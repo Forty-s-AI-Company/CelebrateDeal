@@ -18,6 +18,10 @@ const mocks = vi.hoisted(() => ({
   salesTeamFindFirst: vi.fn(),
   auditSnapshot: vi.fn((value: unknown) => value),
   writeAuditLog: vi.fn(),
+  requestAuditMeta: vi.fn(async () => ({ ipAddress: null, userAgent: null })),
+  teamMembershipUpdateMany: vi.fn(),
+  affiliateFindFirst: vi.fn(),
+  auditLogCreate: vi.fn(),
   redirect: vi.fn(),
   revalidatePath: vi.fn(),
 }));
@@ -27,12 +31,13 @@ vi.mock("next/navigation", () => ({ redirect: mocks.redirect }));
 vi.mock("@/lib/auth", () => ({ requireVendorOwner: mocks.requireVendorOwner }));
 vi.mock("@/lib/csrf", () => ({ assertServerActionSecurity: mocks.assertServerActionSecurity }));
 vi.mock("@/lib/db", () => ({ getDb: mocks.getDb }));
-vi.mock("@/lib/audit", () => ({ auditSnapshot: mocks.auditSnapshot, writeAuditLog: mocks.writeAuditLog }));
+vi.mock("@/lib/audit", () => ({ auditSnapshot: mocks.auditSnapshot, requestAuditMeta: mocks.requestAuditMeta, writeAuditLog: mocks.writeAuditLog }));
 
 import {
   addTeamMemberAction,
   createSalesTeamAction,
   deactivateTeamMembershipAction,
+  setTeamMembershipAffiliateAction,
   setTeamUplineAction,
   transferTeamMemberAction,
 } from "./team-membership-actions";
@@ -68,7 +73,10 @@ beforeEach(() => {
       findFirst: mocks.teamMembershipFindFirst,
       findUnique: mocks.teamMembershipFindUnique,
       update: mocks.teamMembershipUpdate,
+      updateMany: mocks.teamMembershipUpdateMany,
     },
+    affiliate: { findFirst: mocks.affiliateFindFirst },
+    auditLog: { create: mocks.auditLogCreate },
     teamMembershipRelationship: {
       findMany: mocks.teamMembershipRelationshipFindMany,
       updateMany: mocks.teamMembershipRelationshipUpdateMany,
@@ -199,5 +207,97 @@ describe("team membership actions", () => {
       where: { id: "membership-2" },
       data: expect.objectContaining({ status: "INACTIVE", leftAt: expect.any(Date) }),
     }));
+  });
+
+  it("carries the affiliate binding to the target membership when moving a member", async () => {
+    mocks.teamMembershipFindFirst.mockResolvedValue({ id: "membership-2", vendorMemberId: "member-2", affiliateId: "affiliate-2" });
+    mocks.teamMembershipFindUnique.mockResolvedValue(null);
+    mocks.vendorMemberFindFirst.mockResolvedValue({ id: "member-2" });
+    mocks.teamMembershipCreate.mockResolvedValue({ id: "membership-target", status: "ACTIVE" });
+
+    await expect(transferTeamMemberAction(formData({
+      sourceTeamId: "team-1", targetTeamId: "team-2", membershipId: "membership-2",
+    }))).rejects.toThrow("redirect:/settings/team?updated=member_transferred");
+
+    expect(mocks.teamMembershipUpdate).toHaveBeenCalledWith(expect.objectContaining({
+      where: { id: "membership-2" },
+      data: expect.objectContaining({ status: "INACTIVE", affiliateId: null }),
+    }));
+    expect(mocks.teamMembershipCreate).toHaveBeenCalledWith({
+      data: { vendorId: "vendor-1", teamId: "team-2", vendorMemberId: "member-2", affiliateId: "affiliate-2" },
+    });
+    // The source must release the unique binding before the target claims it.
+    expect(mocks.teamMembershipUpdate.mock.invocationCallOrder[0]).toBeLessThan(mocks.teamMembershipCreate.mock.invocationCallOrder[0]!);
+  });
+
+  it("releases the affiliate binding when a member is deactivated", async () => {
+    mocks.teamMembershipFindFirst.mockResolvedValue({ id: "membership-2", vendorMemberId: "member-2", affiliateId: "affiliate-2" });
+
+    await expect(deactivateTeamMembershipAction(formData({ teamId: "team-1", membershipId: "membership-2" }))).rejects.toThrow(
+      "redirect:/settings/team?updated=member_deactivated",
+    );
+    expect(mocks.teamMembershipUpdate).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ status: "INACTIVE", affiliateId: null }),
+    }));
+    expect(mocks.writeAuditLog).toHaveBeenCalledWith(expect.objectContaining({
+      action: "deactivate_team_membership",
+      before: { affiliateId: "affiliate-2" },
+    }));
+  });
+
+  it("binds with a tenant-bound compare-and-set write and an audit row in the same transaction", async () => {
+    mocks.teamMembershipFindFirst
+      .mockResolvedValueOnce({ id: "membership-2", teamId: "team-1", affiliateId: null })
+      .mockResolvedValueOnce(null);
+    mocks.affiliateFindFirst.mockResolvedValue({ id: "affiliate-2", isActive: true });
+    mocks.teamMembershipUpdateMany.mockResolvedValue({ count: 1 });
+
+    await expect(setTeamMembershipAffiliateAction(formData({ membershipId: "membership-2", affiliateId: "affiliate-2" }))).rejects.toThrow(
+      "redirect:/settings/team?updated=affiliate_bound",
+    );
+    expect(mocks.teamMembershipFindFirst).toHaveBeenNthCalledWith(1, expect.objectContaining({
+      where: { id: "membership-2", vendorId: "vendor-1", status: "ACTIVE", leftAt: null },
+    }));
+    expect(mocks.affiliateFindFirst).toHaveBeenCalledWith(expect.objectContaining({ where: { id: "affiliate-2", vendorId: "vendor-1" } }));
+    expect(mocks.teamMembershipUpdateMany).toHaveBeenCalledWith({
+      where: { id: "membership-2", vendorId: "vendor-1", status: "ACTIVE", leftAt: null, affiliateId: null },
+      data: { affiliateId: "affiliate-2" },
+    });
+    expect(mocks.auditLogCreate).toHaveBeenCalledWith({ data: expect.objectContaining({
+      vendorId: "vendor-1",
+      action: "bind_team_membership_affiliate",
+      targetId: "membership-2",
+      before: { membershipId: "membership-2", teamId: "team-1", affiliateId: null },
+      after: { membershipId: "membership-2", teamId: "team-1", affiliateId: "affiliate-2" },
+    }) });
+  });
+
+  it("reports a unique-index race as an existing binding instead of taking it over", async () => {
+    mocks.transaction.mockRejectedValueOnce({ code: "P2002" });
+    await expect(setTeamMembershipAffiliateAction(formData({ membershipId: "membership-2", affiliateId: "affiliate-2" }))).rejects.toThrow(
+      "redirect:/settings/team?error=affiliate_taken",
+    );
+    mocks.transaction.mockRejectedValueOnce({ code: "P2034" });
+    await expect(setTeamMembershipAffiliateAction(formData({ membershipId: "membership-2", affiliateId: "affiliate-2" }))).rejects.toThrow(
+      "redirect:/settings/team?error=affiliate_binding_conflict",
+    );
+    await expect(setTeamMembershipAffiliateAction(formData({ membershipId: "" }))).rejects.toThrow(
+      "redirect:/settings/team?error=affiliate_binding_invalid",
+    );
+    expect(mocks.auditLogCreate).not.toHaveBeenCalled();
+  });
+
+  it("rejects a compare-and-set miss when the binding changed after it was read", async () => {
+    mocks.teamMembershipFindFirst.mockResolvedValueOnce({ id: "membership-2", teamId: "team-1", affiliateId: "affiliate-old" });
+    mocks.teamMembershipUpdateMany.mockResolvedValue({ count: 0 });
+
+    await expect(setTeamMembershipAffiliateAction(formData({ membershipId: "membership-2", affiliateId: "" }))).rejects.toThrow(
+      "redirect:/settings/team?error=affiliate_binding_conflict",
+    );
+    expect(mocks.teamMembershipUpdateMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({ id: "membership-2", vendorId: "vendor-1", affiliateId: "affiliate-old" }),
+      data: { affiliateId: null },
+    }));
+    expect(mocks.auditLogCreate).not.toHaveBeenCalled();
   });
 });

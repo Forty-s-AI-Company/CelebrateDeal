@@ -2,6 +2,7 @@ import {
   addTeamMemberAction,
   createSalesTeamAction,
   deactivateTeamMembershipAction,
+  setTeamMembershipAffiliateAction,
   setTeamUplineAction,
   transferTeamMemberAction,
 } from "@/app/actions/team-membership-actions";
@@ -26,6 +27,11 @@ const errorMessages: Record<string, string> = {
   self_membership: "不能停用自己目前使用中的團隊 membership。",
   team_move_invalid: "請確認來源團隊、目標團隊與成員資料，且不能移到同一團隊。",
   team_move_conflict: "這位成員已在目標團隊中，或轉組與其他操作衝突。",
+  affiliate_binding_invalid: "請確認要綁定的團隊成員與推廣夥伴。",
+  affiliate_invalid: "找不到這個商家的推廣夥伴，請重新整理後再試。",
+  affiliate_inactive: "這位推廣夥伴已停用，請先在推廣夥伴頁啟用後再綁定。",
+  affiliate_taken: "這位推廣夥伴已綁定其他團隊成員，請先解除原本的綁定。",
+  affiliate_binding_conflict: "推廣夥伴綁定與其他操作衝突，請重新整理後再試。",
 };
 
 const updatedMessages: Record<string, string> = {
@@ -34,7 +40,18 @@ const updatedMessages: Record<string, string> = {
   relationship_saved: "上下線關係已更新，歷史關係已保留。",
   member_deactivated: "團隊成員已停用，相關 active 上下線關係已結束。",
   member_transferred: "團隊成員已轉移，原團隊上下線關係已結束。",
+  affiliate_bound: "推廣夥伴已綁定，之後的新訂單會依此計算團隊上線佣金。",
+  affiliate_unbound: "已解除推廣夥伴綁定，之後的新訂單不再發放這位成員的團隊上線佣金。",
+  affiliate_unchanged: "推廣夥伴綁定沒有變更。",
 };
+
+type AffiliateOption = { id: string; name: string; code: string; contactEmail: string | null };
+
+/** Display-only comparison; binding always requires an explicit owner action. */
+function normalizedEmail(value: string | null | undefined) {
+  const email = value?.trim().toLowerCase() ?? "";
+  return email || null;
+}
 
 export default async function TeamSettingsPage({
   searchParams,
@@ -44,7 +61,7 @@ export default async function TeamSettingsPage({
   const params = await searchParams;
   const auth = await requireVendorOwner();
   const db = getDb();
-  const [teams, members] = await Promise.all([
+  const [teams, members, affiliates, boundMemberships] = await Promise.all([
     db.salesTeam.findMany({
       where: { vendorId: auth.vendor.id },
       orderBy: { createdAt: "asc" },
@@ -55,6 +72,7 @@ export default async function TeamSettingsPage({
           include: {
             vendorMember: { include: { user: { select: { name: true, email: true } } } },
             downlineRelationships: { where: { endedAt: null }, select: { uplineMembershipId: true } },
+            affiliate: { select: { id: true, name: true, code: true, isActive: true } },
           },
         },
       },
@@ -64,7 +82,24 @@ export default async function TeamSettingsPage({
       orderBy: { createdAt: "asc" },
       include: { user: { select: { name: true, email: true } } },
     }),
+    db.affiliate.findMany({
+      where: { vendorId: auth.vendor.id, isActive: true },
+      orderBy: [{ name: "asc" }, { createdAt: "asc" }],
+      select: { id: true, name: true, code: true, contactEmail: true },
+    }),
+    db.teamMembership.findMany({
+      where: { vendorId: auth.vendor.id, affiliateId: { not: null } },
+      select: { id: true, affiliateId: true },
+    }),
   ]);
+  const affiliateHolder = new Map<string, string>();
+  for (const bound of boundMemberships) if (bound.affiliateId) affiliateHolder.set(bound.affiliateId, bound.id);
+  const unboundAffiliatesByEmail = new Map<string, AffiliateOption[]>();
+  for (const affiliate of affiliates) {
+    const email = normalizedEmail(affiliate.contactEmail);
+    if (!email || affiliateHolder.has(affiliate.id)) continue;
+    unboundAffiliatesByEmail.set(email, [...(unboundAffiliatesByEmail.get(email) ?? []), affiliate]);
+  }
 
   return (
     <>
@@ -114,6 +149,7 @@ export default async function TeamSettingsPage({
                   <tr>
                     <th className="px-3 py-2 font-semibold">成員</th>
                     <th className="px-3 py-2 font-semibold">直接上線</th>
+                    <th className="px-3 py-2 font-semibold">推廣夥伴（團隊佣金受益人）</th>
                     <th className="px-3 py-2 font-semibold">狀態</th>
                     <th className="px-3 py-2 font-semibold">操作</th>
                   </tr>
@@ -121,6 +157,8 @@ export default async function TeamSettingsPage({
                 <tbody className="divide-y divide-border">
                   {team.memberships.map((membership) => {
                     const currentUpline = membership.downlineRelationships[0]?.uplineMembershipId ?? "";
+                    const boundAffiliate = membership.affiliate;
+                    const emailMatches = boundAffiliate ? [] : unboundAffiliatesByEmail.get(normalizedEmail(membership.vendorMember.user.email) ?? "") ?? [];
                     return (
                       <tr key={membership.id}>
                         <td className="px-3 py-3 align-top">
@@ -140,6 +178,46 @@ export default async function TeamSettingsPage({
                             </select>
                             <SubmitButton pendingChildren="儲存中…">儲存</SubmitButton>
                           </form>
+                        </td>
+                        <td className="px-3 py-3 align-top">
+                          <div className="grid min-w-[16rem] gap-2">
+                            {boundAffiliate ? (
+                              <p className="text-xs text-slate-600">
+                                目前綁定：<span className="font-medium text-slate-900">{boundAffiliate.name}</span>
+                                <span className="ml-1 font-mono">（{boundAffiliate.code}）</span>
+                                {boundAffiliate.isActive ? null : <span className="ml-1 text-red-700">已停用</span>}
+                              </p>
+                            ) : <p className="text-xs text-slate-500">尚未綁定，這位成員擔任上線時不會收到團隊佣金。</p>}
+                            <form action={setTeamMembershipAffiliateAction} className="flex gap-2">
+                              <CsrfField />
+                              <input type="hidden" name="membershipId" value={membership.id} />
+                              <select name="affiliateId" defaultValue={boundAffiliate?.id ?? ""} aria-label={`${membership.vendorMember.user.name || membership.vendorMember.user.email} 的推廣夥伴`} className="h-10 min-w-0 flex-1 rounded-md border border-border-control bg-white px-2 text-sm">
+                                <option value="">（不綁定）</option>
+                                {boundAffiliate && !boundAffiliate.isActive ? <option value={boundAffiliate.id}>{boundAffiliate.name}（{boundAffiliate.code}，已停用）</option> : null}
+                                {affiliates.map((affiliate) => {
+                                  const holder = affiliateHolder.get(affiliate.id);
+                                  const takenByOther = Boolean(holder && holder !== membership.id);
+                                  return (
+                                    <option key={affiliate.id} value={affiliate.id} disabled={takenByOther}>
+                                      {affiliate.name}（{affiliate.code}）{takenByOther ? "・已綁定其他成員" : ""}
+                                    </option>
+                                  );
+                                })}
+                              </select>
+                              <SubmitButton pendingChildren="儲存中…">儲存</SubmitButton>
+                            </form>
+                            {emailMatches.length === 1 ? (
+                              <form action={setTeamMembershipAffiliateAction} className="flex flex-wrap items-center gap-2 rounded-md bg-amber-50 px-2 py-2 text-xs text-amber-800">
+                                <CsrfField />
+                                <input type="hidden" name="membershipId" value={membership.id} />
+                                <input type="hidden" name="affiliateId" value={emailMatches[0]!.id} />
+                                <span>推廣夥伴「{emailMatches[0]!.name}」（{emailMatches[0]!.code}）的聯絡 Email 與這位成員相同。</span>
+                                <SubmitButton pendingChildren="綁定中…">一鍵綁定</SubmitButton>
+                              </form>
+                            ) : emailMatches.length > 1 ? (
+                              <p className="rounded-md bg-amber-50 px-2 py-2 text-xs text-amber-800">有 {emailMatches.length} 位未綁定的推廣夥伴使用與這位成員相同的 Email，請從選單確認後再綁定。</p>
+                            ) : null}
+                          </div>
                         </td>
                         <td className="px-3 py-3 align-top"><Badge tone="green">ACTIVE</Badge></td>
                         <td className="px-3 py-3 align-top">

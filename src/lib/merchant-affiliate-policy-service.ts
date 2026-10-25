@@ -96,7 +96,7 @@ export async function accrueMerchantAffiliatePlan(tx: Prisma.TransactionClient, 
 }) {
   const checkout = await tx.merchantAffiliateCheckoutSnapshot.findUnique({ where: { vendorId_paymentTransactionId: { vendorId: input.vendorId, paymentTransactionId: input.transactionId } }, include: { policy: true, recipients: { orderBy: { level: "asc" } }, calculation: true } });
   if (!checkout) return null; // Explicit legacy flat-rate compatibility path.
-  const payment = await tx.paymentTransaction.findFirst({ where: { vendorId: input.vendorId, id: input.transactionId }, select: { status: true, grossAmountCents: true, netAmountCents: true, currency: true, orderNumber: true } });
+  const payment = await tx.paymentTransaction.findFirst({ where: { vendorId: input.vendorId, id: input.transactionId }, select: { status: true, grossAmountCents: true, netAmountCents: true, currency: true, orderNumber: true, metadata: true } });
   if (!payment || payment.grossAmountCents !== checkout.grossAmountCents || payment.currency !== checkout.currency) throw new MerchantAffiliatePolicyConflict("付款不符合原始佣金快照。");
   if (checkout.calculation) {
     return { calculation: checkout.calculation, commissions: await tx.affiliateCommission.findMany({ where: { vendorId: input.vendorId, merchantCalculationId: checkout.calculation.id }, orderBy: { merchantLevel: "asc" } }) };
@@ -110,14 +110,25 @@ export async function accrueMerchantAffiliatePlan(tx: Prisma.TransactionClient, 
   const changed = await tx.merchantAffiliateSalesCounter.updateMany({ where: { ...key, quantity: counter.quantity }, data: { quantity: BigInt(plan.qualifiedQuantityAfter) } });
   if (changed.count !== 1) throw new MerchantAffiliatePolicyConflict("成交件數已由其他付款變更。");
   const calculation = await tx.merchantAffiliateCalculation.create({ data: { vendorId: input.vendorId, checkoutId: checkout.id, qualifiedQuantityBefore: BigInt(plan.qualifiedQuantityBefore), qualifiedQuantityAfter: BigInt(plan.qualifiedQuantityAfter), plan: plan as Prisma.InputJsonValue } });
+  // The order's referral code is the one the checkout verified against the
+  // signed click and froze on the server-created transaction. Every level of
+  // the same order reports that code; the browser and provider never supply it.
+  const referralCode = frozenCheckoutReferralCode(payment.metadata);
   const commissions = [];
   for (const recipient of plan.recipients) {
     if (!recipient.amountCents) continue; // Zero plans are still immutable and consume quantity exactly once.
-    const saved = await tx.affiliateCommission.create({ data: { vendorId: input.vendorId, affiliateId: recipient.affiliateId, sourceType: "webhook", sourceId: input.transactionId, deduplicationKey: buildCommissionDeduplicationKey({ affiliateId: recipient.affiliateId, sourceType: "webhook", sourceId: input.transactionId }), orderNumber: payment.orderNumber, monthKey: input.occurredAt.toISOString().slice(0, 7), orderAmountCents: plan.grossAmountCents, commissionBaseAmountCents: plan.grossAmountCents, netReferenceAmountCents: payment.netAmountCents, commissionRateBps: recipient.effectiveRateBps, commissionAmountCents: recipient.amountCents, merchantCheckoutId: checkout.id, merchantCalculationId: calculation.id, merchantRecipientId: recipient.checkoutRecipientId, merchantLevel: recipient.level, status: "pending", attributedAt: input.occurredAt } });
+    const saved = await tx.affiliateCommission.create({ data: { vendorId: input.vendorId, affiliateId: recipient.affiliateId, sourceType: "webhook", sourceId: input.transactionId, deduplicationKey: buildCommissionDeduplicationKey({ affiliateId: recipient.affiliateId, sourceType: "webhook", sourceId: input.transactionId }), referralCode, orderNumber: payment.orderNumber, monthKey: input.occurredAt.toISOString().slice(0, 7), orderAmountCents: plan.grossAmountCents, commissionBaseAmountCents: plan.grossAmountCents, netReferenceAmountCents: payment.netAmountCents, commissionRateBps: recipient.effectiveRateBps, commissionAmountCents: recipient.amountCents, merchantCheckoutId: checkout.id, merchantCalculationId: calculation.id, merchantRecipientId: recipient.checkoutRecipientId, merchantLevel: recipient.level, status: "pending", attributedAt: input.occurredAt } });
     await appendCommissionLedgerEntry(tx, { vendorId: input.vendorId, affiliateCommissionId: saved.id, entryType: "accrual", providerName: input.providerName, eventIdentity: `paid:${input.transactionId}`, amountCents: saved.commissionAmountCents, occurredAt: input.occurredAt });
     commissions.push(saved);
   }
   return { calculation, commissions };
+}
+
+function frozenCheckoutReferralCode(metadata: Prisma.JsonValue | null) {
+  if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) return null;
+  const value = (metadata as Prisma.JsonObject).referralCode;
+  const code = typeof value === "string" ? value.trim() : "";
+  return code && code.length <= 191 ? code : null;
 }
 
 // Prospective fixed-rate checkouts also preserve the verified affiliate identity.
