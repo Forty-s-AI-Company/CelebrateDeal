@@ -5,7 +5,18 @@ import { ButtonLink, Card, PageHeader } from "@/components/ui";
 import { EvergreenPreviewPlayer } from "@/components/evergreen-preview-player";
 import { requireVendorManager } from "@/lib/auth";
 import { getDb } from "@/lib/db";
+import { productEventBeyondVideoSec } from "@/lib/live-video-timing";
 import { statusLabel } from "@/lib/status-labels";
+
+function ProductTimingWarning({ durationSec, events }: { durationSec: number | undefined; events: { eventType: string; triggerSec: number }[] }) {
+  const firstProductSec = productEventBeyondVideoSec(durationSec, events);
+  if (firstProductSec === null) return null;
+  return (
+    <p role="alert" className="mb-4 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm leading-6 text-amber-900">
+      商品出現時間超過影片長度：第一個商品在第 {firstProductSec} 秒出現，但影片只有 {durationSec} 秒，觀眾看完影片也看不到商品。請調整互動腳本的商品秒數或更換影片。
+    </p>
+  );
+}
 
 export default async function LivePreviewPage({ params }: { params: Promise<{ id: string }> }) {
   const vendor = await requireVendorManager();
@@ -16,6 +27,7 @@ export default async function LivePreviewPage({ params }: { params: Promise<{ id
   return (
     <>
       <PageHeader title="直播預覽" description="確認公開頁資訊，並取得可分享連結。" action={<ButtonLink href={`/live/${live.slug}`} tone="cta" prefetch={false}>開啟公開頁</ButtonLink>} />
+      <ProductTimingWarning durationSec={live.video?.durationSec} events={live.interactionScript?.events ?? []} />
       <Card>
         <div className="grid gap-5 lg:grid-cols-[1.2fr_0.8fr]">
           <div>

@@ -76,7 +76,7 @@ import type { ScheduledRuntimeMessage } from "@/lib/live-chat-contract";
 import { LiveChatPanel } from "./live-chat-panel";
 import { LivePurchaseBroadcastPanel } from "./live-purchase-broadcast-panel";
 import { LiveViewerPrivateChat } from "./live-viewer-private-chat";
-import { affiliateClickEndpoint, CHECKOUT_NAVIGATION_LOCK_TIMEOUT_MS, checkoutPagePath, getLiveStatusLabel, getStreamUsageRetryDelayMs, getWaitingCountdownSeconds, isHlsPlaybackUrl, isInternalCheckoutPath, LivePlayback, normalizePlaybackStartSeconds, openExternalUrl, PersistentMiniPlayerControls, PlaybackNavigation, requestCheckout, ScriptedInteractionOverlay, shouldResetAffiliateAttribution, STREAM_USAGE_RETRY_DELAYS_MS, stripLiveShareFromUrl, submitCheckout, useLiveAdmission, useLivePlaybackSource } from "./live-playback";
+import { affiliateClickEndpoint, CHECKOUT_NAVIGATION_LOCK_TIMEOUT_MS, checkoutPagePath, getLiveStatusLabel, getStreamUsageRetryDelayMs, getWaitingCountdownSeconds, isHlsPlaybackUrl, isInternalCheckoutPath, LivePlayback, normalizePlaybackStartSeconds, openExternalUrl, PersistentMiniPlayerControls, PlaybackNavigation, PlaybackToggleButton, requestCheckout, ScriptedInteractionOverlay, shouldResetAffiliateAttribution, STREAM_USAGE_RETRY_DELAYS_MS, stripLiveShareFromUrl, submitCheckout, useLiveAdmission, useLivePlaybackSource } from "./live-playback";
 
 type ElementNode = {
   type: unknown;
@@ -1562,6 +1562,39 @@ describe("LivePlayback checkout", () => {
     })).resolves.toBe(true);
     expect(navigateInternal).not.toHaveBeenCalled();
     expect(window.location.href).toBe("https://merchant.example.test/buy");
+  });
+
+  it("renders a reachable play/pause control in the playback overlay, not only the covered native controls", () => {
+    navigation.pathname = "/live/test-fixture-live";
+    const tree = renderLive({ videoUrl: "https://video.example.test/recording.mp4" });
+    const toggles = findElements(tree, (element) => element.type === PlaybackToggleButton);
+    expect(toggles).toHaveLength(1);
+    expect(toggles[0]?.props.isPaused).toBe(true);
+    const navigationBar = findElements(tree, (element) => element.type === PlaybackNavigation)[0];
+    expect(findElements(navigationBar, (element) => element.type === PlaybackToggleButton)).toHaveLength(0);
+
+    const noVideo = renderLive({ videoUrl: null });
+    expect(findElements(noVideo, (element) => element.type === PlaybackToggleButton)).toHaveLength(0);
+  });
+
+  it("toggles the video between play and pause with an accessible label", () => {
+    const video = { paused: true, play: vi.fn(() => Promise.resolve()), pause: vi.fn() };
+    const videoRef = { current: video as unknown as HTMLVideoElement };
+
+    const paused = PlaybackToggleButton({ videoRef, isPaused: true });
+    expect(paused.props["aria-label"]).toBe("播放影片");
+    expect(textContent(paused)).toContain("播放");
+    (paused.props.onClick as () => void)();
+    expect(video.play).toHaveBeenCalledTimes(1);
+    expect(video.pause).not.toHaveBeenCalled();
+
+    video.paused = false;
+    const playing = PlaybackToggleButton({ videoRef, isPaused: false });
+    expect(playing.props["aria-label"]).toBe("暫停影片");
+    expect(textContent(playing)).toContain("暫停");
+    (playing.props.onClick as () => void)();
+    expect(video.pause).toHaveBeenCalledTimes(1);
+    expect(video.play).toHaveBeenCalledTimes(1);
   });
 
   it("keeps the video branch mounted while presenting checkout miniplayer controls", () => {
