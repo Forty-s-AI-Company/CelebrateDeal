@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { Prisma } from "@prisma/client";
-import { auditSnapshot, writeAuditLog } from "@/lib/audit";
+import { auditSnapshot, requestAuditMeta, writeAuditLog } from "@/lib/audit";
 import { requireVendorOwner } from "@/lib/auth";
 import { assertServerActionSecurity } from "@/lib/csrf";
 import { getDb } from "@/lib/db";
@@ -38,6 +38,32 @@ function isSerializableConflict(error: unknown) {
 async function runSerializable<T>(callback: (tx: Prisma.TransactionClient) => Promise<T>): Promise<T> {
   return getDb().$transaction(callback, {
     isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+  });
+}
+
+type OwnerAuth = Awaited<ReturnType<typeof requireVendorOwner>>;
+type AuditMeta = Awaited<ReturnType<typeof requestAuditMeta>>;
+
+/** Beneficiary-changing writes commit their audit row in the same transaction. */
+async function auditInTransaction(tx: Prisma.TransactionClient, auth: OwnerAuth, meta: AuditMeta, entry: {
+  action: string;
+  targetId: string;
+  before?: unknown;
+  after: unknown;
+}) {
+  await tx.auditLog.create({
+    data: {
+      vendorId: auth.vendor.id,
+      actorId: auth.user.id,
+      actorLabel: auth.member.role,
+      action: entry.action,
+      targetType: "TeamMembership",
+      targetId: entry.targetId,
+      ...(entry.before === undefined ? {} : { before: auditSnapshot(entry.before) }),
+      after: auditSnapshot(entry.after),
+      ipAddress: meta.ipAddress,
+      userAgent: meta.userAgent,
+    },
   });
 }
 
@@ -151,14 +177,14 @@ export async function transferTeamMemberAction(formData: FormData) {
   const targetTeamId = text(formData, "targetTeamId");
   const membershipId = text(formData, "membershipId");
   if (!sourceTeamId || !targetTeamId || !membershipId || sourceTeamId === targetTeamId) redirectError("team_move_invalid");
+  const auditMeta = await requestAuditMeta();
 
-  let moved;
   try {
-    moved = await runSerializable(async (tx) => {
+    await runSerializable(async (tx) => {
       const [sourceMembership, targetTeam] = await Promise.all([
         tx.teamMembership.findFirst({
           where: { id: membershipId, vendorId: auth.vendor.id, teamId: sourceTeamId, status: "ACTIVE", leftAt: null },
-          select: { id: true, vendorMemberId: true },
+          select: { id: true, vendorMemberId: true, affiliateId: true },
         }),
         tx.salesTeam.findFirst({ where: { id: targetTeamId, vendorId: auth.vendor.id }, select: { id: true } }),
       ]);
@@ -173,7 +199,7 @@ export async function transferTeamMemberAction(formData: FormData) {
 
       const targetMembership = await tx.teamMembership.findUnique({
         where: { teamId_vendorMemberId: { teamId: targetTeamId, vendorMemberId: sourceMembership.vendorMemberId } },
-        select: { id: true, status: true },
+        select: { id: true, status: true, affiliateId: true },
       });
       if (targetMembership?.status === "ACTIVE") throw new TeamManagementError("team_move_conflict");
 
@@ -186,9 +212,11 @@ export async function transferTeamMemberAction(formData: FormData) {
         },
         data: { endedAt: now },
       });
+      // The affiliate binding belongs to the person, so it moves with them. The
+      // source releases it first because one affiliate may hold one membership.
       await tx.teamMembership.update({
         where: { id: membershipId },
-        data: { status: "INACTIVE", leftAt: now },
+        data: { status: "INACTIVE", leftAt: now, ...(sourceMembership.affiliateId ? { affiliateId: null } : {}) },
       });
 
       const activated = targetMembership
@@ -204,13 +232,35 @@ export async function transferTeamMemberAction(formData: FormData) {
             });
             return tx.teamMembership.update({
               where: { id: targetMembership.id },
-              data: { status: "ACTIVE", leftAt: null, joinedAt: now },
+              data: { status: "ACTIVE", leftAt: null, joinedAt: now, affiliateId: sourceMembership.affiliateId },
             });
           })()
         : await tx.teamMembership.create({
-            data: { vendorId: auth.vendor.id, teamId: targetTeamId, vendorMemberId: sourceMembership.vendorMemberId },
+            data: {
+              vendorId: auth.vendor.id,
+              teamId: targetTeamId,
+              vendorMemberId: sourceMembership.vendorMemberId,
+              ...(sourceMembership.affiliateId ? { affiliateId: sourceMembership.affiliateId } : {}),
+            },
           });
-      return { sourceMembershipId: membershipId, targetMembershipId: activated.id, vendorMemberId: sourceMembership.vendorMemberId };
+      const result = {
+        sourceMembershipId: membershipId,
+        targetMembershipId: activated.id,
+        vendorMemberId: sourceMembership.vendorMemberId,
+        affiliateId: sourceMembership.affiliateId ?? null,
+      };
+      await auditInTransaction(tx, auth, auditMeta, {
+        action: "transfer_team_member",
+        targetId: activated.id,
+        before: {
+          sourceMembershipId: membershipId,
+          sourceAffiliateId: sourceMembership.affiliateId ?? null,
+          targetMembershipId: targetMembership?.id ?? null,
+          targetAffiliateId: targetMembership?.affiliateId ?? null,
+        },
+        after: { ...result, sourceTeamId, targetTeamId },
+      });
+      return result;
     });
   } catch (error) {
     if (error instanceof TeamManagementError) redirectError(error.code);
@@ -218,15 +268,6 @@ export async function transferTeamMemberAction(formData: FormData) {
     throw error;
   }
 
-  await writeAuditLog({
-    vendorId: auth.vendor.id,
-    actorId: auth.user.id,
-    actorLabel: auth.member.role,
-    action: "transfer_team_member",
-    targetType: "TeamMembership",
-    targetId: moved.targetMembershipId,
-    after: auditSnapshot({ ...moved, sourceTeamId, targetTeamId }),
-  });
   revalidateTeamViews();
   redirect(`${TEAM_PATH}?updated=member_transferred`);
 }
@@ -317,10 +358,10 @@ export async function deactivateTeamMembershipAction(formData: FormData) {
   const teamId = text(formData, "teamId");
   const membershipId = text(formData, "membershipId");
   if (!teamId || !membershipId) redirectError("membership_invalid");
+  const auditMeta = await requestAuditMeta();
 
-  let deactivated;
   try {
-    deactivated = await runSerializable(async (tx) => {
+    await runSerializable(async (tx) => {
       const membership = await tx.teamMembership.findFirst({
         where: {
           id: membershipId,
@@ -329,7 +370,7 @@ export async function deactivateTeamMembershipAction(formData: FormData) {
           status: "ACTIVE",
           leftAt: null,
         },
-        select: { id: true, vendorMemberId: true },
+        select: { id: true, vendorMemberId: true, affiliateId: true },
       });
       if (!membership) throw new TeamManagementError("membership_invalid");
       if (membership.vendorMemberId === auth.member.id) throw new TeamManagementError("self_membership");
@@ -343,10 +384,19 @@ export async function deactivateTeamMembershipAction(formData: FormData) {
         },
         data: { endedAt: now },
       });
-      return tx.teamMembership.update({
+      // An inactive membership never earns team commission, so it releases the
+      // affiliate binding and the partner can be bound to another membership.
+      const updated = await tx.teamMembership.update({
         where: { id: membershipId },
-        data: { status: "INACTIVE", leftAt: now },
+        data: { status: "INACTIVE", leftAt: now, ...(membership.affiliateId ? { affiliateId: null } : {}) },
       });
+      await auditInTransaction(tx, auth, auditMeta, {
+        action: "deactivate_team_membership",
+        targetId: updated.id,
+        before: { id: updated.id, teamId, status: "ACTIVE", affiliateId: membership.affiliateId ?? null },
+        after: { id: updated.id, teamId, status: updated.status, leftAt: updated.leftAt, affiliateId: null },
+      });
+      return updated;
     });
   } catch (error) {
     if (error instanceof TeamManagementError) redirectError(error.code);
@@ -354,15 +404,90 @@ export async function deactivateTeamMembershipAction(formData: FormData) {
     throw error;
   }
 
-  await writeAuditLog({
-    vendorId: auth.vendor.id,
-    actorId: auth.user.id,
-    actorLabel: auth.member.role,
-    action: "deactivate_team_membership",
-    targetType: "TeamMembership",
-    targetId: deactivated.id,
-    after: auditSnapshot({ id: deactivated.id, teamId, status: deactivated.status, leftAt: deactivated.leftAt }),
-  });
   revalidateTeamViews();
   redirect(`${TEAM_PATH}?updated=member_deactivated`);
+}
+
+const ID_MAX_LENGTH = 191;
+
+function isPrismaCode(error: unknown, code: string) {
+  return typeof error === "object" && error !== null && "code" in error && error.code === code;
+}
+
+/**
+ * Bind (or release) the affiliate that receives team commission for one
+ * membership. Both IDs are bound to the current vendor in the final write; one
+ * affiliate holds at most one membership, and a concurrent binding is reported
+ * instead of being silently taken over. Binding requires an active membership;
+ * releasing also works on an inactive record of the same vendor so a stale
+ * binding never blocks the affiliate.
+ */
+export async function setTeamMembershipAffiliateAction(formData: FormData) {
+  await assertServerActionSecurity(formData);
+  const auth = await requireVendorOwner();
+  const membershipId = text(formData, "membershipId");
+  const affiliateId = text(formData, "affiliateId") || null;
+  if (!membershipId || membershipId.length > ID_MAX_LENGTH || (affiliateId && affiliateId.length > ID_MAX_LENGTH)) {
+    redirectError("affiliate_binding_invalid");
+  }
+  const auditMeta = await requestAuditMeta();
+
+  let result: { previousAffiliateId: string | null; affiliateId: string | null } | null;
+  try {
+    result = await runSerializable(async (tx) => {
+      const membership = await tx.teamMembership.findFirst({
+        where: { id: membershipId, vendorId: auth.vendor.id },
+        select: { id: true, teamId: true, affiliateId: true, status: true, leftAt: true },
+      });
+      if (!membership) throw new TeamManagementError("membership_invalid");
+      const membershipActive = membership.status === "ACTIVE" && membership.leftAt === null;
+      if (affiliateId && !membershipActive) throw new TeamManagementError("membership_invalid");
+      if (membership.affiliateId === affiliateId) return null;
+
+      if (affiliateId) {
+        const affiliate = await tx.affiliate.findFirst({
+          where: { id: affiliateId, vendorId: auth.vendor.id },
+          select: { id: true, isActive: true },
+        });
+        if (!affiliate) throw new TeamManagementError("affiliate_invalid");
+        if (!affiliate.isActive) throw new TeamManagementError("affiliate_inactive");
+        const holder = await tx.teamMembership.findFirst({
+          where: { vendorId: auth.vendor.id, affiliateId, id: { not: membership.id } },
+          select: { id: true, status: true, leftAt: true },
+        });
+        if (holder) throw new TeamManagementError(holder.status === "ACTIVE" && holder.leftAt === null ? "affiliate_taken" : "affiliate_taken_inactive");
+      }
+
+      // Compare-and-set on the binding that was read, still tenant-bound.
+      const changed = await tx.teamMembership.updateMany({
+        where: {
+          id: membership.id,
+          vendorId: auth.vendor.id,
+          affiliateId: membership.affiliateId,
+          ...(affiliateId ? { status: "ACTIVE" as const, leftAt: null } : {}),
+        },
+        data: { affiliateId },
+      });
+      if (changed.count !== 1) throw new TeamManagementError("affiliate_binding_conflict");
+
+      // The audit row commits with the binding so a beneficiary change is never unrecorded.
+      await auditInTransaction(tx, auth, auditMeta, {
+        action: affiliateId ? "bind_team_membership_affiliate" : "unbind_team_membership_affiliate",
+        targetId: membership.id,
+        before: { membershipId: membership.id, teamId: membership.teamId, membershipStatus: membership.status, affiliateId: membership.affiliateId },
+        after: { membershipId: membership.id, teamId: membership.teamId, membershipStatus: membership.status, affiliateId },
+      });
+      return { previousAffiliateId: membership.affiliateId, affiliateId };
+    });
+  } catch (error) {
+    if (error instanceof TeamManagementError) redirectError(error.code);
+    if (isPrismaCode(error, "P2002")) redirectError("affiliate_taken");
+    if (isPrismaCode(error, "P2003")) redirectError("affiliate_invalid");
+    if (isPrismaConflict(error)) redirectError("affiliate_binding_conflict");
+    throw error;
+  }
+
+  revalidateTeamViews();
+  if (!result) redirect(`${TEAM_PATH}?updated=affiliate_unchanged`);
+  redirect(`${TEAM_PATH}?updated=${result.affiliateId ? "affiliate_bound" : "affiliate_unbound"}`);
 }
