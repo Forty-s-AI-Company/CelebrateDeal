@@ -6,6 +6,7 @@ import { getDb } from "@/lib/db";
 import { hashInteractionBearer } from "@/lib/live-interaction";
 import {
   DERIVED_KEY_ROTATIONS,
+  issuedBeforeRotation,
   macCandidatesWithRotation,
   recordLegacyDerivedKeyUse,
   signWithRotation,
@@ -273,10 +274,14 @@ function deterministicVoucherBearer(executionLogId: string, actionIndex: number)
   return signWithRotation(VOUCHER_BEARER_KEY, voucherBearerMessage(executionLogId, actionIndex));
 }
 
-/** The bearer an existing grant row was created with, current key first. */
-function existingVoucherBearer(executionLogId: string, actionIndex: number, claimTokenHash: string) {
+/**
+ * The bearer an existing grant row was created with, current key first. The
+ * legacy key only counts for a grant created before the rotation took effect.
+ */
+function existingVoucherBearer(executionLogId: string, actionIndex: number, grant: { claimTokenHash: string; createdAt: Date }) {
   const match = macCandidatesWithRotation(VOUCHER_BEARER_KEY, voucherBearerMessage(executionLogId, actionIndex))
-    .find((candidate) => hashInteractionBearer(candidate.mac) === claimTokenHash);
+    .filter((candidate) => candidate.version === "current" || issuedBeforeRotation(grant.createdAt.getTime()))
+    .find((candidate) => hashInteractionBearer(candidate.mac) === grant.claimTokenHash);
   if (match?.version === "legacy") recordLegacyDerivedKeyUse(VOUCHER_BEARER_KEY.label);
   return match?.mac ?? null;
 }
@@ -347,13 +352,16 @@ async function executeAction(
       if (!isUniqueConflict(error)) throw error;
       const existing = await db.automationVoucherGrant.findUnique({
         where: { id },
-        select: { vendorId: true, claimTokenHash: true },
+        select: { vendorId: true, claimTokenHash: true, createdAt: true },
       });
       const existingBearer = existing?.vendorId === event.vendorId
-        ? existingVoucherBearer(executionLogId, actionIndex, existing.claimTokenHash)
+        ? existingVoucherBearer(executionLogId, actionIndex, existing)
         : null;
+      // Never send a link that cannot redeem: fail the execution instead (for
+      // example a pre-rotation grant retried after the legacy key was retired).
+      if (!existingBearer) throw new Error("Existing voucher grant matches no accepted bearer key.");
       const voucherUrl = new URL("/api/automation/vouchers/redeem", getCanonicalAppUrl());
-      voucherUrl.searchParams.set("token", existingBearer ?? bearer);
+      voucherUrl.searchParams.set("token", existingBearer);
       artifacts.voucherUrl = voucherUrl.toString();
       return { type: action.type, status: "already_issued" } as const;
     }

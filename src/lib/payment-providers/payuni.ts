@@ -360,8 +360,12 @@ function decryptInfo(encryptStr: string) {
   if (!encrypted || !tag) {
     throw new Error("Invalid PayUni EncryptInfo payload.");
   }
-  const decipher = createDecipheriv("aes-256-gcm", Buffer.from(key), Buffer.from(iv));
-  decipher.setAuthTag(Buffer.from(tag, "base64"));
+  // PayUni tags are 16 bytes (see encryptInfo). Refuse truncated tags, which
+  // Node would otherwise accept down to 4 bytes.
+  const tagBytes = Buffer.from(tag, "base64");
+  if (tagBytes.length !== 16) throw new Error("Invalid PayUni EncryptInfo payload.");
+  const decipher = createDecipheriv("aes-256-gcm", Buffer.from(key), Buffer.from(iv), { authTagLength: 16 });
+  decipher.setAuthTag(tagBytes);
   const decrypted = Buffer.concat([decipher.update(Buffer.from(encrypted, "base64")), decipher.final()]).toString("utf8");
   return Object.fromEntries(new URLSearchParams(decrypted).entries()) as Record<string, unknown>;
 }

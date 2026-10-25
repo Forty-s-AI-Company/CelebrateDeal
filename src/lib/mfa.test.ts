@@ -161,6 +161,21 @@ describe("mfa key rotation (B04-03 tier 4)", () => {
     expect(() => decryptMfaSecret("m3.a.b.c")).toThrow();
   });
 
+  it("refuses truncated GCM tags in both formats", () => {
+    const secret = generateTotpSecret();
+    const shorten = (tag: string) => Buffer.from(tag, "base64url").subarray(0, 8).toString("base64url");
+    const [version, iv, tag, data] = encryptMfaSecret(secret).split(".");
+    const [legacyIv, legacyTag, legacyData] = legacyCiphertext(secret).split(".");
+
+    expect(() => decryptMfaSecret([version, iv, shorten(tag!), data].join("."))).toThrow("Invalid encrypted MFA payload.");
+    expect(() => decryptMfaSecret([legacyIv, shorten(legacyTag!), legacyData].join("."))).toThrow("Invalid encrypted MFA payload.");
+    // A genuine 4-byte-tag ciphertext under the current key is refused too.
+    const shortIv = randomBytes(12);
+    const cipher = createCipheriv("aes-256-gcm", deriveSensitiveDataKey("mfa-encryption:r2:69a113bdb66c7a1e"), shortIv, { authTagLength: 4 });
+    const body = Buffer.concat([cipher.update(secret, "utf8"), cipher.final()]);
+    expect(() => decryptMfaSecret(["m2", shortIv.toString("base64url"), cipher.getAuthTag().toString("base64url"), body.toString("base64url")].join("."))).toThrow();
+  });
+
   it("accepts only the current format for the short-lived setup and recovery cookies", () => {
     const secret = generateTotpSecret();
     const legacySetup = legacyCiphertext(JSON.stringify({ secret, userId: "user-1", createdAt: Date.now() }));

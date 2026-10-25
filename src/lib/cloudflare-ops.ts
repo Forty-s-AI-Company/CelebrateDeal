@@ -9,7 +9,7 @@ import {
   getStreamVideoStatus,
 } from "@/lib/cloudflare-stream";
 import { getDb } from "@/lib/db";
-import { DERIVED_KEY_ROTATIONS, decryptWithRotation, encryptWithRotation } from "@/lib/derived-key-rotation";
+import { DERIVED_KEY_ROTATIONS, decryptWithRotation, encryptWithRotation, expiryFitsPreRotationIssue } from "@/lib/derived-key-rotation";
 import { encryptSensitiveValue } from "@/lib/sensitive-data";
 
 const CLOUDFLARE_STREAM_KEY_PURPOSE = "cloudflare-live-stream-key";
@@ -248,7 +248,11 @@ export async function completeResumableUploadMapping({
   let ticket: z.infer<typeof ResumableUploadTicket>;
   try {
     ticket = ResumableUploadTicket.parse(JSON.parse(
-      decryptWithRotation(uploadTicket, CLOUDFLARE_UPLOAD_TICKET_KEY).plaintext,
+      // A legacy-key ticket is accepted only if it could have been issued before the rotation.
+      decryptWithRotation(uploadTicket, CLOUDFLARE_UPLOAD_TICKET_KEY, new Date(), (plaintext) => {
+        const legacy = ResumableUploadTicket.safeParse(JSON.parse(plaintext));
+        return legacy.success && expiryFitsPreRotationIssue(legacy.data.expiresAt, RESUMABLE_UPLOAD_TICKET_LIFETIME_MS);
+      }).plaintext,
     ));
   } catch {
     throw new CloudflareUploadTicketError();

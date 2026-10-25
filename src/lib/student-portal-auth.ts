@@ -4,7 +4,7 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 import { automationCustomerKeyHash } from "@/lib/automation-workflow";
 import { getDb } from "@/lib/db";
-import { DERIVED_KEY_ROTATIONS, decryptWithRotation, encryptWithRotation } from "@/lib/derived-key-rotation";
+import { DERIVED_KEY_ROTATIONS, decryptWithRotation, encryptWithRotation, issuedBeforeRotation } from "@/lib/derived-key-rotation";
 import { deriveSensitiveDataKey } from "@/lib/sensitive-data";
 
 const TOKEN_VERSION = "sp1";
@@ -309,10 +309,16 @@ export function createStudentPortalSessionToken(input: {
   }), SESSION_KEY);
 }
 
+function legacySessionIssuedBeforeRotation(plaintext: string) {
+  const parsed = SessionPayload.safeParse(JSON.parse(plaintext));
+  return parsed.success && issuedBeforeRotation(parsed.data.issuedAt * 1_000);
+}
+
 export function readStudentPortalSessionToken(token: string | null | undefined, now = new Date()): StudentPortalSession | null {
   if (!token || token.length > 2_048) return null;
   try {
-    const parsed = SessionPayload.safeParse(JSON.parse(decryptWithRotation(token, SESSION_KEY, now).plaintext));
+    // A legacy-key cookie is accepted only if its encrypted issuedAt predates the rotation.
+    const parsed = SessionPayload.safeParse(JSON.parse(decryptWithRotation(token, SESSION_KEY, now, legacySessionIssuedBeforeRotation).plaintext));
     if (!parsed.success) return null;
     const nowSeconds = epochSeconds(now);
     if (

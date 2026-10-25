@@ -4,7 +4,7 @@ import {
   verifyPasswordAsync,
 } from "@/lib/password";
 import { DERIVED_KEY_ROTATIONS, acceptedLegacyPurpose, recordLegacyDerivedKeyUse } from "@/lib/derived-key-rotation";
-import { deriveSensitiveDataKey } from "@/lib/sensitive-data";
+import { GCM_AUTH_TAG_BYTES, deriveSensitiveDataKey } from "@/lib/sensitive-data";
 
 const TOTP_DIGITS = 6;
 const TOTP_PERIOD_SECONDS = 30;
@@ -79,8 +79,10 @@ function encryptText(value: string) {
 }
 
 function decryptParts(key: Buffer, ivPart: string, tagPart: string, encryptedPart: string) {
-  const decipher = createDecipheriv("aes-256-gcm", key, Buffer.from(ivPart, "base64url"));
-  decipher.setAuthTag(Buffer.from(tagPart, "base64url"));
+  const tag = Buffer.from(tagPart, "base64url");
+  if (tag.length !== GCM_AUTH_TAG_BYTES) throw new Error("Invalid encrypted MFA payload.");
+  const decipher = createDecipheriv("aes-256-gcm", key, Buffer.from(ivPart, "base64url"), { authTagLength: GCM_AUTH_TAG_BYTES });
+  decipher.setAuthTag(tag);
   const decrypted = Buffer.concat([
     decipher.update(Buffer.from(encryptedPart, "base64url")),
     decipher.final(),

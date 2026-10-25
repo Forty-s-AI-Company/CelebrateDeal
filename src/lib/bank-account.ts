@@ -201,7 +201,8 @@ export function decryptBankAccount(
 
   let raw: string;
   try {
-    const decipher = createDecipheriv("aes-256-gcm", key, parsed.iv);
+    // parseEnvelope already requires a 16-byte tag; pin the length in GCM too.
+    const decipher = createDecipheriv("aes-256-gcm", key, parsed.iv, { authTagLength: 16 });
     decipher.setAAD(associatedData(vendorId, parsed.keyId, binding));
     decipher.setAuthTag(parsed.tag);
     raw = Buffer.concat([decipher.update(parsed.ciphertext), decipher.final()]).toString("utf8");

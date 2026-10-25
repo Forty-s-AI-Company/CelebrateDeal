@@ -1,4 +1,4 @@
-import { DERIVED_KEY_ROTATIONS, signWithRotation, verifyWithRotation } from "@/lib/derived-key-rotation";
+import { DERIVED_KEY_ROTATIONS, expiryFitsPreRotationIssue, signWithRotation, verifyWithRotation } from "@/lib/derived-key-rotation";
 
 export const FORM_SUBMISSION_CHAT_SESSION_COOKIE = "celebratedeal_form_submission_chat_session";
 export const FORM_SUBMISSION_CHAT_SESSION_TTL_SECONDS = 30 * 24 * 60 * 60;
@@ -77,7 +77,9 @@ export function verifyFormSubmissionChatSessionToken(
   ) return null;
 
   const value = signedValue(submissionId, expiresAtSeconds);
-  if (!verifyWithRotation(TOKEN_KEY, value, suppliedSignature, now)) return null;
+  // A legacy-key cookie is accepted only if it could have been issued before the rotation.
+  if (!verifyWithRotation(TOKEN_KEY, value, suppliedSignature, now,
+    () => expiryFitsPreRotationIssue(expiresAtSeconds * 1_000, FORM_SUBMISSION_CHAT_SESSION_TTL_SECONDS * 1_000))) return null;
 
   return { submissionId, expiresAt: new Date(expiresAtSeconds * 1_000) };
 }

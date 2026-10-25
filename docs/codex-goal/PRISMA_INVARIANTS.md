@@ -484,6 +484,9 @@ Current source inventory: 145 models and 99 forward migrations. Previous checkpo
 
 - 沒有新增 model、欄位或 migration；目前仍為 154 models、124 forward migrations。變更只在既有字串欄位的內容格式，舊格式持續可讀。
 - `UserMfaFactor.secretEncrypted`：新寫入一律為 `m2.<iv>.<tag>.<data>`（AES-256-GCM，金鑰 `mfa-encryption:r2:…`）；舊格式 `<iv>.<tag>.<data>`（金鑰 `mfa-encryption`）仍可解密。`/mfa/verify` TOTP 成功後以 `updateMany where { userId, secretEncrypted: 舊密文 }` 的 compare-and-swap 改存新格式；`scripts/reencrypt-mfa-secrets.ts` 以同一 CAS 批次處理（預設 dry run；`--execute` 需確認值；先以舊鑰解密成功並驗證新密文可解回同一 secret 才寫入；可重跑）。全部環境都沒有舊格式後，才可移除舊鑰（`DERIVED_KEY_ROTATIONS.mfaEncryption.legacy`）。
-- 同批改名（第 1、2 級，不接受舊鑰）：CSRF MAC `csrf-hmac-v1` → `csrf-hmac:r2:…`（CSRF token 最長 2 小時，部署後舊 token 失效，行為同過期）、商家邀請簽章與邀請稽核 Email 雜湊（見上一節）。
+- **部署前提不變量**：repo 是公開的，新用途名稱推上 GitHub 後任何人都看得到；推送任何新用途名稱之前，必須沒有任何可公開連線的部署仍執行 #485 之前的程式碼（Preview 與舊部署一律留在 Vercel Authentication 之後，絕不可把舊部署重新 alias 到公開網域）。production 服務任何人之前必須先輪替根金鑰並重新註冊管理員 MFA，步驟與 2026-10-25 查核紀錄見 `docs/staging-production-env-vars.md` §7 第 7 點。
+- 第 3 級舊鑰除了停用日，另以 `ROTATION_EFFECTIVE_AT`（2026-10-26 00:00 台灣時間）檢查 token 內的 `issuedAt`／`expiresAt`，生效後才簽發的舊鑰 token 一律拒絕；自動化優惠券以 `AutomationVoucherGrant.createdAt` 判斷。
+- AES-GCM 解密一律指定 `authTagLength: 16` 並先確認 tag 為 16 bytes（`sensitive-data.ts`、`mfa.ts`、`bank-account.ts`、`affiliate-tax-identity.ts`、PayUni）。
+- 同批改名（第 1、2 級，不接受舊鑰）：私訊 conversation binding `live-private-chat-conversation-binding:v1` → `…:r2:…`、CSRF MAC `csrf-hmac-v1` → `csrf-hmac:r2:…`（CSRF token 最長 2 小時，部署後舊 token 失效，行為同過期）、商家邀請簽章與邀請稽核 Email 雜湊（見上一節）。
 - `UserRecoveryCode.codeHash`：新雜湊為 `hmac-sha256-v2:<digest>`（金鑰 `mfa-recovery-code-authentication:r2:…`）；`hmac-sha256-v1` 仍以舊鑰驗證，更早的 password-hash 格式不變。復原碼一次性，不做重算雜湊。
 - 測試：`src/lib/mfa.test.ts`、`src/lib/derived-key-rotation.test.ts`、`src/lib/sensitive-data.test.ts`（舊與新用途 golden key）、`src/app/actions.test.ts`（lazy re-encrypt 與失敗不擋登入）、`scripts/reencrypt-mfa-secrets.db.test.ts`（dry run 不寫入、apply 冪等、錯誤根金鑰不寫入、不可讀列阻擋、CAS 不覆寫重新註冊、目標資料庫守門）。

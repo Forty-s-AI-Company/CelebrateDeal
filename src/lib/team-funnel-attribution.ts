@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { getDb } from "@/lib/db";
-import { DERIVED_KEY_ROTATIONS, signWithRotation, verifyWithRotation } from "@/lib/derived-key-rotation";
+import { DERIVED_KEY_ROTATIONS, issuedBeforeRotation, signWithRotation, verifyWithRotation } from "@/lib/derived-key-rotation";
 import { resolveTeamFunnelLiveShare } from "@/lib/team-funnel-live-sharing";
 
 export const ATTRIBUTION_COOKIE = "celebratedeal_attribution";
@@ -144,7 +144,9 @@ export function attributionCookieFromRequest(request: Request, now = Date.now())
       extra !== undefined
     ) return null;
 
-    if (!verifyWithRotation(ATTRIBUTION_COOKIE_KEY, attributionSignedValue(payload), suppliedSignature, new Date(now))) return null;
+    // A legacy-key cookie is accepted only if its signed issuedAt predates the rotation.
+    if (!verifyWithRotation(ATTRIBUTION_COOKIE_KEY, attributionSignedValue(payload), suppliedSignature, new Date(now),
+      () => legacyAttributionIssuedBeforeRotation(payload))) return null;
 
     const parsed = JSON.parse(Buffer.from(payload, "base64url").toString("utf8")) as unknown;
     if (!isAttributionCookie(parsed)) return null;
@@ -161,6 +163,15 @@ export function encodeAttributionCookie(value: AttributionCookie) {
   if (!isAttributionCookie(value)) throw new Error("Invalid attribution cookie payload.");
   const payload = Buffer.from(JSON.stringify(value)).toString("base64url");
   return `${ATTRIBUTION_COOKIE_VERSION}.${payload}.${signWithRotation(ATTRIBUTION_COOKIE_KEY, attributionSignedValue(payload))}`;
+}
+
+function legacyAttributionIssuedBeforeRotation(payload: string) {
+  try {
+    const parsed = JSON.parse(Buffer.from(payload, "base64url").toString("utf8")) as unknown;
+    return isAttributionCookie(parsed) && issuedBeforeRotation(parsed.issuedAt);
+  } catch {
+    return false;
+  }
 }
 
 function attributionSignedValue(payload: string) {

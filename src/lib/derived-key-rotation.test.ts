@@ -8,7 +8,10 @@ vi.mock("@/lib/db", () => ({ getDb: () => ({}) }));
 import { issueCheckoutAdmission, verifyCheckoutAdmission } from "@/lib/checkout-admission";
 import {
   DERIVED_KEY_ROTATIONS,
+  ROTATION_EFFECTIVE_AT,
   acceptedLegacyPurpose,
+  expiryFitsPreRotationIssue,
+  issuedBeforeRotation,
   decryptWithRotation,
   encryptWithRotation,
   legacyDerivedKeyUseCount,
@@ -41,6 +44,10 @@ import { ATTRIBUTION_COOKIE, attributionCookieFromRequest, encodeAttributionCook
 const IN_WINDOW = new Date("2026-11-01T00:00:00.000Z");
 // After every hard stop.
 const RETIRED = new Date("2028-01-01T00:00:00.000Z");
+// Around ROTATION_EFFECTIVE_AT (2026-10-25T16:00:00Z).
+const PRE_ROTATION = new Date("2026-10-25T12:00:00.000Z");
+const POST_ROTATION = new Date("2026-10-25T17:00:00.000Z");
+const AFTER_DEPLOY = new Date("2026-10-26T00:00:00.000Z");
 
 /** Re-signs a "<signed value>.<mac>" token under another purpose, as the old code did. */
 function resign(token: string, purpose: string) {
@@ -94,7 +101,7 @@ describe("rotation registry", () => {
 
   it("keeps tier 2 rotations without a legacy key", () => {
     for (const name of [
-      "csrfMac", "merchantRegistrationInvite", "merchantInviteEmailHash", "checkoutAdmission", "formSubmissionLineBinding", "studentPortalAccessToken", "liveViewerPass",
+      "csrfMac", "merchantRegistrationInvite", "merchantInviteEmailHash", "livePrivateChatConversationBinding", "checkoutAdmission", "formSubmissionLineBinding", "studentPortalAccessToken", "liveViewerPass",
       "liveChatCursor", "livePrivateChatCursor", "postPurchaseCheckout", "registrationSubmissionResult",
     ] as const) {
       expect(DERIVED_KEY_ROTATIONS[name].legacy, name).toBeNull();
@@ -130,6 +137,32 @@ describe("rotation helpers", () => {
     const flippedTag = `${tag!.startsWith("A") ? "B" : "A"}${tag!.slice(1)}`;
     expect(() => decryptWithRotation([version, iv, flippedTag, data].join("."), ticket, IN_WINDOW)).toThrow();
     expect(legacyDerivedKeyUseCount(ticket.label)).toBe(1);
+  });
+
+  it("applies the issued-before-rotation check only after a legacy match, and never counts a refusal", () => {
+    const legacy = createHmac("sha256", deriveSensitiveDataKey("email-delivery-unsubscribe")).update("message").digest("base64url");
+    const predicate = vi.fn(() => false);
+
+    expect(verifyWithRotation(rotation, "message", signWithRotation(rotation, "message"), IN_WINDOW, predicate)).toBe("current");
+    expect(predicate).not.toHaveBeenCalled();
+    expect(verifyWithRotation(rotation, "message", legacy, IN_WINDOW, predicate)).toBeNull();
+    expect(predicate).toHaveBeenCalledOnce();
+    expect(verifyWithRotation(rotation, "message", legacy, IN_WINDOW, () => true)).toBe("legacy");
+    expect(legacyDerivedKeyUseCount(rotation.label)).toBe(1);
+
+    const ticket = DERIVED_KEY_ROTATIONS.cloudflareUploadTicket;
+    const envelope = encryptSensitiveValue("ticket", "cloudflare-resumable-upload-ticket");
+    expect(() => decryptWithRotation(envelope, ticket, IN_WINDOW, () => false)).toThrow();
+    expect(decryptWithRotation(envelope, ticket, IN_WINDOW, (plaintext) => plaintext === "ticket").keyVersion).toBe("legacy");
+  });
+
+  it("dates the rotation at 2026-10-26 00:00 Taiwan time", () => {
+    expect(ROTATION_EFFECTIVE_AT.toISOString()).toBe("2026-10-25T16:00:00.000Z");
+    expect(issuedBeforeRotation(ROTATION_EFFECTIVE_AT.getTime() - 1)).toBe(true);
+    expect(issuedBeforeRotation(ROTATION_EFFECTIVE_AT.getTime())).toBe(false);
+    expect(issuedBeforeRotation(Number.NaN)).toBe(false);
+    expect(expiryFitsPreRotationIssue(ROTATION_EFFECTIVE_AT.getTime() + 1_000, 1_000)).toBe(true);
+    expect(expiryFitsPreRotationIssue(ROTATION_EFFECTIVE_AT.getTime() + 1_001, 1_000)).toBe(false);
   });
 
   it("logs a legacy-key use with the fixed label only, at most once per interval", () => {
@@ -244,29 +277,42 @@ describe("tier 3: long-lived tokens sign with the new key and still accept the o
   });
 
   it("form submission email verification links", () => {
-    const expiresAt = new Date(IN_WINDOW.getTime() + 48 * 60 * 60 * 1_000);
-    const token = createFormSubmissionVerificationToken({ submissionId: "submission-1", expiresAt, version: 2 });
+    const ttl = 48 * 60 * 60 * 1_000;
+    const create = (issuedAt: Date) => createFormSubmissionVerificationToken({
+      submissionId: "submission-1", expiresAt: new Date(issuedAt.getTime() + ttl), version: 2,
+    });
+    const token = create(PRE_ROTATION);
     const legacy = resign(token, "form-submission-email-verification");
 
-    expect(verifyFormSubmissionVerificationToken(token, IN_WINDOW)).toMatchObject({ submissionId: "submission-1", version: 2 });
-    expect(verifyFormSubmissionVerificationToken(legacy, IN_WINDOW)).toMatchObject({ submissionId: "submission-1", version: 2 });
+    expect(verifyFormSubmissionVerificationToken(token, AFTER_DEPLOY)).toMatchObject({ submissionId: "submission-1", version: 2 });
+    expect(verifyFormSubmissionVerificationToken(legacy, AFTER_DEPLOY)).toMatchObject({ submissionId: "submission-1", version: 2 });
     expect(legacyDerivedKeyUseCount("form-submission-email-verification")).toBe(1);
-    expect(verifyFormSubmissionVerificationToken(tamper(token), IN_WINDOW)).toBeNull();
+    expect(verifyFormSubmissionVerificationToken(tamper(token), AFTER_DEPLOY)).toBeNull();
 
-    const lateExpiry = new Date(RETIRED.getTime() + 60_000);
-    const late = createFormSubmissionVerificationToken({ submissionId: "submission-1", expiresAt: lateExpiry, version: 2 });
+    // An expiry that a pre-rotation link cannot have: legacy key refused, current key fine.
+    const postRotation = create(POST_ROTATION);
+    expect(verifyFormSubmissionVerificationToken(postRotation, AFTER_DEPLOY)).not.toBeNull();
+    expect(verifyFormSubmissionVerificationToken(resign(postRotation, "form-submission-email-verification"), AFTER_DEPLOY)).toBeNull();
+    expect(legacyDerivedKeyUseCount("form-submission-email-verification")).toBe(1);
+
+    const late = createFormSubmissionVerificationToken({ submissionId: "submission-1", expiresAt: new Date(RETIRED.getTime() + 60_000), version: 2 });
     expect(verifyFormSubmissionVerificationToken(late, RETIRED)).not.toBeNull();
     expect(verifyFormSubmissionVerificationToken(resign(late, "form-submission-email-verification"), RETIRED)).toBeNull();
   });
 
   it("form submission chat session cookies", () => {
-    const token = createFormSubmissionChatSessionToken({ submissionId: "submission-1", now: IN_WINDOW });
+    const token = createFormSubmissionChatSessionToken({ submissionId: "submission-1", now: PRE_ROTATION });
     const legacy = resign(token, "form-submission-chat-session");
 
-    expect(verifyFormSubmissionChatSessionToken(token, IN_WINDOW)).toMatchObject({ submissionId: "submission-1" });
-    expect(verifyFormSubmissionChatSessionToken(legacy, IN_WINDOW)).toMatchObject({ submissionId: "submission-1" });
+    expect(verifyFormSubmissionChatSessionToken(token, AFTER_DEPLOY)).toMatchObject({ submissionId: "submission-1" });
+    expect(verifyFormSubmissionChatSessionToken(legacy, AFTER_DEPLOY)).toMatchObject({ submissionId: "submission-1" });
     expect(legacyDerivedKeyUseCount("form-submission-chat-session")).toBe(1);
-    expect(verifyFormSubmissionChatSessionToken(tamper(token), IN_WINDOW)).toBeNull();
+    expect(verifyFormSubmissionChatSessionToken(tamper(token), AFTER_DEPLOY)).toBeNull();
+
+    const postRotation = createFormSubmissionChatSessionToken({ submissionId: "submission-1", now: POST_ROTATION });
+    expect(verifyFormSubmissionChatSessionToken(postRotation, AFTER_DEPLOY)).not.toBeNull();
+    expect(verifyFormSubmissionChatSessionToken(resign(postRotation, "form-submission-chat-session"), AFTER_DEPLOY)).toBeNull();
+    expect(legacyDerivedKeyUseCount("form-submission-chat-session")).toBe(1);
 
     const late = createFormSubmissionChatSessionToken({ submissionId: "submission-1", now: RETIRED });
     expect(verifyFormSubmissionChatSessionToken(late, RETIRED)).not.toBeNull();
@@ -278,14 +324,19 @@ describe("tier 3: long-lived tokens sign with the new key and still accept the o
       new Request("https://app.example.test/", { headers: { cookie: `${ATTRIBUTION_COOKIE}=${cookie}` } }),
       now.getTime(),
     );
-    const value = (now: Date) => ({ clickId: "click-1", visitorId: "visitor-0123456789abcdef", issuedAt: now.getTime() });
-    const cookie = encodeAttributionCookie(value(IN_WINDOW));
+    const value = (issuedAt: Date) => ({ clickId: "click-1", visitorId: "visitor-0123456789abcdef", issuedAt: issuedAt.getTime() });
+    const cookie = encodeAttributionCookie(value(PRE_ROTATION));
     const legacy = resign(cookie, "team-funnel-attribution-cookie");
 
-    expect(read(cookie, IN_WINDOW)).toMatchObject({ clickId: "click-1" });
-    expect(read(legacy, IN_WINDOW)).toMatchObject({ clickId: "click-1" });
+    expect(read(cookie, AFTER_DEPLOY)).toMatchObject({ clickId: "click-1" });
+    expect(read(legacy, AFTER_DEPLOY)).toMatchObject({ clickId: "click-1" });
     expect(legacyDerivedKeyUseCount("team-funnel-attribution-cookie")).toBe(1);
-    expect(read(tamper(cookie), IN_WINDOW)).toBeNull();
+    expect(read(tamper(cookie), AFTER_DEPLOY)).toBeNull();
+
+    const postRotation = encodeAttributionCookie(value(POST_ROTATION));
+    expect(read(postRotation, AFTER_DEPLOY)).not.toBeNull();
+    expect(read(resign(postRotation, "team-funnel-attribution-cookie"), AFTER_DEPLOY)).toBeNull();
+    expect(legacyDerivedKeyUseCount("team-funnel-attribution-cookie")).toBe(1);
 
     const late = encodeAttributionCookie(value(RETIRED));
     expect(read(late, RETIRED)).not.toBeNull();
@@ -294,19 +345,21 @@ describe("tier 3: long-lived tokens sign with the new key and still accept the o
 
   it("student portal session cookies", () => {
     const customerKeyHash = "A".repeat(43);
-    const issuedAt = Math.floor(IN_WINDOW.getTime() / 1_000);
-    const payload = JSON.stringify({ version: "sp1", vendorId: "vendor-1", customerKeyHash, issuedAt, expiresAt: issuedAt + 3_600 });
-    const current = createStudentPortalSessionToken({ vendorId: "vendor-1", customerKeyHash, now: IN_WINDOW, ttlSeconds: 3_600 });
-    const legacy = encryptSensitiveValue(payload, "student-portal-session-v1");
+    const legacyCookie = (issued: Date, ttlSeconds: number) => {
+      const issuedAt = Math.floor(issued.getTime() / 1_000);
+      return encryptSensitiveValue(JSON.stringify({ version: "sp1", vendorId: "vendor-1", customerKeyHash, issuedAt, expiresAt: issuedAt + ttlSeconds }), "student-portal-session-v1");
+    };
+    const current = createStudentPortalSessionToken({ vendorId: "vendor-1", customerKeyHash, now: PRE_ROTATION, ttlSeconds: 86_400 });
 
-    expect(readStudentPortalSessionToken(current, IN_WINDOW)).toMatchObject({ vendorId: "vendor-1" });
-    expect(readStudentPortalSessionToken(legacy, IN_WINDOW)).toMatchObject({ vendorId: "vendor-1" });
+    expect(readStudentPortalSessionToken(current, AFTER_DEPLOY)).toMatchObject({ vendorId: "vendor-1" });
+    expect(readStudentPortalSessionToken(legacyCookie(PRE_ROTATION, 86_400), AFTER_DEPLOY)).toMatchObject({ vendorId: "vendor-1" });
     expect(legacyDerivedKeyUseCount("student-portal-session")).toBe(1);
     // New cookies are not readable under the legacy key.
     expect(() => decryptWithRotation(current, { ...DERIVED_KEY_ROTATIONS.studentPortalSession, current: "student-portal-session-v1" }, RETIRED)).toThrow();
 
-    const lateIssuedAt = Math.floor(RETIRED.getTime() / 1_000);
-    const latePayload = JSON.stringify({ version: "sp1", vendorId: "vendor-1", customerKeyHash, issuedAt: lateIssuedAt, expiresAt: lateIssuedAt + 3_600 });
-    expect(readStudentPortalSessionToken(encryptSensitiveValue(latePayload, "student-portal-session-v1"), RETIRED)).toBeNull();
+    // A legacy-key cookie claiming to be issued after the rotation is refused.
+    expect(readStudentPortalSessionToken(legacyCookie(POST_ROTATION, 86_400), AFTER_DEPLOY)).toBeNull();
+    expect(legacyDerivedKeyUseCount("student-portal-session")).toBe(1);
+    expect(readStudentPortalSessionToken(legacyCookie(RETIRED, 3_600), RETIRED)).toBeNull();
   });
 });

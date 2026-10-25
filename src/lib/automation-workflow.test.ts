@@ -283,6 +283,7 @@ describe("smart automation workflow engine", () => {
         findUnique: vi.fn(async () => ({
           vendorId: event.vendorId,
           claimTokenHash: db.automationVoucherGrant.create.mock.calls[0]?.[0].data.claimTokenHash,
+          createdAt: new Date(),
         })),
       },
       product: { findFirst: vi.fn().mockResolvedValue({ id: "product-1", currency: "TWD" }) },
@@ -295,7 +296,7 @@ describe("smart automation workflow engine", () => {
     expect(db.automationVoucherGrant.create).toHaveBeenCalledTimes(2);
     expect(db.automationVoucherGrant.findUnique).toHaveBeenCalledWith({
       where: { id: db.automationVoucherGrant.create.mock.calls[0]?.[0].data.id },
-      select: { vendorId: true, claimTokenHash: true },
+      select: { vendorId: true, claimTokenHash: true, createdAt: true },
     });
     expect(mocks.enqueueLineNotification).toHaveBeenCalledTimes(2);
     const firstText = mocks.enqueueLineNotification.mock.calls[0]?.[1].messages[0].text as string;
@@ -328,7 +329,9 @@ describe("smart automation workflow engine", () => {
       },
       automationVoucherGrant: {
         create: vi.fn().mockRejectedValueOnce(conflict),
-        findUnique: vi.fn().mockResolvedValue({ vendorId: event.vendorId, claimTokenHash: hashInteractionBearer(legacyBearer) }),
+        findUnique: vi.fn().mockResolvedValue({
+          vendorId: event.vendorId, claimTokenHash: hashInteractionBearer(legacyBearer), createdAt: new Date("2026-10-20T00:00:00.000Z"),
+        }),
       },
       product: { findFirst: vi.fn().mockResolvedValue({ id: "product-1", currency: "TWD" }) },
       customerTagAssignment: {}, lineOfficialAccount: {}, lineUserIdentity: {}, lineDelivery: {},
@@ -365,16 +368,52 @@ describe("smart automation workflow engine", () => {
       },
       automationVoucherGrant: {
         create: vi.fn().mockRejectedValueOnce(conflict),
-        findUnique: vi.fn().mockResolvedValue({ vendorId: "vendor-2", claimTokenHash: hashInteractionBearer(legacyBearer) }),
+        findUnique: vi.fn().mockResolvedValue({
+          vendorId: "vendor-2", claimTokenHash: hashInteractionBearer(legacyBearer), createdAt: new Date("2026-10-20T00:00:00.000Z"),
+        }),
       },
       product: { findFirst: vi.fn().mockResolvedValue({ id: "product-1", currency: "TWD" }) },
       customerTagAssignment: {}, lineOfficialAccount: {}, lineUserIdentity: {}, lineDelivery: {},
     };
-    mocks.enqueueLineNotification.mockResolvedValueOnce({ status: "queued" });
 
-    await dispatchAutomationEvent(db as never, event);
-    const text = mocks.enqueueLineNotification.mock.calls.at(-1)?.[1].messages[0].text as string;
-    expect(text).not.toContain(legacyBearer);
+    // No accepted bearer for this row: the execution fails instead of sending a link.
+    await expect(dispatchAutomationEvent(db as never, event)).resolves.toEqual([{ ruleId: "rule-1", status: "failed" }]);
+    expect(mocks.enqueueLineNotification).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["created after the rotation", new Date("2026-10-26T00:00:00.000Z")],
+  ])("fails explicitly instead of sending a broken link for a legacy-key grant %s", async (_label, createdAt) => {
+    const conflict = new Prisma.PrismaClientKnownRequestError("duplicate", {
+      code: "P2002",
+      clientVersion: Prisma.prismaVersion.client,
+    });
+    resetLegacyDerivedKeyUseCounts();
+    const legacyBearer = createHmac("sha256", deriveSensitiveDataKey("automation-voucher-bearer-v1"))
+      .update("log-late:0")
+      .digest("base64url");
+    const update = vi.fn().mockResolvedValue({});
+    const db = {
+      automationRule: { findMany: vi.fn().mockResolvedValue([{
+        id: "rule-1", version: 1, createdAt: new Date(), condition: { type: "always" },
+        actions: [
+          { type: "issue_repurchase_voucher", productId: "product-1", discountType: "fixed", discountValue: 1_000, expiresInDays: 7 },
+          { type: "line_push", message: "使用 {{voucher_url}}", buttonLabel: "立即使用", buttonUrl: "{{voucher_url}}" },
+        ],
+      }]) },
+      automationExecutionLog: { create: vi.fn().mockResolvedValueOnce({ id: "log-late" }), update },
+      automationVoucherGrant: {
+        create: vi.fn().mockRejectedValueOnce(conflict),
+        findUnique: vi.fn().mockResolvedValue({ vendorId: event.vendorId, claimTokenHash: hashInteractionBearer(legacyBearer), createdAt }),
+      },
+      product: { findFirst: vi.fn().mockResolvedValue({ id: "product-1", currency: "TWD" }) },
+      customerTagAssignment: {}, lineOfficialAccount: {}, lineUserIdentity: {}, lineDelivery: {},
+    };
+
+    await expect(dispatchAutomationEvent(db as never, event)).resolves.toEqual([{ ruleId: "rule-1", status: "failed" }]);
+    expect(mocks.enqueueLineNotification).not.toHaveBeenCalled();
+    expect(update.mock.calls.at(-1)?.[0].data).toMatchObject({ status: "failed", errorCode: "action_failed" });
+    expect(legacyDerivedKeyUseCount("automation-voucher-bearer")).toBe(0);
   });
 
   it("reuses the LINE outbox key when a watch execution is reclaimed by a later heartbeat", async () => {

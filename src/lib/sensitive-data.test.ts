@@ -1,3 +1,4 @@
+import { createCipheriv, randomBytes } from "node:crypto";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { DERIVED_KEY_ROTATIONS } from "@/lib/derived-key-rotation";
 import { decryptSensitiveValue, deriveSensitiveDataKey, encryptSensitiveValue } from "@/lib/sensitive-data";
@@ -16,6 +17,22 @@ describe("sensitive data envelopes", () => {
     expect(envelope).not.toContain(plaintext);
     expect(decryptSensitiveValue(envelope, "cloudflare-live-stream-key")).toBe(plaintext);
     expect(() => decryptSensitiveValue(envelope, "another-purpose")).toThrow();
+  });
+
+  it("accepts only full 16-byte GCM tags (truncated tags are refused before decrypting)", () => {
+    vi.stubEnv("CSRF_SECRET", "test-csrf-secret-for-sensitive-data-32-bytes");
+    const purpose = "cloudflare-live-stream-key";
+    const iv = randomBytes(12);
+    const cipher = createCipheriv("aes-256-gcm", deriveSensitiveDataKey(purpose), iv, { authTagLength: 4 });
+    const encrypted = Buffer.concat([cipher.update("secret", "utf8"), cipher.final()]);
+    // A valid envelope under a 4-byte tag: Node would accept it without authTagLength.
+    const shortTag = ["v1", iv.toString("base64url"), cipher.getAuthTag().toString("base64url"), encrypted.toString("base64url")].join(".");
+    expect(() => decryptSensitiveValue(shortTag, purpose)).toThrow("Invalid sensitive data envelope.");
+
+    const [version, ivPart, tagPart, data] = encryptSensitiveValue("secret", purpose).split(".");
+    const truncated = Buffer.from(tagPart!, "base64url").subarray(0, 12).toString("base64url");
+    expect(() => decryptSensitiveValue([version, ivPart, truncated, data].join("."), purpose)).toThrow("Invalid sensitive data envelope.");
+    expect(decryptSensitiveValue([version, ivPart, tagPart, data].join("."), purpose)).toBe("secret");
   });
 
   it("fails closed when the configured encryption seed is shorter than 32 bytes", () => {
@@ -91,6 +108,7 @@ describe("deriveSensitiveDataKey compatibility", () => {
     ["csrf-hmac:r2:db862e72a7b9a462", "097167103f585faebe8ad2d1972b3bdd9561a4df648160050db8527da34e60c4"],
     ["merchant-registration-invite:r2:9ecb5a622edbf327", "037c93c337f506df35369ee565130db93da60a28b13561e883ecc63950ef30ee"],
     ["merchant-invite-email:r2:bcaa6cb59eb97af3", "40d60f1b71e1c9d7f0b61384c6749b49b404356c08691d5966edd9bb693eddaf"],
+    ["live-private-chat-conversation-binding:r2:93e8e3400ce0da2b", "f3564cae76a1e8fed03f3690bfb5bed2946203db0b3e658df496845c88ab6971"],
   ];
 
   it.each(GOLDEN_KEYS)("keeps the %s key byte-identical", (purpose, expectedHex) => {

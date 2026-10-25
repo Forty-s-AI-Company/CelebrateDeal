@@ -246,6 +246,7 @@ export function createEmailUnsubscribeToken(deliveryId: string) {
 export function verifyEmailUnsubscribeToken(token: string, now = new Date()) {
   const [version, deliveryId, signature, extra] = token.split(".");
   if (version !== TOKEN_VERSION || !deliveryId || !signature || extra || !SAFE_ID.test(deliveryId)) return null;
+  // The token carries no timestamp, so a legacy-key link relies on the hard stop alone.
   return verifyWithRotation(UNSUBSCRIBE_TOKEN_KEY, unsubscribeSignedValue(deliveryId), signature, now) ? deliveryId : null;
 }
 

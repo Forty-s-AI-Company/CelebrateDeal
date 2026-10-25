@@ -8,9 +8,11 @@
  *
  * New purpose names carry a random suffix: the old oracle answered for any
  * string, so a guessable successor (such as "-v2") could have been queried
- * too. The suffixes are not secret; they only had to be unknown while an
- * oracle-bearing build was reachable (production still ran one on 2026-10-25,
- * so production must be redeployed from a build containing #485 first).
+ * too. The suffixes are not secret (the repository is public). Invariant: no
+ * publicly reachable deployment may run pre-#485 code once a new name is
+ * pushed; old deployments stay behind Vercel Authentication and are never
+ * re-aliased publicly. Production also rotates its root secret before it
+ * serves anyone (docs/staging-production-env-vars.md §7 point 7).
  *
  * Retiring a legacy key: delete the `legacy` entry of that rotation (set it to
  * null). `acceptUntil` is a hard stop that refuses the legacy key after that
@@ -40,6 +42,28 @@ function legacyUntil(purpose: string, acceptUntilIso: string | null): LegacyDeri
   return { purpose, acceptUntil: acceptUntilIso === null ? null : new Date(acceptUntilIso) };
 }
 
+/**
+ * When the rotated names took effect (staging deploys right after merge):
+ * 2026-10-26 00:00 Taiwan time. A legacy-key token whose payload shows it was
+ * issued after this instant cannot be legitimate (the server no longer signed
+ * with the old key), so tier 3 readers refuse it even inside the hard-stop
+ * window. Tokens without timestamps rely on the hard stop alone.
+ */
+export const ROTATION_EFFECTIVE_AT = new Date("2026-10-25T16:00:00.000Z");
+
+/** True when a legacy-key payload was issued before the rotation took effect. */
+export function issuedBeforeRotation(issuedAtMs: number) {
+  return Number.isFinite(issuedAtMs) && issuedAtMs < ROTATION_EFFECTIVE_AT.getTime();
+}
+
+/**
+ * For payloads that carry only an expiry: a token issued before the rotation
+ * expires no later than the rotation instant plus its maximum lifetime.
+ */
+export function expiryFitsPreRotationIssue(expiresAtMs: number, maxLifetimeMs: number) {
+  return Number.isFinite(expiresAtMs) && expiresAtMs <= ROTATION_EFFECTIVE_AT.getTime() + maxLifetimeMs;
+}
+
 // Taiwan local midnight, so a date reads the same for operators.
 const END_OF_2026_11 = "2026-11-30T16:00:00.000Z";
 const END_OF_2026_12 = "2026-12-31T16:00:00.000Z";
@@ -60,6 +84,11 @@ export const DERIVED_KEY_ROTATIONS = Object.freeze({
   liveChatCursor: rotation("live-chat-cursor", "live-chat-cursor:r2:98430ee0e284cf26"),
   /** Prefix: the private chat cursor purpose appends its JSON scope. */
   livePrivateChatCursor: rotation("live-private-chat-cursor", "live-private-chat-cursor:r2:408078b5f163410f"),
+  /** Draft/retry binding of a private chat conversation; grants no access. */
+  livePrivateChatConversationBinding: rotation(
+    "live-private-chat-conversation-binding",
+    "live-private-chat-conversation-binding:r2:93e8e3400ce0da2b",
+  ),
   postPurchaseCheckout: rotation("post-purchase-checkout", "post-purchase-checkout:r2:9fc775dc50019fcd"),
   registrationSubmissionResult: rotation("registration-submission-result", "registration-submission-result:r2:15cdb4621848305d"),
 

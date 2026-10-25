@@ -1,4 +1,4 @@
-import { DERIVED_KEY_ROTATIONS, signWithRotation, verifyWithRotation } from "@/lib/derived-key-rotation";
+import { DERIVED_KEY_ROTATIONS, expiryFitsPreRotationIssue, signWithRotation, verifyWithRotation } from "@/lib/derived-key-rotation";
 
 const TOKEN_VERSION = "fsv1";
 // Rotated after #485 (tier 3): links live 48 hours, so the legacy key still
@@ -50,7 +50,9 @@ export function verifyFormSubmissionVerificationToken(token: string, now = new D
   const version = Number(versionRaw);
   if (!Number.isSafeInteger(expiresAtSecondsValue) || !Number.isSafeInteger(version) || version <= 0) return null;
   const value = signedValue(submissionId, expiresAtSecondsValue, version);
-  if (!verifyWithRotation(TOKEN_KEY, value, suppliedSignature, now)) return null;
+  // A legacy-key link is accepted only if it could have been issued before the rotation.
+  if (!verifyWithRotation(TOKEN_KEY, value, suppliedSignature, now,
+    () => expiryFitsPreRotationIssue(expiresAtSecondsValue * 1_000, FORM_SUBMISSION_VERIFICATION_TTL_MS))) return null;
 
   const expiresAt = new Date(expiresAtSecondsValue * 1_000);
   if (expiresAt <= now) return null;

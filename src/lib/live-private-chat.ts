@@ -27,7 +27,8 @@ function signature(payload: string, scope: Scope, kind = "message") {
 // This identity binding grants no access. Fresh authorization still runs before
 // every comparison, so a cookie change cannot redirect an earlier draft/retry.
 function conversationBinding(scope: Scope, actor?: { memberId: string; sessionId: string }) {
-  return createHmac("sha256", deriveSensitiveDataKey("live-private-chat-conversation-binding:v1"))
+  // Rotated after #485 (tier 2, was "...:v1"): a binding only spans one draft or retry.
+  return createHmac("sha256", deriveSensitiveDataKey(DERIVED_KEY_ROTATIONS.livePrivateChatConversationBinding.current))
     .update(JSON.stringify([scope.vendorId, scope.liveId, scope.submissionId, actor?.memberId ?? null, actor?.sessionId ?? null]))
     .digest("base64url");
 }
