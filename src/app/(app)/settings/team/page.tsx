@@ -54,7 +54,7 @@ export default async function TeamSettingsPage({
           orderBy: { createdAt: "asc" },
           include: {
             vendorMember: { include: { user: { select: { name: true, email: true } } } },
-            downlineRelationships: { where: { endedAt: null }, select: { uplineMembershipId: true } },
+            uplineRelationships: { where: { endedAt: null }, select: { uplineMembershipId: true } },
           },
         },
       },
@@ -120,7 +120,7 @@ export default async function TeamSettingsPage({
                 </thead>
                 <tbody className="divide-y divide-border">
                   {team.memberships.map((membership) => {
-                    const currentUpline = membership.downlineRelationships[0]?.uplineMembershipId ?? "";
+                    const currentUpline = membership.uplineRelationships[0]?.uplineMembershipId ?? "";
                     return (
                       <tr key={membership.id}>
                         <td className="px-3 py-3 align-top">
