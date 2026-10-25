@@ -114,7 +114,7 @@ RUN_DEMO_PAYMENT_WEBHOOK_SMOKE=true SMOKE_VENDOR_SLUG=your-vendor npm run extern
 
 - `src/lib/sensitive-data.ts` 的 `deriveSensitiveDataKey()` 以 `CSRF_SECRET` 經 HMAC-SHA256 依用途衍生 AES-256-GCM 金鑰與雜湊索引金鑰（沒有 `CSRF_SECRET` 時改用 `JOB_SECRET`）。
 - 受影響的資料包含：MFA secret、LINE 憑證、訂單買家與收件個資、私訊、tracking token、學員通知、發票請求、交付網址，以及各種 token 雜湊與查詢用雜湊索引（例如 customerKeyHash、destinationKeyHash）。
-- 密文格式只有 `v1`，沒有 key id，也沒有舊金鑰解密清單。銀行帳號另用 `BANK_ACCOUNT_KEYRING_JSON`，有輪替設計，不在此列。
+- 通用密文格式只有 `v1`，沒有 key id。2026-10-25 起改以「換用途名稱」做依用途輪替（第 7 點）：MFA secret 另有 `m2.` 格式，其餘用途由 `src/lib/derived-key-rotation.ts` 以「新鑰優先、舊鑰後備」驗證或解密。銀行帳號另用 `BANK_ACCOUNT_KEYRING_JSON`，有輪替設計，不在此列。
 
 因此：
 
@@ -130,3 +130,64 @@ RUN_DEMO_PAYMENT_WEBHOOK_SMOKE=true SMOKE_VENDOR_SLUG=your-vendor npm run extern
      2. 第 2 級：短效公開 bearer token，例如 `public-checkout-admission`、`form-submission-email-verification`、`form-submission-chat-session`、`form-submission-line-binding`。
      3. 第 3 級：長效連結，需要新舊兩版並行驗證，例如 `email-delivery-unsubscribe`、`student-portal-access-token-v1`、`automation-voucher-bearer-v1`、`team-funnel-attribution-cookie`。
      4. 第 4 級：加密與雜湊索引金鑰，需要 re-encrypt migration，先處理 MFA，再處理 PII。
+   - 第 2～4 級（MFA）已於 2026-10-25 實作，見第 7 點。
+
+7. **2026-10-25 依用途輪替（B04-03）**：新舊名稱、舊鑰停用日都集中在 `src/lib/derived-key-rotation.ts` 的 `DERIVED_KEY_ROTATIONS`。根金鑰不變，舊用途的衍生金鑰也不變（golden test 鎖住），所以既有密文與連結照常可讀。
+
+   **前提與部署順序**
+
+   - 舊 oracle 對**任何字串**都會回答，所以新名稱一律帶隨機後綴（`<舊名>:r2:<16 hex>`），不用可猜的 `-v2`。後綴不是秘密，只需要在「仍有含 oracle 的 build 對外服務」期間不被知道。
+   - staging 已部署 #485，oracle 已關閉。production 仍是 2026-07-24 的 build（含 oracle），目前沒有服務使用者：**production 必須部署含 #485 與本變更的 build 之後才能對外服務**。本分支推上 GitHub 之後，能讀 repo 的人可能拿新名稱去問 production 的舊 oracle；production 若在那之前就已無人可連，或部署前不會有真實資料，這點不構成風險。
+   - 建議（owner 決定）：production 目前沒有真實加密資料，正式開放前**直接換一次 production 的根金鑰 `CSRF_SECRET`** 是最乾淨的做法，所有用途一次換新、不需要等舊鑰停用。前提是確認 production 資料庫沒有需要保留的加密欄位、MFA 與雜湊索引（第 1、2 點的禁令針對「已有資料」的環境）。換完後備份對應關係照第 3 點記錄。staging 不可這樣做，staging 有既有資料。
+
+   **已輪替的用途**
+
+   | 舊用途 | 新用途 | 級別 | 策略 | token 壽命 | 舊鑰停用（台灣時間） |
+   |---|---|---|---|---|---|
+   | `public-checkout-admission` | `public-checkout-admission:r2:…` | 2 | 改名，舊 token 自然過期 | 30 分鐘 | 不接受 |
+   | `form-submission-line-binding` | `form-submission-line-binding:r2:…` | 2 | 改名 | 30 分鐘 | 不接受 |
+   | `student-portal-access-token-v1` | `student-portal-access-token:r2:…` | 2 | 改名（原列第 3 級；實際只活 15 分鐘，且是資料庫一次性 capability，舊 magic link 失效後重新索取即可） | 15 分鐘 | 不接受 |
+   | `live-viewer-pass` | `live-viewer-pass:r2:…` | 2 | 改名（admission binding 的雜湊標籤不變） | ≤ 2 分鐘 | 不接受 |
+   | `live-chat-cursor` | `live-chat-cursor:r2:…` | 2 | 改名 | 單次輪詢 | 不接受 |
+   | `live-private-chat-cursor:<scope>` | `live-private-chat-cursor:r2:…:<scope>` | 2 | 改名 | 單次輪詢 | 不接受 |
+   | `post-purchase-checkout` | `post-purchase-checkout:r2:…` | 2 | 改名。部署前建立、24 小時內帶舊 token 續付的加購單會被拒（與 token 被竄改相同），只影響部署當下進行中的訂單 | 10 分鐘（續付最長 24 小時） | 不接受 |
+   | `registration-submission-result-v1` | `registration-submission-result:r2:…` | 2 | 改名 | 1 分鐘 | 不接受 |
+   | `form-submission-email-verification` | `form-submission-email-verification:r2:…` | 3 | 雙版本驗證（原列第 2 級；連結活 48 小時，超過一天改為第 3 級） | 48 小時 | 2026-12-01 00:00 |
+   | `form-submission-chat-session` | `form-submission-chat-session:r2:…` | 3 | 雙版本驗證（原列第 2 級；cookie 活 30 天） | 30 天 | 2027-01-01 00:00 |
+   | `email-delivery-unsubscribe` | `email-delivery-unsubscribe:r2:…` | 3 | 雙版本驗證 | 無期限 | 2027-11-01 00:00 |
+   | `team-funnel-attribution-cookie` | `team-funnel-attribution-cookie:r2:…` | 3 | 雙版本驗證 | 30 天 | 2027-01-01 00:00 |
+   | `student-portal-session-v1`（加密 cookie） | `student-portal-session:r2:…` | 3 | 新鑰加密、舊鑰後備解密 | 30 天 | 2026-12-01 00:00 |
+   | `cloudflare-resumable-upload-ticket`（加密 ticket） | `cloudflare-resumable-upload-ticket:r2:…` | 3 | 新鑰加密、舊鑰後備解密 | 7 天 | 2026-12-01 00:00 |
+   | `automation-voucher-bearer-v1` | `automation-voucher-bearer:r2:…` | 3 | 新券用新鑰；重試時依資料列的 `claimTokenHash` 判斷新舊鑰重建連結 | 券效期 ≤ 365 天 | 2027-01-01 00:00（只影響重建連結） |
+   | `mfa-encryption` | `mfa-encryption:r2:…` | 4 | 新密文 `m2.`；舊格式以舊鑰解密；TOTP 驗證成功後 lazy re-encrypt；批次腳本 | 永久（資料） | 重新加密完成後 |
+   | `mfa-recovery-code-authentication` | `mfa-recovery-code-authentication:r2:…` | 4 | 新雜湊 `hmac-sha256-v2`；`v1` 以舊鑰驗證 | 至使用或重產 | 未使用的 v1 歸零後 |
+
+   - 雙版本驗證一律先試新鑰，失敗才在停用日之前試舊鑰；舊鑰成功時 log `legacy_derived_key_used`（只含固定標籤 `key` 與本程序累計次數，每個標籤每 10 分鐘最多一筆，不含 token、ID 或金鑰）。
+   - 學員入口 session、報名聊天 session、歸因 cookie 都在 Server Component 或一般讀取路徑上解析，無法在那裡重簽 cookie（Next.js 只允許在 Server Function／Route Handler 寫 cookie），所以沒有「舊鑰驗證成功即換發」。這三者合法的舊 cookie 本來就會在部署後 30 天內過期；停用日只需晚於「部署日＋30 天」。
+   - 自動化優惠券：資料列只存 bearer 的雜湊，已寄出的舊連結在券到期前照常可兌換，輪替無法撤回這些連結。要偽造舊券連結需要舊鑰**和**不公開的 `executionLogId`。若要強制撤回，只能讓舊券失效後重發。
+   - 停用日是硬性上限：即使沒人刪常數，過了日期舊鑰也不再被接受。若 staging 部署晚於 2026-11-01，對應的停用日需順延後再部署。
+
+   **舊鑰停用計畫**
+
+   1. 部署後觀察 Vercel log 的 `legacy_derived_key_used`，各標籤次數應逐步歸零。
+   2. 停用日之後（或確認歸零後），開 PR 把 `DERIVED_KEY_ROTATIONS` 對應項目的 `legacy` 改成 `null`，並從 `sensitive-data.test.ts` 的「仍會讀取」golden 清單移除該舊用途（之後已無程式讀它）。時程：2026-12 上旬清第一批（Email 驗證、學員入口 session、上傳 ticket），2027-01 上旬清第二批（聊天 session、歸因 cookie、優惠券），2027-11 清退訂連結。
+   3. MFA：staging 與 production 都跑完下方腳本且 `remainingLegacy: 0`，並連續 14 天沒有 `key: "mfa-encryption"` 的 log 後，才把 `mfaEncryption.legacy` 改為 `null`。復原碼 v1：以 `SELECT count(*) FROM "UserRecoveryCode" WHERE "usedAt" IS NULL AND "codeHash" LIKE 'hmac-sha256-v1:%'` 確認歸零（或請仍有 v1 的使用者重產復原碼）後，才把 `mfaRecoveryCode.legacy` 改為 `null`。
+   4. 舊鑰永遠能從同一個根金鑰重新衍生，「停用」的意思是程式不再接受。部署前的資料庫備份仍含舊格式密文，備份的保存與銷毀照第 3 點。
+
+   **在 staging 執行 MFA 重新加密（owner／operator）**
+
+   1. 在受保護的環境注入 staging 的 `DATABASE_URL` 與 staging 的根金鑰（`CSRF_SECRET`，沒有時 `JOB_SECRET`）。不得貼到聊天、log 或 repo；不讀 `.env*` 檔。
+   2. Dry run（只輸出筆數）：`node --import tsx scripts/reencrypt-mfa-secrets.ts --target=staging`。確認 `unreadable` 為 0；不為 0 代表根金鑰不對或有損壞資料，先停下來查。
+   3. 執行：`MFA_REENCRYPT_CONFIRM=REENCRYPT_MFA_SECRETS node --import tsx scripts/reencrypt-mfa-secrets.ts --target=staging --execute`。輸出應為 `remainingLegacy: 0`。可重跑：已是新格式的列不會再寫；`changed` 代表執行期間該使用者剛登入或重新註冊，重跑即可。
+   4. 用 staging 的 QA 帳號實際完成一次 `/mfa/verify`，確認新格式可登入。
+   5. production 只能在 owner 明確授權後執行，需額外的 `--target=production` 與 `MFA_REENCRYPT_PRODUCTION_APPROVAL=OWNER_APPROVED_PRODUCTION_MFA_REENCRYPT`。
+   - 腳本守門：loopback `celebratedeal_*` 直接允許；`--target=staging` 時 URL 必須是 staging 資料庫；其他資料庫一律需要 production 授權值；每列先以舊鑰解密成功、確認新密文可解回同一 secret 才以 compare-and-swap 寫入；不輸出 secret、密文、使用者 ID 或 Email。
+
+   **下一步：PII 與雜湊索引（B04-03，尚未輪替）**
+
+   本次**沒有**重新加密下列用途，仍以 2026-10-25 前的金鑰運作（`:<scope>` 代表用途字串後接 vendorId／記錄 ID）：`commerce-order-buyer`／`-shipping`／`-identity-fingerprint`、`commerce-custom-checkout:<scope>` 與 `commerce-custom-checkout-identity-fingerprint`、`commerce-entitlement-access:<scope>`、`product-delivery-config:<scope>`、`commerce-order-item-delivery:<scope>`、`commerce-order-invoice:<scope>` 與 `commerce-order-invoice-fingerprint`、`email-delivery-recipient:<scope>`／`email-delivery-recipient-hash`、`src/lib/support-case-pii.ts` 的案件內容、`line-official-account:<scope>`（LINE 憑證）、`line-profile:<scope>`、`line-user-lookup:<vendor>`、`line-login-state:<scope>`、`line-delivery:<scope>`、`server-side-tracking:<scope>`（tracking 憑證與 browser context）、`learner-notification-*`／`learner-contact-proof-v1:<scope>`、`live-private-chat-body:<scope>` 與 `live-private-chat-conversation-binding:v1`、`live-lucky-draw-claim-hash:v1` 與 `live-lucky-draw-claim:v1:<scope>`、`cloudflare-live-stream-key`、`registration-form-retry-v1`、`automation-customer-key-v1`。
+
+   1. **加密欄位（lazy＋batch）**：讓 envelope 帶 key 版本（例如 `v2.` 表示新用途名稱、`v1.` 表示舊用途），解密依版本選鑰、加密一律用新鑰；寫入路徑自然換新，再為每張表寫一支與本腳本相同模式的批次腳本（cursor 分頁、先解密成功再寫、以舊密文做 CAS、dry run／確認值／資料庫守門、可重跑）。用途字串多半含 vendorId／記錄 ID，新名稱以「新前綴＋原本的 scope」組成即可。
+   2. **雜湊索引（雙查詢）**：`customerKeyHash`、`automationCustomerKeyHash`、`recipientHash`、`checkoutIdentityHash`、發票 fingerprint、`line-user-lookup`、學員通知 destination index／rate／delivery key、抽獎碼雜湊。先部署「同時算新舊雜湊、查詢用 `IN (新, 舊)`、寫入只寫新」；再以批次腳本從明文來源（解密 envelope 或原始欄位）重算；確認舊雜湊歸零後移除舊鑰。有 unique 約束的欄位要先查新舊兩種雜湊再插入，避免同一身分在過渡期出現兩列。
+   3. **優先順序**：訂單買家個資與身分 fingerprint → LINE 與 tracking 憑證（同時建議到供應商端換發憑證，舊密文即失去價值）→ 其餘 PII。短效資料（`registration-form-retry-v1` 10 分鐘、LINE Login verifier）只要改名即可；`cloudflare-live-stream-key` 以在 Cloudflare 換發 stream key 處理較省事。
+   4. 另需評估：#485 引入或之前已存在、但名稱可猜的用途，在 oracle 關閉前同樣可能被查詢過：`csrf-hmac-v1`（CSRF MAC）、`merchant-registration-invite-v2` 與 `merchant-invite-email-v1`（第 1 級）。staging 若在這些名稱出現後、#485 部署前仍可連線，建議同樣換成帶隨機後綴的名稱（CSRF 與邀請都是短效，改名即可）。
