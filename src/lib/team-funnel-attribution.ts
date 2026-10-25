@@ -1,13 +1,15 @@
-import { createHmac, randomUUID, timingSafeEqual } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { getDb } from "@/lib/db";
-import { deriveSensitiveDataKey } from "@/lib/sensitive-data";
+import { DERIVED_KEY_ROTATIONS, signWithRotation, verifyWithRotation } from "@/lib/derived-key-rotation";
 import { resolveTeamFunnelLiveShare } from "@/lib/team-funnel-live-sharing";
 
 export const ATTRIBUTION_COOKIE = "celebratedeal_attribution";
 export const VISITOR_COOKIE = "celebratedeal_visitor";
 export const ATTRIBUTION_TTL_SECONDS = 60 * 60 * 24 * 30;
 const ATTRIBUTION_COOKIE_VERSION = "ta1";
-const ATTRIBUTION_COOKIE_KEY_PURPOSE = "team-funnel-attribution-cookie";
+// Rotated after #485 (tier 3): the cookie lives 30 days, so the legacy key
+// still verifies until its hard stop in derived-key-rotation.ts.
+const ATTRIBUTION_COOKIE_KEY = DERIVED_KEY_ROTATIONS.teamFunnelAttributionCookie;
 const MAX_ATTRIBUTION_COOKIE_LENGTH = 700;
 const ATTRIBUTION_PAYLOAD_PATTERN = /^[A-Za-z0-9_-]{1,512}$/u;
 const ATTRIBUTION_SIGNATURE_PATTERN = /^[A-Za-z0-9_-]{43}$/u;
@@ -142,10 +144,7 @@ export function attributionCookieFromRequest(request: Request, now = Date.now())
       extra !== undefined
     ) return null;
 
-    const expectedSignature = signAttributionPayload(payload);
-    const supplied = Buffer.from(suppliedSignature, "base64url");
-    const expected = Buffer.from(expectedSignature, "base64url");
-    if (supplied.length !== expected.length || !timingSafeEqual(supplied, expected)) return null;
+    if (!verifyWithRotation(ATTRIBUTION_COOKIE_KEY, attributionSignedValue(payload), suppliedSignature, new Date(now))) return null;
 
     const parsed = JSON.parse(Buffer.from(payload, "base64url").toString("utf8")) as unknown;
     if (!isAttributionCookie(parsed)) return null;
@@ -161,13 +160,11 @@ export function attributionCookieFromRequest(request: Request, now = Date.now())
 export function encodeAttributionCookie(value: AttributionCookie) {
   if (!isAttributionCookie(value)) throw new Error("Invalid attribution cookie payload.");
   const payload = Buffer.from(JSON.stringify(value)).toString("base64url");
-  return `${ATTRIBUTION_COOKIE_VERSION}.${payload}.${signAttributionPayload(payload)}`;
+  return `${ATTRIBUTION_COOKIE_VERSION}.${payload}.${signWithRotation(ATTRIBUTION_COOKIE_KEY, attributionSignedValue(payload))}`;
 }
 
-function signAttributionPayload(payload: string) {
-  return createHmac("sha256", deriveSensitiveDataKey(ATTRIBUTION_COOKIE_KEY_PURPOSE))
-    .update(`${ATTRIBUTION_COOKIE_VERSION}.${payload}`)
-    .digest("base64url");
+function attributionSignedValue(payload: string) {
+  return `${ATTRIBUTION_COOKIE_VERSION}.${payload}`;
 }
 
 function isAttributionCookie(value: unknown): value is AttributionCookie {

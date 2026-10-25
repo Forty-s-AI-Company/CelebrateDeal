@@ -4,11 +4,16 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 import { automationCustomerKeyHash } from "@/lib/automation-workflow";
 import { getDb } from "@/lib/db";
-import { decryptSensitiveValue, deriveSensitiveDataKey, encryptSensitiveValue } from "@/lib/sensitive-data";
+import { DERIVED_KEY_ROTATIONS, decryptWithRotation, encryptWithRotation } from "@/lib/derived-key-rotation";
+import { deriveSensitiveDataKey } from "@/lib/sensitive-data";
 
 const TOKEN_VERSION = "sp1";
-const TOKEN_PURPOSE = "student-portal-access-token-v1";
-const SESSION_PURPOSE = "student-portal-session-v1";
+// Rotated after #485. Access tokens (tier 2) live 15 minutes and are one-time
+// database capabilities, so old ones simply expire. Session cookies (tier 3)
+// live up to 30 days: new ones use the new key, old ones still decrypt until
+// the legacy key's hard stop in derived-key-rotation.ts.
+const TOKEN_PURPOSE = DERIVED_KEY_ROTATIONS.studentPortalAccessToken.current;
+const SESSION_KEY = DERIVED_KEY_ROTATIONS.studentPortalSession;
 const TOKEN_SIGNATURE = /^[A-Za-z0-9_-]{43}$/u;
 const TOKEN_PART = /^[A-Za-z0-9_-]{1,1024}$/u;
 const IDENTIFIER = /^[A-Za-z0-9_-]{1,128}$/u;
@@ -295,19 +300,19 @@ export function createStudentPortalSessionToken(input: {
   }
   const issuedAt = epochSeconds(input.now ?? new Date());
   const expiresAt = issuedAt + ttlSeconds;
-  return encryptSensitiveValue(JSON.stringify({
+  return encryptWithRotation(JSON.stringify({
     version: TOKEN_VERSION,
     vendorId: input.vendorId,
     customerKeyHash: input.customerKeyHash,
     issuedAt,
     expiresAt,
-  }), SESSION_PURPOSE);
+  }), SESSION_KEY);
 }
 
 export function readStudentPortalSessionToken(token: string | null | undefined, now = new Date()): StudentPortalSession | null {
   if (!token || token.length > 2_048) return null;
   try {
-    const parsed = SessionPayload.safeParse(JSON.parse(decryptSensitiveValue(token, SESSION_PURPOSE)));
+    const parsed = SessionPayload.safeParse(JSON.parse(decryptWithRotation(token, SESSION_KEY, now).plaintext));
     if (!parsed.success) return null;
     const nowSeconds = epochSeconds(now);
     if (

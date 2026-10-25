@@ -1,9 +1,11 @@
 import { NextResponse } from "next/server";
 import { trustedRequestOrigin } from "@/lib/api-security";
+import { DERIVED_KEY_ROTATIONS } from "@/lib/derived-key-rotation";
 import { decryptSensitiveValue, encryptSensitiveValue } from "@/lib/sensitive-data";
 import { registrationRetrySourcePath, registrationRetrySecureCookies } from "@/lib/registration-form-retry";
 
-const PURPOSE = "registration-submission-result-v1";
+// Rotated after #485 (tier 2): the receipt cookie lives one minute.
+const PURPOSE = DERIVED_KEY_ROTATIONS.registrationSubmissionResult.current;
 export const REGISTRATION_RESULT_TTL_MS = 60_000;
 export function registrationResultCookieName(secure: boolean) {
   return secure ? "__Host-celebratedeal_registration_result" : "celebratedeal_registration_result";

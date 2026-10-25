@@ -1,10 +1,13 @@
-import { createHmac, timingSafeEqual } from "node:crypto";
+import { createHmac } from "node:crypto";
 import { isIP } from "node:net";
+import { DERIVED_KEY_ROTATIONS, signWithRotation, verifyWithRotation } from "@/lib/derived-key-rotation";
 import { decryptSensitiveValue, deriveSensitiveDataKey, encryptSensitiveValue } from "@/lib/sensitive-data";
 
 const RECIPIENT_ENVELOPE_PURPOSE = "email-delivery-recipient";
 const RECIPIENT_HASH_PURPOSE = "email-delivery-recipient-hash";
-const UNSUBSCRIBE_TOKEN_PURPOSE = "email-delivery-unsubscribe";
+// Rotated after #485 (tier 3): links in sent mail must keep working, so the
+// legacy key still verifies until its hard stop in derived-key-rotation.ts.
+const UNSUBSCRIBE_TOKEN_KEY = DERIVED_KEY_ROTATIONS.emailUnsubscribe;
 const SAFE_ID = /^[A-Za-z0-9_-]{1,160}$/u;
 const TOKEN_VERSION = "eu1";
 const BRAND_SENDER_NAME_MAX_LENGTH = 80;
@@ -231,23 +234,19 @@ export function revealEmailDeliveryPayload(envelope: string, binding: DeliveryBi
   };
 }
 
-function unsubscribeSignature(deliveryId: string) {
+function unsubscribeSignedValue(deliveryId: string) {
   if (!SAFE_ID.test(deliveryId)) throw new Error("Invalid email delivery binding.");
-  return createHmac("sha256", deriveSensitiveDataKey(UNSUBSCRIBE_TOKEN_PURPOSE))
-    .update(`${TOKEN_VERSION}.${deliveryId}`)
-    .digest("base64url");
+  return `${TOKEN_VERSION}.${deliveryId}`;
 }
 
 export function createEmailUnsubscribeToken(deliveryId: string) {
-  return `${TOKEN_VERSION}.${deliveryId}.${unsubscribeSignature(deliveryId)}`;
+  return `${TOKEN_VERSION}.${deliveryId}.${signWithRotation(UNSUBSCRIBE_TOKEN_KEY, unsubscribeSignedValue(deliveryId))}`;
 }
 
-export function verifyEmailUnsubscribeToken(token: string) {
+export function verifyEmailUnsubscribeToken(token: string, now = new Date()) {
   const [version, deliveryId, signature, extra] = token.split(".");
   if (version !== TOKEN_VERSION || !deliveryId || !signature || extra || !SAFE_ID.test(deliveryId)) return null;
-  const actual = Buffer.from(signature, "utf8");
-  const expected = Buffer.from(unsubscribeSignature(deliveryId), "utf8");
-  return actual.length === expected.length && timingSafeEqual(actual, expected) ? deliveryId : null;
+  return verifyWithRotation(UNSUBSCRIBE_TOKEN_KEY, unsubscribeSignedValue(deliveryId), signature, now) ? deliveryId : null;
 }
 
 export function createEmailUnsubscribeUrl(deliveryId: string) {

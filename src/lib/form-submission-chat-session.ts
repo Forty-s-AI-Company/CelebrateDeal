@@ -1,11 +1,12 @@
-import { createHmac, timingSafeEqual } from "node:crypto";
-import { deriveSensitiveDataKey } from "@/lib/sensitive-data";
+import { DERIVED_KEY_ROTATIONS, signWithRotation, verifyWithRotation } from "@/lib/derived-key-rotation";
 
 export const FORM_SUBMISSION_CHAT_SESSION_COOKIE = "celebratedeal_form_submission_chat_session";
 export const FORM_SUBMISSION_CHAT_SESSION_TTL_SECONDS = 30 * 24 * 60 * 60;
 
 const TOKEN_VERSION = "fss1";
-const TOKEN_PURPOSE = "form-submission-chat-session";
+// Rotated after #485 (tier 3): the cookie lives 30 days, so the legacy key
+// still verifies until its hard stop in derived-key-rotation.ts.
+const TOKEN_KEY = DERIVED_KEY_ROTATIONS.formSubmissionChatSession;
 const MAX_TOKEN_LENGTH = 320;
 const SUBMISSION_ID = /^[A-Za-z0-9_-]{1,128}$/u;
 const EXPIRY_SECONDS = /^\d{1,12}$/u;
@@ -39,12 +40,6 @@ function signedValue(submissionId: string, expiresAtSeconds: number) {
   return `${TOKEN_VERSION}.${submissionId}.${expiresAtSeconds}`;
 }
 
-function signature(value: string) {
-  return createHmac("sha256", deriveSensitiveDataKey(TOKEN_PURPOSE))
-    .update(value)
-    .digest("base64url");
-}
-
 export function createFormSubmissionChatSessionToken(input: {
   submissionId: string;
   now?: Date;
@@ -52,7 +47,7 @@ export function createFormSubmissionChatSessionToken(input: {
   const current = input.now ?? new Date();
   const expiresAtSeconds = nowSeconds(current) + FORM_SUBMISSION_CHAT_SESSION_TTL_SECONDS;
   const value = signedValue(input.submissionId, expiresAtSeconds);
-  return `${value}.${signature(value)}`;
+  return `${value}.${signWithRotation(TOKEN_KEY, value)}`;
 }
 
 export function verifyFormSubmissionChatSessionToken(
@@ -82,9 +77,7 @@ export function verifyFormSubmissionChatSessionToken(
   ) return null;
 
   const value = signedValue(submissionId, expiresAtSeconds);
-  const expected = Buffer.from(signature(value), "utf8");
-  const supplied = Buffer.from(suppliedSignature, "utf8");
-  if (expected.length !== supplied.length || !timingSafeEqual(expected, supplied)) return null;
+  if (!verifyWithRotation(TOKEN_KEY, value, suppliedSignature, now)) return null;
 
   return { submissionId, expiresAt: new Date(expiresAtSeconds * 1_000) };
 }

@@ -7,11 +7,13 @@ import type { ViewerRuntimeMessage as ContractViewerRuntimeMessage } from "@/lib
 import { hashLiveViewerToken, hasActiveLiveViewerSession } from "@/lib/live-quota-admission";
 import { verifyLiveViewerPass } from "@/lib/live-viewer-pass";
 import { normalizeClientIp } from "@/lib/request-client-ip";
+import { DERIVED_KEY_ROTATIONS } from "@/lib/derived-key-rotation";
 import { deriveSensitiveDataKey } from "@/lib/sensitive-data";
 
 export const LIVE_CHAT_PAGE_SIZE = 50;
 export const LIVE_CHAT_CURSOR_MAX_LENGTH = 256;
-export const LIVE_CHAT_CURSOR_PURPOSE = "live-chat-cursor";
+// Rotated after #485 (tier 2): a cursor only lives for one polling session.
+export const LIVE_CHAT_CURSOR_PURPOSE = DERIVED_KEY_ROTATIONS.liveChatCursor.current;
 
 const MAX_DISPLAY_NAME_LENGTH = 160;
 const CHAT_COOKIE_MAX_LENGTH = 320;

@@ -4,6 +4,12 @@ import { z } from "zod";
 import { getCanonicalAppUrl } from "@/lib/app-url";
 import { getDb } from "@/lib/db";
 import { hashInteractionBearer } from "@/lib/live-interaction";
+import {
+  DERIVED_KEY_ROTATIONS,
+  macCandidatesWithRotation,
+  recordLegacyDerivedKeyUse,
+  signWithRotation,
+} from "@/lib/derived-key-rotation";
 import { deriveSensitiveDataKey } from "@/lib/sensitive-data";
 import { protectEmailDeliveryPayload } from "@/lib/email-delivery-pii";
 import { isSafeExternalHttpsUrl } from "@/lib/safe-url";
@@ -252,10 +258,27 @@ function deterministicActionId(executionLogId: string, actionIndex: number) {
   return `aut_${createHash("sha256").update(`${executionLogId}:${actionIndex}`).digest("hex").slice(0, 28)}`;
 }
 
+// Rotated after #485 (tier 3). New grants use the new key. A grant row stores
+// only the bearer's hash, so links already sent keep working until the voucher
+// expires; the legacy key is needed only to rebuild the link of a pre-rotation
+// grant when its execution is retried (until the hard stop in
+// derived-key-rotation.ts).
+const VOUCHER_BEARER_KEY = DERIVED_KEY_ROTATIONS.automationVoucherBearer;
+
+function voucherBearerMessage(executionLogId: string, actionIndex: number) {
+  return `${executionLogId}:${actionIndex}`;
+}
+
 function deterministicVoucherBearer(executionLogId: string, actionIndex: number) {
-  return createHmac("sha256", deriveSensitiveDataKey("automation-voucher-bearer-v1"))
-    .update(`${executionLogId}:${actionIndex}`)
-    .digest("base64url");
+  return signWithRotation(VOUCHER_BEARER_KEY, voucherBearerMessage(executionLogId, actionIndex));
+}
+
+/** The bearer an existing grant row was created with, current key first. */
+function existingVoucherBearer(executionLogId: string, actionIndex: number, claimTokenHash: string) {
+  const match = macCandidatesWithRotation(VOUCHER_BEARER_KEY, voucherBearerMessage(executionLogId, actionIndex))
+    .find((candidate) => hashInteractionBearer(candidate.mac) === claimTokenHash);
+  if (match?.version === "legacy") recordLegacyDerivedKeyUse(VOUCHER_BEARER_KEY.label);
+  return match?.mac ?? null;
 }
 
 function isUniqueConflict(error: unknown) {
@@ -322,8 +345,15 @@ async function executeAction(
       });
     } catch (error) {
       if (!isUniqueConflict(error)) throw error;
+      const existing = await db.automationVoucherGrant.findUnique({
+        where: { id },
+        select: { vendorId: true, claimTokenHash: true },
+      });
+      const existingBearer = existing?.vendorId === event.vendorId
+        ? existingVoucherBearer(executionLogId, actionIndex, existing.claimTokenHash)
+        : null;
       const voucherUrl = new URL("/api/automation/vouchers/redeem", getCanonicalAppUrl());
-      voucherUrl.searchParams.set("token", bearer);
+      voucherUrl.searchParams.set("token", existingBearer ?? bearer);
       artifacts.voucherUrl = voucherUrl.toString();
       return { type: action.type, status: "already_issued" } as const;
     }

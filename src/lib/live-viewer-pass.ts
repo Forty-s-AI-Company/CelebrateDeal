@@ -1,4 +1,5 @@
 import { createHash, createHmac, timingSafeEqual } from "node:crypto";
+import { DERIVED_KEY_ROTATIONS } from "@/lib/derived-key-rotation";
 import { deriveSensitiveDataKey } from "@/lib/sensitive-data";
 
 /**
@@ -23,7 +24,10 @@ export const LIVE_VIEWER_PASS_COOKIE = "celebratedeal_live_pass";
 export const LIVE_VIEWER_PASS_TTL_SECONDS = 2 * 60;
 
 const PASS_VERSION = "lvp1";
+/** Domain tag of the admission binding digest; not a key purpose. */
 const PASS_PURPOSE = "live-viewer-pass";
+// Rotated after #485 (tier 2): passes live at most two minutes.
+const PASS_KEY_PURPOSE = DERIVED_KEY_ROTATIONS.liveViewerPass.current;
 const MAX_PASS_LENGTH = 1_024;
 const MAX_IDENTIFIER_LENGTH = 128;
 const PAYLOAD_PATTERN = /^[A-Za-z0-9_-]{1,900}$/u;
@@ -61,7 +65,7 @@ export function liveViewerAdmissionBinding(admissionToken: string) {
 }
 
 function signature(signedValue: string) {
-  return createHmac("sha256", deriveSensitiveDataKey(PASS_PURPOSE)).update(signedValue).digest("base64url");
+  return createHmac("sha256", deriveSensitiveDataKey(PASS_KEY_PURPOSE)).update(signedValue).digest("base64url");
 }
 
 export function createLiveViewerPass(input: {
