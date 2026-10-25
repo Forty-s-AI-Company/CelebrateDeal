@@ -14,20 +14,22 @@
 | 程式 | L0 核心 18 項與 L1 48 項全部進 master（PR #445～#467 共 22 個，含文件） | STATE.md 合併紀錄；每個金流／auth／migration PR 都有獨立 reviewer 報告（docs/review-2026Q4/30～47） |
 | 資料庫 | staging 所有 migration 已以 `staging-migrate.yml` 套用；全表 RLS、訂單號唯一、月結 ledger 修正已上 | workflow run 紀錄；STATE.md |
 | CI | `quality` 必要檢查全綠；master 既有的帳號限流 3601 秒抖動已修（#467） | PR 檢查 |
-| 排程 | GitHub Actions 每 5 分鐘呼叫 staging，端點回 200（line-notifications 405 待 O-18） | B2 證據 |
+| 排程 | GitHub Actions 每 5 分鐘呼叫 staging，端點回 200（O-18 已於 10-25 切 alias，line-notifications 需在新部署上重新確認） | B2 證據 |
 | 封測功能閘門 | 六個模組伺服器端閘門已上，預設關閉；需 owner 逐商家在 `/admin/vendor-features` 開啟（O-23） | PR #465 |
-| 商家註冊 | **邀請制已完成**：`/register` 預設只接受平台管理員在 `/admin/merchant-invitations` 產生、綁定 Email 的簽章邀請連結（`REGISTRATION_MODE` 未設定＝invite）；owner 逐一寄出（O-25）。**開放公開註冊前必須完成**：商家 Email 驗證（需 migration 與寄信流程）與 Turnstile 機器人防護，之後才可設 `REGISTRATION_MODE=open` | `ai/invite-only-registration` |
+| 商家註冊 | **邀請制已完成**：`/register` 預設只接受平台管理員在 `/admin/merchant-invitations` 產生、綁定 Email 的簽章邀請連結（`REGISTRATION_MODE` 未設定＝invite）；owner 逐一寄出（O-25）。**商家 Email 驗證已實作**（`ai/merchant-email-verification`，migration `20261025120000_user_email_verified_at`）：註冊後寄 24 小時有效的驗證信，未驗證的商家不能做新的名單型網站獨立發布，既有帳號不被鎖住（O-27）。**Turnstile 程式已就緒，待 owner 建立金鑰（O-26）**；沒有 Turnstile 或寄信設定時，部署的 preflight 會拒絕 `REGISTRATION_MODE=open` | `ai/invite-only-registration`、`ai/merchant-email-verification` |
+| Production | `celebratedeal.carry-digital-nomad.in.net`（專案 `celebrate-deal`）仍是 2026-07-24 的 build，**刻意不更新**：資料庫 migration 需先完成 O-4 備份與還原演練、O-19 RLS 前置查詢、O-20 production migration 設定。Production 目前不服務封測商家，封測只用 staging | O-18 紀錄 |
 
 **11-01 前必須由 owner 完成（否則 No-Go 或縮小範圍）**
 
-1. O-18 把 staging 固定網址切到 master 最新部署（否則封測客戶看到 10-18 的舊版）。
+1. ✅ O-18 已於 2026-10-25 完成：staging 固定網址指向 `dpl_2NRwSRDjhhXNGKX216BrKgzCwKQ7`（commit `585385cc`，tree 與 master `a9291147` 相同，含 #484、#485），smoke 通過；回滾選項 `dpl_FPzL7VRCHnCgeJQhmTdzHj6f4XYQ`。staging 只有 preview 部署，**之後每次合併都要再把 alias 指到 tree 與 master 相同的部署**；新 migration（例如 `20261025120000_user_email_verified_at`）要在切 alias 前以 `staging-migrate.yml`（先 `status` 再 `deploy`）套用到 staging。
 2. O-2 跑一筆 PayUni Sandbox 付款取樣本，10-30 再做 O-12 完整演練。
 3. O-3 平台管理員登記 TOTP；O-14 新增 QA TOTP secret。
 4. O-23 為每個封測商家開啟需要的模組。
 5. O-10／O-11 條款與揭露文字簽核（可先以封測協議過渡）。
 6. O-4 Supabase 升級與備份（沒做則封測資料無每日備份，屬可接受風險但需知情）。
 7. O-8 LINE 官方帳號方案於 10-27 前決定（10-28～11-02 LINE 維護期）。
-8. O-25 為每位封測商家產生並寄出邀請連結（沒有連結無法註冊）；staging／Production 不設定 `REGISTRATION_MODE`。**前置條件**：第一個邀請發出前，CSRF 金鑰分離修正 PR #485 必須已合併、staging 固定網址已切到包含它的部署（O-18），且 Production 也在跑包含它的版本；否則邀請可被偽造。
+8. O-25 為每位封測商家產生並寄出邀請連結（沒有連結無法註冊）；staging／Production 不設定 `REGISTRATION_MODE`。**前置條件**：第一個邀請發出前，CSRF 金鑰分離修正 PR #485 必須已合併、staging 固定網址已切到包含它的部署（O-18，已完成）；Production 開始服務商家之前，也必須在跑包含它的版本；否則邀請可被偽造。
+9. O-27 封測說明提醒商家收驗證信；O-26 Turnstile 金鑰在開放公開註冊前設定（邀請制封測可稍後）。
 
 **已接受的殘餘風險**：F-093 Stream 簽章網址只做評估；F-091 (2)、F-134 其餘矩陣列 L2；虛擬使用者不標示版的公平法風險待律師（O-11）；Supabase 正式專案在孟買與 Vercel 東京跨區（O-15）。
 
@@ -81,9 +83,11 @@
 | ☐ | O-15 | 跨區二選一（A 遷東京、B Vercel 改孟買） | 正式上線前 | 正式環境後台逾時（封測不急） |
 | ☐ | O-16 | Vercel staging 升 Pro 或接受低頻率 | 10-24 | Hobby 用量上限可能讓排程失敗 |
 | ☐ | O-17 | Sentry 告警規則（名稱以 `scheduled-jobs-runbook.md` §3.1 為準） | 10-24 | 付款重試失敗或超賣時沒人知道 |
-| ☐ | O-18 | 固定 staging 網址切到 master 最新部署（`vercel alias set`，命令見 OWNER-ACTIONS） | 10-24（⚠️） | staging 停在舊版，封測前修正驗證不到 |
+| ☑ | O-18 | 固定 staging 網址切到 master 最新部署（2026-10-25 主對話完成，smoke 通過；之後每次合併要再切） | 10-24 | staging 停在舊版，封測前修正驗證不到 |
 | ☐ | O-19 | Production RLS migration 前置查詢回報「通過」 | 正式部署前 | Production migration 會整批失敗（不會部分成功） |
 | ☐ | O-25 | 在 `/admin/merchant-invitations` 為每位封測商家產生邀請連結並親自寄出 | 每位商家開通前 | 封測商家無法註冊（邀請制是預設） |
+| ☐ | O-26 | 建立 Cloudflare Turnstile widget，在 staging／正式設定 `NEXT_PUBLIC_TURNSTILE_SITE_KEY`、`TURNSTILE_SECRET_KEY` | 公開註冊前 | 註冊沒有機器人防護；不能設 `REGISTRATION_MODE=open` |
+| ☐ | O-27 | 封測說明提醒商家收 Email 驗證信（既有帳號不被鎖住） | 封測前 | 商家不知道名單型網站為何無法獨立發布 |
 
 - 未完成的 owner 項目：__________
 
@@ -93,7 +97,7 @@
 
 | ☐ | 步驟 | 通過標準 | 時間（分鐘） | 結果／卡住點 |
 |---|---|---|---|---|
-| ☐ | 1. 註冊 | 沒有邀請連結時只看到受邀註冊說明；用 O-25 的邀請連結開啟後 Email 已帶入且不可改，勾選條款後建立商家帳號，同意紀錄可查 | | |
+| ☐ | 1. 註冊 | 沒有邀請連結時只看到受邀註冊說明；用 O-25 的邀請連結開啟後 Email 已帶入且不可改，勾選條款後建立商家帳號，同意紀錄可查；收到驗證信，按信中連結再按「確認驗證 Email」後，後台的「請先驗證 Email」提示消失 | | |
 | ☐ | 2. 建立商品 | 只用台幣、單品；狀態顯示中文 | | |
 | ☐ | 3. 建立報名表單 | 表單可送出；雙重確認頁有「前往直播間」 | | |
 | ☐ | 4. 建立直播 | 直播網址自動帶入；撞名時欄位提示 | | |
@@ -129,7 +133,7 @@
 | ☐ | F-095、F-102 | 瀏覽器直播無部署文件；預覽死路 | 不用瀏覽器直播（D-09） | |
 | ☐ | F-103（揭露語） | 播放頁「部分互動」字樣未移除 | 等律師意見（O-11） | |
 | ☐ | F-133 | CRM 與行動諮詢的租戶測試是假測試 | 封測期間補；目前靠人工與 B1 查證 | |
-| ☐ | 邀請制註冊 | 邀請連結是持有者憑證，不證明對方擁有該信箱 | 只寄給本人；14 天到期；帳號 Email 唯一，一個連結最多建立一個帳號。寄錯對象或不再需要時，在 `/admin/merchant-invitations` 該筆邀請按「撤銷」（需 15 分鐘內完成 MFA 驗證）：寫入 `merchant_registration_invite_revoked` 稽核紀錄後，`/register` 立即拒絕該連結並顯示已撤銷；已用它建立的帳號不受影響，需另行停用。撤銷擋不住已經送出、正在處理中的註冊（建立帳號的交易內會在寫入前再查一次撤銷紀錄，只縮小而非消除這段時間差），所以撤銷後請重新整理清單，確認該筆狀態是「已撤銷」而不是「已註冊」。前置條件：PR #485 已部署到 staging（O-18 切 alias 後）與 Production，否則邀請可被偽造。不要為了撤銷邀請輪換 `CSRF_SECRET`：它也是 MFA 與敏感資料的加密根金鑰 | |
+| ☐ | 邀請制註冊 | 邀請連結是持有者憑證，不證明對方擁有該信箱 | 只寄給本人；14 天到期；帳號 Email 唯一，一個連結最多建立一個帳號。寄錯對象或不再需要時，在 `/admin/merchant-invitations` 該筆邀請按「撤銷」（需 15 分鐘內完成 MFA 驗證）：寫入 `merchant_registration_invite_revoked` 稽核紀錄後，`/register` 立即拒絕該連結並顯示已撤銷；已用它建立的帳號不受影響，需另行停用。撤銷擋不住已經送出、正在處理中的註冊（建立帳號的交易內會在寫入前再查一次撤銷紀錄，只縮小而非消除這段時間差），所以撤銷後請重新整理清單，確認該筆狀態是「已撤銷」而不是「已註冊」。前置條件：PR #485 已部署到 staging（O-18，已完成），Production 開始服務商家前也必須部署，否則邀請可被偽造。不要為了撤銷邀請輪換 `CSRF_SECRET`：它也是 MFA 與敏感資料的加密根金鑰 | |
 
 - 其餘 `ROADMAP` §1 模組表標為「延後」或「隱藏」的項目，一律視為已接受。
 - 未列入的 BLOCKER 或 MAJOR：__________
