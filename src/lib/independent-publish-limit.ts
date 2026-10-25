@@ -2,7 +2,7 @@ import { Prisma, type PrismaClient } from "@prisma/client";
 import { verifiedVendorPaymentMethodWhere } from "@/lib/payment-method-reference";
 import { parseFunnelStepPages } from "@/lib/funnel-step-pages";
 import { independentlyPublishedPageCandidatesWhere, isIndependentlyPublishedFunnel } from "@/lib/public-landing-page-eligibility";
-import { vendorOwnerEmailVerified } from "@/lib/merchant-email-verification";
+import { vendorEmailVerificationState, type OwnerFallbackReason } from "@/lib/merchant-email-verification";
 
 /**
  * Abuse guard for independent audience publication (owner decision
@@ -15,8 +15,9 @@ import { vendorOwnerEmailVerified } from "@/lib/merchant-email-verification";
  * archived pages never count. systeme.io limits free accounts to 3 funnels.
  *
  * A vendor whose owner has not verified the account email gets no new
- * independent publishes at all (owner decision 2026-10-25): throwaway accounts
- * would otherwise multiply the free limit. See `vendorOwnerEmailVerified`.
+ * independent publishes at all (owner decision 2026-10-25). This only slows
+ * throwaway accounts down (see `vendorEmailVerificationState`); the cap
+ * itself, Turnstile and the registration rate limits do the real work.
  */
 export const INDEPENDENT_AUDIENCE_PUBLISH_FREE_LIMIT = 3;
 
@@ -59,6 +60,8 @@ export type IndependentPublishAllowance = {
   disabled: boolean;
   /** The vendor's owner has not verified the account email: no new independent publishes. */
   emailUnverified: boolean;
+  /** Verified only through the "any active verified owner" fallback (audited on publish). */
+  ownerFallback: OwnerFallbackReason | null;
   limit: number;
   /** Other pages of the vendor currently public through independent publication, when known exactly; null when the scan stopped early. */
   used: number | null;
@@ -141,16 +144,18 @@ export async function independentPublishAllowance(database: LimitReader, vendorI
   const disabled = isIndependentAudiencePublishDisabled();
   const self = await database.landingPage.findFirst({ where: { ...independentlyPublishedPageCandidatesWhere(vendorId), id: pageId }, select: candidateSelect });
   const alreadyCounted = Boolean(self && publicThroughIndependentPublication(self));
-  if (disabled) return { uncapped: false, disabled, emailUnverified: false, limit, used: null, alreadyCounted, allowed: alreadyCounted };
+  if (disabled) return { uncapped: false, disabled, emailUnverified: false, ownerFallback: null, limit, used: null, alreadyCounted, allowed: alreadyCounted };
   // Applies to paid vendors too; like the kill switch it never unpublishes
   // anything, and a page that is already public may be republished.
-  if (!await vendorOwnerEmailVerified(database, vendorId)) return { uncapped: false, disabled, emailUnverified: true, limit, used: null, alreadyCounted, allowed: alreadyCounted };
-  if (await isIndependentPublishUncapped(database, vendorId, now)) return { uncapped: true, disabled, emailUnverified: false, limit, used: null, alreadyCounted, allowed: true };
+  const verification = await vendorEmailVerificationState(database, vendorId);
+  if (!verification.verified) return { uncapped: false, disabled, emailUnverified: true, ownerFallback: null, limit, used: null, alreadyCounted, allowed: alreadyCounted };
+  const ownerFallback = verification.fallbackReason;
+  if (await isIndependentPublishUncapped(database, vendorId, now)) return { uncapped: true, disabled, emailUnverified: false, ownerFallback, limit, used: null, alreadyCounted, allowed: true };
   const others = await scanIndependentlyPublishedPages(database, vendorId, { exceptPageId: pageId, stopAt: limit });
   // A complete scan gives the exact count. An early stop already found `limit`
   // pages; hitting the scan bound below the limit is uncertain and fails closed.
   const atLimit = others.ids.length >= limit || !others.complete;
-  return { uncapped: false, disabled, emailUnverified: false, limit, used: others.complete ? others.ids.length : null, alreadyCounted, allowed: alreadyCounted || !atLimit };
+  return { uncapped: false, disabled, emailUnverified: false, ownerFallback, limit, used: others.complete ? others.ids.length : null, alreadyCounted, allowed: alreadyCounted || !atLimit };
 }
 
 /**

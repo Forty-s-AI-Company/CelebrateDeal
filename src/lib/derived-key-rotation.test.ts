@@ -102,7 +102,7 @@ describe("rotation registry", () => {
   it("keeps tier 2 rotations without a legacy key", () => {
     for (const name of [
       "csrfMac", "merchantRegistrationInvite", "merchantInviteEmailHash", "livePrivateChatConversationBinding", "checkoutAdmission", "formSubmissionLineBinding", "studentPortalAccessToken", "liveViewerPass",
-      "liveChatCursor", "livePrivateChatCursor", "postPurchaseCheckout", "registrationSubmissionResult",
+      "liveChatCursor", "livePrivateChatCursor", "postPurchaseCheckout", "registrationSubmissionResult", "merchantEmailVerification",
     ] as const) {
       expect(DERIVED_KEY_ROTATIONS[name].legacy, name).toBeNull();
     }

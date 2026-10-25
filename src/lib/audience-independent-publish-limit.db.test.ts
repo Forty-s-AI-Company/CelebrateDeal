@@ -113,6 +113,7 @@ afterEach(async () => {
   const ids = vendorIds.splice(0);
   await db.landingPage.updateMany({ where: { vendorId: { in: ids } }, data: { status: "draft", publishedVersionId: null } });
   await db.landingPage.deleteMany({ where: { vendorId: { in: ids } } });
+  await db.auditLog.deleteMany({ where: { vendorId: { in: ids }, action: "independent_publish_email_gate_owner_fallback" } });
   await db.vendor.deleteMany({ where: { id: { in: ids } } });
   await db.user.deleteMany({ where: { id: { in: userIds.splice(0) } } });
   await db.billingPlan.deleteMany({ where: { id: { in: planIds.splice(0) } } });
@@ -403,7 +404,16 @@ describe("merchant email verification gate on independent publication (PostgreSQ
     // A founder who left the vendor no longer decides: any active verified owner does
     // (documented fallback; deactivating an owner needs step-up MFA).
     await db.vendorMember.updateMany({ where: { vendorId: tenant.vendorId, userId: tenant.userId }, data: { status: "inactive" } });
-    await expect(publishLandingPage(page.id, page.revision)).resolves.toMatchObject({ version: 1 });
+    const published = await publishLandingPage(page.id, page.revision);
+    expect(published).toMatchObject({ version: 1 });
+    // The pass through the fallback is audited with ids and a reason code only.
+    const audits = await db.auditLog.findMany({ where: { vendorId: tenant.vendorId, action: "independent_publish_email_gate_owner_fallback" } });
+    expect(audits).toHaveLength(1);
+    expect(audits[0]).toMatchObject({ targetType: "LandingPage", targetId: page.id, actorLabel: "system", after: { reason: "founder_left_vendor" } });
+    expect(JSON.stringify(audits[0])).not.toContain("@");
+    // Republishing a page that already holds its slot is not a new pass.
+    await publishLandingPage(page.id, published.revision);
+    expect(await db.auditLog.count({ where: { vendorId: tenant.vendorId, action: "independent_publish_email_gate_owner_fallback" } })).toBe(1);
   });
 
   it("does not let one vendor's verified founder verify another vendor", async () => {
@@ -430,5 +440,12 @@ describe("merchant email verification gate on independent publication (PostgreSQ
     await rejectsUnverified(publishLandingPage(page.id, page.revision));
     await db.user.update({ where: { id: owner.id }, data: { emailVerifiedAt: new Date() } });
     await expect(publishLandingPage(page.id, page.revision)).resolves.toMatchObject({ version: 1 });
+    expect(await db.auditLog.findFirst({ where: { vendorId: vendor.id, action: "independent_publish_email_gate_owner_fallback" } })).toMatchObject({ after: { reason: "no_founder_account" } });
+  });
+
+  it("does not audit a publish decided by a verified founding account", async () => {
+    const tenant = await createTenant("founder-pass");
+    await publish(tenant);
+    expect(await getDb().auditLog.count({ where: { vendorId: tenant.vendorId, action: "independent_publish_email_gate_owner_fallback" } })).toBe(0);
   });
 });

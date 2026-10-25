@@ -1,6 +1,7 @@
 import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import { z } from "zod";
 import { getCanonicalAppUrl } from "@/lib/app-url";
+import { DERIVED_KEY_ROTATIONS } from "@/lib/derived-key-purposes";
 import { deriveSensitiveDataKey } from "@/lib/sensitive-data";
 
 /**
@@ -22,16 +23,16 @@ import { deriveSensitiveDataKey } from "@/lib/sensitive-data";
  * anything learned from a pre-#485 deployment. Invariant: never ship a new
  * purpose while any public deployment still runs pre-#485 code.
  *
- * Follow-up (ai/derived-key-rotation): once that branch is merged, register this
- * purpose in `DERIVED_KEY_ROTATIONS` (`src/lib/derived-key-purposes.ts`) with
- * no legacy purpose (nothing was ever signed under an older label).
+ * The purpose is registered in `DERIVED_KEY_ROTATIONS`
+ * (`src/lib/derived-key-purposes.ts`) with no legacy purpose: nothing was ever
+ * signed under an older label.
  *
  * There is no token table. Re-opening a link is harmless (the update is
  * idempotent); `jti` only identifies a link in audit records. The token itself
  * is never stored or logged.
  */
 export const MERCHANT_EMAIL_VERIFICATION_PURPOSE = "merchant_email_verification";
-export const MERCHANT_EMAIL_VERIFICATION_KEY_PURPOSE = "merchant-email-verification:r2:5a881e5879ba6156";
+export const MERCHANT_EMAIL_VERIFICATION_KEY_PURPOSE = DERIVED_KEY_ROTATIONS.merchantEmailVerification.current;
 export const MERCHANT_EMAIL_VERIFICATION_TTL_HOURS = 24;
 export const MERCHANT_EMAIL_VERIFICATION_TTL_MS = MERCHANT_EMAIL_VERIFICATION_TTL_HOURS * 60 * 60 * 1_000;
 /** Upper bound for a token read from a URL. */

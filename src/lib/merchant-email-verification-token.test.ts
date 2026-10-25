@@ -19,6 +19,7 @@ import {
   verifyMerchantEmailVerificationToken,
 } from "@/lib/merchant-email-verification-token";
 import { createMerchantRegistrationInvite } from "@/lib/merchant-registration-invite";
+import { DERIVED_KEY_ROTATIONS } from "@/lib/derived-key-purposes";
 import { deriveSensitiveDataKey } from "@/lib/sensitive-data";
 
 const SECRET = "synthetic-email-verification-secret-32-bytes";
@@ -49,6 +50,8 @@ afterEach(() => vi.unstubAllEnvs());
 describe("merchant email verification key", () => {
   it("uses an unguessable, single-purpose label", () => {
     expect(MERCHANT_EMAIL_VERIFICATION_KEY_PURPOSE).toMatch(/^merchant-email-verification:r2:[0-9a-f]{16}$/u);
+    // Registered in the rotation registry with no legacy key.
+    expect(DERIVED_KEY_ROTATIONS.merchantEmailVerification).toEqual({ label: "merchant-email-verification", current: "merchant-email-verification:r2:5a881e5879ba6156", legacy: null });
   });
 
   it("keeps a golden derived key and MAC, so the key and the token format cannot change silently", () => {

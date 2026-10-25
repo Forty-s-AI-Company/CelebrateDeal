@@ -607,7 +607,18 @@ async function assertIndependentPublishAllowed(
   const project = await transaction.salesProject.findFirst({ where: { id: scope.projectId, vendorId: scope.vendorId }, select: { status: true, publishedAt: true } });
   if (isPublishedSalesProject(project)) return;
   const allowance = await independentPublishAllowance(transaction, scope.vendorId, page.id);
-  if (allowance.allowed) return;
+  if (allowance.allowed) {
+    // A new independent publish allowed only by the owner fallback is worth
+    // knowing about (founder suspended, left, or never existed). Ids and a
+    // fixed reason code only; written in the publish transaction.
+    if (allowance.ownerFallback && !allowance.alreadyCounted) {
+      await transaction.auditLog.create({ data: {
+        vendorId: scope.vendorId, actorLabel: "system", action: "independent_publish_email_gate_owner_fallback",
+        targetType: "LandingPage", targetId: page.id, after: { reason: allowance.ownerFallback },
+      } });
+    }
+    return;
+  }
   throw new LandingPageInputError(allowance.disabled
     ? "landing_page_independent_publish_disabled"
     : allowance.emailUnverified ? "landing_page_independent_publish_email_unverified" : "landing_page_independent_publish_limit");

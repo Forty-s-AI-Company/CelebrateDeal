@@ -207,16 +207,16 @@ describe("other links the platform e-mailed also prove the mailbox (PostgreSQL)"
 
   it("decides vendor verification by the founding account while it is active and still a member", async () => {
     const { vendor, owner } = await createVendorWithOwner();
-    await expect(vendorEmailVerificationState(getDb(), vendor.id)).resolves.toEqual({ verified: false, founder: { userId: owner.id, email: owner.email } });
+    await expect(vendorEmailVerificationState(getDb(), vendor.id)).resolves.toEqual({ verified: false, founder: { userId: owner.id, email: owner.email }, fallbackReason: null });
     await getDb().user.update({ where: { id: owner.id }, data: { emailVerifiedAt: new Date() } });
     await expect(vendorOwnerEmailVerified(getDb(), vendor.id)).resolves.toBe(true);
     await expect(vendorOwnerEmailVerified(getDb(), "cuid_unknown_vendor")).resolves.toBe(false);
   });
 
   it.each([
-    ["suspended", { user: { status: "suspended" } }],
-    ["no longer a member", { membership: { status: "inactive" } }],
-  ] as const)("falls back to any active verified owner when the founder is %s", async (_label, change) => {
+    ["suspended", { user: { status: "suspended" } }, "founder_suspended"],
+    ["no longer a member", { membership: { status: "inactive" } }, "founder_left_vendor"],
+  ] as const)("falls back to any active verified owner when the founder is %s", async (_label, change, reason) => {
     const { vendor, owner } = await createVendorWithOwner();
     const coOwner = await createUser({ emailVerifiedAt: new Date() });
     await getDb().vendorMember.create({ data: { vendorId: vendor.id, userId: coOwner.id, role: "owner", status: "active" } });
@@ -224,7 +224,7 @@ describe("other links the platform e-mailed also prove the mailbox (PostgreSQL)"
     await expect(vendorOwnerEmailVerified(getDb(), vendor.id)).resolves.toBe(false);
     if ("user" in change) await getDb().user.update({ where: { id: owner.id }, data: change.user });
     else await getDb().vendorMember.updateMany({ where: { vendorId: vendor.id, userId: owner.id }, data: change.membership });
-    await expect(vendorEmailVerificationState(getDb(), vendor.id)).resolves.toEqual({ verified: true, founder: null });
+    await expect(vendorEmailVerificationState(getDb(), vendor.id)).resolves.toEqual({ verified: true, founder: null, fallbackReason: reason });
     // Without a verified active owner the fallback stays closed.
     await getDb().vendorMember.updateMany({ where: { vendorId: vendor.id, userId: coOwner.id }, data: { role: "support" } });
     await expect(vendorOwnerEmailVerified(getDb(), vendor.id)).resolves.toBe(false);

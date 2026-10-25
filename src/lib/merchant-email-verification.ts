@@ -158,10 +158,15 @@ export async function confirmMerchantEmailVerification(token: unknown, now = new
 
 type VendorVerificationReader = Pick<PrismaClient, "vendor" | "user" | "vendorMember">;
 
+/** Why the "any active verified owner" fallback decided instead of a founding account. */
+export type OwnerFallbackReason = "no_founder_account" | "founder_suspended" | "founder_left_vendor";
+
 export type VendorEmailVerificationState = {
   verified: boolean;
   /** The founding account that decides, when there is one; null means "any active verified owner". */
   founder: { userId: string; email: string } | null;
+  /** Set when the fallback decided; lets callers audit a pass through it. */
+  fallbackReason: OwnerFallbackReason | null;
 };
 
 /**
@@ -170,27 +175,36 @@ export type VendorEmailVerificationState = {
  * The vendor's founding account is the user whose address equals
  * `Vendor.email` (registration creates both with the same address, and both
  * columns are unique), provided it is still active and still an active member
- * of the vendor. While it is, it alone decides: one verified mailbox verifies
- * at most one vendor, so a verified co-owner invited into throwaway
- * workspaces does not lift their limits. Otherwise (no such account, a
- * suspended founder, or a founder who left the vendor) the vendor counts as
- * verified when one of its active owners is verified. That fallback can be
- * reached on purpose by deactivating the founder (owner step-up MFA and the
- * per-recipient invitation limit make it costly); accepted for the beta.
+ * of the vendor. While it is, it alone decides, so inviting an already
+ * verified co-owner into a throwaway workspace does not lift its limits.
+ * Otherwise (no such account, a suspended founder, or a founder who left the
+ * vendor) the vendor counts as verified when one of its active owners is
+ * verified.
+ *
+ * This is a speed bump, not a guarantee that one mailbox unlocks one vendor:
+ * plus-addressing and similar aliases give one person many verifiable
+ * addresses, and deactivating the founder (owner step-up MFA) reaches the
+ * fallback. The real limits on throwaway accounts are Turnstile, the
+ * registration rate limits and the per-vendor independent-publish cap; passes
+ * through the fallback are audited by the publish transaction.
  */
 export async function vendorEmailVerificationState(database: VendorVerificationReader, vendorId: string): Promise<VendorEmailVerificationState> {
   const vendor = await database.vendor.findUnique({ where: { id: vendorId }, select: { email: true } });
-  if (!vendor) return { verified: false, founder: null };
+  if (!vendor) return { verified: false, founder: null, fallbackReason: null };
   const founder = await database.user.findFirst({
     where: { email: vendor.email, status: "active", memberships: { some: { vendorId, status: "active" } } },
     select: { id: true, email: true, emailVerifiedAt: true },
   });
-  if (founder) return { verified: founder.emailVerifiedAt !== null, founder: { userId: founder.id, email: founder.email } };
+  if (founder) return { verified: founder.emailVerifiedAt !== null, founder: { userId: founder.id, email: founder.email }, fallbackReason: null };
   const verifiedOwner = await database.vendorMember.findFirst({
     where: { vendorId, role: "owner", status: "active", user: { status: "active", emailVerifiedAt: { not: null } } },
     select: { id: true },
   });
-  return { verified: Boolean(verifiedOwner), founder: null };
+  if (!verifiedOwner) return { verified: false, founder: null, fallbackReason: null };
+  // Only on a fallback pass: say why the founding account did not decide.
+  const account = await database.user.findUnique({ where: { email: vendor.email }, select: { status: true } });
+  const fallbackReason: OwnerFallbackReason = !account ? "no_founder_account" : account.status !== "active" ? "founder_suspended" : "founder_left_vendor";
+  return { verified: true, founder: null, fallbackReason };
 }
 
 export async function vendorOwnerEmailVerified(database: VendorVerificationReader, vendorId: string) {
