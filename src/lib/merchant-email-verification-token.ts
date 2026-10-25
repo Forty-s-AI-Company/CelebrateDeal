@@ -22,7 +22,7 @@ import { deriveSensitiveDataKey } from "@/lib/sensitive-data";
  * anything learned from a pre-#485 deployment. Invariant: never ship a new
  * purpose while any public deployment still runs pre-#485 code.
  *
- * TODO(ai/derived-key-rotation): once that branch is merged, register this
+ * Follow-up (ai/derived-key-rotation): once that branch is merged, register this
  * purpose in `DERIVED_KEY_ROTATIONS` (`src/lib/derived-key-purposes.ts`) with
  * no legacy purpose (nothing was ever signed under an older label).
  *
