@@ -18,6 +18,16 @@ describe("isolated development build configuration", () => {
     expect(sentry.wrap).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ tunnelRoute: "/monitoring" }));
   });
 
+  it("allows Cloudflare Turnstile's script, iframe and calls in the report-only CSP", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+    const { default: config } = await import("./next.config");
+    const rules = await config.headers!();
+    const csp = rules.find((rule) => rule.source === "/:path*")!.headers.find((header) => header.key === "Content-Security-Policy-Report-Only")!.value;
+    const directive = (name: string) => csp.split("; ").find((part) => part.startsWith(`${name} `)) ?? "";
+    for (const name of ["script-src", "frame-src", "connect-src"]) expect(directive(name)).toContain("https://challenges.cloudflare.com");
+    expect(directive("frame-ancestors")).toBe("frame-ancestors 'none'");
+  });
+
   it("isolates explicitly requested funnel QA builds inside the project", async () => {
     vi.stubEnv("NODE_ENV", "test");
     vi.stubEnv("FUNNEL_ELEMENTS_E2E", "true");

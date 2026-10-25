@@ -11,6 +11,7 @@ import {
   LIVE_CHAT_INGRESS_SECRET_MIN_LENGTH,
 } from "@/lib/request-client-ip";
 import { REGISTRATION_MODES } from "@/lib/registration-mode";
+import { getTurnstileConfig } from "@/lib/turnstile";
 
 const RequiredUrl = z.string().url();
 const OptionalSecret = z.string().optional();
@@ -68,6 +69,10 @@ export const ProductionEnvSchema = z.object({
   SENTRY_AUTH_TOKEN: OptionalSecret,
   NEXT_PUBLIC_POSTHOG_KEY: OptionalSecret,
   NEXT_PUBLIC_POSTHOG_HOST: RequiredUrl.optional(),
+  // Cloudflare Turnstile (registration and verification-mail resend). Both or
+  // neither; see turnstileChecks.
+  NEXT_PUBLIC_TURNSTILE_SITE_KEY: OptionalSecret,
+  TURNSTILE_SECRET_KEY: OptionalSecret,
   // Unset or blank = invite (closed beta). Any other value is a typo and fails
   // preflight; the runtime also treats it as invite.
   REGISTRATION_MODE: z.preprocess(
@@ -132,19 +137,34 @@ function liveChatIngressSecretDeploymentCheck(env: NodeJS.ProcessEnv): EnvCheck 
   };
 }
 
+/**
+ * Public registration (`REGISTRATION_MODE=open`) needs bot protection and
+ * working verification mail. On a deployment (Preview or Production) opening
+ * registration without Turnstile or without email sending fails preflight;
+ * locally it only passes with a note.
+ */
 function registrationModeChecks(env: NodeJS.ProcessEnv, deploymentSecurityRequired: boolean): EnvCheck[] {
   const value = env.REGISTRATION_MODE?.trim().toLowerCase();
   if (value && !(REGISTRATION_MODES as readonly string[]).includes(value)) return []; // the schema reports it
-  if (value === "open") {
-    return [{
-      key: "REGISTRATION_MODE",
-      status: deploymentSecurityRequired ? "warning" : "pass",
-      message: deploymentSecurityRequired
-        ? "已開放任何人註冊商家；開放前必須完成商家 Email 驗證與 Turnstile 機器人防護"
-        : "本機開放任何人註冊商家",
-    }];
+  if (value !== "open") return [{ key: "REGISTRATION_MODE", status: "pass", message: "商家註冊僅限平台邀請（封測預設）" }];
+  if (!deploymentSecurityRequired) return [{ key: "REGISTRATION_MODE", status: "pass", message: "本機開放任何人註冊商家" }];
+  const missing = [
+    ...(getTurnstileConfig(env).status === "enabled" ? [] : ["Turnstile（NEXT_PUBLIC_TURNSTILE_SITE_KEY、TURNSTILE_SECRET_KEY）"]),
+    ...(secretPresent(env.RESEND_API_KEY) && EmailFrom.safeParse(env.EMAIL_FROM ?? "").success ? [] : ["驗證信寄送（RESEND_API_KEY、EMAIL_FROM）"]),
+  ];
+  if (missing.length > 0) {
+    return [{ key: "REGISTRATION_MODE", status: "fail", message: `REGISTRATION_MODE=open 會開放任何人註冊商家，但尚未設定${missing.join("與")}；設定完成前不可開放公開註冊` }];
   }
-  return [{ key: "REGISTRATION_MODE", status: "pass", message: "商家註冊僅限平台邀請（封測預設）" }];
+  return [{ key: "REGISTRATION_MODE", status: "warning", message: "已開放任何人註冊商家（Turnstile 與商家 Email 驗證已啟用）；請確認這是正式公開註冊的決定" }];
+}
+
+function turnstileChecks(env: NodeJS.ProcessEnv): EnvCheck[] {
+  const config = getTurnstileConfig(env);
+  if (config.status === "enabled") return [{ key: "TURNSTILE_SECRET_KEY", status: "pass", message: "已設定 Turnstile 站點金鑰與伺服器金鑰；註冊與重新寄送驗證信會驗證真人" }];
+  if (config.status === "misconfigured") {
+    return [{ key: "TURNSTILE_SECRET_KEY", status: "fail", message: "NEXT_PUBLIC_TURNSTILE_SITE_KEY 與 TURNSTILE_SECRET_KEY 必須同時設定；只設定一個時註冊與重新寄送驗證信會一律失敗" }];
+  }
+  return [{ key: "TURNSTILE_SECRET_KEY", status: "warning", message: "未設定 Turnstile；註冊與重新寄送驗證信沒有機器人防護（邀請制可接受，開放公開註冊前必須設定）" }];
 }
 
 function requiresDeploymentSecurity(env: NodeJS.ProcessEnv) {
@@ -265,8 +285,8 @@ function accountRateLimitCheck(rateLimitProvider: string): EnvCheck {
     key: "ACCOUNT_RATE_LIMIT",
     status: "pass",
     message: rateLimitProvider === "cloudflare_waf"
-      ? "cloudflare_waf 只負責 IP 層限流；帳號層限流（登入、MFA、復原碼、magic link、成員邀請、密碼重設）固定使用資料庫計數"
-      : "帳號層限流（登入、MFA、復原碼、magic link、成員邀請、密碼重設）固定使用資料庫計數，不受 RATE_LIMIT_PROVIDER 影響",
+      ? "cloudflare_waf 只負責 IP 層限流；帳號層限流（登入、MFA、復原碼、magic link、成員邀請、密碼重設、Email 驗證信）固定使用資料庫計數"
+      : "帳號層限流（登入、MFA、復原碼、magic link、成員邀請、密碼重設、Email 驗證信）固定使用資料庫計數，不受 RATE_LIMIT_PROVIDER 影響",
   };
 }
 
@@ -364,6 +384,7 @@ export function getEnvCheckReport(env: NodeJS.ProcessEnv = process.env) {
   }
 
   checks.push(...registrationModeChecks(env, deploymentSecurityRequired));
+  checks.push(...turnstileChecks(env));
 
   checks.push(...productionPaymentProviderChecks(env));
   checks.push(...databasePoolChecks(env));

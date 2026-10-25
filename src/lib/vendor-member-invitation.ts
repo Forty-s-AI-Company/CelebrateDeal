@@ -155,12 +155,16 @@ export async function acceptVendorMemberInvitation(
         if (!input.actorUserId) throw new AcceptAbort("login_required");
         if (input.actorUserId !== existing.id) throw new AcceptAbort("wrong_account");
         userId = existing.id;
+        // The platform e-mailed this token to the address and its owner opened
+        // it while signed in: proof of mailbox possession (bound to the address).
+        await tx.user.updateMany({ where: { id: existing.id, email: invitation.email, emailVerifiedAt: null }, data: { emailVerifiedAt: now } });
       } else {
         // A signed-in user cannot claim an invitation for another address.
         if (input.actorUserId) throw new AcceptAbort("wrong_account");
         if (!input.newAccount) throw new AcceptAbort("invalid");
         const user = await tx.user.create({
-          data: { email: invitation.email, name: input.newAccount.name || invitation.name, passwordHash: input.newAccount.passwordHash, status: "active" },
+          // Opening the e-mailed invitation link proves the mailbox, so the new account starts verified.
+          data: { email: invitation.email, name: input.newAccount.name || invitation.name, passwordHash: input.newAccount.passwordHash, status: "active", emailVerifiedAt: now },
           select: { id: true },
         });
         await tx.userPolicyConsent.create({

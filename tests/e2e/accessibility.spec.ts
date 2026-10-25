@@ -5,6 +5,7 @@ import { PrismaClient } from "@prisma/client";
 import { totpCodeForTimestamp } from "../../src/lib/mfa";
 import { hashPassword } from "../../src/lib/password";
 import { createMerchantRegistrationInvite } from "../../src/lib/merchant-registration-invite";
+import { createMerchantEmailVerificationToken } from "../../src/lib/merchant-email-verification-token";
 
 const db = new PrismaClient();
 const password = "A11y-Test-Password-123!";
@@ -415,9 +416,14 @@ test("registration, policy and support public routes have no blocking axe violat
   test.setTimeout(90_000);
   // Invite mode is the default: cover the invite-only notice and the invited form.
   const invite = createMerchantRegistrationInvite({ email: `a11y-invite-${randomUUID()}@example.test` }).token;
+  // The confirm page only checks the signature; nothing is verified until its POST.
+  const verification = createMerchantEmailVerificationToken({ userId: "a11y_synthetic_user", email: `a11y-verify-${randomUUID()}@example.test` }).token;
   const routes = [
     "/register",
     `/register?invite=${encodeURIComponent(invite)}`,
+    "/verify-email",
+    "/verify-email?status=invalid",
+    `/verify-email?token=${encodeURIComponent(verification)}`,
     "/policies",
     "/policies/terms",
     "/policies/privacy",

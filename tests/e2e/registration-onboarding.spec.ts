@@ -2,6 +2,7 @@ import {randomUUID} from "node:crypto";
 import {test,expect} from "@playwright/test";
 import {PrismaClient} from "@prisma/client";
 import {createMerchantRegistrationInvite} from "../../src/lib/merchant-registration-invite";
+import {createMerchantEmailVerificationToken} from "../../src/lib/merchant-email-verification-token";
 const db=new PrismaClient();
 test.use({trace:"off",screenshot:"off",video:"off"});test.setTimeout(180_000);
 test.afterAll(async()=>db.$disconnect());
@@ -28,6 +29,14 @@ for(const width of [1440,390])test(`registration and questionnaire round trip at
    const next=page.getByRole('button',{name:step===3?'產生我的工作空間':'下一題',exact:true});await expect(next).toBeEnabled();await next.click();
   }
   await expect(page).toHaveURL(/\/welcome\/preparing$/u);await page.getByRole('link',{name:'進入我的工作空間'}).click();await expect(page).toHaveURL(/\/dashboard$/u);
+  // A new account is not locked out; the back office only asks for email verification.
+  await expect(page.locator('[data-email-verification-banner]')).toBeVisible();expect((await db.user.findUniqueOrThrow({where:{email}})).emailVerifiedAt).toBeNull();
+  // The e-mailed link opens a confirm page; only the POST behind its button verifies (the test process signs with the server's synthetic secret).
+  const {token:verification}=createMerchantEmailVerificationToken({userId:(await db.user.findUniqueOrThrow({where:{email}})).id,email});
+  await page.goto(`/verify-email?token=${encodeURIComponent(verification)}`);expect((await db.user.findUniqueOrThrow({where:{email}})).emailVerifiedAt).toBeNull();
+  await page.getByRole('button',{name:'確認驗證 Email'}).click();await expect(page).toHaveURL(/\/verify-email\?status=verified$/u);await expect(page.getByRole('heading',{name:'Email 已完成驗證'})).toBeVisible();
+  expect((await db.user.findUniqueOrThrow({where:{email}})).emailVerifiedAt).not.toBeNull();
+  await page.getByRole('link',{name:'回到後台'}).click();await expect(page).toHaveURL(/\/dashboard$/u);await expect(page.locator('[data-email-verification-banner]')).toHaveCount(0);
   const user=await db.user.findUniqueOrThrow({where:{email}});const vendor=await db.vendor.findUniqueOrThrow({where:{email}});const preference=await db.userOnboardingPreference.findUniqueOrThrow({where:{userId_vendorId:{userId:user.id,vendorId:vendor.id}}});expect(preference.questionnaireDoneAt).not.toBeNull();expect(preference.selectedProjectId).not.toBeNull();expect(await db.salesProject.count({where:{vendorId:vendor.id}})).toBe(1);
   const account=page.getByRole('button',{name:'開啟工作區與帳號選單'});if(await account.isVisible())await account.click();await page.getByRole('button',{name:'登出',exact:true}).filter({visible:true}).click();await expect(page).toHaveURL(/\/login$/u);
   await page.getByLabel('Email').fill(email);await page.getByLabel('密碼').fill(password);await page.getByRole('button',{name:'登入',exact:true}).click();await expect(page).toHaveURL(/\/dashboard$/u);

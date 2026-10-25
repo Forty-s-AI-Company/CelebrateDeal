@@ -5,11 +5,12 @@ vi.mock("@/lib/auth", () => ({ requireVendorContext: mocks.requireVendorContext 
 vi.mock("@/lib/db", () => ({ getDb: mocks.getDb }));
 vi.mock("@/components/app-shell", () => ({ AppShell: () => null }));
 vi.mock("@/app/actions/sales-workspace-actions", () => ({ persistTaskPanelCollapsedAction: vi.fn(), selectSalesProjectAction: vi.fn() }));
+import { renderToStaticMarkup } from "react-dom/server";
 import ProtectedLayout from "./layout";
 
-function context(role: string | null) {
+function context(role: string | null, emailVerifiedAt: Date | null = new Date("2026-10-25T00:00:00Z")) {
   return {
-    auth: { user: { id: "user-1" }, member: role ? { role } : null },
+    auth: { user: { id: "user-1", emailVerifiedAt }, member: role ? { role } : null },
     vendor: { betaFeatureGrants: ["courses", "billing", "funnel_binding", "consultation_booking", "browser_live", "danmaku"], id: "vendor-1", name: "Synthetic workspace", email: "owner@example.test", enabledFeatureModules: [], logoUrl: null, supportEmail: null },
   };
 }
@@ -17,6 +18,24 @@ function context(role: string | null) {
 beforeEach(() => vi.resetAllMocks());
 
 describe("protected shell data boundary", () => {
+  it.each(["support", "owner"])("asks an unverified %s to verify the email without blocking the page", async (role) => {
+    mocks.requireVendorContext.mockResolvedValue(context(role, null));
+    mocks.getDb.mockReturnValue({
+      vendorSubscription: { findFirst: vi.fn().mockResolvedValue(null) },
+      salesProject: { findMany: vi.fn().mockResolvedValue([]) },
+      userOnboardingPreference: { findUnique: vi.fn().mockResolvedValue(null) },
+      onboardingTaskState: { findMany: vi.fn().mockResolvedValue([]) },
+      paymentMethodReference: { count: vi.fn().mockResolvedValue(0) },
+      vendorMember: { count: vi.fn().mockResolvedValue(1) },
+      commerceOrder: { count: vi.fn().mockResolvedValue(0) },
+    });
+    const view = await ProtectedLayout({ children: "protected content" });
+    const html = renderToStaticMarkup(view.props.children);
+    expect(html).toContain("請先驗證 Email");
+    expect(html).toContain('href="/verify-email"');
+    expect(html).toContain("protected content");
+  });
+
   it.each(["support", "accountant", "member", null])("does not load manager data for %s", async (role) => {
     mocks.requireVendorContext.mockResolvedValue(context(role));
     mocks.getDb.mockImplementation(() => { throw new Error("Manager data must not be queried"); });

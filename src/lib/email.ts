@@ -165,6 +165,39 @@ export async function sendPasswordResetEmail({
   });
 }
 
+/** Merchant account email verification. The link expires and is bound to this address. */
+export async function sendMerchantEmailVerificationEmail({
+  to,
+  verifyUrl,
+  validHours,
+  idempotencyKey,
+}: {
+  to: string;
+  verifyUrl: string;
+  validHours: number;
+  idempotencyKey?: string;
+}) {
+  const safeTo = escapeHtml(to);
+  const safeUrl = escapeHtml(verifyUrl);
+  return sendTransactionalEmail({
+    to,
+    subject: "CelebrateDeal｜請驗證你的 Email",
+    idempotencyKey,
+    text: `你好，這封信是為了確認 ${to} 是你本人使用的 Email。\n\n請在 ${validHours} 小時內開啟以下連結完成驗證：\n${verifyUrl}\n\n驗證完成後，才能使用「不需發布專案就公開」的名單型網站等功能。連結過期可以登入後台重新寄送。\n\n如果你沒有註冊 CelebrateDeal，請直接忽略這封信。`,
+    html: `
+      <div style="font-family:Arial,sans-serif;line-height:1.7;color:#0f172a">
+        <h2 style="margin:0 0 12px">驗證你的 Email</h2>
+        <p>你好，這封信是為了確認 <strong>${safeTo}</strong> 是你本人使用的 Email。</p>
+        <p>請在 ${validHours} 小時內按下按鈕完成驗證：</p>
+        <p><a href="${safeUrl}" style="display:inline-block;padding:12px 18px;background:#2563eb;color:#fff;text-decoration:none;border-radius:8px;font-weight:600">驗證 Email</a></p>
+        <p style="word-break:break-all;color:#475569">${safeUrl}</p>
+        <p>驗證完成後，才能使用「不需發布專案就公開」的名單型網站等功能。連結過期可以登入後台重新寄送。</p>
+        <p>如果你沒有註冊 CelebrateDeal，請直接忽略這封信。</p>
+      </div>
+    `,
+  });
+}
+
 const VENDOR_MEMBER_ROLE_LABELS: Record<string, string> = {
   owner: "Owner",
   admin: "Admin",

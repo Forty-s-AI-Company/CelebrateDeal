@@ -26,6 +26,8 @@ export const ACCOUNT_RATE_LIMITS = {
   vendor_member_invitation_vendor: { limit: 5, windowMs: 60_000 },
   vendor_member_invitation_recipient: { limit: 3, windowMs: 60 * 60_000 },
   password_reset_request: { limit: 3, windowMs: 15 * 60_000 },
+  // Verification mail per recipient address, the registration send included.
+  merchant_email_verification: { limit: 3, windowMs: 60 * 60_000 },
   login_account: { limit: 10, windowMs: 15 * 60_000 },
   // Failed TOTP/recovery-code verifications per account per day; beyond the
   // limit each further failure locks verification for an hour (#462 m3).
