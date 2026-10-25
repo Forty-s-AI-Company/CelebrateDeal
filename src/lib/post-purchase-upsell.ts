@@ -1,5 +1,6 @@
 import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import { z } from "zod";
+import { DERIVED_KEY_ROTATIONS } from "@/lib/derived-key-rotation";
 import { deriveSensitiveDataKey } from "@/lib/sensitive-data";
 import type { PostPurchaseOffer } from "@/lib/post-purchase-offer";
 import { isPayUniChargeableAmountCents } from "@/lib/payment-providers/payuni-amount";
@@ -90,7 +91,10 @@ export function postPurchaseCheckoutHref(input: { vendorId: string; offer: Pick<
 
 
 const TOKEN_VERSION = "ppu1";
-const TOKEN_PURPOSE = "post-purchase-checkout";
+// Rotated after #485 (tier 2): quotes live ten minutes. A pre-rotation token is
+// refused like a tampered one; an in-flight continuation can still pay through
+// /checkout/recover/<grantId>, which needs no token.
+const TOKEN_PURPOSE = DERIVED_KEY_ROTATIONS.postPurchaseCheckout.current;
 const tokenPart = /^[A-Za-z0-9_-]{1,2048}$/u;
 const tokenSignature = /^[A-Za-z0-9_-]{43}$/u;
 const PostPurchaseCheckoutTokenSchema = z.object({

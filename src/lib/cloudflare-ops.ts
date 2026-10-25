@@ -9,10 +9,13 @@ import {
   getStreamVideoStatus,
 } from "@/lib/cloudflare-stream";
 import { getDb } from "@/lib/db";
-import { decryptSensitiveValue, encryptSensitiveValue } from "@/lib/sensitive-data";
+import { DERIVED_KEY_ROTATIONS, decryptWithRotation, encryptWithRotation, expiryFitsPreRotationIssue } from "@/lib/derived-key-rotation";
+import { encryptSensitiveValue } from "@/lib/sensitive-data";
 
 const CLOUDFLARE_STREAM_KEY_PURPOSE = "cloudflare-live-stream-key";
-const CLOUDFLARE_UPLOAD_TICKET_PURPOSE = "cloudflare-resumable-upload-ticket";
+// Rotated after #485 (tier 3): tickets live seven days, so the legacy key still
+// decrypts until its hard stop in derived-key-purposes.ts.
+const CLOUDFLARE_UPLOAD_TICKET_KEY = DERIVED_KEY_ROTATIONS.cloudflareUploadTicket;
 const RESUMABLE_UPLOAD_TICKET_LIFETIME_MS = 7 * 24 * 60 * 60 * 1000;
 const VIDEO_UPLOAD_TRANSACTION_OPTIONS = {
   maxWait: 5_000,
@@ -216,7 +219,7 @@ export async function createResumableUploadSession(input: z.infer<typeof Resumab
       maxDurationSeconds: input.maxDurationSeconds,
     });
     const videoId = existingVideoId ?? `upload_${randomUUID()}`;
-    const uploadTicket = encryptSensitiveValue(JSON.stringify({
+    const uploadTicket = encryptWithRotation(JSON.stringify({
       version: 1,
       vendorId: input.vendorId,
       videoId,
@@ -225,7 +228,7 @@ export async function createResumableUploadSession(input: z.infer<typeof Resumab
       maxDurationSeconds: input.maxDurationSeconds,
       uid: upload.uid,
       expiresAt: Date.now() + RESUMABLE_UPLOAD_TICKET_LIFETIME_MS,
-    }), CLOUDFLARE_UPLOAD_TICKET_PURPOSE);
+    }), CLOUDFLARE_UPLOAD_TICKET_KEY);
     return { videoId, uploadURL: upload.uploadURL, uploadTicket };
   };
   if (input.videoId) {
@@ -245,7 +248,11 @@ export async function completeResumableUploadMapping({
   let ticket: z.infer<typeof ResumableUploadTicket>;
   try {
     ticket = ResumableUploadTicket.parse(JSON.parse(
-      decryptSensitiveValue(uploadTicket, CLOUDFLARE_UPLOAD_TICKET_PURPOSE),
+      // A legacy-key ticket is accepted only if it could have been issued before the rotation.
+      decryptWithRotation(uploadTicket, CLOUDFLARE_UPLOAD_TICKET_KEY, new Date(), (plaintext) => {
+        const legacy = ResumableUploadTicket.safeParse(JSON.parse(plaintext));
+        return legacy.success && expiryFitsPreRotationIssue(legacy.data.expiresAt, RESUMABLE_UPLOAD_TICKET_LIFETIME_MS);
+      }).plaintext,
     ));
   } catch {
     throw new CloudflareUploadTicketError();

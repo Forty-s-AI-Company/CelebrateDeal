@@ -1,6 +1,7 @@
 import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import { z } from "zod";
 import { getCanonicalAppUrl } from "@/lib/app-url";
+import { DERIVED_KEY_ROTATIONS } from "@/lib/derived-key-purposes";
 import { deriveSensitiveDataKey } from "@/lib/sensitive-data";
 
 /**
@@ -24,11 +25,11 @@ export const MERCHANT_REGISTRATION_INVITE_TTL_MS = MERCHANT_REGISTRATION_INVITE_
 export const MERCHANT_REGISTRATION_INVITE_MAX_LENGTH = 1_024;
 
 const TOKEN_VERSION = "mri1";
-// v2: a fresh label so nothing signed under the earlier one stays valid. This
-// alone does not protect the key: before the CSRF key-separation fix (PR #485)
-// the CSRF fingerprint oracle could derive a key for any purpose string, used
-// or not. Invitations are safe only where #485 is deployed (see O-25).
-const KEY_PURPOSE = "merchant-registration-invite-v2";
+// Rotated after #485 to a name with a random suffix (was "...-v2"): the old
+// CSRF fingerprint oracle could derive a key for any guessable purpose string.
+// No invitation had been issued, so nothing signed under the old name is
+// accepted. Invitations still require #485 to be deployed (see O-25).
+const KEY_PURPOSE = DERIVED_KEY_ROTATIONS.merchantRegistrationInvite.current;
 const PAYLOAD = /^[A-Za-z0-9_-]{1,900}$/u;
 const SIGNATURE = /^[A-Za-z0-9_-]{43}$/u;
 const JTI = /^[A-Za-z0-9_-]{16,64}$/u;

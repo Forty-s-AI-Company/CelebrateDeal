@@ -20,7 +20,7 @@ function csrfSecret() {
 // CSRF_SECRET is also the sensitive-data KDF root, and the session cookie is
 // attacker-controlled. HMAC(root, cookie) would therefore let anyone read
 // derived keys (e.g. cookie "CelebrateDeal:mfa-encryption"). CSRF MACs use
-// deriveCsrfMacKey (KDF purpose "csrf-hmac-v1"), and every message carries a tag so the
+// deriveCsrfMacKey (KDF purpose DERIVED_KEY_ROTATIONS.csrfMac), and every message carries a tag so the
 // fingerprint and token MACs cannot stand in for each other.
 const FINGERPRINT_TAG = "csrf-fp:v1:";
 const TOKEN_TAG = "csrf-token:v1:";

@@ -28,7 +28,7 @@ function decode(token: string) {
 }
 
 /** Re-sign an arbitrary payload with the real derived key, to test payload rules behind a valid signature. */
-function forge(payload: unknown, version = "mri1", keyPurpose = "merchant-registration-invite-v2") {
+function forge(payload: unknown, version = "mri1", keyPurpose = "merchant-registration-invite:r2:9ecb5a622edbf327") {
   const body = `${version}.${Buffer.from(JSON.stringify(payload), "utf8").toString("base64url")}`;
   return `${body}.${createHmac("sha256", deriveSensitiveDataKey(keyPurpose)).update(body).digest("base64url")}`;
 }
@@ -90,6 +90,8 @@ describe("merchant registration invite tokens", () => {
     expect(verifyMerchantRegistrationInvite(forge(payload, "mri1", "form-submission-email-verification"), NOW)).toBeNull();
     // The pre-fix purpose label must never sign a valid invitation.
     expect(verifyMerchantRegistrationInvite(forge(payload, "mri1", "merchant-registration-invite"), NOW)).toBeNull();
+    // The guessable pre-rotation key is not accepted (no invitation was issued under it).
+    expect(verifyMerchantRegistrationInvite(forge(payload, "mri1", "merchant-registration-invite-v2"), NOW)).toBeNull();
     expect(verifyMerchantRegistrationInvite(forge(payload), NOW)).not.toBeNull();
   });
 
@@ -114,7 +116,7 @@ describe("merchant registration invite tokens", () => {
     expect(crypto.timingSafeEqual).not.toHaveBeenCalled();
     // A well-formed body with a valid signature over invalid JSON is still rejected.
     const body = `mri1.${Buffer.from("{not json").toString("base64url")}`;
-    const signed = `${body}.${createHmac("sha256", deriveSensitiveDataKey("merchant-registration-invite-v2")).update(body).digest("base64url")}`;
+    const signed = `${body}.${createHmac("sha256", deriveSensitiveDataKey("merchant-registration-invite:r2:9ecb5a622edbf327")).update(body).digest("base64url")}`;
     expect(verifyMerchantRegistrationInvite(signed, NOW)).toBeNull();
   });
 

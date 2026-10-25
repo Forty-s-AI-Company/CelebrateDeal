@@ -1,11 +1,13 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
+import { DERIVED_KEY_ROTATIONS } from "@/lib/derived-key-rotation";
 import { deriveSensitiveDataKey } from "@/lib/sensitive-data";
 
 export const FORM_SUBMISSION_LINE_BINDING_COOKIE = "celebratedeal_form_submission_line_binding";
 export const FORM_SUBMISSION_LINE_BINDING_TTL_SECONDS = 30 * 60;
 
 const TOKEN_VERSION = "fsl1";
-const TOKEN_PURPOSE = "form-submission-line-binding";
+// Rotated after #485 (tier 2): 30-minute tokens signed with the old key simply expire.
+const TOKEN_PURPOSE = DERIVED_KEY_ROTATIONS.formSubmissionLineBinding.current;
 const SUBMISSION_ID = /^[A-Za-z0-9_-]{1,128}$/u;
 const SIGNATURE = /^[A-Za-z0-9_-]{43}$/u;
 

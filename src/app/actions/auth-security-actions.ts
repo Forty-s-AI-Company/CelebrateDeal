@@ -27,6 +27,8 @@ import {
   verifyRecoveryCodeAsync,
   verifyTotpCode,
 } from "@/lib/mfa";
+import { reencryptLegacyMfaSecret } from "@/lib/mfa-secret-rotation";
+import { captureOperationalError } from "@/lib/monitoring";
 import { hashPasswordAsync, verifyPasswordAsync } from "@/lib/password";
 import { passwordPolicyErrorCode, validateNewPassword } from "@/lib/password-policy";
 import { schedulePasswordResetLink, sendPasswordResetLink } from "@/lib/password-reset";
@@ -281,6 +283,14 @@ export async function verifyMfaAction(formData: FormData) {
     }
   } else {
     await getDb().userMfaFactor.update({ where: { userId: auth.user.id }, data: { lastUsedAt: new Date() } });
+    // Key rotation (B04-03 tier 4): a secret that just verified but is still
+    // in the legacy format is stored again under the current key. A failure
+    // never blocks sign-in; scripts/reencrypt-mfa-secrets.ts catches the rest.
+    try {
+      await reencryptLegacyMfaSecret(getDb(), { userId: auth.user.id, secretEncrypted: auth.user.mfaFactor.secretEncrypted });
+    } catch (error) {
+      captureOperationalError(error, { source: "mfa", operation: "lazy-reencrypt" });
+    }
   }
   await markCurrentSessionMfaVerified();
   await writeAuditLog({

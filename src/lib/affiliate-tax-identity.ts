@@ -36,7 +36,7 @@ export function decryptAffiliateTaxIdentity(envelope: string, scope: AffiliateBa
       return buffer;
     });
     if (decoded[0]!.length !== 12 || decoded[1]!.length !== 16 || decoded[2]!.length < 6 || decoded[2]!.length > 32) throw new Error();
-    const decipher = createDecipheriv("aes-256-gcm", key, decoded[0]!);
+    const decipher = createDecipheriv("aes-256-gcm", key, decoded[0]!, { authTagLength: 16 });
     decipher.setAAD(aad(scope, keyId));
     decipher.setAuthTag(decoded[1]!);
     return Identity.parse(Buffer.concat([decipher.update(decoded[2]!), decipher.final()]).toString("utf8"));

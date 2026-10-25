@@ -31,7 +31,7 @@ function setRequestContext(headerValues: Record<string, string> = {}, sessionVal
 // from the root secret, then tagged messages under that key. The root secret
 // itself never touches the (attacker-controlled) session cookie value.
 function expectedCsrfKey() {
-  return createHmac("sha256", process.env.CSRF_SECRET ?? "").update("CelebrateDeal:csrf-hmac-v1").digest();
+  return createHmac("sha256", process.env.CSRF_SECRET ?? "").update("CelebrateDeal:csrf-hmac:r2:db862e72a7b9a462").digest();
 }
 
 function expectedFingerprint(sessionValue: string) {
@@ -176,6 +176,10 @@ describe("CSRF key separation from the sensitive-data KDF", () => {
     "merchant-registration-invite",
     "merchant-registration-invite-v2",
     "csrf-hmac-v1",
+    // Purposes rotated after #485 (derived-key-purposes.ts).
+    "csrf-hmac:r2:db862e72a7b9a462",
+    "merchant-registration-invite:r2:9ecb5a622edbf327",
+    "merchant-invite-email:r2:bcaa6cb59eb97af3",
   ];
 
   it.each(PURPOSES)("does not hand out the %s key prefix through a crafted session cookie", async (purpose) => {
@@ -197,7 +201,9 @@ describe("CSRF key separation from the sensitive-data KDF", () => {
     const sessionValue = "CelebrateDeal:mfa-encryption";
     setRequestContext({ host: "request.example.test" }, sessionValue);
 
-    expect(expectedCsrfKey().equals(deriveSensitiveDataKey("csrf-hmac-v1"))).toBe(true);
+    expect(expectedCsrfKey().equals(deriveSensitiveDataKey("csrf-hmac:r2:db862e72a7b9a462"))).toBe(true);
+    // The guessable pre-rotation purpose is no longer the CSRF key.
+    expect(deriveCsrfMacKey(process.env.CSRF_SECRET ?? "").equals(deriveSensitiveDataKey("csrf-hmac-v1"))).toBe(false);
     expect(deriveCsrfMacKey(process.env.CSRF_SECRET ?? "").equals(expectedCsrfKey())).toBe(true);
     const csrfValue = await getCsrfToken();
     const [issuedAt, nonce, fingerprint] = csrfValue.split(".");

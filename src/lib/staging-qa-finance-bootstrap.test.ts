@@ -103,7 +103,7 @@ describe("fixed staging QA finance account", () => {
       expect(decryptMfaSecret(factor.secretEncrypted)).toBe(seed);
       const codes = f.tx.userRecoveryCode.createMany.mock.calls[0][0].data as { userId: string; codeHash: string }[];
       expect(codes).toHaveLength(8);
-      expect(codes.every((code) => code.userId === QA_FINANCE_ID && code.codeHash.startsWith("hmac-sha256-v1:"))).toBe(true);
+      expect(codes.every((code) => code.userId === QA_FINANCE_ID && code.codeHash.startsWith("hmac-sha256-v2:"))).toBe(true);
       expect(f.tx.userRecoveryCode.deleteMany).toHaveBeenCalledWith({ where: { userId: QA_FINANCE_ID } });
       expect(f.tx.auditLog.create.mock.calls.map(([call]) => call.data.action)).toEqual(["staging_qa_finance_created", "mfa_enabled"]);
       expect(JSON.stringify(f.tx.auditLog.create.mock.calls)).not.toContain(seed);
