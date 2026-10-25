@@ -9,6 +9,7 @@ import { enabledFeaturesForVendor } from "@/lib/vendor-feature-toggles";
 import { isCardBindingRequired } from "@/lib/feature-gates";
 import { persistTaskPanelCollapsedAction, selectSalesProjectAction } from "@/app/actions/sales-workspace-actions";
 import { evaluateProjectOnboarding, evaluateWorkspaceOnboarding } from "@/lib/sales-workspace";
+import { hasActiveAffiliatePortalAccess } from "@/lib/affiliate-portal";
 
 /** While funnel_binding is closed there is no card to bind; the step counts as satisfied (F-002). */
 function verifiedPaymentMethodCount(vendorId: string, cardBindingRequired: boolean) {
@@ -16,6 +17,9 @@ function verifiedPaymentMethodCount(vendorId: string, cardBindingRequired: boole
 }
 
 /**
+ * Owners only: the banner is about the owner's own account and the vendor's
+ * publish gate, which other roles can neither fix nor act on.
+ *
  * Mirrors the independent-publish gate (`vendorEmailVerificationState`):
  * nothing while the vendor counts as verified. Otherwise the account whose
  * verification counts (the founder, or any unverified viewer when there is no
@@ -32,13 +36,25 @@ async function withEmailVerificationBanner(user: { id: string; emailVerifiedAt: 
   return <>{banner}{children}</>;
 }
 
+/** Per-member shell state: the owner-only banner and this member's own portal grant in this vendor. */
+async function memberShellState(
+  auth: { user: { id: string; emailVerifiedAt: Date | null }; member: { id: string; role: string } | null },
+  vendorId: string,
+  children: React.ReactNode,
+) {
+  if (!auth.member) return { content: children, hasPartnerPortal: false };
+  const content = auth.member.role === "owner" ? await withEmailVerificationBanner(auth.user, vendorId, children) : children;
+  const hasPartnerPortal = await hasActiveAffiliatePortalAccess(getDb(), { vendorId, vendorMemberId: auth.member.id, userId: auth.user.id });
+  return { content, hasPartnerPortal };
+}
+
 export default async function ProtectedLayout({ children }: { children: React.ReactNode }) {
   const { auth, vendor } = await requireVendorContext();
-  const content = await withEmailVerificationBanner(auth.user, vendor.id, children);
+  const { content, hasPartnerPortal } = await memberShellState(auth, vendor.id, children);
   // Only managers may receive project names and onboarding state in client props.
   const isManager = auth.member?.role === "owner" || auth.member?.role === "admin";
   if (!isManager) {
-    return <AppShell vendorName={vendor.name} memberRole={auth.member?.role ?? null} enabledModules={enabledFeaturesForVendor(vendor)} planLabel="工作區">{content}</AppShell>;
+    return <AppShell vendorName={vendor.name} memberRole={auth.member?.role ?? null} enabledModules={enabledFeaturesForVendor(vendor)} planLabel="工作區" hasPartnerPortal={hasPartnerPortal}>{content}</AppShell>;
   }
 
   const activeSubscription = await getDb().vendorSubscription.findFirst({
@@ -84,5 +100,5 @@ export default async function ProtectedLayout({ children }: { children: React.Re
   const guideHidden = Boolean(preference?.guideDismissedAt || (preference?.taskPanelHiddenUntil && preference.taskPanelHiddenUntil > new Date()));
   const projectQuery = selectedProject ? `?projectId=${encodeURIComponent(selectedProject.id)}` : "";
   const onboardingTasks = guideHidden ? [] : taskProgress.tasks.filter((task) => cardBindingRequired || !task.key.includes("payment")).map((task) => ({ key: task.key, title: task.title, status: task.status, scopeKey: selectedProject?.id ?? "workspace", required: task.required, estimateMinutes: task.estimatedMinutes, impact: task.impact, href: task.key === "project_publish" && selectedProject ? `/projects/${encodeURIComponent(selectedProject.id)}` : task.key.includes("payment") ? "/billing/payment-methods" : task.key.includes("logo") || task.key.includes("profile") || task.key.includes("support") ? "/settings/brand" : task.key.includes("team") ? "/settings/team" : task.key.includes("product") || task.key.includes("price") ? `/products/new${projectQuery}` : task.key.includes("funnel") ? `/forms/new${projectQuery}` : task.key.includes("live") ? `/lives/new${projectQuery}` : task.key.includes("consultation") || task.key.includes("availability") ? "/consultations" : "/onboarding" }));
-  return <AppShell vendorName={vendor.name} memberRole={auth.member?.role ?? null} enabledModules={enabledFeaturesForVendor(vendor)} planLabel={activeSubscription?.plan.name ?? "Free"} projects={projects} selectedProjectId={selectedProject?.id ?? null} onboardingTasks={onboardingTasks} taskPanelCollapsed={preference?.taskPanelCollapsed ?? true} selectProject={selectSalesProjectAction} persistTaskPanelCollapsed={persistTaskPanelCollapsedAction}>{content}</AppShell>;
+  return <AppShell vendorName={vendor.name} memberRole={auth.member?.role ?? null} enabledModules={enabledFeaturesForVendor(vendor)} planLabel={activeSubscription?.plan.name ?? "Free"} hasPartnerPortal={hasPartnerPortal} projects={projects} selectedProjectId={selectedProject?.id ?? null} onboardingTasks={onboardingTasks} taskPanelCollapsed={preference?.taskPanelCollapsed ?? true} selectProject={selectSalesProjectAction} persistTaskPanelCollapsed={persistTaskPanelCollapsedAction}>{content}</AppShell>;
 }

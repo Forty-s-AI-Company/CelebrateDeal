@@ -11,6 +11,7 @@ import { passwordPolicyErrorCode, validateNewPassword } from "@/lib/password-pol
 import { merchantRegistrationPolicyVersions } from "@/lib/public-policy-content";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { acceptVendorMemberInvitation, findPendingVendorMemberInvitation } from "@/lib/vendor-member-invitation";
+import { isVendorPartnerRole, PARTNER_PORTAL_PATH } from "@/lib/vendor-roles";
 
 function text(formData: FormData, key: string) {
   const value = formData.get(key);
@@ -69,5 +70,6 @@ export async function acceptVendorMemberInvitationAction(formData: FormData) {
 
   const result = await acceptVendorMemberInvitation(getDb(), { token, actorUserId: auth?.user.id ?? null, newAccount });
   if (!result.ok) redirect(acceptPath(token, result.reason));
-  redirect(result.createdAccount ? "/login?invited=1" : "/dashboard");
+  // A partner membership never opens the merchant back office (see auth.chooseVendor).
+  redirect(result.createdAccount ? "/login?invited=1" : isVendorPartnerRole(result.role) ? PARTNER_PORTAL_PATH : "/dashboard");
 }

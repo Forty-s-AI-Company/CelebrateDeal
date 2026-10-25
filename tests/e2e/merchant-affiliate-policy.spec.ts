@@ -19,9 +19,10 @@ test("manager publishes tiers; original checkout survives policy edit; partner r
   const product = await db.product.create({ data: { vendorId: vendor.id, name: "合成階梯商品", slug: suffix, priceCents: 10000, currency: "TWD", inventory: 10, commerceDomain: "merchant", fulfillmentType: "physical" } });
   const staleContext = await browser.newContext(), partnerContext = await browser.newContext();
   const stale = await staleContext.newPage(), partnerPage = await partnerContext.newPage();
-  async function login(target: typeof page, email: string) {
+  // Partners land on the partner portal; they never get the merchant back office.
+  async function login(target: typeof page, email: string, home: RegExp = /\/dashboard$/) {
     await target.goto(`${baseURL}/login`); await target.getByLabel("Email").fill(email); await target.getByLabel("密碼").fill(password);
-    await target.getByRole("button", { name: "登入", exact: true }).click(); await expect(target).toHaveURL(/\/dashboard$/);
+    await target.getByRole("button", { name: "登入", exact: true }).click(); await expect(target).toHaveURL(home);
   }
   async function checkout() {
     const key = randomUUID();
@@ -55,13 +56,13 @@ test("manager publishes tiers; original checkout survives policy edit; partner r
     expect((await db.affiliateCommission.findMany({ where: { vendorId: vendor.id }, orderBy: { commissionAmountCents: "asc" } })).map(item => item.commissionAmountCents)).toEqual([1000, 2000]);
     await page.goto(`/affiliates/${affiliate.id}/access`); await page.getByLabel("授權成員", { exact: true }).selectOption(partner.memberships[0]!.id); await page.getByRole("button", { name: "儲存入口授權", exact: true }).click();
     await expect(page.getByText("夥伴入口授權已儲存。", { exact: true })).toBeVisible();
-    await login(partnerPage, partner.email); const statement = `/affiliate-portal/${vendor.slug}/${affiliate.id}`; await partnerPage.goto(statement);
+    await login(partnerPage, partner.email, /\/affiliate-portal$/); const statement = `/affiliate-portal/${vendor.slug}/${affiliate.id}`; await partnerPage.goto(statement);
     await expect(partnerPage.locator('[aria-label="佣金帳本淨額"]')).toHaveText(`帳本淨額：${formatCurrency(3000)}`);
     await processPaymentWebhook(PaymentWebhookPayload.parse({ provider: "demo", vendorId: vendor.id, eventId: randomUUID(), orderNumber: payments[1]!.orderNumber, eventType: "partially_refunded", grossAmountCents: 10000, refundAmountCents: 5000, currency: "TWD", occurredAt: "2026-10-06T02:00:00Z" }));
     await partnerPage.reload(); await expect(partnerPage.locator('[aria-label="佣金帳本淨額"]')).toHaveText(`帳本淨額：${formatCurrency(2000)}`);
     await processPaymentWebhook(PaymentWebhookPayload.parse({ provider: "demo", vendorId: vendor.id, eventId: randomUUID(), orderNumber: payments[1]!.orderNumber, eventType: "paid", grossAmountCents: 10000, currency: "TWD", occurredAt: "2026-10-06T03:00:00Z" }));
     expect((await db.paymentTransaction.findUniqueOrThrow({ where: { id: payments[1]!.id } })).status).toBe("partially_refunded");
-    await partnerPage.goto("/affiliates/policy"); await expect(partnerPage).toHaveURL(/\/dashboard\?error=insufficient_role$/);
+    await partnerPage.goto("/affiliates/policy"); await expect(partnerPage).toHaveURL(/\/affiliate-portal$/);
     expect((await db.merchantAffiliateSalesCounter.findUniqueOrThrow({ where: { vendorId_affiliateId: { vendorId: vendor.id, affiliateId: affiliate.id } } })).quantity).toBe(BigInt(2));
     // Two real successive submissions retain controlled policy fields without a reload.
     await page.goto("/affiliates/policy");

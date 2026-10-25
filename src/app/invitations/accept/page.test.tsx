@@ -53,6 +53,11 @@ describe("/invitations/accept", () => {
     expect(html).not.toContain("接受邀請");
   });
 
+  it.each([["accountant", "Accountant（財務）"], ["partner", "夥伴"]])("names the invited %s role in words", async (role, label) => {
+    mocks.findInvitation.mockResolvedValue({ ...invitation, role });
+    expect(await render()).toContain(`角色：${label}。`);
+  });
+
   it("offers account creation with policy consent for an address without an account", async () => {
     const html = await render();
     expect(html).toContain("加入 測試商家");

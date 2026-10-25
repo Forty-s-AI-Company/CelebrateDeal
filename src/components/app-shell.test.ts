@@ -37,9 +37,9 @@ function linksFor(role: string | null, isPlatformAdmin = false, enabledModules?:
   return navigationForRole(role, isPlatformAdmin, enabledModules).flatMap((group) => group.items.map((item) => item.href));
 }
 
-function renderShell({ memberRole, isPlatformAdmin = false, vendorName = "測試商家" }: { memberRole: string | null; isPlatformAdmin?: boolean; vendorName?: string }) {
+function renderShell({ memberRole, isPlatformAdmin = false, vendorName = "測試商家", hasPartnerPortal }: { memberRole: string | null; isPlatformAdmin?: boolean; vendorName?: string; hasPartnerPortal?: boolean }) {
   formStatuses.cursor = 0;
-  const props = { memberRole, isPlatformAdmin, vendorName } as Parameters<typeof AppShell>[0];
+  const props = { memberRole, isPlatformAdmin, vendorName, ...(hasPartnerPortal === undefined ? {} : { hasPartnerPortal }) } as Parameters<typeof AppShell>[0];
   return renderToStaticMarkup(createElement(AppShell, props, createElement("p", null, "shell content") as ReactNode));
 }
 
@@ -228,6 +228,42 @@ describe("AppShell role navigation", () => {
     expect(html).not.toContain('href="/dashboard"');
     expect(html).not.toContain('href="/orders"');
     expect(html).not.toContain('href="/billing/invoices"');
+  });
+});
+
+describe("AppShell partner portal entry", () => {
+  const portalLinks = (role: string | null, hasPartnerPortal: boolean, isPlatformAdmin = false) =>
+    navigationForRole(role, isPlatformAdmin, undefined, { hasPartnerPortal }).flatMap((group) => group.items.map((item) => item.href));
+
+  it("gives a partner nothing but the partner portal", () => {
+    expect(portalLinks("partner", false)).toEqual(["/affiliate-portal"]);
+    expect(portalLinks("partner", true)).toEqual(["/affiliate-portal"]);
+    const html = renderShell({ memberRole: "partner" });
+    expect(html).toContain('href="/affiliate-portal"');
+    for (const href of ["/dashboard", "/support-cases", "/settings/security", "/orders", "/affiliates", "/billing/usage", "/partner-pages"]) {
+      expect(html).not.toContain(`href="${href}"`);
+    }
+    expect(html).toContain("夥伴");
+  });
+
+  it.each(["owner", "admin", "accountant", "support"])("adds the portal for a %s only with a valid grant", (role) => {
+    expect(portalLinks(role, false)).not.toContain("/affiliate-portal");
+    expect(portalLinks(role, true)).toContain("/affiliate-portal");
+    expect(renderShell({ memberRole: role })).not.toContain('href="/affiliate-portal"');
+    expect(renderShell({ memberRole: role, hasPartnerPortal: false })).not.toContain('href="/affiliate-portal"');
+    expect(renderShell({ memberRole: role, hasPartnerPortal: true })).toContain('href="/affiliate-portal"');
+  });
+
+  it("keeps support's queue and adds only the portal next to it", () => {
+    expect(portalLinks("support", true)).toEqual(["/support-cases", "/settings/security", "/affiliate-portal"]);
+  });
+
+  it("adds only the portal for a legacy role with a grant, and nothing without a member or for the platform administrator", () => {
+    // Legacy roles keep their (empty) back-office navigation; the grant adds just the portal.
+    expect(portalLinks("member", false)).toEqual([]);
+    expect(portalLinks("member", true)).toEqual(["/affiliate-portal"]);
+    expect(portalLinks(null, true)).toEqual([]);
+    expect(portalLinks(null, true, true)).not.toContain("/affiliate-portal");
   });
 });
 

@@ -26,6 +26,9 @@ vi.mock("@/lib/password", () => ({
 }));
 
 import {
+  requireVendor,
+  requireVendorContext,
+  requireVendorOwner,
   authenticateUser,
   createUserSession,
   createWp4PreviewMfaVerifiedSession,
@@ -434,5 +437,114 @@ describe("requireVendorFinance", () => {
     await expect(requireVendorOwnerFinance()).rejects.toThrow(
       "redirect:/settings/security?error=owner_required",
     );
+  });
+});
+
+function membership(id: string, vendorId: string, role: string, createdAt: string, status = "active") {
+  return { id, vendorId, role, status, createdAt: new Date(createdAt), vendor: { id: vendorId, name: vendorId, tracking: null } };
+}
+
+function sessionWithMemberships(memberships: ReturnType<typeof membership>[], sessionVendorId: string | null, mfa: { mfaFactor?: { id: string } | null; mfaVerifiedAt?: Date | null } = {}) {
+  return {
+    id: "session-1",
+    vendorId: sessionVendorId,
+    revokedAt: null,
+    expiresAt: new Date("2099-01-01T00:00:00.000Z"),
+    mfaVerifiedAt: "mfaVerifiedAt" in mfa ? mfa.mfaVerifiedAt : new Date("2026-07-21T00:00:00.000Z"),
+    vendor: null,
+    user: { id: "user-1", status: "active", platformRole: "none", memberships, mfaFactor: "mfaFactor" in mfa ? mfa.mfaFactor : { id: "mfa-1" }, recoveryCodes: [] },
+  };
+}
+
+describe("vendor partner role boundary", () => {
+  const partnerOnly = () => sessionWithMemberships([membership("member-p", "vendor-1", "partner", "2026-01-01T00:00:00Z")], "vendor-1");
+
+  it("never turns a partner membership into the vendor context, even when the session names it", async () => {
+    mocks.findSession.mockResolvedValue(partnerOnly());
+
+    await expect(getCurrentAuth()).resolves.toMatchObject({ vendor: null, member: null, partnerPortalOnly: true, user: { id: "user-1" } });
+    // The partner portal guard (requireAuth) still accepts the account.
+    await expect(requireAuth({ nextPath: "/affiliate-portal" })).resolves.toMatchObject({ partnerPortalOnly: true });
+  });
+
+  it.each([
+    ["requireVendorContext", () => requireVendorContext()],
+    ["requireVendor", () => requireVendor()],
+    ["requireVendorManager", () => requireVendorManager()],
+    ["requireVendorManagerContext", () => requireVendorManagerContext()],
+    ["requireVendorManagerMember", () => requireVendorManagerMember()],
+    ["requireVendorSupportContext", () => requireVendorSupportContext()],
+    ["requireVendorSupportMember", () => requireVendorSupportMember()],
+    ["requireVendorFinance", () => requireVendorFinance()],
+    ["requireVendorOwnerFinance", () => requireVendorOwnerFinance()],
+    ["requireVendorOwner", () => requireVendorOwner()],
+  ])("%s sends a partner to the partner portal", async (_name, guard) => {
+    mocks.findSession.mockResolvedValue(partnerOnly());
+
+    await expect(guard()).rejects.toThrow("redirect:/affiliate-portal");
+    expect(mocks.redirect).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps the platform finance area closed to partners", async () => {
+    mocks.findSession.mockResolvedValue(partnerOnly());
+    await expect(requireFinanceAdmin()).rejects.toThrow("redirect:/dashboard");
+  });
+
+  it("verifies an enrolled partner's MFA before the portal", async () => {
+    mocks.findSession.mockResolvedValue(sessionWithMemberships([membership("member-p", "vendor-1", "partner", "2026-01-01T00:00:00Z")], "vendor-1", { mfaVerifiedAt: null }));
+
+    await expect(getCurrentAuth()).resolves.toBeNull();
+    await expect(requireAuth()).rejects.toThrow("redirect:/mfa/verify?next=%2Faffiliate-portal");
+    await expect(requireVendorContext()).rejects.toThrow("redirect:/mfa/verify?next=%2Faffiliate-portal");
+  });
+
+  it("selects the back-office membership of an account that is a partner elsewhere", async () => {
+    // Partner in vendor-1 (older, and named by the session), support in vendor-2.
+    mocks.findSession.mockResolvedValue(sessionWithMemberships([
+      membership("member-p", "vendor-1", "partner", "2026-01-01T00:00:00Z"),
+      membership("member-s", "vendor-2", "support", "2026-02-01T00:00:00Z"),
+    ], "vendor-1"));
+
+    await expect(getCurrentAuth()).resolves.toMatchObject({ vendor: { id: "vendor-2" }, member: { id: "member-s", role: "support" }, partnerPortalOnly: false });
+    await expect(requireVendorSupportContext()).resolves.toMatchObject({ vendor: { id: "vendor-2" } });
+  });
+
+  it.each(["member", "editor", "manager"])("keeps a legacy or unknown %s role as the vendor context for the role guards to judge", async (role) => {
+    mocks.findSession.mockResolvedValue(sessionWithMemberships([membership("member-x", "vendor-1", role, "2026-01-01T00:00:00Z")], "vendor-1"));
+
+    await expect(getCurrentAuth()).resolves.toMatchObject({ vendor: { id: "vendor-1" }, member: { role }, partnerPortalOnly: false });
+    await expect(requireVendorContext()).resolves.toMatchObject({ vendor: { id: "vendor-1" } });
+    await expect(requireVendorManagerContext()).rejects.toThrow("redirect:/dashboard?error=insufficient_role");
+  });
+
+  it("prefers a legacy role over a partner membership elsewhere", async () => {
+    mocks.findSession.mockResolvedValue(sessionWithMemberships([
+      membership("member-p", "vendor-1", "partner", "2026-01-01T00:00:00Z"),
+      membership("member-x", "vendor-2", "member", "2026-02-01T00:00:00Z"),
+    ], "vendor-1"));
+
+    await expect(getCurrentAuth()).resolves.toMatchObject({ vendor: { id: "vendor-2" }, member: { role: "member" }, partnerPortalOnly: false });
+  });
+
+  it("does not treat an inactive partner membership as portal-only", async () => {
+    mocks.findSession.mockResolvedValue(sessionWithMemberships([membership("member-p", "vendor-1", "partner", "2026-01-01T00:00:00Z", "inactive")], "vendor-1"));
+
+    await expect(getCurrentAuth()).resolves.toMatchObject({ vendor: null, partnerPortalOnly: false });
+    await expect(requireVendorContext()).rejects.toThrow("redirect:/login?error=no_vendor");
+  });
+
+  it("authenticates a partner-only account for the portal and names the partner vendor for its session", async () => {
+    mocks.verifyPasswordAsync.mockResolvedValue(true);
+    mocks.findUser.mockResolvedValue({
+      id: "user-1", status: "active", platformRole: "none", passwordHash: "scrypt:stored",
+      memberships: [membership("member-p", "vendor-1", "partner", "2026-01-01T00:00:00Z")], mfaFactor: null, recoveryCodes: [],
+    });
+    await expect(authenticateUser("partner@example.test", "candidate")).resolves.toMatchObject({ vendor: null, member: null, partnerPortalOnly: true, partnerVendorId: "vendor-1" });
+
+    mocks.findUser.mockResolvedValue({
+      id: "user-1", status: "active", platformRole: "none", passwordHash: "scrypt:stored",
+      memberships: [membership("member-p", "vendor-1", "partner", "2026-01-01T00:00:00Z"), membership("member-o", "vendor-2", "owner", "2026-02-01T00:00:00Z")], mfaFactor: null, recoveryCodes: [],
+    });
+    await expect(authenticateUser("partner@example.test", "candidate")).resolves.toMatchObject({ vendor: { id: "vendor-2" }, member: { role: "owner" }, partnerPortalOnly: false, partnerVendorId: null });
   });
 });

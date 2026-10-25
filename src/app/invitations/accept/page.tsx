@@ -7,8 +7,8 @@ import { getDb } from "@/lib/db";
 import { PASSWORD_HINT, PASSWORD_MAX_LENGTH, PASSWORD_MIN_LENGTH, PASSWORD_POLICY_MESSAGES } from "@/lib/password-policy";
 import { merchantRegistrationPolicyVersions } from "@/lib/public-policy-content";
 import { findPendingVendorMemberInvitation } from "@/lib/vendor-member-invitation";
+import { vendorMemberRoleLabel } from "@/lib/vendor-roles";
 
-const roleLabels: Record<string, string> = { owner: "Owner", admin: "Admin", accountant: "Accountant（財務）", support: "Support（客服）" };
 
 const errorMessages: Record<string, string> = {
   invalid: "邀請連結無效、已使用或已過期。請向商家索取新的邀請。",
@@ -75,7 +75,7 @@ export default async function AcceptVendorInvitationPage({
     <>
       <h1 className="mt-2 text-2xl font-semibold text-slate-950">加入 {invitation.vendor.name}</h1>
       <p className="mt-2 text-sm text-slate-600">
-        受邀 Email：<span className="font-semibold text-slate-900">{invitation.email}</span>，角色：{roleLabels[invitation.role] ?? invitation.role}。接受後才會加入，連結在 {invitation.expiresAt.toLocaleString("zh-TW", { timeZone: "Asia/Taipei" })} 前有效。
+        受邀 Email：<span className="font-semibold text-slate-900">{invitation.email}</span>，角色：{vendorMemberRoleLabel(invitation.role)}。接受後才會加入，連結在 {invitation.expiresAt.toLocaleString("zh-TW", { timeZone: "Asia/Taipei" })} 前有效。
       </p>
       {error}
     </>
