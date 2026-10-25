@@ -5,7 +5,7 @@ export const FORM_SUBMISSION_CHAT_SESSION_TTL_SECONDS = 30 * 24 * 60 * 60;
 
 const TOKEN_VERSION = "fss1";
 // Rotated after #485 (tier 3): the cookie lives 30 days, so the legacy key
-// still verifies until its hard stop in derived-key-rotation.ts.
+// still verifies until its hard stop in derived-key-purposes.ts.
 const TOKEN_KEY = DERIVED_KEY_ROTATIONS.formSubmissionChatSession;
 const MAX_TOKEN_LENGTH = 320;
 const SUBMISSION_ID = /^[A-Za-z0-9_-]{1,128}$/u;

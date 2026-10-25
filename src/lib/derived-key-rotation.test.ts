@@ -20,6 +20,7 @@ import {
   type DerivedKeyRotation,
 } from "@/lib/derived-key-rotation";
 import { createEmailUnsubscribeToken, verifyEmailUnsubscribeToken } from "@/lib/email-delivery-pii";
+import { merchantInviteEmailHash } from "@/lib/merchant-registration-invite-records";
 import { createFormSubmissionChatSessionToken, verifyFormSubmissionChatSessionToken } from "@/lib/form-submission-chat-session";
 import { createFormSubmissionLineBindingToken, verifyFormSubmissionLineBindingToken } from "@/lib/form-submission-line-binding-session";
 import { createFormSubmissionVerificationToken, verifyFormSubmissionVerificationToken } from "@/lib/form-submission-verification";
@@ -93,7 +94,7 @@ describe("rotation registry", () => {
 
   it("keeps tier 2 rotations without a legacy key", () => {
     for (const name of [
-      "checkoutAdmission", "formSubmissionLineBinding", "studentPortalAccessToken", "liveViewerPass",
+      "csrfMac", "merchantRegistrationInvite", "merchantInviteEmailHash", "checkoutAdmission", "formSubmissionLineBinding", "studentPortalAccessToken", "liveViewerPass",
       "liveChatCursor", "livePrivateChatCursor", "postPurchaseCheckout", "registrationSubmissionResult",
     ] as const) {
       expect(DERIVED_KEY_ROTATIONS[name].legacy, name).toBeNull();
@@ -206,6 +207,13 @@ describe("tier 2: short-lived tokens move to the new key and old ones are refuse
     expect(verifyPostPurchaseCheckoutToken(legacy, now)).toBeNull();
     expect(verifyPostPurchaseCheckoutToken(legacy, now, { allowExpired: true })).toBeNull();
     expect(verifyPostPurchaseCheckoutToken(tamper(token), now)).toBeNull();
+  });
+
+  it("merchant invitation audit e-mail hash uses the rotated key", () => {
+    const hashUnder = (purpose: string) => createHmac("sha256", deriveSensitiveDataKey(purpose)).update("owner@example.test").digest("base64url");
+
+    expect(merchantInviteEmailHash(" Owner@Example.test ")).toBe(hashUnder("merchant-invite-email:r2:bcaa6cb59eb97af3"));
+    expect(merchantInviteEmailHash("owner@example.test")).not.toBe(hashUnder("merchant-invite-email-v1"));
   });
 
   it("registration submission receipt", () => {

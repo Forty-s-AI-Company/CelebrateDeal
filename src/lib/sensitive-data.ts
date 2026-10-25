@@ -1,11 +1,13 @@
 import { createCipheriv, createDecipheriv, createHmac, randomBytes } from "node:crypto";
+import { DERIVED_KEY_ROTATIONS } from "@/lib/derived-key-purposes";
 
 const ENVELOPE_VERSION = "v1";
 export const MINIMUM_ENCRYPTION_SECRET_BYTES = 32;
 
 /** Every KDF input begins with this tag; see deriveKeyFromRootSecret. */
 const SENSITIVE_DATA_KDF_PREFIX = "CelebrateDeal:";
-const CSRF_MAC_KEY_PURPOSE = "csrf-hmac-v1";
+// Rotated after #485 (was "csrf-hmac-v1"); see derived-key-purposes.ts.
+const CSRF_MAC_KEY_PURPOSE = DERIVED_KEY_ROTATIONS.csrfMac.current;
 
 /**
  * KDF: HMAC-SHA256(root, "CelebrateDeal:" + purpose). Module-private on purpose.
@@ -25,7 +27,7 @@ function deriveKeyFromRootSecret(rootSecret: string, purpose: string) {
 }
 
 /**
- * The CSRF MAC key: the KDF output for purpose "csrf-hmac-v1" under the CSRF
+ * The CSRF MAC key: the KDF output for the csrfMac purpose under the CSRF
  * root secret. It takes the root explicitly because CSRF keeps its own
  * non-production fallback secret, which is shorter than the 32-byte minimum
  * deriveSensitiveDataKey enforces. Only src/lib/csrf.ts may import this.

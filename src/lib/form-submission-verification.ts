@@ -2,7 +2,7 @@ import { DERIVED_KEY_ROTATIONS, signWithRotation, verifyWithRotation } from "@/l
 
 const TOKEN_VERSION = "fsv1";
 // Rotated after #485 (tier 3): links live 48 hours, so the legacy key still
-// verifies until its hard stop in derived-key-rotation.ts.
+// verifies until its hard stop in derived-key-purposes.ts.
 const TOKEN_KEY = DERIVED_KEY_ROTATIONS.formSubmissionEmailVerification;
 const SUBMISSION_ID = /^[A-Za-z0-9_-]{1,128}$/u;
 const TOKEN_SIGNATURE = /^[A-Za-z0-9_-]{43}$/u;

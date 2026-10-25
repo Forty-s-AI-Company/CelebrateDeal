@@ -8,7 +8,7 @@ export const VISITOR_COOKIE = "celebratedeal_visitor";
 export const ATTRIBUTION_TTL_SECONDS = 60 * 60 * 24 * 30;
 const ATTRIBUTION_COOKIE_VERSION = "ta1";
 // Rotated after #485 (tier 3): the cookie lives 30 days, so the legacy key
-// still verifies until its hard stop in derived-key-rotation.ts.
+// still verifies until its hard stop in derived-key-purposes.ts.
 const ATTRIBUTION_COOKIE_KEY = DERIVED_KEY_ROTATIONS.teamFunnelAttributionCookie;
 const MAX_ATTRIBUTION_COOKIE_LENGTH = 700;
 const ATTRIBUTION_PAYLOAD_PATTERN = /^[A-Za-z0-9_-]{1,512}$/u;

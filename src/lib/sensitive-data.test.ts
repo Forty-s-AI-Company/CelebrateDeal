@@ -57,7 +57,7 @@ describe("deriveSensitiveDataKey compatibility", () => {
     ["public-checkout-admission", "23ab20a36125cd00c78d464aa9a06fc0cdcdc59c333ad3616567cbeb7bd79b78"],
     ["merchant-registration-invite", "a1aa5eb2c893bc38e1efe443a2842721b2c8baaffa780b202df37d1325768d92"],
     ["merchant-registration-invite-v2", "9e2ff4671f0dd4759a0905a0d9bfdbc1a9fa1b8dcb41fa8571f404f2e71ed9cf"],
-    // Legacy purposes that B04-03 rotation still reads (derived-key-rotation.ts).
+    // Legacy purposes that B04-03 rotation still reads (derived-key-purposes.ts).
     ["form-submission-line-binding", "7ed8eaba8b3fd6cc11cb2695500fc35fd21dbf669532b2ebf7d8ea52d5335157"],
     ["live-viewer-pass", "3763e8220397c1ad3744e980193bfb652b97931a37f041204b0816e1e7112f66"],
     ["live-chat-cursor", "93bf7f10c14e3650e9b0b28b83aab87d9afe4a82a57e961c9eb20f0f129f86ef"],
@@ -88,6 +88,9 @@ describe("deriveSensitiveDataKey compatibility", () => {
     ["cloudflare-resumable-upload-ticket:r2:615079db018ccd08", "29626a3be676f85fc8c5b4dede13877a30c4dbde04bcef0d2576e2b21bc82194"],
     ["mfa-encryption:r2:69a113bdb66c7a1e", "254be5b83aa252e7bf87d31f5795eaf50fce89b1f1d0738751555359f3f97666"],
     ["mfa-recovery-code-authentication:r2:0d054e31e6b4e6a2", "34b2790668c742ab520969114247b2d30a9e56083dce1ab7f14b35a2269520fb"],
+    ["csrf-hmac:r2:db862e72a7b9a462", "097167103f585faebe8ad2d1972b3bdd9561a4df648160050db8527da34e60c4"],
+    ["merchant-registration-invite:r2:9ecb5a622edbf327", "037c93c337f506df35369ee565130db93da60a28b13561e883ecc63950ef30ee"],
+    ["merchant-invite-email:r2:bcaa6cb59eb97af3", "40d60f1b71e1c9d7f0b61384c6749b49b404356c08691d5966edd9bb693eddaf"],
   ];
 
   it.each(GOLDEN_KEYS)("keeps the %s key byte-identical", (purpose, expectedHex) => {

@@ -123,27 +123,30 @@ RUN_DEMO_PAYMENT_WEBHOOK_SMOKE=true SMOKE_VENDOR_SLUG=your-vendor npm run extern
 3. **備份必須一併保存對應版本**：每一份資料庫備份都要能對應到「備份當下」的 `CSRF_SECRET`（必要時含 `JOB_SECRET`）。金鑰存放在與備份分開的密碼管理器，記錄「哪一段期間的備份對應哪一版」；不得與備份檔放在同一處，不得寫進 repo、log、收據或聊天。
 4. **還原時缺它，加密資料全部不可讀**：資料表與筆數都會還原成功，但所有加密欄位與雜湊查詢失效，等同遺失個資與 MFA。隔離還原演練必須用對應版本的金鑰抽查加密欄位可讀，見 `docs/production-backup-restore-runbook.md` §B 第 6 步與 §E。
 5. staging 與 production 必須使用不同值；staging 值外洩不影響 production 資料。
-6. **根金鑰只能用在 KDF（domain separation）**：根金鑰（`CSRF_SECRET`，或退回時的 `JOB_SECRET`）只能出現在 `deriveKeyFromRootSecret()`，也就是 `HMAC(root, "CelebrateDeal:" + purpose)`。任何其他 HMAC／雜湊都必須先用自己的 purpose 衍生金鑰，再在該金鑰下計算，並在訊息前加固定標籤。**絕對不可直接用根金鑰 HMAC 攻擊者可控的輸入**（cookie、header、表單值、URL）：只要輸出會回到使用者手上，攻擊者送出 `CelebrateDeal:<purpose>` 就能讀到該用途的衍生金鑰。2026-10-25 前的 CSRF fingerprint 就是這個漏洞（`HMAC(CSRF_SECRET, session cookie)`），現已改為 `csrf-hmac-v1` 衍生金鑰＋`csrf-fp:v1:`／`csrf-token:v1:` 標籤；修正後部署時，既有 CSRF token（最長 2 小時）會失效，行為與 token 過期相同。`deriveSensitiveDataKey()` 的輸出不得改變，`src/lib/sensitive-data.test.ts` 以合成秘密的 golden 值鎖住既有用途；`src/lib/sensitive-data-root-key-boundary.test.ts` 確保通用 KDF helper 不外露，且只有 `csrf.ts` 使用 `deriveCsrfMacKey()`。
+6. **根金鑰只能用在 KDF（domain separation）**：根金鑰（`CSRF_SECRET`，或退回時的 `JOB_SECRET`）只能出現在 `deriveKeyFromRootSecret()`，也就是 `HMAC(root, "CelebrateDeal:" + purpose)`。任何其他 HMAC／雜湊都必須先用自己的 purpose 衍生金鑰，再在該金鑰下計算，並在訊息前加固定標籤。**絕對不可直接用根金鑰 HMAC 攻擊者可控的輸入**（cookie、header、表單值、URL）：只要輸出會回到使用者手上，攻擊者送出 `CelebrateDeal:<purpose>` 就能讀到該用途的衍生金鑰。2026-10-25 前的 CSRF fingerprint 就是這個漏洞（`HMAC(CSRF_SECRET, session cookie)`），現已改為 CSRF 專用衍生金鑰（#485 時為 `csrf-hmac-v1`，2026-10-25 起為 `csrf-hmac:r2:…`，見第 7 點）＋`csrf-fp:v1:`／`csrf-token:v1:` 標籤；修正後部署時，既有 CSRF token（最長 2 小時）會失效，行為與 token 過期相同。`deriveSensitiveDataKey()` 的輸出不得改變，`src/lib/sensitive-data.test.ts` 以合成秘密的 golden 值鎖住既有用途；`src/lib/sensitive-data-root-key-boundary.test.ts` 確保通用 KDF helper 不外露，且只有 `csrf.ts` 使用 `deriveCsrfMacKey()`。
    - **修正前的曝露無法偵測**：任何人都可能已從公開頁取得各用途衍生金鑰的前 192 bits，且不會留下可辨識的紀錄，因此應視為可能已外洩。
    - **依用途輪替，絕不為此輪替根金鑰 `CSRF_SECRET`**（換根金鑰會讓所有密文失效，見第 1 點）。優先順序併入 keyring 工作 B04-03 追蹤：
-     1. 第 1 級：尚未正式使用的用途直接改名，例如商家邀請改用 `merchant-registration-invite-v2`。
+     1. 第 1 級：尚未正式使用的用途直接改名，例如商家邀請（先改為 `merchant-registration-invite-v2`，2026-10-25 再改為帶隨機後綴的名稱，見第 7 點）。
      2. 第 2 級：短效公開 bearer token，例如 `public-checkout-admission`、`form-submission-email-verification`、`form-submission-chat-session`、`form-submission-line-binding`。
      3. 第 3 級：長效連結，需要新舊兩版並行驗證，例如 `email-delivery-unsubscribe`、`student-portal-access-token-v1`、`automation-voucher-bearer-v1`、`team-funnel-attribution-cookie`。
      4. 第 4 級：加密與雜湊索引金鑰，需要 re-encrypt migration，先處理 MFA，再處理 PII。
    - 第 2～4 級（MFA）已於 2026-10-25 實作，見第 7 點。
 
-7. **2026-10-25 依用途輪替（B04-03）**：新舊名稱、舊鑰停用日都集中在 `src/lib/derived-key-rotation.ts` 的 `DERIVED_KEY_ROTATIONS`。根金鑰不變，舊用途的衍生金鑰也不變（golden test 鎖住），所以既有密文與連結照常可讀。
+7. **2026-10-25 依用途輪替（B04-03）**：新舊名稱、舊鑰停用日都集中在 `src/lib/derived-key-purposes.ts` 的 `DERIVED_KEY_ROTATIONS`（不 import 任何模組，讓 `sensitive-data.ts` 也能讀取；驗證與解密 helper 在 `src/lib/derived-key-rotation.ts`）。根金鑰不變，舊用途的衍生金鑰也不變（golden test 鎖住），所以既有密文與連結照常可讀。
 
    **前提與部署順序**
 
    - 舊 oracle 對**任何字串**都會回答，所以新名稱一律帶隨機後綴（`<舊名>:r2:<16 hex>`），不用可猜的 `-v2`。後綴不是秘密，只需要在「仍有含 oracle 的 build 對外服務」期間不被知道。
-   - staging 已部署 #485，oracle 已關閉。production 仍是 2026-07-24 的 build（含 oracle），目前沒有服務使用者：**production 必須部署含 #485 與本變更的 build 之後才能對外服務**。本分支推上 GitHub 之後，能讀 repo 的人可能拿新名稱去問 production 的舊 oracle；production 若在那之前就已無人可連，或部署前不會有真實資料，這點不構成風險。
+   - staging 的舊 oracle 一直運作到 2026-10-25 切換別名到含 #485 的 build 為止，所以 #485 才引入、名稱可猜的 `csrf-hmac-v1`、`merchant-registration-invite-v2`、`merchant-invite-email-v1` 也一併改名。production 仍是 2026-07-24 的 build（含 oracle），目前沒有服務使用者：**production 必須部署含 #485 與本變更的 build 之後才能對外服務**。本分支推上 GitHub 之後，能讀 repo 的人可能拿新名稱去問 production 的舊 oracle；production 若在那之前就已無人可連，或部署前不會有真實資料，這點不構成風險。
    - 建議（owner 決定）：production 目前沒有真實加密資料，正式開放前**直接換一次 production 的根金鑰 `CSRF_SECRET`** 是最乾淨的做法，所有用途一次換新、不需要等舊鑰停用。前提是確認 production 資料庫沒有需要保留的加密欄位、MFA 與雜湊索引（第 1、2 點的禁令針對「已有資料」的環境）。換完後備份對應關係照第 3 點記錄。staging 不可這樣做，staging 有既有資料。
 
    **已輪替的用途**
 
    | 舊用途 | 新用途 | 級別 | 策略 | token 壽命 | 舊鑰停用（台灣時間） |
    |---|---|---|---|---|---|
+   | `csrf-hmac-v1`（CSRF MAC，`deriveCsrfMacKey()`） | `csrf-hmac:r2:…` | 2 | 改名；部署後既有 CSRF token 失效，行為同過期 | ≤ 2 小時 | 不接受 |
+   | `merchant-registration-invite-v2` | `merchant-registration-invite:r2:…` | 1 | 改名；改名時尚未簽發任何邀請 | 14 天 | 不接受 |
+   | `merchant-invite-email-v1`（邀請稽核 Email 雜湊） | `merchant-invite-email:r2:…` | 1 | 改名；當時沒有邀請紀錄，也沒有程式比對此雜湊 | 稽核紀錄 | 不接受 |
    | `public-checkout-admission` | `public-checkout-admission:r2:…` | 2 | 改名，舊 token 自然過期 | 30 分鐘 | 不接受 |
    | `form-submission-line-binding` | `form-submission-line-binding:r2:…` | 2 | 改名 | 30 分鐘 | 不接受 |
    | `student-portal-access-token-v1` | `student-portal-access-token:r2:…` | 2 | 改名（原列第 3 級；實際只活 15 分鐘，且是資料庫一次性 capability，舊 magic link 失效後重新索取即可） | 15 分鐘 | 不接受 |
@@ -190,4 +193,4 @@ RUN_DEMO_PAYMENT_WEBHOOK_SMOKE=true SMOKE_VENDOR_SLUG=your-vendor npm run extern
    1. **加密欄位（lazy＋batch）**：讓 envelope 帶 key 版本（例如 `v2.` 表示新用途名稱、`v1.` 表示舊用途），解密依版本選鑰、加密一律用新鑰；寫入路徑自然換新，再為每張表寫一支與本腳本相同模式的批次腳本（cursor 分頁、先解密成功再寫、以舊密文做 CAS、dry run／確認值／資料庫守門、可重跑）。用途字串多半含 vendorId／記錄 ID，新名稱以「新前綴＋原本的 scope」組成即可。
    2. **雜湊索引（雙查詢）**：`customerKeyHash`、`automationCustomerKeyHash`、`recipientHash`、`checkoutIdentityHash`、發票 fingerprint、`line-user-lookup`、學員通知 destination index／rate／delivery key、抽獎碼雜湊。先部署「同時算新舊雜湊、查詢用 `IN (新, 舊)`、寫入只寫新」；再以批次腳本從明文來源（解密 envelope 或原始欄位）重算；確認舊雜湊歸零後移除舊鑰。有 unique 約束的欄位要先查新舊兩種雜湊再插入，避免同一身分在過渡期出現兩列。
    3. **優先順序**：訂單買家個資與身分 fingerprint → LINE 與 tracking 憑證（同時建議到供應商端換發憑證，舊密文即失去價值）→ 其餘 PII。短效資料（`registration-form-retry-v1` 10 分鐘、LINE Login verifier）只要改名即可；`cloudflare-live-stream-key` 以在 Cloudflare 換發 stream key 處理較省事。
-   4. 另需評估：#485 引入或之前已存在、但名稱可猜的用途，在 oracle 關閉前同樣可能被查詢過：`csrf-hmac-v1`（CSRF MAC）、`merchant-registration-invite-v2` 與 `merchant-invite-email-v1`（第 1 級）。staging 若在這些名稱出現後、#485 部署前仍可連線，建議同樣換成帶隨機後綴的名稱（CSRF 與邀請都是短效，改名即可）。
+   4. #485 引入、名稱可猜的 `csrf-hmac-v1`、`merchant-registration-invite-v2`、`merchant-invite-email-v1` 已於 2026-10-25 一併改為帶隨機後綴的名稱（見上表）。之後新增任何用途，名稱都要帶隨機後綴，並登記到 `DERIVED_KEY_ROTATIONS`。

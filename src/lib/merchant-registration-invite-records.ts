@@ -3,6 +3,7 @@ import { getDb } from "@/lib/db";
 import { maskEmailRecipient } from "@/lib/email-delivery-pii";
 import { MERCHANT_REGISTRATION_INVITE_TTL_MS, normalizeMerchantRegistrationEmail } from "@/lib/merchant-registration-invite";
 import { MERCHANT_INVITATION_AUDIT_ACTION, MERCHANT_INVITATION_REVOKED_AUDIT_ACTION } from "@/lib/merchant-invitation-admin";
+import { DERIVED_KEY_ROTATIONS } from "@/lib/derived-key-purposes";
 import { deriveSensitiveDataKey } from "@/lib/sensitive-data";
 
 /**
@@ -12,7 +13,8 @@ import { deriveSensitiveDataKey } from "@/lib/sensitive-data";
  * (action, createdAt) indexes on AuditLog.
  */
 export const MERCHANT_INVITE_AUDIT_TARGET_TYPE = "MerchantRegistrationInvite";
-const EMAIL_HASH_PURPOSE = "merchant-invite-email-v1";
+// Rotated after #485 (was "merchant-invite-email-v1"); no invitation existed.
+const EMAIL_HASH_PURPOSE = DERIVED_KEY_ROTATIONS.merchantInviteEmailHash.current;
 /** Older, already-expired invitations shown as history. */
 export const MERCHANT_INVITE_HISTORY_LIMIT = 30;
 /** Safety bound for invitations that may still be valid (created within one TTL). */

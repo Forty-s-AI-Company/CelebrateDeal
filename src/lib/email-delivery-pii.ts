@@ -6,7 +6,7 @@ import { decryptSensitiveValue, deriveSensitiveDataKey, encryptSensitiveValue } 
 const RECIPIENT_ENVELOPE_PURPOSE = "email-delivery-recipient";
 const RECIPIENT_HASH_PURPOSE = "email-delivery-recipient-hash";
 // Rotated after #485 (tier 3): links in sent mail must keep working, so the
-// legacy key still verifies until its hard stop in derived-key-rotation.ts.
+// legacy key still verifies until its hard stop in derived-key-purposes.ts.
 const UNSUBSCRIBE_TOKEN_KEY = DERIVED_KEY_ROTATIONS.emailUnsubscribe;
 const SAFE_ID = /^[A-Za-z0-9_-]{1,160}$/u;
 const TOKEN_VERSION = "eu1";

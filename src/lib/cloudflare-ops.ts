@@ -14,7 +14,7 @@ import { encryptSensitiveValue } from "@/lib/sensitive-data";
 
 const CLOUDFLARE_STREAM_KEY_PURPOSE = "cloudflare-live-stream-key";
 // Rotated after #485 (tier 3): tickets live seven days, so the legacy key still
-// decrypts until its hard stop in derived-key-rotation.ts.
+// decrypts until its hard stop in derived-key-purposes.ts.
 const CLOUDFLARE_UPLOAD_TICKET_KEY = DERIVED_KEY_ROTATIONS.cloudflareUploadTicket;
 const RESUMABLE_UPLOAD_TICKET_LIFETIME_MS = 7 * 24 * 60 * 60 * 1000;
 const VIDEO_UPLOAD_TRANSACTION_OPTIONS = {

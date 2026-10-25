@@ -11,7 +11,7 @@ const TOKEN_VERSION = "sp1";
 // Rotated after #485. Access tokens (tier 2) live 15 minutes and are one-time
 // database capabilities, so old ones simply expire. Session cookies (tier 3)
 // live up to 30 days: new ones use the new key, old ones still decrypt until
-// the legacy key's hard stop in derived-key-rotation.ts.
+// the legacy key's hard stop in derived-key-purposes.ts.
 const TOKEN_PURPOSE = DERIVED_KEY_ROTATIONS.studentPortalAccessToken.current;
 const SESSION_KEY = DERIVED_KEY_ROTATIONS.studentPortalSession;
 const TOKEN_SIGNATURE = /^[A-Za-z0-9_-]{43}$/u;

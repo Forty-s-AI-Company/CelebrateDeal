@@ -262,7 +262,7 @@ function deterministicActionId(executionLogId: string, actionIndex: number) {
 // only the bearer's hash, so links already sent keep working until the voucher
 // expires; the legacy key is needed only to rebuild the link of a pre-rotation
 // grant when its execution is retried (until the hard stop in
-// derived-key-rotation.ts).
+// derived-key-purposes.ts).
 const VOUCHER_BEARER_KEY = DERIVED_KEY_ROTATIONS.automationVoucherBearer;
 
 function voucherBearerMessage(executionLogId: string, actionIndex: number) {
