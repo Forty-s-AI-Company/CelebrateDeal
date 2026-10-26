@@ -7,8 +7,8 @@
  *   were always paid to the code holder, so null is treated as direct.
  * - The frozen `referralCode` is the code the order was closed with, i.e. the
  *   level-0 promoter's code at the bottom of the chain. Only the level-1
- *   upline (that promoter's direct upline, who already sees them on the team
- *   page) receives it. Level 2+ uplines may not know that promoter and a code
+ *   upline (that promoter's direct upline; the code is already public in the
+ *   promoter's own `?ref=` share links) receives it. Level 2+ uplines may not know that promoter and a code
  *   can contain a person's name, so the code is dropped here in the data layer
  *   rather than hidden in the UI.
  * - No other downline detail is exposed: no name, email, buyer, order number
