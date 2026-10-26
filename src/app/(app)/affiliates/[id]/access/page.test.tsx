@@ -113,4 +113,16 @@ describe("affiliate portal access member list", () => {
     await expect(render({ cursor: "p.f1" })).rejects.toThrow("not-found");
     expect(optionIds(await render({ cursor: "p.p1" }))).toEqual(["o1"]);
   });
+
+  it("preselects the stored member and active flag on a fresh load", async () => {
+    const owner = member("a-owner", "owner");
+    state.members = [member("b-partner", "partner"), owner];
+    mocks.affiliateFindFirst.mockResolvedValue({ name: "合作夥伴", portalAccess: { vendorMemberId: "a-owner", revision: 2, active: false, member: owner } });
+    const html = await render({ saved: "1" });
+    expect(html).toMatch(/<option value="a-owner" selected="">/);
+    expect(html).not.toMatch(/<option value="" disabled="" selected/);
+    const checkbox = /<input[^>]*name="active"[^>]*>/.exec(html)?.[0];
+    expect(checkbox).toBeDefined();
+    expect(checkbox).not.toContain("checked");
+  });
 });
