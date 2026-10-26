@@ -185,7 +185,7 @@ export default async function TeamSettingsPage({
                             <CsrfField />
                             <input type="hidden" name="teamId" value={team.id} />
                             <input type="hidden" name="downlineMembershipId" value={membership.id} />
-                            <select name="uplineMembershipId" defaultValue={currentUpline} className="h-10 min-w-0 flex-1 rounded-md border border-border-control bg-white px-2 text-sm">
+                            <select key={`${membership.id}:${currentUpline}`} name="uplineMembershipId" defaultValue={currentUpline} className="h-10 min-w-0 flex-1 rounded-md border border-border-control bg-white px-2 text-sm">
                               <option value="">（無直接上線）</option>
                               {team.memberships.filter((candidate) => candidate.id !== membership.id).map((candidate) => (
                                 <option key={candidate.id} value={candidate.id}>{candidate.vendorMember.user.name || candidate.vendorMember.user.email}</option>
@@ -209,7 +209,7 @@ export default async function TeamSettingsPage({
                             <form action={setTeamMembershipAffiliateAction} className="flex gap-2">
                               <CsrfField />
                               <input type="hidden" name="membershipId" value={membership.id} />
-                              <select name="affiliateId" defaultValue={boundAffiliate?.id ?? ""} aria-label={`${membership.vendorMember.user.name || membership.vendorMember.user.email} 的推廣夥伴`} className="h-10 min-w-0 flex-1 rounded-md border border-border-control bg-white px-2 text-sm">
+                              <select key={`${membership.id}:${boundAffiliate?.id ?? ""}`} name="affiliateId" defaultValue={boundAffiliate?.id ?? ""} aria-label={`${membership.vendorMember.user.name || membership.vendorMember.user.email} 的推廣夥伴`} className="h-10 min-w-0 flex-1 rounded-md border border-border-control bg-white px-2 text-sm">
                                 <option value="">（不綁定）</option>
                                 {boundAffiliate && !boundAffiliate.isActive ? <option value={boundAffiliate.id}>{boundAffiliate.name}（{boundAffiliate.code}，已停用）</option> : null}
                                 {affiliates.map((affiliate) => {
