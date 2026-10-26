@@ -13,6 +13,12 @@ const PAGE_SIZE=25;
  * The cursor names its group ("p." partner, "o." other) and the last id. */
 const MEMBER_CURSOR=/^([po])\.([A-Za-z0-9_-]{1,160})$/u;
 
+/** A same-page redirect after saving keeps the mounted form, and React ignores a changed
+ * defaultValue on an existing <select>; remount the form whenever the stored access changes. */
+function accessFormKey(access:{revision:number;vendorMemberId:string;active:boolean}|null){
+ return access?`${access.revision}:${access.vendorMemberId}:${access.active}`:"none";
+}
+
 export default async function AffiliateAccessPage({params,searchParams}:{params:Promise<{id:string}>;searchParams:Promise<{error?:string;saved?:string;q?:string;cursor?:string}>}){
  const vendor=await requireVendorManager();const {id}=await params;const query=await searchParams;
  const affiliate=await getDb().affiliate.findFirst({
@@ -50,7 +56,7 @@ export default async function AffiliateAccessPage({params,searchParams}:{params:
  return <><PageHeader title={`${affiliate.name}：夥伴入口授權`} description="指定現有商家成員查看這位夥伴的推廣碼與佣金帳本，角色為「夥伴」的成員排在最前面。此授權不提供商家財務或出款操作權限。" action={<ButtonLink href={`/affiliates/${encodeURIComponent(id)}`}>回到夥伴</ButtonLink>}/>
  {query.error?<p role="alert">授權已變更或無法存取，請重新整理後重試。</p>:null}{query.saved?<p role="status">夥伴入口授權已儲存。</p>:null}
  <form method="get" className="mb-4 flex gap-2"><label>搜尋成員<input name="q" maxLength={120} defaultValue={search} className="block rounded border p-2"/></label><button className="min-h-11 rounded border px-4">搜尋</button></form>
- <form action={setAffiliatePortalAccessAction} className="grid max-w-xl gap-4 rounded-xl border bg-white p-5">
+ <form key={accessFormKey(affiliate.portalAccess)} action={setAffiliatePortalAccessAction} className="grid max-w-xl gap-4 rounded-xl border bg-white p-5">
  <CsrfField/><input type="hidden" name="affiliateId" value={id}/><input type="hidden" name="expectedRevision" value={affiliate.portalAccess?.revision??0}/>
  <div><label htmlFor="affiliate-portal-member">授權成員</label><select id="affiliate-portal-member" name="vendorMemberId" required defaultValue={affiliate.portalAccess?.vendorMemberId??""} className="block min-h-11 w-full rounded border p-2"><option value="" disabled>請選擇成員</option>{members.map(member=><option key={member.id} value={member.id}>{member.user.name}{member.role?`（${vendorMemberRoleLabel(member.role)}）`:""}{member.status!=="active"||member.user.status!=="active"?"（已停用，可撤銷）":""}</option>)}</select></div>
  <label><input name="active" type="checkbox" defaultChecked={affiliate.portalAccess?.active??true}/>啟用夥伴入口</label>
