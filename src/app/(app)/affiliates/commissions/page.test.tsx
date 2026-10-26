@@ -183,7 +183,7 @@ describe("/affiliates/commissions route", () => {
     const html = renderToStaticMarkup(await AffiliateCommissionsPage({}));
 
     expect(html).toContain(">層級</th>");
-    const levels = [...html.matchAll(/<td class="whitespace-nowrap px-5 py-4 text-slate-700">([^<]*)<\/td>/gu)].map((match) => match[1]);
+    const levels = [...html.matchAll(/<td\b[^>]*\bdata-testid="commission-level"[^>]*>([^<]*)<\/td>/gu)].map((match) => match[1]);
     expect(levels).toEqual(["直接", "直接", "第 1 層", "第 2 層"]);
     expect(mocks.commissionFindMany).toHaveBeenCalledWith(expect.objectContaining({ where: { vendorId: vendor.id } }));
   });

@@ -116,7 +116,7 @@ export default async function AffiliateCommissionsPage({
                         )}
                       </td>
                       <td className="px-5 py-4 font-mono text-slate-700">{commission.referralCode ?? "-"}</td>
-                      <td className="whitespace-nowrap px-5 py-4 text-slate-700">{formatAffiliateCommissionLevel(commission.merchantLevel)}</td>
+                      <td className="whitespace-nowrap px-5 py-4 text-slate-700" data-testid="commission-level">{formatAffiliateCommissionLevel(commission.merchantLevel)}</td>
                       <td className="px-5 py-4">{commission.orderNumber ?? "-"}</td>
                       <td className="px-5 py-4">{formatCurrency(commissionBaseAmountCents)}</td>
                       <td className="px-5 py-4">

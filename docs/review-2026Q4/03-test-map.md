@@ -24,7 +24,7 @@
 
 | # | 設定檔 | include | 檔／case | 環境與保護標記 | 呼叫端（script／CI） |
 |---|---|---|---|---|---|
-| 1 | `vitest.affiliate-portal-db.config.ts` | `affiliate-portal.db.test.ts` | 1／6 | disposable PG，`COURSE_LEARNING_DISPOSABLE=verified-loopback`，URL 相同且 `schema=public` | **CI 直接步驟**；`affiliate-portal-disposable-qa.mjs`、`affiliate-portal-browser-qa.mjs` |
+| 1 | `vitest.affiliate-portal-db.config.ts` | `affiliate-portal.db.test.ts` | 1／7 | disposable PG，`COURSE_LEARNING_DISPOSABLE=verified-loopback`，URL 相同且 `schema=public` | **CI 直接步驟**；`affiliate-portal-disposable-qa.mjs`、`affiliate-portal-browser-qa.mjs` |
 | 2 | `vitest.affiliate-remuneration-db.config.ts` | `affiliate-remuneration.db.test.ts` | 1／29 | 同 #1 | `affiliate-remuneration-disposable-qa.mjs`（CI 未執行） |
 | 3 | `vitest.course-community-db.config.ts` | `course-community.db.test.ts` | 1／9 | 同 #1 | **CI 直接步驟**；`course-community-disposable-qa.mjs`、`course-community-browser-qa.mjs`、`portal-localization-browser-qa.mjs` |
 | 4 | `vitest.course-learning-db.config.ts` | `student-course-learning.db.test.ts` | 1／7 | 同 #1 | **CI 直接步驟**；`course-learning-disposable-qa.mjs` |
