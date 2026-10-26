@@ -23,7 +23,7 @@ const migration = await runMigration({ afterMigrate: async ({ databaseUrl, envir
     return { locations: [...new Set(detail.match(/affiliate-portal(?:\.db\.test)?\.ts:\d+:\d+/gu) ?? [])], exception: ["PrismaClientValidationError", "PrismaClientKnownRequestError", "ZodError", "AssertionError", "TypeError"].find(name => detail.includes(name)) ?? "UNCLASSIFIED", invariant: ["append-only", "immutable", "Invalid", "expected"].filter(term=>detail.includes(term)) };
   }));
   const exactSuite = report.testResults?.length === 1 && report.testResults[0].name.replaceAll("\\", "/").endsWith("/src/lib/affiliate-portal.db.test.ts");
-  if (child.status !== 0 || !report.success || !exactSuite || report.numTotalTests !== 6 || report.numPassedTests !== 6 || report.numPendingTests !== 0) throw new Error("course-database-gate-failed");
+  if (child.status !== 0 || !report.success || !exactSuite || report.numTotalTests !== 7 || report.numPassedTests !== 7 || report.numPendingTests !== 0) throw new Error("course-database-gate-failed");
 
 } });
 receipt.status = migration.status;

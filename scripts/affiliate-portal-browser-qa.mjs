@@ -25,7 +25,7 @@ const migration = await runMigration({ afterMigrate: async ({ databaseUrl, envir
   receipt.tests = { total: report.numTotalTests, passed: report.numPassedTests, failed: report.numFailedTests, skipped: report.numPendingTests };
   receipt.failedTitles = report.testResults.flatMap((suite) => suite.assertionResults.filter((test) => test.status === "failed").map((test) => test.title));
   const exactSuite = report.testResults?.length === 1 && report.testResults[0].name.replaceAll("\\", "/").endsWith("/src/lib/affiliate-portal.db.test.ts");
-  if (child.status !== 0 || !report.success || !exactSuite || report.numTotalTests !== 6 || report.numPassedTests !== 6 || report.numPendingTests !== 0) throw new Error("course-database-gate-failed");
+  if (child.status !== 0 || !report.success || !exactSuite || report.numTotalTests !== 7 || report.numPassedTests !== 7 || report.numPendingTests !== 0) throw new Error("course-database-gate-failed");
   if (includeBrowser) {
     // Reuse only the installed executable. The browser profile stays isolated;
     // changing HOME must not hide the installation and fail before the UI runs.

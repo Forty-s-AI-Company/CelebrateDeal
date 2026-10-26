@@ -1,5 +1,6 @@
 import { Prisma, type PrismaClient } from "@prisma/client";
 import { z } from "zod";
+import { affiliateCommissionSource } from "@/lib/affiliate-commission-source";
 
 const id = z.string().regex(/^[A-Za-z0-9_-]{1,160}$/u);
 export const AffiliatePortalAccessInput = z.object({ affiliateId: id, vendorMemberId: id, active: z.boolean(), expectedRevision: z.number().int().min(0).max(2147483646) }).strict();
@@ -39,7 +40,9 @@ export async function setAffiliatePortalAccess(db: Database, manager: { vendorId
 
 const cents = (value: number | null) => z.number().int().safe().parse(value ?? 0);
 /** The statement is a repeatable-read snapshot. Financial totals come from
- * immutable accounting entries, never the historical gross commission field. */
+ * immutable accounting entries, never the historical gross commission field.
+ * Each row carries only its source (direct, or upline level plus the order's
+ * public referral code); raw level/code fields are not passed through. */
 export async function getAffiliatePortalStatement(db: Database, actor: { userId: string }, vendorId: string, affiliateId: string, cursor?: string) {
   if (![actor.userId,vendorId,affiliateId,...(cursor?[cursor]:[])].every(value=>id.safeParse(value).success)) return null;
   return db.$transaction(async tx => {
@@ -50,10 +53,10 @@ export async function getAffiliatePortalStatement(db: Database, actor: { userId:
     if (cursor && !anchor) return null;
     const missingLedger = await tx.affiliateCommission.count({where:{...where,ledgerEntries:{none:{}}}});
     const balance = missingLedger ? null : cents((await tx.affiliateCommissionLedgerEntry.aggregate({where:{vendorId,commission:{affiliateId}},_sum:{amountCents:true}}))._sum.amountCents);
-    const rows = await tx.affiliateCommission.findMany({where:{...where,...(anchor?{OR:[{attributedAt:{lt:anchor.attributedAt}},{attributedAt:anchor.attributedAt,id:{lt:anchor.id}}]}:{})},orderBy:[{attributedAt:"desc"},{id:"desc"}],take:21,select:{id:true,monthKey:true,status:true,attributedAt:true}});
+    const rows = await tx.affiliateCommission.findMany({where:{...where,...(anchor?{OR:[{attributedAt:{lt:anchor.attributedAt}},{attributedAt:anchor.attributedAt,id:{lt:anchor.id}}]}:{})},orderBy:[{attributedAt:"desc"},{id:"desc"}],take:21,select:{id:true,monthKey:true,status:true,attributedAt:true,merchantLevel:true,referralCode:true}});
     const sums = await tx.affiliateCommissionLedgerEntry.groupBy({by:["affiliateCommissionId"],where:{vendorId,affiliateCommissionId:{in:rows.map(row=>row.id)},commission:{affiliateId}},_sum:{amountCents:true},_count:{_all:true}});
     const amounts = new Map(sums.map(row=>[row.affiliateCommissionId,cents(row._sum.amountCents)]));
-    return {affiliate:access.affiliate,balanceCents:balance,requiresReconciliation:missingLedger>0,commissions:rows.slice(0,20).map(row=>({...row,balanceCents:amounts.get(row.id)??null})),nextCursor:rows.length>20?rows[19]!.id:null};
+    return {affiliate:access.affiliate,balanceCents:balance,requiresReconciliation:missingLedger>0,commissions:rows.slice(0,20).map(row=>({id:row.id,monthKey:row.monthKey,status:row.status,attributedAt:row.attributedAt,source:affiliateCommissionSource(row),balanceCents:amounts.get(row.id)??null})),nextCursor:rows.length>20?rows[19]!.id:null};
   },{isolationLevel:Prisma.TransactionIsolationLevel.RepeatableRead});
 }
 

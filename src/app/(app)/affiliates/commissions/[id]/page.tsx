@@ -5,6 +5,7 @@ import { Badge, Card, EmptyState, PageHeader } from "@/components/ui";
 import { requireVendorFinance } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { formatCurrency, formatDateTime } from "@/lib/format";
+import { formatAffiliateCommissionLevel } from "@/lib/affiliate-commission-source";
 
 function statusTone(status: string) {
   if (status === "paid") return "green" as const;
@@ -137,7 +138,7 @@ export default async function AffiliatePayoutDetailPage({ params }: { params: Pr
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div>
                     <h2 className="font-semibold text-slate-950">訂單 {commission.orderNumber ?? "未記錄"}</h2>
-                    <p className="mt-1 text-sm text-slate-600">{commission.sourceType} · {commission.referralCode ?? "無推廣碼"} · {commission.commissionRateBps / 100}% · {formatDateTime(commission.attributedAt)}</p>
+                    <p className="mt-1 text-sm text-slate-600">{commission.sourceType} · 層級 {formatAffiliateCommissionLevel(commission.merchantLevel)} · {commission.referralCode ?? "無推廣碼"} · {commission.commissionRateBps / 100}% · {formatDateTime(commission.attributedAt)}</p>
                   </div>
                   <div className="flex items-center gap-3"><Badge tone={statusTone(commission.status)}>{commission.status}</Badge><p className="font-bold text-slate-950">Balance {formatCurrency(balance)}</p></div>
                 </div>
