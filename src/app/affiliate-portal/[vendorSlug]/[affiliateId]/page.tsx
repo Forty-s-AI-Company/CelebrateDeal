@@ -8,6 +8,7 @@ import {requireAuth} from "@/lib/auth";
 import {getDb} from "@/lib/db";
 import {formatCurrency,formatDateTime} from "@/lib/format";
 import {getAffiliatePortalStatement} from "@/lib/affiliate-portal";
+import {formatAffiliateCommissionSource} from "@/lib/affiliate-commission-source";
 
 export default async function AffiliateStatement({params,searchParams}:{params:Promise<{vendorSlug:string;affiliateId:string}>;searchParams:Promise<{cursor?:string;liveCursor?:string}>}){
  const {vendorSlug,affiliateId}=await params;const query=await searchParams;
@@ -33,6 +34,6 @@ export default async function AffiliateStatement({params,searchParams}:{params:P
  {vendor.enabledFeatureModules.includes("tax_remuneration") ? <Link className="mt-4 block min-h-11 underline" href={`${path}/remuneration`}>收款資料與佣金提領</Link> : null}
  {statement.requiresReconciliation?<p role="alert" className="mt-5">部分收入尚未完成帳本對帳，暫不顯示合計。</p>:<p className="mt-5 text-xl" aria-label="佣金帳本淨額">帳本淨額：{formatCurrency(statement.balanceCents??0)}</p>}
  <p className="mt-4">推廣碼：{statement.affiliate.code}</p><section aria-label="商家推廣連結">{destinations.length?destinations.map(live=><div key={live.id}><Link className="block min-h-11 underline" href={`/live/${encodeURIComponent(live.slug)}?ref=${encodeURIComponent(statement.affiliate.code)}`} prefetch={false}>推廣：{live.title}</Link><ReferralShareControls title={live.title} referralUrl={`${getCanonicalAppUrl()}/live/${encodeURIComponent(live.slug)}?ref=${encodeURIComponent(statement.affiliate.code)}`}/></div>):<p>此頁沒有可推廣的公開場次。</p>}{nextLive?<Link className="block min-h-11 underline" href={`${path}?${new URLSearchParams({...query.cursor?{cursor:query.cursor}:{},liveCursor:nextLive})}`}>下一頁場次</Link>:null}</section>
- <div className="mt-5 overflow-x-auto"><table className="w-full text-left"><caption className="text-left font-bold">佣金紀錄</caption><thead><tr><th>月份</th><th>狀態</th><th>帳本淨額</th><th>歸因時間</th></tr></thead><tbody>{statement.commissions.map(row=><tr key={row.id}><td>{row.monthKey}</td><td>{{pending:"待確認",approved:"已核准",locked:"結算中",paid:"已出款",void:"已作廢"}[row.status]}</td><td>{row.balanceCents===null?"待對帳":formatCurrency(row.balanceCents)}</td><td>{formatDateTime(row.attributedAt)}</td></tr>)}</tbody></table></div>
+ <div className="mt-5 overflow-x-auto"><table className="w-full text-left"><caption className="text-left font-bold">佣金紀錄</caption><thead><tr><th>月份</th><th>來源</th><th>狀態</th><th>帳本淨額</th><th>歸因時間</th></tr></thead><tbody>{statement.commissions.map(row=><tr key={row.id}><td>{row.monthKey}</td><td className="min-w-40 [overflow-wrap:anywhere]">{formatAffiliateCommissionSource(row.source)}</td><td>{{pending:"待確認",approved:"已核准",locked:"結算中",paid:"已出款",void:"已作廢"}[row.status]}</td><td>{row.balanceCents===null?"待對帳":formatCurrency(row.balanceCents)}</td><td>{formatDateTime(row.attributedAt)}</td></tr>)}</tbody></table></div>
  {statement.nextCursor?<Link className="mt-5 inline-block min-h-11 underline" href={`${path}?cursor=${encodeURIComponent(statement.nextCursor)}`}>下一頁佣金</Link>:null}<Link className="ml-5 inline-block min-h-11 underline" href="/affiliate-portal">回到夥伴入口</Link></main>;
 }

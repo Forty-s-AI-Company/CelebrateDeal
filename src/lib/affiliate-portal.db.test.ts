@@ -4,12 +4,51 @@ import { Prisma } from "@prisma/client";
 import { getDb } from "@/lib/db";
 import { appendCommissionLedgerEntry } from "@/lib/affiliate-commission-accounting";
 import { AffiliatePortalConflict, getAffiliatePortalStatement, setAffiliatePortalAccess, listAffiliatePortalAccess } from "@/lib/affiliate-portal";
+import { createReservedPaymentTransaction } from "@/lib/inventory-reservations";
+import { createCommerceOrderForCheckout, reconcileCommerceOrderPaymentTransition } from "@/lib/commerce-orders";
+import { accrueMerchantAffiliatePlan, freezeMerchantAffiliateCheckout, publishMerchantAffiliatePolicy } from "@/lib/merchant-affiliate-policy-service";
 const db=getDb();
 async function fixture(){
  const suffix=randomUUID();const vendor=await db.vendor.create({data:{name:"Synthetic partner shop",slug:`partner-${suffix}`,email:`${suffix}@example.test`,passwordHash:"synthetic-only"}});
  const user=await db.user.create({data:{email:`partner-${suffix}@example.test`,name:"Synthetic partner",passwordHash:"synthetic-only",memberships:{create:{vendorId:vendor.id,role:"partner",status:"active"}}},include:{memberships:true}});
  const affiliate=await db.affiliate.create({data:{vendorId:vendor.id,name:"Synthetic affiliate",code:`PARTNER-${suffix}`}});
  return {vendor,user,affiliate,member:user.memberships[0],manager:{vendorId:vendor.id,role:"owner"},input:{affiliateId:affiliate.id,vendorMemberId:user.memberships[0].id,active:true,expectedRevision:0}};
+}
+/** A team tenant (top -> upline -> downline) whose downline's order pays the
+ * downline (level 0), the upline (level 1) and the top upline (level 2),
+ * through the real checkout freeze and accrual. */
+async function teamFixture(){
+ const suffix=randomUUID();
+ const vendor=await db.vendor.create({data:{name:"Synthetic team portal",slug:`team-portal-${suffix}`,email:`team-${suffix}@example.test`,passwordHash:"synthetic-only",enabledFeatureModules:["affiliate_program"]}});
+ const owner=await db.user.create({data:{name:"Synthetic owner",email:`owner-${suffix}@example.test`,passwordHash:"synthetic-only",memberships:{create:{vendorId:vendor.id,role:"owner",status:"active"}}}});
+ const team=await db.salesTeam.create({data:{vendorId:vendor.id,name:"Synthetic team",slug:suffix}});
+ const product=await db.product.create({data:{vendorId:vendor.id,name:"Synthetic physical",slug:suffix,priceCents:1000,currency:"TWD",inventory:10,isActive:true,fulfillmentTypeConfirmed:true,commerceDomain:"merchant",fulfillmentType:"physical"}});
+ const member=async(label:string)=>{
+  const user=await db.user.create({data:{name:`Synthetic ${label}`,email:`${label}-${suffix}@example.test`,passwordHash:"synthetic-only",memberships:{create:{vendorId:vendor.id,role:"partner",status:"active"}}},include:{memberships:true}});
+  const affiliate=await db.affiliate.create({data:{vendorId:vendor.id,name:`Synthetic ${label}`,code:`${label.toUpperCase()}-${suffix}`.slice(0,40),contactEmail:`${label}-${suffix}@example.test`}});
+  const membership=await db.teamMembership.create({data:{vendorId:vendor.id,teamId:team.id,vendorMemberId:user.memberships[0]!.id,affiliateId:affiliate.id}});
+  return {user,member:user.memberships[0]!,affiliate,membership};
+ };
+ const top=await member("top"),upline=await member("upline"),downline=await member("downline");
+ await db.teamMembershipRelationship.create({data:{teamId:team.id,uplineMembershipId:top.membership.id,downlineMembershipId:upline.membership.id,effectiveAt:new Date("2026-01-01T00:00:00Z")}});
+ await db.teamMembershipRelationship.create({data:{teamId:team.id,uplineMembershipId:upline.membership.id,downlineMembershipId:downline.membership.id,effectiveAt:new Date("2026-01-01T00:00:00Z")}});
+ await publishMerchantAffiliatePolicy(db,{vendorId:vendor.id,userId:owner.id},{terms:{schemaVersion:1,currency:"TWD",maxTotalBps:10000,tiers:[{minQuantity:1,maxQuantity:null,rateBps:1000}],uplines:[{level:1,rateBps:300},{level:2,rateBps:100}],productOverrides:[]},expectedRevision:0});
+ const order=async(affiliate:{id:string;code:string},occurredAt:Date)=>{
+  const key=randomUUID();
+  const payment=await createReservedPaymentTransaction({vendorId:vendor.id,productId:product.id,checkoutIdempotencyKey:key,
+   transactionData:{vendorId:vendor.id,providerName:"demo",orderNumber:key,checkoutIdempotencyKey:key,grossAmountCents:1000,netAmountCents:1000,currency:"TWD",status:"pending",metadata:{productId:product.id,referralCode:affiliate.code}},
+   createCommerceOrder:async(tx,created)=>{
+    const commerceOrder=await createCommerceOrderForCheckout(tx,{vendorId:vendor.id,productId:product.id,orderNumber:key,checkoutIdempotencyKey:key,paymentTransactionId:created.id,totalAmountCents:1000,discountAmountCents:0,currency:"TWD",buyer:{name:"Synthetic buyer",email:"buyer@example.test",phone:"0912345678"},shipping:{recipientName:"Synthetic buyer",phone:"0912345678",countryCode:"TW",postalCode:"100",administrativeArea:"台北市",locality:"中正區",addressLine1:"合成測試路 1 號"}});
+    await freezeMerchantAffiliateCheckout(tx,{vendorId:vendor.id,orderId:commerceOrder.id,transactionId:created.id,affiliateId:affiliate.id,referralCode:affiliate.code});
+   }});
+  const result=await db.$transaction(async tx=>{
+   await tx.paymentTransaction.update({where:{id:payment.id},data:{status:"paid"}});
+   await reconcileCommerceOrderPaymentTransition(tx,{vendorId:vendor.id,paymentTransactionId:payment.id,transition:"paid",eventIdentity:`paid:${payment.id}`,occurredAt});
+   return accrueMerchantAffiliatePlan(tx,{vendorId:vendor.id,transactionId:payment.id,providerName:"demo",occurredAt});
+  },{isolationLevel:Prisma.TransactionIsolationLevel.Serializable});
+  return result!.commissions;
+ };
+ return {vendor,top,upline,downline,order,manager:{vendorId:vendor.id,role:"owner"}};
 }
 // Immutable ledger fixtures remain intact until the owned disposable database
 // is destroyed by the runner; never disable append-only triggers for cleanup.
@@ -81,6 +120,56 @@ describe("affiliate portal disposable boundaries",()=>{
   const statement=await getAffiliatePortalStatement(db,{userId:f.user.id},f.vendor.id,f.affiliate.id);expect(statement!.commissions).toHaveLength(20);
   const second=await getAffiliatePortalStatement(db,{userId:f.user.id},f.vendor.id,f.affiliate.id,statement!.nextCursor!);expect(second!.commissions).toHaveLength(2);
   expect(await getAffiliatePortalStatement(db,{userId:other.user.id},other.vendor.id,other.affiliate.id,statement!.nextCursor!)).toBeNull();
+ });
+
+ it("labels each statement row's source and never returns another affiliate's or tenant's commissions",async()=>{
+  const t=await teamFixture(),other=await fixture();
+  await setAffiliatePortalAccess(db,t.manager,{affiliateId:t.upline.affiliate.id,vendorMemberId:t.upline.member.id,active:true,expectedRevision:0});
+  await setAffiliatePortalAccess(db,t.manager,{affiliateId:t.top.affiliate.id,vendorMemberId:t.top.member.id,active:true,expectedRevision:0});
+  // The upline's own sale: level 0 for the upline, level 1 for the top upline.
+  const own=await t.order(t.upline.affiliate,new Date("2026-10-05T00:00:00Z"));
+  expect(own.map(row=>[row.merchantLevel,row.affiliateId])).toEqual([[0,t.upline.affiliate.id],[1,t.top.affiliate.id]]);
+  // The downline's sale: level 0 downline, level 1 upline, level 2 top upline;
+  // every row freezes the code the order was closed with.
+  const team=await t.order(t.downline.affiliate,new Date("2026-10-06T00:00:00Z"));
+  expect(team.map(row=>[row.merchantLevel,row.affiliateId,row.referralCode])).toEqual([[0,t.downline.affiliate.id,t.downline.affiliate.code],[1,t.upline.affiliate.id,t.downline.affiliate.code],[2,t.top.affiliate.id,t.downline.affiliate.code]]);
+  // A legacy flat commission predates merchant levels and stays null.
+  const legacy=await db.affiliateCommission.create({data:{vendorId:t.vendor.id,affiliateId:t.upline.affiliate.id,monthKey:"2026-09",deduplicationKey:randomUUID(),referralCode:t.upline.affiliate.code,attributedAt:new Date("2026-09-01T00:00:00Z")}});
+  expect(legacy.merchantLevel).toBeNull();
+  // Foreign-tenant and same-tenant other-affiliate rows must stay hidden.
+  const foreign=await db.affiliateCommission.create({data:{vendorId:other.vendor.id,affiliateId:other.affiliate.id,monthKey:"2026-10",deduplicationKey:randomUUID(),referralCode:other.affiliate.code}});
+  const downlineDirect=team.find(row=>row.merchantLevel===0)!;
+  const uplineLevel1=team.find(row=>row.merchantLevel===1)!;
+  const topLevel2=team.find(row=>row.merchantLevel===2)!;
+  const topLevel1=own.find(row=>row.merchantLevel===1)!;
+
+  const statement=await getAffiliatePortalStatement(db,{userId:t.upline.user.id},t.vendor.id,t.upline.affiliate.id);
+  expect(statement).not.toBeNull();
+  const sources=new Map(statement!.commissions.map(row=>[row.id,row.source]));
+  expect(statement!.commissions).toHaveLength(3);
+  expect(sources.get(own.find(row=>row.merchantLevel===0)!.id)).toEqual({kind:"direct"});
+  expect(sources.get(uplineLevel1.id)).toEqual({kind:"upline",level:1,referralCode:t.downline.affiliate.code});
+  expect(sources.get(legacy.id)).toEqual({kind:"direct"});
+  expect(sources.has(downlineDirect.id)).toBe(false);
+  expect(sources.has(foreign.id)).toBe(false);
+  expect(sources.has(topLevel2.id)).toBe(false);
+  // The top upline sees the level-1 code from its direct downline's own sale,
+  // but only the level for the level-2 row (the bottom promoter's code is
+  // dropped in the data layer, not merely hidden by the page).
+  const topStatement=await getAffiliatePortalStatement(db,{userId:t.top.user.id},t.vendor.id,t.top.affiliate.id);
+  expect(topStatement!.commissions).toHaveLength(2);
+  const topSources=new Map(topStatement!.commissions.map(row=>[row.id,row.source]));
+  expect(topSources.get(topLevel1.id)).toEqual({kind:"upline",level:1,referralCode:t.upline.affiliate.code});
+  expect(topSources.get(topLevel2.id)).toEqual({kind:"upline",level:2,referralCode:null});
+  expect(JSON.stringify(topStatement)).not.toContain(t.downline.affiliate.code);
+  // Rows expose only the source summary, not raw snapshot or order fields.
+  for(const row of statement!.commissions){
+   expect(Object.keys(row).sort()).toEqual(["attributedAt","balanceCents","id","monthKey","source","status"]);
+  }
+  // The same-tenant downline and a foreign user still cannot read the upline's rows.
+  expect(await getAffiliatePortalStatement(db,{userId:t.downline.user.id},t.vendor.id,t.upline.affiliate.id)).toBeNull();
+  expect(await getAffiliatePortalStatement(db,{userId:other.user.id},t.vendor.id,t.upline.affiliate.id)).toBeNull();
+  expect(await getAffiliatePortalStatement(db,{userId:t.upline.user.id},other.vendor.id,t.upline.affiliate.id)).toBeNull();
  });
 
 });
