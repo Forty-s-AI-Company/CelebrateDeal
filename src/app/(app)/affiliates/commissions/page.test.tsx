@@ -32,6 +32,7 @@ const commissions = [
     id: "commission-1",
     affiliateId: "affiliate-1",
     referralCode: "PARTNER-1",
+    merchantLevel: null,
     orderNumber: "ORDER-1",
     orderAmountCents: 10000,
     commissionBaseAmountCents: 10000,
@@ -170,6 +171,21 @@ describe("/affiliates/commissions route", () => {
     expect(html).toContain("爭議暫扣：NT$5");
     expect(html).not.toContain("標記已付款");
     expect(html).not.toContain('name="status" value="paid"');
+  });
+
+  it("labels each commission's level as direct or the upline tier", async () => {
+    mocks.commissionFindMany.mockResolvedValue([
+      { ...commissions[0], id: "commission-legacy", merchantLevel: null, referralCode: "LEGACY-1" },
+      { ...commissions[0], id: "commission-direct", merchantLevel: 0, referralCode: "TESTP1" },
+      { ...commissions[0], id: "commission-upline", merchantLevel: 1, referralCode: "TESTP2" },
+      { ...commissions[0], id: "commission-upline-2", merchantLevel: 2, referralCode: "TESTP3" },
+    ]);
+    const html = renderToStaticMarkup(await AffiliateCommissionsPage({}));
+
+    expect(html).toContain(">層級</th>");
+    const levels = [...html.matchAll(/<td class="whitespace-nowrap px-5 py-4 text-slate-700">([^<]*)<\/td>/gu)].map((match) => match[1]);
+    expect(levels).toEqual(["直接", "直接", "第 1 層", "第 2 層"]);
+    expect(mocks.commissionFindMany).toHaveBeenCalledWith(expect.objectContaining({ where: { vendorId: vendor.id } }));
   });
 
   it("renders only allowlisted action errors", async () => {

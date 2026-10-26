@@ -50,6 +50,7 @@ const commissions = [{
   monthKey: "2026-07",
   sourceType: "webhook",
   referralCode: "PARTNER-1",
+  merchantLevel: 0,
   orderNumber: "ORDER-SYNTHETIC",
   commissionBaseAmountCents: 10_000,
   netReferenceAmountCents: 8_600,
@@ -121,6 +122,22 @@ describe("/affiliates/commissions/[id]", () => {
     expect(html).toContain("case-123");
     expect(html).toContain("金額一致");
     expect(html).not.toContain("<form");
+  });
+
+  it("labels each commission's level without widening the vendor, affiliate and month scope", async () => {
+    mocks.commissionFindMany.mockResolvedValue([
+      { ...commissions[0], id: "commission-direct", merchantLevel: 0 },
+      { ...commissions[0], id: "commission-upline", merchantLevel: 1, referralCode: "TESTP2" },
+      { ...commissions[0], id: "commission-legacy", merchantLevel: null, referralCode: null },
+    ]);
+    const html = renderToStaticMarkup(await AffiliatePayoutDetailPage({ params: Promise.resolve({ id: payout.id }) }));
+
+    expect(html).toContain("webhook · 層級 直接 · PARTNER-1");
+    expect(html).toContain("webhook · 層級 第 1 層 · TESTP2");
+    expect(html).toContain("webhook · 層級 直接 · 無推廣碼");
+    expect(mocks.commissionFindMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: { vendorId: "vendor-current", affiliateId: "affiliate-current", monthKey: "2026-07" },
+    }));
   });
 
   it("expects a zero ledger after a void payout reversal", async () => {

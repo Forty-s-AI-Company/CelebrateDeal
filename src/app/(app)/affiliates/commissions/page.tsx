@@ -7,6 +7,7 @@ import { Badge, Card, EmptyState, PageHeader } from "@/components/ui";
 import { requireVendorFinance } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { formatCurrency, formatDateTime } from "@/lib/format";
+import { formatAffiliateCommissionLevel } from "@/lib/affiliate-commission-source";
 
 function statusTone(status: string) {
   if (status === "paid" || status === "approved") return "green" as const;
@@ -84,11 +85,12 @@ export default async function AffiliateCommissionsPage({
               <h2 className="text-lg font-semibold text-slate-950">佣金明細</h2>
             </div>
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[1080px] text-sm">
+              <table className="w-full min-w-[1160px] text-sm">
                 <thead className="bg-slate-50 text-left text-xs uppercase text-slate-500">
                   <tr>
                     <th className="px-5 py-3">推廣者</th>
                     <th className="px-5 py-3">推廣碼</th>
+                    <th className="px-5 py-3">層級</th>
                     <th className="px-5 py-3">訂單</th>
                     <th className="px-5 py-3">Gross 分潤基礎</th>
                     <th className="px-5 py-3">Net reference</th>
@@ -114,6 +116,7 @@ export default async function AffiliateCommissionsPage({
                         )}
                       </td>
                       <td className="px-5 py-4 font-mono text-slate-700">{commission.referralCode ?? "-"}</td>
+                      <td className="whitespace-nowrap px-5 py-4 text-slate-700">{formatAffiliateCommissionLevel(commission.merchantLevel)}</td>
                       <td className="px-5 py-4">{commission.orderNumber ?? "-"}</td>
                       <td className="px-5 py-4">{formatCurrency(commissionBaseAmountCents)}</td>
                       <td className="px-5 py-4">
