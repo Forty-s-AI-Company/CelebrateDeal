@@ -78,9 +78,15 @@ describe("merchant email verification tokens", () => {
   it("never carries the address: neither in the payload nor anywhere in the token", () => {
     const link = createMerchantEmailVerificationToken({ ...USER, now: NOW });
     expect(decodePayload(link.token)).toEqual({ purpose: "merchant_email_verification", userId: USER.userId, exp: link.expiresAt.getTime() / 1_000, jti: link.jti });
+    const decodedPayloadText = Buffer.from(link.token.split(".")[1]!, "base64url").toString("utf8");
     const decodedAll = link.token.split(".").map((part) => Buffer.from(part, "base64url").toString("latin1")).join(" ");
     for (const fragment of ["owner", "example.test", "@"]) {
       expect(link.token).not.toContain(fragment);
+      expect(decodedPayloadText).not.toContain(fragment);
+    }
+    // The MAC segment is random bytes, so a lone "@" (0x40) can appear by chance;
+    // multi-byte fragments of the address still must not occur anywhere.
+    for (const fragment of [USER.email, "owner@", "example.test"]) {
       expect(decodedAll).not.toContain(fragment);
     }
   });
