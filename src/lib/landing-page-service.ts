@@ -23,6 +23,7 @@ import {
   isWebinarContent as webinarContent,
   MAX_LANDING_PAGE_SLUG_LENGTH as MAX_SLUG_LENGTH,
   normalizeLandingPageSlug as pageSlug,
+  isReservedLandingPageSlug,
   PUBLIC_LIVE_STATUSES,
   publicLandingPageCandidateWhere,
   isAudienceFunnel,
@@ -401,6 +402,7 @@ export async function createLandingPage(input: Omit<LandingPageDraftInput, "id" 
   const formId = input.formId ? identifier(input.formId) : null;
   const liveId = input.liveId ? identifier(input.liveId) : null;
   if (!name || !slug || (input.formId && !formId) || (input.liveId && !liveId)) throw new LandingPageInputError();
+  if (isReservedLandingPageSlug(slug)) throw new LandingPageInputError("landing_page_slug_reserved");
   assertNoStepsAddedOutsideGoal(undefined, content);
   const changes = customCodeChanges(actor, undefined, content);
   await validateBindings(db(), { ...scope, content, formId, liveId });
@@ -510,6 +512,7 @@ export async function saveLandingPageDraft(input: Required<Pick<LandingPageDraft
   const existing = await requireScopedPage(db(), scope, id);
   if (existing.revision !== revision) throw new LandingPageConflictError();
   if (existing.status === "published" && existing.slug !== slug) throw new LandingPageInputError("landing_page_slug_locked");
+  if (existing.slug !== slug && isReservedLandingPageSlug(slug)) throw new LandingPageInputError("landing_page_slug_reserved");
   assertNoStepsAddedOutsideGoal(existing.draftContent, content);
   validateOperationalReferences(existing.operations, content);
   const changes = customCodeChanges(actor, existing.draftContent, content);

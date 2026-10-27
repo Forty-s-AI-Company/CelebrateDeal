@@ -57,13 +57,17 @@ export function sanitizeFunnelHtml(input: string): string {
 }
 
 /**
- * 自訂程式碼能否開新分頁。只有公開頁（`/lp/*`，回應帶 COOP: same-origin）
- * 會開啟；編輯器與後台預覽一律不開，避免彈出頁經 opener 導向後台。
+ * 渲染環境由伺服器決定（`FunnelCustomCodeRuntime`）：
+ * - scriptsEnabled：緊急開關 `FUNNEL_CUSTOM_CODE_DISABLED` 未開啟時才為 true。
+ *   預設 false（fail-closed）：沒有被伺服器明確允許的畫面一律以 sandbox="" 顯示。
+ * - allowPopups：只有公開頁（`/lp/*`，回應帶 COOP: same-origin）會開啟；編輯器與
+ *   後台預覽一律不開，避免彈出頁經 opener 導向後台。
  */
-const FunnelCustomCodeSurfaceContext = createContext<{ allowPopups: boolean }>({ allowPopups: false });
+type FunnelCustomCodeSurface = { allowPopups: boolean; scriptsEnabled: boolean };
+const FunnelCustomCodeSurfaceContext = createContext<FunnelCustomCodeSurface>({ allowPopups: false, scriptsEnabled: false });
 
-export function FunnelCustomCodeSurfaceProvider({ allowPopups, children }: { allowPopups: boolean; children: ReactNode }) {
-  return <FunnelCustomCodeSurfaceContext.Provider value={{ allowPopups }}>{children}</FunnelCustomCodeSurfaceContext.Provider>;
+export function FunnelCustomCodeSurfaceProvider({ allowPopups = false, scriptsEnabled, children }: { allowPopups?: boolean; scriptsEnabled: boolean; children: ReactNode }) {
+  return <FunnelCustomCodeSurfaceContext.Provider value={{ allowPopups, scriptsEnabled }}>{children}</FunnelCustomCodeSurfaceContext.Provider>;
 }
 
 function clampHeight(value: number | undefined): number {
@@ -78,8 +82,10 @@ function clampHeight(value: number | undefined): number {
  *   allow-popups-to-escape-sandbox），商家 HTML／CSS／JS 原樣在不透明來源執行；
  *   高度只接受來自這個 iframe（event.source）且在範圍內的數字。
  */
-export function SandboxedCustomCode({ code, mode, label, height }: { code: FunnelCustomCode; mode: FunnelCustomCodeMode; label: string; height?: number }) {
-  const { allowPopups } = useContext(FunnelCustomCodeSurfaceContext);
+export function SandboxedCustomCode({ code, mode: requestedMode, label, height }: { code: FunnelCustomCode; mode: FunnelCustomCodeMode; label: string; height?: number }) {
+  const { allowPopups, scriptsEnabled } = useContext(FunnelCustomCodeSurfaceContext);
+  const mode: FunnelCustomCodeMode = scriptsEnabled ? requestedMode : "static";
+  const withheld = requestedMode === "script" && mode === "static";
   const frameRef = useRef<HTMLIFrameElement>(null);
   const initialHeight = clampHeight(height);
   const [reportedHeight, setReportedHeight] = useState<number | null>(null);
@@ -96,7 +102,7 @@ export function SandboxedCustomCode({ code, mode, label, height }: { code: Funne
     window.addEventListener("message", onMessage);
     return () => window.removeEventListener("message", onMessage);
   }, [mode]);
-  return <iframe
+  const frame = <iframe
     ref={frameRef}
     title={label}
     sandbox={funnelCustomCodeSandbox(mode, { popups: allowPopups })}
@@ -106,6 +112,10 @@ export function SandboxedCustomCode({ code, mode, label, height }: { code: Funne
     style={{ height: `${reportedHeight ?? initialHeight}px` }}
     className="block w-full border-0"
   />;
+  return withheld ? <>
+    <p data-funnel-custom-code-withheld className="mb-1 text-xs text-amber-800">自訂 JavaScript 目前未執行（平台已暫時停用，或此畫面不執行商家腳本）。</p>
+    {frame}
+  </> : frame;
 }
 
 /** 舊介面：只有 HTML、不執行腳本。 */

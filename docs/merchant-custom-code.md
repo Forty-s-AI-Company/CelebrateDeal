@@ -33,8 +33,11 @@ CelebrateDeal 的一頁式網站提供三種「自己寫程式碼」的方式：
 自訂程式碼放在一個獨立的「沙箱」小視窗（iframe）裡，和頁面其他部分、CelebrateDeal 網站完全隔開：
 
 - **可以**：用 `https://` 載入圖片、字型、樣式表與外部腳本（例如圖表或輪播套件）；使用行內 `<script>`；嵌入 `https://` 影片或其他 iframe；開啟新分頁（只在公開頁）。
-- **不可以**：讀取或設定 Cookie、使用 localStorage／sessionStorage；讀取或修改頁面其他部分（`parent`、`top`）；把整個頁面導向別的網址；送出表單（`<form>`）；使用 `fetch`、`XMLHttpRequest`、WebSocket 等網路請求；使用 `alert()`、`confirm()` 等對話框；使用 `eval()` 或 `new Function()`。
-- 沙箱內的程式碼看不到訪客在 CelebrateDeal 的登入狀態，也碰不到你的後台。
+- **不可以**：讀取或設定 Cookie、使用 localStorage／sessionStorage；讀取或修改頁面其他部分（`parent`、`top`）；把整個頁面導向別的網址；送出表單（`<form>`）；使用 `fetch`、`XMLHttpRequest`、WebSocket；使用 `alert()`、`confirm()` 等對話框；使用 `eval()` 或 `new Function()`。
+- 沙箱內的程式碼看不到訪客在 CelebrateDeal 的登入狀態，也碰不到你的後台或其他商家。
+- **這些限制不代表資料無法離開沙箱。** 沙箱仍可載入 `https://` 圖片（例如追蹤像素）、嵌入外部 iframe，也可以把自己這個小視窗導向外部網址；訪客在小視窗裡輸入的內容，你的程式碼都可能送出去。請只收集你有權收集的資料，並遵守個資規範；平台會在頁面最上方與最下方提醒訪客，不要在商家區塊輸入 CelebrateDeal 帳號密碼或付款資料。
+- 頁面含 JavaScript 時，頁面最上方會顯示一行平台提醒，自訂 CSS 無法隱藏。
+- 避免在 JavaScript 的字串中同時寫出 `<!--` 與 `<script`（例如組 HTML 字串時）：瀏覽器解析 HTML 時會把後面的內容當成腳本的一部分，讓你的腳本失效。需要時請拆開，例如 `"<!-" + "-"`。
 
 ### 沒有 JavaScript 時
 
@@ -55,7 +58,8 @@ CelebrateDeal 的一頁式網站提供三種「自己寫程式碼」的方式：
 - 你的 CSS 只作用在頁面內容：每個選擇器前面會自動加上頁面內容的範圍。
 - `html`、`body`、`:root` 會套用到頁面內容本身，例如 `body { background: #fafafa; }`、`:root { --brand: #e11d48; }`。
 - 要指定某個元件，可以在元件設定的「進階 → HTML ID」設定 ID，再用 `#你的ID` 選取。
-- 支援 `@media`、`@supports`、`@font-face`（字型網址必須是 `https://`，字型名稱不能用 `serif`、`system-ui` 等通用名稱）與 `@keyframes`。
+- 支援 `@media`、`@supports`、`@font-face`（字型網址必須是 `https://`，字型名稱不能用 `serif`、`system-ui` 等通用名稱，只能使用文字、數字、空白、底線與連字號）與 `@keyframes`。
+- 你在 `@font-face` 宣告的字型名稱會自動加上 `cdm-` 前綴，同一份 CSS 裡 `font-family`／`font` 用到這個名稱的地方也會一併改寫，所以寫法不變；但透過 CSS 變數（`var(--font)`）引用的名稱不會改寫，請直接寫在 `font-family`。這是為了避免商家字型取代平台本身使用的字型。`@keyframes` 名稱同理加上前綴。
 - `url()` 只接受完整的 `https://` 網址。
 
 以下寫法會被拒絕，編輯器會顯示原因：
@@ -89,12 +93,14 @@ CelebrateDeal 的一頁式網站提供三種「自己寫程式碼」的方式：
 遇到安全事件時，平台可能暫時停用自訂 JavaScript：
 
 - 公開頁上的自訂程式碼元件只顯示 HTML 與 CSS，不執行 JavaScript；頁面自訂 CSS 也暫停套用。
+- 編輯器預覽與 Funnel 管理頁同樣不執行 JavaScript。
 - 這段期間無法新增或修改 JavaScript，但仍可刪除 JavaScript 或編輯其他內容。
 - 恢復後，已發布的內容會自動照常運作，不需要重新發布。
 
 ## 常見問題
 
 - **為什麼我的腳本讀不到 Cookie？** 沙箱刻意不提供 Cookie 與儲存空間。需要記住訪客狀態時，請改用平台的表單或追蹤整合。
-- **為什麼 `fetch` 失敗？** 沙箱不允許網路請求。外部套件請用 `<script src="https://…">` 載入。
+- **為什麼 `fetch` 失敗？** 沙箱不允許 `fetch`／XHR／WebSocket。外部套件請用 `<script src="https://…">` 載入。
+- **為什麼網址代稱不能用 `login`、`admin`、`support`？** 公開網址 `/lp/…` 不能看起來像平台的登入、後台、客服或驗證頁，也不能包含 `celebratedeal`。已經在使用的網址不受影響。
 - **為什麼高度不對？** 含 JavaScript 時高度依內容自動調整（最高 20,000 px）；沒有 JavaScript 時請在「預設高度」設定。
 - **為什麼編輯畫面沒有執行我的 JavaScript？** 編輯畫面只顯示 HTML 與 CSS，請用「預覽」或公開頁確認互動效果。

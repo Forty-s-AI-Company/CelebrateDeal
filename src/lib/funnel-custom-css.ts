@@ -14,6 +14,11 @@ export const FUNNEL_CUSTOM_CSS_SCOPE = "[data-funnel-content]";
 export const FUNNEL_PAGE_CUSTOM_CSS_MAX_BYTES = 20_000;
 /** 商家 @keyframes 名稱一律加上前綴，避免覆寫平台同名動畫。 */
 export const FUNNEL_CUSTOM_KEYFRAMES_PREFIX = "cdm-";
+/**
+ * 商家 @font-face 的字型名稱也一律加上前綴（並同步改寫 font-family／font 中的
+ * 引用），讓商家字型無法接管平台字型堆疊（例如 "Segoe UI"、"Noto Sans TC"）。
+ */
+export const FUNNEL_CUSTOM_FONT_PREFIX = "cdm-";
 
 const MAX_RULES = 2_000;
 const MAX_NESTING = 3;
@@ -216,6 +221,45 @@ function checkUrls(value: string) {
 }
 
 type DeclarationContext = { kind: "rule" } | { kind: "font-face" } | { kind: "keyframe" };
+/** 這份 CSS 自己宣告的 @keyframes 名稱與 @font-face 字型名稱（小寫→原樣）。 */
+type CustomNames = { keyframes: ReadonlySet<string>; fonts: ReadonlyMap<string, string> };
+
+const FONT_FAMILY_NAME = /^[\p{L}\p{N} _-]{1,64}$/u;
+
+function unquote(value: string): string {
+  const trimmed = value.trim();
+  return /^(["']).*\1$/u.test(trimmed) ? trimmed.slice(1, -1) : trimmed;
+}
+
+function prefixedFont(name: string): string {
+  return `"${FUNNEL_CUSTOM_FONT_PREFIX}${name}"`;
+}
+
+/** font-family 清單：完全等於自己宣告的字型名稱的項目才改寫；通用字型與其他名稱不變。 */
+function renameFontFamilies(value: string, fonts: ReadonlyMap<string, string>): string {
+  if (!fonts.size) return value;
+  let changed = false;
+  const items = splitTopLevel(value, ",").map((item) => {
+    const declared = fonts.get(unquote(item).replace(/\s+/gu, " ").toLowerCase());
+    if (!declared) return item.trim();
+    changed = true;
+    return prefixedFont(declared);
+  });
+  return changed ? items.join(",") : value;
+}
+
+/** font 簡寫：字型清單在最後；第一段的尾端可能是自己宣告的名稱（引號或不加引號）。 */
+function renameFontShorthand(value: string, fonts: ReadonlyMap<string, string>): string {
+  if (!fonts.size) return value;
+  const [first = "", ...rest] = splitTopLevel(value, ",");
+  let head = first.trim();
+  for (const [lower, declared] of fonts) {
+    // Names are limited to letters, digits, spaces, _ and - (FONT_FAMILY_NAME), so they need no regex escaping.
+    const tail = new RegExp(String.raw`(^|\s)(["']?)${lower}\2\s*$`, "iu");
+    if (tail.test(head)) { head = head.replace(tail, (_match, space: string) => `${space}${prefixedFont(declared)}`); break; }
+  }
+  return [head, ...(rest.length ? [renameFontFamilies(rest.join(","), fonts)] : [])].join(",");
+}
 
 function renameKeyframes(value: string, names: ReadonlySet<string>): string {
   if (!names.size) return value;
@@ -228,7 +272,7 @@ function renameKeyframes(value: string, names: ReadonlySet<string>): string {
   });
 }
 
-function compileDeclarations(block: string, context: DeclarationContext, keyframes: ReadonlySet<string>): string {
+function compileDeclarations(block: string, context: DeclarationContext, names: CustomNames): string {
   const output: string[] = [];
   for (const raw of splitTopLevel(block, ";")) {
     const declaration = raw.trim();
@@ -247,17 +291,20 @@ function compileDeclarations(block: string, context: DeclarationContext, keyfram
     if (blocked) reject(`不支援 ${blocked[1]!.toLowerCase()}()；圖片與字型請使用 url(https://…)。`);
     checkUrls(value);
     if (context.kind === "font-face" && property === "font-family") {
-      const family = value.replace(/^["']|["']$/gu, "").trim().toLowerCase();
-      if (!family || GENERIC_FONT_FAMILIES.has(family)) reject(`@font-face 不可使用通用字型名稱「${family || value}」，請改用自己的字型名稱。`);
-    }
+      const family = unquote(value).replace(/\s+/gu, " ").trim();
+      if (!family || GENERIC_FONT_FAMILIES.has(family.toLowerCase())) reject(`@font-face 不可使用通用字型名稱「${family || value}」，請改用自己的字型名稱。`);
+      if (!FONT_FAMILY_NAME.test(family)) reject(`@font-face 的字型名稱只能使用文字、數字、空白、底線與連字號：${snippet(family)}`);
+      value = prefixedFont(family);
+    } else if (property === "font-family") value = renameFontFamilies(value, names.fonts);
+    else if (property === "font") value = renameFontShorthand(value, names.fonts);
     if (context.kind === "font-face" && property === "src" && !/url\s*\(|local\s*\(/iu.test(value)) reject("@font-face 的 src 必須使用 url(https://…) 或 local(…)。");
-    if (property === "animation" || property === "animation-name") value = renameKeyframes(value, keyframes);
+    if (property === "animation" || property === "animation-name") value = renameKeyframes(value, names.keyframes);
     output.push(`${property}:${value}`);
   }
   return output.join(";");
 }
 
-function compileKeyframes(block: string, keyframes: ReadonlySet<string>): string {
+function compileKeyframes(block: string, names: CustomNames): string {
   const cursor: Cursor = { text: block, index: 0 };
   const frames: string[] = [];
   while (cursor.index < block.length) {
@@ -266,12 +313,12 @@ function compileKeyframes(block: string, keyframes: ReadonlySet<string>): string
     if (terminator !== "{") reject(`@keyframes 內的格式不正確：${snippet(prelude)}`);
     const selectors = splitTopLevel(prelude, ",").map((part) => part.trim().toLowerCase());
     if (!selectors.every((selector) => /^(?:from|to|\d{1,3}(?:\.\d+)?%)$/u.test(selector))) reject(`@keyframes 只接受 from、to 或百分比：${snippet(prelude)}`);
-    frames.push(`${selectors.join(",")}{${compileDeclarations(readBlock(cursor), { kind: "keyframe" }, keyframes)}}`);
+    frames.push(`${selectors.join(",")}{${compileDeclarations(readBlock(cursor), { kind: "keyframe" }, names)}}`);
   }
   return frames.join("");
 }
 
-type CompileState = { rules: number; keyframes: ReadonlySet<string> };
+type CompileState = { rules: number; names: CustomNames };
 
 function compileRuleList(text: string, depth: number, state: CompileState): string {
   const cursor: Cursor = { text, index: 0 };
@@ -299,7 +346,7 @@ function compileRuleList(text: string, depth: number, state: CompileState): stri
       if (name === "font-face") {
         if (depth > 0) reject("@font-face 只能放在最外層。");
         if (terminator !== "{" || prelude.trim()) reject("@font-face 格式不正確。");
-        const declarations = compileDeclarations(readBlock(cursor), { kind: "font-face" }, state.keyframes);
+        const declarations = compileDeclarations(readBlock(cursor), { kind: "font-face" }, state.names);
         if (!/(?:^|;)font-family:/u.test(declarations) || !/(?:^|;)src:/u.test(declarations)) reject("@font-face 必須同時設定 font-family 與 src。");
         output.push(`@font-face{${declarations}}`);
         continue;
@@ -308,7 +355,7 @@ function compileRuleList(text: string, depth: number, state: CompileState): stri
         if (depth > 0) reject("@keyframes 只能放在最外層。");
         const keyframeName = prelude.trim();
         if (terminator !== "{" || !/^-?[A-Za-z_][\w-]*$/u.test(keyframeName)) reject(`@keyframes 名稱只能使用英數、底線與連字號：${snippet(keyframeName)}`);
-        output.push(`@${name} ${FUNNEL_CUSTOM_KEYFRAMES_PREFIX}${keyframeName}{${compileKeyframes(readBlock(cursor), state.keyframes)}}`);
+        output.push(`@${name} ${FUNNEL_CUSTOM_KEYFRAMES_PREFIX}${keyframeName}{${compileKeyframes(readBlock(cursor), state.names)}}`);
         continue;
       }
       reject(`不支援 @${name}；只允許 @media、@supports、@font-face 與 @keyframes。`);
@@ -316,7 +363,7 @@ function compileRuleList(text: string, depth: number, state: CompileState): stri
     const { prelude, terminator } = readPrelude(cursor);
     if (terminator !== "{") reject(`規則缺少「{」：${snippet(prelude)}`);
     const selector = scopeSelectorList(prelude);
-    output.push(`${selector}{${compileDeclarations(readBlock(cursor), { kind: "rule" }, state.keyframes)}}`);
+    output.push(`${selector}{${compileDeclarations(readBlock(cursor), { kind: "rule" }, state.names)}}`);
   }
   return output.join("\n");
 }
@@ -335,7 +382,13 @@ export function compileFunnelCustomCss(source: unknown): FunnelCustomCssResult {
     if (/[\u0000-\u0008\u000b\u000e-\u001f\u007f]/u.test(source)) reject("含有不可見的控制字元。");
     const text = stripComments(source);
     const keyframes = new Set([...text.matchAll(/@(?:-webkit-)?keyframes\s+(-?[A-Za-z_][\w-]*)/giu)].map((match) => match[1]!));
-    const css = compileRuleList(text, 0, { rules: 0, keyframes });
+    const fonts = new Map<string, string>();
+    for (const block of text.matchAll(/@font-face\s*\{([^}]*)\}/giu)) {
+      const family = /(?:^|;)\s*font-family\s*:\s*([^;]+)/iu.exec(block[1]!)?.[1];
+      const name = family ? unquote(family).replace(/\s+/gu, " ").trim() : "";
+      if (FONT_FAMILY_NAME.test(name) && !GENERIC_FONT_FAMILIES.has(name.toLowerCase())) fonts.set(name.toLowerCase(), name);
+    }
+    const css = compileRuleList(text, 0, { rules: 0, names: { keyframes, fonts } });
     // 最後一道防線：輸出不可能含有這些字元，若有就是編譯器的錯誤，直接拒絕。
     if (/[<\\]/u.test(css) || /@import/iu.test(css)) reject("無法安全處理這段 CSS。");
     return { ok: true, css };

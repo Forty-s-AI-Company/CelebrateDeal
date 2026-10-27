@@ -84,14 +84,26 @@ export function funnelCustomCodeCsp(mode: FunnelCustomCodeMode): string {
  */
 export const FUNNEL_CUSTOM_CODE_HEIGHT_REPORTER = `(function(){var p=window.parent,l=-1;function s(){var e=document.documentElement;if(!e)return;var h=Math.ceil(e.getBoundingClientRect().height);if(h===l)return;l=h;try{p.postMessage({type:${JSON.stringify(FUNNEL_CUSTOM_CODE_HEIGHT_MESSAGE)},height:h},"*")}catch(x){}}if(typeof ResizeObserver==="function"){new ResizeObserver(s).observe(document.documentElement)}document.addEventListener("DOMContentLoaded",s);window.addEventListener("load",s);s()})();`;
 
-/** `</script` 只會出現在字串或註解裡；改寫成 `<\/script` 語意不變，也不會提早結束標籤。 */
+/**
+ * 只改寫會讓 `<script>` 提早結束的 `</script`（大小寫不拘）為 `<\/script`。
+ * 在字串、樣板字串、註解與 regex 字面值中 `\/` 都等於 `/`，語意不變；一般程式碼
+ * 裡不可能合法出現 `</script`。
+ *
+ * 刻意不處理 `<!--`：HTML 的 script data 只有在 `<!--` 之後又出現 `<script`
+ * 時才會進入「double escaped」狀態，讓這段腳本吃掉後面的內容；而把 `<script`
+ * 改寫會破壞像 `i<scriptCount` 這種合法程式碼。這只會讓商家自己的腳本失效
+ * （仍在沙箱內），不是安全問題；商家文件已說明請避免在字串中同時寫出這兩段。
+ */
 function scriptText(js: string): string {
-  return js.replace(/<\/(script)/giu, "<\\/$1").replace(/<!--/gu, "<\\!--");
+  return js.replace(/<\/(script)/giu, String.raw`<\/$1`);
 }
 
-/** CSS 裡的 `<` 一律寫成 CSS 跳脫，避免 `</style>` 提早結束標籤。 */
+/**
+ * 同理只改寫 `</style` 為 `<\/style`（CSS 中 `\/` 等於 `/`）；其他 `<`
+ * （例如 `@media (width < 600px)`）維持原樣。
+ */
 function styleText(css: string): string {
-  return css.replace(/</gu, "\\3c ");
+  return css.replace(/<\/(style)/giu, String.raw`<\/$1`);
 }
 
 /**

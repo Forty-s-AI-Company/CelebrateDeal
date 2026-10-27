@@ -3,7 +3,7 @@
 import type { FunnelCheckoutReference } from "@/lib/funnel-commerce";
 
 import { LoaderCircle, LockKeyhole, PackageCheck } from "lucide-react";
-import Link from "next/link";
+import { FullPageLink } from "@/components/full-page-link";
 import { policyCenterPublication, resolvePolicyStatus } from "@/lib/policy-publication";
 import { type FormEvent, useEffect, useRef, useState } from "react";
 import {
@@ -528,9 +528,9 @@ export function CommerceCheckoutForm({
       <label className="flex items-start gap-3 text-sm leading-6 text-slate-700">
         <input type="checkbox" name="policyAcknowledgement" required className="mt-1 h-4 w-4 accent-blue-600" disabled={fieldsDisabled} />
         <span>
-          我已閱讀目前的 <Link href="/policies/terms" className="font-semibold text-blue-700 underline">使用條款</Link>、
-          <Link href="/policies/privacy" className="font-semibold text-blue-700 underline">隱私通知</Link> 與
-          <Link href="/policies/refunds" className="font-semibold text-blue-700 underline">退款政策</Link>（{resolvePolicyStatus(policyCenterPublication.effectiveDate) === "published" ? "自" : "將自"} {policyCenterPublication.effectiveDateLabel} 起生效）。
+          我已閱讀目前的 <FullPageLink href="/policies/terms" className="font-semibold text-blue-700 underline">使用條款</FullPageLink>、
+          <FullPageLink href="/policies/privacy" className="font-semibold text-blue-700 underline">隱私通知</FullPageLink> 與
+          <FullPageLink href="/policies/refunds" className="font-semibold text-blue-700 underline">退款政策</FullPageLink>（{resolvePolicyStatus(policyCenterPublication.effectiveDate) === "published" ? "自" : "將自"} {policyCenterPublication.effectiveDateLabel} 起生效）。
         </span>
       </label>
 
@@ -566,7 +566,7 @@ export function CommerceCheckoutForm({
       >
         {message || "尚未送出"}
       </p>
-      <Link href="/support/orders" className="text-sm font-semibold text-blue-700 underline">查看這個瀏覽器的訂單與付款狀態</Link>
+      <FullPageLink href="/support/orders" className="text-sm font-semibold text-blue-700 underline">查看這個瀏覽器的訂單與付款狀態</FullPageLink>
     </form>
   );
 }

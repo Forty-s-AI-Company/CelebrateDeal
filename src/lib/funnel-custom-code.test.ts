@@ -76,6 +76,16 @@ describe("custom code sandbox contract", () => {
     expect(srcDoc.match(/<\/script>/gu)).toHaveLength(2);
   });
 
+  it("rewrites only the closing-tag sequences, so regex literals, comparisons and CSS range queries keep their meaning", () => {
+    const js = "const re = /a<!--b/; if (i<scriptCount) run(); const s = '</SCRIPT>';";
+    const css = "@media (width < 600px){.a{color:red}} .b{content:'</style>'}";
+    const srcDoc = buildFunnelCustomCodeSrcDoc({ html: "", css, js }, "script");
+    expect(srcDoc).toContain("const re = /a<!--b/; if (i<scriptCount) run();");
+    expect(srcDoc).toContain(String.raw`const s = '<\/SCRIPT>';`);
+    expect(srcDoc).toContain("@media (width < 600px){.a{color:red}}");
+    expect(srcDoc).toContain(String.raw`.b{content:'<\/style>'}`);
+  });
+
   it("static mode carries no script at all", () => {
     const srcDoc = buildFunnelCustomCodeSrcDoc({ html: "<p>x</p>", css: "", js: "alert(1)" }, "static");
     expect(srcDoc).not.toContain("<script");

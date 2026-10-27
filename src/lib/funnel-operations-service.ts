@@ -4,6 +4,7 @@ import { requireVendorManagerContext } from "@/lib/auth";
 import { requireEditableSalesProjectScope } from "@/lib/sales-project-scope";
 import { getDb } from "@/lib/db";
 import { parseFunnelStepPages } from "@/lib/funnel-step-pages";
+import { isReservedLandingPageSlug } from "@/lib/public-landing-page-eligibility";
 import { aggregateFunnelVisits, FunnelOperationsSchema, parseFunnelOperations, validExperimentTransition, type FunnelOperations } from "@/lib/funnel-operations";
 
 export class FunnelOperationsError extends Error {}
@@ -82,6 +83,7 @@ export async function saveFunnelOperations(input: unknown) {
   const { page, state, operations } = await scopedPage(data.pageId, database);
   if (page.revision !== data.revision) throw new FunnelOperationsError("版本衝突：已有較新的變更，請重新載入後再編輯。");
   if (page.status === "published" && page.slug !== data.slug) throw new FunnelOperationsError("已發布的 slug 已鎖定，請先取消發布再修改。");
+  if (page.slug !== data.slug && isReservedLandingPageSlug(data.slug)) throw new FunnelOperationsError("這個網址代稱保留給平台使用（例如 login、admin、support、verify），也不可包含 celebratedeal。");
   if (!validExperimentTransition(operations.experiment, data.operations.experiment)) throw new FunnelOperationsError("分流配置已鎖定；請先停止實驗，再建立新的實驗。");
   const nextExperiment = data.operations.experiment;
   if (nextExperiment && nextExperiment.id !== operations.experiment?.id) {

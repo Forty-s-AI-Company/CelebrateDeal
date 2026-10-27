@@ -672,6 +672,10 @@ export function FunnelPageDocumentRenderer({ document, viewport = "desktop", mod
  * 頁面自訂 CSS 的外框。商家選擇器一律以 `[data-funnel-content]` 開頭，選不到這個
  * 外框；外框的 paint／layout containment 讓 position:fixed 只能相對外框定位且被
  * 裁切在外框內，isolation 讓 z-index 無法蓋過外框之外的平台揭露與政策連結。
+ *
+ * 容器「內」由平台產生的介面（報名表單、商品元件、能力提示文字）刻意讓商家
+ * 自訂 CSS 調整外觀，因此可能被隱藏；必須讓訪客看到的平台說明（腳本揭露、
+ * 政策連結）一律放在容器外。真正的結帳同意在獨立的結帳頁，不在這個容器內。
  */
 export const FUNNEL_CONTENT_SHELL_STYLE: CSSProperties = { contain: "layout paint", isolation: "isolate", position: "relative", zIndex: 0 };
 

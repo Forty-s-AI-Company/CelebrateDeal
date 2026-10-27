@@ -67,7 +67,7 @@ const code = (id: "html" | "css" | "js", label: string, description: string): Fu
 const customCodeFields: readonly FunnelInspectorField[] = [
   code("html", "HTML", "原樣放進隔離的沙箱 iframe；沒有 JS 時只保留安全的排版標籤。"),
   code("css", "CSS", "只作用在這個元件的 iframe 內。可用 https:// 載入字型與圖片。"),
-  code("js", "JavaScript", "只在預覽與公開頁的隔離沙箱中執行，無法讀取平台 Cookie、後台或發出網路請求（fetch／XHR）。需 owner 或 admin，且 Email 已驗證。"),
+  code("js", "JavaScript", "只在預覽與公開頁的隔離沙箱中執行，無法讀取平台 Cookie 或後台，也不能使用 fetch／XHR；但仍可載入 https 圖片等資源，資料並非無法離開沙箱。需 owner 或 admin，且 Email 已驗證。"),
   content("title", "iframe 說明（無障礙）"),
   { id: "height", label: "預設高度（px）", group: "content", kind: "number", target: "props", min: 40, max: 20_000, description: "含 JS 時會依內容自動調整；沒有 JS 時固定為這個高度。" },
 ];

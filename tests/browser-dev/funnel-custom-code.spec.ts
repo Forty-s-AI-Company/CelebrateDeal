@@ -10,6 +10,9 @@ async function probe(page: Page) {
   return JSON.parse(await frame.locator("#probe").innerText()) as Record<string, string>;
 }
 
+// Chromium only (playwright.funnel-elements.config.ts). The guarantees rely on
+// standard sandbox, srcdoc CSP inheritance and COOP behaviour; WebKit/Firefox
+// runs are a follow-up (COOP + popups from sandboxed frames differ most there).
 test.describe("Funnel custom code isolation (real browser)", () => {
   test.beforeEach(async ({ context }) => {
     // A readable (non-HttpOnly) platform cookie: the worst case for leakage.
@@ -80,6 +83,8 @@ test.describe("Funnel custom code isolation (real browser)", () => {
       await expect(disclosure).toBeVisible();
       await expect(disclosure).toContainText("部分互動內容為商家自訂腳本");
       await expect(disclosure.getByRole("link", { name: "隱私通知" })).toBeVisible();
+      // Policy links are plain full-page navigations (no client-side router), so merchant tags do not follow.
+      expect(await disclosure.getByRole("link", { name: "隱私通知" }).evaluate((element) => element.tagName)).toBe("A");
       // Whatever sits at the centre of the disclosure and its links is the disclosure itself.
       const covered = await disclosure.evaluate((element) => {
         const targets = [element, ...element.querySelectorAll("a")];
@@ -91,6 +96,16 @@ test.describe("Funnel custom code isolation (real browser)", () => {
       });
       expect(covered).toBe(false);
       await expect(page.getByTestId("platform-sentinel")).toBeVisible();
+      // The above-the-fold notice is outside the content container as well.
+      const notice = page.locator("[data-funnel-platform-top-notice]");
+      await notice.scrollIntoViewIfNeeded();
+      await expect(notice).toBeVisible();
+      await expect(notice).toContainText("請勿在其中輸入 CelebrateDeal 帳號密碼");
+      expect(await notice.evaluate((element) => {
+        const rect = element.getBoundingClientRect();
+        const hit = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
+        return Boolean(hit && element.contains(hit));
+      })).toBe(true);
       if (variant === "overlay") {
         // The fixed "takeover" element is clipped to the contained page shell.
         const geometry = await page.evaluate(() => {

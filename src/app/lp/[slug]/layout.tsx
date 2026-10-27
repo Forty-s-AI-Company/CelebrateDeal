@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { FunnelCustomCodeSurfaceProvider } from "@/components/landing-pages/sandboxed-html";
+import { FunnelCustomCodeRuntime } from "@/components/landing-pages/funnel-custom-code-runtime";
 import { PublicTrackingTagScripts } from "@/components/landing-pages/public-tracking-tags";
 import { loadPublicFunnelTrackingTags } from "@/lib/public-funnel-tracking";
 
@@ -9,8 +9,8 @@ import { loadPublicFunnelTrackingTags } from "@/lib/public-funnel-tracking";
  */
 export default async function PublicFunnelLayout({ children, params }: { children: ReactNode; params: Promise<{ slug: string }> }) {
   const tags = await loadPublicFunnelTrackingTags((await params).slug);
-  return <FunnelCustomCodeSurfaceProvider allowPopups>
+  return <FunnelCustomCodeRuntime allowPopups>
     {children}
     <PublicTrackingTagScripts tags={tags} />
-  </FunnelCustomCodeSurfaceProvider>;
+  </FunnelCustomCodeRuntime>;
 }

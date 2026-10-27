@@ -105,6 +105,7 @@ function failure(error: unknown): LandingPageActionState {
     if (error.message === "landing_page_independent_publish_limit") return { status: "error", message: independentPublishLimitMessage() };
     if (error.message === "landing_page_independent_publish_disabled") return { status: "error", message: INDEPENDENT_PUBLISH_DISABLED_MESSAGE };
     if (error.message === "landing_page_independent_publish_email_unverified") return { status: "error", message: INDEPENDENT_PUBLISH_EMAIL_UNVERIFIED_MESSAGE };
+    if (error.message === "landing_page_slug_reserved") return { status: "error", message: "這個網址代稱保留給平台使用（例如 login、admin、support、verify），也不可包含 celebratedeal。請換一個網址代稱。" };
     if (error.message === "landing_page_custom_code_role") return { status: "error", message: "只有商家擁有者（owner）或管理員（admin）可以新增、修改或刪除自訂程式碼與頁面自訂 CSS，這次變更沒有儲存。" };
     if (error.message === "landing_page_custom_code_email_unverified") return { status: "error", message: "頁面含有自訂 JavaScript，必須先完成 Email 驗證才能儲存或發布。請到「驗證 Email」完成後再試。" };
     if (error.message === "landing_page_custom_code_disabled") return { status: "error", message: "平台已暫時停用自訂 JavaScript，目前無法新增或修改 JS；你仍可刪除 JS 或編輯其他內容。" };

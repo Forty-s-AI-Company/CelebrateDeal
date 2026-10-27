@@ -62,9 +62,9 @@ function harnessDocument(variant: FunnelCustomCodeHarnessVariant, popupHref: str
   return parsed;
 }
 
-export function FunnelCustomCodeBrowserHarness({ variant, popupHref }: { variant: FunnelCustomCodeHarnessVariant; popupHref: string }) {
+export function FunnelCustomCodeBrowserHarness({ variant, popupHref, scriptsEnabled }: { variant: FunnelCustomCodeHarnessVariant; popupHref: string; scriptsEnabled: boolean }) {
   const document = useMemo(() => harnessDocument(variant, popupHref), [variant, popupHref]);
-  return <FunnelCustomCodeSurfaceProvider allowPopups>
+  return <FunnelCustomCodeSurfaceProvider allowPopups scriptsEnabled={scriptsEnabled}>
     <div id="platform-sentinel" data-testid="platform-sentinel">platform</div>
     <PublicFunnelDocument document={document} viewport="desktop" />
   </FunnelCustomCodeSurfaceProvider>;

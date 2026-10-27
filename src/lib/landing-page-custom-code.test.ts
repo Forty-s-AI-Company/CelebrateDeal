@@ -32,8 +32,10 @@ vi.mock("@/lib/funnel-commerce-service", () => ({ listFunnelCommerceProducts: vi
 
 import {
   createLandingPage, deleteLandingPage, duplicateLandingPage, LandingPageInputError, loadPublicLandingPage,
-  publishLandingPage, rollbackLandingPage, saveLandingPageDraft,
+  publishLandingPage, rollbackLandingPage, saveLandingPageDraft, saveLandingPageStepMetadata,
 } from "./landing-page-service";
+import { createFunnelFlow } from "./funnel-flow";
+import { createFunnelStepPages, type FunnelStepPages } from "./funnel-step-pages";
 import { createEmptyPageDocument, type FunnelNode, type PageDocument } from "./funnel-page-document";
 
 const now = new Date("2026-10-27T00:00:00.000Z");
@@ -181,6 +183,62 @@ describe("custom code on every draft write path", () => {
     (badCss.settings as Record<string, unknown>).customCss = "@import url(https://evil.example/x.css);";
     expect(await inputError(saveLandingPageDraft(draft(badCss)))).toBe("landing_page_custom_css_invalid");
     expect(await inputError(saveLandingPageDraft(draft(document([codeNode("big", { js: "x".repeat(50_001) })]))))).toBe("landing_page_custom_code_too_large");
+  });
+});
+
+describe("create and save_steps paths", () => {
+  function stepsWithCode(): { state: FunnelStepPages; codeStepId: string; otherStepId: string } {
+    const state = createFunnelStepPages(createFunnelFlow({ id: "flow_code", name: "自訂流程", goal: "sell", domain: "synthetic" })!)!;
+    const [codeStep, otherStep] = state.flow.steps.filter((step) => !step.isSystem);
+    const page = state.pages[codeStep!.id]!;
+    page.root = withJs.root;
+    return { state: JSON.parse(JSON.stringify(state)) as FunnelStepPages, codeStepId: codeStep!.id, otherStepId: otherStep!.id };
+  }
+
+  it("creating a page with JS needs a verified owner or admin and is audited with the new page id", async () => {
+    mocks.manager.mockResolvedValue(actor("support"));
+    expect(await inputError(createLandingPage({ name: "x", slug: "x-page", content: withJs }))).toBe("landing_page_custom_code_role");
+    mocks.manager.mockResolvedValue(actor("admin"));
+    await createLandingPage({ name: "x", slug: "x-page", content: withJs });
+    expect(mocks.create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ vendorId: "vendor-1", projectId: "project-1" }) }));
+    expect(mocks.auditCreate).toHaveBeenCalledWith({ data: expect.objectContaining({ actorId: "user-admin", targetId: "page-new", after: expect.objectContaining({ operation: "create" }) }) });
+  });
+
+  it("save_steps: removing a step that carries custom code is limited to owner/admin and audited", async () => {
+    const { state, codeStepId } = stepsWithCode();
+    mocks.findFirst.mockResolvedValue(page({ draftContent: state }));
+    mocks.manager.mockResolvedValue(actor("support"));
+    expect(await inputError(saveLandingPageStepMetadata({ id: "page-1", revision: 2, mutation: { type: "remove", stepId: codeStepId } }))).toBe("landing_page_custom_code_role");
+    expect(mocks.updateMany).not.toHaveBeenCalled();
+    mocks.manager.mockResolvedValue(actor("owner"));
+    await expect(saveLandingPageStepMetadata({ id: "page-1", revision: 2, mutation: { type: "remove", stepId: codeStepId } })).resolves.toEqual({ id: "page-1", revision: 3 });
+    expect(mocks.auditCreate).toHaveBeenCalledWith({ data: expect.objectContaining({
+      action: "funnel_custom_code_saved", targetId: "page-1",
+      after: { operation: "save_steps", changes: [expect.objectContaining({ location: `step:${codeStepId}/node:code`, change: "removed", fields: ["html", "js"] })] },
+    }) });
+  });
+
+  it("save_steps: an unverified member cannot rewrite a funnel that still carries JS", async () => {
+    const { state, otherStepId } = stepsWithCode();
+    mocks.findFirst.mockResolvedValue(page({ draftContent: state }));
+    mocks.manager.mockResolvedValue(actor("owner", false));
+    expect(await inputError(saveLandingPageStepMetadata({ id: "page-1", revision: 2, mutation: { type: "rename", stepId: otherStepId, name: "新名稱" } }))).toBe("landing_page_custom_code_email_unverified");
+    expect(mocks.updateMany).not.toHaveBeenCalled();
+  });
+});
+
+describe("reserved public slugs", () => {
+  it("refuses platform-like slugs for new pages and slug changes, but keeps an existing page's slug", async () => {
+    for (const slug of ["login", "admin", "support", "verify", "password", "signup", "my-celebratedeal"]) {
+      expect(await inputError(createLandingPage({ name: "x", slug, content: plain }))).toBe("landing_page_slug_reserved");
+      expect(await inputError(saveLandingPageDraft({ ...draft(plain), slug }))).toBe("landing_page_slug_reserved");
+    }
+    expect(mocks.create).not.toHaveBeenCalled();
+    expect(mocks.updateMany).not.toHaveBeenCalled();
+    mocks.findFirst.mockResolvedValue(page({ slug: "support" }));
+    await expect(saveLandingPageDraft({ ...draft(plain), slug: "support" })).resolves.toEqual({ id: "page-1", revision: 3 });
+    await createLandingPage({ name: "x", slug: "support-group-2026", content: plain });
+    expect(mocks.create).toHaveBeenCalledOnce();
   });
 });
 

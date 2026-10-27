@@ -2,12 +2,17 @@
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { renderToStaticMarkup } from "react-dom/server";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { ReactNode } from "react";
 import { FUNNEL_CUSTOM_CODE_HEIGHT_MESSAGE } from "@/lib/funnel-custom-code";
 import { FunnelCustomCodeSurfaceProvider, SandboxedCustomCode } from "./sandboxed-html";
 import { FunnelPageDocumentRenderer } from "./funnel-page-document-renderer";
 import { PublicFunnelDocument } from "./public-funnel-document";
+import { FunnelCustomCodeRuntime } from "./funnel-custom-code-runtime";
 import { createEmptyPageDocument, type FunnelNode, type PageDocument } from "@/lib/funnel-page-document";
+
+/** What the server provides on /lp, the editor and the operations page while the emergency switch is off. */
+const enabled = (children: ReactNode, allowPopups = false) => <FunnelCustomCodeSurfaceProvider allowPopups={allowPopups} scriptsEnabled>{children}</FunnelCustomCodeSurfaceProvider>;
 
 const code = { html: "<p class=\"m\">merchant</p><script>inline()</script>", css: ".m{color:red}", js: "document.body.dataset.ran = '1';" };
 
@@ -33,7 +38,7 @@ function page(nodes: FunnelNode[], customCss?: string): PageDocument {
 
 describe("SandboxedCustomCode markup", () => {
   it("script mode: exactly allow-scripts, merchant code raw inside an opaque-origin srcdoc with the frame CSP", () => {
-    const frame = frameOf(renderToStaticMarkup(<SandboxedCustomCode code={code} mode="script" label="自訂" />));
+    const frame = frameOf(renderToStaticMarkup(enabled(<SandboxedCustomCode code={code} mode="script" label="自訂" />)));
     expect(frame.getAttribute("sandbox")).toBe("allow-scripts");
     expect(frame.getAttribute("referrerpolicy")).toBe("no-referrer");
     const srcDoc = frame.getAttribute("srcdoc")!;
@@ -44,9 +49,9 @@ describe("SandboxedCustomCode markup", () => {
   });
 
   it("only public pages add popups, always together with escape-sandbox and never anything broader", () => {
-    const frame = frameOf(renderToStaticMarkup(<FunnelCustomCodeSurfaceProvider allowPopups><SandboxedCustomCode code={code} mode="script" label="自訂" /></FunnelCustomCodeSurfaceProvider>));
+    const frame = frameOf(renderToStaticMarkup(enabled(<SandboxedCustomCode code={code} mode="script" label="自訂" />, true)));
     expect(frame.getAttribute("sandbox")!.split(" ").sort()).toEqual(["allow-popups", "allow-popups-to-escape-sandbox", "allow-scripts"]);
-    const staticFrame = frameOf(renderToStaticMarkup(<FunnelCustomCodeSurfaceProvider allowPopups><SandboxedCustomCode code={code} mode="static" label="自訂" /></FunnelCustomCodeSurfaceProvider>));
+    const staticFrame = frameOf(renderToStaticMarkup(enabled(<SandboxedCustomCode code={code} mode="static" label="自訂" />, true)));
     expect(staticFrame.getAttribute("sandbox")).toBe("");
   });
 
@@ -75,7 +80,7 @@ describe("SandboxedCustomCode height messages", () => {
   });
 
   it("accepts a valid height only from its own iframe and ignores everything else", async () => {
-    await act(async () => { root.render(<><SandboxedCustomCode code={code} mode="script" label="A" height={200} /><iframe title="other" /></>); });
+    await act(async () => { root.render(enabled(<><SandboxedCustomCode code={code} mode="script" label="A" height={200} /><iframe title="other" /></>)); });
     const frame = container.querySelector<HTMLIFrameElement>('iframe[title="A"]')!;
     const other = container.querySelector<HTMLIFrameElement>('iframe[title="other"]')!;
     expect(frame.contentWindow).toBeTruthy();
@@ -109,8 +114,8 @@ describe("SandboxedCustomCode height messages", () => {
 describe("renderer integration", () => {
   it("runs JS only outside the editor canvas", () => {
     const doc = page([codeNode("code", { html: "<p>x</p>", js: "run()" })]);
-    expect(frameOf(renderToStaticMarkup(<FunnelPageDocumentRenderer document={doc} mode="preview" />)).getAttribute("sandbox")).toBe("allow-scripts");
-    const editor = renderToStaticMarkup(<FunnelPageDocumentRenderer document={doc} mode="editor" />);
+    expect(frameOf(renderToStaticMarkup(enabled(<FunnelPageDocumentRenderer document={doc} mode="preview" />))).getAttribute("sandbox")).toBe("allow-scripts");
+    const editor = renderToStaticMarkup(enabled(<FunnelPageDocumentRenderer document={doc} mode="editor" />));
     expect(frameOf(editor).getAttribute("sandbox")).toBe("");
     expect(editor).toContain("JS 只在預覽與公開頁面的隔離沙箱中執行");
   });
@@ -118,7 +123,7 @@ describe("renderer integration", () => {
   it("ignores code smuggled into responsive overrides", () => {
     const node = codeNode("code", { html: "<p>base</p>" });
     node.overrides = { mobile: { props: { js: "smuggled()", html: "<p>override</p>" } } };
-    const html = renderToStaticMarkup(<FunnelPageDocumentRenderer document={page([node])} viewport="mobile" mode="preview" />);
+    const html = renderToStaticMarkup(enabled(<FunnelPageDocumentRenderer document={page([node])} viewport="mobile" mode="preview" />));
     expect(frameOf(html).getAttribute("sandbox")).toBe("");
     expect(html).not.toContain("smuggled");
     expect(html).not.toContain("override");
@@ -139,6 +144,17 @@ describe("renderer integration", () => {
     expect(disclosure.closest("[data-funnel-content]")).toBeNull();
     expect(disclosure.closest("[data-funnel-content-shell]")).toBeNull();
     expect(disclosure.querySelector('a[href="/policies/privacy"]')).not.toBeNull();
+    // Above-the-fold notice: before the content shell, outside it, only because the page has JS.
+    const notice = container.querySelector("[data-funnel-platform-top-notice]")!;
+    expect(notice.textContent).toContain("請勿在其中輸入 CelebrateDeal 帳號密碼");
+    expect(notice.closest("[data-funnel-content-shell]")).toBeNull();
+    expect(notice.compareDocumentPosition(shell) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it("shows the above-the-fold notice only for pages with custom JS", () => {
+    const cssOnly = renderToStaticMarkup(<PublicFunnelDocument document={page([codeNode("code", { html: "<p>x</p>" })], "body{color:red}")} viewport="desktop" />);
+    expect(cssOnly).not.toContain("data-funnel-platform-top-notice");
+    expect(cssOnly).toContain("data-funnel-platform-disclosure");
   });
 
   it("adds no shell, style or disclosure to pages without custom code", () => {
@@ -146,5 +162,32 @@ describe("renderer integration", () => {
     expect(html).not.toContain("data-funnel-content-shell");
     expect(html).not.toContain("data-funnel-platform-disclosure");
     expect(html).toContain("data-funnel-content");
+  });
+});
+
+describe("emergency switch on every rendering surface", () => {
+  afterEach(() => { vi.unstubAllEnvs(); });
+
+  it("fails closed: without a server-provided runtime no merchant JS runs", () => {
+    const html = renderToStaticMarkup(<SandboxedCustomCode code={code} mode="script" label="X" />);
+    expect(frameOf(html).getAttribute("sandbox")).toBe("");
+    expect(frameOf(html).getAttribute("srcdoc")).not.toContain("<script");
+    expect(html).toContain("data-funnel-custom-code-withheld");
+  });
+
+  it("the server runtime runs JS only while FUNNEL_CUSTOM_CODE_DISABLED is off, for preview, popups and the public page", () => {
+    const doc = page([codeNode("code", { html: "<p>x</p>", js: "run()" })]);
+    const surfaces = (allowPopups: boolean) => [
+      <FunnelCustomCodeRuntime key="a" allowPopups={allowPopups}><FunnelPageDocumentRenderer document={doc} mode="preview" /></FunnelCustomCodeRuntime>,
+      <FunnelCustomCodeRuntime key="b" allowPopups={allowPopups}><PublicFunnelDocument document={doc} viewport="desktop" /></FunnelCustomCodeRuntime>,
+    ];
+    vi.stubEnv("FUNNEL_CUSTOM_CODE_DISABLED", "");
+    for (const surface of surfaces(false)) expect(frameOf(renderToStaticMarkup(surface)).getAttribute("sandbox")).toBe("allow-scripts");
+    vi.stubEnv("FUNNEL_CUSTOM_CODE_DISABLED", "1");
+    for (const allowPopups of [false, true]) for (const surface of surfaces(allowPopups)) {
+      const html = renderToStaticMarkup(surface);
+      expect(frameOf(html).getAttribute("sandbox")).toBe("");
+      expect(frameOf(html).getAttribute("srcdoc")).not.toContain("run()");
+    }
   });
 });

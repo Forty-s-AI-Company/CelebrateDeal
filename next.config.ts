@@ -25,6 +25,14 @@ const cspReportOnly = cspReportOnlyDirectives.join("; ");
  * styles, fonts, frames). The frame's own meta CSP still sets connect-src,
  * form-action, base-uri and object-src to 'none'. The analytics hosts are for
  * the platform-rendered GA4 / Meta Pixel snippets (IDs only, no merchant code).
+ *
+ * Enforcement note: this stays compatible with custom code only while
+ * script-src keeps 'unsafe-inline' and https:. Moving /lp to a nonce or
+ * 'strict-dynamic' policy would block the srcdoc frame's inline scripts
+ * (they cannot carry the page nonce); custom code must then move to its own
+ * origin (a separate sandbox domain) before that change. Admin pages keep the
+ * stricter site-wide policy, so their editor preview may report (and, once
+ * enforced, block) external https scripts used by merchant code.
  */
 const PUBLIC_FUNNEL_EXTRA_SOURCES: Readonly<Record<string, string>> = {
   "script-src": "https:",

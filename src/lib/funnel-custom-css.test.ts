@@ -37,7 +37,7 @@ describe("compileFunnelCustomCss: scoping", () => {
 
   it("allows https @font-face and prefixes @keyframes names, including their animation references", () => {
     const compiled = css("@font-face{font-family:\"Brand\";src:url(https://cdn.example.com/brand.woff2) format(\"woff2\")} @keyframes pulse{from{opacity:0}50%{opacity:.5}to{opacity:1}} .x{animation:pulse 1s infinite;animation-name:pulse}");
-    expect(compiled).toContain("@font-face{font-family:\"Brand\";src:url(https://cdn.example.com/brand.woff2) format(\"woff2\")}");
+    expect(compiled).toContain("@font-face{font-family:\"cdm-Brand\";src:url(https://cdn.example.com/brand.woff2) format(\"woff2\")}");
     expect(compiled).toContain("@keyframes cdm-pulse{from{opacity:0}50%{opacity:.5}to{opacity:1}}");
     expect(compiled).toContain(`${S} .x{animation:cdm-pulse 1s infinite;animation-name:cdm-pulse}`);
   });
@@ -103,5 +103,32 @@ describe("compileFunnelCustomCss: rejected syntax", () => {
 
   it("rejects a non-string value", () => {
     expect(compileFunnelCustomCss(42).ok).toBe(false);
+  });
+});
+
+describe("compileFunnelCustomCss: merchant fonts cannot take over platform font stacks", () => {
+  it("prefixes @font-face family names and rewrites only matching font-family and font references", () => {
+    const compiled = css([
+      "@font-face{font-family:'Noto Sans TC';src:url(https://cdn.example.com/blank.woff2)}",
+      "@font-face{font-family:Brand Serif;src:url(https://cdn.example.com/brand.woff2)}",
+      "h1{font-family:\"Noto Sans TC\", 'Segoe UI', sans-serif}",
+      ".lead{font:italic 700 18px/1.4 Brand Serif, serif}",
+      ".quote{font:16px 'brand serif'}",
+      "p{font-family:Segoe UI, system-ui}",
+    ].join("\n"));
+    expect(compiled).toContain('@font-face{font-family:"cdm-Noto Sans TC";src:url(https://cdn.example.com/blank.woff2)}');
+    expect(compiled).toContain('@font-face{font-family:"cdm-Brand Serif";src:url(https://cdn.example.com/brand.woff2)}');
+    expect(compiled).toContain(`${S} h1{font-family:"cdm-Noto Sans TC",'Segoe UI',sans-serif}`);
+    expect(compiled).toContain(`${S} .lead{font:italic 700 18px/1.4 "cdm-Brand Serif", serif}`);
+    expect(compiled).toContain(`${S} .quote{font:16px "cdm-Brand Serif"}`);
+    // Names the merchant did not declare (and generic families) are left alone.
+    expect(compiled).toContain(`${S} p{font-family:Segoe UI, system-ui}`);
+    // No @font-face rule can define an unprefixed family name.
+    for (const match of compiled.matchAll(/@font-face\{font-family:([^;]+);/gu)) expect(match[1]).toMatch(/^"cdm-/u);
+  });
+
+  it("rejects font names with characters outside letters, digits, spaces, _ and -", () => {
+    expect(rejected("@font-face{font-family:'Brand;x';src:url(https://cdn.example.com/a.woff2)}")).not.toBe("");
+    expect(rejected("@font-face{font-family:'a(b)';src:url(https://cdn.example.com/a.woff2)}")).toContain("字型名稱");
   });
 });
