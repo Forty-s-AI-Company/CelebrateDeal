@@ -3,12 +3,14 @@
 import { revalidatePath } from "next/cache";
 import type { PageDocument } from "@/lib/funnel-page-document";
 import { assertServerActionSecurity } from "@/lib/csrf";
+import { funnelCustomCodeErrorMessage } from "@/lib/funnel-custom-code-messages";
 import {
   LandingPageConflictError,
   LandingPageInputError,
   LandingPageNotFoundError,
   LandingPageScopeError,
 } from "@/lib/landing-page-service";
+import { LANDING_PAGE_MAX_CONTENT_BYTES } from "@/lib/landing-page-limits";
 import { LANDING_PAGE_TEMPLATE_NAME_MAX_LENGTH, LANDING_PAGE_TEMPLATE_VENDOR_LIMIT } from "@/lib/landing-page-template-document";
 import {
   applyLandingPageTemplateToStep,
@@ -54,7 +56,7 @@ function databaseErrorCode(error: unknown) {
 const INPUT_MESSAGES: Record<LandingPageTemplateInputError["code"], string> = {
   name_invalid: `請輸入 1–${LANDING_PAGE_TEMPLATE_NAME_MAX_LENGTH} 個字的範本名稱。`,
   content_invalid: "範本內容無法套用到這個步驟，頁面沒有變更。",
-  content_too_large: "內容超過 128 KiB 上限（或頁面格式需要修復），這次沒有任何變更。請精簡頁面內容，或改用較小的範本後再試。",
+  content_too_large: `內容超過 ${LANDING_PAGE_MAX_CONTENT_BYTES / 1024} KiB 上限（或頁面格式需要修復），這次沒有任何變更。請精簡頁面內容，或改用較小的範本後再試。`,
   limit_reached: `每個商家最多可保存 ${LANDING_PAGE_TEMPLATE_VENDOR_LIMIT} 個範本，請先刪除不需要的範本。`,
   step_invalid: "找不到這個步驟，或這個步驟由系統管理，不能使用範本。",
   template_incompatible: "這個範本不適用所選的網站類型或步驟，請改選其他步驟或範本。",
@@ -74,6 +76,8 @@ function failure(error: unknown): LandingPageTemplateActionState {
   if (error instanceof LandingPageConflictError) return { status: "error", code: "conflict", message: "這個網站已有較新的版本，系統沒有覆蓋它。請重新讀取網站後再套用。" };
   if (error instanceof LandingPageScopeError || (error instanceof Error && error.message === "sales_project_required")) return { status: "error", message: "請先選擇一個銷售專案，再使用範本建立或套用網站。" };
   if (error instanceof LandingPageInputError) {
+    const customCodeMessage = funnelCustomCodeErrorMessage(error.message);
+    if (customCodeMessage) return { status: "error", message: customCodeMessage };
     if (error.message === "landing_page_live_form_mismatch") return { status: "error", message: "這個網站已綁定活動場次，套用後的報名按鈕必須使用該場次的報名表。請先在頁面設定調整場次，再套用範本。" };
     if (error.message === "landing_page_step_type_not_allowed") return { status: "error", message: "這個網站目標不能新增範本需要的步驟類型，請改選其他網站目標。" };
     return { status: "error", message: "請確認範本內容與網站已綁定的表單、直播都屬於目前專案。" };

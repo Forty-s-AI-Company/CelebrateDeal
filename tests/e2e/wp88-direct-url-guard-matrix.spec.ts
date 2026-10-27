@@ -80,13 +80,13 @@ test("WP-88 verifies every guarded page belongs to a browser-proven direct-URL g
 
   // These counts are intentionally exact. A new protected page must update
   // this matrix, so it cannot silently evade direct-URL review.
-  expect(sourceFiles).toHaveLength(97);
+  expect(sourceFiles).toHaveLength(98);
   expect(familyCounts).toEqual({
     vendorContext: 7,
     vendorManagerMember: 2,
     vendorSupportMember: 2,
     vendorOwner: 3,
-    vendorManager: 56,
+    vendorManager: 57,
     vendorFinance: 12,
     authenticated: 1,
     platformFinance: 14,
@@ -94,6 +94,10 @@ test("WP-88 verifies every guarded page belongs to a browser-proven direct-URL g
   const courseCommunityPage=path.join(workspaceRoot,"src","app","(app)","products","[id]","community","page.tsx");
   expect(sourceFiles).toContain(courseCommunityPage);
   expect(guardFor(readFileSync(courseCommunityPage,"utf8"))).toBe("vendorManager");
+  // 一頁式網站範本庫：與 /landing-pages 相同，只限 owner／admin（support、accountant、partner 被拒）。
+  const landingPageTemplatesPage = path.join(workspaceRoot, "src", "app", "(app)", "landing-pages", "templates", "page.tsx");
+  expect(sourceFiles).toContain(landingPageTemplatesPage);
+  expect(guardFor(readFileSync(landingPageTemplatesPage, "utf8"))).toBe("vendorManager");
   // F-001: closed-beta grants are platform-admin only.
   const vendorFeaturesPage = path.join(workspaceRoot, "src", "app", "admin", "vendor-features", "page.tsx");
   expect(sourceFiles).toContain(vendorFeaturesPage);

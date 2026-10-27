@@ -1,6 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { Prisma } from "@prisma/client";
 import { requireVendorManagerContext } from "@/lib/auth";
+import { assertFunnelCustomCodeWrite, FunnelCustomCodeRefusal, type FunnelCustomCodeActor } from "@/lib/funnel-custom-code-guard";
 import { getDb } from "@/lib/db";
 import { FUNNEL_STEP_TYPES, isFunnelStepTypeAddableForGoal, type FunnelGoal, type FunnelStepType } from "@/lib/funnel-flow";
 import { createGoalFunnelStepPages } from "@/lib/funnel-goal-step-pages";
@@ -10,6 +11,7 @@ import { getFunnelTemplateGalleryItem, instantiateFunnelTemplate, listFunnelTemp
 import {
   createLandingPage,
   LandingPageConflictError,
+  LandingPageInputError,
   LandingPageNotFoundError,
   LandingPageScopeError,
   saveLandingPageDraft,
@@ -98,15 +100,31 @@ function db() {
 
 async function managerVendor() {
   const { auth, vendor } = await requireVendorManagerContext();
-  return { vendorId: vendor.id, userId: auth.user.id };
+  // Role and e-mail verification come from the session's own records (same actor as the page editor).
+  const actor: FunnelCustomCodeActor = { userId: auth.user.id, role: auth.member?.role ?? null, emailVerified: Boolean(auth.user.emailVerifiedAt) };
+  return { vendorId: vendor.id, userId: auth.user.id, actor };
 }
 
 /** Pages belong to a sales project; the aggregate overview is read-only. */
 async function editorScope() {
-  const { vendorId, userId } = await managerVendor();
+  const { vendorId, userId, actor } = await managerVendor();
   const scope = await requireEditableSalesProjectScope(userId, vendorId);
   if (!scope.projectId) throw new LandingPageScopeError();
-  return { vendorId, userId, projectId: scope.projectId };
+  return { vendorId, userId, actor, projectId: scope.projectId };
+}
+
+/**
+ * Saving a template that carries 自訂程式碼 is treated like adding that code to
+ * a page: the same #499 gate (owner/admin; JS needs a verified e-mail; the
+ * kill switch refuses new JS). Refusals use the page editor's error codes.
+ */
+function templateCustomCodeChanges(actor: FunnelCustomCodeActor, content: PageDocument) {
+  try {
+    return assertFunnelCustomCodeWrite(actor, undefined, content);
+  } catch (error) {
+    if (error instanceof FunnelCustomCodeRefusal) throw new LandingPageInputError(error.code);
+    throw error;
+  }
 }
 
 async function scopedPage(scope: { vendorId: string; projectId: string }, pageId: unknown) {
@@ -225,15 +243,22 @@ export async function saveLandingPageTemplateFromStep(input: { pageId: unknown; 
   if (!source) throw new LandingPageTemplateInputError("step_invalid");
   const content = prepareStoredTemplateDocument(source, name);
   if (!content) throw new LandingPageTemplateInputError("content_too_large");
+  const changes = templateCustomCodeChanges(scope.actor, content);
   return db().$transaction(async (transaction) => {
     // Serialises saves per vendor so concurrent requests cannot pass the limit.
     await transaction.$executeRaw(Prisma.sql`SELECT pg_advisory_xact_lock(hashtextextended(${`landing-page-template:${scope.vendorId}`}, 0))`);
     const count = await transaction.landingPageTemplate.count({ where: { vendorId: scope.vendorId } });
     if (count >= LANDING_PAGE_TEMPLATE_VENDOR_LIMIT) throw new LandingPageTemplateInputError("limit_reached");
-    return transaction.landingPageTemplate.create({
+    const created = await transaction.landingPageTemplate.create({
       data: { vendorId: scope.vendorId, name, content: content as unknown as Prisma.InputJsonValue, sourcePageId: page.id, createdById: scope.userId },
       select: { id: true, name: true },
     });
+    // Same audit shape as `recordFunnelCustomCodeSave` (location, change, fields, bytes; never the code).
+    if (changes.length) await transaction.auditLog.create({ data: {
+      vendorId: scope.vendorId, actorId: scope.userId, action: "funnel_custom_code_saved", targetType: "LandingPageTemplate", targetId: created.id,
+      after: { operation: "save_template", sourcePageId: page.id, changes: changes.map(({ location, kind, change, fields, bytes }) => ({ location, kind, change, fields, bytes })) } as Prisma.InputJsonValue,
+    } });
+    return created;
   }, { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted });
 }
 
@@ -287,10 +312,11 @@ export async function applyLandingPageTemplateToStep(input: { pageId: unknown; s
   const replaced = replaceFunnelStepPage(funnel, step.id, document, recordedId);
   if (!replaced.ok) throw new LandingPageTemplateInputError("content_invalid");
   assertDraftWithinLimit(replaced.state);
+  // saveLandingPageDraft runs the #499 custom-code gate (session actor, old vs new draft) and its audit.
   return saveLandingPageDraft({
     id: page.id, revision, name: page.name, slug: page.slug,
     formId: page.draftFormId, liveId: page.draftLiveId, content: replaced.state,
-  });
+  }, { auditOperation: "apply_template" });
 }
 
 /** The step a new site's template goes to; adds one when the goal's default flow has none that fits. */
@@ -334,6 +360,7 @@ export async function createLandingPageFromTemplate(input: { name: unknown; slug
   const active = switchFunnelStep(replaced.state, target.stepId);
   const content = active.ok ? active.state : replaced.state;
   assertDraftWithinLimit(content);
-  const created = await createLandingPage({ name, slug, formId: null, liveId: null, content });
+  // createLandingPage runs the #499 custom-code gate (session actor) and its audit.
+  const created = await createLandingPage({ name, slug, formId: null, liveId: null, content }, { auditOperation: "create_from_template" });
   return { id: created.id, stepId: target.stepId };
 }

@@ -198,7 +198,7 @@ describe("stored template documents", () => {
 
   it("refuses content over the size limit", () => {
     const long = "長".repeat(10_000);
-    const document = parsePageDocument({ schemaVersion: 1, id: "page", root: [container("s", "section", [container("r", "row", Array.from({ length: 6 }, (_, index) => leaf(`t${index}`, "text", { text: long })))])] })!;
+    const document = parsePageDocument({ schemaVersion: 1, id: "page", root: [container("s", "section", [container("r", "row", Array.from({ length: 20 }, (_, index) => leaf(`t${index}`, "text", { text: long })))])] })!;
     expect(templateContentBytes(document)).toBeGreaterThan(LANDING_PAGE_TEMPLATE_MAX_CONTENT_BYTES);
     expect(prepareStoredTemplateDocument(document, "太大")).toBeNull();
   });

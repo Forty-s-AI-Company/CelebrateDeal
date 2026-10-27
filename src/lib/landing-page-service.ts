@@ -394,7 +394,8 @@ export async function listLandingPages(): Promise<LandingPageList> {
   };
 }
 
-export async function createLandingPage(input: Omit<LandingPageDraftInput, "id" | "revision">) {
+/** `auditOperation` names the caller in the custom-code audit entry (default "create"). */
+export async function createLandingPage(input: Omit<LandingPageDraftInput, "id" | "revision">, options: { auditOperation?: string } = {}) {
   const { scope, actor } = await editorContext();
   const name = pageName(input.name);
   const slug = pageSlug(input.slug);
@@ -413,7 +414,7 @@ export async function createLandingPage(input: Omit<LandingPageDraftInput, "id" 
   if (!changes.length) return create(db());
   return db().$transaction(async (transaction) => {
     const created = await create(transaction);
-    await recordFunnelCustomCodeSave(transaction, { vendorId: scope.vendorId, actorId: actor.userId, pageId: created.id, operation: "create", changes });
+    await recordFunnelCustomCodeSave(transaction, { vendorId: scope.vendorId, actorId: actor.userId, pageId: created.id, operation: options.auditOperation ?? "create", changes });
     return created;
   });
 }
@@ -499,7 +500,8 @@ export async function getLandingPageForEditor(pageId: string): Promise<LandingPa
   };
 }
 
-export async function saveLandingPageDraft(input: Required<Pick<LandingPageDraftInput, "id" | "revision">> & Omit<LandingPageDraftInput, "id" | "revision">) {
+/** `auditOperation` names the caller in the custom-code audit entry (default "save"). */
+export async function saveLandingPageDraft(input: Required<Pick<LandingPageDraftInput, "id" | "revision">> & Omit<LandingPageDraftInput, "id" | "revision">, options: { auditOperation?: string } = {}) {
   const { scope, actor } = await editorContext();
   const id = identifier(input.id);
   const revision = positiveRevision(input.revision);
@@ -521,7 +523,7 @@ export async function saveLandingPageDraft(input: Required<Pick<LandingPageDraft
   const draftFormId = formId ?? (!liveId && existing.draftFormId && isIndependentlyPublishedFunnel(content)
     && await ownAutoLeadForm(db(), scope, id, existing.draftFormId) ? existing.draftFormId : null);
   await validateBindings(db(), { ...scope, content, formId: draftFormId, liveId });
-  await updateDraftWithCustomCodeAudit({ scope, actor, id, revision, changes, operation: "save" }, { name, slug, draftContent: content as Prisma.InputJsonValue, draftFormId, draftLiveId: liveId, revision: { increment: 1 } });
+  await updateDraftWithCustomCodeAudit({ scope, actor, id, revision, changes, operation: options.auditOperation ?? "save" }, { name, slug, draftContent: content as Prisma.InputJsonValue, draftFormId, draftLiveId: liveId, revision: { increment: 1 } });
   return { id, revision: revision + 1 };
 }
 

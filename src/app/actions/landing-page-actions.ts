@@ -20,6 +20,7 @@ import {
 } from "@/lib/landing-page-service";
 import type { FunnelStepPersistenceMutation } from "@/lib/funnel-step-pages";
 import { LANDING_PAGE_MAX_CONTENT_BYTES } from "@/lib/landing-page-limits";
+import { funnelCustomCodeErrorMessage } from "@/lib/funnel-custom-code-messages";
 import { independentPublishLimitMessage, INDEPENDENT_PUBLISH_DISABLED_MESSAGE, INDEPENDENT_PUBLISH_EMAIL_UNVERIFIED_MESSAGE } from "@/lib/independent-publish-limit";
 
 const INDEPENDENT_PUBLISH_REFUSALS = new Set(["landing_page_independent_publish_limit", "landing_page_independent_publish_disabled", "landing_page_independent_publish_email_unverified"]);
@@ -106,11 +107,8 @@ function failure(error: unknown): LandingPageActionState {
     if (error.message === "landing_page_independent_publish_disabled") return { status: "error", message: INDEPENDENT_PUBLISH_DISABLED_MESSAGE };
     if (error.message === "landing_page_independent_publish_email_unverified") return { status: "error", message: INDEPENDENT_PUBLISH_EMAIL_UNVERIFIED_MESSAGE };
     if (error.message === "landing_page_slug_reserved") return { status: "error", message: "這個網址代稱保留給平台使用（例如 login、admin、support、verify），也不可包含 celebratedeal。請換一個網址代稱。" };
-    if (error.message === "landing_page_custom_code_role") return { status: "error", message: "只有商家擁有者（owner）或管理員（admin）可以新增、修改或刪除自訂程式碼與頁面自訂 CSS，這次變更沒有儲存。" };
-    if (error.message === "landing_page_custom_code_email_unverified") return { status: "error", message: "頁面含有自訂 JavaScript，必須先完成 Email 驗證才能儲存或發布。請到「驗證 Email」完成後再試。" };
-    if (error.message === "landing_page_custom_code_disabled") return { status: "error", message: "平台已暫時停用自訂 JavaScript，目前無法新增或修改 JS；你仍可刪除 JS 或編輯其他內容。" };
-    if (error.message === "landing_page_custom_css_invalid") return { status: "error", message: "頁面自訂 CSS 含有不支援或不安全的語法，這次變更沒有儲存。請依頁面設定中的錯誤提示修正。" };
-    if (error.message === "landing_page_custom_code_too_large") return { status: "error", message: "自訂程式碼超過大小上限（HTML 50 KB、CSS 20 KB、JS 50 KB），這次變更沒有儲存。" };
+    const customCodeMessage = funnelCustomCodeErrorMessage(error.message);
+    if (customCodeMessage) return { status: "error", message: customCodeMessage };
     if (error.message === "landing_page_step_type_not_allowed") return { status: "error", message: "建立名單網站只能新增名單或資訊步驟，這次變更沒有儲存。銷售頁、訂單表單、加購頁與（銷售）感謝頁請建立在銷售網站中；名單的感謝頁請選「名單感謝頁」。" };
     return { status: "error", message: "請確認頁面內容與已選的報名表單、直播都屬於目前專案且可公開使用。" };
   }

@@ -359,11 +359,11 @@ describe("draft size limit (PostgreSQL)", () => {
     return { page: updated, stepId };
   }
 
-  it("refuses a template that would grow the draft past 128 KiB and leaves the page unchanged", async () => {
+  it("refuses a template that would grow the draft past the 512 KiB draft limit and leaves the page unchanged", async () => {
     const { page, stepId } = await nearlyFullFunnel();
     const before = await getDb().landingPage.findUniqueOrThrow({ where: { id: page.id } });
     const applied = await applyLandingPageTemplateAction(idle, form({ templateKind: "platform", templateId: "audience-volunteer", pageId: page.id, stepId, revision: page.revision }));
-    expect(applied).toMatchObject({ status: "error", message: expect.stringContaining("128 KiB") });
+    expect(applied).toMatchObject({ status: "error", message: expect.stringContaining("512 KiB") });
     const after = await getDb().landingPage.findUniqueOrThrow({ where: { id: page.id } });
     expect(after.revision).toBe(before.revision);
     expect(after.draftContent).toEqual(before.draftContent);
@@ -373,17 +373,138 @@ describe("draft size limit (PostgreSQL)", () => {
     const big = (await createFunnelPage(a, "bigsource")).page;
     const content = parseFunnelStepPages(big.draftContent)!;
     const optIn = content.flow.steps.find((step) => step.type === "opt_in_page")!.id;
-    const rows = Array.from({ length: 15 }, (_, index) => node(`huge_${index}`, "text", { text: "y".repeat(9_500) }));
+    // 60 × 9,500 characters is over the shared draft limit (LANDING_PAGE_MAX_CONTENT_BYTES).
+    const rows = Array.from({ length: 60 }, (_, index) => node(`huge_${index}`, "text", { text: "y".repeat(9_500) }));
+    expect(landingPageContentBytes(rows)).toBeGreaterThan(LANDING_PAGE_MAX_CONTENT_BYTES);
     content.pages[optIn]!.root = [node("huge_section", "section", {}, [node("huge_row", "row", {}, rows)])];
     await getDb().landingPage.update({ where: { id: big.id }, data: { draftContent: content as never } });
     // The template alone is over the limit, so saving it is refused too.
-    expect(await saveTemplate(big.id, optIn)).toMatchObject({ status: "error", message: expect.stringContaining("128 KiB") });
+    expect(await saveTemplate(big.id, optIn)).toMatchObject({ status: "error", message: expect.stringContaining("512 KiB") });
     // A row stored by any other path is still checked when it is used.
     const template = await getDb().landingPageTemplate.create({ data: { vendorId: a.vendorId, name: "過大的範本", content: { schemaVersion: 1, id: "tpl_page", name: "過大", root: content.pages[optIn]!.root } as never } });
     const pagesBefore = await getDb().landingPage.count({ where: { vendorId: a.vendorId } });
     const created = await createLandingPageFromTemplateAction(idle, form({ templateKind: "mine", templateId: template.id, name: "太大的網站", slug: `huge-${randomUUID().slice(0, 8)}`, goal: "audience", currency: "TWD" }));
-    expect(created).toMatchObject({ status: "error", message: expect.stringContaining("128 KiB") });
+    expect(created).toMatchObject({ status: "error", message: expect.stringContaining("512 KiB") });
     expect(await getDb().landingPage.count({ where: { vendorId: a.vendorId } })).toBe(pagesBefore);
+  });
+});
+
+describe("custom code gate (PostgreSQL)", () => {
+  const SCRIPT = "document.body.dataset.synthetic = 'template-js';";
+  const customCodeDocument = (label: string) => ({ schemaVersion: 1, id: "tpl_page", name: label, root: [node("code_section", "section", {}, [node("code_row", "row", {}, [
+    node("code_headline", "headline", { text: `${label} 標題`, level: "h2" }),
+    node("code_node", "raw_html", { html: "<p>自訂區塊</p>", css: "p{color:#0f172a}", js: SCRIPT }),
+  ])])] });
+
+  async function scriptTemplate(label = "含 JS 的範本") {
+    // Stored directly: what an earlier verified save left in the library.
+    return getDb().landingPageTemplate.create({ data: { vendorId: a.vendorId, name: label, content: customCodeDocument(label) as never } });
+  }
+  async function verifyOwnerEmail() {
+    await getDb().user.update({ where: { id: a.ownerId }, data: { emailVerifiedAt: new Date() } });
+  }
+  async function customCodeAudits() {
+    return getDb().auditLog.findMany({ where: { vendorId: a.vendorId, action: "funnel_custom_code_saved" }, orderBy: { createdAt: "asc" } });
+  }
+  const restoreKillSwitch = process.env.FUNNEL_CUSTOM_CODE_DISABLED;
+  afterEach(() => {
+    if (restoreKillSwitch === undefined) delete process.env.FUNNEL_CUSTOM_CODE_DISABLED;
+    else process.env.FUNNEL_CUSTOM_CODE_DISABLED = restoreKillSwitch;
+  });
+
+  it("refuses an owner without a verified e-mail applying a template with JS, leaving the draft and revision unchanged", async () => {
+    const template = await scriptTemplate();
+    const target = await createFunnelPage(a, "unverified");
+    const before = await getDb().landingPage.findUniqueOrThrow({ where: { id: target.page.id } });
+    const applied = await applyLandingPageTemplateAction(idle, form({ templateKind: "mine", templateId: template.id, pageId: target.page.id, stepId: target.stepId, revision: target.page.revision }));
+    expect(applied).toEqual({ status: "error", message: "頁面含有自訂 JavaScript，必須先完成 Email 驗證才能儲存或發布。請到「驗證 Email」完成後再試。" });
+    const after = await getDb().landingPage.findUniqueOrThrow({ where: { id: target.page.id } });
+    expect(after.revision).toBe(before.revision);
+    expect(after.draftContent).toEqual(before.draftContent);
+    expect(await customCodeAudits()).toEqual([]);
+  });
+
+  it("refuses an owner without a verified e-mail creating a site from a template with JS", async () => {
+    const template = await scriptTemplate();
+    const pagesBefore = await getDb().landingPage.count({ where: { vendorId: a.vendorId } });
+    const created = await createLandingPageFromTemplateAction(idle, form({ templateKind: "mine", templateId: template.id, name: "含 JS 網站", slug: `js-${randomUUID().slice(0, 8)}`, goal: "audience", currency: "TWD" }));
+    expect(created).toMatchObject({ status: "error", message: expect.stringContaining("必須先完成 Email 驗證") });
+    expect(await getDb().landingPage.count({ where: { vendorId: a.vendorId } })).toBe(pagesBefore);
+  });
+
+  it("lets an owner with a verified e-mail apply and create, auditing both writes", async () => {
+    await verifyOwnerEmail();
+    const template = await scriptTemplate();
+    const target = await createFunnelPage(a, "verified");
+    const applied = await applyLandingPageTemplateAction(idle, form({ templateKind: "mine", templateId: template.id, pageId: target.page.id, stepId: target.stepId, revision: target.page.revision }));
+    expect(applied).toMatchObject({ status: "success", revision: target.page.revision + 1 });
+    expect(JSON.stringify((await storedStep(target.page.id, target.stepId)).page)).toContain("template-js");
+
+    const created = await createLandingPageFromTemplateAction(idle, form({ templateKind: "mine", templateId: template.id, name: "含 JS 網站", slug: `js-${randomUUID().slice(0, 8)}`, goal: "audience", currency: "TWD" }));
+    expect(created).toMatchObject({ status: "success" });
+
+    const audits = await customCodeAudits();
+    expect(audits.map((audit) => [audit.targetType, audit.targetId, audit.actorId, (audit.after as { operation: string }).operation])).toEqual([
+      ["LandingPage", target.page.id, a.ownerId, "apply_template"],
+      ["LandingPage", created.id, a.ownerId, "create_from_template"],
+    ]);
+    // The audit names locations and sizes, never the code itself.
+    expect(JSON.stringify(audits)).not.toContain("template-js");
+  });
+
+  it("refuses new JS from a template while the kill switch is on", async () => {
+    await verifyOwnerEmail();
+    const template = await scriptTemplate();
+    const target = await createFunnelPage(a, "killswitch");
+    process.env.FUNNEL_CUSTOM_CODE_DISABLED = "1";
+    const applied = await applyLandingPageTemplateAction(idle, form({ templateKind: "mine", templateId: template.id, pageId: target.page.id, stepId: target.stepId, revision: target.page.revision }));
+    expect(applied).toEqual({ status: "error", message: "平台已暫時停用自訂 JavaScript，目前無法新增或修改 JS；你仍可刪除 JS 或編輯其他內容。" });
+    expect((await storedStep(target.page.id, target.stepId)).revision).toBe(target.page.revision);
+    const saved = await (async () => {
+      const source = await createFunnelPage(a, "killsource");
+      const content = parseFunnelStepPages(source.page.draftContent)!;
+      content.pages[source.stepId]!.root = customCodeDocument("開關").root as never;
+      await getDb().landingPage.update({ where: { id: source.page.id }, data: { draftContent: content as never } });
+      return saveTemplate(source.page.id, source.stepId, "開關中存");
+    })();
+    expect(saved).toMatchObject({ status: "error", message: expect.stringContaining("暫時停用自訂 JavaScript") });
+    expect(await getDb().landingPageTemplate.count({ where: { vendorId: a.vendorId, name: "開關中存" } })).toBe(0);
+  });
+
+  it("saves a step with JS as a template only for a verified e-mail, keeping the code and auditing it", async () => {
+    const source = await createFunnelPage(a, "codesource");
+    const content = parseFunnelStepPages(source.page.draftContent)!;
+    content.pages[source.stepId]!.root = customCodeDocument("來源").root as never;
+    await getDb().landingPage.update({ where: { id: source.page.id }, data: { draftContent: content as never } });
+
+    expect(await saveTemplate(source.page.id, source.stepId, "未驗證")).toEqual({ status: "error", message: "頁面含有自訂 JavaScript，必須先完成 Email 驗證才能儲存或發布。請到「驗證 Email」完成後再試。" });
+    expect(await templateRows(a.vendorId)).toHaveLength(0);
+
+    await verifyOwnerEmail();
+    const saved = await saveTemplate(source.page.id, source.stepId, "已驗證");
+    expect(saved).toMatchObject({ status: "success" });
+    const [row] = await templateRows(a.vendorId);
+    expect(JSON.stringify(row!.content)).toContain("template-js");
+    const [audit] = await customCodeAudits();
+    expect(audit).toMatchObject({ targetType: "LandingPageTemplate", targetId: saved.id, actorId: a.ownerId, after: { operation: "save_template", sourcePageId: source.page.id } });
+    expect(JSON.stringify(audit!.after)).not.toContain("template-js");
+  });
+
+  it("needs no verified e-mail for HTML-only custom code, but still audits it", async () => {
+    // createFunnelPage's opt-in page has an HTML-only raw_html node (no JS).
+    const { page, stepId } = await createFunnelPage(a, "htmlonly");
+    const saved = await saveTemplate(page.id, stepId, "只有 HTML");
+    expect(saved).toMatchObject({ status: "success" });
+    expect(await customCodeAudits()).toEqual([expect.objectContaining({ targetType: "LandingPageTemplate", targetId: saved.id, after: expect.objectContaining({ operation: "save_template" }) })]);
+  });
+
+  it("does not gate or audit a template without any custom code", async () => {
+    const { page, stepId } = await createFunnelPage(a, "plain");
+    const content = parseFunnelStepPages(page.draftContent)!;
+    content.pages[stepId]!.root = [node("plain_section", "section", {}, [node("plain_row", "row", {}, [node("plain_text", "text", { text: "純文字" })])])];
+    await getDb().landingPage.update({ where: { id: page.id }, data: { draftContent: content as never } });
+    expect(await saveTemplate(page.id, stepId, "沒有程式碼")).toMatchObject({ status: "success" });
+    expect(await customCodeAudits()).toEqual([]);
   });
 });
 

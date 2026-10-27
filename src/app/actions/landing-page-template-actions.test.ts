@@ -43,9 +43,9 @@ describe("landing page template action errors", () => {
     expect(await createLandingPageFromTemplateAction(idle, form({ templateKind: "platform", templateId: "custom-terms", name: "n", slug: "s", goal: "custom" }))).toMatchObject({ status: "error", message: expect.stringContaining("網址已被使用") });
   });
 
-  it("explains the size limit when the result would be too large", async () => {
+  it("explains the size limit (the shared 512 KiB draft limit) when the result would be too large", async () => {
     mocks.apply.mockRejectedValue(new LandingPageTemplateInputError("content_too_large"));
-    expect(await applyLandingPageTemplateAction(idle, form({ templateKind: "mine", templateId: "t", pageId: "p", stepId: "s", revision: "3" }))).toMatchObject({ status: "error", message: expect.stringContaining("128 KiB") });
+    expect(await applyLandingPageTemplateAction(idle, form({ templateKind: "mine", templateId: "t", pageId: "p", stepId: "s", revision: "3" }))).toMatchObject({ status: "error", message: expect.stringContaining("512 KiB") });
   });
 
   it("rethrows anything it does not recognise (for example a role redirect)", async () => {
