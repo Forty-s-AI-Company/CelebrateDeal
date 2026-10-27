@@ -21,7 +21,7 @@ export default async function TrackingSettingsPage({ searchParams }: { searchPar
   return (
     <>
       <PageHeader title="追蹤設定" description="設定 Pixel、GTM 與事件開關；公開頁會先記錄平台內部 analytics_events。" />
-      {status === "saved" ? <p role="status">伺服器追蹤設定已儲存。</p> : status === "conflict" ? <p role="alert">設定已被其他人修改，請重新載入後再儲存。</p> : status === "invalid" ? <p role="alert">設定未儲存，請檢查輸入後重試。</p> : null}
+      {status === "saved" ? <p role="status">伺服器追蹤設定已儲存。</p> : status === "conflict" ? <p role="alert">設定已被其他人修改，請重新載入後再儲存。</p> : status === "invalid" ? <p role="alert">設定未儲存。請確認 ID 格式：Meta Pixel 為 5–32 位數字、GA4 為 G- 開頭、GTM 為 GTM- 開頭、TikTok 為英數字。</p> : null}
       <Card>
         <form action={saveTrackingCredentialAction} className="mb-6 grid gap-4 border-b border-slate-200 pb-6">
           <CsrfField />
@@ -36,11 +36,19 @@ export default async function TrackingSettingsPage({ searchParams }: { searchPar
         </form>
         <form action={saveTrackingSettingsAction} className="grid gap-4">
           <CsrfField />
-          <div className="grid gap-4 md:grid-cols-3">
-            <Field label="Facebook Pixel ID" name="facebookPixelId" defaultValue={tracking?.facebookPixelId} />
-            <Field label="TikTok Pixel ID" name="tiktokPixelId" defaultValue={tracking?.tiktokPixelId} />
-            <Field label="Google Tag Manager ID" name="googleTagManagerId" defaultValue={tracking?.googleTagManagerId} />
+          <h2 className="font-bold">整合設定（只填 ID）</h2>
+          <p className="text-sm text-slate-600">平台會依 ID 產生標準追蹤碼，不接受自行貼上的 script。</p>
+          <div className="grid gap-4 md:grid-cols-2">
+            <Field label="Meta（Facebook）Pixel ID" name="facebookPixelId" defaultValue={tracking?.facebookPixelId} maxLength={32} placeholder="例如 123456789012345" autoComplete="off" />
+            <Field label="GA4 評估 ID" name="ga4MeasurementId" defaultValue={tracking?.ga4MeasurementId} placeholder="G-XXXXXXXXXX" autoComplete="off" />
+            <Field label="TikTok Pixel ID" name="tiktokPixelId" defaultValue={tracking?.tiktokPixelId} autoComplete="off" />
+            <Field label="Google Tag Manager ID" name="googleTagManagerId" defaultValue={tracking?.googleTagManagerId} placeholder="GTM-XXXXXXX" autoComplete="off" />
           </div>
+          <p className="text-xs leading-5 text-slate-600">Google Tag Manager 容器可以執行任意自訂 HTML 與 JavaScript，為了保護訪客與後台帳號，公開頁不會載入 GTM；請改用 GA4 評估 ID 與 Meta Pixel ID。TikTok Pixel 目前只保留設定值。</p>
+          <label className="flex items-start justify-between gap-3 rounded-lg border border-slate-200 p-4 text-sm font-medium text-slate-700">
+            <span>在一頁式網站公開頁載入 GA4 與 Meta Pixel 瀏覽器追蹤碼<span className="block text-xs font-normal text-slate-600">需同時開啟「記錄頁面瀏覽」。追蹤碼由 Google 與 Meta 提供，會在訪客瀏覽器設定它們的 Cookie。</span></span>
+            <input name="enableBrowserTags" type="checkbox" defaultChecked={tracking?.enableBrowserTags ?? false} className="h-5 w-5 accent-blue-600" />
+          </label>
           <div className="grid gap-3 rounded-lg bg-slate-50 p-4">
             {[
               ["enablePageView", "記錄頁面瀏覽", tracking?.enablePageView ?? true],

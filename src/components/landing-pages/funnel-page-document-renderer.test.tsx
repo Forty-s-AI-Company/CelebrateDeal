@@ -69,8 +69,10 @@ describe("FunnelPageDocumentRenderer", () => {
     const html = renderToStaticMarkup(<FunnelPageDocumentRenderer document={page} />);
     expect(html).not.toContain("<script>");
     expect(html).not.toContain("window.pwned");
-    expect(html).toContain("原始 HTML 已在 sandbox 隔離預覽");
+    expect(html).toContain("自訂程式碼在隔離的沙箱中顯示");
+    // Without JS the node keeps the original no-script sandbox: an empty sandbox attribute, nothing else.
     expect(html).toContain('sandbox=""');
+    expect(html).not.toContain("allow-scripts");
     expect(html).toContain("尚未連結商品與付款方式");
     expect(html).toContain("reCAPTCHA");
     expect(html).toContain("server verification 與網域設定");

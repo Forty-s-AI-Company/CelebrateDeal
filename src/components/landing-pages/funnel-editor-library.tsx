@@ -28,7 +28,7 @@ export const FUNNEL_PALETTE: ReadonlyArray<{ type: FunnelNodeType; label: string
   { type: "image", label: "圖片", icon: ImageIcon }, { type: "video", label: "影片", icon: Video }, { type: "audio", label: "音訊", icon: AudioLines }, { type: "carousel", label: "輪播", icon: GalleryHorizontal },
   { type: "x_share_button", label: "X 分享", icon: Share2 },
   { type: "countdown", label: "倒數計時", icon: Timer }, { type: "menu", label: "選單", icon: Menu }, { type: "horizontal_line", label: "水平線", icon: Minus },
-  { type: "faq", label: "常見問題", icon: CircleHelp }, { type: "raw_html", label: "自訂 HTML", icon: Code },
+  { type: "faq", label: "常見問題", icon: CircleHelp }, { type: "raw_html", label: "自訂程式碼", icon: Code },
   { type: "payment_button", label: "付款按鈕", icon: CreditCard }, { type: "payment_method", label: "付款方式", icon: Wallet }, { type: "offer_price", label: "方案價格", icon: BadgeDollarSign },
   { type: "physical_product", label: "實體商品", icon: Package }, { type: "customer_type", label: "客戶類型", icon: UserRound }, { type: "agreement", label: "同意條款", icon: FileCheck2 },
   { type: "order_bump", label: "加購方案", icon: CirclePlus }, { type: "two_step_order_form", label: "兩步驟結帳", icon: ListOrdered }, { type: "coupon", label: "優惠券狀態", icon: Ticket }, { type: "shipping_fees", label: "運費狀態", icon: Truck },

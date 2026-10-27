@@ -30,7 +30,8 @@ describe("Funnel PageDocument v1", () => {
     expect(PageDocumentSchema.safeParse(document).success).toBe(true);
     expect(FUNNEL_NODE_REGISTRY.text.allowedParents).toContain("columns_2");
     expect(FUNNEL_NODE_REGISTRY.payment_button.capability.status).toBe("limited");
-    expect(FUNNEL_CAPABILITIES.rawHtml.status).toBe("disabled");
+    expect(FUNNEL_CAPABILITIES.rawHtml.status).toBe("available");
+    expect(FUNNEL_NODE_REGISTRY.raw_html.label).toBe("自訂程式碼");
   });
 
   it("驗證 Section > Row > Column > Element 並拒絕非法父子關係", () => {

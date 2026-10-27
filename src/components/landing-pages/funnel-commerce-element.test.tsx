@@ -26,7 +26,8 @@ describe("Funnel commerce renderer", () => {
     for (const label of ["付款按鈕", "方案價格", "加購方案", "兩步驟結帳", "同意條款", "運費狀態"]) {
       expect(html).toMatch(tile(label, true));
     }
-    expect(html).toMatch(tile("自訂 HTML", false));
+    // 自訂程式碼現在可以新增；它只在隔離的沙箱 iframe 中執行。
+    expect(html).toMatch(tile("自訂程式碼", true));
     expect(html).not.toMatch(tile("自訂 HTML", true));
   });
   it("uses trusted prices equally in editor and mobile preview, never node overrides", () => {

@@ -1,7 +1,7 @@
 import { withSentryConfig } from "@sentry/nextjs/config";
 import type { NextConfig } from "next";
 
-const cspReportOnly = [
+const cspReportOnlyDirectives = [
   "default-src 'self'",
   // challenges.cloudflare.com: Turnstile on /register and /verify-email (script, iframe, siteverify calls from the widget).
   "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://*.sentry.io https://*.posthog.com https://app.posthog.com https://challenges.cloudflare.com",
@@ -15,7 +15,40 @@ const cspReportOnly = [
   "base-uri 'self'",
   "form-action 'self' https://api.payuni.com.tw https://sandbox-api.payuni.com.tw",
   "report-uri /api/security/csp-report",
-].join("; ");
+];
+const cspReportOnly = cspReportOnlyDirectives.join("; ");
+
+/**
+ * Public funnel pages (`/lp/*`). A custom-code iframe is a `srcdoc` document,
+ * which inherits this page's policy in addition to its own meta CSP, so the
+ * page policy must allow what the sandboxed frame may load (https scripts,
+ * styles, fonts, frames). The frame's own meta CSP still sets connect-src,
+ * form-action, base-uri and object-src to 'none'. The analytics hosts are for
+ * the platform-rendered GA4 / Meta Pixel snippets (IDs only, no merchant code).
+ */
+const PUBLIC_FUNNEL_EXTRA_SOURCES: Readonly<Record<string, string>> = {
+  "script-src": "https:",
+  "style-src": "https:",
+  "font-src": "https:",
+  "frame-src": "https:",
+  "connect-src": "https://www.google-analytics.com https://*.google-analytics.com https://*.analytics.google.com https://www.googletagmanager.com https://www.facebook.com",
+};
+const cspReportOnlyPublicFunnel = cspReportOnlyDirectives
+  .map((directive) => {
+    const name = directive.split(" ")[0]!;
+    return PUBLIC_FUNNEL_EXTRA_SOURCES[name] ? `${directive} ${PUBLIC_FUNNEL_EXTRA_SOURCES[name]}` : directive;
+  })
+  .join("; ");
+/**
+ * Custom code may open new tabs (allow-popups + allow-popups-to-escape-sandbox)
+ * only on these pages. COOP same-origin makes every popup opened from the
+ * opaque-origin iframe a no-opener popup, so it cannot navigate this page
+ * (reverse tabnabbing). The development-only browser QA harness mirrors it.
+ */
+const publicFunnelHeaders = [
+  { key: "Content-Security-Policy-Report-Only", value: cspReportOnlyPublicFunnel },
+  { key: "Cross-Origin-Opener-Policy", value: "same-origin" },
+];
 
 // Local release-mode QA uses this explicit switch so `next build` cannot
 // publish source maps or create a Sentry release as an external side effect.
@@ -47,6 +80,8 @@ const nextConfig: NextConfig = {
       },
       // Verification links carry a bearer token in the URL; never leak it in a
       // Referer (later rules override the site-wide policy above).
+      { source: "/lp/:path*", headers: publicFunnelHeaders },
+      { source: "/browser-qa/:path*", headers: publicFunnelHeaders },
       { source: "/verify-email", headers: [{ key: "Referrer-Policy", value: "no-referrer" }] },
       { source: "/api/auth/email-verification/confirm", headers: [{ key: "Referrer-Policy", value: "no-referrer" }] },
       {

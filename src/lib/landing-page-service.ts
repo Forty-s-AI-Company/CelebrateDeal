@@ -45,6 +45,16 @@ import { canPublishSalesProject } from "@/lib/sales-workspace";
 import { isFunnelDeadlineExpired } from "@/lib/funnel-runtime";
 import { publicFunnelRouteOutcome, representativeFunnelVisitorIds } from "@/lib/public-landing-page-status";
 import type { FunnelCommerceProduct, FunnelCommerceView } from "@/lib/funnel-commerce";
+import { describeFunnelCustomCodeProblem, isFunnelCustomCodeDisabled, withoutFunnelCustomScripts, type FunnelCustomCodeChange } from "@/lib/funnel-custom-code";
+import {
+  assertFunnelCustomCodeDelete,
+  assertFunnelCustomCodePublish,
+  assertFunnelCustomCodeWrite,
+  FunnelCustomCodeRefusal,
+  recordFunnelCustomCodePublish,
+  recordFunnelCustomCodeSave,
+  type FunnelCustomCodeActor,
+} from "@/lib/funnel-custom-code-guard";
 export type PublicFunnelWebinarResource = {
   form: { id: string; fields: RegistrationFormFieldSpec[]; submitLabel: string; successMessage: string };
   live: { id: string; slug: string; videoId: string; videoTitle: string };
@@ -202,7 +212,11 @@ function databaseErrorCode(error: unknown) {
 
 function inputContent(value: unknown) {
   const content = parseFunnelStepPages(value) ?? parsePageDocument(value) ?? parseLandingPageContent(value);
-    if (!content) throw new LandingPageInputError();
+    if (!content) {
+      // A precise reason for the two custom-code limits the editor also checks live.
+      const problem = describeFunnelCustomCodeProblem(value);
+      throw new LandingPageInputError(problem === "css_invalid" ? "landing_page_custom_css_invalid" : problem === "too_large" ? "landing_page_custom_code_too_large" : undefined);
+    }
     if (invalidWebinarContainer(content)) throw new LandingPageInputError("landing_page_webinar_steps_required");
   return content;
 }
@@ -284,11 +298,31 @@ function validateOperationalReferences(operations: unknown, content: LandingPage
   if (!funnelOperationsReferencesValid(operations, steps)) throw new LandingPageInputError("landing_page_operations_reference_invalid");
 }
 
-async function editorProject() {
+async function editorContext(): Promise<{ scope: { vendorId: string; projectId: string }; actor: FunnelCustomCodeActor }> {
   const { auth, vendor } = await requireVendorManagerContext();
   const scope = await requireEditableSalesProjectScope(auth.user.id, vendor.id);
   if (!scope.projectId) throw new LandingPageScopeError();
-  return { vendorId: vendor.id, projectId: scope.projectId };
+  // Role and e-mail verification come from the session's own records, never from the request.
+  const actor = { userId: auth.user.id, role: auth.member?.role ?? null, emailVerified: Boolean(auth.user.emailVerifiedAt) };
+  return { scope: { vendorId: vendor.id, projectId: scope.projectId }, actor };
+}
+
+async function editorProject() {
+  return (await editorContext()).scope;
+}
+
+function customCodeGate<T>(check: () => T): T {
+  try {
+    return check();
+  } catch (error) {
+    if (error instanceof FunnelCustomCodeRefusal) throw new LandingPageInputError(error.code);
+    throw error;
+  }
+}
+
+/** Custom code (自訂程式碼 / 頁面自訂 CSS) gate shared by every draft write; see `funnel-custom-code-guard`. */
+function customCodeChanges(actor: FunnelCustomCodeActor, previous: unknown, next: unknown): FunnelCustomCodeChange[] {
+  return customCodeGate(() => assertFunnelCustomCodeWrite(actor, previous, next));
 }
 
 async function validateBindings(
@@ -360,7 +394,7 @@ export async function listLandingPages(): Promise<LandingPageList> {
 }
 
 export async function createLandingPage(input: Omit<LandingPageDraftInput, "id" | "revision">) {
-  const scope = await editorProject();
+  const { scope, actor } = await editorContext();
   const name = pageName(input.name);
   const slug = pageSlug(input.slug);
   const content = inputContent(input.content);
@@ -368,10 +402,17 @@ export async function createLandingPage(input: Omit<LandingPageDraftInput, "id" 
   const liveId = input.liveId ? identifier(input.liveId) : null;
   if (!name || !slug || (input.formId && !formId) || (input.liveId && !liveId)) throw new LandingPageInputError();
   assertNoStepsAddedOutsideGoal(undefined, content);
+  const changes = customCodeChanges(actor, undefined, content);
   await validateBindings(db(), { ...scope, content, formId, liveId });
-  return db().landingPage.create({
+  const create = (client: Pick<Prisma.TransactionClient, "landingPage">) => client.landingPage.create({
     data: { vendorId: scope.vendorId, projectId: scope.projectId, name, slug, draftContent: content as Prisma.InputJsonValue, draftFormId: formId, draftLiveId: liveId },
     select: { id: true, vendorId: true, projectId: true, name: true, slug: true, draftContent: true, draftFormId: true, draftLiveId: true, status: true, publishedVersionId: true, revision: true, publishedAt: true, updatedAt: true },
+  });
+  if (!changes.length) return create(db());
+  return db().$transaction(async (transaction) => {
+    const created = await create(transaction);
+    await recordFunnelCustomCodeSave(transaction, { vendorId: scope.vendorId, actorId: actor.userId, pageId: created.id, operation: "create", changes });
+    return created;
   });
 }
 
@@ -457,7 +498,7 @@ export async function getLandingPageForEditor(pageId: string): Promise<LandingPa
 }
 
 export async function saveLandingPageDraft(input: Required<Pick<LandingPageDraftInput, "id" | "revision">> & Omit<LandingPageDraftInput, "id" | "revision">) {
-  const scope = await editorProject();
+  const { scope, actor } = await editorContext();
   const id = identifier(input.id);
   const revision = positiveRevision(input.revision);
   const name = pageName(input.name);
@@ -471,17 +512,35 @@ export async function saveLandingPageDraft(input: Required<Pick<LandingPageDraft
   if (existing.status === "published" && existing.slug !== slug) throw new LandingPageInputError("landing_page_slug_locked");
   assertNoStepsAddedOutsideGoal(existing.draftContent, content);
   validateOperationalReferences(existing.operations, content);
+  const changes = customCodeChanges(actor, existing.draftContent, content);
   // An editor that does not know about the publish-time lead form sends no
   // form; keep this page's own auto-created form instead of unbinding it.
   const draftFormId = formId ?? (!liveId && existing.draftFormId && isIndependentlyPublishedFunnel(content)
     && await ownAutoLeadForm(db(), scope, id, existing.draftFormId) ? existing.draftFormId : null);
   await validateBindings(db(), { ...scope, content, formId: draftFormId, liveId });
-  const updated = await db().landingPage.updateMany({
-    where: { id, vendorId: scope.vendorId, projectId: scope.projectId, revision },
-    data: { name, slug, draftContent: content as Prisma.InputJsonValue, draftFormId, draftLiveId: liveId, revision: { increment: 1 } },
-  });
-  if (updated.count !== 1) throw new LandingPageConflictError();
+  await updateDraftWithCustomCodeAudit({ scope, actor, id, revision, changes, operation: "save" }, { name, slug, draftContent: content as Prisma.InputJsonValue, draftFormId, draftLiveId: liveId, revision: { increment: 1 } });
   return { id, revision: revision + 1 };
+}
+
+/**
+ * Revision CAS update of one draft. When custom code changed, the update and
+ * its audit entry commit together; otherwise this is the plain update.
+ */
+async function updateDraftWithCustomCodeAudit(
+  input: { scope: { vendorId: string; projectId: string }; actor: FunnelCustomCodeActor; id: string; revision: number; changes: FunnelCustomCodeChange[]; operation: string },
+  data: Prisma.LandingPageUncheckedUpdateManyInput,
+) {
+  const where = { id: input.id, vendorId: input.scope.vendorId, projectId: input.scope.projectId, revision: input.revision };
+  if (!input.changes.length) {
+    const updated = await db().landingPage.updateMany({ where, data });
+    if (updated.count !== 1) throw new LandingPageConflictError();
+    return;
+  }
+  await db().$transaction(async (transaction) => {
+    const updated = await transaction.landingPage.updateMany({ where, data });
+    if (updated.count !== 1) throw new LandingPageConflictError();
+    await recordFunnelCustomCodeSave(transaction, { vendorId: input.scope.vendorId, actorId: input.actor.userId, pageId: input.id, operation: input.operation, changes: input.changes });
+  });
 }
 
 const DEFAULT_LEAD_FORM_FIELDS: RegistrationFormFieldSpec[] = [
@@ -653,7 +712,7 @@ async function assertAudienceLiveProjectPublished(
 }
 
 export async function publishLandingPage(pageId: string, expectedRevision: number) {
-  const scope = await editorProject();
+  const { scope, actor } = await editorContext();
   const id = identifier(pageId);
   const revision = positiveRevision(expectedRevision);
   if (!id || !revision) throw new LandingPageInputError();
@@ -668,6 +727,7 @@ export async function publishLandingPage(pageId: string, expectedRevision: numbe
       if (page.revision !== revision) throw new LandingPageConflictError();
       const content = inputContent(page.draftContent);
       validateOperationalReferences(page.operations, content);
+      const publishesCustomCode = customCodeGate(() => assertFunnelCustomCodePublish(actor, content));
       await assertAudienceLiveProjectPublished(transaction, scope, page, content);
       await assertIndependentPublishAllowed(transaction, scope, page, content);
       const formId = await ensureAudienceLeadForm(transaction, scope, page, content);
@@ -682,6 +742,7 @@ export async function publishLandingPage(pageId: string, expectedRevision: numbe
         data: { status: "published", publishedVersionId: version.id, publishedAt: new Date(), unpublishedAt: null, ...(formId !== page.draftFormId ? { draftFormId: formId } : {}), revision: { increment: 1 } },
       });
       if (updated.count !== 1) throw new LandingPageConflictError();
+      if (publishesCustomCode) await recordFunnelCustomCodePublish(transaction, { vendorId: scope.vendorId, actorId: actor.userId, pageId: id, version: version.version, content });
       return { id, revision: revision + 1, version: version.version, formId };
     }, { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted });
   } catch (error) {
@@ -708,7 +769,7 @@ export async function unpublishLandingPage(pageId: string, expectedRevision: num
 /** CAS metadata save that re-reads the latest draft and applies one bounded
  * command. It intentionally cannot replace existing canvas snapshots. */
 export async function saveLandingPageStepMetadata(input: { id: string; revision: number; mutation: FunnelStepPersistenceMutation }) {
-  const scope = await editorProject();
+  const { scope, actor } = await editorContext();
   const id = identifier(input.id);
   const revision = positiveRevision(input.revision);
   if (!id || !revision) throw new LandingPageInputError();
@@ -719,12 +780,9 @@ export async function saveLandingPageStepMetadata(input: { id: string; revision:
   const result = applyFunnelStepPersistenceMutation(content, input.mutation);
   if (!result.ok) throw new LandingPageInputError();
   validateOperationalReferences(existing.operations, result.state);
+  const changes = customCodeChanges(actor, existing.draftContent, result.state);
   await validateBindings(db(), { ...scope, content: result.state, formId: existing.draftFormId, liveId: existing.draftLiveId });
-  const updated = await db().landingPage.updateMany({
-    where: { id, vendorId: scope.vendorId, projectId: scope.projectId, revision },
-    data: { draftContent: result.state as unknown as Prisma.InputJsonValue, revision: { increment: 1 } },
-  });
-  if (updated.count !== 1) throw new LandingPageConflictError();
+  await updateDraftWithCustomCodeAudit({ scope, actor, id, revision, changes, operation: "save_steps" }, { draftContent: result.state as unknown as Prisma.InputJsonValue, revision: { increment: 1 } });
   return { id, revision: revision + 1 };
 }
 
@@ -742,13 +800,14 @@ export async function saveLandingPageStepMetadata(input: { id: string; revision:
  * restrictive foreign key.
  */
 export async function deleteLandingPage(pageId: string, expectedRevision: number): Promise<{ id: string; archived: boolean }> {
-  const scope = await editorProject();
+  const { scope, actor } = await editorContext();
   const id = identifier(pageId);
   const revision = positiveRevision(expectedRevision);
   if (!id || !revision) throw new LandingPageInputError();
 
   const database = db();
-  await requireScopedPage(database, scope, id);
+  const current = await requireScopedPage(database, scope, id);
+  customCodeGate(() => assertFunnelCustomCodeDelete(actor, current.draftContent));
   return database.$transaction(async (transaction) => {
     const page = await requireScopedPage(transaction, scope, id);
     if (page.revision !== revision) throw new LandingPageConflictError();
@@ -790,7 +849,7 @@ export async function deleteLandingPage(pageId: string, expectedRevision: number
 }
 
 export async function rollbackLandingPage(pageId: string, version: number, expectedRevision: number) {
-  const scope = await editorProject();
+  const { scope, actor } = await editorContext();
   const id = identifier(pageId);
   const targetVersion = positiveRevision(version);
   const revision = positiveRevision(expectedRevision);
@@ -804,12 +863,9 @@ export async function rollbackLandingPage(pageId: string, version: number, expec
   if (current.revision !== revision) throw new LandingPageConflictError();
   const content = inputContent(versionRecord.content);
   validateOperationalReferences(current.operations, content);
+  const changes = customCodeChanges(actor, current.draftContent, content);
   await validateBindings(db(), { ...scope, content, formId: versionRecord.formId, liveId: versionRecord.liveId });
-  const updated = await db().landingPage.updateMany({
-    where: { id, vendorId: scope.vendorId, projectId: scope.projectId, revision },
-    data: { draftContent: content as Prisma.InputJsonValue, draftFormId: versionRecord.formId, draftLiveId: versionRecord.liveId, revision: { increment: 1 } },
-  });
-  if (updated.count !== 1) throw new LandingPageConflictError();
+  await updateDraftWithCustomCodeAudit({ scope, actor, id, revision, changes, operation: "rollback" }, { draftContent: content as Prisma.InputJsonValue, draftFormId: versionRecord.formId, draftLiveId: versionRecord.liveId, revision: { increment: 1 } });
   return { id, revision: revision + 1 };
 }
 
@@ -825,15 +881,23 @@ async function availableCopySlug(database: LandingPageDb, slug: string) {
 }
 
 export async function duplicateLandingPage(pageId: string) {
-  const scope = await editorProject();
+  const { scope, actor } = await editorContext();
   const page = await requireScopedPage(db(), scope, pageId);
   const content = inputContent(page.draftContent);
+  // A copy is a new page: copied custom code (and JS) passes the same gate as newly written code.
+  const changes = customCodeChanges(actor, undefined, content);
   await validateBindings(db(), { ...scope, content, formId: page.draftFormId, liveId: page.draftLiveId });
   const slug = await availableCopySlug(db(), page.slug);
   const name = `${page.name} 副本`.slice(0, MAX_NAME_LENGTH);
-  return db().landingPage.create({
+  const create = (client: Pick<Prisma.TransactionClient, "landingPage">) => client.landingPage.create({
     data: { vendorId: scope.vendorId, projectId: scope.projectId, name, slug, draftContent: content as Prisma.InputJsonValue, draftFormId: page.draftFormId, draftLiveId: page.draftLiveId },
     select: { id: true, vendorId: true, projectId: true, name: true, slug: true, draftContent: true, draftFormId: true, draftLiveId: true, status: true, publishedVersionId: true, revision: true, publishedAt: true, updatedAt: true },
+  });
+  if (!changes.length) return create(db());
+  return db().$transaction(async (transaction) => {
+    const created = await create(transaction);
+    await recordFunnelCustomCodeSave(transaction, { vendorId: scope.vendorId, actorId: actor.userId, pageId: created.id, operation: "duplicate", changes });
+    return created;
   });
 }
 
@@ -915,7 +979,8 @@ export async function loadPublicLandingPage(slug: string, onUnavailable?: (reaso
     ...publicSubmissionProjection(forms, version.formId, live?.id),
     id: page.id,
     slug: page.slug,
-    content,
+    // Emergency switch: published custom JS and page CSS are withheld from every public render.
+    content: isFunnelCustomCodeDisabled() ? withoutFunnelCustomScripts(content) : content,
     context: { pageId: page.id, forms: forms.map(toFormReference), ...(live ? { live: toLiveReference(live) } : {}) },
     publishedAt,
     ...(Object.keys(commerceByPageId).length > 0 ? { commerceByPageId } : {}),

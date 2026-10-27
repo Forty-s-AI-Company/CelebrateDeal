@@ -56,6 +56,27 @@ describe("saveTrackingSettingsAction", () => {
     expect(mocks.redirect).not.toHaveBeenCalled();
   });
 
+  it("accepts only ID formats for GA4, GTM and TikTok, and stores the browser tag opt-in", async () => {
+    for (const [key, value] of [["ga4MeasurementId", "UA-1234-1"], ["ga4MeasurementId", "<script>alert(1)</script>"], ["googleTagManagerId", "GTM-1');x()//"], ["tiktokPixelId", "pixel id"]] as const) {
+      const formData = trackingFormData("1234567890");
+      formData.set(key, value);
+      await expect(saveTrackingSettingsAction(formData)).rejects.toThrow("redirect:/settings/tracking?tracking=invalid");
+    }
+    expect(mocks.upsert).not.toHaveBeenCalled();
+    const formData = trackingFormData("1234567890");
+    formData.set("ga4MeasurementId", " g-abc1234 ");
+    formData.set("googleTagManagerId", "gtm-abc123");
+    formData.set("tiktokPixelId", "c4a1b2c3d4e5f6g7h8i9");
+    formData.set("enableBrowserTags", "on");
+    await saveTrackingSettingsAction(formData);
+    expect(mocks.upsert).toHaveBeenLastCalledWith(expect.objectContaining({
+      where: { vendorId: "vendor-1" },
+      update: expect.objectContaining({ ga4MeasurementId: "G-ABC1234", googleTagManagerId: "GTM-ABC123", tiktokPixelId: "C4A1B2C3D4E5F6G7H8I9", enableBrowserTags: true }),
+    }));
+    await saveTrackingSettingsAction(trackingFormData("1234567890"));
+    expect(mocks.upsert).toHaveBeenLastCalledWith(expect.objectContaining({ update: expect.objectContaining({ ga4MeasurementId: null, enableBrowserTags: false }) }));
+  });
+
   it("rejects CSRF before tenant lookup or persistence", async () => {
     mocks.security.mockRejectedValue(new Error("CSRF denied"));
     await expect(saveTrackingSettingsAction(trackingFormData("1234567890"))).rejects.toThrow("CSRF denied");

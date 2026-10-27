@@ -6,6 +6,7 @@ import { ArrowDown, ArrowUp, ChevronLeft, Copy, Monitor, Smartphone, Trash2 } fr
 import { funnelDeviceVisibilityCommand, funnelNodeVisibility, type FunnelDevice } from "@/lib/funnel-node-visibility";
 import { FunnelElementInspector } from "./funnel-element-inspector";
 import { FunnelCommerceSettings } from "./funnel-commerce-settings";
+import { PageCustomCssField } from "./funnel-custom-code-field";
 import { funnelNodeLabel } from "./funnel-editor-library";
 import type { FunnelCommerceProduct } from "@/lib/funnel-commerce";
 import type { FunnelNode, PageDocument } from "@/lib/funnel-page-document";
@@ -193,6 +194,9 @@ export function PageSettingsPanel({ document, disabled, commerceEnabled, commerc
         <DraftTextField label="搜尋引擎描述" value={settings.seo.description} disabled={disabled} multiline maxLength={320} onCommit={(description) => setSeo({ description })} />
         <UrlField id="funnel-settings-social-image" label="社群分享圖片網址" value={settings.seo.socialImage} disabled={disabled} hint="分享到社群時顯示的圖片，建議 1200×630。" onCommit={(socialImage) => setSeo({ socialImage })} />
         <label className="flex items-start gap-2 rounded-lg border border-slate-200 p-3 text-sm font-semibold text-slate-700"><input type="checkbox" className="mt-0.5 h-4 w-4" disabled={disabled} checked={settings.seo.hideFromSearch} onChange={(event) => setSeo({ hideFromSearch: event.currentTarget.checked })} /><span>不讓搜尋引擎收錄這個頁面<span className="block text-xs font-normal text-slate-600">勾選後公開頁會加上 noindex。</span></span></label>
+      </SettingsSection>
+      <SettingsSection id="funnel-page-custom-css-settings" title="自訂 CSS">
+        <PageCustomCssField value={settings.customCss} disabled={disabled} onCommit={(customCss) => onReplace({ ...document, settings: { ...settings, customCss } })} />
       </SettingsSection>
       <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-900">追蹤設定：{settings.tracking.reason}<br />推薦夥伴：{settings.affiliate.reason}</div>
     </div>

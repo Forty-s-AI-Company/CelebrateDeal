@@ -3,6 +3,8 @@ import { z } from "zod";
 import { parseFunnelFlow, type FunnelFlow } from "@/lib/funnel-flow";
 import { FunnelCommerceBindingSchema } from "@/lib/funnel-commerce";
 import { isSafeContentHref } from "@/lib/safe-url";
+import { FUNNEL_CUSTOM_CODE_LIMITS, utf8ByteLength } from "@/lib/funnel-custom-code";
+import { compileFunnelCustomCss, FUNNEL_PAGE_CUSTOM_CSS_MAX_BYTES } from "@/lib/funnel-custom-css";
 
 /**
  * Persisted Funnel editor contract.  This is deliberately independent from
@@ -74,10 +76,18 @@ function withoutRetiredUnsafeLinkActions(value: unknown): unknown {
 const safeColor = z.string().trim().max(32).regex(/^(#[0-9a-f]{3,8}|rgb\([0-9, .]+\)|rgba\([0-9, .]+\)|transparent|white|black)$/iu, "顏色格式不正確");
 const safeCssToken = z.string().trim().max(120).refine((value) => !/[{};<>]/u.test(value) && !/\b(?:javascript|data|vbscript):/iu.test(value), "樣式值不安全");
 
+const JSON_STRING_MAX = 10_000;
 const JsonValueSchema: z.ZodType<unknown> = z.lazy(() => z.union([
-  z.string().max(10_000), z.number().finite(), z.boolean(), z.null(),
+  z.string().max(JSON_STRING_MAX), z.number().finite(), z.boolean(), z.null(),
   z.array(JsonValueSchema).max(100), z.record(z.string().max(100), JsonValueSchema),
 ]));
+/**
+ * Top-level node props. Only the 自訂程式碼 (`raw_html`) fields may exceed the
+ * generic 10,000-character string limit; the node `superRefine` below enforces that.
+ */
+const CUSTOM_CODE_STRING_MAX = Math.max(...Object.values(FUNNEL_CUSTOM_CODE_LIMITS));
+const NodePropsSchema = z.record(z.string().max(100), z.union([JsonValueSchema, z.string().max(CUSTOM_CODE_STRING_MAX)]));
+const CUSTOM_CODE_PROP_LIMITS: Readonly<Record<string, number>> = { ...FUNNEL_CUSTOM_CODE_LIMITS, content: FUNNEL_CUSTOM_CODE_LIMITS.html };
 
 /** Only value-based styles are persisted; arbitrary CSS/class names are not. */
 export const FunnelNodeStyleSchema = z.object({
@@ -149,7 +159,7 @@ const defaultCapability = (status: FunnelCapabilityStatus, reason: string, upgra
 /** Feature flags are explicit so unavailable editor features never fail silently. */
 export const FUNNEL_CAPABILITIES = {
   payment: defaultCapability("limited", "需在訂單步驟綁定有效商品與既有安全結帳；優惠碼輸入及獨立運費規則尚未支援"),
-  rawHtml: defaultCapability("disabled", "為避免編輯器執行危險腳本，目前僅保留不可執行的限制狀態"),
+  rawHtml: defaultCapability("available", "自訂程式碼只在隔離的沙箱 iframe 內執行，碰不到平台 Cookie、後台或其他商家；含 JS 需 owner／admin 且 Email 已驗證"),
   tracking: defaultCapability("disabled", "追蹤碼與自訂程式碼需經安全整合後才可啟用"),
   recaptcha: defaultCapability("unverified", "目前沒有可驗證的 reCAPTCHA 網域金鑰，因此暫不可用"),
   exitIntent: defaultCapability("available", "桌機游標從視窗頂端離開時單次觸發；行動裝置不支援"),
@@ -160,14 +170,27 @@ const NodeSchemaBase = z.object({
   schemaVersion: z.literal(FUNNEL_PAGE_DOCUMENT_SCHEMA_VERSION),
   id: identifier,
   type: z.enum(FUNNEL_NODE_TYPES),
-  props: z.record(z.string().max(100), JsonValueSchema).default({}),
+  props: NodePropsSchema.default({}),
   style: FunnelNodeStyleSchema.default({}),
   overrides: FunnelNodeOverridesSchema.default({}),
   visible: z.boolean().default(true),
   actions: z.preprocess(withoutRetiredUnsafeLinkActions, z.array(NodeActionSchema).max(20)).default([]),
   attributes: NodeAttributesSchema.default({}),
   children: z.array(z.lazy(() => FunnelNodeSchema)).max(100).optional(),
-}).strict();
+}).strict().superRefine((node, context) => {
+  for (const [key, value] of Object.entries(node.props)) {
+    if (typeof value !== "string") continue;
+    const customLimit = node.type === "raw_html" ? CUSTOM_CODE_PROP_LIMITS[key] : undefined;
+    if (customLimit === undefined ? value.length > JSON_STRING_MAX : utf8ByteLength(value) > customLimit) {
+      context.addIssue({ code: "custom", path: ["props", key], message: customLimit === undefined ? "文字內容過長" : `自訂程式碼的 ${key.toUpperCase()} 超過 ${customLimit / 1000} KB 上限` });
+    }
+  }
+  if (node.type === "raw_html") {
+    for (const key of ["html", "css", "js"] as const) {
+      if (node.props[key] !== undefined && typeof node.props[key] !== "string") context.addIssue({ code: "custom", path: ["props", key], message: "自訂程式碼必須是文字" });
+    }
+  }
+});
 
 export const FunnelNodeSchema: z.ZodType<FunnelNode> = NodeSchemaBase as z.ZodType<FunnelNode>;
 export interface FunnelNode {
@@ -216,7 +239,7 @@ const definitions: Record<FunnelNodeType, FunnelNodeDefinition> = {
   countdown: { label: "倒數計時", category: "other", children: false, allowedParents: ["row", "columns_2", "columns_3", "columns_4"], capability: available },
   menu: { label: "選單", category: "other", children: false, allowedParents: ["row", "columns_2", "columns_3", "columns_4", "section"], capability: available },
   horizontal_line: { label: "水平線", category: "other", children: false, allowedParents: ["row", "columns_2", "columns_3", "columns_4", "content_box"], capability: available },
-  raw_html: { label: "原始 HTML", category: "other", children: false, allowedParents: ["row", "columns_2", "columns_3", "columns_4", "content_box"], capability: FUNNEL_CAPABILITIES.rawHtml },
+  raw_html: { label: "自訂程式碼", category: "other", children: false, allowedParents: ["row", "columns_2", "columns_3", "columns_4", "content_box"], capability: FUNNEL_CAPABILITIES.rawHtml },
   faq: { label: "常見問題", category: "other", children: true, allowedParents: ["row", "columns_2", "columns_3", "columns_4"], capability: available },
   recaptcha: { label: "reCAPTCHA", category: "form", children: false, allowedParents: ["form", "row", "columns_2", "columns_3", "columns_4"], capability: FUNNEL_CAPABILITIES.recaptcha },
   payment_button: { label: "付款按鈕", category: "payment", children: false, allowedParents: ["form", "row", "columns_2", "columns_3", "columns_4"], capability: payment },
@@ -279,6 +302,11 @@ const PageSettingsSchema = z.object({
   seo: z.object({ title: safeShortText.optional(), description: z.string().trim().max(320).optional(), keywords: z.string().trim().max(500).optional(), author: safeShortText.optional(), socialImage: optionalSafeHref("social_image"), hideFromSearch: z.boolean().default(false) }).strict().default({ hideFromSearch: false }),
   tracking: FunnelCapabilityStatusSchema.default(FUNNEL_CAPABILITIES.tracking),
   affiliate: FunnelCapabilityStatusSchema.default(FUNNEL_CAPABILITIES.affiliate),
+  /**
+   * 頁面自訂 CSS（原始碼）。儲存時必須能通過 `compileFunnelCustomCss`；渲染時
+   * 再編譯一次，只輸出加上 `[data-funnel-content]` 範圍前綴的結果。
+   */
+  customCss: z.string().max(FUNNEL_PAGE_CUSTOM_CSS_MAX_BYTES).refine((css) => compileFunnelCustomCss(css).ok, "頁面自訂 CSS 含有不支援或不安全的語法").optional(),
 }).strict();
 const defaultTypography = { bodyFont: "system-ui", headingFont: "system-ui", bodySize: 16, bodyLineHeight: 1.5, linkColor: "#2563eb", textColor: "#0f172a", alignment: "left" as const };
 const defaultBackground = { color: "white", blur: 0 };

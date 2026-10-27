@@ -15,7 +15,9 @@ import { FunnelCommerceElement } from "./funnel-commerce-element";
 import { ConsultationBookingBlock } from "@/components/funnel-blocks/consultation-booking-block";
 import { FunnelDocumentCarousel } from "./funnel-document-carousel";
 import { FunnelSurvey } from "./funnel-survey";
-import { SandboxedHtml } from "./sandboxed-html";
+import { SandboxedCustomCode } from "./sandboxed-html";
+import { funnelCustomCodeOf, hasFunnelCustomScript } from "@/lib/funnel-custom-code";
+import { compileFunnelCustomCss } from "@/lib/funnel-custom-css";
 import { InlineEditableText } from "./funnel-inline-editable";
 import { safeContentAssetUrl, safeContentHref } from "@/lib/safe-url";
 
@@ -116,7 +118,7 @@ const LABELS: Record<FunnelNode["type"], string> = {
   countdown: "倒數計時",
   menu: "選單",
   horizontal_line: "水平線",
-  raw_html: "原始 HTML",
+  raw_html: "自訂程式碼",
   faq: "常見問題",
   recaptcha: "reCAPTCHA",
   payment_button: "付款按鈕",
@@ -557,8 +559,18 @@ function NodeRenderer({ node, viewport, mode, flow, submission, consultation, pu
       return surface(publicSurface && mode === "preview" ? <FunnelSurvey nodeId={node.id} question={question} options={surveyOptions} multiple={props.multiple === true} required={props.required === true} fieldKey={safeNodeName(node, props, node.id)} submission={submission} /> : <fieldset className="space-y-2"><legend className="font-medium">{question}</legend>{surveyOptions.map((option, index) => <label key={`${node.id}-option-${index}`} className="flex items-center gap-2"><input type={props.multiple === true ? "checkbox" : "radio"} name={safeNodeName(node, props, node.id)} value={option} /><span>{option}</span></label>)}</fieldset>);
     }
     case "raw_html": {
-      const html = stringProp(props, ["html", "content"]);
-      return surface(html ? <div><p className="sr-only">原始 HTML 已在 sandbox 隔離預覽</p><SandboxedHtml html={html} label={stringProp(props, ["title", "ariaLabel"], "隔離的自訂內容")} /></div> : <UnsupportedNode node={node} message="尚未提供可隔離顯示的 HTML。" />);
+      // Code fields come from the base props only: custom code has no desktop/mobile overrides.
+      const code = funnelCustomCodeOf(node.props);
+      if (!code.html.trim() && !code.css.trim() && !code.js.trim()) return surface(<UnsupportedNode node={node} message="尚未輸入自訂程式碼。" />);
+      const scripted = hasFunnelCustomScript(code);
+      // The editor canvas never runs merchant JS; preview and public pages run it in the opaque-origin sandbox.
+      const codeMode = scripted && mode !== "editor" ? "script" : "static";
+      const height = typeof node.props.height === "number" ? node.props.height : undefined;
+      return surface(<div data-funnel-custom-code-node>
+        <p className="sr-only">自訂程式碼在隔離的沙箱中顯示</p>
+        {scripted && codeMode === "static" ? <p className="mb-1 text-xs text-slate-500">JS 只在預覽與公開頁面的隔離沙箱中執行。</p> : null}
+        <SandboxedCustomCode code={code} mode={codeMode} height={height} label={stringProp(props, ["title", "ariaLabel"], "自訂程式碼")} />
+      </div>);
     }
     case "recaptcha": return surface(<UnsupportedNode node={node} message="CelebrateDeal 尚未具備已驗證的 server verification 與網域設定，因此 reCAPTCHA 不可用。" />);
     case "countdown": {
@@ -646,12 +658,28 @@ export function FunnelPageDocumentRenderer({ document, viewport = "desktop", mod
   const backgroundImage = funnelBackgroundImageValue(parsed.settings.background.imageUrl);
   const blur = Math.min(Math.max(parsed.settings.background.blur, 0), 40);
   const Root = landmark ? "main" : "div";
-  return <CommerceRenderContext.Provider value={{ binding: parsed.commerce, commerce }}><TypographyContext.Provider value={tokens}>
-    <Root data-funnel-renderer data-viewport={viewport} data-render-mode={mode} className={`min-h-full w-full${backgroundImage ? " relative isolate" : ""} ${className}`.trim()} style={pageStyle(parsed, tokens)}>
+  const scopedCss = funnelScopedCustomCss(parsed.settings.customCss);
+  const root = <Root data-funnel-renderer data-funnel-content data-viewport={viewport} data-render-mode={mode} className={`min-h-full w-full${backgroundImage ? " relative isolate" : ""} ${className}`.trim()} style={pageStyle(parsed, tokens)}>
       {backgroundImage ? <div aria-hidden data-funnel-background className="pointer-events-none absolute inset-0 -z-10 overflow-hidden"><div className="absolute bg-cover bg-center" style={{ backgroundImage, inset: blur ? `-${blur * 2}px` : 0, filter: blur ? `blur(${blur}px)` : undefined }} /></div> : null}
       {parsed.root.map((node) => <NodeRenderer key={node.id} node={node} viewport={viewport} mode={mode} flow={parsed.flow} submission={submission} consultation={consultation} publicSurface={publicSurface} selectedNodeId={selectedNodeId} onSelectNode={onSelectNode} inlineEditing={editing} />)}
-    </Root>
+    </Root>;
+  return <CommerceRenderContext.Provider value={{ binding: parsed.commerce, commerce }}><TypographyContext.Provider value={tokens}>
+    {scopedCss ? <div data-funnel-content-shell style={FUNNEL_CONTENT_SHELL_STYLE}><style data-funnel-custom-css dangerouslySetInnerHTML={{ __html: scopedCss }} />{root}</div> : root}
   </TypographyContext.Provider></CommerceRenderContext.Provider>;
+}
+
+/**
+ * 頁面自訂 CSS 的外框。商家選擇器一律以 `[data-funnel-content]` 開頭，選不到這個
+ * 外框；外框的 paint／layout containment 讓 position:fixed 只能相對外框定位且被
+ * 裁切在外框內，isolation 讓 z-index 無法蓋過外框之外的平台揭露與政策連結。
+ */
+export const FUNNEL_CONTENT_SHELL_STYLE: CSSProperties = { contain: "layout paint", isolation: "isolate", position: "relative", zIndex: 0 };
+
+/** 渲染時重新編譯；不合格（或空白）的 CSS 一律不輸出。 */
+export function funnelScopedCustomCss(source: string | undefined): string {
+  if (!source?.trim()) return "";
+  const compiled = compileFunnelCustomCss(source);
+  return compiled.ok ? compiled.css : "";
 }
 
 export const FunnelPageRenderer = FunnelPageDocumentRenderer;

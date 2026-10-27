@@ -6,6 +6,7 @@ import type {
 } from "@/lib/funnel-page-document";
 import type { FunnelNodePatch, FunnelPageCommand } from "@/lib/funnel-page-history";
 import { isSafeContentHref } from "@/lib/safe-url";
+import { FUNNEL_CUSTOM_CODE_LIMITS, utf8ByteLength } from "@/lib/funnel-custom-code";
 
 /**
  * Declarative inspector metadata.  The editor and future alternative
@@ -14,7 +15,7 @@ import { isSafeContentHref } from "@/lib/safe-url";
  */
 export type FunnelInspectorGroup = "content" | "design" | "actions" | "advanced";
 export type FunnelInspectorScope = "base" | "desktop" | "mobile";
-export type FunnelInspectorFieldKind = "text" | "textarea" | "number" | "checkbox" | "select" | "list" | "menu_items" | "faq_items";
+export type FunnelInspectorFieldKind = "text" | "textarea" | "number" | "checkbox" | "select" | "list" | "menu_items" | "faq_items" | "code";
 
 export interface FunnelInspectorField {
   id: string;
@@ -29,6 +30,10 @@ export interface FunnelInspectorField {
   step?: number;
   responsive?: boolean;
   disabled?: boolean;
+  /** `code` fields: UTF-8 byte limit, enforced again by the server schema. */
+  maxBytes?: number;
+  /** `code` fields: language shown to the merchant. */
+  language?: "html" | "css" | "js";
 }
 
 export interface FunnelElementInspectorDefinition {
@@ -57,6 +62,15 @@ const advancedFields: readonly FunnelInspectorField[] = [
 ];
 
 const layout: readonly FunnelInspectorField[] = [content("ariaLabel", "輔助說明"), ...designFields, ...advancedFields];
+/** 自訂程式碼欄位：只編輯基礎值（不支援桌機／手機覆寫），不修剪空白。 */
+const code = (id: "html" | "css" | "js", label: string, description: string): FunnelInspectorField => ({ id, label, kind: "code", group: "content", target: "props", responsive: false, maxBytes: FUNNEL_CUSTOM_CODE_LIMITS[id], language: id, description });
+const customCodeFields: readonly FunnelInspectorField[] = [
+  code("html", "HTML", "原樣放進隔離的沙箱 iframe；沒有 JS 時只保留安全的排版標籤。"),
+  code("css", "CSS", "只作用在這個元件的 iframe 內。可用 https:// 載入字型與圖片。"),
+  code("js", "JavaScript", "只在預覽與公開頁的隔離沙箱中執行，無法讀取平台 Cookie、後台或發出網路請求（fetch／XHR）。需 owner 或 admin，且 Email 已驗證。"),
+  content("title", "iframe 說明（無障礙）"),
+  { id: "height", label: "預設高度（px）", group: "content", kind: "number", target: "props", min: 40, max: 20_000, description: "含 JS 時會依內容自動調整；沒有 JS 時固定為這個高度。" },
+];
 const restricted = (capabilityNote: string): FunnelElementInspectorDefinition => ({ fields: [...designFields, ...advancedFields], capabilityNote });
 
 export const FUNNEL_ELEMENT_INSPECTOR_SCHEMA: Readonly<Record<FunnelNodeType, FunnelElementInspectorDefinition>> = {
@@ -83,7 +97,7 @@ export const FUNNEL_ELEMENT_INSPECTOR_SCHEMA: Readonly<Record<FunnelNodeType, Fu
   countdown: { fields: [content("targetDate", "截止時間", "text", "使用 ISO 日期時間，例如 2026-12-31T23:59:00+08:00。"), ...designFields, ...advancedFields] },
   menu: { fields: [content("items", "選單項目", "menu_items", "每行「名稱 | HTTPS 網址或 #錨點」。"), ...designFields, ...advancedFields] },
   horizontal_line: { fields: [...designFields, ...advancedFields] },
-  raw_html: restricted("Raw HTML 依安全策略維持不可執行狀態，無法輸入或預覽自訂程式碼。"),
+  raw_html: { fields: [...customCodeFields, ...designFields, ...advancedFields] },
   faq: { fields: [content("items", "問題與答案", "faq_items", "每行「問題 | 答案」。"), ...designFields, ...advancedFields] },
   recaptcha: restricted("reCAPTCHA 尚未有可驗證的安全整合，維持待驗證狀態。"),
   payment_button: restricted("付款元件尚未連接商品與付款資料。"),
@@ -135,6 +149,7 @@ function fieldValue(field: FunnelInspectorField, value: unknown): unknown | null
     return number;
   }
   if (typeof value !== "string") return null;
+  if (field.kind === "code") return utf8ByteLength(value) <= (field.maxBytes ?? 0) ? value : null;
   const text = value.trim();
   if (field.kind === "list") return trimLineList(text);
   if (field.kind === "menu_items") return menuItems(text);
@@ -174,7 +189,7 @@ function scopedPatch(scope: FunnelInspectorScope, node: FunnelNode, field: Funne
  */
 export function createFunnelInspectorUpdate(node: FunnelNode, scope: FunnelInspectorScope, field: FunnelInspectorField, value: unknown): FunnelPageCommand | null {
   if (field.disabled) return null;
-  const patch = scopedPatch(scope, node, field, value);
+  const patch = scopedPatch(field.kind === "code" ? "base" : scope, node, field, value);
   return patch ? { type: "update", nodeId: node.id, patch } : null;
 }
 
@@ -208,6 +223,10 @@ function valueToLines(value: unknown, kind: FunnelInspectorFieldKind): string {
 /** Resolve base + responsive override exactly as the shared renderer does. */
 export function getFunnelInspectorFieldValue(node: FunnelNode, scope: FunnelInspectorScope, field: FunnelInspectorField): string | number | boolean {
   if (field.target === "attributes") return node.attributes[field.id] ?? "";
+  if (field.kind === "code") {
+    const stored = node.props[field.id] ?? (field.id === "html" ? node.props.content : undefined);
+    return typeof stored === "string" ? stored : "";
+  }
   let value: unknown;
   if (field.target === "visible") value = scope === "base" ? node.visible : node.overrides[scope]?.visible ?? node.visible;
   else {

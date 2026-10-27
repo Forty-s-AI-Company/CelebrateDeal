@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { referenceOptions } from "./funnel-display-labels";
 import { useFunnelRegistrationLinks } from "./funnel-registration-links";
+import { CodeTextarea } from "./funnel-custom-code-field";
 import { BOUND_LIVE_FORM_RULE, registrationFormChoices } from "@/lib/funnel-registration-action";
 
 import {
@@ -77,6 +78,7 @@ function initialAction(node: FunnelNode): FunnelInspectorActionInput {
 
 function FieldControl({ field, node, scope, disabled, onCommand }: { field: FunnelInspectorField; node: FunnelNode; scope: FunnelInspectorScope; disabled: boolean; onCommand: (command: FunnelPageCommand) => void }) {
   const value = getFunnelInspectorFieldValue(node, scope, field);
+  if (field.kind === "code") return <CodeTextarea label={field.label} value={String(value)} maxBytes={field.maxBytes ?? 0} disabled={disabled || field.disabled} description={field.description} onCommit={(next) => { const command = createFunnelInspectorUpdate(node, "base", field, next); if (command) onCommand(command); }} />;
   const commit = (next: string | boolean) => {
     const command = createFunnelInspectorUpdate(node, scope, field, next);
     if (command) onCommand(command);
