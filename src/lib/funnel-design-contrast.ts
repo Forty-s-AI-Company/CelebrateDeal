@@ -1,5 +1,24 @@
 import type { FunnelNode, PageDocument } from "@/lib/funnel-page-document";
 import { funnelContrastRatio, funnelTextStyle, resolveFunnelTypography } from "@/lib/funnel-typography";
+import { FUNNEL_SHOWCASE_DEFAULT_ACCENT, showcaseCards, showcaseColor } from "@/lib/funnel-showcase";
+
+const showcaseAccent = (node: FunnelNode) => showcaseColor(node.props.accentColor) ?? FUNNEL_SHOWCASE_DEFAULT_ACCENT;
+
+/** Showcase elements use the accent colour for small text (eyebrows, links), so it must pass against the section too. */
+function checkShowcase(node: FunnelNode, color: string, bg: string, headingColor: string, check: (node: FunnelNode, role: string, foreground: string, background: string) => void) {
+  switch (node.type) {
+    case "section_title":
+      check(node, "區塊標題", node.style.color ?? headingColor, bg);
+      if (node.props.eyebrow) check(node, "英文小標", showcaseAccent(node), bg);
+      break;
+    case "image_cards":
+      check(node, "卡片文字", color, bg);
+      if (showcaseCards(node.props.items).some((card) => card.href)) check(node, "卡片連結", showcaseAccent(node), bg);
+      break;
+    case "icon_list": case "stats": case "logo_strip": check(node, node.type, color, bg); break;
+    default: break;
+  }
+}
 
 /** Default button colours used by the renderer when a button sets none. */
 export const FUNNEL_DEFAULT_BUTTON_COLORS = { background: "#f59e0b", text: "#0f172a" } as const;
@@ -32,7 +51,7 @@ export function findFunnelContrastIssues(document: PageDocument, minimum = 4.5):
         case "bulleted_list": case "checkbox": case "form_input": check(node, node.type, color, bg); break;
         case "menu": check(node, "選單連結", style.color ?? tokens.linkColor, bg); break;
         case "button": check(node, "按鈕", style.color ?? FUNNEL_DEFAULT_BUTTON_COLORS.text, ownBackground ?? FUNNEL_DEFAULT_BUTTON_COLORS.background); break;
-        default: break;
+        default: checkShowcase(node, color, bg, tokens.headingColor, check); break;
       }
       if (node.children) walk(node.children, bg, color);
     }

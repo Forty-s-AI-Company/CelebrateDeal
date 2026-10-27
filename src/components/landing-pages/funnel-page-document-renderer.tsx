@@ -18,6 +18,8 @@ import { FunnelSurvey } from "./funnel-survey";
 import { SandboxedHtml } from "./sandboxed-html";
 import { InlineEditableText } from "./funnel-inline-editable";
 import { safeContentAssetUrl, safeContentHref } from "@/lib/safe-url";
+import { ContentCardsElement, FUNNEL_SHOWCASE_ACCENT, IconListElement, ImageCardsElement, LogoStripElement, NavBarElement, SectionTitleElement, ShapeDividerElement, StatsElement, TestimonialWallElement, VideoGalleryElement, type ShowcaseElementProps } from "./funnel-showcase-elements";
+import { showcaseChoice, showcaseColor, showcaseNumber } from "@/lib/funnel-showcase";
 
 import {
   createEmptyPageDocument,
@@ -35,6 +37,7 @@ import {
   funnelPageTypographyStyle,
   funnelTypographyDefaults,
   funnelTypographyKind,
+  parseFunnelColor,
   resolveFunnelTypography,
   type FunnelTypographyTokens,
 } from "@/lib/funnel-typography";
@@ -130,6 +133,16 @@ const LABELS: Record<FunnelNode["type"], string> = {
   two_step_order_form: "兩步驟訂單表單",
   shipping_fees: "運費",
   paid_calendar: "付費行事曆",
+  nav_bar: "導覽列",
+  logo_strip: "Logo 列",
+  stats: "數據統計",
+  icon_list: "圖示重點",
+  shape_divider: "分隔形狀",
+  section_title: "區塊標題組",
+  image_cards: "圖片卡片",
+  testimonial_wall: "評價牆",
+  content_cards: "文章卡片",
+  video_gallery: "影片牆",
 };
 
 function stringProp(props: Record<string, unknown>, keys: string[], fallback = ""): string {
@@ -418,8 +431,12 @@ function selectDetail(event: MouseEvent<HTMLElement>): FunnelNodeSelectDetail {
 }
 
 /** Default (theme) style of a node's wrapper; the node's own style is merged on top and always wins. */
-function surfaceDefaults(node: FunnelNode, resolved: ResolvedNode, tokens: FunnelTypographyTokens): CSSProperties {
-  if (node.type === "section") return { padding: `0 ${funnelLayoutTokens(tokens.viewport).sectionGutter}px` };
+function surfaceDefaults(node: FunnelNode, resolved: ResolvedNode, tokens: FunnelTypographyTokens, mode: FunnelRenderMode): CSSProperties {
+  if (node.type === "section") return { padding: `0 ${funnelLayoutTokens(tokens.viewport).sectionGutter}px`, ...(sectionBackgroundImage(resolved.props) ? { position: "relative", isolation: "isolate", overflow: "hidden" } : {}) };
+  // The navigation bar sticks to the top of the page on preview/public surfaces only (the editor canvas stays static).
+  if (node.type === "nav_bar") return { backgroundColor: "#0b0b0c", color: "#f5f1e8", lineHeight: 1.5, ...(mode === "preview" && resolved.props.sticky !== false ? { position: "sticky", top: 0, zIndex: 40 } : { position: "relative", zIndex: 30 }) };
+  if (node.type === "shape_divider") return { color: "#0b0b0c", lineHeight: 0 };
+  if (node.type === "content_box" && contentBoxDecoration(resolved.props)) return { position: "relative" };
   if (node.type === "button") return {};
   const kind = funnelTypographyKind(node, resolved.props);
   return kind ? funnelTypographyDefaults(kind, tokens) : {};
@@ -429,7 +446,7 @@ function NodeSurface({ node, resolved, viewport, mode, selectedNodeId, onSelectN
   const tokens = useContext(TypographyContext);
   // A button's visuals belong to its control; a row's direction arranges its children, not its wrapper.
   const ownStyle = node.type === "button" ? splitButtonStyle(resolved.style).wrapper : node.type === "row" ? { ...resolved.style, direction: undefined } : resolved.style;
-  const style = { ...surfaceDefaults(node, resolved, tokens), ...nodeStyle(ownStyle) };
+  const style = { ...surfaceDefaults(node, resolved, tokens, mode), ...nodeStyle(ownStyle) };
   const editor = mode === "editor";
   const attributes = safeAttributes(node.attributes);
   // EDT-RESP-001: a node hidden on this device stays selectable in the editor, dimmed and striped.
@@ -464,7 +481,7 @@ function NodeRenderer({ node, viewport, mode, flow, submission, consultation, pu
   switch (node.type) {
     case "offer_price": case "payment_button": case "payment_method": case "physical_product": case "customer_type": case "agreement": case "order_bump": case "coupon": case "two_step_order_form": case "shipping_fees":
       return surface(<><FunnelCommerceElement type={node.type} {...commerceContext} interactive={publicSurface && mode !== "editor"} />{renderChildren()}</>);
-    case "section": return surface(<section>{renderChildren()}</section>);
+    case "section": return surface(<><SectionBackground props={props} /><section>{renderChildren()}</section></>);
     // Row: props.maxWidth centres the content column; props.gap spaces its children;
     // style.direction "row" lays children side by side (wrapping on narrow screens).
     case "row": {
@@ -498,7 +515,8 @@ function NodeRenderer({ node, viewport, mode, flow, submission, consultation, pu
       // A box styled by its own node style (templates, blocks) draws nothing extra; an unstyled box keeps the default card.
       const style = resolved.style;
       const custom = style.padding !== undefined || style.backgroundColor !== undefined || style.borderWidth !== undefined || style.borderColor !== undefined || (style.shadow !== undefined && style.shadow !== "none");
-      return surface(<div className={`flex min-w-0 flex-col${custom ? "" : " rounded-xl border border-slate-200 bg-white/70 p-4"}`} style={{ gap: layoutNumber(props.gap, 0, 120, layout.boxGap) }}>{children.length ? renderChildren() : <p className="whitespace-pre-line">{stringProp(props, ["text", "content", "description", "title"], "內容區塊")}</p>}</div>);
+      const decoration = contentBoxDecoration(props);
+      return surface(<>{decoration ? <ContentBoxDecoration kind={decoration} props={props} /> : null}<div className={`flex min-w-0 flex-col${custom ? "" : " rounded-xl border border-slate-200 bg-white/70 p-4"}${decoration ? " relative" : ""}`} style={{ gap: layoutNumber(props.gap, 0, 120, layout.boxGap) }}>{children.length ? renderChildren() : <p className="whitespace-pre-line">{stringProp(props, ["text", "content", "description", "title"], "內容區塊")}</p>}</div></>);
     }
     case "image": {
       const src = safeContentAssetUrl(props.src ?? props.imageUrl ?? props.url);
@@ -603,8 +621,67 @@ function NodeRenderer({ node, viewport, mode, flow, submission, consultation, pu
       return surface(action ? <a href={action.href} target={action.newTab ? "_blank" : undefined} rel={action.newTab ? "noreferrer" : undefined} download={action.download} className={controlClass} style={controlStyle}>{label}</a> : nextStepHref ? <a href={nextStepHref} className={controlClass} style={controlStyle}>{label}</a> : <button type={submit ? "submit" : "button"} disabled={!supportedButton} aria-disabled={!supportedButton || undefined} onClick={popupId ? () => window.dispatchEvent(new CustomEvent("celebratedeal:show-popup", { detail: { popupId } })) : undefined} className={`${controlClass} disabled:cursor-not-allowed disabled:opacity-60`} style={controlStyle}>{label}</button>);
     }
     case "horizontal_line": return surface(<hr className="border-slate-200" />);
+    case "nav_bar": case "logo_strip": case "stats": case "icon_list": case "shape_divider": case "section_title": case "image_cards": case "testimonial_wall": case "content_cards": case "video_gallery": {
+      const showcase: ShowcaseElementProps = { props, tokens, viewport, interactive: mode === "preview", inheritColor: resolved.style.color !== undefined, align: resolved.style.textAlign ?? tokens.alignment };
+      const Element = SHOWCASE_ELEMENTS[node.type];
+      return surface(<Element {...showcase} />);
+    }
     default: return surface(<UnsupportedNode node={node} message={capabilityMessage(node)} />);
   }
+}
+
+const SHOWCASE_ELEMENTS = {
+  nav_bar: NavBarElement, logo_strip: LogoStripElement, stats: StatsElement, icon_list: IconListElement, shape_divider: ShapeDividerElement,
+  section_title: SectionTitleElement, image_cards: ImageCardsElement, testimonial_wall: TestimonialWallElement, content_cards: ContentCardsElement, video_gallery: VideoGalleryElement,
+} as const;
+
+function sectionBackgroundImage(props: Record<string, unknown>): string | undefined {
+  return funnelBackgroundImageValue(props.backgroundImage);
+}
+
+const OVERLAY_DIRECTIONS = { left: "to left", right: "to right", bottom: "to bottom", top: "to top" } as const;
+
+/** `rgba()` for an overlay colour at the given 0–100 opacity; null for colours that cannot be parsed. */
+function overlayRgba(value: unknown, opacity: number): string | null {
+  const rgb = parseFunnelColor(showcaseColor(value) ?? "#000000");
+  return rgb ? `rgba(${rgb[0]}, ${rgb[1]}, ${rgb[2]}, ${Math.round(opacity) / 100})` : null;
+}
+
+/**
+ * Section background photo with an optional colour overlay. `overlayFade`
+ * fades the overlay out towards one side (dark text side → photo side). Only
+ * URLs accepted by `funnelBackgroundImageValue` reach the CSS.
+ */
+function SectionBackground({ props }: { props: Record<string, unknown> }) {
+  const image = sectionBackgroundImage(props);
+  if (!image) return null;
+  const opacity = showcaseNumber(props.overlayOpacity, 0, 100, 0);
+  const solid = overlayRgba(props.overlayColor, opacity);
+  const fade = showcaseChoice(props.overlayFade, ["none", "left", "right", "bottom", "top"] as const, "none");
+  const overlay = !solid || opacity === 0 ? undefined : fade === "none" ? solid : `linear-gradient(${OVERLAY_DIRECTIONS[fade]}, ${solid} 0%, ${solid} 35%, ${overlayRgba(props.overlayColor, opacity * 0.25)} 100%)`;
+  const position = showcaseChoice(props.backgroundPosition, ["center", "left", "right", "top", "bottom"] as const, "center");
+  return <div aria-hidden data-funnel-section-background className="pointer-events-none absolute inset-0 -z-10">
+    <div className="absolute inset-0 bg-cover" style={{ backgroundImage: image, backgroundPosition: position }} />
+    {overlay ? <div className="absolute inset-0" style={{ background: overlay }} /> : null}
+  </div>;
+}
+
+function contentBoxDecoration(props: Record<string, unknown>): "frame" | "corners" | null {
+  return props.decoration === "frame" || props.decoration === "corners" ? props.decoration : null;
+}
+
+/** Gold inset frame or corner brackets drawn over a content box's padding (CTA boxes). */
+function ContentBoxDecoration({ kind, props }: { kind: "frame" | "corners"; props: Record<string, unknown> }) {
+  const accent = showcaseColor(props.decorationColor) ?? FUNNEL_SHOWCASE_ACCENT;
+  if (kind === "frame") return <span aria-hidden className="pointer-events-none absolute" style={{ inset: 10, border: `1px solid ${accent}`, opacity: 0.7, borderRadius: "inherit" }} />;
+  const corner = (position: CSSProperties, borders: CSSProperties) => <span aria-hidden className="pointer-events-none absolute" style={{ width: 28, height: 28, ...position, ...borders }} />;
+  const line = `2px solid ${accent}`;
+  return <>
+    {corner({ top: 10, left: 10 }, { borderTop: line, borderLeft: line })}
+    {corner({ top: 10, right: 10 }, { borderTop: line, borderRight: line })}
+    {corner({ bottom: 10, left: 10 }, { borderBottom: line, borderLeft: line })}
+    {corner({ bottom: 10, right: 10 }, { borderBottom: line, borderRight: line })}
+  </>;
 }
 
 /**

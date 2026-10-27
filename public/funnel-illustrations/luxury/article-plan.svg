@@ -1,0 +1,3 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 500" width="800" height="500" role="img" aria-label="文章插圖：規劃筆記">
+<rect width="800" height="500" fill="#efe6d4"/><rect x="230" y="70" width="340" height="380" rx="10" fill="#fffaf0" stroke="#d8c8a8" stroke-width="3"/><g stroke="#cbb994" stroke-width="6" stroke-linecap="round"><path d="M290 160h220M290 210h180M290 260h200M290 310h140"/></g><g fill="#c9a063"><circle cx="270" cy="160" r="8"/><circle cx="270" cy="210" r="8"/><circle cx="270" cy="260" r="8"/><circle cx="270" cy="310" r="8"/></g><path d="M520 380l90-170 22 12-90 170-30 18z" fill="#2b2620"/>
+</svg>

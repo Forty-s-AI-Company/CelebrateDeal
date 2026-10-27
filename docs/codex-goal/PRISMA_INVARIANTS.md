@@ -516,3 +516,14 @@ Current source inventory: 145 models and 99 forward migrations. Previous checkpo
 - 後台選單：夥伴只有「夥伴入口」；其他角色只有在**目前商家、目前成員**有有效的 `AffiliatePortalAccess` 時才顯示「夥伴入口」（`hasActiveAffiliatePortalAccess`，條件與入口清單相同並綁定 `vendorId`＋`vendorMemberId`＋`userId`）；原本對所有人顯示的帳號選單連結已移除。商家 Email 驗證橫幅（#487）只顯示給 owner。`/affiliates/[id]/access` 的成員選單先列 partner，再列其他角色，游標為 `p.<id>`／`o.<id>` 並驗證屬於本商家、該群組。
 - 已知限制：夥伴看不到 `/settings/security`（在後台 layout 之下），改密碼請用忘記密碼流程；MFA 在 `/mfa/setup` 設定。同一帳號若只在另一個商家有入口授權，目前商家的選單不會出現連結（依「綁定目前 vendor 與 member」的規則），可直接開 `/affiliate-portal`。團隊漏斗（`/partner-pages`、`/team-templates`、`/team-template`）屬於後台，夥伴同樣被拒絕；`/settings/team` 的候選成員仍會列出 partner（後續處理）。被調降為 partner 的創辦帳號仍決定 Email 發布門檻（後續處理）。
 - 測試：`src/lib/vendor-roles.test.ts`、`src/lib/auth.test.ts`（每個商家 guard 對夥伴導向入口、MFA、跨商家選擇、舊角色維持原行為）、`src/lib/mfa-enrollment.test.ts`、`src/lib/vendor-member-invitation.db.test.ts`（PostgreSQL：邀請／接受／登入、guard／layout／action／API 拒絕矩陣與 owner 正向對照、入口仍可用、停用撤銷 session（含無 vendor 的 session，且不撤銷其他租戶仍有效的 session）、調降規則、support 經邀請變夥伴、入口連結綁定與跨租戶否定、CHECK）、`src/app/actions.test.ts`（夥伴登入導向）、`src/app/(app)/layout.test.tsx`（橫幅只給 owner、入口連結）、`src/components/app-shell.test.ts`（選單）、`src/app/(app)/affiliates/[id]/access/page.test.tsx`（partner 優先與分頁）、`src/app/invitations/accept/page.test.tsx`。
+
+## 2026-10-27 一頁式網站黑金展示元件與範本（無 migration）
+
+- 沒有新增 model、欄位或 migration；目前仍為 154 models、126 forward migrations。變更只在 `LandingPage.draftContent`／`LandingPageVersion.content` 的 `PageDocument` JSON 契約，舊文件照常解析。
+- `FUNNEL_NODE_TYPES` 新增 10 種沒有子節點的展示元件：`nav_bar`（可放在 root、section、row）、`shape_divider`（root、section、row）、`section_title`、`icon_list`、`stats`、`logo_strip`、`image_cards`、`content_cards`、`video_gallery`、`testimonial_wall`（row、各欄、content_box）。內容全放在 `props`（JSON），讀取端 `@/lib/funnel-showcase` 每次渲染都重新驗證：文字截斷、連結走 `safeContentHref`、圖片走 `safeContentAssetUrl`、顏色走樣式同一份允許清單、列舉值不在清單就用預設值，項目數上限 24。
+- `FUNNEL_BLOCK_CATEGORIES` 新增 `social_proof`、`content_showcase`、`call_to_action`（只影響版型區塊分類，不寫入文件）。
+- `section.props` 新增選用的 `backgroundImage`（經 `funnelBackgroundImageValue`，只接受 HTTPS 或本站路徑且不含 CSS 斷字元）、`backgroundPosition`、`overlayColor`、`overlayOpacity`（0–100）、`overlayFade`；`content_box.props` 新增選用的 `decoration`（`frame`／`corners`）與 `decorationColor`。未設定時渲染結果與之前完全相同。
+- 影片牆：YouTube 網址只解析出 11 碼影片 id，訪客按下播放後才載入 `https://www.youtube-nocookie.com/embed/<id>`（iframe 加 sandbox）；其他安全網址在新分頁開啟。`next.config.ts` 的 report-only CSP `frame-src` 加上 `https://www.youtube-nocookie.com`。
+- 編輯器圖片上傳沿用 `/api/media/images/presign` → R2 PUT → `/api/media/images/complete`（商家 API actor 與 CSRF 檢查不變），只把回傳的公開 HTTPS 網址寫進 props。
+- 範本 `custom-luxury-course`（`src/lib/funnel-template-luxury-course.ts`）帶自己的頁面字型／配色（`FunnelTemplateGalleryItem.theme`）；其他範本行為不變。
+- 測試：`src/lib/funnel-showcase.test.ts`、`src/components/landing-pages/funnel-showcase-elements.test.tsx`、`src/lib/funnel-template-gallery.test.ts`、`src/lib/funnel-block-library.test.ts`、`src/lib/funnel-element-inspector.test.ts`、`next.config.test.ts`。

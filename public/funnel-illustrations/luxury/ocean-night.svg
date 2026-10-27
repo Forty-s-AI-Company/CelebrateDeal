@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 900" width="1600" height="900" role="img" aria-label="夜晚海面的背景圖">
+<defs>
+<linearGradient id="sky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#07080b"/><stop offset="0.62" stop-color="#1c1712"/><stop offset="0.64" stop-color="#0d0d0f"/><stop offset="1" stop-color="#050506"/></linearGradient>
+<radialGradient id="sun" cx="0.5" cy="0.62" r="0.32"><stop offset="0" stop-color="#e9c98f" stop-opacity="0.85"/><stop offset="0.25" stop-color="#c9a063" stop-opacity="0.35"/><stop offset="1" stop-color="#c9a063" stop-opacity="0"/></radialGradient>
+</defs>
+<rect width="1600" height="900" fill="url(#sky)"/>
+<rect width="1600" height="900" fill="url(#sun)"/>
+<g><path d="M0 620C200 606 400 634 600 620S1000 606 1200 620 1400 634 1600 620" stroke="#c9a063" stroke-opacity="0.28" fill="none"/><path d="M0 654C200 640 400 668 600 654S1000 640 1200 654 1400 668 1600 654" stroke="#c9a063" stroke-opacity="0.25" fill="none"/><path d="M0 688C200 674 400 702 600 688S1000 674 1200 688 1400 702 1600 688" stroke="#c9a063" stroke-opacity="0.22" fill="none"/><path d="M0 722C200 708 400 736 600 722S1000 708 1200 722 1400 736 1600 722" stroke="#c9a063" stroke-opacity="0.19" fill="none"/><path d="M0 756C200 742 400 770 600 756S1000 742 1200 756 1400 770 1600 756" stroke="#c9a063" stroke-opacity="0.16" fill="none"/><path d="M0 790C200 776 400 804 600 790S1000 776 1200 790 1400 804 1600 790" stroke="#c9a063" stroke-opacity="0.13" fill="none"/><path d="M0 824C200 810 400 838 600 824S1000 810 1200 824 1400 838 1600 824" stroke="#c9a063" stroke-opacity="0.10" fill="none"/><path d="M0 858C200 844 400 872 600 858S1000 844 1200 858 1400 872 1600 858" stroke="#c9a063" stroke-opacity="0.07" fill="none"/></g>
+<path d="M1120 560l0-150 70 135z M1112 560l0-120-52 108z" fill="#0b0b0c" fill-opacity="0.9"/><path d="M1050 566h150l-18 16h-114z" fill="#0b0b0c"/>
+<g fill="#f5f1e8" fill-opacity="0.5"><circle cx="210" cy="120" r="1.6"/><circle cx="420" cy="80" r="1.2"/><circle cx="720" cy="150" r="1.4"/><circle cx="980" cy="90" r="1.1"/><circle cx="1330" cy="140" r="1.5"/><circle cx="1500" cy="60" r="1.2"/></g>
+</svg>
