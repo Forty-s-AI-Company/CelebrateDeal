@@ -23,12 +23,15 @@ vi.mock("@/lib/csrf", () => ({ assertServerActionSecurity: vi.fn(async () => und
 import { createGoalFunnelStepPages } from "@/lib/funnel-goal-step-pages";
 import type { FunnelNode } from "@/lib/funnel-page-document";
 import { parseFunnelStepPages, type FunnelStepPages } from "@/lib/funnel-step-pages";
+import { instantiateFunnelTemplate } from "@/lib/funnel-template-gallery";
+import { LANDING_PAGE_MAX_CONTENT_BYTES, landingPageContentBytes } from "@/lib/landing-page-limits";
 import { LANDING_PAGE_TEMPLATE_VENDOR_LIMIT, readStoredTemplateDocument } from "@/lib/landing-page-template-document";
-import { getLandingPageTemplateName, listLandingPageTemplates, listLandingPageTemplateTargets } from "@/lib/landing-page-template-service";
+import { getLandingPageTemplateName, listLandingPageTemplates, listLandingPageTemplateTargets, TEMPLATE_THUMBNAIL_SECTIONS } from "@/lib/landing-page-template-service";
 import {
   applyLandingPageTemplateAction,
   createLandingPageFromTemplateAction,
   deleteLandingPageTemplateAction,
+  readLandingPageTemplateDocumentAction,
   readLandingPageTemplateTargetAction,
   renameLandingPageTemplateAction,
   saveLandingPageTemplateAction,
@@ -230,6 +233,7 @@ describe("cross-tenant isolation (PostgreSQL)", () => {
     await signIn(a.ownerId, a.vendorId);
     expect((await listLandingPageTemplates()).map((template) => template.id)).not.toContain(foreignId);
     expect(await getLandingPageTemplateName(foreignId)).toBeNull();
+    expect(await readLandingPageTemplateDocumentAction(foreignId)).toEqual({ ok: false, message: expect.stringContaining("找不到這個範本") });
     expect(await renameLandingPageTemplateAction(idle, form({ templateId: foreignId, name: "被改名" }))).toMatchObject({ status: "error", message: expect.stringContaining("找不到這個範本") });
     expect(await deleteLandingPageTemplateAction(idle, form({ templateId: foreignId }))).toMatchObject({ status: "error", message: expect.stringContaining("找不到這個範本") });
 
@@ -336,6 +340,118 @@ describe("apply and create (PostgreSQL)", () => {
   });
 });
 
+describe("draft size limit (PostgreSQL)", () => {
+  /** Grows the thank-you page until the stored funnel sits just under the limit, with room the template would exceed. */
+  async function nearlyFullFunnel() {
+    const { page, stepId, thankYouStepId } = await createFunnelPage(a, "full");
+    const content = parseFunnelStepPages(page.draftContent)!;
+    const growth = landingPageContentBytes(instantiateFunnelTemplate("audience-volunteer", content.pages[stepId]!.id)) - landingPageContentBytes(content.pages[stepId]);
+    expect(growth).toBeGreaterThan(4_000);
+    const target = LANDING_PAGE_MAX_CONTENT_BYTES - Math.floor(growth / 2);
+    const fillers: FunnelNode[] = [];
+    const filled = () => ({ ...content, pages: { ...content.pages, [thankYouStepId]: { ...content.pages[thankYouStepId]!, root: [node("filler_section", "section", {}, [node("filler_row", "row", {}, fillers)])] } } });
+    while (landingPageContentBytes(filled()) < target) {
+      fillers.push(node(`filler_${fillers.length}`, "text", { text: "x".repeat(Math.min(9_000, target - landingPageContentBytes(filled()))) }));
+    }
+    const stored = parseFunnelStepPages(filled())!;
+    expect(landingPageContentBytes(stored)).toBeLessThanOrEqual(LANDING_PAGE_MAX_CONTENT_BYTES);
+    const updated = await getDb().landingPage.update({ where: { id: page.id }, data: { draftContent: stored as never } });
+    return { page: updated, stepId };
+  }
+
+  it("refuses a template that would grow the draft past 128 KiB and leaves the page unchanged", async () => {
+    const { page, stepId } = await nearlyFullFunnel();
+    const before = await getDb().landingPage.findUniqueOrThrow({ where: { id: page.id } });
+    const applied = await applyLandingPageTemplateAction(idle, form({ templateKind: "platform", templateId: "audience-volunteer", pageId: page.id, stepId, revision: page.revision }));
+    expect(applied).toMatchObject({ status: "error", message: expect.stringContaining("128 KiB") });
+    const after = await getDb().landingPage.findUniqueOrThrow({ where: { id: page.id } });
+    expect(after.revision).toBe(before.revision);
+    expect(after.draftContent).toEqual(before.draftContent);
+  });
+
+  it("refuses to create a site whose content would exceed the limit", async () => {
+    const big = (await createFunnelPage(a, "bigsource")).page;
+    const content = parseFunnelStepPages(big.draftContent)!;
+    const optIn = content.flow.steps.find((step) => step.type === "opt_in_page")!.id;
+    const rows = Array.from({ length: 15 }, (_, index) => node(`huge_${index}`, "text", { text: "y".repeat(9_500) }));
+    content.pages[optIn]!.root = [node("huge_section", "section", {}, [node("huge_row", "row", {}, rows)])];
+    await getDb().landingPage.update({ where: { id: big.id }, data: { draftContent: content as never } });
+    // The template alone is over the limit, so saving it is refused too.
+    expect(await saveTemplate(big.id, optIn)).toMatchObject({ status: "error", message: expect.stringContaining("128 KiB") });
+    // A row stored by any other path is still checked when it is used.
+    const template = await getDb().landingPageTemplate.create({ data: { vendorId: a.vendorId, name: "過大的範本", content: { schemaVersion: 1, id: "tpl_page", name: "過大", root: content.pages[optIn]!.root } as never } });
+    const pagesBefore = await getDb().landingPage.count({ where: { vendorId: a.vendorId } });
+    const created = await createLandingPageFromTemplateAction(idle, form({ templateKind: "mine", templateId: template.id, name: "太大的網站", slug: `huge-${randomUUID().slice(0, 8)}`, goal: "audience", currency: "TWD" }));
+    expect(created).toMatchObject({ status: "error", message: expect.stringContaining("128 KiB") });
+    expect(await getDb().landingPage.count({ where: { vendorId: a.vendorId } })).toBe(pagesBefore);
+  });
+});
+
+describe("aggregate overview (PostgreSQL)", () => {
+  it("keeps rename and delete vendor-level, but saving, reading targets and applying need a project", async () => {
+    const { page, stepId } = await createFunnelPage(a);
+    const saved = await saveTemplate(page.id, stepId, "總覽前建立");
+    const second = await saveTemplate(page.id, stepId, "總覽前建立二");
+    // A preference without a selected project is the read-only aggregate overview.
+    await getDb().userOnboardingPreference.update({ where: { userId_vendorId: { userId: a.ownerId, vendorId: a.vendorId } }, data: { selectedProjectId: null } });
+
+    expect((await listLandingPageTemplates()).map((template) => template.name).sort()).toEqual(["總覽前建立", "總覽前建立二"]);
+    expect(await renameLandingPageTemplateAction(idle, form({ templateId: saved.id!, name: "總覽中改名" }))).toMatchObject({ status: "success" });
+    expect(await deleteLandingPageTemplateAction(idle, form({ templateId: second.id! }))).toMatchObject({ status: "success" });
+    expect((await templateRows(a.vendorId)).map((row) => row.name)).toEqual(["總覽中改名"]);
+
+    expect(await saveTemplate(page.id, stepId, "總覽中存")).toMatchObject({ status: "error", message: expect.stringContaining("銷售專案") });
+    expect(await readLandingPageTemplateTargetAction(page.id)).toEqual({ ok: false, message: expect.stringContaining("銷售專案") });
+    expect(await applyLandingPageTemplateAction(idle, form({ templateKind: "mine", templateId: saved.id!, pageId: page.id, stepId, revision: page.revision }))).toMatchObject({ status: "error", message: expect.stringContaining("銷售專案") });
+    expect(await templateRows(a.vendorId)).toHaveLength(1);
+    expect((await storedStep(page.id, stepId)).revision).toBe(page.revision);
+  });
+});
+
+describe("list and preview (PostgreSQL)", () => {
+  it("lists a small thumbnail and reads the full document on demand", async () => {
+    await createFunnelPage(a);
+    const content = instantiateFunnelTemplate("audience-volunteer", "x");
+    expect(content.root.length).toBeGreaterThan(TEMPLATE_THUMBNAIL_SECTIONS);
+    const row = await getDb().landingPageTemplate.create({ data: { vendorId: a.vendorId, name: "長頁", content: content as never } });
+    const [listed] = await listLandingPageTemplates();
+    expect(listed).toMatchObject({ id: row.id, readable: true });
+    expect(listed!.thumbnail!.root).toHaveLength(TEMPLATE_THUMBNAIL_SECTIONS);
+    expect(listed!.thumbnail!.popups).toEqual([]);
+    const full = await readLandingPageTemplateDocumentAction(row.id);
+    expect(full).toMatchObject({ ok: true });
+    expect(full.ok && full.document.root).toHaveLength(content.root.length);
+  });
+
+  it("lists an unreadable row so it can be deleted, and never applies it", async () => {
+    const broken = await getDb().landingPageTemplate.create({ data: { vendorId: a.vendorId, name: "壞掉的範本", content: { schemaVersion: 99 } } });
+    expect(await listLandingPageTemplates()).toEqual([expect.objectContaining({ id: broken.id, name: "壞掉的範本", readable: false, thumbnail: null })]);
+    expect(await readLandingPageTemplateDocumentAction(broken.id)).toEqual({ ok: false, message: expect.stringContaining("找不到這個範本") });
+    const target = await createFunnelPage(a, "target");
+    expect(await applyLandingPageTemplateAction(idle, form({ templateKind: "mine", templateId: broken.id, pageId: target.page.id, stepId: target.stepId, revision: target.page.revision }))).toMatchObject({ status: "error" });
+    expect(await deleteLandingPageTemplateAction(idle, form({ templateId: broken.id }))).toMatchObject({ status: "success" });
+    expect(await listLandingPageTemplates()).toEqual([]);
+  });
+});
+
+describe("concurrent saves (PostgreSQL)", () => {
+  it("never passes the per-vendor limit when saves race", async () => {
+    const { page, stepId } = await createFunnelPage(a);
+    await getDb().landingPageTemplate.createMany({
+      data: Array.from({ length: LANDING_PAGE_TEMPLATE_VENDOR_LIMIT - 2 }, (_, index) => ({ vendorId: a.vendorId, name: `既有 ${index}`, content: { schemaVersion: 1, id: "tpl_page", root: [] } })),
+    });
+    const results = await Promise.all(Array.from({ length: 5 }, (_, index) => saveTemplate(page.id, stepId, `並發 ${index}`)));
+    const successes = results.filter((result) => result.status === "success");
+    expect(successes.length).toBeLessThanOrEqual(2);
+    for (const result of results.filter((item) => item.status !== "success")) {
+      expect(result.message).toMatch(/最多可保存 100 個範本|系統忙碌中/u);
+    }
+    const count = await getDb().landingPageTemplate.count({ where: { vendorId: a.vendorId } });
+    expect(count).toBeLessThanOrEqual(LANDING_PAGE_TEMPLATE_VENDOR_LIMIT);
+    expect(count).toBe(LANDING_PAGE_TEMPLATE_VENDOR_LIMIT - 2 + successes.length);
+  });
+});
+
 describe("role gate (PostgreSQL)", () => {
   async function member(role: "support" | "partner") {
     const user = await createUser(role);
@@ -360,6 +476,7 @@ describe("role gate (PostgreSQL)", () => {
     await expect(renameLandingPageTemplateAction(idle, form({ templateId: saved.id!, name: "不應改名" }))).rejects.toThrow(redirect);
     await expect(deleteLandingPageTemplateAction(idle, form({ templateId: saved.id! }))).rejects.toThrow(redirect);
     await expect(readLandingPageTemplateTargetAction(page.id)).rejects.toThrow(redirect);
+    await expect(readLandingPageTemplateDocumentAction(saved.id!)).rejects.toThrow(redirect);
     await expect(applyLandingPageTemplateAction(idle, form({ templateKind: "mine", templateId: saved.id!, pageId: page.id, stepId, revision: page.revision }))).rejects.toThrow(redirect);
     await expect(createLandingPageFromTemplateAction(idle, form({ templateKind: "mine", templateId: saved.id!, name: "不應建立", slug: `deny-${randomUUID().slice(0, 8)}`, goal: "audience", currency: "TWD" }))).rejects.toThrow(redirect);
 

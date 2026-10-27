@@ -22,6 +22,7 @@ import {
   readStoredTemplateDocument,
   rekeyTemplateDocument,
 } from "@/lib/landing-page-template-document";
+import { LANDING_PAGE_MAX_CONTENT_BYTES, landingPageContentBytes } from "@/lib/landing-page-limits";
 import { requireEditableSalesProjectScope } from "@/lib/sales-project-scope";
 
 /**
@@ -33,13 +34,24 @@ import { requireEditableSalesProjectScope } from "@/lib/sales-project-scope";
 
 export type LandingPageTemplateSource = { kind: "platform" | "mine"; id: string };
 
+/**
+ * List entry. `thumbnail` holds only the first root sections (enough for the
+ * card) so the list stays small; the full document is read per template for
+ * the preview. A stored row that no longer parses is still listed with
+ * `readable: false` (and no thumbnail) so the merchant can delete it instead of
+ * it silently using up the per-vendor limit.
+ */
 export type LandingPageTemplateSummary = {
   id: string;
   name: string;
-  content: PageDocument;
+  readable: boolean;
+  thumbnail: PageDocument | null;
   createdAt: string;
   updatedAt: string;
 };
+
+/** Root sections kept for a card thumbnail (the card shows the top of the page only). */
+export const TEMPLATE_THUMBNAIL_SECTIONS = 2;
 
 export type LandingPageTemplateTargetStep = { id: string; name: string; type: FunnelStepType; isSystem: boolean; templateId: string | null };
 export type LandingPageTemplateTarget = { id: string; name: string; revision: number; goal: FunnelGoal; steps: LandingPageTemplateTargetStep[] };
@@ -60,6 +72,11 @@ export type LandingPageTemplateInputCode =
   | "template_incompatible"
   | "funnel_required"
   | "create_invalid";
+
+/** Applying or creating must not produce a draft larger than the editor itself may save. */
+function assertDraftWithinLimit(content: unknown) {
+  if (landingPageContentBytes(content) > LANDING_PAGE_MAX_CONTENT_BYTES) throw new LandingPageTemplateInputError("content_too_large");
+}
 
 export class LandingPageTemplateInputError extends Error {
   constructor(readonly code: LandingPageTemplateInputCode) {
@@ -145,10 +162,22 @@ export async function listLandingPageTemplates(): Promise<LandingPageTemplateSum
     orderBy: [{ updatedAt: "desc" }, { id: "asc" }],
     take: LANDING_PAGE_TEMPLATE_VENDOR_LIMIT,
   });
-  return rows.flatMap((row) => {
+  return rows.map((row) => {
     const content = readStoredTemplateDocument(row.content);
-    return content ? [{ id: row.id, name: row.name, content, createdAt: row.createdAt.toISOString(), updatedAt: row.updatedAt.toISOString() }] : [];
+    const thumbnail = content ? { ...content, root: content.root.slice(0, TEMPLATE_THUMBNAIL_SECTIONS), popups: [] } : null;
+    return { id: row.id, name: row.name, readable: Boolean(content), thumbnail, createdAt: row.createdAt.toISOString(), updatedAt: row.updatedAt.toISOString() };
   });
+}
+
+/** Full stored document of the caller's own template, for the preview. */
+export async function getLandingPageTemplateDocument(templateId: unknown): Promise<PageDocument> {
+  const { vendorId } = await managerVendor();
+  const id = identifier(templateId);
+  if (!id) throw new LandingPageTemplateNotFoundError();
+  const row = await db().landingPageTemplate.findFirst({ where: { id, vendorId }, select: { content: true } });
+  const content = row ? readStoredTemplateDocument(row.content) : null;
+  if (!content) throw new LandingPageTemplateNotFoundError();
+  return content;
 }
 
 /** Name of the caller's own template (for the create form); null when it is missing or another vendor's. */
@@ -208,6 +237,12 @@ export async function saveLandingPageTemplateFromStep(input: { pageId: unknown; 
   }, { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted });
 }
 
+/*
+ * Rename and delete are vendor-level on purpose: a template belongs to the
+ * vendor, not to a sales project, so they need the manager role but no
+ * selected project and also work from the read-only aggregate overview.
+ * Saving, applying and creating touch project-scoped pages and do need one.
+ */
 export async function renameLandingPageTemplate(input: { templateId: unknown; name: unknown }) {
   const { vendorId } = await managerVendor();
   const id = identifier(input.templateId);
@@ -251,6 +286,7 @@ export async function applyLandingPageTemplateToStep(input: { pageId: unknown; s
   const { document, recordedId } = await resolveTemplate(scope.vendorId, input.source, funnel.pages[step.id]!.id);
   const replaced = replaceFunnelStepPage(funnel, step.id, document, recordedId);
   if (!replaced.ok) throw new LandingPageTemplateInputError("content_invalid");
+  assertDraftWithinLimit(replaced.state);
   return saveLandingPageDraft({
     id: page.id, revision, name: page.name, slug: page.slug,
     formId: page.draftFormId, liveId: page.draftLiveId, content: replaced.state,
@@ -296,6 +332,8 @@ export async function createLandingPageFromTemplate(input: { name: unknown; slug
   const replaced = replaceFunnelStepPage(target.content, target.stepId, document, recordedId);
   if (!replaced.ok) throw new LandingPageTemplateInputError("content_invalid");
   const active = switchFunnelStep(replaced.state, target.stepId);
-  const created = await createLandingPage({ name, slug, formId: null, liveId: null, content: active.ok ? active.state : replaced.state });
+  const content = active.ok ? active.state : replaced.state;
+  assertDraftWithinLimit(content);
+  const created = await createLandingPage({ name, slug, formId: null, liveId: null, content });
   return { id: created.id, stepId: target.stepId };
 }

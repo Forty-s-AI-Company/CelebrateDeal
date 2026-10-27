@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   rename: vi.fn(),
   remove: vi.fn(),
   readTarget: vi.fn(),
+  readDocument: vi.fn(),
   save: vi.fn(),
   refresh: vi.fn(),
 }));
@@ -18,6 +19,7 @@ vi.mock("@/app/actions/landing-page-template-actions", () => ({
   renameLandingPageTemplateAction: mocks.rename,
   deleteLandingPageTemplateAction: mocks.remove,
   readLandingPageTemplateTargetAction: mocks.readTarget,
+  readLandingPageTemplateDocumentAction: mocks.readDocument,
   saveLandingPageTemplateAction: mocks.save,
 }));
 
@@ -31,13 +33,16 @@ import { SaveAsTemplateDialog } from "./save-as-template-dialog";
 let container: HTMLDivElement;
 let root: Root;
 
+const myDocument = prepareStoredTemplateDocument(previewFunnelTemplate("audience-volunteer"), "我的秋季名單頁")!;
 const myTemplate: LandingPageTemplateSummary = {
   id: "tpl_own_1",
   name: "我的秋季名單頁",
-  content: prepareStoredTemplateDocument(previewFunnelTemplate("audience-volunteer"), "我的秋季名單頁")!,
+  readable: true,
+  thumbnail: { ...myDocument, root: myDocument.root.slice(0, 2), popups: [] },
   createdAt: "2026-10-20T02:00:00.000Z",
   updatedAt: "2026-10-26T02:00:00.000Z",
 };
+const brokenTemplate: LandingPageTemplateSummary = { id: "tpl_broken", name: "壞掉的範本", readable: false, thumbnail: null, createdAt: "2026-10-01T02:00:00.000Z", updatedAt: "2026-10-01T02:00:00.000Z" };
 const target: LandingPageTemplateTarget = {
   id: "page_1", name: "秋季活動", revision: 7, goal: "audience",
   steps: [
@@ -245,6 +250,39 @@ describe("apply to an existing site", () => {
     await click([...dialog()!.querySelectorAll("label")].find((label) => label.textContent?.includes("套用到現有網站"))!.querySelector("input"));
     expect(dialog()!.textContent).toContain("請先在左上角選擇一個銷售專案");
     expect(dialog()!.querySelector("select")).toBeNull();
+  });
+});
+
+describe("own template list", () => {
+  it("reads the full document only when an own template is previewed", async () => {
+    mocks.readDocument.mockResolvedValue({ ok: true, document: myDocument });
+    await render(library({ initialTab: "mine" }));
+    expect(mocks.readDocument).not.toHaveBeenCalled();
+    await click(buttonNamed("預覽 我的秋季名單頁"));
+    expect(mocks.readDocument).toHaveBeenCalledWith("tpl_own_1");
+    expect(dialog()?.textContent).toContain("我的秋季名單頁");
+    expect(document.querySelector("[data-template-preview-viewport]")).not.toBeNull();
+    await click(buttonNamed("使用這個範本", dialog()!));
+    expect(dialog()?.textContent).toContain("使用「我的秋季名單頁」");
+  });
+
+  it("reports a preview that cannot be read without opening the dialog", async () => {
+    mocks.readDocument.mockResolvedValue({ ok: false, message: "找不到這個範本，或你沒有使用它的權限。" });
+    await render(library({ initialTab: "mine" }));
+    await click(buttonNamed("預覽 我的秋季名單頁"));
+    expect(dialog()).toBeNull();
+    expect(container.querySelector("[role=alert]")?.textContent).toContain("找不到這個範本");
+  });
+
+  it("lists an unreadable template so it can only be deleted", async () => {
+    await render(library({ initialTab: "mine", myTemplates: [myTemplate, brokenTemplate] }));
+    const broken = cards("我的範本").find((card) => card.textContent?.includes("壞掉的範本"))!;
+    expect(broken.querySelector("[data-template-unreadable]")?.textContent).toContain("無法讀取這個範本的內容");
+    expect([...broken.querySelectorAll("button")].map((button) => button.getAttribute("aria-label"))).toEqual(["刪除 壞掉的範本"]);
+    mocks.remove.mockResolvedValue({ status: "success", message: "ok", id: "tpl_broken" });
+    await click(buttonNamed("刪除 壞掉的範本"));
+    await click(buttonNamed("刪除範本", dialog()!));
+    expect(cardTitles("我的範本")).toEqual(["我的秋季名單頁"]);
   });
 });
 

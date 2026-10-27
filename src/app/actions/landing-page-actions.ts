@@ -19,11 +19,12 @@ import {
   type LandingPageActionState,
 } from "@/lib/landing-page-service";
 import type { FunnelStepPersistenceMutation } from "@/lib/funnel-step-pages";
+import { LANDING_PAGE_MAX_CONTENT_BYTES } from "@/lib/landing-page-limits";
 import { independentPublishLimitMessage, INDEPENDENT_PUBLISH_DISABLED_MESSAGE, INDEPENDENT_PUBLISH_EMAIL_UNVERIFIED_MESSAGE } from "@/lib/independent-publish-limit";
 
 const INDEPENDENT_PUBLISH_REFUSALS = new Set(["landing_page_independent_publish_limit", "landing_page_independent_publish_disabled", "landing_page_independent_publish_email_unverified"]);
 
-const MAX_CONTENT_BYTES = 128 * 1024;
+const MAX_CONTENT_BYTES = LANDING_PAGE_MAX_CONTENT_BYTES;
 
 type LandingPageOperation = "create" | "save" | "save_steps" | "publish" | "unpublish" | "duplicate" | "rollback" | "delete";
 

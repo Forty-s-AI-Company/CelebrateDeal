@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import type { PageDocument } from "@/lib/funnel-page-document";
 import { assertServerActionSecurity } from "@/lib/csrf";
 import {
   LandingPageConflictError,
@@ -13,6 +14,7 @@ import {
   applyLandingPageTemplateToStep,
   createLandingPageFromTemplate,
   deleteLandingPageTemplate,
+  getLandingPageTemplateDocument,
   getLandingPageTemplateTarget,
   LandingPageTemplateInputError,
   LandingPageTemplateNotFoundError,
@@ -52,7 +54,7 @@ function databaseErrorCode(error: unknown) {
 const INPUT_MESSAGES: Record<LandingPageTemplateInputError["code"], string> = {
   name_invalid: `請輸入 1–${LANDING_PAGE_TEMPLATE_NAME_MAX_LENGTH} 個字的範本名稱。`,
   content_invalid: "範本內容無法套用到這個步驟，頁面沒有變更。",
-  content_too_large: "這個頁面內容過大或格式需要修復，無法存成範本。",
+  content_too_large: "內容超過 128 KiB 上限（或頁面格式需要修復），這次沒有任何變更。請精簡頁面內容，或改用較小的範本後再試。",
   limit_reached: `每個商家最多可保存 ${LANDING_PAGE_TEMPLATE_VENDOR_LIMIT} 個範本，請先刪除不需要的範本。`,
   step_invalid: "找不到這個步驟，或這個步驟由系統管理，不能使用範本。",
   template_incompatible: "這個範本不適用所選的網站類型或步驟，請改選其他步驟或範本。",
@@ -76,7 +78,10 @@ function failure(error: unknown): LandingPageTemplateActionState {
     if (error.message === "landing_page_step_type_not_allowed") return { status: "error", message: "這個網站目標不能新增範本需要的步驟類型，請改選其他網站目標。" };
     return { status: "error", message: "請確認範本內容與網站已綁定的表單、直播都屬於目前專案。" };
   }
-  if (databaseErrorCode(error) === "P2002") return { status: "error", message: "這個網址已被使用，請換一個一頁式網站網址。" };
+  const code = databaseErrorCode(error);
+  if (code === "P2002") return { status: "error", message: "這個網址已被使用，請換一個一頁式網站網址。" };
+  // Interactive transaction timed out (for example waiting on the per-vendor template lock).
+  if (code === "P2028") return { status: "error", message: "系統忙碌中，這次沒有任何變更，請稍後再試。" };
   throw error;
 }
 
@@ -147,6 +152,15 @@ export async function createLandingPageFromTemplateAction(_previous: LandingPage
 export async function readLandingPageTemplateTargetAction(pageId: string): Promise<{ ok: true; target: LandingPageTemplateTarget } | { ok: false; message: string }> {
   try {
     return { ok: true, target: await getLandingPageTemplateTarget(pageId) };
+  } catch (error) {
+    return { ok: false, message: failure(error).message };
+  }
+}
+
+/** Full document of an own template for the preview; ownership is checked in the service. */
+export async function readLandingPageTemplateDocumentAction(templateId: string): Promise<{ ok: true; document: PageDocument } | { ok: false; message: string }> {
+  try {
+    return { ok: true, document: await getLandingPageTemplateDocument(templateId) };
   } catch (error) {
     return { ok: false, message: failure(error).message };
   }

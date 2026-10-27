@@ -7,6 +7,7 @@ import { Eye, Pencil, Trash2, WandSparkles } from "lucide-react";
 import {
   applyLandingPageTemplateAction,
   deleteLandingPageTemplateAction,
+  readLandingPageTemplateDocumentAction,
   readLandingPageTemplateTargetAction,
   renameLandingPageTemplateAction,
 } from "@/app/actions/landing-page-template-actions";
@@ -33,8 +34,9 @@ import { useDialogBehavior } from "@/lib/use-dialog-behavior";
 
 export type TemplateLibraryTab = "platform" | "mine";
 type Selected =
-  | { kind: "platform"; id: string; name: string; eyebrow: string; goal: FunnelTemplateCatalogEntry["goal"]; document: PageDocument }
-  | { kind: "mine"; id: string; name: string; eyebrow: string; document: PageDocument };
+  | { kind: "platform"; id: string; name: string; eyebrow: string; goal: FunnelTemplateCatalogEntry["goal"] }
+  | { kind: "mine"; id: string; name: string; eyebrow: string };
+type Preview = { selected: Selected; document: PageDocument };
 type Notice = { tone: "success" | "error"; text: string } | null;
 
 const secondaryButton = "inline-flex min-h-10 items-center justify-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 disabled:cursor-not-allowed disabled:opacity-50";
@@ -68,9 +70,9 @@ function Modal({ labelledBy, onClose, children, size = "max-w-lg", role = "dialo
   </div>;
 }
 
-function TemplateCard({ document, title, eyebrow, badges, description, children }: { document: PageDocument; title: string; eyebrow: string; badges?: ReactNode; description?: ReactNode; children: ReactNode }) {
+function TemplateCard({ document, title, eyebrow, badges, description, children }: { document: PageDocument | null; title: string; eyebrow: string; badges?: ReactNode; description?: ReactNode; children: ReactNode }) {
   return <li className="flex min-w-0 flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm transition-colors hover:border-slate-300">
-    <FunnelTemplateThumbnail document={document} className="m-2 mb-0 h-44 sm:h-48" />
+    {document ? <FunnelTemplateThumbnail document={document} className="m-2 mb-0 h-44 sm:h-48" /> : <div data-template-unreadable className="m-2 mb-0 grid h-44 place-items-center rounded-lg border border-dashed border-amber-300 bg-amber-50 p-4 text-center text-sm text-amber-900 sm:h-48">無法讀取這個範本的內容</div>}
     <div className="flex min-w-0 flex-1 flex-col p-3">
       <span className="text-xs font-semibold text-slate-500">{eyebrow}</span>
       <h3 data-template-title className="mt-0.5 break-words text-base font-bold text-slate-950">{title}</h3>
@@ -107,7 +109,8 @@ export function LandingPageTemplateLibrary({ csrfName, csrfToken, myTemplates, s
   const [purpose, setPurpose] = useState<FunnelTemplatePurpose | null>(null);
   const [style, setStyle] = useState<FunnelTemplateStyle | null>(null);
   const [mine, setMine] = useState(myTemplates);
-  const [preview, setPreview] = useState<Selected | null>(null);
+  const [preview, setPreview] = useState<Preview | null>(null);
+  const [loadingPreviewId, setLoadingPreviewId] = useState<string | null>(null);
   const [viewport, setViewport] = useState<FunnelViewport>("desktop");
   const [using, setUsing] = useState<Selected | null>(null);
   const [renaming, setRenaming] = useState<LandingPageTemplateSummary | null>(null);
@@ -123,9 +126,23 @@ export function LandingPageTemplateLibrary({ csrfName, csrfToken, myTemplates, s
   const documents = useMemo(() => new Map(catalog.map((entry) => [entry.id, previewFunnelTemplate(entry.id, `library_preview_${entry.id}`)])), [catalog]);
   const visible = filterFunnelTemplateCatalog(catalog, { purpose, style });
 
-  const platformSelection = (entry: FunnelTemplateCatalogEntry): Selected => ({ kind: "platform", id: entry.id, name: entry.name, eyebrow: entry.purposes.map((item) => FUNNEL_TEMPLATE_PURPOSE_LABELS[item]).join("・"), goal: entry.goal, document: documents.get(entry.id)! });
-  const mineSelection = (template: LandingPageTemplateSummary): Selected => ({ kind: "mine", id: template.id, name: template.name, eyebrow: "我的範本", document: template.content });
-  const openPreview = (selected: Selected) => { setViewport("desktop"); setPreview(selected); };
+  const platformSelection = (entry: FunnelTemplateCatalogEntry): Selected => ({ kind: "platform", id: entry.id, name: entry.name, eyebrow: entry.purposes.map((item) => FUNNEL_TEMPLATE_PURPOSE_LABELS[item]).join("・"), goal: entry.goal });
+  const mineSelection = (template: LandingPageTemplateSummary): Selected => ({ kind: "mine", id: template.id, name: template.name, eyebrow: "我的範本" });
+  const openPreview = (selected: Selected, document: PageDocument) => { setViewport("desktop"); setPreview({ selected, document }); };
+  /** The list only carries a thumbnail; the full document of an own template is read when it is previewed. */
+  async function openMinePreview(template: LandingPageTemplateSummary) {
+    if (loadingPreviewId) return;
+    setLoadingPreviewId(template.id);
+    try {
+      const response = await readLandingPageTemplateDocumentAction(template.id);
+      if (response.ok) openPreview(mineSelection(template), response.document);
+      else setNotice({ tone: "error", text: response.message });
+    } catch {
+      setNotice({ tone: "error", text: "無法讀取範本內容，請稍後再試。" });
+    } finally {
+      setLoadingPreviewId(null);
+    }
+  }
   const openUse = (selected: Selected) => { setPreview(null); setUsing(selected); };
 
   function onTabKey(event: KeyboardEvent<HTMLButtonElement>) {
@@ -154,23 +171,25 @@ export function LandingPageTemplateLibrary({ csrfName, csrfToken, myTemplates, s
         {visible.map((entry) => <TemplateCard key={entry.id} document={documents.get(entry.id)!} title={entry.name} eyebrow={entry.category}
           badges={<>{entry.purposes.map((item) => <Tag key={item} tone="blue">{FUNNEL_TEMPLATE_PURPOSE_LABELS[item]}</Tag>)}{entry.styles.map((item) => <Tag key={item}>{FUNNEL_TEMPLATE_STYLE_LABELS[item]}</Tag>)}{entry.status === "limited" ? <Tag tone="amber">需綁定商品</Tag> : null}</>}
           description={entry.description}>
-          <button type="button" aria-label={`預覽 ${entry.name}`} onClick={() => openPreview(platformSelection(entry))} className={secondaryButton}><Eye size={16} aria-hidden />預覽</button>
+          <button type="button" aria-label={`預覽 ${entry.name}`} onClick={() => openPreview(platformSelection(entry), documents.get(entry.id)!)} className={secondaryButton}><Eye size={16} aria-hidden />預覽</button>
           <button type="button" aria-label={`使用 ${entry.name}`} onClick={() => openUse(platformSelection(entry))} className={primaryButton}>使用這個範本</button>
         </TemplateCard>)}
       </ul> : <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-8 text-center"><p className="font-semibold text-slate-900">沒有符合條件的範本</p><p className="mt-1 text-sm text-slate-600">換一個用途或風格，或清除篩選看全部範本。</p><button type="button" onClick={() => { setPurpose(null); setStyle(null); }} className={`${secondaryButton} mt-4`}>清除篩選</button></div>}
     </section> : <section id="template-panel-mine" role="tabpanel" aria-labelledby="template-tab-mine">
       <p className="mb-3 text-sm text-slate-600">在編輯器或網站管理頁按「存成範本」，就能把做好的頁面留著重複使用。每個商家最多 {LANDING_PAGE_TEMPLATE_VENDOR_LIMIT} 個。</p>
       {mine.length ? <ul aria-label="我的範本" className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-        {mine.map((template) => <TemplateCard key={template.id} document={template.content} title={template.name} eyebrow={`更新於 ${formatDate(template.updatedAt)}`}>
-          <button type="button" aria-label={`預覽 ${template.name}`} onClick={() => openPreview(mineSelection(template))} className={secondaryButton}><Eye size={16} aria-hidden />預覽</button>
-          <button type="button" aria-label={`使用 ${template.name}`} onClick={() => openUse(mineSelection(template))} className={primaryButton}>使用</button>
-          <button type="button" aria-label={`改名 ${template.name}`} onClick={() => setRenaming(template)} className={secondaryButton}><Pencil size={16} aria-hidden />改名</button>
+        {mine.map((template) => <TemplateCard key={template.id} document={template.thumbnail} title={template.name} eyebrow={`更新於 ${formatDate(template.updatedAt)}`} description={template.readable ? undefined : "內容格式已無法讀取，不能預覽或使用；刪除後即可釋出名額。"}>
+          {template.readable ? <>
+            <button type="button" aria-label={`預覽 ${template.name}`} disabled={loadingPreviewId !== null} onClick={() => void openMinePreview(template)} className={secondaryButton}><Eye size={16} aria-hidden />{loadingPreviewId === template.id ? "讀取中…" : "預覽"}</button>
+            <button type="button" aria-label={`使用 ${template.name}`} onClick={() => openUse(mineSelection(template))} className={primaryButton}>使用</button>
+            <button type="button" aria-label={`改名 ${template.name}`} onClick={() => setRenaming(template)} className={secondaryButton}><Pencil size={16} aria-hidden />改名</button>
+          </> : null}
           <button type="button" aria-label={`刪除 ${template.name}`} onClick={() => setDeleting(template)} className={`${secondaryButton} border-red-200 text-red-700 hover:bg-red-50`}><Trash2 size={16} aria-hidden />刪除</button>
         </TemplateCard>)}
       </ul> : <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-8 text-center"><p className="font-semibold text-slate-900">還沒有自己的範本</p><p className="mx-auto mt-1 max-w-md text-sm leading-6 text-slate-600">打開任一個一頁式網站的編輯器，按工具列的「存成範本」，或在網站管理頁的步驟設定按「存成範本」。</p><Link href="/landing-pages" className={`${secondaryButton} mt-4`}>前往一頁式網站</Link></div>}
     </section>}
 
-    {preview ? <FunnelTemplatePreviewDialog eyebrow={preview.eyebrow} title={preview.name} document={preview.document} viewport={viewport} onViewport={setViewport} onClose={() => setPreview(null)} actionLabel="使用這個範本" onAction={() => openUse(preview)} note="預覽與使用後的頁面內容與顯示方式相同。" /> : null}
+    {preview ? <FunnelTemplatePreviewDialog eyebrow={preview.selected.eyebrow} title={preview.selected.name} document={preview.document} viewport={viewport} onViewport={setViewport} onClose={() => setPreview(null)} actionLabel="使用這個範本" onAction={() => openUse(preview.selected)} note="預覽與使用後的頁面內容與顯示方式相同。" /> : null}
     {using ? <UseTemplateDialog csrfName={csrfName} csrfToken={csrfToken} selected={using} sites={sites} onClose={() => setUsing(null)} /> : null}
     {renaming ? <RenameTemplateDialog csrfName={csrfName} csrfToken={csrfToken} template={renaming} onClose={() => setRenaming(null)} onRenamed={(name) => { setMine((items) => items.map((item) => item.id === renaming.id ? { ...item, name } : item)); setNotice({ tone: "success", text: `範本已改名為「${name}」。` }); setRenaming(null); router.refresh(); }} /> : null}
     {deleting ? <DeleteTemplateDialog csrfName={csrfName} csrfToken={csrfToken} template={deleting} onClose={() => setDeleting(null)} onDeleted={() => { setMine((items) => items.filter((item) => item.id !== deleting.id)); setNotice({ tone: "success", text: `已刪除範本「${deleting.name}」；已套用過的網站內容不受影響。` }); setDeleting(null); router.refresh(); }} /> : null}

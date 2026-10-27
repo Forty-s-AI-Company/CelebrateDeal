@@ -46,7 +46,12 @@ function boundDocument(): PageDocument {
       leaf("image_main", "image", { src: "/placeholder.svg", alt: "保留的圖片" }),
       leaf("cta_registration", "button", { label: "報名" }, [{ type: "registration", formId: `${MARK}_form`, useBoundLive: true }]),
       leaf("cta_next", "button", { label: "下一步" }, [{ type: "next_step", stepId: `${MARK}_step` }]),
-      leaf("cta_submit", "button", { label: "送出" }, [{ type: "submit_form", formId: `${MARK}_submit_form` }]),
+      // submit_form names a form node of this page, not a vendor record: it is kept and remapped on rekey.
+      leaf("cta_submit", "button", { label: "送出" }, [{ type: "submit_form", formId: "form_main" }]),
+      // The renderer falls back to props.action when actions is empty; overrides can carry one too.
+      leaf("cta_props_action", "button", { label: "舊版按鈕", action: { type: "registration", formId: `${MARK}_props_form`, useBoundLive: true }, ctaAction: [{ type: "next_step", stepId: `${MARK}_props_step` }, { type: "open_url", href: "https://example.test/keep-too", newTab: false }] }, [], {
+        overrides: { mobile: { props: { action: { type: "next_step", stepId: `${MARK}_mobile_step` } } }, desktop: { props: { nested: { deep: { action: { type: "registration", formId: `${MARK}_desktop_form` } } } } } },
+      }),
       leaf("cta_popup", "button", { label: "開啟彈窗" }, [{ type: "show_popup", popupId: "popup_offer" }]),
       leaf("cta_link", "button", { label: "外部連結" }, [{ type: "open_url", href: "https://example.test/keep", newTab: true }]),
       container("form_main", "form", [leaf("field_email", "form_input", { id: "email", label: "Email", inputType: "email" })]),
@@ -109,10 +114,19 @@ describe("stripTemplateBindings", () => {
     const actions = (id: string) => allNodes(stripTemplateBindings(boundDocument())).find((node) => node.id === id)!.actions;
     expect(actions("cta_registration")).toEqual([{ type: "none" }]);
     expect(actions("cta_next")).toEqual([{ type: "none" }]);
-    expect(actions("cta_submit")).toEqual([{ type: "submit_form" }]);
+    expect(actions("cta_submit")).toEqual([{ type: "submit_form", formId: "form_main" }]);
     expect(actions("cta_popup")).toEqual([{ type: "show_popup", popupId: "popup_offer" }]);
     expect(actions("cta_link")).toEqual([{ type: "open_url", href: "https://example.test/keep", newTab: true }]);
     expect(actions("popup_cta")).toEqual([{ type: "none" }]);
+  });
+
+  it("unbinds action-shaped props, including nested values and viewport overrides", () => {
+    const node = allNodes(stripTemplateBindings(boundDocument())).find((item) => item.id === "cta_props_action")!;
+    expect(node.props.action).toEqual({ type: "none" });
+    expect(node.props.ctaAction).toEqual([{ type: "none" }, { type: "open_url", href: "https://example.test/keep-too", newTab: false }]);
+    expect(node.overrides.mobile?.props).toEqual({ action: { type: "none" } });
+    expect(node.overrides.desktop?.props).toEqual({ nested: { deep: { action: { type: "none" } } } });
+    expect(node.props.label).toBe("舊版按鈕");
   });
 
   it("keeps a platform template valid after stripping", () => {
@@ -139,6 +153,26 @@ describe("rekeyTemplateDocument", () => {
     expect(byOriginalOrder(rekeyed, 3)).toMatchObject({ type: byOriginalOrder(source, 3).type, props: byOriginalOrder(source, 3).props });
     expect(parsePageDocument(rekeyed)).not.toBeNull();
     expect(rekeyTemplateDocument(source, "tx", "target_page")).toEqual(rekeyed);
+  });
+
+  it("remaps submit_form to the rekeyed form node, in actions and in props.action", () => {
+    const source = stripTemplateBindings(boundDocument());
+    const withPropsSubmit = structuredClone(source);
+    allNodes(withPropsSubmit).find((node) => node.id === "cta_link")!.props.action = { type: "submit_form", formId: "form_main" };
+    const rekeyed = rekeyTemplateDocument(withPropsSubmit, "tz", "p");
+    const sourceIndex = allNodes(withPropsSubmit).findIndex((node) => node.id === "form_main");
+    const formId = allNodes(rekeyed)[sourceIndex]!.id;
+    expect(formId).toMatch(/^tz_n/u);
+    const submit = allNodes(rekeyed)[allNodes(withPropsSubmit).findIndex((node) => node.id === "cta_submit")]!;
+    expect(submit.actions).toEqual([{ type: "submit_form", formId }]);
+    const link = allNodes(rekeyed)[allNodes(withPropsSubmit).findIndex((node) => node.id === "cta_link")]!;
+    expect(link.props.action).toEqual({ type: "submit_form", formId });
+  });
+
+  it("drops the form of a submit_form whose form node is missing", () => {
+    const document = parsePageDocument({ schemaVersion: 1, id: "page", root: [container("s", "section", [container("r", "row", [leaf("b", "button", { label: "送出" }, [{ type: "submit_form", formId: "gone" }])])])] })!;
+    const node = flatten(rekeyTemplateDocument(document, "tw", "p").root).find((item) => item.type === "button")!;
+    expect(node.actions).toEqual([{ type: "submit_form" }]);
   });
 
   it("drops a show_popup action whose popup is missing", () => {
@@ -190,5 +224,9 @@ describe("normalizeTemplateName", () => {
     expect(normalizeTemplateName("名".repeat(LANDING_PAGE_TEMPLATE_NAME_MAX_LENGTH))).toHaveLength(LANDING_PAGE_TEMPLATE_NAME_MAX_LENGTH);
     expect(normalizeTemplateName("名".repeat(LANDING_PAGE_TEMPLATE_NAME_MAX_LENGTH + 1))).toBeNull();
     expect(normalizeTemplateName("bad\u0000name")).toBeNull();
+  });
+
+  it.each([["202E", "\u202e"], ["202A", "\u202a"], ["2066", "\u2066"], ["2069", "\u2069"], ["200E", "\u200e"], ["200F", "\u200f"], ["061C", "\u061c"]])("rejects the bidirectional formatting character U+%s", (_code, character) => {
+    expect(normalizeTemplateName(`範本${character}名稱`)).toBeNull();
   });
 });
