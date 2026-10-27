@@ -120,6 +120,21 @@ describe("template library filters", () => {
     expect(cardTitles()).toEqual(catalog.filter((entry) => entry.styles.includes("minimal")).map((entry) => entry.name));
   });
 
+  it("lists the 高質感課程品牌（黑金） template with a thumbnail under 品牌首頁 + 高質感", async () => {
+    await render(library());
+    const luxury = cards().find((card) => card.querySelector("[data-template-title]")?.textContent === "高質感課程品牌（黑金）");
+    expect(luxury).toBeDefined();
+    expect(luxury!.textContent).toContain("品牌首頁");
+    expect(luxury!.textContent).toContain("高質感");
+    expect(luxury!.querySelector("[data-template-unreadable]")).toBeNull();
+    const thumbnail = luxury!.querySelector<HTMLElement>("[aria-hidden=true][inert]");
+    expect(thumbnail?.querySelectorAll("section").length).toBeGreaterThan(5);
+
+    await click(buttonNamed("品牌首頁", container.querySelector("[role=group][aria-label=用途]")!));
+    await click(buttonNamed("高質感", container.querySelector("[role=group][aria-label=風格]")!));
+    expect(cardTitles()).toEqual(["高質感課程品牌（黑金）"]);
+  });
+
   it("offers to clear filters when nothing matches", async () => {
     await render(library());
     await click(buttonNamed("條款與政策", container.querySelector("[role=group][aria-label=用途]")!));

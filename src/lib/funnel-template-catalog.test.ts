@@ -40,6 +40,9 @@ describe("template catalog labels", () => {
   it("uses the registered labels", () => {
     expect(funnelTemplateCatalogEntry(FUNNEL_TEMPLATE_GALLERY.find((item) => item.id === "custom-privacy")!)).toMatchObject({ purposes: ["policy"], styles: ["minimal"], registered: true });
     expect(funnelTemplateCatalogEntry(FUNNEL_TEMPLATE_GALLERY.find((item) => item.id === "webinar-strategy-registration")!)).toMatchObject({ purposes: ["webinar", "sales"], styles: ["warm"] });
+    const luxury = FUNNEL_TEMPLATE_GALLERY.find((item) => item.id === "custom-luxury-course")!;
+    expect(funnelTemplateCatalogEntry(luxury)).toMatchObject({ name: "高質感課程品牌（黑金）", purposes: ["brand"], styles: ["luxe"], registered: true });
+    expect(filterFunnelTemplateCatalog(listFunnelTemplateCatalog(), { purpose: "brand", style: "luxe" }).map((entry) => entry.id)).toEqual(["custom-luxury-course"]);
   });
 
   it("still shows an unregistered template, deriving its purpose from the goal and defaulting the style to 簡約", () => {

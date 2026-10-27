@@ -56,6 +56,7 @@ export const FUNNEL_TEMPLATE_CATALOG_TAGS: Readonly<Record<string, CatalogTags>>
   "custom-privacy": { purposes: ["policy"], styles: ["minimal"] },
   "custom-terms": { purposes: ["policy"], styles: ["minimal"] },
   "custom-brand-info": { purposes: ["brand"], styles: ["professional"] },
+  "custom-luxury-course": { purposes: ["brand"], styles: ["luxe"] },
 };
 
 const SALES_STEPS: ReadonlySet<FunnelStepType> = new Set(["sales_page", "order_form", "upsell", "downsell", "thank_you_page"]);
