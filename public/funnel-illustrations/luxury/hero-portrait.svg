@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 1100" width="900" height="1100" role="img" aria-label="講師形象照預留位置">
+<defs>
+<radialGradient id="bg" cx="0.62" cy="0.32" r="0.85"><stop offset="0" stop-color="#3a2c1c"/><stop offset="0.55" stop-color="#17120d"/><stop offset="1" stop-color="#0b0b0c"/></radialGradient>
+<linearGradient id="body" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#e6c48d"/><stop offset="0.45" stop-color="#9c7444"/><stop offset="1" stop-color="#2a1f15"/></linearGradient>
+<linearGradient id="fade" x1="0" y1="0" x2="0" y2="1"><stop offset="0.7" stop-color="#0b0b0c" stop-opacity="0"/><stop offset="1" stop-color="#0b0b0c"/></linearGradient>
+</defs>
+<rect width="900" height="1100" fill="url(#bg)"/>
+<g fill="none" stroke="#c9a063" stroke-opacity="0.18"><circle cx="560" cy="380" r="300"/><circle cx="560" cy="380" r="380"/></g>
+<path d="M450 1100c-10-170 30-290 140-345 35-18 55-40 60-70l2-38c-58-30-95-95-104-178-12-112 48-196 152-196s164 84 152 196c-9 83-46 148-104 178l2 38c5 30 25 52 60 70 110 55 150 175 140 345z" transform="translate(-140 0)" fill="url(#body)"/>
+<rect width="900" height="1100" fill="url(#fade)"/>
+<g font-family="system-ui, sans-serif" text-anchor="middle" fill="#f5f1e8"><text x="450" y="1040" font-size="30" letter-spacing="6" fill-opacity="0.75">替換為講師形象照</text></g>
+</svg>

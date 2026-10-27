@@ -10,6 +10,8 @@ import {
   type PageDocument,
 } from "@/lib/funnel-page-document";
 
+import { buildLuxuryCourseSection, type LuxuryCourseSectionName } from "@/lib/funnel-template-luxury-course";
+
 export { FUNNEL_BLOCK_CATEGORIES } from "@/lib/funnel-page-document";
 export type { FunnelBlockCategory } from "@/lib/funnel-page-document";
 
@@ -454,7 +456,33 @@ const definitionsList: BlockDefinition[] = [
   { id: "header-cta", category: "page_headers", label: "深色頁首＋按鈕", description: "品牌、置中選單與報名按鈕。", factory: headerWithCta },
   { id: "testimonials-cards", category: "testimonials", label: "三欄見證卡片", description: "引言、頭像、姓名與身分。", factory: testimonialCards },
   { id: "testimonials-spotlight", category: "testimonials", label: "單則見證聚焦", description: "深色背景上的一則大型引言。", factory: testimonialSpotlight },
+  // 黑金高質感系列：與「高質感課程品牌（黑金）」範本共用同一份區段定義。
+  ...luxuryBlocks([
+    ["header-dark-gold", "page_headers", "nav", "黑金固定導覽列", "Logo、下拉選單、社群圖示與按鈕；手機版收成漢堡選單。"],
+    ["welcome-dark-portrait", "welcome", "hero", "黑金人物主視覺", "左側人物照，右側英文小標、強調色大標與按鈕。"],
+    ["features-dark-photo-points", "features", "method", "背景照＋編號重點", "深色漸層疊在背景照上，左側帶圖示的編號重點。"],
+    ["features-image-cards", "features", "courses", "三欄圖片卡片（角落裝飾）", "米色底、英文小標與三張角落金色三角卡片。"],
+    ["features-dark-image-icons", "features", "features", "左圖右文課程特色", "左側圖片，右側兩欄圖示特色。"],
+    ["social-logos-dark", "social_proof", "press", "媒體 Logo 列", "深色底上的單色 Logo 列，可上傳多張 Logo。"],
+    ["social-stats-photo", "social_proof", "stats", "背景照上的金框數據", "三欄大數字與說明，捲動到畫面時計數。"],
+    ["testimonials-wall-dark", "testimonials", "reviews", "兩排自動捲動評價牆", "頭像、驗證勾、日期、星等；可暫停，滑鼠移上停止。"],
+    ["content-articles-cream", "content_showcase", "journal", "文章卡片網格", "縮圖、分類標籤、日期、標題與 READ MORE。"],
+    ["content-videos-dark", "content_showcase", "videos", "影片牆", "播放鍵縮圖；YouTube 以隱私模式在點擊後載入。"],
+    ["cta-gold-frame", "call_to_action", "cta", "背景照上的金框 CTA", "雙線金框盒疊在暗色背景照上，置中標題與按鈕。"],
+    ["cta-gold-corners", "call_to_action", "ctaCorners", "四角框線 CTA", "深色底上的四角金色框線盒，置中標題與按鈕。"],
+    ["footer-dark-centered", "page_footers", "footer", "黑金置中頁尾", "品牌名稱、頁內連結與版權宣告。"],
+  ]),
 ];
+
+/** Blocks built from a template section; the instance id becomes the node-id prefix. */
+function luxuryBlocks(entries: ReadonlyArray<readonly [string, FunnelBlockCategory, LuxuryCourseSectionName, string, string]>): BlockDefinition[] {
+  return entries.map(([id, category, section, label, description]) => ({ id, category, label, description, factory: (instanceId: string) => withoutHtmlIds(buildLuxuryCourseSection(section, instanceId)) }));
+}
+
+/** Template sections carry anchor ids (#about…); a block may be added many times, so they are dropped. */
+function withoutHtmlIds(root: FunnelNode): FunnelNode {
+  return { ...root, attributes: {}, ...(root.children ? { children: root.children.map(withoutHtmlIds) } : {}) };
+}
 
 /** Category labels follow the editor's 版型區塊 list (EDT-BLK-001). */
 const CATEGORY_TEXT: Readonly<Record<FunnelBlockCategory, { label: string; description: string }>> = {
@@ -467,6 +495,9 @@ const CATEGORY_TEXT: Readonly<Record<FunnelBlockCategory, { label: string; descr
   price_plans: { label: "方案價格", description: "方案比較與推薦方案" },
   page_headers: { label: "頁首", description: "品牌名稱與導覽選單" },
   testimonials: { label: "客戶見證", description: "引言、頭像與身分資訊" },
+  social_proof: { label: "信任背書", description: "媒體 Logo 列與數據統計" },
+  content_showcase: { label: "內容展示", description: "文章卡片與影片牆" },
+  call_to_action: { label: "行動呼籲", description: "疊在背景照上的 CTA 盒" },
 };
 
 const counts = new Map<FunnelBlockCategory, number>();

@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState, type ComponentType } from "react";
 import {
-  AudioLines, BadgeDollarSign, Box, CalendarDays, ChevronLeft, ChevronRight, CircleDollarSign, CircleHelp, CirclePlus, ClipboardList, Code, Columns2, Columns3, Columns4,
+  AudioLines, BadgeDollarSign, Box, ChartNoAxesColumn, Megaphone, Clapperboard, Heading1, LayoutGrid, ListTodo, Newspaper, PanelsTopLeft, Shapes, Star, CalendarDays, ChevronLeft, ChevronRight, CircleDollarSign, CircleHelp, CirclePlus, ClipboardList, Code, Columns2, Columns3, Columns4,
   CreditCard, FileCheck2, FileText, GalleryHorizontal, Heading, House, Image as ImageIcon, LayoutTemplate, List, ListChecks, ListOrdered, Menu, MessageSquareQuote, Minus,
   MousePointerClick, Package, PanelBottom, PanelTop, Rows3, Search, Share2, ShieldCheck, ShoppingCart, SquareCheck, TextCursorInput, ThumbsUp, Ticket, Timer,
   Truck, Type, UserRound, Users, Video, Wallet,
@@ -22,6 +22,12 @@ export const FUNNEL_PALETTE: ReadonlyArray<{ type: FunnelNodeType; label: string
   { type: "bulleted_list", label: "項目清單", icon: List }, { type: "content_box", label: "內容盒", icon: Box },
   { type: "columns_4", label: "4 欄", icon: Columns4 }, { type: "columns_3", label: "3 欄", icon: Columns3 }, { type: "columns_2", label: "2 欄", icon: Columns2 },
   { type: "row", label: "欄列", icon: Rows3 }, { type: "section", label: "區段", icon: LayoutTemplate },
+  { type: "nav_bar", label: "導覽列", icon: PanelsTopLeft }, { type: "shape_divider", label: "分隔形狀", icon: Shapes },
+  { type: "section_title", label: "區塊標題組", icon: Heading1 }, { type: "icon_list", label: "圖示重點", icon: ListTodo },
+  { type: "stats", label: "數據統計", icon: ChartNoAxesColumn },
+  { type: "logo_strip", label: "Logo 列", icon: GalleryHorizontal }, { type: "image_cards", label: "圖片卡片", icon: LayoutGrid },
+  { type: "content_cards", label: "文章卡片", icon: Newspaper }, { type: "video_gallery", label: "影片牆", icon: Clapperboard },
+  { type: "testimonial_wall", label: "評價牆", icon: Star },
   { type: "form", label: "表單", icon: ClipboardList }, { type: "form_input", label: "表單欄位", icon: TextCursorInput }, { type: "button", label: "按鈕", icon: MousePointerClick },
   { type: "checkbox", label: "核取方塊", icon: SquareCheck }, { type: "survey", label: "問卷", icon: ListChecks }, { type: "calendar", label: "行事曆", icon: CalendarDays },
   { type: "recaptcha", label: "reCAPTCHA", icon: ShieldCheck },
@@ -86,6 +92,7 @@ export function ElementLibrary({ disabled, onAdd }: { disabled: boolean; onAdd: 
 const blockIcons: Record<FunnelBlockCategory, IconComponent> = {
   order_forms: ShoppingCart, opt_in_forms: FileText, features: ThumbsUp, page_footers: PanelBottom, team_presentation: Users,
   welcome: House, price_plans: CircleDollarSign, page_headers: PanelTop, testimonials: MessageSquareQuote,
+  social_proof: ChartNoAxesColumn, content_showcase: Newspaper, call_to_action: Megaphone,
 };
 
 /** Width of the virtual desktop canvas a thumbnail is rendered at before scaling down. */

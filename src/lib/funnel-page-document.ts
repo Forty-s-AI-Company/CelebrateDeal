@@ -20,12 +20,15 @@ export const FUNNEL_NODE_TYPES = [
   "raw_html", "faq", "recaptcha", "payment_button", "payment_method", "customer_type",
   "physical_product", "offer_price", "agreement", "order_bump", "coupon", "two_step_order_form",
   "shipping_fees", "paid_calendar",
+  // Showcase elements (props-driven, no children); prop readers live in `@/lib/funnel-showcase`.
+  "nav_bar", "logo_strip", "stats", "icon_list", "shape_divider", "section_title", "image_cards",
+  "testimonial_wall", "content_cards", "video_gallery",
 ] as const;
 export type FunnelNodeType = (typeof FUNNEL_NODE_TYPES)[number];
 
 export const FUNNEL_BLOCK_CATEGORIES = [
   "order_forms", "opt_in_forms", "features", "page_footers", "team_presentation",
-  "welcome", "price_plans", "page_headers", "testimonials",
+  "welcome", "price_plans", "page_headers", "testimonials", "social_proof", "content_showcase", "call_to_action",
 ] as const;
 export type FunnelBlockCategory = (typeof FUNNEL_BLOCK_CATEGORIES)[number];
 
@@ -230,6 +233,16 @@ const definitions: Record<FunnelNodeType, FunnelNodeDefinition> = {
   two_step_order_form: { label: "兩步驟訂單表單", category: "payment", children: true, allowedParents: ["row", "columns_2", "columns_3", "columns_4"], capability: payment },
   shipping_fees: { label: "運費", category: "payment", children: false, allowedParents: ["form", "row", "columns_2", "columns_3", "columns_4"], capability: payment },
   paid_calendar: { label: "付費行事曆", category: "payment", children: false, allowedParents: ["form", "row", "columns_2", "columns_3", "columns_4"], capability: payment },
+  nav_bar: { label: "導覽列", category: "layout", children: false, allowedParents: ["root", "section", "row"], capability: available },
+  shape_divider: { label: "分隔形狀", category: "layout", children: false, allowedParents: ["root", "section", "row"], capability: available },
+  section_title: { label: "區塊標題組", category: "text", children: false, allowedParents: ["row", "columns_2", "columns_3", "columns_4", "content_box"], capability: available },
+  icon_list: { label: "圖示重點", category: "text", children: false, allowedParents: ["row", "columns_2", "columns_3", "columns_4", "content_box"], capability: available },
+  stats: { label: "數據統計", category: "other", children: false, allowedParents: ["row", "columns_2", "columns_3", "columns_4", "content_box"], capability: available },
+  logo_strip: { label: "Logo 列", category: "media", children: false, allowedParents: ["row", "columns_2", "columns_3", "columns_4", "content_box"], capability: available },
+  image_cards: { label: "圖片卡片", category: "media", children: false, allowedParents: ["row", "columns_2", "columns_3", "columns_4", "content_box"], capability: available },
+  content_cards: { label: "文章卡片", category: "media", children: false, allowedParents: ["row", "columns_2", "columns_3", "columns_4", "content_box"], capability: available },
+  video_gallery: { label: "影片牆", category: "media", children: false, allowedParents: ["row", "columns_2", "columns_3", "columns_4", "content_box"], capability: available },
+  testimonial_wall: { label: "評價牆", category: "social", children: false, allowedParents: ["row", "columns_2", "columns_3", "columns_4", "content_box"], capability: available },
 };
 export const FUNNEL_NODE_REGISTRY = definitions as Readonly<Record<FunnelNodeType, FunnelNodeDefinition>>;
 export function getFunnelNodeDefinition(type: FunnelNodeType) { return FUNNEL_NODE_REGISTRY[type]; }

@@ -105,7 +105,28 @@ body:has([data-live-player-mode="checkout"]) [data-testid="announcement-center-l
   }
 }
 
+/* Funnel testimonial wall: the track holds the items twice, so -50% loops seamlessly. */
+@keyframes funnel-marquee {
+  from { transform: translateX(0); }
+  to { transform: translateX(-50%); }
+}
+
+.funnel-marquee-track {
+  animation: funnel-marquee var(--funnel-marquee-duration, 60s) linear infinite;
+  animation-direction: var(--funnel-marquee-direction, normal);
+}
+
+.funnel-marquee[data-paused="true"] .funnel-marquee-track,
+.funnel-marquee:hover .funnel-marquee-track,
+.funnel-marquee:focus-within .funnel-marquee-track {
+  animation-play-state: paused;
+}
+
 @media (prefers-reduced-motion: reduce) {
+  .funnel-marquee-track {
+    animation: none !important;
+  }
+
   html {
     scroll-behavior: auto;
   }

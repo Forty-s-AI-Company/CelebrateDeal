@@ -1,0 +1,4 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 720" width="1280" height="720" role="img" aria-label="影片縮圖：講座">
+<defs><linearGradient id="v" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#2a2219"/><stop offset="1" stop-color="#09090a"/></linearGradient></defs>
+<rect width="1280" height="720" fill="url(#v)"/><rect x="120" y="140" width="520" height="440" rx="8" fill="#efe6d4" fill-opacity="0.08" stroke="#c9a063" stroke-opacity="0.4"/><circle cx="920" cy="300" r="90" fill="#8b6a3e"/><path d="M780 600c10-130 70-190 140-190s130 60 140 190z" fill="#8b6a3e"/><g stroke="#c9a063" stroke-width="10" stroke-linecap="round" stroke-opacity="0.8"><path d="M190 240h300M190 300h380M190 360h260"/></g>
+</svg>
