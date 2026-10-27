@@ -26,11 +26,11 @@ function flatten(nodes: FunnelNode[]): FunnelNode[] {
 describe("funnel template gallery", () => {
   it("提供四個 goal 與獨立 Webinar 模板", () => {
     expect(FUNNEL_TEMPLATE_GOALS).toEqual(["sell", "audience", "custom", "webinar"]);
-    expect(FUNNEL_TEMPLATE_GALLERY).toHaveLength(18);
-    expect(new Set(FUNNEL_TEMPLATE_GALLERY.map(item => item.id)).size).toBe(18);
+    expect(FUNNEL_TEMPLATE_GALLERY).toHaveLength(19);
+    expect(new Set(FUNNEL_TEMPLATE_GALLERY.map(item => item.id)).size).toBe(19);
     expect(listFunnelTemplateGallery("sell").map((item) => item.category)).toEqual(["商品結帳", "簡潔結帳", "內容訂閱"]);
     expect(listFunnelTemplateGallery("audience").map((item) => item.category)).toEqual(["志工招募", "公益活動", "環境倡議", "課程工作表", "課程諮詢", "體驗課程"]);
-    expect(listFunnelTemplateGallery("custom").map((item) => item.category)).toEqual(["隱私", "條款", "品牌資訊"]);
+    expect(listFunnelTemplateGallery("custom").map((item) => item.category)).toEqual(["隱私", "條款", "品牌資訊", "品牌首頁"]);
     expect(listFunnelTemplateGallery("webinar").map((item) => item.category)).toEqual(["播放會場", "報名完成", "活動報名", "課程說明會", "實作工作坊", "顧問服務銷講"]);
   });
 
@@ -78,7 +78,7 @@ describe("funnel template gallery", () => {
     expect(listFunnelTemplateGallery("webinar", "webinar_registration_page").map((item) => item.id)).toEqual(["webinar-registration", "webinar-course-registration", "webinar-workshop-registration", "webinar-strategy-registration"]);
     expect(listFunnelTemplateGallery("webinar", "webinar_broadcast_page").map((item) => item.id)).toEqual(["webinar-broadcast"]);
     expect(listFunnelTemplateGallery("sell", "thank_you_page")).toEqual([]);
-    expect(listFunnelTemplateGallery("custom", "info_page").map((item) => item.id)).toEqual(["custom-privacy", "custom-terms", "custom-brand-info"]);
+    expect(listFunnelTemplateGallery("custom", "info_page").map((item) => item.id)).toEqual(["custom-privacy", "custom-terms", "custom-brand-info", "custom-luxury-course"]);
   });
 
   it("Webinar 三階段具備可辨識且用途不同的節點結構", () => {
@@ -165,6 +165,7 @@ const TEMPLATE_NODE_ID_HASHES: Record<string, string> = {
   "webinar-course-registration": "a22d5a018681e693165a99fbe752eb54116070b4c0c68e09ae49c87a4842c410",
   "webinar-workshop-registration": "caf9714fe0e7237dbc354ff28af52786592348cec9829a56eb50705ca094c5b7",
   "webinar-strategy-registration": "caf9714fe0e7237dbc354ff28af52786592348cec9829a56eb50705ca094c5b7",
+  "custom-luxury-course": "490075ab3d87f5cc42474097aaa352fc502f017456333011525dd41c8864eed5",
 };
 
 describe("既有模板相容性", () => {
@@ -198,6 +199,7 @@ describe("既有模板相容性", () => {
         "webinar-course-registration|celebratedeal-webinar-course|webinar|available|4",
         "webinar-workshop-registration|celebratedeal-webinar-workshop|webinar|available|5",
         "webinar-strategy-registration|celebratedeal-webinar-strategy|webinar|available|5",
+        "custom-luxury-course|celebratedeal-luxury-course|custom|available|15",
       ]
     `);
   });
@@ -214,8 +216,9 @@ describe("模板設計品質（R3）", () => {
     const levels = nodes.filter((node) => node.type === "headline").map((node) => node.props.level);
     expect(levels.filter((level) => level === "h1").length).toBeLessThanOrEqual(1);
     expect(levels.length).toBeGreaterThan(0);
-    expect(document.root.every((section) => typeof section.overrides.mobile?.style?.padding === "string")).toBe(true);
-    expect(document.settings.typography).toMatchObject({ headingColor: "#0f172a", bodyLineHeight: 1.7 });
+    expect(document.root.filter((section) => section.type === "section").every((section) => typeof section.overrides.mobile?.style?.padding === "string")).toBe(true);
+    // Themed templates bring their own palette; every other template keeps the shared defaults.
+    expect(document.settings.typography).toMatchObject(template.theme?.typography ?? { headingColor: "#0f172a", bodyLineHeight: 1.7 });
   });
 
   it("主視覺使用設計過的插圖而不是空白占位圖", () => {

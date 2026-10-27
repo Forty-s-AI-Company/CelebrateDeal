@@ -1,0 +1,4 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 600" width="800" height="600" role="img" aria-label="書本主題插圖">
+<defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#1d1915"/><stop offset="1" stop-color="#0b0b0c"/></linearGradient></defs>
+<rect width="800" height="600" fill="url(#g)"/><path d="M150 420c90-40 170-40 250 0V200c-80-40-160-40-250 0z" fill="#efe6d4"/><path d="M650 420c-90-40-170-40-250 0V200c80-40 160-40 250 0z" fill="#e3d7bf"/><path d="M400 200v220" stroke="#8b6a3e" stroke-width="4"/><g stroke="#a99a7e" stroke-width="3"><path d="M190 250c60-20 120-20 180 0M190 290c60-20 120-20 180 0M190 330c60-20 120-20 180 0M430 250c60-20 120-20 180 0M430 290c60-20 120-20 180 0M430 330c60-20 120-20 180 0"/></g><path d="M120 440c100-40 180-40 280 0 100-40 180-40 280 0" stroke="#c9a063" stroke-width="6" fill="none"/>
+</svg>
