@@ -9,7 +9,8 @@ const cspReportOnlyDirectives = [
   "img-src 'self' data: blob: https:",
   "font-src 'self' data:",
   "media-src 'self' blob: https://videodelivery.net https://*.videodelivery.net https:",
-  "frame-src 'self' https://challenges.cloudflare.com",
+  // www.youtube-nocookie.com: the funnel video gallery embeds a YouTube video (privacy-enhanced mode) only after the visitor presses play.
+  "frame-src 'self' https://challenges.cloudflare.com https://www.youtube-nocookie.com",
   "connect-src 'self' https://*.sentry.io https://*.posthog.com https://app.posthog.com https://api.cloudflare.com https://challenges.cloudflare.com https://*.payuni.com.tw https://sandbox-api.payuni.com.tw",
   "frame-ancestors 'none'",
   "base-uri 'self'",

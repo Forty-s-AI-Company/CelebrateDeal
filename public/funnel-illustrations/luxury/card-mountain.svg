@@ -1,0 +1,4 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 600" width="800" height="600" role="img" aria-label="山峰主題插圖">
+<defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#1d1915"/><stop offset="1" stop-color="#0b0b0c"/></linearGradient></defs>
+<rect width="800" height="600" fill="url(#g)"/><circle cx="560" cy="200" r="70" fill="#c9a063" fill-opacity="0.85"/><path d="M0 600l230-300 120 140 140-220 310 380z" fill="#2a241d"/><path d="M0 600l170-200 110 110 170-160 350 250z" fill="#14110e"/><path d="M490 220l60 90-40-20-30 40-20-50-40 10z" fill="#efe6d4" fill-opacity="0.85"/>
+</svg>

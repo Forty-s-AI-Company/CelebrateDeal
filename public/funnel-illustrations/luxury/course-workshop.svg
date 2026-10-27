@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 1000" width="900" height="1000" role="img" aria-label="課程工作坊示意圖">
+<defs><linearGradient id="w" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#efe6d4"/><stop offset="1" stop-color="#d9c9aa"/></linearGradient></defs>
+<rect width="900" height="1000" fill="url(#w)"/>
+<rect x="110" y="120" width="680" height="430" rx="12" fill="#1b1814"/>
+<g stroke="#c9a063" stroke-width="10" stroke-linecap="round"><path d="M190 230h320M190 300h420M190 370h260"/></g>
+<circle cx="650" cy="430" r="60" fill="#c9a063"/>
+<g fill="#2b2620"><circle cx="250" cy="720" r="60"/><path d="M150 1000c0-140 40-200 100-200s100 60 100 200z"/><circle cx="450" cy="700" r="64"/><path d="M340 1000c0-150 45-215 110-215s110 65 110 215z"/><circle cx="650" cy="720" r="60"/><path d="M550 1000c0-140 40-200 100-200s100 60 100 200z"/></g>
+</svg>

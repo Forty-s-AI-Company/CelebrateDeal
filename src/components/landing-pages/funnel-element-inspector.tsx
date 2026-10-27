@@ -5,15 +5,20 @@ import { referenceOptions } from "./funnel-display-labels";
 import { useFunnelRegistrationLinks } from "./funnel-registration-links";
 import { CodeTextarea } from "./funnel-custom-code-field";
 import { BOUND_LIVE_FORM_RULE, registrationFormChoices } from "@/lib/funnel-registration-action";
+import { ArrowDown, ArrowUp, Plus, Trash2 } from "lucide-react";
+import { FunnelImageUploadButton } from "./funnel-editor-assets";
+import { parseFunnelColor } from "@/lib/funnel-typography";
 
 import {
   createFunnelInspectorActionUpdate,
   createFunnelInspectorUpdate,
   getFunnelElementInspectorDefinition,
   getFunnelInspectorFieldValue,
+  getFunnelInspectorItems,
   isSafeInspectorHref,
   type FunnelInspectorActionInput,
   type FunnelInspectorField,
+  type FunnelInspectorItemField,
   type FunnelInspectorScope,
 } from "@/lib/funnel-element-inspector";
 import type { FunnelNode, FunnelNodeAction } from "@/lib/funnel-page-document";
@@ -29,7 +34,8 @@ const URL_FIELD_RULES: Readonly<Record<string, { valid: (value: string) => boole
 
 /** zh-TW message when a URL content field holds an unsafe value; null when empty or safe. */
 export function inspectorUrlFieldError(field: FunnelInspectorField, value: unknown): string | null {
-  const rule = field.target === "props" && field.kind === "text" ? URL_FIELD_RULES[field.id] : undefined;
+  if (field.kind === "image" && typeof value === "string" && value.trim()) return isSafeContentAssetUrl(value.trim()) ? null : UNSAFE_CONTENT_ASSET_MESSAGE;
+  const rule = field.target === "props" && field.kind === "text" ? URL_FIELD_RULES[field.id] ?? (/href$/iu.test(field.id) ? URL_FIELD_RULES.url : undefined) : undefined;
   if (!rule || typeof value !== "string" || !value.trim()) return null;
   return rule.valid(value.trim()) ? null : rule.message;
 }
@@ -87,8 +93,17 @@ function FieldControl({ field, node, scope, disabled, onCommand }: { field: Funn
   const urlError = inspectorUrlFieldError(field, value);
   const errorId = `funnel-field-${node.id}-${field.id}-error`;
   const common = { disabled: disabled || field.disabled, "aria-describedby": [describedBy, urlError ? errorId : undefined].filter(Boolean).join(" ") || undefined, "aria-invalid": urlError ? true : undefined };
+  if (field.kind === "repeater") return <RepeaterField field={field} node={node} disabled={disabled || Boolean(field.disabled)} onCommand={onCommand} />;
   let input: React.ReactNode;
-  if (field.kind === "checkbox") input = <input {...common} className="h-4 w-4 rounded border-slate-300 text-blue-700" type="checkbox" checked={value === true} onChange={(event) => commit(event.currentTarget.checked)} />;
+  if (field.kind === "color") input = <span className="flex items-center gap-2">
+    <input type="color" aria-label={`${field.label}色票`} disabled={common.disabled} value={colorPickerValue(String(value))} onChange={(event) => commit(event.currentTarget.value)} className="h-10 w-11 shrink-0 cursor-pointer rounded-lg border border-slate-300 bg-white p-1 disabled:cursor-not-allowed" />
+    <input {...common} aria-label={field.label} className={control} value={String(value)} placeholder="例如 #c9a063" spellCheck={false} onChange={(event) => commit(event.currentTarget.value)} />
+  </span>;
+  else if (field.kind === "image") input = <span className="grid gap-2">
+    <input {...common} className={control} inputMode="url" placeholder="https:// 或 /images/…" value={String(value)} spellCheck={false} onChange={(event) => commit(event.currentTarget.value)} />
+    <FunnelImageUploadButton label={field.label} disabled={common.disabled} onUploaded={(url) => commit(url)} />
+  </span>;
+  else if (field.kind === "checkbox") input = <input {...common} className="h-4 w-4 rounded border-slate-300 text-blue-700" type="checkbox" checked={value === true} onChange={(event) => commit(event.currentTarget.checked)} />;
   else if (field.kind === "select") input = <select {...common} className={control} value={String(value)} onChange={(event) => commit(event.currentTarget.value)}><option value="">未設定</option>{field.options?.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select>;
   else if (field.kind === "textarea" || field.kind === "list" || field.kind === "menu_items" || field.kind === "faq_items") input = <textarea {...common} className={`${control} min-h-24 resize-y`} value={String(value)} onChange={(event) => commit(event.currentTarget.value)} />;
   else input = <input {...common} className={control} type={field.kind === "number" ? "number" : "text"} min={field.min} max={field.max} step={field.step} value={String(value)} onChange={(event) => commit(event.currentTarget.value)} />;
@@ -96,6 +111,94 @@ function FieldControl({ field, node, scope, disabled, onCommand }: { field: Funn
     <span>{field.label}</span>{input}{field.description ? <span id={describedBy} className="text-xs font-normal leading-5 text-slate-600">{field.description}</span> : null}
     {urlError ? <span id={errorId} role="alert" className="text-xs font-normal leading-5 text-red-700">{urlError}頁面上不會顯示這個網址。</span> : null}
   </label>;
+}
+
+/** The native colour picker needs #rrggbb; anything else shows black until a colour is chosen. */
+function colorPickerValue(value: string): string {
+  const rgb = value ? parseFunnelColor(value) : null;
+  return rgb ? `#${rgb.map((part) => part.toString(16).padStart(2, "0")).join("")}` : "#000000";
+}
+
+const EMAIL_LINK = /^(mailto:)?[^\s@<>"']{1,64}@[^\s@<>"']{1,190}$/iu;
+
+function itemUrlError(sub: FunnelInspectorItemField, value: unknown): string | null {
+  if (typeof value !== "string" || !value.trim()) return null;
+  const text = value.trim();
+  if (sub.kind === "image") return isSafeContentAssetUrl(text) ? null : UNSAFE_CONTENT_ASSET_MESSAGE;
+  if (sub.kind === "url") return isSafeContentHref(text) || EMAIL_LINK.test(text) ? null : UNSAFE_CONTENT_HREF_MESSAGE;
+  return null;
+}
+
+function itemSummary(field: FunnelInspectorField, item: Record<string, unknown>, index: number): string {
+  const text = ["name", "title", "label", "alt", "value"].map((key) => item[key]).find((value): value is string => typeof value === "string" && value.trim() !== "");
+  return `${field.itemLabel ?? "項目"} ${index + 1}${text ? `：${text.trim().slice(0, 24)}` : ""}`;
+}
+
+/**
+ * Editable list of structured items (testimonials, logos, stats…). Every edit
+ * commits the whole list through `createFunnelInspectorUpdate`, which keeps
+ * only declared keys and coerces each value to its declared kind.
+ */
+function RepeaterField({ field, node, disabled, onCommand }: { field: FunnelInspectorField; node: FunnelNode; disabled: boolean; onCommand: (command: FunnelPageCommand) => void }) {
+  const items = getFunnelInspectorItems(node, field);
+  const [open, setOpen] = useState<number | null>(items.length ? 0 : null);
+  const max = field.maxItems ?? 24;
+  const commit = (next: Record<string, unknown>[]) => {
+    const command = createFunnelInspectorUpdate(node, "base", field, next);
+    if (command) onCommand(command);
+  };
+  const update = (index: number, key: string, value: unknown) => commit(items.map((item, current) => current === index ? { ...item, [key]: value } : item));
+  const move = (index: number, offset: -1 | 1) => {
+    const target = index + offset;
+    if (target < 0 || target >= items.length) return;
+    const next = items.slice();
+    [next[index], next[target]] = [next[target]!, next[index]!];
+    commit(next);
+    setOpen(target);
+  };
+  const remove = (index: number) => { commit(items.filter((_, current) => current !== index)); setOpen(null); };
+  const add = () => { commit([...items, { ...(field.newItem ?? {}) }]); setOpen(items.length); };
+  const base = `funnel-repeater-${node.id}-${field.id}`;
+  const iconButton = "inline-flex h-8 w-8 cursor-pointer items-center justify-center rounded-md text-slate-600 hover:bg-slate-100 hover:text-slate-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 disabled:cursor-not-allowed disabled:opacity-40";
+  return <fieldset className="grid gap-2" aria-describedby={field.description ? `${base}-description` : undefined}>
+    <legend className="mb-1 text-sm font-semibold text-slate-700">{field.label}<span className="ml-1 font-normal text-slate-500">（{items.length}／{max}）</span></legend>
+    {field.description ? <p id={`${base}-description`} className="text-xs leading-5 text-slate-600">{field.description}</p> : null}
+    {items.map((item, index) => {
+      const expanded = open === index;
+      const summary = itemSummary(field, item, index);
+      return <div key={index} className="rounded-lg border border-slate-200 bg-white">
+        <div className="flex items-center gap-1 pr-1">
+          <button type="button" aria-expanded={expanded} aria-controls={`${base}-${index}`} onClick={() => setOpen(expanded ? null : index)} className="min-h-10 min-w-0 flex-1 cursor-pointer truncate rounded-md px-3 text-left text-sm font-semibold text-slate-800 hover:text-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400">{summary}</button>
+          <button type="button" aria-label={`上移${summary}`} title="上移" disabled={disabled || index === 0} className={iconButton} onClick={() => move(index, -1)}><ArrowUp size={15} aria-hidden /></button>
+          <button type="button" aria-label={`下移${summary}`} title="下移" disabled={disabled || index === items.length - 1} className={iconButton} onClick={() => move(index, 1)}><ArrowDown size={15} aria-hidden /></button>
+          <button type="button" aria-label={`刪除${summary}`} title="刪除" disabled={disabled} className={`${iconButton} text-red-600 hover:bg-red-50 hover:text-red-700`} onClick={() => remove(index)}><Trash2 size={15} aria-hidden /></button>
+        </div>
+        <div id={`${base}-${index}`} hidden={!expanded} className="grid gap-2.5 border-t border-slate-100 p-3">
+          {(field.itemFields ?? []).map((sub) => <ItemFieldControl key={sub.key} id={`${base}-${index}-${sub.key}`} sub={sub} value={item[sub.key]} disabled={disabled} onChange={(value) => update(index, sub.key, value)} />)}
+        </div>
+      </div>;
+    })}
+    <button type="button" disabled={disabled || items.length >= max} onClick={add} className="inline-flex min-h-10 cursor-pointer items-center justify-center gap-1.5 rounded-lg border border-dashed border-slate-400 bg-white px-3 text-sm font-semibold text-slate-700 hover:border-blue-500 hover:text-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 disabled:cursor-not-allowed disabled:opacity-50"><Plus size={15} aria-hidden />新增{field.itemLabel ?? "項目"}</button>
+  </fieldset>;
+}
+
+function ItemFieldControl({ id, sub, value, disabled, onChange }: { id: string; sub: FunnelInspectorItemField; value: unknown; disabled: boolean; onChange: (value: unknown) => void }) {
+  const text = typeof value === "string" || typeof value === "number" ? String(value) : "";
+  const error = itemUrlError(sub, value);
+  const common = { id, disabled, "aria-invalid": error ? true : undefined, "aria-describedby": error ? `${id}-error` : undefined };
+  const label = "grid gap-1 text-xs font-semibold text-slate-700";
+  if (sub.kind === "checkbox") return <label htmlFor={id} className="flex items-center gap-2 text-xs font-semibold text-slate-700"><input {...common} type="checkbox" className="h-4 w-4 rounded border-slate-300" checked={value === true} onChange={(event) => onChange(event.currentTarget.checked)} />{sub.label}</label>;
+  let input: React.ReactNode;
+  if (sub.kind === "select") input = <select {...common} className={control} value={text} onChange={(event) => onChange(event.currentTarget.value)}><option value="">未設定</option>{sub.options?.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select>;
+  else if (sub.kind === "textarea") input = <textarea {...common} className={`${control} min-h-20 resize-y`} placeholder={sub.placeholder} value={text} onChange={(event) => onChange(event.currentTarget.value)} />;
+  else if (sub.kind === "number") input = <input {...common} className={control} type="number" min={sub.min} max={sub.max} value={text} onChange={(event) => onChange(event.currentTarget.value)} />;
+  else input = <input {...common} className={control} inputMode={sub.kind === "text" ? undefined : "url"} spellCheck={sub.kind === "text" ? undefined : false} placeholder={sub.placeholder ?? (sub.kind === "image" ? "https:// 或 /images/…" : undefined)} value={text} onChange={(event) => onChange(event.currentTarget.value)} />;
+  return <div className="grid gap-1.5">
+    <label htmlFor={id} className={label}>{sub.label}</label>
+    {input}
+    {sub.kind === "image" ? <FunnelImageUploadButton label={sub.label} disabled={disabled} onUploaded={(url) => onChange(url)} /> : null}
+    {error ? <span id={`${id}-error`} role="alert" className="text-xs leading-5 text-red-700">{error}頁面上不會顯示這個網址。</span> : null}
+  </div>;
 }
 
 // 集中目標有效性，顯示與套用防線使用相同判斷。

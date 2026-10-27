@@ -9,6 +9,7 @@ import {
 } from "@/lib/funnel-page-document";
 import type { FunnelStepType } from "@/lib/funnel-flow";
 import { FUNNEL_ILLUSTRATIONS } from "@/lib/funnel-block-library";
+import { buildLuxuryCourseTemplate, LUXURY_COURSE_THEME } from "@/lib/funnel-template-luxury-course";
 
 export const FUNNEL_TEMPLATE_GOALS = ["sell", "audience", "custom", "webinar"] as const;
 export type FunnelTemplateGoal = (typeof FUNNEL_TEMPLATE_GOALS)[number];
@@ -33,6 +34,8 @@ export type FunnelTemplateGalleryItem = {
   statusReason: string;
   preview: FunnelTemplatePreviewSnapshot;
   build: (prefix: string) => FunnelNode[];
+  /** Page typography / background of this template; templates without one use FUNNEL_TEMPLATE_TYPOGRAPHY on white. */
+  theme?: { typography?: Partial<PageDocument["settings"]["typography"]>; background?: { color: string } };
 };
 
 /*
@@ -319,6 +322,7 @@ const templates: FunnelTemplateGalleryItem[] = [
   { id: "webinar-course-registration", referenceId: "celebratedeal-webinar-course", goal: "webinar", category: "課程說明會", name: "課程說明會報名頁", description: "課程內容、適合對象與參與方式，搭配首屏活動報名表單。", status: "available", statusReason: availableReason, preview: { eyebrow: "銷講活動", headline: "課程說明會報名頁", summary: "課程路線與報名前確認", palette: ["#eff6ff", "#2563eb", "#ffffff"], sectionCount: 4 }, build: prefix => salesWebinarPage(prefix, "course") },
   { id: "webinar-workshop-registration", referenceId: "celebratedeal-webinar-workshop", goal: "webinar", category: "實作工作坊", name: "線上實作工作坊報名頁", description: "實作目標、操作議程與參加前準備，搭配活動報名表單。", status: "available", statusReason: availableReason, preview: { eyebrow: "銷講活動", headline: "線上實作工作坊報名頁", summary: "範例拆解與動手練習", palette: ["#ecfdf5", "#047857", "#ffffff"], sectionCount: 5 }, build: prefix => salesWebinarPage(prefix, "workshop") },
   { id: "webinar-strategy-registration", referenceId: "celebratedeal-webinar-strategy", goal: "webinar", category: "顧問服務銷講", name: "服務提案銷講報名頁", description: "以客戶需求、服務範圍與交付方式為主題，清楚區分活動報名與購買。", status: "available", statusReason: availableReason, preview: { eyebrow: "銷講活動", headline: "服務提案銷講報名頁", summary: "服務價值與合作條件", palette: ["#fff7ed", "#9a3412", "#ffffff"], sectionCount: 5 }, build: prefix => salesWebinarPage(prefix, "strategy") },
+  { id: "custom-luxury-course", referenceId: "celebratedeal-luxury-course", goal: "custom", category: "品牌首頁", name: "高質感課程品牌（黑金）", description: "黑底金字的課程品牌首頁：導覽列、主視覺、媒體 Logo、數據、課程卡片、評價牆、文章、影片與 FAQ。", status: "available", statusReason: availableReason, preview: { eyebrow: "Brand", headline: "高質感課程品牌（黑金）", summary: "襯線標題與金色點綴的品牌長頁", palette: ["#0b0b0c", "#c9a063", "#f7f3ec"], sectionCount: 15 }, theme: LUXURY_COURSE_THEME, build: buildLuxuryCourseTemplate },
 ];
 
 export const FUNNEL_TEMPLATE_GALLERY: readonly FunnelTemplateGalleryItem[] = Object.freeze(templates);
@@ -361,7 +365,11 @@ export const FUNNEL_PLACEHOLDER_IMAGE_SRC = "/placeholder.svg";
 
 function buildTemplateDocument(template: FunnelTemplateGalleryItem, prefix: string, pageId?: string): PageDocument {
   const empty = createEmptyPageDocument(pageId ?? `${prefix}_page`, template.name);
-  const settings = { ...empty.settings, typography: { ...empty.settings.typography, ...FUNNEL_TEMPLATE_TYPOGRAPHY } };
+  const settings = {
+    ...empty.settings,
+    typography: { ...empty.settings.typography, ...FUNNEL_TEMPLATE_TYPOGRAPHY, ...template.theme?.typography },
+    background: { ...empty.settings.background, ...template.theme?.background },
+  };
   const document = parsePageDocument({ ...empty, settings, root: template.build(prefix) });
   if (!document) throw new Error(`一頁式網站模板無法通過 PageDocument 驗證：${template.id}`);
   return document;

@@ -22,6 +22,7 @@ import {
 } from "@/lib/funnel-page-history";
 import { getFunnelNodeDefinition, type FunnelNode, type FunnelNodeType, type PageDocument } from "@/lib/funnel-page-document";
 import { instantiateBlock } from "@/lib/funnel-block-library";
+import { funnelShowcaseDefaultProps, funnelShowcaseDefaultStyle } from "@/lib/funnel-showcase-defaults";
 
 type Props = { document: PageDocument; disabled?: boolean; onChange: (document: PageDocument) => void | boolean; stepIds?: readonly string[]; stepNames?: Readonly<Record<string, string>>; commerceProducts?: FunnelCommerceProduct[]; commerceEnabled?: boolean; chrome?: FunnelEditorChrome };
 type History = ReturnType<typeof createFunnelPageHistory>;
@@ -37,9 +38,9 @@ function newNode(type: FunnelNodeType): FunnelNode {
       : type === "image" ? { src: "/placeholder.svg", alt: "" }
         : type === "button" ? { label: "立即行動" }
           : type === "bulleted_list" ? { items: ["第一個重點", "第二個重點"] }
-            : {};
+            : funnelShowcaseDefaultProps(type) ?? {};
   return {
-    schemaVersion: 1, id: nodeId(type), type, props, style: {}, overrides: {}, visible: true, actions: [], attributes: {},
+    schemaVersion: 1, id: nodeId(type), type, props, style: funnelShowcaseDefaultStyle(type), overrides: {}, visible: true, actions: [], attributes: {},
     ...(getFunnelNodeDefinition(type).children ? { children: [] } : {}),
   };
 }
@@ -194,8 +195,11 @@ function FunnelPageEditorSession({ document, disabled = false, onChange, commerc
   function add(type: FunnelNodeType) {
     const node = newNode(type);
     const selectedParentId = selected && selected.children && getFunnelNodeDefinition(type).allowedParents.includes(selected.type) ? selected.id : null;
-    const parentId = type === "section" ? null : selectedParentId ?? findFirstAccepting(activeRoot, type);
-    if (commit({ type: "add", node, parentId, popupId: editingPopup?.id ?? null })) select(node.id);
+    // Page-level elements (navigation bar, divider) go to the page root unless a container that accepts them is selected; a new navigation bar starts at the top.
+    const pageLevel = type === "nav_bar" || type === "shape_divider";
+    const parentId = type === "section" || (pageLevel && !selectedParentId) ? null : selectedParentId ?? findFirstAccepting(activeRoot, type);
+    const index = type === "nav_bar" && parentId === null ? 0 : undefined;
+    if (commit({ type: "add", node, parentId, popupId: editingPopup?.id ?? null, index })) select(node.id);
   }
 
   function addBlock(templateId: string) {

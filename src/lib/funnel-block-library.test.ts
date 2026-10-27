@@ -27,6 +27,7 @@ describe("Funnel block library", () => {
     expect(Object.fromEntries(FUNNEL_BLOCK_CATEGORIES.map((id) => [id, FUNNEL_BLOCK_CATEGORY_METADATA[id].label]))).toEqual({
       order_forms: "訂購表單", opt_in_forms: "名單表單", features: "特色介紹", page_footers: "頁尾", team_presentation: "團隊介紹",
       welcome: "歡迎區塊", price_plans: "方案價格", page_headers: "頁首", testimonials: "客戶見證",
+      social_proof: "信任背書", content_showcase: "內容展示", call_to_action: "行動呼籲",
     });
     const listed = listFunnelBlockCategories();
     expect(listed.every((category) => category.variantCount > 0)).toBe(true);
@@ -47,11 +48,18 @@ describe("Funnel block library", () => {
 
   it.each(Object.values(FUNNEL_BLOCK_REGISTRY))("$id 展開為可編輯的 Section › Row › 子元素並通過驗證", (template) => {
     const root = instantiateBlock(template.id);
+    // A navigation bar block is a page-level element (it must sit at the root to stay sticky).
+    if (root.type === "nav_bar") {
+      expect(template.category).toBe("page_headers");
+      expect(parsePageDocument({ ...createEmptyPageDocument(`page-${template.id}`), root: [root] })).not.toBeNull();
+      return;
+    }
     expect(root.type).toBe("section");
     expect(root.children?.[0]?.type).toBe("row");
     expect(root.children?.[0]?.children?.length).toBeGreaterThan(0);
     const nodes = flatten([root]);
-    expect(nodes.some((item) => item.type === "headline" || item.type === "text")).toBe(true);
+    // Every block carries copy the merchant edits: plain text, or a showcase element whose items hold the text.
+    expect(nodes.some((item) => ["headline", "text", "section_title", "stats", "logo_strip"].includes(item.type))).toBe(true);
     expect(parsePageDocument({ ...createEmptyPageDocument(`page-${template.id}`), root: [root] })).not.toBeNull();
     // 響應式：區段在手機版有自己的內距覆寫。
     expect(root.overrides.mobile?.style?.padding).toBeDefined();

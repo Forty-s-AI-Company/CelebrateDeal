@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { WorkspaceEditor, type WorkspaceEditorContent } from "@/components/landing-pages/workspace-editor";
+import { FunnelEditorAssetsProvider } from "@/components/landing-pages/funnel-editor-assets";
 import { LegacyConversionNotice } from "@/components/landing-pages/legacy-conversion-notice";
 import { FunnelRegistrationLinkProvider } from "@/components/landing-pages/funnel-registration-links";
 import type { FunnelRegistrationLinks } from "@/lib/funnel-registration-action";
@@ -264,7 +265,7 @@ export function LandingPageWorkspace({ initialPublication, page, forms, lives, c
   if (legacyFailed(legacy)) return <LegacyConversionFailure published={published} pending={pending} onRun={run} onExit={() => router.push(exitHref)} toast={toast} />;
   return <div className="flex h-dvh min-h-0 flex-col overflow-hidden bg-slate-100">
     <FunnelRegistrationLinkProvider value={registrationLinks}>
-      <div className="min-h-0 flex-1"><WorkspaceEditor content={content} commerceProducts={commerceProducts} pending={pending} revision={revision} onDocumentChange={updateContent} chrome={chrome} /></div>
+      <div className="min-h-0 flex-1"><FunnelEditorAssetsProvider csrfToken={csrfToken}><WorkspaceEditor content={content} commerceProducts={commerceProducts} pending={pending} revision={revision} onDocumentChange={updateContent} chrome={chrome} /></FunnelEditorAssetsProvider></div>
     </FunnelRegistrationLinkProvider>
     {toast}
     {exitPrompt ? <UnsavedChangesDialog saving={pendingOperation === "save" || pendingOperation === "create"} saveBlocked={saveBlocked && !pending} onCancel={() => setExitPrompt(false)} onDiscard={() => { setExitPrompt(false); router.push(exitHref); }} onSave={() => { setExitQueued(true); save(); }} /> : null}

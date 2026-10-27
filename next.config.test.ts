@@ -52,6 +52,15 @@ describe("isolated development build configuration", () => {
     expect(site.some((item) => item.key === "Cross-Origin-Opener-Policy")).toBe(false);
   });
 
+  it("allows only the privacy-enhanced YouTube host as an extra frame source", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+    const { default: config } = await import("./next.config");
+    const rules = await config.headers!();
+    const csp = rules.find((rule) => rule.source === "/:path*")!.headers.find((header) => header.key === "Content-Security-Policy-Report-Only")!.value;
+    const frameSrc = csp.split("; ").find((part) => part.startsWith("frame-src ")) ?? "";
+    expect(frameSrc).toBe("frame-src 'self' https://challenges.cloudflare.com https://www.youtube-nocookie.com");
+  });
+
   it("sends no Referer from the verification page and its confirm API, overriding the site-wide policy", async () => {
     vi.stubEnv("NODE_ENV", "production");
     const { default: config } = await import("./next.config");

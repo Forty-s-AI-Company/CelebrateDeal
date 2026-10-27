@@ -1,0 +1,4 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 600" width="800" height="600" role="img" aria-label="羅盤主題插圖">
+<defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#1d1915"/><stop offset="1" stop-color="#0b0b0c"/></linearGradient></defs>
+<rect width="800" height="600" fill="url(#g)"/><g fill="none" stroke="#c9a063" stroke-width="3"><circle cx="400" cy="300" r="170"/><circle cx="400" cy="300" r="140" stroke-opacity="0.5"/><path d="M400 110v40M400 450v40M210 300h40M550 300h40"/></g><path d="M400 180l36 120-36 120-36-120z" fill="#c9a063"/><path d="M400 300l36 0-36 120z" fill="#8b6a3e"/><circle cx="400" cy="300" r="10" fill="#0b0b0c" stroke="#c9a063" stroke-width="3"/>
+</svg>
