@@ -25,7 +25,10 @@ describe("Funnel element inspector schema", () => {
     expect(Object.keys(FUNNEL_ELEMENT_INSPECTOR_SCHEMA).sort()).toEqual([...FUNNEL_NODE_TYPES].sort());
     expect(FUNNEL_ELEMENT_INSPECTOR_SCHEMA.text.fields.some((item) => item.group === "content" && item.id === "text")).toBe(true);
     expect(FUNNEL_ELEMENT_INSPECTOR_SCHEMA.payment_button.capabilityNote).toContain("付款");
-    expect(FUNNEL_ELEMENT_INSPECTOR_SCHEMA.raw_html.capabilityNote).toContain("不可執行");
+    // 自訂程式碼：HTML／CSS／JS 三個等寬程式碼欄位，只編輯基礎值並有伺服器同樣強制的大小上限。
+    const codeFields = FUNNEL_ELEMENT_INSPECTOR_SCHEMA.raw_html.fields.filter((item) => item.kind === "code");
+    expect(codeFields.map((item) => [item.id, item.maxBytes, item.responsive])).toEqual([["html", 50_000, false], ["css", 20_000, false], ["js", 50_000, false]]);
+    expect(FUNNEL_ELEMENT_INSPECTOR_SCHEMA.raw_html.capabilityNote).toBeUndefined();
   });
 
   it("將基礎值與手機覆寫輸出為結構化 update command，不建立第二份頁面", () => {

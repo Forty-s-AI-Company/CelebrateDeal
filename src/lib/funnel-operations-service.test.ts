@@ -34,6 +34,12 @@ describe("Funnel operations tenant/CAS boundary",()=>{
  it("does not silently change a published slug",async()=>{
   mocks.find.mockResolvedValue({...page(),status:"published"});await expect(saveFunnelOperations(input())).rejects.toThrow("slug");
  });
+ it("refuses changing to a reserved platform-like slug but keeps an existing one",async()=>{
+  await expect(saveFunnelOperations({...input(),slug:"login"})).rejects.toThrow("保留給平台");
+  expect(mocks.update).not.toHaveBeenCalled();
+  mocks.find.mockResolvedValue({...page(),slug:"support"});
+  await expect(saveFunnelOperations({...input(),slug:"support"})).resolves.toEqual({revision:5});
+ });
  it("rejects unknown report/experiment step IDs",async()=>{
   const config=defaultFunnelOperations();config.reports.stats.stepId="foreign";
   await expect(saveFunnelOperations({...input(),operations:config})).rejects.toThrow("步驟不存在");

@@ -410,6 +410,10 @@ model TrackingSetting {
   credentialRevision Int @default(0)
   tiktokPixelId       String?
   googleTagManagerId  String?
+  /// GA4 measurement ID (G-XXXX). Validated by src/lib/tracking-integration-ids.ts; the public funnel renders the standard gtag snippet.
+  ga4MeasurementId    String?
+  /// Opt-in: render the GA4 / Meta Pixel browser snippet on public funnel pages (IDs only; never merchant script).
+  enableBrowserTags   Boolean  @default(false)
   enablePageView      Boolean  @default(true)
   enableLeadEvent     Boolean  @default(true)
   enablePurchaseEvent Boolean  @default(true)

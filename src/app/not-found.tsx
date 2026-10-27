@@ -1,4 +1,4 @@
-import Link from "next/link";
+import { FullPageLink } from "@/components/full-page-link";
 
 export default function NotFound() {
   return (
@@ -8,9 +8,9 @@ export default function NotFound() {
         <h2 className="mt-1 text-xl font-bold text-slate-950">找不到這個頁面</h2>
         <p className="mt-2 text-sm leading-6 text-slate-600">連結可能已經變更或失效，請確認網址是否正確。</p>
         <div className="mt-6">
-          <Link href="/" className="inline-flex min-h-11 items-center justify-center rounded-md bg-primary px-4 text-sm font-semibold text-white hover:bg-primary-dark">
+          <FullPageLink href="/" className="inline-flex min-h-11 items-center justify-center rounded-md bg-primary px-4 text-sm font-semibold text-white hover:bg-primary-dark">
             回首頁
-          </Link>
+          </FullPageLink>
         </div>
       </section>
     </main>

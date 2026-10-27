@@ -36,6 +36,23 @@ export function normalizeLandingPageSlug(value: string) {
     : null;
 }
 
+/**
+ * 公開網址 `/lp/<slug>` 不可冒充平台頁面（登入、後台、客服、驗證等），避免含
+ * 自訂程式碼的頁面被包裝成平台流程。只在「新設定」slug 時檢查；既有頁面沿用
+ * 原 slug 儲存不受影響，公開載入也不受影響。
+ */
+export const RESERVED_LANDING_PAGE_SLUGS: ReadonlySet<string> = new Set([
+  "login", "logout", "signin", "sign-in", "signout", "sign-out", "signup", "sign-up", "register", "registration",
+  "admin", "administrator", "account", "accounts", "dashboard", "settings", "support", "help", "verify", "verify-email",
+  "verification", "password", "password-reset", "reset-password", "forgot-password", "auth", "oauth", "sso", "mfa", "2fa",
+  "security", "billing", "checkout", "payment", "payments", "api", "www", "policies", "privacy", "terms", "official",
+]);
+
+export function isReservedLandingPageSlug(slug: string): boolean {
+  const normalized = slug.trim().toLowerCase();
+  return RESERVED_LANDING_PAGE_SLUGS.has(normalized) || normalized.includes("celebratedeal");
+}
+
 export function isWebinarContent(content: LandingPageStoredContent) {
   return "flow" in content && content.flow?.goal === "webinar";
 }

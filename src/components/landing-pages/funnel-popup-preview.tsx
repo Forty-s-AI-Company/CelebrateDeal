@@ -129,7 +129,7 @@ function popupStyle(popup: FunnelPopup): CSSProperties {
 
 function popupDocument(document: PageDocument, popup: FunnelPopup): PageDocument {
   // The popup content is rendered through the same parsed node contract as the
-  // page.  In particular, this never turns a stored raw_html prop into markup.
+  // page.  In particular, custom code (raw_html) only ever renders inside its sandboxed iframe.
   return { ...document, root: popup.root, popups: [] };
 }
 
