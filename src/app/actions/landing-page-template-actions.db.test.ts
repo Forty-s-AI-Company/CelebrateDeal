@@ -26,6 +26,7 @@ import { parseFunnelStepPages, type FunnelStepPages } from "@/lib/funnel-step-pa
 import { instantiateFunnelTemplate } from "@/lib/funnel-template-gallery";
 import { LANDING_PAGE_MAX_CONTENT_BYTES, landingPageContentBytes } from "@/lib/landing-page-limits";
 import { LANDING_PAGE_TEMPLATE_VENDOR_LIMIT, readStoredTemplateDocument } from "@/lib/landing-page-template-document";
+import { listSelectableSalesProjects } from "@/lib/sales-project-scope";
 import { getLandingPageTemplateName, listLandingPageTemplates, listLandingPageTemplateTargets, TEMPLATE_THUMBNAIL_SECTIONS } from "@/lib/landing-page-template-service";
 import {
   applyLandingPageTemplateAction,
@@ -509,6 +510,14 @@ describe("custom code gate (PostgreSQL)", () => {
 });
 
 describe("aggregate overview (PostgreSQL)", () => {
+  it("offers only the vendor's own, non-archived projects to switch to", async () => {
+    const archived = await getDb().salesProject.create({ data: { vendorId: a.vendorId, name: "已封存", slug: `archived-${randomUUID()}`, mode: "live_course", primaryFlow: "live", status: "archived" } });
+    const projects = await listSelectableSalesProjects(a.vendorId);
+    expect(projects).toEqual([{ id: a.projectId, name: "Synthetic project" }]);
+    expect(projects.map((project) => project.id)).not.toContain(archived.id);
+    expect(projects.map((project) => project.id)).not.toContain(b.projectId);
+  });
+
   it("keeps rename and delete vendor-level, but saving, reading targets and applying need a project", async () => {
     const { page, stepId } = await createFunnelPage(a);
     const saved = await saveTemplate(page.id, stepId, "總覽前建立");

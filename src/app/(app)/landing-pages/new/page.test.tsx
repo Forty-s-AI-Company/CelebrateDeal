@@ -1,9 +1,11 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, expect, it, vi } from "vitest";
 
-const mocks = vi.hoisted(() => ({ requireVendorManager: vi.fn(), context: vi.fn(), scope: vi.fn(), templateName: vi.fn(), picker: vi.fn() }));
+const mocks = vi.hoisted(() => ({ requireVendorManager: vi.fn(), context: vi.fn(), scope: vi.fn(), projects: vi.fn(), templateName: vi.fn(), picker: vi.fn() }));
+vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }) }));
+vi.mock("@/app/actions/sales-workspace-actions", () => ({ selectSalesProjectAction: vi.fn() }));
 vi.mock("@/lib/auth", () => ({ requireVendorManager: mocks.requireVendorManager, requireVendorManagerContext: mocks.context }));
-vi.mock("@/lib/sales-project-scope", () => ({ getSalesProjectScope: mocks.scope }));
+vi.mock("@/lib/sales-project-scope", () => ({ getSalesProjectScope: mocks.scope, listSelectableSalesProjects: mocks.projects }));
 vi.mock("@/lib/csrf", () => ({ CSRF_FIELD_NAME: "csrf", getCsrfToken: async () => "synthetic-csrf" }));
 vi.mock("@/lib/landing-page-template-service", () => ({ getLandingPageTemplateName: mocks.templateName }));
 vi.mock("@/components/landing-pages/funnel-goal-picker", () => ({ FunnelGoalPicker: (props: unknown) => { mocks.picker(props); return <div>goal picker</div>; } }));
@@ -39,4 +41,23 @@ it("rejects a non-manager before resolving any template", async () => {
   mocks.requireVendorManager.mockRejectedValueOnce(new Error("redirect:/dashboard?error=insufficient_role"));
   await expect(render({ template: "mine:tpl_1" })).rejects.toThrow("insufficient_role");
   expect(mocks.templateName).not.toHaveBeenCalled();
+});
+
+it("without a selected project explains why and lists the vendor's projects to switch to", async () => {
+  mocks.scope.mockResolvedValue({ projectId: null, projectName: null, isAggregate: true, isLegacyWorkspace: false });
+  mocks.projects.mockResolvedValue([{ id: "project-1", name: "秋季課程" }]);
+  const html = await render({ template: "platform:custom-terms" });
+  expect(mocks.projects).toHaveBeenCalledWith("vendor-1");
+  expect(html).toContain("一頁式網站屬於銷售專案，請先選擇專案");
+  expect(html).toContain("切換到「秋季課程」");
+  expect(mocks.picker).not.toHaveBeenCalled();
+  expect(mocks.templateName).not.toHaveBeenCalled();
+});
+
+it("with no project at all offers to create one", async () => {
+  mocks.scope.mockResolvedValue({ projectId: null, projectName: null, isAggregate: false, isLegacyWorkspace: true });
+  mocks.projects.mockResolvedValue([]);
+  const html = await render({});
+  expect(html).toContain('href="/projects/new"');
+  expect(mocks.picker).not.toHaveBeenCalled();
 });

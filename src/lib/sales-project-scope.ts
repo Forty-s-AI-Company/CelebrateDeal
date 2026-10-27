@@ -36,3 +36,12 @@ export async function requireEditableSalesProjectScope(userId: string, vendorId:
   return scope;
 }
 
+
+/** Projects the user may switch to (same set and order as the sidebar switcher); always bound to the authenticated vendor. */
+export async function listSelectableSalesProjects(vendorId: string): Promise<Array<{ id: string; name: string }>> {
+  return getDb().salesProject.findMany({
+    where: { vendorId, status: { not: "archived" } },
+    orderBy: { updatedAt: "desc" },
+    select: { id: true, name: true },
+  });
+}

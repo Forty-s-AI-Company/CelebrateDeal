@@ -12,6 +12,7 @@ import {
   renameLandingPageTemplateAction,
 } from "@/app/actions/landing-page-template-actions";
 import { funnelStepLabels } from "./funnel-display-labels";
+import { SalesProjectRequiredNotice, type SalesProjectChoice } from "./sales-project-required-notice";
 import type { FunnelViewport } from "./funnel-page-document-renderer";
 import { FunnelTemplatePreviewDialog, FunnelTemplateThumbnail } from "./funnel-template-preview";
 import {
@@ -96,12 +97,14 @@ function FilterGroup<T extends string>({ label, options, labels, value, onChange
   </div>;
 }
 
-export function LandingPageTemplateLibrary({ csrfName, csrfToken, myTemplates, sites, initialTab = "platform" }: {
+export function LandingPageTemplateLibrary({ csrfName, csrfToken, myTemplates, sites, projects = [], initialTab = "platform" }: {
   csrfName: string;
   csrfToken: string;
   myTemplates: LandingPageTemplateSummary[];
   /** null when no sales project is selected (applying and creating need one). */
   sites: Array<{ id: string; name: string }> | null;
+  /** Projects to switch to when `sites` is null (no selected project). */
+  projects?: readonly SalesProjectChoice[];
   initialTab?: TemplateLibraryTab;
 }) {
   const router = useRouter();
@@ -190,13 +193,13 @@ export function LandingPageTemplateLibrary({ csrfName, csrfToken, myTemplates, s
     </section>}
 
     {preview ? <FunnelTemplatePreviewDialog eyebrow={preview.selected.eyebrow} title={preview.selected.name} document={preview.document} viewport={viewport} onViewport={setViewport} onClose={() => setPreview(null)} actionLabel="使用這個範本" onAction={() => openUse(preview.selected)} note="預覽與使用後的頁面內容與顯示方式相同。" /> : null}
-    {using ? <UseTemplateDialog csrfName={csrfName} csrfToken={csrfToken} selected={using} sites={sites} onClose={() => setUsing(null)} /> : null}
+    {using ? <UseTemplateDialog csrfName={csrfName} csrfToken={csrfToken} selected={using} sites={sites} projects={projects} onClose={() => setUsing(null)} /> : null}
     {renaming ? <RenameTemplateDialog csrfName={csrfName} csrfToken={csrfToken} template={renaming} onClose={() => setRenaming(null)} onRenamed={(name) => { setMine((items) => items.map((item) => item.id === renaming.id ? { ...item, name } : item)); setNotice({ tone: "success", text: `範本已改名為「${name}」。` }); setRenaming(null); router.refresh(); }} /> : null}
     {deleting ? <DeleteTemplateDialog csrfName={csrfName} csrfToken={csrfToken} template={deleting} onClose={() => setDeleting(null)} onDeleted={() => { setMine((items) => items.filter((item) => item.id !== deleting.id)); setNotice({ tone: "success", text: `已刪除範本「${deleting.name}」；已套用過的網站內容不受影響。` }); setDeleting(null); router.refresh(); }} /> : null}
   </div>;
 }
 
-function UseTemplateDialog({ csrfName, csrfToken, selected, sites, onClose }: { csrfName: string; csrfToken: string; selected: Selected; sites: Array<{ id: string; name: string }> | null; onClose: () => void }) {
+function UseTemplateDialog({ csrfName, csrfToken, selected, sites, projects, onClose }: { csrfName: string; csrfToken: string; selected: Selected; sites: Array<{ id: string; name: string }> | null; projects: readonly SalesProjectChoice[]; onClose: () => void }) {
   const [mode, setMode] = useState<"create" | "apply">("create");
   const [siteId, setSiteId] = useState("");
   const [target, setTarget] = useState<LandingPageTemplateTarget | null>(null);
@@ -256,12 +259,14 @@ function UseTemplateDialog({ csrfName, csrfToken, selected, sites, onClose }: { 
       <label className={`flex cursor-pointer gap-3 rounded-xl border p-3 text-sm ${mode === "apply" ? "border-blue-600 bg-blue-50" : "border-slate-200"}`}><input type="radio" name="template-use-mode" checked={mode === "apply"} onChange={() => setMode("apply")} className="mt-1" /><span><strong className="block text-slate-950">套用到現有網站</strong><span className="text-slate-600">取代某個步驟目前的頁面內容。</span></span></label>
     </fieldset>
 
-    {mode === "create" ? <div className="mt-5 grid gap-3">
+    {sites === null ? <div className="mt-5 grid gap-3">
+      <SalesProjectRequiredNotice projects={projects} purpose="template" />
+      <div className="flex justify-end"><button type="button" onClick={onClose} className={secondaryButton}>關閉</button></div>
+    </div> : mode === "create" ? <div className="mt-5 grid gap-3">
       <p className="text-sm leading-6 text-slate-600">下一步填寫網站名稱與網址{selected.kind === "platform" ? "，網站目標會依範本設定" : "，並選擇網站目標"}。範本裡的報名表、商品與步驟連結需要建立後再設定。</p>
       <div className="flex flex-wrap justify-end gap-2"><button type="button" onClick={onClose} className={secondaryButton}>取消</button><Link href={templateCreateHref(selected.kind === "platform" ? { kind: "platform", id: selected.id, goal: selected.goal } : { kind: "mine", id: selected.id })} className={primaryButton}><WandSparkles size={16} aria-hidden />前往建立</Link></div>
     </div> : <div className="mt-5 grid gap-4">
-      {sites === null ? <p role="status" className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">請先在左上角選擇一個銷售專案，才能把範本套用到該專案的網站。<Link href="/projects" className="ml-1 font-semibold underline">前往銷售專案</Link></p>
-        : sites.length === 0 ? <p role="status" className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">目前專案還沒有一頁式網站，請改用「建立新網站」。</p>
+      {sites.length === 0 ? <p role="status" className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">目前專案還沒有一頁式網站，請改用「建立新網站」。</p>
           : <>
             <label className="grid gap-1.5 text-sm font-semibold text-slate-700">選擇網站
               <select className={control} value={siteId} disabled={busy || applied} onChange={(event) => load(event.currentTarget.value)}><option value="">請選擇網站</option>{sites.map((site) => <option key={site.id} value={site.id}>{site.name}</option>)}</select>

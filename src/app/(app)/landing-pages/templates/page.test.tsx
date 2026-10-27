@@ -7,11 +7,12 @@ const mocks = vi.hoisted(() => ({
   scope: vi.fn(),
   templates: vi.fn(),
   targets: vi.fn(),
+  projects: vi.fn(),
   csrf: vi.fn(),
   library: vi.fn(),
 }));
 vi.mock("@/lib/auth", () => ({ requireVendorManager: mocks.requireVendorManager, requireVendorManagerContext: mocks.context }));
-vi.mock("@/lib/sales-project-scope", () => ({ getSalesProjectScope: mocks.scope }));
+vi.mock("@/lib/sales-project-scope", () => ({ getSalesProjectScope: mocks.scope, listSelectableSalesProjects: mocks.projects }));
 vi.mock("@/lib/csrf", () => ({ CSRF_FIELD_NAME: "csrf", getCsrfToken: mocks.csrf }));
 vi.mock("@/lib/landing-page-template-service", () => ({ listLandingPageTemplates: mocks.templates, listLandingPageTemplateTargets: mocks.targets }));
 vi.mock("@/components/landing-pages/landing-page-template-library", () => ({ LandingPageTemplateLibrary: (props: unknown) => { mocks.library(props); return <div>template library</div>; } }));
@@ -41,12 +42,15 @@ it("loads own templates and the selected project's sites", async () => {
   expect(html).toContain("範本");
   expect(html).toContain('href="/landing-pages"');
   expect(mocks.scope).toHaveBeenCalledWith("user-1", "vendor-1");
-  expect(mocks.library).toHaveBeenCalledWith(expect.objectContaining({ csrfToken: "synthetic-csrf", myTemplates: [], sites: [{ id: "page-1", name: "網站" }], initialTab: "mine" }));
+  expect(mocks.library).toHaveBeenCalledWith(expect.objectContaining({ csrfToken: "synthetic-csrf", myTemplates: [], sites: [{ id: "page-1", name: "網站" }], projects: [], initialTab: "mine" }));
+  expect(mocks.projects).not.toHaveBeenCalled();
 });
 
-it("does not list sites without a selected project (aggregate overview)", async () => {
+it("stays browsable in the aggregate overview and hands the dialog the projects to switch to", async () => {
   mocks.scope.mockResolvedValue({ projectId: null, projectName: null, isAggregate: true, isLegacyWorkspace: false });
+  mocks.projects.mockResolvedValue([{ id: "project-1", name: "秋季課程" }]);
   renderToStaticMarkup(await Page({ searchParams: Promise.resolve({ tab: "other" }) }));
   expect(mocks.targets).not.toHaveBeenCalled();
-  expect(mocks.library).toHaveBeenCalledWith(expect.objectContaining({ sites: null, initialTab: "platform" }));
+  expect(mocks.projects).toHaveBeenCalledWith("vendor-1");
+  expect(mocks.library).toHaveBeenCalledWith(expect.objectContaining({ sites: null, projects: [{ id: "project-1", name: "秋季課程" }], initialTab: "platform" }));
 });

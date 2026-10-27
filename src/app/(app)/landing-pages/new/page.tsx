@@ -1,6 +1,7 @@
 import { FunnelGoalPicker, type FunnelGoal, type FunnelGoalPickerTemplate } from "@/components/landing-pages/funnel-goal-picker";
 import { requireVendorManager, requireVendorManagerContext } from "@/lib/auth";
-import { getSalesProjectScope } from "@/lib/sales-project-scope";
+import { getSalesProjectScope, listSelectableSalesProjects } from "@/lib/sales-project-scope";
+import { SalesProjectRequiredNotice } from "@/components/landing-pages/sales-project-required-notice";
 import { CSRF_FIELD_NAME, getCsrfToken } from "@/lib/csrf";
 import { getFunnelTemplateGalleryItem } from "@/lib/funnel-template-gallery";
 import { getLandingPageTemplateName } from "@/lib/landing-page-template-service";
@@ -26,7 +27,14 @@ export default async function NewLandingPage({ searchParams }: { searchParams: P
   await requireVendorManager();
   const { auth, vendor } = await requireVendorManagerContext();
   const scope = await getSalesProjectScope(auth.user.id, vendor.id);
-  if (!scope.projectId) return <p>請先選擇一個銷售專案，再建立一頁式網站。</p>;
+  if (!scope.projectId) {
+    // Switching keeps this URL (including ?template=...), so the merchant continues right here.
+    return <main className="mx-auto max-w-3xl py-8">
+      <p className="text-xs font-bold uppercase tracking-[0.18em] text-blue-700">建立一頁式網站</p>
+      <h1 className="mt-2 text-3xl font-bold tracking-tight text-slate-950">建立新的一頁式網站</h1>
+      <SalesProjectRequiredNotice projects={await listSelectableSalesProjects(vendor.id)} className="mt-6" />
+    </main>;
+  }
   const query = await searchParams;
   const template = await requestedTemplate(query.template);
   const requestedGoal: FunnelGoal | null = query.goal === "audience" || query.goal === "sell" || query.goal === "custom" || query.goal === "webinar" ? query.goal : null;
