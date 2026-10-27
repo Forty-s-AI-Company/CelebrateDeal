@@ -1,7 +1,7 @@
 "use client";
 
 import type { ComponentType } from "react";
-import { ArrowLeft, ChevronRight, Eye, History, Monitor, Pencil, Redo2, Settings, Smartphone, SquareStack, Undo2 } from "lucide-react";
+import { ArrowLeft, BookmarkPlus, ChevronRight, Eye, History, Monitor, Pencil, Redo2, Settings, Smartphone, SquareStack, Undo2 } from "lucide-react";
 import type { FunnelEditorChrome } from "./funnel-editor-chrome";
 import type { FunnelViewport } from "./funnel-page-document-renderer";
 
@@ -71,6 +71,7 @@ export function FunnelEditorToolbar({ chrome, history, views, view, onToggleView
       {views.includes("popups") ? <ToolbarButton label="彈出視窗" icon={SquareStack} showLabel pressed={view === "popups"} disabled={previewing} onClick={() => onToggleView("popups")} /> : null}
       {views.includes("page") ? <ToolbarButton label="頁面設定" icon={Settings} showLabel pressed={view === "page"} disabled={previewing} onClick={() => onToggleView("page")} /> : null}
       {views.includes("versions") ? <ToolbarButton label="版本紀錄" icon={History} showLabel labelClassName="hidden 2xl:inline" className="max-sm:hidden" pressed={view === "versions"} disabled={previewing} onClick={() => onToggleView("versions")} /> : null}
+      {chrome?.onSaveAsTemplate ? <ToolbarButton label="存成範本" icon={BookmarkPlus} showLabel labelClassName="hidden 2xl:inline" disabled={previewing} onClick={chrome.onSaveAsTemplate} /> : null}
     </div>
     <div className="min-w-0 flex-1 px-1">
       {previewing ? <p className="truncate text-center text-sm font-bold text-slate-900">預覽模式：顯示目前編輯中的內容（含未儲存變更）</p> : <Breadcrumb crumbs={crumbs} context={context} title={chrome?.title ?? "編輯頁面"} onSelect={onSelectCrumb} />}

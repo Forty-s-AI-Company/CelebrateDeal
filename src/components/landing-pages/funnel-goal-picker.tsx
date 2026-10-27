@@ -2,10 +2,14 @@
 
 import { useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { landingPageAction } from "@/app/actions/landing-page-actions";
+import { createLandingPageFromTemplateAction } from "@/app/actions/landing-page-template-actions";
 import { createGoalFunnelStepPages } from "@/lib/funnel-goal-step-pages";
 
 export type FunnelGoal = "audience" | "sell" | "custom" | "webinar";
+/** A template chosen in the template library; a platform template fixes the goal. */
+export type FunnelGoalPickerTemplate = { kind: "platform" | "mine"; id: string; name: string; goal?: FunnelGoal };
 
 const GOALS: Array<{ id: FunnelGoal; title: string; description: string; disabled?: boolean }> = [
   { id: "audience", title: "建立名單", description: "收集 Email，預設建立名單頁與感謝頁流程。" },
@@ -14,19 +18,36 @@ const GOALS: Array<{ id: FunnelGoal; title: string; description: string; disable
   { id: "webinar", title: "自動化線上講座", description: "建立報名、感謝與播放頁，串接既有活動並設定播放與重播期間。" },
 ];
 
-export function FunnelGoalPicker({ csrfName, csrfToken, initialGoal, initialName = "", initialSlug = "", initialCurrency = "TWD" }: { csrfName: string; csrfToken: string; initialGoal?: FunnelGoal; initialName?: string; initialSlug?: string; initialCurrency?: string }) {
+export function FunnelGoalPicker({ csrfName, csrfToken, initialGoal, initialName = "", initialSlug = "", initialCurrency = "TWD", template, templateMissing = false }: { csrfName: string; csrfToken: string; initialGoal?: FunnelGoal; initialName?: string; initialSlug?: string; initialCurrency?: string; template?: FunnelGoalPickerTemplate; templateMissing?: boolean }) {
   const router = useRouter();
   const [name, setName] = useState(initialName);
   const [domain, setDomain] = useState(initialSlug);
   const [currency, setCurrency] = useState(initialCurrency);
-  const [goal, setGoal] = useState<FunnelGoal | undefined>(initialGoal);
+  const [goal, setGoal] = useState<FunnelGoal | undefined>(template?.goal ?? initialGoal);
   const [message, setMessage] = useState("");
   const [pending, startTransition] = useTransition();
   const inFlight = useRef(false);
   const selected = GOALS.find((item) => item.id === goal);
   const ready = Boolean(name.trim() && domain.trim() && goal && !selected?.disabled);
+  function createFromTemplate(selectedTemplate: FunnelGoalPickerTemplate, selectedGoal: FunnelGoal) {
+    inFlight.current = true;
+    const data = new FormData();
+    data.set(csrfName, csrfToken);
+    data.set("name", name.trim()); data.set("slug", domain.trim()); data.set("goal", selectedGoal); data.set("currency", currency);
+    data.set("templateKind", selectedTemplate.kind); data.set("templateId", selectedTemplate.id);
+    startTransition(async () => {
+      try {
+        const result = await createLandingPageFromTemplateAction({ status: "idle", message: "" }, data);
+        setMessage(result.message);
+        if (result.status === "success" && result.id) router.push(`/landing-pages/${result.id}/operations${result.stepId ? `?step=${encodeURIComponent(result.stepId)}&tab=configuration` : ""}`);
+      } catch { setMessage("建立失敗，一頁式網站尚未建立，請稍後再試。"); }
+      finally { inFlight.current = false; }
+    });
+  }
   function createFunnel() {
     if (!ready || !goal || inFlight.current) return;
+    // The server builds the content from its own template record; the client sends only the reference.
+    if (template) { createFromTemplate(template, goal); return; }
     const content = createGoalFunnelStepPages({ id: "funnel_flow", name: name.trim(), goal, domain: domain.trim(), currency });
     if (!content) { setMessage("一頁式網站初始資料無法建立，請檢查名稱與網址。"); return; }
     inFlight.current = true;
@@ -53,12 +74,14 @@ export function FunnelGoalPicker({ csrfName, csrfToken, initialGoal, initialName
     <p className="text-xs font-bold uppercase tracking-[0.18em] text-blue-700">建立一頁式網站</p>
     <h1 className="mt-2 text-3xl font-bold tracking-tight text-slate-950">建立新的一頁式網站</h1>
     <p className="mt-2 text-slate-600">先設定基本資料與用途；建立後會進入一頁式網站管理與模板選擇。</p>
+    {template ? <div role="status" className="mt-5 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-blue-200 bg-blue-50 p-4 text-sm text-blue-950"><span>將使用{template.kind === "mine" ? "我的範本" : "平台範本"}「<strong>{template.name}</strong>」建立第一個頁面{template.goal ? "，網站目標依範本設定" : ""}。</span><Link href="/landing-pages/new" className="font-semibold underline">改為不使用範本</Link></div> : null}
+    {templateMissing ? <p role="alert" className="mt-5 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">找不到選擇的範本，可能已被刪除。你仍可直接建立網站，或<Link href="/landing-pages/templates" className="ml-1 font-semibold underline">回到範本</Link>重新挑選。</p> : null}
     <div className="mt-8 grid gap-5 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm md:grid-cols-2">
       <label className="text-sm font-semibold text-slate-700">名稱 *<input required maxLength={160} value={name} onChange={(event) => setName(event.target.value)} className={field} placeholder="例如：秋季新品名單頁" /></label>
       <label className="text-sm font-semibold text-slate-700">一頁式網站網址 *<div className="mt-1 flex min-h-11 items-center rounded-xl border border-slate-500 bg-white focus-within:border-blue-600 focus-within:ring-2 focus-within:ring-blue-100"><span className="pl-3 text-sm text-slate-500">/lp/</span><input required pattern="[a-z0-9]+(-[a-z0-9]+)*" value={domain} onChange={(event) => setDomain(event.target.value.toLowerCase().replace(/[^a-z0-9-]/gu, ""))} className="min-w-0 flex-1 bg-transparent px-1 pr-3 text-sm outline-none" placeholder="autumn-launch" /></div></label>
       <label className="text-sm font-semibold text-slate-700">幣別<select value={currency} onChange={(event) => setCurrency(event.target.value)} className={field}><option value="TWD">新台幣 TWD</option><option value="USD">美元 USD</option><option value="EUR">歐元 EUR</option><option value="JPY">日圓 JPY</option></select><span className="mt-1 block text-xs font-normal text-slate-500">此為建頁偏好；實際結帳幣別以綁定商品為準，不會自動換匯。</span></label>
     </div>
-    <fieldset className="mt-8"><legend className="text-lg font-bold text-slate-950">選擇一頁式網站目標 *</legend><div className="mt-3 grid gap-4 md:grid-cols-2">{GOALS.map((item) => <button key={item.id} type="button" aria-pressed={goal === item.id} onClick={() => setGoal(item.id)} className={`rounded-2xl border p-5 text-left transition ${goal === item.id ? "border-blue-600 bg-blue-50 ring-2 ring-blue-100" : "border-slate-200 bg-white hover:border-blue-300"}`}><span className="flex items-center justify-between gap-3"><strong className="text-base text-slate-950">{item.title}</strong>{item.disabled ? <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-bold text-slate-700">開發中</span> : null}</span><span className="mt-2 block text-sm leading-6 text-slate-600">{item.description}</span></button>)}</div></fieldset>
+    <fieldset className="mt-8"><legend className="text-lg font-bold text-slate-950">選擇一頁式網站目標 *</legend><div className="mt-3 grid gap-4 md:grid-cols-2">{GOALS.map((item) => <button key={item.id} type="button" aria-pressed={goal === item.id} disabled={Boolean(template?.goal && template.goal !== item.id)} onClick={() => setGoal(item.id)} className={`rounded-2xl border p-5 text-left transition disabled:cursor-not-allowed disabled:opacity-50 ${goal === item.id ? "border-blue-600 bg-blue-50 ring-2 ring-blue-100" : "border-slate-200 bg-white hover:border-blue-300"}`}><span className="flex items-center justify-between gap-3"><strong className="text-base text-slate-950">{item.title}</strong>{item.disabled ? <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-bold text-slate-700">開發中</span> : null}</span><span className="mt-2 block text-sm leading-6 text-slate-600">{item.description}</span></button>)}</div></fieldset>
     {selected?.disabled ? <p role="status" className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">此類型目前尚未開放建立。</p> : null}
     {message ? <p role="status" className="mt-5 rounded-xl border border-blue-100 bg-blue-50 p-3 text-sm text-blue-900">{message}</p> : null}
     <div className="mt-8 flex justify-end"><button type="button" disabled={!ready || pending} onClick={createFunnel} className="min-h-11 cursor-pointer rounded-xl bg-blue-700 px-6 font-semibold text-white transition-colors duration-200 hover:bg-blue-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-40">{pending ? "建立中…" : "建立"}</button></div>

@@ -1,0 +1,371 @@
+import { createHash, randomBytes, randomUUID } from "node:crypto";
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { getDb } from "@/lib/db";
+
+// 範本庫 against PostgreSQL with the real session, role and project-scope
+// guards: only cookies, redirects, CSRF and cache revalidation are synthetic.
+const state = vi.hoisted(() => ({ token: "" }));
+vi.mock("next/headers", () => ({
+  cookies: vi.fn(async () => ({
+    get: (name: string) => (name === "celebrate_session" && state.token ? { value: state.token } : undefined),
+    set: vi.fn(),
+    delete: vi.fn(),
+  })),
+  headers: vi.fn(async () => new Headers({ "user-agent": "synthetic-agent" })),
+}));
+vi.mock("next/navigation", () => ({
+  redirect: (url: string): never => { throw new Error(`redirect:${url}`); },
+  notFound: (): never => { throw new Error("not_found"); },
+}));
+vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
+vi.mock("@/lib/csrf", () => ({ assertServerActionSecurity: vi.fn(async () => undefined) }));
+
+import { createGoalFunnelStepPages } from "@/lib/funnel-goal-step-pages";
+import type { FunnelNode } from "@/lib/funnel-page-document";
+import { parseFunnelStepPages, type FunnelStepPages } from "@/lib/funnel-step-pages";
+import { LANDING_PAGE_TEMPLATE_VENDOR_LIMIT, readStoredTemplateDocument } from "@/lib/landing-page-template-document";
+import { getLandingPageTemplateName, listLandingPageTemplates, listLandingPageTemplateTargets } from "@/lib/landing-page-template-service";
+import {
+  applyLandingPageTemplateAction,
+  createLandingPageFromTemplateAction,
+  deleteLandingPageTemplateAction,
+  readLandingPageTemplateTargetAction,
+  renameLandingPageTemplateAction,
+  saveLandingPageTemplateAction,
+} from "./landing-page-template-actions";
+
+type Tenant = { vendorId: string; projectId: string; ownerId: string; formId: string };
+const created = { vendorIds: [] as string[], userIds: [] as string[] };
+const idle = { status: "idle" as const, message: "" };
+
+function form(entries: Record<string, string | number>) {
+  const data = new FormData();
+  for (const [key, value] of Object.entries(entries)) data.set(key, String(value));
+  return data;
+}
+
+async function createUser(label: string) {
+  const user = await getDb().user.create({ data: { name: label, email: `${label}-${randomUUID()}@example.test`, passwordHash: "synthetic-only" } });
+  created.userIds.push(user.id);
+  return user;
+}
+
+async function signIn(userId: string, vendorId: string | null) {
+  const token = randomBytes(32).toString("base64url");
+  await getDb().userSession.create({
+    data: { userId, vendorId, tokenHash: createHash("sha256").update(token).digest("hex"), mfaVerifiedAt: new Date(), expiresAt: new Date(Date.now() + 60 * 60_000) },
+  });
+  state.token = token;
+}
+
+async function selectProject(userId: string, vendorId: string, projectId: string) {
+  await getDb().userOnboardingPreference.upsert({
+    where: { userId_vendorId: { userId, vendorId } },
+    create: { userId, vendorId, selectedProjectId: projectId },
+    update: { selectedProjectId: projectId },
+  });
+}
+
+async function createTenant(label: string): Promise<Tenant> {
+  const db = getDb();
+  const suffix = randomUUID();
+  const vendor = await db.vendor.create({ data: { name: `Template ${label}`, slug: `template-${label}-${suffix}`, email: `template-${suffix}@example.test`, passwordHash: "synthetic-only" } });
+  created.vendorIds.push(vendor.id);
+  const owner = await createUser(`owner-${label}`);
+  await db.vendorMember.create({ data: { vendorId: vendor.id, userId: owner.id, role: "owner" } });
+  const project = await db.salesProject.create({ data: { vendorId: vendor.id, name: "Synthetic project", slug: `project-${suffix}`, mode: "live_course", primaryFlow: "live" } });
+  await selectProject(owner.id, vendor.id, project.id);
+  const registration = await db.registrationForm.create({
+    data: { vendorId: vendor.id, projectId: project.id, name: "Synthetic form", slug: `form-${suffix}`, headline: "Register", fields: [{ key: "name", label: "姓名", type: "text", required: true }], isActive: true },
+  });
+  return { vendorId: vendor.id, projectId: project.id, ownerId: owner.id, formId: registration.id };
+}
+
+const node = (id: string, type: FunnelNode["type"], props: Record<string, unknown> = {}, children?: FunnelNode[], actions: FunnelNode["actions"] = []): FunnelNode => ({
+  schemaVersion: 1, id, type, props, style: {}, overrides: {}, visible: true, actions, attributes: {}, ...(children ? { children } : {}),
+});
+
+/** An audience funnel whose opt-in page references the tenant's form, a consultation event and a next step. */
+async function createFunnelPage(tenant: Tenant, label = "source") {
+  const content = createGoalFunnelStepPages({ id: "funnel_flow", name: `網站 ${label}`, goal: "audience", domain: `site-${label}` })!;
+  const optIn = content.flow.steps.find((step) => step.type === "opt_in_page")!;
+  const next: FunnelStepPages = structuredClone(content);
+  next.pages[optIn.id]!.root = [node(`${label}_section`, "section", {}, [node(`${label}_row`, "row", {}, [
+    node(`${label}_headline`, "headline", { text: `${label} 的名單頁標題`, level: "h1" }),
+    node(`${label}_calendar`, "calendar", { eventId: `event-${tenant.vendorId}` }),
+    node(`${label}_register`, "button", { label: "立即報名" }, undefined, [{ type: "registration", formId: tenant.formId, useBoundLive: true }]),
+    node(`${label}_next`, "button", { label: "下一步" }, undefined, [{ type: "next_step", stepId: "opt_in_thank_you" }]),
+    node(`${label}_raw`, "raw_html", { html: "<p>保留</p>" }),
+  ])])];
+  const parsed = parseFunnelStepPages(next);
+  if (!parsed) throw new Error("fixture funnel must be valid");
+  const page = await getDb().landingPage.create({
+    data: { vendorId: tenant.vendorId, projectId: tenant.projectId, name: `網站 ${label}`, slug: `lp-${label}-${randomUUID()}`, draftContent: parsed as never },
+  });
+  return { page, stepId: optIn.id, thankYouStepId: content.flow.steps.find((step) => step.type === "opt_in_thank_you_page")!.id };
+}
+
+async function saveTemplate(pageId: string, stepId: string, name = "我的名單頁") {
+  return saveLandingPageTemplateAction(idle, form({ pageId, stepId, name }));
+}
+
+async function templateRows(vendorId: string) {
+  return getDb().landingPageTemplate.findMany({ where: { vendorId }, orderBy: { createdAt: "asc" } });
+}
+
+async function storedStep(pageId: string, stepId: string) {
+  const page = await getDb().landingPage.findUniqueOrThrow({ where: { id: pageId } });
+  const content = parseFunnelStepPages(page.draftContent)!;
+  return { revision: page.revision, step: content.flow.steps.find((step) => step.id === stepId)!, page: content.pages[stepId]! };
+}
+
+let a: Tenant;
+let b: Tenant;
+
+beforeEach(async () => {
+  a = await createTenant("a");
+  b = await createTenant("b");
+  await signIn(a.ownerId, a.vendorId);
+});
+
+afterEach(async () => {
+  const db = getDb();
+  state.token = "";
+  // The selected-project relation is RESTRICT; remove preferences before the vendor cascade.
+  await db.userOnboardingPreference.deleteMany({ where: { vendorId: { in: created.vendorIds } } });
+  await db.landingPage.deleteMany({ where: { vendorId: { in: created.vendorIds } } });
+  await db.registrationForm.deleteMany({ where: { vendorId: { in: created.vendorIds } } });
+  await db.vendor.deleteMany({ where: { id: { in: created.vendorIds.splice(0) } } });
+  await db.user.deleteMany({ where: { id: { in: created.userIds.splice(0) } } });
+});
+
+afterAll(async () => { await getDb().$disconnect(); });
+
+describe("save as template (PostgreSQL)", () => {
+  it("stores the server-side draft of the step with every binding stripped", async () => {
+    const { page, stepId } = await createFunnelPage(a);
+    // A client-sent document is ignored: only page, step and name are read.
+    const data = form({ pageId: page.id, stepId, name: "  秋季  名單頁 " });
+    data.set("content", JSON.stringify({ forged: true }));
+    const result = await saveLandingPageTemplateAction(idle, data);
+    expect(result).toMatchObject({ status: "success" });
+
+    const [row] = await templateRows(a.vendorId);
+    expect(row).toMatchObject({ id: result.id, name: "秋季 名單頁", sourcePageId: page.id, createdById: a.ownerId });
+    const serialized = JSON.stringify(row!.content);
+    expect(serialized).not.toContain(a.formId);
+    expect(serialized).not.toContain(`event-${a.vendorId}`);
+    expect(serialized).not.toContain("opt_in_thank_you");
+    expect(serialized).not.toContain("forged");
+    expect(serialized).not.toContain("source_headline");
+    expect(serialized).toContain("source 的名單頁標題");
+    expect(serialized).toContain("<p>保留</p>");
+    expect(readStoredTemplateDocument(row!.content)).not.toBeNull();
+  });
+
+  it("validates the name, the step and the per-vendor limit", async () => {
+    const { page, stepId } = await createFunnelPage(a);
+    expect(await saveTemplate(page.id, stepId, " ")).toMatchObject({ status: "error", message: expect.stringContaining("範本名稱") });
+    expect(await saveTemplate(page.id, stepId, "名".repeat(81))).toMatchObject({ status: "error" });
+    // The system 停用頁 cannot become a template.
+    expect(await saveTemplate(page.id, "inactive")).toMatchObject({ status: "error", message: expect.stringContaining("找不到這個步驟") });
+    expect(await saveTemplate(page.id, "missing_step")).toMatchObject({ status: "error" });
+    expect(await templateRows(a.vendorId)).toHaveLength(0);
+
+    await getDb().landingPageTemplate.createMany({
+      data: Array.from({ length: LANDING_PAGE_TEMPLATE_VENDOR_LIMIT }, (_, index) => ({ vendorId: a.vendorId, name: `範本 ${index}`, content: { schemaVersion: 1, id: "tpl_page", root: [] } })),
+    });
+    expect(await saveTemplate(page.id, stepId)).toMatchObject({ status: "error", message: expect.stringContaining(`${LANDING_PAGE_TEMPLATE_VENDOR_LIMIT}`) });
+    expect(await getDb().landingPageTemplate.count({ where: { vendorId: a.vendorId } })).toBe(LANDING_PAGE_TEMPLATE_VENDOR_LIMIT);
+  });
+
+  it("enforces the name bound in the database too", async () => {
+    await expect(getDb().landingPageTemplate.create({ data: { vendorId: a.vendorId, name: " padded", content: {} } })).rejects.toThrow();
+    await expect(getDb().landingPageTemplate.create({ data: { vendorId: a.vendorId, name: "ok", content: [] } })).rejects.toThrow();
+  });
+});
+
+describe("single-page drafts (PostgreSQL)", () => {
+  it("saves a non-funnel page document without a step, but cannot apply templates to it", async () => {
+    const document = { schemaVersion: 1, id: "legacy_page", name: "單頁", root: [node("single_section", "section", {}, [node("single_row", "row", {}, [
+      node("single_button", "button", { label: "報名" }, undefined, [{ type: "registration", formId: a.formId, useBoundLive: true }]),
+    ])])] };
+    const page = await getDb().landingPage.create({ data: { vendorId: a.vendorId, projectId: a.projectId, name: "單頁網站", slug: `single-${randomUUID()}`, draftContent: document as never } });
+    expect(await saveLandingPageTemplateAction(idle, form({ pageId: page.id, name: "單頁範本" }))).toMatchObject({ status: "success" });
+    expect(JSON.stringify((await templateRows(a.vendorId))[0]!.content)).not.toContain(a.formId);
+    // A step id on a single-page draft names nothing.
+    expect(await saveTemplate(page.id, "opt_in")).toMatchObject({ status: "error" });
+    expect(await readLandingPageTemplateTargetAction(page.id)).toEqual({ ok: false, message: expect.stringContaining("舊版單頁格式") });
+  });
+});
+
+describe("cross-tenant isolation (PostgreSQL)", () => {
+  it("lists only the selected project's own sites as targets", async () => {
+    const own = await createFunnelPage(a, "listed");
+    const foreign = await createFunnelPage(b, "foreign");
+    const otherProject = await getDb().salesProject.create({ data: { vendorId: a.vendorId, name: "Other", slug: `other-${randomUUID()}`, mode: "live_course", primaryFlow: "live" } });
+    const elsewhere = await getDb().landingPage.create({ data: { vendorId: a.vendorId, projectId: otherProject.id, name: "其他專案", slug: `elsewhere-${randomUUID()}`, draftContent: own.page.draftContent as never } });
+    const archived = await getDb().landingPage.create({ data: { vendorId: a.vendorId, projectId: a.projectId, name: "已封存", slug: `archived-${randomUUID()}`, draftContent: own.page.draftContent as never, archivedAt: new Date() } });
+    const ids = (await listLandingPageTemplateTargets()).map((target) => target.id);
+    expect(ids).toEqual([own.page.id]);
+    expect(ids).not.toContain(foreign.page.id);
+    expect(ids).not.toContain(elsewhere.id);
+    expect(ids).not.toContain(archived.id);
+    expect(await readLandingPageTemplateTargetAction(elsewhere.id)).toMatchObject({ ok: false });
+  });
+
+  it("cannot save another tenant's page as a template", async () => {
+    const { page, stepId } = await createFunnelPage(b);
+    expect(await saveTemplate(page.id, stepId)).toMatchObject({ status: "error", message: expect.stringContaining("找不到這個一頁式網站") });
+    expect(await getDb().landingPageTemplate.count({ where: { vendorId: { in: [a.vendorId, b.vendorId] } } })).toBe(0);
+  });
+
+  it("cannot list, read, rename, delete or use another tenant's template", async () => {
+    await signIn(b.ownerId, b.vendorId);
+    const source = await createFunnelPage(b);
+    const saved = await saveTemplate(source.page.id, source.stepId, "乙方範本");
+    expect(saved.status).toBe("success");
+    const foreignId = saved.id!;
+
+    await signIn(a.ownerId, a.vendorId);
+    expect((await listLandingPageTemplates()).map((template) => template.id)).not.toContain(foreignId);
+    expect(await getLandingPageTemplateName(foreignId)).toBeNull();
+    expect(await renameLandingPageTemplateAction(idle, form({ templateId: foreignId, name: "被改名" }))).toMatchObject({ status: "error", message: expect.stringContaining("找不到這個範本") });
+    expect(await deleteLandingPageTemplateAction(idle, form({ templateId: foreignId }))).toMatchObject({ status: "error", message: expect.stringContaining("找不到這個範本") });
+
+    const own = await createFunnelPage(a, "own");
+    const applied = await applyLandingPageTemplateAction(idle, form({ templateKind: "mine", templateId: foreignId, pageId: own.page.id, stepId: own.stepId, revision: own.page.revision }));
+    expect(applied).toMatchObject({ status: "error", message: expect.stringContaining("找不到這個範本") });
+    expect((await storedStep(own.page.id, own.stepId)).revision).toBe(own.page.revision);
+
+    const pagesBefore = await getDb().landingPage.count({ where: { vendorId: a.vendorId } });
+    const createdFromForeign = await createLandingPageFromTemplateAction(idle, form({ templateKind: "mine", templateId: foreignId, name: "偷用範本", slug: `steal-${randomUUID().slice(0, 8)}`, goal: "audience", currency: "TWD" }));
+    expect(createdFromForeign).toMatchObject({ status: "error", message: expect.stringContaining("找不到這個範本") });
+    expect(await getDb().landingPage.count({ where: { vendorId: a.vendorId } })).toBe(pagesBefore);
+
+    expect(await getDb().landingPageTemplate.findUniqueOrThrow({ where: { id: foreignId } })).toMatchObject({ vendorId: b.vendorId, name: "乙方範本" });
+  });
+
+  it("cannot read or apply a template to another tenant's page", async () => {
+    const victim = await createFunnelPage(b, "victim");
+    expect(await readLandingPageTemplateTargetAction(victim.page.id)).toEqual({ ok: false, message: expect.stringContaining("找不到這個一頁式網站") });
+    const applied = await applyLandingPageTemplateAction(idle, form({ templateKind: "platform", templateId: "audience-volunteer", pageId: victim.page.id, stepId: victim.stepId, revision: victim.page.revision }));
+    expect(applied).toMatchObject({ status: "error", message: expect.stringContaining("找不到這個一頁式網站") });
+    const after = await storedStep(victim.page.id, victim.stepId);
+    expect(after.revision).toBe(victim.page.revision);
+    expect(JSON.stringify(after.page)).toContain("victim 的名單頁標題");
+  });
+});
+
+describe("apply and create (PostgreSQL)", () => {
+  it("applies an own template through the revision-checked save and regenerates its ids", async () => {
+    const source = await createFunnelPage(a, "source");
+    const saved = await saveTemplate(source.page.id, source.stepId);
+    const target = await createFunnelPage(a, "target");
+
+    const read = await readLandingPageTemplateTargetAction(target.page.id);
+    expect(read).toMatchObject({ ok: true, target: { id: target.page.id, revision: target.page.revision, goal: "audience" } });
+
+    const applied = await applyLandingPageTemplateAction(idle, form({ templateKind: "mine", templateId: saved.id!, pageId: target.page.id, stepId: target.stepId, revision: target.page.revision }));
+    expect(applied).toMatchObject({ status: "success", revision: target.page.revision + 1 });
+    const after = await storedStep(target.page.id, target.stepId);
+    expect(after.step.template).toEqual({ source: "template", templateId: `mine_${saved.id}` });
+    const serialized = JSON.stringify(after.page);
+    expect(serialized).toContain("source 的名單頁標題");
+    expect(serialized).not.toContain("target 的名單頁標題");
+    expect(serialized).not.toContain("tpl_n");
+    expect(serialized).not.toContain(a.formId);
+
+    // Applying the same template to another step of the same funnel still yields unique ids.
+    const again = await applyLandingPageTemplateAction(idle, form({ templateKind: "mine", templateId: saved.id!, pageId: target.page.id, stepId: target.thankYouStepId, revision: target.page.revision + 1 }));
+    expect(again).toMatchObject({ status: "success", revision: target.page.revision + 2 });
+  });
+
+  it("refuses a stale revision and leaves the page unchanged", async () => {
+    const target = await createFunnelPage(a, "stale");
+    await getDb().landingPage.update({ where: { id: target.page.id }, data: { revision: { increment: 1 } } });
+    const applied = await applyLandingPageTemplateAction(idle, form({ templateKind: "platform", templateId: "audience-volunteer", pageId: target.page.id, stepId: target.stepId, revision: target.page.revision }));
+    expect(applied).toMatchObject({ status: "error", code: "conflict" });
+    expect(JSON.stringify((await storedStep(target.page.id, target.stepId)).page)).toContain("stale 的名單頁標題");
+  });
+
+  it("refuses a platform template on a step it is not offered for, and the system step", async () => {
+    const target = await createFunnelPage(a, "typed");
+    const wrongType = await applyLandingPageTemplateAction(idle, form({ templateKind: "platform", templateId: "sell-product-checkout", pageId: target.page.id, stepId: target.stepId, revision: target.page.revision }));
+    expect(wrongType).toMatchObject({ status: "error", message: expect.stringContaining("不適用") });
+    const system = await applyLandingPageTemplateAction(idle, form({ templateKind: "platform", templateId: "audience-volunteer", pageId: target.page.id, stepId: "inactive", revision: target.page.revision }));
+    expect(system).toMatchObject({ status: "error", message: expect.stringContaining("系統管理") });
+    expect((await storedStep(target.page.id, target.stepId)).revision).toBe(target.page.revision);
+  });
+
+  it("applies a platform template to a compatible step", async () => {
+    const target = await createFunnelPage(a, "platform");
+    const applied = await applyLandingPageTemplateAction(idle, form({ templateKind: "platform", templateId: "audience-volunteer", pageId: target.page.id, stepId: target.stepId, revision: target.page.revision }));
+    expect(applied).toMatchObject({ status: "success" });
+    expect((await storedStep(target.page.id, target.stepId)).step.template).toEqual({ source: "template", templateId: "audience-volunteer" });
+  });
+
+  it("creates a new site from a platform or an own template in the selected project", async () => {
+    const platform = await createLandingPageFromTemplateAction(idle, form({ templateKind: "platform", templateId: "custom-brand-info", name: "品牌網站", slug: `brand-${randomUUID().slice(0, 8)}`, goal: "custom", currency: "TWD" }));
+    expect(platform).toMatchObject({ status: "success" });
+    const platformPage = await getDb().landingPage.findUniqueOrThrow({ where: { id: platform.id! } });
+    expect(platformPage).toMatchObject({ vendorId: a.vendorId, projectId: a.projectId });
+    const platformContent = parseFunnelStepPages(platformPage.draftContent)!;
+    expect(platformContent.flow.steps.find((step) => step.id === platform.stepId)).toMatchObject({ type: "info_page", template: { templateId: "custom-brand-info" } });
+
+    const mismatch = await createLandingPageFromTemplateAction(idle, form({ templateKind: "platform", templateId: "custom-brand-info", name: "錯誤目標", slug: `wrong-${randomUUID().slice(0, 8)}`, goal: "sell", currency: "TWD" }));
+    expect(mismatch).toMatchObject({ status: "error", message: expect.stringContaining("不適用") });
+
+    const source = await createFunnelPage(a, "mine");
+    const saved = await saveTemplate(source.page.id, source.stepId);
+    const fromMine = await createLandingPageFromTemplateAction(idle, form({ templateKind: "mine", templateId: saved.id!, name: "用我的範本", slug: `mine-${randomUUID().slice(0, 8)}`, goal: "sell", currency: "TWD" }));
+    expect(fromMine).toMatchObject({ status: "success" });
+    const mineContent = parseFunnelStepPages((await getDb().landingPage.findUniqueOrThrow({ where: { id: fromMine.id! } })).draftContent)!;
+    expect(mineContent.flow.steps.find((step) => step.id === fromMine.stepId)).toMatchObject({ type: "order_form", template: { templateId: `mine_${saved.id}` } });
+    expect(JSON.stringify(mineContent.pages[fromMine.stepId!])).toContain("mine 的名單頁標題");
+  });
+
+  it("renames and deletes an own template", async () => {
+    const source = await createFunnelPage(a);
+    const saved = await saveTemplate(source.page.id, source.stepId);
+    expect(await renameLandingPageTemplateAction(idle, form({ templateId: saved.id!, name: "新名稱" }))).toMatchObject({ status: "success" });
+    expect((await templateRows(a.vendorId))[0]!.name).toBe("新名稱");
+    expect(await deleteLandingPageTemplateAction(idle, form({ templateId: saved.id! }))).toMatchObject({ status: "success" });
+    expect(await templateRows(a.vendorId)).toHaveLength(0);
+    expect(await deleteLandingPageTemplateAction(idle, form({ templateId: saved.id! }))).toMatchObject({ status: "error" });
+  });
+});
+
+describe("role gate (PostgreSQL)", () => {
+  async function member(role: "support" | "partner") {
+    const user = await createUser(role);
+    await getDb().vendorMember.create({ data: { vendorId: a.vendorId, userId: user.id, role } });
+    await selectProject(user.id, a.vendorId, a.projectId);
+    await signIn(user.id, a.vendorId);
+    return user;
+  }
+
+  it.each([
+    ["support", "redirect:/dashboard?error=insufficient_role"],
+    ["partner", "redirect:/affiliate-portal"],
+  ] as const)("%s cannot list, save, rename, delete, read targets, apply or create", async (role, redirect) => {
+    await signIn(a.ownerId, a.vendorId);
+    const { page, stepId } = await createFunnelPage(a);
+    const saved = await saveTemplate(page.id, stepId, "原名");
+    expect(saved.status).toBe("success");
+    await member(role);
+
+    await expect(listLandingPageTemplates()).rejects.toThrow(redirect);
+    await expect(saveTemplate(page.id, stepId, "不應建立")).rejects.toThrow(redirect);
+    await expect(renameLandingPageTemplateAction(idle, form({ templateId: saved.id!, name: "不應改名" }))).rejects.toThrow(redirect);
+    await expect(deleteLandingPageTemplateAction(idle, form({ templateId: saved.id! }))).rejects.toThrow(redirect);
+    await expect(readLandingPageTemplateTargetAction(page.id)).rejects.toThrow(redirect);
+    await expect(applyLandingPageTemplateAction(idle, form({ templateKind: "mine", templateId: saved.id!, pageId: page.id, stepId, revision: page.revision }))).rejects.toThrow(redirect);
+    await expect(createLandingPageFromTemplateAction(idle, form({ templateKind: "mine", templateId: saved.id!, name: "不應建立", slug: `deny-${randomUUID().slice(0, 8)}`, goal: "audience", currency: "TWD" }))).rejects.toThrow(redirect);
+
+    const rows = await templateRows(a.vendorId);
+    expect(rows.map((row) => row.name)).toEqual(["原名"]);
+    expect((await storedStep(page.id, stepId)).revision).toBe(page.revision);
+    expect(await getDb().landingPage.count({ where: { vendorId: a.vendorId } })).toBe(1);
+  });
+});
