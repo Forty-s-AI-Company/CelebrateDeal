@@ -1,5 +1,5 @@
 import type { Metadata, Route } from "next";
-import Link from "next/link";
+import { FullPageLink } from "@/components/full-page-link";
 import { PublicPolicyShell, PublicResourceLinks } from "@/components/public-policy";
 import { policyCenterPublication, resolvePolicyStatus } from "@/lib/public-policy-content";
 
@@ -46,11 +46,11 @@ export default function PoliciesPage() {
         </div>
         <div className="mt-8 grid gap-4 sm:grid-cols-2">
           {policyLinks.map(({ href, title, description }) => (
-            <Link key={href} href={href} className="rounded-lg border border-border bg-white p-5 shadow-sm transition-colors hover:border-primary hover:bg-blue-50">
+            <FullPageLink key={href} href={href} className="rounded-lg border border-border bg-white p-5 shadow-sm transition-colors hover:border-primary hover:bg-blue-50">
               <h2 className="font-semibold text-slate-950">{title}</h2>
               <p className="mt-2 text-sm leading-6 text-slate-600">{description}</p>
               <span className="mt-4 inline-block text-sm font-semibold text-primary">查看頁面 →</span>
-            </Link>
+            </FullPageLink>
           ))}
         </div>
         <section className="mt-8 rounded-lg border border-border bg-white p-6 shadow-sm" aria-labelledby="next-step-title">

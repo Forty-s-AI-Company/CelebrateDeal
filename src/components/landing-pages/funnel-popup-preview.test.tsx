@@ -105,8 +105,9 @@ describe("FunnelPopupPreview", () => {
 
     expect(html).not.toContain("<script>");
     expect(html).not.toContain("window.pwned");
-    expect(html).toContain("原始 HTML");
+    expect(html).toContain("自訂程式碼");
     expect(html).toContain('sandbox=""');
+    expect(html).not.toContain("allow-scripts");
     expect(html).toContain("Content-Security-Policy");
   });
 });

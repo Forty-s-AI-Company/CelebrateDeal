@@ -28,6 +28,30 @@ describe("isolated development build configuration", () => {
     expect(directive("frame-ancestors")).toBe("frame-ancestors 'none'");
   });
 
+  it("gives public funnel pages COOP same-origin and a report-only CSP that a custom-code srcdoc frame can live under", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+    const { default: config } = await import("./next.config");
+    const rules = await config.headers!();
+    const siteWide = rules.findIndex((rule) => rule.source === "/:path*");
+    const index = rules.findIndex((rule) => rule.source === "/lp/:path*");
+    // Later rules override the site-wide CSP for the same key.
+    expect(index).toBeGreaterThan(siteWide);
+    const header = (key: string) => rules[index]!.headers.find((item) => item.key === key)?.value ?? "";
+    expect(header("Cross-Origin-Opener-Policy")).toBe("same-origin");
+    const csp = header("Content-Security-Policy-Report-Only");
+    const directive = (name: string) => csp.split("; ").find((part) => part.startsWith(`${name} `)) ?? "";
+    for (const name of ["script-src", "style-src", "font-src", "frame-src"]) expect(directive(name).split(" ")).toContain("https:");
+    expect(directive("img-src").split(" ")).toContain("https:");
+    expect(directive("frame-ancestors")).toBe("frame-ancestors 'none'");
+    expect(directive("base-uri")).toBe("base-uri 'self'");
+    expect(directive("connect-src")).toContain("https://www.google-analytics.com");
+    expect(directive("connect-src").split(" ")).not.toContain("https:");
+    // The rest of the site keeps the stricter policy and no COOP change.
+    const site = rules[siteWide]!.headers;
+    expect(site.find((item) => item.key === "Content-Security-Policy-Report-Only")!.value).not.toContain("font-src 'self' data: https:");
+    expect(site.some((item) => item.key === "Cross-Origin-Opener-Policy")).toBe(false);
+  });
+
   it("allows only the privacy-enhanced YouTube host as an extra frame source", async () => {
     vi.stubEnv("NODE_ENV", "production");
     const { default: config } = await import("./next.config");

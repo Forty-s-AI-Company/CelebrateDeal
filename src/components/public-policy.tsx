@@ -1,4 +1,4 @@
-import Link from "next/link";
+import { FullPageLink } from "@/components/full-page-link";
 import type { PublicPolicy } from "@/lib/public-policy-content";
 import { publicPolicyLinks, publicSupportContact } from "@/lib/public-policy-content";
 
@@ -6,9 +6,9 @@ export function PublicResourceLinks({ compact = false }: { compact?: boolean }) 
   return (
     <nav aria-label="公開資訊" className={compact ? "flex flex-wrap justify-center gap-x-4 gap-y-2 text-xs" : "grid gap-2 sm:grid-cols-2"}>
       {publicPolicyLinks.map((link) => (
-        <Link key={link.href} href={link.href} className="font-semibold text-primary hover:underline">
+        <FullPageLink key={link.href} href={link.href} className="font-semibold text-primary hover:underline">
           {link.label}
-        </Link>
+        </FullPageLink>
       ))}
     </nav>
   );
@@ -19,10 +19,10 @@ export function PublicPolicyShell({ children }: { children: React.ReactNode }) {
     <main className="min-h-screen bg-background px-4 py-8 sm:px-6 lg:px-8">
       <div className="mx-auto max-w-5xl">
         <header className="mb-8 flex flex-wrap items-center justify-between gap-4">
-          <Link href="/policies" className="text-sm font-bold text-slate-950">CelebrateDeal</Link>
-          <Link href="/login" className="min-h-11 inline-flex items-center rounded-md border border-border bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">
+          <FullPageLink href="/policies" className="text-sm font-bold text-slate-950">CelebrateDeal</FullPageLink>
+          <FullPageLink href="/login" className="min-h-11 inline-flex items-center rounded-md border border-border bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">
             返回登入
-          </Link>
+          </FullPageLink>
         </header>
         {children}
         <footer className="mt-12 border-t border-border pt-6">
@@ -85,8 +85,8 @@ export function PolicyDocument({ policy }: { policy: PublicPolicy }) {
           <h2 id="policy-help-title" className="text-lg font-semibold text-slate-950">需要訂單協助？</h2>
           <p className="mt-3 text-sm leading-6 text-slate-600">你可以先查看訂單與履約進度，或查詢已有的客服案件。</p>
           <div className="mt-4 flex flex-wrap gap-4 text-sm">
-            <Link className="min-h-11 inline-flex items-center font-semibold text-primary underline" href="/support/orders">查看訂單與履約進度</Link>
-            <Link className="min-h-11 inline-flex items-center font-semibold text-primary underline" href="/support/requests">查詢客服案件</Link>
+            <FullPageLink className="min-h-11 inline-flex items-center font-semibold text-primary underline" href="/support/orders">查看訂單與履約進度</FullPageLink>
+            <FullPageLink className="min-h-11 inline-flex items-center font-semibold text-primary underline" href="/support/requests">查詢客服案件</FullPageLink>
           </div>
         </section>
       </article>
