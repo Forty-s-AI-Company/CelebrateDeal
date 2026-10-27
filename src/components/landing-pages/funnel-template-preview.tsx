@@ -3,6 +3,7 @@
 import { useEffect, useRef, type ReactNode } from "react";
 import { FunnelPageDocumentRenderer, type FunnelViewport } from "./funnel-page-document-renderer";
 import type { PageDocument } from "@/lib/funnel-page-document";
+import { templateDisplayDocument } from "@/lib/landing-page-template-document";
 import { useDialogBehavior } from "@/lib/use-dialog-behavior";
 
 /**
@@ -11,8 +12,10 @@ import { useDialogBehavior } from "@/lib/use-dialog-behavior";
  * way it renders once applied.
  */
 export function FunnelTemplateThumbnail({ document, className = "m-2 mb-0 h-28" }: { document: PageDocument; className?: string }) {
+  // Thumbnails share the page: no page custom CSS (global [data-funnel-content] scope) and no JS.
+  const display = templateDisplayDocument(document, { keepPageCss: false });
   return <div aria-hidden="true" inert className={`pointer-events-none overflow-hidden rounded-lg border border-slate-200 bg-slate-50 ${className}`}>
-    <div className="origin-top-left w-[400%] scale-25"><FunnelPageDocumentRenderer document={document} mode="preview" className="min-h-[28rem] bg-white" /></div>
+    <div className="origin-top-left w-[400%] scale-25"><FunnelPageDocumentRenderer document={display} mode="preview" className="min-h-[28rem] bg-white" /></div>
   </div>;
 }
 

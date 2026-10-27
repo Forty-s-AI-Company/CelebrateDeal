@@ -29,7 +29,8 @@ import {
 import type { PageDocument } from "@/lib/funnel-page-document";
 import { listFunnelTemplateGallery, previewFunnelTemplate } from "@/lib/funnel-template-gallery";
 import { landingPageEditorHref } from "@/lib/landing-page-editor-href";
-import { LANDING_PAGE_TEMPLATE_NAME_MAX_LENGTH, LANDING_PAGE_TEMPLATE_VENDOR_LIMIT } from "@/lib/landing-page-template-document";
+import { contentHasCustomScript } from "@/lib/funnel-custom-code";
+import { LANDING_PAGE_TEMPLATE_NAME_MAX_LENGTH, LANDING_PAGE_TEMPLATE_VENDOR_LIMIT, templateDisplayDocument } from "@/lib/landing-page-template-document";
 import type { LandingPageTemplateSummary, LandingPageTemplateTarget, LandingPageTemplateTargetStep } from "@/lib/landing-page-template-service";
 import { useDialogBehavior } from "@/lib/use-dialog-behavior";
 
@@ -37,7 +38,7 @@ export type TemplateLibraryTab = "platform" | "mine";
 type Selected =
   | { kind: "platform"; id: string; name: string; eyebrow: string; goal: FunnelTemplateCatalogEntry["goal"] }
   | { kind: "mine"; id: string; name: string; eyebrow: string };
-type Preview = { selected: Selected; document: PageDocument };
+type Preview = { selected: Selected; document: PageDocument; hasScript: boolean };
 type Notice = { tone: "success" | "error"; text: string } | null;
 
 const secondaryButton = "inline-flex min-h-10 items-center justify-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 disabled:cursor-not-allowed disabled:opacity-50";
@@ -131,7 +132,8 @@ export function LandingPageTemplateLibrary({ csrfName, csrfToken, myTemplates, s
 
   const platformSelection = (entry: FunnelTemplateCatalogEntry): Selected => ({ kind: "platform", id: entry.id, name: entry.name, eyebrow: entry.purposes.map((item) => FUNNEL_TEMPLATE_PURPOSE_LABELS[item]).join("・"), goal: entry.goal });
   const mineSelection = (template: LandingPageTemplateSummary): Selected => ({ kind: "mine", id: template.id, name: template.name, eyebrow: "我的範本" });
-  const openPreview = (selected: Selected, document: PageDocument) => { setViewport("desktop"); setPreview({ selected, document }); };
+  // The preview keeps its own page CSS (thumbnails carry none) but never runs the template's JS.
+  const openPreview = (selected: Selected, document: PageDocument) => { setViewport("desktop"); setPreview({ selected, document: templateDisplayDocument(document, { keepPageCss: true }), hasScript: contentHasCustomScript(document) }); };
   /** The list only carries a thumbnail; the full document of an own template is read when it is previewed. */
   async function openMinePreview(template: LandingPageTemplateSummary) {
     if (loadingPreviewId) return;
@@ -192,7 +194,7 @@ export function LandingPageTemplateLibrary({ csrfName, csrfToken, myTemplates, s
       </ul> : <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-8 text-center"><p className="font-semibold text-slate-900">還沒有自己的範本</p><p className="mx-auto mt-1 max-w-md text-sm leading-6 text-slate-600">打開任一個一頁式網站的編輯器，按工具列的「存成範本」，或在網站管理頁的步驟設定按「存成範本」。</p><Link href="/landing-pages" className={`${secondaryButton} mt-4`}>前往一頁式網站</Link></div>}
     </section>}
 
-    {preview ? <FunnelTemplatePreviewDialog eyebrow={preview.selected.eyebrow} title={preview.selected.name} document={preview.document} viewport={viewport} onViewport={setViewport} onClose={() => setPreview(null)} actionLabel="使用這個範本" onAction={() => openUse(preview.selected)} note="預覽與使用後的頁面內容與顯示方式相同。" /> : null}
+    {preview ? <FunnelTemplatePreviewDialog eyebrow={preview.selected.eyebrow} title={preview.selected.name} document={preview.document} viewport={viewport} onViewport={setViewport} onClose={() => setPreview(null)} actionLabel="使用這個範本" onAction={() => openUse(preview.selected)} note={preview.hasScript ? "這個範本含自訂 JavaScript：JS 只會在公開頁的隔離沙箱中執行，預覽不執行；其他內容與使用後的頁面相同。" : "預覽與使用後的頁面內容與顯示方式相同。"} /> : null}
     {using ? <UseTemplateDialog csrfName={csrfName} csrfToken={csrfToken} selected={using} sites={sites} projects={projects} onClose={() => setUsing(null)} /> : null}
     {renaming ? <RenameTemplateDialog csrfName={csrfName} csrfToken={csrfToken} template={renaming} onClose={() => setRenaming(null)} onRenamed={(name) => { setMine((items) => items.map((item) => item.id === renaming.id ? { ...item, name } : item)); setNotice({ tone: "success", text: `範本已改名為「${name}」。` }); setRenaming(null); router.refresh(); }} /> : null}
     {deleting ? <DeleteTemplateDialog csrfName={csrfName} csrfToken={csrfToken} template={deleting} onClose={() => setDeleting(null)} onDeleted={() => { setMine((items) => items.filter((item) => item.id !== deleting.id)); setNotice({ tone: "success", text: `已刪除範本「${deleting.name}」；已套用過的網站內容不受影響。` }); setDeleting(null); router.refresh(); }} /> : null}

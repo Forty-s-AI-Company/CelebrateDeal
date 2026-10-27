@@ -317,6 +317,54 @@ describe("own template list", () => {
   });
 });
 
+describe("page custom CSS and JS in the library", () => {
+  /** A stored template whose page CSS paints headings in `color` and whose 自訂程式碼 node has JS. */
+  function styled(id: string, color: string) {
+    const document = structuredClone(myDocument);
+    document.settings.customCss = `h2 { color: ${color}; }`;
+    document.root = [{ schemaVersion: 1, id: `${id}_section`, type: "section", props: {}, style: {}, overrides: {}, visible: true, actions: [], attributes: {}, children: [{ schemaVersion: 1, id: `${id}_row`, type: "row", props: {}, style: {}, overrides: {}, visible: true, actions: [], attributes: {}, children: [
+      { schemaVersion: 1, id: `${id}_title`, type: "headline", props: { text: `${id} 標題`, level: "h2" }, style: {}, overrides: {}, visible: true, actions: [], attributes: {} },
+      { schemaVersion: 1, id: `${id}_code`, type: "raw_html", props: { html: "<p>區塊</p>", js: "document.title = 'ran';" }, style: {}, overrides: {}, visible: true, actions: [], attributes: {} },
+    ] }] }];
+    const summary: LandingPageTemplateSummary = { id, name: `範本 ${id}`, readable: true, thumbnail: document, createdAt: "2026-10-20T02:00:00.000Z", updatedAt: "2026-10-26T02:00:00.000Z" };
+    return { document, summary };
+  }
+  const customCssStyles = () => [...document.querySelectorAll("style[data-funnel-custom-css]")].map((style) => style.textContent ?? "");
+  const scriptFrames = () => document.querySelectorAll('iframe[sandbox*="allow-scripts"]').length;
+
+  it("never outputs page custom CSS or runs JS in thumbnails, even when a thumbnail carries them", async () => {
+    const first = styled("tpl_red", "#b91c1c");
+    const second = styled("tpl_green", "#047857");
+    await render(library({ initialTab: "mine", myTemplates: [first.summary, second.summary] }));
+    expect(cardTitles("我的範本")).toEqual(["範本 tpl_red", "範本 tpl_green"]);
+    expect(customCssStyles()).toEqual([]);
+    expect(scriptFrames()).toBe(0);
+  });
+
+  it("outputs only the previewed template's page CSS, does not run its JS, and says so", async () => {
+    const first = styled("tpl_red", "#b91c1c");
+    const second = styled("tpl_green", "#047857");
+    mocks.readDocument.mockResolvedValue({ ok: true, document: second.document });
+    await render(library({ initialTab: "mine", myTemplates: [first.summary, second.summary] }));
+    await click(buttonNamed("預覽 範本 tpl_green"));
+    const styles = customCssStyles();
+    expect(styles).toHaveLength(1);
+    expect(styles[0]).toContain("#047857");
+    expect(styles[0]).not.toContain("#b91c1c");
+    expect(scriptFrames()).toBe(0);
+    expect(dialog()!.textContent).toContain("JS 只會在公開頁的隔離沙箱中執行，預覽不執行");
+    await click(buttonNamed("關閉", dialog()!));
+    expect(customCssStyles()).toEqual([]);
+  });
+
+  it("keeps the usual note for a template without JS", async () => {
+    mocks.readDocument.mockResolvedValue({ ok: true, document: myDocument });
+    await render(library({ initialTab: "mine" }));
+    await click(buttonNamed("預覽 我的秋季名單頁"));
+    expect(dialog()!.textContent).toContain("預覽與使用後的頁面內容與顯示方式相同。");
+  });
+});
+
 describe("own template management", () => {
   it("renames a template", async () => {
     await render(library({ initialTab: "mine" }));

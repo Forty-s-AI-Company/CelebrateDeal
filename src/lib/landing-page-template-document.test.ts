@@ -12,6 +12,7 @@ import {
   STORED_TEMPLATE_PAGE_ID,
   stripTemplateBindings,
   TEMPLATE_RESOURCE_PROP_KEYS,
+  templateDisplayDocument,
   templateContentBytes,
 } from "./landing-page-template-document";
 
@@ -209,6 +210,31 @@ describe("stored template documents", () => {
     expect(JSON.stringify(read)).not.toContain(MARK);
     expect(readStoredTemplateDocument({ not: "a document" })).toBeNull();
     expect(readStoredTemplateDocument(null)).toBeNull();
+  });
+});
+
+describe("templateDisplayDocument", () => {
+  const withCode = () => {
+    const document = parsePageDocument({ schemaVersion: 1, id: "page", settings: { customCss: "h2 { color: #b91c1c; }" }, root: [container("s", "section", [container("r", "row", [leaf("code", "raw_html", { html: "<p>區塊</p>", css: "p{color:#111}", js: "document.title='x'" })])])],
+      popups: [{ schemaVersion: 1, id: "pop", name: "彈窗", root: [container("ps", "section", [container("pr", "row", [leaf("pcode", "raw_html", { html: "<p>彈窗</p>", js: "void 0" })])])] }] })!;
+    return document;
+  };
+
+  it("removes JS everywhere and the page CSS for thumbnails, keeping HTML and node CSS", () => {
+    const source = withCode();
+    const thumbnail = templateDisplayDocument(source, { keepPageCss: false });
+    expect(thumbnail.settings.customCss).toBeUndefined();
+    const nodes = allNodes(thumbnail).filter((node) => node.type === "raw_html");
+    expect(nodes.map((node) => node.props)).toEqual([{ html: "<p>區塊</p>", css: "p{color:#111}" }, { html: "<p>彈窗</p>" }]);
+    // The stored template is not changed.
+    expect(source.settings.customCss).toBe("h2 { color: #b91c1c; }");
+    expect(allNodes(source).find((node) => node.id === "code")!.props.js).toBe("document.title='x'");
+  });
+
+  it("keeps the page CSS for the single previewed document", () => {
+    const preview = templateDisplayDocument(withCode(), { keepPageCss: true });
+    expect(preview.settings.customCss).toBe("h2 { color: #b91c1c; }");
+    expect(allNodes(preview).some((node) => "js" in node.props)).toBe(false);
   });
 });
 

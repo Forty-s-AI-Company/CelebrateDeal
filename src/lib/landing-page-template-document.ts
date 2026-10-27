@@ -207,3 +207,23 @@ export function normalizeTemplateName(value: unknown): string | null {
   if (/[\u061c\u200e\u200f\u202a-\u202e\u2066-\u2069]/u.test(trimmed)) return null;
   return trimmed;
 }
+
+/**
+ * A copy of a template for display in the template library, never for applying:
+ * the 自訂程式碼 JS is removed (a library preview or thumbnail never runs merchant
+ * JS; it runs only on the public page's sandbox) and, for thumbnails, the page
+ * custom CSS too. Page custom CSS is scoped to `[data-funnel-content]`, which every
+ * rendered document on the page shares, so only the one previewed document may
+ * carry it. HTML and per-node CSS of 自訂程式碼 stay (they render in the sandbox).
+ */
+export function templateDisplayDocument(document: PageDocument, options: { keepPageCss: boolean }): PageDocument {
+  const copy = structuredClone(document);
+  const visit = (nodes: FunnelNode[]) => nodes.forEach((node) => {
+    if (node.type === "raw_html" && "js" in node.props) delete node.props.js;
+    if (node.children) visit(node.children);
+  });
+  visit(copy.root);
+  copy.popups.forEach((popup) => visit(popup.root));
+  if (!options.keepPageCss) delete copy.settings.customCss;
+  return copy;
+}

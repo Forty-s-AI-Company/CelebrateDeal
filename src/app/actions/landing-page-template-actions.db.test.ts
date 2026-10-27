@@ -453,6 +453,46 @@ describe("custom code gate (PostgreSQL)", () => {
     expect(JSON.stringify(audits)).not.toContain("template-js");
   });
 
+  it("refuses creating a site from a template with JS while the kill switch is on", async () => {
+    await verifyOwnerEmail();
+    const template = await scriptTemplate();
+    process.env.FUNNEL_CUSTOM_CODE_DISABLED = "1";
+    const pagesBefore = await getDb().landingPage.count({ where: { vendorId: a.vendorId } });
+    const created = await createLandingPageFromTemplateAction(idle, form({ templateKind: "mine", templateId: template.id, name: "開關中建站", slug: `kill-${randomUUID().slice(0, 8)}`, goal: "audience", currency: "TWD" }));
+    expect(created).toEqual({ status: "error", message: "平台已暫時停用自訂 JavaScript，目前無法新增或修改 JS；你仍可刪除 JS 或編輯其他內容。" });
+    expect(await getDb().landingPage.count({ where: { vendorId: a.vendorId } })).toBe(pagesBefore);
+    expect(await customCodeAudits()).toEqual([]);
+  });
+
+  it("applies the same gate to an admin: refused without a verified e-mail, allowed with one", async () => {
+    const admin = await createUser("admin");
+    await getDb().vendorMember.create({ data: { vendorId: a.vendorId, userId: admin.id, role: "admin" } });
+    await selectProject(admin.id, a.vendorId, a.projectId);
+    await signIn(admin.id, a.vendorId);
+    const template = await scriptTemplate();
+    const target = await createFunnelPage(a, "admin");
+
+    const refused = await applyLandingPageTemplateAction(idle, form({ templateKind: "mine", templateId: template.id, pageId: target.page.id, stepId: target.stepId, revision: target.page.revision }));
+    expect(refused).toMatchObject({ status: "error", message: expect.stringContaining("必須先完成 Email 驗證") });
+    expect((await storedStep(target.page.id, target.stepId)).revision).toBe(target.page.revision);
+    const source = await createFunnelPage(a, "adminsource");
+    const content = parseFunnelStepPages(source.page.draftContent)!;
+    content.pages[source.stepId]!.root = customCodeDocument("管理員").root as never;
+    await getDb().landingPage.update({ where: { id: source.page.id }, data: { draftContent: content as never } });
+    expect(await saveTemplate(source.page.id, source.stepId, "管理員未驗證")).toMatchObject({ status: "error", message: expect.stringContaining("必須先完成 Email 驗證") });
+
+    await getDb().user.update({ where: { id: admin.id }, data: { emailVerifiedAt: new Date() } });
+    const applied = await applyLandingPageTemplateAction(idle, form({ templateKind: "mine", templateId: template.id, pageId: target.page.id, stepId: target.stepId, revision: target.page.revision }));
+    expect(applied).toMatchObject({ status: "success" });
+    const saved = await saveTemplate(source.page.id, source.stepId, "管理員已驗證");
+    expect(saved).toMatchObject({ status: "success" });
+    const audits = await customCodeAudits();
+    expect(audits.map((audit) => [audit.actorId, audit.targetType, (audit.after as { operation: string }).operation])).toEqual([
+      [admin.id, "LandingPage", "apply_template"],
+      [admin.id, "LandingPageTemplate", "save_template"],
+    ]);
+  });
+
   it("refuses new JS from a template while the kill switch is on", async () => {
     await verifyOwnerEmail();
     const template = await scriptTemplate();
@@ -539,6 +579,17 @@ describe("aggregate overview (PostgreSQL)", () => {
 });
 
 describe("list and preview (PostgreSQL)", () => {
+  it("lists thumbnails without page custom CSS or JS, while the preview read keeps both", async () => {
+    const document = { schemaVersion: 1, id: "tpl_page", name: "樣式", settings: { customCss: "h2 { color: #b91c1c; }" }, root: [node("s", "section", {}, [node("r", "row", {}, [node("c", "raw_html", { html: "<p>區塊</p>", js: "void 'thumbnail-js'" })])])] };
+    const row = await getDb().landingPageTemplate.create({ data: { vendorId: a.vendorId, name: "樣式", content: document as never } });
+    const [listed] = await listLandingPageTemplates();
+    expect(listed!.thumbnail!.settings.customCss).toBeUndefined();
+    expect(JSON.stringify(listed!.thumbnail)).not.toContain("thumbnail-js");
+    const full = await readLandingPageTemplateDocumentAction(row.id);
+    expect(full.ok && full.document.settings.customCss).toBe("h2 { color: #b91c1c; }");
+    expect(JSON.stringify(full)).toContain("thumbnail-js");
+  });
+
   it("lists a small thumbnail and reads the full document on demand", async () => {
     await createFunnelPage(a);
     const content = instantiateFunnelTemplate("audience-volunteer", "x");

@@ -23,6 +23,7 @@ import {
   prepareStoredTemplateDocument,
   readStoredTemplateDocument,
   rekeyTemplateDocument,
+  templateDisplayDocument,
 } from "@/lib/landing-page-template-document";
 import { LANDING_PAGE_MAX_CONTENT_BYTES, landingPageContentBytes } from "@/lib/landing-page-limits";
 import { requireEditableSalesProjectScope } from "@/lib/sales-project-scope";
@@ -182,7 +183,8 @@ export async function listLandingPageTemplates(): Promise<LandingPageTemplateSum
   });
   return rows.map((row) => {
     const content = readStoredTemplateDocument(row.content);
-    const thumbnail = content ? { ...content, root: content.root.slice(0, TEMPLATE_THUMBNAIL_SECTIONS), popups: [] } : null;
+    // No page custom CSS (it would leak into every other card) and no JS (thumbnails never run it).
+    const thumbnail = content ? templateDisplayDocument({ ...content, root: content.root.slice(0, TEMPLATE_THUMBNAIL_SECTIONS), popups: [] }, { keepPageCss: false }) : null;
     return { id: row.id, name: row.name, readable: Boolean(content), thumbnail, createdAt: row.createdAt.toISOString(), updatedAt: row.updatedAt.toISOString() };
   });
 }
