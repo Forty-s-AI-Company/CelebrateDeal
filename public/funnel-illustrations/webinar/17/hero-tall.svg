@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 1125" role="img" aria-label="代表作品佔位：窗邊自然光人像，直幅（請替換）"><defs>
+<linearGradient id="tb" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#2a1d16"/><stop offset="0.5" stop-color="#5b3a26"/><stop offset="1" stop-color="#1a1411"/></linearGradient>
+<radialGradient id="tg" cx="0.72" cy="0.18" r=".65"><stop offset="0" stop-color="#ffb070" stop-opacity=".85"/><stop offset=".45" stop-color="#ffb070" stop-opacity=".25"/><stop offset="1" stop-color="#ffb070" stop-opacity="0"/></radialGradient>
+<linearGradient id="tv" x1="0" y1="0" x2="0" y2="1"><stop offset=".55" stop-color="#000" stop-opacity="0"/><stop offset="1" stop-color="#000" stop-opacity=".45"/></linearGradient>
+</defs>
+<rect width="900" height="1125" fill="url(#tb)"/>
+<rect width="900" height="1125" fill="url(#tg)"/>
+<g fill="#ffb070" opacity=".16"><path d="M648 0 L270 1125 L450 1125Z"/><path d="M648 0 L540 1125 L684 1125Z"/></g>
+<g fill="#000" opacity=".55">
+<ellipse cx="324" cy="472.5" rx="76.5" ry="90"/>
+<path d="M108 1125 C126 697.5 522 697.5 540 1125Z"/>
+</g>
+<rect width="900" height="1125" fill="url(#tv)"/>
+<g stroke="#ffffff" stroke-opacity=".22" stroke-width="1"><path d="M300 0V1125M600 0V1125M0 375H900M0 750H900"/></g>
+<text x="450" y="90" text-anchor="middle" font-family="'Noto Sans TC','PingFang TC','Microsoft JhengHei',sans-serif" font-size="29" fill="#ffffff" fill-opacity=".7">替換代表作品（直幅 4:5）</text>
+</svg>

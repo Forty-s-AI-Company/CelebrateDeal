@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 1000" role="img" aria-label="講者照片佔位（請替換）"><rect width="800" height="1000" fill="#e9eaec"/>
+<circle cx="400" cy="360" r="336" fill="#c9ccd2" opacity=".55"/>
+<path d="M96 1000 C112.00000000000001 720 240 640 400 640 C560 640 688 720 704 1000Z" fill="#2f3540"/>
+<path d="M344 640 L400 800 L455.99999999999994 640Z" fill="#e9eaec" opacity=".9"/>
+<rect x="356" y="520" width="88" height="140" rx="32" fill="#c9ccd2"/>
+<ellipse cx="400" cy="420" rx="120" ry="150" fill="#c9ccd2"/>
+<path d="M280 400 C280 250 520 250 520 400 C480 310 336 310 280 400Z" fill="#2f3540" opacity=".8"/>
+<rect x="40" y="40" width="720" height="920" fill="none" stroke="#7a1f2b" stroke-width="2" opacity=".35"/>
+<text x="400" y="930" text-anchor="middle" font-family="'Noto Sans TC','PingFang TC','Microsoft JhengHei',sans-serif" font-size="27.200000000000003" fill="#ffffff" opacity=".85">替換講者照片｜建議同樣構圖</text></svg>
