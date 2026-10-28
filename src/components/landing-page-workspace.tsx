@@ -12,6 +12,7 @@ import { FunnelPopupPreview } from "@/components/landing-pages/funnel-popup-prev
 import { panelControl } from "@/components/landing-pages/funnel-editor-panels";
 import type { FunnelEditorChrome, FunnelEditorSaveState } from "@/components/landing-pages/funnel-editor-chrome";
 import { UnsavedChangesDialog } from "@/components/landing-pages/unsaved-changes-dialog";
+import { SaveAsTemplateDialog } from "@/components/landing-pages/save-as-template-dialog";
 import { PublicationChip } from "@/components/landing-page-publication-chip";
 import { landingPageAction } from "@/app/actions/landing-page-actions";
 import type { LandingPageRenderContext } from "@/lib/landing-page-content";
@@ -66,6 +67,20 @@ function CurrentWorkspacePreview({ content, slug, resource, viewport, commercePr
 }
 
 type LegacyOpening = { issues: LegacyConversionIssue[] } | { failed: true };
+
+function WorkspaceSaveAsTemplate({ open, target, dirty, csrfName, csrfToken, onClose }: { open: boolean; target: ReturnType<typeof saveAsTemplateTarget>; dirty: boolean; csrfName: string; csrfToken: string; onClose: () => void }) {
+  if (!open || !target) return null;
+  return <SaveAsTemplateDialog csrfName={csrfName} csrfToken={csrfToken} {...target} blockedReason={dirty ? "你有尚未儲存的變更。範本只會存入已儲存的內容，請先按「儲存」再存成範本。" : undefined} onClose={onClose} />;
+}
+
+/** 「存成範本」 reads the stored draft on the server: offered for a saved, structured page and never for the system step. */
+function saveAsTemplateTarget(page: PageInput | undefined, content: WorkspaceEditorContent, legacy: boolean, name: string) {
+  if (!page || legacy) return null;
+  if (!isFunnelStepPages(content)) return isPageDocument(content) ? { pageId: page.id, defaultName: name } : null;
+  const active = getActiveFunnelStepPage(content);
+  if (!active || active.step.isSystem) return null;
+  return { pageId: page.id, stepId: active.step.id, stepName: active.step.name, defaultName: `${name}－${active.step.name}` };
+}
 
 /**
  * A legacy (pre-structured) draft opens as a converted PageDocument. The
@@ -167,6 +182,7 @@ export function LandingPageWorkspace({ initialPublication, page, forms, lives, c
   const pending = pendingOperation !== null;
   const [exitQueued, setExitQueued] = useState(false);
   const [exitPrompt, setExitPrompt] = useState(false);
+  const [templateDialogOpen, setTemplateDialogOpen] = useState(false);
   const inFlight = useRef(false);
   const revisionRef = useRef(initial.revision);
   const [published, setPublished] = useState(initial.published);
@@ -254,12 +270,14 @@ export function LandingPageWorkspace({ initialPublication, page, forms, lives, c
   const editedSinceSave = dirty && !pristineConversion(legacy, snapshot, convertedSnapshot);
   const versions = page?.versions.length ? <VersionHistory versions={page.versions} selected={selectedVersion} disabled={pending || editedSinceSave} dirty={editedSinceSave} onSelect={setVersion} onRestore={() => run("rollback")} /> : undefined;
   const legacyActions = page && !managementHref ? <LegacyPublishActions published={published} disabled={pending || editedSinceSave} onRun={run} /> : undefined;
+  const templateTarget = saveAsTemplateTarget(page, content, Boolean(legacy), name);
   const chrome: FunnelEditorChrome = {
     title: name, saveState: saveStateFor(pendingOperation, dirty), saveBlocked, onSave: save, onExit: exitEditor,
     status: page ? <PublicationChip published={published} publication={publication} slug={slug} onManage={managementHref ? () => { if (dirty) setExitPrompt(true); else router.push(exitHref); } : undefined} actions={legacyActions} /> : null,
     pageSettings: settings, versions,
     renderPreview: (viewport) => <CurrentWorkspacePreview content={content} slug={slug} resource={webinarResource} viewport={viewport} commerceProducts={commerceProducts} />,
     notice: legacyNotice(legacy, published),
+    onSaveAsTemplate: templateTarget ? () => setTemplateDialogOpen(true) : undefined,
   };
   const toast = notice ? <p role={notice.tone === "error" ? "alert" : "status"} className={`fixed bottom-4 left-1/2 z-[150] max-w-[min(36rem,calc(100vw-2rem))] -translate-x-1/2 rounded-lg px-4 py-2 text-sm font-semibold shadow-lg ${notice.tone === "error" ? "bg-red-700 text-white" : "bg-slate-900 text-white"}`}>{notice.text}{notice.tone === "error" ? <button type="button" aria-label="關閉訊息" className="ml-3 cursor-pointer underline" onClick={() => setNotice(null)}>關閉</button> : null}</p> : null;
   if (legacyFailed(legacy)) return <LegacyConversionFailure published={published} pending={pending} onRun={run} onExit={() => router.push(exitHref)} toast={toast} />;
@@ -268,6 +286,7 @@ export function LandingPageWorkspace({ initialPublication, page, forms, lives, c
       <div className="min-h-0 flex-1"><FunnelEditorAssetsProvider csrfToken={csrfToken}><WorkspaceEditor content={content} commerceProducts={commerceProducts} pending={pending} revision={revision} onDocumentChange={updateContent} chrome={chrome} /></FunnelEditorAssetsProvider></div>
     </FunnelRegistrationLinkProvider>
     {toast}
+    <WorkspaceSaveAsTemplate open={templateDialogOpen} target={templateTarget} dirty={dirty} csrfName={csrfName} csrfToken={csrfToken} onClose={() => setTemplateDialogOpen(false)} />
     {exitPrompt ? <UnsavedChangesDialog saving={pendingOperation === "save" || pendingOperation === "create"} saveBlocked={saveBlocked && !pending} onCancel={() => setExitPrompt(false)} onDiscard={() => { setExitPrompt(false); router.push(exitHref); }} onSave={() => { setExitQueued(true); save(); }} /> : null}
   </div>;
 }

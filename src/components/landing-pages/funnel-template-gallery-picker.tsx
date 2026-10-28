@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
-import { FunnelPageDocumentRenderer, type FunnelViewport } from "./funnel-page-document-renderer";
+import { useMemo, useState } from "react";
+import type { FunnelViewport } from "./funnel-page-document-renderer";
+import { FunnelTemplatePreviewDialog, FunnelTemplateThumbnail } from "./funnel-template-preview";
 import { previewFunnelTemplate, type FunnelTemplateGalleryItem } from "@/lib/funnel-template-gallery";
-import { useDialogBehavior } from "@/lib/use-dialog-behavior";
 
 type Props = {
   templates: readonly FunnelTemplateGalleryItem[];
@@ -17,20 +17,8 @@ export function FunnelTemplateGalleryPicker({ templates, selectedId, disabled = 
   const [previewId, setPreviewId] = useState<string>();
   const [viewport, setViewport] = useState<FunnelViewport>("desktop");
   const [error, setError] = useState<string>();
-  const closeRef = useRef<HTMLButtonElement>(null);
   const documents = useMemo(() => new Map(templates.map((template) => [template.id, previewFunnelTemplate(template.id, `gallery_preview_${template.id}`)])), [templates]);
   const preview = templates.find((template) => template.id === previewId);
-  useDialogBehavior(Boolean(preview));
-
-  useEffect(() => {
-    if (!preview) return;
-    closeRef.current?.focus();
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setPreviewId(undefined);
-    };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [preview]);
 
   if (templates.length === 0) return <div role="status" className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-4 text-sm text-slate-600"><strong className="block text-slate-900">這個 一頁式網站 類型還沒有可用模板</strong><span className="mt-1 block">你仍可從空白頁開始，之後再加入版型區塊。</span></div>;
 
@@ -46,9 +34,7 @@ export function FunnelTemplateGalleryPicker({ templates, selectedId, disabled = 
         const selected = selectedId === template.id;
         const document = documents.get(template.id)!;
         return <article key={template.id} className={`min-w-0 overflow-hidden rounded-xl border bg-white shadow-sm transition ${selected ? "border-blue-600 ring-2 ring-blue-100" : "border-slate-200 hover:border-slate-300"}`}>
-          <div aria-hidden="true" inert className="pointer-events-none m-2 mb-0 h-28 overflow-hidden rounded-lg border border-slate-200 bg-slate-50">
-            <div className="origin-top-left w-[400%] scale-25"><FunnelPageDocumentRenderer document={document} mode="preview" className="min-h-[28rem] bg-white" /></div>
-          </div>
+          <FunnelTemplateThumbnail document={document} />
           <button type="button" aria-pressed={selected} disabled={disabled} onClick={() => onSelect(template.id)} className="w-full min-w-0 p-2 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-600">
             <span className="mt-2 inline-flex rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-slate-600">{template.category}</span>
             <strong className="mt-1 block break-words text-sm text-slate-900">{template.name}</strong>
@@ -62,15 +48,6 @@ export function FunnelTemplateGalleryPicker({ templates, selectedId, disabled = 
       })}
     </div>
     {error ? <p role="alert" className="rounded-lg border border-red-200 bg-red-50 p-3 text-xs leading-5 text-red-800">{error}</p> : null}
-    {preview ? <div role="dialog" aria-modal="true" aria-labelledby="funnel-template-preview-title" className="fixed inset-0 z-50 grid place-items-center bg-slate-950/70 p-3 sm:p-6">
-      <div className="flex max-h-[94dvh] w-full max-w-6xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 p-4">
-          <div className="min-w-0"><span className="text-xs font-bold uppercase tracking-wide text-blue-700">{preview.category}</span><h3 id="funnel-template-preview-title" className="break-words text-lg font-bold text-slate-950">{preview.name}</h3></div>
-          <div className="flex gap-2"><button type="button" aria-pressed={viewport === "desktop"} onClick={() => setViewport("desktop")} className="min-h-10 rounded-lg border px-3 text-sm font-semibold">電腦版</button><button type="button" aria-pressed={viewport === "mobile"} onClick={() => setViewport("mobile")} className="min-h-10 rounded-lg border px-3 text-sm font-semibold">手機版</button><button ref={closeRef} type="button" onClick={() => setPreviewId(undefined)} className="min-h-10 rounded-lg border border-slate-300 px-3 text-sm font-bold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600">關閉</button></div>
-        </div>
-        <div className="min-h-0 flex-1 overflow-auto bg-slate-100 p-3 sm:p-6"><div data-template-preview-viewport={viewport} className={`mx-auto min-w-0 overflow-x-hidden rounded-xl bg-white shadow-sm transition-[max-width] ${viewport === "mobile" ? "max-w-[390px]" : "max-w-5xl"}`}><FunnelPageDocumentRenderer document={documents.get(preview.id)!} viewport={viewport} mode="preview" /></div></div>
-        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 p-4"><p className="text-xs leading-5 text-slate-600">預覽與套用共用相同的頁面內容與顯示方式。</p><button type="button" disabled={disabled} onClick={() => apply(preview.id)} className="min-h-10 rounded-lg bg-blue-700 px-4 text-sm font-bold text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:ring-offset-2 disabled:opacity-50">{disabled ? "套用中…" : "套用這個模板"}</button></div>
-      </div>
-    </div> : null}
+    {preview ? <FunnelTemplatePreviewDialog eyebrow={preview.category} title={preview.name} document={documents.get(preview.id)!} viewport={viewport} onViewport={setViewport} onClose={() => setPreviewId(undefined)} actionLabel={disabled ? "套用中…" : "套用這個模板"} actionDisabled={disabled} onAction={() => apply(preview.id)} /> : null}
   </div>;
 }

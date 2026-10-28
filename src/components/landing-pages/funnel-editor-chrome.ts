@@ -27,6 +27,8 @@ export type FunnelEditorChrome = {
   renderPreview?: (viewport: FunnelViewport) => ReactNode;
   /** Page-level notice shown between the toolbar and the canvas (for example a converted legacy page). */
   notice?: ReactNode;
+  /** Opens 「存成範本」 for the stored page; the toolbar shows the button only when provided. */
+  onSaveAsTemplate?: () => void;
 };
 
 export type EditorShortcut = "undo" | "redo" | "save" | "delete" | "deselect";

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
-import { classifyFunnelRequest, funnelCreateFeedbackKind, funnelEditorNavigationKind, funnelRouteCategory, inspectSyntheticProjectStatus, inspectPublicSurface, syntheticFunnelSlug, runStagingFunnelSmoke } from "./staging-funnel-smoke.mjs";
+import { classifyFunnelRequest, createPageBlocked, funnelCreateFeedbackKind, funnelEditorNavigationKind, funnelRouteCategory, inspectSyntheticProjectStatus, inspectPublicSurface, syntheticFunnelSlug, runStagingFunnelSmoke } from "./staging-funnel-smoke.mjs";
 
 test("read-only diagnostics reject arbitrary paths and emit only fixed surface categories", async () => {
   assert.equal(syntheticFunnelSlug('/lp/staging-synthetic-abcdef123456'), 'staging-synthetic-abcdef123456');
@@ -102,4 +102,13 @@ test("protected workflow binds exact source and uploads only sanitized receipt",
   assert.match(workflow, /--verify-alias/u);
   assert.match(workflow, /celebratedeal-staging-funnel-smoke\.json/u);
   assert.doesNotMatch(workflow, /\.env(?:\.|\b)/u);
+});
+
+test("create page is reported unavailable while the project guidance is still shown", () => {
+  assert.equal(createPageBlocked({ status: 200, headingVisible: true, projectStillMissing: false }), false);
+  // The guidance keeps the 建立新的一頁式網站 heading, so the heading alone is not enough.
+  assert.equal(createPageBlocked({ status: 200, headingVisible: true, projectStillMissing: true }), true);
+  assert.equal(createPageBlocked({ status: 200, headingVisible: false, projectStillMissing: false }), true);
+  assert.equal(createPageBlocked({ status: 500, headingVisible: true, projectStillMissing: false }), true);
+  assert.equal(createPageBlocked({ status: null, headingVisible: true, projectStillMissing: false }), true);
 });

@@ -154,6 +154,7 @@ model Vendor {
   sessions                         UserSession[]
   landingPages                     LandingPage[]
   landingPageVersions              LandingPageVersion[]
+  landingPageTemplates             LandingPageTemplate[]
   funnelVisits                     FunnelVisit[]
   funnelSubmissions                FunnelSubmission[]
   salesTeams                       SalesTeam[]
@@ -240,6 +241,7 @@ model User {
   platformReferralPayouts      PlatformReferralPayout[]
   onboardingPreferences        UserOnboardingPreference[]
   policyConsents               UserPolicyConsent[]
+  landingPageTemplates         LandingPageTemplate[]
 }
 
 /// Append-only record of the policy versions a user accepted (F-114). Versions
@@ -4064,6 +4066,29 @@ model LandingPageVersion {
   @@unique([vendorId, pageId, id])
   @@unique([vendorId, pageId, version])
   @@index([vendorId, pageId, createdAt])
+}
+
+/// Merchant-owned one-page-site template ("我的範本"). `content` is a
+/// PageDocument stripped of every vendor-resource binding (forms, lives,
+/// products, consultation events, step links) by `stripTemplateBindings`; the
+/// server builds it from the stored draft, never from client input.
+/// `sourcePageId` is informational only (no FK) so deleting or archiving the
+/// source page never blocks on templates.
+model LandingPageTemplate {
+  id           String   @id @default(cuid())
+  vendorId     String
+  name         String
+  content      Json
+  sourcePageId String?
+  createdById  String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  vendor    Vendor @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  createdBy User?  @relation(fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@unique([vendorId, id])
+  @@index([vendorId, updatedAt])
 }
 
 // Drafts are tenant-owned configuration, separate from any external publication state.

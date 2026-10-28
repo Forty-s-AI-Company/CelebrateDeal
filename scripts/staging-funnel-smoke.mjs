@@ -4,6 +4,9 @@ import { pathToFileURL } from "node:url";
 import { validateBrowserSmokeBinding, verifyStagingAliasBinding } from "./staging-browser-smoke.mjs";
 import { verifyMvpPayUniLineage } from "./mvp-payuni-sandbox-e2e.mjs";
 
+// /landing-pages/new without a selected sales project (SalesProjectRequiredNotice).
+const PROJECT_REQUIRED_HEADING = "一頁式網站屬於銷售專案，請先選擇專案";
+
 const ALIAS = "celebrate-deal-staging.carry-digital-nomad.in.net";
 const FUNNEL_PATH = /^\/landing-pages\/[a-z0-9]+(?:\/operations|\/edit)?$/u;
 const PUBLIC_PATH = /^\/lp\/staging-synthetic-[a-f0-9]{12}(?:\/[^/?#]+)?$/u;
@@ -106,6 +109,15 @@ export async function inspectSyntheticProjectStatus(page) {
 }
 
 /** Accept only paths created by this runner, not arbitrary tenant/public URLs. */
+/**
+ * The create page also shows its heading above the "select a project" guidance,
+ * so a still-missing project must stop the run here instead of timing out on
+ * the absent form fields.
+ */
+export function createPageBlocked({ status, headingVisible, projectStillMissing }) {
+  return status !== 200 || !headingVisible || projectStillMissing === true;
+}
+
 export function syntheticFunnelSlug(value) {
   return typeof value === "string" && /^\/lp\/staging-synthetic-[a-f0-9]{12}$/u.test(value.trim())
     ? value.trim().slice(4) : null;
@@ -233,7 +245,7 @@ export async function runStagingFunnelSmoke(env = process.env, dependencies = {}
     slug = `staging-synthetic-${randomUUID().replaceAll("-", "").slice(0, 12)}`;
     result.stage = "CREATE";
     let createResponse = await page.goto(`${origin}/landing-pages/new`, { waitUntil: "domcontentloaded", timeout: 20_000 });
-    if (await visible(page.getByText("請先選擇一個銷售專案，再建立一頁式網站。", { exact: true }), 2_000)) {
+    if (await visible(page.getByRole("heading", { name: PROJECT_REQUIRED_HEADING, exact: true }), 2_000)) {
       result.stage = "PROJECT_CREATE";
       const projectResponse = await page.goto(`${origin}/projects/new`, { waitUntil: "domcontentloaded", timeout: 20_000 });
       if (projectResponse?.status() !== 200 || !await visible(page.getByRole("heading", { name: "建立銷售專案" }))) {
@@ -252,8 +264,8 @@ export async function runStagingFunnelSmoke(env = process.env, dependencies = {}
     result.createPageStatus = createResponse?.status() ?? null;
     result.createPageRoute = funnelRouteCategory(page.url());
     const createHeadingVisible = await visible(page.getByRole("heading", { name: "建立新的一頁式網站" }));
-    result.projectStillMissing = await visible(page.getByText("請先選擇一個銷售專案，再建立一頁式網站。", { exact: true }), 1_000);
-    if (result.createPageStatus !== 200 || !createHeadingVisible) { result.reason = "CREATE_PAGE_UNAVAILABLE"; return result; }
+    result.projectStillMissing = await visible(page.getByRole("heading", { name: PROJECT_REQUIRED_HEADING, exact: true }), 1_000);
+    if (createPageBlocked({ status: result.createPageStatus, headingVisible: createHeadingVisible, projectStillMissing: result.projectStillMissing })) { result.reason = "CREATE_PAGE_UNAVAILABLE"; return result; }
     await page.getByRole("textbox", { name: "名稱 *", exact: true }).fill("Staging Synthetic Funnel");
     await page.getByRole("textbox", { name: /^Funnel 網址 \*/u }).fill(slug);
     await page.getByRole("button", { name: /建立名單/u }).click();

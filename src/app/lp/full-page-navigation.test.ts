@@ -33,6 +33,8 @@ describe("custom code emergency switch reaches every route that renders custom c
     expect(rendering).toEqual([
       "app/(app)/landing-pages/[id]/operations/layout.tsx",
       "app/(app)/landing-pages/[id]/operations/page.tsx",
+      "app/(app)/landing-pages/templates/layout.tsx",
+      "app/(app)/landing-pages/templates/page.tsx",
       "app/(editor)/landing-pages/[id]/edit/layout.tsx",
       "app/(editor)/landing-pages/[id]/edit/page.tsx",
       "app/lp/[slug]/[stepPath]/page.tsx",
@@ -40,7 +42,7 @@ describe("custom code emergency switch reaches every route that renders custom c
       "app/lp/[slug]/page.tsx",
     ]);
     // Each of those routes sits under a layout that provides the server runtime.
-    for (const route of ["app/(app)/landing-pages/[id]/operations/layout.tsx", "app/(editor)/landing-pages/[id]/edit/layout.tsx", "app/lp/[slug]/layout.tsx"]) {
+    for (const route of ["app/(app)/landing-pages/[id]/operations/layout.tsx", "app/(app)/landing-pages/templates/layout.tsx", "app/(editor)/landing-pages/[id]/edit/layout.tsx", "app/lp/[slug]/layout.tsx"]) {
       expect(fs.readFileSync(path.join(SRC_ROOT, route), "utf8")).toMatch(/<FunnelCustomCodeRuntime[\s>]/u);
     }
   }, 60_000);
