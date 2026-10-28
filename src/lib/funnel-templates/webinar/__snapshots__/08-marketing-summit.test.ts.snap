@@ -10,7 +10,6 @@ exports[`webinar template: 08-marketing-summit > keeps node ids, types and order
   "snapshot_hero_title:headline",
   "snapshot_hero_lead:text",
   "snapshot_hero_facts:event_facts",
-  "snapshot_hero_when:text",
   "snapshot_hero_cta:button",
   "snapshot_hero_speakers:image",
   "snapshot_hero_speakers_note:text",

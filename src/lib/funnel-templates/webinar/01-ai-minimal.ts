@@ -19,14 +19,6 @@ const DARK_BODY = "#c7cde0";
 function build(prefix: string) {
   const { node, section, stack, headline, text, button, form } = webinarTemplateKit(prefix);
   const primaryButton = { backgroundColor: PRIMARY, color: "#ffffff", borderRadius: 12, shadow: "medium" } as const;
-  const card = { backgroundColor: BG, borderColor: LINE, borderWidth: 1, borderRadius: 20, padding: 32 } as const;
-
-  const learnCard = (id: string, number: string, title: string, body: string) => stack(id, [
-    text(`${id}_number`, number, "eyebrow", { color: PRIMARY, fontSize: 30, letterSpacing: 1, lineHeight: 1.2 }),
-    headline(`${id}_title`, title, "h3", { color: INK, fontSize: 20, lineHeight: 1.45 }, { mobile: { style: { fontSize: 18 } } }),
-    text(`${id}_text`, body, undefined, { color: BODY, fontSize: 16, lineHeight: 1.75 }),
-  ], 12, card, { mobile: { style: { padding: 24 } } });
-
   return [
     // 1. 頂部倒數條：綁開播時間；開播後顯示「直播進行中」，回放期顯示回放文字。
     node("countdown_bar", "countdown", { variant: "bar", source: "webinar_start", label: "距離開播", liveText: "直播進行中，現在就進入", replayText: "回放限時開放中", expiredText: "本場直播已結束", barColor: ACCENT_DECOR, barTextColor: INK }),
@@ -56,18 +48,18 @@ function build(prefix: string) {
       }),
     ], { background: BG, color: BODY, maxWidth: 640, gap: 22, align: "center", paddingY: 72, paddingYMobile: 36, props: { backgroundImage: `${ART}/grid-dots.svg`, backgroundPosition: "top" } }),
 
-    // 3. 你將學到：3 張編號卡片（平板也上下堆疊，避免 2＋1 的孤欄）。
+    // 3. 你將學到：icon_list 編號格狀（桌機 3 欄、平板 2 欄、手機單欄）。
     section("learn", [
       stack("learn_heading", [
         text("learn_eyebrow", "WHAT YOU'LL BUILD", "eyebrow", { color: ACCENT_TEXT }),
         headline("learn_title", "這 90 分鐘，你會帶走 3 個流程", "h2", { color: INK, fontSize: 34, lineHeight: 1.3 }, { mobile: { style: { fontSize: 24, lineHeight: 1.35 } } }),
       ], 10, { textAlign: "center" }),
-      node("learn_grid", "columns_3", { stackOn: "tablet", gap: 24 }, [
-        learnCard("learn_one", "01", "AI 起草重複信件", "一套提示詞框架：把客服回覆、報價追蹤與會議邀約交給 AI 先寫初稿。"),
-        learnCard("learn_two", "02", "10 分鐘會議重點", "從逐字稿到重點摘要與待辦清單，會議一結束就能寄出。"),
-        learnCard("learn_three", "03", "AI 整理週報", "用一份檢查清單讓 AI 彙整數字與進度，你只要確認與補充。"),
-      ], { align: "stretch" }),
-    ], { background: SURFACE, color: BODY, maxWidth: 1080, gap: 48 }),
+      node("learn_list", "icon_list", { layout: "grid", columns: 3, numbered: true, accentColor: PRIMARY, items: [
+        { icon: "message", title: "AI 起草重複信件", text: "一套提示詞框架：把客服回覆、報價追蹤與會議邀約交給 AI 先寫初稿。" },
+        { icon: "clock", title: "10 分鐘會議重點", text: "從逐字稿到重點摘要與待辦清單，會議一結束就能寄出。" },
+        { icon: "chart", title: "AI 整理週報", text: "用一份檢查清單讓 AI 彙整數字與進度，你只要確認與補充。" },
+      ] }, undefined, { color: BODY, textAlign: "left" }),
+    ], { background: SURFACE, color: BODY, maxWidth: 1080, gap: 48, align: "center" }),
 
     // 4. 講者（小型，沒有照片時顯示姓名首字漸層頭像）。
     section("speaker", [

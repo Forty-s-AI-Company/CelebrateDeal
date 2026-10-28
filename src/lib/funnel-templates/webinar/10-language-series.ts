@@ -27,9 +27,6 @@ function build(prefix: string) {
     headline(`${id}_title`, heading, "h3", { color: INK, fontSize: 20, lineHeight: 1.4 }, { mobile: { style: { fontSize: 18 } } }),
     text(`${id}_text`, value, undefined, { color: BODY, fontSize: 16 }),
   ], 12, { ...outlined, backgroundColor: current ? CREAM : BG, padding: 24 });
-  const method = (id: string, icon: string, heading: string, value: string) => stack(id, [
-    node(`${id}_item`, "icon_list", { layout: "list", numbered: false, accentColor: TEAL, items: [{ icon, title: heading, text: value }] }, undefined, { color: INK }),
-  ], 0, { ...outlined, padding: 24, textAlign: "left" });
   return [
     // 1. 首屏：左文案＋本堂資訊與倒數，右對話泡泡插畫（手機縮小放在標題上方）。
     section("hero", [
@@ -38,7 +35,7 @@ function build(prefix: string) {
         headline("hero_title", "30 天，從五十音到自我介紹，\n開口說出第一句日語", "h1", { color: INK, fontSize: 46, lineHeight: 1.3 }, { tablet: { style: { fontSize: 42 } }, mobile: { style: { fontSize: 30 }, props: { text: "從五十音到自我介紹，30 天開口說出第一句日語" } } }),
         text("hero_lead", "每堂 50 分鐘直播＋一張練習單。本頁報名的是「第 1 堂」，報名後會收到後續場次的通知。", "lead", { color: BODY }),
         button("hero_cta", "免費報名第 1 堂", "#register", yellowButton),
-        node("hero_facts", "event_facts", { layout: "row", formatLabel: "線上直播", priceLabel: "免費", showDuration: true, accentColor: TEAL }, undefined, { color: INK, fontSize: 18 }),
+        node("hero_facts", "event_facts", { layout: "row", formatLabel: "線上直播", priceLabel: "免費", showDuration: true, accentColor: TEAL }, undefined, { color: INK }),
         node("hero_countdown", "countdown", { variant: "blocks", source: "webinar_start", label: "距離第 1 堂開播", align: "left", numberColor: INK, cellColor: CREAM }, undefined, { color: INK }),
       ], [
         node("hero_art", "image", { src: `${ART}/hero-bubbles.svg`, alt: "寫著日語問候的對話泡泡插畫" }, undefined, { imageWidth: 100 }, { tablet: { style: { imageWidth: 56, margin: "0 auto" } }, mobile: { style: { imageWidth: 72, margin: "0 auto" } } }),
@@ -71,11 +68,13 @@ function build(prefix: string) {
     // 4. 學習方式。
     section("method", [
       h2("method_title", "不只聽課，還會開口練"),
-      node("method_columns", "columns_3", { gap: 20 }, [
-        method("method_1", "play", "直播跟讀", "老師帶著唸、帶著練，一句一句跟上。"),
-        method("method_2", "book", "每週練習單", "直播後寄出練習單，10 分鐘複習重點。"),
-        method("method_3", "users", "學員社群互相練習", "和學伴一起練對話（社群連結由主辦單位設定）。"),
-      ]),
+      stack("method_panel", [
+        node("method_list", "icon_list", { layout: "grid", columns: 3, numbered: false, accentColor: TEAL, items: [
+          { icon: "play", title: "直播跟讀", text: "老師帶著唸、帶著練，一句一句跟上。" },
+          { icon: "book", title: "每週練習單", text: "直播後寄出練習單，10 分鐘複習重點。" },
+          { icon: "users", title: "學員社群互相練習", text: "和學伴一起練對話（社群連結由主辦單位設定）。" },
+        ] }, undefined, { color: INK, textAlign: "left" }),
+      ], 0, { ...outlined, padding: 36 }, { mobile: { style: { padding: 22 } } }),
     ], { background: CREAM, color: BODY, maxWidth: 1120, gap: 36, align: "center" }),
     // 5. 老師介紹。
     section("teacher", [

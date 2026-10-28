@@ -25,15 +25,8 @@ function build(prefix: string) {
     node(id, "section_title", { eyebrow, title: value, level: "h2", decoration: "line", accentColor: options.light ? GOLD : COPPER }, undefined,
       { color: options.light ? WHITE : INK, ...(options.align ? { textAlign: options.align } : {}) }, options.mobileTitle ? { mobile: { props: { title: options.mobileTitle } } } : {});
   const countdown = (id: string, options: Parameters<typeof node>[5]) => node(id, "countdown", { variant: "blocks", source: "webinar_start", label: "距離開講", liveText: "講座進行中，立即進入", replayText: "回放限時開放中", expiredText: "本場講座已結束", align: "left", numberColor: INK, cellColor: BAND, accentColor: COPPER }, undefined, {}, options);
-  const pain = (id: string, name: string, body: string) => stack(id, [
-    headline(`${id}_title`, name, "h3", { color: INK, fontSize: 21 }, { mobile: { style: { fontSize: 19 } } }),
-    text(`${id}_text`, body, undefined, { color: BODY, fontSize: 16 }),
-  ], 8, { backgroundColor: WHITE, borderColor: LINE, borderWidth: 1, borderRadius: 6, padding: 26 });
-  const takeaway = (id: string, number: string, name: string, body: string) => stack(id, [
-    text(`${id}_number`, number, undefined, { color: COPPER, fontSize: 44, lineHeight: 1.1 }),
-    headline(`${id}_title`, name, "h3", { color: INK, fontSize: 22, lineHeight: 1.4 }, { mobile: { style: { fontSize: 19 } } }),
-    text(`${id}_text`, body, undefined, { color: BODY, fontSize: 16 }),
-  ], 10, { backgroundColor: CREAM, borderColor: LINE, borderWidth: 1, borderRadius: 6, padding: 28 }, { mobile: { style: { padding: 22 } } });
+  /** 白底細框卡容器：裡面放 icon_list 格狀。 */
+  const panel = (id: string, list: ReturnType<typeof node>, background: string) => stack(id, [list], 0, { backgroundColor: background, borderColor: LINE, borderWidth: 1, borderRadius: 6, padding: 36 }, { mobile: { style: { padding: 22 } } });
 
   return [
     // 1. 首屏：左講者主視覺、右文案＋倒數＋表單（手機：寬版主視覺 → 標題 → 資訊列 → 表單 → 倒數）。
@@ -47,7 +40,7 @@ function build(prefix: string) {
           mobile: { style: { fontSize: 28, lineHeight: 1.32 }, props: { text: "用 3 個帳戶開始資產配置" } },
         }),
         text("hero_host", "主講｜陳柏宇・理財教育講師、「柏宇的錢包筆記」創辦人", undefined, { color: BODY, fontSize: 17 }, { mobile: { style: { fontSize: 16 }, props: { text: "主講｜陳柏宇・理財教育講師" } } }),
-        node("hero_facts", "event_facts", { layout: "row", formatLabel: "線上講座", priceLabel: "免費", showDuration: false, accentColor: COPPER }, undefined, { color: INK }, { mobile: { style: { fontSize: 18 } } }),
+        node("hero_facts", "event_facts", { layout: "row", formatLabel: "線上講座", priceLabel: "免費", showDuration: false, accentColor: COPPER }, undefined, { color: INK }),
         countdown("hero_countdown", { mobile: { visible: false } }),
         form("hero_form", {
           fields: [
@@ -79,22 +72,22 @@ function build(prefix: string) {
     // 3. 你是否也有這些困擾（2×2）。
     section("pains", [
       title("pains_title", "SOUND FAMILIAR?", "你是否也有這些困擾？", { align: "center" }),
-      node("pains_grid", "columns_2", { ratio: "1:1", gap: 20 }, [
-        pain("pains_save", "每個月都存不到錢", "薪水明明不低，月底帳戶卻總是見底。"),
-        pain("pains_emergency", "不知道預備金要多少", "想存緊急預備金，卻不知道目標是多少。"),
-        pain("pains_invest", "想投資又怕虧", "看了很多資訊，還是不敢踏出第一步。"),
-        pain("pains_accounts", "帳戶太多管不了", "開了好幾個帳戶，錢在哪裡自己都說不清。"),
-      ], { align: "stretch" }),
+      panel("pains_panel", node("pains_list", "icon_list", { layout: "grid", columns: 2, numbered: false, accentColor: COPPER, items: [
+        { icon: "clock", title: "每個月都存不到錢", text: "薪水明明不低，月底帳戶卻總是見底。" },
+        { icon: "shield", title: "不知道預備金要多少", text: "想存緊急預備金，卻不知道目標是多少。" },
+        { icon: "chart", title: "想投資又怕虧", text: "看了很多資訊，還是不敢踏出第一步。" },
+        { icon: "compass", title: "帳戶太多管不了", text: "開了好幾個帳戶，錢在哪裡自己都說不清。" },
+      ] }, undefined, { color: BODY, textAlign: "left" }), WHITE),
     ], { background: CREAM, color: BODY, maxWidth: 960, gap: 40 }),
 
     // 4. 這堂課你會帶走（3 欄，銅色大數字）。
     section("takeaways", [
       title("takeaways_title", "WHAT YOU'LL TAKE HOME", "這堂課，你會帶走"),
-      node("takeaways_grid", "columns_3", { stackOn: "tablet", gap: 32 }, [
-        takeaway("takeaways_sheet", "01", "3 帳戶分配比例試算表", "輸入月薪，自動算出生活、儲蓄與投資帳戶的建議比例。"),
-        takeaway("takeaways_buffer", "02", "緊急預備金的計算方式", "依你的家庭狀況，算出最低與安心的預備金金額。"),
-        takeaway("takeaways_checklist", "03", "定期定額前的檢查清單", "開始投資前，先確認 7 件事，避免一開始就做錯。"),
-      ], { align: "stretch" }),
+      panel("takeaways_panel", node("takeaways_list", "icon_list", { layout: "grid", columns: 3, numbered: true, accentColor: COPPER, items: [
+        { icon: "chart", title: "3 帳戶分配比例試算表", text: "輸入月薪，自動算出生活、儲蓄與投資帳戶的建議比例。" },
+        { icon: "shield", title: "緊急預備金的計算方式", text: "依你的家庭狀況，算出最低與安心的預備金金額。" },
+        { icon: "check", title: "定期定額前的檢查清單", text: "開始投資前，先確認 7 件事，避免一開始就做錯。" },
+      ] }, undefined, { color: BODY, textAlign: "left" }), CREAM),
     ], { background: WHITE, color: BODY, maxWidth: 1160, gap: 40 }),
 
     // 5. 講者故事（深藍底反白）＋數據。
@@ -110,10 +103,10 @@ function build(prefix: string) {
       ] }, undefined, { color: WHITE }),
     ], { background: INK, color: DARK_BODY, maxWidth: 1000, gap: 48 }),
 
-    // 6. 學員回饋（格狀 3 欄；長評價不截斷）。
+    // 6. 學員回饋（2 排跑馬燈，可暫停）。
     section("reviews", [
       title("reviews_title", "REVIEWS", "聽過的人怎麼說", { align: "center" }),
-      node("reviews_wall", "testimonial_wall", { layout: "grid", columns: 3, autoplay: false, showRating: true, accentColor: COPPER, cardColor: WHITE, cardTextColor: BODY, items: [
+      node("reviews_wall", "testimonial_wall", { layout: "marquee", rows: 2, autoplay: true, showRating: true, accentColor: COPPER, cardColor: WHITE, cardTextColor: BODY, items: [
         { name: "學員 A｜行政人員", rating: 5, title: WEBINAR_TEMPLATE_SAMPLE_MARK, text: "第一次知道緊急預備金要怎麼算，回家馬上開了一個新帳戶。" },
         { name: "學員 B｜工程師", rating: 5, title: WEBINAR_TEMPLATE_SAMPLE_MARK, text: "試算表很好用，薪水一進來就自動分好，不用再想。" },
         { name: "學員 C｜護理師", rating: 5, title: WEBINAR_TEMPLATE_SAMPLE_MARK, text: "講得很白話，沒有推銷任何商品，聽完很安心。" },

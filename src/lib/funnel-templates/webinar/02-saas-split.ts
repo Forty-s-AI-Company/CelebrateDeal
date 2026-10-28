@@ -40,7 +40,7 @@ function build(prefix: string) {
         }),
         text("hero_lead", "用一家虛構的電商公司，從匯入資料到設定警示，完整示範一次。", "lead", { color: HERO_BODY }, { tablet: { visible: false }, mobile: { visible: false } }),
         checks("hero_checks", HERO_INK, { tablet: { visible: false }, mobile: { visible: false } }),
-        node("hero_facts", "event_facts", { layout: "row", formatLabel: "線上直播", priceLabel: "免費", showDuration: false, accentColor: ACCENT }, undefined, { color: HERO_INK }, { tablet: { style: { width: "min(100%, 560px)", margin: "0 auto" } }, mobile: { style: { width: "100%", margin: 0, fontSize: 18 } } }),
+        node("hero_facts", "event_facts", { layout: "row", formatLabel: "線上直播", priceLabel: "免費", showDuration: false, accentColor: ACCENT }, undefined, { color: HERO_INK }, { tablet: { style: { width: "min(100%, 560px)", margin: "0 auto" } }, mobile: { style: { width: "100%", margin: 0 } } }),
       ], [
         form("hero_form", {
           title: "預約 Demo 席位",
@@ -90,10 +90,10 @@ function build(prefix: string) {
     // 4. 議程（3 段，共 45 分鐘）。
     section("agenda", [
       stack("agenda_heading", [text("agenda_eyebrow", "AGENDA", "eyebrow", { color: LINK }), h2("agenda_title", "直播流程")], 10, { textAlign: "center" }),
-      node("agenda_cards", "agenda_timeline", { layout: "cards", accentColor: LINK, cardColor: BG, items: [
-        { time: "00–10 分", title: "問題與情境", text: "為什麼報表越做越多，決策卻越來越慢？" },
-        { time: "10–35 分", title: "產品實機示範", text: "從匯入資料、建立儀表板到設定警示，完整操作一次。" },
-        { time: "35–45 分", title: "方案與 Q&A", text: "試用方案說明，現場回答你的導入問題。" },
+      node("agenda_list", "icon_list", { layout: "grid", columns: 3, numbered: true, accentColor: LINK, items: [
+        { icon: "clock", title: "00–10 分｜問題與情境", text: "為什麼報表越做越多，決策卻越來越慢？" },
+        { icon: "play", title: "10–35 分｜產品實機示範", text: "從匯入資料、建立儀表板到設定警示，完整操作一次。" },
+        { icon: "message", title: "35–45 分｜方案與 Q&A", text: "試用方案說明，現場回答你的導入問題。" },
       ] }, undefined, { color: BODY, textAlign: "left" }),
     ], { background: WHITE, color: BODY, maxWidth: 1160, paddingY: 88, gap: 40 }),
 
