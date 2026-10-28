@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 400" width="640" height="400" role="img" aria-label="省電燈泡插圖">
+<rect width="640" height="400" fill="#1e3323"/>
+<circle cx="320" cy="180" r="120" fill="#2e6b3f" opacity="0.6"/>
+<path d="M320 90c-50 0-85 38-85 82 0 30 16 52 34 70 12 12 16 24 16 38h70c0-14 4-26 16-38 18-18 34-40 34-70 0-44-35-82-85-82z" fill="#c8d96f"/>
+<rect x="288" y="285" width="64" height="16" rx="4" fill="#dfe8d9"/>
+<rect x="294" y="306" width="52" height="14" rx="4" fill="#dfe8d9"/>
+<path d="M300 200c10-20 30-20 40 0" fill="none" stroke="#1e3323" stroke-width="6" stroke-linecap="round"/>
+<path d="M320 200v80" stroke="#1e3323" stroke-width="6"/>
+<g stroke="#c8d96f" stroke-width="5" stroke-linecap="round"><path d="M180 180h-30M490 180h-30M210 90l-22-20M430 90l22-20"/></g>
+</svg>

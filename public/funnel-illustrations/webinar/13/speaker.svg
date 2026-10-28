@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 800" width="800" height="800" role="img" aria-label="講者照片預留位置">
+<rect width="800" height="800" fill="#fff4ea"/>
+<g fill="none" stroke="#ff6a00" stroke-width="2" opacity="0.35"><path d="M0 200h800M0 400h800M0 600h800M200 0v800M400 0v800M600 0v800"/></g>
+<circle cx="400" cy="320" r="130" fill="#0a0a0a"/>
+<path d="M140 800c10-180 120-280 260-280s250 100 260 280z" fill="#0a0a0a"/>
+<rect x="250" y="700" width="300" height="56" fill="#ff6a00"/>
+<text x="400" y="738" text-anchor="middle" font-family="system-ui, sans-serif" font-size="26" font-weight="700" letter-spacing="3" fill="#0a0a0a">替換為講者照片</text>
+</svg>
