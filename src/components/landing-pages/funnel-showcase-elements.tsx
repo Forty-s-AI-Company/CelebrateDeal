@@ -411,7 +411,7 @@ export function TestimonialWallElement({ props, viewport, interactive }: Showcas
   if (props.layout === "grid") return <ul className="m-0 list-none p-0" style={gridColumns(showcaseNumber(props.columns, 1, 4, Math.min(items.length, 3)), viewport, 3)}>
     {items.map((item, index) => <li key={index} className="grid"><TestimonialCard item={item} accent={accent} cardColor={cardColor} cardText={cardText} width="auto" showRating={showRating} /></li>)}
   </ul>;
-  if (props.layout === "carousel") return <TestimonialCarousel items={items} perPage={columnCount(3, viewport, 3)} accent={accent} cardColor={cardColor} cardText={cardText} showRating={showRating} label={showcaseText(props.ariaLabel, 120) || "學員評價"} />;
+  if (props.layout === "carousel") return <TestimonialCarousel items={items} perPage={columnCount(showcaseNumber(props.columns, 1, 3, 3), viewport, 3)} accent={accent} cardColor={cardColor} cardText={cardText} showRating={showRating} label={showcaseText(props.ariaLabel, 120) || "學員評價"} />;
   return <div className="grid gap-4" role="region" aria-label={showcaseText(props.ariaLabel, 120) || "學員評價"} id={regionId}>
     {animated ? <div className="flex justify-end">
       <button type="button" aria-pressed={paused} aria-controls={regionId} onClick={() => setPaused((value) => !value)} className="inline-flex min-h-10 cursor-pointer items-center gap-2 rounded-full px-4 text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-2" style={{ border: `1px solid ${accent}`, color: accent, outlineColor: accent }}>

@@ -100,7 +100,7 @@ function build(prefix: string) {
     section("reviews", [
       eyebrow("reviews_eyebrow", "參加過的人說"),
       h2("reviews_title", "原來不是只有我這樣"),
-      node("reviews_wall", "testimonial_wall", { layout: "carousel", showRating: false, cardColor: CARD, cardTextColor: BODY, accentColor: PRIMARY, items: [
+      node("reviews_wall", "testimonial_wall", { layout: "carousel", columns: 2, showRating: false, cardColor: CARD, cardTextColor: BODY, accentColor: PRIMARY, items: [
         { name: "參與者 A｜行政人員", title: `寫下來，就比較睡得著（${WEBINAR_TEMPLATE_SAMPLE_MARK}）`, text: "想法便條很簡單，但寫完真的比較睡得著。第一次覺得不用跟自己的腦袋吵架。" },
         { name: "參與者 B｜研究生", title: `不用開鏡頭，很安心（${WEBINAR_TEMPLATE_SAMPLE_MARK}）`, text: "不用開鏡頭讓我很安心。老師講話很慢很溫柔，聽完整個人放鬆很多。" },
         { name: "參與者 C｜新手媽媽", title: `終於能跟念頭說晚安（${WEBINAR_TEMPLATE_SAMPLE_MARK}）`, text: "擔心時段對我幫助最大，晚上終於可以跟念頭說「明天再說」。" },

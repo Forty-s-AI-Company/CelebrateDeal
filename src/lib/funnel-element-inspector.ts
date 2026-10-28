@@ -210,7 +210,7 @@ const showcaseFields: Readonly<Record<"nav_bar" | "logo_strip" | "stats" | "icon
   ],
   testimonial_wall: [
     repeater("items", "評價", "評價", [item("avatar", "頭像", "image"), item("name", "名稱"), item("verified", "顯示驗證勾", "checkbox"), item("date", "日期", "text", { placeholder: "例如 2026 年 9 月" }), item("rating", "星等（0–5）", "number", { min: 0, max: 5 }), item("title", "標題"), item("text", "內容", "textarea")], { name: "學員", verified: true, rating: 5, title: "", text: "" }, "只放真實、經同意公開的評價。", 24),
-    select("layout", "版型", { marquee: "橫向捲動（預設）", carousel: "輪播（按鈕切換，不自動播放）", grid: "格狀" }), number("columns", "格狀欄數（桌機）", 1, 3, "平板最多 2 欄，手機單欄。"),
+    select("layout", "版型", { marquee: "橫向捲動（預設）", carousel: "輪播（按鈕切換，不自動播放）", grid: "格狀" }), number("columns", "每列欄數（格狀與輪播，桌機）", 1, 3, "平板最多 2 欄，手機單欄。"),
     select("rows", "排數", { "2": "兩排（桌機）", "1": "一排" }), { ...content("autoplay", "自動橫向捲動", "checkbox", "滑鼠移上或鍵盤聚焦時停止；訪客也可以按「暫停輪播」。"), responsive: false },
     select("speed", "捲動速度", { slow: "慢", normal: "一般", fast: "快" }), { ...content("showRating", "顯示星等", "checkbox"), responsive: false },
     propColor("cardColor", "卡片背景色"), propColor("cardTextColor", "卡片文字色"), accentField,

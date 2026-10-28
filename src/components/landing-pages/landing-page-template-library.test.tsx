@@ -133,7 +133,10 @@ describe("template library filters", () => {
     expect(luxury!.textContent).toContain("高質感");
     expect(luxury!.querySelector("[data-template-unreadable]")).toBeNull();
     const thumbnail = luxury!.querySelector<HTMLElement>("[aria-hidden=true][inert]");
-    expect(thumbnail?.querySelectorAll("section").length).toBeGreaterThan(5);
+    // The thumbnail renders the real template, but only its first sections (the card shows the top of the page).
+    const sections = thumbnail?.querySelectorAll("[data-funnel-renderer] section").length ?? 0;
+    expect(sections).toBeGreaterThan(0);
+    expect(sections).toBeLessThanOrEqual(3);
 
     await click(buttonNamed("品牌首頁", container.querySelector("[role=group][aria-label=用途]")!));
     await click(buttonNamed("高質感", container.querySelector("[role=group][aria-label=風格]")!));
