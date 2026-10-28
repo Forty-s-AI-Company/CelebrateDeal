@@ -1,0 +1,40 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 900" width="1600" height="900" role="img" aria-label="旅途插畫：海岸、路線與筆電">
+<defs>
+<linearGradient id="sky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#f6ead6"/><stop offset="0.6" stop-color="#fbf3e6"/><stop offset="1" stop-color="#fdfaf4"/></linearGradient>
+<linearGradient id="sea" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#8fbfcc"/><stop offset="1" stop-color="#cfe3e3"/></linearGradient>
+<radialGradient id="sun" cx="0.5" cy="0.5" r="0.5"><stop offset="0" stop-color="#f3b38a"/><stop offset="1" stop-color="#f3b38a" stop-opacity="0"/></radialGradient>
+<linearGradient id="fadeL" x1="0" y1="0" x2="1" y2="0"><stop offset="0.36" stop-color="#fff" stop-opacity="0"/><stop offset="0.58" stop-color="#fff" stop-opacity="1"/></linearGradient>
+<mask id="m"><rect width="1600" height="900" fill="url(#fadeL)"/></mask>
+</defs>
+<rect width="1600" height="900" fill="url(#sky)"/>
+<g mask="url(#m)">
+<circle cx="1180" cy="300" r="230" fill="url(#sun)" opacity="0.7"/>
+<circle cx="1180" cy="300" r="78" fill="#e9805f" opacity="0.85"/>
+<path d="M420 500c140-40 220-50 340-30 120-60 210-40 300-10s170 40 260-10 200-40 280 10v60H420z" fill="#d9c3a0"/>
+<path d="M900 480c80-70 150-90 230-40 50 30 100 20 160-20 70-45 150-30 310 60v40H900z" fill="#c9ad86"/>
+<rect x="420" y="520" width="1180" height="380" fill="url(#sea)"/>
+<g stroke="#ffffff" stroke-opacity="0.7" stroke-width="3" stroke-linecap="round"><path d="M860 590h90M1010 620h140M1260 580h110M1420 650h120M900 700h160M1180 740h120"/></g>
+<path d="M1040 560l60-40 6 40z" fill="#fdfaf4"/><path d="M1098 520v46" stroke="#1f2d3d" stroke-width="3"/>
+<path d="M420 900V660c160-40 330-30 560 20s130 60 230 50v170z" fill="#f1e6d2"/>
+<path d="M640 300c120-40 200 30 300 0s170-110 290-70" fill="none" stroke="#c8443a" stroke-width="4" stroke-dasharray="4 14" stroke-linecap="round"/>
+<g fill="#c8443a"><path d="M640 278c-14 0-24 10-24 23 0 17 24 37 24 37s24-20 24-37c0-13-10-23-24-23z"/></g><circle cx="640" cy="301" r="8" fill="#fdfaf4"/>
+<g fill="#1f6f8b"><path d="M1230 208c-14 0-24 10-24 23 0 17 24 37 24 37s24-20 24-37c0-13-10-23-24-23z"/></g><circle cx="1230" cy="231" r="8" fill="#fdfaf4"/>
+<g transform="translate(1060 690)">
+<rect x="0" y="80" width="420" height="16" rx="6" fill="#8a5a3c"/>
+<path d="M60 0h250a10 10 0 0 1 10 10v70H50V10A10 10 0 0 1 60 0z" fill="#1f2d3d"/>
+<rect x="66" y="12" width="238" height="60" rx="4" fill="#9fc8d3"/>
+<path d="M90 50l40-22 30 14 46-26 50 30" fill="none" stroke="#fdfaf4" stroke-width="4" stroke-linecap="round"/>
+<path d="M20 80h320l20 14H0z" fill="#44515f"/>
+<rect x="352" y="30" width="38" height="50" rx="8" fill="#fdfaf4" stroke="#8a5a3c" stroke-width="4"/>
+<path d="M390 42c18 0 18 26 0 26" fill="none" stroke="#8a5a3c" stroke-width="4"/>
+</g>
+<g transform="translate(880 610)">
+<rect x="0" y="40" width="130" height="170" rx="18" fill="#c8443a"/>
+<rect x="38" y="0" width="54" height="46" rx="10" fill="none" stroke="#8a2f28" stroke-width="10"/>
+<path d="M0 100h130M0 150h130" stroke="#8a2f28" stroke-width="6"/>
+<circle cx="25" cy="222" r="10" fill="#1f2d3d"/><circle cx="105" cy="222" r="10" fill="#1f2d3d"/>
+<rect x="72" y="60" width="40" height="26" rx="4" fill="#f1e6d2" transform="rotate(12 92 73)"/>
+</g>
+<g fill="none" stroke="#1f2d3d" stroke-opacity="0.35" stroke-width="2" stroke-linecap="round"><path d="M1320 150c10-8 20-8 30 0 10-8 20-8 30 0"/><path d="M1400 190c8-6 16-6 24 0 8-6 16-6 24 0"/></g>
+</g>
+</svg>

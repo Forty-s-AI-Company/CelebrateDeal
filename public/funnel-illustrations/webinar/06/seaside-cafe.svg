@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 640" width="800" height="640" role="img" aria-label="海邊咖啡店與筆電的插畫">
+<defs><linearGradient id="s" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#f7dcc2"/><stop offset="1" stop-color="#fdf3e4"/></linearGradient><clipPath id="r"><rect width="800" height="640" rx="28"/></clipPath></defs>
+<g clip-path="url(#r)">
+<rect width="800" height="640" fill="url(#s)"/>
+<circle cx="560" cy="210" r="70" fill="#e9805f" opacity="0.85"/>
+<rect x="0" y="270" width="800" height="150" fill="#8fbfcc"/>
+<g stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-opacity="0.75"><path d="M80 320h90M260 350h120M480 310h80M600 370h120"/></g>
+<path d="M0 270c80-30 150-20 230 0s160 10 230-20 180-10 340 20v10H0z" fill="#c9ad86"/>
+<rect x="0" y="420" width="800" height="220" fill="#f1e6d2"/>
+<path d="M90 0v190" stroke="#8a5a3c" stroke-width="10"/>
+<path d="M-10 60c60-60 140-60 200 0z" fill="#c8443a"/>
+<rect x="230" y="440" width="420" height="18" rx="8" fill="#8a5a3c"/>
+<path d="M300 458l-30 170M580 458l30 170" stroke="#8a5a3c" stroke-width="12" stroke-linecap="round"/>
+<path d="M330 330h220a10 10 0 0 1 10 10v100H320V340a10 10 0 0 1 10-10z" fill="#1f2d3d"/>
+<rect x="336" y="342" width="208" height="86" rx="4" fill="#9fc8d3"/>
+<g stroke="#fdfaf4" stroke-width="5" stroke-linecap="round"><path d="M356 366h110M356 386h150M356 406h80"/></g>
+<rect x="590" y="400" width="34" height="40" rx="6" fill="#fdfaf4" stroke="#1f2d3d" stroke-width="4"/>
+<path d="M600 390c4-10-4-14 0-24M612 390c4-10-4-14 0-24" stroke="#6a7480" stroke-width="3" fill="none" stroke-linecap="round"/>
+<g transform="translate(130 360)"><rect x="0" y="0" width="70" height="90" rx="10" fill="#1f6f8b"/><rect x="20" y="-22" width="30" height="26" rx="6" fill="none" stroke="#1f6f8b" stroke-width="7"/></g>
+<g fill="none" stroke="#1f2d3d" stroke-opacity="0.4" stroke-width="3" stroke-linecap="round"><path d="M650 120c10-8 20-8 30 0 10-8 20-8 30 0"/><path d="M700 160c8-6 16-6 24 0 8-6 16-6 24 0"/></g>
+</g>
+</svg>

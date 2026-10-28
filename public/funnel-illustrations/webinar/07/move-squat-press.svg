@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 600" width="800" height="600" role="img" aria-label="深蹲推舉動作示意">
+<defs><radialGradient id="g" cx="0.5" cy="0.45" r="0.6"><stop offset="0" stop-color="#d7ff3a" stop-opacity="0.16"/><stop offset="1" stop-color="#d7ff3a" stop-opacity="0"/></radialGradient></defs>
+<rect width="800" height="600" fill="#0d0d0f"/><rect width="800" height="600" fill="url(#g)"/>
+<path d="M60 500h680" stroke="#3f3f46" stroke-width="4" stroke-linecap="round"/>
+<rect x="120" y="500" width="560" height="14" rx="7" fill="#ff6a4d" opacity="0.85"/>
+<g fill="none" stroke="#d7ff3a" stroke-width="18" stroke-linecap="round" stroke-linejoin="round"><circle cx="400" cy="150" r="32"/><path d="M400 186l-10 130"/><path d="M394 220l-56-40-6-90M394 220l60-40 6-90"/><path d="M390 316l-80 40 20 140M390 316l80 40-20 140"/></g>
+<g fill="#d7ff3a"><rect x="306" y="66" width="52" height="20" rx="7"/><rect x="442" y="66" width="52" height="20" rx="7"/></g>
+<text x="56" y="92" font-family="system-ui, sans-serif" font-size="56" font-weight="700" fill="#fafafa" fill-opacity="0.16">01</text>
+</svg>
