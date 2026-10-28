@@ -285,7 +285,7 @@ const definitions: Record<FunnelNodeType, FunnelNodeDefinition> = {
   value_stack: { label: "價值清單", category: "text", children: false, allowedParents: WEBINAR_LEAF_PARENTS, capability: available },
   session_schedule: { label: "場次表", category: "other", children: false, allowedParents: WEBINAR_LEAF_PARENTS, capability: available },
   deadline_notice: { label: "報名截止提示", category: "other", children: false, allowedParents: WEBINAR_LEAF_PARENTS, capability: available },
-  webinar_state: { label: "依活動狀態切換", category: "layout", children: true, allowedParents: ["row", "columns_2", "columns_3", "columns_4"], capability: available },
+  webinar_state: { label: "依活動狀態切換", category: "layout", children: true, allowedParents: ["row", "columns_2", "columns_3", "columns_4", "content_box"], capability: available },
   media_frame: { label: "裝置框", category: "media", children: false, allowedParents: WEBINAR_LEAF_PARENTS, capability: available },
   image_gallery: { label: "作品集圖庫", category: "media", children: false, allowedParents: WEBINAR_LEAF_PARENTS, capability: available },
   code_snippet: { label: "程式碼片段", category: "text", children: false, allowedParents: WEBINAR_LEAF_PARENTS, capability: available },
@@ -429,6 +429,23 @@ export function parsePageDocument(value: unknown): PageDocument | null {
   // Observability for links dropped from stored content: per-field counts only, never the URL.
   if (Object.keys(counts).length) console.warn("funnel_href_retired", counts);
   return parsed.data;
+}
+
+/**
+ * Diagnostics only (template tests and authoring): the first reason `parsePageDocument`
+ * rejects a value, e.g. a schema path or a duplicate node id; null when it is valid.
+ */
+export function explainPageDocumentIssue(value: unknown): string | null {
+  const outerCounts = retiredHrefCounts;
+  retiredHrefCounts = {};
+  let parsed: ReturnType<typeof PageDocumentSchema.safeParse>;
+  try { parsed = PageDocumentSchema.safeParse(value); } catch (error) { return error instanceof Error ? error.message : "無法解析"; } finally { retiredHrefCounts = outerCounts; }
+  if (!parsed.success) {
+    const first = parsed.error.issues[0];
+    return first ? `${first.path.join(".") || "(root)"}：${first.message}` : "格式不符";
+  }
+  const state = { ids: new Set<string>(), htmlIds: new Set<string>(), count: 0, references: new Set<object>() };
+  return validateNodeTree(parsed.data.root, "root", 1, state);
 }
 
 export function serializePageDocument(document: PageDocument): string {

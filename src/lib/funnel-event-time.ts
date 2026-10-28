@@ -140,15 +140,17 @@ export function formatFunnelEventStart(schedule: Pick<FunnelEventSchedule, "star
 
 /* ------------------------------ 文字動態欄位 ------------------------------ */
 
-export const FUNNEL_EVENT_DYNAMIC_FIELDS = ["webinar.title", "webinar.date", "webinar.time", "webinar.startAt", "webinar.weekday", "webinar.timezone", "webinar.duration"] as const;
+export const FUNNEL_EVENT_DYNAMIC_FIELDS = ["webinar.title", "webinar.date", "webinar.time", "webinar.startAt", "webinar.weekday", "webinar.timezone", "webinar.duration", "webinar.replayEndsAt"] as const;
 export type FunnelEventDynamicField = (typeof FUNNEL_EVENT_DYNAMIC_FIELDS)[number];
 export const FUNNEL_EVENT_DYNAMIC_FIELD_LABELS: Readonly<Record<FunnelEventDynamicField, string>> = {
   "webinar.title": "活動名稱", "webinar.date": "活動日期", "webinar.time": "開始～結束時間", "webinar.startAt": "完整開始時間",
-  "webinar.weekday": "星期", "webinar.timezone": "時區", "webinar.duration": "活動長度",
+  "webinar.weekday": "星期", "webinar.timezone": "時區", "webinar.duration": "活動長度", "webinar.replayEndsAt": "回放開放至",
 };
 
 export function funnelEventFieldValue(field: FunnelEventDynamicField, schedule: FunnelEventSchedule): string {
   if (field === "webinar.title") return schedule.title ?? "本場講座";
+  // 「11 月 12 日 23:59」；沒有回放截止時間時同樣顯示「時間公布中」。
+  if (field === "webinar.replayEndsAt") return schedule.replayEndsAt ? `${formatFunnelEventDate(schedule.replayEndsAt, schedule.timezone, { year: false })} ${formatFunnelEventClock(schedule.replayEndsAt, schedule.timezone)}` : FUNNEL_EVENT_TBA;
   const start = schedule.startsAt;
   if (!start) return field === "webinar.timezone" ? formatFunnelTimezone(schedule.timezone, new Date(0).toISOString()) : FUNNEL_EVENT_TBA;
   switch (field) {

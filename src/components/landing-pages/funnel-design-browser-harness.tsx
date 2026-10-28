@@ -6,6 +6,7 @@ import { PublicFunnelDocument } from "./public-funnel-document";
 import { FUNNEL_BLOCK_REGISTRY, getFunnelBlocksByCategory, listFunnelBlockCategories, previewFunnelBlockDocument } from "@/lib/funnel-block-library";
 import { FUNNEL_TEMPLATE_GALLERY, getFunnelTemplateGalleryItem, previewFunnelTemplate } from "@/lib/funnel-template-gallery";
 import { stressFunnelDocument } from "@/lib/funnel-template-stress";
+import type { FunnelHarnessSchedule } from "@/lib/funnel-harness-schedule";
 
 /**
  * Synthetic registration context so lead forms render their real public fields (the layout checks measure them).
@@ -28,16 +29,18 @@ export type FunnelHarnessViewport = FunnelViewport | "responsive";
  * block library. Every document is built deterministically from its ID, so the
  * page also exercises server/browser render parity (no hydration drift).
  */
-export function FunnelDesignBrowserHarness({ template, block, category, viewport, stress = false, initialViewport }: { template?: string; block?: string; category?: string; viewport: FunnelHarnessViewport; stress?: boolean; initialViewport?: FunnelViewport }) {
+export function FunnelDesignBrowserHarness({ template, block, category, viewport, stress = false, initialViewport, schedule }: { template?: string; block?: string; category?: string; viewport: FunnelHarnessViewport; stress?: boolean; initialViewport?: FunnelViewport; schedule?: FunnelHarnessSchedule }) {
   // false during SSR and hydration, true once mounted: lets the QA script wait for a hydrated page.
   const ready = useSyncExternalStore(() => () => undefined, () => true, () => false);
   const frame = viewport === "mobile" ? "mx-auto w-[375px] max-w-full" : "w-full";
+  const event = schedule ? { webinar: schedule.webinar, registrationClosesAt: schedule.registrationClosesAt, renderedAt: schedule.renderedAt } : undefined;
+  const scheduleAttr = schedule?.kind;
   // getFunnelTemplateGalleryItem also resolves hidden or retired templates.
   if (template && getFunnelTemplateGalleryItem(template)) {
     const document = stress ? stressFunnelDocument(previewFunnelTemplate(template)) : previewFunnelTemplate(template);
     // "responsive" renders the real public path with no forced viewport and no phone frame.
-    if (viewport === "responsive") return <div data-design-harness="template" data-design-harness-viewport="responsive" data-design-harness-stress={stress ? "true" : undefined} data-design-harness-ready={ready ? "true" : undefined} className="w-full"><PublicFunnelDocument document={document} submission={HARNESS_SUBMISSION} initialViewport={initialViewport} /></div>;
-    return <div data-design-harness="template" data-design-harness-stress={stress ? "true" : undefined} data-design-harness-ready={ready ? "true" : undefined} className={frame}><FunnelPageDocumentRenderer document={document} viewport={viewport} /></div>;
+    if (viewport === "responsive") return <div data-design-harness="template" data-design-harness-viewport="responsive" data-design-harness-stress={stress ? "true" : undefined} data-design-harness-ready={ready ? "true" : undefined} data-design-harness-schedule={scheduleAttr} className="w-full"><PublicFunnelDocument document={document} submission={HARNESS_SUBMISSION} initialViewport={initialViewport} event={event} /></div>;
+    return <div data-design-harness="template" data-design-harness-stress={stress ? "true" : undefined} data-design-harness-ready={ready ? "true" : undefined} data-design-harness-schedule={scheduleAttr} className={frame}><FunnelPageDocumentRenderer document={document} viewport={viewport} event={event} /></div>;
   }
   const fixedViewport: FunnelViewport = viewport === "responsive" ? "desktop" : viewport;
   if (block && FUNNEL_BLOCK_REGISTRY[block]) {

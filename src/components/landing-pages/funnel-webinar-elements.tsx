@@ -12,7 +12,7 @@ import { safeContentAssetUrl, safeContentHref } from "@/lib/safe-url";
 import { funnelFluidGridColumns, funnelTypographyDefaults, type FunnelHeadingLevel, type FunnelTypographyTokens, type FunnelTypographyViewport } from "@/lib/funnel-typography";
 import {
   FUNNEL_EVENT_TBA, formatFunnelEventDate, formatFunnelEventDuration, formatFunnelEventStart, formatFunnelEventTimeRange, formatFunnelEventWeekday,
-  formatFunnelTimezone, funnelEventPhase, manualFunnelEventSchedule, type FunnelEventSchedule,
+  formatFunnelTimezone, funnelEventPhase, manualFunnelEventSchedule, resolveFunnelEventFields, type FunnelEventSchedule,
 } from "@/lib/funnel-event-time";
 import {
   AGENDA_LAYOUTS, CALLOUT_TONES, CODE_LANGUAGES, CODE_LANGUAGE_LABELS, COUNTDOWN_SOURCES, COUNTDOWN_VARIANTS, EVENT_FACTS_LAYOUTS, GALLERY_LAYOUTS, MEDIA_FRAMES,
@@ -110,7 +110,7 @@ export function eventFacts(schedule: FunnelEventSchedule, props: Record<string, 
   return facts;
 }
 
-export function EventFactsElement({ props, tokens, viewport }: WebinarElementProps) {
+export function EventFactsElement({ props, tokens, viewport, align }: WebinarElementProps) {
   const schedule = useElementSchedule(props);
   const layout = webinarChoice(props.layout, EVENT_FACTS_LAYOUTS, "row");
   const accent = accentOf(props, tokens);
@@ -122,7 +122,7 @@ export function EventFactsElement({ props, tokens, viewport }: WebinarElementPro
     const Icon = fact.icon;
     return <div key={fact.key} className="flex min-w-0 items-start" style={{ gap: 10 }}>
       <Icon aria-hidden size={compact ? 18 : 20} strokeWidth={1.75} style={{ color: accent, flexShrink: 0, marginTop: 3 }} />
-      <dl className="m-0 min-w-0"><dt className="text-[0.8125em] font-semibold" style={{ opacity: 0.8, letterSpacing: "0.04em" }}>{fact.label}</dt><dd className="m-0 font-semibold" style={{ fontVariantNumeric: "tabular-nums", overflowWrap: "anywhere" }}>{fact.value}</dd></dl>
+      <dl className="m-0 min-w-0"><dt className="font-semibold" style={{ fontSize: "max(14px, 0.8125em)", opacity: 0.8, letterSpacing: "0.04em" }}>{fact.label}</dt><dd className="m-0 font-semibold" style={{ fontVariantNumeric: "tabular-nums", overflowWrap: "anywhere" }}>{fact.value}</dd></dl>
     </div>;
   };
   if (layout === "card") {
@@ -133,12 +133,17 @@ export function EventFactsElement({ props, tokens, viewport }: WebinarElementPro
   }
   // row: one line on desktop (wrapping), 2×2 grid on tablet and mobile; grid: always a grid.
   const columns = layout === "grid" ? (mobile ? 2 : Math.min(facts.length, 4)) : viewport === "desktop" ? 0 : 2;
+  const gridColumnCount = Math.max(1, Math.min(columns, facts.length || 1));
+  const centered = props.align === "center" || align === "center";
   const container: CSSProperties = columns
     // Facts are short, so they keep a fixed 2×2 (or 1×4) grid instead of the 240px card minimum.
-    ? { display: "grid", gap: mobile ? 14 : 18, gridTemplateColumns: `repeat(${Math.max(1, Math.min(columns, facts.length || 1))}, minmax(0, 1fr))` }
-    : { display: "flex", flexWrap: "wrap", columnGap: 28, rowGap: 14, alignItems: "flex-start", justifyContent: props.align === "center" ? "center" : undefined };
+    // Icon and text always start-align inside a cell; a centred section centres the whole grid instead.
+    ? { display: "grid", gap: mobile ? 14 : 18, gridTemplateColumns: `repeat(${gridColumnCount}, minmax(0, 1fr))`, textAlign: "left", ...(centered && !cardColor ? { width: "fit-content", maxWidth: "100%", marginInline: "auto", columnGap: mobile ? 20 : 32 } : {}) }
+    : { display: "flex", flexWrap: "wrap", columnGap: 28, rowGap: 14, alignItems: "flex-start", justifyContent: centered ? "center" : undefined };
+  // An odd count in a 2-column grid lets the last fact span the row instead of leaving an empty cell.
+  const spanLast = gridColumnCount === 2 && facts.length % 2 === 1;
   return <div style={{ ...container, padding: cardColor ? (mobile ? 16 : 20) : undefined, borderRadius: cardColor ? 12 : undefined, backgroundColor: cardColor, color: cardText ?? undefined }} aria-label="活動資訊" role="group">
-    {facts.map((fact) => item(fact, mobile))}
+    {facts.map((fact, index) => spanLast && index === facts.length - 1 ? <div key={fact.key} style={{ gridColumn: "1 / -1" }}>{item(fact, mobile)}</div> : item(fact, mobile))}
   </div>;
 }
 
@@ -448,7 +453,8 @@ export function AddToCalendarElement({ props, tokens, viewport, interactive }: W
 export function AnnouncementBarElement({ props, tokens, viewport, interactive }: WebinarElementProps) {
   const background = showcaseColor(props.barColor) ?? tokens.linkColor;
   const color = showcaseColor(props.barTextColor) ?? showcaseReadableOn(background);
-  const text = showcaseText(props.text, 160) || "在屬性面板輸入公告文字";
+  const { schedule } = useFunnelEvent();
+  const text = resolveFunnelEventFields(showcaseText(props.text, 160) || "在屬性面板輸入公告文字", schedule);
   const href = safeContentHref(props.href);
   const linkLabel = showcaseText(props.linkLabel, 30);
   const mobile = isMobile(viewport);
@@ -590,7 +596,7 @@ export function ImageGalleryElement({ props, viewport, interactive }: WebinarEle
     <figure className="m-0 grid" style={{ gap: 8 }}>
       <button type="button" aria-label={`放大檢視：${image.alt || `作品 ${index + 1}`}`} onClick={(event) => { if (!interactive) return; triggerRef.current = event.currentTarget; setOpen(index); }}
         className="group relative block w-full cursor-zoom-in overflow-hidden rounded-xl focus-visible:outline-2 focus-visible:outline-offset-4" style={layout === "grid" ? { aspectRatio: "4 / 3", backgroundColor: "rgba(127, 127, 127, 0.12)" } : undefined}>
-        <img src={image.src} alt={image.alt} loading="lazy" className={layout === "grid" ? "absolute inset-0 h-full w-full object-contain" : "block h-auto w-full"} />
+        <img src={image.src} alt={image.alt} loading="lazy" className={layout === "grid" ? "absolute inset-0 h-full w-full object-cover" : "block h-auto w-full"} />
         <span aria-hidden className="absolute top-2 right-2 grid h-8 w-8 place-items-center rounded-full bg-black/55 text-white opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100"><Expand size={16} /></span>
       </button>
       {image.caption ? <figcaption className="text-[0.875em]" style={{ opacity: 0.85 }}>{image.caption}</figcaption> : null}

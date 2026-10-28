@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
 import path from "node:path";
 import { findFunnelContrastIssues } from "@/lib/funnel-design-contrast";
-import { type FunnelNode, type PageDocument } from "@/lib/funnel-page-document";
+import { createEmptyPageDocument, explainPageDocumentIssue, type FunnelNode, type PageDocument } from "@/lib/funnel-page-document";
 import { getFunnelTemplateGalleryItem, previewFunnelTemplate } from "@/lib/funnel-template-gallery";
 import { FUNNEL_FONT_OPTIONS } from "@/lib/funnel-typography";
 import { WEBINAR_TEMPLATE_SAMPLE_MARK, type WebinarTemplateDefinition } from "./types";
@@ -53,7 +53,12 @@ export function webinarTemplateIssues(template: WebinarTemplateDefinition): stri
   if (!getFunnelTemplateGalleryItem(template.id)) return [`${template.id} 沒有登記在範本庫（index.ts 的位置是否還是 null？）`];
   if (!/^webinar-[a-z0-9-]+$/u.test(template.id)) issues.push("id 必須是 webinar-<小寫英數與連字號>");
   let document: PageDocument;
-  try { document = previewFunnelTemplate(template.id); } catch (error) { return [...issues, `無法建立 PageDocument：${(error as Error).message}`]; }
+  try { document = previewFunnelTemplate(template.id); } catch (error) {
+    // Name the first schema path or tree rule that failed (e.g. borderRadius > 500, a duplicate node id).
+    const empty = createEmptyPageDocument("template_check_page", template.name);
+    const reason = explainPageDocumentIssue({ ...empty, settings: { ...empty.settings, ...template.settings, typography: { ...empty.settings.typography, ...template.theme.typography } }, root: template.build(`gallery_${template.id}_preview`) });
+    return [...issues, `無法建立 PageDocument：${(error as Error).message}${reason ? `（${reason}）` : ""}`];
+  }
   const nodes = flatten(document.root);
   for (const node of nodes) issues.push(...nodeIssues(node, `gallery_${template.id}_preview_`));
   issues.push(...structureIssues(template, document, nodes));

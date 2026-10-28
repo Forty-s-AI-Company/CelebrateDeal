@@ -90,10 +90,14 @@ export function webinarTemplateKit(prefix: string) {
       { padding: `${paddingY}px 32px`, backgroundColor: background, color, ...(align ? { textAlign: align } : {}) },
       { htmlId, tablet: { style: { padding: `${paddingYTablet}px 28px` } }, mobile: { style: { padding: `${paddingYMobile}px 20px` } } });
   };
-  /** 兩欄：ratio 例如 "7:5"；stackOn "tablet" 讓平板也上下堆疊；mobileOrder "reverse" 讓手機先顯示第二欄。 */
-  const columns2 = (id: string, left: FunnelNode[], right: FunnelNode[], options: { ratio?: string; stackOn?: "mobile" | "tablet"; mobileOrder?: "default" | "reverse"; gap?: number; align?: FunnelNodeStyle["align"] } = {}) =>
+  /**
+   * 兩欄：ratio 例如 "7:5"；stackOn "tablet" 讓平板也上下堆疊；mobileOrder "reverse" 讓手機先顯示第二欄。
+   * 每一欄可以是節點陣列（包成無外框的 content_box），或直接傳入一個節點當作那一欄
+   * （例如帶底色的卡片 `stack(…, style)` 或 `webinar_state`），因為 content_box 不能再包 content_box。
+   */
+  const columns2 = (id: string, left: FunnelNode[] | FunnelNode, right: FunnelNode[] | FunnelNode, options: { ratio?: string; stackOn?: "mobile" | "tablet"; mobileOrder?: "default" | "reverse"; gap?: number; align?: FunnelNodeStyle["align"] } = {}) =>
     node(id, "columns_2", { ...(options.ratio ? { ratio: options.ratio } : {}), ...(options.stackOn ? { stackOn: options.stackOn } : {}), ...(options.mobileOrder ? { mobileOrder: options.mobileOrder } : {}), ...(options.gap !== undefined ? { gap: options.gap } : {}) },
-      [stack(`${id}_left`, left), stack(`${id}_right`, right)], options.align ? { align: options.align } : {});
+      [Array.isArray(left) ? stack(`${id}_left`, left) : left, Array.isArray(right) ? stack(`${id}_right`, right) : right], options.align ? { align: options.align } : {});
   /** 無外框的垂直堆疊（content_box，padding 0）。 */
   const stack = (id: string, children: FunnelNode[], gap = 20, style: FunnelNodeStyle = {}, options: WebinarNodeOptions = {}) => node(id, "content_box", { gap }, children, { padding: 0, ...style }, options);
   const headline = (id: string, text: string, level: "h1" | "h2" | "h3" | "h4" = "h2", style: FunnelNodeStyle = {}, options: WebinarNodeOptions = {}) => node(id, "headline", { text, level }, undefined, style, options);
@@ -105,7 +109,8 @@ export function webinarTemplateKit(prefix: string) {
    * 實際欄位、類型與必填以伺服器報名表為準，這裡提供標籤、提示文字與樣式。
    */
   const form = (id: string, options: { fields: WebinarFormField[]; submitLabel: string; submitStyle?: FunnelNodeStyle; title?: string; consent?: string; note?: string; style?: FunnelNodeStyle; htmlId?: string; tablet?: Overrides; mobile?: Overrides }) => node(id, "form", { ariaLabel: options.title ?? "報名表單" }, [
-    ...(options.title ? [headline(`${id}_title`, options.title, "h3")] : []),
+    // The title follows the form's own text colour (a white form card on a dark page), else the page heading colour.
+    ...(options.title ? [headline(`${id}_title`, options.title, "h3", options.style?.color ? { color: options.style.color } : {})] : []),
     ...options.fields.map((field) => node(`${id}_${field.name}`, "form_input", { name: field.name, label: field.label, inputType: field.type ?? "text", required: field.required ?? false, ...(field.placeholder ? { placeholder: field.placeholder } : {}), ...(field.helpText ? { helpText: field.helpText } : {}), ...(field.half ? { width: "half" } : {}) })),
     ...(options.consent ? [node(`${id}_consent`, "checkbox", { label: options.consent, required: true })] : []),
     node(`${id}_submit`, "button", { label: options.submitLabel }, undefined, { width: 100, ...options.submitStyle }, { actions: [{ type: "submit_form" }] }),

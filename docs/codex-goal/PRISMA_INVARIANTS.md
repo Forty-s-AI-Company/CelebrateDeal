@@ -582,3 +582,10 @@ Current source inventory: 145 models and 99 forward migrations. Previous checkpo
 - 公開報名表（C-19 最小集合）：欄位 key、標籤、類型、必填、送出文字與送出目標一律來自伺服器報名表與既有 submission context，同意文字沿用平台用語；頁面上的 `form_input`／`button` 只提供提示文字、說明、半寬與按鈕樣式。Webinar 報名步驟的頁面若有自己的名單表單，公開頁改由該表單以原生 POST 送出（同一組 hidden 欄位：formId、liveId、landingPageId、funnelStepId、推廣碼、redirectTo；伺服器照舊回傳 `?submitted=` 回饋；欄位送出前不停用；預覽模式不送出），並隱藏原本頁面下方的備用表單。
 - 範本登記：`src/lib/funnel-templates/webinar/index.ts` 預留 20 個位置；`FunnelTemplateGalleryItem` 新增選填 `pageSettings`、`tags`、`retired`、`hidden`。`retired`／`hidden` 的範本仍可由 id 解析（`getFunnelTemplateGalleryItem`、`instantiateFunnelTemplate`），但不出現在 `listFunnelTemplateGallery` 與範本庫。
 - 測試：`src/lib/funnel-event-time.test.ts`、`src/lib/funnel-webinar-elements.test.ts`、`src/components/landing-pages/funnel-webinar-elements.test.tsx`、`src/components/landing-pages/funnel-responsive-renderer.test.tsx`、`src/lib/funnel-element-inspector-webinar.test.ts`、`src/lib/landing-page-template-document.test.ts`（tablet 覆寫清除）、`src/lib/funnel-templates/webinar/*.test.ts`、`src/components/landing-pages/funnel-webinar-experience.test.tsx`。
+
+## 2026-10-29 Webinar 範本整合：共用元件修正（無 migration）
+
+- 沒有新增 model、欄位或 migration。`PageDocument` 契約只放寬：`webinar_state` 可放在 `content_box`（原本只能在 row 與各欄），讓兩欄的某一欄可以同時放 H1、活動資訊列與依狀態切換的 CTA，不必在每個狀態重複整段標題。`webinar_state` 的子節點仍只能是 `content_box`，`content_box` 仍不能直接放在 `content_box` 之下。舊文件解析結果不變。
+- 文字動態欄位新增 `{{webinar.replayEndsAt}}`（回放開放至「11 月 12 日 23:59」，沒有設定時為「時間公布中」）；`section_title`（眉標、標題、副標）與 `announcement_bar` 的文字也在渲染時替換動態欄位。存檔仍保留原字串。
+- `FunnelRenderEvent` 新增選填 `webinar`：文件沒有漏斗排程時的備用排程，只有開發用 harness（`/browser-qa/funnel-design?schedule=…`，production 回 404）會傳入；公開頁仍只讀 `flow.webinar`。
+- 新增 `explainPageDocumentIssue`（只供範本測試診斷，回傳第一個不通過的 schema 路徑或樹狀規則），不影響 `parsePageDocument` 的 fail-closed 行為。

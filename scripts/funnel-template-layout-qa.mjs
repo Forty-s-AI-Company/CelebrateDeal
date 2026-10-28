@@ -4,6 +4,9 @@
  * 用法：
  *   node scripts/funnel-template-layout-qa.mjs --templates=id1,id2 [--widths=1440,390] [--stress] [--out=資料夾] [--base-url=http://127.0.0.1:3000]
  *   node scripts/funnel-template-layout-qa.mjs --all --stress
+ *   node scripts/funnel-template-layout-qa.mjs --templates=id --schedule=sample,far,live,replay,ended
+ *     （harness 合成活動排程，驗證倒數、活動資訊列、截止提示與 webinar_state；每種排程各跑一輪，截圖檔名加 ~排程）
+ *   --jpeg：截圖存成 JPEG（品質 72），給要放進 repo 的證據
  *
  * 沒有 --base-url 時，會把 src／public 複製到暫存鏡像目錄（排除所有 .env*），只傳安全環境變數，
  * 在 127.0.0.1 的未使用 port（預設 31027 起）啟動 `next dev --webpack`，跑完即關閉。
@@ -25,10 +28,11 @@ const FULL_RULES = ["L-1", "L-2", "L-3", "L-4", "L-5", "L-6", "L-10", "L-11", "F
 /** qa-standards §4: stress copy must still pass L-1～L-5 (320 keeps its degraded subset). */
 const STRESS_RULES = ["L-1", "L-2", "L-3", "L-4", "L-5"];
 const HARNESS_PATH = "/browser-qa/funnel-design";
+const SCHEDULES = ["sample", "far", "live", "replay", "ended"];
 const allowedFiles = ["package.json", "tsconfig.json", "next.config.ts", "postcss.config.mjs", "sentry.server.config.ts", "sentry.edge.config.ts"];
 
 function parseArgs(argv) {
-  const args = { templates: [], widths: null, stress: false, all: false, out: null, baseUrl: null };
+  const args = { templates: [], widths: null, stress: false, all: false, out: null, baseUrl: null, schedules: [null], jpeg: false };
   for (const arg of argv) {
     const [key, ...rest] = arg.replace(/^--/u, "").split("=");
     const value = rest.join("=");
@@ -36,7 +40,9 @@ function parseArgs(argv) {
     else if (key === "widths") args.widths = value.split(",").map(Number).filter((item) => Number.isInteger(item) && item >= 200 && item <= 4000);
     else if (key === "stress") args.stress = value !== "false";
     else if (key === "all") args.all = true;
+    else if (key === "jpeg") args.jpeg = true;
     else if (key === "out") args.out = value;
+    else if (key === "schedule") args.schedules = value.split(",").map((item) => item.trim()).filter((item) => SCHEDULES.includes(item));
     else if (key === "base-url") args.baseUrl = value.replace(/\/+$/u, "");
     else throw new Error(`未知的參數：${arg}`);
   }
@@ -133,14 +139,14 @@ async function listAllTemplateIds(browser, baseUrl) {
 }
 
 /** 一個「範本 × 寬度 × 文案」的檢查回合。 */
-async function runCase(context, { baseUrl, template, width, height, stress, rules, screenshot }) {
+async function runCase(context, { baseUrl, template, width, height, stress, rules, screenshot, schedule }) {
   const page = await context.newPage();
   const consoleErrors = [];
   page.on("pageerror", (error) => consoleErrors.push(error.message));
   page.on("console", (message) => { if (message.type() === "error") consoleErrors.push(message.text()); });
   const failures = [];
   try {
-    const url = `${baseUrl}${HARNESS_PATH}?template=${encodeURIComponent(template)}&viewport=responsive${stress ? "&stress=1" : ""}`;
+    const url = `${baseUrl}${HARNESS_PATH}?template=${encodeURIComponent(template)}&viewport=responsive${stress ? "&stress=1" : ""}${schedule ? `&schedule=${schedule}` : ""}`;
     const response = await page.goto(url, { waitUntil: "load", timeout: 180_000 });
     if (!response || response.status() >= 400) failures.push({ rule: "LOAD", nodeId: null, nodeType: null, detail: `HTTP ${response ? response.status() : "無回應"}` });
     try {
@@ -162,10 +168,10 @@ async function runCase(context, { baseUrl, template, width, height, stress, rule
     failures.push(...await page.evaluate(runLayoutChecks, { width, height, rules }));
     if (screenshot) {
       await page.evaluate(() => window.scrollTo(0, 0));
-      await page.screenshot({ path: screenshot, fullPage: true });
+      await page.screenshot({ path: screenshot, fullPage: true, ...(screenshot.endsWith(".jpg") ? { type: "jpeg", quality: 72 } : {}) });
     }
     const hydration = consoleErrors.filter((message) => /hydrat/iu.test(message));
-    if (hydration.length) failures.push({ rule: "HYDRATION", nodeId: null, nodeType: null, detail: hydration[0].slice(0, 300) });
+    if (hydration.length) failures.push({ rule: "HYDRATION", nodeId: null, nodeType: null, detail: hydration[0].slice(0, 1200) });
   } finally {
     await page.close();
   }
@@ -176,12 +182,12 @@ function summarize(results) {
   const lines = [];
   const pad = (value, size) => String(value).padEnd(size);
   const total = (result) => result.failures.reduce((sum, item) => sum + (item.omitted ?? 1), 0);
-  lines.push(`${pad("範本", 34)}${pad("寬度", 12)}${pad("文案", 6)}${pad("失敗", 6)}規則`);
+  lines.push(`${pad("範本", 34)}${pad("寬度", 12)}${pad("文案", 6)}${pad("排程", 8)}${pad("失敗", 6)}規則`);
   for (const result of results) {
     const byRule = {};
     for (const item of result.failures) byRule[item.rule] = (byRule[item.rule] ?? 0) + (item.omitted ?? 1);
     const rules = Object.entries(byRule).sort((a, b) => b[1] - a[1]).map(([rule, count]) => `${rule}×${count}`).join(" ");
-    lines.push(`${pad(result.template, 34)}${pad(`${result.width}${result.label ? `(${result.label})` : ""}`, 12)}${pad(result.stress ? "壓力" : "一般", 6)}${pad(total(result), 6)}${rules || "通過"}`);
+    lines.push(`${pad(result.template, 34)}${pad(`${result.width}${result.label ? `(${result.label})` : ""}`, 12)}${pad(result.stress ? "壓力" : "一般", 6)}${pad(result.schedule ?? "-", 8)}${pad(total(result), 6)}${rules || "通過"}`);
   }
   return lines.join("\n");
 }
@@ -210,15 +216,18 @@ async function main() {
       // 不用 isMobile：避免行動版瀏覽器為了容納溢出內容而放大版面，掩蓋水平捲動。
       const context = await browser.newContext({ viewport: { width: run.width, height: run.height }, userAgent: ua, hasTouch: touch, deviceScaleFactor: 1, reducedMotion: "reduce" });
       for (const template of templates) {
-        for (const stress of args.stress ? [false, true] : [false]) {
+        for (const schedule of args.schedules) for (const stress of args.stress ? [false, true] : [false]) {
           if (stress && run.label) continue;
           const rules = stress ? run.rules.filter((rule) => STRESS_RULES.includes(rule)) : run.rules;
-          const screenshot = run.screenshot ? path.join(outDir, `${template}@${run.width}${stress ? "-stress" : ""}.png`) : null;
-          const { failures, consoleErrors } = await runCase(context, { baseUrl: server.baseUrl, template, width: run.width, height: run.height, stress, rules, screenshot });
-          const result = { template, width: run.width, height: run.height, label: run.label ?? null, stress, rules, failures, consoleErrors: consoleErrors.slice(0, 5), screenshot: screenshot ? path.relative(root, screenshot) : null };
+          const screenshot = run.screenshot ? path.join(outDir, `${template}@${run.width}${stress ? "-stress" : ""}${schedule ? `~${schedule}` : ""}.${args.jpeg ? "jpg" : "png"}`) : null;
+          const options = { baseUrl: server.baseUrl, template, width: run.width, height: run.height, stress, rules, screenshot, schedule };
+          let { failures, consoleErrors } = await runCase(context, options);
+          // A dev-server compile can race the first hydration; retry once and keep the retry's result.
+          if (failures.some((item) => item.rule === "HYDRATION")) ({ failures, consoleErrors } = await runCase(context, options));
+          const result = { template, width: run.width, height: run.height, label: run.label ?? null, stress, schedule, rules, failures, consoleErrors: consoleErrors.slice(0, 5), screenshot: screenshot ? path.relative(root, screenshot) : null };
           results.push(result);
           const count = failures.reduce((sum, item) => sum + (item.omitted ?? 1), 0);
-          console.log(`${count ? "FAIL" : "PASS"} ${template}@${run.width}${run.label ? `(${run.label})` : ""}${stress ? " stress" : ""}${count ? ` — ${count} 項` : ""}`);
+          console.log(`${count ? "FAIL" : "PASS"} ${template}@${run.width}${run.label ? `(${run.label})` : ""}${stress ? " stress" : ""}${schedule ? ` ~${schedule}` : ""}${count ? ` — ${count} 項` : ""}`);
           for (const item of failures) console.log(`  [${item.rule}] node=${item.nodeId ?? "-"} type=${item.nodeType ?? "-"} ${item.detail}`);
         }
       }

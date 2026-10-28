@@ -77,7 +77,8 @@ export function findFunnelContrastIssues(document: PageDocument, minimum = 4.5):
         case "text": check(node, funnelTextStyle(node.props.textStyle) === "eyebrow" ? "眉標" : "文字", funnelTextStyle(node.props.textStyle) === "eyebrow" ? style.color ?? tokens.linkColor : color, bg); break;
         case "bulleted_list": case "checkbox": case "form_input": check(node, node.type, color, bg); break;
         case "menu": check(node, "選單連結", style.color ?? tokens.linkColor, bg); break;
-        case "button": check(node, "按鈕", style.color ?? FUNNEL_DEFAULT_BUTTON_COLORS.text, ownBackground ?? FUNNEL_DEFAULT_BUTTON_COLORS.background); break;
+        // A transparent button (text-link style) sits on the surrounding background, not the default amber fill.
+        case "button": check(node, "按鈕", style.color ?? FUNNEL_DEFAULT_BUTTON_COLORS.text, style.backgroundColor === "transparent" ? background : ownBackground ?? FUNNEL_DEFAULT_BUTTON_COLORS.background); break;
         default: checkShowcase(node, color, bg, tokens.headingColor, check); checkWebinar(node, color, bg, tokens.linkColor, check); break;
       }
       if (node.children) walk(node.children, bg, color);

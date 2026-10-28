@@ -95,7 +95,15 @@ export type FunnelPageDocumentRendererProps = {
   event?: FunnelRenderEvent;
 };
 
-export type FunnelRenderEvent = { registrationClosesAt?: string | null; renderedAt?: number };
+const FAQ_BORDER: CSSProperties = { borderColor: "color-mix(in srgb, currentColor 22%, transparent)" };
+const FAQ_ANSWER: CSSProperties = { fontSize: "0.9375em", opacity: 0.86 };
+
+export type FunnelRenderEvent = {
+  registrationClosesAt?: string | null;
+  renderedAt?: number;
+  /** Fallback schedule when the document carries no funnel schedule (development harness samples only). */
+  webinar?: unknown;
+};
 
 export type FunnelSubmissionContext = {
   form: { id: string; fields: RegistrationFormFieldSpec[]; submitLabel: string; successMessage: string };
@@ -659,7 +667,7 @@ function NodeRenderer({ node, viewport, mode, flow, submission, consultation, pu
     }
     case "image": {
       const src = safeContentAssetUrl(props.src ?? props.imageUrl ?? props.url);
-      return surface(src ? <figure><img src={src} alt={stringProp(props, ["alt", "altText"])} style={imageStyle(resolved.style)} />{stringProp(props, ["caption"]) ? <figcaption className="mt-2 text-sm text-slate-600">{stringProp(props, ["caption"])}</figcaption> : null}</figure> : <UnsupportedNode node={node} message="圖片網址不安全或尚未設定。" />);
+      return surface(src ? <figure><img src={src} alt={stringProp(props, ["alt", "altText"])} style={imageStyle(resolved.style)} />{stringProp(props, ["caption"]) ? <figcaption className="mt-2 text-sm" style={{ opacity: 0.8 }}>{stringProp(props, ["caption"])}</figcaption> : null}</figure> : <UnsupportedNode node={node} message="圖片網址不安全或尚未設定。" />);
     }
     case "video": {
       const src = safeMediaSource(props);
@@ -752,7 +760,8 @@ function NodeRenderer({ node, viewport, mode, flow, submission, consultation, pu
         const answer = stringProp(record, ["answer", "content", "body"], "尚未設定答案。");
         return itemQuestion ? [{ question: itemQuestion, answer }] : [];
       }) : [];
-      return surface(items.length ? <div className="space-y-2">{items.map((item, index) => <details key={`${node.id}-faq-${index}`} className="rounded-lg border border-slate-200 p-4"><summary className="cursor-pointer font-medium">{item.question}</summary><p className="mt-3 text-sm text-slate-600 whitespace-pre-line">{item.answer}</p></details>)}</div> : <details className="rounded-lg border border-slate-200 p-4"><summary className="cursor-pointer font-medium">{question}</summary><div className="mt-3">{children.length ? renderChildren() : <p className="text-sm text-slate-600">尚未設定答案。</p>}</div></details>);
+      // Border and answer follow the section's text colour, so the FAQ stays readable on dark sections too.
+      return surface(items.length ? <div className="space-y-2">{items.map((item, index) => <details key={`${node.id}-faq-${index}`} className="rounded-lg border p-4" style={FAQ_BORDER}><summary className="cursor-pointer font-medium">{item.question}</summary><p className="mt-3 whitespace-pre-line" style={FAQ_ANSWER}>{item.answer}</p></details>)}</div> : <details className="rounded-lg border p-4" style={FAQ_BORDER}><summary className="cursor-pointer font-medium">{question}</summary><div className="mt-3">{children.length ? renderChildren() : <p style={FAQ_ANSWER}>尚未設定答案。</p>}</div></details>);
     }
     case "button": {
       const source: unknown = node.actions[0] ?? props.action;
@@ -943,7 +952,7 @@ export function FunnelPageDocumentRenderer({ document, viewport = "desktop", mod
   const sticky = parsed.settings.stickyCta && funnelStickyCtaVisibleOn(parsed.settings.stickyCta, viewport) ? parsed.settings.stickyCta : null;
   // The bar is a fixed overlay, so it only appears on public pages and the harness that renders them, never on the editor canvas or its preview pane.
   const liveSticky = sticky && publicSurface && mode === "preview" ? sticky : null;
-  const schedule = funnelEventSchedule({ webinar: parsed.flow?.webinar, registrationClosesAt: event?.registrationClosesAt, title: parsed.settings.eventTitle });
+  const schedule = funnelEventSchedule({ webinar: parsed.flow?.webinar ?? event?.webinar, registrationClosesAt: event?.registrationClosesAt, title: parsed.settings.eventTitle });
   const root = <Root ref={rootRef as never} data-funnel-renderer data-funnel-content data-viewport={viewport} data-render-mode={mode} className={`min-h-full w-full${backgroundImage ? " relative isolate" : ""} ${FUNNEL_FONT_VARIABLES} ${className}`.trim()} style={pageStyle(parsed, tokens)}>
       {backgroundImage ? <div aria-hidden data-funnel-background className="pointer-events-none absolute inset-0 -z-10 overflow-hidden"><div className="absolute bg-cover bg-center" style={{ backgroundImage, inset: blur ? `-${blur * 2}px` : 0, filter: blur ? `blur(${blur}px)` : undefined }} /></div> : null}
       {parsed.root.map((node) => <NodeRenderer key={node.id} node={node} viewport={viewport} mode={mode} flow={parsed.flow} submission={submission} consultation={consultation} publicSurface={publicSurface} selectedNodeId={selectedNodeId} onSelectNode={onSelectNode} inlineEditing={editing} />)}

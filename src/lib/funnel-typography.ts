@@ -30,7 +30,7 @@ export const FUNNEL_FONT_OPTIONS = [
   { value: "sans-tc", label: "思源黑體（Noto Sans TC）", stack: 'var(--funnel-font-sans-tc, "Noto Sans TC"), "PingFang TC", "Microsoft JhengHei", "Heiti TC", system-ui, -apple-system, "Segoe UI", sans-serif' },
   { value: "serif-tc", label: "思源宋體（Noto Serif TC）", stack: 'var(--funnel-font-serif-tc, "Noto Serif TC"), "Songti TC", "PMingLiU", "MingLiU", Georgia, "Times New Roman", serif' },
   { value: "wenkai-tc", label: "霞鶩文楷（手寫溫暖）", stack: 'var(--funnel-font-wenkai-tc, "LXGW WenKai TC"), "Kaiti TC", "DFKai-SB", "BiauKai", "Noto Serif TC", serif' },
-  { value: "display-latin", label: "Space Grotesk（英數點綴）", stack: 'var(--funnel-font-display-latin, "Space Grotesk"), "Noto Sans TC", "PingFang TC", "Microsoft JhengHei", system-ui, sans-serif' },
+  { value: "display-latin", label: "Space Grotesk（英數點綴）", stack: 'var(--funnel-font-display-latin, "Space Grotesk"), var(--funnel-font-sans-tc, "Noto Sans TC"), "PingFang TC", "Microsoft JhengHei", system-ui, sans-serif' },
   { value: "rounded-tc", label: "圓體", stack: 'ui-rounded, "Yuanti TC", "jf-openhuninn", "Arial Rounded MT Bold", "Noto Sans TC", "PingFang TC", "Microsoft JhengHei", sans-serif' },
   { value: "humanist", label: "人文無襯線", stack: '"Segoe UI", "Helvetica Neue", Arial, "Noto Sans TC", "PingFang TC", "Microsoft JhengHei", sans-serif' },
   { value: "mono", label: "等寬", stack: 'ui-monospace, "Cascadia Code", "SFMono-Regular", Consolas, "Noto Sans Mono CJK TC", "Microsoft JhengHei", monospace' },

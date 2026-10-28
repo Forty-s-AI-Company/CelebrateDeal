@@ -161,6 +161,29 @@ npx vitest run src/lib/funnel-templates/webinar
   - 金、亮黃、螢光綠只能放在深色底，或只用在 ≥ 24px 的大字。
   - 每份 spec 的配色表已經算好對比。
 
+### 3.7 整合分支修正（2026-10-29）
+
+批次筆記（`notes/batch-1～4.md`）回報的共用元件問題已修正，新範本可以直接照 spec 寫：
+
+| 元件／能力 | 修正後 |
+|---|---|
+| `icon_list`（`layout: "grid"`） | 欄寬計算與實際 gap 一致，`columns: 3` 在桌機就是 3 欄、平板 2 欄 |
+| C-13 `testimonial_wall` | 輪播分頁點與左右按鈕一律 44×44（不會被壓縮）；跑馬燈不再截斷長評價（L-3） |
+| C-01 `event_facts` | 標籤 `max(14px, 0.8125em)`，不需要再設 `fontSize: 18`；2 欄時奇數項的最後一格跨整列；置中區段裡 2×2 維持靠左對齊、整組置中 |
+| `section_title`、C-10 `announcement_bar` | 文字會解析 `{{webinar.*}}` |
+| 動態欄位 | 新增 `{{webinar.replayEndsAt}}`（回放開放至） |
+| `stats` | 平板最多 2 欄（4 項是 2×2）；長數字可換行，不撐出水平捲動 |
+| `faq` | 外框與答案跟隨區段文字色，深色區段也可讀 |
+| `image_gallery`（grid） | 圖片填滿格子（cover），不再左右露出灰底 |
+| `form` 標題 | 跟隨表單 `style.color` |
+| `display-latin` | 中文退回自架的思源黑體 |
+| `webinar_state` | 可以放在 `content_box`（欄內），H1 與活動資訊列只寫一次，只讓 CTA 依狀態切換 |
+| `columns2()` | 每一欄可以直接傳入一個節點（例如帶底色的 `stack(…, style)` 或 `webinar_state`） |
+| 對比檢查 | `backgroundColor: "transparent"` 的按鈕以所在區段底色計算 |
+| `webinarTemplateIssues` | PageDocument 驗證失敗時附上第一個失敗的路徑或規則 |
+
+仍然不支援（列為 follow-up）：單一節點指定字族／字重、`speaker_profiles`／`image_gallery` 手機 2 欄、section 漸層背景、`video` 只有 poster、`borderStyle`、`form_input` textarea、`rounded-tc` 自架字型。
+
 ## 4. 「不跑版」QA 腳本
 
 ```bash
@@ -178,12 +201,15 @@ npm run qa:template-layout -- --templates=webinar-ai-minimal --stress --out=arti
   - `--widths=1440,390` 可以只跑部分寬度。
 - `--stress`：同一頁再用壓力文案跑一次（qa-standards §4）。
 - `--all`：跑範本庫全部範本，包含隱藏範本。
+- `--schedule=sample,far,live,replay,ended`：harness 帶入合成的活動排程（3 天後開播、120 天後開播、直播中、回放中、已結束），驗證倒數、活動資訊列、`{{webinar.*}}`、截止提示與 `webinar_state`。每種排程各跑一輪，截圖檔名加 `~<排程>`。
+- `--jpeg`：截圖存成 JPEG（品質 72），給要放進 repo 的證據。
+- `HYDRATION` 失敗會自動重跑一次（dev server 編譯偶爾會和第一次水合競爭），報告保留重跑的結果與前 1,200 字訊息。
 - 輸出：
   - `<out>/<id>@<width>[-stress].png` 是全頁截圖。
   - `<out>/report.json` 是完整報告。
   - 主控台列出每個失敗的規則、節點 id（`data-funnel-node-id`）與細節。
   - 有失敗時 exit code 為 1。
-- 頁面入口是 development-only 的 harness：`/browser-qa/funnel-design?template=<id>&viewport=responsive[&stress=1]`。
+- 頁面入口是 development-only 的 harness：`/browser-qa/funnel-design?template=<id>&viewport=responsive[&stress=1][&schedule=sample]`。
   - 它直接渲染公開頁元件 `PublicFunnelDocument`，由 matchMedia 自行判斷手機、平板或桌機。
   - 報名表單用合成的姓名、Email、電話欄位，只顯示、不送出。
 - 腳本沒有涵蓋、需要人工確認：
