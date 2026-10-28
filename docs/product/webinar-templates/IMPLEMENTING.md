@@ -203,6 +203,7 @@ npm run qa:template-layout -- --templates=webinar-ai-minimal --stress --out=arti
 - `--all`：跑範本庫全部範本，包含隱藏範本。
 - `--schedule=sample,far,live,replay,ended`：harness 帶入合成的活動排程（3 天後開播、120 天後開播、直播中、回放中、已結束），驗證倒數、活動資訊列、`{{webinar.*}}`、截止提示與 `webinar_state`。每種排程各跑一輪，截圖檔名加 `~<排程>`。
 - `--jpeg`：截圖存成 JPEG（品質 72），給要放進 repo 的證據。
+- `--skip-rules=L-7`：略過不適用的規則（感謝頁、播放頁、政策頁沒有報名入口，L-7 不適用）。報告的 `skippedRules` 會記錄。
 - `HYDRATION` 失敗會自動重跑一次（dev server 編譯偶爾會和第一次水合競爭），報告保留重跑的結果與前 1,200 字訊息。
 - 輸出：
   - `<out>/<id>@<width>[-stress].png` 是全頁截圖。

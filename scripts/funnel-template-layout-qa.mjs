@@ -7,6 +7,7 @@
  *   node scripts/funnel-template-layout-qa.mjs --templates=id --schedule=sample,far,live,replay,ended
  *     （harness 合成活動排程，驗證倒數、活動資訊列、截止提示與 webinar_state；每種排程各跑一輪，截圖檔名加 ~排程）
  *   --jpeg：截圖存成 JPEG（品質 72），給要放進 repo 的證據
+ *   --skip-rules=L-7：不適用的規則（例如感謝頁、播放頁、政策頁沒有報名入口，L-7 不適用）；報告會記錄略過的規則
  *
  * 沒有 --base-url 時，會把 src／public 複製到暫存鏡像目錄（排除所有 .env*），只傳安全環境變數，
  * 在 127.0.0.1 的未使用 port（預設 31027 起）啟動 `next dev --webpack`，跑完即關閉。
@@ -32,7 +33,7 @@ const SCHEDULES = ["sample", "far", "live", "replay", "ended"];
 const allowedFiles = ["package.json", "tsconfig.json", "next.config.ts", "postcss.config.mjs", "sentry.server.config.ts", "sentry.edge.config.ts"];
 
 function parseArgs(argv) {
-  const args = { templates: [], widths: null, stress: false, all: false, out: null, baseUrl: null, schedules: [null], jpeg: false };
+  const args = { templates: [], widths: null, stress: false, all: false, out: null, baseUrl: null, schedules: [null], jpeg: false, skipRules: [] };
   for (const arg of argv) {
     const [key, ...rest] = arg.replace(/^--/u, "").split("=");
     const value = rest.join("=");
@@ -41,6 +42,7 @@ function parseArgs(argv) {
     else if (key === "stress") args.stress = value !== "false";
     else if (key === "all") args.all = true;
     else if (key === "jpeg") args.jpeg = true;
+    else if (key === "skip-rules") args.skipRules = value.split(",").map((item) => item.trim()).filter(Boolean);
     else if (key === "out") args.out = value;
     else if (key === "schedule") args.schedules = value.split(",").map((item) => item.trim()).filter((item) => SCHEDULES.includes(item));
     else if (key === "base-url") args.baseUrl = value.replace(/\/+$/u, "");
@@ -218,7 +220,8 @@ async function main() {
       for (const template of templates) {
         for (const schedule of args.schedules) for (const stress of args.stress ? [false, true] : [false]) {
           if (stress && run.label) continue;
-          const rules = stress ? run.rules.filter((rule) => STRESS_RULES.includes(rule)) : run.rules;
+          const rules = (stress ? run.rules.filter((rule) => STRESS_RULES.includes(rule)) : run.rules).filter((rule) => !args.skipRules.includes(rule));
+          if (!rules.length) continue;
           const screenshot = run.screenshot ? path.join(outDir, `${template}@${run.width}${stress ? "-stress" : ""}${schedule ? `~${schedule}` : ""}.${args.jpeg ? "jpg" : "png"}`) : null;
           const options = { baseUrl: server.baseUrl, template, width: run.width, height: run.height, stress, rules, screenshot, schedule };
           let { failures, consoleErrors } = await runCase(context, options);
@@ -239,7 +242,7 @@ async function main() {
   }
 
   const failureCount = results.reduce((sum, result) => sum + result.failures.reduce((inner, item) => inner + (item.omitted ?? 1), 0), 0);
-  const report = { generatedAt: new Date().toISOString(), widths, stress: args.stress, failureCount, results };
+  const report = { generatedAt: new Date().toISOString(), widths, stress: args.stress, skippedRules: args.skipRules, failureCount, results };
   fs.writeFileSync(path.join(outDir, "report.json"), JSON.stringify(report, null, 2));
   console.log(`\n${summarize(results)}`);
   console.log(`\n共 ${results.length} 個回合，${failureCount} 項失敗。`);
