@@ -11,6 +11,7 @@ import type { FunnelStepType } from "@/lib/funnel-flow";
 import { FUNNEL_ILLUSTRATIONS } from "@/lib/funnel-block-library";
 import { buildLuxuryCourseTemplate, LUXURY_COURSE_THEME } from "@/lib/funnel-template-luxury-course";
 import { WEBINAR_TEMPLATES, type WebinarTemplateDefinition } from "@/lib/funnel-templates/webinar";
+import { FUNCTIONAL_PAGE_TEMPLATES, functionalPageGalleryItem } from "@/lib/funnel-template-functional-pages";
 
 export const FUNNEL_TEMPLATE_GOALS = ["sell", "audience", "custom", "webinar"] as const;
 export type FunnelTemplateGoal = (typeof FUNNEL_TEMPLATE_GOALS)[number];
@@ -46,6 +47,11 @@ export type FunnelTemplateGalleryItem = {
    * but are no longer offered as a new choice.
    */
   retired?: { since: string; replacedBy?: string };
+  /**
+   * Step-only templates: offered in the step menu for their step types, but left out of the library's
+   * unfiltered browse until a replacement exists (audience and checkout templates).
+   */
+  libraryHidden?: boolean;
   /** Development example: resolvable by id (harness, tests), never listed. */
   hidden?: boolean;
 };
@@ -349,7 +355,31 @@ const templates: FunnelTemplateGalleryItem[] = [
   { id: "custom-luxury-course", referenceId: "celebratedeal-luxury-course", goal: "custom", category: "品牌首頁", name: "高質感課程品牌（黑金）", description: "黑底金字的課程品牌首頁：導覽列、主視覺、媒體 Logo、數據、課程卡片、評價牆、文章、影片與 FAQ。", status: "available", statusReason: availableReason, preview: { eyebrow: "Brand", headline: "高質感課程品牌（黑金）", summary: "襯線標題與金色點綴的品牌長頁", palette: ["#0b0b0c", "#c9a063", "#f7f3ec"], sectionCount: 15 }, theme: LUXURY_COURSE_THEME, build: buildLuxuryCourseTemplate },
 ];
 
-export const FUNNEL_TEMPLATE_GALLERY: readonly FunnelTemplateGalleryItem[] = Object.freeze([...templates, ...WEBINAR_TEMPLATES.map(webinarTemplateGalleryItem)]);
+/** Retired 2026-10-29 (migration-plan §1): definitions stay so saved funnels and tests still resolve them. */
+const RETIRED_SINCE = "2026-10-29";
+const RETIRED_TEMPLATES: Readonly<Record<string, string | undefined>> = {
+  "webinar-registration": "webinar-saas-split",
+  "webinar-course-registration": "webinar-saas-split",
+  "webinar-workshop-registration": "webinar-design-workshop",
+  "webinar-strategy-registration": "webinar-saas-split",
+  "custom-brand-info": "custom-luxury-course",
+  ...Object.fromEntries(FUNCTIONAL_PAGE_TEMPLATES.map((page) => [page.replaces, page.id])),
+};
+/** No replacement yet (audience list pages and checkout redesigns are separate work): keep them selectable per step. */
+const STEP_ONLY_TEMPLATES: ReadonlySet<string> = new Set([
+  "audience-volunteer", "audience-charity-event", "audience-environment", "audience-course-workbook", "audience-course-consultation", "audience-course-lesson",
+  "sell-product-checkout", "sell-simple-checkout", "sell-content-subscription",
+]);
+const markLifecycle = (template: FunnelTemplateGalleryItem): FunnelTemplateGalleryItem => {
+  if (Object.hasOwn(RETIRED_TEMPLATES, template.id)) return { ...template, retired: { since: RETIRED_SINCE, ...(RETIRED_TEMPLATES[template.id] ? { replacedBy: RETIRED_TEMPLATES[template.id] } : {}) } };
+  return STEP_ONLY_TEMPLATES.has(template.id) ? { ...template, libraryHidden: true } : template;
+};
+
+export const FUNNEL_TEMPLATE_GALLERY: readonly FunnelTemplateGalleryItem[] = Object.freeze([
+  ...templates.map(markLifecycle),
+  ...WEBINAR_TEMPLATES.map(webinarTemplateGalleryItem),
+  ...FUNCTIONAL_PAGE_TEMPLATES.map(functionalPageGalleryItem),
+]);
 
 /** Templates offered as a new choice: retired and hidden entries stay resolvable but are not listed. */
 const offered = (template: FunnelTemplateGalleryItem) => !template.retired && !template.hidden;
@@ -366,12 +396,12 @@ export function getFunnelTemplateGalleryItem(templateId: string): FunnelTemplate
 
 export function listFunnelTemplateGallery(goal?: FunnelTemplateGoal, stepType?: FunnelStepType): readonly FunnelTemplateGalleryItem[] {
   const goalTemplates = (goal ? FUNNEL_TEMPLATE_GALLERY.filter((template) => template.goal === goal) : FUNNEL_TEMPLATE_GALLERY).filter(offered);
-  if (!stepType) return goalTemplates;
+  if (!stepType) return goalTemplates.filter((template) => !template.libraryHidden);
   if (goal === "webinar") {
     const templatesByStep: Partial<Record<FunnelStepType, string[]>> = {
-      webinar_registration_page: ["webinar-registration", "webinar-course-registration", "webinar-workshop-registration", "webinar-strategy-registration", ...WEBINAR_TEMPLATES.map((template) => template.id)],
-      webinar_thank_you_page: ["webinar-thank-you"],
-      webinar_broadcast_page: ["webinar-broadcast"],
+      webinar_registration_page: WEBINAR_TEMPLATES.map((template) => template.id),
+      webinar_thank_you_page: ["webinar-thank-you-v2"],
+      webinar_broadcast_page: ["webinar-broadcast-v2"],
     };
     const templateIds = templatesByStep[stepType];
     return templateIds ? goalTemplates.filter((template) => templateIds.includes(template.id)) : [];
