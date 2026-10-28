@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 400" width="640" height="400" role="img" aria-label="牛皮紙袋插圖">
+<rect width="640" height="400" fill="#dfe8d9"/>
+<circle cx="500" cy="90" r="40" fill="#c8d96f"/>
+<path d="M230 140h180l20 200H210z" fill="#c99b7f"/>
+<path d="M230 140h180l-10 30H240z" fill="#b58566"/>
+<path d="M280 140c0-40 80-40 80 0" fill="none" stroke="#8a5a40" stroke-width="8" stroke-linecap="round"/>
+<path d="M300 250c10-30 40-30 40 0s-30 30-40 0z" fill="#2e6b3f"/>
+<path d="M320 240v40" stroke="#2e6b3f" stroke-width="4"/>
+<path d="M120 340h400" stroke="#2e6b3f" stroke-width="4" stroke-linecap="round" opacity="0.4"/>
+</svg>

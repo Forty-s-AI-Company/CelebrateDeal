@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 600" width="600" height="600" role="img" aria-label="師資照片預留位置">
+<rect width="600" height="600" fill="#dcebe2"/>
+<circle cx="300" cy="240" r="100" fill="#1f7a5a" opacity="0.55"/>
+<path d="M100 600c10-140 95-215 200-215s190 75 200 215z" fill="#1f7a5a"/>
+<text x="300" y="540" text-anchor="middle" font-family="system-ui, sans-serif" font-size="26" letter-spacing="4" fill="#ffffff">替換為師資照片</text>
+</svg>

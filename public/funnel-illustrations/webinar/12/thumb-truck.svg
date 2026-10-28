@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 400" width="640" height="400" role="img" aria-label="共同配送貨車插圖">
+<rect width="640" height="400" fill="#e4ecdc"/>
+<path d="M0 310h640v90H0z" fill="#cfdcc4"/>
+<rect x="130" y="150" width="250" height="140" rx="10" fill="#2e6b3f"/>
+<path d="M380 190h80l50 50v50H380z" fill="#4d6b1f"/>
+<path d="M400 205h55l35 35h-90z" fill="#dfe8d9"/>
+<circle cx="200" cy="300" r="30" fill="#1e3323"/><circle cx="200" cy="300" r="12" fill="#dfe8d9"/>
+<circle cx="440" cy="300" r="30" fill="#1e3323"/><circle cx="440" cy="300" r="12" fill="#dfe8d9"/>
+<path d="M220 220c10-30 40-30 40 0s-30 30-40 0z" fill="#c8d96f"/>
+<g stroke="#2e6b3f" stroke-width="5" stroke-linecap="round" opacity="0.5"><path d="M60 190h50M40 230h70M70 270h40"/></g>
+</svg>

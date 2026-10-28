@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 400" width="640" height="400" role="img" aria-label="貓咪剪影插圖">
+<rect width="640" height="400" fill="#f6e9dc"/>
+<path d="M0 330h640v70H0z" fill="#ecd7c3"/>
+<path d="M260 330c-30-60-20-140 40-170l-10-60 40 40c20-4 40-4 60 0l40-40-10 60c60 30 70 110 40 170z" fill="#b45f1b"/>
+<path d="M430 320c60 0 90-40 80-90" fill="none" stroke="#b45f1b" stroke-width="16" stroke-linecap="round"/>
+<g fill="#f6e9dc"><ellipse cx="320" cy="200" rx="8" ry="12"/><ellipse cx="370" cy="200" rx="8" ry="12"/></g>
+</svg>

@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 760" width="900" height="760" role="img" aria-label="大人蹲下來和孩子平視、輕輕牽著手的插畫">
+<rect width="900" height="760" rx="48" fill="#fff3c9"/>
+<circle cx="700" cy="170" r="110" fill="#ffe08a"/>
+<path d="M0 560c160-50 300-40 450-10s290 30 450-20v230H0z" fill="#bde5d4"/>
+<path d="M120 200c30-40 90-40 120 0M600 380c20-26 60-26 80 0" fill="none" stroke="#ffb4a2" stroke-width="10" stroke-linecap="round"/>
+<g>
+<path d="M210 600c-6-80 10-150 60-200 30-30 80-40 120-30l40 230z" fill="#2f6fdb"/>
+<circle cx="330" cy="300" r="62" fill="#c98f6b"/>
+<path d="M268 296c0-50 30-82 70-82 34 0 58 24 62 56-30-6-70 0-132 26z" fill="#24324a"/>
+<path d="M390 410c60 10 110 40 140 80l-30 30c-30-30-70-50-120-56z" fill="#2f6fdb"/>
+<path d="M260 600h190c20 0 30 20 20 40H250z" fill="#24324a"/>
+<path d="M330 560l120 0 40 80h-60z" fill="#44516a"/>
+</g>
+<g>
+<circle cx="600" cy="400" r="46" fill="#a86f52"/>
+<path d="M556 392c4-36 26-56 50-56 28 0 46 22 44 52-26-10-58-8-94 4z" fill="#8a5a40"/>
+<path d="M560 450c24-8 60-8 84 0l20 150h-124z" fill="#ffb4a2"/>
+<path d="M548 470l-40 40 20 20 36-30z" fill="#ffb4a2"/>
+<rect x="560" y="600" width="34" height="50" rx="10" fill="#24324a"/>
+<rect x="612" y="600" width="34" height="50" rx="10" fill="#24324a"/>
+</g>
+<circle cx="520" cy="512" r="18" fill="#c98f6b"/>
+<g fill="#ffffff"><path d="M720 520c0-14 11-25 25-25 9 0 17 5 21 12 3-1 6-2 10-2 13 0 24 11 24 24l-1 5h-78z"/></g>
+<g fill="#2f6fdb" opacity="0.5"><circle cx="150" cy="420" r="8"/><circle cx="780" cy="330" r="6"/><circle cx="470" cy="180" r="7"/></g>
+</svg>

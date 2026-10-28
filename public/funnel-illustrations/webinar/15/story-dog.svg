@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 400" width="640" height="400" role="img" aria-label="狗狗剪影插圖">
+<rect width="640" height="400" fill="#dcebe2"/>
+<circle cx="520" cy="90" r="50" fill="#f2f7f4"/>
+<path d="M0 330h640v70H0z" fill="#c9e0d2"/>
+<path d="M190 330l10-90c-30-10-40-50-20-70l40-10 20-40c20-10 40 0 44 20l6 30c20 4 30 20 26 40l140 10c30 0 50 30 46 60l-6 50h-30l-6-40-120 0-10 40h-30l-6-40-40 0-10 40z" fill="#1f7a5a"/>
+<path d="M480 260c30-10 50-40 50-70" fill="none" stroke="#1f7a5a" stroke-width="16" stroke-linecap="round"/>
+</svg>
