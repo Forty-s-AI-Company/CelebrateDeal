@@ -39,7 +39,7 @@ function build(prefix: string) {
         text("hero_eyebrow", "Portrait · Natural Light", "eyebrow", { color: ACCENT, letterSpacing: 4 }),
         headline("hero_title", "不用相機，\n也能拍出讓人想多看一眼的人像", "h1", { fontSize: 56, lineHeight: 1.25, color: INK, width: "min(880px, 100%)", letterSpacing: 1 }, { tablet: { style: { fontSize: 44 } }, mobile: { style: { fontSize: 30, lineHeight: 1.35, letterSpacing: 0 }, props: { text: "不用相機，\n也能拍出\n讓人想多看一眼的人像" } } }),
         text("hero_lead", "90 分鐘線上講座，跟人像攝影師學會找光、構圖與引導表情。只要一支手機。", "lead", { color: BODY, width: "min(600px, 100%)" }, { mobile: { visible: false } }),
-        node("hero_facts", "event_facts", { layout: "row", formatLabel: "手機即可", priceLabel: "免費", accentColor: ACCENT }, undefined, { color: INK, width: "min(760px, 100%)" }, { mobile: { style: { fontSize: 18 } } }),
+        node("hero_facts", "event_facts", { layout: "row", formatLabel: "手機即可", priceLabel: "免費", accentColor: ACCENT }, undefined, { color: INK, width: "min(760px, 100%)" }),
         button("hero_cta", "免費報名講座", "#register", { ...lightButton, fontSize: 18 }),
       ]),
     ], { padding: "380px 32px 96px", backgroundColor: BG, color: BODY, textAlign: "left" }, {
@@ -102,7 +102,7 @@ function build(prefix: string) {
     // 8. 報名表（淺色區塊反轉）
     section("register", [
       title("register_title", "Reserve a Seat", "下一張好照片，從這裡開始", { light: true, align: "center", subtitle: "免費線上講座，報名後寄送直播連結。" }),
-      node("register_facts", "event_facts", { layout: "row", formatLabel: "線上直播", priceLabel: "免費", accentColor: LIGHT_ACCENT, align: "center", showTimezone: false }, undefined, { color: LIGHT_INK, textAlign: "left" }, { mobile: { style: { fontSize: 18 } } }),
+      node("register_facts", "event_facts", { layout: "row", formatLabel: "線上直播", priceLabel: "免費", accentColor: LIGHT_ACCENT, align: "center", showTimezone: false }, undefined, { color: LIGHT_INK }),
       form("register_form", {
         fields: [
           { name: "name", label: "姓名", placeholder: "王小明", required: true },

@@ -64,7 +64,7 @@ function build(prefix: string) {
       columns2("hero_columns", [
         text("hero_lead", "從零開始寫一個訂單 API，示範用型別描述資料、驗證輸入、處理錯誤，全程實機操作。", "lead", { color: BODY }),
         text("hero_tags", "TypeScript  ·  Node.js  ·  Zod  ·  REST", undefined, { color: ACCENT, fontSize: 15, letterSpacing: 1 }),
-        node("hero_facts", "event_facts", { layout: "row", formatLabel: "線上直播", priceLabel: "免費", accentColor: PRIMARY }, undefined, { color: INK, padding: "16px 20px", borderColor: BORDER, borderWidth: 1, borderRadius: 6 }, { mobile: { style: { fontSize: 18 } } }),
+        node("hero_facts", "event_facts", { layout: "row", formatLabel: "線上直播", priceLabel: "免費", accentColor: PRIMARY }, undefined, { color: INK, padding: "16px 20px", borderColor: BORDER, borderWidth: 1, borderRadius: 6 }),
         button("hero_cta", "報名直播 →", "#register", { ...primaryButton, fontSize: 18 }),
       ], [
         node("hero_code", "code_snippet", { code: SCHEMA_CODE, language: "typescript", filename: "src/orders/schema.ts", showLineNumbers: true, showCopy: true }),

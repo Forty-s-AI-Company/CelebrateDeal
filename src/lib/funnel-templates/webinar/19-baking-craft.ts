@@ -30,7 +30,7 @@ function build(prefix: string) {
         text("hero_eyebrow", "免費線上直播示範｜60 分鐘", "eyebrow", { color: PRIMARY, letterSpacing: 3 }),
         headline("hero_title", "第一次做戚風也不塌：\n跟著直播一步一步烤出來", "h1", { fontSize: 50, lineHeight: 1.3, color: INK }, { tablet: { style: { fontSize: 42 } }, mobile: { style: { fontSize: 30, lineHeight: 1.35 }, props: { text: "第一次做戚風也不塌：跟著直播一步一步烤出來" } } }),
         text("hero_lead", "60 分鐘示範，從打發蛋白到倒扣放涼，\n附一張可以貼在冰箱上的零失敗檢查表。", "lead", { color: BODY }, { mobile: { visible: false } }),
-        node("hero_facts", "event_facts", { layout: "row", formatLabel: "線上直播", priceLabel: "免費", accentColor: PRIMARY, align: "center" }, undefined, { color: INK, textAlign: "left" }, { mobile: { style: { fontSize: 18 } } }),
+        node("hero_facts", "event_facts", { layout: "row", formatLabel: "線上直播", priceLabel: "免費", accentColor: PRIMARY, align: "center" }, undefined, { color: INK }),
         button("hero_cta", "免費報名示範直播", "#register", { ...primaryButton, fontSize: 18 }),
       ]),
     ], { padding: "120px 32px 104px", backgroundColor: BG, color: BODY, textAlign: "center" }, {
@@ -51,12 +51,12 @@ function build(prefix: string) {
     // 4. 直播會示範（5 步，3＋2，最後一列置左）
     section("steps", [
       title("steps_title", "LIVE DEMO", "直播會示範的 5 個步驟"),
-      node("steps_list", "agenda_timeline", { layout: "cards", accentColor: PRIMARY, cardColor: PAPER, items: [
-        { time: "STEP 01", title: "分蛋", text: "蛋黃蛋白分乾淨，蛋白盆不能沾到油和水。" },
-        { time: "STEP 02", title: "蛋黃糊", text: "油、牛奶、麵粉的順序，拌到滑順沒有顆粒。" },
-        { time: "STEP 03", title: "打發蛋白", text: "砂糖分三次加，打到勾起來有小彎角。" },
-        { time: "STEP 04", title: "混合", text: "先取三分之一蛋白霜犧牲，再切拌回去。" },
-        { time: "STEP 05", title: "烘烤與倒扣", text: "溫度、時間與判斷熟度，出爐立刻倒扣。" },
+      node("steps_list", "icon_list", { layout: "grid", columns: 3, numbered: true, accentColor: PRIMARY, items: [
+        { title: "分蛋", text: "蛋黃蛋白分乾淨，蛋白盆不能沾到油和水。" },
+        { title: "蛋黃糊", text: "油、牛奶、麵粉的順序，拌到滑順沒有顆粒。" },
+        { title: "打發蛋白", text: "砂糖分三次加，打到勾起來有小彎角。" },
+        { title: "混合", text: "先取三分之一蛋白霜犧牲，再切拌回去。" },
+        { title: "烘烤與倒扣", text: "溫度、時間與判斷熟度，出爐立刻倒扣。" },
       ] }, undefined, { color: INK, textAlign: "left" }),
     ], { background: BG, color: BODY, maxWidth: 1080, gap: 48 }),
     // 5. 準備材料清單（食譜紙卡）

@@ -26,7 +26,7 @@ function build(prefix: string) {
 
   return [
     // 1. 公告條＋inline 倒數（綁漏斗開播時間）。
-    node("announcement", "announcement_bar", { text: "免費線上直播｜小電商客單價拆解", showCountdown: true, countdownLabel: "距離開播", barColor: ORANGE, barTextColor: INK }),
+    node("announcement", "announcement_bar", { text: "免費線上直播｜{{webinar.date}}｜小電商客單價拆解", showCountdown: true, countdownLabel: "距離開播", barColor: ORANGE, barTextColor: INK }),
 
     // 2. 首屏：超大數字、H1、條件小字、活動資訊列、CTA；右側瀏覽器框報表。
     section("hero", [
@@ -42,7 +42,7 @@ function build(prefix: string) {
         }),
         text("hero_condition", "數字為虛構案例示意；實際成效依商品、流量與執行而異。", "small", { color: ON_DARK }),
         button("hero_cta", "免費報名直播", "#register", cta, { mobile: { style: { width: 100 } } }),
-        node("hero_facts", "event_facts", { layout: "row", formatLabel: "線上直播", priceLabel: "免費", showDuration: true, accentColor: ORANGE }, undefined, { color: "#ffffff", fontSize: 18 }),
+        node("hero_facts", "event_facts", { layout: "row", formatLabel: "線上直播", priceLabel: "免費", showDuration: true, accentColor: ORANGE }, undefined, { color: "#ffffff" }),
       ], [
         node("hero_dashboard", "media_frame", { frame: "browser", src: `${ART}/dashboard.svg`, alt: "電商營運報表示意：客單價與加購率的長條圖與數字卡", url: "report.example", aspect: "16:10" }),
       ], { ratio: "7:5", gap: 56, stackOn: "tablet", align: "center" }),
@@ -55,7 +55,7 @@ function build(prefix: string) {
         { value: "50", prefix: "+", suffix: "%", label: "平均客單價變化" },
         { value: "1.8", suffix: "%", label: "退貨率" },
         { value: "31", suffix: "%", label: "90 天回購率" },
-      ] }, undefined, { color: INK }, { tablet: { style: { width: "600px", margin: "0 auto" } } }), // 平板 4 項排成 2×2（見 notes B3-11）
+      ] }, undefined, { color: INK }),
       text("stats_note", `以上為虛構案例的${WEBINAR_TEMPLATE_SAMPLE_MARK}數據，發布前請替換為可查證的資料並註明來源。`, "small", { color: MUTED, textAlign: "center" }),
     ], { background: BAND, color: BODY, maxWidth: 1160, gap: 16, paddingY: 64, paddingYMobile: 48 }),
 
@@ -63,7 +63,7 @@ function build(prefix: string) {
     section("tactics", [
       eyebrow("tactics_eyebrow", "直播內容"),
       h2("tactics_title", "4 個不用多花廣告費的加購設計"),
-      node("tactics_list", "agenda_timeline", { layout: "steps", accentColor: ORANGE_TEXT, cardColor: "#fafafa", items: [
+      node("tactics_list", "icon_list", { layout: "grid", columns: 2, numbered: true, accentColor: ORANGE_TEXT, items: [
         { title: "湊免運門檻", text: "用客單價分布找出門檻，讓差一點的人自然多買一件。" },
         { title: "搭配組", text: "把常一起買的商品組起來，價格設計比單買更划算。" },
         { title: "結帳頁小額加購", text: "結帳前推薦低單價、不用考慮的小物，提高成交件數。" },

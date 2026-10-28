@@ -40,7 +40,7 @@ function build(prefix: string) {
         }),
         text("hero_lead", "60 分鐘線上講座，用真實情境示範怎麼接住孩子的情緒，也照顧好自己。", "lead", { color: BODY }),
         button("hero_cta", "免費報名講座", "#register", pillButton, { mobile: { style: { width: 100 } } }),
-        node("hero_facts", "event_facts", { layout: "row", formatLabel: "線上講座＋回放", priceLabel: "免費", showDuration: true, accentColor: PRIMARY }, undefined, { color: BODY, fontSize: 18 }),
+        node("hero_facts", "event_facts", { layout: "row", formatLabel: "線上講座＋回放", priceLabel: "免費", showDuration: true, accentColor: PRIMARY }, undefined, { color: BODY }),
       ], [
         node("hero_image", "image", { src: `${ART}/hero-eye-level.svg`, alt: "大人蹲下來和孩子平視、輕輕牽著手的插畫" }, undefined, { imageWidth: 100, borderRadius: 32 }),
       ], { ratio: "7:5", gap: 56, stackOn: "tablet", align: "center" }),
@@ -100,7 +100,7 @@ function build(prefix: string) {
     section("reviews", [
       eyebrow("reviews_eyebrow", "家長回饋"),
       h2("reviews_title", "聽完那天晚上，家裡安靜了一點"),
-      node("reviews_wall", "testimonial_wall", { layout: "grid", columns: 3, autoplay: false, showRating: false, cardColor: CARD, cardTextColor: BODY, accentColor: PRIMARY, items: [
+      node("reviews_wall", "testimonial_wall", { layout: "carousel", showRating: false, cardColor: CARD, cardTextColor: BODY, accentColor: PRIMARY, items: [
         { name: "家長 A｜孩子 4 歲", title: `終於不用在賣場罰站（${WEBINAR_TEMPLATE_SAMPLE_MARK}）`, text: "第一句話真的有用。我蹲下來說「我看到你很生氣」，他哭到一半就停下來看我。" },
         { name: "家長 B｜孩子 3 歲", title: `爸爸也一起看了（${WEBINAR_TEMPLATE_SAMPLE_MARK}）`, text: "以前我們兩個說法不一樣，現在講好用同一套句子，孩子比較不會鑽漏洞。" },
         { name: "家長 C｜孩子 6 歲", title: `看回放也很完整（${WEBINAR_TEMPLATE_SAMPLE_MARK}）`, text: "孩子睡了才有空，回放剛好。講義的情境卡我貼在冰箱上。" },
@@ -162,7 +162,7 @@ export const template: WebinarTemplateDefinition = {
   category: "親子教養講座",
   purposes: ["webinar"],
   styles: ["warm"],
-  preview: { eyebrow: "Webinar", headline: "比「不要哭」更有用的 5 句話", summary: "年齡標籤＋適合／不適合＋情境 FAQ", palette: [BG, PRIMARY, YELLOW], sectionCount: 10 },
+  preview: { eyebrow: "Webinar", headline: "比「不要哭」更有用的 5 句話", summary: "年齡標籤＋適合／不適合＋情境 FAQ", palette: [BG, PRIMARY, YELLOW], sectionCount: 14 },
   theme: { typography: { headingFont: "wenkai-tc", bodyFont: "sans-tc", bodySize: 17, bodyLineHeight: 1.8, textColor: BODY, headingColor: INK, linkColor: PRIMARY }, background: { color: BG } },
   settings: { eventTitle: "3–6 歲孩子情緒爆發時，爸媽可以說的 5 句話", scrollReveal: "rise", stickyCta: { enabled: true, label: "免費報名講座", showDate: true, devices: "mobile_tablet", buttonColor: PRIMARY, buttonTextColor: "#ffffff" } },
   build,

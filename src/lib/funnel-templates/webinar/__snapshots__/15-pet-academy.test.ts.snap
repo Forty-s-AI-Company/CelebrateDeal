@@ -31,7 +31,7 @@ exports[`webinar template: 15-pet-academy > keeps node ids, types and order stab
   "snapshot_program_row:row",
   "snapshot_program_eyebrow:text",
   "snapshot_program_title:headline",
-  "snapshot_program_steps:agenda_timeline",
+  "snapshot_program_steps:icon_list",
   "snapshot_program_note:text",
   "snapshot_faculty:section",
   "snapshot_faculty_row:row",

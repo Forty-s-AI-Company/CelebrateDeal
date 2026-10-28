@@ -18,7 +18,7 @@ exports[`webinar template: 19-baking-craft > keeps node ids, types and order sta
   "snapshot_steps:section",
   "snapshot_steps_row:row",
   "snapshot_steps_title:section_title",
-  "snapshot_steps_list:agenda_timeline",
+  "snapshot_steps_list:icon_list",
   "snapshot_materials:section",
   "snapshot_materials_row:row",
   "snapshot_materials_card:content_box",
