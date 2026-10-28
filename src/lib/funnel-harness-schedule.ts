@@ -19,16 +19,18 @@ export function isFunnelHarnessSchedule(value: unknown): value is FunnelHarnessS
 }
 
 /**
- * - sample：3 天 5 小時後開播（倒數 4 格、報名截止在開播前 1 小時）
- * - far：120 天後開播（3 位數天數）
+ * - sample：約 3 天後 20:00 開播（倒數 4 格、報名截止在開播前 1 小時）
+ * - far：約 120 天後 20:00 開播（3 位數天數）
  * - live：20 分鐘前開播，直播中
  * - replay：昨天結束，回放再開放 6 天
  * - ended：回放已結束
  */
 export function funnelHarnessSchedule(kind: FunnelHarnessScheduleKind, now: number): FunnelHarnessSchedule {
   const renderedAt = Math.floor(now / MINUTE) * MINUTE;
-  const startsAt = kind === "sample" ? renderedAt + 3 * DAY + 5 * HOUR
-    : kind === "far" ? renderedAt + 120 * DAY
+  // Upcoming samples start at 20:00 Taiwan time (12:00 UTC) on the 3rd／120th day, so screenshots read like a real event.
+  const atTwentyTaipei = (from: number) => Math.floor(from / DAY) * DAY + 12 * HOUR;
+  const startsAt = kind === "sample" ? atTwentyTaipei(renderedAt + 3 * DAY)
+    : kind === "far" ? atTwentyTaipei(renderedAt + 120 * DAY)
       : kind === "live" ? renderedAt - 20 * MINUTE
         : kind === "replay" ? renderedAt - DAY - 90 * MINUTE
           : renderedAt - 10 * DAY;
