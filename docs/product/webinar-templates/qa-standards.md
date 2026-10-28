@@ -12,9 +12,13 @@
 | 1024 | 平板橫向、小筆電 | desktop | 平板（斷點 640–1079；4 欄降成 2 欄） |
 | 768 | 平板直向 | desktop | 平板 |
 | 390 | iPhone 13–16 | mobile | mobile |
+| 375 | iPhone SE（第 2、3 代）、iPhone 12／13 mini | mobile | mobile |
 | 360 | 小尺寸 Android | mobile | mobile |
+| 320 | iPhone SE 第 1 代、系統字級放大後的等效寬度 | mobile | mobile（**降級驗收**，見下方說明） |
 
-- 高度一律用 900（桌機、平板）與 844（手機）。另外在 390 寬加測 667 高，檢查首屏的報名入口。
+- 高度一律用 900（桌機、平板）與 844（手機）。另外在 375×667（iPhone SE 的實際螢幕）加測首屏的報名入口。
+- 1440～360 共 7 種寬度：L-1～L-12 全部要通過。
+- 320 寬只要求 L-1、L-3、L-5、L-11（不得水平捲動、文字不被裁切、按鈕完整可點、表單可用），字級可以比 §3.1 下限小 2px（內文仍 ≥ 16px），版面不求美觀。
 - 每個寬度都要在**真正的公開頁渲染路徑**上測（`PublicFunnelDocument`，讓 matchMedia 自行判斷），不能只用編輯器強制的 viewport。
 - 加測：瀏覽器縮放 200%（相當於 720 寬的 1440 版面）、系統字級放大（根字級 20px）。
 
@@ -28,7 +32,7 @@
 | L-4 | 文字沒有溢出容器 | 每個 headline／text／button 的 `getBoundingClientRect()` 必須落在最近的 section 內容寬度內 |
 | L-5 | 按鈕完整可見且可點 | 每個 `button`／`a[role=button]`／submit：寬高 ≥ 44×44（主要 CTA 高度 ≥ 48），矩形完全在視窗水平範圍內，文字最多 2 行，`elementFromPoint` 取按鈕中心點時拿到的是按鈕本身或它的子元素（沒有被固定列或裝飾蓋住） |
 | L-6 | 圖片不變形 | `object-fit` 不是 cover／contain 的 `img`：`|渲染寬/高 − naturalWidth/naturalHeight| / 原比例 ≤ 2%`。SVG 要有 viewBox，並保留 `preserveAspectRatio` 預設值 |
-| L-7 | 首屏有報名入口 | 390×667 時，首屏內要看得到「報名表單的第一個欄位」或「主要 CTA 按鈕」（`getBoundingClientRect().top < 667`）；捲過首屏後，固定報名列（C-04）要出現 |
+| L-7 | 首屏有報名入口 | 375×667 時，首屏內要看得到「報名表單的第一個欄位」或「主要 CTA 按鈕」（`getBoundingClientRect().top < 667`，同樣在 390×844 檢查）；捲過首屏後，固定報名列（C-04）要出現 |
 | L-8 | 固定列不遮內容 | 固定報名列出現時：頁尾最後一個元素（平台揭露、政策連結）捲到底時完全可見；表單 submit 按鈕不被遮住 |
 | L-9 | 沒有版面跳動 | 載入後 CLS < 0.1（Lighthouse 或 PerformanceObserver `layout-shift`）。手機第一次 render 不得先出現桌機欄數再切換（I-1） |
 | L-10 | 欄位不擠壞 | 任一欄（grid 子項）的內容寬度 ≥ 240px（桌機、平板）。不足時這個斷點必須降欄 |
@@ -114,7 +118,7 @@
 ### 5.2 Playwright 檢查腳本骨架（示意，實作時再寫成正式程式）
 
 ```ts
-const WIDTHS = [1440, 1280, 1024, 768, 390, 360] as const;
+const WIDTHS = [1440, 1280, 1024, 768, 390, 375, 360] as const; // 320 另跑降級檢查
 for (const id of WEBINAR_TEMPLATE_IDS) for (const width of WIDTHS) for (const stress of [false, true]) {
   test(`${id} @${width}${stress ? " stress" : ""}`, async ({ page }) => {
     await page.setViewportSize({ width, height: width < 640 ? 844 : 900 });
@@ -146,12 +150,12 @@ for (const id of WEBINAR_TEMPLATE_IDS) for (const width of WIDTHS) for (const st
 
 ## 6. 實作者檢查清單（每個範本 PR 都要貼在 PR 描述中勾選）
 
-- [ ] 6 種寬度 × 一般／壓力文案，L-1～L-12 全部通過（附自動檢查輸出）
+- [ ] 7 種寬度（1440～360）× 一般／壓力文案，另加 320 降級檢查，L-1～L-12 全部通過（附自動檢查輸出）
 - [ ] H1 在 360 寬 ≤ 4 行，沒有孤字；手機 H1 介於 28–36px
 - [ ] 手機內文 ≥ 16px、small ≥ 14px、輸入框 ≥ 16px
 - [ ] `findFunnelContrastIssues` 與 axe `color-contrast` 皆 0 筆
 - [ ] 按鈕 ≥ 44×44（主要 CTA 高度 ≥ 48），沒有被固定報名列遮住
-- [ ] 390×667 首屏看得到報名入口；捲過首屏後出現固定報名列
+- [ ] 375×667 首屏看得到報名入口；捲過首屏後出現固定報名列
 - [ ] reduced motion 下沒有任何動畫或自動播放
 - [ ] 日期與時間來自 webinar 設定；沒有寫死的假名額或假倒數
 - [ ] 評價、Logo、數據都標示範本示意；文件中沒有 `raw_html`

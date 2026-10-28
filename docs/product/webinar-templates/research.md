@@ -1,7 +1,7 @@
 # Webinar 報名頁範本研究：排名與來源
 
 > 2026-10-28 研究，第一階段（只做研究與規格，不寫程式）。
-> 同目錄文件：`specs/01～20`（每個範本的規格）、`shared-components.md`（共用新元件與分批）、`qa-standards.md`（不跑版的驗收標準）、`migration-plan.md`（現有範本處置）。
+> 同目錄文件：`specs/01～23`（21–23 來自擁有者指定的參考網站，見 §6）（每個範本的規格）、`shared-components.md`（共用新元件與分批）、`qa-standards.md`（不跑版的驗收標準）、`migration-plan.md`（現有範本處置）。
 
 ## 0. 原則：只參考結構，不複製
 
@@ -112,3 +112,23 @@
 - 現有 webinar 報名範本（`webinar-registration` 等 4 個）用的都是同一套 section、columns、form 組法，缺少講者卡、議程時間軸、活動資訊列、行動版固定 CTA、倒數變化型。視覺上只有換色，版型沒有差異。
 - #497 的展示元件（nav_bar、logo_strip、stats、icon_list、shape_divider、section_title、image_cards、testimonial_wall、content_cards、video_gallery）已經達到品質基準，20 個範本會盡量重用。
 - 詳細的缺口與新元件見 `shared-components.md`。
+
+## 6. 擁有者指定的參考網站（規格 21–23）
+
+這 3 個網站由擁有者在 2026-10-28 指定，不在 §3 的排名內，各自成為一個原創範本。
+
+處理原則和其他範本相同：
+
+- 只參考區塊結構與轉換設計，不複製文案、圖片、配色、品牌。
+- 主題換成不同的虛構領域。
+- 原本是多頁的網站，內容整併成單一頁面。
+
+| 代號 | 來源 | 一句描述 | 改成的範本 |
+|---|---|---|---|
+| R1 | [flyingeagle-ai.com/lp](https://flyingeagle-ai.com/lp) | 多日線上課加贈實體課的招生頁：文字首屏＋數據背書、逐日課綱、歷屆花絮、評分摘要、三步驟報名＋資格題表單 | [21 Podcast 五日線上營](specs/21-podcast-bootcamp.md) |
+| R2 | [xway.com.tw](https://xway.com.tw/) | 行銷顧問公司的多頁官網：成就亮點、案例、服務卡、歷屆高峰會、成效數據、客戶牆、預算與服務類型諮詢表單 | [22 餐飲品牌顧問說明會](specs/22-restaurant-consulting.md) |
+| R3 | [appedu.com.tw 短影音活動頁](https://www.appedu.com.tw/Event/short-video-maker/) | 電腦教育機構的課程活動頁：錨點導覽、問題數據、報名好禮、師資作品、課程模組、限時報名、短表單 | [23 Excel 自動化短期班](specs/23-excel-shortcourse.md) |
+
+- 網址已移除廣告追蹤參數（`utm_*`、`gclid`、`gbraid` 等）。
+- 3 個參考頁都沒有倒數計時器。倒數是常見的 Facebook 銷售頁做法，23 號範本加入了綁定報名截止的真實倒數（`shared-components.md` §3.1）。
+- 參考頁的配色與字型無法從文字擷取判斷。21–23 的配色是原創，不要以「和參考頁相似」作為驗收標準。
