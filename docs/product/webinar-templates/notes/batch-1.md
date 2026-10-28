@@ -40,3 +40,6 @@
 
 - 開發伺服器 `next dev`（`FUNNEL_ELEMENTS_E2E=true`）會自動改寫 `tsconfig.json` 的 `include`（加入 `.next-funnel-elements/types/**`）。範本分支沒有 commit 這個變更。
 - 公開頁表單的欄位標籤與送出文字來自伺服器報名表，所以 harness 截圖的按鈕文字是「免費報名」，不是範本的 `submitLabel`（符合 IMPLEMENTING.md §3.5 C-19 的說明）。
+
+- **QA 偶發失敗**：5 個範本合併跑（85 回合）時，曾出現 1 次 `LOAD`（30 秒內未就緒，02@1440 壓力）與 3 次 `HYDRATION`（03@1440、360、320 壓力）。單獨重跑 02（17 回合）、03（兩次各 17 回合）都是 0 失敗，在瀏覽器重載 03 五次也沒有 console 錯誤。推測是同機有多個 dev server 時的編譯負載；若整合分支合併後仍重現，建議讓 QA 腳本在 `HYDRATION` 時自動重試一次並保留完整訊息（目前 report.json 的 detail 只保留前 200 字，看不到差異的節點）。
+- QA 證據：`docs/ai-team/evidence/webinar-templates/batch-1/`（README 有每回合結果）。
