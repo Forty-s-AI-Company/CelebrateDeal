@@ -15,32 +15,23 @@ const ACCENT = "#2456e8";
 const HIGHLIGHT = "#ffe9d6";
 
 function build(prefix: string) {
-  const { node, section, columns2, stack, headline, text, button, form } = webinarTemplateKit(prefix);
+  const { node, section, columns2, stack, text, button, form } = webinarTemplateKit(prefix);
   /** 橘色按鈕底對紙色只有 2.9:1，所以一律加 2px 墨色邊框（spec §5）。 */
   const cta = { backgroundColor: PRIMARY, color: INK, borderColor: INK, borderWidth: 2, borderRadius: 12, fontSize: 18 } as const;
   const boxed = { borderColor: INK, borderWidth: 2, borderRadius: 16 } as const;
   const title = (id: string, eyebrow: string, value: string, options: { align?: "left" | "center"; level?: "h1" | "h2"; subtitle?: string; mobileTitle?: string } = {}) =>
     node(id, "section_title", { eyebrow, title: value, subtitle: options.subtitle ?? "", level: options.level ?? "h2", decoration: "line", accentColor: ACCENT }, undefined, { color: INK, ...(options.align ? { textAlign: options.align } : {}) }, options.mobileTitle ? { mobile: { props: { title: options.mobileTitle } } } : {});
-  const fitCard = (id: string, number: string, name: string, body: string) => stack(id, [
-    text(`${id}_tag`, number, "eyebrow", { color: ACCENT }),
-    headline(`${id}_title`, name, "h3", { color: INK, fontSize: 22 }, { mobile: { style: { fontSize: 19 } } }),
-    text(`${id}_text`, body, undefined, { color: BODY, fontSize: 16 }),
-  ], 8, { ...boxed, backgroundColor: WHITE, padding: 24 });
-  const learnCard = (id: string, number: string, name: string, body: string) => stack(id, [
-    text(`${id}_number`, number, "eyebrow", { color: INK, fontSize: 32, letterSpacing: 0, lineHeight: 1.1 }),
-    headline(`${id}_title`, name, "h3", { color: INK, fontSize: 22, lineHeight: 1.4 }, { mobile: { style: { fontSize: 19 } } }),
-    text(`${id}_text`, body, undefined, { color: BODY, fontSize: 16 }),
-  ], 10, { ...boxed, backgroundColor: HIGHLIGHT, padding: 28 }, { mobile: { style: { padding: 22 } } });
-
+  /** 粗框卡片容器：裡面放 icon_list 格狀。 */
+  const panel = (id: string, list: ReturnType<typeof node>, background: string) => stack(id, [list], 0, { ...boxed, backgroundColor: background, padding: 36 }, { mobile: { style: { padding: 22 } } });
   return [
     // 1. 首屏：左文右拼貼插圖（手機：文→CTA→圖）。
     section("hero", [
       columns2("hero_split", [
         title("hero_title", "線上實作工作坊｜2 小時｜附練習檔", "不靠天分，\n用 *4 個排版規則*\n做出好看的社群圖卡", { level: "h1", mobileTitle: "不靠天分，用 *4 個排版規則*做出好看的社群圖卡" }),
         text("hero_lead", "從字級、對齊、留白到配色，邊看邊做；\n結束時，你會完成 3 張自己的圖卡。", "lead", { color: BODY }, { mobile: { props: { text: "從字級、對齊、留白到配色邊看邊做，結束時完成 3 張自己的圖卡。" } } }),
-        node("hero_facts", "event_facts", { layout: "row", formatLabel: "線上實作", priceLabel: "免費", showDuration: false, accentColor: ACCENT }, undefined, { color: INK }, { mobile: { style: { fontSize: 18 } } }),
+        node("hero_facts", "event_facts", { layout: "row", formatLabel: "線上實作", priceLabel: "免費", showDuration: false, accentColor: ACCENT }, undefined, { color: INK }),
         button("hero_cta", "報名工作坊", "#register", { ...cta, padding: "16px 36px", width: "fit-content" }, { mobile: { style: { width: "100%" } } }),
-        button("hero_agenda", "先看議程 ↓", "#agenda", { backgroundColor: PAPER, color: ACCENT, padding: "8px 0", fontSize: 17, width: "fit-content" }),
+        button("hero_agenda", "先看議程 ↓", "#agenda", { backgroundColor: "transparent", color: ACCENT, padding: "8px 0", fontSize: 17, width: "fit-content" }),
       ], [
         node("hero_art", "image", { src: `${ART}/collage.svg`, alt: "三張傾斜的社群圖卡拼貼示意：字級、留白與對齊格線" }, undefined, { imageWidth: 100 }),
       ], { ratio: "1:1", stackOn: "tablet", gap: 48, align: "center" }),
@@ -49,23 +40,23 @@ function build(prefix: string) {
     // 2. 適合誰（4 張白底粗框卡）。
     section("fit", [
       title("fit_title", "WHO IS IT FOR", "這堂工作坊，為這些人設計"),
-      node("fit_grid", "columns_4", { gap: 20 }, [
-        fitCard("fit_shop", "FOR 01", "小店老闆", "想自己做活動圖，不想每次都外包。"),
-        fitCard("fit_social", "FOR 02", "社群小編", "每天要出圖，希望又快又有一致感。"),
-        fitCard("fit_office", "FOR 03", "上班族", "簡報和提案想看起來更專業。"),
-        fitCard("fit_beginner", "FOR 04", "設計新手", "會用工具，但總覺得哪裡怪怪的。"),
-      ], { align: "stretch" }),
+      panel("fit_panel", node("fit_list", "icon_list", { layout: "grid", columns: 2, numbered: false, accentColor: ACCENT, items: [
+        { icon: "star", title: "小店老闆", text: "想自己做活動圖，不想每次都外包。" },
+        { icon: "message", title: "社群小編", text: "每天要出圖，希望又快又有一致感。" },
+        { icon: "chart", title: "上班族", text: "簡報和提案想看起來更專業。" },
+        { icon: "lightbulb", title: "設計新手", text: "會用工具，但總覺得哪裡怪怪的。" },
+      ] }, undefined, { color: BODY, textAlign: "left" }), WHITE),
     ], { background: WHITE, color: BODY, maxWidth: 1120, gap: 40 }),
 
     // 3. 你將學到（成果導向，2×2 螢光底卡片）。
     section("learn", [
       title("learn_title", "WHAT YOU WILL LEARN", "結束時，你*能夠*…"),
-      node("learn_grid", "columns_2", { ratio: "1:1", gap: 20 }, [
-        learnCard("learn_size", "01", "用 3 種字級建立層次", "所以重點一眼就被看見，不再每行字都一樣大。"),
-        learnCard("learn_grid_rule", "02", "用格線對齊元素", "所以版面看起來整齊，修改時也不會越改越亂。"),
-        learnCard("learn_space", "03", "用留白控制閱讀順序", "所以讀者的視線會照你安排的路線走。"),
-        learnCard("learn_color", "04", "用 60-30-10 配色法挑色", "所以顏色不打架，品牌感自然出現。"),
-      ], { align: "stretch" }),
+      panel("learn_panel", node("learn_list", "icon_list", { layout: "grid", columns: 2, numbered: true, accentColor: ACCENT, items: [
+        { icon: "target", title: "用 3 種字級建立層次", text: "所以重點一眼就被看見，不再每行字都一樣大。" },
+        { icon: "compass", title: "用格線對齊元素", text: "所以版面看起來整齊，修改時也不會越改越亂。" },
+        { icon: "spark", title: "用留白控制閱讀順序", text: "所以讀者的視線會照你安排的路線走。" },
+        { icon: "gem", title: "用 60-30-10 配色法挑色", text: "所以顏色不打架，品牌感自然出現。" },
+      ] }, undefined, { color: BODY, textAlign: "left" }), HIGHLIGHT),
     ], { background: PAPER, color: BODY, maxWidth: 1120, gap: 40 }),
 
     // 4. 議程時間軸（錨點 #agenda）。
@@ -110,11 +101,11 @@ function build(prefix: string) {
     // 7. 參加前準備（含加入行事曆）。
     section("prepare", [
       title("prepare_title", "BEFORE WE START", "參加前，準備這 3 件事", { align: "center" }),
-      node("prepare_grid", "columns_3", { gap: 20 }, [
-        fitCard("prepare_device", "STEP 1", "一台電腦", "手機也能看直播，但實作建議用電腦。"),
-        fitCard("prepare_tool", "STEP 2", "任一免費設計工具", "任何你習慣的免費線上設計工具都可以。"),
-        fitCard("prepare_calendar", "STEP 3", "把時間留下來", "加入行事曆，開始前會收到提醒信。"),
-      ], { align: "stretch" }),
+      panel("prepare_panel", node("prepare_list", "icon_list", { layout: "grid", columns: 3, numbered: true, accentColor: ACCENT, items: [
+        { icon: "check", title: "一台電腦", text: "手機也能看直播，但實作建議用電腦。" },
+        { icon: "spark", title: "任一免費設計工具", text: "任何你習慣的免費線上設計工具都可以。" },
+        { icon: "clock", title: "把時間留下來", text: "加入行事曆，開始前會收到提醒信。" },
+      ] }, undefined, { color: BODY, textAlign: "left" }), WHITE),
       node("prepare_add", "add_to_calendar", { googleLabel: "加入 Google 日曆", icsLabel: "下載行事曆檔", pendingText: "講座時間公布後即可加入行事曆。", align: "center", accentColor: ACCENT }),
     ], { background: PAPER, color: BODY, maxWidth: 1120, gap: 36, align: "center" }),
 

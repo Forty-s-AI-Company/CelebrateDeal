@@ -26,7 +26,7 @@ function build(prefix: string) {
   const speaker = (letter: string, role: string, bio: string, tags: string) => ({ photo: `${ART}/speaker-${letter.toLowerCase()}.svg`, alt: `講者 ${letter} 的照片（請替換）`, name: `講者姓名 ${letter}`, role, bio, tags });
   return [
     // 1. 公告條（開播倒數綁漏斗排程）。
-    node("announce", "announcement_bar", { text: "早鳥報名中｜線上舉行・免費參加", showCountdown: true, countdownLabel: "距離開場", barColor: PINK, barTextColor: BG }),
+    node("announce", "announcement_bar", { text: "早鳥報名中｜{{webinar.date}}｜線上舉行・免費參加", showCountdown: true, countdownLabel: "距離開場", barColor: PINK, barTextColor: BG }),
     // 2. 導覽列（固定在頂端，錨點平滑捲動）。
     node("nav", "nav_bar", { brand: "成長派社群", homeHref: "#top", sticky: true, accentColor: PINK, ctaLabel: "免費報名", ctaHref: "#register", items: [
       { label: "講者", href: "#speakers" },
@@ -38,9 +38,7 @@ function build(prefix: string) {
       eyebrow("hero_eyebrow", "ONLINE SUMMIT・一天 4 場・免費參加"),
       headline("hero_title", "小品牌的下一步成長，\n聽 8 位操盤手說真話", "h1", { color: INK, fontSize: 64, lineHeight: 1.15, textAlign: "center" }, { tablet: { style: { fontSize: 48 } }, mobile: { style: { fontSize: 34, lineHeight: 1.25 }, props: { text: "小品牌的下一步成長，聽 8 位操盤手說真話" } } }),
       text("hero_lead", "品牌定位、內容、廣告到會員經營，一天聽完 4 個時段的實戰分享與對談，帶走能直接套用的做法。", "lead", { color: BODY, textAlign: "center" }),
-      node("hero_facts", "event_facts", { layout: "row", formatLabel: "線上峰會", priceLabel: "免費", showDuration: false, align: "center", accentColor: PINK }, undefined, { color: INK, fontSize: 18 }, { tablet: { visible: false }, mobile: { visible: false } }),
-      // 平板與手機的資訊列會變成靠左的 2×2，在置中的首屏改用一行置中的時間膠囊。
-      text("hero_when", "{{webinar.startAt}}｜線上峰會｜免費參加", undefined, { color: INK, textAlign: "center", backgroundColor: SURFACE, borderColor: "#3d3566", borderWidth: 1, borderRadius: 100, padding: "10px 22px", fontSize: 16, width: "fit-content", margin: "0 auto" }, { desktop: { visible: false }, tablet: { visible: true } }),
+      node("hero_facts", "event_facts", { layout: "row", formatLabel: "線上峰會", priceLabel: "免費", showDuration: false, align: "center", accentColor: PINK }, undefined, { color: INK }),
       button("hero_cta", "免費報名峰會", "#register", pinkButton),
       node("hero_speakers", "image", { src: `${ART}/speakers-stack.svg`, alt: "8 位講者頭像示意" }, undefined, { imageWidth: 26 }, { tablet: { style: { imageWidth: 40 } }, mobile: { style: { imageWidth: 62 } } }),
       text("hero_speakers_note", "8 位品牌操盤手・4 個主題時段", "small", { color: MUTED, textAlign: "center" }),

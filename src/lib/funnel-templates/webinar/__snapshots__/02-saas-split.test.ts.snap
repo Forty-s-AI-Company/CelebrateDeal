@@ -37,7 +37,7 @@ exports[`webinar template: 02-saas-split > keeps node ids, types and order stabl
   "snapshot_agenda_heading:content_box",
   "snapshot_agenda_eyebrow:text",
   "snapshot_agenda_title:headline",
-  "snapshot_agenda_cards:agenda_timeline",
+  "snapshot_agenda_list:icon_list",
   "snapshot_speakers:section",
   "snapshot_speakers_row:row",
   "snapshot_speakers_heading:content_box",

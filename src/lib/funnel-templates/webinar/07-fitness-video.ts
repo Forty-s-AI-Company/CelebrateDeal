@@ -23,8 +23,6 @@ function build(prefix: string) {
       options.mobileTitle ? { mobile: { props: { title: options.mobileTitle } } } : {});
   const slant = (id: string, fill: string, behind: string, flip = false) =>
     node(id, "shape_divider", { shape: "slant", position: "top", height: 88, flip }, undefined, { color: fill, backgroundColor: behind }, { tablet: { props: { height: 64 } }, mobile: { props: { height: 40 } } });
-  const gain = (id: string, icon: string, heading: string, value: string) =>
-    stack(id, [node(`${id}_item`, "icon_list", { layout: "list", numbered: false, accentColor: LIME, items: [{ icon, title: heading, text: value }] }, undefined, { color: INK })], 0, { padding: 28, backgroundColor: SURFACE, borderRadius: 12 }, { mobile: { style: { padding: 20 } } });
   return [
     // 1. 首屏：左文案、右 16:9 預告；手機影片在上。
     section("hero", [
@@ -32,7 +30,7 @@ function build(prefix: string) {
         title("hero_title", "FREE LIVE WORKOUT · 20 MIN", "不跳躍、不吵鄰居，\n在家 *20 分鐘*練到流汗", { level: "h1", mobileTitle: "不跳躍、不吵鄰居，在家 *20 分鐘*練到流汗" }),
         text("hero_lead", "跟著教練在客廳直播跟練：4 個低衝擊動作組合，膝蓋友善、樓下聽不到，練完一樣全身發熱。", "lead", { color: BODY }),
         button("hero_cta", "報名免費跟練", "#register", limeButton),
-        node("hero_facts", "event_facts", { layout: "row", formatLabel: "直播跟練", priceLabel: "免費", showDuration: true, accentColor: LIME }, undefined, { color: INK, fontSize: 18 }),
+        node("hero_facts", "event_facts", { layout: "row", formatLabel: "直播跟練", priceLabel: "免費", showDuration: true, accentColor: LIME }, undefined, { color: INK }),
       ], [
         node("hero_video", "video_gallery", { columns: 1, accentColor: LIME, items: [
           { url: "", title: "60 秒預告：4 個動作搶先看", thumbnail: `${ART}/trailer-poster.svg` },
@@ -55,19 +53,23 @@ function build(prefix: string) {
     // 4. 你會得到。
     section("gain", [
       title("gain_title", "WHAT YOU GET", "報名就能帶走的 *3 樣東西*"),
-      // 三欄用 columns_3（icon_list 的格狀在 3 欄時會因欄距計算掉成 2 欄，見 notes/batch-2.md）。
-      node("gain_columns", "columns_3", {}, [
-        gain("gain_1", "clock", "4 週跟練課表", "每週 3 次、每次 20 分鐘，照表練就好。"),
-        gain("gain_2", "check", "動作錯誤檢查表", "膝蓋內夾、腰部塌陷，對照圖片自己修正。"),
-        gain("gain_3", "message", "直播限定動作提問", "直播中打字提問，教練當場示範調整。"),
-      ]),
+      stack("gain_panel", [
+        node("gain_list", "icon_list", { layout: "grid", columns: 3, numbered: false, accentColor: LIME, items: [
+          { icon: "clock", title: "4 週跟練課表", text: "每週 3 次、每次 20 分鐘，照表練就好。" },
+          { icon: "check", title: "動作錯誤檢查表", text: "膝蓋內夾、腰部塌陷，對照圖片自己修正。" },
+          { icon: "message", title: "直播限定動作提問", text: "直播中打字提問，教練當場示範調整。" },
+        ] }, undefined, { color: INK, textAlign: "left" }),
+      ], 0, { padding: 40, backgroundColor: SURFACE, borderRadius: 12 }, { mobile: { style: { padding: 24 } } }),
     ], { background: BG, color: BODY, maxWidth: 1200, gap: 44, paddingY: 72, paddingYMobile: 48 }),
     // 5. 學員評價（感受與習慣，不放體重數字或對比照）。
     section("reviews", [
       title("reviews_title", "REAL TALK", "跟練過的人，*最有感的改變*"),
-      node("reviews_wall", "testimonial_wall", { layout: "grid", columns: 3, autoplay: false, showRating: false, accentColor: LIME, cardColor: BG, cardTextColor: INK, items: [
+      node("reviews_wall", "testimonial_wall", { layout: "carousel", columns: 3, autoplay: false, showRating: false, accentColor: LIME, cardColor: BG, cardTextColor: INK, items: [
         { name: "學員 A｜上班族", title: `下班後終於有動力動一動（${WEBINAR_TEMPLATE_SAMPLE_MARK}）`, text: "20 分鐘剛好，換完衣服就開始，不用出門也不用想今天要練什麼。" },
         { name: "學員 B｜新手媽媽", title: `孩子睡了也能練（${WEBINAR_TEMPLATE_SAMPLE_MARK}）`, text: "不用跳，完全不怕吵醒小孩。練完肩頸比較不緊，睡得也比較好。" },
+        { name: "學員 D｜自由工作者", title: `在家也能固定運動（${WEBINAR_TEMPLATE_SAMPLE_MARK}）`, text: "以前總找藉口說沒時間去健身房，現在每週三次，打開直播就開始，已經變成生活節奏的一部分。" },
+        { name: "學員 E｜銀髮族家屬", title: `全家一起跟練（${WEBINAR_TEMPLATE_SAMPLE_MARK}）`, text: "動作有簡易版，爸媽也能跟上。看他們每天在客廳動一動，我們都覺得很安心。" },
+        { name: "學員 F｜學生", title: `考試期間也能放鬆（${WEBINAR_TEMPLATE_SAMPLE_MARK}）`, text: "念書念到肩頸僵硬時跟著練一輪，二十分鐘就覺得整個人清醒不少。" },
         { name: "學員 C｜工程師", title: `爬樓梯不再喘（${WEBINAR_TEMPLATE_SAMPLE_MARK}）`, text: "連續跟了一個月，最明顯的是體力變好，久坐的腰也舒服很多。" },
       ] }, undefined, { textAlign: "left" }),
     ], { background: SURFACE, color: BODY, maxWidth: 1200, gap: 44, paddingY: 88, paddingYMobile: 56 }),
@@ -93,6 +95,7 @@ function build(prefix: string) {
         text("register_points", "✓ 準備一張瑜伽墊與一瓶水\n✓ 直播連結會寄到你的信箱\n✓ 報名就送 4 週跟練課表", undefined, { color: BG, lineHeight: 1.9 }),
       ], [
         form("register_form", {
+          title: "免費報名跟練",
           fields: [
             { name: "name", label: "姓名", placeholder: "王小明", required: true },
             { name: "email", label: "Email", type: "email", placeholder: "name@example.com", required: true, helpText: "直播連結與課表會寄到這裡" },
@@ -112,14 +115,12 @@ function build(prefix: string) {
         text("faq_safety_text", "安全提醒：如有心血管疾病、孕期或受傷，請先諮詢醫師；運動中感到不適請立即停止。", "small", { color: INK }),
       ], 8, { backgroundColor: SURFACE, borderColor: CORAL, borderWidth: 1, borderRadius: 12, padding: 20 }),
       headline("faq_title", "常見問題", "h2", { color: INK, fontSize: 38 }, { tablet: { style: { fontSize: 32 } }, mobile: { style: { fontSize: 26 } } }),
-      stack("faq_panel", [
-        node("faq_list", "faq", { items: [
-          { question: "需要準備器材嗎？", answer: "不用。一張瑜伽墊就夠了；想加強的話，可以用裝滿水的寶特瓶當啞鈴。" },
-          { question: "體能很差也可以跟嗎？", answer: "可以。每個動作都會示範簡易版，跟不上就先做簡易版，循序漸進。" },
-          { question: "樓下會聽到嗎？", answer: "整堂課沒有跳躍動作，落地都很輕，住公寓也能放心練。" },
-          { question: "沒辦法準時參加，有回放嗎？", answer: "依主辦單位的回放設定，報名後會收到回放資訊。" },
-        ] }, undefined, { textAlign: "left", color: BG }),
-      ], 0, { backgroundColor: INK, borderRadius: 12, padding: 12 }),
+      node("faq_list", "faq", { items: [
+        { question: "需要準備器材嗎？", answer: "不用。一張瑜伽墊就夠了；想加強的話，可以用裝滿水的寶特瓶當啞鈴。" },
+        { question: "體能很差也可以跟嗎？", answer: "可以。每個動作都會示範簡易版，跟不上就先做簡易版，循序漸進。" },
+        { question: "樓下會聽到嗎？", answer: "整堂課沒有跳躍動作，落地都很輕，住公寓也能放心練。" },
+        { question: "沒辦法準時參加，有回放嗎？", answer: "依主辦單位的回放設定，報名後會收到回放資訊。" },
+      ] }, undefined, { textAlign: "left", color: INK }),
     ], { background: BG, color: BODY, maxWidth: 760, gap: 28, paddingY: 88, paddingYMobile: 56 }),
     // 9. 頁尾 CTA。
     section("footer_cta", [
@@ -138,7 +139,7 @@ export const template: WebinarTemplateDefinition = {
   category: "健身運動講座",
   purposes: ["webinar"],
   styles: ["vivid"],
-  preview: { eyebrow: "Webinar", headline: "健身影片預告報名頁", summary: "黑底螢光綠＋預告影片", palette: [BG, LIME, CORAL], sectionCount: 9 },
+  preview: { eyebrow: "Webinar", headline: "健身影片預告報名頁", summary: "黑底螢光綠＋預告影片", palette: [BG, LIME, CORAL], sectionCount: 11 },
   theme: { typography: { headingFont: "sans-tc", bodyFont: "sans-tc", bodySize: 17, bodyLineHeight: 1.75, textColor: BODY, headingColor: INK, linkColor: LIME }, background: { color: BG } },
   settings: {
     eventTitle: "在家 20 分鐘的燃脂訓練：不跳躍也有效的 4 個動作組合",

@@ -30,7 +30,7 @@ function build(prefix: string) {
   const story = (id: string, value: string) => text(id, value, undefined, { color: BODY, fontSize: 18, lineHeight: 1.85, textAlign: "left" }, { mobile: { style: { fontSize: 17, lineHeight: 1.8 } } });
   return [
     // 1. 公告條：開播倒數綁漏斗排程。
-    node("announce", "announcement_bar", { text: "免費線上直播｜講者親自攤開第一年的真實收支", showCountdown: true, countdownLabel: "距離開播", barColor: INK, barTextColor: BG }),
+    node("announce", "announcement_bar", { text: "免費直播｜{{webinar.startAt}}｜講者親自攤開第一年的真實收支", showCountdown: true, countdownLabel: "距離開播", barColor: INK, barTextColor: BG }),
     // 2. 導覽列：只有品牌與報名鈕（不固定，避免和固定報名列重複）。
     node("nav", "nav_bar", { brand: "帶著筆電去旅行", homeHref: "#top", sticky: false, accentColor: PRIMARY, ctaLabel: "立即報名", ctaHref: "#register", items: [], socials: [] }, undefined, { backgroundColor: BG, color: INK }),
     // 3. 首屏：全幅旅途插畫＋米色遮罩，文字靠左；平板與手機改成均勻遮罩，插畫只當底紋。
@@ -61,18 +61,15 @@ function build(prefix: string) {
     ], { background: BG, color: BODY, maxWidth: 1080, gap: 28, align: "center", paddingYMobile: 48 }),
     // 5. 中段 CTA：海邊工作的轉捩點。
     section("turn", [
-      node("turn_columns", "columns_2", { ratio: "1:1", gap: 56 }, [
-        stack("turn_columns_left", [
-          node("turn_image", "image", { src: `${ART}/seaside-cafe.svg`, alt: "海邊咖啡店與筆電的插畫" }, undefined, { imageWidth: 100 }),
-        ]),
-        stack("turn_columns_right", [
-          text("turn_eyebrow", "轉捩點", "eyebrow", { color: ACCENT }),
-          headline("turn_quote", "「原來工作可以跟著我走，\n而不是我跟著工作走。」", "h3", { color: INK, fontSize: 28, lineHeight: 1.45 }, { mobile: { style: { fontSize: 22 }, props: { text: "「原來工作可以跟著我走，而不是我跟著工作走。」" } } }),
-          story("turn_text", "這個念頭，讓我花了一整年把技能、客戶與收入重新整理。直播裡，我會把這一年的每個關鍵決定拆開來給你看。"),
-          button("turn_cta", "我想聽完整故事", "#register", cta),
-          text("turn_note", "免費參加，可以隨時取消報名", "small", { color: BODY }),
-        ], 18, {}, { mobile: { style: { textAlign: "center" } } }),
-      ], { align: "center" }),
+      columns2("turn_columns", [
+        node("turn_image", "image", { src: `${ART}/seaside-cafe.svg`, alt: "海邊咖啡店與筆電的插畫" }, undefined, { imageWidth: 100 }),
+      ], stack("turn_columns_right", [
+        text("turn_eyebrow", "轉捩點", "eyebrow", { color: ACCENT }),
+        headline("turn_quote", "「原來工作可以跟著我走，\n而不是我跟著工作走。」", "h3", { color: INK, fontSize: 28, lineHeight: 1.45 }, { mobile: { style: { fontSize: 22 }, props: { text: "「原來工作可以跟著我走，而不是我跟著工作走。」" } } }),
+        story("turn_text", "這個念頭，讓我花了一整年把技能、客戶與收入重新整理。直播裡，我會把這一年的每個關鍵決定拆開來給你看。"),
+        button("turn_cta", "我想聽完整故事", "#register", cta),
+        text("turn_note", "免費參加，可以隨時取消報名", "small", { color: BODY }),
+      ], 18, {}, { mobile: { style: { textAlign: "center" } } }), { ratio: "1:1", gap: 56, align: "center" }),
     ], { background: SAND, color: BODY, maxWidth: 1080, paddingYMobile: 48 }),
     // 6. 5 個轉折（議程）。
     section("agenda", [
@@ -114,10 +111,13 @@ function build(prefix: string) {
     // 9. 學員評價（格狀，不輪播）。
     section("reviews", [
       h2("reviews_title", "聽完直播的人，後來怎麼了"),
-      node("reviews_wall", "testimonial_wall", { layout: "grid", columns: 3, autoplay: false, showRating: false, accentColor: PRIMARY, cardColor: BG, cardTextColor: INK, items: [
+      node("reviews_wall", "testimonial_wall", { layout: "carousel", columns: 3, autoplay: false, showRating: false, accentColor: PRIMARY, cardColor: BG, cardTextColor: INK, items: [
         { name: "學員 A｜前行銷企劃", title: `第一次報價不再心虛（${WEBINAR_TEMPLATE_SAMPLE_MARK}）`, text: "照著報價表重新算了一次，才發現以前把自己賣得太便宜。現在接案前都會先想清楚範圍。" },
         { name: "學員 B｜UI 設計師", title: `先存預備金再出發（${WEBINAR_TEMPLATE_SAMPLE_MARK}）`, text: "原本打算下個月就辭職，聽完決定先存半年預備金，也先接兩個副業案子試水溫。" },
         { name: "學員 C｜英文家教", title: `排程終於不打架（${WEBINAR_TEMPLATE_SAMPLE_MARK}）`, text: "跨時區上課的排程方法很實用，我現在每週固定兩天完全不排課，用來旅行和休息。" },
+        { name: "學員 D｜自由撰稿人", title: `把興趣變成穩定案源（${WEBINAR_TEMPLATE_SAMPLE_MARK}）`, text: "原來作品集不用很多，挑三件最像理想客戶的作品就夠了。我兩週後就收到第一封詢價。" },
+        { name: "學員 E｜行政人員", title: `不再覺得出國工作很遙遠（${WEBINAR_TEMPLATE_SAMPLE_MARK}）`, text: "簽證與保險的清單讓我知道要從哪裡開始查，焦慮少了很多，也跟家人有了具體的討論內容。" },
+        { name: "學員 F｜平面設計師", title: `收入不穩也能安心（${WEBINAR_TEMPLATE_SAMPLE_MARK}）`, text: "三個帳戶的做法讓我淡季也不慌。現在每個月固定先把預備金撥出去，再決定要接多少案子。" },
       ] }, undefined, { textAlign: "left" }),
     ], { background: SAND, color: BODY, maxWidth: 1160, gap: 36, align: "center" }),
     // 10. 參加禮（純展示，不影響金額）。

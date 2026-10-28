@@ -17,7 +17,7 @@ const HIGHLIGHT = "#ffcc33";
 const LINE = "#d5dde8";
 
 function build(prefix: string) {
-  const { node, section, stack, headline, text, button, form } = webinarTemplateKit(prefix);
+  const { node, section, columns2, stack, headline, text, button, form } = webinarTemplateKit(prefix);
   const blueButton = { backgroundColor: PRIMARY, color: "#ffffff", borderRadius: 10, fontSize: 18 } as const;
   const card = { backgroundColor: CARD, borderColor: LINE, borderWidth: 1, borderRadius: 16, shadow: "medium", padding: 32 } as const;
   const h2 = (id: string, value: string, mobileText?: string) => headline(id, value, "h2", { color: INK, fontSize: 32, lineHeight: 1.3 }, { tablet: { style: { fontSize: 30 } }, mobile: { style: { fontSize: 24 }, ...(mobileText ? { props: { text: mobileText } } : {}) } });
@@ -26,7 +26,7 @@ function build(prefix: string) {
   const infoCard = (id: string, htmlId: string): FunnelNode[] => [
     badge(`${id}_badge`, "本場免費・線上直播"),
     headline(`${id}_title`, "3 步驟找出你的可轉移能力", "h3", { color: INK }),
-    node(`${id}_facts`, "event_facts", { layout: "grid", formatLabel: "線上直播", showDuration: true, accentColor: PRIMARY }, undefined, { color: INK, fontSize: 18 }),
+    node(`${id}_facts`, "event_facts", { layout: "grid", formatLabel: "線上直播", showDuration: true, accentColor: PRIMARY }, undefined, { color: INK }),
     node(`${id}_price`, "value_stack", {
       items: [{ title: "60 分鐘直播體驗課", text: "含直播 Q&A 與 3 份參加禮", value: "NT$1,980" }],
       originalPrice: "NT$1,980", offerLabel: "本場免費", note: "原價為講者自訂參考，本場免費參加。",
@@ -47,18 +47,12 @@ function build(prefix: string) {
       style: { color: INK, textAlign: "left" },
     }),
   ];
-  const step = (id: string, icon: string, alt: string, heading: string, value: string) => stack(id, [
-    node(`${id}_icon`, "image", { src: `${ART}/${icon}.svg`, alt }, undefined, { imageWidth: 30 }, { mobile: { style: { imageWidth: 22 } } }),
-    headline(`${id}_title`, heading, "h3", { color: INK }),
-    text(`${id}_text`, value, undefined, { color: BODY }),
-  ], 14, { ...card, shadow: "none", padding: 28 }, { mobile: { style: { padding: 22 } } });
   return [
     // 1. 公告條（開課倒數）。
-    node("announce", "announcement_bar", { text: "60 分鐘線上體驗課・本場免費", showCountdown: true, countdownLabel: "距離開課", barColor: INK, barTextColor: "#ffffff" }),
+    node("announce", "announcement_bar", { text: "60 分鐘線上體驗課・本場免費｜{{webinar.date}}", showCountdown: true, countdownLabel: "距離開課", barColor: INK, barTextColor: "#ffffff" }),
     // 2. 首屏：左標題與講者，右課程資訊卡（手機：標題 → 資訊卡 → 講者）。
     section("hero", [
-      node("hero_columns", "columns_2", { ratio: "7:5", gap: 56, stackOn: "tablet" }, [
-        stack("hero_copy", [
+      columns2("hero_columns", stack("hero_copy", [
           text("hero_eyebrow", "轉職體驗課｜線上直播 60 分鐘", "eyebrow", { color: PRIMARY }),
           headline("hero_title", "投了 50 封履歷沒回音？\n先找出你真正能帶走的能力", "h1", { color: INK, fontSize: 46, lineHeight: 1.25 }, { tablet: { style: { fontSize: 40 } }, mobile: { style: { fontSize: 28, lineHeight: 1.3 }, props: { text: "投了 50 封履歷沒回音？先找出你能帶走的能力" } } }),
           text("hero_lead", "60 分鐘體驗課，用 3 個步驟把過去的經驗，翻譯成新產業看得懂的語言。", "lead", { color: BODY }),
@@ -66,9 +60,7 @@ function build(prefix: string) {
           button("hero_jump", "免費報名體驗課", "#register", blueButton, { desktop: { visible: false }, tablet: { visible: false }, mobile: { visible: true } }),
           text("hero_points", "✓ 不用先改履歷，帶著工作經驗來就好\n✓ 直播中示範 2 份真實改寫案例（匿名）\n✓ 參加就送可轉移能力盤點表", undefined, { color: INK, lineHeight: 1.9 }),
           text("hero_speaker", "主講｜吳佩珊　職涯教練・前科技業人資主管", "small", { color: BODY }, { mobile: { visible: false } }),
-        ], 22, { padding: "8px 0 0" }),
-        stack("hero_card", infoCard("hero_card", "register"), 18, card, { mobile: { style: { padding: 16 } } }),
-      ], { align: "center" }),
+        ], 22, { padding: "8px 0 0" }), stack("hero_card", infoCard("hero_card", "register"), 18, card, { mobile: { style: { padding: 16 } } }), { ratio: "7:5", gap: 56, stackOn: "tablet", align: "center" }),
       text("hero_speaker_mobile", "主講｜吳佩珊　職涯教練・前科技業人資主管", "small", { color: BODY }, { desktop: { visible: false }, tablet: { visible: false }, mobile: { visible: true } }),
     ], { background: BG, color: BODY, maxWidth: 1120, gap: 20, paddingY: 72, paddingYTablet: 56, paddingYMobile: 32 }),
     // 3. 這些情況你中了幾個。
@@ -89,11 +81,13 @@ function build(prefix: string) {
     section("method", [
       text("method_eyebrow", "直播會教的方法", "eyebrow", { color: PRIMARY, textAlign: "center" }),
       h2("method_title", "3 個步驟，把經驗翻譯成新產業的語言", "3 步驟，把經驗翻譯成新產業的語言"),
-      node("method_columns", "columns_3", { gap: 24 }, [
-        step("method_1", "step-inventory", "放大鏡圖示", "1. 盤點", "列出你做過的事，找出背後真正的能力，而不是職稱。"),
-        step("method_2", "step-translate", "翻譯圖示", "2. 翻譯", "把能力換成目標產業的關鍵字與成果描述。"),
-        step("method_3", "step-verify", "勾選圖示", "3. 驗證", "用職缺與資訊訪談檢查方向，再決定要不要進修。"),
-      ]),
+      stack("method_panel", [
+        node("method_list", "icon_list", { layout: "grid", columns: 3, numbered: true, accentColor: PRIMARY, items: [
+          { icon: "compass", title: "盤點", text: "列出你做過的事，找出背後真正的能力，而不是職稱。" },
+          { icon: "message", title: "翻譯", text: "把能力換成目標產業的關鍵字與成果描述。" },
+          { icon: "check", title: "驗證", text: "用職缺與資訊訪談檢查方向，再決定要不要進修。" },
+        ] }, undefined, { color: INK, textAlign: "left" }),
+      ], 0, { ...card, shadow: "soft", padding: 40 }, { mobile: { style: { padding: 22 } } }),
     ], { background: BG, color: BODY, maxWidth: 1120, gap: 24, align: "center" }),
     // 5. 參加就送（收據式價值清單，純展示）。
     section("gift", [
@@ -128,10 +122,13 @@ function build(prefix: string) {
     // 7. 學員評價（格狀，不輪播）。
     section("reviews", [
       h2("reviews_title", "上過體驗課的人怎麼說"),
-      node("reviews_wall", "testimonial_wall", { layout: "grid", columns: 3, autoplay: false, showRating: true, accentColor: PRIMARY, cardColor: CARD, cardTextColor: INK, items: [
+      node("reviews_wall", "testimonial_wall", { layout: "carousel", columns: 3, autoplay: false, showRating: true, accentColor: PRIMARY, cardColor: CARD, cardTextColor: INK, items: [
         { name: "學員 A｜行政轉行銷", rating: 5, title: `終於知道履歷該寫什麼（${WEBINAR_TEMPLATE_SAMPLE_MARK}）`, text: "以前只寫做了哪些事，現在會寫帶來什麼結果。改完履歷後開始收到面試邀請。" },
         { name: "學員 B｜工程師轉產品", rating: 5, title: `面試不再卡住（${WEBINAR_TEMPLATE_SAMPLE_MARK}）`, text: "自我介紹框架很好用，被問到為什麼轉職時，終於能講出有說服力的答案。" },
         { name: "學員 C｜餐飲轉客服", rating: 5, title: `不用再焦慮年齡（${WEBINAR_TEMPLATE_SAMPLE_MARK}）`, text: "盤點完才發現自己有很多能帶走的能力，對轉職這件事有信心多了。" },
+        { name: "學員 D｜業務轉人資", rating: 5, title: `把經驗翻成對方聽得懂的話（${WEBINAR_TEMPLATE_SAMPLE_MARK}）`, text: "翻譯步驟讓我發現銷售經驗在招募工作也用得上，面試時我用新的說法介紹自己，反應很不一樣。" },
+        { name: "學員 E｜設計轉 PM", rating: 4, title: `知道下一步該驗證什麼（${WEBINAR_TEMPLATE_SAMPLE_MARK}）`, text: "資訊訪談的建議很實際，我約了三位現職的人聊，才確定自己是真的想轉，而不是只是想逃離現況。" },
+        { name: "學員 F｜教師轉培訓", rating: 5, title: `不再覺得從零開始（${WEBINAR_TEMPLATE_SAMPLE_MARK}）`, text: "盤點表幫我把教學經驗拆成專案管理與溝通能力，整份履歷的重點都變得更清楚。" },
       ] }, undefined, { textAlign: "left" }),
     ], { background: CARD, color: BODY, maxWidth: 1120, gap: 32, align: "center" }),
     // 8. 注意事項。

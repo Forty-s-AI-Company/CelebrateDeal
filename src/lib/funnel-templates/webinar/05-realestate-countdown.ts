@@ -27,12 +27,6 @@ function build(prefix: string) {
     text(`${id}_eyebrow`, eyebrow, "eyebrow", { color: ACCENT_LIGHT }),
     headline(`${id}_title`, value, "h2", { color: INK, fontSize: 34, lineHeight: 1.3 }, { mobile: { style: { fontSize: 24, lineHeight: 1.35 } } }),
   ], 10, { textAlign: "center" });
-  const judgement = (id: string, number: string, name: string, body: string) => stack(id, [
-    text(`${id}_number`, number, "eyebrow", { color: ACCENT_LIGHT, fontSize: 15 }),
-    headline(`${id}_title`, name, "h3", { color: INK, fontSize: 22, lineHeight: 1.4 }, { mobile: { style: { fontSize: 19 } } }),
-    text(`${id}_text`, body, undefined, { color: BODY, fontSize: 16 }),
-  ], 10, { backgroundColor: WHITE, borderColor: LINE, borderWidth: 1, borderRadius: 14, padding: 28, shadow: "soft" }, { mobile: { style: { padding: 22 } } });
-
   const step = (id: string, label: string, name: string, body: string) => stack(id, [
     text(`${id}_time`, label, "eyebrow", { color: ACCENT_LIGHT, letterSpacing: 1, fontSize: 14 }),
     headline(`${id}_title`, name, "h3", { color: INK, fontSize: 21 }, { mobile: { style: { fontSize: 19 } } }),
@@ -49,7 +43,7 @@ function build(prefix: string) {
       }),
       text("hero_lead", "90 分鐘，帶你用一張表算出自己真正買得起的總價。", "lead", { color: BAND_BODY }),
       node("hero_countdown", "countdown", { variant: "blocks", source: "webinar_start", label: "距離開播", liveText: "直播進行中，立即進入", replayText: "回放限時開放中", expiredText: "本場說明會已結束", align: "center", numberColor: PRIMARY, cellColor: BAND_CELL, accentColor: ACCENT }, undefined, { color: BAND_INK }),
-      node("hero_facts", "event_facts", { layout: "row", formatLabel: "線上說明會", priceLabel: "免費", showDuration: false, accentColor: ACCENT, align: "center" }, undefined, { color: BAND_INK }, { mobile: { style: { fontSize: 18 } } }),
+      node("hero_facts", "event_facts", { layout: "row", formatLabel: "線上說明會", priceLabel: "免費", showDuration: false, accentColor: ACCENT, align: "center" }, undefined, { color: BAND_INK }),
       node("hero_deadline", "deadline_notice", { label: "報名截止", closedText: "本場報名已截止，留下 Email 可收到下一場通知。", accentColor: PRIMARY }, undefined, { color: BAND_INK }),
       form("hero_form", {
         title: "保留說明會席位",
@@ -70,11 +64,13 @@ function build(prefix: string) {
     // 2. 三個判斷（核心內容）。
     section("judgements", [
       heading("judgements", "THE 3 CHECKS", "看房之前，先做這 3 個判斷"),
-      node("judgements_grid", "columns_3", { stackOn: "tablet", gap: 24 }, [
-        judgement("judgements_budget", "判斷 01", "先算月付上限，再看總價", "用收入與生活支出，倒推出你每個月付得起的房貸金額。"),
-        judgement("judgements_loan", "判斷 02", "貸款成數與寬限期的取捨", "成數越高、寬限期越長，未來的壓力會落在哪一年？"),
-        judgement("judgements_area", "判斷 03", "用生活機能評分表看地段", "交通、學區、採買與醫療，用分數比較，而不是靠感覺。"),
-      ], { align: "stretch" }),
+      stack("judgements_panel", [
+        node("judgements_list", "icon_list", { layout: "grid", columns: 3, numbered: true, accentColor: ACCENT_LIGHT, items: [
+          { icon: "target", title: "先算月付上限，再看總價", text: "用收入與生活支出，倒推出你每個月付得起的房貸金額。" },
+          { icon: "shield", title: "貸款成數與寬限期的取捨", text: "成數越高、寬限期越長，未來的壓力會落在哪一年？" },
+          { icon: "compass", title: "用生活機能評分表看地段", text: "交通、學區、採買與醫療，用分數比較，而不是靠感覺。" },
+        ] }, undefined, { color: BODY, textAlign: "left" }),
+      ], 0, { backgroundColor: WHITE, borderColor: LINE, borderWidth: 1, borderRadius: 14, padding: 36, shadow: "soft" }, { mobile: { style: { padding: 22 } } }),
     ], { background: SOFT, color: BODY, maxWidth: 1120, gap: 44 }),
 
     // 3. 市場數據（範本示意，每一項都附資料來源欄位）。
