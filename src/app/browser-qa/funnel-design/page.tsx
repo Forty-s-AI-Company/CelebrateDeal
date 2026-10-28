@@ -15,6 +15,6 @@ export default async function FunnelDesignBrowserHarnessPage({ searchParams }: {
   const initialViewport = funnelViewportHint((await headers()).get("user-agent"));
   // `&schedule=sample|far|live|replay|ended`: a synthetic event schedule, computed once here so server and browser render the same time.
   const scheduleKind = single(params.schedule);
-  const schedule = isFunnelHarnessSchedule(scheduleKind) ? funnelHarnessSchedule(scheduleKind, Date.now()) : undefined;
+  const schedule = isFunnelHarnessSchedule(scheduleKind) ? funnelHarnessSchedule(scheduleKind, new Date().getTime()) : undefined;
   return <FunnelDesignBrowserHarness schedule={schedule} template={single(params.template)} block={single(params.block)} category={single(params.category)} viewport={viewport} stress={single(params.stress) === "1"} initialViewport={initialViewport} />;
 }
