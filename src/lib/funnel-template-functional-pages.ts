@@ -49,6 +49,8 @@ function cardStyle(): { style: FunnelNodeStyle; mobile: { style: FunnelNodeStyle
 
 const h2Style: FunnelNodeStyle = { color: T.heading, fontSize: 28, lineHeight: 1.35 };
 const sectionOptions = (maxWidth: number) => ({ background: T.pageBackground, color: T.body, maxWidth, paddingY: 64, paddingYTablet: 48, paddingYMobile: 32, gap: 24 });
+/** Consecutive cards sit 32px apart (16px section padding on each side; 20px on phones). */
+const stacked = { ...sectionOptions(960), paddingY: 16, paddingYTablet: 14, paddingYMobile: 10 };
 
 /** 感謝頁（960px）：成功狀態、三步驟、活動資訊、選填講者。 */
 function buildThankYou(prefix: string): FunnelNode[] {
@@ -61,11 +63,11 @@ function buildThankYou(prefix: string): FunnelNode[] {
     section("hero", [
       card("hero_card", [
         text("hero_check", "✓", undefined, { color: T.accent, fontSize: 40, lineHeight: 1 }),
-        text("hero_eyebrow", "報名完成", "eyebrow", { color: T.accent }),
-        headline("hero_title", "報名完成，席位已為你保留", "h1", { color: T.heading, fontSize: 38, lineHeight: 1.3 }, { mobile: { style: { fontSize: 28 } } }),
+        text("hero_eyebrow", "感謝你的報名", "eyebrow", { color: T.accent }),
+        headline("hero_title", "報名完成，席位已保留", "h1", { color: T.heading, fontSize: 38, lineHeight: 1.3 }, { mobile: { style: { fontSize: 28 } } }),
         text("hero_event", "{{webinar.title}}", "lead", { color: T.secondary }),
       ], 14, "center"),
-    ], sectionOptions(960)),
+    ], { ...sectionOptions(960), paddingY: 48, paddingYTablet: 40, paddingYMobile: 24 }),
 
     section("steps", [
       card("steps_card", [
@@ -75,20 +77,24 @@ function buildThankYou(prefix: string): FunnelNode[] {
           { icon: "clock", title: "加入行事曆", text: "按下方按鈕，把活動放進 Google 日曆或下載 .ics 檔。" },
           { icon: "lightbulb", title: "準備你的問題", text: "先寫下最想問的一到兩件事，活動中提問會更有效率。" },
         ] }, undefined, { color: T.body }),
-        node("steps_calendar", "add_to_calendar", { accentColor: T.accent, align: "left" }),
+        node("steps_calendar", "add_to_calendar", { accentColor: T.accent, align: "left", icsLabel: "下載 .ics 行事曆檔" }),
       ]),
-    ], sectionOptions(960)),
+    ], stacked),
 
     section("facts", [
-      node("facts_bar", "event_facts", { layout: "row", formatLabel: "線上直播", showDuration: true, showTimezone: true, accentColor: T.accent }, undefined, { color: T.body }),
-    ], sectionOptions(960)),
+      card("facts_card", [
+        node("facts_bar", "event_facts", { layout: "row", formatLabel: "線上直播", showDuration: true, showTimezone: true, accentColor: T.accent }, undefined, { color: T.body }),
+      ]),
+    ], stacked),
 
     // 選填：不需要講者介紹時，請在編輯器刪除或隱藏這個區段。
     section("speaker", [
-      node("speaker_card", "speaker_profiles", { layout: "featured", size: "small", photoShape: "circle", accentColor: T.accent, items: [
-        { photo: "/placeholder.svg", alt: "講者照片（請替換）", name: "講者姓名（請替換）", role: "職稱／所屬單位", bio: "用兩三句話介紹講者的專長，以及這場活動能帶給參加者的幫助。" },
-      ] }, undefined, { color: T.body }),
-    ], sectionOptions(960)),
+      card("speaker_box", [
+        node("speaker_card", "speaker_profiles", { layout: "featured", size: "small", photoShape: "circle", accentColor: T.accent, items: [
+          { photo: "/placeholder.svg", alt: "講者照片（請替換）", name: "講者姓名（請替換）", role: "職稱／所屬單位", bio: "用兩三句話介紹講者的專長，以及這場活動能帶給參加者的幫助。" },
+        ] }, undefined, { color: T.body }),
+      ]),
+    ], stacked),
 
     section("footer", [
       text("footer_text", "有問題嗎？回覆確認信即可聯絡主辦單位。", "small", { color: T.secondary, textAlign: "center" }),
@@ -115,7 +121,7 @@ function buildBroadcast(prefix: string): FunnelNode[] {
 
     section("player", [
       node("player_note", "callout", { tone: "info", title: "觀看方式", text: "播放入口會依活動狀態顯示在這個頁面。若直播開始後仍看不到畫面，請重新整理頁面並確認網路連線。" }),
-    ], { ...sectionOptions(960), paddingY: 24, paddingYTablet: 20, paddingYMobile: 16 }),
+    ], stacked),
 
     section("summary", [
       card("summary_card", [
@@ -126,13 +132,15 @@ function buildBroadcast(prefix: string): FunnelNode[] {
           { icon: "message", title: "重點三", text: "說明提問方式，以及哪些問題會在直播中回答。" },
         ] }, undefined, { color: T.body }),
       ]),
-    ], sectionOptions(960)),
+    ], stacked),
 
     section("speaker", [
-      node("speaker_card", "speaker_profiles", { layout: "featured", size: "small", photoShape: "circle", accentColor: T.accent, items: [
-        { photo: "/placeholder.svg", alt: "講者照片（請替換）", name: "講者姓名（請替換）", role: "職稱／所屬單位", bio: "用兩三句話介紹講者的專長與這場直播的主題。" },
-      ] }, undefined, { color: T.body }),
-    ], sectionOptions(960)),
+      card("speaker_box", [
+        node("speaker_card", "speaker_profiles", { layout: "featured", size: "small", photoShape: "circle", accentColor: T.accent, items: [
+          { photo: "/placeholder.svg", alt: "講者照片（請替換）", name: "講者姓名（請替換）", role: "職稱／所屬單位", bio: "用兩三句話介紹講者的專長與這場直播的主題。" },
+        ] }, undefined, { color: T.body }),
+      ]),
+    ], stacked),
 
     section("faq", [
       card("faq_card", [
@@ -144,7 +152,7 @@ function buildBroadcast(prefix: string): FunnelNode[] {
           { question: "錯過直播還能觀看嗎？", answer: "是否提供回放由主辦單位決定；若有回放，會顯示在這個頁面。" },
         ] }, [], { color: T.body, textAlign: "left" }),
       ]),
-    ], sectionOptions(960)),
+    ], stacked),
 
     section("footer", [
       text("footer_text", "遇到無法解決的問題，請聯絡主辦單位。", "small", { color: T.secondary, textAlign: "center" }),
