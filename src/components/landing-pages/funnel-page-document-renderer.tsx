@@ -1,9 +1,10 @@
 "use client";
 import { useRegistrationRetry } from "@/components/registration-retry-context";
+import { flushSync } from "react-dom";
 
 /* eslint-disable @next/next/no-img-element */
 
-import { createContext, useContext, useRef, useState, type CSSProperties, type FormEvent, type MouseEvent, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useRef, useState, type CSSProperties, type FormEvent, type MouseEvent, type ReactNode } from "react";
 import { RegistrationSubmissionFeedback } from "@/components/registration-submission-feedback";
 import { LandingPageLink } from "@/components/landing-page-link";
 import { useFunnelRegistrationLinks } from "./funnel-registration-links";
@@ -105,6 +106,12 @@ export type FunnelSubmissionContext = {
   redirectTo?: string;
   /** Shown under a designed form's submit button before submission (webinar: email confirmation notice). */
   notice?: string;
+  /**
+   * Submit with the browser's native POST (the server redirects with its own
+   * feedback query), exactly like the webinar fallback form. Fields stay
+   * enabled while the browser serialises them.
+   */
+  nativeSubmit?: boolean;
 };
 
 type ResolvedNode = {
@@ -414,18 +421,16 @@ function referralFields(attribution: { referralCode?: string; shareCode?: string
 }
 
 /**
- * C-19（最小集合）：公開報名表沿用頁面上表單節點的設計。欄位的 key、類型與必填
- * 一律來自伺服器的報名表設定（資料只送進平台自己的報名紀錄）；頁面上的
- * `form_input` 只提供標籤、提示文字、說明與半寬，依欄位 key（或 Email／電話類型）
- * 對應；`button` 提供送出文字與樣式；必填的 `checkbox` 提供同意文字；其他節點
- * （標題、小字）依原本順序顯示在欄位前後。
+ * C-19（最小集合）：公開報名表沿用頁面上表單節點的設計。欄位的 key、標籤、類型、
+ * 必填與送出文字一律來自伺服器的報名表設定（與既有公開表單相同；資料只送進平台
+ * 自己的報名紀錄）；頁面上的 `form_input` 依欄位 key（或 Email／電話類型）提供
+ * 提示文字、說明與半寬，`button` 提供送出按鈕樣式；必填的 `checkbox` 只決定是否
+ * 需要同意（文字沿用平台用語），其他節點（標題、小字）依原本順序顯示在欄位前後。
  */
 export type FunnelFormDesign = {
-  fields: Record<string, { label?: string; placeholder?: string; helpText?: string; half?: boolean }>;
-  submitLabel?: string;
+  fields: Record<string, { placeholder?: string; helpText?: string; half?: boolean }>;
   submitStyle?: CSSProperties;
   submitClassName?: string;
-  consentLabel?: string;
   before: ReactNode;
   after: ReactNode;
   gap: number;
@@ -459,8 +464,23 @@ function PublicSubmissionForm({ submission, label, requireConsent, design }: { s
   const [status, setStatus] = useState<"idle" | "submitting" | "success" | "error">(retry?.submitted ? "success" : retry?.message ? "error" : "idle");
   const [message, setMessage] = useState(retry?.submitted ? `${submission.form.successMessage} ${FORM_SUBMISSION_VERIFICATION_MESSAGE}` : retry?.message ?? "");
   const submissionInFlight = useRef(false);
+  const [nativePending, setNativePending] = useState(false);
   const referral = referralFields(retry?.attribution);
+  useEffect(() => {
+    if (!submission.nativeSubmit) return;
+    // Back/forward cache: allow submitting again after returning to the page.
+    const reset = () => { submissionInFlight.current = false; setNativePending(false); };
+    window.addEventListener("pageshow", reset);
+    return () => window.removeEventListener("pageshow", reset);
+  }, [submission.nativeSubmit]);
   async function submit(event: FormEvent<HTMLFormElement>) {
+    if (submission.nativeSubmit) {
+      if (submissionInFlight.current) { event.preventDefault(); return; }
+      submissionInFlight.current = true;
+      // Paint the waiting state before the native navigation starts; fields are not disabled.
+      flushSync(() => setNativePending(true));
+      return;
+    }
     event.preventDefault();
     // Lock synchronously: disabled is only applied after the next React render.
     if (submissionInFlight.current) return;
@@ -482,7 +502,7 @@ function PublicSubmissionForm({ submission, label, requireConsent, design }: { s
       setStatus("error"); setMessage(formSubmissionErrorMessage());
     }
   }
-  return <form method="post" action="/api/form-submissions" aria-label={label} aria-busy={status === "submitting"} onSubmit={submit} className="space-y-4">
+  return <form method="post" action="/api/form-submissions" aria-label={label} aria-busy={status === "submitting" || nativePending} onSubmit={submit} className="space-y-4">
     <input type="hidden" name="formId" value={submission.form.id} />
     <input type="hidden" name="landingPageId" value={submission.landingPageId ?? ""} />
     <input type="hidden" name="funnelStepId" value={submission.funnelStepId ?? ""} />
@@ -493,7 +513,7 @@ function PublicSubmissionForm({ submission, label, requireConsent, design }: { s
     <input type="hidden" name="redirectTo" value={submission.redirectTo ?? retry?.sourcePath ?? ""} />
     {retry ? <input type="hidden" name="__registrationReturnPath" value={retry.sourcePath} /> : null}
     {design
-      ? <DesignedSubmissionFields submission={submission} design={design} requireConsent={requireConsent} locked={status === "submitting" || status === "success"} draft={retry?.draft?.answers} submitText={submitText(status, design.submitLabel || submission.form.submitLabel)} />
+      ? <DesignedSubmissionFields submission={submission} design={design} requireConsent={requireConsent} locked={status === "submitting" || status === "success"} draft={retry?.draft?.answers} submitText={submitText(nativePending ? "submitting" : status, submission.form.submitLabel)} />
       : <PlainSubmissionFields submission={submission} requireConsent={requireConsent} locked={status === "submitting" || status === "success"} draft={retry?.draft?.answers} submitText={submitText(status, submission.form.submitLabel)} />}
     <RegistrationSubmissionFeedback pending={status === "submitting"} errorMessage={status === "error" ? message : ""} successMessage={status === "success" ? message : ""} />
   </form>;
@@ -521,7 +541,7 @@ function DesignedSubmissionFields({ submission, design, requireConsent, locked, 
         const inputId = `funnel-field-${submission.form.id}-${field.key}`;
         const helpId = look.helpText ? `${inputId}-help` : undefined;
         return <div key={field.key} className="grid min-w-0 content-start" style={{ gap: 6, gridColumn: design.mobile || !look.half ? "1 / -1" : undefined }}>
-          <label htmlFor={inputId} className="block text-[0.9375em] font-semibold">{look.label || field.label}{field.required ? <span aria-hidden> *</span> : <span className="font-normal opacity-80">（選填）</span>}</label>
+          <label htmlFor={inputId} className="block text-[0.9375em] font-semibold">{field.label}{field.required ? " *" : <span aria-hidden className="font-normal opacity-80">（選填）</span>}</label>
           <input id={inputId} name={field.key} defaultValue={draft?.[field.key] ?? ""} type={field.type} required={field.required} disabled={locked} placeholder={look.placeholder} aria-describedby={helpId}
             autoComplete={FIELD_AUTOCOMPLETE[field.key] ?? (field.type === "email" ? "email" : field.type === "tel" ? "tel" : undefined)} inputMode={field.type === "tel" ? "tel" : undefined} {...localizedValidation}
             className="min-h-12 w-full rounded-lg border border-slate-500 bg-white px-3.5 py-2.5 text-[16px] text-slate-900 placeholder:text-slate-500 disabled:bg-slate-100" />
@@ -529,7 +549,8 @@ function DesignedSubmissionFields({ submission, design, requireConsent, locked, 
         </div>;
       })}
     </div>
-    {requireConsent ? <label className="flex items-start gap-2.5 text-[0.9375em]"><input type="checkbox" required disabled={locked} className="mt-1 h-5 w-5 shrink-0" {...localizedValidation} /><span>{design.consentLabel || "我同意依本頁說明提交並使用上述資料。"}</span></label> : null}
+    {/* Platform consent wording, identical to the plain form (a template's checkbox text is not used for consent). */}
+    {requireConsent ? <label className="flex items-start gap-2.5 text-[0.9375em]"><input type="checkbox" required disabled={locked} className="mt-1 h-5 w-5 shrink-0" {...localizedValidation} /><span>我同意依本頁說明提交並使用上述資料。</span></label> : null}
     <button type="submit" disabled={locked} className={`${design.submitClassName ?? ""} w-full cursor-pointer disabled:cursor-not-allowed disabled:opacity-60`} style={design.submitStyle}>{submitText}</button>
     {submission.notice ? <p className="m-0 text-[0.875em]" style={{ opacity: 0.85 }}>{submission.notice}</p> : null}
     {design.after}
@@ -781,9 +802,7 @@ function formDesign(children: FunnelNode[], viewport: FunnelViewport, tokens: Fu
   const before: ReactNode[] = [];
   const after: ReactNode[] = [];
   let reachedFields = false;
-  let submitLabel: string | undefined;
   let submitStyle: CSSProperties | undefined;
-  let consentLabel: string | undefined;
   for (const child of children) {
     const resolved = resolveNode(child, viewport);
     if (!resolved.visible) continue;
@@ -792,22 +811,21 @@ function formDesign(children: FunnelNode[], viewport: FunnelViewport, tokens: Fu
       const props = resolved.props;
       const type = safeInputType(props.inputType ?? props.type);
       const key = safeNodeName(child, props, child.id);
-      const look = { label: stringProp(props, ["label", "title"]) || undefined, placeholder: stringProp(props, ["placeholder"]) || undefined, helpText: stringProp(props, ["helpText"]) || undefined, half: props.width === "half" };
+      const look = { placeholder: stringProp(props, ["placeholder"]) || undefined, helpText: stringProp(props, ["helpText"]) || undefined, half: props.width === "half" };
       fields[key] ??= look;
       if (type === "email") fields.email ??= look;
       if (type === "tel") { fields.phone ??= look; fields.tel ??= look; fields.mobile ??= look; }
       continue;
     }
-    if (child.type === "button" && !submitLabel) {
+    if (child.type === "button" && !submitStyle) {
       reachedFields = true;
-      submitLabel = stringProp(resolved.props, ["label", "text", "title"]) || undefined;
       submitStyle = buttonControlStyle(resolved.style, tokens);
       continue;
     }
-    if (child.type === "checkbox" && resolved.props.required === true) { consentLabel = stringProp(resolved.props, ["label", "text", "title"]) || undefined; continue; }
+    if (child.type === "checkbox" && resolved.props.required === true) continue;
     (reachedFields ? after : before).push(render(child));
   }
-  return { fields, submitLabel, submitStyle: submitStyle ?? buttonControlStyle({}, tokens), submitClassName: "transition-[filter] hover:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2", consentLabel, before, after, gap, mobile: viewport === "mobile" };
+  return { fields, submitStyle: submitStyle ?? buttonControlStyle({}, tokens), submitClassName: "transition-[filter] hover:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2", before, after, gap, mobile: viewport === "mobile" };
 }
 
 function webinarElementProps(props: Record<string, unknown>, resolved: ResolvedNode, tokens: FunnelTypographyTokens, viewport: FunnelViewport, mode: FunnelRenderMode): WebinarElementProps {

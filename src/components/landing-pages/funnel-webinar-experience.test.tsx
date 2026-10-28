@@ -40,6 +40,9 @@ describe("Webinar shared preview/public experience", () => {
     expect(html).toContain('value="owned_live"');
     expect(html).toContain('value="/lp/current-slug/thank-you"');
     expect(html).toContain("完成確認");
+    // Same labels and submit text as the bound registration form (the release E2E fills them by name).
+    expect(html).toContain("Email *</label>");
+    expect(html).toContain(">送出報名</button>");
   });
   it("posts the existing owned resources and redirects only to the current funnel thank-you path", () => {
     vi.useFakeTimers(); vi.setSystemTime(new Date("2030-01-01T01:30:00.000Z"));

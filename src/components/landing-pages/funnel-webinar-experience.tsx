@@ -35,7 +35,7 @@ function designedFormSubmission({ registration, ready, page, resource, source, t
   const redirectTo = path(thankYou.path);
   return {
     form: { id: resource.form.id, fields: resource.form.fields.map((field) => ({ key: field.key, label: field.label, type: REGISTRATION_FIELD_TYPES.has(field.type ?? "") ? field.type as "text" : "text", required: field.required === true })), submitLabel: resource.form.submitLabel, successMessage: resource.form.successMessage },
-    landingPageId: source.landingPageId, funnelStepId: source.stepId, liveId: resource.live.id, redirectTo, notice: WEBINAR_CONFIRMATION_NOTICE,
+    landingPageId: source.landingPageId, funnelStepId: source.stepId, liveId: resource.live.id, redirectTo, notice: WEBINAR_CONFIRMATION_NOTICE, nativeSubmit: true,
   };
 }
 

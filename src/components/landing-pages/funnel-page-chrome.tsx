@@ -79,9 +79,10 @@ export function FunnelStickyCtaBar({ settings, contentRef, endRef, linkColor }: 
   const style: CSSProperties = {
     position: "fixed", insetInline: 0, bottom: 0, zIndex: 60, backgroundColor: background, color: showcaseReadableOn(background),
     boxShadow: "0 -6px 24px rgba(15, 23, 42, 0.16)", padding: "12px 16px", paddingBottom: "calc(12px + env(safe-area-inset-bottom, 0px))",
-    transform: visible ? "translateY(0)" : "translateY(110%)", transition: prefersReducedMotion() ? undefined : "transform 220ms ease",
+    transform: visible ? "translateY(0)" : "translateY(110%)",
   };
-  return <div data-funnel-sticky-cta aria-hidden={!visible} inert={!visible} style={style}>
+  // The slide-in is a CSS media-query class (not a render-time matchMedia check), so server and client markup match.
+  return <div data-funnel-sticky-cta aria-hidden={!visible} inert={!visible} className="motion-safe:transition-transform motion-safe:duration-200 motion-safe:ease-out" style={style}>
     <div className="mx-auto flex max-w-3xl items-center justify-between" style={{ gap: 12 }}>
       {date ? <p className="m-0 min-w-0 text-[15px] leading-snug font-semibold" style={{ fontVariantNumeric: "tabular-nums" }}>{date}</p> : null}
       <button type="button" onClick={go} className="inline-flex min-h-12 shrink-0 cursor-pointer items-center justify-center rounded-[10px] px-6 text-[17px] font-bold focus-visible:outline-2 focus-visible:outline-offset-2" style={{ backgroundColor: button, color: buttonText, outlineColor: button, flex: date ? undefined : 1 }}>{settings.label}</button>

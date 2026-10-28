@@ -94,21 +94,23 @@ describe("designed public form (C-19 minimum)", () => {
     n("f_note", "text", { text: "可隨時取消訂閱", textStyle: "small" }),
   ]);
 
-  it("keeps server field keys and types but uses the page's labels, hints, button and consent text", () => {
+  it("keeps the server form's keys, labels, types and submit text, and takes hints, button style and consent text from the page", () => {
     const html = renderToStaticMarkup(<FunnelPageDocumentRenderer document={page([form])} submission={submission} publicSurface />);
-    expect(html).toContain("您的姓名");
+    expect(html).toContain("姓名 *</label>");
+    expect(html).not.toContain("您的姓名");
     expect(html).toContain('placeholder="王小明"');
-    expect(html).toContain("常用 Email");
+    expect(html).toContain("電子信箱 *</label>");
     expect(html).toContain("直播連結會寄到這裡");
     expect(html).toContain('name="email"');
     expect(html).toContain('type="email"');
     expect(html).toContain("電話<span");
     expect(html).toContain("（選填）");
-    expect(html).toContain("我同意收到講座通知");
-    expect(html).toContain("免費報名直播");
+    expect(html).toContain("我同意依本頁說明提交並使用上述資料。");
+    expect(html).not.toContain("我同意收到講座通知");
+    expect(html).toContain(">送出</button>");
     expect(html).toContain("background-color:#4f46e5");
-    expect(html.indexOf("保留我的席位")).toBeLessThan(html.indexOf("您的姓名"));
-    expect(html.indexOf("免費報名直播")).toBeLessThan(html.indexOf("可隨時取消訂閱"));
+    expect(html.indexOf("保留我的席位")).toBeLessThan(html.indexOf("姓名 *</label>"));
+    expect(html.indexOf(">送出</button>")).toBeLessThan(html.indexOf("可隨時取消訂閱"));
     expect(html).toContain('value="owned_form"');
     expect(html).not.toContain("bg-amber-500");
   });

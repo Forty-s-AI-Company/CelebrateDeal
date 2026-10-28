@@ -145,7 +145,7 @@ npx vitest run src/lib/funnel-templates/webinar
 | C-16 裝置框 | `media_frame` | `frame`：browser／phone／laptop<br>`src`、`alt`、`url`、`aspect` |
 | C-17 作品集圖庫 | `image_gallery` | `layout`：masonry／grid<br>`columns`<br>`items[]`：src、alt、caption |
 | C-18 程式碼片段 | `code_snippet` | `code`、`language`、`filename`、`showLineNumbers`、`showCopy` |
-| C-19 報名表單 | `form(id, { fields, submitLabel, submitStyle, title, consent, note, style, htmlId })` | 欄位 `name` 要對應報名表的 key：`name`、`email`、`phone`<br>公開頁的欄位類型與必填以伺服器報名表為準；頁面提供標籤、提示文字（`placeholder`、`helpText`）、半寬（`half`，手機一律整列）、送出按鈕樣式、同意文字與小字 |
+| C-19 報名表單 | `form(id, { fields, submitLabel, submitStyle, title, consent, note, style, htmlId })` | 欄位 `name` 要對應報名表的 key：`name`、`email`、`phone`<br>**公開頁的欄位標籤、類型、必填與送出按鈕文字一律來自綁定的報名表**（與既有公開表單相同）；範本提供的是提示文字（`placeholder`、`helpText`）、半寬（`half`，手機一律整列）、送出按鈕樣式、表單標題與小字<br>`consent` 只決定是否需要勾選同意，公開頁顯示平台的同意文字<br>`submitLabel` 與欄位 `label` 是編輯器裡的預設顯示，請寫成與一般報名表相近的文字（例如「姓名」「Email」） |
 
 既有的展示元件也都可以用：`section_title`、`icon_list`、`stats`、`logo_strip`、`image_cards`、`content_cards`、`video_gallery`、`nav_bar`、`shape_divider`、`faq`。它們的 props 見 `src/lib/funnel-element-inspector.ts` 的屬性面板定義。
 
@@ -195,17 +195,14 @@ npm run qa:template-layout -- --templates=webinar-ai-minimal --stress --out=arti
 
 ### 基準
 
-2026-10-28 用現有範本跑出的基準（一般文案），失敗是既有問題，不需要在範本工作階段修：
+2026-10-28 在整合分支跑 `--all`（一般文案）的結果：
 
-- `custom-luxury-course`：
-  - 768 與 1024 有 L-10 欄寬不足。
-  - 手機有 F-3.1 小於 14px 的日期與標籤。
-  - 375×667 首屏看不到 CTA。
-  - 壓力文案下，評價牆的 `line-clamp` 被判為 L-3。
-- `webinar-registration`：
-  - 768 有 L-10。
-  - 360 的輸入框寬 274px，低於 280px（L-11）。
-- `webinar-course-registration`：手機主要 CTA 高 46px，低於 48px（L-5）。
+- `webinar-example`：1440～320 與 375×667 全部通過，壓力文案也全部通過。
+- `custom-luxury-course`（黑金，品質基準）：1440～320 全部通過；375×667 的首屏 CTA 在 851px（L-7，品牌首頁的設計，不是報名頁）。
+- 舊範本（即將退役）只剩既有問題，不需要在範本工作階段修：
+  - 360 寬的表單卡內距太大，輸入框只有 274px（L-11）。
+  - 部分頁面在 390 寬的首屏看不到表單欄位或 CTA（L-7）。
+- 黑金範本的壓力文案仍有 L-3：評價牆跑馬燈模式刻意用 `line-clamp` 截斷長評價。格狀與輪播模式不截斷。
 
 ## 5. 命名與標籤
 
