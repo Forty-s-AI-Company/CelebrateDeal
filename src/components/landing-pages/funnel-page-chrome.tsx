@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, type CSSProperties, type RefObject } from "react";
-import { formatFunnelEventDate, formatFunnelEventTimeRange, formatFunnelEventWeekday } from "@/lib/funnel-event-time";
+import { formatFunnelEventDate, formatFunnelEventTimeRange } from "@/lib/funnel-event-time";
 import { showcaseColor, showcaseReadableOn } from "@/lib/funnel-showcase";
 import type { FunnelStickyCta } from "@/lib/funnel-page-document";
 import type { FunnelTypographyViewport } from "@/lib/funnel-typography";
@@ -68,7 +68,8 @@ export function FunnelStickyCtaBar({ settings, contentRef, endRef, linkColor }: 
   const background = showcaseColor(settings.backgroundColor) ?? "#ffffff";
   const button = showcaseColor(settings.buttonColor) ?? linkColor;
   const buttonText = showcaseColor(settings.buttonTextColor) ?? showcaseReadableOn(button);
-  const date = settings.showDate && schedule.startsAt ? `${formatFunnelEventDate(schedule.startsAt, schedule.timezone, { year: false })}（${formatFunnelEventWeekday(schedule.startsAt, schedule.timezone)}）${formatFunnelEventTimeRange({ ...schedule, endsAt: null }) ?? ""}` : "";
+  // Short enough to stay on one line beside a long button at 360px: 「10 月 31 日 20:00」 (the weekday is in the event facts).
+  const date = settings.showDate && schedule.startsAt ? `${formatFunnelEventDate(schedule.startsAt, schedule.timezone, { year: false })} ${formatFunnelEventTimeRange({ ...schedule, endsAt: null }) ?? ""}` : "";
   const go = () => {
     const target = stickyTarget(contentRef.current, settings.target);
     if (!target) return;
@@ -84,7 +85,7 @@ export function FunnelStickyCtaBar({ settings, contentRef, endRef, linkColor }: 
   // The slide-in is a CSS media-query class (not a render-time matchMedia check), so server and client markup match.
   return <div data-funnel-sticky-cta aria-hidden={!visible} inert={!visible} className="motion-safe:transition-transform motion-safe:duration-200 motion-safe:ease-out" style={style}>
     <div className="mx-auto flex max-w-3xl items-center justify-between" style={{ gap: 12 }}>
-      {date ? <p className="m-0 min-w-0 text-[15px] leading-snug font-semibold" style={{ fontVariantNumeric: "tabular-nums" }}>{date}</p> : null}
+      {date ? <p className="m-0 min-w-0 whitespace-nowrap text-[15px] leading-snug font-semibold" style={{ fontVariantNumeric: "tabular-nums" }}>{date}</p> : null}
       <button type="button" onClick={go} className="inline-flex min-h-12 shrink-0 cursor-pointer items-center justify-center rounded-[10px] px-6 text-[17px] font-bold focus-visible:outline-2 focus-visible:outline-offset-2" style={{ backgroundColor: button, color: buttonText, outlineColor: button, flex: date ? undefined : 1 }}>{settings.label}</button>
     </div>
   </div>;

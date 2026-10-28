@@ -43,7 +43,8 @@ function build(prefix: string) {
         stateBlock("hero_pill", (state) => [pill(`hero_pilltext_${state}`, HERO[state].pill)]),
         headline("hero_title", "小店也能做的減碳：\n明天就能開始的 6 個作法", "h1", { color: INK, fontSize: 44, lineHeight: 1.3 }, {
           tablet: { style: { fontSize: 38 } },
-          mobile: { style: { fontSize: 28 }, props: { text: "小店也能做的減碳：明天就能開始的 6 個作法" } },
+          // 28px fits each half on one 350px line, so phones keep the break after「：」.
+          mobile: { style: { fontSize: 28 } },
         }),
         stateBlock("hero_action", (state) => [
           text(`hero_lead_${state}`, HERO[state].lead, "lead", { color: BODY }),
