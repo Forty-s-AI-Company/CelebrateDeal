@@ -228,7 +228,8 @@ export function AgendaTimelineElement({ props, tokens, viewport, inheritColor }:
     {item.speaker ? <span>{item.speaker}</span> : null}
   </p> : null;
   if (layout === "cards" || layout === "steps") {
-    const columns = responsiveColumns(Math.min(list.length, layout === "steps" ? 4 : 3), viewport);
+    // Cards: 3 per row, except exactly 4 items, which read better as one row of 4 (2×2 on tablet) than 3＋1.
+    const columns = responsiveColumns(Math.min(list.length, layout === "steps" || list.length === 4 ? 4 : 3), viewport);
     return <ol className="m-0 list-none p-0" style={grid(columns, mobile ? 16 : 24)}>
       {list.map((item, index) => <li key={`${index}-${item.title}`} className="grid content-start" style={{ gap: 10, padding: layout === "cards" ? (mobile ? 20 : 24) : 0, borderRadius: 14, border: layout === "cards" ? `1px solid ${HAIRLINE}` : undefined, backgroundColor: layout === "cards" ? (showcaseColor(props.cardColor) ?? TINT) : undefined }}>
         {layout === "steps"
