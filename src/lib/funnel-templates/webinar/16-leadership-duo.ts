@@ -51,7 +51,7 @@ function build(prefix: string) {
       text("hero_eyebrow", "線上對談｜90 分鐘｜免費", "eyebrow", { color: PRIMARY, letterSpacing: 4, margin: "16px 0 0" }, { mobile: { style: { margin: "4px 0 0" } } }),
       headline("hero_title", "新手主管的第一年，\n該放手還是親自下場？", "h1", { fontSize: 48, lineHeight: 1.3, color: INK }, { tablet: { style: { fontSize: 40 } }, mobile: { style: { fontSize: 28, lineHeight: 1.35 }, props: { text: "新手主管的第一年，該放手還是親自下場？" } } }),
       text("hero_lead", "一位帶過三百人團隊的營運主管，一位陪伴主管轉型的心理顧問，用 90 分鐘把你最卡的三個問題聊透。", "lead", { color: BODY, width: "min(640px, 100%)", margin: "0 auto" }, { mobile: { visible: false } }),
-      node("hero_facts", "event_facts", { layout: "row", formatLabel: "線上直播對談", priceLabel: "免費", accentColor: PRIMARY, align: "center" }, undefined, { color: INK }),
+      node("hero_facts", "event_facts", { layout: "row", formatLabel: "線上直播對談", priceLabel: "免費", showDuration: false, accentColor: PRIMARY, align: "center" }, undefined, { color: INK }),
       button("hero_cta", "免費報名對談", "#register", { ...primaryButton, fontSize: 18 }),
     ], { background: BG, color: BODY, maxWidth: 800, gap: 24, align: "center", paddingY: 72, paddingYTablet: 56, paddingYMobile: 28 }),
     // 2. 對談的 3 個題目
