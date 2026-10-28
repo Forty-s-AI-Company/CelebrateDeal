@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 1000" role="img" aria-label="醫師照片佔位（請替換）"><rect width="800" height="1000" fill="#f7ebe8"/><circle cx="400" cy="380" r="300" fill="#fffaf8"/>
+<path d="M130 1000 C140 720 660 720 670 1000Z" fill="#ffffff" stroke="#d8b4a6" stroke-width="3"/><path d="M340 730 L400 860 L460 730" fill="#f7ebe8" stroke="#d8b4a6" stroke-width="3"/>
+<path d="M300 760 L360 1000 M500 760 L440 1000" stroke="#d8b4a6" stroke-width="3"/><path d="M520 800 c30 40 30 100 0 130" fill="none" stroke="#9c4a5c" stroke-width="4" stroke-linecap="round"/><circle cx="516" cy="940" r="16" fill="none" stroke="#9c4a5c" stroke-width="4"/>
+<rect x="360" y="610" width="80" height="120" rx="30" fill="#e6cfc6"/><ellipse cx="400" cy="500" rx="120" ry="140" fill="#e6cfc6"/>
+<path d="M276 480 C270 330 530 330 524 480 C500 400 300 400 276 480Z" fill="#7a6a6d" opacity=".55"/>
+<text x="400" y="960" text-anchor="middle" font-family="'Noto Sans TC','PingFang TC','Microsoft JhengHei',sans-serif" font-size="30" fill="#574549">替換醫師照片</text></svg>
