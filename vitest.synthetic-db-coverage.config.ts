@@ -54,6 +54,8 @@ const testExclude = [
 const resolve = {
   alias: {
     "@": path.resolve(__dirname, "src"),
+    // Keep in sync with vitest.config.ts: next/font loaders only exist after Next's compiler transform.
+    "next/font/google": path.resolve(__dirname, "src/test/next-font-google-mock.ts"),
   },
 };
 
