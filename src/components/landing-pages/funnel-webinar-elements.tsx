@@ -110,9 +110,9 @@ export function eventFacts(schedule: FunnelEventSchedule, props: Record<string, 
   return facts;
 }
 
-/** 「20:00–21:30」「（台灣時間）」wrap as whole parts instead of breaking inside「（台／灣時間）」. */
+/** 「2026 年」「10 月 31 日」「（週六）」and「20:00–21:30」「（台灣時間）」wrap as whole parts instead of breaking inside a word. */
 function valueParts(value: string): ReactNode {
-  const parts = value.split(/(?=（)/u);
+  const parts = value.split(/(?<=年 )|(?=（)/u);
   return parts.length > 1 ? parts.map((part, index) => <span key={index} className="inline-block">{part}</span>) : value;
 }
 
