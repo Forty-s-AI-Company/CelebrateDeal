@@ -145,7 +145,8 @@ export function EventFactsElement({ props, tokens, viewport, align }: WebinarEle
   const container: CSSProperties = columns
     // Facts are short, so they keep a fixed 2×2 (or 1×4) grid instead of the 240px card minimum.
     // Icon and text always start-align inside a cell; a centred section centres the whole grid instead.
-    ? { display: "grid", gap: mobile ? 14 : 18, gridTemplateColumns: `repeat(${gridColumnCount}, minmax(0, 1fr))`, textAlign: "left", ...(centered && !cardColor ? { width: "fit-content", maxWidth: "100%", marginInline: "auto", columnGap: mobile ? 20 : 32 } : {}) }
+    // `grid` on wider screens is container-aware (each fact ≥ 150px), so a narrow card falls back to 2 columns instead of crushing 4.
+    ? { display: "grid", gap: mobile ? 14 : 18, gridTemplateColumns: layout === "grid" && !mobile ? funnelFluidGridColumns(gridColumnCount, 18, 150) : `repeat(${gridColumnCount}, minmax(0, 1fr))`, textAlign: "left", ...(centered && !cardColor ? { width: "fit-content", maxWidth: "100%", marginInline: "auto", columnGap: mobile ? 20 : 32 } : {}) }
     : { display: "flex", flexWrap: "wrap", columnGap: 28, rowGap: 14, alignItems: "flex-start", justifyContent: centered ? "center" : undefined };
   // An odd count in a 2-column grid lets the last fact span the row instead of leaving an empty cell.
   const spanLast = gridColumnCount === 2 && facts.length % 2 === 1;

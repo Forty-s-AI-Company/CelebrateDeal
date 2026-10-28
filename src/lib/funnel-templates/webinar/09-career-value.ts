@@ -26,7 +26,7 @@ function build(prefix: string) {
   const infoCard = (id: string, htmlId: string): FunnelNode[] => [
     badge(`${id}_badge`, "本場免費・線上直播"),
     headline(`${id}_title`, "3 步驟找出你的可轉移能力", "h3", { color: INK }),
-    node(`${id}_facts`, "event_facts", { layout: "grid", formatLabel: "線上直播", showDuration: true, accentColor: PRIMARY }, undefined, { color: INK }),
+    node(`${id}_facts`, "event_facts", { layout: "grid", formatLabel: "線上直播", showDuration: false, accentColor: PRIMARY }, undefined, { color: INK }),
     node(`${id}_price`, "value_stack", {
       items: [{ title: "60 分鐘直播體驗課", text: "含直播 Q&A 與 3 份參加禮", value: "NT$1,980" }],
       originalPrice: "NT$1,980", offerLabel: "本場免費", note: "原價為講者自訂參考，本場免費參加。",
