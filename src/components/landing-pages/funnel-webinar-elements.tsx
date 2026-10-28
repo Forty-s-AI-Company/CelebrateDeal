@@ -96,10 +96,10 @@ function useElementSchedule(props: Record<string, unknown>): FunnelEventSchedule
 
 type Fact = { key: string; icon: typeof Clock; label: string; value: string };
 
-export function eventFacts(schedule: FunnelEventSchedule, props: Record<string, unknown>): Fact[] {
+export function eventFacts(schedule: FunnelEventSchedule, props: Record<string, unknown>, options: { year?: boolean } = {}): Fact[] {
   const start = schedule.startsAt;
   const facts: Fact[] = [];
-  if (props.showDate !== false) facts.push({ key: "date", icon: CalendarDays, label: "日期", value: start ? `${formatFunnelEventDate(start, schedule.timezone)}（${formatFunnelEventWeekday(start, schedule.timezone)}）` : FUNNEL_EVENT_TBA });
+  if (props.showDate !== false) facts.push({ key: "date", icon: CalendarDays, label: "日期", value: start ? `${formatFunnelEventDate(start, schedule.timezone, { year: options.year })}（${formatFunnelEventWeekday(start, schedule.timezone)}）` : FUNNEL_EVENT_TBA });
   if (props.showTime !== false && start) facts.push({ key: "time", icon: Clock, label: "時間", value: `${formatFunnelEventTimeRange(schedule)}${props.showTimezone === false ? "" : `（${formatFunnelTimezone(schedule.timezone, start)}）`}` });
   const duration = props.showDuration === false ? null : formatFunnelEventDuration(schedule);
   if (duration) facts.push({ key: "duration", icon: Hourglass, label: "長度", value: duration });
@@ -110,19 +110,26 @@ export function eventFacts(schedule: FunnelEventSchedule, props: Record<string, 
   return facts;
 }
 
+/** 「20:00–21:30」「（台灣時間）」wrap as whole parts instead of breaking inside「（台／灣時間）」. */
+function valueParts(value: string): ReactNode {
+  const parts = value.split(/(?=（)/u);
+  return parts.length > 1 ? parts.map((part, index) => <span key={index} className="inline-block">{part}</span>) : value;
+}
+
 export function EventFactsElement({ props, tokens, viewport, align }: WebinarElementProps) {
   const schedule = useElementSchedule(props);
   const layout = webinarChoice(props.layout, EVENT_FACTS_LAYOUTS, "row");
   const accent = accentOf(props, tokens);
   const mobile = isMobile(viewport);
-  const facts = eventFacts(schedule, props);
+  // Phones show the date without the year so「10 月 31 日（週六）」fits a half-width cell.
+  const facts = eventFacts(schedule, props, { year: !mobile });
   const cardColor = showcaseColor(props.cardColor);
   const cardText = showcaseColor(props.cardTextColor);
   const item = (fact: Fact, compact: boolean) => {
     const Icon = fact.icon;
     return <div key={fact.key} className="flex min-w-0 items-start" style={{ gap: 10 }}>
       <Icon aria-hidden size={compact ? 18 : 20} strokeWidth={1.75} style={{ color: accent, flexShrink: 0, marginTop: 3 }} />
-      <dl className="m-0 min-w-0"><dt className="font-semibold" style={{ fontSize: "max(14px, 0.8125em)", opacity: 0.8, letterSpacing: "0.04em" }}>{fact.label}</dt><dd className="m-0 font-semibold" style={{ fontVariantNumeric: "tabular-nums", overflowWrap: "anywhere" }}>{fact.value}</dd></dl>
+      <dl className="m-0 min-w-0"><dt className="font-semibold" style={{ fontSize: "max(14px, 0.8125em)", opacity: 0.8, letterSpacing: "0.04em" }}>{fact.label}</dt><dd className="m-0 font-semibold" style={{ fontVariantNumeric: "tabular-nums", overflowWrap: "anywhere" }}>{valueParts(fact.value)}</dd></dl>
     </div>;
   };
   if (layout === "card") {

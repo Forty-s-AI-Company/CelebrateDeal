@@ -33,14 +33,14 @@ function build(prefix: string) {
     section("hero", [
       columns2("hero_split", [
         text("hero_brand", "◆ 數流 Flowboard", "small", { color: HERO_INK, fontSize: 16, letterSpacing: 1 }, { tablet: { style: { textAlign: "center" } } }),
-        text("hero_eyebrow", "產品 Demo 直播｜45 分鐘＋Q&A", "eyebrow", { color: "#86efac" }, { tablet: { style: { textAlign: "center" } } }),
+        text("hero_eyebrow", "免費產品 Demo 直播｜45 分鐘＋Q&A", "eyebrow", { color: "#86efac" }, { tablet: { style: { textAlign: "center" } } }),
         headline("hero_title", "不必再開 5 個報表，\n一頁看懂庫存、訂單與現金流", "h1", { color: HERO_INK, fontSize: 48, lineHeight: 1.22 }, {
           tablet: { style: { fontSize: 40, textAlign: "center" } },
           mobile: { style: { fontSize: 30, lineHeight: 1.3, textAlign: "left" }, props: { text: "一頁看懂庫存、訂單與現金流" } },
         }),
         text("hero_lead", "用一家虛構的電商公司，從匯入資料到設定警示，完整示範一次。", "lead", { color: HERO_BODY }, { tablet: { visible: false }, mobile: { visible: false } }),
         checks("hero_checks", HERO_INK, { tablet: { visible: false }, mobile: { visible: false } }),
-        node("hero_facts", "event_facts", { layout: "row", formatLabel: "線上直播", priceLabel: "免費", showDuration: false, accentColor: ACCENT }, undefined, { color: HERO_INK }, { tablet: { style: { width: "min(100%, 560px)", margin: "0 auto" } }, mobile: { style: { width: "100%", margin: 0 } } }),
+        node("hero_facts", "event_facts", { layout: "row", formatLabel: "線上直播", showDuration: false, accentColor: ACCENT }, undefined, { color: HERO_INK }, { tablet: { style: { width: "min(100%, 560px)", margin: "0 auto" } }, mobile: { style: { width: "100%", margin: 0 } } }),
       ], [
         form("hero_form", {
           title: "預約 Demo 席位",

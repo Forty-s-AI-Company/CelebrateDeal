@@ -30,9 +30,11 @@ describe("webinar elements (C-01～C-18)", () => {
   });
 
   it("event facts read the funnel schedule and fall back to 時間公布中", () => {
-    const html = render("event_facts", { formatLabel: "線上直播", priceLabel: "免費" });
+    const html = render("event_facts", { formatLabel: "線上直播", priceLabel: "免費" }).replace(/<[^>]+>/gu, "");
     expect(html).toContain("2026 年 11 月 5 日（週四）");
     expect(html).toContain("20:00–21:30（台灣時間）");
+    // Phones drop the year so the date fits a half-width cell.
+    expect(render("event_facts", {}, { viewport: "mobile" }).replace(/<[^>]+>/gu, "")).toContain("日期11 月 5 日（週四）");
     expect(html).toContain("90 分鐘");
     expect(html).toContain("線上直播");
     const pending = render("event_facts", {}, { schedule: funnelEventSchedule({}) });
