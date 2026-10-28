@@ -6,9 +6,11 @@ import { createFunnelPageHistory, dispatchFunnelPageCommand, undoFunnelPageHisto
 const node = (overrides: FunnelNode["overrides"] = {}, visible = true): FunnelNode => ({ schemaVersion: 1, id: "n", type: "text", props: { text: "合成" }, style: {}, overrides, visible, actions: [], attributes: {} });
 
 it("resolves per-device visibility the same way as the renderer", () => {
-  expect(funnelNodeVisibility(node())).toEqual({ desktop: true, mobile: true });
-  expect(funnelNodeVisibility(node({ mobile: { visible: false } }))).toEqual({ desktop: true, mobile: false });
-  expect(funnelNodeVisibility(node({ desktop: { visible: true } }, false))).toEqual({ desktop: true, mobile: false });
+  expect(funnelNodeVisibility(node())).toEqual({ desktop: true, tablet: true, mobile: true });
+  expect(funnelNodeVisibility(node({ mobile: { visible: false } }))).toEqual({ desktop: true, tablet: true, mobile: false });
+  // Tablet inherits the desktop override ("640px and up" before I-1), then its own override wins.
+  expect(funnelNodeVisibility(node({ desktop: { visible: true } }, false))).toEqual({ desktop: true, tablet: true, mobile: false });
+  expect(funnelNodeVisibility(node({ desktop: { visible: true }, tablet: { visible: false } }, false))).toEqual({ desktop: true, tablet: false, mobile: false });
   expect(funnelNodeVisibleOn(node({ mobile: { style: { fontSize: 12 } } }), "mobile")).toBe(true);
 });
 

@@ -2,7 +2,7 @@
 
 import { useState, type ReactNode } from "react";
 import { FUNNEL_FONT_OPTIONS, funnelContrastRatio, isCuratedFunnelFont, parseFunnelColor, resolveFunnelFontStack } from "@/lib/funnel-typography";
-import { ArrowDown, ArrowUp, ChevronLeft, Copy, Monitor, Smartphone, Trash2 } from "lucide-react";
+import { ArrowDown, ArrowUp, ChevronLeft, Copy, Monitor, Smartphone, Tablet, Trash2 } from "lucide-react";
 import { funnelDeviceVisibilityCommand, funnelNodeVisibility, type FunnelDevice } from "@/lib/funnel-node-visibility";
 import { FunnelElementInspector } from "./funnel-element-inspector";
 import { FunnelCommerceSettings } from "./funnel-commerce-settings";
@@ -32,16 +32,16 @@ export function PanelHeader({ title, backLabel = "返回", onBack, actions, subt
 /** EDT-RESP-001: 桌機顯示／手機顯示, stored as per-device overrides of the existing model. */
 export function DeviceVisibilityToggles({ node, viewport, disabled, onCommand }: { node: FunnelNode; viewport: FunnelDevice; disabled: boolean; onCommand: (command: FunnelPageCommand) => void }) {
   const visibility = funnelNodeVisibility(node);
-  const devices: ReadonlyArray<{ id: FunnelDevice; label: string; icon: typeof Monitor }> = [{ id: "desktop", label: "桌機顯示", icon: Monitor }, { id: "mobile", label: "手機顯示", icon: Smartphone }];
+  const devices: ReadonlyArray<{ id: FunnelDevice; label: string; icon: typeof Monitor }> = [{ id: "desktop", label: "桌機顯示", icon: Monitor }, { id: "tablet", label: "平板顯示", icon: Tablet }, { id: "mobile", label: "手機顯示", icon: Smartphone }];
   return <fieldset data-funnel-device-visibility className="mb-4 grid gap-2 rounded-lg border border-slate-200 p-3">
     <legend className="px-1 text-sm font-bold text-slate-900">裝置顯示</legend>
-    <div className="grid grid-cols-2 gap-2">
+    <div className="grid grid-cols-3 gap-2">
       {devices.map(({ id, label, icon: Icon }) => <label key={id} className={`flex min-h-10 cursor-pointer items-center gap-2 rounded-lg border px-2.5 text-sm font-semibold ${viewport === id ? "border-blue-300 bg-blue-50 text-blue-900" : "border-slate-200 text-slate-700"}`}>
         <input type="checkbox" className="h-4 w-4 rounded border-slate-300 text-blue-700" disabled={disabled} checked={visibility[id]} onChange={(event) => { const command = funnelDeviceVisibilityCommand(node, id, event.currentTarget.checked); if (command) onCommand(command); }} />
         <Icon size={15} aria-hidden />{label}
       </label>)}
     </div>
-    {!visibility.desktop || !visibility.mobile ? <p className="text-xs leading-5 text-slate-600">隱藏的元件在編輯畫布上以斜線標示，預覽與公開頁面不會顯示。</p> : null}
+    {!visibility.desktop || !visibility.tablet || !visibility.mobile ? <p className="text-xs leading-5 text-slate-600">隱藏的元件在編輯畫布上以斜線標示，預覽與公開頁面不會顯示。</p> : null}
   </fieldset>;
 }
 
@@ -127,6 +127,23 @@ function DraftTextField({ label, value, disabled, multiline = false, maxLength, 
   </label>;
 }
 
+/** C-04: structured fields only (no HTML); the platform renders the bar outside the page content. */
+function StickyCtaSettings({ value, disabled, onChange }: { value: PageDocument["settings"]["stickyCta"]; disabled: boolean; onChange: (value: NonNullable<PageDocument["settings"]["stickyCta"]>) => void }) {
+  const current = value ?? { enabled: false, label: "立即報名", showDate: true, devices: "mobile_tablet" as const };
+  const set = (patch: Partial<typeof current>) => onChange({ ...current, ...patch });
+  return <fieldset className="grid gap-2 rounded-lg border border-slate-200 p-3">
+    <legend className="px-1 text-sm font-bold text-slate-900">固定報名列</legend>
+    <label className="flex items-center gap-2 text-sm font-semibold text-slate-700"><input type="checkbox" className="h-4 w-4" disabled={disabled} checked={current.enabled} onChange={(event) => set({ enabled: event.currentTarget.checked })} />捲過首屏後固定在畫面底部</label>
+    {current.enabled ? <>
+      <DraftTextField label="按鈕文字" value={current.label} disabled={disabled} maxLength={40} onCommit={(label) => { if (label) set({ label }); }} />
+      <DraftTextField label="捲動目標的 HTML ID（留空為第一個報名表單）" value={current.target} disabled={disabled} maxLength={100} onCommit={(target) => set({ target: target && /^[A-Za-z0-9_-]+$/u.test(target) ? target : undefined })} />
+      <label className={fieldLabel}>顯示裝置<select disabled={disabled} className={panelControl} value={current.devices} onChange={(event) => set({ devices: event.currentTarget.value as typeof current.devices })}><option value="mobile_tablet">手機與平板（建議）</option><option value="mobile">只有手機</option><option value="all">所有裝置</option></select></label>
+      <label className="flex items-center gap-2 text-sm font-semibold text-slate-700"><input type="checkbox" className="h-4 w-4" disabled={disabled} checked={current.showDate} onChange={(event) => set({ showDate: event.currentTarget.checked })} />顯示開場日期（取自講座排程）</label>
+      <p className="text-xs leading-5 text-slate-600">捲到報名表單或頁尾時會自動隱藏，不會遮住表單與政策連結。</p>
+    </> : null}
+  </fieldset>;
+}
+
 function FontSelect({ label, value, disabled, onChange }: { label: string; value: string; disabled: boolean; onChange: (value: string) => void }) {
   const custom = !isCuratedFunnelFont(value);
   return <label className={fieldLabel}>{label}
@@ -194,6 +211,12 @@ export function PageSettingsPanel({ document, disabled, commerceEnabled, commerc
         <DraftTextField label="搜尋引擎描述" value={settings.seo.description} disabled={disabled} multiline maxLength={320} onCommit={(description) => setSeo({ description })} />
         <UrlField id="funnel-settings-social-image" label="社群分享圖片網址" value={settings.seo.socialImage} disabled={disabled} hint="分享到社群時顯示的圖片，建議 1200×630。" onCommit={(socialImage) => setSeo({ socialImage })} />
         <label className="flex items-start gap-2 rounded-lg border border-slate-200 p-3 text-sm font-semibold text-slate-700"><input type="checkbox" className="mt-0.5 h-4 w-4" disabled={disabled} checked={settings.seo.hideFromSearch} onChange={(event) => setSeo({ hideFromSearch: event.currentTarget.checked })} /><span>不讓搜尋引擎收錄這個頁面<span className="block text-xs font-normal text-slate-600">勾選後公開頁會加上 noindex。</span></span></label>
+      </SettingsSection>
+      <SettingsSection id="funnel-page-event-settings" title="活動與互動">
+        <DraftTextField label="活動名稱（{{webinar.title}}、加入行事曆）" value={settings.eventTitle} disabled={disabled} maxLength={240} onCommit={(eventTitle) => update({ eventTitle: eventTitle || undefined })} />
+        <p className="text-xs leading-5 text-slate-600">活動日期與時間請在漏斗的「線上講座排程」設定；文字中可用 {"{{webinar.date}}"}、{"{{webinar.time}}"}、{"{{webinar.startAt}}"}，改一次全站更新，未設定時顯示「時間公布中」。</p>
+        <label className={fieldLabel}>捲動進場動畫<select disabled={disabled} className={panelControl} value={settings.scrollReveal ?? "none"} onChange={(event) => update({ scrollReveal: event.currentTarget.value as NonNullable<PageDocument["settings"]["scrollReveal"]> })}><option value="none">關閉</option><option value="fade">淡入</option><option value="rise">上浮</option></select></label>
+        <StickyCtaSettings value={settings.stickyCta} disabled={disabled} onChange={(stickyCta) => update({ stickyCta })} />
       </SettingsSection>
       <SettingsSection id="funnel-page-custom-css-settings" title="自訂 CSS">
         <PageCustomCssField value={settings.customCss} disabled={disabled} onCommit={(customCss) => onReplace({ ...document, settings: { ...settings, customCss } })} />

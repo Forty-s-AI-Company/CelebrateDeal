@@ -185,11 +185,12 @@ describe("convertLegacyLandingPage: every legacy block type", () => {
     expect(ofType([section(document, "cta")], "button")[0]!.style).toMatchObject({ backgroundColor: "#ffffff", color: "#1e3a8a" });
   });
 
-  it("maps a fixed countdown and reports its expiry behaviour", () => {
+  it("maps a fixed countdown and carries its expiry message (C-06 expiredText)", () => {
     const timer = ofType([section(document, "countdown")], "countdown")[0]!;
-    expect(timer.props).toMatchObject({ targetDate: "2030-01-01T00:00:00+08:00", expiredMessage: "報名已截止", expiredAction: "show_message" });
+    expect(timer.props).toMatchObject({ targetDate: "2030-01-01T00:00:00+08:00", expiredMessage: "報名已截止", expiredAction: "show_message", expiredText: "報名已截止" });
     expect(ofType([section(document, "countdown")], "button")[0]!.actions).toEqual([{ type: "open_url", href: "#register", newTab: false }]);
-    expect(issueFor("countdown")).toContain("報名已截止");
+    // Showing a message on expiry is now supported, so nothing needs reporting.
+    expect(issueFor("countdown")).not.toContain("報名已截止");
   });
 });
 
@@ -261,13 +262,13 @@ describe("convertLegacyLandingPage: nesting", () => {
     expect(row.children!.map((node) => node.type)).toEqual(["faq", "content_box"]);
     const styled = row.children![1]!;
     expect(styled).toMatchObject({ id: "styled", attributes: { id: "more" }, style: { backgroundColor: "#eeeeee" } });
-    expect(ofType([styled], "faq")).toEqual([]);
-    expect(ofType([styled], "countdown")).toEqual([]);
+    // FAQ and countdown may sit in a content box since the webinar elements (2026-10-28), so they stay real elements.
+    expect(ofType([styled], "faq")).toHaveLength(1);
+    expect(ofType([styled], "countdown")).toHaveLength(1);
     expect(JSON.stringify(styled)).toContain("Q2");
-    expect(JSON.stringify(styled)).toContain("截止時間：2030-01-01T00:00:00+08:00");
     const messages = result.issues.map((issue) => issue.message).join("\n");
-    expect(messages).toContain("可展開的問答元件");
-    expect(messages).toContain("倒數元件");
+    expect(messages).not.toContain("可展開的問答元件");
+    expect(messages).not.toContain("倒數元件");
   });
 
   it("stacks nested columns, keeps never-shown slots hidden, and reports ratios", () => {

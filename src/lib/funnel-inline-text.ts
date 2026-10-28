@@ -50,7 +50,7 @@ export function sanitizeFunnelInlineText(raw: string, multiline: boolean): strin
 export type FunnelInlineCommitInput = {
   node: FunnelNode;
   field: FunnelInlineField;
-  viewport: "desktop" | "mobile";
+  viewport: "desktop" | "tablet" | "mobile";
   /** Text the canvas displayed when editing started. */
   previous: string;
   /** Raw text read from the editable element. */

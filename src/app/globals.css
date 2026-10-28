@@ -116,6 +116,29 @@ body:has([data-live-player-mode="checkout"]) [data-testid="announcement-center-l
   animation-direction: var(--funnel-marquee-direction, normal);
 }
 
+/* I-3 scroll reveal (funnel-page-chrome.tsx): opacity / transform only, never size. */
+[data-funnel-reveal="fade"],
+[data-funnel-reveal="rise"] {
+  opacity: 0;
+}
+
+[data-funnel-reveal="rise"] {
+  transform: translateY(24px);
+}
+
+[data-funnel-reveal="shown"] {
+  opacity: 1;
+  transform: none;
+  transition: opacity 0.6s ease, transform 0.6s ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-funnel-reveal] {
+    opacity: 1 !important;
+    transform: none !important;
+  }
+}
+
 .funnel-marquee[data-paused="true"] .funnel-marquee-track,
 .funnel-marquee:hover .funnel-marquee-track,
 .funnel-marquee:focus-within .funnel-marquee-track {

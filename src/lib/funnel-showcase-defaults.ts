@@ -60,6 +60,32 @@ const DEFAULT_PROPS: Partial<Record<FunnelNodeType, Record<string, unknown>>> = 
       { name: "學員 C", verified: false, date: "2026 年 1 月", rating: 4, title: "評價標題", text: "請填入經同意公開的真實評價。" },
     ],
   },
+  // Webinar elements (C-01～C-18): dates always come from the funnel's webinar schedule, never from these defaults.
+  event_facts: { layout: "row", formatLabel: "線上直播", priceLabel: "免費" },
+  speaker_profiles: { layout: "featured", size: "large", items: [{ name: "講者姓名", role: "職稱｜專長", bio: "用 2–3 行說明講者的具體成果與專長。", tags: "成就一,成就二" }] },
+  agenda_timeline: {
+    layout: "vertical",
+    items: [
+      { time: "20:00", title: "開場與今日目標", text: "說明這場講座能帶走什麼。" },
+      { time: "20:15", title: "主題一", text: "第一段內容的重點。" },
+      { time: "21:00", title: "問答時間", text: "現場回答大家的問題。" },
+    ],
+  },
+  callout: { tone: "info", title: "活動注意事項", text: "請填入參加前需要知道的說明。" },
+  fit_compare: { fitTitle: "適合你，如果你…", fitItems: ["第一個適合的情況", "第二個適合的情況"], notFitTitle: "可能不適合，如果你…", notFitItems: ["第一個不適合的情況"] },
+  add_to_calendar: { googleLabel: "加入 Google 日曆", icsLabel: "下載行事曆檔（Apple／Outlook）" },
+  announcement_bar: { text: "免費線上講座報名中", showCountdown: false },
+  value_stack: {
+    title: "報名就能獲得",
+    items: [{ title: "講座完整內容", text: "", value: "" }, { title: "講義與檢查清單", text: "", value: "" }],
+    offerLabel: "本場免費", note: "價值為講者自訂參考，非售價承諾",
+  },
+  session_schedule: { durationMinutes: 90, items: [{ title: "第 1 堂：主題", text: "" }, { title: "第 2 堂：主題", text: "" }] },
+  deadline_notice: { label: "報名截止", closedText: "本場報名已截止" },
+  media_frame: { frame: "browser", src: PLACEHOLDER, alt: "產品畫面", url: "app.example.com" },
+  image_gallery: { layout: "masonry", columns: 3, items: [{ src: PLACEHOLDER, alt: "作品一" }, { src: PLACEHOLDER, alt: "作品二" }, { src: PLACEHOLDER, alt: "作品三" }] },
+  code_snippet: { language: "javascript", filename: "example.js", code: "const greeting = 'Hello';\nconsole.log(greeting);", showLineNumbers: true, showCopy: true },
+  countdown: { variant: "blocks", source: "webinar_start", label: "距離開播" },
 };
 
 export function funnelShowcaseDefaultProps(type: FunnelNodeType): Record<string, unknown> | null {

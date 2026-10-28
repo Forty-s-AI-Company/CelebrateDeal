@@ -91,7 +91,7 @@ export type FunnelTemplateCatalogEntry = {
 };
 
 export function funnelTemplateCatalogEntry(item: FunnelTemplateGalleryItem): FunnelTemplateCatalogEntry {
-  const tags = Object.hasOwn(FUNNEL_TEMPLATE_CATALOG_TAGS, item.id) ? FUNNEL_TEMPLATE_CATALOG_TAGS[item.id] : undefined;
+  const tags = item.tags ?? (Object.hasOwn(FUNNEL_TEMPLATE_CATALOG_TAGS, item.id) ? FUNNEL_TEMPLATE_CATALOG_TAGS[item.id] : undefined);
   const purposes = tags?.purposes.length ? [...tags.purposes] : deriveFunnelTemplatePurposes(item);
   const styles = tags?.styles.length ? [...tags.styles] : [DEFAULT_FUNNEL_TEMPLATE_STYLE];
   return {
@@ -102,7 +102,8 @@ export function funnelTemplateCatalogEntry(item: FunnelTemplateGalleryItem): Fun
 
 /** Every platform template, in gallery order, with its library labels. */
 export function listFunnelTemplateCatalog(gallery: readonly FunnelTemplateGalleryItem[] = FUNNEL_TEMPLATE_GALLERY): FunnelTemplateCatalogEntry[] {
-  return gallery.map(funnelTemplateCatalogEntry);
+  // Retired and hidden templates stay resolvable by id but are not offered in the library.
+  return gallery.filter((item) => !item.retired && !item.hidden).map(funnelTemplateCatalogEntry);
 }
 
 export type FunnelTemplateCatalogFilter = { purpose?: FunnelTemplatePurpose | null; style?: FunnelTemplateStyle | null };

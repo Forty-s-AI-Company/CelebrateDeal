@@ -10,6 +10,7 @@ import {
 import type { FunnelStepType } from "@/lib/funnel-flow";
 import { FUNNEL_ILLUSTRATIONS } from "@/lib/funnel-block-library";
 import { buildLuxuryCourseTemplate, LUXURY_COURSE_THEME } from "@/lib/funnel-template-luxury-course";
+import { WEBINAR_TEMPLATES, type WebinarTemplateDefinition } from "@/lib/funnel-templates/webinar";
 
 export const FUNNEL_TEMPLATE_GOALS = ["sell", "audience", "custom", "webinar"] as const;
 export type FunnelTemplateGoal = (typeof FUNNEL_TEMPLATE_GOALS)[number];
@@ -36,7 +37,30 @@ export type FunnelTemplateGalleryItem = {
   build: (prefix: string) => FunnelNode[];
   /** Page typography / background of this template; templates without one use FUNNEL_TEMPLATE_TYPOGRAPHY on white. */
   theme?: { typography?: Partial<PageDocument["settings"]["typography"]>; background?: { color: string } };
+  /** Page-level settings applied with the template (event title, scroll reveal, sticky CTA). */
+  pageSettings?: Partial<Pick<PageDocument["settings"], "eventTitle" | "scrollReveal" | "stickyCta">>;
+  /** Library labels declared by the template itself (webinar templates); otherwise `funnel-template-catalog.ts` decides. */
+  tags?: { purposes: readonly FunnelTemplatePurposeTag[]; styles: readonly FunnelTemplateStyleTag[] };
+  /**
+   * Retired templates stay resolvable (saved funnels still instantiate their id),
+   * but are no longer offered as a new choice.
+   */
+  retired?: { since: string; replacedBy?: string };
+  /** Development example: resolvable by id (harness, tests), never listed. */
+  hidden?: boolean;
 };
+type FunnelTemplatePurposeTag = WebinarTemplateDefinition["purposes"][number];
+type FunnelTemplateStyleTag = WebinarTemplateDefinition["styles"][number];
+
+/** Gallery entry of a webinar registration template (`src/lib/funnel-templates/webinar`). */
+export function webinarTemplateGalleryItem(template: WebinarTemplateDefinition): FunnelTemplateGalleryItem {
+  return {
+    id: template.id, referenceId: `celebratedeal-${template.id}`, goal: "webinar", category: template.category, name: template.name, description: template.description,
+    status: "available", statusReason: "可套用並在公開頁顯示；報名表單會綁定此一頁式網站的報名表與活動。", preview: template.preview,
+    theme: template.theme, pageSettings: template.settings, tags: { purposes: template.purposes, styles: template.styles },
+    build: template.build, ...(template.hidden ? { hidden: true } : {}),
+  };
+}
 
 /*
  * Node IDs and types of every template are pinned by tests (saved documents
@@ -325,7 +349,10 @@ const templates: FunnelTemplateGalleryItem[] = [
   { id: "custom-luxury-course", referenceId: "celebratedeal-luxury-course", goal: "custom", category: "品牌首頁", name: "高質感課程品牌（黑金）", description: "黑底金字的課程品牌首頁：導覽列、主視覺、媒體 Logo、數據、課程卡片、評價牆、文章、影片與 FAQ。", status: "available", statusReason: availableReason, preview: { eyebrow: "Brand", headline: "高質感課程品牌（黑金）", summary: "襯線標題與金色點綴的品牌長頁", palette: ["#0b0b0c", "#c9a063", "#f7f3ec"], sectionCount: 15 }, theme: LUXURY_COURSE_THEME, build: buildLuxuryCourseTemplate },
 ];
 
-export const FUNNEL_TEMPLATE_GALLERY: readonly FunnelTemplateGalleryItem[] = Object.freeze(templates);
+export const FUNNEL_TEMPLATE_GALLERY: readonly FunnelTemplateGalleryItem[] = Object.freeze([...templates, ...WEBINAR_TEMPLATES.map(webinarTemplateGalleryItem)]);
+
+/** Templates offered as a new choice: retired and hidden entries stay resolvable but are not listed. */
+const offered = (template: FunnelTemplateGalleryItem) => !template.retired && !template.hidden;
 
 let instanceSequence = 0;
 function nextPrefix(templateId: string): string {
@@ -338,11 +365,11 @@ export function getFunnelTemplateGalleryItem(templateId: string): FunnelTemplate
 }
 
 export function listFunnelTemplateGallery(goal?: FunnelTemplateGoal, stepType?: FunnelStepType): readonly FunnelTemplateGalleryItem[] {
-  const goalTemplates = goal ? FUNNEL_TEMPLATE_GALLERY.filter((template) => template.goal === goal) : FUNNEL_TEMPLATE_GALLERY;
+  const goalTemplates = (goal ? FUNNEL_TEMPLATE_GALLERY.filter((template) => template.goal === goal) : FUNNEL_TEMPLATE_GALLERY).filter(offered);
   if (!stepType) return goalTemplates;
   if (goal === "webinar") {
     const templatesByStep: Partial<Record<FunnelStepType, string[]>> = {
-      webinar_registration_page: ["webinar-registration", "webinar-course-registration", "webinar-workshop-registration", "webinar-strategy-registration"],
+      webinar_registration_page: ["webinar-registration", "webinar-course-registration", "webinar-workshop-registration", "webinar-strategy-registration", ...WEBINAR_TEMPLATES.map((template) => template.id)],
       webinar_thank_you_page: ["webinar-thank-you"],
       webinar_broadcast_page: ["webinar-broadcast"],
     };
@@ -369,6 +396,7 @@ function buildTemplateDocument(template: FunnelTemplateGalleryItem, prefix: stri
     ...empty.settings,
     typography: { ...empty.settings.typography, ...FUNNEL_TEMPLATE_TYPOGRAPHY, ...template.theme?.typography },
     background: { ...empty.settings.background, ...template.theme?.background },
+    ...template.pageSettings,
   };
   const document = parsePageDocument({ ...empty, settings, root: template.build(prefix) });
   if (!document) throw new Error(`一頁式網站模板無法通過 PageDocument 驗證：${template.id}`);

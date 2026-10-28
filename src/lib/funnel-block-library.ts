@@ -11,6 +11,7 @@ import {
 } from "@/lib/funnel-page-document";
 
 import { buildLuxuryCourseSection, type LuxuryCourseSectionName } from "@/lib/funnel-template-luxury-course";
+import { WEBINAR_BLOCKS } from "@/lib/funnel-block-library-webinar";
 
 export { FUNNEL_BLOCK_CATEGORIES } from "@/lib/funnel-page-document";
 export type { FunnelBlockCategory } from "@/lib/funnel-page-document";
@@ -472,6 +473,8 @@ const definitionsList: BlockDefinition[] = [
     ["cta-gold-corners", "call_to_action", "ctaCorners", "四角框線 CTA", "深色底上的四角金色框線盒，置中標題與按鈕。"],
     ["footer-dark-centered", "page_footers", "footer", "黑金置中頁尾", "品牌名稱、頁內連結與版權宣告。"],
   ]),
+  // 講座報名：C-05 首屏三型與 webinar 元件組合（`funnel-block-library-webinar.ts`）。
+  ...WEBINAR_BLOCKS,
 ];
 
 /** Blocks built from a template section; the instance id becomes the node-id prefix. */
@@ -498,6 +501,7 @@ const CATEGORY_TEXT: Readonly<Record<FunnelBlockCategory, { label: string; descr
   social_proof: { label: "信任背書", description: "媒體 Logo 列與數據統計" },
   content_showcase: { label: "內容展示", description: "文章卡片與影片牆" },
   call_to_action: { label: "行動呼籲", description: "疊在背景照上的 CTA 盒" },
+  webinar_sections: { label: "講座報名", description: "首屏報名區、講者、議程、價值清單與活動狀態" },
 };
 
 const counts = new Map<FunnelBlockCategory, number>();

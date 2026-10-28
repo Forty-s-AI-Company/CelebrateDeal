@@ -102,13 +102,16 @@ describe("stripTemplateBindings", () => {
   it.each(TEMPLATE_RESOURCE_PROP_KEYS)("drops the resource prop %s from props and viewport overrides", (key) => {
     const document = parsePageDocument({
       schemaVersion: 1, id: "page", root: [container("s", "section", [container("r", "row", [
-        leaf("t", "text", { text: "內容", [key]: "resource-1" }, [], { overrides: { mobile: { props: { [key]: "resource-2", text: "手機版" } }, desktop: { props: { [key]: "resource-3" } } } }),
+        leaf("t", "text", { text: "內容", [key]: "resource-1" }, [], { overrides: { mobile: { props: { [key]: "resource-2", text: "手機版" } }, desktop: { props: { [key]: "resource-3" } }, tablet: { props: { [key]: "resource-4", text: "平板版", action: { type: "registration", formId: "resource-5" } } } } }),
       ])])],
     })!;
     const node = flatten(stripTemplateBindings(document).root).find((item) => item.id === "t")!;
     expect(node.props).toEqual({ text: "內容" });
     expect(node.overrides.mobile?.props).toEqual({ text: "手機版" });
     expect(node.overrides.desktop?.props).toEqual({});
+    // The tablet breakpoint (I-1) is scrubbed like the other viewports.
+    expect(JSON.stringify(node.overrides.tablet)).not.toContain("resource-");
+    expect(node.overrides.tablet?.props?.text).toBe("平板版");
   });
 
   it("turns form, live and step targets into unconfigured actions", () => {

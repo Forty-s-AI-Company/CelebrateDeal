@@ -5,7 +5,7 @@ import {
   AudioLines, BadgeDollarSign, Box, ChartNoAxesColumn, Megaphone, Clapperboard, Heading1, LayoutGrid, ListTodo, Newspaper, PanelsTopLeft, Shapes, Star, CalendarDays, ChevronLeft, ChevronRight, CircleDollarSign, CircleHelp, CirclePlus, ClipboardList, Code, Columns2, Columns3, Columns4,
   CreditCard, FileCheck2, FileText, GalleryHorizontal, Heading, House, Image as ImageIcon, LayoutTemplate, List, ListChecks, ListOrdered, Menu, MessageSquareQuote, Minus,
   MousePointerClick, Package, PanelBottom, PanelTop, Rows3, Search, Share2, ShieldCheck, ShoppingCart, SquareCheck, TextCursorInput, ThumbsUp, Ticket, Timer,
-  Truck, Type, UserRound, Users, Video, Wallet,
+  Truck, Type, UserRound, Users, Video, Wallet, CalendarClock, Mic, GanttChart, Info, Scale, CalendarPlus, Gift, CalendarRange, Hourglass, ToggleRight, MonitorSmartphone, Images, SquareCode,
 } from "lucide-react";
 import { getFunnelNodeDefinition, type FunnelNodeType, type PageDocument } from "@/lib/funnel-page-document";
 import { FUNNEL_BLOCK_CATEGORY_METADATA, getFunnelBlocksByCategory, listFunnelBlockCategories, previewFunnelBlockDocument, type FunnelBlockCategory, type FunnelBlockTemplate } from "@/lib/funnel-block-library";
@@ -28,6 +28,14 @@ export const FUNNEL_PALETTE: ReadonlyArray<{ type: FunnelNodeType; label: string
   { type: "logo_strip", label: "Logo 列", icon: GalleryHorizontal }, { type: "image_cards", label: "圖片卡片", icon: LayoutGrid },
   { type: "content_cards", label: "文章卡片", icon: Newspaper }, { type: "video_gallery", label: "影片牆", icon: Clapperboard },
   { type: "testimonial_wall", label: "評價牆", icon: Star },
+  // Webinar 範本元件（C-01～C-18）
+  { type: "event_facts", label: "活動資訊列", icon: CalendarClock }, { type: "speaker_profiles", label: "講者卡", icon: Mic },
+  { type: "agenda_timeline", label: "議程時間軸", icon: GanttChart }, { type: "callout", label: "提示框", icon: Info },
+  { type: "fit_compare", label: "適合／不適合", icon: Scale }, { type: "add_to_calendar", label: "加入行事曆", icon: CalendarPlus },
+  { type: "announcement_bar", label: "頂部公告條", icon: Megaphone }, { type: "value_stack", label: "價值清單", icon: Gift },
+  { type: "session_schedule", label: "場次表", icon: CalendarRange }, { type: "deadline_notice", label: "報名截止提示", icon: Hourglass },
+  { type: "webinar_state", label: "依活動狀態切換", icon: ToggleRight }, { type: "media_frame", label: "裝置框", icon: MonitorSmartphone },
+  { type: "image_gallery", label: "作品集圖庫", icon: Images }, { type: "code_snippet", label: "程式碼片段", icon: SquareCode },
   { type: "form", label: "表單", icon: ClipboardList }, { type: "form_input", label: "表單欄位", icon: TextCursorInput }, { type: "button", label: "按鈕", icon: MousePointerClick },
   { type: "checkbox", label: "核取方塊", icon: SquareCheck }, { type: "survey", label: "問卷", icon: ListChecks }, { type: "calendar", label: "行事曆", icon: CalendarDays },
   { type: "recaptcha", label: "reCAPTCHA", icon: ShieldCheck },
@@ -92,7 +100,7 @@ export function ElementLibrary({ disabled, onAdd }: { disabled: boolean; onAdd: 
 const blockIcons: Record<FunnelBlockCategory, IconComponent> = {
   order_forms: ShoppingCart, opt_in_forms: FileText, features: ThumbsUp, page_footers: PanelBottom, team_presentation: Users,
   welcome: House, price_plans: CircleDollarSign, page_headers: PanelTop, testimonials: MessageSquareQuote,
-  social_proof: ChartNoAxesColumn, content_showcase: Newspaper, call_to_action: Megaphone,
+  social_proof: ChartNoAxesColumn, content_showcase: Newspaper, call_to_action: Megaphone, webinar_sections: CalendarClock,
 };
 
 /** Width of the virtual desktop canvas a thumbnail is rendered at before scaling down. */

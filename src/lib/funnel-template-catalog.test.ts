@@ -19,7 +19,8 @@ const unregistered = (goal: FunnelTemplateGalleryItem["goal"], id = "new-unliste
 describe("template catalog labels", () => {
   it("lists every gallery template with at least one known purpose and style", () => {
     const catalog = listFunnelTemplateCatalog();
-    expect(catalog.map((entry) => entry.id)).toEqual(FUNNEL_TEMPLATE_GALLERY.map((item) => item.id));
+    // Retired and hidden templates (the webinar development example) stay resolvable but are not listed.
+    expect(catalog.map((entry) => entry.id)).toEqual(FUNNEL_TEMPLATE_GALLERY.filter((item) => !item.retired && !item.hidden).map((item) => item.id));
     for (const entry of catalog) {
       expect(entry.purposes.length).toBeGreaterThan(0);
       expect(entry.styles.length).toBeGreaterThan(0);

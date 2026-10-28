@@ -1,7 +1,7 @@
 "use client";
 
 import type { ComponentType } from "react";
-import { ArrowLeft, BookmarkPlus, ChevronRight, Eye, History, Monitor, Pencil, Redo2, Settings, Smartphone, SquareStack, Undo2 } from "lucide-react";
+import { ArrowLeft, BookmarkPlus, ChevronRight, Eye, History, Monitor, Pencil, Redo2, Settings, Smartphone, SquareStack, Tablet, Undo2 } from "lucide-react";
 import type { FunnelEditorChrome } from "./funnel-editor-chrome";
 import type { FunnelViewport } from "./funnel-page-document-renderer";
 
@@ -80,6 +80,7 @@ export function FunnelEditorToolbar({ chrome, history, views, view, onToggleView
       {chrome?.status}
       {viewport && onViewport ? <div role="group" aria-label="編輯裝置" className="hidden items-center rounded-lg bg-slate-100 p-0.5 sm:flex">
         <ToolbarButton label="桌機" icon={Monitor} pressed={viewport === "desktop"} onClick={() => onViewport("desktop")} />
+        <ToolbarButton label="平板" icon={Tablet} pressed={viewport === "tablet"} onClick={() => onViewport("tablet")} />
         <ToolbarButton label="手機" icon={Smartphone} pressed={viewport === "mobile"} onClick={() => onViewport("mobile")} />
       </div> : null}
       {onTogglePreview ? <ToolbarButton label={previewing ? "返回編輯" : "預覽"} icon={previewing ? Pencil : Eye} showLabel labelClassName="hidden md:inline" pressed={previewing} onClick={onTogglePreview} /> : null}

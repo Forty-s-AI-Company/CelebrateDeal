@@ -8,6 +8,7 @@ import { BOUND_LIVE_FORM_RULE, registrationFormChoices } from "@/lib/funnel-regi
 import { ArrowDown, ArrowUp, Plus, Trash2 } from "lucide-react";
 import { FunnelImageUploadButton } from "./funnel-editor-assets";
 import { parseFunnelColor } from "@/lib/funnel-typography";
+import { FUNNEL_EVENT_DEFAULT_TIMEZONE, formatFunnelTimezone, isFunnelTimezone, isoToZonedLocalInput } from "@/lib/funnel-event-time";
 
 import {
   createFunnelInspectorActionUpdate,
@@ -104,6 +105,13 @@ function FieldControl({ field, node, scope, disabled, onCommand }: { field: Funn
     <FunnelImageUploadButton label={field.label} disabled={common.disabled} onUploaded={(url) => commit(url)} />
   </span>;
   else if (field.kind === "checkbox") input = <input {...common} className="h-4 w-4 rounded border-slate-300 text-blue-700" type="checkbox" checked={value === true} onChange={(event) => commit(event.currentTarget.checked)} />;
+  else if (field.kind === "datetime") {
+    const zone = isFunnelTimezone(node.props.timezone) ? node.props.timezone : FUNNEL_EVENT_DEFAULT_TIMEZONE;
+    input = <span className="flex items-center gap-2">
+      <input {...common} className={control} type="datetime-local" value={isoToZonedLocalInput(String(value), zone)} onChange={(event) => commit(event.currentTarget.value)} />
+      <span className="shrink-0 text-xs font-normal text-slate-600">{formatFunnelTimezone(zone, new Date().toISOString())}</span>
+    </span>;
+  }
   else if (field.kind === "select") input = <select {...common} className={control} value={String(value)} onChange={(event) => commit(event.currentTarget.value)}><option value="">未設定</option>{field.options?.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select>;
   else if (field.kind === "textarea" || field.kind === "list" || field.kind === "menu_items" || field.kind === "faq_items") input = <textarea {...common} className={`${control} min-h-24 resize-y`} value={String(value)} onChange={(event) => commit(event.currentTarget.value)} />;
   else input = <input {...common} className={control} type={field.kind === "number" ? "number" : "text"} min={field.min} max={field.max} step={field.step} value={String(value)} onChange={(event) => commit(event.currentTarget.value)} />;
@@ -192,6 +200,7 @@ function ItemFieldControl({ id, sub, value, disabled, onChange }: { id: string; 
   if (sub.kind === "select") input = <select {...common} className={control} value={text} onChange={(event) => onChange(event.currentTarget.value)}><option value="">未設定</option>{sub.options?.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select>;
   else if (sub.kind === "textarea") input = <textarea {...common} className={`${control} min-h-20 resize-y`} placeholder={sub.placeholder} value={text} onChange={(event) => onChange(event.currentTarget.value)} />;
   else if (sub.kind === "number") input = <input {...common} className={control} type="number" min={sub.min} max={sub.max} value={text} onChange={(event) => onChange(event.currentTarget.value)} />;
+  else if (sub.kind === "datetime") input = <input {...common} className={control} type="datetime-local" value={isoToZonedLocalInput(text, FUNNEL_EVENT_DEFAULT_TIMEZONE)} onChange={(event) => onChange(event.currentTarget.value)} />;
   else input = <input {...common} className={control} inputMode={sub.kind === "text" ? undefined : "url"} spellCheck={sub.kind === "text" ? undefined : false} placeholder={sub.placeholder ?? (sub.kind === "image" ? "https:// 或 /images/…" : undefined)} value={text} onChange={(event) => onChange(event.currentTarget.value)} />;
   return <div className="grid gap-1.5">
     <label htmlFor={id} className={label}>{sub.label}</label>
@@ -301,7 +310,7 @@ export function FunnelElementInspector({ node, disabled = false, popupIds = [], 
   const responsive = definition.fields.some((field) => field.responsive);
   return <section data-funnel-element-inspector data-node-type={node.type} className="grid gap-3">
     {definition.capabilityNote ? <p role="status" className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm leading-5 text-amber-900">{definition.capabilityNote}</p> : null}
-    {responsive ? <label className="grid gap-1 text-sm font-semibold text-slate-700">編輯範圍<select className={control} value={scope} onChange={(event) => setScope(event.currentTarget.value as FunnelInspectorScope)}><option value="base">基礎值</option><option value="desktop">僅桌機覆寫</option><option value="mobile">僅手機覆寫</option></select><span className="text-xs font-normal leading-5 text-slate-600">覆寫會建立在同一份頁面資料上，未覆寫時會沿用基礎值。</span></label> : null}
+    {responsive ? <label className="grid gap-1 text-sm font-semibold text-slate-700">編輯範圍<select className={control} value={scope} onChange={(event) => setScope(event.currentTarget.value as FunnelInspectorScope)}><option value="base">基礎值</option><option value="desktop">僅桌機覆寫</option><option value="tablet">僅平板覆寫（640–1079px）</option><option value="mobile">僅手機覆寫</option></select><span className="text-xs font-normal leading-5 text-slate-600">覆寫會建立在同一份頁面資料上，未覆寫時會沿用基礎值。</span></label> : null}
     {sections.map(({ key, fields }) => <InspectorSection key={key} id={`funnel-inspector-${node.id}-${key}`} label={sectionLabels[key]} defaultOpen={key !== "actions" && key !== "advanced"}>
       {key === "actions"
         ? <ActionFields stepNames={stepNames} popupNames={popupNames} stepIds={stepIds} key={`${node.id}:${JSON.stringify(node.actions ?? [])}`} node={node} popupIds={popupIds} disabled={disabled} onCommand={onCommand} />
