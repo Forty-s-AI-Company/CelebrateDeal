@@ -1,4 +1,3 @@
-import type { FunnelNode } from "@/lib/funnel-page-document";
 import { WEBINAR_TEMPLATE_SAMPLE_MARK, webinarTemplateKit, type WebinarTemplateDefinition } from "./types";
 
 /**
@@ -19,56 +18,54 @@ const FOOTER_BODY = "#dfe8d9";
 type State = "upcoming" | "live" | "replay" | "ended";
 
 function build(prefix: string) {
-  const { node, section, stack, headline, text, button, form } = webinarTemplateKit(prefix);
+  const { node, section, columns2, headline, text, button, form } = webinarTemplateKit(prefix);
   const primaryButton = { backgroundColor: PRIMARY, color: "#ffffff", borderRadius: 10, padding: "16px 32px", fontSize: 18 } as const;
   const h2 = (id: string, value: string, extra = {}) => headline(id, value, "h2", { color: INK, fontSize: 32, lineHeight: 1.3, ...extra }, { mobile: { style: { fontSize: 24 } } });
   const eyebrow = (id: string, value: string, color = ACCENT) => text(id, value, "eyebrow", { color, letterSpacing: 2 });
   /** C-15 子內容盒：只在指定狀態顯示。 */
   const when = (id: string, state: State, children: ReturnType<typeof text>[], gap = 20) => node(id, "content_box", { gap, webinarState: state }, children, { padding: 0 });
-  /** 數據區手機改用 16px 左右留白：stats 數字不換行，長數字（例如 NT$1,280,000%）在 320 寬需要多 8px。 */
-  const narrowGutter = (sectionNode: FunnelNode): FunnelNode => ({ ...sectionNode, overrides: { ...sectionNode.overrides, mobile: { style: { padding: "56px 16px" } } } });
   const pill = (id: string, label: string) => text(id, label, "small", { backgroundColor: LIME, color: INK, borderRadius: 100, padding: "6px 16px", width: "fit-content", letterSpacing: 1 });
 
   const HERO: Record<State, { pill: string; lead: string; cta: string }> = {
     upcoming: { pill: "● 即將開播｜免費線上講座", lead: "從包材、冷氣到物流，循環經濟顧問帶你算出每個月省得下來的錢與碳。不用寫報告，也不用大筆投資。", cta: "免費報名直播" },
     live: { pill: "● 直播進行中", lead: "直播正在進行。留下 Email，馬上收到直播連結，現在加入還來得及。", cta: "立即進入直播" },
-    replay: { pill: "● 回放開放中", lead: "錯過直播也沒關係。回放限時開放，留下 Email 就能立即觀看完整內容與章節重點。", cta: "立即觀看回放" },
+    replay: { pill: "● 回放開放中", lead: "錯過直播也沒關係。回放限時開放，留下 Email 就能立即觀看完整內容與章節重點。", cta: "立即觀看回放（開放至 {{webinar.replayEndsAt}}）" },
     ended: { pill: "● 本場已結束", lead: "這一場已經結束。留下 Email，下一場開放報名時第一個通知你。", cta: "通知我下一場" },
   };
-  const heroCopy = (state: State) => when(`hero_${state}`, state, [
-    pill(`hero_${state}_pill`, HERO[state].pill),
-    headline(`hero_${state}_title`, "小店也能做的減碳：\n明天就能開始的 6 個作法", "h1", { color: INK, fontSize: 44, lineHeight: 1.3 }, {
-      tablet: { style: { fontSize: 38 } },
-      mobile: { style: { fontSize: 28 }, props: { text: "小店也能做的減碳：明天就能開始的 6 個作法" } },
-    }),
-    text(`hero_${state}_lead`, HERO[state].lead, "lead", { color: BODY }),
-    button(`hero_${state}_cta`, HERO[state].cta, "#register", primaryButton),
-    node(`hero_${state}_facts`, "event_facts", { layout: "row", formatLabel: state === "replay" ? "回放" : "線上直播＋回放", priceLabel: "免費", showDuration: true, accentColor: PRIMARY }, undefined, { color: BODY, fontSize: 18 }),
-  ], 24);
+  /** C-15 內容盒：膠囊、引言與按鈕依狀態切換；H1 與活動資訊列不放進來，只寫一次。 */
+  const stateBlock = (id: string, parts: (state: State) => ReturnType<typeof text>[]) =>
+    node(id, "webinar_state", {}, (["upcoming", "live", "replay", "ended"] as const).map((state) => when(`${id}_${state}`, state, parts(state), 20)));
 
   return [
-    // 1. 首屏：左欄依狀態切換（膠囊、H1、引言、按鈕、活動資訊列；H1 四種狀態相同），右側插畫與報名表。
-    //    C-15 只能直接放在欄裡，所以兩欄用 columns_2 節點直接組，不用 columns2() 的 content_box 外層。
+    // 1. 首屏：左欄 = 狀態膠囊（依狀態）、H1（共用）、引言與 CTA（依狀態）、活動資訊列（共用）；右側插畫與報名表。
     section("hero", [
-      node("hero_columns", "columns_2", { ratio: "1:1", gap: 56, stackOn: "tablet" }, [
-        node("hero_state", "webinar_state", {}, (["upcoming", "live", "replay", "ended"] as const).map((state) => heroCopy(state))),
-        stack("hero_panel", [
-          node("hero_image", "image", { src: `${ART}/hero-shop.svg`, alt: "綠意環繞的小店門面插畫" }, undefined, { imageWidth: 100, borderRadius: 16 }, { mobile: { visible: false } }),
-          form("hero_form", {
-            title: "留下 Email，取得講座連結",
-            fields: [
-              { name: "name", label: "姓名", placeholder: "王小明", required: true },
-              { name: "email", label: "Email", type: "email", placeholder: "name@example.com", required: true },
-            ],
-            submitLabel: "免費取得連結",
-            submitStyle: { backgroundColor: PRIMARY, color: "#ffffff", borderRadius: 10, fontSize: 18 },
-            note: "開播前寄直播連結；直播後寄回放或下一場通知。可隨時取消訂閱。",
-            htmlId: "register",
-            style: { backgroundColor: CARD, padding: 28, borderRadius: 16, color: INK, textAlign: "left", width: 100, shadow: "medium" },
-            mobile: { style: { padding: 20 } },
-          }),
-        ], 20),
-      ], { align: "center" }),
+      columns2("hero_columns", [
+        stateBlock("hero_pill", (state) => [pill(`hero_pilltext_${state}`, HERO[state].pill)]),
+        headline("hero_title", "小店也能做的減碳：\n明天就能開始的 6 個作法", "h1", { color: INK, fontSize: 44, lineHeight: 1.3 }, {
+          tablet: { style: { fontSize: 38 } },
+          mobile: { style: { fontSize: 28 }, props: { text: "小店也能做的減碳：明天就能開始的 6 個作法" } },
+        }),
+        stateBlock("hero_action", (state) => [
+          text(`hero_lead_${state}`, HERO[state].lead, "lead", { color: BODY }),
+          button(`hero_cta_${state}`, HERO[state].cta, "#register", primaryButton),
+        ]),
+        node("hero_facts", "event_facts", { layout: "row", formatLabel: "線上直播＋回放", priceLabel: "免費", showDuration: true, accentColor: PRIMARY }, undefined, { color: BODY }),
+      ], [
+        node("hero_image", "image", { src: `${ART}/hero-shop.svg`, alt: "綠意環繞的小店門面插畫" }, undefined, { imageWidth: 100, borderRadius: 16 }, { mobile: { visible: false } }),
+        form("hero_form", {
+          title: "留下 Email，取得講座連結",
+          fields: [
+            { name: "name", label: "姓名", placeholder: "王小明", required: true },
+            { name: "email", label: "Email", type: "email", placeholder: "name@example.com", required: true },
+          ],
+          submitLabel: "免費取得連結",
+          submitStyle: { backgroundColor: PRIMARY, color: "#ffffff", borderRadius: 10, fontSize: 18 },
+          note: "開播前寄直播連結；直播後寄回放或下一場通知。可隨時取消訂閱。",
+          htmlId: "register",
+          style: { backgroundColor: CARD, padding: 28, borderRadius: 16, color: INK, textAlign: "left", width: 100, shadow: "medium" },
+          mobile: { style: { padding: 20 } },
+        }),
+      ], { ratio: "1:1", gap: 56, stackOn: "tablet", align: "center" }),
     ], { background: BG, color: BODY, maxWidth: 1120, paddingY: 88, paddingYTablet: 64, paddingYMobile: 40 }),
 
     // 2. 6 個作法。
@@ -86,7 +83,7 @@ function build(prefix: string) {
     ], { background: CARD, color: BODY, maxWidth: 1120, gap: 24, align: "center" }),
 
     // 3. 數據（標示資料來源）＋ 4. 回放章節（只在回放期顯示）。
-    narrowGutter(section("impact", [
+    section("impact", [
       eyebrow("impact_eyebrow", "做了會怎樣"),
       h2("impact_title", "小改變，帳單上看得見"),
       node("impact_stats", "stats", { animate: true, accentColor: PRIMARY, items: [
@@ -108,7 +105,7 @@ function build(prefix: string) {
           ] }, undefined, { color: BODY, textAlign: "left" }),
         ], 24),
       ]),
-    ], { background: BG, color: BODY, maxWidth: 1000, gap: 24, align: "center" })),
+    ], { background: BG, color: BODY, maxWidth: 1000, gap: 24, align: "center" }),
 
     // 5. 講者與主辦。
     section("speakers", [
@@ -180,7 +177,7 @@ export const template: WebinarTemplateDefinition = {
   category: "永續講座",
   purposes: ["webinar"],
   styles: ["natural"],
-  preview: { eyebrow: "On-demand", headline: "小店也能做的減碳", summary: "依狀態切換的首屏＋回放章節", palette: [BG, PRIMARY, LIME], sectionCount: 8 },
+  preview: { eyebrow: "On-demand", headline: "小店也能做的減碳", summary: "依狀態切換的首屏＋回放章節", palette: [BG, PRIMARY, LIME], sectionCount: 7 },
   theme: { typography: { headingFont: "sans-tc", bodyFont: "sans-tc", bodySize: 17, bodyLineHeight: 1.8, textColor: BODY, headingColor: INK, linkColor: PRIMARY }, background: { color: BG } },
   settings: { eventTitle: "小店也能做的減碳：從包材到電費的 6 個實際作法", scrollReveal: "fade", stickyCta: { enabled: true, label: "免費取得連結", showDate: true, devices: "mobile_tablet", buttonColor: PRIMARY, buttonTextColor: "#ffffff" } },
   build,

@@ -39,7 +39,7 @@ function build(prefix: string) {
         doctorCard("hero_doctor", { tablet: { visible: false }, mobile: { visible: false } }),
       ], 20),
         stack("hero_sidebar", [
-          node("hero_facts", "event_facts", { layout: "card", title: "講座資訊", formatLabel: "線上直播", priceLabel: "免費", accentColor: PRIMARY, cardColor: "#ffffff", cardTextColor: INK }, undefined, { color: INK }, { mobile: { props: { layout: "row" }, style: { fontSize: 18 } } }),
+          node("hero_facts", "event_facts", { layout: "card", title: "講座資訊", formatLabel: "線上直播", priceLabel: "免費", accentColor: PRIMARY, cardColor: "#ffffff", cardTextColor: INK }, undefined, { color: INK }, { mobile: { props: { layout: "row" } } }),
           form("hero_form", {
             title: "報名衛教講座",
             fields: [

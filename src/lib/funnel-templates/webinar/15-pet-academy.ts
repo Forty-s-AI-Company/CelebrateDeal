@@ -44,7 +44,7 @@ function build(prefix: string) {
         text("hero_subtitle", "寵物行為訓練師認證課程", "lead", { color: PRIMARY }),
         text("hero_lead", "60 分鐘說明會，完整介紹課程內容、實習方式、認證標準與就業方向，現場開放提問。", undefined, { color: BODY }),
         button("hero_cta", "預約說明會", "#register", cta, { mobile: { style: { width: 100 } } }),
-        node("hero_facts", "event_facts", { layout: "row", formatLabel: "線上說明會", priceLabel: "免費", showDuration: true, accentColor: PRIMARY }, undefined, { color: BODY, fontSize: 18 }),
+        node("hero_facts", "event_facts", { layout: "row", formatLabel: "線上說明會", priceLabel: "免費", showDuration: true, accentColor: PRIMARY }, undefined, { color: BODY }),
       ], [
         node("hero_image", "image", { src: `${ART}/hero-trainer.svg`, alt: "訓練師蹲下與狗狗擊掌互動的插畫" }, undefined, { imageWidth: 100, borderRadius: 8 }),
       ], { ratio: "1:1", gap: 56, stackOn: "tablet", align: "center" }),
@@ -69,7 +69,7 @@ function build(prefix: string) {
         { value: "42", suffix: "家", label: "合作單位" },
         { value: "120", suffix: "小時", label: "實習時數" },
         { value: "4.8", suffix: "/5", label: "學員滿意度" },
-      ] }, undefined, { color: INK }, { tablet: { style: { width: "600px", margin: "0 auto" } } }), // 平板 4 項排成 2×2（見 notes B3-11）
+      ] }, undefined, { color: INK }),
       text("stats_note", `數據為${WEBINAR_TEMPLATE_SAMPLE_MARK}，發布前請替換為學院實際資料。`, "small", { color: MUTED, textAlign: "center" }),
     ], { background: BG, color: BODY, maxWidth: 1160, gap: 16, paddingY: 72, paddingYMobile: 48 }),
 
@@ -89,7 +89,7 @@ function build(prefix: string) {
     section("program", [
       eyebrow("program_eyebrow", "課程架構"),
       h2("program_title", "從理論到認證的 4 個階段"),
-      node("program_steps", "agenda_timeline", { layout: "steps", accentColor: PRIMARY, cardColor: SURFACE, items: [
+      node("program_steps", "icon_list", { layout: "grid", columns: 4, numbered: true, accentColor: PRIMARY, items: [
         { title: "線上理論", text: "動物學習理論、肢體語言與福利原則。" },
         { title: "實體實作", text: "小班練習，每位學員都有指導員回饋。" },
         { title: "實習", text: "到合作單位實習，累積真實個案經驗。" },
@@ -137,7 +137,7 @@ function build(prefix: string) {
       columns2("signup_columns", [
         eyebrow("signup_eyebrow", "預約說明會"),
         headline("signup_title", "聽完說明會，\n再決定要不要報名", "h2", { color: INK, fontSize: 34, lineHeight: 1.3 }, { mobile: { style: { fontSize: 24 }, props: { text: "聽完說明會，再決定要不要報名" } } }),
-        node("signup_facts", "event_facts", { layout: "card", title: "說明會資訊", formatLabel: "線上說明會", priceLabel: "免費", showDuration: true, showTimezone: true, accentColor: PRIMARY, cardColor: SURFACE, cardTextColor: INK }, undefined, { color: BODY, fontSize: 18 }),
+        node("signup_facts", "event_facts", { layout: "card", title: "說明會資訊", formatLabel: "線上說明會", priceLabel: "免費", showDuration: true, showTimezone: true, accentColor: PRIMARY, cardColor: SURFACE, cardTextColor: INK }, undefined, { color: BODY }),
         text("signup_note", "說明會不推銷，現場提問都會回答。", "small", { color: MUTED }),
       ], [
         form("signup_form", {

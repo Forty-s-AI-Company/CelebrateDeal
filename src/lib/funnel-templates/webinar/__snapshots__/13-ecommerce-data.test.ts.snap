@@ -23,7 +23,7 @@ exports[`webinar template: 13-ecommerce-data > keeps node ids, types and order s
   "snapshot_tactics_row:row",
   "snapshot_tactics_eyebrow:text",
   "snapshot_tactics_title:headline",
-  "snapshot_tactics_list:agenda_timeline",
+  "snapshot_tactics_list:icon_list",
   "snapshot_case:section",
   "snapshot_case_row:row",
   "snapshot_case_eyebrow:text",
