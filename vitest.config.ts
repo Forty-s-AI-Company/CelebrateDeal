@@ -32,8 +32,6 @@ export default defineConfig({
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "src"),
-      // next/font loaders only exist after Next's compiler transform.
-      "next/font/google": path.resolve(__dirname, "src/test/next-font-google-mock.ts"),
     },
   },
   test: {

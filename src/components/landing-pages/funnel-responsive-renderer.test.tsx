@@ -69,7 +69,7 @@ describe("page chrome (I-2, I-3, I-4, I-5)", () => {
   it("server markup never starts hidden for scroll reveal, and the font variables sit on the page root", () => {
     const html = renderToStaticMarkup(<FunnelPageDocumentRenderer document={page([n("h", "headline", { text: "標題" })], { scrollReveal: "rise" })} />);
     expect(html).not.toContain("data-funnel-reveal");
-    expect(html).toContain("mock-font--funnel-font-sans-tc");
+    expect(html).toMatch(/class="(?:[^"]* )?funnel-font-vars[ "]/u);
     expect(html).toContain("line-break:strict");
   });
 

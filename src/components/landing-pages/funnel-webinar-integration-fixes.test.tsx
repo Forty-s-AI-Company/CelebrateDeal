@@ -92,3 +92,17 @@ describe("webinar template integration fixes", () => {
     expect(Date.parse(funnelHarnessSchedule("sample", NOW).registrationClosesAt)).toBeLessThan(Date.parse(funnelHarnessSchedule("sample", NOW).webinar.startsAt!));
   });
 });
+
+describe("self-hosted funnel fonts", () => {
+  it("declares every font variable and only references woff2 files that exist in public/fonts/funnel", async () => {
+    const { readFileSync, existsSync } = await import("node:fs");
+    const path = await import("node:path");
+    const css = readFileSync(path.join(process.cwd(), "src/components/landing-pages/funnel-fonts.css"), "utf8");
+    for (const variable of ["--funnel-font-sans-tc", "--funnel-font-serif-tc", "--funnel-font-wenkai-tc", "--funnel-font-display-latin"]) expect(css).toContain(`${variable}:`);
+    const files = [...css.matchAll(/url\(\/fonts\/funnel\/([^)]+)\)/gu)].map((match) => match[1]!);
+    expect(files.length).toBeGreaterThan(400);
+    expect(files.filter((file) => !existsSync(path.join(process.cwd(), "public/fonts/funnel", file)))).toEqual([]);
+    // The build must never need the network: no remote font URLs.
+    expect(css).not.toMatch(/https?:\/\//u);
+  });
+});

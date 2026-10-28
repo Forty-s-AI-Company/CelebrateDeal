@@ -20,7 +20,7 @@ export function funnelViewportForWidth(width: number): FunnelTypographyViewport 
 /**
  * Curated font stacks. The Noto TC, LXGW WenKai TC and Space Grotesk options
  * are self-hosted web fonts (I-2, `funnel-fonts.ts`): the stack starts with the
- * CSS variable next/font declares on the renderer root, so a page whose font
+ * CSS variable `.funnel-font-vars` declares on the renderer root, so a page whose font
  * did not load (or a surface without the variable) falls back to system fonts.
  * Only the unicode-range slices a page actually renders are downloaded.
  * Unknown stored values (older documents typed a free-form family) are kept as-is.

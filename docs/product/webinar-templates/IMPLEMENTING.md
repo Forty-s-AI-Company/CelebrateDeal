@@ -103,7 +103,7 @@ npx vitest run src/lib/funnel-templates/webinar
 | `display-latin` | Space Grotesk | 數字與英文點綴（中文會退回思源黑體） |
 | `system-ui` | 系統字 | — |
 
-- 字型由 next/font 自架，只會下載頁面實際用到的字。
+- 字型自架在 `public/fonts/funnel/`（`src/components/landing-pages/funnel-fonts.css`，Google Fonts 的 unicode-range 分片），建置與訪客都不連 Google，只會下載頁面實際用到的字。新增字族的步驟見 `public/fonts/funnel/README.md`。
 - 每頁最多兩個字族。
 
 ### 3.3 頁面設定（`settings`）
