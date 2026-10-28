@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 1000" width="800" height="1000" role="img" aria-label="老師照片預留位置">
+<rect width="800" height="1000" fill="#fff8e7"/>
+<circle cx="600" cy="220" r="110" fill="#ffb020" stroke="#1b2b48" stroke-width="6"/>
+<path d="M238 1000c-6-150 26-250 120-300 30-16 46-36 50-62l2-34c-50-26-82-82-90-154-10-98 42-170 132-170s142 72 132 170c-8 72-40 128-90 154l2 34c4 26 20 46 50 62 94 50 126 150 120 300z" fill="#1f7a70" stroke="#1b2b48" stroke-width="6"/>
+<text x="400" y="950" font-family="system-ui, sans-serif" font-size="30" text-anchor="middle" letter-spacing="4" fill="#ffffff">替換為老師照片</text>
+</svg>

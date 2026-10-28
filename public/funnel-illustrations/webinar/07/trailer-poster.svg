@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 900" width="1600" height="900" role="img" aria-label="預告影片封面預留位置：客廳跟練">
+<defs>
+<radialGradient id="glow" cx="0.68" cy="0.42" r="0.6"><stop offset="0" stop-color="#d7ff3a" stop-opacity="0.32"/><stop offset="0.55" stop-color="#d7ff3a" stop-opacity="0.06"/><stop offset="1" stop-color="#d7ff3a" stop-opacity="0"/></radialGradient>
+<linearGradient id="floor" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#1c1c20"/><stop offset="1" stop-color="#0d0d0f"/></linearGradient>
+</defs>
+<rect width="1600" height="900" fill="#111113"/>
+<rect width="1600" height="900" fill="url(#glow)"/>
+<path d="M0 690h1600v210H0z" fill="url(#floor)"/>
+<path d="M0 690h1600" stroke="#2a2a30" stroke-width="3"/>
+<g stroke="#2a2a30" stroke-width="2"><path d="M160 690L40 900M480 690l-60 210M800 690v210M1120 690l60 210M1440 690l120 210"/></g>
+<rect x="760" y="640" width="560" height="44" rx="10" fill="#ff6a4d" opacity="0.9"/>
+<g fill="none" stroke="#d7ff3a" stroke-width="22" stroke-linecap="round" stroke-linejoin="round">
+<circle cx="1040" cy="250" r="44"/>
+<path d="M1040 300l-14 150"/>
+<path d="M1030 330l-80-70-30-90M1030 330l90-60 20-100"/>
+<path d="M1026 450l-90 70 30 120M1026 450l100 60-20 130"/>
+</g>
+<g fill="#d7ff3a"><rect x="890" y="140" width="60" height="22" rx="8" transform="rotate(-20 920 151)"/><rect x="1110" y="136" width="60" height="22" rx="8" transform="rotate(16 1140 147)"/></g>
+<g fill="none" stroke="#fafafa" stroke-opacity="0.18" stroke-width="6" stroke-linecap="round"><path d="M820 220c-30 40-30 90 0 130M1260 220c30 40 30 90 0 130"/></g>
+<g font-family="system-ui, sans-serif" fill="#fafafa">
+<rect x="80" y="76" width="168" height="48" rx="24" fill="#ff6a4d"/>
+<text x="164" y="108" font-size="24" font-weight="700" text-anchor="middle" fill="#0d0d0f">PREVIEW</text>
+<text x="80" y="800" font-size="34" font-weight="700" fill-opacity="0.92">替換為 60 秒預告影片</text>
+<text x="80" y="846" font-size="24" fill-opacity="0.65">貼上 YouTube 網址後，訪客按下播放才會載入</text>
+</g>
+</svg>

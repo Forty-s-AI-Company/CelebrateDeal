@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 900" width="1600" height="900" role="img" aria-label="往屆片段封面：品牌定位對談">
+<defs><radialGradient id="g" cx="0.3" cy="0.3" r="0.9"><stop offset="0" stop-color="#7c3aed"/><stop offset="1" stop-color="#0b0820"/></radialGradient><radialGradient id="h" cx="0.85" cy="0.9" r="0.6"><stop offset="0" stop-color="#ff4d8d" stop-opacity="0.7"/><stop offset="1" stop-color="#ff4d8d" stop-opacity="0"/></radialGradient></defs>
+<rect width="1600" height="900" fill="url(#g)"/><rect width="1600" height="900" fill="url(#h)"/>
+<rect x="980" y="190" width="420" height="300" rx="24" fill="#0b0820" opacity="0.35"/><rect x="200" y="330" width="420" height="300" rx="24" fill="#0b0820" opacity="0.35"/>
+<g fill="#ffffff" opacity="0.55"><circle cx="410" cy="440" r="56"/><path d="M320 600c0-60 40-90 90-90s90 30 90 90z"/><circle cx="1190" cy="300" r="56"/><path d="M1100 460c0-60 40-90 90-90s90 30 90 90z"/></g>
+<text x="96" y="140" font-family="system-ui, sans-serif" font-size="40" font-weight="700" fill="#ffffff" letter-spacing="6">SESSION 01</text>
+</svg>

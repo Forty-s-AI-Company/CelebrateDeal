@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 72" width="640" height="72" role="img" aria-label="手繪路線分隔線">
+<path d="M18 46c70-34 130-34 190-8s120 30 190 0 140-30 206-6" fill="none" stroke="#c8443a" stroke-width="3" stroke-dasharray="2 11" stroke-linecap="round"/>
+<g fill="#c8443a"><path d="M18 30c-8 0-14 6-14 13 0 10 14 21 14 21s14-11 14-21c0-7-6-13-14-13z"/></g><circle cx="18" cy="43" r="5" fill="#fdfaf4"/>
+<g transform="translate(612 38) rotate(-14)" fill="#1f6f8b"><path d="M0 0l-26-10 4 10-4 10z"/><path d="M-12-3l-10-12h6l12 12zM-12 3l-10 12h6l12-12z"/></g>
+</svg>
