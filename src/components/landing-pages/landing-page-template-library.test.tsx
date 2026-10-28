@@ -104,6 +104,9 @@ describe("template library filters", () => {
     await render(library());
     const catalog = listFunnelTemplateCatalog();
     expect(cards()).toHaveLength(catalog.length);
+    // 退役與只在步驟選單的範本不出現在範本庫（全部瀏覽）。
+    expect(cardTitles()).not.toContain("藍白簡潔結帳");
+    expect(cardTitles()).not.toContain("講者型活動報名頁");
 
     const purpose = container.querySelector("[role=group][aria-label=用途]")!;
     await click(buttonNamed("銷售", purpose));
@@ -113,13 +116,13 @@ describe("template library filters", () => {
     expect(container.textContent).toContain(`符合條件的範本：${sales.length} 個`);
 
     const style = container.querySelector("[role=group][aria-label=風格]")!;
-    await click(buttonNamed("簡約", style));
-    expect(cardTitles()).toEqual(sales.filter((entry) => entry.styles.includes("minimal")).map((entry) => entry.name));
-    expect(cardTitles()).toContain("藍白簡潔結帳");
+    await click(buttonNamed("專業", style));
+    expect(cardTitles()).toEqual(sales.filter((entry) => entry.styles.includes("professional")).map((entry) => entry.name));
+    expect(cardTitles()).toContain("SaaS 產品 Demo 雙欄報名頁");
 
     // Pressing the active chip again clears that filter.
     await click(buttonNamed("銷售", purpose));
-    expect(cardTitles()).toEqual(catalog.filter((entry) => entry.styles.includes("minimal")).map((entry) => entry.name));
+    expect(cardTitles()).toEqual(catalog.filter((entry) => entry.styles.includes("professional")).map((entry) => entry.name));
   });
 
   it("lists the 高質感課程品牌（黑金） template with a thumbnail under 品牌首頁 + 高質感", async () => {
@@ -178,8 +181,8 @@ describe("template library tabs", () => {
 describe("template preview", () => {
   it("opens a full preview, switches desktop and mobile, and hands off to 使用", async () => {
     await render(library());
-    await click(buttonNamed("預覽 藍白簡潔結帳"));
-    expect(dialog()?.textContent).toContain("藍白簡潔結帳");
+    await click(buttonNamed("預覽 AI 工具極簡報名頁"));
+    expect(dialog()?.textContent).toContain("AI 工具極簡報名頁");
     const viewport = () => document.querySelector("[data-template-preview-viewport]")!;
     expect(viewport().getAttribute("data-template-preview-viewport")).toBe("desktop");
 
@@ -192,14 +195,14 @@ describe("template preview", () => {
 
     await click(buttonNamed("使用這個範本", dialog()!));
     expect(document.querySelector("[data-template-preview-viewport]")).toBeNull();
-    expect(dialog()?.textContent).toContain("使用「藍白簡潔結帳」");
+    expect(dialog()?.textContent).toContain("使用「AI 工具極簡報名頁」");
     const create = [...dialog()!.querySelectorAll("a")].find((link) => link.textContent?.includes("前往建立"));
-    expect(create?.getAttribute("href")).toBe(templateCreateHref({ kind: "platform", id: "sell-simple-checkout", goal: "sell" }));
+    expect(create?.getAttribute("href")).toBe(templateCreateHref({ kind: "platform", id: "webinar-ai-minimal", goal: "webinar" }));
   });
 
   it("closes the preview with the close button", async () => {
     await render(library());
-    await click(buttonNamed("預覽 藍白簡潔結帳"));
+    await click(buttonNamed("預覽 AI 工具極簡報名頁"));
     await click(buttonNamed("關閉", dialog()!));
     expect(dialog()).toBeNull();
   });
@@ -254,7 +257,7 @@ describe("apply to an existing site", () => {
 
   it("only offers the steps a platform template fits", async () => {
     await render(library());
-    await openApply("使用 藍白簡潔結帳");
+    await openApply("使用 AI 工具極簡報名頁");
     const radios = [...dialog()!.querySelectorAll<HTMLInputElement>("input[name=template-target-step]")];
     expect(radios.every((radio) => radio.disabled)).toBe(true);
     expect(dialog()!.textContent).toContain("這個範本不適用此步驟類型");
@@ -263,7 +266,7 @@ describe("apply to an existing site", () => {
 
   it("shows the project guidance on both paths when no project is selected, and switches in place", async () => {
     await render(library({ sites: null, projects: [{ id: "project_1", name: "秋季課程" }] }));
-    await click(buttonNamed("使用 藍白簡潔結帳"));
+    await click(buttonNamed("使用 AI 工具極簡報名頁"));
     const guidance = () => dialog()!.querySelector("[data-sales-project-required]");
     expect(guidance()?.textContent).toContain("一頁式網站屬於銷售專案，請先選擇專案");
     expect([...dialog()!.querySelectorAll("a")].some((link) => link.textContent?.includes("前往建立"))).toBe(false);
@@ -278,7 +281,7 @@ describe("apply to an existing site", () => {
 
   it("offers to create a sales project from the template dialog when there is none", async () => {
     await render(library({ sites: null, projects: [] }));
-    await click(buttonNamed("使用 藍白簡潔結帳"));
+    await click(buttonNamed("使用 AI 工具極簡報名頁"));
     expect(dialog()!.querySelector('a[href="/projects/new"]')?.textContent).toBe("建立銷售專案");
     expect(mocks.apply).not.toHaveBeenCalled();
   });

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { FUNNEL_TEMPLATE_GALLERY, type FunnelTemplateGalleryItem } from "@/lib/funnel-template-gallery";
+import { WEBINAR_TEMPLATES } from "@/lib/funnel-templates/webinar";
 import {
   compatibleStepTypes,
   DEFAULT_FUNNEL_TEMPLATE_STYLE,
@@ -14,13 +15,13 @@ import {
   listFunnelTemplateCatalog,
 } from "./funnel-template-catalog";
 
-const unregistered = (goal: FunnelTemplateGalleryItem["goal"], id = "new-unlisted-template"): FunnelTemplateGalleryItem => ({ ...FUNNEL_TEMPLATE_GALLERY[0]!, id, goal, name: "新範本" });
+const unregistered = (goal: FunnelTemplateGalleryItem["goal"], id = "new-unlisted-template"): FunnelTemplateGalleryItem => ({ ...FUNNEL_TEMPLATE_GALLERY.find((item) => !item.retired && !item.hidden && !item.libraryHidden)!, id, goal, name: "新範本" });
 
 describe("template catalog labels", () => {
   it("lists every gallery template with at least one known purpose and style", () => {
     const catalog = listFunnelTemplateCatalog();
-    // Retired and hidden templates (the webinar development example) stay resolvable but are not listed.
-    expect(catalog.map((entry) => entry.id)).toEqual(FUNNEL_TEMPLATE_GALLERY.filter((item) => !item.retired && !item.hidden).map((item) => item.id));
+    // Retired, hidden (the webinar development example) and step-only templates stay resolvable but are not listed.
+    expect(catalog.map((entry) => entry.id)).toEqual(FUNNEL_TEMPLATE_GALLERY.filter((item) => !item.retired && !item.hidden && !item.libraryHidden).map((item) => item.id));
     for (const entry of catalog) {
       expect(entry.purposes.length).toBeGreaterThan(0);
       expect(entry.styles.length).toBeGreaterThan(0);
@@ -63,8 +64,12 @@ describe("template catalog labels", () => {
   });
 
   it("knows which steps a gallery template is offered for", () => {
-    expect(compatibleStepTypes({ id: "webinar-thank-you", goal: "webinar" })).toEqual(["webinar_thank_you_page"]);
-    expect(compatibleStepTypes({ id: "custom-terms", goal: "custom" })).toEqual(["info_page", "contact_us_page"]);
+    expect(compatibleStepTypes({ id: "webinar-thank-you-v2", goal: "webinar" })).toEqual(["webinar_thank_you_page"]);
+    expect(compatibleStepTypes({ id: "custom-terms-v2", goal: "custom" })).toEqual(["info_page", "contact_us_page"]);
+    // Retired ids are no longer offered for any step; step-only templates keep their steps but are not browsable.
+    expect(compatibleStepTypes({ id: "webinar-thank-you", goal: "webinar" })).toEqual([]);
+    expect(compatibleStepTypes({ id: "custom-terms", goal: "custom" })).toEqual([]);
+    expect(compatibleStepTypes({ id: "sell-simple-checkout", goal: "sell" })).toEqual(["sales_page", "order_form", "upsell", "downsell"]);
     expect(deriveFunnelTemplatePurposes({ id: "audience-volunteer", goal: "audience" })).toEqual(["leads"]);
   });
 });
@@ -79,13 +84,27 @@ describe("filterFunnelTemplateCatalog", () => {
 
   it("filters by purpose, style, or both", () => {
     const sales = filterFunnelTemplateCatalog(catalog, { purpose: "sales" });
-    // New gallery templates (registered or derived) may join; the registered ones must be there.
-    expect(sales.map((entry) => entry.id)).toEqual(expect.arrayContaining(["sell-product-checkout", "sell-simple-checkout", "sell-content-subscription", "webinar-strategy-registration"]));
+    // 銷售用途現在由帶 sales 標籤的 Webinar 範本代表；結帳範本只在步驟選單。
+    expect(sales.map((entry) => entry.id)).toEqual(["webinar-saas-split", "webinar-travel-story", "webinar-career-value", "webinar-ecommerce-data"]);
     expect(sales.every((entry) => entry.purposes.includes("sales"))).toBe(true);
-    expect(sales.map((entry) => entry.id)).not.toContain("custom-privacy");
     expect(filterFunnelTemplateCatalog(catalog, { style: "natural" }).every((entry) => entry.styles.includes("natural"))).toBe(true);
-    expect(filterFunnelTemplateCatalog(catalog, { purpose: "sales", style: "minimal" }).map((entry) => entry.id)).toContain("sell-simple-checkout");
-    expect(filterFunnelTemplateCatalog(catalog, { purpose: "sales", style: "minimal" }).map((entry) => entry.id)).not.toContain("sell-product-checkout");
+    expect(filterFunnelTemplateCatalog(catalog, { purpose: "sales", style: "professional" }).map((entry) => entry.id)).toEqual(["webinar-saas-split", "webinar-career-value"]);
+    expect(filterFunnelTemplateCatalog(catalog, { purpose: "policy" }).map((entry) => entry.id)).toEqual(["custom-privacy-v2", "custom-terms-v2"]);
     expect(filterFunnelTemplateCatalog(catalog, { purpose: "policy", style: "vivid" })).toEqual([]);
+  });
+
+  it("classifies the new webinar templates and functional pages by their own tags", () => {
+    const webinar = filterFunnelTemplateCatalog(catalog, { purpose: "webinar" }).map((entry) => entry.id);
+    for (const template of WEBINAR_TEMPLATES.filter((item) => !item.hidden)) {
+      expect(webinar).toContain(template.id);
+      for (const purpose of template.purposes) expect(FUNNEL_TEMPLATE_PURPOSES).toContain(purpose);
+      for (const style of template.styles) expect(FUNNEL_TEMPLATE_STYLES).toContain(style);
+      for (const style of template.styles) expect(filterFunnelTemplateCatalog(catalog, { purpose: "webinar", style }).map((entry) => entry.id)).toContain(template.id);
+    }
+    expect(webinar).toEqual(expect.arrayContaining(["webinar-thank-you-v2", "webinar-broadcast-v2"]));
+    expect(filterFunnelTemplateCatalog(catalog, { purpose: "webinar", style: "minimal" }).map((entry) => entry.id)).toEqual(expect.arrayContaining(["webinar-ai-minimal", "webinar-thank-you-v2"]));
+    expect(filterFunnelTemplateCatalog(catalog, { purpose: "webinar", style: "luxe" }).map((entry) => entry.id)).toEqual(["webinar-photo-portfolio", "webinar-aesthetic-clinic"]);
+    // Every catalog entry of a registration template is registered through its own tags, not derived.
+    expect(catalog.filter((entry) => WEBINAR_TEMPLATES.some((template) => template.id === entry.id)).every((entry) => entry.registered)).toBe(true);
   });
 });
