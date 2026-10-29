@@ -16,6 +16,7 @@ import {
   applyLandingPageTemplateToStep,
   createLandingPageFromTemplate,
   deleteLandingPageTemplate,
+  getLandingPagePlatformTemplateDocument,
   getLandingPageTemplateDocument,
   getLandingPageTemplateTarget,
   LandingPageTemplateInputError,
@@ -156,6 +157,15 @@ export async function createLandingPageFromTemplateAction(_previous: LandingPage
 export async function readLandingPageTemplateTargetAction(pageId: string): Promise<{ ok: true; target: LandingPageTemplateTarget } | { ok: false; message: string }> {
   try {
     return { ok: true, target: await getLandingPageTemplateTarget(pageId) };
+  } catch (error) {
+    return { ok: false, message: failure(error).message };
+  }
+}
+
+/** Full document of a platform template for the preview; the library list only carries thumbnails. */
+export async function readPlatformTemplateDocumentAction(templateId: string): Promise<{ ok: true; document: PageDocument } | { ok: false; message: string }> {
+  try {
+    return { ok: true, document: await getLandingPagePlatformTemplateDocument(templateId) };
   } catch (error) {
     return { ok: false, message: failure(error).message };
   }
