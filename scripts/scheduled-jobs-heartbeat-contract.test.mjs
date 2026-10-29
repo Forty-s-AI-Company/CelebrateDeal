@@ -38,11 +38,12 @@ test("heartbeat is dispatch-only, protected-branch only and honours the pause va
   assert.match(job.if, /github\.ref == 'refs\/heads\/master'/u);
   assert.match(job.if, /github\.ref_protected/u);
   assert.match(job.if, /vars\.SCHEDULED_JOBS_PAUSED != 'true'/u);
+  assert.match(job.if, /vars\.SCHEDULED_JOBS_HEARTBEAT_ENABLED == 'true'/u, "opt-in, default off");
   assert.equal(job.environment, "Preview – celebrate-deal-staging");
 });
 
 test("only one heartbeat runs at a time and a newcomer never cancels the live loop", () => {
-  assert.deepEqual(heartbeat.concurrency, { group: "scheduled-jobs-heartbeat", "cancel-in-progress": false });
+  assert.deepEqual(heartbeat.concurrency, { group: "scheduled-jobs-heartbeat-${{ github.ref }}", "cancel-in-progress": false });
 });
 
 test("the loop fits under the 6h job limit and ticks every 5 minutes", () => {
@@ -55,7 +56,9 @@ test("the loop fits under the 6h job limit and ticks every 5 minutes", () => {
   // Script defaults must agree with the workflow so a manual run behaves the same.
   assert.match(loopScript, /HEARTBEAT_DURATION_SECONDS:-20400/u);
   assert.match(loopScript, /HEARTBEAT_INTERVAL_SECONDS:-300/u);
-  assert.ok(20400 < SIX_HOURS);
+  const scriptDefault = Number(loopScript.match(/HEARTBEAT_DURATION_SECONDS:-(\d+)/u)[1]);
+  assert.equal(scriptDefault, duration);
+  assert.ok(scriptDefault < SIX_HOURS);
 });
 
 test("the heartbeat calls exactly the frequent jobs of scheduled-jobs.yml and never a daily job", () => {
@@ -98,14 +101,20 @@ test("both workflows reach the jobs through the shared runner and use the same s
 test("one failing call is logged and never stops the loop, bad configuration fails fast", () => {
   assert.match(loopScript, /::error::heartbeat tick/u);
   assert.match(loopScript, /failures=\$\(\(failures \+ 1\)\)/u);
-  assert.match(loopScript, /if \[ -z "\$\{JOB_SECRET:-\}" \]/u);
-  assert.match(loopScript, /if \[ -z "\$\{GH_TOKEN:-\}" \]/u);
-  assert.match(loopScript, /gh workflow view scheduled-jobs-heartbeat\.yml/u);
+  assert.match(loopScript, /blank "\$\{JOB_SECRET:-\}"/u);
+  assert.match(loopScript, /blank "\$\{GH_TOKEN:-\}"/u);
+  assert.match(loopScript, /gh workflow view "\$WORKFLOW"/u);
+  assert.match(loopScript, /WORKFLOW="scheduled-jobs-heartbeat\.yml"/u);
   // No `set -e`: a failed call must not abort the loop.
   assert.doesNotMatch(loopScript, /^\s*set\s+-[a-z]*e/mu);
   // A failed preflight must not respawn itself.
   const ensure = heartbeat.jobs.heartbeat.steps.find((step) => step.name === "Ensure a successor heartbeat");
   assert.match(ensure.if, /steps\.loop\.outputs\.preflight == 'ok'/u);
+  // Cancelling the run is a stop switch: always() would respawn it.
+  assert.match(ensure.if, /!cancelled\(\)/u);
+  assert.doesNotMatch(ensure.if, /always\(\)/u);
+  // Each tick reads the workflow state so Disable stops the loop.
+  assert.match(loopScript, /actions\/workflows\/\$\{WORKFLOW\}" --jq \.state/u);
 });
 
 test("the heartbeat queues its successor and scheduled-jobs.yml can start it when none is active", () => {
@@ -119,6 +128,7 @@ test("the heartbeat queues its successor and scheduled-jobs.yml can start it whe
   assert.ok(starter, "heartbeat-starter job");
   assert.match(starter.if, /github\.event\.schedule == '\*\/5 \* \* \* \*'/u);
   assert.match(starter.if, /vars\.SCHEDULED_JOBS_PAUSED != 'true'/u);
+  assert.match(starter.if, /vars\.SCHEDULED_JOBS_HEARTBEAT_ENABLED == 'true'/u);
   assert.ok(starter.steps.some((step) => step.run === "bash scripts/scheduled-jobs-ensure-heartbeat.sh"));
   // The direct job calls stay as a backup and manual dispatch is unchanged.
   assert.ok(scheduled.jobs["staging-jobs"]);

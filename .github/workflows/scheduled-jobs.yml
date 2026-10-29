@@ -4,8 +4,8 @@ name: Scheduled background jobs (staging)
 # Runbook: docs/launch/scheduled-jobs-runbook.md
 # - "*/5 * * * *": email/live/learner/LINE delivery, webhook retry + inventory release,
 #   LINE outbox, and (opt-in) live media cleanup. GitHub fires this schedule only every
-#   few hours (B-1), so each firing also starts scheduled-jobs-heartbeat.yml (the real
-#   5-minute loop) when none is active; the direct calls here stay as a backup.
+#   few hours (B-1), so, once vars.SCHEDULED_JOBS_HEARTBEAT_ENABLED == 'true', each firing also starts
+#   scheduled-jobs-heartbeat.yml (the real 5-minute loop) when none is active; the direct calls here stay as a backup.
 # - "22 17 * * *" (01:22 Asia/Taipei): electronic invoices, and (opt-in) billing cycle
 #   and data retention (vars.SCHEDULED_JOBS_ENABLE_DATA_RETENTION, F-070).
 #   The billing cycle issues monthly invoices and marks them overdue, so it only runs
@@ -149,7 +149,7 @@ jobs:
   # B-1 self-heal: starts the heartbeat when none is queued or running (e.g. after an
   # outage or a manual cancel). Runbook: docs/launch/scheduled-jobs-runbook.md
   heartbeat-starter:
-    if: ${{ github.event_name == 'schedule' && github.event.schedule == '*/5 * * * *' && github.ref == 'refs/heads/master' && github.ref_protected && vars.SCHEDULED_JOBS_PAUSED != 'true' }}
+    if: ${{ vars.SCHEDULED_JOBS_HEARTBEAT_ENABLED == 'true' && github.event_name == 'schedule' && github.event.schedule == '*/5 * * * *' && github.ref == 'refs/heads/master' && github.ref_protected && vars.SCHEDULED_JOBS_PAUSED != 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     # actions: write is needed only for `gh workflow run`.

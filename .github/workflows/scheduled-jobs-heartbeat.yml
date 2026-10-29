@@ -9,7 +9,10 @@ name: Scheduled jobs heartbeat (staging)
 #   `heartbeat-starter` job in scheduled-jobs.yml when no heartbeat is active.
 # - Calls the same runner (scripts/scheduled-jobs-runner.mjs) as scheduled-jobs.yml.
 # - Daily jobs (electronic-invoices, ...) stay on scheduled-jobs.yml only.
-# Stop: disable this workflow AND cancel the running run (see the runbook).
+# Opt-in (default off): repository variable SCHEDULED_JOBS_HEARTBEAT_ENABLED=true.
+# Stop: Disable this workflow; the running loop notices within one tick and ends
+# without a successor. Cancelling the run is optional (see the runbook).
+# Transitional beta measure; the long-term plan is an external cron (runbook §3.0).
 on:
   workflow_dispatch:
 
@@ -20,12 +23,13 @@ permissions:
 # run per group and replaces older pending ones, so duplicates never pile up.
 # cancel-in-progress stays false so a live loop is never killed by a newcomer.
 concurrency:
-  group: scheduled-jobs-heartbeat
+  group: scheduled-jobs-heartbeat-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
   heartbeat:
-    if: ${{ github.ref == 'refs/heads/master' && github.ref_protected && vars.SCHEDULED_JOBS_PAUSED != 'true' }}
+    # Opt-in: nothing starts until the owner sets SCHEDULED_JOBS_HEARTBEAT_ENABLED=true.
+    if: ${{ vars.SCHEDULED_JOBS_HEARTBEAT_ENABLED == 'true' && github.ref == 'refs/heads/master' && github.ref_protected && vars.SCHEDULED_JOBS_PAUSED != 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 350
     environment: Preview – celebrate-deal-staging
@@ -60,11 +64,12 @@ jobs:
           HEARTBEAT_JOBS: ${{ vars.SCHEDULED_JOBS_ENABLE_LIVE_MEDIA == 'true' && 'email-deliveries line-notifications webhook-retry live-media' || 'email-deliveries line-notifications webhook-retry' }}
         run: bash scripts/scheduled-jobs-heartbeat.sh
 
-      # Safety net when the loop died early (crash, timeout): make sure a
-      # successor exists. A no-op when the loop already queued one, and skipped when the
-      # loop failed its preflight (bad secret/token) so a misconfiguration cannot respawn.
+      # Safety net when the loop died early (crash): make sure a successor exists. A
+      # no-op when the loop already queued one or the workflow is disabled. Skipped
+      # when the run was cancelled (cancel must stop the heartbeat) and when the loop
+      # failed its preflight (missing secret or unusable token), so neither can respawn.
       - name: Ensure a successor heartbeat
-        if: ${{ always() && steps.loop.outputs.preflight == 'ok' }}
+        if: ${{ !cancelled() && steps.loop.outputs.preflight == 'ok' }}
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}

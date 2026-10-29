@@ -17,6 +17,12 @@ if [ -z "${GH_TOKEN:-}" ] || [ -z "${GH_REPO:-}" ]; then
   exit 1
 fi
 
+# A disabled workflow must stay stopped: never start it again (or fail trying).
+if state="$(gh api "repos/${GH_REPO}/actions/workflows/${WORKFLOW}" --jq .state 2>/dev/null)" && [ "$state" != "active" ]; then
+  echo "heartbeat-ensure: workflow state is '${state}', not starting a heartbeat"
+  exit 0
+fi
+
 if ! active="$(gh run list --workflow "$WORKFLOW" --limit 30 --json databaseId,status \
   --jq "[.[] | select(.status != \"completed\" and (.databaseId | tostring) != \"${EXCLUDE}\")] | length")"; then
   echo "::error::Could not list heartbeat runs (check the token and its actions permission)"

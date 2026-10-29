@@ -52,7 +52,10 @@ GitHub 的 `*/5 * * * *` 實測約每 2～5 小時才跑一次（中位數 184 �
 - 預期效果：Actions → `Scheduled jobs heartbeat (staging)` 同時只有一個 in progress 的 run；Vercel staging Logs 看到的 POST 每 5 分鐘一輪（`scheduled-jobs.yml` 備援偶爾重疊，各 job 有 claim lease，不會重複處理）。
 - 部署後第一次要手動啟動：master 合併後到 Actions → `Scheduled jobs heartbeat (staging)` → Run workflow（branch 選 `master`），或等下一次 `*/5` 排程由 `heartbeat-starter` 啟動。
 - 檢查：`gh run list --workflow scheduled-jobs-heartbeat.yml --limit 5`，應該有一個 `in_progress`，上一個 `completed` 的結束時間與它的開始時間相接；開啟 in progress 的 run 看日誌，每 5 分鐘有 `heartbeat tick=N` 與三行 `scheduled-job name=... outcome=ok`。
-- 停止：先在 Actions 頁面 Disable `Scheduled jobs heartbeat (staging)`（之後不會再被啟動，包含 `heartbeat-starter`），再取消正在跑的那個 run（`gh run cancel <run-id>`）；只 disable 的話，目前這一輪會跑到結束且啟動不了下一輪。暫停也可設 `SCHEDULED_JOBS_PAUSED=true`，但它只擋新啟動的 run，不影響進行中的迴圈。恢復：Enable workflow 後手動 Run workflow 一次。
+- 預設關閉（opt-in）：repo variable `SCHEDULED_JOBS_HEARTBEAT_ENABLED` 不是 `true` 時，heartbeat 與 `heartbeat-starter` 都不會啟動，合併本身不會開始任何呼叫。owner 設為 `true` 後，手動 Run workflow 一次（或等 `heartbeat-starter`）即開始。此變數只在 job 開頭檢查，關掉它最多在當前這一輪結束時（至多 5 小時 40 分鐘）才生效；要立刻停，用下面的 Disable。
+- 停止：在 Actions 頁面 Disable `Scheduled jobs heartbeat (staging)`。進行中的迴圈每個 tick 開頭都會讀 workflow 狀態（`gh api repos/<repo>/actions/workflows/scheduled-jobs-heartbeat.yml --jq .state`），不是 `active` 就結束且不啟動下一輪，所以約 5 分鐘內停止；`heartbeat-starter` 與 ensure 腳本也不會再啟動它。取消 run（`gh run cancel <run-id>`）是選用的，取消不會觸發重新啟動。**`SCHEDULED_JOBS_PAUSED=true` 不能單獨停掉進行中的迴圈**：`GITHUB_TOKEN` 讀不到 repo variable，所以它只擋新啟動的 run。恢復：Enable workflow 後手動 Run workflow 一次。
+- 暫時性措施與風險（GitHub Actions 使用條款）：把 Actions 當 24 小時常駐的排程器屬灰色地帶，GitHub 若因濫用停用此 repo 的 Actions，**CI（`quality`）也會一起失效**，master 受保護而無法合併。因此這只是封測期間的過渡做法。長期方案：用外部 cron（cron-job.org 或 Cloudflare Worker cron）以 `JOB_SECRET` 呼叫同一批端點，heartbeat 保留作為備援（外部 cron 上線後把 `SCHEDULED_JOBS_HEARTBEAT_ENABLED` 關掉或維持備援皆可，各 job 有 claim lease，重疊呼叫不會重複處理）。決定時機與 O-16 一併處理。
+- 同 ref 隔離：concurrency group 為 `scheduled-jobs-heartbeat-${{ github.ref }}`；heartbeat 只在受保護的 `master` 執行。
 - 限制：這個 job 同時持有 `JOB_SECRET`（environment secret）與 `actions: write`（只能操作 Actions，不能改程式碼）；每輪（約 5 小時 40 分鐘）在 `Preview – celebrate-deal-staging` environment 留一筆 deployment，遠少於原本的每天約 290 筆。若 GitHub Actions 整體當機，迴圈會中斷，之後由 `heartbeat-starter` 或手動重啟。
 
 ### 怎麼確認「真的有被呼叫」
@@ -79,7 +82,8 @@ GitHub 的 `*/5 * * * *` 實測約每 2～5 小時才跑一次（中位數 184 �
 | 方式 | 效果 | 用途 |
 |---|---|---|
 | repo variable `SCHEDULED_JOBS_PAUSED=true` | job 被 `if` 跳過，run 顯示 skipped | 最快、可留痕；事故處理首選 |
-| Actions 頁面 Disable workflow | 不再觸發 | 長時間停用 |
+| Actions 頁面 Disable workflow | 不再觸發 | 長時間停用。**停 heartbeat 要用這個**：進行中的迴圈約 5 分鐘內結束、不啟動下一輪（取消 run 為選用）。`SCHEDULED_JOBS_PAUSED=true` 單獨不會停掉進行中的 heartbeat 迴圈 |
+| repo variable `SCHEDULED_JOBS_HEARTBEAT_ENABLED=true` | 允許 heartbeat 與 `heartbeat-starter` 啟動（預設未設＝關閉） | owner 同意採用 GitHub Actions 過渡方案後再開；見 §3.0 |
 | repo variable `SCHEDULED_JOBS_ENABLE_LIVE_MEDIA=true` | 開始排程 live-media 清理 | browser_live 部署好再開 |
 | repo variable `SCHEDULED_JOBS_ENABLE_DATA_RETENTION=true` | 開始每日執行 data-retention 清理 | owner 依律師建議訂定保存期限、在部署環境設定 `DATA_RETENTION_*_DAYS` 與 `DATA_RETENTION_ENABLED=true` 後再開 |
 | repo variable `SCHEDULED_JOBS_ENABLE_BILLING_CYCLE=true` | 開始每日執行 billing-cycle（開立帳單、標記逾期） | billing 對商家開放、owner 同意後再開；先修「開立當下就逾期」 |
