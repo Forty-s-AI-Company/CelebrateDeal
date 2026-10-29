@@ -1,10 +1,13 @@
 "use client";
 
-import { useEffect, useId, useRef, useState, type ReactNode } from "react";
+import { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { useFormStatus } from "react-dom";
 import { FormSubmitButton } from "@/components/form-submit-button";
 import { trapDialogFocus } from "@/components/landing-pages/unsaved-changes-dialog";
 import { useDialogBehavior } from "@/lib/use-dialog-behavior";
+
+/** Dispatched on the form when the save that precedes a submit did not succeed. */
+export const LIVE_DRAFT_SAVE_FAILED_EVENT = "live-draft-save-failed";
 
 type LiveConfirmedSubmitButtonProps = {
   children: ReactNode;
@@ -47,6 +50,14 @@ export function LiveConfirmedSubmitButton({
 }: LiveConfirmedSubmitButtonProps) {
   const [open, setOpen] = useState(false);
   const { pending } = useFormStatus();
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    const form = buttonRef.current?.form;
+    if (!form) return;
+    const close = () => setOpen(false);
+    form.addEventListener(LIVE_DRAFT_SAVE_FAILED_EVENT, close);
+    return () => form.removeEventListener(LIVE_DRAFT_SAVE_FAILED_EVENT, close);
+  }, []);
   const [wasPending, setWasPending] = useState(pending);
   if (wasPending !== pending) {
     setWasPending(pending);
@@ -55,6 +66,7 @@ export function LiveConfirmedSubmitButton({
   return (
     <>
       <button
+        ref={buttonRef}
         type="button"
         disabled={disabled || pending}
         aria-disabled={disabled || pending}
@@ -96,13 +108,38 @@ export function LiveConfirmedSubmitButton({
  */
 export function LiveFormPendingLock({ formRef }: { formRef: { current: HTMLFormElement | null } }) {
   const { pending } = useFormStatus();
-  useEffect(() => {
+  // Layout effect: its cleanup must clear `inert` before the dialog's passive
+  // unmount cleanup returns focus to the trigger, which is itself inert while
+  // the lock is on. Otherwise focus falls to <body>.
+  useLayoutEffect(() => {
     const form = formRef.current;
     if (!form) return;
-    form.inert = pending;
     form.setAttribute("aria-busy", String(pending));
+    if (!pending) return;
+    // The confirmation lives inside the form, and the status regions announce
+    // the pending message and the draft state. Inerting the whole form would
+    // freeze the dialog and drop those regions from the accessibility tree, so
+    // lock everything except them and the branches that lead to them.
+    const keep = Array.from(form.querySelectorAll('[role="alertdialog"], [role="status"]'));
+    const locked = keep.length ? lockAllExcept(form, keep) : lockForm(form);
+    return () => { for (const element of locked) element.inert = false; };
   }, [formRef, pending]);
   return null;
+}
+
+function lockForm(form: HTMLFormElement) {
+  form.inert = true;
+  return [form];
+}
+
+/** Marks every element that is not, contains or sits inside `keep` inert; returns what it locked. */
+function lockAllExcept(node: Element, keep: Element[], locked: HTMLElement[] = []) {
+  for (const child of Array.from(node.children)) {
+    if (keep.includes(child)) continue;
+    if (keep.some((kept) => child.contains(kept))) lockAllExcept(child, keep, locked);
+    else if (child instanceof HTMLElement) { child.inert = true; locked.push(child); }
+  }
+  return locked;
 }
 
 function LiveSubmitConfirmDialog({
