@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 600" width="800" height="600" role="img" aria-label="案例示意：上升的金色曲線">
+<defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#8a6a3a"/><stop offset=".5" stop-color="#e2c48f"/><stop offset="1" stop-color="#9c7a45"/></linearGradient></defs><rect width="800" height="600" fill="#17171a"/>
+<g stroke="#cfc8bb" stroke-opacity=".12"><path d="M80 120h640M80 220h640M80 320h640M80 420h640M80 520h640"/></g>
+<path d="M80 500C220 480 300 440 380 380s200-200 340-260" fill="none" stroke="url(#g)" stroke-width="4" stroke-linecap="round"/>
+<path d="M80 500C220 480 300 440 380 380s200-200 340-260V520H80z" fill="#c9a063" fill-opacity=".08"/>
+<circle cx="720" cy="120" r="10" fill="#e2c48f"/><circle cx="720" cy="120" r="24" fill="none" stroke="#e2c48f" stroke-opacity=".4"/>
+</svg>

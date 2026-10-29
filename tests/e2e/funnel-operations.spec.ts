@@ -213,12 +213,14 @@ test("Funnel secondary tabs persist settings and enforce the public deadline", a
   await expect(rule.getByRole("button", { name: "停用規則", exact: true })).toBeVisible();
   stage = "public-submission";
   await page.goto(`/lp/${changedSlug}`);
-  await page.getByRole("textbox", { name: "姓名 *", exact: true }).fill("TEST ONLY Lead");
-  await page.getByRole("textbox", { name: "Email *", exact: true }).fill(`lead-${runKey}@example.test`);
-  const consent = page.getByRole("checkbox", { name: "我同意依本頁說明提交並使用上述資料。", exact: true });
+  // The opt-in template repeats its lead form near the end of the page; submit the first (hero) one.
+  const leadForm = page.locator('form[action="/api/form-submissions"]').first();
+  await leadForm.getByRole("textbox", { name: "姓名 *", exact: true }).fill("TEST ONLY Lead");
+  await leadForm.getByRole("textbox", { name: "Email *", exact: true }).fill(`lead-${runKey}@example.test`);
+  const consent = leadForm.getByRole("checkbox", { name: "我同意依本頁說明提交並使用上述資料。", exact: true });
   if (await consent.count()) await consent.check();
   const submitted = page.waitForResponse(response => response.url() === origin + "/api/form-submissions" && response.request().method() === "POST");
-  await page.getByRole("button", { name: fixture.form.submitLabel, exact: true }).click();
+  await leadForm.getByRole("button", { name: fixture.form.submitLabel, exact: true }).click();
   expect((await submitted).status()).toBe(200);
   // The successful form intentionally navigates; wait for that transition before leaving.
   await expect(page).toHaveURL(origin + `/lp/${changedSlug}/${publicSteps[1].path}`);
@@ -246,7 +248,7 @@ test("Funnel secondary tabs persist settings and enforce the public deadline", a
   await panel.getByLabel(/^截止時間（含時區偏移）/u).fill("2099-01-01T00:00:00-05:00");
   await saveSettings();
   await page.goto(`/lp/${changedSlug}`);
-  await expect(page.getByRole("textbox", { name: "姓名 *", exact: true })).toBeVisible();
+  await expect(page.locator('form[action="/api/form-submissions"]').first().getByRole("textbox", { name: "姓名 *", exact: true })).toBeVisible();
   await page.goto(operationsPath);
   await panel.getByRole("button", { name: "截止設定", exact: true }).click();
   stage = "deadline-past";

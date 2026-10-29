@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 600" width="600" height="600" role="img" aria-label="手搖磨豆機示意">
+<rect width="600" height="600" fill="#efe4da"/><circle cx="300" cy="300" r="200" fill="#f6eee6"/>
+<ellipse cx="300" cy="490" rx="130" ry="16" fill="#3d2a1c" fill-opacity=".14"/>
+<rect x="210" y="250" width="180" height="230" rx="18" fill="#5b3a24"/><rect x="226" y="268" width="148" height="22" rx="8" fill="#6f4a30"/>
+<path d="M226 250l26-90h96l26 90z" fill="#d6cbbb"/><rect x="292" y="110" width="16" height="56" fill="#3a2a1f"/>
+<path d="M300 112h120" stroke="#3a2a1f" stroke-width="12" stroke-linecap="round"/><circle cx="426" cy="112" r="20" fill="#8a6545"/>
+<rect x="234" y="380" width="132" height="80" rx="10" fill="#4a2f1d"/><circle cx="300" cy="420" r="10" fill="#c9a77e"/>
+<g fill="#5b3a24"><ellipse cx="160" cy="470" rx="12" ry="8" transform="rotate(20 160 470)"/><ellipse cx="440" cy="476" rx="12" ry="8" transform="rotate(-20 440 476)"/></g>
+</svg>

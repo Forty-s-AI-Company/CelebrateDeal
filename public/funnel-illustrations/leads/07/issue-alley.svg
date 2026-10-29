@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 480" width="640" height="480">
+<title>巷弄線稿：窄巷、鐵窗、盆栽與機車</title>
+<rect width="640" height="480" fill="#efe8da"/>
+<circle cx="470" cy="96" r="44" fill="#d9e4d6"/>
+<g fill="none" stroke="#1f1d1a" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round">
+<path d="M0 420 L260 330 M640 420 L380 330 M260 330 H380"/>
+<path d="M40 40 V408 M40 40 H210 V352 M210 120 H250 V336"/>
+<path d="M600 40 V408 M600 40 H430 V352 M430 140 H392 V336"/>
+<rect x="70" y="80" width="110" height="70"/><rect x="70" y="190" width="110" height="70"/>
+<rect x="460" y="80" width="110" height="70"/><rect x="460" y="190" width="110" height="70"/>
+<path d="M88 80 V150 M106 80 V150 M124 80 V150 M142 80 V150 M160 80 V150 M70 115 H180" stroke-width="1.4"/>
+<path d="M478 190 V260 M496 190 V260 M514 190 V260 M532 190 V260 M550 190 V260 M460 225 H570" stroke-width="1.4"/>
+<path d="M210 70 C260 90 380 90 430 70" stroke-width="1.4"/>
+<path d="M232 78 v18 M262 86 v22 M300 90 v16 M340 90 v20 M380 86 v18 M408 80 v16" stroke-width="1.4"/>
+<path d="M60 360 h60 l10 -28 h-80 z"/><path d="M70 332 c-6 -30 10 -46 20 -60 M92 332 c4 -26 22 -40 30 -52 M110 332 c10 -18 30 -24 36 -36"/>
+<path d="M470 382 c0 -14 14 -22 30 -22 h40 c14 0 24 8 28 20 M478 400 a14 14 0 1 0 0.1 0 M560 400 a14 14 0 1 0 0.1 0 M500 360 l-10 -30 h-14"/>
+</g>
+<g fill="#2f5d46"><path d="M70 332 c-8 -6 -18 -4 -22 4 c10 4 18 2 22 -4z"/><path d="M92 300 c6 -10 18 -12 24 -6 c-6 8 -16 10 -24 6z"/><path d="M118 300 c10 -4 20 0 22 8 c-10 2 -18 0 -22 -8z"/></g>
+<rect x="300" y="236" width="40" height="60" fill="#2f5d46" opacity=".85"/>
+<path d="M304 240 h32 M304 252 h32" stroke="#efe8da" stroke-width="2"/>
+</svg>

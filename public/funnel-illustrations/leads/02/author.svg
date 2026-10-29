@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 500" width="400" height="500">
+<title>作者照片佔位：繫著圍裙的餐飲顧問插畫（請替換為作者照片）</title>
+<rect width="400" height="500" fill="#efe4d3"/>
+<rect x="0" y="330" width="400" height="170" fill="#e3d2b6"/>
+<g opacity=".55" fill="none" stroke="#c9b597" stroke-width="3">
+<path d="M40 70 h90 v120 h-90 Z M40 130 h90 M85 70 v120"/>
+<path d="M290 60 q20 -30 40 0 q20 30 40 0"/>
+</g>
+<circle cx="320" cy="132" r="34" fill="#f7f1e8"/>
+<path d="M300 132 h40 l-4 26 h-32 Z" fill="#7a3e1d"/>
+<path d="M120 500 C120 390 150 340 200 340 C250 340 280 390 280 500 Z" fill="#4a3a2e"/>
+<path d="M162 360 L200 420 L238 360 L238 500 H162 Z" fill="#f1e4cf"/>
+<path d="M162 360 L162 500 M238 360 L238 500" stroke="#7a3e1d" stroke-width="8"/>
+<rect x="184" y="296" width="32" height="50" rx="12" fill="#d9a77e"/>
+<ellipse cx="200" cy="246" rx="62" ry="70" fill="#e5b892"/>
+<path d="M136 236 C132 166 176 150 210 156 C252 162 274 196 264 246 C254 214 230 198 196 200 C170 202 150 214 136 236 Z" fill="#2a1d14"/>
+<path d="M262 240 C276 262 270 300 250 312 C262 290 262 266 256 248 Z" fill="#2a1d14"/>
+<circle cx="178" cy="254" r="5" fill="#2a1d14"/><circle cx="222" cy="254" r="5" fill="#2a1d14"/>
+<path d="M184 284 q16 12 32 0" fill="none" stroke="#7a3e1d" stroke-width="4" stroke-linecap="round"/>
+<circle cx="166" cy="272" r="9" fill="#e9967a" opacity=".45"/><circle cx="234" cy="272" r="9" fill="#e9967a" opacity=".45"/>
+</svg>

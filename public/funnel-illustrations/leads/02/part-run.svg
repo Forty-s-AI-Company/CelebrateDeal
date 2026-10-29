@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 300" width="480" height="300">
+<title>營運：收銀機、收據與每月現金流折線</title>
+<rect width="480" height="300" fill="#f3e9da"/>
+<rect x="268" y="40" width="170" height="130" rx="10" fill="#fffaf2" stroke="#2a1d14" stroke-width="3"/>
+<path d="M288 146 V60 M288 146 H420" stroke="#c9b597" stroke-width="2"/>
+<path d="M292 132 L318 118 L344 124 L370 96 L396 100 L420 72" fill="none" stroke="#7a3e1d" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+<circle cx="420" cy="72" r="6" fill="#7a3e1d"/>
+<g fill="none" stroke="#2a1d14" stroke-width="3" stroke-linejoin="round" stroke-linecap="round">
+<path d="M58 250 L72 150 H226 L240 250 Z" fill="#fffaf2"/>
+<rect x="92" y="96" width="116" height="54" rx="6" fill="#2a1d14"/>
+<path d="M150 96 V74"/>
+<rect x="110" y="56" width="80" height="20" rx="4" fill="#fffaf2"/>
+<path d="M44 250 H460"/>
+</g>
+<text x="150" y="130" text-anchor="middle" fill="#f1c56b" font-size="20" font-family="'Noto Sans TC',monospace" font-weight="700" letter-spacing="2">+ 現金流</text>
+<g fill="#7a3e1d">
+<rect x="96" y="172" width="22" height="14" rx="3"/><rect x="128" y="172" width="22" height="14" rx="3"/><rect x="160" y="172" width="22" height="14" rx="3"/><rect x="192" y="172" width="22" height="14" rx="3" fill="#2a1d14"/>
+<rect x="94" y="196" width="22" height="14" rx="3"/><rect x="128" y="196" width="22" height="14" rx="3"/><rect x="162" y="196" width="22" height="14" rx="3"/><rect x="196" y="196" width="22" height="14" rx="3" fill="#2a1d14"/>
+</g>
+<g transform="translate(300 182) rotate(6)">
+<path d="M0 0 H100 V58 l-10 6 l-10 -6 l-10 6 l-10 -6 l-10 6 l-10 -6 l-10 6 l-10 -6 l-10 6 l-10 -6 Z" fill="#fffaf2" stroke="#2a1d14" stroke-width="2.4" stroke-linejoin="round"/>
+<path d="M14 16 h56 M14 30 h72 M14 44 h40" stroke="#4a3a2e" stroke-width="3" stroke-linecap="round"/>
+</g>
+</svg>

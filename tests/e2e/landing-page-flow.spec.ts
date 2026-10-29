@@ -107,7 +107,8 @@ test("owner creates, edits, publishes and reloads a structured Funnel page", asy
   })).toEqual({ name: `${pageName} 草稿更新`, publishedVersionId: storedPage.publishedVersionId });
 
   await page.goto(`/lp/${slug}?utm_source=landing-e2e&utm_medium=playwright&utm_campaign=publish-flow`);
-  await expect(page.getByRole("heading", { name: "一起把時間變成真正的改變" })).toBeVisible();
+  // The first opt-in template (leads-checklist-minimal) renders its resource name as the public H1.
+  await expect(page.getByRole("heading", { level: 1, name: /^Instagram\s*30 天貼文企劃清單$/u })).toBeVisible();
   await page.screenshot({ path: screenshotPath(testInfo, "landing-page-public-desktop.png"), fullPage: true });
   await page.setViewportSize({ width: 375, height: 812 });
   expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1);

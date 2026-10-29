@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 800" width="800" height="800" role="img" aria-label="入門手沖咖啡器材組商品示意：手沖壺、濾杯、分享壺、磨豆機與濾紙">
+<defs><linearGradient id="bg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ece5d9"/><stop offset="1" stop-color="#e2d7c6"/></linearGradient><linearGradient id="glass" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#ffffff" stop-opacity=".55"/><stop offset=".5" stop-color="#ffffff" stop-opacity=".15"/><stop offset="1" stop-color="#ffffff" stop-opacity=".45"/></linearGradient></defs>
+<rect width="800" height="800" rx="28" fill="url(#bg)"/>
+<circle cx="610" cy="170" r="110" fill="#f3ede3"/>
+<path d="M0 600h800v200H0z" fill="#c9b79c"/><path d="M0 600h800v14H0z" fill="#b29d7e"/>
+<ellipse cx="400" cy="640" rx="330" ry="26" fill="#3d2a1c" fill-opacity=".12"/>
+<!-- grinder -->
+<g transform="translate(90 330)"><rect x="0" y="80" width="130" height="200" rx="14" fill="#5b3a24"/><rect x="10" y="90" width="110" height="18" rx="6" fill="#6f4a30"/><path d="M14 80l20-70h62l20 70z" fill="#cfc4b4"/><rect x="58" y="-30" width="14" height="44" fill="#3a2a1f"/><path d="M65 -30h70" stroke="#3a2a1f" stroke-width="10" stroke-linecap="round"/><circle cx="140" cy="-30" r="14" fill="#8a6545"/><rect x="20" y="190" width="90" height="70" rx="8" fill="#4a2f1d"/></g>
+<!-- kettle -->
+<g transform="translate(250 360)"><path d="M20 240c0-110 20-170 90-170s90 60 90 170z" fill="#2f3a34"/><path d="M40 90c18-30 120-30 140 0" fill="#3f4c45"/><rect x="88" y="44" width="44" height="20" rx="8" fill="#22302a"/><path d="M200 120c40 0 50 70 10 100" stroke="#2f3a34" stroke-width="16" fill="none" stroke-linecap="round"/><path d="M22 180C-10 150-30 90-80 40" stroke="#2f3a34" stroke-width="10" fill="none" stroke-linecap="round"/><path d="M60 110v110" stroke="#ffffff" stroke-opacity=".18" stroke-width="10" stroke-linecap="round"/></g>
+<!-- server with dripper -->
+<g transform="translate(500 300)"><path d="M30 190h140l-10 110c-2 18-16 30-34 30H74c-18 0-32-12-34-30z" fill="#d9cdbb"/><path d="M30 190h140l-10 110c-2 18-16 30-34 30H74c-18 0-32-12-34-30z" fill="url(#glass)"/><path d="M44 260h112l-6 42c-2 12-12 20-24 20H74c-12 0-22-8-24-20z" fill="#5b3a24" fill-opacity=".85"/><path d="M170 210c30 6 30 60 0 70" stroke="#d9cdbb" stroke-width="10" fill="none"/><path d="M10 80h180l-60 100H70z" fill="#f6f3ee"/><path d="M10 80h180l-60 100H70z" fill="none" stroke="#bfae95" stroke-width="3"/><path d="M60 100l40 64 40-64" stroke="#d6c7b0" stroke-width="3" fill="none"/><rect x="50" y="176" width="100" height="16" rx="6" fill="#bfae95"/><path d="M80 50c-10-20 10-30 0-50M120 50c-10-20 10-30 0-50" stroke="#ffffff" stroke-width="5" fill="none" stroke-linecap="round" stroke-opacity=".8"/></g>
+<!-- filters -->
+<g transform="translate(570 668) rotate(-8)"><path d="M0 0h120l-34 56H34z" fill="#fbf8f2" stroke="#d6c7b0" stroke-width="2"/><path d="M10 -10h120l-34 56H44z" fill="#fbf8f2" stroke="#d6c7b0" stroke-width="2"/></g>
+<g fill="#5b3a24"><ellipse cx="300" cy="630" rx="9" ry="6" transform="rotate(20 300 630)"/><ellipse cx="322" cy="640" rx="9" ry="6" transform="rotate(-30 322 640)"/><ellipse cx="460" cy="636" rx="9" ry="6" transform="rotate(10 460 636)"/></g>
+<text x="56" y="92" font-family="Georgia, serif" font-size="26" letter-spacing="6" fill="#3f5f45">HINATA ROASTERY</text>
+<text x="56" y="126" font-family="system-ui, sans-serif" font-size="18" letter-spacing="3" fill="#5b3a24">POUR-OVER STARTER KIT</text>
+</svg>

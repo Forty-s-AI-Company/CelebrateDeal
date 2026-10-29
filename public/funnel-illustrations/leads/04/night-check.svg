@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 520 600" width="520" height="600" font-family="'LXGW WenKai TC','Noto Sans TC','PingFang TC',sans-serif">
+<title>夜空月亮與睡眠自我檢測表示意：題目與勾選框</title>
+<defs>
+<radialGradient id="halo" cx=".5" cy=".5" r=".5"><stop offset="0" stop-color="#f2d27a" stop-opacity=".45"/><stop offset="1" stop-color="#f2d27a" stop-opacity="0"/></radialGradient>
+<filter id="sh" x="-20%" y="-20%" width="140%" height="150%"><feDropShadow dx="0" dy="18" stdDeviation="18" flood-color="#060b18" flood-opacity=".45"/></filter>
+</defs>
+<circle cx="380" cy="118" r="120" fill="url(#halo)"/>
+<path d="M400 58 a64 64 0 1 0 50 104 a52 52 0 1 1 -50 -104 Z" fill="#f2d27a"/>
+<g fill="#f2d27a">
+<circle cx="70" cy="70" r="3"/><circle cx="150" cy="40" r="2"/><circle cx="230" cy="96" r="2.5"/><circle cx="480" cy="250" r="2"/><circle cx="40" cy="200" r="2"/><circle cx="270" cy="30" r="1.8"/>
+<path d="M120 140 l4 10 10 4 -10 4 -4 10 -4 -10 -10 -4 10 -4 Z"/>
+<path d="M470 40 l3 7 7 3 -7 3 -3 7 -3 -7 -7 -3 7 -3 Z"/>
+</g>
+<path d="M30 230 q30 -30 70 -10 q20 -26 60 -10 q36 0 36 30 H30 Z" fill="#26345a"/>
+<g filter="url(#sh)" transform="rotate(-3 260 400)">
+<rect x="70" y="210" width="380" height="350" rx="20" fill="#fbfaf5"/>
+<rect x="70" y="210" width="380" height="64" rx="20" fill="#2f6b5b"/>
+<rect x="70" y="254" width="380" height="20" fill="#2f6b5b"/>
+<text x="100" y="250" font-size="22" fill="#ffffff" font-weight="700">睡眠習慣自我檢測</text>
+<text x="420" y="250" font-size="14" fill="#d9ece5" text-anchor="end">10 題</text>
+<g font-size="16" fill="#1b2a2a">
+<text x="100" y="314">1. 躺下後超過 30 分鐘還睡不著</text>
+<g transform="translate(100 326)"><rect width="74" height="28" rx="14" fill="#2f6b5b"/><text x="37" y="19" font-size="13" fill="#fff" text-anchor="middle">常常</text><rect x="84" width="74" height="28" rx="14" fill="none" stroke="#b9c4bf" stroke-width="1.6"/><text x="121" y="19" font-size="13" fill="#3c4a48" text-anchor="middle">偶爾</text><rect x="168" width="74" height="28" rx="14" fill="none" stroke="#b9c4bf" stroke-width="1.6"/><text x="205" y="19" font-size="13" fill="#3c4a48" text-anchor="middle">很少</text></g>
+<text x="100" y="392">2. 睡前最後一件事是滑手機</text>
+<g transform="translate(100 404)"><rect width="74" height="28" rx="14" fill="none" stroke="#b9c4bf" stroke-width="1.6"/><text x="37" y="19" font-size="13" fill="#3c4a48" text-anchor="middle">常常</text><rect x="84" width="74" height="28" rx="14" fill="#2f6b5b"/><text x="121" y="19" font-size="13" fill="#fff" text-anchor="middle">偶爾</text><rect x="168" width="74" height="28" rx="14" fill="none" stroke="#b9c4bf" stroke-width="1.6"/><text x="205" y="19" font-size="13" fill="#3c4a48" text-anchor="middle">很少</text></g>
+<text x="100" y="470">3. 週末起床時間比平日晚兩小時</text>
+<g transform="translate(100 482)"><rect width="74" height="28" rx="14" fill="none" stroke="#b9c4bf" stroke-width="1.6"/><text x="37" y="19" font-size="13" fill="#3c4a48" text-anchor="middle">常常</text><rect x="84" width="74" height="28" rx="14" fill="none" stroke="#b9c4bf" stroke-width="1.6"/><text x="121" y="19" font-size="13" fill="#3c4a48" text-anchor="middle">偶爾</text><rect x="168" width="74" height="28" rx="14" fill="none" stroke="#b9c4bf" stroke-width="1.6"/><text x="205" y="19" font-size="13" fill="#3c4a48" text-anchor="middle">很少</text></g>
+</g>
+<rect x="100" y="532" width="320" height="6" rx="3" fill="#e3e8e2"/><rect x="100" y="532" width="96" height="6" rx="3" fill="#2f6b5b"/>
+</g>
+</svg>

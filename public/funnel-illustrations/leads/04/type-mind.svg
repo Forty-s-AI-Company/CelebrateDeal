@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 300" width="480" height="300">
+<title>腦袋停不下來型：枕頭上的人頭頂有轉動的思緒線團</title>
+<rect width="480" height="300" fill="#18233f"/>
+<circle cx="400" cy="60" r="26" fill="#f2d27a"/><circle cx="412" cy="52" r="24" fill="#18233f"/>
+<g fill="#f2d27a"><circle cx="60" cy="50" r="2"/><circle cx="140" cy="30" r="1.6"/><circle cx="330" cy="120" r="1.8"/></g>
+<rect x="90" y="196" width="300" height="70" rx="22" fill="#26345a"/>
+<ellipse cx="190" cy="196" rx="70" ry="22" fill="#d3dbec"/>
+<circle cx="200" cy="168" r="34" fill="#e8c7a6"/>
+<path d="M168 160 q4 -32 36 -32 q30 0 30 30 q-20 -12 -66 2 Z" fill="#2b2b3a"/>
+<circle cx="190" cy="172" r="3" fill="#2b2b3a"/><circle cx="212" cy="172" r="3" fill="#2b2b3a"/>
+<path d="M194 188 h14" stroke="#2b2b3a" stroke-width="2.4" stroke-linecap="round"/>
+<path d="M232 196 H390 V230 H232 Z" fill="#2f6b5b"/>
+<g fill="none" stroke="#f2d27a" stroke-width="3" stroke-linecap="round">
+<path d="M220 112 c-30 -10 -20 -50 10 -46 c30 4 40 -30 70 -14 c26 14 6 44 -16 38 c-22 -6 -30 20 -10 28 c20 8 40 -2 50 -16"/>
+<path d="M300 70 l10 -10 M310 92 l14 -2"/>
+</g>
+</svg>
