@@ -1699,7 +1699,7 @@ test("desktop merchant can recover upload and validation errors, then publish an
     expect(response?.status()).toBe(200);
     const video = page.locator("video");
     await expect(video).toBeVisible();
-    await expect(video).toHaveJSProperty("controls", true);
+    await expect(video).toHaveJSProperty("controls", false); // live window: no seek bar or native play button
 
     await video.evaluate((element) => {
       const media = element as HTMLVideoElement;
@@ -1784,6 +1784,10 @@ test("desktop merchant can recover upload and validation errors, then publish an
     expect(liveResponse?.status()).toBe(200);
     const video = page.locator("video");
     await expect(video).toBeVisible();
+    // Inside the live window there is no VOD-style play/pause or seek UI.
+    await expect(video).toHaveJSProperty("controls", false);
+    await expect(page.getByRole("button", { name: "播放影片" })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "暫停影片" })).toHaveCount(0);
     await video.evaluate((element) => {
       const media = element as HTMLVideoElement;
       const browserWindow = window as typeof window & {
@@ -1840,7 +1844,7 @@ test("desktop merchant can recover upload and validation errors, then publish an
       sameSource: true,
       volume: 0.35,
       muted: false,
-      controls: true,
+      controls: false,
     });
     expect(renewalState.currentTime).toBeGreaterThan(checkoutState.currentTime);
     await expect.poll(() => renewalPending).toBe(false);
@@ -1865,7 +1869,7 @@ test("desktop merchant can recover upload and validation errors, then publish an
       sameSource: true,
       volume: 0.35,
       muted: false,
-      controls: true,
+      controls: false,
     });
     expect(renewedState.currentTime).toBeGreaterThan(renewalState.currentTime);
     await expectNoBlockingAxeViolations(page);
@@ -1933,7 +1937,7 @@ test("desktop merchant can recover upload and validation errors, then publish an
     expect(response?.status()).toBe(200);
     const video = page.locator("video");
     await expect(video).toBeVisible();
-    await expect(video).toHaveJSProperty("controls", true);
+    await expect(video).toHaveJSProperty("controls", false); // live window: no seek bar or native play button
 
     await video.evaluate((element) => {
       const media = element as HTMLVideoElement & { __retryPauseCalls?: number };
@@ -1952,14 +1956,14 @@ test("desktop merchant can recover upload and validation errors, then publish an
     expect(heartbeatPayloads.every((payload) => payload.watchSeconds === 60)).toBe(true);
     expect(await video.evaluate((element) => (element as HTMLVideoElement & { __retryPauseCalls?: number }).__retryPauseCalls)).toBe(0);
     await expect(page.getByRole("alert").filter({ hasText: "直播播放額度已用完" })).toHaveCount(0);
-    await expect(video).toHaveJSProperty("controls", true);
+    await expect(video).toHaveJSProperty("controls", false); // live window: no seek bar or native play button
     await expectNoBlockingAxeViolations(page);
     await captureIfRequested(page, "stream-retry-desktop.png");
 
     await page.setViewportSize({ width: 390, height: 844 });
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
     expect(overflow, "Stream retry playback UI must not overflow horizontally").toBeLessThanOrEqual(1);
-    await expect(video).toHaveJSProperty("controls", true);
+    await expect(video).toHaveJSProperty("controls", false); // live window: no seek bar or native play button
     await expectNoBlockingAxeViolations(page);
     await captureIfRequested(page, "stream-retry-mobile.png");
   });
