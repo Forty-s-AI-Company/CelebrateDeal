@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   ensureRegistrationConfirmationDelivery: vi.fn(),
   ensureLiveReminderDelivery: vi.fn(),
   captureOperationalError: vi.fn(),
+  startTextFailure: vi.fn((): Error | null => null),
 }));
 
 vi.mock("@/lib/db", () => ({ getDb: () => mocks.db }));
@@ -20,6 +21,17 @@ vi.mock("@/lib/email-delivery", () => ({
   ensureLiveReminderDelivery: mocks.ensureLiveReminderDelivery,
 }));
 vi.mock("@/lib/monitoring", () => ({ captureOperationalError: mocks.captureOperationalError }));
+vi.mock("@/lib/evergreen-viewer-session", async (importOriginal) => {
+  const original = await importOriginal<typeof import("@/lib/evergreen-viewer-session")>();
+  return {
+    ...original,
+    evergreenRegistrationStartText: (...args: Parameters<typeof original.evergreenRegistrationStartText>) => {
+      const failure = mocks.startTextFailure();
+      if (failure) throw failure;
+      return original.evergreenRegistrationStartText(...args);
+    },
+  };
+});
 
 import { POST } from "./route";
 import { FORM_SUBMISSION_CHAT_SESSION_COOKIE } from "@/lib/form-submission-chat-session";
@@ -154,9 +166,43 @@ describe("POST /api/form-submissions/verify", () => {
       const delivered = mocks.ensureRegistrationConfirmationDelivery.mock.calls[0]?.[0];
       expect(delivered).not.toHaveProperty("evergreen");
       // The 06:15 UTC cohort is 14:15 in Asia/Taipei; scheduledAt (2026-08-10) is not used.
-      expect(delivered.liveStartAtText).toContain("2:15");
+      expect(delivered.liveStartAtText).toMatch(/下午\s?2:15$/u);
       expect(delivered.liveStartAtText).not.toContain("8月10日");
       expect(mocks.ensureLiveReminderDelivery).toHaveBeenCalledWith(expect.objectContaining({ evergreenActive: true }));
+    });
+
+    it.each([
+      ["another live", { live: { ...evergreenLive, id: "live-2" } }],
+      ["another vendor", { live: { ...evergreenLive, vendorId: "vendor-2" } }],
+      ["a tampered signature", { tamper: true }],
+    ])("ignores a session cookie issued for %s and uses the neutral phrase", async (_label, variant) => {
+      vi.useFakeTimers({ toFake: ["Date"] });
+      vi.setSystemTime(new Date("2026-10-29T06:03:00.000Z"));
+      const issuedFor = "live" in variant ? variant.live : evergreenLive;
+      const session = resolveEvergreenViewerSession({ live: issuedFor, vendorTimezone: "Asia/Taipei", token: null, intent: "claim" })!;
+      const token = "tamper" in variant ? `${session.issuedToken!.slice(0, -2)}AA` : session.issuedToken!;
+      mocks.verifyFormSubmission.mockResolvedValue({ status: "verified", confirmation: evergreenConfirmation });
+      const withCookie = request();
+      // Always presented under live-1's cookie name, as a moved or forged cookie would be.
+      withCookie.headers.set("cookie", `${evergreenSessionCookieName("live-1")}=${token}`);
+
+      await POST(withCookie);
+
+      expect(mocks.ensureRegistrationConfirmationDelivery).toHaveBeenCalledWith(expect.objectContaining({ liveStartAtText: "依你的觀看時段開始" }));
+    });
+
+    it("keeps the verified result when the session time cannot be resolved", async () => {
+      mocks.startTextFailure.mockReturnValueOnce(new Error("derived key unavailable for lead@example.test"));
+      mocks.verifyFormSubmission.mockResolvedValue({ status: "verified", confirmation: evergreenConfirmation, chatSession: { submissionId: "formsub_test" } });
+
+      const response = await POST(request());
+
+      expect(response.status).toBe(303);
+      expect(response.headers.get("location")).toBe("https://app.example.test/verify-registration?status=verified");
+      expect(response.cookies.get(FORM_SUBMISSION_CHAT_SESSION_COOKIE)).toBeDefined();
+      expect(mocks.ensureRegistrationConfirmationDelivery).toHaveBeenCalledWith(expect.objectContaining({ liveStartAtText: "依你的觀看時段開始" }));
+      expect(mocks.ensureLiveReminderDelivery).toHaveBeenCalledWith(expect.objectContaining({ evergreenActive: true }));
+      expect(mocks.captureOperationalError).toHaveBeenCalledWith(expect.any(Error), expect.objectContaining({ operation: "evergreen_start_text" }));
     });
 
     it("falls back to a neutral phrase without the visitor's session cookie", async () => {

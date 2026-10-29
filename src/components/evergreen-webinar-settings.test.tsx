@@ -31,6 +31,7 @@ describe("EvergreenWebinarSettings", () => {
     expect(html).toContain("以下全場共用互動會停用");
     for (const text of ["幸運抽獎", "投票", "空投限時紅包", "限時快閃搶購"]) expect(html).toContain(text);
     expect(html).toContain("商品揭露只影響頁面呈現，不是購買授權");
+    expect(html).toContain("個人回放最多保留 7 天");
   });
 
   it.each([

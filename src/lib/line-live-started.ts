@@ -1,5 +1,6 @@
 import type { PrismaClient } from "@prisma/client";
 import { createLiveViewerUrl } from "@/lib/live-public-url";
+import { EVERGREEN_ACTIVATION_SELECT, isActiveEvergreenLive } from "@/lib/evergreen-activation";
 import {
   buildLiveLineMessage,
   enqueueLineNotification,
@@ -28,9 +29,11 @@ export async function dispatchLiveStartedLineNotifications(
 ) {
   const live = await db.live.findFirst({
     where: { id: input.liveId, vendorId: input.vendorId, status: "live", startedAt: input.startedAt, endedAt: null },
-    select: { id: true, slug: true, title: true, startedAt: true },
+    select: { id: true, slug: true, title: true, startedAt: true, ...EVERGREEN_ACTIVATION_SELECT, video: { select: { durationSec: true } } },
   });
   if (!live?.startedAt) return { queued: 0, sent: 0, failed: 0 };
+  // An active evergreen Live has no shared start: each visitor has their own session.
+  if (isActiveEvergreenLive(live, { now: input.startedAt })) return { queued: 0, sent: 0, failed: 0 };
 
   const submissions = await db.formSubmission.findMany({
     where: {

@@ -5,6 +5,7 @@ import {
   createLiveReminderReconciliationSnapshot,
   processLiveReminderReconciliationJobs,
   queueLiveReminderReconciliation,
+  queueLiveReminderReconciliationForCurrentLive,
 } from "./live-reminder-reconciliation";
 import type { LiveReminderTemplateSnapshot } from "./live-reminder-reconciliation";
 
@@ -347,5 +348,53 @@ describe("live reminder reconciliation disposable PostgreSQL invariants", () => 
     expect(results.filter((result) => result.status === "completed")).toHaveLength(1);
     expect(await reconciliationDb().liveReminderReconciliationJob.findUnique({ where: { id: queued.jobId }, select: { lifecycle: true, claimedAt: true, lastErrorCode: true } }))
       .toEqual({ lifecycle: "completed", claimedAt: null, lastErrorCode: null });
+  });
+
+  it("restores legacy reminders after evergreen is turned on and then off again", async () => {
+    const now = new Date("2026-08-09T04:00:00.000Z");
+    const db = getDb();
+    const vendor = await createVendor("evergreen-toggle");
+    const fixture = await createLiveFixture(vendor, "evergreen-toggle");
+    const video = await db.video.create({ data: { vendorId: vendor.id, title: "Evergreen", videoUrl: "https://example.test/evergreen.webm", durationSec: 1_800 } });
+    await db.live.update({ where: { id: fixture.live.id }, data: { videoId: video.id, streamMode: "vod" } });
+    const reminderInput = (submission: { id: string; name: string; email: string }) => ({
+      vendorId: vendor.id, vendorName: vendor.name, liveId: fixture.live.id, liveSlug: fixture.live.slug, liveTitle: fixture.live.title,
+      formSubmissionId: submission.id, recipientName: submission.name, recipientEmail: submission.email,
+      liveScheduledAt: fixture.live.scheduledAt, reminderOffsetMinutes: 60, template: fixture.reminderTemplate,
+    });
+    const registrant = (label: string) => db.formSubmission.create({
+      data: { formId: fixture.form.id, liveId: fixture.live.id, name: label, email: `${label}@example.test`, verificationStatus: "VERIFIED", verifiedAt: now },
+    });
+    // Same write + reconciliation the evergreen settings action performs in one transaction.
+    const setEvergreen = (isEvergreen: boolean) => db.$transaction(async (tx) => {
+      await tx.live.update({ where: { id: fixture.live.id }, data: { isEvergreen, evergreenScheduleMode: "just_in_time", evergreenIntervalMinutes: 15 } });
+      return queueLiveReminderReconciliationForCurrentLive(tx, { vendorId: vendor.id, liveId: fixture.live.id, now });
+    });
+    const processAll = async () => {
+      for (let round = 0; round < 10; round += 1) {
+        const results = await processLiveReminderReconciliationJobs({ limit: 25, batchSize: 50, now });
+        if (results.length === 0) return;
+      }
+    };
+
+    // Registered before evergreen: a reminder is scheduled.
+    const before = await registrant("before-evergreen");
+    const first = await ensureLiveReminderDelivery(reminderInput(before), now);
+    if (!("deliveryId" in first) || !first.deliveryId) throw new Error("Expected a scheduled reminder");
+
+    // Evergreen on: the queued reminder is cancelled; a new registrant gets none.
+    await expect(setEvergreen(true)).resolves.toMatchObject({ status: "cancelled" });
+    expect(await db.emailDelivery.findUnique({ where: { id: first.deliveryId }, select: { status: true } })).toEqual({ status: "superseded" });
+    const during = await registrant("during-evergreen");
+    await expect(ensureLiveReminderDelivery({ ...reminderInput(during), evergreenActive: true }, now)).resolves.toEqual({ status: "not_scheduled" });
+
+    // Evergreen off: the job reschedules both registrants and reactivates the superseded reminder.
+    await expect(setEvergreen(false)).resolves.toMatchObject({ status: "queued" });
+    await processAll();
+    expect(await db.emailDelivery.findUnique({ where: { id: first.deliveryId }, select: { status: true, nextAttemptAt: true } }))
+      .toEqual({ status: "queued", nextAttemptAt: new Date("2026-08-10T03:00:00.000Z") });
+    expect(await db.emailDelivery.count({
+      where: { vendorId: vendor.id, sourceLiveId: fixture.live.id, sourceFormSubmissionId: during.id, trigger: "live_reminder", status: "queued" },
+    })).toBe(1);
   });
 });

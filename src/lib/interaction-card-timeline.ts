@@ -8,6 +8,9 @@ export type CardPlaybackCandidate = LiveRuntimeCandidate & { isEvergreen?: boole
 /** 共同場次只相信伺服器時間；既有回放才採個人媒體時間。真直播永不套用影片排程。 */
 export function resolveCardClock(live: CardPlaybackCandidate, now: Date): CardClock {
   if (live.streamMode !== "vod") return { mode: "manual", positionSeconds: null };
+  // Deliberately the raw flag, not isActiveEvergreenLive: a flagged Live gets
+  // either its merchant anchor or no synchronized cards (fail closed), never a
+  // scheduledAt clock that evergreen visitors do not share.
   if (live.isEvergreen) {
     // 浮動常青場次尚未持久化觀眾 cohort，不能以每次請求重新推算的場次冒充同步。
     const start = live.evergreenSessionStartAt?.getTime();

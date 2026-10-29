@@ -31,6 +31,26 @@ describe("live-started LINE dispatch", () => {
     ]);
   });
 
+  it("does not announce a shared start for an active evergreen live", async () => {
+    const startedAt = new Date("2026-09-07T12:00:00.000Z");
+    const db = {
+      live: { findFirst: vi.fn().mockResolvedValue({
+        id: "live-1", slug: "safe-live", title: "安全直播", startedAt,
+        isEvergreen: true, streamMode: "vod", status: "live", evergreenScheduleMode: "just_in_time", evergreenIntervalMinutes: 15,
+        evergreenDailyTimes: [], evergreenSessionStartAt: null, video: { durationSec: 1_800 },
+      }) },
+      formSubmission: { findMany: vi.fn() },
+    };
+
+    await expect(dispatchLiveStartedLineNotifications(db as never, { vendorId: "vendor-1", liveId: "live-1", startedAt }))
+      .resolves.toEqual({ queued: 0, sent: 0, failed: 0 });
+    expect(db.formSubmission.findMany).not.toHaveBeenCalled();
+    expect(mocks.enqueue).not.toHaveBeenCalled();
+    expect(db.live.findFirst).toHaveBeenCalledWith(expect.objectContaining({
+      select: expect.objectContaining({ isEvergreen: true, video: { select: { durationSec: true } } }),
+    }));
+  });
+
   it("uses tenant-scoped registrations, stable per-viewer keys, and a scoped eager worker", async () => {
     const startedAt = new Date("2026-09-07T12:00:00.000Z");
     const db = {

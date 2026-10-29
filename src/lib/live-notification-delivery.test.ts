@@ -557,6 +557,15 @@ describe("legacy cutover safety", () => {
     expect(mocks.db.live.updateMany).not.toHaveBeenCalled();
   });
 
+  it("never selects evergreen-flagged lives as cutover candidates", async () => {
+    prepareCandidate();
+    mocks.db.emailDelivery.count.mockResolvedValue(0);
+    await processLegacyReminderCutovers({ now, vendorId: "vendor-1" });
+    for (const method of [mocks.db.live.count, mocks.db.live.findMany]) {
+      expect(method).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ isEvergreen: false }) }));
+    }
+  });
+
   it("atomically replaces queued/failed legacy work before clearing the binding", async () => {
     prepareCandidate();
     mocks.db.emailDelivery.count.mockResolvedValue(0);

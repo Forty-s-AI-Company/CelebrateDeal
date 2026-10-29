@@ -13,7 +13,11 @@ import {
   formSubmissionChatSessionCookieOptions,
 } from "@/lib/form-submission-chat-session";
 import { verifyFormSubmission } from "@/lib/form-submission-verification-domain";
-import { evergreenRegistrationStartText, evergreenSessionTokenFromRequest } from "@/lib/evergreen-viewer-session";
+import {
+  EVERGREEN_NEUTRAL_START_TEXT,
+  evergreenRegistrationStartText,
+  evergreenSessionTokenFromRequest,
+} from "@/lib/evergreen-viewer-session";
 import { captureTrackingBrowserContext } from "@/lib/tracking-browser-context";
 import { captureOperationalError } from "@/lib/monitoring";
 import { checkRateLimit } from "@/lib/rate-limit";
@@ -77,13 +81,29 @@ export async function POST(request: Request) {
     const { evergreen, ...confirmation } = result.confirmation;
     // An evergreen Live has no shared start: use this visitor's own session
     // (from their signed cookie) or a neutral phrase, never scheduledAt.
-    const liveStartAtText = evergreen
-      ? evergreenRegistrationStartText({
+    // The submission is already VERIFIED here, so a session-key failure must
+    // never turn into a 500 that drops the confirmation, reminders and cookie.
+    let liveStartAtText: string | undefined;
+    if (evergreen) {
+      try {
+        liveStartAtText = evergreenRegistrationStartText({
           live: evergreen.live,
           vendorTimezone: evergreen.vendorTimezone,
           token: evergreenSessionTokenFromRequest(request, evergreen.live.id),
-        })
-      : undefined;
+        });
+      } catch (error) {
+        liveStartAtText = EVERGREEN_NEUTRAL_START_TEXT;
+        try {
+          captureOperationalError(error, {
+            source: "form_submission_verification",
+            operation: "evergreen_start_text",
+            status: "failed",
+          });
+        } catch {
+          // Monitoring cannot change the verified result.
+        }
+      }
+    }
     try {
       await ensureRegistrationConfirmationDelivery({ ...confirmation, ...(liveStartAtText ? { liveStartAtText } : {}) });
     } catch (error) {

@@ -39,6 +39,7 @@ import {
   reconcileLiveNotificationRules,
   type LiveNotificationRuleInput,
 } from "@/lib/live-notification-rules";
+import { EVERGREEN_ACTIVATION_SELECT, isActiveEvergreenLive, type EvergreenActivationRecord } from "@/lib/evergreen-activation";
 import {
   createLiveReminderReconciliationSnapshot,
   queueLiveReminderReconciliation,
@@ -990,10 +991,10 @@ async function resolveSubmittedLiveReferences(input: {
       ? input.db.live.findFirst({
           where: { id: input.liveId, vendorId: input.vendorId },
           select: {
+            ...EVERGREEN_ACTIVATION_SELECT,
             id: true,
             slug: true,
             title: true,
-            status: true,
             scheduledAt: true,
             liveReminderTemplateId: true,
             liveReminderOffsetMinutes: true,
@@ -1097,6 +1098,20 @@ function requireSubmittedLivePublishReadiness(input: {
   );
 }
 
+/** The shared evergreen rule applied to the Live as this edit will write it. */
+function evergreenActiveAfterLiveUpdate(
+  existingLive: Omit<EvergreenActivationRecord, "video"> | null,
+  next: { status: string; streamMode: string; video: { durationSec: number | null } | null },
+) {
+  if (!existingLive) return false;
+  return isActiveEvergreenLive({
+    ...existingLive,
+    status: next.status,
+    streamMode: next.streamMode,
+    video: next.video ? { durationSec: next.video.durationSec } : null,
+  });
+}
+
 function liveReminderSnapshotAfterUpdate(input: {
   vendorId: string;
   liveId: string | null;
@@ -1107,7 +1122,10 @@ function liveReminderSnapshotAfterUpdate(input: {
     scheduledAt: Date;
     liveReminderTemplateId: string | null;
     liveReminderOffsetMinutes: number;
+    isEvergreen?: boolean | null;
   } | null;
+  /** Post-write evergreen state: an active evergreen Live has no fixed-time reminder. */
+  evergreenActive: boolean;
   requestedTitle: string;
   requestedSlug: string;
   requestedStatus: string;
@@ -1125,7 +1143,9 @@ function liveReminderSnapshotAfterUpdate(input: {
     || existing.scheduledAt.getTime() !== input.scheduledAt.getTime()
     || existing.liveReminderTemplateId !== templateId
     || existing.liveReminderOffsetMinutes !== input.reminderOffsetMinutes
-    || (previousActive !== nextActive && (existing.liveReminderTemplateId !== null || templateId !== null));
+    || (previousActive !== nextActive && (existing.liveReminderTemplateId !== null || templateId !== null))
+    // An evergreen-flagged Live may switch between evergreen and fixed time on any edit.
+    || existing.isEvergreen === true || input.evergreenActive;
   if (!changed) return null;
   return createLiveReminderReconciliationSnapshot({
     vendorId: input.vendorId,
@@ -1136,6 +1156,7 @@ function liveReminderSnapshotAfterUpdate(input: {
     scheduledAt: input.scheduledAt,
     reminderOffsetMinutes: input.reminderOffsetMinutes,
     template: input.template,
+    evergreenActive: input.evergreenActive,
   });
 }
 
@@ -1394,6 +1415,7 @@ export async function upsertLiveAction(formData: FormData) {
     vendorId: vendor.id,
     liveId: id,
     existingLive,
+    evergreenActive: evergreenActiveAfterLiveUpdate(existingLive, { status: requestedStatus, streamMode: data.streamMode, video }),
     requestedTitle: data.title,
     requestedSlug: data.slug,
     requestedStatus,

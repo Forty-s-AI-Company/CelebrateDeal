@@ -97,9 +97,7 @@ describe("registration {{live_start_at}} for an evergreen live", () => {
     const claimed = resolveEvergreenViewerSession({ live: live(), vendorTimezone: "Asia/Taipei", token: null, intent: "claim", now: NOW })!;
     const text = evergreenRegistrationStartText({ live: live(), vendorTimezone: "Asia/Taipei", token: claimed.issuedToken, now: NOW });
     // 06:15 UTC is 14:15 in Asia/Taipei; scheduledAt (06:00 UTC) is never used.
-    expect(text).toContain("2:15");
-    expect(text).not.toContain("2:00");
-    expect(text).not.toBe(EVERGREEN_NEUTRAL_START_TEXT);
+    expect(text).toMatch(/^2026年10月29日\s?下午\s?2:15$/u);
   });
 
   it("falls back to a neutral phrase without a session, or once the session ended", () => {
@@ -111,6 +109,6 @@ describe("registration {{live_start_at}} for an evergreen live", () => {
 
   it("uses the shared merchant anchor for every visitor", () => {
     const anchored = live({ evergreenSessionStartAt: new Date("2026-10-29T12:00:00.000Z") });
-    expect(evergreenRegistrationStartText({ live: anchored, vendorTimezone: "Asia/Taipei", token: null, now: NOW })).toContain("8:00");
+    expect(evergreenRegistrationStartText({ live: anchored, vendorTimezone: "Asia/Taipei", token: null, now: NOW })).toMatch(/^2026年10月29日\s?晚上\s?8:00$/u);
   });
 });

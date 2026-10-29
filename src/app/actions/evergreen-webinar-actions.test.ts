@@ -10,6 +10,8 @@ const mocks = vi.hoisted(() => ({
   revalidatePath: vi.fn(),
   redirect: vi.fn((path: string) => { throw new Error(`REDIRECT:${path}`); }),
   parseZonedDateTimeLocal: vi.fn(),
+  queueReconciliation: vi.fn(),
+  transaction: vi.fn(),
 }));
 
 vi.mock("next/cache", () => ({ revalidatePath: mocks.revalidatePath }));
@@ -18,8 +20,9 @@ vi.mock("@/lib/auth", () => ({ requireVendorManagerContext: mocks.requireVendorM
 vi.mock("@/lib/audit", () => ({ auditSnapshot: mocks.auditSnapshot, writeAuditLog: mocks.writeAuditLog }));
 vi.mock("@/lib/csrf", () => ({ assertServerActionSecurity: mocks.assertServerActionSecurity }));
 vi.mock("@/lib/db", () => ({
-  getDb: () => ({ live: { findFirst: mocks.liveFindFirst, updateMany: mocks.liveUpdateMany } }),
+  getDb: () => ({ live: { findFirst: mocks.liveFindFirst, updateMany: mocks.liveUpdateMany }, $transaction: mocks.transaction }),
 }));
+vi.mock("@/lib/live-reminder-reconciliation", () => ({ queueLiveReminderReconciliationForCurrentLive: mocks.queueReconciliation }));
 vi.mock("@/lib/zoned-date-time", () => ({ parseZonedDateTimeLocal: mocks.parseZonedDateTimeLocal }));
 
 import { updateEvergreenWebinarSettingsAction } from "./evergreen-webinar-actions";
@@ -57,6 +60,8 @@ beforeEach(() => {
     video: { durationSec: 600 },
   });
   mocks.liveUpdateMany.mockResolvedValue({ count: 1 });
+  mocks.queueReconciliation.mockResolvedValue({ status: "queued", jobId: "job-1" });
+  mocks.transaction.mockImplementation(async (callback: (tx: unknown) => Promise<unknown>) => callback({ live: { updateMany: mocks.liveUpdateMany }, marker: "tx" }));
   mocks.writeAuditLog.mockResolvedValue(undefined);
   mocks.parseZonedDateTimeLocal.mockReturnValue(new Date("2026-09-08T02:00:00.000Z"));
 });
@@ -155,6 +160,26 @@ describe("updateEvergreenWebinarSettingsAction", () => {
     await expect(updateEvergreenWebinarSettingsAction(form())).rejects.toThrow("REDIRECT:/lives/live-current/edit?error=evergreen_live_changed");
 
     expect(mocks.writeAuditLog).not.toHaveBeenCalled();
+  });
+
+  it.each([["enabling", true], ["disabling", false]])("re-queues reminder reconciliation from the post-write state when %s evergreen", async (_label, enable) => {
+    const data = form();
+    if (!enable) data.delete("isEvergreen");
+
+    await expect(updateEvergreenWebinarSettingsAction(data)).rejects.toThrow("REDIRECT:/lives/live-current/edit?notice=evergreen_saved");
+
+    expect(mocks.transaction).toHaveBeenCalledWith(expect.any(Function), { isolationLevel: "Serializable" });
+    expect(mocks.queueReconciliation).toHaveBeenCalledWith(
+      expect.objectContaining({ marker: "tx" }),
+      { vendorId: "vendor-current", liveId: "live-current" },
+    );
+    expect(mocks.liveUpdateMany.mock.invocationCallOrder[0]).toBeLessThan(mocks.queueReconciliation.mock.invocationCallOrder[0]!);
+  });
+
+  it("does not queue reconciliation when the guarded write matched nothing", async () => {
+    mocks.liveUpdateMany.mockResolvedValueOnce({ count: 0 });
+    await expect(updateEvergreenWebinarSettingsAction(form())).rejects.toThrow("REDIRECT:/lives/live-current/edit?error=evergreen_live_changed");
+    expect(mocks.queueReconciliation).not.toHaveBeenCalled();
   });
 
   it("does not update or audit a live outside the current vendor", async () => {

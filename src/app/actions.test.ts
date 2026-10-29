@@ -2654,6 +2654,40 @@ describe("upsertLiveAction", () => {
     }));
   });
 
+  it.each([
+    ["an active evergreen live", { isEvergreen: true, evergreenScheduleMode: "just_in_time" }, true],
+    ["an evergreen live whose schedule is unusable", { isEvergreen: true, evergreenScheduleMode: "recurring_daily", evergreenDailyTimes: [] }, false],
+  ])("re-queues reminder reconciliation with the post-write evergreen state for %s", async (_label, evergreen, active) => {
+    allowCurrentVendorLiveReferences();
+    // Nothing reminder-related changes except the evergreen state.
+    mocks.liveFindFirst.mockResolvedValue({
+      id: "live-1",
+      slug: "tenant-live",
+      title: "租戶限定直播",
+      status: "scheduled",
+      streamMode: "vod",
+      scheduledAt: new Date("2026-08-08T12:00:00.000Z"),
+      liveReminderTemplateId: "reminder-template-1",
+      liveReminderOffsetMinutes: 60,
+      evergreenIntervalMinutes: 15,
+      evergreenDailyTimes: [],
+      evergreenSessionStartAt: null,
+      ...evergreen,
+    });
+    const formData = liveFormData();
+    formData.set("id", "live-1");
+    formData.set("status", "scheduled");
+
+    await expect(upsertLiveAction(formData)).rejects.toThrow(/redirect:\/lives\/live-1\/edit/u);
+    expect(mocks.createLiveReminderReconciliationSnapshot).toHaveBeenCalledWith(expect.objectContaining({
+      liveId: "live-1",
+      evergreenActive: active,
+    }));
+    expect(mocks.liveFindFirst).toHaveBeenCalledWith(expect.objectContaining({
+      select: expect.objectContaining({ isEvergreen: true, evergreenScheduleMode: true, streamMode: true }),
+    }));
+  });
+
   it("cancels old reminder work when a live ends", async () => {
     allowCurrentVendorLiveReferences();
     mocks.liveFindFirst.mockResolvedValue({
@@ -4240,7 +4274,10 @@ describe("message template actions", () => {
 
     expect(mocks.liveFindMany).toHaveBeenCalledWith({
       where: { vendorId: "vendor-1", liveReminderTemplateId: "template-1" },
-      select: { id: true, slug: true, title: true, status: true, scheduledAt: true, liveReminderOffsetMinutes: true },
+      select: expect.objectContaining({
+        id: true, slug: true, title: true, status: true, scheduledAt: true, liveReminderOffsetMinutes: true,
+        isEvergreen: true, evergreenScheduleMode: true, video: { select: { durationSec: true } },
+      }),
     });
     expect(mocks.queueLiveReminderReconciliation).toHaveBeenCalledWith(
       expect.any(Object),

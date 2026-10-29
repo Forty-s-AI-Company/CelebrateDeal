@@ -662,6 +662,9 @@ export async function processLegacyReminderCutovers(options: { now?: Date; limit
     status: "scheduled",
     startedAt: null,
     scheduledAt: { gt: now },
+    // Evergreen-flagged Lives never cut over to fixed-time rules; the
+    // transaction below re-checks the full rule for the rest.
+    isEvergreen: false,
   };
   const candidateCount = await db.live.count({ where: candidateWhere });
   const candidates = await db.live.findMany({

@@ -2,11 +2,13 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import { Prisma } from "@prisma/client";
 import { z } from "zod";
 import { requireVendorManagerContext } from "@/lib/auth";
 import { auditSnapshot, writeAuditLog } from "@/lib/audit";
 import { assertServerActionSecurity } from "@/lib/csrf";
 import { getDb } from "@/lib/db";
+import { queueLiveReminderReconciliationForCurrentLive } from "@/lib/live-reminder-reconciliation";
 import { evergreenVideoDurationSeconds } from "@/lib/evergreen-activation";
 import { parseZonedDateTimeLocal } from "@/lib/zoned-date-time";
 
@@ -156,13 +158,22 @@ export async function updateEvergreenWebinarSettingsAction(formData: FormData) {
   const where = settings.isEvergreen
     ? { id: live.id, vendorId: vendor.id, streamMode: "vod", videoId: live.videoId }
     : { id: live.id, vendorId: vendor.id };
-  const result = await (db.live.updateMany as unknown as (args: {
-    where: { id: string; vendorId: string; streamMode?: string; videoId?: string | null };
-    data: typeof data;
-  }) => Promise<{ count: number }>)({
-    where,
-    data,
-  });
+  // The write and the reminder reconciliation share one transaction, so the
+  // reconciliation sees exactly the post-write evergreen state: enabling
+  // cancels queued fixed-time reminders, disabling reschedules (or reactivates)
+  // them for registrants who verified while evergreen was on.
+  const result = await db.$transaction(async (tx) => {
+    const updated = await (tx.live.updateMany as unknown as (args: {
+      where: { id: string; vendorId: string; streamMode?: string; videoId?: string | null };
+      data: typeof data;
+    }) => Promise<{ count: number }>)({
+      where,
+      data,
+    });
+    if (updated.count !== 1) return updated;
+    await queueLiveReminderReconciliationForCurrentLive(tx, { vendorId: vendor.id, liveId: live.id });
+    return updated;
+  }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
   if (result.count !== 1) {
     if (settings.isEvergreen) redirectToSettings(live.id, "evergreen_live_changed");
     redirect("/lives?error=live_not_found");

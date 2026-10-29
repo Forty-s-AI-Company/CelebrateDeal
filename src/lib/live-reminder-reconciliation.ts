@@ -341,6 +341,23 @@ async function currentSnapshot(db: ReconciliationDb, vendorId: string, liveId: s
   };
 }
 
+/**
+ * Reads the Live as written inside the caller's transaction (tenant-bound)
+ * and queues reconciliation for that state. Used by writers that change an
+ * input of the snapshot without going through the Live studio, such as the
+ * evergreen settings: turning evergreen on cancels queued reminders, and
+ * turning it off schedules (or reactivates) them for every verified registrant.
+ */
+export async function queueLiveReminderReconciliationForCurrentLive(
+  tx: Prisma.TransactionClient,
+  input: { vendorId: string; liveId: string; now?: Date },
+) {
+  const now = input.now ?? new Date();
+  const current = await currentSnapshot(asReconciliationDb(tx), input.vendorId, input.liveId, now);
+  if (!current) return null;
+  return queueLiveReminderReconciliation(tx, current.snapshot, now);
+}
+
 async function finalizeJob(db: ReconciliationDb, job: ReconciliationJob, data: Record<string, unknown>) {
   return db.liveReminderReconciliationJob.updateMany({
     where: { id: job.id, lifecycle: "processing", attemptCount: job.attemptCount },
