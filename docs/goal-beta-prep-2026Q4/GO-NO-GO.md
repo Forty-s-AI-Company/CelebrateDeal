@@ -147,7 +147,7 @@
 
 | 編號 | 嚴重度 | 現象 | 重現 | 建議 |
 |---|---|---|---|---|
-| B-1 | MAJOR（封測體驗） | GitHub Actions 的 `*/5 * * * *` 實際約每 2～5 小時才跑一次，遠低於 runbook 寫的「延遲 5～15 分鐘」。10-24 起 36 次 schedule run，間隔中位數 184 分鐘、最長 425 分鐘。報名確認信、開播提醒、webhook 重試若只靠這個排程，可能晚數小時 | `gh run list --workflow scheduled-jobs.yml --limit 100 --json createdAt,event`，只看 `event=schedule`，計算相鄰間隔 | 封測前補一個外部觸發（Vercel Cron 需 Pro、cron-job.org 類服務或 Cloudflare Worker cron，呼叫同一批 `/api/jobs/*`，仍用 `JOB_SECRET`）；O-16 一併決定。確認報名確認信是否在註冊當下就同步寄出，若是則影響較小。這是 O-13 第 6、9 步的風險，也要告知 owner |
+| B-1 | MAJOR（封測體驗） | GitHub Actions 的 `*/5 * * * *` 實際約每 2～5 小時才跑一次，遠低於 runbook 寫的「延遲 5～15 分鐘」。10-24 起 36 次 schedule run，間隔中位數 184 分鐘、最長 425 分鐘。報名確認信、開播提醒、webhook 重試若只靠這個排程，可能晚數小時 | `gh run list --workflow scheduled-jobs.yml --limit 100 --json createdAt,event`，只看 `event=schedule`，計算相鄰間隔 | 封測前補一個外部觸發（Vercel Cron 需 Pro、cron-job.org 類服務或 Cloudflare Worker cron，呼叫同一批 `/api/jobs/*`，仍用 `JOB_SECRET`）；O-16 一併決定。確認報名確認信是否在註冊當下就同步寄出，若是則影響較小。這是 O-13 第 6、9 步的風險，也要告知 owner。**工程緩解進行中（尚未驗證，本項不勾選）**：PR `ai/scheduled-jobs-heartbeat` 新增 `scheduled-jobs-heartbeat.yml`（GitHub Actions 長駐迴圈，每 5 分鐘呼叫同一批 job，不花錢、不需外部帳號），設計與檢查方式見 [runbook §3.0](../launch/scheduled-jobs-runbook.md)。此做法是封測期間的過渡措施，預設關閉（需 owner 設 `SCHEDULED_JOBS_HEARTBEAT_ENABLED=true` 才啟動）；風險是把 Actions 當 24 小時常駐排程器屬 GitHub 使用條款灰色地帶，若 Actions 被停用，CI 也會失效；長期方案是外部 cron（cron-job.org 或 Cloudflare Worker cron）呼叫同一批端點，heartbeat 保留作備援。合併後須用 `gh run list --workflow scheduled-jobs-heartbeat.yml` 與 staging Logs 實測呼叫間隔，確認後才能關閉 B-1 |
 
 未發現 BLOCKER。
 
