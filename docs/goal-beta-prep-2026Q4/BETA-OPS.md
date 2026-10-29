@@ -52,6 +52,7 @@
 - 暫停：
   - 首選：repo variable `SCHEDULED_JOBS_PAUSED=true`。job 會被跳過並顯示 skipped，有留痕。
   - 長期停用：Actions 頁面 Disable workflow。
+  - heartbeat（`scheduled-jobs-heartbeat.yml`，預設關閉，需 `SCHEDULED_JOBS_HEARTBEAT_ENABLED=true` 才會啟動）：停止要 Disable 該 workflow，進行中的迴圈約 5 分鐘內結束，取消 run 為選用；只設 `SCHEDULED_JOBS_PAUSED=true` 停不掉進行中的迴圈。詳見 runbook §3.0。
 - 恢復：刪除變數或設為 `false`，再用 `workflow_dispatch` 跑 `all`，確認全部 `ok`。
 - 封測期間維持關閉：`SCHEDULED_JOBS_ENABLE_BILLING_CYCLE`、`SCHEDULED_JOBS_ENABLE_LIVE_MEDIA`（billing 與瀏覽器直播隱藏，D-02、D-09）。
 - 已知限制：GitHub 排程延遲 5～15 分鐘，偶爾整輪略過；公開 repo 60 天無 commit 會自動停用；environment 不可設 required reviewers。
