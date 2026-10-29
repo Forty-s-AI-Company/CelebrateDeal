@@ -9,6 +9,8 @@ import { createCommerceOrderForCheckout } from "./commerce-orders";
 import { PaymentWebhookPayload, processPaymentWebhook } from "./payment-webhooks";
 import { readWp4ExistingBuyerState, wp4HistoricalBuyerWhere, WP4_BUYER_CONTINUATION_SOURCE as source } from "./wp4-buyer-recovery";
 import { retryQ1OriginalBuyerCallback, retryWp4HistoricalBuyerCallback, retryQ1OriginalAfterSchemaRepair } from "./wp4-buyer-callback-retry";
+import { dispatchEmailDelivery } from "./email-delivery";
+import { IMMEDIATE_EMAIL_DISPATCH_ACTOR } from "./email-delivery-immediate";
 const db = getDb();
 const raceVendorId = "wp4_synthetic_slug_race_vendor";
 afterEach(async () => {
@@ -122,6 +124,31 @@ describe("fixed historical buyer PostgreSQL recovery", () => {
   await processPaymentWebhook(refund); await processPaymentWebhook(refund);
   await expect(readWp4ExistingBuyerState(db)).resolves.toMatchObject({ status: "VERIFIED", paymentStatus: "REFUNDED", refundReconciled: true });
   expect(await db.refundRecord.count({ where: { paymentTransactionId: payment.id, status: "processed" } })).toBe(1);
+ });
+ it("still proves the receipt after an immediate dispatch attempt fails closed without provider configuration", async () => {
+  const { payment, payload } = await checkout(); await processPaymentWebhook(payload);
+  const order = await db.commerceOrder.findFirstOrThrow({ where: { primaryPaymentTransactionId: payment.id } });
+  const receipt = { vendorId: fixed.vendorId, idempotencyKey: `order-paid:v1:${order.id}` };
+  // Same provider-less runtime as the browser gate: no key and no sender, and any network call is counted.
+  vi.stubEnv("RESEND_API_KEY", ""); vi.stubEnv("EMAIL_FROM", "");
+  const fetchSpy = vi.fn(async () => new Response(null, { status: 599 }));
+  vi.stubGlobal("fetch", fetchSpy);
+  try {
+   const { id } = await db.emailDelivery.findUniqueOrThrow({ where: { vendorId_idempotencyKey: receipt }, select: { id: true } });
+   await expect(dispatchEmailDelivery(id, IMMEDIATE_EMAIL_DISPATCH_ACTOR)).resolves.toEqual({ status: "failed", errorCode: "configuration" });
+   expect(fetchSpy).not.toHaveBeenCalled();
+   const row = await db.emailDelivery.findUniqueOrThrow({ where: { id } });
+   expect(row).toMatchObject({ status: "failed", attemptCount: 1, lastErrorCode: "configuration" });
+   expect(row.nextAttemptAt).not.toBeNull();
+   await expect(readWp4ExistingBuyerState(db)).resolves.toEqual({ status: "VERIFIED", paymentStatus: "PAID", orderPaid: true, inventoryCommitted: true, notificationQueued: true, refundReconciled: false });
+   // A receipt that can no longer be delivered is not proof of a queued notification.
+   for (const terminal of [{ status: "exhausted", nextAttemptAt: null }, { status: "suppressed", nextAttemptAt: null }, { status: "failed", nextAttemptAt: null }]) {
+    await db.emailDelivery.update({ where: { id }, data: terminal });
+    await expect(readWp4ExistingBuyerState(db)).resolves.toEqual({ status: "STATE_MISMATCH" });
+   }
+  } finally {
+   vi.unstubAllGlobals();
+  }
  });
  it("retries only the exact stored failed callback and refuses a second dispatch", async () => {
   const { payload } = await checkout();
