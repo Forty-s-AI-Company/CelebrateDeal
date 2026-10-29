@@ -12,6 +12,12 @@ import { captureOperationalError } from "@/lib/monitoring";
 import { processPaymentWebhook } from "@/lib/payment-webhooks";
 import { redactedJsonSnapshot } from "@/lib/redaction";
 
+// A paid notification schedules the receipt email with `after()`
+// (processPaymentWebhook -> scheduleImmediateEmailDispatch), which runs
+// within this limit (see IMMEDIATE_EMAIL_DISPATCH_MAX_DURATION_SECONDS).
+// Segment config only: the webhook response is unchanged.
+export const maxDuration = 60;
+
 type CallbackSource = "return" | "notify" | "unknown";
 type ObservedMethod = "POST" | "HEAD" | "OTHER";
 type PayerReturnOutcome = "updated" | "pending" | "unverified" | "review";

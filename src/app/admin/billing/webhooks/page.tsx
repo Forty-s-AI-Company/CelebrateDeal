@@ -9,6 +9,10 @@ import { getDb } from "@/lib/db";
 import { formatDateTime } from "@/lib/format";
 import { MANUAL_RECONCILIATION_STATUS } from "@/lib/payment-webhook-manual-reconciliation";
 
+// The webhook retry Server Action can schedule the paid receipt email with
+// `after()` inside this limit (see IMMEDIATE_EMAIL_DISPATCH_MAX_DURATION_SECONDS).
+export const maxDuration = 60;
+
 function statusTone(status: string) {
   if (status === "processed") return "green" as const;
   if (status === "failed") return "orange" as const;

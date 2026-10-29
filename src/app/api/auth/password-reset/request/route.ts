@@ -5,6 +5,10 @@ import { getCanonicalAppUrl } from "@/lib/app-url";
 import { schedulePasswordResetLink } from "@/lib/password-reset";
 import { checkRateLimit } from "@/lib/rate-limit";
 
+// The password reset link is sent by `after()` within this limit
+// (see IMMEDIATE_EMAIL_DISPATCH_MAX_DURATION_SECONDS).
+export const maxDuration = 60;
+
 const PasswordResetRequest = z.object({
   email: z.string().email(),
 });

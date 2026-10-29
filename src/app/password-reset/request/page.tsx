@@ -4,6 +4,10 @@ import { CsrfField } from "@/components/csrf-field";
 import { FormSubmitButton } from "@/components/form-submit-button";
 import { applyE2eLoadingDelay } from "@/lib/e2e-loading-diagnostic";
 
+// The password reset Server Action sends its link with `after()` inside
+// this limit (see IMMEDIATE_EMAIL_DISPATCH_MAX_DURATION_SECONDS).
+export const maxDuration = 60;
+
 const errorMessages: Record<string, string> = {
   invalid: "請輸入有效的 Email。",
   rate_limited: "申請次數過多，請稍候再試。",

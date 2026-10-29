@@ -4,6 +4,10 @@ import { releaseExpiredInventoryReservations } from "@/lib/inventory-reservation
 import { captureOperationalError } from "@/lib/monitoring";
 import { processDueWebhookRetries } from "@/lib/webhook-retry";
 
+// Each retried webhook can schedule its paid receipt email with `after()`,
+// which runs within this limit (see IMMEDIATE_EMAIL_DISPATCH_MAX_DURATION_SECONDS).
+export const maxDuration = 60;
+
 const SAFE_RETRY_STATUSES = new Set([
   "processed",
   "failed",
