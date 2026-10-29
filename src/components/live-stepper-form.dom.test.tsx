@@ -320,6 +320,50 @@ describe("LiveStepperForm publish submit", () => {
     expect(container.querySelector('[role="alertdialog"]')).toBeNull();
   });
 
+  it("keeps the pending announcement and draft status outside the inert area, and returns focus to the trigger", async () => {
+    let finishAction!: () => void;
+    mocks.upsertLiveAction.mockImplementationOnce(() => new Promise<void>((resolve) => { finishAction = resolve; }));
+    const inertAtFocus: Array<{ target: Element; inert: boolean }> = [];
+    const realFocus = HTMLElement.prototype.focus;
+    vi.spyOn(HTMLElement.prototype, "focus").mockImplementation(function (this: HTMLElement, options?: FocusOptions) {
+      inertAtFocus.push({ target: this, inert: inertAncestor(this) !== null });
+      realFocus.call(this, options);
+    });
+    await act(async () => { root.render(studio(resumedDraft)); });
+    const trigger = button("建立並排程");
+    trigger.focus();
+    await act(async () => { trigger.click(); });
+    await act(async () => { button("確認建立並排程", control('[role="alertdialog"]')).click(); });
+    await settle();
+
+    const statuses = Array.from(container.querySelectorAll('[role="status"]'));
+    expect(statuses.some((status) => status.textContent === "正在建立並排程直播間，請勿重複送出。")).toBe(true);
+    expect(statuses.length).toBeGreaterThanOrEqual(2);
+    for (const status of statuses) expect(inertAncestor(status)).toBeNull();
+
+    inertAtFocus.length = 0;
+    await act(async () => { finishAction(); });
+    await settle();
+    expect(container.querySelector('[role="alertdialog"]')).toBeNull();
+    expect(document.activeElement).toBe(trigger);
+    // Focus is returned only after the studio is no longer inert.
+    expect(inertAtFocus.filter((entry) => entry.target === trigger).map((entry) => entry.inert)).toEqual([false]);
+  });
+
+  it("closes the confirmation when the draft save before submit hits a conflict", async () => {
+    const { LiveStudioDraftClientError } = await import("@/lib/live-studio-draft-client");
+    mocks.saveLiveStudioDraft.mockRejectedValueOnce(new LiveStudioDraftClientError("draft_conflict"));
+    await act(async () => { root.render(studio(resumedDraft)); });
+    control('[name="accentCopy"]').value = "衝突前的優惠";
+    await act(async () => { button("建立並排程").click(); });
+    await act(async () => { button("確認建立並排程", control('[role="alertdialog"]')).click(); });
+    await settle();
+
+    expect(container.querySelector('[role="alertdialog"]')).toBeNull();
+    expect(mocks.upsertLiveAction).not.toHaveBeenCalled();
+    expect(button("以我的覆蓋")).toBeTruthy();
+  });
+
   it("starts on the safe choice when the confirmation opens", async () => {
     await act(async () => { root.render(studio(resumedDraft)); });
     await act(async () => { button("建立並排程").click(); });
@@ -383,6 +427,29 @@ describe("LiveStepperForm edit page status actions", () => {
     await act(async () => { button("立即儲存草稿").click(); });
     await settle();
     expect(mocks.saveLiveStudioDraft).toHaveBeenCalledWith(expect.objectContaining({ draftId: "draft-edit", revision: 4 }));
+  });
+
+  it("shows a new submit error without dropping unsaved edits", async () => {
+    const props = { liveId: "live-1", currentStatus: "scheduled" };
+    await act(async () => { root.render(studio(editDraft, props)); });
+    const title = control('[name="title"]');
+    await type(title, "尚未儲存的新標題");
+
+    // evergreen-webinar-actions redirects to /lives/{id}/edit?error=...
+    await act(async () => { root.render(studio(editDraft, { ...props, error: "invalid_evergreen_settings" })); });
+
+    expect(control('[name="title"]')).toBe(title);
+    expect(control('[name="title"]').value).toBe("尚未儲存的新標題");
+
+    // A message the studio itself renders shows up without a remount as well.
+    await act(async () => { root.render(studio(editDraft, { ...props, error: "slug_taken" })); });
+    expect(control('[name="title"]')).toBe(title);
+    expect(control('[role="alert"]').textContent).toContain("直播網址已被使用");
+
+    // Error and another admin's revision together: still no remount, no adoption.
+    await act(async () => { root.render(studio({ ...editDraft, revision: 9 }, { ...props, error: "invalid_evergreen_settings" })); });
+    expect(control('[name="title"]')).toBe(title);
+    expect(control('[name="liveDraftRevision"]').value).toBe("4");
   });
 
   it("still remounts for an external revision once nothing is unsaved", async () => {

@@ -8,7 +8,7 @@ import { upsertLiveAction } from "@/app/actions";
 import { formatTimeZoneLabel } from "@/lib/format";
 import { LiveSlugField } from "@/components/live-slug-field";
 import { FormSubmitButton } from "@/components/form-submit-button";
-import { LiveConfirmedSubmitButton, LiveFormPendingLock } from "@/components/live-submit-confirmation";
+import { LIVE_DRAFT_SAVE_FAILED_EVENT, LiveConfirmedSubmitButton, LiveFormPendingLock } from "@/components/live-submit-confirmation";
 import { MediaUploadField } from "@/components/media-upload-field";
 import {
   StreamAllocationEditor,
@@ -546,7 +546,12 @@ function submitOnlyAfterLatestDraft(
     // Release before re-submitting: the follow-up submit below is the one
     // this flush was for and must pass the guard.
     flush.end();
-    if (!claim || !writeClaim(claim) || !form) return;
+    if (!claim || !writeClaim(claim) || !form) {
+      // The save hit a conflict or an error: close the confirmation so the
+      // draft status and its recovery buttons are reachable.
+      form?.dispatchEvent(new CustomEvent(LIVE_DRAFT_SAVE_FAILED_EVENT));
+      return;
+    }
     if (!(submitter instanceof HTMLButtonElement)) {
       form.requestSubmit();
       return;
@@ -1111,14 +1116,14 @@ type LiveStudioSession = {
 /** Autosave states that still hold edits the server has not accepted. */
 const unsavedDraftStatuses: ReadonlySet<string> = new Set(["dirty", "saving", "error", "conflict"]);
 
-/** Same draft and context, only a newer revision than this studio holds. */
-function isExternalRevisionOnly(session: LiveStudioSession, next: LiveStudioIdentity) {
-  const previous = session.requested;
+/**
+ * Same draft in the same lifecycle state; only the revision (another admin
+ * saved, or a revalidation) and/or the submit error differ. The error is shown
+ * through props, so it needs no remount.
+ */
+function isSameDraftNewContext(session: LiveStudioSession, next: LiveStudioIdentity) {
   return next.draftId !== "" && next.draftId === session.adoptedDraftId
-    && next.revision > session.adoptedRevision
-    && next.error === previous.error
-    && next.invalidField === previous.invalidField
-    && next.currentStatus === previous.currentStatus;
+    && next.currentStatus === session.requested.currentStatus;
 }
 
 function sameIdentity(left: LiveStudioIdentity, right: LiveStudioIdentity) {
@@ -1146,10 +1151,11 @@ function isOwnDraftCatchUp(session: LiveStudioSession, next: LiveStudioIdentity)
  * another status or a new submit error — except when the URL only caught up
  * with the draft and revision this studio already autosaved.
  *
- * An external newer revision of the same draft never remounts a studio that
- * still holds unsaved edits: the form keeps them and the revision is not
- * adopted, so the next save reports a conflict and the user chooses between
- * 「載入最新」 and 「以我的覆蓋」 instead of silently losing the typing.
+ * A newer revision or a new error for the same draft never remounts a studio
+ * that still holds unsaved edits: the form keeps them (a new error is shown
+ * through props) and the revision is not adopted, so the next save reports a
+ * conflict and the user chooses between 「載入最新」 and 「以我的覆蓋」
+ * instead of silently losing the typing.
  */
 export function LiveStepperForm(props: LiveStepperFormProps) {
   const requested: LiveStudioIdentity = {
@@ -1165,7 +1171,7 @@ export function LiveStepperForm(props: LiveStepperFormProps) {
   const [hasUnsavedEdits, setHasUnsavedEdits] = useState(false);
   let current = session;
   if (!sameIdentity(session.requested, requested)) {
-    current = isOwnDraftCatchUp(session, requested) || (hasUnsavedEdits && isExternalRevisionOnly(session, requested))
+    current = isOwnDraftCatchUp(session, requested) || (hasUnsavedEdits && isSameDraftNewContext(session, requested))
       ? { ...session, requested }
       : { requested, adoptedDraftId: requested.draftId, adoptedRevision: requested.revision, generation: session.generation + 1 };
     setSession(current);
