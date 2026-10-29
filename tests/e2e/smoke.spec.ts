@@ -1476,8 +1476,8 @@ test("merchant can create and schedule a prerecorded content webinar from the ei
     await expect(page.getByText("發布條件已完成")).toBeVisible();
     const scheduleButton = page.getByRole("button", { name: "建立並排程" });
     await expect(scheduleButton).toBeEnabled();
-    page.once("dialog", (dialog) => dialog.accept());
     await scheduleButton.click();
+    await page.getByRole("alertdialog", { name: "確定要建立並排程這場直播嗎？" }).getByRole("button", { name: "確認建立並排程", exact: true }).click();
 
     await expect(page).toHaveURL(/\/lives\/[^/]+\/preview$/);
     const liveId = new URL(page.url()).pathname.split("/")[2];

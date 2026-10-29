@@ -73,7 +73,7 @@ vi.mock("@/components/stream-allocation-editor", () => ({
   ),
 }));
 
-import { LiveStepPicker, LiveStepperForm } from "./live-stepper-form";
+import { LiveStepPicker, LiveStudioStepperForm } from "./live-stepper-form";
 import { LiveSlugField } from "./live-slug-field";
 
 type ElementNode = {
@@ -192,11 +192,11 @@ const products: Product[] = [
   },
 ];
 
-type FormOverrides = Partial<Parameters<typeof LiveStepperForm>[0]>;
+type FormOverrides = Partial<Parameters<typeof LiveStudioStepperForm>[0]>;
 
 function renderForm(availableProducts: Product[] = products, overrides: FormOverrides = {}) {
   hookState.cursor = 0;
-  return LiveStepperForm({
+  return LiveStudioStepperForm({
     videos: [],
     forms: [],
     templates: [],
@@ -263,7 +263,7 @@ function submitAction(tree: unknown, label: string) {
   const renderedActions = (actions?.type as (props: Record<string, unknown>) => unknown)(actions?.props ?? {});
   return findElement(renderedActions, (candidate) => (
     typeof candidate.type === "function"
-    && candidate.type.name === "FormSubmitButton"
+    && ["FormSubmitButton", "LiveConfirmedSubmitButton"].includes(candidate.type.name)
     && textContent(candidate.props.children) === label
   ));
 }
@@ -1140,6 +1140,7 @@ describe("LiveStepperForm", () => {
     class SyntheticButton {
       name = "status";
       value = "scheduled";
+      form: unknown = formRef.current;
     }
     const submitter = new SyntheticButton();
     (globalThis as Record<string, unknown>).HTMLButtonElement = SyntheticButton;

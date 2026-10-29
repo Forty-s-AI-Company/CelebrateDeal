@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import Link from "next/link";
 import type { Affiliate, InteractionScript, MessageTemplate, Product, RegistrationForm, Video } from "@prisma/client";
 import { Ban, Calendar, Check, Gauge, Package, PlaySquare, Shield } from "lucide-react";
@@ -8,6 +8,7 @@ import { upsertLiveAction } from "@/app/actions";
 import { formatTimeZoneLabel } from "@/lib/format";
 import { LiveSlugField } from "@/components/live-slug-field";
 import { FormSubmitButton } from "@/components/form-submit-button";
+import { LiveConfirmedSubmitButton } from "@/components/live-submit-confirmation";
 import { MediaUploadField } from "@/components/media-upload-field";
 import {
   StreamAllocationEditor,
@@ -535,7 +536,14 @@ function submitOnlyAfterLatestDraft(
   const submitter = (event.nativeEvent as SubmitEvent).submitter;
   void draft.saveNow(activeStep).then((claim) => {
     if (!claim || !writeClaim(claim) || !form) return;
-    form.requestSubmit(submitter instanceof HTMLButtonElement ? submitter : undefined);
+    if (!(submitter instanceof HTMLButtonElement)) {
+      form.requestSubmit();
+      return;
+    }
+    // The confirmation dialog may have been cancelled while the draft was
+    // saving; a detached submitter means the user no longer wants to submit.
+    if (submitter.form !== form) return;
+    form.requestSubmit(submitter);
   });
 }
 
@@ -631,18 +639,18 @@ function LiveSubmitActions({
         {liveId ? "儲存變更" : "建立草稿並預覽"}
       </FormSubmitButton>
       {!liveId ? (
-        <FormSubmitButton name="status" value="scheduled" disabled={!canSubmit || (requiresLivePublishReadiness("scheduled", replayEnabled) && !publishReady)} confirmMessage="確定要建立並排程這場直播嗎？" pendingChildren="排程中…" pendingMessage="正在建立並排程直播間，請勿重複送出。" className="inline-flex min-h-11 items-center justify-center rounded-md bg-cta px-4 text-sm font-semibold text-white transition hover:bg-cta-dark">
+        <LiveConfirmedSubmitButton name="status" value="scheduled" disabled={!canSubmit || (requiresLivePublishReadiness("scheduled", replayEnabled) && !publishReady)} confirmMessage="確定要建立並排程這場直播嗎？" confirmLabel="確認建立並排程" pendingChildren="排程中…" pendingMessage="正在建立並排程直播間，請勿重複送出。" className="inline-flex min-h-11 items-center justify-center rounded-md bg-cta px-4 text-sm font-semibold text-white transition hover:bg-cta-dark">
           建立並排程
-        </FormSubmitButton>
+        </LiveConfirmedSubmitButton>
       ) : statusAction ? (
-        <FormSubmitButton name="status" value={statusAction.value} disabled={actionDisabled} confirmMessage={statusAction.confirm} pendingChildren="處理中…" pendingMessage="正在更新直播公開狀態，請勿重複送出。" className="inline-flex min-h-11 items-center justify-center rounded-md bg-cta px-4 text-sm font-semibold text-white transition hover:bg-cta-dark">
+        <LiveConfirmedSubmitButton name="status" value={statusAction.value} disabled={actionDisabled} confirmMessage={statusAction.confirm} confirmLabel={`確認${statusAction.label}`} pendingChildren="處理中…" pendingMessage="正在更新直播公開狀態，請勿重複送出。" className="inline-flex min-h-11 items-center justify-center rounded-md bg-cta px-4 text-sm font-semibold text-white transition hover:bg-cta-dark">
           {statusAction.label}
-        </FormSubmitButton>
+        </LiveConfirmedSubmitButton>
       ) : null}
       {canUnpublish ? (
-        <FormSubmitButton name="status" value="draft" disabled={!canSubmit} confirmMessage="確定要將這場直播下架並回到草稿嗎？公開連結會立即停止顯示。" pendingChildren="下架中…" pendingMessage="正在將直播下架為草稿，請勿重複送出。" className="inline-flex min-h-11 items-center justify-center rounded-md border border-slate-300 bg-white px-4 text-sm font-semibold text-slate-700 transition hover:bg-slate-50">
+        <LiveConfirmedSubmitButton name="status" value="draft" disabled={!canSubmit} confirmMessage="確定要將這場直播下架並回到草稿嗎？公開連結會立即停止顯示。" confirmLabel="確認下架為草稿" pendingChildren="下架中…" pendingMessage="正在將直播下架為草稿，請勿重複送出。" className="inline-flex min-h-11 items-center justify-center rounded-md border border-slate-300 bg-white px-4 text-sm font-semibold text-slate-700 transition hover:bg-slate-50">
           下架為草稿
-        </FormSubmitButton>
+        </LiveConfirmedSubmitButton>
       ) : null}
     </div>
   );
@@ -1071,25 +1079,54 @@ function LiveDraftConflictActions({ draft }: { draft: { reloadLatest: () => void
   );
 }
 
-export function LiveStepperForm({
-  videos,
-  products,
-  forms,
-  templates,
-  scripts,
-  affiliates,
-  streamMembers,
-  streamPages,
-  csrfToken,
-  error,
-  invalidField,
-  initialDraft,
-  initialValues: suppliedInitialValues,
-  liveId = "",
-  projectId,
-  currentStatus = "draft",
-  timeZone,
-}: {
+type LiveStudioSession = {
+  requestedDraftId: string;
+  error: string;
+  invalidField: string;
+  adoptedDraftId: string;
+  generation: number;
+};
+
+/**
+ * Next keeps client state when `/lives/new` navigates to itself (for example
+ * 「繼續這份草稿」 adds `?draft=`), so a resumed draft kept the blank form's
+ * selects, checkboxes, slug and replay deadline, and its empty draft queue
+ * then created a second draft row. Remount the studio whenever the server
+ * hands it a different draft or a new submit error, except when the URL only
+ * caught up with the draft this form already autosaved into.
+ */
+export function LiveStepperForm(props: LiveStepperFormProps) {
+  const requestedDraftId = props.initialDraft?.id ?? "";
+  const error = props.error ?? "";
+  const invalidField = props.invalidField ?? "";
+  const [session, setSession] = useState<LiveStudioSession>(() => ({
+    requestedDraftId, error, invalidField, adoptedDraftId: requestedDraftId, generation: 0,
+  }));
+  let current = session;
+  if (session.requestedDraftId !== requestedDraftId || session.error !== error || session.invalidField !== invalidField) {
+    const sameStudio = requestedDraftId === session.adoptedDraftId && session.error === error && session.invalidField === invalidField;
+    current = {
+      requestedDraftId,
+      error,
+      invalidField,
+      adoptedDraftId: sameStudio ? session.adoptedDraftId : requestedDraftId,
+      generation: sameStudio ? session.generation : session.generation + 1,
+    };
+    setSession(current);
+  }
+  const adoptDraftId = useCallback((draftId: string) => {
+    setSession((latest) => latest.adoptedDraftId === draftId ? latest : { ...latest, adoptedDraftId: draftId });
+  }, []);
+  return <LiveStudioStepperForm key={current.generation} {...props} onDraftIdChange={adoptDraftId} />;
+}
+
+function useReportedDraftId(draftId: string, onDraftIdChange?: (draftId: string) => void) {
+  useEffect(() => {
+    if (draftId) onDraftIdChange?.(draftId);
+  }, [draftId, onDraftIdChange]);
+}
+
+type LiveStepperFormProps = {
   videos: Array<Pick<Video, "id" | "title">>;
   products: LiveProductOption[];
   forms: LiveFormOption[];
@@ -1108,7 +1145,29 @@ export function LiveStepperForm({
   projectId?: string | null;
   currentStatus?: string;
   timeZone: string;
-}) {
+};
+
+/** The eight-step studio for one draft; mount it through `LiveStepperForm`. */
+export function LiveStudioStepperForm({
+  videos,
+  products,
+  forms,
+  templates,
+  scripts,
+  affiliates,
+  streamMembers,
+  streamPages,
+  csrfToken,
+  error,
+  invalidField,
+  initialDraft,
+  initialValues: suppliedInitialValues,
+  liveId = "",
+  projectId,
+  currentStatus = "draft",
+  timeZone,
+  onDraftIdChange,
+}: LiveStepperFormProps & { onDraftIdChange?: (draftId: string) => void }) {
   const initialValues = initialDraft?.payload ?? suppliedInitialValues ?? emptyLiveStudioDraft();
   const registrationTemplates = templates.filter((template) => template.trigger === "registration_confirmed");
   const notificationTemplates = templates.filter((template) => template.trigger === "live_reminder" || template.trigger === "post_live_followup");
@@ -1153,6 +1212,7 @@ export function LiveStepperForm({
     saveOnMount: Boolean(liveId && !initialDraft),
   });
   useLiveStudioPresetSave(studioPreset, draft.scheduleSave);
+  useReportedDraftId(draft.draftId, onDraftIdChange);
   const preview = buildLivePreview(previewTitle, previewAccentCopy, products, selectedProductIds); const statusAction = liveId ? liveStatusAction(currentStatus) : null;
   const publishReadiness = buildLivePublishReadiness({ studioPreset, products, productIds: selectedProductIds, videos, videoId: selectedVideoId, forms, formId: selectedFormId, templates: registrationTemplates, templateId: selectedTemplateId, scripts, scriptId: selectedScriptId });
   const readinessIsReady = (code: LivePublishRequirementCodeWithReminder) => (

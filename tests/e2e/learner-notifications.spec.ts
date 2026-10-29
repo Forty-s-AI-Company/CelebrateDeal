@@ -268,7 +268,7 @@ test("real manager starts course-linked live, reloads and ends it without republ
   const path=`/lives/${live.id}/edit`;
   await page.goto(path);await page.getByRole("button",{name:/桌機／手機預覽發布/u}).click();
   const start=page.getByRole("button",{name:"開始直播",exact:true});await expect(start).toBeEnabled();
-  page.once("dialog",dialog=>dialog.accept());await start.click();
+  await start.click();await page.getByRole("alertdialog").getByRole("button",{name:"確認開始直播",exact:true}).click();
   await expect.poll(async()=>(await db.live.findUniqueOrThrow({where:{id:live.id}})).status).toBe("live");
   await expect.poll(()=>db.learnerNotificationSourceEvent.count({where:{vendorId:vendor.id,productId:product.id,event:"live_started"}})).toBe(1);
   const source=await db.learnerNotificationSourceEvent.findFirstOrThrow({where:{vendorId:vendor.id,productId:product.id,event:"live_started"}});expect(source.audienceCustomerKeyHash).toBeNull();expect(source.payloadEncryptedEnvelope).not.toContain(live.title);
@@ -276,7 +276,7 @@ test("real manager starts course-linked live, reloads and ends it without republ
   await page.reload();await page.getByRole("button",{name:/桌機／手機預覽發布/u}).click();await expect(page.getByRole("button",{name:"儲存變更",exact:true})).toBeEnabled();await page.getByRole("button",{name:"儲存變更",exact:true}).click();
   await expect.poll(async()=>(await db.live.findUniqueOrThrow({where:{id:live.id}})).updatedAt.toISOString()).not.toBe(beforeSave);
   await expect.poll(()=>db.learnerNotificationSourceEvent.count({where:{vendorId:vendor.id,productId:product.id,event:"live_started"}})).toBe(1);
-  await page.reload();await page.getByRole("button",{name:/桌機／手機預覽發布/u}).click();const end=page.getByRole("button",{name:"結束直播",exact:true});await expect(end).toBeEnabled();page.once("dialog",dialog=>dialog.accept());await end.click();
+  await page.reload();await page.getByRole("button",{name:/桌機／手機預覽發布/u}).click();const end=page.getByRole("button",{name:"結束直播",exact:true});await expect(end).toBeEnabled();await end.click();await page.getByRole("alertdialog").getByRole("button",{name:"確認結束直播",exact:true}).click();
   await expect.poll(async()=>(await db.live.findUniqueOrThrow({where:{id:live.id}})).status).toBe("ended");expect(await db.learnerNotificationSourceEvent.count({where:{vendorId:vendor.id,productId:product.id,event:"live_started"}})).toBe(1);
  }finally{await db.vendor.delete({where:{id:vendor.id}});if(userId)await db.user.delete({where:{id:userId}});await db.$disconnect();}
 });

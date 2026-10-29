@@ -840,8 +840,11 @@ async function commitLiveDraft(input: {
         ...(projectId ? { projectId } : {}),
         vendorId: input.vendorId,
         products: {
+          // LiveProduct's live relation is the composite (vendorId, liveId), so
+          // the nested create inherits vendorId from this live; passing it again
+          // is rejected by Prisma ("Unknown argument `vendorId`"). The composite
+          // (vendorId, productId) FK still binds every product to this vendor.
           create: input.productIds.map((productId, index) => ({
-            vendorId: input.vendorId,
             productId,
             sortOrder: index + 1,
             isPinned: index === 0,
