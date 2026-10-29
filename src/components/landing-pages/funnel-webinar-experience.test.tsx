@@ -75,6 +75,35 @@ describe("Webinar shared preview/public experience", () => {
   });
 });
 
+describe("Webinar bound to an evergreen live", () => {
+  const evergreenResource: WebinarExperienceResource = { ...resource, live: { ...resource.live, isEvergreen: true } };
+  function undatedState() {
+    const result = state();
+    result.flow.webinar = { timezone: "Asia/Taipei", startsAt: null, endsAt: null, replayEndsAt: null };
+    return result;
+  }
+
+  it("accepts registrations without fixed dates and explains the per-visitor session", () => {
+    const html = renderToStaticMarkup(<FunnelWebinarExperience state={undatedState()} slug="current-slug" stepId="webinar_registration" resource={evergreenResource} />);
+    expect(html).toContain('data-webinar-state="waiting"');
+    expect(html).toContain("常青場次");
+    expect(html).toContain("報名後依你的進場時間安排");
+    expect(html).toContain('action="/api/form-submissions"');
+    expect(html).not.toContain("請設定開始時間");
+  });
+
+  it("always offers the evergreen watch page, which runs its own waiting room", () => {
+    const html = renderToStaticMarkup(<FunnelWebinarExperience state={undatedState()} slug="current-slug" stepId="webinar_broadcast" resource={evergreenResource} />);
+    expect(html).toContain('href="/lp/current-slug/broadcast/play"');
+  });
+
+  it("keeps the fixed-date gate for a non-evergreen live without dates", () => {
+    const html = renderToStaticMarkup(<FunnelWebinarExperience state={undatedState()} slug="current-slug" stepId="webinar_broadcast" resource={resource} />);
+    expect(html).toContain('data-webinar-state="missing"');
+    expect(html).not.toContain("/broadcast/play");
+  });
+});
+
 it("posts the boundary's validated ref/share attribution in the native webinar form", () => {
   vi.useFakeTimers(); vi.setSystemTime(new Date("2030-01-01T01:30:00.000Z"));
   const attribution = { referralCode: "synthetic-ref", shareCode: `tls1.${"a".repeat(32)}` };

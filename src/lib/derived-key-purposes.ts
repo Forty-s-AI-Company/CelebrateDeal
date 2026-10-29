@@ -95,6 +95,12 @@ export const DERIVED_KEY_ROTATIONS = Object.freeze({
   ),
   postPurchaseCheckout: rotation("post-purchase-checkout", "post-purchase-checkout:r2:9fc775dc50019fcd"),
   registrationSubmissionResult: rotation("registration-submission-result", "registration-submission-result:r2:15cdb4621848305d"),
+  /**
+   * Evergreen webinar per-visitor session cookie; introduced after #485 under
+   * this name only, so no legacy key. A lost or refused cookie only assigns the
+   * visitor the session a new visitor would get at that moment.
+   */
+  evergreenViewerSession: rotation("evergreen-viewer-session", "evergreen-viewer-session:r2:755cb80211ac7475"),
 
   // Tier 3: long-lived links and cookies. New key signs; legacy still verifies.
   emailUnsubscribe: rotation(

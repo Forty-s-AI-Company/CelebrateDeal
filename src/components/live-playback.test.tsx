@@ -78,6 +78,19 @@ import { LivePurchaseBroadcastPanel } from "./live-purchase-broadcast-panel";
 import { LiveViewerPrivateChat } from "./live-viewer-private-chat";
 import { affiliateClickEndpoint, CHECKOUT_NAVIGATION_LOCK_TIMEOUT_MS, checkoutPagePath, getLiveStatusLabel, getStreamUsageRetryDelayMs, getWaitingCountdownSeconds, isHlsPlaybackUrl, isInternalCheckoutPath, LivePlayback, normalizePlaybackStartSeconds, openExternalUrl, PersistentMiniPlayerControls, PlaybackNavigation, PlaybackToggleButton, requestCheckout, ScriptedInteractionOverlay, shouldResetAffiliateAttribution, STREAM_USAGE_RETRY_DELAYS_MS, stripLiveShareFromUrl, submitCheckout, useLiveAdmission, useLivePlaybackSource } from "./live-playback";
 
+/** Hook-free components the shallow harness renders inline. */
+const RENDERED_COMPONENT_NAMES = [
+  "LiveWaitingRoom",
+  "LiveUnavailableNotice",
+  "LiveIdleState",
+  "EvergreenPreparingNotice",
+  "EvergreenEndedNotice",
+  "LivePlaybackExperience",
+  "LivePlaybackPanel",
+  "ProductSpotlightCard",
+  "ExternalNavigationConfirmDialog",
+];
+
 type ElementNode = {
   type: unknown;
   props: Record<string, unknown>;
@@ -95,7 +108,7 @@ function findElements(value: unknown, predicate: (element: ElementNode) => boole
     ? ScriptedInteractionOverlay(value.props as Parameters<typeof ScriptedInteractionOverlay>[0])
     : value.type === PersistentMiniPlayerControls
       ? PersistentMiniPlayerControls(value.props as Parameters<typeof PersistentMiniPlayerControls>[0])
-      : typeof value.type === "function" && ["LiveWaitingRoom", "LiveUnavailableNotice", "LivePlaybackExperience", "LivePlaybackPanel", "ProductSpotlightCard", "ExternalNavigationConfirmDialog"].includes(value.type.name)
+      : typeof value.type === "function" && RENDERED_COMPONENT_NAMES.includes(value.type.name)
         ? (value.type as (props: Record<string, unknown>) => unknown)(value.props)
     : value.props.children;
 
@@ -113,7 +126,7 @@ function textContent(value: unknown): string {
     ? textContent(ScriptedInteractionOverlay(value.props as Parameters<typeof ScriptedInteractionOverlay>[0]))
     : value.type === PersistentMiniPlayerControls
       ? textContent(PersistentMiniPlayerControls(value.props as Parameters<typeof PersistentMiniPlayerControls>[0]))
-      : typeof value.type === "function" && ["LiveWaitingRoom", "LiveUnavailableNotice", "LivePlaybackExperience", "LivePlaybackPanel", "ProductSpotlightCard", "ExternalNavigationConfirmDialog"].includes(value.type.name)
+      : typeof value.type === "function" && RENDERED_COMPONENT_NAMES.includes(value.type.name)
         ? textContent((value.type as (props: Record<string, unknown>) => unknown)(value.props))
       : textContent(value.props.children);
 }
@@ -1680,5 +1693,207 @@ describe("LivePlayback checkout", () => {
     await vi.advanceTimersByTimeAsync(CHECKOUT_NAVIGATION_LOCK_TIMEOUT_MS);
     expect(checkoutButtons(renderCheckoutLive()).every((button) => button.props.disabled === false)).toBe(true);
     expect(textContent(checkoutErrors(renderCheckoutLive()))).toContain("結帳頁載入逾時");
+  });
+});
+
+describe("LivePlayback evergreen session", () => {
+  type EvergreenData = NonNullable<Parameters<typeof LivePlayback>[0]["live"]["evergreen"]>;
+
+  function evergreenData(startOffsetMs: number, overrides: Partial<EvergreenData> = {}): EvergreenData {
+    const start = new Date(Date.now() + startOffsetMs);
+    return {
+      assigned: true,
+      mode: "just_in_time",
+      timezone: "Asia/Taipei",
+      roomState: startOffsetMs > 0 ? "waiting_countdown" : "playing",
+      sessionStartAt: start.toISOString(),
+      sessionEndAt: new Date(start.getTime() + 1_800_000).toISOString(),
+      offsetSeconds: Math.max(0, -startOffsetMs / 1_000),
+      nextRevealAtSec: null,
+      canRejoin: false,
+      ...overrides,
+    };
+  }
+
+  function stubBrowser(fetchMock: ReturnType<typeof vi.fn>) {
+    vi.stubGlobal("window", { setInterval, clearInterval, setTimeout, clearTimeout, location: { search: "" }, localStorage: {} });
+    vi.stubGlobal("fetch", fetchMock);
+  }
+
+  async function settle() {
+    for (let index = 0; index < 6; index += 1) await Promise.resolve();
+  }
+
+  beforeEach(() => {
+    hookState.cursor = 0;
+    hookState.refCursor = 0;
+    hookState.effectCursor = 0;
+    hookState.effectsEnabled = true;
+    hookState.values = [];
+    hookState.refs = [];
+    hookState.effects = [];
+    hookState.pendingEffects = [];
+    navigation.pathname = "/live/test-fixture-live";
+    vi.clearAllMocks();
+  });
+
+  afterEach(() => {
+    cleanupHookEffects();
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
+  it("asks the server for a session on the first visit without sending any time, then re-renders", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true });
+    stubBrowser(fetchMock);
+    const unassigned = { status: "scheduled", runtimeState: "waiting" as const, admissionRequired: true, evergreen: evergreenData(60_000, { assigned: false }) };
+
+    const tree = renderLive(unassigned);
+    expect(textContent(tree)).toContain("正在為你安排場次");
+    expect(findElements(tree, (element) => element.type === "video")).toHaveLength(0);
+    await flushHookEffects();
+    await settle();
+
+    expect(fetchMock).toHaveBeenCalledExactlyOnceWith("/api/live-evergreen-session", expect.objectContaining({ method: "POST" }));
+    expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toEqual({ vendorId: live.vendorId, liveId: live.id, intent: "claim" });
+    expect(navigation.refresh).toHaveBeenCalledOnce();
+
+    // The server rendered again and still has no session: the browser refused the cookie.
+    renderLive(unassigned);
+    await flushHookEffects();
+    expect(textContent(renderLive(unassigned))).toContain("請允許此網站使用 Cookie");
+    expect(fetchMock).toHaveBeenCalledOnce();
+  });
+
+  it("shows the visitor's own session time and countdown without media, then refreshes at the start", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-10-29T06:03:30.000Z"));
+    const fetchMock = vi.fn();
+    stubBrowser(fetchMock);
+    const evergreen = evergreenData(90_000);
+    const waiting = {
+      status: "scheduled",
+      runtimeState: "waiting" as const,
+      scheduledAt: evergreen.sessionStartAt,
+      serverNow: new Date(Date.now()).toISOString(),
+      admissionRequired: true,
+      evergreen,
+    };
+
+    const tree = renderLive(waiting);
+    const text = textContent(tree);
+    expect(text).toContain("品牌等候室");
+    expect(text).toContain("你的場次：");
+    expect(text).toContain("（Asia/Taipei）");
+    expect(text).toContain("距離你的場次開始 01:30");
+    expect(text).toContain("不是即時直播");
+    expect(findElements(tree, (element) => element.type === "video")).toHaveLength(0);
+    await flushHookEffects();
+    expect(fetchMock).not.toHaveBeenCalled();
+
+    await vi.advanceTimersByTimeAsync(89_000);
+    expect(navigation.refresh).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1_500);
+    expect(navigation.refresh).toHaveBeenCalled();
+  });
+
+  it("locks playback to the session clock so seeking or speed cannot reach later offers", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-10-29T06:20:00.000Z"));
+    const fetchMock = vi.fn((input: string | URL | Request, init?: RequestInit) => {
+      if (init?.method === "DELETE") return Promise.resolve({ ok: true });
+      if (String(input).startsWith("/api/live-playback-source?")) {
+        return Promise.resolve({ ok: true, json: async () => ({ playbackUrl: "https://video.example.test/evergreen.mp4", playbackStartSeconds: 40 }) });
+      }
+      return Promise.resolve({ ok: true });
+    });
+    stubBrowser(fetchMock);
+    const playing = {
+      status: "scheduled",
+      runtimeState: "playing" as const,
+      admissionRequired: true,
+      evergreen: evergreenData(-40_000, { nextRevealAtSec: 100 }),
+      // The server would withhold the later offer; it is shipped here to prove the client clock also holds it back.
+      interactionEvents: [productSpotlightEvent("spotlight-reached", 30, "test-fixture-product-1"), productSpotlightEvent("spotlight-later", 60, "test-fixture-product-2")],
+    };
+
+    renderLive(playing);
+    await flushHookEffects();
+    renderLive(playing);
+    await flushHookEffects();
+    let tree = renderLive(playing);
+    const video = findElements(tree, (element) => element.type === "video")[0];
+    if (!video) throw new Error("Expected video element");
+    expect(video.props.controls).toBe(false);
+    const header = findElements(tree, (element) => typeof element.type === "function" && element.type.name === "LiveBrandHeader")[0];
+    if (!header) throw new Error("Expected brand header");
+    expect(textContent((header.type as (props: Record<string, unknown>) => unknown)(header.props))).toContain("預錄場次播放中");
+    expect(textContent(tree)).toContain("不是即時直播");
+
+    const media = { currentTime: 40, playbackRate: 1 };
+    const target = { currentTarget: media as unknown as HTMLVideoElement };
+    media.currentTime = 1_500;
+    (video.props.onSeeking as (event: typeof target) => void)(target);
+    expect(media.currentTime).toBeLessThanOrEqual(41);
+    media.playbackRate = 2;
+    (video.props.onRateChange as (event: typeof target) => void)(target);
+    expect(media.playbackRate).toBe(1);
+
+    media.currentTime = 1_500;
+    (video.props.onTimeUpdate as (event: typeof target) => void)(target);
+    expect(media.currentTime).toBeLessThanOrEqual(41);
+    tree = renderLive(playing);
+    const spotlight = findElements(tree, (element) => element.props["data-spotlight-state"] === "expanded");
+    expect(spotlight).toHaveLength(1);
+    expect(textContent(spotlight)).toContain("測試商品一");
+    expect(textContent(tree)).not.toContain("測試商品二");
+
+    // Resuming far behind the session rejoins at the session's current second.
+    media.currentTime = 5;
+    (video.props.onPlay as (event: typeof target) => void)(target);
+    expect(media.currentTime).toBeGreaterThanOrEqual(40);
+
+    // The session clock keeps running even while the video is paused.
+    await vi.advanceTimersByTimeAsync(21_000);
+    tree = renderLive(playing);
+    expect(textContent(tree)).toContain("測試商品二");
+
+    // At the next withheld offer second the page re-renders from the server.
+    expect(navigation.refresh).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(61_000);
+    expect(navigation.refresh).toHaveBeenCalled();
+  });
+
+  it("offers an ended visitor the next session through the server", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true });
+    stubBrowser(fetchMock);
+    const ended = {
+      status: "scheduled",
+      runtimeState: "unavailable" as const,
+      admissionRequired: true,
+      evergreen: evergreenData(-1_900_000, { roomState: "ended", canRejoin: true }),
+    };
+    const tree = renderLive(ended);
+    expect(textContent(tree)).toContain("你的場次已結束");
+    expect(textContent(tree)).toContain("場次已結束");
+    const rejoin = findElements(tree, (element) => element.type === "button" && textContent(element.props.children) === "安排下一場")[0];
+    if (!rejoin) throw new Error("Expected rejoin button");
+    (rejoin.props.onClick as () => void)();
+    await settle();
+    expect(fetchMock).toHaveBeenCalledExactlyOnceWith("/api/live-evergreen-session", expect.objectContaining({ method: "POST" }));
+    expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toEqual({ vendorId: live.vendorId, liveId: live.id, intent: "rejoin" });
+    expect(navigation.refresh).toHaveBeenCalledOnce();
+  });
+
+  it("opens the registration form from the consultation CTA once the session reaches it", () => {
+    hookState.effectsEnabled = false;
+    const form = { id: "form-1", headline: "預約諮詢", description: null, fields: [{ key: "email", label: "Email", type: "email", required: true }], submitLabel: "送出", successMessage: "完成" };
+    const consultation = { id: "evergreen-consultation", eventType: "evergreen_consultation", triggerSec: 0, title: "預約諮詢", message: null, productId: null, ctaLabel: "預約諮詢", ctaUrl: null, role: null };
+    const overrides = { videoUrl: "https://video.example.test/recording.mp4", form, interactionEvents: [consultation], evergreen: evergreenData(-10_000) };
+    const tree = renderLive(overrides);
+    const button = findElements(tree, (element) => element.type === "button" && textContent(element.props.children).includes("預約諮詢"))[0];
+    if (!button) throw new Error("Expected consultation CTA");
+    (button.props.onClick as () => void)();
+    expect(findElements(renderLive(overrides), (element) => element.props["aria-label"] === "直播報名")).toHaveLength(1);
   });
 });

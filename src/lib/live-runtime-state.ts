@@ -47,6 +47,7 @@ type LiveRuntimeRecord = {
   endedAt: Date | null;
   replayAvailableUntil: Date | null;
   replayEnabled: boolean;
+  isEvergreen?: boolean | null;
   video: { id: string; durationSec: number | null } | null;
 };
 
@@ -259,6 +260,8 @@ export function resolveLiveRuntimeState(
 function reconciliationTarget(live: LiveRuntimeRecord, decision: LiveRuntimeDecision) {
   if (
     live.streamMode !== "vod"
+    // An evergreen VOD has no shared end: every visitor has their own session.
+    || live.isEvergreen === true
     || !decision.canReconcileToEnded
     || !decision.completionAt
     || live.status === "ended"
@@ -294,6 +297,7 @@ export async function reconcileLiveRuntimeState(
       endedAt: true,
       replayAvailableUntil: true,
       replayEnabled: true,
+      isEvergreen: true,
       video: { select: { id: true, durationSec: true } },
     },
   }) as LiveRuntimeRecord | null;

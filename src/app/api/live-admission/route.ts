@@ -3,6 +3,7 @@ import { z } from "zod";
 import { readJsonBody, requireSameOriginRequest } from "@/lib/api-security";
 import { admitLiveViewer, LIVE_VIEWER_SESSION_TTL_MS, LiveQuotaAdmissionError, liveViewerCookieOptions, liveViewerTokenFromRequest, releaseLiveViewer } from "@/lib/live-quota-admission";
 import { getDb } from "@/lib/db";
+import { evergreenSessionTokenFromRequest } from "@/lib/evergreen-viewer-session";
 import { createLiveViewerPass, LIVE_VIEWER_PASS_COOKIE, liveViewerPassCookieOptions } from "@/lib/live-viewer-pass";
 import { checkRateLimit } from "@/lib/rate-limit";
 
@@ -46,6 +47,7 @@ export async function POST(request: Request) {
     const result = await admitLiveViewer(getDb(), {
       ...payload,
       token: liveViewerTokenFromRequest(request),
+      evergreenToken: evergreenSessionTokenFromRequest(request, payload.liveId),
     });
     const response = NextResponse.json({ ok: true });
     response.cookies.set("celebratedeal_live_viewer", result.token, liveViewerCookieOptions(request));

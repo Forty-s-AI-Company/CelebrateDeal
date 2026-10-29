@@ -35,9 +35,15 @@ export function EvergreenWebinarSettings({
           <h2 className="text-lg font-semibold text-slate-950">常青 Webinar 設定</h2>
           <p className="mt-1 text-sm text-slate-600">沿用這場直播目前的來源影片；公開觀看永遠鎖定正常倍速。</p>
         </div>
-        <p role="note" className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
-          <strong>尚未啟用：</strong>常青排程目前只能儲存設定與在預覽頁試看，公開觀看頁還不會依這些設定自動開場或湊場；正式對外開放前請勿依賴此功能。
-        </p>
+        <div role="note" className="grid gap-1 rounded-md border border-blue-100 bg-blue-50/60 px-3 py-2 text-sm text-slate-700">
+          <p><strong>公開觀看頁如何運作：</strong>啟用後，每位觀眾第一次進入觀看頁或線上講座感謝頁時，系統會依商家時區為他安排專屬場次，重新整理也不會改變；場次開始前顯示等候室倒數，開始後以正常倍速從場次進度播放，觀眾無法快轉或加速。</p>
+          <ul className="list-disc pl-5 text-xs leading-5 text-slate-600">
+            <li>即時入場：排入下一個整點間隔（例如每 15 分鐘的 :00、:15、:30、:45）；每日固定場次：排入進行中或下一個時段；隨選播放：從觀眾第一次進入時開始。</li>
+            <li>優惠券、諮詢 CTA 與互動腳本的商品聚焦、CTA，只會在該觀眾的場次播放到設定秒數後才由伺服器送出。</li>
+            <li>場次結束後依直播的「回放」設定開放回放；未開放時觀眾可自行安排下一場。抽獎、投票、紅包與快閃搶購為全場共用互動，常青場次不會出現。</li>
+            <li>頁面會標示「預錄場次」，不會宣稱為即時直播。變更排程設定後，既有觀眾的場次會重新安排。</li>
+          </ul>
+        </div>
         {error ? <p role="alert" className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">{evergreenError(error)}</p> : null}
         {notice === "evergreen_saved" ? <p role="status" className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">常青 Webinar 設定已儲存。</p> : null}
         <label className="flex items-start gap-3 rounded-md border border-border p-3 text-sm text-slate-700">
@@ -57,6 +63,7 @@ export function EvergreenWebinarSettings({
           </SelectField>
           <Field label="可選排程錨點（商家時區）" name="evergreenSessionStartAt" type="datetime-local" defaultValue={value.evergreenSessionStartAt} />
         </div>
+        <p className="-mt-2 text-xs text-slate-500">設定排程錨點後，所有觀眾共用這一個開場時間（取代上方開播模式）；留空則依開播模式為每位觀眾安排場次。</p>
         <fieldset className="grid gap-2 rounded-md border border-border p-3">
           <legend className="px-1 text-sm font-medium text-slate-700">每日固定場次</legend>
           <p className="text-xs text-slate-500">只在「每日固定場次」使用；最多可設定 4 個時段。</p>

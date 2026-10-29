@@ -2,6 +2,7 @@ import { z } from "zod";
 import { NextResponse } from "next/server";
 import { requireSameOriginRequest } from "@/lib/api-security";
 import { getDb } from "@/lib/db";
+import { evergreenSessionTokenFromRequest } from "@/lib/evergreen-viewer-session";
 import { liveViewerTokenFromRequest } from "@/lib/live-quota-admission";
 import { resolveLivePlaybackSource } from "@/lib/live-playback-source";
 import { checkRateLimit } from "@/lib/rate-limit";
@@ -35,7 +36,11 @@ export async function GET(request: Request) {
   const token = liveViewerTokenFromRequest(request);
   if (!token) return unavailableResponse();
 
-  const source = await resolveLivePlaybackSource(getDb(), { ...parsed.data, token });
+  const source = await resolveLivePlaybackSource(getDb(), {
+    ...parsed.data,
+    token,
+    evergreenToken: evergreenSessionTokenFromRequest(request, parsed.data.liveId),
+  });
   if (!source) return unavailableResponse();
 
   return NextResponse.json(source, {

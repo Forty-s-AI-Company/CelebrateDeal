@@ -8,10 +8,15 @@ const mocks = vi.hoisted(() => ({
     throw new Error("NEXT_NOT_FOUND");
   }),
   warn: vi.fn(),
+  cookies: vi.fn(),
 }));
 
 vi.mock("next/navigation", () => ({
   notFound: mocks.notFound,
+}));
+
+vi.mock("next/headers", () => ({
+  cookies: mocks.cookies,
 }));
 
 vi.mock("@/lib/db", () => ({
@@ -660,5 +665,146 @@ describe("PublicLivePage", () => {
     expect(Object.keys(element.props.live)).toEqual([
       "id", "title", "slug", "status", "runtimeState", "scheduledAt", "serverNow", "description", "accentCopy", "heroImageUrl", "vendorId", "admissionRequired", "chatEnabled", "brand", "form", "formConfigurationUnavailable", "interactionEvents", "scheduledMessages", "products",
     ]);
+    expect(mocks.cookies).not.toHaveBeenCalled();
+  });
+});
+
+describe("PublicLivePage evergreen session", () => {
+  const product = (id: string, name: string) => ({
+    vendorId: "vendor-1",
+    offerLabel: id === "product-1" ? "早鳥價" : null,
+    product: { id, vendorId: "vendor-1", isActive: true, fulfillmentTypeConfirmed: true, name, description: null, priceCents: 1000, compareAtCents: null, currency: "TWD", imageUrl: null, checkoutUrl: null },
+  });
+  const event = (id: string, eventType: string, triggerSec: number, productId: string | null = null) => ({
+    id, eventType, triggerSec, title: id, message: null, productId, ctaLabel: eventType === "cta_switch" ? "了解更多" : null, ctaUrl: eventType === "cta_switch" ? "https://shop.example.test/more" : null, role: null,
+    metadata: eventType === "poll" ? { question: "選哪個？", options: ["A", "B"], durationSec: 30 } : null,
+  });
+
+  function evergreenSalesLive(overrides: Record<string, unknown> = {}) {
+    return {
+      ...runtimeReadySalesLive(),
+      status: "scheduled",
+      scheduledAt: new Date("2026-01-01T00:00:00.000Z"),
+      replayEnabled: false,
+      vendor: { ...publicLive.vendor, timezone: "Asia/Taipei" },
+      video: { ...readyVideo, durationSec: 1_800 },
+      isEvergreen: true,
+      evergreenScheduleMode: "just_in_time",
+      evergreenIntervalMinutes: 15,
+      evergreenDailyTimes: [],
+      evergreenSessionStartAt: null,
+      evergreenPitchAtSeconds: 200,
+      evergreenConsultationAtSeconds: null,
+      interactionScript: {
+        vendorId: "vendor-1",
+        status: "published",
+        events: [
+          event("spotlight-reached", "product_spotlight", 60, "product-2"),
+          event("poll-shared-run", "poll", 100),
+          event("cta-later", "cta_switch", 400),
+        ],
+      },
+      products: [product("product-1", "早鳥課程"), product("product-2", "進階課程")],
+      ...overrides,
+    };
+  }
+
+  async function sessionCookie(enteredAt: Date, live = evergreenSalesLive()) {
+    const { resolveEvergreenViewerSession, evergreenSessionCookieName } = await import("@/lib/evergreen-viewer-session");
+    const session = resolveEvergreenViewerSession({ live: live as never, vendorTimezone: "Asia/Taipei", token: null, intent: "claim", now: enteredAt });
+    return { name: evergreenSessionCookieName("live-1"), value: session!.issuedToken! };
+  }
+
+  function withCookie(cookie: { name: string; value: string } | null) {
+    mocks.cookies.mockResolvedValue({ get: (name: string) => (cookie && name === cookie.name ? { name, value: cookie.value } : undefined) });
+  }
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.stubEnv("CSRF_SECRET", "public-live-evergreen-page-test-secret-0123456789");
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllEnvs();
+  });
+
+  it("keeps a first visit in the waiting room with every offer and product withheld", async () => {
+    vi.setSystemTime(new Date("2026-10-29T06:03:00.000Z"));
+    withCookie(null);
+    mocks.findFirst.mockResolvedValue(evergreenSalesLive());
+
+    const element = await PublicLivePage({ params: Promise.resolve({ slug: "public-live" }) });
+    expect(element.props.live).toMatchObject({
+      runtimeState: "waiting",
+      scheduledAt: "2026-10-29T06:15:00.000Z",
+      evergreen: { assigned: false, roomState: "waiting_countdown", timezone: "Asia/Taipei", nextRevealAtSec: null },
+    });
+    expect(element.props.live.interactionEvents).toEqual([]);
+    expect(element.props.live.products).toEqual([]);
+  });
+
+  it("ships only the offers the visitor's own session reached and the next reveal second", async () => {
+    const cookie = await sessionCookie(new Date("2026-10-29T06:03:00.000Z"));
+    vi.setSystemTime(new Date("2026-10-29T06:20:00.000Z"));
+    withCookie(cookie);
+    mocks.findFirst.mockResolvedValue(evergreenSalesLive());
+
+    const element = await PublicLivePage({ params: Promise.resolve({ slug: "public-live" }) });
+    expect(element.props.live).toMatchObject({
+      runtimeState: "playing",
+      scheduledAt: "2026-10-29T06:15:00.000Z",
+      evergreen: { assigned: true, roomState: "playing", offsetSeconds: 300, nextRevealAtSec: 400, canRejoin: false },
+    });
+    // The pitch (200s) spotlight is reached; the 400s CTA is withheld and the shared-run poll is never offered.
+    expect(element.props.live.interactionEvents.map((item: { id: string }) => item.id)).toEqual(["spotlight-reached", "evergreen-pitch"]);
+    expect(element.props.live.products.map((item: { id: string }) => item.id)).toEqual(["product-1", "product-2"]);
+    expect(JSON.stringify(element.props.live)).not.toContain("https://shop.example.test/more");
+    expect(JSON.stringify(element.props.live)).not.toContain(cookie.value);
+  });
+
+  it("withholds the coupon until its second and reveals it after a refresh", async () => {
+    const cookie = await sessionCookie(new Date("2026-10-29T06:03:00.000Z"));
+    vi.setSystemTime(new Date("2026-10-29T06:16:30.000Z"));
+    withCookie(cookie);
+    mocks.findFirst.mockResolvedValue(evergreenSalesLive());
+
+    const early = await PublicLivePage({ params: Promise.resolve({ slug: "public-live" }) });
+    expect(early.props.live.evergreen).toMatchObject({ offsetSeconds: 90, nextRevealAtSec: 200 });
+    expect(early.props.live.interactionEvents.map((item: { id: string }) => item.id)).toEqual(["spotlight-reached"]);
+    expect(early.props.live.products.map((item: { id: string }) => item.id)).toEqual(["product-2"]);
+  });
+
+  it("ships the whole offer timeline once the session ended into an open replay", async () => {
+    const cookie = await sessionCookie(new Date("2026-10-29T06:03:00.000Z"));
+    vi.setSystemTime(new Date("2026-10-29T07:00:00.000Z"));
+    withCookie(cookie);
+    mocks.findFirst.mockResolvedValue(evergreenSalesLive({ replayEnabled: true }));
+
+    const element = await PublicLivePage({ params: Promise.resolve({ slug: "public-live" }) });
+    expect(element.props.live).toMatchObject({ runtimeState: "replay", evergreen: { roomState: "ended" } });
+    expect(element.props.live.interactionEvents.map((item: { id: string }) => item.id)).toEqual(["spotlight-reached", "evergreen-pitch", "cta-later"]);
+  });
+
+  it("shows an ended session with a rejoin option when replay is closed", async () => {
+    const cookie = await sessionCookie(new Date("2026-10-29T06:03:00.000Z"));
+    vi.setSystemTime(new Date("2026-10-29T07:00:00.000Z"));
+    withCookie(cookie);
+    mocks.findFirst.mockResolvedValue(evergreenSalesLive());
+
+    const element = await PublicLivePage({ params: Promise.resolve({ slug: "public-live" }) });
+    expect(element.props.live).toMatchObject({ runtimeState: "unavailable", evergreen: { roomState: "ended", canRejoin: true } });
+    expect(element.props.live.products).toEqual([]);
+  });
+
+  it("keeps a merchant-ended evergreen live on the regular lifecycle", async () => {
+    vi.setSystemTime(new Date("2026-10-29T06:03:00.000Z"));
+    withCookie(null);
+    mocks.resolveLiveRuntime.mockReturnValue({ state: "replay", playbackStartSeconds: null });
+    mocks.findFirst.mockResolvedValue(evergreenSalesLive({ status: "ended", replayEnabled: true }));
+
+    const element = await PublicLivePage({ params: Promise.resolve({ slug: "public-live" }) });
+    expect(element.props.live.runtimeState).toBe("replay");
+    expect(element.props.live).not.toHaveProperty("evergreen");
   });
 });
