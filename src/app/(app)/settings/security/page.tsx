@@ -34,6 +34,10 @@ import { recentMfaStatus } from "@/lib/recent-mfa";
 import { statusLabel } from "@/lib/status-labels";
 import { vendorMemberRoleLabel } from "@/lib/vendor-roles";
 
+// The add-member Server Action sends the invitation email with `after()`
+// inside this limit (see IMMEDIATE_EMAIL_DISPATCH_MAX_DURATION_SECONDS).
+export const maxDuration = 60;
+
 const errorMessages: Record<string, string> = {
   current_password: "目前密碼不正確。",
   ...PASSWORD_POLICY_MESSAGES,

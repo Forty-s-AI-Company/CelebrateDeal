@@ -9,6 +9,10 @@ import { requireFinanceAdmin } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { formatCurrency, formatDateTime } from "@/lib/format";
 
+// The webhook retry Server Action can schedule the paid receipt email with
+// `after()` inside this limit (see IMMEDIATE_EMAIL_DISPATCH_MAX_DURATION_SECONDS).
+export const maxDuration = 60;
+
 function sevenDaysAgo() {
   const date = new Date();
   date.setDate(date.getDate() - 7);

@@ -18,6 +18,14 @@ import { loadPublicLandingPage } from "@/lib/landing-page-service";
 import { parseFunnelStepPages } from "@/lib/funnel-step-pages";
 
 export const dynamic = "force-dynamic";
+
+// The consultation booking block (a client component, so it cannot carry
+// segment config itself) calls a Server Action that sends booking emails
+// with `after()` inside this page's limit
+// (see IMMEDIATE_EMAIL_DISPATCH_MAX_DURATION_SECONDS).
+// Form submissions post to /api/form-submissions, which sets its own.
+export const maxDuration = 60;
+
 const load = cache(loadPublicLandingPage);
 
 async function resolve(slug: string, stepPath: string) {

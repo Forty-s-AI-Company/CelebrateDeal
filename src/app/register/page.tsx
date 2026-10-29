@@ -11,6 +11,10 @@ import { REGISTRATION_INVITE_ONLY_MESSAGE, registrationMode } from "@/lib/regist
 import { TurnstileWidget } from "@/components/turnstile-widget";
 import { TURNSTILE_ACTIONS, TURNSTILE_ERROR_MESSAGES, turnstileSiteKey } from "@/lib/turnstile";
 
+// The registration Server Action sends the email verification link with
+// `after()` inside this limit (see IMMEDIATE_EMAIL_DISPATCH_MAX_DURATION_SECONDS).
+export const maxDuration = 60;
+
 const errors: Record<string, string> = { invalid: "請確認資料完整，密碼至少 8 個字元。", common: PASSWORD_POLICY_MESSAGES.common, personal: PASSWORD_POLICY_MESSAGES.personal, exists: "這個 Email 已註冊，請直接登入。", rate_limited: "註冊嘗試過多，請稍後再試。", temporarily_unavailable: "註冊保護服務暫時無法使用。", consent_required: "請先閱讀並勾選同意使用條款與隱私通知。", policy_updated: "使用條款或隱私通知已更新，請重新閱讀後再勾選同意。", invite_mismatch: "Email 必須和邀請連結上的 Email 相同。", ...TURNSTILE_ERROR_MESSAGES };
 
 const INVITE_PROBLEMS = {
