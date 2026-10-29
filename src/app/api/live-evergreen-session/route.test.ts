@@ -155,8 +155,33 @@ describe("GET /api/live-evergreen-session", () => {
     expect(await response.json()).toMatchObject({ assigned: true, sessionStartAt: "2026-10-29T06:15:00.000Z" });
   });
 
-  it("rejects malformed queries", async () => {
+  it("rejects an empty liveId", async () => {
     expect((await GET(get("liveId="))).status).toBe(400);
-    expect((await GET(get("liveId=live-1&extra=1"))).status).toBe(200);
+    expect(db.live.findFirst).not.toHaveBeenCalled();
+  });
+
+  it("ignores unknown query parameters (only liveId and vendorId are read)", async () => {
+    const response = await GET(get("liveId=live-1&extra=1"));
+    expect(response.status).toBe(200);
+    expect(db.live.findFirst).toHaveBeenCalledWith(expect.objectContaining({ where: expect.not.objectContaining({ extra: expect.anything() }) }));
+  });
+});
+
+describe("evergreen session cookie lifetime", () => {
+  function maxAge(header: string) {
+    return Number(/max-age=(\d+)/iu.exec(header)?.[1]);
+  }
+
+  it("expires one hour after the visitor's session ends when replay is closed", async () => {
+    // Claimed at 06:03 for the 06:15 cohort of a 30-minute video: the session ends 06:45.
+    const header = setCookie(await POST(post({ vendorId: "vendor-1", liveId: "live-1" })))!;
+    expect(maxAge(header)).toBe((42 + 60) * 60);
+    expect(header).toMatch(/Path=\//u);
+  });
+
+  it("caps an open-ended replay window at seven days", async () => {
+    db.live.findFirst.mockResolvedValue({ ...evergreenLive, replayEnabled: true, replayAvailableUntil: null });
+    const header = setCookie(await POST(post({ vendorId: "vendor-1", liveId: "live-1" })))!;
+    expect(maxAge(header)).toBe(7 * 24 * 60 * 60);
   });
 });

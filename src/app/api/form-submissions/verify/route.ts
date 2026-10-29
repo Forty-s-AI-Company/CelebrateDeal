@@ -14,6 +14,11 @@ import {
   formSubmissionChatSessionCookieOptions,
 } from "@/lib/form-submission-chat-session";
 import { verifyFormSubmission } from "@/lib/form-submission-verification-domain";
+import {
+  EVERGREEN_NEUTRAL_START_TEXT,
+  evergreenRegistrationStartText,
+  evergreenSessionTokenFromRequest,
+} from "@/lib/evergreen-viewer-session";
 import { captureTrackingBrowserContext } from "@/lib/tracking-browser-context";
 import { captureOperationalError } from "@/lib/monitoring";
 import { checkRateLimit } from "@/lib/rate-limit";
@@ -78,12 +83,41 @@ export async function POST(request: Request) {
   if (result.status === "invalid") return redirectResult(request, "invalid");
 
   if (result.status === "verified" && result.confirmation) {
+    const { evergreen, ...confirmation } = result.confirmation;
+    // An evergreen Live has no shared start: use this visitor's own session
+    // (from their signed cookie) or a neutral phrase, never scheduledAt.
+    // The submission is already VERIFIED here, so a session-key failure must
+    // never turn into a 500 that drops the confirmation, reminders and cookie.
+    let liveStartAtText: string | undefined;
+    if (evergreen) {
+      try {
+        liveStartAtText = evergreenRegistrationStartText({
+          live: evergreen.live,
+          vendorTimezone: evergreen.vendorTimezone,
+          token: evergreenSessionTokenFromRequest(request, evergreen.live.id),
+        });
+      } catch (error) {
+        liveStartAtText = EVERGREEN_NEUTRAL_START_TEXT;
+        try {
+          captureOperationalError(error, {
+            source: "form_submission_verification",
+            operation: "evergreen_start_text",
+            status: "failed",
+          });
+        } catch {
+          // Monitoring cannot change the verified result.
+        }
+      }
+    }
     const sendNow: string[] = [];
     try {
-      const confirmation = await ensureRegistrationConfirmationDelivery(result.confirmation);
+      const confirmationResult = await ensureRegistrationConfirmationDelivery({
+        ...confirmation,
+        ...(liveStartAtText ? { liveStartAtText } : {}),
+      });
       // A repeated verification may find its confirmation still queued; the
       // shared claim lets that row be sent at most once.
-      const confirmationId = deliveryIdForStatuses(confirmation, ["queued", "duplicate"]);
+      const confirmationId = deliveryIdForStatuses(confirmationResult, ["queued", "duplicate"]);
       if (confirmationId) sendNow.push(confirmationId);
     } catch (error) {
       try {
@@ -98,9 +132,10 @@ export async function POST(request: Request) {
     }
     try {
       const reminder = await ensureLiveReminderDelivery({
-        ...result.confirmation,
-        template: result.confirmation.reminderTemplate,
-        reminderOffsetMinutes: result.confirmation.liveReminderOffsetMinutes,
+        ...confirmation,
+        template: confirmation.reminderTemplate,
+        reminderOffsetMinutes: confirmation.liveReminderOffsetMinutes,
+        evergreenActive: Boolean(evergreen),
       });
       // A reminder is normally scheduled for later and left to the job. Only a
       // registration made inside the reminder window is already due now.

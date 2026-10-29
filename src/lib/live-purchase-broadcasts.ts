@@ -3,6 +3,7 @@ import { Prisma, type PrismaClient } from "@prisma/client";
 import { z } from "zod";
 import { hasActiveLiveViewerSession } from "./live-quota-admission";
 import { maskCustomerName, type LivePurchaseBroadcastItem } from "./live-interaction";
+import { EVERGREEN_ACTIVATION_SELECT, isActiveEvergreenLive } from "./evergreen-activation";
 
 const Identifier = z.string().regex(/^[A-Za-z0-9_-]{1,128}$/u);
 export const LivePurchaseBroadcastQuery = z.object({ vendorId: Identifier, liveId: Identifier }).strict();
@@ -12,7 +13,12 @@ export class LivePurchaseBroadcastAccessDenied extends Error {}
 
 /** Read one consistent, bounded snapshot. Only server-attributed, unrefunded
  * paid purchases of this live's visible products become public display cards.
- * An empty product list must never widen the query to the entire merchant. */
+ * An empty product list must never widen the query to the entire merchant.
+ *
+ * An active evergreen Live gets no ticker: each visitor's session reveals
+ * offers at its own offset, and a shared ticker would name products their
+ * session has not reached yet. (Reveal is presentation only; it never
+ * authorizes or blocks a purchase, and checkout keeps its own server checks.) */
 export async function listLivePurchaseBroadcasts(db: Database, input: {
   vendorId: string; liveId: string; admissionToken: string | null; now?: Date;
 }): Promise<LivePurchaseBroadcastItem[]> {
@@ -26,8 +32,12 @@ export async function listLivePurchaseBroadcasts(db: Database, input: {
     if (!await hasActiveLiveViewerSession(tx as unknown as PrismaClient, { ...scope, token: admissionToken, now })) {
       throw new LivePurchaseBroadcastAccessDenied();
     }
-    const live = await tx.live.findFirst({ where: { id: scope.liveId, vendorId: scope.vendorId }, select: { id: true } });
+    const live = await tx.live.findFirst({
+      where: { id: scope.liveId, vendorId: scope.vendorId },
+      select: { id: true, ...EVERGREEN_ACTIVATION_SELECT, video: { select: { durationSec: true } } },
+    });
     if (!live) throw new LivePurchaseBroadcastAccessDenied();
+    if (isActiveEvergreenLive(live, { now })) return [];
     const product = await tx.liveProduct.findFirst({ where: { ...scope, isVisible: true }, select: { id: true } });
     if (!product) return [];
     // A relational predicate includes every visible product without loading an
