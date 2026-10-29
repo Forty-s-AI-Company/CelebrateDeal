@@ -68,11 +68,11 @@ describe("template catalog labels", () => {
   it("knows which steps a gallery template is offered for", () => {
     expect(compatibleStepTypes({ id: "webinar-thank-you-v2", goal: "webinar" })).toEqual(["webinar_thank_you_page"]);
     expect(compatibleStepTypes({ id: "custom-terms-v2", goal: "custom" })).toEqual(["info_page", "contact_us_page"]);
-    // Retired ids are no longer offered for any step; step-only templates keep their steps but are not browsable.
+    // Retired ids are no longer offered for any step; thank-you pages are offered only for their thank-you step.
     expect(compatibleStepTypes({ id: "webinar-thank-you", goal: "webinar" })).toEqual([]);
     expect(compatibleStepTypes({ id: "custom-terms", goal: "custom" })).toEqual([]);
     expect(compatibleStepTypes({ id: "sell-simple-checkout", goal: "sell" })).toEqual([]);
-    expect(compatibleStepTypes({ id: "sales-course-watercolor", goal: "sell" })).toEqual(["sales_page", "order_form", "upsell", "downsell"]);
+    expect(compatibleStepTypes({ id: "sales-course-watercolor", goal: "sell" })).toEqual(["order_form"]);
     expect(compatibleStepTypes({ id: "sales-course-watercolor-thanks", goal: "sell" })).toEqual(["thank_you_page"]);
     expect(compatibleStepTypes({ id: "leads-checklist-minimal", goal: "audience" })).toEqual(["opt_in_page", "inline_form", "popup_form", "link_in_bio"]);
     expect(compatibleStepTypes({ id: "leads-checklist-minimal-thanks", goal: "audience" })).toEqual(["opt_in_thank_you_page"]);

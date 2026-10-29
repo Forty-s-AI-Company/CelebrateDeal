@@ -2,6 +2,7 @@ import type { FunnelNodeType } from "@/lib/funnel-page-document";
 import type { FunnelCommerceBinding, FunnelCommerceView } from "@/lib/funnel-commerce";
 import { formatCurrency } from "@/lib/format";
 import { showcaseReadableOn } from "@/lib/funnel-showcase";
+import { funnelContrastRatio } from "@/lib/funnel-typography";
 
 const money = (priceCents: number, currency: string) => formatCurrency(priceCents, currency);
 const buttonClass = "inline-flex min-h-11 items-center justify-center rounded-xl px-5 py-3 font-semibold";
@@ -12,7 +13,9 @@ const DEFAULT_ACCENT = "#1d4ed8";
 export function FunnelCommerceElement({ type, binding, commerce, interactive = false, accentColor = DEFAULT_ACCENT }: {
   type: FunnelNodeType; binding?: FunnelCommerceBinding; commerce?: FunnelCommerceView; interactive?: boolean; accentColor?: string;
 }) {
-  const buttonStyle = { backgroundColor: accentColor, color: showcaseReadableOn(accentColor) };
+  // A page colour that would not read as a button on the light offer card (white, transparent, pale) falls back to the default.
+  const accent = (funnelContrastRatio(accentColor, "#ffffff") ?? 0) >= 3 ? accentColor : DEFAULT_ACCENT;
+  const buttonStyle = { backgroundColor: accent, color: showcaseReadableOn(accent) };
   const product = commerce?.product;
   if (!binding || !product || product.id !== binding.productId) return <div data-funnel-capability={type} role="status" className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">尚未連結商品與付款方式。請在訂單步驟的「商品與結帳」選擇有效商品，再儲存並發布。</div>;
   const checkoutLink = (label: string) => interactive && commerce.checkoutPath?.startsWith("/lp/") && !commerce.checkoutPath.includes("\\")

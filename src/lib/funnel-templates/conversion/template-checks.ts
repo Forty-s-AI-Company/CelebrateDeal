@@ -46,6 +46,9 @@ function nodeIssues(node: FunnelNode, prefix: string, kind: ConversionTemplateDe
     else if (!existsSync(path.join(process.cwd(), "public", src))) issues.push(`圖片檔案不存在：${src}`);
     else if (src.endsWith(".svg") && statSync(path.join(process.cwd(), "public", src)).size > 60_000) issues.push(`SVG 超過 60KB：${src}`);
   }
+  // Links stay on the page or the site: anchors (#offer) or same-origin paths, never another host.
+  const hrefs = [...node.actions.flatMap((action) => ("href" in action ? [action.href] : [])), ...strings(node.props).filter((entry) => /href$/iu.test(entry.key)).map((entry) => entry.text)];
+  for (const href of hrefs) if (!(href.startsWith("#") || (href.startsWith("/") && !href.startsWith("//")))) issues.push(`連結只能是頁內錨點或站內路徑：${node.id} → ${href}`);
   const texts = strings(node.props);
   for (const entry of texts) {
     if (HARDCODED_DATE.test(entry.text)) issues.push(`文字寫死了日期：${node.id}（${entry.text.slice(0, 30)}）`);

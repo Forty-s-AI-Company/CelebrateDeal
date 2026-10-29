@@ -138,7 +138,7 @@ export const template: ConversionTemplateDefinition = {
     name: "接案範本包・名單感謝頁",
     description: "交付範本包、提醒收信，並推薦接案定價工作坊。",
     tokens: { background: BG, surface: CARD, ink: INK, body: BODY, accent: PRIMARY, onAccent: CARD, line: LINE, footerBackground: NAVY, footerText: NAVY_BODY, radius: 8 },
-    eyebrow: "範本包已寄出",
+    eyebrow: "已收到你的 Email",
     title: "下載連結在你的信箱裡",
     intro: "一分鐘內會收到標題為「你的接案範本包」的信。沒看到的話，請檢查促銷內容或垃圾郵件匣。",
     card: { title: "自由接案報價單＋合約範本包", text: "報價單、接案合約、請款與收款追蹤、時薪計算器，共 4 個檔案（Google 試算表、Excel、Word）。", buttonLabel: "開啟範本包", buttonHref: "#ty-steps" },

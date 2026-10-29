@@ -128,7 +128,7 @@ export const template: ConversionTemplateDefinition = {
     name: "睡眠自我檢測・名單感謝頁",
     description: "交付檢測表、提醒收信，並推薦 21 天睡眠練習課。",
     tokens: { background: BG, surface: CARD, ink: INK, body: BODY, accent: PRIMARY, onAccent: CARD, line: LINE, footerBackground: NIGHT, footerText: NIGHT_BODY, radius: 24 },
-    eyebrow: "檢測表已寄出",
+    eyebrow: "已收到你的 Email",
     title: "今晚睡前，花 3 分鐘做一次",
     intro: "一分鐘內會收到標題為「你的睡眠習慣自我檢測表」的信。沒看到的話，請檢查促銷內容或垃圾郵件匣。",
     card: { title: "睡眠習慣自我檢測表", text: "10 題勾選表＋4 種卡關型對照建議（PDF，可列印也可在手機上填）。本檢測為一般衛教，不是醫療診斷。", buttonLabel: "下載檢測表", buttonHref: "#ty-steps" },

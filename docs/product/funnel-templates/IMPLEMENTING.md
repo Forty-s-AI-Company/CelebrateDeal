@@ -89,5 +89,5 @@ npm run qa:template-layout -- --templates=<id>,<id>-thanks --stress --widths=144
 ## 6. 汰換舊範本
 
 - 舊的 audience 6 款、sell 3 款標記 retired（`funnel-template-gallery.ts` 的 `LEGACY_CONVERSION_REPLACEMENTS`）：仍可解析與實例化，既有漏斗不壞；不再出現在步驟選單與範本庫。
-- 步驟選單：名單目標的 `opt_in_page`、`inline_form`、`popup_form`、`link_in_bio` 列出 8 個名單頁；`opt_in_thank_you_page` 列出 8 個名單感謝頁。銷售目標的 `order_form`、`sales_page`、`upsell`、`downsell` 列出 8 個銷售頁；`thank_you_page` 列出 8 個訂單感謝頁。
+- 步驟選單：名單目標的 `opt_in_page`、`inline_form`、`popup_form`、`link_in_bio` 列出 8 個名單頁；`opt_in_thank_you_page` 列出 8 個名單感謝頁。銷售目標的 `order_form` 列出 8 個銷售頁（只有這個步驟能綁商品與結帳；`sales_page`、`upsell`、`downsell` 不提供含報價卡的範本，避免訪客看到「尚未連結商品」）；`thank_you_page` 列出 8 個訂單感謝頁。
 - 範本庫的用途篩選「名單」「銷售」顯示新範本（標籤來自範本自己的 `purposes`）。

@@ -157,10 +157,10 @@ export const template: ConversionTemplateDefinition = {
     name: "Email 課程・名單感謝頁",
     description: "確認第 1 課已寄出、提醒收信，並推薦商品攝影完整課。",
     tokens: { background: BAND, surface: BG, ink: INK, body: BODY, accent: INK, onAccent: SUN, line: LINE, footerBackground: INK, footerText: FOOTER_TEXT, radius: 14 },
-    eyebrow: "第 1 課已寄出",
+    eyebrow: "報名成功",
     title: "打開信箱，今天就拍第一張",
     intro: "幾分鐘內會收到標題為「Day 1｜找到家裡最好的那扇窗」的信。沒看到的話，請檢查促銷內容或垃圾郵件匣。",
-    card: { title: "7 天手機商品攝影 Email 課", text: "第 1 課已經寄出，之後每天早上 8 點寄一課，連續 7 天。每封信 5 分鐘讀完，附一個 10 分鐘的小作業。", buttonLabel: "看看接下來怎麼做", buttonHref: "#ty-steps" },
+    card: { title: "7 天手機商品攝影 Email 課", text: "第 1 課幾分鐘內寄出，之後每天早上 8 點寄一課，連續 7 天。每封信 5 分鐘讀完，附一個 10 分鐘的小作業。", buttonLabel: "看看接下來怎麼做", buttonHref: "#ty-steps" },
     steps: [
       { icon: "message", title: "加入通訊錄", text: "把寄件者加入通訊錄，接下來 6 封課程信才不會被分到促銷匣。" },
       { icon: "spark", title: "準備一扇窗和一支手機", text: "找一扇沒有陽光直射的窗，再挑一件你最想拍好的商品。" },

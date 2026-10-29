@@ -204,7 +204,7 @@ export function runLayoutChecks(options) {
     const firstButtonNode = Array.from(root.querySelectorAll('[data-funnel-node-type="button"]')).find(visible) || null;
     const sticky = Array.from(document.querySelectorAll("[data-funnel-sticky-cta]")).find(visible) || null;
     // 銷售頁：報價卡的結帳按鈕（payment_button）本身就是主要入口。
-    const checkout = Array.from(root.querySelectorAll('[data-funnel-node-type="payment_button"] a, [data-funnel-node-type="payment_button"] button')).find(visible) || null;
+    const checkout = Array.from(root.querySelectorAll('[data-funnel-node-type="payment_button"] a[href]')).find(visible) || null;
     const candidates = [["表單第一個欄位", firstField], ["主要 CTA 按鈕", firstButtonNode], ["結帳按鈕", checkout], ["固定報名列", sticky]].filter(([, el]) => el);
     const inView = candidates.filter(([, el]) => el.getBoundingClientRect().top < viewportHeight);
     if (!inView.length) {

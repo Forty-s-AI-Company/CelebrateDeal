@@ -75,7 +75,7 @@ export function webinarTemplateGalleryItem(template: WebinarTemplateDefinition):
 const CONVERSION_GOAL = { leads: "audience", sales: "sell" } as const;
 const CONVERSION_STATUS = {
   leads: { status: "available", reason: "可套用並在公開頁顯示；名單表單會綁定此一頁式網站的名單表單。" },
-  sales: { status: "limited", reason: "版面可編輯；價格與結帳按鈕來自「訂單表單」步驟綁定的商品，未綁定時不可付款。" },
+  sales: { status: "limited", reason: "用於「訂單表單」步驟：價格與結帳按鈕來自此步驟在「商品與結帳」綁定的商品，未綁定時不可付款。" },
 } as const;
 
 /** Gallery entry of a list (leads) or sales page template (`src/lib/funnel-templates/{leads,sales}`). */
@@ -460,7 +460,9 @@ export function listFunnelTemplateGallery(goal?: FunnelTemplateGoal, stepType?: 
   }
   if (goal === "sell") {
     if (stepType === "thank_you_page") return goalTemplates.filter((template) => THANK_YOU_IDS.has(template.id));
-    return ["order_form", "sales_page", "upsell", "downsell"].includes(stepType) ? goalTemplates.filter((template) => !THANK_YOU_IDS.has(template.id)) : [];
+    // Only the order-form step binds a product and has a checkout path; on sales_page, upsell or downsell the
+    // offer card could never take payment and would show the merchant's "not bound" notice to visitors.
+    return stepType === "order_form" ? goalTemplates.filter((template) => !THANK_YOU_IDS.has(template.id)) : [];
   }
   return [];
 }

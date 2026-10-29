@@ -51,7 +51,7 @@ function build(prefix: string) {
           noteColor: BODY,
           htmlId: "offer",
         }),
-        node("hero_deadline", "deadline_notice", { label: "入門價供應至", closedText: "入門價已結束，歡迎留意下一次的備餐企劃。", accentColor: PRIMARY }, undefined, { color: INK }),
+        node("hero_deadline", "deadline_notice", { label: "本檔開放購買至", closedText: "本檔已結束販售，歡迎留意下一次的備餐企劃。", accentColor: PRIMARY }, undefined, { color: INK }),
       ], 16), { ratio: "7:5", stackOn: "tablet", gap: 56, align: "center" }),
     ], { background: BG, color: BODY, maxWidth: 1160, paddingY: 80, paddingYTablet: 48, paddingYMobile: 28 }),
 
@@ -118,7 +118,7 @@ function build(prefix: string) {
           titleColor: INK,
           noteColor: BODY,
         }),
-        node("close_deadline", "deadline_notice", { label: "入門價供應至", closedText: "入門價已結束，歡迎留意下一次的備餐企劃。", accentColor: PRIMARY }, undefined, { color: INK }),
+        node("close_deadline", "deadline_notice", { label: "本檔開放購買至", closedText: "本檔已結束販售，歡迎留意下一次的備餐企劃。", accentColor: PRIMARY }, undefined, { color: INK }),
       ], 16), { ratio: "7:5", stackOn: "tablet", gap: 56, align: "start" }),
     ], { background: BG, color: BODY, maxWidth: 1120, paddingY: 96 }),
 

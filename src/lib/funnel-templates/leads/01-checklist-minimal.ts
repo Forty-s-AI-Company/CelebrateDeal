@@ -116,7 +116,7 @@ export const template: ConversionTemplateDefinition = {
     description: "交付清單、提醒收信，並推薦一對一社群健檢。",
     tokens: { background: BG, surface: CARD, ink: INK, body: BODY, accent: PRIMARY, onAccent: CARD, line: LINE, footerBackground: INK, footerText: "#d7dae0", radius: 10 },
     eyebrow: "已收到你的 Email",
-    title: "清單已經寄出，去信箱看看吧",
+    title: "清單正在寄出，去信箱看看吧",
     intro: "一分鐘內會收到一封標題為「你的 30 天貼文企劃清單」的信。沒看到的話，請檢查促銷內容或垃圾郵件匣。",
     card: { title: "Instagram 30 天貼文企劃清單", text: "PDF 清單＋可編輯的試算表。建議先存到手機，每天發文前打開看一眼。", buttonLabel: "直接下載清單", buttonHref: "#ty-steps" },
     steps: [

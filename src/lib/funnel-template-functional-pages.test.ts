@@ -175,9 +175,11 @@ describe("步驟選單：每個步驟都有範本可選", () => {
     expect(ids("audience", "opt_in_thank_you_page")).toEqual(leads.map((id) => `${id}-thanks`));
   });
 
-  it("銷售目標：銷售與訂單步驟列出銷售頁，感謝頁步驟列出訂單感謝頁", () => {
+  it("銷售目標：訂單表單步驟列出銷售頁，感謝頁步驟列出訂單感謝頁", () => {
     expect(sales).toHaveLength(8);
-    for (const type of ["order_form", "sales_page", "upsell", "downsell"] as const) expect(ids("sell", type)).toEqual(sales);
+    expect(ids("sell", "order_form")).toEqual(sales);
+    // 只有訂單表單步驟能綁商品與結帳；其他銷售步驟不提供含報價卡的範本（避免訪客看到「尚未連結商品」）。
+    for (const type of ["sales_page", "upsell", "downsell"] as const) expect(ids("sell", type)).toEqual([]);
     expect(ids("sell", "thank_you_page")).toEqual(sales.map((id) => `${id}-thanks`));
   });
 

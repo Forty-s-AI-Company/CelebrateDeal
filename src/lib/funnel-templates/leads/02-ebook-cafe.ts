@@ -156,7 +156,7 @@ export const template: ConversionTemplateDefinition = {
     name: "電子書・名單感謝頁",
     description: "交付電子書、提醒收信，並推薦開店前一對一諮詢。",
     tokens: { background: BG, surface: CARD, ink: INK, body: BODY, accent: PRIMARY, onAccent: WHITE, line: LINE, footerBackground: INK, footerText: FOOTER_TEXT, radius: 6 },
-    eyebrow: "電子書已寄出",
+    eyebrow: "已收到你的 Email",
     title: "去信箱打開你的開店預算書",
     intro: "一分鐘內會收到標題為「開咖啡店前，先算這 12 筆錢」的信。沒看到的話，請檢查促銷內容或垃圾郵件匣。",
     card: { title: "《開咖啡店前，先算這 12 筆錢》", text: "42 頁 PDF＋3 份附錄試算表（Google 試算表與 Excel）。建議存到電腦，邊看邊填。", buttonLabel: "下載電子書", buttonHref: "#ty-steps" },
