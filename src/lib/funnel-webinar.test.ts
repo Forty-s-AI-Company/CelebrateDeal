@@ -35,6 +35,21 @@ describe("固定場次 Webinar", () => {
     expect(getFunnelWebinarState(settings, resources, NaN).status).toBe("missing");
   });
 
+  it("常青 Live 不需固定日期，改依訪客自己的場次判定", () => {
+    const undated = { timezone: "Asia/Taipei", startsAt: null, endsAt: null, replayEndsAt: null };
+    const session = { assigned: true, sessionStartAt: "2026-10-29T06:15:00.000Z", sessionEndAt: "2026-10-29T06:45:00.000Z", timezone: "Asia/Taipei" };
+    const evergreen = { ...resources, evergreen: true };
+    expect(getFunnelWebinarState(undated, evergreen).status).toBe("waiting");
+    expect(getFunnelWebinarState(undated, evergreen).message).toContain("常青場次");
+    expect(getFunnelWebinarState(undated, { ...evergreen, evergreenSession: session }, Date.parse("2026-10-29T06:14:59.999Z"))).toMatchObject({ status: "waiting", message: expect.stringContaining("你的場次已安排") });
+    expect(getFunnelWebinarState(undated, { ...evergreen, evergreenSession: session }, Date.parse(session.sessionStartAt)).status).toBe("live");
+    expect(getFunnelWebinarState(undated, { ...evergreen, evergreenSession: session }, Date.parse(session.sessionEndAt)).status).toBe("replay");
+    expect(getFunnelWebinarState(undated, { ...evergreen, evergreenSession: { ...session, assigned: false } }, Date.parse("2026-10-29T06:00:00.000Z")).message).toContain("報名後會為你安排");
+    expect(getFunnelWebinarState(undated, { evergreen: true }).missing).toEqual(["請綁定播放用 Live", "請綁定報名表單"]);
+    // Without the evergreen flag the fixed-date gate stays unchanged.
+    expect(getFunnelWebinarState(undated, resources).status).toBe("missing");
+  });
+
   it("驗證時區、UTC 格式、真實日期與日期順序，允許未設定草稿", () => {
     expect(parseFunnelWebinarSettings({ timezone: "Asia/Taipei", startsAt: null, endsAt: null, replayEndsAt: null })).not.toBeNull();
     for (const patch of [{ timezone: "Invalid/Zone" }, { startsAt: "2026-02-30T10:00:00Z" }, { startsAt: "2026-09-17T18:00:00+08:00" }, { endsAt: settings.startsAt }, { replayEndsAt: settings.endsAt }, { startsAt: undefined }]) {

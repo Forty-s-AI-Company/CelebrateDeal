@@ -29,8 +29,12 @@ export async function GET(request: Request, { params }: { params: Promise<{ slug
     return unavailable(410, "此活動已截止，無法再開啟播放。");
   }
   const resource = page.webinar;
-  const gate = getFunnelWebinarState(state.flow.webinar, { liveId: resource?.live.id, formId: resource?.form.id }, Date.now());
+  // An evergreen Live's watch page runs the visitor's own waiting room and
+  // session, so no fixed funnel dates gate the entry.
+  const evergreen = resource?.live.isEvergreen === true;
+  const gate = getFunnelWebinarState(state.flow.webinar, { liveId: resource?.live.id, formId: resource?.form.id, evergreen }, Date.now());
   if (!resource || gate.status === "missing") return unavailable(503, "活動設定或播放資源尚未就緒，請聯絡活動主辦方確認。");
+  if (evergreen) return new Response(null, { status: 303, headers: { ...privateHeaders, Location: `/live/${encodeURIComponent(resource.live.slug)}` } });
   if (gate.status === "waiting") return unavailable(409, "活動尚未開始，請於開始時間回到活動頁再試。");
   if (gate.status === "expired") return unavailable(410, "活動與重播已結束，請聯絡主辦方確認後續場次。");
   // A relative, encoded application route cannot become an external redirect.

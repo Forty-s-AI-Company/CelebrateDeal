@@ -6,7 +6,7 @@ vi.mock("@/app/actions/evergreen-webinar-actions", () => ({ updateEvergreenWebin
 import { EvergreenWebinarSettings } from "./evergreen-webinar-settings";
 
 describe("EvergreenWebinarSettings", () => {
-  it("tells the merchant the schedule is not live yet (F-019)", () => {
+  it("explains how the public viewing page now honours the schedule (F-019)", () => {
     const html = renderToStaticMarkup(
       <EvergreenWebinarSettings
         liveId="live-1"
@@ -18,7 +18,12 @@ describe("EvergreenWebinarSettings", () => {
         }}
       />,
     );
-    expect(html).toContain("尚未啟用");
-    expect(html).toContain("公開觀看頁還不會依這些設定");
+    expect(html).not.toContain("尚未啟用");
+    expect(html).not.toContain("公開觀看頁還不會依這些設定");
+    expect(html).toContain("專屬場次");
+    expect(html).toContain("無法快轉或加速");
+    expect(html).toContain("才由伺服器送出");
+    expect(html).toContain("不會宣稱為即時直播");
+    expect(html).toContain("所有觀眾共用這一個開場時間");
   });
 });

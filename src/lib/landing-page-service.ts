@@ -58,9 +58,14 @@ import {
 } from "@/lib/funnel-custom-code-guard";
 export type PublicFunnelWebinarResource = {
   form: { id: string; fields: RegistrationFormFieldSpec[]; submitLabel: string; successMessage: string };
-  live: { id: string; slug: string; videoId: string; videoTitle: string };
+  /** `isEvergreen` is present only when the Live's evergreen schedule governs playback. */
+  live: { id: string; slug: string; videoId: string; videoTitle: string; isEvergreen?: true };
 };
 const videoSelect = { id: true, vendorId: true, title: true, sourceType: true, status: true, cloudflareReadyToStream: true, cloudflareLiveInputUid: true, liveInputStatus: true } as const;
+/** Same activation rule as evergreenScheduleForLive: an evergreen VOD the merchant has not ended. */
+function isEvergreenLiveRecord(live: Pick<LiveRecord, "isEvergreen" | "streamMode" | "status"> | null | undefined) {
+  return live?.isEvergreen === true && live.streamMode === "vod" && (live.status === "scheduled" || live.status === "live");
+}
 function completeWebinarSteps(content: LandingPageStoredContent) {
   const steps = "flow" in content ? content.flow?.steps : undefined;
   return Boolean(steps && ["webinar_registration_page", "webinar_thank_you_page", "webinar_broadcast_page"].every((type) => steps.filter((step) => step.type === type).length === 1));
@@ -69,7 +74,7 @@ function webinarResource(form: FormRecord | undefined, live: LiveRecord | null, 
   if (live?.status === "ended" && (!live.replayEnabled || (live.replayAvailableUntil && live.replayAvailableUntil.getTime() <= Date.now()))) return undefined;
   const fields = parseRegistrationFormFields(form?.fields);
   if (!form || !fields.success || !live?.videoId || live.video?.id !== live.videoId || live.video.vendorId !== vendorId || !isLiveVideoReady(live.video)) return undefined;
-  return { form: { id: form.id, fields: fields.data, submitLabel: form.submitLabel || "送出報名", successMessage: form.successMessage || "已收到報名，請留意確認信。" }, live: { id: live.id, slug: live.slug, videoId: live.videoId, videoTitle: live.video.title } };
+  return { form: { id: form.id, fields: fields.data, submitLabel: form.submitLabel || "送出報名", successMessage: form.successMessage || "已收到報名，請留意確認信。" }, live: { id: live.id, slug: live.slug, videoId: live.videoId, videoTitle: live.video.title, ...(isEvergreenLiveRecord(live) ? { isEvergreen: true as const } : {}) } };
 }
 const MAX_NAME_LENGTH = 160;
 const MAX_IDENTIFIER_LENGTH = 100;
@@ -122,7 +127,7 @@ export type LandingPageEditorPage = LandingPageSummary & {
 };
 
 export type FunnelWebinarResources = {
-  lives: Array<{ id: string; videoId: string | null; videoTitle: string | null; videoReady: boolean }>;
+  lives: Array<{ id: string; videoId: string | null; videoTitle: string | null; videoReady: boolean; isEvergreen?: true }>;
   forms: PublicFunnelWebinarResource["form"][];
 };
 
@@ -185,7 +190,7 @@ export class LandingPageScopeError extends Error {
 }
 
 type FormRecord = { id: string; slug: string; name: string; vendorId?: string; projectId?: string | null; isActive?: boolean; fields?: unknown; submitLabel?: string; successMessage?: string };
-type LiveRecord = { id: string; slug: string; title: string; status: string; scheduledAt: Date; formId?: string | null; vendorId?: string; projectId?: string | null; replayEnabled?: boolean; replayAvailableUntil?: Date | null; videoId?: string | null; video?: (LiveVideoReadiness & { id: string; vendorId: string; title: string }) | null };
+type LiveRecord = { id: string; slug: string; title: string; status: string; scheduledAt: Date; isEvergreen?: boolean; streamMode?: string; formId?: string | null; vendorId?: string; projectId?: string | null; replayEnabled?: boolean; replayAvailableUntil?: Date | null; videoId?: string | null; video?: (LiveVideoReadiness & { id: string; vendorId: string; title: string }) | null };
 
 type LandingPageDb = Pick<PrismaClient, "landingPage" | "landingPageVersion" | "registrationForm" | "live" | "consultationEvent" | "vendor">;
 
@@ -350,7 +355,7 @@ async function validateBindings(
   if (input.liveId) {
     live = await database.live.findFirst({
       where: { id: input.liveId, vendorId: input.vendorId, projectId: input.projectId, status: { in: [...PUBLIC_LIVE_STATUSES] } },
-      select: { id: true, slug: true, title: true, status: true, scheduledAt: true, replayEnabled: true, replayAvailableUntil: true, formId: true, videoId: true, video: { select: videoSelect } },
+      select: { id: true, slug: true, title: true, status: true, scheduledAt: true, isEvergreen: true, streamMode: true, replayEnabled: true, replayAvailableUntil: true, formId: true, videoId: true, video: { select: videoSelect } },
     });
     if (!live) throw new LandingPageInputError("landing_page_live_invalid");
     const liveFormId = live.formId;
@@ -363,7 +368,8 @@ async function validateBindings(
     if (!completeWebinarSteps(input.content)) throw new LandingPageInputError("landing_page_webinar_steps_required");
     if (!input.formId || !input.liveId || !webinarResource(forms.find((form) => form.id === input.formId), live, input.vendorId)) throw new LandingPageInputError("landing_page_webinar_resources_required");
     const settings = "flow" in input.content ? input.content.flow?.webinar : undefined;
-    if (!settings?.startsAt || !settings.endsAt) throw new LandingPageInputError("landing_page_webinar_schedule_required");
+    // An evergreen Live schedules each visitor's own session, so the funnel needs no fixed dates.
+    if (!isEvergreenLiveRecord(live) && (!settings?.startsAt || !settings.endsAt)) throw new LandingPageInputError("landing_page_webinar_schedule_required");
   }
   return { forms, live };
 }
@@ -468,7 +474,7 @@ export async function getLandingPageForEditor(pageId: string): Promise<LandingPa
     }),
     db().live.findMany({
       where: { vendorId: scope.vendorId, projectId: scope.projectId, status: { in: [...PUBLIC_LIVE_STATUSES] } },
-      select: { id: true, slug: true, title: true, status: true, scheduledAt: true, formId: true, videoId: true, video: { select: videoSelect } },
+      select: { id: true, slug: true, title: true, status: true, scheduledAt: true, isEvergreen: true, streamMode: true, formId: true, videoId: true, video: { select: videoSelect } },
       orderBy: { scheduledAt: "desc" },
     }),
     listFunnelCommerceProducts(scope),
@@ -487,6 +493,7 @@ export async function getLandingPageForEditor(pageId: string): Promise<LandingPa
       lives: lives.map((live) => ({
         id: live.id, videoId: live.videoId, videoTitle: live.video?.title ?? null,
         videoReady: live.video?.vendorId === scope.vendorId && isLiveVideoReady(live.video),
+        ...(isEvergreenLiveRecord(live) ? { isEvergreen: true as const } : {}),
       })),
       forms: forms.flatMap((form) => {
         const fields = parseRegistrationFormFields(form.fields);
@@ -939,6 +946,8 @@ export async function loadPublicLandingPage(slug: string, onUnavailable?: (reaso
               title: true,
               status: true,
               scheduledAt: true,
+              isEvergreen: true,
+              streamMode: true,
               replayEnabled: true,
               replayAvailableUntil: true,
               formId: true,

@@ -1,6 +1,19 @@
 import type { Metadata } from "next";
+import { cookies } from "next/headers";
 import { notFound } from "next/navigation";
 import { cache } from "react";
+import {
+  evergreenSettingEvents,
+  revealEvergreenProducts,
+  revealEvergreenTimeline,
+  type EvergreenRevealPosition,
+} from "@/lib/evergreen-offer-timeline";
+import {
+  evergreenSessionCookieName,
+  resolveEvergreenViewerSession,
+  type EvergreenLiveRecord,
+  type EvergreenViewerSession,
+} from "@/lib/evergreen-viewer-session";
 import { PersistentLivePlaybackRegistration } from "@/components/persistent-live-playback";
 import { getDb } from "@/lib/db";
 import { getRuntimeLivePublishReadiness } from "@/lib/live-runtime-readiness";
@@ -49,6 +62,81 @@ const loadPublicLive = cache(async (slug: string) => {
   return { live, serverNow };
 });
 
+/**
+ * Reads (never assigns) the visitor's signed evergreen session. Cookies can
+ * only be written by the session Route Handler, which the page calls when no
+ * session exists yet.
+ */
+async function readEvergreenSession(
+  live: EvergreenLiveRecord & { isEvergreen?: boolean | null; vendor: { timezone?: string | null } },
+  serverNow: Date,
+): Promise<EvergreenViewerSession | null> {
+  if (live.isEvergreen !== true) return null;
+  const token = (await cookies()).get(evergreenSessionCookieName(live.id))?.value ?? null;
+  return resolveEvergreenViewerSession({
+    live,
+    vendorTimezone: live.vendor.timezone,
+    token,
+    intent: "read",
+    now: serverNow,
+  });
+}
+
+function evergreenRevealPosition(session: EvergreenViewerSession): EvergreenRevealPosition {
+  if (!session.assigned) return "none";
+  if (session.runtimeState === "playing") return session.playback.offsetSeconds;
+  if (session.runtimeState === "replay") return "all";
+  return "none";
+}
+
+type ProjectableEvent = { eventType: string; triggerSec: number; productId: string | null };
+
+/**
+ * Evergreen offers are revealed server-side up to the visitor's own session
+ * offset; later ones are withheld and only their next second is shipped.
+ */
+function projectEvergreenPage<E extends ProjectableEvent, P extends { product: { id: string }; offerLabel: string | null }>(
+  session: EvergreenViewerSession,
+  input: {
+    events: E[];
+    products: P[];
+    pitchAtSeconds: number | null;
+    consultationAtSeconds: number | null;
+    consultationFormAvailable: boolean;
+  },
+) {
+  const position = evergreenRevealPosition(session);
+  const firstProduct = input.products[0];
+  const timeline = revealEvergreenTimeline(
+    [
+      ...input.events,
+      ...evergreenSettingEvents({
+        pitchAtSeconds: input.pitchAtSeconds,
+        consultationAtSeconds: input.consultationAtSeconds,
+        pitchProduct: firstProduct ? { id: firstProduct.product.id, offerLabel: firstProduct.offerLabel } : null,
+        consultationFormAvailable: input.consultationFormAvailable,
+      }),
+    ].sort((left, right) => left.triggerSec - right.triggerSec),
+    position,
+  );
+  const products = revealEvergreenProducts(input.products.map((item) => ({ ...item, id: item.product.id })), timeline.events, position);
+  return {
+    events: timeline.events,
+    products,
+    evergreen: {
+      assigned: session.assigned,
+      mode: session.schedule.mode,
+      timezone: session.schedule.timezone,
+      roomState: session.playback.roomState,
+      sessionStartAt: session.sessionStartAt.toISOString(),
+      sessionEndAt: session.playback.sessionEndAt.toISOString(),
+      offsetSeconds: session.playback.offsetSeconds,
+      nextRevealAtSec: timeline.nextRevealAtSec,
+      canRejoin: session.canRejoin,
+    },
+  };
+}
+
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
   const { slug } = await params;
   const { live } = await loadPublicLive(slug);
@@ -85,6 +173,9 @@ export default async function PublicLivePage({ params }: { params: Promise<{ slu
     console.warn("PUBLIC_LIVE_NOT_FOUND_READINESS", readiness.blockers.map(({ code }) => code));
     notFound();
   }
+  // An evergreen Live follows the visitor's own session instead of scheduledAt.
+  const evergreen = await readEvergreenSession(live, serverNow);
+  const runtimeState = evergreen ? evergreen.runtimeState : runtime.state;
   const sameVendorActiveForm = Boolean(live.form?.vendorId === live.vendorId && live.form.isActive);
   const parsedFormFields = sameVendorActiveForm ? parseRegistrationFormFields(live.form?.fields) : null;
   const formConfigurationUnavailable = Boolean(sameVendorActiveForm && parsedFormFields && !parsedFormFields.success);
@@ -118,7 +209,7 @@ export default async function PublicLivePage({ params }: { params: Promise<{ slu
         : null,
     }))
     .filter((message): message is ScheduledRuntimeMessage => message !== null);
-  const interactionEvents = publishedEvents
+  const scriptedInteractionEvents = publishedEvents
       .filter((event) => event.eventType !== "chat_message" && event.eventType !== "reminder")
       .filter((event) => (
         event.eventType !== "product_spotlight"
@@ -141,7 +232,26 @@ export default async function PublicLivePage({ params }: { params: Promise<{ slu
               label: event.role.label,
             }
           : null,
-      }))
+      }));
+  const publicForm = sameVendorActiveForm && live.form && parsedFormFields?.success
+    ? {
+        id: live.form.id,
+        headline: live.form.headline,
+        description: live.form.description,
+        fields: parsedFormFields.data,
+        submitLabel: live.form.submitLabel,
+        successMessage: live.form.successMessage,
+      }
+    : null;
+  const projected = evergreen
+    ? projectEvergreenPage(evergreen, {
+        events: scriptedInteractionEvents,
+        products: liveProducts,
+        pitchAtSeconds: live.evergreenPitchAtSeconds ?? null,
+        consultationAtSeconds: live.evergreenConsultationAtSeconds ?? null,
+        consultationFormAvailable: Boolean(publicForm),
+      })
+    : null;
 
   return (
     <PersistentLivePlaybackRegistration
@@ -150,8 +260,9 @@ export default async function PublicLivePage({ params }: { params: Promise<{ slu
         title: live.title,
         slug: live.slug,
         status: live.status,
-        runtimeState: runtime.state,
-        scheduledAt: live.scheduledAt.toISOString(),
+        runtimeState,
+        scheduledAt: evergreen ? evergreen.sessionStartAt.toISOString() : live.scheduledAt.toISOString(),
+        ...(projected ? { evergreen: projected.evergreen } : {}),
         serverNow: serverNow.toISOString(),
         description: live.description,
         accentCopy: live.accentCopy,
@@ -165,20 +276,11 @@ export default async function PublicLivePage({ params }: { params: Promise<{ slu
           primaryColor: live.vendor.primaryColor,
           ctaColor: live.vendor.ctaColor,
         },
-        form: sameVendorActiveForm && live.form && parsedFormFields?.success
-          ? {
-              id: live.form.id,
-              headline: live.form.headline,
-              description: live.form.description,
-              fields: parsedFormFields.data,
-              submitLabel: live.form.submitLabel,
-              successMessage: live.form.successMessage,
-            }
-          : null,
+        form: publicForm,
         ...(formConfigurationUnavailable ? { formConfigurationUnavailable: true } : {}),
-        interactionEvents,
+        interactionEvents: projected?.events ?? scriptedInteractionEvents,
         scheduledMessages,
-        products: liveProducts.map((item) => ({
+        products: (projected?.products ?? liveProducts).map((item) => ({
           id: item.product.id,
           name: item.product.name,
           description: item.product.description,

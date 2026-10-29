@@ -329,7 +329,7 @@ function resolveWebinarResource(resources: FunnelWebinarResources | undefined, l
   const video = resources?.lives.find((item) => item.id === liveId);
   const form = resources?.forms.find((item) => item.id === formId);
   if (!video?.videoReady || !video.videoId || !live || !form || live.formId !== formId) return undefined;
-  return { form, live: { id: live.id, slug: live.slug, videoId: video.videoId, videoTitle: video.videoTitle ?? "活動影片" } };
+  return { form, live: { id: live.id, slug: live.slug, videoId: video.videoId, videoTitle: video.videoTitle ?? "活動影片", ...(video.isEvergreen ? { isEvergreen: true as const } : {}) } };
 }
 function WebinarWorkspaceSettings({ content, pending, resources, lives, liveId, onValidityChange, onChange, onSelect }: {
   content: LandingPageStoredContent; pending: boolean; resources?: FunnelWebinarResources; lives: Lives; liveId: string;
@@ -343,5 +343,6 @@ function WebinarWorkspaceSettings({ content, pending, resources, lives, liveId, 
       const match = resources?.lives.find((live) => live.id === event.target.value && live.videoReady);
       if (match) onSelect(match.id, lives.find((item) => item.id === match.id)?.formId);
     }}><option value="">請選擇已綁定活動的可播放影片</option>{resources?.lives.filter((live) => live.videoReady && live.videoId).map((live) => <option key={live.id} value={live.id}>{live.videoTitle} · {lives.find((item) => item.id === live.id)?.title}</option>)}</select><span className="text-xs font-normal leading-5 text-slate-600">沿用活動 Studio 的來源影片；選擇影片會同步選擇其活動。實際播放仍依 Live 排程與觀看權限。</span></label>
+    {selected?.isEvergreen ? <p role="note" className="rounded-md border border-blue-100 bg-blue-50/60 p-2 text-xs leading-5 text-slate-700">這個活動已啟用常青 Webinar：每位訪客在感謝頁或播放頁會依活動的常青排程取得自己的場次，上方固定的開始／結束時間不會用來開放播放，可以留空。</p> : null}
   </>;
 }

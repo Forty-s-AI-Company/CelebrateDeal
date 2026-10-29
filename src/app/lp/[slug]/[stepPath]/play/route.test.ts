@@ -42,6 +42,18 @@ describe("Webinar server playback entry", () => {
     expect(response.headers.get("location")).toBeNull();
     expect(await response.text()).not.toContain("scoped-live");
   });
+  it("hands an evergreen live to its own waiting room regardless of the fixed funnel dates", async () => {
+    vi.setSystemTime(new Date("2026-09-17T00:00:00.000Z"));
+    const base = fixture();
+    const flow = (base.content as { flow: { webinar?: unknown } }).flow;
+    flow.webinar = { timezone: "Asia/Taipei", startsAt: null, endsAt: null, replayEndsAt: null };
+    mocks.load.mockResolvedValue({ ...base, webinar: { live: { id: "live-1", slug: "scoped-live", isEvergreen: true }, form: { id: "form-1" } } });
+    const response = await request();
+    expect(response.status).toBe(303);
+    expect(response.headers.get("location")).toBe("/live/scoped-live");
+    mocks.load.mockResolvedValue({ ...base, webinar: { live: { id: "live-1", slug: "scoped-live", isEvergreen: true }, form: { id: "" } } });
+    expect((await request()).status).toBe(503);
+  });
   it("fails closed when runtime ownership/readiness invalidates the resource", async () => {
     vi.setSystemTime(new Date("2026-09-17T01:30:00Z"));
     mocks.load.mockResolvedValue({ ...fixture(), webinar: undefined });

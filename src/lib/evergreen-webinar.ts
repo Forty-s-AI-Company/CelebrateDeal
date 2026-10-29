@@ -43,12 +43,25 @@ function assertDuration(durationSeconds: number) {
   }
 }
 
-/** Returns the next aligned JIT cohort, never more than intervalMinutes away. */
-export function getNextJustInTimeStart(serverTime: Date | string, intervalMinutes = 15) {
+/**
+ * Returns the next aligned JIT cohort, never more than intervalMinutes away.
+ * With a timezone the cohorts align to that zone's wall clock (for example
+ * :00/:30 in Asia/Kathmandu, which is UTC+05:45); without one they align to UTC.
+ */
+export function getNextJustInTimeStart(serverTime: Date | string, intervalMinutes = 15, timezone?: string) {
   if (![5, 15, 30].includes(intervalMinutes)) throw new Error("intervalMinutes must be 5, 15, or 30");
   const now = validDate(serverTime, "serverTime")!;
   const intervalMs = intervalMinutes * 60_000;
-  return new Date(Math.ceil((now.getTime() + 1) / intervalMs) * intervalMs);
+  if (!timezone) return new Date(Math.ceil((now.getTime() + 1) / intervalMs) * intervalMs);
+  assertTimezone(timezone, now);
+  const offset = timezoneOffsetMs(now, timezone);
+  const localNext = Math.ceil((now.getTime() + offset + 1) / intervalMs) * intervalMs;
+  const candidate = localNext - offset;
+  // A DST change between now and the candidate shifts the zone offset; keep
+  // the wall-clock boundary when that still lies in the future.
+  const candidateOffset = timezoneOffsetMs(new Date(candidate), timezone);
+  const adjusted = localNext - candidateOffset;
+  return new Date(candidateOffset !== offset && adjusted > now.getTime() ? adjusted : candidate);
 }
 
 function timezoneParts(date: Date, timezone: string) {
@@ -63,6 +76,17 @@ function timezoneParts(date: Date, timezone: string) {
     hourCycle: "h23",
   }).formatToParts(date);
   return Object.fromEntries(parts.map((part) => [part.type, part.value]));
+}
+
+function assertTimezone(timezone: string, at: Date) {
+  try { timezoneParts(at, timezone); } catch { throw new Error("timezone must be a valid IANA timezone"); }
+}
+
+/** Wall clock minus UTC for this instant, at one-second precision. */
+function timezoneOffsetMs(date: Date, timezone: string) {
+  const parts = timezoneParts(date, timezone);
+  const wall = Date.UTC(Number(parts.year), Number(parts.month) - 1, Number(parts.day), Number(parts.hour), Number(parts.minute), Number(parts.second));
+  return wall - Math.floor(date.getTime() / 1_000) * 1_000;
 }
 
 /** Converts local wall-clock parts to an instant without depending on the host timezone. */
@@ -91,7 +115,7 @@ function recurringStart(schedule: EvergreenSchedule, now: Date) {
     throw new Error("recurring_daily requires valid HH:mm dailyTimes");
   }
   // Validate the IANA identifier before calculating candidates.
-  try { timezoneParts(now, timezone); } catch { throw new Error("timezone must be a valid IANA timezone"); }
+  assertTimezone(timezone, now);
   const local = timezoneParts(now, timezone);
   const noon = Date.UTC(Number(local.year), Number(local.month) - 1, Number(local.day), 12);
   const candidates: Date[] = [];
@@ -117,16 +141,25 @@ function recurringStart(schedule: EvergreenSchedule, now: Date) {
   return next;
 }
 
-export function getEvergreenPlaybackState(schedule: EvergreenSchedule, serverTime: Date | string): EvergreenPlaybackState {
+/**
+ * The session a visitor entering at `serverTime` is assigned to. Callers that
+ * need a stable per-visitor session persist this value (see
+ * evergreen-viewer-session.ts) and pass it back as `sessionStartAt`.
+ */
+export function getEvergreenSessionStart(schedule: EvergreenSchedule, serverTime: Date | string) {
   assertDuration(schedule.durationSeconds);
   if (!EVERGREEN_SCHEDULE_MODES.includes(schedule.mode)) throw new Error("mode must be a supported evergreen schedule mode");
   const now = validDate(serverTime, "serverTime")!;
   const fixedStart = validDate(schedule.sessionStartAt, "sessionStartAt");
-  const sessionStartAt = fixedStart ?? (schedule.mode === "just_in_time"
-    ? getNextJustInTimeStart(now, schedule.intervalMinutes ?? 15)
-    : schedule.mode === "recurring_daily"
-      ? recurringStart(schedule, now)
-      : now);
+  if (fixedStart) return fixedStart;
+  if (schedule.mode === "just_in_time") return getNextJustInTimeStart(now, schedule.intervalMinutes ?? 15, schedule.timezone);
+  if (schedule.mode === "recurring_daily") return recurringStart(schedule, now);
+  return new Date(now.getTime());
+}
+
+export function getEvergreenPlaybackState(schedule: EvergreenSchedule, serverTime: Date | string): EvergreenPlaybackState {
+  const now = validDate(serverTime, "serverTime")!;
+  const sessionStartAt = getEvergreenSessionStart(schedule, now);
   const sessionEndAt = new Date(sessionStartAt.getTime() + schedule.durationSeconds * 1_000);
   if (now < sessionStartAt) {
     return { roomState: "waiting_countdown", offsetSeconds: 0, sessionStartAt, sessionEndAt, countdownSeconds: Math.ceil((sessionStartAt.getTime() - now.getTime()) / 1_000) };
