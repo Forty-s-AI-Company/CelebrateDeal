@@ -219,8 +219,9 @@ model User {
   status       String    @default("active")
   lastLoginAt  DateTime?
   /// Set only after the platform e-mailed a link to `email` and it was opened
-  /// (merchant verification link, accepted member invitation or password
-  /// reset). NULL = not verified; existing accounts were not backfilled.
+  /// (merchant verification link, accepted member invitation, password reset,
+  /// or a completed login email change, which sets `email` and this together).
+  /// NULL = not verified; existing accounts were not backfilled.
   emailVerifiedAt DateTime?
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
@@ -233,6 +234,7 @@ model User {
   sentMemberInvitations        VendorMemberInvitation[] @relation("VendorMemberInvitationInvitedBy")
   acceptedMemberInvitations    VendorMemberInvitation[] @relation("VendorMemberInvitationAcceptedBy")
   passwordResetTokens          PasswordResetToken[]
+  emailChangeRequests          UserEmailChangeRequest[]
   mfaFactor                    UserMfaFactor?
   recoveryCodes                UserRecoveryCode[]
   platformReferralCodes        PlatformReferralCode[]
@@ -326,6 +328,48 @@ model AccountRateLimitBucket {
   updatedAt       DateTime
 
   @@index([updatedAt])
+}
+
+/// Login email change requested from account settings
+/// (src/lib/account-email-change.ts). Only SHA-256 hashes of the two signed
+/// links are stored: the change link e-mailed to `newEmail` and the revert
+/// link e-mailed to `previousEmail`.
+///
+/// Change link: usable while `consumedAt` and `revokedAt` are NULL and
+/// `expiresAt` lies ahead; at most one such open row per user (partial unique
+/// index `UserEmailChangeRequest_one_open_per_user`, not expressible here). A
+/// newer request, a password change or reset, a revert, or the completed
+/// change sets `revokedAt` on the others.
+///
+/// Revert link: usable while `revertedAt` and `revertRevokedAt` are NULL and
+/// `revertExpiresAt` lies ahead (the request expiry until the change
+/// completes, then seven days from completion). While a completed row's
+/// revert is usable, `previousEmail` stays reserved for this user. A used
+/// revert (`revertedAt`) blocks self-service changes for seven days.
+/// `syncedVendorId` names the workspace whose `Vendor.email` followed the
+/// change (no FK on purpose: reference only, guarded by predicates on use).
+model UserEmailChangeRequest {
+  id              String    @id @default(cuid())
+  userId          String
+  previousEmail   String
+  newEmail        String
+  tokenHash       String    @unique
+  expiresAt       DateTime
+  consumedAt      DateTime?
+  revokedAt       DateTime?
+  revertTokenHash String    @unique
+  revertExpiresAt DateTime
+  revertedAt      DateTime?
+  revertRevokedAt DateTime?
+  syncedVendorId  String?
+  createdAt       DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([expiresAt])
+  @@index([previousEmail])
+  @@index([userId, revertedAt])
 }
 
 model PasswordResetToken {

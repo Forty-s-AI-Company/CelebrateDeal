@@ -93,6 +93,10 @@ const nextConfig: NextConfig = {
       { source: "/browser-qa/:path*", headers: publicFunnelHeaders },
       { source: "/verify-email", headers: [{ key: "Referrer-Policy", value: "no-referrer" }] },
       { source: "/api/auth/email-verification/confirm", headers: [{ key: "Referrer-Policy", value: "no-referrer" }] },
+      { source: "/verify-email-change", headers: [{ key: "Referrer-Policy", value: "no-referrer" }] },
+      { source: "/api/auth/email-change/confirm", headers: [{ key: "Referrer-Policy", value: "no-referrer" }] },
+      { source: "/revert-email-change", headers: [{ key: "Referrer-Policy", value: "no-referrer" }] },
+      { source: "/api/auth/email-change/revert", headers: [{ key: "Referrer-Policy", value: "no-referrer" }] },
       {
         // Only the authenticated studio document may request capture permissions.
         source: "/lives/:id/presenter",

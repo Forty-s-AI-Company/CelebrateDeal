@@ -88,6 +88,7 @@ test("the committed allowlist is well formed and covers the B04-04 hazards", () 
     "PostPurchaseCredit_vendorId_sourceOrderId_active_key",
     "SettlementAdjustmentRequest_one_pending_per_settlement",
     "TeamMembershipRelationship_one_active_upline",
+    "UserEmailChangeRequest_one_open_per_user",
   ]);
 });
 

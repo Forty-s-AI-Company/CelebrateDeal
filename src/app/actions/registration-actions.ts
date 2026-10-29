@@ -15,6 +15,7 @@ import { checkRateLimit } from "@/lib/rate-limit";
 import { merchantRegistrationInviteMatchesEmail, verifyMerchantRegistrationInvite } from "@/lib/merchant-registration-invite";
 import { isMerchantRegistrationInviteRevoked } from "@/lib/merchant-registration-invite-records";
 import { registrationMode } from "@/lib/registration-mode";
+import { assertLoginEmailAvailableForNewAccount, LoginEmailReservedError } from "@/lib/login-email-reservation";
 import { scheduleMerchantEmailVerification } from "@/lib/merchant-email-verification";
 import { TURNSTILE_ACTIONS, TURNSTILE_RESPONSE_FIELD, turnstileErrorCode, verifyTurnstileToken } from "@/lib/turnstile";
 
@@ -60,7 +61,8 @@ async function assertInviteNotRevoked(invite: { jti: string } | null, tx: Parame
 
 function transactionFailurePath(error: unknown, failure: (error: string) => string) {
   if (error instanceof InviteRevokedError) return "/register?error=invite_revoked";
-  const duplicate = typeof error === "object" && error !== null && "code" in error && error.code === "P2002";
+  // An address reserved for its previous owner's email revert reads like one in use.
+  const duplicate = error instanceof LoginEmailReservedError || (typeof error === "object" && error !== null && "code" in error && error.code === "P2002");
   return failure(duplicate ? "exists" : "temporarily_unavailable");
 }
 
@@ -109,6 +111,7 @@ export async function registerAction(formData: FormData) {
     created = await getDb().$transaction(async (tx) => {
       // Narrows (does not close) the window between the first check and a revocation.
       if (inviteOnly) await assertInviteNotRevoked(usedInvite, tx);
+      await assertLoginEmailAvailableForNewAccount(tx, input.email);
       const user = await tx.user.create({ data: { name: input.name, email: input.email, passwordHash } });
       const vendor = await tx.vendor.create({ data: { name: input.workspaceName, slug: `${slugBase}-${randomUUID()}`, email: input.email, passwordHash } });
       await tx.vendorMember.create({ data: { vendorId: vendor.id, userId: user.id, role: "owner", status: "active" } });

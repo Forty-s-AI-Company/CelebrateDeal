@@ -209,6 +209,8 @@ export async function updatePasswordAction(formData: FormData) {
   await db.$transaction([
     db.user.update({ where: { id: auth.user.id }, data: { passwordHash: await hashPasswordAsync(password) } }),
     db.userSession.updateMany({ where: { userId: auth.user.id, revokedAt: null }, data: { revokedAt } }),
+    // A pending login email change ends with the old password.
+    db.userEmailChangeRequest.updateMany({ where: { userId: auth.user.id, consumedAt: null, revokedAt: null }, data: { revokedAt } }),
   ]);
   await writeAuditLog({
     vendorId: auth.vendor?.id ?? null,

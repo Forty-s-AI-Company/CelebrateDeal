@@ -1,5 +1,6 @@
 import { createHash, randomBytes } from "node:crypto";
 import { Prisma, type PrismaClient } from "@prisma/client";
+import { assertLoginEmailAvailableForNewAccount, LoginEmailReservedError } from "@/lib/login-email-reservation";
 
 /**
  * Vendor member invitations (F-029 / B02-06).
@@ -166,6 +167,13 @@ export async function acceptVendorMemberInvitation(
         // A signed-in user cannot claim an invitation for another address.
         if (input.actorUserId) throw new AcceptAbort("wrong_account");
         if (!input.newAccount) throw new AcceptAbort("invalid");
+        // An address reserved for its previous owner's email revert reads like one in use.
+        try {
+          await assertLoginEmailAvailableForNewAccount(tx, invitation.email, now);
+        } catch (error) {
+          if (error instanceof LoginEmailReservedError) throw new AcceptAbort("account_exists");
+          throw error;
+        }
         const user = await tx.user.create({
           // Opening the e-mailed invitation link proves the mailbox, so the new account starts verified.
           data: { email: invitation.email, name: input.newAccount.name || invitation.name, passwordHash: input.newAccount.passwordHash, status: "active", emailVerifiedAt: now },
