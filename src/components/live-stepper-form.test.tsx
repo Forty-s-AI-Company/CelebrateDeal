@@ -1141,6 +1141,7 @@ describe("LiveStepperForm", () => {
       name = "status";
       value = "scheduled";
       form: unknown = formRef.current;
+      isConnected = true;
     }
     const submitter = new SyntheticButton();
     (globalThis as Record<string, unknown>).HTMLButtonElement = SyntheticButton;

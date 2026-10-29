@@ -102,6 +102,31 @@ describe("creating a live with products from the eight-step studio", () => {
     expect((await prisma.liveStudioDraft.findUniqueOrThrow({ where: { id: draft.id } })).consumedAt).not.toBeNull();
   });
 
+  it("lets the composite (vendorId, productId) FK refuse a foreign product even inside the nested create", async () => {
+    const foreign = await product(await vendor(), "Foreign product");
+    await expect(prisma.$transaction((tx) => tx.live.create({ data: {
+      vendorId: runtime.vendorId, title: "Synthetic", slug: `fk-${randomUUID()}`, scheduledAt: new Date("2026-11-29T12:00:00.000Z"),
+      products: { create: [{ productId: foreign.id, sortOrder: 1, isPinned: true }] },
+    } }))).rejects.toMatchObject({ code: "P2003" });
+    expect(await prisma.live.count({ where: { vendorId: runtime.vendorId } })).toBe(0);
+  });
+
+  it("maps a tenant FK violation during the write to invalid_reference and keeps the draft", async () => {
+    const resources = await reportedStudioResources(runtime.vendorId);
+    const offered = await product(runtime.vendorId, "Synthetic whole-food box");
+    const draft = await savedDraft(runtime.vendorId, {
+      videoId: resources.video.id, formId: resources.form.id, messageTemplateId: resources.template.id,
+    }, [offered.id]);
+    // The product passed validation, then stopped matching this vendor before the INSERT.
+    db.client = prisma.$extends({ query: { live: { async create() {
+      throw Object.assign(new Error("synthetic foreign key violation"), { code: "P2003" });
+    } } } });
+
+    await expect(upsertLiveAction(draft.data)).rejects.toThrow("error=invalid_reference");
+    expect(await prisma.live.count({ where: { vendorId: runtime.vendorId } })).toBe(0);
+    expect((await prisma.liveStudioDraft.findUniqueOrThrow({ where: { id: draft.id } })).consumedAt).toBeNull();
+  });
+
   it("refuses another vendor's product without creating a live or consuming the draft", async () => {
     const resources = await reportedStudioResources(runtime.vendorId);
     const foreign = await product(await vendor(), "Foreign product");

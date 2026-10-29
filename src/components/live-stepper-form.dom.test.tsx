@@ -75,10 +75,10 @@ let container: HTMLDivElement;
 let root: Root;
 let commits = 0;
 
-function studio(initialDraft?: LiveStudioDraftEnvelope) {
+function studio(initialDraft?: LiveStudioDraftEnvelope, extra: { liveId?: string; currentStatus?: string; error?: string } = {}) {
   return (
     <Profiler id="live-studio" onRender={() => { commits += 1; }}>
-      <LiveStepperForm {...resources} initialDraft={initialDraft} />
+      <LiveStepperForm {...resources} initialDraft={initialDraft} {...extra} />
     </Profiler>
   );
 }
@@ -245,5 +245,123 @@ describe("LiveStepperForm publish submit", () => {
     expect(container.querySelector('[role="alertdialog"]')).toBeNull();
     expect(mocks.upsertLiveAction).not.toHaveBeenCalled();
     expect(mocks.saveLiveStudioDraft).not.toHaveBeenCalled();
+  });
+
+  it("ignores a double click on the confirmation while the draft is still saving", async () => {
+    let finishSave!: () => void;
+    mocks.saveLiveStudioDraft.mockImplementationOnce((input: { draftId: string; revision: number; payload: LiveStudioDraftPayload }) => new Promise((resolve) => {
+      finishSave = () => resolve({ id: input.draftId, revision: input.revision + 1, payload: input.payload, updatedAt: "2026-10-29T08:06:00.000Z", slugTaken: false, slugCheckFailed: false });
+    }));
+    await act(async () => { root.render(studio(resumedDraft)); });
+    control('[name="accentCopy"]').value = "雙擊前的優惠";
+    await act(async () => { button("建立並排程").click(); });
+    const dialog = control('[role="alertdialog"]');
+    const confirm = button("確認建立並排程", dialog);
+
+    await act(async () => { confirm.click(); });
+    await act(async () => { confirm.click(); });
+    await act(async () => { confirm.click(); });
+    expect(mocks.saveLiveStudioDraft).toHaveBeenCalledTimes(1);
+    await act(async () => { finishSave(); });
+    await settle();
+
+    expect(mocks.saveLiveStudioDraft).toHaveBeenCalledTimes(1);
+    expect(mocks.upsertLiveAction).toHaveBeenCalledTimes(1);
+    expect(mocks.upsertLiveAction.mock.calls[0]![0].get("status")).toBe("scheduled");
+    expect(mocks.upsertLiveAction.mock.calls[0]![0].get("liveDraftRevision")).toBe("3");
+  });
+
+  it("does not submit when the confirmation is cancelled while the draft is saving", async () => {
+    let finishSave!: () => void;
+    mocks.saveLiveStudioDraft.mockImplementationOnce((input: { draftId: string; revision: number; payload: LiveStudioDraftPayload }) => new Promise((resolve) => {
+      finishSave = () => resolve({ id: input.draftId, revision: input.revision + 1, payload: input.payload, updatedAt: "2026-10-29T08:06:00.000Z", slugTaken: false, slugCheckFailed: false });
+    }));
+    await act(async () => { root.render(studio(resumedDraft)); });
+    control('[name="accentCopy"]').value = "取消前的優惠";
+    await act(async () => { button("建立並排程").click(); });
+    const dialog = control('[role="alertdialog"]');
+    await act(async () => { button("確認建立並排程", dialog).click(); });
+    await act(async () => { button("取消", dialog).click(); });
+    await act(async () => { finishSave(); });
+    await settle();
+
+    expect(mocks.saveLiveStudioDraft).toHaveBeenCalledTimes(1);
+    expect(mocks.upsertLiveAction).not.toHaveBeenCalled();
+    expect(container.querySelector('[role="alertdialog"]')).toBeNull();
+  });
+
+  it("locks the form while the submit is pending so late edits are not overwritten", async () => {
+    let finishAction!: () => void;
+    mocks.upsertLiveAction.mockImplementationOnce(() => new Promise<void>((resolve) => { finishAction = resolve; }));
+    await act(async () => { root.render(studio(resumedDraft)); });
+    const form = control<HTMLFormElement>("form");
+    await act(async () => { button("建立並排程").click(); });
+    await act(async () => { button("確認建立並排程", control('[role="alertdialog"]')).click(); });
+    await settle();
+    expect(form.inert).toBe(true);
+    expect(form.getAttribute("aria-busy")).toBe("true");
+
+    await act(async () => { finishAction(); });
+    await settle();
+    expect(form.inert).toBe(false);
+    expect(container.querySelector('[role="alertdialog"]')).toBeNull();
+  });
+
+  it("starts on the safe choice when the confirmation opens", async () => {
+    await act(async () => { root.render(studio(resumedDraft)); });
+    await act(async () => { button("建立並排程").click(); });
+    expect(document.activeElement).toBe(button("取消", control('[role="alertdialog"]')));
+  });
+});
+
+describe("LiveStepperForm edit page status actions", () => {
+  const editDraft: LiveStudioDraftEnvelope = { ...resumedDraft, id: "draft-edit", revision: 4 };
+
+  it("does not leave the next status action confirmed after 開始直播 redirects to the same page", async () => {
+    await act(async () => { root.render(studio(editDraft, { liveId: "live-1", currentStatus: "scheduled" })); });
+    await act(async () => { button("開始直播").click(); });
+    await act(async () => { button("確認開始直播", control('[role="alertdialog"]')).click(); });
+    await settle();
+    expect(mocks.upsertLiveAction).toHaveBeenCalledTimes(1);
+    expect(mocks.upsertLiveAction.mock.calls[0]![0].get("status")).toBe("live");
+
+    // The server committed the draft (revision 5) and re-rendered /lives/live-1/edit.
+    await act(async () => { root.render(studio({ ...editDraft, revision: 5 }, { liveId: "live-1", currentStatus: "live" })); });
+
+    expect(container.querySelector('[role="alertdialog"]')).toBeNull();
+    expect(button("結束直播").disabled).toBe(false);
+    expect(control('[name="liveDraftRevision"]').value).toBe("5");
+    expect(mocks.upsertLiveAction).toHaveBeenCalledTimes(1);
+  });
+
+  it("closes the confirmation once a submit settles even when the server props are unchanged", async () => {
+    const props = { liveId: "live-1", currentStatus: "scheduled", error: "slug_taken" };
+    await act(async () => { root.render(studio(editDraft, props)); });
+    await act(async () => { button("開始直播").click(); });
+    await act(async () => { button("確認開始直播", control('[role="alertdialog"]')).click(); });
+    await settle();
+    // Same error again: identical props, so the studio is not remounted.
+    await act(async () => { root.render(studio(editDraft, props)); });
+
+    expect(container.querySelector('[role="alertdialog"]')).toBeNull();
+  });
+
+  it("adopts a newer server revision so the next autosave does not conflict", async () => {
+    await act(async () => { root.render(studio(editDraft, { liveId: "live-1", currentStatus: "scheduled" })); });
+    await act(async () => { root.render(studio({ ...editDraft, revision: 6 }, { liveId: "live-1", currentStatus: "scheduled" })); });
+    await act(async () => { button("立即儲存草稿").click(); });
+    await settle();
+
+    expect(mocks.saveLiveStudioDraft).toHaveBeenCalledWith(expect.objectContaining({ draftId: "draft-edit", revision: 6 }));
+  });
+
+  it("keeps the studio when a refresh only reports the revision it already saved", async () => {
+    await act(async () => { root.render(studio(editDraft, { liveId: "live-1", currentStatus: "scheduled" })); });
+    const title = control('[name="title"]');
+    await act(async () => { button("立即儲存草稿").click(); });
+    await settle();
+    await act(async () => { root.render(studio({ ...editDraft, revision: 5 }, { liveId: "live-1", currentStatus: "scheduled" })); });
+
+    expect(control('[name="title"]')).toBe(title);
   });
 });

@@ -8,7 +8,7 @@ import { upsertLiveAction } from "@/app/actions";
 import { formatTimeZoneLabel } from "@/lib/format";
 import { LiveSlugField } from "@/components/live-slug-field";
 import { FormSubmitButton } from "@/components/form-submit-button";
-import { LiveConfirmedSubmitButton } from "@/components/live-submit-confirmation";
+import { LiveConfirmedSubmitButton, LiveFormPendingLock } from "@/components/live-submit-confirmation";
 import { MediaUploadField } from "@/components/media-upload-field";
 import {
   StreamAllocationEditor,
@@ -517,7 +517,14 @@ function submitOnlyAfterLatestDraft(
   activeStep: number,
   draft: Pick<ReturnType<typeof useLiveStudioDraft>, "getCurrentClaim" | "isCurrentFormSaved" | "saveNow">,
   form: HTMLFormElement | null,
+  flush: Pick<ReturnType<typeof useSubmitFlushGuard>, "isInFlight" | "begin" | "end">,
 ) {
+  // A second submit while the first one is still saving the draft (double
+  // click on the confirmation) must not start another save or Server Action.
+  if (flush.isInFlight()) {
+    event.preventDefault();
+    return;
+  }
   const writeClaim = (claim: { draftId: string; revision: number }) => {
     if (!form) return false;
     const draftIdControl = form.elements.namedItem("liveDraftId") as HTMLInputElement | null;
@@ -534,7 +541,11 @@ function submitOnlyAfterLatestDraft(
   }
   event.preventDefault();
   const submitter = (event.nativeEvent as SubmitEvent).submitter;
+  flush.begin();
   void draft.saveNow(activeStep).then((claim) => {
+    // Release before re-submitting: the follow-up submit below is the one
+    // this flush was for and must pass the guard.
+    flush.end();
     if (!claim || !writeClaim(claim) || !form) return;
     if (!(submitter instanceof HTMLButtonElement)) {
       form.requestSubmit();
@@ -542,9 +553,9 @@ function submitOnlyAfterLatestDraft(
     }
     // The confirmation dialog may have been cancelled while the draft was
     // saving; a detached submitter means the user no longer wants to submit.
-    if (submitter.form !== form) return;
+    if (!submitter.isConnected || submitter.form !== form) return;
     form.requestSubmit(submitter);
-  });
+  }, () => flush.end());
 }
 
 function LiveRulesFields({
@@ -615,6 +626,7 @@ function liveFormError(error?: string, invalidFieldLabel?: string) {
 
 function LiveSubmitActions({
   canSubmit,
+  savingBeforeSubmit = false,
   currentStatus,
   liveId,
   publishReady,
@@ -622,6 +634,7 @@ function LiveSubmitActions({
   statusAction,
 }: {
   canSubmit: boolean;
+  savingBeforeSubmit?: boolean;
   currentStatus: string;
   liveId: string;
   publishReady: boolean;
@@ -639,16 +652,16 @@ function LiveSubmitActions({
         {liveId ? "儲存變更" : "建立草稿並預覽"}
       </FormSubmitButton>
       {!liveId ? (
-        <LiveConfirmedSubmitButton name="status" value="scheduled" disabled={!canSubmit || (requiresLivePublishReadiness("scheduled", replayEnabled) && !publishReady)} confirmMessage="確定要建立並排程這場直播嗎？" confirmLabel="確認建立並排程" pendingChildren="排程中…" pendingMessage="正在建立並排程直播間，請勿重複送出。" className="inline-flex min-h-11 items-center justify-center rounded-md bg-cta px-4 text-sm font-semibold text-white transition hover:bg-cta-dark">
+        <LiveConfirmedSubmitButton key="create-scheduled" savingBeforeSubmit={savingBeforeSubmit} name="status" value="scheduled" disabled={!canSubmit || (requiresLivePublishReadiness("scheduled", replayEnabled) && !publishReady)} confirmMessage="確定要建立並排程這場直播嗎？" confirmLabel="確認建立並排程" pendingChildren="排程中…" pendingMessage="正在建立並排程直播間，請勿重複送出。" className="inline-flex min-h-11 items-center justify-center rounded-md bg-cta px-4 text-sm font-semibold text-white transition hover:bg-cta-dark">
           建立並排程
         </LiveConfirmedSubmitButton>
       ) : statusAction ? (
-        <LiveConfirmedSubmitButton name="status" value={statusAction.value} disabled={actionDisabled} confirmMessage={statusAction.confirm} confirmLabel={`確認${statusAction.label}`} pendingChildren="處理中…" pendingMessage="正在更新直播公開狀態，請勿重複送出。" className="inline-flex min-h-11 items-center justify-center rounded-md bg-cta px-4 text-sm font-semibold text-white transition hover:bg-cta-dark">
+        <LiveConfirmedSubmitButton key={`${currentStatus}-to-${statusAction.value}`} savingBeforeSubmit={savingBeforeSubmit} name="status" value={statusAction.value} disabled={actionDisabled} confirmMessage={statusAction.confirm} confirmLabel={`確認${statusAction.label}`} pendingChildren="處理中…" pendingMessage="正在更新直播公開狀態，請勿重複送出。" className="inline-flex min-h-11 items-center justify-center rounded-md bg-cta px-4 text-sm font-semibold text-white transition hover:bg-cta-dark">
           {statusAction.label}
         </LiveConfirmedSubmitButton>
       ) : null}
       {canUnpublish ? (
-        <LiveConfirmedSubmitButton name="status" value="draft" disabled={!canSubmit} confirmMessage="確定要將這場直播下架並回到草稿嗎？公開連結會立即停止顯示。" confirmLabel="確認下架為草稿" pendingChildren="下架中…" pendingMessage="正在將直播下架為草稿，請勿重複送出。" className="inline-flex min-h-11 items-center justify-center rounded-md border border-slate-300 bg-white px-4 text-sm font-semibold text-slate-700 transition hover:bg-slate-50">
+        <LiveConfirmedSubmitButton key={`${currentStatus}-to-draft`} savingBeforeSubmit={savingBeforeSubmit} name="status" value="draft" disabled={!canSubmit} confirmMessage="確定要將這場直播下架並回到草稿嗎？公開連結會立即停止顯示。" confirmLabel="確認下架為草稿" pendingChildren="下架中…" pendingMessage="正在將直播下架為草稿，請勿重複送出。" className="inline-flex min-h-11 items-center justify-center rounded-md border border-slate-300 bg-white px-4 text-sm font-semibold text-slate-700 transition hover:bg-slate-50">
           下架為草稿
         </LiveConfirmedSubmitButton>
       ) : null}
@@ -1079,51 +1092,94 @@ function LiveDraftConflictActions({ draft }: { draft: { reloadLatest: () => void
   );
 }
 
-type LiveStudioSession = {
-  requestedDraftId: string;
+type LiveStudioIdentity = {
+  draftId: string;
+  revision: number;
   error: string;
   invalidField: string;
+  currentStatus: string;
+};
+
+type LiveStudioSession = {
+  requested: LiveStudioIdentity;
+  /** The draft and newest revision this mounted studio has itself saved. */
   adoptedDraftId: string;
+  adoptedRevision: number;
   generation: number;
 };
 
-/**
- * Next keeps client state when `/lives/new` navigates to itself (for example
- * 「繼續這份草稿」 adds `?draft=`), so a resumed draft kept the blank form's
- * selects, checkboxes, slug and replay deadline, and its empty draft queue
- * then created a second draft row. Remount the studio whenever the server
- * hands it a different draft or a new submit error, except when the URL only
- * caught up with the draft this form already autosaved into.
- */
-export function LiveStepperForm(props: LiveStepperFormProps) {
-  const requestedDraftId = props.initialDraft?.id ?? "";
-  const error = props.error ?? "";
-  const invalidField = props.invalidField ?? "";
-  const [session, setSession] = useState<LiveStudioSession>(() => ({
-    requestedDraftId, error, invalidField, adoptedDraftId: requestedDraftId, generation: 0,
-  }));
-  let current = session;
-  if (session.requestedDraftId !== requestedDraftId || session.error !== error || session.invalidField !== invalidField) {
-    const sameStudio = requestedDraftId === session.adoptedDraftId && session.error === error && session.invalidField === invalidField;
-    current = {
-      requestedDraftId,
-      error,
-      invalidField,
-      adoptedDraftId: sameStudio ? session.adoptedDraftId : requestedDraftId,
-      generation: sameStudio ? session.generation : session.generation + 1,
-    };
-    setSession(current);
-  }
-  const adoptDraftId = useCallback((draftId: string) => {
-    setSession((latest) => latest.adoptedDraftId === draftId ? latest : { ...latest, adoptedDraftId: draftId });
-  }, []);
-  return <LiveStudioStepperForm key={current.generation} {...props} onDraftIdChange={adoptDraftId} />;
+function sameIdentity(left: LiveStudioIdentity, right: LiveStudioIdentity) {
+  return left.draftId === right.draftId && left.revision === right.revision && left.error === right.error
+    && left.invalidField === right.invalidField && left.currentStatus === right.currentStatus;
 }
 
-function useReportedDraftId(draftId: string, onDraftIdChange?: (draftId: string) => void) {
+/** True when new server props only catch up with what this studio already holds. */
+function isOwnDraftCatchUp(session: LiveStudioSession, next: LiveStudioIdentity) {
+  const previous = session.requested;
+  return next.draftId === session.adoptedDraftId
+    && next.revision <= session.adoptedRevision
+    && next.error === previous.error
+    && next.invalidField === previous.invalidField
+    && next.currentStatus === previous.currentStatus;
+}
+
+/**
+ * Next keeps client state when a page navigates to itself: 「繼續這份草稿」
+ * (`/lives/new?draft=`), a submit error redirect, or the edit page after a
+ * status change. A stale studio kept the blank form's selects, slug and
+ * replay deadline, an empty draft queue that created a second draft row, an
+ * outdated revision, or an open confirmation for the next status action.
+ * Remount whenever the server hands over a different draft, a newer revision,
+ * another status or a new submit error — except when the URL only caught up
+ * with the draft and revision this studio already autosaved.
+ */
+export function LiveStepperForm(props: LiveStepperFormProps) {
+  const requested: LiveStudioIdentity = {
+    draftId: props.initialDraft?.id ?? "",
+    revision: props.initialDraft?.revision ?? 0,
+    error: props.error ?? "",
+    invalidField: props.invalidField ?? "",
+    currentStatus: props.currentStatus ?? "draft",
+  };
+  const [session, setSession] = useState<LiveStudioSession>(() => ({
+    requested, adoptedDraftId: requested.draftId, adoptedRevision: requested.revision, generation: 0,
+  }));
+  let current = session;
+  if (!sameIdentity(session.requested, requested)) {
+    current = isOwnDraftCatchUp(session, requested)
+      ? { ...session, requested }
+      : { requested, adoptedDraftId: requested.draftId, adoptedRevision: requested.revision, generation: session.generation + 1 };
+    setSession(current);
+  }
+  const adoptDraft = useCallback((draftId: string, revision: number) => {
+    setSession((latest) => latest.adoptedDraftId === draftId && latest.adoptedRevision === revision
+      ? latest
+      : { ...latest, adoptedDraftId: draftId, adoptedRevision: revision });
+  }, []);
+  return <LiveStudioStepperForm key={current.generation} {...props} onDraftSaved={adoptDraft} />;
+}
+
+function useReportedDraft(draftId: string, revision: number | null, onDraftSaved?: (draftId: string, revision: number) => void) {
   useEffect(() => {
-    if (draftId) onDraftIdChange?.(draftId);
-  }, [draftId, onDraftIdChange]);
+    if (draftId && revision) onDraftSaved?.(draftId, revision);
+  }, [draftId, revision, onDraftSaved]);
+}
+
+/**
+ * Serializes the submit-time draft flush: while the latest draft is being
+ * saved before a submit, further submits (a double click on the confirmation)
+ * are ignored instead of starting a second save and a second Server Action.
+ * Plain object, no memo hooks, so the lightweight hook harness can call it.
+ */
+function useSubmitFlushGuard() {
+  const inFlightRef = useRef(false);
+  const [busy, setBusy] = useState(false);
+  return {
+    busy,
+    isInFlight: () => inFlightRef.current,
+    begin: () => { inFlightRef.current = true; setBusy(true); },
+    end: () => { inFlightRef.current = false; setBusy(false); },
+  };
 }
 
 type LiveStepperFormProps = {
@@ -1166,8 +1222,8 @@ export function LiveStudioStepperForm({
   projectId,
   currentStatus = "draft",
   timeZone,
-  onDraftIdChange,
-}: LiveStepperFormProps & { onDraftIdChange?: (draftId: string) => void }) {
+  onDraftSaved,
+}: LiveStepperFormProps & { onDraftSaved?: (draftId: string, revision: number) => void }) {
   const initialValues = initialDraft?.payload ?? suppliedInitialValues ?? emptyLiveStudioDraft();
   const registrationTemplates = templates.filter((template) => template.trigger === "registration_confirmed");
   const notificationTemplates = templates.filter((template) => template.trigger === "live_reminder" || template.trigger === "post_live_followup");
@@ -1212,7 +1268,8 @@ export function LiveStudioStepperForm({
     saveOnMount: Boolean(liveId && !initialDraft),
   });
   useLiveStudioPresetSave(studioPreset, draft.scheduleSave);
-  useReportedDraftId(draft.draftId, onDraftIdChange);
+  useReportedDraft(draft.draftId, draft.revision, onDraftSaved);
+  const submitFlush = useSubmitFlushGuard();
   const preview = buildLivePreview(previewTitle, previewAccentCopy, products, selectedProductIds); const statusAction = liveId ? liveStatusAction(currentStatus) : null;
   const publishReadiness = buildLivePublishReadiness({ studioPreset, products, productIds: selectedProductIds, videos, videoId: selectedVideoId, forms, formId: selectedFormId, templates: registrationTemplates, templateId: selectedTemplateId, scripts, scriptId: selectedScriptId });
   const readinessIsReady = (code: LivePublishRequirementCodeWithReminder) => (
@@ -1294,9 +1351,10 @@ export function LiveStudioStepperForm({
       className="grid gap-5"
       onChange={() => draft.scheduleSave()}
       onInvalid={(event) => handleLiveFormInvalid(event, invalidFocusPendingRef, setActiveStep, setValidationMessage)}
-      onSubmit={(event) => submitOnlyAfterLatestDraft(event, activeStep, draft, formRef.current)}
+      onSubmit={(event) => submitOnlyAfterLatestDraft(event, activeStep, draft, formRef.current, submitFlush)}
     >
       <input type="hidden" name={CSRF_FIELD_NAME} value={csrfToken} />
+      <LiveFormPendingLock formRef={formRef} />
       {!liveId && projectId ? <input type="hidden" name="projectId" value={projectId} /> : null}
       {liveId ? <input type="hidden" name="id" value={liveId} /> : null}
       <input type="hidden" name="liveDraftId" value={draft.draftId} readOnly />
@@ -1420,6 +1478,7 @@ export function LiveStudioStepperForm({
         ) : (
           <LiveSubmitActions
             canSubmit={draft.canSubmit}
+            savingBeforeSubmit={submitFlush.busy}
             currentStatus={currentStatus}
             liveId={liveId}
             publishReady={publishReadiness.ready}
