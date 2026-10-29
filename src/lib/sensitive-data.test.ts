@@ -108,6 +108,7 @@ describe("deriveSensitiveDataKey compatibility", () => {
     ["csrf-hmac:r2:db862e72a7b9a462", "097167103f585faebe8ad2d1972b3bdd9561a4df648160050db8527da34e60c4"],
     ["merchant-registration-invite:r2:9ecb5a622edbf327", "037c93c337f506df35369ee565130db93da60a28b13561e883ecc63950ef30ee"],
     ["merchant-email-verification:r2:5a881e5879ba6156", "47636dcbd0645d5f0cb4b0256d9e88ebaa23e67838263bc755f070eda927b9c8"],
+    ["account-email-change:r2:a8a788e3ba38de72", "2feb0b738fee9812061467f65792776873cdd5d5d93279e9a5c0955f7a0d83fa"],
     ["merchant-invite-email:r2:bcaa6cb59eb97af3", "40d60f1b71e1c9d7f0b61384c6749b49b404356c08691d5966edd9bb693eddaf"],
     ["live-private-chat-conversation-binding:r2:93e8e3400ce0da2b", "f3564cae76a1e8fed03f3690bfb5bed2946203db0b3e658df496845c88ab6971"],
     ["evergreen-viewer-session:r2:755cb80211ac7475", "5b95497914adb4bce99a9d40f20fe7e5114e196f22b77fbf519166e5bc809ce8"],

@@ -166,6 +166,7 @@ const mocks = vi.hoisted(() => ({
   vendorMemberUpsert: vi.fn(),
   userSessionFindMany: vi.fn(),
   userSessionUpdateMany: vi.fn(),
+  userEmailChangeRequestUpdateMany: vi.fn(),
   writeAuditLog: vi.fn(),
   requestAuditMeta: vi.fn(),
   auditLogCreate: vi.fn(),
@@ -417,6 +418,7 @@ vi.mock("@/lib/db", () => ({
       update: mocks.registrationFormUpdate,
     },
     userSession: { findMany: mocks.userSessionFindMany, updateMany: mocks.userSessionUpdateMany },
+    userEmailChangeRequest: { updateMany: mocks.userEmailChangeRequestUpdateMany },
   }),
 }));
 vi.mock("@/lib/payment-providers", () => ({ getPaymentProvider: mocks.getPaymentProvider }));
@@ -1179,7 +1181,13 @@ describe("updatePasswordAction", () => {
       where: { userId: "user-1", revokedAt: null },
       data: { revokedAt: expect.any(Date) },
     });
+    // A pending login email change ends with the old password, in the same transaction.
+    expect(mocks.userEmailChangeRequestUpdateMany).toHaveBeenCalledWith({
+      where: { userId: "user-1", consumedAt: null, revokedAt: null },
+      data: { revokedAt: expect.any(Date) },
+    });
     expect(mocks.transaction).toHaveBeenCalledOnce();
+    expect(mocks.transaction.mock.calls[0]![0]).toHaveLength(3);
     expect(mocks.writeAuditLog).toHaveBeenCalledWith(expect.objectContaining({
       actorId: "user-1",
       action: "update_password",

@@ -22,7 +22,7 @@
 
 | 類別 | 數量 | Models |
 |---|---:|---|
-| Identity／tenant root | 9 | `Vendor`、`User`、`UserSession`、`UserPolicyConsent`、`UserMfaFactor`、`UserRecoveryCode`、`PasswordResetToken`、`VendorMember`、`TrackingSetting` |
+| Identity／tenant root | 10 | `Vendor`、`User`、`UserSession`、`UserPolicyConsent`、`UserMfaFactor`、`UserRecoveryCode`、`PasswordResetToken`、`UserEmailChangeRequest`、`VendorMember`、`TrackingSetting` |
 | Content／live／lead | 24 | `Video`、`VideoArchiveState`、`ImageAsset`、`Product`、`RegistrationForm`、`RegistrationFormRetryDraft`、`FormSubmission`、`Live`、`LiveMediaSession`、`LiveProduct`、`LiveViewerSession`、`LiveStudioDraft`、`LiveReminderReconciliationJob`、`LiveChatMessage`、`LiveNotificationRule`、`LiveQuestion`、`LiveInteractionRun`、`LiveInteractionResponse`、`MessageTemplate`、`AnalyticsEvent`、`InteractionRole`、`InteractionScript`、`InteractionEvent`、`Blacklist` |
 | Affiliate／billing／payment／ops | 35 | `Affiliate`、`AffiliateClick`、`BillingPlan`、`VendorSubscription`、`PlatformReferralCode`、`PlatformReferralClick`、`PlatformReferralAttribution`、`PlatformReferralCommission`、`PlatformReferralCommissionLedgerEntry`、`PlatformReferralPayout`、`PlatformReferralPayoutBatch`、`VendorUsageLimit`、`UsageRecord`、`StreamUsageLedgerEntry`、`StreamUsageAllocationEntry`、`StreamUsageReconciliation`、`StreamOperationsAlert`、`Invoice`、`Settlement`、`PayoutBatch`、`PayoutItem`、`PaymentAccount`、`PaymentMethodReference`、`PaymentMethodSetupIntent`、`PaymentTransaction`、`PayUniLiveProbe`、`InventoryReservation`、`WebhookEvent`、`RefundRecord`、`AuditLog`、`EmailDelivery`、`EmailSuppression`、`AffiliateCommission`、`AffiliatePayout`、`AffiliateCommissionLedgerEntry` |
 | Team Funnel／attribution | 14 | `SalesTeam`、`TeamMembership`、`TeamMembershipRelationship`、`TeamFunnelTemplate`、`TeamFunnelTemplateVersion`、`TeamFunnelTemplateFieldLock`、`TeamFunnelTemplateProductSlot`、`PartnerFunnelPage`、`PartnerFunnelPageShareSetting`、`PartnerLiveShare`、`PartnerProductSlotOverride`、`TeamClickAttribution`、`TeamLeadAttribution`、`TeamConversionAttribution` |
@@ -133,6 +133,7 @@
 | Session token hash 唯一 | `@unique` | bounded expiry/revocation | schema + session tests |
 | 每位使用者單一 MFA factor | `UserMfaFactor.userId @unique` | setup/verify state machine | schema + action tests |
 | Password reset token hash 唯一 | `@unique` | conditional `usedAt: null` claim | isolated PostgreSQL concurrent consume |
+| 登入 Email 變更：token hash 唯一、每位使用者最多一筆未完成請求 | `tokenHash @unique`、partial unique `UserEmailChangeRequest_one_open_per_user` | 請求與確認都先鎖 `User` 列；條件式 `consumedAt/revokedAt: null` claim | `src/lib/account-email-change.db.test.ts` |
 | Vendor membership 唯一 | `@@unique([vendorId,userId])` | active member/role guard | schema + authorization matrix |
 
 ### Tenant／resource composition
@@ -589,3 +590,14 @@ Current source inventory: 145 models and 99 forward migrations. Previous checkpo
 - 文字動態欄位新增 `{{webinar.replayEndsAt}}`（回放開放至「11 月 12 日 23:59」，沒有設定時為「時間公布中」）；`section_title`（眉標、標題、副標）與 `announcement_bar` 的文字也在渲染時替換動態欄位。存檔仍保留原字串。
 - `FunnelRenderEvent` 新增選填 `webinar`：文件沒有漏斗排程時的備用排程，只有開發用 harness（`/browser-qa/funnel-design?schedule=…`，production 回 404）會傳入；公開頁仍只讀 `flow.webinar`。
 - 新增 `explainPageDocumentIssue`（只供範本測試診斷，回傳第一個不通過的 schema 路徑或樹狀規則），不影響 `parsePageDocument` 的 fail-closed 行為。
+
+## 2026-10-30 使用者自行變更登入 Email
+
+- `20261030120000_user_email_change_request`：forward-only、純新增，不改既有 table、欄位或資料。新增 `UserEmailChangeRequest`（`id`、`userId`、`newEmail`、`tokenHash`、`expiresAt`、`consumedAt`、`revokedAt`、`createdAt`）。`userId` FK → `User` ON DELETE CASCADE；`tokenHash` 唯一；`@@index([userId, createdAt])`、`@@index([expiresAt])`。Partial unique index `UserEmailChangeRequest_one_open_per_user`（`userId`，`WHERE "consumedAt" IS NULL AND "revokedAt" IS NULL`）保證每位使用者最多一筆未完成請求；Prisma 6 不比對 partial index，已加入 `scripts/prisma-drift-allowlist.json` 的 `notComparedByPrismaDiff.partialUniqueIndexes`，並由 `src/lib/prisma-unmanaged-indexes.db.test.ts` 鎖住完整定義。CHECK：`newEmail` 必須已 trim＋小寫且 3–320 字（與註冊規則一致）、`tokenHash` 為 64 字元小寫 hex、`expiresAt > createdAt`、`consumedAt` 與 `revokedAt` 不得同時有值。啟用 RLS（不新增 policy）。交易層級 `lock_timeout = 5s`。Prisma 6 不比對 CHECK，drift 檢查只多 partial index 一項（不在 diff 輸出中）。目前 156 models、129 forward migrations（排在 `20261028090000_landing_page_templates` 之後）；既有 SQL／checksum 不變。
+- **部署順序**：既有 table 沒有新欄位，`auth` 的讀取不受影響；但設定頁的「變更登入 Email」與確認連結會寫入新表，所以 migration 仍須先於程式。
+- 流程（`src/lib/account-email-change.ts`）：登入後在「安全性」輸入新 Email 與目前密碼；帳號有 MFA 時沿用既有 step-up（`recentMfaStatus`，15 分鐘內驗證過），沒有 MFA 的帳號不強迫啟用。限流：IP 層 10 次／15 分鐘、每帳號 5 次／小時（在密碼檢查前計數）、每個新 Email 3 封驗證信／小時（`account_email_change_request`、`account_email_change_recipient`）。新 Email 的正規化與註冊相同（trim、小寫、Email 格式、≤ 320）；等於目前 Email 時拒絕。
+- 連結：`aec1.<base64url JSON {purpose:"account_email_change", userId, exp, jti}>.<MAC>`，MAC = `HMAC-SHA256(deriveSensitiveDataKey("account-email-change:r2:a8a788e3ba38de72"), "aec1-mac:" + body + "\0" + newEmail)`，格式同商家 Email 驗證連結；token 不含 Email。已登記在 `DERIVED_KEY_ROTATIONS.accountEmailChange`（無 legacy）。資料表只存整個 token 的 SHA-256；有效 60 分鐘、只能用一次。連結只寄到新 Email；目前的 Email 收到遮罩（`m***@domain`）的安全通知，不含任何能完成變更的連結，並說明重設密碼會取消變更。
+- 防止列舉：新 Email 已屬於其他帳號時，請求畫面同樣顯示「已寄出驗證信」，不寄任何信到該地址、不建立請求，但照樣撤銷舊的未完成請求並寄同樣的通知到目前 Email；查詢、寫入與寄信都在回應之後（`after()`）執行，設定頁也不顯示待驗證的請求。不寄「有人嘗試」通知給既有帳號：那會讓任何人透過平台寄信給任意已註冊使用者，對對方的帳號也沒有保護作用。
+- 確認：信中連結開 `/verify-email-change?token=`，頁面只有確認按鈕；`POST /api/auth/email-change/confirm`（需 Origin、同源、IP 限流 20 次／分鐘，兩者都送 `Referrer-Policy: no-referrer`）不讀也不建立 session。單一交易內：以 hash 找請求、token 的 `userId` 必須等於請求的 `userId`、以請求的 `newEmail` 驗 MAC、`SELECT … FOR UPDATE` 鎖 `User` 列後重讀請求（未過期、未使用、未撤銷）與帳號（active）、檢查新 Email 沒有被其他帳號使用（已被使用就撤銷請求並回 `email_taken`；更新時的 P2002 競態整筆回滾並回 `email_taken`），然後 `user.updateMany({ where: { id, email: 鎖定時讀到的 Email, status: "active" } })` 設定 `email` 與 `emailVerifiedAt`、標記請求 `consumedAt`、撤銷該使用者**所有** session（比照密碼重設）、把所有未使用的密碼重設 token 標記為已用（它們寄到舊地址，不能再用來證明新信箱）、撤銷其他未完成請求、寫入 `account_email_changed` 稽核（只含 requestId、jti 與計數，不含 Email 或 token）。商家創辦帳號（`Vendor.email` 等於舊 Email 且仍是該商家 active 成員）會同步更新 `Vendor.email`，讓 `vendorEmailVerificationState` 繼續以創辦帳號判斷；若其他商家已使用新 Email 則不更新（改走既有的退回規則）。
+- 取消：更新密碼（`updatePasswordAction`）與完成密碼重設（`consumePasswordResetToken`）都在原交易內撤銷未完成的變更請求。
+- `emailVerifiedAt` 的來源因此新增第 4 種：完成登入 Email 變更（連結只寄到新地址，與 `email` 同時寫入）。

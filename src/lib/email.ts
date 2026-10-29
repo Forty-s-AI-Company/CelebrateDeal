@@ -199,6 +199,73 @@ export async function sendMerchantEmailVerificationEmail({
   });
 }
 
+/**
+ * Sent to the NEW address of a requested login email change. Opening the link
+ * (and pressing the button on the page) completes the change; the link is
+ * single-use, expires, and is bound to this address.
+ */
+export async function sendAccountEmailChangeVerificationEmail({
+  to,
+  confirmUrl,
+  validMinutes,
+  idempotencyKey,
+}: {
+  to: string;
+  confirmUrl: string;
+  validMinutes: number;
+  idempotencyKey?: string;
+}) {
+  const safeTo = escapeHtml(to);
+  const safeUrl = escapeHtml(confirmUrl);
+  return sendTransactionalEmail({
+    to,
+    subject: "CelebrateDeal｜請確認新的登入 Email",
+    idempotencyKey,
+    text: `你好，有人要求把 CelebrateDeal 帳號的登入 Email 變更為 ${to}。\n\n如果是你本人操作，請在 ${validMinutes} 分鐘內開啟以下連結完成變更：\n${confirmUrl}\n\n完成後請改用這個 Email 登入，所有裝置的登入狀態都會結束。\n\n如果不是你本人操作，請直接忽略這封信，帳號不會有任何變更。`,
+    html: `
+      <div style="font-family:Arial,sans-serif;line-height:1.7;color:#0f172a">
+        <h2 style="margin:0 0 12px">確認新的登入 Email</h2>
+        <p>你好，有人要求把 CelebrateDeal 帳號的登入 Email 變更為 <strong>${safeTo}</strong>。</p>
+        <p>如果是你本人操作，請在 ${validMinutes} 分鐘內按下按鈕完成變更：</p>
+        <p><a href="${safeUrl}" style="display:inline-block;padding:12px 18px;background:#2563eb;color:#fff;text-decoration:none;border-radius:8px;font-weight:600">確認變更登入 Email</a></p>
+        <p style="word-break:break-all;color:#475569">${safeUrl}</p>
+        <p>完成後請改用這個 Email 登入，所有裝置的登入狀態都會結束。</p>
+        <p>如果不是你本人操作，請直接忽略這封信，帳號不會有任何變更。</p>
+      </div>
+    `,
+  });
+}
+
+/**
+ * Security notice to the CURRENT address when a login email change is
+ * requested. It names the new address only masked and carries no link that
+ * could complete the change.
+ */
+export async function sendAccountEmailChangeNoticeEmail({
+  to,
+  maskedNewEmail,
+  idempotencyKey,
+}: {
+  to: string;
+  maskedNewEmail: string;
+  idempotencyKey?: string;
+}) {
+  const safeMasked = escapeHtml(maskedNewEmail);
+  return sendTransactionalEmail({
+    to,
+    subject: "CelebrateDeal｜你的登入 Email 正在變更",
+    idempotencyKey,
+    text: `你的登入 Email 正在變更為 ${maskedNewEmail}。\n\n新 Email 的收件人開啟驗證信中的連結後，變更才會生效；在那之前你仍以目前的 Email 登入。\n\n如果不是你本人操作，請立即到登入頁使用「忘記密碼」重設密碼：重設密碼會取消這次變更並結束所有裝置的登入狀態。`,
+    html: `
+      <div style="font-family:Arial,sans-serif;line-height:1.7;color:#0f172a">
+        <h2 style="margin:0 0 12px">你的登入 Email 正在變更</h2>
+        <p>你的登入 Email 正在變更為 <strong>${safeMasked}</strong>。</p>
+        <p>新 Email 的收件人開啟驗證信中的連結後，變更才會生效；在那之前你仍以目前的 Email 登入。</p>
+        <p>如果不是你本人操作，請立即到登入頁使用「忘記密碼」重設密碼：重設密碼會取消這次變更並結束所有裝置的登入狀態。</p>
+      </div>
+    `,
+  });
+}
 
 /** Invitation to join a vendor workspace (F-029). The link is single-use and expires. */
 export async function sendVendorMemberInvitationEmail({

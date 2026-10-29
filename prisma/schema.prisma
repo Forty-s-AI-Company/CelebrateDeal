@@ -219,8 +219,9 @@ model User {
   status       String    @default("active")
   lastLoginAt  DateTime?
   /// Set only after the platform e-mailed a link to `email` and it was opened
-  /// (merchant verification link, accepted member invitation or password
-  /// reset). NULL = not verified; existing accounts were not backfilled.
+  /// (merchant verification link, accepted member invitation, password reset,
+  /// or a completed login email change, which sets `email` and this together).
+  /// NULL = not verified; existing accounts were not backfilled.
   emailVerifiedAt DateTime?
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
@@ -233,6 +234,7 @@ model User {
   sentMemberInvitations        VendorMemberInvitation[] @relation("VendorMemberInvitationInvitedBy")
   acceptedMemberInvitations    VendorMemberInvitation[] @relation("VendorMemberInvitationAcceptedBy")
   passwordResetTokens          PasswordResetToken[]
+  emailChangeRequests          UserEmailChangeRequest[]
   mfaFactor                    UserMfaFactor?
   recoveryCodes                UserRecoveryCode[]
   platformReferralCodes        PlatformReferralCode[]
@@ -326,6 +328,29 @@ model AccountRateLimitBucket {
   updatedAt       DateTime
 
   @@index([updatedAt])
+}
+
+/// Pending change of a user's login email (src/lib/account-email-change.ts).
+/// Only the SHA-256 of the signed link e-mailed to `newEmail` is stored. A row
+/// is usable while `consumedAt` and `revokedAt` are NULL and `expiresAt` lies
+/// ahead; at most one such open row per user (partial unique index
+/// `UserEmailChangeRequest_one_open_per_user`, not expressible here). A newer
+/// request, a password change or reset, or the completed change sets
+/// `revokedAt` on the others.
+model UserEmailChangeRequest {
+  id         String    @id @default(cuid())
+  userId     String
+  newEmail   String
+  tokenHash  String    @unique
+  expiresAt  DateTime
+  consumedAt DateTime?
+  revokedAt  DateTime?
+  createdAt  DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([expiresAt])
 }
 
 model PasswordResetToken {

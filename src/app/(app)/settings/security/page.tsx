@@ -18,6 +18,7 @@ import {
   sendPasswordResetSmokeAction,
   updatePasswordAction,
 } from "@/app/actions";
+import { AccountEmailChangeCard } from "@/components/account-email-change-card";
 import { CsrfField } from "@/components/csrf-field";
 import { FormSubmitButton } from "@/components/form-submit-button";
 import { MfaEnrollmentForm } from "@/components/mfa-enrollment-form";
@@ -26,6 +27,7 @@ import { VendorMemberRoleDowngradeForm } from "@/components/vendor-member-role-d
 import { Badge, ButtonLink, Card, DangerButton, Field, PageHeader, SelectField, SubmitButton } from "@/components/ui";
 import { getDb } from "@/lib/db";
 import { applyE2eLoadingDelay } from "@/lib/e2e-loading-diagnostic";
+import { ACCOUNT_EMAIL_CHANGE_TTL_MINUTES } from "@/lib/account-email-change-token";
 import { generateTotpUri, MFA_RECOVERY_COOKIE, MFA_SETUP_COOKIE, parsePendingMfaSetup, parseRecoveryCodes } from "@/lib/mfa";
 import { requireAuth } from "@/lib/auth";
 import { StepUpMfaNotice } from "@/components/step-up-mfa-notice";
@@ -62,6 +64,11 @@ const errorMessages: Record<string, string> = {
   password_reset_smoke_recipient: "目前帳號不是允許的測試收件人，未寄出測試信。",
   password_reset_smoke_rate_limited: "測試信寄送次數過多，請 15 分鐘後再試。",
   password_reset_smoke_unavailable: "測試信寄送保護暫時無法使用，請稍後再試。",
+  email_change_password: "目前密碼不正確，登入 Email 沒有變更。",
+  email_change_invalid: "請輸入有效的新 Email。",
+  email_change_same: "新 Email 與目前的登入 Email 相同。",
+  email_change_rate_limited: "變更登入 Email 的嘗試次數過多，請稍候一小時再試。",
+  email_change_unavailable: "變更登入 Email 的保護機制暫時無法使用，請稍後再試。",
 };
 
 const updatedMessages: Record<string, string> = {
@@ -77,6 +84,7 @@ const updatedMessages: Record<string, string> = {
   mfa_exists: "這個帳號已經啟用 MFA。",
   recovery_regenerated: "已重新產生 recovery codes，舊的 codes 已失效。",
   password_reset_smoke: "已寄出 password reset 測試信到目前帳號 Email。",
+  email_change_sent: `已寄出驗證信。如果新的 Email 可以使用，請在 ${ACCOUNT_EMAIL_CHANGE_TTL_MINUTES} 分鐘內開啟寄到新 Email 的連結完成變更；目前的 Email 也會收到通知。完成前請繼續用目前的 Email 登入。`,
 };
 
 export default async function SecuritySettingsPage({
@@ -144,6 +152,7 @@ export default async function SecuritySettingsPage({
             <SubmitButton>更新密碼並全部登出</SubmitButton>
           </form>
         </Card>
+        <AccountEmailChangeCard currentEmail={auth.user.email} mfaStatus={recentMfaStatus(auth)} />
         <Card>
           <h2 className="mb-2 text-lg font-semibold text-slate-950">登出此裝置</h2>
           <p className="mb-4 text-sm text-slate-500">登入狀態儲存在伺服器並以安全 Cookie 識別；登出會結束目前登入並清除瀏覽器 Cookie。</p>

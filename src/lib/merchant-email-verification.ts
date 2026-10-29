@@ -17,7 +17,8 @@ import {
  *
  * `User.emailVerifiedAt` is set only when the platform e-mailed a link to the
  * account's current address and the link was opened: the signed link sent
- * here, an accepted vendor member invitation, or a completed password reset.
+ * here, an accepted vendor member invitation, a completed password reset, or
+ * a completed login email change (the link went to the new address).
  * Registration invites are bearer links an administrator hands out, so they
  * prove nothing about the mailbox.
  *
@@ -173,8 +174,10 @@ export type VendorEmailVerificationState = {
  * Whether the vendor counts as email-verified for abuse-sensitive actions.
  *
  * The vendor's founding account is the user whose address equals
- * `Vendor.email` (registration creates both with the same address, and both
- * columns are unique), provided it is still active and still an active member
+ * `Vendor.email` (registration creates both with the same address, both
+ * columns are unique, and a completed login email change moves the vendor's
+ * address along with its founder's; see account-email-change.ts), provided it
+ * is still active and still an active member
  * of the vendor. While it is, it alone decides, so inviting an already
  * verified co-owner into a throwaway workspace does not lift its limits.
  * Otherwise (no such account, a suspended founder, or a founder who left the

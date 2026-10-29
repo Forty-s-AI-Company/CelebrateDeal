@@ -179,12 +179,19 @@ export async function consumePasswordResetToken(token: string, password: string)
 
       await tx.user.update({
         where: { id: resetToken.userId },
-        // The reset link was e-mailed to this address (emails never change),
-        // so completing it also proves the mailbox; an earlier timestamp stays.
+        // The reset link was e-mailed to this address: a completed login
+        // email change marks every outstanding reset link used, so a usable
+        // link always went to the current address. Completing it therefore
+        // also proves the mailbox; an earlier timestamp stays.
         data: { passwordHash, ...(resetToken.user.emailVerifiedAt ? {} : { emailVerifiedAt: now }) },
       });
       await tx.userSession.updateMany({
         where: { userId: resetToken.userId, revokedAt: null },
+        data: { revokedAt: now },
+      });
+      // The old-address notice of a login email change says a reset stops it.
+      await tx.userEmailChangeRequest.updateMany({
+        where: { userId: resetToken.userId, consumedAt: null, revokedAt: null },
         data: { revokedAt: now },
       });
 

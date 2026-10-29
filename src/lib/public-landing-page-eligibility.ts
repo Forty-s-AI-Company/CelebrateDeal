@@ -43,7 +43,7 @@ export function normalizeLandingPageSlug(value: string) {
  */
 export const RESERVED_LANDING_PAGE_SLUGS: ReadonlySet<string> = new Set([
   "login", "logout", "signin", "sign-in", "signout", "sign-out", "signup", "sign-up", "register", "registration",
-  "admin", "administrator", "account", "accounts", "dashboard", "settings", "support", "help", "verify", "verify-email",
+  "admin", "administrator", "account", "accounts", "dashboard", "settings", "support", "help", "verify", "verify-email", "verify-email-change",
   "verification", "password", "password-reset", "reset-password", "forgot-password", "auth", "oauth", "sso", "mfa", "2fa",
   "security", "billing", "checkout", "payment", "payments", "api", "www", "policies", "privacy", "terms", "official",
 ]);

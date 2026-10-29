@@ -1,0 +1,147 @@
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+const mocks = vi.hoisted(() => ({
+  security: vi.fn(),
+  auth: vi.fn(),
+  ipLimit: vi.fn(),
+  accountLimit: vi.fn(),
+  verifyPassword: vi.fn(),
+  schedule: vi.fn(),
+  audit: vi.fn(),
+}));
+vi.mock("next/navigation", () => ({ redirect: (path: string): never => { throw new Error(`redirect:${path}`); } }));
+vi.mock("next/headers", () => ({ headers: async () => new Headers({ "cf-connecting-ip": "203.0.113.9", "x-forwarded-for": "203.0.113.9" }) }));
+vi.mock("@/lib/csrf", () => ({ assertServerActionSecurity: mocks.security }));
+vi.mock("@/lib/auth", () => ({ requireAuth: mocks.auth }));
+vi.mock("@/lib/app-url", () => ({ getCanonicalAppUrl: () => "http://127.0.0.1:31027" }));
+vi.mock("@/lib/rate-limit", () => ({ checkRateLimit: mocks.ipLimit }));
+vi.mock("@/lib/account-rate-limit", () => ({ checkAccountRateLimit: mocks.accountLimit }));
+vi.mock("@/lib/password", () => ({ verifyPasswordAsync: mocks.verifyPassword }));
+vi.mock("@/lib/account-email-change", () => ({ scheduleAccountEmailChangeRequest: mocks.schedule }));
+vi.mock("@/lib/audit", () => ({ writeAuditLog: mocks.audit }));
+
+import { requestAccountEmailChangeAction } from "./account-email-change-actions";
+
+const NOW = Date.now();
+
+function form(extra: Record<string, string> = {}) {
+  const data = new FormData();
+  data.set("newEmail", "  New.Owner@Example.TEST ");
+  data.set("currentPassword", "synthetic-current-password");
+  for (const [key, value] of Object.entries(extra)) data.set(key, value);
+  return data;
+}
+
+function signedIn(overrides: { mfaFactor?: unknown; mfaVerifiedAt?: Date | null } = {}) {
+  return {
+    user: { id: "user-1", email: "owner@example.test", passwordHash: "scrypt:synthetic", platformRole: "none", mfaFactor: overrides.mfaFactor ?? null },
+    session: { id: "session-1", mfaVerifiedAt: overrides.mfaVerifiedAt ?? null },
+    vendor: { id: "vendor-1" },
+    member: { role: "owner" },
+  };
+}
+
+beforeEach(() => {
+  vi.resetAllMocks();
+  mocks.auth.mockResolvedValue(signedIn());
+  mocks.ipLimit.mockResolvedValue(null);
+  mocks.accountLimit.mockResolvedValue(null);
+  mocks.verifyPassword.mockResolvedValue(true);
+  mocks.audit.mockResolvedValue(undefined);
+});
+
+describe("requesting a login email change", () => {
+  it("schedules the change for the signed-in account only, with the normalized address, and answers the generic message", async () => {
+    await expect(requestAccountEmailChangeAction(form({ userId: "someone-else", currentEmail: "victim@example.test" }))).rejects.toThrow("redirect:/settings/security?updated=email_change_sent");
+    expect(mocks.auth).toHaveBeenCalledWith({ nextPath: "/settings/security" });
+    expect(mocks.verifyPassword).toHaveBeenCalledWith("synthetic-current-password", "scrypt:synthetic");
+    expect(mocks.accountLimit).toHaveBeenCalledWith("account_email_change_request", "user-1");
+    expect(mocks.ipLimit).toHaveBeenCalledWith(expect.any(Request), "account-email-change-source", 10, 15 * 60 * 1000);
+    expect(mocks.schedule).toHaveBeenCalledExactlyOnceWith({
+      userId: "user-1",
+      currentEmail: "owner@example.test",
+      newEmail: "new.owner@example.test",
+      vendorId: "vendor-1",
+      actorLabel: "owner",
+    });
+  });
+
+  it("checks CSRF before anything else", async () => {
+    mocks.security.mockRejectedValue(new Error("csrf"));
+    await expect(requestAccountEmailChangeAction(form())).rejects.toThrow("csrf");
+    expect(mocks.auth).not.toHaveBeenCalled();
+    expect(mocks.schedule).not.toHaveBeenCalled();
+  });
+
+  it("requires a recent MFA verification when the account has a factor", async () => {
+    mocks.auth.mockResolvedValue(signedIn({ mfaFactor: { id: "factor-1" }, mfaVerifiedAt: new Date(NOW - 60 * 60_000) }));
+    await expect(requestAccountEmailChangeAction(form())).rejects.toThrow("redirect:/mfa/verify?reason=step_up&next=%2Fsettings%2Fsecurity");
+    mocks.auth.mockResolvedValue(signedIn({ mfaFactor: { id: "factor-1" }, mfaVerifiedAt: null }));
+    await expect(requestAccountEmailChangeAction(form())).rejects.toThrow("redirect:/mfa/verify?reason=step_up&next=%2Fsettings%2Fsecurity");
+    expect(mocks.verifyPassword).not.toHaveBeenCalled();
+    expect(mocks.accountLimit).not.toHaveBeenCalled();
+    expect(mocks.schedule).not.toHaveBeenCalled();
+
+    // A fresh verification passes the step-up; the password is still required.
+    mocks.auth.mockResolvedValue(signedIn({ mfaFactor: { id: "factor-1" }, mfaVerifiedAt: new Date(NOW - 60_000) }));
+    await expect(requestAccountEmailChangeAction(form())).rejects.toThrow("redirect:/settings/security?updated=email_change_sent");
+    expect(mocks.verifyPassword).toHaveBeenCalledOnce();
+    expect(mocks.schedule).toHaveBeenCalledOnce();
+  });
+
+  it("does not force MFA enrolment on an account without a factor", async () => {
+    await expect(requestAccountEmailChangeAction(form())).rejects.toThrow("redirect:/settings/security?updated=email_change_sent");
+    expect(mocks.schedule).toHaveBeenCalledOnce();
+  });
+
+  it.each([[429, "email_change_rate_limited"], [503, "email_change_unavailable"]])("fails closed on IP limit status %s before the password check", async (status, code) => {
+    mocks.ipLimit.mockResolvedValue(new Response(null, { status }));
+    await expect(requestAccountEmailChangeAction(form())).rejects.toThrow(`redirect:/settings/security?error=${code}`);
+    expect(mocks.accountLimit).not.toHaveBeenCalled();
+    expect(mocks.verifyPassword).not.toHaveBeenCalled();
+    expect(mocks.schedule).not.toHaveBeenCalled();
+  });
+
+  it.each([[429, "email_change_rate_limited"], [503, "email_change_unavailable"]])("fails closed on account limit status %s before the password check", async (status, code) => {
+    mocks.accountLimit.mockResolvedValue(new Response(null, { status }));
+    await expect(requestAccountEmailChangeAction(form())).rejects.toThrow(`redirect:/settings/security?error=${code}`);
+    expect(mocks.verifyPassword).not.toHaveBeenCalled();
+    expect(mocks.schedule).not.toHaveBeenCalled();
+  });
+
+  it("refuses a wrong or missing current password, audits it, and schedules nothing", async () => {
+    mocks.verifyPassword.mockResolvedValue(false);
+    await expect(requestAccountEmailChangeAction(form())).rejects.toThrow("redirect:/settings/security?error=email_change_password");
+    expect(mocks.audit).toHaveBeenCalledWith(expect.objectContaining({ actorId: "user-1", action: "account_email_change_password_failed", targetId: "user-1" }));
+    expect(JSON.stringify(mocks.audit.mock.calls)).not.toContain("synthetic-current-password");
+
+    mocks.verifyPassword.mockClear();
+    const missing = form();
+    missing.delete("currentPassword");
+    await expect(requestAccountEmailChangeAction(missing)).rejects.toThrow("redirect:/settings/security?error=email_change_password");
+    expect(mocks.verifyPassword).not.toHaveBeenCalled();
+    expect(mocks.schedule).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["an invalid address", "not-an-email"],
+    ["an empty address", "   "],
+    ["an over-long address", `${"a".repeat(64)}@${"b".repeat(300)}.test`],
+  ])("refuses %s before the password check", async (_label, newEmail) => {
+    await expect(requestAccountEmailChangeAction(form({ newEmail }))).rejects.toThrow("redirect:/settings/security?error=email_change_invalid");
+    expect(mocks.verifyPassword).not.toHaveBeenCalled();
+    expect(mocks.schedule).not.toHaveBeenCalled();
+  });
+
+  it("refuses the current address, whatever its case or spacing", async () => {
+    await expect(requestAccountEmailChangeAction(form({ newEmail: " OWNER@example.test " }))).rejects.toThrow("redirect:/settings/security?error=email_change_same");
+    expect(mocks.schedule).not.toHaveBeenCalled();
+  });
+
+  it("answers the same way whether or not the address is free: the outcome is decided after the response", async () => {
+    await expect(requestAccountEmailChangeAction(form({ newEmail: "taken@example.test" }))).rejects.toThrow("redirect:/settings/security?updated=email_change_sent");
+    await expect(requestAccountEmailChangeAction(form({ newEmail: "free@example.test" }))).rejects.toThrow("redirect:/settings/security?updated=email_change_sent");
+    // The action never looks up other accounts; it only hands the request on.
+    expect(mocks.schedule.mock.calls.map(([input]) => input.newEmail)).toEqual(["taken@example.test", "free@example.test"]);
+  });
+});
