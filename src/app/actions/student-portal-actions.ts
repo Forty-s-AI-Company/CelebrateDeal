@@ -13,6 +13,7 @@ import { getCanonicalAppUrl } from "@/lib/app-url";
 import { assertServerActionSecurity } from "@/lib/csrf";
 import { getDb } from "@/lib/db";
 import { protectEmailDeliveryPayload } from "@/lib/email-delivery-pii";
+import { scheduleImmediateEmailDispatch } from "@/lib/email-delivery-immediate";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { checkAccountRateLimit } from "@/lib/account-rate-limit";
 import { automationCustomerKeyHash } from "@/lib/automation-workflow";
@@ -98,6 +99,9 @@ export async function requestMagicLinkAction(
     status: "queued",
     nextAttemptAt: new Date(),
   } });
+  // The link expires in 15 minutes, so it cannot wait for the email job. The
+  // send runs after the generic response and keeps its send-time token check.
+  scheduleImmediateEmailDispatch([deliveryId]);
   return { status: "sent", message: t(genericSentMessage) };
 }
 

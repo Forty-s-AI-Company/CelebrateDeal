@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import { Prisma } from "@prisma/client";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { getDb } from "@/lib/db";
 import { BUYER_SUPPORT_COOKIE_PREFIX, issueBuyerSupportGrant } from "@/lib/buyer-support-access";
 import { createCommerceOrderForCheckout, reconcileCommerceOrderPaymentTransition, reconcileCommerceOrderRefund } from "@/lib/commerce-orders";
@@ -16,12 +16,42 @@ import { releasePostPurchaseCreditForTerminalPayment } from "./post-purchase-cre
 import { postPurchaseRecoveryAvailable, resumePostPurchaseCheckout } from "./post-purchase-checkout-recovery";
 import { resolvePostPurchaseRecoveryEntry } from "./post-purchase-recovery-entry";
 
+// The post-response hook is observed, not run: these tests cover which receipt
+// the committed webhook hands to it. Sending is covered by email-delivery-immediate.
+const immediate = vi.hoisted(() => ({ schedule: vi.fn(), serializationFailures: 0, teamStageRuns: 0 }));
+vi.mock("@/lib/email-delivery-immediate", async (original) => ({
+  ...await original<typeof import("@/lib/email-delivery-immediate")>(),
+  scheduleImmediateEmailDispatch: immediate.schedule,
+}));
+// Lets one test abort the payment transaction with a serialization failure
+// after the receipt row was written inside it; every other stage is unchanged.
+vi.mock("@/lib/payment-webhook-errors", async (original) => {
+  const actual = await original<typeof import("@/lib/payment-webhook-errors")>();
+  return {
+    ...actual,
+    withPaymentWebhookStage: async <T,>(stage: Parameters<typeof actual.withPaymentWebhookStage>[0], action: () => T | Promise<T>) => {
+      const result = await actual.withPaymentWebhookStage(stage, action);
+      if (stage === "TEAM_ATTRIBUTION") {
+        immediate.teamStageRuns += 1;
+        if (immediate.serializationFailures > 0) {
+          immediate.serializationFailures -= 1;
+          throw new Prisma.PrismaClientKnownRequestError("synthetic serialization failure", { code: "P2034", clientVersion: "synthetic" });
+        }
+      }
+      return result;
+    },
+  };
+});
+
 const ownedVendors: string[] = [];
 const buyer = { name: "合成買家", email: "post-purchase@example.test", phone: "0912345678" };
 const shipping = { recipientName: buyer.name, phone: buyer.phone, countryCode: "TW", postalCode: "106",
   administrativeArea: "Taipei", locality: "Da-an", addressLine1: "Synthetic Road 1" };
 
 afterEach(async () => {
+  immediate.schedule.mockReset();
+  immediate.serializationFailures = 0;
+  immediate.teamStageRuns = 0;
   const vendorId = { in: ownedVendors.splice(0) };
   // Restrictive money/grant foreign keys deliberately require child-first
   // cleanup of only this fixture's synthetic resources.
@@ -726,17 +756,63 @@ describe("paid receipt for post-purchase targets", () => {
     expect((await db.commerceOrder.findUniqueOrThrow({ where: { id: first.targetOrderId } })).status).toBe("paid");
     expect(await manualReviewFlags(input.vendor.id, first.targetOrderId)).toHaveLength(1);
     expect(await db.emailDelivery.count({ where: { vendorId: input.vendor.id, idempotencyKey: `order-paid:v1:${first.targetOrderId}` } })).toBe(0);
+    expect(immediate.schedule.mock.calls.flatMap(([ids]) => ids).filter(Boolean)).toEqual([]);
   });
 
   it("still sends the paid receipt for a normally superseding PayUni target", async () => {
     const input = await fixture(); const result = await upgrade(input, { providerName: "payuni" }); const db = getDb();
+    const committedAtSchedule = recordCommittedAtSchedule();
     await processPaymentWebhook(PaymentWebhookPayload.parse({ provider: "payuni", eventId: `ppu-paid-${randomUUID()}`,
       eventType: "paid", vendorId: input.vendor.id, orderNumber: result.payment.orderNumber, providerTradeNo: "synthetic-paid-trade",
       grossAmountCents: 9_500, currency: "TWD" }));
     expect((await db.postPurchaseCredit.findFirstOrThrow({ where: { vendorId: input.vendor.id } })).supersededAt).not.toBeNull();
     expect(await db.emailDelivery.count({ where: { vendorId: input.vendor.id, idempotencyKey: `order-paid:v1:${result.targetOrderId}` } })).toBe(1);
+    // Handed to the post-response hook once, only after the payment transaction committed.
+    expect(immediate.schedule.mock.calls.flatMap(([ids]) => ids).filter(Boolean)).toEqual([`order_paid_${result.targetOrderId}`]);
+    // Read outside the payment transaction at the moment of scheduling: the row was already committed.
+    await expect(Promise.all(committedAtSchedule)).resolves.toEqual([{ id: `order_paid_${result.targetOrderId}`, committed: true }]);
+    // A replayed provider callback finds the existing receipt and schedules nothing new.
+    immediate.schedule.mockClear();
+    await processPaymentWebhook(PaymentWebhookPayload.parse({ provider: "payuni", eventId: `ppu-paid-${randomUUID()}`,
+      eventType: "paid", vendorId: input.vendor.id, orderNumber: result.payment.orderNumber, providerTradeNo: "synthetic-paid-trade",
+      grossAmountCents: 9_500, currency: "TWD" }));
+    expect(immediate.schedule.mock.calls.flatMap(([ids]) => ids).filter(Boolean)).toEqual([]);
+  });
+
+  it("schedules the receipt once, from the committed retry, when a serialization failure rolls back the first attempt", async () => {
+    const input = await fixture(); const result = await upgrade(input, { providerName: "payuni" }); const db = getDb();
+    const committedAtSchedule = recordCommittedAtSchedule();
+    immediate.serializationFailures = 1;
+
+    await processPaymentWebhook(PaymentWebhookPayload.parse({ provider: "payuni", eventId: `ppu-paid-${randomUUID()}`,
+      eventType: "paid", vendorId: input.vendor.id, orderNumber: result.payment.orderNumber, providerTradeNo: "synthetic-retry-trade",
+      grossAmountCents: 9_500, currency: "TWD" }));
+
+    // The first attempt wrote the receipt row and was rolled back; the retry wrote it again and committed.
+    expect(immediate.teamStageRuns).toBe(2);
+    expect(await db.emailDelivery.count({ where: { vendorId: input.vendor.id, idempotencyKey: `order-paid:v1:${result.targetOrderId}` } })).toBe(1);
+    expect(immediate.schedule).toHaveBeenCalledTimes(1);
+    expect(immediate.schedule.mock.calls.flatMap(([ids]) => ids).filter(Boolean)).toEqual([`order_paid_${result.targetOrderId}`]);
+    await expect(Promise.all(committedAtSchedule)).resolves.toEqual([{ id: `order_paid_${result.targetOrderId}`, committed: true }]);
   });
 });
+
+/**
+ * Makes the scheduler spy start a read through the shared (non-transaction)
+ * client synchronously when called. A row created by a still-open payment
+ * transaction would not be visible to that read.
+ */
+function recordCommittedAtSchedule() {
+  const checks: Array<Promise<{ id: string; committed: boolean }>> = [];
+  immediate.schedule.mockImplementation((ids: Array<string | null | undefined>) => {
+    for (const id of ids) {
+      if (!id) continue;
+      checks.push(getDb().emailDelivery.count({ where: { id } }).then((count) => ({ id, committed: count === 1 })));
+    }
+    return true;
+  });
+  return checks;
+}
 
 async function failedPreparation() {
   const input = await fixture(1); const result = await upgrade(input); const db = getDb();

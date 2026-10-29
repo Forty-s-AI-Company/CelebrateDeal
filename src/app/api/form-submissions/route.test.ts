@@ -28,6 +28,17 @@ vi.mock("@/lib/registration-form-retry", async (original) => ({
   saveRegistrationRetryDraft: retryStorage.save,
   deleteRegistrationRetryDraft: retryStorage.remove,
 }));
+const immediateEmail = vi.hoisted(() => ({ schedule: vi.fn(), ensureVerification: vi.fn() }));
+vi.mock("@/lib/email-delivery-immediate", async (original) => ({
+  ...await original<typeof import("@/lib/email-delivery-immediate")>(),
+  scheduleImmediateEmailDispatch: immediateEmail.schedule,
+}));
+// Pass-through spy: the real enqueue runs unless a test overrides one call.
+vi.mock("@/lib/email-delivery", async (original) => {
+  const actual = await original<typeof import("@/lib/email-delivery")>();
+  immediateEmail.ensureVerification.mockImplementation(actual.ensureFormSubmissionVerificationDelivery);
+  return { ...actual, ensureFormSubmissionVerificationDelivery: immediateEmail.ensureVerification };
+});
 
 import { NextResponse } from "next/server";
 import { checkRateLimit } from "@/lib/rate-limit";
@@ -342,6 +353,37 @@ describe("team lead attribution", () => {
     expect(JSON.stringify(create)).not.toContain("Lead 報名成功");
     expect(JSON.stringify(create)).not.toContain("測試寄件人");
     expect(JSON.stringify(create)).not.toContain("support@example.test");
+    // The verification link is handed to the post-response hook, once, by its persisted id.
+    // (The automation step also calls the scheduler, with no emails here.)
+    expect(immediateEmail.schedule.mock.calls.flatMap(([ids]) => ids).filter(Boolean)).toEqual([create.data.id]);
+  });
+
+  it("dispatches the still-queued verification email again for a repeated registration", async () => {
+    db.formSubmission.findFirst.mockResolvedValue(pendingSubmission("submission-existing"));
+    immediateEmail.ensureVerification.mockResolvedValueOnce({ status: "duplicate", deliveryId: "email_existing_verification", deliveryStatus: "queued" });
+
+    const response = await POST(jsonRequest({ formId: "form-1", liveId: "live-a", payload: { name: "Lead", email: "lead@example.test" } }));
+
+    expect(response.status).toBe(200);
+    expect(immediateEmail.schedule.mock.calls.flatMap(([ids]) => ids).filter(Boolean)).toEqual(["email_existing_verification"]);
+  });
+
+  it("does not dispatch a suppressed verification email and keeps the 503 retry contract", async () => {
+    immediateEmail.ensureVerification.mockResolvedValueOnce({ status: "suppressed", deliveryId: "email_suppressed_verification" });
+
+    const response = await POST(jsonRequest({ formId: "form-1", liveId: "live-a", payload: { name: "Lead", email: "lead@example.test" } }));
+
+    expect(response.status).toBe(503);
+    expect(immediateEmail.schedule.mock.calls.flatMap(([ids]) => ids).filter(Boolean)).toEqual([]);
+  });
+
+  it("does not dispatch anything when enqueueing the verification email fails", async () => {
+    immediateEmail.ensureVerification.mockRejectedValueOnce(new Error("synthetic enqueue failure"));
+
+    const response = await POST(jsonRequest({ formId: "form-1", liveId: "live-a", payload: { name: "Lead", email: "lead@example.test" } }));
+
+    expect(response.status).toBe(503);
+    expect(immediateEmail.schedule.mock.calls.flatMap(([ids]) => ids).filter(Boolean)).toEqual([]);
   });
 
   it("uses the same normalized email and phone values for blacklist checks and persistence", async () => {

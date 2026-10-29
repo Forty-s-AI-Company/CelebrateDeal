@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   ensureRegistrationConfirmationDelivery: vi.fn(),
   ensureLiveReminderDelivery: vi.fn(),
   captureOperationalError: vi.fn(),
+  scheduleImmediateEmailDispatch: vi.fn(),
 }));
 
 vi.mock("@/lib/db", () => ({ getDb: () => mocks.db }));
@@ -20,6 +21,10 @@ vi.mock("@/lib/email-delivery", () => ({
   ensureLiveReminderDelivery: mocks.ensureLiveReminderDelivery,
 }));
 vi.mock("@/lib/monitoring", () => ({ captureOperationalError: mocks.captureOperationalError }));
+vi.mock("@/lib/email-delivery-immediate", async (importOriginal) => ({
+  ...await importOriginal<typeof import("@/lib/email-delivery-immediate")>(),
+  scheduleImmediateEmailDispatch: mocks.scheduleImmediateEmailDispatch,
+}));
 
 import { POST } from "./route";
 import { FORM_SUBMISSION_CHAT_SESSION_COOKIE } from "@/lib/form-submission-chat-session";
@@ -61,6 +66,8 @@ beforeEach(() => {
   vi.stubEnv("CSRF_SECRET", "form-chat-session-route-test-secret-longer-than-thirty-two-bytes");
   mocks.checkRateLimit.mockResolvedValue(null);
   mocks.verifyFormSubmission.mockResolvedValue({ status: "invalid" });
+  mocks.ensureRegistrationConfirmationDelivery.mockResolvedValue({ status: "not_configured" });
+  mocks.ensureLiveReminderDelivery.mockResolvedValue({ status: "not_configured" });
 });
 
 afterEach(() => vi.unstubAllEnvs());
@@ -158,6 +165,7 @@ describe("POST /api/form-submissions/verify", () => {
     expect(response.headers.get("location")).toBe("https://app.example.test/verify-registration?status=verified");
     expect(mocks.ensureRegistrationConfirmationDelivery).not.toHaveBeenCalled();
     expect(mocks.ensureLiveReminderDelivery).not.toHaveBeenCalled();
+    expect(mocks.scheduleImmediateEmailDispatch).not.toHaveBeenCalled();
   });
 
   it("already_verified 只有 current claim 才重新核發 chat session cookie", async () => {
@@ -191,6 +199,46 @@ describe("POST /api/form-submissions/verify", () => {
     });
     expect(JSON.stringify(mocks.captureOperationalError.mock.calls)).not.toContain(confirmation.recipientEmail);
     expect(JSON.stringify(mocks.captureOperationalError.mock.calls)).not.toContain(token);
+  });
+
+  it("驗證成功後在回應結束時立即寄出確認信，未來的開播提醒仍留給排程", async () => {
+    mocks.verifyFormSubmission.mockResolvedValue({ status: "verified", confirmation });
+    mocks.ensureRegistrationConfirmationDelivery.mockResolvedValue({ status: "queued", deliveryId: "email_confirmation" });
+    mocks.ensureLiveReminderDelivery.mockResolvedValue({
+      status: "scheduled",
+      deliveryId: "email_future_reminder",
+      nextAttemptAt: new Date(Date.now() + 60 * 60_000),
+    });
+
+    const response = await POST(request());
+
+    expect(response.status).toBe(303);
+    expect(mocks.scheduleImmediateEmailDispatch).toHaveBeenCalledTimes(1);
+    expect(mocks.scheduleImmediateEmailDispatch).toHaveBeenCalledWith(["email_confirmation"]);
+  });
+
+  it("在提醒時間窗內報名時，已到期的開播提醒也一併立即寄出", async () => {
+    mocks.verifyFormSubmission.mockResolvedValue({ status: "verified", confirmation });
+    mocks.ensureRegistrationConfirmationDelivery.mockResolvedValue({ status: "duplicate", deliveryId: "email_confirmation", deliveryStatus: "queued" });
+    mocks.ensureLiveReminderDelivery.mockResolvedValue({
+      status: "scheduled",
+      deliveryId: "email_due_reminder",
+      nextAttemptAt: new Date(Date.now() - 1_000),
+    });
+
+    await POST(request());
+
+    expect(mocks.scheduleImmediateEmailDispatch).toHaveBeenCalledWith(["email_confirmation", "email_due_reminder"]);
+  });
+
+  it("已退訂或未設定的信件不排入立即寄送", async () => {
+    mocks.verifyFormSubmission.mockResolvedValue({ status: "verified", confirmation });
+    mocks.ensureRegistrationConfirmationDelivery.mockResolvedValue({ status: "suppressed", deliveryId: "email_suppressed" });
+    mocks.ensureLiveReminderDelivery.mockResolvedValue({ status: "suppressed", deliveryId: "email_reminder", nextAttemptAt: null });
+
+    await POST(request());
+
+    expect(mocks.scheduleImmediateEmailDispatch).toHaveBeenCalledWith([]);
   });
 
   it("確認信排程失敗時保留 verified 結果，且監控資料不含收件人或 token", async () => {

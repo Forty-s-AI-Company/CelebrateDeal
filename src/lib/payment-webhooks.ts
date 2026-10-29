@@ -33,6 +33,7 @@ import { auditSnapshot, writeAuditLog } from "@/lib/audit";
 import { withPaymentWebhookStage } from "./payment-webhook-errors";
 import { reconcileCommerceOrderPaymentTransition } from "@/lib/commerce-orders";
 import { ensureCommerceOrderPaidDelivery } from "@/lib/commerce-order-email";
+import { deliveryIdForStatuses, scheduleImmediateEmailDispatch } from "@/lib/email-delivery-immediate";
 import { enqueuePaidPurchaseTracking } from "@/lib/tracking-purchase-outbox";
 import { getDb } from "@/lib/db";
 import { applyPaymentInventoryTransition } from "@/lib/inventory-reservations";
@@ -1014,6 +1015,10 @@ async function processPaymentWebhookOnce(payload: PaymentWebhookPayloadInput, ev
   if (isDisputeEvent(payload.eventType) && !payload.disputeCaseId) {
     throw new Error("synthetic dispute webhook 缺少 disputeCaseId。");
   }
+  // Receipt row created inside the payment transaction; dispatched only after
+  // commit. Each serializable retry calls this function afresh, so an id from
+  // a rolled-back attempt is never scheduled.
+  let paidReceiptDeliveryId: string | null = null;
   const {
     transaction,
     commission,
@@ -1146,11 +1151,14 @@ async function processPaymentWebhookOnce(payload: PaymentWebhookPayloadInput, ev
       }));
       if (payload.eventType === "paid") {
         await enqueuePaidPurchaseTracking(tx, { vendorId: vendor.id, paymentTransactionId: savedTransaction.id });
-        await withPaymentWebhookStage("PAID_DELIVERY_DECRYPT", () => ensureCommerceOrderPaidDelivery(tx, {
+        const paidDelivery = await withPaymentWebhookStage("PAID_DELIVERY_DECRYPT", () => ensureCommerceOrderPaidDelivery(tx, {
           vendorId: vendor.id,
           paymentTransactionId: savedTransaction.id,
           occurredAt,
         }));
+        // Only a receipt created by this attempt is handed to the hook. Reading
+        // the result never throws, so it cannot change the payment outcome.
+        paidReceiptDeliveryId = deliveryIdForStatuses(paidDelivery, ["queued"]);
       }
     }
 
@@ -1316,6 +1324,10 @@ async function processPaymentWebhookOnce(payload: PaymentWebhookPayloadInput, ev
     // is too short for that deliberate scope over a regional connection.
     timeout: 15_000,
   });
+
+  // The transaction has committed. The receipt is sent after this response;
+  // the email job remains the retry path if the hook cannot run or fails.
+  scheduleImmediateEmailDispatch([paidReceiptDeliveryId]);
 
   // Fiscal issuance is deliberately outside the payment transaction. An
   // adapter or queue outage must never roll back an already-successful payment.

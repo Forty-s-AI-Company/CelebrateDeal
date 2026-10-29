@@ -9,6 +9,10 @@ import { getSalesProjectScope } from "@/lib/sales-project-scope";
 import { statusLabel } from "@/lib/status-labels";
 import { requireFeatureOrNotFound } from "@/lib/feature-gates";
 
+// Booking-status automation emails are sent with `after()` inside this limit
+// (see IMMEDIATE_EMAIL_DISPATCH_MAX_DURATION_SECONDS).
+export const maxDuration = 60;
+
 type PageSearchParams = { updated?: string; error?: string };
 
 function database() {
