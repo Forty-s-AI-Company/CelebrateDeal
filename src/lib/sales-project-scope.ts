@@ -70,6 +70,6 @@ export async function resolveDefaultProjectCandidate(userId: string, vendorId: s
 export async function resolveBoundProjectName(vendorId: string, projectId: string | null, knownName: string | null): Promise<string | null> {
   if (!projectId) return null;
   if (knownName) return knownName;
-  const project = await getDb().salesProject.findFirst({ where: { id: projectId, vendorId }, select: { name: true } });
+  const project = await getDb().salesProject.findFirst({ where: { id: projectId, vendorId, status: { not: "archived" } }, select: { name: true } });
   return project?.name ?? null;
 }

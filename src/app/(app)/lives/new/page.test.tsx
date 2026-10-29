@@ -172,6 +172,13 @@ describe("NewLivePage data minimization", () => {
     expect(mocks.liveStepperForm).not.toHaveBeenCalled();
   });
 
+  it("looks up the name of an explicit projectId inside the current vendor and shows it", async () => {
+    mocks.projectFindFirst.mockImplementation(async ({ select }: { select: { id?: boolean; name?: boolean } }) => (select.name ? { name: "春季檔期" } : { id: "project-2" }));
+    const html = renderToStaticMarkup(await NewLivePage({ searchParams: Promise.resolve({ projectId: "project-2" }) }));
+    expect(mocks.projectFindFirst).toHaveBeenCalledWith({ where: { id: "project-2", vendorId: "vendor-1", status: { not: "archived" } }, select: { name: true } });
+    expect(html).toContain("將建立於專案：春季檔期");
+  });
+
   it("lets an explicit projectId override the scoped default without reading the preference", async () => {
     mocks.projectFindFirst.mockResolvedValue({ id: "project-2" });
     renderToStaticMarkup(await NewLivePage({ searchParams: Promise.resolve({ projectId: "project-2" }) }));

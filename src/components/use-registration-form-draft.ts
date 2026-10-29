@@ -84,6 +84,10 @@ export function useRegistrationFormDraft({
   const { raw: rawDraft, fromFallback } = selectRegistrationFormDraftSource(primaryRaw, fallbackRaw);
   // Set once the vendor-level draft was restored, so it is cleaned up after the project-scoped copy is saved.
   const migratedFromFallback = useRef(false);
+  useEffect(() => {
+    // Another tab already removed the vendor-level draft (e.g. after migrating it), so do not migrate it twice.
+    if (fallbackRaw === null) migratedFromFallback.current = false;
+  }, [fallbackRaw]);
   const parsedDraft = useMemo(() => rawDraft
     ? parseRegistrationFormDraft(rawDraft, { formId: initialValues.id, baseUpdatedAt: initialUpdatedAt })
     : null, [initialUpdatedAt, initialValues.id, rawDraft]);
