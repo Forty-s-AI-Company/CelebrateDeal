@@ -1,0 +1,475 @@
+ ✓ src/components/live-stepper-form.test.tsx > LiveStepperForm > shows the tenant timezone beside the schedule input without submitting a timezone field 51ms
+ ✓ src/components/live-stepper-form.test.tsx > LiveStepperForm > labels the default Taipei zone as Taiwan time 19ms
+ ✓ src/components/live-stepper-form.test.tsx > LiveStepperForm > submits the optional replay deadline and clears it when replay is disabled 25ms
+ ✓ src/components/live-stepper-form.test.tsx > LiveStepperForm > autosaves the latest replay deadline from the bubbling form change without a second render 24ms
+ ✓ src/components/live-stepper-form.test.tsx > LiveStepperForm > autosaves an empty replay deadline on the same change that disables replay 3ms
+ ✓ src/components/live-stepper-form.test.tsx > LiveStepperForm > shows stable default copy in the empty publish preview 43ms
+ ✓ src/components/live-stepper-form.test.tsx > LiveStepperForm > keeps an accessible live preview available while editing earlier steps 29ms
+ ✓ src/components/live-stepper-form.test.tsx > LiveStepperForm > offers a persisted purpose starter and selects commerce without submitting the form 32ms
+ ✓ src/components/live-stepper-form.test.tsx > LiveStepperForm > does not expose a writable Cloudflare Live Input UID field 5ms
+ ✓ src/components/live-stepper-form.test.tsx > LiveStepperForm > marks the current step and connects every step control to its panel 4ms
+ ✓ src/components/live-stepper-form.test.tsx > LiveStepperForm > renders the mobile step position and, once compact, a 44px step picker (F-118) 27ms
+ ✓ src/components/live-stepper-form.test.tsx > LiveStepperForm > reports a taken live address as a message that tells the user the draft is kept 25ms
+ ✓ src/components/live-stepper-form.test.tsx > LiveStepperForm > keeps every field in its canonical eight-step panel 13ms
+ ✓ src/components/live-stepper-form.test.tsx > LiveStepperForm > shows an instructive empty product state instead of a blank panel 10ms
+ ✓ src/components/live-stepper-form.test.tsx > LiveStepperForm > updates the publish phone preview with entered copy and selected product summary 87ms
+ ✓ src/components/live-stepper-form.test.tsx > LiveStepperForm > moves between steps in both directions and keeps the active panel linked 29ms
+ ✓ src/components/live-stepper-form.test.tsx > LiveStepperForm > reports required-field validation and refuses to advance until the panel is valid 27ms
+ ✓ src/components/live-stepper-form.test.tsx > LiveStepperForm > moves to the invalid field step, focuses the field, and renders invalid-reference feedback 24ms
+ ✓ src/components/live-stepper-form.test.tsx > LiveStepperForm > supports selecting and then removing a product from the preview 82ms
+ ✓ src/components/live-stepper-form.test.tsx > LiveStepperForm > renders every available media, form, template, script, and affiliate option 85ms
+ ✓ src/components/live-stepper-form.test.tsx > LiveStepperForm > disables suggestions with a clear explanation when no notification templates exist 7ms
+ ✓ src/components/live-stepper-form.test.tsx > LiveStepperForm > suggests only post rules when only a post-live template exists 24ms
+ ✓ src/components/live-stepper-form.test.tsx > LiveStepperForm > supports empty, suggested, add, delete, reorder, enable, and template controls across 3/3/8 groups 43ms
+ ✓ src/components/live-stepper-form.test.tsx > LiveStepperForm > offers direct create links for every missing Studio resource 18ms
+ ✓ src/components/live-stepper-form.test.tsx > LiveStepperForm > shows a readonly selected-script summary with an edit-timeline link 13ms
+ ✓ src/components/live-stepper-form.test.tsx > LiveStepperForm > renders the final confirmation step and submit action 14ms
+ ✓ src/components/live-stepper-form.test.tsx > LiveStepperForm > does not mark optional product, copy, hero, or script fields as pending for a complete content live 34ms
+ ✓ src/components/live-stepper-form.test.tsx > LiveStepperForm > moves a readiness blocker to its exact step and focuses its control after render 3ms
+ ✓ src/components/live-stepper-form.test.tsx > LiveStepperForm > offers separate draft and schedule submitters for a new complete content live 1ms
+ ✓ src/components/live-stepper-form.test.tsx > LiveStepperForm > keeps optional notification rules empty without blocking the schedule submitter 12ms
+ ✓ src/components/live-stepper-form.test.tsx > LiveStepperForm > shows a complete sales-live checklist and enables scheduling 4ms
+ ✓ src/components/live-stepper-form.test.tsx > LiveStepperForm > lets a sales live publish without an interaction script and only recommends one 3ms
+ ✓ src/components/live-stepper-form.test.tsx > LiveStepperForm > keeps sales publishing disabled and links each missing requirement to its step 6ms
+ ✓ src/components/live-stepper-form.test.tsx > LiveStepperForm > keeps content-live publishing simple and offers a recoverable unpublish action 5ms
+ ✓ src/components/live-stepper-form.test.tsx > LiveStepperForm > flushes the newest form payload before allowing a fast final submit 3ms
+ ✓ src/components/interaction-roles-workbench.test.tsx > InteractionRolesWorkbench > renders an empty create state with no destructive edit control 33ms
+ ✓ src/components/interaction-roles-workbench.test.tsx > InteractionRolesWorkbench > renders an existing inactive-or-active role with edit identity and delete action 12ms
+ ✓ src/components/interaction-roles-workbench.test.tsx > InteractionRolesWorkbench > shows a safe validation error and the public-transparency contract 9ms
+ ✓ src/components/interaction-roles-workbench.test.tsx > InteractionRolesWorkbench > only offers official and audience role types and normalizes legacy roles 6ms
+ ✓ src/components/interaction-roles-workbench.test.tsx > InteractionRolesWorkbench > round-trips scheduled state and keeps it after an action error 16ms
+ ✓ src/components/interaction-roles-workbench.test.tsx > InteractionRolesWorkbench > previews an unlabeled role without official or audience appearance chips 16ms
+ ✓ src/components/interaction-roles-workbench.test.tsx > InteractionRolesWorkbench > tells the merchant when a label is a system default that the live room hides 20ms
+ ✓ src/components/interaction-roles-workbench.test.tsx > InteractionRolesWorkbench > makes a new role usable in scripts by default and keeps the label optional 6ms
+ ✓ src/components/interaction-roles-workbench.test.tsx > InteractionRolesWorkbench > shows exact script impact before an active role is disabled or deleted 24ms
+ ✓ src/components/interaction-roles-workbench.test.tsx > InteractionRolesWorkbench > makes an unused role safe to change without inventing references 16ms
+ ✓ src/components/interaction-roles-workbench.test.tsx > InteractionRolesWorkbench > explains that a stale or cross-vendor role must be selected again 19ms
+ ✓ src/components/interaction-roles-workbench.test.tsx > InteractionRolesWorkbench > keeps canonical preset mode fields without mounting the upload field 30ms
+ ✓ src/components/interaction-roles-workbench.test.tsx > InteractionRolesWorkbench > renders custom mode through MediaUploadField with the four persisted avatar contracts 26ms
+ ✓ src/components/interaction-roles-workbench.test.tsx > InteractionRolesWorkbench > blocks save and Enter while upload is incomplete 27ms
+ ✓ src/components/interaction-roles-workbench.test.tsx > InteractionRolesWorkbench > keeps delete formAction available and bypasses the upload block 8ms
+ ✓ src/components/interaction-roles-workbench.test.tsx > InteractionRolesWorkbench > shows an action-state error while retaining the current controlled role values 7ms
+ ✓ src/components/interaction-roles-workbench.test.tsx > InteractionRolesWorkbench > shows a distinct initial empty state when no roles exist 15ms
+ ✓ src/components/interaction-roles-workbench.test.tsx > InteractionRolesWorkbench > searches name, label, and tone case-insensitively 23ms
+ ✓ src/components/interaction-roles-workbench.test.tsx > InteractionRolesWorkbench > trims, lowercases, and caps the search query at 120 characters 28ms
+ ✓ src/components/interaction-roles-workbench.test.tsx > InteractionRolesWorkbench > filters active and inactive roles without changing their original order 29ms
+ ✓ src/components/interaction-roles-workbench.test.tsx > InteractionRolesWorkbench > filters official and audience presentation roles and maps legacy roles to official 28ms
+ ✓ src/components/interaction-roles-workbench.test.tsx > InteractionRolesWorkbench > keeps scheduled and manual role filters separate 23ms
+ ✓ src/components/interaction-roles-workbench.test.tsx > InteractionRolesWorkbench > combines query, status, presentation, and scheduled filters as an intersection 13ms
+ ✓ src/components/interaction-roles-workbench.test.tsx > InteractionRolesWorkbench > shows a filter-empty state instead of the initial empty state 19ms
+ ✓ src/components/interaction-roles-workbench.test.tsx > InteractionRolesWorkbench > only renders clear controls after a filter is active and restores all roles 17ms
+ ✓ src/components/interaction-roles-workbench.test.tsx > InteractionRolesWorkbench > announces filtered and total counts through the labelled live region 18ms
+ ✓ src/components/interaction-roles-workbench.test.tsx > InteractionRolesWorkbench > keeps the selected role form and identity when the selected role is filtered out 16ms
+ ✓ src/components/interaction-roles-workbench.test.tsx > InteractionRolesWorkbench > keeps unknown role types in all results without crashing or misclassifying them 20ms
+ ✓ src/components/interaction-roles-workbench.test.tsx > InteractionRolesWorkbench > fails closed for an unknown selected role instead of silently changing it to official 10ms
+ ✓ src/components/interaction-roles-workbench.test.tsx > InteractionRolesWorkbench > preserves the roles array order after filtering 13ms
+ ✓ src/lib/mfa.test.ts > mfa helpers > encrypts and decrypts totp secrets 10ms
+ ✓ src/lib/mfa.test.ts > mfa helpers > serializes pending mfa setup payloads 4ms
+ ✓ src/lib/mfa.test.ts > mfa helpers > rejects legacy pending setup payloads that are not bound to a user 2ms
+ ✓ src/lib/mfa.test.ts > mfa helpers > verifies generated totp codes within the allowed window 2ms
+ ✓ src/lib/mfa.test.ts > mfa helpers > creates one-time recovery codes 2ms
+ ✓ src/lib/mfa.test.ts > mfa helpers > authenticates high-entropy recovery codes with a versioned keyed digest 4ms
+ ✓ src/lib/mfa.test.ts > mfa helpers > keeps legacy scrypt recovery codes valid during the hash transition 326ms
+ ✓ src/lib/mfa.test.ts > mfa key rotation (B04-03 tier 4) > encrypts new secrets in the m2 format under the new key only 3ms
+ ✓ src/lib/mfa.test.ts > mfa key rotation (B04-03 tier 4) > still decrypts a stored legacy secret and counts the legacy-key use 5ms
+ ✓ src/lib/mfa.test.ts > mfa key rotation (B04-03 tier 4) > re-encrypts a legacy secret into the current format without changing it 1ms
+ ✓ src/lib/mfa.test.ts > mfa key rotation (B04-03 tier 4) > rejects tampered ciphertext in both formats 2ms
+ ✓ src/lib/mfa.test.ts > mfa key rotation (B04-03 tier 4) > refuses truncated GCM tags in both formats 3ms
+ ✓ src/lib/mfa.test.ts > mfa key rotation (B04-03 tier 4) > accepts only the current format for the short-lived setup and recovery cookies 1ms
+ ✓ src/lib/mfa.test.ts > mfa key rotation (B04-03 tier 4) > verifies v1 recovery-code hashes under the legacy key and counts the use 2ms
+ ✓ src/lib/payment-providers/payuni.test.ts > unreferenced Sandbox order observation > queries only the merchant order and authenticates not-found without a write 16ms
+ ✓ src/lib/payment-providers/payuni.test.ts > unreferenced Sandbox order observation > rejects PAYUNI_ENV=production before network access 1ms
+ ✓ src/lib/payment-providers/payuni.test.ts > unreferenced Sandbox order observation > rejects VERCEL_ENV=production before network access 1ms
+ ✓ src/lib/payment-providers/payuni.test.ts > unreferenced Sandbox order observation > rejects WP4_SANDBOX_EXECUTOR_ENABLED=false before network access 1ms
+ ✓ src/lib/payment-providers/payuni.test.ts > unreferenced Sandbox order observation > rejects invalid transaction identity before network access 4ms
+ ✓ src/lib/payment-providers/payuni.test.ts > unreferenced Sandbox order observation > rejects invalid transaction identity before network access 2ms
+ ✓ src/lib/payment-providers/payuni.test.ts > unreferenced Sandbox order observation > rejects invalid transaction identity before network access 1ms
+ ✓ src/lib/payment-providers/payuni.test.ts > unreferenced Sandbox order observation > rejects invalid transaction identity before network access 1ms
+ ✓ src/lib/payment-providers/payuni.test.ts > unreferenced Sandbox order observation > rejects invalid transaction identity before network access 1ms
+ ✓ src/lib/payment-providers/payuni.test.ts > unreferenced Sandbox order observation > rejects unsigned not-found and authenticated unknown errors 2ms
+ ✓ src/lib/payment-providers/payuni.test.ts > unreferenced Sandbox order observation > validates returned order CD-READONLY-001 and amount 1 2ms
+ ✓ src/lib/payment-providers/payuni.test.ts > unreferenced Sandbox order observation > validates returned order OTHER-ORDER and amount 1 1ms
+ ✓ src/lib/payment-providers/payuni.test.ts > unreferenced Sandbox order observation > validates returned order CD-READONLY-001 and amount 2 1ms
+ ✓ src/lib/payment-providers/payuni.test.ts > documented CREDIT query v2.0 refund evidence > uses remaining balance for cumulative refunds, not the last refund amount 2ms
+ ✓ src/lib/payment-providers/payuni.test.ts > documented CREDIT query v2.0 refund evidence > recognizes full cumulative refund after multiple partial refunds 3ms
+ ✓ src/lib/payment-providers/payuni.test.ts > documented CREDIT query v2.0 refund evidence > accepts a complete paid observation with no refund fields 3ms
+ ✓ src/lib/payment-providers/payuni.test.ts > documented CREDIT query v2.0 refund evidence > rejects nonterminal or undocumented refund state 0 1ms
+ ✓ src/lib/payment-providers/payuni.test.ts > documented CREDIT query v2.0 refund evidence > rejects nonterminal or undocumented refund state 1 1ms
+ ✓ src/lib/payment-providers/payuni.test.ts > documented CREDIT query v2.0 refund evidence > rejects nonterminal or undocumented refund state 3 1ms
+ ✓ src/lib/payment-providers/payuni.test.ts > documented CREDIT query v2.0 refund evidence > rejects nonterminal or undocumented refund state 8 1ms
+ ✓ src/lib/payment-providers/payuni.test.ts > documented CREDIT query v2.0 refund evidence > rejects nonterminal or undocumented refund state 9 1ms
+ ✓ src/lib/payment-providers/payuni.test.ts > documented CREDIT query v2.0 refund evidence > rejects nonterminal or undocumented refund state future 1ms
+ ✓ src/lib/payment-providers/payuni.test.ts > documented CREDIT query v2.0 refund evidence > rejects incomplete or inconsistent evidence {"DataSource":"B"} 1ms
+ ✓ src/lib/payment-providers/payuni.test.ts > documented CREDIT query v2.0 refund evidence > rejects incomplete or inconsistent evidence {"DataSource":""} 1ms
+ ✓ src/lib/payment-providers/payuni.test.ts > documented CREDIT query v2.0 refund evidence > rejects incomplete or inconsistent evidence {"TradeStatus":"2"} 1ms
+ ✓ src/lib/payment-providers/payuni.test.ts > documented CREDIT query v2.0 refund evidence > rejects incomplete or inconsistent evidence {"TradeStatus":"4"} 1ms
+ ✓ src/lib/payment-providers/payuni.test.ts > documented CREDIT query v2.0 refund evidence > rejects incomplete or inconsistent evidence {"TradeStatus":"8"} 1ms
+ ✓ src/lib/payment-providers/payuni.test.ts > documented CREDIT query v2.0 refund evidence > rejects incomplete or inconsistent evidence {"TradeStatus":"6"} 2ms
+ ✓ src/lib/payment-providers/payuni.test.ts > documented CREDIT query v2.0 refund evidence > rejects incomplete or inconsistent evidence {"RemainAmt":""} 1ms
+ ✓ src/lib/payment-providers/payuni.test.ts > documented CREDIT query v2.0 refund evidence > rejects incomplete or inconsistent evidence {"RemainAmt":"1001"} 1ms
+ ✓ src/lib/payment-providers/payuni.test.ts > documented CREDIT query v2.0 refund evidence > rejects incomplete or inconsistent evidence {"RemainAmt":"-1"} 1ms
+ ✓ src/lib/payment-providers/payuni.test.ts > documented CREDIT query v2.0 refund evidence > rejects incomplete or inconsistent evidence {"RemainAmt":"500junk"} 1ms
+ ✓ src/lib/payment-providers/payuni.test.ts > documented CREDIT query v2.0 refund evidence > rejects incomplete or inconsistent evidence {"RefundAmt":"0"} 1ms
+ ✓ src/lib/payment-providers/payuni.test.ts > documented CREDIT query v2.0 refund evidence > rejects incomplete or inconsistent evidence {"RefundAmt":"501"} 1ms
+ ✓ src/lib/payment-providers/payuni.test.ts > documented CREDIT query v2.0 refund evidence > rejects incomplete or inconsistent evidence {"RefundAmt":"200junk"} 1ms
+ ✓ src/lib/payment-providers/payuni.test.ts > documented CREDIT query v2.0 refund evidence > rejects incomplete or inconsistent evidence {"RefundStatus":"","RemainAmt":"500"} 1ms
+ ✓ src/lib/payment-providers/payuni.test.ts > documented CREDIT query v2.0 refund evidence > rejects incomplete or inconsistent evidence {"RefundStatus":"","RemainAmt":"1000","RefundAmt":"1"} 1ms
+ ✓ src/lib/payment-providers/payuni.test.ts > documented CREDIT query v2.0 refund evidence > routes a collected non-card trade {"PaymentType":"2"} to manual reconciliation (R448-01) 1ms
+ ✓ src/lib/payment-providers/payuni.test.ts > documented CREDIT query v2.0 refund evidence > routes a collected non-card trade {"PaymentType":""} to manual reconciliation (R448-01) 1ms
+ ✓ src/lib/payment-providers/payuni.test.ts > PayUni provider > reports checkout readiness only when all required runtime configuration is valid 1ms
+ ✓ src/lib/payment-providers/payuni.test.ts > PayUni provider > blocks ordinary checkout on a Preview connected to the live merchant 1ms
+ ✓ src/lib/payment-providers/payuni.test.ts > PayUni provider > allows only the scoped 2 TWD staging plan through the production UPP 5ms
+ ✓ src/lib/payment-providers/payuni.test.ts > PayUni provider > builds a server-side checkout form payload with PayUni fields 2ms
+ ✓ src/lib/payment-providers/payuni.test.ts > PayUni provider > never adds a Vercel preview protection bypass to PayUni callbacks 1ms
+ ✓ src/lib/payment-providers/payuni.test.ts > PayUni provider > separates the browser ReturnURL from the canonical NotifyURL 1ms
+ ✓ src/lib/payment-providers/payuni.test.ts > PayUni provider > submits a signed close request and accepts only the matching PayUni refund response 4ms
+ ✓ src/lib/payment-providers/payuni.test.ts > PayUni provider > accepts PayUni's documented direct encrypted refund response 1ms
+ ✓ src/lib/payment-providers/payuni.test.ts > PayUni provider > accepts PayUni's bracket-encoded refund Result row 1ms
+ ✓ src/lib/payment-providers/payuni.test.ts > PayUni provider > submits the documented token cancellation envelope 2ms
+ ✓ src/lib/payment-providers/payuni.test.ts > PayUni provider > fails closed when the token cancellation response is not successful 1ms
+ ✓ src/lib/payment-providers/payuni.test.ts > PayUni provider > queries the allowlisted Sandbox endpoint and normalizes a terminal refund 4ms
+ ✓ src/lib/payment-providers/payuni.test.ts > PayUni provider > fails closed when a partial query has no provider refund amount 2ms
+ ✓ src/lib/payment-providers/payuni.test.ts > PayUni provider > rejects non-strict PayUni query amount 1680junk 1ms
+ ✓ src/lib/payment-providers/payuni.test.ts > PayUni provider > rejects non-strict PayUni query amount 1680.5 1ms
+ ✓ src/lib/payment-providers/payuni.test.ts > PayUni provider > rejects non-strict PayUni query amount 1e3 1ms
+ ✓ src/lib/payment-providers/payuni.test.ts > PayUni provider > rejects non-strict PayUni query amount  1680 1ms
+ ✓ src/lib/payment-providers/payuni.test.ts > PayUni provider > queries the fixed Production endpoint exactly once and preserves the read-only request contract 2ms
+ ✓ src/lib/payment-providers/payuni.test.ts > PayUni provider > fails closed when Production query identity does not match the transaction: provider reference 1ms
+ ✓ src/lib/payment-providers/payuni.test.ts > PayUni provider > fails closed when Production query identity does not match the transaction: gross amount 3ms
+ ✓ src/lib/payment-providers/payuni.test.ts > PayUni provider > fails closed when Production query identity does not match the transaction: order reference 4ms
+ ✓ src/lib/payment-providers/payuni.test.ts > PayUni provider > fails closed before any provider call for a non-PayUni transaction 9ms
+ ✓ src/lib/payment-providers/payuni.test.ts > PayUni provider > fails closed when PayUni's close response cannot be authenticated 2ms
+ ✓ src/lib/payment-providers/payuni.test.ts > PayUni provider > refuses a non-TWD refund as a request-contract failure before contacting PayUni (F-041) 1ms
+ ✓ src/lib/payment-providers/payuni.test.ts > PayUni provider > rejects invalid PayUni checkout contract: order number too long 1ms
+ ✓ src/lib/payment-providers/payuni.test.ts > PayUni provider > rejects invalid PayUni checkout contract: order number characters 0ms
+ ✓ src/lib/payment-providers/payuni.test.ts > PayUni provider > rejects invalid PayUni checkout contract: fractional TWD 3ms
+ ✓ src/lib/payment-providers/payuni.test.ts > PayUni provider > rejects invalid PayUni checkout contract: credit amount below range 2ms
+ ✓ src/lib/payment-providers/payuni.test.ts > PayUni provider > rejects invalid PayUni checkout contract: credit amount above range 1ms
+ ✓ src/lib/payment-providers/payuni.test.ts > PayUni provider > rejects invalid PayUni checkout contract: non-TWD currency (F-041) 1ms
+ ✓ src/lib/payment-providers/payuni.test.ts > PayUni provider > normalizes PayUni sandbox paid and duplicate fixtures 7ms
+ ✓ src/lib/payment-providers/payuni.test.ts > PayUni provider > rejects a signed paid callback with missing trade amount 1ms
+ ✓ src/lib/payment-providers/payuni.test.ts > PayUni provider > rejects a signed paid callback with non-numeric trade amount 1ms
+ ✓ src/lib/payment-providers/payuni.test.ts > PayUni provider > rejects a signed paid callback with zero trade amount 1ms
+ ✓ src/lib/payment-providers/payuni.test.ts > PayUni provider > rejects a signed paid callback with numeric prefix trade amount 2ms
+ ✓ src/lib/payment-providers/payuni.test.ts > PayUni provider > keeps signed PayUni trade amount 1990 compatible 7ms
+ ✓ src/lib/payment-providers/payuni.test.ts > PayUni provider > keeps signed PayUni trade amount 1990 compatible 1ms
+ ✓ src/lib/payment-providers/payuni.test.ts > PayUni provider > keeps signed PayUni trade amount 1990.00 compatible 1ms
+ ✓ src/lib/payment-providers/payuni.test.ts > PayUni provider > keeps a signed refund callback without an original trade amount compatible 1ms
+ ✓ src/lib/payment-providers/payuni.test.ts > PayUni provider > keeps decrypted callback fields out of durable transaction metadata 1ms
+ ✓ src/lib/payment-providers/payuni.test.ts > PayUni provider > rejects an official callback with missing HashInfo 1ms
+ ✓ src/lib/payment-providers/payuni.test.ts > PayUni provider > rejects an official callback with tampered HashInfo 1ms
+ ✓ src/lib/payment-providers/payuni.test.ts > PayUni provider > rejects an official callback with wrong merchant 1ms
+ ✓ src/lib/payment-providers/payuni.test.ts > PayUni provider > rejects an official callback with wrong version 2ms
+ ✓ src/lib/payment-providers/payuni.test.ts > PayUni provider > rejects the former custom signature-header fallback 18ms
+ ✓ src/lib/payment-providers/payuni.test.ts > PayUni provider > rejects a callback whose encrypted merchant does not match the configured shop 4ms
+ ✓ src/lib/payment-providers/payuni.test.ts > PayUni provider > normalizes PayUni sandbox refund fixtures 3ms
+ ✓ src/lib/payment-providers/payuni.test.ts > PayUni provider > rejects unsupported payment status "processing" instead of treating it as paid 1ms
+ ✓ src/lib/payment-providers/payuni.test.ts > PayUni provider > rejects unsupported payment status "pending" instead of treating it as paid 1ms
+ ✓ src/lib/payment-providers/payuni.test.ts > PayUni provider > rejects unsupported payment status "unknown" instead of treating it as paid 1ms
+ ✓ src/lib/payment-providers/payuni.test.ts > PayUni provider > rejects unsupported payment status "" instead of treating it as paid 0ms
+ ✓ src/lib/payment-providers/payuni.test.ts > PayUni provider > rejects a payload without stable transaction identity 1ms
+ ✓ src/lib/payment-providers/payuni.test.ts > PayUni provider > rejects a payload without stable transaction identity 0ms
+ ✓ src/lib/payment-providers/payuni.test.ts > PayUni provider > rejects a payload without stable transaction identity 0ms
+ ✓ src/lib/payment-providers/payuni.test.ts > PayUni UPP 2.0 payment callback contract (F-037) > records a signed credit-card TradeStatus 1 as paid with one event ID per trade state 2ms
+ ✓ src/lib/payment-providers/payuni.test.ts > PayUni UPP 2.0 payment callback contract (F-037) > never reads tenant, referral or commission overrides from a signed callback (F-048) 1ms
+ ✓ src/lib/payment-providers/payuni.test.ts > PayUni UPP 2.0 payment callback contract (F-037) > leaves absent provider fee and net fields undefined instead of writing zero (F-040) 8ms
+ ✓ src/lib/payment-providers/payuni.test.ts > PayUni UPP 2.0 payment callback contract (F-037) > never pays a pending TradeStatus 0 and leaves the payment unchanged 2ms
+ ✓ src/lib/payment-providers/payuni.test.ts > PayUni UPP 2.0 payment callback contract (F-037) > never pays a pending TradeStatus 8 and leaves the payment unchanged 1ms
+ ✓ src/lib/payment-providers/payuni.test.ts > PayUni UPP 2.0 payment callback contract (F-037) > records a terminal unpaid TradeStatus 2 as failed, never paid 2ms
+ ✓ src/lib/payment-providers/payuni.test.ts > PayUni UPP 2.0 payment callback contract (F-037) > records a terminal unpaid TradeStatus 3 as failed, never paid 1ms
+ ✓ src/lib/payment-providers/payuni.test.ts > PayUni UPP 2.0 payment callback contract (F-037) > records a terminal unpaid TradeStatus 4 as failed, never paid 1ms
+ ✓ src/lib/payment-providers/payuni.test.ts > PayUni UPP 2.0 payment callback contract (F-037) > records a terminal unpaid TradeStatus 9 as failed, never paid 4ms
+ ✓ src/lib/payment-providers/payuni.test.ts > PayUni UPP 2.0 payment callback contract (F-037) > never pays a signed TradeStatus 1 with non-card PaymentType "2" 3ms
+ ✓ src/lib/payment-providers/payuni.test.ts > PayUni UPP 2.0 payment callback contract (F-037) > never pays a signed TradeStatus 1 with non-card PaymentType "3" 1ms
+ ✓ src/lib/payment-providers/payuni.test.ts > PayUni UPP 2.0 payment callback contract (F-037) > never pays a signed TradeStatus 1 with non-card PaymentType "5" 1ms
+ ✓ src/lib/payment-providers/payuni.test.ts > PayUni UPP 2.0 payment callback contract (F-037) > never pays a signed TradeStatus 1 with non-card PaymentType "6" 1ms
+ ✓ src/lib/payment-providers/payuni.test.ts > PayUni UPP 2.0 payment callback contract (F-037) > never pays a signed TradeStatus 1 with non-card PaymentType "7" 1ms
+ ✓ src/lib/payment-providers/payuni.test.ts > PayUni UPP 2.0 payment callback contract (F-037) > never pays a signed TradeStatus 1 with non-card PaymentType "9" 1ms
+ ✓ src/lib/payment-providers/payuni.test.ts > PayUni UPP 2.0 payment callback contract (F-037) > never pays a signed TradeStatus 1 with non-card PaymentType "11" 1ms
+ ✓ src/lib/payment-providers/payuni.test.ts > PayUni UPP 2.0 payment callback contract (F-037) > never pays a signed TradeStatus 1 with non-card PaymentType "" 1ms
+ ✓ src/lib/payment-providers/payuni.test.ts > PayUni UPP 2.0 payment callback contract (F-037) > never pays TradeStatus 1 when inner UNKNOWN 1ms
+ ✓ src/lib/payment-providers/payuni.test.ts > PayUni UPP 2.0 payment callback contract (F-037) > never pays TradeStatus 1 when inner UNAPPROVED 1ms
+ ✓ src/lib/payment-providers/payuni.test.ts > PayUni UPP 2.0 payment callback contract (F-037) > never pays TradeStatus 1 when outer status missing 1ms
+ ✓ src/lib/payment-providers/payuni.test.ts > PayUni UPP 2.0 payment callback contract (F-037) > never pays TradeStatus 1 when outer status disagrees 1ms
+ ✓ src/lib/payment-providers/payuni.test.ts > PayUni UPP 2.0 payment callback contract (F-037) > separates an unsigned outer Status mismatch from a signed provider status (RR-01) 5ms
+ ✓ src/lib/payment-providers/payuni.test.ts > PayUni UPP 2.0 payment callback contract (F-037) > rejects a non-strict provider fee "12abc" (R448-08) 1ms
+ ✓ src/lib/payment-providers/payuni.test.ts > PayUni UPP 2.0 payment callback contract (F-037) > rejects a non-strict provider fee "1e3" (R448-08) 1ms
+ ✓ src/lib/payment-providers/payuni.test.ts > PayUni UPP 2.0 payment callback contract (F-037) > rejects a non-strict provider fee "-5" (R448-08) 1ms
+ ✓ src/lib/payment-providers/payuni.test.ts > PayUni UPP 2.0 payment callback contract (F-037) > rejects a non-strict provider fee "35.5" (R448-08) 1ms
+ ✓ src/lib/payment-providers/payuni.test.ts > PayUni UPP 2.0 payment callback contract (F-037) > fails closed on an undocumented TradeStatus "5" 1ms
+ ✓ src/lib/payment-providers/payuni.test.ts > PayUni UPP 2.0 payment callback contract (F-037) > fails closed on an undocumented TradeStatus "10" 1ms
+ ✓ src/lib/payment-providers/payuni.test.ts > PayUni UPP 2.0 payment callback contract (F-037) > fails closed on an undocumented TradeStatus "x" 1ms
+ ✓ src/lib/payment-providers/payuni.test.ts > PayUni UPP 2.0 payment callback contract (F-037) > fails closed on an undocumented TradeStatus "" 1ms
+ ✓ src/lib/payment-providers/payuni.test.ts > PayUni UPP 2.0 payment callback contract (F-037) > does not accept a signed custom EventType=paid without the PayUni trade status 1ms
+ ✓ src/lib/payment-providers/payuni.test.ts > PayUni UPP 2.0 payment callback contract (F-037) > ignores a signed EventId and keys Return and Notify of one trade state to the same event 1ms
+ ✓ src/lib/payment-providers/payuni.test.ts > PayUni UPP 2.0 payment callback contract (F-037) > legacy refund and failure notices on the paid TradeNo (F-067, PR #454 A-1/A-2) > keys a refund notice by its provider refund serial, the same value a local refund stores 2ms
+ ✓ src/lib/payment-providers/payuni.test.ts > PayUni UPP 2.0 payment callback contract (F-037) > legacy refund and failure notices on the paid TradeNo (F-067, PR #454 A-1/A-2) > never applies a refund without a provider refund serial; it goes to manual reconciliation 1ms
+ ✓ src/lib/payment-providers/payuni.test.ts > PayUni UPP 2.0 payment callback contract (F-037) > legacy refund and failure notices on the paid TradeNo (F-067, PR #454 A-1/A-2) > never applies a partial refund without a provider refund serial; it goes to manual reconciliation 1ms
+ ✓ src/lib/payment-providers/payuni.test.ts > PayUni UPP 2.0 payment callback contract (F-037) > legacy refund and failure notices on the paid TradeNo (F-067, PR #454 A-1/A-2) > never applies a second partial refund of the same amount without a provider refund serial; it goes to manual reconciliation 0ms
+ ✓ src/lib/payment-providers/payuni.test.ts > PayUni UPP 2.0 payment callback contract (F-037) > legacy refund and failure notices on the paid TradeNo (F-067, PR #454 A-1/A-2) > never applies a refund with only a synthetic EventId without a provider refund serial; it goes to manual reconciliation 1ms
+ ✓ src/lib/payment-providers/payuni.test.ts > PayUni UPP 2.0 payment callback contract (F-037) > legacy refund and failure notices on the paid TradeNo (F-067, PR #454 A-1/A-2) > never applies a refund with a blank serial without a provider refund serial; it goes to manual reconciliation 1ms
+ ✓ src/lib/payment-providers/payuni.test.ts > PayUni UPP 2.0 payment callback contract (F-037) > signed non-SUCCESS results without a TradeStatus (F-047) > records a signed provider rejection as a failed event with bounded codes instead of an invalid payload 2ms
+ ✓ src/lib/payment-providers/payuni.test.ts > PayUni UPP 2.0 payment callback contract (F-037) > signed non-SUCCESS results without a TradeStatus (F-047) > keys the event by the trade number when present and flags an outer Status mismatch 1ms
+ ✓ src/lib/payment-providers/payuni.test.ts > PayUni UPP 2.0 payment callback contract (F-037) > signed non-SUCCESS results without a TradeStatus (F-047) > never records free text or card-like digits from the signed message or status 1ms
+ ✓ src/lib/payment-providers/payuni.test.ts > PayUni UPP 2.0 payment callback contract (F-037) > signed non-SUCCESS results without a TradeStatus (F-047) > treats a signed UNKNOWN result as pending and changes nothing 1ms
+ ✓ src/lib/payment-providers/payuni.test.ts > PayUni UPP 2.0 payment callback contract (F-037) > signed non-SUCCESS results without a TradeStatus (F-047) > treats a signed UNAPPROVED result as pending and changes nothing 1ms
+ ✓ src/lib/payment-providers/payuni.test.ts > PayUni UPP 2.0 payment callback contract (F-037) > signed non-SUCCESS results without a TradeStatus (F-047) > keeps the bounded codes on a terminal UPP failure too 1ms
+ ✓ src/lib/payment-providers/payuni.test.ts > PayUni UPP 2.0 payment callback contract (F-037) > keeps a failed attempt and a later paid result of one trade as separate events 2ms
+ ✓ src/lib/payment-providers/payuni.test.ts > PayUni UPP 2.0 payment callback contract (F-037) > restricts buyer checkout to credit card payment on the UPP page 1ms
+ ✓ src/app/api/webhooks/payments/route.test.ts > payment webhook provider selection > returns a reconciled platform plan payment to authenticated billing without a success query or identifiers 34ms
+ ✓ src/app/api/webhooks/payments/route.test.ts > payment webhook provider selection > routes a processed duplicate using the stored event tenant, provider and order 9ms
+ ✓ src/app/api/webhooks/payments/route.test.ts > payment webhook provider selection > uses the latest processed event after losing the claim race 6ms
+ ✓ src/app/api/webhooks/payments/route.test.ts > payment webhook provider selection > preserves processed-event convergence when the payment reconciler loses a race 1ms
+ ✓ src/app/api/webhooks/payments/route.test.ts > payment webhook provider selection > keeps a duplicate with mismatched server identity or purpose on the buyer result: {"vendorId":"other-vendor"} 1ms
+ ✓ src/app/api/webhooks/payments/route.test.ts > payment webhook provider selection > keeps a duplicate with mismatched server identity or purpose on the buyer result: {"providerName":"demo"} 1ms
+ ✓ src/app/api/webhooks/payments/route.test.ts > payment webhook provider selection > keeps a duplicate with mismatched server identity or purpose on the buyer result: {"orderNumber":"OTHER-ORDER"} 1ms
+ ✓ src/app/api/webhooks/payments/route.test.ts > payment webhook provider selection > keeps a duplicate with mismatched server identity or purpose on the buyer result: {"paymentMode":"merchant"} 2ms
+ ✓ src/app/api/webhooks/payments/route.test.ts > payment webhook provider selection > keeps a duplicate with mismatched server identity or purpose on the buyer result: {"metadata":{"billingPurpose":"invoice_payment"}} 6ms
+ ✓ src/app/api/webhooks/payments/route.test.ts > payment webhook provider selection > keeps a duplicate with mismatched server identity or purpose on the buyer result: {"metadata":{"billingPurpose":"platform_subscription_checkout","billingPlanId":"plan-starter"}} 6ms
+ ✓ src/app/api/webhooks/payments/route.test.ts > payment webhook provider selection > does not infer plan purpose from an incomplete processed event: {"vendorId":null} 2ms
+ ✓ src/app/api/webhooks/payments/route.test.ts > payment webhook provider selection > does not infer plan purpose from an incomplete processed event: {"provider":"demo"} 1ms
+ ✓ src/app/api/webhooks/payments/route.test.ts > payment webhook provider selection > does not infer plan purpose from an incomplete processed event: {"payload":{"normalized":{"provider":"payuni"}}} 7ms
+ ✓ src/app/api/webhooks/payments/route.test.ts > payment webhook provider selection > does not infer plan purpose from an incomplete processed event: {"payload":{"normalized":{"provider":"demo","orderNumber":"CD-PLAN"}}} 1ms
+ ✓ src/app/api/webhooks/payments/route.test.ts > payment webhook provider selection > keeps a presentation lookup failure from reprocessing or failing a processed payment 1ms
+ ✓ src/app/api/webhooks/payments/route.test.ts > payment webhook provider selection > ignores forged plan query and provider metadata when the server transaction is a product payment 2ms
+ ✓ src/app/api/webhooks/payments/route.test.ts > payment webhook provider selection > rejects a forged signature before any plan-purpose lookup 1ms
+ ✓ src/app/api/webhooks/payments/route.test.ts > payment webhook provider selection > keeps processed platform plan notifications as JSON without presentation lookups 3ms
+ ✓ src/app/api/webhooks/payments/route.test.ts > payment webhook provider selection > HEAD classifies return source with a fixed 405 receipt 3ms
+ ✓ src/app/api/webhooks/payments/route.test.ts > payment webhook provider selection > HEAD classifies notify source with a fixed 405 receipt 1ms
+ ✓ src/app/api/webhooks/payments/route.test.ts > payment webhook provider selection > HEAD classifies missing source with a fixed 405 receipt 3ms
+ ✓ src/app/api/webhooks/payments/route.test.ts > payment webhook provider selection > HEAD classifies case variant source with a fixed 405 receipt 3ms
+ ✓ src/app/api/webhooks/payments/route.test.ts > payment webhook provider selection > HEAD classifies duplicate source with a fixed 405 receipt 2ms
+ ✓ src/app/api/webhooks/payments/route.test.ts > payment webhook provider selection > emits one safe POST receipt for explicit success and failure statuses 5ms
+ ✓ src/app/api/webhooks/payments/route.test.ts > payment webhook provider selection > redirects an exact PayUni payer return to a bounded same-origin result without identifiers 1ms
+ ✓ src/app/api/webhooks/payments/route.test.ts > payment webhook provider selection > keeps PayUni NotifyURL as a provider JSON acknowledgement 1ms
+ ✓ src/app/api/webhooks/payments/route.test.ts > payment webhook provider selection > sends an unresolved PayUni payer return to a neutral pending result 6ms
+ ✓ src/app/api/webhooks/payments/route.test.ts > payment webhook provider selection > does not serialize raw query, body, header, identifier, or secret markers 56ms
+ ✓ src/app/api/webhooks/payments/route.test.ts > payment webhook provider selection > does not emit request receipts outside Preview 2ms
+ ✓ src/app/api/webhooks/payments/route.test.ts > payment webhook provider selection > rejects oversized payloads before diagnostics, signature verification, audit, or database work 16ms
+ ✓ src/app/api/webhooks/payments/route.test.ts > payment webhook provider selection > rejects a unknown provider before adapter or database work 2ms
+ ✓ src/app/api/webhooks/payments/route.test.ts > payment webhook provider selection > rejects a blank provider before adapter or database work 9ms
+ ✓ src/app/api/webhooks/payments/route.test.ts > payment webhook provider selection > rejects a missing provider before adapter or database work 5ms
+ ✓ src/app/api/webhooks/payments/route.test.ts > payment webhook provider selection > rejects a demo query provider when production is configured for payuni 4ms
+ ✓ src/app/api/webhooks/payments/route.test.ts > payment webhook provider selection > rejects a ecpay-like query provider when production is configured for payuni 5ms
+ ✓ src/app/api/webhooks/payments/route.test.ts > payment webhook provider selection > rejects a ecpay-like header provider when production is configured for payuni 8ms
+ ✓ src/app/api/webhooks/payments/route.test.ts > payment webhook provider selection > rejects demo webhooks in production before reading the body 2ms
+ ✓ src/app/api/webhooks/payments/route.test.ts > payment webhook provider selection > rejects conflicting provider query and header values 1ms
+ ✓ src/app/api/webhooks/payments/route.test.ts > payment webhook provider selection > continues to verify signatures for the configured provider 1ms
+ ✓ src/app/api/webhooks/payments/route.test.ts > payment webhook provider selection > allows demo webhooks outside production 1ms
+ ✓ src/app/api/webhooks/payments/route.test.ts > payment webhook provider selection > records a signed PayUni rejection as a failed WebhookEvent with its bounded provider codes (F-047) 16ms
+ ✓ src/app/api/webhooks/payments/route.test.ts > payment webhook provider selection > does not expose provider parser details when a signed payload is invalid 2ms
+ ✓ src/app/api/webhooks/payments/route.test.ts > payment webhook provider selection > acknowledges a pending trade state on Notify with an audited closed reason and no event 5ms
+ ✓ src/app/api/webhooks/payments/route.test.ts > payment webhook provider selection > records a reported collection refused as payment_type_not_allowed for manual reconciliation, alerts and acknowledges Notify 4ms
+ ✓ src/app/api/webhooks/payments/route.test.ts > payment webhook provider selection > records a reported collection refused as provider_status_not_success for manual reconciliation, alerts and acknowledges Notify 2ms
+ ✓ src/app/api/webhooks/payments/route.test.ts > payment webhook provider selection > sends the payer of a refused reported collection to the under-review result 1ms
+ ✓ src/app/api/webhooks/payments/route.test.ts > payment webhook provider selection > returns a refused platform plan collection to authenticated billing 1ms
+ ✓ src/app/api/webhooks/payments/route.test.ts > payment webhook provider selection > lets only Notify decide when the unsigned outer Status of a Return disagrees (RR-01) 2ms
+ ✓ src/app/api/webhooks/payments/route.test.ts > payment webhook provider selection > does not alert or show review for a callback whose trade is already paid (RR-02) 8ms
+ ✓ src/app/api/webhooks/payments/route.test.ts > payment webhook provider selection > returns a pending platform plan payer to authenticated billing (R448-11) 1ms
+ ✓ src/app/api/webhooks/payments/route.test.ts > payment webhook provider selection > sends the payer of a pending trade state to the neutral pending result 1ms
+ ✓ src/app/api/webhooks/payments/route.test.ts > payment webhook provider selection > never acknowledges a reported collection that could not be recorded 1ms
+ ✓ src/app/api/webhooks/payments/route.test.ts > payment webhook provider selection > stores and returns only a closed failure code when processing throws an unknown exception 1ms
+ ✓ src/app/api/webhooks/payments/route.test.ts > payment webhook provider selection > converges a concurrent callback to duplicate success only after the event is processed 2ms
+ ✓ src/app/api/webhooks/payments/route.test.ts > payment webhook provider selection > converges a first-create ReturnURL and NotifyURL unique-key race 1ms
+ ✓ src/app/api/webhooks/payments/route.test.ts > payment webhook provider selection > leaves an in-flight first callback untouched when the losing payer return sees a received event 54ms
+ ✓ src/app/api/webhooks/payments/route.test.ts > payment webhook provider selection > lets a signed provider redelivery atomically retry a failed event 2ms
+ ✓ src/app/api/webhooks/payments/route.test.ts > payment webhook provider selection > keeps a processing failure fail-closed when convergence is still received 1ms
+ ✓ src/app/api/webhooks/payments/route.test.ts > payment webhook provider selection > keeps a processing failure fail-closed when convergence cannot be read 1ms
+ ✓ src/app/api/webhooks/payments/route.test.ts > payment webhook provider selection > does not convert an invalid provider configuration into duplicate success 1ms
+ ✓ src/app/api/webhooks/payments/route.test.ts > payment webhook provider selection > emits one redacted claim-lost failure record only when convergence is unresolved 1ms
+ ✓ src/app/api/webhooks/payments/route.test.ts > payment webhook provider selection > records unknown failures as processing_failed and isolates a Preview log sink failure 1ms
+ ✓ src/app/api/webhooks/payments/route.test.ts > payment webhook provider selection > does not emit failure records outside Preview or after processed convergence 1ms
+ ✓ src/lib/format.test.ts > format helpers > formats TWD without fractional digits 24ms
+ ✓ src/lib/format.test.ts > format helpers > creates URL-safe slugs while keeping Chinese words 1ms
+ ✓ src/lib/format.test.ts > format helpers > formats date-times in Taipei time regardless of the runtime time zone 6ms
+ ✓ src/lib/format.test.ts > format helpers > labels the default zone as Taiwan time and keeps other zones as IANA names 1ms
+ ✓ src/app/actions/registration-actions.test.ts > workspace registration boundaries (REGISTRATION_MODE=open keeps the original behaviour) > ignores any invite field when registration is open 43ms
+ ✓ src/app/actions/registration-actions.test.ts > workspace registration boundaries (REGISTRATION_MODE=open keeps the original behaviour) > creates ownership and audit in one transaction before issuing the session 15ms
+ ✓ src/app/actions/registration-actions.test.ts > workspace registration boundaries (REGISTRATION_MODE=open keeps the original behaviour) > records the server's terms and privacy versions with the account (F-114) 3ms
+ ✓ src/app/actions/registration-actions.test.ts > workspace registration boundaries (REGISTRATION_MODE=open keeps the original behaviour) > requires an explicit policy consent before any write {} 3ms
+ ✓ src/app/actions/registration-actions.test.ts > workspace registration boundaries (REGISTRATION_MODE=open keeps the original behaviour) > requires an explicit policy consent before any write {"acceptPolicies":""} 2ms
+ ✓ src/app/actions/registration-actions.test.ts > workspace registration boundaries (REGISTRATION_MODE=open keeps the original behaviour) > requires an explicit policy consent before any write {"acceptPolicies":"off"} 1ms
+ ✓ src/app/actions/registration-actions.test.ts > workspace registration boundaries (REGISTRATION_MODE=open keeps the original behaviour) > rejects consent to a policy version the server is not publishing {} 1ms
+ ✓ src/app/actions/registration-actions.test.ts > workspace registration boundaries (REGISTRATION_MODE=open keeps the original behaviour) > rejects consent to a policy version the server is not publishing {"policyVersion":"2020.01.01"} 1ms
+ ✓ src/app/actions/registration-actions.test.ts > workspace registration boundaries (REGISTRATION_MODE=open keeps the original behaviour) > rejects consent to a policy version the server is not publishing {"policyVersion":"2026.10.18x"} 1ms
+ ✓ src/app/actions/registration-actions.test.ts > workspace registration boundaries (REGISTRATION_MODE=open keeps the original behaviour) > sends the verification email for the committed account after the transaction, before the session 2ms
+ ✓ src/app/actions/registration-actions.test.ts > workspace registration boundaries (REGISTRATION_MODE=open keeps the original behaviour) > does not send a verification email when the transaction fails 1ms
+ ✓ src/app/actions/registration-actions.test.ts > workspace registration boundaries (REGISTRATION_MODE=open keeps the original behaviour) > verifies the Turnstile token with the registration action and the client address 1ms
+ ✓ src/app/actions/registration-actions.test.ts > workspace registration boundaries (REGISTRATION_MODE=open keeps the original behaviour) > refuses a rejected Turnstile check before hashing or writing 1ms
+ ✓ src/app/actions/registration-actions.test.ts > workspace registration boundaries (REGISTRATION_MODE=open keeps the original behaviour) > refuses a missing Turnstile check before hashing or writing 1ms
+ ✓ src/app/actions/registration-actions.test.ts > workspace registration boundaries (REGISTRATION_MODE=open keeps the original behaviour) > refuses a unavailable Turnstile check before hashing or writing 1ms
+ ✓ src/app/actions/registration-actions.test.ts > workspace registration boundaries (REGISTRATION_MODE=open keeps the original behaviour) > recovers a committed account when session creation fails 1ms
+ ✓ src/app/actions/registration-actions.test.ts > workspace registration boundaries (REGISTRATION_MODE=open keeps the original behaviour) > offers login recovery if cookie publication fails 2ms
+ ✓ src/app/actions/registration-actions.test.ts > workspace registration boundaries (REGISTRATION_MODE=open keeps the original behaviour) > rejects CSRF before rate limiting or writing 1ms
+ ✓ src/app/actions/registration-actions.test.ts > workspace registration boundaries (REGISTRATION_MODE=open keeps the original behaviour) > rejects invalid bounded input {"email":"bad@"} 1ms
+ ✓ src/app/actions/registration-actions.test.ts > workspace registration boundaries (REGISTRATION_MODE=open keeps the original behaviour) > rejects invalid bounded input {"name":"x"} 1ms
+ ✓ src/app/actions/registration-actions.test.ts > workspace registration boundaries (REGISTRATION_MODE=open keeps the original behaviour) > rejects invalid bounded input {"workspaceName":"x"} 1ms
+ ✓ src/app/actions/registration-actions.test.ts > workspace registration boundaries (REGISTRATION_MODE=open keeps the original behaviour) > rejects invalid bounded input {"password":"short"} 1ms
+ ✓ src/app/actions/registration-actions.test.ts > workspace registration boundaries (REGISTRATION_MODE=open keeps the original behaviour) > rejects invalid bounded input {"password":"  bluewha  "} 1ms
+ ✓ src/app/actions/registration-actions.test.ts > workspace registration boundaries (REGISTRATION_MODE=open keeps the original behaviour) > rejects invalid bounded input {"password":"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"} 1ms
+ ✓ src/app/actions/registration-actions.test.ts > workspace registration boundaries (REGISTRATION_MODE=open keeps the original behaviour) > rejects invalid bounded input {"name":"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"} 1ms
+ ✓ src/app/actions/registration-actions.test.ts > workspace registration boundaries (REGISTRATION_MODE=open keeps the original behaviour) > rejects the common password "12345678" before rate limiting or writing 1ms
+ ✓ src/app/actions/registration-actions.test.ts > workspace registration boundaries (REGISTRATION_MODE=open keeps the original behaviour) > rejects the common password "  PassWord123  " before rate limiting or writing 1ms
+ ✓ src/app/actions/registration-actions.test.ts > workspace registration boundaries (REGISTRATION_MODE=open keeps the original behaviour) > rejects the common password "qwertyuiop" before rate limiting or writing 1ms
+ ✓ src/app/actions/registration-actions.test.ts > workspace registration boundaries (REGISTRATION_MODE=open keeps the original behaviour) > rejects the common password "zzzzzzzzzz" before rate limiting or writing 1ms
+ ✓ src/app/actions/registration-actions.test.ts > workspace registration boundaries (REGISTRATION_MODE=open keeps the original behaviour) > rejects the common password "qwerty2026" before rate limiting or writing 1ms
+ ✓ src/app/actions/registration-actions.test.ts > workspace registration boundaries (REGISTRATION_MODE=open keeps the original behaviour) > rejects the common password "12345678!" before rate limiting or writing 1ms
+ ✓ src/app/actions/registration-actions.test.ts > workspace registration boundaries (REGISTRATION_MODE=open keeps the original behaviour) > rejects the common password "ｐａｓｓｗｏｒｄ" before rate limiting or writing 1ms
+ ✓ src/app/actions/registration-actions.test.ts > workspace registration boundaries (REGISTRATION_MODE=open keeps the original behaviour) > rejects a password containing the e-mail name "owner-2026!" as personal before writing 1ms
+ ✓ src/app/actions/registration-actions.test.ts > workspace registration boundaries (REGISTRATION_MODE=open keeps the original behaviour) > rejects a password containing the e-mail name "my owner pass" as personal before writing 1ms
+ ✓ src/app/actions/registration-actions.test.ts > workspace registration boundaries (REGISTRATION_MODE=open keeps the original behaviour) > does not treat a shared mailbox name as personal 8ms
+ ✓ src/app/actions/registration-actions.test.ts > workspace registration boundaries (REGISTRATION_MODE=open keeps the original behaviour) > accepts an 8-character password that is not common 1ms
+ ✓ src/app/actions/registration-actions.test.ts > workspace registration boundaries (REGISTRATION_MODE=open keeps the original behaviour) > fails closed on rate-limit status 429 2ms
+ ✓ src/app/actions/registration-actions.test.ts > workspace registration boundaries (REGISTRATION_MODE=open keeps the original behaviour) > fails closed on rate-limit status 503 1ms
+ ✓ src/app/actions/registration-actions.test.ts > workspace registration boundaries (REGISTRATION_MODE=open keeps the original behaviour) > distinguishes duplicate input from service failure 'P2002' 2ms
+ ✓ src/app/actions/registration-actions.test.ts > workspace registration boundaries (REGISTRATION_MODE=open keeps the original behaviour) > distinguishes duplicate input from service failure 'P1001' 1ms
+ ✓ src/app/actions/registration-actions.test.ts > invite-only registration (closed beta default) > is invite-only when REGISTRATION_MODE is undefined 3ms
+ ✓ src/app/actions/registration-actions.test.ts > invite-only registration (closed beta default) > is invite-only when REGISTRATION_MODE is "invite" 1ms
+ ✓ src/app/actions/registration-actions.test.ts > invite-only registration (closed beta default) > is invite-only when REGISTRATION_MODE is "INVITE" 1ms
+ ✓ src/app/actions/registration-actions.test.ts > invite-only registration (closed beta default) > is invite-only when REGISTRATION_MODE is "opened" 1ms
+ ✓ src/app/actions/registration-actions.test.ts > invite-only registration (closed beta default) > checks the invitation before consent or input so a closed form reveals nothing else 1ms
+ ✓ src/app/actions/registration-actions.test.ts > invite-only registration (closed beta default) > rejects malformed, tampered, expired and foreign-secret invitations without writing 5ms
+ ✓ src/app/actions/registration-actions.test.ts > invite-only registration (closed beta default) > requires the submitted email to be the invited one 1ms
+ ✓ src/app/actions/registration-actions.test.ts > invite-only registration (closed beta default) > creates the workspace for a valid invitation and audits its id, never the token 2ms
+ ✓ src/app/actions/registration-actions.test.ts > invite-only registration (closed beta default) > keeps the verified invitation on every retryable error so the invitee can fix the form 6ms
+ ✓ src/app/actions/registration-actions.test.ts > invite-only registration (closed beta default) > still rejects CSRF before looking at the invitation 2ms
+ ✓ src/app/actions/registration-actions.test.ts > invite-only registration (closed beta default) > rejects a validly signed but revoked invitation without writing 2ms
+ ✓ src/app/actions/registration-actions.test.ts > invite-only registration (closed beta default) > re-checks revocation inside the transaction before creating the user 2ms
+ ✓ src/app/actions/registration-actions.test.ts > invite-only registration (closed beta default) > does not query revocations for an invalid token 1ms
+ ✓ src/app/actions/registration-actions.test.ts > invitation recording in open mode (n-3) > records the jti of a valid matching invitation even when registration is open 2ms
+ ✓ src/app/actions/registration-actions.test.ts > invitation recording in open mode (n-3) > registers without recording a revoked or non-matching invitation 3ms
+ ✓ src/app/checkout/[vendorId]/[productId]/page.test.tsx > CommerceCheckoutPage > loads the same-vendor product and renders its ready fulfillment flow 22ms
+ ✓ src/app/checkout/[vendorId]/[productId]/page.test.tsx > CommerceCheckoutPage > shows a truthful sold-out state without rendering a checkout form 2ms
+ ✓ src/app/checkout/[vendorId]/[productId]/page.test.tsx > CommerceCheckoutPage > returns not-found for an unavailable or cross-vendor product 3ms
+ ✓ src/app/checkout/[vendorId]/[productId]/page.test.tsx > CommerceCheckoutPage > does not show a new checkout form when digital delivery is disabled 2ms
+ ✓ src/app/checkout/[vendorId]/[productId]/page.test.tsx > CommerceCheckoutPage > redirects an external-checkout product without rendering the internal buyer form 3ms
+ ✓ src/app/checkout/[vendorId]/[productId]/page.test.tsx > CommerceCheckoutPage > keeps a recovery entry when an existing product is deactivated 2ms
+ ✓ src/app/register/page.test.tsx > /register in invite mode (default) > shows the invite-only notice with contact links instead of the form 33ms
+ ✓ src/app/register/page.test.tsx > /register in invite mode (default) > explains an invalid or missing invitation {"invite":"garbage"} without rendering the form 5ms
+ ✓ src/app/register/page.test.tsx > /register in invite mode (default) > explains an invalid or missing invitation {"invite":""} without rendering the form 3ms
+ ✓ src/app/register/page.test.tsx > /register in invite mode (default) > explains an invalid or missing invitation {"invite":["a","b"]} without rendering the form 2ms
+ ✓ src/app/register/page.test.tsx > /register in invite mode (default) > explains an invalid or missing invitation {"error":"invite_required"} without rendering the form 3ms
+ ✓ src/app/register/page.test.tsx > /register in invite mode (default) > treats an expired invitation as invalid 12ms
+ ✓ src/app/register/page.test.tsx > /register in invite mode (default) > prefills the invited email read-only and carries the token in a hidden field 8ms
+ ✓ src/app/register/page.test.tsx > /register in invite mode (default) > shows retryable errors on the invited form 10ms
+ ✓ src/app/register/page.test.tsx > /register in invite mode (default) > explains a revoked invitation instead of rendering the form 10ms
+ ✓ src/app/register/page.test.tsx > /register in invite mode (default) > does not look anything up for an invalid token 2ms
+ ✓ src/app/register/page.test.tsx > /register in invite mode (default) > sends the holder of an invitation whose email already has an account to login 4ms
+ ✓ src/app/register/page.test.tsx > /register in open mode > renders the original editable form when there is no usable invitation 11ms
+ ✓ src/app/register/page.test.tsx > /register in open mode > still prefills a valid invitation so its use is recorded 9ms
+ ✓ src/app/register/page.test.tsx > /login registration entry > is relabelled for invited merchants in invite mode 6ms
+ ✓ src/app/register/page.test.tsx > /login registration entry > keeps the original create-workspace link in open mode 3ms
+ ✓ src/app/register/page.test.tsx > /register bot protection and verification notice > renders the Turnstile widget only when both keys are configured 11ms
+ ✓ src/app/register/page.test.tsx > /register bot protection and verification notice > tells the merchant a verification email follows registration 9ms
+ ✓ src/app/register/page.test.tsx > /register bot protection and verification notice > explains the turnstile_failed error 3ms
+ ✓ src/app/register/page.test.tsx > /register bot protection and verification notice > explains the turnstile_unavailable error 3ms
+ ✓ src/app/(app)/interaction-scripts/new/page.test.tsx > /interaction-scripts/new route > loads active roles/products for the current vendor and forwards an error state 20ms
+ ✓ src/app/(app)/interaction-scripts/new/page.test.tsx > /interaction-scripts/new route > preserves an absent error as undefined while returning empty option lists 3ms
+ ✓ src/lib/turnstile.test.ts > Turnstile configuration > uses action names Cloudflare accepts (up to 32 of A-Z a-z 0-9 _ -) 10ms
+ ✓ src/lib/turnstile.test.ts > Turnstile configuration > is disabled when neither key is set and misconfigured when only one is 10ms
+ ✓ src/lib/turnstile.test.ts > Turnstile configuration > recognises Cloudflare's documented test keys and refuses them on a Vercel deployment 3ms
+ ✓ src/lib/turnstile.test.ts > Turnstile configuration > accepts tokens only from the canonical host, this preview's own URL and configured extra hosts 2ms
+ ✓ src/lib/turnstile.test.ts > Turnstile server verification > skips verification without calling Cloudflare when Turnstile is not configured 3ms
+ ✓ src/lib/turnstile.test.ts > Turnstile server verification > fails closed when only one key is configured, or with test keys on a deployment 1ms
+ ✓ src/lib/turnstile.test.ts > Turnstile server verification > posts the secret, token and client address to siteverify and accepts a matching host and action 113ms
+ ✓ src/lib/turnstile.test.ts > Turnstile server verification > refuses a token solved on another host, or with a missing or different action 4ms
+ ✓ src/lib/turnstile.test.ts > Turnstile server verification > skips the host and action checks only for Cloudflare's test secrets (fixed dummy host, no action) 2ms
+ ✓ src/lib/turnstile.test.ts > Turnstile server verification > refuses a missing or oversized token without calling Cloudflare 3ms
+ ✓ src/lib/turnstile.test.ts > Turnstile server verification > refuses a token Cloudflare rejects 24ms
+ ✓ src/lib/turnstile.test.ts > Turnstile server verification > fails closed on network errors, timeouts, HTTP errors and unexpected bodies 5ms
+ ✓ src/lib/turnstile.test.ts > Turnstile server verification > maps refusals to the form error codes 0ms
+ ✓ next.config.test.ts > isolated development build configuration > keeps the default build directory and monitoring tunnel in production 24ms
+ ✓ next.config.test.ts > isolated development build configuration > allows Cloudflare Turnstile's script, iframe and calls in the report-only CSP 1ms
+ ✓ next.config.test.ts > isolated development build configuration > gives public funnel pages COOP same-origin and a report-only CSP that a custom-code srcdoc frame can live under 2ms
+ ✓ next.config.test.ts > isolated development build configuration > allows only the privacy-enhanced YouTube host as an extra frame source 1ms
+ ✓ next.config.test.ts > isolated development build configuration > sends no Referer from the verification page and its confirm API, overriding the site-wide policy 1ms
+ ✓ next.config.test.ts > isolated development build configuration > isolates explicitly requested funnel QA builds inside the project 1ms
+ ✓ next.config.test.ts > isolated development build configuration > disables only the development Sentry proxy and preserves local upload opt-out 1ms
+ ✓ src/app/api/health/route.test.ts > GET /api/health > returns a healthy database status and non-negative latency when the database is reachable 8ms
+ ✓ src/app/api/health/route.test.ts > GET /api/health > returns a generic service-unavailable error without leaking database details 9ms
+ ✓ src/app/api/health/route.test.ts > GET /api/health > logs only the safe TLS handshake failed for postgresql://user:secret@private-host.example classification in Preview and Production 4ms
+ ✓ src/app/api/health/route.test.ts > GET /api/health > logs only the safe password authentication failed for user postgres classification in Preview and Production 2ms
+ ✓ src/app/api/health/route.test.ts > GET /api/health > logs only the safe Timed out fetching a new connection classification in Preview and Production 2ms
+ ✓ src/app/api/health/route.test.ts > GET /api/health > logs only the safe Connection refused by database server classification in Preview and Production 5ms
+ ✓ src/app/api/health/route.test.ts > GET /api/health > logs only the safe unclassified failure with secret=do-not-log classification in Preview and Production 2ms
+ ✓ src/app/api/health/route.test.ts > GET /api/health > classifies a known Prisma pool timeout without logging its message or metadata 1ms
+ ✓ src/app/api/health/route.test.ts > GET /api/health > does not log diagnostics for an unrecognized runtime environment 2ms
+ ✓ src/lib/sentry-scrub.test.ts > sentryDataCollection > collects no cookies, query params, bodies, user info or stack-frame variables 9ms
+ ✓ src/lib/sentry-scrub.test.ts > sentryDataCollection > allow-lists request headers and never allows cookies or credentials 5ms
+ ✓ src/lib/sentry-scrub.test.ts > scrubString > masks email addresses 2ms
+ ✓ src/lib/sentry-scrub.test.ts > scrubString > masks Taiwan mobile and international phone numbers but keeps order numbers and timestamps 7ms
+ ✓ src/lib/sentry-scrub.test.ts > scrubString > masks Luhn-valid card numbers with or without separators, but not other long numbers 1ms
+ ✓ src/lib/sentry-scrub.test.ts > scrubString > masks bearer tokens, JWTs, provider keys and key=value secrets 1ms
+ ✓ src/lib/sentry-scrub.test.ts > scrubString > drops query strings from absolute and relative URLs 1ms
+ ✓ src/lib/sentry-scrub.test.ts > scrubString > leaves ordinary diagnostic text alone 1ms
+ ✓ src/lib/sentry-scrub.test.ts > isSensitiveKey > matches credential and personal-data field names by word 3ms
+ ✓ src/lib/sentry-scrub.test.ts > isSensitiveKey > does not match structural Sentry keys that merely contain the letters 2ms
+ ✓ src/lib/sentry-scrub.test.ts > scrubValue > redacts sensitive keys entirely and scrubs nested strings without mutating the input 2ms
+ ✓ src/lib/sentry-scrub.test.ts > scrubValue > keeps non-plain objects and primitives and stops at a depth limit 1ms
+ ✓ src/lib/sentry-scrub.test.ts > scrubSentryEvent > keeps only an opaque user id 3ms
+ ✓ src/lib/sentry-scrub.test.ts > scrubSentryEvent > drops cookies, query string and body and keeps only allow-listed headers 4ms
+ ✓ src/lib/sentry-scrub.test.ts > scrubSentryEvent > scrubs messages, exceptions, breadcrumbs and spans while preserving structure 1ms
+ ✓ src/lib/sentry-scrub.test.ts > scrubSentryEvent > never serializes any of the original secrets 1ms
+ ✓ src/lib/sentry-scrub.test.ts > scrubSentryEvent > does not mutate the original event and works for events without a request or user 1ms
+ ✓ src/lib/sentry-scrub.test.ts > breadcrumb and log scrubbing > scrubs breadcrumbs 1ms
+ ✓ src/lib/sentry-scrub.test.ts > breadcrumb and log scrubbing > scrubs structured log messages and attributes 0ms
+ ✓ src/lib/sentry-scrub.test.ts > resolveTraceSampleRate > samples everything in development 0ms
+ ✓ src/lib/sentry-scrub.test.ts > resolveTraceSampleRate > almost never samples live polling and usage routes 1ms
+ ✓ src/lib/sentry-scrub.test.ts > resolveTraceSampleRate > always samples payment, checkout and webhook traces 1ms
+ ✓ src/lib/sentry-scrub.test.ts > resolveTraceSampleRate > uses the request path attribute when present and defaults to 10% elsewhere 0ms
+ ✓ src/lib/sentry-scrub.test.ts > scrubSentryEvent keeps structural identifiers intact (C-01) > keeps event, trace, span, release and debug identifiers byte-for-byte 1ms
+ ✓ src/lib/sentry-scrub.test.ts > scrubSentryEvent keeps structural identifiers intact (C-01) > keeps stack frame locations while still scrubbing free text 1ms
+ ✓ src/lib/sentry-scrub.test.ts > scrubSentryEvent keeps structural identifiers intact (C-01) > still produces a valid envelope header with the original event_id 5ms
+ ✓ src/lib/sentry-scrub.test.ts > scrubSentryEvent keeps structural identifiers intact (C-01) > keeps sentry.* attributes on logs but scrubs the message and user attributes 0ms
+ ✓ src/lib/sentry-scrub.test.ts > createTracesSampler > does not inherit the upstream decision for checkout, payment and webhook routes 0ms
+ ✓ src/lib/sentry-scrub.test.ts > createTracesSampler > does not let an upstream sampled trace lift polling routes above 1% 0ms
+ ✓ src/lib/sentry-scrub.test.ts > createTracesSampler > inherits the upstream decision for ordinary pages, falling back to 10% 0ms
+ ✓ src/lib/sentry-scrub.test.ts > createTracesSampler > samples everything in development 0ms
+ ✓ src/lib/live-slug.test.ts > liveSlugFromTitle > keeps ASCII words from the title and appends the suffix 2ms
+ ✓ src/lib/live-slug.test.ts > liveSlugFromTitle > falls back to a generic base for Chinese-only titles 0ms
+ ✓ src/lib/live-slug.test.ts > liveSlugFromTitle > produces slugs that survive toSlug unchanged and stay short 0ms
+ ✓ src/lib/live-slug.test.ts > liveSlugFromTitle > generates an unambiguous random suffix 2ms
+ ✓ src/lib/live-slug.test.ts > isLiveSlugTaken > checks the global slug and excludes the live being edited 3ms
+ ✓ src/lib/live-slug.test.ts > isLiveSlugTaken > reports a free slug and does not exclude anything on create 1ms
+ ✓ src/lib/live-slug.test.ts > isUniqueConstraintError > recognizes Prisma P2002 only 1ms
+ ✓ src/lib/live-slug.test.ts > liveSlugTakenPath > goes back to the edit page for an existing live and keeps the draft for a new one 0ms
+ ✓ src/lib/live-slug.test.ts > resolveLiveSlugConflict > returns null without looking at the draft when the address is free 2ms
+ ✓ src/lib/live-slug.test.ts > resolveLiveSlugConflict > reports slug_taken only when the draft is still claimable for this vendor and revision 1ms
+ ✓ src/lib/live-slug.test.ts > resolveLiveSlugConflict > reports draft_conflict first when the draft was already consumed or is stale 0ms
+ ✓ src/lib/live-slug.test.ts > isLiveSlugRace > is true only for a unique-constraint error where the address is really taken 1ms
+ ✓ src/app/not-found.test.tsx > Traditional Chinese 404 and error pages > root not-found offers a way home 16ms
+ ✓ src/app/not-found.test.tsx > Traditional Chinese 404 and error pages > viewer not-found has back and home exits 7ms
+ ✓ src/app/not-found.test.tsx > Traditional Chinese 404 and error pages > public page error is Chinese with retry and home 2ms
+ ✓ src/app/not-found.test.tsx > Traditional Chinese 404 and error pages > global error is Chinese with retry and home, and hides the error message 3ms
+ ✓ src/lib/live-publish-readiness.test.ts > live publish readiness > allows a content live to publish with ready playback media 3ms
+ ✓ src/lib/live-publish-readiness.test.ts > live publish readiness > requires products, media, form and email for a sales live, but only recommends an interaction script 1ms
+ ✓ src/lib/live-publish-readiness.test.ts > live publish readiness > lets a sales live with products publish without any interaction script 2ms
+ ✓ src/lib/live-publish-readiness.test.ts > live publish readiness > still blocks an explicit commerce live that has no product selected 0ms
+ ✓ src/lib/live-publish-readiness.test.ts > live publish readiness > can evaluate a commerce starter before the first product is created 1ms
+ ✓ src/lib/live-publish-readiness.test.ts > live publish readiness > derives custom mode from the selected product count 0ms
+ ✓ src/lib/live-publish-readiness.test.ts > live publish readiness > keeps optional notification rules out of content publishing blockers 0ms
+ ✓ src/lib/live-publish-readiness.test.ts > live publish readiness > keeps an explicit commerce preset in commerce mode before a product is selected 0ms
+ ✓ src/lib/live-publish-readiness.test.ts > live publish readiness > promotes a content preset with products to commerce mode 1ms
+ ✓ src/lib/live-publish-readiness.test.ts > live publish readiness > guards every buyer-visible state including ended replay 0ms
+ ✓ src/lib/recent-mfa.test.ts > recentMfaStatus > defaults to the 15-minute step-up window 2ms
+ ✓ src/lib/recent-mfa.test.ts > recentMfaStatus > requires setup when the user has no confirmed factor, even with a verification stamp 0ms
+ ✓ src/lib/recent-mfa.test.ts > recentMfaStatus > fails closed for an incomplete actor 0ms
+ ✓ src/lib/recent-mfa.test.ts > recentMfaStatus > requires verification when the session never passed MFA 0ms
+ ✓ src/lib/recent-mfa.test.ts > recentMfaStatus > accepts a verification up to exactly 15 minutes old and rejects anything older 0ms
+ ✓ src/lib/recent-mfa.test.ts > recentMfaStatus > tolerates small clock skew but rejects a far-future stamp 0ms
+ ✓ src/lib/recent-mfa.test.ts > recentMfaStatus > honours a narrower window and rejects an invalid one 1ms
+ ✓ src/lib/recent-mfa.test.ts > requireRecentMfa > returns without redirecting for a fresh verification 0ms
+ ✓ src/lib/recent-mfa.test.ts > requireRecentMfa > sends a user without a factor to setup with a safe return path 1ms
+ ✓ src/lib/recent-mfa.test.ts > requireRecentMfa > sends a stale verification back to /mfa/verify 0ms
+ ✓ src/lib/recent-mfa.test.ts > requireRecentMfa > drops an off-site return path instead of forwarding it 0ms
+ ✓ src/lib/registration-mode.test.ts > registration mode > defaults to invite when unset, blank or unknown (fail closed) 3ms
+ ✓ src/lib/registration-mode.test.ts > registration mode > opens only for an explicit open value 0ms
+ Test Files  19 passed (19)
+      Tests  466 passed (466)
+   Duration  27.78s (transform 4.37s, setup 0ms, import 16.07s, tests 3.14s, environment 7ms)
+
+# 補充：src/app/actions.test.ts -t "slug"（F-107 送出時撞名）
+ Test Files  1 passed (1)
+      Tests  5 passed | 412 skipped (417)
+ - upsertLiveAction > returns a field-level slug_taken error before touching the draft when the address is already used
+ - upsertLiveAction > turns a concurrent unique-constraint race on the address into slug_taken instead of a 500
