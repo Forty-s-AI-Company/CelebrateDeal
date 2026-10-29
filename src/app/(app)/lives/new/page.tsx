@@ -3,7 +3,9 @@ import { notFound } from "next/navigation";
 import { resolveSalesProjectBinding, SalesProjectBindingError } from "@/lib/sales-project-binding";
 import { LiveStepperForm } from "@/components/live-stepper-form";
 import { PageHeader } from "@/components/ui";
-import { requireVendorManager } from "@/lib/auth";
+import { requireVendorManagerContext } from "@/lib/auth";
+import { ProjectUnboundNotice } from "@/components/project-unbound-notice";
+import { resolveDefaultProjectCandidate } from "@/lib/sales-project-scope";
 import { getCsrfToken } from "@/lib/csrf";
 import { getDb } from "@/lib/db";
 import { LiveStudioDraftPayloadSchema } from "@/lib/live-studio-draft";
@@ -57,7 +59,7 @@ function LiveDraftResumeNotice({ drafts, timeZone }: { drafts: ResumableLiveDraf
 }
 
 export default async function NewLivePage({ searchParams }: { searchParams: Promise<{ error?: string; field?: string; draft?: string; projectId?: string }> }) {
-  const vendor = await requireVendorManager();
+  const { auth, vendor } = await requireVendorManagerContext();
   const { error, field: invalidField, draft, projectId: requestedProjectId } = await searchParams;
   const requestedDraftId = typeof draft === "string" && /^[a-z0-9_-]{1,128}$/iu.test(draft) ? draft : "";
   const db = getDb();
@@ -151,9 +153,13 @@ export default async function NewLivePage({ searchParams }: { searchParams: Prom
   // A resumed draft keeps its original scope; a conflicting URL must not move it.
   const draftProjectId = initialDraft?.payload.projectId;
   if (draftProjectId && requestedProjectId && draftProjectId !== requestedProjectId) notFound();
+  // A resumed draft keeps its own scope; a fresh one defaults to the current workspace project.
+  const defaultProject = initialDraft
+    ? { candidate: draftProjectId ?? null, isAggregate: false }
+    : await resolveDefaultProjectCandidate(auth.user.id, vendor.id, requestedProjectId);
   let projectId: string | null;
   try {
-    projectId = await resolveSalesProjectBinding(db, vendor.id, draftProjectId ?? requestedProjectId ?? null);
+    projectId = await resolveSalesProjectBinding(db, vendor.id, defaultProject.candidate);
   } catch (bindingError) {
     if (bindingError instanceof SalesProjectBindingError) notFound();
     throw bindingError;
@@ -168,6 +174,7 @@ export default async function NewLivePage({ searchParams }: { searchParams: Prom
   return (
     <>
       <PageHeader title="建立直播間" description="用八個清楚步驟完成設定；每次變更都會建立可復原、具版本保護的伺服器草稿。" />
+      {!projectId && defaultProject.isAggregate ? <ProjectUnboundNotice resource="直播" /> : null}
       {draft && !initialDraft ? (
         <p role="alert" className="mb-4 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950">
           指定的直播草稿已失效、已完成或不屬於目前商店。系統沒有載入任何內容，你可以改選下方仍有效的草稿。
