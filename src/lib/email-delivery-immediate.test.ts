@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   after: vi.fn(),
@@ -14,6 +14,7 @@ vi.mock("@/lib/email-delivery", () => ({ dispatchEmailDelivery: mocks.dispatchEm
 vi.mock("@/lib/monitoring", () => ({ captureOperationalError: mocks.captureOperationalError }));
 
 import {
+  deliveryIdForStatuses,
   dispatchEmailDeliveriesNow,
   IMMEDIATE_EMAIL_DISPATCH_ACTOR,
   isImmediateEmailDelivery,
@@ -75,6 +76,39 @@ describe("scheduleImmediateEmailDispatch", () => {
 
     expect(scheduleImmediateEmailDispatch(["email_a"])).toBe(false);
     expect(mocks.dispatchEmailDelivery).not.toHaveBeenCalled();
+  });
+});
+
+describe("scheduleImmediateEmailDispatch without a usable after()", () => {
+  afterEach(() => {
+    vi.doUnmock("next/server");
+    vi.resetModules();
+  });
+
+  it.each([
+    ["a module mock that omits after", () => ({})],
+    ["a module mock whose after is undefined", () => ({ after: undefined })],
+    ["an after that is not a function", () => ({ after: "not-a-function" })],
+  ])("returns false and dispatches nothing for %s", async (_label, factory) => {
+    vi.resetModules();
+    vi.doMock("next/server", factory);
+    const isolated = await import("@/lib/email-delivery-immediate");
+
+    expect(() => isolated.scheduleImmediateEmailDispatch(["email_a"])).not.toThrow();
+    expect(isolated.scheduleImmediateEmailDispatch(["email_a"])).toBe(false);
+    expect(mocks.dispatchEmailDelivery).not.toHaveBeenCalled();
+  });
+});
+
+describe("deliveryIdForStatuses", () => {
+  it("returns the id only for an accepted status and tolerates a missing result", () => {
+    expect(deliveryIdForStatuses({ status: "queued", deliveryId: "email_a" }, ["queued"])).toBe("email_a");
+    expect(deliveryIdForStatuses({ status: "duplicate", deliveryId: "email_a" }, ["queued", "duplicate"])).toBe("email_a");
+    expect(deliveryIdForStatuses({ status: "suppressed", deliveryId: "email_a" }, ["queued", "duplicate"])).toBeNull();
+    expect(deliveryIdForStatuses({ status: "not_configured" }, ["queued"])).toBeNull();
+    expect(deliveryIdForStatuses({ status: "queued", deliveryId: "" }, ["queued"])).toBeNull();
+    expect(deliveryIdForStatuses(undefined, ["queued"])).toBeNull();
+    expect(deliveryIdForStatuses(null, ["queued"])).toBeNull();
   });
 });
 

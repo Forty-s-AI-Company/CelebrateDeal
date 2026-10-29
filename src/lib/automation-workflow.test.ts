@@ -155,6 +155,30 @@ describe("smart automation workflow engine", () => {
     expect(JSON.stringify(update.mock.calls.at(-1)?.[0].data)).not.toContain("buyer@example.test");
   });
 
+  it("hands every email queued by one event to a single post-response hook, even when a later rule fails", async () => {
+    const update = vi.fn().mockResolvedValue({});
+    const db = {
+      automationRule: { findMany: vi.fn().mockResolvedValue([
+        { id: "rule-email-1", condition: { type: "always" }, actions: [{ type: "send_email_notification", template: "webinar_replay" }, { type: "send_email_notification", template: "class_reminder" }] },
+        { id: "rule-email-2", condition: { type: "always" }, actions: [{ type: "send_email_notification", template: "repurchase_followup" }] },
+        { id: "rule-email-3", condition: { type: "always" }, actions: [{ type: "send_email_notification", template: "consultation_confirmation" }] },
+      ]) },
+      automationExecutionLog: { create: vi.fn().mockResolvedValueOnce({ id: "log-1" }).mockResolvedValueOnce({ id: "log-2" }).mockResolvedValueOnce({ id: "log-3" }), update },
+      emailDelivery: { create: vi.fn().mockResolvedValueOnce({}).mockResolvedValueOnce({}).mockResolvedValueOnce({}).mockRejectedValueOnce(new Error("synthetic write failure")) },
+      customerTagAssignment: {}, automationVoucherGrant: {}, product: {}, lineOfficialAccount: {}, lineUserIdentity: {}, lineDelivery: {},
+    };
+    const emailEvent = { ...event, trigger: "form_no_show" as const, recipientEmail: "buyer@example.test", webinarUrl: "https://app.example.test/replay", consultationUrl: "https://app.example.test/book" };
+
+    await expect(dispatchAutomationEvent(db as never, emailEvent)).resolves.toEqual([
+      { ruleId: "rule-email-1", status: "completed" },
+      { ruleId: "rule-email-2", status: "completed" },
+      { ruleId: "rule-email-3", status: "failed" },
+    ]);
+    const queuedIds = db.emailDelivery.create.mock.calls.slice(0, 3).map(([args]) => (args as { data: { id: string } }).data.id);
+    expect(new Set(queuedIds).size).toBe(3);
+    expect(mocks.scheduleImmediateEmailDispatch).toHaveBeenCalledExactlyOnceWith(queuedIds);
+  });
+
   it("dispatches no-show only for verified registrants without attendance evidence", async () => {
     const db = {
       live: { findFirst: vi.fn().mockResolvedValue({ id: "live-1", slug: "launch" }) },

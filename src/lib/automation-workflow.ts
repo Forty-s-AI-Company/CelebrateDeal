@@ -314,6 +314,7 @@ async function executeAction(
   action: AutomationAction,
   actionIndex: number,
   artifacts: { voucherUrl?: string; consultationUrl?: string; webinarUrl?: string },
+  queuedEmailIds: string[],
 ) {
   if (action.type === "add_customer_tag") {
     const tag = action.tag.trim().toLocaleLowerCase("zh-TW");
@@ -392,7 +393,7 @@ async function executeAction(
         status: "queued",
         nextAttemptAt: new Date(),
       } });
-      scheduleImmediateEmailDispatch([id]);
+      queuedEmailIds.push(id);
       return { type: action.type, status: "queued", template: action.template } as const;
     } catch (error) {
       if (!isUniqueConflict(error)) throw error;
@@ -423,8 +424,21 @@ async function executeAction(
 /**
  * Claims each rule/event pair before running actions. A replay sees the unique
  * execution log and cannot issue a second voucher, tag, or LINE outbox row.
+ *
+ * Every email queued across all matched rules is handed to one post-response
+ * hook, bounded by its shared per-call cap; the job sends anything beyond it.
  */
 export async function dispatchAutomationEvent(db: AutomationDb, event: AutomationEvent) {
+  const queuedEmailIds: string[] = [];
+  try {
+    return await runAutomationEvent(db, event, queuedEmailIds);
+  } finally {
+    // Rows already written stay queued even if a later rule fails.
+    scheduleImmediateEmailDispatch(queuedEmailIds);
+  }
+}
+
+async function runAutomationEvent(db: AutomationDb, event: AutomationEvent, queuedEmailIds: string[]) {
   if ((event.trigger === "viewer_watch_progress" || event.trigger === "webinar_attended_duration_gte") && !event.liveId) {
     return [{ ruleId: "__scope__", status: "missing_live_scope" }];
   }
@@ -518,7 +532,7 @@ export async function dispatchAutomationEvent(db: AutomationDb, event: Automatio
         .map((action, index) => ({ action, index }))
         .sort((left, right) => Number(right.action.type === "issue_repurchase_voucher") - Number(left.action.type === "issue_repurchase_voucher"));
       for (const { action, index } of orderedActions) {
-        actionResults.push(await executeAction(db, rule, event, log.id, action, index, artifacts));
+        actionResults.push(await executeAction(db, rule, event, log.id, action, index, artifacts, queuedEmailIds));
       }
       if (artifacts.voucherUrl && !rule.actions.some((action) => action.type === "line_push") && event.subjectType !== "viewer_session") {
         const delivery = await enqueueLineNotification(db, {

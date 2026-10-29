@@ -33,7 +33,7 @@ import { auditSnapshot, writeAuditLog } from "@/lib/audit";
 import { withPaymentWebhookStage } from "./payment-webhook-errors";
 import { reconcileCommerceOrderPaymentTransition } from "@/lib/commerce-orders";
 import { ensureCommerceOrderPaidDelivery } from "@/lib/commerce-order-email";
-import { scheduleImmediateEmailDispatch } from "@/lib/email-delivery-immediate";
+import { deliveryIdForStatuses, scheduleImmediateEmailDispatch } from "@/lib/email-delivery-immediate";
 import { enqueuePaidPurchaseTracking } from "@/lib/tracking-purchase-outbox";
 import { getDb } from "@/lib/db";
 import { applyPaymentInventoryTransition } from "@/lib/inventory-reservations";
@@ -1015,7 +1015,9 @@ async function processPaymentWebhookOnce(payload: PaymentWebhookPayloadInput, ev
   if (isDisputeEvent(payload.eventType) && !payload.disputeCaseId) {
     throw new Error("synthetic dispute webhook 缺少 disputeCaseId。");
   }
-  // Receipt row created inside the payment transaction; dispatched only after commit.
+  // Receipt row created inside the payment transaction; dispatched only after
+  // commit. Each serializable retry calls this function afresh, so an id from
+  // a rolled-back attempt is never scheduled.
   let paidReceiptDeliveryId: string | null = null;
   const {
     transaction,
@@ -1154,7 +1156,9 @@ async function processPaymentWebhookOnce(payload: PaymentWebhookPayloadInput, ev
           paymentTransactionId: savedTransaction.id,
           occurredAt,
         }));
-        paidReceiptDeliveryId = paidDelivery.status === "queued" ? paidDelivery.deliveryId : null;
+        // Only a receipt created by this attempt is handed to the hook. Reading
+        // the result never throws, so it cannot change the payment outcome.
+        paidReceiptDeliveryId = deliveryIdForStatuses(paidDelivery, ["queued"]);
       }
     }
 
