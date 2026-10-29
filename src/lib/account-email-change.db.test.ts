@@ -590,7 +590,8 @@ describe("reverting a login email change (PostgreSQL)", () => {
     const user = await createUser({ passwordHash: await hashPasswordAsync(password) });
     const vendor = await createFounderVendor(user);
     const line = await createLineIdentity(user.id, vendor.id);
-    const before = new Date(Date.now() - DAY_MS);
+    // Older than the revert's 24-hour look-back: the owner's own factor.
+    const before = new Date(Date.now() - 2 * DAY_MS);
     const factor = await getDb().userMfaFactor.create({ data: { userId: user.id, secretEncrypted: "synthetic-owner-secret", enabledAt: before, createdAt: before } });
     await getDb().userRecoveryCode.create({ data: { userId: user.id, codeHash: "synthetic-owner-code", createdAt: before } });
     // Whoever requested the change knew the password and held this session.
@@ -837,7 +838,8 @@ describe("reverting a login email change (PostgreSQL)", () => {
 
   it("keeps the owner's earlier factor but removes every recovery code", async () => {
     const user = await createUser();
-    const before = new Date(Date.now() - DAY_MS);
+    // Older than the revert's 24-hour look-back: the owner's own factor.
+    const before = new Date(Date.now() - 2 * DAY_MS);
     const factor = await getDb().userMfaFactor.create({ data: { userId: user.id, secretEncrypted: "synthetic-owner-secret", enabledAt: before, createdAt: before } });
     await getDb().userRecoveryCode.create({ data: { userId: user.id, codeHash: "synthetic-owner-code", createdAt: before } });
     const revert = await changeEmail(user, syntheticEmail("owner-mfa"));
@@ -866,29 +868,49 @@ describe("reverting a login email change (PostgreSQL)", () => {
     await expect(revertAccountEmailChange(links.revert)).resolves.toEqual({ status: "reverted" });
     expect(await getDb().userMfaFactor.count({ where: { userId: user.id } })).toBe(0);
     const removal = await getDb().auditLog.findFirstOrThrow({ where: { targetId: user.id, action: "account_email_revert_mfa_removed" } });
-    expect(removal.after).toMatchObject({ cutoffSource: "initiating_session", factorCutoff: session.createdAt.toISOString() });
+    expect(removal.after).toMatchObject({ cutoffSource: "initiating_session", factorCutoff: new Date(session.createdAt.getTime() - DAY_MS).toISOString() });
   });
 
   it.each([
-    ["exactly at the cutoff is removed", 0, 0],
+    ["exactly at the cutoff (24 hours before the session) is removed", 0, 0],
     ["1 ms before the cutoff stays", -1, 1],
   ])("treats a factor enabled %s", async (_label, offsetMs, remaining) => {
     const user = await createUser();
     const revert = await changeEmail(user, syntheticEmail("boundary"));
     const row = await getDb().userEmailChangeRequest.findFirstOrThrow({ where: { userId: user.id } });
-    // Session and request at the same instant: the cutoff is request.createdAt.
-    await getDb().userEmailChangeRequest.update({ where: { id: row.id }, data: { initiatingSessionCreatedAt: row.createdAt } });
-    const enabledAt = new Date(row.createdAt.getTime() + offsetMs);
-    await getDb().userMfaFactor.create({ data: { userId: user.id, secretEncrypted: "synthetic-boundary-secret", enabledAt, createdAt: new Date(row.createdAt.getTime() - DAY_MS) } });
+    // The session began an hour before the request, so it sets the cutoff: session start minus 24 hours.
+    const sessionStart = new Date(row.createdAt.getTime() - 60 * 60_000);
+    await getDb().userEmailChangeRequest.update({ where: { id: row.id }, data: { initiatingSessionCreatedAt: sessionStart } });
+    const enabledAt = new Date(sessionStart.getTime() - DAY_MS + offsetMs);
+    await getDb().userMfaFactor.create({ data: { userId: user.id, secretEncrypted: "synthetic-boundary-secret", enabledAt, createdAt: new Date(sessionStart.getTime() - 2 * DAY_MS) } });
 
     await expect(revertAccountEmailChange(revert)).resolves.toEqual({ status: "reverted" });
     expect(await getDb().userMfaFactor.count({ where: { userId: user.id } })).toBe(remaining);
   });
 
+  it("removes a factor enrolled from another session two hours before the request", async () => {
+    const user = await createUser();
+    const tokenHash = () => createHash("sha256").update(randomUUID()).digest("hex");
+    // Session A: sign in and enrol an authenticator, two hours before the request.
+    await getDb().userSession.create({ data: { userId: user.id, tokenHash: tokenHash(), expiresAt: new Date(Date.now() + 60 * 60_000), createdAt: new Date(Date.now() - 3 * 60 * 60_000) } });
+    const enabledAt = new Date(Date.now() - 2 * 60 * 60_000);
+    await getDb().userMfaFactor.create({ data: { userId: user.id, secretEncrypted: "synthetic-intruder-secret", enabledAt, createdAt: enabledAt } });
+    // Session B, opened just now, requests the change: its start is after the enrolment.
+    const sessionB = await createSession(user.id);
+    expect(sessionB.createdAt.getTime()).toBeGreaterThan(enabledAt.getTime());
+    const links = await requestLinks(user, syntheticEmail("other-session"), undefined, sessionB.id);
+    await expect(confirmAccountEmailChange(links.change)).resolves.toEqual({ status: "changed" });
+
+    await expect(revertAccountEmailChange(links.revert)).resolves.toEqual({ status: "reverted" });
+    expect(await getDb().userMfaFactor.count({ where: { userId: user.id } })).toBe(0);
+    const removal = await getDb().auditLog.findFirstOrThrow({ where: { targetId: user.id, action: "account_email_revert_mfa_removed" } });
+    expect(removal.after).toMatchObject({ cutoffSource: "initiating_session", factorCutoff: new Date(sessionB.createdAt.getTime() - DAY_MS).toISOString() });
+  });
+
   it.each([
     ["23 hours before a legacy request is removed", 23, 0],
     ["25 hours before a legacy request stays", 25, 1],
-  ])("falls back to the request time minus 24 hours for rows without a session time: a factor enabled %s", async (_label, hoursBefore, remaining) => {
+  ])("uses the request time minus 24 hours for rows without a session time: a factor enabled %s", async (_label, hoursBefore, remaining) => {
     const user = await createUser();
     const revert = await changeEmail(user, syntheticEmail("legacy"));
     const row = await getDb().userEmailChangeRequest.findFirstOrThrow({ where: { userId: user.id } });
@@ -918,7 +940,8 @@ describe("reverting a login email change (PostgreSQL)", () => {
 
   it("treats a factor re-enrolled with a new secret after the request as the intruder's", async () => {
     const user = await createUser();
-    const before = new Date(Date.now() - DAY_MS);
+    // Older than the revert's 24-hour look-back: the owner's own factor.
+    const before = new Date(Date.now() - 2 * DAY_MS);
     await getDb().userMfaFactor.create({ data: { userId: user.id, secretEncrypted: "synthetic-owner-secret", enabledAt: before, createdAt: before } });
     const revert = await changeEmail(user, syntheticEmail("re-enrolled"));
     // completeMfaEnrollment's upsert keeps createdAt but refreshes enabledAt.

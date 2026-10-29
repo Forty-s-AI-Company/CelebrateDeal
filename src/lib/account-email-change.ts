@@ -592,28 +592,31 @@ export async function revertAccountEmailChange(token: unknown, now = new Date())
 class RevertRollback extends Error {}
 
 /**
- * Rows created before `initiatingSessionCreatedAt` existed (migration
- * 20261030200000_user_email_change_initiating_session) have no session time. For them the factor cutoff falls
- * back to this long before the request: a sign-in that enrolled a factor and
- * then requested the change within a day is covered; a factor enrolled
- * earlier is treated as the owner's.
+ * How far before the requester's session (or the request) a factor still
+ * counts as theirs. Whoever requested the change may have enrolled a factor
+ * from another session shortly before (sign in, enrol, sign in again,
+ * request), so the window reaches back a day. A revert only happens when the
+ * old mailbox rejects the change; an owner who enrolled within that day
+ * simply enrols again after the password reset.
  */
-export const ACCOUNT_EMAIL_REVERT_LEGACY_FACTOR_WINDOW_MS = 24 * 60 * 60 * 1_000;
+export const ACCOUNT_EMAIL_REVERT_FACTOR_WINDOW_MS = 24 * 60 * 60 * 1_000;
 
 /**
- * Factors enabled at or after this instant are treated as the requester's:
- * the earlier of the requesting session's start and the request itself, so
- * signing in, enrolling a factor and only then requesting the change does
- * not keep that factor.
+ * Factors enabled (or created) at or after this instant are treated as the
+ * requester's: 24 hours before the earlier of the requesting session's start
+ * and the request. Rows stored before migration
+ * 20261030200000_user_email_change_initiating_session have no session time
+ * and use the request time alone, so both cases end at the same rule.
  */
 export function accountEmailRevertFactorCutoff(row: { createdAt: Date; initiatingSessionCreatedAt: Date | null }) {
-  if (!row.initiatingSessionCreatedAt) {
-    return { cutoff: new Date(row.createdAt.getTime() - ACCOUNT_EMAIL_REVERT_LEGACY_FACTOR_WINDOW_MS), source: "legacy_window" as const };
-  }
-  const session = row.initiatingSessionCreatedAt.getTime();
-  return { cutoff: new Date(Math.min(session, row.createdAt.getTime())), source: "initiating_session" as const };
+  const anchor = row.initiatingSessionCreatedAt
+    ? Math.min(row.initiatingSessionCreatedAt.getTime(), row.createdAt.getTime())
+    : row.createdAt.getTime();
+  return {
+    cutoff: new Date(anchor - ACCOUNT_EMAIL_REVERT_FACTOR_WINDOW_MS),
+    source: row.initiatingSessionCreatedAt ? "initiating_session" as const : "legacy_request" as const,
+  };
 }
-
 /** Ends the account's LINE Login identities (`subjectType: "user"`) in every workspace. */
 function revokeUserLineIdentities(tx: Tx, userId: string, now: Date) {
   return tx.lineUserIdentity.updateMany({
@@ -634,8 +637,9 @@ function revokeUserLineIdentities(tx: Tx, userId: string, now: Date) {
  *   in with the factor (or enrols again).
  * - On a lockdown (`removeLaterFactor`), the MFA factor is removed when it
  *   was enrolled, or re-enrolled with a new secret, at or after the cutoff
- *   (`accountEmailRevertFactorCutoff`; `enabledAt`, which re-enrolment
- *   refreshes, or `createdAt`). An older factor is the owner's and stays. A
+ *   (`accountEmailRevertFactorCutoff`, a day before the requester's session
+ *   or the request; `enabledAt`, which re-enrolment refreshes, or
+ *   `createdAt`). An older factor is the owner's and stays. A
  *   cancel keeps the factor: its clicker already holds the login mailbox and
  *   must not gain a way past MFA.
  *

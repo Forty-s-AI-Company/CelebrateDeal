@@ -1,16 +1,17 @@
 -- Login email change: remember which session requested the change
 -- (src/lib/account-email-change.ts).
 --
--- A revert removes an MFA factor enrolled since the requester's session
--- began, so signing in, enrolling a factor and only then requesting the
--- change no longer keeps that factor. "initiatingSessionCreatedAt" is copied
+-- A revert removes an MFA factor enrolled from 24 hours before the
+-- requester's session began (or the request, whichever is earlier), so
+-- enrolling a factor and only then requesting the change, from the same or
+-- another session, no longer keeps that factor. "initiatingSessionCreatedAt" is copied
 -- from "UserSession"."createdAt" when the request is stored, so the cutoff
 -- survives the session being revoked or deleted. "initiatingSessionId" is a
 -- reference only (no FK: sessions are revoked and may be cleaned up).
 --
 -- Forward-only and additive: two nullable columns and one CHECK. Rows stored
--- before this migration keep NULL in both; the revert then falls back to
--- request "createdAt" minus 24 hours (ACCOUNT_EMAIL_REVERT_LEGACY_FACTOR_WINDOW_MS).
+-- before this migration keep NULL in both; the revert then uses request
+-- "createdAt" minus 24 hours (ACCOUNT_EMAIL_REVERT_FACTOR_WINDOW_MS).
 DO $$
 BEGIN
   PERFORM pg_catalog.set_config('lock_timeout', '5s', true);

@@ -366,9 +366,10 @@ model UserEmailChangeRequest {
   revertRevokedAt DateTime?
   syncedVendorId  String?
   /// The session that requested the change (reference only, no FK) and when
-  /// it began. A revert removes MFA factors enrolled since the earlier of this
-  /// and `createdAt`. NULL on rows stored before 20261030200000 (the revert
-  /// then uses `createdAt` minus 24 hours). Both or neither (CHECK).
+  /// it began. A revert removes MFA factors enrolled from 24 hours before the
+  /// earlier of this and `createdAt`. NULL on rows stored before
+  /// 20261030200000 (the revert then uses `createdAt` minus 24 hours). Both or
+  /// neither (CHECK).
   initiatingSessionId        String?
   initiatingSessionCreatedAt DateTime?
   createdAt       DateTime  @default(now())
