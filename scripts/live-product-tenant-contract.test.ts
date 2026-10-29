@@ -56,7 +56,15 @@ describe("LiveProduct tenant binding contract", () => {
           const body = ts.isParenthesizedExpression(projection.body) ? projection.body.expression : projection.body;
           expect(ts.isObjectLiteralExpression(body)).toBe(true);
           if (!ts.isObjectLiteralExpression(body)) return;
-          const vendor = body.properties.find(property => ts.isPropertyAssignment(property) && property.name.getText(source) === "vendorId");
+          // A nested create under Live inherits vendorId through the composite
+          // (vendorId, liveId) relation; Prisma rejects a nested vendorId at
+          // runtime ("Unknown argument `vendorId`"). The parent Live must carry
+          // the authenticated vendor instead.
+          expect(body.properties.some(property => ts.isPropertyAssignment(property) && property.name.getText(source) === "vendorId")).toBe(false);
+          const parent = node.parent;
+          expect(ts.isObjectLiteralExpression(parent)).toBe(true);
+          if (!ts.isObjectLiteralExpression(parent)) return;
+          const vendor = parent.properties.find(property => ts.isPropertyAssignment(property) && property.name.getText(source) === "vendorId");
           expect(vendor && ts.isPropertyAssignment(vendor)).toBe(true);
           if (vendor && ts.isPropertyAssignment(vendor)) vendorExpressions.push(vendor.initializer.getText(source));
         }
