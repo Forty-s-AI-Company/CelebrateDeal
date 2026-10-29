@@ -158,10 +158,20 @@ export async function beginLineLogin(
   return { authorizationUrl: authorizationUrl.toString() };
 }
 
+/**
+ * Completes a LINE login or link callback.
+ *
+ * Link mode for a user (`subjectType: "user"`) only links: the caller passes
+ * `linkingUserId`, the user of a valid session cookie on this browser, and
+ * the link happens only when it is the account the state was started for and
+ * that account is active. It never signs anyone in (the callback route
+ * creates no session for it). A state started before a login email change
+ * revert or password reset was consumed by them, so it fails here.
+ */
 export async function completeLineLogin(
   db: LineLoginDatabase,
   provider: LineLoginProvider,
-  input: { state: string; code: string },
+  input: { state: string; code: string; linkingUserId?: string | null },
   now = new Date(),
 ) {
   if (!OAUTH_VALUE.test(input.state) || !input.code || input.code.length > 4_096) throw new Error("Invalid LINE Login callback.");
@@ -209,7 +219,7 @@ export async function completeLineLogin(
       }
       return { identity, redirectPath: attempt.redirectPath, login: true as const };
     }
-    if (attempt.subjectType === "user" && !await activeUser(tx, attempt.subjectId)) {
+    if (attempt.subjectType === "user" && (input.linkingUserId !== attempt.subjectId || !await activeUser(tx, attempt.subjectId))) {
       return { identity: null, redirectPath: attempt.redirectPath, login: false as const };
     }
     const identity = await tx.lineUserIdentity.upsert({

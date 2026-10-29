@@ -109,12 +109,34 @@ describe("LINE Login lifecycle", () => {
     });
     const state = new URL(started.authorizationUrl).searchParams.get("state")!;
     const provider: LineLoginProvider = { exchangeCode: vi.fn().mockResolvedValue({ userId: "U1234567890", displayName: null, pictureUrl: null }) };
-    const result = await completeLineLogin(runtime.db as never, provider, { state, code: "authorization-code" });
+    const result = await completeLineLogin(runtime.db as never, provider, { state, code: "authorization-code", linkingUserId: "user-1" });
 
     expect(result.identity).toBeNull();
     expect(runtime.tx.lineLoginState.updateMany).toHaveBeenCalledOnce();
     expect(runtime.tx.user.findFirst).toHaveBeenCalledWith({ where: { id: "user-1", status: "active" }, select: { id: true } });
     expect(runtime.tx.lineUserIdentity.upsert).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["no session on this browser", null, false],
+    ["a session of another account", "user-2", false],
+    ["the account the link was started for", "user-1", true],
+  ] as const)("links a user identity in link mode only with %s", async (_label, linkingUserId, linked) => {
+    const runtime = testDatabase({ identity: { subjectType: "user", subjectId: "user-1" } });
+    const started = await beginLineLogin(runtime.db as never, { vendorId: "vendor-1", subjectType: "user", subjectId: "user-1", redirectPath: "/settings/line" });
+    const state = new URL(started.authorizationUrl).searchParams.get("state")!;
+    const provider: LineLoginProvider = { exchangeCode: vi.fn().mockResolvedValue({ userId: "U1234567890", displayName: null, pictureUrl: null }) };
+    const result = await completeLineLogin(runtime.db as never, provider, { state, code: "authorization-code", linkingUserId });
+
+    expect(result.login).toBe(false);
+    expect(runtime.tx.lineLoginState.updateMany).toHaveBeenCalledOnce();
+    if (linked) {
+      expect(result.identity).toMatchObject({ subjectType: "user", subjectId: "user-1" });
+      expect(runtime.tx.lineUserIdentity.upsert).toHaveBeenCalledOnce();
+    } else {
+      expect(result.identity).toBeNull();
+      expect(runtime.tx.lineUserIdentity.upsert).not.toHaveBeenCalled();
+    }
   });
 
   it("exchanges the authorization code and verifies the OIDC token nonce", async () => {

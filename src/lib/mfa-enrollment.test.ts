@@ -117,7 +117,7 @@ describe("completeMfaEnrollment", () => {
     ["the account is gone or suspended", () => tx.$queryRaw.mockResolvedValue([])],
   ])("writes nothing when %s", async (_label, arrange) => {
     arrange();
-    await expect(completeMfaEnrollment(new FormData())).resolves.toEqual({ ok: false, destination: "/settings/security", error: "mfa_code" });
+    await expect(completeMfaEnrollment(new FormData())).resolves.toEqual({ ok: false, destination: "/settings/security", error: "session_stale" });
     expect(tx.userMfaFactor.upsert).not.toHaveBeenCalled();
     expect(tx.userRecoveryCode.createMany).not.toHaveBeenCalled();
     expect(mocks.markCurrentSessionMfaVerified).not.toHaveBeenCalled();

@@ -9,7 +9,7 @@ import { completeMfaEnrollment } from "@/lib/mfa-enrollment";
 export async function POST(request: Request) {
   const formData = await request.formData();
   const result = await completeMfaEnrollment(formData);
-  const query = result.ok ? "updated=mfa_enabled" : "error=mfa_code";
+  const query = result.ok ? "updated=mfa_enabled" : `error=${result.error}`;
   // Next's internal request URL may use the configured canonical host while
   // the browser is using a loopback alias. The origin was already validated by
   // completeMfaEnrollment, so preserve that browser origin for the redirect

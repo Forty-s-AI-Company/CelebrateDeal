@@ -37,6 +37,12 @@ describe("MFA confirmation route", () => {
     expect(mocks.completeMfaEnrollment).toHaveBeenCalledWith(body);
   });
 
+  it("reports a session that ended under the lock as session_stale, not a wrong code", async () => {
+    mocks.completeMfaEnrollment.mockResolvedValue({ ok: false, destination: "/settings/security", error: "session_stale" });
+    const response = await POST(new Request("https://app.example.test/api/settings/security/mfa/confirm", { method: "POST", body: new FormData() }));
+    expect(response.headers.get("location")).toBe("https://app.example.test/settings/security?error=session_stale");
+  });
+
   it("keeps the validated browser origin on the native redirect", async () => {
     mocks.completeMfaEnrollment.mockResolvedValue({ ok: true, destination: "/settings/security" });
     const formData = new FormData();

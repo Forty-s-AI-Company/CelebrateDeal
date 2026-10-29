@@ -19,6 +19,7 @@ import { isPasswordResetSmokeEnabled } from "@/lib/password-reset-smoke-policy";
 
 const errorMessages: Record<string, string> = {
   mfa_code: "驗證碼不正確。請看手機 App 上目前的 6 位數數字，它每 30 秒會換一組，輸入前請確認沒有過期。",
+  session_stale: "這次登入已失效，兩步驟驗證沒有啟用。請重新登入後再設定。",
   mfa_required: "請先完成雙重驗證設定，再做這個操作。",
   recovery_rate_limited: "重新產生備用救援碼的嘗試次數太多，請 15 分鐘後再試。",
   recovery_unavailable: "目前暫時無法重新產生備用救援碼，請稍後再試。",

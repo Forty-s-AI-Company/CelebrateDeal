@@ -155,6 +155,7 @@ describe("AppShell role navigation", () => {
       "/admin/support-cases",
       "/admin/vendor-features",
       "/admin/merchant-invitations",
+      "/admin/account-holds",
       "/admin/cloudflare/videos",
       "/mfa/setup",
     ]);

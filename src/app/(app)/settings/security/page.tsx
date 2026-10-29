@@ -62,6 +62,7 @@ const errorMessages: Record<string, string> = {
   member_confirmation: "請輸入要停用成員的 Email 以確認操作。",
   mfa_required: "此操作需要先啟用 MFA。",
   mfa_code: "TOTP 驗證碼不正確。",
+  session_stale: "這次登入已失效，兩步驟驗證沒有啟用。請重新登入後再設定。",
   recovery_rate_limited: "Recovery codes 重建嘗試次數過多，請 15 分鐘後再試。",
   recovery_unavailable: "Recovery codes 驗證保護暫時無法使用，請稍後再試。",
   password_reset_smoke: "密碼重設測試信寄送失敗，請檢查 Resend 設定。",

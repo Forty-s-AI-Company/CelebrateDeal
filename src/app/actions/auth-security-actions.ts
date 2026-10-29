@@ -281,7 +281,7 @@ export async function startMfaEnrollmentAction(formData: FormData) {
 
 export async function confirmMfaEnrollmentAction(formData: FormData) {
   const result = await completeMfaEnrollment(formData);
-  redirect(withMfaReturnPath(`${result.destination}?${result.ok ? "updated=mfa_enabled" : "error=mfa_code"}`, formData.get("next")));
+  redirect(withMfaReturnPath(`${result.destination}?${result.ok ? "updated=mfa_enabled" : `error=${result.error}`}`, formData.get("next")));
 }
 
 export async function verifyMfaAction(formData: FormData) {
