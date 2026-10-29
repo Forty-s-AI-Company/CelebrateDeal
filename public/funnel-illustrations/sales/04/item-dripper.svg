@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 600" width="600" height="600" role="img" aria-label="陶瓷濾杯示意">
+<rect width="600" height="600" fill="#efe8dc"/><circle cx="300" cy="290" r="200" fill="#f6f1e8"/>
+<ellipse cx="300" cy="470" rx="170" ry="18" fill="#3d2a1c" fill-opacity=".12"/>
+<path d="M140 220h320l-90 170H230z" fill="#f9f6f0" stroke="#bfae95" stroke-width="4"/>
+<path d="M190 240l50 130M300 240v140M410 240l-50 130" stroke="#e1d4bf" stroke-width="6"/>
+<rect x="200" y="388" width="200" height="22" rx="8" fill="#bfae95"/><rect x="250" y="410" width="100" height="40" rx="6" fill="#d9cdbb"/>
+<path d="M460 240c50 0 50 80 0 90" stroke="#f9f6f0" stroke-width="22" fill="none"/>
+<path d="M460 240c50 0 50 80 0 90" stroke="#bfae95" stroke-width="4" fill="none"/>
+</svg>

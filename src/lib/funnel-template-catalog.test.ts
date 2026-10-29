@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { FUNNEL_TEMPLATE_GALLERY, type FunnelTemplateGalleryItem } from "@/lib/funnel-template-gallery";
 import { WEBINAR_TEMPLATES } from "@/lib/funnel-templates/webinar";
+import { LEADS_TEMPLATES } from "@/lib/funnel-templates/leads";
+import { SALES_TEMPLATES } from "@/lib/funnel-templates/sales";
 import {
   compatibleStepTypes,
   DEFAULT_FUNNEL_TEMPLATE_STYLE,
@@ -69,7 +71,11 @@ describe("template catalog labels", () => {
     // Retired ids are no longer offered for any step; step-only templates keep their steps but are not browsable.
     expect(compatibleStepTypes({ id: "webinar-thank-you", goal: "webinar" })).toEqual([]);
     expect(compatibleStepTypes({ id: "custom-terms", goal: "custom" })).toEqual([]);
-    expect(compatibleStepTypes({ id: "sell-simple-checkout", goal: "sell" })).toEqual(["sales_page", "order_form", "upsell", "downsell"]);
+    expect(compatibleStepTypes({ id: "sell-simple-checkout", goal: "sell" })).toEqual([]);
+    expect(compatibleStepTypes({ id: "sales-course-watercolor", goal: "sell" })).toEqual(["sales_page", "order_form", "upsell", "downsell"]);
+    expect(compatibleStepTypes({ id: "sales-course-watercolor-thanks", goal: "sell" })).toEqual(["thank_you_page"]);
+    expect(compatibleStepTypes({ id: "leads-checklist-minimal", goal: "audience" })).toEqual(["opt_in_page", "inline_form", "popup_form", "link_in_bio"]);
+    expect(compatibleStepTypes({ id: "leads-checklist-minimal-thanks", goal: "audience" })).toEqual(["opt_in_thank_you_page"]);
     expect(deriveFunnelTemplatePurposes({ id: "audience-volunteer", goal: "audience" })).toEqual(["leads"]);
   });
 });
@@ -84,11 +90,12 @@ describe("filterFunnelTemplateCatalog", () => {
 
   it("filters by purpose, style, or both", () => {
     const sales = filterFunnelTemplateCatalog(catalog, { purpose: "sales" });
-    // 銷售用途現在由帶 sales 標籤的 Webinar 範本代表；結帳範本只在步驟選單。
-    expect(sales.map((entry) => entry.id)).toEqual(["webinar-saas-split", "webinar-travel-story", "webinar-career-value", "webinar-ecommerce-data"]);
+    // 銷售用途：帶 sales 標籤的 Webinar 範本＋8 個銷售頁範本（感謝頁只在步驟選單）。
+    expect(sales.map((entry) => entry.id)).toEqual(["webinar-saas-split", "webinar-travel-story", "webinar-career-value", "webinar-ecommerce-data", ...SALES_TEMPLATES.map((template) => template.id)]);
+    expect(filterFunnelTemplateCatalog(catalog, { purpose: "leads" }).map((entry) => entry.id)).toEqual(LEADS_TEMPLATES.map((template) => template.id));
     expect(sales.every((entry) => entry.purposes.includes("sales"))).toBe(true);
     expect(filterFunnelTemplateCatalog(catalog, { style: "natural" }).every((entry) => entry.styles.includes("natural"))).toBe(true);
-    expect(filterFunnelTemplateCatalog(catalog, { purpose: "sales", style: "professional" }).map((entry) => entry.id)).toEqual(["webinar-saas-split", "webinar-career-value"]);
+    expect(filterFunnelTemplateCatalog(catalog, { purpose: "sales", style: "professional" }).map((entry) => entry.id)).toEqual(["webinar-saas-split", "webinar-career-value", ...SALES_TEMPLATES.filter((template) => template.styles.includes("professional")).map((template) => template.id)]);
     expect(filterFunnelTemplateCatalog(catalog, { purpose: "policy" }).map((entry) => entry.id)).toEqual(["custom-privacy-v2", "custom-terms-v2"]);
     expect(filterFunnelTemplateCatalog(catalog, { purpose: "policy", style: "vivid" })).toEqual([]);
   });
@@ -104,6 +111,10 @@ describe("filterFunnelTemplateCatalog", () => {
     expect(webinar).toEqual(expect.arrayContaining(["webinar-thank-you-v2", "webinar-broadcast-v2"]));
     expect(filterFunnelTemplateCatalog(catalog, { purpose: "webinar", style: "minimal" }).map((entry) => entry.id)).toEqual(expect.arrayContaining(["webinar-ai-minimal", "webinar-thank-you-v2"]));
     expect(filterFunnelTemplateCatalog(catalog, { purpose: "webinar", style: "luxe" }).map((entry) => entry.id)).toEqual(["webinar-photo-portfolio", "webinar-aesthetic-clinic"]);
+    for (const template of [...LEADS_TEMPLATES, ...SALES_TEMPLATES]) {
+      for (const style of template.styles) expect(filterFunnelTemplateCatalog(catalog, { purpose: template.kind, style }).map((entry) => entry.id)).toContain(template.id);
+      expect(catalog.find((entry) => entry.id === template.id)?.registered).toBe(true);
+    }
     // Every catalog entry of a registration template is registered through its own tags, not derived.
     expect(catalog.filter((entry) => WEBINAR_TEMPLATES.some((template) => template.id === entry.id)).every((entry) => entry.registered)).toBe(true);
   });

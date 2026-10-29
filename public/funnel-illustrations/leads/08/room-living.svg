@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 600" width="800" height="600">
+<title>空間線稿：老屋客廳翻新後，木地板、沙發與大窗</title>
+<rect width="800" height="600" fill="#efece6"/>
+<path d="M0 440 H800 V600 H0 Z" fill="#e2d3bf"/>
+<g stroke="#c9b08c" stroke-width="1.2"><path d="M0 470 H800 M0 505 H800 M0 545 H800 M120 440 V470 M340 470 V505 M560 440 V470 M220 505 V545 M640 505 V545 M420 545 V600"/></g>
+<rect x="460" y="90" width="250" height="250" fill="#dfe7e2"/>
+<g fill="none" stroke="#1d2422" stroke-width="2.4" stroke-linejoin="round" stroke-linecap="round">
+<path d="M0 440 H800"/>
+<rect x="460" y="90" width="250" height="250"/><path d="M585 90 V340 M460 215 H710"/>
+<path d="M90 300 h300 v100 h-300 z M90 300 v-60 h300 v60 M70 320 v80 h20 M410 320 v80 h-20 M110 400 v24 M370 400 v24"/>
+<path d="M130 270 h70 v30 M230 262 h80 v38" stroke-width="1.8"/>
+<path d="M200 470 h220 l-20 -24 h-180 z M220 470 v26 M400 470 v26"/>
+<path d="M560 440 v-60 M520 380 h80 M534 380 l26 -70 l26 70" />
+<path d="M90 120 h140 M100 120 v70 h120 v-70" stroke-width="1.8"/>
+</g>
+<path d="M90 300 h300 v-60 h-300 z" fill="#2c4a3f" fill-opacity=".14"/>
+<rect x="104" y="128" width="112" height="56" fill="#8a5a24" fill-opacity=".25"/>
+<g fill="#2c4a3f"><circle cx="736" cy="390" r="22"/><circle cx="758" cy="364" r="18"/><circle cx="722" cy="356" r="16"/></g>
+<path d="M730 440 v-50 M742 440 l-6 -40" stroke="#1d2422" stroke-width="2.4"/>
+<path d="M712 440 h44 l-6 -40 h-32 z" fill="#8a5a24"/>
+</svg>

@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 400" role="img" aria-label="功能示意：拖拉班表格子，自動檢查人力">
+<rect width="640" height="400" fill="#e7ecff"/>
+<circle cx="560" cy="60" r="120" fill="#ffffff" opacity="0.45"/>
+
+<rect x="150" y="110" width="62" height="50" rx="8" fill="#ffffff" stroke="#c5d0f5"/><rect x="222" y="110" width="62" height="50" rx="8" fill="#ffffff" stroke="#c5d0f5"/><rect x="294" y="110" width="62" height="50" rx="8" fill="#ffffff" stroke="#c5d0f5"/><rect x="366" y="110" width="62" height="50" rx="8" fill="#ffffff" stroke="#c5d0f5"/><rect x="438" y="110" width="62" height="50" rx="8" fill="#ffffff" stroke="#c5d0f5"/><rect x="150" y="172" width="62" height="50" rx="8" fill="#ffffff" stroke="#c5d0f5"/><rect x="222" y="172" width="62" height="50" rx="8" fill="#ffffff" stroke="#c5d0f5"/><rect x="294" y="172" width="62" height="50" rx="8" fill="#ffffff" stroke="#c5d0f5"/><rect x="366" y="172" width="62" height="50" rx="8" fill="#ffffff" stroke="#c5d0f5"/><rect x="438" y="172" width="62" height="50" rx="8" fill="#ffffff" stroke="#c5d0f5"/><rect x="150" y="234" width="62" height="50" rx="8" fill="#ffffff" stroke="#c5d0f5"/><rect x="222" y="234" width="62" height="50" rx="8" fill="#ffffff" stroke="#c5d0f5"/><rect x="294" y="234" width="62" height="50" rx="8" fill="#ffffff" stroke="#c5d0f5"/><rect x="366" y="234" width="62" height="50" rx="8" fill="#ffffff" stroke="#c5d0f5"/><rect x="438" y="234" width="62" height="50" rx="8" fill="#ffffff" stroke="#c5d0f5"/>
+<rect x="222" y="172" width="134" height="50" rx="8" fill="#3b5bdb"/>
+<rect x="294" y="110" width="62" height="50" rx="8" fill="#91a7ff"/>
+<rect x="150" y="234" width="62" height="50" rx="8" fill="#91a7ff"/>
+<g transform="translate(330 214)"><path d="M0 0 L0 46 L12 34 L22 56 L32 51 L22 30 L38 30Z" fill="#ffffff" stroke="#0d1b2a" stroke-width="4" stroke-linejoin="round"/></g>
+<rect x="440" y="300" width="150" height="44" rx="22" fill="#ffffff"/><circle cx="466" cy="322" r="10" fill="#0f7a5f"/><rect x="484" y="316" width="88" height="12" rx="6" fill="#c3cad6"/>
+</svg>

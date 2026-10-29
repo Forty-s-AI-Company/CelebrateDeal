@@ -1,0 +1,4 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 24" width="240" height="24" role="img" aria-label="金色分隔線">
+<defs><linearGradient id="g" gradientUnits="userSpaceOnUse" x1="0" y1="12" x2="240" y2="12"><stop offset="0" stop-color="#c9a063" stop-opacity="0"/><stop offset=".5" stop-color="#e2c48f"/><stop offset="1" stop-color="#c9a063" stop-opacity="0"/></linearGradient></defs>
+<path d="M0 12h104M136 12h104" stroke="url(#g)" stroke-width="1.4"/><path d="M120 3l9 9-9 9-9-9z" fill="none" stroke="#c9a063" stroke-width="1.4"/><circle cx="120" cy="12" r="2.5" fill="#e2c48f"/>
+</svg>

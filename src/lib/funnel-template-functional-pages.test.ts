@@ -13,6 +13,8 @@ import {
   previewFunnelTemplate,
 } from "./funnel-template-gallery";
 import { WEBINAR_TEMPLATES } from "./funnel-templates/webinar";
+import { LEADS_TEMPLATES } from "./funnel-templates/leads";
+import { SALES_TEMPLATES } from "./funnel-templates/sales";
 
 const flatten = (nodes: FunnelNode[]): FunnelNode[] => nodes.flatMap((node) => [node, ...(node.children ? flatten(node.children) : [])]);
 const signature = (id: string) => flatten(getFunnelTemplateGalleryItem(id)!.build("snapshot")).map((node) => `${node.id}:${node.type}`);
@@ -28,10 +30,16 @@ const RETIRED: ReadonlyArray<[string, string]> = [
   ["webinar-broadcast", "webinar-broadcast-v2"],
   ["custom-privacy", "custom-privacy-v2"],
   ["custom-terms", "custom-terms-v2"],
-];
-const STEP_ONLY = [
-  "audience-volunteer", "audience-charity-event", "audience-environment", "audience-course-workbook", "audience-course-consultation", "audience-course-lesson",
-  "sell-product-checkout", "sell-simple-checkout", "sell-content-subscription",
+  // 名單頁與結帳／訂閱舊範本（docs/product/funnel-templates）。
+  ["audience-volunteer", "leads-checklist-minimal"],
+  ["audience-charity-event", "leads-newsletter-editorial"],
+  ["audience-environment", "leads-newsletter-editorial"],
+  ["audience-course-workbook", "leads-toolkit-freelance"],
+  ["audience-course-consultation", "leads-consult-interior"],
+  ["audience-course-lesson", "leads-email-course-photo"],
+  ["sell-product-checkout", "sales-product-coffee"],
+  ["sell-simple-checkout", "sales-digital-planner"],
+  ["sell-content-subscription", "sales-saas-plans"],
 ];
 
 describe("功能頁 v2 的統一設計", () => {
@@ -156,28 +164,39 @@ describe("新預設值", () => {
   });
 });
 
-describe("名單頁與結帳範本：沒有替代品，只在步驟選單", () => {
-  it.each(STEP_ONLY)("%s 不在範本庫瀏覽，也不在不帶步驟的列表", (id) => {
-    const item = getFunnelTemplateGalleryItem(id)!;
-    expect(item.libraryHidden).toBe(true);
-    expect(item.retired).toBeUndefined();
-    expect(listFunnelTemplateGallery(item.goal).map((candidate) => candidate.id)).not.toContain(id);
-    expect(listFunnelTemplateCatalog().map((entry) => entry.id)).not.toContain(id);
-    expect(instantiateFunnelTemplate(id).root.length).toBeGreaterThan(0);
+describe("步驟選單：每個步驟都有範本可選", () => {
+  const ids = (goal: Parameters<typeof listFunnelTemplateGallery>[0], type: Parameters<typeof listFunnelTemplateGallery>[1]) => listFunnelTemplateGallery(goal, type).map((item) => item.id);
+  const leads = LEADS_TEMPLATES.filter((template) => !template.hidden).map((template) => template.id);
+  const sales = SALES_TEMPLATES.filter((template) => !template.hidden).map((template) => template.id);
+
+  it("名單目標：內容步驟列出名單頁，名單感謝頁步驟列出對應感謝頁", () => {
+    expect(leads).toHaveLength(8);
+    for (const type of ["opt_in_page", "inline_form", "popup_form", "link_in_bio"] as const) expect(ids("audience", type)).toEqual(leads);
+    expect(ids("audience", "opt_in_thank_you_page")).toEqual(leads.map((id) => `${id}-thanks`));
   });
 
-  it("對應步驟仍可選擇這些範本，沒有步驟變成無範本可選", () => {
-    expect(listFunnelTemplateGallery("audience", "opt_in_page").map((item) => item.id)).toEqual(expect.arrayContaining(STEP_ONLY.filter((id) => id.startsWith("audience-"))));
-    for (const type of ["inline_form", "popup_form", "link_in_bio"] as const) {
-      expect(listFunnelTemplateGallery("audience", type).map((item) => item.id)).toEqual(["audience-volunteer", "audience-charity-event", "audience-environment"]);
-    }
-    for (const type of ["order_form", "sales_page", "upsell", "downsell"] as const) {
-      expect(listFunnelTemplateGallery("sell", type).map((item) => item.id)).toEqual(["sell-product-checkout", "sell-simple-checkout", "sell-content-subscription"]);
-    }
+  it("銷售目標：銷售與訂單步驟列出銷售頁，感謝頁步驟列出訂單感謝頁", () => {
+    expect(sales).toHaveLength(8);
+    for (const type of ["order_form", "sales_page", "upsell", "downsell"] as const) expect(ids("sell", type)).toEqual(sales);
+    expect(ids("sell", "thank_you_page")).toEqual(sales.map((id) => `${id}-thanks`));
+  });
+
+  it("其他目標的步驟仍有範本", () => {
     for (const type of ["webinar_registration_page", "webinar_thank_you_page", "webinar_broadcast_page"] as const) {
       expect(listFunnelTemplateGallery("webinar", type).length).toBeGreaterThan(0);
     }
     for (const type of ["info_page", "contact_us_page"] as const) expect(listFunnelTemplateGallery("custom", type).length).toBeGreaterThan(0);
+  });
+
+  it("感謝頁只在感謝頁步驟，不在範本庫瀏覽", () => {
+    const catalog = listFunnelTemplateCatalog().map((entry) => entry.id);
+    for (const id of [...leads, ...sales]) {
+      const thanks = getFunnelTemplateGalleryItem(`${id}-thanks`)!;
+      expect(thanks.libraryHidden).toBe(true);
+      expect(catalog).not.toContain(thanks.id);
+      expect(catalog).toContain(id);
+      expect(instantiateFunnelTemplate(thanks.id).root.length).toBeGreaterThan(0);
+    }
   });
 
   it("v2 功能頁只出現在對應步驟", () => {

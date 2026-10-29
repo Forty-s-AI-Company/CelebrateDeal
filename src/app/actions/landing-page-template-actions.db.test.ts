@@ -254,7 +254,7 @@ describe("cross-tenant isolation (PostgreSQL)", () => {
   it("cannot read or apply a template to another tenant's page", async () => {
     const victim = await createFunnelPage(b, "victim");
     expect(await readLandingPageTemplateTargetAction(victim.page.id)).toEqual({ ok: false, message: expect.stringContaining("找不到這個一頁式網站") });
-    const applied = await applyLandingPageTemplateAction(idle, form({ templateKind: "platform", templateId: "audience-volunteer", pageId: victim.page.id, stepId: victim.stepId, revision: victim.page.revision }));
+    const applied = await applyLandingPageTemplateAction(idle, form({ templateKind: "platform", templateId: "leads-checklist-minimal", pageId: victim.page.id, stepId: victim.stepId, revision: victim.page.revision }));
     expect(applied).toMatchObject({ status: "error", message: expect.stringContaining("找不到這個一頁式網站") });
     const after = await storedStep(victim.page.id, victim.stepId);
     expect(after.revision).toBe(victim.page.revision);
@@ -289,25 +289,25 @@ describe("apply and create (PostgreSQL)", () => {
   it("refuses a stale revision and leaves the page unchanged", async () => {
     const target = await createFunnelPage(a, "stale");
     await getDb().landingPage.update({ where: { id: target.page.id }, data: { revision: { increment: 1 } } });
-    const applied = await applyLandingPageTemplateAction(idle, form({ templateKind: "platform", templateId: "audience-volunteer", pageId: target.page.id, stepId: target.stepId, revision: target.page.revision }));
+    const applied = await applyLandingPageTemplateAction(idle, form({ templateKind: "platform", templateId: "leads-checklist-minimal", pageId: target.page.id, stepId: target.stepId, revision: target.page.revision }));
     expect(applied).toMatchObject({ status: "error", code: "conflict" });
     expect(JSON.stringify((await storedStep(target.page.id, target.stepId)).page)).toContain("stale 的名單頁標題");
   });
 
   it("refuses a platform template on a step it is not offered for, and the system step", async () => {
     const target = await createFunnelPage(a, "typed");
-    const wrongType = await applyLandingPageTemplateAction(idle, form({ templateKind: "platform", templateId: "sell-product-checkout", pageId: target.page.id, stepId: target.stepId, revision: target.page.revision }));
+    const wrongType = await applyLandingPageTemplateAction(idle, form({ templateKind: "platform", templateId: "sales-course-watercolor", pageId: target.page.id, stepId: target.stepId, revision: target.page.revision }));
     expect(wrongType).toMatchObject({ status: "error", message: expect.stringContaining("不適用") });
-    const system = await applyLandingPageTemplateAction(idle, form({ templateKind: "platform", templateId: "audience-volunteer", pageId: target.page.id, stepId: "inactive", revision: target.page.revision }));
+    const system = await applyLandingPageTemplateAction(idle, form({ templateKind: "platform", templateId: "leads-checklist-minimal", pageId: target.page.id, stepId: "inactive", revision: target.page.revision }));
     expect(system).toMatchObject({ status: "error", message: expect.stringContaining("系統管理") });
     expect((await storedStep(target.page.id, target.stepId)).revision).toBe(target.page.revision);
   });
 
   it("applies a platform template to a compatible step", async () => {
     const target = await createFunnelPage(a, "platform");
-    const applied = await applyLandingPageTemplateAction(idle, form({ templateKind: "platform", templateId: "audience-volunteer", pageId: target.page.id, stepId: target.stepId, revision: target.page.revision }));
+    const applied = await applyLandingPageTemplateAction(idle, form({ templateKind: "platform", templateId: "leads-checklist-minimal", pageId: target.page.id, stepId: target.stepId, revision: target.page.revision }));
     expect(applied).toMatchObject({ status: "success" });
-    expect((await storedStep(target.page.id, target.stepId)).step.template).toEqual({ source: "template", templateId: "audience-volunteer" });
+    expect((await storedStep(target.page.id, target.stepId)).step.template).toEqual({ source: "template", templateId: "leads-checklist-minimal" });
   });
 
   it("creates a new site from a platform or an own template in the selected project", async () => {
@@ -350,7 +350,7 @@ describe("draft size limit (PostgreSQL)", () => {
   async function nearlyFullFunnel() {
     const { page, stepId, thankYouStepId } = await createFunnelPage(a, "full");
     const content = parseFunnelStepPages(page.draftContent)!;
-    const growth = landingPageContentBytes(instantiateFunnelTemplate("audience-volunteer", content.pages[stepId]!.id)) - landingPageContentBytes(content.pages[stepId]);
+    const growth = landingPageContentBytes(instantiateFunnelTemplate("leads-checklist-minimal", content.pages[stepId]!.id)) - landingPageContentBytes(content.pages[stepId]);
     expect(growth).toBeGreaterThan(4_000);
     const target = LANDING_PAGE_MAX_CONTENT_BYTES - Math.floor(growth / 2);
     const fillers: FunnelNode[] = [];
@@ -367,7 +367,7 @@ describe("draft size limit (PostgreSQL)", () => {
   it("refuses a template that would grow the draft past the 512 KiB draft limit and leaves the page unchanged", async () => {
     const { page, stepId } = await nearlyFullFunnel();
     const before = await getDb().landingPage.findUniqueOrThrow({ where: { id: page.id } });
-    const applied = await applyLandingPageTemplateAction(idle, form({ templateKind: "platform", templateId: "audience-volunteer", pageId: page.id, stepId, revision: page.revision }));
+    const applied = await applyLandingPageTemplateAction(idle, form({ templateKind: "platform", templateId: "leads-checklist-minimal", pageId: page.id, stepId, revision: page.revision }));
     expect(applied).toMatchObject({ status: "error", message: expect.stringContaining("512 KiB") });
     const after = await getDb().landingPage.findUniqueOrThrow({ where: { id: page.id } });
     expect(after.revision).toBe(before.revision);
@@ -596,7 +596,7 @@ describe("list and preview (PostgreSQL)", () => {
 
   it("lists a small thumbnail and reads the full document on demand", async () => {
     await createFunnelPage(a);
-    const content = instantiateFunnelTemplate("audience-volunteer", "x");
+    const content = instantiateFunnelTemplate("leads-checklist-minimal", "x");
     expect(content.root.length).toBeGreaterThan(TEMPLATE_THUMBNAIL_SECTIONS);
     const row = await getDb().landingPageTemplate.create({ data: { vendorId: a.vendorId, name: "長頁", content: content as never } });
     const [listed] = await listLandingPageTemplates();

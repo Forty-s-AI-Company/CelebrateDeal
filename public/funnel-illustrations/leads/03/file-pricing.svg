@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 300" width="480" height="300">
+<title>時薪與報價計算器縮圖</title>
+<rect width="480" height="300" fill="#f5f7fb"/>
+<path d="M0 230 C120 200 200 260 300 220 C380 190 430 210 480 200 V300 H0 Z" fill="#e8eefc"/>
+<g transform="translate(150 34)">
+<rect width="180" height="232" rx="22" fill="#0f1e36"/>
+<rect x="16" y="18" width="148" height="56" rx="10" fill="#1b3155"/>
+<rect x="74" y="36" width="76" height="22" rx="4" fill="#5ad1c3"/>
+<g fill="#c7d2e3">
+<rect x="16" y="90" width="40" height="30" rx="8"/><rect x="70" y="90" width="40" height="30" rx="8"/><rect x="124" y="90" width="40" height="30" rx="8" fill="#1f4fd6"/>
+<rect x="16" y="130" width="40" height="30" rx="8"/><rect x="70" y="130" width="40" height="30" rx="8"/><rect x="124" y="130" width="40" height="30" rx="8" fill="#1f4fd6"/>
+<rect x="16" y="170" width="40" height="30" rx="8"/><rect x="70" y="170" width="40" height="30" rx="8"/><rect x="124" y="170" width="40" height="70" rx="8" fill="#5ad1c3"/>
+</g>
+</g>
+<g transform="translate(46 70)" fill="none" stroke="#1f4fd6" stroke-width="4" stroke-linecap="round">
+<circle cx="40" cy="40" r="34" fill="#ffffff"/><path d="M40 20 V40 L54 50"/>
+</g>
+<g transform="translate(360 60)"><rect width="76" height="44" rx="10" fill="#5ad1c3"/><text x="38" y="29" text-anchor="middle" font-size="18" font-weight="700" fill="#0f1e36" font-family="'Noto Sans TC',sans-serif">CALC</text></g>
+</svg>

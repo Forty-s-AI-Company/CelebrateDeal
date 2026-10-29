@@ -11,6 +11,8 @@ import { findFunnelContrastIssues } from "./funnel-design-contrast";
 import { FUNNEL_CAPABILITIES, parsePageDocument, type FunnelNode } from "./funnel-page-document";
 import { WEBINAR_TEMPLATES } from "./funnel-templates/webinar";
 import { FUNCTIONAL_PAGE_TEMPLATES } from "./funnel-template-functional-pages";
+import { LEADS_TEMPLATES } from "./funnel-templates/leads";
+import { SALES_TEMPLATES } from "./funnel-templates/sales";
 import {
   FUNNEL_TEMPLATE_GALLERY,
   FUNNEL_TEMPLATE_GOALS,
@@ -26,7 +28,8 @@ function flatten(nodes: FunnelNode[]): FunnelNode[] {
 }
 
 /** Templates defined in this file's era; webinar registry templates pin their own node ids in their own tests. */
-const LEGACY_TEMPLATES = FUNNEL_TEMPLATE_GALLERY.filter((template) => !WEBINAR_TEMPLATES.some((webinar) => webinar.id === template.id) && !FUNCTIONAL_PAGE_TEMPLATES.some((page) => page.id === template.id));
+const CONVERSION_IDS = new Set([...LEADS_TEMPLATES, ...SALES_TEMPLATES].flatMap((template) => [template.id, `${template.id}-thanks`]));
+const LEGACY_TEMPLATES = FUNNEL_TEMPLATE_GALLERY.filter((template) => !WEBINAR_TEMPLATES.some((webinar) => webinar.id === template.id) && !FUNCTIONAL_PAGE_TEMPLATES.some((page) => page.id === template.id) && !CONVERSION_IDS.has(template.id));
 const REGISTRATION_IDS = WEBINAR_TEMPLATES.filter((template) => !template.hidden).map((template) => template.id);
 
 describe("funnel template gallery", () => {
@@ -34,10 +37,10 @@ describe("funnel template gallery", () => {
     expect(FUNNEL_TEMPLATE_GOALS).toEqual(["sell", "audience", "custom", "webinar"]);
     expect(LEGACY_TEMPLATES).toHaveLength(19);
     expect(new Set(FUNNEL_TEMPLATE_GALLERY.map(item => item.id)).size).toBe(FUNNEL_TEMPLATE_GALLERY.length);
-    expect(FUNNEL_TEMPLATE_GALLERY).toHaveLength(19 + WEBINAR_TEMPLATES.length + FUNCTIONAL_PAGE_TEMPLATES.length);
-    // 退役與「只在步驟選單」的範本不出現在不帶步驟的瀏覽；它們仍可由 id 解析。
-    expect(listFunnelTemplateGallery("sell")).toEqual([]);
-    expect(listFunnelTemplateGallery("audience")).toEqual([]);
+    expect(FUNNEL_TEMPLATE_GALLERY).toHaveLength(19 + WEBINAR_TEMPLATES.length + FUNCTIONAL_PAGE_TEMPLATES.length + CONVERSION_IDS.size);
+    // 退役範本與感謝頁（只在步驟選單）不出現在不帶步驟的瀏覽；它們仍可由 id 解析。
+    expect(listFunnelTemplateGallery("sell").map((item) => item.id)).toEqual(SALES_TEMPLATES.map((template) => template.id));
+    expect(listFunnelTemplateGallery("audience").map((item) => item.id)).toEqual(LEADS_TEMPLATES.map((template) => template.id));
     expect(listFunnelTemplateGallery("custom").map((item) => item.id)).toEqual(["custom-luxury-course", "custom-privacy-v2", "custom-terms-v2"]);
     expect(listFunnelTemplateGallery("webinar").map((item) => item.id)).toEqual([...REGISTRATION_IDS, "webinar-thank-you-v2", "webinar-broadcast-v2"]);
     expect(listFunnelTemplateGallery().map((item) => item.id)).toEqual(FUNNEL_TEMPLATE_GALLERY.filter((item) => !item.retired && !item.hidden && !item.libraryHidden).map((item) => item.id));
@@ -125,10 +128,8 @@ describe("funnel template gallery", () => {
     expect(listFunnelTemplateGallery("webinar", "webinar_thank_you_page").map(t => t.id)).toEqual(["webinar-thank-you-v2"]);
     expect(listFunnelTemplateGallery("audience", "webinar_registration_page")).toEqual([]);
     expect(listFunnelTemplateGallery("webinar", "opt_in_page")).toEqual([]);
-    expect(listFunnelTemplateGallery("audience", "opt_in_page").filter(t => t.id.startsWith("audience-course-"))).toHaveLength(3);
-    for (const step of ["inline_form", "popup_form", "link_in_bio"] as const) {
-      expect(listFunnelTemplateGallery("audience", step).map(t => t.id)).toEqual(["audience-volunteer", "audience-charity-event", "audience-environment"]);
-    }
+    // 舊名單頁已退役（docs/product/funnel-templates），由新名單頁取代。
+    expect(listFunnelTemplateGallery("audience", "opt_in_page").filter(t => t.id.startsWith("audience-"))).toHaveLength(0);
     for (const id of ["webinar-course-registration", "webinar-workshop-registration", "webinar-strategy-registration"]) {
       const nodes = flatten(instantiateFunnelTemplate(id).root);
       expect(nodes.some(n => n.type === "form")).toBe(false);

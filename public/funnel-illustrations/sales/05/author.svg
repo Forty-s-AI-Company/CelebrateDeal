@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400" role="img" aria-label="作者葉小森的插畫頭像（虛構）">
+<rect width="400" height="400" fill="#ffcf5c"/>
+<circle cx="200" cy="210" r="150" fill="#fff1c9"/>
+<path d="M90 400 C96 320 140 286 200 286 C260 286 304 320 310 400Z" fill="#2e7d4f" stroke="#1f2a1c" stroke-width="5" stroke-linejoin="round" stroke-linecap="round"/>
+<path d="M176 290 L200 330 L224 290" fill="#fffdf6" stroke="#1f2a1c" stroke-width="5" stroke-linejoin="round" stroke-linecap="round"/>
+<rect x="180" y="240" width="40" height="52" fill="#f2c39b" stroke="#1f2a1c" stroke-width="5" stroke-linejoin="round" stroke-linecap="round"/>
+<ellipse cx="200" cy="190" rx="68" ry="76" fill="#f6cfaa" stroke="#1f2a1c" stroke-width="5" stroke-linejoin="round" stroke-linecap="round"/>
+<path d="M132 176 C130 120 170 100 204 102 C250 104 272 140 268 184 C250 150 214 142 178 150 C160 156 146 166 132 176Z" fill="#3b2a1e" stroke="#1f2a1c" stroke-width="5" stroke-linejoin="round" stroke-linecap="round"/>
+<path d="M112 128 C150 94 250 94 288 128 C250 126 150 126 112 128Z" fill="#c0412b" stroke="#1f2a1c" stroke-width="5" stroke-linejoin="round" stroke-linecap="round"/>
+<path d="M150 124 C150 80 250 80 250 124Z" fill="#c0412b" stroke="#1f2a1c" stroke-width="5" stroke-linejoin="round" stroke-linecap="round"/>
+<path d="M232 96 C252 70 280 70 290 80 C272 90 252 96 232 96Z" fill="#8fc79a" stroke="#1f2a1c" stroke-width="5" stroke-linejoin="round" stroke-linecap="round"/>
+<g fill="none" stroke="#1f2a1c" stroke-width="5" stroke-linejoin="round" stroke-linecap="round"><circle cx="174" cy="196" r="18"/><circle cx="226" cy="196" r="18"/><path d="M192 196 H208"/></g>
+<circle cx="174" cy="198" r="4" fill="#1f2a1c"/><circle cx="226" cy="198" r="4" fill="#1f2a1c"/>
+<path d="M182 232 C192 242 208 242 218 232" fill="none" stroke="#1f2a1c" stroke-width="5" stroke-linejoin="round" stroke-linecap="round"/>
+<circle cx="150" cy="222" r="10" fill="#e98a6d" opacity="0.6"/><circle cx="250" cy="222" r="10" fill="#e98a6d" opacity="0.6"/>
+<path d="M300 300 C300 260 320 236 344 230 C344 266 330 290 300 300Z" fill="#8fc79a" stroke="#1f2a1c" stroke-width="5" stroke-linejoin="round" stroke-linecap="round"/>
+</svg>

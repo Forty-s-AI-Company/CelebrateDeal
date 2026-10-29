@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 400" role="img" aria-label="功能示意：員工在 App 送出換班，店長一鍵核准">
+<rect width="640" height="400" fill="#dff5ec"/>
+<circle cx="560" cy="60" r="120" fill="#ffffff" opacity="0.45"/>
+
+<rect x="110" y="90" width="190" height="96" rx="16" fill="#ffffff"/><circle cx="148" cy="138" r="22" fill="#ffa94d"/><rect x="182" y="120" width="96" height="14" rx="7" fill="#0d1b2a" opacity="0.8"/><rect x="182" y="144" width="70" height="12" rx="6" fill="#c3cad6"/>
+<rect x="340" y="214" width="190" height="96" rx="16" fill="#ffffff"/><circle cx="378" cy="262" r="22" fill="#38d9a9"/><rect x="412" y="244" width="96" height="14" rx="7" fill="#0d1b2a" opacity="0.8"/><rect x="412" y="268" width="70" height="12" rx="6" fill="#c3cad6"/>
+<path d="M310 138 C380 138 420 160 430 200" fill="none" stroke="#0f7a5f" stroke-width="6" stroke-linecap="round"/><path d="M416 190 l14 14 l10 -18" fill="none" stroke="#0f7a5f" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M330 262 C260 262 220 240 210 200" fill="none" stroke="#3b5bdb" stroke-width="6" stroke-linecap="round"/><path d="M200 214 l10 -16 l14 12" fill="none" stroke="#3b5bdb" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+<rect x="110" y="300" width="150" height="44" rx="22" fill="#0f7a5f"/><path d="M134 322 l8 8 l14 -16" fill="none" stroke="#ffffff" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/><rect x="166" y="316" width="72" height="12" rx="6" fill="#ffffff" opacity="0.85"/>
+</svg>

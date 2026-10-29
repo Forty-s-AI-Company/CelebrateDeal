@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 760" width="600" height="760">
+<title>空間線稿：書房角落，整面書牆與窗邊書桌</title>
+<rect width="600" height="760" fill="#efece6"/>
+<path d="M0 600 H600 V760 H0 Z" fill="#e2d3bf"/>
+<rect x="320" y="80" width="240" height="520" fill="#8a5a24" fill-opacity=".2"/>
+<g fill="none" stroke="#1d2422" stroke-width="2.4" stroke-linejoin="round" stroke-linecap="round">
+<path d="M0 600 H600"/>
+<rect x="320" y="80" width="240" height="520"/><path d="M320 180 H560 M320 280 H560 M320 380 H560 M320 480 H560 M440 80 V600"/>
+<path d="M340 180 v-60 h14 v60 M358 180 v-70 h16 v70 M380 180 v-50 h12 v50 M460 280 v-60 h14 v60 M478 280 v-54 h16 v54 M340 380 v-66 h16 v66 M362 380 v-50 h12 v50 M470 480 v-60 h16 v60 M492 480 v-46 h12 v46"/>
+<rect x="60" y="120" width="200" height="240"/><path d="M160 120 V360 M60 240 H260"/>
+<path d="M40 430 H290 M60 430 V600 M270 430 V600 M70 470 H160"/>
+<path d="M180 430 v-50 l30 -10 M210 370 l20 20"/>
+<path d="M120 520 h70 v40 h-70 z M130 560 v40 M180 560 v40 M120 520 v-50"/>
+</g>
+<rect x="60" y="120" width="200" height="240" fill="#dfe7e2" fill-opacity=".9"/>
+<path d="M160 120 V360 M60 240 H260" stroke="#1d2422" stroke-width="2.4"/>
+<rect x="60" y="120" width="200" height="240" fill="none" stroke="#1d2422" stroke-width="2.4"/>
+<g fill="#2c4a3f"><rect x="398" y="230" width="22" height="50"/><rect x="510" y="330" width="26" height="50"/></g>
+</svg>

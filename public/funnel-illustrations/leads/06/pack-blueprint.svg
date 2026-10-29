@@ -1,0 +1,79 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1040 620" width="1040" height="620" font-family="'Noto Serif TC','Noto Sans TC','Microsoft JhengHei',serif">
+<title>霧嶺 28L 山系通勤背包線稿（虛構品牌示意）</title>
+<defs>
+<pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse"><path d="M40 0H0V40" fill="none" stroke="#c9a46a" stroke-opacity=".07" stroke-width="1"/></pattern>
+<linearGradient id="fade" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#0f1714" stop-opacity="0"/><stop offset="1" stop-color="#0f1714"/></linearGradient>
+</defs>
+<rect width="1040" height="620" fill="url(#grid)"/>
+<g fill="none" stroke="#c9a46a" stroke-opacity=".16" stroke-width="1.2">
+<path d="M0 470 C120 420 190 450 280 400 S430 330 520 372 S700 450 800 392 S960 340 1040 380"/>
+<path d="M0 510 C140 470 230 500 320 455 S470 400 560 430 S720 500 830 450 S970 410 1040 440"/>
+<path d="M0 552 C150 520 250 548 360 510 S520 470 610 492 S760 548 880 510 S990 480 1040 500"/>
+</g>
+<g fill="none" stroke="#c9a46a" stroke-linecap="round" stroke-linejoin="round">
+<!-- shoulder straps behind -->
+<path d="M452 128 C430 170 418 240 420 330" stroke-width="2" stroke-opacity=".55"/>
+<path d="M588 128 C610 170 622 240 620 330" stroke-width="2" stroke-opacity=".55"/>
+<!-- haul loop -->
+<path d="M500 96 C500 70 540 70 540 96" stroke-width="2.4"/>
+<!-- main body -->
+<path d="M430 118 C430 100 448 94 470 94 H570 C592 94 610 100 610 118 L628 498 C629 526 612 540 586 540 H454 C428 540 411 526 412 498 Z" stroke-width="2.6"/>
+<!-- roll-top seam -->
+<path d="M432 150 H608" stroke-width="2"/>
+<path d="M436 160 H604" stroke-width="1" stroke-dasharray="4 6"/>
+<!-- top lid zip -->
+<path d="M456 124 C490 134 550 134 584 124" stroke-width="1.6"/>
+<circle cx="586" cy="124" r="4" stroke-width="1.6"/>
+<!-- front pocket -->
+<path d="M448 318 H592 L598 486 C598 500 590 508 576 508 H464 C450 508 442 500 442 486 Z" stroke-width="2.2"/>
+<path d="M454 330 H586" stroke-width="1" stroke-dasharray="4 6"/>
+<path d="M462 352 H578" stroke-width="1.6"/>
+<rect x="573" y="346" width="10" height="20" rx="3" stroke-width="1.6"/>
+<!-- compression straps -->
+<path d="M418 238 H622" stroke-width="2"/>
+<rect x="508" y="228" width="24" height="20" rx="4" stroke-width="2"/>
+<path d="M415 288 H625" stroke-width="2"/>
+<rect x="508" y="278" width="24" height="20" rx="4" stroke-width="2"/>
+<!-- brand patch -->
+<rect x="496" y="184" width="48" height="26" rx="4" stroke-width="1.6"/>
+<path d="M506 202 L514 192 L520 199 L526 190 L534 202" stroke-width="1.4"/>
+<!-- side pocket -->
+<path d="M412 420 C396 424 392 470 400 500 C404 516 414 520 420 518" stroke-width="2"/>
+<path d="M628 420 C644 424 648 470 640 500 C636 516 626 520 620 518" stroke-width="2"/>
+<!-- reflective loops -->
+<path d="M470 540 V556 M570 540 V556" stroke-width="2"/>
+</g>
+<!-- dimension lines -->
+<g stroke="#c9a46a" stroke-opacity=".7" stroke-width="1.2" fill="none">
+<path d="M352 94 V540 M344 94 H360 M344 540 H360"/>
+<path d="M412 584 H628 M412 576 V592 M628 576 V592"/>
+</g>
+<g fill="#c9a46a" font-size="17" letter-spacing="1">
+<text x="336" y="322" text-anchor="end">46 cm</text>
+<text x="520" y="612" text-anchor="middle">30 cm</text>
+</g>
+<!-- callouts -->
+<g stroke="#c9a46a" stroke-opacity=".75" stroke-width="1.2" fill="none">
+<path d="M600 154 L700 112 H860"/>
+<path d="M626 240 L700 238 H860"/>
+<path d="M598 420 L700 392 H860"/>
+<path d="M440 200 L330 178 H180"/>
+<path d="M416 460 L330 448 H180"/>
+</g>
+<g fill="#c9a46a"><circle cx="600" cy="154" r="4"/><circle cx="626" cy="240" r="4"/><circle cx="598" cy="420" r="4"/><circle cx="440" cy="200" r="4"/><circle cx="416" cy="460" r="4"/></g>
+<g fill="#f3f1ea" font-size="20">
+<text x="710" y="102">捲頂式主艙</text>
+<text x="710" y="228">雙段壓縮帶</text>
+<text x="710" y="382">快取前袋</text>
+<text x="330" y="168" text-anchor="end">15.6 吋筆電夾層</text>
+<text x="330" y="438" text-anchor="end">側邊水壺袋</text>
+</g>
+<g fill="#c8d3cc" font-size="14" letter-spacing="1">
+<text x="710" y="132">ROLL-TOP · 22–28L</text>
+<text x="710" y="258">COMPRESSION</text>
+<text x="710" y="412">QUICK ACCESS</text>
+<text x="330" y="196" text-anchor="end">LAPTOP SLEEVE</text>
+<text x="330" y="466" text-anchor="end">BOTTLE POCKET</text>
+</g>
+<g fill="#c9a46a" font-size="13" letter-spacing="3"><text x="24" y="36">RIDGE &amp; FOG · MODEL 28</text><text x="1016" y="36" text-anchor="end">DRAWING 01 / 03</text></g>
+</svg>

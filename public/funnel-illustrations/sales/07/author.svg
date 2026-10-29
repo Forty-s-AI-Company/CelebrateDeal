@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400" role="img" aria-label="營養師曾小米的插畫頭像（虛構）">
+<rect width="400" height="400" fill="#ffe8d6"/>
+<circle cx="200" cy="214" r="150" fill="#fff8f1"/>
+<path d="M92 400 C98 318 142 288 200 288 C258 288 302 318 308 400Z" fill="#ffffff" stroke="#2a1a10" stroke-width="4" stroke-linejoin="round" stroke-linecap="round"/>
+<path d="M200 300 V400" stroke="#2a1a10" stroke-width="4"/><circle cx="226" cy="340" r="5" fill="#2a1a10"/><circle cx="226" cy="370" r="5" fill="#2a1a10"/>
+<rect x="182" y="244" width="36" height="48" fill="#e9b58f" stroke="#2a1a10" stroke-width="4" stroke-linejoin="round" stroke-linecap="round"/>
+<path d="M120 230 C110 140 150 100 200 100 C250 100 290 140 280 230 C270 260 250 270 240 260 L240 170 L160 170 L160 260 C150 270 130 260 120 230Z" fill="#3a2418" stroke="#2a1a10" stroke-width="4" stroke-linejoin="round" stroke-linecap="round"/>
+<ellipse cx="200" cy="196" rx="62" ry="72" fill="#f3c7a1" stroke="#2a1a10" stroke-width="4" stroke-linejoin="round" stroke-linecap="round"/>
+<path d="M140 176 C160 130 220 120 262 168 C230 160 196 150 140 176Z" fill="#3a2418" stroke="#2a1a10" stroke-width="4" stroke-linejoin="round" stroke-linecap="round"/>
+<circle cx="178" cy="200" r="5" fill="#2a1a10"/><circle cx="222" cy="200" r="5" fill="#2a1a10"/>
+<path d="M184 232 C194 242 206 242 216 232" fill="none" stroke="#2a1a10" stroke-width="4" stroke-linejoin="round" stroke-linecap="round"/>
+<circle cx="160" cy="222" r="10" fill="#e98a6d" opacity="0.55"/><circle cx="240" cy="222" r="10" fill="#e98a6d" opacity="0.55"/>
+<g transform="translate(300 300) rotate(20)"><ellipse rx="34" ry="40" fill="#e0482a" stroke="#2a1a10" stroke-width="4" stroke-linejoin="round" stroke-linecap="round"/><path d="M0 -40 c-4 -16 4 -24 14 -28" fill="none" stroke="#2a1a10" stroke-width="4" stroke-linejoin="round" stroke-linecap="round"/><path d="M6 -46 c16 -12 30 -6 34 2 c-14 6 -26 6 -34 -2z" fill="#3f9150" stroke="#2a1a10" stroke-width="4" stroke-linejoin="round" stroke-linecap="round"/></g>
+</svg>

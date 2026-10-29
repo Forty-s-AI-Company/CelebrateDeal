@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1440 800" preserveAspectRatio="xMidYMid slice" role="img" aria-label="">
+<rect width="1440" height="800" fill="#f6f8fc"/>
+<defs><pattern id="g" width="48" height="48" patternUnits="userSpaceOnUse"><path d="M48 0 H0 V48" fill="none" stroke="#e3e8f2" stroke-width="1"/></pattern></defs>
+<rect x="760" width="680" height="800" fill="url(#g)"/>
+<circle cx="1120" cy="380" r="300" fill="#dbe4ff" opacity="0.8"/>
+<circle cx="1300" cy="640" r="140" fill="#d3f0e6"/>
+</svg>

@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 75 600 450" width="600" height="450">
+<title>細節特寫：可拆式胸扣與肩帶（線稿示意）</title>
+<rect width="600" height="600" fill="#18221e"/>
+<g fill="none" stroke="#c9a46a" stroke-opacity=".12"><path d="M0 120 H600 M0 480 H600"/></g>
+<g fill="#1f2b26" stroke="#c9a46a" stroke-width="2.2" stroke-linejoin="round">
+<path d="M70 40 C110 180 120 420 90 600 H190 C214 420 206 180 170 40 Z"/>
+<path d="M530 40 C490 180 480 420 510 600 H410 C386 420 394 180 430 40 Z"/>
+</g>
+<g stroke="#c9a46a" stroke-width="1.4" stroke-dasharray="5 6" fill="none" stroke-opacity=".7">
+<path d="M88 60 C124 200 132 420 108 590"/><path d="M152 60 C188 200 190 420 172 590"/>
+<path d="M512 60 C476 200 468 420 492 590"/><path d="M448 60 C412 200 410 420 428 590"/>
+</g>
+<path d="M190 300 H262 M338 300 H410" stroke="#c9a46a" stroke-width="18" stroke-opacity=".25"/>
+<path d="M190 292 H262 M190 308 H262 M338 292 H410 M338 308 H410" stroke="#c9a46a" stroke-width="2"/>
+<path d="M258 270 H300 L318 282 V318 L300 330 H258 Z" fill="#0f1714" stroke="#c9a46a" stroke-width="2.6" stroke-linejoin="round"/>
+<path d="M342 270 H300 L318 282 V318 L300 330 H342 Z" fill="#0f1714" stroke="#c9a46a" stroke-width="2.6" stroke-linejoin="round"/>
+<path d="M300 268 C312 260 330 260 340 268" fill="none" stroke="#c9a46a" stroke-width="2"/>
+<circle cx="279" cy="300" r="7" fill="none" stroke="#c9a46a" stroke-width="2"/>
+<path d="M276 300 l6 0 M279 297 l0 6" stroke="#c9a46a" stroke-width="1.6"/>
+<text x="300" y="508" fill="#c9a46a" font-family="Georgia,serif" font-size="22" letter-spacing="4" text-anchor="middle">DETAIL · 02</text>
+</svg>

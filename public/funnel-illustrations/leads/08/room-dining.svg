@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 600" width="600" height="600">
+<title>空間線稿：餐廳，原木餐桌、吊燈與展示櫃</title>
+<rect width="600" height="600" fill="#efece6"/>
+<path d="M0 450 H600 V600 H0 Z" fill="#e2d3bf"/>
+<rect x="380" y="140" width="160" height="310" fill="#2c4a3f" fill-opacity=".12"/>
+<g fill="none" stroke="#1d2422" stroke-width="2.4" stroke-linejoin="round" stroke-linecap="round">
+<path d="M0 450 H600"/>
+<path d="M200 40 V150 M150 150 h100 l-16 34 h-68 z"/>
+<path d="M60 330 H340 M80 330 V450 M320 330 V450"/>
+<path d="M90 300 v-60 h40 v60 M84 300 h52 M96 300 v70 M124 300 v70"/>
+<path d="M270 300 v-60 h40 v60 M264 300 h52 M276 300 v70 M304 300 v70"/>
+<rect x="380" y="140" width="160" height="310"/><path d="M380 240 H540 M380 340 H540 M460 140 V450"/>
+<path d="M400 240 v-40 c0 -14 24 -14 24 0 v40 M480 240 v-60 h20 v60 M410 340 h36 v-30 h-36 z M480 340 c0 -26 40 -26 40 0"/>
+<path d="M180 330 c0 -20 40 -20 40 0"/>
+</g>
+<rect x="60" y="322" width="280" height="10" fill="#8a5a24"/>
+<g fill="#2c4a3f"><circle cx="192" cy="304" r="9"/><circle cx="206" cy="298" r="8"/></g>
+<path d="M166 184 L120 300 M234 184 L280 300" stroke="#e9c98f" stroke-opacity=".5" stroke-width="2"/>
+</svg>

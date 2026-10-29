@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 750" width="600" height="750" role="img" aria-label="水彩作品示意：盤子上的三顆檸檬">
+<defs><filter id="wc" x="-15%" y="-15%" width="130%" height="130%"><feTurbulence type="fractalNoise" baseFrequency=".03" numOctaves="3" seed="4"/><feDisplacementMap in="SourceGraphic" scale="16" xChannelSelector="R" yChannelSelector="G"/></filter></defs><rect width="100%" height="100%" fill="#fffdf9"/>
+<g filter="url(#wc)">
+<rect x="40" y="60" width="520" height="560" fill="#f3e6d6" fill-opacity=".55"/>
+<ellipse cx="300" cy="520" rx="230" ry="70" fill="#c7bfdc" fill-opacity=".45"/>
+<ellipse cx="300" cy="505" rx="200" ry="52" fill="#fffdf9"/>
+<ellipse cx="230" cy="440" rx="95" ry="68" fill="#f2c94c" fill-opacity=".8"/>
+<ellipse cx="370" cy="455" rx="88" ry="62" fill="#efbe3d" fill-opacity=".75"/>
+<ellipse cx="300" cy="370" rx="80" ry="58" fill="#f5d45e" fill-opacity=".8"/>
+<ellipse cx="320" cy="355" rx="30" ry="18" fill="#fff6c8" fill-opacity=".8"/>
+<ellipse cx="250" cy="425" rx="34" ry="20" fill="#fff3b8" fill-opacity=".7"/>
+<path d="M360 300c40-40 96-38 112-22-44 6-74 22-100 44z" fill="#6f9a5b" fill-opacity=".85"/>
+<path d="M150 470c40 50 260 60 330 10" stroke="#d9a62a" stroke-width="10" fill="none" stroke-opacity=".35"/>
+</g>
+<text x="40" y="710" font-family="serif" font-size="22" fill="#8f3b5c" fill-opacity=".75">week 2 · 色彩的濃淡</text>
+</svg>

@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 300" width="480" height="300">
+<title>開店前：店面、租約與鑰匙線稿</title>
+<rect width="480" height="300" fill="#efe4d3"/>
+<circle cx="392" cy="70" r="120" fill="#f7f1e8"/>
+<g fill="none" stroke="#2a1d14" stroke-width="3" stroke-linejoin="round" stroke-linecap="round">
+<path d="M96 250 V118 h196 V250"/>
+<path d="M84 118 l18 -36 h184 l18 36"/>
+<path d="M84 118 q17 20 34 0 q17 20 34 0 q17 20 34 0 q17 20 34 0 q17 20 34 0 q17 20 34 0" fill="#fffaf2"/>
+<rect x="118" y="150" width="70" height="100"/>
+<rect x="208" y="150" width="62" height="56"/>
+<path d="M60 250 h360"/>
+</g>
+<rect x="210" y="210" width="58" height="22" rx="3" fill="#7a3e1d"/>
+<text x="239" y="226" text-anchor="middle" font-size="12" fill="#fffaf2" font-family="'Noto Sans TC',sans-serif" font-weight="700">招租</text>
+<g transform="translate(330 150) rotate(-10)">
+<rect width="96" height="120" rx="6" fill="#fffaf2" stroke="#2a1d14" stroke-width="3"/>
+<path d="M16 26 h64 M16 44 h64 M16 62 h46 M16 80 h56" stroke="#4a3a2e" stroke-width="3" stroke-linecap="round"/>
+<path d="M18 104 q10 -12 20 0 t20 0" fill="none" stroke="#7a3e1d" stroke-width="2.4"/>
+</g>
+<g transform="translate(316 98)" fill="none" stroke="#7a3e1d" stroke-width="4" stroke-linecap="round">
+<circle r="14"/><path d="M14 0 h40 M42 0 v10 M52 0 v8"/>
+</g>
+</svg>
