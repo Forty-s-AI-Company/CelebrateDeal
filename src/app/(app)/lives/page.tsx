@@ -1,13 +1,15 @@
 import { BarChart3, Eye, Plus } from "lucide-react";
 import { Badge, ButtonLink, Card, EmptyState, PageHeader } from "@/components/ui";
-import { requireVendorManager } from "@/lib/auth";
+import { requireVendorManagerContext } from "@/lib/auth";
+import { getSalesProjectScope, withProjectQuery } from "@/lib/sales-project-scope";
 import { isFeatureEnabled } from "@/lib/feature-gates";
 import { getDb } from "@/lib/db";
 import { formatDateTime } from "@/lib/format";
 import { statusLabel } from "@/lib/status-labels";
 
 export default async function LivesPage() {
-  const vendor = await requireVendorManager();
+  const { auth, vendor } = await requireVendorManagerContext();
+  const createHref = withProjectQuery("/lives/new", (await getSalesProjectScope(auth.user.id, vendor.id)).projectId);
   const browserLive = isFeatureEnabled(vendor, "browser_live");
   const lives = await getDb().live.findMany({
     where: { vendorId: vendor.id },
@@ -17,9 +19,9 @@ export default async function LivesPage() {
 
   return (
     <>
-      <PageHeader title="直播間" description="管理每一場直播頁的播放素材、商品、表單與公開連結。" action={<ButtonLink href="/lives/new" tone="cta"><Plus size={16} />建立直播</ButtonLink>} />
+      <PageHeader title="直播間" description="管理每一場直播頁的播放素材、商品、表單與公開連結。" action={<ButtonLink href={createHref} tone="cta"><Plus size={16} />建立直播</ButtonLink>} />
       {lives.length === 0 ? (
-        <EmptyState title="還沒有直播間" description="用 stepper 建立第一場直播，把影片、商品與報名表串起來。" action={<ButtonLink href="/lives/new" tone="cta">建立直播</ButtonLink>} />
+        <EmptyState title="還沒有直播間" description="用 stepper 建立第一場直播，把影片、商品與報名表串起來。" action={<ButtonLink href={createHref} tone="cta">建立直播</ButtonLink>} />
       ) : (
         <Card>
           <div className="grid gap-3">
