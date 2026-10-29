@@ -14,12 +14,20 @@ import {
   ACCOUNT_EMAIL_CHANGE_PATH,
   ACCOUNT_EMAIL_CHANGE_TTL_MINUTES,
   ACCOUNT_EMAIL_CHANGE_TTL_MS,
+  ACCOUNT_EMAIL_REVERT_KEY_PURPOSE,
+  ACCOUNT_EMAIL_REVERT_PATH,
+  ACCOUNT_EMAIL_REVERT_TTL_DAYS,
+  ACCOUNT_EMAIL_REVERT_TTL_MS,
   accountEmailChangeTokenHash,
   accountEmailChangeUrl,
+  accountEmailRevertUrl,
   createAccountEmailChangeToken,
+  createAccountEmailRevertToken,
   normalizeLoginEmail,
   readAccountEmailChangeToken,
+  readAccountEmailRevertToken,
   verifyAccountEmailChangeToken,
+  verifyAccountEmailRevertToken,
 } from "@/lib/account-email-change-token";
 import { DERIVED_KEY_ROTATIONS } from "@/lib/derived-key-purposes";
 import { createMerchantEmailVerificationToken, MERCHANT_EMAIL_VERIFICATION_KEY_PURPOSE } from "@/lib/merchant-email-verification-token";
@@ -170,6 +178,56 @@ describe("account email change tokens", () => {
     expect(url.pathname).toBe(ACCOUNT_EMAIL_CHANGE_PATH);
     expect(url.pathname).toBe("/verify-email-change");
     expect(url.searchParams.get("token")).toBe("aec1.payload.signature");
+  });
+});
+
+describe("account email revert links", () => {
+  const REVERT = { userId: CHANGE.userId, previousEmail: "old-owner@example.test" };
+
+  it("use their own unguessable key, registered without a legacy key, with a golden derived key and MAC", () => {
+    expect(ACCOUNT_EMAIL_REVERT_KEY_PURPOSE).toMatch(/^account-email-revert:r2:[0-9a-f]{16}$/u);
+    expect(DERIVED_KEY_ROTATIONS.accountEmailRevert).toEqual({ label: "account-email-revert", current: "account-email-revert:r2:f58ffa8c7c2f1eeb", legacy: null });
+    vi.stubEnv("CSRF_SECRET", "synthetic-kdf-golden-root-secret-0123456789");
+    expect(deriveSensitiveDataKey(ACCOUNT_EMAIL_REVERT_KEY_PURPOSE).toString("hex")).toBe("9ddbcef3e4609cf88ea4c86362e139b37e965aa1dc2a86afeadd9f60fe854d05");
+    const golden = "aer1.eyJwdXJwb3NlIjoiYWNjb3VudF9lbWFpbF9yZXZlcnQiLCJ1c2VySWQiOiJjdWlkX2dvbGRlbl91c2VyIiwiZXhwIjo0MTAyNDQ0ODAwLCJqdGkiOiJnb2xkZW4tanRpLTAxMjM0NTY3ODkifQ.p0hgJSBQqsokAUkidHJQSnijPiWl5FMDRHhawZ2alP0";
+    expect(verifyAccountEmailRevertToken(golden, "old@example.test", NOW)).toEqual({ userId: "cuid_golden_user", expiresAt: new Date(4102444800 * 1_000), jti: "golden-jti-0123456789" });
+    expect(verifyAccountEmailRevertToken(golden, "other@example.test", NOW)).toBeNull();
+  });
+
+  it("round-trip bound to the previous address, signed for the request window plus seven days, without the address in the token", () => {
+    const link = createAccountEmailRevertToken({ ...REVERT, now: NOW });
+    expect(ACCOUNT_EMAIL_REVERT_TTL_DAYS).toBe(7);
+    expect(link.expiresAt.getTime()).toBe(NOW.getTime() + ACCOUNT_EMAIL_CHANGE_TTL_MS + ACCOUNT_EMAIL_REVERT_TTL_MS);
+    expect(link.token).toMatch(/^aer1\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]{43}$/u);
+    expect(link.tokenHash).toBe(accountEmailChangeTokenHash(link.token));
+    expect(verifyAccountEmailRevertToken(link.token, REVERT.previousEmail, NOW)).toEqual({ userId: REVERT.userId, expiresAt: link.expiresAt, jti: link.jti });
+    expect(readAccountEmailRevertToken(link.token, NOW)).not.toBeNull();
+    expect(verifyAccountEmailRevertToken(link.token, "attacker@example.test", NOW)).toBeNull();
+    expect(link.token).not.toContain("old-owner");
+    expect(Buffer.from(link.token.split(".")[1]!, "base64url").toString("utf8")).not.toContain(REVERT.previousEmail);
+    expect(verifyAccountEmailRevertToken(link.token, REVERT.previousEmail, link.expiresAt)).toBeNull();
+  });
+
+  it("are never accepted as change links, nor change links as revert links", () => {
+    const revert = createAccountEmailRevertToken({ ...REVERT, now: NOW }).token;
+    const change = createAccountEmailChangeToken({ userId: REVERT.userId, newEmail: REVERT.previousEmail, now: NOW }).token;
+    expect(verifyAccountEmailChangeToken(revert, REVERT.previousEmail, NOW)).toBeNull();
+    expect(verifyAccountEmailChangeToken(revert.replace(/^aer1/u, "aec1"), REVERT.previousEmail, NOW)).toBeNull();
+    expect(verifyAccountEmailRevertToken(change, REVERT.previousEmail, NOW)).toBeNull();
+    expect(verifyAccountEmailRevertToken(change.replace(/^aec1/u, "aer1"), REVERT.previousEmail, NOW)).toBeNull();
+    expect(readAccountEmailChangeToken(revert, NOW)).toBeNull();
+    expect(readAccountEmailRevertToken(change, NOW)).toBeNull();
+    // Same payload signed under the change key with the revert label still fails.
+    expect(verifyAccountEmailRevertToken(forge({ ...validPayload({ purpose: "account_email_revert" }) }, REVERT.previousEmail, ACCOUNT_EMAIL_CHANGE_KEY_PURPOSE, "aer1"), REVERT.previousEmail, NOW)).toBeNull();
+    expect(verifyAccountEmailRevertToken(forge({ ...validPayload({ purpose: "account_email_revert" }) }, REVERT.previousEmail, ACCOUNT_EMAIL_REVERT_KEY_PURPOSE, "aer1"), REVERT.previousEmail, NOW)).not.toBeNull();
+  });
+
+  it("refuse to sign an unnormalized address and build the link on the revert page", () => {
+    expect(() => createAccountEmailRevertToken({ userId: REVERT.userId, previousEmail: " Old@Example.test" })).toThrow();
+    const url = new URL(accountEmailRevertUrl("aer1.payload.signature", { NEXT_PUBLIC_APP_URL: "https://app.example.test", NODE_ENV: "test" }));
+    expect(url.pathname).toBe(ACCOUNT_EMAIL_REVERT_PATH);
+    expect(url.pathname).toBe("/revert-email-change");
+    expect(url.searchParams.get("token")).toBe("aer1.payload.signature");
   });
 });
 

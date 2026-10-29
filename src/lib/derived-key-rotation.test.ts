@@ -103,7 +103,7 @@ describe("rotation registry", () => {
     for (const name of [
       "csrfMac", "merchantRegistrationInvite", "merchantInviteEmailHash", "livePrivateChatConversationBinding", "checkoutAdmission", "formSubmissionLineBinding", "studentPortalAccessToken", "liveViewerPass",
       "liveChatCursor", "livePrivateChatCursor", "postPurchaseCheckout", "registrationSubmissionResult", "merchantEmailVerification",
-      "accountEmailChange", "evergreenViewerSession",
+      "accountEmailChange", "accountEmailRevert", "evergreenViewerSession",
     ] as const) {
       expect(DERIVED_KEY_ROTATIONS[name].legacy, name).toBeNull();
     }

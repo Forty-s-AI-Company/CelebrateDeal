@@ -3,7 +3,7 @@ import { CsrfField } from "@/components/csrf-field";
 import { FormSubmitButton } from "@/components/form-submit-button";
 import { StepUpMfaNotice } from "@/components/step-up-mfa-notice";
 import { Card, Field } from "@/components/ui";
-import { ACCOUNT_EMAIL_CHANGE_TTL_MINUTES, LOGIN_EMAIL_MAX_LENGTH } from "@/lib/account-email-change-token";
+import { ACCOUNT_EMAIL_CHANGE_TTL_MINUTES, ACCOUNT_EMAIL_REVERT_TTL_DAYS, LOGIN_EMAIL_MAX_LENGTH } from "@/lib/account-email-change-token";
 import type { RecentMfaStatus } from "@/lib/recent-mfa";
 
 /**
@@ -12,18 +12,21 @@ import type { RecentMfaStatus } from "@/lib/recent-mfa";
  * shown here: a request for an address another account uses stores nothing,
  * so listing pending ones would reveal which addresses are taken.
  */
-export function AccountEmailChangeCard({ currentEmail, mfaStatus }: { currentEmail: string; mfaStatus: RecentMfaStatus }) {
+export function AccountEmailChangeCard({ currentEmail, mfaStatus, platformRole }: { currentEmail: string; mfaStatus: RecentMfaStatus; platformRole: string }) {
+  // Same rule as the action: a platform role always needs a recent factor
+  // (enrolling first if it has none); other accounts re-verify only when they
+  // have a factor and are never asked to enrol.
+  const stepUp = mfaStatus === "verification_required" || (platformRole !== "none" && mfaStatus === "setup_required");
   return (
     <Card>
       <h2 className="mb-2 text-lg font-semibold text-slate-950">變更登入 Email</h2>
       <p className="mb-4 text-sm text-slate-500">目前的登入 Email：<strong className="break-all font-semibold text-slate-700">{currentEmail}</strong></p>
-      {/* Only an account with a factor must re-verify; one without is not asked to enrol. */}
-      {mfaStatus === "verification_required" ? <div className="mb-4"><StepUpMfaNotice status={mfaStatus} nextPath="/settings/security" operation="變更登入 Email" /></div> : null}
+      {stepUp ? <div className="mb-4"><StepUpMfaNotice status={mfaStatus} nextPath="/settings/security" operation="變更登入 Email" /></div> : null}
       <form action={requestAccountEmailChangeAction} className="grid gap-4">
         <CsrfField />
         <Field label="新的 Email" name="newEmail" type="email" autoComplete="email" maxLength={LOGIN_EMAIL_MAX_LENGTH} placeholder="name@example.com" required />
         <Field label="目前密碼" name="currentPassword" type="password" autoComplete="current-password" required />
-        <p className="text-xs text-slate-500">我們會寄驗證連結到新的 Email（{ACCOUNT_EMAIL_CHANGE_TTL_MINUTES} 分鐘內有效），並通知目前的 Email。開啟連結後才會變更，所有裝置也會登出，之後請用新的 Email 登入。</p>
+        <p className="text-xs text-slate-500">我們會寄驗證連結到新的 Email（{ACCOUNT_EMAIL_CHANGE_TTL_MINUTES} 分鐘內有效），並通知目前的 Email；通知信附有「不是我操作，還原 Email」連結，變更完成後 {ACCOUNT_EMAIL_REVERT_TTL_DAYS} 天內可用。開啟驗證連結後才會變更，所有裝置也會登出，之後請用新的 Email 登入。</p>
         <FormSubmitButton
           pendingChildren="寄送中…"
           pendingMessage="正在送出變更登入 Email 的要求，請勿重複送出。"

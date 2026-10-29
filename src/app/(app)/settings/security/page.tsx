@@ -73,6 +73,7 @@ const errorMessages: Record<string, string> = {
   email_change_same: "新 Email 與目前的登入 Email 相同。",
   email_change_rate_limited: "變更登入 Email 的嘗試次數過多，請稍候一小時再試。",
   email_change_unavailable: "變更登入 Email 的保護機制暫時無法使用，請稍後再試。",
+  email_change_locked: "這個帳號最近用原 Email 的「不是我操作，還原 Email」連結撤銷過變更，7 天內不能再自行變更登入 Email。如需協助請聯絡客服。",
 };
 
 const updatedMessages: Record<string, string> = {
@@ -156,7 +157,7 @@ export default async function SecuritySettingsPage({
             <SubmitButton>更新密碼並全部登出</SubmitButton>
           </form>
         </Card>
-        <AccountEmailChangeCard currentEmail={auth.user.email} mfaStatus={recentMfaStatus(auth)} />
+        <AccountEmailChangeCard currentEmail={auth.user.email} mfaStatus={recentMfaStatus(auth)} platformRole={auth.user.platformRole} />
         <Card>
           <h2 className="mb-2 text-lg font-semibold text-slate-950">登出此裝置</h2>
           <p className="mb-4 text-sm text-slate-500">登入狀態儲存在伺服器並以安全 Cookie 識別；登出會結束目前登入並清除瀏覽器 Cookie。</p>

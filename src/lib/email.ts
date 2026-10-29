@@ -202,35 +202,40 @@ export async function sendMerchantEmailVerificationEmail({
 /**
  * Sent to the NEW address of a requested login email change. Opening the link
  * (and pressing the button on the page) completes the change; the link is
- * single-use, expires, and is bound to this address.
+ * single-use, expires, and is bound to this address. The account is named
+ * only by its masked current address, so someone tricked into "verifying" an
+ * address for a stranger's account can tell it is not theirs.
  */
 export async function sendAccountEmailChangeVerificationEmail({
   to,
+  maskedCurrentEmail,
   confirmUrl,
   validMinutes,
   idempotencyKey,
 }: {
   to: string;
+  maskedCurrentEmail: string;
   confirmUrl: string;
   validMinutes: number;
   idempotencyKey?: string;
 }) {
   const safeTo = escapeHtml(to);
+  const safeCurrent = escapeHtml(maskedCurrentEmail);
   const safeUrl = escapeHtml(confirmUrl);
   return sendTransactionalEmail({
     to,
     subject: "CelebrateDeal｜請確認新的登入 Email",
     idempotencyKey,
-    text: `你好，有人要求把 CelebrateDeal 帳號的登入 Email 變更為 ${to}。\n\n如果是你本人操作，請在 ${validMinutes} 分鐘內開啟以下連結完成變更：\n${confirmUrl}\n\n完成後請改用這個 Email 登入，所有裝置的登入狀態都會結束。\n\n如果不是你本人操作，請直接忽略這封信，帳號不會有任何變更。`,
+    text: `你好，有人要求把目前登入 Email 為 ${maskedCurrentEmail} 的 CelebrateDeal 帳號，改用 ${to} 登入。\n\n若不認得此帳號請勿確認，直接忽略這封信即可，任何帳號都不會變更。\n\n如果是你本人操作，請在 ${validMinutes} 分鐘內開啟以下連結完成變更：\n${confirmUrl}\n\n完成後請改用這個 Email 登入，所有裝置的登入狀態都會結束。`,
     html: `
       <div style="font-family:Arial,sans-serif;line-height:1.7;color:#0f172a">
         <h2 style="margin:0 0 12px">確認新的登入 Email</h2>
-        <p>你好，有人要求把 CelebrateDeal 帳號的登入 Email 變更為 <strong>${safeTo}</strong>。</p>
+        <p>你好，有人要求把目前登入 Email 為 <strong>${safeCurrent}</strong> 的 CelebrateDeal 帳號，改用 <strong>${safeTo}</strong> 登入。</p>
+        <p><strong>若不認得此帳號請勿確認</strong>，直接忽略這封信即可，任何帳號都不會變更。</p>
         <p>如果是你本人操作，請在 ${validMinutes} 分鐘內按下按鈕完成變更：</p>
         <p><a href="${safeUrl}" style="display:inline-block;padding:12px 18px;background:#2563eb;color:#fff;text-decoration:none;border-radius:8px;font-weight:600">確認變更登入 Email</a></p>
         <p style="word-break:break-all;color:#475569">${safeUrl}</p>
         <p>完成後請改用這個 Email 登入，所有裝置的登入狀態都會結束。</p>
-        <p>如果不是你本人操作，請直接忽略這封信，帳號不會有任何變更。</p>
       </div>
     `,
   });
@@ -238,30 +243,42 @@ export async function sendAccountEmailChangeVerificationEmail({
 
 /**
  * Security notice to the CURRENT address when a login email change is
- * requested. It names the new address only masked and carries no link that
- * could complete the change.
+ * requested. It names the new address only masked. Its only link is the
+ * single-use revert link ("不是我操作，還原 Email"), which can cancel or undo
+ * the change but never complete it.
  */
 export async function sendAccountEmailChangeNoticeEmail({
   to,
   maskedNewEmail,
+  revertUrl,
+  revertValidDays,
   idempotencyKey,
 }: {
   to: string;
   maskedNewEmail: string;
+  revertUrl: string;
+  revertValidDays: number;
   idempotencyKey?: string;
 }) {
   const safeMasked = escapeHtml(maskedNewEmail);
+  const safeUrl = escapeHtml(revertUrl);
   return sendTransactionalEmail({
     to,
     subject: "CelebrateDeal｜你的登入 Email 正在變更",
     idempotencyKey,
-    text: `你的登入 Email 正在變更為 ${maskedNewEmail}。\n\n新 Email 的收件人開啟驗證信中的連結後，變更才會生效；在那之前你仍以目前的 Email 登入。\n\n如果不是你本人操作，請立即到登入頁使用「忘記密碼」重設密碼：重設密碼會取消這次變更並結束所有裝置的登入狀態。`,
+    text: `你的登入 Email 正在變更為 ${maskedNewEmail}。新 Email 的收件人開啟驗證信中的連結後，變更才會生效。\n\n如果不是你本人操作，請開啟以下「不是我操作，還原 Email」連結：\n${revertUrl}\n\n・變更還沒完成時：這個連結會取消變更；到登入頁用「忘記密碼」重設密碼也會取消。\n・變更已經完成時：這個連結會把登入 Email 還原為這個信箱。變更完成後 ${revertValidDays} 天內有效，只能使用一次。\n\n不論哪一種，所有裝置都會登出。之後請用這個信箱到登入頁重設密碼。`,
     html: `
       <div style="font-family:Arial,sans-serif;line-height:1.7;color:#0f172a">
         <h2 style="margin:0 0 12px">你的登入 Email 正在變更</h2>
-        <p>你的登入 Email 正在變更為 <strong>${safeMasked}</strong>。</p>
-        <p>新 Email 的收件人開啟驗證信中的連結後，變更才會生效；在那之前你仍以目前的 Email 登入。</p>
-        <p>如果不是你本人操作，請立即到登入頁使用「忘記密碼」重設密碼：重設密碼會取消這次變更並結束所有裝置的登入狀態。</p>
+        <p>你的登入 Email 正在變更為 <strong>${safeMasked}</strong>。新 Email 的收件人開啟驗證信中的連結後，變更才會生效。</p>
+        <p>如果不是你本人操作，請按下按鈕：</p>
+        <p><a href="${safeUrl}" style="display:inline-block;padding:12px 18px;background:#dc2626;color:#fff;text-decoration:none;border-radius:8px;font-weight:600">不是我操作，還原 Email</a></p>
+        <p style="word-break:break-all;color:#475569">${safeUrl}</p>
+        <ul>
+          <li>變更還沒完成時：這個連結會取消變更；到登入頁用「忘記密碼」重設密碼也會取消。</li>
+          <li>變更已經完成時：這個連結會把登入 Email 還原為這個信箱。變更完成後 ${revertValidDays} 天內有效，只能使用一次。</li>
+        </ul>
+        <p>不論哪一種，所有裝置都會登出。之後請用這個信箱到登入頁重設密碼。</p>
       </div>
     `,
   });

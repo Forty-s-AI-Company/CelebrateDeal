@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-const mocks = vi.hoisted(() => ({ security: vi.fn(), limit: vi.fn(), hash: vi.fn(), transaction: vi.fn(), user: vi.fn(), vendor: vi.fn(), member: vi.fn(), preference: vi.fn(), consent: vi.fn(), audit: vi.fn(), session: vi.fn(), set: vi.fn(), delete: vi.fn(), revoked: vi.fn(), schedule: vi.fn(), turnstile: vi.fn() }));
+const mocks = vi.hoisted(() => ({ security: vi.fn(), limit: vi.fn(), hash: vi.fn(), transaction: vi.fn(), user: vi.fn(), vendor: vi.fn(), member: vi.fn(), preference: vi.fn(), consent: vi.fn(), audit: vi.fn(), session: vi.fn(), set: vi.fn(), delete: vi.fn(), revoked: vi.fn(), schedule: vi.fn(), turnstile: vi.fn(), advisoryLock: vi.fn(), reserved: vi.fn() }));
 vi.mock("next/navigation", () => ({ redirect: (path: string) => { throw new Error(`redirect:${path}`); } }));
 vi.mock("next/headers", () => ({ headers: async () => new Headers(), cookies: async () => ({ set: mocks.set, delete: mocks.delete }) }));
 vi.mock("@/lib/auth", () => ({ AUTH_COOKIE: "auth", LEGACY_VENDOR_COOKIE: "legacy", createUserSession: mocks.session, sessionCookieOptions: () => ({ httpOnly: true }) }));
@@ -18,7 +18,7 @@ const policy = merchantRegistrationPolicyVersions();
 function form(extra: Record<string, string | undefined> = {}) { const data = new FormData(); for (const [k,v] of Object.entries({ name: "Owner", workspaceName: "Workspace", email: "Owner@Example.test", password: "  synthetic password  ", acceptPolicies: "on", policyVersion: policy.consentVersion, ...extra })) if (v !== undefined) data.set(k,v); return data; }
 beforeEach(() => {
  vi.resetAllMocks(); mocks.limit.mockResolvedValue(null); mocks.turnstile.mockResolvedValue({ ok: true, skipped: true }); mocks.hash.mockResolvedValue("synthetic-hash"); mocks.user.mockResolvedValue({id:"user-1"}); mocks.vendor.mockResolvedValue({id:"vendor-1"}); mocks.session.mockResolvedValue({token:"synthetic-session",expiresAt:new Date("2026-12-01")});
- mocks.transaction.mockImplementation(async (fn) => fn({user:{create:mocks.user},vendor:{create:mocks.vendor},vendorMember:{create:mocks.member},userOnboardingPreference:{create:mocks.preference},userPolicyConsent:{create:mocks.consent},auditLog:{create:mocks.audit,findFirst:mocks.revoked}}));
+ mocks.transaction.mockImplementation(async (fn) => fn({user:{create:mocks.user},vendor:{create:mocks.vendor},vendorMember:{create:mocks.member},userOnboardingPreference:{create:mocks.preference},userPolicyConsent:{create:mocks.consent},auditLog:{create:mocks.audit,findFirst:mocks.revoked},$executeRaw:mocks.advisoryLock,userEmailChangeRequest:{findFirst:mocks.reserved}}));
 });
 afterEach(() => { vi.unstubAllEnvs(); });
 describe("workspace registration boundaries (REGISTRATION_MODE=open keeps the original behaviour)", () => {
@@ -53,6 +53,13 @@ describe("workspace registration boundaries (REGISTRATION_MODE=open keeps the or
   expect(mocks.schedule).toHaveBeenCalledWith({ userId: "user-1", vendorId: "vendor-1" });
   expect(mocks.audit.mock.invocationCallOrder[0]).toBeLessThan(mocks.schedule.mock.invocationCallOrder[0]!);
   expect(mocks.schedule.mock.invocationCallOrder[0]).toBeLessThan(mocks.session.mock.invocationCallOrder[0]!);
+ });
+ it("treats an address reserved for its previous owner's email revert exactly like one in use, before any insert", async () => {
+  mocks.reserved.mockResolvedValue({ id: "reservation-1" });
+  await expect(registerAction(form())).rejects.toThrow("redirect:/register?error=exists");
+  expect(mocks.advisoryLock).toHaveBeenCalledOnce();
+  expect(mocks.reserved).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ previousEmail: "owner@example.test", consumedAt: { not: null }, revertedAt: null, revertRevokedAt: null }) }));
+  expect(mocks.user).not.toHaveBeenCalled(); expect(mocks.vendor).not.toHaveBeenCalled(); expect(mocks.schedule).not.toHaveBeenCalled(); expect(mocks.session).not.toHaveBeenCalled();
  });
  it("does not send a verification email when the transaction fails", async () => { mocks.transaction.mockRejectedValue({ code: "P2002" }); await expect(registerAction(form())).rejects.toThrow("error=exists"); expect(mocks.schedule).not.toHaveBeenCalled(); });
  it("verifies the Turnstile token with the registration action and the client address", async () => {

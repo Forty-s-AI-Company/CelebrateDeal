@@ -8,6 +8,11 @@ import { hashPasswordAsync } from "@/lib/password";
 
 const PASSWORD_RESET_TTL_MS = 30 * 60 * 1000;
 
+// Production uses a deliberately small serverless pool. Allow a second claim
+// on the same account to wait for the row lock rather than surfacing Prisma's
+// default two-second P2028 admission timeout.
+const PASSWORD_RESET_TRANSACTION_OPTIONS = { maxWait: 5_000, timeout: 10_000 } as const;
+
 function tokenHash(token: string) {
   return createHash("sha256").update(token).digest("hex");
 }
@@ -21,35 +26,35 @@ export async function createPasswordResetToken({
   ipAddress?: string | null;
   userAgent?: string | null;
 }) {
-  const user = await getDb().user.findUnique({ where: { email: email.toLowerCase().trim() } });
-  if (!user || user.status !== "active") {
+  const normalized = email.toLowerCase().trim();
+  const candidate = await getDb().user.findUnique({ where: { email: normalized }, select: { id: true } });
+  if (!candidate) {
     return null;
   }
 
   const token = randomBytes(32).toString("base64url");
   const expiresAt = new Date(Date.now() + PASSWORD_RESET_TTL_MS);
 
-  const [, createdToken] = await getDb().$transaction([
-    getDb().passwordResetToken.updateMany({
-      where: {
-        userId: user.id,
-        usedAt: null,
-        expiresAt: { gt: new Date() },
-      },
-      data: { usedAt: new Date() },
-    }),
-    getDb().passwordResetToken.create({
-      data: {
-        userId: user.id,
-        tokenHash: tokenHash(token),
-        expiresAt,
-        ipAddress,
-        userAgent,
-      },
-    }),
-  ]);
-
-  return { user, token, tokenId: createdToken.id, expiresAt };
+  // The lookup above ran without a lock: a login email change may have moved
+  // this account to another address since. Under the same User row lock that
+  // the email change confirmation takes, re-read the account and issue the
+  // token only if it still has this address and is active. The caller mails
+  // the address read here, never the one the request named.
+  return getDb().$transaction(async (tx) => {
+    const locked = await tx.$queryRaw<Array<{ id: string }>>`SELECT "id" FROM "User" WHERE "id" = ${candidate.id} FOR UPDATE`;
+    if (locked.length !== 1) return null;
+    const user = await tx.user.findUnique({ where: { id: candidate.id } });
+    if (!user || user.status !== "active" || user.email !== normalized) return null;
+    const now = new Date();
+    await tx.passwordResetToken.updateMany({
+      where: { userId: user.id, usedAt: null, expiresAt: { gt: now } },
+      data: { usedAt: now },
+    });
+    const createdToken = await tx.passwordResetToken.create({
+      data: { userId: user.id, tokenHash: tokenHash(token), expiresAt, ipAddress, userAgent },
+    });
+    return { user, token, tokenId: createdToken.id, expiresAt };
+  }, PASSWORD_RESET_TRANSACTION_OPTIONS);
 }
 
 export async function sendPasswordResetLink({
@@ -155,6 +160,12 @@ export async function consumePasswordResetToken(token: string, password: string)
   const passwordHash = await hashPasswordAsync(password);
   const consumed = await getDb().$transaction(
     async (tx) => {
+      const owner = await tx.passwordResetToken.findUnique({ where: { tokenHash: tokenHash(token) }, select: { userId: true } });
+      if (!owner) return null;
+      // Lock the account first, the same order as the login email change
+      // confirmation and revert, then re-read the token under that lock (a
+      // completed email change marks it used).
+      await tx.$queryRaw`SELECT "id" FROM "User" WHERE "id" = ${owner.userId} FOR UPDATE`;
       const resetToken = await tx.passwordResetToken.findUnique({
         where: { tokenHash: tokenHash(token) },
         include: { user: true },
@@ -179,17 +190,19 @@ export async function consumePasswordResetToken(token: string, password: string)
 
       await tx.user.update({
         where: { id: resetToken.userId },
-        // The reset link was e-mailed to this address: a completed login
-        // email change marks every outstanding reset link used, so a usable
-        // link always went to the current address. Completing it therefore
-        // also proves the mailbox; an earlier timestamp stays.
+        // The link was e-mailed to the address createPasswordResetToken read
+        // under this same row lock. A login email change confirmation or
+        // revert takes that lock too and marks every unused reset token used
+        // when it moves the address, so a token still usable here was sent to
+        // the current address. Completing it therefore proves the mailbox; an
+        // earlier timestamp stays.
         data: { passwordHash, ...(resetToken.user.emailVerifiedAt ? {} : { emailVerifiedAt: now }) },
       });
       await tx.userSession.updateMany({
         where: { userId: resetToken.userId, revokedAt: null },
         data: { revokedAt: now },
       });
-      // The old-address notice of a login email change says a reset stops it.
+      // The old-address notice of a login email change says a reset stops a pending one.
       await tx.userEmailChangeRequest.updateMany({
         where: { userId: resetToken.userId, consumedAt: null, revokedAt: null },
         data: { revokedAt: now },
@@ -200,13 +213,7 @@ export async function consumePasswordResetToken(token: string, password: string)
         userId: resetToken.userId,
       };
     },
-    {
-      // Production uses a deliberately small serverless pool. Allow a second
-      // password-reset claim to wait for the first atomic transaction rather
-      // than surfacing Prisma's default two-second P2028 admission timeout.
-      maxWait: 5_000,
-      timeout: 10_000,
-    },
+    PASSWORD_RESET_TRANSACTION_OPTIONS,
   );
 
   if (!consumed) {

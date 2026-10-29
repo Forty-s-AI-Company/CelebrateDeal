@@ -49,10 +49,14 @@ const AFTER_SCHEDULING_IMPORTS: Record<string, string> = {
   scheduleMerchantEmailVerification: "merchant email verification link",
   registerAction: "Server Action -> scheduleMerchantEmailVerification",
   createVendorMemberAction: "Server Action -> after() invitation delivery",
+  scheduleAccountEmailChangeRequest: "login email change verification and notice mail",
+  requestAccountEmailChangeAction: "Server Action -> scheduleAccountEmailChangeRequest",
   requestMagicLinkAction: "Server Action -> magic link email",
   grantCustomerVoucherAction: "Server Action -> voucher email",
   updateConsultationBookingStatusAction: "Server Action -> dispatchAutomationEvent",
   createConsultationBookingAction: "Server Action -> dispatchAutomationEvent",
+  // Components whose form posts to one of the Server Actions above.
+  AccountEmailChangeCard: "form -> requestAccountEmailChangeAction",
   // Client components that invoke one of the Server Actions above.
   StudentPortalLoginForm: "client form -> requestMagicLinkAction",
   ConsultationBookingBlock: "client block -> createConsultationBookingAction",

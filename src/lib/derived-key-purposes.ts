@@ -81,6 +81,8 @@ export const DERIVED_KEY_ROTATIONS = Object.freeze({
   merchantEmailVerification: rotation("merchant-email-verification", "merchant-email-verification:r2:5a881e5879ba6156"),
   /** Login email change links (sent to the new address); introduced after #485 under this name only, so no legacy key. */
   accountEmailChange: rotation("account-email-change", "account-email-change:r2:a8a788e3ba38de72"),
+  /** "Not me, restore my email" links (sent to the previous address); introduced after #485 under this name only, so no legacy key. */
+  accountEmailRevert: rotation("account-email-revert", "account-email-revert:r2:f58ffa8c7c2f1eeb"),
   /** Keyed e-mail hash in invitation audit entries; nothing compares it yet. */
   merchantInviteEmailHash: rotation("merchant-invite-email", "merchant-invite-email:r2:bcaa6cb59eb97af3"),
   checkoutAdmission: rotation("public-checkout-admission", "public-checkout-admission:r2:9840cc8be0dee028"),

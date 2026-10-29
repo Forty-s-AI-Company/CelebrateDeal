@@ -3,16 +3,17 @@
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { checkAccountRateLimit } from "@/lib/account-rate-limit";
-import { scheduleAccountEmailChangeRequest } from "@/lib/account-email-change";
+import { accountEmailChangeLockedUntil, scheduleAccountEmailChangeRequest } from "@/lib/account-email-change";
 import { normalizeLoginEmail } from "@/lib/account-email-change-token";
 import { getCanonicalAppUrl } from "@/lib/app-url";
 import { writeAuditLog } from "@/lib/audit";
 import { requireAuth } from "@/lib/auth";
 import { assertServerActionSecurity } from "@/lib/csrf";
+import { getDb } from "@/lib/db";
 import { verifyPasswordAsync } from "@/lib/password";
 import { PASSWORD_INPUT_LIMIT } from "@/lib/password-policy";
 import { checkRateLimit } from "@/lib/rate-limit";
-import { recentMfaRedirectPath, recentMfaStatus } from "@/lib/recent-mfa";
+import { recentMfaRedirectPath, recentMfaStatus, requireRecentMfa } from "@/lib/recent-mfa";
 
 const SECURITY_PATH = "/settings/security";
 const SOURCE_LIMIT = 10;
@@ -26,11 +27,13 @@ function failure(code: string): never {
  * Starts a login email change for the signed-in user (變更登入 Email).
  *
  * Nothing in the form names a user: the account, its current address and
- * password hash come from the session. Order: CSRF, session, recent MFA when
- * the account has a factor (the step-up used for other high-risk account
- * operations; accounts without a factor are not forced to enrol), IP limit,
- * per-account limit (counted before the password check, so a stolen session
- * cannot guess the password through this form), input, current password.
+ * password hash come from the session. Order: CSRF, session, recent MFA
+ * (`requireRecentMfa`, which also sends an account without a factor to
+ * enrolment) for any platform role, recent MFA for any account with a factor
+ * (accounts with neither are not forced to enrol), IP limit, per-account
+ * limit (counted before the password check, so a stolen session cannot guess
+ * the password through this form), the seven-day lock after a used revert
+ * link, input, current password.
  *
  * Every accepted request answers with the same "已寄出驗證信" message. Whether
  * the address is free, the per-recipient limit and both mails are decided
@@ -40,7 +43,9 @@ function failure(code: string): never {
 export async function requestAccountEmailChangeAction(formData: FormData) {
   await assertServerActionSecurity(formData);
   const auth = await requireAuth({ nextPath: SECURITY_PATH });
-  if (auth.user.mfaFactor) {
+  if (auth.user.platformRole !== "none") {
+    requireRecentMfa(auth, { nextPath: SECURITY_PATH });
+  } else if (auth.user.mfaFactor) {
     const status = recentMfaStatus(auth);
     if (status !== "verified") redirect(recentMfaRedirectPath(status, SECURITY_PATH));
   }
@@ -55,6 +60,14 @@ export async function requestAccountEmailChangeAction(formData: FormData) {
   if (sourceLimited) failure(sourceLimited.status === 429 ? "email_change_rate_limited" : "email_change_unavailable");
   const accountLimited = await checkAccountRateLimit("account_email_change_request", auth.user.id);
   if (accountLimited) failure(accountLimited.status === 429 ? "email_change_rate_limited" : "email_change_unavailable");
+  // The account's own state (a revert link was used): reveals nothing about other accounts.
+  let lockedUntil: Date | null;
+  try {
+    lockedUntil = await accountEmailChangeLockedUntil(getDb(), auth.user.id);
+  } catch {
+    failure("email_change_unavailable");
+  }
+  if (lockedUntil) failure("email_change_locked");
 
   const newEmail = normalizeLoginEmail(formData.get("newEmail"));
   if (!newEmail) failure("email_change_invalid");

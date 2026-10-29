@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { confirmAccountEmailChange } from "@/lib/account-email-change";
+import { confirmAccountEmailChange, isTransientTransactionError } from "@/lib/account-email-change";
 import { ACCOUNT_EMAIL_CHANGE_MAX_LENGTH, ACCOUNT_EMAIL_CHANGE_PATH } from "@/lib/account-email-change-token";
 import { readFormDataBody, requireSameOriginRequest } from "@/lib/api-security";
 import { getBrowserReturnAppUrl } from "@/lib/app-url";
@@ -10,7 +10,7 @@ const ConfirmationForm = z.object({
   token: z.string().min(1).max(ACCOUNT_EMAIL_CHANGE_MAX_LENGTH),
 }).strict();
 
-function redirectResult(request: Request, status: "changed" | "invalid" | "email_taken") {
+function redirectResult(request: Request, status: "changed" | "invalid" | "email_taken" | "retry") {
   const url = new URL(ACCOUNT_EMAIL_CHANGE_PATH, getBrowserReturnAppUrl(request));
   url.searchParams.set("status", status);
   return NextResponse.redirect(url, { status: 303, headers: { "Cache-Control": "private, no-store", "Referrer-Policy": "no-referrer" } });
@@ -36,9 +36,11 @@ export async function POST(request: Request) {
   const parsed = ConfirmationForm.safeParse({ token: formData?.get("token") });
   if (!parsed.success) return redirectResult(request, "invalid");
   try {
+    // Deadlocks, serialization failures and lock timeouts come back as "retry":
+    // nothing was written and the link still works.
     const result = await confirmAccountEmailChange(parsed.data.token);
     return redirectResult(request, result.status);
-  } catch {
-    return redirectResult(request, "invalid");
+  } catch (error) {
+    return redirectResult(request, isTransientTransactionError(error) ? "retry" : "invalid");
   }
 }

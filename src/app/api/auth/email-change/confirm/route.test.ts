@@ -1,7 +1,11 @@
+import { Prisma } from "@prisma/client";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({ confirm: vi.fn(), limit: vi.fn() }));
-vi.mock("@/lib/account-email-change", () => ({ confirmAccountEmailChange: mocks.confirm }));
+vi.mock("@/lib/account-email-change", async (importOriginal) => ({
+  isTransientTransactionError: (await importOriginal<typeof import("@/lib/account-email-change")>()).isTransientTransactionError,
+  confirmAccountEmailChange: mocks.confirm,
+}));
 vi.mock("@/lib/rate-limit", () => ({ checkRateLimit: mocks.limit }));
 vi.mock("@/lib/app-url", async (importOriginal) => ({ ...await importOriginal<typeof import("@/lib/app-url")>(), getBrowserReturnAppUrl: () => "https://app.example.test" }));
 vi.mock("@/lib/api-security", async (importOriginal) => ({
@@ -25,7 +29,7 @@ beforeEach(() => {
 });
 
 describe("POST /api/auth/email-change/confirm", () => {
-  it.each(["changed", "invalid", "email_taken"] as const)("redirects with 303 to the %s result without caching or a Referer", async (status) => {
+  it.each(["changed", "invalid", "email_taken", "retry"] as const)("redirects with 303 to the %s result without caching or a Referer", async (status) => {
     mocks.confirm.mockResolvedValue({ status });
     const response = await POST(request("token=aec1.payload.signature"));
     expect(response.status).toBe(303);
@@ -71,5 +75,15 @@ describe("POST /api/auth/email-change/confirm", () => {
     mocks.confirm.mockRejectedValue(new Error("database down"));
     const response = await POST(request("token=aec1.payload.signature"));
     expect(response.headers.get("location")).toBe("https://app.example.test/verify-email-change?status=invalid");
+  });
+
+  it.each([
+    ["a write conflict or deadlock (P2034)", new Prisma.PrismaClientKnownRequestError("conflict", { code: "P2034", clientVersion: "synthetic" })],
+    ["a transaction timeout (P2028)", new Prisma.PrismaClientKnownRequestError("timeout", { code: "P2028", clientVersion: "synthetic" })],
+    ["a raw-query deadlock (40P01)", new Prisma.PrismaClientKnownRequestError("deadlock", { code: "P2010", clientVersion: "synthetic", meta: { code: "40P01" } })],
+  ])("asks to retry after %s instead of calling the link invalid", async (_label, error) => {
+    mocks.confirm.mockRejectedValue(error);
+    const response = await POST(request("token=aec1.payload.signature"));
+    expect(response.headers.get("location")).toBe("https://app.example.test/verify-email-change?status=retry");
   });
 });

@@ -29,11 +29,15 @@ export const ACCOUNT_RATE_LIMITS = {
   // Verification mail per recipient address, the registration send included.
   merchant_email_verification: { limit: 3, windowMs: 60 * 60_000 },
   // Login email change: attempts per account (each one checks the current
-  // password, so this also bounds password guessing from a stolen session),
-  // and verification mail per new address (keyed by the address whatever its
-  // owner, so the decision reveals nothing about existing accounts).
+  // password, so this also bounds password guessing from a stolen session);
+  // verification mail per (account, new address), so one account cannot use
+  // up another account's allowance for the same address; and a looser cap per
+  // new address across all accounts, which only bounds mail-bombing one
+  // mailbox from many accounts. Both recipient keys ignore whether the address
+  // is taken, so their decisions reveal nothing about existing accounts.
   account_email_change_request: { limit: 5, windowMs: 60 * 60_000 },
-  account_email_change_recipient: { limit: 3, windowMs: 60 * 60_000 },
+  account_email_change_pair: { limit: 3, windowMs: 60 * 60_000 },
+  account_email_change_recipient: { limit: 20, windowMs: 60 * 60_000 },
   login_account: { limit: 10, windowMs: 15 * 60_000 },
   // Failed TOTP/recovery-code verifications per account per day; beyond the
   // limit each further failure locks verification for an hour (#462 m3).

@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   verifyPassword: vi.fn(),
   schedule: vi.fn(),
   audit: vi.fn(),
+  lockedUntil: vi.fn(),
 }));
 vi.mock("next/navigation", () => ({ redirect: (path: string): never => { throw new Error(`redirect:${path}`); } }));
 vi.mock("next/headers", () => ({ headers: async () => new Headers({ "cf-connecting-ip": "203.0.113.9", "x-forwarded-for": "203.0.113.9" }) }));
@@ -17,8 +18,9 @@ vi.mock("@/lib/app-url", () => ({ getCanonicalAppUrl: () => "http://127.0.0.1:31
 vi.mock("@/lib/rate-limit", () => ({ checkRateLimit: mocks.ipLimit }));
 vi.mock("@/lib/account-rate-limit", () => ({ checkAccountRateLimit: mocks.accountLimit }));
 vi.mock("@/lib/password", () => ({ verifyPasswordAsync: mocks.verifyPassword }));
-vi.mock("@/lib/account-email-change", () => ({ scheduleAccountEmailChangeRequest: mocks.schedule }));
+vi.mock("@/lib/account-email-change", () => ({ scheduleAccountEmailChangeRequest: mocks.schedule, accountEmailChangeLockedUntil: mocks.lockedUntil }));
 vi.mock("@/lib/audit", () => ({ writeAuditLog: mocks.audit }));
+vi.mock("@/lib/db", () => ({ getDb: () => ({ synthetic: "db" }) }));
 
 import { requestAccountEmailChangeAction } from "./account-email-change-actions";
 
@@ -32,9 +34,9 @@ function form(extra: Record<string, string> = {}) {
   return data;
 }
 
-function signedIn(overrides: { mfaFactor?: unknown; mfaVerifiedAt?: Date | null } = {}) {
+function signedIn(overrides: { mfaFactor?: unknown; mfaVerifiedAt?: Date | null; platformRole?: string } = {}) {
   return {
-    user: { id: "user-1", email: "owner@example.test", passwordHash: "scrypt:synthetic", platformRole: "none", mfaFactor: overrides.mfaFactor ?? null },
+    user: { id: "user-1", email: "owner@example.test", passwordHash: "scrypt:synthetic", platformRole: overrides.platformRole ?? "none", mfaFactor: overrides.mfaFactor ?? null },
     session: { id: "session-1", mfaVerifiedAt: overrides.mfaVerifiedAt ?? null },
     vendor: { id: "vendor-1" },
     member: { role: "owner" },
@@ -48,6 +50,7 @@ beforeEach(() => {
   mocks.accountLimit.mockResolvedValue(null);
   mocks.verifyPassword.mockResolvedValue(true);
   mocks.audit.mockResolvedValue(undefined);
+  mocks.lockedUntil.mockResolvedValue(null);
 });
 
 describe("requesting a login email change", () => {
@@ -87,6 +90,29 @@ describe("requesting a login email change", () => {
     await expect(requestAccountEmailChangeAction(form())).rejects.toThrow("redirect:/settings/security?updated=email_change_sent");
     expect(mocks.verifyPassword).toHaveBeenCalledOnce();
     expect(mocks.schedule).toHaveBeenCalledOnce();
+  });
+
+  it("requires a recent MFA for any platform role, sending one without a factor to enrolment", async () => {
+    mocks.auth.mockResolvedValue(signedIn({ platformRole: "platform_admin" }));
+    await expect(requestAccountEmailChangeAction(form())).rejects.toThrow("redirect:/mfa/setup?reason=step_up&next=%2Fsettings%2Fsecurity");
+    mocks.auth.mockResolvedValue(signedIn({ platformRole: "platform_admin", mfaFactor: { id: "factor-1" }, mfaVerifiedAt: new Date(NOW - 60 * 60_000) }));
+    await expect(requestAccountEmailChangeAction(form())).rejects.toThrow("redirect:/mfa/verify?reason=step_up&next=%2Fsettings%2Fsecurity");
+    expect(mocks.verifyPassword).not.toHaveBeenCalled();
+    expect(mocks.schedule).not.toHaveBeenCalled();
+    mocks.auth.mockResolvedValue(signedIn({ platformRole: "platform_admin", mfaFactor: { id: "factor-1" }, mfaVerifiedAt: new Date(NOW - 60_000) }));
+    await expect(requestAccountEmailChangeAction(form())).rejects.toThrow("redirect:/settings/security?updated=email_change_sent");
+    expect(mocks.schedule).toHaveBeenCalledOnce();
+  });
+
+  it("refuses during the seven-day lock after a used revert link, before the password check", async () => {
+    mocks.lockedUntil.mockResolvedValue(new Date(NOW + 60_000));
+    await expect(requestAccountEmailChangeAction(form())).rejects.toThrow("redirect:/settings/security?error=email_change_locked");
+    expect(mocks.lockedUntil).toHaveBeenCalledWith({ synthetic: "db" }, "user-1");
+    expect(mocks.verifyPassword).not.toHaveBeenCalled();
+    expect(mocks.schedule).not.toHaveBeenCalled();
+    mocks.lockedUntil.mockRejectedValue(new Error("database down"));
+    await expect(requestAccountEmailChangeAction(form())).rejects.toThrow("redirect:/settings/security?error=email_change_unavailable");
+    expect(mocks.schedule).not.toHaveBeenCalled();
   });
 
   it("does not force MFA enrolment on an account without a factor", async () => {
