@@ -32,6 +32,10 @@ import type { LandingPageTemplateSummary, LandingPageTemplateTarget } from "@/li
 import { LandingPageTemplateLibrary, templateCreateHref, templateStepAvailability } from "./landing-page-template-library";
 import { SaveAsTemplateDialog } from "./save-as-template-dialog";
 
+// The library renders a live thumbnail for every platform template (60+ cards after the list and sales
+// templates); under a loaded CI runner a render pass can exceed the 5 s default, so allow more time.
+vi.setConfig({ testTimeout: 15_000 });
+
 let container: HTMLDivElement;
 let root: Root;
 

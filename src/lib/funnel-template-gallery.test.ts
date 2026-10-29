@@ -89,7 +89,8 @@ describe("funnel template gallery", () => {
   it("依 step type 過濾模板，不把其他用途的模板混入目前步驟", () => {
     expect(listFunnelTemplateGallery("webinar", "webinar_registration_page").map((item) => item.id)).toEqual(REGISTRATION_IDS);
     expect(listFunnelTemplateGallery("webinar", "webinar_broadcast_page").map((item) => item.id)).toEqual(["webinar-broadcast-v2"]);
-    expect(listFunnelTemplateGallery("sell", "thank_you_page")).toEqual([]);
+    // 訂單感謝頁步驟只列出訂單感謝頁，不混入銷售頁。
+    expect(listFunnelTemplateGallery("sell", "thank_you_page").map((item) => item.id)).toEqual(SALES_TEMPLATES.map((template) => `${template.id}-thanks`));
     expect(listFunnelTemplateGallery("custom", "info_page").map((item) => item.id)).toEqual(["custom-luxury-course", "custom-privacy-v2", "custom-terms-v2"]);
     expect(listFunnelTemplateGallery("custom", "contact_us_page").map((item) => item.id)).toEqual(["custom-luxury-course", "custom-privacy-v2", "custom-terms-v2"]);
   });

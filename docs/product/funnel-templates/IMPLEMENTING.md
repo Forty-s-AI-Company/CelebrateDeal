@@ -50,6 +50,7 @@ export const template: ConversionTemplateDefinition = {
 ### 銷售頁（sales）
 
 - **售價與結帳只用報價卡** `conversionOfferCard(prefix, "offer", { title, lines, note, style, titleColor, noteColor, htmlId: "offer" })`：裡面的 `offer_price`、`payment_button` 讀「訂單表單」步驟綁定的商品，範本不寫售價。
+- 報價卡的節點 id 是 `<prefix>_<id>`：放報價卡的區段不要也命名成 `offer`，否則節點 id 重複、PageDocument 驗證失敗。
 - 報價卡必須是**淺色底**（結帳元件的字是深色）；按鈕顏色跟隨頁面 `linkColor`，所以 `theme.typography.linkColor` 要選能當按鈕底色的顏色。
 - `value_stack`、原價、方案比較等寫死的金額只做展示，**同一個節點要有「範本示意」**（`CONVERSION_TEMPLATE_SAMPLE_MARK`），共用檢查會擋。
 - 一定要有 `faq`；建議有保證／退費／配送說明的 `callout`，文字提醒商家依實際政策修改。

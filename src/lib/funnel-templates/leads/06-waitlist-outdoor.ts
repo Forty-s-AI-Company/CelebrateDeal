@@ -144,7 +144,7 @@ export const template: ConversionTemplateDefinition = {
   name: "新品候補名單頁",
   description: "深墨綠與黃銅線稿的新品上市前候補頁：設計圖般的首屏、細節特寫、不寫日期的上市流程與候補權益。",
   category: "新品候補／搶先名單",
-  purposes: ["leads", "brand"],
+  purposes: ["leads"],
   styles: ["luxe"],
   preview: { eyebrow: "名單頁", headline: "為城市與山路之間而做的 28L 背包", summary: "深色設計圖首屏＋候補權益", palette: [FOREST, BRASS, INK], sectionCount: 7 },
   theme: { typography: { headingFont: "serif-tc", bodyFont: "sans-tc", bodySize: 17, bodyLineHeight: 1.8, textColor: BODY, headingColor: INK, linkColor: BRASS }, background: { color: FOREST } },
