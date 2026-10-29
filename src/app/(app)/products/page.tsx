@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { Plus } from "lucide-react";
 import { Badge, ButtonLink, Card, EmptyState, PageHeader } from "@/components/ui";
-import { requireVendorManager } from "@/lib/auth";
+import { requireVendorManagerContext } from "@/lib/auth";
+import { getSalesProjectScope, withProjectQuery } from "@/lib/sales-project-scope";
 import { getDb } from "@/lib/db";
 import { formatCurrency } from "@/lib/format";
 
@@ -22,7 +23,8 @@ function selectedStatus(value: string | string[] | undefined): ProductStatus | n
 export default async function ProductsPage({ searchParams }: {
   searchParams?: Promise<{ q?: string | string[]; status?: string | string[]; updated?: string | string[] }>;
 }) {
-  const vendor = await requireVendorManager();
+  const { auth, vendor } = await requireVendorManagerContext();
+  const createHref = withProjectQuery("/products/new", (await getSalesProjectScope(auth.user.id, vendor.id)).projectId);
   const query = await searchParams;
   const rawSearch = Array.isArray(query?.q) ? query.q[0] : query?.q;
   const search = rawSearch?.trim().slice(0, 128) ?? "";
@@ -43,7 +45,7 @@ export default async function ProductsPage({ searchParams }: {
 
   return (
     <>
-      <PageHeader title="商品" description="管理草稿、價格、庫存、媒體、預覽與實際交付方式。" action={<ButtonLink href="/products/new"><Plus size={16} />新增商品</ButtonLink>} />
+      <PageHeader title="商品" description="管理草稿、價格、庫存、媒體、預覽與實際交付方式。" action={<ButtonLink href={createHref}><Plus size={16} />新增商品</ButtonLink>} />
       {updated === "created" || updated === "saved" ? <p role="status" className="mb-5 rounded-md border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-800">商品已{updated === "created" ? "建立為草稿" : "儲存"}。</p> : null}
       <Card className="mb-5">
         <form method="get" className="grid gap-3 md:grid-cols-[1fr_220px_auto] md:items-end">
@@ -62,7 +64,7 @@ export default async function ProductsPage({ searchParams }: {
         </form>
       </Card>
       {products.length === 0 ? (
-        <EmptyState title={search || status ? "沒有符合條件的商品" : "還沒有商品"} description={search || status ? "調整搜尋或狀態條件後再試。" : "先建立草稿並確認預覽，再安全上架販售。"} action={!search && !status ? <ButtonLink href="/products/new">新增商品</ButtonLink> : undefined} />
+        <EmptyState title={search || status ? "沒有符合條件的商品" : "還沒有商品"} description={search || status ? "調整搜尋或狀態條件後再試。" : "先建立草稿並確認預覽，再安全上架販售。"} action={!search && !status ? <ButtonLink href={createHref}>新增商品</ButtonLink> : undefined} />
       ) : (
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           {products.map((product) => (

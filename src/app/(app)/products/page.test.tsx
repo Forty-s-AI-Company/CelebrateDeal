@@ -2,16 +2,17 @@ import { renderToStaticMarkup } from "react-dom/server";
 import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const mocks = vi.hoisted(() => ({ requireVendorManager: vi.fn(), findMany: vi.fn() }));
+const mocks = vi.hoisted(() => ({ requireVendorManager: vi.fn(), prefFindUnique: vi.fn(), findMany: vi.fn() }));
 vi.mock("next/link", () => ({ default: ({ href, children, ...props }: { href: string; children: ReactNode }) => <a href={href} {...props}>{children}</a> }));
 vi.mock("lucide-react", () => ({ Plus: () => <span>plus</span> }));
-vi.mock("@/lib/auth", () => ({ requireVendorManager: mocks.requireVendorManager }));
-vi.mock("@/lib/db", () => ({ getDb: () => ({ product: { findMany: mocks.findMany } }) }));
+vi.mock("@/lib/auth", () => ({ requireVendorManager: mocks.requireVendorManager, requireVendorManagerContext: async () => ({ auth: { user: { id: "user-1" } }, vendor: await mocks.requireVendorManager() }) }));
+vi.mock("@/lib/db", () => ({ getDb: () => ({ userOnboardingPreference: { findUnique: mocks.prefFindUnique }, product: { findMany: mocks.findMany } }) }));
 
 import ProductsPage from "./page";
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mocks.prefFindUnique.mockResolvedValue(null);
   mocks.requireVendorManager.mockResolvedValue({ id: "vendor-1" });
   mocks.findMany.mockResolvedValue([]);
 });
