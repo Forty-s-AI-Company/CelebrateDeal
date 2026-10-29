@@ -25,6 +25,7 @@ import {
   rekeyTemplateDocument,
   templateDisplayDocument,
 } from "@/lib/landing-page-template-document";
+import { getPlatformTemplatePreviewDocument } from "@/lib/landing-page-platform-template-library";
 import { LANDING_PAGE_MAX_CONTENT_BYTES, landingPageContentBytes } from "@/lib/landing-page-limits";
 import { requireEditableSalesProjectScope } from "@/lib/sales-project-scope";
 
@@ -198,6 +199,14 @@ export async function getLandingPageTemplateDocument(templateId: unknown): Promi
   const content = row ? readStoredTemplateDocument(row.content) : null;
   if (!content) throw new LandingPageTemplateNotFoundError();
   return content;
+}
+
+/** Full preview document of a platform template; the library list only carries a thumbnail. Manager-only like the rest of the library. */
+export async function getLandingPagePlatformTemplateDocument(templateId: unknown): Promise<PageDocument> {
+  await managerVendor();
+  const document = getPlatformTemplatePreviewDocument(templateId);
+  if (!document) throw new LandingPageTemplateNotFoundError();
+  return document;
 }
 
 /** Name of the caller's own template (for the create form); null when it is missing or another vendor's. */
