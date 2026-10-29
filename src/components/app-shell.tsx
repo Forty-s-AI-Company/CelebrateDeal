@@ -92,6 +92,7 @@ const navGroups = [
       { href: "/admin/support-cases", label: "退款客服交接", icon: Headphones, adminOnly: true },
       { href: "/admin/vendor-features", label: "商家封測模組", icon: Settings2, adminOnly: true },
       { href: "/admin/merchant-invitations", label: "商家邀請", icon: UserPlus, adminOnly: true },
+      { href: "/admin/account-holds", label: "帳號安全暫停", icon: Ban, adminOnly: true },
       { href: "/admin/cloudflare/videos", label: "Stream 檢查", icon: Cloud, adminOnly: true },
       { href: "/mfa/setup", label: "MFA 安全設定", icon: Lock, adminOnly: true },
     ],

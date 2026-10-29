@@ -91,6 +91,7 @@ export async function requestAccountEmailChangeAction(formData: FormData) {
 
   scheduleAccountEmailChangeRequest({
     userId: auth.user.id,
+    sessionId: auth.session.id,
     currentEmail: auth.user.email,
     newEmail,
     vendorId: auth.vendor?.id ?? null,

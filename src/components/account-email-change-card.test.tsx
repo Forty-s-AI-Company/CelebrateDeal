@@ -20,6 +20,9 @@ describe("AccountEmailChangeCard", () => {
     expect(html).not.toContain('name="userId"');
     expect(html).toContain("60 分鐘內有效");
     expect(html).toContain("不是我操作，還原 Email");
+    expect(html).toContain("舊信箱 7 天內仍可還原；若舊信箱已外洩，請聯絡客服");
+    // No self-service way to void the old mailbox's links (#518 review B1).
+    expect(html).not.toContain("作廢");
   });
 
   it("shows the step-up notice only to an account with a factor whose verification is stale", () => {

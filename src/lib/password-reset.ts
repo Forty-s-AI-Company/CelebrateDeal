@@ -4,6 +4,7 @@ import { consumeAccountRateLimit } from "@/lib/account-rate-limit";
 import { auditSnapshot, writeAuditLog } from "@/lib/audit";
 import { getDb } from "@/lib/db";
 import { sendPasswordResetEmail } from "@/lib/email";
+import { revokeUserLineAccess } from "@/lib/line-user-access";
 import { hashPasswordAsync } from "@/lib/password";
 
 const PASSWORD_RESET_TTL_MS = 30 * 60 * 1000;
@@ -207,6 +208,10 @@ export async function consumePasswordResetToken(token: string, password: string)
         where: { userId: resetToken.userId, consumedAt: null, revokedAt: null },
         data: { revokedAt: now },
       });
+      // LINE Login signs in without the password: a reset (often the way back
+      // in after someone else used the account) ends it too, including any
+      // login/link flow still in progress. The owner links LINE again.
+      await revokeUserLineAccess(tx, resetToken.userId, now);
 
       return {
         tokenId: resetToken.id,

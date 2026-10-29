@@ -48,10 +48,14 @@ describe("completeMfaEnrollment", () => {
     get: vi.fn(),
     set: vi.fn(),
   };
-  const database = {
-    $transaction: vi.fn(),
+  const tx = {
+    $queryRaw: vi.fn(),
+    userSession: { findFirst: vi.fn() },
     userMfaFactor: { upsert: vi.fn() },
     userRecoveryCode: { deleteMany: vi.fn(), createMany: vi.fn() },
+  };
+  const database = {
+    $transaction: vi.fn(),
   };
 
   beforeEach(() => {
@@ -60,6 +64,7 @@ describe("completeMfaEnrollment", () => {
     mocks.cookies.mockResolvedValue(cookieStore);
     mocks.requireAuth.mockResolvedValue({
       user: { id: "owner-1", mfaFactor: null },
+      session: { id: "session-1" },
       vendor: { id: "vendor-1" },
       member: { role: "owner" },
       isPlatformAdmin: false,
@@ -74,7 +79,9 @@ describe("completeMfaEnrollment", () => {
     mocks.markCurrentSessionMfaVerified.mockResolvedValue(undefined);
     mocks.writeAuditLog.mockResolvedValue(undefined);
     mocks.getDb.mockReturnValue(database);
-    database.$transaction.mockResolvedValue([]);
+    database.$transaction.mockImplementation(async (callback: (client: typeof tx) => unknown) => callback(tx));
+    tx.$queryRaw.mockResolvedValue([{ id: "owner-1" }]);
+    tx.userSession.findFirst.mockResolvedValue({ id: "session-1" });
     cookieStore.get.mockReturnValue({ value: "synthetic-pending-cookie" });
   });
 
@@ -91,6 +98,31 @@ describe("completeMfaEnrollment", () => {
     );
     expect(mocks.markCurrentSessionMfaVerified).toHaveBeenCalledOnce();
     expect(mocks.writeAuditLog).toHaveBeenCalledWith(expect.objectContaining({ action: "mfa_enabled" }));
+  });
+
+  it("writes the factor only under the User row lock, after re-checking this session", async () => {
+    await completeMfaEnrollment(new FormData());
+    expect(tx.$queryRaw).toHaveBeenCalledOnce();
+    expect(String((tx.$queryRaw.mock.calls[0]![0] as TemplateStringsArray).join("?"))).toContain("FOR UPDATE");
+    expect(tx.userSession.findFirst).toHaveBeenCalledWith({
+      where: { id: "session-1", userId: "owner-1", revokedAt: null, expiresAt: { gt: expect.any(Date) } },
+      select: { id: true },
+    });
+    expect(tx.$queryRaw.mock.invocationCallOrder[0]).toBeLessThan(tx.userMfaFactor.upsert.mock.invocationCallOrder[0]!);
+    expect(tx.userRecoveryCode.createMany).toHaveBeenCalledWith({ data: [{ userId: "owner-1", codeHash: "hash:recovery-1" }, { userId: "owner-1", codeHash: "hash:recovery-2" }] });
+  });
+
+  it.each([
+    ["the session was revoked meanwhile (e.g. by a login email change revert)", () => tx.userSession.findFirst.mockResolvedValue(null)],
+    ["the account is gone or suspended", () => tx.$queryRaw.mockResolvedValue([])],
+  ])("writes nothing when %s", async (_label, arrange) => {
+    arrange();
+    await expect(completeMfaEnrollment(new FormData())).resolves.toEqual({ ok: false, destination: "/settings/security", error: "session_stale" });
+    expect(tx.userMfaFactor.upsert).not.toHaveBeenCalled();
+    expect(tx.userRecoveryCode.createMany).not.toHaveBeenCalled();
+    expect(mocks.markCurrentSessionMfaVerified).not.toHaveBeenCalled();
+    expect(cookieStore.set).not.toHaveBeenCalled();
+    expect(mocks.writeAuditLog).not.toHaveBeenCalled();
   });
 
   it("starts owner enrollment through the shared security and cookie transition", async () => {
@@ -170,6 +202,7 @@ describe("completeMfaEnrollment", () => {
     beforeEach(() => {
       mocks.requireAuth.mockResolvedValue({
         user: { id: "owner-1", mfaFactor: null },
+      session: { id: "session-1" },
         vendor: null,
         member: null,
         isPlatformAdmin: false,

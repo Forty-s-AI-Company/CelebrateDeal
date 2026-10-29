@@ -153,6 +153,7 @@ const mocks = vi.hoisted(() => ({
   userRecoveryCodeUpdate: vi.fn(),
   userRecoveryCodeUpdateMany: vi.fn(),
   userUpdate: vi.fn(),
+  userUpdateMany: vi.fn(),
   verifyRecoveryCode: vi.fn(),
   verifyTotpCode: vi.fn(),
   decryptMfaSecret: vi.fn(),
@@ -471,7 +472,7 @@ import { RefundProviderError } from "@/lib/payment-providers/types";
 import SecuritySettingsPage from "./(app)/settings/security/page";
 import { FormSubmitButton } from "@/components/form-submit-button";
 import { Field } from "@/components/ui";
-import { hashPassword } from "@/lib/password";
+import { hashPassword, unusablePasswordHash } from "@/lib/password";
 import { BillingCycleError } from "@/lib/billing-cycle";
 import { SettlementAdjustmentError } from "@/lib/settlement-adjustment";
 import { applyPostRefundAfterCommit, applyPostRefundInTransaction } from "@/lib/payment-post-refund";
@@ -1076,6 +1077,16 @@ describe("loginAction", () => {
 describe("updatePasswordAction", () => {
   const currentPassword = "current-password-123";
 
+  /** The interactive transaction the action runs; `count` is what the compare-and-swap matches. */
+  function passwordTransaction(count = 1) {
+    mocks.userUpdateMany.mockResolvedValue({ count });
+    mocks.transaction.mockImplementationOnce(async (callback: (tx: unknown) => Promise<unknown>) => callback({
+      user: { updateMany: mocks.userUpdateMany },
+      userSession: { updateMany: mocks.userSessionUpdateMany },
+      userEmailChangeRequest: { updateMany: mocks.userEmailChangeRequestUpdateMany },
+    }));
+  }
+
   function authenticatedUser(platformRole = "user") {
     mocks.requireAuth.mockResolvedValue({
       user: {
@@ -1126,7 +1137,7 @@ describe("updatePasswordAction", () => {
   it("accepts an 8-character password that is not common", async () => {
     authenticatedUser();
     mocks.cookies.mockResolvedValueOnce({ delete: vi.fn(), set: vi.fn() });
-    mocks.transaction.mockResolvedValueOnce([]);
+    passwordTransaction();
 
     await expect(updatePasswordAction(updatePasswordFormData({ password: "bluewhal" }))).rejects.toThrow(
       "redirect:/login?password_changed=1",
@@ -1144,7 +1155,7 @@ describe("updatePasswordAction", () => {
     expect(mocks.transaction).not.toHaveBeenCalled();
 
     mocks.cookies.mockResolvedValueOnce({ delete: vi.fn(), set: vi.fn() });
-    mocks.transaction.mockResolvedValueOnce([]);
+    passwordTransaction();
     await expect(updatePasswordAction(updatePasswordFormData({ password: "bluewhale123" }))).rejects.toThrow(
       "redirect:/login?password_changed=1",
     );
@@ -1167,16 +1178,18 @@ describe("updatePasswordAction", () => {
     authenticatedUser();
     const deleteCookie = vi.fn();
     mocks.cookies.mockResolvedValueOnce({ delete: deleteCookie, set: vi.fn() });
-    mocks.transaction.mockResolvedValueOnce([]);
+    passwordTransaction();
 
     await expect(updatePasswordAction(updatePasswordFormData())).rejects.toThrow(
       "redirect:/login?password_changed=1",
     );
 
-    expect(mocks.userUpdate).toHaveBeenCalledWith({
-      where: { id: "user-1" },
+    // Compare-and-swap on the hash the current password was verified against.
+    expect(mocks.userUpdateMany).toHaveBeenCalledWith({
+      where: { id: "user-1", passwordHash: hashPassword(currentPassword, "current-password-test-salt") },
       data: { passwordHash: expect.stringMatching(/^scrypt:/) },
     });
+    expect(mocks.userUpdate).not.toHaveBeenCalled();
     expect(mocks.userSessionUpdateMany).toHaveBeenCalledWith({
       where: { userId: "user-1", revokedAt: null },
       data: { revokedAt: expect.any(Date) },
@@ -1187,7 +1200,6 @@ describe("updatePasswordAction", () => {
       data: { revokedAt: expect.any(Date) },
     });
     expect(mocks.transaction).toHaveBeenCalledOnce();
-    expect(mocks.transaction.mock.calls[0]![0]).toHaveLength(3);
     expect(mocks.writeAuditLog).toHaveBeenCalledWith(expect.objectContaining({
       actorId: "user-1",
       action: "update_password",
@@ -1196,6 +1208,31 @@ describe("updatePasswordAction", () => {
     expect(JSON.stringify(mocks.writeAuditLog.mock.calls)).not.toContain("replacement-password-456");
     expect(deleteCookie).toHaveBeenCalledWith("celebrate_session");
     expect(deleteCookie).toHaveBeenCalledWith("celebrate_vendor_id");
+  });
+
+  it("refuses when the stored hash changed after the check (e.g. a login email change revert disabled it)", async () => {
+    authenticatedUser();
+    passwordTransaction(0);
+
+    await expect(updatePasswordAction(updatePasswordFormData())).rejects.toThrow("redirect:/settings/security?error=current_password");
+    expect(mocks.userUpdateMany).toHaveBeenCalledOnce();
+    expect(mocks.userSessionUpdateMany).not.toHaveBeenCalled();
+    expect(mocks.userEmailChangeRequestUpdateMany).not.toHaveBeenCalled();
+    expect(mocks.writeAuditLog).not.toHaveBeenCalled();
+  });
+
+  it("answers current_password for an account whose password a revert made unusable", async () => {
+    mocks.requireAuth.mockResolvedValue({
+      user: { id: "user-1", email: "member@example.com", passwordHash: unusablePasswordHash("account_email_revert"), platformRole: "user" },
+      session: { id: "session-1" },
+      vendor: { id: "vendor-1" },
+      member: { role: "owner" },
+    });
+    for (const attempt of [currentPassword, "", "unusable:account_email_revert"]) {
+      await expect(updatePasswordAction(updatePasswordFormData({ currentPassword: attempt }))).rejects.toThrow("redirect:/settings/security?error=current_password");
+    }
+    expect(mocks.transaction).not.toHaveBeenCalled();
+    expect(mocks.userUpdateMany).not.toHaveBeenCalled();
   });
 });
 
@@ -3563,8 +3600,9 @@ describe("regenerateRecoveryCodesAction", () => {
         id: "user-1",
         email: "member@example.test",
         platformRole: "user",
-        mfaFactor: { secretEncrypted: "encrypted-totp-secret" },
+        mfaFactor: { id: "factor-1", secretEncrypted: "encrypted-totp-secret" },
       },
+      session: { id: "session-1" },
       vendor: { betaFeatureGrants: ["courses", "billing", "funnel_binding", "consultation_booking", "browser_live", "danmaku"], id: "vendor-1" },
       member: { role: "owner" },
       isPlatformAdmin: false,
@@ -3623,7 +3661,15 @@ describe("regenerateRecoveryCodesAction", () => {
     authenticatedMfaUser();
     const setCookie = vi.fn();
     mocks.cookies.mockResolvedValueOnce({ delete: vi.fn(), set: setCookie });
-    mocks.transaction.mockResolvedValueOnce([]);
+    const userMfaFactorUpdateMany = vi.fn().mockResolvedValue({ count: 1 });
+    const queryRaw = vi.fn().mockResolvedValue([{ id: "user-1" }]);
+    const sessionFindFirst = vi.fn().mockResolvedValue({ id: "session-1" });
+    mocks.transaction.mockImplementationOnce(async (callback: (tx: unknown) => Promise<unknown>) => callback({
+      $queryRaw: queryRaw,
+      userSession: { findFirst: sessionFindFirst },
+      userMfaFactor: { updateMany: userMfaFactorUpdateMany },
+      userRecoveryCode: { deleteMany: mocks.userRecoveryCodeDeleteMany, createMany: mocks.userRecoveryCodeCreateMany },
+    }));
 
     await expect(regenerateRecoveryCodesAction(recoveryRegenerationFormData())).rejects.toThrow(
       "redirect:/settings/security?updated=recovery_regenerated",
@@ -3636,10 +3682,13 @@ describe("regenerateRecoveryCodesAction", () => {
         { userId: "user-1", codeHash: "test-hash:recovery-code-2" },
       ],
     });
-    expect(mocks.userMfaFactorUpdate).toHaveBeenCalledWith({
-      where: { userId: "user-1" },
+    expect(userMfaFactorUpdateMany).toHaveBeenCalledWith({
+      where: { id: "factor-1", userId: "user-1" },
       data: { lastUsedAt: expect.any(Date) },
     });
+    // Under the User row lock, re-checking this session first.
+    expect(queryRaw).toHaveBeenCalledOnce();
+    expect(sessionFindFirst).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ id: "session-1", userId: "user-1", revokedAt: null }) }));
     expect(mocks.transaction).toHaveBeenCalledOnce();
     expect(setCookie).toHaveBeenCalledWith(
       "mfa_recovery_codes",

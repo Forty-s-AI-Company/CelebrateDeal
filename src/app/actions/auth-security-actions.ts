@@ -206,12 +206,19 @@ export async function updatePasswordAction(formData: FormData) {
 
   const db = getDb();
   const revokedAt = new Date();
-  await db.$transaction([
-    db.user.update({ where: { id: auth.user.id }, data: { passwordHash: await hashPasswordAsync(password) } }),
-    db.userSession.updateMany({ where: { userId: auth.user.id, revokedAt: null }, data: { revokedAt } }),
+  const passwordHash = await hashPasswordAsync(password);
+  const changed = await db.$transaction(async (tx) => {
+    // Compare-and-swap on the hash the current password was checked against:
+    // a login email change revert (or another change) that ran meanwhile
+    // replaced it, and that write must win.
+    const updated = await tx.user.updateMany({ where: { id: auth.user.id, passwordHash: auth.user.passwordHash }, data: { passwordHash } });
+    if (updated.count !== 1) return false;
+    await tx.userSession.updateMany({ where: { userId: auth.user.id, revokedAt: null }, data: { revokedAt } });
     // A pending login email change ends with the old password.
-    db.userEmailChangeRequest.updateMany({ where: { userId: auth.user.id, consumedAt: null, revokedAt: null }, data: { revokedAt } }),
-  ]);
+    await tx.userEmailChangeRequest.updateMany({ where: { userId: auth.user.id, consumedAt: null, revokedAt: null }, data: { revokedAt } });
+    return true;
+  });
+  if (!changed) redirect("/settings/security?error=current_password");
   await writeAuditLog({
     vendorId: auth.vendor?.id ?? null,
     actorId: auth.user.id,
@@ -274,7 +281,7 @@ export async function startMfaEnrollmentAction(formData: FormData) {
 
 export async function confirmMfaEnrollmentAction(formData: FormData) {
   const result = await completeMfaEnrollment(formData);
-  redirect(withMfaReturnPath(`${result.destination}?${result.ok ? "updated=mfa_enabled" : "error=mfa_code"}`, formData.get("next")));
+  redirect(withMfaReturnPath(`${result.destination}?${result.ok ? "updated=mfa_enabled" : `error=${result.error}`}`, formData.get("next")));
 }
 
 export async function verifyMfaAction(formData: FormData) {

@@ -17,14 +17,18 @@ import {
   verifyAccountEmailRevertToken,
 } from "@/lib/account-email-change-token";
 import { auditSnapshot, requestAuditMeta, writeAuditLog } from "@/lib/audit";
+import { ACCOUNT_SECURITY_HOLD_AUDIT_ACTION, ACCOUNT_SECURITY_HOLD_STATUS } from "@/lib/account-security-hold";
 import { getDb } from "@/lib/db";
 import {
   sendAccountEmailChangeNoticeEmail,
   sendAccountEmailChangeVerificationEmail,
+  sendAccountEmailRevertedNoticeEmail,
   TransactionalEmailError,
 } from "@/lib/email";
 import { maskEmailRecipient } from "@/lib/email-delivery-pii";
 import { lockLoginEmails, loginEmailReservedForAnother } from "@/lib/login-email-reservation";
+import { revokeUserLineAccess } from "@/lib/line-user-access";
+import { unusablePasswordHash } from "@/lib/password";
 
 /**
  * Login email change (account settings → 安全性 → 變更登入 Email).
@@ -46,12 +50,23 @@ import { lockLoginEmails, loginEmailReservedForAnother } from "@/lib/login-email
  *    request, opens the seven-day revert window (which reserves the previous
  *    address for this user), revokes every session and every unused
  *    password-reset token, and audits, in one transaction.
- * 4. `revertAccountEmailChange` ("不是我操作，還原 Email", no sign-in): if
- *    the account still has the previous address it cancels the pending
- *    change; otherwise it restores the previous address (and the founder's
- *    `Vendor.email` if it followed). Either way every session, unused reset
- *    token and pending change ends, later revert links are revoked, and
- *    self-service changes are blocked for seven days.
+ * 4. `revertAccountEmailChange` ("不是我操作，還原 Email", no sign-in). Whoever
+ *    requested the change knew the password and held a session, so both
+ *    modes evict them: every session, unused reset token, pending change,
+ *    user LINE Login identity, unfinished LINE login/link state and recovery
+ *    code ends, and the password stays unusable until a reset to the
+ *    account's address. The MFA factor is never deleted.
+ *    - Cancel: the change never completed and the account still has the
+ *      address the link went to. No change lock (the clicker already holds
+ *      the login mailbox).
+ *    - Lockdown (any other case): also restores the previous address (and
+ *      the founder's `Vendor.email` if it followed), mails a masked notice
+ *      without a link to the address it reverted away from, and blocks
+ *      self-service changes for seven days. When the account's MFA factor
+ *      was enabled within a day before the requester's session (or after),
+ *      the account goes on security hold for support instead
+ *      (`src/lib/account-security-hold.ts`): lock-out over takeover.
+ *    Either way later revert links are revoked; earlier ones keep working.
  *
  * Enumeration safety: when the new address belongs to (or is reserved for)
  * another account, nothing is sent to it, but a request row is stored all the
@@ -67,7 +82,11 @@ import { lockLoginEmails, loginEmailReservedForAnother } from "@/lib/login-email
  * same from a password reset.
  */
 
-/** Self-service changes stay blocked this long after a used revert link. */
+/**
+ * Self-service changes stay blocked this long after a revert that locked the
+ * account down (`revertedAt`). A cancel of a change that never completed ends
+ * its link with `revertRevokedAt` instead and sets no lock.
+ */
 export const ACCOUNT_EMAIL_CHANGE_LOCK_DAYS = 7;
 const LOCK_MS = ACCOUNT_EMAIL_CHANGE_LOCK_DAYS * 24 * 60 * 60 * 1_000;
 
@@ -81,6 +100,8 @@ export type AccountEmailChangeRequestOutcome =
 
 type RequestInput = {
   userId: string;
+  /** The session the request was made from (from `requireAuth`, never the form). */
+  sessionId: string;
   /** The account's address when the request was made (from the session, never the form). */
   currentEmail: string;
   /** Already normalized by `normalizeLoginEmail` and different from `currentEmail`. */
@@ -181,6 +202,14 @@ export async function processAccountEmailChangeRequest(input: RequestInput): Pro
       const user = await tx.user.findUnique({ where: { id: input.userId }, select: { email: true, status: true } });
       // The account changed since the request (suspended, or its address moved on).
       if (!user || user.status !== "active" || user.email !== input.currentEmail) return { kind: "account_changed" };
+      // The requesting session, bound to this user: a revert later evicts
+      // factors enrolled since it began. Ended meanwhile (logout, password
+      // change, another revert): store nothing.
+      const session = await tx.userSession.findFirst({
+        where: { id: input.sessionId, userId: input.userId, revokedAt: null, expiresAt: { gt: now } },
+        select: { id: true, createdAt: true },
+      });
+      if (!session) return { kind: "account_changed" };
       if (await accountEmailChangeLockedUntil(tx, input.userId, now)) return { kind: "locked" };
       const revoked = (await revokeOpenRequests(tx, input.userId, now)).count;
       const taken = Boolean(await tx.user.findUnique({ where: { email: input.newEmail }, select: { id: true } }))
@@ -199,6 +228,8 @@ export async function processAccountEmailChangeRequest(input: RequestInput): Pro
           // Until the change completes, the revert link only cancels it.
           revertTokenHash: revert.tokenHash,
           revertExpiresAt: link.expiresAt,
+          initiatingSessionId: session.id,
+          initiatingSessionCreatedAt: session.createdAt,
           createdAt: now,
         },
         select: { id: true },
@@ -413,62 +444,102 @@ export async function describeAccountEmailRevertLink(token: unknown, now = new D
   if (!candidate || typeof token !== "string") return null;
   const row = await getDb().userEmailChangeRequest.findUnique({
     where: { revertTokenHash: accountEmailChangeTokenHash(token) },
-    select: { userId: true, previousEmail: true, revertedAt: true, revertRevokedAt: true, revertExpiresAt: true, user: { select: { email: true } } },
+    select: { userId: true, previousEmail: true, consumedAt: true, revertedAt: true, revertRevokedAt: true, revertExpiresAt: true, user: { select: { email: true } } },
   });
   if (!row || row.userId !== candidate.userId || row.revertedAt || row.revertRevokedAt || row.revertExpiresAt <= now) return null;
   if (!verifyAccountEmailRevertToken(token, row.previousEmail, now)) return null;
-  return { mode: row.user.email === row.previousEmail ? "cancel" as const : "restore" as const };
+  return { mode: isCancel(row.consumedAt, row.user.email, row.previousEmail) ? "cancel" as const : "restore" as const };
 }
 
-export type AccountEmailRevertResult = { status: "reverted" | "cancelled" | "invalid" | "conflict" | "retry" };
+/**
+ * A revert only cancels when the change never completed and the account
+ * still has the address the link went to: whoever clicks already holds the
+ * login mailbox, so there is nobody to evict. Anything else (the change
+ * completed, or a later change moved the account away) locks it down.
+ */
+function isCancel(consumedAt: Date | null, currentEmail: string, previousEmail: string) {
+  return consumedAt === null && currentEmail === previousEmail;
+}
+
+export type AccountEmailRevertResult = { status: "reverted" | "held" | "cancelled" | "invalid" | "conflict" | "retry" };
+
+/** Restored address and the address it was reverted away from, for the post-commit notice. */
+type RevertNotice = { to: string; restoredEmail: string; jti: string; userId: string; requestId: string };
 
 /**
  * "不是我操作，還原 Email". The link went to the address the account had when
  * the change was requested. Works signed out and never signs anyone in.
+ *
+ * A lockdown that restores the address also mails a security notice (masked
+ * restored address, no link) to the address it was reverted away from, so an
+ * owner who really did move away from a compromised mailbox learns at once
+ * and can contact support.
  */
 export async function revertAccountEmailChange(token: unknown, now = new Date()): Promise<AccountEmailRevertResult> {
   const candidate = readAccountEmailRevertToken(token, now);
   if (!candidate || typeof token !== "string") return { status: "invalid" };
   const revertTokenHash = accountEmailChangeTokenHash(token);
   const meta = await requestAuditMeta();
+  let outcome: { result: AccountEmailRevertResult; notice: RevertNotice | null };
   try {
-    return await getDb().$transaction(async (tx): Promise<AccountEmailRevertResult> => {
+    outcome = await getDb().$transaction(async (tx) => {
+      const done = (result: AccountEmailRevertResult, notice: RevertNotice | null = null) => ({ result, notice });
       const row = await tx.userEmailChangeRequest.findUnique({
         where: { revertTokenHash },
-        select: { id: true, userId: true, previousEmail: true, createdAt: true },
+        select: { id: true, userId: true, previousEmail: true, createdAt: true, initiatingSessionCreatedAt: true },
       });
-      if (!row || row.userId !== candidate.userId) return { status: "invalid" };
+      if (!row || row.userId !== candidate.userId) return done({ status: "invalid" });
       const claim = verifyAccountEmailRevertToken(token, row.previousEmail, now);
-      if (!claim) return { status: "invalid" };
+      if (!claim) return done({ status: "invalid" });
 
-      if (!await lockUser(tx, row.userId)) return { status: "invalid" };
-      const user = await tx.user.findUnique({ where: { id: row.userId }, select: { email: true } });
-      if (!user) return { status: "invalid" };
+      if (!await lockUser(tx, row.userId)) return done({ status: "invalid" });
+      const user = await tx.user.findUnique({ where: { id: row.userId }, select: { email: true, status: true } });
+      if (!user) return done({ status: "invalid" });
       await lockLoginEmails(tx, [user.email, row.previousEmail]);
+      // Re-read under the locks: a concurrent confirmation may have completed the change.
       const open = await tx.userEmailChangeRequest.findFirst({
-        where: { id: row.id, revertedAt: null, revertRevokedAt: null, revertExpiresAt: { gt: now } },
-        select: { id: true },
+        where: { id: row.id, userId: row.userId, revertedAt: null, revertRevokedAt: null, revertExpiresAt: { gt: now } },
+        select: { id: true, consumedAt: true },
       });
-      if (!open) return { status: "invalid" };
+      if (!open) return done({ status: "invalid" });
 
-      // Whatever happens next, the account is secured: every session, unused
-      // reset token and pending change ends.
+      // Single use either way. Later revert links (changes made after this
+      // one, e.g. by whoever took over) stop working; earlier ones keep
+      // working, so a later revert can never lock out the original owner.
+      const revokeLaterRevertLinks = () => tx.userEmailChangeRequest.updateMany({
+        where: { userId: row.userId, id: { not: row.id }, createdAt: { gte: row.createdAt }, revertedAt: null, revertRevokedAt: null },
+        data: { revertRevokedAt: now },
+      });
+      const cancel = isCancel(open.consumedAt, user.email, row.previousEmail);
+
+      // Both modes: whoever requested the change knew the password and held a
+      // session. Every session, unused reset token, pending change, user LINE
+      // Login identity (which signs in without a password) and unfinished
+      // LINE Login/link state ends.
       const sessions = await tx.userSession.updateMany({ where: { userId: row.userId, revokedAt: null }, data: { revokedAt: now } });
       const resetTokens = await tx.passwordResetToken.updateMany({ where: { userId: row.userId, usedAt: null }, data: { usedAt: now } });
       const pending = await revokeOpenRequests(tx, row.userId, now);
+      const line = await revokeUserLineAccess(tx, row.userId, now);
 
-      const restore = user.email !== row.previousEmail;
+      const restore = !cancel && user.email !== row.previousEmail;
       let vendorRestored = false;
       if (restore) {
         const taken = Boolean(await tx.user.findFirst({ where: { email: row.previousEmail, id: { not: row.userId } }, select: { id: true } }))
           || await loginEmailReservedForAnother(tx, row.previousEmail, row.userId, now);
         if (taken) {
           // Should not happen while the reservation holds; support resolves it. The link stays usable.
-          await tx.auditLog.create({ data: revertAudit(row, claim.jti, meta, "account_email_revert_conflict", { sessionsRevoked: sessions.count, pendingCancelled: pending.count }) });
-          return { status: "conflict" };
+          await tx.auditLog.create({
+            data: revertAudit(row, claim.jti, meta, "account_email_revert_conflict", {
+              sessionsRevoked: sessions.count,
+              pendingCancelled: pending.count,
+              lineIdentitiesRevoked: line.identities,
+              lineStatesConsumed: line.states,
+            }),
+          });
+          return done({ status: "conflict" });
         }
         const restored = await tx.user.updateMany({ where: { id: row.userId, email: user.email }, data: { email: row.previousEmail, emailVerifiedAt: now } });
-        if (restored.count !== 1) return { status: "invalid" };
+        if (restored.count !== 1) throw new RevertRollback();
         // Undo the founder's Vendor.email sync of this change or a later one, if the workspace still follows the account.
         const synced = await tx.userEmailChangeRequest.findMany({
           where: { userId: row.userId, createdAt: { gte: row.createdAt }, consumedAt: { not: null }, syncedVendorId: { not: null } },
@@ -481,32 +552,146 @@ export async function revertAccountEmailChange(token: unknown, now = new Date())
         }
       }
 
-      // Single use. Later revert links (changes made after this one, e.g. by
-      // whoever took over) stop working; earlier ones keep working, so a
-      // later revert can never lock out the original owner.
-      await tx.userEmailChangeRequest.update({ where: { id: row.id }, data: { revertedAt: now } });
-      await tx.userEmailChangeRequest.updateMany({
-        where: { userId: row.userId, id: { not: row.id }, createdAt: { gte: row.createdAt }, revertedAt: null, revertRevokedAt: null },
-        data: { revertRevokedAt: now },
+      const evicted = await evictCredentials(tx, row.userId);
+
+      // A cancel ends the link with `revertRevokedAt`, so it sets no change lock.
+      const ended = await tx.userEmailChangeRequest.updateMany({
+        where: { id: row.id, userId: row.userId, revertedAt: null, revertRevokedAt: null },
+        data: cancel ? { revertRevokedAt: now } : { revertedAt: now },
       });
+      if (ended.count !== 1) throw new RevertRollback();
+      const laterLinks = await revokeLaterRevertLinks();
+      const evictedDetails = {
+        sessionsRevoked: sessions.count,
+        resetLinksRevoked: resetTokens.count,
+        pendingCancelled: pending.count,
+        laterRevertLinksRevoked: laterLinks.count,
+        lineIdentitiesRevoked: line.identities,
+        lineStatesConsumed: line.states,
+        loginCredentialDisabled: true,
+        recoveryCodesRemoved: evicted.recoveryCodesRemoved,
+      };
+      if (cancel) {
+        // The factor stays: the clicker holds the login mailbox already.
+        await tx.auditLog.create({ data: revertAudit(row, claim.jti, meta, "account_email_change_cancelled_by_owner", evictedDetails) });
+        return done({ status: "cancelled" });
+      }
+
+      // Lockdown. A factor enrolled within the window may be the requester's
+      // or the real owner's (enabled the same day they moved away from a
+      // compromised mailbox). Neither deleting it (hands the account to
+      // whoever holds the old mailbox) nor keeping it silently is safe, so the
+      // factor stays and the account waits for support: lock-out over takeover.
+      const recent = await recentFactorInWindow(tx, row);
+      const held = Boolean(recent) && user.status === "active"
+        && (await tx.user.updateMany({ where: { id: row.userId, status: "active" }, data: { status: ACCOUNT_SECURITY_HOLD_STATUS } })).count === 1;
+      if (held && recent) {
+        await tx.auditLog.create({
+          data: revertAudit(row, claim.jti, meta, ACCOUNT_SECURITY_HOLD_AUDIT_ACTION, {
+            factorType: recent.factor.factorType,
+            factorEnabledAt: recent.factor.enabledAt.toISOString(),
+            factorCutoff: recent.cutoff.toISOString(),
+            cutoffSource: recent.source,
+          }),
+        });
+      }
       await tx.auditLog.create({
-        data: revertAudit(row, claim.jti, meta, restore ? "account_email_change_reverted" : "account_email_change_cancelled_by_owner", {
-          sessionsRevoked: sessions.count,
-          resetLinksRevoked: resetTokens.count,
-          pendingCancelled: pending.count,
+        data: revertAudit(row, claim.jti, meta, "account_email_change_reverted", {
+          ...evictedDetails,
+          previousRestored: restore,
           vendorRestored,
+          securityHold: held,
           changeLockedUntil: new Date(now.getTime() + LOCK_MS).toISOString(),
         }),
       });
-      return { status: restore ? "reverted" : "cancelled" };
+      const notice = restore ? { to: user.email, restoredEmail: row.previousEmail, jti: claim.jti, userId: row.userId, requestId: row.id } : null;
+      return done({ status: held ? "held" : "reverted" }, notice);
     }, TRANSACTION_OPTIONS);
   } catch (error) {
     if (isUniqueViolation(error)) return { status: "conflict" };
+    if (error instanceof RevertRollback) return { status: "invalid" };
     if (isTransientTransactionError(error)) return { status: "retry" };
     throw error;
   }
+  if (outcome.notice) await sendRevertedAwayNotice(outcome.notice);
+  return outcome.result;
 }
 
+/** After the commit: tell the address the account was reverted away from. Never throws. */
+async function sendRevertedAwayNotice(notice: RevertNotice) {
+  try {
+    await sendAccountEmailRevertedNoticeEmail({
+      to: notice.to,
+      maskedRestoredEmail: maskEmailRecipient(notice.restoredEmail),
+      idempotencyKey: `account-email-reverted-notice:${notice.jti}`,
+    });
+  } catch (error) {
+    await writeAuditLog({
+      actorId: notice.userId,
+      actorLabel: "account_email_revert",
+      action: "account_email_revert_notice_failed",
+      targetType: "User",
+      targetId: notice.userId,
+      after: auditSnapshot({ requestId: notice.requestId, jti: notice.jti, errorCode: error instanceof TransactionalEmailError ? error.code : "unknown" }),
+    }).catch(() => undefined);
+  }
+}
+
+/** Thrown inside the revert transaction to roll it back. */
+class RevertRollback extends Error {}
+
+/**
+ * How far before the requester's session (or the request) a factor counts as
+ * possibly theirs. Whoever requested the change may have enrolled a factor
+ * from another session shortly before (sign in, enrol, sign in again,
+ * request), so the window reaches back a day.
+ */
+export const ACCOUNT_EMAIL_REVERT_FACTOR_WINDOW_MS = 24 * 60 * 60 * 1_000;
+
+/**
+ * Factors enabled (or created) at or after this instant are "in the window":
+ * 24 hours before the earlier of the requesting session's start and the
+ * request. Rows stored before migration
+ * 20261030200000_user_email_change_initiating_session have no session time
+ * and use the request time alone, so both cases end at the same rule.
+ */
+export function accountEmailRevertFactorCutoff(row: { createdAt: Date; initiatingSessionCreatedAt: Date | null }) {
+  const anchor = row.initiatingSessionCreatedAt
+    ? Math.min(row.initiatingSessionCreatedAt.getTime(), row.createdAt.getTime())
+    : row.createdAt.getTime();
+  return {
+    cutoff: new Date(anchor - ACCOUNT_EMAIL_REVERT_FACTOR_WINDOW_MS),
+    source: row.initiatingSessionCreatedAt ? "initiating_session" as const : "legacy_request" as const,
+  };
+}
+
+/** The account's MFA factor if it was enabled (or re-enrolled, which refreshes `enabledAt`) or created in the window. */
+async function recentFactorInWindow(tx: Tx, row: { userId: string; createdAt: Date; initiatingSessionCreatedAt: Date | null }) {
+  const { cutoff, source } = accountEmailRevertFactorCutoff(row);
+  const factor = await tx.userMfaFactor.findFirst({
+    where: { userId: row.userId, OR: [{ enabledAt: { gte: cutoff } }, { createdAt: { gte: cutoff } }] },
+    select: { id: true, factorType: true, enabledAt: true },
+  });
+  return factor ? { factor, cutoff, source } : null;
+}
+
+/**
+ * Part of every revert, under the user's row lock. Whoever requested the
+ * change may know the password and may hold recovery codes, so the password
+ * stops working (`unusablePasswordHash`; the owner sets a new one through
+ * password reset to the account's address) and every recovery code is
+ * removed (the owner regenerates them with the authenticator). The MFA factor
+ * itself is never removed here: see the security hold in
+ * `revertAccountEmailChange`.
+ */
+async function evictCredentials(tx: Tx, userId: string) {
+  await tx.user.update({
+    where: { id: userId },
+    data: { passwordHash: unusablePasswordHash("account_email_revert") },
+  });
+  const codes = await tx.userRecoveryCode.deleteMany({ where: { userId } });
+  return { recoveryCodesRemoved: codes.count };
+}
 function revertAudit(
   row: { id: string; userId: string },
   jti: string,

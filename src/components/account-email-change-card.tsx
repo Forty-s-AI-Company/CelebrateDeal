@@ -3,7 +3,7 @@ import { CsrfField } from "@/components/csrf-field";
 import { FormSubmitButton } from "@/components/form-submit-button";
 import { StepUpMfaNotice } from "@/components/step-up-mfa-notice";
 import { Card, Field } from "@/components/ui";
-import { ACCOUNT_EMAIL_CHANGE_TTL_MINUTES, ACCOUNT_EMAIL_REVERT_TTL_DAYS, LOGIN_EMAIL_MAX_LENGTH } from "@/lib/account-email-change-token";
+import { ACCOUNT_EMAIL_CHANGE_TTL_MINUTES, ACCOUNT_EMAIL_REVERT_TTL_DAYS, ACCOUNT_EMAIL_REVERT_WINDOW_NOTICE, LOGIN_EMAIL_MAX_LENGTH } from "@/lib/account-email-change-token";
 import type { RecentMfaStatus } from "@/lib/recent-mfa";
 
 /**
@@ -27,6 +27,7 @@ export function AccountEmailChangeCard({ currentEmail, mfaStatus, platformRole }
         <Field label="新的 Email" name="newEmail" type="email" autoComplete="email" maxLength={LOGIN_EMAIL_MAX_LENGTH} placeholder="name@example.com" required />
         <Field label="目前密碼" name="currentPassword" type="password" autoComplete="current-password" required />
         <p className="text-xs text-slate-500">我們會寄驗證連結到新的 Email（{ACCOUNT_EMAIL_CHANGE_TTL_MINUTES} 分鐘內有效），並通知目前的 Email；通知信附有「不是我操作，還原 Email」連結，變更完成後 {ACCOUNT_EMAIL_REVERT_TTL_DAYS} 天內可用。開啟驗證連結後才會變更，所有裝置也會登出，之後請用新的 Email 登入。</p>
+        <p className="text-xs text-slate-500">{ACCOUNT_EMAIL_REVERT_WINDOW_NOTICE}。</p>
         <FormSubmitButton
           pendingChildren="寄送中…"
           pendingMessage="正在送出變更登入 Email 的要求，請勿重複送出。"

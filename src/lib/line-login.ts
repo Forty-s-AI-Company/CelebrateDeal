@@ -20,6 +20,10 @@ export type LineLoginSubjectType = typeof LINE_LOGIN_SUBJECT_TYPES[number];
 
 type LineLoginDatabase = Pick<PrismaClient, "$transaction" | "lineOfficialAccount" | "lineLoginState" | "lineUserIdentity">;
 
+async function activeUser(tx: Pick<Prisma.TransactionClient, "user">, userId: string) {
+  return Boolean(await tx.user.findFirst({ where: { id: userId, status: "active" }, select: { id: true } }));
+}
+
 export type LineLoginProfile = {
   userId: string;
   displayName: string | null;
@@ -154,10 +158,20 @@ export async function beginLineLogin(
   return { authorizationUrl: authorizationUrl.toString() };
 }
 
+/**
+ * Completes a LINE login or link callback.
+ *
+ * Link mode for a user (`subjectType: "user"`) only links: the caller passes
+ * `linkingUserId`, the user of a valid session cookie on this browser, and
+ * the link happens only when it is the account the state was started for and
+ * that account is active. It never signs anyone in (the callback route
+ * creates no session for it). A state started before a login email change
+ * revert or password reset was consumed by them, so it fails here.
+ */
 export async function completeLineLogin(
   db: LineLoginDatabase,
   provider: LineLoginProvider,
-  input: { state: string; code: string },
+  input: { state: string; code: string; linkingUserId?: string | null },
   now = new Date(),
 ) {
   if (!OAUTH_VALUE.test(input.state) || !input.code || input.code.length > 4_096) throw new Error("Invalid LINE Login callback.");
@@ -198,7 +212,15 @@ export async function completeLineLogin(
         where: { vendorId_lineUserIdHash: { vendorId: attempt.vendorId, lineUserIdHash: lookupHash } },
       });
       if (!identity || identity.revokedAt) throw new Error("LINE Login identity is not linked.");
+      // A user identity signs in as that account: never for a suspended one.
+      // The state stays consumed (no throw) so the callback cannot be replayed.
+      if (identity.subjectType === "user" && !await activeUser(tx, identity.subjectId)) {
+        return { identity: null, redirectPath: attempt.redirectPath, login: true as const };
+      }
       return { identity, redirectPath: attempt.redirectPath, login: true as const };
+    }
+    if (attempt.subjectType === "user" && (input.linkingUserId !== attempt.subjectId || !await activeUser(tx, attempt.subjectId))) {
+      return { identity: null, redirectPath: attempt.redirectPath, login: false as const };
     }
     const identity = await tx.lineUserIdentity.upsert({
       where: {

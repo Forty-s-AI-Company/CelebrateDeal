@@ -3,6 +3,7 @@ import { accountSecurityPath } from "@/lib/vendor-roles";
 import { cookies } from "next/headers";
 import { requireAuth, markCurrentSessionMfaVerified } from "@/lib/auth";
 import { auditSnapshot, writeAuditLog } from "@/lib/audit";
+import { CREDENTIAL_TRANSACTION_OPTIONS, lockUserForCredentialWrite } from "@/lib/credential-write-lock";
 import { assertServerActionSecurity } from "@/lib/csrf";
 import { getDb } from "@/lib/db";
 import {
@@ -53,7 +54,7 @@ export async function startMfaEnrollment(formData: FormData): Promise<MfaEnrollm
 
 export type MfaEnrollmentResult =
   | { ok: true; destination: string }
-  | { ok: false; destination: string; error: "mfa_code" };
+  | { ok: false; destination: string; error: "mfa_code" | "session_stale" };
 
 /**
  * Verifies and commits MFA enrollment without deciding how the caller
@@ -74,15 +75,22 @@ export async function completeMfaEnrollment(formData: FormData): Promise<MfaEnro
   const recoveryCodes = generateRecoveryCodes();
   const recoveryCodeHashes = await Promise.all(recoveryCodes.map(hashRecoveryCodeAsync));
   const secretEncrypted = encryptMfaSecret(pending.secret);
-  await getDb().$transaction([
-    getDb().userMfaFactor.upsert({
+  const enrolled = await getDb().$transaction(async (tx) => {
+    // Same lock as the login email change revert, which removes factors and
+    // ends every session: a revert that ran first leaves this session revoked,
+    // so the factor is never written after it.
+    if (!await lockUserForCredentialWrite(tx, auth.user.id, auth.session.id)) return false;
+    await tx.userMfaFactor.upsert({
       where: { userId: auth.user.id },
       create: { userId: auth.user.id, factorType: "totp", label: "CelebrateDeal Authenticator", secretEncrypted },
       update: { factorType: "totp", label: "CelebrateDeal Authenticator", secretEncrypted, enabledAt: new Date(), lastUsedAt: new Date() },
-    }),
-    getDb().userRecoveryCode.deleteMany({ where: { userId: auth.user.id } }),
-    getDb().userRecoveryCode.createMany({ data: recoveryCodes.map((codeValue, index) => ({ userId: auth.user.id, codeHash: recoveryCodeHashes[index]! })) }),
-  ]);
+    });
+    await tx.userRecoveryCode.deleteMany({ where: { userId: auth.user.id } });
+    await tx.userRecoveryCode.createMany({ data: recoveryCodes.map((codeValue, index) => ({ userId: auth.user.id, codeHash: recoveryCodeHashes[index]! })) });
+    return true;
+  }, CREDENTIAL_TRANSACTION_OPTIONS);
+  // The session ended (e.g. a login email change revert) or the account is no longer active.
+  if (!enrolled) return { ok: false, destination, error: "session_stale" };
   await markCurrentSessionMfaVerified();
   cookieStore.delete(MFA_SETUP_COOKIE);
   cookieStore.set(MFA_RECOVERY_COOKIE, serializeRecoveryCodes(recoveryCodes), {

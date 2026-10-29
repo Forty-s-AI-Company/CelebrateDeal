@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { protectLineOfficialAccountCredentials } from "@/lib/line-credentials";
 import { beginLineLogin, completeLineLogin, LineFetchLoginProvider, type LineLoginProvider } from "@/lib/line-login";
 
-function testDatabase() {
+function testDatabase(overrides: { identity?: Record<string, unknown>; activeUser?: boolean } = {}) {
   let savedAttempt: Record<string, unknown> | null = null;
   const identity = {
     id: "identity-1",
@@ -10,6 +10,7 @@ function testDatabase() {
     subjectType: "promoter",
     subjectId: "affiliate-1",
     revokedAt: null,
+    ...overrides.identity,
   };
   const credentials = protectLineOfficialAccountCredentials("vendor-1", {
     messagingChannelId: "2000123456",
@@ -25,6 +26,7 @@ function testDatabase() {
       findUnique: vi.fn().mockResolvedValue(identity),
       upsert: vi.fn().mockResolvedValue(identity),
     },
+    user: { findFirst: vi.fn().mockResolvedValue(overrides.activeUser === false ? null : { id: "user-1" }) },
   };
   const db = {
     lineOfficialAccount: { findUnique: vi.fn().mockResolvedValue(account) },
@@ -95,6 +97,46 @@ describe("LINE Login lifecycle", () => {
     expect(upsert.create.lineUserIdEncrypted).toMatch(/^v1\./u);
     expect(JSON.stringify(upsert)).not.toContain("U1234567890");
     expect(JSON.stringify(upsert)).not.toContain("測試推廣者");
+  });
+
+  it.each(["login", "user"] as const)("consumes the %s state but returns no identity for a suspended account", async (subjectType) => {
+    const runtime = testDatabase({ identity: { subjectType: "user", subjectId: "user-1" }, activeUser: false });
+    const started = await beginLineLogin(runtime.db as never, {
+      vendorId: "vendor-1",
+      subjectType,
+      subjectId: subjectType === "login" ? "login" : "user-1",
+      redirectPath: "/dashboard",
+    });
+    const state = new URL(started.authorizationUrl).searchParams.get("state")!;
+    const provider: LineLoginProvider = { exchangeCode: vi.fn().mockResolvedValue({ userId: "U1234567890", displayName: null, pictureUrl: null }) };
+    const result = await completeLineLogin(runtime.db as never, provider, { state, code: "authorization-code", linkingUserId: "user-1" });
+
+    expect(result.identity).toBeNull();
+    expect(runtime.tx.lineLoginState.updateMany).toHaveBeenCalledOnce();
+    expect(runtime.tx.user.findFirst).toHaveBeenCalledWith({ where: { id: "user-1", status: "active" }, select: { id: true } });
+    expect(runtime.tx.lineUserIdentity.upsert).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["no session on this browser", null, false],
+    ["a session of another account", "user-2", false],
+    ["the account the link was started for", "user-1", true],
+  ] as const)("links a user identity in link mode only with %s", async (_label, linkingUserId, linked) => {
+    const runtime = testDatabase({ identity: { subjectType: "user", subjectId: "user-1" } });
+    const started = await beginLineLogin(runtime.db as never, { vendorId: "vendor-1", subjectType: "user", subjectId: "user-1", redirectPath: "/settings/line" });
+    const state = new URL(started.authorizationUrl).searchParams.get("state")!;
+    const provider: LineLoginProvider = { exchangeCode: vi.fn().mockResolvedValue({ userId: "U1234567890", displayName: null, pictureUrl: null }) };
+    const result = await completeLineLogin(runtime.db as never, provider, { state, code: "authorization-code", linkingUserId });
+
+    expect(result.login).toBe(false);
+    expect(runtime.tx.lineLoginState.updateMany).toHaveBeenCalledOnce();
+    if (linked) {
+      expect(result.identity).toMatchObject({ subjectType: "user", subjectId: "user-1" });
+      expect(runtime.tx.lineUserIdentity.upsert).toHaveBeenCalledOnce();
+    } else {
+      expect(result.identity).toBeNull();
+      expect(runtime.tx.lineUserIdentity.upsert).not.toHaveBeenCalled();
+    }
   });
 
   it("exchanges the authorization code and verifies the OIDC token nonce", async () => {

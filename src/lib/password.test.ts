@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   hashPassword,
   hashPasswordAsync,
+  isUnusablePasswordHash,
+  unusablePasswordHash,
   verifyPassword,
   verifyPasswordAsync,
 } from "./password";
@@ -23,5 +25,15 @@ describe("password helpers", () => {
 
   it("rejects malformed asynchronous hash records", async () => {
     await expect(verifyPasswordAsync("demo1234", "not-a-scrypt-record")).resolves.toBe(false);
+  });
+
+  it("never verifies any password against an unusable hash", async () => {
+    const hash = unusablePasswordHash("account_email_revert");
+    expect(isUnusablePasswordHash(hash)).toBe(true);
+    expect(isUnusablePasswordHash(hashPassword("demo1234"))).toBe(false);
+    for (const password of ["", "demo1234", hash, "account_email_revert", "unusable"]) {
+      expect(verifyPassword(password, hash)).toBe(false);
+      await expect(verifyPasswordAsync(password, hash)).resolves.toBe(false);
+    }
   });
 });

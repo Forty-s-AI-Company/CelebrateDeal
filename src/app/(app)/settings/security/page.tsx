@@ -62,6 +62,7 @@ const errorMessages: Record<string, string> = {
   member_confirmation: "請輸入要停用成員的 Email 以確認操作。",
   mfa_required: "此操作需要先啟用 MFA。",
   mfa_code: "TOTP 驗證碼不正確。",
+  session_stale: "這次登入已失效，兩步驟驗證沒有啟用。請重新登入後再設定。",
   recovery_rate_limited: "Recovery codes 重建嘗試次數過多，請 15 分鐘後再試。",
   recovery_unavailable: "Recovery codes 驗證保護暫時無法使用，請稍後再試。",
   password_reset_smoke: "密碼重設測試信寄送失敗，請檢查 Resend 設定。",
@@ -73,7 +74,7 @@ const errorMessages: Record<string, string> = {
   email_change_same: "新 Email 與目前的登入 Email 相同。",
   email_change_rate_limited: "變更登入 Email 的嘗試次數過多，請稍候一小時再試。",
   email_change_unavailable: "變更登入 Email 的保護機制暫時無法使用，請稍後再試。",
-  email_change_locked: "這個帳號最近用原 Email 的「不是我操作，還原 Email」連結撤銷過變更，7 天內不能再自行變更登入 Email。如需協助請聯絡客服。",
+  email_change_locked: "這個帳號最近用原 Email 的「不是我操作，還原 Email」連結還原過登入 Email，7 天內不能再自行變更登入 Email。如需協助請聯絡客服。",
 };
 
 const updatedMessages: Record<string, string> = {

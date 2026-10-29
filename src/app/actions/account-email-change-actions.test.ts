@@ -55,13 +55,14 @@ beforeEach(() => {
 
 describe("requesting a login email change", () => {
   it("schedules the change for the signed-in account only, with the normalized address, and answers the generic message", async () => {
-    await expect(requestAccountEmailChangeAction(form({ userId: "someone-else", currentEmail: "victim@example.test" }))).rejects.toThrow("redirect:/settings/security?updated=email_change_sent");
+    await expect(requestAccountEmailChangeAction(form({ userId: "someone-else", currentEmail: "victim@example.test", sessionId: "someone-elses-session" }))).rejects.toThrow("redirect:/settings/security?updated=email_change_sent");
     expect(mocks.auth).toHaveBeenCalledWith({ nextPath: "/settings/security" });
     expect(mocks.verifyPassword).toHaveBeenCalledWith("synthetic-current-password", "scrypt:synthetic");
     expect(mocks.accountLimit).toHaveBeenCalledWith("account_email_change_request", "user-1");
     expect(mocks.ipLimit).toHaveBeenCalledWith(expect.any(Request), "account-email-change-source", 10, 15 * 60 * 1000);
     expect(mocks.schedule).toHaveBeenCalledExactlyOnceWith({
       userId: "user-1",
+      sessionId: "session-1",
       currentEmail: "owner@example.test",
       newEmail: "new.owner@example.test",
       vendorId: "vendor-1",

@@ -14,6 +14,7 @@ import {
 } from "@/lib/mfa";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { checkAccountRateLimit } from "@/lib/account-rate-limit";
+import { CREDENTIAL_TRANSACTION_OPTIONS, lockUserForCredentialWrite } from "@/lib/credential-write-lock";
 import { accountSecurityPath } from "@/lib/vendor-roles";
 
 function formText(formData: FormData, key: string) {
@@ -83,13 +84,20 @@ export async function regenerateMfaRecoveryCodes(
 
   const recoveryCodes = generateRecoveryCodes();
   const recoveryCodeHashes = await Promise.all(recoveryCodes.map(hashRecoveryCodeAsync));
-  await getDb().$transaction([
-    getDb().userRecoveryCode.deleteMany({ where: { userId: auth.user.id } }),
-    getDb().userRecoveryCode.createMany({
+  const factorId = auth.user.mfaFactor.id;
+  const regenerated = await getDb().$transaction(async (tx) => {
+    // Same lock as the login email change revert: after a revert this session
+    // is revoked (and a later factor gone), so no codes are written after it.
+    if (!await lockUserForCredentialWrite(tx, auth.user.id, auth.session.id)) return false;
+    const touched = await tx.userMfaFactor.updateMany({ where: { id: factorId, userId: auth.user.id }, data: { lastUsedAt: new Date() } });
+    if (touched.count !== 1) return false;
+    await tx.userRecoveryCode.deleteMany({ where: { userId: auth.user.id } });
+    await tx.userRecoveryCode.createMany({
       data: recoveryCodes.map((codeValue, index) => ({ userId: auth.user.id, codeHash: recoveryCodeHashes[index]! })),
-    }),
-    getDb().userMfaFactor.update({ where: { userId: auth.user.id }, data: { lastUsedAt: new Date() } }),
-  ]);
+    });
+    return true;
+  }, CREDENTIAL_TRANSACTION_OPTIONS);
+  if (!regenerated) return { ok: false, destination, error: "recovery_unavailable" };
 
   const cookieStore = await cookies();
   cookieStore.set(MFA_RECOVERY_COOKIE, serializeRecoveryCodes(recoveryCodes), {

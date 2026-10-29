@@ -151,6 +151,45 @@ export async function createUserSession({
 }
 
 /**
+ * LINE Login (`/api/auth/line/callback`, login mode only). The session is
+ * inserted in one transaction that first locks the User row `FOR UPDATE`
+ * (the same lock a login email change revert or password reset takes when it
+ * revokes LINE identities) and re-checks, under it, that the account is
+ * active and this identity is still linked to it. Returns null otherwise.
+ */
+export async function createUserSessionForLineIdentity({
+  identityId,
+  userId,
+  vendorId,
+  ipAddress,
+  userAgent,
+}: {
+  identityId: string;
+  userId: string;
+  vendorId: string;
+  ipAddress?: string | null;
+  userAgent?: string | null;
+}) {
+  const token = newSessionToken();
+  const expiresAt = new Date(Date.now() + SESSION_TTL_SECONDS * 1000);
+  const created = await getDb().$transaction(async (tx) => {
+    const locked = await tx.$queryRaw<Array<{ id: string }>>`SELECT "id" FROM "User" WHERE "id" = ${userId} AND "status" = 'active' FOR UPDATE`;
+    if (locked.length !== 1) return false;
+    const identity = await tx.lineUserIdentity.findFirst({
+      where: { id: identityId, vendorId, subjectType: "user", subjectId: userId, revokedAt: null },
+      select: { id: true },
+    });
+    if (!identity) return false;
+    await tx.userSession.create({
+      data: { userId, vendorId, tokenHash: sessionTokenHash(token), ipAddress, userAgent, mfaVerifiedAt: null, expiresAt },
+    });
+    await tx.user.update({ where: { id: userId }, data: { lastLoginAt: new Date() } });
+    return true;
+  }, { maxWait: 5_000, timeout: 10_000 });
+  return created ? { token, expiresAt } : null;
+}
+
+/**
  * WP4 受控 Preview runner 專用。此 guard 放在 session helper 內，避免 route
  * 以外的任何一般產品呼叫端取得建立 MFA-verified session 的能力。
  */

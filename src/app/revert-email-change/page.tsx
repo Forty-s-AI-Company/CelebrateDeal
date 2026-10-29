@@ -6,11 +6,22 @@ import { ACCOUNT_EMAIL_REVERT_TTL_DAYS } from "@/lib/account-email-change-token"
 export const dynamic = "force-dynamic";
 export const metadata = { title: "不是我操作，還原 Email｜CelebrateDeal" };
 
-const AFTERWARDS = `所有裝置都已登出，${ACCOUNT_EMAIL_CHANGE_LOCK_DAYS} 天內不能再自行變更登入 Email。請立即用這個信箱到登入頁的「忘記密碼」重設密碼，並檢查帳號設定。`;
-
 const STATUS_MESSAGES = {
-  reverted: { tone: "success", title: "登入 Email 已還原", body: `登入 Email 已改回這個信箱。${AFTERWARDS}` },
-  cancelled: { tone: "success", title: "已取消變更登入 Email", body: `登入 Email 維持這個信箱，尚未完成的變更已取消。${AFTERWARDS}` },
+  reverted: {
+    tone: "success",
+    title: "登入 Email 已還原，請重設密碼",
+    body: `登入 Email 已改回這個信箱。為了把變更的人請出帳號，所有裝置都已登出、原本的密碼已停用、LINE 登入已解除綁定、備用碼已全部作廢；兩步驟驗證保留。請用這個信箱到「忘記密碼」重設密碼後再登入，並檢查帳號設定；${ACCOUNT_EMAIL_CHANGE_LOCK_DAYS} 天內不能再自行變更登入 Email。`,
+  },
+  held: {
+    tone: "warning",
+    title: "登入 Email 已還原，帳號已暫停",
+    body: "登入 Email 已改回這個信箱，所有裝置都已登出、原本的密碼已停用、LINE 登入已解除綁定、備用碼已全部作廢。這個帳號在變更前後一天內新設定了兩步驟驗證，系統無法確認是誰設定的，所以帳號已暫停：暫時不能登入，也不能重設密碼。請聯絡客服確認身分，客服恢復帳號後再用這個信箱重設密碼。",
+  },
+  cancelled: {
+    tone: "success",
+    title: "已取消變更，請重設密碼",
+    body: "登入 Email 維持這個信箱，尚未完成的變更已取消。提出變更的人知道你的密碼，所以所有裝置都已登出、原本的密碼已停用、LINE 登入已解除綁定；兩步驟驗證保留。備用碼已全部作廢，請先確認你仍能使用驗證器 App，登入後可在安全性設定重新產生備用碼。請用這個信箱到「忘記密碼」重設密碼後再登入。",
+  },
   invalid: {
     tone: "warning",
     title: "連結無效或已過期",
@@ -57,7 +68,11 @@ export default async function RevertEmailChangePage({ searchParams }: { searchPa
             ? "這個帳號的登入 Email 已被改成其他信箱。按下按鈕後，登入 Email 會還原為收到這封通知的信箱。"
             : "這個帳號有一筆尚未完成的登入 Email 變更。按下按鈕後會取消變更，登入 Email 維持收到這封通知的信箱。"}
         </p>
-        <p className="mt-3 text-sm leading-6 text-slate-700">同時所有裝置都會登出，{ACCOUNT_EMAIL_CHANGE_LOCK_DAYS} 天內不能再自行變更登入 Email。完成後請立即重設密碼。</p>
+        <p className="mt-3 text-sm leading-6 text-slate-700">
+          {restore
+            ? `同時所有裝置都會登出、原本的密碼會停用、LINE 登入會解除綁定、備用碼會作廢，目前的登入 Email 會收到通知，${ACCOUNT_EMAIL_CHANGE_LOCK_DAYS} 天內不能再自行變更登入 Email。兩步驟驗證不會被移除；若它是在變更前後一天內新設定的，帳號會暫停，需聯絡客服確認身分後才能恢復。完成後請用這個信箱重設密碼。`
+            : "同時所有裝置都會登出、原本的密碼會停用、LINE 登入會解除綁定（兩步驟驗證保留）。備用碼會全部作廢，請先確認你仍能使用驗證器 App。完成後請用這個信箱重設密碼。"}
+        </p>
         <NativePostForm
           action="/api/auth/email-change/revert"
           idleLabel={restore ? "還原登入 Email" : "取消變更"}
@@ -80,7 +95,8 @@ export default async function RevertEmailChangePage({ searchParams }: { searchPa
         <h1 className="text-xl font-bold">{status.title}</h1>
         <p className="mt-2 text-sm leading-6">{status.body}</p>
       </div>
-      <Link href="/password-reset/request" className={`mt-6 ${PRIMARY_BUTTON}`}>重設密碼</Link>
+      {/* A held account cannot reset until support releases it. */}
+      {statusKey === "held" ? null : <Link href="/password-reset/request" className={`mt-6 ${PRIMARY_BUTTON}`}>重設密碼</Link>}
       <p className="mt-4 text-center text-sm text-slate-600"><Link href="/login" className="font-semibold text-blue-700 hover:underline">前往登入</Link></p>
     </Shell>
   );
