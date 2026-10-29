@@ -9,6 +9,8 @@ import { FunnelWebinarExperience, type WebinarExperienceResource } from "@/compo
 import { createGoalFunnelStepPages } from "./funnel-goal-step-pages";
 import { findFunnelContrastIssues } from "./funnel-design-contrast";
 import { FUNNEL_CAPABILITIES, parsePageDocument, type FunnelNode } from "./funnel-page-document";
+import { WEBINAR_TEMPLATES } from "./funnel-templates/webinar";
+import { FUNCTIONAL_PAGE_TEMPLATES } from "./funnel-template-functional-pages";
 import {
   FUNNEL_TEMPLATE_GALLERY,
   FUNNEL_TEMPLATE_GOALS,
@@ -23,15 +25,22 @@ function flatten(nodes: FunnelNode[]): FunnelNode[] {
   return nodes.flatMap((node) => [node, ...(node.children ? flatten(node.children) : [])]);
 }
 
+/** Templates defined in this file's era; webinar registry templates pin their own node ids in their own tests. */
+const LEGACY_TEMPLATES = FUNNEL_TEMPLATE_GALLERY.filter((template) => !WEBINAR_TEMPLATES.some((webinar) => webinar.id === template.id) && !FUNCTIONAL_PAGE_TEMPLATES.some((page) => page.id === template.id));
+const REGISTRATION_IDS = WEBINAR_TEMPLATES.filter((template) => !template.hidden).map((template) => template.id);
+
 describe("funnel template gallery", () => {
   it("提供四個 goal 與獨立 Webinar 模板", () => {
     expect(FUNNEL_TEMPLATE_GOALS).toEqual(["sell", "audience", "custom", "webinar"]);
-    expect(FUNNEL_TEMPLATE_GALLERY).toHaveLength(19);
-    expect(new Set(FUNNEL_TEMPLATE_GALLERY.map(item => item.id)).size).toBe(19);
-    expect(listFunnelTemplateGallery("sell").map((item) => item.category)).toEqual(["商品結帳", "簡潔結帳", "內容訂閱"]);
-    expect(listFunnelTemplateGallery("audience").map((item) => item.category)).toEqual(["志工招募", "公益活動", "環境倡議", "課程工作表", "課程諮詢", "體驗課程"]);
-    expect(listFunnelTemplateGallery("custom").map((item) => item.category)).toEqual(["隱私", "條款", "品牌資訊", "品牌首頁"]);
-    expect(listFunnelTemplateGallery("webinar").map((item) => item.category)).toEqual(["播放會場", "報名完成", "活動報名", "課程說明會", "實作工作坊", "顧問服務銷講"]);
+    expect(LEGACY_TEMPLATES).toHaveLength(19);
+    expect(new Set(FUNNEL_TEMPLATE_GALLERY.map(item => item.id)).size).toBe(FUNNEL_TEMPLATE_GALLERY.length);
+    expect(FUNNEL_TEMPLATE_GALLERY).toHaveLength(19 + WEBINAR_TEMPLATES.length + FUNCTIONAL_PAGE_TEMPLATES.length);
+    // 退役與「只在步驟選單」的範本不出現在不帶步驟的瀏覽；它們仍可由 id 解析。
+    expect(listFunnelTemplateGallery("sell")).toEqual([]);
+    expect(listFunnelTemplateGallery("audience")).toEqual([]);
+    expect(listFunnelTemplateGallery("custom").map((item) => item.id)).toEqual(["custom-luxury-course", "custom-privacy-v2", "custom-terms-v2"]);
+    expect(listFunnelTemplateGallery("webinar").map((item) => item.id)).toEqual([...REGISTRATION_IDS, "webinar-thank-you-v2", "webinar-broadcast-v2"]);
+    expect(listFunnelTemplateGallery().map((item) => item.id)).toEqual(FUNNEL_TEMPLATE_GALLERY.filter((item) => !item.retired && !item.hidden && !item.libraryHidden).map((item) => item.id));
   });
 
   it.each(FUNNEL_TEMPLATE_GALLERY)("$id 可實例化為有效且可編輯的 PageDocument", (template) => {
@@ -66,7 +75,7 @@ describe("funnel template gallery", () => {
   });
 
   it("法務模板明確要求發布前人工審閱，不含 script 或 Raw HTML", () => {
-    for (const templateId of ["custom-privacy", "custom-terms"]) {
+    for (const templateId of ["custom-privacy", "custom-terms", "custom-privacy-v2", "custom-terms-v2"]) {
       const nodes = flatten(instantiateFunnelTemplate(templateId).root);
       expect(nodes.some((node) => node.type === "raw_html")).toBe(false);
       expect(JSON.stringify(nodes)).toContain("發布前");
@@ -75,10 +84,11 @@ describe("funnel template gallery", () => {
   });
 
   it("依 step type 過濾模板，不把其他用途的模板混入目前步驟", () => {
-    expect(listFunnelTemplateGallery("webinar", "webinar_registration_page").map((item) => item.id)).toEqual(["webinar-registration", "webinar-course-registration", "webinar-workshop-registration", "webinar-strategy-registration"]);
-    expect(listFunnelTemplateGallery("webinar", "webinar_broadcast_page").map((item) => item.id)).toEqual(["webinar-broadcast"]);
+    expect(listFunnelTemplateGallery("webinar", "webinar_registration_page").map((item) => item.id)).toEqual(REGISTRATION_IDS);
+    expect(listFunnelTemplateGallery("webinar", "webinar_broadcast_page").map((item) => item.id)).toEqual(["webinar-broadcast-v2"]);
     expect(listFunnelTemplateGallery("sell", "thank_you_page")).toEqual([]);
-    expect(listFunnelTemplateGallery("custom", "info_page").map((item) => item.id)).toEqual(["custom-privacy", "custom-terms", "custom-brand-info", "custom-luxury-course"]);
+    expect(listFunnelTemplateGallery("custom", "info_page").map((item) => item.id)).toEqual(["custom-luxury-course", "custom-privacy-v2", "custom-terms-v2"]);
+    expect(listFunnelTemplateGallery("custom", "contact_us_page").map((item) => item.id)).toEqual(["custom-luxury-course", "custom-privacy-v2", "custom-terms-v2"]);
   });
 
   it("Webinar 三階段具備可辨識且用途不同的節點結構", () => {
@@ -112,7 +122,7 @@ describe("funnel template gallery", () => {
   });
 
   it("新報名模板只出現在報名步驟，舊的完成頁與播放會場不變", () => {
-    expect(listFunnelTemplateGallery("webinar", "webinar_thank_you_page").map(t => t.id)).toEqual(["webinar-thank-you"]);
+    expect(listFunnelTemplateGallery("webinar", "webinar_thank_you_page").map(t => t.id)).toEqual(["webinar-thank-you-v2"]);
     expect(listFunnelTemplateGallery("audience", "webinar_registration_page")).toEqual([]);
     expect(listFunnelTemplateGallery("webinar", "opt_in_page")).toEqual([]);
     expect(listFunnelTemplateGallery("audience", "opt_in_page").filter(t => t.id.startsWith("audience-course-"))).toHaveLength(3);
@@ -170,7 +180,7 @@ const TEMPLATE_NODE_ID_HASHES: Record<string, string> = {
 
 describe("既有模板相容性", () => {
   it("每個模板的節點 ID、型別與順序與 R3 之前完全相同", () => {
-    expect(Object.keys(TEMPLATE_NODE_ID_HASHES).sort()).toEqual(FUNNEL_TEMPLATE_GALLERY.map((template) => template.id).sort());
+    expect(Object.keys(TEMPLATE_NODE_ID_HASHES).sort()).toEqual(LEGACY_TEMPLATES.map((template) => template.id).sort());
     for (const [id, expected] of Object.entries(TEMPLATE_NODE_ID_HASHES)) {
       const nodes = flatten(getFunnelTemplateGalleryItem(id)!.build("compat"));
       const actual = createHash("sha256").update(nodes.map((node) => `${node.id}:${node.type}`).join("\n")).digest("hex");
@@ -179,7 +189,7 @@ describe("既有模板相容性", () => {
   });
 
   it("模板 ID、分類與預覽資訊維持不變", () => {
-    expect(FUNNEL_TEMPLATE_GALLERY.map((template) => `${template.id}|${template.referenceId}|${template.goal}|${template.status}|${template.preview.sectionCount}`)).toMatchInlineSnapshot(`
+    expect(LEGACY_TEMPLATES.map((template) => `${template.id}|${template.referenceId}|${template.goal}|${template.status}|${template.preview.sectionCount}`)).toMatchInlineSnapshot(`
       [
         "webinar-broadcast|celebratedeal-webinar-broadcast|webinar|available|2",
         "webinar-thank-you|celebratedeal-webinar-thank-you|webinar|available|3",

@@ -1,0 +1,1572 @@
+{
+ "generatedAt": "2026-10-28T13:29:58.792Z",
+ "widths": [
+  1440,
+  1280,
+  1024,
+  768,
+  390,
+  375,
+  360,
+  320
+ ],
+ "stress": true,
+ "failureCount": 0,
+ "results": [
+  {
+   "template": "webinar-healing-question",
+   "width": 1440,
+   "height": 900,
+   "label": null,
+   "stress": false,
+   "rules": [
+    "L-1",
+    "L-2",
+    "L-3",
+    "L-4",
+    "L-5",
+    "L-6",
+    "L-10",
+    "L-11",
+    "F-3.1"
+   ],
+   "failures": [],
+   "consoleErrors": [],
+   "screenshot": "webinar-healing-question@1440.png"
+  },
+  {
+   "template": "webinar-healing-question",
+   "width": 1440,
+   "height": 900,
+   "label": null,
+   "stress": true,
+   "rules": [
+    "L-1",
+    "L-2",
+    "L-3",
+    "L-4",
+    "L-5"
+   ],
+   "failures": [],
+   "consoleErrors": [],
+   "screenshot": "webinar-healing-question@1440-stress.png"
+  },
+  {
+   "template": "webinar-sustainability-ondemand",
+   "width": 1440,
+   "height": 900,
+   "label": null,
+   "stress": false,
+   "rules": [
+    "L-1",
+    "L-2",
+    "L-3",
+    "L-4",
+    "L-5",
+    "L-6",
+    "L-10",
+    "L-11",
+    "F-3.1"
+   ],
+   "failures": [],
+   "consoleErrors": [],
+   "screenshot": "webinar-sustainability-ondemand@1440.png"
+  },
+  {
+   "template": "webinar-sustainability-ondemand",
+   "width": 1440,
+   "height": 900,
+   "label": null,
+   "stress": true,
+   "rules": [
+    "L-1",
+    "L-2",
+    "L-3",
+    "L-4",
+    "L-5"
+   ],
+   "failures": [],
+   "consoleErrors": [],
+   "screenshot": "webinar-sustainability-ondemand@1440-stress.png"
+  },
+  {
+   "template": "webinar-ecommerce-data",
+   "width": 1440,
+   "height": 900,
+   "label": null,
+   "stress": false,
+   "rules": [
+    "L-1",
+    "L-2",
+    "L-3",
+    "L-4",
+    "L-5",
+    "L-6",
+    "L-10",
+    "L-11",
+    "F-3.1"
+   ],
+   "failures": [],
+   "consoleErrors": [],
+   "screenshot": "webinar-ecommerce-data@1440.png"
+  },
+  {
+   "template": "webinar-ecommerce-data",
+   "width": 1440,
+   "height": 900,
+   "label": null,
+   "stress": true,
+   "rules": [
+    "L-1",
+    "L-2",
+    "L-3",
+    "L-4",
+    "L-5"
+   ],
+   "failures": [],
+   "consoleErrors": [],
+   "screenshot": "webinar-ecommerce-data@1440-stress.png"
+  },
+  {
+   "template": "webinar-parenting-fit",
+   "width": 1440,
+   "height": 900,
+   "label": null,
+   "stress": false,
+   "rules": [
+    "L-1",
+    "L-2",
+    "L-3",
+    "L-4",
+    "L-5",
+    "L-6",
+    "L-10",
+    "L-11",
+    "F-3.1"
+   ],
+   "failures": [],
+   "consoleErrors": [],
+   "screenshot": "webinar-parenting-fit@1440.png"
+  },
+  {
+   "template": "webinar-parenting-fit",
+   "width": 1440,
+   "height": 900,
+   "label": null,
+   "stress": true,
+   "rules": [
+    "L-1",
+    "L-2",
+    "L-3",
+    "L-4",
+    "L-5"
+   ],
+   "failures": [],
+   "consoleErrors": [],
+   "screenshot": "webinar-parenting-fit@1440-stress.png"
+  },
+  {
+   "template": "webinar-pet-academy",
+   "width": 1440,
+   "height": 900,
+   "label": null,
+   "stress": false,
+   "rules": [
+    "L-1",
+    "L-2",
+    "L-3",
+    "L-4",
+    "L-5",
+    "L-6",
+    "L-10",
+    "L-11",
+    "F-3.1"
+   ],
+   "failures": [],
+   "consoleErrors": [],
+   "screenshot": "webinar-pet-academy@1440.png"
+  },
+  {
+   "template": "webinar-pet-academy",
+   "width": 1440,
+   "height": 900,
+   "label": null,
+   "stress": true,
+   "rules": [
+    "L-1",
+    "L-2",
+    "L-3",
+    "L-4",
+    "L-5"
+   ],
+   "failures": [],
+   "consoleErrors": [],
+   "screenshot": "webinar-pet-academy@1440-stress.png"
+  },
+  {
+   "template": "webinar-healing-question",
+   "width": 1280,
+   "height": 900,
+   "label": null,
+   "stress": false,
+   "rules": [
+    "L-1",
+    "L-2",
+    "L-3",
+    "L-4",
+    "L-5",
+    "L-6",
+    "L-10",
+    "L-11",
+    "F-3.1"
+   ],
+   "failures": [],
+   "consoleErrors": [],
+   "screenshot": "webinar-healing-question@1280.png"
+  },
+  {
+   "template": "webinar-healing-question",
+   "width": 1280,
+   "height": 900,
+   "label": null,
+   "stress": true,
+   "rules": [
+    "L-1",
+    "L-2",
+    "L-3",
+    "L-4",
+    "L-5"
+   ],
+   "failures": [],
+   "consoleErrors": [],
+   "screenshot": "webinar-healing-question@1280-stress.png"
+  },
+  {
+   "template": "webinar-sustainability-ondemand",
+   "width": 1280,
+   "height": 900,
+   "label": null,
+   "stress": false,
+   "rules": [
+    "L-1",
+    "L-2",
+    "L-3",
+    "L-4",
+    "L-5",
+    "L-6",
+    "L-10",
+    "L-11",
+    "F-3.1"
+   ],
+   "failures": [],
+   "consoleErrors": [],
+   "screenshot": "webinar-sustainability-ondemand@1280.png"
+  },
+  {
+   "template": "webinar-sustainability-ondemand",
+   "width": 1280,
+   "height": 900,
+   "label": null,
+   "stress": true,
+   "rules": [
+    "L-1",
+    "L-2",
+    "L-3",
+    "L-4",
+    "L-5"
+   ],
+   "failures": [],
+   "consoleErrors": [],
+   "screenshot": "webinar-sustainability-ondemand@1280-stress.png"
+  },
+  {
+   "template": "webinar-ecommerce-data",
+   "width": 1280,
+   "height": 900,
+   "label": null,
+   "stress": false,
+   "rules": [
+    "L-1",
+    "L-2",
+    "L-3",
+    "L-4",
+    "L-5",
+    "L-6",
+    "L-10",
+    "L-11",
+    "F-3.1"
+   ],
+   "failures": [],
+   "consoleErrors": [],
+   "screenshot": "webinar-ecommerce-data@1280.png"
+  },
+  {
+   "template": "webinar-ecommerce-data",
+   "width": 1280,
+   "height": 900,
+   "label": null,
+   "stress": true,
+   "rules": [
+    "L-1",
+    "L-2",
+    "L-3",
+    "L-4",
+    "L-5"
+   ],
+   "failures": [],
+   "consoleErrors": [],
+   "screenshot": "webinar-ecommerce-data@1280-stress.png"
+  },
+  {
+   "template": "webinar-parenting-fit",
+   "width": 1280,
+   "height": 900,
+   "label": null,
+   "stress": false,
+   "rules": [
+    "L-1",
+    "L-2",
+    "L-3",
+    "L-4",
+    "L-5",
+    "L-6",
+    "L-10",
+    "L-11",
+    "F-3.1"
+   ],
+   "failures": [],
+   "consoleErrors": [],
+   "screenshot": "webinar-parenting-fit@1280.png"
+  },
+  {
+   "template": "webinar-parenting-fit",
+   "width": 1280,
+   "height": 900,
+   "label": null,
+   "stress": true,
+   "rules": [
+    "L-1",
+    "L-2",
+    "L-3",
+    "L-4",
+    "L-5"
+   ],
+   "failures": [],
+   "consoleErrors": [],
+   "screenshot": "webinar-parenting-fit@1280-stress.png"
+  },
+  {
+   "template": "webinar-pet-academy",
+   "width": 1280,
+   "height": 900,
+   "label": null,
+   "stress": false,
+   "rules": [
+    "L-1",
+    "L-2",
+    "L-3",
+    "L-4",
+    "L-5",
+    "L-6",
+    "L-10",
+    "L-11",
+    "F-3.1"
+   ],
+   "failures": [],
+   "consoleErrors": [],
+   "screenshot": "webinar-pet-academy@1280.png"
+  },
+  {
+   "template": "webinar-pet-academy",
+   "width": 1280,
+   "height": 900,
+   "label": null,
+   "stress": true,
+   "rules": [
+    "L-1",
+    "L-2",
+    "L-3",
+    "L-4",
+    "L-5"
+   ],
+   "failures": [],
+   "consoleErrors": [],
+   "screenshot": "webinar-pet-academy@1280-stress.png"
+  },
+  {
+   "template": "webinar-healing-question",
+   "width": 1024,
+   "height": 900,
+   "label": null,
+   "stress": false,
+   "rules": [
+    "L-1",
+    "L-2",
+    "L-3",
+    "L-4",
+    "L-5",
+    "L-6",
+    "L-10",
+    "L-11",
+    "F-3.1"
+   ],
+   "failures": [],
+   "consoleErrors": [],
+   "screenshot": "webinar-healing-question@1024.png"
+  },
+  {
+   "template": "webinar-healing-question",
+   "width": 1024,
+   "height": 900,
+   "label": null,
+   "stress": true,
+   "rules": [
+    "L-1",
+    "L-2",
+    "L-3",
+    "L-4",
+    "L-5"
+   ],
+   "failures": [],
+   "consoleErrors": [],
+   "screenshot": "webinar-healing-question@1024-stress.png"
+  },
+  {
+   "template": "webinar-sustainability-ondemand",
+   "width": 1024,
+   "height": 900,
+   "label": null,
+   "stress": false,
+   "rules": [
+    "L-1",
+    "L-2",
+    "L-3",
+    "L-4",
+    "L-5",
+    "L-6",
+    "L-10",
+    "L-11",
+    "F-3.1"
+   ],
+   "failures": [],
+   "consoleErrors": [],
+   "screenshot": "webinar-sustainability-ondemand@1024.png"
+  },
+  {
+   "template": "webinar-sustainability-ondemand",
+   "width": 1024,
+   "height": 900,
+   "label": null,
+   "stress": true,
+   "rules": [
+    "L-1",
+    "L-2",
+    "L-3",
+    "L-4",
+    "L-5"
+   ],
+   "failures": [],
+   "consoleErrors": [],
+   "screenshot": "webinar-sustainability-ondemand@1024-stress.png"
+  },
+  {
+   "template": "webinar-ecommerce-data",
+   "width": 1024,
+   "height": 900,
+   "label": null,
+   "stress": false,
+   "rules": [
+    "L-1",
+    "L-2",
+    "L-3",
+    "L-4",
+    "L-5",
+    "L-6",
+    "L-10",
+    "L-11",
+    "F-3.1"
+   ],
+   "failures": [],
+   "consoleErrors": [],
+   "screenshot": "webinar-ecommerce-data@1024.png"
+  },
+  {
+   "template": "webinar-ecommerce-data",
+   "width": 1024,
+   "height": 900,
+   "label": null,
+   "stress": true,
+   "rules": [
+    "L-1",
+    "L-2",
+    "L-3",
+    "L-4",
+    "L-5"
+   ],
+   "failures": [],
+   "consoleErrors": [],
+   "screenshot": "webinar-ecommerce-data@1024-stress.png"
+  },
+  {
+   "template": "webinar-parenting-fit",
+   "width": 1024,
+   "height": 900,
+   "label": null,
+   "stress": false,
+   "rules": [
+    "L-1",
+    "L-2",
+    "L-3",
+    "L-4",
+    "L-5",
+    "L-6",
+    "L-10",
+    "L-11",
+    "F-3.1"
+   ],
+   "failures": [],
+   "consoleErrors": [],
+   "screenshot": "webinar-parenting-fit@1024.png"
+  },
+  {
+   "template": "webinar-parenting-fit",
+   "width": 1024,
+   "height": 900,
+   "label": null,
+   "stress": true,
+   "rules": [
+    "L-1",
+    "L-2",
+    "L-3",
+    "L-4",
+    "L-5"
+   ],
+   "failures": [],
+   "consoleErrors": [],
+   "screenshot": "webinar-parenting-fit@1024-stress.png"
+  },
+  {
+   "template": "webinar-pet-academy",
+   "width": 1024,
+   "height": 900,
+   "label": null,
+   "stress": false,
+   "rules": [
+    "L-1",
+    "L-2",
+    "L-3",
+    "L-4",
+    "L-5",
+    "L-6",
+    "L-10",
+    "L-11",
+    "F-3.1"
+   ],
+   "failures": [],
+   "consoleErrors": [],
+   "screenshot": "webinar-pet-academy@1024.png"
+  },
+  {
+   "template": "webinar-pet-academy",
+   "width": 1024,
+   "height": 900,
+   "label": null,
+   "stress": true,
+   "rules": [
+    "L-1",
+    "L-2",
+    "L-3",
+    "L-4",
+    "L-5"
+   ],
+   "failures": [],
+   "consoleErrors": [],
+   "screenshot": "webinar-pet-academy@1024-stress.png"
+  },
+  {
+   "template": "webinar-healing-question",
+   "width": 768,
+   "height": 900,
+   "label": null,
+   "stress": false,
+   "rules": [
+    "L-1",
+    "L-2",
+    "L-3",
+    "L-4",
+    "L-5",
+    "L-6",
+    "L-10",
+    "L-11",
+    "F-3.1"
+   ],
+   "failures": [],
+   "consoleErrors": [],
+   "screenshot": "webinar-healing-question@768.png"
+  },
+  {
+   "template": "webinar-healing-question",
+   "width": 768,
+   "height": 900,
+   "label": null,
+   "stress": true,
+   "rules": [
+    "L-1",
+    "L-2",
+    "L-3",
+    "L-4",
+    "L-5"
+   ],
+   "failures": [],
+   "consoleErrors": [],
+   "screenshot": "webinar-healing-question@768-stress.png"
+  },
+  {
+   "template": "webinar-sustainability-ondemand",
+   "width": 768,
+   "height": 900,
+   "label": null,
+   "stress": false,
+   "rules": [
+    "L-1",
+    "L-2",
+    "L-3",
+    "L-4",
+    "L-5",
+    "L-6",
+    "L-10",
+    "L-11",
+    "F-3.1"
+   ],
+   "failures": [],
+   "consoleErrors": [],
+   "screenshot": "webinar-sustainability-ondemand@768.png"
+  },
+  {
+   "template": "webinar-sustainability-ondemand",
+   "width": 768,
+   "height": 900,
+   "label": null,
+   "stress": true,
+   "rules": [
+    "L-1",
+    "L-2",
+    "L-3",
+    "L-4",
+    "L-5"
+   ],
+   "failures": [],
+   "consoleErrors": [],
+   "screenshot": "webinar-sustainability-ondemand@768-stress.png"
+  },
+  {
+   "template": "webinar-ecommerce-data",
+   "width": 768,
+   "height": 900,
+   "label": null,
+   "stress": false,
+   "rules": [
+    "L-1",
+    "L-2",
+    "L-3",
+    "L-4",
+    "L-5",
+    "L-6",
+    "L-10",
+    "L-11",
+    "F-3.1"
+   ],
+   "failures": [],
+   "consoleErrors": [],
+   "screenshot": "webinar-ecommerce-data@768.png"
+  },
+  {
+   "template": "webinar-ecommerce-data",
+   "width": 768,
+   "height": 900,
+   "label": null,
+   "stress": true,
+   "rules": [
+    "L-1",
+    "L-2",
+    "L-3",
+    "L-4",
+    "L-5"
+   ],
+   "failures": [],
+   "consoleErrors": [],
+   "screenshot": "webinar-ecommerce-data@768-stress.png"
+  },
+  {
+   "template": "webinar-parenting-fit",
+   "width": 768,
+   "height": 900,
+   "label": null,
+   "stress": false,
+   "rules": [
+    "L-1",
+    "L-2",
+    "L-3",
+    "L-4",
+    "L-5",
+    "L-6",
+    "L-10",
+    "L-11",
+    "F-3.1"
+   ],
+   "failures": [],
+   "consoleErrors": [],
+   "screenshot": "webinar-parenting-fit@768.png"
+  },
+  {
+   "template": "webinar-parenting-fit",
+   "width": 768,
+   "height": 900,
+   "label": null,
+   "stress": true,
+   "rules": [
+    "L-1",
+    "L-2",
+    "L-3",
+    "L-4",
+    "L-5"
+   ],
+   "failures": [],
+   "consoleErrors": [],
+   "screenshot": "webinar-parenting-fit@768-stress.png"
+  },
+  {
+   "template": "webinar-pet-academy",
+   "width": 768,
+   "height": 900,
+   "label": null,
+   "stress": false,
+   "rules": [
+    "L-1",
+    "L-2",
+    "L-3",
+    "L-4",
+    "L-5",
+    "L-6",
+    "L-10",
+    "L-11",
+    "F-3.1"
+   ],
+   "failures": [],
+   "consoleErrors": [],
+   "screenshot": "webinar-pet-academy@768.png"
+  },
+  {
+   "template": "webinar-pet-academy",
+   "width": 768,
+   "height": 900,
+   "label": null,
+   "stress": true,
+   "rules": [
+    "L-1",
+    "L-2",
+    "L-3",
+    "L-4",
+    "L-5"
+   ],
+   "failures": [],
+   "consoleErrors": [],
+   "screenshot": "webinar-pet-academy@768-stress.png"
+  },
+  {
+   "template": "webinar-healing-question",
+   "width": 390,
+   "height": 844,
+   "label": null,
+   "stress": false,
+   "rules": [
+    "L-1",
+    "L-2",
+    "L-3",
+    "L-4",
+    "L-5",
+    "L-6",
+    "L-10",
+    "L-11",
+    "F-3.1",
+    "L-7"
+   ],
+   "failures": [],
+   "consoleErrors": [],
+   "screenshot": "webinar-healing-question@390.png"
+  },
+  {
+   "template": "webinar-healing-question",
+   "width": 390,
+   "height": 844,
+   "label": null,
+   "stress": true,
+   "rules": [
+    "L-1",
+    "L-2",
+    "L-3",
+    "L-4",
+    "L-5"
+   ],
+   "failures": [],
+   "consoleErrors": [],
+   "screenshot": "webinar-healing-question@390-stress.png"
+  },
+  {
+   "template": "webinar-sustainability-ondemand",
+   "width": 390,
+   "height": 844,
+   "label": null,
+   "stress": false,
+   "rules": [
+    "L-1",
+    "L-2",
+    "L-3",
+    "L-4",
+    "L-5",
+    "L-6",
+    "L-10",
+    "L-11",
+    "F-3.1",
+    "L-7"
+   ],
+   "failures": [],
+   "consoleErrors": [],
+   "screenshot": "webinar-sustainability-ondemand@390.png"
+  },
+  {
+   "template": "webinar-sustainability-ondemand",
+   "width": 390,
+   "height": 844,
+   "label": null,
+   "stress": true,
+   "rules": [
+    "L-1",
+    "L-2",
+    "L-3",
+    "L-4",
+    "L-5"
+   ],
+   "failures": [],
+   "consoleErrors": [],
+   "screenshot": "webinar-sustainability-ondemand@390-stress.png"
+  },
+  {
+   "template": "webinar-ecommerce-data",
+   "width": 390,
+   "height": 844,
+   "label": null,
+   "stress": false,
+   "rules": [
+    "L-1",
+    "L-2",
+    "L-3",
+    "L-4",
+    "L-5",
+    "L-6",
+    "L-10",
+    "L-11",
+    "F-3.1",
+    "L-7"
+   ],
+   "failures": [],
+   "consoleErrors": [],
+   "screenshot": "webinar-ecommerce-data@390.png"
+  },
+  {
+   "template": "webinar-ecommerce-data",
+   "width": 390,
+   "height": 844,
+   "label": null,
+   "stress": true,
+   "rules": [
+    "L-1",
+    "L-2",
+    "L-3",
+    "L-4",
+    "L-5"
+   ],
+   "failures": [],
+   "consoleErrors": [],
+   "screenshot": "webinar-ecommerce-data@390-stress.png"
+  },
+  {
+   "template": "webinar-parenting-fit",
+   "width": 390,
+   "height": 844,
+   "label": null,
+   "stress": false,
+   "rules": [
+    "L-1",
+    "L-2",
+    "L-3",
+    "L-4",
+    "L-5",
+    "L-6",
+    "L-10",
+    "L-11",
+    "F-3.1",
+    "L-7"
+   ],
+   "failures": [],
+   "consoleErrors": [],
+   "screenshot": "webinar-parenting-fit@390.png"
+  },
+  {
+   "template": "webinar-parenting-fit",
+   "width": 390,
+   "height": 844,
+   "label": null,
+   "stress": true,
+   "rules": [
+    "L-1",
+    "L-2",
+    "L-3",
+    "L-4",
+    "L-5"
+   ],
+   "failures": [],
+   "consoleErrors": [],
+   "screenshot": "webinar-parenting-fit@390-stress.png"
+  },
+  {
+   "template": "webinar-pet-academy",
+   "width": 390,
+   "height": 844,
+   "label": null,
+   "stress": false,
+   "rules": [
+    "L-1",
+    "L-2",
+    "L-3",
+    "L-4",
+    "L-5",
+    "L-6",
+    "L-10",
+    "L-11",
+    "F-3.1",
+    "L-7"
+   ],
+   "failures": [],
+   "consoleErrors": [],
+   "screenshot": "webinar-pet-academy@390.png"
+  },
+  {
+   "template": "webinar-pet-academy",
+   "width": 390,
+   "height": 844,
+   "label": null,
+   "stress": true,
+   "rules": [
+    "L-1",
+    "L-2",
+    "L-3",
+    "L-4",
+    "L-5"
+   ],
+   "failures": [],
+   "consoleErrors": [],
+   "screenshot": "webinar-pet-academy@390-stress.png"
+  },
+  {
+   "template": "webinar-healing-question",
+   "width": 375,
+   "height": 844,
+   "label": null,
+   "stress": false,
+   "rules": [
+    "L-1",
+    "L-2",
+    "L-3",
+    "L-4",
+    "L-5",
+    "L-6",
+    "L-10",
+    "L-11",
+    "F-3.1"
+   ],
+   "failures": [],
+   "consoleErrors": [],
+   "screenshot": "webinar-healing-question@375.png"
+  },
+  {
+   "template": "webinar-healing-question",
+   "width": 375,
+   "height": 844,
+   "label": null,
+   "stress": true,
+   "rules": [
+    "L-1",
+    "L-2",
+    "L-3",
+    "L-4",
+    "L-5"
+   ],
+   "failures": [],
+   "consoleErrors": [],
+   "screenshot": "webinar-healing-question@375-stress.png"
+  },
+  {
+   "template": "webinar-sustainability-ondemand",
+   "width": 375,
+   "height": 844,
+   "label": null,
+   "stress": false,
+   "rules": [
+    "L-1",
+    "L-2",
+    "L-3",
+    "L-4",
+    "L-5",
+    "L-6",
+    "L-10",
+    "L-11",
+    "F-3.1"
+   ],
+   "failures": [],
+   "consoleErrors": [],
+   "screenshot": "webinar-sustainability-ondemand@375.png"
+  },
+  {
+   "template": "webinar-sustainability-ondemand",
+   "width": 375,
+   "height": 844,
+   "label": null,
+   "stress": true,
+   "rules": [
+    "L-1",
+    "L-2",
+    "L-3",
+    "L-4",
+    "L-5"
+   ],
+   "failures": [],
+   "consoleErrors": [],
+   "screenshot": "webinar-sustainability-ondemand@375-stress.png"
+  },
+  {
+   "template": "webinar-ecommerce-data",
+   "width": 375,
+   "height": 844,
+   "label": null,
+   "stress": false,
+   "rules": [
+    "L-1",
+    "L-2",
+    "L-3",
+    "L-4",
+    "L-5",
+    "L-6",
+    "L-10",
+    "L-11",
+    "F-3.1"
+   ],
+   "failures": [],
+   "consoleErrors": [],
+   "screenshot": "webinar-ecommerce-data@375.png"
+  },
+  {
+   "template": "webinar-ecommerce-data",
+   "width": 375,
+   "height": 844,
+   "label": null,
+   "stress": true,
+   "rules": [
+    "L-1",
+    "L-2",
+    "L-3",
+    "L-4",
+    "L-5"
+   ],
+   "failures": [],
+   "consoleErrors": [],
+   "screenshot": "webinar-ecommerce-data@375-stress.png"
+  },
+  {
+   "template": "webinar-parenting-fit",
+   "width": 375,
+   "height": 844,
+   "label": null,
+   "stress": false,
+   "rules": [
+    "L-1",
+    "L-2",
+    "L-3",
+    "L-4",
+    "L-5",
+    "L-6",
+    "L-10",
+    "L-11",
+    "F-3.1"
+   ],
+   "failures": [],
+   "consoleErrors": [],
+   "screenshot": "webinar-parenting-fit@375.png"
+  },
+  {
+   "template": "webinar-parenting-fit",
+   "width": 375,
+   "height": 844,
+   "label": null,
+   "stress": true,
+   "rules": [
+    "L-1",
+    "L-2",
+    "L-3",
+    "L-4",
+    "L-5"
+   ],
+   "failures": [],
+   "consoleErrors": [],
+   "screenshot": "webinar-parenting-fit@375-stress.png"
+  },
+  {
+   "template": "webinar-pet-academy",
+   "width": 375,
+   "height": 844,
+   "label": null,
+   "stress": false,
+   "rules": [
+    "L-1",
+    "L-2",
+    "L-3",
+    "L-4",
+    "L-5",
+    "L-6",
+    "L-10",
+    "L-11",
+    "F-3.1"
+   ],
+   "failures": [],
+   "consoleErrors": [],
+   "screenshot": "webinar-pet-academy@375.png"
+  },
+  {
+   "template": "webinar-pet-academy",
+   "width": 375,
+   "height": 844,
+   "label": null,
+   "stress": true,
+   "rules": [
+    "L-1",
+    "L-2",
+    "L-3",
+    "L-4",
+    "L-5"
+   ],
+   "failures": [],
+   "consoleErrors": [],
+   "screenshot": "webinar-pet-academy@375-stress.png"
+  },
+  {
+   "template": "webinar-healing-question",
+   "width": 360,
+   "height": 844,
+   "label": null,
+   "stress": false,
+   "rules": [
+    "L-1",
+    "L-2",
+    "L-3",
+    "L-4",
+    "L-5",
+    "L-6",
+    "L-10",
+    "L-11",
+    "F-3.1"
+   ],
+   "failures": [],
+   "consoleErrors": [],
+   "screenshot": "webinar-healing-question@360.png"
+  },
+  {
+   "template": "webinar-healing-question",
+   "width": 360,
+   "height": 844,
+   "label": null,
+   "stress": true,
+   "rules": [
+    "L-1",
+    "L-2",
+    "L-3",
+    "L-4",
+    "L-5"
+   ],
+   "failures": [],
+   "consoleErrors": [],
+   "screenshot": "webinar-healing-question@360-stress.png"
+  },
+  {
+   "template": "webinar-sustainability-ondemand",
+   "width": 360,
+   "height": 844,
+   "label": null,
+   "stress": false,
+   "rules": [
+    "L-1",
+    "L-2",
+    "L-3",
+    "L-4",
+    "L-5",
+    "L-6",
+    "L-10",
+    "L-11",
+    "F-3.1"
+   ],
+   "failures": [],
+   "consoleErrors": [],
+   "screenshot": "webinar-sustainability-ondemand@360.png"
+  },
+  {
+   "template": "webinar-sustainability-ondemand",
+   "width": 360,
+   "height": 844,
+   "label": null,
+   "stress": true,
+   "rules": [
+    "L-1",
+    "L-2",
+    "L-3",
+    "L-4",
+    "L-5"
+   ],
+   "failures": [],
+   "consoleErrors": [],
+   "screenshot": "webinar-sustainability-ondemand@360-stress.png"
+  },
+  {
+   "template": "webinar-ecommerce-data",
+   "width": 360,
+   "height": 844,
+   "label": null,
+   "stress": false,
+   "rules": [
+    "L-1",
+    "L-2",
+    "L-3",
+    "L-4",
+    "L-5",
+    "L-6",
+    "L-10",
+    "L-11",
+    "F-3.1"
+   ],
+   "failures": [],
+   "consoleErrors": [],
+   "screenshot": "webinar-ecommerce-data@360.png"
+  },
+  {
+   "template": "webinar-ecommerce-data",
+   "width": 360,
+   "height": 844,
+   "label": null,
+   "stress": true,
+   "rules": [
+    "L-1",
+    "L-2",
+    "L-3",
+    "L-4",
+    "L-5"
+   ],
+   "failures": [],
+   "consoleErrors": [],
+   "screenshot": "webinar-ecommerce-data@360-stress.png"
+  },
+  {
+   "template": "webinar-parenting-fit",
+   "width": 360,
+   "height": 844,
+   "label": null,
+   "stress": false,
+   "rules": [
+    "L-1",
+    "L-2",
+    "L-3",
+    "L-4",
+    "L-5",
+    "L-6",
+    "L-10",
+    "L-11",
+    "F-3.1"
+   ],
+   "failures": [],
+   "consoleErrors": [],
+   "screenshot": "webinar-parenting-fit@360.png"
+  },
+  {
+   "template": "webinar-parenting-fit",
+   "width": 360,
+   "height": 844,
+   "label": null,
+   "stress": true,
+   "rules": [
+    "L-1",
+    "L-2",
+    "L-3",
+    "L-4",
+    "L-5"
+   ],
+   "failures": [],
+   "consoleErrors": [],
+   "screenshot": "webinar-parenting-fit@360-stress.png"
+  },
+  {
+   "template": "webinar-pet-academy",
+   "width": 360,
+   "height": 844,
+   "label": null,
+   "stress": false,
+   "rules": [
+    "L-1",
+    "L-2",
+    "L-3",
+    "L-4",
+    "L-5",
+    "L-6",
+    "L-10",
+    "L-11",
+    "F-3.1"
+   ],
+   "failures": [],
+   "consoleErrors": [],
+   "screenshot": "webinar-pet-academy@360.png"
+  },
+  {
+   "template": "webinar-pet-academy",
+   "width": 360,
+   "height": 844,
+   "label": null,
+   "stress": true,
+   "rules": [
+    "L-1",
+    "L-2",
+    "L-3",
+    "L-4",
+    "L-5"
+   ],
+   "failures": [],
+   "consoleErrors": [],
+   "screenshot": "webinar-pet-academy@360-stress.png"
+  },
+  {
+   "template": "webinar-healing-question",
+   "width": 320,
+   "height": 844,
+   "label": null,
+   "stress": false,
+   "rules": [
+    "L-1",
+    "L-3",
+    "L-5",
+    "L-11"
+   ],
+   "failures": [],
+   "consoleErrors": [],
+   "screenshot": "webinar-healing-question@320.png"
+  },
+  {
+   "template": "webinar-healing-question",
+   "width": 320,
+   "height": 844,
+   "label": null,
+   "stress": true,
+   "rules": [
+    "L-1",
+    "L-3",
+    "L-5"
+   ],
+   "failures": [],
+   "consoleErrors": [],
+   "screenshot": "webinar-healing-question@320-stress.png"
+  },
+  {
+   "template": "webinar-sustainability-ondemand",
+   "width": 320,
+   "height": 844,
+   "label": null,
+   "stress": false,
+   "rules": [
+    "L-1",
+    "L-3",
+    "L-5",
+    "L-11"
+   ],
+   "failures": [],
+   "consoleErrors": [],
+   "screenshot": "webinar-sustainability-ondemand@320.png"
+  },
+  {
+   "template": "webinar-sustainability-ondemand",
+   "width": 320,
+   "height": 844,
+   "label": null,
+   "stress": true,
+   "rules": [
+    "L-1",
+    "L-3",
+    "L-5"
+   ],
+   "failures": [],
+   "consoleErrors": [],
+   "screenshot": "webinar-sustainability-ondemand@320-stress.png"
+  },
+  {
+   "template": "webinar-ecommerce-data",
+   "width": 320,
+   "height": 844,
+   "label": null,
+   "stress": false,
+   "rules": [
+    "L-1",
+    "L-3",
+    "L-5",
+    "L-11"
+   ],
+   "failures": [],
+   "consoleErrors": [],
+   "screenshot": "webinar-ecommerce-data@320.png"
+  },
+  {
+   "template": "webinar-ecommerce-data",
+   "width": 320,
+   "height": 844,
+   "label": null,
+   "stress": true,
+   "rules": [
+    "L-1",
+    "L-3",
+    "L-5"
+   ],
+   "failures": [],
+   "consoleErrors": [],
+   "screenshot": "webinar-ecommerce-data@320-stress.png"
+  },
+  {
+   "template": "webinar-parenting-fit",
+   "width": 320,
+   "height": 844,
+   "label": null,
+   "stress": false,
+   "rules": [
+    "L-1",
+    "L-3",
+    "L-5",
+    "L-11"
+   ],
+   "failures": [],
+   "consoleErrors": [],
+   "screenshot": "webinar-parenting-fit@320.png"
+  },
+  {
+   "template": "webinar-parenting-fit",
+   "width": 320,
+   "height": 844,
+   "label": null,
+   "stress": true,
+   "rules": [
+    "L-1",
+    "L-3",
+    "L-5"
+   ],
+   "failures": [],
+   "consoleErrors": [],
+   "screenshot": "webinar-parenting-fit@320-stress.png"
+  },
+  {
+   "template": "webinar-pet-academy",
+   "width": 320,
+   "height": 844,
+   "label": null,
+   "stress": false,
+   "rules": [
+    "L-1",
+    "L-3",
+    "L-5",
+    "L-11"
+   ],
+   "failures": [],
+   "consoleErrors": [],
+   "screenshot": "webinar-pet-academy@320.png"
+  },
+  {
+   "template": "webinar-pet-academy",
+   "width": 320,
+   "height": 844,
+   "label": null,
+   "stress": true,
+   "rules": [
+    "L-1",
+    "L-3",
+    "L-5"
+   ],
+   "failures": [],
+   "consoleErrors": [],
+   "screenshot": "webinar-pet-academy@320-stress.png"
+  },
+  {
+   "template": "webinar-healing-question",
+   "width": 375,
+   "height": 667,
+   "label": "375x667",
+   "stress": false,
+   "rules": [
+    "L-7"
+   ],
+   "failures": [],
+   "consoleErrors": [],
+   "screenshot": null
+  },
+  {
+   "template": "webinar-sustainability-ondemand",
+   "width": 375,
+   "height": 667,
+   "label": "375x667",
+   "stress": false,
+   "rules": [
+    "L-7"
+   ],
+   "failures": [],
+   "consoleErrors": [],
+   "screenshot": null
+  },
+  {
+   "template": "webinar-ecommerce-data",
+   "width": 375,
+   "height": 667,
+   "label": "375x667",
+   "stress": false,
+   "rules": [
+    "L-7"
+   ],
+   "failures": [],
+   "consoleErrors": [],
+   "screenshot": null
+  },
+  {
+   "template": "webinar-parenting-fit",
+   "width": 375,
+   "height": 667,
+   "label": "375x667",
+   "stress": false,
+   "rules": [
+    "L-7"
+   ],
+   "failures": [],
+   "consoleErrors": [],
+   "screenshot": null
+  },
+  {
+   "template": "webinar-pet-academy",
+   "width": 375,
+   "height": 667,
+   "label": "375x667",
+   "stress": false,
+   "rules": [
+    "L-7"
+   ],
+   "failures": [],
+   "consoleErrors": [],
+   "screenshot": null
+  }
+ ]
+}

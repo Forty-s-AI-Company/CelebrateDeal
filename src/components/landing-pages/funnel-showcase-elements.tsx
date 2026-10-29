@@ -5,7 +5,7 @@
 import { useEffect, useId, useRef, useState, useSyncExternalStore, type CSSProperties, type ReactNode } from "react";
 import {
   Anchor, BadgeCheck, BookOpen, ChartLine, Check, ChevronDown, CirclePlay, Clock, Compass, Gem, GraduationCap, Heart, Leaf, Lightbulb, Mail, Menu, MessageCircle,
-  Mountain, Pause, Play, Rocket, Sailboat, ShieldCheck, Sparkles, Star, Target, Trophy, Users, X,
+  Mountain, Pause, Play, Rocket, Sailboat, ShieldCheck, Sparkles, Star, Target, Trophy, Users, X, ChevronLeft, ChevronRight,
 } from "lucide-react";
 import {
   FUNNEL_SHOWCASE_DEFAULT_ACCENT, formatShowcaseStat, showcaseAccentParts, showcaseCards, showcaseReadableOn, showcaseChoice, showcaseColor, showcaseDividerPath, showcaseIconItems, showcaseLogoFilter, showcaseLogoItems, showcaseNavItems,
@@ -13,11 +13,13 @@ import {
   SHOWCASE_DIVIDER_SHAPES, SHOWCASE_LOGO_TONES, SHOWCASE_SOCIAL_LABELS, type ShowcaseCard, type ShowcaseIcon, type ShowcaseSocialNetwork, type ShowcaseTestimonial, type ShowcaseVideo,
 } from "@/lib/funnel-showcase";
 import { safeContentAssetUrl, safeContentHref } from "@/lib/safe-url";
-import { funnelHeadingLevel, funnelTypographyDefaults, type FunnelHeadingLevel, type FunnelTypographyTokens } from "@/lib/funnel-typography";
+import { resolveFunnelEventFields } from "@/lib/funnel-event-time";
+import { useFunnelEvent } from "./funnel-event-context";
+import { funnelFluidGridColumns, funnelHeadingLevel, funnelTypographyDefaults, type FunnelHeadingLevel, type FunnelTypographyTokens, type FunnelTypographyViewport } from "@/lib/funnel-typography";
 
 export const FUNNEL_SHOWCASE_ACCENT = FUNNEL_SHOWCASE_DEFAULT_ACCENT;
 
-type Viewport = "desktop" | "mobile";
+type Viewport = FunnelTypographyViewport;
 export type ShowcaseElementProps = {
   props: Record<string, unknown>;
   tokens: FunnelTypographyTokens;
@@ -59,19 +61,26 @@ function Heading({ level, style, children, id }: { level: FunnelHeadingLevel; st
   }
 }
 
-const gridColumns = (count: number, viewport: Viewport, max = 4): CSSProperties => ({
-  display: "grid", gap: mobileOf(viewport) ? 20 : 28,
-  gridTemplateColumns: mobileOf(viewport) ? "minmax(0, 1fr)" : `repeat(${Math.min(Math.max(count, 1), max)}, minmax(0, 1fr))`,
-});
+/** Desktop `count` columns, tablet at most 2 (I-1), mobile 1. */
+const columnCount = (count: number, viewport: Viewport, max = 4) => {
+  const wanted = Math.min(Math.max(count, 1), max);
+  return mobileOf(viewport) ? 1 : viewport === "tablet" ? Math.min(wanted, 2) : wanted;
+};
+/** The column math and the rendered gap must use the same value, or `auto-fill` drops the last column. */
+const gridColumns = (count: number, viewport: Viewport, max = 4, gapOverride?: number): CSSProperties => {
+  const gap = gapOverride ?? (mobileOf(viewport) ? 20 : viewport === "tablet" ? 24 : 28);
+  return { display: "grid", gap, gridTemplateColumns: funnelFluidGridColumns(columnCount(count, viewport, max), gap) };
+};
 
 /* ------------------------------ 區塊標題組 ------------------------------ */
 
 export function SectionTitleElement({ props, tokens, viewport, inheritColor, align }: ShowcaseElementProps) {
   const accent = accentOf(props);
   const level = funnelHeadingLevel(props.level);
-  const eyebrow = showcaseText(props.eyebrow, 120);
-  const title = showcaseText(props.title, 240) || "區塊標題";
-  const subtitle = showcaseText(props.subtitle, 600);
+  const { schedule } = useFunnelEvent();
+  const eyebrow = resolveFunnelEventFields(showcaseText(props.eyebrow, 120), schedule);
+  const title = resolveFunnelEventFields(showcaseText(props.title, 240) || "區塊標題", schedule);
+  const subtitle = resolveFunnelEventFields(showcaseText(props.subtitle, 600), schedule);
   const line = props.decoration !== "none";
   const mobile = mobileOf(viewport);
   const inline = align === "center" ? "auto" : align === "right" ? "auto 0" : 0;
@@ -97,7 +106,7 @@ export function IconListElement({ props, tokens, viewport, inheritColor }: Showc
   const columns = props.layout === "grid" ? showcaseNumber(props.columns, 1, 4, 2) : 1;
   const mobile = mobileOf(viewport);
   const list = items.length ? items : [{ icon: "check" as const, title: "重點標題", text: "在屬性面板新增重點與說明。" }];
-  return <ol className="m-0 list-none p-0" style={{ ...gridColumns(columns, viewport), gap: mobile ? 22 : 30 }}>
+  return <ol className="m-0 list-none p-0" style={gridColumns(columns, viewport, 4, mobile ? 22 : 30)}>
     {list.map((item, index) => {
       const Icon = ICONS[item.icon];
       return <li key={`${index}-${item.title}`} className="flex items-start" style={{ gap: mobile ? 14 : 20 }}>
@@ -160,7 +169,7 @@ function StatValue({ stat, accent, tokens, viewport, animate }: { stat: ReturnTy
   const current = useCountUp(stat.value, stat.decimals, animate, ref);
   const shown = stat.value === null || current === null ? stat.display : formatShowcaseStat(current, stat.decimals, grouped);
   const final = `${stat.prefix}${stat.value === null ? stat.display : formatShowcaseStat(stat.value, stat.decimals, grouped)}${stat.suffix}`;
-  return <span ref={ref} className="block" style={{ fontFamily: tokens.headingFont, color: accent, fontSize: mobileOf(viewport) ? 40 : 56, fontWeight: 600, lineHeight: 1.1, letterSpacing: "0.02em", fontVariantNumeric: "tabular-nums" }}>
+  return <span ref={ref} className="block" style={{ fontFamily: tokens.headingFont, color: accent, fontSize: mobileOf(viewport) ? 40 : 56, fontWeight: 600, lineHeight: 1.1, letterSpacing: "0.02em", fontVariantNumeric: "tabular-nums", overflowWrap: "anywhere" }}>
     <span aria-hidden>{stat.prefix}{shown}<span style={{ fontSize: "0.5em", marginLeft: "0.15em" }}>{stat.suffix}</span></span>
     <span className="sr-only">{final}</span>
   </span>;
@@ -173,8 +182,12 @@ export function StatsElement({ props, tokens, viewport, interactive }: ShowcaseE
   const mobile = mobileOf(viewport);
   const framed = props.framed === true;
   const animate = interactive && props.animate !== false;
-  const grid = <dl className="m-0" style={{ display: "grid", gridTemplateColumns: mobile ? "minmax(0, 1fr)" : `repeat(${list.length}, minmax(0, 1fr))`, gap: mobile ? 28 : 0 }}>
-    {list.map((stat, index) => <div key={`${index}-${stat.label}`} className="grid content-start text-center" style={{ gap: 10, paddingInline: mobile ? 0 : 24, borderLeft: !mobile && index > 0 ? `1px solid ${accent}55` : undefined }}>
+  // Desktop: one row with dividers. Tablet: a container-aware grid (each stat ≥ 240px), so no dividers.
+  const fluid = viewport === "tablet" && list.length > 1;
+  // Tablet keeps at most 2 columns (I-1), so 4 stats read as 2×2 instead of 3＋1.
+  const columns = mobile ? "minmax(0, 1fr)" : fluid ? funnelFluidGridColumns(columnCount(list.length, viewport), 24) : `repeat(${list.length}, minmax(0, 1fr))`;
+  const grid = <dl className="m-0" style={{ display: "grid", gridTemplateColumns: columns, gap: mobile ? 28 : fluid ? "32px 24px" : 0 }}>
+    {list.map((stat, index) => <div key={`${index}-${stat.label}`} className="grid content-start text-center" style={{ gap: 10, paddingInline: mobile || fluid ? 0 : 24, borderLeft: !mobile && !fluid && index > 0 ? `1px solid ${accent}55` : undefined }}>
       <dt className="sr-only">{stat.label || `數據 ${index + 1}`}</dt>
       <dd className="m-0 grid" style={{ gap: 10 }}>
         <StatValue stat={stat} accent={accent} tokens={tokens} viewport={viewport} animate={animate} />
@@ -278,13 +291,13 @@ export function ContentCardsElement({ props, tokens, viewport }: ShowcaseElement
       return <li key={`${index}-${card.title}`}><article aria-labelledby={titleId} className="group flex h-full flex-col overflow-hidden" style={{ backgroundColor: cardColor, color: cardText, boxShadow: "0 10px 30px rgba(15, 15, 15, 0.08)" }}>
         <CardImage card={card} aspect="16 / 10" accent={accent} corners={false} mobile={mobile} />
         <div className="flex flex-1 flex-col" style={{ gap: 12, padding: mobile ? 20 : 24 }}>
-          {card.category || card.date ? <p className="m-0 flex flex-wrap items-center gap-3 text-xs">
+          {card.category || card.date ? <p className="m-0 flex flex-wrap items-center gap-3 text-sm">
             {card.category ? <span className="px-2.5 py-1 font-bold tracking-[0.08em]" style={{ backgroundColor: accent, color: showcaseReadableOn(accent) }}>{card.category}</span> : null}
             {card.date ? <span style={{ opacity: 0.85 }}>{card.date}</span> : null}
           </p> : null}
           <h3 id={titleId} className="line-clamp-2" style={{ ...funnelTypographyDefaults("h4", tokens), ...PRETTY, color: "inherit" }}>{card.href ? <a href={card.href} className="underline-offset-4 hover:underline">{card.title}</a> : card.title}</h3>
           {card.text ? <p className="m-0 line-clamp-3" style={{ ...PRETTY, opacity: 0.85, fontSize: "0.95em" }}>{card.text}</p> : null}
-          {card.href ? <a href={card.href} aria-hidden tabIndex={-1} className="mt-auto inline-flex w-fit items-center gap-2 pt-2 text-xs font-bold tracking-[0.2em]" style={{ color: cardText }}>{card.linkLabel || "READ MORE"}<span style={{ color: accent }}>→</span></a> : null}
+          {card.href ? <a href={card.href} aria-hidden tabIndex={-1} className="mt-auto inline-flex w-fit items-center gap-2 pt-2 text-sm font-bold tracking-[0.2em]" style={{ color: cardText }}>{card.linkLabel || "READ MORE"}<span style={{ color: accent }}>→</span></a> : null}
         </div>
       </article></li>;
     })}
@@ -334,20 +347,47 @@ function Stars({ rating, accent }: { rating: number; accent: string }) {
   </span>;
 }
 
-function TestimonialCard({ item, accent, cardColor, cardText, width, showRating }: { item: ShowcaseTestimonial; accent: string; cardColor: string; cardText: string; width: number; showRating: boolean }) {
+function TestimonialCard({ item, accent, cardColor, cardText, width, showRating }: { item: ShowcaseTestimonial; accent: string; cardColor: string; cardText: string; width: number | "auto"; showRating: boolean }) {
   const initial = item.name.slice(0, 1) || "★";
-  return <article className="flex shrink-0 flex-col" style={{ width, gap: 12, padding: 24, backgroundColor: cardColor, color: cardText, border: `1px solid ${accent}40` }}>
+  // In grid / carousel layouts (width "auto") the card fills its column, may shrink and shows the full text.
+  const fluid = width === "auto";
+  return <article className={`flex flex-col${fluid ? " min-w-0" : " shrink-0"}`} style={{ width, gap: 12, padding: 24, backgroundColor: cardColor, color: cardText, border: `1px solid ${accent}40`, overflowWrap: "anywhere" }}>
     <div className="flex items-center gap-3">
       {item.avatar ? <img src={item.avatar} alt="" loading="lazy" className="h-11 w-11 shrink-0 rounded-full object-cover" /> : <span aria-hidden className="grid h-11 w-11 shrink-0 place-items-center rounded-full text-base font-bold" style={{ backgroundColor: accent, color: showcaseReadableOn(accent) }}>{initial}</span>}
       <div className="min-w-0">
         <p className="m-0 flex items-center gap-1.5 font-bold">{item.name || "學員"}{item.verified ? <BadgeCheck size={16} role="img" aria-label="已驗證" style={{ color: accent }} /> : null}</p>
-        {item.date ? <p className="m-0 text-xs" style={{ opacity: 0.8 }}>{item.date}</p> : null}
+        {item.date ? <p className="m-0 text-sm" style={{ opacity: 0.8 }}>{item.date}</p> : null}
       </div>
     </div>
     {showRating ? <Stars rating={item.rating} accent={accent} /> : null}
     {item.title ? <h3 className="m-0 text-base font-bold" style={{ lineHeight: 1.45 }}>{item.title}</h3> : null}
-    {item.text ? <p className="m-0 line-clamp-5 whitespace-pre-line text-sm" style={{ ...PRETTY, lineHeight: 1.75, opacity: 0.9 }}>{item.text}</p> : null}
+    {/* Never clamp: a cut-off review hides content (qa-standards L-3); marquee cards grow to their text. */}
+    {item.text ? <p className="m-0 whitespace-pre-line text-sm" style={{ ...PRETTY, lineHeight: 1.75, opacity: 0.9 }}>{item.text}</p> : null}
   </article>;
+}
+
+/** C-13 carousel: one page of 1 (mobile) / 2 (tablet) / 3 (desktop) cards, buttons and dots are keyboard operable, no autoplay. */
+function TestimonialCarousel({ items, perPage, accent, cardColor, cardText, showRating, label }: { items: ShowcaseTestimonial[]; perPage: number; accent: string; cardColor: string; cardText: string; showRating: boolean; label: string }) {
+  const pages = Math.max(1, Math.ceil(items.length / perPage));
+  const [page, setPage] = useState(0);
+  const current = Math.min(page, pages - 1);
+  const regionId = useId();
+  const go = (next: number) => setPage(((next % pages) + pages) % pages);
+  const button = "grid h-11 w-11 shrink-0 cursor-pointer place-items-center rounded-full focus-visible:outline-2 focus-visible:outline-offset-2 disabled:cursor-not-allowed disabled:opacity-40";
+  return <section aria-roledescription="輪播" aria-label={label} className="grid gap-5" onKeyDown={(event) => { if (event.key === "ArrowRight") go(current + 1); if (event.key === "ArrowLeft") go(current - 1); }}>
+    <div id={regionId} aria-live="polite" className="grid" style={{ gap: 20, gridTemplateColumns: `repeat(${perPage}, minmax(0, 1fr))` }}>
+      {items.slice(current * perPage, current * perPage + perPage).map((item, index) => <div key={`${current}-${index}`} role="group" aria-roledescription="投影片" aria-label={`第 ${current * perPage + index + 1} 則，共 ${items.length} 則`} className="grid"><TestimonialCard item={item} accent={accent} cardColor={cardColor} cardText={cardText} width="auto" showRating={showRating} /></div>)}
+    </div>
+    {pages > 1 ? <div className="flex items-center justify-center gap-3">
+      <button type="button" aria-controls={regionId} aria-label="上一組評價" onClick={() => go(current - 1)} className={button} style={{ border: `1px solid ${accent}`, color: accent, outlineColor: accent }}><ChevronLeft size={20} aria-hidden /></button>
+      <div className="flex min-w-0 flex-wrap items-center justify-center" role="group" aria-label="選擇評價頁">
+        {Array.from({ length: pages }, (_, index) => <button key={index} type="button" aria-controls={regionId} aria-label={`第 ${index + 1} 組`} aria-current={index === current ? "true" : undefined} onClick={() => go(index)} className="grid h-11 w-11 shrink-0 cursor-pointer place-items-center focus-visible:outline-2" style={{ outlineColor: accent }}>
+          <span aria-hidden className="block rounded-full" style={{ width: index === current ? 22 : 8, height: 8, backgroundColor: index === current ? accent : `${accent}66` }} />
+        </button>)}
+      </div>
+      <button type="button" aria-controls={regionId} aria-label="下一組評價" onClick={() => go(current + 1)} className={button} style={{ border: `1px solid ${accent}`, color: accent, outlineColor: accent }}><ChevronRight size={20} aria-hidden /></button>
+    </div> : null}
+  </section>;
 }
 
 const MARQUEE_SECONDS_PER_CARD: Readonly<Record<string, number>> = { slow: 9, normal: 6, fast: 4 };
@@ -367,6 +407,11 @@ export function TestimonialWallElement({ props, viewport, interactive }: Showcas
   const showRating = props.showRating !== false;
   const perCard = MARQUEE_SECONDS_PER_CARD[showcaseText(props.speed)] ?? MARQUEE_SECONDS_PER_CARD.normal!;
   if (!items.length) return <p className="text-center text-sm opacity-70">尚未加入評價，請在屬性面板新增。</p>;
+  // C-13: "grid" lays cards out in columns, "carousel" pages through them with buttons and dots (never autoplays).
+  if (props.layout === "grid") return <ul className="m-0 list-none p-0" style={gridColumns(showcaseNumber(props.columns, 1, 4, Math.min(items.length, 3)), viewport, 3)}>
+    {items.map((item, index) => <li key={index} className="grid"><TestimonialCard item={item} accent={accent} cardColor={cardColor} cardText={cardText} width="auto" showRating={showRating} /></li>)}
+  </ul>;
+  if (props.layout === "carousel") return <TestimonialCarousel items={items} perPage={columnCount(showcaseNumber(props.columns, 1, 3, 3), viewport, 3)} accent={accent} cardColor={cardColor} cardText={cardText} showRating={showRating} label={showcaseText(props.ariaLabel, 120) || "學員評價"} />;
   return <div className="grid gap-4" role="region" aria-label={showcaseText(props.ariaLabel, 120) || "學員評價"} id={regionId}>
     {animated ? <div className="flex justify-end">
       <button type="button" aria-pressed={paused} aria-controls={regionId} onClick={() => setPaused((value) => !value)} className="inline-flex min-h-10 cursor-pointer items-center gap-2 rounded-full px-4 text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-2" style={{ border: `1px solid ${accent}`, color: accent, outlineColor: accent }}>

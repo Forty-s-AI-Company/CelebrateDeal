@@ -29,9 +29,27 @@ describe("Webinar shared preview/public experience", () => {
     expect(html).toContain("請開啟頁面設定");
     expect(html).not.toContain('action="/api/form-submissions"');
   });
-  it("posts the existing owned resources and redirects only to the current funnel thank-you path", () => {
+  it("submits through the page's own designed form with the same owned resources, and drops the fallback form", () => {
     vi.useFakeTimers(); vi.setSystemTime(new Date("2030-01-01T01:30:00.000Z"));
     const html = renderToStaticMarkup(<FunnelWebinarExperience state={state()} slug="current-slug" stepId="webinar_registration" resource={resource} />);
+    expect(html).toContain('action="/api/form-submissions"');
+    expect(html).not.toContain('id="webinar-registration"');
+    expect(html).not.toContain("此一頁式網站尚未綁定可公開使用的報名表");
+    expect(html.match(/action="\/api\/form-submissions"/gu)).toHaveLength(1);
+    expect(html).toContain('value="owned_form"');
+    expect(html).toContain('value="owned_live"');
+    expect(html).toContain('value="/lp/current-slug/thank-you"');
+    expect(html).toContain("完成確認");
+    // Same labels and submit text as the bound registration form (the release E2E fills them by name).
+    expect(html).toContain("Email *</label>");
+    expect(html).toContain(">送出報名</button>");
+  });
+  it("posts the existing owned resources and redirects only to the current funnel thank-you path", () => {
+    vi.useFakeTimers(); vi.setSystemTime(new Date("2030-01-01T01:30:00.000Z"));
+    const draft = state();
+    // A registration page without its own lead form keeps the native fallback form.
+    draft.pages.webinar_registration!.root = [];
+    const html = renderToStaticMarkup(<FunnelWebinarExperience state={draft} slug="current-slug" stepId="webinar_registration" resource={resource} />);
     expect(html).toContain('action="/api/form-submissions"');
     expect(html).toContain('id="webinar-registration"');
     expect(html).toContain('value="owned_form"');

@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 400" width="640" height="400" role="img" aria-label="兔子剪影插圖">
+<rect width="640" height="400" fill="#e3e9f2"/>
+<path d="M0 330h640v70H0z" fill="#d3dce9"/>
+<path d="M280 160c-20-60-20-120 0-130 20 0 30 60 30 120zM330 150c0-60 20-120 40-120 16 10 0 80-20 130z" fill="#3d5a50"/>
+<ellipse cx="320" cy="200" rx="60" ry="54" fill="#3d5a50"/>
+<ellipse cx="350" cy="290" rx="100" ry="60" fill="#3d5a50"/>
+<circle cx="450" cy="300" r="20" fill="#3d5a50"/>
+<circle cx="300" cy="190" r="7" fill="#e3e9f2"/>
+</svg>

@@ -8,6 +8,9 @@ import { PublicFunnelDocument } from "@/components/landing-pages/public-funnel-d
 import { getFunnelWebinarState } from "@/lib/funnel-webinar";
 import { hasDirectWebinarVideo } from "@/lib/funnel-webinar-media";
 import type { FunnelStepPages } from "@/lib/funnel-step-pages";
+import type { FunnelRenderEvent, FunnelSubmissionContext, FunnelViewport } from "@/components/landing-pages/funnel-page-document-renderer";
+import { isLeadCaptureFormNode } from "@/lib/funnel-registration-surface";
+import type { FunnelNode } from "@/lib/funnel-page-document";
 
 export type WebinarExperienceResource = {
   live: { id: string; slug: string; videoId: string; videoTitle: string };
@@ -19,9 +22,26 @@ function funnelSourceFields(source: { landingPageId: string; stepId: string } | 
 }
 
 /** Preview and public pages share the same document and state rendering path. */
-export function FunnelWebinarExperience({ state, stepId, slug, resource, preview = false, viewport, funnelSource }: {
+const hasLeadForm = (nodes: FunnelNode[]): boolean => nodes.some((node) => isLeadCaptureFormNode(node) || hasLeadForm(node.children ?? []));
+const REGISTRATION_FIELD_TYPES = new Set(["text", "email", "tel", "number", "url"]);
+const WEBINAR_CONFIRMATION_NOTICE = "送出後請至 Email 完成確認，才會列入正式名單。";
+
+/**
+ * A public registration page whose design has its own lead form (webinar templates) submits through that form,
+ * with the same form, live, step and redirect as `WebinarRegistrationForm`; preview never submits.
+ */
+function designedFormSubmission({ registration, ready, page, resource, source, thankYou, path }: { registration: boolean; ready: boolean; page: { root: FunnelNode[] }; resource?: WebinarExperienceResource; source: ReturnType<typeof funnelSourceFields>; thankYou?: { path: string }; path: (value: string) => string }): FunnelSubmissionContext | undefined {
+  if (!registration || !ready || !resource || !thankYou || !hasLeadForm(page.root)) return undefined;
+  const redirectTo = path(thankYou.path);
+  return {
+    form: { id: resource.form.id, fields: resource.form.fields.map((field) => ({ key: field.key, label: field.label, type: REGISTRATION_FIELD_TYPES.has(field.type ?? "") ? field.type as "text" : "text", required: field.required === true })), submitLabel: resource.form.submitLabel, successMessage: resource.form.successMessage },
+    landingPageId: source.landingPageId, funnelStepId: source.stepId, liveId: resource.live.id, redirectTo, notice: WEBINAR_CONFIRMATION_NOTICE, nativeSubmit: true,
+  };
+}
+
+export function FunnelWebinarExperience({ state, stepId, slug, resource, preview = false, viewport, initialViewport, event, funnelSource }: {
   state: FunnelStepPages; stepId: string; slug: string; resource?: WebinarExperienceResource;
-  preview?: boolean; viewport?: "desktop" | "mobile"; funnelSource?: { landingPageId: string; stepId: string };
+  preview?: boolean; viewport?: FunnelViewport; initialViewport?: FunnelViewport; event?: FunnelRenderEvent; funnelSource?: { landingPageId: string; stepId: string };
 }) {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => { const timer = window.setInterval(() => setNow(Date.now()), 1000); return () => window.clearInterval(timer); }, []);
@@ -38,12 +58,14 @@ export function FunnelWebinarExperience({ state, stepId, slug, resource, preview
   const ready = resource && status.status !== "missing" && status.status !== "expired";
   const start = state.flow.webinar?.startsAt;
   const source = funnelSourceFields(funnelSource);
-  return <div className="mx-auto w-full max-w-5xl p-4" data-webinar-state={status.status}>
-    <PublicFunnelDocument document={{ ...page, flow: { ...state.flow, domain: slug } }} viewport={viewport} />
-    {!step.isSystem ? <section className="mt-5 rounded-xl border border-slate-200 p-5">
+  const submission = designedFormSubmission({ registration: step.type === "webinar_registration_page" && !preview, ready: Boolean(ready), page, resource, source, thankYou, path });
+  // The page design is full width (sections draw their own backgrounds); the platform status box stays in a centred column.
+  return <div className="w-full" data-webinar-state={status.status}>
+    <PublicFunnelDocument document={{ ...page, flow: { ...state.flow, domain: slug } }} viewport={viewport} initialViewport={initialViewport} event={event} submission={submission} />
+    {!step.isSystem ? <section className="mx-auto my-5 w-[calc(100%-2rem)] max-w-5xl rounded-xl border border-slate-200 p-5">
       <p role={status.status === "missing" ? "alert" : "status"}>{status.message}</p>
       {start ? <p className="mt-2 text-sm">開始時間：<time dateTime={start}>{new Intl.DateTimeFormat("zh-TW", { dateStyle: "medium", timeStyle: "short", timeZone: state.flow.webinar?.timezone }).format(new Date(start))}</time> · {state.flow.webinar?.timezone}</p> : null}
-      {step.type === "webinar_registration_page" && ready && thankYou ? <WebinarRegistrationForm resource={resource} source={source} redirectTo={path(thankYou.path)} preview={preview} /> : null}
+      {step.type === "webinar_registration_page" && ready && thankYou && !submission ? <WebinarRegistrationForm resource={resource} source={source} redirectTo={path(thankYou.path)} preview={preview} /> : null}
       {step.type === "webinar_thank_you_page" && ready && broadcast ? <a className="mt-4 inline-block rounded-lg bg-blue-700 p-3 text-white" href={path(broadcast.path)}>查看播放／重播頁</a> : null}
       {step.type === "webinar_broadcast_page" && ready && (status.status === "live" || status.status === "replay") ? <a className="mt-4 inline-block rounded-lg bg-blue-700 p-3 text-white" href={`${path(step.path)}/play`}>前往授權播放：{resource.live.videoTitle}</a> : null}
       {status.status === "missing" ? <p className="mt-2 text-sm">{preview ? "請開啟頁面設定，選擇報名表、活動與可播放來源影片，並補齊排程後儲存。" : "活動設定尚未完成，請聯絡活動主辦方確認資源與排程。"}</p> : null}
@@ -83,6 +105,6 @@ function WebinarRegistrationForm({ resource, source, redirectTo, preview }: {
     {resource.form.fields.map((field) => <label key={field.key} className="grid gap-1 text-sm">{field.label}<input name={field.key} defaultValue={retry?.draft?.answers[field.key] ?? ""} type={["email", "tel", "number", "url"].includes(field.type ?? "") ? field.type : "text"} required={field.required} className="min-h-11 rounded-lg border px-3" /></label>)}
     <RegistrationSubmissionFeedback pending={pending} errorMessage={retry?.message ?? ""} />
     <button disabled={preview || pending} aria-busy={pending} className="min-h-11 rounded-lg bg-blue-700 px-4 text-white">{preview ? "預覽模式，不送出報名" : pending ? "送出中..." : resource.form.submitLabel}</button>
-    <p className="text-sm text-slate-600">送出後請至 Email 完成確認，才會列入正式名單。</p>
+    <p className="text-sm text-slate-600">{WEBINAR_CONFIRMATION_NOTICE}</p>
   </form>;
 }

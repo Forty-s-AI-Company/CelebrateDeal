@@ -20,8 +20,8 @@ beforeEach(() => {
 });
 
 it("takes a platform template's name and goal from the gallery, not the query", async () => {
-  await render({ template: "platform:custom-brand-info", goal: "sell" });
-  expect(mocks.picker).toHaveBeenCalledWith(expect.objectContaining({ initialGoal: "custom", template: { kind: "platform", id: "custom-brand-info", name: "品牌資訊頁", goal: "custom" }, templateMissing: false }));
+  await render({ template: "platform:custom-luxury-course", goal: "sell" });
+  expect(mocks.picker).toHaveBeenCalledWith(expect.objectContaining({ initialGoal: "custom", template: { kind: "platform", id: "custom-luxury-course", name: "高質感課程品牌（黑金）", goal: "custom" }, templateMissing: false }));
 });
 
 it("looks up an own template's name under the caller's vendor", async () => {
@@ -31,7 +31,8 @@ it("looks up an own template's name under the caller's vendor", async () => {
   expect(mocks.picker).toHaveBeenCalledWith(expect.objectContaining({ initialGoal: "audience", template: { kind: "mine", id: "tpl_1", name: "我的名單頁" } }));
 });
 
-it.each([["mine:foreign"], ["platform:missing"], ["other:id"], ["mine:"]])("reports %s as missing instead of using it", async (template) => {
+// platform:custom-brand-info and platform:webinar-example: retired and hidden templates cannot start a new page from an old link.
+it.each([["mine:foreign"], ["platform:missing"], ["platform:custom-brand-info"], ["platform:webinar-example"], ["other:id"], ["mine:"]])("reports %s as missing instead of using it", async (template) => {
   mocks.templateName.mockResolvedValue(null);
   await render({ template });
   expect(mocks.picker).toHaveBeenCalledWith(expect.objectContaining({ template: undefined, templateMissing: true }));
@@ -46,7 +47,7 @@ it("rejects a non-manager before resolving any template", async () => {
 it("without a selected project explains why and lists the vendor's projects to switch to", async () => {
   mocks.scope.mockResolvedValue({ projectId: null, projectName: null, isAggregate: true, isLegacyWorkspace: false });
   mocks.projects.mockResolvedValue([{ id: "project-1", name: "秋季課程" }]);
-  const html = await render({ template: "platform:custom-terms" });
+  const html = await render({ template: "platform:custom-terms-v2" });
   expect(mocks.projects).toHaveBeenCalledWith("vendor-1");
   expect(html).toContain("一頁式網站屬於銷售專案，請先選擇專案");
   expect(html).toContain("切換到「秋季課程」");

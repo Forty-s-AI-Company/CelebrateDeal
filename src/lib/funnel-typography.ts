@@ -8,17 +8,29 @@ import type { FunnelNode, FunnelPageSettings } from "@/lib/funnel-page-document"
  * viewport, so server and browser renders stay identical (no hydration drift)
  * and explicit node styles can always be layered on top.
  */
-export type FunnelTypographyViewport = "desktop" | "mobile";
+export type FunnelTypographyViewport = "desktop" | "tablet" | "mobile";
+
+/** I-1 breakpoints of the public page (CSS px): ≤ 639 mobile, 640–1079 tablet, ≥ 1080 desktop. */
+export const FUNNEL_TABLET_MIN_WIDTH = 640;
+export const FUNNEL_DESKTOP_MIN_WIDTH = 1080;
+export function funnelViewportForWidth(width: number): FunnelTypographyViewport {
+  return width < FUNNEL_TABLET_MIN_WIDTH ? "mobile" : width < FUNNEL_DESKTOP_MIN_WIDTH ? "tablet" : "desktop";
+}
 
 /**
- * Curated font stacks. Only system fonts: no CJK web font is downloaded by
- * default (a Traditional Chinese web font is several MB). Unknown stored
- * values (older documents typed a free-form family) are kept as-is.
+ * Curated font stacks. The Noto TC, LXGW WenKai TC and Space Grotesk options
+ * are self-hosted web fonts (I-2, `funnel-fonts.ts`): the stack starts with the
+ * CSS variable `.funnel-font-vars` declares on the renderer root, so a page whose font
+ * did not load (or a surface without the variable) falls back to system fonts.
+ * Only the unicode-range slices a page actually renders are downloaded.
+ * Unknown stored values (older documents typed a free-form family) are kept as-is.
  */
 export const FUNNEL_FONT_OPTIONS = [
   { value: "system-ui", label: "系統預設", stack: 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans TC", "PingFang TC", "Microsoft JhengHei", sans-serif' },
-  { value: "sans-tc", label: "黑體（無襯線）", stack: '"Noto Sans TC", "PingFang TC", "Microsoft JhengHei", "Heiti TC", system-ui, -apple-system, "Segoe UI", sans-serif' },
-  { value: "serif-tc", label: "明體（襯線）", stack: '"Noto Serif TC", "Songti TC", "PMingLiU", "MingLiU", Georgia, "Times New Roman", serif' },
+  { value: "sans-tc", label: "思源黑體（Noto Sans TC）", stack: 'var(--funnel-font-sans-tc, "Noto Sans TC"), "PingFang TC", "Microsoft JhengHei", "Heiti TC", system-ui, -apple-system, "Segoe UI", sans-serif' },
+  { value: "serif-tc", label: "思源宋體（Noto Serif TC）", stack: 'var(--funnel-font-serif-tc, "Noto Serif TC"), "Songti TC", "PMingLiU", "MingLiU", Georgia, "Times New Roman", serif' },
+  { value: "wenkai-tc", label: "霞鶩文楷（手寫溫暖）", stack: 'var(--funnel-font-wenkai-tc, "LXGW WenKai TC"), "Kaiti TC", "DFKai-SB", "BiauKai", "Noto Serif TC", serif' },
+  { value: "display-latin", label: "Space Grotesk（英數點綴）", stack: 'var(--funnel-font-display-latin, "Space Grotesk"), var(--funnel-font-sans-tc, "Noto Sans TC"), "PingFang TC", "Microsoft JhengHei", system-ui, sans-serif' },
   { value: "rounded-tc", label: "圓體", stack: 'ui-rounded, "Yuanti TC", "jf-openhuninn", "Arial Rounded MT Bold", "Noto Sans TC", "PingFang TC", "Microsoft JhengHei", sans-serif' },
   { value: "humanist", label: "人文無襯線", stack: '"Segoe UI", "Helvetica Neue", Arial, "Noto Sans TC", "PingFang TC", "Microsoft JhengHei", sans-serif' },
   { value: "mono", label: "等寬", stack: 'ui-monospace, "Cascadia Code", "SFMono-Regular", Consolas, "Noto Sans Mono CJK TC", "Microsoft JhengHei", monospace' },
@@ -66,14 +78,14 @@ export type FunnelTypographyTokens = {
   alignment: "left" | "center" | "right";
 };
 
-/** Desktop / mobile ratios against the body size (a ~1.25 modular scale). */
-const HEADING_SCALE: Readonly<Record<FunnelHeadingLevel, { desktop: number; mobile: number; weight: number; lineHeight: number; letterSpacing: string }>> = {
-  h1: { desktop: 3, mobile: 2, weight: 800, lineHeight: 1.2, letterSpacing: "-0.015em" },
-  h2: { desktop: 2.25, mobile: 1.625, weight: 700, lineHeight: 1.25, letterSpacing: "-0.01em" },
-  h3: { desktop: 1.5, mobile: 1.25, weight: 700, lineHeight: 1.35, letterSpacing: "0" },
-  h4: { desktop: 1.25, mobile: 1.125, weight: 700, lineHeight: 1.4, letterSpacing: "0" },
-  h5: { desktop: 1.125, mobile: 1.0625, weight: 700, lineHeight: 1.4, letterSpacing: "0" },
-  h6: { desktop: 1, mobile: 1, weight: 700, lineHeight: 1.4, letterSpacing: "0" },
+/** Desktop / tablet / mobile ratios against the body size (a ~1.25 modular scale). */
+const HEADING_SCALE: Readonly<Record<FunnelHeadingLevel, { desktop: number; tablet: number; mobile: number; weight: number; lineHeight: number; letterSpacing: string }>> = {
+  h1: { desktop: 3, tablet: 2.5, mobile: 2, weight: 800, lineHeight: 1.2, letterSpacing: "-0.015em" },
+  h2: { desktop: 2.25, tablet: 1.875, mobile: 1.625, weight: 700, lineHeight: 1.25, letterSpacing: "-0.01em" },
+  h3: { desktop: 1.5, tablet: 1.375, mobile: 1.25, weight: 700, lineHeight: 1.35, letterSpacing: "0" },
+  h4: { desktop: 1.25, tablet: 1.1875, mobile: 1.125, weight: 700, lineHeight: 1.4, letterSpacing: "0" },
+  h5: { desktop: 1.125, tablet: 1.125, mobile: 1.0625, weight: 700, lineHeight: 1.4, letterSpacing: "0" },
+  h6: { desktop: 1, tablet: 1, mobile: 1, weight: 700, lineHeight: 1.4, letterSpacing: "0" },
 };
 
 /** Mobile body text never grows past 18px, matching the previous renderer behaviour. */
@@ -87,7 +99,7 @@ function safeColor(value: unknown, fallback: string): string {
 export function resolveFunnelTypography(settings: Pick<FunnelPageSettings, "typography">, viewport: FunnelTypographyViewport): FunnelTypographyTokens {
   const typography = settings.typography;
   const requested = Number.isFinite(typography.bodySize) ? typography.bodySize : 16;
-  const baseSize = viewport === "mobile" ? Math.min(requested, FUNNEL_MOBILE_MAX_BODY_SIZE) : requested;
+  const baseSize = viewport === "desktop" ? requested : Math.min(requested, FUNNEL_MOBILE_MAX_BODY_SIZE);
   const textColor = safeColor(typography.textColor, "#0f172a");
   return {
     viewport,
@@ -140,12 +152,13 @@ export function funnelTypographyDefaults(kind: FunnelTypographyKind, tokens: Fun
     return { fontFamily: tokens.headingFont, fontSize: `${funnelHeadingSize(level, tokens)}px`, fontWeight: scale.weight, lineHeight: scale.lineHeight, letterSpacing: scale.letterSpacing, color: tokens.headingColor, margin: 0, overflowWrap: "break-word", textWrap: "balance" };
   }
   switch (kind) {
-    case "lead": return { fontSize: `${round(tokens.baseSize * (mobile ? 1.125 : 1.25))}px`, fontWeight: 400, lineHeight: Math.max(tokens.lineHeight, 1.6), letterSpacing: "0", margin: 0 };
-    case "small": return { fontSize: `${round(Math.max(12, tokens.baseSize * 0.875))}px`, fontWeight: 400, lineHeight: Math.max(tokens.lineHeight, 1.5), letterSpacing: "0", margin: 0 };
-    case "eyebrow": return { fontSize: `${round(Math.max(12, tokens.baseSize * 0.8125))}px`, fontWeight: 700, lineHeight: 1.4, letterSpacing: "0.12em", textTransform: "uppercase", color: tokens.linkColor, margin: 0 };
-    case "list": return { fontSize: `${tokens.baseSize}px`, fontWeight: 400, lineHeight: tokens.lineHeight, letterSpacing: "0", margin: 0 };
+    // Body text may break long URLs / Latin strings anywhere (qa-standards 3.2-5); headings keep break-word.
+    case "lead": return { fontSize: `${round(tokens.baseSize * (mobile ? 1.125 : tokens.viewport === "tablet" ? 1.1875 : 1.25))}px`, fontWeight: 400, lineHeight: Math.max(tokens.lineHeight, 1.6), letterSpacing: "0", margin: 0, overflowWrap: "anywhere" };
+    case "small": return { fontSize: `${round(Math.max(12, tokens.baseSize * 0.875))}px`, fontWeight: 400, lineHeight: Math.max(tokens.lineHeight, 1.5), letterSpacing: "0", margin: 0, overflowWrap: "anywhere" };
+    case "eyebrow": return { fontSize: `${round(Math.max(12, tokens.baseSize * 0.8125))}px`, fontWeight: 700, lineHeight: 1.4, letterSpacing: "0.12em", textTransform: "uppercase", color: tokens.linkColor, margin: 0, overflowWrap: "anywhere" };
+    case "list": return { fontSize: `${tokens.baseSize}px`, fontWeight: 400, lineHeight: tokens.lineHeight, letterSpacing: "0", margin: 0, overflowWrap: "anywhere" };
     case "button": return { fontFamily: tokens.bodyFont, fontSize: `${Math.max(16, tokens.baseSize)}px`, fontWeight: 700, lineHeight: 1.25, letterSpacing: "0", margin: 0 };
-    default: return { fontSize: `${tokens.baseSize}px`, fontWeight: 400, lineHeight: tokens.lineHeight, letterSpacing: "0", margin: 0 };
+    default: return { fontSize: `${tokens.baseSize}px`, fontWeight: 400, lineHeight: tokens.lineHeight, letterSpacing: "0", margin: 0, overflowWrap: "anywhere" };
   }
 }
 
@@ -154,7 +167,8 @@ export function funnelButtonDefaults(tokens: FunnelTypographyTokens): CSSPropert
   const mobile = tokens.viewport === "mobile";
   return {
     display: "inline-flex", alignItems: "center", justifyContent: "center", gap: "0.5em", textAlign: "center",
-    minHeight: mobile ? 46 : 50, padding: mobile ? "12px 22px" : "14px 28px", borderRadius: 10,
+    // qa-standards L-5: primary CTAs are at least 48px tall on every device.
+    minHeight: mobile ? 48 : 50, padding: mobile ? "12px 22px" : "14px 28px", borderRadius: 10,
     backgroundColor: "#f59e0b", color: "#0f172a", textDecoration: "none",
   };
 }
@@ -162,7 +176,18 @@ export function funnelButtonDefaults(tokens: FunnelTypographyTokens): CSSPropert
 /** Layout tokens the renderer uses for containers (px). */
 export function funnelLayoutTokens(viewport: FunnelTypographyViewport) {
   const mobile = viewport === "mobile";
-  return { rowGap: mobile ? 16 : 20, columnGap: mobile ? 20 : 32, boxGap: 12, formGap: 16, sectionGutter: mobile ? 20 : 24 };
+  return { rowGap: mobile ? 16 : 20, columnGap: mobile ? 20 : viewport === "tablet" ? 24 : 32, boxGap: 12, formGap: 16, sectionGutter: mobile ? 20 : 24 };
+}
+
+/**
+ * Container-aware card grid (qa-standards L-10): at most `columns` tracks, each
+ * at least `min` px wide, so a grid placed inside a narrow column drops a
+ * column instead of squeezing its cards. Pure CSS, identical on server and client.
+ */
+export function funnelFluidGridColumns(columns: number, gap: number, min = 240): string {
+  const count = Math.max(1, Math.round(columns));
+  if (count === 1) return "minmax(0, 1fr)";
+  return `repeat(auto-fill, minmax(min(100%, max(${min}px, calc((100% - ${(count - 1) * gap}px) / ${count}))), 1fr))`;
 }
 
 /** Root style: inherited body text and CSS variables for nested surfaces. */

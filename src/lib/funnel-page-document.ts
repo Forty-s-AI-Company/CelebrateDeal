@@ -25,12 +25,15 @@ export const FUNNEL_NODE_TYPES = [
   // Showcase elements (props-driven, no children); prop readers live in `@/lib/funnel-showcase`.
   "nav_bar", "logo_strip", "stats", "icon_list", "shape_divider", "section_title", "image_cards",
   "testimonial_wall", "content_cards", "video_gallery",
+  // Webinar elements (props-driven; `webinar_state` holds one content box per event state). Readers live in `@/lib/funnel-webinar-elements`.
+  "event_facts", "speaker_profiles", "agenda_timeline", "callout", "fit_compare", "add_to_calendar", "announcement_bar",
+  "value_stack", "session_schedule", "deadline_notice", "webinar_state", "media_frame", "image_gallery", "code_snippet",
 ] as const;
 export type FunnelNodeType = (typeof FUNNEL_NODE_TYPES)[number];
 
 export const FUNNEL_BLOCK_CATEGORIES = [
   "order_forms", "opt_in_forms", "features", "page_footers", "team_presentation",
-  "welcome", "price_plans", "page_headers", "testimonials", "social_proof", "content_showcase", "call_to_action",
+  "welcome", "price_plans", "page_headers", "testimonials", "social_proof", "content_showcase", "call_to_action", "webinar_sections",
 ] as const;
 export type FunnelBlockCategory = (typeof FUNNEL_BLOCK_CATEGORIES)[number];
 
@@ -121,8 +124,13 @@ const NodeOverrideSchema = z.object({
   props: z.record(z.string().max(100), JsonValueSchema).optional(),
 }).strict();
 
+/**
+ * Responsive overrides. `desktop` historically meant every width ≥ 640px, so a
+ * tablet render (640–1079px) applies `desktop` first and then `tablet`.
+ */
 export const FunnelNodeOverridesSchema = z.object({
   desktop: NodeOverrideSchema.optional(),
+  tablet: NodeOverrideSchema.optional(),
   mobile: NodeOverrideSchema.optional(),
 }).strict();
 
@@ -217,12 +225,13 @@ type FunnelNodeDefinition = {
   capability: FunnelCapability;
 };
 const available: FunnelCapability = { status: "available", reason: "依目前實測規格可建立與編輯" };
+const WEBINAR_LEAF_PARENTS = ["row", "columns_2", "columns_3", "columns_4", "content_box"] as const;
 const payment = FUNNEL_CAPABILITIES.payment;
 const definitions: Record<FunnelNodeType, FunnelNodeDefinition> = {
   text: { label: "文字", category: "text", children: false, allowedParents: ["row", "columns_2", "columns_3", "columns_4", "content_box", "faq", "form"], capability: available },
-  headline: { label: "標題", category: "text", children: false, allowedParents: ["row", "columns_2", "columns_3", "columns_4", "content_box", "faq"], capability: available },
+  headline: { label: "標題", category: "text", children: false, allowedParents: ["row", "columns_2", "columns_3", "columns_4", "content_box", "faq", "form"], capability: available },
   bulleted_list: { label: "項目清單", category: "text", children: false, allowedParents: ["row", "columns_2", "columns_3", "columns_4", "content_box"], capability: available },
-  content_box: { label: "內容盒", category: "text", children: true, allowedParents: ["row", "columns_2", "columns_3", "columns_4"], capability: available },
+  content_box: { label: "內容盒", category: "text", children: true, allowedParents: ["row", "columns_2", "columns_3", "columns_4", "webinar_state"], capability: available },
   image: { label: "圖片", category: "media", children: false, allowedParents: ["row", "columns_2", "columns_3", "columns_4", "content_box", "faq"], capability: available },
   video: { label: "影片", category: "media", children: false, allowedParents: ["row", "columns_2", "columns_3", "columns_4", "content_box"], capability: available },
   audio: { label: "音訊", category: "media", children: false, allowedParents: ["row", "columns_2", "columns_3", "columns_4", "content_box"], capability: available },
@@ -232,18 +241,18 @@ const definitions: Record<FunnelNodeType, FunnelNodeDefinition> = {
   columns_2: { label: "兩欄", category: "layout", children: true, allowedParents: ["row"], capability: available },
   row: { label: "列", category: "layout", children: true, allowedParents: ["section"], capability: available },
   section: { label: "區段", category: "layout", children: true, allowedParents: ["root"], capability: available },
-  form: { label: "表單", category: "form", children: true, allowedParents: ["row", "columns_2", "columns_3", "columns_4"], capability: available },
+  form: { label: "表單", category: "form", children: true, allowedParents: ["row", "columns_2", "columns_3", "columns_4", "content_box"], capability: available },
   form_input: { label: "表單欄位", category: "form", children: false, allowedParents: ["form", "row", "columns_2", "columns_3", "columns_4"], capability: available },
   button: { label: "按鈕", category: "form", children: false, allowedParents: ["form", "row", "columns_2", "columns_3", "columns_4", "content_box"], capability: available },
   checkbox: { label: "核取方塊", category: "form", children: false, allowedParents: ["form", "row", "columns_2", "columns_3", "columns_4"], capability: available },
   calendar: { label: "行事曆", category: "form", children: false, allowedParents: ["row", "columns_2", "columns_3", "columns_4"], capability: available },
   x_share_button: { label: "X 分享按鈕", category: "social", children: false, allowedParents: ["row", "columns_2", "columns_3", "columns_4", "content_box"], capability: available },
   survey: { label: "問卷", category: "form", children: false, allowedParents: ["row", "columns_2", "columns_3", "columns_4"], capability: available },
-  countdown: { label: "倒數計時", category: "other", children: false, allowedParents: ["row", "columns_2", "columns_3", "columns_4"], capability: available },
+  countdown: { label: "倒數計時", category: "other", children: false, allowedParents: ["root", "section", "row", "columns_2", "columns_3", "columns_4", "content_box"], capability: available },
   menu: { label: "選單", category: "other", children: false, allowedParents: ["row", "columns_2", "columns_3", "columns_4", "section"], capability: available },
   horizontal_line: { label: "水平線", category: "other", children: false, allowedParents: ["row", "columns_2", "columns_3", "columns_4", "content_box"], capability: available },
   raw_html: { label: "自訂程式碼", category: "other", children: false, allowedParents: ["row", "columns_2", "columns_3", "columns_4", "content_box"], capability: FUNNEL_CAPABILITIES.rawHtml },
-  faq: { label: "常見問題", category: "other", children: true, allowedParents: ["row", "columns_2", "columns_3", "columns_4"], capability: available },
+  faq: { label: "常見問題", category: "other", children: true, allowedParents: ["row", "columns_2", "columns_3", "columns_4", "content_box"], capability: available },
   recaptcha: { label: "reCAPTCHA", category: "form", children: false, allowedParents: ["form", "row", "columns_2", "columns_3", "columns_4"], capability: FUNNEL_CAPABILITIES.recaptcha },
   payment_button: { label: "付款按鈕", category: "payment", children: false, allowedParents: ["form", "row", "columns_2", "columns_3", "columns_4"], capability: payment },
   payment_method: { label: "付款方式", category: "payment", children: false, allowedParents: ["form", "row", "columns_2", "columns_3", "columns_4"], capability: payment },
@@ -266,6 +275,20 @@ const definitions: Record<FunnelNodeType, FunnelNodeDefinition> = {
   content_cards: { label: "文章卡片", category: "media", children: false, allowedParents: ["row", "columns_2", "columns_3", "columns_4", "content_box"], capability: available },
   video_gallery: { label: "影片牆", category: "media", children: false, allowedParents: ["row", "columns_2", "columns_3", "columns_4", "content_box"], capability: available },
   testimonial_wall: { label: "評價牆", category: "social", children: false, allowedParents: ["row", "columns_2", "columns_3", "columns_4", "content_box"], capability: available },
+  event_facts: { label: "活動資訊列", category: "other", children: false, allowedParents: WEBINAR_LEAF_PARENTS, capability: available },
+  speaker_profiles: { label: "講者卡", category: "social", children: false, allowedParents: WEBINAR_LEAF_PARENTS, capability: available },
+  agenda_timeline: { label: "議程時間軸", category: "text", children: false, allowedParents: WEBINAR_LEAF_PARENTS, capability: available },
+  callout: { label: "提示框", category: "text", children: false, allowedParents: WEBINAR_LEAF_PARENTS, capability: available },
+  fit_compare: { label: "適合／不適合", category: "text", children: false, allowedParents: WEBINAR_LEAF_PARENTS, capability: available },
+  add_to_calendar: { label: "加入行事曆", category: "other", children: false, allowedParents: WEBINAR_LEAF_PARENTS, capability: available },
+  announcement_bar: { label: "頂部公告條", category: "layout", children: false, allowedParents: ["root", "section", "row"], capability: available },
+  value_stack: { label: "價值清單", category: "text", children: false, allowedParents: WEBINAR_LEAF_PARENTS, capability: available },
+  session_schedule: { label: "場次表", category: "other", children: false, allowedParents: WEBINAR_LEAF_PARENTS, capability: available },
+  deadline_notice: { label: "報名截止提示", category: "other", children: false, allowedParents: WEBINAR_LEAF_PARENTS, capability: available },
+  webinar_state: { label: "依活動狀態切換", category: "layout", children: true, allowedParents: ["row", "columns_2", "columns_3", "columns_4", "content_box"], capability: available },
+  media_frame: { label: "裝置框", category: "media", children: false, allowedParents: WEBINAR_LEAF_PARENTS, capability: available },
+  image_gallery: { label: "作品集圖庫", category: "media", children: false, allowedParents: WEBINAR_LEAF_PARENTS, capability: available },
+  code_snippet: { label: "程式碼片段", category: "text", children: false, allowedParents: WEBINAR_LEAF_PARENTS, capability: available },
 };
 export const FUNNEL_NODE_REGISTRY = definitions as Readonly<Record<FunnelNodeType, FunnelNodeDefinition>>;
 export function getFunnelNodeDefinition(type: FunnelNodeType) { return FUNNEL_NODE_REGISTRY[type]; }
@@ -302,6 +325,19 @@ export const FunnelPopupSchema = z.object({
 }).strict();
 export type FunnelPopup = z.infer<typeof FunnelPopupSchema>;
 
+/** C-04 固定報名列。target 是頁面上的 HTML id（不含 #）；留空時捲到第一個報名表單。 */
+export const FunnelStickyCtaSchema = z.object({
+  enabled: z.boolean().default(false),
+  label: z.string().trim().min(1).max(40).default("立即報名"),
+  target: identifier.optional(),
+  showDate: z.boolean().default(true),
+  devices: z.enum(["mobile", "mobile_tablet", "all"]).default("mobile_tablet"),
+  backgroundColor: safeColor.optional(),
+  buttonColor: safeColor.optional(),
+  buttonTextColor: safeColor.optional(),
+}).strict();
+export type FunnelStickyCta = z.infer<typeof FunnelStickyCtaSchema>;
+
 const PageSettingsSchema = z.object({
   typography: z.object({
     bodyFont: safeCssToken.default("system-ui"), headingFont: safeCssToken.default("system-ui"),
@@ -320,6 +356,15 @@ const PageSettingsSchema = z.object({
    * 再編譯一次，只輸出加上 `[data-funnel-content]` 範圍前綴的結果。
    */
   customCss: z.string().max(FUNNEL_PAGE_CUSTOM_CSS_MAX_BYTES).refine((css) => compileFunnelCustomCss(css).ok, "頁面自訂 CSS 含有不支援或不安全的語法").optional(),
+  /**
+   * Webinar 範本的頁面層級設定，全部選填：舊文件解析結果不變。
+   * - eventTitle：動態欄位 `{{webinar.title}}` 與加入行事曆使用的活動名稱。
+   * - scrollReveal：section 第一層子節點的捲動進場動畫（只改 opacity／transform）。
+   * - stickyCta：行動版固定報名列；由平台在內容外框「外」渲染，只接受結構化欄位。
+   */
+  eventTitle: safeShortText.optional(),
+  scrollReveal: z.enum(["none", "fade", "rise"]).optional(),
+  stickyCta: FunnelStickyCtaSchema.optional(),
 }).strict();
 const defaultTypography = { bodyFont: "system-ui", headingFont: "system-ui", bodySize: 16, bodyLineHeight: 1.5, linkColor: "#2563eb", textColor: "#0f172a", alignment: "left" as const };
 const defaultBackground = { color: "white", blur: 0 };
@@ -384,6 +429,23 @@ export function parsePageDocument(value: unknown): PageDocument | null {
   // Observability for links dropped from stored content: per-field counts only, never the URL.
   if (Object.keys(counts).length) console.warn("funnel_href_retired", counts);
   return parsed.data;
+}
+
+/**
+ * Diagnostics only (template tests and authoring): the first reason `parsePageDocument`
+ * rejects a value, e.g. a schema path or a duplicate node id; null when it is valid.
+ */
+export function explainPageDocumentIssue(value: unknown): string | null {
+  const outerCounts = retiredHrefCounts;
+  retiredHrefCounts = {};
+  let parsed: ReturnType<typeof PageDocumentSchema.safeParse>;
+  try { parsed = PageDocumentSchema.safeParse(value); } catch (error) { return error instanceof Error ? error.message : "無法解析"; } finally { retiredHrefCounts = outerCounts; }
+  if (!parsed.success) {
+    const first = parsed.error.issues[0];
+    return first ? `${first.path.join(".") || "(root)"}：${first.message}` : "格式不符";
+  }
+  const state = { ids: new Set<string>(), htmlIds: new Set<string>(), count: 0, references: new Set<object>() };
+  return validateNodeTree(parsed.data.root, "root", 1, state);
 }
 
 export function serializePageDocument(document: PageDocument): string {

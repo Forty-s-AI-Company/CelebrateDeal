@@ -279,7 +279,7 @@ export function EditorCanvas({ previewing, disabled, viewport, popupName, root, 
     onDrop={onDropEvent}>
     {popupName && !previewing ? <div className="mx-auto mb-3 flex max-w-[1440px] items-center justify-between gap-3 rounded-lg border border-violet-200 bg-violet-50 px-3 py-2 text-sm"><span className="font-semibold text-violet-900">正在編輯彈出視窗：{popupName}</span><button type="button" className="min-h-9 cursor-pointer rounded-lg border border-violet-300 bg-white px-3 text-sm font-semibold text-violet-800 hover:bg-violet-100" onClick={onExitPopup}>返回頁面畫布</button></div> : null}
     <div ref={containerRef} className="relative mx-auto min-h-full" onClick={(event) => { if (interactive && event.target === event.currentTarget) onDeselect(); }}>
-      <div className={`mx-auto min-h-full bg-white shadow-xl ${viewport === "mobile" ? "w-[375px] max-w-full overflow-hidden rounded-[2rem] border-[10px] border-slate-900" : "w-full max-w-[1440px]"}`}>{children}</div>
+      <div className={`mx-auto min-h-full bg-white shadow-xl ${viewport === "mobile" ? "w-[375px] max-w-full overflow-hidden rounded-[2rem] border-[10px] border-slate-900" : viewport === "tablet" ? "w-[768px] max-w-full overflow-hidden rounded-[1.5rem] border-[10px] border-slate-900" : "w-full max-w-[1440px]"}`}>{children}</div>
       {interactive ? <CanvasOverlay handleRef={overlay} containerRef={containerRef} scrollRef={regionRef} selectedId={selectedId} layoutKey={layoutKey} toolbar={toolbar} /> : null}
     </div>
   </div>;

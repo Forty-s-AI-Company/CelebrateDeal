@@ -23,7 +23,7 @@ export function createGoalFunnelStepPages(input: FunnelFlowInput): FunnelStepPag
   // Webinar stays preconfigured because the observed reference account could
   // not reach that paid flow and the current runtime requires three pages.
   const primary = flow.goal === "webinar"
-    ? instantiateFunnelTemplate("webinar-registration", `page_${flow.id}_${first.id}`)
+    ? instantiateFunnelTemplate("webinar-saas-split", `page_${flow.id}_${first.id}`)
     : undefined;
   const state = createFunnelStepPages(flow, primary ? { initialPage: primary, initialStepId: first.id } : undefined);
   if (!state) return null;

@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 600" width="720" height="600" role="img" aria-label="日語對話泡泡插畫">
+<g stroke="#1b2b48" stroke-width="4" stroke-linejoin="round">
+<circle cx="610" cy="96" r="44" fill="#fff8e7"/>
+<path d="M60 70h330a28 28 0 0 1 28 28v118a28 28 0 0 1-28 28H170l-56 48 8-48H60a28 28 0 0 1-28-28V98a28 28 0 0 1 28-28z" fill="#ffffff"/>
+<path d="M330 286h330a28 28 0 0 1 28 28v118a28 28 0 0 1-28 28H602l8 52-60-52H330a28 28 0 0 1-28-28V314a28 28 0 0 1 28-28z" fill="#ffb020"/>
+<path d="M70 360h170a24 24 0 0 1 24 24v86a24 24 0 0 1-24 24h-40l-38 36 4-36H70a24 24 0 0 1-24-24v-86a24 24 0 0 1 24-24z" fill="#1f7a70"/>
+</g>
+<text x="225" y="182" text-anchor="middle" font-family="&quot;Hiragino Maru Gothic ProN&quot;, &quot;Yu Gothic&quot;, &quot;Meiryo&quot;, &quot;Noto Sans JP&quot;, &quot;Noto Sans CJK JP&quot;, sans-serif" font-size="64" font-weight="700" fill="#1b2b48">こんにちは</text>
+<text x="495" y="396" text-anchor="middle" font-family="&quot;Hiragino Maru Gothic ProN&quot;, &quot;Yu Gothic&quot;, &quot;Meiryo&quot;, &quot;Noto Sans JP&quot;, &quot;Noto Sans CJK JP&quot;, sans-serif" font-size="50" font-weight="700" fill="#1b2b48">はじめまして</text>
+<text x="155" y="448" text-anchor="middle" font-family="&quot;Hiragino Maru Gothic ProN&quot;, &quot;Yu Gothic&quot;, &quot;Meiryo&quot;, &quot;Noto Sans JP&quot;, &quot;Noto Sans CJK JP&quot;, sans-serif" font-size="76" font-weight="700" fill="#ffffff">あ</text>
+<text x="610" y="118" text-anchor="middle" font-family="&quot;Hiragino Maru Gothic ProN&quot;, &quot;Yu Gothic&quot;, &quot;Meiryo&quot;, &quot;Noto Sans JP&quot;, &quot;Noto Sans CJK JP&quot;, sans-serif" font-size="52" font-weight="700" fill="#e63946">日</text>
+<path d="M548 534c-14-12-34-26-34-44 0-12 9-20 20-20 7 0 12 4 14 9 2-5 7-9 14-9 11 0 20 8 20 20 0 18-20 32-34 44z" fill="#e63946" stroke="#1b2b48" stroke-width="4"/>
+<g fill="#e63946"><circle cx="470" cy="70" r="8"/><circle cx="500" cy="40" r="5"/><circle cx="292" cy="560" r="7"/></g>
+<path d="M440 220c20 10 40 10 60 0M450 250c14 6 26 6 40 0" fill="none" stroke="#1b2b48" stroke-width="4" stroke-linecap="round" stroke-dasharray="2 10"/>
+</svg>

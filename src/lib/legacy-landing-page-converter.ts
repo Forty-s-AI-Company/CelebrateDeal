@@ -617,11 +617,12 @@ function countdown(state: State, block: LegacyBlockOf<"Countdown">, ctx: Ctx, in
   const expiry = expiredAction === "show_message" ? `${EXPIRED_ACTION_LABEL.show_message}「${expiredMessage}」`
     : expiredAction === "redirect" ? `${EXPIRED_ACTION_LABEL.redirect}${expiredRedirect ? describeAction(state, expiredRedirect) : "指定頁面"}`
       : EXPIRED_ACTION_LABEL[expiredAction];
-  report(state, block, `倒數結束後原本會${expiry}；新版倒數元件尚不支援到期處理，結束時會停在 0，請視需要手動調整頁面。`);
+  // C-06: the countdown shows `expiredText` on expiry; hiding a CTA or redirecting is still not supported.
+  if (expiredAction !== "show_message") report(state, block, `倒數結束後原本會${expiry}；新版倒數元件到期時只會顯示文字，不會隱藏按鈕或轉址，請視需要手動調整頁面。`);
   const titleNodes = title ? [heading(state, id, "title", title, "h2", ink)] : [];
   const cta = optionalCta(state, block, id, ctaLabel, ctaAction, LEGACY_BUTTON);
   if (allowed("countdown", ctx)) {
-    return [...titleNodes, node("countdown", state.ids.derive(id, "timer"), { ...(target ? { targetDate: target } : {}), expiredMessage, expiredAction }), ...cta];
+    return [...titleNodes, node("countdown", state.ids.derive(id, "timer"), { ...(target ? { targetDate: target } : {}), expiredMessage, expiredAction, ...(expiredAction === "show_message" && expiredMessage ? { expiredText: expiredMessage } : {}) }), ...cta];
   }
   report(state, block, "倒數計時放在巢狀區段內時無法使用倒數元件，已改成顯示截止時間的文字。");
   return [...titleNodes, paragraph(state, id, "deadline", target ? `截止時間：${target}` : "截止時間：尚未設定"), ...cta];

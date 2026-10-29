@@ -311,15 +311,19 @@ describe("apply and create (PostgreSQL)", () => {
   });
 
   it("creates a new site from a platform or an own template in the selected project", async () => {
-    const platform = await createLandingPageFromTemplateAction(idle, form({ templateKind: "platform", templateId: "custom-brand-info", name: "品牌網站", slug: `brand-${randomUUID().slice(0, 8)}`, goal: "custom", currency: "TWD" }));
+    const platform = await createLandingPageFromTemplateAction(idle, form({ templateKind: "platform", templateId: "custom-privacy-v2", name: "品牌網站", slug: `brand-${randomUUID().slice(0, 8)}`, goal: "custom", currency: "TWD" }));
     expect(platform).toMatchObject({ status: "success" });
     const platformPage = await getDb().landingPage.findUniqueOrThrow({ where: { id: platform.id! } });
     expect(platformPage).toMatchObject({ vendorId: a.vendorId, projectId: a.projectId });
     const platformContent = parseFunnelStepPages(platformPage.draftContent)!;
-    expect(platformContent.flow.steps.find((step) => step.id === platform.stepId)).toMatchObject({ type: "info_page", template: { templateId: "custom-brand-info" } });
+    expect(platformContent.flow.steps.find((step) => step.id === platform.stepId)).toMatchObject({ type: "info_page", template: { templateId: "custom-privacy-v2" } });
 
-    const mismatch = await createLandingPageFromTemplateAction(idle, form({ templateKind: "platform", templateId: "custom-brand-info", name: "錯誤目標", slug: `wrong-${randomUUID().slice(0, 8)}`, goal: "sell", currency: "TWD" }));
+    const mismatch = await createLandingPageFromTemplateAction(idle, form({ templateKind: "platform", templateId: "custom-privacy-v2", name: "錯誤目標", slug: `wrong-${randomUUID().slice(0, 8)}`, goal: "sell", currency: "TWD" }));
     expect(mismatch).toMatchObject({ status: "error", message: expect.stringContaining("不適用") });
+
+    // 退役的範本 id 仍可解析（舊漏斗），但不能再作為新的套用目標。
+    const retired = await createLandingPageFromTemplateAction(idle, form({ templateKind: "platform", templateId: "custom-brand-info", name: "退役範本", slug: `retired-${randomUUID().slice(0, 8)}`, goal: "custom", currency: "TWD" }));
+    expect(retired).toMatchObject({ status: "error" });
 
     const source = await createFunnelPage(a, "mine");
     const saved = await saveTemplate(source.page.id, source.stepId);

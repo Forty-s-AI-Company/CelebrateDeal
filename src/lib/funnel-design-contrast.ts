@@ -1,6 +1,6 @@
 import type { FunnelNode, PageDocument } from "@/lib/funnel-page-document";
 import { funnelContrastRatio, funnelTextStyle, resolveFunnelTypography } from "@/lib/funnel-typography";
-import { FUNNEL_SHOWCASE_DEFAULT_ACCENT, showcaseCards, showcaseColor } from "@/lib/funnel-showcase";
+import { FUNNEL_SHOWCASE_DEFAULT_ACCENT, showcaseCards, showcaseColor, showcaseReadableOn } from "@/lib/funnel-showcase";
 
 const showcaseAccent = (node: FunnelNode) => showcaseColor(node.props.accentColor) ?? FUNNEL_SHOWCASE_DEFAULT_ACCENT;
 
@@ -16,6 +16,33 @@ function checkShowcase(node: FunnelNode, color: string, bg: string, headingColor
       if (showcaseCards(node.props.items).some((card) => card.href)) check(node, "卡片連結", showcaseAccent(node), bg);
       break;
     case "icon_list": case "stats": case "logo_strip": check(node, node.type, color, bg); break;
+    default: break;
+  }
+}
+
+/**
+ * Webinar elements (C-01～C-18) default their accent to the page link colour and
+ * use it for small text (speaker role, agenda times, offer labels), so that pair is checked too.
+ */
+function checkWebinar(node: FunnelNode, color: string, bg: string, linkColor: string, check: (node: FunnelNode, role: string, foreground: string, background: string) => void) {
+  const accent = showcaseColor(node.props.accentColor) ?? linkColor;
+  const card = showcaseColor(node.props.cardColor);
+  const cardText = showcaseColor(node.props.cardTextColor) ?? color;
+  switch (node.type) {
+    case "event_facts": check(node, "活動資訊", cardText, card ?? bg); break;
+    case "speaker_profiles": check(node, "講者文字", color, bg); check(node, "講者職稱", accent, bg); break;
+    case "agenda_timeline": check(node, "議程文字", color, card ?? bg); check(node, "議程時間", accent, card ?? bg); break;
+    case "value_stack": check(node, "價值清單", cardText, card ?? bg); if (node.props.offerLabel) check(node, "本場優惠", accent, card ?? bg); break;
+    case "session_schedule": check(node, "場次日期", accent, bg); break;
+    case "fit_compare": check(node, "適合／不適合", color, card ?? bg); break;
+    case "add_to_calendar": check(node, "行事曆按鈕外框文字", color, bg); break;
+    case "deadline_notice": check(node, "截止提示", color, bg); break;
+    case "announcement_bar": { const bar = showcaseColor(node.props.barColor) ?? linkColor; check(node, "公告條", showcaseColor(node.props.barTextColor) ?? showcaseReadableOn(bar), bar); break; }
+    case "countdown": {
+      if (node.props.variant === "bar") { const bar = showcaseColor(node.props.barColor) ?? accent; const text = showcaseColor(node.props.barTextColor); if (text) check(node, "倒數條", text, bar); }
+      else check(node, "倒數", showcaseColor(node.props.numberColor) ?? (node.props.variant === "inline" ? accent : color), bg);
+      break;
+    }
     default: break;
   }
 }
@@ -50,8 +77,9 @@ export function findFunnelContrastIssues(document: PageDocument, minimum = 4.5):
         case "text": check(node, funnelTextStyle(node.props.textStyle) === "eyebrow" ? "眉標" : "文字", funnelTextStyle(node.props.textStyle) === "eyebrow" ? style.color ?? tokens.linkColor : color, bg); break;
         case "bulleted_list": case "checkbox": case "form_input": check(node, node.type, color, bg); break;
         case "menu": check(node, "選單連結", style.color ?? tokens.linkColor, bg); break;
-        case "button": check(node, "按鈕", style.color ?? FUNNEL_DEFAULT_BUTTON_COLORS.text, ownBackground ?? FUNNEL_DEFAULT_BUTTON_COLORS.background); break;
-        default: checkShowcase(node, color, bg, tokens.headingColor, check); break;
+        // A transparent button (text-link style) sits on the surrounding background, not the default amber fill.
+        case "button": check(node, "按鈕", style.color ?? FUNNEL_DEFAULT_BUTTON_COLORS.text, style.backgroundColor === "transparent" ? background : ownBackground ?? FUNNEL_DEFAULT_BUTTON_COLORS.background); break;
+        default: checkShowcase(node, color, bg, tokens.headingColor, check); checkWebinar(node, color, bg, tokens.linkColor, check); break;
       }
       if (node.children) walk(node.children, bg, color);
     }

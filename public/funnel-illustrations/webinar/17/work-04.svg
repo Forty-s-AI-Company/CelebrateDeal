@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 1200" role="img" aria-label="作品佔位 4（請替換為作品照片）"><defs>
+<linearGradient id="w3b" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#24180f"/><stop offset="0.5" stop-color="#4a3020"/><stop offset="1" stop-color="#1b130d"/></linearGradient>
+<radialGradient id="w3g" cx="0.2" cy="0.3" r=".65"><stop offset="0" stop-color="#f3a65c" stop-opacity=".85"/><stop offset=".45" stop-color="#f3a65c" stop-opacity=".25"/><stop offset="1" stop-color="#f3a65c" stop-opacity="0"/></radialGradient>
+<linearGradient id="w3v" x1="0" y1="0" x2="0" y2="1"><stop offset=".55" stop-color="#000" stop-opacity="0"/><stop offset="1" stop-color="#000" stop-opacity=".45"/></linearGradient>
+</defs>
+<rect width="800" height="1200" fill="url(#w3b)"/>
+<rect width="800" height="1200" fill="url(#w3g)"/>
+<g fill="#f3a65c" opacity=".16"><path d="M160 0 L-175.99999999999997 1200 L-15.999999999999993 1200Z"/><path d="M160 0 L64.00000000000001 1200 L192.00000000000003 1200Z"/></g>
+<g fill="#000" opacity=".55">
+<ellipse cx="288" cy="504" rx="68" ry="80"/>
+<path d="M96 1200 C112 744 464 744 480 1200Z"/>
+</g>
+<rect width="800" height="1200" fill="url(#w3v)"/>
+<g stroke="#ffffff" stroke-opacity=".22" stroke-width="1"><path d="M266.6666666666667 0V1200M533.3333333333334 0V1200M0 400H800M0 800H800"/></g>
+<text x="768" y="1140" text-anchor="end" font-family="'Noto Sans TC','PingFang TC','Microsoft JhengHei',sans-serif" font-size="36" fill="#ffffff" fill-opacity=".8">替換作品 2:3</text></svg>

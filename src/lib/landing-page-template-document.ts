@@ -29,7 +29,7 @@ export const MERCHANT_TEMPLATE_STEP_PREFIX = "mine_";
  * The renderer currently reads `eventId`/`calendarId`/`bookingEventId`
  * (consultation calendar); the rest are not read today but are accepted by the
  * open `props` record, so a stored document could carry them. All are removed
- * from `props` and from desktop/mobile `overrides.props`.
+ * from `props` and from desktop/tablet/mobile `overrides.props`.
  */
 export const TEMPLATE_RESOURCE_PROP_KEYS = [
   // Consultation calendar (`calendar`, `paid_calendar`).
@@ -77,7 +77,7 @@ function stripProps(props: Record<string, unknown>): Record<string, unknown> {
 
 function mapOverrideProps(node: FunnelNode, map: (props: Record<string, unknown>) => Record<string, unknown>): FunnelNode["overrides"] {
   const overrides = { ...node.overrides };
-  for (const viewport of ["desktop", "mobile"] as const) {
+  for (const viewport of ["desktop", "tablet", "mobile"] as const) {
     const override = overrides[viewport];
     if (override?.props) overrides[viewport] = { ...override, props: map(override.props) };
   }
@@ -106,7 +106,7 @@ function stripNode(node: FunnelNode): FunnelNode {
  * Removes every binding to vendor resources or to the source page: commerce
  * binding (products, order bump, agreement), embedded flow, registration-form
  * and step action targets (in `actions` and in action-shaped `props` values,
- * including desktop/mobile overrides), resource-id props, popup page ownership
+ * including desktop/tablet/mobile overrides), resource-id props, popup page ownership
  * and the tracking / affiliate capability state (reset to the platform
  * defaults). Text, styles, images, HTML ids, in-page form/popup references and
  * `raw_html` content are kept as they are.

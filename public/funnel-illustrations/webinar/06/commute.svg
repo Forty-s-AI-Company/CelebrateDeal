@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 640" width="800" height="640" role="img" aria-label="擁擠的通勤車廂插畫">
+<rect width="800" height="640" rx="28" fill="#e3e7ea"/>
+<rect x="40" y="60" width="720" height="250" rx="20" fill="#c3ccd3"/>
+<g fill="#9aa8b3"><rect x="70" y="90" width="200" height="190" rx="14"/><rect x="300" y="90" width="200" height="190" rx="14"/><rect x="530" y="90" width="200" height="190" rx="14"/></g>
+<g fill="#b9c6cf" opacity="0.8"><path d="M70 230l60-60 50 40 90-90v160H70z"/><path d="M300 240l80-70 60 50 60-40v100H300z"/><path d="M530 220l70-50 60 40 70-60v130H530z"/></g>
+<path d="M40 330h720" stroke="#6a7480" stroke-width="10" stroke-linecap="round"/>
+<g stroke="#6a7480" stroke-width="6"><path d="M140 330v40M330 330v40M520 330v40M680 330v40"/></g>
+<g fill="none" stroke="#6a7480" stroke-width="5"><circle cx="140" cy="392" r="20"/><circle cx="330" cy="392" r="20"/><circle cx="520" cy="392" r="20"/><circle cx="680" cy="392" r="20"/></g>
+<g fill="#44515f"><circle cx="120" cy="450" r="34"/><path d="M60 640c0-90 30-140 60-140s60 50 60 140z"/></g>
+<g fill="#6a7480"><circle cx="250" cy="440" r="36"/><path d="M188 640c0-100 30-155 62-155s62 55 62 155z"/></g>
+<g fill="#1f2d3d"><circle cx="400" cy="430" r="40"/><path d="M330 640c0-110 34-170 70-170s70 60 70 170z"/></g>
+<rect x="378" y="520" width="44" height="64" rx="6" fill="#9fc8d3"/>
+<g fill="#6a7480"><circle cx="545" cy="445" r="35"/><path d="M485 640c0-95 30-150 60-150s60 55 60 150z"/></g>
+<g fill="#44515f"><circle cx="680" cy="455" r="32"/><path d="M624 640c0-88 28-136 56-136s56 48 56 136z"/></g>
+<g transform="translate(590 22)"><rect x="0" y="0" width="150" height="46" rx="23" fill="#fdfaf4"/><circle cx="28" cy="23" r="13" fill="none" stroke="#c8443a" stroke-width="4"/><path d="M28 15v9l6 4" stroke="#c8443a" stroke-width="4" fill="none" stroke-linecap="round"/><path d="M58 23h70" stroke="#44515f" stroke-width="6" stroke-linecap="round"/></g>
+</svg>

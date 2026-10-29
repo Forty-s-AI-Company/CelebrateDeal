@@ -1,5 +1,6 @@
 "use client";
 import { useRegistrationRetry } from "@/components/registration-retry-context";
+import { flushSync } from "react-dom";
 
 /* eslint-disable @next/next/no-img-element */
 
@@ -22,6 +23,12 @@ import { InlineEditableText } from "./funnel-inline-editable";
 import { safeContentAssetUrl, safeContentHref } from "@/lib/safe-url";
 import { ContentCardsElement, FUNNEL_SHOWCASE_ACCENT, IconListElement, ImageCardsElement, LogoStripElement, NavBarElement, SectionTitleElement, ShapeDividerElement, StatsElement, TestimonialWallElement, VideoGalleryElement, type ShowcaseElementProps } from "./funnel-showcase-elements";
 import { showcaseChoice, showcaseColor, showcaseNumber } from "@/lib/funnel-showcase";
+import { CountdownElement, WEBINAR_ELEMENTS, type WebinarElementProps } from "./funnel-webinar-elements";
+import { FunnelEventContext, useFunnelEvent, useFunnelNow } from "./funnel-event-context";
+import { FunnelStickyCtaBar, FunnelStickyCtaSpacer, funnelStickyCtaVisibleOn, useFunnelScrollReveal } from "./funnel-page-chrome";
+import { FUNNEL_FONT_VARIABLES } from "./funnel-fonts";
+import { funnelEventPhase, funnelEventSchedule, resolveFunnelEventFields, FUNNEL_EVENT_PHASE_LABELS } from "@/lib/funnel-event-time";
+import { WEBINAR_STATE_LABELS, webinarStateKey, type WebinarStateKey } from "@/lib/funnel-webinar-elements";
 
 import {
   createEmptyPageDocument,
@@ -48,7 +55,8 @@ const CommerceRenderContext = createContext<{ binding?: FunnelCommerceBinding; c
 /** Page typography for this render; every surface reads the same tokens (editor, preview, public). */
 const TypographyContext = createContext<FunnelTypographyTokens>(resolveFunnelTypography(createEmptyPageDocument().settings, "desktop"));
 
-export type FunnelViewport = "desktop" | "mobile";
+/** I-1: <= 639px mobile, 640-1079px tablet, >= 1080px desktop (`funnelViewportForWidth`). */
+export type FunnelViewport = "desktop" | "tablet" | "mobile";
 export type FunnelRenderMode = "editor" | "preview";
 
 /** Where a canvas click landed: the list entry (if any) and the pointer, for inline editing. */
@@ -80,6 +88,21 @@ export type FunnelPageDocumentRendererProps = {
   consultation?: { csrfToken: string; events: Array<{ id: string; title: string; description: string | null; timezone: string; durationMinutes: number; intakeFormFields: unknown }> };
   /** Render the page root as `<main>` (default). Thumbnails and nested previews pass false to avoid extra landmarks. */
   landmark?: boolean;
+  /**
+   * Server-provided event data (I-5): the funnel registration deadline and the
+   * server render time, so time-dependent elements hydrate without drift.
+   */
+  event?: FunnelRenderEvent;
+};
+
+const FAQ_BORDER: CSSProperties = { borderColor: "color-mix(in srgb, currentColor 22%, transparent)" };
+const FAQ_ANSWER: CSSProperties = { fontSize: "0.9375em", opacity: 0.86 };
+
+export type FunnelRenderEvent = {
+  registrationClosesAt?: string | null;
+  renderedAt?: number;
+  /** Fallback schedule when the document carries no funnel schedule (development harness samples only). */
+  webinar?: unknown;
 };
 
 export type FunnelSubmissionContext = {
@@ -89,6 +112,14 @@ export type FunnelSubmissionContext = {
   funnelStepId?: string;
   liveId?: string;
   redirectTo?: string;
+  /** Shown under a designed form's submit button before submission (webinar: email confirmation notice). */
+  notice?: string;
+  /**
+   * Submit with the browser's native POST (the server redirects with its own
+   * feedback query), exactly like the webinar fallback form. Fields stay
+   * enabled while the browser serialises them.
+   */
+  nativeSubmit?: boolean;
 };
 
 type ResolvedNode = {
@@ -145,6 +176,20 @@ const LABELS: Record<FunnelNode["type"], string> = {
   testimonial_wall: "評價牆",
   content_cards: "文章卡片",
   video_gallery: "影片牆",
+  event_facts: "活動資訊列",
+  speaker_profiles: "講者卡",
+  agenda_timeline: "議程時間軸",
+  callout: "提示框",
+  fit_compare: "適合／不適合",
+  add_to_calendar: "加入行事曆",
+  announcement_bar: "頂部公告條",
+  value_stack: "價值清單",
+  session_schedule: "場次表",
+  deadline_notice: "報名截止提示",
+  webinar_state: "依活動狀態切換",
+  media_frame: "裝置框",
+  image_gallery: "作品集圖庫",
+  code_snippet: "程式碼片段",
 };
 
 function stringProp(props: Record<string, unknown>, keys: string[], fallback = ""): string {
@@ -278,13 +323,34 @@ function layoutNumber(value: unknown, min: number, max: number, fallback: number
 
 const GRID_ALIGN: Record<NonNullable<FunnelNodeStyle["align"]>, CSSProperties["alignItems"]> = { start: "start", center: "center", end: "end", stretch: "stretch" };
 
-function resolveNode(node: FunnelNode, viewport: FunnelViewport): ResolvedNode {
-  const override = node.overrides[viewport];
-  return {
-    props: { ...node.props, ...(override?.props ?? {}) },
-    style: { ...node.style, ...(override?.style ?? {}) },
-    visible: override?.visible ?? node.visible,
-  };
+/** Base, then the viewport override. Tablet applies `desktop` (it meant "640px and up" before I-1) and then `tablet`. */
+export function resolveFunnelNode(node: Pick<FunnelNode, "props" | "style" | "visible" | "overrides">, viewport: FunnelViewport): ResolvedNode {
+  const layers = viewport === "tablet" ? [node.overrides.desktop, node.overrides.tablet] : [node.overrides[viewport]];
+  let resolved: ResolvedNode = { props: { ...node.props }, style: { ...node.style }, visible: node.visible };
+  for (const override of layers) {
+    if (!override) continue;
+    resolved = { props: { ...resolved.props, ...(override.props ?? {}) }, style: { ...resolved.style, ...(override.style ?? {}) }, visible: override.visible ?? resolved.visible };
+  }
+  return resolved;
+}
+const resolveNode = resolveFunnelNode;
+
+const COLUMN_RATIOS: Readonly<Record<string, readonly [number, number]>> = { "1:1": [1, 1], "7:5": [7, 5], "5:7": [5, 7], "3:2": [3, 2], "2:3": [2, 3], "2:1": [2, 1], "1:2": [1, 2] };
+
+/**
+ * Column layout (I-1, C-05). Mobile stacks; tablet stacks when `stackOn` is
+ * "tablet", otherwise 3-4 columns become 2. `ratio` sizes a 2-column row on
+ * desktop/tablet. When stacked, `mobileOrder: "reverse"` reverses the DOM
+ * order, so reading and focus order follow what visitors see.
+ */
+export function funnelColumnsLayout(type: "columns_2" | "columns_3" | "columns_4", props: Record<string, unknown>, viewport: FunnelViewport): { template: string; stacked: boolean; reversed: boolean } {
+  const count = type === "columns_2" ? 2 : type === "columns_3" ? 3 : 4;
+  const stacked = viewport === "mobile" || (viewport === "tablet" && props.stackOn === "tablet");
+  if (stacked) return { template: "minmax(0, 1fr)", stacked, reversed: props.mobileOrder === "reverse" };
+  const ratio = count === 2 && typeof props.ratio === "string" ? COLUMN_RATIOS[props.ratio] : undefined;
+  if (ratio) return { template: `minmax(0, ${ratio[0]}fr) minmax(0, ${ratio[1]}fr)`, stacked, reversed: false };
+  const columns = viewport === "tablet" ? Math.min(count, 2) : count;
+  return { template: `repeat(${columns}, minmax(0, 1fr))`, stacked, reversed: false };
 }
 
 function safeAction(action: unknown): { href: string; newTab: boolean; download?: string } | null {
@@ -335,22 +401,6 @@ function safeMediaSource(props: Record<string, unknown>): string | null {
   return safeContentAssetUrl(props.src ?? props.url ?? props.mediaUrl ?? props.videoUrl ?? props.audioUrl);
 }
 
-function CountdownDisplay({ target }: { target: string }) {
-  const [remaining, setRemaining] = useState<number | null>(null);
-  useEffect(() => {
-    const update = () => setRemaining(Math.max(0, new Date(target).getTime() - Date.now()));
-    update();
-    const timer = window.setInterval(update, 1_000);
-    return () => window.clearInterval(timer);
-  }, [target]);
-  const value = remaining ?? 0;
-  const days = remaining === null ? "--" : String(Math.floor(value / 86_400_000));
-  const hours = remaining === null ? "--" : String(Math.floor((value % 86_400_000) / 3_600_000));
-  const minutes = remaining === null ? "--" : String(Math.floor((value % 3_600_000) / 60_000));
-  const seconds = remaining === null ? "--" : String(Math.floor((value % 60_000) / 1_000));
-  return <div className="grid grid-cols-4 gap-2" aria-label="倒數時間"><span><strong className="block text-xl">{days}</strong><small>天</small></span><span><strong className="block text-xl">{hours}</strong><small>小時</small></span><span><strong className="block text-xl">{minutes}</strong><small>分鐘</small></span><span><strong className="block text-xl">{seconds}</strong><small>秒</small></span></div>;
-}
-
 function capabilityMessage(node: FunnelNode): string {
   const definition = getFunnelNodeDefinition(node.type);
   if (definition.capability.status !== "available") return `功能狀態：${definition.capability.status === "disabled" ? "已停用" : definition.capability.status === "limited" ? "有限支援" : "待驗證"}。${definition.capability.reason}`;
@@ -378,13 +428,67 @@ function referralFields(attribution: { referralCode?: string; shareCode?: string
   };
 }
 
-function PublicSubmissionForm({ submission, label, requireConsent }: { submission: FunnelSubmissionContext; label: string; requireConsent: boolean }) {
+/**
+ * C-19（最小集合）：公開報名表沿用頁面上表單節點的設計。欄位的 key、標籤、類型、
+ * 必填與送出文字一律來自伺服器的報名表設定（與既有公開表單相同；資料只送進平台
+ * 自己的報名紀錄）；頁面上的 `form_input` 依欄位 key（或 Email／電話類型）提供
+ * 提示文字、說明與半寬，`button` 提供送出按鈕樣式；必填的 `checkbox` 只決定是否
+ * 需要同意（文字沿用平台用語），其他節點（標題、小字）依原本順序顯示在欄位前後。
+ */
+export type FunnelFormDesign = {
+  fields: Record<string, { placeholder?: string; helpText?: string; half?: boolean }>;
+  submitStyle?: CSSProperties;
+  submitClassName?: string;
+  before: ReactNode;
+  after: ReactNode;
+  gap: number;
+  mobile: boolean;
+};
+
+const FIELD_INVALID_MESSAGES: Readonly<Record<string, string>> = {
+  valueMissing: "這個欄位必填。",
+  typeMismatchEmail: "請輸入正確的 Email，例如 name@example.com。",
+  typeMismatch: "格式不正確，請再確認一次。",
+  patternMismatch: "格式不正確，請再確認一次。",
+  tooLong: "內容太長了，請縮短。",
+};
+
+/** Native validation bubbles in Traditional Chinese; they float, so they never push the layout sideways (L-11). */
+function invalidMessage(input: HTMLInputElement): string {
+  const validity = input.validity;
+  if (validity.valueMissing) return input.type === "checkbox" ? "請先勾選同意，才能送出。" : FIELD_INVALID_MESSAGES.valueMissing!;
+  if (validity.typeMismatch) return input.type === "email" ? FIELD_INVALID_MESSAGES.typeMismatchEmail! : FIELD_INVALID_MESSAGES.typeMismatch!;
+  if (validity.patternMismatch) return FIELD_INVALID_MESSAGES.patternMismatch!;
+  if (validity.tooLong) return FIELD_INVALID_MESSAGES.tooLong!;
+  return "";
+}
+const localizedValidation = {
+  onInvalid: (event: FormEvent<HTMLInputElement>) => event.currentTarget.setCustomValidity(invalidMessage(event.currentTarget)),
+  onInput: (event: FormEvent<HTMLInputElement>) => event.currentTarget.setCustomValidity(""),
+};
+
+function PublicSubmissionForm({ submission, label, requireConsent, design }: { submission: FunnelSubmissionContext; label: string; requireConsent: boolean; design?: FunnelFormDesign }) {
   const retry = useRegistrationRetry(submission.form.id);
   const [status, setStatus] = useState<"idle" | "submitting" | "success" | "error">(retry?.submitted ? "success" : retry?.message ? "error" : "idle");
   const [message, setMessage] = useState(retry?.submitted ? `${submission.form.successMessage} ${FORM_SUBMISSION_VERIFICATION_MESSAGE}` : retry?.message ?? "");
   const submissionInFlight = useRef(false);
+  const [nativePending, setNativePending] = useState(false);
   const referral = referralFields(retry?.attribution);
+  useEffect(() => {
+    if (!submission.nativeSubmit) return;
+    // Back/forward cache: allow submitting again after returning to the page.
+    const reset = () => { submissionInFlight.current = false; setNativePending(false); };
+    window.addEventListener("pageshow", reset);
+    return () => window.removeEventListener("pageshow", reset);
+  }, [submission.nativeSubmit]);
   async function submit(event: FormEvent<HTMLFormElement>) {
+    if (submission.nativeSubmit) {
+      if (submissionInFlight.current) { event.preventDefault(); return; }
+      submissionInFlight.current = true;
+      // Paint the waiting state before the native navigation starts; fields are not disabled.
+      flushSync(() => setNativePending(true));
+      return;
+    }
     event.preventDefault();
     // Lock synchronously: disabled is only applied after the next React render.
     if (submissionInFlight.current) return;
@@ -406,7 +510,7 @@ function PublicSubmissionForm({ submission, label, requireConsent }: { submissio
       setStatus("error"); setMessage(formSubmissionErrorMessage());
     }
   }
-  return <form method="post" action="/api/form-submissions" aria-label={label} aria-busy={status === "submitting"} onSubmit={submit} className="space-y-4">
+  return <form method="post" action="/api/form-submissions" aria-label={label} aria-busy={status === "submitting" || nativePending} onSubmit={submit} className="space-y-4">
     <input type="hidden" name="formId" value={submission.form.id} />
     <input type="hidden" name="landingPageId" value={submission.landingPageId ?? ""} />
     <input type="hidden" name="funnelStepId" value={submission.funnelStepId ?? ""} />
@@ -416,11 +520,49 @@ function PublicSubmissionForm({ submission, label, requireConsent }: { submissio
     <input type="hidden" name="shareCode" value={referral.shareCode ?? ""} />
     <input type="hidden" name="redirectTo" value={submission.redirectTo ?? retry?.sourcePath ?? ""} />
     {retry ? <input type="hidden" name="__registrationReturnPath" value={retry.sourcePath} /> : null}
-    {submission.form.fields.map((field) => <label key={field.key} className="block space-y-1"><span className="text-sm font-medium text-slate-700">{field.label}{field.required ? " *" : ""}</span><input name={field.key} defaultValue={retry?.draft?.answers[field.key] ?? ""} type={field.type} required={field.required} disabled={status === "submitting" || status === "success"} autoComplete={field.key === "email" ? "email" : field.key === "name" ? "name" : undefined} className="w-full rounded-lg border border-slate-500 px-3 py-2 disabled:bg-slate-100" /></label>)}
-    {requireConsent ? <label className="flex items-start gap-2 text-sm text-slate-700"><input type="checkbox" required disabled={status === "submitting" || status === "success"} className="mt-1" /><span>我同意依本頁說明提交並使用上述資料。</span></label> : null}
-    <button type="submit" disabled={status === "submitting" || status === "success"} className="inline-flex min-h-11 items-center justify-center rounded-lg bg-amber-500 px-5 py-2 font-semibold text-slate-950 disabled:cursor-not-allowed disabled:opacity-60">{status === "submitting" ? "送出中…" : status === "success" ? "已送出" : submission.form.submitLabel}</button>
+    {design
+      ? <DesignedSubmissionFields submission={submission} design={design} requireConsent={requireConsent} locked={status === "submitting" || status === "success"} draft={retry?.draft?.answers} submitText={submitText(nativePending ? "submitting" : status, submission.form.submitLabel)} />
+      : <PlainSubmissionFields submission={submission} requireConsent={requireConsent} locked={status === "submitting" || status === "success"} draft={retry?.draft?.answers} submitText={submitText(status, submission.form.submitLabel)} />}
     <RegistrationSubmissionFeedback pending={status === "submitting"} errorMessage={status === "error" ? message : ""} successMessage={status === "success" ? message : ""} />
   </form>;
+}
+
+const submitText = (status: "idle" | "submitting" | "success" | "error", label: string) => status === "submitting" ? "送出中…" : status === "success" ? "已送出" : label;
+
+/** Form markup for pages without a designed form (kept exactly as before C-19). */
+function PlainSubmissionFields({ submission, requireConsent, locked, draft, submitText: text }: { submission: FunnelSubmissionContext; requireConsent: boolean; locked: boolean; draft?: Record<string, string>; submitText: string }) {
+  return <>
+    {submission.form.fields.map((field) => <label key={field.key} className="block space-y-1"><span className="text-sm font-medium text-slate-700">{field.label}{field.required ? " *" : ""}</span><input name={field.key} defaultValue={draft?.[field.key] ?? ""} type={field.type} required={field.required} disabled={locked} autoComplete={field.key === "email" ? "email" : field.key === "name" ? "name" : undefined} className="w-full rounded-lg border border-slate-500 px-3 py-2 disabled:bg-slate-100" /></label>)}
+    {requireConsent ? <label className="flex items-start gap-2 text-sm text-slate-700"><input type="checkbox" required disabled={locked} className="mt-1" /><span>我同意依本頁說明提交並使用上述資料。</span></label> : null}
+    <button type="submit" disabled={locked} className="inline-flex min-h-11 items-center justify-center rounded-lg bg-amber-500 px-5 py-2 font-semibold text-slate-950 disabled:cursor-not-allowed disabled:opacity-60">{text}</button>
+  </>;
+}
+
+const FIELD_AUTOCOMPLETE: Readonly<Record<string, string>> = { email: "email", name: "name", phone: "tel", tel: "tel", mobile: "tel", company: "organization" };
+
+function DesignedSubmissionFields({ submission, design, requireConsent, locked, draft, submitText }: { submission: FunnelSubmissionContext; design: FunnelFormDesign; requireConsent: boolean; locked: boolean; draft?: Record<string, string>; submitText: string }) {
+  return <div className="grid" style={{ gap: design.gap }}>
+    {design.before}
+    <div className="grid" style={{ gap: design.gap, gridTemplateColumns: design.mobile ? "minmax(0, 1fr)" : "repeat(2, minmax(0, 1fr))" }}>
+      {submission.form.fields.map((field) => {
+        const look = design.fields[field.key] ?? {};
+        const inputId = `funnel-field-${submission.form.id}-${field.key}`;
+        const helpId = look.helpText ? `${inputId}-help` : undefined;
+        return <div key={field.key} className="grid min-w-0 content-start" style={{ gap: 6, gridColumn: design.mobile || !look.half ? "1 / -1" : undefined }}>
+          <label htmlFor={inputId} className="block text-[0.9375em] font-semibold">{field.label}{field.required ? " *" : <span aria-hidden className="font-normal opacity-80">（選填）</span>}</label>
+          <input id={inputId} name={field.key} defaultValue={draft?.[field.key] ?? ""} type={field.type} required={field.required} disabled={locked} placeholder={look.placeholder} aria-describedby={helpId}
+            autoComplete={FIELD_AUTOCOMPLETE[field.key] ?? (field.type === "email" ? "email" : field.type === "tel" ? "tel" : undefined)} inputMode={field.type === "tel" ? "tel" : undefined} {...localizedValidation}
+            className="min-h-12 w-full rounded-lg border border-slate-500 bg-white px-3.5 py-2.5 text-[16px] text-slate-900 placeholder:text-slate-500 disabled:bg-slate-100" />
+          {look.helpText ? <p id={helpId} className="m-0 text-[0.875em]" style={{ opacity: 0.85, overflowWrap: "anywhere" }}>{look.helpText}</p> : null}
+        </div>;
+      })}
+    </div>
+    {/* Platform consent wording, identical to the plain form (a template's checkbox text is not used for consent). */}
+    {requireConsent ? <label className="flex items-start gap-2.5 text-[0.9375em]"><input type="checkbox" required disabled={locked} className="mt-1 h-5 w-5 shrink-0" {...localizedValidation} /><span>我同意依本頁說明提交並使用上述資料。</span></label> : null}
+    <button type="submit" disabled={locked} className={`${design.submitClassName ?? ""} w-full cursor-pointer disabled:cursor-not-allowed disabled:opacity-60`} style={design.submitStyle}>{submitText}</button>
+    {submission.notice ? <p className="m-0 text-[0.875em]" style={{ opacity: 0.85 }}>{submission.notice}</p> : null}
+    {design.after}
+  </div>;
 }
 
 const HIDDEN_STRIPES = "repeating-linear-gradient(135deg, rgba(71, 85, 105, 0.16) 0 6px, transparent 6px 12px)";
@@ -453,7 +595,7 @@ function NodeSurface({ node, resolved, viewport, mode, selectedNodeId, onSelectN
   const attributes = safeAttributes(node.attributes);
   // EDT-RESP-001: a node hidden on this device stays selectable in the editor, dimmed and striped.
   const hidden = editor && !resolved.visible;
-  const horizontal = editor && ((viewport === "desktop" && (node.type === "columns_2" || node.type === "columns_3" || node.type === "columns_4")) || (node.type === "row" && resolved.style.direction === "row"));
+  const horizontal = editor && ((viewport !== "mobile" && (node.type === "columns_2" || node.type === "columns_3" || node.type === "columns_4") && !funnelColumnsLayout(node.type, resolved.props, viewport).stacked) || (node.type === "row" && resolved.style.direction === "row"));
   return <div {...attributes} data-funnel-node-id={node.id} data-funnel-node-type={node.type} data-funnel-selected={selectedNodeId === node.id ? "true" : "false"}
     data-funnel-axis={horizontal ? "horizontal" : undefined} data-funnel-hidden={hidden ? viewport : undefined}
     className={editor ? `relative${hidden ? " opacity-60" : ""}` : ""} style={style}
@@ -461,7 +603,7 @@ function NodeSurface({ node, resolved, viewport, mode, selectedNodeId, onSelectN
     {children}
     {hidden ? <>
       <span aria-hidden className="pointer-events-none absolute inset-0" style={{ backgroundImage: HIDDEN_STRIPES }} />
-      <span className="pointer-events-none absolute top-1 left-1 rounded bg-slate-700 px-1.5 py-0.5 text-[11px] leading-4 font-semibold text-white">{viewport === "mobile" ? "手機版隱藏" : "桌機版隱藏"}</span>
+      <span className="pointer-events-none absolute top-1 left-1 rounded bg-slate-700 px-1.5 py-0.5 text-[11px] leading-4 font-semibold text-white">{viewport === "mobile" ? "手機版隱藏" : viewport === "tablet" ? "平板版隱藏" : "桌機版隱藏"}</span>
     </> : null}
   </div>;
 }
@@ -472,6 +614,7 @@ function NodeSurface({ node, resolved, viewport, mode, selectedNodeId, onSelectN
 function NodeRenderer({ node, viewport, mode, flow, submission, consultation, publicSurface = false, selectedNodeId, onSelectNode, inlineEditing }: { node: FunnelNode; viewport: FunnelViewport; mode: FunnelRenderMode; flow?: PageDocument["flow"]; submission?: FunnelSubmissionContext; consultation?: FunnelPageDocumentRendererProps["consultation"]; publicSurface?: boolean; selectedNodeId?: string; onSelectNode?: (nodeId: string, detail?: FunnelNodeSelectDetail) => void; inlineEditing?: FunnelInlineEditingBinding }): ReactNode {
   const commerceContext = useContext(CommerceRenderContext);
   const tokens = useContext(TypographyContext);
+  const eventContext = useFunnelEvent();
   const layout = funnelLayoutTokens(viewport);
   const resolved = resolveNode(node, viewport);
   if (!resolved.visible && mode !== "editor") return null;
@@ -480,6 +623,7 @@ function NodeRenderer({ node, viewport, mode, flow, submission, consultation, pu
   const renderChildren = () => children.map((child) => <NodeRenderer key={child.id} node={child} viewport={viewport} mode={mode} flow={flow} submission={submission} consultation={consultation} publicSurface={publicSurface} selectedNodeId={selectedNodeId} onSelectNode={onSelectNode} inlineEditing={inlineEditing} />);
   const surface = (content: ReactNode) => <NodeSurface node={node} resolved={resolved} viewport={viewport} mode={mode} selectedNodeId={selectedNodeId} onSelectNode={onSelectNode}>{content}</NodeSurface>;
   const props = resolved.props;
+  const eventSchedule = eventContext.schedule;
   switch (node.type) {
     case "offer_price": case "payment_button": case "payment_method": case "physical_product": case "customer_type": case "agreement": case "order_bump": case "coupon": case "two_step_order_form": case "shipping_fees":
       return surface(<><FunnelCommerceElement type={node.type} {...commerceContext} interactive={publicSurface && mode !== "editor"} />{renderChildren()}</>);
@@ -493,25 +637,26 @@ function NodeRenderer({ node, viewport, mode, flow, submission, consultation, pu
       return surface(<div className="flex w-full min-w-0 flex-col" style={rowStyle}>{renderChildren()}</div>);
     }
     case "columns_2": case "columns_3": case "columns_4": {
-      const count = node.type === "columns_2" ? 2 : node.type === "columns_3" ? 3 : 4;
-      const gridStyle: CSSProperties = { gap: layoutNumber(props.gap, 0, 160, layout.columnGap), gridTemplateColumns: viewport === "mobile" ? "minmax(0, 1fr)" : `repeat(${count}, minmax(0, 1fr))` };
+      const columns = funnelColumnsLayout(node.type, props, viewport);
+      const gridStyle: CSSProperties = { gap: layoutNumber(props.gap, 0, 160, layout.columnGap), gridTemplateColumns: columns.template };
       if (resolved.style.align) gridStyle.alignItems = GRID_ALIGN[resolved.style.align];
-      return surface(<div className="grid min-w-0" style={gridStyle}>{renderChildren()}</div>);
+      const ordered = columns.reversed ? [...children].reverse() : children;
+      return surface(<div className="grid min-w-0" data-funnel-columns={columns.stacked ? "stacked" : "split"} style={gridStyle}>{ordered.map((child) => <NodeRenderer key={child.id} node={child} viewport={viewport} mode={mode} flow={flow} submission={submission} consultation={consultation} publicSurface={publicSurface} selectedNodeId={selectedNodeId} onSelectNode={onSelectNode} inlineEditing={inlineEditing} />)}</div>);
     }
     case "text": {
       const text = stringProp(props, ["text", "content", "body"], "文字內容");
-      return surface(editing ? <InlineEditableText as="p" initial={text} multiline label="編輯文字" caret={editing.caret} onCommit={(value) => editing.onCommit(value, { previous: text })} onCancel={editing.onCancel} /> : <p className="whitespace-pre-line">{text}</p>);
+      return surface(editing ? <InlineEditableText as="p" initial={text} multiline label="編輯文字" caret={editing.caret} onCommit={(value) => editing.onCommit(value, { previous: text })} onCancel={editing.onCancel} /> : <p className="whitespace-pre-line">{resolveFunnelEventFields(text, eventSchedule)}</p>);
     }
     case "headline": {
       const level = funnelHeadingLevel(props.level);
       const text = stringProp(props, ["text", "content", "title"], "標題");
-      return surface(editing ? <InlineEditableText as={level} initial={text} multiline={false} label="編輯標題" caret={editing.caret} onCommit={(value) => editing.onCommit(value, { previous: text })} onCancel={editing.onCancel} /> : <HeadlineMarkup level={level} text={text} />);
+      return surface(editing ? <InlineEditableText as={level} initial={text} multiline={false} label="編輯標題" caret={editing.caret} onCommit={(value) => editing.onCommit(value, { previous: text })} onCancel={editing.onCancel} /> : <HeadlineMarkup level={level} text={resolveFunnelEventFields(text, eventSchedule)} />);
     }
     case "bulleted_list": {
       const items = stringList(props.items).length ? stringList(props.items) : ["清單項目"];
       return surface(<ul className="list-disc pl-[1.25em]" style={{ display: "grid", gap: "0.5em" }}>{items.map((item, index) => editing?.itemIndex === index
         ? <InlineEditableText key={`${node.id}-item-${index}-editing`} as="li" initial={item} multiline={false} label={`編輯清單第 ${index + 1} 項`} caret={editing.caret} onCommit={(value) => editing.onCommit(value, { previous: item, items })} onCancel={editing.onCancel} />
-        : <li key={`${node.id}-item-${index}`} data-funnel-list-item={mode === "editor" ? index : undefined}>{item}</li>)}</ul>);
+        : <li key={`${node.id}-item-${index}`} data-funnel-list-item={mode === "editor" ? index : undefined}>{resolveFunnelEventFields(item, eventSchedule)}</li>)}</ul>);
     }
     case "content_box": {
       // A box styled by its own node style (templates, blocks) draws nothing extra; an unstyled box keeps the default card.
@@ -522,7 +667,7 @@ function NodeRenderer({ node, viewport, mode, flow, submission, consultation, pu
     }
     case "image": {
       const src = safeContentAssetUrl(props.src ?? props.imageUrl ?? props.url);
-      return surface(src ? <figure><img src={src} alt={stringProp(props, ["alt", "altText"])} style={imageStyle(resolved.style)} />{stringProp(props, ["caption"]) ? <figcaption className="mt-2 text-sm text-slate-600">{stringProp(props, ["caption"])}</figcaption> : null}</figure> : <UnsupportedNode node={node} message="圖片網址不安全或尚未設定。" />);
+      return surface(src ? <figure><img src={src} alt={stringProp(props, ["alt", "altText"])} style={imageStyle(resolved.style)} />{stringProp(props, ["caption"]) ? <figcaption className="mt-2 text-sm" style={{ opacity: 0.8 }}>{stringProp(props, ["caption"])}</figcaption> : null}</figure> : <UnsupportedNode node={node} message="圖片網址不安全或尚未設定。" />);
     }
     case "video": {
       const src = safeMediaSource(props);
@@ -545,14 +690,15 @@ function NodeRenderer({ node, viewport, mode, flow, submission, consultation, pu
       if (props.variant === "checkout-contact") return surface(<fieldset disabled style={stack}>{renderChildren()}</fieldset>);
       if (children.some((child) => getFunnelNodeDefinition(child.type).category === "payment")) return surface(<div aria-label={label} style={stack}>{renderChildren()}</div>);
       const requireConsent = children.some((child) => child.type === "checkbox" && child.props.required === true);
-      if (mode === "preview" && submission) return surface(<PublicSubmissionForm submission={submission} label={label} requireConsent={requireConsent} />);
+      if (mode === "preview" && submission) return surface(<PublicSubmissionForm submission={submission} label={label} requireConsent={requireConsent} design={children.length ? formDesign(children, viewport, tokens, (child) => <NodeRenderer key={child.id} node={child} viewport={viewport} mode={mode} flow={flow} submission={submission} consultation={consultation} publicSurface={publicSurface} />, layout.formGap) : undefined} />);
       if (publicSurface) return surface(<UnsupportedNode node={node} message="此一頁式網站尚未綁定可公開使用的報名表，表單已停用。" />);
       return surface(<form aria-label={label} onSubmit={(event) => event.preventDefault()} style={stack}>{stringProp(props, ["title", "heading"]) ? <h3 style={funnelTypographyDefaults("h3", tokens)}>{stringProp(props, ["title", "heading"])}</h3> : null}{renderChildren()}</form>);
     }
     case "form_input": {
       const label = stringProp(props, ["label", "title", "placeholder"], "欄位");
       const inputId = `${node.id}-input`;
-      return surface(<label className="block space-y-1.5" htmlFor={inputId}><span className="block text-[0.875em] font-semibold">{label}</span><input id={inputId} name={safeNodeName(node, props, node.id)} type={safeInputType(props.inputType ?? props.type)} placeholder={stringProp(props, ["placeholder"])} required={props.required === true} defaultValue={typeof props.defaultValue === "string" ? props.defaultValue : undefined} className="min-h-12 w-full rounded-lg border border-slate-500 bg-white px-3.5 py-2.5 text-slate-900 placeholder:text-slate-500" /></label>);
+      const helpText = stringProp(props, ["helpText"]);
+      return surface(<label className="block space-y-1.5" htmlFor={inputId} style={props.width === "half" && viewport !== "mobile" ? { maxWidth: "calc(50% - 8px)" } : undefined}><span className="block text-[0.875em] font-semibold">{label}{props.required === true ? <span aria-hidden> *</span> : null}</span><input id={inputId} name={safeNodeName(node, props, node.id)} type={safeInputType(props.inputType ?? props.type)} placeholder={stringProp(props, ["placeholder"])} required={props.required === true} defaultValue={typeof props.defaultValue === "string" ? props.defaultValue : undefined} aria-describedby={helpText ? `${inputId}-help` : undefined} className="min-h-12 w-full rounded-lg border border-slate-500 bg-white px-3.5 py-2.5 text-[16px] text-slate-900 placeholder:text-slate-500" />{helpText ? <span id={`${inputId}-help`} className="block text-[0.875em]" style={{ opacity: 0.85 }}>{helpText}</span> : null}</label>);
     }
     case "checkbox": {
       const label = stringProp(props, ["label", "text", "title"], "我同意上述內容");
@@ -592,9 +738,11 @@ function NodeRenderer({ node, viewport, mode, flow, submission, consultation, pu
     }
     case "recaptcha": return surface(<UnsupportedNode node={node} message="CelebrateDeal 尚未具備已驗證的 server verification 與網域設定，因此 reCAPTCHA 不可用。" />);
     case "countdown": {
+      // C-06. Documents saved before C-06 have no `variant`/`source`: they keep a fixed deadline and get the block look.
+      const fixed = (props.source ?? "fixed") === "fixed";
       const target = safeDateTime(props.targetDate ?? props.endAt ?? props.deadline);
-      if (!target) return surface(<UnsupportedNode node={node} message="尚未設定有效的截止時間。" />);
-      return surface(<div className="rounded-xl border border-slate-200 bg-white/70 p-4 text-center" data-countdown-target={target}><p className="mb-2 text-sm text-slate-500">倒數至 <time dateTime={target} className="font-semibold">{new Date(target).toLocaleString("zh-TW")}</time></p><CountdownDisplay target={target} /></div>);
+      if (fixed && !target) return surface(<UnsupportedNode node={node} message="尚未設定有效的截止時間。" />);
+      return surface(<div data-countdown-target={fixed ? target ?? undefined : undefined}><CountdownElement {...webinarElementProps(props, resolved, tokens, viewport, mode)} /></div>);
     }
     case "menu": {
       const items = safeMenuItems(props.items ?? props.links);
@@ -612,12 +760,14 @@ function NodeRenderer({ node, viewport, mode, flow, submission, consultation, pu
         const answer = stringProp(record, ["answer", "content", "body"], "尚未設定答案。");
         return itemQuestion ? [{ question: itemQuestion, answer }] : [];
       }) : [];
-      return surface(items.length ? <div className="space-y-2">{items.map((item, index) => <details key={`${node.id}-faq-${index}`} className="rounded-lg border border-slate-200 p-4"><summary className="cursor-pointer font-medium">{item.question}</summary><p className="mt-3 text-sm text-slate-600 whitespace-pre-line">{item.answer}</p></details>)}</div> : <details className="rounded-lg border border-slate-200 p-4"><summary className="cursor-pointer font-medium">{question}</summary><div className="mt-3">{children.length ? renderChildren() : <p className="text-sm text-slate-600">尚未設定答案。</p>}</div></details>);
+      // Border and answer follow the section's text colour, so the FAQ stays readable on dark sections too.
+      return surface(items.length ? <div className="space-y-2">{items.map((item, index) => <details key={`${node.id}-faq-${index}`} className="rounded-lg border p-4" style={FAQ_BORDER}><summary className="cursor-pointer font-medium">{item.question}</summary><p className="mt-3 whitespace-pre-line" style={FAQ_ANSWER}>{item.answer}</p></details>)}</div> : <details className="rounded-lg border p-4" style={FAQ_BORDER}><summary className="cursor-pointer font-medium">{question}</summary><div className="mt-3">{children.length ? renderChildren() : <p style={FAQ_ANSWER}>尚未設定答案。</p>}</div></details>);
     }
     case "button": {
       const source: unknown = node.actions[0] ?? props.action;
       const action = safeAction(source);
-      const label = stringProp(props, ["label", "text", "title"], "立即行動");
+      const rawLabel = stringProp(props, ["label", "text", "title"], "立即行動");
+      const label = editing ? rawLabel : resolveFunnelEventFields(rawLabel, eventSchedule);
       // A span, not the <button>/<a>: native buttons swallow Space/Enter and some browsers block editing inside them.
       const controlStyle = buttonControlStyle(resolved.style, tokens);
       if (editing) return surface(<InlineEditableText as="span" style={controlStyle} initial={label} multiline={false} label="編輯按鈕文字" caret={editing.caret} onCommit={(value) => editing.onCommit(value, { previous: label })} onCancel={editing.onCancel} />);
@@ -638,8 +788,66 @@ function NodeRenderer({ node, viewport, mode, flow, submission, consultation, pu
       const Element = SHOWCASE_ELEMENTS[node.type];
       return surface(<Element {...showcase} />);
     }
+    case "event_facts": case "speaker_profiles": case "agenda_timeline": case "callout": case "fit_compare": case "add_to_calendar": case "announcement_bar":
+    case "value_stack": case "session_schedule": case "deadline_notice": case "media_frame": case "image_gallery": case "code_snippet": {
+      const Element = WEBINAR_ELEMENTS[node.type];
+      return surface(<Element {...webinarElementProps(props, resolved, tokens, viewport, mode)} />);
+    }
+    case "webinar_state": {
+      // C-15: each child content box declares `webinarState`; boxes without one always show.
+      if (mode === "editor") return surface(<div className="grid gap-3">{children.map((child) => {
+        const key = webinarStateKey(child.props.webinarState);
+        return <div key={child.id} className="grid gap-1"><span className="w-fit rounded bg-slate-700 px-2 py-0.5 text-xs font-semibold text-white">{key ? WEBINAR_STATE_LABELS[key] : "所有狀態"}</span><NodeRenderer node={child} viewport={viewport} mode={mode} flow={flow} submission={submission} consultation={consultation} publicSurface={publicSurface} selectedNodeId={selectedNodeId} onSelectNode={onSelectNode} inlineEditing={inlineEditing} /></div>;
+      })}</div>);
+      return surface(<WebinarStateSwitch>{(state) => children.filter((child) => { const key = webinarStateKey(child.props.webinarState); return !key || key === state; }).map((child) => <NodeRenderer key={child.id} node={child} viewport={viewport} mode={mode} flow={flow} submission={submission} consultation={consultation} publicSurface={publicSurface} />)}</WebinarStateSwitch>);
+    }
     default: return surface(<UnsupportedNode node={node} message={capabilityMessage(node)} />);
   }
+}
+
+/** Reads the page's form design (see `FunnelFormDesign`); field inputs and the submit button come from the server form. */
+function formDesign(children: FunnelNode[], viewport: FunnelViewport, tokens: FunnelTypographyTokens, render: (child: FunnelNode) => ReactNode, gap: number): FunnelFormDesign {
+  const fields: FunnelFormDesign["fields"] = {};
+  const before: ReactNode[] = [];
+  const after: ReactNode[] = [];
+  let reachedFields = false;
+  let submitStyle: CSSProperties | undefined;
+  for (const child of children) {
+    const resolved = resolveNode(child, viewport);
+    if (!resolved.visible) continue;
+    if (child.type === "form_input") {
+      reachedFields = true;
+      const props = resolved.props;
+      const type = safeInputType(props.inputType ?? props.type);
+      const key = safeNodeName(child, props, child.id);
+      const look = { placeholder: stringProp(props, ["placeholder"]) || undefined, helpText: stringProp(props, ["helpText"]) || undefined, half: props.width === "half" };
+      fields[key] ??= look;
+      if (type === "email") fields.email ??= look;
+      if (type === "tel") { fields.phone ??= look; fields.tel ??= look; fields.mobile ??= look; }
+      continue;
+    }
+    if (child.type === "button" && !submitStyle) {
+      reachedFields = true;
+      submitStyle = buttonControlStyle(resolved.style, tokens);
+      continue;
+    }
+    if (child.type === "checkbox" && resolved.props.required === true) continue;
+    (reachedFields ? after : before).push(render(child));
+  }
+  return { fields, submitStyle: submitStyle ?? buttonControlStyle({}, tokens), submitClassName: "transition-[filter] hover:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2", before, after, gap, mobile: viewport === "mobile" };
+}
+
+function webinarElementProps(props: Record<string, unknown>, resolved: ResolvedNode, tokens: FunnelTypographyTokens, viewport: FunnelViewport, mode: FunnelRenderMode): WebinarElementProps {
+  return { props, tokens, viewport, interactive: mode === "preview", inheritColor: resolved.style.color !== undefined, align: resolved.style.textAlign ?? tokens.alignment };
+}
+
+/** Current event state (C-15); unscheduled events count as "upcoming". Re-evaluated every 30 seconds. */
+function WebinarStateSwitch({ children }: { children: (state: WebinarStateKey) => ReactNode }) {
+  const { schedule } = useFunnelEvent();
+  const now = useFunnelNow(30_000);
+  const phase = now === null ? "upcoming" : funnelEventPhase(schedule, now);
+  const state: WebinarStateKey = phase === "unscheduled" ? "upcoming" : phase;
+  return <div data-webinar-state={state} aria-label={FUNNEL_EVENT_PHASE_LABELS[phase]}>{children(state)}</div>;
 }
 
 const SHOWCASE_ELEMENTS = {
@@ -723,12 +931,17 @@ export function funnelBackgroundImageValue(value: unknown): string | undefined {
 }
 
 function pageStyle(document: PageDocument, tokens: FunnelTypographyTokens): CSSProperties {
-  return { ...funnelPageTypographyStyle(tokens), backgroundColor: color(document.settings.background.color) };
+  // qa-standards 3.2: no closing punctuation at the start of a line in Traditional Chinese.
+  return { ...funnelPageTypographyStyle(tokens), backgroundColor: color(document.settings.background.color), lineBreak: "strict" };
 }
 
 /** Shared renderer for the editor canvas and the safe public/preview surface. */
-export function FunnelPageDocumentRenderer({ document, viewport = "desktop", mode = "preview", submission, consultation, commerce, publicSurface = false, selectedNodeId, onSelectNode, inlineEditing, className = "", landmark = true }: FunnelPageDocumentRendererProps) {
+export function FunnelPageDocumentRenderer({ document, viewport = "desktop", mode = "preview", submission, consultation, commerce, publicSurface = false, selectedNodeId, onSelectNode, inlineEditing, className = "", landmark = true, event }: FunnelPageDocumentRendererProps) {
   const parsed = parsePageDocument(document);
+  const rootRef = useRef<HTMLElement>(null);
+  const endRef = useRef<HTMLDivElement>(null);
+  const [initialNow] = useState(() => event?.renderedAt ?? null);
+  useFunnelScrollReveal(rootRef, mode === "preview" && parsed?.settings.scrollReveal && parsed.settings.scrollReveal !== "none" ? parsed.settings.scrollReveal : null);
   if (!parsed) return <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">頁面內容不符合安全格式，暫時無法顯示。</div>;
   const editing = mode === "editor" ? inlineEditing : undefined;
   const tokens = resolveFunnelTypography(parsed.settings, viewport);
@@ -736,13 +949,20 @@ export function FunnelPageDocumentRenderer({ document, viewport = "desktop", mod
   const blur = Math.min(Math.max(parsed.settings.background.blur, 0), 40);
   const Root = landmark ? "main" : "div";
   const scopedCss = funnelScopedCustomCss(parsed.settings.customCss);
-  const root = <Root data-funnel-renderer data-funnel-content data-viewport={viewport} data-render-mode={mode} className={`min-h-full w-full${backgroundImage ? " relative isolate" : ""} ${className}`.trim()} style={pageStyle(parsed, tokens)}>
+  const sticky = parsed.settings.stickyCta && funnelStickyCtaVisibleOn(parsed.settings.stickyCta, viewport) ? parsed.settings.stickyCta : null;
+  // The bar is a fixed overlay, so it only appears on public pages and the harness that renders them, never on the editor canvas or its preview pane.
+  const liveSticky = sticky && publicSurface && mode === "preview" ? sticky : null;
+  const schedule = funnelEventSchedule({ webinar: parsed.flow?.webinar ?? event?.webinar, registrationClosesAt: event?.registrationClosesAt, title: parsed.settings.eventTitle });
+  const root = <Root ref={rootRef as never} data-funnel-renderer data-funnel-content data-viewport={viewport} data-render-mode={mode} className={`min-h-full w-full${backgroundImage ? " relative isolate" : ""} ${FUNNEL_FONT_VARIABLES} ${className}`.trim()} style={pageStyle(parsed, tokens)}>
       {backgroundImage ? <div aria-hidden data-funnel-background className="pointer-events-none absolute inset-0 -z-10 overflow-hidden"><div className="absolute bg-cover bg-center" style={{ backgroundImage, inset: blur ? `-${blur * 2}px` : 0, filter: blur ? `blur(${blur}px)` : undefined }} /></div> : null}
       {parsed.root.map((node) => <NodeRenderer key={node.id} node={node} viewport={viewport} mode={mode} flow={parsed.flow} submission={submission} consultation={consultation} publicSurface={publicSurface} selectedNodeId={selectedNodeId} onSelectNode={onSelectNode} inlineEditing={editing} />)}
+      {sticky && mode === "editor" ? <p data-funnel-sticky-preview className="m-0 border-t border-dashed border-slate-400 bg-slate-50 px-4 py-3 text-center text-sm text-slate-700">行動版固定報名列：「{sticky.label}」會在訪客捲過首屏後固定在畫面底部。</p> : null}
+      <div ref={endRef} aria-hidden data-funnel-content-end />
     </Root>;
-  return <CommerceRenderContext.Provider value={{ binding: parsed.commerce, commerce }}><TypographyContext.Provider value={tokens}>
+  return <CommerceRenderContext.Provider value={{ binding: parsed.commerce, commerce }}><TypographyContext.Provider value={tokens}><FunnelEventContext.Provider value={{ schedule, initialNow }}>
     {scopedCss ? <div data-funnel-content-shell style={FUNNEL_CONTENT_SHELL_STYLE}><style data-funnel-custom-css dangerouslySetInnerHTML={{ __html: scopedCss }} />{root}</div> : root}
-  </TypographyContext.Provider></CommerceRenderContext.Provider>;
+    {liveSticky ? <><FunnelStickyCtaSpacer /><FunnelStickyCtaBar settings={liveSticky} contentRef={rootRef} endRef={endRef} linkColor={tokens.linkColor} /></> : null}
+  </FunnelEventContext.Provider></TypographyContext.Provider></CommerceRenderContext.Provider>;
 }
 
 /**

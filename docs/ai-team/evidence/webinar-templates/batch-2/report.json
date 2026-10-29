@@ -1,0 +1,1572 @@
+{
+  "generatedAt": "2026-10-28T13:25:45.786Z",
+  "widths": [
+    1440,
+    1280,
+    1024,
+    768,
+    390,
+    375,
+    360,
+    320
+  ],
+  "stress": true,
+  "failureCount": 0,
+  "results": [
+    {
+      "template": "webinar-travel-story",
+      "width": 1440,
+      "height": 900,
+      "label": null,
+      "stress": false,
+      "rules": [
+        "L-1",
+        "L-2",
+        "L-3",
+        "L-4",
+        "L-5",
+        "L-6",
+        "L-10",
+        "L-11",
+        "F-3.1"
+      ],
+      "failures": [],
+      "consoleErrors": [],
+      "screenshot": "artifacts\\funnel-template-qa\\batch-2\\webinar-travel-story@1440.png"
+    },
+    {
+      "template": "webinar-travel-story",
+      "width": 1440,
+      "height": 900,
+      "label": null,
+      "stress": true,
+      "rules": [
+        "L-1",
+        "L-2",
+        "L-3",
+        "L-4",
+        "L-5"
+      ],
+      "failures": [],
+      "consoleErrors": [],
+      "screenshot": "artifacts\\funnel-template-qa\\batch-2\\webinar-travel-story@1440-stress.png"
+    },
+    {
+      "template": "webinar-fitness-video",
+      "width": 1440,
+      "height": 900,
+      "label": null,
+      "stress": false,
+      "rules": [
+        "L-1",
+        "L-2",
+        "L-3",
+        "L-4",
+        "L-5",
+        "L-6",
+        "L-10",
+        "L-11",
+        "F-3.1"
+      ],
+      "failures": [],
+      "consoleErrors": [],
+      "screenshot": "artifacts\\funnel-template-qa\\batch-2\\webinar-fitness-video@1440.png"
+    },
+    {
+      "template": "webinar-fitness-video",
+      "width": 1440,
+      "height": 900,
+      "label": null,
+      "stress": true,
+      "rules": [
+        "L-1",
+        "L-2",
+        "L-3",
+        "L-4",
+        "L-5"
+      ],
+      "failures": [],
+      "consoleErrors": [],
+      "screenshot": "artifacts\\funnel-template-qa\\batch-2\\webinar-fitness-video@1440-stress.png"
+    },
+    {
+      "template": "webinar-marketing-summit",
+      "width": 1440,
+      "height": 900,
+      "label": null,
+      "stress": false,
+      "rules": [
+        "L-1",
+        "L-2",
+        "L-3",
+        "L-4",
+        "L-5",
+        "L-6",
+        "L-10",
+        "L-11",
+        "F-3.1"
+      ],
+      "failures": [],
+      "consoleErrors": [],
+      "screenshot": "artifacts\\funnel-template-qa\\batch-2\\webinar-marketing-summit@1440.png"
+    },
+    {
+      "template": "webinar-marketing-summit",
+      "width": 1440,
+      "height": 900,
+      "label": null,
+      "stress": true,
+      "rules": [
+        "L-1",
+        "L-2",
+        "L-3",
+        "L-4",
+        "L-5"
+      ],
+      "failures": [],
+      "consoleErrors": [],
+      "screenshot": "artifacts\\funnel-template-qa\\batch-2\\webinar-marketing-summit@1440-stress.png"
+    },
+    {
+      "template": "webinar-career-value",
+      "width": 1440,
+      "height": 900,
+      "label": null,
+      "stress": false,
+      "rules": [
+        "L-1",
+        "L-2",
+        "L-3",
+        "L-4",
+        "L-5",
+        "L-6",
+        "L-10",
+        "L-11",
+        "F-3.1"
+      ],
+      "failures": [],
+      "consoleErrors": [],
+      "screenshot": "artifacts\\funnel-template-qa\\batch-2\\webinar-career-value@1440.png"
+    },
+    {
+      "template": "webinar-career-value",
+      "width": 1440,
+      "height": 900,
+      "label": null,
+      "stress": true,
+      "rules": [
+        "L-1",
+        "L-2",
+        "L-3",
+        "L-4",
+        "L-5"
+      ],
+      "failures": [],
+      "consoleErrors": [],
+      "screenshot": "artifacts\\funnel-template-qa\\batch-2\\webinar-career-value@1440-stress.png"
+    },
+    {
+      "template": "webinar-language-series",
+      "width": 1440,
+      "height": 900,
+      "label": null,
+      "stress": false,
+      "rules": [
+        "L-1",
+        "L-2",
+        "L-3",
+        "L-4",
+        "L-5",
+        "L-6",
+        "L-10",
+        "L-11",
+        "F-3.1"
+      ],
+      "failures": [],
+      "consoleErrors": [],
+      "screenshot": "artifacts\\funnel-template-qa\\batch-2\\webinar-language-series@1440.png"
+    },
+    {
+      "template": "webinar-language-series",
+      "width": 1440,
+      "height": 900,
+      "label": null,
+      "stress": true,
+      "rules": [
+        "L-1",
+        "L-2",
+        "L-3",
+        "L-4",
+        "L-5"
+      ],
+      "failures": [],
+      "consoleErrors": [],
+      "screenshot": "artifacts\\funnel-template-qa\\batch-2\\webinar-language-series@1440-stress.png"
+    },
+    {
+      "template": "webinar-travel-story",
+      "width": 1280,
+      "height": 900,
+      "label": null,
+      "stress": false,
+      "rules": [
+        "L-1",
+        "L-2",
+        "L-3",
+        "L-4",
+        "L-5",
+        "L-6",
+        "L-10",
+        "L-11",
+        "F-3.1"
+      ],
+      "failures": [],
+      "consoleErrors": [],
+      "screenshot": "artifacts\\funnel-template-qa\\batch-2\\webinar-travel-story@1280.png"
+    },
+    {
+      "template": "webinar-travel-story",
+      "width": 1280,
+      "height": 900,
+      "label": null,
+      "stress": true,
+      "rules": [
+        "L-1",
+        "L-2",
+        "L-3",
+        "L-4",
+        "L-5"
+      ],
+      "failures": [],
+      "consoleErrors": [],
+      "screenshot": "artifacts\\funnel-template-qa\\batch-2\\webinar-travel-story@1280-stress.png"
+    },
+    {
+      "template": "webinar-fitness-video",
+      "width": 1280,
+      "height": 900,
+      "label": null,
+      "stress": false,
+      "rules": [
+        "L-1",
+        "L-2",
+        "L-3",
+        "L-4",
+        "L-5",
+        "L-6",
+        "L-10",
+        "L-11",
+        "F-3.1"
+      ],
+      "failures": [],
+      "consoleErrors": [],
+      "screenshot": "artifacts\\funnel-template-qa\\batch-2\\webinar-fitness-video@1280.png"
+    },
+    {
+      "template": "webinar-fitness-video",
+      "width": 1280,
+      "height": 900,
+      "label": null,
+      "stress": true,
+      "rules": [
+        "L-1",
+        "L-2",
+        "L-3",
+        "L-4",
+        "L-5"
+      ],
+      "failures": [],
+      "consoleErrors": [],
+      "screenshot": "artifacts\\funnel-template-qa\\batch-2\\webinar-fitness-video@1280-stress.png"
+    },
+    {
+      "template": "webinar-marketing-summit",
+      "width": 1280,
+      "height": 900,
+      "label": null,
+      "stress": false,
+      "rules": [
+        "L-1",
+        "L-2",
+        "L-3",
+        "L-4",
+        "L-5",
+        "L-6",
+        "L-10",
+        "L-11",
+        "F-3.1"
+      ],
+      "failures": [],
+      "consoleErrors": [],
+      "screenshot": "artifacts\\funnel-template-qa\\batch-2\\webinar-marketing-summit@1280.png"
+    },
+    {
+      "template": "webinar-marketing-summit",
+      "width": 1280,
+      "height": 900,
+      "label": null,
+      "stress": true,
+      "rules": [
+        "L-1",
+        "L-2",
+        "L-3",
+        "L-4",
+        "L-5"
+      ],
+      "failures": [],
+      "consoleErrors": [],
+      "screenshot": "artifacts\\funnel-template-qa\\batch-2\\webinar-marketing-summit@1280-stress.png"
+    },
+    {
+      "template": "webinar-career-value",
+      "width": 1280,
+      "height": 900,
+      "label": null,
+      "stress": false,
+      "rules": [
+        "L-1",
+        "L-2",
+        "L-3",
+        "L-4",
+        "L-5",
+        "L-6",
+        "L-10",
+        "L-11",
+        "F-3.1"
+      ],
+      "failures": [],
+      "consoleErrors": [],
+      "screenshot": "artifacts\\funnel-template-qa\\batch-2\\webinar-career-value@1280.png"
+    },
+    {
+      "template": "webinar-career-value",
+      "width": 1280,
+      "height": 900,
+      "label": null,
+      "stress": true,
+      "rules": [
+        "L-1",
+        "L-2",
+        "L-3",
+        "L-4",
+        "L-5"
+      ],
+      "failures": [],
+      "consoleErrors": [],
+      "screenshot": "artifacts\\funnel-template-qa\\batch-2\\webinar-career-value@1280-stress.png"
+    },
+    {
+      "template": "webinar-language-series",
+      "width": 1280,
+      "height": 900,
+      "label": null,
+      "stress": false,
+      "rules": [
+        "L-1",
+        "L-2",
+        "L-3",
+        "L-4",
+        "L-5",
+        "L-6",
+        "L-10",
+        "L-11",
+        "F-3.1"
+      ],
+      "failures": [],
+      "consoleErrors": [],
+      "screenshot": "artifacts\\funnel-template-qa\\batch-2\\webinar-language-series@1280.png"
+    },
+    {
+      "template": "webinar-language-series",
+      "width": 1280,
+      "height": 900,
+      "label": null,
+      "stress": true,
+      "rules": [
+        "L-1",
+        "L-2",
+        "L-3",
+        "L-4",
+        "L-5"
+      ],
+      "failures": [],
+      "consoleErrors": [],
+      "screenshot": "artifacts\\funnel-template-qa\\batch-2\\webinar-language-series@1280-stress.png"
+    },
+    {
+      "template": "webinar-travel-story",
+      "width": 1024,
+      "height": 900,
+      "label": null,
+      "stress": false,
+      "rules": [
+        "L-1",
+        "L-2",
+        "L-3",
+        "L-4",
+        "L-5",
+        "L-6",
+        "L-10",
+        "L-11",
+        "F-3.1"
+      ],
+      "failures": [],
+      "consoleErrors": [],
+      "screenshot": "artifacts\\funnel-template-qa\\batch-2\\webinar-travel-story@1024.png"
+    },
+    {
+      "template": "webinar-travel-story",
+      "width": 1024,
+      "height": 900,
+      "label": null,
+      "stress": true,
+      "rules": [
+        "L-1",
+        "L-2",
+        "L-3",
+        "L-4",
+        "L-5"
+      ],
+      "failures": [],
+      "consoleErrors": [],
+      "screenshot": "artifacts\\funnel-template-qa\\batch-2\\webinar-travel-story@1024-stress.png"
+    },
+    {
+      "template": "webinar-fitness-video",
+      "width": 1024,
+      "height": 900,
+      "label": null,
+      "stress": false,
+      "rules": [
+        "L-1",
+        "L-2",
+        "L-3",
+        "L-4",
+        "L-5",
+        "L-6",
+        "L-10",
+        "L-11",
+        "F-3.1"
+      ],
+      "failures": [],
+      "consoleErrors": [],
+      "screenshot": "artifacts\\funnel-template-qa\\batch-2\\webinar-fitness-video@1024.png"
+    },
+    {
+      "template": "webinar-fitness-video",
+      "width": 1024,
+      "height": 900,
+      "label": null,
+      "stress": true,
+      "rules": [
+        "L-1",
+        "L-2",
+        "L-3",
+        "L-4",
+        "L-5"
+      ],
+      "failures": [],
+      "consoleErrors": [],
+      "screenshot": "artifacts\\funnel-template-qa\\batch-2\\webinar-fitness-video@1024-stress.png"
+    },
+    {
+      "template": "webinar-marketing-summit",
+      "width": 1024,
+      "height": 900,
+      "label": null,
+      "stress": false,
+      "rules": [
+        "L-1",
+        "L-2",
+        "L-3",
+        "L-4",
+        "L-5",
+        "L-6",
+        "L-10",
+        "L-11",
+        "F-3.1"
+      ],
+      "failures": [],
+      "consoleErrors": [],
+      "screenshot": "artifacts\\funnel-template-qa\\batch-2\\webinar-marketing-summit@1024.png"
+    },
+    {
+      "template": "webinar-marketing-summit",
+      "width": 1024,
+      "height": 900,
+      "label": null,
+      "stress": true,
+      "rules": [
+        "L-1",
+        "L-2",
+        "L-3",
+        "L-4",
+        "L-5"
+      ],
+      "failures": [],
+      "consoleErrors": [],
+      "screenshot": "artifacts\\funnel-template-qa\\batch-2\\webinar-marketing-summit@1024-stress.png"
+    },
+    {
+      "template": "webinar-career-value",
+      "width": 1024,
+      "height": 900,
+      "label": null,
+      "stress": false,
+      "rules": [
+        "L-1",
+        "L-2",
+        "L-3",
+        "L-4",
+        "L-5",
+        "L-6",
+        "L-10",
+        "L-11",
+        "F-3.1"
+      ],
+      "failures": [],
+      "consoleErrors": [],
+      "screenshot": "artifacts\\funnel-template-qa\\batch-2\\webinar-career-value@1024.png"
+    },
+    {
+      "template": "webinar-career-value",
+      "width": 1024,
+      "height": 900,
+      "label": null,
+      "stress": true,
+      "rules": [
+        "L-1",
+        "L-2",
+        "L-3",
+        "L-4",
+        "L-5"
+      ],
+      "failures": [],
+      "consoleErrors": [],
+      "screenshot": "artifacts\\funnel-template-qa\\batch-2\\webinar-career-value@1024-stress.png"
+    },
+    {
+      "template": "webinar-language-series",
+      "width": 1024,
+      "height": 900,
+      "label": null,
+      "stress": false,
+      "rules": [
+        "L-1",
+        "L-2",
+        "L-3",
+        "L-4",
+        "L-5",
+        "L-6",
+        "L-10",
+        "L-11",
+        "F-3.1"
+      ],
+      "failures": [],
+      "consoleErrors": [],
+      "screenshot": "artifacts\\funnel-template-qa\\batch-2\\webinar-language-series@1024.png"
+    },
+    {
+      "template": "webinar-language-series",
+      "width": 1024,
+      "height": 900,
+      "label": null,
+      "stress": true,
+      "rules": [
+        "L-1",
+        "L-2",
+        "L-3",
+        "L-4",
+        "L-5"
+      ],
+      "failures": [],
+      "consoleErrors": [],
+      "screenshot": "artifacts\\funnel-template-qa\\batch-2\\webinar-language-series@1024-stress.png"
+    },
+    {
+      "template": "webinar-travel-story",
+      "width": 768,
+      "height": 900,
+      "label": null,
+      "stress": false,
+      "rules": [
+        "L-1",
+        "L-2",
+        "L-3",
+        "L-4",
+        "L-5",
+        "L-6",
+        "L-10",
+        "L-11",
+        "F-3.1"
+      ],
+      "failures": [],
+      "consoleErrors": [],
+      "screenshot": "artifacts\\funnel-template-qa\\batch-2\\webinar-travel-story@768.png"
+    },
+    {
+      "template": "webinar-travel-story",
+      "width": 768,
+      "height": 900,
+      "label": null,
+      "stress": true,
+      "rules": [
+        "L-1",
+        "L-2",
+        "L-3",
+        "L-4",
+        "L-5"
+      ],
+      "failures": [],
+      "consoleErrors": [],
+      "screenshot": "artifacts\\funnel-template-qa\\batch-2\\webinar-travel-story@768-stress.png"
+    },
+    {
+      "template": "webinar-fitness-video",
+      "width": 768,
+      "height": 900,
+      "label": null,
+      "stress": false,
+      "rules": [
+        "L-1",
+        "L-2",
+        "L-3",
+        "L-4",
+        "L-5",
+        "L-6",
+        "L-10",
+        "L-11",
+        "F-3.1"
+      ],
+      "failures": [],
+      "consoleErrors": [],
+      "screenshot": "artifacts\\funnel-template-qa\\batch-2\\webinar-fitness-video@768.png"
+    },
+    {
+      "template": "webinar-fitness-video",
+      "width": 768,
+      "height": 900,
+      "label": null,
+      "stress": true,
+      "rules": [
+        "L-1",
+        "L-2",
+        "L-3",
+        "L-4",
+        "L-5"
+      ],
+      "failures": [],
+      "consoleErrors": [],
+      "screenshot": "artifacts\\funnel-template-qa\\batch-2\\webinar-fitness-video@768-stress.png"
+    },
+    {
+      "template": "webinar-marketing-summit",
+      "width": 768,
+      "height": 900,
+      "label": null,
+      "stress": false,
+      "rules": [
+        "L-1",
+        "L-2",
+        "L-3",
+        "L-4",
+        "L-5",
+        "L-6",
+        "L-10",
+        "L-11",
+        "F-3.1"
+      ],
+      "failures": [],
+      "consoleErrors": [],
+      "screenshot": "artifacts\\funnel-template-qa\\batch-2\\webinar-marketing-summit@768.png"
+    },
+    {
+      "template": "webinar-marketing-summit",
+      "width": 768,
+      "height": 900,
+      "label": null,
+      "stress": true,
+      "rules": [
+        "L-1",
+        "L-2",
+        "L-3",
+        "L-4",
+        "L-5"
+      ],
+      "failures": [],
+      "consoleErrors": [],
+      "screenshot": "artifacts\\funnel-template-qa\\batch-2\\webinar-marketing-summit@768-stress.png"
+    },
+    {
+      "template": "webinar-career-value",
+      "width": 768,
+      "height": 900,
+      "label": null,
+      "stress": false,
+      "rules": [
+        "L-1",
+        "L-2",
+        "L-3",
+        "L-4",
+        "L-5",
+        "L-6",
+        "L-10",
+        "L-11",
+        "F-3.1"
+      ],
+      "failures": [],
+      "consoleErrors": [],
+      "screenshot": "artifacts\\funnel-template-qa\\batch-2\\webinar-career-value@768.png"
+    },
+    {
+      "template": "webinar-career-value",
+      "width": 768,
+      "height": 900,
+      "label": null,
+      "stress": true,
+      "rules": [
+        "L-1",
+        "L-2",
+        "L-3",
+        "L-4",
+        "L-5"
+      ],
+      "failures": [],
+      "consoleErrors": [],
+      "screenshot": "artifacts\\funnel-template-qa\\batch-2\\webinar-career-value@768-stress.png"
+    },
+    {
+      "template": "webinar-language-series",
+      "width": 768,
+      "height": 900,
+      "label": null,
+      "stress": false,
+      "rules": [
+        "L-1",
+        "L-2",
+        "L-3",
+        "L-4",
+        "L-5",
+        "L-6",
+        "L-10",
+        "L-11",
+        "F-3.1"
+      ],
+      "failures": [],
+      "consoleErrors": [],
+      "screenshot": "artifacts\\funnel-template-qa\\batch-2\\webinar-language-series@768.png"
+    },
+    {
+      "template": "webinar-language-series",
+      "width": 768,
+      "height": 900,
+      "label": null,
+      "stress": true,
+      "rules": [
+        "L-1",
+        "L-2",
+        "L-3",
+        "L-4",
+        "L-5"
+      ],
+      "failures": [],
+      "consoleErrors": [],
+      "screenshot": "artifacts\\funnel-template-qa\\batch-2\\webinar-language-series@768-stress.png"
+    },
+    {
+      "template": "webinar-travel-story",
+      "width": 390,
+      "height": 844,
+      "label": null,
+      "stress": false,
+      "rules": [
+        "L-1",
+        "L-2",
+        "L-3",
+        "L-4",
+        "L-5",
+        "L-6",
+        "L-10",
+        "L-11",
+        "F-3.1",
+        "L-7"
+      ],
+      "failures": [],
+      "consoleErrors": [],
+      "screenshot": "artifacts\\funnel-template-qa\\batch-2\\webinar-travel-story@390.png"
+    },
+    {
+      "template": "webinar-travel-story",
+      "width": 390,
+      "height": 844,
+      "label": null,
+      "stress": true,
+      "rules": [
+        "L-1",
+        "L-2",
+        "L-3",
+        "L-4",
+        "L-5"
+      ],
+      "failures": [],
+      "consoleErrors": [],
+      "screenshot": "artifacts\\funnel-template-qa\\batch-2\\webinar-travel-story@390-stress.png"
+    },
+    {
+      "template": "webinar-fitness-video",
+      "width": 390,
+      "height": 844,
+      "label": null,
+      "stress": false,
+      "rules": [
+        "L-1",
+        "L-2",
+        "L-3",
+        "L-4",
+        "L-5",
+        "L-6",
+        "L-10",
+        "L-11",
+        "F-3.1",
+        "L-7"
+      ],
+      "failures": [],
+      "consoleErrors": [],
+      "screenshot": "artifacts\\funnel-template-qa\\batch-2\\webinar-fitness-video@390.png"
+    },
+    {
+      "template": "webinar-fitness-video",
+      "width": 390,
+      "height": 844,
+      "label": null,
+      "stress": true,
+      "rules": [
+        "L-1",
+        "L-2",
+        "L-3",
+        "L-4",
+        "L-5"
+      ],
+      "failures": [],
+      "consoleErrors": [],
+      "screenshot": "artifacts\\funnel-template-qa\\batch-2\\webinar-fitness-video@390-stress.png"
+    },
+    {
+      "template": "webinar-marketing-summit",
+      "width": 390,
+      "height": 844,
+      "label": null,
+      "stress": false,
+      "rules": [
+        "L-1",
+        "L-2",
+        "L-3",
+        "L-4",
+        "L-5",
+        "L-6",
+        "L-10",
+        "L-11",
+        "F-3.1",
+        "L-7"
+      ],
+      "failures": [],
+      "consoleErrors": [],
+      "screenshot": "artifacts\\funnel-template-qa\\batch-2\\webinar-marketing-summit@390.png"
+    },
+    {
+      "template": "webinar-marketing-summit",
+      "width": 390,
+      "height": 844,
+      "label": null,
+      "stress": true,
+      "rules": [
+        "L-1",
+        "L-2",
+        "L-3",
+        "L-4",
+        "L-5"
+      ],
+      "failures": [],
+      "consoleErrors": [],
+      "screenshot": "artifacts\\funnel-template-qa\\batch-2\\webinar-marketing-summit@390-stress.png"
+    },
+    {
+      "template": "webinar-career-value",
+      "width": 390,
+      "height": 844,
+      "label": null,
+      "stress": false,
+      "rules": [
+        "L-1",
+        "L-2",
+        "L-3",
+        "L-4",
+        "L-5",
+        "L-6",
+        "L-10",
+        "L-11",
+        "F-3.1",
+        "L-7"
+      ],
+      "failures": [],
+      "consoleErrors": [],
+      "screenshot": "artifacts\\funnel-template-qa\\batch-2\\webinar-career-value@390.png"
+    },
+    {
+      "template": "webinar-career-value",
+      "width": 390,
+      "height": 844,
+      "label": null,
+      "stress": true,
+      "rules": [
+        "L-1",
+        "L-2",
+        "L-3",
+        "L-4",
+        "L-5"
+      ],
+      "failures": [],
+      "consoleErrors": [],
+      "screenshot": "artifacts\\funnel-template-qa\\batch-2\\webinar-career-value@390-stress.png"
+    },
+    {
+      "template": "webinar-language-series",
+      "width": 390,
+      "height": 844,
+      "label": null,
+      "stress": false,
+      "rules": [
+        "L-1",
+        "L-2",
+        "L-3",
+        "L-4",
+        "L-5",
+        "L-6",
+        "L-10",
+        "L-11",
+        "F-3.1",
+        "L-7"
+      ],
+      "failures": [],
+      "consoleErrors": [],
+      "screenshot": "artifacts\\funnel-template-qa\\batch-2\\webinar-language-series@390.png"
+    },
+    {
+      "template": "webinar-language-series",
+      "width": 390,
+      "height": 844,
+      "label": null,
+      "stress": true,
+      "rules": [
+        "L-1",
+        "L-2",
+        "L-3",
+        "L-4",
+        "L-5"
+      ],
+      "failures": [],
+      "consoleErrors": [],
+      "screenshot": "artifacts\\funnel-template-qa\\batch-2\\webinar-language-series@390-stress.png"
+    },
+    {
+      "template": "webinar-travel-story",
+      "width": 375,
+      "height": 844,
+      "label": null,
+      "stress": false,
+      "rules": [
+        "L-1",
+        "L-2",
+        "L-3",
+        "L-4",
+        "L-5",
+        "L-6",
+        "L-10",
+        "L-11",
+        "F-3.1"
+      ],
+      "failures": [],
+      "consoleErrors": [],
+      "screenshot": "artifacts\\funnel-template-qa\\batch-2\\webinar-travel-story@375.png"
+    },
+    {
+      "template": "webinar-travel-story",
+      "width": 375,
+      "height": 844,
+      "label": null,
+      "stress": true,
+      "rules": [
+        "L-1",
+        "L-2",
+        "L-3",
+        "L-4",
+        "L-5"
+      ],
+      "failures": [],
+      "consoleErrors": [],
+      "screenshot": "artifacts\\funnel-template-qa\\batch-2\\webinar-travel-story@375-stress.png"
+    },
+    {
+      "template": "webinar-fitness-video",
+      "width": 375,
+      "height": 844,
+      "label": null,
+      "stress": false,
+      "rules": [
+        "L-1",
+        "L-2",
+        "L-3",
+        "L-4",
+        "L-5",
+        "L-6",
+        "L-10",
+        "L-11",
+        "F-3.1"
+      ],
+      "failures": [],
+      "consoleErrors": [],
+      "screenshot": "artifacts\\funnel-template-qa\\batch-2\\webinar-fitness-video@375.png"
+    },
+    {
+      "template": "webinar-fitness-video",
+      "width": 375,
+      "height": 844,
+      "label": null,
+      "stress": true,
+      "rules": [
+        "L-1",
+        "L-2",
+        "L-3",
+        "L-4",
+        "L-5"
+      ],
+      "failures": [],
+      "consoleErrors": [],
+      "screenshot": "artifacts\\funnel-template-qa\\batch-2\\webinar-fitness-video@375-stress.png"
+    },
+    {
+      "template": "webinar-marketing-summit",
+      "width": 375,
+      "height": 844,
+      "label": null,
+      "stress": false,
+      "rules": [
+        "L-1",
+        "L-2",
+        "L-3",
+        "L-4",
+        "L-5",
+        "L-6",
+        "L-10",
+        "L-11",
+        "F-3.1"
+      ],
+      "failures": [],
+      "consoleErrors": [],
+      "screenshot": "artifacts\\funnel-template-qa\\batch-2\\webinar-marketing-summit@375.png"
+    },
+    {
+      "template": "webinar-marketing-summit",
+      "width": 375,
+      "height": 844,
+      "label": null,
+      "stress": true,
+      "rules": [
+        "L-1",
+        "L-2",
+        "L-3",
+        "L-4",
+        "L-5"
+      ],
+      "failures": [],
+      "consoleErrors": [],
+      "screenshot": "artifacts\\funnel-template-qa\\batch-2\\webinar-marketing-summit@375-stress.png"
+    },
+    {
+      "template": "webinar-career-value",
+      "width": 375,
+      "height": 844,
+      "label": null,
+      "stress": false,
+      "rules": [
+        "L-1",
+        "L-2",
+        "L-3",
+        "L-4",
+        "L-5",
+        "L-6",
+        "L-10",
+        "L-11",
+        "F-3.1"
+      ],
+      "failures": [],
+      "consoleErrors": [],
+      "screenshot": "artifacts\\funnel-template-qa\\batch-2\\webinar-career-value@375.png"
+    },
+    {
+      "template": "webinar-career-value",
+      "width": 375,
+      "height": 844,
+      "label": null,
+      "stress": true,
+      "rules": [
+        "L-1",
+        "L-2",
+        "L-3",
+        "L-4",
+        "L-5"
+      ],
+      "failures": [],
+      "consoleErrors": [],
+      "screenshot": "artifacts\\funnel-template-qa\\batch-2\\webinar-career-value@375-stress.png"
+    },
+    {
+      "template": "webinar-language-series",
+      "width": 375,
+      "height": 844,
+      "label": null,
+      "stress": false,
+      "rules": [
+        "L-1",
+        "L-2",
+        "L-3",
+        "L-4",
+        "L-5",
+        "L-6",
+        "L-10",
+        "L-11",
+        "F-3.1"
+      ],
+      "failures": [],
+      "consoleErrors": [],
+      "screenshot": "artifacts\\funnel-template-qa\\batch-2\\webinar-language-series@375.png"
+    },
+    {
+      "template": "webinar-language-series",
+      "width": 375,
+      "height": 844,
+      "label": null,
+      "stress": true,
+      "rules": [
+        "L-1",
+        "L-2",
+        "L-3",
+        "L-4",
+        "L-5"
+      ],
+      "failures": [],
+      "consoleErrors": [],
+      "screenshot": "artifacts\\funnel-template-qa\\batch-2\\webinar-language-series@375-stress.png"
+    },
+    {
+      "template": "webinar-travel-story",
+      "width": 360,
+      "height": 844,
+      "label": null,
+      "stress": false,
+      "rules": [
+        "L-1",
+        "L-2",
+        "L-3",
+        "L-4",
+        "L-5",
+        "L-6",
+        "L-10",
+        "L-11",
+        "F-3.1"
+      ],
+      "failures": [],
+      "consoleErrors": [],
+      "screenshot": "artifacts\\funnel-template-qa\\batch-2\\webinar-travel-story@360.png"
+    },
+    {
+      "template": "webinar-travel-story",
+      "width": 360,
+      "height": 844,
+      "label": null,
+      "stress": true,
+      "rules": [
+        "L-1",
+        "L-2",
+        "L-3",
+        "L-4",
+        "L-5"
+      ],
+      "failures": [],
+      "consoleErrors": [],
+      "screenshot": "artifacts\\funnel-template-qa\\batch-2\\webinar-travel-story@360-stress.png"
+    },
+    {
+      "template": "webinar-fitness-video",
+      "width": 360,
+      "height": 844,
+      "label": null,
+      "stress": false,
+      "rules": [
+        "L-1",
+        "L-2",
+        "L-3",
+        "L-4",
+        "L-5",
+        "L-6",
+        "L-10",
+        "L-11",
+        "F-3.1"
+      ],
+      "failures": [],
+      "consoleErrors": [],
+      "screenshot": "artifacts\\funnel-template-qa\\batch-2\\webinar-fitness-video@360.png"
+    },
+    {
+      "template": "webinar-fitness-video",
+      "width": 360,
+      "height": 844,
+      "label": null,
+      "stress": true,
+      "rules": [
+        "L-1",
+        "L-2",
+        "L-3",
+        "L-4",
+        "L-5"
+      ],
+      "failures": [],
+      "consoleErrors": [],
+      "screenshot": "artifacts\\funnel-template-qa\\batch-2\\webinar-fitness-video@360-stress.png"
+    },
+    {
+      "template": "webinar-marketing-summit",
+      "width": 360,
+      "height": 844,
+      "label": null,
+      "stress": false,
+      "rules": [
+        "L-1",
+        "L-2",
+        "L-3",
+        "L-4",
+        "L-5",
+        "L-6",
+        "L-10",
+        "L-11",
+        "F-3.1"
+      ],
+      "failures": [],
+      "consoleErrors": [],
+      "screenshot": "artifacts\\funnel-template-qa\\batch-2\\webinar-marketing-summit@360.png"
+    },
+    {
+      "template": "webinar-marketing-summit",
+      "width": 360,
+      "height": 844,
+      "label": null,
+      "stress": true,
+      "rules": [
+        "L-1",
+        "L-2",
+        "L-3",
+        "L-4",
+        "L-5"
+      ],
+      "failures": [],
+      "consoleErrors": [],
+      "screenshot": "artifacts\\funnel-template-qa\\batch-2\\webinar-marketing-summit@360-stress.png"
+    },
+    {
+      "template": "webinar-career-value",
+      "width": 360,
+      "height": 844,
+      "label": null,
+      "stress": false,
+      "rules": [
+        "L-1",
+        "L-2",
+        "L-3",
+        "L-4",
+        "L-5",
+        "L-6",
+        "L-10",
+        "L-11",
+        "F-3.1"
+      ],
+      "failures": [],
+      "consoleErrors": [],
+      "screenshot": "artifacts\\funnel-template-qa\\batch-2\\webinar-career-value@360.png"
+    },
+    {
+      "template": "webinar-career-value",
+      "width": 360,
+      "height": 844,
+      "label": null,
+      "stress": true,
+      "rules": [
+        "L-1",
+        "L-2",
+        "L-3",
+        "L-4",
+        "L-5"
+      ],
+      "failures": [],
+      "consoleErrors": [],
+      "screenshot": "artifacts\\funnel-template-qa\\batch-2\\webinar-career-value@360-stress.png"
+    },
+    {
+      "template": "webinar-language-series",
+      "width": 360,
+      "height": 844,
+      "label": null,
+      "stress": false,
+      "rules": [
+        "L-1",
+        "L-2",
+        "L-3",
+        "L-4",
+        "L-5",
+        "L-6",
+        "L-10",
+        "L-11",
+        "F-3.1"
+      ],
+      "failures": [],
+      "consoleErrors": [],
+      "screenshot": "artifacts\\funnel-template-qa\\batch-2\\webinar-language-series@360.png"
+    },
+    {
+      "template": "webinar-language-series",
+      "width": 360,
+      "height": 844,
+      "label": null,
+      "stress": true,
+      "rules": [
+        "L-1",
+        "L-2",
+        "L-3",
+        "L-4",
+        "L-5"
+      ],
+      "failures": [],
+      "consoleErrors": [],
+      "screenshot": "artifacts\\funnel-template-qa\\batch-2\\webinar-language-series@360-stress.png"
+    },
+    {
+      "template": "webinar-travel-story",
+      "width": 320,
+      "height": 844,
+      "label": null,
+      "stress": false,
+      "rules": [
+        "L-1",
+        "L-3",
+        "L-5",
+        "L-11"
+      ],
+      "failures": [],
+      "consoleErrors": [],
+      "screenshot": "artifacts\\funnel-template-qa\\batch-2\\webinar-travel-story@320.png"
+    },
+    {
+      "template": "webinar-travel-story",
+      "width": 320,
+      "height": 844,
+      "label": null,
+      "stress": true,
+      "rules": [
+        "L-1",
+        "L-3",
+        "L-5"
+      ],
+      "failures": [],
+      "consoleErrors": [],
+      "screenshot": "artifacts\\funnel-template-qa\\batch-2\\webinar-travel-story@320-stress.png"
+    },
+    {
+      "template": "webinar-fitness-video",
+      "width": 320,
+      "height": 844,
+      "label": null,
+      "stress": false,
+      "rules": [
+        "L-1",
+        "L-3",
+        "L-5",
+        "L-11"
+      ],
+      "failures": [],
+      "consoleErrors": [],
+      "screenshot": "artifacts\\funnel-template-qa\\batch-2\\webinar-fitness-video@320.png"
+    },
+    {
+      "template": "webinar-fitness-video",
+      "width": 320,
+      "height": 844,
+      "label": null,
+      "stress": true,
+      "rules": [
+        "L-1",
+        "L-3",
+        "L-5"
+      ],
+      "failures": [],
+      "consoleErrors": [],
+      "screenshot": "artifacts\\funnel-template-qa\\batch-2\\webinar-fitness-video@320-stress.png"
+    },
+    {
+      "template": "webinar-marketing-summit",
+      "width": 320,
+      "height": 844,
+      "label": null,
+      "stress": false,
+      "rules": [
+        "L-1",
+        "L-3",
+        "L-5",
+        "L-11"
+      ],
+      "failures": [],
+      "consoleErrors": [],
+      "screenshot": "artifacts\\funnel-template-qa\\batch-2\\webinar-marketing-summit@320.png"
+    },
+    {
+      "template": "webinar-marketing-summit",
+      "width": 320,
+      "height": 844,
+      "label": null,
+      "stress": true,
+      "rules": [
+        "L-1",
+        "L-3",
+        "L-5"
+      ],
+      "failures": [],
+      "consoleErrors": [],
+      "screenshot": "artifacts\\funnel-template-qa\\batch-2\\webinar-marketing-summit@320-stress.png"
+    },
+    {
+      "template": "webinar-career-value",
+      "width": 320,
+      "height": 844,
+      "label": null,
+      "stress": false,
+      "rules": [
+        "L-1",
+        "L-3",
+        "L-5",
+        "L-11"
+      ],
+      "failures": [],
+      "consoleErrors": [],
+      "screenshot": "artifacts\\funnel-template-qa\\batch-2\\webinar-career-value@320.png"
+    },
+    {
+      "template": "webinar-career-value",
+      "width": 320,
+      "height": 844,
+      "label": null,
+      "stress": true,
+      "rules": [
+        "L-1",
+        "L-3",
+        "L-5"
+      ],
+      "failures": [],
+      "consoleErrors": [],
+      "screenshot": "artifacts\\funnel-template-qa\\batch-2\\webinar-career-value@320-stress.png"
+    },
+    {
+      "template": "webinar-language-series",
+      "width": 320,
+      "height": 844,
+      "label": null,
+      "stress": false,
+      "rules": [
+        "L-1",
+        "L-3",
+        "L-5",
+        "L-11"
+      ],
+      "failures": [],
+      "consoleErrors": [],
+      "screenshot": "artifacts\\funnel-template-qa\\batch-2\\webinar-language-series@320.png"
+    },
+    {
+      "template": "webinar-language-series",
+      "width": 320,
+      "height": 844,
+      "label": null,
+      "stress": true,
+      "rules": [
+        "L-1",
+        "L-3",
+        "L-5"
+      ],
+      "failures": [],
+      "consoleErrors": [],
+      "screenshot": "artifacts\\funnel-template-qa\\batch-2\\webinar-language-series@320-stress.png"
+    },
+    {
+      "template": "webinar-travel-story",
+      "width": 375,
+      "height": 667,
+      "label": "375x667",
+      "stress": false,
+      "rules": [
+        "L-7"
+      ],
+      "failures": [],
+      "consoleErrors": [],
+      "screenshot": null
+    },
+    {
+      "template": "webinar-fitness-video",
+      "width": 375,
+      "height": 667,
+      "label": "375x667",
+      "stress": false,
+      "rules": [
+        "L-7"
+      ],
+      "failures": [],
+      "consoleErrors": [],
+      "screenshot": null
+    },
+    {
+      "template": "webinar-marketing-summit",
+      "width": 375,
+      "height": 667,
+      "label": "375x667",
+      "stress": false,
+      "rules": [
+        "L-7"
+      ],
+      "failures": [],
+      "consoleErrors": [],
+      "screenshot": null
+    },
+    {
+      "template": "webinar-career-value",
+      "width": 375,
+      "height": 667,
+      "label": "375x667",
+      "stress": false,
+      "rules": [
+        "L-7"
+      ],
+      "failures": [],
+      "consoleErrors": [],
+      "screenshot": null
+    },
+    {
+      "template": "webinar-language-series",
+      "width": 375,
+      "height": 667,
+      "label": "375x667",
+      "stress": false,
+      "rules": [
+        "L-7"
+      ],
+      "failures": [],
+      "consoleErrors": [],
+      "screenshot": null
+    }
+  ]
+}

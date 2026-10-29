@@ -13,7 +13,8 @@ async function requestedTemplate(raw: string | string[] | undefined): Promise<Fu
   if (!id) return "missing";
   if (kind === "platform") {
     const item = getFunnelTemplateGalleryItem(id);
-    return item ? { kind, id: item.id, name: item.name, goal: item.goal } : "missing";
+    // A retired or hidden template stays resolvable for saved funnels, but an old bookmark cannot start a new page with it.
+    return item && !item.retired && !item.hidden ? { kind, id: item.id, name: item.name, goal: item.goal } : "missing";
   }
   if (kind === "mine") {
     const name = await getLandingPageTemplateName(id);

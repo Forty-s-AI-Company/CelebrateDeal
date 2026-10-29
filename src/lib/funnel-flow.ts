@@ -121,9 +121,9 @@ function inactiveStep(): FunnelStep {
 
 function defaultSteps(goal: FunnelGoal): FunnelStep[] {
   if (goal === "webinar") return [
-    makeStep("webinar_registration", "Webinar 報名頁", "registration", "webinar_registration_page", { source: "template", templateId: "webinar-registration" }),
-    makeStep("webinar_thank_you", "Webinar 感謝頁", "thank-you", "webinar_thank_you_page", { source: "template", templateId: "webinar-thank-you" }),
-    makeStep("webinar_broadcast", "Webinar 播放頁", "broadcast", "webinar_broadcast_page", { source: "template", templateId: "webinar-broadcast" }),
+    makeStep("webinar_registration", "Webinar 報名頁", "registration", "webinar_registration_page", { source: "template", templateId: "webinar-saas-split" }),
+    makeStep("webinar_thank_you", "Webinar 感謝頁", "thank-you", "webinar_thank_you_page", { source: "template", templateId: "webinar-thank-you-v2" }),
+    makeStep("webinar_broadcast", "Webinar 播放頁", "broadcast", "webinar_broadcast_page", { source: "template", templateId: "webinar-broadcast-v2" }),
     inactiveStep(),
   ];
   if (goal === "audience") return [

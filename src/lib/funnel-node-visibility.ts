@@ -1,7 +1,7 @@
 import type { FunnelNode } from "@/lib/funnel-page-document";
 import type { FunnelPageCommand } from "@/lib/funnel-page-history";
 
-export type FunnelDevice = "desktop" | "mobile";
+export type FunnelDevice = "desktop" | "tablet" | "mobile";
 
 /**
  * Device visibility (EDT-RESP-001) on the existing document model: a
@@ -9,11 +9,13 @@ export type FunnelDevice = "desktop" | "mobile";
  * exactly as the shared renderer resolves it. No persisted format change.
  */
 export function funnelNodeVisibleOn(node: Pick<FunnelNode, "visible" | "overrides">, device: FunnelDevice): boolean {
+  // Tablet inherits the desktop override (it meant "640px and up" before the tablet breakpoint).
+  if (device === "tablet") return node.overrides.tablet?.visible ?? node.overrides.desktop?.visible ?? node.visible;
   return node.overrides[device]?.visible ?? node.visible;
 }
 
 export function funnelNodeVisibility(node: Pick<FunnelNode, "visible" | "overrides">): Record<FunnelDevice, boolean> {
-  return { desktop: funnelNodeVisibleOn(node, "desktop"), mobile: funnelNodeVisibleOn(node, "mobile") };
+  return { desktop: funnelNodeVisibleOn(node, "desktop"), tablet: funnelNodeVisibleOn(node, "tablet"), mobile: funnelNodeVisibleOn(node, "mobile") };
 }
 
 /** One toggle → one undoable update that only touches that device's override. */

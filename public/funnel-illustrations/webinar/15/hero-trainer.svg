@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 720" width="960" height="720" role="img" aria-label="訓練師蹲下與狗狗擊掌互動的插畫">
+<rect width="960" height="720" rx="24" fill="#f2f7f4"/>
+<circle cx="740" cy="170" r="120" fill="#e3efe8"/>
+<path d="M0 560h960v160H0z" fill="#dcebe2"/>
+<g opacity="0.35" transform="translate(150 150) rotate(-18)"><g fill="#b45f1b"><ellipse cx="0" cy="8" rx="13" ry="11"/><circle cx="-14" cy="-8" r="5.5"/><circle cx="-5" cy="-15" r="5.5"/><circle cx="6" cy="-15" r="5.5"/><circle cx="15" cy="-8" r="5.5"/></g></g>
+<g opacity="0.25" transform="translate(830 430) rotate(20) scale(0.8)"><g fill="#b45f1b"><ellipse cx="0" cy="8" rx="13" ry="11"/><circle cx="-14" cy="-8" r="5.5"/><circle cx="-5" cy="-15" r="5.5"/><circle cx="6" cy="-15" r="5.5"/><circle cx="15" cy="-8" r="5.5"/></g></g>
+<g>
+<path d="M300 560c-10-110 20-200 90-240 40-22 90-20 120 10l-20 230z" fill="#1f7a5a"/>
+<circle cx="430" cy="240" r="58" fill="#c98f6b"/>
+<path d="M372 236c2-46 30-74 64-74 36 0 60 30 54 66-34-12-74-10-118 8z" fill="#183a2e"/>
+<path d="M500 360c50 0 90 20 120 50l-26 28c-26-22-60-34-100-36z" fill="#1f7a5a"/>
+<circle cx="622" cy="420" r="20" fill="#c98f6b"/>
+<path d="M320 560h200l30 60H300z" fill="#183a2e"/>
+<rect x="470" y="420" width="70" height="40" rx="8" fill="#b45f1b"/>
+</g>
+<g>
+<path d="M640 600c-10-80 20-150 80-170l60 10c40 30 50 90 40 160z" fill="#e0b48a"/>
+<circle cx="700" cy="400" r="58" fill="#e0b48a"/>
+<path d="M650 360c-30 10-40 50-30 80l30-20zM740 350c30 0 46 30 44 60l-34-14z" fill="#8a5a3a"/>
+<ellipse cx="672" cy="430" rx="16" ry="12" fill="#3d2a1e"/>
+<path d="M640 438c-10 0-10 12 0 14l14-2z" fill="#3d2a1e"/>
+<path d="M650 480c-20-10-30-30-24-50l30 30z" fill="#e0b48a"/>
+<path d="M820 560c40-10 60-40 70-70" fill="none" stroke="#e0b48a" stroke-width="18" stroke-linecap="round"/>
+<rect x="660" y="590" width="34" height="40" rx="12" fill="#c99a70"/><rect x="760" y="590" width="34" height="40" rx="12" fill="#c99a70"/>
+<path d="M660 470h80" stroke="#1f7a5a" stroke-width="10" stroke-linecap="round"/>
+</g>
+<g fill="none" stroke="#b45f1b" stroke-width="5" stroke-linecap="round"><path d="M600 360l10-24M630 370l22-14M590 340l-6-24"/></g>
+</svg>

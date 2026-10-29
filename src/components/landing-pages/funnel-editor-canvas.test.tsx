@@ -271,8 +271,8 @@ describe("device visibility", () => {
     const { container, documents } = await setup();
     await click(canvasNode(container, "text_a"));
     const toggles = Array.from(container.querySelectorAll<HTMLLabelElement>("[data-funnel-device-visibility] label"));
-    expect(toggles.map((label) => label.textContent)).toEqual(["桌機顯示", "手機顯示"]);
-    const mobile = toggles[1]!.querySelector("input")!;
+    expect(toggles.map((label) => label.textContent)).toEqual(["桌機顯示", "平板顯示", "手機顯示"]);
+    const mobile = toggles[2]!.querySelector("input")!;
     expect(mobile.checked).toBe(true);
     await click(mobile);
     expect(documents).toHaveLength(1);

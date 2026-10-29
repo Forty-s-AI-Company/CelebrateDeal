@@ -57,6 +57,11 @@ export const FUNNEL_TEMPLATE_CATALOG_TAGS: Readonly<Record<string, CatalogTags>>
   "custom-terms": { purposes: ["policy"], styles: ["minimal"] },
   "custom-brand-info": { purposes: ["brand"], styles: ["professional"] },
   "custom-luxury-course": { purposes: ["brand"], styles: ["luxe"] },
+  // 功能頁 v2（取代上面的舊 id）。
+  "webinar-thank-you-v2": { purposes: ["webinar"], styles: ["minimal"] },
+  "webinar-broadcast-v2": { purposes: ["webinar"], styles: ["professional"] },
+  "custom-privacy-v2": { purposes: ["policy"], styles: ["minimal"] },
+  "custom-terms-v2": { purposes: ["policy"], styles: ["minimal"] },
 };
 
 const SALES_STEPS: ReadonlySet<FunnelStepType> = new Set(["sales_page", "order_form", "upsell", "downsell", "thank_you_page"]);
@@ -91,7 +96,7 @@ export type FunnelTemplateCatalogEntry = {
 };
 
 export function funnelTemplateCatalogEntry(item: FunnelTemplateGalleryItem): FunnelTemplateCatalogEntry {
-  const tags = Object.hasOwn(FUNNEL_TEMPLATE_CATALOG_TAGS, item.id) ? FUNNEL_TEMPLATE_CATALOG_TAGS[item.id] : undefined;
+  const tags = item.tags ?? (Object.hasOwn(FUNNEL_TEMPLATE_CATALOG_TAGS, item.id) ? FUNNEL_TEMPLATE_CATALOG_TAGS[item.id] : undefined);
   const purposes = tags?.purposes.length ? [...tags.purposes] : deriveFunnelTemplatePurposes(item);
   const styles = tags?.styles.length ? [...tags.styles] : [DEFAULT_FUNNEL_TEMPLATE_STYLE];
   return {
@@ -102,7 +107,8 @@ export function funnelTemplateCatalogEntry(item: FunnelTemplateGalleryItem): Fun
 
 /** Every platform template, in gallery order, with its library labels. */
 export function listFunnelTemplateCatalog(gallery: readonly FunnelTemplateGalleryItem[] = FUNNEL_TEMPLATE_GALLERY): FunnelTemplateCatalogEntry[] {
-  return gallery.map(funnelTemplateCatalogEntry);
+  // Retired, hidden and step-only templates stay resolvable by id but are not browsable in the library.
+  return gallery.filter((item) => !item.retired && !item.hidden && !item.libraryHidden).map(funnelTemplateCatalogEntry);
 }
 
 export type FunnelTemplateCatalogFilter = { purpose?: FunnelTemplatePurpose | null; style?: FunnelTemplateStyle | null };

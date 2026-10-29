@@ -567,3 +567,25 @@ Current source inventory: 145 models and 99 forward migrations. Previous checkpo
   - 平台範本不得含自訂 JS 或頁面自訂 CSS（任何商家都能套用，包含 Email 未驗證者）；`funnel-template-gallery-custom-code.test.ts` 逐一檢查 `FUNNEL_TEMPLATE_GALLERY`。
   - 範本庫的顯示（不影響套用與公開頁）：頁面自訂 CSS 以全頁共用的 `[data-funnel-content]` 為範圍，所以縮圖（伺服器列表與 `FunnelTemplateThumbnail`）一律以 `templateDisplayDocument` 拿掉頁面自訂 CSS 與自訂程式碼的 JS；預覽只保留被預覽那一份的頁面 CSS，同樣拿掉 JS（範本庫從不執行商家 JS，含 JS 時預覽備註會說明）。#499 的公開頁與編輯器渲染行為不變。
 - Migration 改名：原 `20261027120000_landing_page_templates` 改為 `20261028090000_landing_page_templates`（內容與 checksum 不變），排在 master 已套用到 staging 的 `20261027150000_tracking_setting_browser_tags` 之後。舊名稱從未套用到 staging／Production；本機 disposable DB 若記錄了舊名稱，更新 `_prisma_migrations.migration_name` 或重建即可。
+
+## 2026-10-28 Webinar 範本共用基礎（平板斷點、活動時間、C-01～C-18；無 migration）
+
+- 沒有新增 model、欄位或 migration（模型與 forward migration 數不變）。變更只在 `LandingPage.draftContent`／`LandingPageVersion.content` 的 `PageDocument` JSON 契約；新增的都是選填欄位，舊文件解析結果不變。
+- 節點覆寫新增 `overrides.tablet`（與 `desktop`／`mobile` 同形）。渲染 640–1079px（平板）時依序套用 `desktop` 再 `tablet`，因為 `desktop` 在平板斷點之前就代表「≥ 640px」；`funnelNodeVisibleOn` 用同一順序。存成「我的範本」的 `stripTemplateBindings` 也會清除 `tablet` 覆寫內的資源 id 與動作（`src/lib/landing-page-template-document.ts`）。
+- `FUNNEL_NODE_TYPES` 新增 14 種：沒有子節點的 `event_facts`、`speaker_profiles`、`agenda_timeline`、`callout`、`fit_compare`、`add_to_calendar`、`value_stack`、`session_schedule`、`deadline_notice`、`media_frame`、`image_gallery`、`code_snippet`（row、各欄、content_box）、`announcement_bar`（root、section、row），以及有子節點的 `webinar_state`（row、各欄；子節點為 `content_box`，以 `props.webinarState` 指定狀態）。讀取端 `src/lib/funnel-webinar-elements.ts` 每次渲染重新驗證（文字截斷、`safeContentHref`／`safeContentAssetUrl`、列舉值、項目上限）。
+- 放寬的父節點：`form`、`countdown`、`faq` 可放在 `content_box`；`headline` 可放在 `form`（表單標題）；`countdown` 可放在 root 與 section（頁首倒數條）；`content_box` 可放在 `webinar_state`。只放寬、不收緊，舊文件不受影響。
+- 新增的選填 props：`columns_2/3/4` 的 `ratio`（只限兩欄）、`stackOn`（mobile／tablet）、`mobileOrder`（default／reverse，堆疊時同時反轉 DOM 與鍵盤順序）；`countdown` 的 `variant`、`source`（fixed／webinar_start／registration_close）與文案欄位，沒有 `source` 的舊倒數維持固定截止時間；`testimonial_wall` 的 `layout`（marquee／carousel／grid）；`form_input` 的 `helpText`、`width`；`content_box` 的 `webinarState`。
+- `settings` 新增選填 `eventTitle`、`scrollReveal`（none／fade／rise）、`stickyCta`（`FunnelStickyCtaSchema`：enabled、label ≤ 40、target 為 HTML id、showDate、devices、三個顏色）。固定報名列由平台在內容外框（`FUNNEL_CONTENT_SHELL_STYLE`）之外渲染、只接受結構化欄位，商家自訂 CSS 選不到；#499 的沙箱與緊急開關未變動。
+- `FUNNEL_BLOCK_CATEGORIES` 新增 `webinar_sections`（只影響版型區塊分類，不寫入文件）。
+- 活動時間單一資料來源（`src/lib/funnel-event-time.ts`）：時間只讀漏斗 `flow.webinar`（UTC＋時區）與伺服器的報名截止（`FunnelOperations.deadline`，只在 enabled 時，由公開頁伺服器端傳入，`src/lib/funnel-public-render-hints.ts`）。截止的強制仍由 `resolveFunnelDeadline` 在寫入前判斷，顯示端不改變任何可用性。文字動態欄位 `{{webinar.title|date|time|startAt|weekday|timezone|duration}}` 只在渲染時替換，存檔保留原字串。
+- `value_stack` 的金額是商家輸入的展示文字：不解析、不加總，不進入訂單、checkout 或任何金額計算。
+- 公開報名表（C-19 最小集合）：欄位 key、標籤、類型、必填、送出文字與送出目標一律來自伺服器報名表與既有 submission context，同意文字沿用平台用語；頁面上的 `form_input`／`button` 只提供提示文字、說明、半寬與按鈕樣式。Webinar 報名步驟的頁面若有自己的名單表單，公開頁改由該表單以原生 POST 送出（同一組 hidden 欄位：formId、liveId、landingPageId、funnelStepId、推廣碼、redirectTo；伺服器照舊回傳 `?submitted=` 回饋；欄位送出前不停用；預覽模式不送出），並隱藏原本頁面下方的備用表單。
+- 範本登記：`src/lib/funnel-templates/webinar/index.ts` 預留 20 個位置；`FunnelTemplateGalleryItem` 新增選填 `pageSettings`、`tags`、`retired`、`hidden`。`retired`／`hidden` 的範本仍可由 id 解析（`getFunnelTemplateGalleryItem`、`instantiateFunnelTemplate`），但不出現在 `listFunnelTemplateGallery` 與範本庫。
+- 測試：`src/lib/funnel-event-time.test.ts`、`src/lib/funnel-webinar-elements.test.ts`、`src/components/landing-pages/funnel-webinar-elements.test.tsx`、`src/components/landing-pages/funnel-responsive-renderer.test.tsx`、`src/lib/funnel-element-inspector-webinar.test.ts`、`src/lib/landing-page-template-document.test.ts`（tablet 覆寫清除）、`src/lib/funnel-templates/webinar/*.test.ts`、`src/components/landing-pages/funnel-webinar-experience.test.tsx`。
+
+## 2026-10-29 Webinar 範本整合：共用元件修正（無 migration）
+
+- 沒有新增 model、欄位或 migration。`PageDocument` 契約只放寬：`webinar_state` 可放在 `content_box`（原本只能在 row 與各欄），讓兩欄的某一欄可以同時放 H1、活動資訊列與依狀態切換的 CTA，不必在每個狀態重複整段標題。`webinar_state` 的子節點仍只能是 `content_box`，`content_box` 仍不能直接放在 `content_box` 之下。舊文件解析結果不變。
+- 文字動態欄位新增 `{{webinar.replayEndsAt}}`（回放開放至「11 月 12 日 23:59」，沒有設定時為「時間公布中」）；`section_title`（眉標、標題、副標）與 `announcement_bar` 的文字也在渲染時替換動態欄位。存檔仍保留原字串。
+- `FunnelRenderEvent` 新增選填 `webinar`：文件沒有漏斗排程時的備用排程，只有開發用 harness（`/browser-qa/funnel-design?schedule=…`，production 回 404）會傳入；公開頁仍只讀 `flow.webinar`。
+- 新增 `explainPageDocumentIssue`（只供範本測試診斷，回傳第一個不通過的 schema 路徑或樹狀規則），不影響 `parsePageDocument` 的 fail-closed 行為。

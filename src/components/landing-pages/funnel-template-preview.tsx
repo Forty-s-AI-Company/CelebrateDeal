@@ -11,9 +11,13 @@ import { useDialogBehavior } from "@/lib/use-dialog-behavior";
  * (「更換模板」) and the template library, so both show a template exactly the
  * way it renders once applied.
  */
+const THUMBNAIL_SECTIONS = 3;
+
 export function FunnelTemplateThumbnail({ document, className = "m-2 mb-0 h-28" }: { document: PageDocument; className?: string }) {
   // Thumbnails share the page: no page custom CSS (global [data-funnel-content] scope) and no JS.
-  const display = templateDisplayDocument(document, { keepPageCss: false });
+  const full = templateDisplayDocument(document, { keepPageCss: false });
+  // The card only shows the top ~450px of the page at 25%, so render just the first sections (header, hero) instead of the whole long page.
+  const display = { ...full, root: full.root.slice(0, THUMBNAIL_SECTIONS) };
   return <div aria-hidden="true" inert className={`pointer-events-none overflow-hidden rounded-lg border border-slate-200 bg-slate-50 ${className}`}>
     <div className="origin-top-left w-[400%] scale-25"><FunnelPageDocumentRenderer document={display} mode="preview" className="min-h-[28rem] bg-white" /></div>
   </div>;

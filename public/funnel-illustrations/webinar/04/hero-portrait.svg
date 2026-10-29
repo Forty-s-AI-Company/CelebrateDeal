@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 720" width="600" height="720" font-family="'Noto Sans TC','PingFang TC','Microsoft JhengHei',sans-serif">
+<defs><linearGradient id="n" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#1c2a39"/><stop offset="1" stop-color="#0f3b5f"/></linearGradient><clipPath id="c"><path d="M0 0H600V720H0Z"/></clipPath></defs>
+<rect x="30" y="190" width="540" height="530" rx="36" fill="url(#n)"/>
+<circle cx="470" cy="290" r="120" fill="none" stroke="#c8a24a" stroke-opacity=".5" stroke-width="2"/>
+<circle cx="470" cy="290" r="80" fill="none" stroke="#c8a24a" stroke-opacity=".35" stroke-width="2"/>
+<g clip-path="url(#c)"><g transform="translate(300 80) scale(1.0)">
+<path d="M-210 640 C-210 470 -140 400 0 392 C140 400 210 470 210 640Z" fill="#2b3f55"/>
+<path d="M-62 396 L0 520 L62 396 Z" fill="#f5efe4"/><path d="M-14 420 L0 520 L14 420 L0 404Z" fill="#a85a1f"/>
+<rect x="-34" y="300" width="68" height="100" rx="30" fill="#c9b49a"/>
+<ellipse cx="0" cy="210" rx="104" ry="124" fill="#d8c3a8"/>
+<path d="M-104 196 C-110 92 -40 70 4 72 C70 74 116 110 104 200 C88 150 40 128 -10 130 C-60 132 -92 160 -104 196Z" fill="#3b3128"/>
+</g></g>
+<rect x="70" y="628" width="460" height="58" rx="29" fill="#fbf8f3" fill-opacity=".94"/>
+<text x="300" y="664" text-anchor="middle" fill="#1c2a39" font-size="20">替換為講者去背照（建議 1200×1500 PNG）</text>
+</svg>

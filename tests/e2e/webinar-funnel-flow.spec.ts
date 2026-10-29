@@ -57,7 +57,8 @@ test("Webinar owner saves settings, resolves publish validation and opens every 
   await previewButton.focus();
   await expect(previewButton).toBeFocused();
   await previewButton.click();
-  const templateDialog = page.getByRole("dialog", { name: /講者型活動報名頁/u });
+  // The registration step lists the 20 webinar templates in library order; 01 opens first (the retired 講者型活動報名頁 is no longer offered).
+  const templateDialog = page.getByRole("dialog", { name: /AI 工具極簡報名頁/u });
   await expect(templateDialog.locator("[data-funnel-renderer]")).toBeVisible();
   await templateDialog.getByRole("button", { name: "手機版", exact: true }).click();
   await expect(templateDialog.locator('[data-template-preview-viewport="mobile"]')).toBeVisible();
@@ -147,9 +148,10 @@ test("Webinar owner saves settings, resolves publish validation and opens every 
   await expect(page.getByRole("heading", { name: editedHeadline, exact: true })).toBeVisible();
   await expect(page.locator("[data-webinar-state]")).toHaveAttribute("data-webinar-state", "live");
   const attendeeEmail = `test-only-attendee-${suffix}@example.test`;
+  // The default registration page (webinar-saas-split) designs its own lead form; it shows the bound form's labels with the required mark, as in funnel-operations.
   const registration = page.locator('form[action="/api/form-submissions"]');
-  await registration.getByLabel("姓名", { exact: true }).fill("TEST ONLY Webinar Attendee");
-  await registration.getByLabel("Email", { exact: true }).fill(attendeeEmail);
+  await registration.getByRole("textbox", { name: "姓名 *", exact: true }).fill("TEST ONLY Webinar Attendee");
+  await registration.getByRole("textbox", { name: "Email *", exact: true }).fill(attendeeEmail);
   await registration.getByRole("button", { name: fixture.form.submitLabel, exact: true }).click();
   await expect(page).toHaveURL(new RegExp(`/lp/${slug}/thank-you\\?submitted=verification_required$`, "u"));
   // A native redirect acknowledges receipt only; it must not mark an unverified email as verified.

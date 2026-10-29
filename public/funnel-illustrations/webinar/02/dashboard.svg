@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 800" width="1280" height="800" font-family="'Noto Sans TC','PingFang TC','Microsoft JhengHei',sans-serif">
+<defs><linearGradient id="g" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#22c55e" stop-opacity=".28"/><stop offset="1" stop-color="#22c55e" stop-opacity="0"/></linearGradient></defs>
+<rect width="1280" height="800" fill="#f8fafc"/>
+<rect width="232" height="800" fill="#0f1b3d"/>
+<rect x="32" y="36" width="28" height="28" rx="8" fill="#22c55e"/><text x="72" y="58" fill="#fff" font-size="20" font-weight="700">數流 Flowboard</text>
+<g fill="#c7d2fe" font-size="17">
+<rect x="20" y="104" width="192" height="44" rx="10" fill="#1e2b55"/><text x="48" y="132" fill="#fff">總覽</text>
+<text x="48" y="192">訂單</text><text x="48" y="248">庫存</text><text x="48" y="304">現金流</text><text x="48" y="360">警示設定</text><text x="48" y="416">週報</text></g>
+<text x="276" y="74" fill="#0f172a" font-size="28" font-weight="700">營運總覽</text>
+<rect x="1060" y="46" width="180" height="40" rx="10" fill="#fff" stroke="#e2e8f0"/><text x="1084" y="72" fill="#475569" font-size="16">本週 ▾</text>
+<g font-size="16">
+<rect x="276" y="112" width="300" height="132" rx="16" fill="#fff" stroke="#e2e8f0"/><text x="300" y="148" fill="#64748b">今日訂單</text><text x="300" y="200" fill="#0f172a" font-size="40" font-weight="700">1,284</text><text x="300" y="228" fill="#16a34a">▲ 12.4%</text>
+<rect x="600" y="112" width="300" height="132" rx="16" fill="#fff" stroke="#e2e8f0"/><text x="624" y="148" fill="#64748b">低庫存品項</text><text x="624" y="200" fill="#0f172a" font-size="40" font-weight="700">7</text><rect x="624" y="214" width="96" height="22" rx="11" fill="#fef3c7"/><text x="636" y="230" fill="#92400e" font-size="13">需補貨</text>
+<rect x="924" y="112" width="316" height="132" rx="16" fill="#fff" stroke="#e2e8f0"/><text x="948" y="148" fill="#64748b">可用現金</text><text x="948" y="200" fill="#0f172a" font-size="40" font-weight="700">$2.8M</text><text x="948" y="228" fill="#16a34a">▲ 4.1%</text>
+</g>
+<rect x="276" y="268" width="624" height="300" rx="16" fill="#fff" stroke="#e2e8f0"/>
+<text x="300" y="306" fill="#0f172a" font-size="18" font-weight="700">營收趨勢</text>
+<g stroke="#eef2f7"><line x1="300" y1="360" x2="876" y2="360"/><line x1="300" y1="420" x2="876" y2="420"/><line x1="300" y1="480" x2="876" y2="480"/><line x1="300" y1="540" x2="876" y2="540"/></g>
+<path d="M300 500 L380 470 L460 488 L540 430 L620 446 L700 392 L780 404 L876 340 L876 540 L300 540Z" fill="url(#g)"/>
+<path d="M300 500 L380 470 L460 488 L540 430 L620 446 L700 392 L780 404 L876 340" fill="none" stroke="#16a34a" stroke-width="4" stroke-linejoin="round"/>
+<path d="M300 520 L380 510 L460 500 L540 492 L620 480 L700 468 L780 470 L876 452" fill="none" stroke="#60a5fa" stroke-width="3" stroke-dasharray="8 8"/>
+<circle cx="876" cy="340" r="7" fill="#16a34a" stroke="#fff" stroke-width="3"/>
+<rect x="924" y="268" width="316" height="300" rx="16" fill="#fff" stroke="#e2e8f0"/>
+<text x="948" y="306" fill="#0f172a" font-size="18" font-weight="700">庫存周轉</text>
+<g fill="#c7d2fe"><rect x="956" y="430" width="34" height="110" rx="6"/><rect x="1010" y="390" width="34" height="150" rx="6"/><rect x="1064" y="450" width="34" height="90" rx="6"/><rect x="1118" y="360" width="34" height="180" rx="6" fill="#1d4ed8"/><rect x="1172" y="410" width="34" height="130" rx="6"/></g>
+<rect x="276" y="592" width="964" height="176" rx="16" fill="#fff" stroke="#e2e8f0"/>
+<text x="300" y="630" fill="#0f172a" font-size="18" font-weight="700">今日警示</text>
+<g font-size="16"><circle cx="308" cy="672" r="6" fill="#f59e0b"/><text x="326" y="678" fill="#334155">「經典帆布袋」庫存低於安全量</text><text x="1100" y="678" fill="#64748b">10 分鐘前</text>
+<line x1="300" y1="700" x2="1216" y2="700" stroke="#eef2f7"/>
+<circle cx="308" cy="732" r="6" fill="#22c55e"/><text x="326" y="738" fill="#334155">每週營運摘要已寄送給 6 位成員</text><text x="1100" y="738" fill="#64748b">1 小時前</text></g>
+</svg>

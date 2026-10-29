@@ -51,6 +51,8 @@
   | C. 只用系統字 | 維持現狀，字型堆疊寫好 fallback | 零成本、最快 | Windows（微軟正黑）與 Mac（蘋方）看起來不同；明體、文楷等風格做不出來，範本的設計無法保證 |
   | D. 依頁面文字自建子集字檔 | 發布時只抽出頁面用到的字，產生小型 woff2 | 檔案最小 | 要有字型處理管線；表單錯誤訊息等動態文字會缺字；維護成本高 |
 
+  > 2026-10-29 更新：實作後發現 `next/font/google` 每次 `next build` 都要下載約 450 個分片，CI 的瀏覽器 gate 因此偶發建置失敗。現在改為把同一批分片與 `@font-face` 自架在 `public/fonts/funnel/`（`funnel-fonts.css`），效果與 A 相同，但建置不需要網路。
+
 - **決定**：採用 **A**，並保留 C 當 fallback（字型堆疊不變）。
   - 第一版只登記範本需要的 4 個字族：Noto Sans TC、Noto Serif TC、LXGW WenKai TC、一個拉丁展示字（Space Grotesk）。
   - 每個字族都要以 CSS 變數掛在公開頁根節點，`funnel-typography.ts` 的字型堆疊改成引用這些變數。

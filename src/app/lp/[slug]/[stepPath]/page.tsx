@@ -5,7 +5,8 @@ import { pageDocumentRendersRegistrationForm } from "@/lib/funnel-registration-s
 import { FunnelWebinarExperience } from "@/components/landing-pages/funnel-webinar-experience";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
+import { funnelPublicRenderEvent, funnelViewportHint } from "@/lib/funnel-public-render-hints";
 import { cache } from "react";
 import { PublicFunnelDocument } from "@/components/landing-pages/public-funnel-document";
 import { FunnelRegistrationLinkProvider } from "@/components/landing-pages/funnel-registration-links";
@@ -50,14 +51,16 @@ export default async function PublicFunnelStepPage({ params, searchParams }: { s
   const buildRetryBoundary = (readDraft: boolean) => registrationRetryBoundary({ formId: steps.flow.goal === "webinar" ? page.webinar?.form.id : page.submissionForm?.id, sourcePath: `/lp/${page.slug}/${step.path}`, attributionQuery: query, retry: query.registrationRetry, submitted: query.submitted, readDraft });
   if (runtime.decision.status !== "render") return registrationDeadlineOutcome({ decision: runtime.decision, query, form: steps.flow.goal === "webinar" ? page.webinar?.form : page.submissionForm, slug: page.slug, withRetry: await buildRetryBoundary(hasRegistrationFeedbackQuery(query)) });
   const decision = runtime.decision;
+  const initialViewport = funnelViewportHint((await headers()).get("user-agent"));
+  const event = funnelPublicRenderEvent(runtime.page.operations);
   await recordPublicFunnelVisit({ pageId: runtime.page.id, vendorId: runtime.page.vendorId, stepId: decision.renderedStepId, logicalStepId: decision.requestedStepId, visitorId, experiment: decision.experiment });
   const renderedStep = steps.flow.steps.find((candidate) => candidate.id === decision.renderedStepId);
-  if (steps.flow.goal === "webinar") return (await buildRetryBoundary(renderedStep?.type === "webinar_registration_page"))(<FunnelRegistrationLinkProvider value={publicRegistrationLinks(page.context)}><FunnelWebinarExperience state={steps} stepId={decision.renderedStepId} slug={page.slug} resource={page.webinar} funnelSource={{ landingPageId: page.id, stepId: decision.requestedStepId }} /></FunnelRegistrationLinkProvider>);
+  if (steps.flow.goal === "webinar") return (await buildRetryBoundary(renderedStep?.type === "webinar_registration_page"))(<FunnelRegistrationLinkProvider value={publicRegistrationLinks(page.context)}><FunnelWebinarExperience initialViewport={initialViewport} event={event} state={steps} stepId={decision.renderedStepId} slug={page.slug} resource={page.webinar} funnelSource={{ landingPageId: page.id, stepId: decision.requestedStepId }} /></FunnelRegistrationLinkProvider>);
   const rendered = getPublicFunnelPage(steps, renderedStep?.path);
   if (!rendered) notFound();
   const withRetry = await buildRetryBoundary(Boolean(page.submissionForm) && pageDocumentRendersRegistrationForm(rendered));
   const logicalDocument = getPublicFunnelPage(steps, step.path);
   const nextPath = logicalDocument ? getNextPublicFunnelStepPath(steps, logicalDocument.id, { excludeStepIds: decision.progressionExcludedStepId ? [decision.progressionExcludedStepId] : [] }) : null;
   const consultation = page.consultationEvents?.length ? { csrfToken: await getCsrfToken(), events: page.consultationEvents } : undefined;
-  return withRetry(<PublicFunnelDocument document={rendered} registrationLinks={publicRegistrationLinks(page.context)} consultation={consultation} commerce={page.commerceByPageId?.[rendered.id]} submission={page.submissionForm ? { form: page.submissionForm, landingPageId: page.id, funnelStepId: decision.requestedStepId, ...(page.submissionLiveId ? { liveId: page.submissionLiveId } : {}), ...(nextPath ? { redirectTo: `/lp/${encodeURIComponent(page.slug)}/${encodeURIComponent(nextPath)}` } : {}) } : undefined} />);
+  return withRetry(<PublicFunnelDocument document={rendered} initialViewport={initialViewport} event={event} registrationLinks={publicRegistrationLinks(page.context)} consultation={consultation} commerce={page.commerceByPageId?.[rendered.id]} submission={page.submissionForm ? { form: page.submissionForm, landingPageId: page.id, funnelStepId: decision.requestedStepId, ...(page.submissionLiveId ? { liveId: page.submissionLiveId } : {}), ...(nextPath ? { redirectTo: `/lp/${encodeURIComponent(page.slug)}/${encodeURIComponent(nextPath)}` } : {}) } : undefined} />);
 }
