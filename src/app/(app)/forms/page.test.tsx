@@ -2,10 +2,10 @@ import { renderToStaticMarkup } from "react-dom/server";
 import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const mocks = vi.hoisted(() => ({ requireVendorManager: vi.fn(), findMany: vi.fn(), groupBy: vi.fn() }));
+const mocks = vi.hoisted(() => ({ requireVendorManager: vi.fn(), prefFindUnique: vi.fn(), findMany: vi.fn(), groupBy: vi.fn() }));
 vi.mock("lucide-react", () => ({ Plus: () => <span>plus</span> }));
-vi.mock("@/lib/auth", () => ({ requireVendorManager: mocks.requireVendorManager }));
-vi.mock("@/lib/db", () => ({ getDb: () => ({ registrationForm: { findMany: mocks.findMany }, formSubmission: { groupBy: mocks.groupBy } }) }));
+vi.mock("@/lib/auth", () => ({ requireVendorManager: mocks.requireVendorManager, requireVendorManagerContext: async () => ({ auth: { user: { id: "user-1" } }, vendor: await mocks.requireVendorManager() }) }));
+vi.mock("@/lib/db", () => ({ getDb: () => ({ userOnboardingPreference: { findUnique: mocks.prefFindUnique }, registrationForm: { findMany: mocks.findMany }, formSubmission: { groupBy: mocks.groupBy } }) }));
 vi.mock("@/components/ui", () => ({
   Badge: ({ children }: { children: ReactNode }) => <span>{children}</span>,
   ButtonLink: ({ href, children }: { href: string; children: ReactNode }) => <a href={href}>{children}</a>,
@@ -22,7 +22,7 @@ async function renderFormsPage(searchParams: FormsSearchParams = {}) {
   return renderToStaticMarkup(await FormsPage({ searchParams: Promise.resolve(searchParams) }));
 }
 
-beforeEach(() => { vi.clearAllMocks(); mocks.requireVendorManager.mockResolvedValue({ id: "vendor-1" }); mocks.findMany.mockResolvedValue([{ id: "form-1", name: "活動報名", slug: "summer", isActive: true, _count: { submissions: 2 } }, { id: "form-2", name: "停用表單", slug: "old", isActive: false, _count: { submissions: 0 } }]); mocks.groupBy.mockResolvedValue([{ formId: "form-1", _count: { _all: 1 } }]); });
+beforeEach(() => { vi.clearAllMocks(); mocks.prefFindUnique.mockResolvedValue(null); mocks.requireVendorManager.mockResolvedValue({ id: "vendor-1" }); mocks.findMany.mockResolvedValue([{ id: "form-1", name: "活動報名", slug: "summer", isActive: true, _count: { submissions: 2 } }, { id: "form-2", name: "停用表單", slug: "old", isActive: false, _count: { submissions: 0 } }]); mocks.groupBy.mockResolvedValue([{ formId: "form-1", _count: { _all: 1 } }]); });
 
 describe("/forms route", () => {
   it("scopes forms to the vendor and renders active state and submission links", async () => {
@@ -123,5 +123,11 @@ describe("/forms route", () => {
     const html = await renderFormsPage();
     expect(html).toContain("公開預覽不可用");
     expect(html).not.toContain('href="/form/disabled"');
+  });
+  it("carries the scoped project into the create link and omits it in other scopes", async () => {
+    mocks.prefFindUnique.mockResolvedValue({ selectedProjectId: "project-1", selectedProject: { id: "project-1", name: "原型食物", status: "active" } });
+    expect(await renderFormsPage()).toContain('href="/forms/new?projectId=project-1"');
+    mocks.prefFindUnique.mockResolvedValue({ selectedProjectId: null, selectedProject: null });
+    expect(await renderFormsPage()).toContain('href="/forms/new"');
   });
 });

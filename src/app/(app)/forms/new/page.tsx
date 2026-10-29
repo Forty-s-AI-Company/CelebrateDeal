@@ -2,13 +2,16 @@ import { notFound } from "next/navigation";
 import { resolveSalesProjectBinding, SalesProjectBindingError } from "@/lib/sales-project-binding";
 import { FormBuilder } from "@/components/form-builder";
 import { PageHeader } from "@/components/ui";
-import { requireVendorManager } from "@/lib/auth";
+import { requireVendorManagerContext } from "@/lib/auth";
+import { ProjectUnboundNotice } from "@/components/project-unbound-notice";
+import { resolveDefaultProjectCandidate } from "@/lib/sales-project-scope";
 import { getDb } from "@/lib/db";
 
 export default async function NewFormPage({ searchParams }: { searchParams: Promise<{ error?: string; projectId?: string }> }) {
-  const vendor = await requireVendorManager();
+  const { auth, vendor } = await requireVendorManagerContext();
   const { error, projectId: requestedProject } = await searchParams;
-  const projectId = await validatedProject(vendor.id, requestedProject ?? null);
+  const { candidate, isAggregate } = await resolveDefaultProjectCandidate(auth.user.id, vendor.id, requestedProject);
+  const projectId = await validatedProject(vendor.id, candidate);
   const promoVideos = await getDb().video.findMany({
     where: { vendorId: vendor.id, status: "ready" },
     select: { id: true, title: true },
@@ -17,6 +20,7 @@ export default async function NewFormPage({ searchParams }: { searchParams: Prom
   return (
     <>
       <PageHeader title="新增報名表" description="用視覺化欄位編輯與即時預覽，建立可直接分享或放入直播頁的報名流程。" />
+      {!projectId && isAggregate ? <ProjectUnboundNotice resource="報名表" /> : null}
       <FormBuilder projectId={projectId} error={error} draftScope={vendor.id} promoVideos={promoVideos} />
     </>
   );
