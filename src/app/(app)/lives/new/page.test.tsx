@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   projectFindFirst: vi.fn(),
   requireVendorManager: vi.fn(),
+  prefFindUnique: vi.fn(),
   getCsrfToken: vi.fn(),
   videoFindMany: vi.fn(),
   productFindMany: vi.fn(),
@@ -20,6 +21,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("@/lib/auth", () => ({
   requireVendorManager: mocks.requireVendorManager,
+  requireVendorManagerContext: async () => ({ auth: { user: { id: "user-1" } }, vendor: await mocks.requireVendorManager() }),
 }));
 vi.mock("@/lib/csrf", () => ({
   getCsrfToken: mocks.getCsrfToken,
@@ -27,6 +29,7 @@ vi.mock("@/lib/csrf", () => ({
 vi.mock("@/lib/db", () => ({
   getDb: () => ({
     salesProject: { findFirst: mocks.projectFindFirst },
+    userOnboardingPreference: { findUnique: mocks.prefFindUnique },
     video: { findMany: mocks.videoFindMany },
     product: { findMany: mocks.productFindMany },
     registrationForm: { findMany: mocks.registrationFormFindMany },
@@ -67,6 +70,7 @@ describe("NewLivePage data minimization", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.projectFindFirst.mockResolvedValue(null);
+    mocks.prefFindUnique.mockResolvedValue(null);
     mocks.requireVendorManager.mockResolvedValue({ id: "vendor-1", timezone: "Asia/Taipei" });
     mocks.getCsrfToken.mockResolvedValue("csrf-token");
     mocks.liveStudioDraftFindFirst.mockResolvedValue(null);
@@ -108,6 +112,39 @@ describe("NewLivePage data minimization", () => {
     mocks.liveStudioDraftFindFirst.mockResolvedValue({ id: "draft-1", revision: 2, payload: { ...emptyLiveStudioDraft(), projectId: "project-1" }, updatedAt: new Date("2026-10-04T00:00:00Z") });
     await expect(NewLivePage({ searchParams: Promise.resolve({ draft: "draft-1", projectId: "project-2" }) })).rejects.toThrow("404");
     expect(mocks.projectFindFirst).not.toHaveBeenCalled();
+  });
+
+  it("defaults a new live to the scoped workspace project when no projectId is given", async () => {
+    mocks.prefFindUnique.mockResolvedValue({ selectedProjectId: "project-1", selectedProject: { id: "project-1", name: "原型食物", status: "active" } });
+    mocks.projectFindFirst.mockResolvedValue({ id: "project-1" });
+    const html = renderToStaticMarkup(await NewLivePage({ searchParams: Promise.resolve({}) }));
+    expect(mocks.prefFindUnique).toHaveBeenCalledWith(expect.objectContaining({ where: { userId_vendorId: { userId: "user-1", vendorId: "vendor-1" } } }));
+    expect(mocks.projectFindFirst).toHaveBeenCalledWith({ where: { id: "project-1", vendorId: "vendor-1", status: { not: "archived" } }, select: { id: true } });
+    expect(mocks.liveStepperForm).toHaveBeenCalledWith(expect.objectContaining({ projectId: "project-1" }), undefined);
+    expect(html).not.toContain("全部專案總覽");
+  });
+
+  it("keeps the live unattached in the aggregate overview and explains it", async () => {
+    mocks.prefFindUnique.mockResolvedValue({ selectedProjectId: null, selectedProject: null });
+    const html = renderToStaticMarkup(await NewLivePage({ searchParams: Promise.resolve({}) }));
+    expect(mocks.projectFindFirst).not.toHaveBeenCalled();
+    expect(mocks.liveStepperForm).toHaveBeenCalledWith(expect.objectContaining({ projectId: null }), undefined);
+    expect(html).toContain("全部專案總覽");
+  });
+
+  it("rejects a scoped default that is not owned by the current vendor", async () => {
+    mocks.prefFindUnique.mockResolvedValue({ selectedProjectId: "foreign-project", selectedProject: { id: "foreign-project", name: "他人", status: "active" } });
+    mocks.projectFindFirst.mockResolvedValue(null);
+    await expect(NewLivePage({ searchParams: Promise.resolve({}) })).rejects.toThrow("404");
+    expect(mocks.projectFindFirst).toHaveBeenCalledWith({ where: { id: "foreign-project", vendorId: "vendor-1", status: { not: "archived" } }, select: { id: true } });
+    expect(mocks.liveStepperForm).not.toHaveBeenCalled();
+  });
+
+  it("lets an explicit projectId override the scoped default without reading the preference", async () => {
+    mocks.projectFindFirst.mockResolvedValue({ id: "project-2" });
+    renderToStaticMarkup(await NewLivePage({ searchParams: Promise.resolve({ projectId: "project-2" }) }));
+    expect(mocks.prefFindUnique).not.toHaveBeenCalled();
+    expect(mocks.liveStepperForm).toHaveBeenCalledWith(expect.objectContaining({ projectId: "project-2" }), undefined);
   });
 
   it("only serializes the video identifier and title into the client form", async () => {

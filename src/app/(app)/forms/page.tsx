@@ -1,7 +1,8 @@
 import { Plus } from "lucide-react";
 import Link from "next/link";
 import { Badge, ButtonLink, Card, EmptyState, PageHeader } from "@/components/ui";
-import { requireVendorManager } from "@/lib/auth";
+import { requireVendorManagerContext } from "@/lib/auth";
+import { getSalesProjectScope, withProjectQuery } from "@/lib/sales-project-scope";
 import { getDb } from "@/lib/db";
 
 type FormsSearchParams = {
@@ -29,7 +30,8 @@ export default async function FormsPage({
 }: {
   searchParams: Promise<FormsSearchParams>;
 }) {
-  const vendor = await requireVendorManager();
+  const { auth, vendor } = await requireVendorManagerContext();
+  const createHref = withProjectQuery("/forms/new", (await getSalesProjectScope(auth.user.id, vendor.id)).projectId);
   const database = getDb();
   const query = await searchParams;
   const search = normalizeQuery(query.q);
@@ -77,7 +79,7 @@ export default async function FormsPage({
 
   return (
     <>
-      <PageHeader title="報名管理" description="建立可嵌在直播頁或單獨分享的 lead 表單。" action={<ButtonLink href="/forms/new"><Plus size={16} />新增表單</ButtonLink>} />
+      <PageHeader title="報名管理" description="建立可嵌在直播頁或單獨分享的 lead 表單。" action={<ButtonLink href={createHref}><Plus size={16} />新增表單</ButtonLink>} />
       <Card className="mb-5">
         <form method="get" className="grid gap-3 md:grid-cols-[minmax(0,1fr)_220px_auto_auto] md:items-end">
           <label className="grid gap-1.5 text-sm font-medium text-slate-700">
@@ -110,7 +112,7 @@ export default async function FormsPage({
         <EmptyState
           title={hasFilters ? "找不到符合條件的報名表" : "還沒有報名表"}
           description={hasFilters ? "請調整搜尋文字或狀態條件後再試。" : "先建立一張表單，直播頁就能收集觀看者名單。"}
-          action={hasFilters ? <Link href="/forms" className="inline-flex min-h-11 items-center justify-center rounded-md border border-border px-4 text-sm font-semibold text-slate-700">清除篩選</Link> : <ButtonLink href="/forms/new">新增表單</ButtonLink>}
+          action={hasFilters ? <Link href="/forms" className="inline-flex min-h-11 items-center justify-center rounded-md border border-border px-4 text-sm font-semibold text-slate-700">清除篩選</Link> : <ButtonLink href={createHref}>新增表單</ButtonLink>}
         />
       ) : (
         <Card>
