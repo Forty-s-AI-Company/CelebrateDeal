@@ -117,4 +117,59 @@ describe("FormSubmitButton in-page confirmation", () => {
     expect(dialog()?.querySelector("h2")?.textContent).toBe("確定要封存「影片」嗎？");
     expect(dialog()?.querySelector("p")?.textContent).toBe("既有回放不受影響。");
   });
+
+  it("runs onClick only after the user confirms, never on cancel", async () => {
+    const onClick = vi.fn();
+    const onSubmit = vi.fn();
+    const container = await mount(<Form onSubmit={onSubmit} onClick={onClick} />);
+    await click(buttonIn(container, "刪除"));
+    expect(onClick).not.toHaveBeenCalled();
+    await click(buttonIn(document.body, "取消"));
+    expect(onClick).not.toHaveBeenCalled();
+    expect(onSubmit).not.toHaveBeenCalled();
+    await click(buttonIn(container, "刪除"));
+    await click(buttonIn(document.body, "確認"));
+    expect(onClick).toHaveBeenCalledOnce();
+    expect(onSubmit).toHaveBeenCalledOnce();
+  });
+
+  it("submits with the exact submitter when it carries a function formAction (server-action style)", async () => {
+    const serverAction = vi.fn(async () => undefined);
+    const container = await mount(
+      <form>
+        <input name="id" defaultValue="row-1" />
+        <FormSubmitButton name="liveId" value="live-1" formAction={serverAction} confirmMessage="確定解除綁定？" pendingChildren="處理中…" pendingMessage="處理中。">解除綁定</FormSubmitButton>
+      </form>,
+    );
+    const form = container.querySelector("form")!;
+    const submitter = buttonIn(container, "解除綁定");
+    const requestSubmit = vi.spyOn(form, "requestSubmit").mockImplementation(() => undefined);
+    await click(submitter);
+    expect(requestSubmit).not.toHaveBeenCalled();
+    await click(buttonIn(document.body, "確認"));
+    expect(requestSubmit).toHaveBeenCalledOnce();
+    expect(requestSubmit).toHaveBeenCalledWith(submitter);
+  });
+
+  it("opens the dialog for Enter-key (implicit) submission, which the browser reports as a click on the submit button", async () => {
+    const onSubmit = vi.fn();
+    const container = await mount(<Form onSubmit={onSubmit} />);
+    // Implicit submission synthesizes a click on the form's default submit button.
+    await act(async () => { buttonIn(container, "刪除").dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, detail: 0 })); });
+    expect(dialog()).not.toBeNull();
+    expect(onSubmit).not.toHaveBeenCalled();
+  });
+
+  it("keeps Tab focus inside the dialog", async () => {
+    const container = await mount(<Form onSubmit={vi.fn()} />);
+    await click(buttonIn(container, "刪除"));
+    const cancel = buttonIn(document.body, "取消");
+    const confirmButton = buttonIn(document.body, "確認");
+    expect(document.activeElement).toBe(cancel);
+    confirmButton.focus();
+    await act(async () => { confirmButton.dispatchEvent(new KeyboardEvent("keydown", { key: "Tab", bubbles: true, cancelable: true })); });
+    expect(document.activeElement).toBe(cancel);
+    await act(async () => { cancel.dispatchEvent(new KeyboardEvent("keydown", { key: "Tab", shiftKey: true, bubbles: true, cancelable: true })); });
+    expect(document.activeElement).toBe(confirmButton);
+  });
 });

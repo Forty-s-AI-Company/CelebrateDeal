@@ -122,4 +122,15 @@ describe("management page owns publishing", () => {
     expect((mocks.action.mock.calls[0]![1] as FormData).get("operation")).toBe("delete");
     expect(mocks.push).toHaveBeenCalledWith("/landing-pages");
   });
+
+  it("returns focus to the overflow-menu button when a delete confirmation is cancelled", async () => {
+    const { container } = await mount("draft");
+    const more = button(container, "更多網站操作");
+    await click(more);
+    await click(button(container, "刪除網站"));
+    expect(document.body.querySelector('[role="alertdialog"]')).not.toBeNull();
+    await click(button(document.body, "取消"));
+    expect(document.activeElement).toBe(more);
+    expect(mocks.action).not.toHaveBeenCalled();
+  });
 });

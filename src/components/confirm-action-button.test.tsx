@@ -174,4 +174,46 @@ describe("useConfirmDialog", () => {
     expect(container.querySelector("output")?.textContent).toBe("left");
     expect(dialog()).toBeNull();
   });
+
+describe("ConfirmDialog event isolation", () => {
+  it("keeps keyboard, click and mousedown events from reaching outer handlers through the React tree", async () => {
+    const outer = { keydown: vi.fn(), click: vi.fn(), mousedown: vi.fn() };
+    const container = await mount(
+      <div onKeyDown={outer.keydown} onClick={outer.click} onMouseDown={outer.mousedown}>
+        <ConfirmActionButton message="確定？" onConfirm={() => undefined}>開啟</ConfirmActionButton>
+      </div>,
+    );
+    await click(buttonIn(container, "開啟"));
+    outer.click.mockClear();
+    const confirmButton = buttonIn(document.body, "確認");
+    await act(async () => {
+      confirmButton.dispatchEvent(new KeyboardEvent("keydown", { key: "a", bubbles: true, cancelable: true }));
+      confirmButton.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true }));
+      document.body.querySelector("[role=alertdialog]")!.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+    });
+    expect(outer.keydown).not.toHaveBeenCalled();
+    expect(outer.mousedown).not.toHaveBeenCalled();
+    expect(outer.click).not.toHaveBeenCalled();
+  });
+
+  it("still closes on Escape when focus is inside the dialog, without reaching outer handlers", async () => {
+    const outerKeydown = vi.fn();
+    const container = await mount(
+      <div onKeyDown={outerKeydown}><ConfirmActionButton message="確定？" onConfirm={() => undefined}>開啟</ConfirmActionButton></div>,
+    );
+    await click(buttonIn(container, "開啟"));
+    await act(async () => {
+      buttonIn(document.body, "取消").dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }));
+    });
+    expect(dialog()).toBeNull();
+    expect(outerKeydown).not.toHaveBeenCalled();
+  });
+
+  it("only advertises a popup when it will actually ask", async () => {
+    const asking = await mount(<ConfirmActionButton message="確定？">一</ConfirmActionButton>);
+    const plain = await mount(<ConfirmActionButton message="確定？" confirmRequired={false}>二</ConfirmActionButton>);
+    expect(buttonIn(asking, "一").getAttribute("aria-haspopup")).toBe("dialog");
+    expect(buttonIn(plain, "二").hasAttribute("aria-haspopup")).toBe(false);
+  });
+});
 });

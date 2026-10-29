@@ -64,6 +64,7 @@ export function ConfirmDialog({
   return createPortal(
     <div
       data-confirm-backdrop="true"
+      data-confirm-dialog="true"
       className="fixed inset-0 z-[200] grid place-items-center bg-slate-950/60 p-4"
       onMouseDown={(event) => { if (event.target === event.currentTarget) onCancel(); }}
     >
@@ -73,7 +74,15 @@ export function ConfirmDialog({
         aria-modal="true"
         aria-labelledby={titleId}
         aria-describedby={description ? descriptionId : undefined}
-        onKeyDown={(event) => { if (panelRef.current) trapDialogFocus(panelRef.current, event); }}
+        // Portal events still bubble through the React tree to outer focus
+        // traps and outside-click handlers; keep them inside this dialog.
+        onKeyDown={(event) => {
+          if (event.key === "Escape") { event.preventDefault(); onCancel(); }
+          else if (panelRef.current) trapDialogFocus(panelRef.current, event);
+          event.stopPropagation();
+        }}
+        onClick={(event) => event.stopPropagation()}
+        onMouseDown={(event) => event.stopPropagation()}
         className="w-full max-w-md rounded-2xl bg-white p-6 text-left shadow-2xl"
       >
         <h2 id={titleId} className="text-lg font-bold text-slate-950">{message}</h2>
@@ -169,7 +178,7 @@ export function ConfirmActionButton({
       <button
         {...buttonProps}
         type={type}
-        aria-haspopup="dialog"
+        aria-haspopup={confirmRequired ? "dialog" : undefined}
         onClick={(event) => {
           onClick?.(event);
           if (event.defaultPrevented) return;

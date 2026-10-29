@@ -317,4 +317,23 @@ describe("publication chip", () => {
     await click(button(region, "前往管理頁發布或管理網站"));
     expect(mocks.push).toHaveBeenCalledWith("/landing-pages/page-1/operations?step=s1&tab=configuration");
   });
+
+  it("deletes from the publication popover with a real mouse press on the portaled confirm button", async () => {
+    // Without a management page the delete action lives inside the chip popover.
+    const base = workspace();
+    const props = { ...(base.props as Record<string, unknown>), managementHref: undefined };
+    mocks.action.mockResolvedValueOnce({ status: "success", message: "Funnel 與草稿已刪除。", id: "page-1" });
+    const container = await mount(<LandingPageWorkspace {...(props as React.ComponentProps<typeof LandingPageWorkspace>)} />);
+    await click(button(container, "發布狀態：草稿"));
+    await click(button(container, "刪除一頁式網站"));
+    const confirmButton = button(document.body, "移除");
+    // The popover closes on any outside mousedown; the dialog must survive it until click.
+    await act(async () => {
+      confirmButton.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true }));
+      confirmButton.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, cancelable: true }));
+    });
+    expect(document.body.querySelector('[role="alertdialog"]')).not.toBeNull();
+    await act(async () => { confirmButton.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true })); });
+    expect((mocks.action.mock.calls[0]![1] as FormData).get("operation")).toBe("delete");
+  });
 });

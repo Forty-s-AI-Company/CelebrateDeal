@@ -1692,7 +1692,6 @@ test("team-funnel browser acceptance covers leader publishing, partner modes, at
     await page.goto(`/team-templates/${templateId}/edit`);
     await expect(page.getByRole("heading", { name: new RegExp(`編輯 ${TEAM_FUNNEL_TEST_ONLY.templateName}`) })).toBeVisible();
     const publishForm = page.locator('form:has(input[name="operation"][value="publish"])');
-    page.once("dialog", (dialog) => dialog.accept());
     await publishForm.getByRole("button", { name: "發布新版本", exact: true }).click();
     await expect(publishForm.locator('p[role="status"]')).toContainText("已發布", { timeout: 30_000 });
   };

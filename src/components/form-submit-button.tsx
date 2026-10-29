@@ -64,14 +64,15 @@ export function FormSubmitButton({
           const form = button.form;
           const formIsValid = form?.checkValidity() ?? true;
           const requiresConfirmation = Boolean(confirmMessage) && (button.formNoValidate || formIsValid);
-          onClick?.(event);
-          if (!requiresConfirmation || event.defaultPrevented) return;
+          if (!requiresConfirmation) { onClick?.(event); return; }
 
           // Ask inside the page (a native confirm() would freeze browser
-          // automation), then submit the same button so its name, value and
-          // formAction stay intact. Cancelling leaves the form untouched.
+          // automation). `onClick` runs only after the user confirms, then the
+          // same button is submitted so its name, value and formAction stay
+          // intact. Cancelling does nothing at all.
           event.preventDefault();
           confirm({ message: confirmMessage!, destructive: confirmDestructive }, () => {
+            onClick?.(event);
             if (type === "submit" && form) form.requestSubmit(button);
           }, button);
         }}

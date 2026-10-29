@@ -115,17 +115,19 @@ export function FunnelOperationsPanel({ initial, initialStepId, csrfName, csrfTo
 
   function change(patch: Partial<SettingsState>) { setEditor((value) => ({ ...value, ...patch })); setDirty(true); }
   function operations(next: FunnelOperations) { change({ operations: next }); }
+  /** The control that opened a confirmation, so focus returns to it when cancelled. */
+  const focusedElement = () => (document.activeElement instanceof HTMLElement && document.activeElement !== document.body ? document.activeElement : null);
   function runPending(task: () => Promise<void>) {
     setPending(true);
     void task().finally(() => setPending(false));
   }
   function navigate(href: string) {
     if (pending || inFlight.current) return;
-    if (dirty) { confirm({ message: "尚有未儲存的設定，確定離開？" }, () => router.push(href)); return; }
+    if (dirty) { confirm({ message: "尚有未儲存的設定，確定離開？" }, () => router.push(href), focusedElement()); return; }
     router.push(href);
   }
   function selectStep(stepId: string) {
-    if (dirty) { confirm({ message: "切換步驟會捨棄尚未儲存的欄位變更，確定繼續？" }, () => switchToStep(stepId)); return; }
+    if (dirty) { confirm({ message: "切換步驟會捨棄尚未儲存的欄位變更，確定繼續？" }, () => switchToStep(stepId), focusedElement()); return; }
     switchToStep(stepId);
   }
   function switchToStep(stepId: string) {
@@ -156,7 +158,7 @@ export function FunnelOperationsPanel({ initial, initialStepId, csrfName, csrfTo
     });
   }
   function reload() {
-    if (dirty) { confirm({ message: "重新載入會捨棄這次尚未儲存的設定，確定繼續？", destructive: true }, reloadLatest); return; }
+    if (dirty) { confirm({ message: "重新載入會捨棄這次尚未儲存的設定，確定繼續？", destructive: true }, reloadLatest, focusedElement()); return; }
     reloadLatest();
   }
   function reloadLatest() {
@@ -194,7 +196,7 @@ export function FunnelOperationsPanel({ initial, initialStepId, csrfName, csrfTo
   }
   function applyTemplate(templateId: string) {
     if (!active || active.step.isSystem) return;
-    if (active.step.template.templateId) { confirm({ message: "更換模板會取代目前步驟的頁面內容，確定繼續？", destructive: true }, () => replaceTemplate(templateId)); return; }
+    if (active.step.template.templateId) { confirm({ message: "更換模板會取代目前步驟的頁面內容，確定繼續？", destructive: true }, () => replaceTemplate(templateId), focusedElement()); return; }
     replaceTemplate(templateId);
   }
   function replaceTemplate(templateId: string) {
@@ -212,10 +214,10 @@ export function FunnelOperationsPanel({ initial, initialStepId, csrfName, csrfTo
     persistContent(pathed.state, "步驟設定已自動儲存。");
   }
   /** Publishing, duplicating and deleting live here, not in the full-screen editor. */
-  function runPageOperation(operation: "publish" | "unpublish" | "duplicate" | "delete") {
+  function runPageOperation(operation: "publish" | "unpublish" | "duplicate" | "delete", trigger?: HTMLElement | null) {
     if (inFlight.current) { setMessage("前一個變更仍在儲存，請稍候再試。"); return; }
     if (operation === "delete") {
-      confirm({ message: "確定要移除這個一頁式網站嗎？曾發布或已有造訪紀錄的一頁式網站會改為封存：公開網址停止開啟，造訪與名單來源紀錄保留；從未發布的草稿會永久刪除。", confirmLabel: "移除", destructive: true }, () => executePageOperation(operation));
+      confirm({ message: "確定要移除這個一頁式網站嗎？曾發布或已有造訪紀錄的一頁式網站會改為封存：公開網址停止開啟，造訪與名單來源紀錄保留；從未發布的草稿會永久刪除。", confirmLabel: "移除", destructive: true }, () => executePageOperation(operation), trigger ?? focusedElement());
       return;
     }
     executePageOperation(operation);
@@ -303,9 +305,10 @@ function ConfigurationPanel({ active, content, editor, templates, selectedTempla
 }
 
 /** Publish the saved draft (edited in the full-screen editor), plus duplicate / delete. */
-function PageActions({ published, disabled, onRun }: { published: boolean; disabled: boolean; onRun: (operation: "publish" | "unpublish" | "duplicate" | "delete") => void }) {
+function PageActions({ published, disabled, onRun }: { published: boolean; disabled: boolean; onRun: (operation: "publish" | "unpublish" | "duplicate" | "delete", trigger?: HTMLElement | null) => void }) {
   const [open, setOpen] = useState(false);
   const menu = useRef<HTMLDivElement>(null);
+  const moreButton = useRef<HTMLButtonElement>(null);
   useDialogBehavior(open, () => setOpen(false));
   useEffect(() => {
     if (!open) return;
@@ -314,11 +317,11 @@ function PageActions({ published, disabled, onRun }: { published: boolean; disab
     return () => document.removeEventListener("mousedown", outside);
   }, [open]);
   const item = "flex min-h-10 w-full cursor-pointer items-center rounded-md px-3 text-left text-sm font-semibold text-slate-700 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-40";
-  const choose = (operation: "unpublish" | "duplicate" | "delete") => { setOpen(false); onRun(operation); };
+  const choose = (operation: "unpublish" | "duplicate" | "delete") => { setOpen(false); onRun(operation, moreButton.current); };
   return <>
     <button type="button" disabled={disabled} title={disabled ? "請先儲存或重新載入設定" : "發布編輯器中已儲存的草稿"} onClick={() => onRun("publish")} className="inline-flex min-h-10 cursor-pointer items-center gap-2 rounded-lg bg-emerald-700 px-4 py-2 text-sm font-bold text-white transition-colors hover:bg-emerald-800 disabled:cursor-not-allowed disabled:opacity-50"><Rocket size={17} aria-hidden />{published ? "重新發布" : "發布"}</button>
     <div ref={menu} className="relative">
-      <button type="button" aria-label="更多網站操作" aria-expanded={open} aria-controls="funnel-page-actions-menu" onClick={() => setOpen((value) => !value)} className="inline-flex min-h-10 min-w-10 cursor-pointer items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-700 hover:bg-slate-50"><MoreHorizontal size={18} aria-hidden /></button>
+      <button ref={moreButton} type="button" aria-label="更多網站操作" aria-expanded={open} aria-controls="funnel-page-actions-menu" onClick={() => setOpen((value) => !value)} className="inline-flex min-h-10 min-w-10 cursor-pointer items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-700 hover:bg-slate-50"><MoreHorizontal size={18} aria-hidden /></button>
       {open ? <div id="funnel-page-actions-menu" role="group" aria-label="更多網站操作" className="absolute top-12 right-0 z-50 grid w-48 gap-1 rounded-xl border border-slate-200 bg-white p-1.5 shadow-xl">
         {published ? <button type="button" disabled={disabled} className={item} onClick={() => choose("unpublish")}>取消發布</button> : null}
         <button type="button" disabled={disabled} className={item} onClick={() => choose("duplicate")}>複製網站</button>

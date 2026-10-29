@@ -238,7 +238,7 @@ export default async function AdminBillingDashboardPage() {
                     <CsrfField />
                     <input type="hidden" name="id" value={commission.id} />
                     <input name="reason" placeholder="作廢原因" className="h-9 rounded-md border border-border px-2 text-xs" />
-                    <FormSubmitButton pendingChildren="作廢中…" pendingMessage="正在作廢聯盟佣金並寫入沖回紀錄，請勿重複送出。" confirmMessage="確認作廢這筆聯盟佣金？系統會依 immutable ledger 寫入沖回紀錄。" className="h-9 rounded-md border border-orange-200 px-3 text-xs font-semibold text-orange-700 hover:bg-orange-50">作廢佣金</FormSubmitButton>
+                    <FormSubmitButton pendingChildren="作廢中…" pendingMessage="正在作廢聯盟佣金並寫入沖回紀錄，請勿重複送出。" confirmDestructive confirmMessage="確認作廢這筆聯盟佣金？系統會依 immutable ledger 寫入沖回紀錄。" className="h-9 rounded-md border border-orange-200 px-3 text-xs font-semibold text-orange-700 hover:bg-orange-50">作廢佣金</FormSubmitButton>
                   </form>
                 </div>
               ))}
