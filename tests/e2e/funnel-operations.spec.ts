@@ -121,8 +121,11 @@ test("Funnel secondary tabs persist settings and enforce the public deadline", a
   await stalePanel.getByRole("button", { name: "儲存設定", exact: true }).click();
   await expect(stalePanel.getByText(/版本衝突/u)).toBeVisible();
   expect((await db.landingPage.findUniqueOrThrow({ where: { id: pageId } })).name).toBe("TEST ONLY Winning Revision");
-  stale.once("dialog", dialog => dialog.accept());
   await stalePanel.getByRole("button", { name: "重新載入", exact: true }).click();
+  // Discarding unsaved settings asks inside the page (no native dialog).
+  const discardConfirmation = stale.getByRole("alertdialog", { name: "重新載入會捨棄這次尚未儲存的設定，確定繼續？" });
+  await expect(discardConfirmation).toBeVisible();
+  await discardConfirmation.getByRole("button", { name: "確認", exact: true }).click();
   await expect(stalePanel.getByLabel("名稱", { exact: true })).toHaveValue("TEST ONLY Winning Revision");
   await stale.close();
 

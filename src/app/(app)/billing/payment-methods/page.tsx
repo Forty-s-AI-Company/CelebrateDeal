@@ -271,7 +271,7 @@ export default async function PaymentMethodsPage({ searchParams }: PaymentMethod
                     <form action={revokePaymentMethodReferenceAction}>
                       <CsrfField />
                       <input type="hidden" name="referenceId" value={reference.id} />
-                      <FormSubmitButton pendingChildren="撤銷中…" pendingMessage="正在撤銷付款方式並停用後續扣款，請勿重複送出。" confirmMessage="確認撤銷這個付款方式？後續扣款會立即 fail closed。" className="min-h-10 rounded-md border border-red-200 px-3 py-2 text-xs font-semibold text-red-700 hover:bg-red-50">撤銷</FormSubmitButton>
+                      <FormSubmitButton pendingChildren="撤銷中…" pendingMessage="正在撤銷付款方式並停用後續扣款，請勿重複送出。" confirmDestructive confirmMessage="確認撤銷這個付款方式？後續扣款會立即 fail closed。" className="min-h-10 rounded-md border border-red-200 px-3 py-2 text-xs font-semibold text-red-700 hover:bg-red-50">撤銷</FormSubmitButton>
                     </form>
                   ) : null}
                 </div>

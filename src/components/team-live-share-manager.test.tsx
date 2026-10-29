@@ -39,6 +39,7 @@ vi.mock("@/app/actions/team-funnel-live-share-actions", () => ({
   initialTeamLiveShareActionState: { status: "idle", message: "" },
 }));
 
+import { ConfirmActionButton } from "./confirm-action-button";
 import { TeamLiveShareManager, type TeamLiveSharePage } from "./team-live-share-manager";
 
 type ElementNode = { type: unknown; props: Record<string, unknown> };
@@ -267,8 +268,8 @@ describe("TeamLiveShareManager", () => {
     const forms = findElements(tree, (element) => element.type === "form");
     const bCreate = forms.find((form) => promoterMembershipId(form) === "membership-b" && textContent(form).includes("建立中…"));
     const cCreate = forms.find((form) => promoterMembershipId(form) === "membership-c" && textContent(form).includes("重新產生"));
-    const bButton = findElements(bCreate, (element) => element.type === "button")[0];
-    const cButton = findElements(cCreate, (element) => element.type === "button")[0];
+    const bButton = findElements(bCreate, (element) => element.type === ConfirmActionButton)[0];
+    const cButton = findElements(cCreate, (element) => element.type === ConfirmActionButton)[0];
 
     expect(bCreate?.props["aria-busy"]).toBe(true);
     expect(cCreate?.props["aria-busy"]).toBe(false);
@@ -280,54 +281,30 @@ describe("TeamLiveShareManager", () => {
     expect(textContent(cCreate)).not.toContain("正在建立新的 Live 合作分享連結");
   });
 
-  it("requires confirmation before disabling an active share", () => {
-    const globalScope = globalThis as Record<string, unknown>;
-    const previousWindow = globalScope.window;
-    const confirm = vi.fn(() => false);
-    globalScope.window = { confirm };
+  it("asks in the page before disabling an active share", () => {
+    const tree = renderManager([activePage]);
+    const disableForm = findElements(tree, (element) => element.type === "form" && textContent(element).includes("停用"))[0];
+    const submitter = findElements(disableForm, (element) => element.type === ConfirmActionButton)[0];
 
-    try {
-      const tree = renderManager([activePage]);
-      const disableForm = findElements(tree, (element) => element.type === "form" && textContent(element).includes("停用"))[0];
-      const blocked = { preventDefault: vi.fn() };
-
-      (disableForm.props.onSubmit as (event: typeof blocked) => void)(blocked);
-
-      expect(confirm).toHaveBeenCalledWith("確定要停用 B 夥伴 的 Live 合作分享連結？既有連結會立即失效。");
-      expect(blocked.preventDefault).toHaveBeenCalledOnce();
-
-      confirm.mockReturnValue(true);
-      const allowed = { preventDefault: vi.fn() };
-      (disableForm.props.onSubmit as (event: typeof allowed) => void)(allowed);
-      expect(allowed.preventDefault).not.toHaveBeenCalled();
-    } finally {
-      if (previousWindow === undefined) delete globalScope.window;
-      else globalScope.window = previousWindow;
-    }
+    expect(submitter.props).toMatchObject({
+      type: "submit",
+      destructive: true,
+      message: "確定要停用 B 夥伴 的 Live 合作分享連結？既有連結會立即失效。",
+    });
+    // The form handler only records the pending operation; it never blocks the submit.
+    expect(() => (disableForm.props.onSubmit as () => void)()).not.toThrow();
   });
 
-  it("confirms regeneration only when an old active share will be invalidated", () => {
-    const globalScope = globalThis as Record<string, unknown>;
-    const previousWindow = globalScope.window;
-    const confirm = vi.fn(() => false);
-    globalScope.window = { confirm };
+  it("asks before regeneration only when an old active share will be invalidated", () => {
+    let tree = renderManager([activePage]);
+    let createForm = findElements(tree, (element) => element.type === "form" && textContent(element).includes("重新產生"))[0];
+    let submitter = findElements(createForm, (element) => element.type === ConfirmActionButton)[0];
+    expect(submitter.props.confirmRequired).toBe(true);
+    expect(submitter.props.message).toBe("重新產生會讓 B 夥伴 的舊分享連結立即失效。確定繼續？");
 
-    try {
-      let tree = renderManager([activePage]);
-      let createForm = findElements(tree, (element) => element.type === "form" && textContent(element).includes("重新產生"))[0];
-      const blocked = { preventDefault: vi.fn() };
-      (createForm.props.onSubmit as (event: typeof blocked) => void)(blocked);
-      expect(confirm).toHaveBeenCalledWith("重新產生會讓 B 夥伴 的舊分享連結立即失效。確定繼續？");
-      expect(blocked.preventDefault).toHaveBeenCalledOnce();
-
-      confirm.mockClear();
-      tree = renderManager([{ ...activePage, targets: [{ ...activePage.targets[0], activeShare: null }] }]);
-      createForm = findElements(tree, (element) => element.type === "form" && textContent(element).includes("建立連結"))[0];
-      (createForm.props.onSubmit as (event: typeof blocked) => void)(blocked);
-      expect(confirm).not.toHaveBeenCalled();
-    } finally {
-      if (previousWindow === undefined) delete globalScope.window;
-      else globalScope.window = previousWindow;
-    }
+    tree = renderManager([{ ...activePage, targets: [{ ...activePage.targets[0], activeShare: null }] }]);
+    createForm = findElements(tree, (element) => element.type === "form" && textContent(element).includes("建立連結"))[0];
+    submitter = findElements(createForm, (element) => element.type === ConfirmActionButton)[0];
+    expect(submitter.props.confirmRequired).toBe(false);
   });
 });

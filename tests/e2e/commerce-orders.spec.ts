@@ -2241,12 +2241,11 @@ test("desktop merchant can recover upload and validation errors, then publish an
 
       const roleName = page.getByLabel("暱稱", { exact: true });
       await roleName.fill("");
-      const dialogPromise = page.waitForEvent("dialog");
-      const deleteClick = page.getByRole("button", { name: "刪除", exact: true }).click();
-      const dialog = await dialogPromise;
-      expect(dialog.message()).toContain("目前有 1 個腳本引用");
-      await dialog.dismiss();
-      await deleteClick;
+      await page.getByRole("button", { name: "刪除", exact: true }).click();
+      const deleteConfirmation = page.getByRole("alertdialog");
+      await expect(deleteConfirmation).toContainText("目前有 1 個腳本引用");
+      await deleteConfirmation.getByRole("button", { name: "取消", exact: true }).click();
+      await expect(deleteConfirmation).toHaveCount(0);
       expect(await db.interactionRole.count({ where: { id: role.id, vendorId: fixture.vendorIds[0] } })).toBe(1);
       await roleName.fill("G7-52 合成直播小編");
 
