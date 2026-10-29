@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, useTransition, type KeyboardEvent, type ReactNode } from "react";
+import { useEffect, useRef, useState, useTransition, type KeyboardEvent, type ReactNode } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Eye, Pencil, Trash2, WandSparkles } from "lucide-react";
@@ -8,6 +8,7 @@ import {
   applyLandingPageTemplateAction,
   deleteLandingPageTemplateAction,
   readLandingPageTemplateDocumentAction,
+  readPlatformTemplateDocumentAction,
   readLandingPageTemplateTargetAction,
   renameLandingPageTemplateAction,
 } from "@/app/actions/landing-page-template-actions";
@@ -21,13 +22,13 @@ import {
   FUNNEL_TEMPLATE_PURPOSES,
   FUNNEL_TEMPLATE_STYLE_LABELS,
   FUNNEL_TEMPLATE_STYLES,
-  listFunnelTemplateCatalog,
   type FunnelTemplateCatalogEntry,
   type FunnelTemplatePurpose,
   type FunnelTemplateStyle,
-} from "@/lib/funnel-template-catalog";
+} from "@/lib/funnel-template-library-meta";
+import type { FunnelStepType } from "@/lib/funnel-flow";
 import type { PageDocument } from "@/lib/funnel-page-document";
-import { listFunnelTemplateGallery, previewFunnelTemplate } from "@/lib/funnel-template-gallery";
+import type { PlatformTemplateLibraryEntry } from "@/lib/landing-page-platform-template-library";
 import { landingPageEditorHref } from "@/lib/landing-page-editor-href";
 import { contentHasCustomScript } from "@/lib/funnel-custom-code";
 import { LANDING_PAGE_TEMPLATE_NAME_MAX_LENGTH, LANDING_PAGE_TEMPLATE_VENDOR_LIMIT, templateDisplayDocument } from "@/lib/landing-page-template-document";
@@ -36,7 +37,7 @@ import { useDialogBehavior } from "@/lib/use-dialog-behavior";
 
 export type TemplateLibraryTab = "platform" | "mine";
 type Selected =
-  | { kind: "platform"; id: string; name: string; eyebrow: string; goal: FunnelTemplateCatalogEntry["goal"] }
+  | { kind: "platform"; id: string; name: string; eyebrow: string; goal: FunnelTemplateCatalogEntry["goal"]; stepTypes: readonly FunnelStepType[] }
   | { kind: "mine"; id: string; name: string; eyebrow: string };
 type Preview = { selected: Selected; document: PageDocument; hasScript: boolean };
 type Notice = { tone: "success" | "error"; text: string } | null;
@@ -57,9 +58,10 @@ export function templateCreateHref(selected: Pick<Selected, "kind" | "id"> & { g
 }
 
 /** Steps a template may replace: never the system step; platform templates only on the steps the gallery offers them for. */
-export function templateStepAvailability(selected: Pick<Selected, "kind" | "id">, target: Pick<LandingPageTemplateTarget, "goal">, step: LandingPageTemplateTargetStep): { ok: true } | { ok: false; reason: string } {
+export function templateStepAvailability(selected: Pick<Selected, "kind" | "id"> & { goal?: string; stepTypes?: readonly FunnelStepType[] }, target: Pick<LandingPageTemplateTarget, "goal">, step: LandingPageTemplateTargetStep): { ok: true } | { ok: false; reason: string } {
   if (step.isSystem) return { ok: false, reason: "系統停用頁，不能套用範本" };
-  if (selected.kind === "platform" && !listFunnelTemplateGallery(target.goal, step.type).some((item) => item.id === selected.id)) return { ok: false, reason: "這個範本不適用此步驟類型" };
+  // Same rule as the gallery lookup by (funnel goal, step type): the template must be of this goal and offered for this step type.
+  if (selected.kind === "platform" && !(selected.goal === target.goal && selected.stepTypes?.includes(step.type))) return { ok: false, reason: "這個範本不適用此步驟類型" };
   return { ok: true };
 }
 
@@ -98,9 +100,11 @@ function FilterGroup<T extends string>({ label, options, labels, value, onChange
   </div>;
 }
 
-export function LandingPageTemplateLibrary({ csrfName, csrfToken, myTemplates, sites, projects = [], initialTab = "platform" }: {
+export function LandingPageTemplateLibrary({ csrfName, csrfToken, platformTemplates, myTemplates, sites, projects = [], initialTab = "platform" }: {
   csrfName: string;
   csrfToken: string;
+  /** Card metadata and thumbnails only; a template's full document is read when it is previewed. */
+  platformTemplates: readonly PlatformTemplateLibraryEntry[];
   myTemplates: LandingPageTemplateSummary[];
   /** null when no sales project is selected (applying and creating need one). */
   sites: Array<{ id: string; name: string }> | null;
@@ -126,11 +130,10 @@ export function LandingPageTemplateLibrary({ csrfName, csrfToken, myTemplates, s
   const [mineSource, setMineSource] = useState(myTemplates);
   if (mineSource !== myTemplates) { setMineSource(myTemplates); setMine(myTemplates); }
 
-  const catalog = useMemo(() => listFunnelTemplateCatalog(), []);
-  const documents = useMemo(() => new Map(catalog.map((entry) => [entry.id, previewFunnelTemplate(entry.id, `library_preview_${entry.id}`)])), [catalog]);
+  const catalog = platformTemplates;
   const visible = filterFunnelTemplateCatalog(catalog, { purpose, style });
 
-  const platformSelection = (entry: FunnelTemplateCatalogEntry): Selected => ({ kind: "platform", id: entry.id, name: entry.name, eyebrow: entry.purposes.map((item) => FUNNEL_TEMPLATE_PURPOSE_LABELS[item]).join("・"), goal: entry.goal });
+  const platformSelection = (entry: PlatformTemplateLibraryEntry): Selected => ({ kind: "platform", id: entry.id, name: entry.name, eyebrow: entry.purposes.map((item) => FUNNEL_TEMPLATE_PURPOSE_LABELS[item]).join("・"), goal: entry.goal, stepTypes: entry.stepTypes });
   const mineSelection = (template: LandingPageTemplateSummary): Selected => ({ kind: "mine", id: template.id, name: template.name, eyebrow: "我的範本" });
   // The preview keeps its own page CSS (thumbnails carry none) but never runs the template's JS.
   const openPreview = (selected: Selected, document: PageDocument) => { setViewport("desktop"); setPreview({ selected, document: templateDisplayDocument(document, { keepPageCss: true }), hasScript: contentHasCustomScript(document) }); };
@@ -141,6 +144,20 @@ export function LandingPageTemplateLibrary({ csrfName, csrfToken, myTemplates, s
     try {
       const response = await readLandingPageTemplateDocumentAction(template.id);
       if (response.ok) openPreview(mineSelection(template), response.document);
+      else setNotice({ tone: "error", text: response.message });
+    } catch {
+      setNotice({ tone: "error", text: "無法讀取範本內容，請稍後再試。" });
+    } finally {
+      setLoadingPreviewId(null);
+    }
+  }
+  /** The list only carries thumbnails; the full document of a platform template is read when it is previewed. */
+  async function openPlatformPreview(entry: PlatformTemplateLibraryEntry) {
+    if (loadingPreviewId) return;
+    setLoadingPreviewId(entry.id);
+    try {
+      const response = await readPlatformTemplateDocumentAction(entry.id);
+      if (response.ok) openPreview(platformSelection(entry), response.document);
       else setNotice({ tone: "error", text: response.message });
     } catch {
       setNotice({ tone: "error", text: "無法讀取範本內容，請稍後再試。" });
@@ -173,10 +190,10 @@ export function LandingPageTemplateLibrary({ csrfName, csrfToken, myTemplates, s
       </div>
       <p role="status" className="mb-3 text-sm text-slate-600">{purpose || style ? `符合條件的範本：${visible.length} 個` : `共 ${visible.length} 個範本`}</p>
       {visible.length ? <ul aria-label="平台範本" className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-        {visible.map((entry) => <TemplateCard key={entry.id} document={documents.get(entry.id)!} title={entry.name} eyebrow={entry.category}
+        {visible.map((entry) => <TemplateCard key={entry.id} document={entry.thumbnail} title={entry.name} eyebrow={entry.category}
           badges={<>{entry.purposes.map((item) => <Tag key={item} tone="blue">{FUNNEL_TEMPLATE_PURPOSE_LABELS[item]}</Tag>)}{entry.styles.map((item) => <Tag key={item}>{FUNNEL_TEMPLATE_STYLE_LABELS[item]}</Tag>)}{entry.status === "limited" ? <Tag tone="amber">需綁定商品</Tag> : null}</>}
           description={entry.description}>
-          <button type="button" aria-label={`預覽 ${entry.name}`} onClick={() => openPreview(platformSelection(entry), documents.get(entry.id)!)} className={secondaryButton}><Eye size={16} aria-hidden />預覽</button>
+          <button type="button" aria-label={`預覽 ${entry.name}`} disabled={loadingPreviewId !== null} onClick={() => void openPlatformPreview(entry)} className={secondaryButton}><Eye size={16} aria-hidden />{loadingPreviewId === entry.id ? "讀取中…" : "預覽"}</button>
           <button type="button" aria-label={`使用 ${entry.name}`} onClick={() => openUse(platformSelection(entry))} className={primaryButton}>使用這個範本</button>
         </TemplateCard>)}
       </ul> : <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-8 text-center"><p className="font-semibold text-slate-900">沒有符合條件的範本</p><p className="mt-1 text-sm text-slate-600">換一個用途或風格，或清除篩選看全部範本。</p><button type="button" onClick={() => { setPurpose(null); setStyle(null); }} className={`${secondaryButton} mt-4`}>清除篩選</button></div>}

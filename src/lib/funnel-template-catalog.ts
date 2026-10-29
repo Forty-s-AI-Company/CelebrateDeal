@@ -1,5 +1,12 @@
 import { FUNNEL_STEP_TYPES, type FunnelStepType } from "@/lib/funnel-flow";
 import {
+  DEFAULT_FUNNEL_TEMPLATE_STYLE,
+  FUNNEL_TEMPLATE_PURPOSES,
+  type FunnelTemplateCatalogEntry,
+  type FunnelTemplatePurpose,
+  type FunnelTemplateStyle,
+} from "@/lib/funnel-template-library-meta";
+import {
   FUNNEL_TEMPLATE_GALLERY,
   listFunnelTemplateGallery,
   type FunnelTemplateGalleryItem,
@@ -12,28 +19,6 @@ import {
  * that is not registered here still appears, with its purpose derived from its
  * goal and compatible step types and the default style 「簡約」.
  */
-export const FUNNEL_TEMPLATE_PURPOSES = ["sales", "leads", "webinar", "brand", "policy"] as const;
-export type FunnelTemplatePurpose = (typeof FUNNEL_TEMPLATE_PURPOSES)[number];
-export const FUNNEL_TEMPLATE_PURPOSE_LABELS: Readonly<Record<FunnelTemplatePurpose, string>> = {
-  sales: "銷售",
-  leads: "名單",
-  webinar: "Webinar",
-  brand: "品牌首頁",
-  policy: "條款與政策",
-};
-
-export const FUNNEL_TEMPLATE_STYLES = ["minimal", "warm", "natural", "professional", "vivid", "luxe"] as const;
-export type FunnelTemplateStyle = (typeof FUNNEL_TEMPLATE_STYLES)[number];
-export const FUNNEL_TEMPLATE_STYLE_LABELS: Readonly<Record<FunnelTemplateStyle, string>> = {
-  minimal: "簡約",
-  warm: "溫暖",
-  natural: "自然",
-  professional: "專業",
-  vivid: "活潑",
-  luxe: "高質感",
-};
-export const DEFAULT_FUNNEL_TEMPLATE_STYLE: FunnelTemplateStyle = "minimal";
-
 type CatalogTags = { purposes: readonly FunnelTemplatePurpose[]; styles: readonly FunnelTemplateStyle[] };
 
 /** Registered labels by template id. Ids missing from the gallery are ignored. */
@@ -82,19 +67,6 @@ export function deriveFunnelTemplatePurposes(item: Pick<FunnelTemplateGalleryIte
   return FUNNEL_TEMPLATE_PURPOSES.filter((purpose) => purposes.has(purpose));
 }
 
-export type FunnelTemplateCatalogEntry = {
-  id: string;
-  name: string;
-  description: string;
-  category: string;
-  goal: FunnelTemplateGoal;
-  status: FunnelTemplateGalleryItem["status"];
-  statusReason: string;
-  purposes: FunnelTemplatePurpose[];
-  styles: FunnelTemplateStyle[];
-  registered: boolean;
-};
-
 export function funnelTemplateCatalogEntry(item: FunnelTemplateGalleryItem): FunnelTemplateCatalogEntry {
   const tags = item.tags ?? (Object.hasOwn(FUNNEL_TEMPLATE_CATALOG_TAGS, item.id) ? FUNNEL_TEMPLATE_CATALOG_TAGS[item.id] : undefined);
   const purposes = tags?.purposes.length ? [...tags.purposes] : deriveFunnelTemplatePurposes(item);
@@ -111,8 +83,16 @@ export function listFunnelTemplateCatalog(gallery: readonly FunnelTemplateGaller
   return gallery.filter((item) => !item.retired && !item.hidden && !item.libraryHidden).map(funnelTemplateCatalogEntry);
 }
 
-export type FunnelTemplateCatalogFilter = { purpose?: FunnelTemplatePurpose | null; style?: FunnelTemplateStyle | null };
-
-export function filterFunnelTemplateCatalog<T extends Pick<FunnelTemplateCatalogEntry, "purposes" | "styles">>(entries: readonly T[], filter: FunnelTemplateCatalogFilter): T[] {
-  return entries.filter((entry) => (!filter.purpose || entry.purposes.includes(filter.purpose)) && (!filter.style || entry.styles.includes(filter.style)));
-}
+// Labels, entry type and filter live in the client-safe meta module; re-exported so existing imports keep working.
+export {
+  DEFAULT_FUNNEL_TEMPLATE_STYLE,
+  filterFunnelTemplateCatalog,
+  FUNNEL_TEMPLATE_PURPOSE_LABELS,
+  FUNNEL_TEMPLATE_PURPOSES,
+  FUNNEL_TEMPLATE_STYLE_LABELS,
+  FUNNEL_TEMPLATE_STYLES,
+  type FunnelTemplateCatalogEntry,
+  type FunnelTemplateCatalogFilter,
+  type FunnelTemplatePurpose,
+  type FunnelTemplateStyle,
+} from "@/lib/funnel-template-library-meta";
