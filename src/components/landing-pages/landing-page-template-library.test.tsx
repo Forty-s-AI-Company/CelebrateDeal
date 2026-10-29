@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
   remove: vi.fn(),
   readTarget: vi.fn(),
   readDocument: vi.fn(),
+  readPlatform: vi.fn(),
   save: vi.fn(),
   refresh: vi.fn(),
   selectProject: vi.fn(),
@@ -22,11 +23,13 @@ vi.mock("@/app/actions/landing-page-template-actions", () => ({
   deleteLandingPageTemplateAction: mocks.remove,
   readLandingPageTemplateTargetAction: mocks.readTarget,
   readLandingPageTemplateDocumentAction: mocks.readDocument,
+  readPlatformTemplateDocumentAction: mocks.readPlatform,
   saveLandingPageTemplateAction: mocks.save,
 }));
 
 import { listFunnelTemplateCatalog } from "@/lib/funnel-template-catalog";
 import { previewFunnelTemplate } from "@/lib/funnel-template-gallery";
+import { getPlatformTemplatePreviewDocument, listPlatformTemplateLibrary } from "@/lib/landing-page-platform-template-library";
 import { prepareStoredTemplateDocument } from "@/lib/landing-page-template-document";
 import type { LandingPageTemplateSummary, LandingPageTemplateTarget } from "@/lib/landing-page-template-service";
 import { LandingPageTemplateLibrary, templateCreateHref, templateStepAvailability } from "./landing-page-template-library";
@@ -39,6 +42,8 @@ vi.setConfig({ testTimeout: 15_000 });
 let container: HTMLDivElement;
 let root: Root;
 
+// The server hands the library metadata and thumbnails only; built once for the whole file.
+const platformTemplates = listPlatformTemplateLibrary();
 const myDocument = prepareStoredTemplateDocument(previewFunnelTemplate("audience-volunteer"), "我的秋季名單頁")!;
 const myTemplate: LandingPageTemplateSummary = {
   id: "tpl_own_1",
@@ -58,12 +63,14 @@ const target: LandingPageTemplateTarget = {
   ],
 };
 
+const platformSelection = (id: string) => ({ kind: "platform" as const, ...platformTemplates.find((entry) => entry.id === id)! });
+
 async function render(ui: ReactNode) {
   await act(async () => { root.render(ui); });
 }
 
 function library(props: Partial<Parameters<typeof LandingPageTemplateLibrary>[0]> = {}) {
-  return <LandingPageTemplateLibrary csrfName="csrf" csrfToken="synthetic-token" myTemplates={[myTemplate]} sites={[{ id: "page_1", name: "秋季活動" }]} {...props} />;
+  return <LandingPageTemplateLibrary csrfName="csrf" csrfToken="synthetic-token" platformTemplates={platformTemplates} myTemplates={[myTemplate]} sites={[{ id: "page_1", name: "秋季活動" }]} {...props} />;
 }
 
 const buttonNamed = (name: string, scope: ParentNode = container) => [...scope.querySelectorAll("button")].find((button) => button.textContent?.trim() === name || button.getAttribute("aria-label") === name);
@@ -95,6 +102,7 @@ beforeEach(() => {
   document.body.append(container);
   root = createRoot(container);
   for (const mock of Object.values(mocks)) mock.mockReset();
+  mocks.readPlatform.mockImplementation(async (id: string) => ({ ok: true, document: getPlatformTemplatePreviewDocument(id) }));
 });
 
 afterEach(async () => {
@@ -188,7 +196,9 @@ describe("template library tabs", () => {
 describe("template preview", () => {
   it("opens a full preview, switches desktop and mobile, and hands off to 使用", async () => {
     await render(library());
+    expect(mocks.readPlatform).not.toHaveBeenCalled();
     await click(buttonNamed("預覽 AI 工具極簡報名頁"));
+    expect(mocks.readPlatform).toHaveBeenCalledWith("webinar-ai-minimal");
     expect(dialog()?.textContent).toContain("AI 工具極簡報名頁");
     const viewport = () => document.querySelector("[data-template-preview-viewport]")!;
     expect(viewport().getAttribute("data-template-preview-viewport")).toBe("desktop");
@@ -205,6 +215,14 @@ describe("template preview", () => {
     expect(dialog()?.textContent).toContain("使用「AI 工具極簡報名頁」");
     const create = [...dialog()!.querySelectorAll("a")].find((link) => link.textContent?.includes("前往建立"));
     expect(create?.getAttribute("href")).toBe(templateCreateHref({ kind: "platform", id: "webinar-ai-minimal", goal: "webinar" }));
+  });
+
+  it("shows a notice instead of a preview when the platform document cannot be read", async () => {
+    await render(library());
+    mocks.readPlatform.mockResolvedValue({ ok: false, message: "找不到這個範本，或你沒有使用它的權限。" });
+    await click(buttonNamed("預覽 AI 工具極簡報名頁"));
+    expect(dialog()).toBeNull();
+    expect(container.querySelector("[role=alert]")?.textContent).toContain("找不到這個範本");
   });
 
   it("closes the preview with the close button", async () => {
@@ -268,8 +286,8 @@ describe("apply to an existing site", () => {
     const radios = [...dialog()!.querySelectorAll<HTMLInputElement>("input[name=template-target-step]")];
     expect(radios.every((radio) => radio.disabled)).toBe(true);
     expect(dialog()!.textContent).toContain("這個範本不適用此步驟類型");
-    expect(templateStepAvailability({ kind: "platform", id: "leads-checklist-minimal" }, target, target.steps[0]!)).toEqual({ ok: true });
-    expect(templateStepAvailability({ kind: "platform", id: "audience-volunteer" }, target, target.steps[0]!)).toEqual({ ok: false, reason: "這個範本不適用此步驟類型" });
+    expect(templateStepAvailability(platformSelection("leads-checklist-minimal"), target, target.steps[0]!)).toEqual({ ok: true });
+    expect(templateStepAvailability(platformSelection("audience-volunteer"), target, target.steps[0]!)).toEqual({ ok: false, reason: "這個範本不適用此步驟類型" });
   });
 
   it("shows the project guidance on both paths when no project is selected, and switches in place", async () => {
