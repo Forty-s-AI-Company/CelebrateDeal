@@ -13,8 +13,10 @@
 // that migration has not been applied to any shared environment yet.
 //
 // Usage: node scripts/migration-order-check.mjs
-//   MIGRATION_ORDER_BASE_REF overrides the base ref (default origin/master;
-//   CI passes HEAD^1 for pushes to master, i.e. the squash merge's parent).
+//   MIGRATION_ORDER_BASE_REF overrides the base ref (default origin/master).
+//   CI passes the merge group's base_sha for merge-queue entries, and for
+//   pushes to master both the previous master tip (a 40-hex SHA) and HEAD^1,
+//   the newest squash merge's parent.
 // CI checks out with fetch-depth: 0, so the base ref and the merge base are
 // always available; a missing ref fails closed.
 import { spawnSync } from "node:child_process";
