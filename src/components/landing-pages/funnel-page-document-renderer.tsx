@@ -626,7 +626,7 @@ function NodeRenderer({ node, viewport, mode, flow, submission, consultation, pu
   const eventSchedule = eventContext.schedule;
   switch (node.type) {
     case "offer_price": case "payment_button": case "payment_method": case "physical_product": case "customer_type": case "agreement": case "order_bump": case "coupon": case "two_step_order_form": case "shipping_fees":
-      return surface(<><FunnelCommerceElement type={node.type} {...commerceContext} interactive={publicSurface && mode !== "editor"} />{renderChildren()}</>);
+      return surface(<><FunnelCommerceElement type={node.type} {...commerceContext} interactive={publicSurface && mode !== "editor"} accentColor={tokens.linkColor} />{renderChildren()}</>);
     case "section": return surface(<><SectionBackground props={props} /><section>{renderChildren()}</section></>);
     // Row: props.maxWidth centres the content column; props.gap spaces its children;
     // style.direction "row" lays children side by side (wrapping on narrow screens).

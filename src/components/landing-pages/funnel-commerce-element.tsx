@@ -1,21 +1,25 @@
 import type { FunnelNodeType } from "@/lib/funnel-page-document";
 import type { FunnelCommerceBinding, FunnelCommerceView } from "@/lib/funnel-commerce";
 import { formatCurrency } from "@/lib/format";
+import { showcaseReadableOn } from "@/lib/funnel-showcase";
 
 const money = (priceCents: number, currency: string) => formatCurrency(priceCents, currency);
-const buttonClass = "inline-flex min-h-11 items-center rounded-xl bg-blue-700 px-5 py-3 font-semibold text-white";
+const buttonClass = "inline-flex min-h-11 items-center justify-center rounded-xl px-5 py-3 font-semibold";
+const DEFAULT_ACCENT = "#1d4ed8";
 
 /** Commerce never trusts node props, responsive overrides or arbitrary node actions. */
-export function FunnelCommerceElement({ type, binding, commerce, interactive = false }: {
-  type: FunnelNodeType; binding?: FunnelCommerceBinding; commerce?: FunnelCommerceView; interactive?: boolean;
+/** `accentColor` (the page link colour) only paints the checkout button; prices and links still come from the trusted view. */
+export function FunnelCommerceElement({ type, binding, commerce, interactive = false, accentColor = DEFAULT_ACCENT }: {
+  type: FunnelNodeType; binding?: FunnelCommerceBinding; commerce?: FunnelCommerceView; interactive?: boolean; accentColor?: string;
 }) {
+  const buttonStyle = { backgroundColor: accentColor, color: showcaseReadableOn(accentColor) };
   const product = commerce?.product;
   if (!binding || !product || product.id !== binding.productId) return <div data-funnel-capability={type} role="status" className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">尚未連結商品與付款方式。請在訂單步驟的「商品與結帳」選擇有效商品，再儲存並發布。</div>;
   const checkoutLink = (label: string) => interactive && commerce.checkoutPath?.startsWith("/lp/") && !commerce.checkoutPath.includes("\\")
-    ? <a href={commerce.checkoutPath} className={buttonClass}>{label}</a>
-    : <button type="button" disabled className={`${buttonClass} opacity-60`}>{label}（預覽不收款）</button>;
+    ? <a href={commerce.checkoutPath} className={buttonClass} style={buttonStyle}>{label}</a>
+    : <button type="button" disabled className={`${buttonClass} opacity-60`} style={buttonStyle}>{label}（預覽不收款）</button>;
   switch (type) {
-    case "offer_price": return <div><p className="text-sm text-slate-600">{product.name}</p><strong className="text-2xl">{money(product.priceCents, product.currency)}</strong></div>;
+    case "offer_price": return <div><p className="text-sm" style={{ opacity: 0.8 }}>{product.name}</p><strong className="text-3xl leading-tight">{money(product.priceCents, product.currency)}</strong></div>;
     case "payment_button": return checkoutLink("前往安全結帳");
     case "two_step_order_form": return <div className="grid gap-3 rounded-xl border p-4"><ol className="list-inside list-decimal text-sm"><li>填寫聯絡資料</li><li>確認訂單與付款</li></ol>{binding.formMode === "two_step" ? checkoutLink("開始兩步驟結帳") : <p role="status">請在商品與結帳設定將版面切換為「兩步驟」。</p>}</div>;
     case "payment_method": return <p>付款方式會在金流商安全頁面提供。CelebrateDeal 不在此收集卡號；付款設定未就緒時不會建立付款。</p>;
