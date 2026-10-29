@@ -257,11 +257,21 @@ test("one stop webinar verifies registration, preserves live playback through de
   });
   const submissionId = submission.id;
   expect(submission.verificationStatus).toBe("UNVERIFIED");
+  expect(await db.emailDelivery.count({
+    where: { vendorId: fixture.vendorId, sourceFormSubmissionId: submissionId, trigger: "form_submission_verification" },
+  })).toBe(1);
+  // The verification email is dispatched right after the response. This web
+  // server has no email provider configured, so the single attempt must fail
+  // closed before any provider request and stay retryable for the email job.
+  await expect.poll(async () => await db.emailDelivery.findFirst({
+    where: { vendorId: fixture.vendorId, sourceFormSubmissionId: submissionId, trigger: "form_submission_verification" },
+    select: { status: true, attemptCount: true, lastErrorCode: true, sentAt: true, providerMessageId: true },
+  })).toEqual({ status: "failed", attemptCount: 1, lastErrorCode: "configuration", sentAt: null, providerMessageId: null });
   const verificationDelivery = await db.emailDelivery.findFirstOrThrow({
     where: { vendorId: fixture.vendorId, sourceFormSubmissionId: submissionId, trigger: "form_submission_verification" },
-    select: { id: true, status: true, payloadEncryptedEnvelope: true },
+    select: { id: true, nextAttemptAt: true, payloadEncryptedEnvelope: true },
   });
-  expect(verificationDelivery.status).toBe("queued");
+  expect(verificationDelivery.nextAttemptAt).not.toBeNull();
 
   // The URL is only held in memory for the loopback browser navigation. It is
   // deliberately never logged, persisted, or included in assertion messages.

@@ -25,6 +25,7 @@ import { normalizeBlacklistIdentifier } from "@/lib/blacklist-identifiers";
 import { allowsLegacyAffiliateAttribution, defaultAffiliateCode } from "@/lib/live-quota-policy";
 import { validateRegistrationFormAnswers } from "@/lib/registration-form-answers";
 import { ensureFormSubmissionVerificationDelivery } from "@/lib/email-delivery";
+import { deliveryIdForStatuses, scheduleImmediateEmailDispatch } from "@/lib/email-delivery-immediate";
 import { captureOperationalError } from "@/lib/monitoring";
 import { FORM_SUBMISSION_VERIFICATION_TTL_MS } from "@/lib/form-submission-verification";
 import { funnelVisitorIdFromRequest, resolveTrustedFunnelSubmission } from "@/lib/funnel-runtime";
@@ -457,6 +458,10 @@ async function enqueueSubmissionVerificationSafely({
       verificationExpiresAt: submission.verificationExpiresAt,
       emailBrand,
     });
+    // The verification link is what the registrant is waiting for, so send it
+    // after this response instead of waiting for the email job. A duplicate
+    // still-queued row is dispatched at most once by the shared claim.
+    scheduleImmediateEmailDispatch([deliveryIdForStatuses(delivery, ["queued", "duplicate"])]);
     return delivery.status !== "suppressed";
   } catch (error) {
     try {
@@ -787,6 +792,10 @@ function withRetryAfter(response: NextResponse, source: Response) {
   if (retryAfter && /^\d{1,8}$/.test(retryAfter)) response.headers.set("Retry-After", retryAfter);
   return response;
 }
+
+// Verification and automation emails are sent by `after()` within this limit
+// (see IMMEDIATE_EMAIL_DISPATCH_MAX_DURATION_SECONDS).
+export const maxDuration = 60;
 
 /**
  * JSON clients keep their exact status/body contract. A native (no-JavaScript)

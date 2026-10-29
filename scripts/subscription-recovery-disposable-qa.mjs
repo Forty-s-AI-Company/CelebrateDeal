@@ -59,14 +59,20 @@ const migration = await migrate({ afterMigrate: async ({ databaseUrl, environmen
    // PR #458 (F-003): production refuses non-PayUni events, including stored retries.
    const productionProviderCase = result.testResults.flatMap(suite => suite.assertionResults).filter(test =>
     test.title === "refuses a non-PayUni event on the production deployment, including stored retries (F-003)");
+   // PR #504: the paid receipt is dispatched right after commit; a provider-less
+   // attempt fails closed with no network call and must still prove the receipt.
+   const immediateReceiptCase = result.testResults.flatMap(suite => suite.assertionResults).filter(test =>
+    test.title === "still proves the receipt after an immediate dispatch attempt fails closed without provider configuration");
    // Keep all 67 prior cases, the original once-only case, both remaining-budget
    // boundaries, and the nine UPP callback cases (71 + 9), plus four F-048
    // unknown-order / override cases in payment-webhooks.test.ts (80 + 4), and
    // the F-067 refund-notice cases in wp4-buyer-ops.db.test.ts (+2) and the
    // two PR #454 A-1 ambiguous-refund cases in payment-webhooks.test.ts (+2),
-   // and the PR #458 F-003 production provider case in payment-webhooks.test.ts (+1).
-   if (child.status !== 0 || !result.success || tests.total !== 89 || tests.passed !== 89 || tests.skipped !== 0
+   // and the PR #458 F-003 production provider case in payment-webhooks.test.ts (+1),
+   // and the PR #504 immediate receipt dispatch case in wp4-buyer-ops.db.test.ts (+1).
+   if (child.status !== 0 || !result.success || tests.total !== 90 || tests.passed !== 90 || tests.skipped !== 0
     || productionProviderCase.length !== 1 || productionProviderCase[0].status !== "passed"
+    || immediateReceiptCase.length !== 1 || immediateReceiptCase[0].status !== "passed"
     || uppCallbackCases.length !== uppCallbackTitles.length || new Set(uppCallbackCases.map(test => test.title)).size !== uppCallbackTitles.length
     || uppCallbackCases.some(test => test.status !== "passed")
     || originalCallbackCase.length !== 1 || originalCallbackCase[0].status !== "passed"

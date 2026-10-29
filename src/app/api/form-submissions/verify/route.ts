@@ -7,6 +7,7 @@ import {
   ensureLiveReminderDelivery,
   ensureRegistrationConfirmationDelivery,
 } from "@/lib/email-delivery";
+import { deliveryIdForStatuses, isImmediateEmailDelivery, scheduleImmediateEmailDispatch } from "@/lib/email-delivery-immediate";
 import {
   createFormSubmissionChatSessionToken,
   FORM_SUBMISSION_CHAT_SESSION_COOKIE,
@@ -46,6 +47,10 @@ function redirectResult(
   }
   return response;
 }
+
+// Confirmation and due reminder emails are sent by `after()` within this
+// limit (see IMMEDIATE_EMAIL_DISPATCH_MAX_DURATION_SECONDS).
+export const maxDuration = 60;
 
 export async function POST(request: Request) {
   if (!request.headers.get("origin")) {
@@ -104,8 +109,16 @@ export async function POST(request: Request) {
         }
       }
     }
+    const sendNow: string[] = [];
     try {
-      await ensureRegistrationConfirmationDelivery({ ...confirmation, ...(liveStartAtText ? { liveStartAtText } : {}) });
+      const confirmationResult = await ensureRegistrationConfirmationDelivery({
+        ...confirmation,
+        ...(liveStartAtText ? { liveStartAtText } : {}),
+      });
+      // A repeated verification may find its confirmation still queued; the
+      // shared claim lets that row be sent at most once.
+      const confirmationId = deliveryIdForStatuses(confirmationResult, ["queued", "duplicate"]);
+      if (confirmationId) sendNow.push(confirmationId);
     } catch (error) {
       try {
         captureOperationalError(error, {
@@ -118,12 +131,18 @@ export async function POST(request: Request) {
       }
     }
     try {
-      await ensureLiveReminderDelivery({
+      const reminder = await ensureLiveReminderDelivery({
         ...confirmation,
         template: confirmation.reminderTemplate,
         reminderOffsetMinutes: confirmation.liveReminderOffsetMinutes,
         evergreenActive: Boolean(evergreen),
       });
+      // A reminder is normally scheduled for later and left to the job. Only a
+      // registration made inside the reminder window is already due now.
+      const reminderId = deliveryIdForStatuses(reminder, ["scheduled", "reactivated"]);
+      if (reminderId && "nextAttemptAt" in reminder &&isImmediateEmailDelivery(reminder.nextAttemptAt)) {
+        sendNow.push(reminderId);
+      }
     } catch (error) {
       try {
         captureOperationalError(error, {
@@ -135,6 +154,7 @@ export async function POST(request: Request) {
         // Verification and confirmation remain valid if reminder scheduling fails.
       }
     }
+    scheduleImmediateEmailDispatch(sendNow);
   }
   return redirectResult(request, "verified", result.chatSession);
 }

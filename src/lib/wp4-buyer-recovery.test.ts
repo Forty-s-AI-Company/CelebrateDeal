@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { readWp4ExistingBuyerState, wp4HistoricalBuyerWhere, WP4_BUYER_CONTINUATION_SOURCE } from "./wp4-buyer-recovery";
+import { ORDER_PAID_RECEIPT_IN_PIPELINE, readWp4ExistingBuyerState, wp4HistoricalBuyerWhere, WP4_BUYER_CONTINUATION_SOURCE } from "./wp4-buyer-recovery";
 import { WP4_SANDBOX_FIXTURE as fixture } from "./wp4-sandbox-fixture";
 function database(refunded = false) {
  const payment = { id: "payment", status: refunded ? "refunded" : "paid", orderNumber: "order", refundedAmountCents: refunded ? 100 : 0 };
@@ -34,6 +34,18 @@ describe("exact historical buyer persisted proof", () => {
   const { db, tx } = database(); tx.paymentTransaction.findMany.mockResolvedValue(Array.from({ length: count }, () => ({ id: "ambiguous" })));
   expect(await readWp4ExistingBuyerState(db as never)).toEqual({ status: count ? "CANDIDATE_AMBIGUOUS" : "FIXTURE_UNAVAILABLE" });
   expect(tx.commerceOrder.findMany).not.toHaveBeenCalled();
+ });
+ it("counts exactly one tenant-bound paid receipt that is still deliverable, including a retryable failed attempt", async () => {
+  const { db, tx, order } = database(); await readWp4ExistingBuyerState(db as never);
+  expect(tx.emailDelivery.count).toHaveBeenCalledWith({ where: { vendorId: fixture.vendorId, idempotencyKey: `order-paid:v1:${order.id}`, trigger: "order_paid", OR: [
+   { status: { in: ["queued", "sending", "sent"] } },
+   { status: "failed", nextAttemptAt: { not: null } },
+  ] } });
+  expect(tx.emailDelivery.count.mock.calls[0]![0].where.OR).toEqual(ORDER_PAID_RECEIPT_IN_PIPELINE);
+  for (const count of [0, 2]) {
+   tx.emailDelivery.count.mockResolvedValue(count);
+   expect(await readWp4ExistingBuyerState(db as never)).toEqual({ status: "STATE_MISMATCH" });
+  }
  });
  it("rejects duplicate paid events or missing inventory commitment", async () => {
   const { db, tx } = database(); tx.commerceOrderEvent.count.mockResolvedValue(2);
