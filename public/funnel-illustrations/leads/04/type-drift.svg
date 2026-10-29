@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 300" width="480" height="300">
+<title>作息飄移型：時鐘指針一天比一天晚</title>
+<rect width="480" height="300" fill="#e7ece4"/>
+<g fill="none" stroke-linecap="round">
+<circle cx="170" cy="150" r="92" fill="#ffffff" stroke="#18233f" stroke-width="6"/>
+<path d="M170 150 V86" stroke="#18233f" stroke-width="6"/>
+<path d="M170 150 L224 176" stroke="#2f6b5b" stroke-width="6"/>
+<g stroke="#18233f" stroke-width="4"><path d="M170 66 v10 M170 224 v10 M86 150 h10 M244 150 h10"/></g>
+</g>
+<circle cx="170" cy="150" r="7" fill="#18233f"/>
+<g font-family="'Noto Sans TC',sans-serif" font-size="16" font-weight="700">
+<g transform="translate(300 74)"><rect width="128" height="38" rx="19" fill="#ffffff"/><text x="64" y="25" text-anchor="middle" fill="#3c4a48">週一 23:00</text></g>
+<g transform="translate(312 128)"><rect width="128" height="38" rx="19" fill="#d3dbec"/><text x="64" y="25" text-anchor="middle" fill="#18233f">週三 00:30</text></g>
+<g transform="translate(324 182)"><rect width="128" height="38" rx="19" fill="#18233f"/><text x="64" y="25" text-anchor="middle" fill="#f2d27a">週五 02:00</text></g>
+</g>
+<path d="M290 92 q-14 50 20 110" fill="none" stroke="#2f6b5b" stroke-width="3" stroke-dasharray="6 7"/>
+</svg>

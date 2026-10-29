@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 360" width="480" height="360" font-family="'Noto Sans TC',sans-serif">
+<title>角度前後對照示意：左為俯拍變形的帆布包，右為平視拍攝比例正確的帆布包</title>
+<rect width="240" height="360" fill="#e9e4da"/>
+<rect x="240" width="240" height="360" fill="#fff6d6"/>
+<rect x="240" y="262" width="240" height="98" fill="#f3e6b4"/>
+<g transform="translate(40 120)">
+<path d="M10 20 L150 0 L170 150 L-6 170 Z" fill="#c9b79a" stroke="#4d4335" stroke-width="3" stroke-linejoin="round"/>
+<path d="M50 14 q30 -60 60 -8" fill="none" stroke="#4d4335" stroke-width="6"/>
+<rect x="56" y="70" width="50" height="34" rx="3" fill="#a8977a" transform="rotate(-6 80 86)"/>
+</g>
+<g transform="translate(300 96)">
+<path d="M0 46 H124 L114 180 H10 Z" fill="#1a1a1a"/>
+<path d="M34 46 q28 -66 56 0" fill="none" stroke="#1a1a1a" stroke-width="7"/>
+<rect x="36" y="92" width="52" height="40" rx="4" fill="#ffd84d"/>
+<text x="62" y="118" text-anchor="middle" font-size="13" font-weight="700" fill="#1a1a1a">TOTE</text>
+</g>
+<ellipse cx="362" cy="276" rx="64" ry="8" fill="#1a1a1a" opacity=".16"/>
+<g stroke="#c42a5f" stroke-width="2" stroke-dasharray="6 6" opacity=".9"><path d="M240 196 H480"/></g>
+<rect x="238" width="4" height="360" fill="#1a1a1a"/>
+<g font-size="15" font-weight="700">
+<rect x="16" y="16" width="78" height="30" rx="15" fill="#1a1a1a"/><text x="55" y="36" text-anchor="middle" fill="#ffffff">BEFORE</text>
+<rect x="386" y="16" width="78" height="30" rx="15" fill="#ffd84d" stroke="#1a1a1a" stroke-width="2"/><text x="425" y="36" text-anchor="middle" fill="#1a1a1a">AFTER</text>
+</g>
+</svg>

@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 300" width="480" height="300">
+<title>接案合約範本縮圖</title>
+<rect width="480" height="300" fill="#e8eefc"/>
+<circle cx="60" cy="260" r="110" fill="#ffffff" opacity=".7"/>
+<g transform="translate(140 30)">
+<rect x="14" y="10" width="200" height="250" rx="8" fill="#c7d2e3"/>
+<rect width="200" height="250" rx="8" fill="#ffffff" stroke="#0f1e36" stroke-width="3"/>
+<rect x="60" y="24" width="80" height="12" rx="6" fill="#0f1e36"/>
+<g fill="#c7d2e3"><rect x="22" y="56" width="156" height="8" rx="4"/><rect x="22" y="74" width="156" height="8" rx="4"/><rect x="22" y="92" width="120" height="8" rx="4"/><rect x="22" y="118" width="156" height="8" rx="4"/><rect x="22" y="136" width="140" height="8" rx="4"/><rect x="22" y="154" width="156" height="8" rx="4"/></g>
+<rect x="22" y="112" width="6" height="56" fill="#1f4fd6"/>
+<path d="M28 214 q14 -22 26 -4 q10 14 22 -6 q8 -12 18 4" fill="none" stroke="#1f4fd6" stroke-width="3" stroke-linecap="round"/>
+<path d="M22 226 H96 M114 226 H178" stroke="#0f1e36" stroke-width="2"/>
+</g>
+<g transform="translate(316 182)"><rect width="76" height="44" rx="10" fill="#1f4fd6"/><text x="38" y="29" text-anchor="middle" font-size="18" font-weight="700" fill="#ffffff" font-family="'Noto Sans TC',sans-serif">DOCX</text></g>
+</svg>

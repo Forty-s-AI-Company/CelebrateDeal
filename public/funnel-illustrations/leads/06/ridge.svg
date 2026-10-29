@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 700" width="1600" height="700" preserveAspectRatio="xMidYMid slice">
+<title>山稜線背景（裝飾）</title>
+<rect width="1600" height="700" fill="#0f1714"/>
+<path d="M0 420 L180 300 L300 360 L470 220 L620 330 L760 250 L900 340 L1060 200 L1220 320 L1380 260 L1600 360 V700 H0 Z" fill="#14201b"/>
+<path d="M0 500 L160 420 L320 470 L500 380 L680 460 L840 400 L1000 470 L1180 390 L1360 450 L1600 410 V700 H0 Z" fill="#18261f"/>
+<path d="M0 590 L200 540 L400 580 L620 520 L820 570 L1040 530 L1240 575 L1440 540 L1600 560 V700 H0 Z" fill="#1c2b24"/>
+<path d="M0 420 L180 300 L300 360 L470 220 L620 330 L760 250 L900 340 L1060 200 L1220 320 L1380 260 L1600 360" fill="none" stroke="#c9a46a" stroke-opacity=".35" stroke-width="1.5"/>
+<g fill="#c9a46a" fill-opacity=".4"><circle cx="240" cy="120" r="1.6"/><circle cx="520" cy="80" r="1.2"/><circle cx="880" cy="140" r="1.8"/><circle cx="1180" cy="90" r="1.3"/><circle cx="1420" cy="150" r="1.5"/><circle cx="700" cy="60" r="1"/></g>
+<circle cx="1260" cy="130" r="34" fill="none" stroke="#c9a46a" stroke-opacity=".4" stroke-width="1.5"/>
+</svg>

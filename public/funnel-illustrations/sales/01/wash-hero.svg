@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1440 900" width="1440" height="900" role="img" aria-label="水彩暈染背景">
+<defs><filter id="wc" x="-15%" y="-15%" width="130%" height="130%"><feTurbulence type="fractalNoise" baseFrequency=".03" numOctaves="3" seed="4"/><feDisplacementMap in="SourceGraphic" scale="16" xChannelSelector="R" yChannelSelector="G"/></filter><filter id="paper"><feTurbulence type="fractalNoise" baseFrequency=".9" numOctaves="2" seed="2"/><feColorMatrix values="0 0 0 0 .55 0 0 0 0 .47 0 0 0 0 .4 0 0 0 .06 0"/></filter><filter id="soft"><feGaussianBlur stdDeviation="28"/></filter></defs>
+<rect width="1440" height="900" fill="#fbf7f2"/>
+<g filter="url(#wc)">
+<g filter="url(#soft)">
+<ellipse cx="1180" cy="170" rx="300" ry="190" fill="#e8b9c6" fill-opacity=".55"/>
+<ellipse cx="1320" cy="420" rx="220" ry="170" fill="#b9cfe4" fill-opacity=".55"/>
+<ellipse cx="1010" cy="720" rx="260" ry="150" fill="#f1d7a8" fill-opacity=".5"/>
+<ellipse cx="110" cy="820" rx="240" ry="130" fill="#c9dcc4" fill-opacity=".5"/>
+<ellipse cx="60" cy="90" rx="180" ry="110" fill="#f3d3d8" fill-opacity=".45"/>
+</g>
+<ellipse cx="1240" cy="250" rx="160" ry="110" fill="#d998ab" fill-opacity=".18"/>
+<ellipse cx="1350" cy="520" rx="110" ry="80" fill="#8fb0d1" fill-opacity=".18"/>
+</g>
+<rect width="1440" height="900" filter="url(#paper)"/>
+</svg>

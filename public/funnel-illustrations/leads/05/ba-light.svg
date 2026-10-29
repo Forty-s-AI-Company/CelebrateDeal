@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 360" width="480" height="360" font-family="'Noto Sans TC',sans-serif">
+<title>光線前後對照示意：左為頂燈下偏黃發暗的香氛瓶，右為窗光下明亮的香氛瓶</title>
+<rect width="240" height="360" fill="#8a7a55"/>
+<rect x="240" width="240" height="360" fill="#fbf7ea"/>
+<rect y="270" width="240" height="90" fill="#6b5d40"/>
+<rect x="240" y="270" width="240" height="90" fill="#efe6cc"/>
+<circle cx="120" cy="30" r="40" fill="#f7d26a" opacity=".55"/>
+<g transform="translate(84 150)">
+<rect x="10" y="0" width="52" height="24" rx="4" fill="#3b3326"/>
+<rect x="0" y="22" width="72" height="104" rx="14" fill="#a68c52" stroke="#3b3326" stroke-width="3"/>
+<rect x="14" y="56" width="44" height="34" rx="4" fill="#cbb98a"/>
+</g>
+<ellipse cx="160" cy="282" rx="70" ry="14" fill="#2b2418" opacity=".55"/>
+<path d="M240 0 L480 0 L480 180 Z" fill="#ffffff" opacity=".8"/>
+<g transform="translate(324 150)">
+<rect x="10" y="0" width="52" height="24" rx="4" fill="#1a1a1a"/>
+<rect x="0" y="22" width="72" height="104" rx="14" fill="#f3c6d4" stroke="#1a1a1a" stroke-width="3"/>
+<rect x="14" y="56" width="44" height="34" rx="4" fill="#ffffff"/>
+<path d="M10 36 v70" stroke="#ffffff" stroke-width="6" stroke-linecap="round" opacity=".85"/>
+</g>
+<ellipse cx="372" cy="280" rx="54" ry="7" fill="#1a1a1a" opacity=".12"/>
+<rect x="238" width="4" height="360" fill="#1a1a1a"/>
+<g font-size="15" font-weight="700">
+<rect x="16" y="16" width="78" height="30" rx="15" fill="#1a1a1a"/><text x="55" y="36" text-anchor="middle" fill="#ffffff">BEFORE</text>
+<rect x="386" y="16" width="78" height="30" rx="15" fill="#ffd84d" stroke="#1a1a1a" stroke-width="2"/><text x="425" y="36" text-anchor="middle" fill="#1a1a1a">AFTER</text>
+</g>
+</svg>

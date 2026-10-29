@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 560" width="800" height="560" role="img" aria-label="水彩作品示意：黃昏港口與小船">
+<defs><filter id="wc" x="-15%" y="-15%" width="130%" height="130%"><feTurbulence type="fractalNoise" baseFrequency=".03" numOctaves="3" seed="4"/><feDisplacementMap in="SourceGraphic" scale="16" xChannelSelector="R" yChannelSelector="G"/></filter><linearGradient id="sky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#f3c7a6"/><stop offset="1" stop-color="#bcd3ea"/></linearGradient></defs><rect width="100%" height="100%" fill="#fffdf9"/>
+<g filter="url(#wc)">
+<rect x="20" y="20" width="760" height="300" fill="url(#sky)" fill-opacity=".85"/>
+<circle cx="600" cy="150" r="46" fill="#f6d28f" fill-opacity=".85"/>
+<path d="M20 300l90-60 70 40 90-80 110 100 80-50 120 70 90-40 110 40v20H20z" fill="#7d8fb3" fill-opacity=".55"/>
+<rect x="20" y="320" width="760" height="220" fill="#6f95bd" fill-opacity=".6"/>
+<path d="M60 380h680M90 430h600M140 480h520" stroke="#fffdf9" stroke-width="6" stroke-opacity=".45"/>
+<path d="M200 360h140l-20 30H220z" fill="#c4563f" fill-opacity=".75"/><path d="M265 360V290l50 70z" fill="#fffdf9"/>
+<path d="M470 390h170l-24 34H496z" fill="#2f5f8a" fill-opacity=".8"/><path d="M550 390v-90l-60 90z" fill="#f6efe6"/>
+</g>
+</svg>

@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 560 600" width="560" height="600" font-family="'Noto Sans TC','PingFang TC','Microsoft JhengHei',sans-serif">
+<defs>
+<filter id="s" x="-20%" y="-20%" width="140%" height="140%"><feDropShadow dx="0" dy="14" stdDeviation="16" flood-color="#14181f" flood-opacity=".14"/></filter>
+<pattern id="dots" width="22" height="22" patternUnits="userSpaceOnUse"><circle cx="2" cy="2" r="1.6" fill="#c2410c" fill-opacity=".18"/></pattern>
+</defs>
+<rect x="18" y="40" width="524" height="540" rx="32" fill="url(#dots)"/>
+<g transform="rotate(-6 280 320)" filter="url(#s)"><rect x="96" y="96" width="340" height="440" rx="18" fill="#f1ede5"/></g>
+<g transform="rotate(3 280 320)" filter="url(#s)">
+<rect x="110" y="70" width="350" height="460" rx="18" fill="#ffffff"/>
+<rect x="110" y="70" width="350" height="78" rx="18" fill="#14181f"/>
+<rect x="110" y="128" width="350" height="20" fill="#14181f"/>
+<text x="138" y="106" fill="#ffffff" font-size="15" letter-spacing="2">WEEK 01</text>
+<text x="138" y="134" fill="#ffffff" font-size="21" font-weight="700">30 天貼文企劃清單</text>
+<g font-size="15" fill="#3b4250">
+<g transform="translate(138 186)"><rect width="22" height="22" rx="6" fill="#c2410c"/><path d="M5 11l4 4 8-9" stroke="#fff" stroke-width="2.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/><text x="36" y="17">Day 1｜自我介紹貼文</text></g>
+<g transform="translate(138 232)"><rect width="22" height="22" rx="6" fill="#c2410c"/><path d="M5 11l4 4 8-9" stroke="#fff" stroke-width="2.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/><text x="36" y="17">Day 2｜商品背後的故事</text></g>
+<g transform="translate(138 278)"><rect width="22" height="22" rx="6" fill="#c2410c"/><path d="M5 11l4 4 8-9" stroke="#fff" stroke-width="2.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/><text x="36" y="17">Day 3｜客人常問的問題</text></g>
+<g transform="translate(138 324)"><rect width="22" height="22" rx="6" fill="none" stroke="#b9b4aa" stroke-width="2"/><text x="36" y="17">Day 4｜工作日常一景</text></g>
+<g transform="translate(138 370)"><rect width="22" height="22" rx="6" fill="none" stroke="#b9b4aa" stroke-width="2"/><text x="36" y="17">Day 5｜用 3 張圖教一件事</text></g>
+<g transform="translate(138 416)"><rect width="22" height="22" rx="6" fill="none" stroke="#b9b4aa" stroke-width="2"/><text x="36" y="17">Day 6｜限時動態互動題</text></g>
+</g>
+<rect x="138" y="468" width="294" height="38" rx="10" fill="#fdf1ea"/>
+<text x="156" y="493" font-size="14" fill="#9a3412">本週檢查：觸及、收藏、私訊數</text>
+</g>
+<g transform="translate(404 34) rotate(8)"><rect width="128" height="128" rx="64" fill="#c2410c"/><text x="64" y="58" text-anchor="middle" fill="#fff" font-size="16">免費</text><text x="64" y="86" text-anchor="middle" fill="#fff" font-size="22" font-weight="700">PDF＋表</text></g>
+</svg>

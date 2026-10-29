@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 760" width="600" height="760">
+<title>空間線稿：開放式廚房，木作吊櫃與中島</title>
+<rect width="600" height="760" fill="#efece6"/>
+<path d="M0 560 H600 V760 H0 Z" fill="#e2d3bf"/>
+<rect x="40" y="110" width="520" height="130" fill="#8a5a24" fill-opacity=".22"/>
+<g fill="none" stroke="#1d2422" stroke-width="2.4" stroke-linejoin="round" stroke-linecap="round">
+<rect x="40" y="110" width="520" height="130"/><path d="M170 110 V240 M300 110 V240 M430 110 V240 M150 175 h0 M280 175 h0"/>
+<path d="M40 330 H560 M40 330 V480 H560 V330 M150 330 V480 M300 330 V480 M450 330 V480"/>
+<path d="M330 300 c0 -24 40 -24 40 0 v30 M350 270 v-16"/>
+<path d="M80 600 H520 V640 H80 Z M100 640 V720 M500 640 V720"/>
+<path d="M150 600 v-50 M140 550 h20 M380 600 v-40 c0 -20 40 -20 40 0 v40"/>
+<path d="M300 40 V90 M270 90 h60 l-10 20 h-40 z M200 40 V70 M180 70 h40 l-8 16 h-24 z M400 40 V70 M380 70 h40 l-8 16 h-24 z"/>
+</g>
+<g fill="#2c4a3f"><rect x="80" y="600" width="440" height="12"/></g>
+<g fill="#1d2422"><circle cx="160" cy="175" r="4"/><circle cx="290" cy="175" r="4"/><circle cx="420" cy="175" r="4"/></g>
+</svg>

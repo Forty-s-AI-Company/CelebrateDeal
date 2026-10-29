@@ -467,7 +467,8 @@ const localizedValidation = {
   onInput: (event: FormEvent<HTMLInputElement>) => event.currentTarget.setCustomValidity(""),
 };
 
-function PublicSubmissionForm({ submission, label, requireConsent, design }: { submission: FunnelSubmissionContext; label: string; requireConsent: boolean; design?: FunnelFormDesign }) {
+/** `idScope` (the form node id) keeps label/input ids unique when a page has more than one form bound to the same registration form. */
+function PublicSubmissionForm({ submission, label, requireConsent, design, idScope }: { submission: FunnelSubmissionContext; label: string; requireConsent: boolean; design?: FunnelFormDesign; idScope?: string }) {
   const retry = useRegistrationRetry(submission.form.id);
   const [status, setStatus] = useState<"idle" | "submitting" | "success" | "error">(retry?.submitted ? "success" : retry?.message ? "error" : "idle");
   const [message, setMessage] = useState(retry?.submitted ? `${submission.form.successMessage} ${FORM_SUBMISSION_VERIFICATION_MESSAGE}` : retry?.message ?? "");
@@ -521,7 +522,7 @@ function PublicSubmissionForm({ submission, label, requireConsent, design }: { s
     <input type="hidden" name="redirectTo" value={submission.redirectTo ?? retry?.sourcePath ?? ""} />
     {retry ? <input type="hidden" name="__registrationReturnPath" value={retry.sourcePath} /> : null}
     {design
-      ? <DesignedSubmissionFields submission={submission} design={design} requireConsent={requireConsent} locked={status === "submitting" || status === "success"} draft={retry?.draft?.answers} submitText={submitText(nativePending ? "submitting" : status, submission.form.submitLabel)} />
+      ? <DesignedSubmissionFields submission={submission} design={design} idScope={idScope} requireConsent={requireConsent} locked={status === "submitting" || status === "success"} draft={retry?.draft?.answers} submitText={submitText(nativePending ? "submitting" : status, submission.form.submitLabel)} />
       : <PlainSubmissionFields submission={submission} requireConsent={requireConsent} locked={status === "submitting" || status === "success"} draft={retry?.draft?.answers} submitText={submitText(status, submission.form.submitLabel)} />}
     <RegistrationSubmissionFeedback pending={status === "submitting"} errorMessage={status === "error" ? message : ""} successMessage={status === "success" ? message : ""} />
   </form>;
@@ -540,13 +541,13 @@ function PlainSubmissionFields({ submission, requireConsent, locked, draft, subm
 
 const FIELD_AUTOCOMPLETE: Readonly<Record<string, string>> = { email: "email", name: "name", phone: "tel", tel: "tel", mobile: "tel", company: "organization" };
 
-function DesignedSubmissionFields({ submission, design, requireConsent, locked, draft, submitText }: { submission: FunnelSubmissionContext; design: FunnelFormDesign; requireConsent: boolean; locked: boolean; draft?: Record<string, string>; submitText: string }) {
+function DesignedSubmissionFields({ submission, design, idScope, requireConsent, locked, draft, submitText }: { submission: FunnelSubmissionContext; design: FunnelFormDesign; idScope?: string; requireConsent: boolean; locked: boolean; draft?: Record<string, string>; submitText: string }) {
   return <div className="grid" style={{ gap: design.gap }}>
     {design.before}
     <div className="grid" style={{ gap: design.gap, gridTemplateColumns: design.mobile ? "minmax(0, 1fr)" : "repeat(2, minmax(0, 1fr))" }}>
       {submission.form.fields.map((field) => {
         const look = design.fields[field.key] ?? {};
-        const inputId = `funnel-field-${submission.form.id}-${field.key}`;
+        const inputId = `funnel-field-${submission.form.id}-${idScope ? `${idScope}-` : ""}${field.key}`;
         const helpId = look.helpText ? `${inputId}-help` : undefined;
         return <div key={field.key} className="grid min-w-0 content-start" style={{ gap: 6, gridColumn: design.mobile || !look.half ? "1 / -1" : undefined }}>
           <label htmlFor={inputId} className="block text-[0.9375em] font-semibold">{field.label}{field.required ? " *" : <span aria-hidden className="font-normal opacity-80">（選填）</span>}</label>
@@ -626,7 +627,7 @@ function NodeRenderer({ node, viewport, mode, flow, submission, consultation, pu
   const eventSchedule = eventContext.schedule;
   switch (node.type) {
     case "offer_price": case "payment_button": case "payment_method": case "physical_product": case "customer_type": case "agreement": case "order_bump": case "coupon": case "two_step_order_form": case "shipping_fees":
-      return surface(<><FunnelCommerceElement type={node.type} {...commerceContext} interactive={publicSurface && mode !== "editor"} />{renderChildren()}</>);
+      return surface(<><FunnelCommerceElement type={node.type} {...commerceContext} interactive={publicSurface && mode !== "editor"} accentColor={tokens.linkColor} />{renderChildren()}</>);
     case "section": return surface(<><SectionBackground props={props} /><section>{renderChildren()}</section></>);
     // Row: props.maxWidth centres the content column; props.gap spaces its children;
     // style.direction "row" lays children side by side (wrapping on narrow screens).
@@ -690,7 +691,7 @@ function NodeRenderer({ node, viewport, mode, flow, submission, consultation, pu
       if (props.variant === "checkout-contact") return surface(<fieldset disabled style={stack}>{renderChildren()}</fieldset>);
       if (children.some((child) => getFunnelNodeDefinition(child.type).category === "payment")) return surface(<div aria-label={label} style={stack}>{renderChildren()}</div>);
       const requireConsent = children.some((child) => child.type === "checkbox" && child.props.required === true);
-      if (mode === "preview" && submission) return surface(<PublicSubmissionForm submission={submission} label={label} requireConsent={requireConsent} design={children.length ? formDesign(children, viewport, tokens, (child) => <NodeRenderer key={child.id} node={child} viewport={viewport} mode={mode} flow={flow} submission={submission} consultation={consultation} publicSurface={publicSurface} />, layout.formGap) : undefined} />);
+      if (mode === "preview" && submission) return surface(<PublicSubmissionForm submission={submission} label={label} requireConsent={requireConsent} idScope={node.id} design={children.length ? formDesign(children, viewport, tokens, (child) => <NodeRenderer key={child.id} node={child} viewport={viewport} mode={mode} flow={flow} submission={submission} consultation={consultation} publicSurface={publicSurface} />, layout.formGap) : undefined} />);
       if (publicSurface) return surface(<UnsupportedNode node={node} message="此一頁式網站尚未綁定可公開使用的報名表，表單已停用。" />);
       return surface(<form aria-label={label} onSubmit={(event) => event.preventDefault()} style={stack}>{stringProp(props, ["title", "heading"]) ? <h3 style={funnelTypographyDefaults("h3", tokens)}>{stringProp(props, ["title", "heading"])}</h3> : null}{renderChildren()}</form>);
     }

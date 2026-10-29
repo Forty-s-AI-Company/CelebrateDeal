@@ -1,0 +1,14 @@
+import type { ConversionTemplateDefinition } from "../conversion/types";
+import { template as t01 } from "./01-checklist-minimal";
+import { template as t02 } from "./02-ebook-cafe";
+import { template as t03 } from "./03-toolkit-freelance";
+import { template as t04 } from "./04-selfcheck-sleep";
+import { template as t05 } from "./05-email-course-photo";
+import { template as t06 } from "./06-waitlist-outdoor";
+import { template as t07 } from "./07-newsletter-editorial";
+import { template as t08 } from "./08-consult-interior";
+
+/** 登記檔：順序即範本庫與步驟選單的順序。範本檔是 null 時不登記。 */
+const slots: ReadonlyArray<ConversionTemplateDefinition | null> = [t01, t02, t03, t04, t05, t06, t07, t08];
+
+export const LEADS_TEMPLATES: readonly ConversionTemplateDefinition[] = Object.freeze(slots.filter((template): template is ConversionTemplateDefinition => template !== null));

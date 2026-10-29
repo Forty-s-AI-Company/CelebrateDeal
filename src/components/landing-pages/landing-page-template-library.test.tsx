@@ -32,6 +32,10 @@ import type { LandingPageTemplateSummary, LandingPageTemplateTarget } from "@/li
 import { LandingPageTemplateLibrary, templateCreateHref, templateStepAvailability } from "./landing-page-template-library";
 import { SaveAsTemplateDialog } from "./save-as-template-dialog";
 
+// The library renders a live thumbnail for every platform template (60+ cards after the list and sales
+// templates); under a loaded CI runner a render pass can exceed the 5 s default, so allow more time.
+vi.setConfig({ testTimeout: 15_000 });
+
 let container: HTMLDivElement;
 let root: Root;
 
@@ -264,7 +268,8 @@ describe("apply to an existing site", () => {
     const radios = [...dialog()!.querySelectorAll<HTMLInputElement>("input[name=template-target-step]")];
     expect(radios.every((radio) => radio.disabled)).toBe(true);
     expect(dialog()!.textContent).toContain("這個範本不適用此步驟類型");
-    expect(templateStepAvailability({ kind: "platform", id: "audience-volunteer" }, target, target.steps[0]!)).toEqual({ ok: true });
+    expect(templateStepAvailability({ kind: "platform", id: "leads-checklist-minimal" }, target, target.steps[0]!)).toEqual({ ok: true });
+    expect(templateStepAvailability({ kind: "platform", id: "audience-volunteer" }, target, target.steps[0]!)).toEqual({ ok: false, reason: "這個範本不適用此步驟類型" });
   });
 
   it("shows the project guidance on both paths when no project is selected, and switches in place", async () => {
