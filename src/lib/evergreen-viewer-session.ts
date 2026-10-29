@@ -1,12 +1,14 @@
 import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 import { DERIVED_KEY_ROTATIONS } from "@/lib/derived-key-rotation";
 import {
-  EVERGREEN_SCHEDULE_MODES,
+  evergreenScheduleForLive,
+  type ActiveEvergreenSchedule,
+} from "@/lib/evergreen-activation";
+import {
   getEvergreenPlaybackState,
   getEvergreenSessionStart,
   type EvergreenPlaybackState,
   type EvergreenSchedule,
-  type EvergreenScheduleMode,
 } from "@/lib/evergreen-webinar";
 import {
   resolveLiveRuntime,
@@ -32,7 +34,15 @@ import { deriveSensitiveDataKey } from "@/lib/sensitive-data";
 const TOKEN_VERSION = "eg1";
 const KEY_PURPOSE = DERIVED_KEY_ROTATIONS.evergreenViewerSession.current;
 const COOKIE_PREFIX = "celebratedeal_eg_";
-export const EVERGREEN_SESSION_COOKIE_MAX_AGE_SECONDS = 30 * 24 * 60 * 60;
+/**
+ * Upper bound for both the cookie and the signed token. Each evergreen Live
+ * gets its own Path=/ cookie, so a long lifetime would let a visitor who browses
+ * many webinars accumulate enough cookies to exceed request header limits (431).
+ */
+export const EVERGREEN_SESSION_COOKIE_MAX_AGE_SECONDS = 7 * 24 * 60 * 60;
+/** Keeps an ended session (and its rejoin option) visible briefly without replay. */
+const ENDED_SESSION_GRACE_SECONDS = 60 * 60;
+const MIN_COOKIE_MAX_AGE_SECONDS = 60;
 const MAX_TOKEN_LENGTH = 1_024;
 const MAX_IDENTIFIER_LENGTH = 128;
 const PAYLOAD_PATTERN = /^[A-Za-z0-9_-]{1,900}$/u;
@@ -41,7 +51,6 @@ const FINGERPRINT_PATTERN = /^[0-9a-f]{32}$/u;
 /** A legitimately issued start is never further than two days from its issue time. */
 const MAX_START_DISTANCE_MS = 2 * 24 * 60 * 60 * 1_000;
 const CLOCK_SKEW_MS = 60_000;
-const DEFAULT_TIMEZONE = "Asia/Taipei";
 
 export type EvergreenLiveRecord = {
   id: string;
@@ -73,11 +82,7 @@ export const EVERGREEN_LIVE_SELECT = {
   replayAvailableUntil: true,
 } as const;
 
-export type ActiveEvergreenSchedule = EvergreenSchedule & {
-  timezone: string;
-  /** Merchant anchor: every visitor shares this start (overrides the mode). */
-  sharedStartAt: Date | null;
-};
+export { evergreenScheduleForLive, type ActiveEvergreenSchedule };
 
 export type EvergreenViewerSession = {
   schedule: ActiveEvergreenSchedule;
@@ -94,59 +99,6 @@ export type EvergreenViewerSession = {
 
 function isIdentifier(value: unknown): value is string {
   return typeof value === "string" && value.length > 0 && value.length <= MAX_IDENTIFIER_LENGTH;
-}
-
-function validTimezone(value: string | null | undefined) {
-  if (!value) return null;
-  try {
-    new Intl.DateTimeFormat("en", { timeZone: value }).format(0);
-    return value;
-  } catch {
-    return null;
-  }
-}
-
-function validDurationSeconds(value: number | null | undefined) {
-  return typeof value === "number" && Number.isInteger(value) && value > 0 && value <= 86_400 ? value : null;
-}
-
-/**
- * Returns the schedule only when evergreen playback governs this Live:
- * an evergreen VOD that the merchant has not ended, with a usable duration.
- * Everything else keeps the regular scheduledAt lifecycle.
- */
-export function evergreenScheduleForLive(
-  live: EvergreenLiveRecord,
-  vendorTimezone: string | null | undefined,
-): ActiveEvergreenSchedule | null {
-  if (!live.isEvergreen || live.streamMode !== "vod" || !["scheduled", "live"].includes(live.status)) return null;
-  const durationSeconds = validDurationSeconds(live.video?.durationSec);
-  if (!durationSeconds) return null;
-  if (!EVERGREEN_SCHEDULE_MODES.includes(live.evergreenScheduleMode as EvergreenScheduleMode)) return null;
-  const mode = live.evergreenScheduleMode as EvergreenScheduleMode;
-  const intervalMinutes = [5, 15, 30].includes(live.evergreenIntervalMinutes)
-    ? live.evergreenIntervalMinutes as 5 | 15 | 30
-    : 15;
-  const dailyTimes = [...new Set(live.evergreenDailyTimes ?? [])].sort();
-  if (mode === "recurring_daily" && dailyTimes.length === 0) return null;
-  const sharedStartAt = live.evergreenSessionStartAt && Number.isFinite(live.evergreenSessionStartAt.getTime())
-    ? new Date(live.evergreenSessionStartAt.getTime())
-    : null;
-  const schedule: ActiveEvergreenSchedule = {
-    mode,
-    durationSeconds,
-    timezone: validTimezone(vendorTimezone) ?? DEFAULT_TIMEZONE,
-    intervalMinutes,
-    dailyTimes,
-    sharedStartAt,
-  };
-  try {
-    // Reject a schedule the engine cannot compute (e.g. malformed daily times).
-    getEvergreenSessionStart(schedule, new Date());
-  } catch {
-    return null;
-  }
-  return schedule;
 }
 
 /** Changes whenever a setting that moves the visitor's session changes. */
@@ -281,7 +233,7 @@ export function resolveEvergreenViewerSession(input: {
   now?: Date;
 }): EvergreenViewerSession | null {
   const now = input.now ?? new Date();
-  const schedule = evergreenScheduleForLive(input.live, input.vendorTimezone);
+  const schedule = evergreenScheduleForLive(input.live, input.vendorTimezone, now);
   if (!schedule) return null;
   const engineSchedule: EvergreenSchedule = { ...schedule, sessionStartAt: schedule.sharedStartAt ?? undefined };
   if (schedule.sharedStartAt) {
@@ -350,9 +302,39 @@ export function resolveViewerLiveRuntime(
   };
 }
 
-function readCookieValue(header: string | null, name: string) {
+/** {{live_start_at}} for an evergreen visitor whose own session time is unknown. */
+export const EVERGREEN_NEUTRAL_START_TEXT = "依你的觀看時段開始";
+
+/**
+ * {{live_start_at}} for outbound messages about an evergreen Live: the
+ * visitor's own upcoming or running session in the merchant timezone, or a
+ * neutral phrase when no signed session is available (or it already ended).
+ * The Live's scheduledAt is never used, because it is not the visitor's start.
+ */
+export function evergreenRegistrationStartText(input: {
+  live: EvergreenLiveRecord;
+  vendorTimezone: string | null | undefined;
+  token: string | null | undefined;
+  now?: Date;
+}) {
+  const session = resolveEvergreenViewerSession({ ...input, intent: "read" });
+  if (!session?.assigned || session.playback.roomState === "ended") return EVERGREEN_NEUTRAL_START_TEXT;
+  return new Intl.DateTimeFormat("zh-TW", {
+    dateStyle: "medium",
+    timeStyle: "short",
+    timeZone: session.schedule.timezone,
+  }).format(session.sessionStartAt);
+}
+
+/**
+ * The one cookie parser for evergreen tokens: Route Handlers pass the Request
+ * header and the viewer page passes `headers()`, so both see the same value.
+ * It scans every segment (no count cap) and returns the first match, which is
+ * the most specific one browsers send first.
+ */
+export function readCookieHeaderValue(header: string | null | undefined, name: string) {
   if (!header) return null;
-  for (const segment of header.split(";").slice(0, 100)) {
+  for (const segment of header.split(";")) {
     const separator = segment.indexOf("=");
     if (separator < 0 || segment.slice(0, separator).trim() !== name) continue;
     const value = segment.slice(separator + 1).trim();
@@ -365,18 +347,44 @@ function readCookieValue(header: string | null, name: string) {
   return null;
 }
 
-export function evergreenSessionTokenFromRequest(request: Request, liveId: string) {
-  const value = readCookieValue(request.headers.get("cookie"), evergreenSessionCookieName(liveId));
+export function evergreenSessionTokenFromCookieHeader(header: string | null | undefined, liveId: string) {
+  const value = readCookieHeaderValue(header, evergreenSessionCookieName(liveId));
   return value && value.length <= MAX_TOKEN_LENGTH ? value : null;
 }
 
-export function evergreenSessionCookieOptions(request: Request) {
+export function evergreenSessionTokenFromRequest(request: Request, liveId: string) {
+  return evergreenSessionTokenFromCookieHeader(request.headers.get("cookie"), liveId);
+}
+
+/**
+ * Keeps the cookie only as long as the session can still matter: until the
+ * replay window closes (or a short grace after the session ends when replay is
+ * off), never longer than EVERGREEN_SESSION_COOKIE_MAX_AGE_SECONDS.
+ */
+export function evergreenSessionCookieMaxAgeSeconds(
+  session: Pick<EvergreenViewerSession, "playback">,
+  live: Pick<EvergreenLiveRecord, "replayEnabled" | "replayAvailableUntil">,
+  now: Date,
+) {
+  const graceUntil = session.playback.sessionEndAt.getTime() + ENDED_SESSION_GRACE_SECONDS * 1_000;
+  const replayUntil = live.replayEnabled === true
+    ? live.replayAvailableUntil?.getTime() ?? Number.POSITIVE_INFINITY
+    : Number.NEGATIVE_INFINITY;
+  const keepUntil = Math.max(graceUntil, replayUntil);
+  const seconds = Math.ceil((keepUntil - now.getTime()) / 1_000);
+  if (!Number.isFinite(seconds)) return seconds > 0 ? EVERGREEN_SESSION_COOKIE_MAX_AGE_SECONDS : MIN_COOKIE_MAX_AGE_SECONDS;
+  return Math.max(MIN_COOKIE_MAX_AGE_SECONDS, Math.min(EVERGREEN_SESSION_COOKIE_MAX_AGE_SECONDS, seconds));
+}
+
+export function evergreenSessionCookieOptions(request: Request, maxAgeSeconds: number) {
   return {
     httpOnly: true,
     sameSite: "lax" as const,
     secure: new URL(request.url).protocol === "https:",
     path: "/",
-    maxAge: EVERGREEN_SESSION_COOKIE_MAX_AGE_SECONDS,
+    maxAge: Number.isFinite(maxAgeSeconds)
+      ? Math.max(MIN_COOKIE_MAX_AGE_SECONDS, Math.min(EVERGREEN_SESSION_COOKIE_MAX_AGE_SECONDS, Math.floor(maxAgeSeconds)))
+      : MIN_COOKIE_MAX_AGE_SECONDS,
   };
 }
 

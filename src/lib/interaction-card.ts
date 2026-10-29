@@ -34,6 +34,10 @@ export async function commandCard(db: PrismaClient, vendorId: string, command: C
       if (row.status !== "draft") throw new CardError(409);
       const live = await tx.live.findFirst({ where: { id: scope.liveId, vendorId }, include: { video: { select: { vendorId: true, durationSec: true } } } });
       const schedule = command.schedule;
+      // Deliberately the raw flag, not isActiveEvergreenLive: this is a
+      // fail-closed gate. A floating evergreen Live has no shared clock, so a
+      // flagged Live without a merchant anchor stays disabled even while the
+      // evergreen rule is inactive, instead of silently syncing to scheduledAt.
       if (schedule.enabled && (!live || live.streamMode !== "vod" || live.video?.vendorId !== vendorId || !live.video.durationSec
         || schedule.startSeconds + schedule.durationSeconds > live.video.durationSec
         || (live.isEvergreen && !live.evergreenSessionStartAt))) throw new CardError(400);
@@ -111,6 +115,7 @@ export async function viewerCardSnapshot(db: PrismaClient, scope: Scope, partici
 export async function cardTimelineCapability(db: PrismaClient, scope: Scope) {
   const live = await db.live.findFirst({ where: { id: scope.liveId, vendorId: scope.vendorId }, include: { video: { select: { vendorId: true, durationSec: true } } } });
   if (!live) throw new CardError(404);
+  // Same fail-closed raw-flag gate as the schedule command above.
   return { enabled: live.streamMode === "vod" && live.video?.vendorId === scope.vendorId && Boolean(live.video.durationSec) && (!live.isEvergreen || Boolean(live.evergreenSessionStartAt)), durationSeconds: live.video?.durationSec ?? null };
 }
 export async function instructorCards(db: PrismaClient, scope: Scope, answerRunId?: string): Promise<InstructorCard[]> {

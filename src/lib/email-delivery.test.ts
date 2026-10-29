@@ -478,6 +478,35 @@ describe("email delivery outbox", () => {
     expect(mocks.db.emailDelivery.create).not.toHaveBeenCalled();
   });
 
+  it("renders {{live_start_at}} from an evergreen override and keeps scheduledAt otherwise", async () => {
+    mocks.db.emailDelivery.create.mockImplementation(async ({ data }: { data: Record<string, unknown> }) => ({ id: data.id, status: data.status }));
+    const template = { ...input.template, subject: "{{live_title}} 開始時間：{{live_start_at}}" };
+
+    await ensureRegistrationConfirmationDelivery({ ...input, template, liveStartAtText: "依你的觀看時段開始" });
+    const evergreen = mocks.db.emailDelivery.create.mock.calls[0]?.[0].data;
+    expect(revealEmailDeliveryPayload(evergreen.payloadEncryptedEnvelope, { vendorId: "vendor-1", deliveryId: evergreen.id }).subject)
+      .toBe("新品直播 開始時間：依你的觀看時段開始");
+
+    await ensureRegistrationConfirmationDelivery({ ...input, formSubmissionId: "submission-2", template });
+    const regular = mocks.db.emailDelivery.create.mock.calls[1]?.[0].data;
+    const regularSubject = revealEmailDeliveryPayload(regular.payloadEncryptedEnvelope, { vendorId: "vendor-1", deliveryId: regular.id }).subject;
+    // 2026-08-08T04:00Z is 12:00 in Asia/Taipei: the non-evergreen behaviour is unchanged.
+    expect(regularSubject).toContain("2026");
+    expect(regularSubject).toContain("12:00");
+    expect(regularSubject).not.toContain("依你的觀看時段開始");
+  });
+
+  it("does not schedule a fixed-time reminder for an active evergreen live", async () => {
+    await expect(ensureLiveReminderDelivery({
+      ...input,
+      reminderOffsetMinutes: 60,
+      evergreenActive: true,
+      template: { ...input.template, trigger: "live_reminder" },
+    }, new Date("2026-08-08T00:00:00.000Z"))).resolves.toEqual({ status: "not_scheduled" });
+    expect(mocks.db.emailDelivery.create).not.toHaveBeenCalled();
+    expect(mocks.db.emailDelivery.updateMany).not.toHaveBeenCalled();
+  });
+
   it("queues one due post-live follow-up and supersedes only older revisions of the same rule", async () => {
     const template = {
       ...input.template,
@@ -783,6 +812,39 @@ describe("email delivery outbox", () => {
     expect(mocks.db.live.findFirst).toHaveBeenCalledWith(expect.objectContaining({
       where: { id: "live-1", vendorId: "vendor-1" },
       select: expect.objectContaining({ title: true }),
+    }));
+  });
+
+  it("supersedes a queued reminder once its live became an active evergreen webinar", async () => {
+    const now = new Date("2026-08-09T04:00:00.000Z");
+    vi.useFakeTimers();
+    vi.setSystemTime(now);
+    const liveScheduledAt = new Date("2026-08-10T04:00:00.000Z");
+    const reminderTemplate = {
+      ...input.template,
+      id: "reminder-template-1",
+      trigger: "live_reminder",
+      subject: "{{live_title}} 即將開始",
+      body: "{{name}}，{{vendor_name}} 即將開播。\n{{unsubscribe_url}}",
+    };
+    mocks.db.emailDelivery.create.mockImplementation(async ({ data }: { data: Record<string, unknown> }) => ({
+      id: data.id, status: data.status, nextAttemptAt: data.nextAttemptAt,
+    }));
+    const scheduled = await ensureLiveReminderDelivery({ ...input, liveScheduledAt, reminderOffsetMinutes: 1440, template: reminderTemplate }, now);
+    if (!("deliveryId" in scheduled) || !scheduled.deliveryId) throw new Error("Expected a scheduled reminder delivery");
+    const createData = mocks.db.emailDelivery.create.mock.calls[0]?.[0].data;
+    mocks.db.emailDelivery.findUnique.mockResolvedValue(candidate({ ...createData, status: "queued" }));
+    mocks.db.live.findFirst.mockResolvedValue({
+      id: "live-1", vendorId: "vendor-1", slug: "new-product-live", title: "新品直播", status: "scheduled",
+      scheduledAt: liveScheduledAt, liveReminderOffsetMinutes: 1440, liveReminderTemplate: reminderTemplate,
+      isEvergreen: true, streamMode: "vod", evergreenScheduleMode: "just_in_time", evergreenIntervalMinutes: 15,
+      evergreenDailyTimes: [], evergreenSessionStartAt: null, video: { durationSec: 1_800 },
+    });
+
+    await expect(dispatchEmailDelivery(scheduled.deliveryId)).resolves.toEqual({ status: "superseded" });
+    expect(mocks.sendTransactionalEmail).not.toHaveBeenCalled();
+    expect(mocks.db.live.findFirst).toHaveBeenCalledWith(expect.objectContaining({
+      select: expect.objectContaining({ isEvergreen: true, evergreenScheduleMode: true, video: { select: { durationSec: true } } }),
     }));
   });
 

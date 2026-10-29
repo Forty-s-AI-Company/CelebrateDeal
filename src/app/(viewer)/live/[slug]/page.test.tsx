@@ -8,7 +8,7 @@ const mocks = vi.hoisted(() => ({
     throw new Error("NEXT_NOT_FOUND");
   }),
   warn: vi.fn(),
-  cookies: vi.fn(),
+  headers: vi.fn(),
 }));
 
 vi.mock("next/navigation", () => ({
@@ -16,7 +16,7 @@ vi.mock("next/navigation", () => ({
 }));
 
 vi.mock("next/headers", () => ({
-  cookies: mocks.cookies,
+  headers: mocks.headers,
 }));
 
 vi.mock("@/lib/db", () => ({
@@ -665,7 +665,7 @@ describe("PublicLivePage", () => {
     expect(Object.keys(element.props.live)).toEqual([
       "id", "title", "slug", "status", "runtimeState", "scheduledAt", "serverNow", "description", "accentCopy", "heroImageUrl", "vendorId", "admissionRequired", "chatEnabled", "brand", "form", "formConfigurationUnavailable", "interactionEvents", "scheduledMessages", "products",
     ]);
-    expect(mocks.cookies).not.toHaveBeenCalled();
+    expect(mocks.headers).not.toHaveBeenCalled();
   });
 });
 
@@ -716,7 +716,7 @@ describe("PublicLivePage evergreen session", () => {
   }
 
   function withCookie(cookie: { name: string; value: string } | null) {
-    mocks.cookies.mockResolvedValue({ get: (name: string) => (cookie && name === cookie.name ? { name, value: cookie.value } : undefined) });
+    mocks.headers.mockResolvedValue(new Headers(cookie ? { cookie: `analytics=1; ${cookie.name}=${cookie.value}` } : {}));
   }
 
   beforeEach(() => {

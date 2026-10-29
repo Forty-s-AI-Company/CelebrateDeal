@@ -40,7 +40,10 @@ export function EvergreenWebinarSettings({
           <ul className="list-disc pl-5 text-xs leading-5 text-slate-600">
             <li>即時入場：排入下一個整點間隔（例如每 15 分鐘的 :00、:15、:30、:45）；每日固定場次：排入進行中或下一個時段；隨選播放：從觀眾第一次進入時開始。</li>
             <li>優惠券、諮詢 CTA 與互動腳本的商品聚焦、CTA，只會在該觀眾的場次播放到設定秒數後才由伺服器送出。</li>
-            <li>場次結束後依直播的「回放」設定開放回放；未開放時觀眾可自行安排下一場。抽獎、投票、紅包與快閃搶購為全場共用互動，常青場次不會出現。</li>
+            <li>場次結束後依直播的「回放」設定開放回放；未開放時觀眾可自行安排下一場。每位觀眾的專屬場次與個人回放最多保留 7 天（未開放回放時為場次結束後 1 小時），之後再次進入會重新安排場次。</li>
+            <li><strong>啟用後不再使用這場直播原本設定的開播時間（scheduledAt）</strong>：公開觀看頁、播放與漏斗都改依觀眾自己的場次；依開播時間排定的 LINE／Email 開播提醒不會寄出，報名確認信的開播時間會改為觀眾的場次時間（未知時顯示「依你的觀看時段開始」）。</li>
+            <li><strong>以下全場共用互動會停用</strong>：幸運抽獎、投票、空投限時紅包與限時快閃搶購不會出現在常青場次；觀看頁也不顯示「最新購買」跑馬燈，以免提前透露尚未揭露的商品。</li>
+            <li>商品揭露只影響頁面呈現，不是購買授權；結帳仍由伺服器依商品與訂單規則檢查。</li>
             <li>頁面會標示「預錄場次」，不會宣稱為即時直播。變更排程設定後，既有觀眾的場次會重新安排。</li>
           </ul>
         </div>
@@ -94,6 +97,9 @@ export function EvergreenWebinarSettings({
 
 function evergreenError(error: string) {
   if (error === "evergreen_video_required") return "啟用常青 Webinar 前，請先在 Studio 綁定可播放的來源影片。";
+  if (error === "evergreen_vod_required") return "常青 Webinar 只適用預錄影片播放的直播；即時直播請先在 Studio 改回影片播放。";
+  if (error === "evergreen_duration_required") return "系統尚未取得來源影片長度（需介於 1 秒到 24 小時），請等影片處理完成後再啟用常青 Webinar。";
+  if (error === "evergreen_live_changed") return "這場直播的播放來源剛被變更，請重新整理後再儲存。";
   if (error === "invalid_evergreen_schedule") return "排程起點無效，請依商家時區重新選擇日期與時間。";
   if (error === "evergreen_timing_out_of_range") return "優惠券或諮詢 CTA 秒數不能超過來源影片長度。";
   return "常青 Webinar 設定無法儲存，請檢查欄位後再試。";

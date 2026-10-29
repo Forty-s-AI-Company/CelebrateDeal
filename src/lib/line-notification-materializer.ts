@@ -2,6 +2,7 @@ import { getCanonicalAppUrl } from "@/lib/app-url";
 import type { PrismaClient } from "@prisma/client";
 import { getDb } from "@/lib/db";
 import { createLiveViewerUrl } from "@/lib/live-public-url";
+import { EVERGREEN_ACTIVATION_SELECT, isActiveEvergreenLive } from "@/lib/evergreen-activation";
 import {
   buildCommissionLineMessage,
   buildLiveLineMessage,
@@ -63,11 +64,23 @@ export async function materializeLineNotifications(
         },
         select: {
           id: true,
-          live: { select: { id: true, slug: true, title: true, status: true, scheduledAt: true, startedAt: true, endedAt: true } },
+          live: {
+            select: {
+              ...EVERGREEN_ACTIVATION_SELECT,
+              id: true, slug: true, title: true, scheduledAt: true, startedAt: true, endedAt: true,
+              video: { select: { durationSec: true } },
+            },
+          },
         },
       });
       const live = submission?.live;
       if (!live) {
+        await db.lineUserIdentity.update({ where: { id: identity.id }, data: { lastMaterializedAt: now } });
+        continue;
+      }
+      // An evergreen Live has no shared start: each visitor gets their own
+      // session, so fixed-time reminders from scheduledAt would be wrong.
+      if (isActiveEvergreenLive(live, { now })) {
         await db.lineUserIdentity.update({ where: { id: identity.id }, data: { lastMaterializedAt: now } });
         continue;
       }

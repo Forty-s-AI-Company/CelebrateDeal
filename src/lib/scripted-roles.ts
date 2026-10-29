@@ -21,6 +21,10 @@ export async function instructorWarmup(db: PrismaClient, scope: Scope) {
   const state = StoredDanmakuSchema.safeParse(row?.danmakuState).data?.scripted ?? null;
   const scripts = await db.interactionScript.findMany({ where: { vendorId: scope.vendorId, status: "published" }, orderBy: { updatedAt: "desc" }, take: 100, select: { id: true, name: true } });
   const events = state ? await db.$transaction(tx => warmupEvents(tx, scope.vendorId, state.scriptId)).catch(() => []) : [];
+  // Deliberately the raw flag, not isActiveEvergreenLive: this is a
+  // fail-closed gate. A floating evergreen Live has no shared clock, so a
+  // flagged Live without a merchant anchor stays disabled even while the
+  // evergreen rule is inactive, instead of silently syncing to scheduledAt.
   return { state, scripts, events, canSchedule: live.streamMode === "vod" && live.video?.vendorId === scope.vendorId && Boolean(live.video.durationSec) && (!live.isEvergreen || Boolean(live.evergreenSessionStartAt)) };
 }
 export async function commandWarmup(db: PrismaClient, vendorId: string, command: ScriptedCommand) {
@@ -37,6 +41,7 @@ export async function commandWarmup(db: PrismaClient, vendorId: string, command:
       if (!events.length) throw new CardError(409);
       if (command.scheduled) {
         const live = await tx.live.findFirst({ where: { id: command.liveId, vendorId }, include: { video: { select: { vendorId: true, durationSec: true } } } });
+        // Same fail-closed raw-flag gate as instructorWarmup.canSchedule.
         if (!live || live.streamMode !== "vod" || live.video?.vendorId !== vendorId || !live.video.durationSec || (live.isEvergreen && !live.evergreenSessionStartAt)
           || events.some(e => e.triggerSec + 3.5 > live.video!.durationSec!)
           || events.some((e, i) => i > 0 && e.triggerSec - events[i - 1]!.triggerSec < SCRIPTED_INTERVAL / 1000)) throw new CardError(409);
