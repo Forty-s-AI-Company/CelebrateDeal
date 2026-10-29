@@ -1921,7 +1921,9 @@ describe("upsertLiveAction", () => {
         interactionScriptId: "script-1",
         replayEnabled: true,
         replayAvailableUntil: null,
-        products: { create: [{ vendorId: "vendor-1", productId: "product-1", sortOrder: 1, isPinned: true }] },
+        // vendorId comes from the parent live via the composite (vendorId, liveId)
+        // relation; Prisma rejects it inside the nested create (see live-create-products.db.test.ts).
+        products: { create: [{ productId: "product-1", sortOrder: 1, isPinned: true }] },
       }),
     });
     expect(mocks.liveCreate.mock.calls[0]?.[0]?.data).not.toHaveProperty("cloudflareLiveInputUid");
