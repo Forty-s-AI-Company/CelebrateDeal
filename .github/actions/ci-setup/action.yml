@@ -1,0 +1,58 @@
+name: CelebrateDeal CI setup
+description: >-
+  Shared setup for every parallel CI job: start the pinned disposable
+  PostgreSQL, install Node dependencies, generate the Prisma client and apply
+  the committed migrations to celebratedeal_ci. Run it right after Checkout;
+  the job-level env (DATABASE_URL, DIRECT_URL and the synthetic secrets) comes
+  from the workflow.
+
+runs:
+  using: composite
+  steps:
+    - name: Start disposable PostgreSQL
+      # Pinned PostgreSQL 16 Alpine. Pull the same digest from the ECR mirror
+      # or Docker Hub so one registry's rate limit cannot fail the job, then
+      # tag it as postgres:16-alpine for the disposable QA runners.
+      shell: bash
+      env:
+        PG_DIGEST: sha256:1a66d744c1b459e13b05a8fca341da84cb63383e99ce262210efee5a319d4551
+      run: |
+        set -euo pipefail
+        pulled=""
+        for attempt in 1 2 3; do
+          for source in "public.ecr.aws/docker/library/postgres@${PG_DIGEST}" "docker.io/library/postgres@${PG_DIGEST}"; do
+            if docker pull --quiet "$source"; then pulled="$source"; break 2; fi
+          done
+          sleep $((attempt * 15))
+        done
+        test -n "$pulled"
+        docker tag "$pulled" postgres:16-alpine
+        docker run --detach --name ci-postgres --publish 5432:5432 \
+          --env POSTGRES_USER=postgres --env POSTGRES_PASSWORD=postgres --env POSTGRES_DB=celebratedeal_ci \
+          postgres:16-alpine
+        # The image's init server listens only on the Unix socket, so a TCP
+        # check waits for the real server.
+        for _ in $(seq 1 60); do
+          if docker exec ci-postgres pg_isready --host 127.0.0.1 --username postgres --dbname celebratedeal_ci >/dev/null 2>&1; then exit 0; fi
+          sleep 2
+        done
+        docker logs ci-postgres | tail -n 30
+        exit 1
+
+    - name: Setup Node
+      uses: actions/setup-node@v4
+      with:
+        node-version: 22
+        cache: npm
+
+    - name: Install dependencies
+      shell: bash
+      run: npm ci
+
+    - name: Generate Prisma client
+      shell: bash
+      run: npm run db:generate
+
+    - name: Apply database migrations
+      shell: bash
+      run: npm run db:migrate:deploy

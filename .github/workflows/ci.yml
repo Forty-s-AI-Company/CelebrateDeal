@@ -6,71 +6,61 @@ on:
   push:
     branches: [master]
   pull_request:
+  # The merge queue runs the same required checks on its temporary
+  # gh-readonly-queue/master/pr-<n>-<sha> branch before it merges.
+  merge_group:
+    types: [checks_requested]
 
-# A newer run for the same ref supersedes an in-flight one, except on master
-# where every merged commit keeps its own full run.
+# A newer run for the same pull request supersedes an in-flight one. A master
+# push keeps one group per merged commit, and every merge-queue entry keeps its
+# own group and is never cancelled by another entry: GitHub removes or rebuilds
+# queue entries itself.
 concurrency:
-  group: ci-${{ github.ref }}${{ github.ref == 'refs/heads/master' && format('-{0}', github.sha) || '' }}
-  cancel-in-progress: ${{ github.ref != 'refs/heads/master' }}
+  group: ci-${{ github.ref }}${{ (github.ref == 'refs/heads/master' || github.event_name == 'merge_group') && format('-{0}', github.sha) || '' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
+# Every job only reads the repository (checkout and the Preview source fetch);
+# caches use the runner's cache service, not GITHUB_TOKEN.
+permissions:
+  contents: read
+
+# Shared by every job. Each job starts its own disposable PostgreSQL, so these
+# synthetic values never point at a shared or deployed database.
+env:
+  DATABASE_URL: postgresql://postgres:postgres@localhost:5432/celebratedeal_ci?schema=public
+  DIRECT_URL: postgresql://postgres:postgres@localhost:5432/celebratedeal_ci?schema=public
+  NEXT_PUBLIC_APP_URL: https://ci.celebratedeal.local
+  JOB_SECRET: ci-job-secret-123456
+  CRON_SECRET: ci-cron-secret-123456
+  CSRF_SECRET: ci-csrf-fixture-32-bytes-safe-key
+  LIVE_CHAT_INGRESS_SECRET: ci-live-chat-ingress-secret-1234567890
+  RATE_LIMIT_PROVIDER: cloudflare_waf
+  CLOUDFLARE_ACCOUNT_ID: ci-cloudflare-account
+  CLOUDFLARE_STREAM_TOKEN: ci-cloudflare-token
+  CLOUDFLARE_STREAM_WEBHOOK_SECRET: ci-cloudflare-webhook-secret
+  PAYMENT_PROVIDER: demo
+  # F-003 (PR #458 review m-5): CI production-mode servers run the demo
+  # provider; never set this on a real deployment.
+  ALLOW_NON_PAYUNI_PROVIDERS: "1"
+  RESEND_API_KEY: ci-resend-key
+  EMAIL_FROM: CelebrateDeal CI <ci@celebratedeal.invalid>
+  SENTRY_DSN: https://ci@sentry.invalid/1
+  NEXT_PUBLIC_POSTHOG_KEY: ci-posthog-key
+  NEXT_PUBLIC_POSTHOG_HOST: https://app.posthog.com
+  RT01_D2_DISPOSABLE_DB: "true"
+
+# The former single `quality` job runs as parallel jobs on free
+# ubuntu-latest runners. Every former step runs in exactly one job with the
+# same command and env; only Checkout, the Preview source import and the
+# shared setup in .github/actions/ci-setup repeat per job. Branch protection
+# requires the final `quality` job, which passes only when every job passed.
 jobs:
-  quality:
+  static:
+    name: Static checks, contracts and build
     runs-on: ubuntu-latest
     # F-146 / B09-07: the default 360 minutes lets a hung run hold a runner.
     timeout-minutes: 60
-    env:
-      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/celebratedeal_ci?schema=public
-      DIRECT_URL: postgresql://postgres:postgres@localhost:5432/celebratedeal_ci?schema=public
-      NEXT_PUBLIC_APP_URL: https://ci.celebratedeal.local
-      JOB_SECRET: ci-job-secret-123456
-      CRON_SECRET: ci-cron-secret-123456
-      CSRF_SECRET: ci-csrf-fixture-32-bytes-safe-key
-      LIVE_CHAT_INGRESS_SECRET: ci-live-chat-ingress-secret-1234567890
-      RATE_LIMIT_PROVIDER: cloudflare_waf
-      CLOUDFLARE_ACCOUNT_ID: ci-cloudflare-account
-      CLOUDFLARE_STREAM_TOKEN: ci-cloudflare-token
-      CLOUDFLARE_STREAM_WEBHOOK_SECRET: ci-cloudflare-webhook-secret
-      PAYMENT_PROVIDER: demo
-      # F-003 (PR #458 review m-5): CI production-mode servers run the demo
-      # provider; never set this on a real deployment.
-      ALLOW_NON_PAYUNI_PROVIDERS: "1"
-      RESEND_API_KEY: ci-resend-key
-      EMAIL_FROM: CelebrateDeal CI <ci@celebratedeal.invalid>
-      SENTRY_DSN: https://ci@sentry.invalid/1
-      NEXT_PUBLIC_POSTHOG_KEY: ci-posthog-key
-      NEXT_PUBLIC_POSTHOG_HOST: https://app.posthog.com
-      RT01_D2_DISPOSABLE_DB: "true"
     steps:
-      - name: Start disposable PostgreSQL
-        # Pinned PostgreSQL 16 Alpine. Pull the same digest from the ECR mirror
-        # or Docker Hub so one registry's rate limit cannot fail the job, then
-        # tag it as postgres:16-alpine for the disposable QA runners.
-        shell: bash
-        env:
-          PG_DIGEST: sha256:1a66d744c1b459e13b05a8fca341da84cb63383e99ce262210efee5a319d4551
-        run: |
-          set -euo pipefail
-          pulled=""
-          for attempt in 1 2 3; do
-            for source in "public.ecr.aws/docker/library/postgres@${PG_DIGEST}" "docker.io/library/postgres@${PG_DIGEST}"; do
-              if docker pull --quiet "$source"; then pulled="$source"; break 2; fi
-            done
-            sleep $((attempt * 15))
-          done
-          test -n "$pulled"
-          docker tag "$pulled" postgres:16-alpine
-          docker run --detach --name ci-postgres --publish 5432:5432 \
-            --env POSTGRES_USER=postgres --env POSTGRES_PASSWORD=postgres --env POSTGRES_DB=celebratedeal_ci \
-            postgres:16-alpine
-          # The image's init server listens only on the Unix socket, so a TCP
-          # check waits for the real server.
-          for _ in $(seq 1 60); do
-            if docker exec ci-postgres pg_isready --host 127.0.0.1 --username postgres --dbname celebratedeal_ci >/dev/null 2>&1; then exit 0; fi
-            sleep 2
-          done
-          docker logs ci-postgres | tail -n 30
-          exit 1
-
       - name: Checkout
         uses: actions/checkout@v4
         with:
@@ -83,14 +73,8 @@ jobs:
           git fetch --no-tags origin refs/pull/277/head:refs/remotes/origin/verified-wp2-source
           test "$(git rev-parse refs/remotes/origin/verified-wp2-source)" = '9193326824b8b6bf774bdfa28e4783a1a1b8f304'
 
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-
-      - name: Install dependencies
-        run: npm ci
+      - name: Disposable PostgreSQL, dependencies, Prisma client and migrations
+        uses: ./.github/actions/ci-setup
 
       - name: Production dependency audit
         run: npm audit --omit=dev --audit-level=high
@@ -98,20 +82,33 @@ jobs:
       - name: Repository secret and archive scan
         run: npm run secret:scan
 
-      - name: Generate Prisma client
-        run: npm run db:generate
-
       # F-063 / B04-09: every new migration directory must be named
       # <YYYYMMDDHHMMSS>_<snake_case> and sort after the base branch's newest
       # migration; existing migrations may not be deleted, renamed or edited.
-      # A push to master compares against the squash merge's parent.
+      # A merge-queue entry compares against its own parent (base_sha), which
+      # already holds every earlier queue entry. A push to master compares
+      # against the previous master tip (event.before, so every commit of a
+      # multi-commit push is checked) and also against the newest commit's
+      # parent; a new-branch push without a previous tip uses HEAD^1 only.
       - name: Migration name order
-        run: node scripts/migration-order-check.mjs
+        shell: bash
         env:
-          MIGRATION_ORDER_BASE_REF: ${{ (github.event_name == 'push' && github.ref == 'refs/heads/master') && 'HEAD^1' || 'origin/master' }}
-
-      - name: Apply database migrations
-        run: npm run db:migrate:deploy
+          MIGRATION_ORDER_BASE_REF: ${{ github.event_name == 'merge_group' && github.event.merge_group.base_sha || (github.event_name == 'push' && github.ref == 'refs/heads/master') && (github.event.before != '0000000000000000000000000000000000000000' && github.event.before || 'HEAD^1') || 'origin/master' }}
+          MERGE_GROUP_BASE_SHA: ${{ github.event.merge_group.base_sha }}
+        run: |
+          set -euo pipefail
+          echo "migration-order base ref: ${MIGRATION_ORDER_BASE_REF}"
+          if [ "$GITHUB_EVENT_NAME" = merge_group ]; then
+            echo "merge_group base_sha=${MERGE_GROUP_BASE_SHA} HEAD^1=$(git rev-parse HEAD^1)"
+            if ! [[ "$MIGRATION_ORDER_BASE_REF" =~ ^[0-9a-f]{40}$ && "$MIGRATION_ORDER_BASE_REF" = "$MERGE_GROUP_BASE_SHA" ]]; then
+              echo "migration-order: merge_group base_sha is missing or malformed." >&2
+              exit 1
+            fi
+          fi
+          node scripts/migration-order-check.mjs
+          if [ "$GITHUB_EVENT_NAME" = push ] && [ "$MIGRATION_ORDER_BASE_REF" != 'HEAD^1' ]; then
+            MIGRATION_ORDER_BASE_REF='HEAD^1' node scripts/migration-order-check.mjs
+          fi
 
       # B04-04: schema.prisma vs migration-built database. Only the drift in
       # scripts/prisma-drift-allowlist.json may remain; Prisma wipes the
@@ -129,20 +126,6 @@ jobs:
 
       - name: Typecheck
         run: npm run typecheck
-
-      - name: Affiliate portal database boundaries
-        run: npx vitest run --config vitest.affiliate-portal-db.config.ts
-        env:
-          COURSE_LEARNING_DISPOSABLE: verified-loopback
-      - name: Native course database boundaries
-        run: npx vitest run --config vitest.course-learning-db.config.ts
-        env:
-          COURSE_LEARNING_DISPOSABLE: verified-loopback
-
-      - name: Course community database boundaries
-        run: npx vitest run --config vitest.course-community-db.config.ts
-        env:
-          COURSE_LEARNING_DISPOSABLE: verified-loopback
 
       - name: PayUni deployment environment binding contract
         run: npx vitest run src/lib/env.test.ts
@@ -190,14 +173,79 @@ jobs:
         shell: pwsh
         run: pwsh -NoProfile -File ops/backup/tests/Test-BackupTooling.ps1
 
-      - name: Unit tests and coverage thresholds
-        run: npm run test:coverage
-
       - name: LINE integration contract
         run: npm run test:line
 
       - name: Node TAP contract tests
         run: npm run test:contracts
+
+      - name: Build
+        run: npm run build
+
+      - name: Controlled production preflight and build
+        run: node scripts/build/controlled-production-build.mjs
+
+      - name: Preflight
+        run: NODE_ENV=production npm run preflight
+
+  unit:
+    name: Unit tests and coverage
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # The combined coverage run also executes the Node TAP contracts, which
+      # read this source.
+      - name: Import fixed Preview source for staging contract tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin refs/pull/277/head:refs/remotes/origin/verified-wp2-source
+          test "$(git rev-parse refs/remotes/origin/verified-wp2-source)" = '9193326824b8b6bf774bdfa28e4783a1a1b8f304'
+
+      - name: Disposable PostgreSQL, dependencies, Prisma client and migrations
+        uses: ./.github/actions/ci-setup
+
+      - name: Unit tests and coverage thresholds
+        run: npm run test:coverage
+
+  database:
+    name: PostgreSQL database gates
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Import fixed Preview source for staging contract tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin refs/pull/277/head:refs/remotes/origin/verified-wp2-source
+          test "$(git rev-parse refs/remotes/origin/verified-wp2-source)" = '9193326824b8b6bf774bdfa28e4783a1a1b8f304'
+
+      - name: Disposable PostgreSQL, dependencies, Prisma client and migrations
+        uses: ./.github/actions/ci-setup
+
+      - name: Affiliate portal database boundaries
+        run: npx vitest run --config vitest.affiliate-portal-db.config.ts
+        env:
+          COURSE_LEARNING_DISPOSABLE: verified-loopback
+      - name: Native course database boundaries
+        run: npx vitest run --config vitest.course-learning-db.config.ts
+        env:
+          COURSE_LEARNING_DISPOSABLE: verified-loopback
+
+      - name: Course community database boundaries
+        run: npx vitest run --config vitest.course-community-db.config.ts
+        env:
+          COURSE_LEARNING_DISPOSABLE: verified-loopback
 
       - name: PostgreSQL concurrency tests
         shell: bash
@@ -224,17 +272,65 @@ jobs:
       - name: Learner notification database boundaries
         run: node --import tsx scripts/learner-notification-disposable-qa.mjs
 
-      - name: Install Playwright browser
-        run: npx playwright install --with-deps chromium
-
-      - name: Tracking authoritative events database and browser gate
-        run: node scripts/tracking-settings-disposable-qa.mjs --browser
-
       - name: Q1 original refund proof database isolation
         run: node scripts/q1-original-refund-proof-disposable-qa.mjs
 
       - name: Q1 original refund reservation database isolation
         run: node scripts/q1-original-refund-target-disposable-qa.mjs
+
+  release-browser:
+    name: Release browser gates
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Import fixed Preview source for staging contract tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin refs/pull/277/head:refs/remotes/origin/verified-wp2-source
+          test "$(git rev-parse refs/remotes/origin/verified-wp2-source)" = '9193326824b8b6bf774bdfa28e4783a1a1b8f304'
+
+      - name: Disposable PostgreSQL, dependencies, Prisma client and migrations
+        uses: ./.github/actions/ci-setup
+
+      - name: Playwright Chromium
+        uses: ./.github/actions/playwright-chromium
+
+      - name: Release browser gates
+        run: npm run e2e -- --fail-on-flaky-tests
+        env:
+          NEXT_PUBLIC_APP_URL: http://127.0.0.1:31023
+
+  browser-gates:
+    name: Database and browser gates
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Import fixed Preview source for staging contract tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin refs/pull/277/head:refs/remotes/origin/verified-wp2-source
+          test "$(git rev-parse refs/remotes/origin/verified-wp2-source)" = '9193326824b8b6bf774bdfa28e4783a1a1b8f304'
+
+      - name: Disposable PostgreSQL, dependencies, Prisma client and migrations
+        uses: ./.github/actions/ci-setup
+
+      - name: Playwright Chromium
+        uses: ./.github/actions/playwright-chromium
+
+      - name: Tracking authoritative events database and browser gate
+        run: node scripts/tracking-settings-disposable-qa.mjs --browser
 
       - name: Referral sharing database and browser gate
         run: node scripts/affiliate-portal-browser-qa.mjs --browser
@@ -246,16 +342,22 @@ jobs:
       - name: Subscription recovery database and browser gate
         run: node scripts/subscription-recovery-disposable-qa.mjs --browser
 
-      - name: Release browser gates
-        run: npm run e2e -- --fail-on-flaky-tests
+  # Branch protection requires this exact check name. It always runs and
+  # fails unless every parallel job succeeded, so a failed, cancelled or
+  # skipped job can never leave `quality` skipped (which would satisfy the
+  # required check).
+  quality:
+    name: quality
+    if: always()
+    needs: [static, unit, database, release-browser, browser-gates]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Require every CI job to succeed
+        shell: bash
         env:
-          NEXT_PUBLIC_APP_URL: http://127.0.0.1:31023
-
-      - name: Build
-        run: npm run build
-
-      - name: Controlled production preflight and build
-        run: node scripts/build/controlled-production-build.mjs
-
-      - name: Preflight
-        run: NODE_ENV=production npm run preflight
+          NEEDS_JSON: ${{ toJSON(needs) }}
+        run: |
+          set -euo pipefail
+          jq -r 'to_entries[] | "\(.key): \(.value.result)"' <<<"$NEEDS_JSON"
+          jq -e 'length == 5 and all(.[]; .result == "success")' <<<"$NEEDS_JSON" >/dev/null

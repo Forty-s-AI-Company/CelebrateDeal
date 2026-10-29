@@ -200,6 +200,36 @@ test("checks a real git repository end to end", () => {
       errors: [],
     });
 
+    // A multi-commit master push (github.event.before) or a merge-queue entry
+    // (merge_group.base_sha) passes a full 40-hex SHA. Against it every pushed
+    // commit is checked; against HEAD^1 only the newest one is, so CI runs both.
+    gitIn(root, "checkout", "--quiet", "-b", "push-range");
+    const before = gitIn(root, "rev-parse", "HEAD");
+    assert.match(before, /^[0-9a-f]{40}$/u);
+    addMigration(root, "20261023080000_queue_entry_one");
+    gitIn(root, "add", ".");
+    gitIn(root, "commit", "--quiet", "-m", "queue entry one");
+    addMigration(root, "20261022080000_queue_entry_two");
+    gitIn(root, "add", ".");
+    gitIn(root, "commit", "--quiet", "-m", "queue entry two");
+    assert.deepEqual(runMigrationOrderCheck({ root, baseRef: before }), {
+      ok: true,
+      latestBase: "20261021080000_other_line",
+      added: ["20261022080000_queue_entry_two", "20261023080000_queue_entry_one"],
+      errors: [],
+    });
+    assert.deepEqual(runMigrationOrderCheck({ root, baseRef: "HEAD^1" }).errors, [
+      "20261022080000_queue_entry_two: must sort after the newest base migration 20261023080000_queue_entry_one; rebase and rename it with a newer timestamp.",
+    ]);
+    addMigration(root, "20261024080000_BadName");
+    gitIn(root, "add", ".");
+    gitIn(root, "commit", "--quiet", "-m", "malformed earlier commit");
+    addMigration(root, "20261025080000_newest_entry");
+    gitIn(root, "add", ".");
+    gitIn(root, "commit", "--quiet", "-m", "newest entry");
+    assert.equal(runMigrationOrderCheck({ root, baseRef: "HEAD^1" }).ok, true);
+    assert.equal(runMigrationOrderCheck({ root, baseRef: before }).errors.some((error) => error.startsWith("20261024080000_BadName:")), true);
+
     gitIn(root, "checkout", "--quiet", "feature");
     const behind = runMigrationOrderCheck({ root, baseRef: "master" });
     assert.equal(behind.ok, false);

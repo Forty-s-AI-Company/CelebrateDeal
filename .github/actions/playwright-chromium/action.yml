@@ -1,0 +1,23 @@
+name: CelebrateDeal Playwright Chromium
+description: >-
+  Restore the Playwright browser cache for the installed Playwright version,
+  then run the unchanged install command so OS dependencies and any missing
+  browser files are always installed. Run it after the CI setup action.
+
+runs:
+  using: composite
+  steps:
+    - name: Resolve Playwright version
+      id: playwright-version
+      shell: bash
+      run: echo "version=$(node -p "require('./node_modules/playwright-core/package.json').version")" >> "$GITHUB_OUTPUT"
+
+    - name: Cache Playwright browsers
+      uses: actions/cache@v4
+      with:
+        path: ~/.cache/ms-playwright
+        key: playwright-${{ runner.os }}-${{ runner.arch }}-${{ steps.playwright-version.outputs.version }}-chromium
+
+    - name: Install Playwright browser
+      shell: bash
+      run: npx playwright install --with-deps chromium
