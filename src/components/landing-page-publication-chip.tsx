@@ -35,7 +35,8 @@ export function PublicationChip({ published, publication, slug, onManage, action
   useDialogBehavior(open, () => setOpen(false));
   useEffect(() => {
     if (!open) return;
-    const outside = (event: MouseEvent) => { if (root.current && !root.current.contains(event.target as Node)) setOpen(false); };
+    // The confirm dialog of an action inside the popover is portaled to body; pressing it must not close the popover.
+    const outside = (event: MouseEvent) => { const target = event.target as Element; if (root.current && !root.current.contains(target) && !target.closest?.("[data-confirm-dialog]")) setOpen(false); };
     document.addEventListener("mousedown", outside);
     return () => document.removeEventListener("mousedown", outside);
   }, [open]);

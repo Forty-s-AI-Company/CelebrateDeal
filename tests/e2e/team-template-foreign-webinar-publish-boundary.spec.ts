@@ -62,7 +62,6 @@ test("template owner cannot publish a payload tampered with another member's web
         if (serializedWebinarId !== id) throw new Error(`unexpected serialized webinarId: ${String(serializedWebinarId)}`);
       }, { capture: true, once: true });
     }, { id: foreignWebinar.id, title: foreignWebinar.title });
-    page.once("dialog", (dialog) => dialog.accept());
     const responses: number[] = [];
     let publishRequestEvidence: { method: string; status: number | null; pathname: string; requestFailedReason: string | null } | null = null;
     const isPublishActionRequest = (request: Request) => {

@@ -287,18 +287,18 @@ describe("opening a legacy page", () => {
     expect(container.querySelector("button[disabled]")).toBeNull();
     // Unpublished now: only delete remains, and it asks for confirmation first.
     expect(Array.from(container.querySelectorAll("button")).some((item) => item.textContent === "取消發布")).toBe(false);
-    const confirm = vi.fn().mockReturnValueOnce(false);
-    Object.defineProperty(window, "confirm", { value: confirm, configurable: true, writable: true });
     await click(button(container, "刪除一頁式網站"));
+    expect(document.body.querySelector('[role="alertdialog"]')?.textContent).toContain("確定要移除這個一頁式網站嗎？");
+    await click(button(document.body, "取消"));
+    expect(document.body.querySelector('[role="alertdialog"]')).toBeNull();
     expect(mocks.action).toHaveBeenCalledOnce();
-    confirm.mockReturnValueOnce(true);
     mocks.action.mockResolvedValueOnce({ status: "success", message: "Funnel 與草稿已刪除。", id: "page1" });
     await click(button(container, "刪除一頁式網站"));
-    expect(confirm).toHaveBeenCalledTimes(2);
+    await click(button(document.body, "移除"));
+    expect(document.body.querySelector('[role="alertdialog"]')).toBeNull();
     expect((mocks.action.mock.calls[1]![1] as FormData).get("operation")).toBe("delete");
     expect((mocks.action.mock.calls[1]![1] as FormData).get("revision")).toBe("8");
     expect(mocks.push).toHaveBeenCalledWith("/landing-pages");
-    Reflect.deleteProperty(window, "confirm");
   });
 });
 
@@ -316,5 +316,24 @@ describe("publication chip", () => {
     expect(region.textContent).not.toContain("發布已儲存草稿");
     await click(button(region, "前往管理頁發布或管理網站"));
     expect(mocks.push).toHaveBeenCalledWith("/landing-pages/page-1/operations?step=s1&tab=configuration");
+  });
+
+  it("deletes from the publication popover with a real mouse press on the portaled confirm button", async () => {
+    // Without a management page the delete action lives inside the chip popover.
+    const base = workspace();
+    const props = { ...(base.props as Record<string, unknown>), managementHref: undefined };
+    mocks.action.mockResolvedValueOnce({ status: "success", message: "Funnel 與草稿已刪除。", id: "page-1" });
+    const container = await mount(<LandingPageWorkspace {...(props as React.ComponentProps<typeof LandingPageWorkspace>)} />);
+    await click(button(container, "發布狀態：草稿"));
+    await click(button(container, "刪除一頁式網站"));
+    const confirmButton = button(document.body, "移除");
+    // The popover closes on any outside mousedown; the dialog must survive it until click.
+    await act(async () => {
+      confirmButton.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true }));
+      confirmButton.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, cancelable: true }));
+    });
+    expect(document.body.querySelector('[role="alertdialog"]')).not.toBeNull();
+    await act(async () => { confirmButton.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true })); });
+    expect((mocks.action.mock.calls[0]![1] as FormData).get("operation")).toBe("delete");
   });
 });

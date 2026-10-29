@@ -1,6 +1,7 @@
 "use client";
 
 import { useActionState, useEffect, useState } from "react";
+import { ConfirmActionButton } from "@/components/confirm-action-button";
 import { Check, Copy, Link2, RotateCcw, XCircle } from "lucide-react";
 import {
   createTeamLiveShareAction,
@@ -58,12 +59,6 @@ function copyButtonLabel(status: CopyStatus) {
   if (status === "success") return "已複製";
   if (status === "error") return "複製失敗，重試";
   return "複製連結";
-}
-
-function confirmShareChange(event: { preventDefault: () => void }, message: string) {
-  if (window.confirm(message)) return true;
-  event.preventDefault();
-  return false;
 }
 
 export function TeamLiveShareManager({ csrfToken, pages }: { csrfToken: string; pages: TeamLiveSharePage[] }) {
@@ -147,35 +142,29 @@ export function TeamLiveShareManager({ csrfToken, pages }: { csrfToken: string; 
                           {target.activeShare && !isFreshlyCreated ? <p className="mt-1 text-xs text-emerald-700">已啟用 · {formatExpiry(target.activeShare.expiresAt)}</p> : null}
                         </div>
                         <div className="flex flex-wrap gap-2">
-                          <form action={createAction} onSubmit={(event) => {
-                            if (target.activeShare && !window.confirm(`重新產生會讓 ${target.label} 的舊分享連結立即失效。確定繼續？`)) {
-                              event.preventDefault();
-                              return;
-                            }
+                          <form action={createAction} onSubmit={() => {
                             setPendingOperation({ kind: "create", key: operationKey });
                           }} aria-busy={creatingThisShare}>
                             <input type="hidden" name="_csrf" value={csrfToken} />
                             <input type="hidden" name="teamId" value={page.teamId} />
                             <input type="hidden" name="pageId" value={page.id} />
                             <input type="hidden" name="promoterMembershipId" value={target.membershipId} />
-                            <button type="submit" disabled={anyShareOperationPending} aria-disabled={anyShareOperationPending} aria-busy={creatingThisShare} className="inline-flex min-h-11 items-center gap-2 rounded-md bg-primary px-3 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60">
+                            <ConfirmActionButton type="submit" confirmRequired={Boolean(target.activeShare)} message={`重新產生會讓 ${target.label} 的舊分享連結立即失效。確定繼續？`} confirmLabel="重新產生" destructive disabled={anyShareOperationPending} aria-disabled={anyShareOperationPending} aria-busy={creatingThisShare} className="inline-flex min-h-11 items-center gap-2 rounded-md bg-primary px-3 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60">
                               <RotateCcw size={15} aria-hidden="true" />{creatingThisShare ? "建立中…" : target.activeShare ? "重新產生" : "建立連結"}
-                            </button>
+                            </ConfirmActionButton>
                             <span role="status" aria-live="polite" className="sr-only">{creatingThisShare ? "正在建立新的 Live 合作分享連結，請勿重複送出。" : ""}</span>
                           </form>
                           {target.activeShare ? (
-                            <form action={disableAction} onSubmit={(event) => {
-                              if (confirmShareChange(event, `確定要停用 ${target.label} 的 Live 合作分享連結？既有連結會立即失效。`)) {
-                                setPendingOperation({ kind: "disable", key: operationKey });
-                              }
+                            <form action={disableAction} onSubmit={() => {
+                              setPendingOperation({ kind: "disable", key: operationKey });
                             }} aria-busy={disablingThisShare}>
                               <input type="hidden" name="_csrf" value={csrfToken} />
                               <input type="hidden" name="teamId" value={page.teamId} />
                               <input type="hidden" name="pageId" value={page.id} />
                               <input type="hidden" name="promoterMembershipId" value={target.membershipId} />
-                              <button type="submit" disabled={anyShareOperationPending} aria-disabled={anyShareOperationPending} aria-busy={disablingThisShare} className="inline-flex min-h-11 items-center gap-2 rounded-md border border-red-200 px-3 text-sm font-semibold text-red-700 disabled:cursor-not-allowed disabled:opacity-60">
+                              <ConfirmActionButton type="submit" message={`確定要停用 ${target.label} 的 Live 合作分享連結？既有連結會立即失效。`} confirmLabel="停用" destructive disabled={anyShareOperationPending} aria-disabled={anyShareOperationPending} aria-busy={disablingThisShare} className="inline-flex min-h-11 items-center gap-2 rounded-md border border-red-200 px-3 text-sm font-semibold text-red-700 disabled:cursor-not-allowed disabled:opacity-60">
                                 <XCircle size={15} aria-hidden="true" />{disablingThisShare ? "停用中…" : "停用"}
-                              </button>
+                              </ConfirmActionButton>
                               <span role="status" aria-live="polite" className="sr-only">{disablingThisShare ? "正在停用 Live 合作分享連結，請勿重複送出。" : ""}</span>
                             </form>
                           ) : null}

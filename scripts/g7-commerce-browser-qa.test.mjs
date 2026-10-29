@@ -376,7 +376,7 @@ test("G7-52 focused mode attests role preview, transparency, usage impact, Axe, 
   assert.match(browserContract, /getByLabel\("啟用角色"/u);
   assert.match(browserContract, /停用後，下列腳本中 2 個留言／提醒事件不會出現在公開直播/u);
   assert.match(browserContract, /G7-52 跨租戶污染直播/u);
-  assert.match(browserContract, /page\.waitForEvent\("dialog"\)/u);
+  assert.match(browserContract, /page\.getByRole\("alertdialog"\)/u);
   assert.match(browserContract, /interactionRole\.count/u);
   assert.match(browserContract, /expectNoBlockingAxeViolations\(page\)/u);
   assert.match(browserContract, /interaction-role-desktop\.png/u);

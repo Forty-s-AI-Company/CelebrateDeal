@@ -3,6 +3,7 @@
 import { useActionState, useEffect, useState, type FormEvent } from "react";
 import { Copy, ExternalLink, Eye, LockKeyhole, Save, Send, X } from "lucide-react";
 import { Card } from "@/components/ui";
+import { ConfirmActionButton } from "@/components/confirm-action-button";
 import type { PartnerPageActionState } from "@/app/actions/team-funnel-partner-actions";
 import { selectNativeTransport, useNativeActionState } from "@/components/use-native-action-state";
 
@@ -44,10 +45,6 @@ function publishPendingMessage(publishing: boolean, isPublished: boolean) {
   return isPublished ? "正在停止公開夥伴頁，請勿重複送出。" : "正在發布夥伴頁，請勿重複送出。";
 }
 
-function confirmUnpublish(event: { preventDefault: () => void }, isPublished: boolean) {
-  if (isPublished && !window.confirm("確定要停止公開這個夥伴頁？公開網址會立即停止顯示。")) event.preventDefault();
-}
-
 function actionLiveMode(status: PartnerPageActionState["status"]) {
   return status === "error" ? "assertive" as const : "polite" as const;
 }
@@ -56,10 +53,6 @@ function copyButtonLabel(status: "idle" | "success" | "error") {
   if (status === "success") return "已複製";
   if (status === "error") return "複製失敗，重試";
   return "複製公開 URL";
-}
-
-function serverPublishSubmit(event: FormEvent<HTMLFormElement>, isPublished: boolean) {
-  confirmUnpublish(event, isPublished);
 }
 
 export function PartnerPageEditor({ page, products, csrfToken, saveAction, publishAction, nativeAction }: {
@@ -101,14 +94,13 @@ export function PartnerPageEditor({ page, products, csrfToken, saveAction, publi
   }
 
   async function handlePublishSubmit(event: FormEvent<HTMLFormElement>) {
-    confirmUnpublish(event, isPublished);
     if (event.defaultPrevented) return;
     const result = await nativePublishState.submit(event);
     if (result?.status === "success") setIsPublished((current) => !current);
   }
 
   const saveSubmit = selectNativeTransport(nativeAction, handleSaveSubmit, undefined);
-  const publishSubmit = selectNativeTransport(nativeAction, handlePublishSubmit, (event: FormEvent<HTMLFormElement>) => serverPublishSubmit(event, isPublished));
+  const publishSubmit = selectNativeTransport(nativeAction, handlePublishSubmit, undefined);
 
   return (
     <div className="grid gap-5">
@@ -159,7 +151,7 @@ export function PartnerPageEditor({ page, products, csrfToken, saveAction, publi
         {copyStatus === "error" ? <p role="alert" aria-live="assertive" className="mt-3 text-sm font-medium text-red-700">瀏覽器無法複製公開網址，請允許剪貼簿權限後重試。</p> : null}
         {showPreview ? <section aria-label="夥伴頁預覽" className="mt-5 rounded-lg border border-slate-200 bg-slate-50 p-5"><p className="text-xs font-semibold tracking-wide text-slate-500">未發布內容預覽</p><h3 className="mt-2 text-2xl font-semibold text-slate-950">{page.headline || "尚未填寫主標題"}</h3>{page.subheadline ? <p className="mt-2 text-slate-600">{page.subheadline}</p> : null}{page.body ? <p className="mt-4 whitespace-pre-line text-sm leading-6 text-slate-700">{page.body}</p> : null}<button type="button" className="mt-5 rounded-md bg-cta px-4 py-2 text-sm font-semibold text-white">{page.ctaLabel || "尚未填寫 CTA"}</button><p className="mt-4 text-xs text-slate-500">聯絡夥伴：{page.partner.name || "尚未填寫名稱"}{page.partner.email ? ` · ${page.partner.email}` : ""}</p></section> : null}
         <form action={publishFormAction} onSubmit={publishSubmit} aria-busy={publishing} className="mt-4 flex flex-wrap items-center gap-3"><input type="hidden" name="_csrf" value={csrfToken} /><input type="hidden" name="teamId" value={page.teamId} /><input type="hidden" name="pageId" value={page.id} /><input type="hidden" name="operation" value="publish" /><input type="hidden" name="publish" value={isPublished ? "false" : "true"} />
-          <button type="submit" disabled={publishing} aria-disabled={publishing} aria-busy={publishing} className={`inline-flex h-10 items-center gap-2 rounded-md px-4 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60 ${isPublished ? "bg-slate-700" : "bg-cta"}`}><Send size={16} aria-hidden="true" />{publishButtonLabel(publishing, isPublished)}</button><span role="status" aria-live="polite" className="sr-only">{publishPendingMessage(publishing, isPublished)}</span>{publishState.status !== "idle" ? <p role={publishState.status === "error" ? "alert" : "status"} aria-live={actionLiveMode(publishState.status)} className={publishState.status === "success" ? "text-sm text-emerald-800" : "text-sm text-red-800"}>{publishState.message}</p> : null}
+          <ConfirmActionButton type="submit" confirmRequired={isPublished} message="確定要停止公開這個夥伴頁？公開網址會立即停止顯示。" confirmLabel="停止公開" destructive disabled={publishing} aria-disabled={publishing} aria-busy={publishing} className={`inline-flex h-10 items-center gap-2 rounded-md px-4 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60 ${isPublished ? "bg-slate-700" : "bg-cta"}`}><Send size={16} aria-hidden="true" />{publishButtonLabel(publishing, isPublished)}</ConfirmActionButton><span role="status" aria-live="polite" className="sr-only">{publishPendingMessage(publishing, isPublished)}</span>{publishState.status !== "idle" ? <p role={publishState.status === "error" ? "alert" : "status"} aria-live={actionLiveMode(publishState.status)} className={publishState.status === "success" ? "text-sm text-emerald-800" : "text-sm text-red-800"}>{publishState.message}</p> : null}
         </form>
       </Card>
     </div>

@@ -182,26 +182,30 @@ test("video library displays thumbnails and protects archive/restore with confir
   await expect(page.getByRole("img", { name: "影片縮圖 E2E縮圖" })).toBeVisible();
   await expect(page.getByRole("img", { name: "影片 Placeholder E2E尚無縮圖" })).toBeVisible();
 
-  const dialogs: string[] = [];
-  page.on("dialog", async (dialog) => {
-    dialogs.push(dialog.message());
-    await dialog.accept();
-  });
+  const confirmations: string[] = [];
+  const acceptConfirmation = async () => {
+    const confirmation = page.getByRole("alertdialog");
+    await expect(confirmation).toBeVisible();
+    confirmations.push((await confirmation.textContent()) ?? "");
+    await confirmation.getByRole("button", { name: "確認", exact: true }).click();
+  };
   const archiveForm = page.getByRole("form", { name: "影片縮圖 E2E封存" });
   await archiveForm.getByRole("button", { name: "封存" }).click();
+  await acceptConfirmation();
   await expect.poll(async () => (await db.video.findUniqueOrThrow({ where: { id: fixture.thumbnailVideoId }, select: { status: true } })).status).toBe("archived");
 
   // A fresh document makes the second mutation prove recovery from persisted
   // state instead of relying on an in-flight streamed RSC response.
   await page.reload({ waitUntil: "load" });
   await expect(page.getByRole("form", { name: "影片縮圖 E2E恢復" })).toBeVisible();
-  expect(dialogs.at(-1)).toContain("Cloudflare Stream 資源不會被刪除");
+  expect(confirmations.at(-1)).toContain("Cloudflare Stream 資源不會被刪除");
   const restoreForm = page.getByRole("form", { name: "影片縮圖 E2E恢復" });
   await restoreForm.getByRole("button", { name: "恢復" }).click();
+  await acceptConfirmation();
   await expect.poll(async () => (await db.video.findUniqueOrThrow({ where: { id: fixture.thumbnailVideoId }, select: { status: true } })).status).toBe("ready");
   await page.reload({ waitUntil: "load" });
   await expect(page.getByRole("form", { name: "影片縮圖 E2E封存" })).toBeVisible();
-  expect(dialogs.at(-1)).toContain("恢復後會回到封存前的狀態");
+  expect(confirmations.at(-1)).toContain("恢復後會回到封存前的狀態");
 
   const restored = await db.video.findUniqueOrThrow({ where: { id: fixture.thumbnailVideoId } });
   expect(restored.status).toBe("ready");
