@@ -5,7 +5,8 @@ import { RegistrationSubmissionFeedback } from "@/components/registration-submis
 import { useEffect, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import { PublicFunnelDocument } from "@/components/landing-pages/public-funnel-document";
-import { getFunnelWebinarState } from "@/lib/funnel-webinar";
+import { getFunnelWebinarState, type FunnelEvergreenSession } from "@/lib/funnel-webinar";
+import { EVERGREEN_SESSION_ENDPOINT, evergreenSessionTimeLabel } from "@/components/live-evergreen";
 import { hasDirectWebinarVideo } from "@/lib/funnel-webinar-media";
 import type { FunnelStepPages } from "@/lib/funnel-step-pages";
 import type { FunnelRenderEvent, FunnelSubmissionContext, FunnelViewport } from "@/components/landing-pages/funnel-page-document-renderer";
@@ -13,7 +14,7 @@ import { isLeadCaptureFormNode } from "@/lib/funnel-registration-surface";
 import type { FunnelNode } from "@/lib/funnel-page-document";
 
 export type WebinarExperienceResource = {
-  live: { id: string; slug: string; videoId: string; videoTitle: string };
+  live: { id: string; slug: string; videoId: string; videoTitle: string; isEvergreen?: true };
   form: { id: string; fields: Array<{ key: string; label: string; type?: string; required?: boolean }>; submitLabel: string; successMessage: string };
 };
 
@@ -47,16 +48,19 @@ export function FunnelWebinarExperience({ state, stepId, slug, resource, preview
   useEffect(() => { const timer = window.setInterval(() => setNow(Date.now()), 1000); return () => window.clearInterval(timer); }, []);
   const step = state.flow.steps.find((item) => item.id === stepId);
   const page = state.pages[stepId];
+  // Reaching the thank-you or broadcast step is the registration confirmation:
+  // the server assigns this visitor's own session there. The registration page only previews.
+  const evergreenSession = useFunnelEvergreenSession(preview ? undefined : resource?.live, Boolean(step) && step?.type !== "webinar_registration_page");
   if (!step || !page) return <p role="alert">找不到線上講座頁面。</p>;
   // Legacy or tampered published snapshots must not bypass the Live admission
   // boundary through the general-purpose video's raw URL renderer.
   if (step.type === "webinar_broadcast_page" && hasDirectWebinarVideo(state)) return <p role="alert" className="rounded-xl border border-amber-200 p-4">播放頁含有直接影片節點。請在編輯器移除該節點，並於頁面設定綁定活動與授權來源影片。</p>;
-  const status = getFunnelWebinarState(state.flow.webinar, { liveId: resource?.live.id, formId: resource?.form.id }, now);
+  const evergreen = resource?.live.isEvergreen === true;
+  const status = getFunnelWebinarState(state.flow.webinar, { liveId: resource?.live.id, formId: resource?.form.id, evergreen, evergreenSession }, now);
   const thankYou = state.flow.steps.find((item) => item.type === "webinar_thank_you_page");
   const broadcast = state.flow.steps.find((item) => item.type === "webinar_broadcast_page");
   const path = (value: string) => `/lp/${encodeURIComponent(slug)}/${encodeURIComponent(value)}`;
   const ready = resource && status.status !== "missing" && status.status !== "expired";
-  const start = state.flow.webinar?.startsAt;
   const source = funnelSourceFields(funnelSource);
   const submission = designedFormSubmission({ registration: step.type === "webinar_registration_page" && !preview, ready: Boolean(ready), page, resource, source, thankYou, path });
   // The page design is full width (sections draw their own backgrounds); the platform status box stays in a centred column.
@@ -64,13 +68,67 @@ export function FunnelWebinarExperience({ state, stepId, slug, resource, preview
     <PublicFunnelDocument document={{ ...page, flow: { ...state.flow, domain: slug } }} viewport={viewport} initialViewport={initialViewport} event={event} submission={submission} />
     {!step.isSystem ? <section className="mx-auto my-5 w-[calc(100%-2rem)] max-w-5xl rounded-xl border border-slate-200 p-5">
       <p role={status.status === "missing" ? "alert" : "status"}>{status.message}</p>
-      {start ? <p className="mt-2 text-sm">開始時間：<time dateTime={start}>{new Intl.DateTimeFormat("zh-TW", { dateStyle: "medium", timeStyle: "short", timeZone: state.flow.webinar?.timezone }).format(new Date(start))}</time> · {state.flow.webinar?.timezone}</p> : null}
+      <WebinarScheduleLine evergreen={evergreen} session={evergreenSession} settings={state.flow.webinar} />
       {step.type === "webinar_registration_page" && ready && thankYou && !submission ? <WebinarRegistrationForm resource={resource} source={source} redirectTo={path(thankYou.path)} preview={preview} /> : null}
       {step.type === "webinar_thank_you_page" && ready && broadcast ? <a className="mt-4 inline-block rounded-lg bg-blue-700 p-3 text-white" href={path(broadcast.path)}>查看播放／重播頁</a> : null}
-      {step.type === "webinar_broadcast_page" && ready && (status.status === "live" || status.status === "replay") ? <a className="mt-4 inline-block rounded-lg bg-blue-700 p-3 text-white" href={`${path(step.path)}/play`}>前往授權播放：{resource.live.videoTitle}</a> : null}
+      {ready && showsBroadcastEntry(step.type, evergreen, status.status) ? <a className="mt-4 inline-block rounded-lg bg-blue-700 p-3 text-white" href={`${path(step.path)}/play`}>前往授權播放：{resource.live.videoTitle}</a> : null}
       {status.status === "missing" ? <p className="mt-2 text-sm">{preview ? "請開啟頁面設定，選擇報名表、活動與可播放來源影片，並補齊排程後儲存。" : "活動設定尚未完成，請聯絡活動主辦方確認資源與排程。"}</p> : null}
     </section> : null}
   </div>;
+}
+
+function parseFunnelEvergreenSession(value: unknown): FunnelEvergreenSession | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const body = value as Record<string, unknown>;
+  if (typeof body.assigned !== "boolean" || typeof body.sessionStartAt !== "string" || typeof body.sessionEndAt !== "string" || typeof body.timezone !== "string") return null;
+  if (!Number.isFinite(Date.parse(body.sessionStartAt)) || !Number.isFinite(Date.parse(body.sessionEndAt))) return null;
+  return { assigned: body.assigned, sessionStartAt: body.sessionStartAt, sessionEndAt: body.sessionEndAt, timezone: body.timezone };
+}
+
+/**
+ * The visitor's evergreen session for a funnel bound to an evergreen Live.
+ * `claim` assigns it (thank-you / broadcast); otherwise it is only previewed.
+ * The server alone computes the time; the request carries no time at all.
+ */
+function useFunnelEvergreenSession(live: WebinarExperienceResource["live"] | undefined, claim: boolean) {
+  const [session, setSession] = useState<{ key: string; value: FunnelEvergreenSession | null }>({ key: "", value: null });
+  const liveId = live?.isEvergreen ? live.id : null;
+  const key = liveId ? `${liveId}:${claim ? "claim" : "read"}` : "";
+  useEffect(() => {
+    if (!liveId) return;
+    let disposed = false;
+    const headers = { "Content-Type": "application/json", "X-CelebrateDeal-Client": "web" };
+    const request = claim
+      ? fetch(EVERGREEN_SESSION_ENDPOINT, { method: "POST", headers, body: JSON.stringify({ liveId, intent: "claim" }) })
+      : fetch(`${EVERGREEN_SESSION_ENDPOINT}?${new URLSearchParams({ liveId }).toString()}`, { headers });
+    void request
+      .then(async (response) => (response.ok ? parseFunnelEvergreenSession(await response.json()) : null))
+      .then((value) => { if (!disposed) setSession({ key, value }); })
+      .catch(() => { if (!disposed) setSession({ key, value: null }); });
+    return () => { disposed = true; };
+  }, [claim, key, liveId]);
+  return session.key === key ? session.value : null;
+}
+
+/** An evergreen watch page runs its own waiting room, so its entry is always offered. */
+function showsBroadcastEntry(stepType: string, evergreen: boolean, status: string) {
+  return stepType === "webinar_broadcast_page" && (evergreen || status === "live" || status === "replay");
+}
+
+/** Fixed funnel dates, or for an evergreen Live the visitor's own session time. */
+function WebinarScheduleLine({ evergreen, session, settings }: {
+  evergreen: boolean;
+  session: FunnelEvergreenSession | null;
+  settings: FunnelStepPages["flow"]["webinar"];
+}) {
+  if (evergreen) {
+    const label = session ? evergreenSessionTimeLabel(session) : null;
+    if (!session || !label) return <p className="mt-2 text-sm">場次時間：報名後依你的進場時間安排。</p>;
+    return <p className="mt-2 text-sm">{session.assigned ? "你的場次" : "下一場次（報名後確認）"}：<time dateTime={session.sessionStartAt}>{label}</time></p>;
+  }
+  const start = settings?.startsAt;
+  if (!start) return null;
+  return <p className="mt-2 text-sm">開始時間：<time dateTime={start}>{new Intl.DateTimeFormat("zh-TW", { dateStyle: "medium", timeStyle: "short", timeZone: settings?.timezone }).format(new Date(start))}</time> · {settings?.timezone}</p>;
 }
 
 function WebinarRegistrationForm({ resource, source, redirectTo, preview }: {

@@ -1,10 +1,11 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const db = {
   liveViewerSession: { findUnique: vi.fn() },
   live: { findFirst: vi.fn() },
 };
 
+import { resolveEvergreenViewerSession } from "@/lib/evergreen-viewer-session";
 import { hashLiveViewerToken } from "@/lib/live-quota-admission";
 import { resolveLivePlaybackSource } from "@/lib/live-playback-source";
 
@@ -216,5 +217,56 @@ describe("resolveLivePlaybackSource", () => {
       token,
       now: startedAt,
     })).resolves.toEqual({ playbackUrl: "https://video.example.test/live.m3u8" });
+  });
+});
+
+describe("resolveLivePlaybackSource for an evergreen live", () => {
+  const evergreen = liveRecord({
+    id: "live-1",
+    vendorId: "vendor-1",
+    streamMode: "vod",
+    status: "scheduled",
+    scheduledAt: new Date("2026-01-01T00:00:00.000Z"),
+    startedAt: null,
+    replayEnabled: false,
+    isEvergreen: true,
+    evergreenScheduleMode: "on_demand",
+    evergreenIntervalMinutes: 15,
+    evergreenDailyTimes: [],
+    evergreenSessionStartAt: null,
+    vendor: { timezone: "Asia/Taipei" },
+    video: { ...liveRecord().video, durationSec: 1_800, videoUrl: "https://video.example.test/evergreen.mp4" },
+  });
+
+  function claimAt(enteredAt: Date) {
+    return resolveEvergreenViewerSession({ live: evergreen as never, vendorTimezone: "Asia/Taipei", token: null, intent: "claim", now: enteredAt })!.issuedToken;
+  }
+
+  beforeEach(() => {
+    vi.stubEnv("CSRF_SECRET", "synthetic-evergreen-playback-root-secret-0123");
+    db.live.findFirst.mockResolvedValue(evergreen);
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it("serves no media without the visitor's signed session", async () => {
+    await expect(resolveLivePlaybackSource(db as never, { vendorId: "vendor-1", liveId: "live-1", token, now })).resolves.toBeNull();
+    await expect(resolveLivePlaybackSource(db as never, { vendorId: "vendor-1", liveId: "live-1", token, evergreenToken: "eg1.forged.value", now })).resolves.toBeNull();
+  });
+
+  it("starts media at the session's server offset, not at the shared schedule", async () => {
+    const evergreenToken = claimAt(new Date(now.getTime() - 125_000));
+    await expect(resolveLivePlaybackSource(db as never, { vendorId: "vendor-1", liveId: "live-1", token, evergreenToken, now }))
+      .resolves.toEqual({ playbackUrl: "https://video.example.test/evergreen.mp4", playbackStartSeconds: 125 });
+  });
+
+  it("serves nothing after the session ended when replay is closed", async () => {
+    const evergreenToken = claimAt(new Date(now.getTime() - 1_900_000));
+    await expect(resolveLivePlaybackSource(db as never, { vendorId: "vendor-1", liveId: "live-1", token, evergreenToken, now })).resolves.toBeNull();
+    db.live.findFirst.mockResolvedValue({ ...evergreen, replayEnabled: true });
+    await expect(resolveLivePlaybackSource(db as never, { vendorId: "vendor-1", liveId: "live-1", token, evergreenToken, now }))
+      .resolves.toEqual({ playbackUrl: "https://video.example.test/evergreen.mp4" });
   });
 });
