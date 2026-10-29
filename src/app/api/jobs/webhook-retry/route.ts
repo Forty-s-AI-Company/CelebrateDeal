@@ -4,9 +4,14 @@ import { releaseExpiredInventoryReservations } from "@/lib/inventory-reservation
 import { captureOperationalError } from "@/lib/monitoring";
 import { processDueWebhookRetries } from "@/lib/webhook-retry";
 
-// Each retried webhook can schedule its paid receipt email with `after()`,
-// which runs within this limit (see IMMEDIATE_EMAIL_DISPATCH_MAX_DURATION_SECONDS).
-export const maxDuration = 60;
+// One run releases expired reservations and then retries up to 20 webhooks in
+// sequence, each a Serializable transaction (15 s timeout, up to 3 attempts)
+// that can also schedule its paid receipt email with `after()`. Under Fluid
+// Compute the platform default is already 300 s, so a lower value would cut
+// the batch off mid-run, leave events `retrying` until the lease expires and
+// lose the summary and alerts. 300 s is the Hobby maximum under Fluid and is
+// above IMMEDIATE_EMAIL_DISPATCH_MAX_DURATION_SECONDS.
+export const maxDuration = 300;
 
 const SAFE_RETRY_STATUSES = new Set([
   "processed",
