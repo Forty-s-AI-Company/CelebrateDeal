@@ -6,6 +6,9 @@ import { StudentPortalLoginForm } from "@/components/student-portal-login-form";
 import { getCsrfToken } from "@/lib/csrf";
 import { getDb } from "@/lib/db";
 export const dynamic = "force-dynamic";
+// The magic-link Server Action sends its 15-minute link with `after()` inside
+// this limit (see IMMEDIATE_EMAIL_DISPATCH_MAX_DURATION_SECONDS).
+export const maxDuration = 60;
 function safeBrandColor(value: string) {
   return /^#[0-9a-f]{6}$/iu.test(value) ? value : "#2563eb";
 }

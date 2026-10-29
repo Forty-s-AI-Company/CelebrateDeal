@@ -10,7 +10,11 @@ import { getSalesProjectScope } from "@/lib/sales-project-scope";
 import { SalesScopeNotice } from "@/components/sales-scope-notice";
 import { formatTwd } from "@/lib/format";
 
-const STATUS_LABELS: Record<string, string> = { following_up: "跟進中", closed_won: "已成交", closed_lost: "無意願", no_show: "未出席" };
+// The voucher Server Action sends its email with `after()` inside this limit
+// (see IMMEDIATE_EMAIL_DISPATCH_MAX_DURATION_SECONDS).
+export const maxDuration = 60;
+
+const STATUS_LABELS: Record<string, string> ={ following_up: "跟進中", closed_won: "已成交", closed_lost: "無意願", no_show: "未出席" };
 
 export default async function CustomerDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const [{ auth, vendor }, { id }] = await Promise.all([requireVendorManagerContext(), params]);

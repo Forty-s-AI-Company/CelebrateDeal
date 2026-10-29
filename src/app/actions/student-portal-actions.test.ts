@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   security: vi.fn(), headers: vi.fn(), rateLimit: vi.fn(), vendor: vi.fn(), orderCount: vi.fn(), bookingCount: vi.fn(), voucherCount: vi.fn(),
-  createToken: vi.fn(), accountRateLimit: vi.fn(async (): Promise<Response | null> => null), emailCreate: vi.fn(), clearCookie: vi.fn(), redirect: vi.fn(), hash: vi.fn(() => "customer-hash"), protect: vi.fn(() => ({ payloadEncryptedEnvelope: "encrypted", recipientHash: "hash", recipientMaskedEmail: "s***@example.test" })),
+  createToken: vi.fn(), scheduleImmediate: vi.fn(), accountRateLimit: vi.fn(async (): Promise<Response | null> => null), emailCreate: vi.fn(), clearCookie: vi.fn(), redirect: vi.fn(), hash: vi.fn(() => "customer-hash"), protect: vi.fn(() => ({ payloadEncryptedEnvelope: "encrypted", recipientHash: "hash", recipientMaskedEmail: "s***@example.test" })),
 }));
 vi.mock("next/headers", () => ({ headers: mocks.headers }));
 vi.mock("next/navigation", () => ({ redirect: mocks.redirect }));
@@ -11,6 +11,7 @@ vi.mock("@/lib/rate-limit", () => ({ checkRateLimit: mocks.rateLimit }));
 vi.mock("@/lib/account-rate-limit", () => ({ checkAccountRateLimit: mocks.accountRateLimit }));
 vi.mock("@/lib/automation-workflow", () => ({ automationCustomerKeyHash: mocks.hash }));
 vi.mock("@/lib/email-delivery-pii", () => ({ protectEmailDeliveryPayload: mocks.protect }));
+vi.mock("@/lib/email-delivery-immediate", () => ({ scheduleImmediateEmailDispatch: mocks.scheduleImmediate }));
 vi.mock("@/lib/student-portal-auth", () => ({ createStudentPortalAccessToken: mocks.createToken, clearStudentPortalSessionCookie: mocks.clearCookie }));
 vi.mock("@/lib/app-url", () => ({ getCanonicalAppUrl: () => "https://app.example.test" }));
 vi.mock("@/lib/db", () => ({ getDb: () => ({ vendor: { findUnique: mocks.vendor }, commerceOrder: { count: mocks.orderCount }, consultationBooking: { count: mocks.bookingCount }, automationVoucherGrant: { count: mocks.voucherCount }, emailDelivery: { create: mocks.emailCreate } }) }));
@@ -39,6 +40,9 @@ describe("student portal actions", () => {
     expect(result).toMatchObject({ status: "sent" });
     expect(result).not.toHaveProperty("mockLink");
     expect(mocks.emailCreate).toHaveBeenCalledOnce();
+    // The 15-minute link is sent after the generic response, not on the job schedule.
+    const deliveryId = mocks.emailCreate.mock.calls[0]?.[0].data.id;
+    expect(mocks.scheduleImmediate).toHaveBeenCalledExactlyOnceWith([deliveryId]);
   });
 
   it("uses the same anti-enumeration response when no student data exists", async () => {
@@ -47,6 +51,7 @@ describe("student portal actions", () => {
     expect(result.status).toBe("sent");
     expect(result.mockLink).toBeUndefined();
     expect(mocks.createToken).not.toHaveBeenCalled();
+    expect(mocks.scheduleImmediate).not.toHaveBeenCalled();
   });
 
   it("applies an IP- and provider-independent tenant and recipient cooldown before issuing a token (F-028)", async () => {

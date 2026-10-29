@@ -17,7 +17,19 @@ export function wp4HistoricalBuyerWhere(source = WP4_BUYER_CONTINUATION_SOURCE) 
       { metadata: { path: ["wp4PaymentSubmissionReserved"], equals: true } }],
   };
 }
-type BuyerItem = Pick<CommerceOrderItem, "productId" | "quantity" | "unitPriceCents" | "lineTotalCents" | "commerceDomain" | "fulfillmentType">;
+/**
+ * `notificationQueued` proves the paid receipt entered the delivery pipeline
+ * exactly once: still queued, claimed, sent, or failed with a scheduled retry.
+ * The webhook dispatches the receipt right after commit, so by the time this
+ * is read one attempt may already have run; without provider configuration it
+ * fails closed before any network request and stays retryable. Suppressed,
+ * superseded and exhausted rows are not deliverable and do not count.
+ */
+export const ORDER_PAID_RECEIPT_IN_PIPELINE: readonly Prisma.EmailDeliveryWhereInput[] = [
+  { status: { in: ["queued", "sending", "sent"] } },
+  { status: "failed", nextAttemptAt: { not: null } },
+];
+type BuyerItem =Pick<CommerceOrderItem, "productId" | "quantity" | "unitPriceCents" | "lineTotalCents" | "commerceDomain" | "fulfillmentType">;
 function isFixedBuyerItem(items: BuyerItem[]) {
   const item = items.length === 1 ? items[0] : null;
   return item?.productId === WP4_SANDBOX_FIXTURE.productId && item.quantity === 1 && item.unitPriceCents === 100
@@ -46,7 +58,7 @@ export async function readWp4ExistingBuyerState(db: Pick<PrismaClient, "$transac
           ? { status: "released", releaseReason: "full_refund", releasedAt: { not: null } }
           : { status: "committed" }),
       } }),
-      tx.emailDelivery.count({ where: { vendorId: WP4_SANDBOX_FIXTURE.vendorId, idempotencyKey: `order-paid:v1:${order.id}`, trigger: "order_paid", status: { in: ["queued", "retrying", "sending", "sent"] } } }),
+      tx.emailDelivery.count({ where: { vendorId: WP4_SANDBOX_FIXTURE.vendorId, idempotencyKey: `order-paid:v1:${order.id}`, trigger: "order_paid", OR: [...ORDER_PAID_RECEIPT_IN_PIPELINE] } }),
       tx.refundRecord.aggregate({ where: { vendorId: WP4_SANDBOX_FIXTURE.vendorId, paymentTransactionId: payment.id, status: "processed" }, _count: true, _sum: { refundAmountCents: true } }),
       tx.commerceOrderRefund.aggregate({ where: { vendorId: WP4_SANDBOX_FIXTURE.vendorId, orderId: order.id }, _count: true, _sum: { amountCents: true } }),
     ]);
