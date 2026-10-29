@@ -12,6 +12,10 @@ import { FUNNEL_ILLUSTRATIONS } from "@/lib/funnel-block-library";
 import { buildLuxuryCourseTemplate, LUXURY_COURSE_THEME } from "@/lib/funnel-template-luxury-course";
 import { WEBINAR_TEMPLATES, type WebinarTemplateDefinition } from "@/lib/funnel-templates/webinar";
 import { FUNCTIONAL_PAGE_TEMPLATES, functionalPageGalleryItem } from "@/lib/funnel-template-functional-pages";
+import { LEADS_TEMPLATES } from "@/lib/funnel-templates/leads";
+import { SALES_TEMPLATES } from "@/lib/funnel-templates/sales";
+import { buildConversionThankYou, conversionThankYouTheme } from "@/lib/funnel-templates/conversion/thank-you";
+import type { ConversionTemplateDefinition } from "@/lib/funnel-templates/conversion/types";
 
 export const FUNNEL_TEMPLATE_GOALS = ["sell", "audience", "custom", "webinar"] as const;
 export type FunnelTemplateGoal = (typeof FUNNEL_TEMPLATE_GOALS)[number];
@@ -49,7 +53,7 @@ export type FunnelTemplateGalleryItem = {
   retired?: { since: string; replacedBy?: string };
   /**
    * Step-only templates: offered in the step menu for their step types, but left out of the library's
-   * unfiltered browse until a replacement exists (audience and checkout templates).
+   * unfiltered browse (the matching thank-you pages of list and sales templates).
    */
   libraryHidden?: boolean;
   /** Development example: resolvable by id (harness, tests), never listed. */
@@ -65,6 +69,35 @@ export function webinarTemplateGalleryItem(template: WebinarTemplateDefinition):
     status: "available", statusReason: "可套用並在公開頁顯示；報名表單會綁定此一頁式網站的報名表與活動。", preview: template.preview,
     theme: template.theme, pageSettings: template.settings, tags: { purposes: template.purposes, styles: template.styles },
     build: template.build, ...(template.hidden ? { hidden: true } : {}),
+  };
+}
+
+const CONVERSION_GOAL = { leads: "audience", sales: "sell" } as const;
+const CONVERSION_STATUS = {
+  leads: { status: "available", reason: "可套用並在公開頁顯示；名單表單會綁定此一頁式網站的名單表單。" },
+  sales: { status: "limited", reason: "用於「訂單表單」步驟：價格與結帳按鈕來自此步驟在「商品與結帳」綁定的商品，未綁定時不可付款。" },
+} as const;
+
+/** Gallery entry of a list (leads) or sales page template (`src/lib/funnel-templates/{leads,sales}`). */
+export function conversionTemplateGalleryItem(template: ConversionTemplateDefinition): FunnelTemplateGalleryItem {
+  const status = CONVERSION_STATUS[template.kind];
+  return {
+    id: template.id, referenceId: `celebratedeal-${template.id}`, goal: CONVERSION_GOAL[template.kind], category: template.category, name: template.name, description: template.description,
+    status: status.status, statusReason: status.reason, preview: template.preview,
+    theme: template.theme, pageSettings: template.settings, tags: { purposes: template.purposes, styles: template.styles },
+    build: template.build, ...(template.hidden ? { hidden: true } : {}),
+  };
+}
+
+/** Matching thank-you page (`${id}-thanks`): offered for the thank-you step, not browsed in the library. */
+export function conversionThankYouGalleryItem(template: ConversionTemplateDefinition): FunnelTemplateGalleryItem {
+  const design = template.thankYou;
+  return {
+    id: `${template.id}-thanks`, referenceId: `celebratedeal-${template.id}-thanks`, goal: CONVERSION_GOAL[template.kind], category: template.kind === "leads" ? "名單感謝頁" : "訂單感謝頁",
+    name: design.name, description: design.description, status: "available", statusReason: "可展開為獨立編輯的 CelebrateDeal 節點",
+    preview: { eyebrow: template.kind === "leads" ? "名單感謝頁" : "訂單感謝頁", headline: design.title, summary: design.description, palette: [design.tokens.background, design.tokens.accent, design.tokens.surface], sectionCount: 3 + (design.next ? 1 : 0) + (design.faq?.length ? 1 : 0) },
+    theme: conversionThankYouTheme(template), tags: { purposes: template.purposes, styles: template.styles },
+    build: (prefix) => buildConversionThankYou(template, prefix), libraryHidden: true, ...(template.hidden ? { hidden: true } : {}),
   };
 }
 
@@ -355,6 +388,18 @@ const templates: FunnelTemplateGalleryItem[] = [
   { id: "custom-luxury-course", referenceId: "celebratedeal-luxury-course", goal: "custom", category: "品牌首頁", name: "高質感課程品牌（黑金）", description: "黑底金字的課程品牌首頁：導覽列、主視覺、媒體 Logo、數據、課程卡片、評價牆、文章、影片與 FAQ。", status: "available", statusReason: availableReason, preview: { eyebrow: "Brand", headline: "高質感課程品牌（黑金）", summary: "襯線標題與金色點綴的品牌長頁", palette: ["#0b0b0c", "#c9a063", "#f7f3ec"], sectionCount: 15 }, theme: LUXURY_COURSE_THEME, build: buildLuxuryCourseTemplate },
 ];
 
+/** Replaced 2026-10-29 by the researched list and sales page templates (docs/product/funnel-templates). */
+const LEGACY_CONVERSION_REPLACEMENTS: Readonly<Record<string, string>> = {
+  "audience-volunteer": "leads-checklist-minimal",
+  "audience-charity-event": "leads-newsletter-editorial",
+  "audience-environment": "leads-newsletter-editorial",
+  "audience-course-workbook": "leads-toolkit-freelance",
+  "audience-course-consultation": "leads-consult-interior",
+  "audience-course-lesson": "leads-email-course-photo",
+  "sell-product-checkout": "sales-product-coffee",
+  "sell-simple-checkout": "sales-digital-planner",
+  "sell-content-subscription": "sales-saas-plans",
+};
 /** Retired 2026-10-29 (migration-plan §1): definitions stay so saved funnels and tests still resolve them. */
 const RETIRED_SINCE = "2026-10-29";
 const RETIRED_TEMPLATES: Readonly<Record<string, string | undefined>> = {
@@ -364,22 +409,23 @@ const RETIRED_TEMPLATES: Readonly<Record<string, string | undefined>> = {
   "webinar-strategy-registration": "webinar-saas-split",
   "custom-brand-info": "custom-luxury-course",
   ...Object.fromEntries(FUNCTIONAL_PAGE_TEMPLATES.map((page) => [page.replaces, page.id])),
+  ...LEGACY_CONVERSION_REPLACEMENTS,
 };
-/** No replacement yet (audience list pages and checkout redesigns are separate work): keep them selectable per step. */
-const STEP_ONLY_TEMPLATES: ReadonlySet<string> = new Set([
-  "audience-volunteer", "audience-charity-event", "audience-environment", "audience-course-workbook", "audience-course-consultation", "audience-course-lesson",
-  "sell-product-checkout", "sell-simple-checkout", "sell-content-subscription",
-]);
 const markLifecycle = (template: FunnelTemplateGalleryItem): FunnelTemplateGalleryItem => {
   if (Object.hasOwn(RETIRED_TEMPLATES, template.id)) return { ...template, retired: { since: RETIRED_SINCE, ...(RETIRED_TEMPLATES[template.id] ? { replacedBy: RETIRED_TEMPLATES[template.id] } : {}) } };
-  return STEP_ONLY_TEMPLATES.has(template.id) ? { ...template, libraryHidden: true } : template;
+  return template;
 };
 
 export const FUNNEL_TEMPLATE_GALLERY: readonly FunnelTemplateGalleryItem[] = Object.freeze([
   ...templates.map(markLifecycle),
   ...WEBINAR_TEMPLATES.map(webinarTemplateGalleryItem),
+  ...LEADS_TEMPLATES.map(conversionTemplateGalleryItem),
+  ...SALES_TEMPLATES.map(conversionTemplateGalleryItem),
+  ...LEADS_TEMPLATES.map(conversionThankYouGalleryItem),
+  ...SALES_TEMPLATES.map(conversionThankYouGalleryItem),
   ...FUNCTIONAL_PAGE_TEMPLATES.map(functionalPageGalleryItem),
 ]);
+const THANK_YOU_IDS: ReadonlySet<string> = new Set([...LEADS_TEMPLATES, ...SALES_TEMPLATES].map((template) => `${template.id}-thanks`));
 
 /** Templates offered as a new choice: retired and hidden entries stay resolvable but are not listed. */
 const offered = (template: FunnelTemplateGalleryItem) => !template.retired && !template.hidden;
@@ -407,13 +453,17 @@ export function listFunnelTemplateGallery(goal?: FunnelTemplateGoal, stepType?: 
     return templateIds ? goalTemplates.filter((template) => templateIds.includes(template.id)) : [];
   }
   if (goal === "custom") return ["info_page", "contact_us_page"].includes(stepType) ? goalTemplates : [];
+  // Audience and sell: page templates for the content steps, the matching thank-you pages for the thank-you step.
   if (goal === "audience") {
-    if (stepType === "opt_in_page") return goalTemplates;
-    // 保留原三款的可用步驟；新的完整課程長頁只提供給名單頁。
-    return ["inline_form", "popup_form", "link_in_bio"].includes(stepType)
-      ? goalTemplates.filter(template => !template.id.startsWith("audience-course-")) : [];
+    if (stepType === "opt_in_thank_you_page") return goalTemplates.filter((template) => THANK_YOU_IDS.has(template.id));
+    return ["opt_in_page", "inline_form", "popup_form", "link_in_bio"].includes(stepType) ? goalTemplates.filter((template) => !THANK_YOU_IDS.has(template.id)) : [];
   }
-  if (goal === "sell") return ["order_form", "sales_page", "upsell", "downsell"].includes(stepType) ? goalTemplates : [];
+  if (goal === "sell") {
+    if (stepType === "thank_you_page") return goalTemplates.filter((template) => THANK_YOU_IDS.has(template.id));
+    // Only the order-form step binds a product and has a checkout path; on sales_page, upsell or downsell the
+    // offer card could never take payment and would show the merchant's "not bound" notice to visitors.
+    return stepType === "order_form" ? goalTemplates.filter((template) => !THANK_YOU_IDS.has(template.id)) : [];
+  }
   return [];
 }
 

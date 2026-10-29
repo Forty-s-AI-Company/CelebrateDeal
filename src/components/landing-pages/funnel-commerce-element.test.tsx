@@ -19,6 +19,17 @@ describe("Funnel commerce renderer", () => {
     expect(html).toContain('href="/lp/shop/order/checkout"');
     expect(html).not.toContain("不應取代付款");
   });
+  it("renders trusted price and checkout link inside a new sales template's offer card, in the page accent", () => {
+    const base = instantiateFunnelTemplate("sales-course-watercolor", "sales");
+    const page = { ...base, settings: { ...base.settings, typography: { ...base.settings.typography, linkColor: "#8f3b5c" } }, commerce: document("offer_price").commerce };
+    const html = renderToStaticMarkup(<FunnelPageDocumentRenderer document={page} commerce={commerce} publicSurface />);
+    expect(html).toContain("可信商品");
+    expect(html).toContain('href="/lp/shop/order/checkout"');
+    expect(html).toMatch(/href="\/lp\/shop\/order\/checkout"[^>]*style="background-color:#8f3b5c/u);
+    expect(html).not.toContain("惡意價格");
+    const pale = { ...page, settings: { ...page.settings, typography: { ...page.settings.typography, linkColor: "#ffffff" } } };
+    expect(renderToStaticMarkup(<FunnelPageDocumentRenderer document={pale} commerce={commerce} publicSurface />)).toMatch(/href="\/lp\/shop\/order\/checkout"[^>]*style="background-color:#1d4ed8/u);
+  });
   it("lets editors add the supported payment elements while scripts remain disabled", () => {
     const html = renderToStaticMarkup(<FunnelPageEditor document={document("payment_button")} commerceProducts={[commerce.product]} commerceEnabled onChange={() => {}} />);
     // Palette tiles are `<button>` > icon + label span; the label must sit inside an enabled tile.

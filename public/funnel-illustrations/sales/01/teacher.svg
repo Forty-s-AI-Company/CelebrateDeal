@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 1000" width="800" height="1000" role="img" aria-label="老師照片預留位置（請替換為本人照片）">
+<defs><filter id="wc" x="-15%" y="-15%" width="130%" height="130%"><feTurbulence type="fractalNoise" baseFrequency=".03" numOctaves="3" seed="4"/><feDisplacementMap in="SourceGraphic" scale="16" xChannelSelector="R" yChannelSelector="G"/></filter></defs>
+<rect width="800" height="1000" fill="#f6ece9"/>
+<g filter="url(#wc)"><ellipse cx="560" cy="250" rx="240" ry="170" fill="#e8b9c6" fill-opacity=".6"/><ellipse cx="200" cy="640" rx="220" ry="160" fill="#b9cfe4" fill-opacity=".6"/><ellipse cx="620" cy="760" rx="170" ry="120" fill="#f1d7a8" fill-opacity=".55"/></g>
+<path d="M210 1000c-4-150 40-240 136-284 28-14 40-34 42-58l1-30c-52-30-82-88-86-158-6-100 50-168 147-168s153 68 147 168c-4 70-34 128-86 158l1 30c2 24 14 44 42 58 96 44 140 134 136 284z" fill="#2b2330" fill-opacity=".85"/>
+<text x="400" y="950" font-family="system-ui, sans-serif" font-size="30" text-anchor="middle" letter-spacing="4" fill="#ffffff">替換為老師照片</text>
+</svg>

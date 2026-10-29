@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 360" width="480" height="360" font-family="'Noto Sans TC',sans-serif">
+<title>背景前後對照示意：左為雜物堆疊的桌面，右為乾淨底色與一片葉子點綴的陶杯</title>
+<rect width="240" height="360" fill="#d7d2c8"/>
+<rect x="240" width="240" height="360" fill="#ffffff"/>
+<rect y="250" width="240" height="110" fill="#a59a86"/>
+<rect x="240" y="250" width="240" height="110" fill="#f6efe0"/>
+<g stroke="#4d4335" stroke-width="3" stroke-linejoin="round">
+<rect x="20" y="150" width="60" height="100" fill="#7a8fa6"/>
+<rect x="150" y="120" width="70" height="40" fill="#e0b25a" transform="rotate(14 185 140)"/>
+<path d="M34 230 l50 -20 l14 30 Z" fill="#c95b5b"/>
+<rect x="168" y="196" width="50" height="60" fill="#8fae7e"/>
+<circle cx="200" cy="100" r="22" fill="#f0f0f0"/>
+</g>
+<g transform="translate(96 186)"><path d="M0 0 h56 v52 a14 14 0 0 1 -14 14 h-28 a14 14 0 0 1 -14 -14 Z" fill="#b9a789" stroke="#4d4335" stroke-width="3"/></g>
+<g transform="translate(326 160)">
+<path d="M0 0 h76 v78 a20 20 0 0 1 -20 20 h-36 a20 20 0 0 1 -20 -20 Z" fill="#e3d6c2" stroke="#1a1a1a" stroke-width="3"/>
+<path d="M0 22 h76" stroke="#c42a5f" stroke-width="6"/>
+</g>
+<path d="M420 240 c-30 -10 -50 -40 -40 -70 c30 6 50 36 40 70 Z" fill="#2f7a4f"/>
+<path d="M420 240 c-12 -22 -22 -40 -40 -70" fill="none" stroke="#ffffff" stroke-width="2"/>
+<ellipse cx="364" cy="262" rx="58" ry="7" fill="#1a1a1a" opacity=".12"/>
+<rect x="238" width="4" height="360" fill="#1a1a1a"/>
+<g font-size="15" font-weight="700">
+<rect x="16" y="16" width="78" height="30" rx="15" fill="#1a1a1a"/><text x="55" y="36" text-anchor="middle" fill="#ffffff">BEFORE</text>
+<rect x="386" y="16" width="78" height="30" rx="15" fill="#ffd84d" stroke="#1a1a1a" stroke-width="2"/><text x="425" y="36" text-anchor="middle" fill="#1a1a1a">AFTER</text>
+</g>
+</svg>

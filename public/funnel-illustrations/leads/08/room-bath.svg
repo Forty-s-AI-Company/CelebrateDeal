@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 600" width="600" height="600">
+<title>空間線稿：浴室翻新，磁磚牆、洗手台與玻璃淋浴間</title>
+<defs><pattern id="tile" width="40" height="40" patternUnits="userSpaceOnUse"><rect width="40" height="40" fill="#e3eae6"/><path d="M40 0H0V40" fill="none" stroke="#b9c8c0" stroke-width="1.4"/></pattern></defs>
+<rect width="600" height="600" fill="#efece6"/>
+<rect x="0" y="0" width="600" height="470" fill="url(#tile)"/>
+<rect x="0" y="470" width="600" height="130" fill="#d8d2c8"/>
+<g fill="none" stroke="#1d2422" stroke-width="2.4" stroke-linejoin="round" stroke-linecap="round">
+<path d="M0 470 H600"/>
+<path d="M60 330 h220 v40 h-220 z M80 370 v100 h180 v-100"/>
+<path d="M170 330 v-30 h40"/>
+<ellipse cx="170" cy="200" rx="70" ry="90"/>
+<path d="M360 60 V470 M360 60 H560 V470"/>
+<path d="M480 90 v40 c0 10 -30 10 -30 24" />
+<path d="M392 120 l40 -40 M392 170 l80 -80" stroke-width="1.4" stroke-opacity=".5"/>
+</g>
+<rect x="80" y="370" width="180" height="100" fill="#8a5a24" fill-opacity=".3"/>
+<g fill="#2c4a3f"><circle cx="300" cy="320" r="12"/><circle cx="312" cy="306" r="10"/></g>
+</svg>

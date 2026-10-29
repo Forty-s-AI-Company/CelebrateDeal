@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 75 600 450" width="600" height="450">
+<title>細節特寫：防潑水隱藏拉鍊（線稿示意）</title>
+<rect width="600" height="600" fill="#18221e"/>
+<g fill="none" stroke="#c9a46a" stroke-opacity=".12"><circle cx="300" cy="300" r="250"/><circle cx="300" cy="300" r="190"/></g>
+<path d="M60 250 C200 236 400 236 540 250 L540 350 C400 364 200 364 60 350 Z" fill="#1f2b26" stroke="#c9a46a" stroke-width="2"/>
+<g stroke="#c9a46a" stroke-width="2" stroke-linecap="round">
+<path d="M70 300 H330" stroke-dasharray="10 6"/>
+<path d="M70 292 H330 M70 308 H330" stroke-opacity=".5"/>
+</g>
+<path d="M330 286 H392 C404 286 410 292 410 300 C410 308 404 314 392 314 H330 Z" fill="#0f1714" stroke="#c9a46a" stroke-width="2.4"/>
+<path d="M392 300 C420 300 438 318 448 352 L470 430 C474 446 462 458 448 456 C436 455 430 446 428 434 L410 354" fill="#0f1714" stroke="#c9a46a" stroke-width="2.4" stroke-linejoin="round"/>
+<circle cx="448" cy="430" r="9" fill="none" stroke="#c9a46a" stroke-width="2"/>
+<path d="M60 266 C200 254 400 254 540 266 M60 334 C200 346 400 346 540 334" stroke="#c9a46a" stroke-opacity=".45" stroke-dasharray="3 7" fill="none"/>
+<g fill="#c9a46a" fill-opacity=".55"><circle cx="150" cy="226" r="6"/><circle cx="182" cy="214" r="4"/><circle cx="240" cy="222" r="5"/><circle cx="470" cy="222" r="4"/></g>
+<text x="40" y="118" fill="#c9a46a" font-family="Georgia,serif" font-size="22" letter-spacing="4">DETAIL · 01</text>
+</svg>

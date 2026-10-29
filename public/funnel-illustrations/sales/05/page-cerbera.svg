@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 600" role="img" aria-label="內頁示意：海檬果的白色星形花與果實">
+<rect width="800" height="600" fill="#e8f3ea"/>
+<path d="M60 70 C200 54 330 60 400 84 C470 60 600 54 740 70 V540 C600 524 470 530 400 552 C330 530 200 524 60 540Z" fill="#fffdf6" stroke="#1f2a1c" stroke-width="5" stroke-linejoin="round" stroke-linecap="round"/>
+<path d="M400 84 V552" stroke="#1f2a1c" stroke-width="3" opacity="0.3"/>
+
+<path d="M230 490 C228 400 236 300 230 230" fill="none" stroke="#1f2a1c" stroke-width="5" stroke-linejoin="round" stroke-linecap="round"/>
+<path d="M230 330 C170 310 130 270 120 220 C180 226 220 270 230 330Z" fill="#5fae73" stroke="#1f2a1c" stroke-width="5" stroke-linejoin="round" stroke-linecap="round"/>
+<path d="M232 290 C290 270 330 230 336 180 C276 190 240 230 232 290Z" fill="#8fc79a" stroke="#1f2a1c" stroke-width="5" stroke-linejoin="round" stroke-linecap="round"/>
+<g transform="translate(230 180)"><path d="M0 -60 L16 -18 L58 -18 L24 8 L36 52 L0 26 L-36 52 L-24 8 L-58 -18 L-16 -18Z" fill="#fffdf6" stroke="#1f2a1c" stroke-width="5" stroke-linejoin="round" stroke-linecap="round"/><circle r="14" fill="#ffcf5c" stroke="#1f2a1c" stroke-width="5" stroke-linejoin="round" stroke-linecap="round"/></g>
+<path d="M160 372 C190 350 214 344 230 344 M300 400 C280 376 250 362 232 360" fill="none" stroke="#1f2a1c" stroke-width="5" stroke-linejoin="round" stroke-linecap="round"/>
+<ellipse cx="160" cy="420" rx="40" ry="52" fill="#2e7d4f" stroke="#1f2a1c" stroke-width="5" stroke-linejoin="round" stroke-linecap="round"/><ellipse cx="300" cy="446" rx="34" ry="44" fill="#c0412b" stroke="#1f2a1c" stroke-width="5" stroke-linejoin="round" stroke-linecap="round"/>
+
+<rect x="450" y="140" width="96" height="16" rx="8" fill="#2e7d4f"/>
+<rect x="450" y="176" width="230" height="12" rx="6" fill="#3e4a3a" opacity="0.28"/>
+<rect x="450" y="200" width="250" height="12" rx="6" fill="#3e4a3a" opacity="0.28"/>
+<rect x="450" y="224" width="200" height="12" rx="6" fill="#3e4a3a" opacity="0.28"/>
+<rect x="450" y="248" width="236" height="12" rx="6" fill="#3e4a3a" opacity="0.28"/>
+<rect x="450" y="300" width="120" height="120" rx="20" fill="#ffcf5c"/>
+<rect x="590" y="300" width="110" height="12" rx="6" fill="#3e4a3a" opacity="0.28"/>
+<rect x="590" y="324" width="90" height="12" rx="6" fill="#3e4a3a" opacity="0.28"/>
+<rect x="590" y="348" width="104" height="12" rx="6" fill="#3e4a3a" opacity="0.28"/>
+<rect x="450" y="452" width="250" height="12" rx="6" fill="#3e4a3a" opacity="0.28"/>
+<rect x="450" y="476" width="180" height="12" rx="6" fill="#3e4a3a" opacity="0.28"/>
+</svg>

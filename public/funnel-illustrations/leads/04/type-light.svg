@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 300" width="480" height="300">
+<title>淺眠易醒型：睡眠曲線在半夜多次被打斷</title>
+<rect width="480" height="300" fill="#26345a"/>
+<g fill="#f2d27a"><circle cx="420" cy="50" r="2"/><circle cx="60" cy="40" r="2"/><circle cx="250" cy="34" r="1.6"/></g>
+<path d="M40 250 H440" stroke="#4b5a82" stroke-width="2"/>
+<g font-family="'Noto Sans TC',sans-serif" font-size="13" fill="#d3dbec"><text x="40" y="276">23:00</text><text x="230" y="276">03:00</text><text x="400" y="276">07:00</text></g>
+<path d="M40 90 C70 90 80 200 120 200 C150 200 150 96 172 96 C192 96 196 210 236 210 C262 210 262 92 284 92 C306 92 310 196 346 196 C372 196 380 100 440 100" fill="none" stroke="#f2d27a" stroke-width="4" stroke-linecap="round"/>
+<g fill="#ffffff"><circle cx="172" cy="96" r="9"/><circle cx="284" cy="92" r="9"/></g>
+<g font-family="'Noto Sans TC',sans-serif" font-size="14" font-weight="700" fill="#18233f">
+<g transform="translate(140 46)"><rect width="64" height="28" rx="14" fill="#ffffff"/><text x="32" y="19" text-anchor="middle">醒來</text></g>
+<g transform="translate(252 42)"><rect width="64" height="28" rx="14" fill="#ffffff"/><text x="32" y="19" text-anchor="middle">又醒</text></g>
+</g>
+</svg>

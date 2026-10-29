@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 600" role="img" aria-label="內頁示意：姑婆芋的大葉片">
+<rect width="800" height="600" fill="#dff0e4"/>
+<path d="M60 70 C200 54 330 60 400 84 C470 60 600 54 740 70 V540 C600 524 470 530 400 552 C330 530 200 524 60 540Z" fill="#fffdf6" stroke="#1f2a1c" stroke-width="5" stroke-linejoin="round" stroke-linecap="round"/>
+<path d="M400 84 V552" stroke="#1f2a1c" stroke-width="3" opacity="0.3"/>
+
+<path d="M240 510 C236 440 220 380 200 330" fill="none" stroke="#1f2a1c" stroke-width="5" stroke-linejoin="round" stroke-linecap="round"/>
+<path d="M300 510 C300 440 310 380 330 330" fill="none" stroke="#1f2a1c" stroke-width="5" stroke-linejoin="round" stroke-linecap="round"/>
+<path d="M200 330 C110 330 80 220 120 140 C160 170 210 200 230 240 C250 210 270 160 280 120 C320 220 290 330 200 330Z" fill="#2e7d4f" stroke="#1f2a1c" stroke-width="5" stroke-linejoin="round" stroke-linecap="round"/>
+<path d="M200 320 C200 260 210 220 230 240 M200 320 C170 280 150 220 124 150 M204 300 C240 260 266 190 278 130" fill="none" stroke="#8fc79a" stroke-width="4" stroke-linecap="round"/>
+<path d="M330 330 C380 330 380 250 350 210 C330 240 320 280 330 330Z" fill="#5fae73" stroke="#1f2a1c" stroke-width="5" stroke-linejoin="round" stroke-linecap="round"/>
+<ellipse cx="270" cy="516" rx="120" ry="12" fill="#1f2a1c" opacity="0.12"/>
+
+<rect x="450" y="140" width="96" height="16" rx="8" fill="#2e7d4f"/>
+<rect x="450" y="176" width="230" height="12" rx="6" fill="#3e4a3a" opacity="0.28"/>
+<rect x="450" y="200" width="250" height="12" rx="6" fill="#3e4a3a" opacity="0.28"/>
+<rect x="450" y="224" width="200" height="12" rx="6" fill="#3e4a3a" opacity="0.28"/>
+<rect x="450" y="248" width="236" height="12" rx="6" fill="#3e4a3a" opacity="0.28"/>
+<rect x="450" y="300" width="120" height="120" rx="20" fill="#ffcf5c"/>
+<rect x="590" y="300" width="110" height="12" rx="6" fill="#3e4a3a" opacity="0.28"/>
+<rect x="590" y="324" width="90" height="12" rx="6" fill="#3e4a3a" opacity="0.28"/>
+<rect x="590" y="348" width="104" height="12" rx="6" fill="#3e4a3a" opacity="0.28"/>
+<rect x="450" y="452" width="250" height="12" rx="6" fill="#3e4a3a" opacity="0.28"/>
+<rect x="450" y="476" width="180" height="12" rx="6" fill="#3e4a3a" opacity="0.28"/>
+</svg>

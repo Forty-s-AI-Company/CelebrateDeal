@@ -7,6 +7,8 @@ import { FUNNEL_BLOCK_REGISTRY, getFunnelBlocksByCategory, listFunnelBlockCatego
 import { FUNNEL_TEMPLATE_GALLERY, getFunnelTemplateGalleryItem, previewFunnelTemplate } from "@/lib/funnel-template-gallery";
 import { stressFunnelDocument } from "@/lib/funnel-template-stress";
 import type { FunnelHarnessSchedule } from "@/lib/funnel-harness-schedule";
+import type { FunnelCommerceView } from "@/lib/funnel-commerce";
+import type { PageDocument } from "@/lib/funnel-page-document";
 
 /**
  * Synthetic registration context so lead forms render their real public fields (the layout checks measure them).
@@ -21,6 +23,16 @@ const HARNESS_SUBMISSION: FunnelSubmissionContext = {
   },
   landingPageId: "design-harness-page",
 };
+
+/**
+ * Synthetic product for sell templates, so the offer card shows the server-priced commerce elements
+ * instead of the "not bound" notice. Display only: the checkout link is never followed by the QA script.
+ */
+const HARNESS_COMMERCE: FunnelCommerceView = {
+  product: { id: "design-harness-product", name: "範例方案（合成資料）", priceCents: 248000, currency: "TWD", fulfillmentType: "course" },
+  checkoutPath: "/lp/design-harness/order_form/checkout",
+};
+const withHarnessCommerce = (document: PageDocument): PageDocument => ({ ...document, commerce: { schemaVersion: 1, productId: HARNESS_COMMERCE.product.id, formMode: "single" } });
 
 export type FunnelHarnessViewport = FunnelViewport | "responsive";
 
@@ -37,10 +49,13 @@ export function FunnelDesignBrowserHarness({ template, block, category, viewport
   const scheduleAttr = schedule?.kind;
   // getFunnelTemplateGalleryItem also resolves hidden or retired templates.
   if (template && getFunnelTemplateGalleryItem(template)) {
-    const document = stress ? stressFunnelDocument(previewFunnelTemplate(template)) : previewFunnelTemplate(template);
+    const sell = getFunnelTemplateGalleryItem(template)?.goal === "sell";
+    const base = stress ? stressFunnelDocument(previewFunnelTemplate(template)) : previewFunnelTemplate(template);
+    const document = sell ? withHarnessCommerce(base) : base;
+    const commerce = sell ? HARNESS_COMMERCE : undefined;
     // "responsive" renders the real public path with no forced viewport and no phone frame.
-    if (viewport === "responsive") return <div data-design-harness="template" data-design-harness-viewport="responsive" data-design-harness-stress={stress ? "true" : undefined} data-design-harness-ready={ready ? "true" : undefined} data-design-harness-schedule={scheduleAttr} className="w-full"><PublicFunnelDocument document={document} submission={HARNESS_SUBMISSION} initialViewport={initialViewport} event={event} /></div>;
-    return <div data-design-harness="template" data-design-harness-stress={stress ? "true" : undefined} data-design-harness-ready={ready ? "true" : undefined} data-design-harness-schedule={scheduleAttr} className={frame}><FunnelPageDocumentRenderer document={document} viewport={viewport} event={event} /></div>;
+    if (viewport === "responsive") return <div data-design-harness="template" data-design-harness-viewport="responsive" data-design-harness-stress={stress ? "true" : undefined} data-design-harness-ready={ready ? "true" : undefined} data-design-harness-schedule={scheduleAttr} className="w-full"><PublicFunnelDocument document={document} submission={HARNESS_SUBMISSION} initialViewport={initialViewport} event={event} commerce={commerce} /></div>;
+    return <div data-design-harness="template" data-design-harness-stress={stress ? "true" : undefined} data-design-harness-ready={ready ? "true" : undefined} data-design-harness-schedule={scheduleAttr} className={frame}><FunnelPageDocumentRenderer document={document} viewport={viewport} event={event} commerce={commerce} /></div>;
   }
   const fixedViewport: FunnelViewport = viewport === "responsive" ? "desktop" : viewport;
   if (block && FUNNEL_BLOCK_REGISTRY[block]) {

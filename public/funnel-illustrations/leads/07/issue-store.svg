@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 480" width="640" height="480">
+<title>巷弄線稿：老雜貨店的店面與一隻貓</title>
+<rect width="640" height="480" fill="#efe8da"/>
+<g fill="none" stroke="#1f1d1a" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round">
+<path d="M0 410 H640"/>
+<rect x="90" y="60" width="460" height="350"/>
+<rect x="150" y="76" width="340" height="44"/>
+</g>
+<path d="M70 130 H570 L540 180 H100 Z" fill="#2f5d46"/>
+<g fill="#efe8da"><path d="M140 130 h40 l-6 50 h-34 z"/><path d="M260 130 h40 l-2 50 h-36 z"/><path d="M380 130 h40 l2 50 h-38 z"/><path d="M500 130 h40 l10 50 h-36 z"/></g>
+<path d="M70 130 H570 L540 180 H100 Z" fill="none" stroke="#1f1d1a" stroke-width="2.2" stroke-linejoin="round"/>
+<text x="320" y="108" text-anchor="middle" font-family="'Noto Serif TC','Microsoft JhengHei',serif" font-size="26" letter-spacing="10" fill="#1f1d1a">日 光 商 行</text>
+<g fill="none" stroke="#1f1d1a" stroke-width="2" stroke-linejoin="round" stroke-linecap="round">
+<rect x="120" y="200" width="180" height="210"/><path d="M120 260 H300 M120 320 H300"/>
+<rect x="140" y="226" width="22" height="34"/><rect x="170" y="236" width="26" height="24"/><circle cx="222" cy="246" r="14"/><rect x="250" y="222" width="30" height="38"/>
+<rect x="140" y="284" width="40" height="36"/><path d="M196 320 v-30 h20 v30 M232 320 v-40 h18 v40 M262 320 v-24 h22 v24"/>
+<rect x="340" y="200" width="180" height="210"/><path d="M430 200 V410 M418 300 h-8 M442 300 h8"/>
+<path d="M360 220 l56 160 M450 230 l50 140" stroke-width="1.2" stroke-opacity=".5"/>
+<path d="M560 400 c0 -40 10 -60 26 -64 l6 -16 l8 14 c12 4 18 20 18 40 c0 14 -6 26 -10 26 z M612 384 c14 6 16 20 6 26"/>
+<path d="M30 410 v-70 h40 v70 M26 340 h48"/>
+</g>
+<g fill="#2f5d46"><circle cx="40" cy="330" r="12"/><circle cx="58" cy="322" r="14"/><circle cx="50" cy="306" r="11"/></g>
+</svg>

@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 400" role="img" aria-label="功能示意：自動加總工時，超時提早提醒">
+<rect width="640" height="400" fill="#fff1e0"/>
+<circle cx="560" cy="60" r="120" fill="#ffffff" opacity="0.45"/>
+
+<rect x="110" y="70" width="420" height="270" rx="20" fill="#ffffff"/>
+<path d="M140 300 H500" stroke="#e3e8f2" stroke-width="3"/>
+<path d="M140 130 H500" stroke="#d9480f" stroke-width="3" stroke-dasharray="10 8"/>
+<rect x="150" y="180" width="34" height="120" rx="8" fill="#3b5bdb"/><rect x="206" y="150" width="34" height="150" rx="8" fill="#3b5bdb"/><rect x="262" y="204" width="34" height="96" rx="8" fill="#3b5bdb"/><rect x="318" y="130" width="34" height="170" rx="8" fill="#3b5bdb"/><rect x="374" y="100" width="34" height="200" rx="8" fill="#d9480f"/><rect x="430" y="160" width="34" height="140" rx="8" fill="#3b5bdb"/>
+<rect x="380" y="86" width="132" height="34" rx="17" fill="#fff0e6"/><circle cx="400" cy="103" r="7" fill="#d9480f"/><rect x="414" y="97" width="84" height="12" rx="6" fill="#d9480f" opacity="0.7"/>
+</svg>

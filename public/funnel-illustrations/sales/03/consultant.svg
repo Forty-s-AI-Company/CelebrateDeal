@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 1000" width="800" height="1000" role="img" aria-label="顧問照片預留位置（請替換為本人照片）">
+<defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#8a6a3a"/><stop offset=".5" stop-color="#e2c48f"/><stop offset="1" stop-color="#9c7a45"/></linearGradient><linearGradient id="bg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#1f1d1a"/><stop offset="1" stop-color="#0c0c0d"/></linearGradient></defs>
+<rect width="800" height="1000" fill="url(#bg)"/>
+<circle cx="400" cy="380" r="300" fill="none" stroke="url(#g)" stroke-width="1.5" stroke-opacity=".5"/>
+<path d="M60 60h680v880H60z" fill="none" stroke="url(#g)" stroke-width="1.2" stroke-opacity=".45"/>
+<path d="M200 1000c-4-150 44-238 140-282 28-13 40-33 42-57l1-30c-52-30-82-88-86-158-6-100 50-168 103-168s109 68 103 168c-4 70-34 128-86 158l1 30c2 24 14 44 42 57 96 44 144 132 140 282z" fill="#2a2724"/>
+<path d="M310 600c40 70 140 70 180 0l60 70-150 120-150-120z" fill="#3a352f"/>
+<path d="M392 640l8 260 8-260z" fill="#c9a063" fill-opacity=".8"/>
+<text x="400" y="960" font-family="system-ui, sans-serif" font-size="28" text-anchor="middle" letter-spacing="4" fill="#cfc8bb">替換為顧問照片</text>
+</svg>

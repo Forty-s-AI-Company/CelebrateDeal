@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 500" width="400" height="500">
+<title>講師照片佔位：手持相機的商品攝影師插畫（請替換為講師照片）</title>
+<rect width="400" height="500" fill="#ffd84d"/>
+<circle cx="320" cy="90" r="60" fill="#fff6d6"/>
+<g fill="none" stroke="#1a1a1a" stroke-width="4" opacity=".25"><path d="M30 40 h70 M30 60 h44"/></g>
+<path d="M110 500 C110 392 148 344 200 344 C252 344 290 392 290 500 Z" fill="#1a1a1a"/>
+<rect x="184" y="296" width="32" height="54" rx="12" fill="#c68b67"/>
+<ellipse cx="200" cy="246" rx="60" ry="68" fill="#d9a07a"/>
+<path d="M140 240 C132 176 176 160 206 164 C246 168 266 196 262 236 C246 210 226 202 200 204 C172 206 152 216 140 240 Z" fill="#1a1a1a"/>
+<circle cx="178" cy="254" r="5" fill="#1a1a1a"/><circle cx="222" cy="254" r="5" fill="#1a1a1a"/>
+<path d="M184 284 q16 10 32 0" fill="none" stroke="#1a1a1a" stroke-width="4" stroke-linecap="round"/>
+<g transform="translate(138 384)">
+<rect width="124" height="80" rx="12" fill="#333333" stroke="#ffd84d" stroke-width="3"/>
+<circle cx="62" cy="42" r="26" fill="#1a1a1a" stroke="#ffd84d" stroke-width="3"/>
+<circle cx="62" cy="42" r="12" fill="#c42a5f"/>
+<rect x="88" y="-12" width="26" height="14" rx="4" fill="#333333"/>
+</g>
+</svg>

@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 600" width="480" height="600">
+<title>主編何以寧（虛構）的插畫肖像</title>
+<rect width="480" height="600" fill="#e6ddcb"/>
+<circle cx="240" cy="250" r="170" fill="#d9e4d6"/>
+<g fill="none" stroke="#1f1d1a" stroke-width="3" stroke-linejoin="round" stroke-linecap="round">
+<path d="M150 600 C150 470 190 420 240 420 C290 420 330 470 330 600"/>
+<path d="M214 380 V420 C214 440 266 440 266 420 V380"/>
+<path d="M170 250 C170 170 310 170 310 250 C310 330 280 384 240 384 C200 384 170 330 170 250 Z" fill="#efe8da"/>
+<path d="M160 250 C150 160 210 120 260 130 C320 140 336 200 322 260 C312 220 290 200 250 196 C220 210 190 230 160 250 Z" fill="#1f1d1a"/>
+<circle cx="210" cy="270" r="22"/><circle cx="272" cy="270" r="22"/><path d="M232 270 h18"/>
+<path d="M226 334 C234 342 248 342 256 334"/>
+<path d="M190 470 L230 600 M330 500 L280 600"/>
+</g>
+<rect x="290" y="470" width="110" height="130" fill="#2f5d46"/>
+<path d="M300 470 C300 430 390 430 390 470" fill="none" stroke="#2f5d46" stroke-width="8"/>
+</svg>
