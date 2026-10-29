@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const mocks = vi.hoisted(() => ({ save: vi.fn(), create: vi.fn(), apply: vi.fn(), document: vi.fn(), csrf: vi.fn() }));
+const mocks = vi.hoisted(() => ({ save: vi.fn(), create: vi.fn(), apply: vi.fn(), document: vi.fn(), platformDocument: vi.fn(), csrf: vi.fn() }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 vi.mock("@/lib/csrf", () => ({ assertServerActionSecurity: mocks.csrf }));
 vi.mock("@/lib/landing-page-template-service", async (importOriginal) => ({
@@ -9,6 +9,7 @@ vi.mock("@/lib/landing-page-template-service", async (importOriginal) => ({
   createLandingPageFromTemplate: mocks.create,
   applyLandingPageTemplateToStep: mocks.apply,
   getLandingPageTemplateDocument: mocks.document,
+  getLandingPagePlatformTemplateDocument: mocks.platformDocument,
 }));
 
 import { LandingPageTemplateInputError, LandingPageTemplateNotFoundError } from "@/lib/landing-page-template-service";
@@ -16,6 +17,7 @@ import {
   applyLandingPageTemplateAction,
   createLandingPageFromTemplateAction,
   readLandingPageTemplateDocumentAction,
+  readPlatformTemplateDocumentAction,
   saveLandingPageTemplateAction,
 } from "./landing-page-template-actions";
 
@@ -68,5 +70,12 @@ describe("landing page template action errors", () => {
   it("maps a missing own template for the preview", async () => {
     mocks.document.mockRejectedValue(new LandingPageTemplateNotFoundError());
     expect(await readLandingPageTemplateDocumentAction("t")).toEqual({ ok: false, message: "找不到這個範本，或你沒有使用它的權限。" });
+  });
+
+  it("returns a platform template's document for the preview and maps an unknown or non-library id", async () => {
+    mocks.platformDocument.mockResolvedValueOnce({ id: "doc" });
+    expect(await readPlatformTemplateDocumentAction("webinar-ai-minimal")).toEqual({ ok: true, document: { id: "doc" } });
+    mocks.platformDocument.mockRejectedValueOnce(new LandingPageTemplateNotFoundError());
+    expect(await readPlatformTemplateDocumentAction("nope")).toEqual({ ok: false, message: "找不到這個範本，或你沒有使用它的權限。" });
   });
 });
