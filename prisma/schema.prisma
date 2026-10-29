@@ -347,9 +347,8 @@ model AccountRateLimitBucket {
 /// revert is usable, `previousEmail` stays reserved for this user. A revert
 /// that locked the account down (`revertedAt`) blocks self-service changes for
 /// seven days. `revertRevokedAt` ends a link without that lock: superseded (an
-/// older link's revert, a failed send), used to cancel a change that never
-/// completed, or voided by the signed-in user in security settings (MFA
-/// step-up).
+/// older link's revert, a failed send) or used to cancel a change that never
+/// completed.
 /// `syncedVendorId` names the workspace whose `Vendor.email` followed the
 /// change (no FK on purpose: reference only, guarded by predicates on use).
 model UserEmailChangeRequest {
@@ -366,6 +365,12 @@ model UserEmailChangeRequest {
   revertedAt      DateTime?
   revertRevokedAt DateTime?
   syncedVendorId  String?
+  /// The session that requested the change (reference only, no FK) and when
+  /// it began. A revert removes MFA factors enrolled since the earlier of this
+  /// and `createdAt`. NULL on rows stored before 20261030200000 (the revert
+  /// then uses `createdAt` minus 24 hours). Both or neither (CHECK).
+  initiatingSessionId        String?
+  initiatingSessionCreatedAt DateTime?
   createdAt       DateTime  @default(now())
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)

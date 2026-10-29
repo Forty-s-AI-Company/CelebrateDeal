@@ -10,12 +10,12 @@ const STATUS_MESSAGES = {
   reverted: {
     tone: "success",
     title: "登入 Email 已還原，請重設密碼",
-    body: `登入 Email 已改回這個信箱。為了把變更的人請出帳號，所有裝置都已登出、原本的密碼已停用，變更後才設定的兩步驟驗證與備用碼也已移除。請用這個信箱到「忘記密碼」重設密碼後再登入，並檢查帳號設定；${ACCOUNT_EMAIL_CHANGE_LOCK_DAYS} 天內不能再自行變更登入 Email。`,
+    body: `登入 Email 已改回這個信箱。為了把變更的人請出帳號，所有裝置都已登出、原本的密碼已停用、LINE 登入已解除綁定、備用碼已全部作廢，提出變更的那次登入之後才設定的兩步驟驗證也已移除。請用這個信箱到「忘記密碼」重設密碼後再登入，並檢查帳號設定；${ACCOUNT_EMAIL_CHANGE_LOCK_DAYS} 天內不能再自行變更登入 Email。`,
   },
   cancelled: {
     tone: "success",
-    title: "已取消變更登入 Email",
-    body: "登入 Email 維持這個信箱，尚未完成的變更已取消，密碼與登入狀態都沒有變動。如果懷疑有人知道你的密碼，請用這個信箱到「忘記密碼」重設密碼。",
+    title: "已取消變更，請重設密碼",
+    body: "登入 Email 維持這個信箱，尚未完成的變更已取消。提出變更的人知道你的密碼，所以所有裝置都已登出、原本的密碼已停用、LINE 登入已解除綁定、備用碼已全部作廢；兩步驟驗證保留。請用這個信箱到「忘記密碼」重設密碼後再登入。",
   },
   invalid: {
     tone: "warning",
@@ -65,8 +65,8 @@ export default async function RevertEmailChangePage({ searchParams }: { searchPa
         </p>
         <p className="mt-3 text-sm leading-6 text-slate-700">
           {restore
-            ? `同時所有裝置都會登出、原本的密碼會停用，變更後才設定的兩步驟驗證也會移除，${ACCOUNT_EMAIL_CHANGE_LOCK_DAYS} 天內不能再自行變更登入 Email。完成後請用這個信箱重設密碼。`
-            : "密碼與登入狀態都不會變動。"}
+            ? `同時所有裝置都會登出、原本的密碼會停用、LINE 登入會解除綁定、備用碼會作廢，提出變更的那次登入之後才設定的兩步驟驗證也會移除，${ACCOUNT_EMAIL_CHANGE_LOCK_DAYS} 天內不能再自行變更登入 Email。完成後請用這個信箱重設密碼。`
+            : "同時所有裝置都會登出、原本的密碼會停用、LINE 登入會解除綁定、備用碼會作廢（兩步驟驗證保留）。完成後請用這個信箱重設密碼。"}
         </p>
         <NativePostForm
           action="/api/auth/email-change/revert"

@@ -3,7 +3,7 @@
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { checkAccountRateLimit } from "@/lib/account-rate-limit";
-import { accountEmailChangeLockedUntil, scheduleAccountEmailChangeRequest, voidAccountEmailRevertLinks } from "@/lib/account-email-change";
+import { accountEmailChangeLockedUntil, scheduleAccountEmailChangeRequest } from "@/lib/account-email-change";
 import { normalizeLoginEmail } from "@/lib/account-email-change-token";
 import { getCanonicalAppUrl } from "@/lib/app-url";
 import { writeAuditLog } from "@/lib/audit";
@@ -91,46 +91,11 @@ export async function requestAccountEmailChangeAction(formData: FormData) {
 
   scheduleAccountEmailChangeRequest({
     userId: auth.user.id,
+    sessionId: auth.session.id,
     currentEmail: auth.user.email,
     newEmail,
     vendorId: auth.vendor?.id ?? null,
     actorLabel,
   });
   redirect(`${SECURITY_PATH}?updated=email_change_sent`);
-}
-
-/**
- * 「確認是我本人，作廢舊信箱的還原連結」: voids every still-usable revert link
- * of the signed-in user's own login email changes, for when the old mailbox
- * is lost or compromised. Nothing in the form names a user or a request.
- *
- * Only accounts with an MFA factor, verified within the step-up window: the
- * revert link is the old mailbox holder's way back in, so a session alone
- * (which a password thief also has) must not be enough to take it away.
- * Accounts without a factor are told to enable one or contact support; they
- * are not sent to enrolment from here. The answer is the same whether or not
- * any link was outstanding.
- */
-export async function voidAccountEmailRevertLinksAction(formData: FormData) {
-  await assertServerActionSecurity(formData);
-  const auth = await requireAuth({ nextPath: SECURITY_PATH });
-  const factor = auth.user.mfaFactor;
-  if (!factor) failure("email_revert_void_mfa_required");
-  requireRecentMfa(auth, { nextPath: SECURITY_PATH });
-  if (!auth.session) failure("email_revert_void_unavailable");
-
-  let result: Awaited<ReturnType<typeof voidAccountEmailRevertLinks>>;
-  try {
-    result = await voidAccountEmailRevertLinks({
-      userId: auth.user.id,
-      sessionId: auth.session.id,
-      factorId: factor.id,
-      vendorId: auth.vendor?.id ?? null,
-      actorLabel: auth.member?.role ?? auth.user.platformRole,
-    });
-  } catch {
-    failure("email_revert_void_unavailable");
-  }
-  if (result.status !== "voided") failure("email_revert_void_unavailable");
-  redirect(`${SECURITY_PATH}?updated=email_revert_links_voided`);
 }

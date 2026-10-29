@@ -19,12 +19,17 @@ export async function GET(request: Request) {
   const code = url.searchParams.get("code") ?? "";
   try {
     const result = await completeLineLogin(getDb(), new LineFetchLoginProvider(), { state, code });
+    // No identity: the linked account is suspended (the state is consumed anyway).
+    if (!result.identity) return resultRedirect("/login", "error");
     if (result.identity.subjectType === "buyer_order" || result.identity.subjectType === "buyer_registration") {
       return resultRedirect(result.redirectPath, "linked");
     }
 
     const userId: string | null = result.identity.subjectType === "user" ? result.identity.subjectId : null;
     if (!userId) return resultRedirect("/login", "error");
+    // Re-checked right before the session: only an active account signs in.
+    const user = await getDb().user.findFirst({ where: { id: userId, status: "active" }, select: { id: true } });
+    if (!user) return resultRedirect("/login", "error");
     const session = await createUserSession({
       userId,
       vendorId: result.identity.vendorId,

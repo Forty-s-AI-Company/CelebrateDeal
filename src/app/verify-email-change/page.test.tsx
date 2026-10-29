@@ -26,7 +26,7 @@ describe("/verify-email-change", () => {
     expect(html).toContain("確認新的登入 Email");
     expect(html).toContain("o***@example.test");
     expect(html).toContain("若不認得此帳號請勿確認");
-    expect(html).toContain("舊信箱 7 天內仍可還原；若舊信箱已外洩，請啟用兩步驟驗證後作廢還原連結，或聯絡客服");
+    expect(html).toContain("舊信箱 7 天內仍可還原；若舊信箱已外洩，請聯絡客服");
     expect(html).toContain('action="/api/auth/email-change/confirm"');
     expect(html).toContain('method="post"');
     expect(html).toContain('name="token" value="aec1.payload.signature"');
@@ -45,7 +45,7 @@ describe("/verify-email-change", () => {
     const html = await render({ status: "changed" });
     expect(html).toContain("登入 Email 已變更");
     expect(html).toContain("所有裝置的登入狀態都已結束");
-    expect(html).toContain("舊信箱 7 天內仍可還原；若舊信箱已外洩，請啟用兩步驟驗證後作廢還原連結，或聯絡客服");
+    expect(html).toContain("舊信箱 7 天內仍可還原；若舊信箱已外洩，請聯絡客服");
     expect(html).toContain('href="/login"');
     expect(mocks.auth).not.toHaveBeenCalled();
     expect(mocks.describe).not.toHaveBeenCalled();
