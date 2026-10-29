@@ -36,7 +36,7 @@ describe("exact live purchase broadcasts", () => {
   it("checks live ownership even with a valid admission row", async () => {
     const f = fixture(); f.tx.live.findFirst.mockResolvedValue(null);
     await expect(listLivePurchaseBroadcasts(f.db as never, f.input)).rejects.toBeInstanceOf(LivePurchaseBroadcastAccessDenied);
-    expect(f.tx.live.findFirst).toHaveBeenCalledWith({ where: { id: "live-1", vendorId: "vendor-1" }, select: { id: true } });
+    expect(f.tx.live.findFirst).toHaveBeenCalledWith({ where: { id: "live-1", vendorId: "vendor-1" }, select: expect.objectContaining({ id: true, isEvergreen: true, video: { select: { durationSec: true } } }) });
     expect(f.tx.commerceOrder.findMany).not.toHaveBeenCalled();
   });
   it("binds paid, unrefunded orders to server checkout attribution and visible products", async () => {
@@ -51,6 +51,22 @@ describe("exact live purchase broadcasts", () => {
       orderBy: [{ paidAt: "desc" }, { id: "desc" }], take: 8,
     });
     expect(f.db.$transaction).toHaveBeenCalledWith(expect.any(Function), { isolationLevel: "RepeatableRead" });
+  });
+  it("publishes no product names for an active evergreen live", async () => {
+    const f = fixture();
+    const evergreen = { id: "live-1", isEvergreen: true, streamMode: "vod", status: "scheduled", evergreenScheduleMode: "just_in_time",
+      evergreenIntervalMinutes: 15, evergreenDailyTimes: [], evergreenSessionStartAt: null, video: { durationSec: 1_800 } };
+    f.tx.live.findFirst.mockResolvedValue(evergreen);
+    await expect(listLivePurchaseBroadcasts(f.db as never, f.input)).resolves.toEqual([]);
+    expect(f.tx.liveProduct.findFirst).not.toHaveBeenCalled();
+    expect(f.tx.commerceOrder.findMany).not.toHaveBeenCalled();
+    // The admission check still runs first: evergreen never bypasses it.
+    expect(f.tx.liveViewerSession.findUnique).toHaveBeenCalled();
+
+    // An evergreen flag that no longer governs playback (merchant ended it) keeps the ticker.
+    const ended = fixture();
+    ended.tx.live.findFirst.mockResolvedValue({ ...evergreen, status: "ended" });
+    await expect(listLivePurchaseBroadcasts(ended.db as never, ended.input)).resolves.toHaveLength(1);
   });
   it("returns only masked, bounded cards without canonical order identifiers", async () => {
     const f = fixture(); const result = await listLivePurchaseBroadcasts(f.db as never, f.input);

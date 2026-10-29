@@ -214,4 +214,38 @@ describe("live runtime state", () => {
       }),
     }));
   });
+
+  it.each([
+    ["an active evergreen VOD", {}],
+    // Even when a fixable setting keeps the evergreen rule inactive, the flag alone blocks a persisted end.
+    ["an evergreen-flagged VOD with an unusable schedule", { evergreenScheduleMode: "recurring_daily", evergreenDailyTimes: [] }],
+  ])("never auto-ends %s after scheduledAt + duration", async (_label, overrides) => {
+    const updateMany = vi.fn().mockResolvedValue({ count: 1 });
+    const db = {
+      live: {
+        findFirst: vi.fn().mockResolvedValue({
+          id: "live-1",
+          vendorId: "vendor-1",
+          ...vod({ status: "live", replayEnabled: false }),
+          isEvergreen: true,
+          evergreenScheduleMode: "just_in_time",
+          evergreenIntervalMinutes: 15,
+          evergreenDailyTimes: [],
+          evergreenSessionStartAt: null,
+          video: { id: "video-1", durationSec: 600 },
+          ...overrides,
+        }),
+        updateMany,
+      },
+    };
+
+    // Long after the shared scheduledAt + 600s completion a regular VOD would be ended here.
+    await expect(reconcileLiveRuntimeState(db as never, {
+      vendorId: "vendor-1",
+      liveId: "live-1",
+      now: new Date("2026-08-19T10:11:00.000Z"),
+    })).resolves.toMatchObject({ updated: false, updateCount: 0 });
+    expect(updateMany).not.toHaveBeenCalled();
+    expect(db.live.findFirst).toHaveBeenCalledWith(expect.objectContaining({ select: expect.objectContaining({ isEvergreen: true }) }));
+  });
 });

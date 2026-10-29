@@ -261,6 +261,11 @@ function reconciliationTarget(live: LiveRuntimeRecord, decision: LiveRuntimeDeci
   if (
     live.streamMode !== "vod"
     // An evergreen VOD has no shared end: every visitor has their own session.
+    // This deliberately reads the raw flag instead of the shared activation
+    // rule (evergreen-activation.ts): `ended` is a persisted transition that
+    // would switch evergreen off for good, so a flagged Live is never ended
+    // automatically, even while a fixable setting keeps the rule inactive.
+    // Viewers of such a Live still get the derived scheduledAt state above.
     || live.isEvergreen === true
     || !decision.canReconcileToEnded
     || !decision.completionAt

@@ -21,6 +21,7 @@ import {
 import { checkRateLimit } from "@/lib/rate-limit";
 import { liveViewerPassFromRequest, verifyLiveViewerPass } from "@/lib/live-viewer-pass";
 import { resolveLiveRuntime } from "@/lib/live-runtime-state";
+import { EVERGREEN_ACTIVATION_SELECT, isActiveEvergreenLive, type EvergreenActivationRecord } from "@/lib/evergreen-activation";
 import { decryptSensitiveValue } from "@/lib/sensitive-data";
 import { normalizeLiveQuestionBody, normalizeLiveQuestionDisplayName } from "@/lib/live-question";
 import { FLASH_SALE_COOKIE, FlashSaleUnavailableError, resolveFlashSaleQuote, resolveFlashSaleTerms } from "@/lib/live-flash-sale";
@@ -113,13 +114,13 @@ async function verifiedPurchasedDrawRegistration(
 }
 
 function scheduledInteractionWindow(
-  sourceLive: (Parameters<typeof resolveLiveRuntime>[0] & { isEvergreen?: boolean }) | undefined,
+  sourceLive: (Parameters<typeof resolveLiveRuntime>[0] & EvergreenActivationRecord) | undefined,
   triggerSec: number,
   durationSec: number,
   now: Date,
 ) {
   // One shared run per live cannot follow per-visitor evergreen sessions.
-  if (!sourceLive || sourceLive.isEvergreen === true) return null;
+  if (!sourceLive || isActiveEvergreenLive(sourceLive, { now })) return null;
   const runtime = resolveLiveRuntime(sourceLive, now);
   if (runtime.state !== "playing") return null;
   const playbackStartedAt = sourceLive.streamMode === "live"
@@ -285,7 +286,7 @@ async function openScheduledInteraction(data: z.infer<typeof OpenRequest>, parti
           lives: {
             where: { id: data.liveId, vendorId: data.vendorId },
             take: 1,
-            select: { streamMode: true, scheduledAt: true, status: true, startedAt: true, endedAt: true, replayAvailableUntil: true, replayEnabled: true, isEvergreen: true, video: { select: { durationSec: true } } },
+            select: { ...EVERGREEN_ACTIVATION_SELECT, scheduledAt: true, startedAt: true, endedAt: true, replayAvailableUntil: true, replayEnabled: true, video: { select: { durationSec: true } } },
           },
         },
       },

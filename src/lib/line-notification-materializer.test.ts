@@ -73,6 +73,32 @@ describe("LINE automatic notification materializer", () => {
     }
   });
 
+  it("does not push scheduledAt-based reminders or start notices for an active evergreen live", async () => {
+    runtime.db.lineUserIdentity.findMany.mockResolvedValue([
+      { id: "identity-registration", vendorId: "vendor-1", subjectType: "buyer_registration", subjectId: "submission-1" },
+    ]);
+    const evergreen = {
+      id: "live-1", slug: "ai-live", title: "AI 實戰", status: "scheduled",
+      scheduledAt: new Date("2026-09-05T12:00:00Z"), startedAt: null, endedAt: null,
+      isEvergreen: true, streamMode: "vod", evergreenScheduleMode: "just_in_time", evergreenIntervalMinutes: 15,
+      evergreenDailyTimes: [], evergreenSessionStartAt: null, video: { durationSec: 1_800 },
+    };
+    runtime.db.formSubmission.findFirst.mockResolvedValue({ id: "submission-1", live: evergreen });
+    // 30 minutes before scheduledAt: a regular live would get its reminder now.
+    await expect(materializeLineNotifications(new Date("2026-09-05T11:30:00Z"))).resolves.toEqual([]);
+    expect(runtime.enqueue).not.toHaveBeenCalled();
+    expect(runtime.db.lineUserIdentity.update).toHaveBeenCalledWith(expect.objectContaining({ where: { id: "identity-registration" } }));
+
+    runtime.db.formSubmission.findFirst.mockResolvedValue({ id: "submission-1", live: { ...evergreen, status: "live", startedAt: new Date("2026-09-05T12:00:00Z") } });
+    await expect(materializeLineNotifications(new Date("2026-09-05T12:01:00Z"))).resolves.toEqual([]);
+    expect(runtime.enqueue).not.toHaveBeenCalled();
+
+    // The same live without evergreen keeps the unchanged reminder.
+    runtime.db.formSubmission.findFirst.mockResolvedValue({ id: "submission-1", live: { ...evergreen, isEvergreen: false } });
+    await materializeLineNotifications(new Date("2026-09-05T11:30:00Z"));
+    expect(runtime.enqueue.mock.calls.map(([, input]) => input.trigger)).toEqual(["live_reminder"]);
+  });
+
   it("accepts an injected database handle for one cron invocation", async () => {
     const cronDb = {
       lineUserIdentity: { findMany: vi.fn().mockResolvedValue([]) },

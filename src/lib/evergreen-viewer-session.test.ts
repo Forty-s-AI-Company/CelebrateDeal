@@ -2,8 +2,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   createEvergreenSessionToken,
   evergreenScheduleForLive,
+  EVERGREEN_SESSION_COOKIE_MAX_AGE_SECONDS,
+  evergreenSessionCookieMaxAgeSeconds,
   evergreenSessionCookieName,
   evergreenSessionCookieOptions,
+  evergreenSessionTokenFromCookieHeader,
   evergreenSessionTokenFromRequest,
   publicEvergreenSession,
   resolveEvergreenViewerSession,
@@ -182,7 +185,9 @@ describe("evergreen session anti-tamper", () => {
     const schedule = binding().schedule;
     const future = createEvergreenSessionToken({ vendorId: "vendor-1", liveId: "live-evergreen-1", schedule, sessionStartAt: new Date("2026-10-29T08:00:00.000Z"), now: new Date("2026-10-29T07:00:00.000Z") });
     expect(verifyEvergreenSessionToken(future, binding())).toBeNull();
-    expect(verifyEvergreenSessionToken(token, { ...binding(), now: new Date("2026-11-29T06:03:00.000Z") })).toBeNull();
+    // Tokens live at most seven days, matching the cookie cap.
+    expect(verifyEvergreenSessionToken(token, { ...binding(), now: new Date("2026-11-05T06:02:00.000Z") })?.toISOString()).toBe("2026-10-29T06:15:00.000Z");
+    expect(verifyEvergreenSessionToken(token, { ...binding(), now: new Date("2026-11-05T06:03:00.000Z") })).toBeNull();
     const farStart = createEvergreenSessionToken({ vendorId: "vendor-1", liveId: "live-evergreen-1", schedule, sessionStartAt: new Date("2026-10-20T00:00:00.000Z"), now: ENTERED_AT });
     expect(verifyEvergreenSessionToken(farStart, binding())).toBeNull();
   });
@@ -196,8 +201,57 @@ describe("evergreen session anti-tamper", () => {
     const request = new Request("https://app.example.test/api/live-admission", { headers: { cookie: `other=1; ${name}=${session.issuedToken}` } });
     expect(evergreenSessionTokenFromRequest(request, "live-evergreen-1")).toBe(session.issuedToken);
     expect(evergreenSessionTokenFromRequest(request, "live-evergreen-2")).toBeNull();
-    expect(evergreenSessionCookieOptions(request)).toEqual({ httpOnly: true, sameSite: "lax", secure: true, path: "/", maxAge: 2_592_000 });
+    expect(evergreenSessionCookieOptions(request, 3_600)).toEqual({ httpOnly: true, sameSite: "lax", secure: true, path: "/", maxAge: 3_600 });
     expect(JSON.stringify(publicEvergreenSession(session, ENTERED_AT))).not.toContain(session.issuedToken!);
+  });
+});
+
+describe("evergreen session cookie lifetime", () => {
+  // Claimed at 06:03 for the 06:15 cohort of a 30-minute video: the session ends at 06:45.
+  const session = () => claim();
+
+  it("expires one hour after the session ends when replay is closed", () => {
+    expect(evergreenSessionCookieMaxAgeSeconds(session(), { replayEnabled: false, replayAvailableUntil: null }, ENTERED_AT))
+      .toBe((42 + 60) * 60);
+  });
+
+  it("follows a dated replay window and never exceeds seven days", () => {
+    const until = new Date("2026-10-30T06:03:00.000Z");
+    expect(evergreenSessionCookieMaxAgeSeconds(session(), { replayEnabled: true, replayAvailableUntil: until }, ENTERED_AT)).toBe(24 * 60 * 60);
+    expect(evergreenSessionCookieMaxAgeSeconds(session(), { replayEnabled: true, replayAvailableUntil: new Date("2027-01-01T00:00:00.000Z") }, ENTERED_AT))
+      .toBe(EVERGREEN_SESSION_COOKIE_MAX_AGE_SECONDS);
+    expect(evergreenSessionCookieMaxAgeSeconds(session(), { replayEnabled: true, replayAvailableUntil: null }, ENTERED_AT))
+      .toBe(EVERGREEN_SESSION_COOKIE_MAX_AGE_SECONDS);
+    expect(EVERGREEN_SESSION_COOKIE_MAX_AGE_SECONDS).toBe(7 * 24 * 60 * 60);
+  });
+
+  it("ignores an already closed replay window and clamps the cookie options", () => {
+    expect(evergreenSessionCookieMaxAgeSeconds(session(), { replayEnabled: true, replayAvailableUntil: new Date("2026-10-29T06:00:00.000Z") }, ENTERED_AT))
+      .toBe((42 + 60) * 60);
+    const request = new Request("http://localhost:3000/live/x");
+    expect(evergreenSessionCookieOptions(request, 10 * 24 * 60 * 60)).toMatchObject({ secure: false, maxAge: EVERGREEN_SESSION_COOKIE_MAX_AGE_SECONDS });
+    expect(evergreenSessionCookieOptions(request, 0).maxAge).toBe(60);
+    expect(evergreenSessionCookieOptions(request, Number.NaN).maxAge).toBe(60);
+  });
+});
+
+describe("evergreen session cookie parser", () => {
+  const name = evergreenSessionCookieName("live-evergreen-1");
+
+  it("finds the token after more than one hundred other cookies", () => {
+    const token = claim().issuedToken!;
+    const others = Array.from({ length: 150 }, (_, index) => `c${index}=v${index}`).join("; ");
+    expect(evergreenSessionTokenFromCookieHeader(`${others}; ${name}=${token}`, "live-evergreen-1")).toBe(token);
+    const request = new Request("https://app.example.test/api/live-admission", { headers: { cookie: `${others}; ${name}=${token}` } });
+    expect(evergreenSessionTokenFromRequest(request, "live-evergreen-1")).toBe(token);
+  });
+
+  it("returns the first matching value and fails closed on malformed or oversized values", () => {
+    expect(evergreenSessionTokenFromCookieHeader(`${name}=first; ${name}=second`, "live-evergreen-1")).toBe("first");
+    expect(evergreenSessionTokenFromCookieHeader(`${name}=%E0%A4%A`, "live-evergreen-1")).toBeNull();
+    expect(evergreenSessionTokenFromCookieHeader(`${name}=${"a".repeat(1_025)}`, "live-evergreen-1")).toBeNull();
+    expect(evergreenSessionTokenFromCookieHeader(null, "live-evergreen-1")).toBeNull();
+    expect(evergreenSessionTokenFromCookieHeader(`x${name}=value`, "live-evergreen-1")).toBeNull();
   });
 });
 

@@ -10,6 +10,7 @@ import { parseSafeExternalHttpUrl } from "@/lib/external-url";
 import { toSlug } from "@/lib/format";
 import { resolveReadyImageAsset } from "@/lib/image-assets";
 import { isLiveVideoReady } from "@/lib/live-video-readiness";
+import { EVERGREEN_ACTIVATION_SELECT, isActiveEvergreenLive } from "@/lib/evergreen-activation";
 import {
   createLiveReminderReconciliationSnapshot,
   queueLiveReminderReconciliation,
@@ -381,7 +382,11 @@ export async function upsertTemplateAction(
 
       const linkedLives = await tx.live.findMany({
         where: { vendorId: vendor.id, liveReminderTemplateId: template.id },
-        select: { id: true, slug: true, title: true, status: true, scheduledAt: true, liveReminderOffsetMinutes: true },
+        select: {
+          id: true, slug: true, title: true, scheduledAt: true, liveReminderOffsetMinutes: true,
+          ...EVERGREEN_ACTIVATION_SELECT,
+          video: { select: { durationSec: true } },
+        },
       });
       const reconciliationStatuses: string[] = [];
       for (const live of linkedLives) {
@@ -394,6 +399,7 @@ export async function upsertTemplateAction(
           scheduledAt: live.scheduledAt,
           reminderOffsetMinutes: live.liveReminderOffsetMinutes,
           template,
+          evergreenActive: isActiveEvergreenLive(live),
         }));
         reconciliationStatuses.push(queued.status);
       }

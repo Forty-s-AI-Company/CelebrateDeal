@@ -12,6 +12,7 @@ import {
 } from "@/lib/email-delivery-pii";
 import { hasOnlySupportedMessageTemplateVariables, renderMessageTemplate } from "@/lib/message-template";
 import { createLiveViewerUrl } from "@/lib/live-public-url";
+import { EVERGREEN_ACTIVATION_SELECT, isActiveEvergreenLive } from "@/lib/evergreen-activation";
 import { normalizeBlacklistIdentifier } from "@/lib/blacklist-identifiers";
 import { captureOperationalError } from "@/lib/monitoring";
 import {
@@ -43,6 +44,11 @@ export type RegistrationConfirmationInput = {
   recipientName: string;
   recipientEmail: string;
   liveScheduledAt: Date;
+  /**
+   * Overrides {{live_start_at}}. An evergreen Live passes the visitor's own
+   * session time (or a neutral phrase) because scheduledAt is not their start.
+   */
+  liveStartAtText?: string;
   emailBrand?: VendorEmailBrandSource;
   template: {
     id: string;
@@ -57,6 +63,8 @@ export type RegistrationConfirmationInput = {
 
 export type LiveReminderDeliveryInput = RegistrationConfirmationInput & {
   reminderOffsetMinutes: number;
+  /** An active evergreen Live has no shared start, so no fixed-time reminder is scheduled. */
+  evergreenActive?: boolean;
 };
 
 export type PostLiveFollowupDeliveryInput = RegistrationConfirmationInput & {
@@ -186,7 +194,7 @@ export async function ensureRegistrationConfirmationDelivery(input: Registration
     name: input.recipientName,
     live_title: input.liveTitle,
     live_url: createLiveViewerUrl(input.liveSlug),
-    live_start_at: formatLiveStartAt(input.liveScheduledAt),
+    live_start_at: input.liveStartAtText ?? formatLiveStartAt(input.liveScheduledAt),
     vendor_name: input.vendorName,
     unsubscribe_url: unsubscribeUrl,
   };
@@ -292,7 +300,7 @@ export async function ensureLiveReminderDelivery(
   ) {
     return { status: "not_configured" as const };
   }
-  if (input.liveScheduledAt <= now) return { status: "not_scheduled" as const };
+  if (input.evergreenActive === true || input.liveScheduledAt <= now) return { status: "not_scheduled" as const };
 
   const reminderAt = new Date(input.liveScheduledAt.getTime() - input.reminderOffsetMinutes * 60_000);
   const nextAttemptAt = reminderAt > now ? reminderAt : now;
@@ -810,18 +818,21 @@ async function isCurrentLiveReminderDelivery(
       vendorId: true,
       slug: true,
       title: true,
-      status: true,
+      ...EVERGREEN_ACTIVATION_SELECT,
       scheduledAt: true,
       liveReminderOffsetMinutes: true,
       liveReminderTemplate: {
         select: { id: true, vendorId: true, channel: true, trigger: true, subject: true, body: true, isActive: true },
       },
+      video: { select: { durationSec: true } },
     },
   });
   const template = live?.liveReminderTemplate;
   if (
     !live
     || !new Set(["scheduled", "live"]).has(live.status)
+    // A reminder queued before evergreen was enabled must not be sent.
+    || isActiveEvergreenLive(live, { now })
     || live.scheduledAt <= now
     || !template?.isActive
     || template.vendorId !== delivery.vendorId
