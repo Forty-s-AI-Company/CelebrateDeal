@@ -39,28 +39,30 @@
 
 對照 `ROADMAP-v2.md` §3.1 的 18 項核對表與 `STATE.md` 的工作項目。
 
-| ☐ | Finding | 工作包 | 10-20 狀態（STATE） | 還需要的證據 |
-|---|---|---|---|---|
-| ☐ | F-168 staging QA 帳號 MFA | A1 | 已合併（PR #448） | QA 帳號通過 TOTP；O-14 已加 secret |
-| ☐ | F-024 財務後台強制 MFA | A2 | 已合併（取代 #436） | 平台管理員 TOTP 登記完成（O-3） |
-| ☐ | F-037 付款通知狀態判斷 | A3 | 已合併；待 Sandbox 樣本驗證 | O-2 的 Sandbox 樣本；TradeStatus 4／9、外層 Status、PaymentType 比對；B03-13 未做 |
-| ☐ | F-114 註冊同意紀錄 | A4 | 已合併 | 條款文字定稿（O-10、O-11）；或改用封測協議 |
-| ☐ | F-026 RLS 與 grant 查證 | B1 | 唯讀查證完成，非阻擋 | 無；RLS 全表 migration 已合併（PR #452） |
-| ☐ | F-042 背景工作排程 | B2 | 已合併（PR #447）；GitHub Actions 每 5 分鐘 | `scheduled-jobs` run 的 runtime log 證明各 job 被呼叫（O-18 切 alias 後） |
-| ☐ | F-090 區域與連線池 | B3 | 已合併；跨區未決 | O-15 決定 A 或 B；`regions: hnd1` 已設 |
-| ☐ | F-058 每日備份與還原演練 | B4 | 準備完成；演練 BLOCKED_OWNER | O-4 升級並開備份；還原演練收據（RTO 記錄） |
-| ☐ | F-074 `pg_trgm` 還原問題 | B4 | runbook 與修正已驗證 | 還原演練中確認 |
-| ☐ | F-101 結帳頁內部備註 | C1 | 已合併（PR #449） | 結帳頁買家端無內部字樣（Playwright 或人工） |
-| ☐ | F-110 台灣時區與 404 | C2 | 已合併 | 頁面實際顯示台灣時間（staging smoke） |
-| ☐ | F-079 英文 404 與 Slug 類顯示 | C2 | 已合併 | 中文 404 與返回出口 |
-| ☐ | F-103 新建角色預設可用 | C3 | 已合併 | 腳本頁角色下拉正常 |
-| ☐ | F-104 不標示版揭露文字 | C3 | 已合併；播放頁「部分互動」未移除 | 律師意見（O-11）；揭露文字定稿 |
-| ☐ | F-107 直播網址重複 | C4 | 已合併 | 撞名時欄位錯誤，不出現整頁錯誤 |
-| ☐ | F-113 強制腳本 | C5 | 已合併（腳本改選配） | 未使用腳本的直播可發布 |
-| ☐ | F-143 Sentry 個資過濾 | C6 | 已合併 | staging 事件內無 cookie、query、變數（抽查） |
-| ☐ | F-031① `CSRF_SECRET` 資料根金鑰說明 | D1 | 已合併（PR #447） | 無 |
+| ☐ | Finding | 工作包 | 10-20 狀態（STATE） | 還需要的證據 | 10-29 預檢結果 |
+|---|---|---|---|---|---|
+| ☐ | F-168 staging QA 帳號 MFA | A1 | 已合併（PR #448） | QA 帳號通過 TOTP；O-14 已加 secret | 待 O-14（需 QA TOTP secret） |
+| ☐ | F-024 財務後台強制 MFA | A2 | 已合併（取代 #436） | 平台管理員 TOTP 登記完成（O-3） | 待 O-3（需平台管理員登記 TOTP）；`recent-mfa`、`mfa` 單元測試通過僅為輔助 |
+| ☐ | F-037 付款通知狀態判斷 | A3 | 已合併；待 Sandbox 樣本驗證 | O-2 的 Sandbox 樣本；TradeStatus 4／9、外層 Status、PaymentType 比對；B03-13 未做 | 待 O-2（需 Sandbox 樣本）；`payuni`、payments webhook 單元測試通過僅為輔助 |
+| ☐ | F-114 註冊同意紀錄 | A4 | 已合併 | 條款文字定稿（O-10、O-11）；或改用封測協議 | 待 O-10／O-11（條款定稿或封測協議） |
+| ☑ | F-026 RLS 與 grant 查證 | B1 | 唯讀查證完成，非阻擋 | 無；RLS 全表 migration 已合併（PR #452） | 10-29 驗證：staging-migrate run 40646327623「128 migrations found … All migrations have been successfully applied」（與 repo 128 個一致）；master `ci` run 40804657424 quality 成功（含 `rls-catalog.db.test.ts`）。[說明](../ai-team/evidence/go-nogo-20261031/README.md) |
+| ☑ | F-042 背景工作排程 | B2 | 已合併（PR #447）；GitHub Actions 每 5 分鐘 | `scheduled-jobs` run 的 runtime log 證明各 job 被呼叫（O-18 切 alias 後） | 10-29 驗證：`scheduled-jobs` run 40826761897 日誌 email-deliveries／line-notifications／webhook-retry 皆 http=200 outcome=ok；每日 run 40773959731 electronic-invoices http=202。10-24 起全部成功。**注意實際觸發頻率遠低於每 5 分鐘，見 §5 B-1**。[說明](../ai-team/evidence/go-nogo-20261031/README.md) |
+| ☐ | F-090 區域與連線池 | B3 | 已合併；跨區未決 | O-15 決定 A 或 B；`regions: hnd1` 已設 | 待 O-15；補充觀察 `x-vercel-id` 為 hnd1（函式在東京） |
+| ☐ | F-058 每日備份與還原演練 | B4 | 準備完成；演練 BLOCKED_OWNER | O-4 升級並開備份；還原演練收據（RTO 記錄） | 待 O-4 與還原演練 |
+| ☐ | F-074 `pg_trgm` 還原問題 | B4 | runbook 與修正已驗證 | 還原演練中確認 | 待還原演練 |
+| ☑ | F-101 結帳頁內部備註 | C1 | 已合併（PR #449） | 結帳頁買家端無內部字樣（Playwright 或人工） | 10-29 驗證：[桌機](../ai-team/evidence/go-nogo-20261031/F-101-checkout-desktop.png)、[手機](../ai-team/evidence/go-nogo-20261031/F-101-checkout-mobile.png)；買家端無「owner／核准／內部」等字樣，改顯示「將自 2026 年 11 月 1 日起生效」。[結果](../ai-team/evidence/go-nogo-20261031/browser-checks.txt) |
+| ☑ | F-110 台灣時區與 404 | C2 | 已合併 | 頁面實際顯示台灣時間（staging smoke） | 10-29 驗證：[截圖](../ai-team/evidence/go-nogo-20261031/F-110-taipei-time.png)；Vercel（UTC）渲染的草稿儲存時間與現在的 UTC+8 相差 0.2 分鐘。[結果](../ai-team/evidence/go-nogo-20261031/browser-checks.txt) |
+| ☑ | F-079 英文 404 與 Slug 類顯示 | C2 | 已合併 | 中文 404 與返回出口 | 10-29 驗證：[截圖](../ai-team/evidence/go-nogo-20261031/F-079-404.png)；未知網址回 404，顯示「找不到這個頁面」與「回首頁」。[結果](../ai-team/evidence/go-nogo-20261031/public-probe.txt) |
+| ☑ | F-103 新建角色預設可用 | C3 | 已合併 | 腳本頁角色下拉正常 | 10-29 驗證：[截圖](../ai-team/evidence/go-nogo-20261031/F-103-script-role-dropdown.png)；新建角色預設為排程角色，腳本頁角色下拉可選到。[結果](../ai-team/evidence/go-nogo-20261031/browser-checks.txt) |
+| ☐ | F-104 不標示版揭露文字 | C3 | 已合併；播放頁「部分互動」未移除 | 律師意見（O-11）；揭露文字定稿 | 待 O-11 律師意見 |
+| ☑ | F-107 直播網址重複 | C4 | 已合併 | 撞名時欄位錯誤，不出現整頁錯誤 | 10-29 驗證：[截圖](../ai-team/evidence/go-nogo-20261031/F-107-slug-taken.png)；撞名時欄位紅字「這個直播網址已被使用」、無整頁錯誤。送出時 redirect 由 `actions.test.ts` slug 5 項測試證明。[結果](../ai-team/evidence/go-nogo-20261031/browser-checks.txt) |
+| ◐ | F-113 強制腳本 | C5 | 已合併（腳本改選配） | 未使用腳本的直播可發布 | ◐ 程式端：`live-publish-readiness.test.ts`、`live-stepper-form.test.tsx`（「lets a sales live publish without an interaction script」）通過。staging 完整發布走查需影片、表單、Email 範本，併入 O-13 第 5 步後才勾選 |
+| ◐ | F-143 Sentry 個資過濾 | C6 | 已合併 | staging 事件內無 cookie、query、變數（抽查） | ◐ 程式端：`sentry-scrub.test.ts` 通過；server／edge／client 設定都套用 `sentryDataCollection` 與 `beforeSend`。staging 事件抽查需 Sentry 帳號，待 owner 後才勾選 |
+| ☑ | F-031① `CSRF_SECRET` 資料根金鑰說明 | D1 | 已合併（PR #447） | 無 | 10-29 驗證：`DECISIONS-2026Q4.md` D-39、`docs/launch/scheduled-jobs-runbook.md` 第 104 行已文件化「資料根金鑰、不可輪替」 |
 
-- 小計：已合併 ___／18；仍阻擋的項目：__________
+- 圖例：☑ 已有 runtime 證據；◐ 程式端（測試）已驗證、staging 實走待補；☐ 待驗證。
+- 10-29 預檢小計：☑ 8 項（F-026、F-042、F-101、F-110、F-079、F-103、F-107、F-031①）；◐ 2 項（F-113、F-143）；☐ 8 項全部卡在 owner（F-168、F-024、F-037、F-114、F-090、F-058、F-074、F-104）。證據索引見 [go-nogo-20261031/README.md](../ai-team/evidence/go-nogo-20261031/README.md)。
+- 仍阻擋的項目：無工程端阻擋；上列 ☐ 皆需 owner 帳號、付款或律師（O-2、O-3、O-4、O-10、O-11、O-14、O-15）。
 
 ## 2. owner 外部動作（O-1～O-19）
 
@@ -89,7 +91,8 @@
 | ☐ | O-26 | 建立 Cloudflare Turnstile widget，在 staging／正式設定 `NEXT_PUBLIC_TURNSTILE_SITE_KEY`、`TURNSTILE_SECRET_KEY` | 公開註冊前 | 註冊沒有機器人防護；不能設 `REGISTRATION_MODE=open` |
 | ☐ | O-27 | 封測說明提醒商家收 Email 驗證信（既有帳號不被鎖住） | 封測前 | 商家不知道名單型網站為何無法獨立發布 |
 
-- 未完成的 owner 項目：__________
+- 10-29 預檢：§2 全部需要 owner 的帳號、付款或簽核，工程端沒有勾選任何一項（O-18 維持 ☑）。唯讀觀察（不構成完成）：O-7 staging 回應標頭 `server: Vercel`、無 `cf-ray`，目前沒有經過 Cloudflare；O-9／O-10／O-11 `/policies*` 已顯示營運者與客服信箱、版本 2026.10.18、「本版本尚未生效」（預定 11-01），無占位字樣；O-26 程式端就緒，金鑰是否設定無法從外部判斷。
+- 未完成的 owner 項目：O-1～O-17（O-18 除外）、O-19、O-25～O-27；其中 10-29 到期的 O-9、O-10、O-11 與 10-30 的 O-12 最急。
 
 ## 3. 首次成功路徑實走
 
@@ -138,7 +141,17 @@
 - 其餘 `ROADMAP` §1 模組表標為「延後」或「隱藏」的項目，一律視為已接受。
 - 未列入的 BLOCKER 或 MAJOR：__________
 
-## 5. 簽收
+## 5. 10-29 預檢發現的缺陷與風險
+
+證據與重現方式見 [go-nogo-20261031/README.md](../ai-team/evidence/go-nogo-20261031/README.md)。
+
+| 編號 | 嚴重度 | 現象 | 重現 | 建議 |
+|---|---|---|---|---|
+| B-1 | MAJOR（封測體驗） | GitHub Actions 的 `*/5 * * * *` 實際約每 2～5 小時才跑一次，遠低於 runbook 寫的「延遲 5～15 分鐘」。10-24 起 36 次 schedule run，間隔中位數 184 分鐘、最長 425 分鐘。報名確認信、開播提醒、webhook 重試若只靠這個排程，可能晚數小時 | `gh run list --workflow scheduled-jobs.yml --limit 100 --json createdAt,event`，只看 `event=schedule`，計算相鄰間隔 | 封測前補一個外部觸發（Vercel Cron 需 Pro、cron-job.org 類服務或 Cloudflare Worker cron，呼叫同一批 `/api/jobs/*`，仍用 `JOB_SECRET`）；O-16 一併決定。確認報名確認信是否在註冊當下就同步寄出，若是則影響較小。這是 O-13 第 6、9 步的風險，也要告知 owner |
+
+未發現 BLOCKER。
+
+## 6. 簽收
 
 | 角色 | 結論 | 日期 | 簽收 |
 |---|---|---|---|

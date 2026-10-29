@@ -1,0 +1,12 @@
+PASS  health  /api/health 回 200  -- status=200 body={"ok":true,"database":"ok","latencyMs":379}
+PASS  F-079  未知網址回 404 且為中文、有返回出口  -- status=404 中文=true 英文預設=false
+PASS  invite-register  /register 無邀請連結時只顯示受邀說明、沒有註冊表單  -- status=200 受邀說明=true 有密碼欄=false
+PASS  invite-register-bad  /register 帶偽造邀請連結被拒絕  -- status=200 顯示無效=true
+PASS  login  /login 回 200 並含登入表單  -- status=200
+PASS  csp  回應含 CSP 標頭（Content-Security-Policy 或 Report-Only）  -- 長度=792 指令=default-src,script-src,style-src,img-src,font-src,media-src,frame-src,connect-src,frame-ancestors,base-uri,form-action,report-uri
+PASS  sec-headers  HSTS／X-Frame-Options／nosniff  -- hsts=true xfo=DENY nosniff=nosniff
+PASS  jobs-jobs/email-deliveries  /api/jobs/email-deliveries 未帶密鑰被拒絕  -- status=401
+PASS  jobs-cron/line-notifications  /api/cron/line-notifications 未帶密鑰被拒絕  -- status=401
+PASS  jobs-jobs/webhook-retry  /api/jobs/webhook-retry 未帶密鑰被拒絕  -- status=401
+
+共 10 項，失敗 0 項
