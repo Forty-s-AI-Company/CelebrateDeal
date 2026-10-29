@@ -3,7 +3,8 @@ import { setTimeout as sleep } from "node:timers/promises";
 import type { Prisma, PrismaClient } from "@prisma/client";
 import { parseLiveQuotaPolicy } from "@/lib/live-quota-policy";
 import { getRuntimeLivePublishReadiness } from "@/lib/live-runtime-readiness";
-import { reconcileLiveRuntimeState, resolveLiveRuntime } from "@/lib/live-runtime-state";
+import { EVERGREEN_LIVE_SELECT, resolveViewerLiveRuntime } from "@/lib/evergreen-viewer-session";
+import { reconcileLiveRuntimeState } from "@/lib/live-runtime-state";
 import { publicLiveAvailabilityWhere } from "@/lib/sellable-live";
 import { assertPaymentMethodReferenceForQuota, PaymentMethodReferenceRequiredError } from "@/lib/payment-method-reference";
 import { assertStreamQuotaAvailable } from "@/lib/stream-quota";
@@ -37,6 +38,8 @@ type AdmissionInput = {
   vendorId: string;
   liveId: string;
   token?: string | null;
+  /** Signed evergreen session cookie; only read when the Live is evergreen. */
+  evergreenToken?: string | null;
   now?: Date;
 };
 
@@ -139,6 +142,7 @@ async function admitWithinTransaction(tx: Prisma.TransactionClient, input: Admis
       ...publicLiveAvailabilityWhere(),
     },
     select: {
+      ...EVERGREEN_LIVE_SELECT,
       id: true,
       vendorId: true,
       streamMode: true,
@@ -149,6 +153,7 @@ async function admitWithinTransaction(tx: Prisma.TransactionClient, input: Admis
       replayAvailableUntil: true,
       replayEnabled: true,
       quotaPolicy: true,
+      vendor: { select: { timezone: true } },
       video: { select: { vendorId: true, durationSec: true, sourceType: true, status: true, cloudflareReadyToStream: true, cloudflareLiveInputUid: true, liveInputStatus: true } },
       form: { select: { vendorId: true, isActive: true, fields: true } },
       messageTemplate: { select: { vendorId: true, channel: true, trigger: true, isActive: true, subject: true, body: true } },
@@ -164,8 +169,14 @@ async function admitWithinTransaction(tx: Prisma.TransactionClient, input: Admis
   if (!live || !getRuntimeLivePublishReadiness(live).ready) {
     throw new LiveQuotaAdmissionError("live_not_found");
   }
-  const runtime = resolveLiveRuntime(live, now);
-  if (runtime.state !== "playing" && runtime.state !== "replay") {
+  // Evergreen Lives admit only a visitor whose own signed session is playing
+  // or in replay; the waiting room never consumes viewer capacity.
+  const { state: runtimeState } = resolveViewerLiveRuntime(live, {
+    vendorTimezone: live.vendor?.timezone,
+    evergreenToken: input.evergreenToken,
+    now,
+  });
+  if (runtimeState !== "playing" && runtimeState !== "replay") {
     throw new LiveQuotaAdmissionError("live_not_found");
   }
 

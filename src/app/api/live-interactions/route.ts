@@ -113,12 +113,13 @@ async function verifiedPurchasedDrawRegistration(
 }
 
 function scheduledInteractionWindow(
-  sourceLive: Parameters<typeof resolveLiveRuntime>[0] | undefined,
+  sourceLive: (Parameters<typeof resolveLiveRuntime>[0] & { isEvergreen?: boolean }) | undefined,
   triggerSec: number,
   durationSec: number,
   now: Date,
 ) {
-  if (!sourceLive) return null;
+  // One shared run per live cannot follow per-visitor evergreen sessions.
+  if (!sourceLive || sourceLive.isEvergreen === true) return null;
   const runtime = resolveLiveRuntime(sourceLive, now);
   if (runtime.state !== "playing") return null;
   const playbackStartedAt = sourceLive.streamMode === "live"
@@ -284,7 +285,7 @@ async function openScheduledInteraction(data: z.infer<typeof OpenRequest>, parti
           lives: {
             where: { id: data.liveId, vendorId: data.vendorId },
             take: 1,
-            select: { streamMode: true, scheduledAt: true, status: true, startedAt: true, endedAt: true, replayAvailableUntil: true, replayEnabled: true, video: { select: { durationSec: true } } },
+            select: { streamMode: true, scheduledAt: true, status: true, startedAt: true, endedAt: true, replayAvailableUntil: true, replayEnabled: true, isEvergreen: true, video: { select: { durationSec: true } } },
           },
         },
       },

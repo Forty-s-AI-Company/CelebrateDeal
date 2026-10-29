@@ -33,12 +33,50 @@ export type FunnelWebinarState = {
   message: string;
 };
 
-/** 時間區間採左閉右開，方便伺服器與預覽共用同一判定。 */
+/** 訪客自己的常青場次（由伺服器依 Live 常青排程計算）；不含任何 cookie。 */
+export type FunnelEvergreenSession = {
+  assigned: boolean;
+  sessionStartAt: string;
+  sessionEndAt: string;
+  timezone: string;
+};
+
+function evergreenWebinarState(session: FunnelEvergreenSession | null | undefined, timestamp: number): FunnelWebinarState {
+  const start = session ? Date.parse(session.sessionStartAt) : Number.NaN;
+  const end = session ? Date.parse(session.sessionEndAt) : Number.NaN;
+  if (!session || !Number.isFinite(start) || !Number.isFinite(end)) {
+    return { status: "waiting", missing: [], message: "此活動為常青場次，報名後會依你的進場時間自動安排場次。" };
+  }
+  if (timestamp < start) {
+    return { status: "waiting", missing: [], message: session.assigned ? "你的場次已安排，開始時間到了就會自動開播。" : "報名後會為你安排下一個場次。" };
+  }
+  if (timestamp < end) return { status: "live", missing: [], message: "你的場次進行中，現在可以進入觀看。" };
+  return { status: "replay", missing: [], message: "你的場次已結束，可前往播放頁觀看回放或安排下一場。" };
+}
+
+/**
+ * 時間區間採左閉右開，方便伺服器與預覽共用同一判定。綁定常青 Live 時改依
+ * 訪客自己的場次判定，不再要求固定的開始／結束時間。
+ */
 export function getFunnelWebinarState(
   value: unknown,
-  resources: { liveId?: string | null; formId?: string | null },
+  resources: {
+    liveId?: string | null;
+    formId?: string | null;
+    evergreen?: boolean;
+    evergreenSession?: FunnelEvergreenSession | null;
+  },
   now: number | Date = Date.now(),
 ): FunnelWebinarState {
+  if (resources.evergreen === true) {
+    const missing: string[] = [];
+    if (!resources.liveId?.trim()) missing.push("請綁定播放用 Live");
+    if (!resources.formId?.trim()) missing.push("請綁定報名表單");
+    const timestamp = now instanceof Date ? now.getTime() : now;
+    if (!Number.isFinite(timestamp)) missing.push("無法取得有效的目前時間");
+    if (missing.length) return { status: "missing", missing, message: missing.join("；") };
+    return evergreenWebinarState(resources.evergreenSession, timestamp);
+  }
   const settings = parseFunnelWebinarSettings(value);
   const missing: string[] = [];
   if (!settings) missing.push("請設定有效的 Webinar 時區與日期");

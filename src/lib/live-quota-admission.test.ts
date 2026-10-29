@@ -1,5 +1,6 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { PrismaClient } from "@prisma/client";
+import { resolveEvergreenViewerSession } from "@/lib/evergreen-viewer-session";
 import {
   admitLiveViewer,
   hasActiveLiveViewerSession,
@@ -430,4 +431,71 @@ it("rejects refunded permission before creating viewer sessions even with unlimi
   tx.vendorUsageLimit.findUnique.mockResolvedValue({ entitlementStatus: "revoked", streamMinutesLimit: 0, creditsLimit: 0, creditsUsed: 0 });
   await expect(admitLiveViewer(db, { vendorId: "vendor-1", liveId: "live-1", now })).rejects.toMatchObject({ code: "subscription_refunded" });
   expect(tx.liveViewerSession.create).not.toHaveBeenCalled();
+});
+
+describe("evergreen live admission", () => {
+  // scheduledAt + duration lies long in the past: the shared lifecycle alone
+  // would say "ended", so admission must follow the visitor's own session.
+  const evergreenLive = {
+    id: "live-1",
+    vendorId: "vendor-1",
+    ...runtimeReadyContent,
+    streamMode: "vod",
+    status: "scheduled",
+    scheduledAt: new Date("2026-01-01T00:00:00.000Z"),
+    startedAt: null,
+    replayEnabled: false,
+    isEvergreen: true,
+    evergreenScheduleMode: "just_in_time",
+    evergreenIntervalMinutes: 15,
+    evergreenDailyTimes: [],
+    evergreenSessionStartAt: null,
+    vendor: { timezone: "Asia/Taipei" },
+    video: { ...runtimeReadyContent.video, durationSec: 1_800 },
+  };
+
+  function sessionToken(enteredAt: Date) {
+    vi.stubEnv("CSRF_SECRET", "synthetic-evergreen-admission-root-secret-0123");
+    return resolveEvergreenViewerSession({ live: evergreenLive, vendorTimezone: "Asia/Taipei", token: null, intent: "claim", now: enteredAt })!.issuedToken;
+  }
+
+  beforeEach(() => {
+    vi.stubEnv("CSRF_SECRET", "synthetic-evergreen-admission-root-secret-0123");
+    (db.live.findFirst as ReturnType<typeof vi.fn>).mockResolvedValue(evergreenLive);
+    tx.live.findFirst.mockResolvedValue({ ...evergreenLive, quotaPolicy: { version: 1, affiliateMode: "enabled", maxConcurrentViewers: 2, stopWhenCreditsBelow: 100 } });
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it("admits nobody without a signed session and never marks the evergreen live ended", async () => {
+    await expect(admitLiveViewer(db, { vendorId: "vendor-1", liveId: "live-1", now })).rejects.toMatchObject({ code: "live_not_found" });
+    expect(db.live.updateMany).not.toHaveBeenCalled();
+    expect(tx.liveViewerSession.create).not.toHaveBeenCalled();
+  });
+
+  it("keeps a visitor whose session has not started in the waiting room", async () => {
+    // Entered at 06:00:00 exactly → next cohort 06:15, still 15 minutes away.
+    const evergreenToken = sessionToken(now);
+    await expect(admitLiveViewer(db, { vendorId: "vendor-1", liveId: "live-1", evergreenToken, now })).rejects.toMatchObject({ code: "live_not_found" });
+    expect(tx.liveViewerSession.create).not.toHaveBeenCalled();
+  });
+
+  it("admits a visitor inside their own session with the usual quota checks", async () => {
+    // Entered 05:44 → cohort 05:45; at 06:00 the session is 15 minutes in.
+    const evergreenToken = sessionToken(new Date("2026-08-07T05:44:00.000Z"));
+    const result = await admitLiveViewer(db, { vendorId: "vendor-1", liveId: "live-1", evergreenToken, now });
+    expect(result.reused).toBe(false);
+    expect(tx.liveViewerSession.count).toHaveBeenCalled();
+    expect(tx.liveViewerSession.create).toHaveBeenCalledOnce();
+  });
+
+  it("refuses a session cookie issued for another live", async () => {
+    const evergreenToken = sessionToken(new Date("2026-08-07T05:44:00.000Z"));
+    (db.live.findFirst as ReturnType<typeof vi.fn>).mockResolvedValue({ ...evergreenLive, id: "live-2" });
+    tx.live.findFirst.mockResolvedValue({ ...evergreenLive, id: "live-2", quotaPolicy: null });
+    await expect(admitLiveViewer(db, { vendorId: "vendor-1", liveId: "live-2", evergreenToken, now })).rejects.toMatchObject({ code: "live_not_found" });
+    expect(tx.liveViewerSession.create).not.toHaveBeenCalled();
+  });
 });

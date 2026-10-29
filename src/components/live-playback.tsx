@@ -8,6 +8,16 @@ import { LeadForm } from "@/components/lead-form";
 import { LiveMediaReceiver } from "@/components/live-media-receiver";
 import { canUseLiveAdvancedInteractions, LiveAdvancedInteractions } from "@/components/live-advanced-interactions";
 import { LiveChatPanel } from "@/components/live-chat-panel";
+import {
+  EVERGREEN_DISCLOSURE,
+  EvergreenEndedNotice,
+  EvergreenPreparingNotice,
+  evergreenCountdownLabel,
+  evergreenSessionTimeLabel,
+  useEvergreenPlayback,
+  type LiveEvergreenData,
+} from "@/components/live-evergreen";
+import { EVERGREEN_CONSULTATION_EVENT_TYPE } from "@/lib/evergreen-offer-timeline";
 import { LivePurchaseBroadcastPanel } from "@/components/live-purchase-broadcast-panel";
 import { LiveViewerPrivateChat } from "@/components/live-viewer-private-chat";
 import { trackClientAnalytics } from "@/lib/client-analytics";
@@ -81,6 +91,8 @@ export type LivePageData = {
   runtimeState?: LiveRuntimeState;
   scheduledAt?: string | null;
   serverNow?: string | null;
+  /** Present only for an evergreen Live: the visitor's own server-computed session. */
+  evergreen?: LiveEvergreenData;
   description: string | null;
   accentCopy: string | null;
   heroImageUrl: string | null;
@@ -291,6 +303,8 @@ function useWaitingRoomCountdown({
 }
 
 function LiveWaitingRoom({ live, countdownSeconds }: { live: LivePageData; countdownSeconds: number | null }) {
+  const evergreen = live.evergreen;
+  const sessionLabel = evergreen ? evergreenSessionTimeLabel(evergreen) : null;
   return (
     <div data-testid="live-waiting-room" role="status" className="relative z-10 mx-4 mb-24 rounded-3xl border border-white/15 bg-black/45 p-6 text-center shadow-2xl backdrop-blur-md">
       <div className="mx-auto grid max-w-xs gap-3">
@@ -298,11 +312,35 @@ function LiveWaitingRoom({ live, countdownSeconds }: { live: LivePageData; count
         <p className="text-xs font-black uppercase tracking-[0.24em] text-white/60">品牌等候室</p>
         <h2 className="text-2xl font-black">{live.brand.name}</h2>
         <p className="text-sm leading-6 text-white/75">{live.title} 即將開始，請先留在這裡。</p>
-        <p className="rounded-2xl bg-white/10 px-4 py-3 text-lg font-black" aria-live="polite">{waitingCountdownLabel(countdownSeconds)}</p>
-        <p className="text-xs leading-5 text-white/55">直播開始前不會建立直播容量連線，也不會載入播放來源。</p>
+        {sessionLabel ? <p className="text-sm font-bold text-white/85">你的場次：{sessionLabel}</p> : null}
+        <p className="rounded-2xl bg-white/10 px-4 py-3 text-lg font-black" aria-live="polite">
+          {evergreen ? evergreenCountdownLabel(countdownSeconds) : waitingCountdownLabel(countdownSeconds)}
+        </p>
+        <p className="text-xs leading-5 text-white/55">{evergreen ? `${EVERGREEN_DISCLOSURE}開始前不會載入播放來源。` : "直播開始前不會建立直播容量連線，也不會載入播放來源。"}</p>
       </div>
     </div>
   );
+}
+
+/** The non-playing lifecycle: waiting room, evergreen session states, or unavailable. */
+function LiveIdleState({
+  live,
+  runtimeState,
+  countdownSeconds,
+  evergreenPlayback,
+}: {
+  live: LivePageData;
+  runtimeState: LiveRuntimeState;
+  countdownSeconds: number | null;
+  evergreenPlayback: ReturnType<typeof useEvergreenPlayback>;
+}) {
+  if (live.evergreen && !live.evergreen.assigned) return <EvergreenPreparingNotice status={evergreenPlayback.claimStatus} />;
+  if (runtimeState === "waiting") return <LiveWaitingRoom live={live} countdownSeconds={countdownSeconds} />;
+  if (live.evergreen?.roomState === "ended") {
+    return <EvergreenEndedNotice title={live.title} evergreen={live.evergreen} rejoinStatus={evergreenPlayback.rejoin.status}
+      onRejoin={() => void evergreenPlayback.rejoin.rejoin()} />;
+  }
+  return <LiveUnavailableNotice live={live} />;
 }
 
 function LiveUnavailableNotice({ live }: { live: LivePageData }) {
@@ -476,12 +514,13 @@ export function useLivePlaybackSource(
 
 function LiveBrandHeader({ live, runtimeState }: { live: LivePageData; runtimeState: LiveRuntimeState }) {
   const statusLabel = runtimeState === "unavailable"
-    ? "目前不可觀看"
+    ? live.evergreen?.roomState === "ended" ? "場次已結束" : "目前不可觀看"
     : runtimeState === "waiting"
-      ? "即將直播"
+      ? live.evergreen ? "場次即將開始" : "即將直播"
       : runtimeState === "replay"
         ? "精彩回放"
-        : getLiveStatusLabel(live.status);
+        // An evergreen session is a recording; never label it as a live broadcast.
+        : live.evergreen ? "預錄場次播放中" : getLiveStatusLabel(live.status);
   return (
     <header className="relative z-10 flex items-center justify-between gap-3 p-4">
       <div className="flex min-w-0 items-center gap-3 rounded-full bg-black/35 px-3 py-2 backdrop-blur-md">
@@ -1402,6 +1441,10 @@ function LivePlaybackExperience({
   // visible panel truthful even if an old client-side selection still says
   // "products"; the catalog must not leak before the trigger second.
   const visiblePanel = !productsAvailable && panel === "products" ? "chat" : panel;
+  // The evergreen consultation CTA (諮詢 CTA) opens the live's own registration form.
+  const consultationEvent = live.form
+    ? [...live.interactionEvents].reverse().find((event) => event.eventType === EVERGREEN_CONSULTATION_EVENT_TYPE && event.triggerSec <= currentSeconds)
+    : undefined;
 
   return (
     <>
@@ -1412,6 +1455,14 @@ function LivePlaybackExperience({
           {live.accentCopy ? <span className="rounded-full bg-orange-700/95 px-3 py-1 text-xs font-bold shadow-lg shadow-orange-950/30">{live.accentCopy}</span> : null}
           {referralCode ? <span className="rounded-full bg-blue-500/90 px-3 py-1 text-xs font-bold">來源 {referralCode}</span> : null}
         </div>
+        {live.evergreen ? <p className="mb-2 rounded-xl border border-white/15 bg-black/45 px-3 py-2 text-[11px] leading-4 text-white/85 backdrop-blur-md">{EVERGREEN_DISCLOSURE}</p> : null}
+        {consultationEvent ? (
+          <button type="button" onClick={() => onPanelChange("form")} aria-controls={visiblePanel === "form" ? "live-playback-panel" : undefined}
+            className="mb-3 flex min-h-11 w-full items-center justify-center gap-2 rounded-2xl bg-blue-700 px-4 py-3 text-sm font-black text-white shadow-2xl hover:bg-blue-800">
+            <Send size={16} aria-hidden="true" />
+            {consultationEvent.ctaLabel ?? "預約諮詢"}
+          </button>
+        ) : null}
 
         <ScriptedInteractionOverlay
           latestCtaEvent={latestCtaEvent}
@@ -1589,6 +1640,41 @@ function interactionControlsObscured(panel: PlaybackPanel, isCheckoutOverlay: bo
   return panel !== "chat" || isCheckoutOverlay || navigationPending;
 }
 
+/** Page view and affiliate click, each sent once per admitted playback scope. */
+function useAdmittedPlaybackAnalytics({ live, admitted, visitorId, referralCode, sourcePageSlug, liveShareCode }: {
+  live: LivePageData;
+  admitted: boolean;
+  visitorId: string;
+  referralCode: string | null;
+  sourcePageSlug: string | null;
+  liveShareCode: string | null;
+}) {
+  useEffect(() => {
+    if (!admitted) return;
+    void trackClientAnalytics({
+      liveId: live.id,
+      vendorId: live.vendorId,
+      eventType: "page_view",
+      payload: { slug: live.slug },
+    });
+  }, [admitted, live.id, live.slug, live.vendorId]);
+  useEffect(() => {
+    if (!admitted || (!referralCode && !sourcePageSlug && !liveShareCode) || typeof window === "undefined") return;
+    void fetch(affiliateClickEndpoint(sourcePageSlug), {
+      method: "POST",
+      headers: clientHeaders,
+      body: JSON.stringify({
+        liveId: live.id,
+        vendorId: live.vendorId,
+        visitorId,
+        ...(referralCode ? { referralCode } : {}),
+        ...(liveShareCode ? { shareCode: liveShareCode } : {}),
+        landingPath: `${window.location.pathname}${window.location.search}`,
+      }),
+    });
+  }, [admitted, live.id, live.vendorId, liveShareCode, referralCode, sourcePageSlug, visitorId]);
+}
+
 export function LivePlayback({ live }: { live: LivePageData }) {
   const router = useRouter(); const pathname = usePathname();
   const isCheckoutOverlay = isInternalCheckoutPath(pathname);
@@ -1605,6 +1691,7 @@ export function LivePlayback({ live }: { live: LivePageData }) {
   const checkoutNavigation = useCheckoutNavigationLock(isCheckoutOverlay);
   const refreshAdmission = useMemo(() => () => setAdmissionRefreshKey((current) => current + 1), []);
   const refreshWaitingRoom = useMemo(() => () => router.refresh(), [router]);
+  const evergreenPlayback = useEvergreenPlayback({ live, runtimeState, refresh: refreshWaitingRoom, onTick: setCurrentSeconds });
   const waitingCountdownSeconds = useWaitingRoomCountdown({
     liveId: live.id,
     runtimeState,
@@ -1699,30 +1786,7 @@ export function LivePlayback({ live }: { live: LivePageData }) {
   const { latestProductEvent, spotlightCardProduct, spotlightProduct, sortedProducts } = resolveProductSpotlight(live.products, triggeredEvents);
   const externalNavigation = useExternalNavigationIntent({ live, latestCtaEvent, admissionStatus, referralCode, videoRef,
     checkoutNavigation, streamUsage, router, setCheckoutError, setIsPlaybackPaused });
-  useEffect(() => {
-    if (!isPlayableRuntime || admissionStatus !== "admitted") return;
-    void trackClientAnalytics({
-      liveId: live.id,
-      vendorId: live.vendorId,
-      eventType: "page_view",
-      payload: { slug: live.slug },
-    });
-  }, [admissionStatus, isPlayableRuntime, live.id, live.slug, live.vendorId]);
-  useEffect(() => {
-    if (!isPlayableRuntime || admissionStatus !== "admitted" || (!referralCode && !sourcePageSlug && !liveShareCode) || typeof window === "undefined") return;
-    void fetch(affiliateClickEndpoint(sourcePageSlug), {
-      method: "POST",
-      headers: clientHeaders,
-      body: JSON.stringify({
-        liveId: live.id,
-        vendorId: live.vendorId,
-        visitorId,
-        ...(referralCode ? { referralCode } : {}),
-        ...(liveShareCode ? { shareCode: liveShareCode } : {}),
-        landingPath: `${window.location.pathname}${window.location.search}`,
-      }),
-    });
-  }, [admissionStatus, isPlayableRuntime, live.id, live.vendorId, liveShareCode, referralCode, sourcePageSlug, visitorId]);
+  useAdmittedPlaybackAnalytics({ live, admitted: isPlayableRuntime && admissionStatus === "admitted", visitorId, referralCode, sourcePageSlug, liveShareCode });
   useEffect(() => {
     const video = videoRef.current;
     const hlsUrl = shouldUseHls(playableSource, playableUrl) ? playableUrl : null;
@@ -1805,15 +1869,19 @@ export function LivePlayback({ live }: { live: LivePageData }) {
               ref={videoRef}
               className={playbackMedia.className}
               src={playbackMedia.src}
-              controls={visibleAdmissionStatus === "admitted" && !streamQuotaExhausted}
+              // A locked evergreen session has no seek bar; the guard below
+              // also pulls back keyboard or script seeks and rate changes.
+              controls={visibleAdmissionStatus === "admitted" && !streamQuotaExhausted && !evergreenPlayback.locked}
               aria-describedby={streamQuotaExhausted ? "stream-quota-alert" : undefined}
               playsInline
               poster={live.heroImageUrl ?? undefined}
               onLoadedMetadata={(event) => applyPlaybackStart(event.currentTarget)}
+              onSeeking={(event) => evergreenPlayback.guard(event.currentTarget)}
+              onRateChange={(event) => evergreenPlayback.guard(event.currentTarget)}
               onTimeUpdate={(event) => {
                 if (streamQuotaExhausted) return;
+                const seconds = Math.floor(evergreenPlayback.position(event.currentTarget));
                 streamUsage.track(event.currentTarget.currentTime);
-                const seconds = Math.floor(event.currentTarget.currentTime);
                 setCurrentSeconds(seconds);
                 trackProgress(seconds);
               }}
@@ -1822,6 +1890,7 @@ export function LivePlayback({ live }: { live: LivePageData }) {
                   event.currentTarget.pause();
                   return;
                 }
+                evergreenPlayback.guard(event.currentTarget, true);
                 setIsPlaybackPaused(false);
                 streamUsage.start(event.currentTarget.currentTime);
                 void trackClientAnalytics({
@@ -1876,10 +1945,8 @@ export function LivePlayback({ live }: { live: LivePageData }) {
               isPlaybackPaused={isPlaybackPaused}
               canControlPlayback={canControlOverlayPlayback(hasPlaybackVideo, visibleAdmissionStatus)}
             />
-          ) : runtimeState === "waiting" ? (
-            <LiveWaitingRoom live={live} countdownSeconds={waitingCountdownSeconds} />
           ) : (
-            <LiveUnavailableNotice live={live} />
+            <LiveIdleState live={live} runtimeState={runtimeState} countdownSeconds={waitingCountdownSeconds} evergreenPlayback={evergreenPlayback} />
           )}
           <ExternalNavigationConfirmDialog
             intent={externalNavigation.intent}
