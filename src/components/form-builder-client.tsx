@@ -64,6 +64,7 @@ function FormDraftRecovery({ draft }: { draft: FormDraftState }) {
       {draft.candidate ? (
         <div role="status" className="rounded-lg border border-amber-300 bg-amber-50 p-4 text-sm text-amber-950">
           <p className="font-semibold">找到尚未儲存的表單草稿</p>
+          {draft.fromVendorScope ? <p className="mt-1 text-xs text-amber-900">這是未歸屬專案時留下的草稿</p> : null}
           <p className="mt-1 leading-6">草稿保存於這台裝置，最後更新時間為 {new Date(draft.candidate.savedAt).toLocaleString("zh-TW")}。</p>
           <div className="mt-3 flex flex-wrap gap-2">
             <button type="button" onClick={draft.restoreDraft} className="min-h-11 rounded-md bg-amber-900 px-4 font-semibold text-white">恢復草稿</button>
@@ -74,6 +75,7 @@ function FormDraftRecovery({ draft }: { draft: FormDraftState }) {
       {draft.unsafeDraft ? (
         <div role="alert" className="rounded-lg border border-amber-300 bg-amber-50 p-4 text-sm text-amber-950">
           <p className="font-semibold">{draft.unsafeDraft === "stale" ? "找到較舊的瀏覽器草稿" : "瀏覽器草稿無法安全讀取"}</p>
+          {draft.fromVendorScope ? <p className="mt-1 text-xs text-amber-900">這是未歸屬專案時留下的草稿</p> : null}
           <p className="mt-1 leading-6">為避免覆蓋伺服器內容，系統不會套用這份草稿。</p>
           <button type="button" onClick={draft.discardDraft} className="mt-3 min-h-11 rounded-md border border-amber-400 bg-white px-4 font-semibold">捨棄這份草稿</button>
         </div>
@@ -322,6 +324,7 @@ export function FormBuilderClient({
   legacyFieldsInvalid,
   legacyRouteError,
   draftScope,
+  fallbackDraftScope,
   initialUpdatedAt,
   csrfField,
   promoVideos,
@@ -332,6 +335,7 @@ export function FormBuilderClient({
   legacyFieldsInvalid: boolean;
   legacyRouteError?: string;
   draftScope: string;
+  fallbackDraftScope?: string | null;
   initialUpdatedAt: string | null;
   csrfField: ReactNode;
   promoVideos: FormPromoVideoOption[];
@@ -355,6 +359,7 @@ export function FormBuilderClient({
   const mediaBlocked = heroMediaBlocked || backgroundMediaBlocked;
   const draft = useRegistrationFormDraft({
     draftScope,
+    fallbackDraftScope,
     initialUpdatedAt,
     initialValues,
     initialFields,

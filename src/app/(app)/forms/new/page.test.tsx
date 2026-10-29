@@ -52,8 +52,16 @@ describe("/forms/new route", () => {
     expect(html).not.toContain("project-1");
   });
 
-  it("rejects a foreign projectId", async () => {
+  it("rejects a foreign projectId after binding the lookup to the current vendor", async () => {
     mocks.projectFindFirst.mockResolvedValue(null);
     await expect(NewFormPage({ searchParams: Promise.resolve({ projectId: "foreign-project" }) })).rejects.toThrow("404");
+    expect(mocks.projectFindFirst).toHaveBeenCalledWith({ where: { id: "foreign-project", vendorId: "vendor-1", status: { not: "archived" } }, select: { id: true } });
+  });
+
+  it("tells the merchant which project a new form will be created in", async () => {
+    mocks.prefFindUnique.mockResolvedValue({ selectedProjectId: "project-1", selectedProject: { id: "project-1", name: "原型食物", status: "active" } });
+    mocks.projectFindFirst.mockResolvedValue({ id: "project-1" });
+    const html = renderToStaticMarkup(await NewFormPage({ searchParams: Promise.resolve({}) }));
+    expect(html).toContain("將建立於專案：原型食物");
   });
 });

@@ -72,6 +72,20 @@ export function registrationFormDraftStorageKey(scope: string, formId?: string) 
   return `celebratedeal:registration-form-draft:v1:${encodeURIComponent(scope)}:${encodeURIComponent(formId ?? "new")}`;
 }
 
+/** Project-scoped drafts live under their own key; the vendor-level key is kept as a read-only fallback. */
+export function registrationFormDraftScopes(vendorScope: string, projectId?: string | null) {
+  return projectId
+    ? { draftScope: `${vendorScope}:project:${projectId}`, fallbackDraftScope: vendorScope }
+    : { draftScope: vendorScope, fallbackDraftScope: null };
+}
+
+/** Prefers the project-scoped draft; only uses the vendor-level one when none exists under the project key. */
+export function selectRegistrationFormDraftSource(primaryRaw: string | null, fallbackRaw: string | null) {
+  if (primaryRaw) return { raw: primaryRaw, fromFallback: false };
+  if (fallbackRaw) return { raw: fallbackRaw, fromFallback: true };
+  return { raw: null, fromFallback: false };
+}
+
 function draftValuesWithDefaults(values: RegistrationFormDraftValues) {
   return {
     ...values,

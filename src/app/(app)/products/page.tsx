@@ -2,7 +2,6 @@ import Link from "next/link";
 import { Plus } from "lucide-react";
 import { Badge, ButtonLink, Card, EmptyState, PageHeader } from "@/components/ui";
 import { requireVendorManagerContext } from "@/lib/auth";
-import { getSalesProjectScope, withProjectQuery } from "@/lib/sales-project-scope";
 import { getDb } from "@/lib/db";
 import { formatCurrency } from "@/lib/format";
 
@@ -23,8 +22,8 @@ function selectedStatus(value: string | string[] | undefined): ProductStatus | n
 export default async function ProductsPage({ searchParams }: {
   searchParams?: Promise<{ q?: string | string[]; status?: string | string[]; updated?: string | string[] }>;
 }) {
-  const { auth, vendor } = await requireVendorManagerContext();
-  const createHref = withProjectQuery("/products/new", (await getSalesProjectScope(auth.user.id, vendor.id)).projectId);
+  const { vendor } = await requireVendorManagerContext();
+  const createHref = "/products/new";
   const query = await searchParams;
   const rawSearch = Array.isArray(query?.q) ? query.q[0] : query?.q;
   const search = rawSearch?.trim().slice(0, 128) ?? "";

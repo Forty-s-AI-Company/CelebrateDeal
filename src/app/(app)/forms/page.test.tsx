@@ -124,10 +124,11 @@ describe("/forms route", () => {
     expect(html).toContain("公開預覽不可用");
     expect(html).not.toContain('href="/form/disabled"');
   });
-  it("carries the scoped project into the create link and omits it in other scopes", async () => {
+  it("links to a project-agnostic create page so the new page derives the scope itself", async () => {
     mocks.prefFindUnique.mockResolvedValue({ selectedProjectId: "project-1", selectedProject: { id: "project-1", name: "原型食物", status: "active" } });
-    expect(await renderFormsPage()).toContain('href="/forms/new?projectId=project-1"');
-    mocks.prefFindUnique.mockResolvedValue({ selectedProjectId: null, selectedProject: null });
-    expect(await renderFormsPage()).toContain('href="/forms/new"');
+    const html = await renderFormsPage();
+    expect(html).toContain('href="/forms/new"');
+    expect(html).not.toContain("projectId");
+    expect(mocks.prefFindUnique).not.toHaveBeenCalled();
   });
 });

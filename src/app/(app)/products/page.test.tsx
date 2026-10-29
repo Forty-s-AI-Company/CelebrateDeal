@@ -46,6 +46,14 @@ describe("/products route", () => {
     expect(html).toContain('href="/orders?productId=product-1"');
   });
 
+  it("links to a project-agnostic create page so the new page derives the scope itself", async () => {
+    mocks.prefFindUnique.mockResolvedValue({ selectedProjectId: "project-1", selectedProject: { id: "project-1", name: "原型食物", status: "active" } });
+    const html = renderToStaticMarkup(await ProductsPage({ searchParams: Promise.resolve({}) }));
+    expect(html).toContain('href="/products/new"');
+    expect(html).not.toContain("projectId");
+    expect(mocks.prefFindUnique).not.toHaveBeenCalled();
+  });
+
   it("drops forged status values before querying", async () => {
     await ProductsPage({ searchParams: Promise.resolve({ status: "deleted" }) });
     expect(mocks.findMany.mock.calls[0][0].where).toEqual({ vendorId: "vendor-1" });
