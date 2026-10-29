@@ -840,8 +840,11 @@ async function commitLiveDraft(input: {
         ...(projectId ? { projectId } : {}),
         vendorId: input.vendorId,
         products: {
+          // LiveProduct's live relation is the composite (vendorId, liveId), so
+          // the nested create inherits vendorId from this live; passing it again
+          // is rejected by Prisma ("Unknown argument `vendorId`"). The composite
+          // (vendorId, productId) FK still binds every product to this vendor.
           create: input.productIds.map((productId, index) => ({
-            vendorId: input.vendorId,
             productId,
             sortOrder: index + 1,
             isPinned: index === 0,
@@ -858,6 +861,10 @@ async function commitLiveDraft(input: {
   });
 }
 
+function isForeignKeyViolation(error: unknown) {
+  return typeof error === "object" && error !== null && "code" in error && error.code === "P2003";
+}
+
 async function commitLiveDraftOrRedirect(
   input: Parameters<typeof commitLiveDraft>[0],
   invalidReferencePath: string,
@@ -867,6 +874,9 @@ async function commitLiveDraftOrRedirect(
     return await commitLiveDraft(input);
   } catch (error) {
     if (error instanceof SalesProjectBindingError) redirect(invalidReferencePath);
+    // A reference that stopped belonging to this vendor between validation and
+    // the write trips a composite tenant FK; the transaction rolled back.
+    if (isForeignKeyViolation(error)) redirect(invalidReferencePath);
     if (await isLiveSlugRace(input.db, error, input.data.slug, input.liveId)) redirect(slugTakenPath);
     throw error;
   }
