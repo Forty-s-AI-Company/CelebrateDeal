@@ -1,11 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import type { RegistrationFormBuilderField } from "@/lib/registration-form-builder";
 import {
   parseRegistrationFormDraft,
   registrationFormDraftMatches,
   registrationFormDraftStorageKey,
+  selectRegistrationFormDraftSource,
   serializeRegistrationFormDraft,
   type RegistrationFormDraft,
   type RegistrationFormDraftValues,
@@ -33,6 +34,7 @@ function removeStoredDraft(storageKey: string) {
 
 export function useRegistrationFormDraft({
   draftScope,
+  fallbackDraftScope = null,
   initialUpdatedAt,
   initialValues,
   initialFields,
@@ -42,6 +44,8 @@ export function useRegistrationFormDraft({
   onRestore,
 }: {
   draftScope: string;
+  /** Vendor-level scope read when no draft exists under `draftScope` (a draft made before a project was selected). */
+  fallbackDraftScope?: string | null;
   initialUpdatedAt: string | null;
   initialValues: RegistrationFormDraftValues;
   initialFields: RegistrationFormBuilderField[];
@@ -56,6 +60,10 @@ export function useRegistrationFormDraft({
     () => registrationFormDraftStorageKey(draftScope, initialValues.id),
     [draftScope, initialValues.id],
   );
+  const fallbackKey = useMemo(
+    () => (fallbackDraftScope ? registrationFormDraftStorageKey(fallbackDraftScope, initialValues.id) : null),
+    [fallbackDraftScope, initialValues.id],
+  );
   const getSnapshot = useCallback(() => {
     try {
       return window.localStorage.getItem(storageKey);
@@ -63,7 +71,23 @@ export function useRegistrationFormDraft({
       return null;
     }
   }, [storageKey]);
-  const rawDraft = useSyncExternalStore(subscribeToDraftStorage, getSnapshot, () => null);
+  const getFallbackSnapshot = useCallback(() => {
+    if (!fallbackKey) return null;
+    try {
+      return window.localStorage.getItem(fallbackKey);
+    } catch {
+      return null;
+    }
+  }, [fallbackKey]);
+  const primaryRaw = useSyncExternalStore(subscribeToDraftStorage, getSnapshot, () => null);
+  const fallbackRaw = useSyncExternalStore(subscribeToDraftStorage, getFallbackSnapshot, () => null);
+  const { raw: rawDraft, fromFallback } = selectRegistrationFormDraftSource(primaryRaw, fallbackRaw);
+  // Set once the vendor-level draft was restored, so it is cleaned up after the project-scoped copy is saved.
+  const migratedFromFallback = useRef(false);
+  useEffect(() => {
+    // Another tab already removed the vendor-level draft (e.g. after migrating it), so do not migrate it twice.
+    if (fallbackRaw === null) migratedFromFallback.current = false;
+  }, [fallbackRaw]);
   const parsedDraft = useMemo(() => rawDraft
     ? parseRegistrationFormDraft(rawDraft, { formId: initialValues.id, baseUpdatedAt: initialUpdatedAt })
     : null, [initialUpdatedAt, initialValues.id, rawDraft]);
@@ -87,16 +111,21 @@ export function useRegistrationFormDraft({
           values,
           fields,
         }));
+        if (migratedFromFallback.current && fallbackKey) {
+          window.localStorage.removeItem(fallbackKey);
+          migratedFromFallback.current = false;
+        }
         notifyDraftStorageChanged();
       } catch {
         setMessage("瀏覽器無法保存草稿；請使用下方按鈕手動儲存。");
       }
     }, 600);
     return () => window.clearTimeout(timer);
-  }, [blocksAutosave, fields, hasUnsavedChanges, initialUpdatedAt, pending, storageKey, storedCurrentDraft, values]);
+  }, [blocksAutosave, fallbackKey, fields, hasUnsavedChanges, initialUpdatedAt, pending, storageKey, storedCurrentDraft, values]);
 
   function restoreDraft() {
     if (parsedDraft?.status !== "ready") return;
+    migratedFromFallback.current = fromFallback;
     onRestore(parsedDraft.draft);
     setDecision("accepted");
     setMessage("已恢復尚未儲存的草稿；請確認內容後再儲存表單。");
@@ -105,6 +134,7 @@ export function useRegistrationFormDraft({
   function discardDraft() {
     try {
       removeStoredDraft(storageKey);
+      if (fromFallback && fallbackKey) removeStoredDraft(fallbackKey);
       setMessage(parsedDraft?.status === "stale"
         ? "已捨棄較舊的瀏覽器草稿，保留伺服器上的最新內容。"
         : "已捨棄瀏覽器草稿，保留伺服器上的表單內容。");
@@ -117,6 +147,7 @@ export function useRegistrationFormDraft({
   function clearForSubmission() {
     try {
       removeStoredDraft(storageKey);
+      if (migratedFromFallback.current && fallbackKey) removeStoredDraft(fallbackKey);
     } catch {
       // A failed server action keeps the current in-memory values available.
     }
@@ -136,5 +167,7 @@ export function useRegistrationFormDraft({
         ? "saving"
         : "idle";
 
-  return { candidate, unsafeDraft, message, saveStatus, restoreDraft, discardDraft, clearForSubmission };
+  const fromVendorScope = decision === "pending" && fromFallback;
+
+  return { candidate, unsafeDraft, fromVendorScope, message, saveStatus, restoreDraft, discardDraft, clearForSubmission };
 }

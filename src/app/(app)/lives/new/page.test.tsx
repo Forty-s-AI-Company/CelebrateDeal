@@ -114,6 +114,38 @@ describe("NewLivePage data minimization", () => {
     expect(mocks.projectFindFirst).not.toHaveBeenCalled();
   });
 
+  it("rejects a projectId param when the resumed draft has no project", async () => {
+    mocks.liveStudioDraftFindFirst.mockResolvedValue({ id: "draft-1", revision: 2, payload: { ...emptyLiveStudioDraft() }, updatedAt: new Date("2026-10-04T00:00:00Z") });
+    await expect(NewLivePage({ searchParams: Promise.resolve({ draft: "draft-1", projectId: "project-1" }) })).rejects.toThrow("404");
+    expect(mocks.projectFindFirst).not.toHaveBeenCalled();
+    expect(mocks.liveStepperForm).not.toHaveBeenCalled();
+  });
+
+  it("resumes a draft whose projectId param equals the draft project, without reading the preference or showing the overview notice", async () => {
+    mocks.projectFindFirst.mockResolvedValue({ id: "project-1", name: "原型食物" });
+    mocks.liveStudioDraftFindFirst.mockResolvedValue({ id: "draft-1", revision: 2, payload: { ...emptyLiveStudioDraft(), projectId: "project-1" }, updatedAt: new Date("2026-10-04T00:00:00Z") });
+    const html = renderToStaticMarkup(await NewLivePage({ searchParams: Promise.resolve({ draft: "draft-1", projectId: "project-1" }) }));
+    expect(mocks.prefFindUnique).not.toHaveBeenCalled();
+    expect(html).not.toContain("全部專案總覽");
+    expect(mocks.liveStepperForm).toHaveBeenCalledWith(expect.objectContaining({ projectId: "project-1" }), undefined);
+  });
+
+  it("resuming an unscoped draft without a param does not read the preference or show the overview notice", async () => {
+    mocks.liveStudioDraftFindFirst.mockResolvedValue({ id: "draft-1", revision: 2, payload: { ...emptyLiveStudioDraft() }, updatedAt: new Date("2026-10-04T00:00:00Z") });
+    const html = renderToStaticMarkup(await NewLivePage({ searchParams: Promise.resolve({ draft: "draft-1" }) }));
+    expect(mocks.prefFindUnique).not.toHaveBeenCalled();
+    expect(html).not.toContain("全部專案總覽");
+    expect(html).not.toContain("將建立於專案");
+    expect(mocks.liveStepperForm).toHaveBeenCalledWith(expect.objectContaining({ projectId: null }), undefined);
+  });
+
+  it("tells the merchant which project a new live will be created in", async () => {
+    mocks.prefFindUnique.mockResolvedValue({ selectedProjectId: "project-1", selectedProject: { id: "project-1", name: "原型食物", status: "active" } });
+    mocks.projectFindFirst.mockResolvedValue({ id: "project-1" });
+    const html = renderToStaticMarkup(await NewLivePage({ searchParams: Promise.resolve({}) }));
+    expect(html).toContain("將建立於專案：原型食物");
+  });
+
   it("defaults a new live to the scoped workspace project when no projectId is given", async () => {
     mocks.prefFindUnique.mockResolvedValue({ selectedProjectId: "project-1", selectedProject: { id: "project-1", name: "原型食物", status: "active" } });
     mocks.projectFindFirst.mockResolvedValue({ id: "project-1" });
@@ -138,6 +170,13 @@ describe("NewLivePage data minimization", () => {
     await expect(NewLivePage({ searchParams: Promise.resolve({}) })).rejects.toThrow("404");
     expect(mocks.projectFindFirst).toHaveBeenCalledWith({ where: { id: "foreign-project", vendorId: "vendor-1", status: { not: "archived" } }, select: { id: true } });
     expect(mocks.liveStepperForm).not.toHaveBeenCalled();
+  });
+
+  it("looks up the name of an explicit projectId inside the current vendor and shows it", async () => {
+    mocks.projectFindFirst.mockImplementation(async ({ select }: { select: { id?: boolean; name?: boolean } }) => (select.name ? { name: "春季檔期" } : { id: "project-2" }));
+    const html = renderToStaticMarkup(await NewLivePage({ searchParams: Promise.resolve({ projectId: "project-2" }) }));
+    expect(mocks.projectFindFirst).toHaveBeenCalledWith({ where: { id: "project-2", vendorId: "vendor-1", status: { not: "archived" } }, select: { name: true } });
+    expect(html).toContain("將建立於專案：春季檔期");
   });
 
   it("lets an explicit projectId override the scoped default without reading the preference", async () => {

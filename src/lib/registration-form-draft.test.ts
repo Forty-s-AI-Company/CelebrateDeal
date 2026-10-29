@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 import {
   parseRegistrationFormDraft,
   registrationFormDraftMatches,
+  registrationFormDraftScopes,
   registrationFormDraftStorageKey,
+  selectRegistrationFormDraftSource,
   serializeRegistrationFormDraft,
   type RegistrationFormDraftValues,
 } from "./registration-form-draft";
@@ -159,5 +161,19 @@ describe("registration form draft", () => {
       },
       fields,
     })).toBe(true);
+  });
+});
+
+describe("project-scoped draft fallback", () => {
+  it("keeps the vendor key as a fallback scope only inside a project", () => {
+    expect(registrationFormDraftScopes("vendor-1", "project-1")).toEqual({ draftScope: "vendor-1:project:project-1", fallbackDraftScope: "vendor-1" });
+    expect(registrationFormDraftScopes("vendor-1", null)).toEqual({ draftScope: "vendor-1", fallbackDraftScope: null });
+    expect(registrationFormDraftStorageKey("vendor-1:project:project-1")).not.toBe(registrationFormDraftStorageKey("vendor-1"));
+  });
+
+  it("reads the vendor-level draft only when the project key is empty", () => {
+    expect(selectRegistrationFormDraftSource("project-draft", "vendor-draft")).toEqual({ raw: "project-draft", fromFallback: false });
+    expect(selectRegistrationFormDraftSource(null, "vendor-draft")).toEqual({ raw: "vendor-draft", fromFallback: true });
+    expect(selectRegistrationFormDraftSource(null, null)).toEqual({ raw: null, fromFallback: false });
   });
 });

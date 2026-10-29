@@ -232,16 +232,27 @@ test("required PostgreSQL concurrency gate fails closed instead of hanging indef
   assert.doesNotMatch(source, /test:db:concurrency[^\n]*(?:--exclude|--skip|--passWithNoTests)/u);
 });
 
-test("quality imports the non-ancestor RC commit before source-aware contract tests", () => {
+test("CI imports the non-ancestor RC commit before source-aware contract tests in every job that runs them", () => {
   const workflow = yaml.load(fs.readFileSync(path.join(root, ".github", "workflows", "ci.yml"), "utf8"));
-  const steps = workflow.jobs.quality.steps;
-  const checkout = steps.find((step) => step.name === "Checkout");
-  const sourceImport = steps.find((step) => step.name === "Import fixed Preview source for staging contract tests");
-  const contracts = steps.find((step) => step.name === "Node TAP contract tests");
-  assert.equal(checkout.with["fetch-depth"], 0);
-  assert.ok(steps.indexOf(sourceImport) < steps.indexOf(contracts));
-  assert.match(sourceImport.run, /refs\/pull\/277\/head:refs\/remotes\/origin\/verified-wp2-source/u);
-  assert.match(sourceImport.run, /9193326824b8b6bf774bdfa28e4783a1a1b8f304/u);
+  // The combined coverage run executes the Node TAP contracts as well.
+  const sourceAwareStepNames = ["Node TAP contract tests", "Unit tests and coverage thresholds"];
+  const sourceAwareJobs = Object.values(workflow.jobs)
+    .filter((job) => (job.steps ?? []).some((step) => sourceAwareStepNames.includes(step.name)));
+  for (const name of sourceAwareStepNames) {
+    assert.ok(sourceAwareJobs.some((job) => job.steps.some((step) => step.name === name)), name);
+  }
+  for (const job of sourceAwareJobs) {
+    const steps = job.steps;
+    const checkout = steps.find((step) => step.name === "Checkout");
+    const sourceImport = steps.find((step) => step.name === "Import fixed Preview source for staging contract tests");
+    assert.equal(checkout.with["fetch-depth"], 0);
+    assert.ok(steps.indexOf(checkout) < steps.indexOf(sourceImport));
+    for (const step of steps.filter((candidate) => sourceAwareStepNames.includes(candidate.name))) {
+      assert.ok(steps.indexOf(sourceImport) < steps.indexOf(step), step.name);
+    }
+    assert.match(sourceImport.run, /refs\/pull\/277\/head:refs\/remotes\/origin\/verified-wp2-source/u);
+    assert.match(sourceImport.run, /9193326824b8b6bf774bdfa28e4783a1a1b8f304/u);
+  }
 });
 
 test("WP4 is protected-master only, Sandbox fixed-host only, and cannot execute arbitrary commands", () => {

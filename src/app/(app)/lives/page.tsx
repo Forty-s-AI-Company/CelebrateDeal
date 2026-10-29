@@ -1,15 +1,14 @@
 import { BarChart3, Eye, Plus } from "lucide-react";
 import { Badge, ButtonLink, Card, EmptyState, PageHeader } from "@/components/ui";
 import { requireVendorManagerContext } from "@/lib/auth";
-import { getSalesProjectScope, withProjectQuery } from "@/lib/sales-project-scope";
 import { isFeatureEnabled } from "@/lib/feature-gates";
 import { getDb } from "@/lib/db";
 import { formatDateTime } from "@/lib/format";
 import { statusLabel } from "@/lib/status-labels";
 
 export default async function LivesPage() {
-  const { auth, vendor } = await requireVendorManagerContext();
-  const createHref = withProjectQuery("/lives/new", (await getSalesProjectScope(auth.user.id, vendor.id)).projectId);
+  const { vendor } = await requireVendorManagerContext();
+  const createHref = "/lives/new";
   const browserLive = isFeatureEnabled(vendor, "browser_live");
   const lives = await getDb().live.findMany({
     where: { vendorId: vendor.id },

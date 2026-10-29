@@ -24,15 +24,20 @@ for (const viewport of [{ width: 1440, height: 1000 }, { width: 390, height: 844
       await expect(page).toHaveURL(/\/dashboard$/u);
       const panel = page.locator('section:visible').filter({ has: page.getByRole('button', { name: /專案上線任務/u }) });
       const next = panel.getByRole('link', { name: /繼續/u });
-      await expect(next).toHaveAttribute('href', `/forms/new?projectId=${project.id}`);
+      await expect(next).toHaveAttribute('href', '/forms/new');
       await next.click();
+      // The new page derives the scope itself instead of trusting a link-time projectId.
+      await expect(page.getByText('將建立於專案：Browser project', { exact: true })).toBeVisible();
       await page.locator('input[name="name"]').fill('Synthetic browser form');
       await page.locator('input[name="slug"]').fill(`shell-${id}`);
       await page.locator('input[name="headline"]').fill('Synthetic signup');
       await page.getByRole('button', { name: '儲存表單', exact: true }).click();
       await expect(page).toHaveURL(/\/forms$/u);
       // No reload: server-action invalidation must update the parent shell itself.
-      await expect(next).toHaveAttribute('href', `/lives/new?projectId=${project.id}`);
+      await expect(next).toHaveAttribute('href', '/lives/new');
+      await next.click();
+      await expect(page).toHaveURL(/\/lives\/new$/u);
+      await expect(page.getByText('將建立於專案：Browser project', { exact: true })).toBeVisible();
       expect(await db.registrationForm.count({ where: { vendorId: vendor.id, projectId: project.id } })).toBe(1);
       // Below lg the project switcher sits inside a collapsed disclosure.
       if (viewport.width < 1024) await page.locator('summary:visible', { hasText: '專案：Browser project' }).click();

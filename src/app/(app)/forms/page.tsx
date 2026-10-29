@@ -2,7 +2,6 @@ import { Plus } from "lucide-react";
 import Link from "next/link";
 import { Badge, ButtonLink, Card, EmptyState, PageHeader } from "@/components/ui";
 import { requireVendorManagerContext } from "@/lib/auth";
-import { getSalesProjectScope, withProjectQuery } from "@/lib/sales-project-scope";
 import { getDb } from "@/lib/db";
 
 type FormsSearchParams = {
@@ -30,8 +29,8 @@ export default async function FormsPage({
 }: {
   searchParams: Promise<FormsSearchParams>;
 }) {
-  const { auth, vendor } = await requireVendorManagerContext();
-  const createHref = withProjectQuery("/forms/new", (await getSalesProjectScope(auth.user.id, vendor.id)).projectId);
+  const { vendor } = await requireVendorManagerContext();
+  const createHref = "/forms/new";
   const database = getDb();
   const query = await searchParams;
   const search = normalizeQuery(query.q);

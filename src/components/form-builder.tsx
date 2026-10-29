@@ -2,6 +2,7 @@ import type { RegistrationForm } from "@prisma/client";
 import { CsrfField } from "@/components/csrf-field";
 import { FormBuilderClient, type FormBuilderValues, type FormPromoVideoOption } from "@/components/form-builder-client";
 import { Card } from "@/components/ui";
+import { registrationFormDraftScopes } from "@/lib/registration-form-draft";
 import { defaultRegistrationFormBuilderFields } from "@/lib/registration-form-builder";
 import { parseRegistrationFormFields } from "@/lib/registration-form-fields";
 
@@ -85,7 +86,7 @@ export function FormBuilder({
         legacyFieldsInvalid={Boolean(form && !parsedFields.success)}
         legacyRouteError={error}
         projectId={projectId}
-        draftScope={projectId ? `${draftScope}:project:${projectId}` : draftScope}
+        {...registrationFormDraftScopes(draftScope, projectId)}
         promoVideos={promoVideos}
         initialUpdatedAt={form?.updatedAt.toISOString() ?? null}
         csrfField={<CsrfField />}
