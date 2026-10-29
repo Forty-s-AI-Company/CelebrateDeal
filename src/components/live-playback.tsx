@@ -7,6 +7,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { LeadForm } from "@/components/lead-form";
 import { LiveMediaReceiver } from "@/components/live-media-receiver";
 import { canUseLiveAdvancedInteractions, LiveAdvancedInteractions } from "@/components/live-advanced-interactions";
+import { useLiveWindowPlayback } from "@/components/live-window-playback";
 import { LiveChatPanel } from "@/components/live-chat-panel";
 import {
   EVERGREEN_DISCLOSURE,
@@ -931,11 +932,14 @@ function ExternalNavigationConfirmDialog({
   isConfirming,
   onCancel,
   onConfirm,
+  resumesOnCancel = false,
 }: {
   intent: ExternalNavigationIntent | null;
   isConfirming: boolean;
   onCancel: () => void;
   onConfirm: () => Promise<void>;
+  /** A live-window broadcast picks up again at the live position when the viewer stays. */
+  resumesOnCancel?: boolean;
 }) {
   const cancelButtonRef = useRef<HTMLButtonElement>(null);
   const confirmButtonRef = useRef<HTMLButtonElement>(null);
@@ -974,7 +978,7 @@ function ExternalNavigationConfirmDialog({
       <div className="w-full max-w-sm rounded-2xl bg-white p-5 text-slate-950 shadow-2xl">
         <h2 id="external-navigation-title" className="text-lg font-black">{title}</h2>
         <p id="external-navigation-description" className="mt-2 text-sm leading-6 text-slate-600">
-          你即將離開直播前往「{intent.label}」。直播已暫停，離開後直播聲音會中斷；取消後請自行按播放繼續觀看。
+          你即將離開直播前往「{intent.label}」。直播已暫停，離開後直播聲音會中斷；{resumesOnCancel ? "回來後會自動接續直播目前的進度。" : "取消後請自行按播放繼續觀看。"}
         </p>
         <div className="mt-5 grid grid-cols-2 gap-3">
           <button ref={cancelButtonRef} type="button" onClick={onCancel} disabled={isConfirming} className="min-h-11 rounded-xl border border-slate-300 bg-white px-4 text-sm font-black disabled:opacity-60">
@@ -1168,8 +1172,17 @@ function playbackSourceStatus({
   return hasPlayableSource ? "ready" : "unavailable";
 }
 
-function canControlOverlayPlayback(hasVideo: boolean, admissionStatus: LiveAdmissionStatus) {
-  return hasVideo && admissionStatus === "admitted";
+function canControlOverlayPlayback(hasVideo: boolean, admissionStatus: LiveAdmissionStatus, inLiveWindow = false) {
+  return hasVideo && admissionStatus === "admitted" && !inLiveWindow;
+}
+
+/** The native seek bar is offered only to an admitted viewer who is not blocked by quota, an evergreen lock or the live window. */
+function nativeControlsAllowed(admissionStatus: LiveAdmissionStatus, blockers: boolean[]) {
+  return admissionStatus === "admitted" && !blockers.some(Boolean);
+}
+
+function isBrowserStreamSource(source: LivePlaybackSource | null) {
+  return source?.protocol === "whep";
 }
 
 function HideDuringCheckout({ active, children }: { active: boolean; children: ReactNode }) {
@@ -1412,6 +1425,7 @@ function LivePlaybackExperience({
   playbackVideoRef,
   isPlaybackPaused,
   canControlPlayback,
+  liveControls,
 }: {
   live: LivePageData;
   currentSeconds: number;
@@ -1435,6 +1449,8 @@ function LivePlaybackExperience({
   playbackVideoRef: RefObject<HTMLVideoElement | null>;
   isPlaybackPaused: boolean;
   canControlPlayback: boolean;
+  /** Replaces the play/pause toggle while the broadcast is inside its live window. */
+  liveControls?: ReactNode;
 }) {
   const productsAvailable = Boolean(latestProductEvent && spotlightCardProduct);
   // A seek or a refreshed timeline can move before the timed offer. Keep the
@@ -1450,7 +1466,7 @@ function LivePlaybackExperience({
     <>
       <div className="relative z-10 flex min-h-[calc(100vh-72px)] flex-col justify-end p-4 pb-24">
         <div className="mb-3 flex flex-wrap items-center gap-2">
-          {canControlPlayback ? <PlaybackToggleButton videoRef={playbackVideoRef} isPaused={isPlaybackPaused} /> : null}
+          {liveControls ?? (canControlPlayback ? <PlaybackToggleButton videoRef={playbackVideoRef} isPaused={isPlaybackPaused} /> : null)}
           <span className="rounded-full bg-white/15 px-3 py-1 text-xs font-bold backdrop-blur-md">{secondsLabel(currentSeconds)}</span>
           {live.accentCopy ? <span className="rounded-full bg-orange-700/95 px-3 py-1 text-xs font-bold shadow-lg shadow-orange-950/30">{live.accentCopy}</span> : null}
           {referralCode ? <span className="rounded-full bg-blue-500/90 px-3 py-1 text-xs font-bold">來源 {referralCode}</span> : null}
@@ -1527,6 +1543,7 @@ function useExternalNavigationIntent({
   router,
   setCheckoutError,
   setIsPlaybackPaused,
+  resumeLivePlayback,
 }: {
   live: LivePageData;
   latestCtaEvent: LiveInteractionEvent | undefined;
@@ -1538,11 +1555,14 @@ function useExternalNavigationIntent({
   router: ReturnType<typeof useRouter>;
   setCheckoutError: (message: string | null) => void;
   setIsPlaybackPaused: (paused: boolean) => void;
+  /** Present only inside the live window: staying on the page continues the broadcast. */
+  resumeLivePlayback?: () => void;
 }) {
   const [intent, setIntent] = useState<ExternalNavigationIntent | null>(null);
   const [isConfirming, setIsConfirming] = useState(false);
   const confirmLockRef = useRef(false);
   const triggerElementRef = useRef<HTMLElement | null>(null);
+  const resumeOnCancelRef = useRef(false);
 
   async function completeProductCheckout(product: LiveProduct, checkoutUrl?: string, flashSaleRunId?: string) {
     if (!checkoutNavigation.begin()) return;
@@ -1570,6 +1590,7 @@ function useExternalNavigationIntent({
     triggerElementRef.current = typeof document !== "undefined" && document.activeElement instanceof HTMLElement
       ? document.activeElement
       : null;
+    resumeOnCancelRef.current = Boolean(resumeLivePlayback && videoRef.current && !videoRef.current.paused);
     videoRef.current?.pause();
     setIsPlaybackPaused(true);
     streamUsage.stop();
@@ -1631,6 +1652,8 @@ function useExternalNavigationIntent({
       const trigger = triggerElementRef.current;
       setIntent(null);
       triggerElementRef.current = null;
+      if (resumeOnCancelRef.current) resumeLivePlayback?.();
+      resumeOnCancelRef.current = false;
       if (trigger && typeof requestAnimationFrame === "function") requestAnimationFrame(() => trigger.focus());
       else trigger?.focus();
     },
@@ -1734,6 +1757,23 @@ export function LivePlayback({ live }: { live: LivePageData }) {
   const playbackSeekIdentity = playableSource
     ? `${live.id}:${runtimeState}:${playableSource.playbackUrl}:${playbackStartSeconds}`
     : null;
+  const hasPlaybackVideo = !streamQuotaExhausted && isPlayableRuntime && Boolean(playableSource || live.videoUrl);
+  // Inside its live window a scheduled broadcast starts by itself and offers no
+  // pause or seek UI; replay keeps the regular player.
+  const liveWindow = useLiveWindowPlayback({
+    runtimeState,
+    isPlayableRuntime,
+    admitted: visibleAdmissionStatus === "admitted",
+    streamQuotaExhausted,
+    evergreenLocked: evergreenPlayback.locked,
+    isBrowserStream: isBrowserStreamSource(playableSource),
+    hasVideo: hasPlaybackVideo,
+    videoRef,
+    isPaused: isPlaybackPaused,
+    isMuted: isPlaybackMuted,
+    setIsMuted: setIsPlaybackMuted,
+  });
+  const { begin: beginLiveWindow } = liveWindow;
   const applyPlaybackStart = useMemo(() => (video: HTMLVideoElement) => {
     if (!playbackSeekIdentity) return;
     if (seekSourceIdentityRef.current !== playbackSeekIdentity) {
@@ -1745,7 +1785,8 @@ export function LivePlayback({ live }: { live: LivePageData }) {
     seekAppliedRef.current = true;
     previousPlaybackUrlRef.current = playableUrl;
     previousPlaybackSeekIdentityRef.current = playbackSeekIdentity;
-  }, [playableUrl, playbackSeekIdentity, playbackStartSeconds]);
+    beginLiveWindow(video, playbackStartSeconds);
+  }, [beginLiveWindow, playableUrl, playbackSeekIdentity, playbackStartSeconds]);
   useEffect(() => {
     if (seekSourceIdentityRef.current === playbackSeekIdentity) return;
     const previousPlaybackUrl = previousPlaybackUrlRef.current;
@@ -1786,7 +1827,8 @@ export function LivePlayback({ live }: { live: LivePageData }) {
   const latestCtaEvent = [...triggeredEvents].reverse().find((event) => event.eventType === "cta_switch" && event.ctaLabel);
   const { latestProductEvent, spotlightCardProduct, spotlightProduct, sortedProducts } = resolveProductSpotlight(live.products, triggeredEvents);
   const externalNavigation = useExternalNavigationIntent({ live, latestCtaEvent, admissionStatus, referralCode, videoRef,
-    checkoutNavigation, streamUsage, router, setCheckoutError, setIsPlaybackPaused });
+    checkoutNavigation, streamUsage, router, setCheckoutError, setIsPlaybackPaused,
+    resumeLivePlayback: liveWindow.resumeWhenLive });
   useAdmittedPlaybackAnalytics({ live, admitted: isPlayableRuntime && admissionStatus === "admitted", visitorId, referralCode, sourcePageSlug, liveShareCode });
   useEffect(() => {
     const video = videoRef.current;
@@ -1814,7 +1856,6 @@ export function LivePlayback({ live }: { live: LivePageData }) {
     };
   }, [playableSource, playableUrl]);
 
-  const hasPlaybackVideo = !streamQuotaExhausted && isPlayableRuntime && Boolean(playableSource || live.videoUrl);
 
   function trackProgress(seconds: number) {
     const checkpoints = [30, 60, 120, 300, 600] as const;
@@ -1833,6 +1874,7 @@ export function LivePlayback({ live }: { live: LivePageData }) {
 
   function handlePlaybackEnded() {
     setIsPlaybackPaused(true);
+    liveWindow.markEnded();
     streamUsage.stop();
     if (!isPlayableRuntime || !live.admissionRequired || !playableSource) return;
     const refreshIdentity = `${live.id}:${playableSource.playbackUrl}`;
@@ -1872,7 +1914,7 @@ export function LivePlayback({ live }: { live: LivePageData }) {
               src={playbackMedia.src}
               // A locked evergreen session has no seek bar; the guard below
               // also pulls back keyboard or script seeks and rate changes.
-              controls={visibleAdmissionStatus === "admitted" && !streamQuotaExhausted && !evergreenPlayback.locked}
+              controls={nativeControlsAllowed(visibleAdmissionStatus, [streamQuotaExhausted, evergreenPlayback.locked, liveWindow.active])}
               aria-describedby={streamQuotaExhausted ? "stream-quota-alert" : undefined}
               playsInline
               poster={live.heroImageUrl ?? undefined}
@@ -1892,6 +1934,8 @@ export function LivePlayback({ live }: { live: LivePageData }) {
                   return;
                 }
                 evergreenPlayback.guard(event.currentTarget, true);
+                // Resuming after a pause (e.g. OS media keys) rejoins the live position.
+                liveWindow.seekToLivePosition(event.currentTarget);
                 setIsPlaybackPaused(false);
                 streamUsage.start(event.currentTarget.currentTime);
                 void trackClientAnalytics({
@@ -1944,7 +1988,8 @@ export function LivePlayback({ live }: { live: LivePageData }) {
               onAdmissionInvalid={refreshAdmission}
               playbackVideoRef={videoRef}
               isPlaybackPaused={isPlaybackPaused}
-              canControlPlayback={canControlOverlayPlayback(hasPlaybackVideo, visibleAdmissionStatus)}
+              canControlPlayback={canControlOverlayPlayback(hasPlaybackVideo, visibleAdmissionStatus, liveWindow.active)}
+              liveControls={liveWindow.controls}
             />
           ) : (
             <LiveIdleState live={live} runtimeState={runtimeState} countdownSeconds={waitingCountdownSeconds} evergreenPlayback={evergreenPlayback} />
@@ -1954,6 +1999,7 @@ export function LivePlayback({ live }: { live: LivePageData }) {
             isConfirming={externalNavigation.isConfirming}
             onCancel={externalNavigation.cancel}
             onConfirm={externalNavigation.confirm}
+            resumesOnCancel={liveWindow.active}
           />
           <LiveAdmissionOverlay status={visibleAdmissionStatus} />
         </HideDuringCheckout>

@@ -86,6 +86,7 @@ const RENDERED_COMPONENT_NAMES = [
   "EvergreenPreparingNotice",
   "EvergreenEndedNotice",
   "LivePlaybackExperience",
+  "LiveAutoplayControls",
   "LivePlaybackPanel",
   "ProductSpotlightCard",
   "ExternalNavigationConfirmDialog",
@@ -1015,7 +1016,7 @@ describe("LivePlayback checkout", () => {
     ]);
     expect(crypto.randomUUID).toHaveBeenCalledOnce();
 
-    tree = renderLive({ videoUrl: "https://video.example.test/recording.mp4" });
+    tree = renderLive({ videoUrl: "https://video.example.test/recording.mp4", runtimeState: "replay", status: "ended" });
     expect(findElements(tree, (element) => element.props.role === "alert")).toHaveLength(0);
     expect(findElements(tree, (element) => element.type === "video")[0]?.props.controls).toBe(true);
   });
@@ -1577,16 +1578,16 @@ describe("LivePlayback checkout", () => {
     expect(window.location.href).toBe("https://merchant.example.test/buy");
   });
 
-  it("renders a reachable play/pause control in the playback overlay, not only the covered native controls", () => {
+  it("renders a reachable play/pause control in the replay overlay, not only the covered native controls", () => {
     navigation.pathname = "/live/test-fixture-live";
-    const tree = renderLive({ videoUrl: "https://video.example.test/recording.mp4" });
+    const tree = renderLive({ videoUrl: "https://video.example.test/recording.mp4", runtimeState: "replay", status: "ended" });
     const toggles = findElements(tree, (element) => element.type === PlaybackToggleButton);
     expect(toggles).toHaveLength(1);
     expect(toggles[0]?.props.isPaused).toBe(true);
     const navigationBar = findElements(tree, (element) => element.type === PlaybackNavigation)[0];
     expect(findElements(navigationBar, (element) => element.type === PlaybackToggleButton)).toHaveLength(0);
 
-    const noVideo = renderLive({ videoUrl: null });
+    const noVideo = renderLive({ videoUrl: null, runtimeState: "replay", status: "ended" });
     expect(findElements(noVideo, (element) => element.type === PlaybackToggleButton)).toHaveLength(0);
   });
 
@@ -1618,10 +1619,10 @@ describe("LivePlayback checkout", () => {
     expect(video).toHaveLength(1);
     expect(String(shell?.props.className)).toContain("fixed");
     expect(textContent(tree)).toContain("測試直播");
-    expect(findElements(tree, (element) => element.props["aria-label"] === "返回直播")).toHaveLength(1);
-    expect(findElements(tree, (element) => element.props["aria-label"] === "播放直播")).toHaveLength(1);
-    expect(findElements(tree, (element) => element.props["aria-label"] === "將直播靜音")).toHaveLength(1);
-    expect(findElements(tree, (element) => element.props["aria-label"] === "展開直播小窗")).toHaveLength(1);
+    expect(findElements(shell, (element) => element.props["aria-label"] === "返回直播")).toHaveLength(1);
+    expect(findElements(shell, (element) => element.props["aria-label"] === "播放直播")).toHaveLength(1);
+    expect(findElements(shell, (element) => element.props["aria-label"] === "將直播靜音")).toHaveLength(1);
+    expect(findElements(shell, (element) => element.props["aria-label"] === "展開直播小窗")).toHaveLength(1);
   });
 
   it("routes purchase intent to the local buyer-details page without calling the payment API", async () => {
@@ -1895,5 +1896,198 @@ describe("LivePlayback evergreen session", () => {
     if (!button) throw new Error("Expected consultation CTA");
     (button.props.onClick as () => void)();
     expect(findElements(renderLive(overrides), (element) => element.props["aria-label"] === "直播報名")).toHaveLength(1);
+  });
+});
+
+
+describe("LivePlayback live-window autoplay", () => {
+  const sourceUrl = "https://video.example.test/recording.mp4";
+
+  type FakeVideo = {
+    currentTime: number;
+    duration: number;
+    muted: boolean;
+    volume: number;
+    paused: boolean;
+    play: ReturnType<typeof vi.fn>;
+  };
+  type MediaEventHandler = (event: { currentTarget: unknown }) => void;
+
+  function fakeVideo(play: FakeVideo["play"]): FakeVideo {
+    return { currentTime: 0, duration: Number.NaN, muted: false, volume: 1, paused: true, play };
+  }
+
+  function notAllowed() {
+    return Object.assign(new Error("autoplay blocked"), { name: "NotAllowedError" });
+  }
+
+  function videoOf(tree: unknown) {
+    const video = findElements(tree, (element) => element.type === "video")[0];
+    if (!video) throw new Error("Expected video element");
+    return video;
+  }
+
+  function findByTestId(tree: unknown, testId: string) {
+    return findElements(tree, (element) => element.props["data-testid"] === testId)[0];
+  }
+
+  /** Renders the live window, wires a fake media element and fires loadedmetadata. */
+  async function loadLive(media: FakeVideo, overrides: Partial<Parameters<typeof renderLive>[0]> = {}) {
+    const options = { runtimeState: "playing" as const, status: "live" as const, videoUrl: sourceUrl, ...overrides };
+    await flushHookEffects();
+    const first = videoOf(renderLive(options));
+    (first.props.ref as { current: unknown }).current = media;
+    (first.props.onLoadedMetadata as MediaEventHandler)({ currentTarget: media });
+    await flushHookEffects();
+    await Promise.resolve();
+    await Promise.resolve();
+    return options;
+  }
+
+  beforeEach(() => {
+    hookState.cursor = 0;
+    hookState.refCursor = 0;
+    hookState.effectCursor = 0;
+    hookState.effectsEnabled = true;
+    hookState.values = [];
+    hookState.refs = [];
+    hookState.effects = [];
+    hookState.pendingEffects = [];
+    navigation.pathname = "/live/test-fixture-live";
+    vi.clearAllMocks();
+    vi.stubGlobal("window", { setInterval, clearInterval, setTimeout, clearTimeout, location: { search: "" }, localStorage: {} });
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true }));
+  });
+
+  afterEach(() => {
+    cleanupHookEffects();
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
+  it("hides native controls and the play/pause toggle inside the live window, and shows them in replay", () => {
+    const liveTree = renderLive({ runtimeState: "playing", status: "live", videoUrl: sourceUrl });
+    expect(videoOf(liveTree).props.controls).toBe(false);
+    expect(findElements(liveTree, (element) => element.type === PlaybackToggleButton)).toHaveLength(0);
+    expect(findByTestId(liveTree, "live-mute-toggle")).toBeDefined();
+    expect(findByTestId(liveTree, "live-fullscreen")).toBeDefined();
+
+    const replayTree = renderLive({ runtimeState: "replay", status: "ended", videoUrl: sourceUrl });
+    expect(videoOf(replayTree).props.controls).toBe(true);
+    expect(findElements(replayTree, (element) => element.type === PlaybackToggleButton)).toHaveLength(1);
+    expect(findByTestId(replayTree, "live-mute-toggle")).toBeUndefined();
+  });
+
+  it("calls play() once the source metadata is ready, after seeking to the live position", async () => {
+    const media = fakeVideo(vi.fn(() => Promise.resolve()));
+    media.currentTime = 99;
+    const options = await loadLive(media);
+
+    expect(media.play).toHaveBeenCalledTimes(1);
+    expect(media.currentTime).toBe(0);
+    expect(media.muted).toBe(false);
+    expect(findByTestId(renderLive(options), "live-autoplay-unmute")).toBeUndefined();
+  });
+
+  it("does not autoplay a replay", async () => {
+    const media = fakeVideo(vi.fn(() => Promise.resolve()));
+    await loadLive(media, { runtimeState: "replay", status: "ended" });
+    expect(media.play).not.toHaveBeenCalled();
+  });
+
+  it("retries muted when the browser blocks autoplay, then offers a labelled unmute button with a live status", async () => {
+    const media = fakeVideo(vi.fn()
+      .mockRejectedValueOnce(notAllowed())
+      .mockResolvedValueOnce(undefined));
+    const options = await loadLive(media);
+
+    expect(media.play).toHaveBeenCalledTimes(2);
+    expect(media.muted).toBe(true);
+
+    // The element is playing now; the video's own events keep the paused/muted state in step.
+    const video = videoOf(renderLive(options));
+    (video.props.onPlay as MediaEventHandler)({ currentTarget: media });
+    (video.props.onVolumeChange as MediaEventHandler)({ currentTarget: media });
+    const tree = renderLive(options);
+    const unmute = findByTestId(tree, "live-autoplay-unmute");
+    if (!unmute) throw new Error("Expected the unmute overlay button");
+    expect(unmute.type).toBe("button");
+    expect(textContent(unmute.props.children)).toContain("點一下開啟聲音");
+    const status = findByTestId(tree, "live-autoplay-status");
+    expect(status?.props.role).toBe("status");
+    expect(status?.props["aria-live"]).toBe("polite");
+    expect(textContent(status?.props.children)).toContain("已靜音開始播放");
+
+    (unmute.props.onClick as () => void)();
+    expect(media.muted).toBe(false);
+    (video.props.onVolumeChange as MediaEventHandler)({ currentTarget: media });
+    const after = renderLive(options);
+    expect(findByTestId(after, "live-autoplay-unmute")).toBeUndefined();
+    expect(textContent(findByTestId(after, "live-autoplay-status")?.props.children)).toBe("");
+  });
+
+  it("falls back to a visible start button when even muted autoplay is refused", async () => {
+    const media = fakeVideo(vi.fn()
+      .mockRejectedValueOnce(notAllowed())
+      .mockRejectedValueOnce(notAllowed())
+      .mockResolvedValue(undefined));
+    const options = await loadLive(media);
+
+    expect(media.muted).toBe(false);
+    const resume = findByTestId(renderLive(options), "live-autoplay-resume");
+    if (!resume) throw new Error("Expected the start button");
+    expect(textContent(resume.props.children)).toContain("點一下觀看直播");
+    (resume.props.onClick as () => void)();
+    expect(media.play).toHaveBeenCalledTimes(3);
+  });
+
+  it("rejoins the live position when playback resumes after a pause", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-10-30T10:00:00.000Z"));
+    const fetchMock = vi.fn((input: string | URL | Request) => {
+      if (String(input).startsWith("/api/live-playback-source?")) {
+        return Promise.resolve({ ok: true, json: async () => ({ playbackUrl: sourceUrl, playbackStartSeconds: 20 }) });
+      }
+      return Promise.resolve({ ok: true });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const media = fakeVideo(vi.fn(() => Promise.resolve()));
+    const options = { runtimeState: "playing" as const, status: "live" as const, admissionRequired: true };
+    await flushHookEffects();
+    renderLive(options);
+    await flushHookEffects();
+    renderLive(options);
+    await flushHookEffects();
+    const video = videoOf(renderLive(options));
+    (video.props.ref as { current: unknown }).current = media;
+    (video.props.onLoadedMetadata as MediaEventHandler)({ currentTarget: media });
+    expect(media.currentTime).toBe(20);
+    expect(media.play).toHaveBeenCalledTimes(1);
+
+    // The viewer pauses at 25s (OS media keys) and comes back 40 seconds later.
+    media.currentTime = 25;
+    await vi.advanceTimersByTimeAsync(40_000);
+    (video.props.onPlay as MediaEventHandler)({ currentTarget: media });
+    expect(media.currentTime).toBeCloseTo(60, 0);
+
+    // A resume that is already at the live position is not nudged.
+    media.currentTime = 60.5;
+    (video.props.onPlay as MediaEventHandler)({ currentTarget: media });
+    expect(media.currentTime).toBe(60.5);
+  });
+
+  it("does not move a replay when it resumes", async () => {
+    const media = fakeVideo(vi.fn(() => Promise.resolve()));
+    const options = await loadLive(media, { runtimeState: "replay", status: "ended" });
+    media.currentTime = 12;
+    (videoOf(renderLive(options)).props.onPlay as MediaEventHandler)({ currentTarget: media });
+    expect(media.currentTime).toBe(12);
+  });
+
+  it("tells the viewer the live resumes by itself when they leave for an external page", () => {
+    const dialogOf = (overrides: Parameters<typeof renderLive>[0]) => findElements(renderLive(overrides),
+      (element) => typeof element.type === "function" && element.type.name === "ExternalNavigationConfirmDialog")[0];
+    expect(dialogOf({ runtimeState: "playing", status: "live", videoUrl: sourceUrl })?.props.resumesOnCancel).toBe(true);
+    expect(dialogOf({ runtimeState: "replay", status: "ended", videoUrl: sourceUrl })?.props.resumesOnCancel).toBe(false);
   });
 });
