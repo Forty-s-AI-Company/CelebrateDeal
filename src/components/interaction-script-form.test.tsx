@@ -187,26 +187,11 @@ describe("InteractionScriptForm", () => {
       }),
     });
 
-    const confirm = vi.fn(() => true);
-    const preventDefault = vi.fn();
-    vi.stubGlobal("window", { confirm });
-    (unbindButton?.props.onClick as (event: { preventDefault: () => void }) => void)({ preventDefault });
-
-    expect(confirm).toHaveBeenCalledWith("確定要解除「七月新品直播」與此留言組的綁定嗎？");
-    expect(preventDefault).not.toHaveBeenCalled();
-  });
-
-  it("does not submit the unbind action when confirmation is declined", () => {
-    const form = renderForm();
-    const unbindButton = findElements(form, (candidate) => (
-      candidate.props.formAction === actionMocks.unbindInteractionScriptFromLiveAction
-    )).at(0);
-    const preventDefault = vi.fn();
-    vi.stubGlobal("window", { confirm: vi.fn(() => false) });
-
-    (unbindButton?.props.onClick as (event: { preventDefault: () => void }) => void)({ preventDefault });
-
-    expect(preventDefault).toHaveBeenCalledOnce();
+    // The shared submit button asks in the page (no native confirm) and then
+    // submits this same button, so liveId and the unbind formAction still travel.
+    expect(unbindButton?.props.confirmMessage).toBe("確定要解除「七月新品直播」與此留言組的綁定嗎？");
+    expect(unbindButton?.props.confirmDestructive).toBe(true);
+    expect(unbindButton?.props.onClick).toBeUndefined();
   });
 
   it("makes the video and timeline outline scroll region keyboard-focusable", () => {

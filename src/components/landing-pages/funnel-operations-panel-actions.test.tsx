@@ -109,16 +109,28 @@ describe("management page owns publishing", () => {
 
   it("deletes only after confirmation", async () => {
     mocks.action.mockResolvedValue({ status: "success", message: "已刪除。", id: "page-1" });
-    const confirm = vi.fn().mockReturnValueOnce(false).mockReturnValueOnce(true);
-    vi.stubGlobal("confirm", confirm);
     const { container } = await mount("draft");
     await click(button(container, "更多網站操作"));
     await click(button(container, "刪除網站"));
+    expect(document.body.querySelector('[role="alertdialog"]')).not.toBeNull();
+    await click(button(document.body, "取消"));
+    expect(document.body.querySelector('[role="alertdialog"]')).toBeNull();
     expect(mocks.action).not.toHaveBeenCalled();
     await click(button(container, "更多網站操作"));
     await click(button(container, "刪除網站"));
-    expect(confirm).toHaveBeenCalledTimes(2);
+    await click(button(document.body, "移除"));
     expect((mocks.action.mock.calls[0]![1] as FormData).get("operation")).toBe("delete");
     expect(mocks.push).toHaveBeenCalledWith("/landing-pages");
+  });
+
+  it("returns focus to the overflow-menu button when a delete confirmation is cancelled", async () => {
+    const { container } = await mount("draft");
+    const more = button(container, "更多網站操作");
+    await click(more);
+    await click(button(container, "刪除網站"));
+    expect(document.body.querySelector('[role="alertdialog"]')).not.toBeNull();
+    await click(button(document.body, "取消"));
+    expect(document.activeElement).toBe(more);
+    expect(mocks.action).not.toHaveBeenCalled();
   });
 });

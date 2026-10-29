@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useMemo, useState, type DragEvent, type FormEvent, type MouseEvent } from "react";
+import { useMemo, useState, type DragEvent, type FormEvent } from "react";
 import type { InteractionEvent, InteractionRole, InteractionScript, Live, Product, Video } from "@prisma/client";
 import { BadgeCheck, ChevronDown, ChevronUp, GripVertical, Link2Off, MessageCircle, Megaphone, ShoppingBag, Trash2, VideoIcon } from "lucide-react";
 import { unbindInteractionScriptFromLiveAction } from "@/app/actions";
@@ -130,13 +130,11 @@ function renderTimelineSidebar({
   primaryLive,
   events,
   products,
-  confirmUnbind,
 }: {
   boundLives: BoundLive[];
   primaryLive: BoundLive | undefined;
   events: TimelineEvent[];
   products: Product[];
-  confirmUnbind: (event: MouseEvent<HTMLButtonElement>, live: BoundLive) => void;
 }) {
   return (
     <aside className="xl:sticky xl:top-[112px] xl:h-[calc(100vh-132px)]">
@@ -184,7 +182,8 @@ function renderTimelineSidebar({
                     data-intent="unbind-live"
                     formAction={unbindInteractionScriptFromLiveAction}
                     formNoValidate
-                    onClick={(event) => confirmUnbind(event, live)}
+                    confirmMessage={`確定要解除「${live.title}」與此留言組的綁定嗎？`}
+                    confirmDestructive
                     pendingChildren="解除中…"
                     pendingMessage={`正在解除「${live.title}」與互動腳本的綁定。`}
                     className="inline-flex h-8 shrink-0 items-center gap-1 rounded-md border border-red-100 bg-white px-2.5 text-xs font-semibold text-red-600 hover:bg-red-50"
@@ -560,10 +559,6 @@ export function InteractionScriptForm({
     if (Object.keys(errors).length > 0 || Object.keys(payloadErrors).length > 0) event.preventDefault();
   }
 
-  function confirmUnbind(event: MouseEvent<HTMLButtonElement>, live: BoundLive) {
-    if (!window.confirm(`確定要解除「${live.title}」與此留言組的綁定嗎？`)) event.preventDefault();
-  }
-
   function handleDragStart(event: DragEvent<HTMLElement>, index: number) {
     event.dataTransfer.effectAllowed = "move";
     event.dataTransfer.setData("text/plain", String(index));
@@ -650,7 +645,7 @@ export function InteractionScriptForm({
       ) : null}
 
       <section className="grid gap-5 xl:grid-cols-[380px_1fr]">
-        {renderTimelineSidebar({ boundLives, primaryLive, events, products, confirmUnbind })}
+        {renderTimelineSidebar({ boundLives, primaryLive, events, products })}
 
         <div className="overflow-hidden rounded-xl border border-border bg-white shadow-sm">
           <div className="flex flex-col gap-3 border-b border-border bg-slate-50 p-4 lg:flex-row lg:items-center lg:justify-between">

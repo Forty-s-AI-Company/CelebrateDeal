@@ -102,7 +102,6 @@ test("member A cannot publish a template bound to member B's webinar through DOM
       dropdown.dispatchEvent(new Event("change", { bubbles: true }));
     }, { id: partnerWebinar.id, title: partnerWebinar.title });
 
-    page.once("dialog", (dialog) => dialog.accept());
     await page.getByRole("button", { name: "發布新版本" }).click();
     await expect(page.getByRole("alert").filter({ hasText: "你沒有管理這個團隊模板的權限，或該資源已不存在。" })).toHaveText("你沒有管理這個團隊模板的權限，或該資源已不存在。");
 
