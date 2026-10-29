@@ -39,6 +39,7 @@ vi.mock("react", async (importOriginal) => {
   };
 });
 
+import { ConfirmActionButton } from "./confirm-action-button";
 import { PartnerPageEditor } from "./partner-page-editor";
 
 const action = async () => ({ status: "idle" as const, message: "" });
@@ -232,7 +233,7 @@ describe("PartnerPageEditor", () => {
     expect(findElements(tree, (element) => element.props.role === "alert")).toHaveLength(2);
     expect(findElements(tree, (element) => element.props.role === "alert")[0].props.className).toContain("red");
     expect(findElements(tree, (element) => element.props.role === "alert")[0].props["aria-live"]).toBe("assertive");
-    const publishButton = findElements(tree, (element) => element.type === "button" && textContent(element).includes("更新中"))[0];
+    const publishButton = findElements(tree, (element) => (element.type === "button" || element.type === ConfirmActionButton) && textContent(element).includes("更新中"))[0];
     expect(publishButton.props.disabled).toBe(true);
     expect(publishButton.props["aria-disabled"]).toBe(true);
     expect(publishButton.props["aria-busy"]).toBe(true);
@@ -242,24 +243,22 @@ describe("PartnerPageEditor", () => {
     expect(findElements(tree, (element) => element.props.role === "status" && element.props.className === "sr-only").map(textContent).join(" ")).toContain("正在發布夥伴頁");
   });
 
-  it("requires confirmation before a published page is taken offline", () => {
-    installBrowserStubs();
-    const confirm = vi.fn(() => false);
-    (globalRecord.window as { confirm?: typeof confirm }).confirm = confirm;
-    const tree = renderEditor({ isPublished: true });
-    const publishForm = findElements(tree, (element) => (
+  it("asks in the page before a published page is taken offline and never for a first publish", () => {
+    const publishSubmitter = (isPublished: boolean) => (hookState.values = []) && findElements(renderEditor({ isPublished }), (element) => (
+      element.type === ConfirmActionButton && element.props.type === "submit"
+    ))[0];
+
+    const published = publishSubmitter(true);
+    expect(published.props.confirmRequired).toBe(true);
+    expect(published.props.message).toBe("確定要停止公開這個夥伴頁？公開網址會立即停止顯示。");
+    expect(published.props.destructive).toBe(true);
+    expect(publishSubmitter(false).props.confirmRequired).toBe(false);
+
+    // The submit handler itself no longer calls a native confirm().
+    hookState.values = [];
+    const publishForm = findElements(renderEditor({ isPublished: true }), (element) => (
       element.type === "form" && findElements(element, (child) => child.props.name === "publish").length > 0
     ))[0];
-    const blocked = { preventDefault: vi.fn() };
-
-    (publishForm.props.onSubmit as (event: typeof blocked) => void)(blocked);
-
-    expect(confirm).toHaveBeenCalledWith("確定要停止公開這個夥伴頁？公開網址會立即停止顯示。");
-    expect(blocked.preventDefault).toHaveBeenCalledOnce();
-
-    confirm.mockReturnValue(true);
-    const allowed = { preventDefault: vi.fn() };
-    (publishForm.props.onSubmit as (event: typeof allowed) => void)(allowed);
-    expect(allowed.preventDefault).not.toHaveBeenCalled();
+    expect(publishForm.props.onSubmit).toBeUndefined();
   });
 });

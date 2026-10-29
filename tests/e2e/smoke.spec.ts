@@ -1339,20 +1339,10 @@ mfaTest("regenerating recovery codes invalidates old codes and accepts newly iss
 
   await page.goto("/mfa/setup");
   await page.getByLabel("目前 App 上的 6 位數驗證碼").fill(totpCodeForTimestamp(totpSeed));
-  const confirmationHandled = new Promise<void>((resolve, reject) => {
-    page.once("dialog", async (dialog) => {
-      try {
-        expect(dialog.type()).toBe("confirm");
-        expect(dialog.message()).toBe("重新產生後，舊的備用救援碼會立刻失效。確定要繼續嗎？");
-        await dialog.accept();
-        resolve();
-      } catch (error) {
-        reject(error);
-      }
-    });
-  });
   await page.getByRole("button", { name: "重新產生備用救援碼" }).click();
-  await confirmationHandled;
+  const regenerateConfirmation = page.getByRole("alertdialog", { name: "重新產生後，舊的備用救援碼會立刻失效。確定要繼續嗎？" });
+  await expect(regenerateConfirmation).toBeVisible();
+  await regenerateConfirmation.getByRole("button", { name: "確認", exact: true }).click();
   await expect(page).toHaveURL(/\/mfa\/setup\?updated=recovery_regenerated/);
   const newRecoveryCode = await displayedRecoveryCode(page);
   expect(oldRecoveryCode === newRecoveryCode).toBe(false);

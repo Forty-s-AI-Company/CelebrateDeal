@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import { ConfirmActionButton } from "@/components/confirm-action-button";
 import { WorkspaceEditor, type WorkspaceEditorContent } from "@/components/landing-pages/workspace-editor";
 import { FunnelEditorAssetsProvider } from "@/components/landing-pages/funnel-editor-assets";
 import { LegacyConversionNotice } from "@/components/landing-pages/legacy-conversion-notice";
@@ -114,7 +115,7 @@ function LegacyConversionFailure({ published, pending, onRun, onExit, toast }: {
       <div className="mt-4 flex flex-wrap gap-2">
         <button type="button" onClick={onExit} className="min-h-10 cursor-pointer rounded-lg bg-slate-900 px-4 font-semibold text-white hover:bg-slate-700">返回管理頁</button>
         {published ? <button type="button" disabled={pending} onClick={() => onRun("unpublish")} className={`${action} border-slate-300 bg-white text-slate-700 hover:bg-slate-50`}>取消發布</button> : null}
-        <button type="button" disabled={pending} onClick={() => { if (window.confirm(DELETE_CONFIRMATION)) onRun("delete"); }} className={`${action} border-red-200 bg-white text-red-700 hover:bg-red-50`}>刪除一頁式網站</button>
+        <ConfirmActionButton type="button" disabled={pending} message={DELETE_CONFIRMATION} confirmLabel="移除" destructive onConfirm={() => onRun("delete")} className={`${action} border-red-200 bg-white text-red-700 hover:bg-red-50`}>刪除一頁式網站</ConfirmActionButton>
       </div>
     </div>
     {toast}
@@ -320,7 +321,7 @@ function LegacyPublishActions({ published, disabled, onRun }: { published: boole
     <button type="button" disabled={disabled} onClick={() => onRun("publish")} className={button}>發布已儲存草稿</button>
     {published ? <button type="button" disabled={disabled} onClick={() => onRun("unpublish")} className={button}>取消發布</button> : null}
     <button type="button" disabled={disabled} onClick={() => onRun("duplicate")} className={button}>複製頁面</button>
-    <button type="button" disabled={disabled} onClick={() => { if (window.confirm(DELETE_CONFIRMATION)) onRun("delete"); }} className={`${button} border-red-200 text-red-700 hover:bg-red-50`}>刪除一頁式網站</button>
+    <ConfirmActionButton type="button" disabled={disabled} message={DELETE_CONFIRMATION} confirmLabel="移除" destructive onConfirm={() => onRun("delete")} className={`${button} border-red-200 text-red-700 hover:bg-red-50`}>刪除一頁式網站</ConfirmActionButton>
   </div>;
 }
 

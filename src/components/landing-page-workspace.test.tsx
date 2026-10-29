@@ -287,18 +287,18 @@ describe("opening a legacy page", () => {
     expect(container.querySelector("button[disabled]")).toBeNull();
     // Unpublished now: only delete remains, and it asks for confirmation first.
     expect(Array.from(container.querySelectorAll("button")).some((item) => item.textContent === "取消發布")).toBe(false);
-    const confirm = vi.fn().mockReturnValueOnce(false);
-    Object.defineProperty(window, "confirm", { value: confirm, configurable: true, writable: true });
     await click(button(container, "刪除一頁式網站"));
+    expect(document.body.querySelector('[role="alertdialog"]')?.textContent).toContain("確定要移除這個一頁式網站嗎？");
+    await click(button(document.body, "取消"));
+    expect(document.body.querySelector('[role="alertdialog"]')).toBeNull();
     expect(mocks.action).toHaveBeenCalledOnce();
-    confirm.mockReturnValueOnce(true);
     mocks.action.mockResolvedValueOnce({ status: "success", message: "Funnel 與草稿已刪除。", id: "page1" });
     await click(button(container, "刪除一頁式網站"));
-    expect(confirm).toHaveBeenCalledTimes(2);
+    await click(button(document.body, "移除"));
+    expect(document.body.querySelector('[role="alertdialog"]')).toBeNull();
     expect((mocks.action.mock.calls[1]![1] as FormData).get("operation")).toBe("delete");
     expect((mocks.action.mock.calls[1]![1] as FormData).get("revision")).toBe("8");
     expect(mocks.push).toHaveBeenCalledWith("/landing-pages");
-    Reflect.deleteProperty(window, "confirm");
   });
 });
 

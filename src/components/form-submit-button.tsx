@@ -2,6 +2,7 @@
 
 import type { ButtonHTMLAttributes, ReactNode } from "react";
 import { useFormStatus } from "react-dom";
+import { useConfirmDialog } from "@/components/confirm-action-button";
 
 type FormSubmitButtonProps = Omit<ButtonHTMLAttributes<HTMLButtonElement>, "children" | "className"> & {
   children: ReactNode;
@@ -9,6 +10,8 @@ type FormSubmitButtonProps = Omit<ButtonHTMLAttributes<HTMLButtonElement>, "chil
   pendingMessage: string;
   pendingOverride?: boolean;
   confirmMessage?: string;
+  /** Red confirm button in the in-page confirmation (use for destructive actions). */
+  confirmDestructive?: boolean;
   className?: string;
 };
 
@@ -21,6 +24,7 @@ export function FormSubmitButton({
   pendingMessage,
   pendingOverride = false,
   confirmMessage,
+  confirmDestructive = false,
   className,
   disabled = false,
   type = "submit",
@@ -31,6 +35,7 @@ export function FormSubmitButton({
   ...buttonProps
 }: FormSubmitButtonProps) {
   const { pending, data, action } = useFormStatus();
+  const { confirm, dialog } = useConfirmDialog();
   const hasSubmitterName = typeof name === "string" && name.length > 0;
   const submittedByName = hasSubmitterName && data
     ? data.getAll(name).some((submittedValue) => (
@@ -59,23 +64,16 @@ export function FormSubmitButton({
           const form = button.form;
           const formIsValid = form?.checkValidity() ?? true;
           const requiresConfirmation = Boolean(confirmMessage) && (button.formNoValidate || formIsValid);
-          if (requiresConfirmation) {
-            if (!window.confirm(confirmMessage!)) {
-              event.preventDefault();
-              return;
-            }
-
-            onClick?.(event);
-            if (event.defaultPrevented || type !== "submit" || !form) return;
-
-            // A blocking confirmation dialog detaches the original click from
-            // React's Server Action dispatch. Submit the same button now so
-            // its name, value and formAction stay intact.
-            event.preventDefault();
-            form.requestSubmit(button);
-            return;
-          }
           onClick?.(event);
+          if (!requiresConfirmation || event.defaultPrevented) return;
+
+          // Ask inside the page (a native confirm() would freeze browser
+          // automation), then submit the same button so its name, value and
+          // formAction stay intact. Cancelling leaves the form untouched.
+          event.preventDefault();
+          confirm({ message: confirmMessage!, destructive: confirmDestructive }, () => {
+            if (type === "submit" && form) form.requestSubmit(button);
+          }, button);
         }}
         className={`${className ?? ""} disabled:cursor-not-allowed disabled:opacity-60`}
       >
@@ -93,6 +91,7 @@ export function FormSubmitButton({
       <span role="status" aria-live="polite" className="sr-only">
         {isActivePending ? pendingMessage : ""}
       </span>
+      {dialog}
     </>
   );
 }

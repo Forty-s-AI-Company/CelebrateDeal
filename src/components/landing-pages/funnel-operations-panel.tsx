@@ -5,6 +5,7 @@ import { addableStepTypeOptions, funnelTabKeys, funnelTabLabels, funnelGoalLabel
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { BookmarkPlus, ExternalLink, Eye, MoreHorizontal, Pencil, Plus, Rocket, Settings, X } from "lucide-react";
+import { ConfirmActionButton, useConfirmDialog } from "@/components/confirm-action-button";
 import { landingPageAction } from "@/app/actions/landing-page-actions";
 import { readFunnelOperations, updateFunnelOperations } from "@/app/actions/funnel-operations-actions";
 import { FunnelAutomationSettings } from "@/components/landing-pages/funnel-automation-settings";
@@ -71,6 +72,7 @@ export function FunnelOperationsPanel({ initial, initialStepId, csrfName, csrfTo
   const [newTemplateId, setNewTemplateId] = useState("");
   const [selectedTemplateId, setSelectedTemplateId] = useState("");
   const [pending, setPending] = useState(false);
+  const { confirm, dialog: confirmDialog } = useConfirmDialog();
   const revisionRef = useRef(initial.revision);
   const reportGeneration = useRef(0);
   const inFlight = useRef(false);
@@ -119,11 +121,14 @@ export function FunnelOperationsPanel({ initial, initialStepId, csrfName, csrfTo
   }
   function navigate(href: string) {
     if (pending || inFlight.current) return;
-    if (dirty && !window.confirm("尚有未儲存的設定，確定離開？")) return;
+    if (dirty) { confirm({ message: "尚有未儲存的設定，確定離開？" }, () => router.push(href)); return; }
     router.push(href);
   }
   function selectStep(stepId: string) {
-    if (dirty && !window.confirm("切換步驟會捨棄尚未儲存的欄位變更，確定繼續？")) return;
+    if (dirty) { confirm({ message: "切換步驟會捨棄尚未儲存的欄位變更，確定繼續？" }, () => switchToStep(stepId)); return; }
+    switchToStep(stepId);
+  }
+  function switchToStep(stepId: string) {
     const result = switchFunnelStep(content, stepId);
     if (!result.ok) { setMessage(result.error); return; }
     setContent(result.state); setDirty(false); setTab("Configuration"); setChangeTemplate(false);
@@ -151,7 +156,10 @@ export function FunnelOperationsPanel({ initial, initialStepId, csrfName, csrfTo
     });
   }
   function reload() {
-    if (dirty && !window.confirm("重新載入會捨棄這次尚未儲存的設定，確定繼續？")) return;
+    if (dirty) { confirm({ message: "重新載入會捨棄這次尚未儲存的設定，確定繼續？", destructive: true }, reloadLatest); return; }
+    reloadLatest();
+  }
+  function reloadLatest() {
     runPending(async () => {
       try {
         const loaded = await readFunnelOperations(editor.pageId);
@@ -186,7 +194,11 @@ export function FunnelOperationsPanel({ initial, initialStepId, csrfName, csrfTo
   }
   function applyTemplate(templateId: string) {
     if (!active || active.step.isSystem) return;
-    if (active.step.template.templateId && !window.confirm("更換模板會取代目前步驟的頁面內容，確定繼續？")) return;
+    if (active.step.template.templateId) { confirm({ message: "更換模板會取代目前步驟的頁面內容，確定繼續？", destructive: true }, () => replaceTemplate(templateId)); return; }
+    replaceTemplate(templateId);
+  }
+  function replaceTemplate(templateId: string) {
+    if (!active || active.step.isSystem) return;
     const result = replaceFunnelStepPage(content, active.step.id, instantiateFunnelTemplate(templateId, active.page.id), templateId);
     if (!result.ok) { setMessage(result.error); return; }
     setChangeTemplate(false); persistContent(result.state, "模板已套用；現在可按「編輯頁面」編輯內容。");
@@ -202,7 +214,14 @@ export function FunnelOperationsPanel({ initial, initialStepId, csrfName, csrfTo
   /** Publishing, duplicating and deleting live here, not in the full-screen editor. */
   function runPageOperation(operation: "publish" | "unpublish" | "duplicate" | "delete") {
     if (inFlight.current) { setMessage("前一個變更仍在儲存，請稍候再試。"); return; }
-    if (operation === "delete" && !window.confirm("確定要移除這個一頁式網站嗎？曾發布或已有造訪紀錄的一頁式網站會改為封存：公開網址停止開啟，造訪與名單來源紀錄保留；從未發布的草稿會永久刪除。")) return;
+    if (operation === "delete") {
+      confirm({ message: "確定要移除這個一頁式網站嗎？曾發布或已有造訪紀錄的一頁式網站會改為封存：公開網址停止開啟，造訪與名單來源紀錄保留；從未發布的草稿會永久刪除。", confirmLabel: "移除", destructive: true }, () => executePageOperation(operation));
+      return;
+    }
+    executePageOperation(operation);
+  }
+  function executePageOperation(operation: "publish" | "unpublish" | "duplicate" | "delete") {
+    if (inFlight.current) { setMessage("前一個變更仍在儲存，請稍候再試。"); return; }
     inFlight.current = true;
     const data = new FormData();
     data.set(csrfName, csrfToken); data.set("operation", operation); data.set("id", editor.pageId); data.set("revision", String(revisionRef.current));
@@ -253,7 +272,7 @@ export function FunnelOperationsPanel({ initial, initialStepId, csrfName, csrfTo
         <button type="button" aria-expanded={mobileStepsOpen} onClick={() => setMobileStepsOpen((open) => !open)} className="min-h-11 px-4 py-2 text-left text-sm font-semibold text-slate-900 focus-visible:ring-2 focus-visible:ring-blue-700 lg:hidden">網站步驟：{active?.step.name ?? "選擇步驟"}（{mobileStepsOpen ? "收合" : "展開"}）</button>
         <div className={`${mobileStepsOpen ? "flex" : "hidden"} min-h-0 flex-col lg:flex`}>
         <div className="max-h-60 min-h-0 flex-1 divide-y divide-slate-100 overflow-auto lg:max-h-none">{content.flow.steps.map((step, index) => <article key={step.id} className={content.activeStepId === step.id ? "bg-sky-50" : "bg-white hover:bg-slate-50"}>
-          <div className="flex items-start gap-2 px-4 py-4"><button type="button" onClick={() => selectStep(step.id)} className="min-w-0 flex-1 cursor-pointer text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"><strong className="block truncate text-sm text-slate-900">{step.name}</strong><span className="mt-1 block text-xs text-slate-600">{step.isSystem ? "網站停用時顯示" : funnelStepLabels[step.type]}</span></button>{!step.isSystem ? <div className="flex gap-1"><button type="button" aria-label={`上移 ${step.name}`} disabled={pending || index === 0} onClick={() => { const result = moveFunnelStepPage(content, step.id, Math.max(0, index - 1)); if (result.ok) persistContent(result.state, "步驟順序已儲存。"); }} className="min-h-11 min-w-11 cursor-pointer rounded p-1 text-slate-600 hover:bg-white disabled:opacity-30">↑</button><button type="button" aria-label={`移除 ${step.name}`} disabled={pending} onClick={() => { if (!window.confirm(`確定移除「${step.name}」及其頁面內容？`)) return; const result = removeFunnelStepPage(content, step.id); if (result.ok) persistContent(result.state, "步驟已移除。"); else setMessage(result.error); }} className="min-h-11 min-w-11 cursor-pointer rounded p-1 text-red-600 hover:bg-red-50">×</button></div> : <MoreHorizontal size={17} className="text-slate-500" />}</div>
+          <div className="flex items-start gap-2 px-4 py-4"><button type="button" onClick={() => selectStep(step.id)} className="min-w-0 flex-1 cursor-pointer text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"><strong className="block truncate text-sm text-slate-900">{step.name}</strong><span className="mt-1 block text-xs text-slate-600">{step.isSystem ? "網站停用時顯示" : funnelStepLabels[step.type]}</span></button>{!step.isSystem ? <div className="flex gap-1"><button type="button" aria-label={`上移 ${step.name}`} disabled={pending || index === 0} onClick={() => { const result = moveFunnelStepPage(content, step.id, Math.max(0, index - 1)); if (result.ok) persistContent(result.state, "步驟順序已儲存。"); }} className="min-h-11 min-w-11 cursor-pointer rounded p-1 text-slate-600 hover:bg-white disabled:opacity-30">↑</button><ConfirmActionButton aria-label={`移除 ${step.name}`} disabled={pending} message={`確定移除「${step.name}」及其頁面內容？`} confirmLabel="移除" destructive onConfirm={() => { const result = removeFunnelStepPage(content, step.id); if (result.ok) persistContent(result.state, "步驟已移除。"); else setMessage(result.error); }} className="min-h-11 min-w-11 cursor-pointer rounded p-1 text-red-600 hover:bg-red-50">×</ConfirmActionButton></div> : <MoreHorizontal size={17} className="text-slate-500" />}</div>
         </article>)}</div>
         <button type="button" onClick={() => setAddOpen(true)} className="m-3 inline-flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white text-sm font-bold text-blue-700 transition-colors hover:bg-sky-50"><Plus size={17} />新增步驟</button>
         </div>
@@ -271,6 +290,7 @@ export function FunnelOperationsPanel({ initial, initialStepId, csrfName, csrfTo
     {settingsOpen ? <div role="dialog" aria-modal="true" aria-labelledby="funnel-settings-title" className="fixed inset-0 z-[120] grid place-items-center bg-slate-950/60 p-4"><div className="max-h-[90dvh] w-full max-w-2xl overflow-auto rounded-2xl bg-white p-6 shadow-2xl"><div className="mb-5 flex items-start justify-between gap-4"><div><h2 id="funnel-settings-title" className="text-xl font-bold">網站設定</h2><p className="mt-1 text-sm text-slate-600">管理整個網站的名稱、網址與幣別。</p></div><button type="button" aria-label="關閉 網站設定" onClick={() => setSettingsOpen(false)} className="cursor-pointer rounded-lg p-2 hover:bg-slate-100"><X size={18} /></button></div><GlobalSettings editor={editor} change={change} /><SettingsFooter pending={pending} dirty={dirty} save={saveSettings} reload={reload} /></div></div> : null}
     {saveTemplateOpen && active && !active.step.isSystem ? <SaveAsTemplateDialog csrfName={csrfName} csrfToken={csrfToken} pageId={editor.pageId} stepId={active.step.id} stepName={active.step.name} defaultName={`${editor.name}－${active.step.name}`} blockedReason={pending ? "前一個變更仍在儲存，請稍候再存成範本。" : undefined} onClose={() => setSaveTemplateOpen(false)} /> : null}
     {addOpen ? <AddStepDialog goal={content.flow.goal} name={newStepName} path={newStepPath} type={newStepType} source={newStepSource} templateId={effectiveNewTemplateId} templates={newTemplates} disabled={pending} onName={setNewStepName} onPath={setNewStepPath} onType={setNewStepType} onSource={setNewStepSource} onTemplate={setNewTemplateId} onClose={() => setAddOpen(false)} onSave={addStep} /> : null}
+    {confirmDialog}
   </section>;
 }
 

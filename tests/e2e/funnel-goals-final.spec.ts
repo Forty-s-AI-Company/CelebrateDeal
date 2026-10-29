@@ -112,8 +112,9 @@ for (const { goal } of goals) {
     }
 
     await management.getByRole("button", { name: "更多網站操作", exact: true }).click();
-    page.once("dialog", (dialog) => dialog.accept());
     await management.getByRole("button", { name: "刪除網站", exact: true }).click();
+    // Removing a site asks inside the page (no native dialog).
+    await page.getByRole("alertdialog", { name: /^確定要移除這個一頁式網站嗎？/u }).getByRole("button", { name: "移除", exact: true }).click();
     await expect(page).toHaveURL(/\/landing-pages$/u);
     if (goal !== "webinar") {
       // F-072 (owner decision D-19): a published Funnel is archived, never
