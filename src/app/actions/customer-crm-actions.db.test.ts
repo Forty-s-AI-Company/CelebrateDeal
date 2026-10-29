@@ -17,6 +17,8 @@ vi.mock("@/lib/auth", () => ({
 }));
 vi.mock("@/lib/csrf", () => ({ assertServerActionSecurity: (form: FormData) => guards.csrf(form) }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
+const immediate = vi.hoisted(() => ({ schedule: vi.fn() }));
+vi.mock("@/lib/email-delivery-immediate", () => ({ scheduleImmediateEmailDispatch: immediate.schedule }));
 vi.mock("@/lib/sales-project-scope", () => ({
   getSalesProjectScope: async () => ({ projectId: runtime.projectId, projectName: null, isAggregate: false, isLegacyWorkspace: !runtime.projectId }),
   requireEditableSalesProjectScope: async (userId: string, vendorId: string) => {
@@ -64,6 +66,7 @@ beforeEach(async () => {
   guards.csrf.mockReset().mockResolvedValue(undefined);
   guards.manager.mockReset().mockResolvedValue(undefined);
   guards.editable.mockReset().mockResolvedValue(undefined);
+  immediate.schedule.mockReset();
   vendorA = await tenant();
   vendorB = await tenant();
   runtime.vendorId = vendorA;
@@ -126,6 +129,23 @@ describe("customer CRM actions across two tenants", () => {
     // A's own product, but the hash belongs to B's learner: no verified contact exists under A.
     await expect(grantCustomerVoucherAction(data({ customerKeyHash: foreignHash, productId: ownProduct.id }))).rejects.toThrow("找不到已驗證的學員聯絡方式");
     expect(await db.automationVoucherGrant.count({ where: { vendorId: { in: [vendorA, vendorB] } } })).toBe(0);
+    expect(immediate.schedule).not.toHaveBeenCalled();
+  });
+
+  it("dispatches the committed voucher email right after the response, scoped to the caller's tenant", async () => {
+    vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://crm-voucher.example.test");
+    try {
+      const ownHash = await registrant(vendorA, "member-a@example.test", "甲方學員");
+      const ownProduct = await db.product.create({ data: { vendorId: vendorA, name: "甲方商品", slug: randomUUID(), priceCents: 10_000, currency: "TWD", inventory: 5, isActive: true, fulfillmentTypeConfirmed: true } });
+
+      await grantCustomerVoucherAction(data({ customerKeyHash: ownHash, productId: ownProduct.id }));
+
+      const deliveries = await db.emailDelivery.findMany({ where: { vendorId: { in: [vendorA, vendorB] } }, select: { id: true, vendorId: true, status: true } });
+      expect(deliveries).toEqual([{ id: expect.any(String), vendorId: vendorA, status: "queued" }]);
+      expect(immediate.schedule).toHaveBeenCalledExactlyOnceWith([deliveries[0]!.id]);
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 });
 

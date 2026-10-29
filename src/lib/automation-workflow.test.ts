@@ -6,10 +6,12 @@ const mocks = vi.hoisted(() => ({
   buildAutomationLineMessage: vi.fn((input) => ({ type: "text", text: input.message })),
   stableLineIdempotencyKey: vi.fn((parts: Array<string | number>) => parts.join(":")),
   getDb: vi.fn(),
+  scheduleImmediateEmailDispatch: vi.fn(),
 }));
 
 vi.mock("@/lib/app-url", () => ({ getCanonicalAppUrl: () => "https://app.example.test" }));
 vi.mock("@/lib/db", () => ({ getDb: mocks.getDb }));
+vi.mock("@/lib/email-delivery-immediate", () => ({ scheduleImmediateEmailDispatch: mocks.scheduleImmediateEmailDispatch }));
 vi.mock("@/lib/line-notification", () => ({
   enqueueLineNotification: mocks.enqueueLineNotification,
   buildAutomationLineMessage: mocks.buildAutomationLineMessage,
@@ -148,6 +150,8 @@ describe("smart automation workflow engine", () => {
     const delivery = db.emailDelivery.create.mock.calls[0]?.[0].data;
     expect(delivery.recipientMaskedEmail).toBe("b***@example.test");
     expect(JSON.stringify(delivery)).not.toContain("buyer@example.test");
+    // The queued notification is sent after the response instead of waiting for the job.
+    expect(mocks.scheduleImmediateEmailDispatch).toHaveBeenCalledExactlyOnceWith([delivery.id]);
     expect(JSON.stringify(update.mock.calls.at(-1)?.[0].data)).not.toContain("buyer@example.test");
   });
 

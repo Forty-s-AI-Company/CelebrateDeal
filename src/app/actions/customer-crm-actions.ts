@@ -6,6 +6,7 @@ import { requireVendorManagerContext } from "@/lib/auth";
 import { assertServerActionSecurity } from "@/lib/csrf";
 import { getDb } from "@/lib/db";
 import { issueManualCustomerVoucher } from "@/lib/customer-voucher";
+import { scheduleImmediateEmailDispatch } from "@/lib/email-delivery-immediate";
 import { revealCommerceOrderPii } from "@/lib/commerce-order-pii";
 import { automationCustomerKeyHash } from "@/lib/automation-workflow";
 import { listCustomers, type CustomerListItem } from "@/lib/customer-crm";
@@ -114,7 +115,9 @@ export async function grantCustomerVoucherAction(formData: FormData) {
       ?? legacyBookings.find((row) => automationCustomerKeyHash(vendor.id, row.clientEmail) === customerKeyHash)?.clientEmail;
   }
   if (!recipientEmail) throw new Error("找不到已驗證的學員聯絡方式");
-  await db.$transaction(async (transaction) => issueManualCustomerVoucher({ db: transaction, vendorId: vendor.id, customerKeyHash, product, recipientEmail }));
+  const issued = await db.$transaction(async (transaction) => issueManualCustomerVoucher({ db: transaction, vendorId: vendor.id, customerKeyHash, product, recipientEmail }));
+  // Scheduled only after the voucher transaction has committed.
+  scheduleImmediateEmailDispatch([issued.deliveryId]);
   refresh(customerKeyHash);
 }
 

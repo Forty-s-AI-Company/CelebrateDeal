@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import { Prisma } from "@prisma/client";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { getDb } from "@/lib/db";
 import { BUYER_SUPPORT_COOKIE_PREFIX, issueBuyerSupportGrant } from "@/lib/buyer-support-access";
 import { createCommerceOrderForCheckout, reconcileCommerceOrderPaymentTransition, reconcileCommerceOrderRefund } from "@/lib/commerce-orders";
@@ -16,12 +16,18 @@ import { releasePostPurchaseCreditForTerminalPayment } from "./post-purchase-cre
 import { postPurchaseRecoveryAvailable, resumePostPurchaseCheckout } from "./post-purchase-checkout-recovery";
 import { resolvePostPurchaseRecoveryEntry } from "./post-purchase-recovery-entry";
 
+// The post-response hook is observed, not run: these tests cover which receipt
+// the committed webhook hands to it. Sending is covered by email-delivery-immediate.
+const immediate = vi.hoisted(() => ({ schedule: vi.fn() }));
+vi.mock("@/lib/email-delivery-immediate", () => ({ scheduleImmediateEmailDispatch: immediate.schedule }));
+
 const ownedVendors: string[] = [];
 const buyer = { name: "合成買家", email: "post-purchase@example.test", phone: "0912345678" };
 const shipping = { recipientName: buyer.name, phone: buyer.phone, countryCode: "TW", postalCode: "106",
   administrativeArea: "Taipei", locality: "Da-an", addressLine1: "Synthetic Road 1" };
 
 afterEach(async () => {
+  immediate.schedule.mockClear();
   const vendorId = { in: ownedVendors.splice(0) };
   // Restrictive money/grant foreign keys deliberately require child-first
   // cleanup of only this fixture's synthetic resources.
@@ -726,6 +732,7 @@ describe("paid receipt for post-purchase targets", () => {
     expect((await db.commerceOrder.findUniqueOrThrow({ where: { id: first.targetOrderId } })).status).toBe("paid");
     expect(await manualReviewFlags(input.vendor.id, first.targetOrderId)).toHaveLength(1);
     expect(await db.emailDelivery.count({ where: { vendorId: input.vendor.id, idempotencyKey: `order-paid:v1:${first.targetOrderId}` } })).toBe(0);
+    expect(immediate.schedule.mock.calls.flatMap(([ids]) => ids).filter(Boolean)).toEqual([]);
   });
 
   it("still sends the paid receipt for a normally superseding PayUni target", async () => {
@@ -735,6 +742,14 @@ describe("paid receipt for post-purchase targets", () => {
       grossAmountCents: 9_500, currency: "TWD" }));
     expect((await db.postPurchaseCredit.findFirstOrThrow({ where: { vendorId: input.vendor.id } })).supersededAt).not.toBeNull();
     expect(await db.emailDelivery.count({ where: { vendorId: input.vendor.id, idempotencyKey: `order-paid:v1:${result.targetOrderId}` } })).toBe(1);
+    // Handed to the post-response hook once, only after the payment transaction committed.
+    expect(immediate.schedule.mock.calls.flatMap(([ids]) => ids).filter(Boolean)).toEqual([`order_paid_${result.targetOrderId}`]);
+    // A replayed provider callback finds the existing receipt and schedules nothing new.
+    immediate.schedule.mockClear();
+    await processPaymentWebhook(PaymentWebhookPayload.parse({ provider: "payuni", eventId: `ppu-paid-${randomUUID()}`,
+      eventType: "paid", vendorId: input.vendor.id, orderNumber: result.payment.orderNumber, providerTradeNo: "synthetic-paid-trade",
+      grossAmountCents: 9_500, currency: "TWD" }));
+    expect(immediate.schedule.mock.calls.flatMap(([ids]) => ids).filter(Boolean)).toEqual([]);
   });
 });
 

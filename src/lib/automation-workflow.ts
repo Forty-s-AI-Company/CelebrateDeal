@@ -13,6 +13,7 @@ import {
 } from "@/lib/derived-key-rotation";
 import { deriveSensitiveDataKey } from "@/lib/sensitive-data";
 import { protectEmailDeliveryPayload } from "@/lib/email-delivery-pii";
+import { scheduleImmediateEmailDispatch } from "@/lib/email-delivery-immediate";
 import { isSafeExternalHttpsUrl } from "@/lib/safe-url";
 import {
   buildAutomationLineMessage,
@@ -391,6 +392,7 @@ async function executeAction(
         status: "queued",
         nextAttemptAt: new Date(),
       } });
+      scheduleImmediateEmailDispatch([id]);
       return { type: action.type, status: "queued", template: action.template } as const;
     } catch (error) {
       if (!isUniqueConflict(error)) throw error;

@@ -25,6 +25,7 @@ import { normalizeBlacklistIdentifier } from "@/lib/blacklist-identifiers";
 import { allowsLegacyAffiliateAttribution, defaultAffiliateCode } from "@/lib/live-quota-policy";
 import { validateRegistrationFormAnswers } from "@/lib/registration-form-answers";
 import { ensureFormSubmissionVerificationDelivery } from "@/lib/email-delivery";
+import { scheduleImmediateEmailDispatch } from "@/lib/email-delivery-immediate";
 import { captureOperationalError } from "@/lib/monitoring";
 import { FORM_SUBMISSION_VERIFICATION_TTL_MS } from "@/lib/form-submission-verification";
 import { funnelVisitorIdFromRequest, resolveTrustedFunnelSubmission } from "@/lib/funnel-runtime";
@@ -457,6 +458,10 @@ async function enqueueSubmissionVerificationSafely({
       verificationExpiresAt: submission.verificationExpiresAt,
       emailBrand,
     });
+    // The verification link is what the registrant is waiting for, so send it
+    // after this response instead of waiting for the email job. A duplicate
+    // still-queued row is dispatched at most once by the shared claim.
+    if (delivery.status !== "suppressed") scheduleImmediateEmailDispatch([delivery.deliveryId]);
     return delivery.status !== "suppressed";
   } catch (error) {
     try {
