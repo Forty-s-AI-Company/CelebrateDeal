@@ -47,6 +47,8 @@ export const ACCOUNT_EMAIL_REVERT_KEY_PURPOSE = DERIVED_KEY_ROTATIONS.accountEma
 /** How long after a completed change the previous address can restore itself. */
 export const ACCOUNT_EMAIL_REVERT_TTL_DAYS = 7;
 export const ACCOUNT_EMAIL_REVERT_TTL_MS = ACCOUNT_EMAIL_REVERT_TTL_DAYS * 24 * 60 * 60 * 1_000;
+/** Shown on the settings card and the confirm page: what the old mailbox can still do, and the way out. */
+export const ACCOUNT_EMAIL_REVERT_WINDOW_NOTICE = `舊信箱 ${ACCOUNT_EMAIL_REVERT_TTL_DAYS} 天內仍可還原；若舊信箱已外洩，請啟用兩步驟驗證後作廢還原連結，或聯絡客服`;
 /** The revert link opens this page, which asks for one click before the POST acts. */
 export const ACCOUNT_EMAIL_REVERT_PATH = "/revert-email-change";
 

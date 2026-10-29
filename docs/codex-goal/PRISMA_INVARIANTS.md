@@ -604,3 +604,12 @@ Current source inventory: 145 models and 99 forward migrations. Previous checkpo
 - 保留（`src/lib/login-email-reservation.ts`）：變更完成後、還原連結仍可用期間，`previousEmail` 保留給原帳號。註冊（`registerAction` 回與重複 Email 相同的 `exists`）、以新帳號接受成員邀請（回 `account_exists`，同 P2002）與其他帳號的 Email 變更（同「已被使用」路徑）都視為已被使用；原帳號自己改回不受影響。寫入者都先取同一個 advisory lock 再檢查。
 - 密碼重設（`src/lib/password-reset.ts`）：`createPasswordResetToken` 改為互動式交易，`SELECT … FOR UPDATE` 鎖 `User` 列後重讀，Email 仍等於申請的地址且 active 才建立 token，並寄到鎖內讀到的地址；`consumePasswordResetToken` 先鎖 `User` 列再重讀 token（與確認、還原同一鎖序）。變更完成後對舊地址申請重設會找不到帳號。更新密碼（`updatePasswordAction`）與完成密碼重設都在原交易內取消未完成的變更請求。
 - `emailVerifiedAt` 的來源因此新增：完成登入 Email 變更（連結只寄到新地址）與還原（連結只寄到原地址），都與 `email` 同時寫入。
+
+## 2026-10-30 登入 Email 變更強化（審查後續；無 migration）
+
+- **不需要 schema 變更**：沿用 `20261030120000_user_email_change_request` 既有欄位，沒有新增 migration；`schema.prisma` 只更新 `UserEmailChangeRequest` 的說明註解。目前仍是 156 models、129 forward migrations。
+- 欄位語意調整：`revertedAt` 只代表「鎖定式還原」（會開始 7 天變更鎖定，`accountEmailChangeLockedUntil` 查詢不變）。`revertRevokedAt` 代表連結結束但**不鎖定**，來源新增兩種：變更尚未完成時用舊信箱連結取消，以及使用者在安全性設定作廢還原連結。既有已用於取消、且寫入 `revertedAt` 的 staging 列仍會鎖定到期滿，屬保守方向，不回填。
+- 取消（變更未完成且帳號仍是舊信箱）：只撤銷所有未完成請求與之後建立的還原連結、把本連結標記 `revertRevokedAt`、寫 `account_email_change_cancelled_by_owner`；不撤銷 session、不動密碼重設 token、不設鎖定。點擊者本來就持有目前的登入信箱，沒有新增能力。
+- 鎖定式還原（其他所有情況，含變更已完成、或之後的變更把帳號移走）：沿用撤銷 session／重設 token／未完成請求、還原 Email 與 `Vendor.email`；另外在同一交易內把 `User.passwordHash` 設為 `unusable:account_email_revert`（`src/lib/password.ts`，任何密碼都不相符，驗證時仍跑一次 scrypt 以免時間差洩漏），擁有者需透過寄到還原後地址的密碼重設設定新密碼；刪除 `enabledAt` 或 `createdAt` 不早於該請求 `createdAt` 的 `UserMfaFactor`（重新啟用會刷新 `enabledAt`，所以換過密鑰也算），刪除 factor 時一併刪除全部 recovery codes，否則只刪除 `createdAt` 不早於請求的 recovery codes；刪除 factor 另寫 `account_email_revert_mfa_removed`（targetType `UserMfaFactor`，不含密鑰）。所有寫入都以 `userId` 綁定該還原連結所屬的使用者。`conflict`（原 Email 被他人持有）維持原行為，不停用密碼也不動 MFA。
+- 已知限制：在變更請求**之前**就被加入的 MFA factor 無法與擁有者自己的區分，會保留；這種情況需聯絡客服。
+- 作廢還原連結（`voidAccountEmailRevertLinksAction` → `voidAccountEmailRevertLinks`）：需已登入、有 MFA factor（沒有就回 `email_revert_void_mfa_required`，不導去啟用）、`requireRecentMfa` 15 分鐘 step-up；交易內鎖 `User` 列，重新確認 action 檢查過的 session 仍有效、factor 仍存在且都屬於同一使用者，然後把該使用者所有仍可用（`revertedAt`／`revertRevokedAt` 皆為 NULL 且未過期）的還原連結設 `revertRevokedAt`，寫 `account_email_revert_links_voided`（只含數量）。未完成的變更本身不受影響；被作廢的已完成變更不再保留舊 Email。回應不論有沒有可作廢的連結都相同。

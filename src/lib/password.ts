@@ -2,6 +2,26 @@ import { randomBytes, scrypt, scryptSync, timingSafeEqual } from "node:crypto";
 
 const KEY_LENGTH = 64;
 
+/**
+ * Prefix of a stored password that can never match: written when an account's
+ * password must stop working until its owner completes a password reset to
+ * the account's address (e.g. after a login email change was reverted).
+ * Verification still derives a key so the response time does not reveal it.
+ */
+const UNUSABLE_PASSWORD_PREFIX = "unusable:";
+const UNUSABLE_TIMING_SALT = "0".repeat(32);
+
+export type UnusablePasswordReason = "account_email_revert";
+
+/** A `passwordHash` value no password verifies against. Only a password reset replaces it. */
+export function unusablePasswordHash(reason: UnusablePasswordReason) {
+  return `${UNUSABLE_PASSWORD_PREFIX}${reason}`;
+}
+
+export function isUnusablePasswordHash(storedHash: string) {
+  return storedHash.startsWith(UNUSABLE_PASSWORD_PREFIX);
+}
+
 function parseStoredHash(storedHash: string) {
   const [algorithm, salt, hash] = storedHash.split(":");
   if (algorithm !== "scrypt" || !salt || !hash || !/^[a-f0-9]+$/i.test(hash)) {
@@ -29,6 +49,10 @@ export function hashPassword(password: string, salt = randomBytes(16).toString("
 }
 
 export function verifyPassword(password: string, storedHash: string) {
+  if (isUnusablePasswordHash(storedHash)) {
+    scryptSync(password, UNUSABLE_TIMING_SALT, KEY_LENGTH);
+    return false;
+  }
   const parsed = parseStoredHash(storedHash);
   if (!parsed) return false;
 
@@ -45,6 +69,10 @@ export async function hashPasswordAsync(
 }
 
 export async function verifyPasswordAsync(password: string, storedHash: string) {
+  if (isUnusablePasswordHash(storedHash)) {
+    await derivePasswordKey(password, UNUSABLE_TIMING_SALT);
+    return false;
+  }
   const parsed = parseStoredHash(storedHash);
   if (!parsed) return false;
 

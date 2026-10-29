@@ -19,6 +19,7 @@ vi.mock("next/navigation", () => ({ redirect: (url: string): never => { throw ne
 vi.mock("@/lib/csrf", () => ({ assertServerActionSecurity: vi.fn(async () => undefined) }));
 vi.mock("@/lib/auth", async (importOriginal) => ({ ...await importOriginal<typeof import("@/lib/auth")>(), requireAuth: auth.requireAuth }));
 
+import { voidAccountEmailRevertLinksAction } from "@/app/actions/account-email-change-actions";
 import { updatePasswordAction } from "@/app/actions/auth-security-actions";
 import { accountRateLimitKeyHash, checkAccountRateLimit, consumeAccountRateLimit } from "@/lib/account-rate-limit";
 import {
@@ -28,12 +29,14 @@ import {
   describeAccountEmailRevertLink,
   processAccountEmailChangeRequest,
   revertAccountEmailChange,
+  voidAccountEmailRevertLinks,
 } from "@/lib/account-email-change";
 import { accountEmailChangeTokenHash, createAccountEmailChangeToken } from "@/lib/account-email-change-token";
+import { authenticateUser } from "@/lib/auth";
 import { assertLoginEmailAvailableForNewAccount, LoginEmailReservedError } from "@/lib/login-email-reservation";
 import { vendorEmailVerificationState } from "@/lib/merchant-email-verification";
-import { hashPasswordAsync } from "@/lib/password";
-import { consumePasswordResetToken, createPasswordResetToken } from "@/lib/password-reset";
+import { hashPasswordAsync, isUnusablePasswordHash, verifyPasswordAsync } from "@/lib/password";
+import { consumePasswordResetToken, createPasswordResetToken, sendPasswordResetLink } from "@/lib/password-reset";
 import { acceptVendorMemberInvitation, createVendorMemberInvitation } from "@/lib/vendor-member-invitation";
 
 const created = { userIds: [] as string[], vendorIds: [] as string[], emails: [] as string[] };
@@ -561,15 +564,61 @@ describe("reverting a login email change (PostgreSQL)", () => {
     await expect(createPasswordResetToken({ email: user.email })).resolves.not.toBeNull();
   });
 
-  it("cancels a change that has not completed yet, and the change link dies", async () => {
-    const user = await createUser();
+  it("cancels a change that has not completed yet: the change link dies, but no lock, no logout and the password stays", async () => {
+    const password = "Synthetic-Owner-Passphrase-2026";
+    const passwordHash = await hashPasswordAsync(password);
+    const user = await createUser({ passwordHash });
     const session = await createSession(user.id);
+    const reset = await createPasswordResetToken({ email: user.email });
     const { change, revert } = await requestLinks(user, syntheticEmail("not-yet"));
     await expect(revertAccountEmailChange(revert)).resolves.toEqual({ status: "cancelled" });
     await expect(confirmAccountEmailChange(change)).resolves.toEqual({ status: "invalid" });
-    expect((await getDb().user.findUniqueOrThrow({ where: { id: user.id } })).email).toBe(user.email);
+
+    const after = await getDb().user.findUniqueOrThrow({ where: { id: user.id } });
+    expect(after.email).toBe(user.email);
+    expect(after.passwordHash).toBe(passwordHash);
+    expect((await getDb().userSession.findUniqueOrThrow({ where: { id: session.id } })).revokedAt).toBeNull();
+    expect((await getDb().passwordResetToken.findUniqueOrThrow({ where: { id: reset!.tokenId } })).usedAt).toBeNull();
+    await expect(accountEmailChangeLockedUntil(getDb(), user.id)).resolves.toBeNull();
+    // The request ends and its revert link is spent without opening the lock.
+    expect(await getDb().userEmailChangeRequest.findFirstOrThrow({ where: { userId: user.id } })).toMatchObject({
+      revokedAt: expect.any(Date),
+      revertedAt: null,
+      revertRevokedAt: expect.any(Date),
+    });
+    const audit = await getDb().auditLog.findFirstOrThrow({ where: { targetId: user.id, action: "account_email_change_cancelled_by_owner" } });
+    expect(audit.after).toMatchObject({ pendingCancelled: 1 });
+    expect(await getDb().auditLog.count({ where: { targetId: user.id, action: "account_email_change_reverted" } })).toBe(0);
+    // The owner may request another change right away.
+    await expect(request(after, syntheticEmail("again"))).resolves.toEqual({ outcome: "sent" });
+  });
+
+  it("keeps a cancel single use and revokes the pending request and later revert links, as before", async () => {
+    const user = await createUser();
+    const first = await requestLinks(user, syntheticEmail("cancel-first"));
+    // A second request supersedes the first; both cancel links went to the same address.
+    const second = await requestLinks(user, syntheticEmail("cancel-second"));
+    await expect(revertAccountEmailChange(first.revert)).resolves.toEqual({ status: "cancelled" });
+    await expect(revertAccountEmailChange(first.revert)).resolves.toEqual({ status: "invalid" });
+    // The open request (the second) ended, and its later revert link with it.
+    await expect(confirmAccountEmailChange(second.change)).resolves.toEqual({ status: "invalid" });
+    await expect(describeAccountEmailRevertLink(second.revert)).resolves.toBeNull();
+    await expect(revertAccountEmailChange(second.revert)).resolves.toEqual({ status: "invalid" });
+    expect(await getDb().userEmailChangeRequest.count({ where: { userId: user.id, consumedAt: null, revokedAt: null } })).toBe(0);
+    await expect(accountEmailChangeLockedUntil(getDb(), user.id)).resolves.toBeNull();
+  });
+
+  it("locks the account down when the old address's link is used after the change completed", async () => {
+    const password = "Synthetic-Owner-Passphrase-2026";
+    const user = await createUser({ passwordHash: await hashPasswordAsync(password) });
+    const newEmail = syntheticEmail("completed");
+    const revert = await changeEmail(user, newEmail);
+    await expect(describeAccountEmailRevertLink(revert)).resolves.toEqual({ mode: "restore" });
+    const session = await createSession(user.id);
+    await expect(revertAccountEmailChange(revert)).resolves.toEqual({ status: "reverted" });
     expect((await getDb().userSession.findUniqueOrThrow({ where: { id: session.id } })).revokedAt).toBeInstanceOf(Date);
     await expect(accountEmailChangeLockedUntil(getDb(), user.id)).resolves.toBeInstanceOf(Date);
+    await expect(authenticateUser(user.email, password)).resolves.toBeNull();
   });
 
   it("is single use", async () => {
@@ -676,6 +725,100 @@ describe("reverting a login email change (PostgreSQL)", () => {
     expect((await getDb().user.findUniqueOrThrow({ where: { id: user.id } })).email).toBe(user.email);
   });
 
+  it("makes the password unusable; a reset to the restored address lets the owner back in", async () => {
+    const password = "Synthetic-Owner-Passphrase-2026";
+    const user = await createUser({ passwordHash: await hashPasswordAsync(password) });
+    const intruderEmail = syntheticEmail("evicted");
+    const revert = await changeEmail(user, intruderEmail);
+    await expect(authenticateUser(intruderEmail, password)).resolves.not.toBeNull();
+
+    await expect(revertAccountEmailChange(revert)).resolves.toEqual({ status: "reverted" });
+    const reverted = await getDb().user.findUniqueOrThrow({ where: { id: user.id } });
+    expect(isUnusablePasswordHash(reverted.passwordHash)).toBe(true);
+    await expect(verifyPasswordAsync(password, reverted.passwordHash)).resolves.toBe(false);
+    await expect(authenticateUser(user.email, password)).resolves.toBeNull();
+    await expect(authenticateUser(intruderEmail, password)).resolves.toBeNull();
+    const audit = await getDb().auditLog.findFirstOrThrow({ where: { targetId: user.id, action: "account_email_change_reverted" } });
+    expect(audit.after).toMatchObject({ previousRestored: true, loginCredentialDisabled: true, mfaFactorRemoved: false });
+    expect(JSON.stringify(audit)).not.toContain(reverted.passwordHash);
+
+    // Not a lockout: the reset link goes to the restored address and replaces the password.
+    sent.length = 0;
+    await sendPasswordResetLink({ email: user.email, appUrl: "https://app.example.test" });
+    expect(sent.map((mail) => mail.to)).toEqual([user.email]);
+    const token = linkFrom(sent[0]!, "/password-reset/confirm");
+    const newPassword = "Synthetic-Restored-Passphrase-2026";
+    await expect(consumePasswordResetToken(token, newPassword)).resolves.toEqual({ ok: true, userId: user.id });
+    await expect(authenticateUser(user.email, newPassword)).resolves.toMatchObject({ user: { id: user.id } });
+    await expect(authenticateUser(user.email, password)).resolves.toBeNull();
+  });
+
+  it("removes an MFA factor and recovery codes enrolled after the change request, with an audit entry", async () => {
+    const user = await createUser();
+    const revert = await changeEmail(user, syntheticEmail("intruder-mfa"));
+    // Whoever took over enrols their own authenticator.
+    const factor = await getDb().userMfaFactor.create({ data: { userId: user.id, secretEncrypted: "synthetic-intruder-secret" } });
+    await getDb().userRecoveryCode.createMany({ data: [1, 2].map((index) => ({ userId: user.id, codeHash: `synthetic-intruder-code-${index}` })) });
+
+    await expect(revertAccountEmailChange(revert)).resolves.toEqual({ status: "reverted" });
+    expect(await getDb().userMfaFactor.count({ where: { userId: user.id } })).toBe(0);
+    expect(await getDb().userRecoveryCode.count({ where: { userId: user.id } })).toBe(0);
+    const removal = await getDb().auditLog.findFirstOrThrow({ where: { targetId: user.id, action: "account_email_revert_mfa_removed" } });
+    expect(removal).toMatchObject({ targetType: "UserMfaFactor", actorLabel: "account_email_revert" });
+    expect(removal.after).toMatchObject({ factorType: "totp", factorEnabledAt: factor.enabledAt.toISOString() });
+    expect(JSON.stringify(removal)).not.toContain("synthetic-intruder-secret");
+    const summary = await getDb().auditLog.findFirstOrThrow({ where: { targetId: user.id, action: "account_email_change_reverted" } });
+    expect(summary.after).toMatchObject({ mfaFactorRemoved: true, recoveryCodesRemoved: 2 });
+    // The restored owner can be reached for a reset; after it, MFA can be enrolled again.
+    await expect(createPasswordResetToken({ email: user.email })).resolves.not.toBeNull();
+  });
+
+  it("keeps the owner's factor and earlier recovery codes, removing only recovery codes issued after the request", async () => {
+    const user = await createUser();
+    const before = new Date(Date.now() - DAY_MS);
+    const factor = await getDb().userMfaFactor.create({ data: { userId: user.id, secretEncrypted: "synthetic-owner-secret", enabledAt: before, createdAt: before } });
+    const ownerCode = await getDb().userRecoveryCode.create({ data: { userId: user.id, codeHash: "synthetic-owner-code", createdAt: before } });
+    const revert = await changeEmail(user, syntheticEmail("owner-mfa"));
+    // Codes regenerated after the request (e.g. by whoever had the session) go.
+    await getDb().userRecoveryCode.create({ data: { userId: user.id, codeHash: "synthetic-later-code" } });
+
+    await expect(revertAccountEmailChange(revert)).resolves.toEqual({ status: "reverted" });
+    await expect(getDb().userMfaFactor.findUnique({ where: { userId: user.id } })).resolves.toMatchObject({ id: factor.id, secretEncrypted: "synthetic-owner-secret" });
+    expect((await getDb().userRecoveryCode.findMany({ where: { userId: user.id }, select: { id: true } })).map((code) => code.id)).toEqual([ownerCode.id]);
+    expect(await getDb().auditLog.count({ where: { targetId: user.id, action: "account_email_revert_mfa_removed" } })).toBe(0);
+    const summary = await getDb().auditLog.findFirstOrThrow({ where: { targetId: user.id, action: "account_email_change_reverted" } });
+    expect(summary.after).toMatchObject({ mfaFactorRemoved: false, recoveryCodesRemoved: 1 });
+  });
+
+  it("treats a factor re-enrolled with a new secret after the request as the intruder's", async () => {
+    const user = await createUser();
+    const before = new Date(Date.now() - DAY_MS);
+    await getDb().userMfaFactor.create({ data: { userId: user.id, secretEncrypted: "synthetic-owner-secret", enabledAt: before, createdAt: before } });
+    const revert = await changeEmail(user, syntheticEmail("re-enrolled"));
+    // completeMfaEnrollment's upsert keeps createdAt but refreshes enabledAt.
+    await getDb().userMfaFactor.update({ where: { userId: user.id }, data: { secretEncrypted: "synthetic-intruder-secret", enabledAt: new Date() } });
+
+    await expect(revertAccountEmailChange(revert)).resolves.toEqual({ status: "reverted" });
+    expect(await getDb().userMfaFactor.count({ where: { userId: user.id } })).toBe(0);
+  });
+
+  it("evicts only this account: another user's factor, codes, sessions and password stay", async () => {
+    const user = await createUser();
+    const bystanderHash = await hashPasswordAsync("Synthetic-Bystander-Passphrase-2026");
+    const bystander = await createUser({ passwordHash: bystanderHash });
+    const revert = await changeEmail(user, syntheticEmail("scoped"));
+    await getDb().userMfaFactor.create({ data: { userId: user.id, secretEncrypted: "synthetic-intruder-secret" } });
+    await getDb().userMfaFactor.create({ data: { userId: bystander.id, secretEncrypted: "synthetic-bystander-secret" } });
+    await getDb().userRecoveryCode.create({ data: { userId: bystander.id, codeHash: "synthetic-bystander-code" } });
+    const bystanderSession = await createSession(bystander.id);
+
+    await expect(revertAccountEmailChange(revert)).resolves.toEqual({ status: "reverted" });
+    expect(await getDb().userMfaFactor.count({ where: { userId: bystander.id } })).toBe(1);
+    expect(await getDb().userRecoveryCode.count({ where: { userId: bystander.id } })).toBe(1);
+    expect((await getDb().userSession.findUniqueOrThrow({ where: { id: bystanderSession.id } })).revokedAt).toBeNull();
+    expect((await getDb().user.findUniqueOrThrow({ where: { id: bystander.id } })).passwordHash).toBe(bystanderHash);
+  });
+
   it("refuses tampered or foreign revert links", async () => {
     const user = await createUser();
     const revert = await changeEmail(user, syntheticEmail("tamper"));
@@ -684,5 +827,81 @@ describe("reverting a login email change (PostgreSQL)", () => {
     for (const value of [undefined, "", "aer1.x.y", revert.replace(/^aer1/u, "aec1")]) {
       await expect(revertAccountEmailChange(value)).resolves.toEqual({ status: "invalid" });
     }
+  });
+});
+
+describe("voiding the old mailbox's revert links from settings (PostgreSQL)", () => {
+  async function signedInWithFactor(user: { id: string; email: string }, mfaVerifiedAt: Date | null = new Date()) {
+    const factor = await getDb().userMfaFactor.create({ data: { userId: user.id, secretEncrypted: "synthetic-owner-secret" } });
+    const session = await getDb().userSession.update({ where: { id: (await createSession(user.id)).id }, data: { mfaVerifiedAt } });
+    const full = await getDb().user.findUniqueOrThrow({ where: { id: user.id } });
+    auth.requireAuth.mockResolvedValue({ user: { ...full, mfaFactor: factor }, session, vendor: null, member: null });
+    return { factor, session };
+  }
+
+  it("voids only the signed-in user's own usable links; a voided link no longer works and frees the address", async () => {
+    const user = await createUser();
+    const other = await createUser();
+    const newEmail = syntheticEmail("moved-for-good");
+    const completed = await changeEmail(user, newEmail);
+    const moved = { id: user.id, email: newEmail };
+    const pending = await requestLinks(moved, syntheticEmail("pending"));
+    const othersRevert = await changeEmail(other, syntheticEmail("others"));
+    await signedInWithFactor(moved);
+
+    await expect(voidAccountEmailRevertLinksAction(new FormData())).rejects.toThrow("redirect:/settings/security?updated=email_revert_links_voided");
+
+    for (const link of [completed, pending.revert]) {
+      await expect(describeAccountEmailRevertLink(link)).resolves.toBeNull();
+      await expect(revertAccountEmailChange(link)).resolves.toEqual({ status: "invalid" });
+    }
+    expect((await getDb().user.findUniqueOrThrow({ where: { id: user.id } })).email).toBe(newEmail);
+    // The pending change itself is untouched: the owner may still complete it.
+    await expect(describeAccountEmailChangeLink(pending.change)).resolves.not.toBeNull();
+    // The old address is no longer reserved for a restore.
+    await getDb().$transaction((tx) => assertLoginEmailAvailableForNewAccount(tx, user.email));
+    await expect(accountEmailChangeLockedUntil(getDb(), user.id)).resolves.toBeNull();
+
+    // Another account's link is untouched.
+    await expect(describeAccountEmailRevertLink(othersRevert)).resolves.toEqual({ mode: "restore" });
+    expect(await getDb().userEmailChangeRequest.count({ where: { userId: other.id, revertRevokedAt: { not: null } } })).toBe(0);
+
+    const audit = await getDb().auditLog.findFirstOrThrow({ where: { targetId: user.id, action: "account_email_revert_links_voided" } });
+    expect(audit).toMatchObject({ actorId: user.id, targetType: "User" });
+    expect(audit.after).toMatchObject({ revertLinksVoided: 2 });
+    expect(JSON.stringify(audit)).not.toContain(user.email);
+  });
+
+  it("refuses an account without MFA and one without a recent step-up, leaving every link usable", async () => {
+    const user = await createUser();
+    const revert = await changeEmail(user, syntheticEmail("no-mfa"));
+    const moved = { id: user.id, email: (await getDb().user.findUniqueOrThrow({ where: { id: user.id } })).email };
+    const session = await createSession(user.id);
+    auth.requireAuth.mockResolvedValue({ user: { ...await getDb().user.findUniqueOrThrow({ where: { id: user.id } }), mfaFactor: null }, session, vendor: null, member: null });
+    await expect(voidAccountEmailRevertLinksAction(new FormData())).rejects.toThrow("redirect:/settings/security?error=email_revert_void_mfa_required");
+
+    await signedInWithFactor(moved, new Date(Date.now() - 60 * 60_000));
+    await expect(voidAccountEmailRevertLinksAction(new FormData())).rejects.toThrow("redirect:/mfa/verify?reason=step_up&next=%2Fsettings%2Fsecurity");
+
+    await expect(describeAccountEmailRevertLink(revert)).resolves.toEqual({ mode: "restore" });
+    expect(await getDb().auditLog.count({ where: { targetId: user.id, action: "account_email_revert_links_voided" } })).toBe(0);
+  });
+
+  it("does nothing when the checked session or factor is gone by the time it runs (e.g. a revert won the race)", async () => {
+    const user = await createUser();
+    const revert = await changeEmail(user, syntheticEmail("raced"));
+    const moved = { id: user.id, email: (await getDb().user.findUniqueOrThrow({ where: { id: user.id } })).email };
+    const { factor, session } = await signedInWithFactor(moved);
+    const other = await createUser();
+    const otherSession = await createSession(other.id);
+
+    // A session or factor of another user never counts.
+    await expect(voidAccountEmailRevertLinks({ userId: user.id, sessionId: otherSession.id, factorId: factor.id, actorLabel: "owner" })).resolves.toEqual({ status: "stale", voided: 0 });
+    await getDb().userSession.update({ where: { id: session.id }, data: { revokedAt: new Date() } });
+    await expect(voidAccountEmailRevertLinks({ userId: user.id, sessionId: session.id, factorId: factor.id, actorLabel: "owner" })).resolves.toEqual({ status: "stale", voided: 0 });
+    const fresh = await createSession(user.id);
+    await getDb().userMfaFactor.delete({ where: { id: factor.id } });
+    await expect(voidAccountEmailRevertLinks({ userId: user.id, sessionId: fresh.id, factorId: factor.id, actorLabel: "owner" })).resolves.toEqual({ status: "stale", voided: 0 });
+    await expect(describeAccountEmailRevertLink(revert)).resolves.toEqual({ mode: "restore" });
   });
 });

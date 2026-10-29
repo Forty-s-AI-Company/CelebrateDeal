@@ -266,7 +266,7 @@ export async function sendAccountEmailChangeNoticeEmail({
     to,
     subject: "CelebrateDeal｜你的登入 Email 正在變更",
     idempotencyKey,
-    text: `你的登入 Email 正在變更為 ${maskedNewEmail}。新 Email 的收件人開啟驗證信中的連結後，變更才會生效。\n\n如果不是你本人操作，請開啟以下「不是我操作，還原 Email」連結：\n${revertUrl}\n\n・變更還沒完成時：這個連結會取消變更；到登入頁用「忘記密碼」重設密碼也會取消。\n・變更已經完成時：這個連結會把登入 Email 還原為這個信箱。變更完成後 ${revertValidDays} 天內有效，只能使用一次。\n\n不論哪一種，所有裝置都會登出。之後請用這個信箱到登入頁重設密碼。`,
+    text: `你的登入 Email 正在變更為 ${maskedNewEmail}。新 Email 的收件人開啟驗證信中的連結後，變更才會生效。\n\n如果不是你本人操作，請開啟以下「不是我操作，還原 Email」連結：\n${revertUrl}\n\n・變更還沒完成時：這個連結會取消變更；到登入頁用「忘記密碼」重設密碼也會取消。\n・變更已經完成時：這個連結會把登入 Email 還原為這個信箱，所有裝置都會登出、原本的密碼會停用，變更後才設定的兩步驟驗證也會移除。變更完成後 ${revertValidDays} 天內有效，只能使用一次。\n\n還原後請用這個信箱到登入頁「忘記密碼」重設密碼。`,
     html: `
       <div style="font-family:Arial,sans-serif;line-height:1.7;color:#0f172a">
         <h2 style="margin:0 0 12px">你的登入 Email 正在變更</h2>
@@ -276,9 +276,9 @@ export async function sendAccountEmailChangeNoticeEmail({
         <p style="word-break:break-all;color:#475569">${safeUrl}</p>
         <ul>
           <li>變更還沒完成時：這個連結會取消變更；到登入頁用「忘記密碼」重設密碼也會取消。</li>
-          <li>變更已經完成時：這個連結會把登入 Email 還原為這個信箱。變更完成後 ${revertValidDays} 天內有效，只能使用一次。</li>
+          <li>變更已經完成時：這個連結會把登入 Email 還原為這個信箱，所有裝置都會登出、原本的密碼會停用，變更後才設定的兩步驟驗證也會移除。變更完成後 ${revertValidDays} 天內有效，只能使用一次。</li>
         </ul>
-        <p>不論哪一種，所有裝置都會登出。之後請用這個信箱到登入頁重設密碼。</p>
+        <p>還原後請用這個信箱到登入頁「忘記密碼」重設密碼。</p>
       </div>
     `,
   });

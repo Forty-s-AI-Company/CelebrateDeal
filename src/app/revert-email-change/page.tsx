@@ -6,11 +6,17 @@ import { ACCOUNT_EMAIL_REVERT_TTL_DAYS } from "@/lib/account-email-change-token"
 export const dynamic = "force-dynamic";
 export const metadata = { title: "不是我操作，還原 Email｜CelebrateDeal" };
 
-const AFTERWARDS = `所有裝置都已登出，${ACCOUNT_EMAIL_CHANGE_LOCK_DAYS} 天內不能再自行變更登入 Email。請立即用這個信箱到登入頁的「忘記密碼」重設密碼，並檢查帳號設定。`;
-
 const STATUS_MESSAGES = {
-  reverted: { tone: "success", title: "登入 Email 已還原", body: `登入 Email 已改回這個信箱。${AFTERWARDS}` },
-  cancelled: { tone: "success", title: "已取消變更登入 Email", body: `登入 Email 維持這個信箱，尚未完成的變更已取消。${AFTERWARDS}` },
+  reverted: {
+    tone: "success",
+    title: "登入 Email 已還原，請重設密碼",
+    body: `登入 Email 已改回這個信箱。為了把變更的人請出帳號，所有裝置都已登出、原本的密碼已停用，變更後才設定的兩步驟驗證與備用碼也已移除。請用這個信箱到「忘記密碼」重設密碼後再登入，並檢查帳號設定；${ACCOUNT_EMAIL_CHANGE_LOCK_DAYS} 天內不能再自行變更登入 Email。`,
+  },
+  cancelled: {
+    tone: "success",
+    title: "已取消變更登入 Email",
+    body: "登入 Email 維持這個信箱，尚未完成的變更已取消，密碼與登入狀態都沒有變動。如果懷疑有人知道你的密碼，請用這個信箱到「忘記密碼」重設密碼。",
+  },
   invalid: {
     tone: "warning",
     title: "連結無效或已過期",
@@ -57,7 +63,11 @@ export default async function RevertEmailChangePage({ searchParams }: { searchPa
             ? "這個帳號的登入 Email 已被改成其他信箱。按下按鈕後，登入 Email 會還原為收到這封通知的信箱。"
             : "這個帳號有一筆尚未完成的登入 Email 變更。按下按鈕後會取消變更，登入 Email 維持收到這封通知的信箱。"}
         </p>
-        <p className="mt-3 text-sm leading-6 text-slate-700">同時所有裝置都會登出，{ACCOUNT_EMAIL_CHANGE_LOCK_DAYS} 天內不能再自行變更登入 Email。完成後請立即重設密碼。</p>
+        <p className="mt-3 text-sm leading-6 text-slate-700">
+          {restore
+            ? `同時所有裝置都會登出、原本的密碼會停用，變更後才設定的兩步驟驗證也會移除，${ACCOUNT_EMAIL_CHANGE_LOCK_DAYS} 天內不能再自行變更登入 Email。完成後請用這個信箱重設密碼。`
+            : "密碼與登入狀態都不會變動。"}
+        </p>
         <NativePostForm
           action="/api/auth/email-change/revert"
           idleLabel={restore ? "還原登入 Email" : "取消變更"}

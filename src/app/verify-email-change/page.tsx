@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { NativePostForm } from "@/components/native-post-form";
 import { describeAccountEmailChangeLink } from "@/lib/account-email-change";
-import { ACCOUNT_EMAIL_CHANGE_TTL_MINUTES } from "@/lib/account-email-change-token";
+import { ACCOUNT_EMAIL_CHANGE_TTL_MINUTES, ACCOUNT_EMAIL_REVERT_WINDOW_NOTICE } from "@/lib/account-email-change-token";
 import { getCurrentAuth } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
@@ -11,7 +11,7 @@ const STATUS_MESSAGES = {
   changed: {
     tone: "success",
     title: "登入 Email 已變更",
-    body: "新的 Email 已完成驗證並成為登入帳號。為了安全，所有裝置的登入狀態都已結束，請用新的 Email 重新登入。",
+    body: `新的 Email 已完成驗證並成為登入帳號。為了安全，所有裝置的登入狀態都已結束，請用新的 Email 重新登入。${ACCOUNT_EMAIL_REVERT_WINDOW_NOTICE}。`,
   },
   invalid: {
     tone: "warning",
@@ -62,6 +62,7 @@ export default async function VerifyEmailChangePage({ searchParams }: { searchPa
         <p className="mt-4 text-sm leading-6 text-slate-700">要變更的帳號，目前登入 Email 為 <strong className="break-all">{link.maskedCurrentEmail}</strong>。</p>
         <p className="mt-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm font-semibold text-amber-900">若不認得此帳號請勿確認，直接關閉這個頁面即可。</p>
         <p className="mt-3 text-sm leading-6 text-slate-700">按下按鈕後，這個帳號的登入 Email 會改成收到這封信的 Email，所有裝置的登入狀態都會結束，之後請用新的 Email 登入。</p>
+        <p className="mt-3 text-sm leading-6 text-slate-700">{ACCOUNT_EMAIL_REVERT_WINDOW_NOTICE}。</p>
         <NativePostForm
           action="/api/auth/email-change/confirm"
           idleLabel="確認變更登入 Email"

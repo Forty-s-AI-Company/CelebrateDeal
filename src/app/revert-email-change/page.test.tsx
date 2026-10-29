@@ -16,15 +16,18 @@ beforeEach(() => {
 
 describe("/revert-email-change", () => {
   it.each([
-    ["restore", "還原登入 Email", "已被改成其他信箱"],
-    ["cancel", "取消變更", "尚未完成的登入 Email 變更"],
-  ] as const)("shows a %s button that posts the token, without any address", async (mode, button, explanation) => {
+    ["restore", "還原登入 Email", "已被改成其他信箱", "原本的密碼會停用"],
+    ["cancel", "取消變更", "尚未完成的登入 Email 變更", "密碼與登入狀態都不會變動"],
+  ] as const)("shows a %s button that posts the token, without any address", async (mode, button, explanation, consequence) => {
     mocks.describe.mockResolvedValue({ mode });
     const html = await render({ token: "aer1.payload.signature" });
     expect(html).toContain("不是我操作，還原 Email");
     expect(html).toContain(button);
     expect(html).toContain(explanation);
-    expect(html).toContain("7 天內不能再自行變更登入 Email");
+    expect(html).toContain(consequence);
+    // Only a real revert locks the account down; a cancel sets no change lock.
+    if (mode === "restore") expect(html).toContain("7 天內不能再自行變更登入 Email");
+    else expect(html).not.toContain("天內不能再自行變更");
     expect(html).toContain('action="/api/auth/email-change/revert"');
     expect(html).toContain('method="post"');
     expect(html).toContain('name="token" value="aer1.payload.signature"');
@@ -49,5 +52,20 @@ describe("/revert-email-change", () => {
     expect(html).toContain(title);
     expect(html).toContain('href="/password-reset/request"');
     expect(mocks.describe).not.toHaveBeenCalled();
+  });
+
+  it("tells the owner after a revert that the password stopped working and links to the reset", async () => {
+    const html = await render({ status: "reverted" });
+    expect(html).toContain("請重設密碼");
+    expect(html).toContain("原本的密碼已停用");
+    expect(html).toContain("兩步驟驗證與備用碼也已移除");
+    expect(html).toContain("7 天內不能再自行變更登入 Email");
+    expect(html).toContain('href="/password-reset/request"');
+  });
+
+  it("tells the owner after a cancel that nothing else changed", async () => {
+    const html = await render({ status: "cancelled" });
+    expect(html).toContain("密碼與登入狀態都沒有變動");
+    expect(html).not.toContain("天內不能再自行變更");
   });
 });

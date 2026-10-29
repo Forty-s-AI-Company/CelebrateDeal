@@ -73,7 +73,9 @@ const errorMessages: Record<string, string> = {
   email_change_same: "新 Email 與目前的登入 Email 相同。",
   email_change_rate_limited: "變更登入 Email 的嘗試次數過多，請稍候一小時再試。",
   email_change_unavailable: "變更登入 Email 的保護機制暫時無法使用，請稍後再試。",
-  email_change_locked: "這個帳號最近用原 Email 的「不是我操作，還原 Email」連結撤銷過變更，7 天內不能再自行變更登入 Email。如需協助請聯絡客服。",
+  email_change_locked: "這個帳號最近用原 Email 的「不是我操作，還原 Email」連結還原過登入 Email，7 天內不能再自行變更登入 Email。如需協助請聯絡客服。",
+  email_revert_void_mfa_required: "需要先啟用兩步驟驗證才能作廢舊信箱的還原連結。沒有兩步驟驗證的帳號請聯絡客服協助。",
+  email_revert_void_unavailable: "目前無法作廢舊信箱的還原連結，請重新登入後再試，或聯絡客服。",
 };
 
 const updatedMessages: Record<string, string> = {
@@ -90,6 +92,7 @@ const updatedMessages: Record<string, string> = {
   recovery_regenerated: "已重新產生 recovery codes，舊的 codes 已失效。",
   password_reset_smoke: "已寄出 password reset 測試信到目前帳號 Email。",
   email_change_sent: `已寄出驗證信。如果新的 Email 可以使用，請在 ${ACCOUNT_EMAIL_CHANGE_TTL_MINUTES} 分鐘內開啟寄到新 Email 的連結完成變更；目前的 Email 也會收到通知。完成前請繼續用目前的 Email 登入。`,
+  email_revert_links_voided: "已作廢寄到舊信箱的所有還原連結，舊信箱不能再還原或取消登入 Email 變更。",
 };
 
 export default async function SecuritySettingsPage({

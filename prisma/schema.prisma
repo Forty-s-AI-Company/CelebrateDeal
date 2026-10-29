@@ -344,8 +344,12 @@ model AccountRateLimitBucket {
 /// Revert link: usable while `revertedAt` and `revertRevokedAt` are NULL and
 /// `revertExpiresAt` lies ahead (the request expiry until the change
 /// completes, then seven days from completion). While a completed row's
-/// revert is usable, `previousEmail` stays reserved for this user. A used
-/// revert (`revertedAt`) blocks self-service changes for seven days.
+/// revert is usable, `previousEmail` stays reserved for this user. A revert
+/// that locked the account down (`revertedAt`) blocks self-service changes for
+/// seven days. `revertRevokedAt` ends a link without that lock: superseded (an
+/// older link's revert, a failed send), used to cancel a change that never
+/// completed, or voided by the signed-in user in security settings (MFA
+/// step-up).
 /// `syncedVendorId` names the workspace whose `Vendor.email` followed the
 /// change (no FK on purpose: reference only, guarded by predicates on use).
 model UserEmailChangeRequest {

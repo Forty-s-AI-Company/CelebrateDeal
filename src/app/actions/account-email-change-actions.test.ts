@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
   schedule: vi.fn(),
   audit: vi.fn(),
   lockedUntil: vi.fn(),
+  voidLinks: vi.fn(),
 }));
 vi.mock("next/navigation", () => ({ redirect: (path: string): never => { throw new Error(`redirect:${path}`); } }));
 vi.mock("next/headers", () => ({ headers: async () => new Headers({ "cf-connecting-ip": "203.0.113.9", "x-forwarded-for": "203.0.113.9" }) }));
@@ -18,11 +19,11 @@ vi.mock("@/lib/app-url", () => ({ getCanonicalAppUrl: () => "http://127.0.0.1:31
 vi.mock("@/lib/rate-limit", () => ({ checkRateLimit: mocks.ipLimit }));
 vi.mock("@/lib/account-rate-limit", () => ({ checkAccountRateLimit: mocks.accountLimit }));
 vi.mock("@/lib/password", () => ({ verifyPasswordAsync: mocks.verifyPassword }));
-vi.mock("@/lib/account-email-change", () => ({ scheduleAccountEmailChangeRequest: mocks.schedule, accountEmailChangeLockedUntil: mocks.lockedUntil }));
+vi.mock("@/lib/account-email-change", () => ({ scheduleAccountEmailChangeRequest: mocks.schedule, accountEmailChangeLockedUntil: mocks.lockedUntil, voidAccountEmailRevertLinks: mocks.voidLinks }));
 vi.mock("@/lib/audit", () => ({ writeAuditLog: mocks.audit }));
 vi.mock("@/lib/db", () => ({ getDb: () => ({ synthetic: "db" }) }));
 
-import { requestAccountEmailChangeAction } from "./account-email-change-actions";
+import { requestAccountEmailChangeAction, voidAccountEmailRevertLinksAction } from "./account-email-change-actions";
 
 const NOW = Date.now();
 
@@ -51,6 +52,7 @@ beforeEach(() => {
   mocks.verifyPassword.mockResolvedValue(true);
   mocks.audit.mockResolvedValue(undefined);
   mocks.lockedUntil.mockResolvedValue(null);
+  mocks.voidLinks.mockResolvedValue({ status: "voided", voided: 1 });
 });
 
 describe("requesting a login email change", () => {
@@ -169,5 +171,55 @@ describe("requesting a login email change", () => {
     await expect(requestAccountEmailChangeAction(form({ newEmail: "free@example.test" }))).rejects.toThrow("redirect:/settings/security?updated=email_change_sent");
     // The action never looks up other accounts; it only hands the request on.
     expect(mocks.schedule.mock.calls.map(([input]) => input.newEmail)).toEqual(["taken@example.test", "free@example.test"]);
+  });
+});
+
+describe("voiding the old mailbox's revert links", () => {
+  const fresh = () => signedIn({ mfaFactor: { id: "factor-1" }, mfaVerifiedAt: new Date(Date.now() - 60_000) });
+
+  it("voids only the signed-in user's own links, bound to the session and factor it checked, whatever the form says", async () => {
+    mocks.auth.mockResolvedValue(fresh());
+    const forged = new FormData();
+    forged.set("userId", "someone-else");
+    forged.set("requestId", "request-of-someone-else");
+    await expect(voidAccountEmailRevertLinksAction(forged)).rejects.toThrow("redirect:/settings/security?updated=email_revert_links_voided");
+    expect(mocks.auth).toHaveBeenCalledWith({ nextPath: "/settings/security" });
+    expect(mocks.voidLinks).toHaveBeenCalledExactlyOnceWith({ userId: "user-1", sessionId: "session-1", factorId: "factor-1", vendorId: "vendor-1", actorLabel: "owner" });
+  });
+
+  it("answers the same when no link was outstanding", async () => {
+    mocks.auth.mockResolvedValue(fresh());
+    mocks.voidLinks.mockResolvedValue({ status: "voided", voided: 0 });
+    await expect(voidAccountEmailRevertLinksAction(new FormData())).rejects.toThrow("redirect:/settings/security?updated=email_revert_links_voided");
+  });
+
+  it("checks CSRF before anything else", async () => {
+    mocks.security.mockRejectedValue(new Error("csrf"));
+    await expect(voidAccountEmailRevertLinksAction(new FormData())).rejects.toThrow("csrf");
+    expect(mocks.auth).not.toHaveBeenCalled();
+    expect(mocks.voidLinks).not.toHaveBeenCalled();
+  });
+
+  it("refuses an account without MFA and points it to support instead of enrolment", async () => {
+    await expect(voidAccountEmailRevertLinksAction(new FormData())).rejects.toThrow("redirect:/settings/security?error=email_revert_void_mfa_required");
+    mocks.auth.mockResolvedValue(signedIn({ platformRole: "platform_admin" }));
+    await expect(voidAccountEmailRevertLinksAction(new FormData())).rejects.toThrow("redirect:/settings/security?error=email_revert_void_mfa_required");
+    expect(mocks.voidLinks).not.toHaveBeenCalled();
+  });
+
+  it("requires a recent MFA step-up", async () => {
+    for (const mfaVerifiedAt of [null, new Date(Date.now() - 60 * 60_000)]) {
+      mocks.auth.mockResolvedValue(signedIn({ mfaFactor: { id: "factor-1" }, mfaVerifiedAt }));
+      await expect(voidAccountEmailRevertLinksAction(new FormData())).rejects.toThrow("redirect:/mfa/verify?reason=step_up&next=%2Fsettings%2Fsecurity");
+    }
+    expect(mocks.voidLinks).not.toHaveBeenCalled();
+  });
+
+  it("fails closed when the session or factor changed meanwhile, or the database is unavailable", async () => {
+    mocks.auth.mockResolvedValue(fresh());
+    mocks.voidLinks.mockResolvedValue({ status: "stale", voided: 0 });
+    await expect(voidAccountEmailRevertLinksAction(new FormData())).rejects.toThrow("redirect:/settings/security?error=email_revert_void_unavailable");
+    mocks.voidLinks.mockRejectedValue(new Error("database down"));
+    await expect(voidAccountEmailRevertLinksAction(new FormData())).rejects.toThrow("redirect:/settings/security?error=email_revert_void_unavailable");
   });
 });
