@@ -80,7 +80,7 @@ test("WP-88 verifies every guarded page belongs to a browser-proven direct-URL g
 
   // These counts are intentionally exact. A new protected page must update
   // this matrix, so it cannot silently evade direct-URL review.
-  expect(sourceFiles).toHaveLength(98);
+  expect(sourceFiles).toHaveLength(99);
   expect(familyCounts).toEqual({
     vendorContext: 7,
     vendorManagerMember: 2,
@@ -89,7 +89,7 @@ test("WP-88 verifies every guarded page belongs to a browser-proven direct-URL g
     vendorManager: 57,
     vendorFinance: 12,
     authenticated: 1,
-    platformFinance: 14,
+    platformFinance: 15,
   });
   const courseCommunityPage=path.join(workspaceRoot,"src","app","(app)","products","[id]","community","page.tsx");
   expect(sourceFiles).toContain(courseCommunityPage);
@@ -106,6 +106,10 @@ test("WP-88 verifies every guarded page belongs to a browser-proven direct-URL g
   const merchantInvitationsPage = path.join(workspaceRoot, "src", "app", "admin", "merchant-invitations", "page.tsx");
   expect(sourceFiles).toContain(merchantInvitationsPage);
   expect(guardFor(readFileSync(merchantInvitationsPage, "utf8"))).toBe("platformFinance");
+  // Accounts a login email change revert put on security hold: platform support only.
+  const accountHoldsPage = path.join(workspaceRoot, "src", "app", "admin", "account-holds", "page.tsx");
+  expect(sourceFiles).toContain(accountHoldsPage);
+  expect(guardFor(readFileSync(accountHoldsPage, "utf8"))).toBe("platformFinance");
 
   const suffix = randomUUID().replace(/-/g, "");
   const vendor = await db.vendor.create({
@@ -140,7 +144,7 @@ test("WP-88 verifies every guarded page belongs to a browser-proven direct-URL g
     const anonymous = await browser.newContext();
     contexts.push(anonymous);
     const anonymousPage = await anonymous.newPage();
-    for (const protectedPath of ["/dashboard", "/products/new", "/billing/usage", "/team-templates", "/admin/billing/dashboard"]) {
+    for (const protectedPath of ["/dashboard", "/products/new", "/billing/usage", "/team-templates", "/admin/billing/dashboard", "/admin/account-holds"]) {
       await anonymousPage.goto(protectedPath);
       await expect(anonymousPage).toHaveURL(/\/login(?:\?|$)/);
       await expect(anonymousPage.getByRole("button", { name: "登入" })).toBeVisible();
@@ -191,6 +195,10 @@ test("WP-88 verifies every guarded page belongs to a browser-proven direct-URL g
     await expect(platformSession.page).toHaveURL(/\/admin\/merchant-invitations$/);
     expect(invitationsResponse?.status()).toBe(200);
     await expect(platformSession.page.getByRole("heading", { name: "商家邀請", exact: true })).toBeVisible();
+    const holdsResponse = await platformSession.page.goto("/admin/account-holds");
+    await expect(platformSession.page).toHaveURL(/\/admin\/account-holds$/);
+    expect(holdsResponse?.status()).toBe(200);
+    await expect(platformSession.page.getByRole("heading", { name: "帳號安全暫停", exact: true })).toBeVisible();
 
     await ownerSession.page.goto("/admin/billing/dashboard");
     await expect(ownerSession.page).toHaveURL(/\/dashboard$/);
@@ -198,6 +206,9 @@ test("WP-88 verifies every guarded page belongs to a browser-proven direct-URL g
     await ownerSession.page.goto("/admin/merchant-invitations");
     await expect(ownerSession.page).toHaveURL(/\/dashboard$/);
     await expect(ownerSession.page.getByRole("heading", { name: "商家邀請", exact: true })).toHaveCount(0);
+    await ownerSession.page.goto("/admin/account-holds");
+    await expect(ownerSession.page).toHaveURL(/\/dashboard$/);
+    await expect(ownerSession.page.getByRole("heading", { name: "帳號安全暫停", exact: true })).toHaveCount(0);
   } finally {
     await Promise.all(contexts.map((context) => context.close()));
     await db.vendor.deleteMany({ where: { id: vendor.id } });
