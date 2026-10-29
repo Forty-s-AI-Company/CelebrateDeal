@@ -40,6 +40,21 @@
 - 每次執行都會在 `Preview – celebrate-deal-staging` environment 留下一筆 deployment 紀錄（每天約 290 筆）。這個 environment 也是 Vercel 預覽部署使用的，還存著 DB URL、Vercel token 等 secret。最小權限的做法是 owner 在 GitHub 新增只存 `JOB_SECRET`、只允許 `master` 的專屬 environment（例如 `staging-scheduler`），再把 workflow 的 `environment` 改過去（PR #447 審查 n4，待 owner 設定）。
 - 若該 environment 設了「required reviewers」，每次排程都會卡在等待核准。合併前請確認該 environment 沒有 reviewer 規則，只有分支限制。
 
+### 3.0 Heartbeat：真正的 5 分鐘觸發（B-1）
+
+GitHub 的 `*/5 * * * *` 實測約每 2～5 小時才跑一次（中位數 184 分鐘），所以每 5 分鐘的工作改由 `.github/workflows/scheduled-jobs-heartbeat.yml` 驅動。不花錢、不需要外部帳號：公開 repo 的標準 runner 分鐘數不限。
+
+- 運作：一個 job 跑約 5 小時 40 分鐘（`HEARTBEAT_DURATION_SECONDS=20400`，job `timeout-minutes: 350`，低於 6 小時上限）的迴圈，每 300 秒呼叫一次 `email-deliveries`、`line-notifications`、`webhook-retry`（`vars.SCHEDULED_JOBS_ENABLE_LIVE_MEDIA=true` 時加上 `live-media`；變數只在每輪開頭讀取，改動最多 5 小時 40 分鐘後生效）。每日工作（電子發票、billing-cycle、data-retention）仍只走 `scheduled-jobs.yml` 的每日排程。
+- 共用同一個 runner：迴圈呼叫 `scripts/scheduled-jobs-runner.mjs`，與 `scheduled-jobs.yml` 相同的 `JOB_SECRET`、同一行輸出格式與結果判定，兩邊不會各改各的。
+- 單次失敗不中斷迴圈：該行輸出 `::error::`，迴圈繼續，整輪結束時只要有失敗就讓 run 標紅。`JOB_SECRET` 或 token 沒設、或讀不到 heartbeat workflow，啟動時立刻失敗，且不會自己重新啟動。
+- 接力：迴圈在最後一個 tick 前用 `gh workflow run scheduled-jobs-heartbeat.yml --ref master` 啟動下一輪（`GITHUB_TOKEN`，job 層級 `actions: write`）。`concurrency: scheduled-jobs-heartbeat`（`cancel-in-progress: false`）讓下一輪排隊等上一輪結束，最多只有一輪在跑、一輪在排隊，多出來的啟動會被丟棄，不會堆積。啟動前會先用 `gh run list` 確認沒有 queued／in progress 的 heartbeat，已有就不再啟動（`scripts/scheduled-jobs-ensure-heartbeat.sh`）。
+- 自癒：`scheduled-jobs.yml` 每次 `*/5` 排程（雖然很稀疏）會由 `heartbeat-starter` job 呼叫同一支 ensure 腳本，若沒有 heartbeat 在跑就啟動一個。`scheduled-jobs.yml` 自己的直接呼叫保留作為備援；手動 `workflow_dispatch -f job=...` 不變。
+- 預期效果：Actions → `Scheduled jobs heartbeat (staging)` 同時只有一個 in progress 的 run；Vercel staging Logs 看到的 POST 每 5 分鐘一輪（`scheduled-jobs.yml` 備援偶爾重疊，各 job 有 claim lease，不會重複處理）。
+- 部署後第一次要手動啟動：master 合併後到 Actions → `Scheduled jobs heartbeat (staging)` → Run workflow（branch 選 `master`），或等下一次 `*/5` 排程由 `heartbeat-starter` 啟動。
+- 檢查：`gh run list --workflow scheduled-jobs-heartbeat.yml --limit 5`，應該有一個 `in_progress`，上一個 `completed` 的結束時間與它的開始時間相接；開啟 in progress 的 run 看日誌，每 5 分鐘有 `heartbeat tick=N` 與三行 `scheduled-job name=... outcome=ok`。
+- 停止：先在 Actions 頁面 Disable `Scheduled jobs heartbeat (staging)`（之後不會再被啟動，包含 `heartbeat-starter`），再取消正在跑的那個 run（`gh run cancel <run-id>`）；只 disable 的話，目前這一輪會跑到結束且啟動不了下一輪。暫停也可設 `SCHEDULED_JOBS_PAUSED=true`，但它只擋新啟動的 run，不影響進行中的迴圈。恢復：Enable workflow 後手動 Run workflow 一次。
+- 限制：這個 job 同時持有 `JOB_SECRET`（environment secret）與 `actions: write`（只能操作 Actions，不能改程式碼）；每輪（約 5 小時 40 分鐘）在 `Preview – celebrate-deal-staging` environment 留一筆 deployment，遠少於原本的每天約 290 筆。若 GitHub Actions 整體當機，迴圈會中斷，之後由 `heartbeat-starter` 或手動重啟。
+
 ### 怎麼確認「真的有被呼叫」
 
 1. Actions → `Scheduled background jobs (staging)` → 任一 run。

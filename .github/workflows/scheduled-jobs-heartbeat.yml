@@ -1,0 +1,72 @@
+name: Scheduled jobs heartbeat (staging)
+
+# B-1 mitigation: GitHub's "*/5 * * * *" schedule really fires every 2-5 hours, so
+# this workflow is a long-running loop that calls the frequent staging jobs every
+# 5 minutes. Each run lasts 5h40m (under the 6h job limit) and queues its own
+# successor shortly before it ends.
+# Runbook: docs/launch/scheduled-jobs-runbook.md
+# - Started by workflow_dispatch: manually, by its predecessor, or by the
+#   `heartbeat-starter` job in scheduled-jobs.yml when no heartbeat is active.
+# - Calls the same runner (scripts/scheduled-jobs-runner.mjs) as scheduled-jobs.yml.
+# - Daily jobs (electronic-invoices, ...) stay on scheduled-jobs.yml only.
+# Stop: disable this workflow AND cancel the running run (see the runbook).
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# One heartbeat at a time. Extra runs wait as "pending"; GitHub keeps one pending
+# run per group and replaces older pending ones, so duplicates never pile up.
+# cancel-in-progress stays false so a live loop is never killed by a newcomer.
+concurrency:
+  group: scheduled-jobs-heartbeat
+  cancel-in-progress: false
+
+jobs:
+  heartbeat:
+    if: ${{ github.ref == 'refs/heads/master' && github.ref_protected && vars.SCHEDULED_JOBS_PAUSED != 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    environment: Preview – celebrate-deal-staging
+    # actions: write is needed only to dispatch the successor run.
+    permissions:
+      contents: read
+      actions: write
+    steps:
+      - name: Checkout fixed scheduler scripts
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+          sparse-checkout: |
+            scripts/scheduled-jobs-runner.mjs
+            scripts/scheduled-jobs-heartbeat.sh
+            scripts/scheduled-jobs-ensure-heartbeat.sh
+          sparse-checkout-cone-mode: false
+
+      - name: Setup Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+
+      - name: Heartbeat loop
+        id: loop
+        env:
+          JOB_SECRET: ${{ secrets.JOB_SECRET }}
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          HEARTBEAT_DURATION_SECONDS: "20400"
+          HEARTBEAT_INTERVAL_SECONDS: "300"
+          HEARTBEAT_JOBS: ${{ vars.SCHEDULED_JOBS_ENABLE_LIVE_MEDIA == 'true' && 'email-deliveries line-notifications webhook-retry live-media' || 'email-deliveries line-notifications webhook-retry' }}
+        run: bash scripts/scheduled-jobs-heartbeat.sh
+
+      # Safety net when the loop died early (crash, timeout): make sure a
+      # successor exists. A no-op when the loop already queued one, and skipped when the
+      # loop failed its preflight (bad secret/token) so a misconfiguration cannot respawn.
+      - name: Ensure a successor heartbeat
+        if: ${{ always() && steps.loop.outputs.preflight == 'ok' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          HEARTBEAT_EXCLUDE_RUN_ID: ${{ github.run_id }}
+        run: bash scripts/scheduled-jobs-ensure-heartbeat.sh
