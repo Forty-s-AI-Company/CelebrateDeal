@@ -101,6 +101,14 @@ async function type(input: HTMLInputElement, value: string) {
   await act(async () => { input.dispatchEvent(new Event("input", { bubbles: true })); });
 }
 
+/** The nearest inert element at or above `element`, as the browser's inert subtree would apply. */
+function inertAncestor(element: Element) {
+  for (let node: Element | null = element; node; node = node.parentElement) {
+    if ((node as HTMLElement).inert) return node;
+  }
+  return null;
+}
+
 async function settle() {
   for (let index = 0; index < 5; index += 1) await act(async () => { await Promise.resolve(); });
 }
@@ -298,12 +306,17 @@ describe("LiveStepperForm publish submit", () => {
     await act(async () => { button("建立並排程").click(); });
     await act(async () => { button("確認建立並排程", control('[role="alertdialog"]')).click(); });
     await settle();
-    expect(form.inert).toBe(true);
     expect(form.getAttribute("aria-busy")).toBe("true");
+    // The studio is locked, but the confirmation inside the form stays reachable.
+    const dialog = control('[role="alertdialog"]');
+    expect(inertAncestor(dialog)).toBeNull();
+    expect(inertAncestor(control('[name="title"]'))).not.toBeNull();
+    expect(inertAncestor(button("建立並排程"))).not.toBeNull();
 
     await act(async () => { finishAction(); });
     await settle();
-    expect(form.inert).toBe(false);
+    expect(inertAncestor(control('[name="title"]'))).toBeNull();
+    expect(Array.from(container.querySelectorAll("*")).some((element) => (element as HTMLElement).inert)).toBe(false);
     expect(container.querySelector('[role="alertdialog"]')).toBeNull();
   });
 
@@ -353,6 +366,33 @@ describe("LiveStepperForm edit page status actions", () => {
     await settle();
 
     expect(mocks.saveLiveStudioDraft).toHaveBeenCalledWith(expect.objectContaining({ draftId: "draft-edit", revision: 6 }));
+  });
+
+  it("keeps unsaved edits when an external newer revision of the same draft arrives", async () => {
+    const props = { liveId: "live-1", currentStatus: "scheduled" };
+    await act(async () => { root.render(studio(editDraft, props)); });
+    const title = control('[name="title"]');
+    await type(title, "尚未儲存的新標題");
+
+    await act(async () => { root.render(studio({ ...editDraft, revision: 6 }, props)); });
+
+    expect(control('[name="title"]')).toBe(title);
+    expect(control('[name="title"]').value).toBe("尚未儲存的新標題");
+    // The external revision is not adopted: the next save compares against what
+    // this studio last saw, so the server reports a conflict instead of a silent overwrite.
+    await act(async () => { button("立即儲存草稿").click(); });
+    await settle();
+    expect(mocks.saveLiveStudioDraft).toHaveBeenCalledWith(expect.objectContaining({ draftId: "draft-edit", revision: 4 }));
+  });
+
+  it("still remounts for an external revision once nothing is unsaved", async () => {
+    const props = { liveId: "live-1", currentStatus: "scheduled" };
+    await act(async () => { root.render(studio(editDraft, props)); });
+    const title = control('[name="title"]');
+    await act(async () => { root.render(studio({ ...editDraft, revision: 6 }, props)); });
+
+    expect(control('[name="title"]')).not.toBe(title);
+    expect(control('[name="liveDraftRevision"]').value).toBe("6");
   });
 
   it("keeps the studio when a refresh only reports the revision it already saved", async () => {

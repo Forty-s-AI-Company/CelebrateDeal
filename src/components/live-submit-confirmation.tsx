@@ -99,10 +99,36 @@ export function LiveFormPendingLock({ formRef }: { formRef: { current: HTMLFormE
   useEffect(() => {
     const form = formRef.current;
     if (!form) return;
-    form.inert = pending;
     form.setAttribute("aria-busy", String(pending));
+    if (!pending) return;
+    // The confirmation lives inside the form. Inerting the whole form would
+    // also freeze the dialog: focus drops to <body> and assistive tech loses
+    // the pending message. Lock everything except the dialog's own branch.
+    const dialog = form.querySelector('[role="alertdialog"]');
+    const locked = dialog ? lockAllExcept(form, dialog) : lockForm(form);
+    return () => { for (const element of locked) element.inert = false; };
   }, [formRef, pending]);
   return null;
+}
+
+function lockForm(form: HTMLFormElement) {
+  form.inert = true;
+  return [form];
+}
+
+/** Marks every element outside the path to `keep` inert; returns what it locked. */
+function lockAllExcept(root: HTMLElement, keep: Element) {
+  const locked: HTMLElement[] = [];
+  let node: Element = root;
+  while (node !== keep) {
+    const next = Array.from(node.children).find((child) => child === keep || child.contains(keep));
+    if (!next) break;
+    for (const child of Array.from(node.children)) {
+      if (child !== next && child instanceof HTMLElement) { child.inert = true; locked.push(child); }
+    }
+    node = next;
+  }
+  return locked;
 }
 
 function LiveSubmitConfirmDialog({

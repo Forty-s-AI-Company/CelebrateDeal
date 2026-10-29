@@ -1108,6 +1108,19 @@ type LiveStudioSession = {
   generation: number;
 };
 
+/** Autosave states that still hold edits the server has not accepted. */
+const unsavedDraftStatuses: ReadonlySet<string> = new Set(["dirty", "saving", "error", "conflict"]);
+
+/** Same draft and context, only a newer revision than this studio holds. */
+function isExternalRevisionOnly(session: LiveStudioSession, next: LiveStudioIdentity) {
+  const previous = session.requested;
+  return next.draftId !== "" && next.draftId === session.adoptedDraftId
+    && next.revision > session.adoptedRevision
+    && next.error === previous.error
+    && next.invalidField === previous.invalidField
+    && next.currentStatus === previous.currentStatus;
+}
+
 function sameIdentity(left: LiveStudioIdentity, right: LiveStudioIdentity) {
   return left.draftId === right.draftId && left.revision === right.revision && left.error === right.error
     && left.invalidField === right.invalidField && left.currentStatus === right.currentStatus;
@@ -1132,6 +1145,11 @@ function isOwnDraftCatchUp(session: LiveStudioSession, next: LiveStudioIdentity)
  * Remount whenever the server hands over a different draft, a newer revision,
  * another status or a new submit error — except when the URL only caught up
  * with the draft and revision this studio already autosaved.
+ *
+ * An external newer revision of the same draft never remounts a studio that
+ * still holds unsaved edits: the form keeps them and the revision is not
+ * adopted, so the next save reports a conflict and the user chooses between
+ * 「載入最新」 and 「以我的覆蓋」 instead of silently losing the typing.
  */
 export function LiveStepperForm(props: LiveStepperFormProps) {
   const requested: LiveStudioIdentity = {
@@ -1144,9 +1162,10 @@ export function LiveStepperForm(props: LiveStepperFormProps) {
   const [session, setSession] = useState<LiveStudioSession>(() => ({
     requested, adoptedDraftId: requested.draftId, adoptedRevision: requested.revision, generation: 0,
   }));
+  const [hasUnsavedEdits, setHasUnsavedEdits] = useState(false);
   let current = session;
   if (!sameIdentity(session.requested, requested)) {
-    current = isOwnDraftCatchUp(session, requested)
+    current = isOwnDraftCatchUp(session, requested) || (hasUnsavedEdits && isExternalRevisionOnly(session, requested))
       ? { ...session, requested }
       : { requested, adoptedDraftId: requested.draftId, adoptedRevision: requested.revision, generation: session.generation + 1 };
     setSession(current);
@@ -1156,7 +1175,7 @@ export function LiveStepperForm(props: LiveStepperFormProps) {
       ? latest
       : { ...latest, adoptedDraftId: draftId, adoptedRevision: revision });
   }, []);
-  return <LiveStudioStepperForm key={current.generation} {...props} onDraftSaved={adoptDraft} />;
+  return <LiveStudioStepperForm key={current.generation} {...props} onDraftSaved={adoptDraft} onUnsavedChange={setHasUnsavedEdits} />;
 }
 
 function useReportedDraft(draftId: string, revision: number | null, onDraftSaved?: (draftId: string, revision: number) => void) {
@@ -1223,7 +1242,11 @@ export function LiveStudioStepperForm({
   currentStatus = "draft",
   timeZone,
   onDraftSaved,
-}: LiveStepperFormProps & { onDraftSaved?: (draftId: string, revision: number) => void }) {
+  onUnsavedChange,
+}: LiveStepperFormProps & {
+  onDraftSaved?: (draftId: string, revision: number) => void;
+  onUnsavedChange?: (unsaved: boolean) => void;
+}) {
   const initialValues = initialDraft?.payload ?? suppliedInitialValues ?? emptyLiveStudioDraft();
   const registrationTemplates = templates.filter((template) => template.trigger === "registration_confirmed");
   const notificationTemplates = templates.filter((template) => template.trigger === "live_reminder" || template.trigger === "post_live_followup");
@@ -1269,6 +1292,8 @@ export function LiveStudioStepperForm({
   });
   useLiveStudioPresetSave(studioPreset, draft.scheduleSave);
   useReportedDraft(draft.draftId, draft.revision, onDraftSaved);
+  const unsaved = unsavedDraftStatuses.has(draft.status);
+  useEffect(() => { onUnsavedChange?.(unsaved); }, [unsaved, onUnsavedChange]);
   const submitFlush = useSubmitFlushGuard();
   const preview = buildLivePreview(previewTitle, previewAccentCopy, products, selectedProductIds); const statusAction = liveId ? liveStatusAction(currentStatus) : null;
   const publishReadiness = buildLivePublishReadiness({ studioPreset, products, productIds: selectedProductIds, videos, videoId: selectedVideoId, forms, formId: selectedFormId, templates: registrationTemplates, templateId: selectedTemplateId, scripts, scriptId: selectedScriptId });
