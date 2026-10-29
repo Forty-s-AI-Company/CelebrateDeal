@@ -81,6 +81,15 @@ describe("live reminder reconciliation snapshots and queue", () => {
     expect(snapshot({ liveStatus: "ended" }).isDeliverable).toBe(false);
   });
 
+  it("makes an active evergreen live undeliverable without changing any other live's digest", () => {
+    const original = snapshot();
+    expect(snapshot({ evergreenActive: false }).configDigest).toBe(original.configDigest);
+    const evergreen = snapshot({ evergreenActive: true });
+    expect(evergreen.isDeliverable).toBe(false);
+    expect(evergreen.configDigest).not.toBe(original.configDigest);
+    expect(evergreen).not.toHaveProperty("evergreenActive");
+  });
+
   it("supersedes stale pending work and creates only one deterministic job", async () => {
     const db = {
       liveReminderReconciliationJob: {
@@ -244,6 +253,30 @@ describe("processLiveReminderReconciliationJobs", () => {
     }));
     const cursorWrite = db.liveReminderReconciliationJob.updateMany.mock.calls.at(-1)?.[0];
     expect(cursorWrite.data).toMatchObject({ cursorId: "verified-b", scannedCount: { increment: 2 }, scheduledCount: { increment: 2 } });
+  });
+
+  it("cancels queued reminders instead of scheduling when the live became an active evergreen webinar", async () => {
+    const db = processingDb();
+    db.live.findFirst.mockResolvedValue({
+      ...(await db.live.findFirst()),
+      isEvergreen: true, streamMode: "vod", evergreenScheduleMode: "just_in_time", evergreenIntervalMinutes: 15,
+      evergreenDailyTimes: [], evergreenSessionStartAt: null, video: { durationSec: 1_800 },
+    });
+    db.live.findFirst.mockClear();
+    db.emailDelivery.updateMany.mockResolvedValue({ count: 3 });
+    mocks.db = db;
+
+    await expect(processLiveReminderReconciliationJobs({ limit: 1, batchSize: 2, now })).resolves.toEqual([
+      { jobId: "job-1", status: "superseded" },
+    ]);
+    expect(mocks.ensureLiveReminderDelivery).not.toHaveBeenCalled();
+    expect(db.emailDelivery.updateMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({ vendorId: "vendor-1", sourceLiveId: "live-1", trigger: "live_reminder" }),
+      data: expect.objectContaining({ status: "superseded" }),
+    }));
+    expect(db.live.findFirst).toHaveBeenCalledWith(expect.objectContaining({
+      select: expect.objectContaining({ isEvergreen: true, video: { select: { durationSec: true } } }),
+    }));
   });
 
   it("stops the claimed batch when the transactional config guard is no longer current", async () => {

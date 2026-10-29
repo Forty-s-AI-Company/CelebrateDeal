@@ -15,6 +15,7 @@ import { isLeadCaptureFormNode, pageDocumentRendersRegistrationForm, surveyLeadF
 import { getSalesProjectScope, requireEditableSalesProjectScope } from "@/lib/sales-project-scope";
 
 import { hasDirectWebinarVideo } from "@/lib/funnel-webinar-media";
+import { EVERGREEN_ACTIVATION_SELECT, isActiveEvergreenLive, type EvergreenActivationRecord } from "@/lib/evergreen-activation";
 import { isLiveVideoReady, type LiveVideoReadiness } from "@/lib/live-video-readiness";
 import { parseRegistrationFormFields, type RegistrationFormFieldSpec } from "@/lib/registration-form-fields";
 import { listFunnelCommerceProducts, publicFunnelCommerceViews, validateFunnelCommerceBindings } from "@/lib/funnel-commerce-service";
@@ -61,10 +62,11 @@ export type PublicFunnelWebinarResource = {
   /** `isEvergreen` is present only when the Live's evergreen schedule governs playback. */
   live: { id: string; slug: string; videoId: string; videoTitle: string; isEvergreen?: true };
 };
-const videoSelect = { id: true, vendorId: true, title: true, sourceType: true, status: true, cloudflareReadyToStream: true, cloudflareLiveInputUid: true, liveInputStatus: true } as const;
-/** Same activation rule as evergreenScheduleForLive: an evergreen VOD the merchant has not ended. */
-function isEvergreenLiveRecord(live: Pick<LiveRecord, "isEvergreen" | "streamMode" | "status"> | null | undefined) {
-  return live?.isEvergreen === true && live.streamMode === "vod" && (live.status === "scheduled" || live.status === "live");
+// durationSec feeds the shared evergreen activation rule.
+const videoSelect = { id: true, vendorId: true, title: true, sourceType: true, status: true, cloudflareReadyToStream: true, cloudflareLiveInputUid: true, liveInputStatus: true, durationSec: true } as const;
+/** The shared rule (evergreen-activation.ts) that the viewer page and APIs also use. */
+function isEvergreenLiveRecord(live: LiveRecord | null | undefined) {
+  return isActiveEvergreenLive(live);
 }
 function completeWebinarSteps(content: LandingPageStoredContent) {
   const steps = "flow" in content ? content.flow?.steps : undefined;
@@ -190,7 +192,7 @@ export class LandingPageScopeError extends Error {
 }
 
 type FormRecord = { id: string; slug: string; name: string; vendorId?: string; projectId?: string | null; isActive?: boolean; fields?: unknown; submitLabel?: string; successMessage?: string };
-type LiveRecord = { id: string; slug: string; title: string; status: string; scheduledAt: Date; isEvergreen?: boolean; streamMode?: string; formId?: string | null; vendorId?: string; projectId?: string | null; replayEnabled?: boolean; replayAvailableUntil?: Date | null; videoId?: string | null; video?: (LiveVideoReadiness & { id: string; vendorId: string; title: string }) | null };
+type LiveRecord = Omit<EvergreenActivationRecord, "video"> & { id: string; slug: string; title: string; scheduledAt: Date; formId?: string | null; vendorId?: string; projectId?: string | null; replayEnabled?: boolean; replayAvailableUntil?: Date | null; videoId?: string | null; video: (LiveVideoReadiness & { id: string; vendorId: string; title: string; durationSec: number | null }) | null };
 
 type LandingPageDb = Pick<PrismaClient, "landingPage" | "landingPageVersion" | "registrationForm" | "live" | "consultationEvent" | "vendor">;
 
@@ -355,7 +357,7 @@ async function validateBindings(
   if (input.liveId) {
     live = await database.live.findFirst({
       where: { id: input.liveId, vendorId: input.vendorId, projectId: input.projectId, status: { in: [...PUBLIC_LIVE_STATUSES] } },
-      select: { id: true, slug: true, title: true, status: true, scheduledAt: true, isEvergreen: true, streamMode: true, replayEnabled: true, replayAvailableUntil: true, formId: true, videoId: true, video: { select: videoSelect } },
+      select: { ...EVERGREEN_ACTIVATION_SELECT, id: true, slug: true, title: true, scheduledAt: true, replayEnabled: true, replayAvailableUntil: true, formId: true, videoId: true, video: { select: videoSelect } },
     });
     if (!live) throw new LandingPageInputError("landing_page_live_invalid");
     const liveFormId = live.formId;
@@ -474,7 +476,7 @@ export async function getLandingPageForEditor(pageId: string): Promise<LandingPa
     }),
     db().live.findMany({
       where: { vendorId: scope.vendorId, projectId: scope.projectId, status: { in: [...PUBLIC_LIVE_STATUSES] } },
-      select: { id: true, slug: true, title: true, status: true, scheduledAt: true, isEvergreen: true, streamMode: true, formId: true, videoId: true, video: { select: videoSelect } },
+      select: { ...EVERGREEN_ACTIVATION_SELECT, id: true, slug: true, title: true, scheduledAt: true, formId: true, videoId: true, video: { select: videoSelect } },
       orderBy: { scheduledAt: "desc" },
     }),
     listFunnelCommerceProducts(scope),
@@ -944,10 +946,8 @@ export async function loadPublicLandingPage(slug: string, onUnavailable?: (reaso
               id: true,
               slug: true,
               title: true,
-              status: true,
               scheduledAt: true,
-              isEvergreen: true,
-              streamMode: true,
+              ...EVERGREEN_ACTIVATION_SELECT,
               replayEnabled: true,
               replayAvailableUntil: true,
               formId: true,

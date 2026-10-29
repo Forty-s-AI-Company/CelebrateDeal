@@ -9,6 +9,7 @@ import {
 } from "@/lib/email-delivery-pii";
 import { hasOnlySupportedMessageTemplateVariables, renderMessageTemplate } from "@/lib/message-template";
 import { createLiveViewerUrl } from "@/lib/live-public-url";
+import { EVERGREEN_ACTIVATION_SELECT, isActiveEvergreenLive, type EvergreenActivationRecord } from "@/lib/evergreen-activation";
 import { captureOperationalError } from "@/lib/monitoring";
 import {
   LIVE_NOTIFICATION_DELIVERY_TRIGGERS,
@@ -40,7 +41,7 @@ type NotificationRule = {
   messageTemplate: NotificationTemplate;
 };
 
-type NotificationLive = {
+type NotificationLive = EvergreenActivationRecord & {
   id: string;
   vendorId: string;
   slug: string;
@@ -142,7 +143,17 @@ function ensureUnsubscribeFooter(body: string, unsubscribeUrl: string) {
   return rendered.includes(unsubscribeUrl) ? rendered : [rendered, `退訂：${unsubscribeUrl}`].filter(Boolean).join("\n\n");
 }
 
+/** Prisma select for the lifecycle fields every notification snapshot reads. */
+const NOTIFICATION_LIVE_SELECT = {
+  ...EVERGREEN_ACTIVATION_SELECT,
+  id: true, vendorId: true, slug: true, title: true, scheduledAt: true, startedAt: true, endedAt: true, liveReminderTemplateId: true,
+  video: { select: { durationSec: true } },
+} as const;
+
 function isLiveEligible(live: NotificationLive, trigger: LiveNotificationDeliveryTrigger, now: Date) {
+  // before_live / during_live anchor on the shared scheduledAt / startedAt; an
+  // active evergreen Live gives each visitor their own session instead.
+  if (isActiveEvergreenLive(live, { now })) return false;
   if (trigger === "before_live") {
     return live.status === "scheduled" && !live.startedAt && now < live.scheduledAt;
   }
@@ -262,7 +273,7 @@ async function readCurrentNotificationSnapshot(
     db.live.findFirst({
       where: { id: input.liveId, vendorId: input.vendorId },
       select: {
-        id: true, vendorId: true, slug: true, title: true, status: true, scheduledAt: true, startedAt: true, endedAt: true, liveReminderTemplateId: true,
+        ...NOTIFICATION_LIVE_SELECT,
         vendor: { select: { name: true, senderName: true, supportEmail: true, contactUrl: true } },
       },
     }),
@@ -398,9 +409,10 @@ async function prepareMaterializationRules(
   for (const rule of rules) {
     const live = await db.live.findFirst({
       where: { id: rule.liveId, vendorId: rule.vendorId },
-      select: { status: true, scheduledAt: true, startedAt: true, endedAt: true, liveReminderTemplateId: true },
+      select: { ...EVERGREEN_ACTIVATION_SELECT, scheduledAt: true, startedAt: true, endedAt: true, liveReminderTemplateId: true, video: { select: { durationSec: true } } },
     });
     if (!live || (rule.trigger === "before_live" && live.liveReminderTemplateId !== null)) continue;
+    if (isActiveEvergreenLive(live, { now })) continue;
     const dueAt = resolveLiveNotificationDueAt({
       trigger: rule.trigger as LiveNotificationDeliveryTrigger,
       scheduledAt: live.scheduledAt,
@@ -666,13 +678,15 @@ export async function processLegacyReminderCutovers(options: { now?: Date; limit
         const live = await tx.live.findFirst({
           where: { id: candidate.id, vendorId: candidate.vendorId, status: "scheduled", startedAt: null, scheduledAt: { gt: now }, liveReminderTemplateId: { not: null } },
           select: {
-            id: true, vendorId: true, slug: true, title: true, status: true, scheduledAt: true, startedAt: true, endedAt: true,
-            liveReminderTemplateId: true, liveReminderOffsetMinutes: true,
+            ...NOTIFICATION_LIVE_SELECT,
+            liveReminderOffsetMinutes: true,
             vendor: { select: { name: true, senderName: true, supportEmail: true, contactUrl: true } },
             notificationRules: { where: { trigger: "before_live", isActive: true }, include: { messageTemplate: true } },
           },
         });
         if (!live?.liveReminderTemplateId) throw new CutoverPreconditionError("precondition");
+        // Fixed-time reminders do not apply to an active evergreen Live.
+        if (isActiveEvergreenLive(live, { now })) throw new CutoverPreconditionError("evergreen_live");
         const equivalent = live.notificationRules.find((rule) => rule.messageTemplateId === live.liveReminderTemplateId && rule.offsetMinutes === live.liveReminderOffsetMinutes);
         if (!equivalent) throw new CutoverPreconditionError("no_equivalent_rule");
         const delivered = await tx.emailDelivery.count({

@@ -7,6 +7,7 @@ import { requireVendorManagerContext } from "@/lib/auth";
 import { auditSnapshot, writeAuditLog } from "@/lib/audit";
 import { assertServerActionSecurity } from "@/lib/csrf";
 import { getDb } from "@/lib/db";
+import { evergreenVideoDurationSeconds } from "@/lib/evergreen-activation";
 import { parseZonedDateTimeLocal } from "@/lib/zoned-date-time";
 
 const LIVE_ID = z.string().trim().min(1).max(128);
@@ -92,12 +93,20 @@ export async function updateEvergreenWebinarSettingsAction(formData: FormData) {
     select: {
       id: true,
       slug: true,
+      streamMode: true,
       videoId: true,
       video: { select: { durationSec: true } },
     },
   });
   if (!live) redirect("/lives?error=live_not_found");
   if (settings.isEvergreen && !live.videoId) redirectToSettings(live.id, "evergreen_video_required");
+  // The evergreen engine schedules a recorded video by its length. A real-time
+  // broadcast, or a video whose length is still unknown, would leave the flag
+  // on while the viewer page silently falls back to scheduledAt.
+  if (settings.isEvergreen && live.streamMode !== "vod") redirectToSettings(live.id, "evergreen_vod_required");
+  if (settings.isEvergreen && !evergreenVideoDurationSeconds(live.video?.durationSec)) {
+    redirectToSettings(live.id, "evergreen_duration_required");
+  }
 
   let sessionStartAt: Date | null = null;
   if (settings.isEvergreen && settings.sessionStartAt) {
@@ -142,14 +151,22 @@ export async function updateEvergreenWebinarSettingsAction(formData: FormData) {
   // The generated Prisma client is refreshed by the repository build after the
   // migration. Keep this narrow boundary while local generated types may lag
   // behind the schema in a shared worktree.
+  // Enabling repeats the VOD + source-video checks in the write itself, so a
+  // concurrent switch to a real-time broadcast or another video cannot slip in.
+  const where = settings.isEvergreen
+    ? { id: live.id, vendorId: vendor.id, streamMode: "vod", videoId: live.videoId }
+    : { id: live.id, vendorId: vendor.id };
   const result = await (db.live.updateMany as unknown as (args: {
-    where: { id: string; vendorId: string };
+    where: { id: string; vendorId: string; streamMode?: string; videoId?: string | null };
     data: typeof data;
   }) => Promise<{ count: number }>)({
-    where: { id: live.id, vendorId: vendor.id },
+    where,
     data,
   });
-  if (result.count !== 1) redirect("/lives?error=live_not_found");
+  if (result.count !== 1) {
+    if (settings.isEvergreen) redirectToSettings(live.id, "evergreen_live_changed");
+    redirect("/lives?error=live_not_found");
+  }
 
   await writeAuditLog({
     vendorId: vendor.id,

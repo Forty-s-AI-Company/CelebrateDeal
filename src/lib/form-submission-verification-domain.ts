@@ -1,5 +1,7 @@
 import { createHash } from "node:crypto";
 import type { PrismaClient } from "@prisma/client";
+import { EVERGREEN_ACTIVATION_SELECT, isActiveEvergreenLive } from "@/lib/evergreen-activation";
+import type { EvergreenLiveRecord } from "@/lib/evergreen-viewer-session";
 import { verifyFormSubmissionVerificationToken } from "@/lib/form-submission-verification";
 import { enqueueAuthoritativeTrackingEvent } from "@/lib/tracking-event-outbox";
 import type { TrackingBrowserContext } from "@/lib/tracking-browser-context";
@@ -24,6 +26,12 @@ export type FormSubmissionVerificationResult =
         recipientEmail: string;
         liveScheduledAt: Date;
         liveReminderOffsetMinutes: number;
+        /**
+         * Present only while the evergreen schedule governs this Live; the
+         * caller resolves the visitor's own session for {{live_start_at}} and
+         * skips fixed-time reminders.
+         */
+        evergreen: { live: EvergreenLiveRecord; vendorTimezone: string | null } | null;
         emailBrand: {
           senderName: string | null;
           supportEmail: string | null;
@@ -89,7 +97,7 @@ export async function verifyFormSubmission(
         form: {
           select: {
             vendorId: true,
-            vendor: { select: { name: true, senderName: true, supportEmail: true, contactUrl: true } },
+            vendor: { select: { name: true, senderName: true, supportEmail: true, contactUrl: true, timezone: true } },
           },
         },
         affiliateClick: {
@@ -99,11 +107,15 @@ export async function verifyFormSubmission(
           select: {
             id: true,
             vendorId: true,
+            ...EVERGREEN_ACTIVATION_SELECT,
+            replayEnabled: true,
+            replayAvailableUntil: true,
             formId: true,
             slug: true,
             title: true,
             scheduledAt: true,
             liveReminderOffsetMinutes: true,
+            video: { select: { durationSec: true } },
             messageTemplate: {
               select: {
                 id: true,
@@ -228,6 +240,9 @@ export async function verifyFormSubmission(
         recipientEmail: submission.email,
         liveScheduledAt: submission.live.scheduledAt,
         liveReminderOffsetMinutes: submission.live.liveReminderOffsetMinutes,
+        evergreen: isActiveEvergreenLive(submission.live, { vendorTimezone: submission.form.vendor.timezone, now })
+          ? { live: submission.live, vendorTimezone: submission.form.vendor.timezone }
+          : null,
         emailBrand: {
           senderName: submission.form.vendor.senderName,
           supportEmail: submission.form.vendor.supportEmail,

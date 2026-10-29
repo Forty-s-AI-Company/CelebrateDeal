@@ -1487,7 +1487,8 @@ function LivePlaybackExperience({
             onAdmissionInvalid={onAdmissionInvalid}
           />
         </div>
-        {productsAvailable && canUseLiveAdvancedInteractions(true, admissionStatus, live.admissionRequired)
+        {/* Evergreen sessions reveal offers per visitor; the server returns no ticker for them. */}
+        {productsAvailable && !live.evergreen && canUseLiveAdvancedInteractions(true, admissionStatus, live.admissionRequired)
           ? <LivePurchaseBroadcastPanel key={`${live.vendorId}:${live.id}:${admissionStatus}`}
             vendorId={live.vendorId} liveId={live.id} onAdmissionInvalid={onAdmissionInvalid} /> : null}
       </div>

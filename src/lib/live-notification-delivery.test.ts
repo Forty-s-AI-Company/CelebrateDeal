@@ -157,6 +157,50 @@ describe("canonical materialization and send-time snapshot", () => {
     expect(mocks.db.emailDelivery.create).not.toHaveBeenCalled();
   });
 
+  it("creates no before/during rows for an active evergreen live and supersedes queued ones at send time", async () => {
+    const evergreen = {
+      isEvergreen: true, streamMode: "vod", evergreenScheduleMode: "just_in_time", evergreenIntervalMinutes: 15,
+      evergreenDailyTimes: [], evergreenSessionStartAt: null, video: { durationSec: 1_800 },
+    };
+    for (const trigger of ["before_live", "during_live"] as const) {
+      mockCurrent(current(trigger, evergreen));
+      await expect(ensureLiveNotificationDelivery({ vendorId: "vendor-1", liveId: "live-1", ruleId: "rule-1", submissionId: "submission-1" }, now, { scheduleFuture: true }))
+        .resolves.toEqual({ status: "not_due" });
+    }
+    expect(mocks.db.emailDelivery.create).not.toHaveBeenCalled();
+    expect(mocks.db.live.findFirst).toHaveBeenCalledWith(expect.objectContaining({
+      select: expect.objectContaining({ isEvergreen: true, evergreenScheduleMode: true, video: { select: { durationSec: true } } }),
+    }));
+
+    // A row queued before evergreen was enabled is no longer current.
+    const queuedId = stableLiveNotificationDeliveryId({
+      vendorId: "vendor-1", liveId: "live-1", liveSlug: "new-product-live", liveTitle: "新品直播", formSubmissionId: "submission-1",
+      ruleId: "rule-1", trigger: "before_live", offsetMinutes: 60, anchor: scheduledAt,
+      template: { id: "template-1", subject: template().subject, body: template().body },
+    });
+    const delivery = {
+      id: queuedId, vendorId: "vendor-1", sourceLiveId: "live-1", sourceFormSubmissionId: "submission-1",
+      trigger: "before_live", idempotencyKey: `live-notification/before-live/rule-1/${queuedId}`,
+    };
+    const dueNow = new Date(scheduledAt.getTime() - 30 * 60_000);
+    mockCurrent(current("before_live"));
+    await expect(isCurrentLiveNotificationDeliverySnapshot(delivery, dueNow, mocks.db as never)).resolves.toBe(true);
+    mockCurrent(current("before_live", evergreen));
+    await expect(isCurrentLiveNotificationDeliverySnapshot(delivery, dueNow, mocks.db as never)).resolves.toBe(false);
+  });
+
+  it("skips an active evergreen live when scanning due rules", async () => {
+    mocks.db.liveNotificationRule.count.mockResolvedValue(1);
+    mocks.db.liveNotificationRule.findMany.mockResolvedValue([{ id: "rule-1", vendorId: "vendor-1", liveId: "live-1", trigger: "before_live", offsetMinutes: 60 }]);
+    mocks.db.live.findFirst.mockResolvedValue({
+      ...current("before_live").live,
+      isEvergreen: true, streamMode: "vod", evergreenScheduleMode: "on_demand", evergreenIntervalMinutes: 15,
+      evergreenDailyTimes: [], evergreenSessionStartAt: null, video: { durationSec: 1_800 },
+    });
+    await expect(processDueLiveNotifications({ now, vendorId: "vendor-1" })).resolves.toEqual([]);
+    expect(mocks.db.formSubmission.count).not.toHaveBeenCalled();
+  });
+
   it("fails a stale delivery snapshot when rule content changes", async () => {
     const value = current("before_live");
     mockCurrent(value);

@@ -44,6 +44,7 @@ import {
 import { publishSalesProjectAction } from "@/app/actions/sales-workspace-actions";
 import { createFunnelFlow } from "./funnel-flow";
 import { createFunnelStepPages } from "./funnel-step-pages";
+import { createGoalFunnelStepPages } from "./funnel-goal-step-pages";
 import { defaultFunnelOperations } from "./funnel-operations";
 import { applyFunnelTemplateChange } from "./funnel-template-transaction";
 import type { PageDocument } from "./funnel-page-document";
@@ -783,5 +784,49 @@ describe("independent audience Funnel publication (owner decision 2026-10-24)", 
     expect(result.message).toMatch(/^專案尚未發布，公開網址目前無法開啟/u);
     expect(result.missing.length).toBeGreaterThan(0);
     expect(mocks.findMany).not.toHaveBeenCalled();
+  });
+});
+
+describe("webinar Funnel fixed-date requirement follows the shared evergreen rule", () => {
+  const form = { id: "form-1", slug: "signup", name: "報名", fields: [
+    { key: "name", label: "姓名", type: "text", required: true },
+    { key: "email", label: "Email", type: "email", required: true },
+  ], submitLabel: "送出", successMessage: "完成" };
+  const live = (overrides: Record<string, unknown> = {}) => ({
+    id: "live-1", slug: "webinar-live", title: "Webinar", status: "scheduled", scheduledAt: now, formId: "form-1",
+    replayEnabled: false, replayAvailableUntil: null, videoId: "video-1",
+    video: { id: "video-1", vendorId: "vendor-1", title: "合成影片", sourceType: "url", status: "ready", cloudflareReadyToStream: false, cloudflareLiveInputUid: null, liveInputStatus: null, durationSec: 1_800 },
+    isEvergreen: true, streamMode: "vod", evergreenScheduleMode: "just_in_time", evergreenIntervalMinutes: 15, evergreenDailyTimes: [], evergreenSessionStartAt: null,
+    ...overrides,
+  });
+  // A goal-generated webinar Funnel has its three steps but no fixed start/end dates.
+  const undatedWebinar = () => {
+    const content = createGoalFunnelStepPages({ id: "flow_webinar", name: "Webinar", goal: "webinar", domain: "webinar" })!;
+    expect(content.flow.webinar?.startsAt ?? null).toBeNull();
+    return content;
+  };
+
+  beforeEach(() => {
+    mocks.findFirst.mockResolvedValue(page({ draftContent: undatedWebinar(), draftFormId: "form-1", draftLiveId: "live-1" }));
+    mocks.formFindMany.mockResolvedValue([form]);
+  });
+
+  it("publishes an evergreen-bound webinar Funnel without fixed dates", async () => {
+    mocks.liveFindFirst.mockResolvedValue(live());
+    await expect(publishLandingPage("page-1", 2)).resolves.toMatchObject({ id: "page-1", version: 1 });
+    expect(mocks.liveFindFirst).toHaveBeenCalledWith(expect.objectContaining({
+      select: expect.objectContaining({ isEvergreen: true, evergreenScheduleMode: true, video: { select: expect.objectContaining({ durationSec: true }) } }),
+    }));
+  });
+
+  it.each([
+    ["a regular live", { isEvergreen: false }],
+    ["an evergreen flag on a real-time broadcast", { streamMode: "live" }],
+    ["an evergreen flag without a known video duration", { video: { ...live().video, durationSec: null } }],
+    ["an evergreen flag with an unusable daily schedule", { evergreenScheduleMode: "recurring_daily", evergreenDailyTimes: [] }],
+  ])("still requires fixed dates for %s", async (_label, overrides) => {
+    mocks.liveFindFirst.mockResolvedValue(live(overrides));
+    await expect(publishLandingPage("page-1", 2)).rejects.toThrow("landing_page_webinar_schedule_required");
+    expect(mocks.versionCreate).not.toHaveBeenCalled();
   });
 });

@@ -23,9 +23,10 @@ vi.mock("@/lib/monitoring", () => ({ captureOperationalError: mocks.captureOpera
 
 import { POST } from "./route";
 import { FORM_SUBMISSION_CHAT_SESSION_COOKIE } from "@/lib/form-submission-chat-session";
+import { evergreenSessionCookieName, resolveEvergreenViewerSession } from "@/lib/evergreen-viewer-session";
 
 const token = `fsv1.formsub_test.1780000000.1.${"a".repeat(43)}`;
-const confirmation = {
+const deliveryConfirmation = {
   vendorId: "vendor-1",
   vendorName: "測試商家",
   liveId: "live-1",
@@ -43,6 +44,7 @@ const confirmation = {
   template: null,
   reminderTemplate: null,
 };
+const confirmation = { ...deliveryConfirmation, evergreen: null };
 
 function request(value = token, origin: string | null = "https://app.example.test") {
   return new Request("https://app.example.test/api/form-submissions/verify", {
@@ -118,13 +120,53 @@ describe("POST /api/form-submissions/verify", () => {
 
     expect(response.status).toBe(303);
     expect(response.headers.get("location")).toBe("https://app.example.test/verify-registration?status=verified");
-    expect(mocks.ensureRegistrationConfirmationDelivery).toHaveBeenCalledWith(confirmation);
+    // A regular live keeps the scheduledAt-based {{live_start_at}} and reminder unchanged.
+    expect(mocks.ensureRegistrationConfirmationDelivery).toHaveBeenCalledWith(deliveryConfirmation);
     expect(mocks.ensureLiveReminderDelivery).toHaveBeenCalledWith({
-      ...confirmation,
+      ...deliveryConfirmation,
       template: null,
       reminderOffsetMinutes: 60,
+      evergreenActive: false,
     });
     expect(mocks.captureOperationalError).not.toHaveBeenCalled();
+  });
+
+  describe("evergreen live", () => {
+    const evergreenLive = {
+      id: "live-1", vendorId: "vendor-1", status: "scheduled", streamMode: "vod", isEvergreen: true,
+      evergreenScheduleMode: "just_in_time", evergreenIntervalMinutes: 15, evergreenDailyTimes: [], evergreenSessionStartAt: null,
+      replayEnabled: false, replayAvailableUntil: null, video: { durationSec: 1_800 },
+    };
+    const evergreenConfirmation = { ...confirmation, evergreen: { live: evergreenLive, vendorTimezone: "Asia/Taipei" } };
+
+    afterEach(() => vi.useRealTimers());
+
+    it("uses the visitor's own signed session for {{live_start_at}} and schedules no fixed reminder", async () => {
+      vi.useFakeTimers({ toFake: ["Date"] });
+      vi.setSystemTime(new Date("2026-10-29T06:03:00.000Z"));
+      const session = resolveEvergreenViewerSession({ live: evergreenLive, vendorTimezone: "Asia/Taipei", token: null, intent: "claim" })!;
+      mocks.verifyFormSubmission.mockResolvedValue({ status: "verified", confirmation: evergreenConfirmation });
+      const withCookie = request();
+      withCookie.headers.set("cookie", `${evergreenSessionCookieName("live-1")}=${session.issuedToken}`);
+
+      await POST(withCookie);
+
+      const delivered = mocks.ensureRegistrationConfirmationDelivery.mock.calls[0]?.[0];
+      expect(delivered).not.toHaveProperty("evergreen");
+      // The 06:15 UTC cohort is 14:15 in Asia/Taipei; scheduledAt (2026-08-10) is not used.
+      expect(delivered.liveStartAtText).toContain("2:15");
+      expect(delivered.liveStartAtText).not.toContain("8月10日");
+      expect(mocks.ensureLiveReminderDelivery).toHaveBeenCalledWith(expect.objectContaining({ evergreenActive: true }));
+    });
+
+    it("falls back to a neutral phrase without the visitor's session cookie", async () => {
+      mocks.verifyFormSubmission.mockResolvedValue({ status: "verified", confirmation: evergreenConfirmation });
+
+      await POST(request());
+
+      expect(mocks.ensureRegistrationConfirmationDelivery).toHaveBeenCalledWith(expect.objectContaining({ liveStartAtText: "依你的觀看時段開始" }));
+      expect(mocks.ensureLiveReminderDelivery).toHaveBeenCalledWith(expect.objectContaining({ evergreenActive: true }));
+    });
   });
 
   it("只在驗證成功後核發 chat session cookie，且不把 submission 或 token 放入 redirect response", async () => {

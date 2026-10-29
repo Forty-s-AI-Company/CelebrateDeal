@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import type { Prisma } from "@prisma/client";
 import { getDb } from "@/lib/db";
 import { ensureLiveReminderDelivery } from "@/lib/email-delivery";
+import { EVERGREEN_ACTIVATION_SELECT, isActiveEvergreenLive, type EvergreenActivationRecord } from "@/lib/evergreen-activation";
 import { hasOnlySupportedMessageTemplateVariables } from "@/lib/message-template";
 
 const JOB_LEASE_MS = 10 * 60 * 1_000;
@@ -66,7 +67,7 @@ type ReconciliationJob = {
   cursorId: string | null;
 };
 
-type CurrentLive = {
+type CurrentLive = EvergreenActivationRecord & {
   id: string;
   vendorId: string;
   slug: string;
@@ -129,6 +130,12 @@ export function createLiveReminderReconciliationSnapshot(input: {
   scheduledAt: Date;
   reminderOffsetMinutes: number;
   template: LiveReminderTemplateSnapshot | null;
+  /**
+   * An active evergreen Live has no shared start, so its reminders are not
+   * deliverable. Because isDeliverable is part of the digest, only evergreen
+   * Lives get a new digest; every other Live keeps its existing one.
+   */
+  evergreenActive?: boolean;
 }, now = new Date()): LiveReminderReconciliationSnapshot {
   const liveSlug = input.liveSlug?.trim() ?? "";
   const validTemplate = isValidTemplate(input.vendorId, input.template);
@@ -137,6 +144,7 @@ export function createLiveReminderReconciliationSnapshot(input: {
   // status as evidence, but do not restart a pending cursor for that change.
   const liveDeliverability = ["scheduled", "live"].includes(input.liveStatus) ? "active" : "inactive";
   const isDeliverable = validTemplate
+    && input.evergreenActive !== true
     && validOffset
     && input.scheduledAt > now
     && liveDeliverability === "active";
@@ -156,8 +164,11 @@ export function createLiveReminderReconciliationSnapshot(input: {
     "live_reminder_reconciliation/v1",
   ]);
 
+  // The flag only feeds isDeliverable; it is not part of the stored snapshot.
+  const snapshotInput = { ...input };
+  delete snapshotInput.evergreenActive;
   return {
-    ...input,
+    ...snapshotInput,
     liveSlug,
     templateId: resolvedTemplateId,
     templateRevision: resolvedTemplateRevision,
@@ -303,12 +314,13 @@ async function currentSnapshot(db: ReconciliationDb, vendorId: string, liveId: s
       vendorId: true,
       slug: true,
       title: true,
-      status: true,
+      ...EVERGREEN_ACTIVATION_SELECT,
       scheduledAt: true,
       liveReminderOffsetMinutes: true,
       liveReminderTemplate: {
         select: { id: true, vendorId: true, channel: true, trigger: true, subject: true, body: true, isActive: true, updatedAt: true },
       },
+      video: { select: { durationSec: true } },
       vendor: { select: { name: true, senderName: true, supportEmail: true, contactUrl: true } },
     },
   }) as CurrentLive | null | undefined;
@@ -324,6 +336,7 @@ async function currentSnapshot(db: ReconciliationDb, vendorId: string, liveId: s
       scheduledAt: live.scheduledAt,
       reminderOffsetMinutes: live.liveReminderOffsetMinutes,
       template: live.liveReminderTemplate,
+      evergreenActive: isActiveEvergreenLive(live, { now }),
     }, now),
   };
 }

@@ -13,6 +13,7 @@ import {
   formSubmissionChatSessionCookieOptions,
 } from "@/lib/form-submission-chat-session";
 import { verifyFormSubmission } from "@/lib/form-submission-verification-domain";
+import { evergreenRegistrationStartText, evergreenSessionTokenFromRequest } from "@/lib/evergreen-viewer-session";
 import { captureTrackingBrowserContext } from "@/lib/tracking-browser-context";
 import { captureOperationalError } from "@/lib/monitoring";
 import { checkRateLimit } from "@/lib/rate-limit";
@@ -73,8 +74,18 @@ export async function POST(request: Request) {
   if (result.status === "invalid") return redirectResult(request, "invalid");
 
   if (result.status === "verified" && result.confirmation) {
+    const { evergreen, ...confirmation } = result.confirmation;
+    // An evergreen Live has no shared start: use this visitor's own session
+    // (from their signed cookie) or a neutral phrase, never scheduledAt.
+    const liveStartAtText = evergreen
+      ? evergreenRegistrationStartText({
+          live: evergreen.live,
+          vendorTimezone: evergreen.vendorTimezone,
+          token: evergreenSessionTokenFromRequest(request, evergreen.live.id),
+        })
+      : undefined;
     try {
-      await ensureRegistrationConfirmationDelivery(result.confirmation);
+      await ensureRegistrationConfirmationDelivery({ ...confirmation, ...(liveStartAtText ? { liveStartAtText } : {}) });
     } catch (error) {
       try {
         captureOperationalError(error, {
@@ -88,9 +99,10 @@ export async function POST(request: Request) {
     }
     try {
       await ensureLiveReminderDelivery({
-        ...result.confirmation,
-        template: result.confirmation.reminderTemplate,
-        reminderOffsetMinutes: result.confirmation.liveReminderOffsetMinutes,
+        ...confirmation,
+        template: confirmation.reminderTemplate,
+        reminderOffsetMinutes: confirmation.liveReminderOffsetMinutes,
+        evergreenActive: Boolean(evergreen),
       });
     } catch (error) {
       try {

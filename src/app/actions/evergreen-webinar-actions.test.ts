@@ -52,6 +52,7 @@ beforeEach(() => {
   mocks.liveFindFirst.mockResolvedValue({
     id: "live-current",
     slug: "live-slug",
+    streamMode: "vod",
     videoId: "video-current",
     video: { durationSec: 600 },
   });
@@ -70,12 +71,13 @@ describe("updateEvergreenWebinarSettingsAction", () => {
       select: {
         id: true,
         slug: true,
+        streamMode: true,
         videoId: true,
         video: { select: { durationSec: true } },
       },
     });
     expect(mocks.liveUpdateMany).toHaveBeenCalledWith({
-      where: { id: "live-current", vendorId: "vendor-current" },
+      where: { id: "live-current", vendorId: "vendor-current", streamMode: "vod", videoId: "video-current" },
       data: expect.objectContaining({
         isEvergreen: true,
         evergreenScheduleMode: "just_in_time",
@@ -114,6 +116,44 @@ describe("updateEvergreenWebinarSettingsAction", () => {
 
     expect(mocks.liveFindFirst).not.toHaveBeenCalled();
     expect(mocks.liveUpdateMany).not.toHaveBeenCalled();
+    expect(mocks.writeAuditLog).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["a real-time broadcast", { streamMode: "live" }, "evergreen_vod_required"],
+    ["a video without a known duration", { video: { durationSec: null } }, "evergreen_duration_required"],
+    ["a zero-length video", { video: { durationSec: 0 } }, "evergreen_duration_required"],
+    ["a video longer than 24 hours", { video: { durationSec: 86_401 } }, "evergreen_duration_required"],
+    ["a live without a source video", { videoId: null, video: null }, "evergreen_video_required"],
+  ])("refuses to enable evergreen for %s", async (_label, overrides, error) => {
+    mocks.liveFindFirst.mockResolvedValueOnce({
+      id: "live-current", slug: "live-slug", streamMode: "vod", videoId: "video-current", video: { durationSec: 600 }, ...overrides,
+    });
+
+    await expect(updateEvergreenWebinarSettingsAction(form())).rejects.toThrow(`REDIRECT:/lives/live-current/edit?error=${error}`);
+
+    expect(mocks.liveUpdateMany).not.toHaveBeenCalled();
+    expect(mocks.writeAuditLog).not.toHaveBeenCalled();
+  });
+
+  it("still lets a merchant turn evergreen off for a real-time broadcast", async () => {
+    mocks.liveFindFirst.mockResolvedValueOnce({ id: "live-current", slug: "live-slug", streamMode: "live", videoId: null, video: null });
+    const data = form();
+    data.delete("isEvergreen");
+
+    await expect(updateEvergreenWebinarSettingsAction(data)).rejects.toThrow("REDIRECT:/lives/live-current/edit?notice=evergreen_saved");
+
+    expect(mocks.liveUpdateMany).toHaveBeenCalledWith({
+      where: { id: "live-current", vendorId: "vendor-current" },
+      data: expect.objectContaining({ isEvergreen: false }),
+    });
+  });
+
+  it("reports a concurrent playback change instead of enabling evergreen on it", async () => {
+    mocks.liveUpdateMany.mockResolvedValueOnce({ count: 0 });
+
+    await expect(updateEvergreenWebinarSettingsAction(form())).rejects.toThrow("REDIRECT:/lives/live-current/edit?error=evergreen_live_changed");
+
     expect(mocks.writeAuditLog).not.toHaveBeenCalled();
   });
 

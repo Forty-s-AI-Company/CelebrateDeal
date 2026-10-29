@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { cookies } from "next/headers";
+import { headers } from "next/headers";
 import { notFound } from "next/navigation";
 import { cache } from "react";
 import {
@@ -9,7 +9,7 @@ import {
   type EvergreenRevealPosition,
 } from "@/lib/evergreen-offer-timeline";
 import {
-  evergreenSessionCookieName,
+  evergreenSessionTokenFromCookieHeader,
   resolveEvergreenViewerSession,
   type EvergreenLiveRecord,
   type EvergreenViewerSession,
@@ -65,14 +65,15 @@ const loadPublicLive = cache(async (slug: string) => {
 /**
  * Reads (never assigns) the visitor's signed evergreen session. Cookies can
  * only be written by the session Route Handler, which the page calls when no
- * session exists yet.
+ * session exists yet. The raw Cookie header goes through the same parser the
+ * Route Handlers use, so the page and the APIs always agree on the token.
  */
 async function readEvergreenSession(
   live: EvergreenLiveRecord & { isEvergreen?: boolean | null; vendor: { timezone?: string | null } },
   serverNow: Date,
 ): Promise<EvergreenViewerSession | null> {
   if (live.isEvergreen !== true) return null;
-  const token = (await cookies()).get(evergreenSessionCookieName(live.id))?.value ?? null;
+  const token = evergreenSessionTokenFromCookieHeader((await headers()).get("cookie"), live.id);
   return resolveEvergreenViewerSession({
     live,
     vendorTimezone: live.vendor.timezone,

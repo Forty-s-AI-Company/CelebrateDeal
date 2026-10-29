@@ -228,6 +228,39 @@ describe("live interaction public contract", () => {
     expect(mocks.upsertRun).not.toHaveBeenCalled();
   });
 
+  it("never opens a shared scheduled run for an active evergreen live, even inside the scheduledAt window", async () => {
+    const scheduledAt = new Date(Date.now() - 40_000);
+    const evergreenLive = {
+      streamMode: "vod", scheduledAt, status: "live",
+      startedAt: null, endedAt: null, replayAvailableUntil: null,
+      replayEnabled: false, video: { durationSec: 3_600 },
+      isEvergreen: true, evergreenScheduleMode: "just_in_time", evergreenIntervalMinutes: 15,
+      evergreenDailyTimes: [], evergreenSessionStartAt: null,
+    };
+    mocks.findEvent.mockResolvedValue({
+      id: "event-evergreen", eventType: "poll", triggerSec: 30, title: "共用投票", productId: null,
+      metadata: { question: "共用投票", options: ["A", "B"], durationSec: 60 },
+      script: { lives: [evergreenLive] },
+    });
+
+    const response = await POST(request({ action: "open", vendorId: "vendor-1", liveId: "live-1", eventId: "event-evergreen" }));
+
+    expect(response.status).toBe(409);
+    expect(mocks.upsertRun).not.toHaveBeenCalled();
+    expect(mocks.findEvent).toHaveBeenCalledWith(expect.objectContaining({ include: { script: { select: { lives: expect.objectContaining({
+      select: expect.objectContaining({ isEvergreen: true, evergreenScheduleMode: true, evergreenDailyTimes: true, evergreenSessionStartAt: true, video: { select: { durationSec: true } } }),
+    }) } } } }));
+
+    // The same VOD without evergreen keeps the shared scheduledAt run.
+    mocks.findEvent.mockResolvedValue({
+      id: "event-evergreen", eventType: "poll", triggerSec: 30, title: "共用投票", productId: null,
+      metadata: { question: "共用投票", options: ["A", "B"], durationSec: 60 },
+      script: { lives: [{ ...evergreenLive, isEvergreen: false }] },
+    });
+    expect((await POST(request({ action: "open", vendorId: "vendor-1", liveId: "live-1", eventId: "event-evergreen" }))).status).toBe(200);
+    expect(mocks.upsertRun).toHaveBeenCalledTimes(1);
+  });
+
   it("records a purchased-only entry only after verified registration and paid live-product purchase checks", async () => {
     mocks.findRun.mockResolvedValue({
       id: "run-purchased", vendorId: "vendor-1", liveId: "live-1", eventType: "lucky_draw", status: "active",

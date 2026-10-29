@@ -4,6 +4,7 @@ import { readJsonBody, requireSameOriginRequest } from "@/lib/api-security";
 import { getDb } from "@/lib/db";
 import {
   EVERGREEN_LIVE_SELECT,
+  evergreenSessionCookieMaxAgeSeconds,
   evergreenSessionCookieName,
   evergreenSessionCookieOptions,
   evergreenSessionTokenFromRequest,
@@ -77,7 +78,11 @@ async function respond(request: Request, input: { liveId: string; vendorId?: str
   if (!session) return unavailable();
   const response = NextResponse.json(publicEvergreenSession(session, now), { headers: privateHeaders });
   if (session.issuedToken) {
-    response.cookies.set(evergreenSessionCookieName(live.id), session.issuedToken, evergreenSessionCookieOptions(request));
+    response.cookies.set(
+      evergreenSessionCookieName(live.id),
+      session.issuedToken,
+      evergreenSessionCookieOptions(request, evergreenSessionCookieMaxAgeSeconds(session, live, now)),
+    );
   }
   return response;
 }
