@@ -28,7 +28,7 @@ const ROLE_LABELS: Record<string, string> = {
 
 function roleLabelFor(memberRole: string | null, isPlatformAdmin: boolean) {
   if (isPlatformAdmin) return "平台管理員";
-  return memberRole && Object.hasOwn(ROLE_LABELS, memberRole) ? ROLE_LABELS[memberRole] : "工作區成員";
+  return (memberRole && Object.hasOwn(ROLE_LABELS, memberRole) ? ROLE_LABELS[memberRole] : undefined) ?? "工作區成員";
 }
 
 export function AppShell({
