@@ -105,6 +105,12 @@ export const DERIVED_KEY_ROTATIONS = Object.freeze({
    * visitor the session a new visitor would get at that moment.
    */
   evergreenViewerSession: rotation("evergreen-viewer-session", "evergreen-viewer-session:r2:755cb80211ac7475"),
+  /**
+   * HttpOnly 30-minute cookie naming the fixed session (指定場次) the server
+   * confirmed for this browser's last registration; read only by the funnel
+   * thank-you page. New purpose, so no legacy key.
+   */
+  liveSessionResult: rotation("live-session-result", "live-session-result:r2:e2e6952d7d8950cb"),
 
   // Tier 3: long-lived links and cookies. New key signs; legacy still verifies.
   emailUnsubscribe: rotation(
