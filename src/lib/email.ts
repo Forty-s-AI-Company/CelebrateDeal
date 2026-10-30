@@ -266,7 +266,7 @@ export async function sendAccountEmailChangeNoticeEmail({
     to,
     subject: "CelebrateDeal｜你的登入 Email 正在變更",
     idempotencyKey,
-    text: `你的登入 Email 正在變更為 ${maskedNewEmail}。新 Email 的收件人開啟驗證信中的連結後，變更才會生效。\n\n如果不是你本人操作，請開啟以下「不是我操作，還原 Email」連結：\n${revertUrl}\n\n・變更還沒完成時：這個連結會取消變更；到登入頁用「忘記密碼」重設密碼也會取消。\n・變更已經完成時：這個連結會把登入 Email 還原為這個信箱；若帳號在變更前後一天內新設定了兩步驟驗證，帳號會暫停，需聯絡客服確認身分後恢復。變更完成後 ${revertValidDays} 天內有效，只能使用一次。\n\n不論哪一種，所有裝置都會登出，原本的密碼會停用，LINE 登入會解除綁定，備用碼會作廢。之後請用這個信箱到登入頁「忘記密碼」重設密碼。`,
+    text: `你的登入 Email 正在變更為 ${maskedNewEmail}。新 Email 的收件人開啟驗證信中的連結後，變更才會生效。\n\n如果不是你本人操作，請開啟以下「不是我操作，還原 Email」連結：\n${revertUrl}\n\n・變更還沒完成時：這個連結會取消變更；到登入頁用「忘記密碼」重設密碼也會取消。\n・變更已經完成時：這個連結會把登入 Email 還原為這個信箱。變更完成後 ${revertValidDays} 天內有效，只能使用一次。\n\n不論哪一種，所有裝置都會登出，原本的密碼會停用，LINE 登入會解除綁定，備用碼會作廢；若帳號在變更前後一天內新設定了兩步驟驗證，帳號會暫停，需聯絡客服確認身分後恢復。之後請用這個信箱到登入頁「忘記密碼」重設密碼。`,
     html: `
       <div style="font-family:Arial,sans-serif;line-height:1.7;color:#0f172a">
         <h2 style="margin:0 0 12px">你的登入 Email 正在變更</h2>
@@ -276,9 +276,9 @@ export async function sendAccountEmailChangeNoticeEmail({
         <p style="word-break:break-all;color:#475569">${safeUrl}</p>
         <ul>
           <li>變更還沒完成時：這個連結會取消變更；到登入頁用「忘記密碼」重設密碼也會取消。</li>
-          <li>變更已經完成時：這個連結會把登入 Email 還原為這個信箱；若帳號在變更前後一天內新設定了兩步驟驗證，帳號會暫停，需聯絡客服確認身分後恢復。變更完成後 ${revertValidDays} 天內有效，只能使用一次。</li>
+          <li>變更已經完成時：這個連結會把登入 Email 還原為這個信箱。變更完成後 ${revertValidDays} 天內有效，只能使用一次。</li>
         </ul>
-        <p>不論哪一種，所有裝置都會登出，原本的密碼會停用，LINE 登入會解除綁定，備用碼會作廢。之後請用這個信箱到登入頁「忘記密碼」重設密碼。</p>
+        <p>不論哪一種，所有裝置都會登出，原本的密碼會停用，LINE 登入會解除綁定，備用碼會作廢；若帳號在變更前後一天內新設定了兩步驟驗證，帳號會暫停，需聯絡客服確認身分後恢復。之後請用這個信箱到登入頁「忘記密碼」重設密碼。</p>
       </div>
     `,
   });
@@ -310,6 +310,35 @@ export async function sendAccountEmailRevertedNoticeEmail({
         <h2 style="margin:0 0 12px">你的登入 Email 已被還原</h2>
         <p>你的登入 Email 已被還原為 <strong>${safeMasked}</strong>；若不是你本人操作，請立即聯絡客服。</p>
         <p>這個信箱已不再是登入帳號。所有裝置都已登出，原本的密碼已停用。</p>
+      </div>
+    `,
+  });
+}
+
+/**
+ * Security notice to the login email after platform support removed the
+ * account's MFA (and disabled its password). Carries no link: the owner goes
+ * to the sign-in page themselves, and someone who did not ask for it contacts
+ * support.
+ */
+export async function sendAccountMfaRemovedBySupportNoticeEmail({
+  to,
+  idempotencyKey,
+}: {
+  to: string;
+  idempotencyKey?: string;
+}) {
+  const notice = "你的兩步驟驗證已由客服移除，密碼也已停用，請使用「忘記密碼」重新設定；若不是你申請的，請立即聯絡客服。";
+  return sendTransactionalEmail({
+    to,
+    subject: "CelebrateDeal｜你的兩步驟驗證已由客服移除",
+    idempotencyKey,
+    text: `${notice}\n\n所有裝置都已登出，備用碼也已全部作廢。重新設定密碼並登入後，請再次設定兩步驟驗證。`,
+    html: `
+      <div style="font-family:Arial,sans-serif;line-height:1.7;color:#0f172a">
+        <h2 style="margin:0 0 12px">你的兩步驟驗證已由客服移除</h2>
+        <p>${escapeHtml(notice)}</p>
+        <p>所有裝置都已登出，備用碼也已全部作廢。重新設定密碼並登入後，請再次設定兩步驟驗證。</p>
       </div>
     `,
   });

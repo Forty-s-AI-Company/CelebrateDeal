@@ -12,10 +12,12 @@ const STATUS_MESSAGES = {
     title: "登入 Email 已還原，請重設密碼",
     body: `登入 Email 已改回這個信箱。為了把變更的人請出帳號，所有裝置都已登出、原本的密碼已停用、LINE 登入已解除綁定、備用碼已全部作廢；兩步驟驗證保留。請用這個信箱到「忘記密碼」重設密碼後再登入，並檢查帳號設定；${ACCOUNT_EMAIL_CHANGE_LOCK_DAYS} 天內不能再自行變更登入 Email。`,
   },
+  // Shared by a restore and a cancel that put the account on hold. Neutral on
+  // purpose: it never says why, so it reveals nothing about the account's MFA.
   held: {
     tone: "warning",
-    title: "登入 Email 已還原，帳號已暫停",
-    body: "登入 Email 已改回這個信箱，所有裝置都已登出、原本的密碼已停用、LINE 登入已解除綁定、備用碼已全部作廢。這個帳號在變更前後一天內新設定了兩步驟驗證，系統無法確認是誰設定的，所以帳號已暫停：暫時不能登入，也不能重設密碼。請聯絡客服確認身分，客服恢復帳號後再用這個信箱重設密碼。",
+    title: "帳號已暫停，請聯絡客服",
+    body: "登入 Email 目前是這個信箱。所有裝置都已登出、原本的密碼已停用、LINE 登入已解除綁定、備用碼已全部作廢。為保護帳號，這個帳號需要客服確認身分後才能繼續使用，請聯絡客服。在客服恢復帳號前暫時不能登入，也不能重設密碼。",
   },
   cancelled: {
     tone: "success",
@@ -71,7 +73,7 @@ export default async function RevertEmailChangePage({ searchParams }: { searchPa
         <p className="mt-3 text-sm leading-6 text-slate-700">
           {restore
             ? `同時所有裝置都會登出、原本的密碼會停用、LINE 登入會解除綁定、備用碼會作廢，目前的登入 Email 會收到通知，${ACCOUNT_EMAIL_CHANGE_LOCK_DAYS} 天內不能再自行變更登入 Email。兩步驟驗證不會被移除；若它是在變更前後一天內新設定的，帳號會暫停，需聯絡客服確認身分後才能恢復。完成後請用這個信箱重設密碼。`
-            : "同時所有裝置都會登出、原本的密碼會停用、LINE 登入會解除綁定（兩步驟驗證保留）。備用碼會全部作廢，請先確認你仍能使用驗證器 App。完成後請用這個信箱重設密碼。"}
+            : "同時所有裝置都會登出、原本的密碼會停用、LINE 登入會解除綁定（兩步驟驗證保留）。備用碼會全部作廢，請先確認你仍能使用驗證器 App。若兩步驟驗證是在變更前後一天內新設定的，帳號會暫停，需聯絡客服確認身分後才能恢復。完成後請用這個信箱重設密碼。"}
         </p>
         <NativePostForm
           action="/api/auth/email-change/revert"

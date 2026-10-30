@@ -55,17 +55,17 @@ import { unusablePasswordHash } from "@/lib/password";
  *    modes evict them: every session, unused reset token, pending change,
  *    user LINE Login identity, unfinished LINE login/link state and recovery
  *    code ends, and the password stays unusable until a reset to the
- *    account's address. The MFA factor is never deleted.
+ *    account's address. The MFA factor is never deleted. When it was enabled
+ *    within a day before the requester's session (or after), the account
+ *    also goes on security hold for support (`src/lib/account-security-hold.ts`),
+ *    in both modes: lock-out over takeover.
  *    - Cancel: the change never completed and the account still has the
  *      address the link went to. No change lock (the clicker already holds
  *      the login mailbox).
  *    - Lockdown (any other case): also restores the previous address (and
  *      the founder's `Vendor.email` if it followed), mails a masked notice
  *      without a link to the address it reverted away from, and blocks
- *      self-service changes for seven days. When the account's MFA factor
- *      was enabled within a day before the requester's session (or after),
- *      the account goes on security hold for support instead
- *      (`src/lib/account-security-hold.ts`): lock-out over takeover.
+ *      self-service changes for seven days.
  *    Either way later revert links are revoked; earlier ones keep working.
  *
  * Enumeration safety: when the new address belongs to (or is reserved for)
@@ -571,30 +571,23 @@ export async function revertAccountEmailChange(token: unknown, now = new Date())
         loginCredentialDisabled: true,
         recoveryCodesRemoved: evicted.recoveryCodesRemoved,
       };
+      // Both modes. A factor enrolled within the window may be the
+      // requester's or the real owner's (enabled the same day they moved away
+      // from a compromised mailbox). Neither deleting it (hands the account to
+      // whoever holds the old mailbox) nor keeping it silently is safe: on a
+      // cancel the owner would be locked out by the requester's authenticator
+      // with nobody to turn to. So the factor stays and the account waits for
+      // support: lock-out over takeover.
+      const held = await placeSecurityHoldForRecentFactor(tx, row, user.status, claim.jti, meta);
       if (cancel) {
-        // The factor stays: the clicker holds the login mailbox already.
-        await tx.auditLog.create({ data: revertAudit(row, claim.jti, meta, "account_email_change_cancelled_by_owner", evictedDetails) });
-        return done({ status: "cancelled" });
+        // No change lock: the clicker holds the login mailbox already.
+        await tx.auditLog.create({
+          data: revertAudit(row, claim.jti, meta, "account_email_change_cancelled_by_owner", { ...evictedDetails, securityHold: held }),
+        });
+        return done({ status: held ? "held" : "cancelled" });
       }
 
-      // Lockdown. A factor enrolled within the window may be the requester's
-      // or the real owner's (enabled the same day they moved away from a
-      // compromised mailbox). Neither deleting it (hands the account to
-      // whoever holds the old mailbox) nor keeping it silently is safe, so the
-      // factor stays and the account waits for support: lock-out over takeover.
-      const recent = await recentFactorInWindow(tx, row);
-      const held = Boolean(recent) && user.status === "active"
-        && (await tx.user.updateMany({ where: { id: row.userId, status: "active" }, data: { status: ACCOUNT_SECURITY_HOLD_STATUS } })).count === 1;
-      if (held && recent) {
-        await tx.auditLog.create({
-          data: revertAudit(row, claim.jti, meta, ACCOUNT_SECURITY_HOLD_AUDIT_ACTION, {
-            factorType: recent.factor.factorType,
-            factorEnabledAt: recent.factor.enabledAt.toISOString(),
-            factorCutoff: recent.cutoff.toISOString(),
-            cutoffSource: recent.source,
-          }),
-        });
-      }
+      // Lockdown.
       await tx.auditLog.create({
         data: revertAudit(row, claim.jti, meta, "account_email_change_reverted", {
           ...evictedDetails,
@@ -676,13 +669,41 @@ async function recentFactorInWindow(tx: Tx, row: { userId: string; createdAt: Da
 }
 
 /**
+ * Puts an active account on security hold when its MFA factor falls in the
+ * revert's window, and audits the hold (factor type and times, never the
+ * secret). Runs under the user's row lock; the status update is bound to
+ * `status = active`, so a suspended or already held account never changes.
+ */
+async function placeSecurityHoldForRecentFactor(
+  tx: Tx,
+  row: { id: string; userId: string; createdAt: Date; initiatingSessionCreatedAt: Date | null },
+  status: string,
+  jti: string,
+  meta: { ipAddress: string | null | undefined; userAgent: string | null | undefined },
+) {
+  if (status !== "active") return false;
+  const recent = await recentFactorInWindow(tx, row);
+  if (!recent) return false;
+  const placed = await tx.user.updateMany({ where: { id: row.userId, status: "active" }, data: { status: ACCOUNT_SECURITY_HOLD_STATUS } });
+  if (placed.count !== 1) return false;
+  await tx.auditLog.create({
+    data: revertAudit(row, jti, meta, ACCOUNT_SECURITY_HOLD_AUDIT_ACTION, {
+      factorType: recent.factor.factorType,
+      factorEnabledAt: recent.factor.enabledAt.toISOString(),
+      factorCutoff: recent.cutoff.toISOString(),
+      cutoffSource: recent.source,
+    }),
+  });
+  return true;
+}
+
+/**
  * Part of every revert, under the user's row lock. Whoever requested the
  * change may know the password and may hold recovery codes, so the password
  * stops working (`unusablePasswordHash`; the owner sets a new one through
  * password reset to the account's address) and every recovery code is
  * removed (the owner regenerates them with the authenticator). The MFA factor
- * itself is never removed here: see the security hold in
- * `revertAccountEmailChange`.
+ * itself is never removed here: see `placeSecurityHoldForRecentFactor`.
  */
 async function evictCredentials(tx: Tx, userId: string) {
   await tx.user.update({
