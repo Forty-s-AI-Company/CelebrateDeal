@@ -652,7 +652,7 @@ describe("reverting a login email change (PostgreSQL)", () => {
       revertRevokedAt: expect.any(Date),
     });
     const audit = await getDb().auditLog.findFirstOrThrow({ where: { targetId: user.id, action: "account_email_change_cancelled_by_owner" } });
-    expect(audit.after).toMatchObject({ pendingCancelled: 1, sessionsRevoked: 1, resetLinksRevoked: 1, lineIdentitiesRevoked: 1, loginCredentialDisabled: true, recoveryCodesRemoved: 1 });
+    expect(audit.after).toMatchObject({ pendingCancelled: 1, sessionsRevoked: 1, resetLinksRevoked: 1, lineIdentitiesRevoked: 1, loginCredentialDisabled: true, recoveryCodesRemoved: 1, securityHold: false });
     expect(await getDb().auditLog.count({ where: { targetId: user.id, action: { in: ["account_email_change_reverted", "account_security_hold_placed"] } } })).toBe(0);
 
     // The owner resets the password through the address they hold, signs in again and may change right away.
@@ -662,6 +662,73 @@ describe("reverting a login email change (PostgreSQL)", () => {
     await expect(consumePasswordResetToken(linkFrom(sent[0]!, "/password-reset/confirm"), newPassword)).resolves.toMatchObject({ ok: true });
     await expect(authenticateUser(user.email, newPassword)).resolves.toMatchObject({ user: { id: user.id } });
     await expect(request(after, syntheticEmail("again"))).resolves.toEqual({ outcome: "sent" });
+  });
+
+  it("puts the account on hold when a cancel finds a factor enrolled in the window, and keeps the rest of the cancel", async () => {
+    const password = "Synthetic-Owner-Passphrase-2026";
+    const user = await createUser({ passwordHash: await hashPasswordAsync(password) });
+    const vendor = await createFounderVendor(user);
+    const line = await createLineIdentity(user.id, vendor.id);
+    // Whoever requested the change enrolled an authenticator from the same session first.
+    const session = await createSession(user.id);
+    const factor = await getDb().userMfaFactor.create({ data: { userId: user.id, secretEncrypted: "synthetic-intruder-secret" } });
+    await getDb().userRecoveryCode.createMany({ data: [1, 2].map((index) => ({ userId: user.id, codeHash: `synthetic-intruder-code-${index}` })) });
+    const reset = await createPasswordResetToken({ email: user.email });
+    const { change, revert } = await requestLinks(user, syntheticEmail("cancel-held"), undefined, session.id);
+    await expect(describeAccountEmailRevertLink(revert)).resolves.toEqual({ mode: "cancel" });
+    sent.length = 0;
+
+    await expect(revertAccountEmailChange(revert)).resolves.toEqual({ status: "held" });
+    await expect(confirmAccountEmailChange(change)).resolves.toEqual({ status: "invalid" });
+    // Held: factor kept, address unchanged, password unusable, no codes, no sessions.
+    await expectHeld(user.id, user.email, factor.id);
+    await expect(authenticateUser(user.email, password)).resolves.toBeNull();
+    await expect(createPasswordResetToken({ email: user.email })).resolves.toBeNull();
+    expect((await getDb().passwordResetToken.findUniqueOrThrow({ where: { id: reset!.tokenId } })).usedAt).toBeInstanceOf(Date);
+    expect((await getDb().lineUserIdentity.findUniqueOrThrow({ where: { id: line.id } })).revokedAt).toBeInstanceOf(Date);
+    // Still a cancel: no change lock, the link is spent with revertRevokedAt, no notice is mailed.
+    await expect(accountEmailChangeLockedUntil(getDb(), user.id)).resolves.toBeNull();
+    expect(await getDb().userEmailChangeRequest.findFirstOrThrow({ where: { userId: user.id } })).toMatchObject({
+      revokedAt: expect.any(Date),
+      revertedAt: null,
+      revertRevokedAt: expect.any(Date),
+    });
+    expect(sent).toHaveLength(0);
+
+    // The same hold audit as a restore.
+    const hold = await getDb().auditLog.findFirstOrThrow({ where: { targetId: user.id, action: "account_security_hold_placed" } });
+    expect(hold).toMatchObject({ targetType: "User", actorLabel: "account_email_revert", userAgent: "synthetic-agent" });
+    expect(hold.after).toMatchObject({ factorType: "totp", factorEnabledAt: factor.enabledAt.toISOString(), cutoffSource: "initiating_session" });
+    expect(JSON.stringify(hold)).not.toContain("synthetic-intruder-secret");
+    const summary = await getDb().auditLog.findFirstOrThrow({ where: { targetId: user.id, action: "account_email_change_cancelled_by_owner" } });
+    expect(summary.after).toMatchObject({ securityHold: true, sessionsRevoked: 1, recoveryCodesRemoved: 2, loginCredentialDisabled: true, lineIdentitiesRevoked: 1 });
+    expect(await getDb().auditLog.count({ where: { targetId: user.id, action: "account_email_change_reverted" } })).toBe(0);
+
+    // Support releases it the same way as a restore's hold.
+    const admin = await createUser();
+    await expect(releaseAccountSecurityHold({ userId: user.id, actorId: admin.id, removeMfaFactor: true })).resolves.toEqual({ status: "released" });
+    expect((await getDb().user.findUniqueOrThrow({ where: { id: user.id } })).status).toBe("active");
+    expect(await getDb().userMfaFactor.count({ where: { userId: user.id } })).toBe(0);
+  });
+
+  it("does not hold a cancel without a factor, and records that in its audit", async () => {
+    const user = await createUser();
+    const { revert } = await requestLinks(user, syntheticEmail("cancel-no-factor"));
+    await expect(revertAccountEmailChange(revert)).resolves.toEqual({ status: "cancelled" });
+    expect((await getDb().user.findUniqueOrThrow({ where: { id: user.id } })).status).toBe("active");
+    expect(await getDb().auditLog.count({ where: { targetId: user.id, action: "account_security_hold_placed" } })).toBe(0);
+    const summary = await getDb().auditLog.findFirstOrThrow({ where: { targetId: user.id, action: "account_email_change_cancelled_by_owner" } });
+    expect(summary.after).toMatchObject({ securityHold: false });
+  });
+
+  it("does not put a suspended account on hold when a cancel finds a fresh factor", async () => {
+    const user = await createUser();
+    const { revert } = await requestLinks(user, syntheticEmail("cancel-suspended"));
+    await getDb().userMfaFactor.create({ data: { userId: user.id, secretEncrypted: "synthetic-recent-secret" } });
+    await getDb().user.update({ where: { id: user.id }, data: { status: "suspended" } });
+    await expect(revertAccountEmailChange(revert)).resolves.toEqual({ status: "cancelled" });
+    expect((await getDb().user.findUniqueOrThrow({ where: { id: user.id } })).status).toBe("suspended");
+    expect(await getDb().auditLog.count({ where: { targetId: user.id, action: "account_security_hold_placed" } })).toBe(0);
   });
 
   it("keeps a cancel single use and revokes the pending request and later revert links, as before", async () => {
@@ -1006,7 +1073,12 @@ describe("reverting a login email change (PostgreSQL)", () => {
     await expect(revertAccountEmailChange(links.revert)).resolves.toEqual({ status: "held" });
     await expectHeld(user.id, user.email, factor.id);
     const hold = await getDb().auditLog.findFirstOrThrow({ where: { targetId: user.id, action: "account_security_hold_placed" } });
-    expect(hold.after).toMatchObject({ factorCutoff: new Date(sessionB.createdAt.getTime() - DAY_MS).toISOString() });
+    // The cutoff is the earlier of the session start and the request, minus 24 hours. The two are
+    // stamped by different clocks (the query engine and Node) and can land a millisecond apart.
+    const row = await getDb().userEmailChangeRequest.findFirstOrThrow({ where: { userId: user.id } });
+    const anchor = Math.min(sessionB.createdAt.getTime(), row.createdAt.getTime());
+    expect(anchor).toBeGreaterThan(enabledAt.getTime());
+    expect(hold.after).toMatchObject({ factorCutoff: new Date(anchor - DAY_MS).toISOString() });
   });
 
   it.each([
