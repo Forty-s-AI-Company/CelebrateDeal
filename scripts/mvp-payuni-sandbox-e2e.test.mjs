@@ -1221,6 +1221,86 @@ test("verifies exact ready Preview lineage and health before secret injection", 
   }), false);
 });
 
+test("browser smoke lineage accepts a merge-queue master commit and probes the fixed alias", async () => {
+  const alias = "celebrate-deal-staging.carry-digital-nomad.in.net";
+  const source = {
+    CELEBRATEDEAL_SOURCE_SHA: sourceSha,
+    CELEBRATEDEAL_DEPLOYMENT_HOST: previewHost,
+    CELEBRATEDEAL_BROWSER_SURFACE: "fixed_alias",
+    GITHUB_TOKEN: "test-github-token",
+  };
+  const verifyDeploymentImpl = async () => ({ host: previewHost, deploymentMatched: true, sourceMatched: true, preview: true, ready: true });
+  const make = (compare, calls = []) => async (url, init) => {
+    calls.push(String(url));
+    if (String(url).startsWith("https://api.github.com/")) {
+      assert.equal(String(url), `https://api.github.com/repos/Forty-s-AI-Company/CelebrateDeal/compare/${sourceSha}...master`);
+      return new Response(JSON.stringify(compare), { status: 200 });
+    }
+    assert.equal(init.method, "HEAD");
+    return new Response(null, { status: 200 });
+  };
+
+  for (const compare of [
+    { status: "ahead", merge_base_commit: { sha: sourceSha } },
+    { status: "identical", merge_base_commit: { sha: sourceSha } },
+  ]) {
+    const calls = [];
+    assert.equal(await verifyMvpPayUniLineage(source, { verifyDeploymentImpl, fetchImpl: make(compare, calls) }), true);
+    assert.equal(calls.at(-1), `https://${alias}/api/health`);
+    assert.ok(!calls.some((url) => url.includes(previewHost)));
+  }
+
+  // Not on master: diverged or behind, or merge base is some other commit.
+  for (const compare of [
+    { status: "diverged", merge_base_commit: { sha: "c".repeat(40) } },
+    { status: "behind", merge_base_commit: { sha: "c".repeat(40) } },
+    { status: "ahead", merge_base_commit: { sha: "c".repeat(40) } },
+  ]) {
+    assert.equal(await verifyMvpPayUniLineage(source, { verifyDeploymentImpl, fetchImpl: make(compare) }), false);
+  }
+  assert.equal(await verifyMvpPayUniLineage(source, {
+    verifyDeploymentImpl,
+    fetchImpl: async () => new Response("{}", { status: 404 }),
+  }), false);
+
+  // Host bound to a different SHA or a non-Vercel host never reaches the master check.
+  let reached = false;
+  const ok = make({ status: "identical", merge_base_commit: { sha: sourceSha } });
+  const spy = async (...args) => { reached = true; return ok(...args); };
+  assert.equal(await verifyMvpPayUniLineage(source, {
+    verifyDeploymentImpl: async () => ({ host: previewHost, deploymentMatched: false, sourceMatched: true, preview: true, ready: true }),
+    fetchImpl: spy,
+  }), false);
+  assert.equal(await verifyMvpPayUniLineage({ ...source, CELEBRATEDEAL_DEPLOYMENT_HOST: "evil.example.com" }, { verifyDeploymentImpl, fetchImpl: spy }), false);
+  assert.equal(reached, false);
+  assert.equal(await verifyMvpPayUniLineage({ ...source, CELEBRATEDEAL_BROWSER_SURFACE: "other" }, { verifyDeploymentImpl, fetchImpl: spy }), false);
+});
+
+test("immutable_preview lineage still requires master and probes the preview host", async () => {
+  const source = {
+    CELEBRATEDEAL_SOURCE_SHA: sourceSha,
+    CELEBRATEDEAL_DEPLOYMENT_HOST: previewHost,
+    CELEBRATEDEAL_BROWSER_SURFACE: "immutable_preview",
+    GITHUB_TOKEN: "test-github-token",
+  };
+  const verifyDeploymentImpl = async () => ({ host: previewHost, deploymentMatched: true, sourceMatched: true, preview: true, ready: true });
+  const calls = [];
+  const fetchImpl = async (url) => {
+    calls.push(String(url));
+    return String(url).startsWith("https://api.github.com/")
+      ? new Response(JSON.stringify({ status: "ahead", merge_base_commit: { sha: sourceSha } }), { status: 200 })
+      : new Response(null, { status: 200 });
+  };
+  assert.equal(await verifyMvpPayUniLineage(source, { verifyDeploymentImpl, fetchImpl }), true);
+  assert.equal(calls.at(-1), `https://${previewHost}/api/health`);
+  assert.equal(await verifyMvpPayUniLineage(source, {
+    verifyDeploymentImpl,
+    fetchImpl: async (url) => String(url).startsWith("https://api.github.com/")
+      ? new Response(JSON.stringify({ status: "diverged", merge_base_commit: { sha: "c".repeat(40) } }), { status: 200 })
+      : new Response(null, { status: 200 }),
+  }), false);
+});
+
 test("final validation failure preserves already executed payment and refund counters", async () => {
   const receipt = await runMvpPayUniSandboxE2E(validInput, successfulDependencies());
   assert.equal(receipt.result, "PASS");

@@ -412,6 +412,26 @@ export function validateExistingRefundRecoveryInvocation(input) {
   return { ok: true, sourceSha, previewHost, jobSecret: input.jobSecret };
 }
 
+const STAGING_ALIAS_HOST = "celebrate-deal-staging.carry-digital-nomad.in.net";
+
+/**
+ * True only when the commit equals or is an ancestor of protected master, which
+ * covers merge-queue commits that fast-forward master (no branch-name check).
+ */
+async function isShaOnProtectedMaster(sourceSha, token, fetchImpl) {
+  const response = await fetchImpl(
+    `https://api.github.com/repos/Forty-s-AI-Company/CelebrateDeal/compare/${sourceSha}...master`,
+    {
+      headers: { Accept: "application/vnd.github+json", Authorization: `Bearer ${token}`, "X-GitHub-Api-Version": "2022-11-28" },
+      redirect: "manual",
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    },
+  );
+  if (response.status !== 200 || response.headers.has("location")) return false;
+  const body = await response.json();
+  return body?.merge_base_commit?.sha === sourceSha && (body.status === "identical" || body.status === "ahead");
+}
+
 /**
  * Verifies the immutable Preview host against the protected GitHub deployment
  * record before any PayUni or application secret is injected into the job.
@@ -439,7 +459,15 @@ export async function verifyMvpPayUniLineage(source = process.env, dependencies 
       || lineage.preview !== true
       || lineage.ready !== true) return false;
 
-    const health = await fetchImpl(fixedUrl(previewHost, "/api/health"), {
+    // Browser smoke only: the commit must already be on protected master.
+    // Vercel firewalls direct probes of the immutable preview host (403 deny), so
+    // a fixed_alias run probes the alias after the host-to-SHA binding above; the
+    // alias-to-deployment binding is attested next by staging-browser-smoke.mjs.
+    const surface = typeof source.CELEBRATEDEAL_BROWSER_SURFACE === "string" ? source.CELEBRATEDEAL_BROWSER_SURFACE : "";
+    if (surface !== "" && surface !== "fixed_alias" && surface !== "immutable_preview") return false;
+    if (surface !== "" && !await isShaOnProtectedMaster(sourceSha, source.GITHUB_TOKEN, fetchImpl)) return false;
+    const healthHost = surface === "fixed_alias" ? STAGING_ALIAS_HOST : previewHost;
+    const health = await fetchImpl(fixedUrl(healthHost, "/api/health"), {
       method: "HEAD",
       redirect: "manual",
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
