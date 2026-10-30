@@ -111,7 +111,7 @@ export function isAllowedCheckoutDestination(value: string, currentOrigin: strin
 export async function readCheckoutErrorCode(response: Pick<Response, "json">) {
   try {
     const body: unknown = await response.json();
-    return body && typeof body === "object" && "code" in body && (body.code === "LIVE_VOUCHER_ALREADY_USED" || body.code === "FLASH_SALE_UNAVAILABLE" || body.code === "POST_PURCHASE_UNAVAILABLE")
+    return body && typeof body === "object" && "code" in body && (body.code === "LIVE_VOUCHER_ALREADY_USED" || body.code === "FLASH_SALE_UNAVAILABLE" || body.code === "POST_PURCHASE_UNAVAILABLE" || body.code === "CHECKOUT_BUSY")
       ? body.code : undefined;
   } catch { return undefined; }
 }
@@ -125,6 +125,8 @@ export function checkoutErrorMessage(status: number, code?: string) {
   if (status === 409) return "商品可能已售完，或這次結帳資料已變更；請重新整理後再試一次。";
   if (status === 425) return "訂單正在建立中，請稍候後重試；系統會沿用同一筆訂單。";
   if (status === 429) return "操作太頻繁，請稍候再試。";
+  // B-2: the reservation used its retry budget and rolled back; the form keeps the same idempotency key.
+  if (status === 503 && code === "CHECKOUT_BUSY") return "目前同時下單的人很多，這次沒有建立訂單，也沒有扣款。請稍等幾秒再按一次付款，系統會沿用同一筆結帳資料。";
   if (status === 503) return "付款服務暫時無法完成請求；請先查看訂單狀態，或聯絡商家確認。";
   return "目前無法確認付款結果；請先查看訂單狀態，避免重複付款。";
 }

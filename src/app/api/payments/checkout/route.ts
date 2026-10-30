@@ -79,6 +79,19 @@ import {
   visitorIdFromRequest,
 } from "@/lib/team-funnel-attribution";
 import { featureDisabledResponse, isProductPurchasable } from "@/lib/feature-gates";
+import { isTransientTransactionConflict } from "@/lib/serializable-retry";
+
+/**
+ * B-2: buyers of one hot product queue inside the inventory reservation's
+ * Serializable retry loop (inventory-reservations.ts: 12 attempts, backoff up
+ * to 1 s, about 6.6 s of backoff in the worst case) before the provider call.
+ * Give the request an explicit limit instead of relying on the platform
+ * default; after() work is not scheduled here.
+ */
+export const maxDuration = 60;
+
+/** Seconds a buyer waits before pressing pay again after CHECKOUT_BUSY. */
+const CHECKOUT_BUSY_RETRY_AFTER_SECONDS = 3;
 
 const CheckoutRequest = CommerceCheckoutRequestSchema.extend({
   // Kept only for backward-compatible request parsing. Attribution remains
@@ -969,6 +982,15 @@ export async function POST(request: Request) {
     }
     if (error instanceof PostPurchaseUnavailableError) return NextResponse.json({ error: "Post purchase unavailable", code: "POST_PURCHASE_UNAVAILABLE" },
       { status: 409, headers: { "Cache-Control": "private, no-store" } });
+    // The reservation used its whole Serializable retry budget. The rolled-back
+    // transaction wrote no payment, order or stock change, so nothing was
+    // charged and the same idempotency key can safely be submitted again.
+    if (isTransientTransactionConflict(error)) {
+      return NextResponse.json({ error: "Checkout is busy; nothing was charged. Please try again.", code: "CHECKOUT_BUSY" }, {
+        status: 503,
+        headers: { "Retry-After": String(CHECKOUT_BUSY_RETRY_AFTER_SECONDS), "Cache-Control": "private, no-store" },
+      });
+    }
     return NextResponse.json({ error: "Unable to start checkout" }, { status: 502 });
   }
   let checkoutSession: CheckoutSessionResult;

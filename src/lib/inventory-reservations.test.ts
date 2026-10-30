@@ -1,10 +1,13 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { Prisma } from "@prisma/client";
 import { getDb } from "@/lib/db";
 import {
   applyPaymentInventoryTransition,
+  CHECKOUT_RESERVATION_RETRY,
   CheckoutIdempotencyConflictError,
   createReservedPaymentTransaction,
+  EXPIRY_CLEANUP_DEADLINE_MS,
+  EXPIRY_CLEANUP_RETRY,
   failPendingCheckoutAndReleaseInventory,
   INVENTORY_RESERVATION_TTL_MS,
   InventoryUnavailableError,
@@ -294,8 +297,8 @@ describe("inventory reservations", () => {
     const first = await reserve("a");
     await reserve("b");
     expect(evidence).toEqual([
-      [{ vendorId: vendor.id, productId: product.id, revision: product.revision, quantity: 1 }],
-      [{ vendorId: vendor.id, productId: product.id, revision: product.revision, quantity: 1 }],
+      [{ vendorId: vendor.id, productId: product.id, revision: product.revision, quantity: 1, inventoryAfter: 1 }],
+      [{ vendorId: vendor.id, productId: product.id, revision: product.revision, quantity: 1, inventoryAfter: 0 }],
     ]);
     expect(await db.product.findUniqueOrThrow({ where: { id: product.id } })).toMatchObject({ inventory: 0, revision: product.revision });
     // Sold out is still sold out, never a negative stock or a stale-content error.
@@ -447,6 +450,60 @@ describe("inventory reservations", () => {
     expect(await db.inventoryReservation.findUniqueOrThrow({
       where: { paymentTransactionId: transaction.id },
     })).toMatchObject({ status: "released", releaseReason: "full_refund" });
+  });
+
+  it("stops the expiry pass at its deadline and leaves the rest for the next run", async () => {
+    const { db, vendor, product, suffix } = await createFixture(3);
+    const createdAt = new Date("2026-07-22T00:00:00.000Z");
+    const transactions = [];
+    for (const lane of ["a", "b", "c"]) {
+      transactions.push(await createReservedPaymentTransaction({
+        vendorId: vendor.id,
+        productId: product.id,
+        transactionData: transactionData(vendor.id, product.id, `${suffix}-${lane}`),
+        now: new Date(createdAt.getTime() + transactions.length),
+      }));
+    }
+    const afterExpiry = new Date(createdAt.getTime() + INVENTORY_RESERVATION_TTL_MS + 1_000);
+    // Synthetic monotonic clock: the deadline passes before the third row starts.
+    const ticks = [0, 0, 10, EXPIRY_CLEANUP_DEADLINE_MS];
+    const clock = () => ticks.shift() ?? EXPIRY_CLEANUP_DEADLINE_MS;
+    const ours = { vendorId: vendor.id };
+
+    const first = await releaseExpiredInventoryReservations(100, afterExpiry, { clock });
+    expect(first).toMatchObject({ examined: 2, released: 2, deferred: expect.any(Number) });
+    expect(first.deferred).toBeGreaterThanOrEqual(1);
+    expect(await db.inventoryReservation.count({ where: { ...ours, status: "released" } })).toBe(2);
+    expect(await db.inventoryReservation.count({ where: { ...ours, status: "reserved" } })).toBe(1);
+    expect(await db.product.findUniqueOrThrow({ where: { id: product.id } })).toMatchObject({ inventory: 2 });
+
+    // The next scheduled run picks up the deferred row.
+    await releaseExpiredInventoryReservations(100, afterExpiry);
+    expect(await db.inventoryReservation.count({ where: { ...ours, status: "released" } })).toBe(3);
+    expect(await db.product.findUniqueOrThrow({ where: { id: product.id } })).toMatchObject({ inventory: 3 });
+    expect(await db.paymentTransaction.count({ where: { ...ours, status: "expired" } })).toBe(3);
+  });
+
+  it("gives each expiry row the smaller cleanup retry budget, not the buyer queue budget", async () => {
+    const { db, vendor, product, suffix } = await createFixture(1);
+    const createdAt = new Date("2026-07-23T00:00:00.000Z");
+    await createReservedPaymentTransaction({
+      vendorId: vendor.id,
+      productId: product.id,
+      transactionData: transactionData(vendor.id, product.id, suffix),
+      now: createdAt,
+    });
+    const afterExpiry = new Date(createdAt.getTime() + INVENTORY_RESERVATION_TTL_MS + 1);
+    const conflict = new Prisma.PrismaClientKnownRequestError("synthetic write conflict", { code: "P2034", clientVersion: "6.19.3" });
+    const spy = vi.spyOn(db, "$transaction").mockRejectedValue(conflict);
+    try {
+      await expect(releaseExpiredInventoryReservations(1, afterExpiry)).rejects.toBe(conflict);
+      expect(spy).toHaveBeenCalledTimes(EXPIRY_CLEANUP_RETRY.attempts);
+    } finally {
+      spy.mockRestore();
+    }
+    expect(EXPIRY_CLEANUP_RETRY.attempts).toBeLessThan(CHECKOUT_RESERVATION_RETRY.attempts);
+    expect(await db.product.findUniqueOrThrow({ where: { id: product.id } })).toMatchObject({ inventory: 0 });
   });
 
   it("releases expired pending reservations without touching committed sales", async () => {

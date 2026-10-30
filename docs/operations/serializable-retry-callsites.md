@@ -4,7 +4,7 @@ F-055（B03-22、B04-14）新增共用的 `src/lib/serializable-retry.ts`：`wit
 
 已套用：
 
-- `src/lib/inventory-reservations.ts`：庫存保留、釋放、過期清理共用的 `runSerializable`，12 次、25–1000 ms（B-2 前是 5 次、25–400 ms，理由見文末〈B-2 修正後〉）。
+- `src/lib/inventory-reservations.ts`：庫存保留與結帳失敗釋放用 `CHECKOUT_RESERVATION_RETRY`（12 次、25–1000 ms；B-2 前是 5 次、25–400 ms，理由見文末〈B-2 修正後〉）；過期清理每列用 `EXPIRY_CLEANUP_RETRY`（5 次、25–400 ms），整趟 60 s 後不再開始新的一列。
 - `src/lib/payment-webhooks.ts`：`processPaymentWebhook` 對 P2034／P2002 重跑整個 webhook 處理，3 次、50–500 ms。
 - `src/lib/live-notification-delivery.ts`：`ensureLiveNotificationDelivery` 的兩段交易（#520），P2034／40001／40P01 重試 3 次、預設 20–400 ms。
 
@@ -150,9 +150,12 @@ npm run db:migrate:deploy && npm run test:db:stress
 
 - 不超賣：保留仍是同一句 `updateMany where { id, vendorId, isActive, inventory >= 數量, revision = admission 的版本 }`。庫存條件守住數量，revision 條件守住過期內容；兩者在同一個 Serializable 交易裡和付款、訂單、保留紀錄一起提交。
 - 過期價格仍會被擋：商家改價會推進 revision，admission 帶舊版本的買家在 route（`admission.productRevision !== product.revision`）或保留的 CAS 拿到 409「Product changed; reload checkout」，重新載入後用新價格。
-- 快閃與 post-purchase 的同交易證據改成 `{ vendorId, productId, revision, quantity }`：「這個交易以 `revision` 扣了 `quantity` 件」。`consumeFlashSaleQuote` 要求證據的 revision 等於報價的 `productRevision`、數量為 1，再逐欄比對目前報價；`resolvePaidOrderPostPurchaseOffer` 只在證據與目前 revision 相同時把自己剛扣的那一件加回可售量。證據只由 `createReservedPaymentTransaction` 產生，不從 request 讀。
+- 快閃與 post-purchase 的同交易證據改成 `{ vendorId, productId, revision, quantity, inventoryAfter }`：「這個交易以 `revision` 扣了 `quantity` 件，扣完剩 `inventoryAfter`」（`inventoryAfter` 來自同一句 `updateManyAndReturn`）。`consumeFlashSaleQuote` 要求證據的 revision 等於報價的 `productRevision`、數量為 1，再逐欄比對目前報價；`resolvePaidOrderPostPurchaseOffer` 只在證據的 revision 與目前相同、且目前庫存正好等於 `inventoryAfter` 時，才把自己剛扣的那一件加回可售量。證據只由 `createReservedPaymentTransaction` 產生，不從 request 讀。
 - 商家表單：以前靠「每次成交都推進 revision」讓舊表單不能覆寫庫存。現在表單另帶 `inventoryBaseline`（載入時的庫存）。庫存沒改就不寫庫存（編輯期間的成交照算）；庫存有改，`updateMany` 另加 `inventory = inventoryBaseline` 條件，庫存已被訂單改動就回 `conflict`。缺少或格式錯誤的 `inventoryBaseline`（部署前開著的舊頁面）一律回 `conflict`。
 - 重試預算：不再回 409 之後，同一商品的買家全部在交易重試裡排隊。Serializable 下同一列的並發更新只有第一個能提交（其他人 P2034），熱門商品的提交是逐筆的，所以重試視窗要大於「買家數 × 交易時間」。實測 5 次、25–400 ms 時 50 人只有 6 人成交，其餘用完重試（route 會回 502）；改成 12 次、25–1000 ms 後全數在第一次載入就成交。最壞情況的總退避約 6.6 s。
+- **容量：單一商品約 50 位同時按下付款。** 這是 loopback 壓測量到的上限：50 人同時送出時，最慘的買家用到 11 次（預算 12）。超過這個量，或交易變慢（遠端資料庫、連線池等待），排在最後的買家會用完重試。那時 checkout route 回 **503 `CHECKOUT_BUSY`＋`Retry-After: 3`**：交易已整筆回滾，沒有建立付款、訂單或保留，也沒有扣庫存或扣款；前端顯示「目前同時下單的人很多，這次沒有建立訂單，也沒有扣款。請稍等幾秒再按一次付款」，並保留同一個 admission 與 idempotency key，再按一次會沿用同一筆結帳資料。其他非暫時性錯誤仍回 502。
+- **checkout route 的 `maxDuration = 60`**：排隊（約 6.6 s 退避加交易時間）與 provider 呼叫都要在 60 s 內完成，不再依賴平台預設的 300 s（`src/app/after-max-duration.test.ts` 釘住這個值）。每次嘗試仍有 `maxWait` 5 s、`timeout` 10 s；連線池長時間塞滿時理論上可能超過 60 s，這時平台中斷請求：中斷在保留交易提交前，交易整筆回滾；中斷在提交後，買家再按一次會以同一個 idempotency key 取回同一筆結帳（既有的 `existingCheckoutResponse` 路徑），不會重複保留。
+- **過期清理不搶 webhook 重試的時間**：`releaseExpiredInventoryReservations` 在 webhook-retry job 裡排在 webhook 重試前面。每列只用 5 次、25–400 ms，且開始處理後 60 s（`EXPIRY_CLEANUP_DEADLINE_MS`）就不再開始新的一列，剩下的列仍是 `reserved` 且已過期，下一次排程會再處理；回傳值多一個 `deferred`（這次沒處理的列數）。順序不變：先釋放再處理晚到的 paid webhook，與修正前行為相同。
 
 結果（同一台機器與容器，base `447237618` 加上 #524 的壓測）：
 

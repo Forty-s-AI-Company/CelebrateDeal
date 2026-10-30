@@ -7,6 +7,7 @@ import {
   CommerceCheckoutResponseSchema,
   CommerceOrderBumpSelectionSchema,
   isAllowedCheckoutDestination,
+  readCheckoutErrorCode,
   shouldDiscardCheckoutAdmission,
 } from "@/lib/commerce-checkout";
 
@@ -123,6 +124,17 @@ describe("commerce checkout contract", () => {
       expect(checkoutErrorMessage(status)).toContain("查看訂單狀態");
       expect(checkoutErrorMessage(status)).not.toContain("尚未向你收款");
     }
+  });
+
+  it("tells a buyer queued behind a hot product that nothing was charged and to press again (B-2)", async () => {
+    const busy = new Response(JSON.stringify({ error: "Checkout is busy; nothing was charged. Please try again.", code: "CHECKOUT_BUSY" }), { status: 503 });
+    const code = await readCheckoutErrorCode(busy);
+    expect(code).toBe("CHECKOUT_BUSY");
+    expect(checkoutErrorMessage(503, code)).toContain("沒有扣款");
+    expect(checkoutErrorMessage(503, code)).toContain("再按一次付款");
+    // The same admission and idempotency key are reused for the retry.
+    expect(shouldDiscardCheckoutAdmission(503, code)).toBe(false);
+    expect(checkoutErrorMessage(502, code)).not.toContain("沒有扣款");
   });
 
   it("retains one checkout identity across ambiguous server failures", () => {

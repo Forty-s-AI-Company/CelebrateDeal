@@ -218,7 +218,7 @@ beforeEach(() => {
       await createCommerceOrder({
         liveInteractionResponse: { updateMany: liveInteractionMocks.consumeLive },
         automationVoucherGrant: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
-      }, transaction, [{ vendorId: "vendor-1", productId: "product-1", revision: 4, quantity: 1 }]);
+      }, transaction, [{ vendorId: "vendor-1", productId: "product-1", revision: 4, quantity: 1, inventoryAfter: 2 }]);
     }
     return transaction;
   });
@@ -267,7 +267,7 @@ describe("successful checkout response", () => {
     }));
     expect(postPurchaseMocks.consume).toHaveBeenCalledWith(expect.anything(), expect.anything(), {
       token: postPurchaseToken, quote: upgradeQuote, targetOrderId: "order-1",
-      reserved: { vendorId: "vendor-1", productId: "product-1", revision: 4, quantity: 1 },
+      reserved: { vendorId: "vendor-1", productId: "product-1", revision: 4, quantity: 1, inventoryAfter: 2 },
     });
     expect(createCheckoutSession).toHaveBeenCalledWith(expect.objectContaining({
       transaction: expect.objectContaining({ grossAmountCents: 400, netAmountCents: 400 }),
@@ -1393,6 +1393,31 @@ describe("checkout provider failures", () => {
     expect(createCheckoutSession).toHaveBeenCalledTimes(1);
     expect(inventoryMocks.createReservedPaymentTransaction).toHaveBeenCalledTimes(1);
     expect(db.paymentTransaction.create.mock.calls[0]?.[0]?.data.grossAmountCents).toBe(1000);
+  });
+
+  it("returns a retryable 503 when the reservation exhausts its Serializable retries (B-2)", async () => {
+    const { Prisma } = await import("@prisma/client");
+    inventoryMocks.createReservedPaymentTransaction.mockRejectedValueOnce(new Prisma.PrismaClientKnownRequestError(
+      "Transaction failed due to a write conflict or a deadlock. Please retry your transaction",
+      { code: "P2034", clientVersion: "6.19.3" },
+    ));
+
+    const response = await POST(checkoutRequest());
+
+    expect(response.status).toBe(503);
+    expect(response.headers.get("Retry-After")).toBe("3");
+    expect(response.headers.get("Cache-Control")).toBe("private, no-store");
+    await expect(response.json()).resolves.toEqual({ error: "Checkout is busy; nothing was charged. Please try again.", code: "CHECKOUT_BUSY" });
+    expect(createCheckoutSession).not.toHaveBeenCalled();
+    expect(inventoryMocks.failPendingCheckoutAndReleaseInventory).not.toHaveBeenCalled();
+  });
+
+  it("keeps a generic 502 for a non-retryable reservation failure", async () => {
+    inventoryMocks.createReservedPaymentTransaction.mockRejectedValueOnce(new Error("synthetic reservation failure"));
+    const response = await POST(checkoutRequest());
+    expect(response.status).toBe(502);
+    expect(response.headers.get("Retry-After")).toBeNull();
+    await expect(response.json()).resolves.toEqual({ error: "Unable to start checkout" });
   });
 
   it("returns sold out when inventory is consumed between product lookup and reservation", async () => {

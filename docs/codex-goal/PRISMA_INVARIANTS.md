@@ -626,6 +626,6 @@ Current source inventory: 145 models and 99 forward migrations. Previous checkpo
 
 - **沒有 migration、沒有新欄位**；`Product.revision`（`20260808235500_g7_10_product_catalog_safety`，CHECK `revision > 0`）語意收窄：只有商家編輯商品（`src/app/actions/product-actions.ts`）與課程大綱（`src/lib/course-curriculum.ts`）會推進。`src/lib/inventory-reservations.ts` 的保留、釋放、過期回補、晚到付款重新扣、恢復結帳重新扣只改 `inventory`，不再推進 revision。
 - 庫存不變式不變：保留仍是 `updateMany where { id, vendorId, isActive, inventory >= 數量, revision = admission 版本 }`，與付款、訂單、保留紀錄在同一個 Serializable 交易。庫存不會為負、N 件只會有 N 個成交。
-- 同交易證據 `ReservedInventoryRevision` 改為 `{ vendorId, productId, revision, quantity }`，只由 `createReservedPaymentTransaction` 產生；快閃（`consumeFlashSaleQuote`）與 post-purchase（`resolvePaidOrderPostPurchaseOffer`）要求證據 revision 等於報價／目前 revision。
+- 同交易證據 `ReservedInventoryRevision` 改為 `{ vendorId, productId, revision, quantity, inventoryAfter }`，只由 `createReservedPaymentTransaction` 產生（`inventoryAfter` 來自扣減那句 `updateManyAndReturn`）；快閃（`consumeFlashSaleQuote`）要求證據 revision 等於報價 revision，post-purchase（`resolvePaidOrderPostPurchaseOffer`）另要求目前庫存等於 `inventoryAfter`。
 - 商家表單另帶 `inventoryBaseline`：庫存沒改就不寫 `inventory`；有改就以 `inventory = inventoryBaseline` 作 CAS，不符回 `conflict`；缺少時 fail closed。
 - **部署順序**：只有程式。部署前開著的商品編輯頁沒有 `inventoryBaseline`，送出會回 `conflict`，商家重新整理即可。既有列的 revision 值不需回填；部署當下已發出的 admission 仍有效（revision 未變），只是不再因成交失效。

@@ -6,6 +6,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 import { createCommerceOrderForCheckout } from "@/lib/commerce-orders";
 import { getDb } from "@/lib/db";
 import {
+  CHECKOUT_RESERVATION_RETRY,
   createReservedPaymentTransaction,
   InventoryUnavailableError,
   ProductChangedError,
@@ -50,7 +51,7 @@ const MAX_BUYER_RELOADS = CONCURRENCY * 4;
 // Retry policies of the code under test (kept in sync with the callers): how
 // many transactions one retry loop opens and which aborts it re-runs.
 type RetryPolicy = { attempts: number; retried: ReadonlySet<TransactionOutcome> };
-const CHECKOUT_RETRY: RetryPolicy = { attempts: 12, retried: new Set(["transient"]) }; // inventory-reservations.ts
+const CHECKOUT_RETRY: RetryPolicy = { attempts: CHECKOUT_RESERVATION_RETRY.attempts, retried: new Set(["transient"]) }; // inventory-reservations.ts
 const WEBHOOK_RETRY: RetryPolicy = { attempts: 3, retried: new Set(["transient", "unique"]) }; // payment-webhooks.ts
 const NOTIFICATION_RETRY: RetryPolicy = { attempts: 3, retried: new Set(["transient"]) }; // live-notification-delivery.ts TRANSIENT_RETRY
 

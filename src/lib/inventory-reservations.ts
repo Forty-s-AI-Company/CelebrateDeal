@@ -18,8 +18,17 @@ export const INVENTORY_RESERVATION_TTL_MS = 30 * 60 * 1000;
 // others (first updater wins), so commits on a hot product are serial and a
 // burst needs a retry window wider than (buyers x transaction time). Twelve
 // attempts capped at 1 s cover the 50-buyer burst in
-// serializable-stress.db.test.ts (worst-case total backoff about 6.6 s).
-const MAX_SERIALIZABLE_ATTEMPTS = 12;
+// serializable-stress.db.test.ts (worst-case total backoff about 6.6 s);
+// about 50 simultaneous buyers of one product is the measured capacity.
+export const CHECKOUT_RESERVATION_RETRY = { attempts: 12, baseDelayMs: 25, maxDelayMs: 1_000 } as const;
+
+// The expiry job is not a buyer queue: it walks up to `limit` rows in one
+// cron request ahead of webhook retries, so each row keeps the pre-B-2 budget
+// and the whole pass stops at a deadline, leaving the rest for the next run.
+export const EXPIRY_CLEANUP_RETRY = { attempts: 5, baseDelayMs: 25, maxDelayMs: 400 } as const;
+export const EXPIRY_CLEANUP_DEADLINE_MS = 60_000;
+
+type InventoryRetryPolicy = { attempts: number; baseDelayMs: number; maxDelayMs: number };
 
 export class InventoryUnavailableError extends Error {
   constructor() {
@@ -163,11 +172,12 @@ function isUniqueConstraintConflict(error: unknown) {
   return error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002";
 }
 
-function runSerializable<T>(operation: (tx: Prisma.TransactionClient) => Promise<T>) {
+function runSerializable<T>(
+  operation: (tx: Prisma.TransactionClient) => Promise<T>,
+  policy: InventoryRetryPolicy = CHECKOUT_RESERVATION_RETRY,
+) {
   return runSharedSerializable(getDb(), operation, {
-    attempts: MAX_SERIALIZABLE_ATTEMPTS,
-    baseDelayMs: 25,
-    maxDelayMs: 1_000,
+    ...policy,
     // Production intentionally runs with a small serverless connection
     // pool. Concurrent checkout attempts should queue long enough to
     // resolve through the inventory invariant, not fail at pool admission.
@@ -186,8 +196,8 @@ function runSerializable<T>(operation: (tx: Prisma.TransactionClient) => Promise
  * therefore keep a valid admission while stock lasts.
  *
  * Evidence handed to the same-transaction order callback: this transaction
- * decremented `quantity` units of the product, and its compare-and-set proved
- * the content revision was exactly `revision` at that moment. Only
+ * decremented `quantity` units of the product, leaving `inventoryAfter`, and
+ * its compare-and-set proved the content revision was exactly `revision`. Only
  * `createReservedPaymentTransaction` builds it; it is never parsed from a
  * request.
  */
@@ -196,6 +206,8 @@ export type ReservedInventoryRevision = {
   productId: string;
   revision: number;
   quantity: number;
+  /** Stock this transaction's own decrement left, as returned by that UPDATE. */
+  inventoryAfter: number;
 };
 
 export async function createReservedPaymentTransaction({
@@ -243,11 +255,12 @@ export async function createReservedPaymentTransaction({
 
       // Always mutate products in a stable order. This keeps two multi-item
       // checkout attempts from taking locks in opposite directions.
+      const inventoryAfter = new Map<string, number>();
       for (const item of orderedReservationItems(reservationItems)) {
         // The revision condition rejects stale content (price, terms); the
         // inventory condition alone guards stock. Stock-only writes leave the
         // content revision unchanged, so other admitted buyers stay valid.
-        const reserved = await tx.product.updateMany({
+        const reserved = await tx.product.updateManyAndReturn({
           where: {
             id: item.productId,
             vendorId,
@@ -256,8 +269,12 @@ export async function createReservedPaymentTransaction({
             ...(item.expectedProductRevision !== undefined ? { revision: item.expectedProductRevision } : {}),
           },
           data: { inventory: { decrement: item.quantity } },
+          select: { inventory: true },
         });
-        if (reserved.count === 1) continue;
+        if (reserved.length === 1) {
+          inventoryAfter.set(item.productId, reserved[0]!.inventory);
+          continue;
+        }
         if (item.expectedProductRevision !== undefined) {
           const current = await tx.product.findFirst({
             where: { id: item.productId, vendorId, isActive: true, inventory: { gte: item.quantity } },
@@ -274,6 +291,7 @@ export async function createReservedPaymentTransaction({
           vendorId, productId: item.productId,
           revision: item.expectedProductRevision,
           quantity: item.quantity,
+          inventoryAfter: inventoryAfter.get(item.productId)!,
         }]));
       await tx.inventoryReservation.create({
         data: {
@@ -510,8 +528,22 @@ export async function applyPaymentInventoryTransition(
   return "unchanged" as const;
 }
 
-export async function releaseExpiredInventoryReservations(limit = 100, now = new Date()) {
+/**
+ * Releases expired reservations one Serializable transaction per row, with
+ * the smaller EXPIRY_CLEANUP_RETRY budget. The pass stops starting new rows
+ * once `deadlineMs` has elapsed (measured with `clock`, not the logical
+ * `now`); `deferred` counts the rows left for the next scheduled run, which
+ * still finds them because they stay `reserved` and expired.
+ */
+export async function releaseExpiredInventoryReservations(
+  limit = 100,
+  now = new Date(),
+  options: { deadlineMs?: number; clock?: () => number } = {},
+) {
   const db = getDb();
+  const clock = options.clock ?? Date.now;
+  const deadlineMs = options.deadlineMs ?? EXPIRY_CLEANUP_DEADLINE_MS;
+  const startedAt = clock();
   const candidates = await db.inventoryReservation.findMany({
     where: { status: "reserved", expiresAt: { lte: now } },
     orderBy: { expiresAt: "asc" },
@@ -521,8 +553,11 @@ export async function releaseExpiredInventoryReservations(limit = 100, now = new
   let released = 0;
   let committed = 0;
   let held = 0;
+  let examined = 0;
 
   for (const candidate of candidates) {
+    if (clock() - startedAt >= deadlineMs) break;
+    examined += 1;
     const outcome = await runSerializable(async (tx) => {
       const reservation = await tx.inventoryReservation.findUnique({
         where: { id: candidate.id },
@@ -585,12 +620,12 @@ export async function releaseExpiredInventoryReservations(limit = 100, now = new
         });
       }
       return "released";
-    });
+    }, EXPIRY_CLEANUP_RETRY);
 
     if (outcome === "released") released += 1;
     if (outcome === "committed") committed += 1;
     if (outcome === "held") held += 1;
   }
 
-  return { examined: candidates.length, released, committed, held };
+  return { examined, released, committed, held, deferred: candidates.length - examined };
 }

@@ -292,9 +292,9 @@ describe("flash sale authoritative price and reservation", () => {
     const f = await fixture();
     const quote = (await resolveFlashSaleQuote(f.db, f.bearers[0], f.scope))!;
     for (const evidence of [
-      { vendorId: f.vendor.id, productId: f.product.id, revision: quote.productRevision + 1, quantity: 1 },
-      { vendorId: f.vendor.id, productId: f.product.id, revision: quote.productRevision, quantity: 2 },
-      { vendorId: "other-vendor", productId: f.product.id, revision: quote.productRevision, quantity: 1 },
+      { vendorId: f.vendor.id, productId: f.product.id, revision: quote.productRevision + 1, quantity: 1, inventoryAfter: 4 },
+      { vendorId: f.vendor.id, productId: f.product.id, revision: quote.productRevision, quantity: 2, inventoryAfter: 3 },
+      { vendorId: "other-vendor", productId: f.product.id, revision: quote.productRevision, quantity: 1, inventoryAfter: 4 },
     ]) {
       await expect(f.db.$transaction((tx) => consumeFlashSaleQuote(tx, f.bearers[0]!, quote, "evidence", new Date(), evidence),
         { isolationLevel: Prisma.TransactionIsolationLevel.Serializable })).rejects.toBeInstanceOf(FlashSaleUnavailableError);
