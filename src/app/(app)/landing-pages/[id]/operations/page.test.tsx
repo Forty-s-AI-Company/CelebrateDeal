@@ -42,7 +42,7 @@ it("rejects unauthorized access before loading private operations or issuing CSR
   expect(mocks.csrf).not.toHaveBeenCalled();
 });
 
-const loaded = { pageId: "page-1", content: { activeStepId: "s1", flow: { steps: [{ id: "s1", isSystem: false }, { id: "s2", isSystem: false }] } } };
+const loaded = { pageId: "page-1", content: { activeStepId: "s1", flow: { goal: "audience", steps: [{ id: "s1", isSystem: false }, { id: "s2", isSystem: false }] } } };
 
 it("passes the scoped publication diagnosis to the management panel", async () => {
   const diagnosis = { available: true, message: "公開網址可以開啟。", projectHref: "/projects/p1", missing: [] };
@@ -52,6 +52,18 @@ it("passes the scoped publication diagnosis to the management panel", async () =
   renderToStaticMarkup(await Page({ params: Promise.resolve({ id: "page-1" }), searchParams: Promise.resolve({ step: "s2" }) }));
   expect(mocks.publication).toHaveBeenCalledWith("page-1");
   expect(mocks.panel).toHaveBeenCalledWith(expect.objectContaining({ initialPublication: diagnosis, initialStepId: "s2" }));
+});
+
+it("gives the panel template metadata and thumbnails for the funnel goal, never template build code", async () => {
+  mocks.load.mockResolvedValue(loaded);
+  mocks.publication.mockResolvedValue(undefined);
+  mocks.csrf.mockResolvedValue("synthetic");
+  renderToStaticMarkup(await Page({ params: Promise.resolve({ id: "page-1" }), searchParams: Promise.resolve({}) }));
+  const options = (mocks.panel.mock.calls[0]![0] as { templateOptions: Array<Record<string, unknown>> }).templateOptions;
+  expect(options.length).toBeGreaterThan(0);
+  for (const option of options) {
+    expect(Object.keys(option).sort()).toEqual(["category", "description", "id", "name", "stepTypes", "thumbnail"]);
+  }
 });
 
 it("keeps management usable when the publication diagnosis fails", async () => {

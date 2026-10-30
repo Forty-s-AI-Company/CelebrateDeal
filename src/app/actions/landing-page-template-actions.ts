@@ -17,6 +17,8 @@ import {
   createLandingPageFromTemplate,
   deleteLandingPageTemplate,
   getLandingPagePlatformTemplateDocument,
+  getLandingPageStepTemplatePreview,
+  instantiateLandingPageStepTemplate,
   getLandingPageTemplateDocument,
   getLandingPageTemplateTarget,
   LandingPageTemplateInputError,
@@ -175,6 +177,26 @@ export async function readPlatformTemplateDocumentAction(templateId: string): Pr
 export async function readLandingPageTemplateDocumentAction(templateId: string): Promise<{ ok: true; document: PageDocument } | { ok: false; message: string }> {
   try {
     return { ok: true, document: await getLandingPageTemplateDocument(templateId) };
+  } catch (error) {
+    return { ok: false, message: failure(error).message };
+  }
+}
+
+type StepTemplateRequest = { goal: string; stepType: string; templateId: string };
+
+/** Full document of a step-picker template for the preview; thumbnails come with the page. */
+export async function readStepTemplatePreviewAction(request: StepTemplateRequest): Promise<{ ok: true; document: PageDocument } | { ok: false; message: string }> {
+  try {
+    return { ok: true, document: await getLandingPageStepTemplatePreview(request) };
+  } catch (error) {
+    return { ok: false, message: failure(error).message };
+  }
+}
+
+/** Fresh document (new node ids) of a step-picker template, built on the server when the merchant applies it. */
+export async function instantiateStepTemplateAction(request: StepTemplateRequest & { pageId: string }): Promise<{ ok: true; document: PageDocument } | { ok: false; message: string }> {
+  try {
+    return { ok: true, document: await instantiateLandingPageStepTemplate(request) };
   } catch (error) {
     return { ok: false, message: failure(error).message };
   }

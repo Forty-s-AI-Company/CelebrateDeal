@@ -4,6 +4,7 @@ import { FunnelOperationsError, loadFunnelOperations } from "@/lib/funnel-operat
 import { getLandingPagePublicationStatus } from "@/lib/landing-page-service";
 import { CSRF_FIELD_NAME, getCsrfToken } from "@/lib/csrf";
 import { requireVendorManager } from "@/lib/auth";
+import { listStepTemplateOptions } from "@/lib/funnel-step-template-options";
 
 export default async function FunnelOperationsPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams?: Promise<Record<string, string | string[] | undefined>> }) {
   const { id } = await params;
@@ -21,5 +22,5 @@ export default async function FunnelOperationsPage({ params, searchParams }: { p
   const initialStepId = requestedStepExists
     ? requestedStep!
     : initial.content.flow.steps.find((step) => !step.isSystem)?.id ?? initial.content.activeStepId;
-  return <FunnelOperationsPanel initial={initial} initialStepId={initialStepId} initialPublication={publication} csrfName={CSRF_FIELD_NAME} csrfToken={await getCsrfToken()} />;
+  return <FunnelOperationsPanel initial={initial} initialStepId={initialStepId} initialPublication={publication} templateOptions={listStepTemplateOptions(initial.content.flow.goal)} csrfName={CSRF_FIELD_NAME} csrfToken={await getCsrfToken()} />;
 }

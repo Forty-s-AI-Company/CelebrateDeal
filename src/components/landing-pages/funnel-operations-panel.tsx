@@ -7,6 +7,7 @@ import { useRouter } from "next/navigation";
 import { BookmarkPlus, ExternalLink, Eye, MoreHorizontal, Pencil, Plus, Rocket, Settings, X } from "lucide-react";
 import { ConfirmActionButton, useConfirmDialog } from "@/components/confirm-action-button";
 import { landingPageAction } from "@/app/actions/landing-page-actions";
+import { instantiateStepTemplateAction } from "@/app/actions/landing-page-template-actions";
 import { readFunnelOperations, updateFunnelOperations } from "@/app/actions/funnel-operations-actions";
 import { FunnelAutomationSettings } from "@/components/landing-pages/funnel-automation-settings";
 import { FunnelTemplateGalleryPicker } from "@/components/landing-pages/funnel-template-gallery-picker";
@@ -14,7 +15,8 @@ import { SaveAsTemplateDialog } from "@/components/landing-pages/save-as-templat
 import { type FunnelOperations, type FunnelExperiment } from "@/lib/funnel-operations";
 import type { FunnelOperationsEditor, FunnelReports } from "@/lib/funnel-operations-service";
 import type { FunnelStepType } from "@/lib/funnel-flow";
-import { instantiateFunnelTemplate, listFunnelTemplateGallery } from "@/lib/funnel-template-gallery";
+import { filterStepTemplateOptions, type StepTemplateOption } from "@/lib/funnel-step-template-options-meta";
+import type { PageDocument } from "@/lib/funnel-page-document";
 import {
   addFunnelStepPage,
   getActiveFunnelStepPage,
@@ -47,7 +49,7 @@ function editableSteps(content: FunnelStepPages): Steps {
 // One management surface coordinates the seven tabs and atomic step actions;
 // splitting its state across sibling owners would make revision conflicts harder to guard.
 // eslint-disable-next-line complexity
-export function FunnelOperationsPanel({ initial, initialStepId, csrfName, csrfToken, initialPublication }: { initial: FunnelOperationsEditor; initialStepId: string; csrfName: string; csrfToken: string; initialPublication?: LandingPagePublicationStatus }) {
+export function FunnelOperationsPanel({ initial, initialStepId, csrfName, csrfToken, initialPublication, templateOptions }: { initial: FunnelOperationsEditor; initialStepId: string; csrfName: string; csrfToken: string; initialPublication?: LandingPagePublicationStatus; /** Template metadata and thumbnails for this funnel's goal (server-built); documents are fetched on demand. */ templateOptions: readonly StepTemplateOption[] }) {
   const router = useRouter();
   const initialContent = { ...initial.content, activeStepId: initialStepId };
   const [editor, setEditor] = useState(initial);
@@ -72,14 +74,18 @@ export function FunnelOperationsPanel({ initial, initialStepId, csrfName, csrfTo
   const [newTemplateId, setNewTemplateId] = useState("");
   const [selectedTemplateId, setSelectedTemplateId] = useState("");
   const [pending, setPending] = useState(false);
+  const [applyError, setApplyError] = useState<string>();
+  const [addError, setAddError] = useState<string>();
   const { confirm, dialog: confirmDialog } = useConfirmDialog();
   const revisionRef = useRef(initial.revision);
+  const contentRef = useRef(content);
+  useEffect(() => { contentRef.current = content; }, [content]);
   const reportGeneration = useRef(0);
   const inFlight = useRef(false);
   const active = getActiveFunnelStepPage(content);
   const activeStepType = active?.step.type;
-  const templates = activeStepType ? listFunnelTemplateGallery(content.flow.goal, activeStepType) : [];
-  const newTemplates = listFunnelTemplateGallery(content.flow.goal, newStepType);
+  const templates = activeStepType ? filterStepTemplateOptions(templateOptions, activeStepType) : [];
+  const newTemplates = filterStepTemplateOptions(templateOptions, newStepType);
   const effectiveSelectedTemplateId = templates.some((item) => item.id === selectedTemplateId)
     ? selectedTemplateId
     : active?.step.template.templateId ?? templates[0]?.id ?? "";
@@ -199,11 +205,32 @@ export function FunnelOperationsPanel({ initial, initialStepId, csrfName, csrfTo
     if (active.step.template.templateId) { confirm({ message: "更換模板會取代目前步驟的頁面內容，確定繼續？", destructive: true }, () => replaceTemplate(templateId), focusedElement()); return; }
     replaceTemplate(templateId);
   }
+  /** The server builds the document (fresh node ids), so the template registry never reaches the browser. */
+  async function buildTemplateDocument(goal: FunnelStepPages["flow"]["goal"], stepType: FunnelStepType, templateId: string, pageId: string, report: (message: string) => void = setApplyError): Promise<PageDocument | undefined> {
+    inFlight.current = true;
+    try {
+      const response = await instantiateStepTemplateAction({ goal, stepType, templateId, pageId });
+      if (response.ok) return response.document;
+      report(`${response.message}畫布內容沒有變更。`);
+    } catch { report("模板目前無法套用，畫布內容沒有變更，請稍後再試。"); }
+    finally { inFlight.current = false; }
+    return undefined;
+  }
   function replaceTemplate(templateId: string) {
     if (!active || active.step.isSystem) return;
-    const result = replaceFunnelStepPage(content, active.step.id, instantiateFunnelTemplate(templateId, active.page.id), templateId);
-    if (!result.ok) { setMessage(result.error); return; }
-    setChangeTemplate(false); persistContent(result.state, "模板已套用；現在可按「編輯頁面」編輯內容。");
+    if (inFlight.current) { setApplyError("前一個變更仍在儲存，請稍候再試。"); return; }
+    const stepId = active.step.id;
+    setApplyError(undefined); setPending(true);
+    void buildTemplateDocument(content.flow.goal, active.step.type, templateId, active.page.id).then((document) => {
+      setPending(false);
+      if (!document) return;
+      // The merchant may have moved on while the server built the document; apply to the latest state.
+      const latest = contentRef.current;
+      if (latest.activeStepId !== stepId) { setApplyError("已切換到其他步驟，模板沒有套用。"); return; }
+      const result = replaceFunnelStepPage(latest, stepId, document, templateId);
+      if (!result.ok) { setApplyError(result.error); return; }
+      setChangeTemplate(false); persistContent(result.state, "模板已套用；現在可按「編輯頁面」編輯內容。");
+    });
   }
   function saveActiveMetadata() {
     if (!active || active.step.isSystem) return;
@@ -249,19 +276,25 @@ export function FunnelOperationsPanel({ initial, initialStepId, csrfName, csrfTo
     if (!added.ok) { setMessage(added.error); return; }
     const created = added.state.flow.steps.find((step) => !content.flow.steps.some((existing) => existing.id === step.id));
     if (!created) return;
-    let next = added.state;
-    if (newStepSource === "template" && effectiveNewTemplateId) {
-      const page = next.pages[created.id];
-      if (!page) return;
-      const replaced = replaceFunnelStepPage(next, created.id, instantiateFunnelTemplate(effectiveNewTemplateId, page.id), effectiveNewTemplateId);
-      if (!replaced.ok) { setMessage(replaced.error); return; }
-      next = replaced.state;
-    }
-    const selected = switchFunnelStep(next, created.id);
-    if (selected.ok) next = selected.state;
-    setAddOpen(false); setTab("Configuration");
-    window.history.replaceState(null, "", `/landing-pages/${editor.pageId}/operations?step=${encodeURIComponent(created.id)}&tab=configuration`);
-    persistContent(next, "新步驟已建立。");
+    const finish = (next: FunnelStepPages) => {
+      const selected = switchFunnelStep(next, created.id);
+      if (selected.ok) next = selected.state;
+      setAddOpen(false); setTab("Configuration");
+      window.history.replaceState(null, "", `/landing-pages/${editor.pageId}/operations?step=${encodeURIComponent(created.id)}&tab=configuration`);
+      persistContent(next, "新步驟已建立。");
+    };
+    if (newStepSource !== "template" || !effectiveNewTemplateId) { finish(added.state); return; }
+    const page = added.state.pages[created.id];
+    if (!page) return;
+    if (inFlight.current) { setAddError("前一個變更仍在儲存，請稍候再試。"); return; }
+    setAddError(undefined); setPending(true);
+    void buildTemplateDocument(content.flow.goal, newStepType, effectiveNewTemplateId, page.id, setAddError).then((document) => {
+      setPending(false);
+      if (!document) return;
+      const replaced = replaceFunnelStepPage(added.state, created.id, document, effectiveNewTemplateId);
+      if (!replaced.ok) { setAddError(replaced.error); return; }
+      finish(replaced.state);
+    });
   }
 
   return <section aria-label="一頁式網站管理" className="min-w-0 space-y-2 lg:space-y-4">
@@ -282,7 +315,7 @@ export function FunnelOperationsPanel({ initial, initialStepId, csrfName, csrfTo
       <div className="min-w-0 overflow-auto">
         <nav aria-label="網站功能分頁" className="flex min-w-max border-b border-slate-200 px-4">{tabs.map((item) => <button type="button" key={item} disabled={item !== "Configuration" && secondaryDisabled} aria-pressed={tab === item} className={`cursor-pointer border-b-2 px-4 py-4 text-sm font-semibold transition-colors disabled:cursor-not-allowed disabled:text-slate-300 ${tab === item ? "border-sky-500 text-slate-950" : "border-transparent text-slate-600 hover:text-slate-900"}`} onClick={() => setTab(item)}>{funnelTabLabels[item]}</button>)}</nav>
         <div className="p-3 sm:p-7">
-          {tab === "Configuration" ? <ConfigurationPanel active={active} content={content} editor={editor} templates={templates} selectedTemplateId={effectiveSelectedTemplateId} needsTemplate={needsTemplate} changeTemplate={changeTemplate} disabled={pending} setContent={(next) => { setContent(next); setDirty(true); }} setSelectedTemplateId={setSelectedTemplateId} setChangeTemplate={setChangeTemplate} onBlur={saveActiveMetadata} onApply={applyTemplate} navigate={navigate} onSaveAsTemplate={() => setSaveTemplateOpen(true)} /> : null}
+          {tab === "Configuration" ? <ConfigurationPanel active={active} content={content} editor={editor} templates={templates} applyError={applyError} selectedTemplateId={effectiveSelectedTemplateId} needsTemplate={needsTemplate} changeTemplate={changeTemplate} disabled={pending} setContent={(next) => { setContent(next); setDirty(true); }} setSelectedTemplateId={setSelectedTemplateId} setChangeTemplate={setChangeTemplate} onBlur={saveActiveMetadata} onApply={applyTemplate} navigate={navigate} onSaveAsTemplate={() => setSaveTemplateOpen(true)} /> : null}
           {tab === "Automation Rules" ? <FunnelAutomationSettings pageId={editor.pageId} csrfName={csrfName} csrfToken={csrfToken} /> : null}
           {tab !== "Configuration" && tab !== "Automation Rules" ? <fieldset disabled={pending} className="space-y-4"><legend className="mb-4 text-lg font-bold">{funnelTabLabels[tab]}</legend>{tab === "A/B test" ? <ExperimentSettings value={editor.operations.experiment} steps={editor.steps} onChange={(experiment) => operations({ ...editor.operations, experiment })} /> : null}{tab === "Deadline settings" ? <DeadlineSettings value={editor.operations.deadline} steps={editor.steps} onChange={(deadline) => operations({ ...editor.operations, deadline })} /> : null}{tab === "Stats" || tab === "Leads" || tab === "Sales" ? <ReportSettings tab={tab} editor={editor} reports={reports} reportError={reportError} retry={() => { setReports(null); setReportError(false); setReportRequest((value) => value + 1); }} onChange={operations} /> : null}<SettingsFooter pending={pending} dirty={dirty} save={saveSettings} reload={reload} /></fieldset> : null}
           {message ? <p role="status" className="mt-5 rounded-lg border border-blue-100 bg-blue-50 p-3 text-sm text-blue-900">{message}</p> : null}
@@ -291,14 +324,14 @@ export function FunnelOperationsPanel({ initial, initialStepId, csrfName, csrfTo
     </div>
     {settingsOpen ? <div role="dialog" aria-modal="true" aria-labelledby="funnel-settings-title" className="fixed inset-0 z-[120] grid place-items-center bg-slate-950/60 p-4"><div className="max-h-[90dvh] w-full max-w-2xl overflow-auto rounded-2xl bg-white p-6 shadow-2xl"><div className="mb-5 flex items-start justify-between gap-4"><div><h2 id="funnel-settings-title" className="text-xl font-bold">網站設定</h2><p className="mt-1 text-sm text-slate-600">管理整個網站的名稱、網址與幣別。</p></div><button type="button" aria-label="關閉 網站設定" onClick={() => setSettingsOpen(false)} className="cursor-pointer rounded-lg p-2 hover:bg-slate-100"><X size={18} /></button></div><GlobalSettings editor={editor} change={change} /><SettingsFooter pending={pending} dirty={dirty} save={saveSettings} reload={reload} /></div></div> : null}
     {saveTemplateOpen && active && !active.step.isSystem ? <SaveAsTemplateDialog csrfName={csrfName} csrfToken={csrfToken} pageId={editor.pageId} stepId={active.step.id} stepName={active.step.name} defaultName={`${editor.name}－${active.step.name}`} blockedReason={pending ? "前一個變更仍在儲存，請稍候再存成範本。" : undefined} onClose={() => setSaveTemplateOpen(false)} /> : null}
-    {addOpen ? <AddStepDialog goal={content.flow.goal} name={newStepName} path={newStepPath} type={newStepType} source={newStepSource} templateId={effectiveNewTemplateId} templates={newTemplates} disabled={pending} onName={setNewStepName} onPath={setNewStepPath} onType={setNewStepType} onSource={setNewStepSource} onTemplate={setNewTemplateId} onClose={() => setAddOpen(false)} onSave={addStep} /> : null}
+    {addOpen ? <AddStepDialog goal={content.flow.goal} name={newStepName} path={newStepPath} type={newStepType} source={newStepSource} templateId={effectiveNewTemplateId} templates={newTemplates} error={addError} disabled={pending} onName={setNewStepName} onPath={setNewStepPath} onType={setNewStepType} onSource={setNewStepSource} onTemplate={setNewTemplateId} onClose={() => { setAddOpen(false); setAddError(undefined); }} onSave={addStep} /> : null}
     {confirmDialog}
   </section>;
 }
 
-function ConfigurationPanel({ active, content, editor, templates, selectedTemplateId, needsTemplate, changeTemplate, disabled, setContent, setSelectedTemplateId, setChangeTemplate, onBlur, onApply, navigate, onSaveAsTemplate }: { active: ReturnType<typeof getActiveFunnelStepPage>; content: FunnelStepPages; editor: FunnelOperationsEditor; templates: ReturnType<typeof listFunnelTemplateGallery>; selectedTemplateId: string; needsTemplate: boolean; changeTemplate: boolean; disabled: boolean; setContent: (next: FunnelStepPages) => void; setSelectedTemplateId: (id: string) => void; setChangeTemplate: (value: boolean) => void; onBlur: () => void; onApply: (id: string) => void; navigate: (href: string) => void; onSaveAsTemplate: () => void }) {
+function ConfigurationPanel({ active, content, editor, templates, applyError, selectedTemplateId, needsTemplate, changeTemplate, disabled, setContent, setSelectedTemplateId, setChangeTemplate, onBlur, onApply, navigate, onSaveAsTemplate }: { active: ReturnType<typeof getActiveFunnelStepPage>; content: FunnelStepPages; editor: FunnelOperationsEditor; templates: readonly StepTemplateOption[]; applyError?: string; selectedTemplateId: string; needsTemplate: boolean; changeTemplate: boolean; disabled: boolean; setContent: (next: FunnelStepPages) => void; setSelectedTemplateId: (id: string) => void; setChangeTemplate: (value: boolean) => void; onBlur: () => void; onApply: (id: string) => void; navigate: (href: string) => void; onSaveAsTemplate: () => void }) {
   if (!active || active.step.isSystem) return <div className="grid min-h-[28rem] place-items-center rounded-xl border border-dashed border-slate-200 bg-slate-50 text-center"><div className="max-w-md p-8"><h2 className="text-xl font-bold text-slate-900">尚未建立網站步驟</h2><p className="mt-2 text-sm leading-6 text-slate-600">自訂流程會從空白開始。請使用左側的「新增步驟」 選擇頁面類型，再決定套用模板或從空白開始。</p></div></div>;
-  if (needsTemplate || changeTemplate) return <div><div className="mb-5"><p className="text-xs font-bold uppercase tracking-wider text-blue-700">基本設定</p><h2 className="mt-1 text-xl font-bold">為「{active.step.name}」選擇模板</h2><p className="mt-2 text-sm text-slate-600">模板已依 {funnelGoalLabels[content.flow.goal]} 與 {funnelStepLabels[active.step.type]} 過濾。完整預覽後再套用。</p></div>{templates.length ? <FunnelTemplateGalleryPicker templates={templates} selectedId={selectedTemplateId} disabled={disabled} onSelect={setSelectedTemplateId} onApply={onApply} /> : <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-6 text-sm text-slate-600">這個頁面類型 沒有相容模板。請新增步驟時選擇「從空白開始」。</div>}<p className="mt-4 text-sm text-slate-600">想用自己存過的範本？到<Link href="/landing-pages/templates?tab=mine" className="mx-1 font-semibold text-blue-700 underline">範本 › 我的範本</Link>選擇「套用到現有網站」。</p>{changeTemplate ? <button type="button" onClick={() => setChangeTemplate(false)} className={`${button} mt-4`}>取消更換模板</button> : null}</div>;
+  if (needsTemplate || changeTemplate) return <div><div className="mb-5"><p className="text-xs font-bold uppercase tracking-wider text-blue-700">基本設定</p><h2 className="mt-1 text-xl font-bold">為「{active.step.name}」選擇模板</h2><p className="mt-2 text-sm text-slate-600">模板已依 {funnelGoalLabels[content.flow.goal]} 與 {funnelStepLabels[active.step.type]} 過濾。完整預覽後再套用。</p></div>{templates.length ? <FunnelTemplateGalleryPicker templates={templates} goal={content.flow.goal} stepType={active.step.type} applyError={applyError} selectedId={selectedTemplateId} disabled={disabled} onSelect={setSelectedTemplateId} onApply={onApply} /> : <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-6 text-sm text-slate-600">這個頁面類型 沒有相容模板。請新增步驟時選擇「從空白開始」。</div>}<p className="mt-4 text-sm text-slate-600">想用自己存過的範本？到<Link href="/landing-pages/templates?tab=mine" className="mx-1 font-semibold text-blue-700 underline">範本 › 我的範本</Link>選擇「套用到現有網站」。</p>{changeTemplate ? <button type="button" onClick={() => setChangeTemplate(false)} className={`${button} mt-4`}>取消更換模板</button> : null}</div>;
   const nextName = (name: string) => { const result = renameFunnelStepPage(content, active.step.id, name); if (result.ok) setContent(result.state); };
   const nextPath = (path: string) => { const result = setFunnelStepPathPage(content, active.step.id, path); if (result.ok) setContent(result.state); };
   return <div><div className="mb-3 lg:mb-6"><p className="text-xs font-bold uppercase tracking-wider text-blue-700">基本設定</p><h2 className="mt-1 text-xl font-bold text-slate-950">{active.step.name}</h2></div><div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_14rem]"><div className="space-y-5"><label className="grid gap-1.5 text-sm font-semibold text-slate-700">名稱 *<input className={control} value={active.step.name} disabled={disabled} onChange={(event) => nextName(event.currentTarget.value)} onBlur={onBlur} /></label><label className="grid gap-1.5 text-sm font-semibold text-slate-700">網址路徑 *<div className="flex min-h-10 overflow-hidden rounded-lg border border-slate-500 bg-white focus-within:border-blue-600 focus-within:ring-2 focus-within:ring-blue-100"><span className="flex items-center border-r border-slate-200 bg-slate-50 px-3 text-xs text-slate-600">/lp/{editor.slug}/</span><input aria-label="步驟 網址路徑" className="min-w-0 flex-1 px-3 text-sm outline-none" value={active.step.path} disabled={disabled} onChange={(event) => nextPath(event.currentTarget.value)} onBlur={onBlur} /></div></label><div className="border-t border-slate-200 pt-5"><p className="text-sm text-slate-600">模板：{active.step.template.templateId ? templates.find((item) => item.id === active.step.template.templateId)?.name ?? "已套用模板" : "從空白開始"}</p></div></div><div className="grid content-start gap-3"><Link href={`/lp/${editor.slug}/${active.step.path}`} target="_blank" className="inline-flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-lg bg-blue-700 px-4 text-sm font-bold text-white hover:bg-blue-800"><ExternalLink size={17} />查看步驟頁面</Link><button type="button" disabled={disabled} onClick={() => navigate(landingPageEditorHref(editor.pageId, active.step.id))} className="inline-flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-lg bg-blue-700 px-4 text-sm font-bold text-white hover:bg-blue-800 disabled:cursor-not-allowed disabled:opacity-40"><Pencil size={17} />編輯頁面</button>{templates.length ? <button type="button" disabled={disabled} onClick={() => setChangeTemplate(true)} className="inline-flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-lg bg-blue-700 px-4 text-sm font-bold text-white hover:bg-blue-800 disabled:cursor-not-allowed disabled:opacity-40"><Settings size={17} />更換模板</button> : null}<button type="button" disabled={disabled} onClick={onSaveAsTemplate} className="inline-flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-lg border border-slate-300 bg-white px-4 text-sm font-bold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"><BookmarkPlus size={17} />存成範本</button></div></div></div>;
@@ -335,11 +368,11 @@ function SettingsFooter({ pending, dirty, save, reload }: { pending: boolean; di
   return <div className="mt-6 flex flex-wrap items-center gap-3 border-t pt-4"><button type="button" disabled={pending || !dirty} className={`${button} border-blue-600 text-blue-700`} onClick={save}>儲存設定</button><button type="button" disabled={pending} className={button} onClick={reload}>重新載入</button><span className="text-sm text-slate-600">{pending ? "處理中…" : dirty ? "尚未儲存" : "已儲存"}</span></div>;
 }
 
-function AddStepDialog({ goal, name, path, type, source, templateId, templates, disabled, onName, onPath, onType, onSource, onTemplate, onClose, onSave }: { goal: FunnelStepPages["flow"]["goal"]; name: string; path: string; type: EditableStepType; source: "blank" | "template"; templateId: string; templates: ReturnType<typeof listFunnelTemplateGallery>; disabled: boolean; onName: (value: string) => void; onPath: (value: string) => void; onType: (value: EditableStepType) => void; onSource: (value: "blank" | "template") => void; onTemplate: (value: string) => void; onClose: () => void; onSave: () => void }) {
+function AddStepDialog({ goal, name, path, type, source, templateId, templates, error, disabled, onName, onPath, onType, onSource, onTemplate, onClose, onSave }: { goal: FunnelStepPages["flow"]["goal"]; name: string; path: string; type: EditableStepType; source: "blank" | "template"; templateId: string; templates: readonly StepTemplateOption[]; error?: string; disabled: boolean; onName: (value: string) => void; onPath: (value: string) => void; onType: (value: EditableStepType) => void; onSource: (value: "blank" | "template") => void; onTemplate: (value: string) => void; onClose: () => void; onSave: () => void }) {
   const allowedGroups = addableStepTypeOptions(goal);
   const canSave = Boolean(name.trim() && path.trim() && (source === "blank" || templateId));
   useDialogBehavior(true, onClose);
-  return <div role="dialog" aria-modal="true" aria-labelledby="add-step-title" className="fixed inset-0 z-[120] grid place-items-center bg-slate-950/60 p-4"><div className="max-h-[90dvh] w-full max-w-xl overflow-auto rounded-2xl bg-white p-6 shadow-2xl"><div className="mb-5 flex items-start justify-between gap-3"><div><h2 id="add-step-title" className="text-xl font-bold">新增步驟</h2><p className="mt-1 text-sm text-slate-600">選擇頁面類型與起始方式後一次建立，避免留下半完成步驟。</p></div><button type="button" aria-label="關閉新增步驟" onClick={onClose} className="cursor-pointer rounded-lg p-2 hover:bg-slate-100"><X size={18} /></button></div><div className="grid gap-4"><label className="grid gap-1 text-sm font-semibold">名稱 *<input className={control} value={name} onChange={(event) => onName(event.currentTarget.value)} /></label><label className="grid gap-1 text-sm font-semibold">網址路徑 *<input className={control} value={path} onChange={(event) => onPath(event.currentTarget.value.toLowerCase().replace(/[^a-z0-9-]/gu, ""))} /></label><label className="grid gap-1 text-sm font-semibold">類型 *<select className={control} value={type} onChange={(event) => onType(event.currentTarget.value as EditableStepType)}>{allowedGroups.map((group) => <optgroup key={group.group} label={group.label}>{group.items.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</optgroup>)}</select></label><fieldset><legend className="text-sm font-semibold">起始內容 *</legend><div className="mt-2 grid gap-2 sm:grid-cols-2"><label className="flex cursor-pointer items-center gap-2 rounded-xl border border-slate-200 p-3"><input type="radio" checked={source === "template"} onChange={() => onSource("template")} />選擇模板</label><label className="flex cursor-pointer items-center gap-2 rounded-xl border border-slate-200 p-3"><input type="radio" checked={source === "blank"} onChange={() => onSource("blank")} />從空白開始</label></div></fieldset>{source === "template" ? <label className="grid gap-1 text-sm font-semibold">相容模板<select className={control} value={templateId} onChange={(event) => onTemplate(event.currentTarget.value)}><option value="">請選擇模板</option>{templates.map((template) => <option key={template.id} value={template.id}>{template.name}</option>)}</select>{templates.length === 0 ? <span className="font-normal text-amber-700">這個類型目前沒有模板，請改選從空白開始。</span> : null}</label> : null}</div><div className="mt-6 flex justify-end gap-2"><button type="button" onClick={onClose} className={button}>取消</button><button type="button" disabled={disabled || !canSave} onClick={onSave} className="min-h-10 cursor-pointer rounded-lg bg-blue-700 px-5 text-sm font-bold text-white hover:bg-blue-800 disabled:cursor-not-allowed disabled:opacity-40">儲存</button></div></div></div>;
+  return <div role="dialog" aria-modal="true" aria-labelledby="add-step-title" className="fixed inset-0 z-[120] grid place-items-center bg-slate-950/60 p-4"><div className="max-h-[90dvh] w-full max-w-xl overflow-auto rounded-2xl bg-white p-6 shadow-2xl"><div className="mb-5 flex items-start justify-between gap-3"><div><h2 id="add-step-title" className="text-xl font-bold">新增步驟</h2><p className="mt-1 text-sm text-slate-600">選擇頁面類型與起始方式後一次建立，避免留下半完成步驟。</p></div><button type="button" aria-label="關閉新增步驟" onClick={onClose} className="cursor-pointer rounded-lg p-2 hover:bg-slate-100"><X size={18} /></button></div><div className="grid gap-4"><label className="grid gap-1 text-sm font-semibold">名稱 *<input className={control} value={name} onChange={(event) => onName(event.currentTarget.value)} /></label><label className="grid gap-1 text-sm font-semibold">網址路徑 *<input className={control} value={path} onChange={(event) => onPath(event.currentTarget.value.toLowerCase().replace(/[^a-z0-9-]/gu, ""))} /></label><label className="grid gap-1 text-sm font-semibold">類型 *<select className={control} value={type} onChange={(event) => onType(event.currentTarget.value as EditableStepType)}>{allowedGroups.map((group) => <optgroup key={group.group} label={group.label}>{group.items.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</optgroup>)}</select></label><fieldset><legend className="text-sm font-semibold">起始內容 *</legend><div className="mt-2 grid gap-2 sm:grid-cols-2"><label className="flex cursor-pointer items-center gap-2 rounded-xl border border-slate-200 p-3"><input type="radio" checked={source === "template"} onChange={() => onSource("template")} />選擇模板</label><label className="flex cursor-pointer items-center gap-2 rounded-xl border border-slate-200 p-3"><input type="radio" checked={source === "blank"} onChange={() => onSource("blank")} />從空白開始</label></div></fieldset>{source === "template" ? <label className="grid gap-1 text-sm font-semibold">相容模板<select className={control} value={templateId} onChange={(event) => onTemplate(event.currentTarget.value)}><option value="">請選擇模板</option>{templates.map((template) => <option key={template.id} value={template.id}>{template.name}</option>)}</select>{templates.length === 0 ? <span className="font-normal text-amber-700">這個類型目前沒有模板，請改選從空白開始。</span> : null}</label> : null}</div>{error ? <p role="alert" className="mt-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">{error}</p> : null}<div className="mt-6 flex justify-end gap-2"><button type="button" onClick={onClose} className={button}>取消</button><button type="button" disabled={disabled || !canSave} onClick={onSave} className="min-h-10 cursor-pointer rounded-lg bg-blue-700 px-5 text-sm font-bold text-white hover:bg-blue-800 disabled:cursor-not-allowed disabled:opacity-40">儲存</button></div></div></div>;
 }
 
 function GlobalSettings({ editor, change }: { editor: FunnelOperationsEditor; change: (patch: Partial<SettingsState>) => void }) {

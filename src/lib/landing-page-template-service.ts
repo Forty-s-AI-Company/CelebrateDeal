@@ -26,6 +26,7 @@ import {
   templateDisplayDocument,
 } from "@/lib/landing-page-template-document";
 import { getPlatformTemplatePreviewDocument } from "@/lib/landing-page-platform-template-library";
+import { getStepTemplatePreviewDocument, instantiateStepTemplateDocument } from "@/lib/funnel-step-template-options";
 import { LANDING_PAGE_MAX_CONTENT_BYTES, landingPageContentBytes } from "@/lib/landing-page-limits";
 import { requireEditableSalesProjectScope } from "@/lib/sales-project-scope";
 
@@ -205,6 +206,26 @@ export async function getLandingPageTemplateDocument(templateId: unknown): Promi
 export async function getLandingPagePlatformTemplateDocument(templateId: unknown): Promise<PageDocument> {
   await managerVendor();
   const document = getPlatformTemplatePreviewDocument(templateId);
+  if (!document) throw new LandingPageTemplateNotFoundError();
+  return document;
+}
+
+/**
+ * Documents for the step template picker (「更換模板」／新增步驟). Platform templates are code, so there is no
+ * tenant row to bind; the manager guard applies, and the template must be one the gallery offers for the
+ * funnel's goal and the step's type (unknown, retired, hidden and incompatible ids are refused).
+ */
+export async function getLandingPageStepTemplatePreview(input: { goal: unknown; stepType: unknown; templateId: unknown }): Promise<PageDocument> {
+  await managerVendor();
+  const document = getStepTemplatePreviewDocument(input);
+  if (!document) throw new LandingPageTemplateNotFoundError();
+  return document;
+}
+
+/** Fresh document (unique node ids) to apply as a step's page; same checks as the preview. */
+export async function instantiateLandingPageStepTemplate(input: { goal: unknown; stepType: unknown; templateId: unknown; pageId: unknown }): Promise<PageDocument> {
+  await managerVendor();
+  const document = instantiateStepTemplateDocument(input);
   if (!document) throw new LandingPageTemplateNotFoundError();
   return document;
 }

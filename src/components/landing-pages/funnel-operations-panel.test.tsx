@@ -2,6 +2,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import { createGoalFunnelStepPages } from "@/lib/funnel-goal-step-pages";
 import { defaultFunnelOperations } from "@/lib/funnel-operations";
+import { listStepTemplateOptions } from "@/lib/funnel-step-template-options";
 import { FunnelOperationsPanel } from "./funnel-operations-panel";
 
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }) }));
@@ -19,7 +20,7 @@ describe("localized merchant operations", () => {
       steps: content.flow.steps.filter((step) => !step.isSystem).map(({ id, name, path }) => ({ id, name, path })),
     };
     const before = structuredClone(initial);
-    const html = renderToStaticMarkup(<FunnelOperationsPanel initial={initial} initialStepId={content.activeStepId} csrfName="synthetic" csrfToken="synthetic" />);
+    const html = renderToStaticMarkup(<FunnelOperationsPanel initial={initial} initialStepId={content.activeStepId} csrfName="synthetic" csrfToken="synthetic" templateOptions={listStepTemplateOptions("audience")} />);
     for (const label of ["一頁式網站", "建立名單", "版本", "名單頁", "頁面設定", "自動化規則", "成效統計", "報名名單", "銷售紀錄", "截止設定"]) expect(html).toContain(label);
     for (const oldLabel of ["Configuration", "Automation Rules", "opt_in_page", "audience · revision"]) expect(html).not.toContain(oldLabel);
     expect(html).toContain('href="/lp/synthetic"');
