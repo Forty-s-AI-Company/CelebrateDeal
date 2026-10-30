@@ -180,7 +180,7 @@ S＝0.5、M＝0.5–2、L＝2–4、S–M＝0.5–2、M–L＝1–4（人日）�
 | 19 | F-127 | 還原焦點、補 Escape 與外點關閉 | MINOR | engineer | 否 | — | 0.5 | 2×4÷0.5＝16.0 |
 | 20 | F-072 | 已發布或有流量的頁面改封存（`archivedAt`）、FK 改 Restrict | MINOR | engineer-hard | 是 | 封測期間先告知商家已上線頁面改下架、不要刪除 | 1 | 3×5÷1＝15.0 |
 | 21 | F-038 | 月結只計買家訂單交易＋精確金額 DB 回歸測試 | BLOCKER | engineer-hard | 是 | 封測期間不鎖月結、不撥款 | 0.5–1 | 5×2÷0.75＝13.3 |
-| 22 | F-055 | 共用 `runSerializable`（退避＋jitter）＋staging 50 併發壓測 | MINOR | engineer-hard | 是 | F-090 | 1–1.5 | 3×5÷1.25＝12.0 |
+| 22 | F-055 | 共用 `runSerializable`（退避＋jitter）＋staging 50 併發壓測。**2026-10-30 狀態**：helper 已合併；50 併發壓測改在 loopback disposable PostgreSQL 完成（不跑 staging），`npm run test:db:stress`，一般 DB 測試另跑 10 併發。結帳、限量快閃、付款 webhook、直播通知四條路徑沒有超賣、每個付款事件只有一次 paid、沒有未被攔下的 P2034。另發現兩項未修：結帳 revision 釘選讓同時下單每輪只有一人成功；直播通知不同收件人同時具現化 47/50 用完重試。證據與建議見 `docs/operations/serializable-retry-callsites.md`〈50 併發壓測〉 | MINOR | engineer-hard | 是 | F-090 | 1–1.5 | 3×5÷1.25＝12.0 |
 | 23 | F-073 | 商家撥款帳號 action（只寫 envelope）＋遮罩 CHECK＋backfill 分批 | MINOR | engineer-hard | 是 | — | 1 | 3×4÷1＝12.0 |
 | 24 | F-118 | 手機改「第 N 步／共 8 步」＋下拉；控件 44px；切換後聚焦標題 | MAJOR | engineer | 否 | — | 0.5–2 | 3×5÷1.25＝12.0 |
 | 25 | F-098 | `tracesSampler`：輪詢 0～0.01、付款與 webhook 高取樣 | MINOR | engineer | 否 | 可與 F-143 同 PR | 0.5 | 2×3÷0.5＝12.0 |
