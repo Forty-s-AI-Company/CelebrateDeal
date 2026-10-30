@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import {
   ACCOUNT_SECURITY_HOLDS_PATH,
-  findAccountIdByLoginEmail,
+  lookupAccountForMfaRemoval,
   normalizeMfaRemovalReason,
   releaseAccountSecurityHold,
   removeAccountMfaBySupport,
@@ -48,22 +48,30 @@ function mfaRemovalPath(params: Record<string, string>) {
 /**
  * Step 1 of the support MFA removal tool: find the account by its login
  * email. The address travels only in this POST body; the page URL carries
- * the account id, and the page shows the masked address.
+ * the account id, and the page shows the masked address. Every lookup is
+ * audited (admin and account found, never the address).
  */
 export async function lookupAccountForMfaRemovalAction(formData: FormData) {
   await assertServerActionSecurity(formData);
   const auth = await requireFinanceAdmin();
   requireRecentMfa(auth, { nextPath: ACCOUNT_SECURITY_HOLDS_PATH });
-  const userId = await findAccountIdByLoginEmail(formData.get("email"));
+  const meta = await requestAuditMeta();
+  const userId = await lookupAccountForMfaRemoval({
+    email: formData.get("email"),
+    actorId: auth.user.id,
+    ipAddress: meta.ipAddress ?? null,
+    userAgent: meta.userAgent ?? null,
+  });
   redirect(userId ? mfaRemovalPath({ mfaUser: userId }) : mfaRemovalPath({ mfaError: "not_found" }));
 }
 
 /**
- * Step 2: remove every MFA factor and recovery code of an active account and
- * end its sessions. Platform admin with a recent MFA step-up, never on the
- * admin's own account, with the masked address retyped and a reason that the
- * audit entry keeps. `removeAccountMfaBySupport` re-checks all of it under
- * the user's row lock.
+ * Step 2: remove every MFA factor and recovery code of an active account,
+ * disable its password, end its sessions and notify its login email.
+ * Platform admin with a recent MFA step-up, never on the admin's own account
+ * or an account with a platform role, with the masked address retyped and a
+ * reason that the audit entry keeps. `removeAccountMfaBySupport` re-checks
+ * all of it under the user's row lock.
  */
 export async function removeAccountMfaAction(formData: FormData) {
   await assertServerActionSecurity(formData);

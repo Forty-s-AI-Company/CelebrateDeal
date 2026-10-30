@@ -22,7 +22,8 @@ const INPUT = "h-10 w-full rounded-md border border-border bg-white px-3 text-sm
 const MFA_ERRORS: Record<string, string> = {
   not_found: "找不到這個登入 Email 的帳號，未做任何變更。",
   not_active: "這個帳號不是使用中狀態，未做任何變更。暫停中的帳號請用上方的恢復功能。",
-  self: "不能移除自己帳號的兩步驟驗證，請由另一位平台管理員處理。",
+  self: "不能移除自己帳號的兩步驟驗證，請依客服手冊的平台管理員程序處理。",
+  platform_role: "平台管理員帳號不能用這個工具，請依客服手冊的雙人程序處理，未做任何變更。",
   confirmation_mismatch: "確認欄位與遮罩後的 Email 不一致，未做任何變更。",
   invalid_reason: `請填寫原因（${ACCOUNT_MFA_REMOVAL_REASON_MIN_LENGTH}–${ACCOUNT_MFA_REMOVAL_REASON_MAX_LENGTH} 字），未做任何變更。`,
   nothing_to_remove: "這個帳號沒有兩步驟驗證或備用碼，未做任何變更。",
@@ -54,7 +55,7 @@ export default async function AdminAccountHoldsPage({ searchParams }: { searchPa
   const mfaStatus = recentMfaStatus({ user, session });
   const target = typeof params.mfaUser === "string" && USER_ID.test(params.mfaUser) ? await describeAccountForMfaRemoval(params.mfaUser) : null;
   const mfaMessage = params.mfaRemoved
-    ? "已移除兩步驟驗證與備用碼，並登出該帳號所有裝置。請對方登入後重新設定兩步驟驗證。"
+    ? "已移除兩步驟驗證與備用碼、停用密碼並登出該帳號所有裝置，登入 Email 會收到通知。請對方用「忘記密碼」重新設定密碼，登入後再設定兩步驟驗證。"
     : params.mfaError ? MFA_ERRORS[params.mfaError] ?? MFA_ERRORS.not_found : null;
   const ownAccount = target?.userId === user.id;
 
@@ -112,7 +113,7 @@ export default async function AdminAccountHoldsPage({ searchParams }: { searchPa
       <section id="mfa-removal" aria-labelledby="mfa-removal-title" className="mt-8 rounded-lg border border-border bg-white p-4 sm:p-6">
         <h2 id="mfa-removal-title" className="text-lg font-semibold text-slate-950">移除兩步驟驗證</h2>
         <p className="mt-1 text-sm leading-6 text-slate-600">
-          給沒有被暫停、但無法通過兩步驟驗證的帳號使用（例如手機遺失，或驗證器不是本人設定的）。依客服流程確認本人身分後才能操作；會刪除該帳號的兩步驟驗證與所有備用碼，並登出所有裝置，密碼不變。不能用在自己的帳號。
+          給沒有被暫停、但無法通過兩步驟驗證的帳號使用（例如手機遺失，或驗證器不是本人設定的）。依客服流程確認本人身分後才能操作；會刪除該帳號的兩步驟驗證與所有備用碼、停用密碼、登出所有裝置，並寄一封沒有連結的通知到登入 Email；對方之後只能用「忘記密碼」重新設定密碼。不能用在自己的帳號或平台管理員帳號。
         </p>
         {mfaMessage ? <p role={params.mfaRemoved ? "status" : "alert"} className={`mt-4 rounded-md px-3 py-2 text-sm ${params.mfaRemoved ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-700"}`}>{mfaMessage}</p> : null}
 
@@ -141,6 +142,8 @@ export default async function AdminAccountHoldsPage({ searchParams }: { searchPa
             </dl>
             {ownAccount ? (
               <p role="alert" className="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-900">這是你自己的帳號，不能用這個工具移除兩步驟驗證。</p>
+            ) : target.isPlatformAdmin ? (
+              <p role="alert" className="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-900">平台管理員帳號不能用這個工具，請依客服手冊的雙人程序處理。</p>
             ) : target.status !== "active" ? (
               <p role="alert" className="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-900">這個帳號不是使用中狀態，不能用這個工具。暫停中的帳號請用上方的恢復功能。</p>
             ) : (

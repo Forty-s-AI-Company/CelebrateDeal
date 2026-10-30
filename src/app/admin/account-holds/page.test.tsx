@@ -81,6 +81,10 @@ describe("/admin/account-holds", () => {
     html = await render({ mfaUser: "user-9" });
     expect(html).toContain("安全暫停");
     expect(html).not.toContain('name="confirmation"');
+    mocks.describe.mockResolvedValue({ ...target, isPlatformAdmin: true });
+    html = await render({ mfaUser: "user-9" });
+    expect(html).toContain("平台管理員帳號不能用這個工具");
+    expect(html).not.toContain('name="confirmation"');
   });
 
   it.each([
@@ -88,12 +92,15 @@ describe("/admin/account-holds", () => {
     ["confirmation_mismatch", "確認欄位與遮罩後的 Email 不一致"],
     ["invalid_reason", "請填寫原因（10–500 字）"],
     ["not_active", "不是使用中狀態"],
+    ["platform_role", "平台管理員帳號不能用這個工具"],
     ["unexpected", "找不到這個登入 Email 的帳號"],
   ])("explains the %s result", async (mfaError, text) => {
     expect(await render({ mfaError })).toContain(text);
   });
 
   it("confirms a removal", async () => {
-    expect(await render({ mfaRemoved: "1" })).toContain("已移除兩步驟驗證與備用碼");
+    const html = await render({ mfaRemoved: "1" });
+    expect(html).toContain("已移除兩步驟驗證與備用碼、停用密碼");
+    expect(html).toContain("忘記密碼");
   });
 });

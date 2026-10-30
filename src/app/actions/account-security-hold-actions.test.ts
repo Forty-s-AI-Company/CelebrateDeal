@@ -18,7 +18,7 @@ vi.mock("@/lib/account-security-hold", async (importOriginal) => ({
   normalizeMfaRemovalReason: (await importOriginal<typeof import("@/lib/account-security-hold")>()).normalizeMfaRemovalReason,
   releaseAccountSecurityHold: mocks.release,
   removeAccountMfaBySupport: mocks.remove,
-  findAccountIdByLoginEmail: mocks.find,
+  lookupAccountForMfaRemoval: mocks.find,
 }));
 
 import { lookupAccountForMfaRemovalAction, releaseAccountSecurityHoldAction, removeAccountMfaAction } from "./account-security-hold-actions";
@@ -134,7 +134,7 @@ describe("removeAccountMfaAction", () => {
     await expect(removeAccountMfaAction(removal({ confirmation: "x***@example.test" }))).rejects.toThrow("redirect:/admin/account-holds?mfaUser=user-1&mfaError=confirmation_mismatch#mfa-removal");
   });
 
-  it.each(["not_found", "not_active", "self", "nothing_to_remove"] as const)("reports %s from the database check", async (status) => {
+  it.each(["not_found", "not_active", "self", "platform_role", "nothing_to_remove"] as const)("reports %s from the database check", async (status) => {
     mocks.remove.mockResolvedValue({ status });
     await expect(removeAccountMfaAction(removal())).rejects.toThrow(`redirect:/admin/account-holds?mfaUser=user-1&mfaError=${status}#mfa-removal`);
   });
@@ -146,9 +146,9 @@ describe("removeAccountMfaAction", () => {
 });
 
 describe("lookupAccountForMfaRemovalAction", () => {
-  it("finds the account by email and puts only its id in the URL", async () => {
-    await expect(lookupAccountForMfaRemovalAction(form({ email: "owner@example.test" }))).rejects.toThrow("redirect:/admin/account-holds?mfaUser=user-1#mfa-removal");
-    expect(mocks.find).toHaveBeenCalledWith("owner@example.test");
+  it("finds the account by email as the signed-in admin (audited by the lookup) and puts only its id in the URL", async () => {
+    await expect(lookupAccountForMfaRemovalAction(form({ email: "owner@example.test", actorId: "forged" }))).rejects.toThrow("redirect:/admin/account-holds?mfaUser=user-1#mfa-removal");
+    expect(mocks.find).toHaveBeenCalledWith({ email: "owner@example.test", actorId: "admin-1", ipAddress: "203.0.113.9", userAgent: "synthetic-agent" });
     mocks.find.mockResolvedValue(null);
     await expect(lookupAccountForMfaRemovalAction(form({ email: "nobody@example.test" }))).rejects.toThrow("redirect:/admin/account-holds?mfaError=not_found#mfa-removal");
   });

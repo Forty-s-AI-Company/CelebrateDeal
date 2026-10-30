@@ -315,6 +315,35 @@ export async function sendAccountEmailRevertedNoticeEmail({
   });
 }
 
+/**
+ * Security notice to the login email after platform support removed the
+ * account's MFA (and disabled its password). Carries no link: the owner goes
+ * to the sign-in page themselves, and someone who did not ask for it contacts
+ * support.
+ */
+export async function sendAccountMfaRemovedBySupportNoticeEmail({
+  to,
+  idempotencyKey,
+}: {
+  to: string;
+  idempotencyKey?: string;
+}) {
+  const notice = "你的兩步驟驗證已由客服移除，密碼也已停用，請使用「忘記密碼」重新設定；若不是你申請的，請立即聯絡客服。";
+  return sendTransactionalEmail({
+    to,
+    subject: "CelebrateDeal｜你的兩步驟驗證已由客服移除",
+    idempotencyKey,
+    text: `${notice}\n\n所有裝置都已登出，備用碼也已全部作廢。重新設定密碼並登入後，請再次設定兩步驟驗證。`,
+    html: `
+      <div style="font-family:Arial,sans-serif;line-height:1.7;color:#0f172a">
+        <h2 style="margin:0 0 12px">你的兩步驟驗證已由客服移除</h2>
+        <p>${escapeHtml(notice)}</p>
+        <p>所有裝置都已登出，備用碼也已全部作廢。重新設定密碼並登入後，請再次設定兩步驟驗證。</p>
+      </div>
+    `,
+  });
+}
+
 /** Invitation to join a vendor workspace (F-029). The link is single-use and expires. */
 export async function sendVendorMemberInvitationEmail({
   to,
