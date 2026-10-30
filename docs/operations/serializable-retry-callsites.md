@@ -6,6 +6,9 @@ F-055（B03-22、B04-14）新增共用的 `src/lib/serializable-retry.ts`：`wit
 
 - `src/lib/inventory-reservations.ts`：庫存保留、釋放、過期清理共用的 `runSerializable`，5 次、25–400 ms。
 - `src/lib/payment-webhooks.ts`：`processPaymentWebhook` 對 P2034／P2002 重跑整個 webhook 處理，3 次、50–500 ms。
+- `src/lib/live-notification-delivery.ts`：`ensureLiveNotificationDelivery` 的兩段交易（#520），P2034／40001／40P01 重試 3 次、預設 20–400 ms。
+
+50 併發壓測的跑法與結果見文末〈50 併發壓測〉。
 
 其餘呼叫點這次不改，只列出位置（`TransactionIsolationLevel.Serializable`，不含測試；行號為本次 commit 當下）。日後各自改用共用 helper 時，需確認該路徑可安全重跑（沒有交易外的副作用）。
 
@@ -85,3 +88,58 @@ F-055（B03-22、B04-14）新增共用的 `src/lib/serializable-retry.ts`：`wit
 - `src/lib/team-funnel-sharing.ts:193`
 - `src/lib/wp4-buyer-callback-retry.ts:82`
 - `src/lib/wp4-payuni-sandbox-payment-attempt.ts:73`
+
+## 50 併發壓測
+
+F-055 剩下的「50 併發壓測」用 `src/lib/serializable-stress.db.test.ts` 驗證。它只連 Vitest 設定已檢查過的 loopback `celebratedeal_*` 資料庫（`scripts/local-database-safety.ts`），不碰 staging 或 Production。
+
+### 怎麼跑
+
+- 一般 DB 測試（`npm run test:db`、CI 的 `test:coverage` 與 `test:db:concurrency`）每條路徑以 10 個併發呼叫者跑同一個檔案，約 4 秒。
+- 50 併發只在手動跑：`npm run test:db:stress`。設定在 `vitest.serializable-stress-db.config.ts`：只跑這個檔案、`SERIALIZABLE_STRESS_CONCURRENCY=50`、Prisma `connection_limit=60`，讓每個呼叫者都有自己的連線，衝突發生在 PostgreSQL 內而不是連線池排隊。
+- 要模擬 Production 的小連線池（F-090 建議每個函式實例 3–5）：`SERIALIZABLE_STRESS_CONNECTION_LIMIT=5 npm run test:db:stress`。也可用 `SERIALIZABLE_STRESS_CONCURRENCY` 改併發數（2–200）。
+- 每條路徑輸出一行 `[serializable_stress] {...}`：結果分類、每個呼叫者開過的 Serializable 交易數（attempts）、p50／p95 延遲與總耗時。
+
+資料庫可用全新的 disposable 容器，例如：
+
+```bash
+docker run -d --name f055-stress-pg -p 127.0.0.1:55471:5432 -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=celebratedeal_test postgres:16-alpine -c max_connections=300
+export DATABASE_URL='postgresql://postgres:postgres@127.0.0.1:55471/celebratedeal_test?schema=public' DIRECT_URL="$DATABASE_URL"
+export JOB_SECRET=ci-job-secret-123456 CSRF_SECRET=ci-csrf-fixture-32-bytes-safe-key   # CI 的合成值
+npm run db:migrate:deploy && npm run test:db:stress
+```
+
+### 測了哪些路徑、斷言什麼
+
+| 測試 | 呼叫的程式 | 斷言 |
+|---|---|---|
+| 結帳庫存保留 | `createReservedPaymentTransaction`＋`createCommerceOrderForCheckout`（與 checkout route 相同的同交易建單） | N 件商品、2N 個買家：剛好 N 個成功，其餘是 `InventoryUnavailableError`；庫存 0、不為負；付款、訂單、保留各 N 筆；金額都是商品的伺服器價格 |
+| 限量快閃 | 同上＋`consumeFlashSaleQuote`（`stockLimit`） | 剛好 `stockLimit` 個名額被核銷；付款金額都是伺服器的優惠價；其餘是 `FlashSaleUnavailableError` |
+| 付款 webhook（route） | `POST /api/webhooks/payments`，同一個 event 由所有呼叫者同時送達 | 只有一個請求處理；其他回 200（已處理）或 503（處理中，provider 會重送），沒有 500；訂單只有一筆 `payment.paid` 事件；庫存不會再扣一次 |
+| 付款 webhook（不經 event claim） | `processPaymentWebhook` 直接被同時呼叫 | 仍只有一筆 `payment.paid`；失敗者都是用完 3 次的 P2034，重送後成功 |
+| 直播通知：同一個收件人 | `ensureLiveNotificationDelivery`（#520） | 只有一筆 EmailDelivery，一個 `queued`、其餘 `duplicate` |
+| 直播通知：不同收件人 | 同上，每個呼叫者一位不同的已驗證報名者 | 每位收件人最多一筆；失敗者沒有留下任何資料 |
+
+所有失敗都必須是領域錯誤，或是用完該路徑整個重試預算的暫時性衝突（P2034／P2002，以呼叫者自己的交易紀錄確認最後連續失敗次數等於預算）。提早放棄的 P2034、連線池逾時或其他例外都會讓測試失敗。
+
+### 2026-10-30 結果
+
+環境：Windows 主機（8 核心）、Docker PostgreSQL 16.14（loopback、全新資料庫、130 個 migration）、Prisma 6.19.3、Node 22.23。base `001d1b20`。延遲是單一呼叫者從開始到結束的時間，結帳與快閃包含模擬的重新載入。
+
+| 路徑 | 50 併發、連線池 60（三次） | 50 併發、連線池 5 | 10 併發（一般 DB 測試） |
+|---|---|---|---|
+| 結帳 25 件／50 人 | 25 成功（第一次就成功 1 人，最多重新載入 24 次）、25 售完；attempts 平均 37.5、最多 50；p95 6.6–7.9 s | 25／25；平均 13.7；p95 3.0 s | 5／5；p95 0.5 s |
+| 快閃 10 名額／50 人 | 10 成功（第一次就成功 1 人，最多重新載入 9 次）、40 名額已滿；平均 18.8；p95 5.4–6.2 s | 10／40；p95 2.7 s | 2／8；p95 0.5–0.8 s |
+| webhook route 同一 event | 1 個處理、49 個 503；共 1 次交易；p95 0.2–0.3 s | 同左 | 1／9 |
+| webhook 不經 claim | 3 成功、47 個用完重試；p95 0.9–1.3 s | 25／25 | 5／5 |
+| 通知：同一收件人 | 50 成功（1 queued、49 duplicate）；p95 1.2–1.3 s | 同左；p95 0.8 s | 10 成功 |
+| 通知：不同收件人 | 3 成功、47 個用完重試；p95 0.8–1.0 s | 24／26 | 3／7 |
+
+沒有超賣、庫存沒有變負、每個付款事件只有一次 paid 轉換，也沒有未被攔下的 P2034（測試全部通過）。以下是壓測找到、這個 PR 沒有修的問題：
+
+1. **結帳：同一商品同時下單，每一輪只有一人成功（體驗問題，非超賣）。** 每次保留庫存都會把 `Product.revision` 加 1，而 checkout 用 admission 當下的 revision 做 CAS（`inventory-reservations.ts` 的 `ProductChangedError`、checkout route 的 `admission.productRevision !== product.revision`）。這是 G7-10／G7-14 刻意的設計，避免舊表單覆寫庫存、避免用過期的價格。代價是：一筆成交會讓其他所有已 admission 的買家拿到 409「Product changed; reload checkout」。50 人搶 25 件時只有 1 人第一次就成功，賣完 25 件要 25 輪，最慘的買家要重新載入 24 次；快閃也一樣。實際上每一輪是一次使用者重新整理加重新 admission，比測試裡模擬的立即重試更慢。建議把「商品內容版本」和「庫存數量」分開：價格與內容變更才推進 checkout 用的 revision，庫存只用 `inventory >= quantity` 條件扣減（商家編輯庫存另用自己的 CAS）。這會動到 checkout、快閃與 post-purchase 的 revision 證據，需要 engineer-hard 實作、reviewer 審查，並由 owner 決定是否在封測前做。
+2. **直播通知：不同收件人同時具現化，大多數用完重試。** 50 位報名者同時通過驗證時，47 位的 `ensureLiveNotificationDelivery` 在 3 次後仍是 P2034（連線池 5 時 26 位，10 併發時 7 位）。原因是交易內「已寄出檢查」與「舊快照 supersede」兩個查詢沒有能縮小範圍的索引：`idempotencyKey` 的 `startsWith` 在 en_US collation 下用不到唯一索引，`sourceFormSubmissionId` 也沒有索引，所以會掃描整個商家的 EmailDelivery（空表時是 seq scan，鎖整張表；另以 5 萬筆其他商家資料 `ANALYZE` 後改走 `vendorId` 索引，結果仍是 47/50）。每個交易都讀到別人正在新增的列，形成 rw-conflict 環，每一輪只有最先提交的人成功。目前的影響有上限：報名驗證流程會攔下錯誤並回報（`verified_submission_materialize`），提醒在到期時由排程 `processDueLiveNotifications` 補建（取決於排程頻率，見 GO-NO-GO §5 B-1）。把重試改成 8 次、25–800 ms 試跑仍有 12/50 失敗、p95 3.7 s，所以只加重試不是解法。建議改成依收件人縮小讀取範圍（例如 `(vendorId, sourceFormSubmissionId)` 索引並確認查詢計畫，或改由 outbox／排程具現化），需要 migration 與 reviewer。
+3. **用完重試時丟出的是原始 Prisma P2034，沒有專屬型別。** 每個 Production 呼叫點都會攔下：checkout 回 502「Unable to start checkout」，webhook route 回 500 並把 event 標成 failed 交給 webhook-retry，通知流程回報後由排程補。50 併發下 checkout 與 webhook route 都沒有發生；如果之後要讓買家看到「請稍後再試」，可以把用完重試的錯誤包成專屬型別並回 503 加 `Retry-After`，但要同步調整 `classifyPaymentWebhookErrorClass` 依 `error.name` 的分類。
+4. **webhook 不經 event claim 時大量用完重試，但 Production 不會走到。** route 與 webhook-retry 都先以 `WebhookEvent` 的 CAS 認領，同一個 event 只會有一個處理者；route 測試證明 50 個同時送達只開了 1 次付款交易。其餘 49 個收到 503，要靠 provider 重送。
+
+沒有驗證：staging 與 Production（依規定不跑）、Supabase transaction pooler（pgbouncer）模式、真實 PayUni 重送間隔。
