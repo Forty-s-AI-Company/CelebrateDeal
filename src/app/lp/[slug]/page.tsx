@@ -9,6 +9,7 @@ import { cookies, headers } from "next/headers";
 import { funnelPublicRenderEvent, funnelViewportHint } from "@/lib/funnel-public-render-hints";
 import { cache } from "react";
 import { loadPublicLandingPage } from "@/lib/landing-page-service";
+import { liveSessionsProp } from "@/lib/live-fixed-sessions";
 import { LandingPageRenderer } from "@/components/landing-pages/landing-page-renderer";
 import { PublicFunnelDocument } from "@/components/landing-pages/public-funnel-document";
 import { FunnelRegistrationLinkProvider } from "@/components/landing-pages/funnel-registration-links";
@@ -73,11 +74,11 @@ export default async function PublicLandingPage({ params, searchParams }: { sear
     const withRetry = await buildRetryBoundary(Boolean(page.submissionForm) && pageDocumentRendersRegistrationForm(document));
     const logicalDocument = getPublicFunnelPage(page.content, requestedStep.path);
     const nextPath = logicalDocument ? getNextPublicFunnelStepPath(page.content, logicalDocument.id, { excludeStepIds: decision.progressionExcludedStepId ? [decision.progressionExcludedStepId] : [] }) : null;
-    return withRetry(<PublicFunnelDocument document={document} initialViewport={initialViewport} event={event} registrationLinks={publicRegistrationLinks(page.context)} consultation={consultation} commerce={page.commerceByPageId?.[document.id]} submission={page.submissionForm ? { form: page.submissionForm, landingPageId: page.id, funnelStepId: decision.requestedStepId, ...(page.submissionLiveId ? { liveId: page.submissionLiveId } : {}), ...(nextPath ? { redirectTo: `/lp/${encodeURIComponent(page.slug)}/${encodeURIComponent(nextPath)}` } : {}) } : undefined} />);
+    return withRetry(<PublicFunnelDocument document={document} initialViewport={initialViewport} event={event} registrationLinks={publicRegistrationLinks(page.context)} consultation={consultation} commerce={page.commerceByPageId?.[document.id]} submission={page.submissionForm ? { form: page.submissionForm, landingPageId: page.id, funnelStepId: decision.requestedStepId, ...(page.submissionLiveId ? { liveId: page.submissionLiveId } : {}), ...liveSessionsProp(page), ...(nextPath ? { redirectTo: `/lp/${encodeURIComponent(page.slug)}/${encodeURIComponent(nextPath)}` } : {}) } : undefined} />);
   }
   // Legacy landing content cannot be inspected for forms; keep reading as before.
   if (!isPageDocument(page.content)) return (await buildRetryBoundary(true))(<LandingPageRenderer content={page.content} context={page.context} />);
   const withRetry = await buildRetryBoundary(Boolean(page.submissionForm) && pageDocumentRendersRegistrationForm(page.content));
   const initialViewport = funnelViewportHint((await headers()).get("user-agent"));
-  return withRetry(<PublicFunnelDocument document={page.content} initialViewport={initialViewport} event={funnelPublicRenderEvent(null)} registrationLinks={publicRegistrationLinks(page.context)} consultation={consultation} commerce={page.commerceByPageId?.[page.content.id]} submission={page.submissionForm ? { form: page.submissionForm, landingPageId: page.id, ...(page.submissionLiveId ? { liveId: page.submissionLiveId } : {}) } : undefined} />);
+  return withRetry(<PublicFunnelDocument document={page.content} initialViewport={initialViewport} event={funnelPublicRenderEvent(null)} registrationLinks={publicRegistrationLinks(page.context)} consultation={consultation} commerce={page.commerceByPageId?.[page.content.id]} submission={page.submissionForm ? { form: page.submissionForm, landingPageId: page.id, ...(page.submissionLiveId ? { liveId: page.submissionLiveId } : {}), ...liveSessionsProp(page) } : undefined} />);
 }

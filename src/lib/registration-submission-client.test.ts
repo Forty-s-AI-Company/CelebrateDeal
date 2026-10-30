@@ -29,6 +29,11 @@ describe("public registration client contract", () => {
     expect(formSubmissionErrorMessage(status)).toMatch(/請/);
   });
 
+  it("names the full-or-closed session conflict (409) only for forms that ask for a session", () => {
+    expect(formSubmissionErrorMessage(409)).toContain("內容仍保留");
+    expect(formSubmissionErrorMessage(409, { fixedSessions: true })).toBe("此時段已額滿或已截止，請改選其他時段");
+  });
+
   it("propagates network failure so the caller can unlock retry without clearing inputs", async () => {
     vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new TypeError("synthetic network failure")));
     await expect(postRegistrationSubmission({ payload: {} })).rejects.toThrow(TypeError);

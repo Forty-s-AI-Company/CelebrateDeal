@@ -2,7 +2,7 @@
 import { useRegistrationRetry } from "@/components/registration-retry-context";
 import { RegistrationSubmissionFeedback } from "@/components/registration-submission-feedback";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { flushSync } from "react-dom";
 import { PublicFunnelDocument } from "@/components/landing-pages/public-funnel-document";
 import { getFunnelWebinarState, type FunnelEvergreenSession } from "@/lib/funnel-webinar";
@@ -10,11 +10,14 @@ import { EVERGREEN_SESSION_ENDPOINT, evergreenSessionTimeLabel } from "@/compone
 import { hasDirectWebinarVideo } from "@/lib/funnel-webinar-media";
 import type { FunnelStepPages } from "@/lib/funnel-step-pages";
 import type { FunnelRenderEvent, FunnelSubmissionContext, FunnelViewport } from "@/components/landing-pages/funnel-page-document-renderer";
+import { LiveSessionPicker, readChosenLiveSessionRaw, useLiveSessionForm, type LiveSessionsData } from "@/components/landing-pages/live-session-picker";
 import { isLeadCaptureFormNode } from "@/lib/funnel-registration-surface";
 import type { FunnelNode } from "@/lib/funnel-page-document";
 
 export type WebinarExperienceResource = {
   live: { id: string; slug: string; videoId: string; videoTitle: string; isEvergreen?: true };
+  /** Open sessions of a fixed-session (指定場次) Live; the registration then requires a session pick. */
+  liveSessions?: LiveSessionsData;
   form: { id: string; fields: Array<{ key: string; label: string; type?: string; required?: boolean }>; submitLabel: string; successMessage: string };
 };
 
@@ -36,7 +39,7 @@ function designedFormSubmission({ registration, ready, page, resource, source, t
   const redirectTo = path(thankYou.path);
   return {
     form: { id: resource.form.id, fields: resource.form.fields.map((field) => ({ key: field.key, label: field.label, type: REGISTRATION_FIELD_TYPES.has(field.type ?? "") ? field.type as "text" : "text", required: field.required === true })), submitLabel: resource.form.submitLabel, successMessage: resource.form.successMessage },
-    landingPageId: source.landingPageId, funnelStepId: source.stepId, liveId: resource.live.id, redirectTo, notice: WEBINAR_CONFIRMATION_NOTICE, nativeSubmit: true,
+    landingPageId: source.landingPageId, funnelStepId: source.stepId, liveId: resource.live.id, ...(resource.liveSessions ? { liveSessions: resource.liveSessions } : {}), redirectTo, notice: WEBINAR_CONFIRMATION_NOTICE, nativeSubmit: true,
   };
 }
 
@@ -68,7 +71,7 @@ export function FunnelWebinarExperience({ state, stepId, slug, resource, preview
     <PublicFunnelDocument document={{ ...page, flow: { ...state.flow, domain: slug } }} viewport={viewport} initialViewport={initialViewport} event={event} submission={submission} />
     {!step.isSystem ? <section className="mx-auto my-5 w-[calc(100%-2rem)] max-w-5xl rounded-xl border border-slate-200 p-5">
       <p role={status.status === "missing" ? "alert" : "status"}>{status.message}</p>
-      <WebinarScheduleLine evergreen={evergreen} session={evergreenSession} settings={state.flow.webinar} />
+      <WebinarScheduleLine evergreen={evergreen} session={evergreenSession} settings={state.flow.webinar} resource={resource} stepType={step.type} />
       {step.type === "webinar_registration_page" && ready && thankYou && !submission ? <WebinarRegistrationForm resource={resource} source={source} redirectTo={path(thankYou.path)} preview={preview} /> : null}
       {step.type === "webinar_thank_you_page" && ready && broadcast ? <a className="mt-4 inline-block rounded-lg bg-blue-700 p-3 text-white" href={path(broadcast.path)}>查看播放／重播頁</a> : null}
       {ready && showsBroadcastEntry(step.type, evergreen, status.status) ? <a className="mt-4 inline-block rounded-lg bg-blue-700 p-3 text-white" href={`${path(step.path)}/play`}>前往授權播放：{resource.live.videoTitle}</a> : null}
@@ -116,11 +119,22 @@ function showsBroadcastEntry(stepType: string, evergreen: boolean, status: strin
 }
 
 /** Fixed funnel dates, or for an evergreen Live the visitor's own session time. */
-function WebinarScheduleLine({ evergreen, session, settings }: {
+function WebinarScheduleLine({ evergreen, session, settings, resource, stepType }: {
   evergreen: boolean;
   session: FunnelEvergreenSession | null;
   settings: FunnelStepPages["flow"]["webinar"];
+  resource?: WebinarExperienceResource;
+  stepType: string;
 }) {
+  const fixedSessionsLiveId = resource?.liveSessions?.liveId;
+  const showChosen = stepType !== "webinar_registration_page";
+  const chosen = useChosenSession(showChosen ? fixedSessionsLiveId : undefined);
+  // Fixed sessions: the funnel's shared start time does not apply; show the visitor's own pick.
+  if (fixedSessionsLiveId) {
+    if (!showChosen) return <p className="mt-2 text-sm">場次時間：請在下方報名時選擇場次。</p>;
+    if (!chosen) return <p className="mt-2 text-sm">場次時間：依你報名時選擇的場次，確認信會寫明開始時間。</p>;
+    return <p className="mt-2 text-sm">你選擇的場次：<time dateTime={chosen.startAt}>{chosen.label}</time></p>;
+  }
   if (evergreen) {
     const label = session ? evergreenSessionTimeLabel(session) : null;
     if (!session || !label) return <p className="mt-2 text-sm">場次時間：報名後依你的進場時間安排。</p>;
@@ -131,12 +145,23 @@ function WebinarScheduleLine({ evergreen, session, settings }: {
   return <p className="mt-2 text-sm">開始時間：<time dateTime={start}>{new Intl.DateTimeFormat("zh-TW", { dateStyle: "medium", timeStyle: "short", timeZone: settings?.timezone }).format(new Date(start))}</time> · {settings?.timezone}</p>;
 }
 
+const subscribeNothing = () => () => undefined;
+/** The session the visitor just picked, remembered by the registration form for this step (client only; null while server rendering). */
+function useChosenSession(liveId: string | undefined) {
+  const raw = useSyncExternalStore(subscribeNothing, () => (liveId ? readChosenLiveSessionRaw(liveId) : null), () => null);
+  return useMemo(() => {
+    if (!raw) return null;
+    try { const value = JSON.parse(raw) as { label: string; startAt: string }; return { label: value.label, startAt: value.startAt }; } catch { return null; }
+  }, [raw]);
+}
+
 function WebinarRegistrationForm({ resource, source, redirectTo, preview }: {
   resource: WebinarExperienceResource; source: ReturnType<typeof funnelSourceFields>; redirectTo: string; preview: boolean;
 }) {
-  const retry = useRegistrationRetry(resource.form.id);
+  const retry = useRegistrationRetry(resource.form.id, { fixedSessions: Boolean(resource.liveSessions) });
   const [pending, setPending] = useState(false);
   const inFlight = useRef(false);
+  const { sessions, formRef, missing: sessionMissing, remember: rememberSession } = useLiveSessionForm(resource.liveSessions);
   useEffect(() => {
     // 從瀏覽器歷史快取返回時，允許使用者重新送出。
     const reset = () => { inFlight.current = false; setPending(false); };
@@ -145,12 +170,14 @@ function WebinarRegistrationForm({ resource, source, redirectTo, preview }: {
   }, []);
   function onSubmit(event: React.FormEvent<HTMLFormElement>) {
     if (preview || inFlight.current) { event.preventDefault(); return; }
+    if (sessionMissing()) { event.preventDefault(); return; }
+    rememberSession();
     inFlight.current = true;
     // 在原生導頁開始前繪製等待狀態，避免更新被延後到離開頁面之後。
     flushSync(() => setPending(true));
     // 首次提交保留原生POST；不停用欄位，以免瀏覽器序列化時漏值。
   }
-  return <form id="webinar-registration" method="post" action="/api/form-submissions" className="mt-4 grid gap-3" aria-busy={pending} onSubmit={onSubmit}>
+  return <form ref={formRef} id="webinar-registration" method="post" action="/api/form-submissions" className="mt-4 grid gap-3" aria-busy={pending} onSubmit={onSubmit}>
     {retry ? <input type="hidden" name="__registrationReturnPath" value={retry.sourcePath} /> : null}
     <input type="hidden" name="formId" value={resource.form.id} />
     <input type="hidden" name="liveId" value={resource.live.id} />
@@ -161,6 +188,7 @@ function WebinarRegistrationForm({ resource, source, redirectTo, preview }: {
     <input type="hidden" name="shareCode" value={retry?.attribution?.shareCode ?? ""} />
     <input type="hidden" name="redirectTo" value={redirectTo} />
     {resource.form.fields.map((field) => <label key={field.key} className="grid gap-1 text-sm">{field.label}<input name={field.key} defaultValue={retry?.draft?.answers[field.key] ?? ""} type={["email", "tel", "number", "url"].includes(field.type ?? "") ? field.type : "text"} required={field.required} className="min-h-11 rounded-lg border px-3" /></label>)}
+    {sessions.active ? <LiveSessionPicker selection={sessions} locked={preview || pending} /> : null}
     <RegistrationSubmissionFeedback pending={pending} errorMessage={retry?.message ?? ""} />
     <button disabled={preview || pending} aria-busy={pending} className="min-h-11 rounded-lg bg-blue-700 px-4 text-white">{preview ? "預覽模式，不送出報名" : pending ? "送出中..." : resource.form.submitLabel}</button>
     <p className="text-sm text-slate-600">{WEBINAR_CONFIRMATION_NOTICE}</p>

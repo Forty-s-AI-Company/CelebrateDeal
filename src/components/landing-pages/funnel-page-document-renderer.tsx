@@ -9,6 +9,7 @@ import { RegistrationSubmissionFeedback } from "@/components/registration-submis
 import { LandingPageLink } from "@/components/landing-page-link";
 import { useFunnelRegistrationLinks } from "./funnel-registration-links";
 import { funnelRegistrationHref } from "@/lib/funnel-registration-action";
+import { LiveSessionPicker, useLiveSessionForm, type LiveSessionsData } from "@/components/landing-pages/live-session-picker";
 import { formSubmissionErrorMessage, FORM_SUBMISSION_VERIFICATION_MESSAGE, postRegistrationSubmission } from "@/lib/registration-submission-client";
 import type { RegistrationFormFieldSpec } from "@/lib/registration-form-fields";
 import type { FunnelCommerceBinding, FunnelCommerceView } from "@/lib/funnel-commerce";
@@ -111,6 +112,8 @@ export type FunnelSubmissionContext = {
   /** A public route supplies this server-resolved step for trusted attribution. */
   funnelStepId?: string;
   liveId?: string;
+  /** Open sessions of a fixed-session Live (指定場次); the form then requires a session pick. */
+  liveSessions?: LiveSessionsData;
   redirectTo?: string;
   /** Shown under a designed form's submit button before submission (webinar: email confirmation notice). */
   notice?: string;
@@ -469,12 +472,13 @@ const localizedValidation = {
 
 /** `idScope` (the form node id) keeps label/input ids unique when a page has more than one form bound to the same registration form. */
 function PublicSubmissionForm({ submission, label, requireConsent, design, idScope }: { submission: FunnelSubmissionContext; label: string; requireConsent: boolean; design?: FunnelFormDesign; idScope?: string }) {
-  const retry = useRegistrationRetry(submission.form.id);
+  const retry = useRegistrationRetry(submission.form.id, { fixedSessions: Boolean(submission.liveSessions) });
   const [status, setStatus] = useState<"idle" | "submitting" | "success" | "error">(retry?.submitted ? "success" : retry?.message ? "error" : "idle");
   const [message, setMessage] = useState(retry?.submitted ? `${submission.form.successMessage} ${FORM_SUBMISSION_VERIFICATION_MESSAGE}` : retry?.message ?? "");
   const submissionInFlight = useRef(false);
   const [nativePending, setNativePending] = useState(false);
   const referral = referralFields(retry?.attribution);
+  const { sessions, formRef, fixed, payload: sessionPayload, missing: sessionMissing, remember: rememberSession } = useLiveSessionForm(submission.liveSessions);
   useEffect(() => {
     if (!submission.nativeSubmit) return;
     // Back/forward cache: allow submitting again after returning to the page.
@@ -485,6 +489,8 @@ function PublicSubmissionForm({ submission, label, requireConsent, design, idSco
   async function submit(event: FormEvent<HTMLFormElement>) {
     if (submission.nativeSubmit) {
       if (submissionInFlight.current) { event.preventDefault(); return; }
+      if (sessionMissing()) { event.preventDefault(); return; }
+      rememberSession();
       submissionInFlight.current = true;
       // Paint the waiting state before the native navigation starts; fields are not disabled.
       flushSync(() => setNativePending(true));
@@ -493,17 +499,21 @@ function PublicSubmissionForm({ submission, label, requireConsent, design, idSco
     event.preventDefault();
     // Lock synchronously: disabled is only applied after the next React render.
     if (submissionInFlight.current) return;
+    if (sessionMissing()) return;
     submissionInFlight.current = true;
     setStatus("submitting"); setMessage("");
     try {
       const values = new FormData(event.currentTarget);
       const payload = Object.fromEntries(submission.form.fields.map((field) => [field.key, String(values.get(field.key) ?? "")]));
-      const response = await postRegistrationSubmission({ formId: submission.form.id, landingPageId: submission.landingPageId, funnelStepId: submission.funnelStepId, liveId: submission.liveId ?? null, payload, ...referral });
+      const response = await postRegistrationSubmission({ formId: submission.form.id, landingPageId: submission.landingPageId, funnelStepId: submission.funnelStepId, liveId: submission.liveId ?? null, ...sessionPayload, payload, ...referral });
       if (!response.ok) {
         submissionInFlight.current = false;
-        setStatus("error"); setMessage(formSubmissionErrorMessage(response.status));
+        setStatus("error"); setMessage(formSubmissionErrorMessage(response.status, { fixedSessions: fixed }));
+        // The chosen seat was taken or closed: reload the list so the visitor picks again.
+        if (response.status === 409 && fixed) { void sessions.refresh(); }
         return;
       }
+      rememberSession();
       setStatus("success"); setMessage(`${submission.form.successMessage} ${FORM_SUBMISSION_VERIFICATION_MESSAGE}`);
       if (submission.redirectTo) window.location.assign(submission.redirectTo);
     } catch {
@@ -511,7 +521,8 @@ function PublicSubmissionForm({ submission, label, requireConsent, design, idSco
       setStatus("error"); setMessage(formSubmissionErrorMessage());
     }
   }
-  return <form method="post" action="/api/form-submissions" aria-label={label} aria-busy={status === "submitting" || nativePending} onSubmit={submit} className="space-y-4">
+  const picker = (submitStyle?: CSSProperties) => sessions.active ? <LiveSessionPicker selection={sessions} locked={status === "submitting" || status === "success"} accentStyle={sessionAccentStyle(submitStyle)} /> : null;
+  return <form ref={formRef} method="post" action="/api/form-submissions" aria-label={label} aria-busy={status === "submitting" || nativePending} onSubmit={submit} className="space-y-4">
     <input type="hidden" name="formId" value={submission.form.id} />
     <input type="hidden" name="landingPageId" value={submission.landingPageId ?? ""} />
     <input type="hidden" name="funnelStepId" value={submission.funnelStepId ?? ""} />
@@ -522,18 +533,28 @@ function PublicSubmissionForm({ submission, label, requireConsent, design, idSco
     <input type="hidden" name="redirectTo" value={submission.redirectTo ?? retry?.sourcePath ?? ""} />
     {retry ? <input type="hidden" name="__registrationReturnPath" value={retry.sourcePath} /> : null}
     {design
-      ? <DesignedSubmissionFields submission={submission} design={design} idScope={idScope} requireConsent={requireConsent} locked={status === "submitting" || status === "success"} draft={retry?.draft?.answers} submitText={submitText(nativePending ? "submitting" : status, submission.form.submitLabel)} />
-      : <PlainSubmissionFields submission={submission} requireConsent={requireConsent} locked={status === "submitting" || status === "success"} draft={retry?.draft?.answers} submitText={submitText(status, submission.form.submitLabel)} />}
+      ? <DesignedSubmissionFields picker={picker(design.submitStyle)} submission={submission} design={design} idScope={idScope} requireConsent={requireConsent} locked={status === "submitting" || status === "success"} draft={retry?.draft?.answers} submitText={submitText(nativePending ? "submitting" : status, submission.form.submitLabel)} />
+      : <PlainSubmissionFields picker={picker()} submission={submission} requireConsent={requireConsent} locked={status === "submitting" || status === "success"} draft={retry?.draft?.answers} submitText={submitText(status, submission.form.submitLabel)} />}
     <RegistrationSubmissionFeedback pending={status === "submitting"} errorMessage={status === "error" ? message : ""} successMessage={status === "success" ? message : ""} />
   </form>;
+}
+
+/** Theme colours for the session picker: the designed submit button's own fill, so it matches every template. */
+function sessionAccentStyle(submitStyle: CSSProperties | undefined): CSSProperties | undefined {
+  if (!submitStyle) return undefined;
+  const fill = typeof submitStyle.backgroundColor === "string" ? submitStyle.backgroundColor : undefined;
+  const text = typeof submitStyle.color === "string" ? submitStyle.color : undefined;
+  if (!fill) return undefined;
+  return { "--live-session-accent": fill, ...(text ? { "--live-session-accent-text": text } : {}) } as CSSProperties;
 }
 
 const submitText = (status: "idle" | "submitting" | "success" | "error", label: string) => status === "submitting" ? "送出中…" : status === "success" ? "已送出" : label;
 
 /** Form markup for pages without a designed form (kept exactly as before C-19). */
-function PlainSubmissionFields({ submission, requireConsent, locked, draft, submitText: text }: { submission: FunnelSubmissionContext; requireConsent: boolean; locked: boolean; draft?: Record<string, string>; submitText: string }) {
+function PlainSubmissionFields({ picker, submission, requireConsent, locked, draft, submitText: text }: { picker: ReactNode; submission: FunnelSubmissionContext; requireConsent: boolean; locked: boolean; draft?: Record<string, string>; submitText: string }) {
   return <>
     {submission.form.fields.map((field) => <label key={field.key} className="block space-y-1"><span className="text-sm font-medium text-slate-700">{field.label}{field.required ? " *" : ""}</span><input name={field.key} defaultValue={draft?.[field.key] ?? ""} type={field.type} required={field.required} disabled={locked} autoComplete={field.key === "email" ? "email" : field.key === "name" ? "name" : undefined} className="w-full rounded-lg border border-slate-500 px-3 py-2 disabled:bg-slate-100" /></label>)}
+    {picker}
     {requireConsent ? <label className="flex items-start gap-2 text-sm text-slate-700"><input type="checkbox" required disabled={locked} className="mt-1" /><span>我同意依本頁說明提交並使用上述資料。</span></label> : null}
     <button type="submit" disabled={locked} className="inline-flex min-h-11 items-center justify-center rounded-lg bg-amber-500 px-5 py-2 font-semibold text-slate-950 disabled:cursor-not-allowed disabled:opacity-60">{text}</button>
   </>;
@@ -541,7 +562,7 @@ function PlainSubmissionFields({ submission, requireConsent, locked, draft, subm
 
 const FIELD_AUTOCOMPLETE: Readonly<Record<string, string>> = { email: "email", name: "name", phone: "tel", tel: "tel", mobile: "tel", company: "organization" };
 
-function DesignedSubmissionFields({ submission, design, idScope, requireConsent, locked, draft, submitText }: { submission: FunnelSubmissionContext; design: FunnelFormDesign; idScope?: string; requireConsent: boolean; locked: boolean; draft?: Record<string, string>; submitText: string }) {
+function DesignedSubmissionFields({ picker, submission, design, idScope, requireConsent, locked, draft, submitText }: { picker: ReactNode; submission: FunnelSubmissionContext; design: FunnelFormDesign; idScope?: string; requireConsent: boolean; locked: boolean; draft?: Record<string, string>; submitText: string }) {
   return <div className="grid" style={{ gap: design.gap }}>
     {design.before}
     <div className="grid" style={{ gap: design.gap, gridTemplateColumns: design.mobile ? "minmax(0, 1fr)" : "repeat(2, minmax(0, 1fr))" }}>
@@ -558,6 +579,7 @@ function DesignedSubmissionFields({ submission, design, idScope, requireConsent,
         </div>;
       })}
     </div>
+    {picker}
     {/* Platform consent wording, identical to the plain form (a template's checkbox text is not used for consent). */}
     {requireConsent ? <label className="flex items-start gap-2.5 text-[0.9375em]"><input type="checkbox" required disabled={locked} className="mt-1 h-5 w-5 shrink-0" {...localizedValidation} /><span>我同意依本頁說明提交並使用上述資料。</span></label> : null}
     <button type="submit" disabled={locked} className={`${design.submitClassName ?? ""} w-full cursor-pointer disabled:cursor-not-allowed disabled:opacity-60`} style={design.submitStyle}>{submitText}</button>

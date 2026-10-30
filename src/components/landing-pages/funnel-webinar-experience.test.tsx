@@ -116,3 +116,36 @@ it("posts the boundary's validated ref/share attribution in the native webinar f
   vi.useRealTimers();
 });
 
+describe("Webinar bound to a fixed-session live (指定場次)", () => {
+  const liveSessions = { liveId: "owned_live", timeZone: "Asia/Taipei", days: [{ date: "2030-01-01", label: "1月1日（週二）", sessions: [{ id: "session_a", startAt: "2030-01-01T06:00:00.000Z", timeLabel: "14:00", capacity: 10, remaining: 4, full: false }] }] };
+  const fixedResource: WebinarExperienceResource = { ...resource, liveSessions };
+  it("shows the session picker inside the page's designed form and keeps the funnel's shared start time out", () => {
+    vi.useFakeTimers(); vi.setSystemTime(new Date("2030-01-01T01:30:00.000Z"));
+    const html = renderToStaticMarkup(<FunnelWebinarExperience state={state()} slug="current-slug" stepId="webinar_registration" resource={fixedResource} />);
+    expect(html).toContain('aria-label="選擇日期"');
+    expect(html).toContain('name="liveSessionId"');
+    expect(html).toContain("剩 4 位");
+    expect(html).not.toContain("開始時間：");
+  });
+  it("adds the picker to the native fallback form too", () => {
+    vi.useFakeTimers(); vi.setSystemTime(new Date("2030-01-01T01:30:00.000Z"));
+    const draft = state();
+    draft.pages.webinar_registration!.root = [];
+    const html = renderToStaticMarkup(<FunnelWebinarExperience state={draft} slug="current-slug" stepId="webinar_registration" resource={fixedResource} />);
+    expect(html).toContain('id="webinar-registration"');
+    expect(html).toContain('name="liveSessionId"');
+    expect(html).toContain('aria-label="選擇日期"');
+  });
+  it("leaves lives without sessions exactly as before", () => {
+    vi.useFakeTimers(); vi.setSystemTime(new Date("2030-01-01T01:30:00.000Z"));
+    const html = renderToStaticMarkup(<FunnelWebinarExperience state={state()} slug="current-slug" stepId="webinar_registration" resource={resource} />);
+    expect(html).not.toContain("liveSessionId");
+    expect(html).toContain("開始時間：");
+  });
+  it("tells the thank-you step the session comes from the registration, never the shared start", () => {
+    vi.useFakeTimers(); vi.setSystemTime(new Date("2030-01-01T01:30:00.000Z"));
+    const html = renderToStaticMarkup(<FunnelWebinarExperience state={state()} slug="current-slug" stepId="webinar_thank_you" resource={fixedResource} />);
+    expect(html).toContain("確認信會寫明開始時間");
+    expect(html).not.toContain("開始時間：<time");
+  });
+});

@@ -17,7 +17,9 @@ export async function postRegistrationSubmission(body: Record<string, unknown>):
   return new Response(null, { status: 503 });
 }
 
-export function formSubmissionErrorMessage(status?: number) {
+/** `fixedSessions`: the form asks for a live session, whose only 409 is a full or closed seat. */
+export function formSubmissionErrorMessage(status?: number, options?: { fixedSessions?: boolean }) {
+  if (status === 409 && options?.fixedSessions) return "此時段已額滿或已截止，請改選其他時段";
   if (status === 400) return "請確認必填欄位與資料格式後再送出。";
   if (status === 403) return "這次送出未通過安全檢查，請稍候再試；若仍失敗，請重新開啟活動頁。";
   if (status === 429) return "送出次數太頻繁，請稍候一分鐘再試。";

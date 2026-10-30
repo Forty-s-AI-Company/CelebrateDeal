@@ -370,3 +370,8 @@ export function parseStudioFixedSessionSettings(
     scheduledAt: fixedSessionScheduledAt(sessions)!,
   };
 }
+
+/** Spreadable `liveSessions` prop for a public registration form; empty for lives without fixed sessions. */
+export function liveSessionsProp<T>(page: { submissionLiveSessions?: T }): { liveSessions?: T } {
+  return page.submissionLiveSessions ? { liveSessions: page.submissionLiveSessions } : {};
+}
