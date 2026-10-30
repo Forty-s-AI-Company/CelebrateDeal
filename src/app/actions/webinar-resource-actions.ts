@@ -369,6 +369,14 @@ export async function upsertTemplateAction(
     reconciliationStatuses: string[];
   };
   try {
+    // READ COMMITTED (B-3): the update takes the template's row lock, so it
+    // waits for any live notification materialization holding the template
+    // FOR SHARE, and the supersede below is a new statement that sees the row
+    // that materialization committed. Under SERIALIZABLE the supersede read
+    // the snapshot from before the wait and missed it. The update is guarded
+    // by the expected `updatedAt` (re-checked on the latest row version after
+    // a wait); reminder reconciliation already runs at READ COMMITTED from
+    // the live studio save.
     outcome = await db.$transaction(async (tx) => {
       const template = id
         ? await tx.messageTemplate.update({ where: { id, vendorId: vendor.id, updatedAt: expectedUpdatedAt ?? undefined }, data })
@@ -404,7 +412,7 @@ export async function upsertTemplateAction(
         reconciliationStatuses.push(queued.status);
       }
       return { template, reconciliationStatuses };
-    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted });
   } catch (error) {
     if (isRecordNotFoundError(error)) {
       const current = id

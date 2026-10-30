@@ -1,7 +1,7 @@
 import { Prisma } from "@prisma/client";
 import { describe, expect, it, vi } from "vitest";
 
-import { isTransientTransactionConflict, runSerializable, serializableRetryDelayMs, withSerializableRetry } from "@/lib/serializable-retry";
+import { isLockTimeout, isTransientTransactionConflict, runSerializable, serializableRetryDelayMs, withSerializableRetry } from "@/lib/serializable-retry";
 
 function conflict(code = "P2034") {
   return new Prisma.PrismaClientKnownRequestError("conflict", { code, clientVersion: "test" });
@@ -71,6 +71,24 @@ describe("F-055 shared Serializable retry", () => {
     expect(isTransientTransactionConflict(known("P2000", undefined, "The value 40001 is too long for the column"))).toBe(false);
     expect(isTransientTransactionConflict(null)).toBe(false);
     expect(isTransientTransactionConflict("40001")).toBe(false);
+  });
+
+  it("recognizes a lock_timeout cancellation (55P03) and nothing else", () => {
+    const known = (code: string, meta?: Record<string, unknown>, message = "raw") =>
+      new Prisma.PrismaClientKnownRequestError(message, { code, clientVersion: "test", ...(meta ? { meta } : {}) });
+    const unknown = (message: string) => new Prisma.PrismaClientUnknownRequestError(message, { clientVersion: "test" });
+
+    expect(isLockTimeout(known("P2010", { code: "55P03" }))).toBe(true);
+    expect(isLockTimeout(known("55P03"))).toBe(true);
+    expect(isLockTimeout(known("P2034", undefined, "ERROR: canceling statement due to lock timeout"))).toBe(true);
+    expect(isLockTimeout(unknown("ERROR: canceling statement due to lock timeout"))).toBe(true);
+
+    expect(isLockTimeout(conflict())).toBe(false);
+    expect(isLockTimeout(known("P2010", { code: "57014" }, "canceling statement due to statement timeout"))).toBe(false);
+    expect(isLockTimeout(unknown("canceling statement due to user request"))).toBe(false);
+    expect(isLockTimeout(new Error("canceling statement due to lock timeout"))).toBe(false);
+    expect(isLockTimeout(Object.assign(new Error("raw"), { code: "P2010", meta: { code: "55P03" } }))).toBe(false);
+    expect(isLockTimeout(null)).toBe(false);
   });
 
   it("opens each attempt as its own Serializable transaction with the caller's pool limits", async () => {

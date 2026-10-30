@@ -17,7 +17,7 @@ import { consumeFlashSaleQuote, FlashSaleUnavailableError, resolveFlashSaleQuote
 import { ensureLiveNotificationDelivery } from "@/lib/live-notification-delivery";
 import { PaymentWebhookPayload, processPaymentWebhook } from "@/lib/payment-webhooks";
 import { POST as paymentWebhookRoute } from "@/app/api/webhooks/payments/route";
-import { isTransientTransactionConflict } from "@/lib/serializable-retry";
+import { isLockTimeout, isTransientTransactionConflict } from "@/lib/serializable-retry";
 
 /**
  * F-055: concurrent callers on the most contended Serializable paths.
@@ -53,22 +53,29 @@ const MAX_BUYER_RELOADS = CONCURRENCY * 4;
 type RetryPolicy = { attempts: number; retried: ReadonlySet<TransactionOutcome> };
 const CHECKOUT_RETRY: RetryPolicy = { attempts: CHECKOUT_RESERVATION_RETRY.attempts, retried: new Set(["transient"]) }; // inventory-reservations.ts
 const WEBHOOK_RETRY: RetryPolicy = { attempts: 3, retried: new Set(["transient", "unique"]) }; // payment-webhooks.ts
-const NOTIFICATION_RETRY: RetryPolicy = { attempts: 3, retried: new Set(["transient"]) }; // live-notification-delivery.ts TRANSIENT_RETRY
+// B-3: READ COMMITTED under row locks; a deadlock, a lock_timeout or a P2002 re-runs the step.
+const NOTIFICATION_RETRY: RetryPolicy = { attempts: 3, retried: new Set(["transient", "lock_timeout", "unique"]) }; // live-notification-delivery.ts MATERIALIZE_RETRY
 
 const buyer = { name: "Synthetic buyer", email: "buyer@example.test", phone: "0912345678" };
 const shipping = { recipientName: "Synthetic buyer", phone: "0912345678", countryCode: "TW", postalCode: "100", administrativeArea: "台北市", locality: "中正區", addressLine1: "合成測試路 1 號" };
 
 // ---------------------------------------------------------------------------
-// Measurement: every Serializable interactive transaction opened by a caller
-// is recorded against that caller through AsyncLocalStorage.
+// Measurement: every interactive transaction opened by a caller with an
+// explicit isolation level (Serializable, or the READ COMMITTED live
+// notification step) is recorded against that caller through AsyncLocalStorage.
 
-type TransactionOutcome = "committed" | "transient" | "unique" | "other";
+type TransactionOutcome = "committed" | "transient" | "lock_timeout" | "unique" | "other";
 type CallerTrace = { outcomes: TransactionOutcome[] };
 const callerTrace = new AsyncLocalStorage<CallerTrace>();
 
-function isSerializableTransaction(args: unknown[]) {
+const MEASURED_ISOLATION_LEVELS: ReadonlySet<unknown> = new Set([
+  Prisma.TransactionIsolationLevel.Serializable,
+  Prisma.TransactionIsolationLevel.ReadCommitted,
+]);
+
+function isMeasuredTransaction(args: unknown[]) {
   const options = args[1] as { isolationLevel?: unknown } | undefined;
-  return typeof args[0] === "function" && options?.isolationLevel === Prisma.TransactionIsolationLevel.Serializable;
+  return typeof args[0] === "function" && MEASURED_ISOLATION_LEVELS.has(options?.isolationLevel);
 }
 
 function instrumentTransactions() {
@@ -76,12 +83,12 @@ function instrumentTransactions() {
   const original = db.$transaction.bind(db) as (...args: unknown[]) => Promise<unknown>;
   vi.spyOn(db, "$transaction").mockImplementation(((...args: unknown[]) => {
     const trace = callerTrace.getStore();
-    if (!trace || !isSerializableTransaction(args)) return original(...args);
+    if (!trace || !isMeasuredTransaction(args)) return original(...args);
     return original(...args).then((value) => {
       trace.outcomes.push("committed");
       return value;
     }, (error: unknown) => {
-      trace.outcomes.push(isTransientTransactionConflict(error) ? "transient" : isUniqueConflict(error) ? "unique" : "other");
+      trace.outcomes.push(isTransientTransactionConflict(error) ? "transient" : isLockTimeout(error) ? "lock_timeout" : isUniqueConflict(error) ? "unique" : "other");
       throw error;
     });
   }) as typeof db.$transaction);
@@ -130,7 +137,7 @@ function errorKind(error: unknown) {
   if (error instanceof InventoryUnavailableError) return "InventoryUnavailableError";
   if (error instanceof ProductChangedError) return "ProductChangedError";
   if (error instanceof FlashSaleUnavailableError) return "FlashSaleUnavailableError";
-  if (isTransientTransactionConflict(error) || isUniqueConflict(error)) return `retry_exhausted:${(error as { code?: string }).code ?? "unknown"}`;
+  if (isTransientTransactionConflict(error) || isLockTimeout(error) || isUniqueConflict(error)) return `retry_exhausted:${(error as { code?: string }).code ?? "unknown"}`;
   return `unexpected:${error instanceof Error ? error.name : typeof error}`;
 }
 
@@ -493,12 +500,14 @@ describe(`F-055 Serializable contention (${CONCURRENCY} concurrent callers)`, ()
     report("live_notification_same_recipient", run, { statuses });
 
     expectCleanFailures(run.results, [], NOTIFICATION_RETRY);
-    expect(statuses.queued).toBe(1);
+    // B-3: callers of one recipient queue on its registration lock instead of aborting each other.
+    expect(run.results.filter((result) => result.error !== undefined)).toEqual([]);
+    expect(statuses).toEqual({ queued: 1, duplicate: CONCURRENCY - 1 });
     expect(await db.emailDelivery.count({ where: { vendorId: fixture.vendor.id, sourceLiveId: fixture.live.id } })).toBe(1);
     expect(await db.emailDelivery.count({ where: { vendorId: fixture.vendor.id, status: "queued" } })).toBe(1);
   }, TEST_TIMEOUT_MS);
 
-  it("live notification materialization of distinct recipients writes one delivery each", async () => {
+  it("live notification materialization of distinct recipients writes one delivery each without conflicting", async () => {
     const db = getDb();
     const fixture = await notificationFixture(CONCURRENCY);
 
@@ -509,12 +518,13 @@ describe(`F-055 Serializable contention (${CONCURRENCY} concurrent callers)`, ()
     report("live_notification_distinct_recipients", run);
 
     expectCleanFailures(run.results, [], NOTIFICATION_RETRY);
-    // A caller that exhausted its budget wrote nothing; the scheduled job is its retry path.
+    // B-3: different recipients share only FOR SHARE locks, so nobody exhausts
+    // (or even uses) a retry. Before: 47/50 and 7/10 exhausted the retries.
+    expect(failed).toEqual([]);
+    expect(run.results.map((result) => result.outcomes)).toEqual(run.results.map(() => ["committed"]));
+    expect(run.results.map((result) => result.value?.status)).toEqual(run.results.map(() => "queued"));
     const written = await db.emailDelivery.groupBy({ by: ["sourceFormSubmissionId"], where: { vendorId: fixture.vendor.id }, _count: { _all: true } });
     expect(written.every((row) => row._count._all === 1)).toBe(true);
-    expect(written).toHaveLength(CONCURRENCY - failed.length);
-    for (const result of failed) {
-      expect(written.some((row) => row.sourceFormSubmissionId === fixture.submissionIds[result.index])).toBe(false);
-    }
+    expect(written.map((row) => row.sourceFormSubmissionId).sort()).toEqual([...fixture.submissionIds].sort());
   }, TEST_TIMEOUT_MS);
 });

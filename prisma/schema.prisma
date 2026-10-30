@@ -1200,6 +1200,8 @@ model EmailDelivery {
   @@index([vendorId, status, createdAt])
   @@index([vendorId, trigger, createdAt])
   @@index([vendorId, recipientHash])
+  // Per-recipient lookups of live notification materialization (B-3).
+  @@index([vendorId, sourceFormSubmissionId])
 }
 
 /// Durable, tenant-scoped cursor for bringing already verified registrations

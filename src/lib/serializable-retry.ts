@@ -51,6 +51,23 @@ export function isTransientTransactionConflict(error: unknown) {
   return error instanceof Prisma.PrismaClientUnknownRequestError && TRANSIENT_MESSAGE.test(error.message);
 }
 
+const LOCK_TIMEOUT_SQLSTATE = "55P03";
+const LOCK_TIMEOUT_MESSAGE = /canceling statement due to lock timeout/iu;
+
+/**
+ * A statement cancelled by `lock_timeout` (PostgreSQL 55P03, lock_not_available).
+ * Safe to re-run only when the whole operation is idempotent. Matched like
+ * isTransientTransactionConflict: structured `code` / `meta.code` on a known
+ * request error, or the PostgreSQL phrase on a known or unknown one.
+ */
+export function isLockTimeout(error: unknown) {
+  if (error instanceof Prisma.PrismaClientKnownRequestError) {
+    const meta = error.meta as { code?: unknown } | undefined;
+    return error.code === LOCK_TIMEOUT_SQLSTATE || meta?.code === LOCK_TIMEOUT_SQLSTATE || LOCK_TIMEOUT_MESSAGE.test(error.message);
+  }
+  return error instanceof Prisma.PrismaClientUnknownRequestError && LOCK_TIMEOUT_MESSAGE.test(error.message);
+}
+
 const DEFAULT_BASE_DELAY_MS = 20;
 const DEFAULT_MAX_DELAY_MS = 400;
 
