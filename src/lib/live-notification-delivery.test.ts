@@ -836,8 +836,19 @@ describe("B-3 lock timeout", () => {
     await expect(ensureLiveNotificationDelivery(input, now)).resolves.toMatchObject({ status: "queued" });
     const [setting] = mocks.db.$executeRaw.mock.calls;
     expect((setting![0] as TemplateStringsArray).join("?")).toBe("SELECT pg_catalog.set_config('lock_timeout', ?, true)");
-    expect(setting!.slice(1)).toEqual(["2s"]);
+    expect(setting!.slice(1)).toEqual(["2000ms"]);
     expect(mocks.db.$executeRaw.mock.invocationCallOrder[0]!).toBeLessThan(mocks.db.$queryRaw.mock.invocationCallOrder[0]!);
+  });
+
+  it("accepts only a bounded integer lock bound from the caller and otherwise keeps the 2 s default", async () => {
+    mockCurrent(current("before_live"));
+    const bounds: unknown[] = [];
+    for (const lockTimeoutMs of [30_000, 100, 60_000, 99, 60_001, 1.5, Number.NaN, undefined]) {
+      mocks.db.$executeRaw.mockClear();
+      await ensureLiveNotificationDelivery(input, now, { lockTimeoutMs });
+      bounds.push(mocks.db.$executeRaw.mock.calls[0]![1]);
+    }
+    expect(bounds).toEqual(["30000ms", "100ms", "60000ms", "2000ms", "2000ms", "2000ms", "2000ms", "2000ms"]);
   });
 
   it("re-runs the idempotent step after a lock timeout and gives up after the bounded attempts", async () => {

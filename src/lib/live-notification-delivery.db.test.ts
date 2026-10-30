@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { PrismaClient } from "@prisma/client";
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const ctx = vi.hoisted(() => ({ vendorId: "" }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
@@ -63,6 +64,26 @@ async function fixture(label: string) {
 const materialize = (input: Parameters<typeof ensureLiveNotificationDelivery>[0]) =>
   ensureLiveNotificationDelivery(input, new Date(), { scheduleFuture: true });
 
+/**
+ * A materialization that a test stops on purpose at the registration lock.
+ * The staged wait lasts as long as the test needs, so it gets a longer lock
+ * bound than the 2 s default (which the m-2 test below exercises).
+ */
+const stagedMaterialize = (input: Parameters<typeof ensureLiveNotificationDelivery>[0]) =>
+  ensureLiveNotificationDelivery(input, new Date(), { scheduleFuture: true, lockTimeoutMs: STAGED_LOCK_TIMEOUT_MS });
+const STAGED_LOCK_TIMEOUT_MS = 30_000;
+const INTERLEAVING_TEST_TIMEOUT_MS = 45_000;
+
+type Settled = { value: unknown; error: unknown };
+
+/** Never rejects, so a promise started early cannot surface as unhandled if the test fails first. */
+function settle(promise: Promise<unknown>): Promise<Settled> {
+  return promise.then((value) => ({ value, error: undefined }), (error: unknown) => ({ value: undefined, error }));
+}
+
+/** Placeholder for a step that a failed wait never started; asserting on it fails with this error. */
+const notStarted = (): Promise<Settled> => Promise.resolve({ value: undefined, error: new Error("step not started") });
+
 function rowsOf(vendorId: string) {
   return getDb().emailDelivery.findMany({
     where: { vendorId },
@@ -71,30 +92,46 @@ function rowsOf(vendorId: string) {
   });
 }
 
-async function waitingOnLock(pattern: string) {
-  for (let poll = 0; poll < 200; poll += 1) {
-    const [row] = await getDb().$queryRaw<Array<{ n: number }>>`
+// The lock holder and the lock-wait poller use their own client, so they never
+// take a connection from the pool the code under test needs, whatever the
+// pool size of the run (CI uses Prisma's default).
+const control = new PrismaClient();
+afterAll(() => control.$disconnect());
+
+/**
+ * Waits until a backend whose current statement matches `pattern` is blocked
+ * by another backend (pg_blocking_pids). Patterns are schema-agnostic: Prisma
+ * qualifies tables with the run's schema (public locally, wp18_ci in CI).
+ */
+async function waitForLockWaiter(pattern: string) {
+  for (let poll = 0; poll < 400; poll += 1) {
+    const [row] = await control.$queryRaw<Array<{ n: number }>>`
       SELECT count(*)::int AS n FROM pg_stat_activity
-      WHERE datname = current_database() AND wait_event_type = 'Lock' AND query LIKE ${pattern}`;
+      WHERE datname = current_database()
+        AND cardinality(pg_blocking_pids(pid)) > 0
+        AND query ILIKE ${pattern}`;
     if ((row?.n ?? 0) > 0) return;
     await new Promise((resolve) => setTimeout(resolve, 25));
   }
-  throw new Error(`no backend waited on a lock for ${pattern}`);
+  const activity = await control.$queryRaw<Array<{ state: string | null; wait: string | null; blocked: number; query: string }>>`
+    SELECT state, wait_event_type AS wait, cardinality(pg_blocking_pids(pid))::int AS blocked, left(regexp_replace(query, '[[:space:]]+', ' ', 'g'), 120) AS query
+    FROM pg_stat_activity WHERE datname = current_database() AND pid <> pg_backend_pid()`;
+  throw new Error(`no backend waited on a lock for ${pattern}; backends: ${JSON.stringify(activity)}`);
 }
 
-/** Holds the registration row lock so a materialization stops after its Live FOR SHARE. */
+/** Holds the registration row lock so a materialization stops after its Live FOR SHARE. Release is idempotent. */
 async function holdRegistration(submissionId: string) {
-  let release!: () => void;
-  const gate = new Promise<void>((resolve) => { release = resolve; });
+  let open!: () => void;
+  const gate = new Promise<void>((resolve) => { open = resolve; });
   let held!: () => void;
   const holding = new Promise<void>((resolve) => { held = resolve; });
-  const done = getDb().$transaction(async (tx) => {
+  const done = control.$transaction(async (tx) => {
     await tx.$queryRaw`SELECT "id" FROM "FormSubmission" WHERE "id" = ${submissionId} FOR NO KEY UPDATE`;
     held();
     await gate;
-  }, { timeout: 30_000 });
-  await holding;
-  return { release: async () => { release(); await done; } };
+  }, { timeout: 40_000 });
+  await Promise.race([holding, done]);
+  return { release: async () => { open(); await done; } };
 }
 
 describe("live notification materialization (disposable PostgreSQL, B-3)", () => {
@@ -145,27 +182,32 @@ describe("live notification materialization (disposable PostgreSQL, B-3)", () =>
     const db = getDb();
     const f = await fixture("lifecycle");
     const holder = await holdRegistration(f.submission.id);
-    const materialized = materialize(f.input);
-    await waitingOnLock('%JOIN "FormSubmission" s%');
+    let materialized = notStarted();
+    let started = notStarted();
+    try {
+      materialized = settle(stagedMaterialize(f.input));
+      await waitForLockWaiter('%JOIN "FormSubmission" s%');
 
-    // The same shape as the live update action: READ COMMITTED, update the Live, then supersede.
-    const started = db.$transaction(async (tx) => {
-      await tx.live.update({ where: { id: f.live.id, vendorId: f.vendor.id }, data: { status: "live", startedAt: new Date() } });
-      await supersedeLiveNotificationDeliveriesForLifecycle(tx, { vendorId: f.vendor.id, liveId: f.live.id, triggers: ["before_live"] });
-    }, { timeout: 30_000 });
-    await waitingOnLock('UPDATE "public"."Live"%');
-
-    await holder.release();
+      // The same shape as the live update action: READ COMMITTED, update the Live, then supersede.
+      started = settle(db.$transaction(async (tx) => {
+        await tx.live.update({ where: { id: f.live.id, vendorId: f.vendor.id }, data: { status: "live", startedAt: new Date() } });
+        await supersedeLiveNotificationDeliveriesForLifecycle(tx, { vendorId: f.vendor.id, liveId: f.live.id, triggers: ["before_live"] });
+      }, { timeout: 40_000 }));
+      await waitForLockWaiter('UPDATE %"Live"%');
+    } finally {
+      await holder.release();
+    }
     const result = await materialized;
-    expect(result).toMatchObject({ status: "queued" });
-    await started;
+    expect(result.error).toBeUndefined();
+    expect(result.value).toMatchObject({ status: "queued" });
+    expect((await started).error).toBeUndefined();
 
     expect(await rowsOf(f.vendor.id)).toEqual([
-      { id: (result as { deliveryId: string }).deliveryId, status: "superseded", lastErrorCode: "lifecycle_superseded" },
+      { id: (result.value as { deliveryId: string }).deliveryId, status: "superseded", lastErrorCode: "lifecycle_superseded" },
     ]);
     // A materialization after the start writes nothing for before_live.
     await expect(materialize(f.input)).resolves.toEqual({ status: "not_due" });
-  });
+  }, INTERLEAVING_TEST_TIMEOUT_MS);
 
   it("lets a different recipient finish while another recipient's materialization is in flight", async () => {
     const db = getDb();
@@ -174,26 +216,25 @@ describe("live notification materialization (disposable PostgreSQL, B-3)", () =>
       data: { formId: f.live.formId!, liveId: f.live.id, name: "Other", email: `other-${randomUUID()}@example.test`, verificationStatus: "VERIFIED", verifiedAt: new Date() },
     });
     const holder = await holdRegistration(f.submission.id);
-    // In flight: holds Live, rule and template FOR SHARE and waits for its registration.
-    const blocked = materialize(f.input);
+    let blocked = notStarted();
     try {
-      await waitingOnLock('%JOIN "FormSubmission" s%');
+      // In flight: holds Live, rule and template FOR SHARE and waits for its registration.
+      blocked = settle(stagedMaterialize(f.input));
+      await waitForLockWaiter('%JOIN "FormSubmission" s%');
+      // The default 2 s bound applies here: this call must not wait at all.
       await expect(materialize({ ...f.input, submissionId: other.id })).resolves.toMatchObject({ status: "queued" });
     } finally {
       await holder.release();
     }
-    await expect(blocked).resolves.toMatchObject({ status: "queued" });
+    const result = await blocked;
+    expect(result.error).toBeUndefined();
+    expect(result.value).toMatchObject({ status: "queued" });
     expect((await rowsOf(f.vendor.id)).map((row) => row.status)).toEqual(["queued", "queued"]);
-  });
+  }, INTERLEAVING_TEST_TIMEOUT_MS);
 
   it("makes a template edit wait for an in-flight materialization and supersede the row it committed (M-1)", async () => {
     const f = await fixture("template-edit");
     ctx.vendorId = f.vendor.id;
-    const holder = await holdRegistration(f.submission.id);
-    const materialized = materialize(f.input);
-    await waitingOnLock('%JOIN "FormSubmission" s%');
-
-    // The real Server Action: its template update waits on the materializer's template FOR SHARE.
     const form = new FormData();
     form.set("id", f.template.id);
     form.set("expectedUpdatedAt", f.template.updatedAt.toISOString());
@@ -203,24 +244,35 @@ describe("live notification materialization (disposable PostgreSQL, B-3)", () =>
     form.set("subject", "{{live_title}}");
     form.set("body", "Edited {{name}}\n{{unsubscribe_url}}");
     form.set("isActive", "on");
-    const edited = upsertTemplateAction({ status: "idle", version: 0 } as never, form);
-    const editedOutcome = expect(edited).rejects.toThrow("REDIRECT:/messages/templates");
-    await waitingOnLock('UPDATE "public"."MessageTemplate"%');
 
-    await holder.release();
+    const holder = await holdRegistration(f.submission.id);
+    let materialized = notStarted();
+    let edited = notStarted();
+    try {
+      materialized = settle(stagedMaterialize(f.input));
+      await waitForLockWaiter('%JOIN "FormSubmission" s%');
+      // The real Server Action: its template update waits on the materializer's template FOR SHARE.
+      edited = settle(upsertTemplateAction({ status: "idle", version: 0 } as never, form));
+      await waitForLockWaiter('UPDATE %"MessageTemplate"%');
+    } finally {
+      await holder.release();
+    }
     const result = await materialized;
-    expect(result).toMatchObject({ status: "queued" });
-    await editedOutcome;
+    expect(result.error).toBeUndefined();
+    expect(result.value).toMatchObject({ status: "queued" });
+    // The action ends with a redirect, which the test's next/navigation mock throws.
+    expect(String((await edited).error)).toContain("REDIRECT:/messages/templates");
 
     // The edit's supersede ran after its wait and saw the old-content row.
+    const deliveryId = (result.value as { deliveryId: string }).deliveryId;
     expect(await rowsOf(f.vendor.id)).toEqual([
-      { id: (result as { deliveryId: string }).deliveryId, status: "superseded", lastErrorCode: "config_superseded" },
+      { id: deliveryId, status: "superseded", lastErrorCode: "config_superseded" },
     ]);
     // The next materialization uses the edited content.
     const next = await materialize(f.input);
     expect(next).toMatchObject({ status: "queued" });
-    expect((next as { deliveryId: string }).deliveryId).not.toBe((result as { deliveryId: string }).deliveryId);
-  });
+    expect((next as { deliveryId: string }).deliveryId).not.toBe(deliveryId);
+  }, INTERLEAVING_TEST_TIMEOUT_MS);
 
   it("orders the legacy cutover after an in-flight materialization: no deadlock, no partial cutover (m-1)", async () => {
     const db = getDb();
@@ -228,20 +280,25 @@ describe("live notification materialization (disposable PostgreSQL, B-3)", () =>
     // A legacy reminder binding with an equivalent before_live rule makes the Live a cutover candidate.
     await db.live.update({ where: { id: f.live.id }, data: { liveReminderTemplateId: f.template.id, liveReminderOffsetMinutes: 60 } });
     const holder = await holdRegistration(f.submission.id);
-    const materialized = materialize(f.input);
-    await waitingOnLock('%JOIN "FormSubmission" s%');
-
-    // The cutover's first statement is its Live lock; it waits there, holding nothing.
-    const cutover = processLegacyReminderCutovers({ vendorId: f.vendor.id });
-    await waitingOnLock('%FROM "Live"%FOR NO KEY UPDATE%');
-
-    await holder.release();
-    await expect(materialized).resolves.toMatchObject({ status: "queued" });
+    let materialized = notStarted();
+    let cutover = notStarted();
+    try {
+      materialized = settle(stagedMaterialize(f.input));
+      await waitForLockWaiter('%JOIN "FormSubmission" s%');
+      // The cutover's first statement is its Live lock; it waits there, holding nothing.
+      cutover = settle(processLegacyReminderCutovers({ vendorId: f.vendor.id }));
+      await waitForLockWaiter('%FROM "Live"%FOR NO KEY UPDATE%');
+    } finally {
+      await holder.release();
+    }
+    const result = await materialized;
+    expect(result.error).toBeUndefined();
+    expect(result.value).toMatchObject({ status: "queued" });
     // The materializer's row already covers the recipient: the cutover writes nothing.
-    await expect(cutover).resolves.toEqual([{ status: "duplicate_conflict" }]);
+    expect(await cutover).toEqual({ value: [{ status: "duplicate_conflict" }], error: undefined });
     expect(await rowsOf(f.vendor.id)).toHaveLength(1);
     expect((await db.live.findUniqueOrThrow({ where: { id: f.live.id }, select: { liveReminderTemplateId: true } })).liveReminderTemplateId).toBe(f.template.id);
-  });
+  }, INTERLEAVING_TEST_TIMEOUT_MS);
 
   it("bounds the wait on a held registration with lock_timeout, re-runs it and then gives up without writing (m-2)", async () => {
     const f = await fixture("lock-timeout");

@@ -347,13 +347,26 @@ async function lockNotificationSources(
  * - config and lifecycle writers wait on the FOR SHARE locks; how each of
  *   them then sees the committed rows is listed at lockNotificationSources.
  *
- * Every lock wait is bounded by MATERIALIZE_LOCK_TIMEOUT so a long writer or
+ * Every lock wait is bounded (MATERIALIZE_LOCK_TIMEOUT_MS) so a long writer or
  * a burst for one recipient cannot hold a pooled connection until Prisma's
  * transaction timeout. A lock timeout (55P03), a deadlock with a writer
  * (40P01) or a P2002 re-runs the idempotent step; if all attempts fail the
  * caller contains the error and the scheduled job picks the recipient up.
  */
-const MATERIALIZE_LOCK_TIMEOUT = "2s";
+const MATERIALIZE_LOCK_TIMEOUT_MS = 2_000;
+
+/**
+ * The lock bound for one call. Callers use the default; DB tests that hold a
+ * registration lock on purpose to stage an interleaving pass a longer bound so
+ * the staged wait cannot time out on a slow runner. Anything that is not an
+ * integer between 100 ms and 60 s falls back to the default.
+ */
+function materializeLockTimeout(requested: number | undefined) {
+  const value = requested !== undefined && Number.isInteger(requested) && requested >= 100 && requested <= 60_000
+    ? requested
+    : MATERIALIZE_LOCK_TIMEOUT_MS;
+  return `${value}ms`;
+}
 const MATERIALIZE_RETRY = {
   attempts: 3,
   retryOn: (error: unknown) => isTransientTransactionConflict(error) || isLockTimeout(error) || isUniqueConflict(error),
@@ -364,11 +377,12 @@ export async function ensureLiveNotificationDelivery(input: {
   liveId: string;
   ruleId: string;
   submissionId: string;
-}, now = new Date(), options: { scheduleFuture?: boolean } = {}) {
+}, now = new Date(), options: { scheduleFuture?: boolean; lockTimeoutMs?: number } = {}) {
   const db = getDb();
   const scheduleFuture = options.scheduleFuture ?? false;
+  const lockTimeout = materializeLockTimeout(options.lockTimeoutMs);
   return withSerializableRetry(() => db.$transaction(async (tx) => {
-    await tx.$executeRaw`SELECT pg_catalog.set_config('lock_timeout', ${MATERIALIZE_LOCK_TIMEOUT}, true)`;
+    await tx.$executeRaw`SELECT pg_catalog.set_config('lock_timeout', ${lockTimeout}, true)`;
     if (!(await lockNotificationSources(tx, input))) return { status: "not_configured" as const };
     const current = await readCurrentNotificationSnapshot(tx, input);
     if (!current) return { status: "not_configured" as const };

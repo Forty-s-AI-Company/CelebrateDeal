@@ -176,7 +176,7 @@ webhook 與通知路徑不受影響，數字與修正前相同。10 併發時最
 ### 設計
 
 - 具現化改成一段 READ COMMITTED 互動交易。第一個語句以 `set_config('lock_timeout', '2s', true)` 限制這個交易內每次等鎖最多 2 秒，第二個語句以同一個 SQL 鎖住 `Live`、`LiveNotificationRule`、`MessageTemplate`（`FOR SHARE`）與 `FormSubmission`（`FOR NO KEY UPDATE`），四者都綁 `vendorId`（範本以 `t."vendorId" = l."vendorId"`），沒有列就回 `not_configured`、不寫入。之後每個語句都看得到鎖之前已提交的資料。
-- 不同收件人之間只有可共用的 `FOR SHARE` 鎖，不會互相等待或中止；同一收件人的呼叫者在報名列上排隊，前一個提交後下一個看到既有列，回 `duplicate`（或重新啟用 superseded 的列）。等超過 2 秒的呼叫者收到 lock timeout（55P03）後重跑，不會一直佔著連線等到 Prisma 的 5 秒交易期限。
+- 不同收件人之間只有可共用的 `FOR SHARE` 鎖，不會互相等待或中止；同一收件人的呼叫者在報名列上排隊，前一個提交後下一個看到既有列，回 `duplicate`（或重新啟用 superseded 的列）。等超過 2 秒的呼叫者收到 lock timeout（55P03）後重跑，不會一直佔著連線等到 Prisma 的 5 秒交易期限。`ensureLiveNotificationDelivery` 的 `lockTimeoutMs` 選項（100 ms–60 s 的整數，其他值一律用 2 s）只給刻意持鎖、安排交錯順序的 DB 測試使用，正式呼叫端都用預設值。
 - 一位收件人一條規則只有一列：確定性 delivery id 是主鍵，加上收件人鎖讓「已寄出檢查 → supersede 其他快照 → 查既有列 → 新增或重新啟用」在同一收件人上不會交錯。P2002、死結（40P01／P2034）與 lock timeout 都會整步重跑；重試仍是 3 次，用完後由呼叫端攔下、排程補建。
 - 原本兩段交易（P2002 時第一段的 supersede 被回滾，第二段只接手）合成一段，所以接手既有列時也會 supersede 同一收件人、同一規則的其他舊快照。
 - 抑制、黑名單、退訂：交易內照舊查 `EmailSuppression` 與 `Blacklist`，寄送前的快照與抑制檢查不變。這條路徑沒有 opt-out 或靜音時段規則。

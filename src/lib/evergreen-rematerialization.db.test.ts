@@ -1,4 +1,5 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { PrismaClient } from "@prisma/client";
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const ctx = vi.hoisted(() => ({ vendor: { id: "", timezone: "Asia/Taipei" }, failInFlightSweep: false }));
 const monitoring = vi.hoisted(() => ({ captureOperationalError: vi.fn() }));
@@ -35,6 +36,9 @@ import { ensureLiveNotificationDelivery, isCurrentLiveNotificationDeliverySnapsh
 import { processLiveReminderReconciliationJobs } from "@/lib/live-reminder-reconciliation";
 
 const createdVendorIds: string[] = [];
+// Lock holder and lock-wait poller for the interleaving tests; never the pool the code under test uses.
+const control = new PrismaClient();
+afterAll(() => control.$disconnect());
 const now = new Date();
 const scheduledAt = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1_000);
 /** The real action stamps jobs with the wall clock, so the follow-up runs use a later one. */
@@ -220,53 +224,66 @@ describe("evergreen settings re-materialization (disposable PostgreSQL)", () => 
    * Enables evergreen while a real materialization of the fixture's first
    * registrant is in flight (it has taken Live FOR SHARE and waits for the
    * registration), and returns that materialization's result.
+   *
+   * The lock holder and the lock-wait poller use their own client (`control`),
+   * so they never take a pool connection the code under test needs. Lock-wait
+   * patterns are schema-agnostic: Prisma qualifies tables with the run's
+   * schema (public locally, wp18_ci in CI). The staged materialization gets a
+   * longer lock bound than the 2 s default because the test decides how long
+   * it waits.
    */
   async function enableEvergreenDuringInFlightMaterialization(fixture: Fixture) {
-    const db = getDb();
     const submissionId = fixture.submissionIds[0]!;
-    const waitingOnLock = async (pattern: string) => {
-      for (let poll = 0; poll < 200; poll += 1) {
-        const [row] = await db.$queryRaw<Array<{ n: number }>>`
+    const waitForLockWaiter = async (pattern: string) => {
+      for (let poll = 0; poll < 400; poll += 1) {
+        const [row] = await control.$queryRaw<Array<{ n: number }>>`
           SELECT count(*)::int AS n FROM pg_stat_activity
-          WHERE datname = current_database() AND wait_event_type = 'Lock' AND query LIKE ${pattern}`;
+          WHERE datname = current_database()
+            AND cardinality(pg_blocking_pids(pid)) > 0
+            AND query ILIKE ${pattern}`;
         if ((row?.n ?? 0) > 0) return;
         await new Promise((resolve) => setTimeout(resolve, 25));
       }
       throw new Error(`no backend waited on a lock for ${pattern}`);
     };
+    const settle = (promise: Promise<unknown>) =>
+      promise.then((value) => ({ value, error: undefined as unknown }), (error: unknown) => ({ value: undefined as unknown, error }));
 
     // 1. Hold the registration lock so the real materialization stops after
     //    it has taken Live FOR SHARE and before it reads or writes anything.
-    let release!: () => void;
-    const gate = new Promise<void>((resolve) => { release = resolve; });
+    let open!: () => void;
+    const gate = new Promise<void>((resolve) => { open = resolve; });
     let held!: () => void;
     const holding = new Promise<void>((resolve) => { held = resolve; });
-    const holder = db.$transaction(async (tx) => {
+    const holder = control.$transaction(async (tx) => {
       await tx.$queryRaw`SELECT "id" FROM "FormSubmission" WHERE "id" = ${submissionId} FOR NO KEY UPDATE`;
       held();
       await gate;
-    }, { timeout: 30_000 });
-    await holding;
-    const materialized = ensureLiveNotificationDelivery(
+    }, { timeout: 40_000 });
+    await Promise.race([holding, holder]);
+    const materialized = settle(ensureLiveNotificationDelivery(
       { vendorId: fixture.vendor.id, liveId: fixture.live.id, ruleId: fixture.rule!.id, submissionId },
       new Date(),
-      { scheduleFuture: true },
-    );
-    await waitingOnLock('%JOIN "FormSubmission" s%');
-
-    // 2. Enabling evergreen now: its Serializable transaction takes its
-    //    snapshot and then waits on the materialization's Live FOR SHARE.
-    const saved = saveEvergreen(fixture, true);
-    await waitingOnLock('UPDATE "public"."Live"%');
-
-    // 3. The materialization still sees the fixed-time Live, queues its row
-    //    and commits; only then can the save update the Live and commit.
-    release();
-    await holder;
+      { scheduleFuture: true, lockTimeoutMs: 30_000 },
+    ));
+    let saved = Promise.resolve({ value: undefined as unknown, error: new Error("save not started") as unknown });
+    try {
+      await waitForLockWaiter('%JOIN "FormSubmission" s%');
+      // 2. Enabling evergreen now: its Serializable transaction takes its
+      //    snapshot and then waits on the materialization's Live FOR SHARE.
+      saved = settle(saveEvergreen(fixture, true));
+      await waitForLockWaiter('UPDATE %"Live"%');
+    } finally {
+      // 3. The materialization still sees the fixed-time Live, queues its row
+      //    and commits; only then can the save update the Live and commit.
+      open();
+      await holder;
+    }
     const result = await materialized;
-    expect(result).toMatchObject({ status: "queued" });
-    await saved;
-    return result as { status: "queued"; deliveryId: string };
+    expect(result.error).toBeUndefined();
+    expect(result.value).toMatchObject({ status: "queued" });
+    expect((await saved).error).toBeUndefined();
+    return result.value as { status: "queued"; deliveryId: string };
   }
 
   it("cancels the fixed-time row of a materialization that was in flight while evergreen was being enabled (B-3)", async () => {
@@ -278,7 +295,7 @@ describe("evergreen settings re-materialization (disposable PostgreSQL)", () => 
     expect(await getDb().emailDelivery.findUniqueOrThrow({ where: { id: result.deliveryId }, select: { status: true, lastErrorCode: true } }))
       .toEqual({ status: "superseded", lastErrorCode: "lifecycle_superseded" });
     expect(await deliveryCount(fixture, "before_live", "queued")).toBe(0);
-  });
+  }, 45_000);
 
   it("still never sends that row when the post-commit pass fails: the send-time check supersedes it (m-3)", async () => {
     const db = getDb();
@@ -300,7 +317,7 @@ describe("evergreen settings re-materialization (disposable PostgreSQL)", () => 
     await expect(dispatchEmailDelivery(row.id)).resolves.toEqual({ status: "superseded" });
     expect(await db.emailDelivery.findUniqueOrThrow({ where: { id: row.id }, select: { status: true, lastErrorCode: true, sentAt: true, providerMessageId: true } }))
       .toEqual({ status: "superseded", lastErrorCode: "config_superseded", sentAt: null, providerMessageId: null });
-  });
+  }, 45_000);
 
   it("stays inside the tenant: another vendor's pending job and a foreign live id are untouched", async () => {
     const [a, b] = [await createFixture("tenant-a", { legacyReminder: true }), await createFixture("tenant-b", { legacyReminder: true })];
