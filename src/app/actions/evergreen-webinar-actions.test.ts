@@ -1,3 +1,4 @@
+import { Prisma } from "@prisma/client";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
@@ -12,6 +13,9 @@ const mocks = vi.hoisted(() => ({
   parseZonedDateTimeLocal: vi.fn(),
   queueReconciliation: vi.fn(),
   transaction: vi.fn(),
+  supersedeNotifications: vi.fn(),
+  scheduleRematerialization: vi.fn(),
+  captureOperationalError: vi.fn(),
 }));
 
 vi.mock("next/cache", () => ({ revalidatePath: mocks.revalidatePath }));
@@ -23,6 +27,9 @@ vi.mock("@/lib/db", () => ({
   getDb: () => ({ live: { findFirst: mocks.liveFindFirst, updateMany: mocks.liveUpdateMany }, $transaction: mocks.transaction }),
 }));
 vi.mock("@/lib/live-reminder-reconciliation", () => ({ queueLiveReminderReconciliationForCurrentLive: mocks.queueReconciliation }));
+vi.mock("@/lib/live-notification-delivery", () => ({ supersedeLiveNotificationDeliveriesForLifecycle: mocks.supersedeNotifications }));
+vi.mock("@/lib/evergreen-rematerialization", () => ({ scheduleEvergreenRematerialization: mocks.scheduleRematerialization }));
+vi.mock("@/lib/monitoring", () => ({ captureOperationalError: mocks.captureOperationalError }));
 vi.mock("@/lib/zoned-date-time", () => ({ parseZonedDateTimeLocal: mocks.parseZonedDateTimeLocal }));
 
 import { updateEvergreenWebinarSettingsAction } from "./evergreen-webinar-actions";
@@ -62,6 +69,7 @@ beforeEach(() => {
   mocks.liveUpdateMany.mockResolvedValue({ count: 1 });
   mocks.queueReconciliation.mockResolvedValue({ status: "queued", jobId: "job-1" });
   mocks.transaction.mockImplementation(async (callback: (tx: unknown) => Promise<unknown>) => callback({ live: { updateMany: mocks.liveUpdateMany }, marker: "tx" }));
+  mocks.supersedeNotifications.mockResolvedValue({ count: 0 });
   mocks.writeAuditLog.mockResolvedValue(undefined);
   mocks.parseZonedDateTimeLocal.mockReturnValue(new Date("2026-09-08T02:00:00.000Z"));
 });
@@ -180,6 +188,83 @@ describe("updateEvergreenWebinarSettingsAction", () => {
     mocks.liveUpdateMany.mockResolvedValueOnce({ count: 0 });
     await expect(updateEvergreenWebinarSettingsAction(form())).rejects.toThrow("REDIRECT:/lives/live-current/edit?error=evergreen_live_changed");
     expect(mocks.queueReconciliation).not.toHaveBeenCalled();
+  });
+
+  it("cancels queued before/during-live notification emails in the saving transaction when enabling, not when disabling", async () => {
+    await expect(updateEvergreenWebinarSettingsAction(form())).rejects.toThrow("evergreen_saved");
+    expect(mocks.supersedeNotifications).toHaveBeenCalledWith(
+      expect.objectContaining({ marker: "tx" }),
+      { vendorId: "vendor-current", liveId: "live-current", triggers: ["before_live", "during_live"] },
+    );
+
+    mocks.supersedeNotifications.mockClear();
+    const off = form();
+    off.delete("isEvergreen");
+    await expect(updateEvergreenWebinarSettingsAction(off)).rejects.toThrow("evergreen_saved");
+    expect(mocks.supersedeNotifications).not.toHaveBeenCalled();
+  });
+
+  it.each([["enabling", true], ["disabling", false]])("schedules an immediate tenant-bound re-materialization after the commit when %s evergreen", async (_label, enable) => {
+    const data = form();
+    if (!enable) data.delete("isEvergreen");
+
+    await expect(updateEvergreenWebinarSettingsAction(data)).rejects.toThrow("evergreen_saved");
+
+    expect(mocks.scheduleRematerialization).toHaveBeenCalledTimes(1);
+    expect(mocks.scheduleRematerialization).toHaveBeenCalledWith({ vendorId: "vendor-current", liveId: "live-current" });
+    expect(mocks.transaction.mock.invocationCallOrder[0]).toBeLessThan(mocks.scheduleRematerialization.mock.invocationCallOrder[0]!);
+  });
+
+  it("does not schedule re-materialization when the guarded write matched nothing", async () => {
+    mocks.liveUpdateMany.mockResolvedValueOnce({ count: 0 });
+    await expect(updateEvergreenWebinarSettingsAction(form())).rejects.toThrow("evergreen_live_changed");
+    expect(mocks.scheduleRematerialization).not.toHaveBeenCalled();
+  });
+
+  describe("transient transaction conflicts", () => {
+    function p2034() {
+      return new Prisma.PrismaClientKnownRequestError("Transaction failed due to a write conflict or a deadlock", { code: "P2034", clientVersion: "test" });
+    }
+
+    it("retries a P2034 on the idempotent save and then succeeds", async () => {
+      const real = mocks.transaction.getMockImplementation()!;
+      mocks.transaction.mockRejectedValueOnce(p2034()).mockRejectedValueOnce(p2034()).mockImplementation(real);
+
+      await expect(updateEvergreenWebinarSettingsAction(form())).rejects.toThrow("REDIRECT:/lives/live-current/edit?notice=evergreen_saved");
+
+      expect(mocks.transaction).toHaveBeenCalledTimes(3);
+      expect(mocks.captureOperationalError).not.toHaveBeenCalled();
+      expect(mocks.writeAuditLog).toHaveBeenCalledTimes(1);
+      expect(mocks.scheduleRematerialization).toHaveBeenCalledTimes(1);
+    });
+
+    it.each([
+      ["P2034", p2034],
+      ["a raw 40001", () => new Prisma.PrismaClientKnownRequestError("could not serialize access due to concurrent update", { code: "P2010", clientVersion: "test", meta: { code: "40001" } })],
+      ["a raw 40P01 deadlock", () => new Prisma.PrismaClientKnownRequestError("deadlock detected", { code: "P2010", clientVersion: "test", meta: { code: "40P01" } })],
+    ])("returns a friendly retry error, logs it and skips side effects when %s persists", async (_label, makeError) => {
+      mocks.transaction.mockImplementation(async () => { throw makeError(); });
+
+      await expect(updateEvergreenWebinarSettingsAction(form())).rejects.toThrow("REDIRECT:/lives/live-current/edit?error=evergreen_retry");
+
+      expect(mocks.transaction).toHaveBeenCalledTimes(3);
+      expect(mocks.captureOperationalError).toHaveBeenCalledWith(
+        expect.anything(),
+        { source: "evergreen_settings", operation: "save", status: "conflict" },
+      );
+      expect(mocks.writeAuditLog).not.toHaveBeenCalled();
+      expect(mocks.scheduleRematerialization).not.toHaveBeenCalled();
+      expect(mocks.revalidatePath).not.toHaveBeenCalled();
+    });
+
+    it("does not retry or swallow an unrelated database error", async () => {
+      mocks.transaction.mockRejectedValue(new Prisma.PrismaClientKnownRequestError("unique", { code: "P2002", clientVersion: "test" }));
+
+      await expect(updateEvergreenWebinarSettingsAction(form())).rejects.toMatchObject({ code: "P2002" });
+
+      expect(mocks.transaction).toHaveBeenCalledTimes(1);
+      expect(mocks.writeAuditLog).not.toHaveBeenCalled();
+    });
   });
 
   it("does not update or audit a live outside the current vendor", async () => {

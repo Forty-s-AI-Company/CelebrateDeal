@@ -54,7 +54,18 @@ async function processEmailDeliveries() {
     // Cut over only proven-equivalent legacy schedules before materializing the
     // canonical rule-scoped snapshots in this bounded invocation.
     const cutovers = await processLegacyReminderCutovers();
-    const dueLiveNotifications = await processDueLiveNotifications({ includeFuture: false, writeBudget: 100 });
+    let dueLiveNotifications: Array<{ status: string }> = [];
+    try {
+      dueLiveNotifications = await processDueLiveNotifications({ includeFuture: false, writeBudget: 100 });
+    } catch (error) {
+      // A failed due-notification pass must not abort the rest of the round
+      // (dispatch, LINE, learner notifications) for every tenant.
+      try {
+        captureOperationalError(error, { source: "email_delivery_job", operation: "due_live_notifications", status: "failed" });
+      } catch {
+        // Monitoring must never change the job outcome.
+      }
+    }
     const followups = await processDuePostLiveFollowups();
     const reconciliations = await processLiveReminderReconciliationJobs();
     const results = await processDueEmailDeliveries();

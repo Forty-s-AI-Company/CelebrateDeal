@@ -17,7 +17,8 @@ export default async function VerifyRegistrationPage({
   const query = await searchParams;
   const hasToken = validTokenShape(query.token);
   const verified = query.status === "verified";
-  const invalid = query.status === "invalid" || (!verified && !hasToken);
+  const retry = query.status === "retry";
+  const invalid = !retry && (query.status === "invalid" || (!verified && !hasToken));
 
   return (
     <main className="grid min-h-screen place-items-center bg-slate-100 px-4 py-10">
@@ -30,6 +31,11 @@ export default async function VerifyRegistrationPage({
             <VerifiedRegistrationNextSteps />
             <div className="mt-4"><LineLoginButton request={{ mode: "registration", redirectPath: "/verify-registration?status=verified" }}>🟢 接收 LINE 開播提醒與電子票券</LineLoginButton></div>
             <VerifiedRegistrationShare />
+          </div>
+        ) : retry ? (
+          <div role="alert" className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-4 text-amber-900">
+            <h1 className="text-xl font-black">目前較為忙碌，請重試</h1>
+            <p className="mt-2 text-sm leading-6">你的確認連結仍然有效，請回到確認信再按一次連結即可。</p>
           </div>
         ) : invalid ? (
           <div role="alert" className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-4 text-amber-900">

@@ -22,6 +22,7 @@ import {
 import { captureTrackingBrowserContext } from "@/lib/tracking-browser-context";
 import { captureOperationalError } from "@/lib/monitoring";
 import { checkRateLimit } from "@/lib/rate-limit";
+import { isTransientTransactionConflict, withSerializableRetry } from "@/lib/serializable-retry";
 
 const VerificationForm = z.object({
   token: z.string().min(1).max(320),
@@ -29,7 +30,7 @@ const VerificationForm = z.object({
 
 function redirectResult(
   request: Request,
-  status: "verified" | "invalid",
+  status: "verified" | "invalid" | "retry",
   chatSession?: { submissionId: string },
 ) {
   const url = new URL("/verify-registration", getBrowserReturnAppUrl(request));
@@ -67,7 +68,13 @@ export async function POST(request: Request) {
 
   let result;
   try {
-    result = await verifyFormSubmission(getDb(), parsed.data.token, new Date(), captureTrackingBrowserContext(request.headers, "/verify-registration"));
+    // The verification transaction is all-or-nothing and re-checks the token
+    // state, so re-running it after a Serializable conflict cannot double-apply.
+    const trackingContext = captureTrackingBrowserContext(request.headers, "/verify-registration");
+    result = await withSerializableRetry(
+      () => verifyFormSubmission(getDb(), parsed.data.token, new Date(), trackingContext),
+      { attempts: 3, retryOn: isTransientTransactionConflict },
+    );
   } catch (error) {
     try {
       captureOperationalError(error, {
@@ -78,7 +85,9 @@ export async function POST(request: Request) {
     } catch {
       // Monitoring cannot change the fail-closed response.
     }
-    return redirectResult(request, "invalid");
+    // Still conflicting after the bounded retries: the link itself is fine, so
+    // ask the visitor to press it again instead of calling it invalid.
+    return redirectResult(request, isTransientTransactionConflict(error) ? "retry" : "invalid");
   }
   if (result.status === "invalid") return redirectResult(request, "invalid");
 

@@ -19,7 +19,12 @@ import {
 import { parseRegistrationFormFields } from "@/lib/registration-form-fields";
 import { getSalesProjectScope } from "@/lib/sales-project-scope";
 
-type LiveEditorFormCandidate = { id: string; name: string; fields: unknown };
+// The evergreen settings Server Action re-materializes reminders with `after()`
+// (reminder reconciliation job + notification rules, bounded batches), so this
+// page gets the long limit, like the other batch work.
+export const maxDuration = 300;
+
+type LiveEditorFormCandidate ={ id: string; name: string; fields: unknown };
 type LiveEditorTemplateCandidate = {
   id: string;
   name: string;

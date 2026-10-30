@@ -11,6 +11,7 @@ import { hasOnlySupportedMessageTemplateVariables, renderMessageTemplate } from 
 import { createLiveViewerUrl } from "@/lib/live-public-url";
 import { EVERGREEN_ACTIVATION_SELECT, isActiveEvergreenLive, type EvergreenActivationRecord } from "@/lib/evergreen-activation";
 import { captureOperationalError } from "@/lib/monitoring";
+import { isTransientTransactionConflict, runSerializable } from "@/lib/serializable-retry";
 import {
   LIVE_NOTIFICATION_DELIVERY_TRIGGERS,
   liveNotificationIdempotencyPrefix,
@@ -291,6 +292,13 @@ async function readCurrentNotificationSnapshot(
     : null;
 }
 
+/**
+ * The materialization is idempotent (deterministic delivery id, P2002
+ * takeover), so a Serializable abort (P2034 / 40001 / 40P01) from a race with
+ * the immediate evergreen path or the scheduled job is simply re-run.
+ */
+const TRANSIENT_RETRY = { attempts: 3, retryOn: isTransientTransactionConflict } as const;
+
 export async function ensureLiveNotificationDelivery(input: {
   vendorId: string;
   liveId: string;
@@ -300,7 +308,7 @@ export async function ensureLiveNotificationDelivery(input: {
   const db = getDb();
   const scheduleFuture = options.scheduleFuture ?? false;
   try {
-    return await db.$transaction(async (tx) => {
+    return await runSerializable(db, async (tx) => {
       const current = await readCurrentNotificationSnapshot(tx, input);
       if (!current) return { status: "not_configured" as const };
       const data = await buildDeliveryData(tx, { ...current, now, scheduleFuture });
@@ -330,10 +338,10 @@ export async function ensureLiveNotificationDelivery(input: {
       });
       const delivery = await tx.emailDelivery.create({ data, select: { id: true, status: true, nextAttemptAt: true } });
       return { status: delivery.status === "suppressed" ? "suppressed" as const : "queued" as const, deliveryId: delivery.id };
-    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+    }, TRANSIENT_RETRY);
   } catch (error) {
     if (!isUniqueConflict(error)) throw error;
-    return db.$transaction(async (tx) => {
+    return runSerializable(db, async (tx) => {
       const current = await readCurrentNotificationSnapshot(tx, input);
       if (!current) return { status: "not_configured" as const };
       const data = await buildDeliveryData(tx, { ...current, now, scheduleFuture });
@@ -364,7 +372,7 @@ export async function ensureLiveNotificationDelivery(input: {
       return reactivated.count === 1
         ? { status: data.status === "suppressed" ? "suppressed" as const : "reactivated" as const, deliveryId: existing.id }
         : { status: "duplicate" as const, deliveryId: existing.id };
-    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+    }, TRANSIENT_RETRY);
   }
 }
 
@@ -528,11 +536,24 @@ export async function processDueLiveNotifications(options: {
       if (scanned >= scanBudget || writes >= writeBudget) break;
       const submission = await nextSubmissionForRule(db, state, recipientLimit);
       if (!submission) continue;
-      const result = await ensureLiveNotificationDelivery(
-        { vendorId: state.rule.vendorId, liveId: state.rule.liveId, ruleId: state.rule.id, submissionId: submission.id },
-        now,
-        { scheduleFuture: true },
-      );
+      let result: { status: string };
+      try {
+        result = await ensureLiveNotificationDelivery(
+          { vendorId: state.rule.vendorId, liveId: state.rule.liveId, ruleId: state.rule.id, submissionId: submission.id },
+          now,
+          { scheduleFuture: true },
+        );
+      } catch (error) {
+        // One recipient's failure (for example a conflict that outlived the
+        // bounded retries) must not stop the round for every other tenant;
+        // the recipient is picked up again on a later round.
+        try {
+          captureOperationalError(error, { source: "live_notification", operation: "materialize", status: "failed" });
+        } catch {
+          // Monitoring must never change the round's outcome.
+        }
+        result = { status: "error" };
+      }
       results.push({ status: result.status });
       scanned += 1;
       if (WRITING_NOTIFICATION_STATUSES.has(result.status)) writes += 1;

@@ -255,6 +255,29 @@ describe("processLiveReminderReconciliationJobs", () => {
     expect(cursorWrite.data).toMatchObject({ cursorId: "verified-b", scannedCount: { increment: 2 }, scheduledCount: { increment: 2 } });
   });
 
+  it("scopes candidates and stale-lease recovery to the given vendor and live", async () => {
+    const db = processingDb();
+    mocks.db = db;
+    mocks.ensureLiveReminderDelivery.mockResolvedValue({ status: "scheduled" });
+
+    await processLiveReminderReconciliationJobs({ now, vendorId: "vendor-1", liveId: "live-1" });
+
+    expect(db.liveReminderReconciliationJob.findMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({ vendorId: "vendor-1", liveId: "live-1" }),
+    }));
+    expect(db.liveReminderReconciliationJob.updateMany.mock.calls[0]![0].where).toMatchObject({ vendorId: "vendor-1", liveId: "live-1" });
+  });
+
+  it("returns nothing, touching no tenant, when a liveId is given without a vendorId", async () => {
+    const db = processingDb();
+    mocks.db = db;
+
+    await expect(processLiveReminderReconciliationJobs({ now, liveId: "live-1" })).resolves.toEqual([]);
+
+    expect(db.liveReminderReconciliationJob.updateMany).not.toHaveBeenCalled();
+    expect(db.liveReminderReconciliationJob.findMany).not.toHaveBeenCalled();
+  });
+
   it("cancels queued reminders instead of scheduling when the live became an active evergreen webinar", async () => {
     const db = processingDb();
     db.live.findFirst.mockResolvedValue({

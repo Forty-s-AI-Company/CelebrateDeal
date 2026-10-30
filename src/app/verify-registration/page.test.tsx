@@ -41,4 +41,13 @@ describe("VerifyRegistrationPage", () => {
       expect(html).not.toContain(token);
     }
   });
+
+  it("retry 狀態提示連結仍有效、請重試，而不是說連結無效", async () => {
+    const html = await render({ status: "retry" });
+
+    expect(html).toContain("請重試");
+    expect(html).toContain('role="alert"');
+    expect(html).not.toContain("確認連結無效或已過期");
+    expect(html).not.toContain('action="/api/form-submissions/verify"');
+  });
 });

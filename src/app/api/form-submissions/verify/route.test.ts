@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { Prisma } from "@prisma/client";
 import { NextRequest } from "next/server";
 
 const mocks = vi.hoisted(() => ({
@@ -120,6 +121,39 @@ describe("POST /api/form-submissions/verify", () => {
     expect(mocks.verifyFormSubmission).toHaveBeenCalledWith(mocks.db, "not-a-verification-token", expect.any(Date), null);
     expect(mocks.ensureRegistrationConfirmationDelivery).not.toHaveBeenCalled();
     expect(mocks.ensureLiveReminderDelivery).not.toHaveBeenCalled();
+  });
+
+  it("serialization conflict (P2034) 會重試驗證交易，之後照常成功", async () => {
+    const conflict = new Prisma.PrismaClientKnownRequestError("write conflict", { code: "P2034", clientVersion: "test" });
+    mocks.verifyFormSubmission.mockRejectedValueOnce(conflict).mockResolvedValueOnce({ status: "already_verified" });
+
+    const response = await POST(request());
+
+    expect(mocks.verifyFormSubmission).toHaveBeenCalledTimes(2);
+    expect(response.headers.get("location")).toBe("https://app.example.test/verify-registration?status=verified");
+    expect(mocks.captureOperationalError).not.toHaveBeenCalled();
+  });
+
+  it("重試後仍然衝突時導向「請重試」而不是「連結無效」，並記錄監控", async () => {
+    const deadlock = new Prisma.PrismaClientKnownRequestError("deadlock detected", { code: "P2010", clientVersion: "test", meta: { code: "40P01" } });
+    mocks.verifyFormSubmission.mockRejectedValue(deadlock);
+
+    const response = await POST(request());
+
+    expect(mocks.verifyFormSubmission).toHaveBeenCalledTimes(3);
+    expect(response.status).toBe(303);
+    expect(response.headers.get("location")).toBe("https://app.example.test/verify-registration?status=retry");
+    expect(mocks.captureOperationalError).toHaveBeenCalledWith(deadlock, expect.objectContaining({ source: "form_submission_verification", operation: "verify" }));
+    expect(mocks.ensureRegistrationConfirmationDelivery).not.toHaveBeenCalled();
+  });
+
+  it("非暫時性的資料庫錯誤不重試，仍然 fail closed 為無效頁面", async () => {
+    mocks.verifyFormSubmission.mockRejectedValue(new Error("unexpected"));
+
+    const response = await POST(request());
+
+    expect(mocks.verifyFormSubmission).toHaveBeenCalledTimes(1);
+    expect(response.headers.get("location")).toBe("https://app.example.test/verify-registration?status=invalid");
   });
 
   it("將 domain 判定無效的 token 導向無效頁面", async () => {

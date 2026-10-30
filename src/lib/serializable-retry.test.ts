@@ -1,7 +1,7 @@
 import { Prisma } from "@prisma/client";
 import { describe, expect, it, vi } from "vitest";
 
-import { runSerializable, serializableRetryDelayMs, withSerializableRetry } from "@/lib/serializable-retry";
+import { isTransientTransactionConflict, runSerializable, serializableRetryDelayMs, withSerializableRetry } from "@/lib/serializable-retry";
 
 function conflict(code = "P2034") {
   return new Prisma.PrismaClientKnownRequestError("conflict", { code, clientVersion: "test" });
@@ -45,6 +45,32 @@ describe("F-055 shared Serializable retry", () => {
     await expect(withSerializableRetry(widened, {
       attempts: 3, sleep, retryOn: (error) => error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002",
     })).resolves.toBe("ok");
+  });
+
+  it("recognizes P2034 and raw 40001 / 40P01 as transient, and nothing else", () => {
+    const known = (code: string, meta?: Record<string, unknown>, message = "raw") =>
+      new Prisma.PrismaClientKnownRequestError(message, { code, clientVersion: "test", ...(meta ? { meta } : {}) });
+    const unknown = (message: string) => new Prisma.PrismaClientUnknownRequestError(message, { clientVersion: "test" });
+
+    expect(isTransientTransactionConflict(conflict())).toBe(true);
+    expect(isTransientTransactionConflict(known("P2010", { code: "40001" }))).toBe(true);
+    expect(isTransientTransactionConflict(known("P2010", { code: "40P01" }))).toBe(true);
+    expect(isTransientTransactionConflict(known("40P01"))).toBe(true);
+    expect(isTransientTransactionConflict(unknown("ERROR: could not serialize access due to concurrent update"))).toBe(true);
+    expect(isTransientTransactionConflict(unknown("deadlock detected"))).toBe(true);
+
+    expect(isTransientTransactionConflict(conflict("P2002"))).toBe(false);
+    expect(isTransientTransactionConflict(known("P2010", { code: "23505" }))).toBe(false);
+    expect(isTransientTransactionConflict(unknown("connection refused"))).toBe(false);
+    expect(isTransientTransactionConflict(new Error("connection refused"))).toBe(false);
+    // Not Prisma request errors: never transient, even with a matching code or phrase.
+    expect(isTransientTransactionConflict(Object.assign(new Error("raw"), { code: "P2010", meta: { code: "40001" } }))).toBe(false);
+    expect(isTransientTransactionConflict(new Error("deadlock detected"))).toBe(false);
+    // A validation error whose message merely contains "40001" must not be retried.
+    expect(isTransientTransactionConflict(new Prisma.PrismaClientValidationError("Invalid value 40001 for field amount", { clientVersion: "test" }))).toBe(false);
+    expect(isTransientTransactionConflict(known("P2000", undefined, "The value 40001 is too long for the column"))).toBe(false);
+    expect(isTransientTransactionConflict(null)).toBe(false);
+    expect(isTransientTransactionConflict("40001")).toBe(false);
   });
 
   it("opens each attempt as its own Serializable transaction with the caller's pool limits", async () => {

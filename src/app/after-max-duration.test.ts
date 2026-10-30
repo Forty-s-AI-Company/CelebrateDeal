@@ -55,7 +55,10 @@ const AFTER_SCHEDULING_IMPORTS: Record<string, string> = {
   grantCustomerVoucherAction: "Server Action -> voucher email",
   updateConsultationBookingStatusAction: "Server Action -> dispatchAutomationEvent",
   createConsultationBookingAction: "Server Action -> dispatchAutomationEvent",
+  scheduleEvergreenRematerialization: "registers after() itself",
+  updateEvergreenWebinarSettingsAction: "Server Action -> scheduleEvergreenRematerialization",
   // Components whose form posts to one of the Server Actions above.
+  EvergreenWebinarSettings: "form -> updateEvergreenWebinarSettingsAction",
   AccountEmailChangeCard: "form -> requestAccountEmailChangeAction",
   // Client components that invoke one of the Server Actions above.
   StudentPortalLoginForm: "client form -> requestMagicLinkAction",
@@ -71,6 +74,7 @@ const AFTER_SCHEDULING_IMPORTS: Record<string, string> = {
 const EXPECTED_ENTRIES = [
   "src/app/(app)/consultations/page.tsx",
   "src/app/(app)/customers/[id]/page.tsx",
+  "src/app/(app)/lives/[id]/edit/page.tsx",
   "src/app/(app)/settings/security/page.tsx",
   "src/app/admin/billing/dashboard/page.tsx",
   "src/app/admin/billing/webhooks/[id]/page.tsx",
