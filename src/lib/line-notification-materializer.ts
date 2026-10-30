@@ -109,7 +109,7 @@ export async function materializeLineNotifications(
           messages: [buildLiveLineMessage({ kind: "reminder", liveTitle: live.title, startsAtText: formatStart(startAt), viewerUrl })],
         }));
       }
-      if (live.status === "live" && live.startedAt && !live.endedAt) {
+      if (live.status === "live" && live.startedAt && !live.endedAt && live.sessionMode !== "fixed_sessions") {
         results.push(await enqueueLineNotification(db, {
           vendorId: identity.vendorId,
           subjectType: "buyer_registration",

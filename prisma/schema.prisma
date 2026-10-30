@@ -765,6 +765,9 @@ model FormSubmission {
   affiliateClickId      String?
   /// The fixed session (指定場次) this registrant chose; bound to the same Live by the composite FK.
   liveSessionId         String?
+  /// Set once when an unverified registration's seat in liveSessionId is given
+  /// back (verification window passed). The seat counts while this is null.
+  liveSessionSeatReleasedAt DateTime?
   createdAt             DateTime                         @default(now())
 
   form                     RegistrationForm          @relation(fields: [formId], references: [id], onDelete: Cascade)
@@ -786,6 +789,7 @@ model FormSubmission {
   @@index([affiliateClickId])
   @@index([formId, customerKeyHash, createdAt])
   @@index([liveId, liveSessionId])
+  @@index([verificationStatus, liveSessionSeatReleasedAt, liveSessionId, verificationExpiresAt])
 }
 
 enum FormSubmissionVerificationStatus {
@@ -899,6 +903,10 @@ model LiveSession {
   registeredCount Int      @default(0)
   /// open | closed | cancelled
   status          String   @default("open")
+  /// Set exactly while status is cancelled; part of the cancellation notice identity.
+  cancelledAt     DateTime?
+  /// When every verified registrant of this cancellation got a notice queued.
+  cancellationNoticesQueuedAt DateTime?
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 

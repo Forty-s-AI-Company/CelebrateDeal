@@ -608,6 +608,15 @@ export async function ensurePostLiveFollowupDelivery(
   }
 }
 
+/**
+ * Latest session start whose follow-up is due now: start + video length +
+ * rule offset <= now. Null when the length is unknown (no follow-up can be due).
+ */
+function fixedSessionPostLiveCutoff(durationSec: number | null, offsetMinutes: number, now: Date) {
+  if (!durationSec || durationSec <= 0 || !Number.isInteger(offsetMinutes) || offsetMinutes < 0 || offsetMinutes > 10_080) return null;
+  return new Date(now.getTime() - durationSec * 1_000 - offsetMinutes * 60_000);
+}
+
 export async function processDuePostLiveFollowups(
   options: { now?: Date; ruleLimit?: number; recipientLimitPerRule?: number } = {},
 ) {
@@ -631,20 +640,28 @@ export async function processDuePostLiveFollowups(
 
   for (const rule of rules) {
     const live = rule.live;
-    const deliveryAt = resolvePostLiveDeliveryAt({
+    const fixedSessionsDueBefore = isFixedSessionLive(live)
+      ? fixedSessionPostLiveCutoff(live.video?.durationSec ?? null, rule.offsetMinutes, now)
+      : null;
+    const deliveryAt = isFixedSessionLive(live) ? null : resolvePostLiveDeliveryAt({
       streamMode: live.streamMode,
       scheduledAt: live.scheduledAt,
       endedAt: live.endedAt,
       videoDurationSec: live.video?.durationSec ?? null,
     }, rule.offsetMinutes);
-    if (!deliveryAt || deliveryAt > now) {
+    if (isFixedSessionLive(live) ? !fixedSessionsDueBefore : !deliveryAt || deliveryAt > now) {
       results.push({ status: "not_due" });
       continue;
     }
-    const submissionWhere = {
+    // A fixed-session Live (指定場次) follows up each registrant after their own
+    // session; cancelled sessions and registrants without one are skipped.
+    const submissionWhere: Prisma.FormSubmissionWhereInput = {
       liveId: live.id,
       verificationStatus: "VERIFIED" as const,
       form: { vendorId: rule.vendorId },
+      ...(fixedSessionsDueBefore
+        ? { liveSession: { is: { vendorId: rule.vendorId, liveId: live.id, status: { not: "cancelled" }, startAt: { lte: fixedSessionsDueBefore } } } }
+        : {}),
     };
     const submissionCount = await db.formSubmission.count({ where: submissionWhere });
     const submissions = await db.formSubmission.findMany({
@@ -652,9 +669,11 @@ export async function processDuePostLiveFollowups(
       orderBy: [{ createdAt: "asc" }, { id: "asc" }],
       skip: rotatingPostLivePageSkip(submissionCount, recipientLimit, now),
       take: recipientLimit,
-      select: { id: true, name: true, email: true, verificationStatus: true },
+      select: { id: true, name: true, email: true, verificationStatus: true, liveSession: { select: { startAt: true } } },
     });
     for (const submission of submissions) {
+      const sessionStartAt = fixedSessionsDueBefore ? submission.liveSession?.startAt ?? null : null;
+      if (fixedSessionsDueBefore && !sessionStartAt) continue;
       const result = await ensurePostLiveFollowupDelivery({
         vendorId: rule.vendorId,
         vendorName: live.vendor.name,
@@ -664,11 +683,11 @@ export async function processDuePostLiveFollowups(
         formSubmissionId: submission.id,
         recipientName: submission.name,
         recipientEmail: submission.email,
-        liveScheduledAt: live.scheduledAt,
+        liveScheduledAt: sessionStartAt ?? live.scheduledAt,
         template: rule.messageTemplate,
         rule,
-        streamMode: live.streamMode,
-        endedAt: live.endedAt,
+        streamMode: sessionStartAt ? "vod" : live.streamMode,
+        endedAt: sessionStartAt ? null : live.endedAt,
         videoDurationSec: live.video?.durationSec ?? null,
         verificationStatus: submission.verificationStatus,
         emailBrand: {
@@ -765,6 +784,132 @@ export async function ensureFormSubmissionVerificationDelivery(
     if (!existing) throw error;
     return { status: "duplicate" as const, deliveryId: existing.id, deliveryStatus: existing.status };
   }
+}
+
+export type FixedSessionCancelledDeliveryInput = {
+  vendorId: string;
+  vendorName: string;
+  liveId: string;
+  liveTitle: string;
+  sessionId: string;
+  sessionStartAt: Date;
+  /** Identity of this cancellation; a session cancelled again gets new notices. */
+  cancelledAt: Date;
+  formSubmissionId: string;
+  recipientName: string;
+  recipientEmail: string;
+  /** Where to choose another session (landing page, registration form or viewer page). */
+  rechooseUrl: string;
+  emailBrand?: VendorEmailBrandSource;
+};
+
+const FIXED_SESSION_CANCELLED_TRIGGER = "fixed_session_cancelled";
+
+function stableFixedSessionCancelledDeliveryId(input: Pick<FixedSessionCancelledDeliveryInput, "vendorId" | "formSubmissionId" | "sessionId" | "cancelledAt">) {
+  const digest = createHash("sha256")
+    .update(JSON.stringify([input.vendorId, input.formSubmissionId, input.sessionId, input.cancelledAt.toISOString(), FIXED_SESSION_CANCELLED_TRIGGER]))
+    .digest("hex")
+    .slice(0, 32);
+  return `email_${digest}`;
+}
+
+function fixedSessionCancelledIdempotencyKey(sessionId: string, cancelledAtMs: number, deliveryId: string) {
+  return `fixed-session-cancelled/${sessionId}/${cancelledAtMs}/${deliveryId}`;
+}
+
+/**
+ * Queues one platform-written notice to a verified registrant whose fixed
+ * session (指定場次) was cancelled: 「你報名的場次已取消，請重新選擇場次」 with a
+ * link to choose again. One row per registration and cancellation; calling
+ * again returns the existing row. It honours the merchant unsubscribe list
+ * (with the usual footer) and is re-checked at send time.
+ */
+export async function ensureFixedSessionCancelledDelivery(input: FixedSessionCancelledDeliveryInput) {
+  const db = getDb();
+  const deliveryId = stableFixedSessionCancelledDeliveryId(input);
+  const unsubscribeUrl = createEmailUnsubscribeUrl(deliveryId);
+  const recipientName = safeDisplayText(input.recipientName, "您好");
+  const liveTitle = safeDisplayText(input.liveTitle, "直播");
+  const vendorName = safeDisplayText(input.vendorName, "活動主辦單位");
+  const protectedPayload = protectEmailDeliveryPayload({
+    recipientEmail: input.recipientEmail,
+    subject: `你報名的「${liveTitle}」場次已取消`,
+    body: ensureEmailUnsubscribeFooter([
+      `${recipientName}：`,
+      `你報名的場次已取消，請重新選擇場次。`,
+      `直播：${liveTitle}`,
+      `原場次：${formatLiveStartAt(input.sessionStartAt)}`,
+      `重新選擇場次：${input.rechooseUrl}`,
+      `— ${vendorName}`,
+    ].join("\n\n"), unsubscribeUrl),
+    brand: input.emailBrand,
+  }, { vendorId: input.vendorId, deliveryId });
+  const normalizedEmail = normalizeBlacklistIdentifier("email", input.recipientEmail);
+  const [suppression, blacklist] = await Promise.all([
+    db.emailSuppression.findUnique({
+      where: { vendorId_recipientHash: { vendorId: input.vendorId, recipientHash: protectedPayload.recipientHash } },
+      select: { resubscribedAt: true },
+    }),
+    normalizedEmail ? db.blacklist.findFirst({
+      where: { vendorId: input.vendorId, identifierType: "email", identifier: normalizedEmail, isActive: true, unblockedAt: null },
+      select: { id: true },
+    }) : Promise.resolve(null),
+  ]);
+  const suppressed = Boolean((suppression && !suppression.resubscribedAt) || blacklist);
+  try {
+    const delivery = await db.emailDelivery.create({
+      data: {
+        id: deliveryId,
+        vendorId: input.vendorId,
+        sourceTemplateId: "system_fixed_session_cancelled_v1",
+        sourceLiveId: input.liveId,
+        sourceFormSubmissionId: input.formSubmissionId,
+        trigger: FIXED_SESSION_CANCELLED_TRIGGER,
+        ...protectedPayload,
+        idempotencyKey: fixedSessionCancelledIdempotencyKey(input.sessionId, input.cancelledAt.getTime(), deliveryId),
+        status: suppressed ? "suppressed" : "queued",
+        maxAttempts: MAX_ATTEMPTS,
+        nextAttemptAt: suppressed ? null : new Date(),
+        lastErrorCode: blacklist ? "recipient_blacklisted" : suppressed ? "recipient_suppressed" : null,
+      },
+      select: { id: true, status: true },
+    });
+    return { status: delivery.status === "suppressed" ? "suppressed" as const : "queued" as const, deliveryId: delivery.id };
+  } catch (error) {
+    if (!isUniqueConflict(error)) throw error;
+    const existing = await db.emailDelivery.findUnique({ where: { id: deliveryId }, select: { id: true, status: true } });
+    if (!existing) throw error;
+    return { status: "duplicate" as const, deliveryId: existing.id, deliveryStatus: existing.status };
+  }
+}
+
+/** Sends a cancellation notice only while the registration still sits in that same cancellation. */
+async function isCurrentFixedSessionCancelledDelivery(
+  delivery: EmailDeliverySnapshotIdentity,
+  database: DeliverySnapshotDatabase,
+) {
+  if (delivery.trigger !== FIXED_SESSION_CANCELLED_TRIGGER) return true;
+  const match = /^fixed-session-cancelled\/([A-Za-z0-9_-]{1,128})\/(\d{1,15})\//u.exec(delivery.idempotencyKey ?? "");
+  if (!match || !delivery.sourceLiveId || !delivery.sourceFormSubmissionId) return false;
+  const submission = await database.formSubmission.findFirst({
+    where: {
+      id: delivery.sourceFormSubmissionId,
+      liveId: delivery.sourceLiveId,
+      liveSessionId: match[1],
+      verificationStatus: "VERIFIED",
+      form: { vendorId: delivery.vendorId },
+    },
+    select: { id: true, liveSession: { select: { id: true, vendorId: true, status: true, cancelledAt: true } } },
+  });
+  const session = submission?.liveSession;
+  if (!session || session.vendorId !== delivery.vendorId || session.status !== "cancelled" || !session.cancelledAt) return false;
+  if (session.cancelledAt.getTime() !== Number(match[2])) return false;
+  return stableFixedSessionCancelledDeliveryId({
+    vendorId: delivery.vendorId,
+    formSubmissionId: submission.id,
+    sessionId: session.id,
+    cancelledAt: session.cancelledAt,
+  }) === delivery.id;
 }
 
 function nextAttemptDate(attemptCount: number, now = new Date()) {
@@ -900,6 +1045,7 @@ async function isCurrentPostLiveFollowupDelivery(
         scheduledAt: true,
         endedAt: true,
         streamMode: true,
+        sessionMode: true,
         video: { select: { durationSec: true } },
         notificationRules: {
           where: { trigger: "post_live_followup", isActive: true },
@@ -924,10 +1070,17 @@ async function isCurrentPostLiveFollowupDelivery(
         verificationStatus: "VERIFIED",
         form: { vendorId: delivery.vendorId },
       },
-      select: { id: true, email: true },
+      select: { id: true, email: true, liveSession: { select: { vendorId: true, liveId: true, startAt: true, status: true } } },
     }),
   ]);
   if (!live || !submission) return false;
+  // A fixed-session registrant's follow-up is anchored on their own session.
+  const session = submission.liveSession;
+  const fixed = live.sessionMode === "fixed_sessions";
+  if (fixed && (!session || session.vendorId !== delivery.vendorId || session.liveId !== live.id || session.status === "cancelled")) return false;
+  const schedule = fixed && session
+    ? { streamMode: "vod", scheduledAt: session.startAt, endedAt: null }
+    : { streamMode: live.streamMode, scheduledAt: live.scheduledAt, endedAt: live.endedAt };
   const normalizedEmail = normalizeBlacklistIdentifier("email", submission.email);
   if (!normalizedEmail) return false;
   const blacklist = await database.blacklist.findFirst({
@@ -942,9 +1095,7 @@ async function isCurrentPostLiveFollowupDelivery(
   });
   if (blacklist) return false;
   const completionAt = resolveLiveCompletionAt({
-    streamMode: live.streamMode,
-    scheduledAt: live.scheduledAt,
-    endedAt: live.endedAt,
+    ...schedule,
     videoDurationSec: live.video?.durationSec ?? null,
   });
   if (!completionAt) return false;
@@ -952,9 +1103,7 @@ async function isCurrentPostLiveFollowupDelivery(
   return live.notificationRules.some((rule) => {
     const template = rule.messageTemplate;
     const deliveryAt = resolvePostLiveDeliveryAt({
-      streamMode: live.streamMode,
-      scheduledAt: live.scheduledAt,
-      endedAt: live.endedAt,
+      ...schedule,
       videoDurationSec: live.video?.durationSec ?? null,
     }, rule.offsetMinutes);
     if (
@@ -975,7 +1124,7 @@ async function isCurrentPostLiveFollowupDelivery(
       liveId: live.id,
       liveSlug: live.slug,
       liveTitle: live.title,
-      liveScheduledAt: live.scheduledAt,
+      liveScheduledAt: schedule.scheduledAt,
       formSubmissionId: submission.id,
       ruleId: rule.id,
       offsetMinutes: rule.offsetMinutes,
@@ -1055,6 +1204,7 @@ export async function isCurrentEmailDeliverySnapshot(
     && await isCurrentLiveNotificationDeliverySnapshot(delivery, now, database)
     && await isCurrentPostLiveFollowupDelivery(delivery, now, database)
     && await isCurrentFormVerificationDelivery(delivery, now, database)
+    && await isCurrentFixedSessionCancelledDelivery(delivery, database)
     && await isCurrentStudentPortalDelivery(delivery, now, database);
 }
 
