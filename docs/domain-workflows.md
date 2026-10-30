@@ -61,6 +61,16 @@ UI 隱藏不能充當權限。每個新增敏感 read／mutation／export／rela
 
 證據記錄 `scenario | role | viewport | data state | result | revision/head | evidence | issue`，區分本機合成、外部 Sandbox 與 Production。問題回報附 severity、重現步驟、expected／actual、owner 及必要 console／network 證據；只存有界、去識別分類，不保存 raw log、URL query、header 或 payload。敏感旅程關閉可能保留 token／cookie／payload 的 trace／screenshot／video，改存有界且去識別的狀態；只有已確認不含敏感資訊的視覺 fixture 才保留影像。不得停用 assertions、盲改 snapshot、重試掩蓋固定失敗或把 external-required 改成 PASS。
 
+### Staging browser smoke（merge queue 流程）
+
+每次 merge queue 合併、Vercel 建好 preview 並把固定 alias 指向該 deployment 之後執行。`<sha>` 為 master 上該 queue commit 的完整 40 碼 SHA，`<host>` 為 Vercel 為該 SHA 建立的 `celebrate-deal-staging-*.vercel.app` immutable host：
+
+```
+gh workflow run staging-browser-smoke.yml --ref master -f source_sha=<sha> -f deployment_host=<host> -f surface=fixed_alias
+```
+
+lineage 步驟（`node scripts/mvp-payuni-sandbox-e2e.mjs --verify-lineage`）依序驗證：GitHub Deployment 紀錄（environment `Preview – celebrate-deal-staging`）的最新 success status 指向 `<host>` 且 SHA 完全相同；`<sha>` 為 `master` 本身或其祖先（GitHub compare API，不比對分支名稱，因此 `gh-readonly-queue/*` ref 的 deployment 可通過）；`fixed_alias` 對 alias 的 `/api/health` 取得 200。Vercel 防火牆會以 403 拒絕直接探測 immutable host，所以只有 `immutable_preview` 才探測該 host。alias 是否確實指向 `<host>` 由下一步 `--verify-alias`（Vercel API）證明，host 與 SHA 的綁定由前述 Deployment 紀錄證明。
+
 ## 設計與互動
 
 先定義頁面受眾、單一主要工作、資料密度與 mobile workflow；重用目前 [ui.tsx](../src/components/ui.tsx)、[globals.css](../src/app/globals.css) 的元件與 token。定義 default、hover、focus-visible、disabled、loading、empty、error、success、selected，再做視覺調整。
