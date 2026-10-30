@@ -47,7 +47,8 @@ export async function resolveRepeatedFixedSessionRegistration(input: {
 }): Promise<
   | { ok: true; moved: boolean }
   | { ok: false; reason: FixedSessionClaimFailure }
-  | { ok: false; reason: "already_registered"; session: { startAt: Date } }
+  /** `session` only when this browser holds the registration's signed cookie; nobody else learns which session it is. */
+  | { ok: false; reason: "already_registered"; session: { startAt: Date } | null }
 > {
   const db = getDb();
   const current = await db.formSubmission.findFirst({
@@ -63,9 +64,10 @@ export async function resolveRepeatedFixedSessionRegistration(input: {
   const sameSession = current.liveSessionId === input.sessionId;
   if (sameSession && current.liveSessionSeatReleasedAt === null) return { ok: true, moved: false };
   if (!sameSession && !mayMove(input, current)) {
-    return current.liveSession
-      ? { ok: false, reason: "already_registered", session: { startAt: current.liveSession.startAt } }
-      : { ok: true, moved: false };
+    if (!current.liveSession) return { ok: true, moved: false };
+    // Knowing an email must not reveal which session that registration holds.
+    const ownBrowser = holdsRegistrationCookie(input.request, input.submissionId, input.now);
+    return { ok: false, reason: "already_registered", session: ownBrowser ? { startAt: current.liveSession.startAt } : null };
   }
   try {
     const failure = await withSerializableRetry(() => db.$transaction(async (tx) => {
@@ -124,9 +126,14 @@ function mayMove(
   const cancelled = !session || session.status === "cancelled" || session.vendorId !== input.vendorId || session.liveId !== input.liveId;
   if (!cancelled && session.startAt.getTime() <= input.now.getTime()) return false;
   if (cancelled || current.verificationStatus !== "VERIFIED") return true;
-  const token = registrationSessionTokenFromRequest(input.request);
-  const claim = token ? verifyFormSubmissionChatSessionToken(token, input.now) : null;
-  return claim?.submissionId === input.submissionId;
+  return holdsRegistrationCookie(input.request, input.submissionId, input.now);
+}
+
+/** The browser holds the signed registration cookie of this very registration (set when its email was confirmed). */
+function holdsRegistrationCookie(request: Request, submissionId: string, now: Date) {
+  const token = registrationSessionTokenFromRequest(request);
+  const claim = token ? verifyFormSubmissionChatSessionToken(token, now) : null;
+  return claim?.submissionId === submissionId;
 }
 
 /**

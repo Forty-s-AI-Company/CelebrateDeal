@@ -181,6 +181,19 @@ describe("session picker on the public registration form", () => {
     expect(readChosenLiveSession("live-1")).toBeNull();
   });
 
+  it("gives a neutral message when the server withholds the held session (another browser)", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(Response.json({ error: "Already registered for another session" }, { status: 409 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const root = await mount(submission(sessionsData()));
+    await fill(root);
+    await click(times(root)[1]!);
+    await submit(root);
+    expect(root.textContent).toContain("這個 Email 已經報名過其他場次，請查看確認信，或在原本報名的裝置上更換場次");
+    expect(root.textContent).not.toContain("你已報名");
+    expect(fetchMock).toHaveBeenCalledOnce();
+    expect(readChosenLiveSession("live-1")).toBeNull();
+  });
+
   it("does not send liveSessionId for a live without sessions", async () => {
     const fetchMock = vi.fn().mockResolvedValue(Response.json({ ok: true, verificationRequired: true }));
     vi.stubGlobal("fetch", fetchMock);

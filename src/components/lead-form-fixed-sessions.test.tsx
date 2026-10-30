@@ -83,6 +83,11 @@ describe("LeadForm with a fixed-session live (/form)", () => {
     await submit(root);
     expect(root.textContent).toContain("你已報名 10月31日（週四） 20:00 場次");
 
+    // Without the registration's own cookie the server sends no details.
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(Response.json({ error: "Already registered for another session" }, { status: 409 })));
+    await submit(root);
+    expect(root.textContent).toContain("這個 Email 已經報名過其他場次，請查看確認信，或在原本報名的裝置上更換場次");
+
     const plain = vi.fn().mockResolvedValue(Response.json({ ok: true, verificationRequired: true }));
     vi.stubGlobal("fetch", plain);
     const other = await mount([plainLive]);

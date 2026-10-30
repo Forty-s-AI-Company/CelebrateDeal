@@ -21,6 +21,7 @@ export type LiveSessionsData = {
 
 export const LIVE_SESSION_REQUIRED_MESSAGE = "請選擇要參加的場次。";
 export const LIVE_SESSION_NONE_OPEN_MESSAGE = "目前沒有可報名的場次，請稍後再來。";
+export const LIVE_SESSION_ALREADY_REGISTERED_MESSAGE = "這個 Email 已經報名過其他場次，請查看確認信，或在原本報名的裝置上更換場次";
 
 
 /** First date that still has a seat; falls back to the first date so full days stay visible. */
@@ -195,7 +196,7 @@ export async function describeLiveSessionFailure(response: Response): Promise<{ 
   if (response.status === 409) {
     // The same email already holds another session that cannot be changed from here.
     const registered = await alreadyRegisteredSession(response);
-    if (registered) return { message: `你已報名 ${registered} 場次`, refresh: false };
+    if (registered) return { message: registered.label ? `你已報名 ${registered.label} 場次` : LIVE_SESSION_ALREADY_REGISTERED_MESSAGE, refresh: false };
     return { message: "此時段已額滿或已截止，請改選其他時段", refresh: true };
   }
   if (response.status === 429) return { message: "報名次數過多，請稍後再試", refresh: false };
@@ -212,7 +213,9 @@ async function alreadyRegisteredSession(response: Response) {
     const body: unknown = await response.clone().json();
     if (!body || typeof body !== "object") return null;
     const record = body as { error?: unknown; sessionLabel?: unknown };
-    return record.error === "Already registered for another session" && typeof record.sessionLabel === "string" ? record.sessionLabel : null;
+    if (record.error !== "Already registered for another session") return null;
+    // The label comes only to the registration's own browser.
+    return { label: typeof record.sessionLabel === "string" ? record.sessionLabel : null };
   } catch { return null; }
 }
 

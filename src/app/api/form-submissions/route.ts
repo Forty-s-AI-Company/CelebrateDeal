@@ -394,10 +394,13 @@ async function repeatedFixedSessionResponse(request: Request, seat: FixedSession
   if (outcome.reason === "already_registered") {
     // The registration did not move: say which session it holds, so the
     // picker shows it instead of the session the visitor just tapped.
+    // Only this registration's own browser learns which session it holds.
     return NextResponse.json({
       error: "Already registered for another session",
-      startAt: outcome.session.startAt.toISOString(),
-      sessionLabel: fixedSessionLabel(outcome.session.startAt, timeZone || undefined),
+      ...(outcome.session ? {
+        startAt: outcome.session.startAt.toISOString(),
+        sessionLabel: fixedSessionLabel(outcome.session.startAt, timeZone || undefined),
+      } : {}),
     }, { status: 409 });
   }
   return fixedSessionUnavailableResponse(outcome.reason);

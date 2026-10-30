@@ -214,11 +214,13 @@ describe("re-registering moves between sessions (M-2)", () => {
       liveScheduledAt: first, reminderOffsetMinutes: 60, template: fx.reminderTemplate,
     });
 
-    // Knowing the email is not enough to move a confirmed registration: 409 names the session it holds.
-    expect(await register(fx, registrant.email, b!.id)).toEqual({
-      status: 409,
-      body: { error: "Already registered for another session", startAt: first.toISOString(), sessionLabel: fixedSessionLabel(first) },
-    });
+    // Knowing the email is not enough to move a confirmed registration, and the 409 reveals nothing about it.
+    expect(await register(fx, registrant.email, b!.id)).toEqual({ status: 409, body: { error: "Already registered for another session" } });
+    // A cookie of another registration does not count as this registrant's browser.
+    const stranger = await verifiedRegistrant(fx, b!.id, "stranger");
+    expect(await register(fx, registrant.email, b!.id, chatCookie(stranger.id))).toEqual({ status: 409, body: { error: "Already registered for another session" } });
+    await getDb().liveSession.update({ where: { id: b!.id }, data: { registeredCount: { decrement: 1 } } });
+    await getDb().formSubmission.delete({ where: { id: stranger.id } });
     expect((await submissionByEmail(fx, registrant.email)).liveSessionId).toBe(a!.id);
 
     const moved = await register(fx, registrant.email, b!.id, chatCookie(registrant.id));
@@ -251,10 +253,13 @@ describe("re-registering moves between sessions (M-2)", () => {
     expect((await submissionByEmail(fx, stranded.email)).liveSessionId).toBe(open!.id);
 
     const watching = await verifiedRegistrant(fx, started!.id, "watching");
+    // Its own browser (signed registration cookie) is told which session it holds...
     expect(await register(fx, watching.email, open!.id, chatCookie(watching.id))).toEqual({
       status: 409,
       body: { error: "Already registered for another session", startAt: started!.startAt.toISOString(), sessionLabel: fixedSessionLabel(started!.startAt) },
     });
+    // ...anyone else who only knows the email is not.
+    expect(await register(fx, watching.email, open!.id)).toEqual({ status: 409, body: { error: "Already registered for another session" } });
     expect((await submissionByEmail(fx, watching.email)).liveSessionId).toBe(started!.id);
 
     await verifiedRegistrant(fx, full!.id, "full");
