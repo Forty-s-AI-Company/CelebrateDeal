@@ -11,7 +11,7 @@ const KEY_LENGTH = 64;
 const UNUSABLE_PASSWORD_PREFIX = "unusable:";
 const UNUSABLE_TIMING_SALT = "0".repeat(32);
 
-export type UnusablePasswordReason = "account_email_revert";
+export type UnusablePasswordReason = "account_email_revert" | "support_mfa_removal";
 
 /** A `passwordHash` value no password verifies against. Only a password reset replaces it. */
 export function unusablePasswordHash(reason: UnusablePasswordReason) {

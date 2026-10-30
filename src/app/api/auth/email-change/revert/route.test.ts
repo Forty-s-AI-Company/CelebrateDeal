@@ -28,7 +28,7 @@ beforeEach(() => {
 });
 
 describe("POST /api/auth/email-change/revert", () => {
-  it.each(["reverted", "cancelled", "invalid", "conflict", "retry"] as const)("redirects with 303 to the %s result without caching or a Referer", async (status) => {
+  it.each(["reverted", "held", "cancelled", "invalid", "conflict", "retry"] as const)("redirects with 303 to the %s result without caching or a Referer", async (status) => {
     mocks.revert.mockResolvedValue({ status });
     const response = await POST(request("token=aer1.payload.signature"));
     expect(response.status).toBe(303);

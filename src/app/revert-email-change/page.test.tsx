@@ -65,11 +65,15 @@ describe("/revert-email-change", () => {
     expect(html).toContain('href="/password-reset/request"');
   });
 
-  it("tells a held account to contact support instead of resetting yet", async () => {
+  it("tells a held account (after a restore or a cancel) to contact support in neutral words, without a reset", async () => {
     const html = await render({ status: "held" });
-    expect(html).toContain("登入 Email 已還原，帳號已暫停");
+    expect(html).toContain("帳號已暫停，請聯絡客服");
+    expect(html).toContain("為保護帳號，這個帳號需要客服確認身分後才能繼續使用，請聯絡客服");
     expect(html).toContain("不能重設密碼");
-    expect(html).toContain("請聯絡客服確認身分");
+    // Neither the reason nor whether the address moved: the same page follows a cancel.
+    expect(html).not.toContain("兩步驟驗證");
+    expect(html).not.toContain("一天內");
+    expect(html).not.toContain("已還原");
     expect(html).not.toContain('href="/password-reset/request"');
   });
 
@@ -80,6 +84,13 @@ describe("/revert-email-change", () => {
     expect(html).toContain("變更前後一天內新設定的，帳號會暫停");
     expect(html).toContain("目前的登入 Email 會收到通知");
     expect(html).not.toContain("那次登入之後");
+  });
+
+  it("states before a cancel that a fresh factor puts the account on hold too", async () => {
+    mocks.describe.mockResolvedValue({ mode: "cancel" });
+    const html = await render({ token: "aer1.payload.signature" });
+    expect(html).toContain("兩步驟驗證保留");
+    expect(html).toContain("變更前後一天內新設定的，帳號會暫停");
   });
 
   it("tells the owner after a cancel that the requester was signed out and the password must be reset, without a change lock", async () => {
