@@ -487,25 +487,36 @@ async function processClaimedJob(db: ReconciliationDb, job: ReconciliationJob, b
   return { jobId: job.id, status: advanced.count === 1 ? (completed ? "completed" as const : "pending" as const) : "claimed_elsewhere" as const };
 }
 
-/** Processes a bounded number of jobs and verified submissions without exposing PII. */
+/**
+ * Processes a bounded number of jobs and verified submissions without exposing PII.
+ * `vendorId` (with optional `liveId`) narrows the run to one tenant's jobs so a
+ * request that just queued a job can work it off immediately; a `liveId`
+ * without a `vendorId` is ignored rather than widening the scope. The claim is
+ * a compare-and-set, so this and the scheduled job never process one job twice.
+ */
 export async function processLiveReminderReconciliationJobs(options: {
   limit?: number;
   batchSize?: number;
   now?: Date;
+  vendorId?: string;
+  liveId?: string;
 } = {}) {
   const db = asReconciliationDb(getDb());
   const now = options.now ?? new Date();
   const limit = Math.max(1, Math.min(25, options.limit ?? 5));
   const batchSize = Math.max(1, Math.min(MAX_BATCH_SIZE, options.batchSize ?? DEFAULT_BATCH_SIZE));
   const staleCutoff = new Date(now.getTime() - JOB_LEASE_MS);
+  const scope = options.vendorId
+    ? { vendorId: options.vendorId, ...(options.liveId ? { liveId: options.liveId } : {}) }
+    : {};
 
   await db.liveReminderReconciliationJob.updateMany({
-    where: { lifecycle: "processing", claimedAt: { lte: staleCutoff } },
+    where: { ...scope, lifecycle: "processing", claimedAt: { lte: staleCutoff } },
     data: { lifecycle: "failed", claimedAt: null, nextAttemptAt: now, lastErrorCode: "stale_lease_recovered" },
   });
 
   const candidates = await db.liveReminderReconciliationJob.findMany({
-    where: { lifecycle: { in: ["pending", "failed"] }, nextAttemptAt: { lte: now }, attemptCount: { lt: JOB_MAX_ATTEMPTS } },
+    where: { ...scope, lifecycle: { in: ["pending", "failed"] }, nextAttemptAt: { lte: now }, attemptCount: { lt: JOB_MAX_ATTEMPTS } },
     orderBy: [{ nextAttemptAt: "asc" }, { createdAt: "asc" }, { id: "asc" }],
     take: limit,
   });

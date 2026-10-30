@@ -28,6 +28,27 @@ export function isSerializationFailure(error: unknown) {
   return error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2034";
 }
 
+const TRANSIENT_SQLSTATES = new Set(["40001", "40P01"]);
+const TRANSIENT_MESSAGE = /\b(?:40001|40P01)\b|could not serialize access|deadlock detected|write conflict or a deadlock/iu;
+
+/**
+ * A transaction abort that is safe to re-run when the whole operation is
+ * idempotent: Prisma P2034, or the raw PostgreSQL SQLSTATEs serialization
+ * failure (40001) and deadlock (40P01) when the driver surfaces them without
+ * the P2034 mapping (for example as P2010 or an unknown request error).
+ */
+export function isTransientTransactionConflict(error: unknown) {
+  if (isSerializationFailure(error)) return true;
+  if (typeof error !== "object" || error === null) return false;
+  const meta = (error as { meta?: unknown }).meta;
+  const metaCode = typeof meta === "object" && meta !== null ? (meta as { code?: unknown }).code : undefined;
+  if (typeof metaCode === "string" && TRANSIENT_SQLSTATES.has(metaCode)) return true;
+  const code = (error as { code?: unknown }).code;
+  if (typeof code === "string" && TRANSIENT_SQLSTATES.has(code)) return true;
+  const message = (error as { message?: unknown }).message;
+  return typeof message === "string" && TRANSIENT_MESSAGE.test(message);
+}
+
 const DEFAULT_BASE_DELAY_MS = 20;
 const DEFAULT_MAX_DELAY_MS = 400;
 

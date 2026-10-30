@@ -2,13 +2,16 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { Prisma } from "@prisma/client";
 import { z } from "zod";
 import { requireVendorManagerContext } from "@/lib/auth";
 import { auditSnapshot, writeAuditLog } from "@/lib/audit";
 import { assertServerActionSecurity } from "@/lib/csrf";
 import { getDb } from "@/lib/db";
+import { scheduleEvergreenRematerialization } from "@/lib/evergreen-rematerialization";
+import { supersedeLiveNotificationDeliveriesForLifecycle } from "@/lib/live-notification-delivery";
 import { queueLiveReminderReconciliationForCurrentLive } from "@/lib/live-reminder-reconciliation";
+import { captureOperationalError } from "@/lib/monitoring";
+import { isTransientTransactionConflict, runSerializable } from "@/lib/serializable-retry";
 import { evergreenVideoDurationSeconds } from "@/lib/evergreen-activation";
 import { parseZonedDateTimeLocal } from "@/lib/zoned-date-time";
 
@@ -76,6 +79,59 @@ function parseSettings(formData: FormData): EvergreenSettings | null {
   const dailyTimes = [...new Set(parsed.data.dailyTimes)].sort();
   if (parsed.data.isEvergreen && parsed.data.scheduleMode === "recurring_daily" && dailyTimes.length === 0) return null;
   return { ...parsed.data, dailyTimes };
+}
+
+type EvergreenWriteData = Record<string, unknown>;
+
+/**
+ * The write and the reminder reconciliation share one transaction, so the
+ * reconciliation sees exactly the post-write evergreen state: enabling
+ * cancels queued fixed-time reminders, disabling reschedules (or reactivates)
+ * them for registrants who verified while evergreen was on.
+ *
+ * The whole transaction is idempotent (absolute values, deterministic job
+ * key), so a Serializable conflict (P2034, 40001, 40P01) is retried a few
+ * times with jitter; if it still conflicts the user is asked to retry.
+ * Every write repeats the vendor binding in its own where clause.
+ */
+async function saveEvergreenTransaction(
+  db: ReturnType<typeof getDb>,
+  input: {
+    vendorId: string;
+    liveId: string;
+    enabling: boolean;
+    where: { id: string; vendorId: string; streamMode?: string; videoId?: string | null };
+    data: EvergreenWriteData;
+  },
+) {
+  try {
+    return await runSerializable(db, async (tx) => {
+      const updated = await (tx.live.updateMany as unknown as (args: {
+        where: typeof input.where;
+        data: EvergreenWriteData;
+      }) => Promise<{ count: number }>)({ where: input.where, data: input.data });
+      if (updated.count !== 1) return updated;
+      // Enabling: queued before_live / during_live emails anchored on the old
+      // fixed time are cancelled in the same commit instead of at send time.
+      if (input.enabling) {
+        await supersedeLiveNotificationDeliveriesForLifecycle(tx, {
+          vendorId: input.vendorId,
+          liveId: input.liveId,
+          triggers: ["before_live", "during_live"],
+        });
+      }
+      await queueLiveReminderReconciliationForCurrentLive(tx, { vendorId: input.vendorId, liveId: input.liveId });
+      return updated;
+    }, { attempts: 3, retryOn: isTransientTransactionConflict });
+  } catch (error) {
+    if (!isTransientTransactionConflict(error)) throw error;
+    try {
+      captureOperationalError(error, { source: "evergreen_settings", operation: "save", status: "conflict" });
+    } catch {
+      // Monitoring must never turn a retryable conflict into a 500.
+    }
+    return redirectToSettings(input.liveId, "evergreen_retry");
+  }
 }
 
 /**
@@ -158,26 +214,21 @@ export async function updateEvergreenWebinarSettingsAction(formData: FormData) {
   const where = settings.isEvergreen
     ? { id: live.id, vendorId: vendor.id, streamMode: "vod", videoId: live.videoId }
     : { id: live.id, vendorId: vendor.id };
-  // The write and the reminder reconciliation share one transaction, so the
-  // reconciliation sees exactly the post-write evergreen state: enabling
-  // cancels queued fixed-time reminders, disabling reschedules (or reactivates)
-  // them for registrants who verified while evergreen was on.
-  const result = await db.$transaction(async (tx) => {
-    const updated = await (tx.live.updateMany as unknown as (args: {
-      where: { id: string; vendorId: string; streamMode?: string; videoId?: string | null };
-      data: typeof data;
-    }) => Promise<{ count: number }>)({
-      where,
-      data,
-    });
-    if (updated.count !== 1) return updated;
-    await queueLiveReminderReconciliationForCurrentLive(tx, { vendorId: vendor.id, liveId: live.id });
-    return updated;
-  }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+  const result = await saveEvergreenTransaction(db, {
+    vendorId: vendor.id,
+    liveId: live.id,
+    enabling: settings.isEvergreen,
+    where,
+    data,
+  });
   if (result.count !== 1) {
     if (settings.isEvergreen) redirectToSettings(live.id, "evergreen_live_changed");
     redirect("/lives?error=live_not_found");
   }
+
+  // Re-materialize before-live reminders and notification rules now instead of
+  // waiting for the scheduled job. Idempotent with that job; never throws.
+  scheduleEvergreenRematerialization({ vendorId: vendor.id, liveId: live.id });
 
   await writeAuditLog({
     vendorId: vendor.id,

@@ -100,6 +100,7 @@ function evergreenError(error: string) {
   if (error === "evergreen_vod_required") return "常青 Webinar 只適用預錄影片播放的直播；即時直播請先在 Studio 改回影片播放。";
   if (error === "evergreen_duration_required") return "系統尚未取得來源影片長度（需介於 1 秒到 24 小時），請等影片處理完成後再啟用常青 Webinar。";
   if (error === "evergreen_live_changed") return "這場直播的播放來源剛被變更，請重新整理後再儲存。";
+  if (error === "evergreen_retry") return "系統剛好同時有其他變更，這次設定沒有儲存，請重試一次。";
   if (error === "invalid_evergreen_schedule") return "排程起點無效，請依商家時區重新選擇日期與時間。";
   if (error === "evergreen_timing_out_of_range") return "優惠券或諮詢 CTA 秒數不能超過來源影片長度。";
   return "常青 Webinar 設定無法儲存，請檢查欄位後再試。";
