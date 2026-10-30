@@ -70,6 +70,8 @@ D-05：#436 經 rebase、QA 帳號 TOTP、reviewer 通過、CI 綠後由主對�
 
 ## 每日摘要
 
+- 10-30（文件校正）：GO-NO-GO §4 已接受風險中，F-133（#459 `ad453597`，真實 DB 兩租戶測試）、F-001／F-002（#465 `1330e107`，伺服器端功能閘門）、F-041（#454 `8d72080b`，只收 TWD）、F-077／F-078／F-112（#453 `23a6a22d`）、F-019（#505 `0aa58e5d`、#507 `89d2088e`、#520 `cf6b0610`）已依 git 紀錄改為已處理；B-1 排程頻率的緩解 #517（`bc1f559c`）已合併但尚未實測，仍不勾選。
+
 - 10-22（晚）：#465 合併並套用 staging migration（累計 22 個 PR，含 #460 文件）。**L1 48 項全部進 master；OWNER-ACTIONS 只剩 owner 本人項目，Goal 自動推進 loop 依停止條件結束**。Go／No-Go 摘要見 GO-NO-GO.md §0。殘餘（封測後或 owner 決策）：F-093 Stream 簽章網址只完成評估，實作等 Cloudflare 設定；F-091 (2) 與 F-134 其餘 action 矩陣列 L2；Vercel Hobby build 速率上限 10-22 觸發一次（O-24）。
 - 10-22（傍晚）：#467 合併（累計 21 個 PR）。#465 同步 master 後 CI 在 Release browser gates 掛一個 Playwright 斷言，交回工作線 A 查根因。
 - 10-22（下午）：#466（第六批 C）合併（累計 20 個 PR）。#465 經 reviewer 兩輪：BLOCKER（夾具缺 browser_live 授權）、MAJOR（courses 關閉仍可結帳課程商品、商家不能下架）、複審 BLOCKER（e2e 夾具授權未同步開啟商家模組開關）皆已修，等 CI 完整跑綠後三審。CI 揭露 master 既有的帳號限流 3601 秒抖動，根因是 `now()` 微秒寫進 TIMESTAMP(3) 四捨五入；開 #467 修正（截到毫秒＋回歸測試），reviewer 可合併，等 CI。

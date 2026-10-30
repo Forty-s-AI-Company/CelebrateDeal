@@ -1,6 +1,7 @@
 import { cancelConsultationBookingAction, createConsultationEventAction, toggleConsultationEventAction, updateConsultationBookingStatusAction, updateConsultationEventAction, type ConsultationDatabase } from "@/app/actions/consultation-actions";
 import Link from "next/link";
 import { CsrfField } from "@/components/csrf-field";
+import { FormSubmitButton } from "@/components/form-submit-button";
 import { Badge, Card, Field, PageHeader, SubmitButton, TextArea } from "@/components/ui";
 import { SalesScopeNotice } from "@/components/sales-scope-notice";
 import { requireVendorManagerContext } from "@/lib/auth";
@@ -184,24 +185,24 @@ export default async function ConsultationsPage({ searchParams }: { searchParams
                             <CsrfField />
                             <input type="hidden" name="bookingId" value={booking.id} />
                             <input type="hidden" name="status" value="completed" />
-                            <button type="submit" className="min-h-11 rounded-md border border-border px-3 text-sm font-semibold text-slate-700 hover:bg-slate-50">
+                            <FormSubmitButton pendingChildren="處理中…" pendingMessage="正在更新預約，請勿重複送出。" className="min-h-11 rounded-md border border-border px-3 text-sm font-semibold text-slate-700 hover:bg-slate-50">
                               完成
-                            </button>
+                            </FormSubmitButton>
                           </form>
                           <form action={updateConsultationBookingStatusAction}>
                             <CsrfField />
                             <input type="hidden" name="bookingId" value={booking.id} />
                             <input type="hidden" name="status" value="no_show" />
-                            <button type="submit" className="min-h-11 rounded-md border border-border px-3 text-sm font-semibold text-slate-700 hover:bg-slate-50">
+                            <FormSubmitButton pendingChildren="處理中…" pendingMessage="正在更新預約，請勿重複送出。" className="min-h-11 rounded-md border border-border px-3 text-sm font-semibold text-slate-700 hover:bg-slate-50">
                               未到
-                            </button>
+                            </FormSubmitButton>
                           </form>
                           <form action={cancelConsultationBookingAction}>
                             <CsrfField />
                             <input type="hidden" name="bookingId" value={booking.id} />
-                            <button type="submit" className="min-h-11 rounded-md border border-border px-3 text-sm font-semibold text-slate-700 hover:bg-slate-50">
+                            <FormSubmitButton pendingChildren="取消中…" pendingMessage="正在取消預約，請勿重複送出。" className="min-h-11 rounded-md border border-border px-3 text-sm font-semibold text-slate-700 hover:bg-slate-50">
                               取消預約
-                            </button>
+                            </FormSubmitButton>
                           </form>
                         </div>
                       ) : null}

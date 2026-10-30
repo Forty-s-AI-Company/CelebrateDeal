@@ -258,7 +258,7 @@ function ActiveLiveAdvancedInteractions({
   function renderOffer() {
     if (!run) return null;
     return (<>
-{run.metadata.kind === "flash_voucher" ? <div className="mt-4 grid gap-3 text-center"><p className="text-3xl font-black text-red-700">{run.metadata.discountType === "percentage" ? `${run.metadata.discountValue}% OFF` : `折抵 NT$${run.metadata.discountValue / 100}`}</p><p className="text-sm text-slate-600">限量 {run.metadata.maxClaims} 份，目前已有 {run.responseCount} 人領取。</p><button type="button" disabled={run.responded || closed || isSubmitting} onClick={() => void respond("claim")} className="min-h-12 rounded-2xl bg-red-600 px-5 text-lg font-black text-white shadow-lg shadow-red-200 disabled:opacity-50">{run.responded ? "紅包已領取" : "一鍵領取折扣"}</button></div> : null}
+{run.metadata.kind === "flash_voucher" ? <div className="mt-4 grid gap-3 text-center"><p className="text-3xl font-black text-red-700">{run.metadata.discountType === "percentage" ? `${run.metadata.discountValue}% OFF` : `折抵 ${formatCurrency(run.metadata.discountValue, "TWD")}`}</p><p className="text-sm text-slate-600">限量 {run.metadata.maxClaims} 份，目前已有 {run.responseCount} 人領取。</p><button type="button" disabled={run.responded || closed || isSubmitting} onClick={() => void respond("claim")} className="min-h-12 rounded-2xl bg-red-600 px-5 text-lg font-black text-white shadow-lg shadow-red-200 disabled:opacity-50">{run.responded ? "紅包已領取" : "一鍵領取折扣"}</button></div> : null}
 
       {run.metadata.kind === "flash_sale" ? (
         <div className="mt-4 grid gap-3 text-center">

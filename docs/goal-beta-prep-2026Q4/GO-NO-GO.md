@@ -118,12 +118,12 @@
 
 | ☐ | Finding | 風險 | 繞過方式 | 是否已做（待確認） |
 |---|---|---|---|---|
-| ☐ | F-041 | 非台幣商品可被建立 | 只用台幣；主對話不指導其他幣別 | |
-| ☐ | F-112 | LINE 綁定頁錯誤不會變紅 | 創辦人陪同綁定 | |
-| ☐ | F-078 | 錯誤頁「重試」不會重新抓資料 | 失敗時由工程端重新整理頁面 | |
-| ☐ | F-019 | 常青場設定可能不生效 | 常青場設定由創辦人走查；必要時隱藏 | |
-| ☐ | F-077 | 錯誤頁無重新載入按鈕 | 同上 | |
-| ☐ | F-001、F-002 | 隱藏只在前端，伺服器仍可呼叫（課程、billing、Funnel 綁卡、諮詢） | 不開權限、不主動介紹 | |
+| ☑ | F-041 | 非台幣商品可被建立 | 只用台幣；主對話不指導其他幣別 | 已處理：#454（`8d72080b`）起結帳只收 TWD，商品 action 對非 TWD 幣別直接拒絕、不轉換（`product-actions.ts`、`product-form-client.tsx` 的 `unsupported_currency` 提示）。2026-10-30 依 git 紀錄與程式查證，未另做 staging 實測 |
+| ☑ | F-112 | LINE 綁定頁錯誤不會變紅 | 創辦人陪同綁定 | 已處理：#453（`23a6a22d`，F-112）LINE 綁定頁加三步驟教學、欄位級錯誤與成功回饋。依 commit 紀錄查證，未另做 staging 實測 |
+| ☑ | F-078 | 錯誤頁「重試」不會重新抓資料 | 失敗時由工程端重新整理頁面 | 已處理：#453（`23a6a22d`，F-077、F-078）error boundary 改用 Next 16 的 `retry` 並補掃描測試。依 commit 紀錄查證，未另做 staging 實測 |
+| ☑ | F-019 | 常青場設定可能不生效 | 常青場設定由創辦人走查；必要時隱藏 | 已處理：#505（`0aa58e5d`）公開觀看頁依常青排程為每位觀眾安排場次；#507（`89d2088e`）統一常青生效規則（`evergreen-activation.ts`），非 VOD 或影片長度未知時拒絕啟用；#520（`cf6b0610`）儲存設定後立即重建提醒。依 commit 紀錄查證，建議創辦人仍走查一次 |
+| ☑ | F-077 | 錯誤頁無重新載入按鈕 | 同上 | 已處理：同 F-078，#453（`23a6a22d`） |
+| ☑ | F-001、F-002 | 隱藏只在前端，伺服器仍可呼叫（課程、billing、Funnel 綁卡、諮詢） | 不開權限、不主動介紹 | 已處理：#465（`1330e107`）新增 `Vendor.betaFeatureGrants` 與 `src/lib/feature-gates.ts`，courses、billing、funnel_binding、consultation_booking、browser_live、danmaku 的 action、route 與 page 都在伺服器端檢查，並有 `feature-gates.matrix.test.ts` 與 DB 測試。依 commit 紀錄查證 |
 | ☐ | F-052 | 平台沒有「禁止標記已出款」開關 | 封測期間不鎖月結、不撥款 | |
 | ☐ | F-025 | 夥伴身分權限過大（會計可看全部夥伴佣金） | 夥伴入口不授權外部人 | |
 | ☐ | F-042 | GitHub 排程延遲 5～15 分鐘，偶爾略過；60 天無 commit 會停用 | 每日看排程 run；每 60 天內至少一次 commit | |
@@ -135,7 +135,7 @@
 | ☐ | F-015、F-091、F-092 | 漏斗頁與即時輪詢在 20 人以上可能變慢或誤判額度 | 封測同時在線 ≤20 人（D-15） | |
 | ☐ | F-095、F-102 | 瀏覽器直播無部署文件；預覽死路 | 不用瀏覽器直播（D-09） | |
 | ☐ | F-103（揭露語） | 播放頁「部分互動」字樣未移除 | 等律師意見（O-11） | |
-| ☐ | F-133 | CRM 與行動諮詢的租戶測試是假測試 | 封測期間補；目前靠人工與 B1 查證 | |
+| ☑ | F-133 | CRM 與行動諮詢的租戶測試是假測試 | 封測期間補；目前靠人工與 B1 查證 | 已處理：#459（`ad453597`）以真實 DB 的兩租戶測試取代 mock 假測試：新增 `customer-crm-actions.db.test.ts`、`mobile-consultation-actions.db.test.ts`、`consultations/mobile/page.db.test.tsx`，並刪除原本的 mock 版 `.test.ts` |
 | ☐ | 邀請制註冊 | 邀請連結是持有者憑證，不證明對方擁有該信箱 | 只寄給本人；14 天到期；帳號 Email 唯一，一個連結最多建立一個帳號。寄錯對象或不再需要時，在 `/admin/merchant-invitations` 該筆邀請按「撤銷」（需 15 分鐘內完成 MFA 驗證）：寫入 `merchant_registration_invite_revoked` 稽核紀錄後，`/register` 立即拒絕該連結並顯示已撤銷；已用它建立的帳號不受影響，需另行停用。撤銷擋不住已經送出、正在處理中的註冊（建立帳號的交易內會在寫入前再查一次撤銷紀錄，只縮小而非消除這段時間差），所以撤銷後請重新整理清單，確認該筆狀態是「已撤銷」而不是「已註冊」。前置條件：PR #485 已部署到 staging（O-18，已完成），Production 開始服務商家前也必須部署，否則邀請可被偽造。不要為了撤銷邀請輪換 `CSRF_SECRET`：它也是 MFA 與敏感資料的加密根金鑰 | |
 
 - 其餘 `ROADMAP` §1 模組表標為「延後」或「隱藏」的項目，一律視為已接受。
@@ -147,7 +147,7 @@
 
 | 編號 | 嚴重度 | 現象 | 重現 | 建議 |
 |---|---|---|---|---|
-| B-1 | MAJOR（封測體驗） | GitHub Actions 的 `*/5 * * * *` 實際約每 2～5 小時才跑一次，遠低於 runbook 寫的「延遲 5～15 分鐘」。10-24 起 36 次 schedule run，間隔中位數 184 分鐘、最長 425 分鐘。報名確認信、開播提醒、webhook 重試若只靠這個排程，可能晚數小時 | `gh run list --workflow scheduled-jobs.yml --limit 100 --json createdAt,event`，只看 `event=schedule`，計算相鄰間隔 | 封測前補一個外部觸發（Vercel Cron 需 Pro、cron-job.org 類服務或 Cloudflare Worker cron，呼叫同一批 `/api/jobs/*`，仍用 `JOB_SECRET`）；O-16 一併決定。確認報名確認信是否在註冊當下就同步寄出，若是則影響較小。這是 O-13 第 6、9 步的風險，也要告知 owner。**工程緩解進行中（尚未驗證，本項不勾選）**：PR `ai/scheduled-jobs-heartbeat` 新增 `scheduled-jobs-heartbeat.yml`（GitHub Actions 長駐迴圈，每 5 分鐘呼叫同一批 job，不花錢、不需外部帳號），設計與檢查方式見 [runbook §3.0](../launch/scheduled-jobs-runbook.md)。此做法是封測期間的過渡措施，預設關閉（需 owner 設 `SCHEDULED_JOBS_HEARTBEAT_ENABLED=true` 才啟動）；風險是把 Actions 當 24 小時常駐排程器屬 GitHub 使用條款灰色地帶，若 Actions 被停用，CI 也會失效；長期方案是外部 cron（cron-job.org 或 Cloudflare Worker cron）呼叫同一批端點，heartbeat 保留作備援。合併後須用 `gh run list --workflow scheduled-jobs-heartbeat.yml` 與 staging Logs 實測呼叫間隔，確認後才能關閉 B-1 |
+| B-1 | MAJOR（封測體驗） | GitHub Actions 的 `*/5 * * * *` 實際約每 2～5 小時才跑一次，遠低於 runbook 寫的「延遲 5～15 分鐘」。10-24 起 36 次 schedule run，間隔中位數 184 分鐘、最長 425 分鐘。報名確認信、開播提醒、webhook 重試若只靠這個排程，可能晚數小時 | `gh run list --workflow scheduled-jobs.yml --limit 100 --json createdAt,event`，只看 `event=schedule`，計算相鄰間隔 | 封測前補一個外部觸發（Vercel Cron 需 Pro、cron-job.org 類服務或 Cloudflare Worker cron，呼叫同一批 `/api/jobs/*`，仍用 `JOB_SECRET`）；O-16 一併決定。確認報名確認信是否在註冊當下就同步寄出，若是則影響較小。這是 O-13 第 6、9 步的風險，也要告知 owner。**工程緩解已合併（#517，`bc1f559c`；尚未驗證，本項不勾選）**：新增 `scheduled-jobs-heartbeat.yml`（GitHub Actions 長駐迴圈，每 5 分鐘呼叫同一批 job，不花錢、不需外部帳號），設計與檢查方式見 [runbook §3.0](../launch/scheduled-jobs-runbook.md)。此做法是封測期間的過渡措施，預設關閉（需 owner 設 `SCHEDULED_JOBS_HEARTBEAT_ENABLED=true` 才啟動）；風險是把 Actions 當 24 小時常駐排程器屬 GitHub 使用條款灰色地帶，若 Actions 被停用，CI 也會失效；長期方案是外部 cron（cron-job.org 或 Cloudflare Worker cron）呼叫同一批端點，heartbeat 保留作備援。合併後須用 `gh run list --workflow scheduled-jobs-heartbeat.yml` 與 staging Logs 實測呼叫間隔，確認後才能關閉 B-1 |
 | B-2 | MAJOR（封測體驗，非超賣） | F-055 50 併發壓測（2026-10-30，loopback disposable DB）：同一商品同時下單時，每筆成交都推進 `Product.revision`，其他已 admission 的買家都收到 409「Product changed; reload checkout」。50 人搶 25 件，只有 1 人第一次就成功，賣完要 25 輪；限量快閃相同。沒有超賣，名額與金額都正確 | `npm run test:db:stress`，看 `checkout_reservation` 的 `firstLoadWinners` 與 `reloads` | 封測同時在線 ≤20 人（D-15）時仍會出現，直播快閃前告知商家與買家「遇到請重新整理」。長期把商品內容版本與庫存分開，需 engineer-hard＋reviewer，由 owner 決定時程。詳見 [serializable-retry-callsites.md](../operations/serializable-retry-callsites.md) 〈50 併發壓測〉。**工程修正進行中（尚未合併、本項不勾選）**：PR `ai/checkout-stock-version` 讓庫存寫入不再推進 `Product.revision`（商家表單改用 `inventoryBaseline` 自己的 CAS），保留重試改 12 次、25–1000 ms；loopback 壓測 50 人搶 25 件全數第一次就成交、重新載入 0 次、不超賣，改價仍讓舊 admission 409。需 reviewer 審查後合併，見同文件〈B-2 修正後〉 |
 | B-3 | MINOR（有補救路徑） | 同一場直播多位報名者同時通過驗證時，提醒信具現化大多用完重試（50 併發 47 位、10 併發 7 位失敗，P2034）。報名本身成功，錯誤會被攔下回報，提醒在到期時由排程補建 | 同上，看 `live_notification_distinct_recipients` | 依賴排程頻率（B-1）。Sentry 可能出現成批 `verified_submission_materialize` 回報，屬已知。修正需縮小交易內的查詢範圍（索引或改由排程具現化），另開 PR |
 
