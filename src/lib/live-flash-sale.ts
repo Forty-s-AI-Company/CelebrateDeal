@@ -127,16 +127,14 @@ export async function consumeFlashSaleQuote(
   reservedRevision?: ReservedInventoryRevision,
 ) {
   const current = await resolveFlashSaleQuote(tx, bearer, { ...quote, now });
-  // 只接受同交易庫存 helper 回傳的精確 +1 證據；其餘欄位仍逐一重驗。
-  const expected = { ...quote };
-  if (reservedRevision) {
-    if (reservedRevision.vendorId !== quote.vendorId || reservedRevision.productId !== quote.productId
-      || reservedRevision.beforeRevision !== quote.productRevision
-      || reservedRevision.afterRevision !== quote.productRevision + 1) throw new FlashSaleUnavailableError();
-    expected.productRevision = reservedRevision.afterRevision;
+  // 庫存扣減不推進商品內容版本（B-2）。同交易庫存 helper 的證據必須是同一商家、
+  // 同一商品、以報價當下的內容版本保留；其餘欄位（含目前內容版本）仍逐一重驗。
+  if (reservedRevision && (reservedRevision.vendorId !== quote.vendorId || reservedRevision.productId !== quote.productId
+    || reservedRevision.revision !== quote.productRevision || reservedRevision.quantity !== 1)) {
+    throw new FlashSaleUnavailableError();
   }
   if (!current || Object.keys(quote).some((key) =>
-    current[key as keyof FlashSaleQuote] !== expected[key as keyof FlashSaleQuote])) {
+    current[key as keyof FlashSaleQuote] !== quote[key as keyof FlashSaleQuote])) {
     throw new FlashSaleUnavailableError();
   }
   if (current.stockLimit !== null) {

@@ -108,7 +108,7 @@ function errorMessage(error: ProductActionError | undefined) {
   if (error === "invalid_custom_checkout_fields") return "自訂結帳欄位格式不正確；請確認欄位 key、標題與選項後再儲存。";
   if (error === "media_upload_incomplete") return "圖片尚未完成上傳，請先完成、重試或移除檔案。";
   if (error === "duplicate_slug") return "這個網址已被目前商家的另一個商品使用，請更換後再儲存。";
-  if (error === "conflict") return "商品在你編輯期間已被更新（可能包含新訂單扣庫存）。請重新整理確認最新資料後再修改。";
+  if (error === "conflict") return "商品在你編輯期間已被更新，或你修改的庫存已因新訂單變動。請重新整理確認最新資料後再修改。";
   if (error === "not_found") return "找不到這個商品，或你沒有權限修改。";
   if (error === "unavailable") return "商品暫時無法儲存，請稍後再試一次。";
   return null;
@@ -368,7 +368,7 @@ export function ProductFormClient({
     <form ref={formRef} key={state.version} action={formAction} onSubmit={submitNatively} className="grid gap-4" aria-busy={pending || nativePending}>
       {projectId ? <input type="hidden" name="projectId" value={projectId} /> : null}
       <input type="hidden" name="_csrf" value={csrfToken} />
-      {product ? <><input type="hidden" name="id" value={product.id} /><input type="hidden" name="revision" value={product.revision} /></> : null}
+      {product ? <><input type="hidden" name="id" value={product.id} /><input type="hidden" name="revision" value={product.revision} /><input type="hidden" name="inventoryBaseline" value={product.inventory} /></> : null}
       <ProductErrorSummary message={error} fieldErrors={fieldErrors} />
       {product && !product.fulfillmentTypeConfirmed ? (
         <p role="status" className="rounded-md border border-orange-200 bg-orange-50 px-3 py-2 text-sm font-medium text-orange-900">

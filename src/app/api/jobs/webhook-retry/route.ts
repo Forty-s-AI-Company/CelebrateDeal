@@ -4,7 +4,10 @@ import { releaseExpiredInventoryReservations } from "@/lib/inventory-reservation
 import { captureOperationalError } from "@/lib/monitoring";
 import { processDueWebhookRetries } from "@/lib/webhook-retry";
 
-// One run releases expired reservations and then retries up to 20 webhooks in
+// One run releases expired reservations (each row with the 5-attempt
+// EXPIRY_CLEANUP_RETRY budget, and no new row after EXPIRY_CLEANUP_DEADLINE_MS
+// = 60 s, so the cleanup cannot starve webhook recovery; leftovers wait for
+// the next run) and then retries up to 20 webhooks in
 // sequence, each a Serializable transaction (15 s timeout, up to 3 attempts)
 // that can also schedule its paid receipt email with `after()`. Under Fluid
 // Compute the platform default is already 300 s, so a lower value would cut

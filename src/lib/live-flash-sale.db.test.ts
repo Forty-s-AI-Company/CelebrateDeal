@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { Prisma } from "@prisma/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { createReservedPaymentTransaction } from "@/lib/inventory-reservations";
+import { createReservedPaymentTransaction, ProductChangedError } from "@/lib/inventory-reservations";
 import { createCommerceOrderForCheckout } from "@/lib/commerce-orders";
 import { getDb } from "@/lib/db";
 import { createInteractionBearer, hashInteractionBearer } from "@/lib/live-interaction";
@@ -241,6 +241,65 @@ describe("flash sale authoritative price and reservation", () => {
     expect(await f.db.liveInteractionResponse.count({ where: { runId: f.run.id, usedOrderId: { not: null } } })).toBe(1);
     const loser = results.findIndex((result) => result.status === "rejected");
     await expect(f.db.$transaction((tx) => consumeFlashSaleQuote(tx, f.bearers[loser]!, quotes[loser]!, "retry"), { isolationLevel: Prisma.TransactionIsolationLevel.Serializable })).rejects.toBeInstanceOf(FlashSaleUnavailableError);
+  });
+
+  it("B-2: another buyer's sale does not stale an unchanged offer, but a merchant edit does", async () => {
+    const f = await fixture({ stockLimit: 2 });
+    // Both buyers saw the offer before either bought.
+    const quotes = await Promise.all(f.bearers.map((bearer) => resolveFlashSaleQuote(f.db, bearer, f.scope)));
+    const buy = (index: number) => {
+      const key = randomUUID();
+      const quote = quotes[index]!;
+      return createReservedPaymentTransaction({
+        ...f.scope, expectedProductRevision: quote.productRevision, checkoutIdempotencyKey: key,
+        transactionData: {
+          vendorId: f.vendor.id, checkoutIdempotencyKey: key, providerName: "demo", orderNumber: key,
+          paymentMode: "platform", grossAmountCents: quote.salePriceCents, netAmountCents: quote.salePriceCents, currency: "TWD", status: "pending",
+        },
+        createCommerceOrder: async (tx, payment, revisions) => {
+          const order = await createCommerceOrderForCheckout(tx, {
+            ...f.scope, orderNumber: key, checkoutIdempotencyKey: key, paymentTransactionId: payment.id,
+            totalAmountCents: quote.salePriceCents, discountAmountCents: quote.priceCents - quote.salePriceCents, currency: "TWD",
+            buyer: { name: "Synthetic buyer", email: "buyer@example.test", phone: "0912345678" },
+            shipping: { recipientName: "Synthetic buyer", phone: "0912345678", countryCode: "TW", postalCode: "100", administrativeArea: "台北市", locality: "中正區", addressLine1: "合成測試路 1 號" },
+          });
+          await consumeFlashSaleQuote(tx, f.bearers[index]!, quote, order.id, new Date(), revisions.find((item) => item.productId === f.product.id));
+        },
+      });
+    };
+    await expect(buy(0)).resolves.toMatchObject({ grossAmountCents: 1000 });
+    await expect(buy(1)).resolves.toMatchObject({ grossAmountCents: 1000 });
+    expect(await f.db.liveInteractionResponse.count({ where: { runId: f.run.id, usedOrderId: { not: null } } })).toBe(2);
+    expect(await f.db.product.findUniqueOrThrow({ where: { id: f.product.id } })).toMatchObject({ inventory: 3, revision: quotes[0]!.productRevision });
+
+    // A merchant price edit after quoting still invalidates the stale offer.
+    const g = await fixture({ stockLimit: 2 });
+    const stale = (await resolveFlashSaleQuote(g.db, g.bearers[0], g.scope))!;
+    await g.db.product.update({ where: { id: g.product.id }, data: { priceCents: 3000, revision: { increment: 1 } } });
+    const key = randomUUID();
+    await expect(createReservedPaymentTransaction({
+      ...g.scope, expectedProductRevision: stale.productRevision, checkoutIdempotencyKey: key,
+      transactionData: {
+        vendorId: g.vendor.id, checkoutIdempotencyKey: key, providerName: "demo", orderNumber: key,
+        paymentMode: "platform", grossAmountCents: stale.salePriceCents, netAmountCents: stale.salePriceCents, currency: "TWD", status: "pending",
+      },
+    })).rejects.toBeInstanceOf(ProductChangedError);
+    await expect(resolveFlashSaleQuote(g.db, g.bearers[0], g.scope)).rejects.toBeInstanceOf(FlashSaleUnavailableError);
+    expect(await g.db.product.findUniqueOrThrow({ where: { id: g.product.id } })).toMatchObject({ inventory: 5 });
+  });
+
+  it("rejects reservation evidence for another product revision", async () => {
+    const f = await fixture();
+    const quote = (await resolveFlashSaleQuote(f.db, f.bearers[0], f.scope))!;
+    for (const evidence of [
+      { vendorId: f.vendor.id, productId: f.product.id, revision: quote.productRevision + 1, quantity: 1, inventoryAfter: 4 },
+      { vendorId: f.vendor.id, productId: f.product.id, revision: quote.productRevision, quantity: 2, inventoryAfter: 3 },
+      { vendorId: "other-vendor", productId: f.product.id, revision: quote.productRevision, quantity: 1, inventoryAfter: 4 },
+    ]) {
+      await expect(f.db.$transaction((tx) => consumeFlashSaleQuote(tx, f.bearers[0]!, quote, "evidence", new Date(), evidence),
+        { isolationLevel: Prisma.TransactionIsolationLevel.Serializable })).rejects.toBeInstanceOf(FlashSaleUnavailableError);
+    }
+    expect((await f.db.liveInteractionResponse.findUniqueOrThrow({ where: { id: quote.claimId } })).usedOrderId).toBeNull();
   });
 
   it("rejects product or run revision changes between quote and reservation", async () => {

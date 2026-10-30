@@ -622,6 +622,14 @@ Current source inventory: 145 models and 99 forward migrations. Previous checkpo
 - LINE Login：`completeLineLogin` 對 `subjectType = "user"` 的 identity 在交易內確認 `User.status = active`，否則 state 照樣 consume 但不回傳 identity。**綁定模式**只在 callback 瀏覽器已有同一使用者的有效 session（`linkingUserId`）時才綁定，且**不建立新 session**。**登入模式**的 session 由 `createUserSessionForLineIdentity` 在交易內先 `FOR UPDATE` 鎖 `User`（須 active），再確認該 identity 仍屬於此使用者且未撤銷後才寫入，與還原、密碼重設同一鎖序。
 - 先前規劃的「在設定頁作廢舊信箱還原連結」已撤回（沒有 MFA 的帳號被接手後，接手者可當場啟用 TOTP 再作廢，舊信箱也不會收到通知）。設定卡與確認頁只顯示「舊信箱 7 天內仍可還原；若舊信箱已外洩，請聯絡客服」。
 
+## Product.revision 只代表商品內容（B-2，2026-10-30）
+
+- **沒有 migration、沒有新欄位**；`Product.revision`（`20260808235500_g7_10_product_catalog_safety`，CHECK `revision > 0`）語意收窄：只有商家編輯商品（`src/app/actions/product-actions.ts`）與課程大綱（`src/lib/course-curriculum.ts`）會推進。`src/lib/inventory-reservations.ts` 的保留、釋放、過期回補、晚到付款重新扣、恢復結帳重新扣只改 `inventory`，不再推進 revision。
+- 庫存不變式不變：保留仍是 `updateMany where { id, vendorId, isActive, inventory >= 數量, revision = admission 版本 }`，與付款、訂單、保留紀錄在同一個 Serializable 交易。庫存不會為負、N 件只會有 N 個成交。
+- 同交易證據 `ReservedInventoryRevision` 改為 `{ vendorId, productId, revision, quantity, inventoryAfter }`，只由 `createReservedPaymentTransaction` 產生（`inventoryAfter` 來自扣減那句 `updateManyAndReturn`）；快閃（`consumeFlashSaleQuote`）要求證據 revision 等於報價 revision，post-purchase（`resolvePaidOrderPostPurchaseOffer`）另要求目前庫存等於 `inventoryAfter`。
+- 商家表單另帶 `inventoryBaseline`：庫存沒改就不寫 `inventory`；有改就以 `inventory = inventoryBaseline` 作 CAS，不符回 `conflict`；缺少時 fail closed。
+- **部署順序**：只有程式。部署前開著的商品編輯頁沒有 `inventoryBaseline`，送出會回 `conflict`，商家重新整理即可。既有列的 revision 值不需回填；部署當下已發出的 admission 仍有效（revision 未變），只是不再因成交失效。
+
 ## 2026-10-30 直播通知具現化去除不同收件人間的衝突（GO-NO-GO §5 B-3）
 
 - `20261031090000_email_delivery_source_submission_index`：forward-only、純新增，排在 `20261030200000_user_email_change_initiating_session` 之後。只新增 b-tree 索引 `EmailDelivery_vendorId_sourceFormSubmissionId_idx`（`"vendorId", "sourceFormSubmissionId"`），schema 對應 `@@index([vendorId, sourceFormSubmissionId])`；不改欄位、constraint、資料或 RLS。不用 `CONCURRENTLY`（與其他 migration 相同，封測前表小），交易層級 `lock_timeout = 5s`。`prisma-drift-check` 維持 100 句、無新 allowlist 項目。目前 156 models、131 forward migrations；既有 SQL／checksum 不變。

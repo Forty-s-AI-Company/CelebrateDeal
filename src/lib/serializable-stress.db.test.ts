@@ -6,6 +6,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 import { createCommerceOrderForCheckout } from "@/lib/commerce-orders";
 import { getDb } from "@/lib/db";
 import {
+  CHECKOUT_RESERVATION_RETRY,
   createReservedPaymentTransaction,
   InventoryUnavailableError,
   ProductChangedError,
@@ -50,7 +51,7 @@ const MAX_BUYER_RELOADS = CONCURRENCY * 4;
 // Retry policies of the code under test (kept in sync with the callers): how
 // many transactions one retry loop opens and which aborts it re-runs.
 type RetryPolicy = { attempts: number; retried: ReadonlySet<TransactionOutcome> };
-const CHECKOUT_RETRY: RetryPolicy = { attempts: 5, retried: new Set(["transient"]) }; // inventory-reservations.ts
+const CHECKOUT_RETRY: RetryPolicy = { attempts: CHECKOUT_RESERVATION_RETRY.attempts, retried: new Set(["transient"]) }; // inventory-reservations.ts
 const WEBHOOK_RETRY: RetryPolicy = { attempts: 3, retried: new Set(["transient", "unique"]) }; // payment-webhooks.ts
 // B-3: READ COMMITTED under row locks; a deadlock, a lock_timeout or a P2002 re-runs the step.
 const NOTIFICATION_RETRY: RetryPolicy = { attempts: 3, retried: new Set(["transient", "lock_timeout", "unique"]) }; // live-notification-delivery.ts MATERIALIZE_RETRY
@@ -253,7 +254,8 @@ type BuyerOutcome = { won: boolean; reloads: number };
 /**
  * A buyer whose admission is stale (409 "Product changed; reload checkout")
  * reloads and tries again with the current server revision, as the checkout
- * page does. Sold out ends the attempt.
+ * page does. Sold out ends the attempt. Since B-2 only a content change (a
+ * merchant edit) makes an admission stale, so these paths expect no reload.
  */
 async function buyerWithReloads(attempt: () => Promise<unknown>): Promise<BuyerOutcome> {
   for (let reloads = 0; reloads <= MAX_BUYER_RELOADS; reloads += 1) {
@@ -292,9 +294,14 @@ describe(`F-055 Serializable contention (${CONCURRENCY} concurrent callers)`, ()
 
     expectCleanFailures(run.results, [InventoryUnavailableError], CHECKOUT_RETRY);
     expect(winners).toHaveLength(units);
+    // B-2: a sale moves stock, not the content revision, so no admitted buyer
+    // of the unchanged product is sent back to reload checkout.
+    expect(winners.filter((result) => result.value!.reloads === 0)).toHaveLength(units);
+    expect(reloads.every((value) => value === 0)).toBe(true);
+    expect(run.results.filter((result) => result.error !== undefined).every((result) => result.error instanceof InventoryUnavailableError)).toBe(true);
     const after = await db.product.findUniqueOrThrow({ where: { id: product.id } });
     expect(after.inventory).toBe(0);
-    expect(after.revision).toBe(product.revision + units);
+    expect(after.revision).toBe(product.revision);
     expect(await db.paymentTransaction.count({ where: { vendorId: vendor.id } })).toBe(units);
     expect(await db.commerceOrder.count({ where: { vendorId: vendor.id } })).toBe(units);
     expect(await db.inventoryReservation.count({ where: { vendorId: vendor.id, status: "reserved" } })).toBe(units);
@@ -343,11 +350,49 @@ describe(`F-055 Serializable contention (${CONCURRENCY} concurrent callers)`, ()
 
     expectCleanFailures(run.results, [FlashSaleUnavailableError], CHECKOUT_RETRY);
     expect(winners).toHaveLength(stockLimit);
+    // B-2: an unchanged offer stays valid for every buyer who saw it.
+    expect(reloads.every((value) => value === 0)).toBe(true);
     expect(await db.liveInteractionResponse.count({ where: { runId: flashRun.id, usedOrderId: { not: null } } })).toBe(stockLimit);
     expect(await db.paymentTransaction.count({ where: { vendorId: vendor.id } })).toBe(stockLimit);
     expect(await db.paymentTransaction.count({ where: { vendorId: vendor.id, grossAmountCents: { not: 1000 } } })).toBe(0);
     expect(await db.commerceOrder.count({ where: { vendorId: vendor.id } })).toBe(stockLimit);
     expect((await db.product.findUniqueOrThrow({ where: { id: product.id } })).inventory).toBe(CONCURRENCY - stockLimit);
+  }, TEST_TIMEOUT_MS);
+
+  it("a merchant price edit during a concurrent sale still invalidates every stale admission", async () => {
+    const db = getDb();
+    const vendor = await createVendor("price-edit");
+    const half = Math.floor(CONCURRENCY / 2);
+    const product = await createProduct(vendor.id, CONCURRENCY);
+    // Every buyer opened checkout before the edit and holds the same admission.
+    const admitted = { revision: product.revision, priceCents: product.priceCents };
+    const stale = () => reserveCheckout({ vendorId: vendor.id, productId: product.id, expectedProductRevision: admitted.revision, amountCents: admitted.priceCents });
+
+    const before = await runConcurrently(half, stale);
+    report("checkout_before_price_edit", before);
+    expectCleanFailures(before.results, [], CHECKOUT_RETRY);
+    expect(before.results.every((result) => result.error === undefined)).toBe(true);
+
+    // The merchant raises the price; the content revision moves exactly once.
+    const edited = await db.product.updateMany({ where: { id: product.id, vendorId: vendor.id, revision: admitted.revision }, data: { priceCents: 2500, revision: { increment: 1 } } });
+    expect(edited.count).toBe(1);
+
+    const after = await runConcurrently(CONCURRENCY - half, async () => {
+      // The stale admission is rejected before any stock or payment is written.
+      const rejected = await stale().then(() => null, (error: unknown) => error);
+      // A reload reads the new server revision and price, as the checkout page does.
+      const current = await db.product.findFirstOrThrow({ where: { id: product.id, vendorId: vendor.id }, select: { revision: true, priceCents: true } });
+      await reserveCheckout({ vendorId: vendor.id, productId: product.id, expectedProductRevision: current.revision, amountCents: current.priceCents });
+      return rejected;
+    });
+    report("checkout_after_price_edit", after);
+    expectCleanFailures(after.results, [], CHECKOUT_RETRY);
+    expect(after.results.every((result) => result.error === undefined && result.value instanceof ProductChangedError)).toBe(true);
+
+    expect(await db.product.findUniqueOrThrow({ where: { id: product.id } })).toMatchObject({ inventory: 0, revision: admitted.revision + 1 });
+    expect(await db.paymentTransaction.count({ where: { vendorId: vendor.id, grossAmountCents: admitted.priceCents } })).toBe(half);
+    expect(await db.paymentTransaction.count({ where: { vendorId: vendor.id, grossAmountCents: 2500 } })).toBe(CONCURRENCY - half);
+    expect(await db.paymentTransaction.count({ where: { vendorId: vendor.id } })).toBe(CONCURRENCY);
   }, TEST_TIMEOUT_MS);
 
   async function pendingCheckout(label: string) {

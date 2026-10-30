@@ -1576,7 +1576,8 @@ test("desktop merchant can recover upload and validation errors, then publish an
       db.commerceOrder.count({ where: { vendorId: fixture.vendorIds[0] } }),
       db.inventoryReservation.count({ where: { productId: fixture.productId } }),
     ]);
-    expect(after[0]).toEqual({ inventory: before[0].inventory - 1, revision: before[0].revision + 1 });
+    // B-2: a sale moves stock only; the content revision is unchanged.
+    expect(after[0]).toEqual({ inventory: before[0].inventory - 1, revision: before[0].revision });
     expect(after[1]).toBe(before[1] + 1);
     expect(after[2]).toBe(before[2] + 1);
     expect(after[3]).toBe(before[3] + 1);

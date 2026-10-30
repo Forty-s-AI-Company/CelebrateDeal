@@ -6,7 +6,11 @@
   ],
   "git": {
     "deploymentEnabled": {
-      "master": false
+      "master": false,
+      "ai/**": false,
+      "codex/**": false,
+      "claude/**": false,
+      "worktree-*": false
     }
   }
 }

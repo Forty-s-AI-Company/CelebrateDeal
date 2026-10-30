@@ -97,9 +97,13 @@ const EXPECTED_ENTRIES = [
 /** Platform ceiling for maxDuration on Hobby with Fluid Compute. */
 const FLUID_HOBBY_MAX_DURATION_SECONDS = 300;
 
-/** Entries that run a batch and need more than the email dispatch limit. */
+/** Entries whose exact limit is pinned: batches that need more than the email dispatch limit, and bounded retry queues. */
 const BATCH_ENTRY_MAX_DURATIONS: Record<string, number> = {
   "src/app/api/jobs/webhook-retry/route.ts": 300,
+  // B-2: not an after() entry; its limit bounds the inventory reservation's
+  // Serializable retry queue (12 attempts, about 6.6 s of backoff) plus the
+  // provider call, instead of the 300 s platform default.
+  "src/app/api/payments/checkout/route.ts": 60,
 };
 
 function relative(file: string) {
@@ -183,7 +187,7 @@ describe("maxDuration for requests that schedule after() work", () => {
       || Number(value) > FLUID_HOBBY_MAX_DURATION_SECONDS)).toEqual([]);
   });
 
-  it.each(Object.entries(BATCH_ENTRY_MAX_DURATIONS))("%s keeps maxDuration = %i for its batch", (file, expected) => {
+  it.each(Object.entries(BATCH_ENTRY_MAX_DURATIONS))("%s keeps maxDuration = %i", (file, expected) => {
     const source = files.find((entry) => entry.file === file)!.source;
     expect(maxDurationExports(source)).toEqual([String(expected)]);
   });

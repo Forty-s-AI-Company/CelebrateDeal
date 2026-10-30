@@ -234,7 +234,7 @@ describe("upsertProductAction", () => {
     expect(created.error).toBe("course_feature_disabled");
 
     mocks.productFindFirst.mockResolvedValue({ id: "product-existing", currency: "TWD", commerceDomain: "course", courseContentOwnerMembershipId: "membership-owner", coursePromoterShareBps: 2500, coursePolicyVersion: 3, revision: 7 });
-    const listed = await upsertProductAction(initialProductActionState, validProduct({ id: "product-existing", revision: "7", isActive: "on", fulfillmentType: "course", courseContentOwnerMembershipId: "membership-owner", coursePromoterShareBps: "2500", deliveryTitle: "課程入口", deliveryUrl: "https://learn.example.com/course", deliveryInstructions: "付款後開通。", deliveryHostConfirmed: "on" }));
+    const listed = await upsertProductAction(initialProductActionState, validProduct({ id: "product-existing", revision: "7", inventoryBaseline: "12", isActive: "on", fulfillmentType: "course", courseContentOwnerMembershipId: "membership-owner", coursePromoterShareBps: "2500", deliveryTitle: "課程入口", deliveryUrl: "https://learn.example.com/course", deliveryInstructions: "付款後開通。", deliveryHostConfirmed: "on" }));
     expect(listed.error).toBe("course_feature_disabled");
     expect(mocks.productCreate).not.toHaveBeenCalled();
     expect(mocks.productUpdateMany).not.toHaveBeenCalled();
@@ -243,7 +243,7 @@ describe("upsertProductAction", () => {
   it("still lets the merchant edit and unlist an existing course product while the module is closed (F-001)", async () => {
     mocks.betaFeatureGrants.value = [];
     mocks.productFindFirst.mockResolvedValue({ id: "product-existing", currency: "TWD", commerceDomain: "course", courseContentOwnerMembershipId: "membership-owner", coursePromoterShareBps: 2500, coursePolicyVersion: 3, revision: 7 });
-    const data = validProduct({ id: "product-existing", revision: "7", fulfillmentType: "course", courseContentOwnerMembershipId: "membership-owner", coursePromoterShareBps: "2500" });
+    const data = validProduct({ id: "product-existing", revision: "7", inventoryBaseline: "12", fulfillmentType: "course", courseContentOwnerMembershipId: "membership-owner", coursePromoterShareBps: "2500" });
 
     await expect(upsertProductAction(initialProductActionState, data)).rejects.toThrow("redirect:/products?updated=saved");
     expect(mocks.productUpdateMany).toHaveBeenCalledWith({
@@ -254,7 +254,7 @@ describe("upsertProductAction", () => {
 
   it("uses optimistic concurrency and increments policy version on an edit", async () => {
     mocks.productFindFirst.mockResolvedValue({ id: "product-existing", currency: "TWD", commerceDomain: "course", courseContentOwnerMembershipId: "membership-old", coursePromoterShareBps: 2000, coursePolicyVersion: 3, revision: 7 });
-    const data = validProduct({ id: "product-existing", revision: "7", fulfillmentType: "course", courseContentOwnerMembershipId: "membership-owner", coursePromoterShareBps: "2500" });
+    const data = validProduct({ id: "product-existing", revision: "7", inventoryBaseline: "12", fulfillmentType: "course", courseContentOwnerMembershipId: "membership-owner", coursePromoterShareBps: "2500" });
 
     await expect(upsertProductAction(initialProductActionState, data)).rejects.toThrow("redirect:/products?updated=saved");
     expect(mocks.productUpdateMany).toHaveBeenCalledWith({
@@ -286,11 +286,11 @@ describe("upsertProductAction", () => {
 
   it("only rewrites a legacy non-TWD product after explicit TWD confirmation (F-041)", async () => {
     mocks.productFindFirst.mockResolvedValue({ id: "product-existing", currency: "USD", commerceDomain: "merchant", courseContentOwnerMembershipId: null, coursePromoterShareBps: null, coursePolicyVersion: 1, revision: 7 });
-    const unconfirmed = await upsertProductAction(initialProductActionState, validProduct({ id: "product-existing", revision: "7" }));
+    const unconfirmed = await upsertProductAction(initialProductActionState, validProduct({ id: "product-existing", revision: "7", inventoryBaseline: "12" }));
     expect(unconfirmed.error).toBe("unsupported_currency");
     expect(mocks.productUpdateMany).not.toHaveBeenCalled();
 
-    await expect(upsertProductAction(initialProductActionState, validProduct({ id: "product-existing", revision: "7", confirmTwdCurrency: "on" })))
+    await expect(upsertProductAction(initialProductActionState, validProduct({ id: "product-existing", revision: "7", inventoryBaseline: "12", confirmTwdCurrency: "on" })))
       .rejects.toThrow("redirect:/products?updated=saved");
     expect(mocks.productUpdateMany).toHaveBeenCalledWith({
       where: { id: "product-existing", vendorId: "vendor-1", revision: 7 },
@@ -298,13 +298,49 @@ describe("upsertProductAction", () => {
     });
   });
 
-  it("returns a conflict without overwriting data after a concurrent inventory change", async () => {
+  it("returns a conflict without overwriting data after a concurrent content change", async () => {
     mocks.productFindFirst.mockResolvedValue({ id: "product-existing", currency: "TWD", commerceDomain: "merchant", courseContentOwnerMembershipId: null, coursePromoterShareBps: null, coursePolicyVersion: 1, revision: 8 });
     mocks.productUpdateMany.mockResolvedValueOnce({ count: 0 });
-    const result = await upsertProductAction(initialProductActionState, validProduct({ id: "product-existing", revision: "7" }));
+    const result = await upsertProductAction(initialProductActionState, validProduct({ id: "product-existing", revision: "7", inventoryBaseline: "12" }));
 
     expect(result.error).toBe("conflict");
     expect(mocks.redirect).not.toHaveBeenCalled();
+  });
+
+  // B-2: sales move stock without moving the content revision, so the stock
+  // field carries its own compare-and-set on the value the form loaded.
+  it("leaves stock untouched when the merchant did not change it, so a sale during the edit stays counted", async () => {
+    mocks.productFindFirst.mockResolvedValue({ id: "product-existing", currency: "TWD", commerceDomain: "merchant", courseContentOwnerMembershipId: null, coursePromoterShareBps: null, coursePolicyVersion: 1, revision: 7 });
+    await expect(upsertProductAction(initialProductActionState, validProduct({ id: "product-existing", revision: "7", inventoryBaseline: "12", name: "改名" })))
+      .rejects.toThrow("redirect:/products?updated=saved");
+    const [call] = mocks.productUpdateMany.mock.calls[0] as [{ where: Record<string, unknown>; data: Record<string, unknown> }];
+    expect(call.where).toEqual({ id: "product-existing", vendorId: "vendor-1", revision: 7 });
+    expect(call.data).toMatchObject({ name: "改名", revision: { increment: 1 } });
+    expect(call.data).not.toHaveProperty("inventory");
+  });
+
+  it("sets changed stock only while stock still equals the value the form loaded", async () => {
+    mocks.productFindFirst.mockResolvedValue({ id: "product-existing", currency: "TWD", commerceDomain: "merchant", courseContentOwnerMembershipId: null, coursePromoterShareBps: null, coursePolicyVersion: 1, revision: 7 });
+    await expect(upsertProductAction(initialProductActionState, validProduct({ id: "product-existing", revision: "7", inventoryBaseline: "10", inventory: "20" })))
+      .rejects.toThrow("redirect:/products?updated=saved");
+    expect(mocks.productUpdateMany).toHaveBeenCalledWith({
+      where: { id: "product-existing", vendorId: "vendor-1", revision: 7, inventory: 10 },
+      data: expect.objectContaining({ inventory: 20, revision: { increment: 1 } }),
+    });
+
+    // A sale changed stock after the form loaded: the stale stock value is not written.
+    mocks.productUpdateMany.mockResolvedValueOnce({ count: 0 });
+    const stale = await upsertProductAction(initialProductActionState, validProduct({ id: "product-existing", revision: "7", inventoryBaseline: "10", inventory: "20" }));
+    expect(stale.error).toBe("conflict");
+  });
+
+  it.each([undefined, "", "-1", "1.5"])("fails closed on an edit without a valid stock baseline (%s)", async (inventoryBaseline) => {
+    mocks.productFindFirst.mockResolvedValue({ id: "product-existing", currency: "TWD", commerceDomain: "merchant", courseContentOwnerMembershipId: null, coursePromoterShareBps: null, coursePolicyVersion: 1, revision: 7 });
+    const result = await upsertProductAction(initialProductActionState, validProduct({
+      id: "product-existing", revision: "7", ...(inventoryBaseline === undefined ? {} : { inventoryBaseline }),
+    }));
+    expect(result.error).toBe("conflict");
+    expect(mocks.productUpdateMany).not.toHaveBeenCalled();
   });
 
   it("rejects unfinished media before writing product data", async () => {

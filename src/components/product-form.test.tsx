@@ -76,6 +76,18 @@ describe("ProductForm fulfillment classification", () => {
     expect(html).toMatch(/<input type="hidden" name="currency" value="TWD"\/>/u);
   });
 
+  it("posts the loaded stock as the hidden inventoryBaseline next to the content revision (B-2)", async () => {
+    const html = renderToStaticMarkup(await ProductForm({ product: { ...product(true), inventory: 17, revision: 9 } }));
+    expect(html).toContain('<input type="hidden" name="inventoryBaseline" value="17"/>');
+    expect(html).toContain('<input type="hidden" name="revision" value="9"/>');
+    expect(html).toMatch(/name="inventory"[^>]*value="17"|value="17"[^>]*name="inventory"/u);
+  });
+
+  it("does not render an inventoryBaseline for a new product", async () => {
+    const html = renderToStaticMarkup(await ProductForm({}));
+    expect(html).not.toContain('name="inventoryBaseline"');
+  });
+
   it("does not show the migration warning after a merchant confirms the delivery type", async () => {
     const html = renderToStaticMarkup(await ProductForm({ product: product(true) }));
     expect(html).not.toContain("交付方式尚未確認");
