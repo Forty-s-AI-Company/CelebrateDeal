@@ -106,6 +106,8 @@ export function useLiveSessionSelection(initial: LiveSessionsData | undefined) {
     setRefreshing(true);
     try {
       const response = await fetch(`/api/live-sessions?${new URLSearchParams({ liveId: data.liveId }).toString()}`, { headers: { "X-CelebrateDeal-Client": "web" }, cache: "no-store" });
+      // 404: the live is no longer publish-ready, so nothing can be picked; the form stays unsubmittable.
+      if (response.status === 404) { setData({ ...data, days: [] }); setDateKey(null); setSessionId(null); return; }
       if (!response.ok) return;
       const next = parseLiveSessionsData(await response.json());
       if (!next) return;
@@ -177,6 +179,23 @@ function parseLiveSessionsData(value: unknown): LiveSessionsData | null {
     ...(typeof body.registrationClosesAfterStartMinutes === "number" ? { registrationClosesAfterStartMinutes: body.registrationClosesAfterStartMinutes } : {}),
     days,
   };
+}
+
+/**
+ * Maps a failed registration of a fixed-session form to what the visitor
+ * should see: a full/closed seat (409, also for a duplicate email switching
+ * seats) reloads the list, 429 is the per-session rate limit, and a 400 for a
+ * missing choice asks for one. Anything else is left to the generic message.
+ */
+export async function describeLiveSessionFailure(response: Response): Promise<{ message: string; refresh: boolean } | null> {
+  if (response.status === 409) return { message: "此時段已額滿或已截止，請改選其他時段", refresh: true };
+  if (response.status === 429) return { message: "報名次數過多，請稍後再試", refresh: false };
+  if (response.status !== 400) return null;
+  try {
+    const body: unknown = await response.clone().json();
+    if (body && typeof body === "object" && (body as { error?: unknown }).error === "Fixed session selection required") return { message: LIVE_SESSION_REQUIRED_MESSAGE, refresh: false };
+  } catch { /* not JSON: generic validation message */ }
+  return null;
 }
 
 /** "10月30日（週五）" -> "10/30 週五". */

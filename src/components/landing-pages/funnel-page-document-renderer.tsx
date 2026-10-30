@@ -9,7 +9,7 @@ import { RegistrationSubmissionFeedback } from "@/components/registration-submis
 import { LandingPageLink } from "@/components/landing-page-link";
 import { useFunnelRegistrationLinks } from "./funnel-registration-links";
 import { funnelRegistrationHref } from "@/lib/funnel-registration-action";
-import { LiveSessionPicker, useLiveSessionForm, type LiveSessionsData } from "@/components/landing-pages/live-session-picker";
+import { describeLiveSessionFailure, LiveSessionPicker, useLiveSessionForm, type LiveSessionsData } from "@/components/landing-pages/live-session-picker";
 import { formSubmissionErrorMessage, FORM_SUBMISSION_VERIFICATION_MESSAGE, postRegistrationSubmission } from "@/lib/registration-submission-client";
 import type { RegistrationFormFieldSpec } from "@/lib/registration-form-fields";
 import type { FunnelCommerceBinding, FunnelCommerceView } from "@/lib/funnel-commerce";
@@ -508,9 +508,10 @@ function PublicSubmissionForm({ submission, label, requireConsent, design, idSco
       const response = await postRegistrationSubmission({ formId: submission.form.id, landingPageId: submission.landingPageId, funnelStepId: submission.funnelStepId, liveId: submission.liveId ?? null, ...sessionPayload, payload, ...referral });
       if (!response.ok) {
         submissionInFlight.current = false;
-        setStatus("error"); setMessage(formSubmissionErrorMessage(response.status, { fixedSessions: fixed }));
+        const known = fixed ? await describeLiveSessionFailure(response) : null;
+        setStatus("error"); setMessage(known?.message ?? formSubmissionErrorMessage(response.status, { fixedSessions: fixed }));
         // The chosen seat was taken or closed: reload the list so the visitor picks again.
-        if (response.status === 409 && fixed) { void sessions.refresh(); }
+        if (known?.refresh) void sessions.refresh();
         return;
       }
       rememberSession();

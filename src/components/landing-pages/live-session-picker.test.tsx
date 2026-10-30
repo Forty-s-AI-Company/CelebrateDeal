@@ -189,6 +189,55 @@ describe("session picker on the public registration form", () => {
     expect(times(root)[0]!.getAttribute("aria-checked")).toBe("true");
   });
 
+  it("shows a friendly message on the per-session rate limit (429) without refreshing", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(Response.json({ error: "Too many requests" }, { status: 429 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const root = await mount(submission(sessionsData()));
+    await fill(root);
+    await click(times(root)[0]!);
+    await submit(root);
+    expect(root.textContent).toContain("報名次數過多，請稍後再試");
+    expect(fetchMock).toHaveBeenCalledOnce();
+  });
+
+  it("asks for a session when the server reports a missing selection (400)", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(Response.json({ error: "Fixed session selection required" }, { status: 400 })));
+    const root = await mount(submission(sessionsData()));
+    await fill(root);
+    await click(times(root)[0]!);
+    await submit(root);
+    expect(root.textContent).toContain("請選擇要參加的場次。");
+    // An ordinary validation 400 keeps the generic message.
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(Response.json({ error: "Invalid payload" }, { status: 400 })));
+    await submit(root);
+    expect(root.textContent).toContain("請確認必填欄位");
+  });
+
+  it("treats a duplicate-email 409 like a taken seat: message plus refresh", async () => {
+    const fetchMock = vi.fn((input: string) => Promise.resolve(input.startsWith("/api/live-sessions") ? Response.json(sessionsData()) : Response.json({ error: "Live session closed" }, { status: 409 })));
+    vi.stubGlobal("fetch", fetchMock);
+    const root = await mount(submission(sessionsData()));
+    await fill(root);
+    await click(times(root)[0]!);
+    await submit(root);
+    expect(root.textContent).toContain("此時段已額滿或已截止，請改選其他時段");
+    expect(fetchMock.mock.calls.some(([input]) => String(input).startsWith("/api/live-sessions"))).toBe(true);
+  });
+
+  it("a 404 from the sessions refresh means nothing is available: clear message and no submit", async () => {
+    const fetchMock = vi.fn((input: string) => Promise.resolve(input.startsWith("/api/live-sessions") ? Response.json({ error: "Live sessions unavailable" }, { status: 404 }) : Response.json({ error: "Live session full" }, { status: 409 })));
+    vi.stubGlobal("fetch", fetchMock);
+    const root = await mount(submission(sessionsData()));
+    await fill(root);
+    await click(times(root)[0]!);
+    await submit(root);
+    expect(root.textContent).toContain("目前沒有可報名的場次");
+    expect(dates(root)).toHaveLength(0);
+    const calls = fetchMock.mock.calls.length;
+    await submit(root);
+    expect(fetchMock.mock.calls.length).toBe(calls);
+  });
+
   it("explains when every session is gone and blocks submit", async () => {
     const fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);

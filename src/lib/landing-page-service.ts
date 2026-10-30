@@ -986,7 +986,10 @@ export async function loadPublicLandingPage(slug: string, onUnavailable?: (reaso
   if (!projectPublished && version.liveId) return unavailable("live_requires_published_project");
 
   // Fixed-session Lives list their open sessions for the registration picker (vendor-bound).
-  const liveSessions = live && isFixedSessionLive(live) ? await loadPublicLiveSessions(getDb(), { liveId: live.id, vendorId: page.vendorId }) : null;
+  // A fixed-session Live that is not publish-ready lists nothing, so the form stays unsubmittable instead of posting without a session.
+  const liveSessions = live && isFixedSessionLive(live)
+    ? (await loadPublicLiveSessions(getDb(), { liveId: live.id, vendorId: page.vendorId })) ?? { liveId: live.id, timeZone: "Asia/Taipei", registrationClosesAfterStartMinutes: 0, days: [] }
+    : null;
   const webinar = webinarContent(content) && completeWebinarSteps(content) && !("pages" in content && hasDirectWebinarVideo(content))
     ? webinarResource(forms.find((form) => form.id === version.formId), live, page.vendorId, liveSessions)
     : undefined;
