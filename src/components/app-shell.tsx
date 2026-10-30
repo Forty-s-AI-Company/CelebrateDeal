@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Ban, Banknote, BarChart3, Bell, Bot, Boxes, CalendarCheck, ClipboardList, Cloud, CreditCard, Gauge, GitCompareArrows, Handshake, Headphones, Lock, LogOut, PackageCheck, Palette, PlaySquare, Radio, ReceiptText, Rocket, ScrollText, Settings2, Shield, Tags, UserPlus, UsersRound, WalletCards } from "lucide-react";
+import { Headphones, Lock, LogOut, ScrollText, Settings2, Shield, Tags } from "lucide-react";
 import { PublicResourceLinks } from "@/components/public-policy";
 import { logoutAction } from "@/app/actions";
 import { AppShellMobileNav } from "@/components/app-shell-mobile-nav";
@@ -9,163 +9,26 @@ import { AppShellAccountMenu } from "@/components/app-shell-account-menu";
 import { CsrfField } from "@/components/csrf-field";
 import { FormSubmitButton } from "@/components/form-submit-button";
 import { FeatureAccessBoundary } from "@/components/feature-access-boundary";
-import { hasVendorFeature, type GatedFeature } from "@/lib/vendor-feature-toggles";
+import { type GatedFeature } from "@/lib/vendor-feature-toggles";
+import { navigationForRole, SECURITY_SETTINGS_PATH, SETTINGS_HUB_PATH, settingsHubForRole } from "@/lib/app-navigation";
 import { WorkspaceProjectSwitcher, type ProjectSwitcherItem } from "@/components/workspace-project-switcher";
 import { SystemStatusIndicator } from "@/components/system-status-indicator";
 import { OnboardingTaskPanel, type SidebarOnboardingTask } from "@/components/onboarding-task-panel";
-import { isVendorBackofficeRole, isVendorPartnerRole, PARTNER_PORTAL_PATH } from "@/lib/vendor-roles";
+import { isVendorPartnerRole, PARTNER_PORTAL_PATH } from "@/lib/vendor-roles";
 
-const navGroups = [
-  {
-    label: "營運總覽",
-    items: [
-      { href: "/dashboard", label: "營運總覽", icon: Gauge },
-      { href: "/projects", label: "銷售專案", icon: ClipboardList, managerOnly: true },
-    ],
-  },
-  {
-    label: "銷講中心",
-    items: [
-      { href: "/lives", label: "直播間", icon: Radio, managerOnly: true, feature: "live_webinar" },
-      { href: "/videos", label: "影片素材", icon: PlaySquare, managerOnly: true, feature: "live_webinar" },
-      { href: "/landing-pages", label: "一頁式網站", icon: Palette, managerOnly: true, feature: "funnel_builder" },
-      { href: "/forms", label: "報名管理", icon: ClipboardList, managerOnly: true, feature: "funnel_builder" },
-    ],
-  },
-  {
-    label: "成交管理",
-    items: [
-      { href: "/products", label: "商品", icon: Boxes, managerOnly: true },
-      { href: "/orders", label: "訂單與履約", icon: PackageCheck, managerOnly: true },
-      { href: "/consultations", label: "諮詢預約", icon: CalendarCheck, managerOnly: true, feature: "consultation_booking" },
-      { href: "/customers", label: "學員 CRM", icon: UsersRound, managerOnly: true },
-      { href: "/support-cases", label: "客服案件", icon: Headphones, managerOnly: true },
-    ],
-  },
-  {
-    label: "互動與行銷",
-    items: [
-      { href: "/messages/templates", label: "訊息模板", icon: Bell, managerOnly: true },
-      { href: "/messages/deliveries", label: "寄送管理", icon: ReceiptText, managerOnly: true },
-      { href: "/interaction-scripts", label: "互動腳本", icon: ScrollText, managerOnly: true, feature: "live_webinar" },
-      { href: "/interaction-roles", label: "互動角色", icon: Bot, managerOnly: true, feature: "live_webinar" },
-      { href: "/blacklists", label: "封鎖名單", icon: Ban, managerOnly: true },
-    ],
-  },
-  {
-    label: "夥伴成長",
-    items: [
-      { href: "/affiliates", label: "推廣夥伴", icon: Handshake, managerOnly: true, feature: "affiliate_program" },
-      { href: "/team-templates", label: "團隊模板", icon: UsersRound, feature: "funnel_builder" },
-      { href: "/partner-pages", label: "我的夥伴頁", icon: Palette, feature: "funnel_builder" },
-      { href: "/team-performance", label: "成效分析", icon: BarChart3, feature: "affiliate_program" },
-    ],
-  },
-  {
-    label: "設定",
-    items: [
-      { href: "/billing/usage", label: "用量與扣點", icon: CreditCard, financeOnly: true, feature: "billing" },
-      { href: "/billing/payment-methods", label: "平台服務付款方式", icon: CreditCard, financeOnly: true, feature: "funnel_binding" },
-      { href: "/billing/plans", label: "方案", icon: Tags, financeOnly: true, feature: "billing" },
-      { href: "/billing/invoices", label: "帳單", icon: ReceiptText, financeOnly: true, feature: "billing" },
-      { href: "/billing/electronic-invoices", label: "電子發票", icon: ReceiptText, financeOnly: true },
-      { href: "/billing/settlements", label: "月結", icon: WalletCards, financeOnly: true, feature: "billing" },
-      { href: "/billing/payouts", label: "批次出款", icon: Banknote, financeOnly: true, feature: "tax_remuneration" },
-      { href: "/affiliates/commissions", label: "佣金結算", icon: Handshake, financeOnly: true, feature: "affiliate_program" },
-      { href: "/billing/course-payouts", label: "課程分潤", icon: WalletCards, financeOnly: true, feature: "tax_remuneration" },
-      { href: "/onboarding", label: "上線導引", icon: Rocket, managerOnly: true },
-      { href: "/settings/brand", label: "品牌設定", icon: Palette, managerOnly: true },
-      { href: "/settings/tracking", label: "追蹤設定", icon: BarChart3, managerOnly: true },
-      { href: "/settings/features", label: "功能模組", icon: Settings2, managerOnly: true },
-      { href: "/settings/line", label: "LINE 整合", icon: Bell, ownerOnly: true },
-      { href: "/settings/automations", label: "自動化", icon: Bot, managerOnly: true },
-      { href: "/settings/team", label: "團隊管理", icon: UsersRound, managerOnly: true },
-      { href: "/settings/security", label: "安全性", icon: Shield },
-    ],
-  },
-  {
-    label: "平台營運",
-    items: [
-      { href: "/admin/billing/dashboard", label: "平台財務管理", icon: Shield, adminOnly: true },
-      { href: "/admin/billing/stream-reconciliation", label: "Stream 用量對帳", icon: GitCompareArrows, adminOnly: true },
-      { href: "/admin/billing/webhooks", label: "系統通知對帳", icon: ReceiptText, adminOnly: true },
-      { href: "/admin/support-cases", label: "退款客服交接", icon: Headphones, adminOnly: true },
-      { href: "/admin/vendor-features", label: "商家封測模組", icon: Settings2, adminOnly: true },
-      { href: "/admin/merchant-invitations", label: "商家邀請", icon: UserPlus, adminOnly: true },
-      { href: "/admin/account-holds", label: "帳號安全暫停", icon: Ban, adminOnly: true },
-      { href: "/admin/cloudflare/videos", label: "Stream 檢查", icon: Cloud, adminOnly: true },
-      { href: "/mfa/setup", label: "MFA 安全設定", icon: Lock, adminOnly: true },
-    ],
-  },
-];
+export { navigationForRole };
 
-const accountMenuGroupLabels = new Set(["設定"]);
-
-/** The portal lives outside the merchant back office and authorizes per grant. */
-const partnerPortalGroup = {
-  label: "夥伴入口",
-  items: [{ href: PARTNER_PORTAL_PATH, label: "夥伴入口", icon: Handshake }],
+const ROLE_LABELS: Record<string, string> = {
+  owner: "品牌擁有者",
+  admin: "品牌管理員",
+  accountant: "財務協作者",
+  support: "客服協作者",
+  partner: "夥伴",
 };
 
-/**
- * `hasPartnerPortal` is true only when the current member holds a valid
- * AffiliatePortalAccess grant in the current vendor (see the protected
- * layout). A partner sees nothing but the portal; partners never reach the
- * back office shell in the first place (`requireVendorContext`).
- */
-export function navigationForRole(
-  memberRole: string | null,
-  isPlatformAdmin = false,
-  enabledModules?: readonly GatedFeature[],
-  { hasPartnerPortal = false }: { hasPartnerPortal?: boolean } = {},
-) {
-  if (isPlatformAdmin) {
-    return backofficeNavigation(memberRole, true, enabledModules);
-  }
-  if (isVendorPartnerRole(memberRole)) return [partnerPortalGroup];
-  const groups = backofficeNavigation(memberRole, false, enabledModules);
-  return hasPartnerPortal && isVendorBackofficeRole(memberRole) ? [...groups, partnerPortalGroup] : groups;
-}
-
-function backofficeNavigation(memberRole: string | null, isPlatformAdmin: boolean, enabledModules?: readonly GatedFeature[]) {
-  if (isPlatformAdmin) {
-    return navGroups
-      .map((group) => ({
-        ...group,
-        items: group.items.filter((item) => "adminOnly" in item && item.adminOnly),
-      }))
-      .filter((group) => group.items.length > 0);
-  }
-
-  if (memberRole === "support") {
-    return navGroups
-      .map((group) => ({
-        ...group,
-        items: group.items.filter((item) => item.href === "/support-cases" || item.href === "/settings/security"),
-      }))
-      .filter((group) => group.items.length > 0);
-  }
-
-  if (memberRole !== "owner" && memberRole !== "admin" && memberRole !== "accountant") {
-    return [];
-  }
-
-  const isManager = memberRole === "owner" || memberRole === "admin";
-  const isFinance = isManager || memberRole === "accountant";
-  return navGroups
-    .map((group) => ({
-      ...group,
-      items: group.items.filter((item) => {
-        const adminOnly = "adminOnly" in item && item.adminOnly;
-        if (adminOnly) return false;
-        // Match the existing LINE page guard; this only filters navigation.
-        if ("ownerOnly" in item && item.ownerOnly && memberRole !== "owner") return false;
-        if ("financeOnly" in item && item.financeOnly && !isFinance) return false;
-        if ("managerOnly" in item && item.managerOnly && !isManager) return false;
-        return !("feature" in item && item.feature) || !enabledModules || hasVendorFeature(enabledModules, item.feature as GatedFeature);
-      }),
-    }))
-    .filter((group) => group.items.length > 0);
+function roleLabelFor(memberRole: string | null, isPlatformAdmin: boolean) {
+  if (isPlatformAdmin) return "平台管理員";
+  return (memberRole && Object.hasOwn(ROLE_LABELS, memberRole) ? ROLE_LABELS[memberRole] : undefined) ?? "工作區成員";
 }
 
 export function AppShell({
@@ -198,30 +61,16 @@ export function AppShell({
   persistTaskPanelCollapsed?: (collapsed: boolean) => Promise<void>;
 }) {
   const visibleGroups = navigationForRole(memberRole, isPlatformAdmin, enabledModules, { hasPartnerPortal });
-  const primaryGroups = visibleGroups.filter((group) => !accountMenuGroupLabels.has(group.label));
-  const accountItems = visibleGroups
-    .filter((group) => accountMenuGroupLabels.has(group.label))
-    .flatMap((group) => group.items);
-  const accountItemByHref = new Map(accountItems.map((item) => [item.href, item]));
-  const accountMenuSections = [
-    { label: "工作區", hrefs: ["/onboarding", "/settings/brand"] },
-    { label: "系統設定", hrefs: ["/settings/tracking", "/settings/features", "/settings/line", "/settings/automations", "/settings/team", "/settings/security"] },
-    { label: "帳務與方案", hrefs: ["/billing/usage", "/billing/payment-methods", "/billing/plans", "/billing/invoices", "/billing/electronic-invoices", "/billing/settlements", "/billing/payouts", "/affiliates/commissions", "/billing/course-payouts"] },
-  ];
+  // The account menu only carries account-level entries; every settings and
+  // billing page lives behind the single 設定 hub.
+  const settingsGroups = settingsHubForRole(memberRole, isPlatformAdmin, enabledModules);
+  const showSettingsLink = settingsGroups.length > 0;
+  const showSecurityLink = settingsGroups.some((group) => group.items.some((item) => item.href === SECURITY_SETTINGS_PATH));
+  // Platform administrators have no merchant security page; they use the standalone MFA page.
+  const securityHref = isPlatformAdmin ? "/mfa/setup" : showSecurityLink ? SECURITY_SETTINGS_PATH : null;
+  const menuLinkClass = "flex min-h-9 items-center gap-3 rounded-lg px-3 py-1.5 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-950";
   const homeHref = isPlatformAdmin ? "/dashboard" : memberRole === "support" ? "/support-cases" : isVendorPartnerRole(memberRole) ? PARTNER_PORTAL_PATH : "/dashboard";
-  const roleLabel = isPlatformAdmin
-    ? "平台管理員"
-    : memberRole === "owner"
-      ? "品牌擁有者"
-      : memberRole === "admin"
-        ? "品牌管理員"
-        : memberRole === "accountant"
-          ? "財務協作者"
-          : memberRole === "support"
-            ? "客服協作者"
-            : isVendorPartnerRole(memberRole)
-              ? "夥伴"
-              : "工作區成員";
+  const roleLabel = roleLabelFor(memberRole, isPlatformAdmin);
   const vendorInitial = vendorName.trim().charAt(0).toUpperCase() || "C";
 
   return (
@@ -248,11 +97,11 @@ export function AppShell({
         {!isPlatformAdmin && persistTaskPanelCollapsed ? <OnboardingTaskPanel title={selectedProjectId ? "專案上線任務" : "商家上線任務"} tasks={onboardingTasks} initiallyCollapsed={taskPanelCollapsed} persistCollapsed={persistTaskPanelCollapsed} /> : null}
 
         <nav className="min-h-0 flex-1 space-y-2 overflow-y-auto pr-1 [scrollbar-color:rgba(148,163,184,0.45)_transparent] [scrollbar-width:thin]" aria-label="主要導覽">
-          {primaryGroups.map((group) => {
-            if (group.items.length === 1 && group.items[0]?.href === "/dashboard") {
+          {visibleGroups.map((group) => {
+            if (group.items.length === 1 && (group.items[0]?.href === "/dashboard" || group.items[0]?.href === SETTINGS_HUB_PATH)) {
               const item = group.items[0];
               return (
-                <AppShellNavLink key={item.href} href={item.href}>
+                <AppShellNavLink key={item.href} href={item.href} activePrefixes={item.activePrefixes}>
                   <item.icon className="size-4 shrink-0 text-slate-500 transition-colors group-hover:text-slate-700 group-aria-[current=page]:text-blue-600" strokeWidth={1.8} aria-hidden="true" />
                   <span className="truncate">{item.label}</span>
                 </AppShellNavLink>
@@ -275,26 +124,19 @@ export function AppShell({
         <div className="mt-3 shrink-0 border-t border-slate-200 pt-3">
           <SystemStatusIndicator />
           <AppShellAccountMenu vendorName={vendorName} roleLabel={roleLabel} vendorInitial={vendorInitial} planLabel={planLabel}>
-            {accountMenuSections.map((section) => {
-              const items = section.hrefs.flatMap((href) => {
-                const item = accountItemByHref.get(href);
-                return item ? [item] : [];
-              });
-              if (items.length === 0) return null;
-              return (
-                <div key={section.label} className="border-t border-slate-100 pt-2 first:border-t-0 first:pt-0">
-                  <p className="px-3 pb-1 pt-1 text-[10px] font-semibold uppercase tracking-wider text-slate-500">{section.label}</p>
-                  {items.map((item) => {
-                    const Icon = item.icon;
-                    return <Link key={item.href} href={item.href} className="flex min-h-9 items-center gap-3 rounded-lg px-3 py-1.5 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-950"><Icon className="size-4 text-slate-500" strokeWidth={1.8} aria-hidden="true" />{item.label}</Link>;
-                  })}
-                </div>
-              );
-            })}
+            <div className="px-3 pb-2 pt-1">
+              <p className="truncate text-sm font-semibold text-slate-900">{vendorName}</p>
+              <p className="truncate text-xs font-medium text-slate-600">{roleLabel}</p>
+            </div>
+            {showSettingsLink || securityHref ? (
+              <div className="border-t border-slate-100 pt-2">
+                {showSettingsLink ? <Link href={SETTINGS_HUB_PATH} className={menuLinkClass}><Settings2 className="size-4 text-slate-500" strokeWidth={1.8} aria-hidden="true" />設定</Link> : null}
+                {securityHref ? <Link href={securityHref} className={menuLinkClass}><Shield className="size-4 text-slate-500" strokeWidth={1.8} aria-hidden="true" />安全性</Link> : null}
+              </div>
+            ) : null}
             <div className="border-t border-slate-100 pt-2">
-              <p className="px-3 pb-1 pt-1 text-[10px] font-semibold uppercase tracking-wider text-slate-500">支援</p>
-              <Link href="/policies" className="flex min-h-9 items-center gap-3 rounded-lg px-3 py-1.5 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-950"><ScrollText className="size-4 text-slate-500" strokeWidth={1.8} aria-hidden="true" />說明與政策</Link>
-              <Link href="/support" className="flex min-h-9 items-center gap-3 rounded-lg px-3 py-1.5 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-950"><Headphones className="size-4 text-slate-500" strokeWidth={1.8} aria-hidden="true" />聯絡客服</Link>
+              <Link href="/support" className={menuLinkClass}><Headphones className="size-4 text-slate-500" strokeWidth={1.8} aria-hidden="true" />客服與付款協助</Link>
+              <Link href="/policies" className={menuLinkClass}><ScrollText className="size-4 text-slate-500" strokeWidth={1.8} aria-hidden="true" />服務條款與政策</Link>
             </div>
             <div className="border-t border-slate-100 pt-2">
               <form action={logoutAction}>
@@ -346,7 +188,7 @@ export function AppShell({
         </footer>
       </main>
       <AppShellMobileNav
-        groups={visibleGroups.map((group) => ({ label: group.label, items: group.items.map((item) => ({ href: item.href, label: item.label })) }))}
+        groups={visibleGroups.map((group) => ({ label: group.label, items: group.items.map((item) => ({ href: item.href, label: item.label, activePrefixes: item.activePrefixes })) }))}
         supportLinks={[{ href: "/support", label: "客服與付款協助" }, { href: "/policies", label: "服務條款與政策" }]}
       />
     </div>

@@ -1,6 +1,7 @@
 import { CheckCircle2, Circle } from "lucide-react";
 import Link from "next/link";
 
+import { SettingsBackLink } from "@/components/settings-back-link";
 import { Badge, ButtonLink, Card, PageHeader } from "@/components/ui";
 import { requireVendorManager } from "@/lib/auth";
 import { getDb } from "@/lib/db";
@@ -72,6 +73,7 @@ export default async function OnboardingPage() {
 
   return (
     <>
+      <SettingsBackLink />
       <PageHeader
         title="上線導引"
         description="依真實商店設定自動保存進度；完成一項設定後回到這裡即可接著做，不需要重複填表。"
