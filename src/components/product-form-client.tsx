@@ -13,6 +13,7 @@ import {
 } from "@/lib/product-action-state";
 import type { CustomCheckoutField, CustomCheckoutFields } from "@/lib/commerce-custom-checkout";
 import { SUPPORTED_CHECKOUT_CURRENCY } from "@/lib/checkout-currency";
+import { formatCurrency } from "@/lib/format";
 
 export type ProductFormProduct = {
   id: string;
@@ -464,12 +465,12 @@ export function ProductFormClient({
         <p className="text-sm leading-6 text-slate-600 md:col-span-2">買家付款後可用原訂單實付金額折抵一次升級。拒絕加購時可改選備選商品；原訂單退款會撤銷升級權益。</p>
         <SelectField label="加購商品" name="upsellProductId" defaultValue={draft.upsellProductId ?? ""}>
           <option value="">不提供加購</option>
-          {offerProducts.filter(option => option.id !== product?.id).map(option => <option key={option.id} value={option.id}>{option.name} · {option.currency} {(option.priceCents / 100).toFixed(2)}</option>)}
+          {offerProducts.filter(option => option.id !== product?.id).map(option => <option key={option.id} value={option.id}>{option.name} · {formatCurrency(option.priceCents, option.currency)}</option>)}
         </SelectField>
         <Field label="加購額外折扣（元）" name="upsellDiscount" type="number" min={0} step={0.01} defaultValue={draft.upsellDiscount ?? "0"} />
         <SelectField label="拒絕加購後的備選商品" name="downsellProductId" defaultValue={draft.downsellProductId ?? ""}>
           <option value="">不提供備選商品</option>
-          {offerProducts.filter(option => option.id !== product?.id).map(option => <option key={option.id} value={option.id}>{option.name} · {option.currency} {(option.priceCents / 100).toFixed(2)}</option>)}
+          {offerProducts.filter(option => option.id !== product?.id).map(option => <option key={option.id} value={option.id}>{option.name} · {formatCurrency(option.priceCents, option.currency)}</option>)}
         </SelectField>
         <p className="self-end text-xs leading-5 text-slate-600">限同商家、同幣別且使用本站結帳的已上架商品；折抵後應付金額必須大於零。</p>
       </fieldset>
