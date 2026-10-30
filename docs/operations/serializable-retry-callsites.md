@@ -4,7 +4,7 @@ F-055（B03-22、B04-14）新增共用的 `src/lib/serializable-retry.ts`：`wit
 
 已套用：
 
-- `src/lib/inventory-reservations.ts`：庫存保留、釋放、過期清理共用的 `runSerializable`，5 次、25–400 ms。
+- `src/lib/inventory-reservations.ts`：庫存保留與結帳失敗釋放用 `CHECKOUT_RESERVATION_RETRY`（12 次、25–1000 ms；B-2 前是 5 次、25–400 ms，理由見文末〈B-2 修正後〉）；過期清理每列用 `EXPIRY_CLEANUP_RETRY`（5 次、25–400 ms），整趟 60 s 後不再開始新的一列。
 - `src/lib/payment-webhooks.ts`：`processPaymentWebhook` 對 P2034／P2002 重跑整個 webhook 處理，3 次、50–500 ms。
 - `src/lib/live-notification-delivery.ts`：`ensureLiveNotificationDelivery` 的兩段交易（#520），P2034／40001／40P01 重試 3 次、預設 20–400 ms。
 
@@ -137,9 +137,32 @@ npm run db:migrate:deploy && npm run test:db:stress
 
 沒有超賣、庫存沒有變負、每個付款事件只有一次 paid 轉換，也沒有未被攔下的 P2034（測試全部通過）。以下是壓測找到、這個 PR 沒有修的問題：
 
-1. **結帳：同一商品同時下單，每一輪只有一人成功（體驗問題，非超賣）。** 每次保留庫存都會把 `Product.revision` 加 1，而 checkout 用 admission 當下的 revision 做 CAS（`inventory-reservations.ts` 的 `ProductChangedError`、checkout route 的 `admission.productRevision !== product.revision`）。這是 G7-10／G7-14 刻意的設計，避免舊表單覆寫庫存、避免用過期的價格。代價是：一筆成交會讓其他所有已 admission 的買家拿到 409「Product changed; reload checkout」。50 人搶 25 件時只有 1 人第一次就成功，賣完 25 件要 25 輪，最慘的買家要重新載入 24 次；快閃也一樣。實際上每一輪是一次使用者重新整理加重新 admission，比測試裡模擬的立即重試更慢。建議把「商品內容版本」和「庫存數量」分開：價格與內容變更才推進 checkout 用的 revision，庫存只用 `inventory >= quantity` 條件扣減（商家編輯庫存另用自己的 CAS）。這會動到 checkout、快閃與 post-purchase 的 revision 證據，需要 engineer-hard 實作、reviewer 審查，並由 owner 決定是否在封測前做。
+1. **（已修正，見下方〈B-2 修正後〉）結帳：同一商品同時下單，每一輪只有一人成功（體驗問題，非超賣）。** 每次保留庫存都會把 `Product.revision` 加 1，而 checkout 用 admission 當下的 revision 做 CAS（`inventory-reservations.ts` 的 `ProductChangedError`、checkout route 的 `admission.productRevision !== product.revision`）。這是 G7-10／G7-14 刻意的設計，避免舊表單覆寫庫存、避免用過期的價格。代價是：一筆成交會讓其他所有已 admission 的買家拿到 409「Product changed; reload checkout」。50 人搶 25 件時只有 1 人第一次就成功，賣完 25 件要 25 輪，最慘的買家要重新載入 24 次；快閃也一樣。實際上每一輪是一次使用者重新整理加重新 admission，比測試裡模擬的立即重試更慢。建議把「商品內容版本」和「庫存數量」分開：價格與內容變更才推進 checkout 用的 revision，庫存只用 `inventory >= quantity` 條件扣減（商家編輯庫存另用自己的 CAS）。這會動到 checkout、快閃與 post-purchase 的 revision 證據，需要 engineer-hard 實作、reviewer 審查，並由 owner 決定是否在封測前做。
 2. **直播通知：不同收件人同時具現化，大多數用完重試。** 50 位報名者同時通過驗證時，47 位的 `ensureLiveNotificationDelivery` 在 3 次後仍是 P2034（連線池 5 時 26 位，10 併發時 7 位）。原因是交易內「已寄出檢查」與「舊快照 supersede」兩個查詢沒有能縮小範圍的索引：`idempotencyKey` 的 `startsWith` 在 en_US collation 下用不到唯一索引，`sourceFormSubmissionId` 也沒有索引，所以會掃描整個商家的 EmailDelivery（空表時是 seq scan，鎖整張表；另以 5 萬筆其他商家資料 `ANALYZE` 後改走 `vendorId` 索引，結果仍是 47/50）。每個交易都讀到別人正在新增的列，形成 rw-conflict 環，每一輪只有最先提交的人成功。目前的影響有上限：報名驗證流程會攔下錯誤並回報（`verified_submission_materialize`），提醒在到期時由排程 `processDueLiveNotifications` 補建（取決於排程頻率，見 GO-NO-GO §5 B-1）。把重試改成 8 次、25–800 ms 試跑仍有 12/50 失敗、p95 3.7 s，所以只加重試不是解法。建議改成依收件人縮小讀取範圍（例如 `(vendorId, sourceFormSubmissionId)` 索引並確認查詢計畫，或改由 outbox／排程具現化），需要 migration 與 reviewer。
 3. **用完重試時丟出的是原始 Prisma P2034，沒有專屬型別。** 每個 Production 呼叫點都會攔下：checkout 回 502「Unable to start checkout」，webhook route 回 500 並把 event 標成 failed 交給 webhook-retry，通知流程回報後由排程補。50 併發下 checkout 與 webhook route 都沒有發生；如果之後要讓買家看到「請稍後再試」，可以把用完重試的錯誤包成專屬型別並回 503 加 `Retry-After`，但要同步調整 `classifyPaymentWebhookErrorClass` 依 `error.name` 的分類。
 4. **webhook 不經 event claim 時大量用完重試，但 Production 不會走到。** route 與 webhook-retry 都先以 `WebhookEvent` 的 CAS 認領，同一個 event 只會有一個處理者；route 測試證明 50 個同時送達只開了 1 次付款交易。其餘 49 個收到 503，要靠 provider 重送。
 
 沒有驗證：staging 與 Production（依規定不跑）、Supabase transaction pooler（pgbouncer）模式、真實 PayUni 重送間隔。
+
+### B-2 修正後（`ai/checkout-stock-version`）
+
+做法：`Product.revision` 只代表商品**內容**版本（價格、名稱、選項、課程／交付設定），只有商家編輯（`product-actions.ts`）與課程大綱（`course-curriculum.ts`）會推進。庫存寫入（保留、釋放、過期回補、晚到付款重新扣、恢復結帳重新扣）不再推進 revision。沒有新增欄位或 migration。
+
+- 不超賣：保留仍是同一句 `updateMany where { id, vendorId, isActive, inventory >= 數量, revision = admission 的版本 }`。庫存條件守住數量，revision 條件守住過期內容；兩者在同一個 Serializable 交易裡和付款、訂單、保留紀錄一起提交。
+- 過期價格仍會被擋：商家改價會推進 revision，admission 帶舊版本的買家在 route（`admission.productRevision !== product.revision`）或保留的 CAS 拿到 409「Product changed; reload checkout」，重新載入後用新價格。
+- 快閃與 post-purchase 的同交易證據改成 `{ vendorId, productId, revision, quantity, inventoryAfter }`：「這個交易以 `revision` 扣了 `quantity` 件，扣完剩 `inventoryAfter`」（`inventoryAfter` 來自同一句 `updateManyAndReturn`）。`consumeFlashSaleQuote` 要求證據的 revision 等於報價的 `productRevision`、數量為 1，再逐欄比對目前報價；`resolvePaidOrderPostPurchaseOffer` 只在證據的 revision 與目前相同、且目前庫存正好等於 `inventoryAfter` 時，才把自己剛扣的那一件加回可售量。證據只由 `createReservedPaymentTransaction` 產生，不從 request 讀。
+- 商家表單：以前靠「每次成交都推進 revision」讓舊表單不能覆寫庫存。現在表單另帶 `inventoryBaseline`（載入時的庫存）。庫存沒改就不寫庫存（編輯期間的成交照算）；庫存有改，`updateMany` 另加 `inventory = inventoryBaseline` 條件，庫存已被訂單改動就回 `conflict`。缺少或格式錯誤的 `inventoryBaseline`（部署前開著的舊頁面）一律回 `conflict`。
+- 重試預算：不再回 409 之後，同一商品的買家全部在交易重試裡排隊。Serializable 下同一列的並發更新只有第一個能提交（其他人 P2034），熱門商品的提交是逐筆的，所以重試視窗要大於「買家數 × 交易時間」。實測 5 次、25–400 ms 時 50 人只有 6 人成交，其餘用完重試（route 會回 502）；改成 12 次、25–1000 ms 後全數在第一次載入就成交。最壞情況的總退避約 6.6 s。
+- **容量：單一商品約 50 位同時按下付款。** 這是 loopback 壓測量到的上限：50 人同時送出時，最慘的買家用到 11 次（預算 12）。超過這個量，或交易變慢（遠端資料庫、連線池等待），排在最後的買家會用完重試。那時 checkout route 回 **503 `CHECKOUT_BUSY`＋`Retry-After: 3`**：交易已整筆回滾，沒有建立付款、訂單或保留，也沒有扣庫存或扣款；前端顯示「目前同時下單的人很多，這次沒有建立訂單，也沒有扣款。請稍等幾秒再按一次付款」，並保留同一個 admission 與 idempotency key，再按一次會沿用同一筆結帳資料。其他非暫時性錯誤仍回 502。
+- **checkout route 的 `maxDuration = 60`**：排隊（約 6.6 s 退避加交易時間）與 provider 呼叫都要在 60 s 內完成，不再依賴平台預設的 300 s（`src/app/after-max-duration.test.ts` 釘住這個值）。每次嘗試仍有 `maxWait` 5 s、`timeout` 10 s；連線池長時間塞滿時理論上可能超過 60 s，這時平台中斷請求：中斷在保留交易提交前，交易整筆回滾；中斷在提交後，買家再按一次會以同一個 idempotency key 取回同一筆結帳（既有的 `existingCheckoutResponse` 路徑），不會重複保留。
+- **過期清理不搶 webhook 重試的時間**：`releaseExpiredInventoryReservations` 在 webhook-retry job 裡排在 webhook 重試前面。每列只用 5 次、25–400 ms，且開始處理後 60 s（`EXPIRY_CLEANUP_DEADLINE_MS`）就不再開始新的一列，剩下的列仍是 `reserved` 且已過期，下一次排程會再處理；回傳值多一個 `deferred`（這次沒處理的列數）。順序不變：先釋放再處理晚到的 paid webhook，與修正前行為相同。
+
+結果（同一台機器與容器，base `447237618` 加上 #524 的壓測）：
+
+| 路徑 | 修正前 50 併發、連線池 60 | 修正後 50 併發、連線池 60（三次） | 修正後 50 併發、連線池 5 | 修正後 10 併發（兩次） |
+|---|---|---|---|---|
+| 結帳 25 件／50 人 | 25 成功，第一次就成功 1 人，最多重新載入 24 次（共 300 次）；attempts 平均 37.5；p95 7.2 s | 25 成功，**第一次就成功 25 人、重新載入 0 次**、25 售完；attempts 平均 7.1–7.3、最多 10–11；p95 2.7–3.1 s | 25／25，重新載入 0；平均 3.0；p95 1.1 s | 5／5，重新載入 0；平均 3.9–4.5、最多 5–6；p95 0.7–1.1 s |
+| 快閃 10 名額／50 人 | 10 成功，第一次就成功 1 人，最多重新載入 9 次；平均 18.8；p95 5.3 s | 10 成功，**第一次就成功 10 人、重新載入 0 次**、40 名額已滿；平均 6.2–6.3、最多 8；p95 2.9–3.0 s | 10／40，重新載入 0；平均 1.8；p95 1.7 s | 2／8，重新載入 0；平均 2.7；p95 0.7–0.8 s |
+| 改價（新增）：25 人以舊 admission 成交 → 商家改價 → 25 人帶舊 admission | — | 前 25 人全數成交；改價後 25 人全部先拿到 `ProductChangedError`，重新載入後以新價格成交；付款金額 25 筆 2000、25 筆 2500 | 同左 | 5／5 同左 |
+
+webhook 與通知路徑不受影響，數字與修正前相同。10 併發時最多用到 6 次嘗試，舊的 5 次預算在一般 DB 測試就會偶發失敗，所以兩者一起改。

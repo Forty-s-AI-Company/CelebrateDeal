@@ -621,3 +621,11 @@ Current source inventory: 145 models and 99 forward migrations. Previous checkpo
 - 不鎖 `User` 的寫入者改為同一鎖序（`src/lib/credential-write-lock.ts`）：`completeMfaEnrollment` 與 recovery code 重新產生改成互動式交易，先 `SELECT … FOR UPDATE` 鎖 `User`（須 active），再確認目前 session 未撤銷、未過期（重新產生另要求同一個 factor 仍存在），否則不寫入（啟用回 `session_stale`、重新產生回 `recovery_unavailable`）。`updatePasswordAction` 以 `updateMany({ id, passwordHash: 驗證時的舊 hash })` compare-and-swap，count ≠ 1 回 `current_password`。
 - LINE Login：`completeLineLogin` 對 `subjectType = "user"` 的 identity 在交易內確認 `User.status = active`，否則 state 照樣 consume 但不回傳 identity。**綁定模式**只在 callback 瀏覽器已有同一使用者的有效 session（`linkingUserId`）時才綁定，且**不建立新 session**。**登入模式**的 session 由 `createUserSessionForLineIdentity` 在交易內先 `FOR UPDATE` 鎖 `User`（須 active），再確認該 identity 仍屬於此使用者且未撤銷後才寫入，與還原、密碼重設同一鎖序。
 - 先前規劃的「在設定頁作廢舊信箱還原連結」已撤回（沒有 MFA 的帳號被接手後，接手者可當場啟用 TOTP 再作廢，舊信箱也不會收到通知）。設定卡與確認頁只顯示「舊信箱 7 天內仍可還原；若舊信箱已外洩，請聯絡客服」。
+
+## Product.revision 只代表商品內容（B-2，2026-10-30）
+
+- **沒有 migration、沒有新欄位**；`Product.revision`（`20260808235500_g7_10_product_catalog_safety`，CHECK `revision > 0`）語意收窄：只有商家編輯商品（`src/app/actions/product-actions.ts`）與課程大綱（`src/lib/course-curriculum.ts`）會推進。`src/lib/inventory-reservations.ts` 的保留、釋放、過期回補、晚到付款重新扣、恢復結帳重新扣只改 `inventory`，不再推進 revision。
+- 庫存不變式不變：保留仍是 `updateMany where { id, vendorId, isActive, inventory >= 數量, revision = admission 版本 }`，與付款、訂單、保留紀錄在同一個 Serializable 交易。庫存不會為負、N 件只會有 N 個成交。
+- 同交易證據 `ReservedInventoryRevision` 改為 `{ vendorId, productId, revision, quantity, inventoryAfter }`，只由 `createReservedPaymentTransaction` 產生（`inventoryAfter` 來自扣減那句 `updateManyAndReturn`）；快閃（`consumeFlashSaleQuote`）要求證據 revision 等於報價 revision，post-purchase（`resolvePaidOrderPostPurchaseOffer`）另要求目前庫存等於 `inventoryAfter`。
+- 商家表單另帶 `inventoryBaseline`：庫存沒改就不寫 `inventory`；有改就以 `inventory = inventoryBaseline` 作 CAS，不符回 `conflict`；缺少時 fail closed。
+- **部署順序**：只有程式。部署前開著的商品編輯頁沒有 `inventoryBaseline`，送出會回 `conflict`，商家重新整理即可。既有列的 revision 值不需回填；部署當下已發出的 admission 仍有效（revision 未變），只是不再因成交失效。

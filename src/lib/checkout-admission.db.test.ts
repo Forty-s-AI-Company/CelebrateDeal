@@ -85,7 +85,8 @@ describe("checkout admission disposable PostgreSQL invariants", () => {
     });
     expect(await db.product.findUniqueOrThrow({ where: { id: product.id } })).toMatchObject({
       inventory: 1,
-      revision: product.revision + 1,
+      // B-2: a sale moves stock only, never the content revision.
+      revision: product.revision,
     });
     expect(await db.paymentTransaction.count({
       where: { vendorId: vendor.id, checkoutIdempotencyKey: binding.idempotencyKey },

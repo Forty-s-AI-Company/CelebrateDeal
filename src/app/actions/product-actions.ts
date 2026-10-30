@@ -265,11 +265,14 @@ function parseProductRequest(previousState: ProductActionState, formData: FormDa
     return { success: false as const, state: productFailure(previousState, formData, "media_upload_incomplete") };
   }
   const expectedRevision = id ? nonNegativeInteger(text(formData, "revision")) : null;
-  if (id && (!expectedRevision || expectedRevision < 1)) {
+  // B-2: sales no longer move the content revision, so an edit carries the
+  // stock value it loaded. A form without it (stale page) fails closed.
+  const inventoryBaseline = id ? nonNegativeInteger(text(formData, "inventoryBaseline")) : null;
+  if (id && (!expectedRevision || expectedRevision < 1 || inventoryBaseline === null)) {
     return { success: false as const, state: productFailure(previousState, formData, "conflict") };
   }
   return {
-    success: true as const, id, expectedRevision, productInput,
+    success: true as const, id, expectedRevision, inventoryBaseline, productInput,
     commerceDomain: commercePolicy.commerceDomain,
     fulfillmentType: commercePolicy.fulfillmentType,
     courseContentOwnerMembershipId: coursePolicy.courseContentOwnerMembershipId,
@@ -364,8 +367,17 @@ async function persistProduct(
       const updateData: Prisma.ProductUncheckedUpdateManyInput = { ...data, revision: { increment: 1 } };
       delete updateData.vendorId;
       delete updateData.id;
+      // B-2: checkout stock writes do not move `revision`. Leave stock alone
+      // when the merchant did not change it (a sale during the edit stays
+      // counted); otherwise set it only if stock is still what the form
+      // loaded, so a stale form can never overwrite newer stock.
+      const stockUnchanged = request.productInput.inventory === request.inventoryBaseline;
+      if (stockUnchanged) delete updateData.inventory;
       const updated = await db.product.updateMany({
-        where: { id: request.id, vendorId, revision: request.expectedRevision! },
+        where: {
+          id: request.id, vendorId, revision: request.expectedRevision!,
+          ...(stockUnchanged ? {} : { inventory: request.inventoryBaseline! }),
+        },
         data: updateData,
       });
       return updated.count === 1 ? null : "conflict";

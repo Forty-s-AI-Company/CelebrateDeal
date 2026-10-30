@@ -80,15 +80,23 @@ function contractSql(schema) {
         RAISE EXCEPTION 'invalid revision unexpectedly accepted';
       EXCEPTION WHEN check_violation THEN INSERT INTO qa_result VALUES ('positive_revision_enforced', true); END;
     END $$;
-    DO $$ DECLARE first_count INTEGER; second_count INTEGER; BEGIN
-      UPDATE "Product" SET "inventory"="inventory"-1,"revision"="revision"+1,"updatedAt"=CURRENT_TIMESTAMP WHERE "id"='p1' AND "vendorId"='v1' AND "revision"=1;
+    DO $$ DECLARE sale_count INTEGER; stale_stock_count INTEGER; first_count INTEGER; second_count INTEGER; BEGIN
+      -- B-2: a sale is a conditional stock decrement and keeps the content revision.
+      UPDATE "Product" SET "inventory"="inventory"-1,"updatedAt"=CURRENT_TIMESTAMP WHERE "id"='p1' AND "vendorId"='v1' AND "revision"=1 AND "inventory">=1;
+      GET DIAGNOSTICS sale_count = ROW_COUNT;
+      -- A merchant stock edit loaded before the sale (inventoryBaseline = 2) must not overwrite it.
+      UPDATE "Product" SET "inventory"=5,"revision"="revision"+1,"updatedAt"=CURRENT_TIMESTAMP WHERE "id"='p1' AND "vendorId"='v1' AND "revision"=1 AND "inventory"=2;
+      GET DIAGNOSTICS stale_stock_count = ROW_COUNT;
+      IF sale_count <> 1 OR stale_stock_count <> 0 THEN RAISE EXCEPTION 'stale stock edit overwrote a sale'; END IF;
+      INSERT INTO qa_result VALUES ('stale_stock_edit_rejected', true);
+      UPDATE "Product" SET "name"='Edited',"revision"="revision"+1,"updatedAt"=CURRENT_TIMESTAMP WHERE "id"='p1' AND "vendorId"='v1' AND "revision"=1;
       GET DIAGNOSTICS first_count = ROW_COUNT;
       UPDATE "Product" SET "name"='Stale overwrite',"revision"="revision"+1,"updatedAt"=CURRENT_TIMESTAMP WHERE "id"='p1' AND "vendorId"='v1' AND "revision"=1;
       GET DIAGNOSTICS second_count = ROW_COUNT;
       IF first_count <> 1 OR second_count <> 0 THEN RAISE EXCEPTION 'product revision CAS did not select one winner'; END IF;
       INSERT INTO qa_result VALUES ('stale_product_edit_cas_one_winner', true);
     END $$;
-    INSERT INTO qa_result SELECT 'inventory_change_advanced_revision', "inventory" = 1 AND "revision" = 2 FROM "Product" WHERE "id" = 'p1';
+    INSERT INTO qa_result SELECT 'sale_kept_content_revision', "inventory" = 1 AND "revision" = 2 AND "name" = 'Edited' FROM "Product" WHERE "id" = 'p1';
     INSERT INTO qa_result SELECT 'tenant_slug_index_present', COUNT(*) = 1 FROM pg_indexes WHERE schemaname='${schema}' AND indexname='Product_vendorId_slug_key';
     INSERT INTO qa_result SELECT 'global_slug_index_removed', COUNT(*) = 0 FROM pg_indexes WHERE schemaname='${schema}' AND indexname='Product_slug_key';
     SELECT name || '=' || passed::text FROM qa_result ORDER BY name;
@@ -139,7 +147,7 @@ export async function main() {
     if (status.exitCode !== 0) throw new Error("prisma-status-failed");
     const constraints = psql(containerId, contractSql(schema), env);
     receipt.assertions = constraints.stdout.trim().split(/\r?\n/u).filter(Boolean);
-    const required = ["global_slug_index_removed=true", "inventory_change_advanced_revision=true", "positive_revision_enforced=true", "revision_default_is_one=true", "same_slug_across_vendors_accepted=true", "same_vendor_duplicate_slug_rejected=true", "stale_product_edit_cas_one_winner=true", "tenant_slug_index_present=true"];
+    const required = ["global_slug_index_removed=true", "positive_revision_enforced=true", "revision_default_is_one=true", "sale_kept_content_revision=true", "same_slug_across_vendors_accepted=true", "same_vendor_duplicate_slug_rejected=true", "stale_product_edit_cas_one_winner=true", "stale_stock_edit_rejected=true", "tenant_slug_index_present=true"];
     receipt.phases.constraints = constraints.exitCode === 0 && required.every((value) => receipt.assertions.includes(value)) ? "PASS" : "FAIL";
     if (receipt.phases.constraints !== "PASS") throw new Error("constraint-contract-failed");
     const vitestCli = path.join(root, "node_modules", "vitest", "vitest.mjs");
