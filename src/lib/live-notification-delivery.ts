@@ -11,7 +11,7 @@ import { hasOnlySupportedMessageTemplateVariables, renderMessageTemplate } from 
 import { createLiveViewerUrl } from "@/lib/live-public-url";
 import { EVERGREEN_ACTIVATION_SELECT, isActiveEvergreenLive, type EvergreenActivationRecord } from "@/lib/evergreen-activation";
 import { captureOperationalError } from "@/lib/monitoring";
-import { isTransientTransactionConflict, runSerializable } from "@/lib/serializable-retry";
+import { isTransientTransactionConflict, withSerializableRetry } from "@/lib/serializable-retry";
 import {
   LIVE_NOTIFICATION_DELIVERY_TRIGGERS,
   liveNotificationIdempotencyPrefix,
@@ -293,11 +293,62 @@ async function readCurrentNotificationSnapshot(
 }
 
 /**
- * The materialization is idempotent (deterministic delivery id, P2002
- * takeover), so a Serializable abort (P2034 / 40001 / 40P01) from a race with
- * the immediate evergreen path or the scheduled job is simply re-run.
+ * Row locks taken in one statement before the snapshot is read (B-3), in
+ * FROM order: Live, rule, template, registration. The statement repeats the
+ * vendor binding for the Live, the rule and the registration's form, so a
+ * foreign id locks nothing and the caller returns `not_configured`.
+ *
+ * - Live, rule and template FOR SHARE: many recipients share them without
+ *   waiting for each other, while a writer that updates one of them (live
+ *   lifecycle, rule edit, template edit, evergreen switch) waits for the
+ *   in-flight materializations to commit and only then supersedes their rows.
+ *   A materialization that starts after such an update waits for its commit
+ *   and reads the new state.
+ * - Registration FOR NO KEY UPDATE: one materialization per recipient at a
+ *   time, so the supersede / existing-row / insert steps below never race
+ *   another caller for the same recipient. It does not block FOR KEY SHARE
+ *   (foreign-key checks of other tables).
  */
-const TRANSIENT_RETRY = { attempts: 3, retryOn: isTransientTransactionConflict } as const;
+async function lockNotificationSources(
+  tx: Pick<Prisma.TransactionClient, "$queryRaw">,
+  input: { vendorId: string; liveId: string; ruleId: string; submissionId: string },
+) {
+  const locked = await tx.$queryRaw<Array<{ id: string }>>`
+    SELECT l."id" FROM "Live" l
+    JOIN "LiveNotificationRule" r ON r."id" = ${input.ruleId} AND r."liveId" = l."id" AND r."vendorId" = l."vendorId"
+    JOIN "MessageTemplate" t ON t."id" = r."messageTemplateId"
+    JOIN "FormSubmission" s ON s."id" = ${input.submissionId} AND s."liveId" = l."id"
+    JOIN "RegistrationForm" f ON f."id" = s."formId" AND f."vendorId" = l."vendorId"
+    WHERE l."id" = ${input.liveId} AND l."vendorId" = ${input.vendorId}
+    FOR SHARE OF l, r, t
+    FOR NO KEY UPDATE OF s`;
+  return locked.length === 1;
+}
+
+/**
+ * B-3: materialization runs at READ COMMITTED under the row locks above, not
+ * SERIALIZABLE. At SERIALIZABLE every read of EmailDelivery (the sent check
+ * and the supersede) took SIREAD locks on index leaf pages that the other
+ * recipients' inserts land in, so concurrent registrants of one Live aborted
+ * each other and each round committed about one of them (47/50 exhausted the
+ * retries). An index cannot fix that: recipients that register together sit
+ * on the same leaf page. Correctness now comes from:
+ *
+ * - one row per delivery id: the primary key, the deterministic id and the
+ *   per-recipient lock (a P2002 from a writer that does not take that lock,
+ *   the legacy cutover, re-runs the whole step and finds the row);
+ * - every statement after the locks sees all commits made before them, so
+ *   the sent check, the supersede and the existing-row check are exact;
+ * - config and lifecycle writers serialize with the materialization through
+ *   the FOR SHARE locks (see lockNotificationSources and
+ *   supersedeFixedTimeNotificationsForActiveEvergreen).
+ *
+ * A deadlock with a writer (40P01) or a P2002 re-runs the idempotent step.
+ */
+const MATERIALIZE_RETRY = {
+  attempts: 3,
+  retryOn: (error: unknown) => isTransientTransactionConflict(error) || isUniqueConflict(error),
+} as const;
 
 export async function ensureLiveNotificationDelivery(input: {
   vendorId: string;
@@ -307,73 +358,58 @@ export async function ensureLiveNotificationDelivery(input: {
 }, now = new Date(), options: { scheduleFuture?: boolean } = {}) {
   const db = getDb();
   const scheduleFuture = options.scheduleFuture ?? false;
-  try {
-    return await runSerializable(db, async (tx) => {
-      const current = await readCurrentNotificationSnapshot(tx, input);
-      if (!current) return { status: "not_configured" as const };
-      const data = await buildDeliveryData(tx, { ...current, now, scheduleFuture });
-      if (!data) return { status: "not_due" as const };
-      const prefix = liveNotificationIdempotencyPrefix(data.trigger as LiveNotificationDeliveryTrigger, current.rule.id);
-      const alreadySent = await tx.emailDelivery.findFirst({
-        where: {
-          vendorId: input.vendorId,
-          sourceLiveId: input.liveId,
-          sourceFormSubmissionId: input.submissionId,
-          idempotencyKey: { startsWith: prefix },
-          status: "sent",
-        },
-        select: { id: true },
-      });
-      if (alreadySent) return { status: "already_sent" as const };
-      await tx.emailDelivery.updateMany({
-        where: {
-          vendorId: input.vendorId,
-          sourceLiveId: input.liveId,
-          sourceFormSubmissionId: input.submissionId,
-          id: { not: data.id },
-          idempotencyKey: { startsWith: prefix },
-          status: { in: ["queued", "failed"] },
-        },
-        data: { status: "superseded", nextAttemptAt: null, claimedAt: null, lastErrorCode: "config_superseded" },
-      });
+  return withSerializableRetry(() => db.$transaction(async (tx) => {
+    if (!(await lockNotificationSources(tx, input))) return { status: "not_configured" as const };
+    const current = await readCurrentNotificationSnapshot(tx, input);
+    if (!current) return { status: "not_configured" as const };
+    const data = await buildDeliveryData(tx, { ...current, now, scheduleFuture });
+    if (!data) return { status: "not_due" as const };
+    const prefix = liveNotificationIdempotencyPrefix(data.trigger as LiveNotificationDeliveryTrigger, current.rule.id);
+    const recipientRule = {
+      vendorId: input.vendorId,
+      sourceLiveId: input.liveId,
+      sourceFormSubmissionId: input.submissionId,
+      idempotencyKey: { startsWith: prefix },
+    };
+    const alreadySent = await tx.emailDelivery.findFirst({
+      where: { ...recipientRule, status: "sent" },
+      select: { id: true },
+    });
+    if (alreadySent) return { status: "already_sent" as const };
+    await tx.emailDelivery.updateMany({
+      where: { ...recipientRule, id: { not: data.id }, status: { in: ["queued", "failed"] } },
+      data: { status: "superseded", nextAttemptAt: null, claimedAt: null, lastErrorCode: "config_superseded" },
+    });
+    const existing = await tx.emailDelivery.findFirst({
+      where: { id: data.id, vendorId: input.vendorId },
+      select: { id: true, status: true, updatedAt: true },
+    });
+    if (!existing) {
       const delivery = await tx.emailDelivery.create({ data, select: { id: true, status: true, nextAttemptAt: true } });
       return { status: delivery.status === "suppressed" ? "suppressed" as const : "queued" as const, deliveryId: delivery.id };
-    }, TRANSIENT_RETRY);
-  } catch (error) {
-    if (!isUniqueConflict(error)) throw error;
-    return runSerializable(db, async (tx) => {
-      const current = await readCurrentNotificationSnapshot(tx, input);
-      if (!current) return { status: "not_configured" as const };
-      const data = await buildDeliveryData(tx, { ...current, now, scheduleFuture });
-      if (!data) return { status: "not_due" as const };
-      const existing = await tx.emailDelivery.findUnique({
-        where: { id: data.id },
-        select: { id: true, status: true, updatedAt: true },
-      });
-      if (!existing) throw error;
-      if (existing.status === "sent") return { status: "already_sent" as const, deliveryId: existing.id };
-      if (existing.status !== "superseded") return { status: "duplicate" as const, deliveryId: existing.id };
-      const reactivated = await tx.emailDelivery.updateMany({
-        where: { id: existing.id, status: "superseded", updatedAt: existing.updatedAt },
-        data: {
-          sourceTemplateId: data.sourceTemplateId,
-          payloadEncryptedEnvelope: data.payloadEncryptedEnvelope,
-          recipientHash: data.recipientHash,
-          recipientMaskedEmail: data.recipientMaskedEmail,
-          idempotencyKey: data.idempotencyKey,
-          status: data.status,
-          attemptCount: 0,
-          nextAttemptAt: data.nextAttemptAt,
-          claimedAt: null,
-          failedAt: null,
-          lastErrorCode: data.lastErrorCode,
-        },
-      });
-      return reactivated.count === 1
-        ? { status: data.status === "suppressed" ? "suppressed" as const : "reactivated" as const, deliveryId: existing.id }
-        : { status: "duplicate" as const, deliveryId: existing.id };
-    }, TRANSIENT_RETRY);
-  }
+    }
+    if (existing.status === "sent") return { status: "already_sent" as const, deliveryId: existing.id };
+    if (existing.status !== "superseded") return { status: "duplicate" as const, deliveryId: existing.id };
+    const reactivated = await tx.emailDelivery.updateMany({
+      where: { id: existing.id, vendorId: input.vendorId, status: "superseded", updatedAt: existing.updatedAt },
+      data: {
+        sourceTemplateId: data.sourceTemplateId,
+        payloadEncryptedEnvelope: data.payloadEncryptedEnvelope,
+        recipientHash: data.recipientHash,
+        recipientMaskedEmail: data.recipientMaskedEmail,
+        idempotencyKey: data.idempotencyKey,
+        status: data.status,
+        attemptCount: 0,
+        nextAttemptAt: data.nextAttemptAt,
+        claimedAt: null,
+        failedAt: null,
+        lastErrorCode: data.lastErrorCode,
+      },
+    });
+    return reactivated.count === 1
+      ? { status: data.status === "suppressed" ? "suppressed" as const : "reactivated" as const, deliveryId: existing.id }
+      : { status: "duplicate" as const, deliveryId: existing.id };
+  }, { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted }), MATERIALIZE_RETRY);
 }
 
 function rotatingSkip(total: number, limit: number, now: Date) {
@@ -644,6 +680,46 @@ export async function supersedeLiveNotificationDeliveriesForLifecycle(
     },
     data: { status: "superseded", nextAttemptAt: null, claimedAt: null, lastErrorCode: "lifecycle_superseded" },
   });
+}
+
+/**
+ * Run right after the evergreen-enabling transaction commits (#520, B-3).
+ *
+ * That transaction is SERIALIZABLE, so its supersede reads a snapshot taken
+ * when it started. A materialization (READ COMMITTED, Live FOR SHARE) that
+ * read the fixed-time Live before the switch makes the switch's UPDATE wait,
+ * but commits its queued row after that snapshot, so the in-transaction
+ * supersede cannot see it. Every such materialization has committed before
+ * the switch could, so this pass, which starts after the switch committed,
+ * sees and supersedes the row. A materialization that starts later reads the
+ * evergreen Live and writes nothing.
+ *
+ * The Live row lock and the re-check keep a concurrent "turn evergreen off
+ * again" from having its fresh rows cancelled: if the Live is no longer an
+ * active evergreen one, nothing is touched. Tenant-bound on every statement.
+ */
+export async function supersedeFixedTimeNotificationsForActiveEvergreen(
+  input: { vendorId: string; liveId: string },
+  now = new Date(),
+) {
+  return getDb().$transaction(async (tx) => {
+    const locked = await tx.$queryRaw<Array<{ id: string }>>`
+      SELECT "id" FROM "Live"
+      WHERE "id" = ${input.liveId} AND "vendorId" = ${input.vendorId}
+      FOR NO KEY UPDATE`;
+    if (locked.length !== 1) return 0;
+    const live = await tx.live.findFirst({
+      where: { id: input.liveId, vendorId: input.vendorId },
+      select: { ...EVERGREEN_ACTIVATION_SELECT, video: { select: { durationSec: true } } },
+    });
+    if (!live || !isActiveEvergreenLive(live, { now })) return 0;
+    const superseded = await supersedeLiveNotificationDeliveriesForLifecycle(tx, {
+      vendorId: input.vendorId,
+      liveId: input.liveId,
+      triggers: [...LIVE_NOTIFICATION_DELIVERY_TRIGGERS],
+    });
+    return superseded.count;
+  }, { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted });
 }
 
 export async function supersedeLiveNotificationDeliveriesForTemplate(

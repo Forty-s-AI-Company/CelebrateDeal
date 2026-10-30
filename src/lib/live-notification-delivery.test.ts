@@ -5,6 +5,7 @@ const mocks = vi.hoisted(() => ({
   captureOperationalError: vi.fn(),
   db: {
     $transaction: vi.fn(),
+    $queryRaw: vi.fn(),
     live: { count: vi.fn(), findFirst: vi.fn(), findMany: vi.fn(), updateMany: vi.fn() },
     liveNotificationRule: { count: vi.fn(), findFirst: vi.fn(), findUnique: vi.fn(), findMany: vi.fn() },
     formSubmission: { count: vi.fn(), findFirst: vi.fn(), findMany: vi.fn() },
@@ -26,6 +27,7 @@ import {
   processLegacyReminderCutovers,
   resolveLiveNotificationDueAt,
   stableLiveNotificationDeliveryId,
+  supersedeFixedTimeNotificationsForActiveEvergreen,
   supersedeLiveNotificationDeliveriesForTemplate,
 } from "./live-notification-delivery";
 import { liveNotificationIdempotencyPrefix, liveNotificationIdentityFromKey } from "./live-notification-identity";
@@ -92,6 +94,7 @@ beforeEach(() => {
   vi.stubEnv("CSRF_SECRET", "live-notification-test-secret-longer-than-32-bytes");
   vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://app.example.test");
   mocks.db.$transaction.mockImplementation(async (callback: (tx: typeof mocks.db) => unknown) => callback(mocks.db));
+  mocks.db.$queryRaw.mockResolvedValue([{ id: "locked" }]);
   mocks.db.emailSuppression.findUnique.mockResolvedValue(null);
   mocks.db.blacklist.findFirst.mockResolvedValue(null);
   mocks.db.emailDelivery.findFirst.mockResolvedValue(null);
@@ -148,7 +151,7 @@ describe("canonical materialization and send-time snapshot", () => {
     expect(mocks.db.emailDelivery.create).toHaveBeenCalledTimes(1);
   });
 
-  it("retries a Serializable conflict (P2034) on the idempotent materialization and then queues once", async () => {
+  it("retries a transient conflict (P2034, e.g. a deadlock with a writer) on the idempotent materialization and then queues once", async () => {
     mockCurrent(current("before_live"));
     mocks.db.$transaction.mockRejectedValueOnce(new Prisma.PrismaClientKnownRequestError("write conflict", { code: "P2034", clientVersion: "test" }));
 
@@ -363,11 +366,9 @@ describe("canonical materialization and send-time snapshot", () => {
       created.add(id);
       return { id, status: data.status, nextAttemptAt: data.nextAttemptAt };
     });
-    mocks.db.emailDelivery.findUnique.mockImplementation(async ({ where }: { where: { id: string } }) => ({
-      id: where.id,
-      status: "queued",
-      updatedAt: now,
-    }));
+    // The stable-id lookup (the only findFirst with an id) sees rows written by earlier passes.
+    mocks.db.emailDelivery.findFirst.mockImplementation(async ({ where }: { where: { id?: string } }) =>
+      where.id && created.has(where.id) ? { id: where.id, status: "queued", updatedAt: now } : null);
 
     for (let pass = 0; pass < 5; pass += 1) {
       await processDueLiveNotifications({ now, vendorId: "vendor-1", writeBudget: 100, scanBudget: 500 });
@@ -392,13 +393,20 @@ describe("canonical materialization and send-time snapshot", () => {
       id: where.id,
       email: `${where.id}@example.test`,
     }));
+    // Recipients 1-100 already have a row that another writer inserted: the
+    // insert hits P2002 and the re-run finds that row.
+    const insertedElsewhere = new Set<string>();
     mocks.db.emailDelivery.create.mockImplementation(async ({ data }: { data: Record<string, unknown> }) => {
       const submissionNumber = Number(String(data.sourceFormSubmissionId).match(/submission-(\d+)/u)?.[1]);
-      if (submissionNumber <= 100) throw { code: "P2002" };
+      if (submissionNumber <= 100) {
+        insertedElsewhere.add(String(data.id));
+        throw { code: "P2002" };
+      }
       newWrites += 1;
       return { id: data.id, status: data.status, nextAttemptAt: data.nextAttemptAt };
     });
-    mocks.db.emailDelivery.findUnique.mockImplementation(async ({ where }: { where: { id: string } }) => ({ id: where.id, status: "queued", updatedAt: now }));
+    mocks.db.emailDelivery.findFirst.mockImplementation(async ({ where }: { where: { id?: string } }) =>
+      where.id && insertedElsewhere.has(where.id) ? { id: where.id, status: "queued", updatedAt: now } : null);
 
     const results = await processDueLiveNotifications({ now, vendorId: "vendor-1", writeBudget: 1, scanBudget: 101 });
 
@@ -531,7 +539,8 @@ describe("canonical materialization and send-time snapshot", () => {
     );
     mocks.db.formSubmission.findFirst.mockResolvedValue(value.submission);
     mocks.db.emailDelivery.create.mockRejectedValue({ code: "P2002" });
-    mocks.db.emailDelivery.findUnique.mockImplementation(async ({ where }: { where: { id: string } }) => ({ id: where.id, status: "queued", updatedAt: now }));
+    mocks.db.emailDelivery.findFirst.mockImplementation(async ({ where }: { where: { id?: string } }) =>
+      where.id ? { id: where.id, status: "queued", updatedAt: now } : null);
 
     await expect(processDueLiveNotifications({ now, vendorId: "vendor-1", writeBudget: 10, scanBudget: 3 }))
       .resolves.toEqual([{ status: "duplicate" }, { status: "duplicate" }, { status: "duplicate" }]);
@@ -539,24 +548,138 @@ describe("canonical materialization and send-time snapshot", () => {
 
   it("reactivates a superseded stable row with CAS while sent remains one-shot", async () => {
     mockCurrent(current("before_live"));
-    mocks.db.$transaction
-      .mockRejectedValueOnce({ code: "P2002" })
-      .mockImplementationOnce(async (callback: (tx: typeof mocks.db) => unknown) => callback(mocks.db));
-    mocks.db.emailDelivery.findUnique.mockResolvedValue({ id: "existing", status: "superseded", updatedAt: now });
+    mocks.db.emailDelivery.findFirst.mockImplementation(async ({ where }: { where: { id?: string } }) =>
+      where.id ? { id: "existing", status: "superseded", updatedAt: now } : null);
     mocks.db.emailDelivery.updateMany.mockResolvedValue({ count: 1 });
     await expect(ensureLiveNotificationDelivery({ vendorId: "vendor-1", liveId: "live-1", ruleId: "rule-1", submissionId: "submission-1" }, now))
       .resolves.toMatchObject({ status: "reactivated" });
+    expect(mocks.db.emailDelivery.findFirst).toHaveBeenCalledWith(expect.objectContaining({
+      where: { id: expect.stringMatching(/^email_/u), vendorId: "vendor-1" },
+    }));
     expect(mocks.db.emailDelivery.updateMany).toHaveBeenCalledWith(expect.objectContaining({
-      where: expect.objectContaining({ status: "superseded", updatedAt: now }),
+      where: expect.objectContaining({ id: "existing", vendorId: "vendor-1", status: "superseded", updatedAt: now }),
       data: expect.objectContaining({ status: "queued", attemptCount: 0, claimedAt: null, failedAt: null, nextAttemptAt: now }),
     }));
+    expect(mocks.db.emailDelivery.create).not.toHaveBeenCalled();
 
-    mocks.db.$transaction
-      .mockRejectedValueOnce({ code: "P2002" })
-      .mockImplementationOnce(async (callback: (tx: typeof mocks.db) => unknown) => callback(mocks.db));
-    mocks.db.emailDelivery.findUnique.mockResolvedValue({ id: "existing", status: "sent", updatedAt: now });
+    mocks.db.emailDelivery.findFirst.mockImplementation(async ({ where }: { where: { id?: string } }) =>
+      where.id ? { id: "existing", status: "sent", updatedAt: now } : null);
     await expect(ensureLiveNotificationDelivery({ vendorId: "vendor-1", liveId: "live-1", ruleId: "rule-1", submissionId: "submission-1" }, now))
       .resolves.toMatchObject({ status: "already_sent" });
+    expect(mocks.db.emailDelivery.create).not.toHaveBeenCalled();
+  });
+
+  it("supersedes stale rows of the recipient and rule before reporting the current row as a duplicate", async () => {
+    mockCurrent(current("before_live"));
+    mocks.db.emailDelivery.findFirst.mockImplementation(async ({ where }: { where: { id?: string } }) =>
+      where.id ? { id: where.id, status: "queued", updatedAt: now } : null);
+    await expect(ensureLiveNotificationDelivery({ vendorId: "vendor-1", liveId: "live-1", ruleId: "rule-1", submissionId: "submission-1" }, now))
+      .resolves.toMatchObject({ status: "duplicate" });
+    expect(mocks.db.emailDelivery.updateMany).toHaveBeenCalledTimes(1);
+    expect(mocks.db.emailDelivery.updateMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({
+        vendorId: "vendor-1", sourceLiveId: "live-1", sourceFormSubmissionId: "submission-1",
+        id: { not: expect.stringMatching(/^email_/u) },
+        idempotencyKey: { startsWith: "live-notification/before-live/rule-1/" },
+        status: { in: ["queued", "failed"] },
+      }),
+    }));
+    expect(mocks.db.emailDelivery.create).not.toHaveBeenCalled();
+  });
+});
+
+describe("B-3 contention: READ COMMITTED with vendor-bound row locks", () => {
+  const input = { vendorId: "vendor-1", liveId: "live-1", ruleId: "rule-1", submissionId: "submission-1" };
+  const sqlOf = (call: unknown[]) => (call[0] as TemplateStringsArray).join("?").replace(/\s+/gu, " ").trim();
+
+  it("locks the live, the rule with its template and the registration, vendor-bound, before reading anything", async () => {
+    mockCurrent(current("before_live"));
+    await expect(ensureLiveNotificationDelivery(input, now)).resolves.toMatchObject({ status: "queued" });
+
+    expect(mocks.db.$transaction).toHaveBeenCalledWith(expect.any(Function), {
+      isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted,
+    });
+    const calls = mocks.db.$queryRaw.mock.calls;
+    expect(calls).toHaveLength(1);
+    const sql = sqlOf(calls[0]!);
+    expect(sql).toMatch(/^SELECT l\."id" FROM "Live" l JOIN "LiveNotificationRule" r ON r\."id" = \? AND r\."liveId" = l\."id" AND r\."vendorId" = l\."vendorId" /u);
+    expect(sql).toContain(`JOIN "MessageTemplate" t ON t."id" = r."messageTemplateId"`);
+    expect(sql).toContain(`JOIN "FormSubmission" s ON s."id" = ? AND s."liveId" = l."id"`);
+    expect(sql).toContain(`JOIN "RegistrationForm" f ON f."id" = s."formId" AND f."vendorId" = l."vendorId"`);
+    expect(sql).toMatch(/WHERE l\."id" = \? AND l\."vendorId" = \? FOR SHARE OF l, r, t FOR NO KEY UPDATE OF s$/u);
+    expect(calls[0]!.slice(1)).toEqual(["rule-1", "submission-1", "live-1", "vendor-1"]);
+
+    const lock = mocks.db.$queryRaw.mock.invocationCallOrder[0]!;
+    for (const read of [mocks.db.live.findFirst, mocks.db.liveNotificationRule.findFirst, mocks.db.formSubmission.findFirst, mocks.db.emailDelivery.findFirst]) {
+      expect(Math.min(...read.mock.invocationCallOrder)).toBeGreaterThan(lock);
+    }
+  });
+
+  it("returns not_configured and writes nothing when the lock finds no row of this vendor", async () => {
+    mockCurrent(current("before_live"));
+    mocks.db.$queryRaw.mockResolvedValue([]);
+    await expect(ensureLiveNotificationDelivery({ ...input, vendorId: "vendor-2" }, now)).resolves.toEqual({ status: "not_configured" });
+    expect(mocks.db.$queryRaw).toHaveBeenCalledTimes(1);
+    expect(mocks.db.$queryRaw.mock.calls[0]!.slice(1)).toEqual(["rule-1", "submission-1", "live-1", "vendor-2"]);
+    expect(mocks.db.live.findFirst).not.toHaveBeenCalled();
+    expect(mocks.db.emailDelivery.updateMany).not.toHaveBeenCalled();
+    expect(mocks.db.emailDelivery.create).not.toHaveBeenCalled();
+  });
+
+  it("re-runs the step after a P2002 from a writer without the lock and reports that writer's row", async () => {
+    mockCurrent(current("before_live"));
+    const insertedElsewhere = new Set<string>();
+    mocks.db.emailDelivery.create.mockImplementationOnce(async ({ data }: { data: Record<string, unknown> }) => {
+      insertedElsewhere.add(String(data.id));
+      throw new Prisma.PrismaClientKnownRequestError("Unique constraint failed", { code: "P2002", clientVersion: "test" });
+    });
+    mocks.db.emailDelivery.findFirst.mockImplementation(async ({ where }: { where: { id?: string } }) =>
+      where.id && insertedElsewhere.has(where.id) ? { id: where.id, status: "queued", updatedAt: now } : null);
+
+    await expect(ensureLiveNotificationDelivery(input, now)).resolves.toMatchObject({ status: "duplicate" });
+    expect(mocks.db.$transaction).toHaveBeenCalledTimes(2);
+    expect(mocks.db.emailDelivery.create).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not retry an application error", async () => {
+    mockCurrent(current("before_live"));
+    mocks.db.emailDelivery.create.mockRejectedValueOnce(new Error("private database detail"));
+    await expect(ensureLiveNotificationDelivery(input, now)).rejects.toThrow("private database detail");
+    expect(mocks.db.$transaction).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("evergreen in-flight sweep", () => {
+  const evergreen = {
+    isEvergreen: true, streamMode: "vod", status: "scheduled", evergreenScheduleMode: "just_in_time", evergreenIntervalMinutes: 15,
+    evergreenDailyTimes: [], evergreenSessionStartAt: null, video: { durationSec: 1_800 },
+  };
+
+  it("supersedes queued and failed before/during rows of an active evergreen live under a vendor-bound Live lock", async () => {
+    mocks.db.live.findFirst.mockResolvedValue(evergreen);
+    mocks.db.emailDelivery.updateMany.mockResolvedValue({ count: 2 });
+    await expect(supersedeFixedTimeNotificationsForActiveEvergreen({ vendorId: "vendor-1", liveId: "live-1" }, now)).resolves.toBe(2);
+
+    expect(mocks.db.$transaction).toHaveBeenCalledWith(expect.any(Function), {
+      isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted,
+    });
+    const [lock] = mocks.db.$queryRaw.mock.calls;
+    expect((lock![0] as TemplateStringsArray).join("?").replace(/\s+/gu, " ").trim()).toMatch(/FROM "Live" WHERE "id" = \? AND "vendorId" = \? FOR NO KEY UPDATE$/u);
+    expect(lock!.slice(1)).toEqual(["live-1", "vendor-1"]);
+    expect(mocks.db.live.findFirst).toHaveBeenCalledWith(expect.objectContaining({ where: { id: "live-1", vendorId: "vendor-1" } }));
+    expect(mocks.db.emailDelivery.updateMany).toHaveBeenCalledWith({
+      where: { vendorId: "vendor-1", sourceLiveId: "live-1", trigger: { in: ["before_live", "during_live"] }, status: { in: ["queued", "failed"] } },
+      data: { status: "superseded", nextAttemptAt: null, claimedAt: null, lastErrorCode: "lifecycle_superseded" },
+    });
+  });
+
+  it("touches nothing when the live is no longer an active evergreen one or is not this vendor's", async () => {
+    mocks.db.live.findFirst.mockResolvedValue({ ...evergreen, isEvergreen: false });
+    await expect(supersedeFixedTimeNotificationsForActiveEvergreen({ vendorId: "vendor-1", liveId: "live-1" }, now)).resolves.toBe(0);
+
+    mocks.db.$queryRaw.mockResolvedValue([]);
+    await expect(supersedeFixedTimeNotificationsForActiveEvergreen({ vendorId: "vendor-2", liveId: "live-1" }, now)).resolves.toBe(0);
+    expect(mocks.db.emailDelivery.updateMany).not.toHaveBeenCalled();
   });
 });
 

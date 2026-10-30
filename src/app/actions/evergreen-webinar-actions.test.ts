@@ -14,6 +14,7 @@ const mocks = vi.hoisted(() => ({
   queueReconciliation: vi.fn(),
   transaction: vi.fn(),
   supersedeNotifications: vi.fn(),
+  supersedeInFlight: vi.fn(),
   scheduleRematerialization: vi.fn(),
   captureOperationalError: vi.fn(),
 }));
@@ -27,7 +28,10 @@ vi.mock("@/lib/db", () => ({
   getDb: () => ({ live: { findFirst: mocks.liveFindFirst, updateMany: mocks.liveUpdateMany }, $transaction: mocks.transaction }),
 }));
 vi.mock("@/lib/live-reminder-reconciliation", () => ({ queueLiveReminderReconciliationForCurrentLive: mocks.queueReconciliation }));
-vi.mock("@/lib/live-notification-delivery", () => ({ supersedeLiveNotificationDeliveriesForLifecycle: mocks.supersedeNotifications }));
+vi.mock("@/lib/live-notification-delivery", () => ({
+  supersedeLiveNotificationDeliveriesForLifecycle: mocks.supersedeNotifications,
+  supersedeFixedTimeNotificationsForActiveEvergreen: mocks.supersedeInFlight,
+}));
 vi.mock("@/lib/evergreen-rematerialization", () => ({ scheduleEvergreenRematerialization: mocks.scheduleRematerialization }));
 vi.mock("@/lib/monitoring", () => ({ captureOperationalError: mocks.captureOperationalError }));
 vi.mock("@/lib/zoned-date-time", () => ({ parseZonedDateTimeLocal: mocks.parseZonedDateTimeLocal }));
@@ -70,6 +74,7 @@ beforeEach(() => {
   mocks.queueReconciliation.mockResolvedValue({ status: "queued", jobId: "job-1" });
   mocks.transaction.mockImplementation(async (callback: (tx: unknown) => Promise<unknown>) => callback({ live: { updateMany: mocks.liveUpdateMany }, marker: "tx" }));
   mocks.supersedeNotifications.mockResolvedValue({ count: 0 });
+  mocks.supersedeInFlight.mockResolvedValue(0);
   mocks.writeAuditLog.mockResolvedValue(undefined);
   mocks.parseZonedDateTimeLocal.mockReturnValue(new Date("2026-09-08T02:00:00.000Z"));
 });
@@ -202,6 +207,29 @@ describe("updateEvergreenWebinarSettingsAction", () => {
     off.delete("isEvergreen");
     await expect(updateEvergreenWebinarSettingsAction(off)).rejects.toThrow("evergreen_saved");
     expect(mocks.supersedeNotifications).not.toHaveBeenCalled();
+  });
+
+  it("sweeps rows committed by in-flight materializations after the enabling commit, tenant-bound, and never when disabling or unmatched", async () => {
+    await expect(updateEvergreenWebinarSettingsAction(form())).rejects.toThrow("evergreen_saved");
+    expect(mocks.supersedeInFlight).toHaveBeenCalledTimes(1);
+    expect(mocks.supersedeInFlight).toHaveBeenCalledWith({ vendorId: "vendor-current", liveId: "live-current" });
+    expect(mocks.transaction.mock.invocationCallOrder.at(-1)).toBeLessThan(mocks.supersedeInFlight.mock.invocationCallOrder[0]!);
+
+    mocks.supersedeInFlight.mockClear();
+    const off = form();
+    off.delete("isEvergreen");
+    await expect(updateEvergreenWebinarSettingsAction(off)).rejects.toThrow("evergreen_saved");
+    mocks.liveUpdateMany.mockResolvedValueOnce({ count: 0 });
+    await expect(updateEvergreenWebinarSettingsAction(form())).rejects.toThrow("evergreen_live_changed");
+    expect(mocks.supersedeInFlight).not.toHaveBeenCalled();
+  });
+
+  it("keeps the saved setting when the in-flight sweep fails and reports it", async () => {
+    const failure = new Error("sweep failed");
+    mocks.supersedeInFlight.mockRejectedValueOnce(failure);
+    await expect(updateEvergreenWebinarSettingsAction(form())).rejects.toThrow("REDIRECT:/lives/live-current/edit?notice=evergreen_saved");
+    expect(mocks.captureOperationalError).toHaveBeenCalledWith(failure, { source: "evergreen_settings", operation: "supersede_in_flight", status: "failed" });
+    expect(mocks.writeAuditLog).toHaveBeenCalledTimes(1);
   });
 
   it.each([["enabling", true], ["disabling", false]])("schedules an immediate tenant-bound re-materialization after the commit when %s evergreen", async (_label, enable) => {

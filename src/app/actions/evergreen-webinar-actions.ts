@@ -8,7 +8,10 @@ import { auditSnapshot, writeAuditLog } from "@/lib/audit";
 import { assertServerActionSecurity } from "@/lib/csrf";
 import { getDb } from "@/lib/db";
 import { scheduleEvergreenRematerialization } from "@/lib/evergreen-rematerialization";
-import { supersedeLiveNotificationDeliveriesForLifecycle } from "@/lib/live-notification-delivery";
+import {
+  supersedeFixedTimeNotificationsForActiveEvergreen,
+  supersedeLiveNotificationDeliveriesForLifecycle,
+} from "@/lib/live-notification-delivery";
 import { queueLiveReminderReconciliationForCurrentLive } from "@/lib/live-reminder-reconciliation";
 import { captureOperationalError } from "@/lib/monitoring";
 import { isTransientTransactionConflict, runSerializable } from "@/lib/serializable-retry";
@@ -135,6 +138,26 @@ async function saveEvergreenTransaction(
 }
 
 /**
+ * Enabling, after the commit: also cancel a fixed-time row that a
+ * materialization in flight during the save committed after the save's
+ * Serializable snapshot (see supersedeFixedTimeNotificationsForActiveEvergreen).
+ * The send-time snapshot check stays the last guard if this pass fails, so a
+ * failure is reported and the saved setting stands.
+ */
+async function supersedeInFlightAfterEnabling(input: { enabling: boolean; vendorId: string; liveId: string }) {
+  if (!input.enabling) return;
+  try {
+    await supersedeFixedTimeNotificationsForActiveEvergreen({ vendorId: input.vendorId, liveId: input.liveId });
+  } catch (error) {
+    try {
+      captureOperationalError(error, { source: "evergreen_settings", operation: "supersede_in_flight", status: "failed" });
+    } catch {
+      // Monitoring must never turn a saved setting into a 500.
+    }
+  }
+}
+
+/**
  * Saves vendor-owned Evergreen settings. The Live is looked up with the
  * current vendor ID and the eventual update repeats that qualification, so a
  * forged liveId can never cross the selected tenant boundary.
@@ -225,6 +248,8 @@ export async function updateEvergreenWebinarSettingsAction(formData: FormData) {
     if (settings.isEvergreen) redirectToSettings(live.id, "evergreen_live_changed");
     redirect("/lives?error=live_not_found");
   }
+
+  await supersedeInFlightAfterEnabling({ enabling: settings.isEvergreen, vendorId: vendor.id, liveId: live.id });
 
   // Re-materialize before-live reminders and notification rules now instead of
   // waiting for the scheduled job. Idempotent with that job; never throws.
