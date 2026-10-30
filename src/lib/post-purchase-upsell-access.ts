@@ -107,8 +107,10 @@ export async function resolvePaidOrderPostPurchaseOffer(
   const availableCandidates = candidates.map(({ revision, ...candidate }) => {
     // Only the checkout's successful reserve proof permits its own final unit
     // to remain eligible after stock reaches zero inside the same transaction.
+    // Stock writes do not move the content revision (B-2), so the proof is
+    // the same-transaction decrement at the revision this read still sees.
     const ownsReservedUnit = reserved?.vendorId === input.vendorId && reserved.productId === candidate.id
-      && reserved.afterRevision === reserved.beforeRevision + 1 && revision === reserved.afterRevision;
+      && reserved.quantity === 1 && revision === reserved.revision;
     return ownsReservedUnit ? { ...candidate, inventory: candidate.inventory + 1 } : candidate;
   });
   // Keep the live product's offer configuration and availability checks, but

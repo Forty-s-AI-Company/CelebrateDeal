@@ -218,7 +218,7 @@ beforeEach(() => {
       await createCommerceOrder({
         liveInteractionResponse: { updateMany: liveInteractionMocks.consumeLive },
         automationVoucherGrant: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
-      }, transaction, [{ vendorId: "vendor-1", productId: "product-1", beforeRevision: 4, afterRevision: 5 }]);
+      }, transaction, [{ vendorId: "vendor-1", productId: "product-1", revision: 4, quantity: 1 }]);
     }
     return transaction;
   });
@@ -267,7 +267,7 @@ describe("successful checkout response", () => {
     }));
     expect(postPurchaseMocks.consume).toHaveBeenCalledWith(expect.anything(), expect.anything(), {
       token: postPurchaseToken, quote: upgradeQuote, targetOrderId: "order-1",
-      reserved: { vendorId: "vendor-1", productId: "product-1", beforeRevision: 4, afterRevision: 5 },
+      reserved: { vendorId: "vendor-1", productId: "product-1", revision: 4, quantity: 1 },
     });
     expect(createCheckoutSession).toHaveBeenCalledWith(expect.objectContaining({
       transaction: expect.objectContaining({ grossAmountCents: 400, netAmountCents: 400 }),

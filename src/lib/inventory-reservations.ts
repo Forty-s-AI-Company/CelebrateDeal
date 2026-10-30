@@ -12,7 +12,14 @@ export const INVENTORY_RESERVATION_TTL_MS = 30 * 60 * 1000;
 
 // F-055: a hot product in a flash sale aborts many Serializable attempts;
 // retry more often, with exponential backoff and full jitter.
-const MAX_SERIALIZABLE_ATTEMPTS = 5;
+// B-2: with stock no longer moving the content revision, concurrent buyers
+// of one product are no longer sent back to reload; they all wait here
+// instead. Every concurrent stock write to the same Product row aborts the
+// others (first updater wins), so commits on a hot product are serial and a
+// burst needs a retry window wider than (buyers x transaction time). Twelve
+// attempts capped at 1 s cover the 50-buyer burst in
+// serializable-stress.db.test.ts (worst-case total backoff about 6.6 s).
+const MAX_SERIALIZABLE_ATTEMPTS = 12;
 
 export class InventoryUnavailableError extends Error {
   constructor() {
@@ -160,7 +167,7 @@ function runSerializable<T>(operation: (tx: Prisma.TransactionClient) => Promise
   return runSharedSerializable(getDb(), operation, {
     attempts: MAX_SERIALIZABLE_ATTEMPTS,
     baseDelayMs: 25,
-    maxDelayMs: 400,
+    maxDelayMs: 1_000,
     // Production intentionally runs with a small serverless connection
     // pool. Concurrent checkout attempts should queue long enough to
     // resolve through the inventory invariant, not fail at pool admission.
@@ -169,12 +176,26 @@ function runSerializable<T>(operation: (tx: Prisma.TransactionClient) => Promise
   });
 }
 
-/** 成功以 expected revision 保留庫存後，供同交易訂單 callback 驗證的版本證據。 */
+/**
+ * B-2: `Product.revision` is the product *content* version (price, title,
+ * options, offer configuration). It moves only when the merchant edits the
+ * product (product-actions, course-curriculum). Stock writes in this module
+ * never move it: the `inventory >= quantity` conditional decrement is the
+ * stock invariant, and merchant stock edits use their own compare-and-set on
+ * the inventory value they loaded. Concurrent buyers of an unchanged product
+ * therefore keep a valid admission while stock lasts.
+ *
+ * Evidence handed to the same-transaction order callback: this transaction
+ * decremented `quantity` units of the product, and its compare-and-set proved
+ * the content revision was exactly `revision` at that moment. Only
+ * `createReservedPaymentTransaction` builds it; it is never parsed from a
+ * request.
+ */
 export type ReservedInventoryRevision = {
   vendorId: string;
   productId: string;
-  beforeRevision: number;
-  afterRevision: number;
+  revision: number;
+  quantity: number;
 };
 
 export async function createReservedPaymentTransaction({
@@ -223,6 +244,9 @@ export async function createReservedPaymentTransaction({
       // Always mutate products in a stable order. This keeps two multi-item
       // checkout attempts from taking locks in opposite directions.
       for (const item of orderedReservationItems(reservationItems)) {
+        // The revision condition rejects stale content (price, terms); the
+        // inventory condition alone guards stock. Stock-only writes leave the
+        // content revision unchanged, so other admitted buyers stay valid.
         const reserved = await tx.product.updateMany({
           where: {
             id: item.productId,
@@ -231,7 +255,7 @@ export async function createReservedPaymentTransaction({
             inventory: { gte: item.quantity },
             ...(item.expectedProductRevision !== undefined ? { revision: item.expectedProductRevision } : {}),
           },
-          data: { inventory: { decrement: item.quantity }, revision: { increment: 1 } },
+          data: { inventory: { decrement: item.quantity } },
         });
         if (reserved.count === 1) continue;
         if (item.expectedProductRevision !== undefined) {
@@ -248,8 +272,8 @@ export async function createReservedPaymentTransaction({
       if (createCommerceOrder) await createCommerceOrder(tx, transaction, reservationItems.flatMap((item) =>
         item.expectedProductRevision === undefined ? [] : [{
           vendorId, productId: item.productId,
-          beforeRevision: item.expectedProductRevision,
-          afterRevision: item.expectedProductRevision + 1,
+          revision: item.expectedProductRevision,
+          quantity: item.quantity,
         }]));
       await tx.inventoryReservation.create({
         data: {
@@ -300,7 +324,7 @@ async function releaseReservation(
   for (const item of orderedReservationItems(snapshotReservationItems(reservation))) {
     const restocked = await tx.product.updateMany({
       where: { id: item.productId, vendorId: reservation.vendorId },
-      data: { inventory: { increment: item.quantity }, revision: { increment: 1 } },
+      data: { inventory: { increment: item.quantity } },
     });
     if (restocked.count !== 1) throw new Error("Inventory reservation product is unavailable for release.");
   }
@@ -333,7 +357,7 @@ export async function reacquireReleasedCheckoutInventory(
     const reserved = await tx.product.updateMany({
       where: { id: item.productId, vendorId: input.vendorId, isActive: true,
         fulfillmentTypeConfirmed: true, inventory: { gte: item.quantity } },
-      data: { inventory: { decrement: item.quantity }, revision: { increment: 1 } },
+      data: { inventory: { decrement: item.quantity } },
     });
     if (reserved.count !== 1) throw new InventoryUnavailableError();
   }
@@ -443,7 +467,7 @@ export async function applyPaymentInventoryTransition(
           isActive: true,
           inventory: { gte: item.quantity },
         },
-        data: { inventory: { decrement: item.quantity }, revision: { increment: 1 } },
+        data: { inventory: { decrement: item.quantity } },
       });
       if (reacquired.count !== 1) throw new InventoryUnavailableError();
     }
