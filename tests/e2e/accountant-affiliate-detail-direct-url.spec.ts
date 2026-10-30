@@ -371,7 +371,10 @@ test("active accountant is denied a same-tenant affiliate detail before sensitiv
     // Commission settlement now lives behind the single 設定 hub entry.
     await page.getByRole("navigation", { name: "主要導覽" }).getByRole("link", { name: "設定", exact: true }).click();
     await expect(page).toHaveURL(/\/settings$/u);
-    const commissionLink = page.getByRole("link", { name: "佣金結算", exact: true });
+    // Hub cards carry a description, so match by destination rather than the exact link name.
+    await expect(page.getByRole("heading", { name: "設定", level: 1, exact: true })).toBeVisible();
+    const commissionLink = page.locator('main a[href="/affiliates/commissions"]');
+    await expect(commissionLink).toContainText("佣金結算");
     await expect(commissionLink).toBeVisible();
     await expect(commissionLink).toHaveAttribute("href", "/affiliates/commissions");
     await expect(page.locator('a[href="/affiliates"]')).toHaveCount(0);
