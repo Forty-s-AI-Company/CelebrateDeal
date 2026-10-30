@@ -166,6 +166,22 @@ describe("POST /api/jobs/email-deliveries", () => {
       status: "failed",
     });
   });
+
+  it("does not let a failing first due-notification pass abort the rest of the round", async () => {
+    mocks.processDueLiveNotifications
+      .mockRejectedValueOnce(new Error("serialization-private-detail"))
+      .mockResolvedValueOnce([]);
+    mocks.processDueEmailDeliveries.mockResolvedValue([{ deliveryId: "private-due", status: "sent" }]);
+    const response = await POST(request("g7-07-job-secret"));
+    expect(response.status).toBe(200);
+    expect(mocks.processDueEmailDeliveries).toHaveBeenCalledOnce();
+    expect(mocks.captureOperationalError).toHaveBeenCalledWith(expect.any(Error), {
+      source: "email_delivery_job",
+      operation: "due_live_notifications",
+      status: "failed",
+    });
+    expect(JSON.stringify(await response.json())).not.toContain("serialization-private-detail");
+  });
 });
 
 describe("GET /api/jobs/email-deliveries", () => {

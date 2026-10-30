@@ -1,12 +1,29 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+const ctx = vi.hoisted(() => ({ vendor: { id: "", timezone: "Asia/Taipei" } }));
+
+vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
+vi.mock("next/navigation", () => ({ redirect: (path: string) => { throw new Error(`REDIRECT:${path}`); } }));
+vi.mock("@/lib/csrf", () => ({ assertServerActionSecurity: vi.fn() }));
+vi.mock("@/lib/audit", () => ({ auditSnapshot: (value: unknown) => value, writeAuditLog: vi.fn() }));
+vi.mock("@/lib/auth", () => ({
+  requireVendorManagerContext: async () => ({
+    auth: { user: { id: "user-disposable" }, member: { role: "owner" } },
+    vendor: ctx.vendor,
+  }),
+}));
+
+import { updateEvergreenWebinarSettingsAction } from "@/app/actions/evergreen-webinar-actions";
 import { getDb } from "@/lib/db";
 import { rematerializeEvergreenLiveNow } from "@/lib/evergreen-rematerialization";
-import { processDueLiveNotifications, supersedeLiveNotificationDeliveriesForLifecycle } from "@/lib/live-notification-delivery";
-import { processLiveReminderReconciliationJobs, queueLiveReminderReconciliationForCurrentLive } from "@/lib/live-reminder-reconciliation";
+import { processDueLiveNotifications } from "@/lib/live-notification-delivery";
+import { processLiveReminderReconciliationJobs } from "@/lib/live-reminder-reconciliation";
 
 const createdVendorIds: string[] = [];
-const now = new Date("2026-10-30T00:00:00.000Z");
-const scheduledAt = new Date("2026-12-10T04:00:00.000Z");
+const now = new Date();
+const scheduledAt = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1_000);
+/** The real action stamps jobs with the wall clock, so the follow-up runs use a later one. */
+const later = () => new Date(Date.now() + 1_000);
 
 beforeEach(() => {
   vi.stubEnv("CSRF_SECRET", "evergreen-rematerialization-disposable-secret-longer-than-thirty-two-bytes");
@@ -18,7 +35,9 @@ afterEach(async () => {
   vi.unstubAllEnvs();
 });
 
-async function createFixture(label: string, options: { legacyReminder: boolean }) {
+type Fixture = Awaited<ReturnType<typeof createFixture>>;
+
+async function createFixture(label: string, options: { legacyReminder: boolean; registrants?: number; isEvergreen?: boolean }) {
   const db = getDb();
   const suffix = `${label}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
   const vendor = await db.vendor.create({
@@ -44,7 +63,7 @@ async function createFixture(label: string, options: { legacyReminder: boolean }
       scheduledAt,
       status: "scheduled",
       streamMode: "vod",
-      isEvergreen: true,
+      isEvergreen: options.isEvergreen ?? true,
       ...(options.legacyReminder ? { liveReminderTemplateId: template.id, liveReminderOffsetMinutes: 60 } : {}),
     },
   });
@@ -53,39 +72,36 @@ async function createFixture(label: string, options: { legacyReminder: boolean }
     : await db.liveNotificationRule.create({
       data: { vendorId: vendor.id, liveId: live.id, messageTemplateId: template.id, trigger: "before_live", offsetMinutes: 60 },
     });
-  await db.formSubmission.create({
-    data: {
-      formId: form.id,
-      liveId: live.id,
-      name: "Verified Lead",
-      email: `lead-${suffix}@example.test`,
-      verificationStatus: "VERIFIED",
-      verifiedAt: now,
-    },
-  });
-  return { vendor, live, rule };
-}
-
-/** Mirrors the evergreen settings transaction: write the flag, then queue reconciliation. */
-async function saveEvergreen(fixture: Awaited<ReturnType<typeof createFixture>>, isEvergreen: boolean) {
-  await getDb().$transaction(async (tx) => {
-    const updated = await tx.live.updateMany({
-      where: { id: fixture.live.id, vendorId: fixture.vendor.id },
-      data: { isEvergreen },
+  const submissionIds: string[] = [];
+  for (let index = 0; index < (options.registrants ?? 1); index += 1) {
+    const submission = await db.formSubmission.create({
+      data: {
+        formId: form.id,
+        liveId: live.id,
+        name: `Verified Lead ${index}`,
+        email: `lead-${index}-${suffix}@example.test`,
+        verificationStatus: "VERIFIED",
+        verifiedAt: now,
+      },
     });
-    expect(updated.count).toBe(1);
-    if (isEvergreen) {
-      await supersedeLiveNotificationDeliveriesForLifecycle(tx, {
-        vendorId: fixture.vendor.id,
-        liveId: fixture.live.id,
-        triggers: ["before_live", "during_live"],
-      });
-    }
-    await queueLiveReminderReconciliationForCurrentLive(tx, { vendorId: fixture.vendor.id, liveId: fixture.live.id, now });
-  });
+    submissionIds.push(submission.id);
+  }
+  return { vendor, form, template, live, rule, submissionIds };
 }
 
-function reminderCount(fixture: Awaited<ReturnType<typeof createFixture>>, trigger: string, status?: string) {
+/** Runs the real Server Action (real Serializable transaction, real queries) as this fixture's vendor. */
+async function saveEvergreen(fixture: Fixture, isEvergreen: boolean) {
+  ctx.vendor = { id: fixture.vendor.id, timezone: fixture.vendor.timezone };
+  const data = new FormData();
+  data.set("liveId", fixture.live.id);
+  if (isEvergreen) data.set("isEvergreen", "on");
+  data.set("evergreenScheduleMode", "just_in_time");
+  data.set("evergreenIntervalMinutes", "15");
+  data.set("evergreenPreviewRate", "1");
+  await expect(updateEvergreenWebinarSettingsAction(data)).rejects.toThrow(`REDIRECT:/lives/${fixture.live.id}/edit?notice=evergreen_saved`);
+}
+
+function deliveryCount(fixture: Fixture, trigger: string, status?: string) {
   return getDb().emailDelivery.count({
     where: { vendorId: fixture.vendor.id, sourceLiveId: fixture.live.id, trigger, ...(status ? { status } : {}) },
   });
@@ -95,56 +111,92 @@ describe("evergreen settings re-materialization (disposable PostgreSQL)", () => 
   it("schedules the legacy live reminder right after evergreen is turned off, and the scheduled job adds nothing", async () => {
     const fixture = await createFixture("legacy", { legacyReminder: true });
     await saveEvergreen(fixture, true);
-    expect(await reminderCount(fixture, "live_reminder")).toBe(0);
+    expect(await deliveryCount(fixture, "live_reminder")).toBe(0);
 
     await saveEvergreen(fixture, false);
     // The save only queued the job; nothing is scheduled until it is worked off.
-    expect(await reminderCount(fixture, "live_reminder")).toBe(0);
+    expect(await deliveryCount(fixture, "live_reminder")).toBe(0);
 
-    const outcome = await rematerializeEvergreenLiveNow({ vendorId: fixture.vendor.id, liveId: fixture.live.id, now });
+    const outcome = await rematerializeEvergreenLiveNow({ vendorId: fixture.vendor.id, liveId: fixture.live.id, now: later() });
     expect(outcome).toMatchObject({ reminderJobs: 1, failed: [] });
-    expect(await reminderCount(fixture, "live_reminder", "queued")).toBe(1);
-    expect(await getDb().liveReminderReconciliationJob.findMany({
+    expect(await deliveryCount(fixture, "live_reminder", "queued")).toBe(1);
+    expect(await getDb().liveReminderReconciliationJob.count({
       where: { vendorId: fixture.vendor.id, liveId: fixture.live.id, lifecycle: "pending" },
-    })).toHaveLength(0);
+    })).toBe(0);
 
     // Idempotency: the scheduled job, and a repeated immediate run, find nothing to do.
-    expect(await processLiveReminderReconciliationJobs({ now })).not.toContainEqual(expect.objectContaining({ status: "pending" }));
-    await rematerializeEvergreenLiveNow({ vendorId: fixture.vendor.id, liveId: fixture.live.id, now });
-    expect(await reminderCount(fixture, "live_reminder")).toBe(1);
+    expect(await processLiveReminderReconciliationJobs({ now: later() })).not.toContainEqual(expect.objectContaining({ status: "pending" }));
+    await rematerializeEvergreenLiveNow({ vendorId: fixture.vendor.id, liveId: fixture.live.id, now: later() });
+    expect(await deliveryCount(fixture, "live_reminder")).toBe(1);
   });
 
   it("materializes before_live rules right after evergreen is turned off, and is idempotent with the scheduled job", async () => {
     const fixture = await createFixture("rules", { legacyReminder: false });
     await saveEvergreen(fixture, true);
-    await rematerializeEvergreenLiveNow({ vendorId: fixture.vendor.id, liveId: fixture.live.id, now });
-    expect(await reminderCount(fixture, "before_live")).toBe(0);
+    await rematerializeEvergreenLiveNow({ vendorId: fixture.vendor.id, liveId: fixture.live.id, now: later() });
+    expect(await deliveryCount(fixture, "before_live")).toBe(0);
 
     await saveEvergreen(fixture, false);
-    expect(await reminderCount(fixture, "before_live")).toBe(0);
+    expect(await deliveryCount(fixture, "before_live")).toBe(0);
 
-    await rematerializeEvergreenLiveNow({ vendorId: fixture.vendor.id, liveId: fixture.live.id, now });
-    expect(await reminderCount(fixture, "before_live", "queued")).toBe(1);
+    await rematerializeEvergreenLiveNow({ vendorId: fixture.vendor.id, liveId: fixture.live.id, now: later() });
+    expect(await deliveryCount(fixture, "before_live", "queued")).toBe(1);
 
     // The scheduled materializer and a second immediate run converge on the same row.
-    await processDueLiveNotifications({ now, vendorId: fixture.vendor.id, includeFuture: true });
-    await rematerializeEvergreenLiveNow({ vendorId: fixture.vendor.id, liveId: fixture.live.id, now });
-    expect(await reminderCount(fixture, "before_live")).toBe(1);
+    await processDueLiveNotifications({ now: later(), vendorId: fixture.vendor.id, includeFuture: true });
+    await rematerializeEvergreenLiveNow({ vendorId: fixture.vendor.id, liveId: fixture.live.id, now: later() });
+    expect(await deliveryCount(fixture, "before_live")).toBe(1);
   });
 
-  it("cancels queued before_live emails when evergreen is turned on and does not re-create them", async () => {
+  it("cancels only queued or failed before_live emails of this live when evergreen is turned on", async () => {
     const fixture = await createFixture("enable", { legacyReminder: false });
+    const other = await createFixture("enable-other-vendor", { legacyReminder: false });
+    const db = getDb();
+    const siblingLive = await db.live.create({
+      data: {
+        vendorId: fixture.vendor.id, formId: fixture.form.id, videoId: fixture.live.videoId, title: "Sibling", slug: `${fixture.live.slug}-sibling`,
+        scheduledAt, status: "scheduled", streamMode: "vod", isEvergreen: false,
+      },
+    });
+    const seed = (id: string, owner: { vendorId: string; liveId: string; templateId: string }, status: string, trigger = "before_live") =>
+      db.emailDelivery.create({
+        data: {
+          id, vendorId: owner.vendorId, sourceTemplateId: owner.templateId, sourceLiveId: owner.liveId, sourceFormSubmissionId: null, trigger,
+          payloadEncryptedEnvelope: "disposable", recipientHash: `hash-${id}`, recipientMaskedEmail: "d***@example.test",
+          idempotencyKey: `key-${id}`, status, maxAttempts: 5, nextAttemptAt: status === "sent" ? null : now,
+        },
+      });
+    const mine = { vendorId: fixture.vendor.id, liveId: fixture.live.id, templateId: fixture.template.id };
+    const tag = Math.random().toString(36).slice(2, 8);
+    await Promise.all([
+      seed(`${tag}-queued`, mine, "queued"),
+      seed(`${tag}-failed`, mine, "failed"),
+      seed(`${tag}-during`, mine, "queued", "during_live"),
+      seed(`${tag}-sent`, mine, "sent"),
+      seed(`${tag}-suppressed`, mine, "suppressed"),
+      seed(`${tag}-sending`, mine, "sending"),
+      seed(`${tag}-sibling`, { vendorId: fixture.vendor.id, liveId: siblingLive.id, templateId: fixture.template.id }, "queued"),
+      seed(`${tag}-other-vendor`, { vendorId: other.vendor.id, liveId: other.live.id, templateId: other.template.id }, "queued"),
+    ]);
+
     await saveEvergreen(fixture, false);
-    await rematerializeEvergreenLiveNow({ vendorId: fixture.vendor.id, liveId: fixture.live.id, now });
-    expect(await reminderCount(fixture, "before_live", "queued")).toBe(1);
-
     await saveEvergreen(fixture, true);
-    expect(await reminderCount(fixture, "before_live", "superseded")).toBe(1);
 
-    await rematerializeEvergreenLiveNow({ vendorId: fixture.vendor.id, liveId: fixture.live.id, now });
-    await processDueLiveNotifications({ now, vendorId: fixture.vendor.id, includeFuture: true });
-    expect(await reminderCount(fixture, "before_live")).toBe(1);
-    expect(await reminderCount(fixture, "before_live", "queued")).toBe(0);
+    const statusOf = async (suffix: string) => (await db.emailDelivery.findUnique({ where: { id: `${tag}-${suffix}` }, select: { status: true } }))?.status;
+    expect(await statusOf("queued")).toBe("superseded");
+    expect(await statusOf("failed")).toBe("superseded");
+    expect(await statusOf("during")).toBe("superseded");
+    expect(await statusOf("sent")).toBe("sent");
+    expect(await statusOf("suppressed")).toBe("suppressed");
+    expect(await statusOf("sending")).toBe("sending");
+    expect(await statusOf("sibling")).toBe("queued");
+    expect(await statusOf("other-vendor")).toBe("queued");
+
+    // Evergreen stays on: re-materialization and the scheduled pass create nothing new.
+    const before = await db.emailDelivery.count({ where: { vendorId: fixture.vendor.id } });
+    await rematerializeEvergreenLiveNow({ vendorId: fixture.vendor.id, liveId: fixture.live.id, now: later() });
+    await processDueLiveNotifications({ now: later(), vendorId: fixture.vendor.id, includeFuture: true });
+    expect(await db.emailDelivery.count({ where: { vendorId: fixture.vendor.id } })).toBe(before);
   });
 
   it("stays inside the tenant: another vendor's pending job and a foreign live id are untouched", async () => {
@@ -153,13 +205,38 @@ describe("evergreen settings re-materialization (disposable PostgreSQL)", () => 
     await saveEvergreen(b, false);
 
     // Vendor A's id with vendor B's live must do nothing at all.
-    await rematerializeEvergreenLiveNow({ vendorId: a.vendor.id, liveId: b.live.id, now });
-    expect(await reminderCount(b, "live_reminder")).toBe(0);
+    await rematerializeEvergreenLiveNow({ vendorId: a.vendor.id, liveId: b.live.id, now: later() });
+    expect(await deliveryCount(b, "live_reminder")).toBe(0);
     expect(await getDb().liveReminderReconciliationJob.count({ where: { vendorId: b.vendor.id, lifecycle: "pending" } })).toBe(1);
 
-    await rematerializeEvergreenLiveNow({ vendorId: a.vendor.id, liveId: a.live.id, now });
-    expect(await reminderCount(a, "live_reminder", "queued")).toBe(1);
-    expect(await reminderCount(b, "live_reminder")).toBe(0);
+    await rematerializeEvergreenLiveNow({ vendorId: a.vendor.id, liveId: a.live.id, now: later() });
+    expect(await deliveryCount(a, "live_reminder", "queued")).toBe(1);
+    expect(await deliveryCount(b, "live_reminder")).toBe(0);
     expect(await getDb().liveReminderReconciliationJob.count({ where: { vendorId: b.vendor.id, lifecycle: "pending" } })).toBe(1);
+  });
+
+  it.each([1, 2, 3])("immediate re-materialization racing the scheduled job (round %i) never throws and leaves exactly one delivery per registrant", async () => {
+    const fixture = await createFixture("race", { legacyReminder: false, registrants: 4, isEvergreen: false });
+    const scope = { vendorId: fixture.vendor.id, liveId: fixture.live.id, now: later() };
+
+    const settled = await Promise.allSettled([
+      rematerializeEvergreenLiveNow(scope),
+      processDueLiveNotifications({ now: later(), vendorId: fixture.vendor.id, includeFuture: true }),
+      rematerializeEvergreenLiveNow(scope),
+      processDueLiveNotifications({ now: later(), vendorId: fixture.vendor.id, includeFuture: true }),
+    ]);
+    // Nothing escapes: a conflict is retried, and one that outlives the retries is contained per recipient.
+    expect(settled.filter((result) => result.status === "rejected")).toEqual([]);
+
+    // A recipient skipped by a contained conflict is picked up by the next pass.
+    await processDueLiveNotifications({ now: later(), vendorId: fixture.vendor.id, includeFuture: true });
+
+    const rows = await getDb().emailDelivery.findMany({
+      where: { vendorId: fixture.vendor.id, sourceLiveId: fixture.live.id, trigger: "before_live" },
+      select: { sourceFormSubmissionId: true, status: true },
+    });
+    expect(rows).toHaveLength(fixture.submissionIds.length);
+    expect(rows.map((row) => row.sourceFormSubmissionId).sort()).toEqual([...fixture.submissionIds].sort());
+    expect(new Set(rows.map((row) => row.status))).toEqual(new Set(["queued"]));
   });
 });

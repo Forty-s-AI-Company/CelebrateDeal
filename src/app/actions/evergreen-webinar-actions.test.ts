@@ -240,8 +240,8 @@ describe("updateEvergreenWebinarSettingsAction", () => {
 
     it.each([
       ["P2034", p2034],
-      ["a raw 40001", () => Object.assign(new Error("could not serialize access due to concurrent update"), { code: "P2010", meta: { code: "40001" } })],
-      ["a raw 40P01 deadlock", () => Object.assign(new Error("deadlock detected"), { code: "P2010", meta: { code: "40P01" } })],
+      ["a raw 40001", () => new Prisma.PrismaClientKnownRequestError("could not serialize access due to concurrent update", { code: "P2010", clientVersion: "test", meta: { code: "40001" } })],
+      ["a raw 40P01 deadlock", () => new Prisma.PrismaClientKnownRequestError("deadlock detected", { code: "P2010", clientVersion: "test", meta: { code: "40P01" } })],
     ])("returns a friendly retry error, logs it and skips side effects when %s persists", async (_label, makeError) => {
       mocks.transaction.mockImplementation(async () => { throw makeError(); });
 

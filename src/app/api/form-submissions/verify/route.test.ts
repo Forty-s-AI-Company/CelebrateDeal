@@ -135,7 +135,7 @@ describe("POST /api/form-submissions/verify", () => {
   });
 
   it("重試後仍然衝突時導向「請重試」而不是「連結無效」，並記錄監控", async () => {
-    const deadlock = Object.assign(new Error("deadlock detected"), { code: "P2010", meta: { code: "40P01" } });
+    const deadlock = new Prisma.PrismaClientKnownRequestError("deadlock detected", { code: "P2010", clientVersion: "test", meta: { code: "40P01" } });
     mocks.verifyFormSubmission.mockRejectedValue(deadlock);
 
     const response = await POST(request());

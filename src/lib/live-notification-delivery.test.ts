@@ -1,3 +1,4 @@
+import { Prisma } from "@prisma/client";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
@@ -145,6 +146,39 @@ describe("canonical materialization and send-time snapshot", () => {
       }),
     }));
     expect(mocks.db.emailDelivery.create).toHaveBeenCalledTimes(1);
+  });
+
+  it("retries a Serializable conflict (P2034) on the idempotent materialization and then queues once", async () => {
+    mockCurrent(current("before_live"));
+    mocks.db.$transaction.mockRejectedValueOnce(new Prisma.PrismaClientKnownRequestError("write conflict", { code: "P2034", clientVersion: "test" }));
+
+    await expect(ensureLiveNotificationDelivery({ vendorId: "vendor-1", liveId: "live-1", ruleId: "rule-1", submissionId: "submission-1" }, now))
+      .resolves.toMatchObject({ status: "queued" });
+    expect(mocks.db.$transaction).toHaveBeenCalledTimes(2);
+    expect(mocks.db.emailDelivery.create).toHaveBeenCalledTimes(1);
+  });
+
+  it("gives up after bounded retries on a persistent conflict instead of looping", async () => {
+    mockCurrent(current("before_live"));
+    mocks.db.$transaction.mockRejectedValue(new Prisma.PrismaClientKnownRequestError("write conflict", { code: "P2034", clientVersion: "test" }));
+
+    await expect(ensureLiveNotificationDelivery({ vendorId: "vendor-1", liveId: "live-1", ruleId: "rule-1", submissionId: "submission-1" }, now))
+      .rejects.toMatchObject({ code: "P2034" });
+    expect(mocks.db.$transaction).toHaveBeenCalledTimes(3);
+  });
+
+  it("contains a conflict that outlives the retries so one recipient cannot stop the whole round", async () => {
+    const value = current("before_live", { scheduledAt: new Date("2026-08-18T04:05:00.000Z") });
+    mocks.db.liveNotificationRule.count.mockResolvedValue(1);
+    mocks.db.liveNotificationRule.findMany.mockResolvedValue([{ id: "rule-1", vendorId: "vendor-1", liveId: "live-1", trigger: "before_live", offsetMinutes: 1 }]);
+    mocks.db.live.findFirst.mockResolvedValue(value.live);
+    mocks.db.formSubmission.count.mockResolvedValue(2);
+    mocks.db.formSubmission.findMany.mockImplementation(async ({ skip }: { skip: number }) => [{ id: skip === 0 ? "submission-1" : "submission-2" }]);
+    mocks.db.$transaction.mockRejectedValue(new Prisma.PrismaClientKnownRequestError("write conflict", { code: "P2034", clientVersion: "test" }));
+
+    await expect(processDueLiveNotifications({ now, vendorId: "vendor-1", recipientLimitPerRule: 1 }))
+      .resolves.toEqual([{ status: "error" }, { status: "error" }]);
+    expect(mocks.captureOperationalError).toHaveBeenCalledWith(expect.anything(), { source: "live_notification", operation: "materialize", status: "failed" });
   });
 
   it("does not backfill before after start or during after end", async () => {

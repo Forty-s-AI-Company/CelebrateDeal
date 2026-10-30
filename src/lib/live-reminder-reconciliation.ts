@@ -491,7 +491,8 @@ async function processClaimedJob(db: ReconciliationDb, job: ReconciliationJob, b
  * Processes a bounded number of jobs and verified submissions without exposing PII.
  * `vendorId` (with optional `liveId`) narrows the run to one tenant's jobs so a
  * request that just queued a job can work it off immediately; a `liveId`
- * without a `vendorId` is ignored rather than widening the scope. The claim is
+ * without a `vendorId` is rejected (returns `[]`) rather than widening to all
+ * tenants. The claim is
  * a compare-and-set, so this and the scheduled job never process one job twice.
  */
 export async function processLiveReminderReconciliationJobs(options: {
@@ -501,6 +502,8 @@ export async function processLiveReminderReconciliationJobs(options: {
   vendorId?: string;
   liveId?: string;
 } = {}) {
+  // A live id is only meaningful inside a tenant: never widen to all tenants.
+  if (options.liveId && !options.vendorId) return [];
   const db = asReconciliationDb(getDb());
   const now = options.now ?? new Date();
   const limit = Math.max(1, Math.min(25, options.limit ?? 5));

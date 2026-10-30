@@ -29,24 +29,26 @@ export function isSerializationFailure(error: unknown) {
 }
 
 const TRANSIENT_SQLSTATES = new Set(["40001", "40P01"]);
-const TRANSIENT_MESSAGE = /\b(?:40001|40P01)\b|could not serialize access|deadlock detected|write conflict or a deadlock/iu;
+const TRANSIENT_MESSAGE = /could not serialize access|deadlock detected/iu;
 
 /**
  * A transaction abort that is safe to re-run when the whole operation is
- * idempotent: Prisma P2034, or the raw PostgreSQL SQLSTATEs serialization
- * failure (40001) and deadlock (40P01) when the driver surfaces them without
- * the P2034 mapping (for example as P2010 or an unknown request error).
+ * idempotent: Prisma P2034, or the PostgreSQL SQLSTATEs serialization failure
+ * (40001) and deadlock (40P01) when the driver surfaces them without the P2034
+ * mapping. Only Prisma request errors qualify, so an application or validation
+ * error that merely mentions a number is never retried. A known error is
+ * matched on its structured `code` / `meta.code`; an unknown request error
+ * carries no code, so only the two PostgreSQL phrases are accepted.
  */
 export function isTransientTransactionConflict(error: unknown) {
   if (isSerializationFailure(error)) return true;
-  if (typeof error !== "object" || error === null) return false;
-  const meta = (error as { meta?: unknown }).meta;
-  const metaCode = typeof meta === "object" && meta !== null ? (meta as { code?: unknown }).code : undefined;
-  if (typeof metaCode === "string" && TRANSIENT_SQLSTATES.has(metaCode)) return true;
-  const code = (error as { code?: unknown }).code;
-  if (typeof code === "string" && TRANSIENT_SQLSTATES.has(code)) return true;
-  const message = (error as { message?: unknown }).message;
-  return typeof message === "string" && TRANSIENT_MESSAGE.test(message);
+  if (error instanceof Prisma.PrismaClientKnownRequestError) {
+    const meta = error.meta as { code?: unknown } | undefined;
+    return TRANSIENT_SQLSTATES.has(error.code)
+      || (typeof meta?.code === "string" && TRANSIENT_SQLSTATES.has(meta.code))
+      || TRANSIENT_MESSAGE.test(error.message);
+  }
+  return error instanceof Prisma.PrismaClientUnknownRequestError && TRANSIENT_MESSAGE.test(error.message);
 }
 
 const DEFAULT_BASE_DELAY_MS = 20;
