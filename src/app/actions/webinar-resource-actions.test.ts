@@ -163,6 +163,9 @@ describe("upsertTemplateAction reminder reconciliation", () => {
 
     await expect(upsertTemplateAction({ status: "idle", version: 0 } as never, form)).rejects.toThrow("redirect:/messages/templates?notice=reminders_reconciling");
 
+    // B-3: READ COMMITTED so the supersede after the template update sees rows
+    // committed by materializations the update waited for.
+    expect(mocks.transaction).toHaveBeenCalledWith(expect.any(Function), { isolationLevel: "ReadCommitted" });
     expect(mocks.tx.live.findMany).toHaveBeenCalledWith(expect.objectContaining({
       where: { vendorId: "vendor-1", liveReminderTemplateId: "template-1" },
       select: expect.objectContaining({ isEvergreen: true, evergreenScheduleMode: true, video: { select: { durationSec: true } } }),

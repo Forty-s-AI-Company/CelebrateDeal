@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({
   db: {
     $transaction: vi.fn(),
     $queryRaw: vi.fn(),
+    $executeRaw: vi.fn(),
     live: { count: vi.fn(), findFirst: vi.fn(), findMany: vi.fn(), updateMany: vi.fn() },
     liveNotificationRule: { count: vi.fn(), findFirst: vi.fn(), findUnique: vi.fn(), findMany: vi.fn() },
     formSubmission: { count: vi.fn(), findFirst: vi.fn(), findMany: vi.fn() },
@@ -95,6 +96,7 @@ beforeEach(() => {
   vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://app.example.test");
   mocks.db.$transaction.mockImplementation(async (callback: (tx: typeof mocks.db) => unknown) => callback(mocks.db));
   mocks.db.$queryRaw.mockResolvedValue([{ id: "locked" }]);
+  mocks.db.$executeRaw.mockResolvedValue(1);
   mocks.db.emailSuppression.findUnique.mockResolvedValue(null);
   mocks.db.blacklist.findFirst.mockResolvedValue(null);
   mocks.db.emailDelivery.findFirst.mockResolvedValue(null);
@@ -603,7 +605,7 @@ describe("B-3 contention: READ COMMITTED with vendor-bound row locks", () => {
     expect(calls).toHaveLength(1);
     const sql = sqlOf(calls[0]!);
     expect(sql).toMatch(/^SELECT l\."id" FROM "Live" l JOIN "LiveNotificationRule" r ON r\."id" = \? AND r\."liveId" = l\."id" AND r\."vendorId" = l\."vendorId" /u);
-    expect(sql).toContain(`JOIN "MessageTemplate" t ON t."id" = r."messageTemplateId"`);
+    expect(sql).toContain(`JOIN "MessageTemplate" t ON t."id" = r."messageTemplateId" AND t."vendorId" = l."vendorId"`);
     expect(sql).toContain(`JOIN "FormSubmission" s ON s."id" = ? AND s."liveId" = l."id"`);
     expect(sql).toContain(`JOIN "RegistrationForm" f ON f."id" = s."formId" AND f."vendorId" = l."vendorId"`);
     expect(sql).toMatch(/WHERE l\."id" = \? AND l\."vendorId" = \? FOR SHARE OF l, r, t FOR NO KEY UPDATE OF s$/u);
@@ -778,5 +780,77 @@ describe("legacy cutover safety", () => {
       status: "failed",
     });
     expect(JSON.stringify(mocks.captureOperationalError.mock.calls[0]?.[1])).not.toContain("live-private");
+  });
+
+  it("locks the Live, then the rule with its template, vendor-bound, before reading or writing anything", async () => {
+    prepareCandidate();
+    mocks.db.emailDelivery.count.mockResolvedValue(0);
+    await expect(processLegacyReminderCutovers({ now, vendorId: "vendor-1" })).resolves.toEqual([{ status: "cutover" }]);
+
+    expect(mocks.db.$transaction).toHaveBeenCalledWith(expect.any(Function), { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+    const [liveLock, ruleLock] = mocks.db.$queryRaw.mock.calls;
+    const sql = (call: unknown[]) => (call[0] as TemplateStringsArray).join("?").replace(/\s+/gu, " ").trim();
+    expect(sql(liveLock!)).toBe(`SELECT "id" FROM "Live" WHERE "id" = ? AND "vendorId" = ? FOR NO KEY UPDATE`);
+    expect(liveLock!.slice(1)).toEqual(["live-1", "vendor-1"]);
+    expect(sql(ruleLock!)).toMatch(/JOIN "MessageTemplate" t ON t\."id" = r\."messageTemplateId" AND t\."vendorId" = r\."vendorId" .*FOR SHARE OF r, t$/u);
+    expect(ruleLock!.slice(1)).toEqual(["rule-1", "vendor-1", "live-1"]);
+    const [liveLockOrder, ruleLockOrder] = mocks.db.$queryRaw.mock.invocationCallOrder;
+    expect(liveLockOrder!).toBeLessThan(mocks.db.live.findFirst.mock.invocationCallOrder[0]!);
+    expect(ruleLockOrder!).toBeLessThan(mocks.db.emailDelivery.count.mock.invocationCallOrder[0]!);
+  });
+
+  it("writes nothing when the Live lock finds no row of this vendor", async () => {
+    prepareCandidate();
+    mocks.db.$queryRaw.mockResolvedValueOnce([]);
+    await expect(processLegacyReminderCutovers({ now, vendorId: "vendor-1" })).resolves.toEqual([{ status: "precondition" }]);
+    expect(mocks.db.live.findFirst).not.toHaveBeenCalled();
+    expect(mocks.db.emailDelivery.create).not.toHaveBeenCalled();
+  });
+
+  it("re-runs a deadlock or serialization failure and reports one that persists as a conflict, not a failure", async () => {
+    prepareCandidate();
+    mocks.db.emailDelivery.count.mockResolvedValue(0);
+    const deadlock = new Prisma.PrismaClientKnownRequestError("Transaction failed due to a write conflict or a deadlock", { code: "P2034", clientVersion: "test" });
+    mocks.db.$transaction.mockRejectedValueOnce(deadlock);
+    await expect(processLegacyReminderCutovers({ now, vendorId: "vendor-1" })).resolves.toEqual([{ status: "cutover" }]);
+    expect(mocks.db.$transaction).toHaveBeenCalledTimes(2);
+
+    vi.clearAllMocks();
+    prepareCandidate();
+    mocks.db.$transaction.mockRejectedValue(deadlock);
+    await expect(processLegacyReminderCutovers({ now, vendorId: "vendor-1" })).resolves.toEqual([{ status: "conflict" }]);
+    expect(mocks.db.$transaction).toHaveBeenCalledTimes(3);
+    expect(mocks.captureOperationalError).not.toHaveBeenCalled();
+  });
+});
+
+describe("B-3 lock timeout", () => {
+  const input = { vendorId: "vendor-1", liveId: "live-1", ruleId: "rule-1", submissionId: "submission-1" };
+  const lockTimeout = () => new Prisma.PrismaClientKnownRequestError(
+    "Raw query failed. Code: `55P03`. Message: `canceling statement due to lock timeout`",
+    { code: "P2010", clientVersion: "test", meta: { code: "55P03", message: "canceling statement due to lock timeout" } },
+  );
+
+  it("bounds every lock wait of the materialization before taking the first lock", async () => {
+    mockCurrent(current("before_live"));
+    await expect(ensureLiveNotificationDelivery(input, now)).resolves.toMatchObject({ status: "queued" });
+    const [setting] = mocks.db.$executeRaw.mock.calls;
+    expect((setting![0] as TemplateStringsArray).join("?")).toBe("SELECT pg_catalog.set_config('lock_timeout', ?, true)");
+    expect(setting!.slice(1)).toEqual(["2s"]);
+    expect(mocks.db.$executeRaw.mock.invocationCallOrder[0]!).toBeLessThan(mocks.db.$queryRaw.mock.invocationCallOrder[0]!);
+  });
+
+  it("re-runs the idempotent step after a lock timeout and gives up after the bounded attempts", async () => {
+    mockCurrent(current("before_live"));
+    mocks.db.$queryRaw.mockRejectedValueOnce(lockTimeout());
+    await expect(ensureLiveNotificationDelivery(input, now)).resolves.toMatchObject({ status: "queued" });
+    expect(mocks.db.$transaction).toHaveBeenCalledTimes(2);
+
+    vi.clearAllMocks();
+    mocks.db.$transaction.mockImplementation(async (callback: (tx: typeof mocks.db) => unknown) => callback(mocks.db));
+    mocks.db.$queryRaw.mockRejectedValue(lockTimeout());
+    await expect(ensureLiveNotificationDelivery(input, now)).rejects.toMatchObject({ code: "P2010" });
+    expect(mocks.db.$transaction).toHaveBeenCalledTimes(3);
+    expect(mocks.db.emailDelivery.create).not.toHaveBeenCalled();
   });
 });

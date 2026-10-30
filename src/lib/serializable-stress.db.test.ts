@@ -16,7 +16,7 @@ import { consumeFlashSaleQuote, FlashSaleUnavailableError, resolveFlashSaleQuote
 import { ensureLiveNotificationDelivery } from "@/lib/live-notification-delivery";
 import { PaymentWebhookPayload, processPaymentWebhook } from "@/lib/payment-webhooks";
 import { POST as paymentWebhookRoute } from "@/app/api/webhooks/payments/route";
-import { isTransientTransactionConflict } from "@/lib/serializable-retry";
+import { isLockTimeout, isTransientTransactionConflict } from "@/lib/serializable-retry";
 
 /**
  * F-055: concurrent callers on the most contended Serializable paths.
@@ -52,8 +52,8 @@ const MAX_BUYER_RELOADS = CONCURRENCY * 4;
 type RetryPolicy = { attempts: number; retried: ReadonlySet<TransactionOutcome> };
 const CHECKOUT_RETRY: RetryPolicy = { attempts: 5, retried: new Set(["transient"]) }; // inventory-reservations.ts
 const WEBHOOK_RETRY: RetryPolicy = { attempts: 3, retried: new Set(["transient", "unique"]) }; // payment-webhooks.ts
-// B-3: READ COMMITTED under row locks; a deadlock or a P2002 re-runs the step.
-const NOTIFICATION_RETRY: RetryPolicy = { attempts: 3, retried: new Set(["transient", "unique"]) }; // live-notification-delivery.ts MATERIALIZE_RETRY
+// B-3: READ COMMITTED under row locks; a deadlock, a lock_timeout or a P2002 re-runs the step.
+const NOTIFICATION_RETRY: RetryPolicy = { attempts: 3, retried: new Set(["transient", "lock_timeout", "unique"]) }; // live-notification-delivery.ts MATERIALIZE_RETRY
 
 const buyer = { name: "Synthetic buyer", email: "buyer@example.test", phone: "0912345678" };
 const shipping = { recipientName: "Synthetic buyer", phone: "0912345678", countryCode: "TW", postalCode: "100", administrativeArea: "台北市", locality: "中正區", addressLine1: "合成測試路 1 號" };
@@ -63,7 +63,7 @@ const shipping = { recipientName: "Synthetic buyer", phone: "0912345678", countr
 // explicit isolation level (Serializable, or the READ COMMITTED live
 // notification step) is recorded against that caller through AsyncLocalStorage.
 
-type TransactionOutcome = "committed" | "transient" | "unique" | "other";
+type TransactionOutcome = "committed" | "transient" | "lock_timeout" | "unique" | "other";
 type CallerTrace = { outcomes: TransactionOutcome[] };
 const callerTrace = new AsyncLocalStorage<CallerTrace>();
 
@@ -87,7 +87,7 @@ function instrumentTransactions() {
       trace.outcomes.push("committed");
       return value;
     }, (error: unknown) => {
-      trace.outcomes.push(isTransientTransactionConflict(error) ? "transient" : isUniqueConflict(error) ? "unique" : "other");
+      trace.outcomes.push(isTransientTransactionConflict(error) ? "transient" : isLockTimeout(error) ? "lock_timeout" : isUniqueConflict(error) ? "unique" : "other");
       throw error;
     });
   }) as typeof db.$transaction);
@@ -136,7 +136,7 @@ function errorKind(error: unknown) {
   if (error instanceof InventoryUnavailableError) return "InventoryUnavailableError";
   if (error instanceof ProductChangedError) return "ProductChangedError";
   if (error instanceof FlashSaleUnavailableError) return "FlashSaleUnavailableError";
-  if (isTransientTransactionConflict(error) || isUniqueConflict(error)) return `retry_exhausted:${(error as { code?: string }).code ?? "unknown"}`;
+  if (isTransientTransactionConflict(error) || isLockTimeout(error) || isUniqueConflict(error)) return `retry_exhausted:${(error as { code?: string }).code ?? "unknown"}`;
   return `unexpected:${error instanceof Error ? error.name : typeof error}`;
 }
 

@@ -11,7 +11,7 @@ import { hasOnlySupportedMessageTemplateVariables, renderMessageTemplate } from 
 import { createLiveViewerUrl } from "@/lib/live-public-url";
 import { EVERGREEN_ACTIVATION_SELECT, isActiveEvergreenLive, type EvergreenActivationRecord } from "@/lib/evergreen-activation";
 import { captureOperationalError } from "@/lib/monitoring";
-import { isTransientTransactionConflict, withSerializableRetry } from "@/lib/serializable-retry";
+import { isLockTimeout, isTransientTransactionConflict, runSerializable, withSerializableRetry } from "@/lib/serializable-retry";
 import {
   LIVE_NOTIFICATION_DELIVERY_TRIGGERS,
   liveNotificationIdempotencyPrefix,
@@ -294,16 +294,20 @@ async function readCurrentNotificationSnapshot(
 
 /**
  * Row locks taken in one statement before the snapshot is read (B-3), in
- * FROM order: Live, rule, template, registration. The statement repeats the
- * vendor binding for the Live, the rule and the registration's form, so a
- * foreign id locks nothing and the caller returns `not_configured`.
+ * FROM order: Live, rule, template, registration. The statement binds the
+ * Live, the rule, the template and the registration's form to the vendor, so
+ * a foreign id locks nothing and the caller returns `not_configured`.
  *
  * - Live, rule and template FOR SHARE: many recipients share them without
- *   waiting for each other, while a writer that updates one of them (live
- *   lifecycle, rule edit, template edit, evergreen switch) waits for the
- *   in-flight materializations to commit and only then supersedes their rows.
- *   A materialization that starts after such an update waits for its commit
- *   and reads the new state.
+ *   waiting for each other, while a writer that updates one of them waits for
+ *   the in-flight materializations to commit. A materialization that starts
+ *   after such an update waits for its commit and reads the new state.
+ *   The writer's supersede sees the rows those materializations committed
+ *   only if it reads a new snapshot after the wait: READ COMMITTED writers do
+ *   (live studio save with lifecycle and rule changes, template edit); the
+ *   SERIALIZABLE evergreen switch does not and runs
+ *   supersedeFixedTimeNotificationsForActiveEvergreen after its commit; the
+ *   SERIALIZABLE legacy cutover locks the Live before reading anything.
  * - Registration FOR NO KEY UPDATE: one materialization per recipient at a
  *   time, so the supersede / existing-row / insert steps below never race
  *   another caller for the same recipient. It does not block FOR KEY SHARE
@@ -316,7 +320,7 @@ async function lockNotificationSources(
   const locked = await tx.$queryRaw<Array<{ id: string }>>`
     SELECT l."id" FROM "Live" l
     JOIN "LiveNotificationRule" r ON r."id" = ${input.ruleId} AND r."liveId" = l."id" AND r."vendorId" = l."vendorId"
-    JOIN "MessageTemplate" t ON t."id" = r."messageTemplateId"
+    JOIN "MessageTemplate" t ON t."id" = r."messageTemplateId" AND t."vendorId" = l."vendorId"
     JOIN "FormSubmission" s ON s."id" = ${input.submissionId} AND s."liveId" = l."id"
     JOIN "RegistrationForm" f ON f."id" = s."formId" AND f."vendorId" = l."vendorId"
     WHERE l."id" = ${input.liveId} AND l."vendorId" = ${input.vendorId}
@@ -335,19 +339,24 @@ async function lockNotificationSources(
  * on the same leaf page. Correctness now comes from:
  *
  * - one row per delivery id: the primary key, the deterministic id and the
- *   per-recipient lock (a P2002 from a writer that does not take that lock,
- *   the legacy cutover, re-runs the whole step and finds the row);
+ *   per-recipient lock (a P2002 from a writer that does not take that lock
+ *   re-runs the whole step and finds the row; the legacy cutover avoids the
+ *   race by locking the Live first);
  * - every statement after the locks sees all commits made before them, so
  *   the sent check, the supersede and the existing-row check are exact;
- * - config and lifecycle writers serialize with the materialization through
- *   the FOR SHARE locks (see lockNotificationSources and
- *   supersedeFixedTimeNotificationsForActiveEvergreen).
+ * - config and lifecycle writers wait on the FOR SHARE locks; how each of
+ *   them then sees the committed rows is listed at lockNotificationSources.
  *
- * A deadlock with a writer (40P01) or a P2002 re-runs the idempotent step.
+ * Every lock wait is bounded by MATERIALIZE_LOCK_TIMEOUT so a long writer or
+ * a burst for one recipient cannot hold a pooled connection until Prisma's
+ * transaction timeout. A lock timeout (55P03), a deadlock with a writer
+ * (40P01) or a P2002 re-runs the idempotent step; if all attempts fail the
+ * caller contains the error and the scheduled job picks the recipient up.
  */
+const MATERIALIZE_LOCK_TIMEOUT = "2s";
 const MATERIALIZE_RETRY = {
   attempts: 3,
-  retryOn: (error: unknown) => isTransientTransactionConflict(error) || isUniqueConflict(error),
+  retryOn: (error: unknown) => isTransientTransactionConflict(error) || isLockTimeout(error) || isUniqueConflict(error),
 } as const;
 
 export async function ensureLiveNotificationDelivery(input: {
@@ -359,6 +368,7 @@ export async function ensureLiveNotificationDelivery(input: {
   const db = getDb();
   const scheduleFuture = options.scheduleFuture ?? false;
   return withSerializableRetry(() => db.$transaction(async (tx) => {
+    await tx.$executeRaw`SELECT pg_catalog.set_config('lock_timeout', ${MATERIALIZE_LOCK_TIMEOUT}, true)`;
     if (!(await lockNotificationSources(tx, input))) return { status: "not_configured" as const };
     const current = await readCurrentNotificationSnapshot(tx, input);
     if (!current) return { status: "not_configured" as const };
@@ -749,6 +759,9 @@ export async function supersedeLiveNotificationDeliveriesForTemplate(
 
 class CutoverPreconditionError extends Error {}
 
+/** The cutover is all-or-nothing, so a serialization failure or deadlock re-runs it. */
+const CUTOVER_RETRY = { attempts: 3, retryOn: isTransientTransactionConflict } as const;
+
 export async function processLegacyReminderCutovers(options: { now?: Date; limit?: number; vendorId?: string } = {}) {
   const db = getDb();
   const now = options.now ?? new Date();
@@ -774,7 +787,18 @@ export async function processLegacyReminderCutovers(options: { now?: Date; limit
   const results: Array<{ status: string }> = [];
   for (const candidate of candidates) {
     try {
-      const status = await db.$transaction(async (tx) => {
+      const status = await runSerializable(db, async (tx) => {
+        // Same lock order as the materializer (Live, then rule and template),
+        // taken before anything is read or written. In-flight materializations
+        // of this Live finish first and later ones wait, so a cutover row and a
+        // materialization of the same recipient no longer deadlock. A row
+        // committed while this waited is caught by the stable-id insert (P2002)
+        // or by a serialization failure that re-runs the cutover.
+        const lockedLive = await tx.$queryRaw<Array<{ id: string }>>`
+          SELECT "id" FROM "Live"
+          WHERE "id" = ${candidate.id} AND "vendorId" = ${candidate.vendorId}
+          FOR NO KEY UPDATE`;
+        if (lockedLive.length !== 1) throw new CutoverPreconditionError("precondition");
         const live = await tx.live.findFirst({
           where: { id: candidate.id, vendorId: candidate.vendorId, status: "scheduled", startedAt: null, scheduledAt: { gt: now }, liveReminderTemplateId: { not: null } },
           select: {
@@ -789,6 +813,15 @@ export async function processLegacyReminderCutovers(options: { now?: Date; limit
         if (isActiveEvergreenLive(live, { now })) throw new CutoverPreconditionError("evergreen_live");
         const equivalent = live.notificationRules.find((rule) => rule.messageTemplateId === live.liveReminderTemplateId && rule.offsetMinutes === live.liveReminderOffsetMinutes);
         if (!equivalent) throw new CutoverPreconditionError("no_equivalent_rule");
+        // A rule or template edit that committed after this snapshot makes
+        // this lock fail with a serialization error (re-run on fresh data);
+        // a later edit waits and then supersedes the rows created here.
+        const lockedRule = await tx.$queryRaw<Array<{ id: string }>>`
+          SELECT r."id" FROM "LiveNotificationRule" r
+          JOIN "MessageTemplate" t ON t."id" = r."messageTemplateId" AND t."vendorId" = r."vendorId"
+          WHERE r."id" = ${equivalent.id} AND r."vendorId" = ${live.vendorId} AND r."liveId" = ${live.id}
+          FOR SHARE OF r, t`;
+        if (lockedRule.length !== 1) throw new CutoverPreconditionError("precondition");
         const delivered = await tx.emailDelivery.count({
           where: { vendorId: live.vendorId, sourceLiveId: live.id, trigger: "live_reminder", status: { in: ["sent", "sending"] } },
         });
@@ -841,11 +874,13 @@ export async function processLegacyReminderCutovers(options: { now?: Date; limit
         });
         if (cleared.count !== 1) throw new CutoverPreconditionError("precondition");
         return "cutover";
-      }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+      }, CUTOVER_RETRY);
       results.push({ status });
     } catch (error) {
       if (error instanceof CutoverPreconditionError) results.push({ status: error.message });
       else if (isUniqueConflict(error)) results.push({ status: "duplicate_conflict" });
+      // Still conflicting after the retries: nothing was written; a later run tries again.
+      else if (isTransientTransactionConflict(error)) results.push({ status: "conflict" });
       else {
         try {
           captureOperationalError(error, { source: "live_notification_cutover", operation: "cutover", status: "failed" });

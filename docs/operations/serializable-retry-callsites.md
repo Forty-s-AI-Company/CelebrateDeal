@@ -6,7 +6,9 @@ F-055（B03-22、B04-14）新增共用的 `src/lib/serializable-retry.ts`：`wit
 
 - `src/lib/inventory-reservations.ts`：庫存保留、釋放、過期清理共用的 `runSerializable`，5 次、25–400 ms。
 - `src/lib/payment-webhooks.ts`：`processPaymentWebhook` 對 P2034／P2002 重跑整個 webhook 處理，3 次、50–500 ms。
-- `src/lib/live-notification-delivery.ts`：`ensureLiveNotificationDelivery` 原本是兩段 Serializable 交易（#520）。B-3 改成一段 READ COMMITTED 交易加列鎖（見〈B-3 修正〉），用同一個 `withSerializableRetry` 對 P2034／40001／40P01（例如與設定寫入者死結）與 P2002 重試 3 次、預設 20–400 ms。
+- `src/lib/live-notification-delivery.ts`：`processLegacyReminderCutovers`（legacy cutover）改用 `runSerializable`，P2034／40001／40P01 重試 3 次，用完回 `conflict`（B-3 審查 m-1）。
+- `src/app/actions/webinar-resource-actions.ts`：`upsertTemplateAction` 的範本儲存交易由 Serializable 改為 READ COMMITTED（B-3 審查 M-1，見〈B-3 修正〉）。
+- `src/lib/live-notification-delivery.ts`：`ensureLiveNotificationDelivery` 原本是兩段 Serializable 交易（#520）。B-3 改成一段 READ COMMITTED 交易加列鎖（見〈B-3 修正〉），用同一個 `withSerializableRetry` 對 P2034／40001／40P01（例如與設定寫入者死結）、lock timeout（55P03，交易內 `lock_timeout = 2s`）與 P2002 重試 3 次、預設 20–400 ms。
 
 50 併發壓測的跑法與結果見文末〈50 併發壓測〉。
 
@@ -34,7 +36,6 @@ F-055（B03-22、B04-14）新增共用的 `src/lib/serializable-retry.ts`：`wit
 - `src/app/actions/team-membership-actions.ts:40`
 - `src/app/actions/vendor-member-actions.ts:98`
 - `src/app/actions/vendor-member-actions.ts:221`
-- `src/app/actions/webinar-resource-actions.ts:401`
 - `src/app/api/checkout/upsell/route.ts:63`
 - `src/app/api/live-interactions/route.ts:417`
 - `src/app/api/live-interactions/route.ts:476`
@@ -62,7 +63,6 @@ F-055（B03-22、B04-14）新增共用的 `src/lib/serializable-retry.ts`：`wit
 - `src/lib/learner-notification-verification.ts:21`
 - `src/lib/line-login.ts:232`
 - `src/lib/live-chat.ts:573`
-- `src/lib/live-notification-delivery.ts:844`（legacy cutover；B-3 時重新標示行號）
 - `src/lib/live-private-chat.ts:98`
 - `src/lib/live-private-chat.ts:201`
 - `src/lib/live-quota-admission.ts:287`
@@ -152,30 +152,45 @@ npm run db:migrate:deploy && npm run test:db:stress
 
 ### 設計
 
-- 具現化改成一段 READ COMMITTED 互動交易。第一個語句以同一個 SQL 鎖住 `Live`、`LiveNotificationRule`、`MessageTemplate`（`FOR SHARE`）與 `FormSubmission`（`FOR NO KEY UPDATE`），每個鎖都綁 `vendorId`，沒有列就回 `not_configured`、不寫入。之後每個語句都看得到鎖之前已提交的資料。
-- 不同收件人之間只有可共用的 `FOR SHARE` 鎖，不會互相等待或中止；同一收件人的呼叫者在報名列上排隊，前一個提交後下一個看到既有列，回 `duplicate`（或重新啟用 superseded 的列）。
-- 一位收件人一條規則只有一列：確定性 delivery id 是主鍵，加上收件人鎖讓「已寄出檢查 → supersede 其他快照 → 查既有列 → 新增或重新啟用」在同一收件人上不會交錯。沒取這個鎖的寫入者（legacy cutover，仍是 Serializable）撞到 P2002 時，整步重跑並看到既有列。死結（與設定寫入者，40P01）也會重跑；重試仍是 3 次。
+- 具現化改成一段 READ COMMITTED 互動交易。第一個語句以 `set_config('lock_timeout', '2s', true)` 限制這個交易內每次等鎖最多 2 秒，第二個語句以同一個 SQL 鎖住 `Live`、`LiveNotificationRule`、`MessageTemplate`（`FOR SHARE`）與 `FormSubmission`（`FOR NO KEY UPDATE`），四者都綁 `vendorId`（範本以 `t."vendorId" = l."vendorId"`），沒有列就回 `not_configured`、不寫入。之後每個語句都看得到鎖之前已提交的資料。
+- 不同收件人之間只有可共用的 `FOR SHARE` 鎖，不會互相等待或中止；同一收件人的呼叫者在報名列上排隊，前一個提交後下一個看到既有列，回 `duplicate`（或重新啟用 superseded 的列）。等超過 2 秒的呼叫者收到 lock timeout（55P03）後重跑，不會一直佔著連線等到 Prisma 的 5 秒交易期限。
+- 一位收件人一條規則只有一列：確定性 delivery id 是主鍵，加上收件人鎖讓「已寄出檢查 → supersede 其他快照 → 查既有列 → 新增或重新啟用」在同一收件人上不會交錯。P2002、死結（40P01／P2034）與 lock timeout 都會整步重跑；重試仍是 3 次，用完後由呼叫端攔下、排程補建。
 - 原本兩段交易（P2002 時第一段的 supersede 被回滾，第二段只接手）合成一段，所以接手既有列時也會 supersede 同一收件人、同一規則的其他舊快照。
 - 抑制、黑名單、退訂：交易內照舊查 `EmailSuppression` 與 `Blacklist`，寄送前的快照與抑制檢查不變。這條路徑沒有 opt-out 或靜音時段規則。
-- 設定與生命週期寫入者：直播開始／結束、規則編輯（直播更新交易，READ COMMITTED）與範本編輯都先更新 `Live`／`MessageTemplate`，所以會等進行中的具現化提交，之後的 supersede 看得到它的列（`live-notification-delivery.db.test.ts` 以真實交易驗證開播的情況）。原本的 Serializable 對這些 READ COMMITTED 寫入者沒有保護，這部分比原本嚴格。
-- 常青啟用（#507／#520）仍是 Serializable，supersede 讀交易開始時的快照，看不到等它期間才提交的具現化列。啟用成功後另跑 `supersedeFixedTimeNotificationsForActiveEvergreen`（READ COMMITTED，`Live` `FOR NO KEY UPDATE` 後確認仍是有效常青才 supersede）。`evergreen-rematerialization.db.test.ts` 重現這個交錯：拿掉這一步時列會留在 `queued`，加上後變成 `superseded`。這一步失敗只回報，寄送前的快照檢查仍會攔下。
+- 範本內容渲染與加密（`protectEmailDeliveryPayload`）仍在鎖內：本機量測每次約 0.1 ms，而移到鎖外需要在鎖前多讀一次快照、鎖後再比對（至少多 3 次 DB 往返，每次約 1–3 ms），反而拉長同一收件人的排隊時間，所以不移。
+
+#### 寫入者如何看到進行中具現化的列
+
+鎖只保證寫入者「等」進行中的具現化提交；寫入者之後的 supersede 要用等待之後的新快照才看得到那些列。逐一檢查所有會 supersede `before_live`／`during_live` 列的寫入者：
+
+| 寫入者 | 隔離 | 先更新哪一列 | 看得到等待期間提交的列嗎 |
+|---|---|---|---|
+| 直播編輯（開播、結束、重新排程、規則編輯；`actions.ts` 的直播儲存交易） | READ COMMITTED | `Live` | 會：supersede 是等待之後的新語句。DB 測試以開播驗證 |
+| 範本編輯（`upsertTemplateAction`） | 6d2f4ecd 時是 SERIALIZABLE，**看不到**（審查 M-1 重現：列留在 `queued`）；現改為 READ COMMITTED | `MessageTemplate` | 會。DB 測試：改回 SERIALIZABLE 時失敗、READ COMMITTED 時列變成 `superseded` |
+| 常青啟用（`updateEvergreenWebinarSettingsAction`） | SERIALIZABLE（#520 保留） | `Live` | 交易內看不到；提交後由 `supersedeFixedTimeNotificationsForActiveEvergreen` 補上（DB 測試：拿掉這一步列留在 `queued`） |
+| legacy cutover（`processLegacyReminderCutovers`） | SERIALIZABLE | 改為第一個語句就鎖 `Live`（`FOR NO KEY UPDATE`），找到對應規則後再鎖規則與範本（`FOR SHARE`），與具現化同一個順序 | 等待期間提交的具現化列會讓同 id 的新增撞到 P2002（或序列化失敗後重跑），結果是 `duplicate_conflict`、不寫入任何列 |
+
+範本編輯改成 READ COMMITTED 前確認過交易內的其他步驟：範本更新以 `id + vendorId + updatedAt` 為條件，等鎖後 PostgreSQL 會用最新版本重新比對，所以兩個同時的編輯仍只有一個成功，另一個回 `conflict`；`queueLiveReminderReconciliation` 本來就在直播儲存的 READ COMMITTED 交易裡被呼叫（job 以 `(vendorId, liveId, configDigest)` 唯一、處理時再比對目前 digest）。失去的只有與進行中的 legacy `ensureLiveReminderDelivery`（SERIALIZABLE）之間的 SSI 偵測：那筆舊 digest 的提醒若在範本編輯之後才提交，會由新 job 處理該報名者時的 `supersedeOlderReminder` 取代，或在寄送前被 `isCurrentLiveReminderDelivery` 攔下，與直播儲存路徑相同。
+
+legacy cutover 原本先新增 delivery、最後才更新 `Live`；遇到持有 `Live` `FOR SHARE`、正在新增同一個 id 的具現化時，兩邊可能互相等待而死結（40P01，審查 m-1 指出，本機未另外重現），cutover 會回 `failed`。現在先鎖 `Live`，不會死結；仍遇到序列化失敗或死結時重跑 3 次，用完回 `conflict`（不寫入、不當成失敗回報），下一輪再試。
+
 - 新索引 `EmailDelivery(vendorId, sourceFormSubmissionId)`（migration `20261031090000_email_delivery_source_submission_index`）讓兩個查詢不再掃整個商家；5 萬筆合成資料下兩者都走這個索引。正確性不依賴索引。
 
 ### 前後數字
 
-同一台 Windows 主機、Docker PostgreSQL 16（loopback、全新資料庫、131 個 migration）、Prisma 6.19.3。前＝base `e32549ba`，後＝本分支。latency 是單一呼叫者從開始到結束。
+同一台 Windows 主機、Docker PostgreSQL 16（loopback、全新資料庫、131 個 migration）、Prisma 6.19.3。前＝base `e32549ba`，後＝本分支（含審查修正：lock_timeout、範本編輯 READ COMMITTED、cutover 鎖序）。latency 是單一呼叫者從開始到結束。
 
-| 情境 | 前：結果 | 前：attempts 平均 | 前：p95 | 後：結果 | 後：attempts | 後：p95 |
+| 情境 | 前：結果 | 前：attempts 平均 | 前：p95 | 後：結果 | 後：attempts 平均 | 後：p95 |
 |---|---|---|---|---|---|---|
-| 不同收件人，50 併發、連線池 60 | 3 成功、47 用完重試 | 2.94 | 1.1 s | 50 成功（三次都是） | 每人 1 | 0.36–0.44 s |
-| 不同收件人，50 併發、連線池 5 | 25 成功、25 用完重試 | 2.44 | 1.0 s | 50 成功 | 每人 1 | 0.53 s |
-| 不同收件人，10 併發 | 4 成功、6 用完重試（10-30 原紀錄 3／7） | 2.7 | 0.26 s | 10 成功 | 每人 1 | 0.11 s |
-| 同一收件人，50 併發、連線池 60 | 50 成功（1 queued、49 duplicate） | 2.94 | 1.6 s | 50 成功（1 queued、49 duplicate） | 每人 1 | 2.3–3.0 s |
-| 同一收件人，50 併發、連線池 5 | 同上 | 1.98 | 0.8 s | 同上 | 每人 1 | 1.4 s |
-| 同一收件人，10 併發 | 同上 | 1.9 | 0.45 s | 同上 | 每人 1 | 0.47 s |
+| 不同收件人，50 併發、連線池 60 | 3 成功、47 用完重試 | 2.94 | 1.1 s | 50 成功（每次都是） | 1（每人 1） | 0.32–0.46 s |
+| 不同收件人，50 併發、連線池 5 | 25 成功、25 用完重試 | 2.44 | 1.0 s | 50 成功 | 1 | 0.39 s |
+| 不同收件人，10 併發 | 4 成功、6 用完重試（10-30 原紀錄 3／7） | 2.7 | 0.26 s | 10 成功 | 1 | 0.11 s |
+| 同一收件人，50 併發、連線池 60 | 50 成功（1 queued、49 duplicate） | 2.94 | 1.6 s | 50 成功（1 queued、49 duplicate） | 1.04–1.18（等超過 2 秒者重跑一次） | 2.2–2.7 s |
+| 同一收件人，50 併發、連線池 5 | 同上 | 1.98 | 0.8 s | 同上 | 1 | 1.4 s |
+| 同一收件人，10 併發 | 同上 | 1.9 | 0.45 s | 同上 | 1 | 0.53 s |
 
-其他四條路徑（結帳、快閃、兩個 webhook）的結果與上面 10-30 的紀錄相同。
+其他四條路徑（結帳、快閃、兩個 webhook）的結果與上面 10-30 的紀錄相同。審查修正後在新容器上跑了 8 次 50 併發壓測（2 次只跑直播通知、6 次完整），另在全新容器上再跑 2 次完整壓測也全部通過。前 8 次中有 2 次各有一個呼叫者在連線階段失敗：一次是直播通知同一收件人的 `Can't reach database server`，一次是未修改的結帳路徑上訊息為空的 `PrismaClientKnownRequestError`。PostgreSQL 日誌沒有任何連線錯誤，判斷是 Windows Docker 埠轉發在大量新連線同時建立時的環境問題，與本修正無關（修正前的容器上沒有出現）；其餘 6 次全部通過，數字取自這些通過的回合。
 
-代價：同一收件人的呼叫者改為排隊，50 個同時呼叫時最後一個約 3 s（原本是並行後各自重試）。等待時間算在 Prisma 互動交易預設的 5 s 期限內，依本機每筆約 60 ms 估算，約 80 個同時呼叫同一收件人才會開始逾時（P2028，被呼叫端攔下，由排程補）。正式環境同一收件人的同時呼叫只有驗證流程、排程與常青重建，最多幾個。
+代價：同一收件人的呼叫者改為排隊，50 個同時呼叫時最後一個約 2.5 s（原本是並行後各自重試）。每次等鎖最多 2 s，超過就重跑，所以不會再碰到 Prisma 的 5 s 交易期限；3 次都等不到時以 lock timeout 失敗，由呼叫端攔下、排程補建。正式環境同一收件人的同時呼叫只有驗證流程、排程與常青重建，最多幾個。
 
-測試斷言：不同收件人時沒有失敗、每個呼叫者只開 1 次交易、全部 `queued`、每位收件人剛好一筆；同一收件人時沒有失敗、狀態剛好 `{ queued: 1, duplicate: N-1 }`、只有一筆 EmailDelivery。
+測試斷言：不同收件人時沒有失敗、每個呼叫者只開 1 次交易、全部 `queued`、每位收件人剛好一筆；同一收件人時沒有失敗、狀態剛好 `{ queued: 1, duplicate: N-1 }`、只有一筆 EmailDelivery。lock timeout 與死結、P2002 一樣算在重試預算內。

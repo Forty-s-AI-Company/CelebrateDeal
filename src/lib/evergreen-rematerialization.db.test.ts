@@ -1,6 +1,20 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const ctx = vi.hoisted(() => ({ vendor: { id: "", timezone: "Asia/Taipei" } }));
+const ctx = vi.hoisted(() => ({ vendor: { id: "", timezone: "Asia/Taipei" }, failInFlightSweep: false }));
+const monitoring = vi.hoisted(() => ({ captureOperationalError: vi.fn() }));
+
+vi.mock("@/lib/monitoring", () => monitoring);
+// Real module; only the evergreen post-commit sweep can be made to fail (m-3).
+vi.mock("@/lib/live-notification-delivery", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/live-notification-delivery")>();
+  return {
+    ...actual,
+    supersedeFixedTimeNotificationsForActiveEvergreen: async (...args: Parameters<typeof actual.supersedeFixedTimeNotificationsForActiveEvergreen>) => {
+      if (ctx.failInFlightSweep) throw new Error("synthetic sweep failure");
+      return actual.supersedeFixedTimeNotificationsForActiveEvergreen(...args);
+    },
+  };
+});
 
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 vi.mock("next/navigation", () => ({ redirect: (path: string) => { throw new Error(`REDIRECT:${path}`); } }));
@@ -16,7 +30,8 @@ vi.mock("@/lib/auth", () => ({
 import { updateEvergreenWebinarSettingsAction } from "@/app/actions/evergreen-webinar-actions";
 import { getDb } from "@/lib/db";
 import { rematerializeEvergreenLiveNow } from "@/lib/evergreen-rematerialization";
-import { ensureLiveNotificationDelivery, processDueLiveNotifications } from "@/lib/live-notification-delivery";
+import { dispatchEmailDelivery } from "@/lib/email-delivery";
+import { ensureLiveNotificationDelivery, isCurrentLiveNotificationDeliverySnapshot, processDueLiveNotifications } from "@/lib/live-notification-delivery";
 import { processLiveReminderReconciliationJobs } from "@/lib/live-reminder-reconciliation";
 
 const createdVendorIds: string[] = [];
@@ -33,6 +48,8 @@ beforeEach(() => {
 afterEach(async () => {
   await getDb().vendor.deleteMany({ where: { id: { in: createdVendorIds.splice(0) } } });
   vi.unstubAllEnvs();
+  ctx.failInFlightSweep = false;
+  monitoring.captureOperationalError.mockClear();
 });
 
 type Fixture = Awaited<ReturnType<typeof createFixture>>;
@@ -199,8 +216,12 @@ describe("evergreen settings re-materialization (disposable PostgreSQL)", () => 
     expect(await db.emailDelivery.count({ where: { vendorId: fixture.vendor.id } })).toBe(before);
   });
 
-  it("cancels the fixed-time row of a materialization that was in flight while evergreen was being enabled (B-3)", async () => {
-    const fixture = await createFixture("in-flight", { legacyReminder: false, isEvergreen: false });
+  /**
+   * Enables evergreen while a real materialization of the fixture's first
+   * registrant is in flight (it has taken Live FOR SHARE and waits for the
+   * registration), and returns that materialization's result.
+   */
+  async function enableEvergreenDuringInFlightMaterialization(fixture: Fixture) {
     const db = getDb();
     const submissionId = fixture.submissionIds[0]!;
     const waitingOnLock = async (pattern: string) => {
@@ -245,12 +266,40 @@ describe("evergreen settings re-materialization (disposable PostgreSQL)", () => 
     const result = await materialized;
     expect(result).toMatchObject({ status: "queued" });
     await saved;
+    return result as { status: "queued"; deliveryId: string };
+  }
+
+  it("cancels the fixed-time row of a materialization that was in flight while evergreen was being enabled (B-3)", async () => {
+    const fixture = await createFixture("in-flight", { legacyReminder: false, isEvergreen: false });
+    const result = await enableEvergreenDuringInFlightMaterialization(fixture);
 
     // The save's own supersede ran on a snapshot older than that row; the
     // post-commit pass cancelled it.
-    expect(await db.emailDelivery.findUniqueOrThrow({ where: { id: (result as { deliveryId: string }).deliveryId }, select: { status: true, lastErrorCode: true } }))
+    expect(await getDb().emailDelivery.findUniqueOrThrow({ where: { id: result.deliveryId }, select: { status: true, lastErrorCode: true } }))
       .toEqual({ status: "superseded", lastErrorCode: "lifecycle_superseded" });
     expect(await deliveryCount(fixture, "before_live", "queued")).toBe(0);
+  });
+
+  it("still never sends that row when the post-commit pass fails: the send-time check supersedes it (m-3)", async () => {
+    const db = getDb();
+    const fixture = await createFixture("sweep-fails", { legacyReminder: false, isEvergreen: false });
+    // Due now and the Live still ahead, so the only thing that makes the row stale is evergreen.
+    await db.live.update({ where: { id: fixture.live.id }, data: { scheduledAt: new Date(Date.now() + 30 * 60_000) } });
+    ctx.failInFlightSweep = true;
+
+    const result = await enableEvergreenDuringInFlightMaterialization(fixture);
+    expect(monitoring.captureOperationalError).toHaveBeenCalledWith(expect.any(Error), {
+      source: "evergreen_settings", operation: "supersede_in_flight", status: "failed",
+    });
+    const row = await db.emailDelivery.findUniqueOrThrow({ where: { id: result.deliveryId } });
+    expect(row.status).toBe("queued");
+    expect(row.nextAttemptAt!.getTime()).toBeLessThanOrEqual(Date.now());
+    expect(await isCurrentLiveNotificationDeliverySnapshot(row)).toBe(false);
+
+    // The worker claims it and finalizes it as superseded before any provider call.
+    await expect(dispatchEmailDelivery(row.id)).resolves.toEqual({ status: "superseded" });
+    expect(await db.emailDelivery.findUniqueOrThrow({ where: { id: row.id }, select: { status: true, lastErrorCode: true, sentAt: true, providerMessageId: true } }))
+      .toEqual({ status: "superseded", lastErrorCode: "config_superseded", sentAt: null, providerMessageId: null });
   });
 
   it("stays inside the tenant: another vendor's pending job and a foreign live id are untouched", async () => {

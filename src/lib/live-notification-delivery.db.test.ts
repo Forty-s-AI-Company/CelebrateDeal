@@ -1,7 +1,24 @@
 import { randomUUID } from "node:crypto";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+const ctx = vi.hoisted(() => ({ vendorId: "" }));
+vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
+vi.mock("next/navigation", () => ({ redirect: (path: string) => { throw new Error(`REDIRECT:${path}`); } }));
+vi.mock("@/lib/csrf", () => ({ assertServerActionSecurity: vi.fn() }));
+vi.mock("@/lib/audit", () => ({ auditSnapshot: (value: unknown) => value, writeAuditLog: vi.fn() }));
+vi.mock("@/lib/auth", () => {
+  const context = async () => ({ auth: { user: { id: "user-synthetic" }, member: { role: "owner" } }, vendor: { id: ctx.vendorId, timezone: "Asia/Taipei" } });
+  return { requireVendorManagerContext: context, requireVendorManager: async () => (await context()).vendor };
+});
+
+import { upsertTemplateAction } from "@/app/actions/webinar-resource-actions";
 import { getDb } from "@/lib/db";
-import { ensureLiveNotificationDelivery, supersedeLiveNotificationDeliveriesForLifecycle } from "@/lib/live-notification-delivery";
+import {
+  ensureLiveNotificationDelivery,
+  processLegacyReminderCutovers,
+  supersedeLiveNotificationDeliveriesForLifecycle,
+} from "@/lib/live-notification-delivery";
+import { isLockTimeout } from "@/lib/serializable-retry";
 
 /**
  * B-3: live notification materialization at READ COMMITTED under row locks,
@@ -168,4 +185,83 @@ describe("live notification materialization (disposable PostgreSQL, B-3)", () =>
     await expect(blocked).resolves.toMatchObject({ status: "queued" });
     expect((await rowsOf(f.vendor.id)).map((row) => row.status)).toEqual(["queued", "queued"]);
   });
+
+  it("makes a template edit wait for an in-flight materialization and supersede the row it committed (M-1)", async () => {
+    const f = await fixture("template-edit");
+    ctx.vendorId = f.vendor.id;
+    const holder = await holdRegistration(f.submission.id);
+    const materialized = materialize(f.input);
+    await waitingOnLock('%JOIN "FormSubmission" s%');
+
+    // The real Server Action: its template update waits on the materializer's template FOR SHARE.
+    const form = new FormData();
+    form.set("id", f.template.id);
+    form.set("expectedUpdatedAt", f.template.updatedAt.toISOString());
+    form.set("name", "Reminder");
+    form.set("channel", "email");
+    form.set("trigger", "live_reminder");
+    form.set("subject", "{{live_title}}");
+    form.set("body", "Edited {{name}}\n{{unsubscribe_url}}");
+    form.set("isActive", "on");
+    const edited = upsertTemplateAction({ status: "idle", version: 0 } as never, form);
+    const editedOutcome = expect(edited).rejects.toThrow("REDIRECT:/messages/templates");
+    await waitingOnLock('UPDATE "public"."MessageTemplate"%');
+
+    await holder.release();
+    const result = await materialized;
+    expect(result).toMatchObject({ status: "queued" });
+    await editedOutcome;
+
+    // The edit's supersede ran after its wait and saw the old-content row.
+    expect(await rowsOf(f.vendor.id)).toEqual([
+      { id: (result as { deliveryId: string }).deliveryId, status: "superseded", lastErrorCode: "config_superseded" },
+    ]);
+    // The next materialization uses the edited content.
+    const next = await materialize(f.input);
+    expect(next).toMatchObject({ status: "queued" });
+    expect((next as { deliveryId: string }).deliveryId).not.toBe((result as { deliveryId: string }).deliveryId);
+  });
+
+  it("orders the legacy cutover after an in-flight materialization: no deadlock, no partial cutover (m-1)", async () => {
+    const db = getDb();
+    const f = await fixture("cutover");
+    // A legacy reminder binding with an equivalent before_live rule makes the Live a cutover candidate.
+    await db.live.update({ where: { id: f.live.id }, data: { liveReminderTemplateId: f.template.id, liveReminderOffsetMinutes: 60 } });
+    const holder = await holdRegistration(f.submission.id);
+    const materialized = materialize(f.input);
+    await waitingOnLock('%JOIN "FormSubmission" s%');
+
+    // The cutover's first statement is its Live lock; it waits there, holding nothing.
+    const cutover = processLegacyReminderCutovers({ vendorId: f.vendor.id });
+    await waitingOnLock('%FROM "Live"%FOR NO KEY UPDATE%');
+
+    await holder.release();
+    await expect(materialized).resolves.toMatchObject({ status: "queued" });
+    // The materializer's row already covers the recipient: the cutover writes nothing.
+    await expect(cutover).resolves.toEqual([{ status: "duplicate_conflict" }]);
+    expect(await rowsOf(f.vendor.id)).toHaveLength(1);
+    expect((await db.live.findUniqueOrThrow({ where: { id: f.live.id }, select: { liveReminderTemplateId: true } })).liveReminderTemplateId).toBe(f.template.id);
+  });
+
+  it("bounds the wait on a held registration with lock_timeout, re-runs it and then gives up without writing (m-2)", async () => {
+    const f = await fixture("lock-timeout");
+    const holder = await holdRegistration(f.submission.id);
+    const started = Date.now();
+    let failure: unknown;
+    try {
+      await materialize(f.input);
+    } catch (error) {
+      failure = error;
+    } finally {
+      await holder.release();
+    }
+    const elapsed = Date.now() - started;
+    expect(isLockTimeout(failure)).toBe(true);
+    // Three attempts of about 2 s each, far below an unbounded wait.
+    expect(elapsed).toBeGreaterThanOrEqual(5_500);
+    expect(elapsed).toBeLessThan(12_000);
+    expect(await rowsOf(f.vendor.id)).toEqual([]);
+    // Once the registration is free the same call succeeds.
+    await expect(materialize(f.input)).resolves.toMatchObject({ status: "queued" });
+  }, 30_000);
 });
