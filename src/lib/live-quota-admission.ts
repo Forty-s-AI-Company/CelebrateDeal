@@ -4,6 +4,7 @@ import type { Prisma, PrismaClient } from "@prisma/client";
 import { parseLiveQuotaPolicy } from "@/lib/live-quota-policy";
 import { getRuntimeLivePublishReadiness } from "@/lib/live-runtime-readiness";
 import { EVERGREEN_LIVE_SELECT, resolveViewerLiveRuntime } from "@/lib/evergreen-viewer-session";
+import { FIXED_SESSION_LIVE_SELECT, resolveViewerFixedSessionForLive } from "@/lib/live-fixed-sessions-store";
 import { reconcileLiveRuntimeState } from "@/lib/live-runtime-state";
 import { publicLiveAvailabilityWhere } from "@/lib/sellable-live";
 import { assertPaymentMethodReferenceForQuota, PaymentMethodReferenceRequiredError } from "@/lib/payment-method-reference";
@@ -40,6 +41,8 @@ type AdmissionInput = {
   token?: string | null;
   /** Signed evergreen session cookie; only read when the Live is evergreen. */
   evergreenToken?: string | null;
+  /** Signed registration cookie; only read when the Live has fixed sessions. */
+  registrationToken?: string | null;
   now?: Date;
 };
 
@@ -143,6 +146,7 @@ async function admitWithinTransaction(tx: Prisma.TransactionClient, input: Admis
     },
     select: {
       ...EVERGREEN_LIVE_SELECT,
+      ...FIXED_SESSION_LIVE_SELECT,
       id: true,
       vendorId: true,
       streamMode: true,
@@ -170,11 +174,14 @@ async function admitWithinTransaction(tx: Prisma.TransactionClient, input: Admis
     throw new LiveQuotaAdmissionError("live_not_found");
   }
   // Evergreen Lives admit only a visitor whose own signed session is playing
-  // or in replay; the waiting room never consumes viewer capacity.
+  // or in replay; the waiting room never consumes viewer capacity. A
+  // fixed-session Live does the same with the session the viewer follows.
+  const fixedSession = await resolveViewerFixedSessionForLive(tx, live, { registrationToken: input.registrationToken, now });
   const { state: runtimeState } = resolveViewerLiveRuntime(live, {
     vendorTimezone: live.vendor?.timezone,
     evergreenToken: input.evergreenToken,
     now,
+    fixedSession,
   });
   if (runtimeState !== "playing" && runtimeState !== "replay") {
     throw new LiveQuotaAdmissionError("live_not_found");

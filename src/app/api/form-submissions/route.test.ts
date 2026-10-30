@@ -789,6 +789,9 @@ describe("team lead attribution", () => {
         id: true,
         title: true,
         quotaPolicy: true,
+        sessionMode: true,
+        sessionRegistrationCutoffMinutes: true,
+        sessionReplayWindowHours: true,
         vendor: { select: { name: true } },
         messageTemplate: {
           select: {

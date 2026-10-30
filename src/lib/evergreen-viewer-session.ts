@@ -17,6 +17,12 @@ import {
   type LiveRuntimeState,
 } from "@/lib/live-runtime-state";
 import { deriveSensitiveDataKey } from "@/lib/sensitive-data";
+import {
+  isFixedSessionLive,
+  resolveFixedSessionRuntime,
+  type FixedSessionRecord,
+  type FixedSessionReplayRules,
+} from "@/lib/live-fixed-sessions";
 
 /**
  * Per-visitor evergreen session (常青 Webinar 場次).
@@ -62,6 +68,8 @@ export type EvergreenLiveRecord = {
   evergreenIntervalMinutes: number;
   evergreenDailyTimes: string[];
   evergreenSessionStartAt: Date | null;
+  /** A fixed-session Live (指定場次) never runs the evergreen schedule. */
+  sessionMode?: string | null;
   replayEnabled: boolean;
   replayAvailableUntil: Date | null;
   video: { durationSec: number | null } | null;
@@ -78,6 +86,7 @@ export const EVERGREEN_LIVE_SELECT = {
   evergreenIntervalMinutes: true,
   evergreenDailyTimes: true,
   evergreenSessionStartAt: true,
+  sessionMode: true,
   replayEnabled: true,
   replayAvailableUntil: true,
 } as const;
@@ -283,9 +292,33 @@ export function resolveEvergreenViewerSession(input: {
  * Other Lives keep the shared scheduledAt lifecycle unchanged.
  */
 export function resolveViewerLiveRuntime(
-  live: LiveRuntimeCandidate & EvergreenLiveRecord,
-  input: { vendorTimezone: string | null | undefined; evergreenToken: string | null | undefined; now: Date },
+  live: LiveRuntimeCandidate & EvergreenLiveRecord & Partial<FixedSessionReplayRules> & { sessionMode?: string | null },
+  input: {
+    vendorTimezone: string | null | undefined;
+    evergreenToken: string | null | undefined;
+    now: Date;
+    /**
+     * The session this viewer follows on a fixed-session Live (指定場次),
+     * resolved on the server by resolveViewerFixedSession. Without one the
+     * viewer stays in the waiting room and gets no admission or media.
+     */
+    fixedSession?: Pick<FixedSessionRecord, "startAt" | "status"> | null;
+  },
 ): LiveRuntimeResolution & { evergreen: EvergreenViewerSession | null } {
+  if (isFixedSessionLive(live)) {
+    if (!input.fixedSession) return { state: "waiting", playbackStartSeconds: null, evergreen: null };
+    return {
+      ...resolveFixedSessionRuntime({
+        status: live.status,
+        endedAt: live.endedAt,
+        replayEnabled: live.replayEnabled === true,
+        replayAvailableUntil: live.replayAvailableUntil,
+        sessionReplayWindowHours: live.sessionReplayWindowHours ?? null,
+        video: live.video ?? null,
+      }, input.fixedSession, input.now),
+      evergreen: null,
+    };
+  }
   const evergreen = resolveEvergreenViewerSession({
     live,
     vendorTimezone: input.vendorTimezone,

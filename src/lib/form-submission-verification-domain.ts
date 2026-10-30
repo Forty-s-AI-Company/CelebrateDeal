@@ -32,6 +32,12 @@ export type FormSubmissionVerificationResult =
          * skips fixed-time reminders.
          */
         evergreen: { live: EvergreenLiveRecord; vendorTimezone: string | null } | null;
+        /**
+         * The fixed session (指定場次) this registrant chose. liveScheduledAt
+         * above is already that session's start; a cancelled session gets no
+         * fixed-time reminder.
+         */
+        fixedSession: { id: string; status: string } | null;
         emailBrand: {
           senderName: string | null;
           supportEmail: string | null;
@@ -103,6 +109,7 @@ export async function verifyFormSubmission(
         affiliateClick: {
           select: { id: true, vendorId: true, affiliateId: true, referralCode: true },
         },
+        liveSession: { select: { id: true, vendorId: true, liveId: true, startAt: true, status: true } },
         live: {
           select: {
             id: true,
@@ -151,6 +158,14 @@ export async function verifyFormSubmission(
     ) {
       return { status: "invalid" as const };
     }
+    // The composite FK already binds the session to this Live; the vendor is
+    // re-checked so a registration never follows another tenant's session.
+    const fixedSession = submission.live?.sessionMode === "fixed_sessions"
+      && submission.liveSession
+      && submission.liveSession.vendorId === submission.form.vendorId
+      && submission.liveSession.liveId === submission.liveId
+      ? submission.liveSession
+      : null;
     if (submission.verificationStatus === "VERIFIED") {
       return matchesCurrentVerificationClaim(submission, verifiedToken, now)
         ? {
@@ -238,11 +253,12 @@ export async function verifyFormSubmission(
         formSubmissionId: submission.id,
         recipientName: submission.name,
         recipientEmail: submission.email,
-        liveScheduledAt: submission.live.scheduledAt,
+        liveScheduledAt: fixedSession?.startAt ?? submission.live.scheduledAt,
         liveReminderOffsetMinutes: submission.live.liveReminderOffsetMinutes,
-        evergreen: isActiveEvergreenLive(submission.live, { vendorTimezone: submission.form.vendor.timezone, now })
+        evergreen: !fixedSession && isActiveEvergreenLive(submission.live, { vendorTimezone: submission.form.vendor.timezone, now })
           ? { live: submission.live, vendorTimezone: submission.form.vendor.timezone }
           : null,
+        fixedSession: fixedSession ? { id: fixedSession.id, status: fixedSession.status } : null,
         emailBrand: {
           senderName: submission.form.vendor.senderName,
           supportEmail: submission.form.vendor.supportEmail,

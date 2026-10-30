@@ -84,6 +84,25 @@ function parseSettings(formData: FormData): EvergreenSettings | null {
   return { ...parsed.data, dailyTimes };
 }
 
+/** Why evergreen cannot be switched on for this Live, or null. */
+function evergreenEnableBlocker(live: {
+  sessionMode: string;
+  videoId: string | null;
+  streamMode: string;
+  video: { durationSec: number | null } | null;
+}) {
+  // 指定場次 and evergreen are exclusive: registrants of a fixed-session Live
+  // follow the session they chose, not a per-visitor schedule.
+  if (live.sessionMode === "fixed_sessions") return "evergreen_fixed_sessions";
+  if (!live.videoId) return "evergreen_video_required";
+  // The evergreen engine schedules a recorded video by its length. A real-time
+  // broadcast, or a video whose length is still unknown, would leave the flag
+  // on while the viewer page silently falls back to scheduledAt.
+  if (live.streamMode !== "vod") return "evergreen_vod_required";
+  if (!evergreenVideoDurationSeconds(live.video?.durationSec)) return "evergreen_duration_required";
+  return null;
+}
+
 type EvergreenWriteData = Record<string, unknown>;
 
 /**
@@ -103,7 +122,7 @@ async function saveEvergreenTransaction(
     vendorId: string;
     liveId: string;
     enabling: boolean;
-    where: { id: string; vendorId: string; streamMode?: string; videoId?: string | null };
+    where: { id: string; vendorId: string; streamMode?: string; videoId?: string | null; sessionMode?: string };
     data: EvergreenWriteData;
   },
 ) {
@@ -175,19 +194,14 @@ export async function updateEvergreenWebinarSettingsAction(formData: FormData) {
       id: true,
       slug: true,
       streamMode: true,
+      sessionMode: true,
       videoId: true,
       video: { select: { durationSec: true } },
     },
   });
   if (!live) redirect("/lives?error=live_not_found");
-  if (settings.isEvergreen && !live.videoId) redirectToSettings(live.id, "evergreen_video_required");
-  // The evergreen engine schedules a recorded video by its length. A real-time
-  // broadcast, or a video whose length is still unknown, would leave the flag
-  // on while the viewer page silently falls back to scheduledAt.
-  if (settings.isEvergreen && live.streamMode !== "vod") redirectToSettings(live.id, "evergreen_vod_required");
-  if (settings.isEvergreen && !evergreenVideoDurationSeconds(live.video?.durationSec)) {
-    redirectToSettings(live.id, "evergreen_duration_required");
-  }
+  const enableBlocker = settings.isEvergreen ? evergreenEnableBlocker(live) : null;
+  if (enableBlocker) redirectToSettings(live.id, enableBlocker);
 
   let sessionStartAt: Date | null = null;
   if (settings.isEvergreen && settings.sessionStartAt) {
@@ -235,7 +249,7 @@ export async function updateEvergreenWebinarSettingsAction(formData: FormData) {
   // Enabling repeats the VOD + source-video checks in the write itself, so a
   // concurrent switch to a real-time broadcast or another video cannot slip in.
   const where = settings.isEvergreen
-    ? { id: live.id, vendorId: vendor.id, streamMode: "vod", videoId: live.videoId }
+    ? { id: live.id, vendorId: vendor.id, streamMode: "vod", videoId: live.videoId, sessionMode: "single" }
     : { id: live.id, vendorId: vendor.id };
   const result = await saveEvergreenTransaction(db, {
     vendorId: vendor.id,

@@ -4,6 +4,7 @@ import { getDb } from "@/lib/db";
 import { ensureLiveReminderDelivery } from "@/lib/email-delivery";
 import { EVERGREEN_ACTIVATION_SELECT, isActiveEvergreenLive, type EvergreenActivationRecord } from "@/lib/evergreen-activation";
 import { hasOnlySupportedMessageTemplateVariables } from "@/lib/message-template";
+import { isFixedSessionLive } from "@/lib/live-fixed-sessions";
 
 const JOB_LEASE_MS = 10 * 60 * 1_000;
 const DEFAULT_BATCH_SIZE = 100;
@@ -52,6 +53,7 @@ type ReconciliationDb = {
   emailDelivery: ReconciliationDelegate;
   live: ReconciliationDelegate;
   formSubmission: ReconciliationDelegate;
+  liveSession: ReconciliationDelegate;
 };
 
 type ReconciliationJob = {
@@ -84,7 +86,23 @@ type CurrentLive = EvergreenActivationRecord & {
   };
 };
 
-type VerifiedSubmission = { id: string; name: string; email: string; createdAt: Date };
+type VerifiedSubmission = {
+  id: string;
+  name: string;
+  email: string;
+  createdAt: Date;
+  liveSession?: { vendorId: string; liveId: string; startAt: Date; status: string } | null;
+};
+
+/** What a session change means for reminders: its start and whether it was cancelled. */
+export function fixedSessionsReminderDigest(sessions: readonly { startAt: Date; status: string }[]) {
+  return stableDigest([
+    "fixed_sessions/v1",
+    ...[...sessions]
+      .map((session) => [session.startAt.toISOString(), session.status === "cancelled" ? "cancelled" : "active"] as const)
+      .sort((left, right) => left[0].localeCompare(right[0])),
+  ]);
+}
 
 function asReconciliationDb(db: unknown) {
   return db as ReconciliationDb;
@@ -136,6 +154,12 @@ export function createLiveReminderReconciliationSnapshot(input: {
    * Lives get a new digest; every other Live keeps its existing one.
    */
   evergreenActive?: boolean;
+  /**
+   * Digest of a fixed-session Live's session starts and cancellations
+   * (fixedSessionsReminderDigest). Only a fixed-session Live passes it, so
+   * every other Live keeps its existing digest.
+   */
+  fixedSessionsDigest?: string | null;
 }, now = new Date()): LiveReminderReconciliationSnapshot {
   const liveSlug = input.liveSlug?.trim() ?? "";
   const validTemplate = isValidTemplate(input.vendorId, input.template);
@@ -162,11 +186,13 @@ export function createLiveReminderReconciliationSnapshot(input: {
     resolvedTemplateRevision,
     isDeliverable,
     "live_reminder_reconciliation/v1",
+    ...(input.fixedSessionsDigest ? [input.fixedSessionsDigest] : []),
   ]);
 
-  // The flag only feeds isDeliverable; it is not part of the stored snapshot.
+  // The flags only feed the digest; they are not part of the stored snapshot.
   const snapshotInput = { ...input };
   delete snapshotInput.evergreenActive;
+  delete snapshotInput.fixedSessionsDigest;
   return {
     ...snapshotInput,
     liveSlug,
@@ -325,6 +351,12 @@ async function currentSnapshot(db: ReconciliationDb, vendorId: string, liveId: s
     },
   }) as CurrentLive | null | undefined;
   if (!live) return null;
+  const fixedSessionsDigest = isFixedSessionLive(live)
+    ? fixedSessionsReminderDigest(await db.liveSession.findMany({
+        where: { vendorId: live.vendorId, liveId: live.id },
+        select: { startAt: true, status: true },
+      }) as Array<{ startAt: Date; status: string }>)
+    : null;
   return {
     live,
     snapshot: createLiveReminderReconciliationSnapshot({
@@ -337,6 +369,7 @@ async function currentSnapshot(db: ReconciliationDb, vendorId: string, liveId: s
       reminderOffsetMinutes: live.liveReminderOffsetMinutes,
       template: live.liveReminderTemplate,
       evergreenActive: isActiveEvergreenLive(live, { now }),
+      fixedSessionsDigest,
     }, now),
   };
 }
@@ -356,6 +389,13 @@ export async function queueLiveReminderReconciliationForCurrentLive(
   const current = await currentSnapshot(asReconciliationDb(tx), input.vendorId, input.liveId, now);
   if (!current) return null;
   return queueLiveReminderReconciliation(tx, current.snapshot, now);
+}
+
+function recipientReminderStart(live: CurrentLive, submission: VerifiedSubmission) {
+  if (!isFixedSessionLive(live)) return live.scheduledAt;
+  const session = submission.liveSession;
+  if (!session || session.vendorId !== live.vendorId || session.liveId !== live.id || session.status === "cancelled") return null;
+  return session.startAt;
 }
 
 async function finalizeJob(db: ReconciliationDb, job: ReconciliationJob, data: Record<string, unknown>) {
@@ -415,7 +455,13 @@ async function processClaimedJob(db: ReconciliationDb, job: ReconciliationJob, b
     },
     orderBy: [{ createdAt: "asc" }, { id: "asc" }],
     take: batchSize,
-    select: { id: true, name: true, email: true, createdAt: true },
+    select: {
+      id: true,
+      name: true,
+      email: true,
+      createdAt: true,
+      liveSession: { select: { vendorId: true, liveId: true, startAt: true, status: true } },
+    },
   }) as VerifiedSubmission[];
 
   if (submissions.length === 0) {
@@ -440,6 +486,10 @@ async function processClaimedJob(db: ReconciliationDb, job: ReconciliationJob, b
   let scheduledCount = 0;
   try {
     for (const submission of submissions) {
+      // A fixed-session registrant is reminded before their own session; one
+      // without a live session of this Live, or with a cancelled one, is skipped.
+      const recipientStartAt = recipientReminderStart(beforeWrite.live, submission);
+      if (!recipientStartAt) continue;
       // The query is tenant-bound and VERIFIED-only; never backfill another live.
       const result = await ensureLiveReminderDelivery({
         vendorId: job.vendorId,
@@ -452,7 +502,7 @@ async function processClaimedJob(db: ReconciliationDb, job: ReconciliationJob, b
         formSubmissionId: submission.id,
         recipientName: submission.name,
         recipientEmail: submission.email,
-        liveScheduledAt: beforeWrite.live.scheduledAt,
+        liveScheduledAt: recipientStartAt,
         reminderOffsetMinutes: beforeWrite.live.liveReminderOffsetMinutes,
         template: beforeWrite.live.liveReminderTemplate,
         emailBrand: {

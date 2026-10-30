@@ -29,6 +29,16 @@ function formatStart(value: Date) {
   }).format(value);
 }
 
+/** The registrant's own start: the shared scheduledAt, or a fixed-session Live's chosen session. */
+function registrantStartAt(
+  live: { id: string; vendorId: string; scheduledAt: Date; sessionMode?: string | null },
+  session: { vendorId: string; liveId: string; startAt: Date; status: string } | null,
+) {
+  if (live.sessionMode !== "fixed_sessions") return live.scheduledAt;
+  if (!session || session.vendorId !== live.vendorId || session.liveId !== live.id || session.status === "cancelled") return null;
+  return session.startAt;
+}
+
 /**
  * Converts current domain facts into LINE outbox rows. Every event key is stable,
  * so cron retries and webhook overlap converge instead of double-pushing.
@@ -67,10 +77,11 @@ export async function materializeLineNotifications(
           live: {
             select: {
               ...EVERGREEN_ACTIVATION_SELECT,
-              id: true, slug: true, title: true, scheduledAt: true, startedAt: true, endedAt: true,
+              id: true, vendorId: true, slug: true, title: true, scheduledAt: true, startedAt: true, endedAt: true,
               video: { select: { durationSec: true } },
             },
           },
+          liveSession: { select: { vendorId: true, liveId: true, startAt: true, status: true } },
         },
       });
       const live = submission?.live;
@@ -85,15 +96,17 @@ export async function materializeLineNotifications(
         continue;
       }
       const viewerUrl = createLiveViewerUrl(live.slug);
-      const reminderAt = new Date(live.scheduledAt.getTime() - 60 * 60_000);
-      if (live.status === "scheduled" && !live.startedAt && now >= reminderAt && now < live.scheduledAt) {
+      // A fixed-session registrant (指定場次) is reminded before their own
+      // session; a cancelled session (or none) gets no reminder.
+      const startAt = registrantStartAt(live, submission.liveSession);
+      if (startAt && live.status === "scheduled" && !live.startedAt && now.getTime() >= startAt.getTime() - 60 * 60_000 && now < startAt) {
         results.push(await enqueueLineNotification(db, {
           vendorId: identity.vendorId,
           subjectType: "buyer_registration",
           subjectId: identity.subjectId,
           trigger: "live_reminder",
-          idempotencyKey: stableLineIdempotencyKey(["live_reminder", live.id, identity.subjectId, live.scheduledAt]),
-          messages: [buildLiveLineMessage({ kind: "reminder", liveTitle: live.title, startsAtText: formatStart(live.scheduledAt), viewerUrl })],
+          idempotencyKey: stableLineIdempotencyKey(["live_reminder", live.id, identity.subjectId, startAt]),
+          messages: [buildLiveLineMessage({ kind: "reminder", liveTitle: live.title, startsAtText: formatStart(startAt), viewerUrl })],
         }));
       }
       if (live.status === "live" && live.startedAt && !live.endedAt) {

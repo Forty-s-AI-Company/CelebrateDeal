@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 export const REGISTRATION_FORM_FIELD_KEY = /^[A-Za-z][A-Za-z0-9_-]{0,63}$/;
-export const REGISTRATION_FORM_RESERVED_FIELDS = new Set(["formId", "landingPageId", "funnelStepId", "liveId", "referralCode", "shareCode", "redirectTo", "__registrationReturnPath"]);
+export const REGISTRATION_FORM_RESERVED_FIELDS = new Set(["formId", "landingPageId", "funnelStepId", "liveId", "liveSessionId", "referralCode", "shareCode", "redirectTo", "__registrationReturnPath"]);
 
 const RegistrationFormField = z.object({
   key: z.string().regex(REGISTRATION_FORM_FIELD_KEY),

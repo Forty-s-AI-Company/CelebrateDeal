@@ -40,6 +40,12 @@ import {
 } from "@/lib/public-registration-form";
 import { clearRegistrationRetry, registrationRetryResponse, trustedNativeRetryRequest } from "@/lib/registration-form-retry-response";
 import { attachRegistrationResult } from "@/lib/registration-submission-receipt";
+import { isFixedSessionLive } from "@/lib/live-fixed-sessions";
+import {
+  claimFixedSessionSeat,
+  FIXED_SESSION_LIVE_SELECT,
+  type FixedSessionClaimFailure,
+} from "@/lib/live-fixed-sessions-store";
 
 const FORM_SUBMISSION_COOKIE = "celebratedeal_form_submission";
 const FORM_SUBMISSION_COOKIE_TTL_SECONDS = 60 * 30;
@@ -53,6 +59,8 @@ const SubmissionPayload = z.object({
   landingPageId: z.string().regex(/^[A-Za-z0-9_-]+$/u).max(128).optional(),
   funnelStepId: z.string().regex(/^[A-Za-z][A-Za-z0-9_-]{0,95}$/u).optional(),
   liveId: z.string().min(1).max(128).nullable().optional(),
+  /** The chosen 指定場次; required for, and only accepted by, a fixed-session Live. */
+  liveSessionId: z.string().regex(/^[A-Za-z0-9_-]+$/u).max(128).nullable().optional(),
   payload: SubmissionAnswers,
   referralCode: z.string().min(1).max(80).nullable().optional(),
   shareCode: z.string().regex(/^tls1\.[A-Za-z0-9_-]{32,155}$/u).max(160).nullable().optional(),
@@ -146,7 +154,7 @@ async function loadFormLiveQuotaPolicy({
   vendorId: string;
   liveId: string | null;
 }) {
-  if (!liveId) return { found: true, quotaPolicy: null as unknown, notification: null };
+  if (!liveId) return { found: true, quotaPolicy: null as unknown, notification: null, fixedSessions: null };
 
   const live = await getDb().live.findFirst({
     where: {
@@ -157,6 +165,7 @@ async function loadFormLiveQuotaPolicy({
       id: true,
       title: true,
       quotaPolicy: true,
+      ...FIXED_SESSION_LIVE_SELECT,
       vendor: { select: { name: true } },
       messageTemplate: {
         select: {
@@ -180,7 +189,10 @@ async function loadFormLiveQuotaPolicy({
       vendorName: live.vendor.name,
       template: live.messageTemplate,
     },
-  } : { found: false, quotaPolicy: null as unknown, notification: null };
+    fixedSessions: isFixedSessionLive(live)
+      ? { sessionRegistrationCutoffMinutes: live.sessionRegistrationCutoffMinutes }
+      : null,
+  } : { found: false, quotaPolicy: null as unknown, notification: null, fixedSessions: null };
 }
 
 async function hasVisiblePublicRegistrationSession({
@@ -319,18 +331,88 @@ const verifiableSubmissionSelect = {
   verificationExpiresAt: true,
 } satisfies Prisma.FormSubmissionSelect;
 
-/** The new registration and its immutable Funnel provenance commit together. */
-async function createPublicSubmission(data: Prisma.FormSubmissionCreateArgs["data"], source: TrustedFunnelSource | null): Promise<VerifiableSubmission> {
+type FixedSessionSeat = Parameters<typeof claimFixedSessionSeat>[1];
+
+class FixedSessionUnavailableError extends Error {
+  constructor(public readonly reason: FixedSessionClaimFailure) {
+    super(reason);
+    this.name = "FixedSessionUnavailableError";
+  }
+}
+
+/**
+ * A fixed-session Live needs the chosen session; any other Live rejects one,
+ * so a Live without sessions keeps exactly its previous contract. The seat is
+ * only described here; createPublicSubmission takes it atomically.
+ */
+function fixedSessionSeatRequest(input: {
+  vendorId: string;
+  liveId: string | null;
+  sessionId: string | null | undefined;
+  rules: { sessionRegistrationCutoffMinutes: number } | null;
+}): { ok: true; seat: FixedSessionSeat | null } | { ok: false; response: NextResponse } {
+  if (!input.rules || !input.liveId) {
+    return input.sessionId
+      ? { ok: false, response: NextResponse.json({ error: "Invalid payload" }, { status: 400 }) }
+      : { ok: true, seat: null };
+  }
+  if (!input.sessionId) {
+    return { ok: false, response: NextResponse.json({ error: "Live session selection required" }, { status: 400 }) };
+  }
+  return {
+    ok: true,
+    seat: {
+      vendorId: input.vendorId,
+      liveId: input.liveId,
+      sessionId: input.sessionId,
+      sessionRegistrationCutoffMinutes: input.rules.sessionRegistrationCutoffMinutes,
+      now: new Date(),
+    },
+  };
+}
+
+function rethrowOrFixedSessionResponse(error: unknown): NextResponse {
+  if (error instanceof FixedSessionUnavailableError) return fixedSessionUnavailableResponse(error.reason);
+  throw error;
+}
+
+function fixedSessionUnavailableResponse(reason: FixedSessionClaimFailure) {
+  if (reason === "not_found") return NextResponse.json({ error: "Live session not found" }, { status: 404 });
+  if (reason === "full") return NextResponse.json({ error: "Live session full" }, { status: 409 });
+  return NextResponse.json({ error: "Live session closed" }, { status: 409 });
+}
+
+/**
+ * The new registration, its seat in the chosen fixed session and its
+ * immutable Funnel provenance commit together. The seat is taken first by
+ * one conditional UPDATE (status, cutoff and capacity re-checked on the
+ * locked row), so a full session rejects the registration and a failed
+ * insert (for example a concurrent duplicate) gives the seat back.
+ */
+async function createPublicSubmission(
+  data: Prisma.FormSubmissionUncheckedCreateInput,
+  source: TrustedFunnelSource | null,
+  seat: FixedSessionSeat | null,
+): Promise<VerifiableSubmission> {
   const database = getDb();
-  if (!source) return database.formSubmission.create({ data, select: verifiableSubmissionSelect });
+  if (!source && !seat) return database.formSubmission.create({ data, select: verifiableSubmissionSelect });
   return database.$transaction(async (transaction) => {
-    const submission = await transaction.formSubmission.create({ data, select: verifiableSubmissionSelect });
-    await transaction.funnelSubmission.upsert({
-      where: { submissionId: submission.id },
-      create: { vendorId: source.vendorId, pageId: source.pageId, stepId: source.stepId, submissionId: submission.id, visitId: source.visitId },
-      update: {},
-      select: { id: true },
+    if (seat) {
+      const failure = await claimFixedSessionSeat(transaction, seat);
+      if (failure) throw new FixedSessionUnavailableError(failure);
+    }
+    const submission = await transaction.formSubmission.create({
+      data: seat ? { ...data, liveSessionId: seat.sessionId } : data,
+      select: verifiableSubmissionSelect,
     });
+    if (source) {
+      await transaction.funnelSubmission.upsert({
+        where: { submissionId: submission.id },
+        create: { vendorId: source.vendorId, pageId: source.pageId, stepId: source.stepId, submissionId: submission.id, visitId: source.visitId },
+        update: {},
+        select: { id: true },
+      });
+    }
     return submission;
   });
 }
@@ -558,6 +640,14 @@ async function processSubmission(request: Request, native?: { formData: FormData
   if (!liveContext.found) {
     return NextResponse.json({ error: "Live not found" }, { status: 404 });
   }
+  const seatRequest = fixedSessionSeatRequest({
+    vendorId: form.vendorId,
+    liveId: submittedLiveId,
+    sessionId: parsed.data.liveSessionId,
+    rules: liveContext.fixedSessions,
+  });
+  if (!seatRequest.ok) return seatRequest.response;
+  const seat = seatRequest.seat;
 
   // A public Funnel source is only accepted when the current published page,
   // its bound form/live pair, deadline and observed visit all re-resolve.
@@ -655,9 +745,9 @@ async function processSubmission(request: Request, native?: { formData: FormData
         verificationVersion: 1,
         verificationExpiresAt,
         affiliateClickId: referral?.source === "cookie" ? referral.clickId ?? null : null,
-      }, funnelSource);
+      }, funnelSource, seat);
   } catch (error) {
-    if (!isUniqueConflict(error)) throw error;
+    if (!isUniqueConflict(error)) return rethrowOrFixedSessionResponse(error);
     const concurrentSubmission = await getDb().formSubmission.findUnique({
       where: { id: submissionId },
       select: {
@@ -751,6 +841,11 @@ function isSameOriginRedirect(redirectTo: string, requestUrl: string) {
   }
 }
 
+function nativeOptionalText(formData: FormData, key: string) {
+  const value = formData.get(key);
+  return typeof value === "string" && value ? value : null;
+}
+
 function nativeFormPayload(formData: FormData | null) {
   if (!formData) return {};
   const payload: Record<string, unknown> = {};
@@ -773,6 +868,7 @@ function nativeFormPayload(formData: FormData | null) {
     landingPageId: typeof landingPageId === "string" && landingPageId ? landingPageId : undefined,
     funnelStepId: typeof funnelStepId === "string" && funnelStepId ? funnelStepId : undefined,
     liveId: typeof liveId === "string" && liveId ? liveId : null,
+    liveSessionId: nativeOptionalText(formData, "liveSessionId"),
     payload,
     referralCode: typeof referralCode === "string" && referralCode ? referralCode : null,
     shareCode: typeof shareCode === "string" && shareCode ? shareCode : null,

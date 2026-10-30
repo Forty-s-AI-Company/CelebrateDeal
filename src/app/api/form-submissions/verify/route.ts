@@ -92,7 +92,7 @@ export async function POST(request: Request) {
   if (result.status === "invalid") return redirectResult(request, "invalid");
 
   if (result.status === "verified" && result.confirmation) {
-    const { evergreen, ...confirmation } = result.confirmation;
+    const { evergreen, fixedSession, ...confirmation } = result.confirmation;
     // An evergreen Live has no shared start: use this visitor's own session
     // (from their signed cookie) or a neutral phrase, never scheduledAt.
     // The submission is already VERIFIED here, so a session-key failure must
@@ -144,7 +144,9 @@ export async function POST(request: Request) {
         ...confirmation,
         template: confirmation.reminderTemplate,
         reminderOffsetMinutes: confirmation.liveReminderOffsetMinutes,
-        evergreenActive: Boolean(evergreen),
+        // No fixed-time reminder for an evergreen visitor, or for a fixed
+        // session that was cancelled (its registration is kept, nothing plays).
+        evergreenActive: Boolean(evergreen) || fixedSession?.status === "cancelled",
       });
       // A reminder is normally scheduled for later and left to the job. Only a
       // registration made inside the reminder window is already due now.

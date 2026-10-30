@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { LiveNotificationRuleDraftListSchema } from "@/lib/live-notification-rules";
+import { MAX_FIXED_SESSIONS } from "@/lib/live-fixed-sessions";
 
 const boundedReference = z.string().trim().min(1).max(128);
 const optionalReference = z.union([boundedReference, z.literal("")]).default("");
@@ -12,6 +13,17 @@ const DraftImageReference = z.string().trim().max(2_048).refine(
   (value) => !/^(?:javascript|data|vbscript):/iu.test(value),
   "unsafe_url_scheme",
 );
+
+/**
+ * One 指定場次 row as the merchant typed it: wall-clock YYYY-MM-DDTHH:mm
+ * in the merchant timezone, optional capacity (blank = unlimited) and whether
+ * it still accepts registrations. The publish action validates and sorts.
+ */
+export const FixedSessionDraftRowSchema = z.object({
+  startAt: z.string().trim().max(40),
+  capacity: z.string().trim().regex(/^\d{0,6}$/u).default(""),
+  status: z.enum(["open", "closed"]).default("open"),
+}).strict();
 
 export const LIVE_STUDIO_FLOW_VERSION = 2 as const;
 export const LIVE_STUDIO_STEP_COUNT = 8;
@@ -49,6 +61,13 @@ const liveStudioDraftFields = {
   pageQuotas: boundedJsonText,
   replayEnabled: z.boolean().default(true),
   replayAvailableUntil: z.string().trim().max(40).default(""),
+  // 指定場次. Absent (not defaulted) for a Live with one shared start, so the
+  // payload of such a Live, and every draft saved before this field existed,
+  // stays byte-identical and the publish claim's payload comparison still holds.
+  sessionMode: z.literal("fixed_sessions").optional(),
+  fixedSessions: z.array(FixedSessionDraftRowSchema).max(MAX_FIXED_SESSIONS).optional(),
+  sessionRegistrationCutoffMinutes: z.string().trim().regex(/^\d{0,4}$/u).optional(),
+  sessionReplayWindowHours: z.string().trim().regex(/^\d{0,4}$/u).optional(),
 };
 
 const LegacyLiveStudioDraftPayloadSchema = z.object({

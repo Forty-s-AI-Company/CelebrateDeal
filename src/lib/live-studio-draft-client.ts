@@ -17,6 +17,23 @@ function stringValue(formData: FormData, name: string) {
   return typeof value === "string" ? value : "";
 }
 
+function fixedSessionsValue(formData: FormData) {
+  const value = stringValue(formData, "fixedSessions");
+  if (!value) return [];
+  return JSON.parse(value) as unknown;
+}
+
+/** Only a fixed-session Live carries the 指定場次 keys (see the draft schema). */
+function fixedSessionFields(data: FormData) {
+  if (stringValue(data, "sessionMode") !== "fixed_sessions") return {};
+  return {
+    sessionMode: "fixed_sessions",
+    fixedSessions: fixedSessionsValue(data),
+    sessionRegistrationCutoffMinutes: stringValue(data, "sessionRegistrationCutoffMinutes"),
+    sessionReplayWindowHours: stringValue(data, "sessionReplayWindowHours"),
+  };
+}
+
 function notificationRulesValue(formData: FormData) {
   const value = stringValue(formData, "notificationRules");
   if (!value) return [];
@@ -63,6 +80,7 @@ export function liveStudioDraftFromFormData(data: FormData, activeStep: number):
     pageQuotas: stringValue(data, "pageQuotas"),
     replayEnabled,
     replayAvailableUntil: replayEnabled ? stringValue(data, "replayAvailableUntil") : "",
+    ...fixedSessionFields(data),
     activeStep,
   });
 }

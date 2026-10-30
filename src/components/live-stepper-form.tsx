@@ -10,6 +10,9 @@ import { LiveSlugField } from "@/components/live-slug-field";
 import { FormSubmitButton } from "@/components/form-submit-button";
 import { LIVE_DRAFT_SAVE_FAILED_EVENT, LiveConfirmedSubmitButton, LiveFormPendingLock } from "@/components/live-submit-confirmation";
 import { MediaUploadField } from "@/components/media-upload-field";
+import { LiveFixedSessionsEditor, type StoredFixedSessionSummary } from "@/components/live-fixed-sessions-editor";
+import type { FixedSessionDraftRow } from "@/lib/live-fixed-sessions";
+import { formatZonedDateTimeLocal } from "@/lib/zoned-date-time";
 import {
   StreamAllocationEditor,
   type StreamAllocationMemberOption,
@@ -1028,6 +1031,15 @@ function renderLiveStudioScheduleStep(input: {
   onReplayEnabledChange: (enabled: boolean) => void;
   onReplayAvailableUntilChange: (value: string) => void;
   onMediaValueChange: () => void;
+  fixedSessions: {
+    mode: "single" | "fixed_sessions";
+    latestStartAt: string;
+    nowLocal: string;
+    storedSessions: StoredFixedSessionSummary[];
+    streamMode: string;
+    onModeChange: (mode: "single" | "fixed_sessions") => void;
+    onRowsChange: (rows: FixedSessionDraftRow[]) => void;
+  };
 }) {
   return (
     <StepPanel active={input.activeStep === 4} index={4}>
@@ -1039,7 +1051,24 @@ function renderLiveStudioScheduleStep(input: {
         Logo、品牌色、寄件資訊與聯絡網址會沿用商店品牌設定。
         <Link href="/settings/brand" className="ml-1 font-semibold text-primary underline">編輯品牌設定</Link>
       </p>
-      <ScheduleDateTimeField timeZone={input.timeZone} defaultValue={input.initialValues.scheduledAt} onChange={input.onScheduledAtChange} />
+      <LiveFixedSessionsEditor
+        timeZoneLabel={formatTimeZoneLabel(input.timeZone)}
+        nowLocal={input.fixedSessions.nowLocal}
+        initialMode={input.initialValues.sessionMode === "fixed_sessions" ? "fixed_sessions" : "single"}
+        initialRows={input.initialValues.fixedSessions ?? []}
+        initialCutoffMinutes={input.initialValues.sessionRegistrationCutoffMinutes ?? "0"}
+        initialReplayWindowHours={input.initialValues.sessionReplayWindowHours ?? ""}
+        storedSessions={input.fixedSessions.storedSessions}
+        streamMode={input.fixedSessions.streamMode}
+        onModeChange={input.fixedSessions.onModeChange}
+        onRowsChange={input.fixedSessions.onRowsChange}
+      />
+      {input.fixedSessions.mode === "fixed_sessions" ? (
+        // The Live's shared start is its latest session; the server derives it again.
+        <input type="hidden" name="scheduledAt" value={input.fixedSessions.latestStartAt} readOnly />
+      ) : (
+        <ScheduleDateTimeField timeZone={input.timeZone} defaultValue={input.initialValues.scheduledAt} onChange={input.onScheduledAtChange} />
+      )}
       <label className="flex items-center gap-2 text-sm font-medium text-slate-700">
         <input name="replayEnabled" type="checkbox" checked={input.replayEnabled} onChange={(event) => input.onReplayEnabledChange(event.target.checked)} className="h-4 w-4 accent-blue-600" />
         直播結束後允許回放
@@ -1226,6 +1255,8 @@ type LiveStepperFormProps = {
   projectId?: string | null;
   currentStatus?: string;
   timeZone: string;
+  /** Stored 指定場次 of an existing Live, with their registration counts. */
+  fixedSessionSummaries?: StoredFixedSessionSummary[];
 };
 
 /** The eight-step studio for one draft; mount it through `LiveStepperForm`. */
@@ -1247,6 +1278,7 @@ export function LiveStudioStepperForm({
   projectId,
   currentStatus = "draft",
   timeZone,
+  fixedSessionSummaries = [],
   onDraftSaved,
   onUnsavedChange,
 }: LiveStepperFormProps & {
@@ -1288,6 +1320,12 @@ export function LiveStudioStepperForm({
   const [replayAvailableUntil, setReplayAvailableUntil] = useState(
     initialValues.replayEnabled ? initialValues.replayAvailableUntil : "",
   );
+  const [sessionMode, setSessionMode] = useState<"single" | "fixed_sessions">(initialValues.sessionMode === "fixed_sessions" ? "fixed_sessions" : "single");
+  const [fixedSessionRows, setFixedSessionRows] = useState<FixedSessionDraftRow[]>(initialValues.fixedSessions ?? []);
+  const [streamMode, setStreamMode] = useState(initialValues.streamMode);
+  // Only drives the past-time hint; the publish action re-checks on the server.
+  const nowLocal = formatZonedDateTimeLocal(new Date(), timeZone);
+  const latestFixedSessionStart = fixedSessionRows.map((row) => row.startAt).filter(Boolean).sort().at(-1) ?? "";
   const draft = useLiveStudioDraft({
     activeStep,
     csrfToken,
@@ -1311,7 +1349,7 @@ export function LiveStudioStepperForm({
     readinessIsReady("media"),
     readinessIsReady("products"),
     readinessIsReady("registration_form"),
-    Boolean(scheduledAt),
+    sessionMode === "fixed_sessions" ? Boolean(latestFixedSessionStart) : Boolean(scheduledAt),
     readinessIsReady("registration_email"),
     readinessIsReady("interaction_script"),
     publishReadiness.ready,
@@ -1380,7 +1418,11 @@ export function LiveStudioStepperForm({
       ref={formRef}
       action={upsertLiveAction}
       className="grid gap-5"
-      onChange={() => draft.scheduleSave()}
+      onChange={(event) => {
+        const target = event?.target as EventTarget as HTMLInputElement | HTMLSelectElement | undefined;
+        if (target?.name === "streamMode") setStreamMode(target.value === "live" ? "live" : "vod");
+        draft.scheduleSave();
+      }}
       onInvalid={(event) => handleLiveFormInvalid(event, invalidFocusPendingRef, setActiveStep, setValidationMessage)}
       onSubmit={(event) => submitOnlyAfterLatestDraft(event, activeStep, draft, formRef.current, submitFlush)}
     >
@@ -1493,7 +1535,7 @@ export function LiveStudioStepperForm({
         streamPages,
       })}
 
-      {renderLiveStudioScheduleStep({ activeStep, initialValues, timeZone, replayEnabled, replayAvailableUntil, onScheduledAtChange: setScheduledAt, onReplayEnabledChange: (enabled) => { setReplayEnabled(enabled); if (!enabled) setReplayAvailableUntil(""); }, onReplayAvailableUntilChange: setReplayAvailableUntil, onMediaValueChange: () => draft.scheduleSave() })}
+      {renderLiveStudioScheduleStep({ activeStep, initialValues, timeZone, replayEnabled, replayAvailableUntil, onScheduledAtChange: setScheduledAt, onReplayEnabledChange: (enabled) => { setReplayEnabled(enabled); if (!enabled) setReplayAvailableUntil(""); }, onReplayAvailableUntilChange: setReplayAvailableUntil, onMediaValueChange: () => draft.scheduleSave(), fixedSessions: { mode: sessionMode, latestStartAt: latestFixedSessionStart, nowLocal, storedSessions: fixedSessionSummaries, streamMode, onModeChange: (mode) => { setSessionMode(mode); draft.scheduleSave(); }, onRowsChange: (rows) => { setFixedSessionRows(rows); draft.scheduleSave(); } } })}
       <StepPanel active={activeStep === 7} index={7}>
         <LiveReviewPanel preview={preview} readiness={publishReadiness} onFix={fixReadinessRequirement} />
       </StepPanel>

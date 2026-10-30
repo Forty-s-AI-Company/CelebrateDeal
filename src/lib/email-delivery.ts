@@ -13,6 +13,7 @@ import {
 import { hasOnlySupportedMessageTemplateVariables, renderMessageTemplate } from "@/lib/message-template";
 import { createLiveViewerUrl } from "@/lib/live-public-url";
 import { EVERGREEN_ACTIVATION_SELECT, isActiveEvergreenLive } from "@/lib/evergreen-activation";
+import { isFixedSessionLive } from "@/lib/live-fixed-sessions";
 import { normalizeBlacklistIdentifier } from "@/lib/blacklist-identifiers";
 import { captureOperationalError } from "@/lib/monitoring";
 import {
@@ -828,12 +829,18 @@ async function isCurrentLiveReminderDelivery(
     },
   });
   const template = live?.liveReminderTemplate;
+  // A fixed-session Live (指定場次) reminds each registrant before their own
+  // session; a cancelled session (or none) gets no reminder.
+  const recipientStartAt = live && isFixedSessionLive(live)
+    ? await fixedSessionReminderStart(database, delivery, live)
+    : live?.scheduledAt ?? null;
   if (
     !live
+    || !recipientStartAt
     || !new Set(["scheduled", "live"]).has(live.status)
     // A reminder queued before evergreen was enabled must not be sent.
     || isActiveEvergreenLive(live, { now })
-    || live.scheduledAt <= now
+    || recipientStartAt <= now
     || !template?.isActive
     || template.vendorId !== delivery.vendorId
     || template.channel !== "email"
@@ -850,9 +857,29 @@ async function isCurrentLiveReminderDelivery(
     liveTitle: live.title,
     formSubmissionId: delivery.sourceFormSubmissionId,
     template: { id: template.id, subject: template.subject, body: template.body },
-    liveScheduledAt: live.scheduledAt,
+    liveScheduledAt: recipientStartAt,
     reminderOffsetMinutes: live.liveReminderOffsetMinutes,
   }) === delivery.id;
+}
+
+async function fixedSessionReminderStart(
+  database: DeliverySnapshotDatabase,
+  delivery: EmailDeliverySnapshotIdentity,
+  live: { id: string; vendorId: string },
+) {
+  if (!delivery.sourceFormSubmissionId) return null;
+  const submission = await database.formSubmission.findFirst({
+    where: {
+      id: delivery.sourceFormSubmissionId,
+      liveId: live.id,
+      verificationStatus: "VERIFIED",
+      form: { vendorId: live.vendorId },
+    },
+    select: { liveSession: { select: { vendorId: true, liveId: true, startAt: true, status: true } } },
+  });
+  const session = submission?.liveSession;
+  if (!session || session.vendorId !== live.vendorId || session.liveId !== live.id || session.status === "cancelled") return null;
+  return session.startAt;
 }
 
 async function isCurrentPostLiveFollowupDelivery(

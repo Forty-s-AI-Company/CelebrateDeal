@@ -90,12 +90,13 @@ describe("updateEvergreenWebinarSettingsAction", () => {
         id: true,
         slug: true,
         streamMode: true,
+        sessionMode: true,
         videoId: true,
         video: { select: { durationSec: true } },
       },
     });
     expect(mocks.liveUpdateMany).toHaveBeenCalledWith({
-      where: { id: "live-current", vendorId: "vendor-current", streamMode: "vod", videoId: "video-current" },
+      where: { id: "live-current", vendorId: "vendor-current", streamMode: "vod", videoId: "video-current", sessionMode: "single" },
       data: expect.objectContaining({
         isEvergreen: true,
         evergreenScheduleMode: "just_in_time",
@@ -143,6 +144,7 @@ describe("updateEvergreenWebinarSettingsAction", () => {
     ["a zero-length video", { video: { durationSec: 0 } }, "evergreen_duration_required"],
     ["a video longer than 24 hours", { video: { durationSec: 86_401 } }, "evergreen_duration_required"],
     ["a live without a source video", { videoId: null, video: null }, "evergreen_video_required"],
+    ["a live with fixed sessions (指定場次)", { sessionMode: "fixed_sessions" }, "evergreen_fixed_sessions"],
   ])("refuses to enable evergreen for %s", async (_label, overrides, error) => {
     mocks.liveFindFirst.mockResolvedValueOnce({
       id: "live-current", slug: "live-slug", streamMode: "vod", videoId: "video-current", video: { durationSec: 600 }, ...overrides,

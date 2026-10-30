@@ -20,7 +20,9 @@ import { getRuntimeLivePublishReadiness } from "@/lib/live-runtime-readiness";
 import { normalizeScheduledRuntimeMessage, type ScheduledRuntimeMessage } from "@/lib/live-chat-contract";
 import { parseRegistrationFormFields } from "@/lib/registration-form-fields";
 import { publicLiveAvailabilityWhere } from "@/lib/sellable-live";
-import { resolveLiveRuntime } from "@/lib/live-runtime-state";
+import { resolveLiveRuntime, type LiveRuntimeState } from "@/lib/live-runtime-state";
+import { isFixedSessionLive, resolveFixedSessionRuntime } from "@/lib/live-fixed-sessions";
+import { registrationSessionTokenFromCookieHeader, resolveViewerFixedSessionForLive } from "@/lib/live-fixed-sessions-store";
 import { buildShareMetadata, shareDescription, unavailableShareMetadata } from "@/lib/public-share-metadata";
 import { publicInteractionMetadata } from "@/lib/public-interaction-metadata";
 import { isProductPurchasable } from "@/lib/feature-gates";
@@ -81,6 +83,55 @@ async function readEvergreenSession(
     intent: "read",
     now: serverNow,
   });
+}
+
+/**
+ * The session this visitor follows on a fixed-session Live (指定場次): their
+ * own verified registration's session (signed registration cookie), else the
+ * public schedule. Admission and playback resolve it the same way.
+ */
+async function readFixedSession(
+  live: {
+    id: string;
+    vendorId: string;
+    sessionMode: string;
+    status: string;
+    endedAt: Date | null;
+    replayEnabled: boolean;
+    replayAvailableUntil: Date | null;
+    sessionReplayWindowHours: number | null;
+    video: { durationSec: number | null } | null;
+  },
+  serverNow: Date,
+) {
+  if (!isFixedSessionLive(live)) return null;
+  const session = await resolveViewerFixedSessionForLive(getDb(), live, {
+    registrationToken: registrationSessionTokenFromCookieHeader((await headers()).get("cookie")),
+    now: serverNow,
+  });
+  const runtime = session
+    ? resolveFixedSessionRuntime(live, session, serverNow)
+    : { state: "waiting" as const, playbackStartSeconds: null };
+  return { session, runtime };
+}
+
+/** The lifecycle state and start this visitor's page counts down to or plays from. */
+function viewerSchedule(input: {
+  runtime: { state: LiveRuntimeState };
+  evergreen: EvergreenViewerSession | null;
+  fixedSession: Awaited<ReturnType<typeof readFixedSession>>;
+  liveScheduledAt: Date;
+}) {
+  if (input.fixedSession) {
+    return {
+      runtimeState: input.fixedSession.runtime.state,
+      scheduledAt: (input.fixedSession.session?.startAt ?? input.liveScheduledAt).toISOString(),
+    };
+  }
+  if (input.evergreen) {
+    return { runtimeState: input.evergreen.runtimeState, scheduledAt: input.evergreen.sessionStartAt.toISOString() };
+  }
+  return { runtimeState: input.runtime.state, scheduledAt: input.liveScheduledAt.toISOString() };
 }
 
 function evergreenRevealPosition(session: EvergreenViewerSession): EvergreenRevealPosition {
@@ -174,9 +225,13 @@ export default async function PublicLivePage({ params }: { params: Promise<{ slu
     console.warn("PUBLIC_LIVE_NOT_FOUND_READINESS", readiness.blockers.map(({ code }) => code));
     notFound();
   }
-  // An evergreen Live follows the visitor's own session instead of scheduledAt.
+  // An evergreen Live follows the visitor's own session instead of scheduledAt;
+  // a fixed-session Live follows the session the registrant chose.
+  // The evergreen rule itself is off for a fixed-session Live.
+  const fixedSession = await readFixedSession(live, serverNow);
   const evergreen = await readEvergreenSession(live, serverNow);
-  const runtimeState = evergreen ? evergreen.runtimeState : runtime.state;
+  const schedule = viewerSchedule({ runtime, evergreen, fixedSession, liveScheduledAt: live.scheduledAt });
+  const runtimeState = schedule.runtimeState;
   const sameVendorActiveForm = Boolean(live.form?.vendorId === live.vendorId && live.form.isActive);
   const parsedFormFields = sameVendorActiveForm ? parseRegistrationFormFields(live.form?.fields) : null;
   const formConfigurationUnavailable = Boolean(sameVendorActiveForm && parsedFormFields && !parsedFormFields.success);
@@ -262,7 +317,7 @@ export default async function PublicLivePage({ params }: { params: Promise<{ slu
         slug: live.slug,
         status: live.status,
         runtimeState,
-        scheduledAt: evergreen ? evergreen.sessionStartAt.toISOString() : live.scheduledAt.toISOString(),
+        scheduledAt: schedule.scheduledAt,
         ...(projected ? { evergreen: projected.evergreen } : {}),
         serverNow: serverNow.toISOString(),
         description: live.description,

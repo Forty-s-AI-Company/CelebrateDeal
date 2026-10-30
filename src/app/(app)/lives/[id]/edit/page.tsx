@@ -11,6 +11,7 @@ import { LiveStudioDraftPayloadSchema } from "@/lib/live-studio-draft";
 import { parseLiveQuotaPolicy } from "@/lib/live-quota-policy";
 import { liveReadyVideoWhere } from "@/lib/live-video-readiness";
 import { formatZonedDateTimeLocal } from "@/lib/zoned-date-time";
+import { fixedSessionDraftRows } from "@/lib/live-fixed-sessions";
 import {
   hasUsableMessageTemplateContent,
   LIVE_REMINDER_EMAIL_TEMPLATE_WHERE,
@@ -80,6 +81,33 @@ function prepareEvergreenSettings(
     evergreenPreviewEnabled: live.evergreenPreviewEnabled ?? false,
     evergreenPreviewRate,
   };
+}
+
+/** 指定場次 draft fields (only for a fixed-session Live) and per-session registration counts. */
+function prepareFixedSessionStudio(
+  live: {
+    sessionMode: string;
+    sessionRegistrationCutoffMinutes: number;
+    sessionReplayWindowHours: number | null;
+    sessions?: Array<{ startAt: Date; capacity: number | null; registeredCount: number; status: string }>;
+  },
+  timeZone: string,
+) {
+  const sessions = live.sessions ?? [];
+  const payloadFields = live.sessionMode === "fixed_sessions"
+    ? {
+        sessionMode: "fixed_sessions" as const,
+        fixedSessions: fixedSessionDraftRows(sessions, timeZone),
+        sessionRegistrationCutoffMinutes: String(live.sessionRegistrationCutoffMinutes),
+        sessionReplayWindowHours: live.sessionReplayWindowHours === null ? "" : String(live.sessionReplayWindowHours),
+      }
+    : {};
+  const summaries = sessions.map((session) => ({
+    startAt: formatZonedDateTimeLocal(session.startAt, timeZone),
+    registeredCount: session.registeredCount,
+    status: session.status,
+  }));
+  return { payloadFields, summaries };
 }
 
 function prepareLiveEditorResources(input: {
@@ -161,7 +189,11 @@ export default async function EditLivePage({
   const [live, videos, products, formCandidates, templateCandidates, scripts, affiliates, streamMemberships, streamQuotaPages, csrfToken, savedDraft] = await Promise.all([
     db.live.findFirst({
       where: { id, vendorId: vendor.id, ...resourceScope.liveAndForm },
-      include: { products: true, notificationRules: { orderBy: [{ trigger: "asc" }, { sortOrder: "asc" }, { id: "asc" }] } },
+      include: {
+        products: true,
+        notificationRules: { orderBy: [{ trigger: "asc" }, { sortOrder: "asc" }, { id: "asc" }] },
+        sessions: { orderBy: [{ startAt: "asc" }, { id: "asc" }], select: { startAt: true, capacity: true, registeredCount: true, status: true } },
+      },
     }),
     db.video.findMany({
       where: liveReadyVideoWhere(vendor.id),
@@ -250,6 +282,7 @@ export default async function EditLivePage({
     const expectedTrigger = rule.trigger === "post_live_followup" ? "post_live_followup" : "live_reminder";
     return !template || template.trigger !== expectedTrigger;
   });
+  const fixedSessionStudio = prepareFixedSessionStudio(live, vendor.timezone);
   const basePayload = LiveStudioDraftPayloadSchema.parse({
     title: live.title,
     slug: live.slug,
@@ -289,8 +322,10 @@ export default async function EditLivePage({
     replayAvailableUntil: live.replayAvailableUntil
       ? formatZonedDateTimeLocal(live.replayAvailableUntil, vendor.timezone)
       : "",
+    ...fixedSessionStudio.payloadFields,
     activeStep: 0,
   });
+  const fixedSessionSummaries = fixedSessionStudio.summaries;
   const savedPayload = savedDraft ? LiveStudioDraftPayloadSchema.safeParse(savedDraft.payload) : null;
   const initialDraft = savedDraft
     ? {
@@ -408,6 +443,7 @@ export default async function EditLivePage({
         liveId={live.id}
         currentStatus={live.status}
         timeZone={vendor.timezone}
+        fixedSessionSummaries={fixedSessionSummaries}
       />
     </>
   );
