@@ -5,12 +5,13 @@ import { usePathname } from "next/navigation";
 import { MoreHorizontal, X } from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
 import { useDialogBehavior } from "@/lib/use-dialog-behavior";
+import { isNavPathActive } from "@/lib/nav-active";
 
-export type MobileNavItem = { href: string; label: string };
+export type MobileNavItem = { href: string; label: string; activePrefixes?: readonly string[] };
 export type MobileNavGroup = { label: string; items: MobileNavItem[] };
 
 /** F-122: 底部固定 4 個常用入口 + 「更多」抽屜，取代約 35–40 顆橫向膠囊。 */
-const PRIMARY_PREFERENCE = ["/dashboard", "/lives", "/orders", "/customers", "/products", "/support-cases", "/settings/security"];
+const PRIMARY_PREFERENCE = ["/dashboard", "/lives", "/orders", "/customers", "/products", "/support-cases", "/settings"];
 
 export function pickPrimaryItems(groups: MobileNavGroup[], limit = 4): MobileNavItem[] {
   const all = groups.flatMap((group) => group.items);
@@ -24,8 +25,8 @@ export function pickPrimaryItems(groups: MobileNavGroup[], limit = 4): MobileNav
   return picked;
 }
 
-function isActive(pathname: string | null, href: string) {
-  return pathname === href || (href !== "/dashboard" && Boolean(pathname?.startsWith(`${href}/`)));
+function isActive(pathname: string | null, item: MobileNavItem) {
+  return isNavPathActive(pathname, item.href, item.activePrefixes);
 }
 
 export function AppShellMobileNav({ groups, supportLinks }: { groups: MobileNavGroup[]; supportLinks: MobileNavItem[] }) {
@@ -64,7 +65,7 @@ export function AppShellMobileNav({ groups, supportLinks }: { groups: MobileNavG
     <>
       <nav aria-label="行動版主要導覽" className="fixed inset-x-0 bottom-0 z-40 grid grid-cols-5 border-t border-slate-200 bg-white pb-[env(safe-area-inset-bottom)] shadow-[0_-4px_12px_rgba(15,23,42,0.06)] lg:hidden">
         {primary.map((item) => {
-          const active = isActive(pathname, item.href);
+          const active = isActive(pathname, item);
           return (
             <Link key={item.href} href={item.href} aria-current={active ? "page" : undefined} className={`${tabClass} ${active ? "text-blue-700" : "text-slate-600"}`}>
               <span className="max-w-full truncate">{item.label}</span>
@@ -99,7 +100,7 @@ export function AppShellMobileNav({ groups, supportLinks }: { groups: MobileNavG
                 <ul>
                   {group.items.map((item) => (
                     <li key={item.href}>
-                      <Link href={item.href} onClick={close} aria-current={isActive(pathname, item.href) ? "page" : undefined} className="flex min-h-11 items-center rounded-lg px-2 text-sm font-medium text-slate-800 hover:bg-slate-100 aria-[current=page]:bg-blue-50 aria-[current=page]:text-blue-700">
+                      <Link href={item.href} onClick={close} aria-current={isActive(pathname, item) ? "page" : undefined} className="flex min-h-11 items-center rounded-lg px-2 text-sm font-medium text-slate-800 hover:bg-slate-100 aria-[current=page]:bg-blue-50 aria-[current=page]:text-blue-700">
                         {item.label}
                       </Link>
                     </li>

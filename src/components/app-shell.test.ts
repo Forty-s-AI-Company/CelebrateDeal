@@ -30,11 +30,16 @@ vi.mock("react-dom", async (importOriginal) => {
 });
 
 import { navigationForRole } from "./app-shell";
+import { settingsGroups, settingsHubForRole } from "@/lib/app-navigation";
 import type { VendorFeatureModule } from "@/lib/vendor-feature-toggles";
 import { AppShell } from "./app-shell";
 
 function linksFor(role: string | null, isPlatformAdmin = false, enabledModules?: readonly VendorFeatureModule[]) {
   return navigationForRole(role, isPlatformAdmin, enabledModules).flatMap((group) => group.items.map((item) => item.href));
+}
+
+function hubLinksFor(role: string | null, isPlatformAdmin = false, enabledModules?: readonly VendorFeatureModule[]) {
+  return settingsHubForRole(role, isPlatformAdmin, enabledModules).flatMap((group) => group.items.map((item) => item.href));
 }
 
 function renderShell({ memberRole, isPlatformAdmin = false, vendorName = "測試商家", hasPartnerPortal }: { memberRole: string | null; isPlatformAdmin?: boolean; vendorName?: string; hasPartnerPortal?: boolean }) {
@@ -50,12 +55,12 @@ beforeEach(() => {
 
 describe("AppShell role navigation", () => {
   it("exposes LINE only to the owner allowed by the existing settings page", () => {
-    expect(linksFor("owner")).toContain("/settings/line");
+    expect(hubLinksFor("owner")).toContain("/settings/line");
     for (const role of ["admin", "accountant", "support", "member", null]) {
-      expect(linksFor(role)).not.toContain("/settings/line");
+      expect(hubLinksFor(role)).not.toContain("/settings/line");
     }
-    expect(linksFor(null, true)).not.toContain("/settings/line");
-    expect(renderShell({ memberRole: "owner" })).toContain('href="/settings/line"');
+    expect(hubLinksFor(null, true)).not.toContain("/settings/line");
+    expect(renderShell({ memberRole: "owner" })).not.toContain('href="/settings/line"');
   });
 
   it("makes partner pages discoverable with the funnel feature", () => {
@@ -68,7 +73,7 @@ describe("AppShell role navigation", () => {
   });
 
   it("links every supported role to an existing page rather than a missing settings route", () => {
-    const links = new Set(["owner", "admin", "accountant", "support"].flatMap((role) => linksFor(role))
+    const links = new Set(["owner", "admin", "accountant", "support"].flatMap((role) => linksFor(role).concat(hubLinksFor(role)))
       .concat(linksFor(null, true)));
     expect(links.has("/settings/commissions")).toBe(false);
     for (const href of links) {
@@ -79,15 +84,19 @@ describe("AppShell role navigation", () => {
   });
   it("keeps accountant navigation tenant-scoped and read-oriented", () => {
     const links = linksFor("accountant");
+    const hub = hubLinksFor("accountant");
 
-    expect(links).toContain("/billing/invoices");
-    expect(links).toContain("/billing/payment-methods");
-    expect(links).toContain("/affiliates/commissions");
-    expect(links).toContain("/billing/course-payouts");
+    expect(links).toContain("/settings");
+    expect(hub).toContain("/billing/invoices");
+    expect(hub).toContain("/billing/payment-methods");
+    expect(hub).toContain("/affiliates/commissions");
+    expect(hub).toContain("/billing/course-payouts");
+    expect(hub).toContain("/settings/security");
     expect(links).toContain("/team-performance");
     expect(links).not.toContain("/forms");
     expect(links).not.toContain("/landing-pages");
-    expect(links).not.toContain("/settings/brand");
+    expect(hub).not.toContain("/settings/brand");
+    expect(hub).not.toContain("/onboarding");
     expect(links).not.toContain("/admin/billing/dashboard");
   });
 
@@ -101,7 +110,8 @@ describe("AppShell role navigation", () => {
   });
 
   it("gives support only its case queue and personal security settings", () => {
-    expect(linksFor("support")).toEqual(["/support-cases", "/settings/security"]);
+    expect(linksFor("support")).toEqual(["/support-cases", "/settings"]);
+    expect(hubLinksFor("support")).toEqual(["/settings/security"]);
   });
 
   it("defaults unknown member roles to no navigation", () => {
@@ -114,9 +124,9 @@ describe("AppShell role navigation", () => {
 
     expect(links).toContain("/forms");
     expect(links).toContain("/landing-pages");
-    expect(links).toContain("/onboarding");
-    expect(links).toContain("/settings/brand");
-    expect(links).toContain("/settings/automations");
+    expect(links).toContain("/settings");
+    expect(links).not.toContain("/settings/brand");
+    expect(hubLinksFor(role)).toEqual(expect.arrayContaining(["/onboarding", "/settings/brand", "/settings/automations", "/settings/security"]));
     expect(links).not.toContain("/admin/billing/dashboard");
   });
 
@@ -126,10 +136,11 @@ describe("AppShell role navigation", () => {
     expect(links).toContain("/forms");
     expect(links).toContain("/landing-pages");
     expect(linksFor("owner", false, ["live_webinar"])).not.toContain("/landing-pages");
-    expect(links).toContain("/settings/features");
+    expect(links).toContain("/settings");
+    expect(hubLinksFor("owner", false, ["funnel_builder"])).toContain("/settings/features");
     expect(links).not.toContain("/lives");
     expect(links).not.toContain("/affiliates");
-    expect(links).not.toContain("/billing/payouts");
+    expect(hubLinksFor("owner", false, ["funnel_builder"])).not.toContain("/billing/payouts");
   });
 
   it("hides every finance route from a non-finance member", () => {
@@ -171,11 +182,17 @@ describe("AppShell role navigation", () => {
     expect(html).toContain('aria-label="主要導覽"');
     expect(html).toContain('aria-label="行動版主要導覽"');
     expect(html).toContain('href="/forms"');
-    expect(html).toContain('href="/onboarding"');
     expect(html).toContain('href="/support-cases"');
-    expect(html).toContain('href="/billing/invoices"');
-    expect(html).toContain('href="/affiliates/commissions"');
-    expect(html).toContain('href="/billing/course-payouts"');
+    // Settings and billing pages collapse into the 設定 hub entry (sidebar, account menu, mobile).
+    expect(html).toContain('href="/settings"');
+    expect(html).toContain('href="/settings/security"');
+    for (const href of ["/onboarding", "/settings/brand", "/settings/line", "/billing/invoices", "/affiliates/commissions", "/billing/course-payouts"]) {
+      expect(html).not.toContain(`href="${href}"`);
+    }
+    expect(html).not.toContain("帳務與方案");
+    expect(html).not.toContain("系統設定");
+    expect(html).toContain("客服與付款協助");
+    expect(html).toContain("服務條款與政策");
     expect(html).toContain('href="/policies"');
     expect(html).toContain('href="/support"');
     expect(html).toContain('class="mb-3 text-xs font-semibold text-slate-600"');
@@ -256,7 +273,7 @@ describe("AppShell partner portal entry", () => {
   });
 
   it("keeps support's queue and adds only the portal next to it", () => {
-    expect(portalLinks("support", true)).toEqual(["/support-cases", "/settings/security", "/affiliate-portal"]);
+    expect(portalLinks("support", true)).toEqual(["/support-cases", "/settings", "/affiliate-portal"]);
   });
 
   it("adds only the portal for a legacy role with a grant, and nothing without a member or for the platform administrator", () => {
@@ -280,4 +297,76 @@ it("keeps every merchant navigation label aligned with its destination title", (
     expect(title, href).toBe(label);
   }
   expect(labels).toMatchSnapshot();
+});
+
+describe("settings hub role and feature filtering", () => {
+  const hubGroups = (role: string | null, isPlatformAdmin = false, modules?: readonly VendorFeatureModule[]) =>
+    Object.fromEntries(settingsHubForRole(role, isPlatformAdmin, modules).map((group) => [group.label, group.items.map((item) => item.href)]));
+  const allHubLinks = settingsGroups.flatMap((group) => group.items.map((item) => item.href));
+
+  it("shows the owner every settings and billing page", () => {
+    expect(hubLinksFor("owner")).toEqual(allHubLinks);
+    expect(Object.keys(hubGroups("owner"))).toEqual(["帳號與安全", "工作區", "系統設定", "帳務與方案"]);
+  });
+
+  it("hides only the owner-only LINE page from an admin", () => {
+    expect(hubLinksFor("admin")).toEqual(allHubLinks.filter((href) => href !== "/settings/line"));
+  });
+
+  it("gives an accountant billing pages and personal security, nothing else", () => {
+    const groups = hubGroups("accountant");
+    expect(Object.keys(groups)).toEqual(["帳號與安全", "帳務與方案"]);
+    expect(groups["帳號與安全"]).toEqual(["/settings/security"]);
+    expect(groups["帳務與方案"]).toHaveLength(9);
+  });
+
+  it("gives support only personal security", () => {
+    expect(hubGroups("support")).toEqual({ "帳號與安全": ["/settings/security"] });
+  });
+
+  it("gives partners, platform administrators and unknown roles an empty hub", () => {
+    expect(settingsHubForRole("partner")).toEqual([]);
+    expect(settingsHubForRole("partner", false, ["billing"])).toEqual([]);
+    expect(settingsHubForRole(null, true)).toEqual([]);
+    expect(settingsHubForRole("owner", true)).toEqual([]);
+    expect(settingsHubForRole("member")).toEqual([]);
+    expect(settingsHubForRole(null)).toEqual([]);
+  });
+
+  it("drops pages whose module is disabled", () => {
+    const withoutAny = hubLinksFor("owner", false, []);
+    for (const href of ["/billing/usage", "/billing/payment-methods", "/billing/plans", "/billing/invoices", "/billing/settlements", "/billing/payouts", "/affiliates/commissions", "/billing/course-payouts"]) {
+      expect(withoutAny, href).not.toContain(href);
+    }
+    // Pages without a feature gate stay available.
+    expect(withoutAny).toEqual(expect.arrayContaining(["/billing/electronic-invoices", "/settings/security", "/settings/brand", "/onboarding", "/settings/features"]));
+
+    const affiliateOnly = hubLinksFor("accountant", false, ["affiliate_program"]);
+    expect(affiliateOnly).toContain("/affiliates/commissions");
+    expect(affiliateOnly).not.toContain("/billing/course-payouts");
+    expect(hubLinksFor("accountant", false, ["tax_remuneration"])).toEqual(expect.arrayContaining(["/billing/payouts", "/billing/course-payouts"]));
+  });
+
+  it("keeps an ungated billing page when every module is disabled", () => {
+    expect(hubGroups("accountant", false, [])["帳務與方案"]).toEqual(["/billing/electronic-invoices"]);
+  });
+
+  it("only offers the sidebar entry when the hub has a page to show", () => {
+    expect(linksFor("owner")).toContain("/settings");
+    expect(linksFor("member")).not.toContain("/settings");
+    expect(linksFor(null, true)).not.toContain("/settings");
+    expect(navigationForRole("partner")).toEqual([expect.objectContaining({ label: "夥伴入口" })]);
+  });
+
+  it("keeps every hub label aligned with its destination title", () => {
+    for (const { href, label } of settingsGroups.flatMap((group) => group.items)) {
+      const source = readFileSync(path.join(process.cwd(), `src/app/(app)${href}/page.tsx`), "utf8");
+      const titles = [...source.matchAll(/<PageHeader\b[^>]*?\btitle="([^"]+)"/g)].map((match) => match[1]);
+      expect(titles, href).toContain(label);
+    }
+  });
+
+  it("describes every hub page", () => {
+    for (const item of settingsGroups.flatMap((group) => group.items)) expect(item.description?.length, item.href).toBeGreaterThan(0);
+  });
 });

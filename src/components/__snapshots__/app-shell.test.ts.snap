@@ -83,72 +83,8 @@ exports[`keeps every merchant navigation label aligned with its destination titl
     "label": "成效分析",
   },
   {
-    "href": "/billing/usage",
-    "label": "用量與扣點",
-  },
-  {
-    "href": "/billing/payment-methods",
-    "label": "平台服務付款方式",
-  },
-  {
-    "href": "/billing/plans",
-    "label": "方案",
-  },
-  {
-    "href": "/billing/invoices",
-    "label": "帳單",
-  },
-  {
-    "href": "/billing/electronic-invoices",
-    "label": "電子發票",
-  },
-  {
-    "href": "/billing/settlements",
-    "label": "月結",
-  },
-  {
-    "href": "/billing/payouts",
-    "label": "批次出款",
-  },
-  {
-    "href": "/affiliates/commissions",
-    "label": "佣金結算",
-  },
-  {
-    "href": "/billing/course-payouts",
-    "label": "課程分潤",
-  },
-  {
-    "href": "/onboarding",
-    "label": "上線導引",
-  },
-  {
-    "href": "/settings/brand",
-    "label": "品牌設定",
-  },
-  {
-    "href": "/settings/tracking",
-    "label": "追蹤設定",
-  },
-  {
-    "href": "/settings/features",
-    "label": "功能模組",
-  },
-  {
-    "href": "/settings/line",
-    "label": "LINE 整合",
-  },
-  {
-    "href": "/settings/automations",
-    "label": "自動化",
-  },
-  {
-    "href": "/settings/team",
-    "label": "團隊管理",
-  },
-  {
-    "href": "/settings/security",
-    "label": "安全性",
+    "href": "/settings",
+    "label": "設定",
   },
 ]
 `;

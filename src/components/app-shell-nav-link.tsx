@@ -3,18 +3,21 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { clsx } from "clsx";
+import { isNavPathActive } from "@/lib/nav-active";
 
 export function AppShellNavLink({
   href,
   children,
   mobile = false,
+  activePrefixes,
 }: {
   href: string;
   children: React.ReactNode;
   mobile?: boolean;
+  activePrefixes?: readonly string[];
 }) {
   const pathname = usePathname();
-  const isActive = pathname === href || (href !== "/dashboard" && Boolean(pathname?.startsWith(`${href}/`)));
+  const isActive = isNavPathActive(pathname, href, activePrefixes);
 
   return (
     <Link

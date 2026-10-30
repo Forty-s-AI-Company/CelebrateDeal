@@ -349,10 +349,6 @@ test("active accountant is denied a same-tenant affiliate detail before sensitiv
     await expect(page.getByRole("heading", { name: "聯盟來源摘要", exact: true })).toBeVisible();
     await expect(page.getByText(affiliate.name, { exact: true })).toBeVisible();
     await expect(page.getByText(affiliate.code, { exact: true })).toBeVisible();
-    await page.getByRole("button", { name: "開啟工作區與帳號選單", exact: true }).click();
-    const commissionLink = page.getByRole("link", { name: "佣金結算", exact: true });
-    await expect(commissionLink).toBeVisible();
-    await expect(commissionLink).toHaveAttribute("href", "/affiliates/commissions");
     await expect(page.locator('a[href="/affiliates"]')).toHaveCount(0);
     await expect(page.locator(`a[href="${detailPath}"]`)).toHaveCount(0);
     await expect(page.locator(`a[href="${detailPath}/edit"]`)).toHaveCount(0);
@@ -371,6 +367,14 @@ test("active accountant is denied a same-tenant affiliate detail before sensitiv
     for (const canary of deniedDashboardCanaries) {
       await expect(page.getByText(canary, { exact: true })).toHaveCount(0);
     }
+
+    // Commission settlement now lives behind the single 設定 hub entry.
+    await page.getByRole("navigation", { name: "主要導覽" }).getByRole("link", { name: "設定", exact: true }).click();
+    await expect(page).toHaveURL(/\/settings$/u);
+    const commissionLink = page.getByRole("link", { name: "佣金結算", exact: true });
+    await expect(commissionLink).toBeVisible();
+    await expect(commissionLink).toHaveAttribute("href", "/affiliates/commissions");
+    await expect(page.locator('a[href="/affiliates"]')).toHaveCount(0);
 
     expect(posts).toEqual([]);
     expect(external).toEqual([]);

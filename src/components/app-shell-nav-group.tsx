@@ -3,6 +3,7 @@
 import { ChevronDown } from "lucide-react";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
+import { isNavPathActive } from "@/lib/nav-active";
 
 export function AppShellNavGroup({
   label,
@@ -14,7 +15,7 @@ export function AppShellNavGroup({
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
-  const containsActivePage = hrefs.some((href) => pathname === href || (href !== "/dashboard" && Boolean(pathname?.startsWith(`${href}/`))));
+  const containsActivePage = hrefs.some((href) => isNavPathActive(pathname, href));
   const [isOpen, setIsOpen] = useState(true);
 
   return (

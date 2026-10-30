@@ -80,9 +80,9 @@ test("WP-88 verifies every guarded page belongs to a browser-proven direct-URL g
 
   // These counts are intentionally exact. A new protected page must update
   // this matrix, so it cannot silently evade direct-URL review.
-  expect(sourceFiles).toHaveLength(99);
+  expect(sourceFiles).toHaveLength(100);
   expect(familyCounts).toEqual({
-    vendorContext: 7,
+    vendorContext: 8,
     vendorManagerMember: 2,
     vendorSupportMember: 2,
     vendorOwner: 3,
@@ -98,6 +98,10 @@ test("WP-88 verifies every guarded page belongs to a browser-proven direct-URL g
   const landingPageTemplatesPage = path.join(workspaceRoot, "src", "app", "(app)", "landing-pages", "templates", "page.tsx");
   expect(sourceFiles).toContain(landingPageTemplatesPage);
   expect(guardFor(readFileSync(landingPageTemplatesPage, "utf8"))).toBe("vendorManager");
+  // 設定 hub: any signed-in back-office member; the page itself filters links by role and feature.
+  const settingsHubPage = path.join(workspaceRoot, "src", "app", "(app)", "settings", "page.tsx");
+  expect(sourceFiles).toContain(settingsHubPage);
+  expect(guardFor(readFileSync(settingsHubPage, "utf8"))).toBe("vendorContext");
   // F-001: closed-beta grants are platform-admin only.
   const vendorFeaturesPage = path.join(workspaceRoot, "src", "app", "admin", "vendor-features", "page.tsx");
   expect(sourceFiles).toContain(vendorFeaturesPage);
@@ -144,7 +148,7 @@ test("WP-88 verifies every guarded page belongs to a browser-proven direct-URL g
     const anonymous = await browser.newContext();
     contexts.push(anonymous);
     const anonymousPage = await anonymous.newPage();
-    for (const protectedPath of ["/dashboard", "/products/new", "/billing/usage", "/team-templates", "/admin/billing/dashboard", "/admin/account-holds"]) {
+    for (const protectedPath of ["/dashboard", "/settings", "/products/new", "/billing/usage", "/team-templates", "/admin/billing/dashboard", "/admin/account-holds"]) {
       await anonymousPage.goto(protectedPath);
       await expect(anonymousPage).toHaveURL(/\/login(?:\?|$)/);
       await expect(anonymousPage.getByRole("button", { name: "登入" })).toBeVisible();
@@ -165,7 +169,28 @@ test("WP-88 verifies every guarded page belongs to a browser-proven direct-URL g
     await expect(ownerSession.page).toHaveURL(/\/billing\/usage$/);
     await expect(ownerSession.page.getByRole("heading", { name: "用量與扣點" })).toBeVisible();
 
+    // 設定 hub: grouped links filtered by role and feature, keyboard reachable, with a back link on sub-pages.
+    await ownerSession.page.goto("/settings");
+    await expect(ownerSession.page).toHaveURL(/\/settings$/);
+    await expect(ownerSession.page.getByRole("heading", { name: "設定", level: 1, exact: true })).toBeVisible();
+    for (const group of ["帳號與安全", "工作區", "系統設定", "帳務與方案"]) {
+      await expect(ownerSession.page.getByRole("heading", { name: group, level: 2, exact: true })).toBeVisible();
+    }
+    for (const href of ["/settings/security", "/settings/brand", "/settings/line", "/billing/usage", "/affiliates/commissions"]) {
+      await expect(ownerSession.page.locator(`main a[href="${href}"]`)).toHaveCount(1);
+    }
+    await ownerSession.page.locator('main a[href="/settings/security"]').focus();
+    await ownerSession.page.keyboard.press("Tab");
+    await expect(ownerSession.page.locator("main a:focus")).toHaveAttribute("href", "/settings/brand");
+    await ownerSession.page.goto("/settings/brand");
+    await ownerSession.page.getByRole("link", { name: "返回設定" }).click();
+    await expect(ownerSession.page).toHaveURL(/\/settings$/);
+
     const adminSession = await signedInPage(browser, admin.email);
+    await adminSession.page.goto("/settings");
+    await expect(adminSession.page.getByRole("heading", { name: "設定", level: 1, exact: true })).toBeVisible();
+    await expect(adminSession.page.locator('main a[href="/settings/brand"]')).toHaveCount(1);
+    await expect(adminSession.page.locator('main a[href="/settings/line"]')).toHaveCount(0);
     contexts.push(adminSession.context);
     await adminSession.page.goto("/products/new");
     await expect(adminSession.page).toHaveURL(/\/products\/new$/);
@@ -177,8 +202,18 @@ test("WP-88 verifies every guarded page belongs to a browser-proven direct-URL g
     await expect(accountantSession.page).toHaveURL(/\/dashboard\?error=insufficient_role$/);
     await expect(accountantSession.page.getByRole("heading", { name: "新增商品" })).toHaveCount(0);
 
+    await accountantSession.page.goto("/settings");
+    await expect(accountantSession.page.getByRole("heading", { name: "設定", level: 1, exact: true })).toBeVisible();
+    await expect(accountantSession.page.locator('main a[href="/billing/invoices"]')).toHaveCount(1);
+    await expect(accountantSession.page.locator('main a[href="/settings/security"]')).toHaveCount(1);
+    for (const hidden of ["/settings/brand", "/settings/team", "/settings/line", "/onboarding"]) {
+      await expect(accountantSession.page.locator(`main a[href="${hidden}"]`)).toHaveCount(0);
+    }
+
     const memberSession = await signedInPage(browser, member.email);
     contexts.push(memberSession.context);
+    await memberSession.page.goto("/settings");
+    await expect(memberSession.page).toHaveURL(/\/dashboard\?error=insufficient_role$/);
     await memberSession.page.goto("/billing/usage");
     await expect(memberSession.page).toHaveURL(/\/dashboard\?error=insufficient_role$/);
     await expect(memberSession.page.getByRole("heading", { name: "用量與扣點" })).toHaveCount(0);
