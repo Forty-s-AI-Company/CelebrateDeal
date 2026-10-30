@@ -241,7 +241,7 @@ describe("registration with a fixed session", () => {
     expect(await register(fx, `closed-${fx.suffix}@example.test`, closed!.id)).toEqual({ status: 409, body: { error: "Live session closed" } });
 
     const ok = await register(fx, `ok-${fx.suffix}@example.test`, open!.id);
-    expect(ok).toEqual({ status: 200, body: { ok: true, verificationRequired: true } });
+    expect(ok).toMatchObject({ status: 200, body: { ok: true, verificationRequired: true, liveSession: { id: open!.id } } });
     expect(await register(fx, `full-${fx.suffix}@example.test`, open!.id)).toEqual({ status: 409, body: { error: "Live session full" } });
 
     const rows = await getDb().formSubmission.findMany({ where: { liveId: fx.live.id }, select: { email: true, liveSessionId: true } });
@@ -299,7 +299,7 @@ describe("downstream timing follows the chosen session", () => {
     expect(result.status).toBe("verified");
     const confirmation = result.status === "verified" ? result.confirmation! : null;
     expect(confirmation?.liveScheduledAt.toISOString()).toBe(late.toISOString());
-    expect(confirmation?.fixedSession).toEqual({ id: lateSession!.id, status: "open" });
+    expect(confirmation?.fixedSession).toMatchObject({ id: lateSession!.id, status: "open", cancelledAt: null });
     expect(confirmation?.evergreen).toBeNull();
 
     const reminder = await ensureLiveReminderDelivery({

@@ -612,9 +612,30 @@ export async function ensurePostLiveFollowupDelivery(
  * Latest session start whose follow-up is due now: start + video length +
  * rule offset <= now. Null when the length is unknown (no follow-up can be due).
  */
-function fixedSessionPostLiveCutoff(durationSec: number | null, offsetMinutes: number, now: Date) {
+function fixedSessionPostLiveCutoff(
+  live: { status: string; endedAt: Date | null; video: { durationSec: number | null } | null },
+  offsetMinutes: number,
+  now: Date,
+) {
+  const durationSec = live.video?.durationSec ?? null;
   if (!durationSec || durationSec <= 0 || !Number.isInteger(offsetMinutes) || offsetMinutes < 0 || offsetMinutes > 10_080) return null;
-  return new Date(now.getTime() - durationSec * 1_000 - offsetMinutes * 60_000);
+  const due = now.getTime() - durationSec * 1_000 - offsetMinutes * 60_000;
+  const playedUntil = fixedSessionPlayedUntil(live, durationSec);
+  if (playedUntil === null) return null;
+  return new Date(Math.min(due, playedUntil));
+}
+
+/**
+ * m-F rule: a fixed session gets a follow-up only if it actually played to
+ * its end. A Live taken back to draft played nothing further; a Live the
+ * merchant ended played only the sessions that had finished by `endedAt`.
+ * Returns the latest session start that qualifies (exclusive of later
+ * sessions), +Infinity while the Live is still running, or null for none.
+ */
+function fixedSessionPlayedUntil(live: { status: string; endedAt: Date | null }, durationSec: number) {
+  if (live.status === "scheduled" || live.status === "live") return Number.POSITIVE_INFINITY;
+  if (live.status === "ended" && live.endedAt) return live.endedAt.getTime() - durationSec * 1_000;
+  return null;
 }
 
 export async function processDuePostLiveFollowups(
@@ -641,7 +662,7 @@ export async function processDuePostLiveFollowups(
   for (const rule of rules) {
     const live = rule.live;
     const fixedSessionsDueBefore = isFixedSessionLive(live)
-      ? fixedSessionPostLiveCutoff(live.video?.durationSec ?? null, rule.offsetMinutes, now)
+      ? fixedSessionPostLiveCutoff(live, rule.offsetMinutes, now)
       : null;
     const deliveryAt = isFixedSessionLive(live) ? null : resolvePostLiveDeliveryAt({
       streamMode: live.streamMode,
@@ -804,6 +825,13 @@ export type FixedSessionCancelledDeliveryInput = {
 };
 
 const FIXED_SESSION_CANCELLED_TRIGGER = "fixed_session_cancelled";
+const RECIPIENT_REQUEST_SUPPRESSION = "recipient_request";
+
+/** Whether a suppression row (by reason) lets this trigger through at send time. */
+export function isSuppressionExempt(trigger: string, reason: string) {
+  if (["student_portal_magic_link", "form_submission_verification"].includes(trigger)) return true;
+  return trigger === FIXED_SESSION_CANCELLED_TRIGGER && reason === RECIPIENT_REQUEST_SUPPRESSION;
+}
 
 function stableFixedSessionCancelledDeliveryId(input: Pick<FixedSessionCancelledDeliveryInput, "vendorId" | "formSubmissionId" | "sessionId" | "cancelledAt">) {
   const digest = createHash("sha256")
@@ -821,41 +849,42 @@ function fixedSessionCancelledIdempotencyKey(sessionId: string, cancelledAtMs: n
  * Queues one platform-written notice to a verified registrant whose fixed
  * session (指定場次) was cancelled: 「你報名的場次已取消，請重新選擇場次」 with a
  * link to choose again. One row per registration and cancellation; calling
- * again returns the existing row. It honours the merchant unsubscribe list
- * (with the usual footer) and is re-checked at send time.
+ * again returns the existing row.
+ *
+ * Transactional service notice about the registrant's own booking: fixed
+ * platform copy with no merchant marketing content and no unsubscribe link.
+ * A merchant-list unsubscribe (`recipient_request`) does not stop it; the
+ * merchant blacklist and any other suppression reason (bounce, complaint) do.
+ * It is re-checked at send time.
  */
 export async function ensureFixedSessionCancelledDelivery(input: FixedSessionCancelledDeliveryInput) {
   const db = getDb();
   const deliveryId = stableFixedSessionCancelledDeliveryId(input);
-  const unsubscribeUrl = createEmailUnsubscribeUrl(deliveryId);
   const recipientName = safeDisplayText(input.recipientName, "您好");
   const liveTitle = safeDisplayText(input.liveTitle, "直播");
   const vendorName = safeDisplayText(input.vendorName, "活動主辦單位");
   const protectedPayload = protectEmailDeliveryPayload({
     recipientEmail: input.recipientEmail,
     subject: `你報名的「${liveTitle}」場次已取消`,
-    body: ensureEmailUnsubscribeFooter([
+    body: [
       `${recipientName}：`,
       `你報名的場次已取消，請重新選擇場次。`,
       `直播：${liveTitle}`,
       `原場次：${formatLiveStartAt(input.sessionStartAt)}`,
       `重新選擇場次：${input.rechooseUrl}`,
-      `— ${vendorName}`,
-    ].join("\n\n"), unsubscribeUrl),
+      `主辦單位：${vendorName}`,
+      `這是依你的報名寄出的服務通知，不含行銷內容；若不再需要這個場次，可以忽略此信。`,
+    ].join("\n\n"),
     brand: input.emailBrand,
   }, { vendorId: input.vendorId, deliveryId });
   const normalizedEmail = normalizeBlacklistIdentifier("email", input.recipientEmail);
-  const [suppression, blacklist] = await Promise.all([
-    db.emailSuppression.findUnique({
-      where: { vendorId_recipientHash: { vendorId: input.vendorId, recipientHash: protectedPayload.recipientHash } },
-      select: { resubscribedAt: true },
-    }),
-    normalizedEmail ? db.blacklist.findFirst({
-      where: { vendorId: input.vendorId, identifierType: "email", identifier: normalizedEmail, isActive: true, unblockedAt: null },
-      select: { id: true },
-    }) : Promise.resolve(null),
-  ]);
-  const suppressed = Boolean((suppression && !suppression.resubscribedAt) || blacklist);
+  // Only the merchant blacklist blocks it here; EmailSuppression is applied at
+  // send time (dispatchEmailDelivery), where a recipient_request unsubscribe is exempt.
+  const blacklist = normalizedEmail ? await db.blacklist.findFirst({
+    where: { vendorId: input.vendorId, identifierType: "email", identifier: normalizedEmail, isActive: true, unblockedAt: null },
+    select: { id: true },
+  }) : null;
+  const suppressed = Boolean(blacklist);
   try {
     const delivery = await db.emailDelivery.create({
       data: {
@@ -870,7 +899,7 @@ export async function ensureFixedSessionCancelledDelivery(input: FixedSessionCan
         status: suppressed ? "suppressed" : "queued",
         maxAttempts: MAX_ATTEMPTS,
         nextAttemptAt: suppressed ? null : new Date(),
-        lastErrorCode: blacklist ? "recipient_blacklisted" : suppressed ? "recipient_suppressed" : null,
+        lastErrorCode: blacklist ? "recipient_blacklisted" : null,
       },
       select: { id: true, status: true },
     });
@@ -899,11 +928,16 @@ async function isCurrentFixedSessionCancelledDelivery(
       verificationStatus: "VERIFIED",
       form: { vendorId: delivery.vendorId },
     },
-    select: { id: true, liveSession: { select: { id: true, vendorId: true, status: true, cancelledAt: true } } },
+    select: { id: true, email: true, liveSession: { select: { id: true, vendorId: true, status: true, cancelledAt: true } } },
   });
   const session = submission?.liveSession;
   if (!session || session.vendorId !== delivery.vendorId || session.status !== "cancelled" || !session.cancelledAt) return false;
   if (session.cancelledAt.getTime() !== Number(match[2])) return false;
+  const normalizedEmail = normalizeBlacklistIdentifier("email", submission.email);
+  if (!normalizedEmail || await database.blacklist.findFirst({
+    where: { vendorId: delivery.vendorId, identifierType: "email", identifier: normalizedEmail, isActive: true, unblockedAt: null },
+    select: { id: true },
+  })) return false;
   return stableFixedSessionCancelledDeliveryId({
     vendorId: delivery.vendorId,
     formSubmissionId: submission.id,
@@ -1044,6 +1078,7 @@ async function isCurrentPostLiveFollowupDelivery(
         title: true,
         scheduledAt: true,
         endedAt: true,
+        status: true,
         streamMode: true,
         sessionMode: true,
         video: { select: { durationSec: true } },
@@ -1078,6 +1113,7 @@ async function isCurrentPostLiveFollowupDelivery(
   const session = submission.liveSession;
   const fixed = live.sessionMode === "fixed_sessions";
   if (fixed && (!session || session.vendorId !== delivery.vendorId || session.liveId !== live.id || session.status === "cancelled")) return false;
+  if (fixed && session && session.startAt.getTime() > (fixedSessionPlayedUntil(live, live.video?.durationSec ?? 0) ?? Number.NEGATIVE_INFINITY)) return false;
   const schedule = fixed && session
     ? { streamMode: "vod", scheduledAt: session.startAt, endedAt: null }
     : { streamMode: live.streamMode, scheduledAt: live.scheduledAt, endedAt: live.endedAt };
@@ -1283,11 +1319,13 @@ export async function dispatchEmailDelivery(deliveryId: string, actorLabel = "jo
         recipientHash: delivery.recipientHash,
       },
     },
-    select: { resubscribedAt: true },
+    select: { resubscribedAt: true, reason: true },
   });
   // Requested authentication mail is not a marketing subscription. Its capability
-  // still has to pass the send-time validity guard below.
-  if (suppression && !suppression.resubscribedAt && !["student_portal_magic_link", "form_submission_verification"].includes(delivery.trigger)) return finalizeSuppressed(delivery);
+  // still has to pass the send-time validity guard below. A fixed-session
+  // cancellation notice is a service message: only a merchant-list
+  // unsubscribe skips it, a bounce or complaint suppression still applies.
+  if (suppression && !suppression.resubscribedAt && !isSuppressionExempt(delivery.trigger, suppression.reason)) return finalizeSuppressed(delivery);
   if (!(await isCurrentEmailDeliverySnapshot(delivery, new Date()))) {
     return finalizeSuperseded(
       delivery,

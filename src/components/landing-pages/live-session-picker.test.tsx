@@ -7,7 +7,8 @@ import { previewFunnelTemplate } from "@/lib/funnel-template-gallery";
 import { FunnelPageDocumentRenderer, type FunnelSubmissionContext } from "./funnel-page-document-renderer";
 import { FunnelWebinarExperience, type WebinarExperienceResource } from "./funnel-webinar-experience";
 import { createGoalFunnelStepPages } from "@/lib/funnel-goal-step-pages";
-import { dateChipLabel, rememberChosenLiveSession, firstAvailableDate, LIVE_SESSION_STORAGE_PREFIX, readChosenLiveSession, type LiveSessionsData } from "./live-session-picker";
+import { dateChipLabel, firstAvailableDate, LIVE_SESSION_FALLBACK_ACCENT, LIVE_SESSION_FALLBACK_ACCENT_TEXT, LiveSessionPicker, readChosenLiveSession, useLiveSessionSelection, type LiveSessionsData } from "./live-session-picker";
+import { LIVE_SESSION_RESULT_COOKIE } from "@/lib/live-fixed-sessions";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -36,8 +37,13 @@ const submission = (liveSessions?: LiveSessionsData, extra: Partial<FunnelSubmis
 });
 
 const cleanups: Array<() => Promise<void>> = [];
-afterEach(async () => { while (cleanups.length) await cleanups.pop()!(); vi.unstubAllGlobals(); window.sessionStorage.clear(); });
-beforeEach(() => window.sessionStorage.clear());
+const clearConfirmed = () => { document.cookie = `${LIVE_SESSION_RESULT_COOKIE}=; Max-Age=0; Path=/`; };
+/** What POST /api/form-submissions writes after a successful fixed-session registration. */
+const confirmCookie = (value: { liveId: string; id: string; startAt: string; label: string }) => {
+  document.cookie = `${LIVE_SESSION_RESULT_COOKIE}=${encodeURIComponent(JSON.stringify(value))}; Path=/`;
+};
+afterEach(async () => { while (cleanups.length) await cleanups.pop()!(); vi.unstubAllGlobals(); clearConfirmed(); });
+beforeEach(() => clearConfirmed());
 
 async function mount(context: FunnelSubmissionContext, template = "leads-checklist-minimal") {
   const container = document.createElement("div");
@@ -145,8 +151,9 @@ describe("session picker on the public registration form", () => {
     expect(document.activeElement).toBe(times(root)[0]);
   });
 
-  it("posts liveSessionId with the registration and remembers the choice for the thank-you step", async () => {
-    const fetchMock = vi.fn().mockResolvedValue(Response.json({ ok: true, verificationRequired: true }));
+  it("posts liveSessionId with the registration and shows only the session the server confirmed", async () => {
+    // The server answers with the session the registration really holds (here a converged earlier pick).
+    const fetchMock = vi.fn().mockResolvedValue(Response.json({ ok: true, verificationRequired: true, liveSession: { id: "s-1400", startAt: "2026-11-02T14:00:00+08:00", label: "11月2日（週一） 14:00" } }));
     vi.stubGlobal("fetch", fetchMock);
     const root = await mount(submission(sessionsData()));
     await fill(root);
@@ -156,7 +163,22 @@ describe("session picker on the public registration form", () => {
     const [url, options] = fetchMock.mock.calls[0]!;
     expect(url).toBe("/api/form-submissions");
     expect(JSON.parse(options.body)).toMatchObject({ formId: "lead-form", liveId: "live-1", liveSessionId: "s-1900", payload: { name: "測試", email: "synthetic@example.invalid" } });
-    expect(readChosenLiveSession("live-1")).toMatchObject({ label: "11月2日（週一） 19:00" });
+    expect(root.textContent).toContain("你的場次：11月2日（週一） 14:00");
+    expect(root.textContent).not.toContain("19:00。");
+    // The client never records its own pick for the thank-you step.
+    expect(readChosenLiveSession("live-1")).toBeNull();
+  });
+
+  it("tells a registrant who cannot switch which session they already hold, without refreshing or remembering", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(Response.json({ error: "Already registered for another session", startAt: "2026-11-01T19:00:00+08:00", sessionLabel: "11月1日（週日） 19:00" }, { status: 409 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const root = await mount(submission(sessionsData()));
+    await fill(root);
+    await click(times(root)[1]!);
+    await submit(root);
+    expect(root.textContent).toContain("你已報名 11月1日（週日） 19:00 場次");
+    expect(fetchMock).toHaveBeenCalledOnce();
+    expect(readChosenLiveSession("live-1")).toBeNull();
   });
 
   it("does not send liveSessionId for a live without sessions", async () => {
@@ -252,7 +274,31 @@ describe("session picker on the public registration form", () => {
     const root = await mount(submission(sessionsData()));
     const picker = root.querySelector<HTMLElement>("[data-live-session-picker]")!;
     expect(picker.getAttribute("style") ?? "").toContain("--live-session-accent");
-    expect(times(root)[0]!.getAttribute("style") ?? "").not.toMatch(/#[0-9a-f]{3,6}\b/iu);
+    await click(times(root)[0]!);
+    // The template's accent variable wins; the explicit pair is only its fallback.
+    expect(times(root)[0]!.getAttribute("style") ?? "").toMatch(/background-color: var\(--live-session-accent/u);
+  });
+
+  it("keeps the selected chip readable on a dark template without an accent (no color-scheme dependent colours)", async () => {
+    // A stable payload, as a server prop would be (a new object per render re-seeds the picker).
+    const data = sessionsData();
+    function Harness() {
+      const selection = useLiveSessionSelection(data);
+      return <div style={{ color: "#f8fafc", backgroundColor: "#020617", colorScheme: "light" }}><LiveSessionPicker selection={selection} /></div>;
+    }
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root = createRoot(container);
+    await act(async () => root.render(<Harness />));
+    cleanups.push(async () => { await act(async () => root.unmount()); container.remove(); });
+    await click(times(container)[0]!);
+    const style = times(container)[0]!.getAttribute("style") ?? "";
+    expect(style).toContain(`var(--live-session-accent, ${LIVE_SESSION_FALLBACK_ACCENT})`);
+    expect(style).toContain(`var(--live-session-accent-text, ${LIVE_SESSION_FALLBACK_ACCENT_TEXT})`);
+    expect(style).not.toMatch(/Canvas|currentColor\)/u);
+    // The required marker is decorative; the group carries aria-required.
+    expect(container.querySelector('[data-live-session-picker] p span[aria-hidden="true"]')!.textContent).toBe("*");
+    expect(container.querySelector('[data-live-session-times]')!.getAttribute("aria-required")).toBe("true");
   });
 
   it("native-submit forms (webinar designs) carry liveSessionId in the POST and block a missing choice", async () => {
@@ -262,12 +308,12 @@ describe("session picker on the public registration form", () => {
     expect(submitEvent.defaultPrevented).toBe(true);
     await click(times(root)[0]!);
     expect(root.querySelector('input[name="liveSessionId"]')!.getAttribute("value")).toBe("s-1400");
-    expect(window.sessionStorage.getItem(`${LIVE_SESSION_STORAGE_PREFIX}live-1`)).toBeNull();
+    expect(readChosenLiveSession("live-1")).toBeNull();
   });
 });
 
 describe("thank-you step", () => {
-  it("shows the date and time the visitor chose, and a neutral line when nothing is remembered", async () => {
+  it("shows only the session the server confirmed, and a neutral line otherwise", async () => {
     const flow = createGoalFunnelStepPages({ id: "f", name: "Webinar", goal: "webinar", domain: "slug" })!;
     flow.flow.webinar = { timezone: "Asia/Taipei", startsAt: "2030-01-01T01:00:00.000Z", endsAt: "2030-01-01T02:00:00.000Z", replayEndsAt: "2030-01-02T02:00:00.000Z" };
     const resource: WebinarExperienceResource = {
@@ -284,7 +330,10 @@ describe("thank-you step", () => {
       return container;
     };
     expect((await mountThanks()).textContent).toContain("確認信會寫明開始時間");
-    rememberChosenLiveSession("live-1", "11月2日（週一） 19:00", "2026-11-02T19:00:00+08:00");
+    // Another Live's confirmation never shows here.
+    confirmCookie({ liveId: "live-2", id: "s-x", startAt: "2026-11-02T19:00:00+08:00", label: "11月2日（週一） 19:00" });
+    expect((await mountThanks()).textContent).toContain("確認信會寫明開始時間");
+    confirmCookie({ liveId: "live-1", id: "s-1900", startAt: "2026-11-02T19:00:00+08:00", label: "11月2日（週一） 19:00" });
     const withChoice = await mountThanks();
     expect(withChoice.textContent).toContain("你選擇的場次：11月2日（週一） 19:00");
     expect(withChoice.querySelector("time")!.getAttribute("datetime")).toBe("2026-11-02T19:00:00+08:00");

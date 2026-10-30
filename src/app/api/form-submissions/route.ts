@@ -48,6 +48,9 @@ import {
   type FixedSessionClaimFailure,
 } from "@/lib/live-fixed-sessions-store";
 import { resolveRepeatedFixedSessionRegistration } from "@/lib/live-fixed-session-registration";
+import { confirmedFixedSession, type ConfirmedFixedSession } from "@/lib/live-fixed-sessions-store";
+import { fixedSessionLabel, LIVE_SESSION_RESULT_COOKIE } from "@/lib/live-fixed-sessions";
+import { isTransientTransactionConflict, withSerializableRetry } from "@/lib/serializable-retry";
 
 const FIXED_SESSION_REGISTRATIONS_PER_IP = 5;
 const FIXED_SESSION_RATE_WINDOW_MS = 10 * 60_000;
@@ -384,16 +387,33 @@ async function fixedSessionRateLimit(request: Request, seat: FixedSessionSeat | 
 }
 
 /** A repeated registration may take its released seat back or move session (see resolveRepeatedFixedSessionRegistration). */
-async function repeatedFixedSessionResponse(request: Request, seat: FixedSessionSeat | null, submissionId: string) {
+async function repeatedFixedSessionResponse(request: Request, seat: FixedSessionSeat | null, submissionId: string, timeZone: string | null) {
   if (!seat) return null;
   const outcome = await resolveRepeatedFixedSessionRegistration({ request, ...seat, submissionId });
-  return outcome.ok ? null : fixedSessionUnavailableResponse(outcome.reason);
+  if (outcome.ok) return null;
+  if (outcome.reason === "already_registered") {
+    // The registration did not move: say which session it holds, so the
+    // picker shows it instead of the session the visitor just tapped.
+    return NextResponse.json({
+      error: "Already registered for another session",
+      startAt: outcome.session.startAt.toISOString(),
+      sessionLabel: fixedSessionLabel(outcome.session.startAt, timeZone || undefined),
+    }, { status: 409 });
+  }
+  return fixedSessionUnavailableResponse(outcome.reason);
+}
+
+/** The session this registration holds after the request (server truth), or null for a Live without sessions. */
+async function confirmedSessionFor(seat: FixedSessionSeat | null, submissionId: string, timeZone: string | null) {
+  if (!seat) return null;
+  const session = await confirmedFixedSession(getDb(), { vendorId: seat.vendorId, liveId: seat.liveId, submissionId, timeZone });
+  return session ? { ...session, liveId: seat.liveId } : null;
 }
 
 /** The same form, Live and email again: converge on the existing registration. */
 async function respondToRepeatedSubmission(input: {
   request: Request;
-  form: { vendorId: string; vendor: { name: string; senderName: string | null; supportEmail: string | null; contactUrl: string | null } };
+  form: { vendorId: string; vendor: { name: string; senderName: string | null; supportEmail: string | null; contactUrl: string | null; timezone: string | null } };
   duplicate: VerifiableSubmission;
   email: string;
   seat: FixedSessionSeat | null;
@@ -401,7 +421,7 @@ async function respondToRepeatedSubmission(input: {
   isNativeFormPost: boolean;
 }) {
   const { form, duplicate } = input;
-  const repeatedSeat = await repeatedFixedSessionResponse(input.request, input.seat, duplicate.id);
+  const repeatedSeat = await repeatedFixedSessionResponse(input.request, input.seat, duplicate.id, form.vendor.timezone);
   if (repeatedSeat) return repeatedSeat;
   const missedAutomation = await automationMissedBySubmission(form.vendorId, duplicate.id);
   const refreshed = await refreshExpiredVerification(duplicate);
@@ -424,7 +444,7 @@ async function respondToRepeatedSubmission(input: {
   // binding capability is deliberately not issued: proving knowledge of an
   // email address must not let a browser bind LINE to an existing record.
   await dispatchMissedFormRegistered(form.vendorId, duplicate.id, input.email, missedAutomation);
-  return submissionResponse(input.request, input.redirectTo, input.isNativeFormPost, duplicate.id);
+  return submissionResponse(input.request, input.redirectTo, input.isNativeFormPost, duplicate.id, false, await confirmedSessionFor(input.seat, duplicate.id, form.vendor.timezone));
 }
 
 function rethrowOrFixedSessionResponse(error: unknown): NextResponse {
@@ -452,7 +472,9 @@ async function createPublicSubmission(
 ): Promise<VerifiableSubmission> {
   const database = getDb();
   if (!source && !seat) return database.formSubmission.create({ data, select: verifiableSubmissionSelect });
-  return database.$transaction(async (transaction) => {
+  // The seat transaction is idempotent until it commits, so a deadlock or
+  // serialization conflict with a concurrent switch is re-run, never a 500.
+  return withSerializableRetry(() => database.$transaction(async (transaction) => {
     if (seat) {
       // A concurrent studio switch back to one shared start waits for this
       // seat and then refuses, instead of racing it (lockFixedSessionLive).
@@ -475,7 +497,7 @@ async function createPublicSubmission(
       });
     }
     return submission;
-  });
+  }), { attempts: 3, retryOn: isTransientTransactionConflict });
 }
 
 function formRegisteredAutomationEvent(input: { vendorId: string; submissionId: string; email: string; funnelPageId: string | null }) {
@@ -670,7 +692,7 @@ async function processSubmission(request: Request, native?: { formData: FormData
   const form = availablePublicForm(await getDb().registrationForm.findUnique({
     where: { id: parsed.data.formId },
     include: {
-      vendor: { select: { name: true, senderName: true, supportEmail: true, contactUrl: true } },
+      vendor: { select: { name: true, senderName: true, supportEmail: true, contactUrl: true, timezone: true } },
     },
   }));
   if (!form) {
@@ -818,7 +840,7 @@ async function processSubmission(request: Request, native?: { formData: FormData
       return NextResponse.json({ error: "Verification email unavailable" }, { status: 503 });
     }
     await dispatchMissedFormRegistered(form.vendorId, concurrentSubmission.id, email, missedAutomation);
-    return submissionResponse(request, parsed.data.redirectTo, isNativeFormPost, concurrentSubmission.id);
+    return submissionResponse(request, parsed.data.redirectTo, isNativeFormPost, concurrentSubmission.id, false, await confirmedSessionFor(seat, concurrentSubmission.id, form.vendor.timezone));
   }
   await recordLeadAttribution(submission.id, attribution);
   const verificationQueued = await enqueueSubmissionVerificationSafely({
@@ -837,7 +859,7 @@ async function processSubmission(request: Request, native?: { formData: FormData
 
   await dispatchFormRegistered(form.vendorId, submission.id, email, funnelSource?.pageId ?? null);
 
-  return submissionResponse(request, parsed.data.redirectTo, isNativeFormPost, submission.id, true);
+  return submissionResponse(request, parsed.data.redirectTo, isNativeFormPost, submission.id, true, await confirmedSessionFor(seat, submission.id, form.vendor.timezone));
 }
 
 function submissionResponse(
@@ -846,10 +868,24 @@ function submissionResponse(
   isNativeFormPost: boolean,
   formSubmissionId: string,
   issueLineBindingCapability = false,
+  liveSession: (ConfirmedFixedSession & { liveId: string }) | null = null,
 ) {
+  const confirmed = liveSession ? { id: liveSession.id, startAt: liveSession.startAt, label: liveSession.label } : null;
   const response = isNativeFormPost && redirectTo && isSameOriginRedirect(redirectTo, request.url)
     ? NextResponse.redirect(withSubmittedSearchParam(redirectTo, request.url), { status: 303 })
-    : NextResponse.json({ ok: true, verificationRequired: true });
+    : NextResponse.json({ ok: true, verificationRequired: true, ...(confirmed ? { liveSession: confirmed } : {}) });
+  // The thank-you step shows only this server-confirmed session (指定場次),
+  // never the visitor's own pick; readable by that page's script, no secret.
+  if (liveSession) {
+    // Next encodes the value (encodeURIComponent); the page decodes it once.
+    response.cookies.set(LIVE_SESSION_RESULT_COOKIE, JSON.stringify(liveSession), {
+      httpOnly: false,
+      sameSite: "lax",
+      secure: new URL(request.url).protocol === "https:",
+      path: "/",
+      maxAge: FORM_SUBMISSION_COOKIE_TTL_SECONDS,
+    });
+  }
 
   response.cookies.set(FORM_SUBMISSION_COOKIE, formSubmissionId, {
     httpOnly: true,

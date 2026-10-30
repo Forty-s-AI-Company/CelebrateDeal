@@ -1,4 +1,7 @@
+import type { Prisma } from "@prisma/client";
 import { getDb } from "@/lib/db";
+import { FORM_SUBMISSION_VERIFICATION_TTL_MS } from "@/lib/form-submission-verification";
+import { isTransientTransactionConflict, withSerializableRetry } from "@/lib/serializable-retry";
 import { ensureLiveReminderDelivery } from "@/lib/email-delivery";
 import { verifyFormSubmissionChatSessionToken } from "@/lib/form-submission-chat-session";
 import {
@@ -19,16 +22,19 @@ import { captureOperationalError } from "@/lib/monitoring";
  * Live (指定場次). It may take a seat again or move to another session:
  *
  * - Same session, seat released (the verification window had passed): take
- *   the seat again before the verification link is refreshed.
+ *   the seat again and refresh the verification window in the same
+ *   transaction, so the new link and the seat stand or fall together.
  * - Another session: move only while the current session has not started
  *   (or was cancelled), and only when the request may change this record:
  *   the registration is unverified, its session was cancelled, or the
  *   browser holds the signed registration cookie of this very registration.
- *   Knowing an email address alone never moves a confirmed registrant.
+ *   Knowing an email address alone never moves a confirmed registrant; that
+ *   request is answered `already_registered` with the session it holds.
  *
- * Everything that touches seats runs in one transaction behind the Live
- * FOR SHARE lock (lockFixedSessionLive). Returns the failure that should be
- * answered, or whether the registration moved.
+ * Seat changes run in one transaction behind the Live FOR SHARE lock
+ * (lockFixedSessionLive), then the registration row, then the session rows.
+ * A deadlock or serialization conflict is retried and, if it persists,
+ * treated like a concurrent change: the registration keeps what it holds.
  */
 export async function resolveRepeatedFixedSessionRegistration(input: {
   request: Request;
@@ -38,7 +44,11 @@ export async function resolveRepeatedFixedSessionRegistration(input: {
   sessionId: string;
   sessionRegistrationCutoffMinutes: number;
   now: Date;
-}): Promise<{ ok: true; moved: boolean } | { ok: false; reason: FixedSessionClaimFailure }> {
+}): Promise<
+  | { ok: true; moved: boolean }
+  | { ok: false; reason: FixedSessionClaimFailure }
+  | { ok: false; reason: "already_registered"; session: { startAt: Date } }
+> {
   const db = getDb();
   const current = await db.formSubmission.findFirst({
     where: { id: input.submissionId, liveId: input.liveId, form: { vendorId: input.vendorId } },
@@ -52,11 +62,15 @@ export async function resolveRepeatedFixedSessionRegistration(input: {
   if (!current) return { ok: true, moved: false };
   const sameSession = current.liveSessionId === input.sessionId;
   if (sameSession && current.liveSessionSeatReleasedAt === null) return { ok: true, moved: false };
-  if (!sameSession && !mayMove(input, current)) return { ok: true, moved: false };
+  if (!sameSession && !mayMove(input, current)) {
+    return current.liveSession
+      ? { ok: false, reason: "already_registered", session: { startAt: current.liveSession.startAt } }
+      : { ok: true, moved: false };
+  }
   try {
-    const failure = await db.$transaction(async (tx) => {
+    const failure = await withSerializableRetry(() => db.$transaction(async (tx) => {
       if (!await lockFixedSessionLive(tx, { vendorId: input.vendorId, liveId: input.liveId })) return "closed" as const;
-      return switchFixedSessionSeat(tx, {
+      const claim = await switchFixedSessionSeat(tx, {
         vendorId: input.vendorId,
         liveId: input.liveId,
         submissionId: input.submissionId,
@@ -65,11 +79,14 @@ export async function resolveRepeatedFixedSessionRegistration(input: {
         sessionRegistrationCutoffMinutes: input.sessionRegistrationCutoffMinutes,
         now: input.now,
       });
-    });
+      if (!claim) await refreshExpiredVerificationWindow(tx, { submissionId: input.submissionId, now: input.now });
+      return claim;
+    }), { attempts: 3, retryOn: isTransientTransactionConflict });
     if (failure) return { ok: false, reason: failure };
   } catch (error) {
-    // Another request changed this registration first; keep what it wrote.
-    if (error instanceof FixedSessionSwitchConflict) return { ok: true, moved: false };
+    // Another request changed this registration first (or the conflict
+    // outlived the retries); keep what it holds and report that.
+    if (error instanceof FixedSessionSwitchConflict || isTransientTransactionConflict(error)) return { ok: true, moved: false };
     throw error;
   }
   if (!sameSession && current.verificationStatus === "VERIFIED") {
@@ -78,6 +95,24 @@ export async function resolveRepeatedFixedSessionRegistration(input: {
   return { ok: true, moved: !sameSession };
 }
 
+/**
+ * Opens a new verification window for an unverified registration whose
+ * window has passed (the same update refreshExpiredVerification makes), in
+ * the caller's seat transaction. A verified or still valid one is untouched.
+ */
+async function refreshExpiredVerificationWindow(tx: Prisma.TransactionClient, input: { submissionId: string; now: Date }) {
+  await tx.formSubmission.updateMany({
+    where: {
+      id: input.submissionId,
+      verificationStatus: "UNVERIFIED",
+      OR: [{ verificationExpiresAt: null }, { verificationExpiresAt: { lte: input.now } }],
+    },
+    data: {
+      verificationVersion: { increment: 1 },
+      verificationExpiresAt: new Date(input.now.getTime() + FORM_SUBMISSION_VERIFICATION_TTL_MS),
+    },
+  });
+}
 function mayMove(
   input: { request: Request; vendorId: string; liveId: string; submissionId: string; now: Date },
   current: {

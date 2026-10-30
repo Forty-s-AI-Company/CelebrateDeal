@@ -6,12 +6,13 @@ vi.mock("@/lib/rate-limit", () => ({ checkRateLimit: vi.fn(async () => null) }))
 import { POST } from "@/app/api/form-submissions/route";
 import { POST as VERIFY } from "@/app/api/form-submissions/verify/route";
 import { getDb } from "@/lib/db";
-import { ensureLiveReminderDelivery, isCurrentEmailDeliverySnapshot, processDuePostLiveFollowups } from "@/lib/email-delivery";
+import { dispatchEmailDelivery, ensureLiveReminderDelivery, isCurrentEmailDeliverySnapshot, isSuppressionExempt, processDuePostLiveFollowups } from "@/lib/email-delivery";
 import { revealEmailDeliveryPayload } from "@/lib/email-delivery-pii";
 import { createFormSubmissionChatSessionToken, FORM_SUBMISSION_CHAT_SESSION_COOKIE } from "@/lib/form-submission-chat-session";
 import { createFormSubmissionVerificationToken } from "@/lib/form-submission-verification";
 import { verifyFormSubmission } from "@/lib/form-submission-verification-domain";
-import { queueFixedSessionCancellationNotices } from "@/lib/live-fixed-session-notices";
+import { queueFixedSessionCancellationNotices, resolveFixedSessionRechooseUrl } from "@/lib/live-fixed-session-notices";
+import { loadPublicRegistrationForm } from "@/lib/public-registration-form";
 import {
   loadPublicLiveSessions,
   releaseExpiredFixedSessionSeats,
@@ -19,6 +20,7 @@ import {
   syncLiveSessions,
 } from "@/lib/live-fixed-sessions-store";
 import { processDueLiveNotifications, supersedeFixedSessionDeliveries } from "@/lib/live-notification-delivery";
+import { fixedSessionLabel } from "@/lib/live-fixed-sessions";
 import { checkRateLimit } from "@/lib/rate-limit";
 
 /**
@@ -212,11 +214,15 @@ describe("re-registering moves between sessions (M-2)", () => {
       liveScheduledAt: first, reminderOffsetMinutes: 60, template: fx.reminderTemplate,
     });
 
-    // Knowing the email is not enough to move a confirmed registration.
-    expect((await register(fx, registrant.email, b!.id)).status).toBe(200);
+    // Knowing the email is not enough to move a confirmed registration: 409 names the session it holds.
+    expect(await register(fx, registrant.email, b!.id)).toEqual({
+      status: 409,
+      body: { error: "Already registered for another session", startAt: first.toISOString(), sessionLabel: fixedSessionLabel(first) },
+    });
     expect((await submissionByEmail(fx, registrant.email)).liveSessionId).toBe(a!.id);
 
-    expect((await register(fx, registrant.email, b!.id, chatCookie(registrant.id))).status).toBe(200);
+    const moved = await register(fx, registrant.email, b!.id, chatCookie(registrant.id));
+    expect(moved).toEqual({ status: 200, body: { ok: true, verificationRequired: true, liveSession: { id: b!.id, startAt: second.toISOString(), label: fixedSessionLabel(second) } } });
     expect((await submissionByEmail(fx, registrant.email)).liveSessionId).toBe(b!.id);
     expect([await seats(a!.id), await seats(b!.id)]).toEqual([0, 1]);
     const reminders = await getDb().emailDelivery.findMany({
@@ -245,7 +251,10 @@ describe("re-registering moves between sessions (M-2)", () => {
     expect((await submissionByEmail(fx, stranded.email)).liveSessionId).toBe(open!.id);
 
     const watching = await verifiedRegistrant(fx, started!.id, "watching");
-    expect((await register(fx, watching.email, open!.id, chatCookie(watching.id))).status).toBe(200);
+    expect(await register(fx, watching.email, open!.id, chatCookie(watching.id))).toEqual({
+      status: 409,
+      body: { error: "Already registered for another session", startAt: started!.startAt.toISOString(), sessionLabel: fixedSessionLabel(started!.startAt) },
+    });
     expect((await submissionByEmail(fx, watching.email)).liveSessionId).toBe(started!.id);
 
     await verifiedRegistrant(fx, full!.id, "full");
@@ -377,5 +386,149 @@ describe("per-session timing (M-3, m-7)", () => {
     expect(await loadPublicLiveSessions(getDb(), { liveId: fx.live.id })).not.toBeNull();
     await getDb().live.update({ where: { id: fx.live.id }, data: { messageTemplateId: null } });
     expect(await loadPublicLiveSessions(getDb(), { liveId: fx.live.id })).toBeNull();
+  });
+});
+
+describe("second review of PR #529", () => {
+  it("answers a confirmed registration with the session it holds and sets the thank-you cookie", async () => {
+    const fx = await fixture("confirmed");
+    const [a] = await sync(fx, [session(new Date("2030-10-30T06:00:00.000Z"), 5)]);
+    const response = await POST(new Request(`${APP}/api/form-submissions`, {
+      method: "POST",
+      headers: { "content-type": "application/json", origin: APP, "x-celebratedeal-client": "web" },
+      body: JSON.stringify({ formId: fx.form.id, liveId: fx.live.id, liveSessionId: a!.id, payload: { name: "Lead", email: `cookie-${fx.suffix}@example.test` } }),
+    }));
+    expect(await response.json()).toEqual({ ok: true, verificationRequired: true, liveSession: { id: a!.id, startAt: "2030-10-30T06:00:00.000Z", label: "10月30日（週三） 14:00" } });
+    const cookie = response.headers.getSetCookie().find((value) => value.startsWith("celebratedeal_live_session_result="));
+    expect(cookie).toBeDefined();
+    expect(cookie).not.toMatch(/HttpOnly/iu);
+    expect(JSON.parse(decodeURIComponent(cookie!.split(";")[0]!.split("=").slice(1).join("=")))).toEqual({ id: a!.id, startAt: "2030-10-30T06:00:00.000Z", label: "10月30日（週三） 14:00", liveId: fx.live.id });
+  });
+
+  it("sends the cancellation notice, not a confirmation, when a registrant verifies after their session was cancelled", async () => {
+    const fx = await fixture("verify-cancelled");
+    const [a, b] = await sync(fx, [session(new Date(Date.now() + 2 * DAY), 5), session(new Date(Date.now() + 3 * DAY), 5)]);
+    const email = `late-cancel-${fx.suffix}@example.test`;
+    await register(fx, email, a!.id);
+    const submission = await submissionByEmail(fx, email);
+    await sync(fx, [session(b!.startAt, 5)]);
+    // The studio/job pass already ran for this cancellation (the registrant was not verified yet).
+    expect(await queueFixedSessionCancellationNotices({ vendorId: fx.vendor.id, liveId: fx.live.id })).toEqual([]);
+
+    const token = createFormSubmissionVerificationToken({ submissionId: submission.id, expiresAt: submission.verificationExpiresAt!, version: submission.verificationVersion });
+    const response = await VERIFY(new Request(`${APP}/api/form-submissions/verify`, {
+      method: "POST",
+      headers: { origin: APP, "content-type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({ token }),
+    }));
+    const location = new URL(response.headers.get("location")!);
+    expect(location.searchParams.get("status")).toBe("session_cancelled");
+    expect(location.searchParams.get("rechoose")).toBe(`/form/${fx.form.slug}`);
+    const rows = await getDb().emailDelivery.findMany({ where: { vendorId: fx.vendor.id, sourceFormSubmissionId: submission.id }, select: { trigger: true } });
+    expect(rows.map((row) => row.trigger).sort()).toEqual(["fixed_session_cancelled", "form_submission_verification"]);
+    // Same identity as the studio/job notice: a later pass adds nothing.
+    await getDb().liveSession.update({ where: { id: a!.id }, data: { cancellationNoticesQueuedAt: null } });
+    await queueFixedSessionCancellationNotices({ vendorId: fx.vendor.id, liveId: fx.live.id });
+    expect(await getDb().emailDelivery.count({ where: { vendorId: fx.vendor.id, trigger: "fixed_session_cancelled" } })).toBe(1);
+  });
+
+  it("treats the cancellation notice as a service message: an unsubscribe lets it through, a bounce or the blacklist does not", async () => {
+    expect(isSuppressionExempt("fixed_session_cancelled", "recipient_request")).toBe(true);
+    expect(isSuppressionExempt("fixed_session_cancelled", "hard_bounce")).toBe(false);
+    expect(isSuppressionExempt("live_reminder", "recipient_request")).toBe(false);
+
+    const fx = await fixture("transactional");
+    const [a, b] = await sync(fx, [session(new Date(Date.now() + 2 * DAY)), session(new Date(Date.now() + 3 * DAY))]);
+    const unsubscribed = await verifiedRegistrant(fx, a!.id, "unsubscribed");
+    const bounced = await verifiedRegistrant(fx, a!.id, "bounced");
+    const blocked = await verifiedRegistrant(fx, a!.id, "blocked");
+    const { protectEmailDeliveryPayload } = await import("@/lib/email-delivery-pii");
+    const hash = (address: string) => protectEmailDeliveryPayload({ recipientEmail: address, subject: "x", body: "x" }, { vendorId: fx.vendor.id, deliveryId: "email_hash" }).recipientHash;
+    await getDb().emailSuppression.createMany({ data: [
+      { vendorId: fx.vendor.id, recipientHash: hash(unsubscribed.email), recipientMaskedEmail: "u***", reason: "recipient_request", source: "unsubscribe_link" },
+      { vendorId: fx.vendor.id, recipientHash: hash(bounced.email), recipientMaskedEmail: "b***", reason: "hard_bounce", source: "provider" },
+    ] });
+    await getDb().blacklist.create({ data: { vendorId: fx.vendor.id, identifierType: "email", identifier: blocked.email, reason: "synthetic" } });
+    await sync(fx, [session(b!.startAt)]);
+    await queueFixedSessionCancellationNotices({ vendorId: fx.vendor.id, liveId: fx.live.id });
+    const rows = await getDb().emailDelivery.findMany({ where: { vendorId: fx.vendor.id, trigger: "fixed_session_cancelled" }, select: { id: true, sourceFormSubmissionId: true, status: true } });
+    const byRecipient = Object.fromEntries(rows.map((row) => [row.sourceFormSubmissionId, row]));
+    expect(byRecipient[unsubscribed.id]!.status).toBe("queued");
+    expect(byRecipient[bounced.id]!.status).toBe("queued");
+    expect(byRecipient[blocked.id]!.status).toBe("suppressed");
+    // At send time the bounce still suppresses it (before any provider call).
+    expect(await dispatchEmailDelivery(byRecipient[bounced.id]!.id)).toEqual({ status: "suppressed" });
+    // The copy is the platform's own service text with no unsubscribe link.
+    const notice = await getDb().emailDelivery.findUniqueOrThrow({ where: { id: byRecipient[unsubscribed.id]!.id } });
+    const body = reveal(notice).body;
+    expect(body).toContain("這是依你的報名寄出的服務通知");
+    expect(body).not.toContain("退訂");
+  });
+
+  it("lists a fixed-session live on /form with its open sessions, and links there only while the form is public", async () => {
+    const fx = await fixture("form-page");
+    await sync(fx, [session(new Date("2030-10-30T06:00:00.000Z")), session(new Date("2030-10-31T12:00:00.000Z"), 3)]);
+    const page = await loadPublicRegistrationForm(fx.form.slug);
+    const option = page!.sessions.find((item) => item.id === fx.live.id)!;
+    expect(option.fixedSessions!.days.map((day) => [day.date, day.sessions.map((entry) => entry.timeLabel)])).toEqual([["2030-10-30", ["14:00"]], ["2030-10-31", ["20:00"]]]);
+    const rechoose = () => resolveFixedSessionRechooseUrl({ vendorId: fx.vendor.id, liveId: fx.live.id, slug: fx.live.slug, formId: fx.form.id });
+    expect(await rechoose()).toBe(`${APP}/form/${fx.form.slug}`);
+
+    // The form moves into an unpublished project: /form would 404, so the link falls back to the watch page.
+    const project = await getDb().salesProject.create({ data: { vendorId: fx.vendor.id, name: "Draft", slug: `draft-${fx.suffix}`, mode: "live_course", primaryFlow: "live" } });
+    await getDb().registrationForm.update({ where: { id: fx.form.id }, data: { projectId: project.id } });
+    expect(await loadPublicRegistrationForm(fx.form.slug)).toBeNull();
+    expect(await rechoose()).toBe(`${APP}/live/${fx.live.slug}`);
+  });
+
+  it("never turns a switch racing a seat release into a 500", async () => {
+    const fx = await fixture("race-release");
+    const [a, b] = await sync(fx, [session(new Date(Date.now() + 2 * DAY), 10), session(new Date(Date.now() + 3 * DAY), 10)]);
+    const emails = Array.from({ length: 4 }, (_, index) => `race-${index}-${fx.suffix}@example.test`);
+    for (const email of emails) await register(fx, email, a!.id);
+    await getDb().formSubmission.updateMany({ where: { liveId: fx.live.id }, data: { verificationExpiresAt: new Date(Date.now() - MINUTE) } });
+    const now = new Date();
+    const ids = (await getDb().formSubmission.findMany({ where: { liveId: fx.live.id }, select: { id: true } })).map((row) => row.id);
+    const [switches] = await Promise.all([
+      Promise.all(emails.map((email) => register(fx, email, b!.id))),
+      Promise.all(ids.map((submissionId) => releaseFixedSessionSeatIfExpired(getDb(), { submissionId, now }).catch((error: unknown) => error))),
+      releaseExpiredFixedSessionSeats(getDb(), { now }),
+    ]);
+    expect(switches.every((result) => result.status === 200)).toBe(true);
+    const rows = await getDb().formSubmission.findMany({ where: { liveId: fx.live.id }, select: { liveSessionId: true, liveSessionSeatReleasedAt: true } });
+    const held = (sessionId: string) => rows.filter((row) => row.liveSessionId === sessionId && row.liveSessionSeatReleasedAt === null).length;
+    expect([await seats(a!.id), await seats(b!.id)]).toEqual([held(a!.id), held(b!.id)]);
+    expect(rows.every((row) => row.liveSessionId === b!.id)).toBe(true);
+  });
+
+  it("follows up only sessions that played to their end before the merchant ended or withdrew the live", async () => {
+    const fx = await fixture("followup-ended");
+    const now = new Date();
+    const early = new Date(now.getTime() - 6 * HOUR);
+    const late = new Date(now.getTime() - 3 * HOUR);
+    const [earlySession, lateSession] = await sync(fx, [session(early), session(late)]);
+    const template = await getDb().messageTemplate.create({
+      data: { vendorId: fx.vendor.id, name: "Follow-up", channel: "email", trigger: "post_live_followup", subject: "感謝參加", body: "{{name}}\n{{unsubscribe_url}}", isActive: true },
+    });
+    await getDb().liveNotificationRule.create({ data: { vendorId: fx.vendor.id, liveId: fx.live.id, messageTemplateId: template.id, trigger: "post_live_followup", offsetMinutes: 10 } });
+    const watchedEarly = await verifiedRegistrant(fx, earlySession!.id, "early");
+    await verifiedRegistrant(fx, lateSession!.id, "late");
+    // Ended between the two sessions: the later one never finished.
+    await getDb().live.update({ where: { id: fx.live.id }, data: { status: "ended", endedAt: new Date(late.getTime() - HOUR) } });
+    await processDuePostLiveFollowups({ now });
+    const rows = await getDb().emailDelivery.findMany({ where: { vendorId: fx.vendor.id, trigger: "post_live_followup" }, select: { sourceFormSubmissionId: true } });
+    expect(rows.map((row) => row.sourceFormSubmissionId)).toEqual([watchedEarly.id]);
+
+    // Withdrawn to draft: nothing more is sent.
+    const withdrawn = await fixture("followup-draft");
+    const [played] = await sync(withdrawn, [session(early)]);
+    const draftTemplate = await getDb().messageTemplate.create({
+      data: { vendorId: withdrawn.vendor.id, name: "Follow-up", channel: "email", trigger: "post_live_followup", subject: "感謝參加", body: "{{name}}\n{{unsubscribe_url}}", isActive: true },
+    });
+    await getDb().liveNotificationRule.create({ data: { vendorId: withdrawn.vendor.id, liveId: withdrawn.live.id, messageTemplateId: draftTemplate.id, trigger: "post_live_followup", offsetMinutes: 10 } });
+    await verifiedRegistrant(withdrawn, played!.id, "draft");
+    await getDb().live.update({ where: { id: withdrawn.live.id }, data: { status: "draft" } });
+    await processDuePostLiveFollowups({ now });
+    expect(await getDb().emailDelivery.count({ where: { vendorId: withdrawn.vendor.id, trigger: "post_live_followup" } })).toBe(0);
   });
 });

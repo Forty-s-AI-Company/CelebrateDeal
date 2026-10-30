@@ -16,6 +16,7 @@ import {
 import { verifyFormSubmission } from "@/lib/form-submission-verification-domain";
 import { expiredFormSubmissionVerificationSubject } from "@/lib/form-submission-verification";
 import { releaseFixedSessionSeatIfExpired } from "@/lib/live-fixed-sessions-store";
+import { queueCancelledSessionNoticeOnVerification } from "@/lib/live-fixed-session-notices";
 import {
   EVERGREEN_NEUTRAL_START_TEXT,
   evergreenRegistrationStartText,
@@ -32,11 +33,13 @@ const VerificationForm = z.object({
 
 function redirectResult(
   request: Request,
-  status: "verified" | "invalid" | "retry",
+  status: "verified" | "invalid" | "retry" | "session_cancelled",
   chatSession?: { submissionId: string },
+  rechoosePath?: string | null,
 ) {
   const url = new URL("/verify-registration", getBrowserReturnAppUrl(request));
   url.searchParams.set("status", status);
+  if (rechoosePath) url.searchParams.set("rechoose", rechoosePath);
   const response = NextResponse.redirect(url, {
     status: 303,
     headers: { "Cache-Control": "private, no-store" },
@@ -49,6 +52,45 @@ function redirectResult(
     );
   }
   return response;
+}
+
+type VerifiedConfirmation = NonNullable<Extract<Awaited<ReturnType<typeof verifyFormSubmission>>, { status: "verified" }>["confirmation"]>;
+
+/**
+ * The registrant confirmed after their 指定場次 was cancelled: send the
+ * cancellation notice (same identity as the studio/job notices) instead of
+ * the confirmation, schedule no reminder, and return the relative path where
+ * they can choose another session. Never fails the verified result.
+ */
+async function notifyCancelledSession(
+  confirmation: VerifiedConfirmation,
+  session: NonNullable<VerifiedConfirmation["fixedSession"]>,
+) {
+  try {
+    const notice = await queueCancelledSessionNoticeOnVerification({
+      vendorId: confirmation.vendorId,
+      vendorName: confirmation.vendorName,
+      liveId: confirmation.liveId,
+      liveSlug: confirmation.liveSlug,
+      liveTitle: confirmation.liveTitle,
+      liveFormId: confirmation.liveFormId,
+      session,
+      formSubmissionId: confirmation.formSubmissionId,
+      recipientName: confirmation.recipientName,
+      recipientEmail: confirmation.recipientEmail,
+      emailBrand: confirmation.emailBrand,
+    });
+    scheduleImmediateEmailDispatch([notice.deliveryId]);
+    const url = new URL(notice.rechooseUrl);
+    return `${url.pathname}${url.search}`;
+  } catch (error) {
+    try {
+      captureOperationalError(error, { source: "form_submission_verification", operation: "fixed_session_cancelled_notice", status: "failed" });
+    } catch {
+      // The email job queues the notice later.
+    }
+    return null;
+  }
 }
 
 /** An expired link gives its fixed-session seat back now instead of at the next job run. */
@@ -112,8 +154,13 @@ export async function POST(request: Request) {
     return redirectResult(request, "invalid");
   }
 
+  if (result.status === "verified" && result.confirmation?.fixedSession?.status === "cancelled") {
+    const rechoosePath = await notifyCancelledSession(result.confirmation, result.confirmation.fixedSession);
+    return redirectResult(request, "session_cancelled", result.chatSession, rechoosePath);
+  }
   if (result.status === "verified" && result.confirmation) {
-    const { evergreen, fixedSession, ...confirmation } = result.confirmation;
+    const { evergreen, fixedSession, liveFormId: ignoredLiveFormId, ...confirmation } = result.confirmation;
+    void ignoredLiveFormId;
     // An evergreen Live has no shared start: use this visitor's own session
     // (from their signed cookie) or a neutral phrase, never scheduledAt.
     // The submission is already VERIFIED here, so a session-key failure must

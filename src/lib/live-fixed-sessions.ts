@@ -33,6 +33,8 @@ export const MAX_FIXED_SESSION_CAPACITY = 100_000;
 export const MAX_SESSION_REGISTRATION_CUTOFF_MINUTES = 1_440;
 export const MAX_SESSION_REPLAY_WINDOW_HOURS = 8_760;
 export const DEFAULT_SESSION_TIMEZONE = "Asia/Taipei";
+/** Script-readable cookie with the session the server confirmed for the last registration. */
+export const LIVE_SESSION_RESULT_COOKIE = "celebratedeal_live_session_result";
 
 export type FixedSessionDraftRow = {
   startAt: string;
@@ -315,6 +317,12 @@ export function groupOpenFixedSessionsByDate(
     days.set(date, [...(days.get(date) ?? []), entry]);
   }
   return [...days.entries()].map(([date, entries]) => ({ date, label: dayLabel(date), sessions: entries }));
+}
+
+/** The picker's label for one session, e.g. 10月30日（週五） 14:00, in the grouping timezone. */
+export function fixedSessionLabel(startAt: Date, timeZone = DEFAULT_SESSION_TIMEZONE) {
+  const [date, time] = formatZonedDateTimeLocal(startAt, timeZone).split("T") as [string, string];
+  return `${dayLabel(date)} ${time}`;
 }
 
 /** {{live_start_at}} for one session, in the same style as the shared start. */

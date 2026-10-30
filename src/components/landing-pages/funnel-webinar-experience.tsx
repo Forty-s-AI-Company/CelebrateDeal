@@ -58,8 +58,8 @@ export function FunnelWebinarExperience({ state, stepId, slug, resource, preview
   // Legacy or tampered published snapshots must not bypass the Live admission
   // boundary through the general-purpose video's raw URL renderer.
   if (step.type === "webinar_broadcast_page" && hasDirectWebinarVideo(state)) return <p role="alert" className="rounded-xl border border-amber-200 p-4">播放頁含有直接影片節點。請在編輯器移除該節點，並於頁面設定綁定活動與授權來源影片。</p>;
-  const evergreen = resource?.live.isEvergreen === true;
-  const status = getFunnelWebinarState(state.flow.webinar, { liveId: resource?.live.id, formId: resource?.form.id, evergreen, evergreenSession }, now);
+  const { evergreen, fixedSessions } = webinarScheduleKind(resource);
+  const status = getFunnelWebinarState(state.flow.webinar, { liveId: resource?.live.id, formId: resource?.form.id, evergreen, evergreenSession, fixedSessions }, now);
   const thankYou = state.flow.steps.find((item) => item.type === "webinar_thank_you_page");
   const broadcast = state.flow.steps.find((item) => item.type === "webinar_broadcast_page");
   const path = (value: string) => `/lp/${encodeURIComponent(slug)}/${encodeURIComponent(value)}`;
@@ -74,7 +74,7 @@ export function FunnelWebinarExperience({ state, stepId, slug, resource, preview
       <WebinarScheduleLine evergreen={evergreen} session={evergreenSession} settings={state.flow.webinar} resource={resource} stepType={step.type} />
       {step.type === "webinar_registration_page" && ready && thankYou && !submission ? <WebinarRegistrationForm resource={resource} source={source} redirectTo={path(thankYou.path)} preview={preview} /> : null}
       {step.type === "webinar_thank_you_page" && ready && broadcast ? <a className="mt-4 inline-block rounded-lg bg-blue-700 p-3 text-white" href={path(broadcast.path)}>查看播放／重播頁</a> : null}
-      {ready && showsBroadcastEntry(step.type, evergreen, status.status) ? <a className="mt-4 inline-block rounded-lg bg-blue-700 p-3 text-white" href={`${path(step.path)}/play`}>前往授權播放：{resource.live.videoTitle}</a> : null}
+      {ready && showsBroadcastEntry(step.type, evergreen || fixedSessions, status.status) ? <a className="mt-4 inline-block rounded-lg bg-blue-700 p-3 text-white" href={`${path(step.path)}/play`}>前往授權播放：{resource.live.videoTitle}</a> : null}
       {status.status === "missing" ? <p className="mt-2 text-sm">{preview ? "請開啟頁面設定，選擇報名表、活動與可播放來源影片，並補齊排程後儲存。" : "活動設定尚未完成，請聯絡活動主辦方確認資源與排程。"}</p> : null}
     </section> : null}
   </div>;
@@ -114,6 +114,11 @@ function useFunnelEvergreenSession(live: WebinarExperienceResource["live"] | und
 }
 
 /** An evergreen watch page runs its own waiting room, so its entry is always offered. */
+/** Evergreen and fixed-session (指定場次) Lives follow each visitor's own session, not the funnel dates. */
+function webinarScheduleKind(resource: WebinarExperienceResource | undefined) {
+  return { evergreen: resource?.live.isEvergreen === true, fixedSessions: Boolean(resource?.liveSessions) };
+}
+
 function showsBroadcastEntry(stepType: string, evergreen: boolean, status: string) {
   return stepType === "webinar_broadcast_page" && (evergreen || status === "live" || status === "replay");
 }
@@ -155,13 +160,16 @@ function useChosenSession(liveId: string | undefined) {
   }, [raw]);
 }
 
+/** The native webinar form's own submit colours (bg-blue-700, white), so its selected session matches it on any page background. */
+const WEBINAR_SESSION_ACCENT = { "--live-session-accent": "#1d4ed8", "--live-session-accent-text": "#ffffff" } as React.CSSProperties;
+
 function WebinarRegistrationForm({ resource, source, redirectTo, preview }: {
   resource: WebinarExperienceResource; source: ReturnType<typeof funnelSourceFields>; redirectTo: string; preview: boolean;
 }) {
   const retry = useRegistrationRetry(resource.form.id, { fixedSessions: Boolean(resource.liveSessions) });
   const [pending, setPending] = useState(false);
   const inFlight = useRef(false);
-  const { sessions, formRef, missing: sessionMissing, remember: rememberSession } = useLiveSessionForm(resource.liveSessions);
+  const { sessions, formRef, missing: sessionMissing } = useLiveSessionForm(resource.liveSessions);
   useEffect(() => {
     // 從瀏覽器歷史快取返回時，允許使用者重新送出。
     const reset = () => { inFlight.current = false; setPending(false); };
@@ -171,7 +179,6 @@ function WebinarRegistrationForm({ resource, source, redirectTo, preview }: {
   function onSubmit(event: React.FormEvent<HTMLFormElement>) {
     if (preview || inFlight.current) { event.preventDefault(); return; }
     if (sessionMissing()) { event.preventDefault(); return; }
-    rememberSession();
     inFlight.current = true;
     // 在原生導頁開始前繪製等待狀態，避免更新被延後到離開頁面之後。
     flushSync(() => setPending(true));
@@ -188,7 +195,7 @@ function WebinarRegistrationForm({ resource, source, redirectTo, preview }: {
     <input type="hidden" name="shareCode" value={retry?.attribution?.shareCode ?? ""} />
     <input type="hidden" name="redirectTo" value={redirectTo} />
     {resource.form.fields.map((field) => <label key={field.key} className="grid gap-1 text-sm">{field.label}<input name={field.key} defaultValue={retry?.draft?.answers[field.key] ?? ""} type={["email", "tel", "number", "url"].includes(field.type ?? "") ? field.type : "text"} required={field.required} className="min-h-11 rounded-lg border px-3" /></label>)}
-    {sessions.active ? <LiveSessionPicker selection={sessions} locked={preview || pending} /> : null}
+    {sessions.active ? <LiveSessionPicker selection={sessions} locked={preview || pending} accentStyle={WEBINAR_SESSION_ACCENT} /> : null}
     <RegistrationSubmissionFeedback pending={pending} errorMessage={retry?.message ?? ""} />
     <button disabled={preview || pending} aria-busy={pending} className="min-h-11 rounded-lg bg-blue-700 px-4 text-white">{preview ? "預覽模式，不送出報名" : pending ? "送出中..." : resource.form.submitLabel}</button>
     <p className="text-sm text-slate-600">{WEBINAR_CONFIRMATION_NOTICE}</p>

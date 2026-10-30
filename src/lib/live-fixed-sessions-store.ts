@@ -1,5 +1,6 @@
 import type { Prisma, PrismaClient } from "@prisma/client";
 import { getRuntimeLivePublishReadiness } from "@/lib/live-runtime-readiness";
+import { isTransientTransactionConflict } from "@/lib/serializable-retry";
 import { readCookieHeaderValue } from "@/lib/evergreen-viewer-session";
 import {
   FORM_SUBMISSION_CHAT_SESSION_COOKIE,
@@ -7,6 +8,7 @@ import {
 } from "@/lib/form-submission-chat-session";
 import {
   DEFAULT_SESSION_TIMEZONE,
+  fixedSessionLabel,
   fixedSessionRegistrationState,
   groupOpenFixedSessionsByDate,
   isFixedSessionLive,
@@ -347,6 +349,8 @@ export async function releaseFixedSessionSeatIfExpired(
   input: { submissionId: string; now: Date },
 ) {
   return db.$transaction(async (tx) => {
+    // Same lock order as switchFixedSessionSeat: the registration row, then its session.
+    await lockFormSubmissionRow(tx, input.submissionId);
     const submission = await tx.formSubmission.findFirst({
       where: {
         id: input.submissionId,
@@ -381,6 +385,10 @@ export async function releaseFixedSessionSeatIfExpired(
   });
 }
 
+async function lockFormSubmissionRow(tx: Pick<Prisma.TransactionClient, "$queryRaw">, submissionId: string) {
+  await tx.$queryRaw`SELECT "id" FROM "FormSubmission" WHERE "id" = ${submissionId} FOR NO KEY UPDATE`;
+}
+
 /** Scheduled sweep: releases expired unverified seats in bounded batches. */
 export async function releaseExpiredFixedSessionSeats(
   db: Pick<PrismaClient, "$transaction" | "formSubmission">,
@@ -396,7 +404,13 @@ export async function releaseExpiredFixedSessionSeats(
   });
   let released = 0;
   for (const submission of expired) {
-    if (await releaseFixedSessionSeatIfExpired(db, { submissionId: submission.id, now })) released += 1;
+    try {
+      if (await releaseFixedSessionSeatIfExpired(db, { submissionId: submission.id, now })) released += 1;
+    } catch (error) {
+      // A deadlock or serialization conflict with a concurrent switch leaves
+      // the seat for the next run; anything else is a real failure.
+      if (!isTransientTransactionConflict(error)) throw error;
+    }
   }
   return released;
 }
@@ -422,6 +436,10 @@ export async function switchFixedSessionSeat(
     now: Date;
   },
 ): Promise<FixedSessionClaimFailure | null> {
+  // Lock order shared with the seat release: the registration row first, then
+  // the session rows in id order, so a release, a switch and two opposite
+  // switches never wait on each other in a cycle.
+  await lockFormSubmissionRow(tx, input.submissionId);
   const ids = [...new Set([input.fromSessionId, input.toSessionId].filter((id): id is string => Boolean(id)))].sort();
   await tx.$queryRaw`
     SELECT "id" FROM "LiveSession"
@@ -481,4 +499,23 @@ export async function lockFixedSessionLive(
     WHERE "id" = ${input.liveId} AND "vendorId" = ${input.vendorId} AND "sessionMode" = 'fixed_sessions'
     FOR SHARE`;
   return rows.length === 1;
+}
+
+export type ConfirmedFixedSession = { id: string; startAt: string; label: string };
+
+/**
+ * The session a registration holds right now, read from the database, for
+ * the registration response and the thank-you step (never the client's pick).
+ */
+export async function confirmedFixedSession(
+  db: Pick<PrismaClient, "formSubmission">,
+  input: { vendorId: string; liveId: string; submissionId: string; timeZone?: string | null },
+): Promise<ConfirmedFixedSession | null> {
+  const submission = await db.formSubmission.findFirst({
+    where: { id: input.submissionId, liveId: input.liveId, form: { vendorId: input.vendorId } },
+    select: { liveSession: { select: { id: true, vendorId: true, liveId: true, startAt: true } } },
+  });
+  const session = submission?.liveSession;
+  if (!session || session.vendorId !== input.vendorId || session.liveId !== input.liveId) return null;
+  return { id: session.id, startAt: session.startAt.toISOString(), label: fixedSessionLabel(session.startAt, input.timeZone || DEFAULT_SESSION_TIMEZONE) };
 }

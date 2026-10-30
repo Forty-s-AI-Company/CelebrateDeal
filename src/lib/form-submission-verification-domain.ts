@@ -37,7 +37,9 @@ export type FormSubmissionVerificationResult =
          * above is already that session's start; a cancelled session gets no
          * fixed-time reminder.
          */
-        fixedSession: { id: string; status: string } | null;
+        fixedSession: { id: string; status: string; startAt: Date; cancelledAt: Date | null } | null;
+        /** For the cancellation notice of a session cancelled before verification. */
+        liveFormId: string | null;
         emailBrand: {
           senderName: string | null;
           supportEmail: string | null;
@@ -109,7 +111,7 @@ export async function verifyFormSubmission(
         affiliateClick: {
           select: { id: true, vendorId: true, affiliateId: true, referralCode: true },
         },
-        liveSession: { select: { id: true, vendorId: true, liveId: true, startAt: true, status: true } },
+        liveSession: { select: { id: true, vendorId: true, liveId: true, startAt: true, status: true, cancelledAt: true } },
         live: {
           select: {
             id: true,
@@ -261,7 +263,8 @@ export async function verifyFormSubmission(
         evergreen: !fixedSession && isActiveEvergreenLive(submission.live, { vendorTimezone: submission.form.vendor.timezone, now })
           ? { live: submission.live, vendorTimezone: submission.form.vendor.timezone }
           : null,
-        fixedSession: fixedSession ? { id: fixedSession.id, status: fixedSession.status } : null,
+        fixedSession: fixedSession ? { id: fixedSession.id, status: fixedSession.status, startAt: fixedSession.startAt, cancelledAt: fixedSession.cancelledAt } : null,
+        liveFormId: submission.live.formId,
         emailBrand: {
           senderName: submission.form.vendor.senderName,
           supportEmail: submission.form.vendor.supportEmail,

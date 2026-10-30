@@ -10,7 +10,7 @@ import VerifyRegistrationPage from "./page";
 
 const token = `fsv1.formsub_test.1780000000.1.${"a".repeat(43)}`;
 
-async function render(searchParams: { token?: string; status?: string }) {
+async function render(searchParams: { token?: string; status?: string; rechoose?: string }) {
   const stream = await renderToReadableStream(await VerifyRegistrationPage({ searchParams: Promise.resolve(searchParams) }));
   await stream.allReady;
   return new Response(stream).text();
@@ -49,5 +49,19 @@ describe("VerifyRegistrationPage", () => {
     expect(html).toContain('role="alert"');
     expect(html).not.toContain("確認連結無效或已過期");
     expect(html).not.toContain('action="/api/form-submissions/verify"');
+  });
+});
+
+describe("VerifyRegistrationPage cancelled session (指定場次)", () => {
+  it("says the session was cancelled and links only to a same-site registration path", async () => {
+    const html = await render({ status: "session_cancelled", rechoose: "/form/summer-live" });
+    expect(html).toContain("你報名的場次已取消");
+    expect(html).toContain('href="/form/summer-live"');
+    expect(html).not.toContain('action="/api/form-submissions/verify"');
+    for (const rechoose of ["https://evil.example/form/x", "//evil.example/lp/x", "/admin/lives", "/lp/"]) {
+      const unsafe = await render({ status: "session_cancelled", rechoose });
+      expect(unsafe).toContain("你報名的場次已取消");
+      expect(unsafe).not.toContain("重新選擇場次</a>");
+    }
   });
 });

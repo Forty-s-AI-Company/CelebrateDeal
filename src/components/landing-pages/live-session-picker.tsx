@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useId, useRef, useState, type CSSProperties, type KeyboardEvent } from "react";
-import type { PublicFixedSession, PublicFixedSessionDay } from "@/lib/live-fixed-sessions";
+import { LIVE_SESSION_RESULT_COOKIE, type PublicFixedSession, type PublicFixedSessionDay } from "@/lib/live-fixed-sessions";
 
 /**
  * Session picker (指定場次) for a registration form bound to a fixed-session
@@ -21,8 +21,7 @@ export type LiveSessionsData = {
 
 export const LIVE_SESSION_REQUIRED_MESSAGE = "請選擇要參加的場次。";
 export const LIVE_SESSION_NONE_OPEN_MESSAGE = "目前沒有可報名的場次，請稍後再來。";
-export const LIVE_SESSION_STORAGE_PREFIX = "celebratedeal:live-session:";
-const LIVE_SESSION_STORAGE_TTL_MS = 30 * 60_000;
+
 
 /** First date that still has a seat; falls back to the first date so full days stay visible. */
 export function firstAvailableDate(days: readonly PublicFixedSessionDay[]): string | null {
@@ -43,23 +42,31 @@ export function liveSessionChoiceLabel(choice: { day: PublicFixedSessionDay; ses
   return `${choice.day.label} ${choice.session.timeLabel}`;
 }
 
-/** Remembers the chosen session for the thank-you step (the server confirms it by email). */
-export function rememberChosenLiveSession(liveId: string, label: string, startAt: string) {
-  try { window.sessionStorage.setItem(`${LIVE_SESSION_STORAGE_PREFIX}${liveId}`, JSON.stringify({ label, startAt, savedAt: Date.now() })); } catch { /* storage may be blocked */ }
-}
-export function forgetChosenLiveSession(liveId: string) {
-  try { window.sessionStorage.removeItem(`${LIVE_SESSION_STORAGE_PREFIX}${liveId}`); } catch { /* storage may be blocked */ }
-}
-/** The raw stored record (a stable string, so it can feed useSyncExternalStore); null when absent, stale or blocked. */
-export function readChosenLiveSessionRaw(liveId: string): string | null {
+/**
+ * The session the server confirmed for this browser's last registration of
+ * `liveId` (cookie written by POST /api/form-submissions from the database,
+ * 30 minutes). The thank-you step shows only this, never the visitor's own
+ * pick, so a registration that did not move never shows the wrong session.
+ */
+function readConfirmedCookie(): Record<string, unknown> | null {
   try {
-    const raw = window.sessionStorage.getItem(`${LIVE_SESSION_STORAGE_PREFIX}${liveId}`);
-    if (!raw) return null;
-    const value = JSON.parse(raw) as { label?: unknown; startAt?: unknown; savedAt?: unknown };
-    if (typeof value.label !== "string" || typeof value.startAt !== "string" || typeof value.savedAt !== "number") return null;
-    if (Date.now() - value.savedAt > LIVE_SESSION_STORAGE_TTL_MS) return null;
-    return JSON.stringify({ label: value.label, startAt: value.startAt });
+    const entry = document.cookie.split(";").map((part) => part.trim()).find((part) => part.startsWith(`${LIVE_SESSION_RESULT_COOKIE}=`));
+    if (!entry) return null;
+    const value: unknown = JSON.parse(decodeURIComponent(entry.slice(LIVE_SESSION_RESULT_COOKIE.length + 1)));
+    return value && typeof value === "object" ? value as Record<string, unknown> : null;
   } catch { return null; }
+}
+/** Drops a previous registration's confirmed session when a fresh registration page opens. */
+export function forgetChosenLiveSession(liveId: string) {
+  try {
+    if (readConfirmedCookie()?.liveId === liveId) document.cookie = `${LIVE_SESSION_RESULT_COOKIE}=; Max-Age=0; Path=/; SameSite=Lax`;
+  } catch { /* cookies may be blocked */ }
+}
+/** The confirmed record as a stable string (for useSyncExternalStore); null when absent, for another Live or malformed. */
+export function readChosenLiveSessionRaw(liveId: string): string | null {
+  const value = readConfirmedCookie();
+  if (!value || value.liveId !== liveId || typeof value.label !== "string" || typeof value.startAt !== "string") return null;
+  return JSON.stringify({ label: value.label, startAt: value.startAt });
 }
 export function readChosenLiveSession(liveId: string): { label: string; startAt: string } | null {
   const raw = readChosenLiveSessionRaw(liveId);
@@ -133,7 +140,7 @@ export function useLiveSessionForm(initial: LiveSessionsData | undefined) {
   const liveId = initial?.liveId;
   // A fresh registration page never carries a previous attempt's choice to the thank-you step.
   useEffect(() => { if (liveId) forgetChosenLiveSession(liveId); }, [liveId]);
-  const { validate, setError, choice, sessionId } = sessions;
+  const { validate, setError, sessionId } = sessions;
   /** True (and the problem shown inline) while a session is still required. */
   const missing = useCallback(() => {
     const problem = validate();
@@ -142,10 +149,7 @@ export function useLiveSessionForm(initial: LiveSessionsData | undefined) {
     focusLiveSessionPicker(formRef.current);
     return true;
   }, [validate, setError]);
-  const remember = useCallback(() => {
-    if (liveId && choice) rememberChosenLiveSession(liveId, liveSessionChoiceLabel(choice), choice.session.startAt);
-  }, [liveId, choice]);
-  return { sessions, formRef, fixed: Boolean(liveId), payload: liveId ? { liveSessionId: sessionId } : {}, missing, remember };
+  return { sessions, formRef, fixed: Boolean(liveId), payload: liveId ? { liveSessionId: sessionId } : {}, missing };
 }
 
 function parseLiveSessionsData(value: unknown): LiveSessionsData | null {
@@ -188,7 +192,12 @@ function parseLiveSessionsData(value: unknown): LiveSessionsData | null {
  * missing choice asks for one. Anything else is left to the generic message.
  */
 export async function describeLiveSessionFailure(response: Response): Promise<{ message: string; refresh: boolean } | null> {
-  if (response.status === 409) return { message: "此時段已額滿或已截止，請改選其他時段", refresh: true };
+  if (response.status === 409) {
+    // The same email already holds another session that cannot be changed from here.
+    const registered = await alreadyRegisteredSession(response);
+    if (registered) return { message: `你已報名 ${registered} 場次`, refresh: false };
+    return { message: "此時段已額滿或已截止，請改選其他時段", refresh: true };
+  }
   if (response.status === 429) return { message: "報名次數過多，請稍後再試", refresh: false };
   if (response.status !== 400) return null;
   try {
@@ -196,6 +205,28 @@ export async function describeLiveSessionFailure(response: Response): Promise<{ 
     if (body && typeof body === "object" && (body as { error?: unknown }).error === "Fixed session selection required") return { message: LIVE_SESSION_REQUIRED_MESSAGE, refresh: false };
   } catch { /* not JSON: generic validation message */ }
   return null;
+}
+
+async function alreadyRegisteredSession(response: Response) {
+  try {
+    const body: unknown = await response.clone().json();
+    if (!body || typeof body !== "object") return null;
+    const record = body as { error?: unknown; sessionLabel?: unknown };
+    return record.error === "Already registered for another session" && typeof record.sessionLabel === "string" ? record.sessionLabel : null;
+  } catch { return null; }
+}
+
+/** The session the server confirmed in a successful registration response, if any. */
+export async function confirmedSessionFromResponse(response: Response): Promise<{ id: string; startAt: string; label: string } | null> {
+  try {
+    const body: unknown = await response.clone().json();
+    const session = body && typeof body === "object" ? (body as { liveSession?: unknown }).liveSession : null;
+    if (!session || typeof session !== "object") return null;
+    const value = session as Record<string, unknown>;
+    return typeof value.id === "string" && typeof value.startAt === "string" && typeof value.label === "string"
+      ? { id: value.id, startAt: value.startAt, label: value.label }
+      : null;
+  } catch { return null; }
 }
 
 /** "10月30日（週五）" -> "10/30 週五". */
@@ -210,9 +241,17 @@ const CHIP_BASE = `${TARGET} shrink-0 snap-start cursor-pointer rounded-lg borde
 const BORDER = "color-mix(in srgb, currentColor 38%, transparent)";
 const SURFACE = "color-mix(in srgb, currentColor 7%, transparent)";
 
+/**
+ * Selected chip colours when the form supplies no accent: an explicit pair
+ * (white on blue-700, 6.7:1) that never depends on `color-scheme`, so a dark
+ * template's light text colour cannot turn it into white on white.
+ */
+export const LIVE_SESSION_FALLBACK_ACCENT = "#1d4ed8";
+export const LIVE_SESSION_FALLBACK_ACCENT_TEXT = "#ffffff";
+
 function chipStyle(selected: boolean, disabled: boolean): CSSProperties {
-  const base: CSSProperties = { outlineColor: "var(--live-session-accent, currentColor)" };
-  if (selected) return { ...base, backgroundColor: "var(--live-session-accent, currentColor)", color: "var(--live-session-accent-text, Canvas)", borderColor: "var(--live-session-accent, currentColor)" };
+  const base: CSSProperties = { outlineColor: `var(--live-session-accent, ${LIVE_SESSION_FALLBACK_ACCENT})` };
+  if (selected) return { ...base, backgroundColor: `var(--live-session-accent, ${LIVE_SESSION_FALLBACK_ACCENT})`, color: `var(--live-session-accent-text, ${LIVE_SESSION_FALLBACK_ACCENT_TEXT})`, borderColor: `var(--live-session-accent, ${LIVE_SESSION_FALLBACK_ACCENT})` };
   return { ...base, backgroundColor: SURFACE, borderColor: BORDER, borderStyle: disabled ? "dashed" : "solid", opacity: disabled ? 0.6 : 1, color: "inherit" };
 }
 
@@ -285,7 +324,7 @@ export function LiveSessionPicker({ selection, locked = false, accentStyle }: { 
 
   return <div data-live-session-picker className="grid min-w-0 gap-3" style={accentStyle} role="group" aria-labelledby={`${id}-label`} aria-describedby={error ? errorId : undefined}>
     <input type="hidden" name="liveSessionId" value={sessionId ?? ""} />
-    <p id={`${id}-label`} className="m-0 text-[0.9375em] font-semibold">選擇場次 *</p>
+    <p id={`${id}-label`} className="m-0 text-[0.9375em] font-semibold">選擇場次 <span aria-hidden="true">*</span></p>
     {noneOpen ? <p className="m-0 text-[0.9375em]">{LIVE_SESSION_NONE_OPEN_MESSAGE}</p> : <>
       <div className="relative min-w-0">
         {overflow.left ? <button type="button" aria-label="顯示較早的日期" onClick={() => scrollBy(-1)} className={`${TARGET} absolute top-0 left-0 z-10 hidden cursor-pointer items-center justify-center rounded-lg border md:flex`} style={{ ...chipStyle(false, false), backgroundColor: "Canvas", color: "CanvasText" }}><span aria-hidden>‹</span></button> : null}

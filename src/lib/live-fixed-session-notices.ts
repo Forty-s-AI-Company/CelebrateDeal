@@ -2,6 +2,8 @@ import { getCanonicalAppUrl } from "@/lib/app-url";
 import { getDb } from "@/lib/db";
 import { ensureFixedSessionCancelledDelivery } from "@/lib/email-delivery";
 import { createLiveViewerUrl } from "@/lib/live-public-url";
+import { loadPublicLandingPage } from "@/lib/landing-page-service";
+import { loadPublicRegistrationForm } from "@/lib/public-registration-form";
 import { captureOperationalError } from "@/lib/monitoring";
 
 /**
@@ -27,13 +29,16 @@ type CancelledSession = {
 };
 
 /**
- * Where a registrant can pick another session: the published landing page
- * bound to this Live, else the Live's active registration form, else the
- * public viewer page. Tenant-bound; never a draft page.
+ * Where a registrant can pick another session: a published landing page
+ * bound to this Live, else the Live's registration form page, else the
+ * public viewer page. Tenant-bound. A candidate is only linked when the same
+ * public loader the visitor will hit (loadPublicLandingPage /
+ * loadPublicRegistrationForm, including the published-project gate) serves
+ * it with this Live, so the link never lands on a 404.
  */
 export async function resolveFixedSessionRechooseUrl(input: { vendorId: string; liveId: string; slug: string; formId: string | null }) {
   const db = getDb();
-  const page = await db.landingPage.findFirst({
+  const pages = await db.landingPage.findMany({
     where: {
       vendorId: input.vendorId,
       status: "published",
@@ -42,13 +47,22 @@ export async function resolveFixedSessionRechooseUrl(input: { vendorId: string; 
       publishedVersion: { is: { vendorId: input.vendorId, liveId: input.liveId } },
     },
     orderBy: [{ publishedAt: "desc" }, { id: "asc" }],
+    take: 3,
     select: { slug: true },
   });
-  if (page) return new URL(`/lp/${encodeURIComponent(page.slug)}`, getCanonicalAppUrl()).toString();
+  for (const page of pages) {
+    const served = await loadPublicLandingPage(page.slug);
+    if (served?.submissionLiveId === input.liveId) return new URL(`/lp/${encodeURIComponent(page.slug)}`, getCanonicalAppUrl()).toString();
+  }
   const form = input.formId
     ? await db.registrationForm.findFirst({ where: { id: input.formId, vendorId: input.vendorId, isActive: true }, select: { slug: true } })
     : null;
-  if (form) return new URL(`/form/${encodeURIComponent(form.slug)}`, getCanonicalAppUrl()).toString();
+  if (form) {
+    const served = await loadPublicRegistrationForm(form.slug);
+    if (served?.sessions.some((session) => session.id === input.liveId)) {
+      return new URL(`/form/${encodeURIComponent(form.slug)}`, getCanonicalAppUrl()).toString();
+    }
+  }
   return createLiveViewerUrl(input.slug);
 }
 
@@ -147,4 +161,43 @@ export async function queueFixedSessionCancellationNotices(input: {
     }
   }
   return queued;
+}
+
+/**
+ * A registrant who confirms their email after their session was cancelled
+ * gets the cancellation notice instead of a confirmation. It uses the same
+ * identity (registration + session + cancellation) as the studio and job
+ * notices, so a registrant never receives it twice. Returns the delivery to
+ * send now (if newly queued) and the page where they can choose again.
+ */
+export async function queueCancelledSessionNoticeOnVerification(input: {
+  vendorId: string;
+  vendorName: string;
+  liveId: string;
+  liveSlug: string;
+  liveTitle: string;
+  liveFormId: string | null;
+  session: { id: string; startAt: Date; cancelledAt: Date | null };
+  formSubmissionId: string;
+  recipientName: string;
+  recipientEmail: string;
+  emailBrand?: { senderName: string | null; supportEmail: string | null; contactUrl: string | null };
+}) {
+  const rechooseUrl = await resolveFixedSessionRechooseUrl({ vendorId: input.vendorId, liveId: input.liveId, slug: input.liveSlug, formId: input.liveFormId });
+  if (!input.session.cancelledAt) return { deliveryId: null, rechooseUrl };
+  const result = await ensureFixedSessionCancelledDelivery({
+    vendorId: input.vendorId,
+    vendorName: input.vendorName,
+    liveId: input.liveId,
+    liveTitle: input.liveTitle,
+    sessionId: input.session.id,
+    sessionStartAt: input.session.startAt,
+    cancelledAt: input.session.cancelledAt,
+    formSubmissionId: input.formSubmissionId,
+    recipientName: input.recipientName,
+    recipientEmail: input.recipientEmail,
+    rechooseUrl,
+    emailBrand: input.emailBrand,
+  });
+  return { deliveryId: result.status === "queued" ? result.deliveryId : null, rechooseUrl };
 }

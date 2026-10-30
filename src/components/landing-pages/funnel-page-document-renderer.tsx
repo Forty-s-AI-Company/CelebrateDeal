@@ -9,7 +9,7 @@ import { RegistrationSubmissionFeedback } from "@/components/registration-submis
 import { LandingPageLink } from "@/components/landing-page-link";
 import { useFunnelRegistrationLinks } from "./funnel-registration-links";
 import { funnelRegistrationHref } from "@/lib/funnel-registration-action";
-import { describeLiveSessionFailure, LiveSessionPicker, useLiveSessionForm, type LiveSessionsData } from "@/components/landing-pages/live-session-picker";
+import { confirmedSessionFromResponse, describeLiveSessionFailure, LiveSessionPicker, useLiveSessionForm, type LiveSessionsData } from "@/components/landing-pages/live-session-picker";
 import { formSubmissionErrorMessage, FORM_SUBMISSION_VERIFICATION_MESSAGE, postRegistrationSubmission } from "@/lib/registration-submission-client";
 import type { RegistrationFormFieldSpec } from "@/lib/registration-form-fields";
 import type { FunnelCommerceBinding, FunnelCommerceView } from "@/lib/funnel-commerce";
@@ -478,7 +478,7 @@ function PublicSubmissionForm({ submission, label, requireConsent, design, idSco
   const submissionInFlight = useRef(false);
   const [nativePending, setNativePending] = useState(false);
   const referral = referralFields(retry?.attribution);
-  const { sessions, formRef, fixed, payload: sessionPayload, missing: sessionMissing, remember: rememberSession } = useLiveSessionForm(submission.liveSessions);
+  const { sessions, formRef, fixed, payload: sessionPayload, missing: sessionMissing } = useLiveSessionForm(submission.liveSessions);
   useEffect(() => {
     if (!submission.nativeSubmit) return;
     // Back/forward cache: allow submitting again after returning to the page.
@@ -490,7 +490,6 @@ function PublicSubmissionForm({ submission, label, requireConsent, design, idSco
     if (submission.nativeSubmit) {
       if (submissionInFlight.current) { event.preventDefault(); return; }
       if (sessionMissing()) { event.preventDefault(); return; }
-      rememberSession();
       submissionInFlight.current = true;
       // Paint the waiting state before the native navigation starts; fields are not disabled.
       flushSync(() => setNativePending(true));
@@ -514,8 +513,9 @@ function PublicSubmissionForm({ submission, label, requireConsent, design, idSco
         if (known?.refresh) void sessions.refresh();
         return;
       }
-      rememberSession();
-      setStatus("success"); setMessage(`${submission.form.successMessage} ${FORM_SUBMISSION_VERIFICATION_MESSAGE}`);
+      // Only the server-confirmed session is shown (it may differ from the tap, e.g. a converged duplicate).
+      const confirmed = fixed ? await confirmedSessionFromResponse(response) : null;
+      setStatus("success"); setMessage(`${submission.form.successMessage}${confirmed ? ` 你的場次：${confirmed.label}。` : ""} ${FORM_SUBMISSION_VERIFICATION_MESSAGE}`);
       if (submission.redirectTo) window.location.assign(submission.redirectTo);
     } catch {
       submissionInFlight.current = false;
