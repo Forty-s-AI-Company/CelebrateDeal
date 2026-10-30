@@ -265,6 +265,11 @@ function buildLivePublishReadiness(resources: LiveReadinessResources) {
   });
 }
 
+/** A fixed-session Live plays each session by itself: no manual "開始直播". */
+function fixedSessionStatusAction(action: ReturnType<typeof liveStatusAction>, sessionMode: string) {
+  return sessionMode === "fixed_sessions" && action?.value === "live" ? null : action;
+}
+
 function liveStatusAction(status: string) {
   switch (status) {
     case "draft": return { value: "scheduled", label: "排程發布", confirm: "確定要讓這場直播進入已排程、可公開存取的狀態嗎？" };
@@ -618,6 +623,7 @@ function liveFormError(error?: string, invalidFieldLabel?: string) {
     invalid_policy: "用量或聯盟來源規則無效，請確認模式、推廣碼與數值範圍。",
     payment_method_required: "啟用成員／推廣頁的影片額度前，必須先由付款服務驗證付款方式；目前不會自動扣款。",
     draft_conflict: "這份直播草稿已有較新的版本；系統沒有覆蓋它。請確認目前載入內容後再繼續。",
+    fixed_sessions_manual_start: "指定場次的直播會在每個場次時間自動播放，不需要手動開始直播；請保留「已排程」狀態。",
     invalid_status: "直播狀態轉換無效，內容尚未發布。",
     invalid_draft: "直播草稿內容不完整或格式無效；系統沒有發布任何變更。請修正欄位並重新儲存草稿。",
     slug_taken: "這個直播網址已被使用，內容沒有發布；草稿已保留。請在「直播網址」欄位換一個再儲存。",
@@ -1339,7 +1345,7 @@ export function LiveStudioStepperForm({
   const unsaved = unsavedDraftStatuses.has(draft.status);
   useEffect(() => { onUnsavedChange?.(unsaved); }, [unsaved, onUnsavedChange]);
   const submitFlush = useSubmitFlushGuard();
-  const preview = buildLivePreview(previewTitle, previewAccentCopy, products, selectedProductIds); const statusAction = liveId ? liveStatusAction(currentStatus) : null;
+  const preview = buildLivePreview(previewTitle, previewAccentCopy, products, selectedProductIds); const statusAction = liveId ? fixedSessionStatusAction(liveStatusAction(currentStatus), sessionMode) : null;
   const publishReadiness = buildLivePublishReadiness({ studioPreset, products, productIds: selectedProductIds, videos, videoId: selectedVideoId, forms, formId: selectedFormId, templates: registrationTemplates, templateId: selectedTemplateId, scripts, scriptId: selectedScriptId });
   const readinessIsReady = (code: LivePublishRequirementCodeWithReminder) => (
     publishReadiness.requirements.find((requirement) => requirement.code === code)?.ready ?? true

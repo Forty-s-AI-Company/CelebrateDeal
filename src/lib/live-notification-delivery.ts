@@ -846,8 +846,44 @@ const FIXED_SESSION_SUPERSEDE_BATCH = 500;
  * session and writes nothing; the send-time guards reject anything left.
  * Tenant-bound on every statement.
  */
+type RegistrantSupersedeDb = Pick<Prisma.TransactionClient, "emailDelivery" | "lineDelivery">;
+
+/**
+ * Cancels the unsent fixed-time messages of the given registrations of one
+ * Live: Email `live_reminder`, `before_live`, `during_live` and the LINE
+ * `live_reminder` pushed to their bound LINE identity. Tenant-bound on every
+ * statement; used when a session is cancelled and when a registrant moves to
+ * another session (the new session's rows are materialized afterwards).
+ */
+export async function supersedeRegistrantFixedTimeDeliveries(
+  tx: RegistrantSupersedeDb,
+  input: { vendorId: string; liveId: string; submissionIds: readonly string[]; reason: "session_cancelled" | "session_changed" },
+) {
+  if (input.submissionIds.length === 0) return 0;
+  const email = await tx.emailDelivery.updateMany({
+    where: {
+      vendorId: input.vendorId,
+      sourceLiveId: input.liveId,
+      sourceFormSubmissionId: { in: [...input.submissionIds] },
+      trigger: { in: ["live_reminder", ...LIVE_NOTIFICATION_DELIVERY_TRIGGERS] },
+      status: { in: ["queued", "failed"] },
+    },
+    data: { status: "superseded", nextAttemptAt: null, claimedAt: null, lastErrorCode: input.reason },
+  });
+  const line = await tx.lineDelivery.updateMany({
+    where: {
+      vendorId: input.vendorId,
+      trigger: "live_reminder",
+      status: { in: ["queued", "failed"] },
+      identity: { is: { vendorId: input.vendorId, subjectType: "buyer_registration", subjectId: { in: [...input.submissionIds] } } },
+    },
+    data: { status: "suppressed", nextAttemptAt: null, claimedAt: null, lastErrorCode: input.reason },
+  });
+  return email.count + line.count;
+}
+
 export async function supersedeFixedSessionDeliveries(
-  tx: Pick<Prisma.TransactionClient, "formSubmission" | "emailDelivery">,
+  tx: Pick<Prisma.TransactionClient, "formSubmission"> & RegistrantSupersedeDb,
   input: { vendorId: string; liveId: string; sessionIds: readonly string[] },
 ) {
   if (input.sessionIds.length === 0) return 0;
@@ -866,17 +902,12 @@ export async function supersedeFixedSessionDeliveries(
       select: { id: true },
     });
     if (page.length === 0) break;
-    const result = await tx.emailDelivery.updateMany({
-      where: {
-        vendorId: input.vendorId,
-        sourceLiveId: input.liveId,
-        sourceFormSubmissionId: { in: page.map((submission) => submission.id) },
-        trigger: { in: ["live_reminder", ...LIVE_NOTIFICATION_DELIVERY_TRIGGERS] },
-        status: { in: ["queued", "failed"] },
-      },
-      data: { status: "superseded", nextAttemptAt: null, claimedAt: null, lastErrorCode: "session_cancelled" },
+    superseded += await supersedeRegistrantFixedTimeDeliveries(tx, {
+      vendorId: input.vendorId,
+      liveId: input.liveId,
+      submissionIds: page.map((submission) => submission.id),
+      reason: "session_cancelled",
     });
-    superseded += result.count;
     if (page.length < FIXED_SESSION_SUPERSEDE_BATCH) break;
     cursor = page[page.length - 1]!.id;
   }

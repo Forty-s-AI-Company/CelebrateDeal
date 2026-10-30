@@ -14,6 +14,8 @@ import {
   formSubmissionChatSessionCookieOptions,
 } from "@/lib/form-submission-chat-session";
 import { verifyFormSubmission } from "@/lib/form-submission-verification-domain";
+import { expiredFormSubmissionVerificationSubject } from "@/lib/form-submission-verification";
+import { releaseFixedSessionSeatIfExpired } from "@/lib/live-fixed-sessions-store";
 import {
   EVERGREEN_NEUTRAL_START_TEXT,
   evergreenRegistrationStartText,
@@ -47,6 +49,22 @@ function redirectResult(
     );
   }
   return response;
+}
+
+/** An expired link gives its fixed-session seat back now instead of at the next job run. */
+async function releaseSeatOfExpiredLink(token: string) {
+  const now = new Date();
+  const submissionId = expiredFormSubmissionVerificationSubject(token, now);
+  if (!submissionId) return;
+  try {
+    await releaseFixedSessionSeatIfExpired(getDb(), { submissionId, now });
+  } catch (error) {
+    try {
+      captureOperationalError(error, { source: "form_submission_verification", operation: "release_fixed_session_seat", status: "failed" });
+    } catch {
+      // The scheduled job releases it later.
+    }
+  }
 }
 
 // Confirmation and due reminder emails are sent by `after()` within this
@@ -89,7 +107,10 @@ export async function POST(request: Request) {
     // ask the visitor to press it again instead of calling it invalid.
     return redirectResult(request, isTransientTransactionConflict(error) ? "retry" : "invalid");
   }
-  if (result.status === "invalid") return redirectResult(request, "invalid");
+  if (result.status === "invalid") {
+    await releaseSeatOfExpiredLink(parsed.data.token);
+    return redirectResult(request, "invalid");
+  }
 
   if (result.status === "verified" && result.confirmation) {
     const { evergreen, fixedSession, ...confirmation } = result.confirmation;

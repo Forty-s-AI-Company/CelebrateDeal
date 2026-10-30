@@ -31,6 +31,22 @@ export function createFormSubmissionVerificationToken(input: {
 }
 
 export function verifyFormSubmissionVerificationToken(token: string, now = new Date()) {
+  const verified = verifySignedFormSubmissionVerificationToken(token, now);
+  if (!verified || verified.expiresAt <= now) return null;
+  return verified;
+}
+
+/**
+ * The registration an authentic but expired link points at, so the verify
+ * path can give back its fixed-session seat (releaseFixedSessionSeatIfExpired
+ * re-checks the expiry and status itself). Never a verification.
+ */
+export function expiredFormSubmissionVerificationSubject(token: string, now = new Date()) {
+  const verified = verifySignedFormSubmissionVerificationToken(token, now);
+  return verified && verified.expiresAt <= now ? verified.submissionId : null;
+}
+
+function verifySignedFormSubmissionVerificationToken(token: string, now: Date) {
   if (token.length > 320) return null;
   const [tokenVersion, submissionId, expiresAtRaw, versionRaw, suppliedSignature, extra] = token.split(".");
   if (
@@ -55,7 +71,6 @@ export function verifyFormSubmissionVerificationToken(token: string, now = new D
     () => expiryFitsPreRotationIssue(expiresAtSecondsValue * 1_000, FORM_SUBMISSION_VERIFICATION_TTL_MS))) return null;
 
   const expiresAt = new Date(expiresAtSecondsValue * 1_000);
-  if (expiresAt <= now) return null;
   return { submissionId, expiresAt, version };
 }
 

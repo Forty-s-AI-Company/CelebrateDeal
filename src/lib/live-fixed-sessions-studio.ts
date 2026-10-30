@@ -9,7 +9,11 @@ import {
 } from "@/lib/live-fixed-sessions";
 import { deleteUnusedLiveSessions, syncLiveSessions } from "@/lib/live-fixed-sessions-store";
 import { supersedeFixedSessionDeliveries } from "@/lib/live-notification-delivery";
+import { queueFixedSessionCancellationNotices } from "@/lib/live-fixed-session-notices";
+import { scheduleImmediateEmailDispatch } from "@/lib/email-delivery-immediate";
+import { captureOperationalError } from "@/lib/monitoring";
 import type { LiveStudioDraftPayload } from "@/lib/live-studio-draft";
+import { evergreenVideoDurationSeconds } from "@/lib/evergreen-activation";
 
 /**
  * Live Studio side of 指定場次 (fixed sessions): validating the submitted
@@ -63,6 +67,7 @@ export async function resolveSubmittedFixedSessions(input: {
   liveId: string | null;
   payload: LiveStudioDraftPayload;
   existingLive: { isEvergreen: boolean | null } | null;
+  video: { durationSec: number | null } | null;
   requestedStatus: string;
   timeZone: string;
   invalidDraftPath: string;
@@ -70,6 +75,13 @@ export async function resolveSubmittedFixedSessions(input: {
   if (input.payload.sessionMode !== "fixed_sessions") return null;
   const fieldPath = (field: string) => `${input.invalidDraftPath}&field=${encodeURIComponent(field)}`;
   if (input.payload.streamMode !== "vod" || input.existingLive?.isEvergreen === true) redirect(fieldPath("sessionMode"));
+  const publishing = ["scheduled", "live"].includes(input.requestedStatus);
+  // Each session plays the recording on its own; there is no shared "go live".
+  if (input.requestedStatus === "live" && input.liveId) {
+    redirect(`/lives/${encodeURIComponent(input.liveId)}/edit?error=fixed_sessions_manual_start`);
+  }
+  // Session end, replay window and follow-ups need the recording's length.
+  if (publishing && !evergreenVideoDurationSeconds(input.video?.durationSec)) redirect(fieldPath("videoId"));
   const stored = input.liveId
     ? await input.db.liveSession.findMany({ where: { vendorId: input.vendorId, liveId: input.liveId }, select: { startAt: true } })
     : [];
@@ -77,7 +89,7 @@ export async function resolveSubmittedFixedSessions(input: {
     return parseStudioFixedSessionSettings(input.payload, {
       timeZone: input.timeZone,
       now: new Date(),
-      requireFuture: ["scheduled", "live"].includes(input.requestedStatus),
+      requireFuture: publishing,
       existingStartTimes: new Set(stored.map((session) => session.startAt.getTime())),
     });
   } catch (error) {
@@ -107,4 +119,23 @@ export function submittedLiveSchedule(settings: StudioFixedSessionSettings | nul
       sessionReplayWindowHours: settings.sessionReplayWindowHours,
     },
   };
+}
+
+/**
+ * Right after a studio save: queue the cancellation notices of sessions it
+ * cancelled and send the first ones now. Best effort; the email job queues
+ * and sends whatever is left (live-fixed-session-notices.ts).
+ */
+export async function queueFixedSessionCancellationNoticesSafely(input: { vendorId: string; liveId: string; fixedSessions: boolean }) {
+  if (!input.fixedSessions) return;
+  try {
+    const queued = await queueFixedSessionCancellationNotices({ vendorId: input.vendorId, liveId: input.liveId, limit: 20 });
+    scheduleImmediateEmailDispatch(queued);
+  } catch (error) {
+    try {
+      captureOperationalError(error, { source: "fixed_session", operation: "cancellation_notice_eager", status: "failed" });
+    } catch {
+      // The scheduled job repairs it.
+    }
+  }
 }

@@ -1,4 +1,5 @@
 import type { Prisma, PrismaClient } from "@prisma/client";
+import { getRuntimeLivePublishReadiness } from "@/lib/live-runtime-readiness";
 import { readCookieHeaderValue } from "@/lib/evergreen-viewer-session";
 import {
   FORM_SUBMISSION_CHAT_SESSION_COOKIE,
@@ -63,8 +64,9 @@ export type LiveSessionSyncResult = {
  */
 export async function syncLiveSessions(
   tx: SessionDb,
-  input: { vendorId: string; liveId: string; sessions: readonly ParsedFixedSession[] },
+  input: { vendorId: string; liveId: string; sessions: readonly ParsedFixedSession[]; now?: Date },
 ): Promise<LiveSessionSyncResult> {
+  const now = input.now ?? new Date();
   const existing = await tx.liveSession.findMany({
     where: { vendorId: input.vendorId, liveId: input.liveId },
     select: FIXED_SESSION_SELECT,
@@ -102,7 +104,12 @@ export async function syncLiveSessions(
         liveId: input.liveId,
         ...(session.capacity !== null ? { registeredCount: { lte: session.capacity } } : {}),
       },
-      data: { capacity: session.capacity, status: session.status },
+      data: {
+        capacity: session.capacity,
+        status: session.status,
+        // Reopening ends this cancellation; a later one gets its own notices.
+        ...(current.status === "cancelled" ? { cancelledAt: null, cancellationNoticesQueuedAt: null } : {}),
+      },
     });
     if (updated.count !== 1) throw new FixedSessionCapacityBelowRegistrationsError(session.startAt);
     if (current.status === "cancelled") result.reopenedSessionIds.push(current.id);
@@ -126,7 +133,7 @@ export async function syncLiveSessions(
     }
     await tx.liveSession.updateMany({
       where: { id: session.id, vendorId: input.vendorId, liveId: input.liveId },
-      data: { status: "cancelled" },
+      data: { status: "cancelled", cancelledAt: now, cancellationNoticesQueuedAt: null },
     });
     result.cancelledSessionIds.push(session.id);
   }
@@ -224,9 +231,20 @@ export async function loadPublicLiveSessions(
       vendorId: true,
       sessionRegistrationCutoffMinutes: true,
       vendor: { select: { timezone: true } },
+      // Same publish-readiness gate as the viewer page and /api/live-evergreen-session.
+      video: { select: { vendorId: true, durationSec: true, sourceType: true, status: true, cloudflareReadyToStream: true, cloudflareLiveInputUid: true, liveInputStatus: true } },
+      form: { select: { vendorId: true, isActive: true, fields: true } },
+      messageTemplate: { select: { vendorId: true, channel: true, trigger: true, isActive: true, subject: true, body: true } },
+      interactionScript: { select: { vendorId: true, status: true } },
+      products: {
+        select: {
+          vendorId: true,
+          product: { select: { vendorId: true, isActive: true, fulfillmentTypeConfirmed: true } },
+        },
+      },
     },
   });
-  if (!live) return null;
+  if (!live || !getRuntimeLivePublishReadiness(live).ready) return null;
   const sessions = await db.liveSession.findMany({
     where: { vendorId: live.vendorId, liveId: live.id, status: "open" },
     orderBy: [{ startAt: "asc" }, { id: "asc" }],
@@ -312,4 +330,155 @@ export async function resolveViewerFixedSessionForLive(
     durationSeconds: live.video?.durationSec ?? 0,
     now: input.now,
   });
+}
+
+/** A seat counts while the registration points at a session and has not released it. */
+export const HELD_SEAT_WHERE = { liveSessionId: { not: null }, liveSessionSeatReleasedAt: null } as const;
+
+/**
+ * Gives back the seat of one unverified registration whose verification
+ * window has passed. The submission row is claimed first with a conditional
+ * update on `liveSessionSeatReleasedAt IS NULL`, so the decrement runs at
+ * most once per seat however many workers race; a verification that commits
+ * first makes the claim match nothing. Returns true when a seat was released.
+ */
+export async function releaseFixedSessionSeatIfExpired(
+  db: Pick<PrismaClient, "$transaction">,
+  input: { submissionId: string; now: Date },
+) {
+  return db.$transaction(async (tx) => {
+    const submission = await tx.formSubmission.findFirst({
+      where: {
+        id: input.submissionId,
+        verificationStatus: "UNVERIFIED",
+        ...HELD_SEAT_WHERE,
+        verificationExpiresAt: { lte: input.now },
+      },
+      select: { id: true, liveId: true, liveSessionId: true, form: { select: { vendorId: true } } },
+    });
+    if (!submission?.liveId || !submission.liveSessionId) return false;
+    const claimed = await tx.formSubmission.updateMany({
+      where: {
+        id: submission.id,
+        verificationStatus: "UNVERIFIED",
+        liveSessionId: submission.liveSessionId,
+        liveSessionSeatReleasedAt: null,
+        verificationExpiresAt: { lte: input.now },
+      },
+      data: { liveSessionSeatReleasedAt: input.now },
+    });
+    if (claimed.count !== 1) return false;
+    await tx.liveSession.updateMany({
+      where: {
+        id: submission.liveSessionId,
+        vendorId: submission.form.vendorId,
+        liveId: submission.liveId,
+        registeredCount: { gt: 0 },
+      },
+      data: { registeredCount: { decrement: 1 } },
+    });
+    return true;
+  });
+}
+
+/** Scheduled sweep: releases expired unverified seats in bounded batches. */
+export async function releaseExpiredFixedSessionSeats(
+  db: Pick<PrismaClient, "$transaction" | "formSubmission">,
+  input: { now?: Date; limit?: number } = {},
+) {
+  const now = input.now ?? new Date();
+  const limit = Math.max(1, Math.min(500, input.limit ?? 200));
+  const expired = await db.formSubmission.findMany({
+    where: { verificationStatus: "UNVERIFIED", ...HELD_SEAT_WHERE, verificationExpiresAt: { lte: now } },
+    orderBy: [{ verificationExpiresAt: "asc" }, { id: "asc" }],
+    take: limit,
+    select: { id: true },
+  });
+  let released = 0;
+  for (const submission of expired) {
+    if (await releaseFixedSessionSeatIfExpired(db, { submissionId: submission.id, now })) released += 1;
+  }
+  return released;
+}
+
+/**
+ * Takes a seat in `toSessionId` for an existing registration, inside the
+ * caller's transaction: lock both session rows in id order (two opposite
+ * switches cannot deadlock), take the new seat conditionally, move the
+ * registration only if it still points at `fromSessionId`, and give back the
+ * old seat only if it still counted. Returns null on success or why the new
+ * seat could not be taken; throws FixedSessionSwitchConflict when the
+ * registration changed underneath.
+ */
+export async function switchFixedSessionSeat(
+  tx: Prisma.TransactionClient,
+  input: {
+    vendorId: string;
+    liveId: string;
+    submissionId: string;
+    fromSessionId: string | null;
+    toSessionId: string;
+    sessionRegistrationCutoffMinutes: number;
+    now: Date;
+  },
+): Promise<FixedSessionClaimFailure | null> {
+  const ids = [...new Set([input.fromSessionId, input.toSessionId].filter((id): id is string => Boolean(id)))].sort();
+  await tx.$queryRaw`
+    SELECT "id" FROM "LiveSession"
+    WHERE "id" = ANY(${ids}::text[]) AND "vendorId" = ${input.vendorId} AND "liveId" = ${input.liveId}
+    ORDER BY "id"
+    FOR NO KEY UPDATE`;
+  const current = await tx.formSubmission.findFirst({
+    where: { id: input.submissionId, liveId: input.liveId, form: { vendorId: input.vendorId } },
+    select: { liveSessionId: true, liveSessionSeatReleasedAt: true },
+  });
+  if (!current || current.liveSessionId !== input.fromSessionId) throw new FixedSessionSwitchConflict();
+  const failure = await claimFixedSessionSeat(tx, {
+    vendorId: input.vendorId,
+    liveId: input.liveId,
+    sessionId: input.toSessionId,
+    sessionRegistrationCutoffMinutes: input.sessionRegistrationCutoffMinutes,
+    now: input.now,
+  });
+  if (failure) return failure;
+  const moved = await tx.formSubmission.updateMany({
+    where: {
+      id: input.submissionId,
+      liveId: input.liveId,
+      liveSessionId: input.fromSessionId,
+      liveSessionSeatReleasedAt: current.liveSessionSeatReleasedAt,
+    },
+    data: { liveSessionId: input.toSessionId, liveSessionSeatReleasedAt: null },
+  });
+  if (moved.count !== 1) throw new FixedSessionSwitchConflict();
+  if (input.fromSessionId && input.fromSessionId !== input.toSessionId && current.liveSessionSeatReleasedAt === null) {
+    await tx.liveSession.updateMany({
+      where: { id: input.fromSessionId, vendorId: input.vendorId, liveId: input.liveId, registeredCount: { gt: 0 } },
+      data: { registeredCount: { decrement: 1 } },
+    });
+  }
+  return null;
+}
+
+export class FixedSessionSwitchConflict extends Error {
+  constructor() {
+    super("fixed_session_switch_conflict");
+    this.name = "FixedSessionSwitchConflict";
+  }
+}
+
+/**
+ * Locks the Live FOR SHARE and confirms it is still a fixed-session Live of
+ * this vendor, so a concurrent studio switch back to one shared start waits
+ * for this registration (and then sees its seat) instead of racing it.
+ */
+export async function lockFixedSessionLive(
+  tx: Pick<Prisma.TransactionClient, "$queryRaw">,
+  input: { vendorId: string; liveId: string },
+) {
+  const rows = await tx.$queryRaw<Array<{ id: string }>>`
+    SELECT "id" FROM "Live"
+    WHERE "id" = ${input.liveId} AND "vendorId" = ${input.vendorId} AND "sessionMode" = 'fixed_sessions'
+    FOR SHARE`;
+  return rows.length === 1;
 }

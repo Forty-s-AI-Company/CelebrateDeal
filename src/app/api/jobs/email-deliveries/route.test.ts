@@ -11,7 +11,11 @@ const mocks = vi.hoisted(() => ({
   processDueLineDeliveries: vi.fn(),
   captureOperationalError: vi.fn(),
   sweepExpiredRegistrationRetryDrafts: vi.fn(),
+  releaseExpiredFixedSessionSeats: vi.fn(),
+  queueFixedSessionCancellationNotices: vi.fn(),
 }));
+vi.mock("@/lib/live-fixed-sessions-store", () => ({ releaseExpiredFixedSessionSeats: mocks.releaseExpiredFixedSessionSeats }));
+vi.mock("@/lib/live-fixed-session-notices", () => ({ queueFixedSessionCancellationNotices: mocks.queueFixedSessionCancellationNotices }));
 vi.mock("@/lib/db", () => ({ getDb: () => ({}) }));
 vi.mock("@/lib/registration-form-retry", () => ({ sweepExpiredRegistrationRetryDrafts: mocks.sweepExpiredRegistrationRetryDrafts }));
 
@@ -46,6 +50,8 @@ beforeEach(() => {
   mocks.materializeLineNotifications.mockResolvedValue([]);
   mocks.processDueLineDeliveries.mockResolvedValue([]);
   mocks.sweepExpiredRegistrationRetryDrafts.mockResolvedValue(3);
+  mocks.releaseExpiredFixedSessionSeats.mockResolvedValue(2);
+  mocks.queueFixedSessionCancellationNotices.mockResolvedValue(["private-notice-1"]);
 });
 
 afterEach(() => vi.unstubAllEnvs());
@@ -117,7 +123,15 @@ describe("POST /api/jobs/email-deliveries", () => {
       lineProcessed: 0,
       lineResults: [],
       registrationRetryDraftsPurged: 3,
+      fixedSessionSeatsReleased: 2,
+      fixedSessionCancellationNotices: 1,
     });
+    expect(JSON.stringify(body)).not.toContain("private-notice");
+    // Seats and notices are handled before this round's dispatch sends anything.
+    expect(mocks.releaseExpiredFixedSessionSeats.mock.invocationCallOrder[0])
+      .toBeLessThan(mocks.processDueEmailDeliveries.mock.invocationCallOrder[0]!);
+    expect(mocks.queueFixedSessionCancellationNotices.mock.invocationCallOrder[0])
+      .toBeLessThan(mocks.processDueEmailDeliveries.mock.invocationCallOrder[0]!);
     expect(JSON.stringify(body)).not.toContain("private-delivery");
     expect(JSON.stringify(body)).not.toContain("private-job");
     expect(JSON.stringify(body)).not.toContain("private-followup");

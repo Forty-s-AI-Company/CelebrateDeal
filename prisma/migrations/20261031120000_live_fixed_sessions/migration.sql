@@ -15,7 +15,12 @@ END
 $$;
 
 -- AlterTable
-ALTER TABLE "FormSubmission" ADD COLUMN     "liveSessionId" TEXT;
+ALTER TABLE "FormSubmission" ADD COLUMN     "liveSessionId" TEXT,
+ADD COLUMN     "liveSessionSeatReleasedAt" TIMESTAMP(3);
+
+-- A seat can only be released for a registration that held one.
+ALTER TABLE "FormSubmission" ADD CONSTRAINT "FormSubmission_liveSessionSeatReleasedAt_check"
+    CHECK ("liveSessionSeatReleasedAt" IS NULL OR "liveSessionId" IS NOT NULL);
 
 -- AlterTable
 ALTER TABLE "Live" ADD COLUMN     "sessionMode" TEXT NOT NULL DEFAULT 'single',
@@ -38,11 +43,17 @@ CREATE TABLE "LiveSession" (
     "capacity" INTEGER,
     "registeredCount" INTEGER NOT NULL DEFAULT 0,
     "status" TEXT NOT NULL DEFAULT 'open',
+    "cancelledAt" TIMESTAMP(3),
+    "cancellationNoticesQueuedAt" TIMESTAMP(3),
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
 
     CONSTRAINT "LiveSession_pkey" PRIMARY KEY ("id"),
     CONSTRAINT "LiveSession_status_check" CHECK ("status" IN ('open', 'closed', 'cancelled')),
+    -- cancelledAt is set exactly while the session is cancelled.
+    CONSTRAINT "LiveSession_cancelledAt_check" CHECK (("status" = 'cancelled') = ("cancelledAt" IS NOT NULL)),
+    CONSTRAINT "LiveSession_cancellationNoticesQueuedAt_check"
+        CHECK ("cancellationNoticesQueuedAt" IS NULL OR "cancelledAt" IS NOT NULL),
     -- null = unlimited seats.
     CONSTRAINT "LiveSession_capacity_check" CHECK ("capacity" IS NULL OR "capacity" BETWEEN 1 AND 100000),
     -- The seat ledger can never go negative or past the capacity: the
@@ -63,6 +74,11 @@ CREATE UNIQUE INDEX "LiveSession_vendorId_liveId_startAt_key" ON "LiveSession"("
 
 -- CreateIndex
 CREATE INDEX "FormSubmission_liveId_liveSessionId_idx" ON "FormSubmission"("liveId", "liveSessionId");
+
+-- CreateIndex
+-- Seat release sweep: unverified registrations still holding a seat whose
+-- verification window passed (rows without a session sort last and are skipped).
+CREATE INDEX "FormSubmission_verificationStatus_liveSessionSeatReleasedAt_idx" ON "FormSubmission"("verificationStatus", "liveSessionSeatReleasedAt", "liveSessionId", "verificationExpiresAt");
 
 -- AddForeignKey
 -- NO ACTION (checked at the end of the statement) rather than RESTRICT: when

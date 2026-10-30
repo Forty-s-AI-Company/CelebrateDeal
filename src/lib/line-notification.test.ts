@@ -234,3 +234,76 @@ describe("LINE notification outbox", () => {
     }));
   });
 });
+
+describe("fixed-session LINE reminder guard (指定場次)", () => {
+  beforeEach(() => vi.stubEnv("CSRF_SECRET", "line-notification-test-secret-at-least-32-bytes"));
+  afterEach(() => vi.unstubAllEnvs());
+
+  const now = new Date("2026-10-30T05:30:00Z");
+  const sessionStart = new Date("2026-10-30T06:00:00Z");
+
+  function reminderDb(input: { liveSession: { vendorId: string; liveId: string; startAt: Date; status: string } | null; keyStart?: Date }) {
+    const deliveryId = "123e4567-e89b-42d3-a456-426614174099";
+    const account = {
+      id: "account-1",
+      vendorId: "vendor-1",
+      status: "active",
+      ...protectLineOfficialAccountCredentials("vendor-1", {
+        messagingChannelId: "2000123456",
+        messagingChannelSecret: "messaging-secret-1234567890",
+        messagingAccessToken: "access-token-with-at-least-thirty-two-characters",
+        loginChannelId: null,
+        loginChannelSecret: null,
+      }),
+    };
+    const messages = [buildLiveLineMessage({ kind: "reminder", liveTitle: "場次", startsAtText: "14:00", viewerUrl: "https://celebratedeal.example/live/a" })];
+    const due = {
+      id: deliveryId,
+      vendorId: "vendor-1",
+      trigger: "live_reminder",
+      idempotencyKey: stableLineIdempotencyKey(["live_reminder", "live-1", "submission-1", input.keyStart ?? sessionStart]),
+      status: "queued",
+      attemptCount: 0,
+      maxAttempts: 5,
+      payloadEncrypted: encryptSensitiveValue(JSON.stringify(messages), `line-delivery:vendor-1:${deliveryId}`),
+      account,
+      identity: { vendorId: "vendor-1", revokedAt: null, subjectType: "buyer_registration", subjectId: "submission-1", lineUserIdEncrypted: protectLineProfileValue("vendor-1", "userId", "U123") },
+    };
+    return {
+      lineDelivery: {
+        findMany: vi.fn().mockResolvedValue([due]),
+        findFirst: vi.fn().mockResolvedValue(due),
+        updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+      },
+      formSubmission: {
+        findFirst: vi.fn().mockResolvedValue({
+          id: "submission-1",
+          live: { id: "live-1", vendorId: "vendor-1", sessionMode: "fixed_sessions" },
+          liveSession: input.liveSession,
+        }),
+      },
+    };
+  }
+
+  it("sends a reminder keyed on the registrant's current session", async () => {
+    const db = reminderDb({ liveSession: { vendorId: "vendor-1", liveId: "live-1", startAt: sessionStart, status: "open" } });
+    const client = new MockLineMessagingClient();
+    expect(await processDueLineDeliveries(db as never, () => client, now)).toEqual([{ id: "123e4567-e89b-42d3-a456-426614174099", status: "sent" }]);
+    expect(db.formSubmission.findFirst).toHaveBeenCalledWith(expect.objectContaining({ where: { id: "submission-1", form: { vendorId: "vendor-1" } } }));
+  });
+
+  it.each([
+    ["a cancelled session", { liveSession: { vendorId: "vendor-1", liveId: "live-1", startAt: sessionStart, status: "cancelled" } }],
+    ["a moved registration", { liveSession: { vendorId: "vendor-1", liveId: "live-1", startAt: new Date("2026-10-31T06:00:00Z"), status: "open" } }],
+    ["no session", { liveSession: null }],
+    ["another tenant's session", { liveSession: { vendorId: "vendor-2", liveId: "live-1", startAt: sessionStart, status: "open" } }],
+  ])("suppresses a reminder for %s without pushing it", async (_label, input) => {
+    const db = reminderDb(input);
+    const client = new MockLineMessagingClient();
+    expect(await processDueLineDeliveries(db as never, () => client, now)).toEqual([{ id: "123e4567-e89b-42d3-a456-426614174099", status: "suppressed" }]);
+    expect(client.calls).toEqual([]);
+    expect(db.lineDelivery.updateMany).toHaveBeenLastCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ status: "suppressed", lastErrorCode: "session_changed" }),
+    }));
+  });
+});

@@ -63,7 +63,10 @@ async function fixture(label: string, options: { sessionMode?: "single" | "fixed
     },
   });
   const video = await db.video.create({
-    data: { vendorId: vendor.id, title: "Recording", videoUrl: "https://video.example.test/recording.m3u8", durationSec: 3_600, status: "ready" },
+    data: { vendorId: vendor.id, title: "Recording", sourceType: "url", videoUrl: "https://video.example.test/recording.m3u8", durationSec: 3_600, status: "ready" },
+  });
+  const confirmationTemplate = await db.messageTemplate.create({
+    data: { vendorId: vendor.id, name: "Confirmed", channel: "email", trigger: "registration_confirmed", subject: "報名成功 {{live_title}}", body: "{{name}} {{live_start_at}} {{live_url}}\n{{unsubscribe_url}}", isActive: true },
   });
   const reminderTemplate = await db.messageTemplate.create({
     data: { vendorId: vendor.id, name: "Reminder", channel: "email", trigger: "live_reminder", subject: "{{live_title}} {{live_start_at}}", body: "Hello {{name}} {{live_start_at}}\n{{unsubscribe_url}}", isActive: true },
@@ -82,9 +85,10 @@ async function fixture(label: string, options: { sessionMode?: "single" | "fixed
       sessionRegistrationCutoffMinutes: options.cutoffMinutes ?? 0,
       liveReminderTemplateId: reminderTemplate.id,
       liveReminderOffsetMinutes: 60,
+      messageTemplateId: confirmationTemplate.id,
     },
   });
-  return { vendor, form, video, live, reminderTemplate, suffix };
+  return { vendor, form, video, live, reminderTemplate, confirmationTemplate, suffix };
 }
 
 function session(startAt: Date, capacity: number | null = null, status: "open" | "closed" = "open") {
@@ -231,7 +235,7 @@ describe("registration with a fixed session", () => {
     });
     const [foreign] = await sync(sibling, [session(new Date(Date.now() + 2 * DAY))]);
 
-    expect(await register(fx, `missing-${fx.suffix}@example.test`)).toEqual({ status: 400, body: { error: "Live session selection required" } });
+    expect(await register(fx, `missing-${fx.suffix}@example.test`)).toEqual({ status: 400, body: { error: "Fixed session selection required" } });
     expect(await register(fx, `foreign-${fx.suffix}@example.test`, foreign!.id)).toEqual({ status: 404, body: { error: "Live session not found" } });
     expect(await register(fx, `past-${fx.suffix}@example.test`, past!.id)).toEqual({ status: 409, body: { error: "Live session closed" } });
     expect(await register(fx, `closed-${fx.suffix}@example.test`, closed!.id)).toEqual({ status: 409, body: { error: "Live session closed" } });
@@ -310,7 +314,7 @@ describe("downstream timing follows the chosen session", () => {
     expect(await isCurrentEmailDeliverySnapshot(identity, new Date())).toBe(true);
 
     // Cancelling the session makes the queued reminder stale at send time and supersedes it.
-    await getDb().liveSession.update({ where: { id: lateSession!.id }, data: { status: "cancelled" } });
+    await getDb().liveSession.update({ where: { id: lateSession!.id }, data: { status: "cancelled", cancelledAt: new Date() } });
     expect(await isCurrentEmailDeliverySnapshot(identity, new Date())).toBe(false);
     const superseded = await getDb().$transaction((tx) => supersedeFixedSessionDeliveries(tx, { vendorId: fx.vendor.id, liveId: fx.live.id, sessionIds: [lateSession!.id] }));
     expect(superseded).toBe(1);
@@ -350,7 +354,7 @@ describe("downstream timing follows the chosen session", () => {
     expect(at(b.id, "during_live")).toBe(new Date(second.getTime() + 5 * 60_000).toISOString());
 
     // A cancelled session gets nothing new.
-    await getDb().liveSession.update({ where: { id: secondSession!.id }, data: { status: "cancelled" } });
+    await getDb().liveSession.update({ where: { id: secondSession!.id }, data: { status: "cancelled", cancelledAt: new Date() } });
     const c = await getDb().formSubmission.create({
       data: { formId: fx.form.id, liveId: fx.live.id, liveSessionId: secondSession!.id, name: "Late", email: `late-${fx.suffix}@example.test`, verificationStatus: "VERIFIED", verifiedAt: now },
     });
@@ -374,7 +378,7 @@ describe("downstream timing follows the chosen session", () => {
     expect(rows.find((row) => row.sourceFormSubmissionId === b.id)?.nextAttemptAt?.toISOString()).toBe(new Date(second.getTime() - HOUR).toISOString());
 
     const job = await getDb().liveReminderReconciliationJob.findFirstOrThrow({ where: { vendorId: fx.vendor.id, liveId: fx.live.id } });
-    await getDb().liveSession.update({ where: { id: secondSession!.id }, data: { status: "cancelled" } });
+    await getDb().liveSession.update({ where: { id: secondSession!.id }, data: { status: "cancelled", cancelledAt: new Date() } });
     const requeued = await getDb().$transaction((tx) => queueLiveReminderReconciliationForCurrentLive(tx, { vendorId: fx.vendor.id, liveId: fx.live.id, now }));
     expect(requeued?.jobId).not.toBe(job.id);
   });

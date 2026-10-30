@@ -12,6 +12,8 @@ import { materializeLineNotifications } from "@/lib/line-notification-materializ
 import { processDueLineDeliveries } from "@/lib/line-notification";
 import { getDb } from "@/lib/db";
 import { sweepExpiredRegistrationRetryDrafts } from "@/lib/registration-form-retry";
+import { releaseExpiredFixedSessionSeats } from "@/lib/live-fixed-sessions-store";
+import { queueFixedSessionCancellationNotices } from "@/lib/live-fixed-session-notices";
 
 const SAFE_STATUSES = new Set([
   "sent",
@@ -49,6 +51,30 @@ const SAFE_CUTOVER_STATUSES = new Set([
   "failed",
 ]);
 
+async function processFixedSessionHousekeeping() {
+  let seatsReleased: number | null = null;
+  let cancellationNotices: number | null = null;
+  try {
+    seatsReleased = await releaseExpiredFixedSessionSeats(getDb());
+  } catch (error) {
+    try {
+      captureOperationalError(error, { source: "email_delivery_job", operation: "fixed_session_seat_release", status: "failed" });
+    } catch {
+      // Monitoring must never change the job outcome.
+    }
+  }
+  try {
+    cancellationNotices = (await queueFixedSessionCancellationNotices()).length;
+  } catch (error) {
+    try {
+      captureOperationalError(error, { source: "email_delivery_job", operation: "fixed_session_cancellation_notices", status: "failed" });
+    } catch {
+      // Monitoring must never change the job outcome.
+    }
+  }
+  return { seatsReleased, cancellationNotices };
+}
+
 async function processEmailDeliveries() {
   try {
     // Cut over only proven-equivalent legacy schedules before materializing the
@@ -66,6 +92,9 @@ async function processEmailDeliveries() {
         // Monitoring must never change the job outcome.
       }
     }
+    // 指定場次: give back unverified seats whose window passed and queue the
+    // notices of cancelled sessions before this round's dispatch sends them.
+    const fixedSessions = await processFixedSessionHousekeeping();
     const followups = await processDuePostLiveFollowups();
     const reconciliations = await processLiveReminderReconciliationJobs();
     const results = await processDueEmailDeliveries();
@@ -134,6 +163,8 @@ async function processEmailDeliveries() {
         status: SAFE_STATUSES.has(result.status) ? result.status : "unknown",
       })),
       registrationRetryDraftsPurged: safeCount(registrationRetryDraftsPurged),
+      fixedSessionSeatsReleased: safeCount(fixedSessions.seatsReleased),
+      fixedSessionCancellationNotices: safeCount(fixedSessions.cancellationNotices),
     });
   } catch (error) {
     try {

@@ -184,6 +184,9 @@ export async function verifyFormSubmission(
         verificationStatus: "UNVERIFIED",
         verificationVersion: verifiedToken.version,
         verificationExpiresAt: submission.verificationExpiresAt,
+        // A fixed-session seat given back when the window passed is not
+        // confirmed by a late click; the registrant registers again.
+        OR: [{ liveSessionId: null }, { liveSessionSeatReleasedAt: null }],
       },
       data: {
         verificationStatus: "VERIFIED",

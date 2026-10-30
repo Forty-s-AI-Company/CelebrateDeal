@@ -44,8 +44,13 @@ import { isFixedSessionLive } from "@/lib/live-fixed-sessions";
 import {
   claimFixedSessionSeat,
   FIXED_SESSION_LIVE_SELECT,
+  lockFixedSessionLive,
   type FixedSessionClaimFailure,
 } from "@/lib/live-fixed-sessions-store";
+import { resolveRepeatedFixedSessionRegistration } from "@/lib/live-fixed-session-registration";
+
+const FIXED_SESSION_REGISTRATIONS_PER_IP = 5;
+const FIXED_SESSION_RATE_WINDOW_MS = 10 * 60_000;
 
 const FORM_SUBMISSION_COOKIE = "celebratedeal_form_submission";
 const FORM_SUBMISSION_COOKIE_TTL_SECONDS = 60 * 30;
@@ -357,7 +362,8 @@ function fixedSessionSeatRequest(input: {
       : { ok: true, seat: null };
   }
   if (!input.sessionId) {
-    return { ok: false, response: NextResponse.json({ error: "Live session selection required" }, { status: 400 }) };
+    // Distinct from the form-level "Live session selection required" (pick a Live first).
+    return { ok: false, response: NextResponse.json({ error: "Fixed session selection required" }, { status: 400 }) };
   }
   return {
     ok: true,
@@ -369,6 +375,56 @@ function fixedSessionSeatRequest(input: {
       now: new Date(),
     },
   };
+}
+
+/** Per IP and session, on top of the form-wide limit: one browser cannot fill a session. */
+async function fixedSessionRateLimit(request: Request, seat: FixedSessionSeat | null) {
+  if (!seat) return null;
+  return checkRateLimit(request, `form-submissions-session:${seat.sessionId}`, FIXED_SESSION_REGISTRATIONS_PER_IP, FIXED_SESSION_RATE_WINDOW_MS);
+}
+
+/** A repeated registration may take its released seat back or move session (see resolveRepeatedFixedSessionRegistration). */
+async function repeatedFixedSessionResponse(request: Request, seat: FixedSessionSeat | null, submissionId: string) {
+  if (!seat) return null;
+  const outcome = await resolveRepeatedFixedSessionRegistration({ request, ...seat, submissionId });
+  return outcome.ok ? null : fixedSessionUnavailableResponse(outcome.reason);
+}
+
+/** The same form, Live and email again: converge on the existing registration. */
+async function respondToRepeatedSubmission(input: {
+  request: Request;
+  form: { vendorId: string; vendor: { name: string; senderName: string | null; supportEmail: string | null; contactUrl: string | null } };
+  duplicate: VerifiableSubmission;
+  email: string;
+  seat: FixedSessionSeat | null;
+  redirectTo: string | undefined;
+  isNativeFormPost: boolean;
+}) {
+  const { form, duplicate } = input;
+  const repeatedSeat = await repeatedFixedSessionResponse(input.request, input.seat, duplicate.id);
+  if (repeatedSeat) return repeatedSeat;
+  const missedAutomation = await automationMissedBySubmission(form.vendorId, duplicate.id);
+  const refreshed = await refreshExpiredVerification(duplicate);
+  const verificationQueued = await enqueueSubmissionVerificationSafely({
+    vendorId: form.vendorId,
+    vendorName: form.vendor.name,
+    emailBrand: {
+      senderName: form.vendor.senderName,
+      supportEmail: form.vendor.supportEmail,
+      contactUrl: form.vendor.contactUrl,
+    },
+    submission: refreshed,
+  });
+  if (!verificationQueued) {
+    return NextResponse.json({ error: "Verification email unavailable" }, { status: 503 });
+  }
+  // A retry after a 503 lands here: the first attempt created the row but
+  // never reached the automation step. The execution log's durable key on
+  // `form-registered:<submissionId>` keeps this exactly-once. The LINE
+  // binding capability is deliberately not issued: proving knowledge of an
+  // email address must not let a browser bind LINE to an existing record.
+  await dispatchMissedFormRegistered(form.vendorId, duplicate.id, input.email, missedAutomation);
+  return submissionResponse(input.request, input.redirectTo, input.isNativeFormPost, duplicate.id);
 }
 
 function rethrowOrFixedSessionResponse(error: unknown): NextResponse {
@@ -398,6 +454,11 @@ async function createPublicSubmission(
   if (!source && !seat) return database.formSubmission.create({ data, select: verifiableSubmissionSelect });
   return database.$transaction(async (transaction) => {
     if (seat) {
+      // A concurrent studio switch back to one shared start waits for this
+      // seat and then refuses, instead of racing it (lockFixedSessionLive).
+      if (!await lockFixedSessionLive(transaction, { vendorId: seat.vendorId, liveId: seat.liveId })) {
+        throw new FixedSessionUnavailableError("closed");
+      }
       const failure = await claimFixedSessionSeat(transaction, seat);
       if (failure) throw new FixedSessionUnavailableError(failure);
     }
@@ -648,6 +709,8 @@ async function processSubmission(request: Request, native?: { formData: FormData
   });
   if (!seatRequest.ok) return seatRequest.response;
   const seat = seatRequest.seat;
+  const sessionLimited = await fixedSessionRateLimit(request, seat);
+  if (sessionLimited) return sessionLimited;
 
   // A public Funnel source is only accepted when the current published page,
   // its bound form/live pair, deadline and observed visit all re-resolve.
@@ -696,28 +759,7 @@ async function processSubmission(request: Request, native?: { formData: FormData
     return NextResponse.json({ error: "Live share unavailable" }, { status: 400 });
   }
   if (duplicate) {
-    const missedAutomation = await automationMissedBySubmission(form.vendorId, duplicate.id);
-    const refreshed = await refreshExpiredVerification(duplicate);
-    const verificationQueued = await enqueueSubmissionVerificationSafely({
-      vendorId: form.vendorId,
-      vendorName: form.vendor.name,
-      emailBrand: {
-        senderName: form.vendor.senderName,
-        supportEmail: form.vendor.supportEmail,
-        contactUrl: form.vendor.contactUrl,
-      },
-      submission: refreshed,
-    });
-    if (!verificationQueued) {
-      return NextResponse.json({ error: "Verification email unavailable" }, { status: 503 });
-    }
-    // A retry after a 503 lands here: the first attempt created the row but
-    // never reached the automation step. The execution log's durable key on
-    // `form-registered:<submissionId>` keeps this exactly-once. The LINE
-    // binding capability is deliberately not issued: proving knowledge of an
-    // email address must not let a browser bind LINE to an existing record.
-    await dispatchMissedFormRegistered(form.vendorId, duplicate.id, email, missedAutomation);
-    return submissionResponse(request, parsed.data.redirectTo, isNativeFormPost, duplicate.id);
+    return respondToRepeatedSubmission({ request, form, duplicate, email, seat, redirectTo: parsed.data.redirectTo, isNativeFormPost });
   }
 
   const submissionId = stableSubmissionId(parsed.data.formId, submittedLiveId, email);

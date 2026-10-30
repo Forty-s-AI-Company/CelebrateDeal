@@ -56,6 +56,7 @@ import { FixedSessionCapacityBelowRegistrationsError, syncLiveSessions } from "@
 import {
   applyLiveSessionChanges,
   LiveSessionModeConflict,
+  queueFixedSessionCancellationNoticesSafely,
   resolveSubmittedFixedSessions,
   submittedLiveSchedule,
 } from "@/lib/live-fixed-sessions-studio";
@@ -1406,6 +1407,7 @@ export async function upsertLiveAction(formData: FormData) {
     liveId: id,
     payload: submittedDraft,
     existingLive,
+    video,
     requestedStatus,
     timeZone: vendor.timezone,
     invalidDraftPath: parsedSubmission.invalidDraftPath,
@@ -1498,6 +1500,7 @@ export async function upsertLiveAction(formData: FormData) {
     fixedSessions: schedule.fixedSessions,
   }, invalidReferencePath, slugTakenPath, parsedSubmission.invalidDraftPath);
   if (!committed) redirect(draftClaim.conflictPath);
+  await queueFixedSessionCancellationNoticesSafely({ vendorId: vendor.id, liveId: committed.id, fixedSessions: schedule.fixedSessions !== null });
   await dispatchLiveStartedLineNotificationsSafely(db, vendor.id, committed);
   try {
     await materializeLiveNotificationRules({
