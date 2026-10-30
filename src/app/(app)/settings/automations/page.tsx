@@ -4,6 +4,7 @@ import { Badge, Card, Field, PageHeader, SelectField, SubmitButton, TextArea } f
 import { AUTOMATION_BUTTON_URL_ERROR_MESSAGE, AUTOMATION_RECIPES, maskAutomationTarget } from "@/lib/automation-workflow";
 import { requireVendorOwner } from "@/lib/auth";
 import { getDb } from "@/lib/db";
+import { formatTwd } from "@/lib/format";
 
 const TRIGGERS: Record<string, string> = { payment_paid: "訂單付款完成", viewer_watch_progress: "觀看進度更新", webinar_attended_duration_gte: "觀看累積秒數達標", form_registered: "表單報名成功", consultation_booked: "諮詢預約成功", consultation_no_show: "諮詢未出席", form_no_show: "報名但未出席直播" };
 const ACTIONS: Record<string, string> = { line_push: "LINE 推播", send_email_notification: "Email 通知", add_customer_tag: "客戶打標", issue_repurchase_voucher: "派發回購券" };
@@ -11,7 +12,7 @@ function actionLabels(value: unknown) { return Array.isArray(value) ? value.map(
 function conditionLabel(value: unknown) {
   const condition = value && typeof value === "object" ? value as Record<string, unknown> : {};
   if (condition.type === "always") return "事件發生時";
-  if (condition.type === "order_amount_gte") return `訂單滿 NT$${Number(condition.amountCents ?? 0) / 100}`;
+  if (condition.type === "order_amount_gte") return `訂單滿 ${formatTwd(Number(condition.amountCents ?? 0))}`;
   if (condition.type === "watch_seconds_gte_and_not_purchased") return `觀看滿 ${condition.seconds} 秒且尚未購買`;
   return `觀看滿 ${condition.seconds ?? "?"} 秒`;
 }
