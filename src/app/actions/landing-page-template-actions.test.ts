@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const mocks = vi.hoisted(() => ({ save: vi.fn(), create: vi.fn(), apply: vi.fn(), document: vi.fn(), platformDocument: vi.fn(), csrf: vi.fn() }));
+const mocks = vi.hoisted(() => ({ save: vi.fn(), create: vi.fn(), apply: vi.fn(), document: vi.fn(), platformDocument: vi.fn(), stepPreview: vi.fn(), stepInstantiate: vi.fn(), csrf: vi.fn() }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 vi.mock("@/lib/csrf", () => ({ assertServerActionSecurity: mocks.csrf }));
 vi.mock("@/lib/landing-page-template-service", async (importOriginal) => ({
@@ -10,6 +10,8 @@ vi.mock("@/lib/landing-page-template-service", async (importOriginal) => ({
   applyLandingPageTemplateToStep: mocks.apply,
   getLandingPageTemplateDocument: mocks.document,
   getLandingPagePlatformTemplateDocument: mocks.platformDocument,
+  getLandingPageStepTemplatePreview: mocks.stepPreview,
+  instantiateLandingPageStepTemplate: mocks.stepInstantiate,
 }));
 
 import { LandingPageTemplateInputError, LandingPageTemplateNotFoundError } from "@/lib/landing-page-template-service";
@@ -17,7 +19,9 @@ import {
   applyLandingPageTemplateAction,
   createLandingPageFromTemplateAction,
   readLandingPageTemplateDocumentAction,
+  instantiateStepTemplateAction,
   readPlatformTemplateDocumentAction,
+  readStepTemplatePreviewAction,
   saveLandingPageTemplateAction,
 } from "./landing-page-template-actions";
 
@@ -77,5 +81,25 @@ describe("landing page template action errors", () => {
     expect(await readPlatformTemplateDocumentAction("webinar-ai-minimal")).toEqual({ ok: true, document: { id: "doc" } });
     mocks.platformDocument.mockRejectedValueOnce(new LandingPageTemplateNotFoundError());
     expect(await readPlatformTemplateDocumentAction("nope")).toEqual({ ok: false, message: "找不到這個範本，或你沒有使用它的權限。" });
+  });
+});
+
+describe("step template picker actions", () => {
+  const request = { goal: "audience", stepType: "opt_in_page", templateId: "t" };
+
+  it("returns the preview and applied documents", async () => {
+    mocks.stepPreview.mockResolvedValueOnce({ id: "preview" });
+    expect(await readStepTemplatePreviewAction(request)).toEqual({ ok: true, document: { id: "preview" } });
+    expect(mocks.stepPreview).toHaveBeenCalledWith(request);
+    mocks.stepInstantiate.mockResolvedValueOnce({ id: "applied" });
+    expect(await instantiateStepTemplateAction({ ...request, pageId: "p" })).toEqual({ ok: true, document: { id: "applied" } });
+    expect(mocks.stepInstantiate).toHaveBeenCalledWith({ ...request, pageId: "p" });
+  });
+
+  it("maps a refused template to a message and never throws a raw error to the browser", async () => {
+    mocks.stepPreview.mockRejectedValueOnce(new LandingPageTemplateNotFoundError());
+    expect(await readStepTemplatePreviewAction(request)).toEqual({ ok: false, message: "找不到這個範本，或你沒有使用它的權限。" });
+    mocks.stepInstantiate.mockRejectedValueOnce(new LandingPageTemplateNotFoundError());
+    expect(await instantiateStepTemplateAction({ ...request, pageId: "p" })).toEqual({ ok: false, message: "找不到這個範本，或你沒有使用它的權限。" });
   });
 });

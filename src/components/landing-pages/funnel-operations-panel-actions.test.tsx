@@ -5,11 +5,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createGoalFunnelStepPages } from "@/lib/funnel-goal-step-pages";
 import { defaultFunnelOperations } from "@/lib/funnel-operations";
 import { instantiateFunnelTemplate, listFunnelTemplateGallery } from "@/lib/funnel-template-gallery";
-import { replaceFunnelStepPage } from "@/lib/funnel-step-pages";
+import { replaceFunnelStepPage, type FunnelStepPages } from "@/lib/funnel-step-pages";
+import { instantiateStepTemplateDocument, listStepTemplateOptions } from "@/lib/funnel-step-template-options";
 
-const mocks = vi.hoisted(() => ({ push: vi.fn(), action: vi.fn() }));
+const mocks = vi.hoisted(() => ({ push: vi.fn(), action: vi.fn(), instantiate: vi.fn(), read: vi.fn() }));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: mocks.push, refresh: vi.fn() }) }));
 vi.mock("@/app/actions/landing-page-actions", () => ({ landingPageAction: mocks.action }));
+vi.mock("@/app/actions/landing-page-template-actions", () => ({ instantiateStepTemplateAction: mocks.instantiate, readStepTemplatePreviewAction: mocks.read }));
 vi.mock("@/app/actions/funnel-operations-actions", () => ({ readFunnelOperations: vi.fn(), updateFunnelOperations: vi.fn() }));
 vi.mock("@/components/landing-pages/funnel-automation-settings", () => ({ FunnelAutomationSettings: () => null }));
 
@@ -20,6 +22,11 @@ const cleanups: Array<() => Promise<void>> = [];
 afterEach(async () => { while (cleanups.length) await cleanups.pop()!(); vi.unstubAllGlobals(); });
 beforeEach(() => {
   vi.clearAllMocks();
+  // The server action builds the document with the same function the real action uses.
+  mocks.instantiate.mockImplementation(async (request: Parameters<typeof instantiateStepTemplateDocument>[0]) => {
+    const document = instantiateStepTemplateDocument(request);
+    return document ? { ok: true, document } : { ok: false, message: "找不到這個範本，或你沒有使用它的權限。" };
+  });
   // The panel loads reports independently; keep that request synthetic and inert.
   vi.stubGlobal("fetch", vi.fn(() => new Promise(() => undefined)));
 });
@@ -41,7 +48,7 @@ async function mount(status: "draft" | "published") {
   const container = document.createElement("div");
   document.body.append(container);
   const root = createRoot(container);
-  await act(async () => root.render(<FunnelOperationsPanel initial={panel} initialStepId={stepId} csrfName="csrf" csrfToken="synthetic" initialPublication={{ available: false, message: "專案尚未發布，公開網址目前無法開啟。", projectHref: "/projects/p1", missing: [] }} />));
+  await act(async () => root.render(<FunnelOperationsPanel initial={panel} initialStepId={stepId} csrfName="csrf" csrfToken="synthetic" templateOptions={listStepTemplateOptions("audience")} initialPublication={{ available: false, message: "專案尚未發布，公開網址目前無法開啟。", projectHref: "/projects/p1", missing: [] }} />));
   cleanups.push(async () => { await act(async () => root.unmount()); container.remove(); });
   return { container, stepId };
 }
@@ -131,6 +138,86 @@ describe("management page owns publishing", () => {
     expect(document.body.querySelector('[role="alertdialog"]')).not.toBeNull();
     await click(button(document.body, "取消"));
     expect(document.activeElement).toBe(more);
+    expect(mocks.action).not.toHaveBeenCalled();
+  });
+});
+
+describe("step template picker applies server built documents", () => {
+  const savedContent = () => JSON.parse((mocks.action.mock.calls[0]![1] as FormData).get("content") as string) as FunnelStepPages;
+  const options = listStepTemplateOptions("audience");
+  const cardApply = (container: HTMLElement, templateId: string) => {
+    const name = options.find((option) => option.id === templateId)!.name;
+    const card = Array.from(container.querySelectorAll<HTMLElement>("article")).find((item) => item.querySelector("strong")?.textContent === name)!;
+    return button(card, "套用模板");
+  };
+
+  it("asks before replacing, then applies the server document to the step and saves it", async () => {
+    mocks.action.mockResolvedValue({ status: "success", message: "已儲存。", id: "page-1", revision: 8 });
+    const { container, stepId } = await mount("draft");
+    const current = initial("draft").content.flow.steps.find((step) => step.id === stepId)!.template.templateId;
+    const target = options.find((option) => option.stepTypes.includes("opt_in_page") && option.id !== current)!.id;
+    await click(button(container, "更換模板"));
+    await click(cardApply(container, target));
+    expect(document.body.querySelector('[role="alertdialog"]')?.textContent).toContain("更換模板會取代目前步驟的頁面內容");
+    expect(mocks.instantiate).not.toHaveBeenCalled();
+    await click(button(document.body, "確認"));
+    const pageId = initial("draft").content.pages[stepId]!.id;
+    expect(mocks.instantiate).toHaveBeenCalledWith({ goal: "audience", stepType: "opt_in_page", templateId: target, pageId });
+    const saved = savedContent();
+    expect(saved.flow.steps.find((step) => step.id === stepId)!.template.templateId).toBe(target);
+    const expected = (await mocks.instantiate.mock.results[0]!.value).document;
+    expect(saved.pages[stepId]).toEqual(expected);
+    expect(container.textContent).toContain("模板已套用");
+  });
+
+  it("does nothing when the replacement is cancelled", async () => {
+    const { container } = await mount("draft");
+    await click(button(container, "更換模板"));
+    await click(button(container, "套用模板"));
+    await click(button(document.body, "取消"));
+    expect(mocks.instantiate).not.toHaveBeenCalled();
+    expect(mocks.action).not.toHaveBeenCalled();
+  });
+
+  it("keeps the canvas and shows the error when the server refuses the template", async () => {
+    mocks.instantiate.mockResolvedValue({ ok: false, message: "找不到這個範本，或你沒有使用它的權限。" });
+    const { container } = await mount("draft");
+    await click(button(container, "更換模板"));
+    await click(button(container, "套用模板"));
+    await click(button(document.body, "確認"));
+    expect(container.querySelector("[role=alert]")?.textContent).toContain("找不到這個範本，或你沒有使用它的權限。畫布內容沒有變更");
+    expect(mocks.action).not.toHaveBeenCalled();
+    expect(button(container, "取消更換模板")).toBeTruthy();
+  });
+
+  it("keeps the canvas and shows an error when the request itself fails", async () => {
+    mocks.instantiate.mockRejectedValue(new Error("network"));
+    const { container } = await mount("draft");
+    await click(button(container, "更換模板"));
+    await click(button(container, "套用模板"));
+    await click(button(document.body, "確認"));
+    expect(container.querySelector("[role=alert]")?.textContent).toContain("模板目前無法套用，畫布內容沒有變更");
+    expect(mocks.action).not.toHaveBeenCalled();
+  });
+
+  it("builds the starter page of a new step on the server too", async () => {
+    mocks.action.mockResolvedValue({ status: "success", message: "已儲存。", id: "page-1", revision: 8 });
+    const { container } = await mount("draft");
+    await click(button(container, "新增步驟"));
+    await click(button(document.body, "儲存"));
+    expect(mocks.instantiate).toHaveBeenCalledWith(expect.objectContaining({ goal: "audience", stepType: "opt_in_page", templateId: options.find((option) => option.stepTypes.includes("opt_in_page"))!.id }));
+    const saved = savedContent();
+    const created = saved.flow.steps.find((step) => step.name === "新步驟")!;
+    expect(saved.pages[created.id]).toEqual((await mocks.instantiate.mock.results[0]!.value).document);
+    expect(created.template.templateId).toBe(options.find((option) => option.stepTypes.includes("opt_in_page"))!.id);
+  });
+
+  it("shows the error inside the add-step dialog and creates nothing when the server fails", async () => {
+    mocks.instantiate.mockResolvedValue({ ok: false, message: "找不到這個範本，或你沒有使用它的權限。" });
+    const { container } = await mount("draft");
+    await click(button(container, "新增步驟"));
+    await click(button(document.body, "儲存"));
+    expect(document.body.querySelector('[aria-labelledby="add-step-title"] [role=alert]')?.textContent).toContain("畫布內容沒有變更");
     expect(mocks.action).not.toHaveBeenCalled();
   });
 });
