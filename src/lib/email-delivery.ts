@@ -12,6 +12,7 @@ import {
 } from "@/lib/email-delivery-pii";
 import { hasOnlySupportedMessageTemplateVariables, renderMessageTemplate } from "@/lib/message-template";
 import { createLiveViewerUrl } from "@/lib/live-public-url";
+import { createLiveSessionSwitchToken, createLiveSessionSwitchUrl, LIVE_SESSION_SWITCH_TTL_SECONDS } from "@/lib/live-session-switch-token";
 import { EVERGREEN_ACTIVATION_SELECT, isActiveEvergreenLive } from "@/lib/evergreen-activation";
 import { isFixedSessionLive } from "@/lib/live-fixed-sessions";
 import { normalizeBlacklistIdentifier } from "@/lib/blacklist-identifiers";
@@ -887,6 +888,10 @@ function stableAlreadyRegisteredDeliveryId(input: { vendorId: string; formSubmis
  * - it carries an unsubscribe link and is exempt from no suppression: an
  *   unsubscribe (`recipient_request`), bounce, complaint or the merchant
  *   blacklist stops it, here and again at send time.
+ *
+ * It also carries a 「更換場次」 link (live-session-switch-token.ts): signed,
+ * 24 hours, single use, bound to this registration and the session it holds.
+ * Only the inbox owner gets it, so it is the new-device way to switch.
  */
 export async function ensureFixedSessionAlreadyRegisteredDelivery(input: FixedSessionAlreadyRegisteredDeliveryInput, now = new Date()) {
   const db = getDb();
@@ -894,13 +899,21 @@ export async function ensureFixedSessionAlreadyRegisteredDelivery(input: FixedSe
   const recipientName = safeDisplayText(input.recipientName, "您好");
   const liveTitle = safeDisplayText(input.liveTitle, "直播");
   const vendorName = safeDisplayText(input.vendorName, "活動主辦單位");
+  // Single use and bound to the session held now: a switch, or 24 hours, ends it.
+  const switchUrl = createLiveSessionSwitchUrl(createLiveSessionSwitchToken({
+    vendorId: input.vendorId,
+    submissionId: input.formSubmissionId,
+    sessionId: input.sessionId,
+  }, now));
   const protectedPayload = protectEmailDeliveryPayload({
     recipientEmail: input.recipientEmail,
     subject: `你已報名「${liveTitle}」的場次`,
     body: [
       `${recipientName}：`,
       `剛才有人用這個 Email 報名「${liveTitle}」的其他場次。你已報名 ${input.sessionLabel} 場次，報名沒有變更。`,
-      `如需換場，請在原本報名的裝置上操作。`,
+      `如需換場，請在原本報名的裝置上操作；或在這台裝置開啟下面的「更換場次」連結，確認後回到報名頁，用同一個 Email 選擇新場次。`,
+      `更換場次：${switchUrl}`,
+      `（連結 ${LIVE_SESSION_SWITCH_TTL_SECONDS / 3_600} 小時內有效，只能使用一次；完成換場後即失效。請勿轉寄此信。）`,
       `直播頁：${createLiveViewerUrl(input.liveSlug)}`,
       `主辦單位：${vendorName}`,
       `若不是你本人操作，可以忽略此信。`,
@@ -930,7 +943,7 @@ export async function ensureFixedSessionAlreadyRegisteredDelivery(input: FixedSe
         data: {
           id: deliveryId,
           vendorId: input.vendorId,
-          sourceTemplateId: "system_fixed_session_already_registered_v2",
+          sourceTemplateId: "system_fixed_session_already_registered_v3",
           sourceLiveId: input.liveId,
           sourceFormSubmissionId: input.formSubmissionId,
           trigger: FIXED_SESSION_ALREADY_REGISTERED_TRIGGER,

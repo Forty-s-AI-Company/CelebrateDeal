@@ -97,6 +97,8 @@ const nextConfig: NextConfig = {
       { source: "/api/auth/email-change/confirm", headers: [{ key: "Referrer-Policy", value: "no-referrer" }] },
       { source: "/revert-email-change", headers: [{ key: "Referrer-Policy", value: "no-referrer" }] },
       { source: "/api/auth/email-change/revert", headers: [{ key: "Referrer-Policy", value: "no-referrer" }] },
+      { source: "/live-session-switch", headers: [{ key: "Referrer-Policy", value: "no-referrer" }] },
+      { source: "/api/live-session-switch", headers: [{ key: "Referrer-Policy", value: "no-referrer" }] },
       {
         // Only the authenticated studio document may request capture permissions.
         source: "/lives/:id/presenter",
