@@ -66,9 +66,9 @@ describe("live session switch token", () => {
   });
 
   it("links to the confirmation page on the public app URL", () => {
-    expect(createLiveSessionSwitchUrl("lsw1.payload.sig", { NEXT_PUBLIC_APP_URL: "https://app.example.test" } as NodeJS.ProcessEnv))
+    expect(createLiveSessionSwitchUrl("lsw1.payload.sig", { NEXT_PUBLIC_APP_URL: "https://app.example.test" } as unknown as NodeJS.ProcessEnv))
       .toBe("https://app.example.test/live-session-switch?token=lsw1.payload.sig");
-    expect(() => createLiveSessionSwitchUrl("t", {} as NodeJS.ProcessEnv)).toThrow("Public application URL is not configured.");
-    expect(() => createLiveSessionSwitchUrl("t", { NEXT_PUBLIC_APP_URL: "ftp://files.example.test" } as NodeJS.ProcessEnv)).toThrow("Public application URL is invalid.");
+    expect(() => createLiveSessionSwitchUrl("t", {} as unknown as NodeJS.ProcessEnv)).toThrow("Public application URL is not configured.");
+    expect(() => createLiveSessionSwitchUrl("t", { NEXT_PUBLIC_APP_URL: "ftp://files.example.test" } as unknown as NodeJS.ProcessEnv)).toThrow("Public application URL is invalid.");
   });
 });
