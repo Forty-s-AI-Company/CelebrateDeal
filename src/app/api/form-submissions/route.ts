@@ -430,6 +430,7 @@ async function notifyAlreadyRegistered(input: {
       liveTitle: live.title,
       sessionId: input.held.sessionId,
       sessionLabel: fixedSessionLabel(input.held.startAt, input.form.vendor.timezone || undefined),
+      targetSessionId: input.seat.sessionId,
       formSubmissionId: input.duplicate.id,
       recipientName: input.duplicate.name,
       recipientEmail: input.duplicate.email,

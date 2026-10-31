@@ -40,6 +40,17 @@ describe("signed fixed-session result cookie", () => {
     expect(verifyLiveSessionResultToken(token, "live-1", NOW)).toBeNull();
   });
 
+  it("produces a fixed token for a fixed secret and time (format and derived key are frozen)", () => {
+    vi.stubEnv("CSRF_SECRET", "synthetic-kdf-golden-root-secret-0123456789");
+    vi.stubEnv("JOB_SECRET", "");
+    const token = createLiveSessionResultToken(result, NOW);
+    expect(token).toBe(
+      "lsr1.eyJsIjoibGl2ZS0xIiwiaSI6InNlc3Npb24tMSIsInMiOiIyMDMwLTEwLTMwVDA2OjAwOjAwLjAwMFoiLCJiIjoiMTDmnIgzMOaXpe-8iOmAseS4ie-8iSAxNDowMCIsImUiOjE5MTk1Njg2MDB9"
+        + ".qrTjGxdPF18UDS0YUxbtCjBL40mPV3NAxJ1fV7pMs1s",
+    );
+    expect(verifyLiveSessionResultToken(token, "live-1", NOW)).toEqual(result);
+  });
+
   it("is HttpOnly, Lax and scoped to the funnel pages that read it", () => {
     expect(liveSessionResultCookieOptions(true)).toEqual({ httpOnly: true, sameSite: "lax", secure: true, path: "/lp", maxAge: 1_800 });
   });

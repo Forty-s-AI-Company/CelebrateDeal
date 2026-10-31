@@ -5,9 +5,10 @@ vi.mock("@/lib/rate-limit", () => ({ checkRateLimit: vi.fn(async () => null) }))
 
 import { POST } from "@/app/api/form-submissions/route";
 import { POST as VERIFY } from "@/app/api/form-submissions/verify/route";
+import { POST as UNSUBSCRIBE } from "@/app/api/email/unsubscribe/route";
 import { getDb } from "@/lib/db";
 import { dispatchEmailDelivery, ensureLiveReminderDelivery, isCurrentEmailDeliverySnapshot, isSuppressionExempt, processDuePostLiveFollowups } from "@/lib/email-delivery";
-import { revealEmailDeliveryPayload } from "@/lib/email-delivery-pii";
+import { createEmailUnsubscribeToken, createEmailUnsubscribeUrl, revealEmailDeliveryPayload } from "@/lib/email-delivery-pii";
 import { createFormSubmissionChatSessionToken, FORM_SUBMISSION_CHAT_SESSION_COOKIE } from "@/lib/form-submission-chat-session";
 import { createFormSubmissionVerificationToken } from "@/lib/form-submission-verification";
 import { verifyFormSubmission } from "@/lib/form-submission-verification-domain";
@@ -219,42 +220,30 @@ describe("re-registering moves between sessions (M-2)", () => {
     // Knowing the email is not enough to move a confirmed registration, and the
     // answer is the same 200 a fresh registration gets: nothing about the
     // existing one, no session and no result cookie. The real registrant is
-    // emailed instead, at most once per registration per clock hour.
+    // emailed instead, once for this requested session.
     const stranger = await verifiedRegistrant(fx, b!.id, "stranger");
-    const hour = Math.floor(Date.now() / HOUR) * HOUR;
-    const concealed = async (at: number, cookie?: string) => {
-      vi.useFakeTimers({ toFake: ["Date"], now: at });
-      try {
-        const response = await POST(new Request(`${APP}/api/form-submissions`, {
-          method: "POST",
-          headers: { "content-type": "application/json", origin: APP, "x-celebratedeal-client": "web", ...(cookie ? { cookie } : {}) },
-          body: JSON.stringify({ formId: fx.form.id, liveId: fx.live.id, liveSessionId: b!.id, payload: { name: "Synthetic Lead", email: registrant.email } }),
-        }));
-        expect(response.headers.getSetCookie().filter((value) => value.startsWith("celebratedeal_live_session_result="))).toEqual([]);
-        return { status: response.status, body: await response.json() as Record<string, unknown> };
-      } finally {
-        vi.useRealTimers();
-      }
+    const concealed = async (cookie?: string) => {
+      const response = await POST(new Request(`${APP}/api/form-submissions`, {
+        method: "POST",
+        headers: { "content-type": "application/json", origin: APP, "x-celebratedeal-client": "web", ...(cookie ? { cookie } : {}) },
+        body: JSON.stringify({ formId: fx.form.id, liveId: fx.live.id, liveSessionId: b!.id, payload: { name: "Synthetic Lead", email: registrant.email } }),
+      }));
+      expect(response.headers.getSetCookie().filter((value) => value.startsWith("celebratedeal_live_session_result="))).toEqual([]);
+      return { status: response.status, body: await response.json() as Record<string, unknown> };
     };
-    const notices = () => getDb().emailDelivery.findMany({
-      where: { vendorId: fx.vendor.id, trigger: "fixed_session_already_registered" },
-      orderBy: { createdAt: "asc" },
-    });
-    expect(await concealed(hour + 20 * MINUTE)).toEqual({ status: 200, body: { ok: true, verificationRequired: true } });
+    expect(await concealed()).toEqual({ status: 200, body: { ok: true, verificationRequired: true } });
     // A cookie of another registration does not count as this registrant's browser.
-    expect(await concealed(hour + 25 * MINUTE, chatCookie(stranger.id))).toEqual({ status: 200, body: { ok: true, verificationRequired: true } });
-    const firstHour = await notices();
-    expect(firstHour.map((row) => [row.sourceFormSubmissionId, row.sourceLiveId, row.status])).toEqual([[registrant.id, fx.live.id, "queued"]]);
-    expect(firstHour[0]!.idempotencyKey).toMatch(new RegExp(`^fixed-session-already-registered/${a!.id}/${Math.floor(hour / HOUR)}/`, "u"));
-    const notice = reveal(firstHour[0]!);
+    expect(await concealed(chatCookie(stranger.id))).toEqual({ status: 200, body: { ok: true, verificationRequired: true } });
+    const notices = await getDb().emailDelivery.findMany({ where: { vendorId: fx.vendor.id, trigger: "fixed_session_already_registered" } });
+    expect(notices.map((row) => [row.sourceFormSubmissionId, row.sourceLiveId, row.status])).toEqual([[registrant.id, fx.live.id, "queued"]]);
+    expect(notices[0]!.idempotencyKey).toBe(`fixed-session-already-registered/${a!.id}/${b!.id}/${notices[0]!.id}`);
+    const notice = reveal(notices[0]!);
     expect(notice.recipientEmail).toBe(registrant.email);
     expect(notice.body).toContain(`你已報名 ${fixedSessionLabel(first, "Asia/Taipei")} 場次`);
     expect(notice.body).toContain("如需換場，請在原本報名的裝置上操作");
     expect(notice.body).not.toContain(fixedSessionLabel(second, "Asia/Taipei"));
-    expect(await isCurrentEmailDeliverySnapshot(identity(firstHour[0]!), new Date())).toBe(true);
-    // The next clock hour may send one more.
-    expect((await concealed(hour + 80 * MINUTE)).status).toBe(200);
-    expect(await notices()).toHaveLength(2);
+    expect(notice.body).toContain(`退訂：${createEmailUnsubscribeUrl(notices[0]!.id)}`);
+    expect(await isCurrentEmailDeliverySnapshot(identity(notices[0]!), new Date())).toBe(true);
     await getDb().liveSession.update({ where: { id: b!.id }, data: { registeredCount: { decrement: 1 } } });
     await getDb().formSubmission.delete({ where: { id: stranger.id } });
     expect((await submissionByEmail(fx, registrant.email)).liveSessionId).toBe(a!.id);
@@ -536,7 +525,80 @@ describe("second review of PR #529", () => {
     expect(body).toContain("這是依你的報名寄出的服務通知");
     expect(body).not.toContain("退訂");
   });
+});
 
+describe("the already-registered notice cannot be used to harass (PR #530 MAJOR-1)", () => {
+  async function heldWithTargets(label: string, targets: number) {
+    const fx = await fixture(label);
+    const [held, ...open] = await sync(fx, Array.from({ length: targets + 1 }, (_, index) => session(new Date(Date.now() + (2 + index) * DAY))));
+    return { fx, held: held!, targets: open };
+  }
+  const notices = (fx: Fixture, submissionId: string) => getDb().emailDelivery.findMany({
+    where: { vendorId: fx.vendor.id, trigger: "fixed_session_already_registered", sourceFormSubmissionId: submissionId },
+    orderBy: { createdAt: "asc" },
+  });
+  const targetOf = (row: { idempotencyKey: string }) => row.idempotencyKey.split("/")[2];
+
+  it("sends at most one per requested session and three per registration, even concurrently", async () => {
+    const { fx, held, targets } = await heldWithTargets("notice-caps", 5);
+    const victim = await verifiedRegistrant(fx, held.id, "victim");
+    const fresh = { status: 200, body: { ok: true, verificationRequired: true } };
+    // The same requested session again: still one notice.
+    expect(await register(fx, victim.email, targets[0]!.id)).toEqual(fresh);
+    expect(await register(fx, victim.email, targets[0]!.id)).toEqual(fresh);
+    expect((await notices(fx, victim.id)).map(targetOf)).toEqual([targets[0]!.id]);
+    // Other sessions: up to three in all, then nothing more (the answer does not change).
+    for (const target of targets.slice(1)) expect(await register(fx, victim.email, target.id)).toEqual(fresh);
+    expect((await notices(fx, victim.id)).map(targetOf)).toEqual([targets[0]!.id, targets[1]!.id, targets[2]!.id]);
+    expect((await submissionByEmail(fx, victim.email)).liveSessionId).toBe(held.id);
+
+    // Concurrent requests for five sessions cannot exceed the cap either.
+    const racing = await verifiedRegistrant(fx, held.id, "racing");
+    const answers = await Promise.all(targets.map((target) => register(fx, racing.email, target.id)));
+    expect(answers).toEqual(targets.map(() => fresh));
+    const raced = await notices(fx, racing.id);
+    expect(raced).toHaveLength(3);
+    expect(new Set(raced.map(targetOf)).size).toBe(3);
+  });
+
+  it("honours an unsubscribe: queued notices stop, new ones are suppressed, and the send-time check applies", async () => {
+    expect(isSuppressionExempt("fixed_session_already_registered", "recipient_request")).toBe(false);
+    const { fx, held, targets } = await heldWithTargets("notice-unsubscribe", 3);
+    const victim = await verifiedRegistrant(fx, held.id, "unsubscriber");
+    await register(fx, victim.email, targets[0]!.id);
+    const [first] = await notices(fx, victim.id);
+    expect(first!.status).toBe("queued");
+    const link = new URL(reveal(first!).body.match(/退訂：(\S+)/u)![1]!);
+    expect(link.toString()).toBe(createEmailUnsubscribeUrl(first!.id));
+
+    const unsubscribed = await UNSUBSCRIBE(new Request(`${APP}/api/email/unsubscribe`, {
+      method: "POST",
+      headers: { origin: APP, "content-type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({ token: createEmailUnsubscribeToken(first!.id) }),
+    }));
+    expect(unsubscribed.status).toBe(303);
+    expect(new URL(unsubscribed.headers.get("location")!).searchParams.get("status")).toBe("done");
+    expect((await getDb().emailDelivery.findUniqueOrThrow({ where: { id: first!.id } })).status).toBe("suppressed");
+
+    // A later request still answers like a fresh registration, but its notice is never sent.
+    expect((await register(fx, victim.email, targets[1]!.id)).status).toBe(200);
+    const later = (await notices(fx, victim.id)).find((row) => targetOf(row) === targets[1]!.id)!;
+    expect([later.status, later.lastErrorCode, later.nextAttemptAt]).toEqual(["suppressed", "recipient_suppressed", null]);
+
+    // An unsubscribe that lands after queueing is applied at send time, before any provider call.
+    const other = await verifiedRegistrant(fx, held.id, "late-unsubscriber");
+    await register(fx, other.email, targets[0]!.id);
+    const [queued] = await notices(fx, other.id);
+    expect(queued!.status).toBe("queued");
+    await getDb().emailSuppression.create({
+      data: { vendorId: fx.vendor.id, recipientHash: queued!.recipientHash, recipientMaskedEmail: "l***", reason: "recipient_request", source: "unsubscribe_link" },
+    });
+    expect(await dispatchEmailDelivery(queued!.id)).toEqual({ status: "suppressed" });
+    expect((await getDb().emailDelivery.findUniqueOrThrow({ where: { id: queued!.id } })).sentAt).toBeNull();
+  });
+});
+
+describe("second review of PR #529 (continued)", () => {
   it("lists a fixed-session live on /form with its open sessions, and links there only while the form is public", async () => {
     const fx = await fixture("form-page");
     await sync(fx, [session(new Date("2030-10-30T06:00:00.000Z")), session(new Date("2030-10-31T12:00:00.000Z"), 3)]);
