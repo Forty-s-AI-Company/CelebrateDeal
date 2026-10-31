@@ -127,11 +127,11 @@ export function LiveFixedSessionsEditor({
 
   return (
     <fieldset className="grid gap-3 rounded-md border border-border p-4">
-      <legend className="px-1 text-sm font-semibold text-slate-900">開播時間安排</legend>
-      <div role="radiogroup" aria-label="開播時間安排" className="flex flex-wrap gap-2">
+      <legend className="px-1 text-sm font-semibold text-slate-900">場次安排</legend>
+      <div role="radiogroup" aria-label="場次安排" className="flex flex-wrap gap-2">
         <label className="flex min-h-11 items-center gap-2 rounded-md border border-border px-3 text-sm font-medium text-slate-700">
           <input type="radio" name="sessionMode" value="single" checked={mode === "single"} onChange={() => changeMode("single")} className="h-4 w-4 accent-blue-600" />
-          單一開播時間
+          單一場次
         </label>
         <label className="flex min-h-11 items-center gap-2 rounded-md border border-border px-3 text-sm font-medium text-slate-700">
           <input type="radio" name="sessionMode" value="fixed_sessions" checked={mode === "fixed_sessions"} onChange={() => changeMode("fixed_sessions")} className="h-4 w-4 accent-blue-600" />
@@ -155,7 +155,7 @@ export function LiveFixedSessionsEditor({
               return (
                 <li key={row.key} className="grid gap-2 rounded-md border border-slate-200 p-3 sm:grid-cols-[minmax(0,2fr)_minmax(0,1fr)_auto_auto] sm:items-end">
                   <label className="grid gap-1 text-sm font-medium text-slate-700">
-                    場次 {index + 1} 開播時間
+                    場次 {index + 1} 的日期與時間
                     <input
                       type="datetime-local"
                       autoComplete="off"
