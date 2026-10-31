@@ -12,6 +12,7 @@ import {
 } from "@/lib/email-delivery-pii";
 import { hasOnlySupportedMessageTemplateVariables, renderMessageTemplate } from "@/lib/message-template";
 import { createLiveViewerUrl } from "@/lib/live-public-url";
+import { createLiveSessionSwitchToken, createLiveSessionSwitchUrl, LIVE_SESSION_SWITCH_TTL_SECONDS } from "@/lib/live-session-switch-token";
 import { EVERGREEN_ACTIVATION_SELECT, isActiveEvergreenLive } from "@/lib/evergreen-activation";
 import { isFixedSessionLive } from "@/lib/live-fixed-sessions";
 import { normalizeBlacklistIdentifier } from "@/lib/blacklist-identifiers";
@@ -842,8 +843,14 @@ const FIXED_SESSION_ALREADY_REGISTERED_TRIGGER = "fixed_session_already_register
  * (see ensureFixedSessionAlreadyRegisteredDelivery).
  */
 export const FIXED_SESSION_SERVICE_TRIGGERS: ReadonlySet<string> = new Set([FIXED_SESSION_CANCELLED_TRIGGER]);
-/** At most this many already-registered notices per registration, ever. */
+/** At most this many already-registered notices per registration in any 24 hours. */
 export const FIXED_SESSION_ALREADY_REGISTERED_MAX_PER_SUBMISSION = 3;
+/**
+ * The notice carries a 24-hour 「更換場次」 link, so its identity and cap run
+ * in the same 24-hour windows: once a link can have expired, asking for the
+ * same session again yields a fresh notice instead of silence.
+ */
+const ALREADY_REGISTERED_WINDOW_MS = LIVE_SESSION_SWITCH_TTL_SECONDS * 1_000;
 const ALREADY_REGISTERED_LOCK_NAMESPACE = "fixed-session-already-registered:";
 
 export type FixedSessionAlreadyRegisteredDeliveryInput = {
@@ -863,10 +870,16 @@ export type FixedSessionAlreadyRegisteredDeliveryInput = {
   emailBrand?: VendorEmailBrandSource;
 };
 
-/** Dedupe identity: one notice per (registration, requested session). */
-function stableAlreadyRegisteredDeliveryId(input: { vendorId: string; formSubmissionId: string; targetSessionId: string }) {
+/**
+ * Dedupe identity: one notice per (registration, requested session, 24-hour
+ * window). `window` null is the pre-link identity of rows queued before
+ * windows existed (their idempotencyKey has no `w<window>` segment).
+ */
+function stableAlreadyRegisteredDeliveryId(input: { vendorId: string; formSubmissionId: string; targetSessionId: string }, window: number | null) {
+  const parts: Array<string | number> = [input.vendorId, input.formSubmissionId, input.targetSessionId, FIXED_SESSION_ALREADY_REGISTERED_TRIGGER];
+  if (window !== null) parts.push(window);
   const digest = createHash("sha256")
-    .update(JSON.stringify([input.vendorId, input.formSubmissionId, input.targetSessionId, FIXED_SESSION_ALREADY_REGISTERED_TRIGGER]))
+    .update(JSON.stringify(parts))
     .digest("hex")
     .slice(0, 32);
   return `email_${digest}`;
@@ -879,28 +892,44 @@ function stableAlreadyRegisteredDeliveryId(input: { vendorId: string; formSubmis
  * the real registrant is told here: 「你已報名 X 場；如需換場請在原裝置操作」.
  *
  * A third party can trigger it, so it is capped and stoppable:
- * - at most one per (registration, requested session): the pair is the
- *   stable delivery id, so repeats converge on that row;
+ * - at most one per (registration, requested session) in each 24-hour
+ *   window: the triple is the stable delivery id, so repeats converge on
+ *   that row;
  * - at most FIXED_SESSION_ALREADY_REGISTERED_MAX_PER_SUBMISSION per
- *   registration overall, counted under a per-registration advisory lock so
- *   concurrent requests cannot exceed it;
+ *   registration in the last 24 hours, counted under a per-registration
+ *   advisory lock so concurrent requests cannot exceed it. A rolling cap,
+ *   not a lifetime one: a lifetime cap would let anyone who knows the email
+ *   spend it and leave the registrant without a working switch link;
  * - it carries an unsubscribe link and is exempt from no suppression: an
  *   unsubscribe (`recipient_request`), bounce, complaint or the merchant
  *   blacklist stops it, here and again at send time.
+ *
+ * It also carries a 「更換場次」 link (live-session-switch-token.ts): signed,
+ * 24 hours, single use, bound to this registration and the session it holds.
+ * Only the inbox owner gets it, so it is the new-device way to switch.
  */
 export async function ensureFixedSessionAlreadyRegisteredDelivery(input: FixedSessionAlreadyRegisteredDeliveryInput, now = new Date()) {
   const db = getDb();
-  const deliveryId = stableAlreadyRegisteredDeliveryId(input);
+  const window = Math.floor(now.getTime() / ALREADY_REGISTERED_WINDOW_MS);
+  const deliveryId = stableAlreadyRegisteredDeliveryId(input, window);
   const recipientName = safeDisplayText(input.recipientName, "您好");
   const liveTitle = safeDisplayText(input.liveTitle, "直播");
   const vendorName = safeDisplayText(input.vendorName, "活動主辦單位");
+  // Single use and bound to the session held now: a switch, or 24 hours, ends it.
+  const switchUrl = createLiveSessionSwitchUrl(createLiveSessionSwitchToken({
+    vendorId: input.vendorId,
+    submissionId: input.formSubmissionId,
+    sessionId: input.sessionId,
+  }, now));
   const protectedPayload = protectEmailDeliveryPayload({
     recipientEmail: input.recipientEmail,
     subject: `你已報名「${liveTitle}」的場次`,
     body: [
       `${recipientName}：`,
       `剛才有人用這個 Email 報名「${liveTitle}」的其他場次。你已報名 ${input.sessionLabel} 場次，報名沒有變更。`,
-      `如需換場，請在原本報名的裝置上操作。`,
+      `如需換場，請在原本報名的裝置上操作；或在這台裝置開啟下面的「更換場次」連結，確認後回到報名頁，用同一個 Email 選擇新場次。`,
+      `更換場次：${switchUrl}`,
+      `（連結 ${LIVE_SESSION_SWITCH_TTL_SECONDS / 3_600} 小時內有效，只能使用一次；完成換場後即失效。請勿轉寄此信。）`,
       `直播頁：${createLiveViewerUrl(input.liveSlug)}`,
       `主辦單位：${vendorName}`,
       `若不是你本人操作，可以忽略此信。`,
@@ -914,7 +943,12 @@ export async function ensureFixedSessionAlreadyRegisteredDelivery(input: FixedSe
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${ALREADY_REGISTERED_LOCK_NAMESPACE + input.formSubmissionId}, 0))`;
       if (await tx.emailDelivery.findUnique({ where: { id: deliveryId }, select: { id: true } })) return { status: "duplicate" as const, deliveryId };
       const earlier = await tx.emailDelivery.count({
-        where: { vendorId: input.vendorId, sourceFormSubmissionId: input.formSubmissionId, trigger: FIXED_SESSION_ALREADY_REGISTERED_TRIGGER },
+        where: {
+          vendorId: input.vendorId,
+          sourceFormSubmissionId: input.formSubmissionId,
+          trigger: FIXED_SESSION_ALREADY_REGISTERED_TRIGGER,
+          createdAt: { gt: new Date(now.getTime() - ALREADY_REGISTERED_WINDOW_MS) },
+        },
       });
       if (earlier >= FIXED_SESSION_ALREADY_REGISTERED_MAX_PER_SUBMISSION) return { status: "capped" as const, deliveryId: null };
       const blacklist = normalizedEmail ? await tx.blacklist.findFirst({
@@ -930,16 +964,18 @@ export async function ensureFixedSessionAlreadyRegisteredDelivery(input: FixedSe
         data: {
           id: deliveryId,
           vendorId: input.vendorId,
-          sourceTemplateId: "system_fixed_session_already_registered_v2",
+          sourceTemplateId: "system_fixed_session_already_registered_v3",
           sourceLiveId: input.liveId,
           sourceFormSubmissionId: input.formSubmissionId,
           trigger: FIXED_SESSION_ALREADY_REGISTERED_TRIGGER,
           ...protectedPayload,
-          idempotencyKey: `fixed-session-already-registered/${input.sessionId}/${input.targetSessionId}/${deliveryId}`,
+          idempotencyKey: `fixed-session-already-registered/${input.sessionId}/${input.targetSessionId}/w${window}/${deliveryId}`,
           status: errorCode ? "suppressed" : "queued",
           maxAttempts: MAX_ATTEMPTS,
           nextAttemptAt: errorCode ? null : now,
           lastErrorCode: errorCode,
+          // The same clock as the 24-hour cap above.
+          createdAt: now,
         },
         select: { id: true, status: true },
       });
@@ -954,7 +990,7 @@ export async function ensureFixedSessionAlreadyRegisteredDelivery(input: FixedSe
 /** Sends the notice only while the registration still holds the session it names. */
 async function isCurrentFixedSessionAlreadyRegisteredDelivery(delivery: EmailDeliverySnapshotIdentity, database: DeliverySnapshotDatabase) {
   if (delivery.trigger !== FIXED_SESSION_ALREADY_REGISTERED_TRIGGER) return true;
-  const match = /^fixed-session-already-registered\/([A-Za-z0-9_-]{1,128})\/([A-Za-z0-9_-]{1,128})\//u.exec(delivery.idempotencyKey ?? "");
+  const match = /^fixed-session-already-registered\/([A-Za-z0-9_-]{1,128})\/([A-Za-z0-9_-]{1,128})\/(?:w(\d{1,12})\/)?/u.exec(delivery.idempotencyKey ?? "");
   if (!match || !delivery.sourceLiveId || !delivery.sourceFormSubmissionId) return false;
   const submission = await database.formSubmission.findFirst({
     where: { id: delivery.sourceFormSubmissionId, liveId: delivery.sourceLiveId, liveSessionId: match[1], form: { vendorId: delivery.vendorId } },
@@ -966,7 +1002,8 @@ async function isCurrentFixedSessionAlreadyRegisteredDelivery(delivery: EmailDel
     where: { vendorId: delivery.vendorId, identifierType: "email", identifier: normalizedEmail, isActive: true, unblockedAt: null },
     select: { id: true },
   })) return false;
-  return stableAlreadyRegisteredDeliveryId({ vendorId: delivery.vendorId, formSubmissionId: submission.id, targetSessionId: match[2]! }) === delivery.id;
+  const window = match[3] === undefined ? null : Number(match[3]);
+  return stableAlreadyRegisteredDeliveryId({ vendorId: delivery.vendorId, formSubmissionId: submission.id, targetSessionId: match[2]! }, window) === delivery.id;
 }
 
 function stableFixedSessionCancelledDeliveryId(input: Pick<FixedSessionCancelledDeliveryInput, "vendorId" | "formSubmissionId" | "sessionId" | "cancelledAt">) {

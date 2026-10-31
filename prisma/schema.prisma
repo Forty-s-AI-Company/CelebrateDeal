@@ -779,6 +779,7 @@ model FormSubmission {
   privateChatMessages      LivePrivateChatMessage[]
   liveInteractionResponses LiveInteractionResponse[]
   funnelSubmission         FunnelSubmission?
+  liveSessionSwitchRedemptions LiveSessionSwitchRedemption[]
 
   trackingDeliveries TrackingDelivery[]
 
@@ -910,12 +911,33 @@ model LiveSession {
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
-  live        Live             @relation(fields: [vendorId, liveId], references: [vendorId, id], onDelete: Cascade)
-  submissions FormSubmission[]
+  live              Live                          @relation(fields: [vendorId, liveId], references: [vendorId, id], onDelete: Cascade)
+  submissions       FormSubmission[]
+  switchRedemptions LiveSessionSwitchRedemption[]
 
   @@unique([vendorId, id])
   @@unique([liveId, id])
   @@unique([vendorId, liveId, startAt])
+}
+
+/// A used 「更換場次」 link (src/lib/live-session-switch.ts). The link is a
+/// signed 24-hour token bound to a registration and the session it held; this
+/// row makes it single use: the primary key is the SHA-256 of the token's
+/// nonce, so a second redemption fails on the key.
+model LiveSessionSwitchRedemption {
+  id               String   @id
+  vendorId         String
+  formSubmissionId String
+  liveSessionId    String
+  /// The token's own expiry; past it the token is refused before this table is read.
+  expiresAt        DateTime
+  redeemedAt       DateTime @default(now())
+
+  formSubmission FormSubmission @relation(fields: [formSubmissionId], references: [id], onDelete: Cascade)
+  liveSession    LiveSession    @relation(fields: [vendorId, liveSessionId], references: [vendorId, id], onDelete: Cascade)
+
+  @@index([formSubmissionId])
+  @@index([vendorId, liveSessionId])
 }
 
 /// Private WHIP/WHEP resources. Never expose upstream session URLs to viewers.

@@ -111,6 +111,11 @@ export const DERIVED_KEY_ROTATIONS = Object.freeze({
    * thank-you page. New purpose, so no legacy key.
    */
   liveSessionResult: rotation("live-session-result", "live-session-result:r2:e2e6952d7d8950cb"),
+  /**
+   * 「更換場次」 links in the already-registered notice (指定場次): 24 hours,
+   * single use (LiveSessionSwitchRedemption). New purpose, so no legacy key.
+   */
+  liveSessionSwitch: rotation("live-session-switch", "live-session-switch:r2:fb3e6e707aa6bd7b"),
 
   // Tier 3: long-lived links and cookies. New key signs; legacy still verifies.
   emailUnsubscribe: rotation(
