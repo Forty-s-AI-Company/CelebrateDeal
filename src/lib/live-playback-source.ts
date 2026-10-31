@@ -3,6 +3,7 @@ import { parseSafeExternalHttpUrl } from "@/lib/external-url";
 import { hasActiveLiveViewerSession } from "@/lib/live-quota-admission";
 import { isExistingLiveVideoReady } from "@/lib/live-video-readiness";
 import { EVERGREEN_LIVE_SELECT, resolveViewerLiveRuntime } from "@/lib/evergreen-viewer-session";
+import { FIXED_SESSION_LIVE_SELECT, resolveViewerFixedSessionForLive } from "@/lib/live-fixed-sessions-store";
 
 type PlaybackSourceInput = {
   vendorId: string;
@@ -10,6 +11,8 @@ type PlaybackSourceInput = {
   token: string;
   /** Signed evergreen session cookie; only read when the Live is evergreen. */
   evergreenToken?: string | null;
+  /** Signed registration cookie; only read when the Live has fixed sessions. */
+  registrationToken?: string | null;
   now?: Date;
 };
 
@@ -29,6 +32,7 @@ export async function resolveLivePlaybackSource(db: PrismaClient, input: Playbac
     },
     select: {
       ...EVERGREEN_LIVE_SELECT,
+      ...FIXED_SESSION_LIVE_SELECT,
       vendor: { select: { timezone: true } },
       streamMode: true,
       scheduledAt: true,
@@ -54,10 +58,13 @@ export async function resolveLivePlaybackSource(db: PrismaClient, input: Playbac
   if (!live) return null;
   // An evergreen Live serves media only inside the visitor's own signed
   // session, from that session's server-computed offset.
+  // A fixed-session Live serves media from the viewer's own session offset.
+  const fixedSession = await resolveViewerFixedSessionForLive(db, live, { registrationToken: input.registrationToken, now });
   const runtime = resolveViewerLiveRuntime(live, {
     vendorTimezone: live.vendor?.timezone,
     evergreenToken: input.evergreenToken,
     now,
+    fixedSession,
   });
   if (runtime.state === "unavailable" || runtime.state === "waiting") return null;
   if (live?.video?.vendorId !== input.vendorId) return null;

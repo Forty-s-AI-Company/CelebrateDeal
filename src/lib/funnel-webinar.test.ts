@@ -81,3 +81,14 @@ describe("固定場次 Webinar", () => {
     expect(addFunnelStep(custom.flow, input).ok).toBe(false);
   });
 });
+
+describe("指定場次 Webinar（fixed sessions）", () => {
+  it("ignores the funnel's shared dates and asks only for the bound resources", () => {
+    const settings = { timezone: "Asia/Taipei", startsAt: "2026-09-17T01:00:00.000Z", endsAt: "2026-09-17T02:00:00.000Z", replayEndsAt: null };
+    for (const now of [Date.parse("2026-09-16T00:00:00.000Z"), Date.parse("2030-01-01T00:00:00.000Z")]) {
+      expect(getFunnelWebinarState(settings, { liveId: "live", formId: "form", fixedSessions: true }, now)).toMatchObject({ status: "waiting", missing: [] });
+    }
+    expect(getFunnelWebinarState(null, { liveId: "live", formId: "form", fixedSessions: true }).message).toContain("依你報名時選擇的場次");
+    expect(getFunnelWebinarState(settings, { liveId: "", formId: "form", fixedSessions: true })).toMatchObject({ status: "missing", missing: ["請綁定播放用 Live"] });
+  });
+});

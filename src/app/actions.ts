@@ -43,6 +43,7 @@ import { EVERGREEN_ACTIVATION_SELECT, isActiveEvergreenLive, type EvergreenActiv
 import {
   createLiveReminderReconciliationSnapshot,
   queueLiveReminderReconciliation,
+  queueLiveReminderReconciliationForCurrentLive,
   type LiveReminderReconciliationSnapshot,
   type LiveReminderTemplateSnapshot,
 } from "@/lib/live-reminder-reconciliation";
@@ -50,6 +51,15 @@ import {
   materializeLiveNotificationRules,
   supersedeLiveNotificationDeliveriesForLifecycle,
 } from "@/lib/live-notification-delivery";
+import type { ParsedFixedSession } from "@/lib/live-fixed-sessions";
+import { FixedSessionCapacityBelowRegistrationsError, syncLiveSessions } from "@/lib/live-fixed-sessions-store";
+import {
+  applyLiveSessionChanges,
+  LiveSessionModeConflict,
+  queueFixedSessionCancellationNoticesSafely,
+  resolveSubmittedFixedSessions,
+  submittedLiveSchedule,
+} from "@/lib/live-fixed-sessions-studio";
 import { captureOperationalError } from "@/lib/monitoring";
 import { recordLearnerLiveStartedSources } from "@/lib/learner-live-notifications";
 import { replaceLiveProductBindings } from "@/lib/live-product-bindings";
@@ -698,6 +708,9 @@ type LiveMutationData = {
   replayAvailableUntil: Date | null;
   streamMode: string;
   quotaPolicy: Prisma.InputJsonValue;
+  sessionMode: string;
+  sessionRegistrationCutoffMinutes: number;
+  sessionReplayWindowHours: number | null;
 };
 
 class LiveLegacyBindingConflict extends Error {}
@@ -725,6 +738,8 @@ async function commitLiveDraft(input: {
   reminderReconciliationSnapshot: LiveReminderReconciliationSnapshot | null;
   notificationRules: LiveNotificationRuleInput[];
   expectedLegacyBinding: { templateId: string | null; offsetMinutes: number } | null;
+  /** Validated 指定場次 rows, or null for a Live with one shared start. */
+  fixedSessions: ParsedFixedSession[] | null;
 }) {
   const transitionAt = new Date();
   if (input.liveId) {
@@ -757,7 +772,7 @@ async function commitLiveDraft(input: {
       if (bindingClaim.count !== 1) throw new LiveLegacyBindingConflict();
       const currentLive = await tx.live.findFirst({
         where: { id: input.liveId!, vendorId: input.vendorId },
-        select: { status: true, startedAt: true, endedAt: true },
+        select: { status: true, startedAt: true, endedAt: true, sessionMode: true },
       });
       if (!currentLive) return null;
       const lifecycleData: LiveMutationData & { startedAt?: Date | null; endedAt?: Date | null } = { ...input.data };
@@ -773,6 +788,12 @@ async function commitLiveDraft(input: {
         lifecycleData.endedAt = null;
       }
       await tx.live.update({ where: { id: input.liveId!, vendorId: input.vendorId }, data: lifecycleData });
+      await applyLiveSessionChanges(tx, {
+        vendorId: input.vendorId,
+        liveId: input.liveId!,
+        fixedSessions: input.fixedSessions,
+        previousSessionMode: currentLive.sessionMode,
+      });
       if (currentLive.status === "scheduled" && input.data.status === "live") {
         await supersedeLiveNotificationDeliveriesForLifecycle(tx, {
           vendorId: input.vendorId,
@@ -801,9 +822,14 @@ async function commitLiveDraft(input: {
         liveId: input.liveId!,
         rules: input.notificationRules,
       });
-      const reminderReconciliation = input.reminderReconciliationSnapshot
-        ? await queueLiveReminderReconciliation(tx, input.reminderReconciliationSnapshot, transitionAt)
-        : null;
+      // A fixed-session Live (before or after this save) reconciles from the
+      // state just written, because the session rows are part of its digest.
+      const usesFixedSessions = input.fixedSessions !== null || currentLive.sessionMode === "fixed_sessions";
+      const reminderReconciliation = usesFixedSessions
+        ? await queueLiveReminderReconciliationForCurrentLive(tx, { vendorId: input.vendorId, liveId: input.liveId!, now: transitionAt })
+        : input.reminderReconciliationSnapshot
+          ? await queueLiveReminderReconciliation(tx, input.reminderReconciliationSnapshot, transitionAt)
+          : null;
       return {
         id: input.liveId!,
         created: false,
@@ -853,6 +879,9 @@ async function commitLiveDraft(input: {
         },
       },
     });
+    if (input.fixedSessions) {
+      await syncLiveSessions(tx, { vendorId: input.vendorId, liveId: live.id, sessions: input.fixedSessions });
+    }
     const notificationReconciliation = await reconcileLiveNotificationRules(tx, {
       vendorId: input.vendorId,
       liveId: live.id,
@@ -870,11 +899,16 @@ async function commitLiveDraftOrRedirect(
   input: Parameters<typeof commitLiveDraft>[0],
   invalidReferencePath: string,
   slugTakenPath: string,
+  invalidDraftPath: string,
 ) {
   try {
     return await commitLiveDraft(input);
   } catch (error) {
     if (error instanceof SalesProjectBindingError) redirect(invalidReferencePath);
+    // Nothing was written: the transaction rolled back.
+    if (error instanceof FixedSessionCapacityBelowRegistrationsError || error instanceof LiveSessionModeConflict) {
+      redirect(`${invalidDraftPath}&field=${error instanceof LiveSessionModeConflict ? "sessionMode" : "fixedSessions"}`);
+    }
     // A reference that stopped belonging to this vendor between validation and
     // the write trips a composite tenant FK; the transaction rolled back.
     if (isForeignKeyViolation(error)) redirect(invalidReferencePath);
@@ -912,13 +946,15 @@ function parseSubmittedLiveDraft(
   // Project context is create-only; edits cannot move an existing live.
   if (liveId && payload.projectId) redirect(invalidDraftPath);
   const slug = toSlug(payload.slug);
-  if (!payload.title || !slug || !payload.scheduledAt) {
+  // A fixed-session Live derives scheduledAt from its sessions (resolveSubmittedFixedSessions).
+  const fixedSessions = payload.sessionMode === "fixed_sessions";
+  if (!payload.title || !slug || (!payload.scheduledAt && !fixedSessions)) {
     redirect(invalidDraftPath);
   }
   let scheduledAt: Date;
   let replayAvailableUntil: Date | null = null;
   try {
-    scheduledAt = parseZonedDateTimeLocal(payload.scheduledAt, vendorTimeZone);
+    scheduledAt = payload.scheduledAt ? parseZonedDateTimeLocal(payload.scheduledAt, vendorTimeZone) : new Date(0);
     if (payload.replayEnabled && payload.replayAvailableUntil) {
       replayAvailableUntil = parseZonedDateTimeLocal(payload.replayAvailableUntil, vendorTimeZone);
     }
@@ -1263,7 +1299,6 @@ export async function upsertLiveAction(formData: FormData) {
   const parsedSubmission = parseSubmittedLiveDraft(formData, id, draftClaim.draftId, vendor.timezone);
   const submittedDraft = parsedSubmission.payload;
   const notificationRules = parseSubmittedNotificationRuleDraft(submittedDraft, parsedSubmission.invalidDraftPath);
-  const scheduledAt = parsedSubmission.scheduledAt;
   const createDraftSuffix = parsedSubmission.suffix;
   const rawProductIds = submittedDraft.productIds;
   const productIds = [...new Set(rawProductIds.map((productId) => productId.trim()).filter(Boolean))];
@@ -1365,6 +1400,19 @@ export async function upsertLiveAction(formData: FormData) {
   if (hasInvalidReference) {
     redirect(invalidReferencePath);
   }
+  const requestedStatus = requestedLiveStatus(formData, id, draftClaim.draftId, existingLive?.status ?? null);
+  const schedule = submittedLiveSchedule(await resolveSubmittedFixedSessions({
+    db,
+    vendorId: vendor.id,
+    liveId: id,
+    payload: submittedDraft,
+    existingLive,
+    video,
+    requestedStatus,
+    timeZone: vendor.timezone,
+    invalidDraftPath: parsedSubmission.invalidDraftPath,
+  }), parsedSubmission.scheduledAt);
+  const scheduledAt = schedule.scheduledAt;
   requireValidNotificationRuleTemplates({
     rules: notificationRules,
     templates: notificationTemplates,
@@ -1379,7 +1427,6 @@ export async function upsertLiveAction(formData: FormData) {
     invalidDraftPath: parsedSubmission.invalidDraftPath,
   });
   await requireLiveQuotaPaymentMethod(db, vendor.id, quotaPolicy, id, draftClaim.draftId);
-  const requestedStatus = requestedLiveStatus(formData, id, draftClaim.draftId, existingLive?.status ?? null);
   requireSubmittedLivePublishReadiness({
     liveId: id,
     draftId: draftClaim.draftId,
@@ -1419,6 +1466,7 @@ export async function upsertLiveAction(formData: FormData) {
     replayAvailableUntil: parsedSubmission.replayAvailableUntil,
     streamMode: submittedDraft.streamMode,
     quotaPolicy: quotaPolicy as Prisma.InputJsonValue,
+    ...schedule.fields,
   };
 
   const reminderReconciliationSnapshot = liveReminderSnapshotAfterUpdate({
@@ -1449,8 +1497,10 @@ export async function upsertLiveAction(formData: FormData) {
       templateId: existingLive.liveReminderTemplateId,
       offsetMinutes: existingLive.liveReminderOffsetMinutes,
     } : null,
-  }, invalidReferencePath, slugTakenPath);
+    fixedSessions: schedule.fixedSessions,
+  }, invalidReferencePath, slugTakenPath, parsedSubmission.invalidDraftPath);
   if (!committed) redirect(draftClaim.conflictPath);
+  await queueFixedSessionCancellationNoticesSafely({ vendorId: vendor.id, liveId: committed.id, fixedSessions: schedule.fixedSessions !== null });
   await dispatchLiveStartedLineNotificationsSafely(db, vendor.id, committed);
   try {
     await materializeLiveNotificationRules({

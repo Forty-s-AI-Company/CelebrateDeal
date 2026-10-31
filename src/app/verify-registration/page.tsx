@@ -9,16 +9,24 @@ function validTokenShape(value: string | undefined) {
   return Boolean(value && value.length <= 320 && /^fsv1\.[A-Za-z0-9_-]{1,128}\.\d{1,12}\.\d{1,9}\.[A-Za-z0-9_-]{43}$/u.test(value));
 }
 
+/** Only a same-site public registration path (landing page, form or live page) is linked. */
+function rechoosePath(value: string | undefined) {
+  if (!value || value.length > 600 || !/^\/(?:lp|form|live)\/[^/\\\s?#][^\\\s#]*$/u.test(value)) return null;
+  return value;
+}
+
 export default async function VerifyRegistrationPage({
   searchParams,
 }: {
-  searchParams: Promise<{ token?: string; status?: string }>;
+  searchParams: Promise<{ token?: string; status?: string; rechoose?: string }>;
 }) {
   const query = await searchParams;
   const hasToken = validTokenShape(query.token);
   const verified = query.status === "verified";
   const retry = query.status === "retry";
-  const invalid = !retry && (query.status === "invalid" || (!verified && !hasToken));
+  const sessionCancelled = query.status === "session_cancelled";
+  const rechoose = rechoosePath(query.rechoose);
+  const invalid = !retry && !sessionCancelled && (query.status === "invalid" || (!verified && !hasToken));
 
   return (
     <main className="grid min-h-screen place-items-center bg-slate-100 px-4 py-10">
@@ -31,6 +39,12 @@ export default async function VerifyRegistrationPage({
             <VerifiedRegistrationNextSteps />
             <div className="mt-4"><LineLoginButton request={{ mode: "registration", redirectPath: "/verify-registration?status=verified" }}>🟢 接收 LINE 開播提醒與電子票券</LineLoginButton></div>
             <VerifiedRegistrationShare />
+          </div>
+        ) : sessionCancelled ? (
+          <div role="alert" className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-4 text-amber-900">
+            <h1 className="text-xl font-black">你報名的場次已取消</h1>
+            <p className="mt-2 text-sm leading-6">Email 已確認，但你選的場次已由主辦單位取消。請重新選擇場次，我們也已寄出一封說明信。</p>
+            {rechoose ? <a href={rechoose} className="mt-4 inline-flex min-h-11 items-center justify-center rounded-lg bg-blue-700 px-4 py-2 text-sm font-bold text-white hover:bg-blue-800">重新選擇場次</a> : null}
           </div>
         ) : retry ? (
           <div role="alert" className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-4 text-amber-900">

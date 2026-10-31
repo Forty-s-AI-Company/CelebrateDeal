@@ -346,7 +346,7 @@ describe("team lead attribution", () => {
     expect(db.registrationForm.findUnique).toHaveBeenCalledWith({
       where: { id: "form-1" },
       include: {
-        vendor: { select: { name: true, senderName: true, supportEmail: true, contactUrl: true } },
+        vendor: { select: { name: true, senderName: true, supportEmail: true, contactUrl: true, timezone: true } },
       },
     });
     expect(JSON.stringify(create)).not.toContain("lead@example.test");
@@ -789,6 +789,9 @@ describe("team lead attribution", () => {
         id: true,
         title: true,
         quotaPolicy: true,
+        sessionMode: true,
+        sessionRegistrationCutoffMinutes: true,
+        sessionReplayWindowHours: true,
         vendor: { select: { name: true } },
         messageTemplate: {
           select: {

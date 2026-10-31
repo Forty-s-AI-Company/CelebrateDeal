@@ -10,6 +10,7 @@ import {
 import { hasOnlySupportedMessageTemplateVariables, renderMessageTemplate } from "@/lib/message-template";
 import { createLiveViewerUrl } from "@/lib/live-public-url";
 import { EVERGREEN_ACTIVATION_SELECT, isActiveEvergreenLive, type EvergreenActivationRecord } from "@/lib/evergreen-activation";
+import { isFixedSessionLive } from "@/lib/live-fixed-sessions";
 import { captureOperationalError } from "@/lib/monitoring";
 import { isLockTimeout, isTransientTransactionConflict, runSerializable, withSerializableRetry } from "@/lib/serializable-retry";
 import {
@@ -65,7 +66,22 @@ type VerifiedSubmission = {
   name: string;
   email: string;
   verificationStatus: string;
+  /** The chosen 指定場次; only read for a fixed-session Live. */
+  liveSession?: SubmissionFixedSession | null;
 };
+
+type SubmissionFixedSession = {
+  id: string;
+  vendorId: string;
+  liveId: string;
+  startAt: Date;
+  status: string;
+};
+
+/** Prisma select for the session a registrant chose. */
+const SUBMISSION_FIXED_SESSION_SELECT = {
+  liveSession: { select: { id: true, vendorId: true, liveId: true, startAt: true, status: true } },
+} as const;
 
 type NotificationSnapshotDatabase = Pick<
   Prisma.TransactionClient,
@@ -99,6 +115,32 @@ export function resolveLiveNotificationDueAt(input: {
 
 function liveAnchor(live: Pick<NotificationLive, "scheduledAt" | "startedAt">, trigger: LiveNotificationDeliveryTrigger) {
   return trigger === "before_live" ? live.scheduledAt : live.startedAt;
+}
+
+/**
+ * The registrant's own schedule. A fixed-session Live (指定場次) anchors both
+ * before_live and during_live on the chosen session's startAt (the recorded
+ * video starts playing then); every other Live keeps the shared
+ * scheduledAt / startedAt. Null when a fixed-session registrant has no
+ * session of this exact Live and vendor.
+ */
+function recipientSchedule(live: NotificationLive, submission: VerifiedSubmission) {
+  if (!isFixedSessionLive(live)) return { scheduledAt: live.scheduledAt, startedAt: live.startedAt, session: null };
+  const session = submission.liveSession;
+  if (!session || session.vendorId !== live.vendorId || session.liveId !== live.id) return null;
+  return { scheduledAt: session.startAt, startedAt: session.startAt, session };
+}
+
+function isFixedSessionEligible(
+  live: NotificationLive,
+  session: SubmissionFixedSession,
+  trigger: LiveNotificationDeliveryTrigger,
+  now: Date,
+) {
+  if (!["scheduled", "live"].includes(live.status) || session.status === "cancelled") return false;
+  if (trigger === "before_live") return now < session.startAt;
+  const durationMs = (live.video?.durationSec ?? 0) * 1_000;
+  return now.getTime() < session.startAt.getTime() + durationMs;
 }
 
 export function stableLiveNotificationDeliveryId(input: {
@@ -151,7 +193,10 @@ const NOTIFICATION_LIVE_SELECT = {
   video: { select: { durationSec: true } },
 } as const;
 
-function isLiveEligible(live: NotificationLive, trigger: LiveNotificationDeliveryTrigger, now: Date) {
+function isLiveEligible(live: NotificationLive, trigger: LiveNotificationDeliveryTrigger, now: Date, submission: VerifiedSubmission) {
+  const schedule = recipientSchedule(live, submission);
+  if (!schedule) return false;
+  if (schedule.session) return isFixedSessionEligible(live, schedule.session, trigger, now);
   // before_live / during_live anchor on the shared scheduledAt / startedAt; an
   // active evergreen Live gives each visitor their own session instead.
   if (isActiveEvergreenLive(live, { now })) return false;
@@ -169,11 +214,13 @@ function deliverySnapshot(input: {
 }) {
   const trigger = input.rule.trigger as LiveNotificationDeliveryTrigger;
   const template = input.rule.messageTemplate;
-  const anchor = liveAnchor(input.live, trigger);
+  const schedule = recipientSchedule(input.live, input.submission);
+  if (!schedule) return null;
+  const anchor = liveAnchor(schedule, trigger);
   const dueAt = resolveLiveNotificationDueAt({
     trigger,
-    scheduledAt: input.live.scheduledAt,
-    startedAt: input.live.startedAt,
+    scheduledAt: schedule.scheduledAt,
+    startedAt: schedule.startedAt,
     offsetMinutes: input.rule.offsetMinutes,
   });
   if (
@@ -185,7 +232,7 @@ function deliverySnapshot(input: {
     || !validTemplate(input.live.vendorId, template, trigger)
     || !anchor
     || !dueAt
-    || !isLiveEligible(input.live, trigger, input.now)
+    || !isLiveEligible(input.live, trigger, input.now, input.submission)
   ) return null;
 
   const deliveryId = stableLiveNotificationDeliveryId({
@@ -200,7 +247,7 @@ function deliverySnapshot(input: {
     anchor,
     template: { id: template.id, subject: template.subject!, body: template.body },
   });
-  return { trigger, template, dueAt, deliveryId };
+  return { trigger, template, dueAt, deliveryId, startAt: schedule.scheduledAt };
 }
 
 async function buildDeliveryData(
@@ -220,7 +267,7 @@ async function buildDeliveryData(
     name: input.submission.name,
     live_title: input.live.title,
     live_url: createLiveViewerUrl(input.live.slug),
-    live_start_at: formatLiveStartAt(input.live.scheduledAt),
+    live_start_at: formatLiveStartAt(snapshot.startAt),
     vendor_name: input.live.vendor.name,
     unsubscribe_url: unsubscribeUrl,
   };
@@ -284,7 +331,7 @@ async function readCurrentNotificationSnapshot(
     }),
     db.formSubmission.findFirst({
       where: { id: input.submissionId, liveId: input.liveId, verificationStatus: "VERIFIED", form: { vendorId: input.vendorId } },
-      select: { id: true, name: true, email: true, verificationStatus: true },
+      select: { id: true, name: true, email: true, verificationStatus: true, ...SUBMISSION_FIXED_SESSION_SELECT },
     }),
   ]);
   return live && rule && submission
@@ -466,6 +513,41 @@ type MaterializationRuleState = {
   exhausted: boolean;
 };
 
+/**
+ * For a fixed-session Live: the sessions whose registrants can still receive
+ * this rule, and the earliest due time among them (for ordering and the
+ * due-only pass). Null when no session qualifies.
+ */
+async function fixedSessionMaterializationScope(
+  db: ReturnType<typeof getDb>,
+  rule: MaterializationRule,
+  live: { status: string; video: { durationSec: number | null } | null },
+  now: Date,
+) {
+  if (!["scheduled", "live"].includes(live.status)) return null;
+  const durationMs = (live.video?.durationSec ?? 0) * 1_000;
+  const sessions = await db.liveSession.findMany({
+    where: {
+      vendorId: rule.vendorId,
+      liveId: rule.liveId,
+      status: { not: "cancelled" },
+      startAt: rule.trigger === "before_live" ? { gt: now } : { gt: new Date(now.getTime() - durationMs) },
+    },
+    orderBy: [{ startAt: "asc" }, { id: "asc" }],
+    take: 50,
+    select: { id: true, startAt: true },
+  });
+  const trigger = rule.trigger as LiveNotificationDeliveryTrigger;
+  const dueTimes = sessions
+    .map((session) => resolveLiveNotificationDueAt({ trigger, scheduledAt: session.startAt, startedAt: session.startAt, offsetMinutes: rule.offsetMinutes }))
+    .filter((value): value is Date => value !== null);
+  if (sessions.length === 0 || dueTimes.length === 0) return null;
+  return {
+    sessionIds: sessions.map((session) => session.id),
+    dueAt: new Date(Math.min(...dueTimes.map((value) => value.getTime()))),
+  };
+}
+
 async function prepareMaterializationRules(
   db: ReturnType<typeof getDb>,
   rules: MaterializationRule[],
@@ -481,20 +563,28 @@ async function prepareMaterializationRules(
     });
     if (!live || (rule.trigger === "before_live" && live.liveReminderTemplateId !== null)) continue;
     if (isActiveEvergreenLive(live, { now })) continue;
-    const dueAt = resolveLiveNotificationDueAt({
+    const fixed = isFixedSessionLive(live)
+      ? await fixedSessionMaterializationScope(db, rule, live, now)
+      : null;
+    if (isFixedSessionLive(live) && !fixed) continue;
+    const dueAt = fixed ? fixed.dueAt : resolveLiveNotificationDueAt({
       trigger: rule.trigger as LiveNotificationDeliveryTrigger,
       scheduledAt: live.scheduledAt,
       startedAt: live.startedAt,
       offsetMinutes: rule.offsetMinutes,
     });
-    const lifecycleEligible = rule.trigger === "before_live"
-      ? live.status === "scheduled" && !live.startedAt && now < live.scheduledAt
-      : live.status === "live" && Boolean(live.startedAt) && !live.endedAt;
+    const lifecycleEligible = fixed
+      ? true
+      : rule.trigger === "before_live"
+        ? live.status === "scheduled" && !live.startedAt && now < live.scheduledAt
+        : live.status === "live" && Boolean(live.startedAt) && !live.endedAt;
     if (!dueAt || !lifecycleEligible || (!includeFuture && dueAt > now)) continue;
     const submissionWhere: Prisma.FormSubmissionWhereInput = {
       liveId: rule.liveId,
       verificationStatus: "VERIFIED",
       form: { vendorId: rule.vendorId },
+      // A fixed-session Live only scans registrants whose session can still get this trigger.
+      ...(fixed ? { liveSessionId: { in: fixed.sessionIds } } : {}),
     };
     const submissionCount = await db.formSubmission.count({ where: submissionWhere });
     prepared.push({
@@ -746,6 +836,84 @@ export async function supersedeFixedTimeNotificationsForActiveEvergreen(
   }, { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted });
 }
 
+const FIXED_SESSION_SUPERSEDE_BATCH = 500;
+
+/**
+ * Cancels the unsent fixed-time emails (legacy live_reminder, before_live,
+ * during_live) of registrants whose fixed session was cancelled. Runs in the
+ * studio transaction after the Live row is locked and the sessions are
+ * written, so a materialization that waited on that lock reads the cancelled
+ * session and writes nothing; the send-time guards reject anything left.
+ * Tenant-bound on every statement.
+ */
+type RegistrantSupersedeDb = Pick<Prisma.TransactionClient, "emailDelivery" | "lineDelivery">;
+
+/**
+ * Cancels the unsent fixed-time messages of the given registrations of one
+ * Live: Email `live_reminder`, `before_live`, `during_live` and the LINE
+ * `live_reminder` pushed to their bound LINE identity. Tenant-bound on every
+ * statement; used when a session is cancelled and when a registrant moves to
+ * another session (the new session's rows are materialized afterwards).
+ */
+export async function supersedeRegistrantFixedTimeDeliveries(
+  tx: RegistrantSupersedeDb,
+  input: { vendorId: string; liveId: string; submissionIds: readonly string[]; reason: "session_cancelled" | "session_changed" },
+) {
+  if (input.submissionIds.length === 0) return 0;
+  const email = await tx.emailDelivery.updateMany({
+    where: {
+      vendorId: input.vendorId,
+      sourceLiveId: input.liveId,
+      sourceFormSubmissionId: { in: [...input.submissionIds] },
+      trigger: { in: ["live_reminder", ...LIVE_NOTIFICATION_DELIVERY_TRIGGERS] },
+      status: { in: ["queued", "failed"] },
+    },
+    data: { status: "superseded", nextAttemptAt: null, claimedAt: null, lastErrorCode: input.reason },
+  });
+  const line = await tx.lineDelivery.updateMany({
+    where: {
+      vendorId: input.vendorId,
+      trigger: "live_reminder",
+      status: { in: ["queued", "failed"] },
+      identity: { is: { vendorId: input.vendorId, subjectType: "buyer_registration", subjectId: { in: [...input.submissionIds] } } },
+    },
+    data: { status: "suppressed", nextAttemptAt: null, claimedAt: null, lastErrorCode: input.reason },
+  });
+  return email.count + line.count;
+}
+
+export async function supersedeFixedSessionDeliveries(
+  tx: Pick<Prisma.TransactionClient, "formSubmission"> & RegistrantSupersedeDb,
+  input: { vendorId: string; liveId: string; sessionIds: readonly string[] },
+) {
+  if (input.sessionIds.length === 0) return 0;
+  let superseded = 0;
+  let cursor: string | null = null;
+  for (;;) {
+    const page: Array<{ id: string }> = await tx.formSubmission.findMany({
+      where: {
+        liveId: input.liveId,
+        liveSessionId: { in: [...input.sessionIds] },
+        form: { vendorId: input.vendorId },
+        ...(cursor ? { id: { gt: cursor } } : {}),
+      },
+      orderBy: { id: "asc" },
+      take: FIXED_SESSION_SUPERSEDE_BATCH,
+      select: { id: true },
+    });
+    if (page.length === 0) break;
+    superseded += await supersedeRegistrantFixedTimeDeliveries(tx, {
+      vendorId: input.vendorId,
+      liveId: input.liveId,
+      submissionIds: page.map((submission) => submission.id),
+      reason: "session_cancelled",
+    });
+    if (page.length < FIXED_SESSION_SUPERSEDE_BATCH) break;
+    cursor = page[page.length - 1]!.id;
+  }
+  return superseded;
+}
+
 export async function supersedeLiveNotificationDeliveriesForTemplate(
   tx: Pick<Prisma.TransactionClient, "liveNotificationRule" | "emailDelivery">,
   input: { vendorId: string; templateId: string },
@@ -841,10 +1009,18 @@ export async function processLegacyReminderCutovers(options: { now?: Date; limit
         });
         if (delivered > 0) throw new CutoverPreconditionError("legacy_sent_or_sending");
         const submissions = await tx.formSubmission.findMany({
-          where: { liveId: live.id, verificationStatus: "VERIFIED", form: { vendorId: live.vendorId } },
+          where: {
+            liveId: live.id,
+            verificationStatus: "VERIFIED",
+            form: { vendorId: live.vendorId },
+            // Fixed sessions: only registrants whose session is still ahead get a before-live row.
+            ...(isFixedSessionLive(live)
+              ? { liveSession: { is: { vendorId: live.vendorId, liveId: live.id, status: { not: "cancelled" }, startAt: { gt: now } } } }
+              : {}),
+          },
           orderBy: [{ createdAt: "asc" }, { id: "asc" }],
           take: CUTOVER_RECIPIENT_LIMIT + 1,
-          select: { id: true, name: true, email: true, verificationStatus: true },
+          select: { id: true, name: true, email: true, verificationStatus: true, ...SUBMISSION_FIXED_SESSION_SELECT },
         });
         if (submissions.length > CUTOVER_RECIPIENT_LIMIT) throw new CutoverPreconditionError("capacity");
         const prefix = liveNotificationIdempotencyPrefix("before_live", equivalent.id);

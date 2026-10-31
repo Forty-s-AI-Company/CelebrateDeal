@@ -34,6 +34,8 @@ export type EvergreenActivationRecord = {
   evergreenIntervalMinutes: number;
   evergreenDailyTimes: string[];
   evergreenSessionStartAt: Date | null;
+  /** A fixed-session Live (指定場次) never runs the evergreen schedule. */
+  sessionMode?: string | null;
   video: { durationSec: number | null } | null;
 };
 
@@ -46,6 +48,7 @@ export const EVERGREEN_ACTIVATION_SELECT = {
   evergreenIntervalMinutes: true,
   evergreenDailyTimes: true,
   evergreenSessionStartAt: true,
+  sessionMode: true,
 } as const;
 
 export type ActiveEvergreenSchedule = EvergreenSchedule & {
@@ -83,6 +86,9 @@ export function evergreenScheduleForLive(
   now: Date = new Date(),
 ): ActiveEvergreenSchedule | null {
   if (live.isEvergreen !== true || live.streamMode !== "vod" || !ACTIVE_STATUSES.has(live.status)) return null;
+  // The studio keeps the two modes exclusive; if both were ever set, the
+  // registrant's chosen session wins and no per-visitor schedule applies.
+  if (live.sessionMode === "fixed_sessions") return null;
   const durationSeconds = evergreenVideoDurationSeconds(live.video?.durationSec);
   if (!durationSeconds) return null;
   if (!EVERGREEN_SCHEDULE_MODES.includes(live.evergreenScheduleMode as EvergreenScheduleMode)) return null;

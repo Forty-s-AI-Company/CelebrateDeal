@@ -4,6 +4,7 @@ import { readJsonBody, requireSameOriginRequest } from "@/lib/api-security";
 import { admitLiveViewer, LIVE_VIEWER_SESSION_TTL_MS, LiveQuotaAdmissionError, liveViewerCookieOptions, liveViewerTokenFromRequest, releaseLiveViewer } from "@/lib/live-quota-admission";
 import { getDb } from "@/lib/db";
 import { evergreenSessionTokenFromRequest } from "@/lib/evergreen-viewer-session";
+import { registrationSessionTokenFromRequest } from "@/lib/live-fixed-sessions-store";
 import { createLiveViewerPass, LIVE_VIEWER_PASS_COOKIE, liveViewerPassCookieOptions } from "@/lib/live-viewer-pass";
 import { checkRateLimit } from "@/lib/rate-limit";
 
@@ -48,6 +49,7 @@ export async function POST(request: Request) {
       ...payload,
       token: liveViewerTokenFromRequest(request),
       evergreenToken: evergreenSessionTokenFromRequest(request, payload.liveId),
+      registrationToken: registrationSessionTokenFromRequest(request),
     });
     const response = NextResponse.json({ ok: true });
     response.cookies.set("celebratedeal_live_viewer", result.token, liveViewerCookieOptions(request));

@@ -15,6 +15,7 @@ import { getCsrfToken } from "@/lib/csrf";
 import { getNextPublicFunnelStepPath, getPublicFunnelPage } from "@/lib/funnel-public-page";
 import { FUNNEL_VISITOR_COOKIE, recordPublicFunnelVisit, resolveFunnelVisitorId, resolvePublicFunnelRuntime } from "@/lib/funnel-runtime";
 import { loadPublicLandingPage } from "@/lib/landing-page-service";
+import { liveSessionsProp } from "@/lib/live-fixed-sessions";
 import { parseFunnelStepPages } from "@/lib/funnel-step-pages";
 
 export const dynamic = "force-dynamic";
@@ -70,5 +71,5 @@ export default async function PublicFunnelStepPage({ params, searchParams }: { s
   const logicalDocument = getPublicFunnelPage(steps, step.path);
   const nextPath = logicalDocument ? getNextPublicFunnelStepPath(steps, logicalDocument.id, { excludeStepIds: decision.progressionExcludedStepId ? [decision.progressionExcludedStepId] : [] }) : null;
   const consultation = page.consultationEvents?.length ? { csrfToken: await getCsrfToken(), events: page.consultationEvents } : undefined;
-  return withRetry(<PublicFunnelDocument document={rendered} initialViewport={initialViewport} event={event} registrationLinks={publicRegistrationLinks(page.context)} consultation={consultation} commerce={page.commerceByPageId?.[rendered.id]} submission={page.submissionForm ? { form: page.submissionForm, landingPageId: page.id, funnelStepId: decision.requestedStepId, ...(page.submissionLiveId ? { liveId: page.submissionLiveId } : {}), ...(nextPath ? { redirectTo: `/lp/${encodeURIComponent(page.slug)}/${encodeURIComponent(nextPath)}` } : {}) } : undefined} />);
+  return withRetry(<PublicFunnelDocument document={rendered} initialViewport={initialViewport} event={event} registrationLinks={publicRegistrationLinks(page.context)} consultation={consultation} commerce={page.commerceByPageId?.[rendered.id]} submission={page.submissionForm ? { form: page.submissionForm, landingPageId: page.id, funnelStepId: decision.requestedStepId, ...(page.submissionLiveId ? { liveId: page.submissionLiveId } : {}), ...liveSessionsProp(page), ...(nextPath ? { redirectTo: `/lp/${encodeURIComponent(page.slug)}/${encodeURIComponent(nextPath)}` } : {}) } : undefined} />);
 }

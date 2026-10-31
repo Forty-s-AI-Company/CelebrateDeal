@@ -763,10 +763,16 @@ model FormSubmission {
   verificationExpiresAt DateTime?
   verifiedAt            DateTime?
   affiliateClickId      String?
+  /// The fixed session (指定場次) this registrant chose; bound to the same Live by the composite FK.
+  liveSessionId         String?
+  /// Set once when an unverified registration's seat in liveSessionId is given
+  /// back (verification window passed). The seat counts while this is null.
+  liveSessionSeatReleasedAt DateTime?
   createdAt             DateTime                         @default(now())
 
   form                     RegistrationForm          @relation(fields: [formId], references: [id], onDelete: Cascade)
   live                     Live?                     @relation(fields: [liveId], references: [id], onDelete: SetNull)
+  liveSession              LiveSession?              @relation(fields: [liveId, liveSessionId], references: [liveId, id], onDelete: NoAction, onUpdate: NoAction)
   affiliateClick           AffiliateClick?           @relation(fields: [affiliateClickId], references: [id], onDelete: SetNull)
   teamAttribution          TeamLeadAttribution?
   chatMessages             LiveChatMessage[]
@@ -782,6 +788,8 @@ model FormSubmission {
   @@index([liveId, verificationStatus, createdAt])
   @@index([affiliateClickId])
   @@index([formId, customerKeyHash, createdAt])
+  @@index([liveId, liveSessionId])
+  @@index([verificationStatus, liveSessionSeatReleasedAt, liveSessionId, verificationExpiresAt])
 }
 
 enum FormSubmissionVerificationStatus {
@@ -833,6 +841,13 @@ model Live {
   /// Preview controls are merchant-only; public playback remains at normal speed.
   evergreenPreviewEnabled        Boolean                  @default(false)
   evergreenPreviewRate           Float                    @default(1)
+  /// "single" keeps the one shared scheduledAt; "fixed_sessions" (指定場次)
+  /// lists LiveSession rows and each registrant follows the session they chose.
+  sessionMode                    String                   @default("single")
+  /// Minutes after a fixed session starts that it still accepts registrations (0 = only before it starts).
+  sessionRegistrationCutoffMinutes Int                    @default(0)
+  /// Replay hours after each fixed session ends; null = until replayAvailableUntil (or open-ended).
+  sessionReplayWindowHours       Int?
   createdAt                      DateTime                 @default(now())
   updatedAt                      DateTime                 @updatedAt
 
@@ -863,6 +878,7 @@ model Live {
   interactionResponses       LiveInteractionResponse[]
   notificationRules          LiveNotificationRule[]
   mediaSessions              LiveMediaSession[]
+  sessions                   LiveSession[]
   landingPages               LandingPage[]        @relation("LandingPageDraftLive")
   landingPageVersions        LandingPageVersion[] @relation("LandingPageVersionLive")
 
@@ -870,6 +886,36 @@ model Live {
   @@index([heroImageAssetId])
   @@index([vendorId, status, replayAvailableUntil])
   @@index([vendorId, projectId, status])
+}
+
+/// 指定場次: one fixed start of a Live in "fixed_sessions" mode. A session that
+/// has registrations is never deleted, only closed (no new registrations) or
+/// cancelled (no playback or reminders); the registrations keep pointing at it.
+/// registeredCount is the seat ledger: a registration increments it in the
+/// same conditional UPDATE that checks status, start time and capacity.
+model LiveSession {
+  id              String   @id @default(cuid())
+  vendorId        String
+  liveId          String
+  startAt         DateTime
+  /// null = unlimited seats.
+  capacity        Int?
+  registeredCount Int      @default(0)
+  /// open | closed | cancelled
+  status          String   @default("open")
+  /// Set exactly while status is cancelled; part of the cancellation notice identity.
+  cancelledAt     DateTime?
+  /// When every verified registrant of this cancellation got a notice queued.
+  cancellationNoticesQueuedAt DateTime?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  live        Live             @relation(fields: [vendorId, liveId], references: [vendorId, id], onDelete: Cascade)
+  submissions FormSubmission[]
+
+  @@unique([vendorId, id])
+  @@unique([liveId, id])
+  @@unique([vendorId, liveId, startAt])
 }
 
 /// Private WHIP/WHEP resources. Never expose upstream session URLs to viewers.

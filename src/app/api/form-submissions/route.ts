@@ -40,6 +40,20 @@ import {
 } from "@/lib/public-registration-form";
 import { clearRegistrationRetry, registrationRetryResponse, trustedNativeRetryRequest } from "@/lib/registration-form-retry-response";
 import { attachRegistrationResult } from "@/lib/registration-submission-receipt";
+import { isFixedSessionLive } from "@/lib/live-fixed-sessions";
+import {
+  claimFixedSessionSeat,
+  FIXED_SESSION_LIVE_SELECT,
+  lockFixedSessionLive,
+  type FixedSessionClaimFailure,
+} from "@/lib/live-fixed-sessions-store";
+import { resolveRepeatedFixedSessionRegistration } from "@/lib/live-fixed-session-registration";
+import { confirmedFixedSession, type ConfirmedFixedSession } from "@/lib/live-fixed-sessions-store";
+import { fixedSessionLabel, LIVE_SESSION_RESULT_COOKIE } from "@/lib/live-fixed-sessions";
+import { isTransientTransactionConflict, withSerializableRetry } from "@/lib/serializable-retry";
+
+const FIXED_SESSION_REGISTRATIONS_PER_IP = 5;
+const FIXED_SESSION_RATE_WINDOW_MS = 10 * 60_000;
 
 const FORM_SUBMISSION_COOKIE = "celebratedeal_form_submission";
 const FORM_SUBMISSION_COOKIE_TTL_SECONDS = 60 * 30;
@@ -53,6 +67,8 @@ const SubmissionPayload = z.object({
   landingPageId: z.string().regex(/^[A-Za-z0-9_-]+$/u).max(128).optional(),
   funnelStepId: z.string().regex(/^[A-Za-z][A-Za-z0-9_-]{0,95}$/u).optional(),
   liveId: z.string().min(1).max(128).nullable().optional(),
+  /** The chosen 指定場次; required for, and only accepted by, a fixed-session Live. */
+  liveSessionId: z.string().regex(/^[A-Za-z0-9_-]+$/u).max(128).nullable().optional(),
   payload: SubmissionAnswers,
   referralCode: z.string().min(1).max(80).nullable().optional(),
   shareCode: z.string().regex(/^tls1\.[A-Za-z0-9_-]{32,155}$/u).max(160).nullable().optional(),
@@ -146,7 +162,7 @@ async function loadFormLiveQuotaPolicy({
   vendorId: string;
   liveId: string | null;
 }) {
-  if (!liveId) return { found: true, quotaPolicy: null as unknown, notification: null };
+  if (!liveId) return { found: true, quotaPolicy: null as unknown, notification: null, fixedSessions: null };
 
   const live = await getDb().live.findFirst({
     where: {
@@ -157,6 +173,7 @@ async function loadFormLiveQuotaPolicy({
       id: true,
       title: true,
       quotaPolicy: true,
+      ...FIXED_SESSION_LIVE_SELECT,
       vendor: { select: { name: true } },
       messageTemplate: {
         select: {
@@ -180,7 +197,10 @@ async function loadFormLiveQuotaPolicy({
       vendorName: live.vendor.name,
       template: live.messageTemplate,
     },
-  } : { found: false, quotaPolicy: null as unknown, notification: null };
+    fixedSessions: isFixedSessionLive(live)
+      ? { sessionRegistrationCutoffMinutes: live.sessionRegistrationCutoffMinutes }
+      : null,
+  } : { found: false, quotaPolicy: null as unknown, notification: null, fixedSessions: null };
 }
 
 async function hasVisiblePublicRegistrationSession({
@@ -319,20 +339,168 @@ const verifiableSubmissionSelect = {
   verificationExpiresAt: true,
 } satisfies Prisma.FormSubmissionSelect;
 
-/** The new registration and its immutable Funnel provenance commit together. */
-async function createPublicSubmission(data: Prisma.FormSubmissionCreateArgs["data"], source: TrustedFunnelSource | null): Promise<VerifiableSubmission> {
-  const database = getDb();
-  if (!source) return database.formSubmission.create({ data, select: verifiableSubmissionSelect });
-  return database.$transaction(async (transaction) => {
-    const submission = await transaction.formSubmission.create({ data, select: verifiableSubmissionSelect });
-    await transaction.funnelSubmission.upsert({
-      where: { submissionId: submission.id },
-      create: { vendorId: source.vendorId, pageId: source.pageId, stepId: source.stepId, submissionId: submission.id, visitId: source.visitId },
-      update: {},
-      select: { id: true },
-    });
-    return submission;
+type FixedSessionSeat = Parameters<typeof claimFixedSessionSeat>[1];
+
+class FixedSessionUnavailableError extends Error {
+  constructor(public readonly reason: FixedSessionClaimFailure) {
+    super(reason);
+    this.name = "FixedSessionUnavailableError";
+  }
+}
+
+/**
+ * A fixed-session Live needs the chosen session; any other Live rejects one,
+ * so a Live without sessions keeps exactly its previous contract. The seat is
+ * only described here; createPublicSubmission takes it atomically.
+ */
+function fixedSessionSeatRequest(input: {
+  vendorId: string;
+  liveId: string | null;
+  sessionId: string | null | undefined;
+  rules: { sessionRegistrationCutoffMinutes: number } | null;
+}): { ok: true; seat: FixedSessionSeat | null } | { ok: false; response: NextResponse } {
+  if (!input.rules || !input.liveId) {
+    return input.sessionId
+      ? { ok: false, response: NextResponse.json({ error: "Invalid payload" }, { status: 400 }) }
+      : { ok: true, seat: null };
+  }
+  if (!input.sessionId) {
+    // Distinct from the form-level "Live session selection required" (pick a Live first).
+    return { ok: false, response: NextResponse.json({ error: "Fixed session selection required" }, { status: 400 }) };
+  }
+  return {
+    ok: true,
+    seat: {
+      vendorId: input.vendorId,
+      liveId: input.liveId,
+      sessionId: input.sessionId,
+      sessionRegistrationCutoffMinutes: input.rules.sessionRegistrationCutoffMinutes,
+      now: new Date(),
+    },
+  };
+}
+
+/** Per IP and session, on top of the form-wide limit: one browser cannot fill a session. */
+async function fixedSessionRateLimit(request: Request, seat: FixedSessionSeat | null) {
+  if (!seat) return null;
+  return checkRateLimit(request, `form-submissions-session:${seat.sessionId}`, FIXED_SESSION_REGISTRATIONS_PER_IP, FIXED_SESSION_RATE_WINDOW_MS);
+}
+
+/** A repeated registration may take its released seat back or move session (see resolveRepeatedFixedSessionRegistration). */
+async function repeatedFixedSessionResponse(request: Request, seat: FixedSessionSeat | null, submissionId: string, timeZone: string | null) {
+  if (!seat) return null;
+  const outcome = await resolveRepeatedFixedSessionRegistration({ request, ...seat, submissionId });
+  if (outcome.ok) return null;
+  if (outcome.reason === "already_registered") {
+    // The registration did not move: say which session it holds, so the
+    // picker shows it instead of the session the visitor just tapped.
+    // Only this registration's own browser learns which session it holds.
+    return NextResponse.json({
+      error: "Already registered for another session",
+      ...(outcome.session ? {
+        startAt: outcome.session.startAt.toISOString(),
+        sessionLabel: fixedSessionLabel(outcome.session.startAt, timeZone || undefined),
+      } : {}),
+    }, { status: 409 });
+  }
+  return fixedSessionUnavailableResponse(outcome.reason);
+}
+
+/** The session this registration holds after the request (server truth), or null for a Live without sessions. */
+async function confirmedSessionFor(seat: FixedSessionSeat | null, submissionId: string, timeZone: string | null) {
+  if (!seat) return null;
+  const session = await confirmedFixedSession(getDb(), { vendorId: seat.vendorId, liveId: seat.liveId, submissionId, timeZone });
+  return session ? { ...session, liveId: seat.liveId } : null;
+}
+
+/** The same form, Live and email again: converge on the existing registration. */
+async function respondToRepeatedSubmission(input: {
+  request: Request;
+  form: { vendorId: string; vendor: { name: string; senderName: string | null; supportEmail: string | null; contactUrl: string | null; timezone: string | null } };
+  duplicate: VerifiableSubmission;
+  email: string;
+  seat: FixedSessionSeat | null;
+  redirectTo: string | undefined;
+  isNativeFormPost: boolean;
+}) {
+  const { form, duplicate } = input;
+  const repeatedSeat = await repeatedFixedSessionResponse(input.request, input.seat, duplicate.id, form.vendor.timezone);
+  if (repeatedSeat) return repeatedSeat;
+  const missedAutomation = await automationMissedBySubmission(form.vendorId, duplicate.id);
+  const refreshed = await refreshExpiredVerification(duplicate);
+  const verificationQueued = await enqueueSubmissionVerificationSafely({
+    vendorId: form.vendorId,
+    vendorName: form.vendor.name,
+    emailBrand: {
+      senderName: form.vendor.senderName,
+      supportEmail: form.vendor.supportEmail,
+      contactUrl: form.vendor.contactUrl,
+    },
+    submission: refreshed,
   });
+  if (!verificationQueued) {
+    return NextResponse.json({ error: "Verification email unavailable" }, { status: 503 });
+  }
+  // A retry after a 503 lands here: the first attempt created the row but
+  // never reached the automation step. The execution log's durable key on
+  // `form-registered:<submissionId>` keeps this exactly-once. The LINE
+  // binding capability is deliberately not issued: proving knowledge of an
+  // email address must not let a browser bind LINE to an existing record.
+  await dispatchMissedFormRegistered(form.vendorId, duplicate.id, input.email, missedAutomation);
+  return submissionResponse(input.request, input.redirectTo, input.isNativeFormPost, duplicate.id, false, await confirmedSessionFor(input.seat, duplicate.id, form.vendor.timezone));
+}
+
+function rethrowOrFixedSessionResponse(error: unknown): NextResponse {
+  if (error instanceof FixedSessionUnavailableError) return fixedSessionUnavailableResponse(error.reason);
+  throw error;
+}
+
+function fixedSessionUnavailableResponse(reason: FixedSessionClaimFailure) {
+  if (reason === "not_found") return NextResponse.json({ error: "Live session not found" }, { status: 404 });
+  if (reason === "full") return NextResponse.json({ error: "Live session full" }, { status: 409 });
+  return NextResponse.json({ error: "Live session closed" }, { status: 409 });
+}
+
+/**
+ * The new registration, its seat in the chosen fixed session and its
+ * immutable Funnel provenance commit together. The seat is taken first by
+ * one conditional UPDATE (status, cutoff and capacity re-checked on the
+ * locked row), so a full session rejects the registration and a failed
+ * insert (for example a concurrent duplicate) gives the seat back.
+ */
+async function createPublicSubmission(
+  data: Prisma.FormSubmissionUncheckedCreateInput,
+  source: TrustedFunnelSource | null,
+  seat: FixedSessionSeat | null,
+): Promise<VerifiableSubmission> {
+  const database = getDb();
+  if (!source && !seat) return database.formSubmission.create({ data, select: verifiableSubmissionSelect });
+  // The seat transaction is idempotent until it commits, so a deadlock or
+  // serialization conflict with a concurrent switch is re-run, never a 500.
+  return withSerializableRetry(() => database.$transaction(async (transaction) => {
+    if (seat) {
+      // A concurrent studio switch back to one shared start waits for this
+      // seat and then refuses, instead of racing it (lockFixedSessionLive).
+      if (!await lockFixedSessionLive(transaction, { vendorId: seat.vendorId, liveId: seat.liveId })) {
+        throw new FixedSessionUnavailableError("closed");
+      }
+      const failure = await claimFixedSessionSeat(transaction, seat);
+      if (failure) throw new FixedSessionUnavailableError(failure);
+    }
+    const submission = await transaction.formSubmission.create({
+      data: seat ? { ...data, liveSessionId: seat.sessionId } : data,
+      select: verifiableSubmissionSelect,
+    });
+    if (source) {
+      await transaction.funnelSubmission.upsert({
+        where: { submissionId: submission.id },
+        create: { vendorId: source.vendorId, pageId: source.pageId, stepId: source.stepId, submissionId: submission.id, visitId: source.visitId },
+        update: {},
+        select: { id: true },
+      });
+    }
+    return submission;
+  }), { attempts: 3, retryOn: isTransientTransactionConflict });
 }
 
 function formRegisteredAutomationEvent(input: { vendorId: string; submissionId: string; email: string; funnelPageId: string | null }) {
@@ -527,7 +695,7 @@ async function processSubmission(request: Request, native?: { formData: FormData
   const form = availablePublicForm(await getDb().registrationForm.findUnique({
     where: { id: parsed.data.formId },
     include: {
-      vendor: { select: { name: true, senderName: true, supportEmail: true, contactUrl: true } },
+      vendor: { select: { name: true, senderName: true, supportEmail: true, contactUrl: true, timezone: true } },
     },
   }));
   if (!form) {
@@ -558,6 +726,16 @@ async function processSubmission(request: Request, native?: { formData: FormData
   if (!liveContext.found) {
     return NextResponse.json({ error: "Live not found" }, { status: 404 });
   }
+  const seatRequest = fixedSessionSeatRequest({
+    vendorId: form.vendorId,
+    liveId: submittedLiveId,
+    sessionId: parsed.data.liveSessionId,
+    rules: liveContext.fixedSessions,
+  });
+  if (!seatRequest.ok) return seatRequest.response;
+  const seat = seatRequest.seat;
+  const sessionLimited = await fixedSessionRateLimit(request, seat);
+  if (sessionLimited) return sessionLimited;
 
   // A public Funnel source is only accepted when the current published page,
   // its bound form/live pair, deadline and observed visit all re-resolve.
@@ -606,28 +784,7 @@ async function processSubmission(request: Request, native?: { formData: FormData
     return NextResponse.json({ error: "Live share unavailable" }, { status: 400 });
   }
   if (duplicate) {
-    const missedAutomation = await automationMissedBySubmission(form.vendorId, duplicate.id);
-    const refreshed = await refreshExpiredVerification(duplicate);
-    const verificationQueued = await enqueueSubmissionVerificationSafely({
-      vendorId: form.vendorId,
-      vendorName: form.vendor.name,
-      emailBrand: {
-        senderName: form.vendor.senderName,
-        supportEmail: form.vendor.supportEmail,
-        contactUrl: form.vendor.contactUrl,
-      },
-      submission: refreshed,
-    });
-    if (!verificationQueued) {
-      return NextResponse.json({ error: "Verification email unavailable" }, { status: 503 });
-    }
-    // A retry after a 503 lands here: the first attempt created the row but
-    // never reached the automation step. The execution log's durable key on
-    // `form-registered:<submissionId>` keeps this exactly-once. The LINE
-    // binding capability is deliberately not issued: proving knowledge of an
-    // email address must not let a browser bind LINE to an existing record.
-    await dispatchMissedFormRegistered(form.vendorId, duplicate.id, email, missedAutomation);
-    return submissionResponse(request, parsed.data.redirectTo, isNativeFormPost, duplicate.id);
+    return respondToRepeatedSubmission({ request, form, duplicate, email, seat, redirectTo: parsed.data.redirectTo, isNativeFormPost });
   }
 
   const submissionId = stableSubmissionId(parsed.data.formId, submittedLiveId, email);
@@ -655,9 +812,9 @@ async function processSubmission(request: Request, native?: { formData: FormData
         verificationVersion: 1,
         verificationExpiresAt,
         affiliateClickId: referral?.source === "cookie" ? referral.clickId ?? null : null,
-      }, funnelSource);
+      }, funnelSource, seat);
   } catch (error) {
-    if (!isUniqueConflict(error)) throw error;
+    if (!isUniqueConflict(error)) return rethrowOrFixedSessionResponse(error);
     const concurrentSubmission = await getDb().formSubmission.findUnique({
       where: { id: submissionId },
       select: {
@@ -686,7 +843,7 @@ async function processSubmission(request: Request, native?: { formData: FormData
       return NextResponse.json({ error: "Verification email unavailable" }, { status: 503 });
     }
     await dispatchMissedFormRegistered(form.vendorId, concurrentSubmission.id, email, missedAutomation);
-    return submissionResponse(request, parsed.data.redirectTo, isNativeFormPost, concurrentSubmission.id);
+    return submissionResponse(request, parsed.data.redirectTo, isNativeFormPost, concurrentSubmission.id, false, await confirmedSessionFor(seat, concurrentSubmission.id, form.vendor.timezone));
   }
   await recordLeadAttribution(submission.id, attribution);
   const verificationQueued = await enqueueSubmissionVerificationSafely({
@@ -705,7 +862,7 @@ async function processSubmission(request: Request, native?: { formData: FormData
 
   await dispatchFormRegistered(form.vendorId, submission.id, email, funnelSource?.pageId ?? null);
 
-  return submissionResponse(request, parsed.data.redirectTo, isNativeFormPost, submission.id, true);
+  return submissionResponse(request, parsed.data.redirectTo, isNativeFormPost, submission.id, true, await confirmedSessionFor(seat, submission.id, form.vendor.timezone));
 }
 
 function submissionResponse(
@@ -714,10 +871,24 @@ function submissionResponse(
   isNativeFormPost: boolean,
   formSubmissionId: string,
   issueLineBindingCapability = false,
+  liveSession: (ConfirmedFixedSession & { liveId: string }) | null = null,
 ) {
+  const confirmed = liveSession ? { id: liveSession.id, startAt: liveSession.startAt, label: liveSession.label } : null;
   const response = isNativeFormPost && redirectTo && isSameOriginRedirect(redirectTo, request.url)
     ? NextResponse.redirect(withSubmittedSearchParam(redirectTo, request.url), { status: 303 })
-    : NextResponse.json({ ok: true, verificationRequired: true });
+    : NextResponse.json({ ok: true, verificationRequired: true, ...(confirmed ? { liveSession: confirmed } : {}) });
+  // The thank-you step shows only this server-confirmed session (指定場次),
+  // never the visitor's own pick; readable by that page's script, no secret.
+  if (liveSession) {
+    // Next encodes the value (encodeURIComponent); the page decodes it once.
+    response.cookies.set(LIVE_SESSION_RESULT_COOKIE, JSON.stringify(liveSession), {
+      httpOnly: false,
+      sameSite: "lax",
+      secure: new URL(request.url).protocol === "https:",
+      path: "/",
+      maxAge: FORM_SUBMISSION_COOKIE_TTL_SECONDS,
+    });
+  }
 
   response.cookies.set(FORM_SUBMISSION_COOKIE, formSubmissionId, {
     httpOnly: true,
@@ -751,6 +922,11 @@ function isSameOriginRedirect(redirectTo: string, requestUrl: string) {
   }
 }
 
+function nativeOptionalText(formData: FormData, key: string) {
+  const value = formData.get(key);
+  return typeof value === "string" && value ? value : null;
+}
+
 function nativeFormPayload(formData: FormData | null) {
   if (!formData) return {};
   const payload: Record<string, unknown> = {};
@@ -773,6 +949,7 @@ function nativeFormPayload(formData: FormData | null) {
     landingPageId: typeof landingPageId === "string" && landingPageId ? landingPageId : undefined,
     funnelStepId: typeof funnelStepId === "string" && funnelStepId ? funnelStepId : undefined,
     liveId: typeof liveId === "string" && liveId ? liveId : null,
+    liveSessionId: nativeOptionalText(formData, "liveSessionId"),
     payload,
     referralCode: typeof referralCode === "string" && referralCode ? referralCode : null,
     shareCode: typeof shareCode === "string" && shareCode ? shareCode : null,

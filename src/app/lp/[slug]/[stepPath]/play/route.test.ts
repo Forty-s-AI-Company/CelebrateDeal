@@ -54,6 +54,25 @@ describe("Webinar server playback entry", () => {
     mocks.load.mockResolvedValue({ ...base, webinar: { live: { id: "live-1", slug: "scoped-live", isEvergreen: true }, form: { id: "" } } });
     expect((await request()).status).toBe(503);
   });
+  it("hands a fixed-session live to its own watch page, outside and without the funnel dates", async () => {
+    // Before the shared start: a fixed-session registrant follows their own session.
+    vi.setSystemTime(new Date("2026-09-17T00:00:00.000Z"));
+    const base = fixture();
+    const liveSessions = { liveId: "live-1", timeZone: "Asia/Taipei", registrationClosesAfterStartMinutes: 0, days: [] };
+    mocks.load.mockResolvedValue({ ...base, webinar: { ...base.webinar, liveSessions } });
+    const early = await request();
+    expect(early.status).toBe(303);
+    expect(early.headers.get("location")).toBe("/live/scoped-live");
+    // After the funnel's replay window, and with no funnel dates at all.
+    vi.setSystemTime(new Date("2030-01-01T00:00:00.000Z"));
+    expect((await request()).status).toBe(303);
+    const flow = (base.content as { flow: { webinar?: unknown } }).flow;
+    flow.webinar = { timezone: "Asia/Taipei", startsAt: null, endsAt: null, replayEndsAt: null };
+    expect((await request()).headers.get("location")).toBe("/live/scoped-live");
+    // A missing binding still fails closed.
+    mocks.load.mockResolvedValue({ ...base, webinar: { ...base.webinar, form: { id: "" }, liveSessions } });
+    expect((await request()).status).toBe(503);
+  });
   it("fails closed when runtime ownership/readiness invalidates the resource", async () => {
     vi.setSystemTime(new Date("2026-09-17T01:30:00Z"));
     mocks.load.mockResolvedValue({ ...fixture(), webinar: undefined });

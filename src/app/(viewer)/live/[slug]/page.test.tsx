@@ -9,6 +9,8 @@ const mocks = vi.hoisted(() => ({
   }),
   warn: vi.fn(),
   headers: vi.fn(),
+  liveSessionFindMany: vi.fn(),
+  formSubmissionFindFirst: vi.fn(),
 }));
 
 vi.mock("next/navigation", () => ({
@@ -24,6 +26,8 @@ vi.mock("@/lib/db", () => ({
     live: {
       findFirst: mocks.findFirst,
     },
+    liveSession: { findMany: mocks.liveSessionFindMany },
+    formSubmission: { findFirst: mocks.formSubmissionFindFirst },
   }),
 }));
 
@@ -806,5 +810,65 @@ describe("PublicLivePage evergreen session", () => {
     const element = await PublicLivePage({ params: Promise.resolve({ slug: "public-live" }) });
     expect(element.props.live.runtimeState).toBe("replay");
     expect(element.props.live).not.toHaveProperty("evergreen");
+  });
+});
+
+describe("PublicLivePage fixed sessions (指定場次)", () => {
+  const sessionStart = new Date("2026-10-30T06:00:00.000Z");
+  const fixedLive = () => ({
+    ...runtimeReadySalesLive(),
+    sessionMode: "fixed_sessions",
+    sessionRegistrationCutoffMinutes: 0,
+    sessionReplayWindowHours: null,
+    scheduledAt: new Date("2026-10-31T12:00:00.000Z"),
+    vendor: { ...publicLive.vendor, timezone: "Asia/Taipei" },
+  });
+
+  beforeEach(() => {
+    vi.stubEnv("CSRF_SECRET", "public-live-fixed-session-page-test-secret-0123456789");
+    mocks.headers.mockResolvedValue(new Headers({}));
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it("times the page from the session the visitor follows instead of the shared scheduledAt", async () => {
+    mocks.findFirst.mockResolvedValue(fixedLive());
+    mocks.liveSessionFindMany.mockResolvedValue([
+      { id: "session-a", startAt: sessionStart, capacity: null, registeredCount: 0, status: "open" },
+      { id: "session-b", startAt: new Date("2026-10-31T12:00:00.000Z"), capacity: null, registeredCount: 0, status: "open" },
+    ]);
+    mocks.resolveLiveRuntime.mockReturnValue({ state: "playing", playbackStartSeconds: 120 });
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(sessionStart.getTime() + 120_000));
+    try {
+      const element = await PublicLivePage({ params: Promise.resolve({ slug: "public-live" }) });
+      expect(element.props.live).toMatchObject({ runtimeState: "playing", scheduledAt: sessionStart.toISOString() });
+      expect(element.props.live.evergreen).toBeUndefined();
+      // The session lookup is bound to this Live and vendor and skips cancelled sessions.
+      expect(mocks.liveSessionFindMany).toHaveBeenCalledWith(expect.objectContaining({
+        where: { vendorId: "vendor-1", liveId: "live-1", status: { not: "cancelled" } },
+      }));
+      // The shared runtime is evaluated on the session's own start.
+      expect(mocks.resolveLiveRuntime).toHaveBeenLastCalledWith(expect.objectContaining({ scheduledAt: sessionStart, streamMode: "vod" }), expect.any(Date));
+      expect(mocks.formSubmissionFindFirst).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("keeps a visitor in the waiting room when the Live has no session left to follow", async () => {
+    mocks.findFirst.mockResolvedValue(fixedLive());
+    mocks.liveSessionFindMany.mockResolvedValue([]);
+    const element = await PublicLivePage({ params: Promise.resolve({ slug: "public-live" }) });
+    expect(element.props.live).toMatchObject({ runtimeState: "waiting", scheduledAt: "2026-10-31T12:00:00.000Z" });
+  });
+
+  it("leaves a Live without sessions on its shared schedule", async () => {
+    mocks.findFirst.mockResolvedValue({ ...runtimeReadySalesLive(), sessionMode: "single" });
+    const element = await PublicLivePage({ params: Promise.resolve({ slug: "public-live" }) });
+    expect(element.props.live).toMatchObject({ runtimeState: "playing", scheduledAt: publicLive.scheduledAt.toISOString() });
+    expect(mocks.liveSessionFindMany).not.toHaveBeenCalled();
   });
 });

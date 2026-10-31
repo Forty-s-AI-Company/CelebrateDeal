@@ -2,6 +2,7 @@ import type { Prisma } from "@prisma/client";
 import { cache } from "react";
 
 import { getDb } from "@/lib/db";
+import { loadPublicLiveSessions, type PublicLiveSessionsResult } from "@/lib/live-fixed-sessions-store";
 import { parseSafeExternalHttpUrl } from "@/lib/external-url";
 import { isExistingLiveVideoReady } from "@/lib/live-video-readiness";
 import { parseRegistrationFormFields, type RegistrationFormFieldSpec } from "@/lib/registration-form-fields";
@@ -54,6 +55,7 @@ type SessionCandidate = PublicRegistrationSessionVisibilityCandidate & {
   title: string;
   description: string | null;
   endedAt: Date | null;
+  sessionMode?: string | null;
 };
 
 export type PublicRegistrationSession = {
@@ -62,6 +64,11 @@ export type PublicRegistrationSession = {
   description: string | null;
   scheduledAt: string;
   status: "scheduled" | "live" | "ended";
+  /**
+   * A fixed-session Live (指定場次): its open sessions for the picker. Its
+   * scheduledAt is only its last session, so the option never shows it.
+   */
+  fixedSessions?: PublicLiveSessionsResult;
 };
 
 export type PublicRegistrationForm = {
@@ -149,6 +156,7 @@ export function selectPublicRegistrationSessions(
       description: session.description,
       scheduledAt: session.scheduledAt.toISOString(),
       status: session.status as PublicRegistrationSession["status"],
+      ...(session.sessionMode === "fixed_sessions" ? { fixedSessions: { liveId: session.id, timeZone: "Asia/Taipei", registrationClosesAfterStartMinutes: 0, days: [] } } : {}),
     }));
 
   return options.maxVisibleSessions > 0
@@ -217,10 +225,18 @@ export async function loadPublicRegistrationForm(slug: string, now = new Date())
       scheduledAt: true,
       status: true,
       endedAt: true,
+      sessionMode: true,
     },
   });
 
-  return publicFormFromRecord(form, sessions, now);
+  const publicForm = publicFormFromRecord(form, sessions, now);
+  // Fixed-session Lives list their open sessions, bound to the form's vendor.
+  // One that is not publish-ready keeps an empty list, so the form cannot post without a session.
+  for (const session of publicForm.sessions) {
+    if (!session.fixedSessions) continue;
+    session.fixedSessions = await loadPublicLiveSessions(db, { liveId: session.id, vendorId: form.vendorId, now }) ?? session.fixedSessions;
+  }
+  return publicForm;
 }
 
 export const getPublicRegistrationForm = cache((slug: string) => loadPublicRegistrationForm(slug));

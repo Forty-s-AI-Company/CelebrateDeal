@@ -54,6 +54,31 @@ function evergreenWebinarState(session: FunnelEvergreenSession | null | undefine
   return { status: "replay", missing: [], message: "你的場次已結束，可前往播放頁觀看回放或安排下一場。" };
 }
 
+function boundResourcesMissing(resources: { liveId?: string | null; formId?: string | null }) {
+  const missing: string[] = [];
+  if (!resources.liveId?.trim()) missing.push("請綁定播放用 Live");
+  if (!resources.formId?.trim()) missing.push("請綁定報名表單");
+  return missing;
+}
+
+/** 指定場次：不看漏斗的共用日期，觀看頁依報名者自己的場次處理等候與播放。 */
+function fixedSessionsWebinarState(resources: { liveId?: string | null; formId?: string | null }): FunnelWebinarState {
+  const missing = boundResourcesMissing(resources);
+  if (missing.length) return { status: "missing", missing, message: missing.join("；") };
+  return { status: "waiting", missing: [], message: "此活動有多個場次，依你報名時選擇的場次開播；開播前可先進入觀看頁等候。" };
+}
+
+function evergreenResourcesState(
+  resources: { liveId?: string | null; formId?: string | null; evergreenSession?: FunnelEvergreenSession | null },
+  now: number | Date,
+): FunnelWebinarState {
+  const missing = boundResourcesMissing(resources);
+  const timestamp = now instanceof Date ? now.getTime() : now;
+  if (!Number.isFinite(timestamp)) missing.push("無法取得有效的目前時間");
+  if (missing.length) return { status: "missing", missing, message: missing.join("；") };
+  return evergreenWebinarState(resources.evergreenSession, timestamp);
+}
+
 /**
  * 時間區間採左閉右開，方便伺服器與預覽共用同一判定。綁定常青 Live 時改依
  * 訪客自己的場次判定，不再要求固定的開始／結束時間。
@@ -65,18 +90,17 @@ export function getFunnelWebinarState(
     formId?: string | null;
     evergreen?: boolean;
     evergreenSession?: FunnelEvergreenSession | null;
+    /**
+     * A fixed-session Live (指定場次): each registrant follows the session they
+     * chose, so the funnel's shared start/end dates do not gate it; the Live's
+     * watch page runs the waiting room for that session.
+     */
+    fixedSessions?: boolean;
   },
   now: number | Date = Date.now(),
 ): FunnelWebinarState {
-  if (resources.evergreen === true) {
-    const missing: string[] = [];
-    if (!resources.liveId?.trim()) missing.push("請綁定播放用 Live");
-    if (!resources.formId?.trim()) missing.push("請綁定報名表單");
-    const timestamp = now instanceof Date ? now.getTime() : now;
-    if (!Number.isFinite(timestamp)) missing.push("無法取得有效的目前時間");
-    if (missing.length) return { status: "missing", missing, message: missing.join("；") };
-    return evergreenWebinarState(resources.evergreenSession, timestamp);
-  }
+  if (resources.fixedSessions === true) return fixedSessionsWebinarState(resources);
+  if (resources.evergreen === true) return evergreenResourcesState(resources, now);
   const settings = parseFunnelWebinarSettings(value);
   const missing: string[] = [];
   if (!settings) missing.push("請設定有效的 Webinar 時區與日期");

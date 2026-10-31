@@ -47,6 +47,8 @@ import { canPublishSalesProject } from "@/lib/sales-workspace";
 import { isFunnelDeadlineExpired } from "@/lib/funnel-runtime";
 import { publicFunnelRouteOutcome, representativeFunnelVisitorIds } from "@/lib/public-landing-page-status";
 import type { FunnelCommerceProduct, FunnelCommerceView } from "@/lib/funnel-commerce";
+import { isFixedSessionLive } from "@/lib/live-fixed-sessions";
+import { loadPublicLiveSessions, type PublicLiveSessionsResult } from "@/lib/live-fixed-sessions-store";
 import { describeFunnelCustomCodeProblem, isFunnelCustomCodeDisabled, withoutFunnelCustomScripts, type FunnelCustomCodeChange } from "@/lib/funnel-custom-code";
 import {
   assertFunnelCustomCodeDelete,
@@ -61,6 +63,8 @@ export type PublicFunnelWebinarResource = {
   form: { id: string; fields: RegistrationFormFieldSpec[]; submitLabel: string; successMessage: string };
   /** `isEvergreen` is present only when the Live's evergreen schedule governs playback. */
   live: { id: string; slug: string; videoId: string; videoTitle: string; isEvergreen?: true };
+  /** Open sessions of a fixed-session (指定場次) Live; absent for every other Live. */
+  liveSessions?: PublicLiveSessionsResult;
 };
 // durationSec feeds the shared evergreen activation rule.
 const videoSelect = { id: true, vendorId: true, title: true, sourceType: true, status: true, cloudflareReadyToStream: true, cloudflareLiveInputUid: true, liveInputStatus: true, durationSec: true } as const;
@@ -72,11 +76,11 @@ function completeWebinarSteps(content: LandingPageStoredContent) {
   const steps = "flow" in content ? content.flow?.steps : undefined;
   return Boolean(steps && ["webinar_registration_page", "webinar_thank_you_page", "webinar_broadcast_page"].every((type) => steps.filter((step) => step.type === type).length === 1));
 }
-function webinarResource(form: FormRecord | undefined, live: LiveRecord | null, vendorId: string): PublicFunnelWebinarResource | undefined {
+function webinarResource(form: FormRecord | undefined, live: LiveRecord | null, vendorId: string, liveSessions?: PublicLiveSessionsResult | null): PublicFunnelWebinarResource | undefined {
   if (live?.status === "ended" && (!live.replayEnabled || (live.replayAvailableUntil && live.replayAvailableUntil.getTime() <= Date.now()))) return undefined;
   const fields = parseRegistrationFormFields(form?.fields);
   if (!form || !fields.success || !live?.videoId || live.video?.id !== live.videoId || live.video.vendorId !== vendorId || !isLiveVideoReady(live.video)) return undefined;
-  return { form: { id: form.id, fields: fields.data, submitLabel: form.submitLabel || "送出報名", successMessage: form.successMessage || "已收到報名，請留意確認信。" }, live: { id: live.id, slug: live.slug, videoId: live.videoId, videoTitle: live.video.title, ...(isEvergreenLiveRecord(live) ? { isEvergreen: true as const } : {}) } };
+  return { form: { id: form.id, fields: fields.data, submitLabel: form.submitLabel || "送出報名", successMessage: form.successMessage || "已收到報名，請留意確認信。" }, live: { id: live.id, slug: live.slug, videoId: live.videoId, videoTitle: live.video.title, ...(isEvergreenLiveRecord(live) ? { isEvergreen: true as const } : {}) }, ...(liveSessions ? { liveSessions } : {}) };
 }
 const MAX_NAME_LENGTH = 160;
 const MAX_IDENTIFIER_LENGTH = 100;
@@ -156,6 +160,8 @@ export type PublicLandingPage = {
   webinar?: PublicFunnelWebinarResource;
   submissionForm?: PublicFunnelWebinarResource["form"];
   submissionLiveId?: string;
+  /** Open sessions of a fixed-session Live bound to this page's registration form. */
+  submissionLiveSessions?: PublicLiveSessionsResult;
   commerceByPageId?: Record<string, FunnelCommerceView>;
   consultationEvents?: Array<{ id: string; title: string; description: string | null; timezone: string; durationMinutes: number; intakeFormFields: unknown }>;
 };
@@ -192,7 +198,7 @@ export class LandingPageScopeError extends Error {
 }
 
 type FormRecord = { id: string; slug: string; name: string; vendorId?: string; projectId?: string | null; isActive?: boolean; fields?: unknown; submitLabel?: string; successMessage?: string };
-type LiveRecord = Omit<EvergreenActivationRecord, "video"> & { id: string; slug: string; title: string; scheduledAt: Date; formId?: string | null; vendorId?: string; projectId?: string | null; replayEnabled?: boolean; replayAvailableUntil?: Date | null; videoId?: string | null; video: (LiveVideoReadiness & { id: string; vendorId: string; title: string; durationSec: number | null }) | null };
+type LiveRecord = Omit<EvergreenActivationRecord, "video"> & { id: string; slug: string; title: string; scheduledAt: Date; formId?: string | null; vendorId?: string; projectId?: string | null; sessionMode?: string | null; replayEnabled?: boolean; replayAvailableUntil?: Date | null; videoId?: string | null; video: (LiveVideoReadiness & { id: string; vendorId: string; title: string; durationSec: number | null }) | null };
 
 type LandingPageDb = Pick<PrismaClient, "landingPage" | "landingPageVersion" | "registrationForm" | "live" | "consultationEvent" | "vendor">;
 
@@ -979,8 +985,13 @@ export async function loadPublicLandingPage(slug: string, onUnavailable?: (reaso
   // A live never becomes public before its project, even through an independent audience Funnel.
   if (!projectPublished && version.liveId) return unavailable("live_requires_published_project");
 
+  // Fixed-session Lives list their open sessions for the registration picker (vendor-bound).
+  // A fixed-session Live that is not publish-ready lists nothing, so the form stays unsubmittable instead of posting without a session.
+  const liveSessions = live && isFixedSessionLive(live)
+    ? (await loadPublicLiveSessions(getDb(), { liveId: live.id, vendorId: page.vendorId })) ?? { liveId: live.id, timeZone: "Asia/Taipei", registrationClosesAfterStartMinutes: 0, days: [] }
+    : null;
   const webinar = webinarContent(content) && completeWebinarSteps(content) && !("pages" in content && hasDirectWebinarVideo(content))
-    ? webinarResource(forms.find((form) => form.id === version.formId), live, page.vendorId)
+    ? webinarResource(forms.find((form) => form.id === version.formId), live, page.vendorId, liveSessions)
     : undefined;
   // Checkout stays behind project publication (resolvePublishedFunnelCheckout),
   // so an unpublished project shows no purchase surface it could not honour.
@@ -991,6 +1002,7 @@ export async function loadPublicLandingPage(slug: string, onUnavailable?: (reaso
   return {
     ...(webinar ? { webinar } : {}),
     ...publicSubmissionProjection(forms, version.formId, live?.id),
+    ...(liveSessions ? { submissionLiveSessions: liveSessions } : {}),
     id: page.id,
     slug: page.slug,
     // Emergency switch: published custom JS and page CSS are withheld from every public render.

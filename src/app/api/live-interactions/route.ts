@@ -119,8 +119,9 @@ function scheduledInteractionWindow(
   durationSec: number,
   now: Date,
 ) {
-  // One shared run per live cannot follow per-visitor evergreen sessions.
-  if (!sourceLive || isActiveEvergreenLive(sourceLive, { now })) return null;
+  // One shared run per live cannot follow per-visitor evergreen sessions, nor
+  // the several starts of a fixed-session Live (指定場次).
+  if (!sourceLive || isActiveEvergreenLive(sourceLive, { now }) || sourceLive.sessionMode === "fixed_sessions") return null;
   const runtime = resolveLiveRuntime(sourceLive, now);
   if (runtime.state !== "playing") return null;
   const playbackStartedAt = sourceLive.streamMode === "live"

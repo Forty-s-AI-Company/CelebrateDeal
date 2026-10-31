@@ -16,7 +16,9 @@ export const LINE_NOTIFICATION_TRIGGERS = [
 ] as const;
 export type LineNotificationTrigger = typeof LINE_NOTIFICATION_TRIGGERS[number];
 
-type LineNotificationDatabase = Pick<PrismaClient, "lineOfficialAccount" | "lineUserIdentity" | "lineDelivery">;
+type LineNotificationDatabase = Pick<PrismaClient, "lineOfficialAccount" | "lineUserIdentity" | "lineDelivery">
+  // Read only by the fixed-session reminder guard; callers without it skip that guard.
+  & Partial<Pick<PrismaClient, "formSubmission">>;
 type LineClientFactory = (accessToken: string) => LineMessagingClient;
 export type LineDeliveryProcessingScope = {
   /** Limits a worker invocation to one tenant without changing global cron behavior. */
@@ -238,6 +240,14 @@ export async function processDueLineDeliveries(
       results.push({ id: delivery.id, status: "suppressed" });
       continue;
     }
+    if (!await isCurrentFixedSessionLineReminder(db, current, now)) {
+      await db.lineDelivery.updateMany({
+        where: { id: delivery.id, vendorId: delivery.vendorId, status: "sending" },
+        data: { status: "suppressed", claimedAt: null, nextAttemptAt: null, lastErrorCode: "session_changed" },
+      });
+      results.push({ id: delivery.id, status: "suppressed" });
+      continue;
+    }
     try {
       const credentials = unprotectLineOfficialAccountCredentials(current.vendorId, current.account);
       const recipient = unprotectLineProfileValue(current.vendorId, "userId", current.identity.lineUserIdEncrypted);
@@ -274,6 +284,35 @@ export async function processDueLineDeliveries(
     }
   }
   return results;
+}
+
+/**
+ * Send-time guard for a registrant's LINE reminder on a fixed-session Live
+ * (指定場次): it is only current while the registration still sits in a
+ * non-cancelled session that starts later and whose start is the one the
+ * reminder was keyed on (line-notification-materializer.ts). Every other
+ * delivery passes unchanged.
+ */
+async function isCurrentFixedSessionLineReminder(
+  db: LineNotificationDatabase,
+  delivery: { vendorId: string; trigger: string; idempotencyKey: string; identity: { subjectType: string; subjectId: string } },
+  now: Date,
+) {
+  if (delivery.trigger !== "live_reminder" || delivery.identity.subjectType !== "buyer_registration" || !db.formSubmission) return true;
+  const submission = await db.formSubmission.findFirst({
+    where: { id: delivery.identity.subjectId, form: { vendorId: delivery.vendorId } },
+    select: {
+      id: true,
+      live: { select: { id: true, vendorId: true, sessionMode: true } },
+      liveSession: { select: { vendorId: true, liveId: true, startAt: true, status: true } },
+    },
+  });
+  const live = submission?.live;
+  if (!live || live.sessionMode !== "fixed_sessions") return true;
+  const session = submission.liveSession;
+  if (!session || session.vendorId !== delivery.vendorId || live.vendorId !== delivery.vendorId || session.liveId !== live.id) return false;
+  if (session.status === "cancelled" || session.startAt <= now) return false;
+  return stableLineIdempotencyKey(["live_reminder", live.id, submission.id, session.startAt]) === delivery.idempotencyKey;
 }
 
 export function stableLineIdempotencyKey(parts: readonly (string | number | Date | null)[]) {

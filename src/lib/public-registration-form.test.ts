@@ -83,7 +83,7 @@ describe("public registration form DAL", () => {
           { status: "ended", replayEnabled: true },
         ],
       },
-      select: { id: true, title: true, description: true, scheduledAt: true, status: true, endedAt: true },
+      select: { id: true, title: true, description: true, scheduledAt: true, status: true, endedAt: true, sessionMode: true },
     }));
     expect(result?.sessions.map((session) => session.id)).toEqual(["live"]);
     expect(result?.promoVideo).toEqual({ title: "預告", videoUrl: "https://cdn.example.test/promo.m3u8" });

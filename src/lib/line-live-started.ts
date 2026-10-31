@@ -34,6 +34,8 @@ export async function dispatchLiveStartedLineNotifications(
   if (!live?.startedAt) return { queued: 0, sent: 0, failed: 0 };
   // An active evergreen Live has no shared start: each visitor has their own session.
   if (isActiveEvergreenLive(live, { now: input.startedAt })) return { queued: 0, sent: 0, failed: 0 };
+  // A fixed-session Live (指定場次) has no shared start either; the studio refuses a manual start.
+  if (live.sessionMode === "fixed_sessions") return { queued: 0, sent: 0, failed: 0 };
 
   const submissions = await db.formSubmission.findMany({
     where: {
