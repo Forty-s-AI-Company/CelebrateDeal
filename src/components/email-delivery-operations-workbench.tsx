@@ -33,6 +33,7 @@ const triggerLabel: Record<string, string> = {
   live_reminder: "開播提醒",
   post_live_followup: "課後通知",
   fixed_session_cancelled: "場次取消通知",
+  fixed_session_already_registered: "已報名場次通知",
 };
 
 const errorGuidance: Record<string, string> = {

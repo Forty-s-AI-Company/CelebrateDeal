@@ -9,7 +9,7 @@ import { RegistrationSubmissionFeedback } from "@/components/registration-submis
 import { LandingPageLink } from "@/components/landing-page-link";
 import { useFunnelRegistrationLinks } from "./funnel-registration-links";
 import { funnelRegistrationHref } from "@/lib/funnel-registration-action";
-import { confirmedSessionFromResponse, describeLiveSessionFailure, LiveSessionPicker, useLiveSessionForm, type LiveSessionsData } from "@/components/landing-pages/live-session-picker";
+import { confirmedSessionFromResponse, describeLiveSessionFailure, LIVE_SESSION_CHECK_EMAIL_MESSAGE, LiveSessionPicker, useLiveSessionForm, type LiveSessionsData } from "@/components/landing-pages/live-session-picker";
 import { formSubmissionErrorMessage, FORM_SUBMISSION_VERIFICATION_MESSAGE, postRegistrationSubmission } from "@/lib/registration-submission-client";
 import type { RegistrationFormFieldSpec } from "@/lib/registration-form-fields";
 import type { FunnelCommerceBinding, FunnelCommerceView } from "@/lib/funnel-commerce";
@@ -515,7 +515,7 @@ function PublicSubmissionForm({ submission, label, requireConsent, design, idSco
       }
       // Only the server-confirmed session is shown (it may differ from the tap, e.g. a converged duplicate).
       const confirmed = fixed ? await confirmedSessionFromResponse(response) : null;
-      setStatus("success"); setMessage(`${submission.form.successMessage}${confirmed ? ` 你的場次：${confirmed.label}。` : ""} ${FORM_SUBMISSION_VERIFICATION_MESSAGE}`);
+      setStatus("success"); setMessage(`${submission.form.successMessage}${fixedSessionSuccessNote(fixed, confirmed)} ${FORM_SUBMISSION_VERIFICATION_MESSAGE}`);
       if (submission.redirectTo) window.location.assign(submission.redirectTo);
     } catch {
       submissionInFlight.current = false;
@@ -538,6 +538,15 @@ function PublicSubmissionForm({ submission, label, requireConsent, design, idSco
       : <PlainSubmissionFields picker={picker()} submission={submission} requireConsent={requireConsent} locked={status === "submitting" || status === "success"} draft={retry?.draft?.answers} submitText={submitText(status, submission.form.submitLabel)} />}
     <RegistrationSubmissionFeedback pending={status === "submitting"} errorMessage={status === "error" ? message : ""} successMessage={status === "success" ? message : ""} />
   </form>;
+}
+
+/**
+ * The server names the session only to the registration's own browser; any
+ * other success (including a repeated email) is told to check the email.
+ */
+function fixedSessionSuccessNote(fixed: boolean, confirmed: { label: string } | null) {
+  if (!fixed) return "";
+  return confirmed ? ` 你的場次：${confirmed.label}。` : ` ${LIVE_SESSION_CHECK_EMAIL_MESSAGE}`;
 }
 
 /** Theme colours for the session picker: the designed submit button's own fill, so it matches every template. */

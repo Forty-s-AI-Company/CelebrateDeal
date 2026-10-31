@@ -17,8 +17,16 @@ export async function postRegistrationSubmission(body: Record<string, unknown>):
   return new Response(null, { status: 503 });
 }
 
-/** `fixedSessions`: the form asks for a live session, whose only 409 is a full or closed seat. */
-export function formSubmissionErrorMessage(status?: number, options?: { fixedSessions?: boolean }) {
+/** Native retry of a fixed-session form that the same email already holds another session of (the registration's own browser). */
+export const ALREADY_REGISTERED_RETRY_MESSAGE = "你已經報名其他場次，這次沒有更換；請查看確認信中的場次時間。";
+
+/**
+ * `fixedSessions`: the form asks for a live session. A native retry carries
+ * the server's `reason` for a 409, so "already registered" is not shown as a
+ * full or closed slot.
+ */
+export function formSubmissionErrorMessage(status?: number, options?: { fixedSessions?: boolean; reason?: "already_registered" | "session_unavailable" }) {
+  if (status === 409 && options?.reason === "already_registered") return ALREADY_REGISTERED_RETRY_MESSAGE;
   if (status === 409 && options?.fixedSessions) return "此時段已額滿或已截止，請改選其他時段";
   if (status === 429 && options?.fixedSessions) return "報名次數過多，請稍後再試";
   if (status === 400) return "請確認必填欄位與資料格式後再送出。";

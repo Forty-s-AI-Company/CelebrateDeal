@@ -170,6 +170,7 @@ RUN_DEMO_PAYMENT_WEBHOOK_SMOKE=true SMOKE_VENDOR_SLUG=your-vendor npm run extern
    | `live-private-chat-conversation-binding:v1` | `live-private-chat-conversation-binding:r2:…` | 2 | 改名（不授予存取權；部署當下進行中的私訊草稿或重送會被拒一次） | 單次草稿／重送 | 不接受 |
    | `post-purchase-checkout` | `post-purchase-checkout:r2:…` | 2 | 改名。部署前發出的舊 token 不再被接受；部署當下進行中的加購續付仍可經 `/checkout/recover/<grantId>` 完成付款（該入口用 buyer grant cookie 與已綁定的 credit 驗證，不需要 token） | 10 分鐘 | 不接受 |
    | `registration-submission-result-v1` | `registration-submission-result:r2:…` | 2 | 改名 | 1 分鐘 | 不接受 |
+   | （新用途）指定場次感謝頁 cookie | `live-session-result:r2:…` | 2 | 新增，無舊鑰 | 30 分鐘 | 不接受 |
    | `form-submission-email-verification` | `form-submission-email-verification:r2:…` | 3 | 雙版本驗證（原列第 2 級；連結活 48 小時，超過一天改為第 3 級）。舊鑰只接受 `expiresAt ≤ 生效時間＋48 小時` 的連結 | 48 小時 | 2026-12-01 00:00 |
    | `form-submission-chat-session` | `form-submission-chat-session:r2:…` | 3 | 雙版本驗證（原列第 2 級；cookie 活 30 天）。舊鑰只接受 `expiresAt ≤ 生效時間＋30 天` 的 cookie | 30 天 | 2027-01-01 00:00 |
    | `email-delivery-unsubscribe` | `email-delivery-unsubscribe:r2:…` | 3 | 雙版本驗證。token 沒有時間戳記，舊鑰只受停用日限制 | 無期限 | 2027-11-01 00:00 |

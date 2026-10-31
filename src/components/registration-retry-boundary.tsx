@@ -3,6 +3,7 @@ import { registrationResultCookieName, verifyRegistrationResult } from "@/lib/re
 import { cookies, headers } from "next/headers";
 import type { ReactNode } from "react";
 import { getDb } from "@/lib/db";
+import { REGISTRATION_RETRY_STATUSES } from "@/lib/registration-form-retry-response";
 import { readRegistrationRetryDraft, registrationRetrySecureCookies, registrationRetryCookieName } from "@/lib/registration-form-retry";
 import { RegistrationRetryProvider } from "@/components/registration-retry-context";
 
@@ -10,10 +11,13 @@ import { RegistrationRetryProvider } from "@/components/registration-retry-conte
  * 公開入口載入後才讀草稿，避免跳過原本的發布與存取檢查。草稿只能讀一次：
  * `readDraft` 為 false 時（例如 A/B 或步驟決定此頁不會顯示表單）不讀取、不消耗。
  */
+/** Every value a native retry redirect may carry in ?registrationRetry= (409: a fixed-session problem, 指定場次). */
+const REGISTRATION_RETRY_QUERY_VALUES: readonly string[] = [...REGISTRATION_RETRY_STATUSES.map(String), "unavailable"];
+
 export async function registrationRetryBoundary({ formId, sourcePath, retry, submitted, attributionQuery, readDraft = true }: {
   formId?: string; sourcePath: string; retry?: string | string[]; submitted?: string; attributionQuery?: RegistrationAttributionQuery; readDraft?: boolean;
 }) {
-  const failed = typeof retry === "string" && ["400", "403", "404", "429", "503", "unavailable"].includes(retry);
+  const failed = typeof retry === "string" && REGISTRATION_RETRY_QUERY_VALUES.includes(retry);
   let draft = null;
   if (readDraft && failed && retry !== "unavailable" && formId) {
     const jar = await cookies();
@@ -38,5 +42,5 @@ export async function verifiedRegistrationSubmission(formId: string | undefined,
 
 /** 網址只決定是否呈現結果頁；成功與欄位仍須通過原來源綁定驗證。 */
 export function hasRegistrationFeedbackQuery(query: { registrationRetry?: string; submitted?: string }) {
-  return ["400", "403", "404", "429", "503", "unavailable"].includes(query.registrationRetry ?? "") || query.submitted === "verification_required";
+  return REGISTRATION_RETRY_QUERY_VALUES.includes(query.registrationRetry ?? "") || query.submitted === "verification_required";
 }

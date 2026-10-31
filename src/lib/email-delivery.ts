@@ -830,7 +830,143 @@ const RECIPIENT_REQUEST_SUPPRESSION = "recipient_request";
 /** Whether a suppression row (by reason) lets this trigger through at send time. */
 export function isSuppressionExempt(trigger: string, reason: string) {
   if (["student_portal_magic_link", "form_submission_verification"].includes(trigger)) return true;
-  return trigger === FIXED_SESSION_CANCELLED_TRIGGER && reason === RECIPIENT_REQUEST_SUPPRESSION;
+  return FIXED_SESSION_SERVICE_TRIGGERS.has(trigger) && reason === RECIPIENT_REQUEST_SUPPRESSION;
+}
+
+const FIXED_SESSION_ALREADY_REGISTERED_TRIGGER = "fixed_session_already_registered";
+/**
+ * Service notices about the registrant's own 指定場次 booking that a
+ * merchant-list unsubscribe does not stop. Only the cancellation notice: the
+ * merchant causes it, never a third party. The already-registered notice is
+ * triggered by whoever types the email, so it honours every unsubscribe
+ * (see ensureFixedSessionAlreadyRegisteredDelivery).
+ */
+export const FIXED_SESSION_SERVICE_TRIGGERS: ReadonlySet<string> = new Set([FIXED_SESSION_CANCELLED_TRIGGER]);
+/** At most this many already-registered notices per registration, ever. */
+export const FIXED_SESSION_ALREADY_REGISTERED_MAX_PER_SUBMISSION = 3;
+const ALREADY_REGISTERED_LOCK_NAMESPACE = "fixed-session-already-registered:";
+
+export type FixedSessionAlreadyRegisteredDeliveryInput = {
+  vendorId: string;
+  vendorName: string;
+  liveId: string;
+  liveSlug: string;
+  liveTitle: string;
+  /** The session the registration holds (named in the notice). */
+  sessionId: string;
+  sessionLabel: string;
+  /** The session the request asked for: one notice per registration and target. */
+  targetSessionId: string;
+  formSubmissionId: string;
+  recipientName: string;
+  recipientEmail: string;
+  emailBrand?: VendorEmailBrandSource;
+};
+
+/** Dedupe identity: one notice per (registration, requested session). */
+function stableAlreadyRegisteredDeliveryId(input: { vendorId: string; formSubmissionId: string; targetSessionId: string }) {
+  const digest = createHash("sha256")
+    .update(JSON.stringify([input.vendorId, input.formSubmissionId, input.targetSessionId, FIXED_SESSION_ALREADY_REGISTERED_TRIGGER]))
+    .digest("hex")
+    .slice(0, 32);
+  return `email_${digest}`;
+}
+
+/**
+ * Someone registered this email again for another 指定場次 without the
+ * registration's own browser, and the registration could not move. The
+ * response to that request says nothing (it looks like any registration);
+ * the real registrant is told here: 「你已報名 X 場；如需換場請在原裝置操作」.
+ *
+ * A third party can trigger it, so it is capped and stoppable:
+ * - at most one per (registration, requested session): the pair is the
+ *   stable delivery id, so repeats converge on that row;
+ * - at most FIXED_SESSION_ALREADY_REGISTERED_MAX_PER_SUBMISSION per
+ *   registration overall, counted under a per-registration advisory lock so
+ *   concurrent requests cannot exceed it;
+ * - it carries an unsubscribe link and is exempt from no suppression: an
+ *   unsubscribe (`recipient_request`), bounce, complaint or the merchant
+ *   blacklist stops it, here and again at send time.
+ */
+export async function ensureFixedSessionAlreadyRegisteredDelivery(input: FixedSessionAlreadyRegisteredDeliveryInput, now = new Date()) {
+  const db = getDb();
+  const deliveryId = stableAlreadyRegisteredDeliveryId(input);
+  const recipientName = safeDisplayText(input.recipientName, "您好");
+  const liveTitle = safeDisplayText(input.liveTitle, "直播");
+  const vendorName = safeDisplayText(input.vendorName, "活動主辦單位");
+  const protectedPayload = protectEmailDeliveryPayload({
+    recipientEmail: input.recipientEmail,
+    subject: `你已報名「${liveTitle}」的場次`,
+    body: [
+      `${recipientName}：`,
+      `剛才有人用這個 Email 報名「${liveTitle}」的其他場次。你已報名 ${input.sessionLabel} 場次，報名沒有變更。`,
+      `如需換場，請在原本報名的裝置上操作。`,
+      `直播頁：${createLiveViewerUrl(input.liveSlug)}`,
+      `主辦單位：${vendorName}`,
+      `若不是你本人操作，可以忽略此信。`,
+      `退訂：${createEmailUnsubscribeUrl(deliveryId)}`,
+    ].join("\n\n"),
+    brand: input.emailBrand,
+  }, { vendorId: input.vendorId, deliveryId });
+  const normalizedEmail = normalizeBlacklistIdentifier("email", input.recipientEmail);
+  try {
+    return await db.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${ALREADY_REGISTERED_LOCK_NAMESPACE + input.formSubmissionId}, 0))`;
+      if (await tx.emailDelivery.findUnique({ where: { id: deliveryId }, select: { id: true } })) return { status: "duplicate" as const, deliveryId };
+      const earlier = await tx.emailDelivery.count({
+        where: { vendorId: input.vendorId, sourceFormSubmissionId: input.formSubmissionId, trigger: FIXED_SESSION_ALREADY_REGISTERED_TRIGGER },
+      });
+      if (earlier >= FIXED_SESSION_ALREADY_REGISTERED_MAX_PER_SUBMISSION) return { status: "capped" as const, deliveryId: null };
+      const blacklist = normalizedEmail ? await tx.blacklist.findFirst({
+        where: { vendorId: input.vendorId, identifierType: "email", identifier: normalizedEmail, isActive: true, unblockedAt: null },
+        select: { id: true },
+      }) : null;
+      const suppression = await tx.emailSuppression.findUnique({
+        where: { vendorId_recipientHash: { vendorId: input.vendorId, recipientHash: protectedPayload.recipientHash } },
+        select: { resubscribedAt: true },
+      });
+      const errorCode = blacklist ? "recipient_blacklisted" : suppression && !suppression.resubscribedAt ? "recipient_suppressed" : null;
+      const delivery = await tx.emailDelivery.create({
+        data: {
+          id: deliveryId,
+          vendorId: input.vendorId,
+          sourceTemplateId: "system_fixed_session_already_registered_v2",
+          sourceLiveId: input.liveId,
+          sourceFormSubmissionId: input.formSubmissionId,
+          trigger: FIXED_SESSION_ALREADY_REGISTERED_TRIGGER,
+          ...protectedPayload,
+          idempotencyKey: `fixed-session-already-registered/${input.sessionId}/${input.targetSessionId}/${deliveryId}`,
+          status: errorCode ? "suppressed" : "queued",
+          maxAttempts: MAX_ATTEMPTS,
+          nextAttemptAt: errorCode ? null : now,
+          lastErrorCode: errorCode,
+        },
+        select: { id: true, status: true },
+      });
+      return { status: delivery.status === "suppressed" ? "suppressed" as const : "queued" as const, deliveryId: delivery.id };
+    });
+  } catch (error) {
+    if (!isUniqueConflict(error)) throw error;
+    return { status: "duplicate" as const, deliveryId };
+  }
+}
+
+/** Sends the notice only while the registration still holds the session it names. */
+async function isCurrentFixedSessionAlreadyRegisteredDelivery(delivery: EmailDeliverySnapshotIdentity, database: DeliverySnapshotDatabase) {
+  if (delivery.trigger !== FIXED_SESSION_ALREADY_REGISTERED_TRIGGER) return true;
+  const match = /^fixed-session-already-registered\/([A-Za-z0-9_-]{1,128})\/([A-Za-z0-9_-]{1,128})\//u.exec(delivery.idempotencyKey ?? "");
+  if (!match || !delivery.sourceLiveId || !delivery.sourceFormSubmissionId) return false;
+  const submission = await database.formSubmission.findFirst({
+    where: { id: delivery.sourceFormSubmissionId, liveId: delivery.sourceLiveId, liveSessionId: match[1], form: { vendorId: delivery.vendorId } },
+    select: { id: true, email: true, liveSession: { select: { vendorId: true, status: true } } },
+  });
+  if (!submission?.liveSession || submission.liveSession.vendorId !== delivery.vendorId || submission.liveSession.status === "cancelled") return false;
+  const normalizedEmail = normalizeBlacklistIdentifier("email", submission.email);
+  if (!normalizedEmail || await database.blacklist.findFirst({
+    where: { vendorId: delivery.vendorId, identifierType: "email", identifier: normalizedEmail, isActive: true, unblockedAt: null },
+    select: { id: true },
+  })) return false;
+  return stableAlreadyRegisteredDeliveryId({ vendorId: delivery.vendorId, formSubmissionId: submission.id, targetSessionId: match[2]! }) === delivery.id;
 }
 
 function stableFixedSessionCancelledDeliveryId(input: Pick<FixedSessionCancelledDeliveryInput, "vendorId" | "formSubmissionId" | "sessionId" | "cancelledAt">) {
@@ -1241,6 +1377,7 @@ export async function isCurrentEmailDeliverySnapshot(
     && await isCurrentPostLiveFollowupDelivery(delivery, now, database)
     && await isCurrentFormVerificationDelivery(delivery, now, database)
     && await isCurrentFixedSessionCancelledDelivery(delivery, database)
+    && await isCurrentFixedSessionAlreadyRegisteredDelivery(delivery, database)
     && await isCurrentStudentPortalDelivery(delivery, now, database);
 }
 

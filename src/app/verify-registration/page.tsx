@@ -1,4 +1,7 @@
+import { cookies } from "next/headers";
 import { NativePostForm } from "@/components/native-post-form";
+import { FORM_SUBMISSION_CHAT_SESSION_COOKIE } from "@/lib/form-submission-chat-session";
+import { rechoosePathForRegistrationCookie } from "@/lib/live-fixed-session-notices";
 import { LineLoginButton } from "@/components/line-login-button";
 import { VerifiedRegistrationNextSteps } from "@/components/verified-registration-next-steps";
 import { VerifiedRegistrationShare } from "@/components/verified-registration-share";
@@ -9,8 +12,8 @@ function validTokenShape(value: string | undefined) {
   return Boolean(value && value.length <= 320 && /^fsv1\.[A-Za-z0-9_-]{1,128}\.\d{1,12}\.\d{1,9}\.[A-Za-z0-9_-]{43}$/u.test(value));
 }
 
-/** Only a same-site public registration path (landing page, form or live page) is linked. */
-function rechoosePath(value: string | undefined) {
+/** Defence in depth: only a same-site public registration path (landing page, form or live page) is linked. */
+function rechoosePath(value: string | null | undefined) {
   if (!value || value.length > 600 || !/^\/(?:lp|form|live)\/[^/\\\s?#][^\\\s#]*$/u.test(value)) return null;
   return value;
 }
@@ -18,14 +21,17 @@ function rechoosePath(value: string | undefined) {
 export default async function VerifyRegistrationPage({
   searchParams,
 }: {
-  searchParams: Promise<{ token?: string; status?: string; rechoose?: string }>;
+  searchParams: Promise<{ token?: string; status?: string }>;
 }) {
   const query = await searchParams;
   const hasToken = validTokenShape(query.token);
   const verified = query.status === "verified";
   const retry = query.status === "retry";
   const sessionCancelled = query.status === "session_cancelled";
-  const rechoose = rechoosePath(query.rechoose);
+  // Never from the URL: resolved from the signed registration cookie that the verify redirect set.
+  const rechoose = sessionCancelled
+    ? rechoosePath(await rechoosePathForRegistrationCookie((await cookies()).get(FORM_SUBMISSION_CHAT_SESSION_COOKIE)?.value))
+    : null;
   const invalid = !retry && !sessionCancelled && (query.status === "invalid" || (!verified && !hasToken));
 
   return (

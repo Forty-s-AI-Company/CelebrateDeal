@@ -1,5 +1,6 @@
 import { getCanonicalAppUrl } from "@/lib/app-url";
 import { getDb } from "@/lib/db";
+import { verifyFormSubmissionChatSessionToken } from "@/lib/form-submission-chat-session";
 import { ensureFixedSessionCancelledDelivery } from "@/lib/email-delivery";
 import { createLiveViewerUrl } from "@/lib/live-public-url";
 import { loadPublicLandingPage } from "@/lib/landing-page-service";
@@ -200,4 +201,28 @@ export async function queueCancelledSessionNoticeOnVerification(input: {
     emailBrand: input.emailBrand,
   });
   return { deliveryId: result.status === "queued" ? result.deliveryId : null, rechooseUrl };
+}
+
+/**
+ * For /verify-registration?status=session_cancelled: the same-site path where
+ * the registrant holding this signed registration cookie can choose another
+ * session, resolved on the server (registration → Live → public link
+ * resolver). Null unless that registration is VERIFIED and its session is
+ * cancelled, so a crafted URL can never point the page anywhere.
+ */
+export async function rechoosePathForRegistrationCookie(token: string | null | undefined, now = new Date()) {
+  const claim = token ? verifyFormSubmissionChatSessionToken(token, now) : null;
+  if (!claim) return null;
+  const submission = await getDb().formSubmission.findFirst({
+    where: { id: claim.submissionId, verificationStatus: "VERIFIED", liveSession: { is: { status: "cancelled" } } },
+    select: {
+      form: { select: { vendorId: true } },
+      live: { select: { id: true, vendorId: true, slug: true, formId: true } },
+      liveSession: { select: { vendorId: true, liveId: true } },
+    },
+  });
+  const live = submission?.live;
+  if (!submission || !live || live.vendorId !== submission.form.vendorId || submission.liveSession?.vendorId !== live.vendorId || submission.liveSession.liveId !== live.id) return null;
+  const url = new URL(await resolveFixedSessionRechooseUrl({ vendorId: live.vendorId, liveId: live.id, slug: live.slug, formId: live.formId }));
+  return `${url.pathname}${url.search}`;
 }

@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useId, useRef, useState, type CSSProperties, type KeyboardEvent } from "react";
-import { LIVE_SESSION_RESULT_COOKIE, type PublicFixedSession, type PublicFixedSessionDay } from "@/lib/live-fixed-sessions";
+import type { PublicFixedSession, PublicFixedSessionDay } from "@/lib/live-fixed-sessions";
 
 /**
  * Session picker (指定場次) for a registration form bound to a fixed-session
@@ -21,6 +21,8 @@ export type LiveSessionsData = {
 
 export const LIVE_SESSION_REQUIRED_MESSAGE = "請選擇要參加的場次。";
 export const LIVE_SESSION_NONE_OPEN_MESSAGE = "目前沒有可報名的場次，請稍後再來。";
+/** A successful fixed-session registration whose session the server did not name (it is in the confirmation email). */
+export const LIVE_SESSION_CHECK_EMAIL_MESSAGE = "請查看確認信，信中會寫明你的場次。";
 export const LIVE_SESSION_ALREADY_REGISTERED_MESSAGE = "這個 Email 已經報名過其他場次，請查看確認信，或在原本報名的裝置上更換場次";
 
 
@@ -41,37 +43,6 @@ export function findLiveSession(days: readonly PublicFixedSessionDay[], sessionI
 
 export function liveSessionChoiceLabel(choice: { day: PublicFixedSessionDay; session: PublicFixedSession }) {
   return `${choice.day.label} ${choice.session.timeLabel}`;
-}
-
-/**
- * The session the server confirmed for this browser's last registration of
- * `liveId` (cookie written by POST /api/form-submissions from the database,
- * 30 minutes). The thank-you step shows only this, never the visitor's own
- * pick, so a registration that did not move never shows the wrong session.
- */
-function readConfirmedCookie(): Record<string, unknown> | null {
-  try {
-    const entry = document.cookie.split(";").map((part) => part.trim()).find((part) => part.startsWith(`${LIVE_SESSION_RESULT_COOKIE}=`));
-    if (!entry) return null;
-    const value: unknown = JSON.parse(decodeURIComponent(entry.slice(LIVE_SESSION_RESULT_COOKIE.length + 1)));
-    return value && typeof value === "object" ? value as Record<string, unknown> : null;
-  } catch { return null; }
-}
-/** Drops a previous registration's confirmed session when a fresh registration page opens. */
-export function forgetChosenLiveSession(liveId: string) {
-  try {
-    if (readConfirmedCookie()?.liveId === liveId) document.cookie = `${LIVE_SESSION_RESULT_COOKIE}=; Max-Age=0; Path=/; SameSite=Lax`;
-  } catch { /* cookies may be blocked */ }
-}
-/** The confirmed record as a stable string (for useSyncExternalStore); null when absent, for another Live or malformed. */
-export function readChosenLiveSessionRaw(liveId: string): string | null {
-  const value = readConfirmedCookie();
-  if (!value || value.liveId !== liveId || typeof value.label !== "string" || typeof value.startAt !== "string") return null;
-  return JSON.stringify({ label: value.label, startAt: value.startAt });
-}
-export function readChosenLiveSession(liveId: string): { label: string; startAt: string } | null {
-  const raw = readChosenLiveSessionRaw(liveId);
-  return raw ? JSON.parse(raw) as { label: string; startAt: string } : null;
 }
 
 /** Selection state shared by the JSON form and the native-POST forms. */
@@ -139,8 +110,6 @@ export function useLiveSessionForm(initial: LiveSessionsData | undefined) {
   const sessions = useLiveSessionSelection(initial);
   const formRef = useRef<HTMLFormElement>(null);
   const liveId = initial?.liveId;
-  // A fresh registration page never carries a previous attempt's choice to the thank-you step.
-  useEffect(() => { if (liveId) forgetChosenLiveSession(liveId); }, [liveId]);
   const { validate, setError, sessionId } = sessions;
   /** True (and the problem shown inline) while a session is still required. */
   const missing = useCallback(() => {

@@ -4,7 +4,9 @@ import { FORM_SUBMISSION_VERIFICATION_TTL_MS } from "@/lib/form-submission-verif
 import { isTransientTransactionConflict, withSerializableRetry } from "@/lib/serializable-retry";
 import { ensureLiveReminderDelivery } from "@/lib/email-delivery";
 import { verifyFormSubmissionChatSessionToken } from "@/lib/form-submission-chat-session";
+import { fixedSessionRegistrationState } from "@/lib/live-fixed-sessions";
 import {
+  FIXED_SESSION_SELECT,
   FixedSessionSwitchConflict,
   lockFixedSessionLive,
   registrationSessionTokenFromRequest,
@@ -36,6 +38,8 @@ import { captureOperationalError } from "@/lib/monitoring";
  * A deadlock or serialization conflict is retried and, if it persists,
  * treated like a concurrent change: the registration keeps what it holds.
  */
+export { holdsRegistrationCookie };
+
 export async function resolveRepeatedFixedSessionRegistration(input: {
   request: Request;
   vendorId: string;
@@ -46,9 +50,17 @@ export async function resolveRepeatedFixedSessionRegistration(input: {
   now: Date;
 }): Promise<
   | { ok: true; moved: boolean }
+  /**
+   * The registration cannot move and the request does not come from its own
+   * browser: answer exactly like a fresh registration (nothing about the
+   * existing one) and tell the real registrant by email instead.
+   */
+  | { ok: true; moved: false; concealed: { sessionId: string; startAt: Date } }
   | { ok: false; reason: FixedSessionClaimFailure }
-  /** `session` only when this browser holds the registration's signed cookie; nobody else learns which session it is. */
-  | { ok: false; reason: "already_registered"; session: { startAt: Date } | null }
+  /** The registration's own browser (signed cookie) is told which session it holds. */
+  | { ok: false; reason: "already_registered"; session: { startAt: Date } }
+  /** A concurrent change won the race: the visitor must retry, never see a success that did not happen. */
+  | { ok: false; reason: "busy" }
 > {
   const db = getDb();
   const current = await db.formSubmission.findFirst({
@@ -64,10 +76,16 @@ export async function resolveRepeatedFixedSessionRegistration(input: {
   const sameSession = current.liveSessionId === input.sessionId;
   if (sameSession && current.liveSessionSeatReleasedAt === null) return { ok: true, moved: false };
   if (!sameSession && !mayMove(input, current)) {
-    if (!current.liveSession) return { ok: true, moved: false };
-    // Knowing an email must not reveal which session that registration holds.
-    const ownBrowser = holdsRegistrationCookie(input.request, input.submissionId, input.now);
-    return { ok: false, reason: "already_registered", session: ownBrowser ? { startAt: current.liveSession.startAt } : null };
+    if (!current.liveSession || !current.liveSessionId) return { ok: true, moved: false };
+    // Knowing an email must not reveal that, or how, it is registered.
+    if (!holdsRegistrationCookie(input.request, input.submissionId, input.now)) {
+      // Answer exactly what a fresh registration for this session would get:
+      // a full, closed or foreign session fails the same way, anything else succeeds.
+      const unavailable = await targetSessionFailure(db, input);
+      if (unavailable) return { ok: false, reason: unavailable };
+      return { ok: true, moved: false, concealed: { sessionId: current.liveSessionId, startAt: current.liveSession.startAt } };
+    }
+    return { ok: false, reason: "already_registered", session: { startAt: current.liveSession.startAt } };
   }
   try {
     const failure = await withSerializableRetry(() => db.$transaction(async (tx) => {
@@ -88,13 +106,31 @@ export async function resolveRepeatedFixedSessionRegistration(input: {
   } catch (error) {
     // Another request changed this registration first (or the conflict
     // outlived the retries); keep what it holds and report that.
-    if (error instanceof FixedSessionSwitchConflict || isTransientTransactionConflict(error)) return { ok: true, moved: false };
+    if (error instanceof FixedSessionSwitchConflict || isTransientTransactionConflict(error)) return { ok: false, reason: "busy" };
     throw error;
   }
   if (!sameSession && current.verificationStatus === "VERIFIED") {
     await rescheduleFixedSessionRegistrant({ vendorId: input.vendorId, liveId: input.liveId, submissionId: input.submissionId, now: input.now });
   }
   return { ok: true, moved: !sameSession };
+}
+
+/**
+ * Why a fresh registration for the requested session would fail right now
+ * (the read-only form of claimFixedSessionSeat's checks), or null when it
+ * would take a seat. Tenant- and Live-scoped like the claim itself.
+ */
+async function targetSessionFailure(
+  db: Pick<Prisma.TransactionClient, "liveSession">,
+  input: { vendorId: string; liveId: string; sessionId: string; sessionRegistrationCutoffMinutes: number; now: Date },
+): Promise<FixedSessionClaimFailure | null> {
+  const session = await db.liveSession.findFirst({
+    where: { id: input.sessionId, vendorId: input.vendorId, liveId: input.liveId },
+    select: FIXED_SESSION_SELECT,
+  });
+  if (!session) return "not_found";
+  const state = fixedSessionRegistrationState(session, { sessionRegistrationCutoffMinutes: input.sessionRegistrationCutoffMinutes }, input.now);
+  return state === "open" ? null : state;
 }
 
 /**

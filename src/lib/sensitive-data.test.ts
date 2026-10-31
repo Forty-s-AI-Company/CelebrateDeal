@@ -113,6 +113,7 @@ describe("deriveSensitiveDataKey compatibility", () => {
     ["merchant-invite-email:r2:bcaa6cb59eb97af3", "40d60f1b71e1c9d7f0b61384c6749b49b404356c08691d5966edd9bb693eddaf"],
     ["live-private-chat-conversation-binding:r2:93e8e3400ce0da2b", "f3564cae76a1e8fed03f3690bfb5bed2946203db0b3e658df496845c88ab6971"],
     ["evergreen-viewer-session:r2:755cb80211ac7475", "5b95497914adb4bce99a9d40f20fe7e5114e196f22b77fbf519166e5bc809ce8"],
+    ["live-session-result:r2:e2e6952d7d8950cb", "62d95a76fdbe8d2e6ee3ace12156f8304163f03fd3ff69f1590a784914fc4151"],
   ];
 
   it.each(GOLDEN_KEYS)("keeps the %s key byte-identical", (purpose, expectedHex) => {

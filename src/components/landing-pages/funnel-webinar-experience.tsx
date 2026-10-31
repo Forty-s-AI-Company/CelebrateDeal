@@ -2,7 +2,7 @@
 import { useRegistrationRetry } from "@/components/registration-retry-context";
 import { RegistrationSubmissionFeedback } from "@/components/registration-submission-feedback";
 
-import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { useEffect, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import { PublicFunnelDocument } from "@/components/landing-pages/public-funnel-document";
 import { getFunnelWebinarState, type FunnelEvergreenSession } from "@/lib/funnel-webinar";
@@ -10,7 +10,7 @@ import { EVERGREEN_SESSION_ENDPOINT, evergreenSessionTimeLabel } from "@/compone
 import { hasDirectWebinarVideo } from "@/lib/funnel-webinar-media";
 import type { FunnelStepPages } from "@/lib/funnel-step-pages";
 import type { FunnelRenderEvent, FunnelSubmissionContext, FunnelViewport } from "@/components/landing-pages/funnel-page-document-renderer";
-import { LiveSessionPicker, readChosenLiveSessionRaw, useLiveSessionForm, type LiveSessionsData } from "@/components/landing-pages/live-session-picker";
+import { LiveSessionPicker, useLiveSessionForm, type LiveSessionsData } from "@/components/landing-pages/live-session-picker";
 import { isLeadCaptureFormNode } from "@/lib/funnel-registration-surface";
 import type { FunnelNode } from "@/lib/funnel-page-document";
 
@@ -43,9 +43,14 @@ function designedFormSubmission({ registration, ready, page, resource, source, t
   };
 }
 
-export function FunnelWebinarExperience({ state, stepId, slug, resource, preview = false, viewport, initialViewport, event, funnelSource }: {
+export function FunnelWebinarExperience({ state, stepId, slug, resource, preview = false, viewport, initialViewport, event, funnelSource, confirmedLiveSession = null }: {
   state: FunnelStepPages; stepId: string; slug: string; resource?: WebinarExperienceResource;
   preview?: boolean; viewport?: FunnelViewport; initialViewport?: FunnelViewport; event?: FunnelRenderEvent; funnelSource?: { landingPageId: string; stepId: string };
+  /**
+   * The 指定場次 the server confirmed for this browser's registration, read by
+   * the page's Server Component from the HttpOnly signed result cookie.
+   */
+  confirmedLiveSession?: { startAt: string; label: string } | null;
 }) {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => { const timer = window.setInterval(() => setNow(Date.now()), 1000); return () => window.clearInterval(timer); }, []);
@@ -71,7 +76,7 @@ export function FunnelWebinarExperience({ state, stepId, slug, resource, preview
     <PublicFunnelDocument document={{ ...page, flow: { ...state.flow, domain: slug } }} viewport={viewport} initialViewport={initialViewport} event={event} submission={submission} />
     {!step.isSystem ? <section className="mx-auto my-5 w-[calc(100%-2rem)] max-w-5xl rounded-xl border border-slate-200 p-5">
       <p role={status.status === "missing" ? "alert" : "status"}>{status.message}</p>
-      <WebinarScheduleLine evergreen={evergreen} session={evergreenSession} settings={state.flow.webinar} resource={resource} stepType={step.type} />
+      <WebinarScheduleLine evergreen={evergreen} session={evergreenSession} settings={state.flow.webinar} resource={resource} stepType={step.type} confirmed={confirmedLiveSession} />
       {step.type === "webinar_registration_page" && ready && thankYou && !submission ? <WebinarRegistrationForm resource={resource} source={source} redirectTo={path(thankYou.path)} preview={preview} /> : null}
       {step.type === "webinar_thank_you_page" && ready && broadcast ? <a className="mt-4 inline-block rounded-lg bg-blue-700 p-3 text-white" href={path(broadcast.path)}>查看播放／重播頁</a> : null}
       {ready && showsBroadcastEntry(step.type, evergreen || fixedSessions, status.status) ? <a className="mt-4 inline-block rounded-lg bg-blue-700 p-3 text-white" href={`${path(step.path)}/play`}>前往授權播放：{resource.live.videoTitle}</a> : null}
@@ -124,16 +129,17 @@ function showsBroadcastEntry(stepType: string, evergreen: boolean, status: strin
 }
 
 /** Fixed funnel dates, or for an evergreen Live the visitor's own session time. */
-function WebinarScheduleLine({ evergreen, session, settings, resource, stepType }: {
+function WebinarScheduleLine({ evergreen, session, settings, resource, stepType, confirmed }: {
   evergreen: boolean;
   session: FunnelEvergreenSession | null;
   settings: FunnelStepPages["flow"]["webinar"];
   resource?: WebinarExperienceResource;
   stepType: string;
+  confirmed: { startAt: string; label: string } | null;
 }) {
   const fixedSessionsLiveId = resource?.liveSessions?.liveId;
   const showChosen = stepType !== "webinar_registration_page";
-  const chosen = useChosenSession(showChosen ? fixedSessionsLiveId : undefined);
+  const chosen = showChosen ? confirmed : null;
   // Fixed sessions: the funnel's shared start time does not apply; show the visitor's own pick.
   if (fixedSessionsLiveId) {
     if (!showChosen) return <p className="mt-2 text-sm">場次時間：請在下方報名時選擇場次。</p>;
@@ -150,15 +156,6 @@ function WebinarScheduleLine({ evergreen, session, settings, resource, stepType 
   return <p className="mt-2 text-sm">開始時間：<time dateTime={start}>{new Intl.DateTimeFormat("zh-TW", { dateStyle: "medium", timeStyle: "short", timeZone: settings?.timezone }).format(new Date(start))}</time> · {settings?.timezone}</p>;
 }
 
-const subscribeNothing = () => () => undefined;
-/** The session the visitor just picked, remembered by the registration form for this step (client only; null while server rendering). */
-function useChosenSession(liveId: string | undefined) {
-  const raw = useSyncExternalStore(subscribeNothing, () => (liveId ? readChosenLiveSessionRaw(liveId) : null), () => null);
-  return useMemo(() => {
-    if (!raw) return null;
-    try { const value = JSON.parse(raw) as { label: string; startAt: string }; return { label: value.label, startAt: value.startAt }; } catch { return null; }
-  }, [raw]);
-}
 
 /** The native webinar form's own submit colours (bg-blue-700, white), so its selected session matches it on any page background. */
 const WEBINAR_SESSION_ACCENT = { "--live-session-accent": "#1d4ed8", "--live-session-accent-text": "#ffffff" } as React.CSSProperties;

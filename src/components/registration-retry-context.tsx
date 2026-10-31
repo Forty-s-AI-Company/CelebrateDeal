@@ -13,5 +13,5 @@ export function useRegistrationRetry(formId: string, options?: { fixedSessions?:
   const state = useContext(Context);
   if (!state || state.formId !== formId) return null;
   // 網址可被分享或保留；沒有有效草稿時，不把網址旗標當成送出失敗的證據。
-  return { ...state, message: state.failed ? state.draft ? formSubmissionErrorMessage(state.draft.status, options) : "目前沒有可恢復的填寫內容，無法確認先前的送出結果。若您已報名，請先查看確認信，避免重複送出；若尚未報名，請重新填寫。" : "" };
+  return { ...state, message: state.failed ? state.draft ? formSubmissionErrorMessage(state.draft.status, { ...options, reason: state.draft.reason }) : "目前沒有可恢復的填寫內容，無法確認先前的送出結果。若您已報名，請先查看確認信，避免重複送出；若尚未報名，請重新填寫。" : "" };
 }
