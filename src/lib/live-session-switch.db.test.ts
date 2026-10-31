@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -8,6 +8,7 @@ import { POST as REGISTER } from "@/app/api/form-submissions/route";
 import { POST as SWITCH } from "@/app/api/live-session-switch/route";
 import LiveSessionSwitchPage from "@/app/live-session-switch/page";
 import { getDb } from "@/lib/db";
+import { ensureFixedSessionAlreadyRegisteredDelivery, isCurrentEmailDeliverySnapshot } from "@/lib/email-delivery";
 import { revealEmailDeliveryPayload } from "@/lib/email-delivery-pii";
 import { FORM_SUBMISSION_CHAT_SESSION_COOKIE } from "@/lib/form-submission-chat-session";
 import { syncLiveSessions } from "@/lib/live-fixed-sessions-store";
@@ -61,7 +62,7 @@ async function fixture(label: string) {
   await db.$transaction((tx) => syncLiveSessions(tx, {
     vendorId: vendor.id,
     liveId: live.id,
-    sessions: [2, 4, 6].map((days) => ({ startAt: new Date(now.getTime() + days * DAY), capacity: 5, status: "open" as const })),
+    sessions: [2, 4, 6, 8].map((days) => ({ startAt: new Date(now.getTime() + days * DAY), capacity: 5, status: "open" as const })),
     now,
   }));
   const sessions = await db.liveSession.findMany({ where: { vendorId: vendor.id, liveId: live.id }, orderBy: { startAt: "asc" } });
@@ -100,8 +101,8 @@ function cookieFrom(response: Response) {
   return header ? header.split(";")[0]! : null;
 }
 
-async function openPage(token: string) {
-  return renderToStaticMarkup(await LiveSessionSwitchPage({ searchParams: Promise.resolve({ token }) }));
+async function openPage(token: string, status?: string) {
+  return renderToStaticMarkup(await LiveSessionSwitchPage({ searchParams: Promise.resolve({ token, ...(status ? { status } : {}) }) }));
 }
 
 const redemptions = (submissionId: string) => getDb().liveSessionSwitchRedemption.count({ where: { formSubmissionId: submissionId } });
@@ -242,5 +243,78 @@ describe("「更換場次」 link in the already-registered notice", () => {
     expect(responses.filter((response) => cookieFrom(response) !== null)).toHaveLength(1);
     expect(responses.filter((response) => response.headers.get("location") === INVALID)).toHaveLength(4);
     expect(await redemptions(registrant.id)).toBe(1);
+  });
+
+  it("lets a registrant of a cancelled session use the link even after its start, and shows the retry page", async () => {
+    const fx = await fixture("cancelled");
+    const registrant = await verifiedRegistrant(fx, fx.sessions[0]!.id, "cancelled");
+    await getDb().liveSession.update({
+      where: { id: fx.sessions[0]!.id },
+      data: { status: "cancelled", cancelledAt: new Date(), startAt: new Date(Date.now() - HOUR) },
+    });
+    const token = createLiveSessionSwitchToken({ vendorId: fx.vendor.id, submissionId: registrant.id, sessionId: fx.sessions[0]!.id });
+    const pressed = await press(token);
+    expect(cookieFrom(pressed)).not.toBeNull();
+    expect(await redemptions(registrant.id)).toBe(1);
+    const retry = await openPage(token, "retry");
+    expect(retry).toContain("目前較為忙碌，請重試");
+    expect(retry).not.toContain("確認並前往選擇場次");
+  });
+});
+
+describe("the notice keeps working once its link can have expired (review M1)", () => {
+  const noticeInput = (fx: Fixture, registrant: { id: string; name: string; email: string }, held: string, target: string) => ({
+    vendorId: fx.vendor.id, vendorName: fx.vendor.name, liveId: fx.live.id, liveSlug: fx.live.slug, liveTitle: fx.live.title,
+    sessionId: held, sessionLabel: "11/2 20:00", targetSessionId: target,
+    formSubmissionId: registrant.id, recipientName: registrant.name, recipientEmail: registrant.email,
+  });
+  const noticeRows = (fx: Fixture, submissionId: string) => getDb().emailDelivery.findMany({
+    where: { vendorId: fx.vendor.id, trigger: "fixed_session_already_registered", sourceFormSubmissionId: submissionId },
+    orderBy: { createdAt: "asc" },
+  });
+
+  it("sends a fresh link for the same session once its link can have expired, capped at three per rolling 24 hours", async () => {
+    const fx = await fixture("window");
+    const [held, b, c, d] = fx.sessions;
+    const registrant = await verifiedRegistrant(fx, held!.id, "window");
+    // One hour into a 24-hour window, so the steps below land in known windows.
+    const t0 = new Date(Math.floor(Date.now() / DAY) * DAY + HOUR);
+    const send = (target: string, at: Date) => ensureFixedSessionAlreadyRegisteredDelivery(noticeInput(fx, registrant, held!.id, target), at);
+    for (const target of [b!, c!, d!]) expect((await send(target.id, t0)).status).toBe("queued");
+    expect((await send(b!.id, new Date(t0.getTime() + 2 * HOUR))).status).toBe("duplicate");
+
+    // Next window, but all three are still inside the last 24 hours: capped, nothing sent.
+    expect(await send(b!.id, new Date(t0.getTime() + DAY - 30 * MINUTE))).toEqual({ status: "capped", deliveryId: null });
+    // A day after the first notice its link has expired: the same session again gets a new notice and link.
+    const t1 = new Date(t0.getTime() + DAY + MINUTE);
+    expect((await send(b!.id, t1)).status).toBe("queued");
+
+    const rows = await noticeRows(fx, registrant.id);
+    expect(rows).toHaveLength(4);
+    const tokens = rows.map((row) => /更換場次：(\S+)/u.exec(revealEmailDeliveryPayload(row.payloadEncryptedEnvelope, { vendorId: row.vendorId, deliveryId: row.id }).body)![1]!);
+    expect(new Set(tokens).size).toBe(4);
+    for (const row of rows) {
+      expect(row.idempotencyKey).toMatch(/^fixed-session-already-registered\/[^/]+\/[^/]+\/w\d+\/email_[0-9a-f]{32}$/u);
+      expect(await isCurrentEmailDeliverySnapshot(row, t1)).toBe(true);
+    }
+    // The fresh link works at its own time, while the first one has expired by then.
+    const tokenOf = (link: string) => new URL(link).searchParams.get("token")!;
+    expect(await redeemLiveSessionSwitchToken(tokenOf(tokens[0]!), t1)).toEqual({ ok: false });
+    expect(await redeemLiveSessionSwitchToken(tokenOf(tokens[3]!), t1)).toMatchObject({ ok: true, submissionId: registrant.id });
+  });
+
+  it("still sends a notice queued before windows existed (legacy identity)", async () => {
+    const fx = await fixture("legacy");
+    const [held, target] = fx.sessions;
+    const registrant = await verifiedRegistrant(fx, held!.id, "legacy");
+    const { deliveryId } = await ensureFixedSessionAlreadyRegisteredDelivery(noticeInput(fx, registrant, held!.id, target!.id));
+    const legacyId = `email_${createHash("sha256").update(JSON.stringify([fx.vendor.id, registrant.id, target!.id, "fixed_session_already_registered"])).digest("hex").slice(0, 32)}`;
+    const legacy = await getDb().emailDelivery.update({
+      where: { id: deliveryId! },
+      data: { id: legacyId, idempotencyKey: `fixed-session-already-registered/${held!.id}/${target!.id}/${legacyId}` },
+    });
+    expect(await isCurrentEmailDeliverySnapshot(legacy)).toBe(true);
+    // A forged window on a legacy id does not match.
+    expect(await isCurrentEmailDeliverySnapshot({ ...legacy, idempotencyKey: `fixed-session-already-registered/${held!.id}/${target!.id}/w1/${legacyId}` })).toBe(false);
   });
 });

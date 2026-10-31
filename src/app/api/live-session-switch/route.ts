@@ -1,12 +1,8 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { readFormDataBody, requireSameOriginRequest } from "@/lib/api-security";
+import { readFormDataBody, trustedRequestOrigin } from "@/lib/api-security";
 import { getBrowserReturnAppUrl } from "@/lib/app-url";
-import {
-  createFormSubmissionChatSessionToken,
-  FORM_SUBMISSION_CHAT_SESSION_COOKIE,
-  formSubmissionChatSessionCookieOptions,
-} from "@/lib/form-submission-chat-session";
+import { FORM_SUBMISSION_CHAT_SESSION_COOKIE, formSubmissionChatSessionCookieOptions } from "@/lib/form-submission-chat-session";
 import { redeemLiveSessionSwitchToken } from "@/lib/live-session-switch";
 import { LIVE_SESSION_SWITCH_MAX_TOKEN_LENGTH } from "@/lib/live-session-switch-token";
 import { captureOperationalError } from "@/lib/monitoring";
@@ -32,11 +28,12 @@ function redirectTo(request: Request, path: string) {
  * registration. Forged, expired, used and stale links share one answer.
  */
 export async function POST(request: Request) {
-  if (!request.headers.get("origin")) {
-    return NextResponse.json({ error: "Missing request origin" }, { status: 403 });
+  // An exact same-origin Origin header, never "null" or a Referer: a page
+  // elsewhere cannot plant someone else's registration cookie here (the
+  // confirmation page uses Referrer-Policy: same-origin, so its own POST sends one).
+  if (!trustedRequestOrigin(request)) {
+    return NextResponse.json({ error: "Invalid request origin" }, { status: 403 });
   }
-  const sameOrigin = requireSameOriginRequest(request);
-  if (sameOrigin) return sameOrigin;
   const limited = await checkRateLimit(request, "live-session-switch", 20, 60_000);
   if (limited) return limited;
 
@@ -61,7 +58,7 @@ export async function POST(request: Request) {
   const response = redirectTo(request, result.rechoosePath);
   response.cookies.set(
     FORM_SUBMISSION_CHAT_SESSION_COOKIE,
-    createFormSubmissionChatSessionToken({ submissionId: result.submissionId }),
+    result.registrationCookie,
     formSubmissionChatSessionCookieOptions(new URL(request.url).protocol === "https:"),
   );
   return response;

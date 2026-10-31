@@ -66,12 +66,22 @@ describe("isolated development build configuration", () => {
     const { default: config } = await import("./next.config");
     const rules = await config.headers!();
     const siteWide = rules.findIndex((rule) => rule.source === "/:path*");
-    for (const source of ["/verify-email", "/api/auth/email-verification/confirm", "/verify-email-change", "/api/auth/email-change/confirm", "/revert-email-change", "/api/auth/email-change/revert", "/live-session-switch", "/api/live-session-switch"]) {
+    for (const source of ["/verify-email", "/api/auth/email-verification/confirm", "/verify-email-change", "/api/auth/email-change/confirm", "/revert-email-change", "/api/auth/email-change/revert", "/api/live-session-switch"]) {
       const index = rules.findIndex((rule) => rule.source === source);
       // Next applies matching rules in order; the later one wins for the same key.
       expect(index).toBeGreaterThan(siteWide);
       expect(rules[index]!.headers).toEqual([{ key: "Referrer-Policy", value: "no-referrer" }]);
     }
+  });
+
+  it("keeps the session switch page's Referer same-origin so its confirm POST carries a real Origin", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+    const { default: config } = await import("./next.config");
+    const rules = await config.headers!();
+    const siteWide = rules.findIndex((rule) => rule.source === "/:path*");
+    const index = rules.findIndex((rule) => rule.source === "/live-session-switch");
+    expect(index).toBeGreaterThan(siteWide);
+    expect(rules[index]!.headers).toEqual([{ key: "Referrer-Policy", value: "same-origin" }]);
   });
 
   it("isolates explicitly requested funnel QA builds inside the project", async () => {

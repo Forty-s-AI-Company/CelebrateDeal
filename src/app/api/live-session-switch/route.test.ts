@@ -12,7 +12,7 @@ vi.mock("@/lib/live-session-switch", () => ({ redeemLiveSessionSwitchToken: mock
 vi.mock("@/lib/monitoring", () => ({ captureOperationalError: mocks.captureOperationalError }));
 
 import * as route from "./route";
-import { FORM_SUBMISSION_CHAT_SESSION_COOKIE, verifyFormSubmissionChatSessionToken } from "@/lib/form-submission-chat-session";
+import { createFormSubmissionChatSessionToken, FORM_SUBMISSION_CHAT_SESSION_COOKIE, verifyFormSubmissionChatSessionToken } from "@/lib/form-submission-chat-session";
 
 const APP = "https://app.example.test";
 
@@ -45,8 +45,11 @@ describe("POST /api/live-session-switch", () => {
     expect(Object.keys(route).filter((name) => /^(GET|HEAD|PUT|PATCH|DELETE)$/u.test(name))).toEqual([]);
   });
 
-  it("requires an origin, the same origin and the rate limit before reading the token", async () => {
+  it("requires an exact same-origin Origin (not missing, not \"null\") and the rate limit before reading the token", async () => {
     expect((await post("lsw1.a.b", {})).status).toBe(403);
+    // A no-referrer page elsewhere posts with Origin: null; that must not plant a registration cookie.
+    expect((await post("lsw1.a.b", { origin: "null" })).status).toBe(403);
+    expect((await post("lsw1.a.b", { origin: "null", referer: `${APP}/live-session-switch` })).status).toBe(403);
     expect((await post("lsw1.a.b", { origin: "https://evil.example.test" })).status).toBe(403);
     mocks.checkRateLimit.mockResolvedValueOnce(new Response(null, { status: 429 }));
     expect((await post("lsw1.a.b")).status).toBe(429);
@@ -55,7 +58,12 @@ describe("POST /api/live-session-switch", () => {
   });
 
   it("gives the registration's signed cookie and goes to the registration page on success", async () => {
-    mocks.redeem.mockResolvedValue({ ok: true, submissionId: "submission_a", rechoosePath: "/lp/spring-webinar" });
+    mocks.redeem.mockResolvedValue({
+      ok: true,
+      submissionId: "submission_a",
+      rechoosePath: "/lp/spring-webinar",
+      registrationCookie: createFormSubmissionChatSessionToken({ submissionId: "submission_a" }),
+    });
     const response = await post("lsw1.payload.signature");
     expect(mocks.redeem).toHaveBeenCalledWith("lsw1.payload.signature", expect.any(Date));
     expect(response.status).toBe(303);

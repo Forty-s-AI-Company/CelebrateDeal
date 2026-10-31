@@ -1,5 +1,6 @@
 import { Prisma } from "@prisma/client";
 import { getDb } from "@/lib/db";
+import { createFormSubmissionChatSessionToken } from "@/lib/form-submission-chat-session";
 import { resolveFixedSessionRechooseUrl } from "@/lib/live-fixed-session-notices";
 import { liveSessionSwitchRedemptionId, verifyLiveSessionSwitchToken } from "@/lib/live-session-switch-token";
 
@@ -7,7 +8,8 @@ import { liveSessionSwitchRedemptionId, verifyLiveSessionSwitchToken } from "@/l
 const RECHOOSE_PATH = /^\/(?:lp|form|live)\/[^/\\\s?#][^\\\s#]*$/u;
 
 export type LiveSessionSwitchRedemptionResult =
-  | { ok: true; submissionId: string; rechoosePath: string }
+  /** registrationCookie: the signed registration cookie value, made before the link is spent. */
+  | { ok: true; submissionId: string; rechoosePath: string; registrationCookie: string }
   /** Forged, expired, already used, or the registration no longer holds that session: one answer for all. */
   | { ok: false };
 
@@ -54,6 +56,8 @@ export async function redeemLiveSessionSwitchToken(token: string, now = new Date
   const url = new URL(await resolveFixedSessionRechooseUrl({ vendorId: claim.vendorId, liveId: live.id, slug: live.slug, formId: live.formId }));
   const rechoosePath = `${url.pathname}${url.search}`;
   if (rechoosePath.length > 600 || !RECHOOSE_PATH.test(rechoosePath)) return { ok: false };
+  // Made before the redemption row, so a signing failure never spends the link.
+  const registrationCookie = createFormSubmissionChatSessionToken({ submissionId: submission.id, now });
 
   try {
     await db.liveSessionSwitchRedemption.create({
@@ -71,5 +75,5 @@ export async function redeemLiveSessionSwitchToken(token: string, now = new Date
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") return { ok: false };
     throw error;
   }
-  return { ok: true, submissionId: submission.id, rechoosePath };
+  return { ok: true, submissionId: submission.id, rechoosePath, registrationCookie };
 }
