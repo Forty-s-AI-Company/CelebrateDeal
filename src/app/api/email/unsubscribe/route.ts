@@ -58,7 +58,7 @@ export async function POST(request: Request) {
         status: { in: ["queued", "failed"] },
         // A voluntary login request is independent of the marketing preference,
         // and so is a fixed-session cancellation notice (a service message).
-        trigger: { notIn: ["student_portal_magic_link", "form_submission_verification", "fixed_session_cancelled"] },
+        trigger: { notIn: ["student_portal_magic_link", "form_submission_verification", "fixed_session_cancelled", "fixed_session_already_registered"] },
       },
       data: {
         status: "suppressed",

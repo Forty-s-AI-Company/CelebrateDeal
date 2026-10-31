@@ -24,7 +24,7 @@ import {
 import { normalizeBlacklistIdentifier } from "@/lib/blacklist-identifiers";
 import { allowsLegacyAffiliateAttribution, defaultAffiliateCode } from "@/lib/live-quota-policy";
 import { validateRegistrationFormAnswers } from "@/lib/registration-form-answers";
-import { ensureFormSubmissionVerificationDelivery } from "@/lib/email-delivery";
+import { ensureFixedSessionAlreadyRegisteredDelivery, ensureFormSubmissionVerificationDelivery } from "@/lib/email-delivery";
 import { deliveryIdForStatuses, scheduleImmediateEmailDispatch } from "@/lib/email-delivery-immediate";
 import { captureOperationalError } from "@/lib/monitoring";
 import { FORM_SUBMISSION_VERIFICATION_TTL_MS } from "@/lib/form-submission-verification";
@@ -39,6 +39,7 @@ import {
   publicRegistrationSessionWhere,
 } from "@/lib/public-registration-form";
 import { clearRegistrationRetry, registrationRetryResponse, trustedNativeRetryRequest } from "@/lib/registration-form-retry-response";
+import type { RegistrationRetryReason } from "@/lib/registration-form-retry";
 import { attachRegistrationResult } from "@/lib/registration-submission-receipt";
 import { isFixedSessionLive } from "@/lib/live-fixed-sessions";
 import {
@@ -47,7 +48,8 @@ import {
   lockFixedSessionLive,
   type FixedSessionClaimFailure,
 } from "@/lib/live-fixed-sessions-store";
-import { resolveRepeatedFixedSessionRegistration } from "@/lib/live-fixed-session-registration";
+import { holdsRegistrationCookie, resolveRepeatedFixedSessionRegistration } from "@/lib/live-fixed-session-registration";
+import { createLiveSessionResultToken, liveSessionResultCookieOptions } from "@/lib/live-session-result";
 import { confirmedFixedSession, type ConfirmedFixedSession } from "@/lib/live-fixed-sessions-store";
 import { fixedSessionLabel, LIVE_SESSION_RESULT_COOKIE } from "@/lib/live-fixed-sessions";
 import { isTransientTransactionConflict, withSerializableRetry } from "@/lib/serializable-retry";
@@ -387,23 +389,56 @@ async function fixedSessionRateLimit(request: Request, seat: FixedSessionSeat | 
 }
 
 /** A repeated registration may take its released seat back or move session (see resolveRepeatedFixedSessionRegistration). */
-async function repeatedFixedSessionResponse(request: Request, seat: FixedSessionSeat | null, submissionId: string, timeZone: string | null) {
+/**
+ * A repeated registration of a fixed-session Live: null to carry on as a
+ * converged duplicate, a response to send instead, or `concealed` when the
+ * registration could not move and the request is not from its own browser
+ * (carry on, answer like any registration, and email the real registrant).
+ */
+async function repeatedFixedSessionResponse(request: Request, seat: FixedSessionSeat | null, submissionId: string, timeZone: string | null): Promise<{ response: NextResponse } | { concealed: { sessionId: string; startAt: Date } } | null> {
   if (!seat) return null;
   const outcome = await resolveRepeatedFixedSessionRegistration({ request, ...seat, submissionId });
-  if (outcome.ok) return null;
+  if (outcome.ok) return "concealed" in outcome ? { concealed: outcome.concealed } : null;
   if (outcome.reason === "already_registered") {
-    // The registration did not move: say which session it holds, so the
-    // picker shows it instead of the session the visitor just tapped.
-    // Only this registration's own browser learns which session it holds.
-    return NextResponse.json({
+    // Only this registration's own browser (signed cookie) learns which session it holds.
+    return { response: NextResponse.json({
       error: "Already registered for another session",
-      ...(outcome.session ? {
-        startAt: outcome.session.startAt.toISOString(),
-        sessionLabel: fixedSessionLabel(outcome.session.startAt, timeZone || undefined),
-      } : {}),
-    }, { status: 409 });
+      startAt: outcome.session.startAt.toISOString(),
+      sessionLabel: fixedSessionLabel(outcome.session.startAt, timeZone || undefined),
+    }, { status: 409 }) };
   }
-  return fixedSessionUnavailableResponse(outcome.reason);
+  // A concurrent change won: never report a success (or a move) that did not happen.
+  if (outcome.reason === "busy") return { response: NextResponse.json({ error: "Live session busy" }, { status: 503 }) };
+  return { response: fixedSessionUnavailableResponse(outcome.reason) };
+}
+
+/** Best effort: the response stays the same whether or not the notice could be queued. */
+async function notifyAlreadyRegistered(input: {
+  form: { vendorId: string; vendor: { name: string; senderName: string | null; supportEmail: string | null; contactUrl: string | null; timezone: string | null } };
+  duplicate: VerifiableSubmission;
+  seat: FixedSessionSeat;
+  held: { sessionId: string; startAt: Date };
+}) {
+  try {
+    const live = await getDb().live.findFirst({ where: { id: input.seat.liveId, vendorId: input.form.vendorId }, select: { id: true, slug: true, title: true } });
+    if (!live) return;
+    const notice = await ensureFixedSessionAlreadyRegisteredDelivery({
+      vendorId: input.form.vendorId,
+      vendorName: input.form.vendor.name,
+      liveId: live.id,
+      liveSlug: live.slug,
+      liveTitle: live.title,
+      sessionId: input.held.sessionId,
+      sessionLabel: fixedSessionLabel(input.held.startAt, input.form.vendor.timezone || undefined),
+      formSubmissionId: input.duplicate.id,
+      recipientName: input.duplicate.name,
+      recipientEmail: input.duplicate.email,
+      emailBrand: { senderName: input.form.vendor.senderName, supportEmail: input.form.vendor.supportEmail, contactUrl: input.form.vendor.contactUrl },
+    });
+    if (notice.status === "queued") scheduleImmediateEmailDispatch([notice.deliveryId]);
+  } catch (error) {
+    captureOperationalError(error, { area: "fixed_session_already_registered_notice", vendorId: input.form.vendorId });
+  }
 }
 
 /** The session this registration holds after the request (server truth), or null for a Live without sessions. */
@@ -425,7 +460,8 @@ async function respondToRepeatedSubmission(input: {
 }) {
   const { form, duplicate } = input;
   const repeatedSeat = await repeatedFixedSessionResponse(input.request, input.seat, duplicate.id, form.vendor.timezone);
-  if (repeatedSeat) return repeatedSeat;
+  if (repeatedSeat && "response" in repeatedSeat) return repeatedSeat.response;
+  const concealed = repeatedSeat?.concealed ?? null;
   const missedAutomation = await automationMissedBySubmission(form.vendorId, duplicate.id);
   const refreshed = await refreshExpiredVerification(duplicate);
   const verificationQueued = await enqueueSubmissionVerificationSafely({
@@ -447,6 +483,11 @@ async function respondToRepeatedSubmission(input: {
   // binding capability is deliberately not issued: proving knowledge of an
   // email address must not let a browser bind LINE to an existing record.
   await dispatchMissedFormRegistered(form.vendorId, duplicate.id, input.email, missedAutomation);
+  if (concealed && input.seat) {
+    // Indistinguishable from a fresh registration: no session in the body, no result cookie.
+    await notifyAlreadyRegistered({ form, duplicate, seat: input.seat, held: concealed });
+    return submissionResponse(input.request, input.redirectTo, input.isNativeFormPost, duplicate.id);
+  }
   return submissionResponse(input.request, input.redirectTo, input.isNativeFormPost, duplicate.id, false, await confirmedSessionFor(input.seat, duplicate.id, form.vendor.timezone));
 }
 
@@ -873,21 +914,19 @@ function submissionResponse(
   issueLineBindingCapability = false,
   liveSession: (ConfirmedFixedSession & { liveId: string }) | null = null,
 ) {
-  const confirmed = liveSession ? { id: liveSession.id, startAt: liveSession.startAt, label: liveSession.label } : null;
+  // The body names the session only for the registration's own browser
+  // (its signed cookie), so a response never tells a stranger whether, or
+  // how, an email is registered.
+  const confirmed = liveSession && holdsRegistrationCookie(request, formSubmissionId, new Date())
+    ? { id: liveSession.id, startAt: liveSession.startAt, label: liveSession.label }
+    : null;
   const response = isNativeFormPost && redirectTo && isSameOriginRedirect(redirectTo, request.url)
     ? NextResponse.redirect(withSubmittedSearchParam(redirectTo, request.url), { status: 303 })
     : NextResponse.json({ ok: true, verificationRequired: true, ...(confirmed ? { liveSession: confirmed } : {}) });
-  // The thank-you step shows only this server-confirmed session (指定場次),
-  // never the visitor's own pick; readable by that page's script, no secret.
+  // The funnel thank-you page shows only this server-confirmed session: an
+  // HttpOnly, signed, Live-bound cookie read by the page's Server Component.
   if (liveSession) {
-    // Next encodes the value (encodeURIComponent); the page decodes it once.
-    response.cookies.set(LIVE_SESSION_RESULT_COOKIE, JSON.stringify(liveSession), {
-      httpOnly: false,
-      sameSite: "lax",
-      secure: new URL(request.url).protocol === "https:",
-      path: "/",
-      maxAge: FORM_SUBMISSION_COOKIE_TTL_SECONDS,
-    });
+    response.cookies.set(LIVE_SESSION_RESULT_COOKIE, createLiveSessionResultToken(liveSession), liveSessionResultCookieOptions(new URL(request.url).protocol === "https:"));
   }
 
   response.cookies.set(FORM_SUBMISSION_COOKIE, formSubmissionId, {
@@ -970,6 +1009,17 @@ function withRetryAfter(response: NextResponse, source: Response) {
   return response;
 }
 
+/** A fixed-session 409 tells the native retry which problem to name (never shown in the URL). */
+async function nativeRetryReason(response: NextResponse): Promise<RegistrationRetryReason | undefined> {
+  if (response.status !== 409) return undefined;
+  try {
+    const body = await response.clone().json() as { error?: unknown };
+    if (body.error === "Already registered for another session") return "already_registered";
+    if (body.error === "Live session full" || body.error === "Live session closed") return "session_unavailable";
+  } catch { /* not JSON */ }
+  return undefined;
+}
+
 // Verification and automation emails are sent by `after()` within this limit
 // (see IMMEDIATE_EMAIL_DISPATCH_MAX_DURATION_SECONDS).
 export const maxDuration = 60;
@@ -1014,7 +1064,7 @@ export async function POST(request: Request) {
     response = NextResponse.json({ error: "Submission unavailable" }, { status: 503 });
   }
   if (response.status >= 400) {
-    const retryResponse = await registrationRetryResponse(request, formData, response.status);
+    const retryResponse = await registrationRetryResponse(request, formData, response.status, await nativeRetryReason(response));
     return response.status === 429 ? withRetryAfter(retryResponse, response) : retryResponse;
   }
   await clearRegistrationRetry(request, response);

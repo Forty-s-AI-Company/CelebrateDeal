@@ -241,7 +241,8 @@ describe("registration with a fixed session", () => {
     expect(await register(fx, `closed-${fx.suffix}@example.test`, closed!.id)).toEqual({ status: 409, body: { error: "Live session closed" } });
 
     const ok = await register(fx, `ok-${fx.suffix}@example.test`, open!.id);
-    expect(ok).toMatchObject({ status: 200, body: { ok: true, verificationRequired: true, liveSession: { id: open!.id } } });
+    // The session is in the signed thank-you cookie, not in the body (which is the same for every registration).
+    expect(ok).toEqual({ status: 200, body: { ok: true, verificationRequired: true } });
     expect(await register(fx, `full-${fx.suffix}@example.test`, open!.id)).toEqual({ status: 409, body: { error: "Live session full" } });
 
     const rows = await getDb().formSubmission.findMany({ where: { liveId: fx.live.id }, select: { email: true, liveSessionId: true } });

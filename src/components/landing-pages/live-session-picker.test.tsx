@@ -7,7 +7,7 @@ import { previewFunnelTemplate } from "@/lib/funnel-template-gallery";
 import { FunnelPageDocumentRenderer, type FunnelSubmissionContext } from "./funnel-page-document-renderer";
 import { FunnelWebinarExperience, type WebinarExperienceResource } from "./funnel-webinar-experience";
 import { createGoalFunnelStepPages } from "@/lib/funnel-goal-step-pages";
-import { dateChipLabel, firstAvailableDate, LIVE_SESSION_FALLBACK_ACCENT, LIVE_SESSION_FALLBACK_ACCENT_TEXT, LiveSessionPicker, readChosenLiveSession, useLiveSessionSelection, type LiveSessionsData } from "./live-session-picker";
+import { dateChipLabel, firstAvailableDate, LIVE_SESSION_FALLBACK_ACCENT, LIVE_SESSION_FALLBACK_ACCENT_TEXT, LIVE_SESSION_CHECK_EMAIL_MESSAGE, LiveSessionPicker, useLiveSessionSelection, type LiveSessionsData } from "./live-session-picker";
 import { LIVE_SESSION_RESULT_COOKIE } from "@/lib/live-fixed-sessions";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -37,13 +37,13 @@ const submission = (liveSessions?: LiveSessionsData, extra: Partial<FunnelSubmis
 });
 
 const cleanups: Array<() => Promise<void>> = [];
-const clearConfirmed = () => { document.cookie = `${LIVE_SESSION_RESULT_COOKIE}=; Max-Age=0; Path=/`; };
-/** What POST /api/form-submissions writes after a successful fixed-session registration. */
-const confirmCookie = (value: { liveId: string; id: string; startAt: string; label: string }) => {
-  document.cookie = `${LIVE_SESSION_RESULT_COOKIE}=${encodeURIComponent(JSON.stringify(value))}; Path=/`;
+/** The client never stores a session for the thank-you step: the server's HttpOnly cookie is the only source. */
+const noClientRecord = () => {
+  expect(document.cookie).not.toContain(LIVE_SESSION_RESULT_COOKIE);
+  expect(window.sessionStorage.length).toBe(0);
 };
-afterEach(async () => { while (cleanups.length) await cleanups.pop()!(); vi.unstubAllGlobals(); clearConfirmed(); });
-beforeEach(() => clearConfirmed());
+afterEach(async () => { while (cleanups.length) await cleanups.pop()!(); vi.unstubAllGlobals(); });
+beforeEach(() => window.sessionStorage.clear());
 
 async function mount(context: FunnelSubmissionContext, template = "leads-checklist-minimal") {
   const container = document.createElement("div");
@@ -166,7 +166,18 @@ describe("session picker on the public registration form", () => {
     expect(root.textContent).toContain("你的場次：11月2日（週一） 14:00");
     expect(root.textContent).not.toContain("19:00。");
     // The client never records its own pick for the thank-you step.
-    expect(readChosenLiveSession("live-1")).toBeNull();
+    noClientRecord();
+  });
+
+  it("tells a visitor whose session the server did not name to check the email", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(Response.json({ ok: true, verificationRequired: true })));
+    const root = await mount(submission(sessionsData()));
+    await fill(root);
+    await click(times(root)[1]!);
+    await submit(root);
+    expect(root.textContent).toContain(LIVE_SESSION_CHECK_EMAIL_MESSAGE);
+    expect(root.textContent).not.toContain("你的場次：");
+    noClientRecord();
   });
 
   it("tells a registrant who cannot switch which session they already hold, without refreshing or remembering", async () => {
@@ -178,7 +189,7 @@ describe("session picker on the public registration form", () => {
     await submit(root);
     expect(root.textContent).toContain("你已報名 11月1日（週日） 19:00 場次");
     expect(fetchMock).toHaveBeenCalledOnce();
-    expect(readChosenLiveSession("live-1")).toBeNull();
+    noClientRecord();
   });
 
   it("gives a neutral message when the server withholds the held session (another browser)", async () => {
@@ -191,7 +202,7 @@ describe("session picker on the public registration form", () => {
     expect(root.textContent).toContain("這個 Email 已經報名過其他場次，請查看確認信，或在原本報名的裝置上更換場次");
     expect(root.textContent).not.toContain("你已報名");
     expect(fetchMock).toHaveBeenCalledOnce();
-    expect(readChosenLiveSession("live-1")).toBeNull();
+    noClientRecord();
   });
 
   it("does not send liveSessionId for a live without sessions", async () => {
@@ -321,7 +332,7 @@ describe("session picker on the public registration form", () => {
     expect(submitEvent.defaultPrevented).toBe(true);
     await click(times(root)[0]!);
     expect(root.querySelector('input[name="liveSessionId"]')!.getAttribute("value")).toBe("s-1400");
-    expect(readChosenLiveSession("live-1")).toBeNull();
+    noClientRecord();
   });
 });
 
@@ -334,20 +345,21 @@ describe("thank-you step", () => {
       form: { id: "form", fields: [{ key: "email", label: "Email", type: "email", required: true }], submitLabel: "送出", successMessage: "ok" },
       liveSessions: sessionsData(),
     };
-    const mountThanks = async () => {
+    const mountThanks = async (confirmedLiveSession: { startAt: string; label: string } | null = null) => {
       const container = document.createElement("div");
       document.body.append(container);
       const root = createRoot(container);
-      await act(async () => root.render(<FunnelWebinarExperience state={flow} slug="slug" stepId="webinar_thank_you" resource={resource} />));
+      // The page's Server Component verifies the HttpOnly cookie and passes the result down.
+      await act(async () => root.render(<FunnelWebinarExperience state={flow} slug="slug" stepId="webinar_thank_you" resource={resource} confirmedLiveSession={confirmedLiveSession} />));
       cleanups.push(async () => { await act(async () => root.unmount()); container.remove(); });
       return container;
     };
     expect((await mountThanks()).textContent).toContain("確認信會寫明開始時間");
-    // Another Live's confirmation never shows here.
-    confirmCookie({ liveId: "live-2", id: "s-x", startAt: "2026-11-02T19:00:00+08:00", label: "11月2日（週一） 19:00" });
-    expect((await mountThanks()).textContent).toContain("確認信會寫明開始時間");
-    confirmCookie({ liveId: "live-1", id: "s-1900", startAt: "2026-11-02T19:00:00+08:00", label: "11月2日（週一） 19:00" });
-    const withChoice = await mountThanks();
+    // A script-planted client cookie is ignored: only the server prop counts.
+    document.cookie = `${LIVE_SESSION_RESULT_COOKIE}=${encodeURIComponent(JSON.stringify({ liveId: "live-1", id: "s-x", startAt: "2026-11-03T10:00:00+08:00", label: "偽造場次" }))}; Path=/`;
+    expect((await mountThanks()).textContent).not.toContain("偽造場次");
+    document.cookie = `${LIVE_SESSION_RESULT_COOKIE}=; Max-Age=0; Path=/`;
+    const withChoice = await mountThanks({ startAt: "2026-11-02T19:00:00+08:00", label: "11月2日（週一） 19:00" });
     expect(withChoice.textContent).toContain("你選擇的場次：11月2日（週一） 19:00");
     expect(withChoice.querySelector("time")!.getAttribute("datetime")).toBe("2026-11-02T19:00:00+08:00");
   });

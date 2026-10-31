@@ -16,6 +16,7 @@ import { getNextPublicFunnelStepPath, getPublicFunnelPage } from "@/lib/funnel-p
 import { FUNNEL_VISITOR_COOKIE, recordPublicFunnelVisit, resolveFunnelVisitorId, resolvePublicFunnelRuntime } from "@/lib/funnel-runtime";
 import { loadPublicLandingPage } from "@/lib/landing-page-service";
 import { liveSessionsProp } from "@/lib/live-fixed-sessions";
+import { confirmedWebinarSession } from "@/lib/live-session-result-page";
 import { parseFunnelStepPages } from "@/lib/funnel-step-pages";
 
 export const dynamic = "force-dynamic";
@@ -64,7 +65,10 @@ export default async function PublicFunnelStepPage({ params, searchParams }: { s
   const event = funnelPublicRenderEvent(runtime.page.operations);
   await recordPublicFunnelVisit({ pageId: runtime.page.id, vendorId: runtime.page.vendorId, stepId: decision.renderedStepId, logicalStepId: decision.requestedStepId, visitorId, experiment: decision.experiment });
   const renderedStep = steps.flow.steps.find((candidate) => candidate.id === decision.renderedStepId);
-  if (steps.flow.goal === "webinar") return (await buildRetryBoundary(renderedStep?.type === "webinar_registration_page"))(<FunnelRegistrationLinkProvider value={publicRegistrationLinks(page.context)}><FunnelWebinarExperience initialViewport={initialViewport} event={event} state={steps} stepId={decision.renderedStepId} slug={page.slug} resource={page.webinar} funnelSource={{ landingPageId: page.id, stepId: decision.requestedStepId }} /></FunnelRegistrationLinkProvider>);
+  if (steps.flow.goal === "webinar") {
+    const confirmedLiveSession = await confirmedWebinarSession(page.webinar);
+    return (await buildRetryBoundary(renderedStep?.type === "webinar_registration_page"))(<FunnelRegistrationLinkProvider value={publicRegistrationLinks(page.context)}><FunnelWebinarExperience initialViewport={initialViewport} event={event} state={steps} stepId={decision.renderedStepId} slug={page.slug} resource={page.webinar} funnelSource={{ landingPageId: page.id, stepId: decision.requestedStepId }} confirmedLiveSession={confirmedLiveSession} /></FunnelRegistrationLinkProvider>);
+  }
   const rendered = getPublicFunnelPage(steps, renderedStep?.path);
   if (!rendered) notFound();
   const withRetry = await buildRetryBoundary(Boolean(page.submissionForm) && pageDocumentRendersRegistrationForm(rendered));

@@ -55,8 +55,11 @@ const Draft = z.object({
   answers: Answers,
   attribution: RegistrationAttributionSchema.optional(),
   liveId: z.string().max(128).nullable(),
-  status: z.union([z.literal(400), z.literal(403), z.literal(404), z.literal(429), z.literal(503)]),
+  status: z.union([z.literal(400), z.literal(403), z.literal(404), z.literal(409), z.literal(429), z.literal(503)]),
+  /** Why a fixed-session (指定場次) registration was refused, so the form names the right problem. */
+  reason: z.enum(["already_registered", "session_unavailable"]).optional(),
 }).strict();
+export type RegistrationRetryReason = NonNullable<RegistrationRetryDraft["reason"]>;
 export type RegistrationRetryDraft = z.infer<typeof Draft>;
 /** The tenant and size budget always come from the server-loaded form record, never from the request. */
 export type RegistrationRetryDraftInput = RegistrationRetryDraft & { vendorId: string; maxPayloadBytes?: number };
@@ -177,7 +180,7 @@ export async function readRegistrationRetryDraft(db: DraftDatabase, input: {
     if (consumed.count !== 1) return null;
     // Only refill data reaches the Client Component; never the capability,
     // lookup hash or tenant identifier.
-    return { formId: value.formId, sourcePath: value.sourcePath, answers: value.answers, liveId: value.liveId, status: value.status, ...(value.attribution ? { attribution: value.attribution } : {}) };
+    return { formId: value.formId, sourcePath: value.sourcePath, answers: value.answers, liveId: value.liveId, status: value.status, ...(value.reason ? { reason: value.reason } : {}), ...(value.attribution ? { attribution: value.attribution } : {}) };
   } catch {
     return null;
   }

@@ -6,6 +6,7 @@ import { independentFunnelBindsForm } from "@/lib/funnel-runtime";
 import { registrationAttribution } from "@/lib/registration-attribution";
 import { parseRegistrationFormFields, REGISTRATION_FORM_RESERVED_FIELDS } from "@/lib/registration-form-fields";
 import {
+  type RegistrationRetryReason,
   deleteRegistrationRetryDraft,
   REGISTRATION_RETRY_VALUE_LIMITS,
   registrationRetryCookieName,
@@ -16,7 +17,7 @@ import {
   saveRegistrationRetryDraft,
 } from "@/lib/registration-form-retry";
 
-export const REGISTRATION_RETRY_STATUSES = [400, 403, 404, 429, 503] as const;
+export const REGISTRATION_RETRY_STATUSES = [400, 403, 404, 409, 429, 503] as const;
 type RetryStatus = (typeof REGISTRATION_RETRY_STATUSES)[number];
 const LIVE_ID_PATTERN = /^[A-Za-z0-9_-]{1,128}$/u;
 
@@ -95,7 +96,7 @@ function retainSourceQuery(target: URL, sourcePath: string, data: FormData | nul
  * same-origin POST back to a public registration path, encrypted and bound to
  * that path and form.
  */
-export async function registrationRetryResponse(request: Request, data: FormData | null, status: number) {
+export async function registrationRetryResponse(request: Request, data: FormData | null, status: number, reason?: RegistrationRetryReason) {
   const returnPath = stringField(data, "__registrationReturnPath");
   const sourcePath = returnPath ? registrationRetrySourcePath(returnPath) : null;
   const origin = registrationRetryOrigin(request);
@@ -121,7 +122,7 @@ export async function registrationRetryResponse(request: Request, data: FormData
       if (form && valid) saved = await saveRegistrationRetryDraft(getDb(), {
         vendorId: form.vendorId, formId: form.id, sourcePath, answers, maxPayloadBytes: form.maxPayloadBytes,
         attribution: submittedAttribution(data),
-        liveId: stringField(data, "liveId") || null, status: errorStatus,
+        liveId: stringField(data, "liveId") || null, status: errorStatus, ...(reason && errorStatus === 409 ? { reason } : {}),
       });
     }
   } catch { /* Report "unavailable" honestly; never output fields or ciphertext. */ }

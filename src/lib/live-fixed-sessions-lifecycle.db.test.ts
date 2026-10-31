@@ -11,7 +11,8 @@ import { revealEmailDeliveryPayload } from "@/lib/email-delivery-pii";
 import { createFormSubmissionChatSessionToken, FORM_SUBMISSION_CHAT_SESSION_COOKIE } from "@/lib/form-submission-chat-session";
 import { createFormSubmissionVerificationToken } from "@/lib/form-submission-verification";
 import { verifyFormSubmission } from "@/lib/form-submission-verification-domain";
-import { queueFixedSessionCancellationNotices, resolveFixedSessionRechooseUrl } from "@/lib/live-fixed-session-notices";
+import { queueFixedSessionCancellationNotices, rechoosePathForRegistrationCookie, resolveFixedSessionRechooseUrl } from "@/lib/live-fixed-session-notices";
+import { verifyLiveSessionResultToken } from "@/lib/live-session-result";
 import { loadPublicRegistrationForm } from "@/lib/public-registration-form";
 import {
   loadPublicLiveSessions,
@@ -22,6 +23,7 @@ import {
 import { processDueLiveNotifications, supersedeFixedSessionDeliveries } from "@/lib/live-notification-delivery";
 import { fixedSessionLabel } from "@/lib/live-fixed-sessions";
 import { checkRateLimit } from "@/lib/rate-limit";
+import { readRegistrationRetryDraft } from "@/lib/registration-form-retry";
 
 /**
  * 指定場次 lifecycle (PR #529 review): temporary unverified seats, session
@@ -214,11 +216,45 @@ describe("re-registering moves between sessions (M-2)", () => {
       liveScheduledAt: first, reminderOffsetMinutes: 60, template: fx.reminderTemplate,
     });
 
-    // Knowing the email is not enough to move a confirmed registration, and the 409 reveals nothing about it.
-    expect(await register(fx, registrant.email, b!.id)).toEqual({ status: 409, body: { error: "Already registered for another session" } });
-    // A cookie of another registration does not count as this registrant's browser.
+    // Knowing the email is not enough to move a confirmed registration, and the
+    // answer is the same 200 a fresh registration gets: nothing about the
+    // existing one, no session and no result cookie. The real registrant is
+    // emailed instead, at most once per registration per clock hour.
     const stranger = await verifiedRegistrant(fx, b!.id, "stranger");
-    expect(await register(fx, registrant.email, b!.id, chatCookie(stranger.id))).toEqual({ status: 409, body: { error: "Already registered for another session" } });
+    const hour = Math.floor(Date.now() / HOUR) * HOUR;
+    const concealed = async (at: number, cookie?: string) => {
+      vi.useFakeTimers({ toFake: ["Date"], now: at });
+      try {
+        const response = await POST(new Request(`${APP}/api/form-submissions`, {
+          method: "POST",
+          headers: { "content-type": "application/json", origin: APP, "x-celebratedeal-client": "web", ...(cookie ? { cookie } : {}) },
+          body: JSON.stringify({ formId: fx.form.id, liveId: fx.live.id, liveSessionId: b!.id, payload: { name: "Synthetic Lead", email: registrant.email } }),
+        }));
+        expect(response.headers.getSetCookie().filter((value) => value.startsWith("celebratedeal_live_session_result="))).toEqual([]);
+        return { status: response.status, body: await response.json() as Record<string, unknown> };
+      } finally {
+        vi.useRealTimers();
+      }
+    };
+    const notices = () => getDb().emailDelivery.findMany({
+      where: { vendorId: fx.vendor.id, trigger: "fixed_session_already_registered" },
+      orderBy: { createdAt: "asc" },
+    });
+    expect(await concealed(hour + 20 * MINUTE)).toEqual({ status: 200, body: { ok: true, verificationRequired: true } });
+    // A cookie of another registration does not count as this registrant's browser.
+    expect(await concealed(hour + 25 * MINUTE, chatCookie(stranger.id))).toEqual({ status: 200, body: { ok: true, verificationRequired: true } });
+    const firstHour = await notices();
+    expect(firstHour.map((row) => [row.sourceFormSubmissionId, row.sourceLiveId, row.status])).toEqual([[registrant.id, fx.live.id, "queued"]]);
+    expect(firstHour[0]!.idempotencyKey).toMatch(new RegExp(`^fixed-session-already-registered/${a!.id}/${Math.floor(hour / HOUR)}/`, "u"));
+    const notice = reveal(firstHour[0]!);
+    expect(notice.recipientEmail).toBe(registrant.email);
+    expect(notice.body).toContain(`你已報名 ${fixedSessionLabel(first, "Asia/Taipei")} 場次`);
+    expect(notice.body).toContain("如需換場，請在原本報名的裝置上操作");
+    expect(notice.body).not.toContain(fixedSessionLabel(second, "Asia/Taipei"));
+    expect(await isCurrentEmailDeliverySnapshot(identity(firstHour[0]!), new Date())).toBe(true);
+    // The next clock hour may send one more.
+    expect((await concealed(hour + 80 * MINUTE)).status).toBe(200);
+    expect(await notices()).toHaveLength(2);
     await getDb().liveSession.update({ where: { id: b!.id }, data: { registeredCount: { decrement: 1 } } });
     await getDb().formSubmission.delete({ where: { id: stranger.id } });
     expect((await submissionByEmail(fx, registrant.email)).liveSessionId).toBe(a!.id);
@@ -258,8 +294,12 @@ describe("re-registering moves between sessions (M-2)", () => {
       status: 409,
       body: { error: "Already registered for another session", startAt: started!.startAt.toISOString(), sessionLabel: fixedSessionLabel(started!.startAt) },
     });
-    // ...anyone else who only knows the email is not.
-    expect(await register(fx, watching.email, open!.id)).toEqual({ status: 409, body: { error: "Already registered for another session" } });
+    // ...anyone else who only knows the email gets a fresh registration's answer.
+    expect(await register(fx, watching.email, open!.id)).toEqual({ status: 200, body: { ok: true, verificationRequired: true } });
+    expect((await getDb().emailDelivery.findMany({
+      where: { vendorId: fx.vendor.id, trigger: "fixed_session_already_registered" },
+      select: { sourceFormSubmissionId: true },
+    })).map((row) => row.sourceFormSubmissionId)).toEqual([watching.id]);
     expect((await submissionByEmail(fx, watching.email)).liveSessionId).toBe(started!.id);
 
     await verifiedRegistrant(fx, full!.id, "full");
@@ -395,19 +435,38 @@ describe("per-session timing (M-3, m-7)", () => {
 });
 
 describe("second review of PR #529", () => {
-  it("answers a confirmed registration with the session it holds and sets the thank-you cookie", async () => {
+  it("sets the signed HttpOnly thank-you cookie for the session held, and names it in the body only to the registration's own browser", async () => {
     const fx = await fixture("confirmed");
     const [a] = await sync(fx, [session(new Date("2030-10-30T06:00:00.000Z"), 5)]);
-    const response = await POST(new Request(`${APP}/api/form-submissions`, {
+    const email = `cookie-${fx.suffix}@example.test`;
+    const post = (cookie?: string) => POST(new Request(`${APP}/api/form-submissions`, {
       method: "POST",
-      headers: { "content-type": "application/json", origin: APP, "x-celebratedeal-client": "web" },
-      body: JSON.stringify({ formId: fx.form.id, liveId: fx.live.id, liveSessionId: a!.id, payload: { name: "Lead", email: `cookie-${fx.suffix}@example.test` } }),
+      headers: { "content-type": "application/json", origin: APP, "x-celebratedeal-client": "web", ...(cookie ? { cookie } : {}) },
+      body: JSON.stringify({ formId: fx.form.id, liveId: fx.live.id, liveSessionId: a!.id, payload: { name: "Lead", email } }),
     }));
-    expect(await response.json()).toEqual({ ok: true, verificationRequired: true, liveSession: { id: a!.id, startAt: "2030-10-30T06:00:00.000Z", label: "10月30日（週三） 14:00" } });
-    const cookie = response.headers.getSetCookie().find((value) => value.startsWith("celebratedeal_live_session_result="));
+    const expected = { id: a!.id, startAt: "2030-10-30T06:00:00.000Z", label: "10月30日（週三） 14:00", liveId: fx.live.id };
+    const resultCookie = (response: Response) => response.headers.getSetCookie().find((value) => value.startsWith("celebratedeal_live_session_result="));
+    const tokenOf = (cookie: string) => decodeURIComponent(cookie.split(";")[0]!.split("=").slice(1).join("="));
+
+    const fresh = await post();
+    // The JSON body is no oracle: it is the same for every registration.
+    expect(await fresh.json()).toEqual({ ok: true, verificationRequired: true });
+    const cookie = resultCookie(fresh);
     expect(cookie).toBeDefined();
-    expect(cookie).not.toMatch(/HttpOnly/iu);
-    expect(JSON.parse(decodeURIComponent(cookie!.split(";")[0]!.split("=").slice(1).join("=")))).toEqual({ id: a!.id, startAt: "2030-10-30T06:00:00.000Z", label: "10月30日（週三） 14:00", liveId: fx.live.id });
+    expect(cookie).toMatch(/;\s*HttpOnly/iu);
+    expect(cookie).toMatch(/;\s*Path=\/lp(?:;|$)/iu);
+    expect(cookie).toMatch(/;\s*SameSite=Lax/iu);
+    expect(cookie).toMatch(/;\s*Max-Age=1800/iu);
+    const token = tokenOf(cookie!);
+    expect(token).toMatch(/^lsr1\./u);
+    expect(verifyLiveSessionResultToken(token, fx.live.id)).toEqual(expected);
+    expect(verifyLiveSessionResultToken(token, randomUUID())).toBeNull();
+
+    // The registration's own browser (signed registration cookie) is told the session in the body too.
+    const submission = await submissionByEmail(fx, email);
+    const own = await post(chatCookie(submission.id));
+    expect(await own.json()).toEqual({ ok: true, verificationRequired: true, liveSession: { id: a!.id, startAt: expected.startAt, label: expected.label } });
+    expect(verifyLiveSessionResultToken(tokenOf(resultCookie(own)!), fx.live.id)).toEqual(expected);
   });
 
   it("sends the cancellation notice, not a confirmation, when a registrant verifies after their session was cancelled", async () => {
@@ -428,7 +487,15 @@ describe("second review of PR #529", () => {
     }));
     const location = new URL(response.headers.get("location")!);
     expect(location.searchParams.get("status")).toBe("session_cancelled");
-    expect(location.searchParams.get("rechoose")).toBe(`/form/${fx.form.slug}`);
+    // The page link carries no path a third party could craft; the page resolves
+    // it server-side from the signed registration cookie the redirect set.
+    expect(location.searchParams.has("rechoose")).toBe(false);
+    const registrationCookie = response.headers.getSetCookie().find((value) => value.startsWith(`${FORM_SUBMISSION_CHAT_SESSION_COOKIE}=`));
+    expect(registrationCookie).toBeDefined();
+    const registrationToken = decodeURIComponent(registrationCookie!.split(";")[0]!.split("=").slice(1).join("="));
+    expect(await rechoosePathForRegistrationCookie(registrationToken)).toBe(`/form/${fx.form.slug}`);
+    expect(await rechoosePathForRegistrationCookie(createFormSubmissionChatSessionToken({ submissionId: randomUUID() }))).toBeNull();
+    expect(await rechoosePathForRegistrationCookie("not-a-token")).toBeNull();
     const rows = await getDb().emailDelivery.findMany({ where: { vendorId: fx.vendor.id, sourceFormSubmissionId: submission.id }, select: { trigger: true } });
     expect(rows.map((row) => row.trigger).sort()).toEqual(["fixed_session_cancelled", "form_submission_verification"]);
     // Same identity as the studio/job notice: a later pass adds nothing.
@@ -535,5 +602,56 @@ describe("second review of PR #529", () => {
     await getDb().live.update({ where: { id: withdrawn.live.id }, data: { status: "draft" } });
     await processDuePostLiveFollowups({ now });
     expect(await getDb().emailDelivery.count({ where: { vendorId: withdrawn.vendor.id, trigger: "post_live_followup" } })).toBe(0);
+  });
+});
+
+describe("native (no-JavaScript) retries name the session problem (m-4)", () => {
+  it("tells an already-registered browser apart from a full session, and conceals both from anyone else", async () => {
+    const fx = await fixture("native-retry");
+    const [started, full, open] = await sync(fx, [
+      session(new Date(Date.now() - 10 * MINUTE)),
+      session(new Date(Date.now() + 2 * DAY), 1),
+      session(new Date(Date.now() + 3 * DAY)),
+    ]);
+    const sourcePath = `/form/${fx.form.slug}`;
+    const native = (email: string, liveSessionId: string, cookie?: string) => POST(new Request(`${APP}/api/form-submissions`, {
+      method: "POST",
+      headers: { origin: APP, "content-type": "application/x-www-form-urlencoded", ...(cookie ? { cookie } : {}) },
+      body: new URLSearchParams({ formId: fx.form.id, liveId: fx.live.id, liveSessionId, name: "Synthetic Lead", email, __registrationReturnPath: sourcePath, redirectTo: sourcePath }),
+    }));
+    const draftOf = async (response: Response) => {
+      const draft = response.headers.getSetCookie().find((value) => value.startsWith("__Host-celebratedeal_registration_retry="));
+      expect(draft).toBeDefined();
+      return readRegistrationRetryDraft(getDb(), { capability: draft!.split(";")[0]!.split("=").slice(1).join("="), formId: fx.form.id, sourcePath });
+    };
+
+    const watching = await verifiedRegistrant(fx, started!.id, "native-watching");
+    const own = await native(watching.email, full!.id, chatCookie(watching.id));
+    expect(own.status).toBe(303);
+    // The URL carries only the opaque status; the reason lives in the encrypted draft.
+    expect(own.headers.get("location")).toBe(`${APP}${sourcePath}?liveId=${fx.live.id}&registrationRetry=409`);
+    expect(await draftOf(own)).toMatchObject({ status: 409, reason: "already_registered", liveId: fx.live.id });
+
+    await verifiedRegistrant(fx, full!.id, "native-full");
+    const unavailable = await native(`native-late-${fx.suffix}@example.test`, full!.id);
+    expect(unavailable.headers.get("location")).toBe(`${APP}${sourcePath}?liveId=${fx.live.id}&registrationRetry=409`);
+    expect(await draftOf(unavailable)).toMatchObject({ status: 409, reason: "session_unavailable" });
+
+    // Without the registration's own browser the answer is whatever a fresh
+    // registration for that session gets: the same "unavailable" for the full
+    // session (not a success that would reveal the email is registered)...
+    const concealedFull = await native(watching.email, full!.id);
+    expect(concealedFull.headers.get("location")).toBe(unavailable.headers.get("location"));
+    expect(await draftOf(concealedFull)).toMatchObject({ status: 409, reason: "session_unavailable" });
+    // ...and the same success for an open one.
+    const fresh = await native(`native-fresh-${fx.suffix}@example.test`, open!.id);
+    const concealedOpen = await native(watching.email, open!.id);
+    expect(fresh.status).toBe(303);
+    expect(concealedOpen.status).toBe(303);
+    expect(concealedOpen.headers.get("location")).toBe(fresh.headers.get("location"));
+    expect(concealedOpen.headers.get("location")).toBe(`${APP}${sourcePath}?submitted=verification_required`);
+    expect((await submissionByEmail(fx, watching.email)).liveSessionId).toBe(started!.id);
+    // JSON clients the same: a fresh and a concealed request for the full session fail identically.
+    expect(await register(fx, watching.email, full!.id)).toEqual(await register(fx, `json-late-${fx.suffix}@example.test`, full!.id));
   });
 });

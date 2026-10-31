@@ -6,7 +6,7 @@ import { useRef, useState } from "react";
 import { RegistrationSubmissionFeedback } from "@/components/registration-submission-feedback";
 import { LineLoginButton } from "@/components/line-login-button";
 import { formSubmissionErrorMessage, FORM_SUBMISSION_VERIFICATION_MESSAGE, postRegistrationSubmission } from "@/lib/registration-submission-client";
-import { confirmedSessionFromResponse, describeLiveSessionFailure, LiveSessionPicker, useLiveSessionForm, type LiveSessionsData } from "@/components/landing-pages/live-session-picker";
+import { confirmedSessionFromResponse, describeLiveSessionFailure, LIVE_SESSION_CHECK_EMAIL_MESSAGE, LiveSessionPicker, useLiveSessionForm, type LiveSessionsData } from "@/components/landing-pages/live-session-picker";
 
 // Preserve the existing exports for callers while sharing the submission contract.
 export { formSubmissionErrorMessage, FORM_SUBMISSION_VERIFICATION_MESSAGE } from "@/lib/registration-submission-client";
@@ -77,8 +77,10 @@ function LeadFormSessionPicker({ picker, locked, themeColor }: { picker: ReturnT
   return <LiveSessionPicker selection={picker} locked={locked} accentStyle={{ "--live-session-accent": themeColor, "--live-session-accent-text": "#ffffff" } as React.CSSProperties} />;
 }
 
-function ConfirmedSessionNote({ label }: { label: string }) {
-  return label ? <p className="rounded-lg border border-emerald-100 bg-white p-4 text-sm font-semibold leading-6 text-emerald-800">你的場次：{label}</p> : null;
+/** The session is named only to the registration's own browser; otherwise the confirmation email carries it. */
+function ConfirmedSessionNote({ label, fixed }: { label: string; fixed: boolean }) {
+  if (!fixed) return null;
+  return <p className="rounded-lg border border-emerald-100 bg-white p-4 text-sm font-semibold leading-6 text-emerald-800">{label ? `你的場次：${label}` : LIVE_SESSION_CHECK_EMAIL_MESSAGE}</p>;
 }
 
 function hasFixedSessionLive(sessions: LeadFormSession[]) {
@@ -260,7 +262,7 @@ export function LeadForm({
       </> : null}
       <RegistrationSubmissionFeedback key="submission-feedback" pending={status === "loading"} errorMessage={status === "error" ? errorMessage || formSubmissionErrorMessage() : ""} successMessage={status === "success" ? successMessage : ""} focusSuccess />
       {status === "success" ? <div className="grid gap-3">
-        <ConfirmedSessionNote label={confirmedLabel} />
+        <ConfirmedSessionNote label={confirmedLabel} fixed={fixed} />
         <p className="rounded-lg border border-emerald-100 bg-white p-4 text-sm leading-6 text-emerald-800">{FORM_SUBMISSION_VERIFICATION_MESSAGE}</p>
         <LineLoginButton request={{ mode: "registration", redirectPath: retry?.sourcePath ?? (typeof window === "undefined" ? "/" : window.location.pathname) }}>
           🟢 接收 LINE 開播提醒與電子票券

@@ -12,7 +12,7 @@ it("keeps form editable when a shared URL claims success without proof", async (
   expect(html).toContain('name="email"');expect(html).not.toContain('disabled=""');expect(html).not.toContain("已送出");
 });
 
-it.each(["400", "403", "404", "429", "503", "unavailable"])("shared error URL %s does not prove submission failure", async (retry) => {
+it.each(["400", "403", "404", "409", "429", "503", "unavailable"])("shared error URL %s does not prove submission failure", async (retry) => {
   vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://app.example.test");
   const wrap = await registrationRetryBoundary({formId:"synthetic-form",sourcePath:"/form/synthetic",retry});
   const html = renderToStaticMarkup(wrap(<LeadForm formId="synthetic-form" fields={[{key:"email",type:"email",label:"Email",required:true}]} submitLabel="報名" successMessage="已送出" />));

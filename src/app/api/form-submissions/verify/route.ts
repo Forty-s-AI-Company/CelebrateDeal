@@ -35,11 +35,9 @@ function redirectResult(
   request: Request,
   status: "verified" | "invalid" | "retry" | "session_cancelled",
   chatSession?: { submissionId: string },
-  rechoosePath?: string | null,
 ) {
   const url = new URL("/verify-registration", getBrowserReturnAppUrl(request));
   url.searchParams.set("status", status);
-  if (rechoosePath) url.searchParams.set("rechoose", rechoosePath);
   const response = NextResponse.redirect(url, {
     status: 303,
     headers: { "Cache-Control": "private, no-store" },
@@ -59,8 +57,7 @@ type VerifiedConfirmation = NonNullable<Extract<Awaited<ReturnType<typeof verify
 /**
  * The registrant confirmed after their 指定場次 was cancelled: send the
  * cancellation notice (same identity as the studio/job notices) instead of
- * the confirmation, schedule no reminder, and return the relative path where
- * they can choose another session. Never fails the verified result.
+ * the confirmation and schedule no reminder. Never fails the verified result.
  */
 async function notifyCancelledSession(
   confirmation: VerifiedConfirmation,
@@ -81,15 +78,12 @@ async function notifyCancelledSession(
       emailBrand: confirmation.emailBrand,
     });
     scheduleImmediateEmailDispatch([notice.deliveryId]);
-    const url = new URL(notice.rechooseUrl);
-    return `${url.pathname}${url.search}`;
   } catch (error) {
     try {
       captureOperationalError(error, { source: "form_submission_verification", operation: "fixed_session_cancelled_notice", status: "failed" });
     } catch {
       // The email job queues the notice later.
     }
-    return null;
   }
 }
 
@@ -155,8 +149,10 @@ export async function POST(request: Request) {
   }
 
   if (result.status === "verified" && result.confirmation?.fixedSession?.status === "cancelled") {
-    const rechoosePath = await notifyCancelledSession(result.confirmation, result.confirmation.fixedSession);
-    return redirectResult(request, "session_cancelled", result.chatSession, rechoosePath);
+    await notifyCancelledSession(result.confirmation, result.confirmation.fixedSession);
+    // The page resolves the re-choose link itself from the signed registration
+    // cookie set here, so the URL carries nothing a phishing link could forge.
+    return redirectResult(request, "session_cancelled", result.chatSession);
   }
   if (result.status === "verified" && result.confirmation) {
     const { evergreen, fixedSession, liveFormId: ignoredLiveFormId, ...confirmation } = result.confirmation;

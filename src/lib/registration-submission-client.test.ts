@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { formSubmissionErrorMessage, postRegistrationSubmission } from "./registration-submission-client";
+import { ALREADY_REGISTERED_RETRY_MESSAGE, formSubmissionErrorMessage, postRegistrationSubmission } from "./registration-submission-client";
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -104,4 +104,12 @@ it("rejects manual opaque redirects and retains neutral retry guidance", async (
   expect(response.status).toBe(0);
   expect(formSubmissionErrorMessage(response.status)).not.toContain("網路");
   expect(formSubmissionErrorMessage(response.status)).toContain("內容仍保留");
+});
+
+describe("fixed-session native retry reasons (指定場次)", () => {
+  it("names an already held session apart from a full or closed slot", () => {
+    expect(formSubmissionErrorMessage(409, { fixedSessions: true, reason: "already_registered" })).toBe(ALREADY_REGISTERED_RETRY_MESSAGE);
+    expect(formSubmissionErrorMessage(409, { fixedSessions: true, reason: "session_unavailable" })).toBe("此時段已額滿或已截止，請改選其他時段");
+    expect(formSubmissionErrorMessage(409, { fixedSessions: true })).toBe("此時段已額滿或已截止，請改選其他時段");
+  });
 });

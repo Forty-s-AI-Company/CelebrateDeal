@@ -3,14 +3,18 @@ import { describe, expect, it, vi } from "vitest";
 
 // A forged success URL has no signed registrant session. Keep the real async
 // sharing component in this page regression, without a Next request context.
+const cookieJar = vi.hoisted(() => ({ value: undefined as string | undefined }));
 vi.mock("next/headers", () => ({
-  cookies: async () => ({ get: () => undefined }),
+  cookies: async () => ({ get: (name: string) => (name === "celebratedeal_form_submission_chat_session" && cookieJar.value ? { value: cookieJar.value } : undefined) }),
 }));
+const rechoose = vi.hoisted(() => vi.fn(async (token: string | null | undefined) => (token === "signed-registration" ? "/form/summer-live" : null)));
+vi.mock("@/lib/live-fixed-session-notices", () => ({ rechoosePathForRegistrationCookie: rechoose }));
 import VerifyRegistrationPage from "./page";
 
 const token = `fsv1.formsub_test.1780000000.1.${"a".repeat(43)}`;
 
 async function render(searchParams: { token?: string; status?: string; rechoose?: string }) {
+  // `rechoose` is only here to prove a crafted query parameter is ignored.
   const stream = await renderToReadableStream(await VerifyRegistrationPage({ searchParams: Promise.resolve(searchParams) }));
   await stream.allReady;
   return new Response(stream).text();
@@ -53,15 +57,20 @@ describe("VerifyRegistrationPage", () => {
 });
 
 describe("VerifyRegistrationPage cancelled session (指定場次)", () => {
-  it("says the session was cancelled and links only to a same-site registration path", async () => {
-    const html = await render({ status: "session_cancelled", rechoose: "/form/summer-live" });
+  it("links to the page resolved from the signed registration cookie, never to a URL parameter", async () => {
+    cookieJar.value = "signed-registration";
+    const html = await render({ status: "session_cancelled", rechoose: "https://evil.example/form/x" });
     expect(html).toContain("你報名的場次已取消");
     expect(html).toContain('href="/form/summer-live"');
+    expect(html).not.toContain("evil.example");
     expect(html).not.toContain('action="/api/form-submissions/verify"');
-    for (const rechoose of ["https://evil.example/form/x", "//evil.example/lp/x", "/admin/lives", "/lp/"]) {
-      const unsafe = await render({ status: "session_cancelled", rechoose });
-      expect(unsafe).toContain("你報名的場次已取消");
-      expect(unsafe).not.toContain("重新選擇場次</a>");
-    }
+    expect(rechoose).toHaveBeenLastCalledWith("signed-registration");
+
+    // Without that cookie (a forwarded link, another browser) there is no link at all.
+    cookieJar.value = undefined;
+    const crafted = await render({ status: "session_cancelled", rechoose: "/lp/phishing" });
+    expect(crafted).toContain("你報名的場次已取消");
+    expect(crafted).not.toContain("重新選擇場次</a>");
+    expect(crafted).not.toContain("/lp/phishing");
   });
 });
