@@ -97,6 +97,11 @@ const nextConfig: NextConfig = {
       { source: "/api/auth/email-change/confirm", headers: [{ key: "Referrer-Policy", value: "no-referrer" }] },
       { source: "/revert-email-change", headers: [{ key: "Referrer-Policy", value: "no-referrer" }] },
       { source: "/api/auth/email-change/revert", headers: [{ key: "Referrer-Policy", value: "no-referrer" }] },
+      // Same-origin, not no-referrer: the page's confirm POST must carry a real
+      // Origin (no-referrer makes it "null", which the switch API refuses). The
+      // page loads nothing from other sites, so the token still never leaves.
+      { source: "/live-session-switch", headers: [{ key: "Referrer-Policy", value: "same-origin" }] },
+      { source: "/api/live-session-switch", headers: [{ key: "Referrer-Policy", value: "no-referrer" }] },
       {
         // Only the authenticated studio document may request capture permissions.
         source: "/lives/:id/presenter",

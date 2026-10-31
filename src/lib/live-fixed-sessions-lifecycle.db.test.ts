@@ -236,7 +236,7 @@ describe("re-registering moves between sessions (M-2)", () => {
     expect(await concealed(chatCookie(stranger.id))).toEqual({ status: 200, body: { ok: true, verificationRequired: true } });
     const notices = await getDb().emailDelivery.findMany({ where: { vendorId: fx.vendor.id, trigger: "fixed_session_already_registered" } });
     expect(notices.map((row) => [row.sourceFormSubmissionId, row.sourceLiveId, row.status])).toEqual([[registrant.id, fx.live.id, "queued"]]);
-    expect(notices[0]!.idempotencyKey).toBe(`fixed-session-already-registered/${a!.id}/${b!.id}/${notices[0]!.id}`);
+    expect(notices[0]!.idempotencyKey).toMatch(new RegExp(`^fixed-session-already-registered/${a!.id}/${b!.id}/w\\d+/${notices[0]!.id}$`, "u"));
     const notice = reveal(notices[0]!);
     expect(notice.recipientEmail).toBe(registrant.email);
     expect(notice.body).toContain(`你已報名 ${fixedSessionLabel(first, "Asia/Taipei")} 場次`);
