@@ -12,7 +12,8 @@ const TASK = "wp2-readonly-restore";
 const GITHUB_API_ORIGIN = "https://api.github.com";
 const GITHUB_REPOSITORY = "Forty-s-AI-Company/CelebrateDeal";
 const GITHUB_ENVIRONMENT = "Preview – celebrate-deal-staging";
-const GITHUB_DEPLOYMENT_PAGE_SIZE = 10;
+// GitHub caps per_page at 100; with the page limit below this covers 1000 records per sha.
+const GITHUB_DEPLOYMENT_PAGE_SIZE = 100;
 const GITHUB_STATUS_PAGE_SIZE = 1;
 // Total GitHub reads: deployment list pages plus statuses reads of Vercel-created candidates.
 const GITHUB_READ_BUDGET = 20;
