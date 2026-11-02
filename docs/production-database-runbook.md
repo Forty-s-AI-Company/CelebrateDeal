@@ -132,7 +132,7 @@ owner 決策 D-41：Production migration 由 owner 核准、經 workflow 執行�
 
 1. GitHub → Settings → Environments 建立 `production`：設定 required reviewers（owner），並勾選只允許 protected branch（`master`）。
 2. 在 `production` environment 設定 secret `PRODUCTION_DATABASE_URL`：Supabase pooler 的 session 連線（`postgres.awigitueyqdqaqwbjdgu@aws-N-<region>.pooler.supabase.com`；6543 會自動改用 5432）。腳本只接受固定的 Production project ref，遇到 staging ref 會拒絕。
-3. 建立 Production 備份 workflow：路徑固定為 `.github/workflows/production-backup.yml`（寫在 `scripts/production-migrate.mjs` 的 `PRODUCTION_BACKUP_WORKFLOW`，改動需經 PR 審查），只能備份固定的 Production 專案（不得有 target 之類的 input），成功時上傳名為 `production-database-backup-<run id>` 的 artifact。**目前 repo 還沒有這個 workflow**，所以 `deploy` 一律回 `BACKUP_RUN_WRONG_WORKFLOW` 或 `BACKUP_ARTIFACT_MISSING`，不會連線資料庫。若 owner 改用 Supabase dashboard／PITR 備份，仍需由該 workflow 產生上述 artifact（例如記錄 restore point 的 receipt）。
+3. 建立 Production 備份 workflow：路徑固定為 `.github/workflows/production-backup.yml`（寫在 `scripts/production-migrate.mjs` 的 `PRODUCTION_BACKUP_WORKFLOW`，改動需經 PR 審查），只能備份固定的 Production 專案（不得有 target 之類的 input），成功時上傳名為 `production-database-backup-<run id>` 的 artifact。這個 workflow 已建立（`scripts/production-backup.mjs`）：同樣掛在 `production` environment、只用 `PRODUCTION_DATABASE_URL`，artifact 只含 age 密文與不含資料的 receipt。觸發、核准、失敗代碼與還原演練見 `docs/operations/production-backup-restore-runbook.md`。沒有成功的備份 run 時，`deploy` 仍一律回 `BACKUP_RUN_*` 或 `BACKUP_ARTIFACT_MISSING`，不會連線資料庫。若 owner 改用 Supabase dashboard／PITR 備份，仍需由該 workflow 產生上述 artifact。
 
 **每次部署**
 
