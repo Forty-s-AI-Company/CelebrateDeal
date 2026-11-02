@@ -31,21 +31,38 @@ const deploymentsPath = "/repos/Forty-s-AI-Company/CelebrateDeal/deployments";
 
 function actionsDeployment(id, index = id) {
   // Mirrors the record an Actions job bound to the staging environment leaves behind.
-  return { id, sha, environment: stagingEnvironment, production_environment: false, creator: index % 2 === 0 ? ownerCreator : actionsCreator, payload: {} };
+  return { id, sha, ref: "master", environment: stagingEnvironment, production_environment: false, creator: index % 2 === 0 ? ownerCreator : actionsCreator, payload: {} };
 }
 
 function vercelDeployment(id) {
-  return { id, sha, environment: stagingEnvironment, production_environment: false, creator: vercelCreator };
+  return { id, sha, ref: sha, environment: stagingEnvironment, production_environment: false, creator: vercelCreator };
 }
 
 // GitHub's real Link header: next+last on earlier pages, prev+first (no next, no last) on the final page.
 function githubLink(page, lastPage) {
-  const link = (target, rel) => `<https://api.github.com${deploymentsPath}?sha=${sha}&per_page=100&page=${target}>; rel="${rel}"`;
+  const link = (target, rel) => `<https://api.github.com${deploymentsPath}?sha=${sha}&ref=${sha}&per_page=100&page=${target}>; rel="${rel}"`;
   const entries = [];
   if (page > 1) entries.push(link(page - 1, "prev"));
   if (page < lastPage) entries.push(link(page + 1, "next"), link(lastPage, "last"));
   if (page > 1) entries.push(link(1, "first"));
   return entries.length > 0 ? { Link: entries.join(", ") } : {};
+}
+
+// Fake GitHub: the deployments listing honours the ref query parameter like the real API.
+function honoringRef(fetchImpl) {
+  return async (input, init) => {
+    const response = await fetchImpl(input, init);
+    const request = new URL(String(input));
+    if (request.pathname !== deploymentsPath || response.status !== 200) return response;
+    const ref = request.searchParams.get("ref");
+    const body = await response.json();
+    const filtered = Array.isArray(body) ? body.filter((item) => item?.ref === ref) : body;
+    return new Response(JSON.stringify(filtered), { status: response.status, headers: response.headers });
+  };
+}
+
+function verifyThroughGitHub(source, fetchImpl) {
+  return verifyDeployment(source, honoringRef(fetchImpl));
 }
 
 function environment() {
@@ -102,14 +119,14 @@ test("cross-project database identity and non-Preview hosts fail closed", () => 
 test("deployment verification requires one exact non-production successful Preview", async () => {
   const source = environment();
   const responses = [
-    new Response(JSON.stringify([{ id: 42, sha, environment: "Preview – celebrate-deal-staging", production_environment: false, creator: vercelCreator }]), { status: 200 }),
+    new Response(JSON.stringify([{ id: 42, sha, ref: sha, environment: "Preview – celebrate-deal-staging", production_environment: false, creator: vercelCreator }]), { status: 200 }),
     new Response(JSON.stringify([{ state: "success", environment_url: "https://safe-preview.vercel.app" }]), { status: 200 }),
   ];
-  const result = await verifyDeployment(source, async () => responses.shift());
+  const result = await verifyThroughGitHub(source, async () => responses.shift());
   assert.equal(result.sourceMatched, true);
   assert.equal(result.reads, 2);
-  const productionResponses = [new Response(JSON.stringify([{ id: 42, sha, environment: "Preview – celebrate-deal-staging", production_environment: true, creator: vercelCreator }]), { status: 200 })];
-  await assert.rejects(verifyDeployment(source, async () => productionResponses.shift()), /GITHUB_DEPLOYMENT_AMBIGUOUS/u);
+  const productionResponses = [new Response(JSON.stringify([{ id: 42, sha, ref: sha, environment: "Preview – celebrate-deal-staging", production_environment: true, creator: vercelCreator }]), { status: 200 })];
+  await assert.rejects(verifyThroughGitHub(source, async () => productionResponses.shift()), /GITHUB_DEPLOYMENT_AMBIGUOUS/u);
 });
 
 test("deployment verification reads every candidate and ignores latest failure records", async () => {
@@ -117,13 +134,13 @@ test("deployment verification reads every candidate and ignores latest failure r
   const requests = [];
   const responses = [
     new Response(JSON.stringify([
-      { id: 41, sha, environment: "Preview – celebrate-deal-staging", production_environment: false, creator: vercelCreator },
-      { id: 42, sha, environment: "Preview – celebrate-deal-staging", production_environment: false, creator: vercelCreator },
+      { id: 41, sha, ref: sha, environment: "Preview – celebrate-deal-staging", production_environment: false, creator: vercelCreator },
+      { id: 42, sha, ref: sha, environment: "Preview – celebrate-deal-staging", production_environment: false, creator: vercelCreator },
     ]), { status: 200 }),
     new Response(JSON.stringify([{ state: "failure", environment_url: "https://safe-preview.vercel.app" }]), { status: 200 }),
     new Response(JSON.stringify([{ state: "success", environment_url: "https://safe-preview.vercel.app/" }]), { status: 200 }),
   ];
-  const result = await verifyDeployment(source, async (input) => {
+  const result = await verifyThroughGitHub(source, async (input) => {
     requests.push(new URL(String(input)));
     return responses.shift();
   });
@@ -143,8 +160,8 @@ test("deployment verification follows a Link-header page for a unique exact-host
   const source = environment();
   const requests = [];
   const pageOne = [
-    { id: 41, sha, environment: "Preview – celebrate-deal-staging", production_environment: false, creator: vercelCreator },
-    ...Array.from({ length: 99 }, (_, index) => ({ id: 100 + index, sha: "f".repeat(40), environment: "Preview – celebrate-deal-staging", production_environment: false, creator: vercelCreator })),
+    { id: 41, sha, ref: sha, environment: "Preview – celebrate-deal-staging", production_environment: false, creator: vercelCreator },
+    ...Array.from({ length: 99 }, (_, index) => ({ id: 100 + index, sha: "f".repeat(40), ref: sha, environment: "Preview – celebrate-deal-staging", production_environment: false, creator: vercelCreator })),
   ];
   const responses = [
     new Response(JSON.stringify(pageOne), {
@@ -152,10 +169,10 @@ test("deployment verification follows a Link-header page for a unique exact-host
       headers: { Link: '<https://api.github.com/repos/Forty-s-AI-Company/CelebrateDeal/deployments?page=2>; rel="next"' },
     }),
     new Response(JSON.stringify([{ state: "failure", environment_url: "https://safe-preview.vercel.app" }]), { status: 200 }),
-    new Response(JSON.stringify([{ id: 42, sha, environment: "Preview – celebrate-deal-staging", production_environment: false, creator: vercelCreator }]), { status: 200 }),
+    new Response(JSON.stringify([{ id: 42, sha, ref: sha, environment: "Preview – celebrate-deal-staging", production_environment: false, creator: vercelCreator }]), { status: 200 }),
     new Response(JSON.stringify([{ state: "success", target_url: "https://safe-preview.vercel.app/" }]), { status: 200 }),
   ];
-  const result = await verifyDeployment(source, async (input) => {
+  const result = await verifyThroughGitHub(source, async (input) => {
     requests.push(new URL(String(input)));
     return responses.shift();
   });
@@ -168,12 +185,12 @@ test("deployment verification follows a Link-header page for a unique exact-host
 test("deployment verification rejects a malformed Link header before accepting page-one success", async () => {
   const source = environment();
   const pageOne = [
-    { id: 42, sha, environment: "Preview – celebrate-deal-staging", production_environment: false, creator: vercelCreator },
-    ...Array.from({ length: 99 }, (_, index) => ({ id: 300 + index, sha: "f".repeat(40), environment: "Preview – celebrate-deal-staging", production_environment: false, creator: vercelCreator })),
+    { id: 42, sha, ref: sha, environment: "Preview – celebrate-deal-staging", production_environment: false, creator: vercelCreator },
+    ...Array.from({ length: 99 }, (_, index) => ({ id: 300 + index, sha: "f".repeat(40), ref: sha, environment: "Preview – celebrate-deal-staging", production_environment: false, creator: vercelCreator })),
   ];
   const requests = [];
   await assert.rejects(
-    verifyDeployment(source, async (input) => {
+    verifyThroughGitHub(source, async (input) => {
       requests.push(new URL(String(input)));
       return new Response(JSON.stringify(pageOne), { status: 200, headers: { Link: "malformed-pagination" } });
     }),
@@ -186,13 +203,13 @@ test("deployment verification accepts a valid terminal Link header without next"
   const source = environment();
   const requests = [];
   const responses = [
-    new Response(JSON.stringify([{ id: 42, sha, environment: "Preview – celebrate-deal-staging", production_environment: false, creator: vercelCreator }]), {
+    new Response(JSON.stringify([{ id: 42, sha, ref: sha, environment: "Preview – celebrate-deal-staging", production_environment: false, creator: vercelCreator }]), {
       status: 200,
       headers: { Link: '<https://api.github.com/repos/Forty-s-AI-Company/CelebrateDeal/deployments?page=1>; rel="last"' },
     }),
     new Response(JSON.stringify([{ state: "success", environment_url: "https://safe-preview.vercel.app" }]), { status: 200 }),
   ];
-  const result = await verifyDeployment(source, async (input) => {
+  const result = await verifyThroughGitHub(source, async (input) => {
     requests.push(new URL(String(input)));
     return responses.shift();
   });
@@ -205,17 +222,17 @@ test("deployment verification reads across full pages before rejecting multiple 
   const source = environment();
   const requests = [];
   const pageOne = [
-    { id: 41, sha, environment: "Preview – celebrate-deal-staging", production_environment: false, creator: vercelCreator },
-    ...Array.from({ length: 99 }, (_, index) => ({ id: 200 + index, sha, environment: "Preview – celebrate-deal-staging", production_environment: true, creator: vercelCreator })),
+    { id: 41, sha, ref: sha, environment: "Preview – celebrate-deal-staging", production_environment: false, creator: vercelCreator },
+    ...Array.from({ length: 99 }, (_, index) => ({ id: 200 + index, sha, ref: sha, environment: "Preview – celebrate-deal-staging", production_environment: true, creator: vercelCreator })),
   ];
   const responses = [
     new Response(JSON.stringify(pageOne), { status: 200 }),
     new Response(JSON.stringify([{ state: "success", environment_url: "https://safe-preview.vercel.app" }]), { status: 200 }),
-    new Response(JSON.stringify([{ id: 42, sha, environment: "Preview – celebrate-deal-staging", production_environment: false, creator: vercelCreator }]), { status: 200 }),
+    new Response(JSON.stringify([{ id: 42, sha, ref: sha, environment: "Preview – celebrate-deal-staging", production_environment: false, creator: vercelCreator }]), { status: 200 }),
     new Response(JSON.stringify([{ state: "success", target_url: "https://safe-preview.vercel.app/" }]), { status: 200 }),
   ];
   await assert.rejects(
-    verifyDeployment(source, async (input) => {
+    verifyThroughGitHub(source, async (input) => {
       requests.push(new URL(String(input)));
       return responses.shift();
     }),
@@ -229,15 +246,15 @@ test("deployment verification fails closed when pagination exhausts the total Gi
   const source = environment();
   const requests = [];
   await assert.rejects(
-    verifyDeployment(source, async (input) => {
+    verifyThroughGitHub(source, async (input) => {
       const request = new URL(String(input));
       requests.push(request);
       if (request.pathname.endsWith("/statuses")) {
         return new Response(JSON.stringify([{ state: "failure", environment_url: "https://safe-preview.vercel.app" }]), { status: 200 });
       }
       const page = Number(request.searchParams.get("page"));
-      // Full 100-item pages: 10 Vercel records each, padded with Actions records that must not spend the budget.
-      const deployments = Array.from({ length: 100 }, (_, index) => (index < 10 ? { id: page * 1000 + index, sha, environment: "Preview – celebrate-deal-staging", production_environment: false, creator: vercelCreator } : actionsDeployment(page * 1000 + index, index)));
+      // Full 100-item pages: 10 Vercel records each; the padded Actions records (ref "master") are dropped by the ref filter.
+      const deployments = Array.from({ length: 100 }, (_, index) => (index < 10 ? { id: page * 1000 + index, sha, ref: sha, environment: "Preview – celebrate-deal-staging", production_environment: false, creator: vercelCreator } : actionsDeployment(page * 1000 + index, index)));
       return new Response(JSON.stringify(deployments), {
         status: 200,
         headers: { Link: `<https://api.github.com/repos/Forty-s-AI-Company/CelebrateDeal/deployments?page=${page + 1}>; rel="next"` },
@@ -253,11 +270,11 @@ test("deployment verification fails closed when pagination exhausts the total Gi
 test("deployment verification fails closed with zero successful exact-host candidates", async () => {
   const source = environment();
   const responses = [
-    new Response(JSON.stringify([{ id: 42, sha, environment: "Preview – celebrate-deal-staging", production_environment: false, creator: vercelCreator }]), { status: 200 }),
+    new Response(JSON.stringify([{ id: 42, sha, ref: sha, environment: "Preview – celebrate-deal-staging", production_environment: false, creator: vercelCreator }]), { status: 200 }),
     new Response(JSON.stringify([{ state: "failure", environment_url: "https://safe-preview.vercel.app" }]), { status: 200 }),
   ];
   await assert.rejects(
-    verifyDeployment(source, async () => responses.shift()),
+    verifyThroughGitHub(source, async () => responses.shift()),
     /GITHUB_DEPLOYMENT_LINEAGE_MISMATCH/u,
   );
 });
@@ -266,14 +283,14 @@ test("deployment verification fails closed with multiple successful exact-host c
   const source = environment();
   const responses = [
     new Response(JSON.stringify([
-      { id: 41, sha, environment: "Preview – celebrate-deal-staging", production_environment: false, creator: vercelCreator },
-      { id: 42, sha, environment: "Preview – celebrate-deal-staging", production_environment: false, creator: vercelCreator },
+      { id: 41, sha, ref: sha, environment: "Preview – celebrate-deal-staging", production_environment: false, creator: vercelCreator },
+      { id: 42, sha, ref: sha, environment: "Preview – celebrate-deal-staging", production_environment: false, creator: vercelCreator },
     ]), { status: 200 }),
     new Response(JSON.stringify([{ state: "success", environment_url: "https://safe-preview.vercel.app" }]), { status: 200 }),
     new Response(JSON.stringify([{ state: "success", target_url: "https://safe-preview.vercel.app/" }]), { status: 200 }),
   ];
   await assert.rejects(
-    verifyDeployment(source, async () => responses.shift()),
+    verifyThroughGitHub(source, async () => responses.shift()),
     /GITHUB_DEPLOYMENT_AMBIGUOUS/u,
   );
 });
@@ -281,14 +298,14 @@ test("deployment verification fails closed with multiple successful exact-host c
 test("deployment verification accepts GitHub target_url and rejects conflicting status URLs", async () => {
   const source = environment();
   const targetUrlResponses = [
-    new Response(JSON.stringify([{ id: 42, sha, environment: "Preview – celebrate-deal-staging", production_environment: false, creator: vercelCreator }]), { status: 200 }),
+    new Response(JSON.stringify([{ id: 42, sha, ref: sha, environment: "Preview – celebrate-deal-staging", production_environment: false, creator: vercelCreator }]), { status: 200 }),
     new Response(JSON.stringify([{ state: "success", target_url: "https://safe-preview.vercel.app" }]), { status: 200 }),
   ];
-  const result = await verifyDeployment(source, async () => targetUrlResponses.shift());
+  const result = await verifyThroughGitHub(source, async () => targetUrlResponses.shift());
   assert.equal(result.deploymentMatched, true);
 
   const conflictingResponses = [
-    new Response(JSON.stringify([{ id: 42, sha, environment: "Preview – celebrate-deal-staging", production_environment: false, creator: vercelCreator }]), { status: 200 }),
+    new Response(JSON.stringify([{ id: 42, sha, ref: sha, environment: "Preview – celebrate-deal-staging", production_environment: false, creator: vercelCreator }]), { status: 200 }),
     new Response(JSON.stringify([{
       state: "success",
       environment_url: "https://safe-preview.vercel.app",
@@ -296,12 +313,13 @@ test("deployment verification accepts GitHub target_url and rejects conflicting 
     }]), { status: 200 }),
   ];
   await assert.rejects(
-    verifyDeployment(source, async () => conflictingResponses.shift()),
+    verifyThroughGitHub(source, async () => conflictingResponses.shift()),
     /GITHUB_DEPLOYMENT_LINEAGE_MISMATCH/u,
   );
 });
 
-function pagedDeploymentFetch(pages, statusesById, requests) {
+// Fake GitHub listing over a flat, newest-first record set. honorRef=false simulates an API that ignores ref.
+function fakeDeploymentsApi(records, statusesById, requests, { honorRef = true } = {}) {
   return async (input) => {
     const request = new URL(String(input));
     requests.push(request);
@@ -309,97 +327,126 @@ function pagedDeploymentFetch(pages, statusesById, requests) {
       const id = Number(request.pathname.split("/").at(-2));
       return new Response(JSON.stringify(statusesById[id] ?? [{ state: "failure" }]), { status: 200 });
     }
+    const ref = request.searchParams.get("ref");
+    const matching = honorRef ? records.filter((item) => item.ref === ref) : records;
+    const pageSize = Number(request.searchParams.get("per_page"));
     const page = Number(request.searchParams.get("page"));
-    const headers = githubLink(page, pages.length);
-    return new Response(JSON.stringify(pages[page - 1] ?? []), { status: 200, headers });
+    const lastPage = Math.max(1, Math.ceil(matching.length / pageSize));
+    return new Response(JSON.stringify(matching.slice((page - 1) * pageSize, page * pageSize)), { status: 200, headers: githubLink(page, lastPage) });
   };
 }
 
-test("deployment verification skips Actions-created records and finds the Vercel record on a later page", async () => {
+const exactHostSuccess = Object.freeze([{ state: "success", environment_url: "https://safe-preview.vercel.app" }]);
+const actionsRecords = (count, firstId = 900) => Array.from({ length: count }, (_, index) => actionsDeployment(firstId + index, index));
+const listRequests = (requests) => requests.filter((request) => request.pathname === deploymentsPath);
+const statusRequests = (requests) => requests.filter((request) => request.pathname.endsWith("/statuses"));
+
+test("deployment verification lists by sha, exact source ref and environment so Actions records are never returned", async () => {
   const source = environment();
   const requests = [];
-  // 2026-11-02 shape: 18 Actions records for the sha, newest first, and the Vercel record last.
-  const actions = Array.from({ length: 180 }, (_, index) => actionsDeployment(900 + index, index));
-  const pages = [actions.slice(0, 100), [...actions.slice(100), vercelDeployment(7464859261)]];
-  const statusesById = Object.fromEntries(actions.map((item) => [item.id, [{ state: "success", environment_url: "https://safe-preview.vercel.app" }]]));
-  statusesById[7464859261] = [{ state: "success", environment_url: "https://safe-preview.vercel.app" }];
+  // 2026-11-02 shape scaled to the new page size: many Actions records (ref "master"), the Vercel record (ref = sha) last.
+  const records = [...actionsRecords(180), vercelDeployment(7464859261)];
+  const statusesById = Object.fromEntries(records.map((item) => [item.id, exactHostSuccess]));
 
-  const result = await verifyDeployment(source, pagedDeploymentFetch(pages, statusesById, requests));
+  const result = await verifyDeployment(source, fakeDeploymentsApi(records, statusesById, requests));
+
+  assert.equal(result.deploymentMatched, true);
+  assert.equal(result.reads, 2);
+  assert.equal(listRequests(requests).length, 1);
+  for (const request of listRequests(requests)) {
+    assert.equal(request.searchParams.get("sha"), sha);
+    assert.equal(request.searchParams.get("ref"), sha);
+    assert.equal(request.searchParams.getAll("ref").length, 1);
+    assert.equal(request.searchParams.get("environment"), stagingEnvironment);
+    assert.equal(request.searchParams.get("per_page"), "100");
+  }
+  assert.deepEqual(statusRequests(requests).map((request) => request.pathname), [`${deploymentsPath}/7464859261/statuses`]);
+});
+
+test("deployment verification still skips Actions records when the API ignores ref, across pages", async () => {
+  const source = environment();
+  const requests = [];
+  const records = [...actionsRecords(180), vercelDeployment(7464859261)];
+  // Even Actions records whose status points at the exact host must not be read or trusted.
+  const statusesById = Object.fromEntries(records.map((item) => [item.id, exactHostSuccess]));
+
+  const result = await verifyDeployment(source, fakeDeploymentsApi(records, statusesById, requests, { honorRef: false }));
 
   assert.equal(result.deploymentMatched, true);
   assert.equal(result.host, "safe-preview.vercel.app");
   assert.equal(result.reads, 3);
-  assert.deepEqual(requests.filter((request) => request.pathname === deploymentsPath).map((request) => request.searchParams.get("page")), ["1", "2"]);
-  assert.deepEqual(requests.filter((request) => request.pathname.endsWith("/statuses")).map((request) => request.pathname), [`${deploymentsPath}/7464859261/statuses`]);
+  assert.deepEqual(listRequests(requests).map((request) => request.searchParams.get("page")), ["1", "2"]);
+  assert.deepEqual(statusRequests(requests).map((request) => request.pathname), [`${deploymentsPath}/7464859261/statuses`]);
 });
 
 test("deployment verification reports a missing Vercel record distinctly and never reads Actions statuses", async () => {
   const source = environment();
-  const requests = [];
-  const actions = Array.from({ length: 180 }, (_, index) => actionsDeployment(900 + index, index));
-  // Even an Actions record whose status points at the exact host must not be trusted.
-  const statusesById = Object.fromEntries(actions.map((item) => [item.id, [{ state: "success", environment_url: "https://safe-preview.vercel.app" }]]));
+  const actions = actionsRecords(180);
+  const statusesById = Object.fromEntries(actions.map((item) => [item.id, exactHostSuccess]));
+
+  // An API that ignores ref returns only Actions records: the creator filter yields the dedicated error.
+  const ignoringRequests = [];
   await assert.rejects(
-    verifyDeployment(source, pagedDeploymentFetch([actions.slice(0, 100), actions.slice(100)], statusesById, requests)),
+    verifyDeployment(source, fakeDeploymentsApi(actions, statusesById, ignoringRequests, { honorRef: false })),
     /GITHUB_DEPLOYMENT_NO_VERCEL_CANDIDATE/u,
   );
-  assert.equal(requests.filter((request) => request.pathname.endsWith("/statuses")).length, 0);
-  assert.equal(requests.length, 2);
+  assert.equal(statusRequests(ignoringRequests).length, 0);
+  assert.equal(ignoringRequests.length, 2);
 
-  // No environment record at all keeps the pre-existing error.
-  await assert.rejects(verifyDeployment(source, pagedDeploymentFetch([[]], {}, [])), /GITHUB_DEPLOYMENT_AMBIGUOUS/u);
+  // With ref honoured nothing is listed at all, which keeps the pre-existing error.
+  const honouringRequests = [];
+  await assert.rejects(verifyDeployment(source, fakeDeploymentsApi(actions, statusesById, honouringRequests)), /GITHUB_DEPLOYMENT_AMBIGUOUS/u);
+  assert.equal(statusRequests(honouringRequests).length, 0);
+  await assert.rejects(verifyDeployment(source, fakeDeploymentsApi([], {}, [])), /GITHUB_DEPLOYMENT_AMBIGUOUS/u);
 });
 
 test("deployment verification does not trust a vercel[bot] login without the Bot creator type", async () => {
   const source = environment();
   const requests = [];
   const spoofed = { ...vercelDeployment(42), creator: { login: "vercel[bot]", type: "User" } };
-  const missingCreator = { id: 43, sha, environment: stagingEnvironment, production_environment: false };
+  const missingCreator = { id: 43, sha, ref: sha, environment: stagingEnvironment, production_environment: false };
   await assert.rejects(
-    verifyDeployment(source, pagedDeploymentFetch([[spoofed, missingCreator]], { 42: [{ state: "success", environment_url: "https://safe-preview.vercel.app" }] }, requests)),
+    verifyDeployment(source, fakeDeploymentsApi([spoofed, missingCreator], { 42: exactHostSuccess, 43: exactHostSuccess }, requests)),
     /GITHUB_DEPLOYMENT_NO_VERCEL_CANDIDATE/u,
   );
-  assert.equal(requests.filter((request) => request.pathname.endsWith("/statuses")).length, 0);
+  assert.equal(statusRequests(requests).length, 0);
 });
 
 test("deployment verification rejects a Vercel record whose host does not match", async () => {
   const source = environment();
-  const actions = Array.from({ length: 180 }, (_, index) => actionsDeployment(900 + index, index));
-  const pages = [actions.slice(0, 100), [...actions.slice(100), vercelDeployment(7464859261)]];
+  const records = [...actionsRecords(180), vercelDeployment(7464859261)];
   const statusesById = { 7464859261: [{ state: "success", environment_url: "https://other-preview.vercel.app" }] };
-  await assert.rejects(verifyDeployment(source, pagedDeploymentFetch(pages, statusesById, [])), /GITHUB_DEPLOYMENT_LINEAGE_MISMATCH/u);
+  await assert.rejects(verifyDeployment(source, fakeDeploymentsApi(records, statusesById, [])), /GITHUB_DEPLOYMENT_LINEAGE_MISMATCH/u);
+  await assert.rejects(verifyDeployment(source, fakeDeploymentsApi(records, statusesById, [], { honorRef: false })), /GITHUB_DEPLOYMENT_LINEAGE_MISMATCH/u);
 });
 
 test("deployment verification rejects two matching Vercel records as ambiguous", async () => {
   const source = environment();
-  const requests = [];
-  const actions = Array.from({ length: 180 }, (_, index) => actionsDeployment(900 + index, index));
-  const pages = [[vercelDeployment(41), ...actions.slice(0, 99)], [...actions.slice(99), vercelDeployment(42)]];
-  const statusesById = {
-    41: [{ state: "success", environment_url: "https://safe-preview.vercel.app" }],
-    42: [{ state: "success", target_url: "https://safe-preview.vercel.app/" }],
-  };
-  await assert.rejects(verifyDeployment(source, pagedDeploymentFetch(pages, statusesById, requests)), /GITHUB_DEPLOYMENT_AMBIGUOUS/u);
-  assert.equal(requests.filter((request) => request.pathname.endsWith("/statuses")).length, 2);
+  const records = [vercelDeployment(41), ...actionsRecords(180), vercelDeployment(42)];
+  const statusesById = { 41: exactHostSuccess, 42: [{ state: "success", target_url: "https://safe-preview.vercel.app/" }] };
+  for (const honorRef of [true, false]) {
+    const requests = [];
+    await assert.rejects(verifyDeployment(source, fakeDeploymentsApi(records, statusesById, requests, { honorRef })), /GITHUB_DEPLOYMENT_AMBIGUOUS/u);
+    assert.equal(statusRequests(requests).length, 2);
+    assert.equal(listRequests(requests).length, honorRef ? 1 : 2);
+  }
 });
 
 test("deployment verification reaches a Vercel record on the last allowed page", async () => {
   const source = environment();
   const requests = [];
-  const pages = Array.from({ length: 10 }, (_, page) => Array.from({ length: 100 }, (_, index) => actionsDeployment(10000 + page * 100 + index, index)));
-  pages[9] = [...pages[9].slice(0, 99), vercelDeployment(7464859261)];
-  const result = await verifyDeployment(source, pagedDeploymentFetch(pages, { 7464859261: [{ state: "success", environment_url: "https://safe-preview.vercel.app" }] }, requests));
+  const records = [...actionsRecords(999, 10000), vercelDeployment(7464859261)];
+  const result = await verifyDeployment(source, fakeDeploymentsApi(records, { 7464859261: exactHostSuccess }, requests, { honorRef: false }));
   assert.equal(result.deploymentMatched, true);
   assert.equal(result.reads, 11);
-  assert.equal(requests.filter((request) => request.pathname === deploymentsPath).length, 10);
+  assert.equal(listRequests(requests).length, 10);
 });
 
 test("deployment verification accepts GitHub's final-page Link shape but rejects terminal pages without prev or last", async () => {
   const source = environment();
-  const actions = Array.from({ length: 100 }, (_, index) => actionsDeployment(900 + index, index));
+  const actions = actionsRecords(100);
   const finalPage = [vercelDeployment(42)];
-  const success = [{ state: "success", environment_url: "https://safe-preview.vercel.app" }];
-  const result = await verifyDeployment(source, pagedDeploymentFetch([actions, finalPage], { 42: success }, []));
+  const result = await verifyDeployment(source, fakeDeploymentsApi([...actions, ...finalPage], { 42: exactHostSuccess }, [], { honorRef: false }));
   assert.equal(result.deploymentMatched, true);
 
   for (const terminalLink of [
@@ -418,14 +465,13 @@ test("deployment verification accepts GitHub's final-page Link shape but rejects
 test("deployment verification stops paginating at the list page limit", async () => {
   const source = environment();
   const requests = [];
-  const pages = Array.from({ length: 12 }, (_, page) => Array.from({ length: 100 }, (_, index) => actionsDeployment(20000 + page * 100 + index, index)));
-  pages[11] = [vercelDeployment(7464859261)];
+  const records = [...actionsRecords(1100, 20000), vercelDeployment(7464859261)];
   await assert.rejects(
-    verifyDeployment(source, pagedDeploymentFetch(pages, { 7464859261: [{ state: "success", environment_url: "https://safe-preview.vercel.app" }] }, requests)),
+    verifyDeployment(source, fakeDeploymentsApi(records, { 7464859261: exactHostSuccess }, requests, { honorRef: false })),
     /GITHUB_DEPLOYMENT_PAGE_LIMIT_EXHAUSTED/u,
   );
   assert.equal(requests.length, 10);
-  assert.equal(requests.filter((request) => request.pathname.endsWith("/statuses")).length, 0);
+  assert.equal(statusRequests(requests).length, 0);
 });
 
 test("squash-merged sources require an exact protected migration tree", () => {

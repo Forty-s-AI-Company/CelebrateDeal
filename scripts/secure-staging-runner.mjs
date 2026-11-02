@@ -278,6 +278,9 @@ export async function verifyDeployment(source, fetchImpl = fetch) {
     if (listPages >= GITHUB_DEPLOYMENT_PAGE_LIMIT) throw new Error("GITHUB_DEPLOYMENT_PAGE_LIMIT_EXHAUSTED");
     const endpoint = new URL(`/repos/${GITHUB_REPOSITORY}/deployments`, GITHUB_API_ORIGIN);
     endpoint.searchParams.set("sha", source.CELEBRATEDEAL_SOURCE_SHA);
+    // Vercel's records carry the full commit sha as ref; Actions jobs record ref "master". Filtering
+    // on ref keeps those Actions records out of the listing; the creator filter below stays as backup.
+    endpoint.searchParams.set("ref", source.CELEBRATEDEAL_SOURCE_SHA);
     endpoint.searchParams.set("environment", GITHUB_ENVIRONMENT);
     endpoint.searchParams.set("per_page", String(GITHUB_DEPLOYMENT_PAGE_SIZE));
     endpoint.searchParams.set("page", String(page));

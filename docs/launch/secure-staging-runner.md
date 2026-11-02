@@ -59,9 +59,14 @@ Preview hostname 與 sha 的對應，而且會隨 sha 在 `master` 停留的時�
 
 因此閘門的規則是：
 
-- 只有 `creator.login === "vercel[bot]"` 且 `creator.type === "Bot"` 的候選才讀 statuses；
-  其他候選不讀、不耗預算，也不計入候選數。
-- 列表分頁一律走完（GitHub 由新到舊排序，Vercel 那筆通常在最後一頁），每頁 100 筆（GitHub 上限）、上限 10 頁，即每個 sha 最多 1000 筆；
+- 第一道：列表查詢同時帶 `sha=<source sha>`、`ref=<source sha>` 與
+  `environment=Preview – celebrate-deal-staging`。2026-11-02 實測，`vercel[bot]` 建立的紀錄
+  `ref` 都是完整 40 碼 commit sha（例如 id 7464859261 的 ref 是
+  `6f3de05efc6fc1872778aa213ccf7cee2d7725fc`），Actions 建立的紀錄 `ref` 是 `master`，
+  所以 Actions 紀錄根本不會被列出，heartbeat 或排程跑再多次也不影響這個閘門。
+- 第二道（API 若忽略 `ref` 仍有效）：只有 `creator.login === "vercel[bot]"` 且
+  `creator.type === "Bot"` 的候選才讀 statuses；其他候選不讀、不耗預算，也不計入候選數。
+- 列表分頁一律走完（GitHub 由新到舊排序），每頁 100 筆（GitHub 上限）、上限 10 頁，即每個 sha 最多 1000 筆；
   超過回 `GITHUB_DEPLOYMENT_PAGE_LIMIT_EXHAUSTED`。最後一頁接受 GitHub 實際送出的
   `prev`/`first`（沒有 `next`/`last`）Link header，`prev` 必須正好是前一頁。
 - 讀取預算 20 次 = 列表頁數 + Vercel 候選的 statuses 讀取。
@@ -73,8 +78,8 @@ Preview hostname 與 sha 的對應，而且會隨 sha 在 `master` 停留的時�
 
 | 錯誤碼 | 意義 |
 |---|---|
-| `GITHUB_DEPLOYMENT_NO_VERCEL_CANDIDATE` | 該 sha 在 environment 下有紀錄，但沒有任何一筆是 `vercel[bot]` 建立；通常是 Vercel 尚未部署這個 sha 或 GitHub 整合中斷。 |
-| `GITHUB_DEPLOYMENT_AMBIGUOUS` | 完全沒有候選，或多於一筆 Vercel 紀錄同時符合 host。 |
+| `GITHUB_DEPLOYMENT_NO_VERCEL_CANDIDATE` | 列表有紀錄，但沒有任何一筆是 `vercel[bot]`（Bot）建立；在 `ref` 過濾正常時只會出現在 ref 等於 sha 卻不是 Vercel 建立的紀錄，或 API 忽略了 `ref`。 |
+| `GITHUB_DEPLOYMENT_AMBIGUOUS` | 完全沒有候選（含 `ref=<sha>` 查無紀錄，通常是 Vercel 尚未部署這個 sha 或 GitHub 整合中斷），或多於一筆 Vercel 紀錄同時符合 host。 |
 | `GITHUB_DEPLOYMENT_LINEAGE_MISMATCH` | 有 Vercel 候選，但沒有一筆成功且 host 相符。 |
 | `GITHUB_DEPLOYMENT_PAGE_LIMIT_EXHAUSTED` | 列表超過 10 頁（1000 筆）仍未結束。 |
 | `GITHUB_DEPLOYMENT_READ_BUDGET_EXHAUSTED` | 列表頁數加 Vercel statuses 讀取超過 20 次。 |
