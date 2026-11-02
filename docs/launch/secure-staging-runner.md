@@ -43,6 +43,42 @@ receipt 的 migration status 為 `BACKUP_READY_MIGRATIONS_PENDING`。此時整�
 
 Lineage 使用 workflow 的短效、唯讀 `GITHUB_TOKEN`，不需要 Vercel Token。
 
+### Lineage 閘門只信任 `vercel[bot]` 的部署紀錄
+
+`verifyDeployment()`（`scripts/secure-staging-runner.mjs`）是所有受保護 staging
+workflow 注入 Secret 前共用的 lineage 閘門；`mvp-payuni-sandbox-e2e.mjs --verify-lineage`、
+`staging-migration-apply.mjs` 與 `secure-staging-wp4-payuni.mjs` 都直接呼叫它，沒有自己的候選邏輯。
+
+每個在 `master` 上綁定 `Preview – celebrate-deal-staging` environment 的 Actions job
+（`scheduled-jobs.yml` 每次排程、heartbeat、`secure-staging-validation` 本身等）都會在
+同一個 sha 下多建立一筆 GitHub deployment：creator 是 owner 帳號或
+`github-actions[bot]`，payload 為 `{}`，status URL 指向 Actions run。這些紀錄不證明
+Preview hostname 與 sha 的對應，而且會隨 sha 在 `master` 停留的時間累積。2026-11-02 實測
+同一 sha 有 19 筆候選，只有 1 筆來自 Vercel；舊版對每筆都讀 statuses，第二頁就耗盡
+20 次讀取預算，六個受保護 workflow 全部 `GITHUB_DEPLOYMENT_READ_BUDGET_EXHAUSTED`。
+
+因此閘門的規則是：
+
+- 只有 `creator.login === "vercel[bot]"` 且 `creator.type === "Bot"` 的候選才讀 statuses；
+  其他候選不讀、不耗預算，也不計入候選數。
+- 列表分頁一律走完（GitHub 由新到舊排序，Vercel 那筆通常在最後一頁），上限 10 頁；
+  超過回 `GITHUB_DEPLOYMENT_PAGE_LIMIT_EXHAUSTED`。最後一頁接受 GitHub 實際送出的
+  `prev`/`first`（沒有 `next`/`last`）Link header，`prev` 必須正好是前一頁。
+- 讀取預算 20 次 = 列表頁數 + Vercel 候選的 statuses 讀取。
+- 原本的檢查全部保留：sha、environment、`production_environment === false`、最新
+  status 為 `success`、host 與 `CELEBRATEDEAL_DEPLOYMENT_HOST` 完全相同、`.vercel.app`
+  後綴與 `SAFE_HOST`，且必須剛好一筆符合（多於一筆仍為 `GITHUB_DEPLOYMENT_AMBIGUOUS`）。
+
+錯誤碼：
+
+| 錯誤碼 | 意義 |
+|---|---|
+| `GITHUB_DEPLOYMENT_NO_VERCEL_CANDIDATE` | 該 sha 在 environment 下有紀錄，但沒有任何一筆是 `vercel[bot]` 建立；通常是 Vercel 尚未部署這個 sha 或 GitHub 整合中斷。 |
+| `GITHUB_DEPLOYMENT_AMBIGUOUS` | 完全沒有候選，或多於一筆 Vercel 紀錄同時符合 host。 |
+| `GITHUB_DEPLOYMENT_LINEAGE_MISMATCH` | 有 Vercel 候選，但沒有一筆成功且 host 相符。 |
+| `GITHUB_DEPLOYMENT_PAGE_LIMIT_EXHAUSTED` | 列表超過 10 頁仍未結束。 |
+| `GITHUB_DEPLOYMENT_READ_BUDGET_EXHAUSTED` | 列表頁數加 Vercel statuses 讀取超過 20 次。 |
+
 ## 執行與網路邊界
 
 依賴安裝、contract tests 與 PostgreSQL image pull 都在注入 Secret 前完成。
