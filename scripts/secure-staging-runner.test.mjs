@@ -432,6 +432,36 @@ test("deployment verification rejects two matching Vercel records as ambiguous",
   }
 });
 
+test("deployment verification counts a Vercel record repeated across pages once, but still rejects a distinct second match", async () => {
+  const source = environment();
+  // A record created between page reads shifts the listing, so page 2 starts with page 1's last item.
+  const pageOne = [...actionsRecords(99), vercelDeployment(42)];
+  const shiftedPageTwo = (extra) => [vercelDeployment(42), ...extra];
+  const fetchFor = (pageTwo, statusesById, requests) => async (input) => {
+    const request = new URL(String(input));
+    requests.push(request);
+    if (request.pathname.endsWith("/statuses")) {
+      const id = Number(request.pathname.split("/").at(-2));
+      return new Response(JSON.stringify(statusesById[id] ?? [{ state: "failure" }]), { status: 200 });
+    }
+    const page = Number(request.searchParams.get("page"));
+    return new Response(JSON.stringify(page === 1 ? pageOne : pageTwo), { status: 200, headers: githubLink(page, 2) });
+  };
+
+  const requests = [];
+  const result = await verifyDeployment(source, fetchFor(shiftedPageTwo(actionsRecords(5, 5000)), { 42: exactHostSuccess }, requests));
+  assert.equal(result.deploymentMatched, true);
+  assert.equal(result.reads, 3);
+  assert.deepEqual(statusRequests(requests).map((request) => request.pathname), [`${deploymentsPath}/42/statuses`]);
+
+  const ambiguousRequests = [];
+  await assert.rejects(
+    verifyDeployment(source, fetchFor(shiftedPageTwo([vercelDeployment(43)]), { 42: exactHostSuccess, 43: exactHostSuccess }, ambiguousRequests)),
+    /GITHUB_DEPLOYMENT_AMBIGUOUS/u,
+  );
+  assert.deepEqual(statusRequests(ambiguousRequests).map((request) => request.pathname), [`${deploymentsPath}/42/statuses`, `${deploymentsPath}/43/statuses`]);
+});
+
 test("deployment verification reaches a Vercel record on the last allowed page", async () => {
   const source = environment();
   const requests = [];

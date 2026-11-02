@@ -271,6 +271,7 @@ export async function verifyDeployment(source, fetchImpl = fetch) {
   let listPages = 0;
   let environmentCandidateCount = 0;
   let candidateCount = 0;
+  const seenCandidateIds = new Set();
   const matchedCandidates = [];
 
   while (true) {
@@ -293,7 +294,10 @@ export async function verifyDeployment(source, fetchImpl = fetch) {
     const environmentCandidates = pageDeployments.filter((item) => item?.sha === source.CELEBRATEDEAL_SOURCE_SHA && item?.environment === GITHUB_ENVIRONMENT && item?.production_environment === false && Number.isSafeInteger(item?.id));
     environmentCandidateCount += environmentCandidates.length;
     // Records created by Actions jobs are skipped without a statuses read, so they never spend the budget.
-    const candidates = environmentCandidates.filter(isVercelCreatedDeployment);
+    // A record created while paging shifts older ones onto the next page, so the same deployment
+    // can be listed twice. Each id is read and counted once; a repeat is not a second match.
+    const candidates = environmentCandidates.filter((item) => isVercelCreatedDeployment(item) && !seenCandidateIds.has(item.id));
+    for (const candidate of candidates) seenCandidateIds.add(candidate.id);
     candidateCount += candidates.length;
     const nextPage = nextDeploymentPage(response, pageDeployments.length, page);
 

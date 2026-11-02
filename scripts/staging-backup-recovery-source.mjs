@@ -31,7 +31,7 @@ const APPROVED_BACKUP_BLOBS = Object.freeze({
   "scripts/secure-staging-runner.mjs": [
     "50839ab6d2cf96b2c8a6a1d9870a9f29b2065555", // #288
     "8b14996eeca4e1616743fb6c168991287c626b28", // #290
-    "47a5aa076cf83e4852f9064c7db49e9d73d4e6a7", // Lineage gate lists by ref=<sha> and reads statuses only for vercel[bot] deployments (page size 100, page limit 10); WP2 backup, restore and receipt unchanged.
+    "0f869399153fd058a988a25fe5c3f56dcd8acd38", // #534: lineage gate lists by ref=<sha>, reads statuses only for vercel[bot] deployments once per id (page size 100, page limit 10); WP2 backup, restore and receipt unchanged.
   ],
 });
 
