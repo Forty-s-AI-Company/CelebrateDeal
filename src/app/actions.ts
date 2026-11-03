@@ -1,6 +1,7 @@
 "use server";
 
 import { requestedLiveStatus } from "@/lib/live-status-transition";
+import { sumLedgerCents } from "@/lib/ledger-cents";
 import { resolveSalesProjectBinding, SalesProjectBindingError } from "@/lib/sales-project-binding";
 import { isIP } from "node:net";
 import { redirect } from "next/navigation";
@@ -2047,7 +2048,8 @@ export async function createPayoutBatchAction(formData: FormData) {
 
   const now = new Date();
   const batchNumber = payoutBatchNumber(now);
-  const totalAmountCents = settlements.reduce((sum, settlement) => sum + settlement.finalPayoutAmountCents, 0);
+  // F-068: settlement and batch totals are BigInt; sum exactly.
+  const totalAmountCents = sumLedgerCents(settlements.map((settlement) => settlement.finalPayoutAmountCents));
 
   let batch;
   try {

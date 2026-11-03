@@ -161,11 +161,27 @@ export async function executePayUniRefund(input: PayUniRefundExecutionInput): Pr
           const refundOccurredAt = new Date();
           // F-039: the server completion month, past any locked month.
           const settlementMonthKey = await refundSettlementMonthKey(tx, currentTransaction.vendorId, refundOccurredAt);
+          // F-062: a provider event is booked at most once per payment
+          // (RefundRecord_paymentTransactionId_providerEventId_key). When the
+          // provider answer only repeats an identity already booked on this
+          // trade (the TradeNo fallback of a second partial refund), this refund
+          // keeps its unique local reservation identity. The earlier row keeps
+          // the trade-only identity that the webhook ambiguity check relies on.
+          const providerEventId = providerResult.providerEventId ?? requestReservationEventId;
+          const providerEventIdTaken = providerEventId !== requestReservationEventId
+            && await tx.refundRecord.count({
+              where: {
+                vendorId: currentTransaction.vendorId,
+                paymentTransactionId: currentTransaction.id,
+                providerEventId,
+                id: { not: reserved.refundId },
+              },
+            }) > 0;
           await tx.refundRecord.update({
             where: { id: reserved.refundId, status: "pending", providerEventId: requestReservationEventId },
             data: {
               status: "processed",
-              providerEventId: providerResult.providerEventId ?? `request:${requestId}`,
+              providerEventId: providerEventIdTaken ? requestReservationEventId : providerEventId,
               monthKey: settlementMonthKey,
               processedAt: refundOccurredAt,
             },

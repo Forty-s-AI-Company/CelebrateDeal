@@ -2,6 +2,7 @@ import type { BillingPlan, PaymentTransaction, Prisma, UsageRecord, VendorSubscr
 import { createHash } from "node:crypto";
 import { isSupportedCheckoutCurrency, SUPPORTED_CHECKOUT_CURRENCY, UnsupportedCurrencyError } from "@/lib/checkout-currency";
 import { getDb } from "@/lib/db";
+import { ledgerCentsToNumber } from "@/lib/ledger-cents";
 import { estimateVendorUsage, MONTHLY_USAGE_SNAPSHOT_RECORD_TYPE } from "@/lib/usage-estimation";
 
 type SubscriptionWithPlan = VendorSubscription & { plan: BillingPlan };
@@ -372,7 +373,8 @@ export async function calculateSettlement(vendorId: string, monthKey: string) {
   // F-039: a refund above this month's revenue is not truncated; the
   // negative payable carries into the next open month (billing-cycle.ts).
   const grossRevenueCents = grossRevenueBeforeRefundCents - refundAmountCents;
-  const carriedInCents = carriedIn._sum.amountCents ?? 0;
+  // F-068: the carry ledger is BigInt; settlement arithmetic stays in exact numbers.
+  const carriedInCents = ledgerCentsToNumber(carriedIn._sum.amountCents ?? 0);
   const recordedGatewayFeeCents = transactions.reduce((sum: number, transaction: PaymentTransaction) => sum + transaction.gatewayFeeCents, 0);
   const recordedPlatformFeeCents = transactions.reduce(
     (sum: number, transaction: PaymentTransaction) => sum + transaction.platformFeeCents,

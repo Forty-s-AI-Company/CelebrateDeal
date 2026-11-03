@@ -81,7 +81,21 @@ describe("PayUni refund accounting identity on disposable PostgreSQL", () => {
     expect(identities).toHaveLength(2);
     expect(new Set(identities).size).toBe(2);
     expect(identities.every((identity) => identity.startsWith("refund:payuni:"))).toBe(true);
-    expect(await db.refundRecord.count({ where: { paymentTransactionId: transactionId, status: "processed", providerEventId: "same-provider-trade" } })).toBe(2);
+    // F-062: a provider event is booked once per payment. The first refund
+    // keeps the provider identity; the second, whose provider answer repeats
+    // it, keeps its own local reservation identity.
+    const processed = await db.refundRecord.findMany({
+      where: { paymentTransactionId: transactionId, status: "processed" },
+      orderBy: { createdAt: "asc" },
+      select: { providerEventId: true, refundAmountCents: true },
+    });
+    expect(processed).toHaveLength(2);
+    expect(processed[0]).toEqual({ providerEventId: "same-provider-trade", refundAmountCents: 2_000 });
+    expect(processed[1]?.refundAmountCents).toBe(3_000);
+    expect(processed[1]?.providerEventId).toMatch(/^request:[0-9a-f]{32}$/);
+    await expect(db.refundRecord.create({
+      data: { vendorId, paymentTransactionId: transactionId, providerEventId: "same-provider-trade", monthKey: "2026-10", refundAmountCents: 1, status: "processed" },
+    })).rejects.toMatchObject({ code: "P2002" });
     await expect(db.paymentTransaction.findUnique({ where: { id: transactionId } })).resolves.toMatchObject({
       status: "partially_refunded",
       refundedAmountCents: 5_000,

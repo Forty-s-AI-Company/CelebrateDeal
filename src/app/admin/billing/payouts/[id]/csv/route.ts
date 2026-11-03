@@ -3,6 +3,7 @@ import { requireFinanceAdmin } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { auditSnapshot, writeAuditLog } from "@/lib/audit";
 import { resolveStoredBankAccount } from "@/lib/bank-account";
+import { ledgerCentsToNumber } from "@/lib/ledger-cents";
 
 function csvCell(value: string | number | null | undefined) {
   const raw = String(value ?? "");
@@ -38,7 +39,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
       bankAccount.bankCode,
       bankAccount.accountNumber,
       bankAccount.accountName,
-      item.payoutAmountCents / 100,
+      ledgerCentsToNumber(item.payoutAmountCents) / 100,
       item.status,
       item.outcomeReference,
     ];

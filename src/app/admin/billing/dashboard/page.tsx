@@ -8,6 +8,7 @@ import { Badge, Card, PageHeader } from "@/components/ui";
 import { requireFinanceAdmin } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { formatCurrency, formatDateTime } from "@/lib/format";
+import { ledgerCentsToNumber, sumLedgerCents } from "@/lib/ledger-cents";
 
 // The webhook retry Server Action can schedule the paid receipt email with
 // `after()` inside this limit (see IMMEDIATE_EMAIL_DISPATCH_MAX_DURATION_SECONDS).
@@ -105,7 +106,7 @@ export default async function AdminBillingDashboardPage() {
   });
 
   const mrr = subscriptions.reduce((sum, subscription) => sum + subscription.plan.monthlyPriceCents, 0);
-  const pendingPayoutAmount = readySettlements.reduce((sum, settlement) => sum + settlement.finalPayoutAmountCents, 0);
+  const pendingPayoutAmount = ledgerCentsToNumber(sumLedgerCents(readySettlements.map((settlement) => settlement.finalPayoutAmountCents)));
 
   return (
     <>
@@ -219,7 +220,7 @@ export default async function AdminBillingDashboardPage() {
                   </div>
                   <div className="text-right">
                     <Badge tone={statusTone(settlement.status)}>{settlement.status}</Badge>
-                    <p className="mt-1 text-sm font-semibold">{formatCurrency(settlement.finalPayoutAmountCents)}</p>
+                    <p className="mt-1 text-sm font-semibold">{formatCurrency(ledgerCentsToNumber(settlement.finalPayoutAmountCents))}</p>
                   </div>
                 </div>
               ))}

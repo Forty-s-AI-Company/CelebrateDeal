@@ -115,7 +115,7 @@ describe("F-044 monthly settlement does not withhold merchant-paid affiliate com
     });
 
     const { settlement } = await generateSettlementForVendor(vendor.id, monthKey);
-    expect(settlement).toMatchObject({ payoutableAmountCents: expectedPayout, finalPayoutAmountCents: expectedPayout });
+    expect(settlement).toMatchObject({ payoutableAmountCents: BigInt(expectedPayout), finalPayoutAmountCents: BigInt(expectedPayout) });
     await expect(db.affiliateCommissionLedgerEntry.aggregate({ where: { vendorId: vendor.id }, _sum: { amountCents: true } }))
       .resolves.toMatchObject({ _sum: { amountCents: 10_000 } });
   });
