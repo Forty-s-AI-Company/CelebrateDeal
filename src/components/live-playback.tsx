@@ -25,7 +25,8 @@ import { trackClientAnalytics } from "@/lib/client-analytics";
 import { formatCurrency } from "@/lib/format";
 import { parseSafeExternalHttpUrl } from "@/lib/external-url";
 import { postStreamUsageHeartbeat, type StreamUsageHeartbeat } from "@/lib/stream-usage-client";
-import { scheduleSignedPlaybackRenewal, swapNativePlaybackSource, withCurrentStreamToken } from "@/lib/signed-playback-renewal";
+import { consumeSourceSwapPlay } from "@/lib/signed-playback-renewal";
+import { attachHlsPlayback } from "@/lib/hls-playback-attachment";
 import { getOrCreateVisitorId } from "@/lib/visitor-id";
 import type { ScheduledRuntimeMessage } from "@/lib/live-chat-contract";
 import type { LiveRuntimeState } from "@/lib/live-runtime-state";
@@ -1709,12 +1710,12 @@ function useAdmittedPlaybackAnalytics({ live, admitted, visitorId, referralCode,
 }
 
 /**
- * Attaches an HLS source to the player. F-093: a signed Stream URL is renewed
- * through the admission-checked playback-source endpoint before its token
- * lapses; hls.js swaps the token on every later request, native HLS reloads
- * the source in place.
+ * Attaches an HLS source to the player (hls.js first, native HLS only when
+ * hls.js is unsupported). F-093: a signed Stream URL is renewed through the
+ * admission-checked playback-source endpoint before its token lapses and
+ * whenever playback hits an expired token.
  */
-function useHlsPlayback({
+export function useHlsPlayback({
   videoRef,
   playableSource,
   playableUrl,
@@ -1739,49 +1740,15 @@ function useHlsPlayback({
     const video = videoRef.current;
     const hlsUrl = shouldUseHls(playableSource, playableUrl) ? playableUrl : null;
     if (!video || !hlsUrl) return;
-    const nativeHls = Boolean(video.canPlayType("application/vnd.apple.mpegurl"));
-    let currentUrl = hlsUrl;
-    const renewalSeconds = playableSource?.expiresInSeconds;
-    const stopRenewal = renewalSeconds
-      ? scheduleSignedPlaybackRenewal({
-        expiresInSeconds: renewalSeconds,
-        fetchSource: () => {
-          const scope = renewalScopeRef.current;
-          return fetchLivePlaybackSource(scope.vendorId, scope.liveId, scope.runtimeState);
-        },
-        applySource: (nextUrl) => {
-          if (!isHlsPlaybackUrl(nextUrl) || nextUrl === currentUrl) return;
-          currentUrl = nextUrl;
-          if (nativeHls) swapNativePlaybackSource(video, nextUrl);
-        },
-      })
-      : () => undefined;
-    if (nativeHls) {
-      video.src = hlsUrl;
-      return stopRenewal;
-    }
-    let disposed = false;
-    let hls: { destroy: () => void } | null = null;
-    void import("hls.js")
-      .then(({ default: Hls }) => {
-        if (disposed || !Hls.isSupported()) return;
-        const player = new Hls(renewalSeconds ? {
-          xhrSetup: (xhr, url) => {
-            const target = withCurrentStreamToken(url, currentUrl);
-            if (target !== url) xhr.open("GET", target, true);
-          },
-        } : undefined);
-        hls = player;
-        player.loadSource(hlsUrl);
-        player.attachMedia(video);
-      })
-      .catch(() => undefined);
-
-    return () => {
-      disposed = true;
-      stopRenewal();
-      hls?.destroy();
-    };
+    return attachHlsPlayback({
+      video,
+      url: hlsUrl,
+      expiresInSeconds: playableSource?.expiresInSeconds,
+      fetchSource: () => {
+        const scope = renewalScopeRef.current;
+        return fetchLivePlaybackSource(scope.vendorId, scope.liveId, scope.runtimeState);
+      },
+    });
   }, [playableSource, playableUrl, videoRef]);
 }
 
@@ -2000,7 +1967,8 @@ export function LivePlayback({ live }: { live: LivePageData }) {
                 liveWindow.seekToLivePosition(event.currentTarget);
                 setIsPlaybackPaused(false);
                 streamUsage.start(event.currentTarget.currentTime);
-                void trackClientAnalytics({
+                // A signed-URL source swap resumes playback; it is not a viewer play.
+                if (!consumeSourceSwapPlay(event.currentTarget)) void trackClientAnalytics({
                   liveId: live.id,
                   vendorId: live.vendorId,
                   eventType: "video_play",

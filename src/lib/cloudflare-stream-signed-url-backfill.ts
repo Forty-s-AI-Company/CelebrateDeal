@@ -3,34 +3,37 @@ import {
   CloudflareStreamError,
   updateLiveInputRecordingSecurity,
   updateStreamVideoPlaybackSecurity,
+  type StreamPlaybackSecurityUpdate,
 } from "@/lib/cloudflare-stream";
-import {
-  getStreamPlaybackSecurity,
-  parseCloudflareStreamPlaybackUrl,
-  type StreamPlaybackSecurity,
-} from "@/lib/cloudflare-stream-signing";
+import { getStreamLockSecurity } from "@/lib/cloudflare-stream-signing-config";
 import { getDb } from "@/lib/db";
 
 /**
- * F-093 §4：對既有 Cloudflare Stream 影片與 live input 錄影批次開啟
- * `requireSignedURLs`＋`allowedOrigins`。
+ * F-093 §4／§8：對單一 vendor 的既有 Cloudflare Stream 影片與 live input 錄影
+ * 批次開啟（lock）或關閉（unlock）`requireSignedURLs`。
  *
- * - 一次只處理一個 vendor，所有影片都以 `vendorId` 篩選；不接受 uid 清單。
- * - 預設 dry-run；`apply: true` 才呼叫 Cloudflare，且必須已設定簽章金鑰，
- *   否則開啟後應用程式簽不出 token，影片會全部無法播放。
- * - 以 `id` 游標分頁，每批最多 10 支，逐支依序呼叫（每次請求 15 秒逾時）。
+ * - 只處理 `sourceType` 為 `cloudflare_stream`／`cloudflare_live` 的列，且以
+ *   `vendorId` 篩選；uid 只取伺服器寫入的 `cloudflareStreamUid`／
+ *   `cloudflarePlaybackId`／`cloudflareLiveInputUid`，不從商家可改的 `videoUrl` 解析，
+ *   也不接受呼叫端傳入 uid。
+ * - 預設 dry-run；`apply: true` 才呼叫 Cloudflare。lock 必須已設定簽章金鑰，
+ *   否則影片鎖上後應用程式簽不出 token；unlock（回滾）不需要金鑰。
+ * - 以 `id` 游標分頁，每批最多 5 支，逐支依序呼叫（每次請求 15 秒逾時）。
+ * - apply 後寫一筆稽核（vendor、模式、每個資源的 uid 與結果；不含 token 或金鑰）。
  */
-export const SIGNED_URL_BACKFILL_MAX_BATCH = 10;
+export const SIGNED_URL_BACKFILL_MAX_BATCH = 5;
 
 export const SignedUrlBackfillRequest = z.object({
   vendorId: z.string().trim().min(1).max(128),
+  mode: z.enum(["lock", "unlock"]).default("lock"),
   cursor: z.string().trim().min(1).max(128).optional(),
-  limit: z.number().int().min(1).max(SIGNED_URL_BACKFILL_MAX_BATCH).default(5),
+  limit: z.number().int().min(1).max(SIGNED_URL_BACKFILL_MAX_BATCH).default(SIGNED_URL_BACKFILL_MAX_BATCH),
   apply: z.boolean().default(false),
 }).strict();
 
 export type SignedUrlBackfillInput = z.infer<typeof SignedUrlBackfillRequest>;
 
+const CLOUDFLARE_SOURCE_TYPES = ["cloudflare_stream", "cloudflare_live"];
 const STREAM_UID_PATTERN = /^[a-f0-9]{32}$/i;
 
 type BackfillTarget = { videoId: string; kind: "video" | "live_input"; uid: string };
@@ -50,27 +53,29 @@ export class SignedUrlBackfillNotConfiguredError extends Error {
 
 type BackfillVideo = {
   id: string;
-  videoUrl: string;
   cloudflareStreamUid: string | null;
   cloudflarePlaybackId: string | null;
   cloudflareLiveInputUid: string | null;
 };
+
+export type SignedUrlBackfillAudit = (entry: {
+  vendorId: string;
+  mode: "lock" | "unlock";
+  allowedOrigins: string[] | null;
+  results: SignedUrlBackfillResult[];
+}) => Promise<void>;
 
 function validUid(value: string | null | undefined) {
   const uid = value?.trim();
   return uid && STREAM_UID_PATTERN.test(uid) ? uid.toLowerCase() : null;
 }
 
-/** 一列 Video 對應的 Cloudflare 資源：live input 本身，以及所有已知的影片 uid。 */
+/** 一列 Video 對應的 Cloudflare 資源：live input 本身，以及欄位中記錄的影片 uid。 */
 export function backfillTargetsForVideo(video: BackfillVideo): BackfillTarget[] {
   const liveInputUid = validUid(video.cloudflareLiveInputUid);
   const videoUids = new Set<string>();
-  for (const candidate of [
-    validUid(video.cloudflareStreamUid),
-    validUid(video.cloudflarePlaybackId),
-    validUid(parseCloudflareStreamPlaybackUrl(video.videoUrl)?.uid),
-  ]) {
-    // 直播尚未錄影前 videoUrl 指向 live input uid；那不是影片，由 live input 更新涵蓋。
+  for (const candidate of [validUid(video.cloudflareStreamUid), validUid(video.cloudflarePlaybackId)]) {
+    // live input uid 不是影片；由 live input 錄影設定涵蓋。
     if (candidate && candidate !== liveInputUid) videoUids.add(candidate);
   }
   return [
@@ -79,7 +84,7 @@ export function backfillTargetsForVideo(video: BackfillVideo): BackfillTarget[] 
   ];
 }
 
-async function applyTarget(target: BackfillTarget, security: StreamPlaybackSecurity): Promise<SignedUrlBackfillResult> {
+async function applyTarget(target: BackfillTarget, security: StreamPlaybackSecurityUpdate): Promise<SignedUrlBackfillResult> {
   try {
     if (target.kind === "live_input") await updateLiveInputRecordingSecurity(target.uid, security);
     else await updateStreamVideoPlaybackSecurity(target.uid, security);
@@ -98,28 +103,33 @@ async function applyTarget(target: BackfillTarget, security: StreamPlaybackSecur
 
 export async function backfillStreamSignedUrls(
   input: SignedUrlBackfillInput,
-  db: Pick<ReturnType<typeof getDb>, "video"> = getDb(),
+  dependencies: {
+    db?: Pick<ReturnType<typeof getDb>, "video">;
+    audit?: SignedUrlBackfillAudit;
+  } = {},
 ) {
-  const security = getStreamPlaybackSecurity();
-  if (input.apply && !security) throw new SignedUrlBackfillNotConfiguredError();
+  const lockSecurity = getStreamLockSecurity();
+  if (input.mode === "lock" && input.apply && !lockSecurity) throw new SignedUrlBackfillNotConfiguredError();
+  const security: StreamPlaybackSecurityUpdate | null = input.mode === "unlock"
+    ? { requireSignedURLs: false }
+    : lockSecurity;
 
+  const db = dependencies.db ?? getDb();
   const videos = await db.video.findMany({
     where: {
       vendorId: input.vendorId,
+      sourceType: { in: CLOUDFLARE_SOURCE_TYPES },
       ...(input.cursor ? { id: { gt: input.cursor } } : {}),
       OR: [
         { cloudflareStreamUid: { not: null } },
         { cloudflarePlaybackId: { not: null } },
         { cloudflareLiveInputUid: { not: null } },
-        { videoUrl: { startsWith: "https://videodelivery.net/" } },
-        { videoUrl: { contains: ".cloudflarestream.com/" } },
       ],
     },
     orderBy: { id: "asc" },
     take: input.limit,
     select: {
       id: true,
-      videoUrl: true,
       cloudflareStreamUid: true,
       cloudflarePlaybackId: true,
       cloudflareLiveInputUid: true,
@@ -131,11 +141,24 @@ export async function backfillStreamSignedUrls(
     results.push(input.apply && security ? await applyTarget(target, security) : { ...target, status: "pending" });
   }
 
+  const allowedOrigins = input.mode === "lock" ? lockSecurity?.allowedOrigins ?? null : null;
+  let audited = false;
+  if (input.apply && results.length > 0 && dependencies.audit) {
+    try {
+      await dependencies.audit({ vendorId: input.vendorId, mode: input.mode, allowedOrigins, results });
+      audited = true;
+    } catch {
+      audited = false;
+    }
+  }
+
   return {
+    mode: input.mode,
     apply: input.apply,
-    allowedOrigins: security?.allowedOrigins ?? null,
+    allowedOrigins,
     scannedVideos: videos.length,
     results,
+    audited,
     nextCursor: videos.length === input.limit ? videos[videos.length - 1]!.id : null,
   };
 }

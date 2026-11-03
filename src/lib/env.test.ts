@@ -8,6 +8,7 @@ const syntheticStreamSigningPem = generateKeyPairSync("rsa", { modulusLength: 20
   .export({ format: "pem", type: "pkcs1" }).toString();
 const streamSigningKeyId = envKey("CLOUDFLARE", "STREAM", "SIGNING", "KEY", "ID");
 const streamSigningKeyPem = envKey("CLOUDFLARE", "STREAM", "SIGNING", "KEY", "PEM");
+const streamLockNewUploads = envKey("CLOUDFLARE", "STREAM", "LOCK", "NEW", "UPLOADS");
 
 function configuredEnv(): NodeJS.ProcessEnv {
   return {
@@ -24,6 +25,7 @@ function configuredEnv(): NodeJS.ProcessEnv {
     [envKey("CLOUDFLARE", "STREAM", "WEBHOOK", "SECRET")]: "test-webhook-value",
     [streamSigningKeyId]: "0123456789abcdef0123456789abcdef",
     [streamSigningKeyPem]: syntheticStreamSigningPem,
+    [streamLockNewUploads]: "true",
     [envKey("PAYMENT", "PROVIDER")]: "demo",
     [envKey("RESEND", "API", "KEY")]: "test-resend-value",
     [envKey("EMAIL", "FROM")]: "noreply@app.test",
@@ -632,6 +634,7 @@ describe("Cloudflare Stream signing preflight (F-093)", () => {
     const env = configuredEnv();
     delete env[streamSigningKeyId];
     delete env[streamSigningKeyPem];
+    delete env[streamLockNewUploads];
     const report = getEnvCheckReport(env);
     expect(report.ok).toBe(true);
     expect(check(report, streamSigningKeyId, "warning")?.message).toContain("F-093");
@@ -645,6 +648,20 @@ describe("Cloudflare Stream signing preflight (F-093)", () => {
     const report = getEnvCheckReport({ ...configuredEnv(), ...overrides });
     expect(report.ok).toBe(false);
     expect(check(report, streamSigningKeyId, "fail")?.message).toContain(message);
+  });
+
+  it("warns until new uploads are locked after Staging verification", () => {
+    const report = getEnvCheckReport({ ...configuredEnv(), [streamLockNewUploads]: undefined });
+    expect(report.ok).toBe(true);
+    expect(check(report, streamLockNewUploads, "warning")?.message).toContain("Staging");
+  });
+
+  it("fails a lock flag without signing keys, or with a value other than true／false", () => {
+    const env = configuredEnv();
+    delete env[streamSigningKeyId];
+    delete env[streamSigningKeyPem];
+    expect(check(getEnvCheckReport(env), streamLockNewUploads, "fail")?.message).toContain("金鑰");
+    expect(check(getEnvCheckReport({ ...configuredEnv(), [streamLockNewUploads]: "yes" }), streamLockNewUploads, "fail")).toBeDefined();
   });
 
   it("fails an allowed origin Cloudflare cannot accept", () => {

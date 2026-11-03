@@ -178,6 +178,7 @@ function enableStreamSigning() {
   vi.stubEnv("CLOUDFLARE_STREAM_SIGNING_KEY_PEM", syntheticSigningPem);
   vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://app.example.test");
   vi.stubEnv("STREAM_ALLOWED_ORIGINS", "*.preview.example.test");
+  vi.stubEnv("CLOUDFLARE_STREAM_LOCK_NEW_UPLOADS", "true");
 }
 
 function requestBody(fetchMock: ReturnType<typeof vi.fn>) {
@@ -227,7 +228,22 @@ describe("Cloudflare Stream signed playback settings (F-093)", () => {
     expect(metadata).not.toContain("allowedorigins");
   });
 
-  it("requires signed URLs and restricts origins on new direct uploads once signing is enabled", async () => {
+  it("keeps new uploads public while CLOUDFLARE_STREAM_LOCK_NEW_UPLOADS is not on, even with signing keys", async () => {
+    enableStreamSigning();
+    vi.stubEnv("CLOUDFLARE_STREAM_LOCK_NEW_UPLOADS", undefined);
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(directUploadResponse())
+      .mockResolvedValueOnce(liveInputResponse());
+    vi.stubGlobal("fetch", fetchMock);
+
+    await createDirectCreatorUpload(120);
+    await createLiveInput("Launch");
+
+    expect(JSON.parse(String(fetchMock.mock.calls[0]![1].body))).toEqual({ maxDurationSeconds: 120 });
+    expect(JSON.parse(String(fetchMock.mock.calls[1]![1].body))).toEqual({ meta: { name: "Launch" }, recording: { mode: "automatic" } });
+  });
+
+  it("requires signed URLs and restricts origins on new direct uploads once signing and the lock flag are on", async () => {
     enableStreamSigning();
     const fetchMock = vi.fn().mockResolvedValue(directUploadResponse());
     vi.stubGlobal("fetch", fetchMock);
@@ -272,21 +288,15 @@ describe("Cloudflare Stream signed playback settings (F-093)", () => {
     });
   });
 
-  it("updates an existing video and a live input recording for the backfill", async () => {
+  it("locks an existing video with a POST carrying its uid", async () => {
     const security = { requireSignedURLs: true as const, allowedOrigins: ["app.example.test"] };
-    const fetchMock = vi.fn()
-      .mockResolvedValueOnce(new Response(JSON.stringify({
-        success: true,
-        result: { uid: "a1b2c3d4e5f60718293a4b5c6d7e8f90", requireSignedURLs: true, allowedOrigins: ["app.example.test"] },
-      }), { status: 200 }))
-      .mockResolvedValueOnce(new Response(JSON.stringify({
-        success: true,
-        result: { uid: "f0e1d2c3b4a5968778695a4b3c2d1e0f", recording: { mode: "automatic", requireSignedURLs: true } },
-      }), { status: 200 }));
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      success: true,
+      result: { uid: "a1b2c3d4e5f60718293a4b5c6d7e8f90", requireSignedURLs: true, allowedOrigins: ["app.example.test"] },
+    }), { status: 200 }));
     vi.stubGlobal("fetch", fetchMock);
 
     await updateStreamVideoPlaybackSecurity("a1b2c3d4e5f60718293a4b5c6d7e8f90", security);
-    await updateLiveInputRecordingSecurity("f0e1d2c3b4a5968778695a4b3c2d1e0f", security);
 
     expect(fetchMock.mock.calls[0]![0]).toBe(
       "https://api.cloudflare.com/client/v4/accounts/test-fixture-account/stream/a1b2c3d4e5f60718293a4b5c6d7e8f90",
@@ -297,13 +307,59 @@ describe("Cloudflare Stream signed playback settings (F-093)", () => {
       requireSignedURLs: true,
       allowedOrigins: ["app.example.test"],
     });
-    expect(fetchMock.mock.calls[1]![0]).toBe(
-      "https://api.cloudflare.com/client/v4/accounts/test-fixture-account/stream/live_inputs/f0e1d2c3b4a5968778695a4b3c2d1e0f",
-    );
+  });
+
+  it("unlocks an existing video by sending only requireSignedURLs: false", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      success: true,
+      result: { uid: "a1b2c3d4e5f60718293a4b5c6d7e8f90", requireSignedURLs: false },
+    }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await updateStreamVideoPlaybackSecurity("a1b2c3d4e5f60718293a4b5c6d7e8f90", { requireSignedURLs: false });
+
+    expect(requestBody(fetchMock)).toEqual({ uid: "a1b2c3d4e5f60718293a4b5c6d7e8f90", requireSignedURLs: false });
+  });
+
+  it("reads a live input first and PUTs it back with only the recording security changed", async () => {
+    const liveInputUrl = "https://api.cloudflare.com/client/v4/accounts/test-fixture-account/stream/live_inputs/f0e1d2c3b4a5968778695a4b3c2d1e0f";
+    const existing = {
+      uid: "f0e1d2c3b4a5968778695a4b3c2d1e0f",
+      meta: { name: "Launch" },
+      defaultCreator: "creator-1",
+      deleteRecordingAfterDays: 45,
+      recording: { mode: "automatic", timeoutSeconds: 30, requireSignedURLs: false, allowedOrigins: [] },
+      rtmps: { url: "rtmps://live.example.test", streamKey: "must-not-be-sent-back" },
+    };
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ success: true, result: existing }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ success: true, result: { ...existing, recording: { mode: "automatic", requireSignedURLs: true } } }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await updateLiveInputRecordingSecurity("f0e1d2c3b4a5968778695a4b3c2d1e0f", {
+      requireSignedURLs: true,
+      allowedOrigins: ["app.example.test"],
+    });
+
+    expect(fetchMock.mock.calls[0]![0]).toBe(liveInputUrl);
+    expect(fetchMock.mock.calls[0]![1]?.method).toBeUndefined();
+    expect(fetchMock.mock.calls[1]![0]).toBe(liveInputUrl);
     expect(fetchMock.mock.calls[1]![1]).toMatchObject({ method: "PUT" });
     expect(JSON.parse(String(fetchMock.mock.calls[1]![1].body))).toEqual({
-      recording: { mode: "automatic", requireSignedURLs: true, allowedOrigins: ["app.example.test"] },
+      meta: { name: "Launch" },
+      defaultCreator: "creator-1",
+      deleteRecordingAfterDays: 45,
+      recording: { mode: "automatic", timeoutSeconds: 30, requireSignedURLs: true, allowedOrigins: ["app.example.test"] },
     });
+  });
+
+  it("never PUTs a live input whose current settings could not be read", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ success: false }), { status: 404 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(updateLiveInputRecordingSecurity("f0e1d2c3b4a5968778695a4b3c2d1e0f", { requireSignedURLs: false }))
+      .rejects.toMatchObject({ code: "provider_rejected", providerStatus: 404 });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
   it("surfaces a missing video as a provider rejection with its status", async () => {

@@ -106,45 +106,51 @@
 - **Preview 網域**：`allowedOrigins` 不支援路徑，Preview 網域若無法以萬用字元涵蓋，需要 Preview 專用影片。
 - **時鐘偏移**：`nbf` 往前 30 秒，避免伺服器與 Cloudflare 時間差造成剛簽發就無效。
 
-## 7. 實作摘要（2026-11-03）
+## 7. 實作摘要（2026-11-03，含審查修正）
 
 | 項目 | 實作 |
 |---|---|
-| 簽章模組 | `src/lib/cloudflare-stream-signing.ts`：RS256 自簽 JWT，header `{ alg, kid }`，claims `sub`（video 或 live input uid）、`kid`、`nbf = now − 30 秒`、`exp`；不帶 `accessRules`（不綁 IP）。私鑰只從伺服器環境變數讀取，token 不寫 DB、不寫 log |
-| 效期 | 直播（含 evergreen、指定場次播放中）10 分鐘；回放 30 分鐘；一律不超過 24 小時。回放的 `exp` 取 `min(now + 30 分鐘, replayAvailableUntil)`，指定場次再加上該場次的回放期限；期限已過時不簽、回 403 |
-| 播放來源 | `src/lib/live-playback-source.ts`：入場、vendor／live 綁定與 runtime 檢查都通過後才簽；回應多一個 `expiresInSeconds`。非 Cloudflare Stream 網址（商家自填 HLS／MP4）不變 |
-| 續期 | `src/lib/signed-playback-renewal.ts`＋`src/components/live-playback.tsx`：到期前 2 分鐘（短效 token 取一半效期）重新呼叫 `GET /api/live-playback-source`（同樣要通過入場）。hls.js 以 `xhrSetup` 把之後每個 manifest／segment 請求的 token 換成最新的，播放不中斷；Safari 原生 HLS 換 `src` 後補回播放位置。續期失敗時在原 token 到期前每 30 秒重試，之後交給入場輪詢 |
-| 上傳與 live input | `src/lib/cloudflare-stream.ts`：簽章啟用時，direct upload body、tus `Upload-Metadata`（`requiresignedurls`、`allowedorigins`）與 live input `recording` 都帶 `requireSignedURLs: true`＋`allowedOrigins`；未啟用時請求內容與之前完全相同 |
+| 設定 | `src/lib/cloudflare-stream-signing-config.ts`：金鑰解析（PEM／Cloudflare base64 pem／JWK）、`allowedOrigins`、`CLOUDFLARE_STREAM_LOCK_NEW_UPLOADS`。不簽 token，供 preflight 與上傳程式讀取 |
+| 簽章 | `src/lib/cloudflare-stream-signing.ts`（`server-only`）：RS256 自簽 JWT，header `{ alg, kid }`，claims `sub`、`kid`、`nbf = now − 30 秒`、`exp`；不帶 `accessRules`（不綁 IP）。token 不寫 DB、不寫 log |
+| 租戶綁定 | 只簽 `sourceType` 為 `cloudflare_stream`／`cloudflare_live` 的 Video 列，且呼叫端必須傳入目前 vendor（與列的 `vendorId` 不同就不簽）。`sub` 只能是同一列由伺服器寫入的 `cloudflareStreamUid`／`cloudflarePlaybackId`／`cloudflareLiveInputUid`；網址中的 uid 與欄位不一致時原樣回傳、不簽。商家可自填的 `url` 類型即使貼了 Stream 網址也一律不簽，避免替其他租戶的影片簽 token |
+| 效期 | 直播（含 evergreen、指定場次播放中）10 分鐘；回放 30 分鐘；後台預覽、縮圖與報名頁宣傳影片 4 小時；一律不超過 24 小時。回放的 `exp` 不超過 `replayAvailableUntil`，指定場次再取該場次的回放期限（`fixedSessionReplayAvailableUntil`）；期限已過時不簽、回 403 |
+| 播放來源 | `src/lib/live-playback-source.ts`：入場、vendor／live 綁定與 runtime 檢查都通過後，把該列傳進簽章函式；回應多一個 `expiresInSeconds` |
+| 續期 | `src/lib/signed-playback-renewal.ts`、`src/lib/hls-playback-attachment.ts`、`src/components/live-playback.tsx`：hls.js 只要 `Hls.isSupported()` 就優先使用，原生 HLS 只在不支援時使用。到期前 2 分鐘（短效 token 取一半效期）重新呼叫 `GET /api/live-playback-source`（同樣要通過入場）；hls.js 以 `xhrSetup` 把之後每個請求的 token 換成最新的，原生 HLS 換 `src` 後補回播放位置。續期失敗時只要播放器還掛著就以 15 秒起倍增、上限 5 分鐘持續重試。播放中遇到 hls.js `NETWORK_ERROR` 401／403，或原生 `error`（網路／來源錯誤）時立刻續期，hls.js 以 `loadSource`＋`startLoad(原位置)` 接續；換 `src` 造成的播放不送 `video_play` |
+| 上傳與 live input | `src/lib/cloudflare-stream.ts`：簽章啟用**且** `CLOUDFLARE_STREAM_LOCK_NEW_UPLOADS=true` 時，direct upload body、tus `Upload-Metadata`（`requiresignedurls`、`allowedorigins`）與新 live input 的 `recording` 才帶 `requireSignedURLs: true`＋`allowedOrigins`；否則請求內容與之前完全相同 |
 | `allowedOrigins` | `NEXT_PUBLIC_APP_URL` 的主機名（非預設連接埠時含 `:port`），加上 `STREAM_ALLOWED_ORIGINS`（逗號分隔，可用 `*.example.com`） |
-| 既有影片 | `POST /api/admin/ops/cloudflare/require-signed-urls`（`JOB_SECRET`）：一次一個 vendor、每批最多 10 支、`id` 游標分頁、預設 dry-run；`apply: true` 需已設定金鑰（否則 409）。影片 uid 取自 DB 的 `cloudflareStreamUid`／`cloudflarePlaybackId`／`videoUrl`，live input 另以 `PUT /stream/live_inputs/{uid}` 更新錄影設定 |
-| 其他播放位置 | 商家後台影片預覽、直播預覽（evergreen 預覽播放器）與公開報名頁宣傳影片在伺服器端簽 4 小時 token（宣傳影片本來就公開，只是改成限時） |
-| preflight | 未設定金鑰：WARN（維持公開網址）；金鑰不完整、無法解析、非 RSA 或小於 2048 bits、`STREAM_ALLOWED_ORIGINS` 含無效項目：FAIL |
-| CSP | report-only 的 `media-src` 加 `https://*.cloudflarestream.com`；`connect-src` 加 `https://videodelivery.net`、`https://*.cloudflarestream.com`（hls.js 以 XHR 抓 manifest） |
+| 既有影片 | `POST /api/admin/ops/cloudflare/require-signed-urls`（`JOB_SECRET`）：`mode` 為 `lock`（預設）或 `unlock`；一次一個 vendor、只處理 Cloudflare 類型、uid 只取上述欄位、每批最多 5 支、`id` 游標分頁、預設 dry-run，`maxDuration` 300 秒。lock 的 `apply` 需已設定金鑰（否則 409）；unlock 不需金鑰，送 `requireSignedURLs: false`。live input 先 `GET` 目前設定，只改 `recording` 的兩個欄位再 `PUT`。`apply` 後寫一筆稽核（`cloudflare_stream.require_signed_urls`／`cloudflare_stream.allow_public_urls`，只含 vendor、模式、videoId、uid 與結果） |
+| 其他位置 | 商家後台影片預覽、直播預覽（另檢查 `live.video.vendorId`）、影片清單與互動腳本的縮圖（`thumbnails/thumbnail.*`）、公開報名頁宣傳影片都改成傳 Video 列簽章。`GET /api/admin/ops/cloudflare/direct-upload` 在影片 ready 且簽章啟用時回傳 10 分鐘簽章網址，`scripts/staging-stream-resource-smoke.mjs` 改用它驗證播放（檢查 token 的 `sub` 是這次上傳的 uid） |
+| preflight | 未設定金鑰：WARN；金鑰不完整、無法解析、非 RSA 或小於 2048 bits、`STREAM_ALLOWED_ORIGINS` 含無效項目、`CLOUDFLARE_STREAM_LOCK_NEW_UPLOADS` 不是 true／false 或在沒有金鑰時設 true：FAIL；有金鑰但未鎖新上傳：WARN。執行期若發現設定錯誤，記一次 `stream_signing_misconfigured`（只含原因代碼）並回傳未簽章網址 |
+| CSP | report-only 的 `media-src` 加 `https://*.cloudflarestream.com`；`connect-src` 加 `https://videodelivery.net`、`https://*.cloudflarestream.com` |
 
 與第 3 節評估不同之處：
 
-- **不改 schema**：第 3 節第 2 步建議新增 `cloudflareVideoUid` 欄位。為了不和同時進行的 schema 變更衝突，本次不加欄位，也不改 webhook 與 `cloudflare-ops.ts` 寫入的 `videodelivery.net/<uid>` 網址；簽章時從 `videoUrl` 解析 uid（只接受 `videodelivery.net` 或 `customer-<CODE>.cloudflarestream.com`、32 位 hex uid、`manifest/video.m3u8|mpd`），再把 uid 換成 token。
-- **`CLOUDFLARE_STREAM_CUSTOMER_CODE` 改為選填**：未設定時沿用 DB 網址的主機（`videodelivery.net`）；設定後簽章網址改用 `customer-<CODE>.cloudflarestream.com`。若 Staging 實測 `videodelivery.net/<TOKEN>/…` 被拒，就設定這個值。
+- **不改 schema**：第 3 節第 2 步建議新增 `cloudflareVideoUid` 欄位。為了不和同時進行的 schema 變更衝突，本次不加欄位，沿用既有的 `cloudflareStreamUid`／`cloudflarePlaybackId`／`cloudflareLiveInputUid`，webhook 與 `cloudflare-ops.ts` 寫入的 `videodelivery.net/<uid>` 網址不變。
+- **`CLOUDFLARE_STREAM_CUSTOMER_CODE`**：程式上選填（未設定時沿用 DB 網址的主機），部署時建議一併設定（第 8 節第 2 步），簽章網址改用 `customer-<CODE>.cloudflarestream.com`。
+- **鎖定新上傳另設旗標**：`CLOUDFLARE_STREAM_LOCK_NEW_UPLOADS`，在 Staging 驗證簽章播放通過後才開，避免金鑰一設定新影片就要求簽章。
 - **用量**：本次只做簽章，用量仍以 `/api/stream-usage` 心跳入帳，不改用 Cloudflare 遞送分鐘對帳（第 3 節第 6 步維持現狀）。
-- **未簽章的位置**：Cloudflare 縮圖（`thumbnailUrl`，只出現在商家後台影片清單與互動腳本頁）與 `GET /api/media/videos/status` 回給編輯器的 `videoUrl` 沒有簽章。開啟 `requireSignedURLs` 後若縮圖也被要求簽章，後台縮圖會失效，需在 Staging 確認後另案處理。商家若把 Stream 網址手動貼到課程單元或漏斗頁影片元件，開啟後同樣無法播放。
+- **仍未簽章的位置**：`GET /api/media/videos/status` 回給編輯器的 `videoUrl`／`thumbnailUrl`（編輯器只顯示，不播放 Stream 網址）；商家手動貼到課程單元或漏斗頁影片元件的 Stream 網址（`url` 類型，依設計不簽），鎖定後會無法播放。
 
 ## 8. 部署步驟
 
 每個環境（Preview／Staging → Production）各做一次，順序不可顛倒。
 
 1. **建立 signing key（owner）**：在該環境的 Cloudflare 帳號呼叫 `POST /accounts/{account_id}/stream/keys`，記下回應的 `id` 與 `pem`（只顯示一次，存入密碼管理器）。各環境用不同的 key。
-2. **設定環境變數**：在 Vercel 對應環境設定 `CLOUDFLARE_STREAM_SIGNING_KEY_ID`＝`id`、`CLOUDFLARE_STREAM_SIGNING_KEY_PEM`＝`pem`（可直接貼 Cloudflare 回傳的 base64 字串）；需要 Preview 網域時設定 `STREAM_ALLOWED_ORIGINS`（例如 `*.vercel.app` 或明確的 Preview 網域）。重新部署後確認 `/api/admin/preflight` 的 `CLOUDFLARE_STREAM_SIGNING_KEY_ID` 與 `STREAM_ALLOWED_ORIGINS` 為 PASS。
-   - 此時播放器已拿到簽章網址，但既有影片尚未 `requireSignedURLs`，新舊網址都能播放；新上傳的影片與新建的 live input 會直接要求簽章。
-3. **Staging 驗證（簽章網址）**：用合成資料的直播與回放各看一次，確認：入場後的播放網址是 token 形式且能播放；Chrome（hls.js）與 Safari（原生 HLS）都能跨過第一次續期（直播約第 8 分鐘、回放約第 28 分鐘）不中斷；回放截止前的 token `exp` 等於截止時間；新上傳影片在 Cloudflare 後台顯示 `requireSignedURLs: true`。
-4. **既有影片批次開啟**：避開直播時段，對每個 vendor 先 dry-run 確認清單，再 `apply`：
+2. **設定環境變數**：在 Vercel 對應環境設定 `CLOUDFLARE_STREAM_SIGNING_KEY_ID`＝`id`、`CLOUDFLARE_STREAM_SIGNING_KEY_PEM`＝`pem`（可直接貼 Cloudflare 回傳的 base64 字串）、`CLOUDFLARE_STREAM_CUSTOMER_CODE`＝Stream 後台 `customer-<CODE>` 的 `<CODE>`；需要 Preview 網域時設定 `STREAM_ALLOWED_ORIGINS`（例如 `*.vercel.app` 或明確的 Preview 網域）。**先不要設** `CLOUDFLARE_STREAM_LOCK_NEW_UPLOADS`。重新部署後確認 `/api/admin/preflight` 的 `CLOUDFLARE_STREAM_SIGNING_KEY_ID`、`STREAM_ALLOWED_ORIGINS` 為 PASS，`CLOUDFLARE_STREAM_LOCK_NEW_UPLOADS` 為 WARN。
+   - 此時播放器已拿到簽章網址，但所有影片（含新上傳）都還沒有 `requireSignedURLs`，新舊網址都能播放。
+3. **Staging 驗證（簽章網址）**：用合成資料的直播與回放各看一次，確認：入場後的播放網址是 token 形式且能播放；Chrome 與 Safari 都能跨過第一次續期（直播約第 8 分鐘、回放約第 28 分鐘）不中斷；回放截止前的 token `exp` 等於截止時間；後台預覽、縮圖、報名頁宣傳影片可顯示；`RUN_CLOUDFLARE_SMOKE` 的 Stream smoke 回報 `signedPlayback: true` 並通過。
+4. **鎖定新上傳**：第 3 步全部通過後，設定 `CLOUDFLARE_STREAM_LOCK_NEW_UPLOADS=true` 並重新部署；上傳一支合成影片，確認 Cloudflare 後台顯示 `requireSignedURLs: true`、舊式網址被拒、簽章網址可播放。
+5. **既有影片批次鎖定**：避開直播時段，對每個 vendor 先 dry-run 確認清單，再 `apply`：
 
    ```bash
-   curl -sS -X POST "$APP_URL/api/admin/ops/cloudflare/require-signed-urls"      -H "Authorization: Bearer $JOB_SECRET" -H "Content-Type: application/json"      -d '{"vendorId":"<vendorId>","limit":10}'
+   curl -sS -X POST "$APP_URL/api/admin/ops/cloudflare/require-signed-urls" \
+     -H "Authorization: Bearer $JOB_SECRET" -H "Content-Type: application/json" \
+     -d '{"vendorId":"<vendorId>","mode":"lock"}'
    # 確認 results 後加上 "apply": true；有 nextCursor 就帶 "cursor" 繼續，直到 nextCursor 為 null
    ```
 
-   結果只含 `videoId`、`uid` 與狀態；`failed` 的項目可重跑（同一設定重送結果相同），`not_found` 表示 Cloudflare 上已無該影片。
-5. **Staging 驗證（舊網址失效）**：抽樣確認舊的 `https://videodelivery.net/<uid>/manifest/video.m3u8` 被拒、經入場取得的網址可播放、其他網域嵌入被 `allowedOrigins` 擋下；確認直播進行中以 live input 播放也要求簽章（第 6 節待實測項目），以及後台縮圖是否仍正常。
-6. **Production**：Staging 全部通過後，對 Production 重複第 1–5 步。
-7. **回滾**：把同一批影片的 `requireSignedURLs` 改回 `false` 即恢復公開網址；移除兩個簽章環境變數並重新部署則回到未簽章的程式行為（新上傳也不再要求簽章）。順序：先改回影片設定，再移除環境變數，否則已鎖定的影片在移除變數後會無法播放。
-8. **金鑰輪替**：建立新 key → 更新環境變數並部署 → 等最長 token 效期（30 分鐘，保守取 24 小時）過後再 `DELETE /stream/keys/{舊 key id}`。
+   結果只含 `videoId`、`uid` 與狀態；`failed` 的項目可重跑（同一設定重送結果相同），`not_found` 表示 Cloudflare 上已無該資源。每次 `apply` 會寫一筆稽核，回應的 `audited` 為 `false` 時要另外記錄。
+6. **Staging 驗證（舊網址失效）**：抽樣確認舊的 `https://videodelivery.net/<uid>/manifest/video.m3u8` 被拒、經入場取得的網址可播放、其他網域嵌入被 `allowedOrigins` 擋下；確認直播進行中以 live input 播放也要求簽章（第 6 節待實測項目），live input 的 `meta`、錄影模式在 PUT 後未被改動。
+7. **Production**：Staging 全部通過後，對 Production 重複第 1–6 步。
+8. **回滾**：先用同一個端點的 `"mode":"unlock"` 對每個 vendor 解除（同樣先 dry-run、再 `apply`，不需要金鑰），並移除 `CLOUDFLARE_STREAM_LOCK_NEW_UPLOADS`；確認影片都恢復公開後，才視需要移除簽章環境變數。順序反過來的話，已鎖定的影片在移除金鑰後會無法播放。
+9. **金鑰輪替**：建立新 key → 更新環境變數並部署 → 等最長 token 效期過後（預覽與宣傳影片的 token 最長 4 小時）再 `DELETE /stream/keys/{舊 key id}`。

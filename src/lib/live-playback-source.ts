@@ -6,7 +6,7 @@ import { EVERGREEN_LIVE_SELECT, resolveViewerLiveRuntime } from "@/lib/evergreen
 import { FIXED_SESSION_LIVE_SELECT, resolveViewerFixedSessionForLive } from "@/lib/live-fixed-sessions-store";
 import { fixedSessionReplayAvailableUntil } from "@/lib/live-fixed-sessions";
 import {
-  signStreamPlaybackUrl,
+  signVideoUrl,
   STREAM_LIVE_TOKEN_TTL_SECONDS,
   STREAM_REPLAY_TOKEN_TTL_SECONDS,
 } from "@/lib/cloudflare-stream-signing";
@@ -25,8 +25,9 @@ type PlaybackSourceInput = {
 /**
  * Resolves a playback URL only for an unexpired session bound to this live and vendor.
  *
- * F-093: when Cloudflare Stream signing is configured, a Stream URL is
- * returned with a short-lived token in place of the video uid, plus
+ * F-093: when Cloudflare Stream signing is configured, a Cloudflare video's
+ * URL is returned with a short-lived token in place of the uid bound on this
+ * vendor's own Video row (never a uid taken only from the URL), plus
  * `expiresInSeconds` so the player re-requests this endpoint (and so passes
  * admission again) before the token lapses. Replay tokens never outlive the
  * replay deadline. Without signing keys the stored URL is returned unchanged.
@@ -64,6 +65,8 @@ export async function resolveLivePlaybackSource(db: PrismaClient, input: Playbac
           status: true,
           cloudflareReadyToStream: true,
           cloudflareLiveInputUid: true,
+          cloudflareStreamUid: true,
+          cloudflarePlaybackId: true,
           liveInputStatus: true,
         },
       },
@@ -89,7 +92,8 @@ export async function resolveLivePlaybackSource(db: PrismaClient, input: Playbac
   const storedUrl = parseSafeExternalHttpUrl(live?.video?.videoUrl);
   if (!storedUrl) return null;
   const isReplay = runtime.state === "replay";
-  const signed = signStreamPlaybackUrl(storedUrl, {
+  const signed = signVideoUrl({ ...live.video, videoUrl: storedUrl }, {
+    vendorId: input.vendorId,
     now,
     ttlSeconds: isReplay ? STREAM_REPLAY_TOKEN_TTL_SECONDS : STREAM_LIVE_TOKEN_TTL_SECONDS,
     notAfter: isReplay
@@ -101,10 +105,10 @@ export async function resolveLivePlaybackSource(db: PrismaClient, input: Playbac
   if (!signed) return null;
   const source = signed.signed
     ? {
-      playbackUrl: signed.playbackUrl,
+      playbackUrl: signed.url,
       expiresInSeconds: Math.max(1, Math.floor((signed.expiresAt.getTime() - now.getTime()) / 1_000)),
     }
-    : { playbackUrl: signed.playbackUrl };
+    : { playbackUrl: signed.url };
   return runtime.playbackStartSeconds === null
     ? source
     : { ...source, playbackStartSeconds: runtime.playbackStartSeconds };

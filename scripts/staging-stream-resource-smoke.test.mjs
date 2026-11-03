@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { runStagingStreamResourceSmoke, validNewStreamUpload } from "./staging-stream-resource-smoke.mjs";
+import { runStagingStreamResourceSmoke, validNewStreamUpload, validSignedPlayback } from "./staging-stream-resource-smoke.mjs";
 
 const uid = "a".repeat(32);
 const uploadURL = `https://upload.videodelivery.net/${uid}`;
@@ -144,4 +144,52 @@ test("slow status reads stop at deadline and retain mutation counts without retr
   assert.ok(receipt.sideEffects.statusReads < 36);
   assert.equal(receipt.sideEffects.playbackReads, 0);
   assert.ok(time <= 194_000);
+});
+
+// F-093: synthetic JWT-shaped tokens; the smoke only checks the `sub` claim, never a signature.
+function tokenFor(sub) {
+  const part = (value) => Buffer.from(JSON.stringify(value)).toString("base64url");
+  return `${part({ alg: "RS256", kid: "k" })}.${part({ sub, exp: 1 })}.c2lnbmF0dXJl`;
+}
+
+test("signed playback URLs must carry this upload's UID on a Cloudflare delivery host", () => {
+  const signed = `https://videodelivery.net/${tokenFor(uid)}/manifest/video.m3u8`;
+  assert.equal(validSignedPlayback(signed, uid), true);
+  assert.equal(validSignedPlayback(`https://customer-abc123.cloudflarestream.com/${tokenFor(uid)}/manifest/video.m3u8`, uid), true);
+  for (const url of [`https://videodelivery.net/${tokenFor("c".repeat(32))}/manifest/video.m3u8`, signed.replace("videodelivery.net", "attacker.test"),
+    `${signed}?x=1`, signed.replace("https:", "http:"), `https://videodelivery.net/${uid}/manifest/video.m3u8`, "not a url"]) {
+    assert.equal(validSignedPlayback(url, uid), false);
+  }
+});
+
+test("plays the signed URL from the status endpoint when signing is configured", async () => {
+  const signedUrl = `https://videodelivery.net/${tokenFor(uid)}/manifest/video.m3u8`;
+  const { calls, dependencies } = harness();
+  const original = dependencies.fetch;
+  dependencies.fetch = async (url, options) => {
+    if (!String(url).includes("?videoId=")) return original(url, options);
+    calls.push({ url, options });
+    return Response.json({ ok: true, video: { readyToStream: true, durationSec: 1, playbackUrl: signedUrl } });
+  };
+  const receipt = await runStagingStreamResourceSmoke(env, dependencies);
+  assert.equal(receipt.resourceJourney, "PASS");
+  assert.equal(receipt.signedPlayback, true);
+  assert.equal(calls.at(-1).url, signedUrl);
+  assert.equal(calls.at(-1).options.headers, undefined);
+  assert.equal(JSON.stringify(receipt).includes(signedUrl), false);
+});
+
+test("rejects a status playback URL signed for another resource", async () => {
+  const { dependencies } = harness();
+  const original = dependencies.fetch;
+  dependencies.fetch = async (url, options) => {
+    if (String(url).includes("?videoId=")) {
+      return Response.json({ ok: true, video: { readyToStream: true, durationSec: 1,
+        playbackUrl: `https://videodelivery.net/${tokenFor("c".repeat(32))}/manifest/video.m3u8` } });
+    }
+    return original(url, options);
+  };
+  const receipt = await runStagingStreamResourceSmoke(env, dependencies);
+  assert.equal(receipt.reason, "STATUS_REJECTED");
+  assert.equal(receipt.sideEffects.playbackReads, 0);
 });

@@ -4,6 +4,7 @@ import { cache } from "react";
 import { getDb } from "@/lib/db";
 import { loadPublicLiveSessions, type PublicLiveSessionsResult } from "@/lib/live-fixed-sessions-store";
 import { parseSafeExternalHttpUrl } from "@/lib/external-url";
+import { signedVideoUrlOrNull } from "@/lib/cloudflare-stream-signing";
 import { isExistingLiveVideoReady } from "@/lib/live-video-readiness";
 import { parseRegistrationFormFields, type RegistrationFormFieldSpec } from "@/lib/registration-form-fields";
 
@@ -40,6 +41,8 @@ const PUBLIC_REGISTRATION_FORM_SELECT = {
       status: true,
       cloudflareReadyToStream: true,
       cloudflareLiveInputUid: true,
+      cloudflareStreamUid: true,
+      cloudflarePlaybackId: true,
       liveInputStatus: true,
     },
   },
@@ -175,6 +178,11 @@ function publicFormFromRecord(
     && isExistingLiveVideoReady(form.promoVideo)
     ? parseSafeExternalHttpUrl(form.promoVideo.videoUrl)
     : null;
+  // F-093: the promo is public by design; a Cloudflare video still gets a
+  // time-limited token bound to this vendor's own Video row.
+  const promoVideoUrl = promoVideo
+    ? signedVideoUrlOrNull({ ...form.promoVideo!, videoUrl: promoVideo }, { vendorId: form.vendorId, now })
+    : null;
 
   return {
     id: form.id,
@@ -193,7 +201,7 @@ function publicFormFromRecord(
     notice: form.notice,
     seoTitle: form.seoTitle,
     seoDescription: form.seoDescription,
-    promoVideo: promoVideo ? { title: form.promoVideo!.title, videoUrl: promoVideo } : null,
+    promoVideo: promoVideoUrl ? { title: form.promoVideo!.title, videoUrl: promoVideoUrl } : null,
     sessions: selectPublicRegistrationSessions(sessions, {
       now,
       hideExpiredSessions: form.hideExpiredSessions,

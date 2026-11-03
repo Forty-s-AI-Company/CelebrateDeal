@@ -17,7 +17,7 @@ if (new URL(databaseUrl).searchParams.get("schema") !== schema || new URL(direct
 
 export default defineConfig({
   envDir: false,
-  resolve: { alias: { "@": path.resolve(__dirname, "src") } },
+  resolve: { alias: { "@": path.resolve(__dirname, "src"), "server-only": path.resolve(__dirname, "node_modules/next/dist/compiled/server-only/empty.js") } },
   test: {
     include: ["src/lib/stream-usage-reconciliation.db.test.ts"],
     fileParallelism: false,

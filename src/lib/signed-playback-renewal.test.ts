@@ -1,15 +1,20 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
-  scheduleSignedPlaybackRenewal,
+  consumeSourceSwapPlay,
+  createSignedPlaybackRenewal,
   signedPlaybackRenewalDelayMs,
+  signedPlaybackRetryDelayMs,
+  SIGNED_PLAYBACK_MIN_RECOVERY_INTERVAL_MS,
   SIGNED_PLAYBACK_MIN_RENEWAL_DELAY_MS,
-  SIGNED_PLAYBACK_RETRY_DELAY_MS,
+  SIGNED_PLAYBACK_RETRY_MAX_MS,
   swapNativePlaybackSource,
   withCurrentStreamToken,
 } from "@/lib/signed-playback-renewal";
 
 const oldToken = "aaa.bbb.ccc";
 const newToken = "ddd.eee.fff";
+const t2 = "https://videodelivery.net/t2/manifest/video.m3u8";
+const t3 = "https://videodelivery.net/t3/manifest/video.m3u8";
 
 beforeEach(() => {
   vi.useFakeTimers();
@@ -19,7 +24,7 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-describe("signedPlaybackRenewalDelayMs", () => {
+describe("delays", () => {
   it("renews two minutes before a normal token lapses", () => {
     expect(signedPlaybackRenewalDelayMs(600)).toBe(8 * 60_000);
     expect(signedPlaybackRenewalDelayMs(1_800)).toBe(28 * 60_000);
@@ -29,71 +34,110 @@ describe("signedPlaybackRenewalDelayMs", () => {
     expect(signedPlaybackRenewalDelayMs(120)).toBe(60_000);
     expect(signedPlaybackRenewalDelayMs(2)).toBe(SIGNED_PLAYBACK_MIN_RENEWAL_DELAY_MS);
   });
+
+  it("backs off failed renewals exponentially up to five minutes", () => {
+    expect([0, 1, 2, 3, 4, 5, 50].map(signedPlaybackRetryDelayMs))
+      .toEqual([15_000, 30_000, 60_000, 120_000, 240_000, SIGNED_PLAYBACK_RETRY_MAX_MS, SIGNED_PLAYBACK_RETRY_MAX_MS]);
+  });
 });
 
-describe("scheduleSignedPlaybackRenewal", () => {
+describe("createSignedPlaybackRenewal", () => {
   it("re-requests the source before expiry and keeps renewing with each new expiry", async () => {
     const fetchSource = vi.fn()
-      .mockResolvedValueOnce({ playbackUrl: "https://videodelivery.net/t2/manifest/video.m3u8", expiresInSeconds: 600 })
-      .mockResolvedValueOnce({ playbackUrl: "https://videodelivery.net/t3/manifest/video.m3u8", expiresInSeconds: 600 });
+      .mockResolvedValueOnce({ playbackUrl: t2, expiresInSeconds: 600 })
+      .mockResolvedValueOnce({ playbackUrl: t3, expiresInSeconds: 600 });
     const applySource = vi.fn();
-    const stop = scheduleSignedPlaybackRenewal({ expiresInSeconds: 600, fetchSource, applySource });
+    const renewal = createSignedPlaybackRenewal({ expiresInSeconds: 600, fetchSource, applySource });
 
     await vi.advanceTimersByTimeAsync(8 * 60_000 - 1);
     expect(fetchSource).not.toHaveBeenCalled();
     await vi.advanceTimersByTimeAsync(1);
-    expect(applySource).toHaveBeenLastCalledWith("https://videodelivery.net/t2/manifest/video.m3u8");
+    expect(applySource).toHaveBeenLastCalledWith(t2);
 
     await vi.advanceTimersByTimeAsync(8 * 60_000);
-    expect(applySource).toHaveBeenLastCalledWith("https://videodelivery.net/t3/manifest/video.m3u8");
+    expect(applySource).toHaveBeenLastCalledWith(t3);
     expect(fetchSource).toHaveBeenCalledTimes(2);
-    stop();
+    renewal.stop();
   });
 
-  it("retries a refused renewal only while the current token is still valid", async () => {
+  it("keeps retrying with backoff past the token expiry while the player is mounted", async () => {
     const fetchSource = vi.fn().mockResolvedValue(null);
     const applySource = vi.fn();
-    scheduleSignedPlaybackRenewal({ expiresInSeconds: 600, fetchSource, applySource });
+    const renewal = createSignedPlaybackRenewal({ expiresInSeconds: 600, fetchSource, applySource });
 
-    // First attempt at 8:00, then 8:30, 9:00, 9:30; 10:00 is the expiry, so no retry at or past it.
-    await vi.advanceTimersByTimeAsync(20 * 60_000);
-    expect(fetchSource).toHaveBeenCalledTimes(4);
-    expect(applySource).not.toHaveBeenCalled();
-    expect(SIGNED_PLAYBACK_RETRY_DELAY_MS).toBe(30_000);
+    // 8:00, then +15 s, +30 s, +60 s, +120 s, +240 s, +300 s ... well past the 10:00 expiry.
+    await vi.advanceTimersByTimeAsync(8 * 60_000 + 15_000 + 30_000 + 60_000 + 120_000 + 240_000 + 300_000);
+    expect(fetchSource).toHaveBeenCalledTimes(7);
+
+    fetchSource.mockResolvedValueOnce({ playbackUrl: t2, expiresInSeconds: 600 });
+    await vi.advanceTimersByTimeAsync(300_000);
+    expect(applySource).toHaveBeenCalledWith(t2);
+
+    renewal.stop();
+    const calls = fetchSource.mock.calls.length;
+    await vi.advanceTimersByTimeAsync(60 * 60_000);
+    expect(fetchSource).toHaveBeenCalledTimes(calls);
   });
 
   it("treats a thrown renewal like a refusal", async () => {
     const fetchSource = vi.fn().mockRejectedValueOnce(new Error("offline"))
-      .mockResolvedValueOnce({ playbackUrl: "https://videodelivery.net/t2/manifest/video.m3u8", expiresInSeconds: 600 });
+      .mockResolvedValueOnce({ playbackUrl: t2, expiresInSeconds: 600 });
     const applySource = vi.fn();
-    scheduleSignedPlaybackRenewal({ expiresInSeconds: 600, fetchSource, applySource });
+    createSignedPlaybackRenewal({ expiresInSeconds: 600, fetchSource, applySource });
 
-    await vi.advanceTimersByTimeAsync(8 * 60_000 + SIGNED_PLAYBACK_RETRY_DELAY_MS);
-    expect(applySource).toHaveBeenCalledWith("https://videodelivery.net/t2/manifest/video.m3u8");
+    await vi.advanceTimersByTimeAsync(8 * 60_000 + 15_000);
+    expect(applySource).toHaveBeenCalledWith(t2);
   });
 
   it("applies an unsigned source once and stops when the server no longer signs", async () => {
     const fetchSource = vi.fn().mockResolvedValue({ playbackUrl: "https://videodelivery.net/uid/manifest/video.m3u8" });
     const applySource = vi.fn();
-    scheduleSignedPlaybackRenewal({ expiresInSeconds: 600, fetchSource, applySource });
+    createSignedPlaybackRenewal({ expiresInSeconds: 600, fetchSource, applySource });
 
     await vi.advanceTimersByTimeAsync(60 * 60_000);
     expect(fetchSource).toHaveBeenCalledTimes(1);
     expect(applySource).toHaveBeenCalledTimes(1);
   });
 
+  it("renews immediately on demand, shares an in-flight request and rate-limits recoveries", async () => {
+    let resolveFetch: (value: unknown) => void = () => undefined;
+    const fetchSource = vi.fn(() => new Promise((resolve) => { resolveFetch = resolve; }));
+    const applySource = vi.fn();
+    const renewal = createSignedPlaybackRenewal({
+      expiresInSeconds: 600,
+      fetchSource: fetchSource as never,
+      applySource,
+    });
+
+    const first = renewal.renewNow();
+    const shared = renewal.renewNow();
+    expect(fetchSource).toHaveBeenCalledTimes(1);
+    resolveFetch({ playbackUrl: t2, expiresInSeconds: 600 });
+    await expect(first).resolves.toBe(t2);
+    await expect(shared).resolves.toBe(t2);
+    expect(applySource).toHaveBeenCalledWith(t2);
+
+    await expect(renewal.renewNow()).resolves.toBeNull();
+    expect(fetchSource).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(SIGNED_PLAYBACK_MIN_RECOVERY_INTERVAL_MS);
+    void renewal.renewNow();
+    expect(fetchSource).toHaveBeenCalledTimes(2);
+    renewal.stop();
+  });
+
   it("stops cleanly, including a renewal already in flight", async () => {
     let resolveFetch: (value: unknown) => void = () => undefined;
-    const fetchSource = vi.fn(() => new Promise<never>((resolve) => { resolveFetch = resolve as never; }));
+    const fetchSource = vi.fn(() => new Promise((resolve) => { resolveFetch = resolve; }));
     const applySource = vi.fn();
-    const stop = scheduleSignedPlaybackRenewal({ expiresInSeconds: 600, fetchSource, applySource });
+    const renewal = createSignedPlaybackRenewal({ expiresInSeconds: 600, fetchSource: fetchSource as never, applySource });
 
     await vi.advanceTimersByTimeAsync(8 * 60_000);
-    stop();
-    resolveFetch({ playbackUrl: "https://videodelivery.net/t2/manifest/video.m3u8", expiresInSeconds: 600 });
+    renewal.stop();
+    resolveFetch({ playbackUrl: t2, expiresInSeconds: 600 });
     await vi.advanceTimersByTimeAsync(60 * 60_000);
     expect(applySource).not.toHaveBeenCalled();
     expect(fetchSource).toHaveBeenCalledTimes(1);
+    await expect(renewal.renewNow()).resolves.toBeNull();
   });
 });
 
@@ -139,7 +183,7 @@ describe("swapNativePlaybackSource", () => {
     };
   }
 
-  it("restores the position and keeps playing after the source swap", () => {
+  it("restores the position, keeps playing, and marks the resulting play as a source swap", () => {
     const video = fakeVideo(312, false);
     swapNativePlaybackSource(video as unknown as HTMLVideoElement, "https://videodelivery.net/new/manifest/video.m3u8");
     expect(video.src).toBe("https://videodelivery.net/new/manifest/video.m3u8");
@@ -148,13 +192,15 @@ describe("swapNativePlaybackSource", () => {
     video.fire("loadedmetadata");
     expect(video.currentTime).toBe(312);
     expect(video.play).toHaveBeenCalledTimes(1);
-    expect(video.removeEventListener).toHaveBeenCalledWith("loadedmetadata", expect.any(Function));
+    expect(consumeSourceSwapPlay(video)).toBe(true);
+    expect(consumeSourceSwapPlay(video)).toBe(false);
   });
 
-  it("does not resume a paused video", () => {
+  it("does not resume or mark a paused video", () => {
     const video = fakeVideo(40, true);
     swapNativePlaybackSource(video as unknown as HTMLVideoElement, "https://videodelivery.net/new/manifest/video.m3u8");
     video.fire("loadedmetadata");
     expect(video.play).not.toHaveBeenCalled();
+    expect(consumeSourceSwapPlay(video)).toBe(false);
   });
 });

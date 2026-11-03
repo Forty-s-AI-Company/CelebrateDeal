@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { getStreamPlaybackSecurity, type StreamPlaybackSecurity } from "@/lib/cloudflare-stream-signing";
+import { getStreamPlaybackSecurity, type StreamPlaybackSecurity } from "@/lib/cloudflare-stream-signing-config";
 
 const CloudflareVideoDetails = z.object({
   uid: z.string(),
@@ -206,22 +206,27 @@ export async function getLiveInput(uid: string) {
   return parsed.data;
 }
 
+/** 批次 lock／unlock 送給既有影片與 live input 錄影的播放限制。 */
+export type StreamPlaybackSecurityUpdate =
+  | StreamPlaybackSecurity
+  | { requireSignedURLs: false };
+
 const CloudflareVideoPlaybackSettings = z.object({
   uid: z.string().min(1),
   requireSignedURLs: z.boolean().optional(),
   allowedOrigins: z.array(z.string()).optional(),
 });
 
-const CloudflareLiveInputRecordingSettings = z.object({
+const CloudflareLiveInputSettings = z.object({
   uid: z.string().min(1),
-  recording: z.object({
-    requireSignedURLs: z.boolean().optional(),
-    allowedOrigins: z.array(z.string()).optional(),
-  }).optional(),
+  meta: z.record(z.string(), z.unknown()).optional(),
+  defaultCreator: z.string().optional(),
+  deleteRecordingAfterDays: z.number().optional(),
+  recording: z.record(z.string(), z.unknown()).optional(),
 });
 
-/** 既有影片開啟簽章：`POST /stream/{uid}`，body 帶 `uid`。 */
-export async function updateStreamVideoPlaybackSecurity(uid: string, security: StreamPlaybackSecurity) {
+/** 既有影片：`POST /stream/{uid}`，body 帶 `uid` 與 `requireSignedURLs`（lock 時另帶 `allowedOrigins`）。 */
+export async function updateStreamVideoPlaybackSecurity(uid: string, security: StreamPlaybackSecurityUpdate) {
   const result = await cloudflareRequest(`/stream/${encodeURIComponent(uid)}`, {
     method: "POST",
     body: JSON.stringify({ uid, ...security }),
@@ -233,13 +238,28 @@ export async function updateStreamVideoPlaybackSecurity(uid: string, security: S
   return parsed.data;
 }
 
-/** 既有 live input 的錄影開啟簽章：`PUT /stream/live_inputs/{uid}`，保留自動錄影。 */
-export async function updateLiveInputRecordingSecurity(uid: string, security: StreamPlaybackSecurity) {
-  const result = await cloudflareRequest(`/stream/live_inputs/${encodeURIComponent(uid)}`, {
+/**
+ * 既有 live input 的錄影設定：先 `GET` 取得目前設定，只覆寫 `recording` 中的
+ * `requireSignedURLs`／`allowedOrigins`，其他欄位（`meta`、`defaultCreator`、
+ * `deleteRecordingAfterDays`、錄影 `mode` 等）原樣帶回 `PUT`，避免 PUT 把未帶的欄位重設。
+ */
+export async function updateLiveInputRecordingSecurity(uid: string, security: StreamPlaybackSecurityUpdate) {
+  const path = `/stream/live_inputs/${encodeURIComponent(uid)}`;
+  const current = CloudflareLiveInputSettings.safeParse(await cloudflareRequest(path));
+  if (!current.success) {
+    throw new CloudflareStreamError("invalid_response", 200);
+  }
+  const { meta, defaultCreator, deleteRecordingAfterDays, recording } = current.data;
+  const result = await cloudflareRequest(path, {
     method: "PUT",
-    body: JSON.stringify({ recording: { mode: "automatic", ...security } }),
+    body: JSON.stringify({
+      ...(meta !== undefined ? { meta } : {}),
+      ...(defaultCreator !== undefined ? { defaultCreator } : {}),
+      ...(deleteRecordingAfterDays !== undefined ? { deleteRecordingAfterDays } : {}),
+      recording: { mode: "automatic", ...recording, ...security },
+    }),
   });
-  const parsed = CloudflareLiveInputRecordingSettings.safeParse(result);
+  const parsed = CloudflareLiveInputSettings.safeParse(result);
   if (!parsed.success) {
     throw new CloudflareStreamError("invalid_response", 200);
   }

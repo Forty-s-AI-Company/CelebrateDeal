@@ -15,8 +15,9 @@ import { getTurnstileConfig } from "@/lib/turnstile";
 import {
   getStreamAllowedOrigins,
   getStreamSigningConfig,
+  getStreamUploadLockFlag,
   type StreamSigningMisconfiguration,
-} from "@/lib/cloudflare-stream-signing";
+} from "@/lib/cloudflare-stream-signing-config";
 
 const RequiredUrl = z.string().url();
 const OptionalSecret = z.string().optional();
@@ -58,6 +59,7 @@ export const ProductionEnvSchema = z.object({
   CLOUDFLARE_STREAM_SIGNING_KEY_PEM: OptionalSecret,
   CLOUDFLARE_STREAM_SIGNING_KEY_JWK: OptionalSecret,
   CLOUDFLARE_STREAM_CUSTOMER_CODE: OptionalSecret,
+  CLOUDFLARE_STREAM_LOCK_NEW_UPLOADS: OptionalSecret,
   STREAM_ALLOWED_ORIGINS: OptionalSecret,
   PAYMENT_PROVIDER: z.enum(["demo", "payuni", "ecpay-like", "platform-ecpay"]).default("demo"),
   PAYUNI_HASH_KEY: OptionalSecret,
@@ -306,16 +308,25 @@ const STREAM_SIGNING_MISCONFIGURATION_MESSAGES: Record<StreamSigningMisconfigura
 /**
  * F-093: signed Stream playback. Unset keys keep today's public URLs (warning)
  * so environments can switch one at a time; a set but unusable key fails.
+ * Locking new uploads is a separate flag, turned on only after the signed URLs
+ * were verified on Staging.
  */
 function streamSigningChecks(env: NodeJS.ProcessEnv): EnvCheck[] {
   const config = getStreamSigningConfig(env);
   const allowedOrigins = getStreamAllowedOrigins(env);
+  const lockFlag = getStreamUploadLockFlag(env);
+  const lockKey = "CLOUDFLARE_STREAM_LOCK_NEW_UPLOADS";
+  if (lockFlag === "invalid") {
+    return [{ key: lockKey, status: "fail", message: "CLOUDFLARE_STREAM_LOCK_NEW_UPLOADS 只能是 true 或 false（未設定＝false）" }];
+  }
   if (config.status === "disabled") {
-    return [{
-      key: "CLOUDFLARE_STREAM_SIGNING_KEY_ID",
-      status: "warning",
-      message: "未設定 Stream 簽章金鑰；播放網址維持公開且永久有效，任何人可不經入場觀看（F-093，見 docs/operations/stream-signed-urls-plan.md）",
-    }];
+    return [lockFlag === "on"
+      ? { key: lockKey, status: "fail", message: "CLOUDFLARE_STREAM_LOCK_NEW_UPLOADS=true 需要先設定 Stream 簽章金鑰，否則新影片會無法播放" }
+      : {
+        key: "CLOUDFLARE_STREAM_SIGNING_KEY_ID",
+        status: "warning",
+        message: "未設定 Stream 簽章金鑰；播放網址維持公開且永久有效，任何人可不經入場觀看（F-093，見 docs/operations/stream-signed-urls-plan.md）",
+      }];
   }
   if (config.status === "misconfigured") {
     return [{ key: "CLOUDFLARE_STREAM_SIGNING_KEY_ID", status: "fail", message: STREAM_SIGNING_MISCONFIGURATION_MESSAGES[config.reason] }];
@@ -323,15 +334,18 @@ function streamSigningChecks(env: NodeJS.ProcessEnv): EnvCheck[] {
   const originsCheck: EnvCheck = allowedOrigins.invalid.length > 0
     ? { key: "STREAM_ALLOWED_ORIGINS", status: "fail", message: "STREAM_ALLOWED_ORIGINS 含無效項目；只接受以逗號分隔的主機名（可用 *.example.com、可加 :port），不可含路徑" }
     : allowedOrigins.origins.length === 0
-      ? { key: "STREAM_ALLOWED_ORIGINS", status: "warning", message: "無法從 NEXT_PUBLIC_APP_URL 推得 allowedOrigins；新影片不會限制播放網域" }
-      : { key: "STREAM_ALLOWED_ORIGINS", status: "pass", message: `新影片 allowedOrigins：${allowedOrigins.origins.join(", ")}` };
+      ? { key: "STREAM_ALLOWED_ORIGINS", status: "warning", message: "無法從 NEXT_PUBLIC_APP_URL 推得 allowedOrigins；鎖定的影片不會限制播放網域" }
+      : { key: "STREAM_ALLOWED_ORIGINS", status: "pass", message: `鎖定影片的 allowedOrigins：${allowedOrigins.origins.join(", ")}` };
   return [
     {
       key: "CLOUDFLARE_STREAM_SIGNING_KEY_ID",
       status: "pass",
-      message: "已設定 Stream 簽章金鑰（RS256）；入場後簽發短效播放 token，新影片與 live input 錄影要求簽章",
+      message: "已設定 Stream 簽章金鑰（RS256）；入場後簽發短效播放 token",
     },
     originsCheck,
+    lockFlag === "on"
+      ? { key: lockKey, status: "pass", message: "新上傳與新 live input 錄影要求簽章" }
+      : { key: lockKey, status: "warning", message: "新上傳仍是公開網址；Staging 驗證簽章播放通過後再設 CLOUDFLARE_STREAM_LOCK_NEW_UPLOADS=true" },
   ];
 }
 

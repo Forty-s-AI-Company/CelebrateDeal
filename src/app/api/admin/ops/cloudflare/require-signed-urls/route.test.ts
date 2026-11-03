@@ -3,7 +3,10 @@ import { CloudflareStreamError } from "@/lib/cloudflare-stream";
 
 const mocks = vi.hoisted(() => ({
   backfill: vi.fn(),
+  writeAuditLog: vi.fn(),
 }));
+
+vi.mock("@/lib/audit", () => ({ writeAuditLog: mocks.writeAuditLog }));
 
 vi.mock("@/lib/cloudflare-stream-signed-url-backfill", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/cloudflare-stream-signed-url-backfill")>();
@@ -11,7 +14,7 @@ vi.mock("@/lib/cloudflare-stream-signed-url-backfill", async (importOriginal) =>
 });
 
 import { SignedUrlBackfillNotConfiguredError } from "@/lib/cloudflare-stream-signed-url-backfill";
-import { POST } from "./route";
+import { maxDuration, POST } from "./route";
 
 const jobSecret = "test-fixture-job-secret";
 
@@ -44,7 +47,8 @@ describe("POST /api/admin/ops/cloudflare/require-signed-urls", () => {
 
   it.each([
     [{}],
-    [{ vendorId: "vendor-1", limit: 50 }],
+    [{ vendorId: "vendor-1", limit: 6 }],
+    [{ vendorId: "vendor-1", mode: "public" }],
     [{ vendorId: "vendor-1", uids: ["a1b2c3d4e5f60718293a4b5c6d7e8f90"] }],
     [{ vendorId: "vendor-1", apply: "yes" }],
   ])("rejects an invalid request %#", async (payload) => {
@@ -54,22 +58,63 @@ describe("POST /api/admin/ops/cloudflare/require-signed-urls", () => {
   });
 
   it("runs one vendor-scoped batch with the parsed defaults", async () => {
-    mocks.backfill.mockResolvedValue({ apply: false, allowedOrigins: null, scannedVideos: 0, results: [], nextCursor: null });
+    mocks.backfill.mockResolvedValue({ mode: "lock", apply: false, allowedOrigins: null, scannedVideos: 0, results: [], audited: false, nextCursor: null });
 
     const response = await POST(request({ vendorId: "vendor-1" }));
 
     expect(response.status).toBe(200);
     expect(response.headers.get("cache-control")).toBe("private, no-store");
-    expect(mocks.backfill).toHaveBeenCalledWith({ vendorId: "vendor-1", limit: 5, apply: false });
+    expect(mocks.backfill).toHaveBeenCalledWith(
+      { vendorId: "vendor-1", mode: "lock", limit: 5, apply: false },
+      { audit: expect.any(Function) },
+    );
     await expect(response.json()).resolves.toEqual({
       ok: true,
       helper: "admin_ops_cloudflare_require_signed_urls",
+      mode: "lock",
       apply: false,
       allowedOrigins: null,
       scannedVideos: 0,
       results: [],
+      audited: false,
       nextCursor: null,
     });
+  });
+
+  it("passes unlock through and audits applied batches without tokens", async () => {
+    mocks.backfill.mockImplementation(async (input, { audit }) => {
+      await audit({
+        vendorId: input.vendorId,
+        mode: input.mode,
+        allowedOrigins: null,
+        results: [{ videoId: "video-1", kind: "video", uid: "a1b2c3d4e5f60718293a4b5c6d7e8f90", status: "updated" }],
+      });
+      return { mode: input.mode, apply: true, allowedOrigins: null, scannedVideos: 1, results: [], audited: true, nextCursor: null };
+    });
+
+    const response = await POST(request({ vendorId: "vendor-1", mode: "unlock", apply: true }));
+
+    expect(response.status).toBe(200);
+    expect(mocks.backfill).toHaveBeenCalledWith(
+      { vendorId: "vendor-1", mode: "unlock", limit: 5, apply: true },
+      expect.anything(),
+    );
+    expect(mocks.writeAuditLog).toHaveBeenCalledWith({
+      vendorId: "vendor-1",
+      actorLabel: "ops:job_secret",
+      action: "cloudflare_stream.allow_public_urls",
+      targetType: "vendor",
+      targetId: "vendor-1",
+      after: {
+        mode: "unlock",
+        allowedOrigins: null,
+        results: [{ videoId: "video-1", kind: "video", uid: "a1b2c3d4e5f60718293a4b5c6d7e8f90", status: "updated" }],
+      },
+    });
+  });
+
+  it("declares an explicit maxDuration for the sequential provider calls", () => {
+    expect(maxDuration).toBe(300);
   });
 
   it("returns 409 when applying before signing keys are configured", async () => {

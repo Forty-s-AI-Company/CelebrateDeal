@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { readJsonBody, requireJobSecret, unauthorizedJson } from "@/lib/api-security";
 import { classifyCloudflareOperationError, createDirectUploadMapping, DirectUploadRequest } from "@/lib/cloudflare-ops";
+import { SIGNABLE_VIDEO_SELECT, signVideoUrl } from "@/lib/cloudflare-stream-signing";
 import { getDb } from "@/lib/db";
 import { withPreviewSmokeVendorId } from "@/lib/preview-smoke-config";
 
@@ -20,6 +21,7 @@ export async function GET(request: Request) {
   const video = await getDb().video.findUnique({
     where: { id: videoId.data },
     select: {
+      ...SIGNABLE_VIDEO_SELECT,
       status: true,
       cloudflareReadyToStream: true,
       durationSec: true,
@@ -29,14 +31,22 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "Video not found" }, { status: 404 });
   }
 
+  // F-093: once ready and signing is configured, the smoke check plays a
+  // short-lived token URL from the same signing path as viewers. Unsigned
+  // stored URLs (which carry the provider UID) are still never returned here.
+  const signed = video.cloudflareReadyToStream
+    ? signVideoUrl(video, { vendorId: video.vendorId, now: new Date(), ttlSeconds: 10 * 60 })
+    : null;
+  const playbackUrl = signed?.signed ? signed.url : null;
   return NextResponse.json({
     ok: true,
     video: {
       status: video.status,
       readyToStream: video.cloudflareReadyToStream,
       durationSec: video.durationSec,
+      ...(playbackUrl ? { playbackUrl } : {}),
     },
-  });
+  }, { headers: { "Cache-Control": "private, no-store" } });
 }
 
 export async function POST(request: Request) {
