@@ -177,11 +177,13 @@ test("LINE task verifies lineage before receiving fixed staging bindings", () =>
   assert.match(lineage.run, /--verify-lineage/u);
   assert.deepEqual(Object.keys(execute.env).sort(), [
     "CELEBRATEDEAL_DEPLOYMENT_HOST", "CELEBRATEDEAL_SOURCE_SHA", "CRON_SECRET", "CSRF_SECRET",
-    "DATA_ENCRYPTION_KEYRING", "LINE_STAGING_DATABASE_IDENTITY_SHA256", "LINE_STAGING_MESSAGING_ACCESS_TOKEN",
+    "DATA_ENCRYPTION_KEYRING", "GITHUB_TOKEN", "LINE_STAGING_DATABASE_IDENTITY_SHA256", "LINE_STAGING_MESSAGING_ACCESS_TOKEN",
     "LINE_STAGING_MESSAGING_CHANNEL_ID", "LINE_STAGING_MESSAGING_CHANNEL_SECRET",
     "LINE_STAGING_USER_ID", "SECURE_RECEIPT_PATH", "STAGING_DATABASE_URL",
   ]);
   assert.equal(execute.env.LINE_STAGING_DATABASE_IDENTITY_SHA256, "${{ vars.LINE_STAGING_DATABASE_IDENTITY_SHA256 }}");
+  // Only the read-only workflow token, for the protected-master check before alias attestation.
+  assert.equal(execute.env.GITHUB_TOKEN, "${{ github.token }}");
   assert.equal(execute.env.SECURE_RECEIPT_PATH, validate.env.SECURE_RECEIPT_PATH);
   assert.match(execute.run, /mkdir -p "\$\(dirname "\$SECURE_RECEIPT_PATH"\)"/u);
   assert.match(execute.run, /trap report_line_stage_failure ERR/u);
@@ -336,11 +338,14 @@ test("existing-refund recovery verifies the current Preview before JOB binding a
   assert.deepEqual(Object.keys(recovery.env).sort(), ["CELEBRATEDEAL_DEPLOYMENT_HOST", "CELEBRATEDEAL_SOURCE_SHA", "JOB_SECRET"]);
   assert.equal(recovery.env.JOB_SECRET, "${{ secrets.JOB_SECRET }}");
   assert.match(recovery.run, /\["api\.github\.com", "443"\]/u);
-  assert.match(recovery.run, /\[deploymentHost, "443"\]/u);
+  // Vercel firewalls the immutable Preview host; only the attested alias is reachable.
+  assert.match(recovery.run, /const operationHost = "celebrate-deal-staging\.carry-digital-nomad\.in\.net";/u);
+  assert.match(recovery.run, /\[operationHost, "443"\]/u);
+  assert.doesNotMatch(recovery.run, /\[deploymentHost, "443"\]/u);
   assert.match(recovery.run, /node scripts\/mvp-payuni-sandbox-e2e\.mjs --recover-existing-refund/u);
   assert.match(recovery.run, /!\/\^\[a-f0-9\]\{40\}\$\/u\.test\(process\.env\.CELEBRATEDEAL_SOURCE_SHA\)/u);
   assert.doesNotMatch(recovery.run, /CELEBRATEDEAL_SOURCE_SHA\s*!==\s*"1052a46d002149b5c06104927ed0fab32b049214"/u);
-  assert.match(recovery.run, /process\.stdout\.write\(\[\s*\["api\.github\.com", "443"\],\s*\[deploymentHost, "443"\]/u);
+  assert.match(recovery.run, /process\.stdout\.write\(\[\s*\["api\.github\.com", "443"\],\s*\[operationHost, "443"\]/u);
   assert.match(recovery.run, /sudo iptables -P OUTPUT DROP/u);
   assert.match(recovery.run, /sudo ip6tables -P OUTPUT DROP/u);
   assert.match(recovery.run, /sudo iptables-restore/u);
@@ -463,4 +468,38 @@ test("WP4 egress heredoc is syntactically valid without executing it", () => {
   const broken = match[1].replace("const destinations = [", "process.stdout.write([");
   assert.notEqual(broken, match[1]);
   assert.throws(() => new vm.Script(broken), SyntaxError);
+});
+
+test("secret-aware steps reach the attested staging alias, never the firewalled Preview host", () => {
+  const steps = yaml.load(fs.readFileSync(workflowPath, "utf8")).jobs["trusted-runner"].steps;
+  const ids = [
+    "execute-wp4",
+    "execute-wp4-existing-refund-recovery",
+    "execute-wp4-buyer-payment-check",
+    "execute-wp4-buyer-callback-retry",
+    "execute-wp4-buyer-existing-continuation",
+    "execute-line",
+  ];
+  for (const id of ids) {
+    const step = steps.find((candidate) => candidate.id === id);
+    assert.ok(step, id);
+    const heredoc = step.run.match(/node <<'NODE' > "\$destinations"\r?\n([\s\S]*?)\r?\n\s*NODE/u)?.[1];
+    assert.ok(heredoc, id);
+    assert.doesNotThrow(() => new vm.Script(heredoc), id);
+    assert.match(heredoc, /const operationHost = "celebrate-deal-staging\.carry-digital-nomad\.in\.net";/u, id);
+    assert.match(heredoc, /\[operationHost, "443"\]/u, id);
+    assert.doesNotMatch(heredoc, /\[deploymentHost, "443"\]/u, id);
+    // The dispatched Preview host is still validated: it remains the lineage input.
+    assert.match(heredoc, /deploymentHost\.endsWith\("\.vercel\.app"\)|\\\.vercel\\\.app\$/u, id);
+  }
+  // WP2 is lineage-only: GitHub and the staging database, no application host at all.
+  const wp2 = steps.find((candidate) => candidate.id === "execute-wp2").run;
+  const wp2Heredoc = wp2.match(/node <<'NODE' > "\$destinations"\r?\n([\s\S]*?)\r?\n\s*NODE/u)?.[1];
+  assert.ok(wp2Heredoc);
+  assert.doesNotThrow(() => new vm.Script(wp2Heredoc));
+  assert.doesNotMatch(wp2Heredoc, /\[(?:deploymentHost|operationHost), "443"\]|carry-digital-nomad/u);
+  assert.match(wp2Heredoc, /\["api\.github\.com", "443"\],\s*\[database\.hostname, port\]/u);
+  // LINE reaches GitHub only for the protected-master check.
+  const line = steps.find((candidate) => candidate.id === "execute-line").run;
+  assert.match(line, /\[\["api\.github\.com", "443"\], \[operationHost, "443"\], \[database\.hostname, port\]\]/u);
 });

@@ -1629,7 +1629,7 @@ test("checkout rejects a client amount and uses the server product price for an 
   expect(transaction.grossAmountCents).toBe(e2eProductPriceCents);
 });
 
-test("JOB_SECRET protected APIs reject missing and invalid authorization", async ({ request }) => {
+test("JOB_SECRET and OPS_SMOKE_SECRET protected APIs reject missing and invalid authorization", async ({ request }) => {
   // This assertion intentionally cold-loads nine separate Next.js route
   // modules in the development server. Keep the allowance local and bounded
   // so route compilation does not consume the suite-wide 30-second default.

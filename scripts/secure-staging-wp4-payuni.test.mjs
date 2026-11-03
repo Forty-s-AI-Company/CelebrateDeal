@@ -37,6 +37,16 @@ const safeEnvironment = {
   CELEBRATEDEAL_DEPLOYMENT_HOST: "safe-preview.vercel.app",
   RUNNER_TEMP: "/tmp/runner",
 };
+const stagingAlias = "celebrate-deal-staging.carry-digital-nomad.in.net";
+// The child only ever receives the operation host from the parent after alias attestation.
+const childSource = { ...safeEnvironment, CELEBRATEDEAL_OPERATION_HOST: stagingAlias };
+
+function aliasHealthResponse({ commitSha = sha, vercelUrl = safeEnvironment.CELEBRATEDEAL_DEPLOYMENT_HOST, status = 200 } = {}) {
+  return new Response(JSON.stringify({ ok: true, database: "ok", latencyMs: 1, deployment: { commitSha, deploymentId: "dpl_Fixture123", vercelUrl } }), {
+    status,
+    headers: { "content-type": "application/json" },
+  });
+}
 
 test("parent timeout covers every bounded child request plus shutdown headroom", () => {
   assert.ok(
@@ -51,6 +61,26 @@ test("WP4 invocation is fixed-task, exact-source, Preview and staging-only", () 
   assert.equal(validateInvocation("wp4-payuni-sandbox-reconciliation", { ...safeEnvironment, CELEBRATEDEAL_DEPLOYMENT_HOST: "production.example.com" }).reason, "DEPLOYMENT_HOST_INVALID");
   assert.equal(validateInvocation("wp4-payuni-sandbox-reconciliation", { ...safeEnvironment, GITHUB_TOKEN: "" }).reason, "REQUIRED_BINDING_MISSING");
   assert.equal(validateInvocation("wp4-payuni-sandbox-reconciliation", { ...safeEnvironment, JOB_SECRET: "" }).reason, "REQUIRED_BINDING_MISSING");
+});
+
+test("child environment forwards only the parent's attested alias as operation host", () => {
+  assert.equal(childEnvironment({ ...safeEnvironment, CELEBRATEDEAL_OPERATION_HOST: stagingAlias }).CELEBRATEDEAL_OPERATION_HOST, undefined);
+  assert.equal(childEnvironment(safeEnvironment, "attacker.example").CELEBRATEDEAL_OPERATION_HOST, undefined);
+  assert.equal(childEnvironment(safeEnvironment, stagingAlias).CELEBRATEDEAL_OPERATION_HOST, stagingAlias);
+});
+
+test("child performs no request without an attested operation host and only addresses the alias with one", async () => {
+  const requests = [];
+  const fetchImpl = async (url, options) => { requests.push(String(url)); return successfulWp4Fetch([])(url, options); };
+  for (const source of [safeEnvironment, { ...safeEnvironment, CELEBRATEDEAL_OPERATION_HOST: "attacker.example" }, { ...safeEnvironment, CELEBRATEDEAL_OPERATION_HOST: safeEnvironment.CELEBRATEDEAL_DEPLOYMENT_HOST }]) {
+    const result = await runWp4Child(source, fetchImpl);
+    assert.equal(result.fixtureSetup.requests, 0);
+    assert.equal(result.ownerSession.bootstrapRequests, 0);
+  }
+  assert.deepEqual(requests, []);
+  await runWp4Child(childSource, fetchImpl);
+  assert.ok(requests.length > 0);
+  assert.ok(requests.every((url) => new URL(url).hostname === stagingAlias));
 });
 
 test("owner-session child environment excludes GitHub and ambient application credentials", () => {
@@ -125,22 +155,80 @@ test("parent persists a closed lineage diagnostic without raw error text", async
   assert.deepEqual(validateReceipt(receipt), { ok: true, errors: [] });
 });
 
-test("parent classifies a non-200 Preview health response without starting the child", async () => {
+const onProtectedMaster = async (receivedSha, token) => {
+  assert.equal(receivedSha, sha);
+  assert.equal(token, safeEnvironment.GITHUB_TOKEN);
+  return true;
+};
+
+const verifiedLineage = async () => ({
+  reads: 2,
+  host: safeEnvironment.CELEBRATEDEAL_DEPLOYMENT_HOST,
+  deploymentMatched: true,
+  sourceMatched: true,
+  preview: true,
+  ready: true,
+});
+
+test("parent stops before the child when the alias does not attest the lineage-verified deployment", async () => {
+  for (const [code, fetchImpl] of [
+    ["ALIAS_ATTESTATION_HTTP_REJECTED", async () => aliasHealthResponse({ status: 503 })],
+    ["ALIAS_ATTESTATION_SHA_MISMATCH", async () => aliasHealthResponse({ commitSha: "f".repeat(40) })],
+    ["ALIAS_ATTESTATION_HOST_MISMATCH", async () => aliasHealthResponse({ vercelUrl: "older-preview.vercel.app" })],
+    ["ALIAS_ATTESTATION_UNREACHABLE", async () => { throw new TypeError("fetch failed"); }],
+    ["ALIAS_ATTESTATION_FIELDS_MISSING", async () => new Response(JSON.stringify({ ok: true, database: "ok" }), { status: 200, headers: { "content-type": "application/json" } })],
+  ]) {
+    let spawned = false;
+    const receipt = await runParentInTemp({
+      verifyDeploymentImpl: verifiedLineage,
+      verifyShaOnProtectedMasterImpl: onProtectedMaster,
+      fetchImpl,
+      spawnSyncImpl: () => { spawned = true; return { status: 2, signal: null, stdout: "" }; },
+    });
+    assert.equal(receipt.diagnosticCategory, code);
+    assert.equal(spawned, false, code);
+    assert.equal(receipt.lineage.deploymentReads, 0);
+    assert.equal(receipt.prerequisites.exactPreviewLineage, false);
+    assert.equal(receipt.sideEffects.sessionCreationAttempts, 0);
+    assert.deepEqual(validateReceipt(receipt), { ok: true, errors: [] });
+  }
+});
+
+test("parent BLOCKS a non-master SHA before alias attestation or the child, even if the alias would attest", async () => {
+  const requested = [];
+  let spawned = false;
   const receipt = await runParentInTemp({
-    verifyDeploymentImpl: async () => ({
-      reads: 2,
-      host: safeEnvironment.CELEBRATEDEAL_DEPLOYMENT_HOST,
-      deploymentMatched: true,
-      sourceMatched: true,
-      preview: true,
-      ready: true,
-    }),
-    fetchImpl: async () => new Response(null, { status: 503 }),
+    verifyDeploymentImpl: verifiedLineage,
+    // Real gate against a fake GitHub compare API that reports the SHA off master.
+    fetchImpl: async (url) => {
+      requested.push(String(url));
+      if (String(url).startsWith("https://api.github.com/")) {
+        return new Response(JSON.stringify({ status: "diverged", merge_base_commit: { sha: "e".repeat(40) } }), { status: 200 });
+      }
+      return aliasHealthResponse();
+    },
+    spawnSyncImpl: () => { spawned = true; return { status: 2, signal: null, stdout: "" }; },
   });
-  assert.equal(receipt.diagnosticCategory, "STAGING_HEALTH_FAILED");
-  assert.equal(receipt.lineage.deploymentReads, 0);
-  assert.equal(receipt.sideEffects.sessionCreationAttempts, 0);
+  assert.equal(receipt.diagnosticCategory, "SOURCE_NOT_ON_PROTECTED_MASTER");
+  assert.equal(spawned, false);
+  assert.deepEqual(requested, [`https://api.github.com/repos/Forty-s-AI-Company/CelebrateDeal/compare/${sha}...master`]);
+  assert.equal(receipt.prerequisites.exactPreviewLineage, false);
   assert.deepEqual(validateReceipt(receipt), { ok: true, errors: [] });
+});
+
+test("parent probes only the alias and hands the child the attested operation host", async () => {
+  const requested = [];
+  let childEnv = null;
+  const receipt = await runParentInTemp({
+    verifyDeploymentImpl: verifiedLineage,
+    verifyShaOnProtectedMasterImpl: onProtectedMaster,
+    fetchImpl: async (url) => { requested.push(String(url)); return aliasHealthResponse(); },
+    spawnSyncImpl: (_command, _args, options) => { childEnv = options.env; return { status: 1, signal: null, stdout: "" }; },
+  });
+  assert.deepEqual(requested, [`https://${stagingAlias}/api/health`]);
+  assert.equal(childEnv.CELEBRATEDEAL_OPERATION_HOST, stagingAlias);
+  assert.equal(receipt.lineage.healthStatus, 200);
+  assert.equal(receipt.lineage.noRedirect, true);
 });
 
 test("parent preserves unknown fixture side effects when child output is invalid", async () => {
@@ -153,7 +241,8 @@ test("parent preserves unknown fixture side effects when child output is invalid
       preview: true,
       ready: true,
     }),
-    fetchImpl: async () => new Response(null, { status: 200 }),
+    verifyShaOnProtectedMasterImpl: onProtectedMaster,
+    fetchImpl: async () => aliasHealthResponse(),
     spawnSyncImpl: () => ({ status: 1, signal: null, stdout: "", stderr: "must-not-persist" }),
   });
   assert.equal(receipt.diagnosticCategory, "CHILD_OUTPUT_INVALID");
@@ -236,7 +325,7 @@ function successfulOwnerFetch(requests) {
   return async (url, options) => {
     requests.push({ url, options });
     if (url.endsWith("/wp4-session")) {
-      return mockResponse(url, 204, { cookies: [`celebrate_session=${token}; Path=/; HttpOnly; Secure`] });
+      return mockResponse(url, 204, { cookies: [`__Host-celebrate_session=${token}; Path=/; HttpOnly; Secure`] });
     }
     return mockResponse(url, 200);
   };
@@ -259,7 +348,7 @@ function successfulWp4Fetch(requests) {
 
 test("fixture setup accepts only bounded deterministic counters", async () => {
   const requests = [];
-  const setup = await runFixtureSetup(safeEnvironment, successfulWp4Fetch(requests));
+  const setup = await runFixtureSetup(childSource, successfulWp4Fetch(requests));
 
   assert.deepEqual(setup, {
     requests: 1,
@@ -285,7 +374,7 @@ test("fixture setup fails closed for auth, conflict, schema drift and redirects"
     [async (url) => mockResponse(url, 302, { location: "https://production.example.com" }), "HTTP_REJECTED"],
   ];
   for (const [fetchImpl, outcome] of cases) {
-    const setup = await runFixtureSetup(safeEnvironment, fetchImpl);
+    const setup = await runFixtureSetup(childSource, fetchImpl);
     assert.equal(setup.outcome, outcome);
     assert.equal(setup.responseAccepted, false);
     assert.equal(JSON.stringify(setup).includes("production.example.com"), false);
@@ -294,7 +383,7 @@ test("fixture setup fails closed for auth, conflict, schema drift and redirects"
 
 test("fixture preflight accepts only the exact fixed boolean projection", async () => {
   const requests = [];
-  const fixture = await runFixturePreflight(safeEnvironment, successfulWp4Fetch(requests));
+  const fixture = await runFixturePreflight(childSource, successfulWp4Fetch(requests));
 
   assert.deepEqual(fixture, {
     requests: 1,
@@ -311,13 +400,13 @@ test("fixture preflight accepts only the exact fixed boolean projection", async 
 });
 
 test("fixture preflight fails closed for redirect, schema drift and oversized output", async () => {
-  const redirect = await runFixturePreflight(safeEnvironment, async (url) => mockResponse(url, 302, {
+  const redirect = await runFixturePreflight(childSource, async (url) => mockResponse(url, 302, {
     location: "https://production.example.com",
   }));
-  const drift = await runFixturePreflight(safeEnvironment, async (url) => mockResponse(url, 200, {
+  const drift = await runFixturePreflight(childSource, async (url) => mockResponse(url, 200, {
     json: { ...readyFixtures, identifier: "must-not-persist" },
   }));
-  const oversized = await runFixturePreflight(safeEnvironment, async (url) => mockResponse(url, 200, {
+  const oversized = await runFixturePreflight(childSource, async (url) => mockResponse(url, 200, {
     json: { ...readyFixtures, padding: "x".repeat(1_100) },
   }));
 
@@ -349,7 +438,7 @@ test("fixture preflight persists only a closed HTTP failure classification", asy
 
   for (const [status, outcome] of cases) {
     const result = await runFixturePreflight(
-      safeEnvironment,
+      childSource,
       async (url) => mockResponse(url, status),
     );
     assert.equal(result.outcome, outcome);
@@ -361,7 +450,7 @@ test("fixture preflight persists only a closed HTTP failure classification", asy
 test("fixture preflight accepts only closed authenticated 404 classifications", async () => {
   for (const outcome of ["EXECUTOR_DISABLED", "FIXTURE_UNAVAILABLE"]) {
     const result = await runFixturePreflight(
-      safeEnvironment,
+      childSource,
       async (url) => mockResponse(url, 404, {
         extraHeaders: { "x-celebratedeal-wp4-preflight": outcome },
       }),
@@ -370,7 +459,7 @@ test("fixture preflight accepts only closed authenticated 404 classifications", 
   }
 
   const rejected = await runFixturePreflight(
-    safeEnvironment,
+    childSource,
     async (url) => mockResponse(url, 404, {
       extraHeaders: { "x-celebratedeal-wp4-preflight": "raw-fixture-identifier" },
     }),
@@ -381,7 +470,7 @@ test("fixture preflight accepts only closed authenticated 404 classifications", 
 
 test("WP4 child verifies fixtures before creating one bounded owner session", async () => {
   const requests = [];
-  const result = await runWp4Child(safeEnvironment, successfulWp4Fetch(requests));
+  const result = await runWp4Child(childSource, successfulWp4Fetch(requests));
 
   assert.equal(result.fixturePreflight.responseAccepted, true);
   assert.equal(result.fixtureSetup.responseAccepted, true);
@@ -397,7 +486,7 @@ test("WP4 child verifies fixtures before creating one bounded owner session", as
 
 test("WP4 child does not create a session when fixture preflight is unconfirmed", async () => {
   const requests = [];
-  const result = await runWp4Child(safeEnvironment, async (url, options) => {
+  const result = await runWp4Child(childSource, async (url, options) => {
     requests.push({ url, options });
     return mockResponse(url, 404);
   });
@@ -411,7 +500,7 @@ test("WP4 child does not create a session when fixture preflight is unconfirmed"
 
 test("owner-session child performs one bootstrap and two authenticated read-only probes", async () => {
   const requests = [];
-  const ownerSession = await runOwnerSession(safeEnvironment, successfulOwnerFetch(requests));
+  const ownerSession = await runOwnerSession(childSource, successfulOwnerFetch(requests));
   assert.deepEqual(ownerSession, {
     bootstrapRequests: 1,
     bootstrapAuthenticated: true,
@@ -448,9 +537,9 @@ test("receipt accepts owner-session evidence only after exact lineage is proven"
     noRedirect: true,
   };
   receipt.prerequisites.exactPreviewLineage = true;
-  receipt.fixtureSetup = await runFixtureSetup(safeEnvironment, successfulWp4Fetch([]));
-  receipt.fixturePreflight = await runFixturePreflight(safeEnvironment, successfulWp4Fetch([]));
-  receipt.ownerSession = await runOwnerSession(safeEnvironment, successfulOwnerFetch([]));
+  receipt.fixtureSetup = await runFixtureSetup(childSource, successfulWp4Fetch([]));
+  receipt.fixturePreflight = await runFixturePreflight(childSource, successfulWp4Fetch([]));
+  receipt.ownerSession = await runOwnerSession(childSource, successfulOwnerFetch([]));
   receipt.sideEffects.fixtureSetupAttempts = 1;
   receipt.sideEffects.fixtureRowsCreated = 6;
   receipt.sideEffects.fixtureRowsReused = 0;
@@ -556,25 +645,26 @@ test("receipt rejects a session attempt when fixture preflight never ran", () =>
 for (const [name, fetchImpl] of [
   ["bootstrap auth failure", async (url) => mockResponse(url, 401)],
   ["multiple session cookies", async (url) => mockResponse(url, 204, { cookies: [
-    `celebrate_session=${"a".repeat(43)}; Path=/`,
-    `celebrate_session=${"b".repeat(43)}; Path=/`,
+    `__Host-celebrate_session=${"a".repeat(43)}; Path=/`,
+    `__Host-celebrate_session=${"b".repeat(43)}; Path=/`,
   ] })],
   ["unexpected cookie", async (url) => mockResponse(url, 204, { cookies: [`other_session=${"a".repeat(43)}; Path=/`] })],
+  ["pre-rename cookie name (F-036)", async (url) => mockResponse(url, 204, { cookies: [`celebrate_session=${"a".repeat(43)}; Path=/`] })],
   ["redirect", async (url) => mockResponse(url, 302, { location: "https://production.example.com" })],
-  ["host drift", async () => mockResponse("https://production.example.com/api/admin/ops/payuni/wp4-session", 204, { cookies: [`celebrate_session=${"a".repeat(43)}; Path=/`] })],
+  ["host drift", async () => mockResponse("https://production.example.com/api/admin/ops/payuni/wp4-session", 204, { cookies: [`__Host-celebrate_session=${"a".repeat(43)}; Path=/`] })],
   ["probe failure", async (url) => url.endsWith("/wp4-session")
-    ? mockResponse(url, 204, { cookies: [`celebrate_session=${"a".repeat(43)}; Path=/`] })
+    ? mockResponse(url, 204, { cookies: [`__Host-celebrate_session=${"a".repeat(43)}; Path=/`] })
     : mockResponse(url, 403)],
 ]) {
   test(`owner-session child fails closed for ${name}`, async () => {
-    const ownerSession = await runOwnerSession(safeEnvironment, fetchImpl);
+    const ownerSession = await runOwnerSession(childSource, fetchImpl);
     assert.notEqual(ownerSession.invoicesProbeAuthenticated, true);
     assert.equal(JSON.stringify(ownerSession).includes("production.example.com"), false);
   });
 }
 
 test("sterile child output accepts exactly one canonical preflight and owner projection", async () => {
-  const childResult = await runWp4Child(safeEnvironment, successfulWp4Fetch([]));
+  const childResult = await runWp4Child(childSource, successfulWp4Fetch([]));
   assert.equal(parseChildOutput(`SECURE_WP4_RESULT:${JSON.stringify(childResult)}\n`, 2).ok, true);
   assert.equal(parseChildOutput(`noise\nSECURE_WP4_RESULT:${JSON.stringify(childResult)}\n`, 2).ok, false);
   assert.equal(parseChildOutput(`SECURE_WP4_RESULT:${JSON.stringify(childResult)}\n`, 0).ok, false);
@@ -589,7 +679,8 @@ test("sterile child output accepts exactly one canonical preflight and owner pro
 test("runner cannot load provider fixtures, Prisma, or create external payment side effects", () => {
   const source = fs.readFileSync(new URL("./secure-staging-wp4-payuni.mjs", import.meta.url), "utf8");
   assert.doesNotMatch(source, /payuni-fixtures|@prisma\/client|queryPayment|refundPayment|createCheckoutSession/u);
-  assert.match(source, /\/api\/health/u);
+  // Health and deployment identity are proven through the shared alias attestation.
+  assert.match(source, /verifyAliasAttestation/u);
   assert.doesNotMatch(source, /sandbox-api\.payuni\.com\.tw/u);
   assert.doesNotMatch(source, /Object\.(?:keys|entries)\(process\.env\)/u);
   assert.doesNotMatch(source, /\.json\(\)|\.text\(\)/u);

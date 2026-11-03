@@ -1,5 +1,6 @@
 import { timingSafeEqual } from "node:crypto";
 import { NextResponse } from "next/server";
+import { opsSmokeSecret } from "./ops-smoke-config";
 
 export const CLIENT_REQUEST_HEADER = "x-celebratedeal-client";
 export const CLIENT_REQUEST_HEADER_VALUE = "web";
@@ -33,6 +34,11 @@ export function requireJobSecret(request: Request) {
 
 export function requireCronSecret(request: Request) {
   return isAuthorizedBearer(request, process.env.CRON_SECRET);
+}
+
+/** F-016: smoke endpoints use OPS_SMOKE_SECRET only; see ops-smoke-config. */
+export function requireOpsSmokeSecret(request: Request) {
+  return isAuthorizedBearer(request, opsSmokeSecret());
 }
 
 export function requireSharedSecretHeader(request: Request, headerName: string, secret: string | undefined) {

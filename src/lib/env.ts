@@ -20,6 +20,7 @@ import {
 } from "@/lib/request-client-ip";
 import { REGISTRATION_MODES } from "@/lib/registration-mode";
 import { getTurnstileConfig } from "@/lib/turnstile";
+import { MINIMUM_OPS_SMOKE_SECRET_LENGTH, OPS_SMOKE_SECRET_REUSE_FORBIDDEN, opsSmokeSecret, opsSmokeVendorId } from "@/lib/ops-smoke-config";
 import {
   getStreamAllowedOrigins,
   getStreamSigningConfig,
@@ -179,6 +180,46 @@ function dataEncryptionKeyringCheck(env: NodeJS.ProcessEnv): EnvCheck {
     const issue = error instanceof DataEncryptionKeyringError ? error.issue : "invalid_json";
     return { key, status: "fail", message: `DATA_ENCRYPTION_KEYRING 格式錯誤：${KEYRING_ISSUE_MESSAGES[issue]}；執行時所有敏感資料加解密都會拒絕` };
   }
+}
+
+/**
+ * F-016: OPS_SMOKE_SECRET opens only the provider smoke endpoints. Unset is a
+ * valid, closed state; a configured value that is weak or reuses a scheduler
+ * or CSRF secret fails, because the routes then stay closed anyway and the
+ * operator would otherwise believe smoke runs are available.
+ */
+function opsSmokeChecks(env: NodeJS.ProcessEnv, deploymentSecurityRequired: boolean): EnvCheck[] {
+  if (!secretPresent(env.OPS_SMOKE_SECRET)) {
+    return [{
+      key: "OPS_SMOKE_SECRET",
+      status: env.VERCEL_ENV === "preview" ? "warning" : "pass",
+      message: env.VERCEL_ENV === "preview"
+        ? "未設定；smoke 端點（test-email／analytics／monitoring、Cloudflare）一律回 401，Staging smoke workflow 會失敗"
+        : "未設定；smoke 端點保持關閉（一律回 401）",
+    }];
+  }
+  if (!opsSmokeSecret(env)) {
+    return [{
+      key: "OPS_SMOKE_SECRET",
+      status: "fail",
+      message: `OPS_SMOKE_SECRET 必須至少 ${MINIMUM_OPS_SMOKE_SECRET_LENGTH} 字元、前後不得有空白，且不得與 ${OPS_SMOKE_SECRET_REUSE_FORBIDDEN.join("、")} 相同；目前 smoke 端點保持關閉`,
+    }];
+  }
+  const checks: EnvCheck[] = [{
+    key: "OPS_SMOKE_SECRET",
+    status: env.VERCEL_ENV === "production" ? "warning" : "pass",
+    message: env.VERCEL_ENV === "production"
+      ? "Production 已開啟 smoke 端點；只在驗證期間設定，完成後請移除"
+      : "已設定獨立的 smoke secret",
+  }];
+  if (!opsSmokeVendorId(env)) {
+    checks.push({
+      key: "SMOKE_VENDOR_ID",
+      status: deploymentSecurityRequired ? "warning" : "pass",
+      message: "未設定或格式不符；Cloudflare smoke 會回 503，且不接受任何呼叫端指定的 vendorId",
+    });
+  }
+  return checks;
 }
 
 function liveChatIngressSecretDeploymentCheck(env: NodeJS.ProcessEnv): EnvCheck {
@@ -596,6 +637,8 @@ export function getEnvCheckReport(env: NodeJS.ProcessEnv = process.env) {
       });
     }
   }
+
+  checks.push(...opsSmokeChecks(env, deploymentSecurityRequired));
 
   const smokeTestEmailConfigured = secretPresent(env.SMOKE_TEST_EMAIL);
   const smokeTestEmailValid = smokeTestEmailConfigured && z.string().email().safeParse(env.SMOKE_TEST_EMAIL?.trim()).success;

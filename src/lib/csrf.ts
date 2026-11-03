@@ -1,6 +1,6 @@
 import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import { cookies, headers } from "next/headers";
-import { AUTH_COOKIE } from "@/lib/auth";
+import { readSessionCookieToken } from "@/lib/session-cookie";
 import { CSRF_FIELD_NAME } from "@/lib/csrf-constants";
 import { deriveCsrfMacKey } from "@/lib/sensitive-data";
 
@@ -47,7 +47,7 @@ function safeEqual(left: string, right: string) {
 
 async function sessionFingerprint() {
   const cookieStore = await cookies();
-  const sessionToken = cookieStore.get(AUTH_COOKIE)?.value ?? "anonymous";
+  const sessionToken = readSessionCookieToken(cookieStore) ?? "anonymous";
   return sign(FINGERPRINT_TAG, sessionToken).slice(0, 32);
 }
 

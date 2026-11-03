@@ -6,15 +6,14 @@ import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import {
-  AUTH_COOKIE,
   LEGACY_VENDOR_COOKIE,
   authenticateUser,
   createUserSession,
   markCurrentSessionMfaVerified,
   requireAuth,
   revokeCurrentSession,
-  sessionCookieOptions,
 } from "@/lib/auth";
+import { clearSessionCookies, writeSessionCookie } from "@/lib/session-cookie";
 import { accountSecurityPath, signedInHomePath } from "@/lib/vendor-roles";
 import { getCanonicalAppUrl } from "@/lib/app-url";
 import { auditSnapshot, writeAuditLog } from "@/lib/audit";
@@ -129,9 +128,10 @@ export async function loginAction(formData: FormData) {
     vendorId: login.sessionVendorId,
     ipAddress: headerStore.get("x-forwarded-for")?.split(",")[0]?.trim() ?? null,
     userAgent: headerStore.get("user-agent"),
+    platformRole: auth.user.platformRole,
   });
   const cookieStore = await cookies();
-  cookieStore.set(AUTH_COOKIE, token, sessionCookieOptions(expiresAt));
+  writeSessionCookie(cookieStore, token, expiresAt);
   cookieStore.delete(LEGACY_VENDOR_COOKIE);
   await writeAuditLog({
     vendorId: login.sessionVendorId,
@@ -187,7 +187,7 @@ export async function logoutAction(formData: FormData) {
   await assertServerActionSecurity(formData);
   await revokeCurrentSession();
   const cookieStore = await cookies();
-  cookieStore.delete(AUTH_COOKIE);
+  clearSessionCookies(cookieStore);
   cookieStore.delete(LEGACY_VENDOR_COOKIE);
   redirect("/login");
 }
@@ -229,7 +229,7 @@ export async function updatePasswordAction(formData: FormData) {
     after: { email: auth.user.email },
   });
   const cookieStore = await cookies();
-  cookieStore.delete(AUTH_COOKIE);
+  clearSessionCookies(cookieStore);
   cookieStore.delete(LEGACY_VENDOR_COOKIE);
   redirect("/login?password_changed=1");
 }
@@ -425,7 +425,7 @@ export async function revokeAllSessionsAction(formData: FormData) {
   });
   await writeAuditLog({ vendorId: auth.vendor?.id ?? null, actorId: auth.user.id, actorLabel: auth.member?.role ?? auth.user.platformRole, action: "revoke_all_sessions", targetType: "User", targetId: auth.user.id });
   const cookieStore = await cookies();
-  cookieStore.delete(AUTH_COOKIE);
+  clearSessionCookies(cookieStore);
   cookieStore.delete(LEGACY_VENDOR_COOKIE);
   redirect("/login?revoked=1");
 }

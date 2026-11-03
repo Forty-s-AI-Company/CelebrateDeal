@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
-import { requireJobSecret, unauthorizedJson } from "@/lib/api-security";
+import { requireOpsSmokeSecret, unauthorizedJson } from "@/lib/api-security";
 import { captureProductEvent } from "@/lib/product-analytics";
 
 export async function POST(request: Request) {
-  if (!requireJobSecret(request)) {
+  if (!requireOpsSmokeSecret(request)) {
     return unauthorizedJson();
   }
 

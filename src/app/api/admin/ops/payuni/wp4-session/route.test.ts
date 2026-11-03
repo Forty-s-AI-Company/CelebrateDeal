@@ -220,7 +220,8 @@ describe("POST /api/admin/ops/payuni/wp4-session", () => {
 
     expect(response.status).toBe(204);
     expect(response.headers.get("cache-control")).toBe("no-store");
-    expect(setCookie).toContain("celebrate_session=");
+    expect(response.headers.getSetCookie()).toHaveLength(1);
+    expect(setCookie).toMatch(/^__Host-celebrate_session=[A-Za-z0-9_-]{43};/);
     expect(setCookie).toContain("HttpOnly");
     expect(setCookie).toContain("Secure");
     expect(setCookie).toContain("Path=/");

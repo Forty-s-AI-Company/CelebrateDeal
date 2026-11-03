@@ -11,13 +11,14 @@ vi.mock("@/lib/cloudflare-ops", async (importOriginal) => {
 
 import { POST } from "./route";
 
-const jobSecret = "test-fixture-job-secret";
+const smokeSecret = "test-fixture-ops-smoke-secret-0123456789abcdef";
+const jobSecret = "test-fixture-job-secret-0123456789";
 
 function authorizedRequest(payload: Record<string, unknown>) {
   return new Request("https://app.example.test/api/cloudflare/direct-upload", {
     method: "POST",
     headers: {
-      authorization: `Bearer ${jobSecret}`,
+      authorization: `Bearer ${smokeSecret}`,
       "content-type": "application/json",
     },
     body: JSON.stringify(payload),
@@ -37,7 +38,9 @@ function requestWithJsonSpy(authorization?: string) {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.stubEnv("OPS_SMOKE_SECRET", smokeSecret);
   vi.stubEnv("JOB_SECRET", jobSecret);
+  vi.stubEnv("SMOKE_VENDOR_ID", "vendor-1");
 });
 
 afterEach(() => {
@@ -47,8 +50,8 @@ afterEach(() => {
 describe("POST /api/cloudflare/direct-upload", () => {
   it.each([
     { name: "is missing", authorization: undefined },
-    { name: "is invalid", authorization: "Bearer test-fixture-wrong-job-secret" },
-  ])("returns 401 without reading the body or creating an upload when JOB_SECRET $name", async ({ authorization }) => {
+    { name: "is invalid", authorization: "Bearer test-fixture-wrong-ops-smoke-secret" },
+  ])("returns 401 without reading the body or creating an upload when OPS_SMOKE_SECRET $name", async ({ authorization }) => {
     const { request, json } = requestWithJsonSpy(authorization);
 
     const response = await POST(request);
@@ -59,9 +62,9 @@ describe("POST /api/cloudflare/direct-upload", () => {
     expect(mocks.createDirectUploadMapping).not.toHaveBeenCalled();
   });
 
-  it("returns 401 without reading the body or creating an upload when JOB_SECRET is not configured", async () => {
-    vi.stubEnv("JOB_SECRET", undefined);
-    const { request, json } = requestWithJsonSpy(`Bearer ${jobSecret}`);
+  it("returns 401 without reading the body or creating an upload when OPS_SMOKE_SECRET is not configured", async () => {
+    vi.stubEnv("OPS_SMOKE_SECRET", undefined);
+    const { request, json } = requestWithJsonSpy(`Bearer ${smokeSecret}`);
 
     const response = await POST(request);
 
@@ -71,8 +74,39 @@ describe("POST /api/cloudflare/direct-upload", () => {
     expect(mocks.createDirectUploadMapping).not.toHaveBeenCalled();
   });
 
-  it("returns 400 for an invalid payload after JOB_SECRET authorization", async () => {
-    const response = await POST(authorizedRequest({ vendorId: "", maxDurationSeconds: 0 }));
+  it.each([
+    { name: "the shared JOB_SECRET", configured: smokeSecret },
+    { name: "JOB_SECRET while OPS_SMOKE_SECRET is unset", configured: undefined },
+  ])("rejects $name without reading the body or creating an upload", async ({ configured }) => {
+    vi.stubEnv("OPS_SMOKE_SECRET", configured);
+    const { request, json } = requestWithJsonSpy(`Bearer ${jobSecret}`);
+
+    const response = await POST(request);
+
+    expect(response.status).toBe(401);
+    expect(json).not.toHaveBeenCalled();
+    expect(mocks.createDirectUploadMapping).not.toHaveBeenCalled();
+  });
+
+  it("refuses a vendorId other than the configured smoke vendor before creating an upload", async () => {
+    const response = await POST(authorizedRequest({ vendorId: "vendor-other", title: "Cross-tenant upload" }));
+
+    expect(response.status).toBe(403);
+    await expect(response.json()).resolves.toEqual({ error: "Vendor is not permitted for smoke operations" });
+    expect(mocks.createDirectUploadMapping).not.toHaveBeenCalled();
+  });
+
+  it("returns 503 without creating an upload when no smoke vendor is configured", async () => {
+    vi.stubEnv("SMOKE_VENDOR_ID", undefined);
+
+    const response = await POST(authorizedRequest({ vendorId: "vendor-1", title: "Cross-tenant upload" }));
+
+    expect(response.status).toBe(503);
+    expect(mocks.createDirectUploadMapping).not.toHaveBeenCalled();
+  });
+
+  it("returns 400 for an invalid payload after OPS_SMOKE_SECRET authorization", async () => {
+    const response = await POST(authorizedRequest({ maxDurationSeconds: 0 }));
 
     expect(response.status).toBe(400);
     await expect(response.json()).resolves.toEqual({ error: "Invalid upload request" });

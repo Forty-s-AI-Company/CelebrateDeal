@@ -109,10 +109,11 @@
 
 | ☐ | 變數 | 內容／來源 | 誰提供 | 驗收 | 狀態 |
 |---|---|---|---|---|---|
-| ☐ | `OPS_SMOKE_SECRET` | 另一條線正在新增的獨立維運 smoke 密鑰（取代目前 5 個 ops 端點只靠 `JOB_SECRET` 的做法，F-016） | owner | — | **待 PR 合併後確認名稱**與用法；名稱未定前不要先設 |
+| ☐ | `OPS_SMOKE_SECRET` | F-016：provider smoke 端點（`/api/admin/ops/test-email`、`test-analytics`、`test-monitoring`、`/api/admin/ops/cloudflare/*`、`/api/cloudflare/{direct-upload,live-inputs}`）專用 Bearer。至少 32 字元隨機值，與 `JOB_SECRET`／`CRON_SECRET`／`CSRF_SECRET` 都不同、與 staging 不同。未設定時這些端點一律 401（不會退回 `JOB_SECRET`） | owner | 未設定：`OPS_SMOKE_SECRET: PASS`（端點關閉）；已設定：`[WARN]`「Production 已開啟 smoke 端點」；值太短或與其他密鑰相同為 `[FAIL]` | **預設不設**；只在上線後的外部服務驗證（例如 Resend 測試信）期間暫設，完成後移除 |
+| ☐ | `SMOKE_VENDOR_ID` | F-016：Cloudflare smoke 一律綁定這個 vendor（呼叫端帶其他 `vendorId` 回 403，未設定回 503）。指向 Production 專用的 smoke vendor，不可是真實商家 | owner | 只在 `OPS_SMOKE_SECRET` 已設定時檢查；缺少為 `[WARN]` | 只在 Cloudflare smoke 期間與 `OPS_SMOKE_SECRET` 一起設定，完成後移除 |
 | ☐ | `BANK_ACCOUNT_KEYRING_JSON` | 商家撥款帳號加密 keyring（`src/lib/bank-account.ts`）。封測期間不撥款；啟用撥款前必須設定，金鑰另存、含輪替設計 | owner | 撥款帳號 backfill／寫入功能可用 | 待 owner（撥款前） |
 | ☐ | `DATA_RETENTION_ENABLED`、`DATA_RETENTION_*_DAYS` | 個資保存期限清理，預設關閉；O-21 待 owner 定案 | owner | — | 不設（O-21 定案後再開） |
-| ☐ | `TARGET_APP_URL`、`SMOKE_VENDOR_*`、`RUN_*_SMOKE` | 只給本機／CI 的 `external:smoke` | — | — | Production 不設 |
+| ☐ | `TARGET_APP_URL`、`SMOKE_VENDOR_SLUG`、`RUN_*_SMOKE` | 只給本機／CI 的 `external:smoke`（部署端的 `SMOKE_VENDOR_ID` 見上一列） | — | — | Production 不設 |
 
 ## I. 設定完成後的整體驗收
 

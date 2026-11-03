@@ -7,7 +7,7 @@ import { getDb } from "@/lib/db";
 const state = vi.hoisted(() => ({ token: "" }));
 vi.mock("next/headers", () => ({
   cookies: vi.fn(async () => ({
-    get: (name: string) => (name === "celebrate_session" && state.token ? { value: state.token } : undefined),
+    get: (name: string) => (name === "__Host-celebrate_session" && state.token ? { value: state.token } : undefined),
     set: vi.fn(),
     delete: vi.fn(),
   })),

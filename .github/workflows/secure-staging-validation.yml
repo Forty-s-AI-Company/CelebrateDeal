@@ -253,11 +253,12 @@ jobs:
           const deploymentHost = process.env.CELEBRATEDEAL_DEPLOYMENT_HOST;
           const safeHost = /^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/u;
           if (!safeHost.test(database.hostname) || !safeHost.test(deploymentHost) || !deploymentHost.endsWith(".vercel.app")) process.exit(2);
+          // WP2 is lineage-only: it sends no application request, so neither the firewalled
+          // Preview host nor the staging alias is reachable from this step.
           const port = database.port || "5432";
           if (!/^\d{2,5}$/u.test(port)) process.exit(2);
           process.stdout.write([
             ["api.github.com", "443"],
-            [deploymentHost, "443"],
             [database.hostname, port],
           ].map((row) => row.join("\t")).join("\n") + "\n");
           NODE
@@ -434,9 +435,11 @@ jobs:
           const deploymentHost = process.env.CELEBRATEDEAL_DEPLOYMENT_HOST;
           const safeHost = /^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/u;
           if (!safeHost.test(deploymentHost) || !deploymentHost.endsWith(".vercel.app")) process.exit(2);
+          // Vercel firewalls the immutable Preview host; requests go to the attested fixed alias.
+          const operationHost = "celebrate-deal-staging.carry-digital-nomad.in.net";
           const destinations = [
             ["api.github.com", "443"],
-            [deploymentHost, "443"],
+            [operationHost, "443"],
             ["sandbox-api.payuni.com.tw", "443"],
             ["sandbox-vendor.payuni.com.tw", "443"],
           ];
@@ -512,9 +515,11 @@ jobs:
           const deploymentHost = process.env.CELEBRATEDEAL_DEPLOYMENT_HOST;
           const safeHost = /^(?=.{1,253}$)[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.vercel\.app$/u;
           if (!safeHost.test(deploymentHost)) process.exit(2);
+          // Vercel firewalls the immutable Preview host; requests go to the attested fixed alias.
+          const operationHost = "celebrate-deal-staging.carry-digital-nomad.in.net";
           process.stdout.write([
             ["api.github.com", "443"],
-            [deploymentHost, "443"],
+            [operationHost, "443"],
           ].map((row) => row.join("\t")).join("\n") + "\n");
           NODE
 
@@ -585,9 +590,11 @@ jobs:
           const deploymentHost = process.env.CELEBRATEDEAL_DEPLOYMENT_HOST;
           const safeHost = /^(?=.{1,253}$)[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.vercel\.app$/u;
           if (!safeHost.test(deploymentHost)) process.exit(2);
+          // Vercel firewalls the immutable Preview host; requests go to the attested fixed alias.
+          const operationHost = "celebrate-deal-staging.carry-digital-nomad.in.net";
           process.stdout.write([
             ["api.github.com", "443"],
-            [deploymentHost, "443"],
+            [operationHost, "443"],
           ].map((row) => row.join("\t")).join("\n") + "\n");
           NODE
 
@@ -658,9 +665,11 @@ jobs:
           const deploymentHost = process.env.CELEBRATEDEAL_DEPLOYMENT_HOST;
           const safeHost = /^(?=.{1,253}$)[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.vercel\.app$/u;
           if (!safeHost.test(deploymentHost)) process.exit(2);
+          // Vercel firewalls the immutable Preview host; requests go to the attested fixed alias.
+          const operationHost = "celebrate-deal-staging.carry-digital-nomad.in.net";
           process.stdout.write([
             ["api.github.com", "443"],
-            [deploymentHost, "443"],
+            [operationHost, "443"],
           ].map((row) => row.join("\t")).join("\n") + "\n");
           NODE
 
@@ -731,9 +740,11 @@ jobs:
           const deploymentHost = process.env.CELEBRATEDEAL_DEPLOYMENT_HOST;
           const safeHost = /^(?=.{1,253}$)[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.vercel\.app$/u;
           if (!safeHost.test(deploymentHost)) process.exit(2);
+          // Vercel firewalls the immutable Preview host; requests go to the attested fixed alias.
+          const operationHost = "celebrate-deal-staging.carry-digital-nomad.in.net";
           process.stdout.write([
             ["api.github.com", "443"],
-            [deploymentHost, "443"],
+            [operationHost, "443"],
           ].map((row) => row.join("\t")).join("\n") + "\n");
           NODE
 
@@ -807,6 +818,8 @@ jobs:
           LINE_STAGING_MESSAGING_ACCESS_TOKEN: ${{ secrets.LINE_STAGING_MESSAGING_ACCESS_TOKEN }}
           LINE_STAGING_USER_ID: ${{ secrets.LINE_STAGING_USER_ID }}
           LINE_STAGING_DATABASE_IDENTITY_SHA256: ${{ vars.LINE_STAGING_DATABASE_IDENTITY_SHA256 }}
+          # Read-only workflow token: the runner checks the SHA is on protected master before alias attestation.
+          GITHUB_TOKEN: ${{ github.token }}
           CELEBRATEDEAL_SOURCE_SHA: ${{ inputs.source_sha }}
           CELEBRATEDEAL_DEPLOYMENT_HOST: ${{ inputs.deployment_host }}
           SECURE_RECEIPT_PATH: ${{ runner.temp }}/celebratedeal-secure-receipts/line-notifications-e2e-receipt.json
@@ -838,7 +851,9 @@ jobs:
           const database = new URL(process.env.STAGING_DATABASE_URL ?? "invalid:");
           const port = database.port || "5432";
           if (!safeHost.test(deploymentHost) || !deploymentHost.endsWith(".vercel.app") || !safeHost.test(database.hostname) || !/^\d{2,5}$/u.test(port)) process.exit(2);
-          process.stdout.write([[deploymentHost, "443"], [database.hostname, port]].map((row) => row.join("\t")).join("\n") + "\n");
+          // Vercel firewalls the immutable Preview host; requests go to the attested fixed alias.
+          const operationHost = "celebrate-deal-staging.carry-digital-nomad.in.net";
+          process.stdout.write([["api.github.com", "443"], [operationHost, "443"], [database.hostname, port]].map((row) => row.join("\t")).join("\n") + "\n");
           NODE
 
           line_stage="resolve_allowlist"

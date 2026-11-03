@@ -5,7 +5,7 @@ import { runStagingStreamResourceSmoke, validNewStreamUpload, validSignedPlaybac
 const uid = "a".repeat(32);
 const uploadURL = `https://upload.videodelivery.net/${uid}`;
 const env = { CELEBRATEDEAL_SOURCE_SHA: "b".repeat(40), CELEBRATEDEAL_DEPLOYMENT_HOST: "staging-fixture.vercel.app",
-  GITHUB_TOKEN: "synthetic-github", VERCEL_TOKEN: "synthetic-vercel", JOB_SECRET: "synthetic-job-secret-only" };
+  GITHUB_TOKEN: "synthetic-github", VERCEL_TOKEN: "synthetic-vercel", OPS_SMOKE_SECRET: "synthetic-ops-smoke-secret-0123456789abcdef" };
 const created = { ok: true, helper: "admin_ops_cloudflare_direct_upload", videoId: "synthetic_video_1",
   upload: { uid, uploadURL }, playbackUrl: `https://videodelivery.net/${uid}/manifest/video.m3u8` };
 function harness(overrides = {}) {
@@ -51,7 +51,22 @@ test("successful bounded journey never claims account isolation and never transm
   assert.match(calls[2].url, /videoId=synthetic_video_1$/u);
   for (const call of calls) assert.equal(call.options.redirect, "manual");
   const serialized = JSON.stringify(receipt);
-  for (const secret of [env.JOB_SECRET, uid, uploadURL, created.videoId]) assert.equal(serialized.includes(secret), false);
+  assert.equal(calls[0].options.headers.Authorization, `Bearer ${env.OPS_SMOKE_SECRET}`);
+  assert.equal(calls[2].options.headers.Authorization, `Bearer ${env.OPS_SMOKE_SECRET}`);
+  for (const secret of [env.OPS_SMOKE_SECRET, uid, uploadURL, created.videoId]) assert.equal(serialized.includes(secret), false);
+});
+
+test("F-016: the runner refuses to start with only the scheduler JOB_SECRET or a short smoke secret", async () => {
+  const jobSecretOnly = { ...env, JOB_SECRET: "synthetic-job-secret-0123456789abcdef" };
+  delete jobSecretOnly.OPS_SMOKE_SECRET;
+  for (const candidate of [jobSecretOnly,
+    { ...env, OPS_SMOKE_SECRET: "too-short-smoke-secret" }]) {
+    const { calls, dependencies } = harness();
+    const receipt = await runStagingStreamResourceSmoke(candidate, dependencies);
+    assert.equal(receipt.result, "BLOCKED");
+    assert.equal(receipt.reason, "INVALID_BINDING");
+    assert.equal(calls.length, 0);
+  }
 });
 
 test("binding failures prevent all writes", async () => {
