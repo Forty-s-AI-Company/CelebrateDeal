@@ -211,6 +211,12 @@ export type PaymentWebhookNotActionableReason = "trade_pending" | "payment_type_
   | "outer_status_mismatch"
   /** Signed, well-formed TradeStatus outside the documented UPP table (for example 4); neither paid nor failed. */
   | "trade_status_unknown"
+  /**
+   * Signed TradeStatus 4: "expired" in the trade query table, not in the UPP
+   * table. No money was received, so it is recorded without holding the
+   * pending payment; stock is released on the normal reservation expiry (RR-03).
+   */
+  | "trade_expired"
   /** Signed refund notice without a provider refund serial (CloseNo/RefundNo); never applied automatically. */
   | "refund_reference_missing";
 
@@ -256,6 +262,15 @@ export class PaymentWebhookNotActionableError extends Error {
    */
   get requiresManualReconciliation() {
     return this.reason !== "trade_pending";
+  }
+
+  /**
+   * Whether the matching pending payment is held from inventory expiry while
+   * finance reconciles. An expired trade (TradeStatus 4) received no money, so
+   * it is recorded and alerted at warning level but never holds stock (RR-03).
+   */
+  get holdsPaymentForReconciliation() {
+    return this.requiresManualReconciliation && this.reason !== "trade_expired";
   }
 }
 

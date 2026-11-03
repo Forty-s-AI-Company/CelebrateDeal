@@ -82,9 +82,11 @@ function optionalCents(value: unknown) {
 // cancelled, 8 awaiting confirmation. 9 is "unpaid" in the trade query table
 // (#/7/164): not yet paid, never a failure, so it is pending like 0 and a later
 // Notify still settles the order. 4 is not in the UPP table (it is "expired"
-// only in the query table and the Version 1.0 expiry notice); 4 and every other
-// well-formed but unmapped code are unknown: never paid, never failed, recorded
-// for manual reconciliation. 待 Sandbox 樣本驗證 (no 4/9 UPP sample yet).
+// only in the query table and the Version 1.0 expiry notice): no money was
+// received, so it is recorded for reconciliation without holding the payment
+// (RR-03). Every other well-formed but unmapped code is unknown: never paid,
+// never failed, recorded and held for manual reconciliation.
+// 待 Sandbox 樣本驗證 (no 4/9 UPP sample yet).
 // PaymentType: 1 credit card, 2 ATM, 3 CVS code, 5 CVS pickup COD, 6 icash,
 // 7 AFTEE, 8 C2B return collection (query only), 9 LINE Pay, 10 home-delivery
 // COD, 11 JKOPAY. Apple/Google/Samsung Pay are card AuthType 4/5/6, so their
@@ -92,6 +94,7 @@ function optionalCents(value: unknown) {
 const PAYUNI_PAID_TRADE_STATUS = "1";
 const PAYUNI_FAILED_TRADE_STATUSES = new Set(["2", "3"]);
 const PAYUNI_PENDING_TRADE_STATUSES = new Set(["0", "8", "9"]);
+const PAYUNI_EXPIRED_TRADE_STATUS = "4";
 // A well-formed provider code outside the table above; anything else is malformed.
 const PAYUNI_TRADE_STATUS_CODE = /^[0-9]{1,2}$/;
 // Closed beta accepts credit card only; buyer checkout sends Credit=1.
@@ -123,6 +126,7 @@ function payUniUppEventType(envelope: Record<string, unknown>, payload: Record<s
   if (tradeStatus !== PAYUNI_PAID_TRADE_STATUS) {
     // An unmapped provider code (for example 4) is neither success nor
     // failure: keep the signed snapshot for manual reconciliation.
+    if (tradeStatus === PAYUNI_EXPIRED_TRADE_STATUS) throw notActionable("trade_expired");
     if (PAYUNI_TRADE_STATUS_CODE.test(tradeStatus)) throw notActionable("trade_status_unknown");
     throw new Error("Unsupported PayUni payment status.");
   }

@@ -970,12 +970,22 @@ describe("PayUni UPP 2.0 payment callback contract (F-037)", () => {
     await expect(normalizeReal({ ...realPaid, GatewayFee: fee })).rejects.toThrow("Invalid PayUni amount field.");
   });
 
-  it.each(["4", "5", "6", "7", "10", "99"])(
-    "routes an unmapped TradeStatus %s to manual reconciliation, never paid or failed",
+  it("records an expired TradeStatus 4 for reconciliation without holding the payment, never paid or failed (RR-03)", async () => {
+    await expect(normalizeReal({ ...realPaid, TradeStatus: "4" })).rejects.toMatchObject({
+      name: "PaymentWebhookNotActionableError", reason: "trade_expired", requiresManualReconciliation: true,
+      holdsPaymentForReconciliation: false,
+      identifiers: { orderNumber: "CD-REAL-001", providerTradeNo: "PAYUNI-REAL-TRADE-001", tradeStatus: "4", paymentType: "1" },
+      rawSnapshot: expect.objectContaining({ TradeStatus: "4", OuterStatus: "SUCCESS" }),
+    });
+  });
+
+  it.each(["5", "6", "7", "10", "99"])(
+    "routes an unmapped TradeStatus %s to held manual reconciliation, never paid or failed",
     async (tradeStatus) => {
       // Signed outer and inner SUCCESS must not turn an unknown code into a decision.
       await expect(normalizeReal({ ...realPaid, TradeStatus: tradeStatus })).rejects.toMatchObject({
         name: "PaymentWebhookNotActionableError", reason: "trade_status_unknown", requiresManualReconciliation: true,
+        holdsPaymentForReconciliation: true,
         identifiers: { orderNumber: "CD-REAL-001", providerTradeNo: "PAYUNI-REAL-TRADE-001", tradeStatus, paymentType: "1" },
         rawSnapshot: expect.objectContaining({ MerTradeNo: "CD-REAL-001", TradeNo: "PAYUNI-REAL-TRADE-001", TradeStatus: tradeStatus,
           PaymentType: "1", Status: "SUCCESS", OuterStatus: "SUCCESS" }),
@@ -991,7 +1001,8 @@ describe("PayUni UPP 2.0 payment callback contract (F-037)", () => {
 
   it.each([
     ["unpaid 9", "9", "trade_pending"],
-    ["unmapped 4", "4", "trade_status_unknown"],
+    ["expired 4", "4", "trade_expired"],
+    ["unmapped 5", "5", "trade_status_unknown"],
   ] as const)("gives a resent %s callback the same outcome every time", async (_label, tradeStatus, reason) => {
     const first = await normalizeReal({ ...realPaid, TradeStatus: tradeStatus }).catch((caught: unknown) => caught);
     const resent = await normalizeReal({ ...realPaid, TradeStatus: tradeStatus }).catch((caught: unknown) => caught);
@@ -1006,9 +1017,9 @@ describe("PayUni UPP 2.0 payment callback contract (F-037)", () => {
       .toBe(manualReconciliationEventId(a.identifiers.providerTradeNo!, a.identifiers.tradeStatus!, a.identifiers.paymentType));
   });
 
-  it("still settles an unpaid (9) or unmapped (4) trade with a later verified paid callback", async () => {
+  it("still settles an unpaid (9) or expired (4) trade with a later verified paid callback", async () => {
     await expect(normalizeReal({ ...realPaid, TradeStatus: "9" })).rejects.toMatchObject({ reason: "trade_pending" });
-    await expect(normalizeReal({ ...realPaid, TradeStatus: "4" })).rejects.toMatchObject({ reason: "trade_status_unknown" });
+    await expect(normalizeReal({ ...realPaid, TradeStatus: "4" })).rejects.toMatchObject({ reason: "trade_expired" });
     const { payload } = await normalizeReal(realPaid);
     expect(payload).toMatchObject({ eventType: "paid", eventId: "PAYUNI-REAL-TRADE-001:1" });
   });

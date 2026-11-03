@@ -54,10 +54,10 @@ const migration = await migrate({ afterMigrate: async ({ databaseUrl, environmen
     "records a failed attempt and a later paid result of one trade as two events and pays once",
     "pays once when a verified Notify follows a tampered Return and an unconfirmed Notify (RR-01)",
     "treats an unconfirmed callback after a verified payment as already processed, without a reconciliation record (RR-02)",
-    // ai/payuni-tradestatus-semantics: 9 is unpaid (pending), 4 is unmapped (manual reconciliation).
+    // ai/payuni-tradestatus-semantics: 9 is unpaid (pending), 4 is expired (reconciliation record, no hold).
     "acknowledges unpaid TradeStatus 9 without any event, payment change or commission",
     "keeps an unpaid TradeStatus 9 order pending through resends until a later verified Notify pays it once",
-    "records an unmapped TradeStatus 4 once for manual reconciliation without failing or paying the order",
+    "records an expired TradeStatus 4 once for reconciliation without holding, failing or paying the order (RR-03)",
    ];
    const uppCallbackCases = result.testResults.flatMap(suite => suite.assertionResults).filter(test => uppCallbackTitles.includes(test.title));
    // PR #458 (F-003): production refuses non-PayUni events, including stored retries.

@@ -334,6 +334,14 @@ describe("PayUni UPP 2.0 callback outcomes on a pending buyer checkout", () => {
   expect(await db.paymentTransaction.findUniqueOrThrow({ where: { id: payment.id } })).toMatchObject({ status: "pending" });
   expect(await db.commerceOrder.findUniqueOrThrow({ where: { id: order.id } })).not.toMatchObject({ status: "payment_failed" });
   expect(await db.inventoryReservation.count({ where: { paymentTransactionId: payment.id, status: "reserved" } })).toBe(1);
+  // Unpaid is not a failure: no failure email or order event was queued.
+  expect(await db.emailDelivery.count({ where: { vendorId: fixed.vendorId } })).toBe(0);
+  expect(await db.commerceOrderEvent.count({ where: { orderId: order.id, eventType: { in: ["email.queued", "payment.failed"] } } })).toBe(0);
+  // The reservation still expires on its normal schedule (nothing holds it).
+  const expiry = await releaseExpiredInventoryReservations(100, new Date(Date.now() + 1000 * 60 * 60 * 24));
+  expect(expiry.held).toBe(0);
+  expect(await db.inventoryReservation.findUniqueOrThrow({ where: { paymentTransactionId: payment.id } })).toMatchObject({ status: "released", releaseReason: "expired" });
+  expect(await db.paymentTransaction.findUniqueOrThrow({ where: { id: payment.id } })).toMatchObject({ status: "expired" });
   expect((await callback("notify", {}, payment.orderNumber!, payment.providerTradeNo!)).status).toBe(200);
   const events = await db.webhookEvent.findMany({ where: { provider: "payuni", eventId: { contains: payment.providerTradeNo! } } });
   expect(events.map(event => [event.eventId, event.eventType, event.status])).toEqual([[`${payment.providerTradeNo}:1`, "paid", "processed"]]);
@@ -341,7 +349,7 @@ describe("PayUni UPP 2.0 callback outcomes on a pending buyer checkout", () => {
   expect(await db.commerceOrderEvent.count({ where: { orderId: order.id, eventType: "payment.paid" } })).toBe(1);
  });
 
- it("records an unmapped TradeStatus 4 once for manual reconciliation without failing or paying the order", async () => {
+ it("records an expired TradeStatus 4 once for reconciliation without holding, failing or paying the order (RR-03)", async () => {
   const { payment } = await checkout();
   stubPayUni();
   const tradeNo = payment.providerTradeNo!;
@@ -355,19 +363,26 @@ describe("PayUni UPP 2.0 callback outcomes on a pending buyer checkout", () => {
   expect(manual.map(event => [event.eventId, event.eventType, event.status, event.vendorId])).toEqual([
    [`manual:${tradeNo}:4:1`, "manual_reconciliation", "needs_manual_reconciliation", fixed.vendorId],
   ]);
-  expect(manual[0]!.payload).toMatchObject({ reconciliation: { reason: "trade_status_unknown", orderNumber: payment.orderNumber, tradeStatus: "4", matchedTransaction: payment.id },
+  expect(manual[0]!.payload).toMatchObject({ reconciliation: { reason: "trade_expired", orderNumber: payment.orderNumber, tradeStatus: "4", matchedTransaction: payment.id },
    raw: { TradeStatus: "4", OuterStatus: "SUCCESS" } });
-  expect(await db.paymentTransaction.findUniqueOrThrow({ where: { id: payment.id } })).toMatchObject({ status: "pending",
-   metadata: { paymentManualReconciliation: { reason: "trade_status_unknown", webhookEventId: manual[0]!.id } } });
+  // Expired means no money was received (RR-03): the payment is not held.
+  const pending = await db.paymentTransaction.findUniqueOrThrow({ where: { id: payment.id } });
+  expect(pending.status).toBe("pending");
+  expect(pending.metadata).not.toHaveProperty("paymentManualReconciliation");
   expect(await db.affiliateCommission.count({ where: { vendorId: fixed.vendorId } })).toBe(0);
-  expect(await notActionableAudit(payment.createdAt)).toMatchObject({ reason: "trade_status_unknown", tradeStatus: "4", manualReconciliation: true });
-  // A later verified paid callback still settles the trade once and lifts the hold.
+  expect(await notActionableAudit(payment.createdAt)).toMatchObject({ reason: "trade_expired", tradeStatus: "4", manualReconciliation: true });
+  // The reservation expires on its normal schedule instead of being held.
+  const expiry = await releaseExpiredInventoryReservations(100, new Date(Date.now() + 1000 * 60 * 60 * 24));
+  expect(expiry.held).toBe(0);
+  expect(await db.inventoryReservation.findUniqueOrThrow({ where: { paymentTransactionId: payment.id } })).toMatchObject({ status: "released", releaseReason: "expired" });
+  expect(await db.paymentTransaction.findUniqueOrThrow({ where: { id: payment.id } })).toMatchObject({ status: "expired" });
+  // A later verified paid callback still settles the trade once (late-paid path).
   expect((await callback("notify", {}, payment.orderNumber!, tradeNo)).status).toBe(200);
-  const paid = await db.paymentTransaction.findUniqueOrThrow({ where: { id: payment.id } });
-  expect(paid.status).toBe("paid");
-  expect(paid.metadata).not.toHaveProperty("paymentManualReconciliation");
+  expect(await db.paymentTransaction.findUniqueOrThrow({ where: { id: payment.id } })).toMatchObject({ status: "paid" });
   const order = await db.commerceOrder.findFirstOrThrow({ where: { primaryPaymentTransactionId: payment.id } });
   expect(await db.commerceOrderEvent.count({ where: { orderId: order.id, eventType: "payment.paid" } })).toBe(1);
+  // Only TradeStatus 1 reconciliation records close automatically; this one stays for finance.
+  expect(await db.webhookEvent.findUniqueOrThrow({ where: { id: manual[0]!.id } })).toMatchObject({ status: "needs_manual_reconciliation" });
  });
 
  // 待 Sandbox 確認: synthetic legacy refund notice shape on the paid TradeNo.

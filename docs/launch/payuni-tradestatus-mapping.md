@@ -6,7 +6,7 @@
   - **程式**：`src/lib/payment-providers/payuni.ts`（`payUniUppEventType`、`classifyPayUniCallback`、`payUniSignedPaymentRejection`、`payUniQueryRow`、`verifyPayUniSignature`）；`src/app/api/webhooks/payments/route.ts`（`notActionableResponse`）。
   - **既有文件**：`docs/launch/payuni-payment-callback-runbook.md`（§1 判斷規則、§5 待 Sandbox 樣本驗證）；`docs/goal-beta-prep-2026Q4/OWNER-ACTIONS.md` O-2；`GO-NO-GO.md` F-037。
 - 狀態：官方代碼表已對照（見 §1）；**Sandbox 去識別化樣本尚未入庫**，所以「實際回呼長什麼樣」仍以官方文件為準，未做實測對照（§5）。
-- 2026-11-03 更新（分支 `ai/payuni-tradestatus-semantics`）：依本文件 §3.2 的結論修正程式判斷：UPP 回呼的 `TradeStatus=9` 改為待付款（不改狀態），`4` 與其他格式正確但官方 UPP 表沒有的代碼改走人工對帳（reason `trade_status_unknown`）。§2、§3、§4 已改為修正後的行為；修正前的判斷保留在各列的「修正前」說明。
+- 2026-11-03 更新（分支 `ai/payuni-tradestatus-semantics`）：依本文件 §3.2 的結論修正程式判斷：UPP 回呼的 `TradeStatus=9` 改為待付款（不改狀態），`4`（官方查詢表「交易逾期」）改為只記對帳紀錄、不保留交易（reason `trade_expired`，reviewer M1），其他格式正確但官方 UPP 表沒有的代碼改走會保留交易的人工對帳（reason `trade_status_unknown`）。§2、§3、§4 已改為修正後的行為；修正前的判斷保留在各列的「修正前」說明。
 
 ## 0. 取得官方文件的過程
 
@@ -79,7 +79,7 @@
 1. 帶有 `EventType` 欄位 → 丟錯（真實 UPP 回呼不會有）→ 400 `invalid_payload`。
 2. `TradeStatus` ∈ {0, 8, 9} → **不改任何狀態**（`trade_pending`），audit `payment_webhook_not_actionable`；Notify 回 200、Return 導向 `payment=pending`。不建立 WebhookEvent、不標 failed、不開通、不算佣金、不寄失敗信；之後的 paid Notify（eventId `TradeNo:1`）照常結案。（修正前：9 歸在 failed。）
 3. `TradeStatus` ∈ {2, 3} → `failed`，eventId `TradeNo:<狀態>`。（修正前：還包含 4、9。）
-4. `TradeStatus` 是 1～2 位數字但不在上述代碼與 1（例如 4、5、6、7、10、99）→ `trade_status_unknown`：不當成功也不當失敗，走與第 6 點相同的人工對帳路徑（`manual:<TradeNo>:<TradeStatus>:<PaymentType>` 事件、保留 pending 交易不被逾期釋放、Sentry error 告警、audit 與有界的已簽章 snapshot，含外層 `Status`）；Notify 與 Return 都會記錄（`TradeStatus` 在已簽章的 EncryptInfo 內），重送收斂到同一筆事件。之後的 paid Notify 仍會入帳並解除保留，但這筆對帳事件只有 `TradeStatus=1` 的對帳事件會被自動結案，所以要由財務人工關閉。格式錯誤（空白、非數字、3 位數以上）仍丟錯 → 400 `invalid_payload`（fail closed）。（修正前：4 為 failed，其他代碼一律 400。）
+4. `TradeStatus=4` → `trade_expired`：建立 `manual:<TradeNo>:4:<PaymentType>` 對帳事件（冪等）、audit、Sentry warning，但**不保留**交易：庫存依既有保留期限到期釋放、交易轉 expired，之後的 paid 走既有「逾期後 paid」路徑入帳；對帳事件需財務人工關閉。`TradeStatus` 是 1～2 位數字但不是上述代碼（例如 5、6、7、10、99）→ `trade_status_unknown`：不當成功也不當失敗，走與第 6 點相同的人工對帳路徑（`manual:<TradeNo>:<TradeStatus>:<PaymentType>` 事件、保留 pending 交易不被逾期釋放、Sentry error 告警、audit 與有界的已簽章 snapshot，含外層 `Status`）；Notify 與 Return 都會記錄（`TradeStatus` 在已簽章的 EncryptInfo 內），重送收斂到同一筆事件。之後的 paid Notify 仍會入帳並解除保留，但這筆對帳事件只有 `TradeStatus=1` 的對帳事件會被自動結案，所以要由財務人工關閉。格式錯誤（空白、非數字、3 位數以上）仍丟錯 → 400 `invalid_payload`（fail closed）。（修正前：4 為 failed，其他代碼一律 400。）
 5. `TradeStatus = 1` 時，依序：EncryptInfo 內 `Status` 必須 `SUCCESS`（否則 `provider_status_not_success`）；`PaymentType` 必須在允許清單 {1}（否則 `payment_type_not_allowed`）；外層 `Status` 必須 `SUCCESS`（否則 `outer_status_mismatch`）；全過才是 `paid`，eventId `TradeNo:1`，且金額 `TradeAmt` 必須存在且大於 0。
 6. 上述 5 的三種否決：Notify 一律建立 `needs_manual_reconciliation` 事件、保留庫存、Sentry error 告警；唯一例外是**來源為 Return 且只有外層 `Status` 不符**，不記錄、導向 pending，交給 Notify 決定（RR-01）。
 7. 沒有 `TradeStatus` 的簽章結果（`payUniSignedPaymentRejection`）：EncryptInfo 內 `Status` 是 `UNKNOWN` 或 `UNAPPROVED`（不分大小寫）→ `trade_pending`；是舊式文字（paid、success、failed…）→ 走舊通知路徑，**永遠不會變成 paid**；其他 PayUni 錯誤代碼 → `failed`，並保留有界的 `Status`／`Message`／`TradeStatus`／`ResCode` 診斷碼（`Message` 只在符合代碼格式、不含 12～19 位連續數字時保留）。
@@ -114,9 +114,9 @@
 | 2 付款失敗 | 付款失敗 | `failed` | **一致**。runbook §5 第 2 點的疑問（失敗後能否用同一 `MerTradeNo` 在 UPP 頁重試成 1）官方文件沒有說明，仍待 Sandbox 驗證；程式的 eventId 帶狀態（`TradeNo:2`、`TradeNo:1`），後到的 paid 不會被去重吞掉 |
 | 3 付款取消 | 付款取消 | `failed` | **一致** |
 | 8 訂單待確認 | 待確認 | pending，不改狀態 | **一致**。8 之後是否會再送最終 Notify，官方 UPP 頁沒有寫（runbook §5 第 3 點仍待實測） |
-| 4 交易逾期 | **UPP 返回表沒有**；出現在查詢表與「訂單失效通知 Notify」（Version 1.0，僅 ATM／超商／愛金卡／後支付／街口） | UPP 回呼收到 4 → `trade_status_unknown`，人工對帳（不標 failed、不入帳）；失效通知因 `Version` 是 1.0，**簽章驗證即失敗（401）**（修正前：UPP 回呼的 4 → `failed`） | **已修正（本分支）**：UPP 表沒有的代碼不再推論為失敗。**日後開 ATM／超商時，Version 1.0 失效通知仍會被拒收**，屬「程式沒處理」，需要另做 |
+| 4 交易逾期 | **UPP 返回表沒有**；出現在查詢表與「訂單失效通知 Notify」（Version 1.0，僅 ATM／超商／愛金卡／後支付／街口） | UPP 回呼收到 4 → `trade_expired`：只記對帳事件與 warning，不保留交易、不標 failed、不入帳，庫存依保留期限釋放；失效通知因 `Version` 是 1.0，**簽章驗證即失敗（401）**（修正前：UPP 回呼的 4 → `failed`） | **已修正（本分支）**：UPP 表沒有的代碼不再推論為失敗。**日後開 ATM／超商時，Version 1.0 失效通知仍會被拒收**，屬「程式沒處理」，需要另做 |
 | 9 未付款 | **UPP 返回表沒有**；只在查詢表（尚未付款） | UPP 回呼收到 9 → `trade_pending`，不改任何狀態；之後的 paid Notify 照常結案（修正前：`failed`） | **已修正（本分支）**：與官方「未付款」語意一致。UPP 回呼是否真的會送 9 仍待 Sandbox 樣本 |
-| 5、6、7、10～99 | 官方三份表都沒有 | `trade_status_unknown`，人工對帳（修正前：400 `invalid_payload`） | **已修正（本分支）**：保留已簽章的 snapshot、audit 與告警，不當成功或失敗；格式錯誤（空白、非數字、3 位數以上）仍 400 |
+| 5、6、7、10～99 | 官方三份表都沒有 | `trade_status_unknown`，人工對帳並保留交易（修正前：400 `invalid_payload`） | **已修正（本分支）**：保留已簽章的 snapshot、audit 與告警，不當成功或失敗；格式錯誤（空白、非數字、3 位數以上）仍 400 |
 
 ### 3.3 `PaymentType`
 
@@ -144,7 +144,7 @@
 
 ## 4. 目前沒有對應處理的官方代碼彙整
 
-1. **`TradeStatus=4` 的「訂單失效通知 Notify」（Version 1.0）**：簽章驗證要求 `Version=2.0`，會回 401。信用卡封測沒影響；開放 ATM／超商前要處理。（UPP 2.0 回呼帶 4 的情況已由本分支改走人工對帳。）
+1. **`TradeStatus=4` 的「訂單失效通知 Notify」（Version 1.0）**：簽章驗證要求 `Version=2.0`，會回 401。信用卡封測沒影響；開放 ATM／超商前要處理。（UPP 2.0 回呼帶 4 的情況已由本分支改為只記對帳紀錄、不保留交易。）
 2. ~~**`TradeStatus=9`（查詢表的「未付款」）**：程式把 UPP 回呼的 9 當 `failed`~~ → 本分支已改為待付款（§3.2）。
 3. **查詢路徑對 `TradeStatus` 0、2、3、4、8、9 與 `DataSource=B`**：一律回 `provider_response` 錯誤，不會推論為失敗或逾期；與回呼路徑的新判斷一致（不會把 9 或未知代碼當失敗）。含意：卡片失敗或逾期的訂單，**不能靠查詢自動結案**，只能等回呼。是否需要補強由 owner 與 reviewer 決定。
 4. **`UNKNOWN` 後 15 分鐘主動查詢**：官方建議；程式是否已排程，本次未查證。
@@ -169,7 +169,7 @@
 ## 6. 建議的後續工作（皆非本文件範圍，需 owner 與 reviewer 決定）
 
 1. 在 Sandbox 取樣：失敗卡（官方測試區有「模擬 3D 交易 ECI 值不符主動取消授權」的卡號 `4147631000000002`、`3560511000000002`，可產生失敗案例）、取消付款、等待逾時（`UNKNOWN`），把去識別化的欄位名稱與值寫進 `docs/launch/`（不含卡號與簽章 body）。
-2. ~~決定 UPP 回呼的 `TradeStatus=9` 要維持 `failed` 還是改 pending~~：分支 `ai/payuni-tradestatus-semantics` 已改為 pending，4 與未知代碼改走人工對帳；合併前需 reviewer 獨立審查。
+2. ~~決定 UPP 回呼的 `TradeStatus=9` 要維持 `failed` 還是改 pending~~：分支 `ai/payuni-tradestatus-semantics` 已改為 pending，4 改為只記對帳紀錄不保留、其他未知代碼改走人工對帳；合併前需 reviewer 獨立審查。
 3. 開放 ATM／超商前，補 Version 1.0 失效通知的處理。
 4. 補上對 `UNKNOWN` 訂單的 15 分鐘後查詢（若尚未存在）。
 5. ~~把本文件 §1 的官方代碼表同步進 `payuni-payment-callback-runbook.md` §1 與 `payuni.ts` 的註解~~：本分支已同步。
