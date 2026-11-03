@@ -60,6 +60,38 @@ function getSafeVercelEnvironment(): SafeVercelEnvironment | null {
   return null;
 }
 
+type DeploymentIdentity = {
+  commitSha: string | null;
+  deploymentId: string | null;
+  vercelUrl: string | null;
+};
+
+const SAFE_COMMIT_SHA = /^[a-f0-9]{40}$/;
+const SAFE_DEPLOYMENT_ID = /^dpl_[A-Za-z0-9]{1,64}$/;
+const SAFE_VERCEL_HOST = /^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+vercel\.app$/;
+
+function allowlisted(value: string | undefined, pattern: RegExp) {
+  return typeof value === "string" && pattern.test(value) ? value : null;
+}
+
+const NO_DEPLOYMENT_IDENTITY: DeploymentIdentity = { commitSha: null, deploymentId: null, vercelUrl: null };
+
+// Non-secret deployment identity injected by Vercel (VERCEL_GIT_COMMIT_SHA,
+// VERCEL_DEPLOYMENT_ID, VERCEL_URL). The protected staging runner compares it,
+// fetched through the fixed alias, with the GitHub deployment lineage record.
+// Only Preview deployments report it; Production and local runs always return
+// null. Values outside the fixed shapes are reported as null, never echoed.
+function getDeploymentIdentity(): DeploymentIdentity {
+  if (getSafeVercelEnvironment() !== "preview") return NO_DEPLOYMENT_IDENTITY;
+  return {
+    commitSha: allowlisted(process.env.VERCEL_GIT_COMMIT_SHA, SAFE_COMMIT_SHA),
+    deploymentId: allowlisted(process.env.VERCEL_DEPLOYMENT_ID, SAFE_DEPLOYMENT_ID),
+    vercelUrl: allowlisted(process.env.VERCEL_URL?.toLowerCase(), SAFE_VERCEL_HOST),
+  };
+}
+
+const NO_STORE = { "Cache-Control": "no-store" } as const;
+
 function logDatabaseDiagnostic(error: unknown) {
   const environment = getSafeVercelEnvironment();
   if (!environment) return;
@@ -75,6 +107,7 @@ function logDatabaseDiagnostic(error: unknown) {
 
 export async function GET() {
   const startedAt = Date.now();
+  const deployment = getDeploymentIdentity();
 
   try {
     await getDb().$queryRaw`SELECT 1`;
@@ -82,7 +115,8 @@ export async function GET() {
       ok: true,
       database: "ok",
       latencyMs: Date.now() - startedAt,
-    });
+      deployment,
+    }, { headers: NO_STORE });
   } catch (error) {
     logDatabaseDiagnostic(error);
     return NextResponse.json({
@@ -90,6 +124,7 @@ export async function GET() {
       database: "failed",
       latencyMs: Date.now() - startedAt,
       error: "Database health check failed",
-    }, { status: 503 });
+      deployment,
+    }, { status: 503, headers: NO_STORE });
   }
 }

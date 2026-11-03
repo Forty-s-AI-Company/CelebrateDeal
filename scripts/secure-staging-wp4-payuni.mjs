@@ -4,7 +4,7 @@ import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
-import { verifyDeployment } from "./secure-staging-runner.mjs";
+import { ALIAS_ATTESTATION_FAILURES, PROTECTED_MASTER_FAILURES, STAGING_ALIAS_HOST, verifyAliasAttestation, verifyDeployment, verifyShaOnProtectedMaster } from "./secure-staging-runner.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const TASK = "wp4-payuni-sandbox-reconciliation";
@@ -79,6 +79,8 @@ export const DIAGNOSTIC_CATEGORIES = Object.freeze([
   "GITHUB_DEPLOYMENT_READ_BUDGET_EXHAUSTED",
   "GITHUB_DEPLOYMENT_PAGINATION_INVALID",
   "STAGING_HEALTH_FAILED",
+  ...PROTECTED_MASTER_FAILURES,
+  ...ALIAS_ATTESTATION_FAILURES,
   "CHILD_EXECUTION_FAILED",
   "CHILD_OUTPUT_INVALID",
   "CHILD_OUTPUT_UNREADABLE",
@@ -195,6 +197,14 @@ function uncertainOwnerSession() {
 
 function fixedPreviewUrl(host, pathname) {
   return `https://${host}${pathname}`;
+}
+
+/**
+ * The child addresses only the fixed staging alias, and only when the parent set it
+ * after the alias attested the lineage-verified deployment. Anything else runs nothing.
+ */
+function attestedOperationHost(source) {
+  return source?.CELEBRATEDEAL_OPERATION_HOST === STAGING_ALIAS_HOST ? STAGING_ALIAS_HOST : null;
 }
 
 function responseMatches(response, host, pathname, status) {
@@ -508,9 +518,11 @@ export function validateReceipt(receipt) {
   return { ok: errors.length === 0, errors };
 }
 
-export function childEnvironment(source) {
+export function childEnvironment(source, operationHost = null) {
   return {
     ...systemEnvironment(source),
+    // Only the parent's attestation result is forwarded; a caller-provided value is ignored.
+    ...(operationHost === STAGING_ALIAS_HOST ? { CELEBRATEDEAL_OPERATION_HOST: STAGING_ALIAS_HOST } : {}),
     JOB_SECRET: source.JOB_SECRET,
     PAYUNI_SANDBOX_ONETIME_CARD_NO: source.PAYUNI_SANDBOX_ONETIME_CARD_NO,
     PAYUNI_TEST_EXPIRY: source.PAYUNI_TEST_EXPIRY,
@@ -525,10 +537,11 @@ export async function runFixtureSetup(source, fetchImpl = fetch) {
   if (!hasValue(source, "JOB_SECRET")
     || !SAFE_SHA.test(source.CELEBRATEDEAL_SOURCE_SHA ?? "")
     || !SAFE_HOST.test(source.CELEBRATEDEAL_DEPLOYMENT_HOST ?? "")
-    || !source.CELEBRATEDEAL_DEPLOYMENT_HOST.endsWith(".vercel.app")) return initial;
+    || !source.CELEBRATEDEAL_DEPLOYMENT_HOST.endsWith(".vercel.app")
+    || !attestedOperationHost(source)) return initial;
   try {
     const pathname = "/api/admin/ops/payuni/wp4-fixture";
-    const response = await fetchImpl(fixedPreviewUrl(source.CELEBRATEDEAL_DEPLOYMENT_HOST, pathname), {
+    const response = await fetchImpl(fixedPreviewUrl(attestedOperationHost(source), pathname), {
       method: "POST",
       headers: {
         Authorization: `Bearer ${source.JOB_SECRET}`,
@@ -538,7 +551,7 @@ export async function runFixtureSetup(source, fetchImpl = fetch) {
       signal: AbortSignal.timeout(WP4_NETWORK_REQUEST_TIMEOUT_MS),
     });
     const contentType = response.headers?.get?.("content-type")?.split(";", 1)[0]?.trim().toLowerCase();
-    if (!responseMatches(response, source.CELEBRATEDEAL_DEPLOYMENT_HOST, pathname, 200)) {
+    if (!responseMatches(response, attestedOperationHost(source), pathname, 200)) {
       await discardResponseBody(response);
       const closedOutcome = response.headers?.get?.("x-celebratedeal-wp4-fixture");
       const allowlistedClosedOutcome = ["EXECUTOR_DISABLED", "SOURCE_CONFIGURATION_UNAVAILABLE", "SOURCE_MISMATCH", "BODY_REJECTED"].includes(closedOutcome)
@@ -587,10 +600,11 @@ export async function runFixturePreflight(source, fetchImpl = fetch) {
   if (!hasValue(source, "JOB_SECRET")
     || !SAFE_SHA.test(source.CELEBRATEDEAL_SOURCE_SHA ?? "")
     || !SAFE_HOST.test(source.CELEBRATEDEAL_DEPLOYMENT_HOST ?? "")
-    || !source.CELEBRATEDEAL_DEPLOYMENT_HOST.endsWith(".vercel.app")) return initial;
+    || !source.CELEBRATEDEAL_DEPLOYMENT_HOST.endsWith(".vercel.app")
+    || !attestedOperationHost(source)) return initial;
   try {
     const pathname = "/api/admin/ops/payuni/wp4-preflight";
-    const response = await fetchImpl(fixedPreviewUrl(source.CELEBRATEDEAL_DEPLOYMENT_HOST, pathname), {
+    const response = await fetchImpl(fixedPreviewUrl(attestedOperationHost(source), pathname), {
       method: "POST",
       headers: {
         Authorization: `Bearer ${source.JOB_SECRET}`,
@@ -600,7 +614,7 @@ export async function runFixturePreflight(source, fetchImpl = fetch) {
       signal: AbortSignal.timeout(WP4_NETWORK_REQUEST_TIMEOUT_MS),
     });
     const contentType = response.headers?.get?.("content-type")?.split(";", 1)[0]?.trim().toLowerCase();
-    if (!responseMatches(response, source.CELEBRATEDEAL_DEPLOYMENT_HOST, pathname, 200)) {
+    if (!responseMatches(response, attestedOperationHost(source), pathname, 200)) {
       await discardResponseBody(response);
       const closedPreflightOutcome = response.headers?.get?.("x-celebratedeal-wp4-preflight");
       const outcome = response.status === 401
@@ -643,11 +657,12 @@ export async function runOwnerSession(source, fetchImpl = fetch) {
   if (!hasValue(source, "JOB_SECRET")
     || !SAFE_SHA.test(source.CELEBRATEDEAL_SOURCE_SHA ?? "")
     || !SAFE_HOST.test(source.CELEBRATEDEAL_DEPLOYMENT_HOST ?? "")
-    || !source.CELEBRATEDEAL_DEPLOYMENT_HOST.endsWith(".vercel.app")) return owner;
+    || !source.CELEBRATEDEAL_DEPLOYMENT_HOST.endsWith(".vercel.app")
+    || !attestedOperationHost(source)) return owner;
   try {
     owner = uncertainOwnerSession();
     const bootstrapPath = "/api/admin/ops/payuni/wp4-session";
-    const bootstrap = await fetchImpl(fixedPreviewUrl(source.CELEBRATEDEAL_DEPLOYMENT_HOST, bootstrapPath), {
+    const bootstrap = await fetchImpl(fixedPreviewUrl(attestedOperationHost(source), bootstrapPath), {
       method: "POST",
       headers: {
         Authorization: `Bearer ${source.JOB_SECRET}`,
@@ -656,7 +671,7 @@ export async function runOwnerSession(source, fetchImpl = fetch) {
       redirect: "manual",
       signal: AbortSignal.timeout(WP4_NETWORK_REQUEST_TIMEOUT_MS),
     });
-    if (!responseMatches(bootstrap, source.CELEBRATEDEAL_DEPLOYMENT_HOST, bootstrapPath, 204)) {
+    if (!responseMatches(bootstrap, attestedOperationHost(source), bootstrapPath, 204)) {
       await discardResponseBody(bootstrap);
       return owner;
     }
@@ -672,13 +687,13 @@ export async function runOwnerSession(source, fetchImpl = fetch) {
       ["/billing/invoices", "invoicesProbeRequests", "invoicesProbeAuthenticated"],
     ]) {
       owner[requestKey] = 1;
-      const response = await fetchImpl(fixedPreviewUrl(source.CELEBRATEDEAL_DEPLOYMENT_HOST, pathname), {
+      const response = await fetchImpl(fixedPreviewUrl(attestedOperationHost(source), pathname), {
         method: "GET",
         headers: { Cookie: sessionCookie },
         redirect: "manual",
         signal: AbortSignal.timeout(WP4_NETWORK_REQUEST_TIMEOUT_MS),
       });
-      if (!responseMatches(response, source.CELEBRATEDEAL_DEPLOYMENT_HOST, pathname, 200)) {
+      if (!responseMatches(response, attestedOperationHost(source), pathname, 200)) {
         await discardResponseBody(response);
         return owner;
       }
@@ -747,6 +762,8 @@ async function writeReceipt(receipt, runnerTemp) {
 
 export async function runParent(source, dependencies = {}) {
   const verifyDeploymentImpl = dependencies.verifyDeploymentImpl ?? verifyDeployment;
+  const verifyShaOnProtectedMasterImpl = dependencies.verifyShaOnProtectedMasterImpl ?? verifyShaOnProtectedMaster;
+  const verifyAliasAttestationImpl = dependencies.verifyAliasAttestationImpl ?? verifyAliasAttestation;
   const fetchImpl = dependencies.fetchImpl ?? fetch;
   const spawnSyncImpl = dependencies.spawnSyncImpl ?? spawnSync;
   let receipt = createInitialReceipt(source.CELEBRATEDEAL_SOURCE_SHA);
@@ -758,20 +775,20 @@ export async function runParent(source, dependencies = {}) {
   let childStarted = false;
   try {
     const lineage = await verifyDeploymentImpl(source);
-    const health = await fetchImpl(`https://${lineage.host}/api/health`, {
-      method: "HEAD",
-      redirect: "manual",
-      signal: AbortSignal.timeout(WP4_NETWORK_REQUEST_TIMEOUT_MS),
-    });
-    const noRedirect = health.status === 200 && !health.headers.has("location");
-    if (!noRedirect) throw new Error("STAGING_HEALTH_FAILED");
+    // The alias attestation cannot detect a forged identity; only protected-master SHAs qualify.
+    await verifyShaOnProtectedMasterImpl(source.CELEBRATEDEAL_SOURCE_SHA, source.GITHUB_TOKEN, fetchImpl);
+    // Vercel firewalls the immutable Preview host. The fixed alias must attest that it
+    // serves the same commit SHA and Preview host the GitHub record bound together.
+    const alias = await verifyAliasAttestationImpl({ sourceSha: source.CELEBRATEDEAL_SOURCE_SHA, previewHost: lineage.host }, fetchImpl);
+    const noRedirect = alias?.host === STAGING_ALIAS_HOST && alias.healthStatus === 200 && alias.noRedirect === true;
+    if (!noRedirect) throw new Error("ALIAS_ATTESTATION_FAILED");
     receipt.lineage = {
       deploymentReads: lineage.reads,
       deploymentMatched: lineage.deploymentMatched,
       sourceMatched: lineage.sourceMatched,
       preview: lineage.preview,
       ready: lineage.ready,
-      healthStatus: health.status,
+      healthStatus: alias.healthStatus,
       noRedirect,
     };
     receipt.prerequisites.exactPreviewLineage = Boolean(
@@ -782,7 +799,7 @@ export async function runParent(source, dependencies = {}) {
       childStarted = true;
       const child = spawnSyncImpl(process.execPath, [fileURLToPath(import.meta.url), "--child"], {
         cwd: ROOT,
-        env: childEnvironment(source),
+        env: childEnvironment(source, alias.host),
         encoding: "utf8",
         shell: false,
         windowsHide: true,
