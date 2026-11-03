@@ -119,6 +119,21 @@ describe("shared live updates channel", () => {
     stop();
   });
 
+  it("keeps delivering to other subscribers and keeps polling when one handler throws", async () => {
+    const healthy = vi.fn();
+    const statuses: LiveUpdatesStatus[] = [];
+    const stopBad = subscribeLiveUpdates(scope, { include: { chat: true, interactions: false }, onUpdate: () => { throw new Error("boom"); }, onStatus: () => { throw new Error("boom"); } });
+    const stopGood = subscribeLiveUpdates(scope, { include: { chat: false, interactions: true }, onUpdate: healthy, onStatus: (status) => statuses.push(status) });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(healthy).toHaveBeenCalledTimes(1);
+    expect(statuses).toEqual(["ok"]);
+    await vi.advanceTimersByTimeAsync(3_000);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(healthy).toHaveBeenCalledTimes(2);
+    stopBad();
+    stopGood();
+  });
+
   it("never overlaps requests and stops everything when the last subscriber leaves", async () => {
     let release: (value: unknown) => void = () => {};
     fetchMock.mockImplementationOnce((_url: string, init: { signal: AbortSignal }) => new Promise((resolve, reject) => {

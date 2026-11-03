@@ -202,6 +202,8 @@ export function decodeLiveChatCursor(value: string | undefined): CursorValue | n
 
 const LIVE_UPDATES_CURSOR_VERSION = 2;
 export const LIVE_UPDATES_CURSOR_MAX_LENGTH = 320;
+/** A since poll re-reads this much history; clients dedupe by id. */
+export const LIVE_UPDATES_LOOKBACK_MS = 5_000;
 
 /**
  * Forward ("since") cursor for the merged live poll (F-091 (2)). Unlike the
@@ -221,7 +223,7 @@ export function encodeLiveUpdatesCursor(value: { liveId: string; createdAt: Date
 }
 
 export function decodeLiveUpdatesCursor(value: string | undefined, liveId: string): CursorValue | null {
-  if (!value || value.length > LIVE_UPDATES_CURSOR_MAX_LENGTH || !/^[A-Za-z0-9_-]+.[A-Za-z0-9_-]+$/u.test(value)) return null;
+  if (!value || value.length > LIVE_UPDATES_CURSOR_MAX_LENGTH || !/^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/u.test(value)) return null;
   const [payload, suppliedSignature] = value.split(".");
   if (!payload || !suppliedSignature || suppliedSignature.length !== 43) return null;
   let expectedSignature: string;
@@ -619,7 +621,13 @@ export async function listViewerChatUpdates(
       })
     : false;
 
-  // Newest first so a long gap keeps the latest page; one extra row detects it.
+  // Newest first so a long gap keeps the latest page. A since poll also
+  // re-reads LIVE_UPDATES_LOOKBACK_MS of history so a row whose transaction
+  // committed after a newer one is still delivered (clients dedupe by id);
+  // the createdAt lower bound keeps the scan a range on the
+  // (vendorId, liveId, createdAt) index. The take leaves room for both a full
+  // page of new rows and the overlap.
+  const lowerBound = since ? new Date(since.createdAt.getTime() - LIVE_UPDATES_LOOKBACK_MS) : null;
   const rows = await database.liveChatMessage.findMany({
     where: {
       vendorId: input.vendorId,
@@ -627,21 +635,22 @@ export async function listViewerChatUpdates(
       source: "viewer",
       status: "visible",
       isSimulated: false,
-      ...(since ? {
-        OR: [
-          { createdAt: { gt: since.createdAt } },
-          { createdAt: since.createdAt, id: { gt: since.id } },
-        ],
-      } : {}),
+      ...(lowerBound ? { createdAt: { gte: lowerBound } } : {}),
     },
     select: messageSelect(),
     orderBy: [{ createdAt: "desc" }, { id: "desc" }],
-    take: LIVE_CHAT_PAGE_SIZE + 1,
+    take: since ? LIVE_CHAT_PAGE_SIZE * 2 : LIVE_CHAT_PAGE_SIZE,
   }) as unknown as StoredViewerMessage[];
 
-  const reset = since !== null && rows.length > LIVE_CHAT_PAGE_SIZE;
-  const pageRows = rows.slice(0, LIVE_CHAT_PAGE_SIZE);
-  const newest = pageRows[0];
+  const isAfterCursor = (row: StoredViewerMessage) => since === null
+    || row.createdAt.getTime() > since.createdAt.getTime()
+    || (row.createdAt.getTime() === since.createdAt.getTime() && row.id > since.id);
+  // Rows are newest first, so every row after the cursor precedes the overlap.
+  const newRows = rows.filter(isAfterCursor);
+  // Only rows after the cursor decide a gap; the overlap never does.
+  const reset = since !== null && newRows.length > LIVE_CHAT_PAGE_SIZE;
+  const pageRows = reset ? rows.slice(0, LIVE_CHAT_PAGE_SIZE) : rows;
+  const newest = newRows[0];
   const messages = pageRows
     .map(toViewerRuntimeMessage)
     .filter((message): message is ViewerRuntimeMessage => message !== null)

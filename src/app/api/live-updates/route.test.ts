@@ -21,7 +21,7 @@ type FindManyArgs = {
     source: string;
     status: string;
     isSimulated: boolean;
-    OR?: Array<{ createdAt: { gt: Date } } | { createdAt: Date; id: { gt: string } }>;
+    createdAt?: { gte: Date };
   };
   take: number;
 };
@@ -77,7 +77,7 @@ function row(id: string, overrides: Partial<Row> = {}): Row {
 
 let store: Row[] = [];
 
-/** Evaluates the route's real keyset filter against the in-memory rows. */
+/** Evaluates the route's real createdAt range filter against the in-memory rows. */
 function runFindMany({ where, take }: FindManyArgs) {
   return store
     .filter((message) => message.vendorId === where.vendorId
@@ -85,9 +85,7 @@ function runFindMany({ where, take }: FindManyArgs) {
       && message.source === where.source
       && message.status === where.status
       && message.isSimulated === where.isSimulated
-      && (!where.OR || where.OR.some((clause) => "gt" in clause.createdAt
-        ? message.createdAt > clause.createdAt.gt
-        : message.createdAt.getTime() === clause.createdAt.getTime() && message.id > (clause as { id: { gt: string } }).id.gt)))
+      && (!where.createdAt || message.createdAt >= where.createdAt.gte))
     .sort((left, right) => right.createdAt.getTime() - left.createdAt.getTime() || (left.id < right.id ? 1 : -1))
     .slice(0, take);
 }
@@ -250,39 +248,81 @@ describe("GET /api/live-updates", () => {
       expect(body.interactions).toBeUndefined();
     });
 
-    it("returns only rows after the cursor and echoes the cursor when nothing is new", async () => {
-      store = [row("m1", { createdAt: new Date(t0.getTime() + 1) }), row("m2", { createdAt: new Date(t0.getTime() + 2) })];
+    const ids = (body: { chat: { messages: Array<{ id: string }> } }) => body.chat.messages.map((message) => message.id);
+    const at = (seconds: number, extraMs = 0) => new Date(t0.getTime() + seconds * 1_000 + extraMs);
+
+    it("delivers rows after the cursor and echoes the cursor when nothing is new", async () => {
+      store = [row("m1", { createdAt: at(0) }), row("m2", { createdAt: at(10) })];
       const first = await (await GET(request("vendorId=v1&liveId=l1&include=chat"))).json();
 
-      store.push(row("m3", { createdAt: new Date(t0.getTime() + 3) }));
+      store.push(row("m3", { createdAt: at(30) }));
       const next = await (await GET(request(`vendorId=v1&liveId=l1&include=chat&since=${first.cursor}`))).json();
-      expect(next.chat.messages.map((message: { id: string }) => message.id)).toEqual(["m3"]);
+      // m1 is older than the 5 s lookback window; m2 (the cursor row) is re-read.
+      expect(ids(next)).toEqual(["m2", "m3"]);
       expect(next.cursor).not.toBe(first.cursor);
 
       const idle = await (await GET(request(`vendorId=v1&liveId=l1&include=chat&since=${next.cursor}`))).json();
-      expect(idle.chat.messages).toEqual([]);
+      expect(ids(idle)).toEqual(["m3"]);
+      expect(idle.chat.reset).toBe(false);
       expect(idle.cursor).toBe(next.cursor);
     });
 
-    it("orders rows that share the same millisecond by id and never drops or repeats them", async () => {
+    it("re-reads a 5 second lookback so a late-committed older row is delivered, and nothing older", async () => {
+      store = [row("early", { createdAt: at(0) }), row("seen", { createdAt: at(10) })];
+      const since = encodeLiveUpdatesCursor({ liveId: "l1", createdAt: at(10), id: "seen" });
+      // Committed after "seen" but stamped earlier; "early" is outside the window.
+      store.push(row("late", { createdAt: at(8) }));
+      const body = await (await GET(request(`vendorId=v1&liveId=l1&include=chat&since=${since}`))).json();
+      expect(ids(body)).toEqual(["late", "seen"]);
+      expect(body.chat.reset).toBe(false);
+      expect(mocks.findMessages).toHaveBeenCalledWith(expect.objectContaining({
+        where: expect.objectContaining({ createdAt: { gte: at(5) } }),
+      }));
+      // The cursor never moves backwards for a late row.
+      expect(body.cursor).toBe(since);
+    });
+
+    it("orders rows that share the same millisecond by id and never loses the next one", async () => {
       store = [row("a", { createdAt: t0 }), row("b", { createdAt: t0 }), row("c", { createdAt: t0 })];
       const cursorAtB = encodeLiveUpdatesCursor({ liveId: "l1", createdAt: t0, id: "b" });
       const body = await (await GET(request(`vendorId=v1&liveId=l1&include=chat&since=${cursorAtB}`))).json();
-      expect(body.chat.messages.map((message: { id: string }) => message.id)).toEqual(["c"]);
+      expect(ids(body)).toEqual(["a", "b", "c"]);
+      expect(body.cursor).not.toBe(cursorAtB);
 
       store.push(row("d", { createdAt: t0 }));
       const afterC = await (await GET(request(`vendorId=v1&liveId=l1&include=chat&since=${body.cursor}`))).json();
-      expect(afterC.chat.messages.map((message: { id: string }) => message.id)).toEqual(["d"]);
+      expect(ids(afterC)).toEqual(["a", "b", "c", "d"]);
+      expect(afterC.cursor).not.toBe(body.cursor);
     });
 
-    it("flags a gap longer than one page and returns only the latest page", async () => {
-      store = Array.from({ length: 60 }, (_, index) => row(`m${String(index).padStart(2, "0")}`, { createdAt: new Date(t0.getTime() + 1_000 + index) }));
+    it("flags a gap longer than one page of new rows and returns only the latest page", async () => {
+      store = Array.from({ length: 60 }, (_, index) => row(`m${String(index).padStart(2, "0")}`, { createdAt: at(1, index) }));
       const since = encodeLiveUpdatesCursor({ liveId: "l1", createdAt: t0, id: "m" });
       const body = await (await GET(request(`vendorId=v1&liveId=l1&include=chat&since=${since}`))).json();
       expect(body.chat.reset).toBe(true);
       expect(body.chat.messages).toHaveLength(50);
       expect(body.chat.messages[0].id).toBe("m10");
       expect(body.chat.messages[49].id).toBe("m59");
+    });
+
+    it("counts only rows after the cursor toward reset, never the lookback overlap", async () => {
+      // 30 already-delivered rows inside the lookback window plus 40 new ones.
+      const overlap = Array.from({ length: 30 }, (_, index) => row(`o${String(index).padStart(2, "0")}`, { createdAt: at(6, index) }));
+      const fresh = Array.from({ length: 40 }, (_, index) => row(`n${String(index).padStart(2, "0")}`, { createdAt: at(10, 100 + index) }));
+      store = [...overlap, ...fresh];
+      const since = encodeLiveUpdatesCursor({ liveId: "l1", createdAt: at(10), id: "z" });
+      const body = await (await GET(request(`vendorId=v1&liveId=l1&include=chat&since=${since}`))).json();
+      expect(body.chat.reset).toBe(false);
+      expect(body.chat.messages).toHaveLength(70);
+      expect(body.chat.messages[0].id).toBe("o00");
+      expect(body.chat.messages[69].id).toBe("n39");
+
+      // 60 new rows still trip reset even with overlap rows present.
+      store = [...overlap, ...Array.from({ length: 60 }, (_, index) => row(`p${String(index).padStart(2, "0")}`, { createdAt: at(10, 100 + index) }))];
+      const gap = await (await GET(request(`vendorId=v1&liveId=l1&include=chat&since=${since}`))).json();
+      expect(gap.chat.reset).toBe(true);
+      expect(gap.chat.messages).toHaveLength(50);
+      expect(gap.chat.messages[0].id).toBe("p10");
     });
 
     it("rejects a cursor issued for another live, a backward paging cursor, and a tampered cursor", async () => {

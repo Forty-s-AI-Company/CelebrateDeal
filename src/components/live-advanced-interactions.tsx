@@ -203,7 +203,9 @@ function ActiveLiveAdvancedInteractions({
     return () => {
       controller.abort();
       window.clearTimeout(timer);
+      // 排定窗口結束時立即回到輪詢的 run，不等下一次輪詢。
       scriptedRunRef.current = null;
+      showRun();
     };
   }, [enabled, admissionLost, liveId, pageVisible, scriptedEvent, showRun, vendorId]);
 

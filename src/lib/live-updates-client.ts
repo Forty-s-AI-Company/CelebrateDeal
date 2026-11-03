@@ -194,7 +194,9 @@ export class LiveUpdatesChannel {
   }
 
   private notify(status: LiveUpdatesStatus) {
-    for (const subscriber of [...this.subscribers]) subscriber.onStatus?.(status);
+    for (const subscriber of [...this.subscribers]) {
+      try { subscriber.onStatus?.(status); } catch { /* isolated */ }
+    }
   }
 
   private async poll() {
@@ -234,8 +236,9 @@ export class LiveUpdatesChannel {
       if (include.chat && payload.cursor) this.cursor = payload.cursor;
       nextDelay = clampPollInterval(payload.nextPollMs);
       for (const subscriber of [...this.subscribers]) {
-        subscriber.onUpdate(payload);
-        subscriber.onStatus?.("ok");
+        // A throwing subscriber must not starve the others or fake a poll failure.
+        try { subscriber.onUpdate(payload); } catch { /* isolated */ }
+        try { subscriber.onStatus?.("ok"); } catch { /* isolated */ }
       }
     } catch (error) {
       if (controller.signal.aborted || (error instanceof DOMException && error.name === "AbortError")) return;

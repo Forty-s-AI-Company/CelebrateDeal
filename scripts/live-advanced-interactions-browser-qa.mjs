@@ -13,6 +13,7 @@ window.checkouts=[];
 window.saleIntents=[];
 window.fetch=(url,init={})=>new Promise(resolve=>window.requests.push({url,init,resolve}));
 window.answer=(index,payload,status=200)=>window.requests[index].resolve({ok:status<400,status,json:async()=>payload});
+window.indexOfRequest=(kind,nth=0)=>{const matches=window.requests.map((request,index)=>({request,index})).filter(({request})=>kind==='updates'?String(request.url).startsWith('/api/live-updates'):request.init.method==='POST');return matches[nth]?matches[nth].index:-1;};
 const root=createRoot(document.getElementById('root'));
 window.renderInteractions=(props)=>root.render(<LiveAdvancedInteractions vendorId="vendor-1" liveId="live-1" currentSeconds={0} events={[]} enabled={false} onCheckout={(productId,runId)=>{window.checkouts.push(productId);window.saleIntents.push(runId)}} {...props}/>);
 window.renderInteractions({});
@@ -23,6 +24,8 @@ const server = http.createServer((request, response) => {
   response.end(request.url === "/bundle.js" ? built.outputFiles[0].text : '<!doctype html><div id="root"></div><script src="/bundle.js"></script>');
 });
 await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
+// 合併輪詢 /api/live-updates 的回應格式（僅互動部分）。
+const updates = (runs, spotlight = null) => ({ cursor: null, nextPollMs: 2000, interactions: { runs, spotlight } });
 const run = (id, title) => ({ id, title, eventType: "poll", status: "active", startsAt: new Date().toISOString(), endsAt: new Date(Date.now() + 120_000).toISOString(), metadata: { kind: "poll", question: title, durationSec: 120, options: [{ id: "a", label: "A" }, { id: "b", label: "B" }] }, responseCount: 0, responded: false, ownValue: null, pollResults: [{ id: "a", label: "A", votes: 0, percentage: 0 }, { id: "b", label: "B", votes: 0, percentage: 0 }], winner: null, winnerIsViewer: false });
 let browser;
 const results = [];
@@ -37,16 +40,17 @@ try {
     expect(await page.evaluate(() => window.requests.length)).toBe(0);
     await page.evaluate(() => window.renderInteractions({ enabled: true }));
     await expect.poll(() => page.evaluate(() => window.requests.length)).toBe(1);
+    expect(await page.evaluate(() => window.requests[0].url)).toBe("/api/live-updates?vendorId=vendor-1&liveId=live-1&include=interactions");
     // 保持第一個請求未完成，跨過輪詢週期，確認沒有重疊請求。
     await page.waitForTimeout(2_200);
     expect(await page.evaluate(() => window.requests.length)).toBe(1);
     await page.evaluate(() => window.renderInteractions({ enabled: true, liveId: "live-2" }));
     await expect.poll(() => page.evaluate(() => window.requests.length)).toBe(2);
     expect(await page.evaluate(() => window.requests[0].init.signal.aborted)).toBe(true);
-    await page.evaluate(payload => window.answer(1, payload), { runs: [run("new", "新直播投票")] });
+    await page.evaluate(payload => window.answer(1, payload), updates([run("new", "新直播投票")]));
     await expect(page.getByRole("heading", { name: "新直播投票" })).toBeVisible();
     // 即使傳輸層忽略 abort，舊回應也不可覆蓋另一場直播。
-    await page.evaluate(payload => window.answer(0, payload), { runs: [run("old", "舊直播投票")] });
+    await page.evaluate(payload => window.answer(0, payload), updates([run("old", "舊直播投票")]));
     await expect(page.getByRole("heading", { name: "新直播投票" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "舊直播投票" })).toHaveCount(0);
     await page.getByRole("button", { name: /^A\s*0%$/u }).click();
@@ -56,7 +60,7 @@ try {
     expect(body).toEqual({ action: "respond", vendorId: "vendor-1", liveId: "live-2", runId: "new", value: "a" });
     await expect.poll(() => page.evaluate(() => window.requests.findIndex((request, index) => index > 1 && !request.init.method))).toBeGreaterThan(1);
     const pollIndex = await page.evaluate(() => window.requests.findIndex((request, index) => index > 1 && !request.init.method));
-    await page.evaluate(({ index, payload }) => window.answer(index, payload), { index: pollIndex, payload: { runs: [run("next", "下一個互動")] } });
+    await page.evaluate(({ index, payload }) => window.answer(index, payload), { index: pollIndex, payload: updates([run("next", "下一個互動")]) });
     await expect(page.getByRole("heading", { name: "下一個互動" })).toBeVisible();
     expect(await page.evaluate(index => window.requests[index].init.signal.aborted, responseIndex)).toBe(true);
     await page.evaluate(({ index, payload }) => window.answer(index, payload), { index: responseIndex, payload: { run: { ...run("new", "新直播投票"), responded: true, ownValue: "a" } } });
@@ -75,16 +79,21 @@ try {
     const fallbackPage = await browser.newPage({ viewport: { width, height: 900 } });
     await fallbackPage.goto(`http://127.0.0.1:${server.address().port}`);
     await fallbackPage.evaluate(() => window.renderInteractions({ enabled: true, events: [{ id: "script-1", eventType: "poll", title: "Script", triggerSec: 0, metadata: { kind: "poll", durationSec: 120 } }] }));
-    await expect.poll(() => fallbackPage.evaluate(() => window.requests.length)).toBe(1);
-    await fallbackPage.evaluate(() => window.answer(0, {}, 409));
+    // 排定事件的 open POST 與合併輪詢 GET 同時啟動；依 URL 辨識，不假設順序。
     await expect.poll(() => fallbackPage.evaluate(() => window.requests.length)).toBe(2);
-    await fallbackPage.evaluate(payload => window.answer(1, payload), { runs: [run("manual", "手動投票")], spotlight: { id: "question", body: "精選問題", displayName: "合成觀眾", spotlightedAt: null } });
+    const openIndex = await fallbackPage.evaluate(() => window.indexOfRequest("post"));
+    const getIndex = await fallbackPage.evaluate(() => window.indexOfRequest("updates"));
+    expect(openIndex).toBeGreaterThanOrEqual(0);
+    expect(getIndex).toBeGreaterThanOrEqual(0);
+    await fallbackPage.evaluate(index => window.answer(index, {}, 409), openIndex);
+    await fallbackPage.evaluate(({ index, payload }) => window.answer(index, payload), { index: getIndex, payload: updates([run("manual", "手動投票")], { id: "question", body: "精選問題", displayName: "合成觀眾", spotlightedAt: null }) });
     await expect(fallbackPage.getByRole("heading", { name: "手動投票" })).toBeVisible();
     await expect(fallbackPage.getByTestId("live-question-spotlight")).toContainText("精選問題");
-    await expect.poll(() => fallbackPage.evaluate(() => window.requests.length)).toBe(3);
-    await fallbackPage.evaluate(() => window.answer(2, {}, 409));
     await expect.poll(() => fallbackPage.evaluate(() => window.requests.length)).toBe(4);
-    await fallbackPage.evaluate(() => window.answer(3, {}, 401));
+    const nextOpen = await fallbackPage.evaluate(() => window.indexOfRequest("post", 1));
+    const nextGet = await fallbackPage.evaluate(() => window.indexOfRequest("updates", 1));
+    await fallbackPage.evaluate(index => window.answer(index, {}, 409), nextOpen);
+    await fallbackPage.evaluate(index => window.answer(index, {}, 401), nextGet);
     await expect(fallbackPage.getByRole("alert")).toContainText("入場驗證已失效");
     await expect(fallbackPage.getByTestId("live-question-spotlight")).toHaveCount(0);
     await expect(fallbackPage.getByTestId("live-advanced-interaction")).toHaveCount(0);
@@ -98,7 +107,7 @@ try {
     await salePage.evaluate(() => window.renderInteractions({ enabled: true }));
     await expect.poll(() => salePage.evaluate(() => window.requests.length)).toBe(1);
     const sale = { ...run("sale", "限時商品"), eventType: "flash_sale", metadata: { kind: "flash_sale", durationSec: 120, productId: "bound-product" }, sale: { priceCents: 2000, salePriceCents: 1000, currency: "TWD", stockLimit: 1 } };
-    await salePage.evaluate(payload => window.answer(0, payload), { runs: [sale] });
+    await salePage.evaluate(payload => window.answer(0, payload), updates([sale]));
     await salePage.getByRole("button", { name: "立即搶購特惠方案" }).click();
     await expect.poll(() => salePage.evaluate(() => window.requests.length)).toBe(2);
     expect(await salePage.evaluate(() => window.checkouts)).toEqual([]);
@@ -106,7 +115,7 @@ try {
     await expect.poll(() => salePage.evaluate(() => window.checkouts)).toEqual(["bound-product"]);
     await salePage.getByRole("button", { name: "立即搶購特惠方案" }).click();
     await expect.poll(() => salePage.evaluate(() => window.requests.filter(request => request.init.method === "POST").length)).toBe(2);
-    await salePage.evaluate(payload => window.answer(window.requests.length - 1, payload), { run: { ...sale, responded: true } });
+    await salePage.evaluate(payload => window.answer(window.requests.findLastIndex(request => request.init.method === "POST"), payload), { run: { ...sale, responded: true } });
     await expect.poll(() => salePage.evaluate(() => window.checkouts)).toEqual(["bound-product", "bound-product"]);
     expect(await salePage.evaluate(() => window.saleIntents)).toEqual(["sale", "sale"]);
     expect(await salePage.evaluate(() => window.requests.filter(request => request.init.method === "POST").length)).toBe(2);
