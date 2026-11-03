@@ -11,6 +11,6 @@ if (process.env.COURSE_LEARNING_DISPOSABLE !== "verified-loopback" || databaseUr
 }
 export default defineConfig({
   envDir: false,
-  resolve: { alias: { "@": path.resolve(__dirname, "src") } },
+  resolve: { alias: { "@": path.resolve(__dirname, "src"), "server-only": path.resolve(__dirname, "node_modules/next/dist/compiled/server-only/empty.js") } },
   test: { include: ["src/lib/affiliate-portal.db.test.ts"], fileParallelism: false, testTimeout: 15000 },
 });

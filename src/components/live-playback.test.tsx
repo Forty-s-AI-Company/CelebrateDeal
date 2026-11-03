@@ -66,17 +66,23 @@ vi.mock("react", async (importOriginal) => {
   };
 });
 
+vi.mock("@/lib/hls-playback-attachment", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/hls-playback-attachment")>();
+  return { ...actual, attachHlsPlayback: vi.fn(actual.attachHlsPlayback) };
+});
 vi.mock("@/lib/client-analytics", () => ({ trackClientAnalytics: vi.fn() }));
 vi.mock("@/lib/stream-usage-client", () => ({ postStreamUsageHeartbeat: vi.fn() }));
 vi.mock("@/lib/visitor-id", () => ({ getOrCreateVisitorId: () => "test-fixture-visitor-id" }));
 
 import { postStreamUsageHeartbeat } from "@/lib/stream-usage-client";
 import { trackClientAnalytics } from "@/lib/client-analytics";
+import { swapNativePlaybackSource } from "@/lib/signed-playback-renewal";
+import { attachHlsPlayback } from "@/lib/hls-playback-attachment";
 import type { ScheduledRuntimeMessage } from "@/lib/live-chat-contract";
 import { LiveChatPanel } from "./live-chat-panel";
 import { LivePurchaseBroadcastPanel } from "./live-purchase-broadcast-panel";
 import { LiveViewerPrivateChat } from "./live-viewer-private-chat";
-import { affiliateClickEndpoint, CHECKOUT_NAVIGATION_LOCK_TIMEOUT_MS, checkoutPagePath, getLiveStatusLabel, getStreamUsageRetryDelayMs, getWaitingCountdownSeconds, isHlsPlaybackUrl, isInternalCheckoutPath, LivePlayback, normalizePlaybackStartSeconds, openExternalUrl, PersistentMiniPlayerControls, PlaybackNavigation, PlaybackToggleButton, requestCheckout, ScriptedInteractionOverlay, shouldResetAffiliateAttribution, STREAM_USAGE_RETRY_DELAYS_MS, stripLiveShareFromUrl, submitCheckout, useLiveAdmission, useLivePlaybackSource } from "./live-playback";
+import { affiliateClickEndpoint, CHECKOUT_NAVIGATION_LOCK_TIMEOUT_MS, checkoutPagePath, getLiveStatusLabel, getStreamUsageRetryDelayMs, getWaitingCountdownSeconds, isHlsPlaybackUrl, isInternalCheckoutPath, LivePlayback, normalizePlaybackStartSeconds, openExternalUrl, PersistentMiniPlayerControls, PlaybackNavigation, PlaybackToggleButton, requestCheckout, ScriptedInteractionOverlay, shouldResetAffiliateAttribution, STREAM_USAGE_RETRY_DELAYS_MS, stripLiveShareFromUrl, submitCheckout, useHlsPlayback, useLiveAdmission, useLivePlaybackSource } from "./live-playback";
 
 /** Hook-free components the shallow harness renders inline. */
 const RENDERED_COMPONENT_NAMES = [
@@ -457,6 +463,27 @@ describe("LivePlayback checkout", () => {
     expect(renderPlaybackSource({ runtimeState: "playing", status: "live" }, "checking", 1)).toBeNull();
   });
 
+  it.each([
+    [600, { expiresInSeconds: 600 }],
+    [0, {}],
+    ["600", {}],
+  ] as const)("keeps only a positive numeric signed-URL expiry from the source endpoint (%s)", async (expiresInSeconds, expected) => {
+    hookState.effectsEnabled = true;
+    const signedUrl = "https://videodelivery.net/aaa.bbb.ccc/manifest/video.m3u8";
+    vi.stubGlobal("fetch", vi.fn(() => Promise.resolve({
+      ok: true,
+      json: async () => ({ playbackUrl: signedUrl, playbackStartSeconds: 4, expiresInSeconds }),
+    })));
+
+    renderPlaybackSource({ runtimeState: "playing", status: "live" });
+    await flushHookEffects();
+    expect(renderPlaybackSource({ runtimeState: "playing", status: "live" })).toEqual({
+      playbackUrl: signedUrl,
+      playbackStartSeconds: 4,
+      ...expected,
+    });
+  });
+
   it("clears a cached source when replay revalidation fails", async () => {
     hookState.effectsEnabled = true;
     let sourceRequests = 0;
@@ -824,6 +851,76 @@ describe("LivePlayback checkout", () => {
     expect(currentTarget.currentTime).toBe(0);
     expect(fetchMock.mock.calls.filter(([, init]) => init?.method === "POST")).toHaveLength(2);
     expect(findElements(tree, (element) => element.type === "video")).toHaveLength(1);
+  });
+
+  it("useHlsPlayback attaches signed sources with their expiry and renews through the playback-source endpoint (F-093)", async () => {
+    hookState.effectsEnabled = true;
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ playbackUrl: "https://videodelivery.net/ddd.eee.fff/manifest/video.m3u8", expiresInSeconds: 600 }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const video = { canPlayType: vi.fn(() => ""), src: "" } as unknown as HTMLVideoElement;
+    const videoRef = { current: video };
+    const signedSource = { playbackUrl: "https://videodelivery.net/aaa.bbb.ccc/manifest/video.m3u8", playbackStartSeconds: 0, expiresInSeconds: 600 };
+    function HlsPlaybackHarness({ source, runtimeState }: { source: typeof signedSource | null; runtimeState: "playing" | "replay" }) {
+      useHlsPlayback({ videoRef, playableSource: source, playableUrl: source?.playbackUrl ?? null, vendorId: live.vendorId, liveId: live.id, runtimeState });
+      return null;
+    }
+    const run = (source: typeof signedSource | null, runtimeState: "playing" | "replay" = "playing") => {
+      hookState.cursor = 0;
+      hookState.refCursor = 0;
+      hookState.effectCursor = 0;
+      HlsPlaybackHarness({ source, runtimeState });
+    };
+
+    run(signedSource);
+    await flushHookEffects();
+    expect(attachHlsPlayback).toHaveBeenCalledTimes(1);
+    const options = vi.mocked(attachHlsPlayback).mock.calls[0]![0];
+    expect(options).toMatchObject({ video, url: signedSource.playbackUrl, expiresInSeconds: 600 });
+
+    // A runtime label change alone does not re-attach the player, but renewal uses the latest scope.
+    run(signedSource, "replay");
+    await flushHookEffects();
+    expect(attachHlsPlayback).toHaveBeenCalledTimes(1);
+    await expect(options.fetchSource()).resolves.toEqual({
+      playbackUrl: "https://videodelivery.net/ddd.eee.fff/manifest/video.m3u8",
+      playbackStartSeconds: 0,
+      expiresInSeconds: 600,
+    });
+    expect(String(fetchMock.mock.calls[0]![0])).toBe(`/api/live-playback-source?vendorId=${encodeURIComponent(live.vendorId)}&liveId=${encodeURIComponent(live.id)}`);
+
+    run(null);
+    await flushHookEffects();
+    expect(attachHlsPlayback).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not report video_play for the resume after a signed-URL source swap (F-093)", () => {
+    vi.stubGlobal("window", { location: { search: "" }, localStorage: {} });
+    const tree = renderLive({ videoUrl: "https://video.example.test/recording.mp4" });
+    const video = findElements(tree, (element) => element.type === "video")[0];
+    if (!video) throw new Error("Expected video element");
+    const onPlay = video.props.onPlay as (event: { currentTarget: unknown }) => void;
+    const listeners = new Map<string, () => void>();
+    const element = {
+      currentTime: 30,
+      paused: false,
+      src: "",
+      play: vi.fn(() => Promise.resolve()),
+      addEventListener: (name: string, listener: () => void) => listeners.set(name, listener),
+      removeEventListener: (name: string) => listeners.delete(name),
+    };
+    const videoPlays = () => vi.mocked(trackClientAnalytics).mock.calls
+      .filter(([event]) => (event as { eventType?: string }).eventType === "video_play").length;
+
+    swapNativePlaybackSource(element as unknown as HTMLVideoElement, "https://videodelivery.net/ddd.eee.fff/manifest/video.m3u8");
+    listeners.get("loadedmetadata")?.();
+    onPlay({ currentTarget: element });
+    expect(videoPlays()).toBe(0);
+
+    onPlay({ currentTarget: element });
+    expect(videoPlays()).toBe(1);
   });
 
   it("flushes validated playback seconds with the shared page lineage", async () => {

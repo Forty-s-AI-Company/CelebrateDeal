@@ -4,6 +4,7 @@ import { PageHeader } from "@/components/ui";
 import { requireVendorManager } from "@/lib/auth";
 import { getCsrfToken } from "@/lib/csrf";
 import { getDb } from "@/lib/db";
+import { signedVideoUrlOrNull } from "@/lib/cloudflare-stream-signing";
 
 export default async function EditInteractionScriptPage({
   params,
@@ -26,7 +27,7 @@ export default async function EditInteractionScriptPage({
   return (
     <>
       <PageHeader title="編輯互動腳本" description="調整時間軸事件，讓前台依影片進度觸發官方互動。" />
-      <InteractionScriptForm key={script.id} script={script} roles={roles} products={products} boundLives={script.lives} csrfToken={csrfToken} error={error} />
+      <InteractionScriptForm key={script.id} script={script} roles={roles} products={products} boundLives={script.lives.map((live) => (live.video ? { ...live, video: { ...live.video, thumbnailUrl: signedVideoUrlOrNull(live.video, { vendorId: vendor.id, kind: "thumbnail" }) } } : live))} csrfToken={csrfToken} error={error} />
     </>
   );
 }

@@ -1,7 +1,14 @@
+import { generateKeyPairSync } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { getEnvCheckReport, ProductionEnvSchema, type EnvCheck } from "@/lib/env";
 
 const envKey = (...parts: string[]) => parts.join("_");
+// F-093: synthetic Stream signing key generated per run; never a real key.
+const syntheticStreamSigningPem = generateKeyPairSync("rsa", { modulusLength: 2048 }).privateKey
+  .export({ format: "pem", type: "pkcs1" }).toString();
+const streamSigningKeyId = envKey("CLOUDFLARE", "STREAM", "SIGNING", "KEY", "ID");
+const streamSigningKeyPem = envKey("CLOUDFLARE", "STREAM", "SIGNING", "KEY", "PEM");
+const streamLockNewUploads = envKey("CLOUDFLARE", "STREAM", "LOCK", "NEW", "UPLOADS");
 
 function configuredEnv(): NodeJS.ProcessEnv {
   return {
@@ -16,6 +23,9 @@ function configuredEnv(): NodeJS.ProcessEnv {
     [envKey("CLOUDFLARE", "ACCOUNT", "ID")]: "test-account-id",
     [envKey("CLOUDFLARE", "STREAM", "TOKEN")]: "test-stream-value",
     [envKey("CLOUDFLARE", "STREAM", "WEBHOOK", "SECRET")]: "test-webhook-value",
+    [streamSigningKeyId]: "0123456789abcdef0123456789abcdef",
+    [streamSigningKeyPem]: syntheticStreamSigningPem,
+    [streamLockNewUploads]: "true",
     [envKey("PAYMENT", "PROVIDER")]: "demo",
     [envKey("RESEND", "API", "KEY")]: "test-resend-value",
     [envKey("EMAIL", "FROM")]: "noreply@app.test",
@@ -611,6 +621,54 @@ describe("Turnstile preflight", () => {
     const report = getEnvCheckReport(env);
     expect(report.ok).toBe(false);
     expect(check(report, secret, "fail")?.message).toContain("必須同時設定");
+  });
+});
+
+describe("Cloudflare Stream signing preflight (F-093)", () => {
+  it("passes a valid key and reports the derived allowedOrigins", () => {
+    const report = getEnvCheckReport({ ...configuredEnv(), STREAM_ALLOWED_ORIGINS: "*.preview.app.test" });
+    expect(check(report, streamSigningKeyId, "pass")).toBeDefined();
+    expect(check(report, "STREAM_ALLOWED_ORIGINS", "pass")?.message).toContain("app.test, *.preview.app.test");
+  });
+
+  it("only warns when no signing key is set, so environments can switch one at a time", () => {
+    const env = configuredEnv();
+    delete env[streamSigningKeyId];
+    delete env[streamSigningKeyPem];
+    delete env[streamLockNewUploads];
+    const report = getEnvCheckReport(env);
+    expect(report.ok).toBe(true);
+    expect(check(report, streamSigningKeyId, "warning")?.message).toContain("F-093");
+  });
+
+  it.each([
+    ["only the key id", { [streamSigningKeyPem]: undefined }, "必須同時設定"],
+    ["an unparsable key", { [streamSigningKeyPem]: "placeholder-key" }, "無法解析"],
+    ["a malformed key id", { [streamSigningKeyId]: "bad id" }, "格式不正確"],
+  ])("fails with %s", (_name, overrides, message) => {
+    const report = getEnvCheckReport({ ...configuredEnv(), ...overrides });
+    expect(report.ok).toBe(false);
+    expect(check(report, streamSigningKeyId, "fail")?.message).toContain(message);
+  });
+
+  it("warns until new uploads are locked after Staging verification", () => {
+    const report = getEnvCheckReport({ ...configuredEnv(), [streamLockNewUploads]: undefined });
+    expect(report.ok).toBe(true);
+    expect(check(report, streamLockNewUploads, "warning")?.message).toContain("Staging");
+  });
+
+  it("fails a lock flag without signing keys, or with a value other than true／false", () => {
+    const env = configuredEnv();
+    delete env[streamSigningKeyId];
+    delete env[streamSigningKeyPem];
+    expect(check(getEnvCheckReport(env), streamLockNewUploads, "fail")?.message).toContain("金鑰");
+    expect(check(getEnvCheckReport({ ...configuredEnv(), [streamLockNewUploads]: "yes" }), streamLockNewUploads, "fail")).toBeDefined();
+  });
+
+  it("fails an allowed origin Cloudflare cannot accept", () => {
+    const report = getEnvCheckReport({ ...configuredEnv(), STREAM_ALLOWED_ORIGINS: "app.test/path" });
+    expect(report.ok).toBe(false);
+    expect(check(report, "STREAM_ALLOWED_ORIGINS", "fail")).toBeDefined();
   });
 });
 
