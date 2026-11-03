@@ -22,6 +22,7 @@ const APPROVED_BACKUP_BLOBS = Object.freeze({
     "a8d9e09bd4f3179d7abec116e5aeb6a05a9b4fb6", // #312: same pinned source checkout now applies to every task.
     "797805d471f245ce58130ad0a878650ab0bd453e", // #347: payment-only task; WP2 source, secrets, backup and artifacts unchanged.
     "b92f66538312734e9d70e9616ec6aedacc8d5236", // #448 (F-168): Q1 refund step env PAYUNI_QA_FINANCE_OTP -> PAYUNI_QA_FINANCE_TOTP_SECRET only; WP2 source, secrets, backup and artifacts unchanged.
+    "444df9ac757384d88cf85a6b5d83f87181a2138a", // #542: WP4/LINE egress allowlists the fixed staging alias instead of the firewalled Preview host, LINE gets the read-only token for the protected-master check, WP2 egress drops every application host (Q1 unchanged); WP2 source, secrets, backup and artifacts unchanged.
   ],
   "scripts/staging-retained-backup.mjs": ["acf26bf628903feef3d549e4500b5c478e7e4312"],
   "scripts/validate-staging-retained-backup.mjs": [
@@ -32,6 +33,7 @@ const APPROVED_BACKUP_BLOBS = Object.freeze({
     "50839ab6d2cf96b2c8a6a1d9870a9f29b2065555", // #288
     "8b14996eeca4e1616743fb6c168991287c626b28", // #290
     "0f869399153fd058a988a25fe5c3f56dcd8acd38", // #534: lineage gate lists by ref=<sha>, reads statuses only for vercel[bot] deployments once per id (page size 100, page limit 10); WP2 backup, restore and receipt unchanged.
+    "9c1dde3c118ebcf3f0f67b3a1b3736d1e46014d3", // #542: shared protected-master gate and fixed-alias self-attestation for alias-using runners; WP2 is lineage-only (Preview probe skipped, receipt aliasAttestation "not_applicable", retained receipts still validate); WP2 backup and restore unchanged.
   ],
 });
 

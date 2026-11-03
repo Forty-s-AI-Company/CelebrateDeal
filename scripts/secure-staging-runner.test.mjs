@@ -4,7 +4,10 @@ import test from "node:test";
 import { BACKUP_MIGRATION_TREE_SHA } from "./staging-backup-recovery-source.mjs";
 
 import {
+  ALIAS_ATTESTATION_FAILURES,
   BACKUP_SOURCE_SHA,
+  PROTECTED_MASTER_FAILURES,
+  STAGING_ALIAS_HOST,
   classifyPostgresFailure,
   classifyRestoreFailure,
   createInitialReceipt,
@@ -13,12 +16,16 @@ import {
   isolatedRestoreArgs,
   parseExtensionPlacements,
   readOnlySql,
+  runSecureTask,
   sourceInventory,
   REQUIRED_CONFIG_KEYS,
   REQUIRED_SECRET_KEYS,
   validateInvocation,
   validateReceipt,
+  verifyAliasAttestation,
   verifyDeployment,
+  verifyDeploymentThroughAlias,
+  verifyShaOnProtectedMaster,
   verifyTrustedMigrationTree,
 } from "./secure-staging-runner.mjs";
 
@@ -640,4 +647,200 @@ test("receipt validation rejects extra fields, writes and secret-bearing text", 
   assert.equal(errors.includes("SCHEMA_DATABASE"), true);
   assert.equal(errors.includes("FORBIDDEN_SIDE_EFFECTS"), true);
   assert.equal(errors.includes("FORBIDDEN_TEXT"), true);
+});
+
+// ---- Alias self-attestation (Vercel firewalls the immutable Preview host) ----
+
+const previewHost = "safe-preview.vercel.app";
+const aliasHealthUrl = `https://${STAGING_ALIAS_HOST}/api/health`;
+
+function aliasHealth({ commitSha = sha, vercelUrl = previewHost, deploymentId = "dpl_Fixture123", status = 200, headers = {}, body } = {}) {
+  const payload = body ?? { ok: true, database: "ok", latencyMs: 3, deployment: { commitSha, deploymentId, vercelUrl } };
+  return new Response(typeof payload === "string" ? payload : JSON.stringify(payload), {
+    status,
+    headers: { "content-type": "application/json", ...headers },
+  });
+}
+
+test("alias attestation passes only for the exact SHA and Preview host served through the fixed alias", async () => {
+  const requests = [];
+  const result = await verifyAliasAttestation({ sourceSha: sha, previewHost }, async (url, init) => {
+    requests.push({ url: String(url), init });
+    return aliasHealth();
+  });
+  assert.deepEqual(result, { host: STAGING_ALIAS_HOST, healthStatus: 200, noRedirect: true, commitShaMatched: true, vercelUrlMatched: true });
+  assert.equal(requests.length, 1);
+  assert.equal(requests[0].url, aliasHealthUrl);
+  assert.equal(requests[0].init.method, "GET");
+  assert.equal(requests[0].init.redirect, "manual");
+  assert.equal(requests[0].init.headers.Authorization, undefined);
+  // The Preview host itself is never contacted.
+  assert.equal(requests.some((request) => request.url.includes(previewHost)), false);
+  // Vercel reports VERCEL_URL in lowercase; a null deployment id is shape-valid.
+  await verifyAliasAttestation({ sourceSha: sha, previewHost }, async () => aliasHealth({ vercelUrl: previewHost.toUpperCase(), deploymentId: null }));
+});
+
+test("alias attestation fails closed on SHA drift, host drift, missing fields and unreachable alias", async () => {
+  const attest = (fetchImpl) => verifyAliasAttestation({ sourceSha: sha, previewHost }, fetchImpl);
+  await assert.rejects(attest(async () => aliasHealth({ commitSha: "b".repeat(40) })), /^Error: ALIAS_ATTESTATION_SHA_MISMATCH$/u);
+  await assert.rejects(attest(async () => aliasHealth({ vercelUrl: "other-preview.vercel.app" })), /^Error: ALIAS_ATTESTATION_HOST_MISMATCH$/u);
+  await assert.rejects(attest(async () => { throw new TypeError("fetch failed"); }), /^Error: ALIAS_ATTESTATION_UNREACHABLE$/u);
+  await assert.rejects(attest(async () => aliasHealth({ status: 403, headers: { "x-vercel-mitigated": "deny" } })), /^Error: ALIAS_ATTESTATION_HTTP_REJECTED$/u);
+  await assert.rejects(attest(async () => aliasHealth({ status: 503, body: { ok: false, database: "failed", deployment: { commitSha: sha, deploymentId: null, vercelUrl: previewHost } } })), /^Error: ALIAS_ATTESTATION_HTTP_REJECTED$/u);
+  await assert.rejects(attest(async () => aliasHealth({ status: 307, headers: { location: "https://elsewhere.example/" } })), /^Error: ALIAS_ATTESTATION_REDIRECTED$/u);
+  await assert.rejects(attest(async () => aliasHealth({ headers: { location: "https://elsewhere.example/" } })), /^Error: ALIAS_ATTESTATION_REDIRECTED$/u);
+
+  // Responses missing the identity, or any of its fields, are never treated as proof.
+  const missing = [
+    { ok: true, database: "ok", latencyMs: 1 },
+    { ok: true, database: "ok", deployment: { commitSha: sha, vercelUrl: previewHost } },
+    { ok: true, database: "ok", deployment: { deploymentId: null, vercelUrl: previewHost } },
+    { ok: true, database: "ok", deployment: { commitSha: sha, deploymentId: null } },
+    { ok: true, database: "ok", deployment: { commitSha: null, deploymentId: null, vercelUrl: previewHost } },
+    { ok: true, database: "ok", deployment: { commitSha: sha, deploymentId: null, vercelUrl: null } },
+    { ok: true, database: "ok", deployment: { commitSha: sha, deploymentId: "not-a-dpl", vercelUrl: previewHost } },
+    { ok: true, database: "ok", deployment: { commitSha: sha, deploymentId: null, vercelUrl: previewHost, extra: "x" } },
+    { ok: false, database: "ok", deployment: { commitSha: sha, deploymentId: null, vercelUrl: previewHost } },
+    { ok: true, database: "failed", deployment: { commitSha: sha, deploymentId: null, vercelUrl: previewHost } },
+  ];
+  for (const body of missing) {
+    await assert.rejects(attest(async () => aliasHealth({ body })), /^Error: ALIAS_ATTESTATION_FIELDS_MISSING$/u, JSON.stringify(body));
+  }
+  await assert.rejects(attest(async () => new Response("<html>ok</html>", { status: 200, headers: { "content-type": "text/html" } })), /^Error: ALIAS_ATTESTATION_RESPONSE_INVALID$/u);
+  await assert.rejects(attest(async () => aliasHealth({ body: "not json" })), /^Error: ALIAS_ATTESTATION_RESPONSE_INVALID$/u);
+  await assert.rejects(attest(async () => aliasHealth({ body: "[]" })), /^Error: ALIAS_ATTESTATION_RESPONSE_INVALID$/u);
+  await assert.rejects(attest(async () => aliasHealth({ body: JSON.stringify({ padding: "x".repeat(5000) }) })), /^Error: ALIAS_ATTESTATION_RESPONSE_INVALID$/u);
+});
+
+test("alias attestation rejects malformed expectations before any request", async () => {
+  let requested = false;
+  const spy = async () => { requested = true; return aliasHealth(); };
+  for (const input of [
+    { sourceSha: "main", previewHost },
+    { sourceSha: sha, previewHost: STAGING_ALIAS_HOST },
+    { sourceSha: sha, previewHost: "https://safe-preview.vercel.app" },
+    { sourceSha: sha, previewHost: "" },
+    {},
+  ]) {
+    await assert.rejects(verifyAliasAttestation(input, spy), /^Error: ALIAS_ATTESTATION_INPUT_INVALID$/u);
+  }
+  assert.equal(requested, false);
+  for (const code of ALIAS_ATTESTATION_FAILURES) assert.match(code, /^ALIAS_ATTESTATION_[A-Z_]+$/u);
+});
+
+const compareUrl = `https://api.github.com/repos/Forty-s-AI-Company/CelebrateDeal/compare/${sha}...master`;
+const onMaster = () => new Response(JSON.stringify({ status: "ahead", merge_base_commit: { sha } }), { status: 200 });
+const offMaster = () => new Response(JSON.stringify({ status: "diverged", merge_base_commit: { sha: "e".repeat(40) } }), { status: 200 });
+
+function lineageThenAlias(aliasResponse, requests = [], master = onMaster) {
+  const responses = [
+    new Response(JSON.stringify([vercelDeployment(42)]), { status: 200 }),
+    new Response(JSON.stringify(exactHostSuccess), { status: 200 }),
+  ];
+  return async (url) => {
+    requests.push(String(url));
+    if (String(url) === aliasHealthUrl) return aliasResponse();
+    if (String(url) === compareUrl) return master();
+    return responses.shift();
+  };
+}
+
+test("protected-master gate accepts only master itself or an ancestor", async () => {
+  const requests = [];
+  const fetchImpl = async (url, init) => { requests.push({ url: String(url), init }); return onMaster(); };
+  assert.equal(await verifyShaOnProtectedMaster(sha, "present", fetchImpl), true);
+  assert.equal(requests[0].url, compareUrl);
+  assert.equal(requests[0].init.redirect, "manual");
+  assert.equal(await verifyShaOnProtectedMaster(sha, "present", async () => new Response(JSON.stringify({ status: "identical", merge_base_commit: { sha } }), { status: 200 })), true);
+  for (const body of [
+    { status: "diverged", merge_base_commit: { sha: "e".repeat(40) } },
+    { status: "behind", merge_base_commit: { sha } },
+    { status: "ahead", merge_base_commit: { sha: "e".repeat(40) } },
+    {},
+  ]) {
+    await assert.rejects(verifyShaOnProtectedMaster(sha, "present", async () => new Response(JSON.stringify(body), { status: 200 })), /^Error: SOURCE_NOT_ON_PROTECTED_MASTER$/u);
+  }
+  await assert.rejects(verifyShaOnProtectedMaster(sha, "present", async () => new Response("{}", { status: 404 })), /^Error: PROTECTED_MASTER_CHECK_FAILED$/u);
+  await assert.rejects(verifyShaOnProtectedMaster(sha, "present", async () => { throw new TypeError("fetch failed"); }), /^Error: PROTECTED_MASTER_CHECK_FAILED$/u);
+  let requested = false;
+  await assert.rejects(verifyShaOnProtectedMaster(sha, "", async () => { requested = true; return onMaster(); }), /^Error: PROTECTED_MASTER_CHECK_FAILED$/u);
+  await assert.rejects(verifyShaOnProtectedMaster("main", "present", async () => { requested = true; return onMaster(); }), /^Error: PROTECTED_MASTER_CHECK_FAILED$/u);
+  assert.equal(requested, false);
+  for (const code of PROTECTED_MASTER_FAILURES) assert.match(code, /^[A-Z_]+$/u);
+});
+
+test("lineage gate, master gate and alias attestation compose into the alias-only operation host", async () => {
+  const requests = [];
+  const result = await verifyDeploymentThroughAlias(environment(), lineageThenAlias(() => aliasHealth(), requests));
+  assert.equal(result.host, previewHost);
+  assert.equal(result.operationHost, STAGING_ALIAS_HOST);
+  assert.equal(result.alias.commitShaMatched, true);
+  assert.ok(requests.indexOf(compareUrl) < requests.indexOf(aliasHealthUrl));
+  assert.equal(requests.some((url) => url.startsWith(`https://${previewHost}`)), false);
+  await assert.rejects(
+    verifyDeploymentThroughAlias(environment(), lineageThenAlias(() => aliasHealth({ commitSha: "c".repeat(40) }))),
+    /^Error: ALIAS_ATTESTATION_SHA_MISMATCH$/u,
+  );
+});
+
+test("a non-master SHA is BLOCKED even when the alias attestation would pass", async () => {
+  const requests = [];
+  await assert.rejects(
+    verifyDeploymentThroughAlias(environment(), lineageThenAlias(() => aliasHealth(), requests, offMaster)),
+    /^Error: SOURCE_NOT_ON_PROTECTED_MASTER$/u,
+  );
+  // The alias is never consulted once the master gate fails.
+  assert.equal(requests.includes(aliasHealthUrl), false);
+});
+
+test("WP2 is lineage-only: no Preview, alias or master request, and the receipt marks attestation not applicable", async () => {
+  const requests = [];
+  const receipt = await runSecureTask("wp2-readonly-restore", environment(), {
+    fetchImpl: lineageThenAlias(() => { throw new Error("alias must not be probed"); }, requests),
+    spawnSyncImpl: () => ({ status: 1, stdout: "" }),
+  });
+  // Lineage passed and the run moved on to the next fixed gate (source inventory fails closed here).
+  assert.equal(receipt.result, "BLOCKED");
+  assert.equal(receipt.failureCategory, "SOURCE_COMMIT_UNAVAILABLE");
+  assert.equal(receipt.lineage.deploymentMatched, true);
+  assert.equal(receipt.lineage.aliasAttestation, "not_applicable");
+  assert.equal(receipt.lineage.healthStatus, null);
+  assert.equal(receipt.lineage.noRedirect, false);
+  assert.equal(receipt.network.stagingPreview, false);
+  assert.equal(receipt.database.connectionAttempts, 0);
+  assert.equal(requests.some((url) => url === aliasHealthUrl || url === compareUrl || url.startsWith(`https://${previewHost}`)), false);
+  assert.ok(requests.every((url) => url.startsWith("https://api.github.com/repos/Forty-s-AI-Company/CelebrateDeal/deployments")));
+});
+
+test("current WP2 receipts pass only as lineage-only; retained receipts keep their Preview-health shape", () => {
+  const current = completePassReceipt();
+  current.lineage = { deploymentReads: 2, deploymentMatched: true, sourceMatched: true, preview: true, ready: true, healthStatus: null, noRedirect: false, deploymentDigest: `sha256:${"a".repeat(64)}`, aliasAttestation: "not_applicable" };
+  assert.deepEqual(validateReceipt(current, { pinnedMigrationTreeSha: BACKUP_MIGRATION_TREE_SHA }), { ok: true, errors: [] });
+  // A current receipt may not claim a health probe it never made.
+  assert.equal(validateReceipt({ ...current, lineage: { ...current.lineage, healthStatus: 200, noRedirect: true } }, { pinnedMigrationTreeSha: BACKUP_MIGRATION_TREE_SHA }).errors.includes("PASS_GATE_INCOMPLETE"), true);
+  assert.equal(validateReceipt({ ...current, lineage: { ...current.lineage, aliasAttestation: "verified" } }, { pinnedMigrationTreeSha: BACKUP_MIGRATION_TREE_SHA }).errors.includes("LINEAGE_ALIAS_ATTESTATION"), true);
+  // Retained receipts (no aliasAttestation key) still require their recorded Preview health.
+  const retained = completePassReceipt();
+  assert.deepEqual(validateReceipt(retained, { pinnedMigrationTreeSha: BACKUP_MIGRATION_TREE_SHA }), { ok: true, errors: [] });
+  assert.equal(validateReceipt({ ...retained, lineage: { ...retained.lineage, healthStatus: null } }, { pinnedMigrationTreeSha: BACKUP_MIGRATION_TREE_SHA }).errors.includes("PASS_GATE_INCOMPLETE"), true);
+  assert.equal(validateReceipt({ ...retained, lineage: { ...retained.lineage, extra: true } }).errors.includes("SCHEMA_LINEAGE"), true);
+  assert.equal(createInitialReceipt(sha).lineage.aliasAttestation, "not_applicable");
+});
+
+test("alias attestation rejects a declared or streamed body over 4096 bytes without buffering it", async () => {
+  const attest = (fetchImpl) => verifyAliasAttestation({ sourceSha: sha, previewHost }, fetchImpl);
+  await assert.rejects(attest(async () => aliasHealth({ headers: { "content-length": "4097" } })), /^Error: ALIAS_ATTESTATION_RESPONSE_INVALID$/u);
+  await assert.rejects(attest(async () => aliasHealth({ headers: { "content-length": "not-a-number" } })), /^Error: ALIAS_ATTESTATION_RESPONSE_INVALID$/u);
+  let pulls = 0;
+  let cancelled = false;
+  const endless = new ReadableStream({
+    pull(controller) { pulls += 1; controller.enqueue(new Uint8Array(1024).fill(32)); },
+    cancel() { cancelled = true; },
+  });
+  await assert.rejects(attest(async () => new Response(endless, { status: 200, headers: { "content-type": "application/json" } })), /^Error: ALIAS_ATTESTATION_RESPONSE_INVALID$/u);
+  assert.equal(cancelled, true);
+  assert.ok(pulls <= 6, `read ${pulls} chunks`);
+  // A body exactly at the limit is read normally (and then judged on its fields).
+  const padded = JSON.stringify({ ok: true, database: "ok", deployment: { commitSha: sha, deploymentId: null, vercelUrl: previewHost } });
+  await attest(async () => new Response(padded + " ".repeat(4096 - Buffer.byteLength(padded)), { status: 200, headers: { "content-type": "application/json" } }));
 });
