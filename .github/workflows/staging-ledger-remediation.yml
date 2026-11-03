@@ -1,0 +1,81 @@
+name: Staging ledger remediation
+
+# Diagnoses and repairs the fixed staging project after
+# 20261103090200_ledger_integrity_constraints_validate failed (CHECK
+# violation, SQLSTATE 23514). See docs/operations/prisma-migration-guards-runbook.md
+# section 7.
+#   inspect              read-only snapshot: violations per CHECK (row id,
+#                        vendorId, status, failing amount rules) and the
+#                        _prisma_migrations state of the ledger migrations.
+#   resolve-rolled-back  prisma migrate resolve --rolled-back for the fixed
+#                        090200 migration; confirm = resolve-20261103090200.
+#   apply-fix            one fix registered in FIXES of
+#                        scripts/staging-ledger-remediation.ts; confirm =
+#                        apply-<fix_id>; rolls back above its row limit.
+# The repository is public: the script prints only fixed codes, ids, status
+# values, counts and allowlisted Prisma lines (never amounts, hosts or URLs).
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: inspect (read-only), resolve-rolled-back or apply-fix
+        required: true
+        default: inspect
+        type: choice
+        options:
+          - inspect
+          - resolve-rolled-back
+          - apply-fix
+      fix_id:
+        description: apply-fix only, an id registered in FIXES
+        required: false
+        default: ""
+        type: string
+      confirm:
+        description: resolve-20261103090200 or apply-<fix_id>
+        required: false
+        default: ""
+        type: string
+
+permissions:
+  contents: read
+
+# Shares the staging migration group so remediation never overlaps a migrate run.
+concurrency:
+  group: fixed-staging-migration-apply
+  cancel-in-progress: false
+
+jobs:
+  remediate:
+    if: ${{ github.ref == 'refs/heads/master' && github.ref_protected }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: Preview – celebrate-deal-staging
+    steps:
+      - name: Checkout protected master
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: Setup Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install locked tooling and Prisma client before staging credentials
+        run: |
+          npm ci --ignore-scripts
+          npx prisma generate
+          node node_modules/@prisma/engines/scripts/postinstall.js
+
+      - name: Verify staging guard contracts
+        run: node --test scripts/staging-migrate.test.mjs scripts/staging-ledger-remediation-workflow.test.mjs
+
+      - name: Run ledger remediation on the fixed staging project
+        env:
+          STAGING_DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
+          LEDGER_REMEDIATION_MODE: ${{ inputs.mode }}
+          LEDGER_REMEDIATION_FIX_ID: ${{ inputs.fix_id }}
+          LEDGER_REMEDIATION_CONFIRM: ${{ inputs.confirm }}
+        run: node --import tsx scripts/staging-ledger-remediation.ts
