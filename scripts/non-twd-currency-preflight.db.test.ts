@@ -9,8 +9,10 @@ describe("non-TWD currency preflight (F-041)", () => {
   it("lists non-TWD products and groups without changing any record", async () => {
     const suffix = randomUUID();
     const vendor = await db.vendor.create({ data: { name: "Synthetic currency shop", slug: `currency-${suffix}`, email: `currency-${suffix}@example.test`, passwordHash: "synthetic-only" } });
-    const usd = await db.product.create({ data: { vendorId: vendor.id, name: "Synthetic USD", slug: `usd-${suffix}`, priceCents: 5000, currency: "USD", isActive: false } });
-    const twd = await db.product.create({ data: { vendorId: vendor.id, name: "Synthetic TWD", slug: `twd-${suffix}`, priceCents: 5000, currency: "TWD" } });
+    // A price that cannot appear inside a cuid (lower-case base 36 with a leading letter).
+    const marker = 123456789;
+    const usd = await db.product.create({ data: { vendorId: vendor.id, name: "Synthetic USD", slug: `usd-${suffix}`, priceCents: marker, compareAtCents: marker, currency: "USD", isActive: false } });
+    const twd = await db.product.create({ data: { vendorId: vendor.id, name: "Synthetic TWD", slug: `twd-${suffix}`, priceCents: marker, currency: "TWD" } });
     const before = await db.product.findMany({ where: { vendorId: vendor.id }, orderBy: { id: "asc" } });
 
     const inventory = await readNonTwdCurrencyInventory(db);
@@ -19,9 +21,25 @@ describe("non-TWD currency preflight (F-041)", () => {
     expect(inventory.products.listed.some((row) => row.productId === twd.id)).toBe(false);
     expect(inventory.products.total).toBeGreaterThanOrEqual(1);
     expect(inventory.total).toBeGreaterThanOrEqual(inventory.products.total);
-    // Only identifiers, tenant ids and currency codes leave the snapshot.
+    // Only identifiers, tenant ids, currency codes and counts leave the snapshot:
+    // assert the parsed structure, not a substring of the serialized output.
+    const printed = JSON.parse(JSON.stringify(inventory)) as {
+      products: { total: unknown; listed: Array<Record<string, unknown>> };
+      groups: Record<string, Array<Record<string, unknown>>>;
+      refundsOfNonTwdPayments: unknown;
+      total: unknown;
+    };
+    expect(Object.keys(printed).sort()).toEqual(["groups", "products", "refundsOfNonTwdPayments", "total"]);
+    expect(Object.keys(printed.products).sort()).toEqual(["listed", "total"]);
+    for (const row of printed.products.listed) {
+      expect(Object.keys(row).sort()).toEqual(["currency", "isActive", "productId", "vendorId"]);
+    }
+    for (const rows of Object.values(printed.groups)) {
+      for (const row of rows) expect(Object.keys(row).sort()).toEqual(["count", "currency", "vendorId"]);
+    }
+    // Second layer: neither the product name nor its price is anywhere in the output.
     expect(JSON.stringify(inventory)).not.toContain("Synthetic USD");
-    expect(JSON.stringify(inventory)).not.toContain("5000");
+    expect(JSON.stringify(inventory)).not.toContain(String(marker));
     expect(await db.product.findMany({ where: { vendorId: vendor.id }, orderBy: { id: "asc" } })).toEqual(before);
   });
 

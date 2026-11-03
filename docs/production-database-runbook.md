@@ -310,6 +310,39 @@ node --import tsx scripts/non-twd-currency-preflight.ts
 若有結果：非 TWD 商品由商家在後台重新以新台幣填價並勾選確認後儲存（表單會要求確認，不會自動換匯）；
 非 TWD 交易需人工對帳後再產生月結，不可直接以 SQL 改幣別。月結也會在當月出現屬於非 TWD 交易的退款時停止。
 
+### 9.1a 無法標記已付款的待出款聯盟月結（唯讀，F-052）
+
+F-052 之後，聯盟出款要標記已付款，必須同時有已啟用的商家出款政策與已匯出的扣繳快照（且平台開關
+`AFFILIATE_PAYOUTS_DISABLED` 不是 `true`）；舊的「未登記政策直接手動標記已付款」路徑已移除。部署前後以唯讀連線
+統計仍是 `pending` 但不符合條件的 `AffiliatePayout`，供商家改走提領流程或作廢；結果只含商家 id、原因、筆數與金額合計：
+
+```sql
+BEGIN TRANSACTION READ ONLY;
+WITH latest AS (
+  SELECT DISTINCT ON ("payoutId") "payoutId", "status"
+  FROM "AffiliateRemunerationSnapshot"
+  ORDER BY "payoutId", "revision" DESC
+)
+SELECT p."vendorId",
+       CASE WHEN COALESCE(pol."enabled", false) = false THEN 'no_enabled_policy'
+            WHEN l."status" IS NULL THEN 'no_snapshot'
+            ELSE 'snapshot_not_exported' END AS reason,
+       COUNT(*) AS payouts,
+       SUM(p."finalAmountCents") AS final_amount_cents
+FROM "AffiliatePayout" p
+LEFT JOIN "MerchantAffiliatePayoutPolicy" pol ON pol."vendorId" = p."vendorId"
+LEFT JOIN latest l ON l."payoutId" = p."id"
+WHERE p."status" = 'pending'
+  AND (COALESCE(pol."enabled", false) = false OR l."status" IS DISTINCT FROM 'exported')
+GROUP BY p."vendorId", reason
+ORDER BY p."vendorId", reason;
+ROLLBACK;
+```
+
+`no_enabled_policy`：商家需先開啟「團隊分銷與推廣夥伴」與「勞報單與稅務出款」模組並啟用提領政策；`no_snapshot`／
+`snapshot_not_exported`：夥伴需取得報價並簽署、商家匯出後才能記錄付款。若商家其實已在系統外付款，不可用作廢處理
+（作廢會沖回佣金並讓這期歸零），應補走提領流程後再標記已付款。不可直接以 SQL 改 `status`。
+
 ### 9.2 PayUni 退款事件 ID 變更前檢查（唯讀，PR #454 A-1）
 
 舊式（非 UPP）退款通知現在以 provider 退款序號（`CloseNo`，其次 `RefundNo`）作為事件 ID；沒有序號的

@@ -54,6 +54,11 @@ export default async function AffiliateCommissionsPage({
 
   const approvedAmount = commissions.filter((item) => item.status === "approved").reduce((sum, item) => sum + item.commissionAmountCents, 0);
   const pendingAmount = commissions.filter((item) => item.status === "pending").reduce((sum, item) => sum + item.commissionAmountCents, 0);
+  // The step-up hint only matters when there is a payout outcome to record.
+  const hasPendingPayout = payouts.some((payout) => payout.status === "pending");
+  // Withholding snapshots (and the payout policy) need both merchant modules.
+  const enabledModules: readonly string[] = vendor.enabledFeatureModules ?? [];
+  const remunerationModulesEnabled = ["affiliate_program", "tax_remuneration"].every((feature) => enabledModules.includes(feature));
 
   return (
     <>
@@ -67,9 +72,11 @@ export default async function AffiliateCommissionsPage({
           {AFFILIATE_PAYOUTS_DISABLED_MESSAGE}
         </p>
       ) : null}
-      <div className="mb-6">
-        <StepUpMfaNotice status={recentMfaStatus({ user, session })} nextPath="/affiliates/commissions" operation="記錄聯盟出款或作廢月結" />
-      </div>
+      {hasPendingPayout ? (
+        <div className="mb-6">
+          <StepUpMfaNotice status={recentMfaStatus({ user, session })} nextPath="/affiliates/commissions" operation="記錄聯盟出款或作廢月結" />
+        </div>
+      ) : null}
 
       {query?.error && payoutErrorMessages[query.error] ? (
         <p className="mb-6 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700" role="alert">
@@ -205,6 +212,7 @@ export default async function AffiliateCommissionsPage({
                             className="h-9 rounded-md bg-emerald-600 px-3 text-xs font-semibold text-white hover:bg-emerald-700"
                           >標記已付款</FormSubmitButton>
                         </form> : payoutsDisabled ? <p className="text-sm text-amber-900">平台暫停聯盟出款，無法標記已付款。</p>
+                          : !remunerationModulesEnabled ? <p className="text-sm text-slate-700">記錄付款需要扣繳快照：請由商家 Owner 在<Link href="/settings/features" className="text-primary underline">功能模組</Link>開啟「團隊分銷與推廣夥伴」與「勞報單與稅務出款」，再設定提領政策。</p>
                           : !payoutPolicy?.enabled ? <Link href="/affiliates/payout-policy" className="text-sm text-primary">請先啟用提領政策，並完成扣繳快照簽署與匯出，再記錄付款</Link>
                           : <Link href={`/affiliates/${payout.affiliateId}/remuneration`} className="text-sm text-primary">請先完成報酬簽署與匯出，再記錄付款</Link>}
                         <form action={recordAffiliatePayoutOutcomeAction} className="flex flex-wrap items-end gap-2">
@@ -217,6 +225,7 @@ export default async function AffiliateCommissionsPage({
                             pendingMessage="正在作廢月結並沖回佣金，請勿重複送出。"
                             className="h-9 rounded-md border border-border px-3 text-xs font-semibold text-slate-700 hover:bg-slate-50"
                           >標記作廢並沖回佣金</FormSubmitButton>
+                          <p className="w-full text-xs text-red-700">作廢會讓推廣者這期佣金歸零，若已實際付款請勿作廢。</p>
                         </form>
                       </div>
                     </div>

@@ -26,7 +26,7 @@ vi.mock("@/lib/db", () => ({
 
 import AffiliateCommissionsPage from "./page";
 
-const vendor = { id: "vendor-current" };
+const vendor = { id: "vendor-current", enabledFeatureModules: ["affiliate_program", "tax_remuneration"] };
 const commissions = [
   {
     id: "commission-1",
@@ -119,8 +119,26 @@ describe("/affiliates/commissions route", () => {
     expect(html).not.toContain('name="status" value="paid"');
     expect(html).toContain("請先啟用提領政策，並完成扣繳快照簽署與匯出，再記錄付款");
     expect(html).toContain('href="/affiliates/payout-policy"');
-    // Void does not pay anyone and stays available.
+    // Void does not pay anyone and stays available, with an explicit warning.
     expect(html).toContain("標記作廢並沖回佣金");
+    expect(html).toContain("作廢會讓推廣者這期佣金歸零，若已實際付款請勿作廢。");
+  });
+
+  it("explains which modules to enable instead of linking to an unreachable payout policy (F-052)", async () => {
+    mocks.requireVendorFinance.mockResolvedValue({ vendor: { ...vendor, enabledFeatureModules: ["affiliate_program"] }, member: { id: "member-finance", role: "accountant", status: "active" } });
+    const html = renderToStaticMarkup(await AffiliateCommissionsPage({}));
+    expect(html).not.toContain('href="/affiliates/payout-policy"');
+    expect(html).toContain("勞報單與稅務出款");
+    expect(html).toContain('href="/settings/features"');
+    expect(html).not.toContain('name="status" value="paid"');
+  });
+
+  it("shows the MFA step-up hint only while a payout outcome can be recorded (F-025)", async () => {
+    const pending = renderToStaticMarkup(await AffiliateCommissionsPage({}));
+    expect(pending).toContain("需要驗證");
+    mocks.payoutFindMany.mockResolvedValue([{ ...pendingPayout, status: "paid", paidAt: new Date("2026-08-01T00:00:00.000Z") }]);
+    const settled = renderToStaticMarkup(await AffiliateCommissionsPage({}));
+    expect(settled).not.toContain("需要驗證");
   });
 
   it("explains and hides the paid control while the platform payout switch is on (F-052)", async () => {
