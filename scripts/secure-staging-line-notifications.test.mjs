@@ -31,6 +31,9 @@ test("accepts only fixed bindings and an exact Preview host", () => {
   assert.deepEqual(validateInvocation(source), { ok: true, reason: null });
   assert.equal(validateInvocation({ ...source, CELEBRATEDEAL_DEPLOYMENT_HOST: "attacker.example" }).ok, false);
   assert.equal(validateInvocation({ ...source, CRON_SECRET: "" }).ok, false);
+  assert.deepEqual(validateInvocation({ ...source, DATA_ENCRYPTION_KEYRING: "" }), { ok: true, reason: null });
+  assert.deepEqual(validateInvocation({ ...source, DATA_ENCRYPTION_KEYRING: JSON.stringify([{ kid: "d2611a", key: Buffer.alloc(32, 5).toString("base64url"), active: true }, { kid: "legacy" }]) }), { ok: true, reason: null });
+  assert.deepEqual(validateInvocation({ ...source, DATA_ENCRYPTION_KEYRING: "[]" }), { ok: false, reason: "DATA_ENCRYPTION_KEYRING_INVALID" });
   assert.equal(validateInvocation({ ...source, LINE_STAGING_DATABASE_IDENTITY_SHA256: "0".repeat(64) }).ok, false);
   assert.equal(validateInvocation({ ...source, STAGING_DATABASE_URL: `${source.STAGING_DATABASE_URL}?schema=production` }).ok, false);
 });

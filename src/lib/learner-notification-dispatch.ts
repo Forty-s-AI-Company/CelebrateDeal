@@ -2,7 +2,7 @@ import { learnerPaymentNotificationOrderIsCurrent, learnerNotificationPurchaseIs
 import { createHash, randomBytes } from "node:crypto";
 import { Prisma, type PrismaClient } from "@prisma/client";
 import { z } from "zod";
-import { LearnerNotificationChannel, LearnerNotificationScope, revealLearnerNotificationDestination } from "./learner-notification-contract";
+import { LearnerNotificationChannel, LearnerNotificationScope, learnerNotificationPayloadEnvelopePurpose, revealLearnerNotificationDestination } from "./learner-notification-contract";
 import { LearnerNotificationMessage, finishLearnerNotification } from "./learner-notification-outbox";
 import { decryptSensitiveValue } from "./sensitive-data";
 import { sendLearnerNotificationProvider, type NotificationProviderConfiguration, type NotificationProviderResult } from "./learner-notification-providers";
@@ -86,7 +86,7 @@ async function prepareClaimedDelivery(db:Database,input:z.infer<typeof Claim>):P
   const row=await tx.learnerNotificationDelivery.findFirstOrThrow({where:{vendorId:input.vendorId,id:input.id}});
   const preference=await tx.learnerNotificationPreference.findFirstOrThrow({where:{vendorId:input.vendorId,productId:row.productId,id:row.preferenceId}});
   const scope=LearnerNotificationScope.parse({vendorId:input.vendorId,productId:row.productId,customerKeyHash:preference.customerKeyHash});
-  const message=LearnerNotificationMessage.parse(JSON.parse(decryptSensitiveValue(row.payloadEncryptedEnvelope,`learner-notification-payload-v1:${JSON.stringify([input.vendorId,row.deduplicationKey])}`)));
+  const message=LearnerNotificationMessage.parse(JSON.parse(decryptSensitiveValue(row.payloadEncryptedEnvelope,learnerNotificationPayloadEnvelopePurpose(input.vendorId,row.deduplicationKey))));
   const paymentCurrent=await paymentSourceIsCurrent(tx,scope,row.event,message);
   const rights=await learnerNotificationPurchaseIsCurrent(tx,scope);
   const permitted=paymentCurrent && rights && preference.enabled && preference.revision===row.consentRevision && preference.destinationVerifiedAt && preference.destinationEncryptedEnvelope && preference.destinationKeyHash && !row.dispatchedAt;

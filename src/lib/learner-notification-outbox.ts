@@ -2,7 +2,7 @@ import { hasLearnerNotificationPurchase } from "./learner-notification-access";
 import { createHash, randomBytes } from "node:crypto";
 import { Prisma, type PrismaClient } from "@prisma/client";
 import { z } from "zod";
-import { LearnerNotificationChannel, LearnerNotificationEvent, LearnerNotificationScope, learnerNotificationDeliveryKey, mayDispatchLearnerNotification, type LearnerNotificationScope as Scope } from "./learner-notification-contract";
+import { LearnerNotificationChannel, LearnerNotificationEvent, LearnerNotificationScope, learnerNotificationDeliveryKey, learnerNotificationPayloadEnvelopePurpose, learnerNotificationReceiptEnvelopePurpose, mayDispatchLearnerNotification, type LearnerNotificationScope as Scope } from "./learner-notification-contract";
 import { decryptSensitiveValue, encryptSensitiveValue } from "./sensitive-data";
 
 export const LearnerNotificationMessage = z.object({
@@ -18,8 +18,8 @@ export const LearnerNotificationMessage = z.object({
 type Store = Pick<Prisma.TransactionClient, "commerceOrderItem" | "commerceOrder" | "learnerNotificationPreference" | "learnerNotificationDelivery">;
 type Database = Store & Pick<PrismaClient, "$transaction">;
 const tokenHash = (token: string) => createHash("sha256").update(token).digest("hex");
-const payloadPurpose = (vendorId: string, key: string) => `learner-notification-payload-v1:${JSON.stringify([vendorId,key])}`;
-const receiptPurpose = (vendorId: string, id: string) => `learner-notification-receipt-v1:${JSON.stringify([vendorId,id])}`;
+const payloadPurpose = learnerNotificationPayloadEnvelopePurpose;
+const receiptPurpose = learnerNotificationReceiptEnvelopePurpose;
 
 /** Every supported event keeps a live vendor/customer/product purchase boundary. */
 async function hasRights(tx: Store, scope: Scope) {
@@ -100,5 +100,3 @@ export async function finishLearnerNotification(db: Database, input: { vendorId:
  });
 }
 
-// Exact envelope purpose for scripts/reencrypt-sensitive-data.ts (F-031).
-export { payloadPurpose as learnerNotificationPayloadEnvelopePurpose, receiptPurpose as learnerNotificationReceiptEnvelopePurpose };

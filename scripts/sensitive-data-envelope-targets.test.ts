@@ -1,8 +1,8 @@
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { encryptSensitiveValue } from "../src/lib/sensitive-data";
-import { ENVELOPE_TARGETS, EXCLUDED_ENCRYPTED_COLUMNS, envelopeTargetLabel, type EnvelopeRow } from "./sensitive-data-envelope-targets";
+import { ENVELOPE_TARGETS, ENVELOPE_WRITERS, EXCLUDED_ENCRYPTED_COLUMNS, envelopeTargetLabel, type EnvelopeRow } from "./sensitive-data-envelope-targets";
 import { planTarget, type RawDb } from "./reencrypt-sensitive-data";
 
 const schema = readFileSync(path.join(process.cwd(), "prisma", "schema.prisma"), "utf8");
@@ -29,6 +29,62 @@ function schemaModels() {
 }
 
 const models = schemaModels();
+
+/** Production sources under src/, as "<path under src/>" and text. */
+function sourceFiles(dir = path.join(process.cwd(), "src"), out: Array<{ path: string; source: string }> = []) {
+  for (const name of readdirSync(dir)) {
+    const full = path.join(dir, name);
+    if (statSync(full).isDirectory()) sourceFiles(full, out);
+    else if (/\.(ts|tsx)$/u.test(name) && !/\.test\.(ts|tsx)$/u.test(name)) {
+      out.push({ path: path.relative(path.join(process.cwd(), "src"), full).split(path.sep).join("/"), source: readFileSync(full, "utf8") });
+    }
+  }
+  return out;
+}
+
+/** The top-level arguments of the call whose "(" is at `open`. */
+function callArguments(source: string, open: number) {
+  const args: string[] = [];
+  let depth = 0;
+  let quote: string | null = null;
+  let start = open + 1;
+  for (let index = open; index < source.length; index += 1) {
+    const char = source[index]!;
+    if (quote) {
+      if (char === "\\") index += 1;
+      else if (char === quote) quote = null;
+      continue;
+    }
+    if (char === "\"" || char === "'" || char === "`") quote = char;
+    else if (char === "(" || char === "[" || char === "{") depth += 1;
+    else if (char === ")" || char === "]" || char === "}") {
+      depth -= 1;
+      if (depth === 0) {
+        args.push(source.slice(start, index).trim());
+        return args;
+      }
+    } else if (char === "," && depth === 1) {
+      args.push(source.slice(start, index).trim());
+      start = index + 1;
+    }
+  }
+  return args;
+}
+
+/** "<file> <purpose argument>" for every envelope-writing call in src/. */
+function encryptCallSites() {
+  const sites = new Set<string>();
+  for (const file of sourceFiles()) {
+    if (file.path === "lib/sensitive-data.ts" || file.path === "lib/derived-key-rotation.ts") continue;
+    for (const match of file.source.matchAll(/\b(encryptSensitiveValue|encryptWithRotation)\(/gu)) {
+      if (/function\s*$/u.test(file.source.slice(Math.max(0, match.index! - 9), match.index!))) continue;
+      const purpose = callArguments(file.source, match.index! + match[1]!.length)[1];
+      if (purpose !== undefined) sites.add(`${file.path} ${purpose.replace(/\s+/gu, " ")}`);
+    }
+  }
+  return sites;
+}
+
 // Synthetic row: every id is 64 hex characters so the strictest binding
 // (private chat message ids) accepts it; other fields use safe formats.
 const SAMPLE_ID = "0123456789abcdef".repeat(4);
@@ -64,6 +120,27 @@ describe("sensitive-data envelope targets", () => {
     expect(encrypted.length).toBeGreaterThan(40);
     expect(encrypted.filter((label) => !listed.has(label))).toEqual([]);
     expect(Object.values(EXCLUDED_ENCRYPTED_COLUMNS).every((reason) => reason.length > 10)).toBe(true);
+  });
+
+  it("maps every encryptSensitiveValue／encryptWithRotation call in src/ to targets or a non-stored lifetime", () => {
+    const sites = encryptCallSites();
+    expect(sites.size).toBeGreaterThan(30);
+    expect([...sites].filter((site) => !(site in ENVELOPE_WRITERS)), "新的加密呼叫點必須登記在 ENVELOPE_WRITERS").toEqual([]);
+    expect(Object.keys(ENVELOPE_WRITERS).filter((site) => !sites.has(site)), "ENVELOPE_WRITERS 中已不存在的呼叫點請移除").toEqual([]);
+
+    const labels = new Set(ENVELOPE_TARGETS.map(envelopeTargetLabel));
+    const written = new Set<string>();
+    for (const [site, writer] of Object.entries(ENVELOPE_WRITERS)) {
+      if ("notStored" in writer) {
+        expect(writer.notStored.length, site).toBeGreaterThan(5);
+        continue;
+      }
+      for (const target of writer.targets) {
+        expect(labels.has(target), `${site} -> ${target}`).toBe(true);
+        written.add(target);
+      }
+    }
+    expect([...labels].filter((label) => !written.has(label)), "每個 target 都要有寫入它的呼叫點").toEqual([]);
   });
 
   it("names only real tables and columns, each target once", () => {
@@ -115,7 +192,7 @@ describe("sensitive-data envelope targets", () => {
         queries.push(sql);
         return queries.length === 1 ? [{ __id: "verification_1", __value: envelope, ...row }] : [];
       }),
-      $executeRawUnsafe: vi.fn(),
+      $transaction: vi.fn(),
     } as unknown as RawDb;
 
     const plan = await planTarget(db, target, 1);

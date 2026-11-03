@@ -5,7 +5,7 @@ import type { CourseLearningStore } from "./student-course-learning";
 import { hasLearnerNotificationPurchase } from "./learner-notification-access";
 import { encryptSensitiveValue } from "./sensitive-data";
 import type { StudentPortalScope } from "./student-portal";
-import { LearnerEmailDestination, LearnerPhoneDestination, LearnerPushDestination, LearnerNotificationScope, isAllowedLearnerPhoneDestination, learnerNotificationDestinationRateKey, protectLearnerNotificationDestination } from "./learner-notification-contract";
+import { LearnerEmailDestination, LearnerPhoneDestination, LearnerPushDestination, LearnerNotificationScope, isAllowedLearnerPhoneDestination, learnerContactProofEnvelopePurpose, learnerNotificationDestinationRateKey, protectLearnerNotificationDestination } from "./learner-notification-contract";
 
 export const LearnerContactEnrollmentInput = z.discriminatedUnion("channel", [
  z.object({ channel: z.literal("push"), destination: LearnerPushDestination, expectedRevision: z.number().int().safe().nonnegative() }).strict(),
@@ -55,7 +55,7 @@ export async function requestLearnerContactVerification(db: Database, session: S
    : await tx.learnerNotificationPreference.create({ data: identity, select: publicFields });
   await tx.learnerNotificationVerification.updateMany({ where: { vendorId: scope.vendorId, productId, preferenceId: preference.id, deliveryStatus: "queued" }, data: { deliveryStatus: "suppressed", deliveryTokenEncryptedEnvelope: null, deliveryNextAttemptAt: null } });
   const challengeId = randomUUID();
-  const challenge = await tx.learnerNotificationVerification.create({ data: { id: challengeId, deliveryStatus: "queued", deliveryNextAttemptAt: new Date(), deliveryTokenEncryptedEnvelope: encryptSensitiveValue(token,`learner-contact-proof-v1:${JSON.stringify([scope.vendorId,challengeId])}`), vendorId: scope.vendorId, productId, preferenceId: preference.id,
+  const challenge = await tx.learnerNotificationVerification.create({ data: { id: challengeId, deliveryStatus: "queued", deliveryNextAttemptAt: new Date(), deliveryTokenEncryptedEnvelope: encryptSensitiveValue(token,learnerContactProofEnvelopePurpose(scope.vendorId,challengeId)), vendorId: scope.vendorId, productId, preferenceId: preference.id,
    consentRevision: preference.revision, tokenHash: hashToken(token), destinationEncryptedEnvelope: destination.encryptedEnvelope,
    destinationKeyHash: destination.destinationKeyHash, destinationRateKeyHash: rateKey, expiresAt: new Date(Date.now()+15*60*1000) }, select: { id: true, expiresAt: true } });
   return { status: "challenge_created", challenge, preference } as const;

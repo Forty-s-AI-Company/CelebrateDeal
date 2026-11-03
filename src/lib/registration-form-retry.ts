@@ -40,11 +40,16 @@ export function registrationRetryPayloadBudget(fields: ReadonlyArray<{ key: stri
   const answers = fields.reduce((total, field) => total + field.key.length + 8 + REGISTRATION_RETRY_VALUE_LIMITS[field.type] * WORST_BYTES_PER_CHAR, 0);
   return Math.min(MAX_PAYLOAD_BYTES, DRAFT_METADATA_BYTES + answers);
 }
+// Envelope header margin: a v2 keyring envelope adds at most 76 characters
+// ("v2." + 32-char kid + "." + IV + "." + tag + "."); v1 adds 43.
+const ENVELOPE_HEADER_MARGIN = 80;
 function envelopeChars(payloadBytes: number) {
-  return 4 * Math.ceil(payloadBytes / 3) + 64;
+  return 4 * Math.ceil(payloadBytes / 3) + ENVELOPE_HEADER_MARGIN;
 }
-// Matches the CHECK constraint in 20261018110000_registration_form_retry_draft.
-const MAX_ENVELOPE_CHARS = envelopeChars(MAX_PAYLOAD_BYTES);
+// 533416: matches RegistrationFormRetryDraft_payload_check
+// (20261103160100_sensitive_envelope_v2_checks).
+export const REGISTRATION_RETRY_MAX_ENVELOPE_CHARS = envelopeChars(MAX_PAYLOAD_BYTES);
+const MAX_ENVELOPE_CHARS = REGISTRATION_RETRY_MAX_ENVELOPE_CHARS;
 const capabilityPattern = /^[A-Za-z0-9_-]{43}$/u;
 type DraftDatabase = Pick<PrismaClient, "registrationFormRetryDraft">;
 const Answers = z.record(z.string().regex(REGISTRATION_FORM_FIELD_KEY), z.string().max(2_000))

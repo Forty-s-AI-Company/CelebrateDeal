@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { z } from "zod";
-import { decryptSensitiveValue, encryptSensitiveValue } from "./sensitive-data";
+import { decryptSensitiveValue, encryptSensitiveValue, isWellFormedSensitiveEnvelope } from "./sensitive-data";
 
 const Id = z.string().min(1).max(128).regex(/^[A-Za-z0-9_-]+$/u);
 const Scope = z.object({
@@ -45,7 +45,8 @@ export function encryptPrivateChatBody(body: string, scope: PrivateChatStorageSc
 
 export function decryptPrivateChatBody(envelope: string, scope: PrivateChatStorageScope) {
   // Reject extra envelope fields and oversized input before the common decoder.
-  if (envelope.length > 8_192 || !/^v1\.[A-Za-z0-9_-]{16}\.[A-Za-z0-9_-]{22}\.[A-Za-z0-9_-]+$/u.test(envelope)) {
+  // Same bound and formats (v1 and keyring v2) as LivePrivateChatMessage_envelope_check.
+  if (envelope.length > 8_192 || !isWellFormedSensitiveEnvelope(envelope)) {
     throw new Error("invalid_private_chat_envelope");
   }
   return normalizePrivateChatBody(decryptSensitiveValue(envelope, purpose(scope)));

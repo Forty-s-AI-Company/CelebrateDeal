@@ -147,6 +147,7 @@ const KEYRING_ISSUE_MESSAGES: Record<DataEncryptionKeyringIssue, string> = {
   invalid_entry: "每一項只能有 kid、key、active（布林值）三個欄位",
   invalid_key_id: "kid 只能是 1–32 個小寫英數字、底線或連字號，且以英數字開頭",
   duplicate_key_id: "kid 重複",
+  duplicate_key_material: "兩個 kid 使用同一把金鑰；每個 kid 必須是不同的隨機值",
   no_active_key: "必須恰好有一把 active 金鑰，目前沒有",
   multiple_active_keys: "必須恰好有一把 active 金鑰，目前超過一把",
   legacy_key_material: "kid legacy 代表 CSRF_SECRET 衍生的金鑰，不可附 key",

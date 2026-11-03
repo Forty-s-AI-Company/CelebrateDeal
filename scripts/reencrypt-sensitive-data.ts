@@ -18,6 +18,10 @@
  * - A row is written only after it decrypted under its own kid and purpose and
  *   the new envelope decrypts back to the same plaintext. Unreadable rows
  *   block `--apply` unless `--allow-unreadable`, and are never written.
+ * - Each write runs in its own transaction that sets the transaction-local
+ *   flag celebratedeal.sensitive_data_reencrypt = on, which is the only way
+ *   the SupportRefundHandoff trigger lets its encrypted reason change
+ *   (20261103160100_sensitive_envelope_v2_checks). The flag lapses at commit.
  * - Each write is a compare-and-swap on the old ciphertext (raw SQL, so
  *   updatedAt does not move): idempotent, safe to interrupt and rerun, never
  *   overwrites a concurrent application write.
@@ -50,7 +54,9 @@ const DEFAULT_BATCH_SIZE = 200;
 const IDENTIFIER = /^[A-Za-z][A-Za-z0-9_]*$/u;
 
 type Environment = Readonly<Record<string, string | undefined>>;
-export type RawDb = Pick<PrismaClient, "$queryRawUnsafe" | "$executeRawUnsafe">;
+export type RawDb = Pick<PrismaClient, "$queryRawUnsafe" | "$transaction">;
+/** Transaction-local flag read by the SupportRefundHandoff trigger. */
+export const REENCRYPT_SESSION_FLAG = "celebratedeal.sensitive_data_reencrypt";
 export type ReencryptLog = (entry: Record<string, unknown>) => void;
 
 export class SensitiveDataReencryptRefusedError extends Error {
@@ -299,7 +305,10 @@ export async function reencryptTarget(
         continue;
       }
       const next = reencrypted(target, stored.value, classified);
-      const written = await db.$executeRawUnsafe(update, next, stored.id, stored.value);
+      const written = await db.$transaction(async (tx) => {
+        await tx.$queryRawUnsafe(`SELECT pg_catalog.set_config('${REENCRYPT_SESSION_FLAG}', 'on', true)`);
+        return tx.$executeRawUnsafe(update, next, stored.id, stored.value);
+      });
       if (written === 1) {
         counts.reencrypted += 1;
         increment(after, nextKeyId(target, next));

@@ -18,10 +18,15 @@ import { customCheckoutAnswersEnvelopePurpose } from "../src/lib/commerce-custom
 import { commerceEntitlementAccessEnvelopePurpose } from "../src/lib/commerce-entitlement-access";
 import { commerceOrderPiiEnvelopePurpose } from "../src/lib/commerce-order-pii";
 import { emailDeliveryPayloadEnvelopePurpose } from "../src/lib/email-delivery-pii";
-import { LearnerNotificationChannel, learnerNotificationDestinationEnvelopePurpose } from "../src/lib/learner-notification-contract";
-import { learnerNotificationPayloadEnvelopePurpose, learnerNotificationReceiptEnvelopePurpose } from "../src/lib/learner-notification-outbox";
+import {
+  LearnerNotificationChannel,
+  learnerContactProofEnvelopePurpose,
+  learnerContactReceiptEnvelopePurpose,
+  learnerNotificationDestinationEnvelopePurpose,
+  learnerNotificationPayloadEnvelopePurpose,
+  learnerNotificationReceiptEnvelopePurpose,
+} from "../src/lib/learner-notification-contract";
 import { learnerNotificationSourceEnvelopePurpose } from "../src/lib/learner-notification-source-events";
-import { learnerContactProofEnvelopePurpose, learnerContactReceiptEnvelopePurpose } from "../src/lib/learner-verification-delivery";
 import { lineOfficialAccountCredentialEnvelopePurpose, lineProfileEnvelopePurpose } from "../src/lib/line-credentials";
 import { lineLoginVerifierEnvelopePurpose } from "../src/lib/line-login";
 import { lineDeliveryPayloadEnvelopePurpose } from "../src/lib/line-notification";
@@ -251,6 +256,63 @@ export const EXCLUDED_ENCRYPTED_COLUMNS: Readonly<Record<string, string>> = Obje
   "AffiliateRemunerationSnapshot.bankEncrypted": "BANK_ACCOUNT_KEYRING_JSON",
   "AffiliateRemunerationSnapshot.taxIdentityEncrypted": "BANK_ACCOUNT_KEYRING_JSON",
   "ServiceFulfillment.serviceEncryptedEnvelope": "never written with a value (always null in src/lib/commerce-orders.ts)",
+});
+
+/**
+ * Every encryptSensitiveValue／encryptWithRotation call in src/, keyed by
+ * "<file under src/> <purpose argument>" (whitespace collapsed), and where
+ * its envelope ends up. scripts/sensitive-data-envelope-targets.test.ts scans
+ * the source: a new call must be added here, and every target above must be
+ * written by at least one listed call. Envelopes that never reach the
+ * database (cookies, tickets) name their lifetime instead; they move to the
+ * active kid on their own and lapse when a kid is removed.
+ */
+export const ENVELOPE_WRITERS: Readonly<Record<string, { targets: readonly string[] } | { notStored: string }>> = Object.freeze({
+  "app/actions/interaction-actions.ts luckyDrawClaimEnvelopePurpose(vendor.id, winner.id)": { targets: ["LiveInteractionResponse.winnerClaimCodeEncryptedEnvelope"] },
+  "lib/cloudflare-ops.ts CLOUDFLARE_UPLOAD_TICKET_KEY": { notStored: "Cloudflare 續傳 ticket，回給瀏覽器，7 天" },
+  "lib/cloudflare-ops.ts CLOUDFLARE_STREAM_KEY_PURPOSE": { targets: ["Video.liveStreamKey"] },
+  "lib/commerce-custom-checkout.ts purpose(binding)": { targets: ["CommerceOrderItem.customCheckoutAnswersEncryptedEnvelope"] },
+  "lib/commerce-entitlement-access.ts purpose(safe)": { targets: ["CommerceEntitlement.accessEncryptedEnvelope"] },
+  "lib/commerce-order-pii.ts envelopePurpose(BUYER_ENVELOPE_PURPOSE, safeBinding)": { targets: ["CommerceOrder.buyerEncryptedEnvelope"] },
+  "lib/commerce-order-pii.ts envelopePurpose(SHIPPING_ENVELOPE_PURPOSE, safeBinding)": { targets: ["CommerceOrder.shippingEncryptedEnvelope"] },
+  "lib/email-delivery-pii.ts recipientPurpose(binding)": { targets: ["EmailDelivery.payloadEncryptedEnvelope"] },
+  "lib/learner-notification-contract.ts binding": {
+    targets: ["LearnerNotificationPreference.destinationEncryptedEnvelope", "LearnerNotificationVerification.destinationEncryptedEnvelope"],
+  },
+  "lib/learner-notification-outbox.ts payloadPurpose(scope.vendorId,key)": { targets: ["LearnerNotificationDelivery.payloadEncryptedEnvelope"] },
+  "lib/learner-notification-outbox.ts receiptPurpose(input.vendorId, input.id)": { targets: ["LearnerNotificationDelivery.providerReceiptEncryptedEnvelope"] },
+  "lib/learner-notification-source-events.ts purpose(input)": { targets: ["LearnerNotificationSourceEvent.payloadEncryptedEnvelope"] },
+  "lib/learner-notification-verification.ts learnerContactProofEnvelopePurpose(scope.vendorId,challengeId)": {
+    targets: ["LearnerNotificationVerification.deliveryTokenEncryptedEnvelope"],
+  },
+  "lib/learner-verification-delivery.ts receiptPurpose(input.vendorId,input.id)": { targets: ["LearnerNotificationVerification.deliveryReceiptEncryptedEnvelope"] },
+  "lib/line-credentials.ts credentialPurpose(vendorId, \"messagingChannelId\")": { targets: ["LineOfficialAccount.messagingChannelIdEncrypted"] },
+  "lib/line-credentials.ts credentialPurpose(vendorId, \"messagingChannelSecret\")": { targets: ["LineOfficialAccount.messagingChannelSecretEncrypted"] },
+  "lib/line-credentials.ts credentialPurpose(vendorId, \"messagingAccessToken\")": { targets: ["LineOfficialAccount.messagingAccessTokenEncrypted"] },
+  "lib/line-credentials.ts credentialPurpose(vendorId, \"loginChannelId\")": { targets: ["LineOfficialAccount.loginChannelIdEncrypted"] },
+  "lib/line-credentials.ts credentialPurpose(vendorId, \"loginChannelSecret\")": { targets: ["LineOfficialAccount.loginChannelSecretEncrypted"] },
+  "lib/line-credentials.ts lineProfileEnvelopePurpose(vendorId, field)": {
+    targets: ["LineUserIdentity.lineUserIdEncrypted", "LineUserIdentity.displayNameEncrypted", "LineUserIdentity.pictureUrlEncrypted"],
+  },
+  "lib/line-login.ts verifierPurpose(input.vendorId, stateId)": { targets: ["LineLoginState.codeVerifierEncrypted"] },
+  "lib/line-notification.ts deliveryPurpose(input.vendorId, id)": { targets: ["LineDelivery.payloadEncrypted"] },
+  "lib/live-private-chat-storage.ts purpose(scope)": { targets: ["LivePrivateChatMessage.bodyEncrypted"] },
+  // Also the 15-minute MFA setup and recovery-code cookies.
+  "lib/mfa.ts MFA_ENCRYPTION_KEY.current": { targets: ["UserMfaFactor.secretEncrypted"] },
+  "lib/product-delivery.ts configPurpose(binding, \"destination\")": { targets: ["ProductDeliveryConfig.destinationEncryptedEnvelope"] },
+  "lib/product-delivery.ts configPurpose(binding, \"instructions\")": { targets: ["ProductDeliveryConfig.instructionsEncryptedEnvelope"] },
+  "lib/product-delivery.ts snapshotPurpose(binding, \"destination\")": { targets: ["CommerceOrderItemDeliverySnapshot.destinationEncryptedEnvelope"] },
+  "lib/product-delivery.ts snapshotPurpose(binding, \"instructions\")": { targets: ["CommerceOrderItemDeliverySnapshot.instructionsEncryptedEnvelope"] },
+  "lib/registration-form-retry.ts PURPOSE": { targets: ["RegistrationFormRetryDraft.encryptedPayload"] },
+  "lib/registration-submission-receipt.ts PURPOSE": { notStored: "報名結果 cookie，1 分鐘" },
+  "lib/student-portal-auth.ts SESSION_KEY": { notStored: "學員入口 session cookie，30 天" },
+  "lib/support-case-pii.ts purpose(binding)": { targets: ["SupportCaseEvent.payloadEncryptedEnvelope", "SupportRefundHandoff.reasonEncryptedEnvelope"] },
+  // The order keeps the request; the electronic invoice row copies it unchanged.
+  "lib/taiwan-invoice-request.ts purpose(vendorId, orderId)": {
+    targets: ["CommerceOrder.invoiceRequestEncryptedEnvelope", "ElectronicInvoice.requestEncryptedEnvelope"],
+  },
+  "lib/tracking-browser-context.ts purpose(vendorId, sourceId)": { targets: ["TrackingDelivery.contextEncrypted", "CommerceOrder.trackingContextEncrypted"] },
+  "lib/tracking-credentials.ts purpose(vendorId)": { targets: ["TrackingSetting.facebookAccessTokenEncrypted"] },
 });
 
 export function envelopeTargetLabel(target: Pick<EnvelopeTarget, "table" | "column">) {

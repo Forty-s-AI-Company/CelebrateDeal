@@ -268,7 +268,7 @@ JSON 陣列，每一項 `{"kid": "<id>", "key": "<base64url>", "active": true}`�
 1. 新增 kid（先 decrypt-only）：owner 產生金鑰，設定 `[{"kid":"legacy","active":true},{"kid":"d2611a","key":"…"}]`，部署。preflight 顯示「新資料仍以 legacy 寫入」。這一步讓所有執行中的實例先認得新 kid，避免切換當下舊實例讀不到新密文。
 2. 切換 active：改為 `[{"kid":"d2611a","key":"…","active":true},{"kid":"legacy"}]`，部署。之後新寫入的資料都是 `v2.d2611a.…`。
 3. re-encrypt：在受保護的環境注入該環境的 `DATABASE_URL`、`CSRF_SECRET` 與同一份 `DATA_ENCRYPTION_KEYRING`，先 dry run，確認 `unreadable: 0`，再 `--apply`，輸出應為 `remainingPending: 0`（§8.6）。中斷或 `changed` 不為 0 時重跑即可。
-4. 移除舊 kid：再跑一次 dry run，確認每個欄位的 `byKeyId` 都沒有 `legacy`，並等到第 2 步之後至少 30 天（最長的加密 cookie 壽命），才把 `{"kid":"legacy"}` 從 keyring 移除並部署。preflight 會顯示「不再接受 legacy」。`CSRF_SECRET` 仍要保留（雜湊索引需要），而且仍不可輪替。
+4. 移除舊 kid：再跑一次 dry run，確認每個欄位的 `byKeyId` 都沒有 `legacy`，並等到第 2 步之後至少 30 天（最長的加密 cookie 壽命），才把 `{"kid":"legacy"}` 從 keyring 移除並部署。preflight 會顯示「不再接受 legacy」。`CSRF_SECRET` 仍要保留（雜湊索引需要），而且仍不可輪替。**同一份 keyring 也要放進 GitHub environment secret `DATA_ENCRYPTION_KEYRING`**（`Preview – celebrate-deal-staging`）：`staging-qa-finance-bootstrap.yml` 寫入 QA 財務帳號的 MFA secret、`secure-staging-validation.yml` 的 LINE 任務（`scripts/secure-staging-line-notifications.mjs`）寫入 LINE 憑證與個資，都會讀它；沒設定時沿用 `CSRF_SECRET` 衍生的金鑰，移除 `legacy` 之後就必須設定，否則這兩個 runner 寫入的密文 Preview 讀不到。
 
 **之後的輪替（例如 d2611a → d2705b）**：新增 kid → 部署 → re-encrypt → 移除舊 kid。
 
@@ -305,14 +305,21 @@ JSON 陣列，每一項 `{"kid": "<id>", "key": "<base64url>", "active": true}`�
 
 不受影響（不是後備用途）：`JOB_SECRET` 作為排程與 `/api/admin/ops/**` 的 Bearer；`src/lib/provider-runtime-identity.ts` 以 `JOB_SECRET` 計算的 provider 綁定摘要（只供已通過 `JOB_SECRET` 授權的維運端點比對，不保護資料）。
 
+**本機開發**：本機或測試環境若只設了 `JOB_SECRET`、沒設 `CSRF_SECRET`，之前會默默拿 `JOB_SECRET` 當根金鑰；現在 MFA、訂單個資、各種 token 與雜湊都會丟出 `Sensitive data encryption key is not configured.`。請另設至少 32 bytes 的 `CSRF_SECRET`（Vitest 各測試自行注入；CI 用 `.github/workflows/ci.yml` 的合成值）。以 `JOB_SECRET` 為根金鑰寫入的本機資料會讀不到，本機資料庫直接重建即可。CSRF token 在非 production 沒有 `CSRF_SECRET` 時改用固定開發值。
+
 **部署前檢查**：每個要部署的環境都必須已設定 `CSRF_SECRET`（Preview／Production 的 preflight `CSRF_SECRET: PASS` 本來就要求）。如果某環境曾在沒有 `CSRF_SECRET` 的情況下寫入加密資料（當時退回 `JOB_SECRET`），部署本版後那些資料會讀不到：先停下來由 owner 決定，不要直接部署。
 
 ### 8.6 re-encrypt 腳本（`scripts/reencrypt-sensitive-data.ts`）
 
-- 涵蓋 `scripts/sensitive-data-envelope-targets.ts` 列出的所有加密欄位（含 `UserMfaFactor.secretEncrypted`），每一欄都用寫入模組匯出的用途函式重建 purpose。`scripts/sensitive-data-envelope-targets.test.ts` 會掃 `prisma/schema.prisma`：名稱含 `Encrypted`／`Envelope` 的欄位必須列入或註明排除理由（銀行與稅籍資料用 `BANK_ACCOUNT_KEYRING_JSON`）。新增加密欄位時要一起登記。
+- 涵蓋 `scripts/sensitive-data-envelope-targets.ts` 列出的 38 個加密欄位（含 `UserMfaFactor.secretEncrypted`），每一欄都用寫入模組匯出的用途函式重建 purpose。防漏登有兩道測試（`scripts/sensitive-data-envelope-targets.test.ts`）：
+  - 掃 `prisma/schema.prisma`：名稱含 `Encrypted`／`Envelope` 的欄位必須列入或註明排除理由（銀行與稅籍資料用 `BANK_ACCOUNT_KEYRING_JSON`）。
+  - 掃 `src/` 的每個 `encryptSensitiveValue`／`encryptWithRotation` 呼叫點：都要登記在 `ENVELOPE_WRITERS`，指向它寫入的欄位，或註明不落地（cookie、ticket）與壽命；每個欄位也都要有寫入它的呼叫點。新增加密欄位或呼叫點時要一起登記。
+  - `scripts/reencrypt-sensitive-data-all-targets.db.test.ts` 對 38 個欄位各用應用程式的寫入／讀取函式建一列（客服五種內容、追蹤四種來源），驗證 v1 與 v2 都寫得進、讀得回，dry run `unreadable: 0`、`--apply` 後 `remainingPending: 0`，移除 `legacy` 後仍全部可讀。
 - Dry run（預設，唯讀）：`DATABASE_URL=<目標> node --import tsx scripts/reencrypt-sensitive-data.ts --target=staging`。每個欄位輸出 `rows`、`byKeyId`（各 kid 筆數）、`pending`（需搬移且可解密）、`unreadable`、`unrecognized`（不是密文，例如舊的明文 stream key，不會被改動）。
 - 執行：`DATA_REENCRYPT_CONFIRM=REENCRYPT_SENSITIVE_DATA DATABASE_URL=<目標> node --import tsx scripts/reencrypt-sensitive-data.ts --target=staging --apply`。每批輸出表名、欄位、批次、筆數與 kid 前後（`before`／`after`），最後輸出 `remainingPending`、`remainingUnreadable`。
 - 選項：`--batch-size N`（1–1000，預設 200）、`--only=<Table.column>`（可重複）、`--allow-unreadable`（有無法解密的列時仍處理其他列；那些列不會被寫）。
 - 守門與 MFA 腳本相同：loopback `celebratedeal_*` 直接允許；`--target=staging` 時 URL 必須是 staging 資料庫；其他資料庫需要 `--target=production` 與 `DATA_REENCRYPT_PRODUCTION_APPROVAL=OWNER_APPROVED_PRODUCTION_DATA_REENCRYPT`（只在 owner 明確授權後設定）。腳本不讀 `.env*`。
-- 每列先以原 kid 與正確 purpose 解密成功、新密文解回同一明文，才以 compare-and-swap（`WHERE id = … AND 欄位 = 舊密文`，raw SQL，不更新 `updatedAt`）寫入；已在 active kid 的列不動，所以可中斷、可重跑。輸出只有表名、欄位、筆數與 kid，不含明文、密文、金鑰、列 ID 或綁定值。
+- 每列先以原 kid 與正確 purpose 解密成功、新密文解回同一明文，才以 compare-and-swap（`WHERE id = … AND 欄位 = 舊密文`，raw SQL，不更新 `updatedAt`）寫入；已在 active kid 的列不動，所以可中斷、可重跑。
+- 每筆寫入在自己的交易裡先設定交易層級旗標 `celebratedeal.sensitive_data_reencrypt = on`。`SupportRefundHandoff` 的 trigger 原本把退款原因密文視為不可變，`20261103160100_sensitive_envelope_v2_checks` 改為只有帶這個旗標、且新值是格式正確的密文時才允許更換；應用程式不設這個旗標，所以對應用程式而言仍不可變。寫入也會觸發 `CommerceEntitlement`、`SupportRefundHandoff` 既有的關聯驗證 trigger（只驗證，不改資料）。
+- 同一個 migration 把 `LivePrivateChatMessage.bodyEncrypted` 與 `RegistrationFormRetryDraft.encryptedPayload` 原本只接受 `v1.` 的 CHECK 放寬為 v1 或 v2（重送暫存長度上限 533400 → 533416，配合 v2 最長 76 字元的標頭）。**這個 migration 必須在切換 active kid 之前部署**；否則私訊寫不進、重送暫存失效。輸出只有表名、欄位、筆數與 kid，不含明文、密文、金鑰、列 ID 或綁定值。
 - `scripts/reencrypt-mfa-secrets.ts` 仍可單獨使用；設定 keyring 後它會把 MFA secret 搬到 active kid（`remainingLegacy` 改為「不在 active 格式」的筆數）。

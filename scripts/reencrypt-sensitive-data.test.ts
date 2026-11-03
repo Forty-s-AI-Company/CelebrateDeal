@@ -65,7 +65,7 @@ describe("scripts/reencrypt-sensitive-data database guard", () => {
   it("refuses to start with a malformed keyring before touching the database", async () => {
     const previous = process.env.DATA_ENCRYPTION_KEYRING;
     process.env.DATA_ENCRYPTION_KEYRING = "[]";
-    const db = { $queryRawUnsafe: () => { throw new Error("must not query"); }, $executeRawUnsafe: () => { throw new Error("must not write"); } } as unknown as RawDb;
+    const db = { $queryRawUnsafe: () => { throw new Error("must not query"); }, $transaction: () => { throw new Error("must not write"); } } as unknown as RawDb;
     try {
       await expect(runSensitiveDataReencryption(db, parseReencryptArguments([]), {})).rejects.toMatchObject({ category: "keyring-empty" });
     } finally {

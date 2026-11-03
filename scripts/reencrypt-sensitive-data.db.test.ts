@@ -202,16 +202,17 @@ describe("scripts/reencrypt-sensitive-data (PostgreSQL)", () => {
     const concurrent = protectFacebookAccessToken(fixture.vendorId, `synthetic${randomBytes(12).toString("hex")}`);
     const db = getDb();
     let interfered = false;
-    const racing: RawDb = {
+    // The application writes between the script's read and its compare-and-swap.
+    const racing = {
       $queryRawUnsafe: db.$queryRawUnsafe.bind(db),
-      $executeRawUnsafe: (async (sql: string, ...values: unknown[]) => {
-        if (!interfered && sql.startsWith(`UPDATE "TrackingSetting"`)) {
+      $transaction: async (work: Parameters<typeof db.$transaction>[0]) => {
+        if (!interfered) {
           interfered = true;
           await db.trackingSetting.update({ where: { vendorId: fixture.vendorId }, data: { facebookAccessTokenEncrypted: concurrent } });
         }
-        return db.$executeRawUnsafe(sql, ...values);
-      }) as RawDb["$executeRawUnsafe"],
-    };
+        return db.$transaction(work as never);
+      },
+    } as unknown as RawDb;
 
     const outcome = await runSensitiveDataReencryption(racing, { ...apply, only: ["TrackingSetting.facebookAccessTokenEncrypted"] }, confirmed, { scope });
     // The application wrote under the active kid meanwhile, so nothing is left.

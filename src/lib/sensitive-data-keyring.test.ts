@@ -9,6 +9,7 @@ import {
   decryptSensitiveValue,
   encryptSensitiveValue,
   inspectDataEncryptionKeyring,
+  isWellFormedSensitiveEnvelope,
   sensitiveEnvelopeKeyId,
   type DataEncryptionKeyringIssue,
 } from "@/lib/sensitive-data";
@@ -123,12 +124,33 @@ describe("DATA_ENCRYPTION_KEYRING configured", () => {
     expect(decryptSensitiveValue(keyringEnvelope, PURPOSE)).toBe("buyer");
   });
 
-  it("authenticates the kid: relabelling an envelope with another listed kid fails", () => {
-    useKeyring([{ kid: "k2026a", key: KEY_A, active: true }, { kid: "k2026b", key: KEY_B }]);
+  it("authenticates the kid: the same key under another kid does not open a relabelled envelope (AAD)", () => {
+    useKeyring([{ kid: "k2026a", key: KEY_A, active: true }]);
     const envelope = encryptSensitiveValue("buyer", PURPOSE);
+    // Same key material, different kid: only the associated data differs.
+    useKeyring([{ kid: "k2026b", key: KEY_A, active: true }]);
     const relabelled = envelope.replace(/^v2\.k2026a\./u, "v2.k2026b.");
 
-    expect(() => decryptSensitiveValue(relabelled, PURPOSE)).toThrow();
+    expect(() => decryptSensitiveValue(relabelled, PURPOSE)).toThrow("Unsupported state or unable to authenticate data");
+    useKeyring([{ kid: "k2026a", key: KEY_A, active: true }]);
+    expect(decryptSensitiveValue(envelope, PURPOSE)).toBe("buyer");
+  });
+
+  it("checks the well-formed v1 and v2 shapes the database CHECKs also enforce", () => {
+    const v1 = encryptSensitiveValue("buyer", PURPOSE);
+    useKeyring([{ kid: "k".repeat(32), key: KEY_A, active: true }]);
+    const v2 = encryptSensitiveValue("buyer", PURPOSE);
+
+    expect(isWellFormedSensitiveEnvelope(v1)).toBe(true);
+    expect(isWellFormedSensitiveEnvelope(v2)).toBe(true);
+    // The longest v2 header is 76 characters (32-character kid).
+    expect(v2.length - v2.split(".").at(-1)!.length).toBe(76);
+    const [, kid, iv, tag, data] = v2.split(".");
+    const shortIv = Buffer.from(iv!, "base64url").subarray(0, 9).toString("base64url");
+    expect(isWellFormedSensitiveEnvelope(`v2.${kid}.${shortIv}.${tag}.${data}`)).toBe(false);
+    expect(isWellFormedSensitiveEnvelope(`v2.${kid}.${iv}.${tag}.${data}.extra`)).toBe(false);
+    expect(isWellFormedSensitiveEnvelope(`v2.${kid}.${iv}.${tag}.`)).toBe(false);
+    expect(() => decryptSensitiveValue(`v2.${kid}.${shortIv}.${tag}.${data}`, PURPOSE)).toThrow("Invalid sensitive data envelope.");
   });
 
   it("decrypts a golden v2 envelope (locks the keyring KDF label, AAD and format)", () => {
@@ -160,6 +182,7 @@ describe("DATA_ENCRYPTION_KEYRING configured", () => {
   });
 
   it("fails every envelope operation closed while the keyring is malformed, without echoing it", () => {
+    const legacyEnvelope = encryptSensitiveValue("buyer", PURPOSE);
     vi.stubEnv(DATA_ENCRYPTION_KEYRING_ENV, `[{"kid":"k2026a","key":"${KEY_A}"}]`);
 
     let caught: unknown;
@@ -171,7 +194,7 @@ describe("DATA_ENCRYPTION_KEYRING configured", () => {
     expect(caught).toBeInstanceOf(DataEncryptionKeyringError);
     expect((caught as Error).message).toBe("Sensitive data keyring is invalid.");
     expect(JSON.stringify({ message: (caught as Error).message, stack: (caught as Error).stack })).not.toContain(KEY_A);
-    expect(() => decryptSensitiveValue("v1.a.b.c", PURPOSE)).toThrow("Sensitive data keyring is invalid.");
+    expect(() => decryptSensitiveValue(legacyEnvelope, PURPOSE)).toThrow("Sensitive data keyring is invalid.");
   });
 });
 
@@ -188,6 +211,7 @@ describe("inspectDataEncryptionKeyring", () => {
     ["a kid longer than 32", JSON.stringify([{ kid: "k".repeat(33), key: KEY_A, active: true }]), "invalid_key_id"],
     ["a duplicate kid", JSON.stringify([{ kid: "k1", key: KEY_A, active: true }, { kid: "k1", key: KEY_B }]), "duplicate_key_id"],
     ["a duplicate legacy entry", JSON.stringify([{ kid: "k1", key: KEY_A, active: true }, { kid: "legacy" }, { kid: "legacy" }]), "duplicate_key_id"],
+    ["one key under two kids", JSON.stringify([{ kid: "k1", key: KEY_A, active: true }, { kid: "k2", key: KEY_A }]), "duplicate_key_material"],
     ["no active entry", JSON.stringify([{ kid: "k1", key: KEY_A }, { kid: "legacy" }]), "no_active_key"],
     ["two active entries", JSON.stringify([{ kid: "k1", key: KEY_A, active: true }, { kid: "k2", key: KEY_B, active: true }]), "multiple_active_keys"],
     ["key material on legacy", JSON.stringify([{ kid: "legacy", key: KEY_A, active: true }]), "legacy_key_material"],

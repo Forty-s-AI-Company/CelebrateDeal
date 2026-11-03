@@ -27,6 +27,10 @@ export const DATA_ENCRYPTION_KEYRING_ENV = "DATA_ENCRYPTION_KEYRING";
 export const LEGACY_DATA_KEY_ID = "legacy";
 /** Lower-case, no dots (the envelope separator), so a kid is safe to log. */
 const DATA_KEY_ID_PATTERN = /^[a-z0-9][a-z0-9_-]{0,31}$/u;
+/** 12-byte IV (16 base64url chars), 16-byte tag (22 chars), non-empty data. */
+const LEGACY_ENVELOPE_PATTERN = /^v1\.[A-Za-z0-9_-]{16}\.[A-Za-z0-9_-]{22}\.[A-Za-z0-9_-]+$/u;
+const KEYRING_ENVELOPE_PATTERN = /^v2\.([a-z0-9][a-z0-9_-]{0,31})\.[A-Za-z0-9_-]{16}\.[A-Za-z0-9_-]{22}\.[A-Za-z0-9_-]+$/u;
+const GCM_IV_BYTES = 12;
 export const DATA_ENCRYPTION_KEY_BYTES = 32;
 const UNKNOWN_KEY_ID_MESSAGE = "Sensitive data key id is not in the keyring.";
 const INVALID_KEYRING_MESSAGE = "Sensitive data keyring is invalid.";
@@ -84,6 +88,7 @@ export type DataEncryptionKeyringIssue =
   | "invalid_entry"
   | "invalid_key_id"
   | "duplicate_key_id"
+  | "duplicate_key_material"
   | "no_active_key"
   | "multiple_active_keys"
   | "legacy_key_material"
@@ -170,7 +175,10 @@ function parseKeyring(raw: string | undefined): ParsedKeyring {
       if (record.key !== undefined) throw new DataEncryptionKeyringError("legacy_key_material");
     } else {
       if (record.key === undefined) throw new DataEncryptionKeyringError("missing_key_material");
-      keys.set(kid, decodeKeyringKey(record.key));
+      const key = decodeKeyringKey(record.key);
+      // One key under two kids would make retiring a kid meaningless.
+      if ([...keys.values()].some((existing) => existing.equals(key))) throw new DataEncryptionKeyringError("duplicate_key_material");
+      keys.set(kid, key);
     }
     keyIds.push(kid);
     if (record.active === true) active.push(kid);
@@ -236,13 +244,19 @@ export function assertLegacyDataKeyAccepted() {
  * v2, null when the value is not a well-formed envelope. Reads no key.
  */
 export function sensitiveEnvelopeKeyId(envelope: string): string | null {
-  const parts = envelope.split(".");
-  if (parts.length === 4 && parts[0] === LEGACY_ENVELOPE_VERSION && parts.slice(1).every(Boolean)) return LEGACY_DATA_KEY_ID;
-  if (parts.length === 5 && parts[0] === KEYRING_ENVELOPE_VERSION && parts.slice(2).every(Boolean)
-    && DATA_KEY_ID_PATTERN.test(parts[1]!) && parts[1] !== LEGACY_DATA_KEY_ID) {
-    return parts[1]!;
-  }
-  return null;
+  if (LEGACY_ENVELOPE_PATTERN.test(envelope)) return LEGACY_DATA_KEY_ID;
+  const kid = KEYRING_ENVELOPE_PATTERN.exec(envelope)?.[1];
+  return kid && kid !== LEGACY_DATA_KEY_ID ? kid : null;
+}
+
+/**
+ * True for a v1 or v2 envelope with a 12-byte IV and a 16-byte tag. Shared
+ * with readers that pre-check stored values (live-private-chat-storage.ts);
+ * the same patterns are the database CHECKs in
+ * 20261103160100_sensitive_envelope_v2_checks.
+ */
+export function isWellFormedSensitiveEnvelope(envelope: string) {
+  return sensitiveEnvelopeKeyId(envelope) !== null;
 }
 
 function keyringPurposeKey(keyringKey: Buffer, purpose: string) {
@@ -254,7 +268,7 @@ function keyringAssociatedData(kid: string) {
 }
 
 function sealWith(key: Buffer, value: string, associatedData?: Buffer) {
-  const iv = randomBytes(12);
+  const iv = randomBytes(GCM_IV_BYTES);
   const cipher = createCipheriv("aes-256-gcm", key, iv);
   if (associatedData) cipher.setAAD(associatedData);
   const encrypted = Buffer.concat([cipher.update(value, "utf8"), cipher.final()]);
@@ -263,8 +277,9 @@ function sealWith(key: Buffer, value: string, associatedData?: Buffer) {
 
 function openWith(key: Buffer, ivPart: string, tagPart: string, encryptedPart: string, associatedData?: Buffer) {
   const tag = Buffer.from(tagPart, "base64url");
-  if (tag.length !== GCM_AUTH_TAG_BYTES) throw new Error("Invalid sensitive data envelope.");
-  const decipher = createDecipheriv("aes-256-gcm", key, Buffer.from(ivPart, "base64url"), {
+  const iv = Buffer.from(ivPart, "base64url");
+  if (tag.length !== GCM_AUTH_TAG_BYTES || iv.length !== GCM_IV_BYTES) throw new Error("Invalid sensitive data envelope.");
+  const decipher = createDecipheriv("aes-256-gcm", key, iv, {
     authTagLength: GCM_AUTH_TAG_BYTES,
   });
   if (associatedData) decipher.setAAD(associatedData);

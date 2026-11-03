@@ -736,6 +736,7 @@ describe("DATA_ENCRYPTION_KEYRING preflight (F-031)", () => {
     ["a non-unique active key", JSON.stringify([{ kid: "a1", key: material(1), active: true }, { kid: "b1", key: material(2), active: true }]), "超過一把"],
     ["no active key", JSON.stringify([{ kid: "a1", key: material(1) }]), "目前沒有"],
     ["a duplicate kid", JSON.stringify([{ kid: "a1", key: material(1), active: true }, { kid: "a1", key: material(2) }]), "kid 重複"],
+    ["one key under two kids", JSON.stringify([{ kid: "a1", key: material(1), active: true }, { kid: "b1", key: material(1) }]), "同一把金鑰"],
     ["a short key", JSON.stringify([{ kid: "a1", key: material(1, 24), active: true }]), "長度不足"],
     ["a long key", JSON.stringify([{ kid: "a1", key: material(1, 64), active: true }]), "剛好是 32 bytes"],
     ["key material on legacy", JSON.stringify([{ kid: "legacy", key: material(1), active: true }]), "不可附 key"],

@@ -799,6 +799,8 @@ jobs:
         env:
           STAGING_DATABASE_URL: ${{ secrets.LINE_STAGING_DATABASE_URL }}
           CSRF_SECRET: ${{ secrets.CSRF_SECRET }}
+          # F-031: same data keyring as the Preview (empty when unset = CSRF_SECRET key).
+          DATA_ENCRYPTION_KEYRING: ${{ secrets.DATA_ENCRYPTION_KEYRING }}
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
           LINE_STAGING_MESSAGING_CHANNEL_ID: ${{ secrets.LINE_STAGING_MESSAGING_CHANNEL_ID }}
           LINE_STAGING_MESSAGING_CHANNEL_SECRET: ${{ secrets.LINE_STAGING_MESSAGING_CHANNEL_SECRET }}

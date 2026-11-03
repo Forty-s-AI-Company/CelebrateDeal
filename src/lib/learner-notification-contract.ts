@@ -95,3 +95,16 @@ export function mayDispatchLearnerNotification(input: { purchaseGranted: boolean
 
 // Exact envelope purpose for scripts/reencrypt-sensitive-data.ts (F-031).
 export { purpose as learnerNotificationDestinationEnvelopePurpose };
+
+/**
+ * Envelope purposes of the learner notification tables: one definition for
+ * writers, readers and scripts/reencrypt-sensitive-data.ts (F-031).
+ */
+export const learnerNotificationPayloadEnvelopePurpose = (vendorId: string, deduplicationKey: string) =>
+  `learner-notification-payload-v1:${JSON.stringify([vendorId, deduplicationKey])}`;
+export const learnerNotificationReceiptEnvelopePurpose = (vendorId: string, deliveryId: string) =>
+  `learner-notification-receipt-v1:${JSON.stringify([vendorId, deliveryId])}`;
+export const learnerContactProofEnvelopePurpose = (vendorId: string, verificationId: string) =>
+  `learner-contact-proof-v1:${JSON.stringify([vendorId, verificationId])}`;
+export const learnerContactReceiptEnvelopePurpose = (vendorId: string, verificationId: string) =>
+  `learner-contact-receipt-v1:${JSON.stringify([vendorId, verificationId])}`;
