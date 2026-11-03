@@ -140,25 +140,25 @@ describe("F-039 negative settlement balance carries forward (D-32)", () => {
     const september = await generateSettlementForVendor(vendor.id, "2026-09");
 
     expect(september.settlement).toMatchObject({
-      grossRevenueCents: -15_000,
-      refundAmountCents: 25_000,
-      payoutableAmountCents: -15_000,
-      finalPayoutAmountCents: 0,
-      carriedOutCents: -15_000,
+      grossRevenueCents: BigInt(-15_000),
+      refundAmountCents: BigInt(25_000),
+      payoutableAmountCents: BigInt(-15_000),
+      finalPayoutAmountCents: BigInt(0),
+      carriedOutCents: BigInt(-15_000),
     });
     await expect(db.settlementAdjustmentLedgerEntry.findMany({ where: { vendorId: vendor.id } })).resolves.toEqual([
-      expect.objectContaining({ kind: "negative_balance_carry_forward", sourceMonthKey: "2026-09", targetMonthKey: "2026-10", amountCents: -15_000 }),
+      expect.objectContaining({ kind: "negative_balance_carry_forward", sourceMonthKey: "2026-09", targetMonthKey: "2026-10", amountCents: BigInt(-15_000) }),
     ]);
 
     await buyerPayment(vendor.id, 40_000, new Date("2026-10-03T00:00:00.000Z"));
     const october = await generateSettlementForVendor(vendor.id, "2026-10");
 
     expect(october.settlement).toMatchObject({
-      grossRevenueCents: 40_000,
-      carriedInCents: -15_000,
-      payoutableAmountCents: 25_000,
-      finalPayoutAmountCents: 25_000,
-      carriedOutCents: 0,
+      grossRevenueCents: BigInt(40_000),
+      carriedInCents: BigInt(-15_000),
+      payoutableAmountCents: BigInt(25_000),
+      finalPayoutAmountCents: BigInt(25_000),
+      carriedOutCents: BigInt(0),
     });
   });
 
@@ -181,12 +181,12 @@ describe("F-039 negative settlement balance carries forward (D-32)", () => {
     const september = await generateSettlementForVendor(vendor.id, "2026-09");
 
     expect(september.settlement).toMatchObject({
-      grossRevenueCents: -10_000,
-      paymentGatewayFeeCents: 0,
-      transactionServiceFeeCents: 0,
-      payoutableAmountCents: -9_220,
-      finalPayoutAmountCents: 0,
-      carriedOutCents: -9_220,
+      grossRevenueCents: BigInt(-10_000),
+      paymentGatewayFeeCents: BigInt(0),
+      transactionServiceFeeCents: BigInt(0),
+      payoutableAmountCents: BigInt(-9_220),
+      finalPayoutAmountCents: BigInt(0),
+      carriedOutCents: BigInt(-9_220),
     });
   });
 
@@ -196,21 +196,21 @@ describe("F-039 negative settlement balance carries forward (D-32)", () => {
     await processedRefund(vendor.id, august.id, "2026-09", 8_000);
     await generateSettlementForVendor(vendor.id, "2026-09");
     const october = await generateSettlementForVendor(vendor.id, "2026-10");
-    expect(october.settlement).toMatchObject({ carriedInCents: -8_000, finalPayoutAmountCents: 0, carriedOutCents: -8_000 });
+    expect(october.settlement).toMatchObject({ carriedInCents: BigInt(-8_000), finalPayoutAmountCents: BigInt(0), carriedOutCents: BigInt(-8_000) });
     await expect(assertSettlementInputsUnchanged(db, october.settlement)).resolves.toBeUndefined();
 
     // A late September sale removes September's shortfall.
     await buyerPayment(vendor.id, 20_000, new Date("2026-09-28T00:00:00.000Z"));
     const september = await generateSettlementForVendor(vendor.id, "2026-09");
-    expect(september.settlement).toMatchObject({ finalPayoutAmountCents: 12_000, carriedOutCents: 0 });
+    expect(september.settlement).toMatchObject({ finalPayoutAmountCents: BigInt(12_000), carriedOutCents: BigInt(0) });
     await expect(assertSettlementInputsUnchanged(db, october.settlement)).rejects.toMatchObject({ code: "stale_settlement" });
 
     const regenerated = await generateSettlementForVendor(vendor.id, "2026-10");
-    expect(regenerated.settlement).toMatchObject({ carriedInCents: 0, finalPayoutAmountCents: 0, carriedOutCents: 0 });
+    expect(regenerated.settlement).toMatchObject({ carriedInCents: BigInt(0), finalPayoutAmountCents: BigInt(0), carriedOutCents: BigInt(0) });
     await expect(db.settlementAdjustmentLedgerEntry.findMany({ where: { vendorId: vendor.id }, orderBy: { sourceMonthKey: "asc" } }))
       .resolves.toEqual([
-        expect.objectContaining({ sourceMonthKey: "2026-09", amountCents: 0 }),
-        expect.objectContaining({ sourceMonthKey: "2026-10", amountCents: 0 }),
+        expect.objectContaining({ sourceMonthKey: "2026-09", amountCents: BigInt(0) }),
+        expect.objectContaining({ sourceMonthKey: "2026-10", amountCents: BigInt(0) }),
       ]);
   });
 
@@ -235,7 +235,7 @@ describe("F-039 negative settlement balance carries forward (D-32)", () => {
 
     await expect(generateSettlementForVendor(vendor.id, "2026-09")).rejects.toMatchObject({ code: "carry_forward_target_locked" });
     await expect(db.settlementAdjustmentLedgerEntry.findFirstOrThrow({ where: { vendorId: vendor.id } }))
-      .resolves.toMatchObject({ targetMonthKey: "2026-10", amountCents: -5_000 });
+      .resolves.toMatchObject({ targetMonthKey: "2026-10", amountCents: BigInt(-5_000) });
   });
 
   it("lets a positive manual adjustment reduce the carry but refuses a negative one below zero", async () => {
@@ -247,13 +247,13 @@ describe("F-039 negative settlement balance carries forward (D-32)", () => {
     await expect(submitSettlementAdjustment(db, { settlementId: settlement.id, amountCents: -100, reason: "recover", actor: admin }))
       .rejects.toMatchObject({ code: "negative_payout" });
     await expect(submitSettlementAdjustment(db, { settlementId: settlement.id, amountCents: 5_000, reason: "absorb part", actor: admin }))
-      .resolves.toMatchObject({ outcome: "applied", settlement: { finalPayoutAmountCents: 0, carriedOutCents: -10_000 } });
+      .resolves.toMatchObject({ outcome: "applied", settlement: { finalPayoutAmountCents: BigInt(0), carriedOutCents: BigInt(-10_000) } });
     await expect(db.settlementAdjustmentLedgerEntry.findFirstOrThrow({ where: { vendorId: vendor.id } }))
-      .resolves.toMatchObject({ amountCents: -10_000 });
+      .resolves.toMatchObject({ amountCents: BigInt(-10_000) });
     await expect(submitSettlementAdjustment(db, { settlementId: settlement.id, amountCents: 20_000, reason: "absorb all", actor: admin }))
-      .resolves.toMatchObject({ outcome: "applied", settlement: { finalPayoutAmountCents: 5_000, carriedOutCents: 0 } });
+      .resolves.toMatchObject({ outcome: "applied", settlement: { finalPayoutAmountCents: BigInt(5_000), carriedOutCents: BigInt(0) } });
     await expect(db.settlementAdjustmentLedgerEntry.findFirstOrThrow({ where: { vendorId: vendor.id } }))
-      .resolves.toMatchObject({ amountCents: 0 });
+      .resolves.toMatchObject({ amountCents: BigInt(0) });
   });
 
   it("settles the commission reversal of a cross-month refund in the refund month when the sale month is locked (review M-1)", async () => {
@@ -277,7 +277,7 @@ describe("F-039 negative settlement balance carries forward (D-32)", () => {
 
     const september = await generateSettlementForVendor(vendor.id, "2026-09");
     // F-044 / D-31 A: the merchant pays the affiliate; the payout is not reduced.
-    expect(september.settlement).toMatchObject({ grossRevenueCents: 10_000, payoutableAmountCents: 10_000, finalPayoutAmountCents: 10_000 });
+    expect(september.settlement).toMatchObject({ grossRevenueCents: BigInt(10_000), payoutableAmountCents: BigInt(10_000), finalPayoutAmountCents: BigInt(10_000) });
     await lockMonth(vendor.id, "2026-09");
 
     // October: the full refund is booked into October; so is its commission reversal.
@@ -298,11 +298,11 @@ describe("F-039 negative settlement balance carries forward (D-32)", () => {
     // -10,000 refunded to the buyer is carried. The -1,000 commission reversal
     // is the merchant's to reclaim from its affiliate (F-044 / D-31 A).
     expect(october.settlement).toMatchObject({
-      grossRevenueCents: -10_000,
-      refundAmountCents: 10_000,
-      payoutableAmountCents: -10_000,
-      finalPayoutAmountCents: 0,
-      carriedOutCents: -10_000,
+      grossRevenueCents: BigInt(-10_000),
+      refundAmountCents: BigInt(10_000),
+      payoutableAmountCents: BigInt(-10_000),
+      finalPayoutAmountCents: BigInt(0),
+      carriedOutCents: BigInt(-10_000),
     });
   });
 
@@ -337,7 +337,7 @@ describe("F-039 negative settlement balance carries forward (D-32)", () => {
 
     const september = await generateSettlementForVendor(vendor.id, "2026-09");
 
-    expect(september.settlement).toMatchObject({ grossRevenueCents: 20_000, payoutableAmountCents: 20_000, finalPayoutAmountCents: 20_000 });
+    expect(september.settlement).toMatchObject({ grossRevenueCents: BigInt(20_000), payoutableAmountCents: BigInt(20_000), finalPayoutAmountCents: BigInt(20_000) });
   });
 
   it("never turns an earlier negative adjustment into a carry when a regeneration shrinks the payable (review m-1)", async () => {
@@ -345,12 +345,12 @@ describe("F-039 negative settlement balance carries forward (D-32)", () => {
     const sale = await buyerPayment(vendor.id, 1_000, new Date("2026-09-05T00:00:00.000Z"), "partially_refunded");
     const { settlement } = await generateSettlementForVendor(vendor.id, "2026-09");
     await expect(submitSettlementAdjustment(db, { settlementId: settlement.id, amountCents: -800, reason: "recover", actor: admin }))
-      .resolves.toMatchObject({ outcome: "applied", settlement: { finalPayoutAmountCents: 200 } });
+      .resolves.toMatchObject({ outcome: "applied", settlement: { finalPayoutAmountCents: BigInt(200) } });
 
     await processedRefund(vendor.id, sale.id, "2026-09", 500);
     const regenerated = await generateSettlementForVendor(vendor.id, "2026-09");
 
-    expect(regenerated.settlement).toMatchObject({ payoutableAmountCents: 500, adjustmentAmountCents: -800, finalPayoutAmountCents: 0, carriedOutCents: 0 });
+    expect(regenerated.settlement).toMatchObject({ payoutableAmountCents: BigInt(500), adjustmentAmountCents: BigInt(-800), finalPayoutAmountCents: BigInt(0), carriedOutCents: BigInt(0) });
     await expect(db.settlementAdjustmentLedgerEntry.count({ where: { vendorId: vendor.id } })).resolves.toBe(0);
   });
 

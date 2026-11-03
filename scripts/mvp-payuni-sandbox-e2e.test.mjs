@@ -58,6 +58,8 @@ import {
   validateWrittenMvpPayUniReceipt,
   validateWrittenMvpPayUniSubscriptionReceipt,
   verifyMvpPayUniLineage,
+  attestOperationHost,
+  diagnoseMvpPayUniLineage,
   writeExistingRefundRecoveryReceipt,
   writeMvpPayUniReceipt,
   writeMvpPayUniSubscriptionReceipt,
@@ -1194,25 +1196,40 @@ test("preserves only allowlisted fixture failure classifications in the sanitize
   }
 });
 
-test("verifies exact ready Preview lineage and health before secret injection", async () => {
+const stagingAlias = "celebrate-deal-staging.carry-digital-nomad.in.net";
+
+function aliasHealthResponse({ commitSha = sourceSha, vercelUrl = previewHost, status = 200, body } = {}) {
+  const payload = body ?? { ok: true, database: "ok", latencyMs: 2, deployment: { commitSha, deploymentId: "dpl_Fixture123", vercelUrl } };
+  return new Response(JSON.stringify(payload), { status, headers: { "content-type": "application/json" } });
+}
+
+const masterCompareUrl = `https://api.github.com/repos/Forty-s-AI-Company/CelebrateDeal/compare/${sourceSha}...master`;
+
+function masterThenAlias(alias = () => aliasHealthResponse(), calls = [], compare = { status: "ahead", merge_base_commit: { sha: sourceSha } }) {
+  return async (url, init) => {
+    calls.push(String(url));
+    if (String(url) === masterCompareUrl) return new Response(JSON.stringify(compare), { status: 200 });
+    assert.equal(init.method, "GET");
+    assert.equal(init.redirect, "manual");
+    return alias();
+  };
+}
+
+test("verifies exact Preview lineage, protected master, then proves the alias serves that deployment", async () => {
   const source = {
     CELEBRATEDEAL_SOURCE_SHA: sourceSha,
     CELEBRATEDEAL_DEPLOYMENT_HOST: previewHost,
     GITHUB_TOKEN: "test-github-token",
   };
-  const valid = await verifyMvpPayUniLineage(source, {
-    verifyDeploymentImpl: async (received) => {
-      assert.equal(received.CELEBRATEDEAL_SOURCE_SHA, sourceSha);
-      assert.equal(received.CELEBRATEDEAL_DEPLOYMENT_HOST, previewHost);
-      return { host: previewHost, deploymentMatched: true, sourceMatched: true, preview: true, ready: true };
-    },
-    fetchImpl: async (url, init) => {
-      assert.equal(url, `https://${previewHost}/api/health`);
-      assert.equal(init.method, "HEAD");
-      return new Response(null, { status: 200 });
-    },
-  });
-  assert.equal(valid, true);
+  const verifyDeploymentImpl = async (received) => {
+    assert.equal(received.CELEBRATEDEAL_SOURCE_SHA, sourceSha);
+    assert.equal(received.CELEBRATEDEAL_DEPLOYMENT_HOST, previewHost);
+    return { host: previewHost, deploymentMatched: true, sourceMatched: true, preview: true, ready: true };
+  };
+  const calls = [];
+  assert.equal(await verifyMvpPayUniLineage(source, { verifyDeploymentImpl, fetchImpl: masterThenAlias(undefined, calls) }), true);
+  // Vercel firewalls the immutable Preview host (403 deny); it is never probed directly.
+  assert.deepEqual(calls, [masterCompareUrl, `https://${stagingAlias}/api/health`]);
 
   assert.equal(await verifyMvpPayUniLineage({ ...source, CELEBRATEDEAL_DEPLOYMENT_HOST: "example.com" }), false);
   assert.equal(await verifyMvpPayUniLineage({ ...source, GITHUB_TOKEN: "" }), false);
@@ -1221,8 +1238,50 @@ test("verifies exact ready Preview lineage and health before secret injection", 
   }), false);
 });
 
-test("browser smoke lineage accepts a merge-queue master commit and probes the fixed alias", async () => {
-  const alias = "celebrate-deal-staging.carry-digital-nomad.in.net";
+test("a non-master SHA is BLOCKED on every surface even when the alias attestation would pass", async () => {
+  const verifyDeploymentImpl = async () => ({ host: previewHost, deploymentMatched: true, sourceMatched: true, preview: true, ready: true });
+  for (const surface of [undefined, "fixed_alias", "immutable_preview"]) {
+    const source = {
+      CELEBRATEDEAL_SOURCE_SHA: sourceSha,
+      CELEBRATEDEAL_DEPLOYMENT_HOST: previewHost,
+      GITHUB_TOKEN: "test-github-token",
+      ...(surface ? { CELEBRATEDEAL_BROWSER_SURFACE: surface } : {}),
+    };
+    const calls = [];
+    const fetchImpl = masterThenAlias(undefined, calls, { status: "diverged", merge_base_commit: { sha: "c".repeat(40) } });
+    assert.equal(await diagnoseMvpPayUniLineage(source, { verifyDeploymentImpl, fetchImpl }), "SOURCE_NOT_ON_PROTECTED_MASTER", String(surface));
+    assert.deepEqual(calls, [masterCompareUrl], String(surface));
+  }
+});
+
+test("alias attestation failures keep the lineage gate BLOCKED with a fixed reason", async () => {
+  const source = {
+    CELEBRATEDEAL_SOURCE_SHA: sourceSha,
+    CELEBRATEDEAL_DEPLOYMENT_HOST: previewHost,
+    GITHUB_TOKEN: "test-github-token",
+  };
+  const verifyDeploymentImpl = async () => ({ host: previewHost, deploymentMatched: true, sourceMatched: true, preview: true, ready: true });
+  const cases = [
+    ["ALIAS_ATTESTATION_SHA_MISMATCH", masterThenAlias(() => aliasHealthResponse({ commitSha: "c".repeat(40) }))],
+    ["ALIAS_ATTESTATION_HOST_MISMATCH", masterThenAlias(() => aliasHealthResponse({ vercelUrl: "older-preview.vercel.app" }))],
+    ["ALIAS_ATTESTATION_UNREACHABLE", masterThenAlias(() => { throw new TypeError("fetch failed"); })],
+    ["ALIAS_ATTESTATION_FIELDS_MISSING", masterThenAlias(() => aliasHealthResponse({ body: { ok: true, database: "ok", latencyMs: 1 } }))],
+    ["ALIAS_ATTESTATION_HTTP_REJECTED", masterThenAlias(() => aliasHealthResponse({ status: 503 }))],
+    ["PROTECTED_MASTER_CHECK_FAILED", async () => new Response("{}", { status: 403 })],
+  ];
+  for (const [reason, fetchImpl] of cases) {
+    assert.equal(await diagnoseMvpPayUniLineage(source, { verifyDeploymentImpl, fetchImpl }), reason);
+    assert.equal(await verifyMvpPayUniLineage(source, { verifyDeploymentImpl, fetchImpl }), false);
+  }
+  assert.equal(await diagnoseMvpPayUniLineage(source, {
+    verifyDeploymentImpl: async () => { throw new Error("GITHUB_DEPLOYMENT_AMBIGUOUS"); },
+  }), "GITHUB_DEPLOYMENT_AMBIGUOUS");
+  assert.equal(await diagnoseMvpPayUniLineage(source, {
+    verifyDeploymentImpl: async () => { throw new Error("https://unexpected.example/?token=secret"); },
+  }), "LINEAGE_CHECK_FAILED");
+});
+
+test("browser smoke lineage accepts a merge-queue master commit and attests the fixed alias", async () => {
   const source = {
     CELEBRATEDEAL_SOURCE_SHA: sourceSha,
     CELEBRATEDEAL_DEPLOYMENT_HOST: previewHost,
@@ -1230,14 +1289,14 @@ test("browser smoke lineage accepts a merge-queue master commit and probes the f
     GITHUB_TOKEN: "test-github-token",
   };
   const verifyDeploymentImpl = async () => ({ host: previewHost, deploymentMatched: true, sourceMatched: true, preview: true, ready: true });
-  const make = (compare, calls = []) => async (url, init) => {
+  const make = (compare, calls = [], alias = () => aliasHealthResponse()) => async (url, init) => {
     calls.push(String(url));
     if (String(url).startsWith("https://api.github.com/")) {
       assert.equal(String(url), `https://api.github.com/repos/Forty-s-AI-Company/CelebrateDeal/compare/${sourceSha}...master`);
       return new Response(JSON.stringify(compare), { status: 200 });
     }
-    assert.equal(init.method, "HEAD");
-    return new Response(null, { status: 200 });
+    assert.equal(init.method, "GET");
+    return alias();
   };
 
   for (const compare of [
@@ -1246,7 +1305,7 @@ test("browser smoke lineage accepts a merge-queue master commit and probes the f
   ]) {
     const calls = [];
     assert.equal(await verifyMvpPayUniLineage(source, { verifyDeploymentImpl, fetchImpl: make(compare, calls) }), true);
-    assert.equal(calls.at(-1), `https://${alias}/api/health`);
+    assert.equal(calls.at(-1), `https://${stagingAlias}/api/health`);
     assert.ok(!calls.some((url) => url.includes(previewHost)));
   }
 
@@ -1262,6 +1321,11 @@ test("browser smoke lineage accepts a merge-queue master commit and probes the f
     verifyDeploymentImpl,
     fetchImpl: async () => new Response("{}", { status: 404 }),
   }), false);
+  // A plain 200 from the alias (no identity) is no longer proof.
+  assert.equal(await verifyMvpPayUniLineage(source, {
+    verifyDeploymentImpl,
+    fetchImpl: make({ status: "identical", merge_base_commit: { sha: sourceSha } }, [], () => new Response(null, { status: 200 })),
+  }), false);
 
   // Host bound to a different SHA or a non-Vercel host never reaches the master check.
   let reached = false;
@@ -1274,6 +1338,50 @@ test("browser smoke lineage accepts a merge-queue master commit and probes the f
   assert.equal(await verifyMvpPayUniLineage({ ...source, CELEBRATEDEAL_DEPLOYMENT_HOST: "evil.example.com" }, { verifyDeploymentImpl, fetchImpl: spy }), false);
   assert.equal(reached, false);
   assert.equal(await verifyMvpPayUniLineage({ ...source, CELEBRATEDEAL_BROWSER_SURFACE: "other" }, { verifyDeploymentImpl, fetchImpl: spy }), false);
+});
+
+test("secret-bearing flows re-attest the alias and then address only the alias", async () => {
+  const attested = await attestOperationHost(validInput, { fetchImpl: async () => aliasHealthResponse() });
+  assert.deepEqual(attested, { ok: true, operationHost: stagingAlias });
+  for (const [code, fetchImpl] of [
+    ["ALIAS_ATTESTATION_SHA_MISMATCH", async () => aliasHealthResponse({ commitSha: "d".repeat(40) })],
+    ["ALIAS_ATTESTATION_HOST_MISMATCH", async () => aliasHealthResponse({ vercelUrl: "older-preview.vercel.app" })],
+    ["ALIAS_ATTESTATION_UNREACHABLE", async () => { throw new TypeError("fetch failed"); }],
+    ["ALIAS_ATTESTATION_FIELDS_MISSING", async () => aliasHealthResponse({ body: { ok: true, database: "ok" } })],
+  ]) {
+    assert.deepEqual(await attestOperationHost(validInput, { fetchImpl }), { ok: false, code });
+  }
+  assert.deepEqual(await attestOperationHost({ ...validInput, previewHost: stagingAlias }, { fetchImpl: async () => aliasHealthResponse() }), { ok: false, code: "INPUT_REJECTED" });
+
+  const calls = [];
+  const base = successfulDependencies(calls);
+  const receipt = await runMvpPayUniSandboxE2E(validInput, {
+    ...base,
+    operationHost: stagingAlias,
+    async browserSubmit(browserInput) {
+      // PayUni returns to NEXT_PUBLIC_APP_URL, the alias on staging; the browser must expect that host.
+      assert.equal(browserInput.previewHost, stagingAlias);
+      return base.browserSubmit({ ...browserInput, previewHost });
+    },
+  });
+  assert.equal(receipt.result, "PASS");
+  const urls = calls.filter((call) => call.url).map((call) => new URL(call.url));
+  assert.ok(urls.length > 0);
+  assert.ok(urls.every((url) => url.hostname === stagingAlias));
+  for (const call of calls.filter((item) => item.headers?.origin)) assert.equal(call.headers.origin, `https://${stagingAlias}`);
+
+  // Only the fixed alias is accepted as an operation host; anything else falls back to the
+  // (firewalled) Preview host and can never redirect requests to an arbitrary origin.
+  const otherCalls = [];
+  await runMvpPayUniSandboxE2E(validInput, { ...successfulDependencies(otherCalls), operationHost: "attacker.example" });
+  assert.ok(otherCalls.filter((call) => call.url).every((call) => new URL(call.url).hostname === previewHost));
+
+  let recoveryUrl = null;
+  await recoverExistingWp4BuyerRefund({ sourceSha, previewHost, jobSecret: "test-job-secret" }, {
+    operationHost: stagingAlias,
+    request: async (request) => { recoveryUrl = request.url; return { status: 200, body: { reconciled: true, status: "RECONCILED" } }; },
+  });
+  assert.equal(recoveryUrl, `https://${stagingAlias}/api/admin/ops/payuni/wp4-refund-recovery`);
 });
 
 test("immutable_preview lineage still requires master and probes the preview host", async () => {

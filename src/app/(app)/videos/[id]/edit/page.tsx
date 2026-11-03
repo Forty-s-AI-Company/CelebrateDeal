@@ -3,6 +3,7 @@ import { VideoForm } from "@/components/video-form";
 import { PageHeader } from "@/components/ui";
 import { requireVendorManager } from "@/lib/auth";
 import { getDb } from "@/lib/db";
+import { signedVideoUrlOrNull } from "@/lib/cloudflare-stream-signing";
 
 export default async function EditVideoPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ error?: string }> }) {
   const vendor = await requireVendorManager();
@@ -13,7 +14,11 @@ export default async function EditVideoPage({ params, searchParams }: { params: 
   return (
     <>
       <PageHeader title="編輯影片" description="更新影片資訊、直接替換 Stream 檔案或上傳縮圖；影片服務的對應設定仍由伺服器管理。" />
-      <VideoForm video={video} error={query.error} />
+      <VideoForm
+        video={video}
+        error={query.error}
+        thumbnailPreviewUrl={signedVideoUrlOrNull(video, { vendorId: vendor.id, kind: "thumbnail" })}
+      />
     </>
   );
 }

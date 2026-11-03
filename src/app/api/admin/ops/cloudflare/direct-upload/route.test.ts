@@ -1,3 +1,4 @@
+import { generateKeyPairSync } from "node:crypto";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
@@ -186,7 +187,33 @@ describe("GET /api/admin/ops/cloudflare/direct-upload", () => {
     });
     expect(mocks.videoFindUnique).toHaveBeenCalledWith({
       where: { id: "video-1" },
-      select: { status: true, cloudflareReadyToStream: true, durationSec: true },
+      select: expect.objectContaining({ status: true, cloudflareReadyToStream: true, durationSec: true }),
     });
+  });
+
+  it("adds a short-lived signed playback URL for a ready Cloudflare video once signing is configured (F-093)", async () => {
+    const uid = "a1b2c3d4e5f60718293a4b5c6d7e8f90";
+    vi.stubEnv("CLOUDFLARE_STREAM_SIGNING_KEY_ID", "0123456789abcdef0123456789abcdef");
+    vi.stubEnv("CLOUDFLARE_STREAM_SIGNING_KEY_PEM", generateKeyPairSync("rsa", { modulusLength: 2048 }).privateKey
+      .export({ format: "pem", type: "pkcs1" }).toString());
+    mocks.videoFindUnique.mockResolvedValue({
+      vendorId: "vendor-1",
+      sourceType: "cloudflare_stream",
+      videoUrl: `https://videodelivery.net/${uid}/manifest/video.m3u8`,
+      cloudflareStreamUid: uid,
+      cloudflarePlaybackId: uid,
+      cloudflareLiveInputUid: null,
+      status: "ready",
+      cloudflareReadyToStream: true,
+      durationSec: 1,
+    });
+    const response = await GET(new Request(
+      "https://app.example.test/api/admin/ops/cloudflare/direct-upload?videoId=video-1",
+      { headers: { authorization: `Bearer ${jobSecret}` } },
+    ));
+
+    const body = await response.json();
+    expect(body.video.playbackUrl).toMatch(/^https:\/\/videodelivery\.net\/[\w-]+\.[\w-]+\.[\w-]+\/manifest\/video\.m3u8$/);
+    expect(body.video.playbackUrl).not.toContain(uid);
   });
 });

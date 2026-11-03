@@ -3,6 +3,7 @@ import { z } from "zod";
 import { requireSameOriginRequest } from "@/lib/api-security";
 import { getCurrentAuth } from "@/lib/auth";
 import { getDb } from "@/lib/db";
+import { SIGNABLE_VIDEO_SELECT, signedVideoUrlOrNull } from "@/lib/cloudflare-stream-signing";
 
 export const runtime = "nodejs";
 
@@ -35,6 +36,7 @@ export async function GET(request: Request) {
   const video = await getDb().video.findFirst({
     where: { id: parsed.data.id, vendorId: auth.vendor.id },
     select: {
+      ...SIGNABLE_VIDEO_SELECT,
       id: true,
       status: true,
       cloudflareReadyToStream: true,
@@ -53,7 +55,8 @@ export async function GET(request: Request) {
       cloudflareReadyToStream: video.cloudflareReadyToStream,
       durationSec: video.durationSec ?? 0,
       estimatedMinutes: video.estimatedMinutes ?? 0,
-      thumbnailUrl: video.thumbnailUrl,
+      // F-093: a Cloudflare thumbnail gets a short-lived token bound to this vendor's row.
+      thumbnailUrl: signedVideoUrlOrNull(video, { vendorId: auth.vendor.id, kind: "thumbnail" }),
       videoUrl: video.videoUrl,
     },
   }, { headers: { "Cache-Control": "private, no-store" } });

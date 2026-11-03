@@ -96,6 +96,7 @@ const mocks = vi.hoisted(() => ({
   payoutBatchUpdate: vi.fn(),
   redirect: vi.fn(),
   refundRecordAggregate: vi.fn(),
+  refundRecordCount: vi.fn(),
   refundRecordCreate: vi.fn(),
   refundRecordUpdate: vi.fn(),
   getPaymentProvider: vi.fn(),
@@ -794,6 +795,7 @@ beforeEach(() => {
   mocks.refundRecordAggregate.mockResolvedValue({
     _sum: { gatewayFeeRefundCents: 0, platformFeeRefundCents: 0 },
   });
+  mocks.refundRecordCount.mockResolvedValue(0);
   mocks.refundRecordCreate.mockResolvedValue({ id: "refund-1" });
   mocks.refundRecordUpdate.mockResolvedValue({ id: "refund-1", status: "processed" });
   mocks.vendorFindUnique.mockResolvedValue({ id: "vendor-1", slug: "vendor", betaFeatureGrants: ["courses", "billing", "funnel_binding", "consultation_booking", "browser_live", "danmaku"] });
@@ -918,6 +920,7 @@ beforeEach(() => {
     },
     refundRecord: {
       aggregate: mocks.refundRecordAggregate,
+      count: mocks.refundRecordCount,
       create: mocks.refundRecordCreate,
       update: mocks.refundRecordUpdate,
     },
@@ -5290,6 +5293,24 @@ describe("createPayoutBatchAction", () => {
     expect(mocks.payoutItemCreate).not.toHaveBeenCalled();
     expect(mocks.writeAuditLog).not.toHaveBeenCalled();
   });
+
+  it("reports a conflict when the one-item-per-settlement index rejects a duplicate payout item (F-066)", async () => {
+    mocks.settlementFindMany.mockResolvedValueOnce([eligibleSettlement]);
+    mocks.settlementUpdateMany.mockResolvedValueOnce({ count: 1 });
+    mocks.payoutItemCreate.mockRejectedValueOnce(Object.assign(new Error("unique violation"), { code: "P2002" }));
+    mocks.transaction.mockImplementationOnce(async (callback: (tx: unknown) => Promise<unknown>) => callback({
+      payoutBatch: { create: mocks.payoutBatchCreate },
+      settlement: { updateMany: mocks.settlementUpdateMany },
+      payoutItem: { create: mocks.payoutItemCreate },
+    }));
+
+    await expect(createPayoutBatchAction(payoutBatchFormData())).rejects.toThrow(
+      "redirect:/admin/billing/payouts?error=conflict",
+    );
+
+    expect(mocks.payoutItemCreate).toHaveBeenCalledTimes(1);
+    expect(mocks.writeAuditLog).not.toHaveBeenCalled();
+  });
 });
 
 describe("updatePayoutItemStatusAction", () => {
@@ -5591,6 +5612,29 @@ describe("generateSettlementAction", () => {
 });
 
 describe("refundPaymentTransactionAction", () => {
+  it("keeps the local reservation identity when PayUni repeats an event id already booked on the payment (F-062)", async () => {
+    const payUniTransaction = { ...transaction, providerName: "payuni", providerTradeNo: "trade-123" };
+    const providerRefund = vi.fn().mockResolvedValue({ providerEventId: "trade-123" });
+    mocks.findUnique.mockResolvedValue(payUniTransaction);
+    mocks.getPaymentProvider.mockReturnValue({ refundPayment: providerRefund });
+    mocks.refundRecordCount.mockResolvedValueOnce(1);
+
+    await expect(refundPaymentTransactionAction(refundFormData("40"))).rejects.toThrow(
+      "redirect:/admin/billing/dashboard",
+    );
+
+    expect(mocks.refundRecordCount).toHaveBeenCalledWith({
+      where: { vendorId: transaction.vendorId, paymentTransactionId: transaction.id, providerEventId: "trade-123", id: { not: "refund-1" } },
+    });
+    const completion = mocks.refundRecordUpdate.mock.calls
+      .map(([args]) => args as { where: { providerEventId: string }; data: { status?: string; providerEventId?: string } })
+      .find((args) => args.data.status === "processed");
+    expect(completion).toEqual({
+      where: { id: "refund-1", status: "pending", providerEventId: expect.stringMatching(/^request:[a-f0-9]{32}$/) },
+      data: { status: "processed", providerEventId: completion?.where.providerEventId, monthKey: "2026-10", processedAt: expect.any(Date) },
+    });
+  });
+
   it("uses one recoverable PayUni path: reserve pending, refund provider, then mark processed", async () => {
     const payUniTransaction = { ...transaction, providerName: "payuni", providerTradeNo: "trade-123" };
     const providerRefund = vi.fn().mockResolvedValue({ providerEventId: "refund-456" });
@@ -5616,6 +5660,10 @@ describe("refundPaymentTransactionAction", () => {
         providerEventId: expect.stringMatching(/^request:[a-f0-9]{32}$/),
       },
       data: { status: "processed", providerEventId: "refund-456", monthKey: "2026-10", processedAt: expect.any(Date) },
+    });
+    // F-062: the provider event id is first checked against this payment's other refunds, vendor-bound.
+    expect(mocks.refundRecordCount).toHaveBeenCalledWith({
+      where: { vendorId: transaction.vendorId, paymentTransactionId: transaction.id, providerEventId: "refund-456", id: { not: "refund-1" } },
     });
     // F-039: the month is resolved from the completion time inside the completion transaction.
     expect(mocks.refundSettlementMonthKey).toHaveBeenCalledWith(expect.any(Object), transaction.vendorId, expect.any(Date));
@@ -5700,6 +5748,7 @@ describe("refundPaymentTransactionAction", () => {
         },
         refundRecord: {
           aggregate: mocks.refundRecordAggregate,
+          count: mocks.refundRecordCount,
           create: mocks.refundRecordCreate,
           update: mocks.refundRecordUpdate,
         },

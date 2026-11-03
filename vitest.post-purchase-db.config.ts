@@ -11,7 +11,7 @@ for (const name of ["DATABASE_URL", "DIRECT_URL"] as const) {
 }
 
 export default defineConfig({
-  resolve: { alias: { "@": path.resolve(__dirname, "src") } },
+  resolve: { alias: { "@": path.resolve(__dirname, "src"), "server-only": path.resolve(__dirname, "node_modules/next/dist/compiled/server-only/empty.js") } },
   test: {
     include: ["src/lib/post-purchase-upsell-access.test.ts", "src/lib/post-purchase-upsell.test.ts", "src/lib/post-purchase-credit.db.test.ts"],
     fileParallelism: false,

@@ -5,6 +5,7 @@ import { ButtonLink, Card, PageHeader } from "@/components/ui";
 import { EvergreenPreviewPlayer } from "@/components/evergreen-preview-player";
 import { requireVendorManager } from "@/lib/auth";
 import { getDb } from "@/lib/db";
+import { signedVideoUrlOrNull, type SignableVideo } from "@/lib/cloudflare-stream-signing";
 import { productEventBeyondVideoSec } from "@/lib/live-video-timing";
 import { statusLabel } from "@/lib/status-labels";
 
@@ -18,11 +19,21 @@ function ProductTimingWarning({ durationSec, events }: { durationSec: number | u
   );
 }
 
+/** F-093: the evergreen preview plays the vendor's own video through a short-lived token. */
+function evergreenPreviewUrl(
+  live: { isEvergreen: boolean; evergreenPreviewEnabled: boolean; video: SignableVideo | null },
+  vendorId: string,
+) {
+  if (!live.isEvergreen || !live.evergreenPreviewEnabled || !live.video?.videoUrl || live.video.vendorId !== vendorId) return null;
+  return signedVideoUrlOrNull(live.video, { vendorId });
+}
+
 export default async function LivePreviewPage({ params }: { params: Promise<{ id: string }> }) {
   const vendor = await requireVendorManager();
   const { id } = await params;
   const live = await getDb().live.findFirst({ where: { id, vendorId: vendor.id }, include: { products: { include: { product: true } }, form: true, video: true, messageTemplate: true, liveReminderTemplate: true, interactionScript: { include: { events: { orderBy: { triggerSec: "asc" } } } } } });
   if (!live) notFound();
+  const previewUrl = evergreenPreviewUrl(live, vendor.id);
 
   return (
     <>
@@ -31,9 +42,9 @@ export default async function LivePreviewPage({ params }: { params: Promise<{ id
       <Card>
         <div className="grid gap-5 lg:grid-cols-[1.2fr_0.8fr]">
           <div>
-            {live.isEvergreen && live.evergreenPreviewEnabled && live.video?.videoUrl ? (
+            {previewUrl ? (
               <EvergreenPreviewPlayer
-                videoUrl={live.video.videoUrl}
+                videoUrl={previewUrl}
                 playbackRate={live.evergreenPreviewRate}
                 orientation={liveOrientation(live.presenterLayout)}
                 events={(live.interactionScript?.events ?? []).map(({ id: eventId, triggerSec, title, eventType }) => ({ id: eventId, triggerSec, title, eventType }))}

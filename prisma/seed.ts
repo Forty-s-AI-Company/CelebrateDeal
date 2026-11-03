@@ -579,7 +579,10 @@ async function main() {
       payoutableAmountCents: 231075,
       adjustmentAmountCents: 0,
       finalPayoutAmountCents: 231075,
-      status: "reviewing",
+      // F-062: only statuses the app writes (Settlement_status_check). A
+      // settlement in a payout batch is locked and claimed for payout.
+      status: "ready_for_payout",
+      lockedAt: new Date("2026-08-01T10:00:00+08:00"),
       payoutDate: new Date("2026-08-05T10:00:00+08:00"),
       batchNumber: "PB-20260805-001",
     },
@@ -610,7 +613,7 @@ async function main() {
       batchDate: new Date("2026-08-05T10:00:00+08:00"),
       totalAmountCents: 231075,
       totalCount: 1,
-      status: "reviewing",
+      status: "draft",
       exportedFilePath: "/exports/payouts/PB-20260805-001.csv",
       items: {
         create: {
@@ -620,7 +623,7 @@ async function main() {
           bankCodeDisplay: "013",
           bankAccountDisplayNumber: "****7788",
           payoutAmountCents: 231075,
-          status: "pending_review",
+          status: "pending",
         },
       },
     },
@@ -652,7 +655,8 @@ async function main() {
         action: "generate_settlement",
         targetType: "Settlement",
         targetId: settlement.id,
-        after: { monthKey: settlement.monthKey, finalPayoutAmountCents: settlement.finalPayoutAmountCents },
+        // F-068: BigInt column; audit JSON stores the exact number.
+        after: { monthKey: settlement.monthKey, finalPayoutAmountCents: Number(settlement.finalPayoutAmountCents) },
       },
       {
         vendorId: vendor.id,

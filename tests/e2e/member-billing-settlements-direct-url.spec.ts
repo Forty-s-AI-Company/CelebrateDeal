@@ -71,7 +71,9 @@ test("active member is denied billing settlements before tenant query or MFA", a
       batchDate: new Date("2099-02-15T06:07:08.000Z"),
       totalAmountCents: 876_543,
       totalCount: 1,
-      status: `wp81-batch-reviewing-${suffix}`,
+      // F-062: statuses are limited to the values the app writes
+      // (PayoutBatch_status_check / Settlement_status_check).
+      status: "exported",
     },
   });
   const settlements = await Promise.all([
@@ -90,7 +92,7 @@ test("active member is denied billing settlements before tenant query or MFA", a
         adjustmentAmountCents: -12_345,
         adjustmentReason: `wp81-draft-reason-${suffix}`,
         finalPayoutAmountCents: 733_333,
-        status: `wp81-draft-${suffix}`,
+        status: "draft",
         createdAt: new Date("2098-12-01T01:02:03.000Z"),
       },
     }),
@@ -109,7 +111,7 @@ test("active member is denied billing settlements before tenant query or MFA", a
         adjustmentAmountCents: 23_456,
         adjustmentReason: `wp81-paid-reason-${suffix}`,
         finalPayoutAmountCents: 858_023,
-        status: `wp81-paid-${suffix}`,
+        status: "paid",
         lockedAt: new Date("2099-01-08T02:03:04.000Z"),
         lockedBy: `wp81-locker-${suffix}`,
         paidAt: new Date("2099-01-11T05:06:07.000Z"),
@@ -355,21 +357,20 @@ test("active member is denied billing settlements before tenant query or MFA", a
     const settlementCanaries = settlements.flatMap((settlement) => [
       settlement.id,
       settlement.monthKey,
-      settlement.status,
       settlement.batchNumber,
       settlement.adjustmentReason,
       settlement.lockedBy,
       settlement.reviewedBy,
-      formatCurrency(settlement.monthlyFeeCents),
-      formatCurrency(settlement.overflowFeeCents),
-      formatCurrency(settlement.paymentServiceFeeCents),
-      formatCurrency(settlement.transactionServiceFeeCents),
-      formatCurrency(settlement.affiliateManagementFeeCents),
-      formatCurrency(settlement.paymentGatewayFeeCents),
-      formatCurrency(settlement.grossRevenueCents),
-      formatCurrency(settlement.payoutableAmountCents),
-      formatCurrency(settlement.adjustmentAmountCents),
-      formatCurrency(settlement.finalPayoutAmountCents),
+      formatCurrency(Number(settlement.monthlyFeeCents)),
+      formatCurrency(Number(settlement.overflowFeeCents)),
+      formatCurrency(Number(settlement.paymentServiceFeeCents)),
+      formatCurrency(Number(settlement.transactionServiceFeeCents)),
+      formatCurrency(Number(settlement.affiliateManagementFeeCents)),
+      formatCurrency(Number(settlement.paymentGatewayFeeCents)),
+      formatCurrency(Number(settlement.grossRevenueCents)),
+      formatCurrency(Number(settlement.payoutableAmountCents)),
+      formatCurrency(Number(settlement.adjustmentAmountCents)),
+      formatCurrency(Number(settlement.finalPayoutAmountCents)),
       formatDateTime(settlement.createdAt),
       settlement.lockedAt ? formatDateTime(settlement.lockedAt) : "",
       settlement.paidAt ? formatDateTime(settlement.paidAt) : "",
@@ -378,8 +379,7 @@ test("active member is denied billing settlements before tenant query or MFA", a
     const payoutBatchCanaries = [
       payoutBatch.id,
       payoutBatch.batchNumber,
-      payoutBatch.status,
-      formatCurrency(payoutBatch.totalAmountCents),
+      formatCurrency(Number(payoutBatch.totalAmountCents)),
       formatDateTime(payoutBatch.batchDate),
     ];
     const disclosureCanaries = [
@@ -389,6 +389,17 @@ test("active member is denied billing settlements before tenant query or MFA", a
       (value): value is string =>
         typeof value === "string" && value.length > 0 && value !== "NT$0",
     );
+    // F-062: statuses are now limited to the values the app writes, so they
+    // are common words ("pending", "failed", "exported") that also occur in
+    // ordinary dashboard HTML. They can no longer be substring canaries for
+    // the protected payload or the final HTML; every row keeps unique
+    // substring canaries (ids, numbers, reasons, account fields) above, and
+    // a leaked status is checked as an element whose entire text is the
+    // status below.
+    const statusCanaries = [
+      ...settlements.map((settlement) => settlement.status),
+      payoutBatch.status,
+    ];
 
     const posts: string[] = [];
     const external: string[] = [];
@@ -500,7 +511,7 @@ test("active member is denied billing settlements before tenant query or MFA", a
     ]) {
       await expect(page.getByText(deniedText, { exact: true })).toHaveCount(0);
     }
-    for (const canary of disclosureCanaries) {
+    for (const canary of [...disclosureCanaries, ...statusCanaries]) {
       await expect(page.getByText(canary, { exact: true })).toHaveCount(0);
     }
 
