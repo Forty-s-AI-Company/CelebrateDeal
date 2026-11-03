@@ -37,8 +37,11 @@ const PRODUCTION_RECIPIENT = parseProductionRecipient(fs.readFileSync(path.join(
 export const REQUIRED_SECRET_KEYS = Object.freeze(["STAGING_DATABASE_URL", "GITHUB_TOKEN"]);
 export const REQUIRED_CONFIG_KEYS = Object.freeze(["NEXT_PUBLIC_SUPABASE_URL", "CELEBRATEDEAL_SOURCE_SHA", "CELEBRATEDEAL_DEPLOYMENT_HOST", "RUNNER_TEMP", "STAGING_BACKUP_AGE_RECIPIENT"]);
 const RECEIPT_KEYS = Object.freeze(["schemaVersion", "task", "sourceCommit", "result", "executedAtUtc", "lineage", "database", "migration", "backup", "restore", "retention", "network", "safety", "sideEffects", "failureCategory"]);
+// Retained receipts produced before the alias change carry the old lineage shape (Preview
+// health probe, no aliasAttestation key). They remain valid for backup recovery.
+const RETAINED_LINEAGE_KEYS = Object.freeze(["deploymentReads", "deploymentMatched", "sourceMatched", "preview", "ready", "healthStatus", "noRedirect", "deploymentDigest"]);
 const RECEIPT_NESTED_KEYS = Object.freeze({
-  lineage: ["deploymentReads", "deploymentMatched", "sourceMatched", "preview", "ready", "healthStatus", "noRedirect", "deploymentDigest"],
+  lineage: ["deploymentReads", "deploymentMatched", "sourceMatched", "preview", "ready", "healthStatus", "noRedirect", "deploymentDigest", "aliasAttestation"],
   database: ["connectionAttempts", "firstTransactionReadOnly", "identityMatched", "readQueries", "disconnected"],
   migration: ["expectedCount", "appliedCount", "unresolvedFailedCount", "rollbackEntryCount", "completedCounterpartCount", "exactChecksumCount", "formatVarianceCount", "unknownMismatchCount", "status"],
   backup: ["attempts", "result", "byteBucket", "digest"],
@@ -102,13 +105,15 @@ export function createInitialReceipt(sourceCommit = "unknown") {
     sourceCommit: SAFE_SHA.test(sourceCommit) ? sourceCommit : "unknown",
     result: "BLOCKED",
     executedAtUtc: new Date().toISOString(),
-    lineage: { deploymentReads: 0, deploymentMatched: false, sourceMatched: false, preview: false, ready: false, healthStatus: null, noRedirect: false, deploymentDigest: null },
+    // WP2 sends no application request, so neither the firewalled Preview host nor the alias is probed.
+    lineage: { deploymentReads: 0, deploymentMatched: false, sourceMatched: false, preview: false, ready: false, healthStatus: null, noRedirect: false, deploymentDigest: null, aliasAttestation: "not_applicable" },
     database: { connectionAttempts: 0, firstTransactionReadOnly: false, identityMatched: false, readQueries: 0, disconnected: false },
     migration: { expectedCount: 0, appliedCount: 0, unresolvedFailedCount: 0, rollbackEntryCount: 0, completedCounterpartCount: 0, exactChecksumCount: 0, formatVarianceCount: 0, unknownMismatchCount: 0, status: "NOT_RUN" },
     backup: { attempts: 0, result: "NOT_RUN", byteBucket: "not_run", digest: null },
     restore: { attempts: 0, result: "NOT_RUN", migrationCount: 0, schemaMatched: false, extensionsMatched: false, aggregateMatched: false, isolated: true },
     retention: { status: "NOT_RUN", archiveDigest: null, recipientDigest: null, recoverability: "NOT_PROVEN", migrationAuthorization: "BLOCKED" },
-    network: { policy: "fixed-host-egress", githubDeployments: true, stagingPreview: true, supabaseStaging: true, arbitraryOutbound: false },
+    // WP2 reaches no application host (Preview or alias); only GitHub and the staging database.
+    network: { policy: "fixed-host-egress", githubDeployments: true, stagingPreview: false, supabaseStaging: true, arbitraryOutbound: false },
     safety: { sanitized: true, envFilesRead: false, envEnumerated: false, secretValuesPrinted: false, secretValuesPersisted: false, rawOutputPersisted: false, rawDumpPersisted: false, rawDatabaseRowsPersisted: false, customerDataPersisted: false },
     sideEffects: { databaseWrites: 0, migrationWrites: 0, backupWrites: 0, isolatedRestoreWrites: 0, deployments: 0, aliasMutations: 0, productionOperations: 0 },
     failureCategory: null,
@@ -118,9 +123,12 @@ export function createInitialReceipt(sourceCommit = "unknown") {
 export function validateReceipt(receipt, { pinnedMigrationTreeSha = null } = {}) {
   const errors = [];
   if (!exactKeys(receipt, RECEIPT_KEYS)) errors.push("SCHEMA_KEYS");
+  const retainedLineage = exactKeys(receipt?.lineage, RETAINED_LINEAGE_KEYS);
   for (const [key, keys] of Object.entries(RECEIPT_NESTED_KEYS)) {
+    if (key === "lineage" && retainedLineage) continue;
     if (!exactKeys(receipt?.[key], keys)) errors.push(`SCHEMA_${key.toUpperCase()}`);
   }
+  if (!retainedLineage && receipt?.lineage?.aliasAttestation !== "not_applicable") errors.push("LINEAGE_ALIAS_ATTESTATION");
   if (receipt?.schemaVersion !== "celebratedeal-secure-staging-wp2/v2" || receipt?.task !== TASK) errors.push("SCHEMA");
   if (!SAFE_SHA.test(receipt?.sourceCommit ?? "")) errors.push("SOURCE");
   if (!["PASS", "FAILED", "BLOCKED"].includes(receipt?.result)) errors.push("RESULT");
@@ -140,7 +148,11 @@ export function validateReceipt(receipt, { pinnedMigrationTreeSha = null } = {})
     // commit or an untrusted migration tree must fail the receipt closed.
     let manifestCount = 0;
     try { manifestCount = sourceInventory(BACKUP_SOURCE_SHA, spawnSync, pinnedMigrationTreeSha).size; } catch { errors.push("SOURCE_MANIFEST_UNVERIFIED"); }
-    const complete = receipt.lineage?.deploymentMatched === true && receipt.lineage?.sourceMatched === true && receipt.lineage?.preview === true && receipt.lineage?.ready === true && receipt.lineage?.healthStatus === 200 && receipt.lineage?.noRedirect === true
+    // Retained receipts proved Preview health; current receipts prove lineage only and must not claim a probe.
+    const lineageProbe = retainedLineage
+      ? receipt.lineage?.healthStatus === 200 && receipt.lineage?.noRedirect === true
+      : receipt.lineage?.aliasAttestation === "not_applicable" && receipt.lineage?.healthStatus === null && receipt.lineage?.noRedirect === false;
+    const complete = receipt.lineage?.deploymentMatched === true && receipt.lineage?.sourceMatched === true && receipt.lineage?.preview === true && receipt.lineage?.ready === true && lineageProbe
       && receipt.database?.firstTransactionReadOnly === true && receipt.database?.identityMatched === true && receipt.database?.disconnected === true
       && receipt.sourceCommit === BACKUP_SOURCE_SHA && manifestCount > 0 && migration.expectedCount === manifestCount
       && migration.appliedCount > 0 && migration.appliedCount <= migration.expectedCount
@@ -340,6 +352,40 @@ export const STAGING_ALIAS_HOST = "celebrate-deal-staging.carry-digital-nomad.in
 const ALIAS_ATTESTATION_PATH = "/api/health";
 const ALIAS_ATTESTATION_MAX_BYTES = 4096;
 const SAFE_VERCEL_DEPLOYMENT_ID = /^dpl_[A-Za-z0-9]{1,64}$/u;
+export const PROTECTED_MASTER_FAILURES = Object.freeze([
+  "SOURCE_NOT_ON_PROTECTED_MASTER",
+  "PROTECTED_MASTER_CHECK_FAILED",
+]);
+
+/**
+ * Alias self-attestation only stops an honest but unreviewed deployment; a deployment's own
+ * code can forge its identity. Every path that accepts the attestation therefore first
+ * requires the SHA to be protected master itself or one of its ancestors (GitHub compare
+ * API, read-only token; no branch-name check, so merge-queue commits pass).
+ */
+export async function verifyShaOnProtectedMaster(sourceSha, token, fetchImpl = fetch) {
+  if (!SAFE_SHA.test(typeof sourceSha === "string" ? sourceSha : "") || typeof token !== "string" || token.length === 0) {
+    throw new Error("PROTECTED_MASTER_CHECK_FAILED");
+  }
+  let response;
+  try {
+    response = await fetchImpl(`${GITHUB_API_ORIGIN}/repos/${GITHUB_REPOSITORY}/compare/${sourceSha}...master`, {
+      headers: { Accept: "application/vnd.github+json", Authorization: `Bearer ${token}`, "X-GitHub-Api-Version": "2022-11-28" },
+      redirect: "manual",
+      signal: AbortSignal.timeout(15_000),
+    });
+  } catch {
+    throw new Error("PROTECTED_MASTER_CHECK_FAILED");
+  }
+  if (response?.status !== 200 || response.headers?.has?.("location")) throw new Error("PROTECTED_MASTER_CHECK_FAILED");
+  let body;
+  try { body = await response.json(); } catch { throw new Error("PROTECTED_MASTER_CHECK_FAILED"); }
+  if (body?.merge_base_commit?.sha !== sourceSha || (body.status !== "identical" && body.status !== "ahead")) {
+    throw new Error("SOURCE_NOT_ON_PROTECTED_MASTER");
+  }
+  return true;
+}
+
 export const ALIAS_ATTESTATION_FAILURES = Object.freeze([
   "ALIAS_ATTESTATION_INPUT_INVALID",
   "ALIAS_ATTESTATION_UNREACHABLE",
@@ -354,9 +400,32 @@ export const ALIAS_ATTESTATION_FAILURES = Object.freeze([
 
 async function readBoundedAttestationBody(response) {
   const contentType = response.headers?.get?.("content-type")?.split(";", 1)[0]?.trim().toLowerCase();
-  if (contentType !== "application/json" || typeof response.text !== "function") throw new Error("ALIAS_ATTESTATION_RESPONSE_INVALID");
-  const text = await response.text();
-  if (typeof text !== "string" || Buffer.byteLength(text, "utf8") > ALIAS_ATTESTATION_MAX_BYTES) throw new Error("ALIAS_ATTESTATION_RESPONSE_INVALID");
+  if (contentType !== "application/json") throw new Error("ALIAS_ATTESTATION_RESPONSE_INVALID");
+  const declaredLength = response.headers?.get?.("content-length");
+  if (declaredLength !== null && declaredLength !== undefined
+    && (!/^\d{1,10}$/u.test(declaredLength) || Number(declaredLength) > ALIAS_ATTESTATION_MAX_BYTES)) {
+    await response.body?.cancel?.().catch(() => undefined);
+    throw new Error("ALIAS_ATTESTATION_RESPONSE_INVALID");
+  }
+  const reader = response.body?.getReader?.();
+  if (!reader) throw new Error("ALIAS_ATTESTATION_RESPONSE_INVALID");
+  const chunks = [];
+  let received = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      received += value.byteLength;
+      if (received > ALIAS_ATTESTATION_MAX_BYTES) {
+        await reader.cancel().catch(() => undefined);
+        throw new Error("ALIAS_ATTESTATION_RESPONSE_INVALID");
+      }
+      chunks.push(Buffer.from(value));
+    }
+  } catch {
+    throw new Error("ALIAS_ATTESTATION_RESPONSE_INVALID");
+  }
+  const text = Buffer.concat(chunks).toString("utf8");
   try {
     const body = JSON.parse(text);
     if (body === null || typeof body !== "object" || Array.isArray(body)) throw new Error("not an object");
@@ -418,9 +487,10 @@ export async function verifyAliasAttestation({ sourceSha, previewHost } = {}, fe
   };
 }
 
-/** Lineage gate followed by alias self-attestation; returns the alias as the only operation host. */
+/** Lineage gate, protected-master gate, then alias self-attestation; returns the alias as the only operation host. */
 export async function verifyDeploymentThroughAlias(source, fetchImpl = fetch) {
   const lineage = await verifyDeployment(source, fetchImpl);
+  await verifyShaOnProtectedMaster(source.CELEBRATEDEAL_SOURCE_SHA, source.GITHUB_TOKEN, fetchImpl);
   const alias = await verifyAliasAttestation({ sourceSha: source.CELEBRATEDEAL_SOURCE_SHA, previewHost: lineage.host }, fetchImpl);
   return { ...lineage, operationHost: alias.host, alias };
 }
@@ -622,12 +692,18 @@ export async function runSecureTask(task, source = process.env, dependencies = {
   let pgEnvironment = null;
   try {
     const deployment = await verifyDeployment(source, fetchImpl);
-    const { host, reads, ...sanitizedDeployment } = deployment;
-    receipt.lineage = { ...receipt.lineage, ...sanitizedDeployment, deploymentReads: reads };
-    // The Preview host itself is firewalled; health and identity are proven through the alias.
-    const alias = await verifyAliasAttestation({ sourceSha: source.CELEBRATEDEAL_SOURCE_SHA, previewHost: host }, fetchImpl);
-    receipt.lineage.healthStatus = alias.healthStatus;
-    receipt.lineage.noRedirect = alias.noRedirect;
+    const lineageFields = {
+      deploymentMatched: deployment.deploymentMatched,
+      sourceMatched: deployment.sourceMatched,
+      preview: deployment.preview,
+      ready: deployment.ready,
+      deploymentDigest: deployment.deploymentDigest,
+    };
+    // WP2 is lineage-only. It sends no application request, the Preview host is firewalled,
+    // and its pinned RC is not in current master history, so alias self-attestation
+    // (which requires a protected-master SHA) does not apply. The Preview probe is skipped:
+    // healthStatus stays null and aliasAttestation stays "not_applicable".
+    receipt.lineage = { ...receipt.lineage, ...lineageFields, deploymentReads: deployment.reads };
 
     const inventory = sourceInventory(source.CELEBRATEDEAL_SOURCE_SHA, dependencies.spawnSyncImpl ?? spawnSync);
     pgEnvironment = databaseEnvironment(source);

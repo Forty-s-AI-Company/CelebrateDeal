@@ -10,7 +10,7 @@ import {
   protectLineOfficialAccountCredentials,
   protectLineProfileValue,
 } from "../src/lib/line-credentials.ts";
-import { STAGING_ALIAS_HOST, verifyAliasAttestation } from "./secure-staging-runner.mjs";
+import { STAGING_ALIAS_HOST, verifyAliasAttestation, verifyShaOnProtectedMaster } from "./secure-staging-runner.mjs";
 
 export const TASK = "line-notifications-e2e";
 export const RECEIPT_NAME = `${TASK}-receipt.json`;
@@ -212,7 +212,9 @@ export async function runLineStagingValidation(source = process.env, dependencie
   const invocation = validateInvocation(source);
   if (!invocation.ok) { receipt.failureCode = invocation.reason; return receipt; }
   // Prove the alias serves the lineage-verified deployment before touching the database.
+  // The attestation cannot detect a forged identity, so the SHA must be on protected master first.
   try {
+    await (dependencies.verifyShaOnProtectedMasterImpl ?? verifyShaOnProtectedMaster)(source.CELEBRATEDEAL_SOURCE_SHA, source.GITHUB_TOKEN);
     const attestation = await (dependencies.verifyAliasAttestationImpl ?? verifyAliasAttestation)({
       sourceSha: source.CELEBRATEDEAL_SOURCE_SHA,
       previewHost: source.CELEBRATEDEAL_DEPLOYMENT_HOST,

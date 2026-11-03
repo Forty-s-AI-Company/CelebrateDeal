@@ -74,11 +74,15 @@ function allowlisted(value: string | undefined, pattern: RegExp) {
   return typeof value === "string" && pattern.test(value) ? value : null;
 }
 
+const NO_DEPLOYMENT_IDENTITY: DeploymentIdentity = { commitSha: null, deploymentId: null, vercelUrl: null };
+
 // Non-secret deployment identity injected by Vercel (VERCEL_GIT_COMMIT_SHA,
 // VERCEL_DEPLOYMENT_ID, VERCEL_URL). The protected staging runner compares it,
 // fetched through the fixed alias, with the GitHub deployment lineage record.
-// Values outside the fixed shapes are reported as null, never echoed.
+// Only Preview deployments report it; Production and local runs always return
+// null. Values outside the fixed shapes are reported as null, never echoed.
 function getDeploymentIdentity(): DeploymentIdentity {
+  if (getSafeVercelEnvironment() !== "preview") return NO_DEPLOYMENT_IDENTITY;
   return {
     commitSha: allowlisted(process.env.VERCEL_GIT_COMMIT_SHA, SAFE_COMMIT_SHA),
     deploymentId: allowlisted(process.env.VERCEL_DEPLOYMENT_ID, SAFE_DEPLOYMENT_ID),

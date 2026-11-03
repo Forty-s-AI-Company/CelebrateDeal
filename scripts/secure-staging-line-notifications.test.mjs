@@ -58,7 +58,7 @@ test("stops before any database or cron request unless the alias attests the exa
     async () => { throw new Error("ALIAS_ATTESTATION_UNREACHABLE"); },
     async () => ({ host: "preview.vercel.app" }),
   ]) {
-    const receipt = await runLineStagingValidation(source, { verifyAliasAttestationImpl: failure });
+    const receipt = await runLineStagingValidation(source, { verifyShaOnProtectedMasterImpl: async () => true, verifyAliasAttestationImpl: failure });
     assert.equal(receipt.result, "BLOCKED");
     assert.match(receipt.failureCode, /^ALIAS_ATTESTATION_[A-Z_]+$/u);
     assert.equal(receipt.sideEffects.cronCalls, 0);
@@ -66,7 +66,10 @@ test("stops before any database or cron request unless the alias attests the exa
     assert.equal(receipt.checks.isolatedDatabase, false);
   }
   let received = null;
-  await runLineStagingValidation(source, { verifyAliasAttestationImpl: async (input) => { received = input; throw new Error("ALIAS_ATTESTATION_HOST_MISMATCH"); } });
+  await runLineStagingValidation(source, {
+    verifyShaOnProtectedMasterImpl: async () => true,
+    verifyAliasAttestationImpl: async (input) => { received = input; throw new Error("ALIAS_ATTESTATION_HOST_MISMATCH"); },
+  });
   assert.deepEqual(received, { sourceSha: source.CELEBRATEDEAL_SOURCE_SHA, previewHost: source.CELEBRATEDEAL_DEPLOYMENT_HOST });
 });
 
@@ -74,4 +77,23 @@ test("cron requests address the attested alias, never the firewalled Preview hos
   const runner = fs.readFileSync(new URL("./secure-staging-line-notifications.mjs", import.meta.url), "utf8");
   assert.doesNotMatch(runner, /https:\/\/\$\{source\.CELEBRATEDEAL_DEPLOYMENT_HOST\}/u);
   assert.match(runner, /fetch\(`https:\/\/\$\{operationHost\}\/api\/cron\/line-notifications`/u);
+});
+
+test("a non-master SHA is BLOCKED before alias attestation, even if the alias would attest", async () => {
+  let attested = false;
+  let checked = null;
+  const receipt = await runLineStagingValidation({ ...source, GITHUB_TOKEN: "read-only-workflow-token" }, {
+    verifyShaOnProtectedMasterImpl: async (sha, token) => { checked = { sha, token }; throw new Error("SOURCE_NOT_ON_PROTECTED_MASTER"); },
+    verifyAliasAttestationImpl: async () => { attested = true; return { host: "celebrate-deal-staging.carry-digital-nomad.in.net" }; },
+  });
+  assert.deepEqual(checked, { sha: source.CELEBRATEDEAL_SOURCE_SHA, token: "read-only-workflow-token" });
+  assert.equal(attested, false);
+  assert.equal(receipt.result, "BLOCKED");
+  assert.equal(receipt.failureCode, "SOURCE_NOT_ON_PROTECTED_MASTER");
+  assert.equal(receipt.sideEffects.cronCalls, 0);
+  assert.equal(receipt.cleanup.attempted, false);
+  // Without the read-only token the shared gate fails closed.
+  const tokenless = await runLineStagingValidation(source, { verifyAliasAttestationImpl: async () => { attested = true; return {}; } });
+  assert.equal(tokenless.failureCode, "PROTECTED_MASTER_CHECK_FAILED");
+  assert.equal(attested, false);
 });

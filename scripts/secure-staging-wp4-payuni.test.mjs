@@ -155,6 +155,12 @@ test("parent persists a closed lineage diagnostic without raw error text", async
   assert.deepEqual(validateReceipt(receipt), { ok: true, errors: [] });
 });
 
+const onProtectedMaster = async (receivedSha, token) => {
+  assert.equal(receivedSha, sha);
+  assert.equal(token, safeEnvironment.GITHUB_TOKEN);
+  return true;
+};
+
 const verifiedLineage = async () => ({
   reads: 2,
   host: safeEnvironment.CELEBRATEDEAL_DEPLOYMENT_HOST,
@@ -175,6 +181,7 @@ test("parent stops before the child when the alias does not attest the lineage-v
     let spawned = false;
     const receipt = await runParentInTemp({
       verifyDeploymentImpl: verifiedLineage,
+      verifyShaOnProtectedMasterImpl: onProtectedMaster,
       fetchImpl,
       spawnSyncImpl: () => { spawned = true; return { status: 2, signal: null, stdout: "" }; },
     });
@@ -187,11 +194,34 @@ test("parent stops before the child when the alias does not attest the lineage-v
   }
 });
 
+test("parent BLOCKS a non-master SHA before alias attestation or the child, even if the alias would attest", async () => {
+  const requested = [];
+  let spawned = false;
+  const receipt = await runParentInTemp({
+    verifyDeploymentImpl: verifiedLineage,
+    // Real gate against a fake GitHub compare API that reports the SHA off master.
+    fetchImpl: async (url) => {
+      requested.push(String(url));
+      if (String(url).startsWith("https://api.github.com/")) {
+        return new Response(JSON.stringify({ status: "diverged", merge_base_commit: { sha: "e".repeat(40) } }), { status: 200 });
+      }
+      return aliasHealthResponse();
+    },
+    spawnSyncImpl: () => { spawned = true; return { status: 2, signal: null, stdout: "" }; },
+  });
+  assert.equal(receipt.diagnosticCategory, "SOURCE_NOT_ON_PROTECTED_MASTER");
+  assert.equal(spawned, false);
+  assert.deepEqual(requested, [`https://api.github.com/repos/Forty-s-AI-Company/CelebrateDeal/compare/${sha}...master`]);
+  assert.equal(receipt.prerequisites.exactPreviewLineage, false);
+  assert.deepEqual(validateReceipt(receipt), { ok: true, errors: [] });
+});
+
 test("parent probes only the alias and hands the child the attested operation host", async () => {
   const requested = [];
   let childEnv = null;
   const receipt = await runParentInTemp({
     verifyDeploymentImpl: verifiedLineage,
+    verifyShaOnProtectedMasterImpl: onProtectedMaster,
     fetchImpl: async (url) => { requested.push(String(url)); return aliasHealthResponse(); },
     spawnSyncImpl: (_command, _args, options) => { childEnv = options.env; return { status: 1, signal: null, stdout: "" }; },
   });
@@ -211,6 +241,7 @@ test("parent preserves unknown fixture side effects when child output is invalid
       preview: true,
       ready: true,
     }),
+    verifyShaOnProtectedMasterImpl: onProtectedMaster,
     fetchImpl: async () => aliasHealthResponse(),
     spawnSyncImpl: () => ({ status: 1, signal: null, stdout: "", stderr: "must-not-persist" }),
   });

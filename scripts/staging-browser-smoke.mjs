@@ -1,7 +1,7 @@
 import { writeFile } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
 import { verifyMvpPayUniLineage } from "./mvp-payuni-sandbox-e2e.mjs";
-import { STAGING_ALIAS_HOST, verifyAliasAttestation } from "./secure-staging-runner.mjs";
+import { STAGING_ALIAS_HOST, verifyAliasAttestation, verifyShaOnProtectedMaster } from "./secure-staging-runner.mjs";
 
 const SOURCE_SHA = /^[a-f0-9]{40}$/u;
 const PREVIEW_HOST = /^(?=.{1,253}$)[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.vercel\.app$/u;
@@ -73,29 +73,40 @@ function vercelApiFailure(response, resource) {
   return `${resource}_API_ERROR`;
 }
 
-/** Return only a fixed reason code; never include the token or provider response. */
-export async function diagnoseStagingAliasBinding(env, fetchImpl = fetch) {
+/**
+ * Vercel API view of the alias. Returns a fixed reason code plus, once the alias record was
+ * read, its deployment id (a non-secret `dpl_` identifier kept for audit). Never includes the
+ * token or any other provider response field.
+ */
+async function inspectStagingAliasBinding(env, fetchImpl) {
   if (!SOURCE_SHA.test(env.CELEBRATEDEAL_SOURCE_SHA ?? "")
-    || !PREVIEW_HOST.test(env.CELEBRATEDEAL_DEPLOYMENT_HOST ?? "")) return "SOURCE_BINDING_INVALID";
-  if (typeof env.VERCEL_TOKEN !== "string" || env.VERCEL_TOKEN.length === 0) return "VERCEL_TOKEN_MISSING";
+    || !PREVIEW_HOST.test(env.CELEBRATEDEAL_DEPLOYMENT_HOST ?? "")) return { reason: "SOURCE_BINDING_INVALID", aliasDeploymentId: null };
+  if (typeof env.VERCEL_TOKEN !== "string" || env.VERCEL_TOKEN.length === 0) return { reason: "VERCEL_TOKEN_MISSING", aliasDeploymentId: null };
   const headers = { Authorization: `Bearer ${env.VERCEL_TOKEN}` };
   const options = { headers, redirect: "manual", cache: "no-store", signal: AbortSignal.timeout(10_000) };
+  let aliasDeploymentId = null;
   try {
     const aliasResponse = await fetchImpl(`https://api.vercel.com/v4/aliases/${STAGING_ALIAS}?slug=${VERCEL_SCOPE}`, options);
-    if (aliasResponse.status !== 200) return vercelApiFailure(aliasResponse, "ALIAS");
+    if (aliasResponse.status !== 200) return { reason: vercelApiFailure(aliasResponse, "ALIAS"), aliasDeploymentId };
     const alias = await aliasResponse.json();
-    if (alias.alias !== STAGING_ALIAS || alias.redirect || alias.deletedAt || !/^dpl_[a-zA-Z0-9]+$/u.test(alias.deploymentId)) return "ALIAS_METADATA_INVALID";
+    if (alias.alias !== STAGING_ALIAS || alias.redirect || alias.deletedAt || !/^dpl_[a-zA-Z0-9]{1,64}$/u.test(alias.deploymentId)) return { reason: "ALIAS_METADATA_INVALID", aliasDeploymentId };
+    aliasDeploymentId = alias.deploymentId;
     const deploymentResponse = await fetchImpl(`https://api.vercel.com/v13/deployments/${env.CELEBRATEDEAL_DEPLOYMENT_HOST}?slug=${VERCEL_SCOPE}`, options);
-    if (deploymentResponse.status !== 200) return vercelApiFailure(deploymentResponse, "DEPLOYMENT");
+    if (deploymentResponse.status !== 200) return { reason: vercelApiFailure(deploymentResponse, "DEPLOYMENT"), aliasDeploymentId };
     const deployment = await deploymentResponse.json();
-    if (alias.deploymentId !== deployment.id) return "ALIAS_DEPLOYMENT_MISMATCH";
-    if (alias.projectId !== deployment.projectId) return "ALIAS_PROJECT_MISMATCH";
+    if (alias.deploymentId !== deployment.id) return { reason: "ALIAS_DEPLOYMENT_MISMATCH", aliasDeploymentId };
+    if (alias.projectId !== deployment.projectId) return { reason: "ALIAS_PROJECT_MISMATCH", aliasDeploymentId };
     if (deployment.url !== env.CELEBRATEDEAL_DEPLOYMENT_HOST
-      || deployment.name !== VERCEL_PROJECT || deployment.target !== null || deployment.readyState !== "READY") return "DEPLOYMENT_METADATA_INVALID";
-    return "VERIFIED";
+      || deployment.name !== VERCEL_PROJECT || deployment.target !== null || deployment.readyState !== "READY") return { reason: "DEPLOYMENT_METADATA_INVALID", aliasDeploymentId };
+    return { reason: "VERIFIED", aliasDeploymentId };
   } catch {
-    return "VERCEL_API_EXCEPTION";
+    return { reason: "VERCEL_API_EXCEPTION", aliasDeploymentId };
   }
+}
+
+/** Return only a fixed reason code; never include the token or provider response. */
+export async function diagnoseStagingAliasBinding(env, fetchImpl = fetch) {
+  return (await inspectStagingAliasBinding(env, fetchImpl)).reason;
 }
 
 // Only answers that mean "this token cannot read the alias" fall back. A definitive
@@ -108,31 +119,46 @@ const ALIAS_API_CREDENTIAL_FAILURES = new Set([
   "DEPLOYMENT_PERMISSION_DENIED",
 ]);
 
+// When the token could read the alias record but not the deployment, the alias's deployment
+// id is kept in the output so the self-attested deployment can be audited afterwards.
+const DEPLOYMENT_CREDENTIAL_FAILURES = new Set(["DEPLOYMENT_AUTH_REJECTED", "DEPLOYMENT_PERMISSION_DENIED"]);
+
 /**
- * Alias binding proof with two independent methods:
- *  1. VERCEL_API: Vercel's alias record names the exact Preview deployment.
- *  2. SELF_ATTESTATION, only when the token cannot read that record: the alias is
- *     resolved by Vercel, the /api/health response is produced by the deployment it
- *     routes to, and VERCEL_GIT_COMMIT_SHA/VERCEL_URL in it are injected by Vercel.
- *     Both must equal the source SHA and the Preview host bound by the GitHub record.
- * Returns fixed codes only.
+ * Alias binding proof:
+ *  1. VERCEL_API: Vercel's alias record names the exact Preview deployment. This is the
+ *     primary, independent proof; it is preferred whenever the token can read the record.
+ *  2. SELF_ATTESTATION, only when the token cannot read that record. This is the SAME proof
+ *     the --verify-lineage step already made (protected-master SHA + alias /api/health
+ *     identity), not a second independent one. It stops an honest but unreviewed deployment;
+ *     it cannot stop a deployment whose own code forges VERCEL_GIT_COMMIT_SHA/VERCEL_URL.
+ * Returns fixed codes, plus the alias deployment id when it was read.
  */
 export async function diagnoseStagingAliasBindingWithFallback(env, fetchImpl = fetch, dependencies = {}) {
-  const vercelApi = await (dependencies.diagnoseAlias ?? diagnoseStagingAliasBinding)(env, fetchImpl);
+  const inspected = dependencies.diagnoseAlias
+    ? { reason: await dependencies.diagnoseAlias(env, fetchImpl), aliasDeploymentId: null }
+    : await inspectStagingAliasBinding(env, fetchImpl);
+  const vercelApi = inspected.reason;
+  const audit = DEPLOYMENT_CREDENTIAL_FAILURES.has(vercelApi) && inspected.aliasDeploymentId
+    ? { aliasDeploymentId: inspected.aliasDeploymentId }
+    : {};
   if (vercelApi === "VERIFIED") return { reason: "VERIFIED", method: "VERCEL_API", vercelApi };
   if (!ALIAS_API_CREDENTIAL_FAILURES.has(vercelApi)) return { reason: vercelApi, method: "NONE", vercelApi };
   try {
+    await (dependencies.verifyShaOnProtectedMasterImpl ?? verifyShaOnProtectedMaster)(env.CELEBRATEDEAL_SOURCE_SHA, env.GITHUB_TOKEN, fetchImpl);
     const attested = await (dependencies.verifyAliasAttestationImpl ?? verifyAliasAttestation)({
       sourceSha: env.CELEBRATEDEAL_SOURCE_SHA,
       previewHost: env.CELEBRATEDEAL_DEPLOYMENT_HOST,
     }, fetchImpl);
     if (attested?.host === STAGING_ALIAS && attested.commitShaMatched === true && attested.vercelUrlMatched === true) {
-      return { reason: "VERIFIED", method: "SELF_ATTESTATION", vercelApi };
+      return { reason: "VERIFIED", method: "SELF_ATTESTATION", vercelApi, ...audit };
     }
-    return { reason: "ALIAS_ATTESTATION_FAILED", method: "NONE", vercelApi };
+    return { reason: "ALIAS_ATTESTATION_FAILED", method: "NONE", vercelApi, ...audit };
   } catch (error) {
-    const code = typeof error?.message === "string" && /^ALIAS_ATTESTATION_[A-Z_]+$/u.test(error.message) ? error.message : "ALIAS_ATTESTATION_FAILED";
-    return { reason: code, method: "NONE", vercelApi };
+    const code = typeof error?.message === "string"
+      && /^(?:ALIAS_ATTESTATION_[A-Z_]+|SOURCE_NOT_ON_PROTECTED_MASTER|PROTECTED_MASTER_CHECK_FAILED)$/u.test(error.message)
+      ? error.message
+      : "ALIAS_ATTESTATION_FAILED";
+    return { reason: code, method: "NONE", vercelApi, ...audit };
   }
 }
 
@@ -620,8 +646,8 @@ async function main() {
     return;
   }
   if (process.argv[2] === "--verify-alias") {
-    const { reason, method, vercelApi } = await diagnoseStagingAliasBindingWithFallback(process.env);
-    process.stdout.write(`${JSON.stringify({ aliasBinding: reason === "VERIFIED" ? "VERIFIED" : "NOT_VERIFIED", reason, method, vercelApi })}\n`);
+    const { reason, method, vercelApi, aliasDeploymentId } = await diagnoseStagingAliasBindingWithFallback(process.env);
+    process.stdout.write(`${JSON.stringify({ aliasBinding: reason === "VERIFIED" ? "VERIFIED" : "NOT_VERIFIED", reason, method, vercelApi, ...(aliasDeploymentId ? { aliasDeploymentId } : {}) })}\n`);
     if (reason !== "VERIFIED" && process.env.RUNNER_TEMP) {
       const report = emptyReport(reason, process.env.CELEBRATEDEAL_SOURCE_SHA);
       await writeFile(`${process.env.RUNNER_TEMP}/celebratedeal-staging-browser-smoke.json`, `${JSON.stringify(report)}\n`, { mode: 0o600 });

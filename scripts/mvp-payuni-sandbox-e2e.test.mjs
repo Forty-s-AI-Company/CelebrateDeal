@@ -1203,7 +1203,19 @@ function aliasHealthResponse({ commitSha = sourceSha, vercelUrl = previewHost, s
   return new Response(JSON.stringify(payload), { status, headers: { "content-type": "application/json" } });
 }
 
-test("verifies exact Preview lineage, then proves the alias serves that deployment, before secret injection", async () => {
+const masterCompareUrl = `https://api.github.com/repos/Forty-s-AI-Company/CelebrateDeal/compare/${sourceSha}...master`;
+
+function masterThenAlias(alias = () => aliasHealthResponse(), calls = [], compare = { status: "ahead", merge_base_commit: { sha: sourceSha } }) {
+  return async (url, init) => {
+    calls.push(String(url));
+    if (String(url) === masterCompareUrl) return new Response(JSON.stringify(compare), { status: 200 });
+    assert.equal(init.method, "GET");
+    assert.equal(init.redirect, "manual");
+    return alias();
+  };
+}
+
+test("verifies exact Preview lineage, protected master, then proves the alias serves that deployment", async () => {
   const source = {
     CELEBRATEDEAL_SOURCE_SHA: sourceSha,
     CELEBRATEDEAL_DEPLOYMENT_HOST: previewHost,
@@ -1215,24 +1227,31 @@ test("verifies exact Preview lineage, then proves the alias serves that deployme
     return { host: previewHost, deploymentMatched: true, sourceMatched: true, preview: true, ready: true };
   };
   const calls = [];
-  const valid = await verifyMvpPayUniLineage(source, {
-    verifyDeploymentImpl,
-    fetchImpl: async (url, init) => {
-      calls.push(String(url));
-      assert.equal(init.method, "GET");
-      assert.equal(init.redirect, "manual");
-      return aliasHealthResponse();
-    },
-  });
-  assert.equal(valid, true);
+  assert.equal(await verifyMvpPayUniLineage(source, { verifyDeploymentImpl, fetchImpl: masterThenAlias(undefined, calls) }), true);
   // Vercel firewalls the immutable Preview host (403 deny); it is never probed directly.
-  assert.deepEqual(calls, [`https://${stagingAlias}/api/health`]);
+  assert.deepEqual(calls, [masterCompareUrl, `https://${stagingAlias}/api/health`]);
 
   assert.equal(await verifyMvpPayUniLineage({ ...source, CELEBRATEDEAL_DEPLOYMENT_HOST: "example.com" }), false);
   assert.equal(await verifyMvpPayUniLineage({ ...source, GITHUB_TOKEN: "" }), false);
   assert.equal(await verifyMvpPayUniLineage(source, {
     verifyDeploymentImpl: async () => ({ host: previewHost, deploymentMatched: true, sourceMatched: false, preview: true, ready: true }),
   }), false);
+});
+
+test("a non-master SHA is BLOCKED on every surface even when the alias attestation would pass", async () => {
+  const verifyDeploymentImpl = async () => ({ host: previewHost, deploymentMatched: true, sourceMatched: true, preview: true, ready: true });
+  for (const surface of [undefined, "fixed_alias", "immutable_preview"]) {
+    const source = {
+      CELEBRATEDEAL_SOURCE_SHA: sourceSha,
+      CELEBRATEDEAL_DEPLOYMENT_HOST: previewHost,
+      GITHUB_TOKEN: "test-github-token",
+      ...(surface ? { CELEBRATEDEAL_BROWSER_SURFACE: surface } : {}),
+    };
+    const calls = [];
+    const fetchImpl = masterThenAlias(undefined, calls, { status: "diverged", merge_base_commit: { sha: "c".repeat(40) } });
+    assert.equal(await diagnoseMvpPayUniLineage(source, { verifyDeploymentImpl, fetchImpl }), "SOURCE_NOT_ON_PROTECTED_MASTER", String(surface));
+    assert.deepEqual(calls, [masterCompareUrl], String(surface));
+  }
 });
 
 test("alias attestation failures keep the lineage gate BLOCKED with a fixed reason", async () => {
@@ -1243,11 +1262,12 @@ test("alias attestation failures keep the lineage gate BLOCKED with a fixed reas
   };
   const verifyDeploymentImpl = async () => ({ host: previewHost, deploymentMatched: true, sourceMatched: true, preview: true, ready: true });
   const cases = [
-    ["ALIAS_ATTESTATION_SHA_MISMATCH", async () => aliasHealthResponse({ commitSha: "c".repeat(40) })],
-    ["ALIAS_ATTESTATION_HOST_MISMATCH", async () => aliasHealthResponse({ vercelUrl: "older-preview.vercel.app" })],
-    ["ALIAS_ATTESTATION_UNREACHABLE", async () => { throw new TypeError("fetch failed"); }],
-    ["ALIAS_ATTESTATION_FIELDS_MISSING", async () => aliasHealthResponse({ body: { ok: true, database: "ok", latencyMs: 1 } })],
-    ["ALIAS_ATTESTATION_HTTP_REJECTED", async () => aliasHealthResponse({ status: 503 })],
+    ["ALIAS_ATTESTATION_SHA_MISMATCH", masterThenAlias(() => aliasHealthResponse({ commitSha: "c".repeat(40) }))],
+    ["ALIAS_ATTESTATION_HOST_MISMATCH", masterThenAlias(() => aliasHealthResponse({ vercelUrl: "older-preview.vercel.app" }))],
+    ["ALIAS_ATTESTATION_UNREACHABLE", masterThenAlias(() => { throw new TypeError("fetch failed"); })],
+    ["ALIAS_ATTESTATION_FIELDS_MISSING", masterThenAlias(() => aliasHealthResponse({ body: { ok: true, database: "ok", latencyMs: 1 } }))],
+    ["ALIAS_ATTESTATION_HTTP_REJECTED", masterThenAlias(() => aliasHealthResponse({ status: 503 }))],
+    ["PROTECTED_MASTER_CHECK_FAILED", async () => new Response("{}", { status: 403 })],
   ];
   for (const [reason, fetchImpl] of cases) {
     assert.equal(await diagnoseMvpPayUniLineage(source, { verifyDeploymentImpl, fetchImpl }), reason);

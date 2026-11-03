@@ -531,10 +531,13 @@ function aliasIdentity({ commitSha = INPUT.CELEBRATEDEAL_SOURCE_SHA, vercelUrl =
   });
 }
 
-function vercelThenAlias(vercelStatus, alias = () => aliasIdentity(), requests = []) {
+const MASTER_COMPARE_URL = `https://api.github.com/repos/Forty-s-AI-Company/CelebrateDeal/compare/${INPUT.CELEBRATEDEAL_SOURCE_SHA}...master`;
+
+function vercelThenAlias(vercelStatus, alias = () => aliasIdentity(), requests = [], compare = { status: "ahead", merge_base_commit: { sha: INPUT.CELEBRATEDEAL_SOURCE_SHA } }) {
   return async (url) => {
     requests.push(String(url));
     if (String(url) === ALIAS_HEALTH_URL) return alias();
+    if (String(url) === MASTER_COMPARE_URL) return new Response(JSON.stringify(compare), { status: 200 });
     return { status: vercelStatus, json: async () => ({}) };
   };
 }
@@ -579,4 +582,35 @@ test("--verify-alias stays NOT_VERIFIED when both proofs fail or Vercel gives a 
       ? { alias: "celebrate-deal-staging.carry-digital-nomad.in.net", deploymentId: "dpl_old", projectId: "prj_fixture" }
       : { id: "dpl_fixture", projectId: "prj_fixture", url: INPUT.CELEBRATEDEAL_DEPLOYMENT_HOST, name: "celebrate-deal-staging", target: null, readyState: "READY" }) });
   assert.deepEqual(mismatch, { reason: "ALIAS_DEPLOYMENT_MISMATCH", method: "NONE", vercelApi: "ALIAS_DEPLOYMENT_MISMATCH" });
+});
+
+test("--verify-alias fallback BLOCKS a non-master SHA even when the alias would attest", async () => {
+  const requests = [];
+  const offMaster = { status: "diverged", merge_base_commit: { sha: "c".repeat(40) } };
+  assert.deepEqual(
+    await diagnoseStagingAliasBindingWithFallback(INPUT, vercelThenAlias(403, undefined, requests, offMaster)),
+    { reason: "SOURCE_NOT_ON_PROTECTED_MASTER", method: "NONE", vercelApi: "ALIAS_PERMISSION_DENIED" },
+  );
+  assert.equal(requests.includes(ALIAS_HEALTH_URL), false);
+  assert.equal(await verifyStagingAliasBinding(INPUT, vercelThenAlias(403, undefined, [], offMaster)), false);
+  // No read-only token, no fallback.
+  assert.equal((await diagnoseStagingAliasBindingWithFallback({ ...INPUT, GITHUB_TOKEN: "" }, vercelThenAlias(403))).reason, "PROTECTED_MASTER_CHECK_FAILED");
+});
+
+test("--verify-alias keeps the alias deployment id for audit when only the deployment read is denied", async () => {
+  for (const [status, vercelApi] of [[403, "DEPLOYMENT_PERMISSION_DENIED"], [401, "DEPLOYMENT_AUTH_REJECTED"]]) {
+    const fetchImpl = async (url) => {
+      if (String(url) === ALIAS_HEALTH_URL) return aliasIdentity();
+      if (String(url) === MASTER_COMPARE_URL) return new Response(JSON.stringify({ status: "identical", merge_base_commit: { sha: INPUT.CELEBRATEDEAL_SOURCE_SHA } }), { status: 200 });
+      if (String(url).includes("/v4/aliases/")) {
+        return { status: 200, json: async () => ({ alias: "celebrate-deal-staging.carry-digital-nomad.in.net", deploymentId: "dpl_AuditFixture", projectId: "prj_fixture" }) };
+      }
+      return { status, json: async () => ({}) };
+    };
+    assert.deepEqual(await diagnoseStagingAliasBindingWithFallback(INPUT, fetchImpl), {
+      reason: "VERIFIED", method: "SELF_ATTESTATION", vercelApi, aliasDeploymentId: "dpl_AuditFixture",
+    });
+  }
+  // The alias id is never reported for other outcomes (here the alias record itself was denied).
+  assert.equal("aliasDeploymentId" in await diagnoseStagingAliasBindingWithFallback(INPUT, vercelThenAlias(403)), false);
 });

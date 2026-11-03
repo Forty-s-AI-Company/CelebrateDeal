@@ -21,7 +21,15 @@ beforeEach(() => {
   vi.stubEnv("VERCEL_GIT_COMMIT_SHA", "");
   vi.stubEnv("VERCEL_DEPLOYMENT_ID", "");
   vi.stubEnv("VERCEL_URL", "");
+  vi.stubEnv("VERCEL_ENV", "");
 });
+
+function stubPreviewIdentity() {
+  vi.stubEnv("VERCEL_ENV", "preview");
+  vi.stubEnv("VERCEL_GIT_COMMIT_SHA", "a".repeat(40));
+  vi.stubEnv("VERCEL_DEPLOYMENT_ID", "dpl_Fixture123");
+  vi.stubEnv("VERCEL_URL", "celebrate-deal-staging-abc123-a25814740s-projects.vercel.app");
+}
 
 afterEach(() => {
   vi.unstubAllEnvs();
@@ -148,11 +156,9 @@ describe("GET /api/health", () => {
     expect(warn).not.toHaveBeenCalled();
   });
 
-  it("reports the Vercel-injected deployment identity used by the staging alias attestation", async () => {
+  it("reports the Vercel-injected deployment identity on Preview for the staging alias attestation", async () => {
     mocks.queryRaw.mockResolvedValue([{ "?column?": 1 }]);
-    vi.stubEnv("VERCEL_GIT_COMMIT_SHA", "a".repeat(40));
-    vi.stubEnv("VERCEL_DEPLOYMENT_ID", "dpl_Fixture123");
-    vi.stubEnv("VERCEL_URL", "celebrate-deal-staging-abc123-a25814740s-projects.vercel.app");
+    stubPreviewIdentity();
 
     const response = await GET();
     const body = await response.json();
@@ -172,6 +178,8 @@ describe("GET /api/health", () => {
 
   it("keeps the identity on a failed database probe so drift stays diagnosable", async () => {
     mocks.queryRaw.mockRejectedValue(new Error("unreachable"));
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    vi.stubEnv("VERCEL_ENV", "preview");
     vi.stubEnv("VERCEL_GIT_COMMIT_SHA", "b".repeat(40));
     vi.stubEnv("VERCEL_URL", "celebrate-deal-staging-def456-a25814740s-projects.vercel.app");
 
@@ -195,6 +203,7 @@ describe("GET /api/health", () => {
     ["VERCEL_URL", "user:secret@celebrate-deal-staging.vercel.app"],
   ] as const)("never echoes an out-of-shape %s value", async (name, value) => {
     mocks.queryRaw.mockResolvedValue([{ "?column?": 1 }]);
+    vi.stubEnv("VERCEL_ENV", "preview");
     vi.stubEnv(name, value);
 
     const response = await GET();
@@ -202,6 +211,20 @@ describe("GET /api/health", () => {
 
     expect(body.deployment).toEqual(NO_IDENTITY);
     expect(JSON.stringify(body)).not.toContain(value);
+  });
+
+  it.each(["production", "development", ""])("returns a null identity outside Preview (VERCEL_ENV=%s)", async (environment) => {
+    mocks.queryRaw.mockResolvedValue([{ "?column?": 1 }]);
+    stubPreviewIdentity();
+    vi.stubEnv("VERCEL_ENV", environment);
+
+    const response = await GET();
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.deployment).toEqual(NO_IDENTITY);
+    expect(JSON.stringify(body)).not.toContain("a".repeat(40));
+    expect(JSON.stringify(body)).not.toContain("vercel.app");
   });
 
   it("never includes server secrets or database configuration in the response", async () => {

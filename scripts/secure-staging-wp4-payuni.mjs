@@ -4,7 +4,7 @@ import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
-import { ALIAS_ATTESTATION_FAILURES, STAGING_ALIAS_HOST, verifyAliasAttestation, verifyDeployment } from "./secure-staging-runner.mjs";
+import { ALIAS_ATTESTATION_FAILURES, PROTECTED_MASTER_FAILURES, STAGING_ALIAS_HOST, verifyAliasAttestation, verifyDeployment, verifyShaOnProtectedMaster } from "./secure-staging-runner.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const TASK = "wp4-payuni-sandbox-reconciliation";
@@ -79,6 +79,7 @@ export const DIAGNOSTIC_CATEGORIES = Object.freeze([
   "GITHUB_DEPLOYMENT_READ_BUDGET_EXHAUSTED",
   "GITHUB_DEPLOYMENT_PAGINATION_INVALID",
   "STAGING_HEALTH_FAILED",
+  ...PROTECTED_MASTER_FAILURES,
   ...ALIAS_ATTESTATION_FAILURES,
   "CHILD_EXECUTION_FAILED",
   "CHILD_OUTPUT_INVALID",
@@ -761,6 +762,7 @@ async function writeReceipt(receipt, runnerTemp) {
 
 export async function runParent(source, dependencies = {}) {
   const verifyDeploymentImpl = dependencies.verifyDeploymentImpl ?? verifyDeployment;
+  const verifyShaOnProtectedMasterImpl = dependencies.verifyShaOnProtectedMasterImpl ?? verifyShaOnProtectedMaster;
   const verifyAliasAttestationImpl = dependencies.verifyAliasAttestationImpl ?? verifyAliasAttestation;
   const fetchImpl = dependencies.fetchImpl ?? fetch;
   const spawnSyncImpl = dependencies.spawnSyncImpl ?? spawnSync;
@@ -773,6 +775,8 @@ export async function runParent(source, dependencies = {}) {
   let childStarted = false;
   try {
     const lineage = await verifyDeploymentImpl(source);
+    // The alias attestation cannot detect a forged identity; only protected-master SHAs qualify.
+    await verifyShaOnProtectedMasterImpl(source.CELEBRATEDEAL_SOURCE_SHA, source.GITHUB_TOKEN, fetchImpl);
     // Vercel firewalls the immutable Preview host. The fixed alias must attest that it
     // serves the same commit SHA and Preview host the GitHub record bound together.
     const alias = await verifyAliasAttestationImpl({ sourceSha: source.CELEBRATEDEAL_SOURCE_SHA, previewHost: lineage.host }, fetchImpl);

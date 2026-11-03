@@ -3,7 +3,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
-import { STAGING_ALIAS_HOST, verifyAliasAttestation, verifyDeployment } from "./secure-staging-runner.mjs";
+import { STAGING_ALIAS_HOST, verifyAliasAttestation, verifyDeployment, verifyShaOnProtectedMaster } from "./secure-staging-runner.mjs";
 
 const SOURCE_SHA = /^[a-f0-9]{40}$/u;
 const PREVIEW_HOST = /^(?=.{1,253}$)[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.vercel\.app$/u;
@@ -413,24 +413,6 @@ export function validateExistingRefundRecoveryInvocation(input) {
 }
 
 /**
- * True only when the commit equals or is an ancestor of protected master, which
- * covers merge-queue commits that fast-forward master (no branch-name check).
- */
-async function isShaOnProtectedMaster(sourceSha, token, fetchImpl) {
-  const response = await fetchImpl(
-    `https://api.github.com/repos/Forty-s-AI-Company/CelebrateDeal/compare/${sourceSha}...master`,
-    {
-      headers: { Accept: "application/vnd.github+json", Authorization: `Bearer ${token}`, "X-GitHub-Api-Version": "2022-11-28" },
-      redirect: "manual",
-      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-    },
-  );
-  if (response.status !== 200 || response.headers.has("location")) return false;
-  const body = await response.json();
-  return body?.merge_base_commit?.sha === sourceSha && (body.status === "identical" || body.status === "ahead");
-}
-
-/**
  * Verifies the immutable Preview host against the protected GitHub deployment
  * record before any PayUni or application secret is injected into the job, then
  * proves that the fixed staging alias is serving that exact deployment.
@@ -459,10 +441,11 @@ export async function diagnoseMvpPayUniLineage(source = process.env, dependencie
       || lineage.preview !== true
       || lineage.ready !== true) return "GITHUB_DEPLOYMENT_LINEAGE_MISMATCH";
 
-    // Browser smoke only: the commit must already be on protected master.
     const surface = typeof source.CELEBRATEDEAL_BROWSER_SURFACE === "string" ? source.CELEBRATEDEAL_BROWSER_SURFACE : "";
     if (surface !== "" && surface !== "fixed_alias" && surface !== "immutable_preview") return "INPUT_REJECTED";
-    if (surface !== "" && !await isShaOnProtectedMaster(sourceSha, source.GITHUB_TOKEN, fetchImpl)) return "SOURCE_NOT_ON_PROTECTED_MASTER";
+    // Every surface: the commit must be protected master itself or an ancestor. The alias
+    // self-attestation below cannot detect a forged identity, only an unreviewed deployment.
+    await (dependencies.verifyShaOnProtectedMasterImpl ?? verifyShaOnProtectedMaster)(sourceSha, source.GITHUB_TOKEN, fetchImpl);
     if (surface === "immutable_preview") {
       // Explicit pre-cutover mode only: the alias does not serve this deployment yet.
       const health = await fetchImpl(fixedUrl(previewHost, "/api/health"), {
@@ -480,7 +463,7 @@ export async function diagnoseMvpPayUniLineage(source = process.env, dependencie
     return "VERIFIED";
   } catch (error) {
     const code = typeof error?.message === "string" ? error.message : "";
-    return /^(?:GITHUB_DEPLOYMENT|ALIAS_ATTESTATION)_[A-Z0-9_]+$/u.test(code) ? code : "LINEAGE_CHECK_FAILED";
+    return /^(?:(?:GITHUB_DEPLOYMENT|ALIAS_ATTESTATION)_[A-Z0-9_]+|SOURCE_NOT_ON_PROTECTED_MASTER|PROTECTED_MASTER_CHECK_FAILED)$/u.test(code) ? code : "LINEAGE_CHECK_FAILED";
   }
 }
 
@@ -489,9 +472,11 @@ export async function verifyMvpPayUniLineage(source = process.env, dependencies 
 }
 
 /**
- * Re-attests the fixed alias immediately before a secret-bearing flow. The
- * GitHub lineage gate already ran in an earlier step of the same protected job;
- * this repeat closes the window in which the alias could have been moved.
+ * Re-attests the fixed alias immediately before a secret-bearing flow. The GitHub
+ * lineage gate and the protected-master check already ran (--verify-lineage) in an
+ * earlier step of the same protected job with the same immutable dispatch inputs;
+ * this repeat only closes the window in which the alias could have been moved.
+ * These execution steps intentionally carry no GITHUB_TOKEN.
  */
 export async function attestOperationHost(input, dependencies = {}) {
   const sourceSha = typeof input?.sourceSha === "string" ? input.sourceSha.trim().toLowerCase() : "";
