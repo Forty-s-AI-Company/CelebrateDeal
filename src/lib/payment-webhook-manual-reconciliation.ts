@@ -108,7 +108,10 @@ export async function recordPaymentWebhookManualReconciliation(input: {
       if (!event) throw error;
     }
   }
-  if (transaction && transaction.status === "pending" && !paymentHeldForManualReconciliation(transaction.metadata)) {
+  // An expired trade (TradeStatus 4) received no money: record it, but let the
+  // reservation expire normally (RR-03).
+  if (input.error.holdsPaymentForReconciliation && transaction && transaction.status === "pending"
+    && !paymentHeldForManualReconciliation(transaction.metadata)) {
     await db.paymentTransaction.updateMany({
       where: { id: transaction.id, vendorId: transaction.vendorId, status: "pending" },
       data: {

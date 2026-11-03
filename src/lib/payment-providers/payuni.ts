@@ -77,23 +77,35 @@ function optionalCents(value: unknown) {
 }
 
 // PayUni UPP 2.0 Notify/Return result codes (docs.payuni.com.tw/web/#/7/34,
-// read 2026-10-19). TradeStatus: 0 number issued (ATM/CVS, not paid), 1 paid,
-// 2 payment failed, 3 payment cancelled, 8 awaiting confirmation. 4 (expired)
-// and 9 (unpaid) are not in the UPP table; they follow the 2026Q4 review
-// (F-037) and the trade query contract. 待 Sandbox 樣本驗證.
+// re-read 2026-11-03, docs/launch/payuni-tradestatus-mapping.md). TradeStatus:
+// 0 number issued (ATM/CVS, not paid), 1 paid, 2 payment failed, 3 payment
+// cancelled, 8 awaiting confirmation. 9 is "unpaid" in the trade query table
+// (#/7/164): not yet paid, never a failure, so it is pending like 0 and a later
+// Notify still settles the order. 4 is not in the UPP table (it is "expired"
+// only in the query table and the Version 1.0 expiry notice): no money was
+// received, so it is recorded for reconciliation without holding the payment
+// (RR-03). Every other well-formed but unmapped code is unknown: never paid,
+// never failed, recorded and held for manual reconciliation.
+// 待 Sandbox 樣本驗證 (no 4/9 UPP sample yet).
 // PaymentType: 1 credit card, 2 ATM, 3 CVS code, 5 CVS pickup COD, 6 icash,
-// 7 AFTEE, 9 LINE Pay, 10 home-delivery COD, 11 JKOPAY.
+// 7 AFTEE, 8 C2B return collection (query only), 9 LINE Pay, 10 home-delivery
+// COD, 11 JKOPAY. Apple/Google/Samsung Pay are card AuthType 4/5/6, so their
+// PaymentType is inferred to be 1 (not stated verbatim; 待 Sandbox 實測).
 const PAYUNI_PAID_TRADE_STATUS = "1";
-const PAYUNI_FAILED_TRADE_STATUSES = new Set(["2", "3", "4", "9"]);
-const PAYUNI_PENDING_TRADE_STATUSES = new Set(["0", "8"]);
+const PAYUNI_FAILED_TRADE_STATUSES = new Set(["2", "3"]);
+const PAYUNI_PENDING_TRADE_STATUSES = new Set(["0", "8", "9"]);
+const PAYUNI_EXPIRED_TRADE_STATUS = "4";
+// A well-formed provider code outside the table above; anything else is malformed.
+const PAYUNI_TRADE_STATUS_CODE = /^[0-9]{1,2}$/;
 // Closed beta accepts credit card only; buyer checkout sends Credit=1.
 const PAYUNI_PAYABLE_PAYMENT_TYPES = new Set(["1"]);
 
 /**
  * Decides a signed UPP 2.0 payment callback. Only signed Status=SUCCESS with
  * TradeStatus=1 and an allowlisted PaymentType is paid, and the unsigned outer
- * Status must agree. Failed/cancelled/expired/unpaid are failed; issued or
- * awaiting-confirmation states change nothing; anything else fails closed.
+ * Status must agree. Failed/cancelled are failed; issued, awaiting
+ * confirmation and unpaid change nothing; an unmapped code goes to manual
+ * reconciliation; a malformed one fails closed.
  */
 function payUniUppEventType(envelope: Record<string, unknown>, payload: Record<string, unknown>): "paid" | "failed" {
   // Bounded identifiers and the allowlisted snapshot travel with a refusal so
@@ -111,7 +123,13 @@ function payUniUppEventType(envelope: Record<string, unknown>, payload: Record<s
   const tradeStatus = optionalPayloadText(payload.TradeStatus) ?? "";
   if (PAYUNI_PENDING_TRADE_STATUSES.has(tradeStatus)) throw notActionable("trade_pending");
   if (PAYUNI_FAILED_TRADE_STATUSES.has(tradeStatus)) return "failed";
-  if (tradeStatus !== PAYUNI_PAID_TRADE_STATUS) throw new Error("Unsupported PayUni payment status.");
+  if (tradeStatus !== PAYUNI_PAID_TRADE_STATUS) {
+    // An unmapped provider code (for example 4) is neither success nor
+    // failure: keep the signed snapshot for manual reconciliation.
+    if (tradeStatus === PAYUNI_EXPIRED_TRADE_STATUS) throw notActionable("trade_expired");
+    if (PAYUNI_TRADE_STATUS_CODE.test(tradeStatus)) throw notActionable("trade_status_unknown");
+    throw new Error("Unsupported PayUni payment status.");
+  }
   // The outer Status is not covered by HashInfo and passes through the payer's
   // browser on ReturnURL. It can only veto a paid decision, never create one.
   if (optionalPayloadText(payload.Status) !== "SUCCESS") throw notActionable("provider_status_not_success");
