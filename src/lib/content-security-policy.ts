@@ -52,10 +52,14 @@ function baseDirectives(nonce: string, development: boolean): Directives {
     // Merchant images (R2 public URLs, external https images), data: and blob:
     // previews before upload, DiceBear interaction avatars.
     "img-src": ["'self'", "data:", "blob:", "https:"],
-    // Self-hosted fonts under /fonts and the Next.js font output.
-    "font-src": ["'self'", "data:"],
+    // Self-hosted fonts under /fonts and the Next.js font output; https: for
+    // merchant page CSS and static custom-code frames, which the editor
+    // preview renders on admin pages as well.
+    "font-src": ["'self'", "data:", "https:"],
     // Cloudflare Stream playback (hls.js uses blob: MediaSource URLs) and
-    // merchant-provided https video files.
+    // merchant-provided https video files. The Stream hosts are redundant
+    // with https: today and listed on purpose: they document the feature and
+    // keep Stream working if https: is ever narrowed.
     "media-src": ["'self'", "blob:", ...STREAM_HOSTS, "https:"],
     // Turnstile challenge, YouTube (privacy-enhanced) and Vimeo players, and
     // the same-origin custom-code sandbox document.
@@ -84,9 +88,8 @@ const PUBLIC_FUNNEL_EXTRA: Directives = {
   // already trusts what the nonced init scripts insert).
   "script-src": ["https://www.googletagmanager.com", "https://connect.facebook.net"],
   // Static custom-code frames (srcdoc, no scripts) inherit this page policy;
-  // merchant CSS may load https stylesheets and fonts.
+  // merchant CSS may load https stylesheets.
   "style-src": ["https:"],
-  "font-src": ["https:"],
   "connect-src": [
     "https://www.google-analytics.com",
     "https://*.google-analytics.com",
@@ -100,25 +103,37 @@ export type BuildCspOptions = {
   nonce: string;
   surface: CspSurface;
   development?: boolean;
-  /**
-   * Report-only preview of the next tightening: <style> elements need the
-   * nonce (style attributes stay allowed). Only sent beside an enforced policy.
-   */
-  nonceStyleElements?: boolean;
 };
 
-export function buildContentSecurityPolicy({ nonce, surface, development = false, nonceStyleElements = false }: BuildCspOptions): string {
+function serialize(directives: Directives): string {
+  return Object.entries(directives).map(([name, sources]) => `${name} ${sources.join(" ")}`).join("; ");
+}
+
+export function buildContentSecurityPolicy({ nonce, surface, development = false }: BuildCspOptions): string {
   if (!isValidCspNonce(nonce)) throw new Error("Invalid CSP nonce");
   const directives = baseDirectives(nonce, development);
   if (surface === "public-funnel") {
     for (const [name, sources] of Object.entries(PUBLIC_FUNNEL_EXTRA)) directives[name] = [...directives[name]!, ...sources];
   }
-  if (nonceStyleElements) {
-    const styleSources = directives["style-src"]!.filter((source) => source !== "'unsafe-inline'");
-    directives["style-src-elem"] = [...styleSources, `'nonce-${nonce}'`];
-    directives["style-src-attr"] = ["'unsafe-inline'"];
-  }
-  return Object.entries(directives).map(([name, sources]) => `${name} ${sources.join(" ")}`).join("; ");
+  return serialize(directives);
+}
+
+/**
+ * Report-Only preview of the next tightening, sent only beside an enforced
+ * policy on app pages: <style> elements need the nonce, style attributes stay
+ * allowed. It has no other directive, so it reports nothing the enforced
+ * policy already covers. Public funnel pages get no preview: merchant page
+ * CSS, static custom-code frames and visitor traffic would only add noise.
+ * Expected reports are listed in docs/launch/csp-rollout.md.
+ */
+export function buildStylePreviewPolicy(nonce: string): string {
+  if (!isValidCspNonce(nonce)) throw new Error("Invalid CSP nonce");
+  return serialize({
+    "style-src-elem": ["'self'", `'nonce-${nonce}'`],
+    "style-src-attr": ["'unsafe-inline'"],
+    "report-uri": [CSP_REPORT_PATH],
+    "report-to": [CSP_REPORT_GROUP],
+  });
 }
 
 /** 128 random bits, base64 (the character set Next.js accepts for nonces). */
@@ -162,7 +177,7 @@ export function contentSecurityPolicyHeaders({ nonce, surface, development = fal
   const response: Record<string, string> = { "Reporting-Endpoints": `${CSP_REPORT_GROUP}="${CSP_REPORT_PATH}"` };
   if (enforce) {
     response["Content-Security-Policy"] = policy;
-    response["Content-Security-Policy-Report-Only"] = buildContentSecurityPolicy({ nonce, surface, development, nonceStyleElements: true });
+    if (surface === "app") response["Content-Security-Policy-Report-Only"] = buildStylePreviewPolicy(nonce);
   } else {
     response["Content-Security-Policy-Report-Only"] = policy;
   }

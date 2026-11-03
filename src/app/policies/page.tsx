@@ -8,7 +8,8 @@ export const metadata: Metadata = {
   description: "查看 CelebrateDeal 政策發布狀態、訂單協助與商家使用指南。",
 };
 
-// 生效狀態依台灣時間的日期判斷，每小時重新產生一次。
+// 生效狀態依台灣時間的日期判斷。F-156 起所有頁面因 CSP nonce 都是動態渲染，revalidate
+// 目前沒有作用（每次請求都重新判斷）；保留是為了日後改回靜態時仍維持每小時更新的契約。
 export const revalidate = 3600;
 
 export default function PoliciesPage() {

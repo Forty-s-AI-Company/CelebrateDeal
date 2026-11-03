@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   buildContentSecurityPolicy,
+  buildStylePreviewPolicy,
   contentSecurityPolicyHeaders,
   createCspNonce,
   CSP_REPORT_GROUP,
@@ -86,22 +87,24 @@ describe("site Content Security Policy (F-156)", () => {
     expect(directives(policy).get("connect-src")).not.toContain("https:");
   });
 
-  it("public funnel pages add only the analytics hosts and https styles/fonts for static custom-code frames", () => {
+  it("public funnel pages add only the analytics hosts and https styles for static custom-code frames", () => {
     const app = directives(buildContentSecurityPolicy({ nonce: NONCE, surface: "app" }));
     const funnel = directives(buildContentSecurityPolicy({ nonce: NONCE, surface: "public-funnel" }));
     expect(funnel.get("script-src")).toEqual([...app.get("script-src")!, "https://www.googletagmanager.com", "https://connect.facebook.net"]);
     expect(funnel.get("style-src")).toEqual(["'self'", "'unsafe-inline'", "https:"]);
-    expect(funnel.get("font-src")).toEqual(["'self'", "data:", "https:"]);
+    expect(funnel.get("font-src")).toEqual(app.get("font-src"));
     expect(funnel.get("connect-src")).toContain("https://www.google-analytics.com");
     expect(funnel.get("connect-src")).toContain("https://www.facebook.com");
-    expect(app.get("font-src")).toEqual(["'self'", "data:"]);
+    expect(app.get("font-src")).toEqual(["'self'", "data:", "https:"]);
     expect(app.get("connect-src")).not.toContain("https://www.google-analytics.com");
   });
 
-  it("previews nonce-only <style> elements in the report-only policy beside an enforced one", () => {
-    const policy = directives(buildContentSecurityPolicy({ nonce: NONCE, surface: "app", nonceStyleElements: true }));
+  it("previews nonce-only <style> elements with nothing but the style and report directives", () => {
+    const policy = directives(buildStylePreviewPolicy(NONCE));
+    expect([...policy.keys()]).toEqual(["style-src-elem", "style-src-attr", "report-uri", "report-to"]);
     expect(policy.get("style-src-elem")).toEqual(["'self'", `'nonce-${NONCE}'`]);
     expect(policy.get("style-src-attr")).toEqual(["'unsafe-inline'"]);
+    expect(() => buildStylePreviewPolicy("bad")).toThrow("Invalid CSP nonce");
   });
 
   it("refuses a malformed nonce", () => {
@@ -117,11 +120,14 @@ describe("CSP headers and the CSP_ENFORCE switch", () => {
     expect(set.response["Reporting-Endpoints"]).toBe(`${CSP_REPORT_GROUP}="${CSP_REPORT_PATH}"`);
   });
 
-  it("enforces the policy and keeps a stricter report-only copy when enabled", () => {
-    const set = contentSecurityPolicyHeaders({ nonce: NONCE, surface: "public-funnel", enforce: true });
-    expect(set.response["Content-Security-Policy"]).toBe(set.requestPolicy);
-    expect(set.response["Content-Security-Policy-Report-Only"]).toContain("style-src-elem");
-    expect(set.response["Content-Security-Policy"]).not.toContain("style-src-elem");
+  it("enforces the policy and adds only the style preview on app pages when enabled", () => {
+    const app = contentSecurityPolicyHeaders({ nonce: NONCE, surface: "app", enforce: true });
+    expect(app.response["Content-Security-Policy"]).toBe(app.requestPolicy);
+    expect(app.response["Content-Security-Policy-Report-Only"]).toBe(buildStylePreviewPolicy(NONCE));
+    expect(app.response["Content-Security-Policy"]).not.toContain("style-src-elem");
+    const funnel = contentSecurityPolicyHeaders({ nonce: NONCE, surface: "public-funnel", enforce: true });
+    expect(funnel.response["Content-Security-Policy"]).toBe(funnel.requestPolicy);
+    expect(funnel.response["Content-Security-Policy-Report-Only"]).toBeUndefined();
   });
 
   it.each([

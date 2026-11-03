@@ -1,3 +1,5 @@
+import fs from "node:fs";
+import path from "node:path";
 import { NextRequest } from "next/server";
 import { unstable_doesMiddlewareMatch } from "next/experimental/testing/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -27,9 +29,20 @@ describe("Next Proxy matcher", () => {
   const matches = (url: string) => unstable_doesMiddlewareMatch({ config, url });
 
   it("runs for the marker, public funnels and every HTML document", () => {
-    for (const path of [MARKER_PATH, "/", "/login", "/register", "/dashboard", "/lp/example", "/lp/example/thank-you", "/lp/example/offer/checkout", "/lives/abc/presenter", "/admin/billing", "/policies/privacy", "/portal/shop/learn/course-1", "/browser-qa/funnel-elements/custom-code", "/apiary", "/monitoring-dashboard"]) {
+    for (const path of [MARKER_PATH, "/", "/login", "/register", "/dashboard", "/lp/example", "/lp/example/thank-you", "/lp/example/offer/checkout", "/lives/abc/presenter", "/admin/billing", "/policies/privacy", "/portal/shop/learn/course-1", "/browser-qa/funnel-elements/custom-code", "/apiary", "/monitoring-dashboard", "/live/abc.css", "/live/abc.js", "/p/team/logo.png", "/portal/shop/learn/notes.txt"]) {
       expect(matches(path), path).toBe(true);
     }
+  });
+
+  it("skips every file in /public, and only those, by extension", () => {
+    const files = (directory: string): string[] => fs.readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
+      const full = path.join(directory, entry.name);
+      return entry.isDirectory() ? files(full) : [full];
+    });
+    const publicRoot = path.resolve("public");
+    const publicPaths = files(publicRoot).map((file) => `/${path.relative(publicRoot, file).replaceAll("\\", "/")}`);
+    expect(publicPaths.length).toBeGreaterThan(10);
+    expect(publicPaths.filter((publicPath) => matches(publicPath))).toEqual([]);
   });
 
   it("skips API routes, build assets, the Sentry tunnel, the sandbox document, the certificate SVG and public files", () => {

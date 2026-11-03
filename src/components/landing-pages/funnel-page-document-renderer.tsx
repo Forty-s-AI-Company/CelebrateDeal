@@ -6,6 +6,7 @@ import { flushSync } from "react-dom";
 
 import { createContext, useContext, useEffect, useRef, useState, type CSSProperties, type FormEvent, type MouseEvent, type ReactNode } from "react";
 import { RegistrationSubmissionFeedback } from "@/components/registration-submission-feedback";
+import { useCspNonce } from "@/components/csp-nonce";
 import { LandingPageLink } from "@/components/landing-page-link";
 import { useFunnelRegistrationLinks } from "./funnel-registration-links";
 import { funnelRegistrationHref } from "@/lib/funnel-registration-action";
@@ -974,6 +975,8 @@ export function FunnelPageDocumentRenderer({ document, viewport = "desktop", mod
   const rootRef = useRef<HTMLElement>(null);
   const endRef = useRef<HTMLDivElement>(null);
   const [initialNow] = useState(() => event?.renderedAt ?? null);
+  // F-156: the page CSS <style> carries the CSP nonce, so the stricter style preview does not report it.
+  const cspNonce = useCspNonce();
   useFunnelScrollReveal(rootRef, mode === "preview" && parsed?.settings.scrollReveal && parsed.settings.scrollReveal !== "none" ? parsed.settings.scrollReveal : null);
   if (!parsed) return <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">頁面內容不符合安全格式，暫時無法顯示。</div>;
   const editing = mode === "editor" ? inlineEditing : undefined;
@@ -993,7 +996,7 @@ export function FunnelPageDocumentRenderer({ document, viewport = "desktop", mod
       <div ref={endRef} aria-hidden data-funnel-content-end />
     </Root>;
   return <CommerceRenderContext.Provider value={{ binding: parsed.commerce, commerce }}><TypographyContext.Provider value={tokens}><FunnelEventContext.Provider value={{ schedule, initialNow }}>
-    {scopedCss ? <div data-funnel-content-shell style={FUNNEL_CONTENT_SHELL_STYLE}><style data-funnel-custom-css dangerouslySetInnerHTML={{ __html: scopedCss }} />{root}</div> : root}
+    {scopedCss ? <div data-funnel-content-shell style={FUNNEL_CONTENT_SHELL_STYLE}><style data-funnel-custom-css nonce={cspNonce} dangerouslySetInnerHTML={{ __html: scopedCss }} />{root}</div> : root}
     {liveSticky ? <><FunnelStickyCtaSpacer /><FunnelStickyCtaBar settings={liveSticky} contentRef={rootRef} endRef={endRef} linkColor={tokens.linkColor} /></> : null}
   </FunnelEventContext.Provider></TypographyContext.Provider></CommerceRenderContext.Provider>;
 }

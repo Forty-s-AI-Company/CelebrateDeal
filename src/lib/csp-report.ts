@@ -21,6 +21,54 @@ export type CspViolation = {
 /** Reports beyond this many in one request are ignored. */
 export const MAX_CSP_REPORTS_PER_REQUEST = 20;
 
+/**
+ * Per-instance cap that applies under every RATE_LIMIT_PROVIDER. With
+ * `cloudflare_waf` the shared limiter returns early (the WAF is expected to
+ * count in front of the app), so without this an instance would log every
+ * report it receives. Per serverless instance, not global: a Cloudflare WAF
+ * rate rule on this path remains the real limit in production.
+ */
+export const CSP_REPORT_LOCAL_LIMITS = { perIp: 120, global: 2000, windowMs: 60_000 } as const;
+const MAX_TRACKED_IPS = 5000;
+
+type Window = { startedAt: number; count: number };
+let globalWindow: Window = { startedAt: 0, count: 0 };
+const ipWindows = new Map<string, Window>();
+
+function requestIp(request: Request): string {
+  return request.headers.get("cf-connecting-ip")?.trim()
+    || request.headers.get("x-forwarded-for")?.split(",")[0]?.trim()
+    || "unknown";
+}
+
+/** Returns the seconds to wait when this request is over a local cap, otherwise null. */
+export function cspReportLocalLimit(request: Request, now = Date.now()): number | null {
+  const { perIp, global, windowMs } = CSP_REPORT_LOCAL_LIMITS;
+  if (now - globalWindow.startedAt >= windowMs) {
+    globalWindow = { startedAt: now, count: 0 };
+    ipWindows.clear();
+  }
+  const retryAfter = Math.max(1, Math.ceil((globalWindow.startedAt + windowMs - now) / 1000));
+  if (globalWindow.count >= global) return retryAfter;
+  const ip = requestIp(request);
+  let ipWindow = ipWindows.get(ip);
+  if (!ipWindow) {
+    // A flood of distinct (possibly spoofed) addresses cannot grow memory past this bound.
+    if (ipWindows.size >= MAX_TRACKED_IPS) return retryAfter;
+    ipWindow = { startedAt: globalWindow.startedAt, count: 0 };
+    ipWindows.set(ip, ipWindow);
+  }
+  if (ipWindow.count >= perIp) return retryAfter;
+  ipWindow.count += 1;
+  globalWindow.count += 1;
+  return null;
+}
+
+export function resetCspReportLocalLimitForTests() {
+  globalWindow = { startedAt: 0, count: 0 };
+  ipWindows.clear();
+}
+
 const KEYWORD = /^[a-z][a-z-]{0,31}$/u;
 const DIRECTIVE = /^[a-z][a-z-]{1,39}$/u;
 const NETWORK_SCHEMES = new Set(["http:", "https:", "ws:", "wss:"]);

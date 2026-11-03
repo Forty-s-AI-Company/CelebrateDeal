@@ -3,7 +3,6 @@
 // https://docs.sentry.io/platforms/javascript/guides/nextjs/
 
 import * as Sentry from "@sentry/nextjs";
-import { z } from "zod";
 import { resolveSentryEnvironment } from "@/lib/sentry-environment";
 import {
   createTracesSampler,
@@ -13,11 +12,6 @@ import {
   sentryBeforeSendTransaction,
   sentryDataCollection,
 } from "@/lib/sentry-scrub";
-
-// F-156: the CSP has no 'unsafe-eval'. Zod otherwise probes `new Function("")`
-// to compile object parsers, which the browser reports as a violation on
-// every page that validates input. Interpreted parsing is equivalent.
-z.config({ jitless: true });
 
 Sentry.init({
   dsn: process.env.NEXT_PUBLIC_SENTRY_DSN,

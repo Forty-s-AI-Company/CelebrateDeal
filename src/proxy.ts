@@ -166,12 +166,15 @@ function replaceCookie(header: string | null, name: string, value: string) {
  * Sentry tunnel, the custom-code sandbox document (own CSP, next.config.ts),
  * the course certificate SVG (own `sandbox` CSP, which a proxy header would
  * replace) and static files from /public such as the presenter segmentation
- * worker, which must not run under the page's nonce policy.
+ * worker, which must not run under the page's nonce policy. The static-file
+ * exclusion is limited to files at the root and the /public directories
+ * below (proxy.test.ts checks that the list covers /public), so an app path
+ * such as /live/abc.css still gets the policy.
  */
 export const config = {
   matcher: [
     "/__celebratedeal_wp187_fingerprint\\.json",
     "/lp/:path*",
-    "/((?!api/|_next/static/|_next/image|monitoring(?:/|$)|sandbox/custom-code$|portal/[^/]+/learn/[^/]+/certificate$|favicon\\.ico$|.*\\.(?:css|js|mjs|map|json|txt|xml|ico|png|jpe?g|gif|svg|webp|avif|woff2?|ttf|otf|wasm|tflite|mp4|webm)$).*)",
+    "/((?!api/|_next/static/|_next/image|monitoring(?:/|$)|sandbox/custom-code$|portal/[^/]+/learn/[^/]+/certificate$|(?:(?:fonts|funnel-illustrations)/(?:.*/)?|(?:portal|presenter-segmentation)/)[^/]+\\.(?:js|json|txt|md|html|webmanifest|png|svg|woff2|wasm|tflite)$|[^/]+\\.(?:ico|png|svg|txt|xml|webmanifest|json)$).*)",
   ],
 };

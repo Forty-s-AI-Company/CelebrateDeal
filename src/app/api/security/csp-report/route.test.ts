@@ -5,18 +5,45 @@ const { checkRateLimit } = vi.hoisted(() => ({ checkRateLimit: vi.fn() }));
 vi.mock("@/lib/rate-limit", () => ({ checkRateLimit }));
 
 import { POST } from "@/app/api/security/csp-report/route";
+import { CSP_REPORT_LOCAL_LIMITS, cspReportLocalLimit, resetCspReportLocalLimitForTests } from "@/lib/csp-report";
 
-function cspReportRequest(body = '{"csp-report":{"blocked-uri":"https://example.test"}}') {
+function cspReportRequest(body = '{"csp-report":{"blocked-uri":"https://example.test"}}', ip?: string) {
   return new Request("https://app.example.test/api/security/csp-report", {
     method: "POST",
-    headers: { "content-type": "application/csp-report" },
+    headers: { "content-type": "application/csp-report", ...(ip ? { "cf-connecting-ip": ip } : {}) },
     body,
   });
 }
 
 beforeEach(() => {
   vi.clearAllMocks();
+  resetCspReportLocalLimitForTests();
   checkRateLimit.mockResolvedValue(null);
+});
+
+describe("POST /api/security/csp-report local cap (applies under RATE_LIMIT_PROVIDER=cloudflare_waf)", () => {
+  // checkRateLimit resolves null, exactly as it does when Cloudflare WAF is the provider.
+  it("allows 120 reports per IP per minute, then 429 without reading the body", async () => {
+    for (let index = 0; index < CSP_REPORT_LOCAL_LIMITS.perIp; index += 1) {
+      expect((await POST(cspReportRequest(undefined, "198.51.100.7"))).status).toBe(204);
+    }
+    const request = cspReportRequest(undefined, "198.51.100.7");
+    const response = await POST(request);
+    expect(response.status).toBe(429);
+    expect(Number(response.headers.get("retry-after"))).toBeGreaterThanOrEqual(1);
+    expect(request.bodyUsed).toBe(false);
+    // Another address still has its own allowance.
+    expect((await POST(cspReportRequest(undefined, "198.51.100.8"))).status).toBe(204);
+  });
+
+  it("caps all reports at 2000 per minute and recovers in the next window", () => {
+    const now = 1_000_000;
+    for (let index = 0; index < CSP_REPORT_LOCAL_LIMITS.global; index += 1) {
+      expect(cspReportLocalLimit(cspReportRequest(undefined, `10.0.${Math.floor(index / 100)}.${index % 100}`), now)).toBeNull();
+    }
+    expect(cspReportLocalLimit(cspReportRequest(undefined, "203.0.113.9"), now + 1_000)).toBe(59);
+    expect(cspReportLocalLimit(cspReportRequest(undefined, "203.0.113.9"), now + CSP_REPORT_LOCAL_LIMITS.windowMs)).toBeNull();
+  });
 });
 
 afterEach(() => {
