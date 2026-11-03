@@ -20,9 +20,15 @@ test.describe("Funnel custom code isolation (real browser)", () => {
   });
 
   test("runs merchant JS in the sandbox document under the enforced nonce CSP without any page violation (F-156)", async ({ page }) => {
-    const violations: string[] = [];
-    page.on("console", (message) => {
-      if (/Content Security Policy|Refused to/u.test(message.text())) violations.push(message.text());
+    // Only the platform (top) document's violations count; the probe's blocked
+    // fetch inside the sandbox document is expected.
+    await page.addInitScript(() => {
+      if (window !== window.top) return;
+      const store = window as unknown as { __cspViolations: Array<{ directive: string; blocked: string; disposition: string }> };
+      store.__cspViolations = [];
+      document.addEventListener("securitypolicyviolation", (event) => {
+        store.__cspViolations.push({ directive: event.effectiveDirective, blocked: event.blockedURI, disposition: event.disposition });
+      });
     });
     const sandboxResponse = page.waitForResponse((response) => new URL(response.url()).pathname === "/sandbox/custom-code");
     const response = await page.goto(HARNESS);
@@ -37,9 +43,11 @@ test.describe("Funnel custom code isolation (real browser)", () => {
     const result = await probe(page);
     expect(result.origin).toBe("null");
     await page.waitForTimeout(300);
-    // Nothing is blocked except the sandbox's own fetch (connect-src 'none'). Report-only
-    // lines are the next-step style preview (<style> without a nonce) and block nothing.
-    expect(violations.filter((text) => !/connect-src 'none'/u.test(text) && !/policy is report-only/u.test(text))).toEqual([]);
+    // The platform page blocks nothing. Report-only entries are the next-step
+    // style preview (<style> without a nonce) and block nothing.
+    const violations = await page.evaluate(() => (window as unknown as { __cspViolations: Array<{ directive: string; blocked: string; disposition: string }> }).__cspViolations);
+    expect(violations.filter((violation) => violation.disposition === "enforce")).toEqual([]);
+    expect(violations.filter((violation) => violation.directive !== "style-src-elem")).toEqual([]);
   });
 
   test("merchant JS cannot read platform cookies, the parent DOM, storage or the network, nor navigate the top page", async ({ page }) => {
