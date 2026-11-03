@@ -19,6 +19,9 @@ const baseUrl = resolveSmokeTarget({
   expectedHostname: process.env.SMOKE_EXPECTED_HOSTNAME,
 });
 const jobSecret = process.env.JOB_SECRET;
+// F-016: provider smoke endpoints accept only OPS_SMOKE_SECRET; JOB_SECRET
+// stays limited to preflight and scheduled jobs.
+const opsSmokeSecret = process.env.OPS_SMOKE_SECRET;
 const results: SmokeResult[] = [];
 const sampleVideoUrl = "https://storage.googleapis.com/stream-example-bucket/video.mp4";
 
@@ -42,7 +45,7 @@ function isRecord(payload: unknown): payload is Record<string, unknown> {
   return Boolean(payload && typeof payload === "object" && !Array.isArray(payload));
 }
 
-async function request(path: string, init?: RequestInit) {
+async function request(path: string, init?: RequestInit, bearer: string | undefined = jobSecret) {
   if (!baseUrl) {
     throw new Error("TARGET_APP_URL is required.");
   }
@@ -53,15 +56,15 @@ async function request(path: string, init?: RequestInit) {
     redirect: "error",
     headers: {
       "Content-Type": "application/json",
-      ...(jobSecret ? { Authorization: `Bearer ${jobSecret}` } : {}),
+      ...(bearer ? { Authorization: `Bearer ${bearer}` } : {}),
       ...init?.headers,
     },
   });
 }
 
-async function checkJson(name: string, path: string, init?: RequestInit) {
+async function checkJson(name: string, path: string, init?: RequestInit, bearer: string | undefined = jobSecret) {
   try {
-    const response = await request(path, init);
+    const response = await request(path, init, bearer);
     const body = await readResponsePayload(response);
     if (!response.ok || (isRecord(body) && body.ok === false)) {
       record({
@@ -95,12 +98,14 @@ async function main() {
     await checkJson("resend test email", "/api/admin/ops/test-email", {
       method: "POST",
       body: JSON.stringify(process.env.SMOKE_TEST_EMAIL ? { to: process.env.SMOKE_TEST_EMAIL } : {}),
-    });
+    }, opsSmokeSecret);
 
-    await checkJson("posthog smoke event", "/api/admin/ops/test-analytics", { method: "POST" });
-    await checkJson("sentry smoke event", "/api/admin/ops/test-monitoring", { method: "POST" });
+    await checkJson("posthog smoke event", "/api/admin/ops/test-analytics", { method: "POST" }, opsSmokeSecret);
+    await checkJson("sentry smoke event", "/api/admin/ops/test-monitoring", { method: "POST" }, opsSmokeSecret);
 
     if (process.env.RUN_CLOUDFLARE_SMOKE === "true") {
+      // The deployment binds Cloudflare smoke to its own SMOKE_VENDOR_ID; a
+      // local value is sent only as a cross-check and must match it.
       const vendorId = process.env.SMOKE_VENDOR_ID;
       await runCloudflareSmoke(vendorId);
     } else {
@@ -164,7 +169,7 @@ async function runCloudflareSmoke(vendorId?: string) {
         title: `Smoke upload ${Date.now()}`,
         maxDurationSeconds: 600,
       }),
-    });
+    }, opsSmokeSecret);
     const directUploadBody = await readResponsePayload(directUploadResponse);
     const upload = isRecord(directUploadBody) && isRecord(directUploadBody.upload) ? directUploadBody.upload : null;
     if (
@@ -230,7 +235,7 @@ async function runCloudflareSmoke(vendorId?: string) {
         ...(vendorId ? { vendorId } : {}),
         name: `CelebrateDeal smoke ${new Date().toISOString()}`,
       }),
-    });
+    }, opsSmokeSecret);
     const liveInputBody = await readResponsePayload(liveInputResponse);
     const liveInput = isRecord(liveInputBody) && isRecord(liveInputBody.liveInput) ? liveInputBody.liveInput : null;
     if (!liveInputResponse.ok || !liveInput || typeof liveInput.uid !== "string") {
@@ -268,7 +273,7 @@ async function runCloudflareSmoke(vendorId?: string) {
 async function pollUntilReady(videoId: string) {
   const timeoutAt = Date.now() + 180_000;
   while (Date.now() < timeoutAt) {
-    const response = await request(`/api/admin/ops/cloudflare/direct-upload?videoId=${encodeURIComponent(videoId)}`);
+    const response = await request(`/api/admin/ops/cloudflare/direct-upload?videoId=${encodeURIComponent(videoId)}`, undefined, opsSmokeSecret);
     const payload = await readResponsePayload(response);
     const video = isRecord(payload) && isRecord(payload.video) ? payload.video : null;
     if (!response.ok || !video) {

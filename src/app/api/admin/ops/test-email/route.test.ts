@@ -14,13 +14,14 @@ vi.mock("@/lib/email", () => ({
 
 import { POST } from "./route";
 
-const jobSecret = "test-fixture-job-secret";
+const smokeSecret = "test-fixture-ops-smoke-secret-0123456789abcdef";
+const jobSecret = "test-fixture-job-secret-0123456789";
 
 function authorizedRequest(payload: Record<string, unknown>) {
   return new Request("https://app.example.test/api/admin/ops/test-email", {
     method: "POST",
     headers: {
-      authorization: `Bearer ${jobSecret}`,
+      authorization: `Bearer ${smokeSecret}`,
       "content-type": "application/json",
     },
     body: JSON.stringify(payload),
@@ -40,6 +41,7 @@ function requestWithJsonSpy(authorization?: string) {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.stubEnv("OPS_SMOKE_SECRET", smokeSecret);
   vi.stubEnv("JOB_SECRET", jobSecret);
   mocks.getSmokeTestEmail.mockReturnValue("recipient@example.test");
   mocks.isAllowedSmokeTestRecipient.mockReturnValue(true);
@@ -52,8 +54,8 @@ afterEach(() => {
 describe("POST /api/admin/ops/test-email", () => {
   it.each([
     { name: "is missing", authorization: undefined },
-    { name: "is incorrect", authorization: "Bearer test-fixture-wrong-job-secret" },
-  ])("returns 401 without reading the body or sending an email when JOB_SECRET $name", async ({ authorization }) => {
+    { name: "is incorrect", authorization: "Bearer test-fixture-wrong-ops-smoke-secret" },
+  ])("returns 401 without reading the body or sending an email when OPS_SMOKE_SECRET $name", async ({ authorization }) => {
     const { request, json } = requestWithJsonSpy(authorization);
 
     const response = await POST(request);
@@ -64,9 +66,23 @@ describe("POST /api/admin/ops/test-email", () => {
     expect(mocks.sendTransactionalEmail).not.toHaveBeenCalled();
   });
 
-  it("returns 401 without reading the body or sending an email when JOB_SECRET is not configured", async () => {
-    vi.stubEnv("JOB_SECRET", undefined);
+  it.each([
+    { name: "the shared JOB_SECRET", configured: smokeSecret },
+    { name: "JOB_SECRET while OPS_SMOKE_SECRET is unset", configured: undefined },
+  ])("rejects $name without reading the body or sending an email", async ({ configured }) => {
+    vi.stubEnv("OPS_SMOKE_SECRET", configured);
     const { request, json } = requestWithJsonSpy(`Bearer ${jobSecret}`);
+
+    const response = await POST(request);
+
+    expect(response.status).toBe(401);
+    expect(json).not.toHaveBeenCalled();
+    expect(mocks.sendTransactionalEmail).not.toHaveBeenCalled();
+  });
+
+  it("returns 401 without reading the body or sending an email when OPS_SMOKE_SECRET is not configured", async () => {
+    vi.stubEnv("OPS_SMOKE_SECRET", undefined);
+    const { request, json } = requestWithJsonSpy(`Bearer ${smokeSecret}`);
 
     const response = await POST(request);
 
