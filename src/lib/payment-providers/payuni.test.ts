@@ -3,6 +3,10 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { BillingPlan, PaymentTransaction, Product, Vendor } from "@prisma/client";
 import { payUniPaymentProvider } from "@/lib/payment-providers/payuni";
 import { buildPayUniSandboxWebhookFixture } from "@/lib/payment-providers/payuni-fixtures";
+import { UnsupportedCurrencyError } from "@/lib/checkout-currency";
+
+const currencyAuditMocks = vi.hoisted(() => ({ recordUnsupportedCurrencyRefusal: vi.fn() }));
+vi.mock("@/lib/checkout-currency-audit", () => currencyAuditMocks);
 
 const hashKey = "12345678901234567890123456789012";
 const hashIv = "1234567890123456";
@@ -614,6 +618,24 @@ describe("PayUni provider", () => {
       vendor: { id: "vendor_1" } as Vendor,
       appUrl: "https://app.example.test",
     })).rejects.toThrow();
+  });
+
+  it("refuses a non-TWD transaction before credentials or encryption and audits the refusal (F-041)", async () => {
+    // No PayUni credentials are stubbed: the currency guard must run first.
+    currencyAuditMocks.recordUnsupportedCurrencyRefusal.mockClear();
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(payUniPaymentProvider.createCheckoutSession?.({
+      transaction: { id: "tx_jpy", orderNumber: "CD-TEST-006", grossAmountCents: 199000, currency: "JPY" } as PaymentTransaction,
+      product: { name: "Sandbox Product" } as Product,
+      vendor: { id: "vendor_1" } as Vendor,
+      appUrl: "https://app.example.test",
+    })).rejects.toBeInstanceOf(UnsupportedCurrencyError);
+    expect(currencyAuditMocks.recordUnsupportedCurrencyRefusal).toHaveBeenCalledWith({
+      vendorId: "vendor_1", targetType: "PaymentTransaction", targetId: "tx_jpy", currency: "JPY", surface: "payuni_checkout_session",
+    });
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it("normalizes PayUni sandbox paid and duplicate fixtures", async () => {

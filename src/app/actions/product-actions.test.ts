@@ -266,6 +266,7 @@ describe("upsertProductAction", () => {
   it.each(["USD", "usd", "JPY", "XYZ1"])("refuses a non-TWD currency (%s) without creating a product (F-041)", async (currency) => {
     const result = await upsertProductAction(initialProductActionState, validProduct({ currency }));
     expect(result.error).toBe("unsupported_currency");
+    expect(result.fieldErrors).toEqual({ currency: "平台目前只支援新台幣（TWD），請以新台幣整數元填寫售價。" });
     expect(result.draft?.name).toBe("Demo Webinar");
     expect(mocks.productCreate).not.toHaveBeenCalled();
     expect(mocks.productUpdateMany).not.toHaveBeenCalled();
@@ -288,6 +289,7 @@ describe("upsertProductAction", () => {
     mocks.productFindFirst.mockResolvedValue({ id: "product-existing", currency: "USD", commerceDomain: "merchant", courseContentOwnerMembershipId: null, coursePromoterShareBps: null, coursePolicyVersion: 1, revision: 7 });
     const unconfirmed = await upsertProductAction(initialProductActionState, validProduct({ id: "product-existing", revision: "7", inventoryBaseline: "12" }));
     expect(unconfirmed.error).toBe("unsupported_currency");
+    expect(unconfirmed.fieldErrors).toEqual({ currency: "這個商品原本不是新台幣，請確認售價已改以新台幣元填寫並勾選確認。" });
     expect(mocks.productUpdateMany).not.toHaveBeenCalled();
 
     await expect(upsertProductAction(initialProductActionState, validProduct({ id: "product-existing", revision: "7", inventoryBaseline: "12", confirmTwdCurrency: "on" })))

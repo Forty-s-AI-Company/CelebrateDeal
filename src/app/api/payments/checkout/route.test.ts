@@ -39,8 +39,10 @@ const admissionMocks = vi.hoisted(() => ({
   checkoutSessionTokenFromRequest: vi.fn(),
   verifyCheckoutAdmission: vi.fn(),
 }));
+const currencyAuditMocks = vi.hoisted(() => ({ recordUnsupportedCurrencyRefusal: vi.fn() }));
 
 vi.mock("@/lib/db", () => ({ getDb: () => db }));
+vi.mock("@/lib/checkout-currency-audit", () => currencyAuditMocks);
 vi.mock("@/lib/rate-limit", () => ({ checkRateLimit: vi.fn(async () => null) }));
 vi.mock("@/lib/payment-providers", () => ({
   getPaymentProvider: paymentProviderMocks.getPaymentProvider,
@@ -607,6 +609,11 @@ describe("successful checkout response", () => {
     await expect(response.json()).resolves.toEqual({ error: "Product currency is not supported", code: "UNSUPPORTED_CURRENCY" });
     expect(inventoryMocks.createReservedPaymentTransaction).not.toHaveBeenCalled();
     expect(createCheckoutSession).not.toHaveBeenCalled();
+    // The refusal is audited against the server product record, not client input.
+    expect(currencyAuditMocks.recordUnsupportedCurrencyRefusal).toHaveBeenCalledTimes(1);
+    expect(currencyAuditMocks.recordUnsupportedCurrencyRefusal).toHaveBeenCalledWith({
+      vendorId: "vendor-1", targetType: "Product", targetId: "product-1", currency: "USD", surface: "checkout_product",
+    });
   });
 
   it("fails before stock reservation when a non-physical product has no active delivery config", async () => {
