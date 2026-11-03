@@ -151,6 +151,10 @@ function productCurrency(formData: FormData) {
   return text(formData, "currency").toUpperCase() || SUPPORTED_CHECKOUT_CURRENCY;
 }
 
+/** F-041: the field error shown next to the fixed TWD currency display. */
+const UNSUPPORTED_CURRENCY_FIELD_ERRORS: ProductFieldErrors = { currency: "平台目前只支援新台幣（TWD），請以新台幣整數元填寫售價。" };
+const LEGACY_CURRENCY_CONFIRMATION_FIELD_ERRORS: ProductFieldErrors = { currency: "這個商品原本不是新台幣，請確認售價已改以新台幣元填寫並勾選確認。" };
+
 function productFieldErrors(input: {
   name: string; slug: string; isActive: boolean; priceCents: number | null;
   compareAtRaw: string | null; compareAtCents: number | null; inventory: number | null;
@@ -228,7 +232,7 @@ function parseProductRequest(previousState: ProductActionState, formData: FormDa
     return { success: false as const, state: productFailure(previousState, formData, "invalid_course_policy", coursePolicy.fieldErrors) };
   }
   if (!isSupportedCheckoutCurrency(productCurrency(formData))) {
-    return { success: false as const, state: productFailure(previousState, formData, "unsupported_currency") };
+    return { success: false as const, state: productFailure(previousState, formData, "unsupported_currency", UNSUPPORTED_CURRENCY_FIELD_ERRORS) };
   }
   const parsedInput = parseProductInput(formData);
   if ("fieldErrors" in parsedInput) {
@@ -522,7 +526,7 @@ export async function mutateProduct(
   // USD 50.00 price would silently become NT$50.
   if (existingProduct && !isSupportedCheckoutCurrency(existingProduct.currency)
     && formData.get("confirmTwdCurrency") !== "on") {
-    return { ok: false, state: productFailure(previousState, formData, "unsupported_currency") };
+    return { ok: false, state: productFailure(previousState, formData, "unsupported_currency", LEGACY_CURRENCY_CONFIRMATION_FIELD_ERRORS) };
   }
   const policyChanged = request.commerceDomain === "course" && existingProduct !== null
     && (

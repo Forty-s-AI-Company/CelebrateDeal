@@ -102,7 +102,7 @@ type ViewerChatContext = {
   admissionToken: string;
 };
 
-type ViewerChatAdmissionContext = {
+export type ViewerChatAdmissionContext = {
   admissionToken: string;
 };
 
@@ -200,6 +200,54 @@ export function decodeLiveChatCursor(value: string | undefined): CursorValue | n
   }
 }
 
+const LIVE_UPDATES_CURSOR_VERSION = 2;
+export const LIVE_UPDATES_CURSOR_MAX_LENGTH = 320;
+/** A since poll re-reads this much history; clients dedupe by id. */
+export const LIVE_UPDATES_LOOKBACK_MS = 5_000;
+
+/**
+ * Forward ("since") cursor for the merged live poll (F-091 (2)). Unlike the
+ * backward paging cursor above it is bound to one live, so a cursor taken
+ * from another live is rejected instead of silently reused. It encodes the
+ * (createdAt, id) keyset position of the newest chat row already delivered,
+ * which orders rows that share the same millisecond by id.
+ */
+export function encodeLiveUpdatesCursor(value: { liveId: string; createdAt: Date; id: string }) {
+  const payload = Buffer.from(JSON.stringify({
+    v: LIVE_UPDATES_CURSOR_VERSION,
+    l: value.liveId,
+    t: value.createdAt.getTime(),
+    i: value.id,
+  }), "utf8").toString("base64url");
+  return `${payload}.${cursorSignature(payload)}`;
+}
+
+export function decodeLiveUpdatesCursor(value: string | undefined, liveId: string): CursorValue | null {
+  if (!value || value.length > LIVE_UPDATES_CURSOR_MAX_LENGTH || !/^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/u.test(value)) return null;
+  const [payload, suppliedSignature] = value.split(".");
+  if (!payload || !suppliedSignature || suppliedSignature.length !== 43) return null;
+  let expectedSignature: string;
+  try {
+    expectedSignature = cursorSignature(payload);
+  } catch {
+    return null;
+  }
+  const expected = Buffer.from(expectedSignature, "utf8");
+  const supplied = Buffer.from(suppliedSignature, "utf8");
+  if (expected.length !== supplied.length || !timingSafeEqual(expected, supplied)) return null;
+  try {
+    const decoded = JSON.parse(Buffer.from(payload, "base64url").toString("utf8")) as { v?: unknown; l?: unknown; t?: unknown; i?: unknown };
+    if (decoded.v !== LIVE_UPDATES_CURSOR_VERSION || decoded.l !== liveId) return null;
+    if (typeof decoded.t !== "number" || !Number.isSafeInteger(decoded.t)) return null;
+    if (typeof decoded.i !== "string" || decoded.i.length < 1 || decoded.i.length > 128) return null;
+    const createdAt = new Date(decoded.t);
+    if (!Number.isFinite(createdAt.getTime())) return null;
+    return { createdAt, id: decoded.i };
+  } catch {
+    return null;
+  }
+}
+
 export function buildViewerChatMessageId(input: {
   vendorId: string;
   liveId: string;
@@ -267,7 +315,7 @@ function sameIdempotentMessage(
     && normalizeViewerBody(existing.body) === input.body;
 }
 
-async function resolveViewerAdmissionContext(
+export async function resolveViewerAdmissionContext(
   database: LiveChatModels,
   input: { vendorId: string; liveId: string; admissionToken: string | null; now?: Date },
   /** Only the read poll passes this; every write path leaves it null. */
@@ -519,6 +567,101 @@ export async function listViewerChatMessages(
   return {
     messages,
     nextCursor: hasMore && oldest ? encodeLiveChatCursor({ createdAt: oldest.createdAt, id: oldest.id }) : null,
+    viewer: {
+      canPost: Boolean(context && !blocked),
+      displayName: context ? normalizeDisplayName(context.submission.name) : null,
+      reason: !context ? "verification_required" : blocked ? "blocked" : null,
+    },
+  };
+}
+
+export const ViewerChatUpdatesQuerySchema = z.object({
+  vendorId: z.string().trim().min(1).max(128),
+  liveId: z.string().trim().min(1).max(128),
+  since: z.string().trim().min(1).max(LIVE_UPDATES_CURSOR_MAX_LENGTH).optional(),
+}).strict();
+
+export type ViewerChatUpdatesResult = {
+  messages: ViewerRuntimeMessage[];
+  /** Position of the newest delivered row; echoes `since` when nothing is new. */
+  cursor: string | null;
+  /** True when more than one page arrived after `since`: replace, do not merge. */
+  reset: boolean;
+  viewer: ViewerChatListResult["viewer"];
+};
+
+/**
+ * Chat half of the merged live poll. Returns only rows after `since` (a full
+ * latest page without it). Admission is resolved by the caller, once, for
+ * both halves. Only visible, real-viewer rows are ever selected, so scripted
+ * roles and simulated rows neither appear nor use up the page (D-10).
+ */
+export async function listViewerChatUpdates(
+  database: LiveChatDatabase,
+  input: z.infer<typeof ViewerChatUpdatesQuerySchema> & {
+    admission: ViewerChatAdmissionContext;
+    chatSessionToken: string | null;
+    ipAddress?: string | null;
+    now?: Date;
+  },
+): Promise<ViewerChatUpdatesResult> {
+  const since = input.since ? decodeLiveUpdatesCursor(input.since, input.liveId) : null;
+  if (input.since && !since) throw new LiveChatError("invalid_cursor");
+
+  const context = await resolveVerifiedViewerContext(database, input, input.admission);
+  const blacklistRows = context
+    ? await cachedActiveBlacklists(database, input.vendorId, (input.now ?? new Date()).getTime())
+    : [];
+  const blocked = context
+    ? isIdentityBlocked(blacklistRows, {
+        email: context.submission.email,
+        phone: context.submission.phone,
+        ip: normalizeClientIp(input.ipAddress ?? null),
+        visitorId: hashLiveViewerToken(context.admissionToken),
+      })
+    : false;
+
+  // Newest first so a long gap keeps the latest page. A since poll also
+  // re-reads LIVE_UPDATES_LOOKBACK_MS of history so a row whose transaction
+  // committed after a newer one is still delivered (clients dedupe by id);
+  // the createdAt lower bound keeps the scan a range on the
+  // (vendorId, liveId, createdAt) index. The take leaves room for both a full
+  // page of new rows and the overlap.
+  const lowerBound = since ? new Date(since.createdAt.getTime() - LIVE_UPDATES_LOOKBACK_MS) : null;
+  const rows = await database.liveChatMessage.findMany({
+    where: {
+      vendorId: input.vendorId,
+      liveId: input.liveId,
+      source: "viewer",
+      status: "visible",
+      isSimulated: false,
+      ...(lowerBound ? { createdAt: { gte: lowerBound } } : {}),
+    },
+    select: messageSelect(),
+    orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+    take: since ? LIVE_CHAT_PAGE_SIZE * 2 : LIVE_CHAT_PAGE_SIZE,
+  }) as unknown as StoredViewerMessage[];
+
+  const isAfterCursor = (row: StoredViewerMessage) => since === null
+    || row.createdAt.getTime() > since.createdAt.getTime()
+    || (row.createdAt.getTime() === since.createdAt.getTime() && row.id > since.id);
+  // Rows are newest first, so every row after the cursor precedes the overlap.
+  const newRows = rows.filter(isAfterCursor);
+  // Only rows after the cursor decide a gap; the overlap never does.
+  const reset = since !== null && newRows.length > LIVE_CHAT_PAGE_SIZE;
+  const pageRows = reset ? rows.slice(0, LIVE_CHAT_PAGE_SIZE) : rows;
+  const newest = newRows[0];
+  const messages = pageRows
+    .map(toViewerRuntimeMessage)
+    .filter((message): message is ViewerRuntimeMessage => message !== null)
+    .reverse();
+
+  return {
+    messages,
+    cursor: newest
+      ? encodeLiveUpdatesCursor({ liveId: input.liveId, createdAt: newest.createdAt, id: newest.id })
+      : input.since ?? null,
+    reset,
     viewer: {
       canPost: Boolean(context && !blocked),
       displayName: context ? normalizeDisplayName(context.submission.name) : null,

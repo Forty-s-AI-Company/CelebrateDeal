@@ -61,6 +61,18 @@ describe("private remuneration export POST", () => {
     expect((await POST(request(), context)).status).toBe(409);
     expect(mocks.csv).not.toHaveBeenCalled();
   });
+  it("exports no bank data while the platform payout switch is on (F-052)", async () => {
+    vi.stubEnv("AFFILIATE_PAYOUTS_DISABLED", "true");
+    try {
+      const response = await POST(request(), context);
+      expect(response.status).toBe(409);
+      expect(await response.json()).toEqual({ error: "payouts_disabled" });
+      expect(response.headers.get("cache-control")).toBe("private, no-store");
+      expect(mocks.policy).not.toHaveBeenCalled(); expect(mocks.export).not.toHaveBeenCalled(); expect(mocks.csv).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
   it("rejects invalid attachment identifiers and disabled module", async () => {
     expect((await POST(request(), { params: Promise.resolve({ affiliateId: "affiliate_a", snapshotId: "../private" }) })).status).toBe(404);
     mocks.auth.mockResolvedValueOnce({ user: { id: "actual-user", mfaFactor: { id: "factor" } }, session: { mfaVerifiedAt: new Date() }, vendor: { id: "actual-vendor", enabledFeatureModules: [] }, isMfaVerified: true });

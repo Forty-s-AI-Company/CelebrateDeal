@@ -8,6 +8,7 @@ import { CSRF_FIELD_NAME, getCsrfToken } from "@/lib/csrf";
 import { getAffiliateRemunerationDashboard } from "@/lib/affiliate-remuneration-dashboard";
 import { createAffiliateRemunerationQuoteAction, signAffiliateRemunerationQuoteAction, submitAffiliatePayeeProfileAction } from "@/app/actions/affiliate-remuneration-actions";
 import { AffiliateRemunerationSummary } from "@/components/affiliate-remuneration-summary";
+import { AFFILIATE_PAYOUTS_DISABLED_MESSAGE, affiliatePayoutsDisabled } from "@/lib/affiliate-payout-switch";
 export default async function AffiliateRemunerationPage({ params, searchParams }: { params: Promise<{ vendorSlug: string; affiliateId: string }>; searchParams: Promise<{ cursor?: string; error?: string; saved?: string }> }) {
   const { vendorSlug, affiliateId } = await params, query = await searchParams;
   const path = `/affiliate-portal/${encodeURIComponent(vendorSlug)}/${encodeURIComponent(affiliateId)}/remuneration`;
@@ -36,6 +37,7 @@ export default async function AffiliateRemunerationPage({ params, searchParams }
       </form>
     </section><section aria-label="提領與簽署"><h2 className="text-xl font-bold">提領與簽署</h2>
       {!current.policy?.enabled ? <p>商家尚未啟用提領費用政策。</p> : null}
+      {affiliatePayoutsDisabled() ? <p role="status">{AFFILIATE_PAYOUTS_DISABLED_MESSAGE}</p> : null}
       {!current.payouts.length ? <p>尚無已結算的佣金提領。</p> : current.payouts.map(payout => { const quote = payout.remunerationSnapshots[0]; return <article key={payout.id} className="my-4 rounded border p-4"><h3 className="font-bold">{payout.monthKey} 提領</h3><p>結算狀態：{payout.status}{payout.heldAmountCents > 0 ? "，有爭議款項暫停提領" : ""}</p>
         {payout.status === "paid" && payout.paidNetAmountCents != null ? <p>已記錄實領金額：{formatAffiliateRemuneration(payout.paidNetAmountCents)}</p> : null}{quote ? <><AffiliateRemunerationSummary quote={quote} /><p>簽署狀態：{payout.status === "paid" ? "商家已記錄付款" : quote.status === "signed" ? "已簽署" : quote.status === "exported" ? "商家已匯出，尚不代表付款" : quote.status === "invalidated" ? "已失效，請重新報價" : "待簽署"}</p></> : null}
         {payout.status === "pending" && !payout.heldAmountCents && approved && current.policy?.enabled ? <form action={createAffiliateRemunerationQuoteAction}>{identity}<input type="hidden" name="payoutId" value={payout.id} /><FormSubmitButton pendingChildren="取得報價中…" pendingMessage="正在取得報價，請勿重複送出。" className="min-h-11 rounded border px-4">取得最新提領報價</FormSubmitButton></form> : null}

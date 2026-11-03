@@ -395,6 +395,7 @@ export function ProductFormClient({
           <input type="hidden" name="currency" value={SUPPORTED_CHECKOUT_CURRENCY} />
           <p className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-slate-900">新台幣（TWD）</p>
           <span className="text-xs font-normal text-slate-500">平台結帳、退款與月結目前只支援新台幣，售價須為整數元。</span>
+          {fieldErrors.currency ? <span className="text-xs font-normal text-red-700">{fieldErrors.currency}</span> : null}
         </div>
         <Field label="可售庫存" name="inventory" error={fieldErrors.inventory} type="number" min={0} step={1} required defaultValue={draft.inventory} />
       </div>

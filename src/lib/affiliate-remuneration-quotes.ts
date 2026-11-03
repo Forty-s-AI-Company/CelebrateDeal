@@ -7,6 +7,7 @@ import type { AffiliateBankScope } from "./affiliate-bank-account";
 import { decryptAffiliateBankAccount } from "./affiliate-bank-account";
 import { decryptAffiliateTaxIdentity } from "./affiliate-tax-identity";
 import { loadRuntimeBankAccountKeyring, type BankAccountKeyring } from "./bank-account";
+import { affiliatePayoutsDisabled, assertAffiliatePayoutsEnabled } from "./affiliate-payout-switch";
 const Id = z.string().regex(/^[A-Za-z0-9_-]{1,160}$/u);
 type Database = Pick<PrismaClient, "$transaction">;
 const publicQuote = { id: true, revision: true, profileRevision: true, ruleVersion: true, grossAmountCents: true, withholdingTaxCents: true, nhiSupplementaryTaxCents: true, bankFeeCents: true, netPayoutAmountCents: true, status: true, signedAt: true } as const;
@@ -83,8 +84,10 @@ export async function signAffiliateRemunerationQuote(db: Database, actor: { user
 
 /** Private export data for a tenant manager. The HTTP layer must use no-store,
  * CSRF protection and an attachment response; never log this return value.
- * Export is not payment, and re-download revalidates every current invariant. */
+ * Export is not payment, and re-download revalidates every current invariant.
+ * While the platform payout switch is on (F-052), bank data never leaves. */
 export async function exportAffiliateRemunerationQuote(db: Database, actor: { userId: string }, scope: AffiliateBankScope, snapshotId: string, policy: { bankFeeCents: number }, injectedKeyring?: BankAccountKeyring) {
+  if (affiliatePayoutsDisabled()) return null;
   if (![actor.userId, scope.vendorId, scope.affiliateId, snapshotId].every(value => Id.safeParse(value).success)) return null;
   z.number().int().min(0).max(2_147_483_647).parse(policy.bankFeeCents);
   return db.$transaction(async tx => {
@@ -110,13 +113,15 @@ export async function exportAffiliateRemunerationQuote(db: Database, actor: { us
   }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
 }
 
-/** Existing merchant finance action calls this inside its serializable payout
- * transaction. Enrolled payouts cannot bypass current signature/export proof;
- * legacy payouts without a policy or snapshot keep their original contract. */
+/** The merchant finance action calls this inside its serializable payout
+ * transaction before recording any payout as paid. F-052: a payout is only
+ * paid against a current, signed and exported withholding snapshot under an
+ * enabled merchant payout policy, and never while the platform payout switch
+ * is on. There is no legacy path without a policy or snapshot. */
 export async function affiliateRemunerationPaymentProof(tx: Prisma.TransactionClient, scope: AffiliateBankScope, payoutId: string, confirmation: FormData) {
+  assertAffiliatePayoutsEnabled();
   const policy = await tx.merchantAffiliatePayoutPolicy.findUnique({ where: { vendorId: scope.vendorId } });
   const latest = await tx.affiliateRemunerationSnapshot.findFirst({ where: { ...scope, payoutId }, orderBy: { revision: "desc" } });
-  if (!policy?.enabled && !latest) return null;
   if (!policy?.enabled || latest?.status !== "exported" || !latest.signedByUserId) throw new AffiliatePayoutMutationConflict();
   const state = await current(tx, { userId: latest.signedByUserId }, scope, payoutId);
   if (!state || latest.ledgerDigest !== state.ledgerDigest || latest.profileRevision !== state.profile.revision || latest.payoutPolicyRevision !== state.payoutPolicy.revision || latest.bankFeeCents !== state.payoutPolicy.bankFeeCents || latest.bankEncrypted !== state.profile.bankEncrypted || latest.taxIdentityEncrypted !== state.profile.taxIdentityEncrypted) throw new AffiliatePayoutMutationConflict();

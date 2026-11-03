@@ -4,10 +4,10 @@ import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type
 import { Send } from "lucide-react";
 
 import type { ScheduledRuntimeMessage, ViewerRuntimeMessage } from "@/lib/live-chat-contract";
-import { usePageVisible } from "@/lib/use-page-visibility";
+import { parseViewerRuntimeMessage, type LiveUpdatesPayload, type LiveUpdatesStatus } from "@/lib/live-updates-client";
+import { useLiveUpdates } from "@/lib/use-live-updates";
 
 const CHAT_ENDPOINT = "/api/live-chat/messages";
-const CHAT_POLL_INTERVAL_MS = 3_000;
 const CHAT_BODY_MAX_LENGTH = 1_000;
 const CLIENT_HEADERS = {
   "Content-Type": "application/json",
@@ -45,21 +45,7 @@ function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-export function parseViewerRuntimeMessage(value: unknown): ViewerRuntimeMessage | null {
-  if (!isObject(value) || value.source !== "viewer") return null;
-  if (typeof value.id !== "string" || !value.id || value.id.length > 128) return null;
-  if (typeof value.createdAt !== "string" || !Number.isFinite(Date.parse(value.createdAt))) return null;
-  if (typeof value.body !== "string" || !value.body.trim() || Array.from(value.body).length > CHAT_BODY_MAX_LENGTH) return null;
-  if (!isObject(value.actor) || typeof value.actor.name !== "string" || !value.actor.name.trim()) return null;
-
-  return {
-    id: value.id,
-    source: "viewer",
-    createdAt: value.createdAt,
-    body: value.body,
-    actor: { name: value.actor.name },
-  };
-}
+export { parseViewerRuntimeMessage };
 
 export function parseChatListPayload(value: unknown): ChatListPayload | null {
   if (!isObject(value) || !Array.isArray(value.messages) || !isObject(value.viewer)) return null;
@@ -128,10 +114,8 @@ function LiveChatSession({
   const [pollMessage, setPollMessage] = useState<string | null>(null);
   const [postMessage, setPostMessage] = useState<string | null>(null);
   const logRef = useRef<HTMLDivElement>(null);
-  const generationRef = useRef(0);
   const postControllerRef = useRef<AbortController | null>(null);
   const admissionRefreshRequestedRef = useRef(false);
-  const pageVisible = usePageVisible();
 
   const visibleScheduledMessages = useMemo(() => sortScheduledMessages(scheduledMessages), [scheduledMessages]);
   const canPost = enabled && admissionStatus === "admitted" && !paused && viewer.canPost && pending === null;
@@ -144,67 +128,31 @@ function LiveChatSession({
     return () => window.clearTimeout(reset);
   }, [admissionStatus]);
 
-  useEffect(() => {
-    const generation = generationRef.current + 1;
-    generationRef.current = generation;
-    // Hidden tabs do not poll; returning to the foreground re-runs this
-    // effect, which fetches once immediately before the interval resumes.
-    if (!enabled || admissionStatus !== "admitted" || paused || !pageVisible) return;
-
-    let disposed = false;
-    let inFlight = false;
-    let controller: AbortController | null = null;
-
-    const poll = async () => {
-      if (disposed || inFlight) return;
-      inFlight = true;
-      controller = new AbortController();
-      const query = new URLSearchParams({ vendorId, liveId });
-      try {
-        const response = await fetch(`${CHAT_ENDPOINT}?${query.toString()}`, {
-          headers: CLIENT_HEADERS,
-          signal: controller.signal,
-        });
-        if (disposed || generationRef.current !== generation) return;
-        if (response.status === 403) {
-          setPaused(true);
-          setPollMessage("直播連線或留言資格已失效，請重新進入直播或完成信件驗證。");
-          if (!admissionRefreshRequestedRef.current) {
-            admissionRefreshRequestedRef.current = true;
-            onAdmissionInvalid?.();
-          }
-          return;
-        }
-        if (!response.ok) {
-          setPollMessage("留言暫時無法更新，系統會自動重試。");
-          return;
-        }
-        const payload = parseChatListPayload(await response.json());
-        if (!payload) {
-          setPollMessage("留言暫時無法更新，系統會自動重試。");
-          return;
-        }
-        setViewer(payload.viewer);
-        setViewerMessages((current) => mergeViewerMessages(current, payload.messages));
-        setPollMessage(null);
-      } catch (error) {
-        if (!disposed && !(error instanceof DOMException && error.name === "AbortError")) {
-          setPollMessage("留言暫時無法更新，系統會自動重試。");
-        }
-      } finally {
-        inFlight = false;
-        controller = null;
+  const pollEnabled = enabled && admissionStatus === "admitted" && !paused;
+  const handleUpdate = useCallback((payload: LiveUpdatesPayload) => {
+    if (!payload.chat) return;
+    const { messages, reset, viewer: nextViewer } = payload.chat;
+    setViewer(nextViewer);
+    // A gap longer than one page replaces the list; otherwise rows merge by id.
+    setViewerMessages((current) => reset ? mergeViewerMessages([], messages) : mergeViewerMessages(current, messages));
+  }, []);
+  const handleStatus = useCallback((status: LiveUpdatesStatus) => {
+    if (status === "ok") {
+      setPollMessage(null);
+    } else if (status === "unauthorized") {
+      setPaused(true);
+      setPollMessage("直播連線或留言資格已失效，請重新進入直播或完成信件驗證。");
+      if (!admissionRefreshRequestedRef.current) {
+        admissionRefreshRequestedRef.current = true;
+        onAdmissionInvalid?.();
       }
-    };
-
-    void poll();
-    const timer = window.setInterval(() => void poll(), CHAT_POLL_INTERVAL_MS);
-    return () => {
-      disposed = true;
-      window.clearInterval(timer);
-      controller?.abort();
-    };
-  }, [admissionStatus, enabled, liveId, onAdmissionInvalid, pageVisible, paused, vendorId]);
+    } else {
+      setPollMessage("留言暫時無法更新，系統會自動重試。");
+    }
+  }, [onAdmissionInvalid]);
+  // Chat shares one merged poll with the interaction state; hidden tabs
+  // unsubscribe and the hook fetches again on return to the foreground.
+  useLiveUpdates({ vendorId, liveId, enabled: pollEnabled, chat: true, onUpdate: handleUpdate, onStatus: handleStatus });
 
   useEffect(() => {
     const log = logRef.current;

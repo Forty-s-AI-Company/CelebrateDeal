@@ -132,14 +132,14 @@ owner 決策 D-41：Production migration 由 owner 核准、經 workflow 執行�
 
 1. GitHub → Settings → Environments 建立 `production`：設定 required reviewers（owner），並勾選只允許 protected branch（`master`）。
 2. 在 `production` environment 設定 secret `PRODUCTION_DATABASE_URL`：Supabase pooler 的 session 連線（`postgres.awigitueyqdqaqwbjdgu@aws-N-<region>.pooler.supabase.com`；6543 會自動改用 5432）。腳本只接受固定的 Production project ref，遇到 staging ref 會拒絕。
-3. 建立 Production 備份 workflow：路徑固定為 `.github/workflows/production-backup.yml`（寫在 `scripts/production-migrate.mjs` 的 `PRODUCTION_BACKUP_WORKFLOW`，改動需經 PR 審查），只能備份固定的 Production 專案（不得有 target 之類的 input），成功時上傳名為 `production-database-backup-<run id>` 的 artifact。**目前 repo 還沒有這個 workflow**，所以 `deploy` 一律回 `BACKUP_RUN_WRONG_WORKFLOW` 或 `BACKUP_ARTIFACT_MISSING`，不會連線資料庫。若 owner 改用 Supabase dashboard／PITR 備份，仍需由該 workflow 產生上述 artifact（例如記錄 restore point 的 receipt）。
+3. 建立 Production 備份 workflow：路徑固定為 `.github/workflows/production-backup.yml`（寫在 `scripts/production-migrate.mjs` 的 `PRODUCTION_BACKUP_WORKFLOW`，改動需經 PR 審查），只能備份固定的 Production 專案（不得有 target 之類的 input），成功時上傳名為 `production-database-backup-<run id>` 的 artifact。這個 workflow 已建立（`scripts/production-backup.mjs`）：同樣掛在 `production` environment，secret 只用 `PRODUCTION_DATABASE_URL`，另需 owner 設定 variable `PRODUCTION_BACKUP_RECIPIENT_SHA256`（公鑰檔的 SHA-256，未設定或不符就拒絕執行），artifact 只含 age 密文與不含資料的 receipt。觸發、核准、失敗代碼與還原演練見 `docs/operations/production-backup-restore-runbook.md`。沒有成功的備份 run 時，`deploy` 仍一律回 `BACKUP_RUN_*`、`BACKUP_JOB_NOT_SUCCESSFUL` 或 `BACKUP_ARTIFACT_MISSING`，不會連線資料庫。若 owner 改用 Supabase dashboard／PITR 備份，仍需由該 workflow 產生上述 artifact。
 
 **每次部署**
 
 1. 先在 staging 跑同一批 migration（`Staging migrate`），並依 `docs/operations/prisma-migration-guards-runbook.md` 完成各 migration 的唯讀前置查詢（例如 §4 重複訂單號、§6 撥款帳號明文列）。
 2. 執行 Production 備份 workflow，記下成功的 run ID。備份必須在 24 小時內完成，否則 `BACKUP_RUN_TOO_OLD`。
 3. Actions → `Production migrate` → Run workflow（branch `master`）→ `mode=status`，`backup_run_id` 填上一步的 run ID。由 environment reviewer 核准。確認輸出只列出預期的 pending migration。
-4. 同樣方式執行 `mode=deploy`。腳本會依序：驗證 URL 與 project ref → 以 GitHub API 確認備份 run（固定的 Production 備份 workflow、同一 repository、`master` 上的 dispatch 或排程、`completed`／`conclusion=success`、24 小時內、有未過期的 `production-database-backup-<run id>` artifact）→ `prisma migrate status` → 歷史一致才 `prisma migrate deploy`。連線固定 `lock_timeout=5s`、`statement_timeout=60s`、`sslmode=require`。
+4. 同樣方式執行 `mode=deploy`。腳本會依序：驗證 URL 與 project ref → 以 GitHub API 確認備份 run（固定的 Production 備份 workflow、同一 repository、`master` 上的 dispatch 或排程、`completed`／`conclusion=success`、24 小時內、`head_sha` 在 master 歷史上、`backup` job 成功、有未過期的 `production-database-backup-<run id>` artifact）→ `prisma migrate status` → 歷史一致才 `prisma migrate deploy`。連線固定 `lock_timeout=5s`、`statement_timeout=60s`、`sslmode=require`。
 5. 部署後再跑一次 `mode=status`，應為 `Database schema is up to date!`。
 
 輸出只有固定代碼與 Prisma 摘要行（migration 名稱、`PRISMA_ERROR Pxxxx`、SQLSTATE），不含主機、帳號或資料值。
@@ -298,8 +298,50 @@ GROUP BY "vendorId", "currency", "status"
 ORDER BY "vendorId", "currency", "status";
 ```
 
+也可以用唯讀腳本一次盤點所有含幣別的資料表（商品、付款交易、訂單、電子發票、購後折抵、課程分潤、自動化優惠券、聯盟結帳快照、平台推薦佣金，以及屬於非 TWD 交易的退款）。腳本在 `SET TRANSACTION READ ONLY` 快照內執行，只輸出 id、商家 id、幣別與筆數，不輸出買家資料或金額；不讀 `.env*`，`DATABASE_URL` 必須由已核准的工作階段注入（正式環境需 owner 授權連線）：
+
+```bash
+node --import tsx scripts/non-twd-currency-preflight.ts
+# exit 0 = CLEAN；1 = NON_TWD_RECORDS_FOUND（上線前處理）；2 = 設定或連線失敗
+```
+
+結帳與 PayUni 拒絕非 TWD 時會寫 audit `checkout_unsupported_currency_refused`（`surface` 為 `checkout_product` 或 `payuni_checkout_session`）。
+
 若有結果：非 TWD 商品由商家在後台重新以新台幣填價並勾選確認後儲存（表單會要求確認，不會自動換匯）；
 非 TWD 交易需人工對帳後再產生月結，不可直接以 SQL 改幣別。月結也會在當月出現屬於非 TWD 交易的退款時停止。
+
+### 9.1a 無法標記已付款的待出款聯盟月結（唯讀，F-052）
+
+F-052 之後，聯盟出款要標記已付款，必須同時有已啟用的商家出款政策與已匯出的扣繳快照（且平台開關
+`AFFILIATE_PAYOUTS_DISABLED` 不是 `true`）；舊的「未登記政策直接手動標記已付款」路徑已移除。部署前後以唯讀連線
+統計仍是 `pending` 但不符合條件的 `AffiliatePayout`，供商家改走提領流程或作廢；結果只含商家 id、原因、筆數與金額合計：
+
+```sql
+BEGIN TRANSACTION READ ONLY;
+WITH latest AS (
+  SELECT DISTINCT ON ("payoutId") "payoutId", "status"
+  FROM "AffiliateRemunerationSnapshot"
+  ORDER BY "payoutId", "revision" DESC
+)
+SELECT p."vendorId",
+       CASE WHEN COALESCE(pol."enabled", false) = false THEN 'no_enabled_policy'
+            WHEN l."status" IS NULL THEN 'no_snapshot'
+            ELSE 'snapshot_not_exported' END AS reason,
+       COUNT(*) AS payouts,
+       SUM(p."finalAmountCents") AS final_amount_cents
+FROM "AffiliatePayout" p
+LEFT JOIN "MerchantAffiliatePayoutPolicy" pol ON pol."vendorId" = p."vendorId"
+LEFT JOIN latest l ON l."payoutId" = p."id"
+WHERE p."status" = 'pending'
+  AND (COALESCE(pol."enabled", false) = false OR l."status" IS DISTINCT FROM 'exported')
+GROUP BY p."vendorId", reason
+ORDER BY p."vendorId", reason;
+ROLLBACK;
+```
+
+`no_enabled_policy`：商家需先開啟「團隊分銷與推廣夥伴」與「勞報單與稅務出款」模組並啟用提領政策；`no_snapshot`／
+`snapshot_not_exported`：夥伴需取得報價並簽署、商家匯出後才能記錄付款。若商家其實已在系統外付款，不可用作廢處理
+（作廢會沖回佣金並讓這期歸零），應補走提領流程後再標記已付款。不可直接以 SQL 改 `status`。
 
 ### 9.2 PayUni 退款事件 ID 變更前檢查（唯讀，PR #454 A-1）
 

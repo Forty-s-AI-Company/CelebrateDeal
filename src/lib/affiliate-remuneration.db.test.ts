@@ -1,10 +1,11 @@
 import { randomUUID } from "node:crypto";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { getDb } from "./db";
 import { createBankAccountKeyring } from "./bank-account";
 import { AffiliatePayeeConflict, approveAffiliatePayeeProfile, submitAffiliatePayeeProfile } from "./affiliate-payee-profile";
 import { affiliateRemunerationPaymentProof, createAffiliateRemunerationQuote, exportAffiliateRemunerationQuote, signAffiliateRemunerationQuote } from "./affiliate-remuneration-quotes";
 import { AffiliatePayoutMutationConflict } from "./affiliate-payout-accounting";
+import { AffiliatePayoutsDisabledError } from "./affiliate-payout-switch";
 import { appendCommissionLedgerEntry } from "./affiliate-commission-accounting";
 import { MerchantAffiliatePayoutPolicyConflict, setMerchantAffiliatePayoutPolicy } from "./merchant-affiliate-payout-policy";
 import { getAffiliateRemunerationDashboard } from "./affiliate-remuneration-dashboard";
@@ -107,11 +108,36 @@ describe("affiliate remuneration private database contracts", () => {
     await expect(proof()).rejects.toBeInstanceOf(AffiliatePayoutMutationConflict);
   });
 
-  it("payment proof preserves unenrolled legacy payouts and rejects foreign scope", async () => {
+  it("payment proof rejects unenrolled payouts, the platform payout switch and foreign scope (F-052)", async () => {
     const f = await fixture(), foreign = await fixture();
-    expect(await db.$transaction(tx => affiliateRemunerationPaymentProof(tx, { vendorId: f.vendor.id, affiliateId: f.affiliate.id }, f.payout.id, new FormData()))).toBeNull();
+    // No enabled policy and no withholding snapshot is no longer a manual paid path.
+    await expect(db.$transaction(tx => affiliateRemunerationPaymentProof(tx, { vendorId: f.vendor.id, affiliateId: f.affiliate.id }, f.payout.id, new FormData()))).rejects.toBeInstanceOf(AffiliatePayoutMutationConflict);
     const enrolled = await payableFixture();
     await expect(db.$transaction(tx => affiliateRemunerationPaymentProof(tx, { vendorId: enrolled.vendor.id, affiliateId: foreign.affiliate.id }, enrolled.payout.id, new FormData()))).rejects.toBeInstanceOf(AffiliatePayoutMutationConflict);
+    const quote = await createAffiliateRemunerationQuote(db, enrolled.actor, enrolled.scope, enrolled.payout.id, { bankFeeCents: 1500 });
+    await signAffiliateRemunerationQuote(db, enrolled.actor, enrolled.scope, quote!.id, quote!.revision);
+    const confirmation = new FormData();
+    confirmation.set("remunerationSnapshotId", quote!.id);
+    confirmation.set("paidNetAmountCents", String(quote!.netPayoutAmountCents));
+    confirmation.set("paidNetConfirmed", "on");
+    const proof = () => db.$transaction(tx => affiliateRemunerationPaymentProof(tx, enrolled.scope, enrolled.payout.id, confirmation));
+    vi.stubEnv("AFFILIATE_PAYOUTS_DISABLED", "true");
+    try {
+      // While the switch is on, bank data is not exported and nothing is paid.
+      expect(await exportAffiliateRemunerationQuote(db, enrolled.manager, enrolled.scope, quote!.id, { bankFeeCents: 1500 }, keyring)).toBeNull();
+      expect(await db.affiliateRemunerationExport.count({ where: { snapshotId: quote!.id } })).toBe(0);
+    } finally {
+      vi.unstubAllEnvs();
+    }
+    await exportAffiliateRemunerationQuote(db, enrolled.manager, enrolled.scope, quote!.id, { bankFeeCents: 1500 }, keyring);
+    vi.stubEnv("AFFILIATE_PAYOUTS_DISABLED", "true");
+    try {
+      await expect(proof()).rejects.toBeInstanceOf(AffiliatePayoutsDisabledError);
+    } finally {
+      vi.unstubAllEnvs();
+    }
+    expect(await proof()).toEqual({ snapshotId: quote!.id, netPayoutAmountCents: quote!.netPayoutAmountCents });
+    expect(await db.affiliatePayout.findUniqueOrThrow({ where: { id: enrolled.payout.id } })).toMatchObject({ status: "pending", paidAt: null });
   });
   it("rejects foreign tenant and affiliate references", async () => {
     const a = await fixture(), b = await fixture();

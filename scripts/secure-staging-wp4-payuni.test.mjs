@@ -86,6 +86,19 @@ test("receipt is an explicit bounded-mutation prerequisite contract", () => {
 test("diagnostic categories are closed, sanitized and never persist raw errors", () => {
   assert.equal(safeDiagnosticCategory(new Error("GITHUB_DEPLOYMENT_READ_FAILED")), "GITHUB_DEPLOYMENT_READ_FAILED");
   assert.equal(safeDiagnosticCategory("CHILD_OUTPUT_INVALID"), "CHILD_OUTPUT_INVALID");
+  // Every fail-closed code the shared lineage gate can throw is classified, not collapsed into UNCLASSIFIED.
+  for (const lineageCode of [
+    "GITHUB_DEPLOYMENT_NO_VERCEL_CANDIDATE",
+    "GITHUB_DEPLOYMENT_PAGE_LIMIT_EXHAUSTED",
+    "GITHUB_DEPLOYMENT_READ_BUDGET_EXHAUSTED",
+    "GITHUB_DEPLOYMENT_PAGINATION_INVALID",
+  ]) {
+    assert.equal(safeDiagnosticCategory(new Error(lineageCode)), lineageCode);
+    const classified = createInitialReceipt(sha);
+    classified.diagnosticCategory = lineageCode;
+    assert.equal(validateReceipt(classified).errors.includes("DIAGNOSTIC_CATEGORY"), false, lineageCode);
+  }
+  assert.equal(safeDiagnosticCategory(new Error("GITHUB_DEPLOYMENT_NO_VERCEL_CANDIDATE https://unexpected.example/")), "UNCLASSIFIED_INTERNAL_FAILURE");
   assert.equal(safeDiagnosticCategory(new Error("https://unexpected.example/?token=secret")), "UNCLASSIFIED_INTERNAL_FAILURE");
   const receipt = createInitialReceipt(sha);
   receipt.diagnosticCategory = "https://unexpected.example/?token=secret";
