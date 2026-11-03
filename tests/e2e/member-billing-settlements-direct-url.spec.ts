@@ -357,7 +357,6 @@ test("active member is denied billing settlements before tenant query or MFA", a
     const settlementCanaries = settlements.flatMap((settlement) => [
       settlement.id,
       settlement.monthKey,
-      settlement.status,
       settlement.batchNumber,
       settlement.adjustmentReason,
       settlement.lockedBy,
@@ -380,7 +379,6 @@ test("active member is denied billing settlements before tenant query or MFA", a
     const payoutBatchCanaries = [
       payoutBatch.id,
       payoutBatch.batchNumber,
-      payoutBatch.status,
       formatCurrency(Number(payoutBatch.totalAmountCents)),
       formatDateTime(payoutBatch.batchDate),
     ];
@@ -391,6 +389,17 @@ test("active member is denied billing settlements before tenant query or MFA", a
       (value): value is string =>
         typeof value === "string" && value.length > 0 && value !== "NT$0",
     );
+    // F-062: statuses are now limited to the values the app writes, so they
+    // are common words ("pending", "failed", "exported") that also occur in
+    // ordinary dashboard HTML. They can no longer be substring canaries for
+    // the protected payload or the final HTML; every row keeps unique
+    // substring canaries (ids, numbers, reasons, account fields) above, and
+    // a leaked status is checked as an element whose entire text is the
+    // status below.
+    const statusCanaries = [
+      ...settlements.map((settlement) => settlement.status),
+      payoutBatch.status,
+    ];
 
     const posts: string[] = [];
     const external: string[] = [];
@@ -502,7 +511,7 @@ test("active member is denied billing settlements before tenant query or MFA", a
     ]) {
       await expect(page.getByText(deniedText, { exact: true })).toHaveCount(0);
     }
-    for (const canary of disclosureCanaries) {
+    for (const canary of [...disclosureCanaries, ...statusCanaries]) {
       await expect(page.getByText(canary, { exact: true })).toHaveCount(0);
     }
 
