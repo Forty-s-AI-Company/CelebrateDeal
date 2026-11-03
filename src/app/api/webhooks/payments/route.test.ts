@@ -591,6 +591,58 @@ describe("payment webhook provider selection", () => {
     },
   );
 
+  it("acknowledges an unpaid TradeStatus 9 as pending on Notify and Return, never failed (payuni-tradestatus-mapping)", async () => {
+    vi.stubEnv("PAYMENT_PROVIDER", "payuni");
+    mocks.payUniVerifySignature.mockResolvedValue(true);
+    const unpaid = { ...identifiers, tradeStatus: "9", paymentType: "1" };
+    mocks.payUniNormalizePayload.mockRejectedValue(new PaymentWebhookNotActionableError("trade_pending", unpaid));
+
+    const notify = await POST(webhookRequest("?provider=payuni&source=notify"));
+    const resent = await POST(webhookRequest("?provider=payuni&source=notify"));
+    const payerReturn = await POST(webhookRequest("?provider=payuni&source=return"));
+
+    for (const response of [notify, resent]) {
+      expect(response.status).toBe(200);
+      await expect(response.json()).resolves.toEqual({ ok: true, actionable: false, code: "not_actionable" });
+    }
+    expect(payerReturn.headers.get("location")).toBe("https://app.example.test/checkout/result?payment=pending");
+    expect(mocks.recordManualReconciliation).not.toHaveBeenCalled();
+    expect(mocks.captureOperationalError).not.toHaveBeenCalled();
+    expect(mocks.webhookEventCreate).not.toHaveBeenCalled();
+    expect(mocks.processPaymentWebhook).not.toHaveBeenCalled();
+    expect(mocks.auditSnapshot).toHaveBeenCalledWith({ errorCode: "not_actionable", reason: "trade_pending", ...unpaid, manualReconciliation: false });
+  });
+
+  it("records an unmapped TradeStatus 4 for manual reconciliation on Notify and Return, never failed or paid", async () => {
+    vi.stubEnv("PAYMENT_PROVIDER", "payuni");
+    mocks.payUniVerifySignature.mockResolvedValue(true);
+    const unknown = { ...identifiers, tradeStatus: "4", paymentType: "1" };
+    const error = new PaymentWebhookNotActionableError("trade_status_unknown", unknown);
+    mocks.payUniNormalizePayload.mockRejectedValue(error);
+    mocks.recordManualReconciliation.mockResolvedValue({ event: { id: "webhook-review-4" }, transaction: null, alreadyPaid: false });
+
+    const notify = await POST(webhookRequest("?provider=payuni&source=notify"));
+    const resent = await POST(webhookRequest("?provider=payuni&source=notify"));
+    const payerReturn = await POST(webhookRequest("?provider=payuni&source=return"));
+
+    for (const response of [notify, resent]) {
+      expect(response.status).toBe(200);
+      await expect(response.json()).resolves.toEqual({ ok: true, actionable: false, code: "manual_reconciliation" });
+    }
+    expect(payerReturn.headers.get("location")).toBe("https://app.example.test/checkout/result?payment=review");
+    // Every delivery goes to the same idempotent reconciliation record; none is processed.
+    expect(mocks.recordManualReconciliation).toHaveBeenCalledTimes(3);
+    for (const [input] of mocks.recordManualReconciliation.mock.calls) {
+      expect(input).toMatchObject({ provider: "payuni", error: expect.objectContaining({ reason: "trade_status_unknown", identifiers: unknown }) });
+    }
+    expect(mocks.captureOperationalError).toHaveBeenCalledWith(expect.any(Error), expect.objectContaining({
+      operation: "manual_reconciliation", status: "trade_status_unknown", providerTradeStatus: "4", webhookEventId: "webhook-review-4",
+    }), expect.objectContaining({ level: "error" }));
+    expect(mocks.auditSnapshot).toHaveBeenCalledWith({ errorCode: "not_actionable", reason: "trade_status_unknown", ...unknown, manualReconciliation: true });
+    expect(mocks.webhookEventCreate).not.toHaveBeenCalled();
+    expect(mocks.processPaymentWebhook).not.toHaveBeenCalled();
+  });
+
   it("sends the payer of a refused reported collection to the under-review result", async () => {
     vi.stubEnv("PAYMENT_PROVIDER", "payuni");
     mocks.payUniVerifySignature.mockResolvedValue(true);

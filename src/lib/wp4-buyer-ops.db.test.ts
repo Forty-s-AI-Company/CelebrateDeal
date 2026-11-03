@@ -244,6 +244,7 @@ describe("PayUni UPP 2.0 callback outcomes on a pending buyer checkout", () => {
  it.each([
   ["issued number TradeStatus 0", "0"],
   ["awaiting confirmation TradeStatus 8", "8"],
+  ["unpaid TradeStatus 9", "9"],
  ])("acknowledges %s without any event, payment change or commission", async (_label, tradeStatus) => {
   const { payment } = await checkout();
   stubPayUni();
@@ -316,6 +317,55 @@ describe("PayUni UPP 2.0 callback outcomes on a pending buyer checkout", () => {
   // taxed fee is NT$0.0294, which rounds to NT$0 at whole-dollar precision.
   expect(paid).toMatchObject({ status: "paid", grossAmountCents: 100, gatewayFeeCents: 0, netAmountCents: 100 });
   expect(paid.metadata).toMatchObject({ feeSource: "contract_rate", gatewayFeePolicy: { feeBps: 280, taxBps: 500, roundingUnitCents: 100 } });
+  const order = await db.commerceOrder.findFirstOrThrow({ where: { primaryPaymentTransactionId: payment.id } });
+  expect(await db.commerceOrderEvent.count({ where: { orderId: order.id, eventType: "payment.paid" } })).toBe(1);
+ });
+
+ // docs/launch/payuni-tradestatus-mapping.md: 9 is "unpaid", never a failure.
+ it("keeps an unpaid TradeStatus 9 order pending through resends until a later verified Notify pays it once", async () => {
+  const { payment } = await checkout();
+  stubPayUni();
+  for (const source of ["notify", "notify", "return"] as const) {
+   const response = await callback(source, { TradeStatus: "9" }, payment.orderNumber!, payment.providerTradeNo!);
+   expect(response.status).toBe(source === "notify" ? 200 : 303);
+  }
+  expect(await db.webhookEvent.count({ where: { provider: "payuni", eventId: { contains: payment.providerTradeNo! } } })).toBe(0);
+  const order = await db.commerceOrder.findFirstOrThrow({ where: { primaryPaymentTransactionId: payment.id } });
+  expect(await db.paymentTransaction.findUniqueOrThrow({ where: { id: payment.id } })).toMatchObject({ status: "pending" });
+  expect(await db.commerceOrder.findUniqueOrThrow({ where: { id: order.id } })).not.toMatchObject({ status: "payment_failed" });
+  expect(await db.inventoryReservation.count({ where: { paymentTransactionId: payment.id, status: "reserved" } })).toBe(1);
+  expect((await callback("notify", {}, payment.orderNumber!, payment.providerTradeNo!)).status).toBe(200);
+  const events = await db.webhookEvent.findMany({ where: { provider: "payuni", eventId: { contains: payment.providerTradeNo! } } });
+  expect(events.map(event => [event.eventId, event.eventType, event.status])).toEqual([[`${payment.providerTradeNo}:1`, "paid", "processed"]]);
+  expect(await db.paymentTransaction.findUniqueOrThrow({ where: { id: payment.id } })).toMatchObject({ status: "paid" });
+  expect(await db.commerceOrderEvent.count({ where: { orderId: order.id, eventType: "payment.paid" } })).toBe(1);
+ });
+
+ it("records an unmapped TradeStatus 4 once for manual reconciliation without failing or paying the order", async () => {
+  const { payment } = await checkout();
+  stubPayUni();
+  const tradeNo = payment.providerTradeNo!;
+  for (const source of ["notify", "notify", "return"] as const) {
+   const response = await callback(source, { TradeStatus: "4" }, payment.orderNumber!, tradeNo);
+   if (source === "notify") await expect(response.json()).resolves.toEqual({ ok: true, actionable: false, code: "manual_reconciliation" });
+   else expect(response.headers.get("location")).toBe("http://127.0.0.1:31041/checkout/result?payment=review");
+  }
+  // Never a failed (`TradeNo:4`) or paid event: one reconciliation record for all deliveries.
+  const manual = await db.webhookEvent.findMany({ where: { provider: "payuni", eventId: { contains: tradeNo } } });
+  expect(manual.map(event => [event.eventId, event.eventType, event.status, event.vendorId])).toEqual([
+   [`manual:${tradeNo}:4:1`, "manual_reconciliation", "needs_manual_reconciliation", fixed.vendorId],
+  ]);
+  expect(manual[0]!.payload).toMatchObject({ reconciliation: { reason: "trade_status_unknown", orderNumber: payment.orderNumber, tradeStatus: "4", matchedTransaction: payment.id },
+   raw: { TradeStatus: "4", OuterStatus: "SUCCESS" } });
+  expect(await db.paymentTransaction.findUniqueOrThrow({ where: { id: payment.id } })).toMatchObject({ status: "pending",
+   metadata: { paymentManualReconciliation: { reason: "trade_status_unknown", webhookEventId: manual[0]!.id } } });
+  expect(await db.affiliateCommission.count({ where: { vendorId: fixed.vendorId } })).toBe(0);
+  expect(await notActionableAudit(payment.createdAt)).toMatchObject({ reason: "trade_status_unknown", tradeStatus: "4", manualReconciliation: true });
+  // A later verified paid callback still settles the trade once and lifts the hold.
+  expect((await callback("notify", {}, payment.orderNumber!, tradeNo)).status).toBe(200);
+  const paid = await db.paymentTransaction.findUniqueOrThrow({ where: { id: payment.id } });
+  expect(paid.status).toBe("paid");
+  expect(paid.metadata).not.toHaveProperty("paymentManualReconciliation");
   const order = await db.commerceOrder.findFirstOrThrow({ where: { primaryPaymentTransactionId: payment.id } });
   expect(await db.commerceOrderEvent.count({ where: { orderId: order.id, eventType: "payment.paid" } })).toBe(1);
  });

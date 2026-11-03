@@ -8,11 +8,11 @@
 | 回呼內容（已驗簽） | 系統處理 | HTTP |
 |---|---|---|
 | 內外層 `Status=SUCCESS`、`TradeStatus=1`、`PaymentType=1`（信用卡） | paid，eventId `TradeNo:1` | 200 |
-| `TradeStatus` 2／3／4／9 | failed，eventId `TradeNo:<狀態>` | 200 |
-| `TradeStatus` 0／8（取號、待確認） | 不改任何狀態；audit `payment_webhook_not_actionable`（reason `trade_pending`） | Notify 200；Return 導向 `payment=pending` |
+| `TradeStatus` 2／3（付款失敗、取消） | failed，eventId `TradeNo:<狀態>` | 200 |
+| `TradeStatus` 0／8／9（取號、待確認、未付款） | 不改任何狀態（9 不是失敗：不標 failed、不寄失敗信、不提前釋放庫存（與 0／8 相同，仍依保留期限到期），之後的 paid Notify 仍可結案）；audit `payment_webhook_not_actionable`（reason `trade_pending`） | Notify 200；Return 導向 `payment=pending` |
 | 已簽章內容是信用卡 paid，只有未簽章的外層 Status 不符或缺漏，來源是 Return | 不記錄、不告警，交給 Notify 決定（RR-01） | Return 導向 `payment=pending` |
-| `TradeStatus=1` 但 `PaymentType≠1`；內層 Status 不是 SUCCESS；或 Notify 的外層 Status 不符／缺漏 | **人工對帳**：建立 `WebhookEvent`（eventId `manual:<TradeNo>:<TradeStatus>:<PaymentType>`，獨立 namespace，不佔用真正付款的 `TradeNo:1`；status `needs_manual_reconciliation`、eventType `manual_reconciliation`）、該筆 pending 交易加上 `metadata.paymentManualReconciliation` 不會被庫存逾期釋放、Sentry error 告警、audit 記 MerTradeNo／TradeNo／TradeStatus／PaymentType | Notify 200；Return 導向 `payment=review`（平台方案付款導回 `/billing/plans`） |
-| 其他 TradeStatus、帶 `EventType` 的 UPP payload | fail closed（400 invalid_payload） | 400 |
+| `TradeStatus=1` 但 `PaymentType≠1`；內層 Status 不是 SUCCESS；Notify 的外層 Status 不符／缺漏；或 `TradeStatus` 是格式正確（1～2 位數字）但不在官方 UPP 表的代碼（例如 4，reason `trade_status_unknown`；之後的 paid Notify 仍會入帳並解除保留，但這筆對帳紀錄不會自動結案，需財務人工關閉） | **人工對帳**：建立 `WebhookEvent`（eventId `manual:<TradeNo>:<TradeStatus>:<PaymentType>`，獨立 namespace，不佔用真正付款的 `TradeNo:1`；status `needs_manual_reconciliation`、eventType `manual_reconciliation`）、該筆 pending 交易加上 `metadata.paymentManualReconciliation` 不會被庫存逾期釋放、Sentry error 告警、audit 記 MerTradeNo／TradeNo／TradeStatus／PaymentType | Notify 200；Return 導向 `payment=review`（平台方案付款導回 `/billing/plans`） |
+| 格式錯誤的 TradeStatus（空白、非數字、3 位數以上）、帶 `EventType` 的 UPP payload | fail closed（400 invalid_payload） | 400 |
 
 人工對帳紀錄寫入失敗時回 500，讓 PayUni 重送，不會無聲丟掉。
 

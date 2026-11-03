@@ -142,10 +142,10 @@ async function processedPayerReturnResponse(requestUrl: URL, event: WebhookEvent
 
 /**
  * Authentic callbacks that must not change payment state automatically
- * (R448-01). A pending trade (issued/awaiting confirmation) is acknowledged
- * and audited. A reported collection we refuse to apply (non-card
- * PaymentType, or a paid trade without a final provider status) may mean the
- * buyer was charged: it becomes a needs_manual_reconciliation WebhookEvent,
+ * (R448-01). A pending trade (issued/awaiting confirmation/unpaid) is
+ * acknowledged and audited. A reported collection we refuse to apply (non-card
+ * PaymentType, a paid trade without a final provider status, or an unmapped
+ * TradeStatus) may mean the buyer was charged: it becomes a needs_manual_reconciliation WebhookEvent,
  * holds the pending payment from expiry, and raises an error-level alert.
  * Notify is acknowledged with 200 so the provider does not redeliver forever;
  * the payer sees a neutral "under review" page.

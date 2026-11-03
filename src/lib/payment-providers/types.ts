@@ -209,6 +209,8 @@ export class PaymentMethodSetupMalformedPayloadError extends Error {
 export type PaymentWebhookNotActionableReason = "trade_pending" | "payment_type_not_allowed" | "provider_status_not_success"
   /** Signed result is a paid card trade; only the unsigned outer Status disagrees. */
   | "outer_status_mismatch"
+  /** Signed, well-formed TradeStatus outside the documented UPP table (for example 4); neither paid nor failed. */
+  | "trade_status_unknown"
   /** Signed refund notice without a provider refund serial (CloseNo/RefundNo); never applied automatically. */
   | "refund_reference_missing";
 
@@ -247,8 +249,9 @@ export class PaymentWebhookNotActionableError extends Error {
   }
 
   /**
-   * The provider reported a completed collection (paid trade status) that this
-   * system refuses to apply automatically. The money may already be captured,
+   * The provider reported a completed collection (paid trade status), or a
+   * trade state this system cannot map, that it refuses to apply
+   * automatically. The money may already be captured,
    * so it must be recorded for manual reconciliation, never silently dropped.
    */
   get requiresManualReconciliation() {
