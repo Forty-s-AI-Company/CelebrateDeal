@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { getStreamPlaybackSecurity, type StreamPlaybackSecurity } from "@/lib/cloudflare-stream-signing";
 
 const CloudflareVideoDetails = z.object({
   uid: z.string(),
@@ -97,9 +98,11 @@ async function cloudflareRequest(path: string, init?: RequestInit): Promise<unkn
 }
 
 export async function createDirectCreatorUpload(maxDurationSeconds = 60 * 60) {
+  // F-093：簽章啟用時新影片一律 requireSignedURLs＋allowedOrigins；未啟用時請求內容不變。
+  const security = getStreamPlaybackSecurity();
   const result = await cloudflareRequest("/stream/direct_upload", {
     method: "POST",
-    body: JSON.stringify({ maxDurationSeconds }),
+    body: JSON.stringify({ maxDurationSeconds, ...security }),
   });
   const parsed = CloudflareDirectUpload.safeParse(result);
   if (!parsed.success) {
@@ -112,6 +115,17 @@ function encodeTusMetadata(value: string) {
   return Buffer.from(value, "utf8").toString("base64");
 }
 
+/** tus 的 Cloudflare 擴充 metadata：`requiresignedurls` 不帶值，`allowedorigins` 為逗號分隔清單。 */
+function tusSecurityMetadata(security: StreamPlaybackSecurity | null) {
+  if (!security) return [];
+  return [
+    "requiresignedurls",
+    ...(security.allowedOrigins.length > 0
+      ? [`allowedorigins ${encodeTusMetadata(security.allowedOrigins.join(","))}`]
+      : []),
+  ];
+}
+
 export async function createResumableCreatorUpload(input: {
   fileName: string;
   mimeType: string;
@@ -119,6 +133,7 @@ export async function createResumableCreatorUpload(input: {
   maxDurationSeconds: number;
 }) {
   const { accountId, token } = cloudflareEnv();
+  const security = getStreamPlaybackSecurity();
   let response: Response;
   try {
     response = await fetch(
@@ -133,6 +148,7 @@ export async function createResumableCreatorUpload(input: {
             `name ${encodeTusMetadata(input.fileName)}`,
             `filetype ${encodeTusMetadata(input.mimeType)}`,
             `maxDurationSeconds ${encodeTusMetadata(String(input.maxDurationSeconds))}`,
+            ...tusSecurityMetadata(security),
           ].join(","),
         },
         signal: AbortSignal.timeout(15_000),
@@ -166,11 +182,12 @@ export async function getStreamVideoStatus(uid: string) {
 }
 
 export async function createLiveInput(name: string) {
+  const security = getStreamPlaybackSecurity();
   const result = await cloudflareRequest("/stream/live_inputs", {
     method: "POST",
     body: JSON.stringify({
       meta: { name },
-      recording: { mode: "automatic" },
+      recording: { mode: "automatic", ...security },
     }),
   });
   const parsed = CloudflareLiveInput.safeParse(result);
@@ -183,6 +200,46 @@ export async function createLiveInput(name: string) {
 export async function getLiveInput(uid: string) {
   const result = await cloudflareRequest(`/stream/live_inputs/${encodeURIComponent(uid)}`);
   const parsed = CloudflareLiveInput.safeParse(result);
+  if (!parsed.success) {
+    throw new CloudflareStreamError("invalid_response", 200);
+  }
+  return parsed.data;
+}
+
+const CloudflareVideoPlaybackSettings = z.object({
+  uid: z.string().min(1),
+  requireSignedURLs: z.boolean().optional(),
+  allowedOrigins: z.array(z.string()).optional(),
+});
+
+const CloudflareLiveInputRecordingSettings = z.object({
+  uid: z.string().min(1),
+  recording: z.object({
+    requireSignedURLs: z.boolean().optional(),
+    allowedOrigins: z.array(z.string()).optional(),
+  }).optional(),
+});
+
+/** 既有影片開啟簽章：`POST /stream/{uid}`，body 帶 `uid`。 */
+export async function updateStreamVideoPlaybackSecurity(uid: string, security: StreamPlaybackSecurity) {
+  const result = await cloudflareRequest(`/stream/${encodeURIComponent(uid)}`, {
+    method: "POST",
+    body: JSON.stringify({ uid, ...security }),
+  });
+  const parsed = CloudflareVideoPlaybackSettings.safeParse(result);
+  if (!parsed.success) {
+    throw new CloudflareStreamError("invalid_response", 200);
+  }
+  return parsed.data;
+}
+
+/** 既有 live input 的錄影開啟簽章：`PUT /stream/live_inputs/{uid}`，保留自動錄影。 */
+export async function updateLiveInputRecordingSecurity(uid: string, security: StreamPlaybackSecurity) {
+  const result = await cloudflareRequest(`/stream/live_inputs/${encodeURIComponent(uid)}`, {
+    method: "PUT",
+    body: JSON.stringify({ recording: { mode: "automatic", ...security } }),
+  });
+  const parsed = CloudflareLiveInputRecordingSettings.safeParse(result);
   if (!parsed.success) {
     throw new CloudflareStreamError("invalid_response", 200);
   }

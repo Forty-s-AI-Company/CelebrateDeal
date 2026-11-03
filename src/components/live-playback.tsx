@@ -25,6 +25,7 @@ import { trackClientAnalytics } from "@/lib/client-analytics";
 import { formatCurrency } from "@/lib/format";
 import { parseSafeExternalHttpUrl } from "@/lib/external-url";
 import { postStreamUsageHeartbeat, type StreamUsageHeartbeat } from "@/lib/stream-usage-client";
+import { scheduleSignedPlaybackRenewal, swapNativePlaybackSource, withCurrentStreamToken } from "@/lib/signed-playback-renewal";
 import { getOrCreateVisitorId } from "@/lib/visitor-id";
 import type { ScheduledRuntimeMessage } from "@/lib/live-chat-contract";
 import type { LiveRuntimeState } from "@/lib/live-runtime-state";
@@ -161,7 +162,13 @@ export type LivePlaybackSource = {
   playbackUrl: string;
   playbackStartSeconds: number;
   protocol?: "whep";
+  /** F-093: signed Stream URL lifetime; the player renews before it lapses. */
+  expiresInSeconds?: number;
 };
+
+function normalizeExpiresInSeconds(value: unknown) {
+  return typeof value === "number" && Number.isFinite(value) && value > 0 ? Math.floor(value) : null;
+}
 
 export function normalizePlaybackStartSeconds(value: unknown) {
   return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : 0;
@@ -214,11 +221,13 @@ function projectPlaybackSource(payload: unknown, runtimeState: LiveRuntimeState)
   }
   const playbackUrl = typeof rawPlaybackUrl === "string" ? parseSafeExternalHttpUrl(rawPlaybackUrl) : null;
   if (!playbackUrl) return null;
+  const expiresInSeconds = normalizeExpiresInSeconds((payload as { expiresInSeconds?: unknown }).expiresInSeconds);
   return {
     playbackUrl,
     playbackStartSeconds: runtimeState === "replay"
       ? 0
       : normalizePlaybackStartSeconds((payload as { playbackStartSeconds?: unknown }).playbackStartSeconds),
+    ...(expiresInSeconds === null ? {} : { expiresInSeconds }),
   };
 }
 
@@ -1699,6 +1708,83 @@ function useAdmittedPlaybackAnalytics({ live, admitted, visitorId, referralCode,
   }, [admitted, live.id, live.vendorId, liveShareCode, referralCode, sourcePageSlug, visitorId]);
 }
 
+/**
+ * Attaches an HLS source to the player. F-093: a signed Stream URL is renewed
+ * through the admission-checked playback-source endpoint before its token
+ * lapses; hls.js swaps the token on every later request, native HLS reloads
+ * the source in place.
+ */
+function useHlsPlayback({
+  videoRef,
+  playableSource,
+  playableUrl,
+  vendorId,
+  liveId,
+  runtimeState,
+}: {
+  videoRef: RefObject<HTMLVideoElement | null>;
+  playableSource: LivePlaybackSource | null;
+  playableUrl: string | null;
+  vendorId: string;
+  liveId: string;
+  runtimeState: LiveRuntimeState;
+}) {
+  // Renewal reads the latest scope without re-attaching the player when only
+  // the runtime label changes; a new source re-runs the attach effect anyway.
+  const renewalScopeRef = useRef({ vendorId, liveId, runtimeState });
+  useEffect(() => {
+    renewalScopeRef.current = { vendorId, liveId, runtimeState };
+  }, [liveId, runtimeState, vendorId]);
+  useEffect(() => {
+    const video = videoRef.current;
+    const hlsUrl = shouldUseHls(playableSource, playableUrl) ? playableUrl : null;
+    if (!video || !hlsUrl) return;
+    const nativeHls = Boolean(video.canPlayType("application/vnd.apple.mpegurl"));
+    let currentUrl = hlsUrl;
+    const renewalSeconds = playableSource?.expiresInSeconds;
+    const stopRenewal = renewalSeconds
+      ? scheduleSignedPlaybackRenewal({
+        expiresInSeconds: renewalSeconds,
+        fetchSource: () => {
+          const scope = renewalScopeRef.current;
+          return fetchLivePlaybackSource(scope.vendorId, scope.liveId, scope.runtimeState);
+        },
+        applySource: (nextUrl) => {
+          if (!isHlsPlaybackUrl(nextUrl) || nextUrl === currentUrl) return;
+          currentUrl = nextUrl;
+          if (nativeHls) swapNativePlaybackSource(video, nextUrl);
+        },
+      })
+      : () => undefined;
+    if (nativeHls) {
+      video.src = hlsUrl;
+      return stopRenewal;
+    }
+    let disposed = false;
+    let hls: { destroy: () => void } | null = null;
+    void import("hls.js")
+      .then(({ default: Hls }) => {
+        if (disposed || !Hls.isSupported()) return;
+        const player = new Hls(renewalSeconds ? {
+          xhrSetup: (xhr, url) => {
+            const target = withCurrentStreamToken(url, currentUrl);
+            if (target !== url) xhr.open("GET", target, true);
+          },
+        } : undefined);
+        hls = player;
+        player.loadSource(hlsUrl);
+        player.attachMedia(video);
+      })
+      .catch(() => undefined);
+
+    return () => {
+      disposed = true;
+      stopRenewal();
+      hls?.destroy();
+    };
+  }, [playableSource, playableUrl, videoRef]);
+}
+
 export function LivePlayback({ live }: { live: LivePageData }) {
   const router = useRouter(); const pathname = usePathname();
   const isCheckoutOverlay = isInternalCheckoutPath(pathname);
@@ -1830,31 +1916,7 @@ export function LivePlayback({ live }: { live: LivePageData }) {
     checkoutNavigation, streamUsage, router, setCheckoutError, setIsPlaybackPaused,
     resumeLivePlayback: liveWindow.resumeWhenLive });
   useAdmittedPlaybackAnalytics({ live, admitted: isPlayableRuntime && admissionStatus === "admitted", visitorId, referralCode, sourcePageSlug, liveShareCode });
-  useEffect(() => {
-    const video = videoRef.current;
-    const hlsUrl = shouldUseHls(playableSource, playableUrl) ? playableUrl : null;
-    if (!video || !hlsUrl) return;
-    if (video.canPlayType("application/vnd.apple.mpegurl")) {
-      video.src = hlsUrl;
-      return;
-    }
-    let disposed = false;
-    let hls: { destroy: () => void } | null = null;
-    void import("hls.js")
-      .then(({ default: Hls }) => {
-        if (disposed || !Hls.isSupported()) return;
-        const player = new Hls();
-        hls = player;
-        player.loadSource(hlsUrl);
-        player.attachMedia(video);
-      })
-      .catch(() => undefined);
-
-    return () => {
-      disposed = true;
-      hls?.destroy();
-    };
-  }, [playableSource, playableUrl]);
+  useHlsPlayback({ videoRef, playableSource, playableUrl, vendorId: live.vendorId, liveId: live.id, runtimeState });
 
 
   function trackProgress(seconds: number) {

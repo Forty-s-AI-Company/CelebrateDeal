@@ -12,6 +12,11 @@ import {
 } from "@/lib/request-client-ip";
 import { REGISTRATION_MODES } from "@/lib/registration-mode";
 import { getTurnstileConfig } from "@/lib/turnstile";
+import {
+  getStreamAllowedOrigins,
+  getStreamSigningConfig,
+  type StreamSigningMisconfiguration,
+} from "@/lib/cloudflare-stream-signing";
 
 const RequiredUrl = z.string().url();
 const OptionalSecret = z.string().optional();
@@ -48,6 +53,12 @@ export const ProductionEnvSchema = z.object({
   CLOUDFLARE_ACCOUNT_ID: OptionalSecret,
   CLOUDFLARE_STREAM_TOKEN: OptionalSecret,
   CLOUDFLARE_STREAM_WEBHOOK_SECRET: OptionalSecret,
+  // F-093: Stream signed playback URLs. Validated in streamSigningChecks.
+  CLOUDFLARE_STREAM_SIGNING_KEY_ID: OptionalSecret,
+  CLOUDFLARE_STREAM_SIGNING_KEY_PEM: OptionalSecret,
+  CLOUDFLARE_STREAM_SIGNING_KEY_JWK: OptionalSecret,
+  CLOUDFLARE_STREAM_CUSTOMER_CODE: OptionalSecret,
+  STREAM_ALLOWED_ORIGINS: OptionalSecret,
   PAYMENT_PROVIDER: z.enum(["demo", "payuni", "ecpay-like", "platform-ecpay"]).default("demo"),
   PAYUNI_HASH_KEY: OptionalSecret,
   PAYUNI_HASH_IV: OptionalSecret,
@@ -283,6 +294,47 @@ const recommendedKeys = [
   "SENTRY_AUTH_TOKEN",
 ] as const;
 
+const STREAM_SIGNING_MISCONFIGURATION_MESSAGES: Record<StreamSigningMisconfiguration, string> = {
+  partial: "CLOUDFLARE_STREAM_SIGNING_KEY_ID 與 CLOUDFLARE_STREAM_SIGNING_KEY_PEM（或 _JWK）必須同時設定",
+  both_key_formats: "CLOUDFLARE_STREAM_SIGNING_KEY_PEM 與 CLOUDFLARE_STREAM_SIGNING_KEY_JWK 只能設定其中一個",
+  invalid_key_id: "CLOUDFLARE_STREAM_SIGNING_KEY_ID 格式不正確（應為 Cloudflare signing key 的 id）",
+  invalid_key: "Stream signing key 無法解析成 RSA 私鑰；請貼上 Cloudflare 回傳的 pem（base64）或 PEM 文字",
+  weak_key: "Stream signing key 的 RSA 長度不足 2048 bits",
+  invalid_customer_code: "CLOUDFLARE_STREAM_CUSTOMER_CODE 只能是 customer-<CODE>.cloudflarestream.com 中的 <CODE>（小寫英數）",
+};
+
+/**
+ * F-093: signed Stream playback. Unset keys keep today's public URLs (warning)
+ * so environments can switch one at a time; a set but unusable key fails.
+ */
+function streamSigningChecks(env: NodeJS.ProcessEnv): EnvCheck[] {
+  const config = getStreamSigningConfig(env);
+  const allowedOrigins = getStreamAllowedOrigins(env);
+  if (config.status === "disabled") {
+    return [{
+      key: "CLOUDFLARE_STREAM_SIGNING_KEY_ID",
+      status: "warning",
+      message: "未設定 Stream 簽章金鑰；播放網址維持公開且永久有效，任何人可不經入場觀看（F-093，見 docs/operations/stream-signed-urls-plan.md）",
+    }];
+  }
+  if (config.status === "misconfigured") {
+    return [{ key: "CLOUDFLARE_STREAM_SIGNING_KEY_ID", status: "fail", message: STREAM_SIGNING_MISCONFIGURATION_MESSAGES[config.reason] }];
+  }
+  const originsCheck: EnvCheck = allowedOrigins.invalid.length > 0
+    ? { key: "STREAM_ALLOWED_ORIGINS", status: "fail", message: "STREAM_ALLOWED_ORIGINS 含無效項目；只接受以逗號分隔的主機名（可用 *.example.com、可加 :port），不可含路徑" }
+    : allowedOrigins.origins.length === 0
+      ? { key: "STREAM_ALLOWED_ORIGINS", status: "warning", message: "無法從 NEXT_PUBLIC_APP_URL 推得 allowedOrigins；新影片不會限制播放網域" }
+      : { key: "STREAM_ALLOWED_ORIGINS", status: "pass", message: `新影片 allowedOrigins：${allowedOrigins.origins.join(", ")}` };
+  return [
+    {
+      key: "CLOUDFLARE_STREAM_SIGNING_KEY_ID",
+      status: "pass",
+      message: "已設定 Stream 簽章金鑰（RS256）；入場後簽發短效播放 token，新影片與 live input 錄影要求簽章",
+    },
+    originsCheck,
+  ];
+}
+
 function accountRateLimitCheck(rateLimitProvider: string): EnvCheck {
   return {
     key: "ACCOUNT_RATE_LIMIT",
@@ -344,6 +396,8 @@ export function getEnvCheckReport(env: NodeJS.ProcessEnv = process.env) {
       message,
     });
   }
+
+  checks.push(...streamSigningChecks(env));
 
   for (const key of ["SENTRY_ENVIRONMENT", "NEXT_PUBLIC_SENTRY_ENVIRONMENT"] as const) {
     const value = env[key];

@@ -457,6 +457,27 @@ describe("LivePlayback checkout", () => {
     expect(renderPlaybackSource({ runtimeState: "playing", status: "live" }, "checking", 1)).toBeNull();
   });
 
+  it.each([
+    [600, { expiresInSeconds: 600 }],
+    [0, {}],
+    ["600", {}],
+  ] as const)("keeps only a positive numeric signed-URL expiry from the source endpoint (%s)", async (expiresInSeconds, expected) => {
+    hookState.effectsEnabled = true;
+    const signedUrl = "https://videodelivery.net/aaa.bbb.ccc/manifest/video.m3u8";
+    vi.stubGlobal("fetch", vi.fn(() => Promise.resolve({
+      ok: true,
+      json: async () => ({ playbackUrl: signedUrl, playbackStartSeconds: 4, expiresInSeconds }),
+    })));
+
+    renderPlaybackSource({ runtimeState: "playing", status: "live" });
+    await flushHookEffects();
+    expect(renderPlaybackSource({ runtimeState: "playing", status: "live" })).toEqual({
+      playbackUrl: signedUrl,
+      playbackStartSeconds: 4,
+      ...expected,
+    });
+  });
+
   it("clears a cached source when replay revalidation fails", async () => {
     hookState.effectsEnabled = true;
     let sourceRequests = 0;

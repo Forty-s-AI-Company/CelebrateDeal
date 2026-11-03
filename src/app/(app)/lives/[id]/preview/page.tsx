@@ -5,6 +5,7 @@ import { ButtonLink, Card, PageHeader } from "@/components/ui";
 import { EvergreenPreviewPlayer } from "@/components/evergreen-preview-player";
 import { requireVendorManager } from "@/lib/auth";
 import { getDb } from "@/lib/db";
+import { signedStreamPlaybackUrlOrNull } from "@/lib/cloudflare-stream-signing";
 import { productEventBeyondVideoSec } from "@/lib/live-video-timing";
 import { statusLabel } from "@/lib/status-labels";
 
@@ -33,7 +34,7 @@ export default async function LivePreviewPage({ params }: { params: Promise<{ id
           <div>
             {live.isEvergreen && live.evergreenPreviewEnabled && live.video?.videoUrl ? (
               <EvergreenPreviewPlayer
-                videoUrl={live.video.videoUrl}
+                videoUrl={signedStreamPlaybackUrlOrNull(live.video.videoUrl) ?? ""}
                 playbackRate={live.evergreenPreviewRate}
                 orientation={liveOrientation(live.presenterLayout)}
                 events={(live.interactionScript?.events ?? []).map(({ id: eventId, triggerSec, title, eventType }) => ({ id: eventId, triggerSec, title, eventType }))}

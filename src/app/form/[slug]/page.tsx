@@ -9,6 +9,7 @@ import { PromoVideoPlayer } from "@/components/promo-video-player";
 import { RichTextContent } from "@/components/rich-text-content";
 import { decodeRouteSlug } from "@/lib/format";
 import { getPublicRegistrationForm } from "@/lib/public-registration-form";
+import { signedStreamPlaybackUrlOrNull } from "@/lib/cloudflare-stream-signing";
 
 type PublicFormPageProps = {
   params: Promise<{ slug: string }>;
@@ -94,7 +95,8 @@ export default async function PublicFormPage({ params, searchParams }: PublicFor
           {form.promoVideo ? (
             <section className="grid gap-2" aria-labelledby="registration-promo-video-title">
               <h2 id="registration-promo-video-title" className="text-sm font-bold text-slate-900">活動預告</h2>
-              <PromoVideoPlayer src={form.promoVideo.videoUrl} title={form.promoVideo.title} />
+              {/* F-093: the promo is public by design; a Stream URL still gets a time-limited token. */}
+              <PromoVideoPlayer src={signedStreamPlaybackUrlOrNull(form.promoVideo.videoUrl) ?? ""} title={form.promoVideo.title} />
             </section>
           ) : null}
 
