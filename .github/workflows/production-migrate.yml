@@ -10,7 +10,8 @@ name: Production migrate
 # - "status" is read-only. "deploy" first verifies, through the GitHub API, that
 #   `backup_run_id` is a run of the fixed Production backup workflow
 #   (.github/workflows/production-backup.yml, pinned in scripts/production-migrate.mjs)
-#   on master with conclusion=success, finished within the last 24 hours and
+#   on master with conclusion=success, built from a commit in master history
+#   with a successful `backup` job, finished within the last 24 hours and
 #   holding the production-database-backup-<run id> artifact, then runs `prisma migrate status`
 #   and only deploys when history is clean (a failed migration / P3009 stops it).
 # - The migration session uses lock_timeout=5s and statement_timeout=60s, TLS is

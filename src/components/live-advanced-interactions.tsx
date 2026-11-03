@@ -1,9 +1,10 @@
 "use client";
 
 import { BarChart3, Flame, Gift, MessageCircleQuestion, PartyPopper, Sparkles, Trophy, X, Zap } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { AdvancedInteractionMetadata } from "@/lib/interaction-event";
 import { formatCurrency } from "@/lib/format";
+import { useLiveUpdates } from "@/lib/use-live-updates";
 import { usePageVisible } from "@/lib/use-page-visibility";
 
 type AdvancedEvent = {
@@ -149,49 +150,64 @@ function ActiveLiveAdvancedInteractions({
     return () => controller.abort();
   }, [run?.id, scriptedEvent?.id, admissionLost]);
 
+  // 排定事件的 run 只能由 POST open 具現化；手動互動與精選問題改走共用的
+  // /api/live-updates 單一輪詢（與聊天合併），不再各自輪詢。
+  const polledRunRef = useRef<PublicRun | null>(null);
+  const scriptedRunRef = useRef<PublicRun | null>(null);
+  const showRun = useCallback(() => setRun(scriptedRunRef.current ?? polledRunRef.current), []);
+
+  useLiveUpdates({
+    vendorId,
+    liveId,
+    enabled: enabled && !admissionLost,
+    interactions: true,
+    onUpdate: (payload) => {
+      if (!payload.interactions) return;
+      polledRunRef.current = (payload.interactions.runs[0] as PublicRun | undefined) ?? null;
+      setSpotlight((payload.interactions.spotlight as PublicSpotlight | null) ?? null);
+      showRun();
+    },
+    onStatus: (status) => {
+      if (status === "unauthorized") setAdmissionLost(true);
+    },
+  });
+
   useEffect(() => {
-    // 分頁隱藏時暫停輪詢；回到前景時重新執行並立即讀取一次。
-    if (!enabled || admissionLost || !pageVisible) return;
-    // 依序輪詢，切換直播或事件時中止舊請求，避免過期結果覆蓋新狀態。
+    // 分頁隱藏時暫停；回到前景時重新執行並立即開啟一次。
+    if (!enabled || admissionLost || !pageVisible || !scriptedEvent) return;
+    // 依序請求，切換直播或事件時中止舊請求，避免過期結果覆蓋新狀態。
     const controller = new AbortController();
     const { signal } = controller;
     let timer: number;
-    async function refresh() {
+    async function open() {
       try {
-        let scriptedRun: PublicRun | null = null;
-        if (scriptedEvent) {
-          try {
-            const payload = await interactionRequest({ action: "open", vendorId, liveId, eventId: scriptedEvent.id }, signal);
-            scriptedRun = payload.run ?? null;
-          } catch (error) {
-            if (error instanceof InteractionRequestError && error.status === 401) {
-              if (!signal.aborted) setAdmissionLost(true);
-              return;
-            }
-            // 排定事件已結束或暫時失敗，仍讀取手動互動與精選問題。
-          }
+        const payload = await interactionRequest({ action: "open", vendorId, liveId, eventId: scriptedEvent!.id }, signal);
+        if (signal.aborted) return;
+        scriptedRunRef.current = payload.run ?? null;
+        showRun();
+      } catch (error) {
+        if (error instanceof InteractionRequestError && error.status === 401) {
+          if (!signal.aborted) setAdmissionLost(true);
+          return;
         }
-        if (signal.aborted) return;
-        const response = await fetch(`/api/live-interactions?vendorId=${encodeURIComponent(vendorId)}&liveId=${encodeURIComponent(liveId)}`, { cache: "no-store", signal });
-        if (signal.aborted) return;
-        if (response.status === 401) { setAdmissionLost(true); return; }
-        if (!response.ok) return;
-        const payload = await response.json() as { runs?: PublicRun[]; spotlight?: PublicSpotlight | null };
-        if (signal.aborted) return;
-        setRun(scriptedRun ?? payload.runs?.[0] ?? null);
-        setSpotlight(payload.spotlight ?? null);
-      } catch {
-        // 暫時斷線不影響播放；下一輪重新讀取伺服器結果。
+        // 排定事件已結束或暫時失敗，仍顯示手動互動。
+        if (!signal.aborted) {
+          scriptedRunRef.current = null;
+          showRun();
+        }
       } finally {
-        if (!signal.aborted) timer = window.setTimeout(() => void refresh(), 2_000);
+        if (!signal.aborted) timer = window.setTimeout(() => void open(), 2_000);
       }
     }
-    timer = window.setTimeout(() => void refresh(), 0);
+    timer = window.setTimeout(() => void open(), 0);
     return () => {
       controller.abort();
       window.clearTimeout(timer);
+      // 排定窗口結束時立即回到輪詢的 run，不等下一次輪詢。
+      scriptedRunRef.current = null;
+      showRun();
     };
-  }, [enabled, admissionLost, liveId, pageVisible, scriptedEvent, vendorId]);
+  }, [enabled, admissionLost, liveId, pageVisible, scriptedEvent, showRun, vendorId]);
 
   useEffect(() => {
     if (!run) return;

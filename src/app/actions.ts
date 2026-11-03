@@ -16,6 +16,8 @@ import { auditSnapshot, requestAuditMeta, writeAuditLog } from "@/lib/audit";
 import { AffiliateCommissionRateBps } from "@/lib/affiliate-commission";
 import { AffiliatePayoutMutationConflict, isAffiliatePayoutMutationConflict, payoutCommissionAmount } from "@/lib/affiliate-payout-accounting";
 import { affiliatePaidRemunerationFields, affiliateRemunerationPaymentProof, assertAffiliatePayoutFinanceActor } from "@/lib/affiliate-remuneration-quotes";
+import { affiliatePayoutsDisabled, AffiliatePayoutsDisabledError } from "@/lib/affiliate-payout-switch";
+import { requireRecentMfa } from "@/lib/recent-mfa";
 import { appendCommissionLedgerEntry, commissionLedgerPayableState } from "@/lib/affiliate-commission-accounting";
 import { encryptBankAccount, maskBankAccount, resolveStoredBankAccount } from "@/lib/bank-account";
 import { monthRange, payoutBatchNumber } from "@/lib/billing";
@@ -1873,7 +1875,9 @@ export async function lockSettlementAction(formData: FormData) {
 
 export async function recordAffiliatePayoutOutcomeAction(formData: FormData) {
   await assertServerActionSecurity(formData);
-  const { vendor, member } = await requireVendorFinance("/affiliates/commissions");
+  const { vendor, member, user, session } = await requireVendorFinance("/affiliates/commissions");
+  // F-025: marking a payout paid or void changes what an affiliate is owed.
+  requireRecentMfa({ user, session }, { nextPath: "/affiliates/commissions" });
   const id = text(formData, "id");
   const status = text(formData, "status");
   const reason = text(formData, "reason");
@@ -1888,6 +1892,8 @@ export async function recordAffiliatePayoutOutcomeAction(formData: FormData) {
   ) {
     redirect("/affiliates/commissions?error=invalid_payout");
   }
+  // F-052: the platform switch stops every paid outcome; void stays available.
+  if (status === "paid" && affiliatePayoutsDisabled()) redirect("/affiliates/commissions?error=payouts_disabled");
 
   const auditMeta = await requestAuditMeta();
   try {
@@ -1994,6 +2000,7 @@ export async function recordAffiliatePayoutOutcomeAction(formData: FormData) {
       });
     }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
   } catch (error) {
+    if (error instanceof AffiliatePayoutsDisabledError) redirect("/affiliates/commissions?error=payouts_disabled");
     if (error instanceof AffiliatePayoutMutationConflict || isAffiliatePayoutMutationConflict(error)) {
       redirect("/affiliates/commissions?error=conflict");
     }

@@ -2,6 +2,8 @@
 
 適用於 Supabase Free Plan 無 managed project backups 的期間。本方案使用加密邏輯備份，不取代正式收費後應評估的 provider-managed backups 或 PITR。Supabase 升級 Pro 之後的步驟見文末 §A～§E（2026-10-19 新增，F-058／F-074）。
 
+GitHub 上的 `Production backup` workflow（`production-migrate` 的 `backup_run_id` 只認它）產生 custom 格式、以同一把 age 公鑰加密的邏輯備份（範圍與 staging 相同，只含 `public` schema；本機 PowerShell 版是整個資料庫），並在同一個 snapshot 附上 §C 的帳務彙總密文；觸發、核准與用它做隔離還原演練的步驟見 `docs/operations/production-backup-restore-runbook.md`。§C 的 SQL 由 `scripts/production-backup.mjs` 逐字使用，修改時兩邊要一起改（契約測試會檢查）。
+
 ## 安全界線
 
 - 僅可使用 Production 的 `DIRECT_URL`，並由 SecretManagement 或 Windows Credential Manager 在執行期注入。Credential Manager 使用時，完整連線字串僅放在 credential password 欄位。

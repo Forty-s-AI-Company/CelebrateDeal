@@ -1,5 +1,6 @@
 import { createCipheriv, createDecipheriv, createHash, timingSafeEqual } from "node:crypto";
 import { isSupportedCheckoutCurrency, UnsupportedCurrencyError } from "@/lib/checkout-currency";
+import { recordUnsupportedCurrencyRefusal } from "@/lib/checkout-currency-audit";
 import { PaymentWebhookPayload } from "@/lib/payment-webhooks";
 import { getDb } from "@/lib/db";
 import { activePayUniCredentials } from "@/lib/payuni-credentials";
@@ -1048,6 +1049,13 @@ export const payUniPaymentProvider: PaymentProviderAdapter = {
     if (process.env.VERCEL_ENV === "preview" && process.env.PAYUNI_ENV === "production"
       && (product || description || !payUniStagingPlanSessionAllowed(vendor.id, billingPlan, transaction))) {
       throw new Error("General PayUni checkout is disabled in live-probe Preview.");
+    }
+    // F-041: assert TWD before credentials or any provider work, for every
+    // caller (product, plan, upsell and recovery checkouts), and audit it.
+    if (!isSupportedCheckoutCurrency(transaction.currency)) {
+      await recordUnsupportedCurrencyRefusal({ vendorId: vendor.id, targetType: "PaymentTransaction", targetId: transaction.id,
+        currency: transaction.currency, surface: "payuni_checkout_session" });
+      throw new UnsupportedCurrencyError("PayUni checkout session");
     }
     const merchantId = activePayUniCredentials().merchantId;
 
