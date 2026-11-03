@@ -32,6 +32,7 @@ import {
   isCurrentLiveNotificationDeliverySnapshot,
   materializeLiveNotificationsForSubmission,
 } from "@/lib/live-notification-delivery";
+import { ACTIVE_VENDOR_RELATION, isVendorSuspendedById } from "@/lib/vendor-suspension-state";
 
 const DELIVERY_LEASE_MS = 10 * 60 * 1_000;
 const MAX_ATTEMPTS = 5;
@@ -1466,6 +1467,10 @@ export async function dispatchEmailDelivery(deliveryId: string, actorLabel = "jo
   if (!candidate) return { status: "missing" as const };
   if (!new Set(["queued", "failed"]).has(candidate.status)) return { status: "not_due" as const };
   if (candidate.nextAttemptAt && candidate.nextAttemptAt > new Date()) return { status: "not_due" as const };
+  // F-036: nothing is sent for a suspended vendor (job and post-response hook
+  // alike). The row is not claimed, so it stays queued until the suspension
+  // is lifted; the send-time snapshot checks below still apply then.
+  if (await isVendorSuspendedById(db, candidate.vendorId)) return { status: "vendor_suspended" as const };
 
   const attemptCount = candidate.attemptCount + 1;
   const claimed = await db.emailDelivery.updateMany({
@@ -1607,6 +1612,8 @@ export async function processDueEmailDeliveries(limit = 20) {
     where: {
       status: { in: ["queued", "failed"] },
       nextAttemptAt: { lte: now },
+      // F-036: a suspended vendor's queue waits without starving other tenants.
+      ...ACTIVE_VENDOR_RELATION,
     },
     orderBy: { nextAttemptAt: "asc" },
     take: remaining,

@@ -78,7 +78,7 @@ type StudentPortalAccessTokenStore = {
 
 type StudentPortalVendorStore = {
   findFirst(args: {
-    where: { id: string; slug: string };
+    where: { id: string; slug: string; suspendedAt: null };
     select: { id: true; slug: true; name: true; logoUrl: true; primaryColor: true };
   }): Promise<{ id: string; slug: string; name: string; logoUrl: string | null; primaryColor: string } | null>;
 };
@@ -373,7 +373,8 @@ export async function requireStudentPortalSession(vendorSlug: string) {
   if (!session) redirect(studentPortalLoginPath(vendorSlug));
 
   const vendor = await database().vendor.findFirst({
-    where: { id: session.vendorId, slug: vendorSlug },
+    // F-036: a suspended vendor's portal is closed even for a session issued before the suspension.
+    where: { id: session.vendorId, slug: vendorSlug, suspendedAt: null },
     select: { id: true, slug: true, name: true, logoUrl: true, primaryColor: true },
   });
   if (!vendor) redirect(`${studentPortalLoginPath(vendorSlug)}?error=unauthorized`);

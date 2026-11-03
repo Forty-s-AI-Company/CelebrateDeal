@@ -6,6 +6,7 @@ import {
   type FeatureGateVendor,
   type GatedFeature,
 } from "@/lib/vendor-feature-toggles";
+import { isVendorSuspended, type VendorSuspensionState } from "@/lib/vendor-suspension-state";
 
 /**
  * Server-side module gates (F-001 / F-002, B01-01 / B01-02).
@@ -60,13 +61,16 @@ type VendorFeatureReader = Pick<PrismaClient, "vendor">;
 /**
  * Buyer, learner and viewer entry points only know the vendor through the
  * record they ask for. Reads the flags of exactly that vendor; an unknown
- * vendor is treated as closed.
+ * vendor is treated as closed, and so is a suspended one (F-036): every gated
+ * learner, viewer and buyer module of a suspended tenant answers 404 even for
+ * a portal session issued before the suspension.
  */
 export async function loadFeatureGateVendor(db: VendorFeatureReader, vendorId: string): Promise<FeatureGateVendor | null> {
-  return db.vendor.findUnique({
+  const vendor = await db.vendor.findUnique({
     where: { id: vendorId },
-    select: { enabledFeatureModules: true, betaFeatureGrants: true },
+    select: { enabledFeatureModules: true, betaFeatureGrants: true, suspendedAt: true },
   });
+  return vendor && !isVendorSuspended(vendor) ? vendor : null;
 }
 
 export async function isVendorFeatureEnabled(db: VendorFeatureReader, vendorId: string, feature: GatedFeature): Promise<boolean> {
@@ -87,8 +91,11 @@ export function isCourseProduct(product: CourseShape): boolean {
 /**
  * A course product can only be bought while the vendor's courses module is
  * open; otherwise the buyer would pay for a learner portal that answers 404.
+ * Nothing of a suspended vendor can be bought (F-036); `suspendedAt` is a
+ * required field so every caller must select it.
  */
-export function isProductPurchasable(vendor: FeatureGateVendor | null | undefined, product: CourseShape): boolean {
+export function isProductPurchasable(vendor: (FeatureGateVendor & VendorSuspensionState) | null | undefined, product: CourseShape): boolean {
+  if (!vendor || isVendorSuspended(vendor)) return false;
   return !isCourseProduct(product) || isFeatureEnabled(vendor, "courses");
 }
 

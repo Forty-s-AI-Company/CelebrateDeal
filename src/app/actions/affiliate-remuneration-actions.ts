@@ -11,6 +11,7 @@ import { BankAccountEncryptionError } from "@/lib/bank-account";
 import { AffiliatePayeeConflict, approveAffiliatePayeeProfile, submitAffiliatePayeeProfile } from "@/lib/affiliate-payee-profile";
 import { createAffiliateRemunerationQuote, signAffiliateRemunerationQuote } from "@/lib/affiliate-remuneration-quotes";
 import { AffiliateRemunerationInputError } from "@/lib/affiliate-remuneration";
+import { ACTIVE_VENDOR_WHERE } from "@/lib/vendor-suspension-state";
 const Id = z.string().regex(/^[A-Za-z0-9_-]{1,160}$/u);
 const Revision = z.string().regex(/^\d{1,10}$/u).transform(Number).pipe(z.number().int().min(0).max(2_147_483_646));
 async function memberContext(form: FormData) {
@@ -19,7 +20,8 @@ async function memberContext(form: FormData) {
   const affiliateId = Id.parse(form.get("affiliateId"));
   const path = `/affiliate-portal/${encodeURIComponent(vendorSlug)}/${encodeURIComponent(affiliateId)}/remuneration`;
   const auth = await requireAuth({ nextPath: path });
-  const vendor = await getDb().vendor.findFirst({ where: { slug: vendorSlug, enabledFeatureModules: { hasEvery: ["affiliate_program", "tax_remuneration"] } }, select: { id: true } });
+  // F-036: a suspended vendor's partner portal is closed like its back office.
+  const vendor = await getDb().vendor.findFirst({ where: { slug: vendorSlug, enabledFeatureModules: { hasEvery: ["affiliate_program", "tax_remuneration"] }, ...ACTIVE_VENDOR_WHERE }, select: { id: true } });
   if (!vendor) notFound();
   return { actor: { userId: auth.user.id }, scope: { vendorId: vendor.id, affiliateId }, path };
 }

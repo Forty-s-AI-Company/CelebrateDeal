@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { requireSameOriginRequest } from "@/lib/api-security";
 import { getCurrentAuth } from "@/lib/auth";
 import { verifyCsrfToken } from "@/lib/csrf";
+import { vendorSuspendedApiResponse } from "@/lib/vendor-suspension";
 
 export const MERCHANT_API_CSRF_HEADER = "x-csrf-token";
 
@@ -26,6 +27,8 @@ export async function requireMerchantApiActor(request: Request): Promise<Merchan
   if (!auth) {
     return { response: NextResponse.json({ error: { code: "UNAUTHORIZED" } }, { status: 401 }) };
   }
+  // F-036: getCurrentAuth already withholds the vendor; say why instead of a bare FORBIDDEN.
+  if (auth.suspendedVendor) return { response: vendorSuspendedApiResponse() };
 
   if (
     !auth.vendor

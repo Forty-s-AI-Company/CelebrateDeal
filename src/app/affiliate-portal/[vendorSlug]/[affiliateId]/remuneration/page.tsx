@@ -4,6 +4,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { requireAuth } from "@/lib/auth";
 import { getDb } from "@/lib/db";
+import { ACTIVE_VENDOR_WHERE } from "@/lib/vendor-suspension-state";
 import { CSRF_FIELD_NAME, getCsrfToken } from "@/lib/csrf";
 import { getAffiliateRemunerationDashboard } from "@/lib/affiliate-remuneration-dashboard";
 import { createAffiliateRemunerationQuoteAction, signAffiliateRemunerationQuoteAction, submitAffiliatePayeeProfileAction } from "@/app/actions/affiliate-remuneration-actions";
@@ -13,7 +14,8 @@ export default async function AffiliateRemunerationPage({ params, searchParams }
   const { vendorSlug, affiliateId } = await params, query = await searchParams;
   const path = `/affiliate-portal/${encodeURIComponent(vendorSlug)}/${encodeURIComponent(affiliateId)}/remuneration`;
   const auth = await requireAuth({ nextPath: path });
-  const vendor = await getDb().vendor.findUnique({ where: { slug: vendorSlug }, select: { id: true } });
+  // F-036: a suspended vendor's partner portal is closed like its back office.
+  const vendor = await getDb().vendor.findFirst({ where: { slug: vendorSlug, ...ACTIVE_VENDOR_WHERE }, select: { id: true } });
   if (!vendor) notFound();
   const current = await getAffiliateRemunerationDashboard(getDb(), { userId: auth.user.id }, { vendorId: vendor.id, affiliateId }, "affiliate", query.cursor);
   if (!current) notFound();

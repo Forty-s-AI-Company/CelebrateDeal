@@ -112,7 +112,8 @@ export async function loginAction(formData: FormData) {
   // A partner-only account signs in to the partner portal (see loginFacts).
   const login = loginFacts(auth);
   const invitationLogin = !auth.isPlatformAdmin && !auth.vendor && await hasPendingVendorMemberInvitation(getDb(), auth.user.email);
-  if (!auth.isPlatformAdmin && !auth.vendor && !invitationLogin && !login.partnerLogin) {
+  // F-036: a member of a suspended vendor still signs in, to see the suspended page only.
+  if (!auth.isPlatformAdmin && !auth.vendor && !auth.suspendedVendor && !invitationLogin && !login.partnerLogin) {
     await writeAuditLog({
       actorId: auth.user.id,
       actorLabel: "user_without_vendor",
@@ -158,11 +159,12 @@ type AuthenticatedLogin = NonNullable<Awaited<ReturnType<typeof authenticateUser
  * the partner vendor so deactivating that membership revokes the session.
  */
 function loginFacts(auth: AuthenticatedLogin) {
-  const partnerLogin = !auth.isPlatformAdmin && !auth.vendor && auth.partnerPortalOnly;
+  const partnerLogin = !auth.isPlatformAdmin && !auth.vendor && !auth.suspendedVendor && auth.partnerPortalOnly;
   return {
     partnerLogin,
-    sessionVendorId: auth.vendor?.id ?? (partnerLogin ? auth.partnerVendorId : null),
-    actorLabel: auth.isPlatformAdmin ? "platform_admin" : auth.member?.role ?? (partnerLogin ? "partner" : "user"),
+    // A suspended vendor is recorded on the session (it is never a vendor context, see getCurrentAuth).
+    sessionVendorId: auth.vendor?.id ?? auth.suspendedVendor?.id ?? (partnerLogin ? auth.partnerVendorId : null),
+    actorLabel: auth.isPlatformAdmin ? "platform_admin" : auth.member?.role ?? (auth.suspendedVendor ? "suspended_vendor_member" : partnerLogin ? "partner" : "user"),
   };
 }
 

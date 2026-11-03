@@ -2,12 +2,18 @@ import { createHash, randomUUID } from "node:crypto";
 import { Prisma } from "@prisma/client";
 import { recordLearnerPaymentNotificationSources } from "@/lib/learner-payment-notifications";
 import {
+  isStudentPortalCustomerKey,
+  revokeStudentPortalSessionsForCustomerKey,
+  studentPortalCustomerKeyForEmail,
+} from "@/lib/student-portal-revocation";
+import {
   deriveRefundOrderStatus,
   type CommerceFulfillmentType,
   type CommerceOrderStatus,
 } from "@/lib/commerce-order-domain";
 import {
   protectCommerceOrderPii,
+  revealCommerceOrderPii,
   type CommerceOrderBuyerContact,
   type CommerceOrderShippingAddress,
 } from "@/lib/commerce-order-pii";
@@ -43,6 +49,8 @@ export type CommerceOrdersTransaction = Pick<
   | "vendor"
   | "learnerNotificationSourceEvent"
   | "trackingSetting"
+  | "studentPortalAccessToken"
+  | "$queryRaw"
 >;
 
 type OrderRecord = {
@@ -621,6 +629,18 @@ async function grantPaidEntitlements(
   return granted.count;
 }
 
+/**
+ * F-036: a suspended vendor's paid callback is still recorded (the buyer's
+ * money already moved), but access is not opened. `FOR SHARE` makes a
+ * concurrent suspend/resume wait for this transaction (or abort it as a
+ * serialization failure that the payment retry absorbs), so `resumeVendor`
+ * always sees the entitlements this transaction left pending.
+ */
+async function vendorFulfillmentHeld(tx: CommerceOrdersTransaction, vendorId: string) {
+  const rows = await tx.$queryRaw<Array<{ suspendedAt: Date | null }>>`SELECT "suspendedAt" FROM "Vendor" WHERE "id" = ${vendorId} FOR SHARE`;
+  return rows[0]?.suspendedAt instanceof Date;
+}
+
 /** Reconciles a provider paid or failed notification without ever downgrading paid money. */
 export async function reconcileCommerceOrderPaymentTransition(
   tx: CommerceOrdersTransaction,
@@ -634,7 +654,8 @@ export async function reconcileCommerceOrderPaymentTransition(
   const dedupKey = `payment.${input.transition}:${input.eventIdentity}`;
   const now = input.occurredAt ?? new Date();
   if (await eventExists(tx, input.vendorId, order.id, dedupKey)) {
-    if (input.transition === "paid" && ["paid", "partially_refunded"].includes(order.status)) {
+    if (input.transition === "paid" && ["paid", "partially_refunded"].includes(order.status)
+      && !await vendorFulfillmentHeld(tx, input.vendorId)) {
       await grantPaidEntitlements(tx, input.vendorId, order.id, now);
     }
     return { orderId: order.id, changed: false, status: order.status };
@@ -642,7 +663,7 @@ export async function reconcileCommerceOrderPaymentTransition(
 
   if (input.transition === "paid") {
     if (["paid", "partially_refunded", "refunded"].includes(order.status)) {
-      if (order.status !== "refunded") {
+      if (order.status !== "refunded" && !await vendorFulfillmentHeld(tx, input.vendorId)) {
         await grantPaidEntitlements(tx, input.vendorId, order.id, now);
       }
       return { orderId: order.id, changed: false, status: order.status };
@@ -659,9 +680,15 @@ export async function reconcileCommerceOrderPaymentTransition(
       data: { status: "paid", paidAmountCents: order.totalAmountCents, paidAt: now, failedAt: null },
     });
     if (updated.count !== 1) throw new CommerceOrderConflictError();
-    const grantedEntitlementCount = await grantPaidEntitlements(tx, input.vendorId, order.id, now);
-    await appendEvent(tx, { vendorId: input.vendorId, orderId: order.id, dedupKey, eventType: "payment.paid", occurredAt: now, data: sanitizedOrderData({ ...order, status: "paid", paidAmountCents: order.totalAmountCents }, { paymentTransactionId: input.paymentTransactionId, paidAmountCents: order.totalAmountCents, grantedEntitlementCount }) });
-    await recordLearnerPaymentNotificationSources(tx, { vendorId: input.vendorId, orderId: order.id, customerKeyHash: order.automationCustomerKeyHash ?? null, occurredAt: now });
+    // F-036: the money is recorded either way. A suspended vendor's order stays
+    // un-provisioned (entitlements pending, no learner notifications) until
+    // resumeVendor releases it.
+    const fulfillmentHeld = await vendorFulfillmentHeld(tx, input.vendorId);
+    const grantedEntitlementCount = fulfillmentHeld ? 0 : await grantPaidEntitlements(tx, input.vendorId, order.id, now);
+    await appendEvent(tx, { vendorId: input.vendorId, orderId: order.id, dedupKey, eventType: "payment.paid", occurredAt: now, data: sanitizedOrderData({ ...order, status: "paid", paidAmountCents: order.totalAmountCents }, { paymentTransactionId: input.paymentTransactionId, paidAmountCents: order.totalAmountCents, grantedEntitlementCount, ...(fulfillmentHeld ? { fulfillmentHeld: "vendor_suspended" } : {}) }) });
+    if (!fulfillmentHeld) {
+      await recordLearnerPaymentNotificationSources(tx, { vendorId: input.vendorId, orderId: order.id, customerKeyHash: order.automationCustomerKeyHash ?? null, occurredAt: now });
+    }
     return { orderId: order.id, changed: true, status: "paid" as const };
   }
 
@@ -770,6 +797,31 @@ async function convergeFullRefundFulfillment(
   };
 }
 
+type RefundCustomerIdentity = {
+  automationCustomerKeyHash?: string | null;
+  buyerEncryptedEnvelope: string;
+  shippingEncryptedEnvelope: string | null;
+};
+
+/**
+ * The learner portal key of the order's buyer: the stored key when present,
+ * else derived from the decrypted buyer email (same derivation as
+ * `revokeStudentPortalSessions`). Never throws: a refund must not roll back
+ * because a revocation key could not be computed.
+ */
+function refundStudentPortalCustomerKey(vendorId: string, order: { id: string } & RefundCustomerIdentity) {
+  if (isStudentPortalCustomerKey(order.automationCustomerKeyHash)) return order.automationCustomerKeyHash;
+  try {
+    const pii = revealCommerceOrderPii(
+      { buyerEncrypted: order.buyerEncryptedEnvelope, shippingEncrypted: order.shippingEncryptedEnvelope },
+      { vendorId, orderId: order.id },
+    );
+    return studentPortalCustomerKeyForEmail(vendorId, pii.buyer.email);
+  } catch {
+    return null;
+  }
+}
+
 /** Records an immutable provider refund after a guarded cumulative-order update. */
 export async function reconcileCommerceOrderRefund(
   tx: CommerceOrdersTransaction,
@@ -801,8 +853,8 @@ export async function reconcileCommerceOrderRefund(
 
   const order = await tx.commerceOrder.findUnique({
     where: { vendorId_id: { vendorId: input.vendorId, id: input.orderId } },
-    select: { id: true, vendorId: true, status: true, totalAmountCents: true, paidAmountCents: true, refundedAmountCents: true, primaryPaymentTransactionId: true },
-  }) as (OrderRecord & { primaryPaymentTransactionId: string | null }) | null;
+    select: { id: true, vendorId: true, status: true, totalAmountCents: true, paidAmountCents: true, refundedAmountCents: true, primaryPaymentTransactionId: true, automationCustomerKeyHash: true, buyerEncryptedEnvelope: true, shippingEncryptedEnvelope: true },
+  }) as (OrderRecord & { primaryPaymentTransactionId: string | null } & RefundCustomerIdentity) | null;
   if (!order) throw new CommerceOrderValidationError("Canonical commerce order was not found.");
   if (input.paymentTransactionId && order.primaryPaymentTransactionId !== input.paymentTransactionId) {
     throw new CommerceOrderValidationError("Refund payment transaction does not match order.");
@@ -831,6 +883,15 @@ export async function reconcileCommerceOrderRefund(
   const fulfillmentConvergence = nextStatus === "refunded"
     ? await convergeFullRefundFulfillment(tx, input.vendorId, order.id, input.occurredAt)
     : null;
+  // F-030: when the refund removed course/digital access, end the buyer's
+  // learner portal sessions of this vendor in the same transaction. They can
+  // sign in again for anything they still own; the revoked order stays closed.
+  const refundCustomerKey = fulfillmentConvergence && fulfillmentConvergence.revokedEntitlementCount > 0
+    ? refundStudentPortalCustomerKey(input.vendorId, order)
+    : null;
+  const revokedStudentPortalTokenCount = refundCustomerKey
+    ? await revokeStudentPortalSessionsForCustomerKey(tx, { vendorId: input.vendorId, customerKeyHash: refundCustomerKey })
+    : 0;
   await appendEvent(tx, {
     vendorId: input.vendorId,
     orderId: order.id,
@@ -844,6 +905,7 @@ export async function reconcileCommerceOrderRefund(
         amountCents: input.amountCents,
         cumulativeAmountCents: nextRefundedAmount,
         ...(fulfillmentConvergence ? { fulfillmentConvergence } : {}),
+        ...(revokedStudentPortalTokenCount > 0 ? { revokedStudentPortalTokenCount } : {}),
       },
     ),
   });

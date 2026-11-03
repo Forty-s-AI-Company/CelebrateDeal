@@ -57,6 +57,10 @@ function transaction() {
     commerceEntitlement: { create: vi.fn(), updateMany: vi.fn().mockResolvedValue({ count: 0 }) },
     serviceFulfillment: { create: vi.fn(), updateMany: vi.fn().mockResolvedValue({ count: 0 }) },
     commerceOrderItemDeliverySnapshot: { create: vi.fn(), updateMany: vi.fn().mockResolvedValue({ count: 0 }) },
+    // F-036: the paid transition reads the vendor's suspension under FOR SHARE.
+    $queryRaw: vi.fn().mockResolvedValue([{ suspendedAt: null }]),
+    // F-030: a full refund that revokes access also revokes learner portal sessions.
+    studentPortalAccessToken: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
   };
 }
 
@@ -358,6 +362,35 @@ describe("commerce orders database service", () => {
     expect(tx.commerceEntitlement.updateMany).toHaveBeenCalledWith(expect.objectContaining({
       data: expect.objectContaining({ status: "granted", revision: { increment: 1 } }),
     }));
+  });
+
+  it("records a suspended vendor's paid event without granting access (F-036)", async () => {
+    const tx = transaction();
+    tx.$queryRaw.mockResolvedValue([{ suspendedAt: new Date("2026-11-03T00:00:00.000Z") }]);
+    tx.commerceOrder.findFirst.mockResolvedValue(order("pending_payment"));
+    tx.commerceOrder.updateMany.mockResolvedValue({ count: 1 });
+    tx.commerceOrderItem.findMany.mockResolvedValue([{ id: "digital-item-1" }]);
+
+    await expect(reconcileCommerceOrderPaymentTransition(tx as never, {
+      vendorId: "vendor-1", paymentTransactionId: "payment-1", eventIdentity: "provider-paid-held", transition: "paid", occurredAt: now,
+    })).resolves.toMatchObject({ changed: true, status: "paid" });
+    expect(tx.commerceOrder.updateMany).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ status: "paid", paidAmountCents: 1_200 }),
+    }));
+    expect(tx.commerceEntitlement.updateMany).not.toHaveBeenCalled();
+    expect(tx.commerceOrderEvent.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ sanitizedData: expect.objectContaining({ grantedEntitlementCount: 0, fulfillmentHeld: "vendor_suspended" }) }),
+    }));
+
+    // A replay of the same paid event while still suspended keeps access closed.
+    const replay = transaction();
+    replay.$queryRaw.mockResolvedValue([{ suspendedAt: new Date("2026-11-03T00:00:00.000Z") }]);
+    replay.commerceOrder.findFirst.mockResolvedValue(order("paid"));
+    replay.commerceOrderEvent.findUnique.mockResolvedValue({ id: "event-1" });
+    await reconcileCommerceOrderPaymentTransition(replay as never, {
+      vendorId: "vendor-1", paymentTransactionId: "payment-1", eventIdentity: "provider-paid-held", transition: "paid", occurredAt: now,
+    });
+    expect(replay.commerceEntitlement.updateMany).not.toHaveBeenCalled();
   });
 
   it("fails closed for cancelled to paid and does not downgrade paid on failed", async () => {

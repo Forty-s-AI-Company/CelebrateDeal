@@ -9,6 +9,7 @@ import { getDb } from "@/lib/db";
 import { decryptMfaSecret } from "@/lib/mfa";
 import { verifyPasswordAsync } from "@/lib/password";
 import { isVendorBackofficeRole, isVendorPartnerRole, PARTNER_PORTAL_PATH, signedInHomePath } from "@/lib/vendor-roles";
+import { isVendorSuspended, VENDOR_SUSPENDED_PATH } from "@/lib/vendor-suspension-state";
 
 export const AUTH_COOKIE = "celebrate_session";
 export const LEGACY_VENDOR_COOKIE = "celebrate_vendor_id";
@@ -83,7 +84,28 @@ function chooseVendor(user: UserWithMemberships, sessionVendorId?: string | null
   const selected = sessionVendorId
     ? backoffice.find((membership) => membership.vendorId === sessionVendorId)
     : null;
-  return selected ?? backoffice[0] ?? null;
+  // Without an explicit session vendor, prefer a tenant that is not suspended
+  // (F-036); the session's own vendor is honoured even when it is suspended.
+  return selected ?? backoffice.find((membership) => !isVendorSuspended(membership.vendor)) ?? backoffice[0] ?? null;
+}
+
+type ChosenMembership = ReturnType<typeof chooseVendor>;
+
+/**
+ * F-036 single checkpoint: a suspended vendor never becomes the vendor
+ * context, and neither does its membership. Every guard, page, Server Action
+ * and API route that reads `vendor`/`member` therefore denies by default;
+ * `suspendedVendor` only tells the shell to show the "商家已暫停" page.
+ */
+function vendorContext(selected: ChosenMembership) {
+  if (selected && isVendorSuspended(selected.vendor)) {
+    return {
+      vendor: null,
+      member: null,
+      suspendedVendor: { id: selected.vendor.id, name: selected.vendor.name, suspendedAt: selected.vendor.suspendedAt as Date },
+    };
+  }
+  return { vendor: selected?.vendor ?? null, member: selected, suspendedVendor: null };
 }
 
 /** At least one active partner membership and no active non-partner membership. */
@@ -271,14 +293,17 @@ export async function getCurrentAuth(options: { allowUnverifiedMfa?: boolean } =
   }
 
   const selectedMembership = chooseVendor(session.user, session.vendorId);
-  const vendor = selectedMembership?.vendor ?? null;
+  const { vendor, member, suspendedVendor } = vendorContext(selectedMembership);
 
   return {
     session,
     user: session.user,
     vendor,
-    member: selectedMembership,
+    member,
+    // F-036: set only when the selected vendor is suspended; vendor and member are then null.
+    suspendedVendor,
     isPlatformAdmin: isPlatformAdmin(session.user),
+    // Judged on the raw selection so a suspended back-office member is never treated as partner-only.
     partnerPortalOnly: isPartnerPortalOnly(session.user, selectedMembership),
     isMfaVerified: Boolean(session.mfaVerifiedAt),
   };
@@ -304,6 +329,8 @@ export async function requireAuth(options: { allowUnverifiedMfa?: boolean; nextP
 
 export async function requireVendorContext(nextPath?: string, fallbackPath = "/dashboard") {
   const auth = await requireAuth({ nextPath: nextPath ? safeMfaNextPath(nextPath, fallbackPath) : undefined });
+  // F-036: every back-office page, layout and Server Action of a suspended vendor ends here.
+  if (auth.suspendedVendor) redirect(VENDOR_SUSPENDED_PATH);
   // Defense in depth: getCurrentAuth never selects a partner member.
   if (!auth.vendor || !auth.member || !isVendorBackofficeRole(auth.member.role)) {
     redirect(auth.isPlatformAdmin ? "/admin/billing/dashboard" : auth.partnerPortalOnly ? PARTNER_PORTAL_PATH : "/login?error=no_vendor");
@@ -438,6 +465,7 @@ export async function requireVendorOwnerFinance(nextPath = "/billing/plans") {
 export async function requireVendorOwner() {
   const auth = await requireAuth();
 
+  if (auth.suspendedVendor) redirect(VENDOR_SUSPENDED_PATH);
   if (auth.partnerPortalOnly) redirect(PARTNER_PORTAL_PATH);
   if (!auth.vendor || !auth.member || auth.member.status !== ACTIVE_MEMBER_STATUS || auth.member.role !== "owner") {
     redirect("/settings/security?error=owner_required");
@@ -473,10 +501,13 @@ export async function authenticateUser(email: string, password: string) {
   }
 
   const membership = chooseVendor(user);
+  const { vendor, member, suspendedVendor } = vendorContext(membership);
   return {
     user,
-    vendor: membership?.vendor ?? null,
-    member: membership,
+    vendor,
+    member,
+    // F-036: sign-in still succeeds; the session records the suspended vendor and lands on the suspended page.
+    suspendedVendor,
     isPlatformAdmin: isPlatformAdmin(user),
     partnerPortalOnly: isPartnerPortalOnly(user, membership),
     // Recorded on a partner-only session so deactivating that membership

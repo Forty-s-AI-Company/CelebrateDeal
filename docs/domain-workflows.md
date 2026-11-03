@@ -72,6 +72,37 @@
 
 聯盟出款另受平台開關 `AFFILIATE_PAYOUTS_DISABLED`（F-052）約束：開啟時任何角色都不能標記已付款或匯出提領 CSV；不論開關，標記已付款都必須有已啟用的商家出款政策與已匯出的扣繳快照。support 讀取範圍目前不縮小：案件多數未指派，縮成「只看指派給自己」會讓客服無法接手，留待有客服排班需求時再評估。
 
+### 商家凍結（F-036／B02-14）
+
+平台管理員在 `/admin/vendor-features` 凍結或解除凍結整個商家（需要 15 分鐘內 MFA step-up；填寫內部原因；寫 AuditLog `vendor_suspended`／`vendor_suspension_lifted`）。權威資料是 `Vendor.suspendedAt`，判斷只走 `src/lib/vendor-suspension-state.ts`，各頁不自行判斷。
+
+| 入口 | 凍結中的行為 |
+| --- | --- |
+| 後台登入 | 可以登入（session 記錄該 vendor），落地 `/vendor-suspended`「商家已暫停」頁；平台管理員仍回平台後台 |
+| 後台頁面與 layout、Server Action | `getCurrentAuth` 不給 vendor／member，`requireVendorContext`／`requireVendorOwner` 一律導向 `/vendor-suspended`，不做任何寫入 |
+| 後台 API | `requireMerchantApiActor` 回 403 `VENDOR_SUSPENDED`；其他以 `auth.vendor` 判斷的 route 回 401／403 |
+| 夥伴 portal | 該 vendor 的授權清單與對帳單不出現（404），提領／收款資料操作 404 |
+| 直播觀看、入場、回放來源、常青場次 | `publicLiveAvailabilityWhere` 排除，404 |
+| 報名表頁與送出 | 頁面 404；`/api/form-submissions` 回「Form not found」404 |
+| 一頁式網站（`/lp`）、團隊夥伴頁（`/p`） | proxy 狀態、頁面與 runtime gate 都排除，404 |
+| 結帳頁、`/api/payments/checkout` | 結帳頁 404；API 在讀取冪等重放前就回 404「Product not available」；直播間不列商品 |
+| 學員 portal | 凍結時同一交易刪除該 vendor 全部 `StudentPortalAccessToken`（F-030 的 grant 檢查上線後所有學員 session 即失效）；另外每次請求都擋：`requireStudentPortalSession` 的 vendor 查詢排除凍結商家、`loadFeatureGateVendor` 把凍結商家視為所有模組關閉（課程、通知、社群、預約等 route 404）；登入頁 404、不寄登入連結、連結無法兌換 |
+| PayUni 付款回呼 | 照常驗章、入帳（交易、訂單、佣金、月結資料），但數位／課程權限留在 pending、不建立學員付款通知；`payment.paid` 事件標 `fulfillmentHeld`。解除凍結時同一交易開通已付款訂單的 pending 權限 |
+| Email 與 LINE 排程、付款收據 | 不寄、不推播、不 claim，列維持 queued；解除後照常寄送（仍套用寄送前檢查）。學員通知 job 跳過該 vendor |
+| 電子發票、月結、webhook 重試、追蹤事件 | 不變（金流與法定義務照常） |
+
+已接受的取捨：凍結期間排隊的行銷信在解除後才會寄出，依賴既有寄送前檢查（例如直播已結束的提醒會被 supersede）；解除凍結不補寫凍結期間略過的學員付款通知。買家客服頁（`/support`）維持可用，讓已付款買家能聯絡。
+
+### 學員 portal session 撤銷（F-030）
+
+學員 session 只在當初兌換的 magic-link 列存在時有效，刪除該 vendor＋customer 的列即撤銷。以下流程會撤銷，且每處都綁目前 vendor：
+
+- 商家封鎖 Email（`upsertBlacklistAction`，類型 `email`）：與封鎖同一交易，撤銷該 Email 在本商家的學員 session；其他商家不受影響。被封鎖的 Email 仍可重新申請登入連結（封鎖目前只擋聊天與報名，是否也擋學員中心待 owner 決定）。
+- 全額退款撤銷了課程／數位權限（`reconcileCommerceOrderRefund`，webhook 與後台 PayUni 退款共用）：同一交易撤銷買家在本商家的學員 session。客戶 key 優先用訂單的 `automationCustomerKeyHash`，沒有時以解密的買家 Email 推導；推導失敗只略過撤銷、不讓退款回滾。學員可重新登入存取仍擁有的內容。
+- 商家被凍結：批次撤銷該 vendor 全部學員 session（見上）。
+- 客戶匿名化（`scripts/anonymize-customer.ts`，個資刪除請求）：原本就在同一交易刪除該 vendor＋customer 的列。
+- 客戶 Email 變更：目前沒有任何「變更客戶 Email」的流程（商家或學員都無法改買家 Email），所以沒有接線；日後新增時必須在同一交易對舊 Email 呼叫 `revokeStudentPortalSessions`。
+
 UI 隱藏不能充當權限。每個新增敏感 read／mutation／export／relation 用第二租戶回歸；拒絕不得洩漏存在性。Schema 變更評估 tenant key、FK、unique、index、既有 RLS 與 forward migration；RLS 是額外防線，不取代 server guard 或 audit。安全、finance、role、ownership 變更須有適當 audit。
 
 ## 瀏覽器 QA

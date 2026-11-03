@@ -1,5 +1,5 @@
 import { beforeEach,expect,it,vi } from "vitest";
-const mocks=vi.hoisted(()=>({getDb:vi.fn(),find:vi.fn(),claim:vi.fn(),dispatch:vi.fn(),proofFind:vi.fn(),proofClaim:vi.fn(),proofDispatch:vi.fn(),sourceFind:vi.fn(),materialize:vi.fn(),sourceFailure:vi.fn(),capture:vi.fn(),count:vi.fn()}));
+const mocks=vi.hoisted(()=>({getDb:vi.fn(),activeVendors:vi.fn(),find:vi.fn(),claim:vi.fn(),dispatch:vi.fn(),proofFind:vi.fn(),proofClaim:vi.fn(),proofDispatch:vi.fn(),sourceFind:vi.fn(),materialize:vi.fn(),sourceFailure:vi.fn(),capture:vi.fn(),count:vi.fn()}));
 vi.mock("./db",()=>({getDb:mocks.getDb}));
 vi.mock("./monitoring",()=>({captureOperationalError:mocks.capture}));
 vi.mock("./learner-notification-outbox",()=>({claimLearnerNotification:mocks.claim}));
@@ -7,11 +7,12 @@ vi.mock("./learner-notification-dispatch",()=>({dispatchClaimedLearnerNotificati
 vi.mock("./learner-verification-delivery",()=>({claimLearnerVerificationDelivery:mocks.proofClaim,dispatchLearnerVerificationDelivery:mocks.proofDispatch}));
 vi.mock("./learner-notification-source-events",()=>({materializeLearnerNotificationSourceEvent:mocks.materialize,recordLearnerNotificationSourceFailure:mocks.sourceFailure}));
 import { fairVendorBatch,LEARNER_NOTIFICATION_JOB_LIMITS,processDueLearnerNotifications,readLearnerNotificationProviderConfiguration } from "./learner-notification-job";
-const db={learnerNotificationSourceEvent:{findMany:mocks.sourceFind,count:mocks.count},learnerNotificationDelivery:{findMany:mocks.find,count:mocks.count},learnerNotificationVerification:{findMany:mocks.proofFind,count:mocks.count}};
+// F-036: the job first narrows the configured tenants to vendors that are not suspended.
+const db={vendor:{findMany:mocks.activeVendors},learnerNotificationSourceEvent:{findMany:mocks.sourceFind,count:mocks.count},learnerNotificationDelivery:{findMany:mocks.find,count:mocks.count},learnerNotificationVerification:{findMany:mocks.proofFind,count:mocks.count}};
 const env:NodeJS.ProcessEnv={NODE_ENV:"test",NEXT_PUBLIC_APP_URL:"https://app.example.test",LEARNER_NOTIFICATIONS_EXECUTOR_ENABLED:"true",LEARNER_NOTIFICATIONS_JOB_VENDOR_IDS:"vendor-1,vendor-2",RESEND_API_KEY:"synthetic-provider-credential",EMAIL_FROM:"synthetic@invalid.example"};
 type Row={vendorId:string;id:string};
 const forVendor=(rows:Record<string,Row[]>)=>async({where}:{where:{vendorId:string}})=>rows[where.vendorId]??[];
-beforeEach(()=>{vi.clearAllMocks();mocks.sourceFind.mockResolvedValue([]);mocks.materialize.mockResolvedValue({status:"completed"});mocks.proofFind.mockResolvedValue([]);mocks.proofClaim.mockResolvedValue(null);mocks.getDb.mockReturnValue(db);mocks.count.mockResolvedValue(0);
+beforeEach(()=>{vi.clearAllMocks();mocks.activeVendors.mockImplementation(async({where}:{where:{id:{in:string[]}}})=>where.id.in.map(id=>({id})));mocks.sourceFind.mockResolvedValue([]);mocks.materialize.mockResolvedValue({status:"completed"});mocks.proofFind.mockResolvedValue([]);mocks.proofClaim.mockResolvedValue(null);mocks.getDb.mockReturnValue(db);mocks.count.mockResolvedValue(0);
  mocks.find.mockImplementation(forVendor({"vendor-1":[{vendorId:"vendor-1",id:"delivery-1"}]}));mocks.claim.mockResolvedValue({claimToken:"a".repeat(43)});mocks.dispatch.mockResolvedValue({status:"sent",providerReceipt:"private-provider-receipt"});});
 it("disabled executor never reads the database or dispatches",async()=>{
  expect(await processDueLearnerNotifications({...env,LEARNER_NOTIFICATIONS_EXECUTOR_ENABLED:"false"})).toEqual({results:[],backlog:null});expect(mocks.getDb).not.toHaveBeenCalled();expect(mocks.dispatch).not.toHaveBeenCalled();
@@ -24,6 +25,20 @@ it("absent configured provider never consumes a queue attempt",async()=>{
 });
 it("never derives message links from an untrusted request host or HTTP origin",async()=>{
  expect(await processDueLearnerNotifications({...env,NEXT_PUBLIC_APP_URL:"http://127.0.0.1"})).toEqual({results:[{status:"configuration_missing"}],backlog:null});expect(mocks.getDb).not.toHaveBeenCalled();
+});
+it("skips a suspended vendor's sources, proofs and deliveries entirely (F-036)",async()=>{
+ mocks.activeVendors.mockResolvedValue([{id:"vendor-2"}]);
+ mocks.find.mockImplementation(forVendor({"vendor-1":[{vendorId:"vendor-1",id:"delivery-1"}],"vendor-2":[{vendorId:"vendor-2",id:"delivery-2"}]}));
+ await processDueLearnerNotifications(env);
+ expect(mocks.activeVendors).toHaveBeenCalledWith({where:{id:{in:["vendor-1","vendor-2"]},suspendedAt:null},select:{id:true}});
+ for(const find of [mocks.find,mocks.proofFind,mocks.sourceFind])expect(find).not.toHaveBeenCalledWith(expect.objectContaining({where:expect.objectContaining({vendorId:"vendor-1"})}));
+ expect(mocks.claim).toHaveBeenCalledWith(db,"vendor-2","delivery-2");
+ expect(mocks.claim).not.toHaveBeenCalledWith(db,"vendor-1",expect.anything());
+});
+it("fails closed without touching any queue when the tenant scope cannot be read",async()=>{
+ mocks.activeVendors.mockRejectedValue(new Error("synthetic outage"));
+ expect(await processDueLearnerNotifications(env)).toEqual({results:[{status:"vendor_scope_unavailable"}],backlog:null});
+ expect(mocks.find).not.toHaveBeenCalled();expect(mocks.claim).not.toHaveBeenCalled();
 });
 it("reads each approved tenant's due queue separately with the configured channels only",async()=>{
  const summary=await processDueLearnerNotifications(env);expect(summary.results).toEqual([{status:"sent"}]);

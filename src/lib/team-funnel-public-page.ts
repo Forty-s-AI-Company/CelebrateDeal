@@ -2,6 +2,7 @@ import { getDb } from "@/lib/db";
 import { parseRegistrationFormFields, type RegistrationFormFieldSpec } from "@/lib/registration-form-fields";
 import { renderTeamFunnelPageText } from "@/lib/team-funnel-pages";
 import { isSafeInternalPath } from "@/lib/safe-url";
+import { ACTIVE_VENDOR_RELATION } from "@/lib/vendor-suspension-state";
 import {
   parseSafeTeamFunnelProductUrl,
   resolveTeamFunnelPartnerProfile,
@@ -121,8 +122,9 @@ export function buildPartnerPlaybackHref(liveSlug: string, sourcePageSlug: strin
  * a tenant, team, owner, webinar, or product identifier.
  */
 export async function getPublicTeamFunnelPage(slug: string): Promise<TeamFunnelPublicPageView> {
-  const page = await getDb().partnerFunnelPage.findUnique({
-    where: { slug },
+  // F-036: a suspended vendor's partner page is "not found", like an unknown slug.
+  const page = await getDb().partnerFunnelPage.findFirst({
+    where: { slug, ...ACTIVE_VENDOR_RELATION },
     include: {
       sharing: { select: { accessMode: true, isEnabled: true, expiresAt: true } },
       promoter: {

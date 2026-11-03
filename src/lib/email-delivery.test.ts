@@ -21,6 +21,8 @@ const mocks = vi.hoisted(() => ({
     liveNotificationRule: { count: vi.fn(), findFirst: vi.fn(), findMany: vi.fn() },
     live: { findFirst: vi.fn() },
     formSubmission: { count: vi.fn(), findFirst: vi.fn(), findMany: vi.fn() },
+    // F-036: dispatch reads the delivery vendor's suspension before claiming.
+    vendor: { findUnique: vi.fn() },
   },
 }));
 
@@ -79,6 +81,7 @@ beforeEach(() => {
   vi.stubEnv("CSRF_SECRET", "g7-07-email-delivery-test-secret-longer-than-32-bytes");
   vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://app.example.test");
   mocks.db.emailSuppression.findUnique.mockResolvedValue(null);
+  mocks.db.vendor.findUnique.mockResolvedValue({ suspendedAt: null });
   mocks.db.blacklist.findFirst.mockResolvedValue(null);
   mocks.db.liveNotificationRule.count.mockResolvedValue(0);
   mocks.db.formSubmission.count.mockResolvedValue(0);
@@ -742,6 +745,16 @@ describe("email delivery outbox", () => {
       where: { id: "delivery-1", status: "sending", attemptCount: 1 },
       data: expect.objectContaining({ status: "sent", providerMessageId: "provider-message-1" }),
     }));
+  });
+
+  it("leaves a suspended vendor's delivery queued without claiming or sending (F-036)", async () => {
+    mocks.db.emailDelivery.findUnique.mockResolvedValue(candidate());
+    mocks.db.vendor.findUnique.mockResolvedValue({ suspendedAt: new Date("2026-11-03T00:00:00.000Z") });
+
+    await expect(dispatchEmailDelivery("delivery-1")).resolves.toEqual({ status: "vendor_suspended" });
+    expect(mocks.db.vendor.findUnique).toHaveBeenCalledWith({ where: { id: "vendor-1" }, select: { suspendedAt: true } });
+    expect(mocks.db.emailDelivery.updateMany).not.toHaveBeenCalled();
+    expect(mocks.sendTransactionalEmail).not.toHaveBeenCalled();
   });
 
   it("dispatches a legacy envelope without rebuilding brand data from the current vendor", async () => {

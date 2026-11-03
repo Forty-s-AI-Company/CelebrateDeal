@@ -4,6 +4,7 @@ import { hasActiveLiveViewerSession } from "@/lib/live-quota-admission";
 import { isExistingLiveVideoReady } from "@/lib/live-video-readiness";
 import { EVERGREEN_LIVE_SELECT, resolveViewerLiveRuntime } from "@/lib/evergreen-viewer-session";
 import { FIXED_SESSION_LIVE_SELECT, resolveViewerFixedSessionForLive } from "@/lib/live-fixed-sessions-store";
+import { publicLiveAvailabilityWhere } from "@/lib/sellable-live";
 import { fixedSessionReplayAvailableUntil } from "@/lib/live-fixed-sessions";
 import {
   signVideoUrl,
@@ -40,10 +41,8 @@ export async function resolveLivePlaybackSource(db: PrismaClient, input: Playbac
     where: {
       id: input.liveId,
       vendorId: input.vendorId,
-      OR: [
-        { status: { in: ["scheduled", "live"] } },
-        { status: "ended", replayEnabled: true },
-      ],
+      // Same audience predicate as the watch page and admission, including F-036 suspension.
+      ...publicLiveAvailabilityWhere(),
     },
     select: {
       ...EVERGREEN_LIVE_SELECT,

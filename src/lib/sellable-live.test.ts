@@ -43,8 +43,9 @@ function candidate(
 }
 
 describe("sellable live readiness", () => {
-  it("shares the buyer-visible status boundary", () => {
+  it("shares the buyer-visible status boundary and hides suspended vendors (F-036)", () => {
     expect(publicLiveAvailabilityWhere()).toEqual({
+      vendor: { is: { suspendedAt: null } },
       OR: [
         { status: { in: ["scheduled", "live"] } },
         { status: "ended", replayEnabled: true },

@@ -33,6 +33,8 @@ describe("public pre-stream status (content-free, F-015)", () => {
     expect(findMany).toHaveBeenCalledWith({
       where: {
         slug: "fall-launch", status: "published", publishedVersionId: { not: null }, archivedAt: null,
+        // F-036: a suspended vendor's pages are never public.
+        vendor: { is: { suspendedAt: null } },
         // Owner decision 2026-10-24: a lead-only audience Funnel of a project
         // that is not archived opens without a published project.
         OR: [

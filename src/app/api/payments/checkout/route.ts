@@ -80,6 +80,7 @@ import {
   visitorIdFromRequest,
 } from "@/lib/team-funnel-attribution";
 import { featureDisabledResponse, isProductPurchasable } from "@/lib/feature-gates";
+import { isVendorAvailableForPublic } from "@/lib/vendor-suspension-state";
 import { isTransientTransactionConflict } from "@/lib/serializable-retry";
 
 /**
@@ -728,6 +729,19 @@ async function existingCheckoutResponse({
   }
 }
 
+/** The caller's earlier checkout with the same vendor-scoped idempotency key, if any. */
+function findExistingCheckout(db: ReturnType<typeof getDb>, data: { vendorId: string; idempotencyKey: string }) {
+  return db.paymentTransaction.findUnique({
+    where: {
+      vendorId_checkoutIdempotencyKey: {
+        vendorId: data.vendorId,
+        checkoutIdempotencyKey: data.idempotencyKey,
+      },
+    },
+    include: existingCheckoutInclude,
+  });
+}
+
 // The route intentionally keeps the admission, scope, revision and idempotency
 // guards in one auditable transaction boundary; the surrounding helpers keep
 // provider and persistence details out of this control flow.
@@ -749,15 +763,9 @@ export async function POST(request: Request) {
   const { admission } = admissionResult;
 
   const db = getDb();
-  const existing = await db.paymentTransaction.findUnique({
-    where: {
-      vendorId_checkoutIdempotencyKey: {
-        vendorId: parsed.data.vendorId,
-        checkoutIdempotencyKey: parsed.data.idempotencyKey,
-      },
-    },
-    include: existingCheckoutInclude,
-  });
+  // F-036: a suspended vendor starts no checkout, not even an idempotent replay; answered like an unknown product.
+  if (!await isVendorAvailableForPublic(db, parsed.data.vendorId)) return NextResponse.json({ error: "Product not available" }, { status: 404 });
+  const existing = await findExistingCheckout(db, parsed.data);
   if (existing) return await existingCheckoutResponse({ request, transaction: existing, data: parsed.data });
   const buyerCookies = postPurchaseRequestCookies(request);
   let postPurchaseQuote: Awaited<ReturnType<typeof resolvePostPurchaseCreditQuote>> | undefined;

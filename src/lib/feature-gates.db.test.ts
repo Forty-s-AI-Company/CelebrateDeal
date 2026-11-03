@@ -42,6 +42,15 @@ describe("Vendor.betaFeatureGrants", () => {
     await expect(isVendorFeatureEnabled(db, `missing-${randomUUID()}`, "billing")).resolves.toBe(false);
   });
 
+  it("closes every module of a suspended vendor for learner, viewer and buyer entry points (F-036)", async () => {
+    const suspended = await vendor({ betaFeatureGrants: ["courses", "billing"] });
+    const active = await vendor({ betaFeatureGrants: ["courses"] });
+    await db.vendor.update({ where: { id: suspended.id }, data: { suspendedAt: new Date(), suspendedReason: "合成" } });
+    await expect(isVendorFeatureEnabled(db, suspended.id, "courses")).resolves.toBe(false);
+    await expect(isVendorFeatureEnabled(db, suspended.id, "funnel_builder")).resolves.toBe(false);
+    await expect(isVendorFeatureEnabled(db, active.id, "courses")).resolves.toBe(true);
+  });
+
   it("rejects values outside the known module set in the database", async () => {
     const created = await vendor();
     await expect(db.vendor.update({ where: { id: created.id }, data: { betaFeatureGrants: ["billing", "everything"] } })).rejects.toThrow();
@@ -70,9 +79,16 @@ describe("course products while the courses module is closed (F-001, review M-1)
   });
 
   it("treats a course product as unsellable unless the vendor holds the grant", () => {
-    expect(isProductPurchasable({ betaFeatureGrants: [] }, { fulfillmentType: "course" })).toBe(false);
-    expect(isProductPurchasable({ betaFeatureGrants: [] }, { commerceDomain: "course", fulfillmentType: "digital" })).toBe(false);
-    expect(isProductPurchasable({ betaFeatureGrants: [] }, { commerceDomain: "merchant", fulfillmentType: "physical" })).toBe(true);
-    expect(isProductPurchasable({ betaFeatureGrants: ["courses"] }, { fulfillmentType: "course" })).toBe(true);
+    expect(isProductPurchasable({ betaFeatureGrants: [], suspendedAt: null }, { fulfillmentType: "course" })).toBe(false);
+    expect(isProductPurchasable({ betaFeatureGrants: [], suspendedAt: null }, { commerceDomain: "course", fulfillmentType: "digital" })).toBe(false);
+    expect(isProductPurchasable({ betaFeatureGrants: [], suspendedAt: null }, { commerceDomain: "merchant", fulfillmentType: "physical" })).toBe(true);
+    expect(isProductPurchasable({ betaFeatureGrants: ["courses"], suspendedAt: null }, { fulfillmentType: "course" })).toBe(true);
+  });
+
+  it("sells nothing of a suspended vendor, whatever the grants (F-036)", () => {
+    const suspendedAt = new Date("2026-11-03T00:00:00.000Z");
+    expect(isProductPurchasable({ betaFeatureGrants: ["courses"], suspendedAt }, { fulfillmentType: "course" })).toBe(false);
+    expect(isProductPurchasable({ betaFeatureGrants: [], suspendedAt }, { commerceDomain: "merchant", fulfillmentType: "physical" })).toBe(false);
+    expect(isProductPurchasable(null, { commerceDomain: "merchant", fulfillmentType: "physical" })).toBe(false);
   });
 });

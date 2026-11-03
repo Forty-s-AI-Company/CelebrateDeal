@@ -18,6 +18,7 @@ import { checkRateLimit } from "@/lib/rate-limit";
 import { checkAccountRateLimit } from "@/lib/account-rate-limit";
 import { automationCustomerKeyHash } from "@/lib/automation-workflow";
 import { resolveBuyerSupportGrant } from "@/lib/buyer-support-access";
+import { ACTIVE_VENDOR_WHERE } from "@/lib/vendor-suspension-state";
 import {
   clearStudentPortalSessionCookie,
   createStudentPortalAccessToken,
@@ -60,8 +61,9 @@ export async function requestMagicLinkAction(
   if (limited) return { status: "rate_limited", message: t("申請次數較多，請稍後再試。") };
 
   const db = getDb();
-  const vendor = await db.vendor.findUnique({
-    where: { slug: vendorSlug.data },
+  // F-036: a suspended vendor issues no learner links; the answer stays the generic one.
+  const vendor = await db.vendor.findFirst({
+    where: { slug: vendorSlug.data, ...ACTIVE_VENDOR_WHERE },
     select: { id: true, slug: true, name: true, senderName: true, supportEmail: true, contactUrl: true },
   });
   if (!vendor) return { status: "sent", message: t(genericSentMessage) };

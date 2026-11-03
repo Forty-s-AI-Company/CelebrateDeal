@@ -346,7 +346,7 @@ describe("team lead attribution", () => {
     expect(db.registrationForm.findUnique).toHaveBeenCalledWith({
       where: { id: "form-1" },
       include: {
-        vendor: { select: { name: true, senderName: true, supportEmail: true, contactUrl: true, timezone: true } },
+        vendor: { select: { name: true, senderName: true, supportEmail: true, contactUrl: true, timezone: true, suspendedAt: true } },
       },
     });
     expect(JSON.stringify(create)).not.toContain("lead@example.test");
@@ -765,6 +765,17 @@ describe("team lead attribution", () => {
       data: expect.objectContaining({ affiliateClickId: null }),
     }));
     expect(db.affiliateClick.findFirst).not.toHaveBeenCalled();
+  });
+
+  it("answers a suspended vendor's form like an unknown form and stores nothing (F-036)", async () => {
+    const form = await db.registrationForm.findUnique();
+    db.registrationForm.findUnique.mockResolvedValue({ ...form, vendor: { ...form.vendor, suspendedAt: new Date("2026-11-03T00:00:00.000Z") } });
+
+    const response = await POST(jsonRequest({ formId: "form-1", payload: { name: "Lead", email: "lead@example.test" } }));
+
+    expect(response.status).toBe(404);
+    await expect(response.json()).resolves.toEqual({ error: "Form not found" });
+    expect(db.formSubmission.create).not.toHaveBeenCalled();
   });
 
   it("rejects a webinar that is not bound to the submitted form", async () => {

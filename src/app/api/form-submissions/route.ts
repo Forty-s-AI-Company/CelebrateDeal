@@ -53,6 +53,7 @@ import { createLiveSessionResultToken, liveSessionResultCookieOptions } from "@/
 import { confirmedFixedSession, type ConfirmedFixedSession } from "@/lib/live-fixed-sessions-store";
 import { fixedSessionLabel, LIVE_SESSION_RESULT_COOKIE } from "@/lib/live-fixed-sessions";
 import { isTransientTransactionConflict, withSerializableRetry } from "@/lib/serializable-retry";
+import { isVendorSuspended, type VendorSuspensionState } from "@/lib/vendor-suspension-state";
 
 const FIXED_SESSION_REGISTRATIONS_PER_IP = 5;
 const FIXED_SESSION_RATE_WINDOW_MS = 10 * 60_000;
@@ -687,8 +688,9 @@ async function enqueueSubmissionVerificationSafely({
   }
 }
 
-function availablePublicForm<T extends { isActive: boolean }>(form: T | null): T | null {
-  if (!form || !form.isActive) return null;
+/** An inactive form, or any form of a suspended vendor (F-036), is not found. */
+function availablePublicForm<T extends { isActive: boolean; vendor: VendorSuspensionState }>(form: T | null): T | null {
+  if (!form || !form.isActive || isVendorSuspended(form.vendor)) return null;
   return form;
 }
 
@@ -737,7 +739,7 @@ async function processSubmission(request: Request, native?: { formData: FormData
   const form = availablePublicForm(await getDb().registrationForm.findUnique({
     where: { id: parsed.data.formId },
     include: {
-      vendor: { select: { name: true, senderName: true, supportEmail: true, contactUrl: true, timezone: true } },
+      vendor: { select: { name: true, senderName: true, supportEmail: true, contactUrl: true, timezone: true, suspendedAt: true } },
     },
   }));
   if (!form) {

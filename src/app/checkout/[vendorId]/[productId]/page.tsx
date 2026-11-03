@@ -55,11 +55,12 @@ export default async function CommerceCheckoutPage({
       fulfillmentType: true,
       commerceDomain: true,
       deliveryConfig: { select: { status: true, fulfillmentType: true } },
-      vendor: { select: { name: true, enabledFeatureModules: true, betaFeatureGrants: true } },
+      vendor: { select: { name: true, enabledFeatureModules: true, betaFeatureGrants: true, suspendedAt: true } },
     },
   });
   if (!product) notFound();
-  // A course cannot be sold while the courses module is closed (F-001).
+  // A course cannot be sold while the courses module is closed (F-001), and a
+  // suspended vendor sells nothing (F-036).
   if (!isProductPurchasable(product.vendor, product)) notFound();
   if (postPurchaseToken && product.checkoutUrl) notFound();
   if (flashSaleRunId && product.checkoutUrl) notFound();

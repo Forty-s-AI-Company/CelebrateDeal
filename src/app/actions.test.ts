@@ -1354,6 +1354,16 @@ describe("upsertBlacklistAction", () => {
     return formData;
   }
 
+  // F-030: the block and the learner portal revocation share one transaction.
+  const studentPortalTokenDeleteMany = vi.fn();
+  beforeEach(() => {
+    studentPortalTokenDeleteMany.mockReset().mockResolvedValue({ count: 2 });
+    mocks.transaction.mockImplementation(async (callback: (tx: unknown) => Promise<unknown>) => callback({
+      blacklist: { create: mocks.blacklistCreate },
+      studentPortalAccessToken: { deleteMany: studentPortalTokenDeleteMany },
+    }));
+  });
+
   it("normalizes an email before storing it in the current vendor", async () => {
     mocks.requireVendor.mockResolvedValue({ id: "vendor-1" });
 
@@ -1366,6 +1376,13 @@ describe("upsertBlacklistAction", () => {
         identifier: "blocked@example.test",
       }),
     });
+    // Revocation is bound to the current vendor and the normalized email's customer key.
+    expect(studentPortalTokenDeleteMany).toHaveBeenCalledWith({
+      where: { vendorId: "vendor-1", customerKeyHash: expect.stringMatching(/^[A-Za-z0-9_-]{43}$/u) },
+    });
+    expect(mocks.writeAuditLog).toHaveBeenCalledWith(expect.objectContaining({
+      after: { identifierType: "email", isActive: true, revokedStudentPortalTokenCount: 2 },
+    }));
   });
 
   it("normalizes a keyword and keeps the raw keyword out of the audit snapshot", async () => {
@@ -1385,9 +1402,10 @@ describe("upsertBlacklistAction", () => {
       vendorId: "vendor-1",
       action: "blacklist_created",
       targetType: "Blacklist",
-      after: { identifierType: "keyword", isActive: true },
+      after: { identifierType: "keyword", isActive: true, revokedStudentPortalTokenCount: 0 },
     });
     expect(JSON.stringify(mocks.writeAuditLog.mock.calls[0])).not.toContain("foo bar");
+    expect(studentPortalTokenDeleteMany).not.toHaveBeenCalled();
   });
 
   it.each([
@@ -6183,6 +6201,28 @@ describe("refundPaymentTransactionAction", () => {
     expect(committedPaymentTransactions).toHaveLength(1);
     expect(mocks.writeAuditLog).toHaveBeenCalledTimes(1);
     expect(events).toEqual(["committed", "audit"]);
+  });
+});
+
+describe("login for a member of a suspended vendor (F-036)", () => {
+  const suspendedMember = {
+    user: { id: "user-3", email: "suspended@example.com", platformRole: "none", mfaFactor: null },
+    vendor: null,
+    member: null,
+    suspendedVendor: { id: "vendor-suspended", name: "暫停商家", suspendedAt: new Date("2026-11-03T00:00:00.000Z") },
+    isPlatformAdmin: false,
+    partnerPortalOnly: false,
+    partnerVendorId: null,
+  };
+
+  it("signs in, records the suspended vendor on the session and lands on the suspended page only", async () => {
+    mocks.cookies.mockResolvedValue({ delete: vi.fn(), set: vi.fn() });
+    mocks.authenticateUser.mockResolvedValue(suspendedMember);
+    mocks.invitationFindFirst.mockResolvedValue(null);
+
+    await expect(loginAction(loginFormData("suspended@example.com", "test-fixture-password"))).rejects.toThrow("redirect:/vendor-suspended");
+    expect(mocks.createUserSession).toHaveBeenCalledWith(expect.objectContaining({ userId: "user-3", vendorId: "vendor-suspended" }));
+    expect(mocks.writeAuditLog).toHaveBeenCalledWith(expect.objectContaining({ action: "login_success", vendorId: "vendor-suspended", actorLabel: "suspended_vendor_member" }));
   });
 });
 

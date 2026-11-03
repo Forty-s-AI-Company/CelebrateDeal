@@ -71,7 +71,7 @@ describe("public registration form DAL", () => {
 
     const result = await loadPublicRegistrationForm("summer", new Date("2026-08-15T00:00:00Z"));
     expect(mocks.findFirst).toHaveBeenCalledWith(expect.objectContaining({
-      where: { slug: "summer", isActive: true, OR: [{ projectId: null }, { salesProject: { is: { status: "published", publishedAt: { not: null } } } }] },
+      where: { slug: "summer", isActive: true, vendor: { is: { suspendedAt: null } }, OR: [{ projectId: null }, { salesProject: { is: { status: "published", publishedAt: { not: null } } } }] },
       select: expect.objectContaining({ vendor: { select: { name: true } } }),
     }));
     expect(mocks.findMany).toHaveBeenCalledWith(expect.objectContaining({

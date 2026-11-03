@@ -14,7 +14,7 @@ vi.mock("@/lib/email-delivery-pii", () => ({ protectEmailDeliveryPayload: mocks.
 vi.mock("@/lib/email-delivery-immediate", () => ({ scheduleImmediateEmailDispatch: mocks.scheduleImmediate }));
 vi.mock("@/lib/student-portal-auth", () => ({ createStudentPortalAccessToken: mocks.createToken, clearStudentPortalSessionCookie: mocks.clearCookie }));
 vi.mock("@/lib/app-url", () => ({ getCanonicalAppUrl: () => "https://app.example.test" }));
-vi.mock("@/lib/db", () => ({ getDb: () => ({ vendor: { findUnique: mocks.vendor }, commerceOrder: { count: mocks.orderCount }, consultationBooking: { count: mocks.bookingCount }, automationVoucherGrant: { count: mocks.voucherCount }, emailDelivery: { create: mocks.emailCreate } }) }));
+vi.mock("@/lib/db", () => ({ getDb: () => ({ vendor: { findFirst: mocks.vendor }, commerceOrder: { count: mocks.orderCount }, consultationBooking: { count: mocks.bookingCount }, automationVoucherGrant: { count: mocks.voucherCount }, emailDelivery: { create: mocks.emailCreate } }) }));
 
 import * as studentPortalActions from "@/app/actions/student-portal-actions";
 import { STUDENT_PORTAL_INITIAL_STATE } from "@/lib/student-portal-action-state";
@@ -32,6 +32,15 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllEnvs());
 
 describe("student portal actions", () => {
+  it("issues no link for a suspended vendor and keeps the generic answer (F-036)", async () => {
+    mocks.vendor.mockResolvedValue(null);
+    const result = await requestMagicLinkAction(STUDENT_PORTAL_INITIAL_STATE, form({ email: "student@example.test", vendorSlug: "teacher" }));
+    expect(mocks.vendor).toHaveBeenCalledWith(expect.objectContaining({ where: { slug: "teacher", suspendedAt: null } }));
+    expect(result).toMatchObject({ status: "sent" });
+    expect(mocks.createToken).not.toHaveBeenCalled();
+    expect(mocks.emailCreate).not.toHaveBeenCalled();
+  });
+
   it("validates CSRF and queues a private email for an eligible student", async () => {
     const result = await requestMagicLinkAction(STUDENT_PORTAL_INITIAL_STATE, form({ email: " Student@Example.test ", vendorSlug: "teacher" }));
     expect(mocks.security).toHaveBeenCalledOnce();
