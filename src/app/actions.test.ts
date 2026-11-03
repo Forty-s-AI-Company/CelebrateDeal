@@ -1206,7 +1206,9 @@ describe("updatePasswordAction", () => {
       after: { email: "member@example.com" },
     }));
     expect(JSON.stringify(mocks.writeAuditLog.mock.calls)).not.toContain("replacement-password-456");
-    expect(deleteCookie).toHaveBeenCalledWith("celebrate_session");
+    // F-036: the __Host- cookie can only be cleared with Secure and Path=/; the pre-rename cookie is cleared too.
+    expect(deleteCookie).toHaveBeenCalledWith(expect.objectContaining({ name: "__Host-celebrate_session", secure: true, path: "/" }));
+    expect(deleteCookie).toHaveBeenCalledWith(expect.objectContaining({ name: "celebrate_session", secure: true, path: "/" }));
     expect(deleteCookie).toHaveBeenCalledWith("celebrate_vendor_id");
   });
 
@@ -6281,11 +6283,14 @@ describe("COV-04 login success attribution", () => {
       vendorId: "vendor-1",
       ipAddress: "203.0.113.10",
       userAgent: "CelebrateDeal test",
+      platformRole: "user",
     });
     expect(cookieStore.set.mock.calls[0]?.slice(0, 2)).toEqual([
-      "celebrate_session",
+      "__Host-celebrate_session",
       "test-fixture-session-token",
     ]);
+    expect(cookieStore.set.mock.calls[0]?.[2]).toMatchObject({ httpOnly: true, secure: true, path: "/", sameSite: "lax" });
+    expect(cookieStore.delete).toHaveBeenCalledWith(expect.objectContaining({ name: "celebrate_session", secure: true }));
     expect(cookieStore.delete).toHaveBeenCalledWith("celebrate_vendor_id");
     expect(mocks.writeAuditLog).toHaveBeenCalledWith(expect.objectContaining({
       action: "login_success",

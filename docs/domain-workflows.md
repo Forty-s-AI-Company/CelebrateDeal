@@ -63,6 +63,13 @@
 
 UI 隱藏不能充當權限。每個新增敏感 read／mutation／export／relation 用第二租戶回歸；拒絕不得洩漏存在性。Schema 變更評估 tenant key、FK、unique、index、既有 RLS 與 forward migration；RLS 是額外防線，不取代 server guard 或 audit。安全、finance、role、ownership 變更須有適當 audit。
 
+Session 與機器憑證（F-016、F-030、F-036）：
+
+- 後台 session cookie 是 `__Host-celebrate_session`（`Secure`、`Path=/`、無 `Domain`，`secure` 不再看 `NODE_ENV`），寫入與刪除一律經 `src/lib/session-cookie.ts`。本機 http 開發只靠瀏覽器對 `localhost`／`127.0.0.1` 的安全來源例外（Chromium、Firefox 可用；Safari 不行）。舊名 `celebrate_session` 只在 2026-12-15 前作為讀取備援，登入時會清掉舊名。Playwright 手動放 cookie 時用 `domain`＋`path: "/"`＋`secure: true`，不要用 `url`。
+- 平台管理員（`platformRole=platform_admin`）的 session 自建立起 24 小時失效（讀取時以 `UserSession.createdAt` 判斷，涵蓋舊 session）；商家後台 session 維持 14 天。敏感操作另有 `requireRecentMfa` step-up。
+- 學員 portal session 最長 7 天，且只在當初兌換的 magic-link 列（`StudentPortalAccessToken`，同 vendor、同 customerKeyHash、已 consumed）仍存在時有效；登出、`revokeStudentPortalSessions` 或客戶匿名化刪除該列即撤銷。任何清理該表的排程都必須保留已 consumed 的列至少 7 天。
+- Provider smoke 端點（test-email／analytics／monitoring、Cloudflare upload／live input）只認 `OPS_SMOKE_SECRET`，vendor 一律是部署設定的 `SMOKE_VENDOR_ID`；排程 `/api/jobs/*` 與 preflight 仍用 `JOB_SECRET`。
+
 ## 瀏覽器 QA
 
 風險決定覆蓋範圍，使用固定非 Production 與唯一合成資料。角色涵蓋受影響的 anonymous、owner、staff、finance、platform admin 未驗證／已驗證 MFA；狀態涵蓋 empty、loading、validation／authorization／provider error、success、duplicate、large list、expired session。

@@ -7,8 +7,11 @@ import {
   readFormDataBody,
   readJsonBody,
   readTextBody,
+  requireJobSecret,
+  requireOpsSmokeSecret,
   requireSameOriginRequest,
 } from "@/lib/api-security";
+import { opsSmokeSecret } from "@/lib/ops-smoke-config";
 
 function request(headers: Record<string, string> = {}) {
   return new Request("https://request.example.test/api/test", {
@@ -218,5 +221,39 @@ describe("readTextBody", () => {
     });
 
     await expect(readTextBody(request)).resolves.toBeNull();
+  });
+});
+
+describe("OPS_SMOKE_SECRET (F-016)", () => {
+  const smokeSecret = "ops-smoke-fixture-secret-0123456789abcdef";
+  const jobSecret = "job-fixture-secret-0123456789abcdef";
+  const bearer = (token: string) => request({ authorization: `Bearer ${token}` });
+
+  it("accepts only the dedicated smoke bearer, never JOB_SECRET", () => {
+    vi.stubEnv("OPS_SMOKE_SECRET", smokeSecret);
+    vi.stubEnv("JOB_SECRET", jobSecret);
+
+    expect(requireOpsSmokeSecret(bearer(smokeSecret))).toBe(true);
+    expect(requireOpsSmokeSecret(bearer(jobSecret))).toBe(false);
+    expect(requireJobSecret(bearer(smokeSecret))).toBe(false);
+  });
+
+  it("stays closed when OPS_SMOKE_SECRET is missing instead of falling back to JOB_SECRET", () => {
+    vi.stubEnv("OPS_SMOKE_SECRET", undefined);
+    vi.stubEnv("JOB_SECRET", jobSecret);
+
+    expect(opsSmokeSecret()).toBeUndefined();
+    expect(requireOpsSmokeSecret(bearer(jobSecret))).toBe(false);
+    expect(requireOpsSmokeSecret(request())).toBe(false);
+  });
+
+  it.each([
+    ["shorter than 32 characters", { OPS_SMOKE_SECRET: "short-smoke-secret" }],
+    ["padded with whitespace", { OPS_SMOKE_SECRET: ` ${smokeSecret}` }],
+    ["equal to JOB_SECRET", { OPS_SMOKE_SECRET: smokeSecret, JOB_SECRET: smokeSecret }],
+    ["equal to CRON_SECRET", { OPS_SMOKE_SECRET: smokeSecret, CRON_SECRET: smokeSecret }],
+    ["equal to CSRF_SECRET", { OPS_SMOKE_SECRET: smokeSecret, CSRF_SECRET: smokeSecret }],
+  ])("treats a value %s as unconfigured", (_label, env) => {
+    expect(opsSmokeSecret(env)).toBeUndefined();
   });
 });

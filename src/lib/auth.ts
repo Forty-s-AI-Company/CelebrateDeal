@@ -9,11 +9,15 @@ import { getDb } from "@/lib/db";
 import { decryptMfaSecret } from "@/lib/mfa";
 import { verifyPasswordAsync } from "@/lib/password";
 import { isVendorBackofficeRole, isVendorPartnerRole, PARTNER_PORTAL_PATH, signedInHomePath } from "@/lib/vendor-roles";
+import {
+  PLATFORM_ADMIN_SESSION_TTL_SECONDS,
+  SESSION_TTL_SECONDS,
+  readSessionCookieToken,
+} from "@/lib/session-cookie";
 
-export const AUTH_COOKIE = "celebrate_session";
+// Cookie writes and deletes go through @/lib/session-cookie (F-036).
+export { AUTH_COOKIE, LEGACY_AUTH_COOKIE, sessionCookieOptions } from "@/lib/session-cookie";
 export const LEGACY_VENDOR_COOKIE = "celebrate_vendor_id";
-
-const SESSION_TTL_SECONDS = 60 * 60 * 24 * 14;
 export const WP4_PREVIEW_SESSION_TTL_SECONDS = 15 * 60;
 const FINANCE_ROLES = ["owner", "admin", "accountant"] as const;
 const VENDOR_MANAGER_ROLES = ["owner", "admin"] as const;
@@ -41,15 +45,22 @@ function newSessionToken() {
   return randomBytes(32).toString("base64url");
 }
 
-export function sessionCookieOptions(expiresAt?: Date, maxAge = SESSION_TTL_SECONDS) {
-  return {
-    httpOnly: true,
-    sameSite: "lax" as const,
-    secure: process.env.NODE_ENV === "production",
-    path: "/",
-    maxAge,
-    expires: expiresAt,
-  };
+/**
+ * F-036: a platform administrator's session ends 24 hours after it was
+ * created; every other back-office session keeps the 14-day lifetime. Applied
+ * both when the session is issued and when it is read, so sessions issued
+ * before this rule (or before a promotion to platform admin) also end.
+ */
+export function sessionTtlSecondsFor(user: Pick<User, "platformRole">) {
+  return isPlatformAdmin(user) ? PLATFORM_ADMIN_SESSION_TTL_SECONDS : SESSION_TTL_SECONDS;
+}
+
+function sessionLifetimeExceeded(
+  session: { createdAt: Date },
+  user: Pick<User, "platformRole">,
+  now = Date.now(),
+) {
+  return session.createdAt.getTime() + sessionTtlSecondsFor(user) * 1_000 <= now;
 }
 
 function isActiveUser(user: Pick<User, "status">) {
@@ -140,14 +151,24 @@ export async function createUserSession({
   vendorId,
   ipAddress,
   userAgent,
+  platformRole,
 }: {
   userId: string;
   vendorId?: string | null;
   ipAddress?: string | null;
   userAgent?: string | null;
+  /** Shortens a platform administrator's session (F-036); reads also enforce it. */
+  platformRole?: string | null;
 }) {
   // 一般登入流程永遠從未通過 MFA 的 session 開始；不得由一般 caller 覆寫。
-  return createSession({ userId, vendorId, ipAddress, userAgent, mfaVerifiedAt: null });
+  return createSession({
+    userId,
+    vendorId,
+    ipAddress,
+    userAgent,
+    mfaVerifiedAt: null,
+    ttlSeconds: sessionTtlSecondsFor({ platformRole: platformRole ?? "none" }),
+  });
 }
 
 /**
@@ -171,10 +192,11 @@ export async function createUserSessionForLineIdentity({
   userAgent?: string | null;
 }) {
   const token = newSessionToken();
-  const expiresAt = new Date(Date.now() + SESSION_TTL_SECONDS * 1000);
+  let expiresAt = new Date(Date.now() + SESSION_TTL_SECONDS * 1000);
   const created = await getDb().$transaction(async (tx) => {
-    const locked = await tx.$queryRaw<Array<{ id: string }>>`SELECT "id" FROM "User" WHERE "id" = ${userId} AND "status" = 'active' FOR UPDATE`;
+    const locked = await tx.$queryRaw<Array<{ id: string; platformRole: string }>>`SELECT "id", "platformRole" FROM "User" WHERE "id" = ${userId} AND "status" = 'active' FOR UPDATE`;
     if (locked.length !== 1) return false;
+    expiresAt = new Date(Date.now() + sessionTtlSecondsFor(locked[0]!) * 1000);
     const identity = await tx.lineUserIdentity.findFirst({
       where: { id: identityId, vendorId, subjectType: "user", subjectId: userId, revokedAt: null },
       select: { id: true },
@@ -222,7 +244,7 @@ export async function createWp4PreviewMfaVerifiedSession({
 
 export async function revokeCurrentSession() {
   const cookieStore = await cookies();
-  const token = cookieStore.get(AUTH_COOKIE)?.value;
+  const token = readSessionCookieToken(cookieStore);
   if (token) {
     await getDb().userSession.updateMany({
       where: {
@@ -236,7 +258,7 @@ export async function revokeCurrentSession() {
 
 export async function getCurrentAuth(options: { allowUnverifiedMfa?: boolean } = {}) {
   const cookieStore = await cookies();
-  const token = cookieStore.get(AUTH_COOKIE)?.value;
+  const token = readSessionCookieToken(cookieStore);
 
   if (!token) {
     return null;
@@ -259,7 +281,13 @@ export async function getCurrentAuth(options: { allowUnverifiedMfa?: boolean } =
     },
   });
 
-  if (!session || session.revokedAt || session.expiresAt <= new Date() || !isActiveUser(session.user)) {
+  if (
+    !session
+    || session.revokedAt
+    || session.expiresAt <= new Date()
+    || !isActiveUser(session.user)
+    || sessionLifetimeExceeded(session, session.user)
+  ) {
     return null;
   }
 
@@ -487,7 +515,7 @@ export async function authenticateUser(email: string, password: string) {
 
 export async function markCurrentSessionMfaVerified() {
   const cookieStore = await cookies();
-  const token = cookieStore.get(AUTH_COOKIE)?.value;
+  const token = readSessionCookieToken(cookieStore);
   if (!token) {
     return;
   }

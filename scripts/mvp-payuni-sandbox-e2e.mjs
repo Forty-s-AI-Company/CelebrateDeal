@@ -1424,8 +1424,9 @@ export async function defaultSubscriptionBrowserSubmit(input, dependencies = {})
       } catch {}
     });
     const [name, value] = input.ownerSessionCookie.split("=", 2);
-    if (name !== "celebrate_session" || !value) return "PAYMENT_REJECTED";
-    await context.addCookies([{ name, value, url: origin, httpOnly: true, sameSite: "Lax", secure: true }]);
+    if (name !== "__Host-celebrate_session" || !value) return "PAYMENT_REJECTED";
+    // F-036: a __Host- cookie must be host-only with Secure and Path=/.
+    await context.addCookies([{ name, value, domain: new URL(origin).hostname, path: "/", httpOnly: true, sameSite: "Lax", secure: true }]);
     await page.goto(`${origin}/billing/plans`, { waitUntil: "domcontentloaded", timeout: REQUEST_TIMEOUT_MS });
     const planForm = page.locator('form[action="/api/billing/plans/select"]:has(input[name="planId"][value="wp4_synthetic_plan_v1"])');
     await Promise.all([
@@ -1694,8 +1695,8 @@ async function runBuyerPayment(input, dependencies, paymentOnly) {
 function assertSubscriptionSessionResponse(response) {
   return response?.status === 204
     && typeof response.sessionCookie === "string"
-    && response.sessionCookie.startsWith("celebrate_session=")
-    && response.sessionCookie.length > "celebrate_session=".length;
+    && response.sessionCookie.startsWith("__Host-celebrate_session=")
+    && response.sessionCookie.length > "__Host-celebrate_session=".length;
 }
 
 function assertSubscriptionRefundResponse(response) {
@@ -1748,7 +1749,7 @@ export async function runMvpPayUniSandboxSubscriptionE2E(input, dependencies = {
       url: fixedUrl(invocation.previewHost, "/api/admin/ops/payuni/wp4-session"),
       headers: guarded,
       body: undefined,
-      cookiePrefix: "celebrate_session=",
+      cookiePrefix: "__Host-celebrate_session=",
     });
     if (!assertSubscriptionSessionResponse(session)) return fail(receipt, "CHECKOUT_REJECTED");
     receipt.checks.ownerSessionIssued = true;

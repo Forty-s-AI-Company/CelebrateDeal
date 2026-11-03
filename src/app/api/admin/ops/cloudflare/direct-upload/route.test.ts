@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   createDirectUploadMapping: vi.fn(),
-  videoFindUnique: vi.fn(),
+  videoFindFirst: vi.fn(),
 }));
 
 vi.mock("@/lib/cloudflare-ops", async (importOriginal) => {
@@ -11,18 +11,19 @@ vi.mock("@/lib/cloudflare-ops", async (importOriginal) => {
 });
 
 vi.mock("@/lib/db", () => ({
-  getDb: () => ({ video: { findUnique: mocks.videoFindUnique } }),
+  getDb: () => ({ video: { findFirst: mocks.videoFindFirst } }),
 }));
 
 import { GET, POST } from "./route";
 
-const jobSecret = "test-fixture-job-secret";
+const smokeSecret = "test-fixture-ops-smoke-secret-0123456789abcdef";
+const jobSecret = "test-fixture-job-secret-0123456789";
 
 function authorizedRequest(payload: Record<string, unknown>) {
   return new Request("https://app.example.test/api/admin/ops/cloudflare/direct-upload", {
     method: "POST",
     headers: {
-      authorization: `Bearer ${jobSecret}`,
+      authorization: `Bearer ${smokeSecret}`,
       "content-type": "application/json",
     },
     body: JSON.stringify(payload),
@@ -42,7 +43,9 @@ function requestWithJsonSpy(authorization?: string) {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.stubEnv("OPS_SMOKE_SECRET", smokeSecret);
   vi.stubEnv("JOB_SECRET", jobSecret);
+  vi.stubEnv("SMOKE_VENDOR_ID", "vendor-1");
 });
 
 afterEach(() => {
@@ -52,8 +55,8 @@ afterEach(() => {
 describe("POST /api/admin/ops/cloudflare/direct-upload", () => {
   it.each([
     { name: "is missing", authorization: undefined },
-    { name: "is invalid", authorization: "Bearer test-fixture-wrong-job-secret" },
-  ])("returns 401 without reading the body or creating an upload when JOB_SECRET $name", async ({ authorization }) => {
+    { name: "is invalid", authorization: "Bearer test-fixture-wrong-ops-smoke-secret" },
+  ])("returns 401 without reading the body or creating an upload when OPS_SMOKE_SECRET $name", async ({ authorization }) => {
     const { request, json } = requestWithJsonSpy(authorization);
 
     const response = await POST(request);
@@ -64,9 +67,9 @@ describe("POST /api/admin/ops/cloudflare/direct-upload", () => {
     expect(mocks.createDirectUploadMapping).not.toHaveBeenCalled();
   });
 
-  it("returns 401 without reading the body or creating an upload when JOB_SECRET is not configured", async () => {
-    vi.stubEnv("JOB_SECRET", undefined);
-    const { request, json } = requestWithJsonSpy(`Bearer ${jobSecret}`);
+  it("returns 401 without reading the body or creating an upload when OPS_SMOKE_SECRET is not configured", async () => {
+    vi.stubEnv("OPS_SMOKE_SECRET", undefined);
+    const { request, json } = requestWithJsonSpy(`Bearer ${smokeSecret}`);
 
     const response = await POST(request);
 
@@ -76,16 +79,46 @@ describe("POST /api/admin/ops/cloudflare/direct-upload", () => {
     expect(mocks.createDirectUploadMapping).not.toHaveBeenCalled();
   });
 
-  it("returns 400 for an invalid payload after JOB_SECRET authorization", async () => {
-    const response = await POST(authorizedRequest({ vendorId: "", maxDurationSeconds: 0 }));
+  it.each([
+    { name: "the shared JOB_SECRET", configured: smokeSecret },
+    { name: "JOB_SECRET while OPS_SMOKE_SECRET is unset", configured: undefined },
+  ])("rejects $name without reading the body or creating an upload", async ({ configured }) => {
+    vi.stubEnv("OPS_SMOKE_SECRET", configured);
+    const { request, json } = requestWithJsonSpy(`Bearer ${jobSecret}`);
+
+    const response = await POST(request);
+
+    expect(response.status).toBe(401);
+    expect(json).not.toHaveBeenCalled();
+    expect(mocks.createDirectUploadMapping).not.toHaveBeenCalled();
+  });
+
+  it("refuses a vendorId other than the configured smoke vendor before any upload", async () => {
+    const response = await POST(authorizedRequest({ vendorId: "vendor-other", title: "Cross-tenant upload" }));
+
+    expect(response.status).toBe(403);
+    await expect(response.json()).resolves.toEqual({ error: "Vendor is not permitted for smoke operations" });
+    expect(mocks.createDirectUploadMapping).not.toHaveBeenCalled();
+  });
+
+  it("returns 503 without creating an upload when no smoke vendor is configured", async () => {
+    vi.stubEnv("SMOKE_VENDOR_ID", undefined);
+
+    const response = await POST(authorizedRequest({ vendorId: "vendor-1", title: "Unbound upload" }));
+
+    expect(response.status).toBe(503);
+    expect(mocks.createDirectUploadMapping).not.toHaveBeenCalled();
+  });
+
+  it("returns 400 for an invalid payload after OPS_SMOKE_SECRET authorization", async () => {
+    const response = await POST(authorizedRequest({ maxDurationSeconds: 0 }));
 
     expect(response.status).toBe(400);
     await expect(response.json()).resolves.toEqual({ error: "Invalid upload request" });
     expect(mocks.createDirectUploadMapping).not.toHaveBeenCalled();
   });
 
-  it("uses the configured fixture vendor when a Preview smoke omits vendorId", async () => {
-    vi.stubEnv("VERCEL_ENV", "preview");
+  it("uses the configured smoke vendor when the caller omits vendorId", async () => {
     vi.stubEnv("SMOKE_VENDOR_ID", "vendor-preview");
     mocks.createDirectUploadMapping.mockResolvedValue({
       video: { id: "video-1", status: "processing", videoUrl: "https://videodelivery.net/video-1/manifest/video.m3u8" },
@@ -158,17 +191,51 @@ describe("POST /api/admin/ops/cloudflare/direct-upload", () => {
 });
 
 describe("GET /api/admin/ops/cloudflare/direct-upload", () => {
-  it("returns 401 without querying status when JOB_SECRET is invalid", async () => {
+  it("returns 401 without querying status when OPS_SMOKE_SECRET is invalid", async () => {
     const response = await GET(new Request(
       "https://app.example.test/api/admin/ops/cloudflare/direct-upload?videoId=video-1",
     ));
 
     expect(response.status).toBe(401);
-    expect(mocks.videoFindUnique).not.toHaveBeenCalled();
+    expect(mocks.videoFindFirst).not.toHaveBeenCalled();
+  });
+
+  it("rejects the shared JOB_SECRET without querying status", async () => {
+    const response = await GET(new Request(
+      "https://app.example.test/api/admin/ops/cloudflare/direct-upload?videoId=video-1",
+      { headers: { authorization: `Bearer ${jobSecret}` } },
+    ));
+
+    expect(response.status).toBe(401);
+    expect(mocks.videoFindFirst).not.toHaveBeenCalled();
+  });
+
+  it("returns 503 without querying status when no smoke vendor is configured", async () => {
+    vi.stubEnv("SMOKE_VENDOR_ID", undefined);
+    const response = await GET(new Request(
+      "https://app.example.test/api/admin/ops/cloudflare/direct-upload?videoId=video-1",
+      { headers: { authorization: `Bearer ${smokeSecret}` } },
+    ));
+
+    expect(response.status).toBe(503);
+    expect(mocks.videoFindFirst).not.toHaveBeenCalled();
+  });
+
+  it("does not reveal a video owned by another vendor", async () => {
+    mocks.videoFindFirst.mockResolvedValue(null);
+    const response = await GET(new Request(
+      "https://app.example.test/api/admin/ops/cloudflare/direct-upload?videoId=video-of-other-vendor",
+      { headers: { authorization: `Bearer ${smokeSecret}` } },
+    ));
+
+    expect(response.status).toBe(404);
+    expect(mocks.videoFindFirst).toHaveBeenCalledWith(expect.objectContaining({
+      where: { id: "video-of-other-vendor", vendorId: "vendor-1" },
+    }));
   });
 
   it("returns a bounded webhook-updated video status", async () => {
-    mocks.videoFindUnique.mockResolvedValue({
+    mocks.videoFindFirst.mockResolvedValue({
       status: "ready",
       cloudflareReadyToStream: true,
       durationSec: 10,
@@ -176,7 +243,7 @@ describe("GET /api/admin/ops/cloudflare/direct-upload", () => {
     });
     const response = await GET(new Request(
       "https://app.example.test/api/admin/ops/cloudflare/direct-upload?videoId=video-1",
-      { headers: { authorization: `Bearer ${jobSecret}` } },
+      { headers: { authorization: `Bearer ${smokeSecret}` } },
     ));
 
     expect(response.status).toBe(200);
@@ -184,8 +251,8 @@ describe("GET /api/admin/ops/cloudflare/direct-upload", () => {
       ok: true,
       video: { status: "ready", readyToStream: true, durationSec: 10 },
     });
-    expect(mocks.videoFindUnique).toHaveBeenCalledWith({
-      where: { id: "video-1" },
+    expect(mocks.videoFindFirst).toHaveBeenCalledWith({
+      where: { id: "video-1", vendorId: "vendor-1" },
       select: { status: true, cloudflareReadyToStream: true, durationSec: true },
     });
   });

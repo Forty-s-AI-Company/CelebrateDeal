@@ -10,15 +10,17 @@ import { deriveSensitiveDataKey } from "@/lib/sensitive-data";
 const TOKEN_VERSION = "sp1";
 // Rotated after #485. Access tokens (tier 2) live 15 minutes and are one-time
 // database capabilities, so old ones simply expire. Session cookies (tier 3)
-// live up to 30 days: new ones use the new key, old ones still decrypt until
-// the legacy key's hard stop in derived-key-purposes.ts.
+// live up to 7 days (30 before F-030): new ones use the new key, old ones
+// still decrypt until the legacy key's hard stop in derived-key-purposes.ts.
 const TOKEN_PURPOSE = DERIVED_KEY_ROTATIONS.studentPortalAccessToken.current;
 const SESSION_KEY = DERIVED_KEY_ROTATIONS.studentPortalSession;
 const TOKEN_SIGNATURE = /^[A-Za-z0-9_-]{43}$/u;
 const TOKEN_PART = /^[A-Za-z0-9_-]{1,1024}$/u;
 const IDENTIFIER = /^[A-Za-z0-9_-]{1,128}$/u;
 const NONCE = /^[A-Za-z0-9_-]{43}$/u;
-const SESSION_MAX_TTL_SECONDS = 30 * 24 * 60 * 60;
+// F-030: shortened from 30 days. Revocation is server-side (see `grant` below).
+const SESSION_MAX_TTL_SECONDS = 7 * 24 * 60 * 60;
+const GRANT = /^[A-Za-z0-9_-]{43}$/u;
 
 export const STUDENT_PORTAL_ACCESS_TOKEN_TTL_SECONDS = 15 * 60;
 export const STUDENT_PORTAL_SESSION_TTL_SECONDS = SESSION_MAX_TTL_SECONDS;
@@ -43,6 +45,10 @@ const SessionPayload = z.object({
   customerKeyHash: z.string().regex(/^[A-Za-z0-9_-]{43}$/u),
   issuedAt: z.number().int().safe().positive(),
   expiresAt: z.number().int().safe().positive(),
+  // F-030: digest of the consumed magic-link row this session was minted
+  // from. Optional only so pre-F-030 cookies still parse; such cookies carry
+  // no grant and are refused by getCurrentStudentPortalSession.
+  grant: z.string().regex(GRANT).optional(),
 }).strict();
 
 const IssueInput = z.object({
@@ -74,6 +80,13 @@ type StudentPortalAccessTokenStore = {
     };
     data: { consumedAt: Date };
   }): Promise<{ count: number }>;
+  findFirst(args: {
+    where: { vendorId: string; customerKeyHash: string; tokenHash: string; consumedAt: { not: null } };
+    select: { id: true };
+  }): Promise<{ id: string } | null>;
+  deleteMany(args: {
+    where: { vendorId: string; customerKeyHash: string; tokenHash?: string; consumedAt?: { not: null } };
+  }): Promise<{ count: number }>;
 };
 
 type StudentPortalVendorStore = {
@@ -96,11 +109,15 @@ export type StudentPortalAccessTokenClaim = {
   expiresAt: Date;
 };
 
+/** A consumed capability also names the row that later keeps its session alive (F-030). */
+export type StudentPortalConsumedAccess = StudentPortalAccessTokenClaim & { grant: string };
+
 export type StudentPortalSession = {
   vendorId: string;
   customerKeyHash: string;
   issuedAt: Date;
   expiresAt: Date;
+  grant?: string;
 };
 
 function database(): StudentPortalTokenDatabase {
@@ -188,7 +205,7 @@ export function verifyStudentPortalAccessToken(input: {
  * matching `consume` call below owns the one-time state transition.
  */
 export async function createStudentPortalAccessToken(
-  db: Pick<StudentPortalTokenDatabase, "studentPortalAccessToken">,
+  db: { studentPortalAccessToken: Pick<StudentPortalAccessTokenStore, "create" | "updateMany"> },
   input: { vendorId: string; email: string; purpose: StudentPortalAccessTokenPurpose; now?: Date },
 ) {
   const parsed = IssueInput.parse(input);
@@ -244,9 +261,9 @@ export async function createCheckoutStudentPortalAccessToken(input: {
  * concurrent requests can transition exactly one row from unconsumed to used.
  */
 export async function consumeStudentPortalAccessToken(
-  db: Pick<StudentPortalTokenDatabase, "studentPortalAccessToken">,
+  db: { studentPortalAccessToken: Pick<StudentPortalAccessTokenStore, "create" | "updateMany"> },
   input: { token: string; expectedPurpose: StudentPortalAccessTokenPurpose; now?: Date },
-): Promise<StudentPortalAccessTokenClaim | null> {
+): Promise<StudentPortalConsumedAccess | null> {
   const now = input.now ?? new Date();
   const claim = verifyStudentPortalAccessToken({
     token: input.token,
@@ -274,6 +291,7 @@ export async function consumeStudentPortalAccessToken(
     purpose: claim.purpose,
     issuedAt: claim.issuedAt,
     expiresAt: claim.expiresAt,
+    grant: tokenDigest(input.token),
   };
 }
 
@@ -288,10 +306,15 @@ export async function consumeCheckoutStudentPortalAccessToken(input: { token: st
 export function createStudentPortalSessionToken(input: {
   vendorId: string;
   customerKeyHash: string;
+  grant?: string;
   now?: Date;
   ttlSeconds?: number;
 }) {
-  if (!IDENTIFIER.test(input.vendorId) || !/^[A-Za-z0-9_-]{43}$/u.test(input.customerKeyHash)) {
+  if (
+    !IDENTIFIER.test(input.vendorId)
+    || !/^[A-Za-z0-9_-]{43}$/u.test(input.customerKeyHash)
+    || (input.grant !== undefined && !GRANT.test(input.grant))
+  ) {
     throw new Error("Invalid student portal session binding.");
   }
   const ttlSeconds = input.ttlSeconds ?? STUDENT_PORTAL_SESSION_TTL_SECONDS;
@@ -306,6 +329,7 @@ export function createStudentPortalSessionToken(input: {
     customerKeyHash: input.customerKeyHash,
     issuedAt,
     expiresAt,
+    ...(input.grant ? { grant: input.grant } : {}),
   }), SESSION_KEY);
 }
 
@@ -332,10 +356,51 @@ export function readStudentPortalSessionToken(token: string | null | undefined, 
       customerKeyHash: parsed.data.customerKeyHash,
       issuedAt: new Date(parsed.data.issuedAt * 1_000),
       expiresAt: new Date(parsed.data.expiresAt * 1_000),
+      grant: parsed.data.grant,
     };
   } catch {
     return null;
   }
+}
+
+/**
+ * F-030: a portal session stays valid only while the consumed magic-link row
+ * it was minted from still exists for the same tenant and customer. Deleting
+ * that row (sign-out, revokeStudentPortalSessions, customer anonymization)
+ * revokes the session server-side without a schema change. Any retention job
+ * for StudentPortalAccessToken must therefore keep consumed rows for at least
+ * the 7-day session lifetime.
+ */
+export async function isStudentPortalSessionActive(
+  db: { studentPortalAccessToken: Pick<StudentPortalAccessTokenStore, "findFirst"> },
+  session: StudentPortalSession,
+) {
+  if (!session.grant || !GRANT.test(session.grant)) return false;
+  const row = await db.studentPortalAccessToken.findFirst({
+    where: {
+      vendorId: session.vendorId,
+      customerKeyHash: session.customerKeyHash,
+      tokenHash: session.grant,
+      consumedAt: { not: null },
+    },
+    select: { id: true },
+  });
+  return Boolean(row);
+}
+
+/**
+ * Ends every portal session (and unused magic link) of one customer at one
+ * vendor. Tenant-scoped: the customer key is derived from this vendorId.
+ */
+export async function revokeStudentPortalSessions(
+  db: { studentPortalAccessToken: Pick<StudentPortalAccessTokenStore, "deleteMany"> },
+  input: { vendorId: string; email: string },
+) {
+  const parsed = z.object({ vendorId: z.string().regex(IDENTIFIER), email: z.string().trim().toLowerCase().email().max(254) }).parse(input);
+  const { count } = await db.studentPortalAccessToken.deleteMany({
+    where: { vendorId: parsed.vendorId, customerKeyHash: automationCustomerKeyHash(parsed.vendorId, parsed.email) },
+  });
+  return count;
 }
 
 export function studentPortalSessionCookieOptions(secure = process.env.NODE_ENV === "production") {
@@ -348,18 +413,37 @@ export function studentPortalSessionCookieOptions(secure = process.env.NODE_ENV 
   };
 }
 
-export async function setStudentPortalSessionCookie(session: Pick<StudentPortalSession, "vendorId" | "customerKeyHash">) {
-  const token = createStudentPortalSessionToken(session);
+export async function setStudentPortalSessionCookie(session: Pick<StudentPortalConsumedAccess, "vendorId" | "customerKeyHash" | "grant">) {
+  const token = createStudentPortalSessionToken({
+    vendorId: session.vendorId,
+    customerKeyHash: session.customerKeyHash,
+    grant: session.grant,
+  });
   (await cookies()).set(STUDENT_PORTAL_SESSION_COOKIE, token, studentPortalSessionCookieOptions());
 }
 
+/** Sign-out revokes this session server-side before the cookie is removed (F-030). */
 export async function clearStudentPortalSessionCookie() {
-  (await cookies()).delete({ name: STUDENT_PORTAL_SESSION_COOKIE, path: "/portal" });
+  const store = await cookies();
+  const session = readStudentPortalSessionToken(store.get(STUDENT_PORTAL_SESSION_COOKIE)?.value);
+  if (session?.grant) {
+    await database().studentPortalAccessToken.deleteMany({
+      where: {
+        vendorId: session.vendorId,
+        customerKeyHash: session.customerKeyHash,
+        tokenHash: session.grant,
+        consumedAt: { not: null },
+      },
+    });
+  }
+  store.delete({ name: STUDENT_PORTAL_SESSION_COOKIE, path: "/portal" });
 }
 
 export async function getCurrentStudentPortalSession() {
   const token = (await cookies()).get(STUDENT_PORTAL_SESSION_COOKIE)?.value;
-  return readStudentPortalSessionToken(token);
+  const session = readStudentPortalSessionToken(token);
+  if (!session || !await isStudentPortalSessionActive(database(), session)) return null;
+  return session;
 }
 
 function studentPortalLoginPath(vendorSlug: string) {

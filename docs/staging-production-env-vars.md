@@ -19,7 +19,9 @@
 | `DATABASE_REGION` | 選填；AWS 區域 ID，例如 `ap-northeast-1` | 選填；例如 `ap-south-1` | Supabase Project Settings | 只在 `DATABASE_URL` 不是 Supabase pooler 網址、無法推得區域時需要 |
 | `DIRECT_URL` | Supabase staging direct URL | Supabase production direct URL | Supabase Project Settings | `npm run db:migrate:status` up to date |
 | `NEXT_PUBLIC_APP_URL` | `https://staging-app...` | `https://app...` | Vercel domain | Email links / webhook URLs 正確 |
-| `JOB_SECRET` | staging random secret | production random secret | Password manager | `/api/admin/preflight` Bearer token 可通過 |
+| `JOB_SECRET` | staging random secret | production random secret | Password manager | `/api/admin/preflight` Bearer token 可通過；**不再**能呼叫 smoke 端點（F-016，見 `OPS_SMOKE_SECRET`） |
+| `OPS_SMOKE_SECRET` | **必填**（Staging Stream／external smoke 需要）：獨立 random secret，至少 32 字元；GitHub Actions `Preview – celebrate-deal-staging` environment secret 用同一個值 | **選填，預設不設**：只在驗證期間設定，完成後移除 | Password manager | F-016：只開放 `/api/admin/ops/test-email`、`test-analytics`、`test-monitoring`、`/api/admin/ops/cloudflare/{direct-upload,live-input}` 與 `/api/cloudflare/{direct-upload,live-inputs}`。未設定、短於 32 字元、前後有空白或與 `JOB_SECRET`／`CRON_SECRET`／`CSRF_SECRET` 相同時，這些端點一律回 401（不退回 `JOB_SECRET`）；preflight 對後三種情況回 FAIL、Preview 未設定回 WARNING、Production 已設定回 WARNING |
+| `SMOKE_VENDOR_ID` | Staging 合成 smoke vendor 的 ID | 只在 Production smoke 期間設定，指向專用的 smoke vendor | 維運設定 | F-016：Cloudflare smoke 一律綁定這個 vendor；呼叫端帶其他 `vendorId` 回 403，未設定或格式不符回 503，狀態查詢只看得到這個 vendor 的影片 |
 | `CRON_SECRET` | staging random secret | production random secret | Password manager | Vercel Cron 對 `/api/jobs/email-deliveries` 的 Bearer 驗證可通過；不得輸出值 |
 | `CSRF_SECRET` | staging random secret | production 獨立 random secret | Password manager | preflight 通過；不得與 `JOB_SECRET` 共用。**這是應用層資料加密根金鑰：禁止輪替；備份時必須一併保存對應版本**（見 §7） |
 | `LIVE_CHAT_INGRESS_SECRET` | staging random secret，至少 32 字元 | production random secret，至少 32 字元 | Password manager＋edge secret store | preflight 通過；不得輸出或進入 client bundle |
@@ -97,6 +99,8 @@ Production／Preview 的 live chat route 使用專用 header `x-celebratedeal-li
 RUN_CLOUDFLARE_SMOKE=true npm run external:smoke
 RUN_DEMO_PAYMENT_WEBHOOK_SMOKE=true SMOKE_VENDOR_SLUG=your-vendor npm run external:smoke
 ```
+
+`external:smoke` 以 `JOB_SECRET` 呼叫 `/api/admin/preflight`，以 `OPS_SMOKE_SECRET` 呼叫 provider smoke 端點（F-016）。兩個值都由已核准的工作階段注入，不寫進 repo。Cloudflare smoke 的 vendor 由部署端的 `SMOKE_VENDOR_ID` 決定；本機另外設定 `SMOKE_VENDOR_ID` 時只是交叉檢查，與部署值不同會得到 403。
 
 ## 6. 函式區域與連線池（F-090／B06-03）
 

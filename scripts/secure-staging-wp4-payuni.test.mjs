@@ -223,7 +223,7 @@ function successfulOwnerFetch(requests) {
   return async (url, options) => {
     requests.push({ url, options });
     if (url.endsWith("/wp4-session")) {
-      return mockResponse(url, 204, { cookies: [`celebrate_session=${token}; Path=/; HttpOnly; Secure`] });
+      return mockResponse(url, 204, { cookies: [`__Host-celebrate_session=${token}; Path=/; HttpOnly; Secure`] });
     }
     return mockResponse(url, 200);
   };
@@ -543,14 +543,15 @@ test("receipt rejects a session attempt when fixture preflight never ran", () =>
 for (const [name, fetchImpl] of [
   ["bootstrap auth failure", async (url) => mockResponse(url, 401)],
   ["multiple session cookies", async (url) => mockResponse(url, 204, { cookies: [
-    `celebrate_session=${"a".repeat(43)}; Path=/`,
-    `celebrate_session=${"b".repeat(43)}; Path=/`,
+    `__Host-celebrate_session=${"a".repeat(43)}; Path=/`,
+    `__Host-celebrate_session=${"b".repeat(43)}; Path=/`,
   ] })],
   ["unexpected cookie", async (url) => mockResponse(url, 204, { cookies: [`other_session=${"a".repeat(43)}; Path=/`] })],
+  ["pre-rename cookie name (F-036)", async (url) => mockResponse(url, 204, { cookies: [`celebrate_session=${"a".repeat(43)}; Path=/`] })],
   ["redirect", async (url) => mockResponse(url, 302, { location: "https://production.example.com" })],
-  ["host drift", async () => mockResponse("https://production.example.com/api/admin/ops/payuni/wp4-session", 204, { cookies: [`celebrate_session=${"a".repeat(43)}; Path=/`] })],
+  ["host drift", async () => mockResponse("https://production.example.com/api/admin/ops/payuni/wp4-session", 204, { cookies: [`__Host-celebrate_session=${"a".repeat(43)}; Path=/`] })],
   ["probe failure", async (url) => url.endsWith("/wp4-session")
-    ? mockResponse(url, 204, { cookies: [`celebrate_session=${"a".repeat(43)}; Path=/`] })
+    ? mockResponse(url, 204, { cookies: [`__Host-celebrate_session=${"a".repeat(43)}; Path=/`] })
     : mockResponse(url, 403)],
 ]) {
   test(`owner-session child fails closed for ${name}`, async () => {

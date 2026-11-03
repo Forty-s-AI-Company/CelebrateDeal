@@ -43,6 +43,7 @@ import {
   requireVendorSupportContext,
   requireVendorSupportMember,
 } from "@/lib/auth";
+import { LEGACY_AUTH_COOKIE_SUNSET } from "@/lib/session-cookie";
 
 function sessionFor({
   platformRole,
@@ -70,6 +71,7 @@ function sessionFor({
     id: "session-1",
     vendorId: memberships[0]?.vendorId ?? null,
     revokedAt: null,
+    createdAt: new Date(),
     expiresAt: new Date("2099-01-01T00:00:00.000Z"),
     mfaVerifiedAt,
     vendor: memberships[0]?.vendor ?? null,
@@ -95,6 +97,7 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.unstubAllEnvs();
+  vi.useRealTimers();
 });
 
 describe("createUserSession", () => {
@@ -200,6 +203,72 @@ describe("voluntary MFA session boundary", () => {
     await expect(getCurrentAuth()).resolves.toBeNull();
     await expect(requireAuth()).rejects.toThrow("redirect:/mfa/verify?next=%2Fdashboard");
     await expect(requireAuth({ allowUnverifiedMfa: true })).resolves.toMatchObject({ user: { id: "user-1" } });
+  });
+});
+
+describe("session lifetime and cookie name (F-036)", () => {
+  const hoursAgo = (hours: number) => new Date(Date.now() - hours * 60 * 60 * 1000);
+
+  it("ends a platform administrator's session 24 hours after it was created, even with a later expiresAt", async () => {
+    mocks.findSession.mockResolvedValue({ ...sessionFor({ platformRole: "platform_admin" }), createdAt: hoursAgo(23) });
+    await expect(getCurrentAuth()).resolves.toMatchObject({ isPlatformAdmin: true });
+
+    // A session issued before the 24-hour rule still carries a 14-day expiresAt.
+    mocks.findSession.mockResolvedValue({ ...sessionFor({ platformRole: "platform_admin" }), createdAt: hoursAgo(25) });
+    await expect(getCurrentAuth()).resolves.toBeNull();
+    await expect(requireFinanceAdmin()).rejects.toThrow("redirect:/login");
+  });
+
+  it("keeps the 14-day lifetime for vendor back-office sessions", async () => {
+    mocks.findSession.mockResolvedValue({ ...sessionFor({ platformRole: "none", memberRole: "owner" }), createdAt: hoursAgo(13 * 24) });
+    await expect(getCurrentAuth()).resolves.toMatchObject({ user: { id: "user-1" } });
+
+    mocks.findSession.mockResolvedValue({ ...sessionFor({ platformRole: "none", memberRole: "owner" }), createdAt: hoursAgo(14 * 24 + 1) });
+    await expect(getCurrentAuth()).resolves.toBeNull();
+  });
+
+  it("issues a 24-hour session to a platform administrator and 14 days to everyone else", async () => {
+    mocks.createSession.mockResolvedValue({ id: "session-1" });
+    mocks.updateUser.mockResolvedValue({ id: "user-1" });
+
+    const admin = await createUserSession({ userId: "admin-1", platformRole: "platform_admin" });
+    const vendor = await createUserSession({ userId: "user-1", vendorId: "vendor-1", platformRole: "none" });
+
+    expect(admin.expiresAt.getTime() - Date.now()).toBeLessThanOrEqual(24 * 60 * 60 * 1000);
+    expect(admin.expiresAt.getTime() - Date.now()).toBeGreaterThan(23 * 60 * 60 * 1000);
+    expect(vendor.expiresAt.getTime() - Date.now()).toBeGreaterThan(13 * 24 * 60 * 60 * 1000);
+  });
+
+  it("reads the __Host- cookie first and the pre-rename cookie only as a fallback before the sunset", async () => {
+    // Pin the clock inside the transition window so this test does not depend on today's date.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date(LEGACY_AUTH_COOKIE_SUNSET.getTime() - 24 * 60 * 60 * 1000));
+    const jar = (values: Record<string, string>) => ({ get: (name: string) => (values[name] ? { value: values[name] } : undefined) });
+    mocks.findSession.mockResolvedValue(sessionFor({ platformRole: "none", memberRole: "owner" }));
+
+    mocks.cookies.mockResolvedValue(jar({ "__Host-celebrate_session": "new-token", celebrate_session: "old-token" }));
+    await getCurrentAuth();
+    const newHash = mocks.findSession.mock.calls.at(-1)?.[0].where.tokenHash;
+
+    mocks.cookies.mockResolvedValue(jar({ celebrate_session: "old-token" }));
+    await expect(getCurrentAuth()).resolves.toMatchObject({ user: { id: "user-1" } });
+    const legacyHash = mocks.findSession.mock.calls.at(-1)?.[0].where.tokenHash;
+
+    expect(newHash).toMatch(/^[a-f0-9]{64}$/);
+    expect(legacyHash).toMatch(/^[a-f0-9]{64}$/);
+    expect(newHash).not.toBe(legacyHash);
+
+    mocks.cookies.mockResolvedValue(jar({}));
+    mocks.findSession.mockClear();
+    await expect(getCurrentAuth()).resolves.toBeNull();
+    expect(mocks.findSession).not.toHaveBeenCalled();
+
+    // After the sunset a legacy-only cookie is ignored without a database lookup.
+    vi.setSystemTime(LEGACY_AUTH_COOKIE_SUNSET);
+    mocks.cookies.mockResolvedValue(jar({ celebrate_session: "old-token" }));
+    await expect(getCurrentAuth()).resolves.toBeNull();
+    expect(mocks.findSession).not.toHaveBeenCalled();
+    vi.useRealTimers();
   });
 });
 
@@ -449,6 +518,7 @@ function sessionWithMemberships(memberships: ReturnType<typeof membership>[], se
     id: "session-1",
     vendorId: sessionVendorId,
     revokedAt: null,
+    createdAt: new Date(),
     expiresAt: new Date("2099-01-01T00:00:00.000Z"),
     mfaVerifiedAt: "mfaVerifiedAt" in mfa ? mfa.mfaVerifiedAt : new Date("2026-07-21T00:00:00.000Z"),
     vendor: null,
