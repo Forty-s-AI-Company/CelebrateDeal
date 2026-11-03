@@ -292,10 +292,35 @@ Partial unique index：`RefundRecord_paymentTransactionId_providerEventId_key`�
                       'PayoutItem_status_check', 'PayoutItem_amounts_check');
    ```
 
+**Staging 的診斷與修復：`Staging ledger remediation` workflow**
+
+staging 沒有直接 SQL 存取權，步驟 1、3、4 在 staging 一律透過 `.github/workflows/staging-ledger-remediation.yml`（`scripts/staging-ledger-remediation.ts`）執行。只能在受保護 `master` 以 `workflow_dispatch` 手動觸發，environment 為 `Preview – celebrate-deal-staging`，只用 `STAGING_DATABASE_URL`（與 `Staging migrate` 相同的 URL 檢查：只接受固定 staging project、pooler 6543 轉 session 5432、強制 TLS），並與 staging migration 共用 concurrency group。輸出寫在 job summary 與 log，不輸出金額、主機或連線字串；只輸出固定代碼、row id、vendorId、狀態值（限 `[A-Za-z0-9_-]`，其他字元以長度代替）、筆數、時間戳與 allowlist 內的 Prisma 摘要行。
+
+注意事項：
+
+- **id／vendorId 會出現在公開 log**：repo 是公開的，Actions log 與 job summary 任何人都看得到。違規列的 `id`、`vendorId`（cuid，不含個資）會原樣公開；如需更嚴格，改在 PR 中只輸出筆數。
+- **dispatch 權限等於 repo write，`confirm` 不是秘密**：任何有 repo write 權限的人都能觸發此 workflow（environment 若設定 required reviewers，仍需核准）。`confirm` 字串寫在 repo 內，只用來防止誤選 mode，不是授權機制；授權來自 repo 權限、受保護 `master` 與 `FIXES` 的 PR 審查。
+
+| `mode` | 其他輸入 | 作用 |
+|---|---|---|
+| `inspect`（預設） | — | `SET TRANSACTION READ ONLY` 的 repeatable-read 快照（輸出 `readOnly`，即 `current_setting('transaction_read_only')`，應為 `on`）。10 條 CHECK 各輸出違規筆數、是否已 validate，以及前 200 筆違規列的 `id`、`vendorId`（`PayoutBatch` 沒有，為空）、`status` 與違反的金額規則（例如 `gatewayFeeCents < 0`、`refundedAmountCents > grossAmountCents`，只有欄名與規則、沒有數值）；另列出三個帳務 migration 在 `_prisma_migrations` 的狀態（`applied`／`rolled_back`／`failed` 與 started／finished／rolled_back 時間）。 |
+| `resolve-rolled-back` | `confirm` = `resolve-20261103090200` | 只在 `20261103090200_ledger_integrity_constraints_validate` 目前為 failed 時，執行 `prisma migrate resolve --rolled-back` 該 migration（名稱寫死，不接受輸入），再印 `prisma migrate status`。仍有違規時會提示下一次 deploy 仍會失敗。 |
+| `apply-fix` | `fix_id`、`confirm` = `apply-<fix_id>` | 執行 `FIXES` 中登記的修復：同一交易內依序執行每句 SQL（`lock_timeout` 5s、`statement_timeout` 60s）。每句的影響筆數都**完全等於**該句的 `expectedRows` 才寫一筆 `AuditLog`（`staging_ledger_remediation.apply_fix`，`after` 含每句筆數、run id、`GITHUB_ACTOR`、`GITHUB_SHA`）並 commit（`outcome=committed`）；全部為 0 代表已套用過，回滾不寫入（`already_applied`）；其他情況整筆回滾並以 exit 1 結束（`rolled_back_row_mismatch`）。`dryRun` 的 fix 一律回滾。commit 後先輸出結果，再重跑 inspect：重跑失敗回 `LEDGER_REMEDIATION_POST_INSPECT_FAILED`（exit 1，修復已 commit）；仍有違規時輸出 `WARNING violations remain after fix: N` 並以 exit 1 結束。 |
+
+`confirm` 不符、`fix_id` 未登記、fix 定義不合規或 mode 不明時，在連線前就拒絕。
+
+修復流程：
+
+1. 執行 `mode=inspect`，把違規筆數與列 id 交給主對話。
+2. 主對話依步驟 3 判斷每列的正確值，另開 PR 在 `scripts/staging-ledger-remediation.ts` 的 `FIXES` 登記修復：`id`（kebab-case）、說明、`statements`（每句 `{ sql, expectedRows }`，`expectedRows` 只能是 0 或 1）。SQL 只允許 `UPDATE "<PaymentTransaction|RefundRecord|PayoutBatch|Settlement|PayoutItem>" SET "欄" = 值, … WHERE 條件 AND 條件 …`：值只能是簡單字串（`[A-Za-z0-9_ -]`）、整數或另一個欄位；`WHERE` 只能用 `AND` 串接簡單比較，必須含 `"id" = '…'`，`PayoutBatch` 以外的四張表還必須含 `"vendorId" = '…'`；禁止 `DELETE`／`INSERT`、`FROM`、`USING`、`SELECT`、`RETURNING`、`OR`、`NOT`、括號（子查詢與任何函式呼叫）、`;`、註解、`$`、交易控制、DDL 與 `_prisma_migrations`。建議同時以目前的錯誤值作為條件（例如 `AND "status" = 'reviewing'`），重跑時每句為 0 筆即判定已套用。**同一列的所有違規必須在同一句修正**：CHECK 已以 NOT VALID 存在，會檢查每次 UPDATE，只修一部分欄位會得到 SQLSTATE 23514，整個 fix 回滾。PR 需經獨立審查後合併。本 PR 只登記機制驗證用的 `mechanism-dry-run-noop`（`dryRun`，五句以不存在的 id 為條件的 UPDATE，影響 0 筆）。
+3. 合併後執行 `mode=apply-fix`，確認 `outcome` 為 `committed` 且 `violations_after 0`。
+4. 執行 `mode=resolve-rolled-back`（`confirm=resolve-20261103090200`）。
+5. 執行 `Staging migrate`：先 `status`，再 `deploy`；之後以 `mode=inspect` 確認 10 條 CHECK 的 validated 都是 `true`，並在下表補記。
+
 **查詢紀錄**
 
 | 環境 | 日期 | 結果 | 執行者 | 備註 |
 |---|---|---|---|---|
 | loopback disposable（`celebratedeal_ci`） | 2026-11-03 | 12 列皆 0；交易內人為插入違規列後對應列為 1，`VALIDATE` 與重複 preflight 都如預期失敗，交易回滾 | engineer-hard（合成資料） | 只證明查詢與 migration 行為，不代表 staging／production |
-| staging | 待執行 | — | 主對話（唯讀） | |
+| staging | 2026-11-03 | `Staging migrate deploy`（run 41580688491）：`090000`、`090100` 已套用，`090200` 以 P3018／SQLSTATE 23514 失敗並標為 failed | 主對話 | 以上方 remediation workflow 診斷與修復，修復後補記 inspect 結果 |
 | production | 待執行 | — | owner | 部署前由 owner 查詢並補記 |
