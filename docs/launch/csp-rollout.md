@@ -168,4 +168,4 @@ nonce 必須每次請求產生，root layout 讀取 request 標頭後所有頁�
 | 15 | Sentry：在 Staging 觸發一次前端錯誤，確認經 `/monitoring` 送達 | `'self'` |
 | 16 | `/api/security/csp-report`：刻意在 Console 執行 `eval("1")`，log 出現 `csp_violation`、`blocked: "eval"`、`disposition: "enforce"` | 回報管線 |
 
-本機 `next start` 已驗證的範圍見 PR 說明（首頁、登入頁、註冊頁與自訂程式碼沙箱）；外部服務（PayUni、LINE、Stream、Turnstile、GA／Meta）只能在 Staging 驗證。
+本機已驗證（2026-11-03）：webpack production build 以 `CSP_ENFORCE=true` 執行 `next start`，`/`、`/login`、`/register`、`/policies/privacy` 與 404 頁的所有 script 都帶 nonce、hydration 正常、無任何 CSP 違規；`/sandbox/custom-code` 帶 sandbox CSP 與 `SAMEORIGIN`；`/presenter-segmentation/worker.js` 與 `/api/*` 不帶頁面政策。開發模式 Chromium QA（`node scripts/funnel-elements-browser-qa.mjs`，現在固定以 `CSP_ENFORCE=true` 執行）22 項通過，含自訂程式碼在強制政策下執行。外部服務（PayUni、LINE、Stream、Turnstile、GA／Meta）只能在 Staging 驗證。
