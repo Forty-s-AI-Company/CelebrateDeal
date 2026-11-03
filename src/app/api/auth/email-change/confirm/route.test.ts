@@ -40,7 +40,7 @@ describe("POST /api/auth/email-change/confirm", () => {
   });
 
   it("never sets or clears a session cookie: it does not sign anyone in or out", async () => {
-    const response = await POST(request("token=aec1.payload.signature", "https://app.example.test", "celebrate_session=someone-else"));
+    const response = await POST(request("token=aec1.payload.signature", "https://app.example.test", "__Host-celebrate_session=someone-else"));
     expect(response.headers.get("set-cookie")).toBeNull();
   });
 

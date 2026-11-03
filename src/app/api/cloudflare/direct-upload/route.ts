@@ -1,13 +1,16 @@
 import { NextResponse } from "next/server";
-import { readJsonBody, requireJobSecret, unauthorizedJson } from "@/lib/api-security";
+import { readJsonBody, requireOpsSmokeSecret, unauthorizedJson } from "@/lib/api-security";
+import { bindOpsSmokeVendor } from "@/lib/ops-smoke";
 import { classifyCloudflareOperationError, createDirectUploadMapping, DirectUploadRequest } from "@/lib/cloudflare-ops";
 
 export async function POST(request: Request) {
-  if (!requireJobSecret(request)) {
+  if (!requireOpsSmokeSecret(request)) {
     return unauthorizedJson();
   }
 
-  const parsed = DirectUploadRequest.safeParse(await readJsonBody(request));
+  const bound = bindOpsSmokeVendor(await readJsonBody(request));
+  if (!bound.ok) return bound.response;
+  const parsed = DirectUploadRequest.safeParse(bound.payload);
   if (!parsed.success) {
     return NextResponse.json({ error: "Invalid upload request" }, { status: 400 });
   }

@@ -9,8 +9,8 @@ const state = vi.hoisted(() => ({ token: "", deferred: [] as Array<() => Promise
 
 vi.mock("next/headers", () => ({
   cookies: vi.fn(async () => ({
-    get: (name: string) => (name === "celebrate_session" && state.token ? { value: state.token } : undefined),
-    set: (name: string, value: string) => { if (name === "celebrate_session") state.token = value; },
+    get: (name: string) => (name === "__Host-celebrate_session" && state.token ? { value: state.token } : undefined),
+    set: (name: string, value: string) => { if (name === "__Host-celebrate_session") state.token = value; },
     delete: vi.fn(),
   })),
   headers: vi.fn(async () => new Headers({ "user-agent": "synthetic-agent" })),

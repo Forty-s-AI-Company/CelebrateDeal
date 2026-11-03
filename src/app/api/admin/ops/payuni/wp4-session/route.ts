@@ -3,12 +3,8 @@ import { NextResponse } from "next/server";
 import { createHash } from "node:crypto";
 import { requireJobSecret, unauthorizedJson } from "@/lib/api-security";
 import { requestHasNonEmptyBody } from "@/lib/http-request-body";
-import {
-  AUTH_COOKIE,
-  WP4_PREVIEW_SESSION_TTL_SECONDS,
-  createWp4PreviewMfaVerifiedSession,
-  sessionCookieOptions,
-} from "@/lib/auth";
+import { WP4_PREVIEW_SESSION_TTL_SECONDS, createWp4PreviewMfaVerifiedSession } from "@/lib/auth";
+import { AUTH_COOKIE, readSessionCookieToken, sessionCookieOptions } from "@/lib/session-cookie";
 import { getDb } from "@/lib/db";
 import { cookies } from "next/headers";
 import { WP4_SANDBOX_FIXTURE } from "@/lib/wp4-sandbox-fixture";
@@ -88,6 +84,8 @@ export async function POST(request: Request) {
       status: 204,
       headers: { "Cache-Control": "no-store" },
     });
+    // Exactly one Set-Cookie: the runner rejects any additional cookie, so the
+    // legacy-name expiry that interactive sign-ins send is not added here.
     response.cookies.set(
       AUTH_COOKIE,
       token,
@@ -112,7 +110,7 @@ export async function DELETE(request: Request) {
   if (!wp4SourceMatchesRequest(request, deploymentSha) || await requestHasNonEmptyBody(request)) {
     return unavailableResponse();
   }
-  const token = (await cookies()).get(AUTH_COOKIE)?.value;
+  const token = readSessionCookieToken(await cookies());
   if (!token) return unavailableResponse();
   try {
     const tokenHash = createHash("sha256").update(token).digest("hex");

@@ -535,6 +535,44 @@ describe("getEnvCheckReport", () => {
   });
 });
 
+describe("OPS_SMOKE_SECRET preflight (F-016)", () => {
+  const smokeKey = envKey("OPS", "SMOKE", "SECRET");
+  const smokeValue = "test-ops-smoke-value-at-least-32-bytes";
+
+  it("treats an unset smoke secret as closed: pass locally/Production, warning on Preview", () => {
+    expect(check(getEnvCheckReport(configuredEnv()), smokeKey, "pass")?.message).toContain("保持關閉");
+    const preview = getEnvCheckReport({ ...configuredEnv(), VERCEL_ENV: "preview" });
+    expect(check(preview, smokeKey, "warning")?.message).toContain("一律回 401");
+  });
+
+  it.each([
+    ["short", { [smokeKey]: "short-smoke-value" }],
+    ["equal to JOB_SECRET", { [smokeKey]: "test-job-secret-value-at-least-32-bytes" }],
+    ["equal to CRON_SECRET", { [smokeKey]: "test-cron-secret-value-at-least-32-bytes" }],
+    ["equal to CSRF_SECRET", { [smokeKey]: "test-csrf-secret-value-at-least-32-bytes" }],
+    ["equal to LIVE_CHAT_INGRESS_SECRET", { [smokeKey]: "test-live-chat-ingress-secret-value-longer-than-32" }],
+  ])("fails a configured smoke secret that is %s", (_label, overrides) => {
+    const report = getEnvCheckReport({ ...configuredEnv(), ...overrides });
+    expect(report.ok).toBe(false);
+    expect(check(report, smokeKey, "fail")?.message).toContain("不得與 JOB_SECRET");
+  });
+
+  it("passes an independent smoke secret and warns when no smoke vendor is bound", () => {
+    const env = { ...configuredEnv(), VERCEL_ENV: "preview", [smokeKey]: smokeValue };
+    const report = getEnvCheckReport(env);
+    expect(check(report, smokeKey, "pass")).toBeDefined();
+    expect(check(report, envKey("SMOKE", "VENDOR", "ID"), "warning")?.message).toContain("Cloudflare smoke 會回 503");
+
+    const bound = getEnvCheckReport({ ...env, [envKey("SMOKE", "VENDOR", "ID")]: "vendor_smoke_1" });
+    expect(bound.checks.some((item) => item.key === envKey("SMOKE", "VENDOR", "ID"))).toBe(false);
+  });
+
+  it("warns when Production keeps the smoke endpoints open", () => {
+    const report = getEnvCheckReport({ ...configuredEnv(), VERCEL_ENV: "production", [smokeKey]: smokeValue });
+    expect(check(report, smokeKey, "warning")?.message).toContain("完成後請移除");
+  });
+});
+
 describe("REGISTRATION_MODE preflight", () => {
   const key = envKey("REGISTRATION", "MODE");
 

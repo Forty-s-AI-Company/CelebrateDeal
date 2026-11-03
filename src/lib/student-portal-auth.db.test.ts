@@ -5,7 +5,14 @@ import { automationCustomerKeyHash } from "@/lib/automation-workflow";
 import { protectCommerceOrderPii } from "@/lib/commerce-order-pii";
 import { studentPortalVoucherProductWhere } from "@/lib/student-portal-voucher";
 import { getStudentPortalDashboard } from "@/lib/student-portal";
-import { consumeStudentPortalAccessToken, createStudentPortalAccessToken } from "@/lib/student-portal-auth";
+import {
+  consumeStudentPortalAccessToken,
+  createStudentPortalAccessToken,
+  createStudentPortalSessionToken,
+  isStudentPortalSessionActive,
+  readStudentPortalSessionToken,
+  revokeStudentPortalSessions,
+} from "@/lib/student-portal-auth";
 
 const vendors: string[] = [];
 const db = getDb();
@@ -37,6 +44,33 @@ afterEach(async () => {
 });
 
 describe("student portal PostgreSQL boundaries", () => {
+  it("revokes a portal session server-side once its consumed capability row is gone (F-030)", async () => {
+    const [owner, other] = [await vendor(), await vendor()];
+    const mint = async (vendorId: string, email: string) => {
+      const token = await createStudentPortalAccessToken(db, { vendorId, email, purpose: "magic_link", now });
+      const claim = await consumeStudentPortalAccessToken(db, { token, expectedPurpose: "magic_link", now });
+      if (!claim) throw new Error("synthetic capability was not consumed");
+      return readStudentPortalSessionToken(createStudentPortalSessionToken({ ...claim, now }), now)!;
+    };
+    const first = await mint(owner.id, "learner@example.test");
+    const second = await mint(owner.id, "learner@example.test");
+    const otherTenant = await mint(other.id, "learner@example.test");
+    for (const session of [first, second, otherTenant]) expect(await isStudentPortalSessionActive(db, session)).toBe(true);
+
+    // A grant moved to another tenant's session never validates there.
+    expect(await isStudentPortalSessionActive(db, { ...otherTenant, grant: first.grant })).toBe(false);
+
+    // Sign-out of one device removes only that row.
+    await db.studentPortalAccessToken.deleteMany({ where: { vendorId: owner.id, customerKeyHash: first.customerKeyHash, tokenHash: first.grant, consumedAt: { not: null } } });
+    expect(await isStudentPortalSessionActive(db, first)).toBe(false);
+    expect(await isStudentPortalSessionActive(db, second)).toBe(true);
+
+    // Revoking the customer at one vendor leaves the same email at another vendor signed in.
+    expect(await revokeStudentPortalSessions(db, { vendorId: owner.id, email: "Learner@Example.test" })).toBe(1);
+    expect(await isStudentPortalSessionActive(db, second)).toBe(false);
+    expect(await isStudentPortalSessionActive(db, otherTenant)).toBe(true);
+  });
+
   it("lets exactly one of twelve concurrent consumers claim the capability", async () => {
     const owner = await vendor();
     const token = await createStudentPortalAccessToken(db, { vendorId: owner.id, email: "learner@example.test", purpose: "magic_link", now });

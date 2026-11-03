@@ -5,7 +5,7 @@ const runtime=vi.hoisted(()=>({database:null as unknown,cookies:new Map<string,s
 // Work deferred with after() is collected and run explicitly by the tests that need it.
 vi.mock("next/server",async(importOriginal)=>({...await importOriginal<typeof import("next/server")>(),after:(task:()=>unknown)=>{runtime.afterTasks.push(task);}}));
 vi.mock("@/lib/db",()=>({getDb:()=>runtime.database}));
-vi.mock("next/headers",()=>({headers:async()=>new Headers(),cookies:async()=>({get:(key:string)=>runtime.cookies.has(key)?{value:runtime.cookies.get(key)}:undefined,set:(key:string,value:string)=>runtime.cookies.set(key,value),delete:(key:string)=>runtime.cookies.delete(key)})}));
+vi.mock("next/headers",()=>({headers:async()=>new Headers(),cookies:async()=>({get:(key:string)=>runtime.cookies.has(key)?{value:runtime.cookies.get(key)}:undefined,set:(key:string,value:string)=>runtime.cookies.set(key,value),delete:(key:string|{name:string})=>runtime.cookies.delete(typeof key==="string"?key:key.name)})}));
 vi.mock("next/navigation",()=>({redirect:(path:string)=>{throw new Error(`redirect:${path}`);}}));
 vi.mock("@/lib/csrf",()=>({assertServerActionSecurity:async()=>undefined}));
 vi.mock("@/lib/rate-limit",()=>({checkRateLimit:async()=>null}));

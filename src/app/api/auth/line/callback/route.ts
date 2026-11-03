@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { AUTH_COOKIE, createUserSessionForLineIdentity, getCurrentAuth, sessionCookieOptions } from "@/lib/auth";
+import { createUserSessionForLineIdentity, getCurrentAuth } from "@/lib/auth";
+import { writeSessionCookie } from "@/lib/session-cookie";
 import { getCanonicalAppUrl } from "@/lib/app-url";
 import { getDb } from "@/lib/db";
 import { completeLineLogin, LineFetchLoginProvider } from "@/lib/line-login";
@@ -46,7 +47,7 @@ export async function GET(request: Request) {
     });
     if (!session) return resultRedirect("/login", "error");
     const response = resultRedirect(result.redirectPath, "authenticated");
-    response.cookies.set(AUTH_COOKIE, session.token, sessionCookieOptions(session.expiresAt));
+    writeSessionCookie(response.cookies, session.token, session.expiresAt);
     return response;
   } catch {
     return resultRedirect("/login", "error");
