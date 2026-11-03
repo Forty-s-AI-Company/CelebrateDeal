@@ -8,6 +8,7 @@ import { recentMfaRedirectPath, recentMfaStatus } from "@/lib/recent-mfa";
 import { BankAccountEncryptionError } from "@/lib/bank-account";
 import { AffiliateRemunerationInputError } from "@/lib/affiliate-remuneration";
 import { exportAffiliateRemunerationQuote } from "@/lib/affiliate-remuneration-quotes";
+import { affiliatePayoutsDisabled } from "@/lib/affiliate-payout-switch";
 import { affiliateRemunerationCsv } from "@/lib/affiliate-remuneration-csv";
 const PrivateHeaders = { "Cache-Control": "private, no-store", "CDN-Cache-Control": "no-store", "X-Content-Type-Options": "nosniff" };
 const failure = (status: number) => Response.json({ error: "export_unavailable" }, { status, headers: PrivateHeaders });
@@ -20,6 +21,8 @@ export async function POST(request: Request, context: { params: Promise<{ affili
   if (typeof token !== "string" || !await verifyCsrfToken(token)) return failure(403);
   const params = await context.params;
   if (![params.affiliateId, params.snapshotId].every(value => z.string().regex(/^[A-Za-z0-9_-]{1,160}$/u).safeParse(value).success)) return failure(404);
+  // F-052: while the platform payout switch is on, payee bank data never leaves.
+  if (affiliatePayoutsDisabled()) return Response.json({ error: "payouts_disabled" }, { status: 409, headers: PrivateHeaders });
   // Payee identity and bank data leave the platform here (F-027 step-up). A
   // native form POST must come back with 303 so the browser GETs the MFA page.
   const stepUp = recentMfaStatus(auth);

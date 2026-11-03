@@ -8,6 +8,9 @@ import { requireVendorFinance } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { formatCurrency, formatDateTime } from "@/lib/format";
 import { formatAffiliateCommissionLevel } from "@/lib/affiliate-commission-source";
+import { AFFILIATE_PAYOUTS_DISABLED_MESSAGE, affiliatePayoutsDisabled } from "@/lib/affiliate-payout-switch";
+import { StepUpMfaNotice } from "@/components/step-up-mfa-notice";
+import { recentMfaStatus } from "@/lib/recent-mfa";
 
 function statusTone(status: string) {
   if (status === "paid" || status === "approved") return "green" as const;
@@ -18,6 +21,7 @@ function statusTone(status: string) {
 const payoutErrorMessages: Record<string, string> = {
   conflict: "這筆聯盟月結已被其他操作更新，請重新整理後再試一次。",
   invalid_payout: "聯盟月結操作資料不完整，請重新整理後再試一次。",
+  payouts_disabled: AFFILIATE_PAYOUTS_DISABLED_MESSAGE,
 };
 
 export default async function AffiliateCommissionsPage({
@@ -25,8 +29,10 @@ export default async function AffiliateCommissionsPage({
 }: {
   searchParams?: Promise<{ error?: string }>;
 }) {
-  const { vendor } = await requireVendorFinance("/affiliates/commissions");
+  const { vendor, user, session } = await requireVendorFinance("/affiliates/commissions");
   const query = await searchParams;
+  // F-052: the platform switch is read on the server; the action re-checks it.
+  const payoutsDisabled = affiliatePayoutsDisabled();
   const [commissions, payouts, payoutPolicy, snapshots] = await Promise.all([
     getDb().affiliateCommission.findMany({
       where: { vendorId: vendor.id },
@@ -55,6 +61,15 @@ export default async function AffiliateCommissionsPage({
         title="佣金結算"
         description="依活動、商品與推廣碼追蹤佣金，並與平台交易服務費分開列帳。"
       />
+
+      {payoutsDisabled ? (
+        <p className="mb-6 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900" role="status">
+          {AFFILIATE_PAYOUTS_DISABLED_MESSAGE}
+        </p>
+      ) : null}
+      <div className="mb-6">
+        <StepUpMfaNotice status={recentMfaStatus({ user, session })} nextPath="/affiliates/commissions" operation="記錄聯盟出款或作廢月結" />
+      </div>
 
       {query?.error && payoutErrorMessages[query.error] ? (
         <p className="mb-6 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700" role="alert">
@@ -144,8 +159,9 @@ export default async function AffiliateCommissionsPage({
             <div className="mt-4 grid gap-3">
               {payouts.map((payout) => {
                 const snapshot = snapshots.find((item) => item.payoutId === payout.id);
-                const enrolled = Boolean(payoutPolicy?.enabled || snapshot);
-                const canRecordPayment = !enrolled || Boolean(payoutPolicy?.enabled && snapshot?.status === "exported");
+                // F-052: paid always needs an enabled policy and an exported
+                // withholding snapshot; there is no unenrolled manual path.
+                const canRecordPayment = !payoutsDisabled && Boolean(payoutPolicy?.enabled && snapshot?.status === "exported");
                 return (
                 <div key={payout.id} className="grid gap-3 rounded-lg border border-border p-4 md:grid-cols-[1fr_auto_auto] md:items-center">
                   <div>
@@ -176,7 +192,7 @@ export default async function AffiliateCommissionsPage({
                           <CsrfField />
                           <input type="hidden" name="id" value={payout.id} />
                           <input type="hidden" name="status" value="paid" />
-                          {enrolled && snapshot ? <>
+                          {snapshot ? <>
                             <input type="hidden" name="remunerationSnapshotId" value={snapshot.id} />
                             <input type="hidden" name="paidNetAmountCents" value={snapshot.netPayoutAmountCents} />
                             <label className="text-sm"><input type="checkbox" name="paidNetConfirmed" required /> 確認已實際支付實領金額 {formatAffiliateRemuneration(snapshot.netPayoutAmountCents)}</label>
@@ -188,7 +204,9 @@ export default async function AffiliateCommissionsPage({
                             pendingMessage="正在記錄聯盟出款結果，請勿重複送出。"
                             className="h-9 rounded-md bg-emerald-600 px-3 text-xs font-semibold text-white hover:bg-emerald-700"
                           >標記已付款</FormSubmitButton>
-                        </form> : <Link href={`/affiliates/${payout.affiliateId}/remuneration`} className="text-sm text-primary">請先完成報酬簽署與匯出，再記錄付款</Link>}
+                        </form> : payoutsDisabled ? <p className="text-sm text-amber-900">平台暫停聯盟出款，無法標記已付款。</p>
+                          : !payoutPolicy?.enabled ? <Link href="/affiliates/payout-policy" className="text-sm text-primary">請先啟用提領政策，並完成扣繳快照簽署與匯出，再記錄付款</Link>
+                          : <Link href={`/affiliates/${payout.affiliateId}/remuneration`} className="text-sm text-primary">請先完成報酬簽署與匯出，再記錄付款</Link>}
                         <form action={recordAffiliatePayoutOutcomeAction} className="flex flex-wrap items-end gap-2">
                           <CsrfField />
                           <input type="hidden" name="id" value={payout.id} />

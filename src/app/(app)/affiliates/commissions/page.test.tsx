@@ -1,5 +1,5 @@
 import { renderToStaticMarkup } from "react-dom/server";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   commissionFindMany: vi.fn(),
@@ -73,6 +73,10 @@ beforeEach(() => {
   mocks.snapshotFindMany.mockResolvedValue([]);
 });
 
+afterEach(() => vi.unstubAllEnvs());
+
+const exportedSnapshot = { id: "snapshot-current", payoutId: pendingPayout.id, status: "exported", netPayoutAmountCents: 399 };
+
 describe("/affiliates/commissions route", () => {
   it("requires the exported snapshot's exact net payment confirmation", async () => {
     mocks.payoutPolicyFindUnique.mockResolvedValue({ enabled: true });
@@ -109,7 +113,33 @@ describe("/affiliates/commissions route", () => {
     });
   });
 
+  it("offers no paid control without an enabled payout policy and exported withholding snapshot (F-052)", async () => {
+    const html = renderToStaticMarkup(await AffiliateCommissionsPage({}));
+    expect(html).not.toContain("標記已付款");
+    expect(html).not.toContain('name="status" value="paid"');
+    expect(html).toContain("請先啟用提領政策，並完成扣繳快照簽署與匯出，再記錄付款");
+    expect(html).toContain('href="/affiliates/payout-policy"');
+    // Void does not pay anyone and stays available.
+    expect(html).toContain("標記作廢並沖回佣金");
+  });
+
+  it("explains and hides the paid control while the platform payout switch is on (F-052)", async () => {
+    vi.stubEnv("AFFILIATE_PAYOUTS_DISABLED", "true");
+    mocks.payoutPolicyFindUnique.mockResolvedValue({ enabled: true });
+    mocks.snapshotFindMany.mockResolvedValue([exportedSnapshot]);
+    const html = renderToStaticMarkup(await AffiliateCommissionsPage({}));
+    expect(html).toContain("平台目前暫停聯盟出款");
+    expect(html).toContain("平台暫停聯盟出款，無法標記已付款。");
+    expect(html).not.toContain("標記已付款</");
+    expect(html).not.toContain('name="status" value="paid"');
+    expect(html).toContain('name="status" value="void"');
+    const disabledError = renderToStaticMarkup(await AffiliateCommissionsPage({ searchParams: Promise.resolve({ error: "payouts_disabled" }) }));
+    expect(disabledError).toContain('role="alert"');
+  });
+
   it("renders deterministic paid and void controls only for an actionable pending payout", async () => {
+    mocks.payoutPolicyFindUnique.mockResolvedValue({ enabled: true });
+    mocks.snapshotFindMany.mockResolvedValue([exportedSnapshot]);
     const html = renderToStaticMarkup(await AffiliateCommissionsPage({}));
 
     expect(html).toContain("推廣夥伴");

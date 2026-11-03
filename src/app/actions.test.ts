@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   assertServerActionSecurity: vi.fn(),
+  affiliateRemunerationPaymentProof: vi.fn(),
   affiliateCreate: vi.fn(),
   affiliateFindFirst: vi.fn(),
   affiliateUpdate: vi.fn(),
@@ -199,6 +200,13 @@ vi.mock("@/lib/settlement-period", () => ({
   settlementMonthKeyOf: (date: Date) => date.toISOString().slice(0, 7),
   assertSettlementInputsUnchanged: mocks.assertSettlementInputsUnchanged,
   SettlementInputsChangedError: mocks.SettlementInputsChangedError,
+}));
+// F-052: the withholding-snapshot proof has its own PostgreSQL contract
+// (src/lib/affiliate-remuneration.db.test.ts); the action tests below verify
+// how the action uses it.
+vi.mock("@/lib/affiliate-remuneration-quotes", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/affiliate-remuneration-quotes")>()),
+  affiliateRemunerationPaymentProof: mocks.affiliateRemunerationPaymentProof,
 }));
 vi.mock("@/lib/audit", () => ({
   auditSnapshot: (value: unknown) => value,
@@ -474,6 +482,8 @@ import { FormSubmitButton } from "@/components/form-submit-button";
 import { Field } from "@/components/ui";
 import { hashPassword, unusablePasswordHash } from "@/lib/password";
 import { BillingCycleError } from "@/lib/billing-cycle";
+import { AffiliatePayoutMutationConflict } from "@/lib/affiliate-payout-accounting";
+import { AffiliatePayoutsDisabledError } from "@/lib/affiliate-payout-switch";
 import { SettlementAdjustmentError } from "@/lib/settlement-adjustment";
 import { applyPostRefundAfterCommit, applyPostRefundInTransaction } from "@/lib/payment-post-refund";
 import { initialMessageTemplateActionState } from "@/lib/message-template";
@@ -7034,6 +7044,19 @@ describe("FIN-05 merchant AffiliatePayout outcome workflow", () => {
   };
   const commission = { id: "commission-fin-05", vendorId: "vendor-1", affiliateId: "affiliate-1", monthKey: "2026-08", status: "locked" };
   const transitionAt = new Date("2026-08-06T09:00:00.000Z");
+  const remunerationProof = { snapshotId: "remuneration-snapshot-fin-05", netPayoutAmountCents: 450 };
+
+  beforeEach(() => {
+    // F-025: payout outcomes need a recent MFA step-up. The getter keeps the
+    // stamp fresh under the fake clock some cases install.
+    mocks.requireVendorFinance.mockResolvedValue({
+      vendor: { id: "vendor-1" },
+      member: { id: "merchant-finance-1", role: "owner" },
+      user: { id: "merchant-finance-user", mfaFactor: { secretEncrypted: "synthetic" } },
+      session: { get mfaVerifiedAt() { return new Date(); } },
+    });
+    mocks.affiliateRemunerationPaymentProof.mockResolvedValue(remunerationProof);
+  });
 
   function outcomeFormData(status = "paid", reason = "merchant transfer confirmed", id = payout.id, outcomeReference = "affiliate-transfer-ref-2026-08") {
     const formData = new FormData();
@@ -7050,9 +7073,6 @@ describe("FIN-05 merchant AffiliatePayout outcome workflow", () => {
     mocks.affiliateCommissionFindMany.mockResolvedValueOnce(commissions);
     mocks.transaction.mockImplementationOnce(async (callback: (tx: unknown) => Promise<unknown>) => callback({
       vendorMember: { findFirst: vi.fn().mockResolvedValue(payerActive ? { id: "synthetic-active-finance" } : null) },
-      // Existing manual payouts have neither an enrolled policy nor a remuneration snapshot.
-      merchantAffiliatePayoutPolicy: { findUnique: vi.fn().mockResolvedValue(null) },
-      affiliateRemunerationSnapshot: { findFirst: vi.fn().mockResolvedValue(null) },
       affiliateCommission: {
         findMany: mocks.affiliateCommissionFindMany,
         updateMany: mocks.affiliateCommissionUpdateMany,
@@ -7109,6 +7129,56 @@ describe("FIN-05 merchant AffiliatePayout outcome workflow", () => {
       "redirect:/affiliates/commissions?error=invalid_payout",
     );
     expect(mocks.transaction).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["stale", { mfaFactor: { secretEncrypted: "synthetic" } }, { mfaVerifiedAt: new Date(Date.now() - 16 * 60_000) }, "redirect:/mfa/verify?reason=step_up&next=%2Faffiliates%2Fcommissions"],
+    ["missing factor", { mfaFactor: null }, { mfaVerifiedAt: null }, "redirect:/mfa/setup?reason=step_up&next=%2Faffiliates%2Fcommissions"],
+  ])("requires a recent MFA step-up (%s) before reading the payout (F-025)", async (_label, user, session, expected) => {
+    mocks.requireVendorFinance.mockResolvedValueOnce({ vendor: { id: "vendor-1" }, member: { id: "merchant-finance-1", role: "accountant" }, user, session });
+    await expect(recordAffiliatePayoutOutcomeAction(outcomeFormData())).rejects.toThrow(expected);
+    expect(mocks.transaction).not.toHaveBeenCalled();
+    expect(mocks.affiliatePayoutFindFirst).not.toHaveBeenCalled();
+    expect(mocks.auditLogCreate).not.toHaveBeenCalled();
+  });
+
+  it("refuses every paid outcome while the platform payout switch is on, before any read (F-052)", async () => {
+    vi.stubEnv("AFFILIATE_PAYOUTS_DISABLED", "true");
+    await expect(recordAffiliatePayoutOutcomeAction(outcomeFormData())).rejects.toThrow("redirect:/affiliates/commissions?error=payouts_disabled");
+    expect(mocks.transaction).not.toHaveBeenCalled();
+    expect(mocks.affiliateRemunerationPaymentProof).not.toHaveBeenCalled();
+    expect(mocks.affiliatePayoutUpdateMany).not.toHaveBeenCalled();
+    expect(mocks.auditLogCreate).not.toHaveBeenCalled();
+  });
+
+  it("keeps void available while the platform payout switch is on (F-052)", async () => {
+    vi.stubEnv("AFFILIATE_PAYOUTS_DISABLED", "true");
+    configureOutcomeTransaction({ ...payout, status: "void", paidAt: null });
+    mocks.affiliateCommissionLedgerEntryAggregate.mockResolvedValue({ _sum: { amountCents: 500 } });
+    await expect(recordAffiliatePayoutOutcomeAction(outcomeFormData("void", "merchant cancelled transfer"))).rejects.toThrow("redirect:/affiliates/commissions");
+    expect(mocks.affiliateRemunerationPaymentProof).not.toHaveBeenCalled();
+    expect(mocks.affiliatePayoutUpdateMany).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ status: "void" }) }));
+  });
+
+  it("maps a platform switch raised inside the proof to the disabled message without writes (F-052)", async () => {
+    configureOutcomeTransaction({ ...payout, status: "paid", paidAt: transitionAt });
+    mocks.affiliateCommissionLedgerEntryAggregate.mockResolvedValueOnce({ _sum: { amountCents: 500 } });
+    mocks.affiliateRemunerationPaymentProof.mockRejectedValueOnce(new AffiliatePayoutsDisabledError());
+    await expect(recordAffiliatePayoutOutcomeAction(outcomeFormData())).rejects.toThrow("redirect:/affiliates/commissions?error=payouts_disabled");
+    expect(mocks.affiliatePayoutUpdateMany).not.toHaveBeenCalled();
+    expect(mocks.affiliateCommissionUpdateMany).not.toHaveBeenCalled();
+    expect(mocks.auditLogCreate).not.toHaveBeenCalled();
+  });
+
+  it("refuses a paid outcome without a current exported withholding snapshot (F-052)", async () => {
+    configureOutcomeTransaction({ ...payout, status: "paid", paidAt: transitionAt });
+    mocks.affiliateCommissionLedgerEntryAggregate.mockResolvedValueOnce({ _sum: { amountCents: 500 } });
+    mocks.affiliateRemunerationPaymentProof.mockRejectedValueOnce(new AffiliatePayoutMutationConflict());
+    await expect(recordAffiliatePayoutOutcomeAction(outcomeFormData())).rejects.toThrow("redirect:/affiliates/commissions?error=conflict");
+    expect(mocks.affiliateRemunerationPaymentProof).toHaveBeenCalledWith(expect.anything(), { vendorId: "vendor-1", affiliateId: "affiliate-1" }, payout.id, expect.any(FormData));
+    expect(mocks.affiliatePayoutUpdateMany).not.toHaveBeenCalled();
+    expect(mocks.affiliateCommissionUpdateMany).not.toHaveBeenCalled();
+    expect(mocks.auditLogCreate).not.toHaveBeenCalled();
   });
 
   it("uses the merchant finance MFA boundary before accepting a valid outcome", async () => {
@@ -7170,6 +7240,8 @@ describe("FIN-05 merchant AffiliatePayout outcome workflow", () => {
           outcomeReference: "affiliate-transfer-ref-2026-08",
           outcomeReason: "merchant transfer confirmed",
           paidAt: transitionAt,
+          remunerationSnapshotId: remunerationProof.snapshotId,
+          paidNetAmountCents: remunerationProof.netPayoutAmountCents,
         },
       });
       expect(mocks.affiliateCommissionUpdateMany).toHaveBeenCalledWith({

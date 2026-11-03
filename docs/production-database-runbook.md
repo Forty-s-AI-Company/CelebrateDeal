@@ -298,6 +298,15 @@ GROUP BY "vendorId", "currency", "status"
 ORDER BY "vendorId", "currency", "status";
 ```
 
+也可以用唯讀腳本一次盤點所有含幣別的資料表（商品、付款交易、訂單、電子發票、購後折抵、課程分潤、自動化優惠券、聯盟結帳快照、平台推薦佣金，以及屬於非 TWD 交易的退款）。腳本在 `SET TRANSACTION READ ONLY` 快照內執行，只輸出 id、商家 id、幣別與筆數，不輸出買家資料或金額；不讀 `.env*`，`DATABASE_URL` 必須由已核准的工作階段注入（正式環境需 owner 授權連線）：
+
+```bash
+node --import tsx scripts/non-twd-currency-preflight.ts
+# exit 0 = CLEAN；1 = NON_TWD_RECORDS_FOUND（上線前處理）；2 = 設定或連線失敗
+```
+
+結帳與 PayUni 拒絕非 TWD 時會寫 audit `checkout_unsupported_currency_refused`（`surface` 為 `checkout_product` 或 `payuni_checkout_session`）。
+
 若有結果：非 TWD 商品由商家在後台重新以新台幣填價並勾選確認後儲存（表單會要求確認，不會自動換匯）；
 非 TWD 交易需人工對帳後再產生月結，不可直接以 SQL 改幣別。月結也會在當月出現屬於非 TWD 交易的退款時停止。
 

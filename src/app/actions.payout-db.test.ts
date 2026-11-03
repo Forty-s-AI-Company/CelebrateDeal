@@ -1,5 +1,8 @@
 import { PrismaClient } from "@prisma/client";
-import { encryptBankAccount } from "@/lib/bank-account";
+import { createBankAccountKeyring, encryptBankAccount } from "@/lib/bank-account";
+import { approveAffiliatePayeeProfile, submitAffiliatePayeeProfile } from "@/lib/affiliate-payee-profile";
+import { createAffiliateRemunerationQuote, exportAffiliateRemunerationQuote, signAffiliateRemunerationQuote } from "@/lib/affiliate-remuneration-quotes";
+import { setMerchantAffiliatePayoutPolicy } from "@/lib/merchant-affiliate-payout-policy";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
@@ -138,6 +141,9 @@ function redirectUrl(outcome: PromiseSettledResult<unknown>) {
   expect(reason).toBeInstanceOf(Error);
   return (reason as Error).message.replace(/^redirect:/, "");
 }
+
+// Synthetic payee-data keyring for the withholding flow; never a deployed key.
+const payeeKeyring = createBankAccountKeyring({ activeKeyId: "synthetic", keys: { synthetic: Buffer.alloc(32, 4).toString("base64url") } });
 
 describe("createPayoutBatchAction PostgreSQL conditional settlement claim", () => {
   const createdVendorIds: string[] = [];
@@ -430,9 +436,52 @@ describe("lockSettlementAction PostgreSQL AffiliatePayout writer concurrency", (
       data: { email: `fin84-owner-${suffix}@invalid.test`, name: "Synthetic finance", passwordHash: "synthetic-password-hash", memberships: { create: { vendorId: vendor.id, role: "owner", status: "active" } } },
       include: { memberships: true },
     });
-    mocks.requireVendorFinance.mockResolvedValue({ vendor, member: finance.memberships[0] });
+    // F-025: the finance actor carries a fresh MFA step-up.
+    mocks.requireVendorFinance.mockResolvedValue({
+      vendor,
+      member: finance.memberships[0],
+      user: { ...finance, mfaFactor: { secretEncrypted: "synthetic-not-decrypted" } },
+      session: { mfaVerifiedAt: new Date() },
+    });
 
+    // F-052: without an enabled policy and an exported withholding snapshot the
+    // paid outcome is refused and nothing changes.
     await expect(recordAffiliatePayoutOutcomeAction(affiliatePayoutOutcomeFormData(payout.id))).rejects.toThrow(
+      "redirect:/affiliates/commissions?error=conflict",
+    );
+    await expect(database.affiliatePayout.findUniqueOrThrow({ where: { id: payout.id } })).resolves.toMatchObject({ status: "pending", paidAt: null });
+
+    // Enrol the payout through the real withholding flow: policy, approved
+    // payee profile, partner-signed quote and manager export.
+    const scope = { vendorId: vendor.id, affiliateId: affiliate.id };
+    const managerActor = { userId: finance.id };
+    const partner = await database.user.create({
+      data: { email: `fin84-partner-${suffix}@invalid.test`, name: "Synthetic partner", passwordHash: "synthetic-password-hash", memberships: { create: { vendorId: vendor.id, role: "partner", status: "active" } } },
+      include: { memberships: true },
+    });
+    await database.affiliatePortalAccess.create({ data: { ...scope, vendorMemberId: partner.memberships[0]!.id } });
+    await setMerchantAffiliatePayoutPolicy(database, managerActor, vendor.id, { expectedRevision: 0, bankFeeCents: 0, enabled: true });
+    await submitAffiliatePayeeProfile(database, { userId: partner.id }, scope, { expectedRevision: 0, bank: { accountName: "Synthetic", bankCode: "999", accountNumber: "123456789" }, taxIdentity: "SYNTHETIC123", recipientType: "resident_individual", nhiTreatment: "subject_execution_business" }, payeeKeyring);
+    await approveAffiliatePayeeProfile(database, managerActor, scope, 1);
+    const quote = await createAffiliateRemunerationQuote(database, { userId: partner.id }, scope, payout.id, { bankFeeCents: 0 });
+    expect(quote).not.toBeNull();
+    await signAffiliateRemunerationQuote(database, { userId: partner.id }, scope, quote!.id, quote!.revision);
+    expect(await exportAffiliateRemunerationQuote(database, managerActor, scope, quote!.id, { bankFeeCents: 0 }, payeeKeyring)).not.toBeNull();
+    const confirmed = affiliatePayoutOutcomeFormData(payout.id);
+    confirmed.set("remunerationSnapshotId", quote!.id);
+    confirmed.set("paidNetAmountCents", String(quote!.netPayoutAmountCents));
+    confirmed.set("paidNetConfirmed", "on");
+
+    // F-052: the platform switch refuses the paid outcome even with full proof.
+    vi.stubEnv("AFFILIATE_PAYOUTS_DISABLED", "true");
+    try {
+      await expect(recordAffiliatePayoutOutcomeAction(confirmed)).rejects.toThrow("redirect:/affiliates/commissions?error=payouts_disabled");
+    } finally {
+      vi.unstubAllEnvs();
+    }
+    await expect(database.affiliatePayout.findUniqueOrThrow({ where: { id: payout.id } })).resolves.toMatchObject({ status: "pending", paidAt: null });
+
+    await expect(recordAffiliatePayoutOutcomeAction(confirmed)).rejects.toThrow(
       "redirect:/affiliates/commissions",
     );
 
@@ -440,9 +489,11 @@ describe("lockSettlementAction PostgreSQL AffiliatePayout writer concurrency", (
       status: "paid",
       outcomeReference: "affiliate-transfer-ref-db-2026-08",
       outcomeReason: "synthetic merchant transfer confirmed",
+      remunerationSnapshotId: quote!.id,
+      paidNetAmountCents: quote!.netPayoutAmountCents,
     });
     await expect(database.affiliateCommission.findUniqueOrThrow({ where: { id: commission.id } })).resolves.toMatchObject({ status: "paid" });
-  }, 15_000);
+  }, 30_000);
 
   it("settles the vendor payout without marking the separate merchant affiliate payout paid", async () => {
     const suffix = `${Date.now()}-${Math.random().toString(36).slice(2)}`;

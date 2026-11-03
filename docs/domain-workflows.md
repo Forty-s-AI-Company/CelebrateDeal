@@ -61,6 +61,17 @@
 | Affiliate／click／commission | vendorId＋affiliate ownership | referral code 不能跨 tenant |
 | Audit／webhook | 平台或租戶範圍、必要去識別 | 不揭露其他 tenant、payload 或 secret |
 
+### 商家成員角色範圍（F-025 現況，2026-11）
+
+| 角色 | 後台 | 夥伴佣金 | 聯盟出款 | 買家客服資料 |
+| --- | --- | --- | --- | --- |
+| owner／admin | 可進入 | 全部（本商家） | 可標記已付款／作廢；需 15 分鐘內 MFA step-up | 客服案件全部 |
+| accountant | 可進入（財務頁） | 全部（本商家，`requireVendorFinance`） | 同 owner：需 MFA step-up；不能核准收款資料或匯出提領 CSV（只限 owner／admin） | 不可進入客服案件 |
+| support | 只有客服案件與帳號安全 | 不可 | 不可 | 本商家全部客服案件（不限指派給自己）；買家姓名與 Email 只看遮罩值，案件內容（買家回覆、內部紀錄）解密顯示；不可看付款或退款原因 |
+| partner（夥伴） | 不可（永遠不成為 vendor context，所有商家 guard 導回夥伴入口） | 只有自己被授權的推廣者（`AffiliatePortalAccess` 綁定成員與使用者；上線看得到下線訂單的層級，但第 2 層以上不揭露推廣碼） | 不可 | 不可 |
+
+聯盟出款另受平台開關 `AFFILIATE_PAYOUTS_DISABLED`（F-052）約束：開啟時任何角色都不能標記已付款或匯出提領 CSV；不論開關，標記已付款都必須有已啟用的商家出款政策與已匯出的扣繳快照。support 讀取範圍目前不縮小：案件多數未指派，縮成「只看指派給自己」會讓客服無法接手，留待有客服排班需求時再評估。
+
 UI 隱藏不能充當權限。每個新增敏感 read／mutation／export／relation 用第二租戶回歸；拒絕不得洩漏存在性。Schema 變更評估 tenant key、FK、unique、index、既有 RLS 與 forward migration；RLS 是額外防線，不取代 server guard 或 audit。安全、finance、role、ownership 變更須有適當 audit。
 
 ## 瀏覽器 QA
