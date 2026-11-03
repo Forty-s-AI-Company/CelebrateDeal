@@ -89,6 +89,7 @@ describe("public registration form DAL", () => {
     expect(result?.promoVideo).toEqual({
       title: "預告",
       videoUrl: "https://cdn.example.test/promo.m3u8",
+      vendorId: "vendor-1",
       signingSource: {
         vendorId: "vendor-1",
         sourceType: "url",
@@ -193,6 +194,7 @@ describe("promo video signing source (F-093)", () => {
     expect(result?.promoVideo).toEqual({
       title: "預告",
       videoUrl: streamUrl,
+      vendorId: "vendor-1",
       signingSource: {
         vendorId: "vendor-1",
         sourceType: "cloudflare_stream",

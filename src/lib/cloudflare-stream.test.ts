@@ -309,16 +309,16 @@ describe("Cloudflare Stream signed playback settings (F-093)", () => {
     });
   });
 
-  it("unlocks an existing video by sending only requireSignedURLs: false", async () => {
+  it("unlocks an existing video by turning signing off and clearing allowedOrigins", async () => {
     const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
       success: true,
       result: { uid: "a1b2c3d4e5f60718293a4b5c6d7e8f90", requireSignedURLs: false },
     }), { status: 200 }));
     vi.stubGlobal("fetch", fetchMock);
 
-    await updateStreamVideoPlaybackSecurity("a1b2c3d4e5f60718293a4b5c6d7e8f90", { requireSignedURLs: false });
+    await updateStreamVideoPlaybackSecurity("a1b2c3d4e5f60718293a4b5c6d7e8f90", { requireSignedURLs: false, allowedOrigins: [] });
 
-    expect(requestBody(fetchMock)).toEqual({ uid: "a1b2c3d4e5f60718293a4b5c6d7e8f90", requireSignedURLs: false });
+    expect(requestBody(fetchMock)).toEqual({ uid: "a1b2c3d4e5f60718293a4b5c6d7e8f90", requireSignedURLs: false, allowedOrigins: [] });
   });
 
   it("reads a live input first and PUTs it back with only the recording security changed", async () => {
@@ -353,11 +353,30 @@ describe("Cloudflare Stream signed playback settings (F-093)", () => {
     });
   });
 
+  it("unlocks a live input recording by clearing allowedOrigins as well", async () => {
+    const existing = {
+      uid: "f0e1d2c3b4a5968778695a4b3c2d1e0f",
+      meta: { name: "Launch" },
+      recording: { mode: "automatic", requireSignedURLs: true, allowedOrigins: ["app.example.test"] },
+    };
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ success: true, result: existing }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ success: true, result: existing }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await updateLiveInputRecordingSecurity("f0e1d2c3b4a5968778695a4b3c2d1e0f", { requireSignedURLs: false, allowedOrigins: [] });
+
+    expect(JSON.parse(String(fetchMock.mock.calls[1]![1].body))).toEqual({
+      meta: { name: "Launch" },
+      recording: { mode: "automatic", requireSignedURLs: false, allowedOrigins: [] },
+    });
+  });
+
   it("never PUTs a live input whose current settings could not be read", async () => {
     const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ success: false }), { status: 404 }));
     vi.stubGlobal("fetch", fetchMock);
 
-    await expect(updateLiveInputRecordingSecurity("f0e1d2c3b4a5968778695a4b3c2d1e0f", { requireSignedURLs: false }))
+    await expect(updateLiveInputRecordingSecurity("f0e1d2c3b4a5968778695a4b3c2d1e0f", { requireSignedURLs: false, allowedOrigins: [] }))
       .rejects.toMatchObject({ code: "provider_rejected", providerStatus: 404 });
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });

@@ -180,7 +180,15 @@ export function consumeSourceSwapPlay(video: object) {
   return sourceSwapPlays.delete(video);
 }
 
-/** Safari 原生 HLS：換網址後回到原播放位置，並維持播放／暫停狀態。 */
+/** 標記下一個 `play` 事件是續期恢復造成的，而不是觀眾操作。 */
+export function markSourceSwapPlay(video: object) {
+  sourceSwapPlays.add(video);
+}
+
+/**
+ * Safari 原生 HLS：換網址後回到原播放位置，並維持播放／暫停狀態。
+ * 回傳取消函式：移除尚未觸發的 `loadedmetadata` 監聽（再次換網址或卸載時呼叫）。
+ */
 export function swapNativePlaybackSource(video: HTMLVideoElement, nextUrl: string) {
   const resumeAt = video.currentTime;
   const wasPaused = video.paused;
@@ -201,4 +209,5 @@ export function swapNativePlaybackSource(video: HTMLVideoElement, nextUrl: strin
   };
   video.addEventListener("loadedmetadata", restore);
   video.src = nextUrl;
+  return () => video.removeEventListener("loadedmetadata", restore);
 }

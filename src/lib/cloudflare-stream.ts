@@ -206,10 +206,10 @@ export async function getLiveInput(uid: string) {
   return parsed.data;
 }
 
-/** 批次 lock／unlock 送給既有影片與 live input 錄影的播放限制。 */
+/** 批次 lock／unlock 送給既有影片與 live input 錄影的播放限制；unlock 一併清空 allowedOrigins。 */
 export type StreamPlaybackSecurityUpdate =
   | StreamPlaybackSecurity
-  | { requireSignedURLs: false };
+  | { requireSignedURLs: false; allowedOrigins: [] };
 
 const CloudflareVideoPlaybackSettings = z.object({
   uid: z.string().min(1),
@@ -225,7 +225,7 @@ const CloudflareLiveInputSettings = z.object({
   recording: z.record(z.string(), z.unknown()).optional(),
 });
 
-/** 既有影片：`POST /stream/{uid}`，body 帶 `uid` 與 `requireSignedURLs`（lock 時另帶 `allowedOrigins`）。 */
+/** 既有影片：`POST /stream/{uid}`，body 帶 `uid`、`requireSignedURLs` 與 `allowedOrigins`（unlock 時為空陣列）。 */
 export async function updateStreamVideoPlaybackSecurity(uid: string, security: StreamPlaybackSecurityUpdate) {
   const result = await cloudflareRequest(`/stream/${encodeURIComponent(uid)}`, {
     method: "POST",

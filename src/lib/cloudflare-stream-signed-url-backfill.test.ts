@@ -156,7 +156,7 @@ describe("backfillStreamSignedUrls", () => {
     expect(JSON.stringify(audit.mock.calls)).not.toMatch(/[\w-]+\.[\w-]+\.[\w-]{20,}/);
   });
 
-  it("unlocks without signing keys by sending requireSignedURLs: false", async () => {
+  it("unlocks without signing keys by turning signing off and clearing allowedOrigins", async () => {
     const fetchMock = vi.fn().mockResolvedValue(cloudflareOk({ uid: videoUid, requireSignedURLs: false }));
     vi.stubGlobal("fetch", fetchMock);
     const audit = vi.fn().mockResolvedValue(undefined);
@@ -164,11 +164,12 @@ describe("backfillStreamSignedUrls", () => {
     const result = await backfillStreamSignedUrls(parse({ vendorId: "vendor-1", mode: "unlock", apply: true }), { db: db as never, audit });
 
     expect(result).toMatchObject({ mode: "unlock", apply: true, allowedOrigins: null, audited: true });
-    expect(JSON.parse(String(fetchMock.mock.calls[0]![1].body))).toEqual({ uid: videoUid, requireSignedURLs: false });
+    expect(JSON.parse(String(fetchMock.mock.calls[0]![1].body))).toEqual({ uid: videoUid, requireSignedURLs: false, allowedOrigins: [] });
     expect(audit).toHaveBeenCalledWith(expect.objectContaining({ mode: "unlock" }));
   });
 
   it("reports a failed audit instead of hiding it", async () => {
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(cloudflareOk({ uid: videoUid })));
     const result = await backfillStreamSignedUrls(parse({ vendorId: "vendor-1", mode: "unlock", apply: true }), {
       db: db as never,
@@ -176,6 +177,44 @@ describe("backfillStreamSignedUrls", () => {
     });
     expect(result.audited).toBe(false);
     expect(result.results[0]).toMatchObject({ status: "updated" });
+    expect(consoleError).toHaveBeenCalledWith("stream_signed_url_backfill_audit_failed", { vendorId: "vendor-1", mode: "unlock", count: 1 });
+    expect(JSON.stringify(consoleError.mock.calls)).not.toContain("db down");
+    consoleError.mockRestore();
+  });
+
+  it("audits the resources already changed before a configuration error aborts the batch", async () => {
+    enableSigning();
+    db.video.findMany.mockResolvedValue([videoRow(), videoRow({ id: "video-2", cloudflareStreamUid: recordingUid })]);
+    const audit = vi.fn().mockResolvedValue(undefined);
+    // The first update succeeds; then the provider credentials disappear before the second.
+    vi.stubGlobal("fetch", vi.fn(async () => {
+      vi.stubEnv("CLOUDFLARE_STREAM_TOKEN", undefined);
+      return cloudflareOk({ uid: videoUid, requireSignedURLs: true });
+    }));
+
+    await expect(backfillStreamSignedUrls(parse({ vendorId: "vendor-1", apply: true }), { db: db as never, audit }))
+      .rejects.toMatchObject({ code: "configuration" });
+    expect(audit).toHaveBeenCalledWith({
+      vendorId: "vendor-1",
+      mode: "lock",
+      allowedOrigins: ["app.example.test"],
+      results: [{ videoId: "video-1", kind: "video", uid: videoUid, status: "updated" }],
+    });
+  });
+
+  it("pages by id: a full batch returns its last id as the cursor, a short batch ends the scan", async () => {
+    db.video.findMany.mockResolvedValueOnce([videoRow({ id: "video-a" }), videoRow({ id: "video-b" })]);
+    await expect(backfillStreamSignedUrls(parse({ vendorId: "vendor-1", limit: 2 }), { db: db as never }))
+      .resolves.toMatchObject({ scannedVideos: 2, nextCursor: "video-b" });
+
+    db.video.findMany.mockResolvedValueOnce([videoRow({ id: "video-c" })]);
+    await expect(backfillStreamSignedUrls(parse({ vendorId: "vendor-1", limit: 2, cursor: "video-b" }), { db: db as never }))
+      .resolves.toMatchObject({ scannedVideos: 1, nextCursor: null });
+    expect(db.video.findMany.mock.calls[1]![0]).toMatchObject({ where: { id: { gt: "video-b" } }, take: 2 });
+
+    db.video.findMany.mockResolvedValueOnce([]);
+    await expect(backfillStreamSignedUrls(parse({ vendorId: "vendor-1", limit: 2, cursor: "video-c" }), { db: db as never }))
+      .resolves.toMatchObject({ scannedVideos: 0, results: [], nextCursor: null });
   });
 
   it("keeps going after a provider failure without exposing provider details", async () => {

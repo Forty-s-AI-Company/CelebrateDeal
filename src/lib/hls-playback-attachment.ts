@@ -1,5 +1,6 @@
 import {
   createSignedPlaybackRenewal,
+  markSourceSwapPlay,
   swapNativePlaybackSource,
   withCurrentStreamToken,
   type RenewablePlaybackSource,
@@ -84,9 +85,10 @@ export function attachHlsPlayback({
   let currentUrl = url;
   let native = false;
   let player: HlsPlayer | null = null;
-  // Set when playback hit an expired token; the next renewed URL reloads the source.
-  let hlsReloadAt: number | null = null;
+  // Set when playback hit an expired token; the next renewed token resumes loading.
+  let hlsRecovery: { resumeAt: number; wasPlaying: boolean } | null = null;
   let nativeReloadPending = false;
+  let cancelNativeSwap: (() => void) | null = null;
 
   const renewal: SignedPlaybackRenewal | null = expiresInSeconds && expiresInSeconds > 0
     ? createSignedPlaybackRenewal({
@@ -100,17 +102,24 @@ export function attachHlsPlayback({
         currentUrl = nextUrl;
         if (native) {
           // Native HLS needs a new src; after a media error it reloads even for the same URL.
-          if (changed || nativeReloadPending) swapNativePlaybackSource(video, nextUrl);
+          if (changed || nativeReloadPending) {
+            cancelNativeSwap?.();
+            cancelNativeSwap = swapNativePlaybackSource(video, nextUrl);
+          }
           nativeReloadPending = false;
           return;
         }
-        // hls.js picks the new token up in xhrSetup; after an expired-token
-        // error it stopped loading, so reload from the position it stopped at.
-        if (hlsReloadAt !== null && player) {
-          const resumeAt = hlsReloadAt;
-          hlsReloadAt = null;
-          player.loadSource(nextUrl);
+        // hls.js picks the new token up in xhrSetup on every later request, so
+        // after an expired-token error only loading restarts. No loadSource():
+        // in hls.js it re-attaches the media and resets the position to 0.
+        if (hlsRecovery && player) {
+          const { resumeAt, wasPlaying } = hlsRecovery;
+          hlsRecovery = null;
           player.startLoad(resumeAt);
+          if (wasPlaying && video.paused) {
+            markSourceSwapPlay(video);
+            void video.play()?.catch(() => undefined);
+          }
         }
       },
     })
@@ -149,7 +158,7 @@ export function attachHlsPlayback({
           if (data.type !== Hls.ErrorTypes.NETWORK_ERROR) return;
           const status = errorStatus(data);
           if (status !== 401 && status !== 403) return;
-          hlsReloadAt ??= video.currentTime;
+          hlsRecovery ??= { resumeAt: video.currentTime, wasPlaying: !video.paused };
           void renewal.renewNow();
         });
       }
@@ -161,6 +170,7 @@ export function attachHlsPlayback({
   return () => {
     disposed = true;
     renewal?.stop();
+    cancelNativeSwap?.();
     player?.destroy();
     player = null;
     if (native && renewal) video.removeEventListener("error", onNativeError);

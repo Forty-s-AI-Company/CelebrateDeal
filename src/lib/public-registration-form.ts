@@ -93,11 +93,12 @@ export type PublicRegistrationForm = {
   seoDescription: string | null;
   /**
    * `videoUrl` is the stored, validated URL. F-093: the page signs it with
-   * `signingSource` (the promo's own Video row, already bound to this form's
-   * vendor here); the DAL itself stays free of `server-only` so Node-run
-   * callers (Playwright specs, jobs) can import it.
+   * `signingSource` (the promo's own Video row) against `vendorId`, the
+   * form's server-side vendor; the DAL itself stays free of `server-only` so
+   * Node-run callers (Playwright specs, jobs) can import it. The form's
+   * vendorId is not exposed at the top level of this public projection.
    */
-  promoVideo: { title: string; videoUrl: string; signingSource: SignableVideo } | null;
+  promoVideo: { title: string; videoUrl: string; vendorId: string; signingSource: SignableVideo } | null;
   sessions: PublicRegistrationSession[];
 };
 
@@ -208,6 +209,7 @@ function publicFormFromRecord(
       ? {
         title: form.promoVideo!.title,
         videoUrl: promoVideo,
+        vendorId: form.vendorId,
         signingSource: {
           vendorId: form.promoVideo!.vendorId,
           sourceType: form.promoVideo!.sourceType,

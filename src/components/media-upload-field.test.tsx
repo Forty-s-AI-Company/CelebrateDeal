@@ -95,6 +95,27 @@ describe("MediaUploadField", () => {
     expect(markup).not.toContain('type="url"');
   });
 
+  it("previews a signed thumbnail but keeps submitting the stored URL (F-093)", () => {
+    const stored = "https://videodelivery.net/a1b2c3d4e5f60718293a4b5c6d7e8f90/thumbnails/thumbnail.jpg";
+    const signed = "https://videodelivery.net/aaa.bbb.ccc/thumbnails/thumbnail.jpg";
+    const markup = renderToStaticMarkup(
+      <form>
+        <MediaUploadField
+          kind="image"
+          label="影片縮圖"
+          description="縮圖"
+          defaultUrl={stored}
+          defaultPreviewUrl={signed}
+          urlInputName="thumbnailUrl"
+        />
+      </form>,
+    );
+
+    expect(markup).toContain(`name="thumbnailUrl" value="${stored}"`);
+    expect(markup).toContain(`src="${signed}"`);
+    expect(markup).not.toContain(`src="${stored}"`);
+  });
+
   it("renders video upload without a writable provider URL or UID", () => {
     const markup = renderToStaticMarkup(
       <form>

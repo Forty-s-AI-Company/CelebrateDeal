@@ -17,9 +17,12 @@ import { getDb } from "@/lib/db";
  *   `cloudflarePlaybackId`／`cloudflareLiveInputUid`，不從商家可改的 `videoUrl` 解析，
  *   也不接受呼叫端傳入 uid。
  * - 預設 dry-run；`apply: true` 才呼叫 Cloudflare。lock 必須已設定簽章金鑰，
- *   否則影片鎖上後應用程式簽不出 token；unlock（回滾）不需要金鑰。
+ *   否則影片鎖上後應用程式簽不出 token；unlock（回滾）不需要金鑰，並清空
+ *   `allowedOrigins`，回到鎖定前的公開狀態。
  * - 以 `id` 游標分頁，每批最多 5 支，逐支依序呼叫（每次請求 15 秒逾時）。
  * - apply 後寫一筆稽核（vendor、模式、每個資源的 uid 與結果；不含 token 或金鑰）。
+ *   稽核失敗時回傳 `audited: false` 並記錯誤；Cloudflare 設定錯誤中斷時，先把
+ *   已完成的結果寫入稽核再拋出。
  */
 export const SIGNED_URL_BACKFILL_MAX_BATCH = 5;
 
@@ -111,7 +114,7 @@ export async function backfillStreamSignedUrls(
   const lockSecurity = getStreamLockSecurity();
   if (input.mode === "lock" && input.apply && !lockSecurity) throw new SignedUrlBackfillNotConfiguredError();
   const security: StreamPlaybackSecurityUpdate | null = input.mode === "unlock"
-    ? { requireSignedURLs: false }
+    ? { requireSignedURLs: false, allowedOrigins: [] }
     : lockSecurity;
 
   const db = dependencies.db ?? getDb();
@@ -136,21 +139,30 @@ export async function backfillStreamSignedUrls(
     },
   });
 
-  const results: SignedUrlBackfillResult[] = [];
-  for (const target of videos.flatMap(backfillTargetsForVideo)) {
-    results.push(input.apply && security ? await applyTarget(target, security) : { ...target, status: "pending" });
-  }
-
   const allowedOrigins = input.mode === "lock" ? lockSecurity?.allowedOrigins ?? null : null;
-  let audited = false;
-  if (input.apply && results.length > 0 && dependencies.audit) {
+  const audit = async (results: SignedUrlBackfillResult[]) => {
+    if (!input.apply || results.length === 0 || !dependencies.audit) return false;
     try {
       await dependencies.audit({ vendorId: input.vendorId, mode: input.mode, allowedOrigins, results });
-      audited = true;
+      return true;
     } catch {
-      audited = false;
+      console.error("stream_signed_url_backfill_audit_failed", { vendorId: input.vendorId, mode: input.mode, count: results.length });
+      return false;
     }
+  };
+
+  const results: SignedUrlBackfillResult[] = [];
+  try {
+    for (const target of videos.flatMap(backfillTargetsForVideo)) {
+      results.push(input.apply && security ? await applyTarget(target, security) : { ...target, status: "pending" });
+    }
+  } catch (error) {
+    // Cloudflare configuration vanished mid-batch: record what already changed first.
+    await audit(results);
+    throw error;
   }
+
+  const audited = await audit(results);
 
   return {
     mode: input.mode,

@@ -144,6 +144,11 @@ type MediaUploadFieldProps = {
   label: string;
   description: string;
   defaultUrl?: string | null;
+  /**
+   * Display-only URL for the unchanged `defaultUrl` (F-093: a signed Stream
+   * thumbnail). The form still submits `defaultUrl`, so a token never gets saved.
+   */
+  defaultPreviewUrl?: string | null;
   defaultAssetId?: string | null;
   defaultResourceId?: string | null;
   allowExternalUrlFallback?: boolean;
@@ -883,7 +888,10 @@ export function MediaUploadField(props: MediaUploadFieldProps) {
   const hydrationKeyRef = useRef(props.hydrationKey);
   const isBusy = ["provisioning", "uploading", "finalizing"].includes(state.phase);
   const blocksFormSubmit = Boolean(state.file) && state.phase !== "success";
-  const previewUrl = state.previewUrl || (props.kind === "image" ? state.remoteUrl : "");
+  const remotePreviewUrl = props.defaultPreviewUrl && state.remoteUrl && state.remoteUrl === props.defaultUrl
+    ? props.defaultPreviewUrl
+    : state.remoteUrl;
+  const previewUrl = state.previewUrl || (props.kind === "image" ? remotePreviewUrl : "");
 
   useEffect(() => () => {
     if (state.previewUrl.startsWith("blob:")) URL.revokeObjectURL(state.previewUrl);

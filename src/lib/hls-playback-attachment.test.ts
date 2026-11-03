@@ -119,7 +119,7 @@ describe("attachHlsPlayback", () => {
     expect(instances[0]!.loadSource).toHaveBeenCalledTimes(1);
   });
 
-  it.each([401, 403])("renews at once and resumes loading after an hls.js %i network error", async (code) => {
+  it.each([401, 403])("renews at once and only restarts loading at the stopped position after an hls.js %i error", async (code) => {
     const video = fakeVideo({ currentTime: 321 });
     const { Hls, instances } = fakeHls(true);
     const fetchSource = vi.fn().mockResolvedValue({ playbackUrl: renewedUrl, expiresInSeconds: 600 });
@@ -130,8 +130,46 @@ describe("attachHlsPlayback", () => {
     await settle();
 
     expect(fetchSource).toHaveBeenCalledTimes(1);
-    expect(instances[0]!.loadSource).toHaveBeenLastCalledWith(renewedUrl);
-    expect(instances[0]!.startLoad).toHaveBeenCalledWith(321);
+    // loadSource() would re-attach the media in hls.js and reset currentTime to 0.
+    expect(instances[0]!.loadSource).toHaveBeenCalledTimes(1);
+    expect(instances[0]!.loadSource).toHaveBeenCalledWith(firstUrl);
+    expect(instances[0]!.startLoad).toHaveBeenCalledExactlyOnceWith(321);
+    expect(video.play).not.toHaveBeenCalled();
+
+    // Later requests carry the renewed token.
+    const xhr = { open: vi.fn() };
+    instances[0]!.config!.xhrSetup!(xhr as never, "https://videodelivery.net/aaa.bbb.ccc/video/9.ts");
+    expect(xhr.open).toHaveBeenCalledWith("GET", "https://videodelivery.net/ddd.eee.fff/video/9.ts", true);
+  });
+
+  it("resumes a video that the expired token paused, without reporting a viewer play", async () => {
+    const video = fakeVideo({ currentTime: 40, paused: false });
+    const { Hls, instances } = fakeHls(true);
+    const fetchSource = vi.fn().mockResolvedValue({ playbackUrl: renewedUrl, expiresInSeconds: 600 });
+    attachHlsPlayback({ video: video as never, url: firstUrl, expiresInSeconds: 600, fetchSource, loadHls: async () => Hls });
+    await settle();
+
+    instances[0]!.emit({ type: "networkError", response: { code: 403 } });
+    video.paused = true;
+    await settle();
+
+    expect(instances[0]!.startLoad).toHaveBeenCalledWith(40);
+    expect(video.play).toHaveBeenCalledTimes(1);
+    expect(consumeSourceSwapPlay(video)).toBe(true);
+  });
+
+  it("does not start a video that was already paused when the token expired", async () => {
+    const video = fakeVideo({ currentTime: 40, paused: true });
+    const { Hls, instances } = fakeHls(true);
+    const fetchSource = vi.fn().mockResolvedValue({ playbackUrl: renewedUrl, expiresInSeconds: 600 });
+    attachHlsPlayback({ video: video as never, url: firstUrl, expiresInSeconds: 600, fetchSource, loadHls: async () => Hls });
+    await settle();
+
+    instances[0]!.emit({ type: "networkError", response: { code: 403 } });
+    await settle();
+
+    expect(instances[0]!.startLoad).toHaveBeenCalledWith(40);
+    expect(video.play).not.toHaveBeenCalled();
   });
 
   it("ignores other hls.js errors and unsigned sources", async () => {
@@ -161,7 +199,7 @@ describe("attachHlsPlayback", () => {
     expect(instances[0]!.startLoad).not.toHaveBeenCalled();
 
     await vi.advanceTimersByTimeAsync(15_000);
-    expect(instances[0]!.loadSource).toHaveBeenLastCalledWith(renewedUrl);
+    expect(instances[0]!.loadSource).toHaveBeenCalledTimes(1);
     expect(instances[0]!.startLoad).toHaveBeenCalledWith(50);
   });
 
@@ -186,6 +224,25 @@ describe("attachHlsPlayback", () => {
 
     cleanup();
     expect(video.listenerCount("error")).toBe(0);
+  });
+
+  it("drops a pending native source swap on cleanup and on the next swap", async () => {
+    const video = fakeVideo({ nativeHls: true, currentTime: 12 });
+    const fetchSource = vi.fn()
+      .mockResolvedValueOnce({ playbackUrl: renewedUrl, expiresInSeconds: 600 })
+      .mockResolvedValueOnce({ playbackUrl: "https://videodelivery.net/ggg.hhh.iii/manifest/video.m3u8", expiresInSeconds: 600 });
+    const cleanup = attachHlsPlayback({
+      video: video as never, url: firstUrl, expiresInSeconds: 600, fetchSource, loadHls: async () => fakeHls(false).Hls,
+    });
+    await settle();
+
+    await vi.advanceTimersByTimeAsync(8 * 60_000);
+    expect(video.listenerCount("loadedmetadata")).toBe(1);
+    await vi.advanceTimersByTimeAsync(8 * 60_000);
+    expect(video.listenerCount("loadedmetadata")).toBe(1);
+
+    cleanup();
+    expect(video.listenerCount("loadedmetadata")).toBe(0);
   });
 
   it("stops renewing after cleanup", async () => {

@@ -56,7 +56,12 @@ export async function POST(request: Request) {
 
   try {
     const result = await backfillStreamSignedUrls(parsed.data, { audit: auditBackfill });
-    return NextResponse.json({ ok: true, helper: "admin_ops_cloudflare_require_signed_urls", ...result }, { headers: noStore });
+    // Provider changes were made but not recorded: report a partial success the operator must follow up.
+    const unaudited = result.apply && result.results.length > 0 && !result.audited;
+    return NextResponse.json(
+      { ok: true, helper: "admin_ops_cloudflare_require_signed_urls", ...result },
+      { status: unaudited ? 207 : 200, headers: noStore },
+    );
   } catch (error) {
     if (error instanceof SignedUrlBackfillNotConfiguredError) {
       return NextResponse.json(

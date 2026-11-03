@@ -45,7 +45,8 @@ test("successful bounded journey never claims account isolation and never transm
   assert.match(request.title, /^Staging Synthetic Stream [a-f0-9-]{36}$/u);
   assert.equal(request.maxDurationSeconds, 2);
   assert.equal(calls[1].options.headers, undefined);
-  assert.equal(calls[3].options.headers, undefined);
+  // Playback carries only the app Origin (allowedOrigins), never owner credentials.
+  assert.deepEqual(calls[3].options.headers, { Origin: "https://celebrate-deal-staging.carry-digital-nomad.in.net" });
   assert.equal(calls[1].options.body.get("file").size, 1854);
   assert.match(calls[2].url, /videoId=synthetic_video_1$/u);
   for (const call of calls) assert.equal(call.options.redirect, "manual");
@@ -175,7 +176,7 @@ test("plays the signed URL from the status endpoint when signing is configured",
   assert.equal(receipt.resourceJourney, "PASS");
   assert.equal(receipt.signedPlayback, true);
   assert.equal(calls.at(-1).url, signedUrl);
-  assert.equal(calls.at(-1).options.headers, undefined);
+  assert.deepEqual(calls.at(-1).options.headers, { Origin: "https://celebrate-deal-staging.carry-digital-nomad.in.net" });
   assert.equal(JSON.stringify(receipt).includes(signedUrl), false);
 });
 

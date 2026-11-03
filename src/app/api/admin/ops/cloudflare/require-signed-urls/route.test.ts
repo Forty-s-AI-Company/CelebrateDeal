@@ -113,6 +113,45 @@ describe("POST /api/admin/ops/cloudflare/require-signed-urls", () => {
     });
   });
 
+  it("returns 207 when applied provider changes could not be audited", async () => {
+    mocks.backfill.mockResolvedValue({
+      mode: "lock",
+      apply: true,
+      allowedOrigins: ["app.example.test"],
+      scannedVideos: 1,
+      results: [{ videoId: "video-1", kind: "video", uid: "a1b2c3d4e5f60718293a4b5c6d7e8f90", status: "updated" }],
+      audited: false,
+      nextCursor: null,
+    });
+
+    const response = await POST(request({ vendorId: "vendor-1", apply: true }));
+
+    expect(response.status).toBe(207);
+    await expect(response.json()).resolves.toMatchObject({ ok: true, audited: false });
+  });
+
+  it("forwards the cursor and returns the next page boundary unchanged", async () => {
+    mocks.backfill.mockResolvedValueOnce({ mode: "lock", apply: false, allowedOrigins: null, scannedVideos: 5, results: [], audited: false, nextCursor: "video-5" });
+    const first = await POST(request({ vendorId: "vendor-1" }));
+    await expect(first.json()).resolves.toMatchObject({ nextCursor: "video-5" });
+
+    mocks.backfill.mockResolvedValueOnce({ mode: "lock", apply: false, allowedOrigins: null, scannedVideos: 0, results: [], audited: false, nextCursor: null });
+    const last = await POST(request({ vendorId: "vendor-1", cursor: "video-5" }));
+    expect(last.status).toBe(200);
+    await expect(last.json()).resolves.toMatchObject({ scannedVideos: 0, nextCursor: null });
+    expect(mocks.backfill).toHaveBeenLastCalledWith(
+      { vendorId: "vendor-1", mode: "lock", cursor: "video-5", limit: 5, apply: false },
+      expect.anything(),
+    );
+  });
+
+  it.each([[{ vendorId: "vendor-1", cursor: "" }], [{ vendorId: "vendor-1", cursor: "x".repeat(129) }]])(
+    "rejects an empty or oversized cursor %#",
+    async (payload) => {
+      expect((await POST(request(payload))).status).toBe(400);
+    },
+  );
+
   it("declares an explicit maxDuration for the sequential provider calls", () => {
     expect(maxDuration).toBe(300);
   });

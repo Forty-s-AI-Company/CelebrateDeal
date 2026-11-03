@@ -51,6 +51,7 @@ const publicForm = {
   promoVideo: {
     title: "活動預告",
     videoUrl: "https://cdn.example.test/promo.mp4",
+    vendorId: "vendor-1",
     signingSource: {
       vendorId: "vendor-1",
       sourceType: "url",
@@ -77,6 +78,7 @@ describe("public registration form", () => {
     const cloudflarePromo = {
       title: "活動預告",
       videoUrl: streamUrl,
+      vendorId: "vendor-1",
       signingSource: {
         vendorId: "vendor-1",
         sourceType: "cloudflare_stream",
@@ -106,6 +108,12 @@ describe("public registration form", () => {
     it("plays a Cloudflare promo through a time-limited token", async () => {
       const html = await renderPromo(cloudflarePromo);
       expect(html).toMatch(/data-src="https:\/\/videodelivery\.net\/[\w-]+\.[\w-]+\.[\w-]+\/manifest\/video\.m3u8"/);
+      expect(html).not.toContain(uid);
+    });
+
+    it("renders no promo source when the row's vendor differs from the form's vendor", async () => {
+      const html = await renderPromo({ ...cloudflarePromo, vendorId: "vendor-2" });
+      expect(html).toContain('data-src=""');
       expect(html).not.toContain(uid);
     });
 

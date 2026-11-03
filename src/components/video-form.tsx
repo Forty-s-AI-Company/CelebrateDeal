@@ -7,7 +7,12 @@ import { Card, Field, SelectField, SubmitButton, TextArea } from "@/components/u
 
 type VideoWithImageAsset = Video & { thumbnailAssetId?: string | null };
 
-export function VideoForm({ video, error }: { video?: VideoWithImageAsset; error?: string }) {
+export function VideoForm({ video, error, thumbnailPreviewUrl }: {
+  video?: VideoWithImageAsset;
+  error?: string;
+  /** F-093: signed display URL for the stored thumbnail; the form keeps submitting the stored value. */
+  thumbnailPreviewUrl?: string | null;
+}) {
   const isExternalVideo = !video || video.sourceType === "url";
 
   return (
@@ -48,6 +53,7 @@ export function VideoForm({ video, error }: { video?: VideoWithImageAsset; error
           label="影片縮圖"
           description="可上傳縮圖，或從影片時間軸擷取畫面；裁切只會套用到縮圖，不會剪輯影片。"
           defaultUrl={video?.thumbnailUrl}
+          defaultPreviewUrl={thumbnailPreviewUrl}
           defaultAssetId={video?.thumbnailAssetId}
           urlInputName="thumbnailUrl"
           assetIdInputName="thumbnailAssetId"

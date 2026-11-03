@@ -135,7 +135,8 @@ export async function runStagingStreamResourceSmoke(env = process.env, dependenc
     if (!receipt.ready || !receipt.durationWithinFixtureLimit) return receipt;
     receipt.reason = "PLAYBACK_OUTCOME_UNKNOWN";
     receipt.sideEffects.playbackReads++;
-    const playback = await request(playbackUrl);
+    // F-093: send the app's own Origin, as the player does, so allowedOrigins is exercised; never owner auth.
+    const playback = await request(playbackUrl, { headers: { Origin: ORIGIN } });
     if (playback.status !== 200) { await playback.body?.cancel(); receipt.reason = "PLAYBACK_REJECTED"; return receipt; }
     const manifest = await playback.text();
     receipt.playbackManifest = manifest.length < 100_000 && manifest.startsWith("#EXTM3U")
