@@ -14,14 +14,20 @@
  * Chromium/Firefox or over https. Any other http origin cannot sign in.
  *
  * Transition: before this change the cookie was `celebrate_session` (no
- * prefix). Sessions issued under that name stay readable until
- * LEGACY_AUTH_COOKIE_SUNSET (the 14-day session TTL plus margin after the
- * planned rollout). New sign-ins always write the `__Host-` name and expire
- * the legacy one, and sign-out clears both. The legacy name is never
- * preferred over the `__Host-` cookie, and after the sunset it is ignored.
+ * prefix). Until LEGACY_AUTH_COOKIE_SUNSET (the 14-day session TTL plus
+ * margin after the rollout) that name is still read, but only for a session
+ * row created before LEGACY_AUTH_COOKIE_ISSUED_BEFORE (the rollout date): a
+ * session created after the rollout is honoured only under the `__Host-`
+ * name, so a freshly minted token planted under the old name is refused.
+ * Until the sunset a sibling subdomain can still plant a pre-rollout token
+ * under the old name when no `__Host-` cookie is present; the subdomain
+ * cookie-tossing protection is complete only after the sunset. New sign-ins
+ * always write the `__Host-` name and expire the legacy one, sign-out clears
+ * both, and the legacy name never wins over a `__Host-` cookie.
  */
 export const AUTH_COOKIE = "__Host-celebrate_session";
 export const LEGACY_AUTH_COOKIE = "celebrate_session";
+export const LEGACY_AUTH_COOKIE_ISSUED_BEFORE = new Date("2026-11-04T00:00:00.000Z");
 export const LEGACY_AUTH_COOKIE_SUNSET = new Date("2026-12-15T00:00:00.000Z");
 
 export const SESSION_TTL_SECONDS = 60 * 60 * 24 * 14;
@@ -54,12 +60,26 @@ export function sessionCookieOptions(expiresAt?: Date, maxAge = SESSION_TTL_SECO
   };
 }
 
-/** The `__Host-` cookie wins; the legacy cookie is a read-only fallback until the sunset. */
-export function readSessionCookieToken(store: SessionCookieReader, now = new Date()) {
+/**
+ * The `__Host-` cookie wins; the legacy cookie is a read-only fallback until
+ * the sunset. `legacy: true` tells the caller to accept the token only for a
+ * session created before LEGACY_AUTH_COOKIE_ISSUED_BEFORE.
+ */
+export function readSessionCookie(store: SessionCookieReader, now = new Date()) {
   const current = store.get(AUTH_COOKIE)?.value;
-  if (current) return current;
-  if (now.getTime() >= LEGACY_AUTH_COOKIE_SUNSET.getTime()) return undefined;
-  return store.get(LEGACY_AUTH_COOKIE)?.value || undefined;
+  if (current) return { token: current, legacy: false };
+  if (now.getTime() >= LEGACY_AUTH_COOKIE_SUNSET.getTime()) return null;
+  const legacy = store.get(LEGACY_AUTH_COOKIE)?.value;
+  return legacy ? { token: legacy, legacy: true } : null;
+}
+
+export function readSessionCookieToken(store: SessionCookieReader, now = new Date()) {
+  return readSessionCookie(store, now)?.token;
+}
+
+/** A legacy-name token is honoured only for a session row created before the rollout. */
+export function legacySessionCookieAllowed(session: { createdAt: Date }) {
+  return session.createdAt.getTime() < LEGACY_AUTH_COOKIE_ISSUED_BEFORE.getTime();
 }
 
 /** maxAge follows the session row's expiry so a 24-hour session is not kept for 14 days. */

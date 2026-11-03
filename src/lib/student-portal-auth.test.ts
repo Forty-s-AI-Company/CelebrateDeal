@@ -207,6 +207,39 @@ describe("student portal session revocation (F-030)", () => {
     await expect(getCurrentStudentPortalSession()).resolves.toBeNull();
   });
 
+  it("revokes the session a replaced cookie still names before writing the new one (M3)", async () => {
+    const otherHash = "b".repeat(43);
+    const previousGrant = "p".repeat(43);
+    mocks.cookieGet.mockReturnValue({
+      value: createStudentPortalSessionToken({ vendorId: "vendor_2", customerKeyHash: otherHash, grant: previousGrant, now }),
+    });
+
+    await setStudentPortalSessionCookie({ vendorId: "vendor_1", customerKeyHash, grant });
+
+    expect(mocks.tokenDeleteMany).toHaveBeenCalledExactlyOnceWith({
+      where: { vendorId: "vendor_2", customerKeyHash: otherHash, tokenHash: previousGrant, consumedAt: { not: null } },
+    });
+    expect(mocks.tokenDeleteMany.mock.invocationCallOrder[0]).toBeLessThan(mocks.cookieSet.mock.invocationCallOrder[0]!);
+    expect(readStudentPortalSessionToken(mocks.cookieSet.mock.calls[0]?.[1] as string, now)).toMatchObject({ vendorId: "vendor_1", grant });
+  });
+
+  it("does not touch the database when the replaced cookie is unreadable or has no grant", async () => {
+    for (const value of ["tampered", createStudentPortalSessionToken({ vendorId: "vendor_1", customerKeyHash, now })]) {
+      mocks.cookieGet.mockReturnValue({ value });
+      await setStudentPortalSessionCookie({ vendorId: "vendor_1", customerKeyHash, grant });
+    }
+    expect(mocks.tokenDeleteMany).not.toHaveBeenCalled();
+    expect(mocks.cookieSet).toHaveBeenCalledTimes(2);
+  });
+
+  it("still removes the cookie when server-side revocation fails on sign-out", async () => {
+    mocks.cookieGet.mockReturnValue({ value: sessionCookie() });
+    mocks.tokenDeleteMany.mockRejectedValue(new Error("synthetic database outage"));
+
+    await expect(clearStudentPortalSessionCookie()).rejects.toThrow("synthetic database outage");
+    expect(mocks.cookieDelete).toHaveBeenCalledWith({ name: STUDENT_PORTAL_SESSION_COOKIE, path: "/portal" });
+  });
+
   it("revokes every session of one customer within one vendor", async () => {
     const deleteMany = vi.fn().mockResolvedValue({ count: 2 });
     await expect(revokeStudentPortalSessions({ studentPortalAccessToken: { deleteMany } }, {

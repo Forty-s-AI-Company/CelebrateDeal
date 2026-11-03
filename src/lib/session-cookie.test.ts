@@ -2,8 +2,11 @@ import { describe, expect, it, vi } from "vitest";
 import {
   AUTH_COOKIE,
   LEGACY_AUTH_COOKIE,
+  LEGACY_AUTH_COOKIE_ISSUED_BEFORE,
   LEGACY_AUTH_COOKIE_SUNSET,
   clearSessionCookies,
+  legacySessionCookieAllowed,
+  readSessionCookie,
   readSessionCookieToken,
   sessionCookieOptions,
   writeSessionCookie,
@@ -45,6 +48,17 @@ describe("session cookie (F-036)", () => {
     expect(readSessionCookieToken(jar({ [AUTH_COOKIE]: "new" }), LEGACY_AUTH_COOKIE_SUNSET)).toBe("new");
     expect(readSessionCookieToken(jar({ [LEGACY_AUTH_COOKIE]: "" }), beforeSunset)).toBeUndefined();
     expect(readSessionCookieToken(jar({}), beforeSunset)).toBeUndefined();
+  });
+
+  it("marks a legacy-name read so only pre-rollout sessions are honoured (M1)", () => {
+    expect(readSessionCookie(jar({ [AUTH_COOKIE]: "new", [LEGACY_AUTH_COOKIE]: "old" }), beforeSunset)).toEqual({ token: "new", legacy: false });
+    expect(readSessionCookie(jar({ [LEGACY_AUTH_COOKIE]: "old" }), beforeSunset)).toEqual({ token: "old", legacy: true });
+    expect(readSessionCookie(jar({ [LEGACY_AUTH_COOKIE]: "old" }), LEGACY_AUTH_COOKIE_SUNSET)).toBeNull();
+
+    expect(LEGACY_AUTH_COOKIE_ISSUED_BEFORE.getTime()).toBeLessThan(LEGACY_AUTH_COOKIE_SUNSET.getTime());
+    expect(legacySessionCookieAllowed({ createdAt: new Date(LEGACY_AUTH_COOKIE_ISSUED_BEFORE.getTime() - 1) })).toBe(true);
+    expect(legacySessionCookieAllowed({ createdAt: LEGACY_AUTH_COOKIE_ISSUED_BEFORE })).toBe(false);
+    expect(legacySessionCookieAllowed({ createdAt: new Date(LEGACY_AUTH_COOKIE_ISSUED_BEFORE.getTime() + 1) })).toBe(false);
   });
 
   it("writes the __Host- cookie with a maxAge that matches the session row and expires the legacy cookie", () => {

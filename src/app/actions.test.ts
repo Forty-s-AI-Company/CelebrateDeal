@@ -6280,7 +6280,7 @@ describe("COV-04 login success attribution", () => {
     const cookieStore = { delete: vi.fn(), set: vi.fn() };
     mocks.cookies.mockResolvedValue(cookieStore);
     mocks.authenticateUser.mockResolvedValue({
-      user: { id: "user-1", email: "member@example.com", platformRole: "user", mfaFactor: null },
+      user: { id: "user-1", email: "member@example.com", platformRole: "none", mfaFactor: null },
       vendor: { betaFeatureGrants: ["courses", "billing", "funnel_binding", "consultation_booking", "browser_live", "danmaku"], id: "vendor-1" },
       member: { role: "owner" },
       isPlatformAdmin: false,
@@ -6293,7 +6293,7 @@ describe("COV-04 login success attribution", () => {
       vendorId: "vendor-1",
       ipAddress: "203.0.113.10",
       userAgent: "CelebrateDeal test",
-      platformRole: "user",
+      platformRole: "none",
     });
     expect(cookieStore.set.mock.calls[0]?.slice(0, 2)).toEqual([
       "__Host-celebrate_session",

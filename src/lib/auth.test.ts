@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   findWp4Member: vi.fn(),
   redirect: vi.fn(),
   updateUser: vi.fn(),
+  updateSessions: vi.fn(),
   verifyPasswordAsync: vi.fn(),
 }));
 
@@ -15,7 +16,7 @@ vi.mock("next/headers", () => ({ cookies: mocks.cookies }));
 vi.mock("next/navigation", () => ({ redirect: mocks.redirect }));
 vi.mock("@/lib/db", () => ({
   getDb: () => ({
-    userSession: { create: mocks.createSession, findUnique: mocks.findSession },
+    userSession: { create: mocks.createSession, findUnique: mocks.findSession, updateMany: mocks.updateSessions },
     user: { findUnique: mocks.findUser, update: mocks.updateUser },
     vendorMember: { findFirst: mocks.findWp4Member },
   }),
@@ -33,6 +34,7 @@ import {
   createUserSession,
   createWp4PreviewMfaVerifiedSession,
   getCurrentAuth,
+  markCurrentSessionMfaVerified,
   requireAuth,
   requireFinanceAdmin,
   requireVendorFinance,
@@ -43,7 +45,7 @@ import {
   requireVendorSupportContext,
   requireVendorSupportMember,
 } from "@/lib/auth";
-import { LEGACY_AUTH_COOKIE_SUNSET } from "@/lib/session-cookie";
+import { LEGACY_AUTH_COOKIE_ISSUED_BEFORE, LEGACY_AUTH_COOKIE_SUNSET } from "@/lib/session-cookie";
 
 function sessionFor({
   platformRole,
@@ -242,9 +244,10 @@ describe("session lifetime and cookie name (F-036)", () => {
   it("reads the __Host- cookie first and the pre-rename cookie only as a fallback before the sunset", async () => {
     // Pin the clock inside the transition window so this test does not depend on today's date.
     vi.useFakeTimers({ toFake: ["Date"] });
-    vi.setSystemTime(new Date(LEGACY_AUTH_COOKIE_SUNSET.getTime() - 24 * 60 * 60 * 1000));
+    vi.setSystemTime(new Date(LEGACY_AUTH_COOKIE_ISSUED_BEFORE.getTime() + 24 * 60 * 60 * 1000));
     const jar = (values: Record<string, string>) => ({ get: (name: string) => (values[name] ? { value: values[name] } : undefined) });
-    mocks.findSession.mockResolvedValue(sessionFor({ platformRole: "none", memberRole: "owner" }));
+    const preRollout = new Date(LEGACY_AUTH_COOKIE_ISSUED_BEFORE.getTime() - 60 * 60 * 1000);
+    mocks.findSession.mockResolvedValue({ ...sessionFor({ platformRole: "none", memberRole: "owner" }), createdAt: preRollout });
 
     mocks.cookies.mockResolvedValue(jar({ "__Host-celebrate_session": "new-token", celebrate_session: "old-token" }));
     await getCurrentAuth();
@@ -258,10 +261,31 @@ describe("session lifetime and cookie name (F-036)", () => {
     expect(legacyHash).toMatch(/^[a-f0-9]{64}$/);
     expect(newHash).not.toBe(legacyHash);
 
+    // M1: a session created at or after the rollout is never honoured under the legacy name...
+    mocks.findSession.mockResolvedValue({ ...sessionFor({ platformRole: "none", memberRole: "owner" }), createdAt: LEGACY_AUTH_COOKIE_ISSUED_BEFORE });
+    await expect(getCurrentAuth()).resolves.toBeNull();
+    // ...but the same session is valid under the __Host- name.
+    mocks.cookies.mockResolvedValue(jar({ "__Host-celebrate_session": "old-token" }));
+    await expect(getCurrentAuth()).resolves.toMatchObject({ user: { id: "user-1" } });
+
     mocks.cookies.mockResolvedValue(jar({}));
     mocks.findSession.mockClear();
     await expect(getCurrentAuth()).resolves.toBeNull();
     expect(mocks.findSession).not.toHaveBeenCalled();
+
+    // MFA verification through a legacy-name token is limited to pre-rollout sessions.
+    mocks.cookies.mockResolvedValue(jar({ celebrate_session: "old-token" }));
+    await markCurrentSessionMfaVerified();
+    expect(mocks.updateSessions).toHaveBeenLastCalledWith({
+      where: { tokenHash: legacyHash, revokedAt: null, createdAt: { lt: LEGACY_AUTH_COOKIE_ISSUED_BEFORE } },
+      data: { mfaVerifiedAt: expect.any(Date) },
+    });
+    mocks.cookies.mockResolvedValue(jar({ "__Host-celebrate_session": "old-token" }));
+    await markCurrentSessionMfaVerified();
+    expect(mocks.updateSessions).toHaveBeenLastCalledWith({
+      where: { tokenHash: legacyHash, revokedAt: null },
+      data: { mfaVerifiedAt: expect.any(Date) },
+    });
 
     // After the sunset a legacy-only cookie is ignored without a database lookup.
     vi.setSystemTime(LEGACY_AUTH_COOKIE_SUNSET);

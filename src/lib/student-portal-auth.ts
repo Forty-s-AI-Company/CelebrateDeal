@@ -413,30 +413,45 @@ export function studentPortalSessionCookieOptions(secure = process.env.NODE_ENV 
   };
 }
 
+/** Deletes the consumed capability row behind one session cookie, bound to its own vendor and customer. */
+async function revokeStudentPortalSessionCookie(token: string | undefined) {
+  const session = readStudentPortalSessionToken(token);
+  if (!session?.grant) return;
+  await database().studentPortalAccessToken.deleteMany({
+    where: {
+      vendorId: session.vendorId,
+      customerKeyHash: session.customerKeyHash,
+      tokenHash: session.grant,
+      consumedAt: { not: null },
+    },
+  });
+}
+
+/**
+ * A new sign-in on this browser first revokes the session the cookie being
+ * replaced still names (M3), so overwriting a cookie never leaves an older,
+ * possibly copied, session alive on the server.
+ */
 export async function setStudentPortalSessionCookie(session: Pick<StudentPortalConsumedAccess, "vendorId" | "customerKeyHash" | "grant">) {
   const token = createStudentPortalSessionToken({
     vendorId: session.vendorId,
     customerKeyHash: session.customerKeyHash,
     grant: session.grant,
   });
-  (await cookies()).set(STUDENT_PORTAL_SESSION_COOKIE, token, studentPortalSessionCookieOptions());
+  const store = await cookies();
+  const previous = store.get(STUDENT_PORTAL_SESSION_COOKIE)?.value;
+  if (previous) await revokeStudentPortalSessionCookie(previous);
+  store.set(STUDENT_PORTAL_SESSION_COOKIE, token, studentPortalSessionCookieOptions());
 }
 
-/** Sign-out revokes this session server-side before the cookie is removed (F-030). */
+/** Sign-out revokes this session server-side; the cookie is removed even if that fails (F-030). */
 export async function clearStudentPortalSessionCookie() {
   const store = await cookies();
-  const session = readStudentPortalSessionToken(store.get(STUDENT_PORTAL_SESSION_COOKIE)?.value);
-  if (session?.grant) {
-    await database().studentPortalAccessToken.deleteMany({
-      where: {
-        vendorId: session.vendorId,
-        customerKeyHash: session.customerKeyHash,
-        tokenHash: session.grant,
-        consumedAt: { not: null },
-      },
-    });
+  try {
+    await revokeStudentPortalSessionCookie(store.get(STUDENT_PORTAL_SESSION_COOKIE)?.value);
+  } finally {
+    store.delete({ name: STUDENT_PORTAL_SESSION_COOKIE, path: "/portal" });
   }
-  store.delete({ name: STUDENT_PORTAL_SESSION_COOKIE, path: "/portal" });
 }
 
 export async function getCurrentStudentPortalSession() {

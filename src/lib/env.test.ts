@@ -540,6 +540,7 @@ describe("OPS_SMOKE_SECRET preflight (F-016)", () => {
     ["equal to JOB_SECRET", { [smokeKey]: "test-job-secret-value-at-least-32-bytes" }],
     ["equal to CRON_SECRET", { [smokeKey]: "test-cron-secret-value-at-least-32-bytes" }],
     ["equal to CSRF_SECRET", { [smokeKey]: "test-csrf-secret-value-at-least-32-bytes" }],
+    ["equal to LIVE_CHAT_INGRESS_SECRET", { [smokeKey]: "test-live-chat-ingress-secret-value-longer-than-32" }],
   ])("fails a configured smoke secret that is %s", (_label, overrides) => {
     const report = getEnvCheckReport({ ...configuredEnv(), ...overrides });
     expect(report.ok).toBe(false);

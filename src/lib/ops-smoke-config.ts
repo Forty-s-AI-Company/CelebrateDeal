@@ -5,19 +5,28 @@
 type Environment = Readonly<Record<string, string | undefined>>;
 
 export const MINIMUM_OPS_SMOKE_SECRET_LENGTH = 32;
+/** Secrets the smoke bearer must never equal; reuse leaves the smoke endpoints closed. */
+export const OPS_SMOKE_SECRET_REUSE_FORBIDDEN = [
+  "JOB_SECRET",
+  "CRON_SECRET",
+  "CSRF_SECRET",
+  "LIVE_CHAT_INGRESS_SECRET",
+  "PAYUNI_LIVE_PROBE_JOB_SECRET",
+] as const;
+const REUSE_FORBIDDEN = OPS_SMOKE_SECRET_REUSE_FORBIDDEN;
 const VENDOR_ID = /^[A-Za-z0-9_-]{1,128}$/u;
 
 /**
  * The provider smoke endpoints (test email/analytics/monitoring and Cloudflare
  * upload/live input) have their own bearer. It is usable only when it is long
- * enough and differs from every scheduler/CSRF secret, so a leaked cron/job
+ * enough and differs from every scheduler, CSRF, ingress and probe secret, so a leaked cron/job
  * credential can never reach them and an unset or reused value leaves them
  * closed (401) instead of falling back to JOB_SECRET.
  */
 export function opsSmokeSecret(env: Environment = process.env) {
   const secret = env.OPS_SMOKE_SECRET;
   if (!secret || secret.trim() !== secret || secret.length < MINIMUM_OPS_SMOKE_SECRET_LENGTH) return undefined;
-  if (secret === env.JOB_SECRET || secret === env.CRON_SECRET || secret === env.CSRF_SECRET) return undefined;
+  if (REUSE_FORBIDDEN.some((key) => secret === env[key])) return undefined;
   return secret;
 }
 

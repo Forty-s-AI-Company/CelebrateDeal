@@ -253,6 +253,8 @@ describe("OPS_SMOKE_SECRET (F-016)", () => {
     ["equal to JOB_SECRET", { OPS_SMOKE_SECRET: smokeSecret, JOB_SECRET: smokeSecret }],
     ["equal to CRON_SECRET", { OPS_SMOKE_SECRET: smokeSecret, CRON_SECRET: smokeSecret }],
     ["equal to CSRF_SECRET", { OPS_SMOKE_SECRET: smokeSecret, CSRF_SECRET: smokeSecret }],
+    ["equal to LIVE_CHAT_INGRESS_SECRET", { OPS_SMOKE_SECRET: smokeSecret, LIVE_CHAT_INGRESS_SECRET: smokeSecret }],
+    ["equal to PAYUNI_LIVE_PROBE_JOB_SECRET", { OPS_SMOKE_SECRET: smokeSecret, PAYUNI_LIVE_PROBE_JOB_SECRET: smokeSecret }],
   ])("treats a value %s as unconfigured", (_label, env) => {
     expect(opsSmokeSecret(env)).toBeUndefined();
   });

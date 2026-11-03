@@ -10,8 +10,11 @@ import { decryptMfaSecret } from "@/lib/mfa";
 import { verifyPasswordAsync } from "@/lib/password";
 import { isVendorBackofficeRole, isVendorPartnerRole, PARTNER_PORTAL_PATH, signedInHomePath } from "@/lib/vendor-roles";
 import {
+  LEGACY_AUTH_COOKIE_ISSUED_BEFORE,
   PLATFORM_ADMIN_SESSION_TTL_SECONDS,
   SESSION_TTL_SECONDS,
+  legacySessionCookieAllowed,
+  readSessionCookie,
   readSessionCookieToken,
 } from "@/lib/session-cookie";
 
@@ -258,11 +261,12 @@ export async function revokeCurrentSession() {
 
 export async function getCurrentAuth(options: { allowUnverifiedMfa?: boolean } = {}) {
   const cookieStore = await cookies();
-  const token = readSessionCookieToken(cookieStore);
+  const cookie = readSessionCookie(cookieStore);
 
-  if (!token) {
+  if (!cookie) {
     return null;
   }
+  const { token } = cookie;
 
   const session = await getDb().userSession.findUnique({
     where: { tokenHash: sessionTokenHash(token) },
@@ -287,6 +291,8 @@ export async function getCurrentAuth(options: { allowUnverifiedMfa?: boolean } =
     || session.expiresAt <= new Date()
     || !isActiveUser(session.user)
     || sessionLifetimeExceeded(session, session.user)
+    // F-036: the pre-rename cookie name only carries sessions created before the rollout.
+    || (cookie.legacy && !legacySessionCookieAllowed(session))
   ) {
     return null;
   }
@@ -515,15 +521,17 @@ export async function authenticateUser(email: string, password: string) {
 
 export async function markCurrentSessionMfaVerified() {
   const cookieStore = await cookies();
-  const token = readSessionCookieToken(cookieStore);
-  if (!token) {
+  const cookie = readSessionCookie(cookieStore);
+  if (!cookie) {
     return;
   }
 
   await getDb().userSession.updateMany({
     where: {
-      tokenHash: sessionTokenHash(token),
+      tokenHash: sessionTokenHash(cookie.token),
       revokedAt: null,
+      // Same rule as getCurrentAuth: a legacy-name token never verifies a post-rollout session.
+      ...(cookie.legacy ? { createdAt: { lt: LEGACY_AUTH_COOKIE_ISSUED_BEFORE } } : {}),
     },
     data: { mfaVerifiedAt: new Date() },
   });

@@ -12,7 +12,7 @@ import {
 } from "@/lib/request-client-ip";
 import { REGISTRATION_MODES } from "@/lib/registration-mode";
 import { getTurnstileConfig } from "@/lib/turnstile";
-import { MINIMUM_OPS_SMOKE_SECRET_LENGTH, opsSmokeSecret, opsSmokeVendorId } from "@/lib/ops-smoke-config";
+import { MINIMUM_OPS_SMOKE_SECRET_LENGTH, OPS_SMOKE_SECRET_REUSE_FORBIDDEN, opsSmokeSecret, opsSmokeVendorId } from "@/lib/ops-smoke-config";
 
 const RequiredUrl = z.string().url();
 const OptionalSecret = z.string().optional();
@@ -140,7 +140,7 @@ function opsSmokeChecks(env: NodeJS.ProcessEnv, deploymentSecurityRequired: bool
     return [{
       key: "OPS_SMOKE_SECRET",
       status: "fail",
-      message: `OPS_SMOKE_SECRET 必須至少 ${MINIMUM_OPS_SMOKE_SECRET_LENGTH} 字元、前後不得有空白，且不得與 JOB_SECRET、CRON_SECRET、CSRF_SECRET 相同；目前 smoke 端點保持關閉`,
+      message: `OPS_SMOKE_SECRET 必須至少 ${MINIMUM_OPS_SMOKE_SECRET_LENGTH} 字元、前後不得有空白，且不得與 ${OPS_SMOKE_SECRET_REUSE_FORBIDDEN.join("、")} 相同；目前 smoke 端點保持關閉`,
     }];
   }
   const checks: EnvCheck[] = [{
