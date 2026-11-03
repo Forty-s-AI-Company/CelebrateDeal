@@ -8,9 +8,10 @@ import {
 } from "./staging-ledger-remediation";
 
 const db = getDb();
-// Scratch schema: copies of the ledger tables WITHOUT their CHECK constraints
-// (LIKE ... INCLUDING DEFAULTS never copies CHECKs) so violating rows can be
-// inserted. Nothing in "public" is touched.
+// Scratch schema: copies of the ledger tables (LIKE ... INCLUDING DEFAULTS
+// never copies CHECKs). Violating rows are inserted first, then the same CHECKs
+// as 20261103090100 are added NOT VALID, mirroring staging after the failed
+// validate migration. The connection's own schema is never written.
 const schema = `ledger_remediation_${randomUUID().replace(/-/gu, "").slice(0, 12)}`;
 const TABLES = ["PaymentTransaction", "RefundRecord", "PayoutBatch", "Settlement", "PayoutItem", "AuditLog", "_prisma_migrations"];
 let scratch: PrismaClient;
@@ -36,9 +37,12 @@ async function snapshot() {
 }
 
 beforeAll(async () => {
+  // Source schema follows the test connection (public locally, wp18_ci in CI).
+  const [{ source }] = await db.$queryRawUnsafe<Array<{ source: string }>>(`SELECT current_schema() AS "source"`);
+  expect(source).toMatch(/^[a-z0-9_]+$/u);
   await db.$executeRawUnsafe(`CREATE SCHEMA "${schema}"`);
   for (const table of TABLES) {
-    await db.$executeRawUnsafe(`CREATE TABLE ${q(table)} (LIKE "public"."${table}" INCLUDING DEFAULTS)`);
+    await db.$executeRawUnsafe(`CREATE TABLE ${q(table)} (LIKE "${source}"."${table}" INCLUDING DEFAULTS)`);
   }
   // Only the columns a test sets need values.
   await db.$executeRawUnsafe(`DO $$
@@ -72,7 +76,18 @@ beforeAll(async () => {
   });
   await migration("m1", "20261103090100_ledger_integrity_constraints", true, "2026-11-03T01:00:00Z");
   await migration("m2", VALIDATE_MIGRATION, false, "2026-11-03T01:00:01Z");
+  for (const check of CHECKS) {
+    await db.$executeRawUnsafe(`ALTER TABLE ${q(check.table)} ADD CONSTRAINT "${check.name}" CHECK (${check.predicate}) NOT VALID`);
+  }
 });
+
+/** Test-only restore of a violating row: the NOT VALID CHECKs reject it otherwise. */
+async function restoreViolatingRow(table: string, constraint: string, sql: string) {
+  const check = CHECKS.find((entry) => entry.name === constraint)!;
+  await db.$executeRawUnsafe(`ALTER TABLE ${q(table)} DROP CONSTRAINT "${constraint}"`);
+  await db.$executeRawUnsafe(sql);
+  await db.$executeRawUnsafe(`ALTER TABLE ${q(table)} ADD CONSTRAINT "${constraint}" CHECK (${check.predicate}) NOT VALID`);
+}
 
 afterAll(async () => {
   await scratch?.$disconnect();
@@ -107,8 +122,9 @@ describe("inspect", () => {
     expect(report.checks.find((check) => check.constraint === "RefundRecord_amounts_check")!.rows[0].violatedRules).toEqual(["refundAmountCents <= 0"]);
     expect(report.checks.find((check) => check.constraint === "PayoutBatch_status_check")!.rows).toEqual([{ id: "pb_reviewing", vendorId: null, status: "reviewing", violatedRules: [] }]);
     expect(report.checks.find((check) => check.constraint === "PayoutItem_status_check")!.rows[0].status).toBe("<unsafe-status len=18>");
-    // Scratch tables carry no constraints.
-    expect(report.checks.every((check) => check.validated === null)).toBe(true);
+    // Same state as staging: the CHECKs exist NOT VALID.
+    expect(report.checks.every((check) => check.validated === false)).toBe(true);
+    expect(report.readOnly).toBe("on");
 
     expect(report.migrations).toEqual([
       expect.objectContaining({ migration: "20261103090100_ledger_integrity_constraints", state: "applied" }),
@@ -125,7 +141,10 @@ describe("inspect", () => {
     const statements: string[] = [];
     const transaction = vi.fn(async (callback: (tx: unknown) => Promise<unknown>) => callback({
       $executeRawUnsafe: async (sql: string) => { statements.push(sql); return 0; },
-      $queryRawUnsafe: async (sql: string) => (sql.includes("count(*)") ? [{ count: BigInt(0) }] : []),
+      $queryRawUnsafe: async (sql: string) => {
+        if (sql.includes("transaction_read_only")) return [{ value: "on" }];
+        return sql.includes("count(*)") ? [{ count: BigInt(0) }] : [];
+      },
     }));
     await inspectLedger({ $transaction: transaction } as never);
     expect(statements[0]).toBe("SET TRANSACTION READ ONLY");
@@ -138,56 +157,88 @@ describe("inspect", () => {
 });
 
 describe("apply-fix", () => {
+  const vendorScope = `AND "vendorId" = 'vendor_remediation_a'`;
   const fixSettlement: LedgerFix = {
     id: "test-settlement-reviewing-to-locked",
     description: "test",
-    statements: [`UPDATE "Settlement" SET "status" = 'locked' WHERE "id" = 'st_reviewing' AND "vendorId" = 'vendor_remediation_a' AND "status" = 'reviewing'`],
-    maxAffectedRows: 1,
+    statements: [{ sql: `UPDATE "Settlement" SET "status" = 'locked' WHERE "id" = 'st_reviewing' ${vendorScope} AND "status" = 'reviewing'`, expectedRows: 1 }],
     dryRun: false,
   };
 
-  it("rolls back every statement when the affected rows exceed the fix limit", async () => {
+  it("rolls back every statement when any statement's row count differs from expectedRows", async () => {
     const before = await snapshot();
-    const fix: LedgerFix = { ...fixSettlement, id: "test-over-limit", statements: [
+    const fix: LedgerFix = { ...fixSettlement, id: "test-row-mismatch", statements: [
       ...fixSettlement.statements,
-      `UPDATE "PayoutBatch" SET "status" = 'draft' WHERE "status" = 'reviewing'`,
+      { sql: `UPDATE "PayoutBatch" SET "status" = 'draft' WHERE "id" = 'pb_missing'`, expectedRows: 1 },
     ] };
     const report = await applyFix(scratch, fix);
-    expect(report).toMatchObject({ outcome: "rolled_back_over_limit", statementRows: [1, 1], affectedRows: 2, maxAffectedRows: 1 });
+    expect(report).toMatchObject({ outcome: "rolled_back_row_mismatch", statementRows: [1, 0], expectedRows: [1, 1], rowsMatch: false });
+    expect(await snapshot()).toEqual(before);
+  });
+
+  it("a statement that fixes only part of a row's violations fails with 23514 and rolls back the whole fix", async () => {
+    const before = await snapshot();
+    const fix: LedgerFix = { ...fixSettlement, id: "test-half-fix", statements: [
+      ...fixSettlement.statements,
+      // pt_bad_amounts also has refundedAmountCents > grossAmountCents.
+      { sql: `UPDATE "PaymentTransaction" SET "gatewayFeeCents" = 0 WHERE "id" = 'pt_bad_amounts' ${vendorScope}`, expectedRows: 1 },
+    ] };
+    await expect(applyFix(scratch, fix)).rejects.toMatchObject({ meta: { code: "23514" } });
     expect(await snapshot()).toEqual(before);
   });
 
   it("the registered dry-run fix touches no rows and always rolls back", async () => {
     const before = await snapshot();
-    const fix = FIXES.find((entry) => entry.id === "legacy-status-null-amounts-report-only")!;
+    const fix = FIXES.find((entry) => entry.id === "mechanism-dry-run-noop")!;
     const report = await applyFix(scratch, fix);
-    expect(report).toMatchObject({ outcome: "rolled_back_dry_run", affectedRows: 0, statementRows: [0, 0, 0, 0, 0] });
+    expect(report).toMatchObject({ outcome: "rolled_back_dry_run", statementRows: [0, 0, 0, 0, 0], rowsMatch: true });
     expect(await snapshot()).toEqual(before);
   });
 
-  it("commits a fix within its limit and records one AuditLog row", async () => {
-    const report = await applyFix(scratch, fixSettlement, "12345");
-    expect(report).toMatchObject({ outcome: "committed", affectedRows: 1 });
+  it("commits when every count matches, records one AuditLog row, and reports already_applied on a rerun", async () => {
+    const sha = "a".repeat(40);
+    const report = await applyFix(scratch, fixSettlement, { runId: "12345", actor: "octo-cat", sha });
+    expect(report).toMatchObject({ outcome: "committed", statementRows: [1], rowsMatch: true });
     const rows = await db.$queryRawUnsafe<Array<{ status: string }>>(`SELECT "status" FROM ${q("Settlement")} WHERE "id" = 'st_reviewing'`);
     expect(rows[0].status).toBe("locked");
     const audit = await db.$queryRawUnsafe<Array<{ action: string; targetId: string; after: unknown }>>(`SELECT "action", "targetId", "after" FROM ${q("AuditLog")}`);
-    expect(audit).toEqual([{ action: "staging_ledger_remediation.apply_fix", targetId: fixSettlement.id, after: { affectedRows: 1, statementRows: [1], maxAffectedRows: 1, runId: "12345" } }]);
-    // Restore for the other tests.
-    await db.$executeRawUnsafe(`UPDATE ${q("Settlement")} SET "status" = 'reviewing' WHERE "id" = 'st_reviewing'`);
+    expect(audit).toEqual([{ action: "staging_ledger_remediation.apply_fix", targetId: fixSettlement.id, after: { statementRows: [1], expectedRows: [1], runId: "12345", actor: "octo-cat", sha } }]);
+
+    const before = await snapshot();
+    const rerun = await applyFix(scratch, fixSettlement, { actor: "a b@c", sha: "not-a-sha" });
+    expect(rerun).toMatchObject({ outcome: "already_applied", statementRows: [0] });
+    expect(await snapshot()).toEqual(before);
+
+    await restoreViolatingRow("Settlement", "Settlement_status_check", `UPDATE ${q("Settlement")} SET "status" = 'reviewing' WHERE "id" = 'st_reviewing'`);
     await db.$executeRawUnsafe(`DELETE FROM ${q("AuditLog")}`);
   });
 
-  it("refuses fix definitions outside the allowed SQL shape", () => {
+  it("refuses fix definitions outside the single-row UPDATE shape", () => {
     for (const fix of FIXES) expect(fixDefinitionProblem(fix)).toBeNull();
-    const bad = (statements: readonly string[], extra: Partial<LedgerFix> = {}) => fixDefinitionProblem({ ...fixSettlement, statements, ...extra });
-    expect(bad([`UPDATE "Settlement" SET "status" = 'locked'; DROP TABLE "Settlement"`])).toBe("LEDGER_FIX_SQL_FORBIDDEN");
-    expect(bad([`DELETE FROM "_prisma_migrations"`])).toBe("LEDGER_FIX_SQL_FORBIDDEN");
-    expect(bad([`UPDATE "Vendor" SET "name" = 'x'`])).toBe("LEDGER_FIX_SQL_FORBIDDEN");
-    expect(bad([`UPDATE "Settlement" SET "status" = 'locked' -- comment`])).toBe("LEDGER_FIX_SQL_FORBIDDEN");
-    expect(bad([`SET LOCAL session_replication_role = replica`])).toBe("LEDGER_FIX_SQL_FORBIDDEN");
-    expect(bad([])).toBe("LEDGER_FIX_EMPTY");
-    expect(bad(fixSettlement.statements, { maxAffectedRows: 501 })).toBe("LEDGER_FIX_LIMIT_INVALID");
-    expect(bad(fixSettlement.statements, { id: "Bad Id" })).toBe("LEDGER_FIX_ID_INVALID");
+    const bad = (sql: string, expectedRows = 1) => fixDefinitionProblem({ ...fixSettlement, statements: [{ sql, expectedRows }] });
+    const forbidden = [
+      `UPDATE "Settlement" SET "status" = 'locked'`,
+      `UPDATE "Settlement" SET "status" = 'locked' WHERE "id" = 'st_reviewing' ${vendorScope}; DROP TABLE "Settlement"`,
+      `UPDATE "Settlement" SET "status" = 'locked' WHERE "id" = 'st_reviewing' ${vendorScope} -- comment`,
+      `UPDATE "Settlement" SET "status" = 'locked' FROM "Vendor" WHERE "id" = 'st_reviewing' ${vendorScope}`,
+      `UPDATE "Settlement" SET "status" = lower('LOCKED') WHERE "id" = 'st_reviewing' ${vendorScope}`,
+      `UPDATE "Settlement" SET "status" = 'locked' WHERE "id" = 'st_reviewing' ${vendorScope} AND "id" IN (SELECT "id" FROM "Settlement")`,
+      `UPDATE "Settlement" SET "status" = 'locked' WHERE "id" = 'st_reviewing' OR "vendorId" = 'vendor_remediation_a'`,
+      `UPDATE "Settlement" SET "status" = 'locked' WHERE "id" = 'st_reviewing' ${vendorScope} RETURNING "id"`,
+      `DELETE FROM "Settlement" WHERE "id" = 'st_reviewing' ${vendorScope}`,
+      `INSERT INTO "Settlement" ("id") VALUES ('x')`,
+      `UPDATE "Vendor" SET "name" = 'x' WHERE "id" = 'v1'`,
+      `UPDATE "_prisma_migrations" SET "rolled_back_at" = 'x' WHERE "id" = 'm2'`,
+      `SET LOCAL session_replication_role = replica`,
+    ];
+    for (const sql of forbidden) expect([sql, bad(sql)]).toEqual([sql, "LEDGER_FIX_SQL_FORBIDDEN"]);
+    expect(bad(`UPDATE "Settlement" SET "status" = 'locked' WHERE "vendorId" = 'vendor_remediation_a' AND "status" = 'reviewing'`)).toBe("LEDGER_FIX_WHERE_ID_MISSING");
+    expect(bad(`UPDATE "Settlement" SET "status" = 'locked' WHERE "id" = 'st_reviewing'`)).toBe("LEDGER_FIX_WHERE_VENDOR_MISSING");
+    expect(bad(`UPDATE "PayoutBatch" SET "status" = 'draft' WHERE "id" = 'pb_reviewing'`)).toBeNull();
+    expect(bad(fixSettlement.statements[0].sql, 2)).toBe("LEDGER_FIX_EXPECTED_ROWS_INVALID");
+    expect(bad(fixSettlement.statements[0].sql, 0.5)).toBe("LEDGER_FIX_EXPECTED_ROWS_INVALID");
+    expect(fixDefinitionProblem({ ...fixSettlement, statements: [] })).toBe("LEDGER_FIX_EMPTY");
+    expect(fixDefinitionProblem({ ...fixSettlement, id: "Bad Id" })).toBe("LEDGER_FIX_ID_INVALID");
   });
 });
 
@@ -201,8 +252,8 @@ describe("run guards", () => {
       [{ mode: "resolve-rolled-back", confirm: "" }, "LEDGER_REMEDIATION_CONFIRM_MISMATCH"],
       [{ mode: "resolve-rolled-back", confirm: "resolve-20261103090100" }, "LEDGER_REMEDIATION_CONFIRM_MISMATCH"],
       [{ mode: "resolve-rolled-back", confirm: ` ${RESOLVE_CONFIRMATION}` }, "LEDGER_REMEDIATION_CONFIRM_MISMATCH"],
-      [{ mode: "apply-fix", fixId: "legacy-status-null-amounts-report-only", confirm: "apply" }, "LEDGER_REMEDIATION_CONFIRM_MISMATCH"],
-      [{ mode: "apply-fix", fixId: "legacy-status-null-amounts-report-only", confirm: "resolve-20261103090200" }, "LEDGER_REMEDIATION_CONFIRM_MISMATCH"],
+      [{ mode: "apply-fix", fixId: "mechanism-dry-run-noop", confirm: "apply" }, "LEDGER_REMEDIATION_CONFIRM_MISMATCH"],
+      [{ mode: "apply-fix", fixId: "mechanism-dry-run-noop", confirm: "resolve-20261103090200" }, "LEDGER_REMEDIATION_CONFIRM_MISMATCH"],
       [{ mode: "apply-fix", fixId: "unknown-fix", confirm: "apply-unknown-fix" }, "LEDGER_FIX_UNKNOWN"],
       [{ mode: "drop-everything" }, "LEDGER_REMEDIATION_MODE_INVALID"],
     ];
@@ -218,7 +269,7 @@ describe("run guards", () => {
 
   it("refuses a non-staging database URL", async () => {
     const createDb = vi.fn();
-    const result = await run({ mode: "inspect" }, { env: { STAGING_DATABASE_URL: process.env.DATABASE_URL }, createDb, emit: () => undefined });
+    const result = await run({ mode: "inspect" }, { env: { STAGING_DATABASE_URL: ["postgresql:", "", "postgres:synthetic@localhost:5432/postgres"].join("/") }, createDb, emit: () => undefined });
     expect(result.code).toBe(2);
     expect(result.lines).toEqual(["STAGING_PROJECT_MISMATCH"]);
     expect(createDb).not.toHaveBeenCalled();
@@ -257,11 +308,48 @@ describe("run guards", () => {
     await db.$executeRawUnsafe(`UPDATE ${q("_prisma_migrations")} SET "rolled_back_at" = NULL WHERE "id" = 'm2'`);
   });
 
-  it("apply-fix through run reports the outcome and violations afterwards", async () => {
-    const result = await run({ mode: "apply-fix", fixId: "legacy-status-null-amounts-report-only", confirm: "apply-legacy-status-null-amounts-report-only" }, { env, db: scratch, emit: () => undefined });
+  it("apply-fix through run emits the outcome first, then the violations afterwards", async () => {
+    const emitted: string[] = [];
+    const result = await run({ mode: "apply-fix", fixId: "mechanism-dry-run-noop", confirm: "apply-mechanism-dry-run-noop" }, { env, db: scratch, emit: (line) => emitted.push(line) });
     expect(result.code).toBe(0);
-    expect(JSON.parse(result.lines[0])).toMatchObject({ outcome: "rolled_back_dry_run", affectedRows: 0 });
-    expect(result.lines[1]).toBe("violations_after 6");
+    expect(JSON.parse(emitted.at(-1)!)).toMatchObject({ outcome: "rolled_back_dry_run", statementRows: [0, 0, 0, 0, 0] });
+    expect(result.lines).toEqual(["violations_after 6"]);
+  });
+
+  const batchFix: LedgerFix = {
+    id: "test-run-batch",
+    description: "test",
+    statements: [{ sql: `UPDATE "PayoutBatch" SET "status" = 'draft' WHERE "id" = 'pb_reviewing' AND "status" = 'reviewing'`, expectedRows: 1 }],
+    dryRun: false,
+  };
+  const restoreBatch = async () => {
+    await restoreViolatingRow("PayoutBatch", "PayoutBatch_status_check", `UPDATE ${q("PayoutBatch")} SET "status" = 'reviewing' WHERE "id" = 'pb_reviewing'`);
+    await db.$executeRawUnsafe(`DELETE FROM ${q("AuditLog")}`);
+  };
+
+  it("a committed fix that leaves violations exits 1 with a WARNING", async () => {
+    const result = await run({ mode: "apply-fix", fixId: batchFix.id, confirm: `apply-${batchFix.id}` }, { env, db: scratch, fixes: [batchFix], emit: () => undefined });
+    expect(result.code).toBe(1);
+    expect(result.lines).toEqual(["violations_after 5", "WARNING violations remain after fix: 5"]);
+    await restoreBatch();
+  });
+
+  it("reports LEDGER_REMEDIATION_POST_INSPECT_FAILED after emitting a committed outcome", async () => {
+    let calls = 0;
+    const flaky = {
+      $transaction: ((...args: unknown[]) => {
+        calls += 1;
+        if (calls > 1) return Promise.reject(Object.assign(new Error(`timeout at ${stagingUrl}`), { code: "P2028" }));
+        return (scratch.$transaction as unknown as (...a: unknown[]) => Promise<unknown>)(...args);
+      }) as unknown as PrismaClient["$transaction"],
+    };
+    const emitted: string[] = [];
+    const result = await run({ mode: "apply-fix", fixId: batchFix.id, confirm: `apply-${batchFix.id}` }, { env, db: flaky, fixes: [batchFix], emit: (line) => emitted.push(line) });
+    expect(result.code).toBe(1);
+    expect(JSON.parse(emitted.at(-1)!)).toMatchObject({ outcome: "committed" });
+    expect(result.lines).toEqual(["LEDGER_REMEDIATION_POST_INSPECT_FAILED PRISMA_ERROR P2028"]);
+    expect(result.summary).not.toContain("pooler.supabase.com");
+    await restoreBatch();
   });
 
   it("sanitises ids, statuses and errors", () => {

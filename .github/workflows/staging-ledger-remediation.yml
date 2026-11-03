@@ -11,7 +11,8 @@ name: Staging ledger remediation
 #                        090200 migration; confirm = resolve-20261103090200.
 #   apply-fix            one fix registered in FIXES of
 #                        scripts/staging-ledger-remediation.ts; confirm =
-#                        apply-<fix_id>; rolls back above its row limit.
+#                        apply-<fix_id>; commits only when every statement
+#                        touched exactly its expectedRows.
 # The repository is public: the script prints only fixed codes, ids, status
 # values, counts and allowlisted Prisma lines (never amounts, hosts or URLs).
 on:

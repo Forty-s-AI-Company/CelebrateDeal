@@ -17,8 +17,8 @@
  *   LEDGER_REMEDIATION_CONFIRM = "resolve-20261103090200" and refuses unless
  *   that migration is currently recorded as failed.
  * - apply-fix: runs one fix registered in FIXES (reviewed in a PR) inside a
- *   transaction, commits only when the affected row count is within the fix's
- *   maxAffectedRows, and writes one AuditLog row. Needs
+ *   transaction, commits only when every statement touched exactly its
+ *   expectedRows, and writes one AuditLog row. Needs
  *   LEDGER_REMEDIATION_FIX_ID and LEDGER_REMEDIATION_CONFIRM = "apply-<fix id>".
  *
  * The repository is public, so every printed line is public: output carries
@@ -48,8 +48,6 @@ export const LEDGER_MIGRATIONS = [
 export const MODES = ["inspect", "resolve-rolled-back", "apply-fix"] as const;
 export type Mode = (typeof MODES)[number];
 export const ROW_LIMIT = 200;
-/** Hard ceiling for any registered fix, whatever its own limit says. */
-export const MAX_FIX_ROWS = 500;
 
 type Term = { rule: string; sql: string };
 export type CheckSpec = {
@@ -126,42 +124,76 @@ export const CHECKS: readonly CheckSpec[] = Object.freeze([
 ]);
 
 /**
- * A data fix registered by PR. The statements run in order inside one
- * transaction; their summed row counts must stay within maxAffectedRows or
- * the whole transaction rolls back. A dryRun fix always rolls back.
- * Each statement should be a single-row-scoped UPDATE keyed by id (and
- * vendorId), written after an inspect run showed the exact rows.
+ * A data fix registered by PR, written after an inspect run showed the exact
+ * rows. Every statement is a single-row UPDATE keyed by id (and vendorId),
+ * and declares how many rows it must touch (0 or 1). The statements run in
+ * order inside one transaction, which commits only when every statement hit
+ * exactly its expectedRows; when every statement touched 0 rows the fix was
+ * already applied and nothing is committed. Any other count rolls back.
+ * All violations of one row must be fixed in the same statement: the CHECKs
+ * already exist NOT VALID and reject an UPDATE that leaves the row invalid
+ * (SQLSTATE 23514, whole transaction rolled back). A dryRun fix always rolls
+ * back.
  */
+export type FixStatement = { sql: string; expectedRows: number };
 export type LedgerFix = {
   id: string;
   description: string;
-  statements: readonly string[];
-  maxAffectedRows: number;
+  statements: readonly FixStatement[];
   dryRun: boolean;
 };
 
-const STATUS_TABLES = ["PaymentTransaction", "RefundRecord", "PayoutBatch", "Settlement", "PayoutItem"];
+const VENDOR_TABLES = new Set(["PaymentTransaction", "RefundRecord", "Settlement", "PayoutItem"]);
+const NOOP_ID = "mechanism-dry-run-noop";
 
 export const FIXES: readonly LedgerFix[] = Object.freeze([
   {
-    id: "legacy-status-null-amounts-report-only",
-    description: "機制驗證：對五張帳務表各執行一次 WHERE false 的 UPDATE（不會選到任何列），回報影響筆數後一律回滾。真正的資料修復在 inspect 結果出來後另開 PR 登記。",
-    statements: STATUS_TABLES.map((table) => `UPDATE "${table}" SET "status" = "status" WHERE false`),
-    maxAffectedRows: 0,
+    id: NOOP_ID,
+    description: "機制驗證：對五張帳務表各執行一次以不存在的 id 為條件的 UPDATE（不會選到任何列），回報影響筆數後一律回滾。真正的資料修復在 inspect 結果出來後另開 PR 登記。",
+    statements: CHECKS.filter((check) => check.name.endsWith("_status_check")).map((check) => ({
+      sql: `UPDATE "${check.table}" SET "status" = "status" WHERE "id" = '${NOOP_ID}'${VENDOR_TABLES.has(check.table) ? ` AND "vendorId" = '${NOOP_ID}'` : ""}`,
+      expectedRows: 0,
+    })),
     dryRun: true,
   },
 ]);
 
 const FIX_ID = /^[a-z0-9][a-z0-9-]{2,79}$/u;
-const FORBIDDEN_FIX_SQL = /;|--|\/\*|\$\$|\b(?:BEGIN|COMMIT|ROLLBACK|SAVEPOINT|RELEASE|RESET|ALTER|DROP|TRUNCATE|CREATE|GRANT|REVOKE|COPY|CALL|VACUUM|LOCK|_prisma_migrations|pg_catalog|set_config)\b|\bSET\s+(?:LOCAL|SESSION|TRANSACTION|ROLE)\b/iu;
-const ALLOWED_FIX_SQL = /^\s*(?:UPDATE|DELETE\s+FROM|INSERT\s+INTO)\s+"(?:PaymentTransaction|RefundRecord|PayoutBatch|Settlement|PayoutItem)"\s/u;
+export const MAX_FIX_STATEMENTS = 500;
+const FIX_SHAPE = /^\s*UPDATE\s+"(PaymentTransaction|RefundRecord|PayoutBatch|Settlement|PayoutItem)"\s+SET\s+([\s\S]+?)\s+WHERE\s+([\s\S]+?)\s*$/u;
+// No statement separators, comments, dollar quotes, subqueries, joins or calls.
+const FORBIDDEN_FIX_SQL = /;|--|\/\*|\$|\(|\)|\b(?:FROM|USING|SELECT|RETURNING|OR|NOT|BEGIN|COMMIT|ROLLBACK|SAVEPOINT|ALTER|DROP|TRUNCATE|CREATE|GRANT|REVOKE|COPY|CALL|LOCK|_prisma_migrations|pg_catalog)\b|\w+\s*\(/iu;
+const VALUE = String.raw`(?:'[A-Za-z0-9_ -]{0,64}'|-?\d{1,15}|"[A-Za-z]\w{0,62}")`;
+const ASSIGNMENT = new RegExp(String.raw`^"[A-Za-z]\w{0,62}"\s*=\s*${VALUE}$`, "u");
+const CONDITION = new RegExp(String.raw`^"[A-Za-z]\w{0,62}"\s*(?:=|<>|<=|>=|<|>)\s*${VALUE}$`, "u");
+const ID_CONDITION = /^"id"\s*=\s*'[A-Za-z0-9_-]{1,64}'$/u;
+const VENDOR_CONDITION = /^"vendorId"\s*=\s*'[A-Za-z0-9_-]{1,64}'$/u;
+
+/** Returns null when the statement has the allowed single-row UPDATE shape. */
+export function fixStatementProblem(statement: FixStatement): string | null {
+  if (!Number.isInteger(statement.expectedRows) || statement.expectedRows < 0 || statement.expectedRows > 1) return "LEDGER_FIX_EXPECTED_ROWS_INVALID";
+  const sql = statement.sql;
+  if (FORBIDDEN_FIX_SQL.test(sql)) return "LEDGER_FIX_SQL_FORBIDDEN";
+  const shape = FIX_SHAPE.exec(sql);
+  if (!shape) return "LEDGER_FIX_SQL_FORBIDDEN";
+  const [, table, set, where] = shape;
+  if (!set.split(/\s*,\s*/u).every((part) => ASSIGNMENT.test(part.trim()))) return "LEDGER_FIX_SQL_FORBIDDEN";
+  const conditions = where.split(/\s+AND\s+/iu).map((part) => part.trim());
+  if (!conditions.every((part) => CONDITION.test(part))) return "LEDGER_FIX_SQL_FORBIDDEN";
+  if (!conditions.some((part) => ID_CONDITION.test(part))) return "LEDGER_FIX_WHERE_ID_MISSING";
+  if (VENDOR_TABLES.has(table) && !conditions.some((part) => VENDOR_CONDITION.test(part))) return "LEDGER_FIX_WHERE_VENDOR_MISSING";
+  return null;
+}
 
 /** Returns null when the fix may run, or the fixed refusal code. */
 export function fixDefinitionProblem(fix: LedgerFix): string | null {
   if (!FIX_ID.test(fix.id)) return "LEDGER_FIX_ID_INVALID";
-  if (!Number.isInteger(fix.maxAffectedRows) || fix.maxAffectedRows < 0 || fix.maxAffectedRows > MAX_FIX_ROWS) return "LEDGER_FIX_LIMIT_INVALID";
   if (fix.statements.length === 0) return "LEDGER_FIX_EMPTY";
-  if (fix.statements.some((sql) => !ALLOWED_FIX_SQL.test(sql) || FORBIDDEN_FIX_SQL.test(sql))) return "LEDGER_FIX_SQL_FORBIDDEN";
+  if (fix.statements.length > MAX_FIX_STATEMENTS) return "LEDGER_FIX_TOO_MANY_STATEMENTS";
+  for (const statement of fix.statements) {
+    const problem = fixStatementProblem(statement);
+    if (problem) return problem;
+  }
   return null;
 }
 
@@ -218,6 +250,8 @@ export type InspectReport = {
   schemaVersion: typeof REMEDIATION_SCHEMA_VERSION;
   mode: "inspect";
   databaseWrites: false;
+  /** current_setting('transaction_read_only') inside the snapshot; "on". */
+  readOnly: string;
   totalViolations: number;
   checks: CheckReport[];
   migrations: MigrationRow[];
@@ -283,6 +317,9 @@ export async function inspectLedger(db: Db): Promise<InspectReport> {
   return db.$transaction(async (tx) => {
     await tx.$executeRawUnsafe("SET TRANSACTION READ ONLY");
     await tx.$executeRawUnsafe("SET LOCAL statement_timeout = '60s'");
+    const [setting] = await tx.$queryRawUnsafe<Array<{ value: string }>>(
+      "SELECT current_setting('transaction_read_only') AS \"value\"",
+    );
     const constraintRows = await tx.$queryRawUnsafe<Array<{ conname: string; convalidated: boolean }>>(
       `SELECT c."conname", c."convalidated" FROM pg_catalog.pg_constraint c
          JOIN pg_catalog.pg_class t ON t.oid = c.conrelid
@@ -297,6 +334,7 @@ export async function inspectLedger(db: Db): Promise<InspectReport> {
       schemaVersion: REMEDIATION_SCHEMA_VERSION,
       mode: "inspect" as const,
       databaseWrites: false as const,
+      readOnly: String(setting?.value ?? "unknown"),
       totalViolations: checks.reduce((sum, check) => sum + check.violations, 0),
       checks,
       migrations,
@@ -312,27 +350,29 @@ export type FixReport = {
   mode: "apply-fix";
   fixId: string;
   dryRun: boolean;
-  maxAffectedRows: number;
+  expectedRows: number[];
   statementRows: number[];
-  affectedRows: number;
-  outcome: "committed" | "rolled_back_dry_run" | "rolled_back_over_limit";
+  rowsMatch: boolean;
+  outcome: "committed" | "already_applied" | "rolled_back_dry_run" | "rolled_back_row_mismatch";
 };
+export type FixContext = { runId?: string | null; actor?: string | null; sha?: string | null };
 
 class Rollback extends Error {
   constructor(readonly outcome: FixReport["outcome"], readonly statementRows: number[]) { super(outcome); }
 }
 
-export async function applyFix(db: Db, fix: LedgerFix, runId: string | null = null): Promise<FixReport> {
+export async function applyFix(db: Db, fix: LedgerFix, context: FixContext = {}): Promise<FixReport> {
   const problem = fixDefinitionProblem(fix);
   if (problem) throw new Error(problem);
+  const expectedRows = fix.statements.map((statement) => statement.expectedRows);
   const report = (outcome: FixReport["outcome"], statementRows: number[]): FixReport => ({
     schemaVersion: REMEDIATION_SCHEMA_VERSION,
     mode: "apply-fix",
     fixId: fix.id,
     dryRun: fix.dryRun,
-    maxAffectedRows: fix.maxAffectedRows,
+    expectedRows,
     statementRows,
-    affectedRows: statementRows.reduce((sum, rows) => sum + rows, 0),
+    rowsMatch: statementRows.length === expectedRows.length && statementRows.every((rows, index) => rows === expectedRows[index]),
     outcome,
   });
   try {
@@ -340,17 +380,23 @@ export async function applyFix(db: Db, fix: LedgerFix, runId: string | null = nu
       await tx.$executeRawUnsafe("SET LOCAL lock_timeout = '5s'");
       await tx.$executeRawUnsafe("SET LOCAL statement_timeout = '60s'");
       const counts: number[] = [];
-      for (const sql of fix.statements) counts.push(await tx.$executeRawUnsafe(sql));
-      const total = counts.reduce((sum, rows) => sum + rows, 0);
-      if (total > fix.maxAffectedRows) throw new Rollback("rolled_back_over_limit", counts);
+      for (const statement of fix.statements) counts.push(await tx.$executeRawUnsafe(statement.sql));
       if (fix.dryRun) throw new Rollback("rolled_back_dry_run", counts);
+      if (counts.every((rows) => rows === 0)) throw new Rollback("already_applied", counts);
+      if (!counts.every((rows, index) => rows === expectedRows[index])) throw new Rollback("rolled_back_row_mismatch", counts);
       await tx.auditLog.create({
         data: {
           action: "staging_ledger_remediation.apply_fix",
           actorLabel: "staging-ledger-remediation workflow",
           targetType: "LedgerRemediationFix",
           targetId: fix.id,
-          after: { affectedRows: total, statementRows: counts, maxAffectedRows: fix.maxAffectedRows, runId },
+          after: {
+            statementRows: counts,
+            expectedRows,
+            runId: safeId(context.runId),
+            actor: safeId(context.actor),
+            sha: typeof context.sha === "string" && /^[0-9a-f]{40}$/u.test(context.sha) ? context.sha : null,
+          },
         },
       });
       return counts;
@@ -464,7 +510,8 @@ export async function run(inputs: RunInputs, deps: RunDeps = {}): Promise<RunRes
 
   const target = parseStagingDatabaseUrl(env.STAGING_DATABASE_URL);
   if (target.failure) return { code: 2, lines: [target.failure], summary: renderLines("Staging 帳務修復（設定錯誤）", [target.failure]) };
-  for (const line of maskCommands(target)) (deps.emit ?? console.log)(line);
+  const emit = deps.emit ?? console.log;
+  for (const line of maskCommands(target)) emit(line);
   const migrationUrl = target.url as string;
   // The query engine gets the same session URL without the migration-only `options`.
   const clientUrl = new URL(migrationUrl);
@@ -484,11 +531,25 @@ export async function run(inputs: RunInputs, deps: RunDeps = {}): Promise<RunRes
       };
       return await resolveRolledBack(db, deps.runner ?? spawnPrisma, childEnv);
     }
-    const report = await applyFix(db, checked.fix!, safeId(env.GITHUB_RUN_ID));
-    const after = await inspectLedger(db);
-    const lines = [JSON.stringify(report), `violations_after ${after.totalViolations}`];
-    const code = report.outcome === "rolled_back_over_limit" ? 1 : 0;
-    return { code, lines, summary: renderLines(`Staging 帳務修復 ${report.fixId}：${report.outcome}`, lines) + renderInspectMarkdown(after) };
+    const report = await applyFix(db, checked.fix!, { runId: env.GITHUB_RUN_ID, actor: env.GITHUB_ACTOR, sha: env.GITHUB_SHA });
+    // Emit the outcome first: a committed fix must be visible even if the re-inspect fails.
+    const reportLine = JSON.stringify(report);
+    emit(reportLine);
+    const title = `Staging 帳務修復 ${report.fixId}：${report.outcome}`;
+    let code = report.outcome === "rolled_back_row_mismatch" ? 1 : 0;
+    let after: InspectReport;
+    try {
+      after = await inspectLedger(db);
+    } catch (error) {
+      const line = sanitizeError("LEDGER_REMEDIATION_POST_INSPECT_FAILED", error);
+      return { code: 1, lines: [line], summary: renderLines(title, [reportLine, line]) };
+    }
+    const lines = [`violations_after ${after.totalViolations}`];
+    if (report.outcome === "committed" && after.totalViolations > 0) {
+      lines.push(`WARNING violations remain after fix: ${after.totalViolations}`);
+      code = 1;
+    }
+    return { code, lines, summary: renderLines(title, [reportLine, ...lines]) + renderInspectMarkdown(after) };
   } catch (error) {
     const line = sanitizeError("LEDGER_REMEDIATION_DATABASE_FAILED", error);
     return { code: 1, lines: [line], summary: renderLines("Staging 帳務修復（失敗）", [line]) };
