@@ -13,7 +13,11 @@
 // - plaintext (dump, aggregates) only ever exists in a 0700 tmpfs directory
 //   that is removed before this script returns;
 // - the artifact holds age ciphertext encrypted to the reviewed recipient in
-//   ops/backup/keys/production-backup.agepub plus a receipt without data;
+//   ops/backup/keys/production-backup.agepub, whose SHA-256 must equal the
+//   owner-set environment variable PRODUCTION_BACKUP_RECIPIENT_SHA256, plus a
+//   receipt without data;
+// - only Node built-ins are imported: this runs in the job that holds the
+//   Production secret, where no npm dependency is installed;
 // - every printed line is a fixed code, a count or a SHA-256 digest.
 import crypto from "node:crypto";
 import fs from "node:fs";
@@ -33,7 +37,15 @@ export const POSTGRES_IMAGE_DIGEST = "sha256:742f40ea20b9ff2ff31db5458d127452988
 /** Local tag the workflow gives the pulled image; the script checks it still resolves to the digest. */
 export const POSTGRES_IMAGE = "celebratedeal-production-backup-postgres:17.10-alpine";
 const PG_DUMP_VERSION = /^pg_dump \(PostgreSQL\) 17\.10(?:\s|$)/u;
+/** The workflow installs this age release after checking its published SHA-256. */
+export const AGE_VERSION = "v1.3.1";
 export const RECIPIENT_FILE = "ops/backup/keys/production-backup.agepub";
+/**
+ * Owner-set `production` environment variable holding the SHA-256 of
+ * RECIPIENT_FILE (LF line endings). A pull request that swaps the public key
+ * cannot also change this value, so a swapped key fails closed.
+ */
+export const RECIPIENT_PIN_VARIABLE = "PRODUCTION_BACKUP_RECIPIENT_SHA256";
 const AGE_RECIPIENT = /^age1[023456789acdefghjklmnpqrstuvwxyz]{58}$/u;
 export const ARTIFACT_DIRECTORY = "production-backup-artifact";
 export const RECEIPT_NAME = "production-backup-receipt.json";
@@ -107,6 +119,8 @@ export const SNAPSHOT_SCRIPT = [
   "BEGIN ISOLATION LEVEL REPEATABLE READ, READ ONLY;",
   "SET LOCAL idle_in_transaction_session_timeout = '30min';",
   "SET LOCAL statement_timeout = '10min';",
+  // Like pg_dump: a role that RLS would filter must fail loudly, never count zero rows.
+  "SET LOCAL row_security = off;",
   "SELECT pg_export_snapshot() AS cd_backup_snapshot \\gset",
   "\\setenv CD_BACKUP_SNAPSHOT :cd_backup_snapshot",
   `\\! pg_dump --format=custom --no-owner --no-privileges --schema=public --lock-wait-timeout=60s --snapshot="$CD_BACKUP_SNAPSHOT" --file=/out/${DUMP_NAME} && touch /out/pg_dump.ok`,
@@ -138,6 +152,11 @@ const defaultDeps = Object.freeze({
   readRecipientSource: () => fs.readFileSync(path.join(ROOT, RECIPIENT_FILE), "utf8"),
   now: () => new Date(),
 });
+
+/** SHA-256 of the recipient file as committed (CRLF normalised to LF). */
+export function recipientFileSha256(source) {
+  return sha256(String(source ?? "").replace(/\r\n/gu, "\n"));
+}
 
 /** The reviewed age recipient: exactly one non-comment `age1…` line. */
 export function parseRecipient(source) {
@@ -247,13 +266,17 @@ export function run(env = process.env, overrides = {}) {
   const runnerTemp = env.RUNNER_TEMP ?? "";
   if (!RUN_ID.test(runId) || !path.isAbsolute(runnerTemp) || !fs.existsSync(runnerTemp)) return fail("PRODUCTION_BACKUP_RUN_CONTEXT_INVALID");
 
-  let recipient;
-  try { recipient = parseRecipient(deps.readRecipientSource()); } catch { recipient = null; }
+  const pin = String(env[RECIPIENT_PIN_VARIABLE] ?? "").trim().toLowerCase();
+  if (!/^[a-f0-9]{64}$/u.test(pin)) return fail("PRODUCTION_BACKUP_RECIPIENT_UNPINNED");
+  let recipientSource;
+  try { recipientSource = deps.readRecipientSource(); } catch { recipientSource = null; }
+  if (typeof recipientSource !== "string" || recipientFileSha256(recipientSource) !== pin) return fail("PRODUCTION_BACKUP_RECIPIENT_PIN_MISMATCH");
+  const recipient = parseRecipient(recipientSource);
   if (!recipient) return fail("PRODUCTION_BACKUP_RECIPIENT_INVALID");
 
   const baseEnv = { PATH: env.PATH ?? "", HOME: env.HOME ?? "" };
   const age = deps.exec("age", ["--version"], { env: baseEnv });
-  if (age.error || age.status !== 0) return fail("PRODUCTION_BACKUP_AGE_UNAVAILABLE");
+  if (age.error || age.status !== 0 || String(age.stdout ?? "").trim() !== AGE_VERSION) return fail("PRODUCTION_BACKUP_AGE_UNAVAILABLE");
 
   const inspected = deps.exec("docker", ["image", "inspect", "--format", "{{json .RepoDigests}}", POSTGRES_IMAGE], { env: baseEnv });
   if (inspected.error || inspected.status !== 0 || !String(inspected.stdout).includes(`@${POSTGRES_IMAGE_DIGEST}`)) return fail("PRODUCTION_BACKUP_IMAGE_UNVERIFIED");
@@ -323,7 +346,7 @@ export function run(env = process.env, overrides = {}) {
       },
       migrations: migrations ?? { applied: null, latest: null },
       aggregates: aggregatesOk ? "ENCRYPTED_SAME_SNAPSHOT" : "UNAVAILABLE",
-      encryption: { tool: "age", recipientFile: RECIPIENT_FILE, recipientSha256: sha256(recipient) },
+      encryption: { tool: `age ${AGE_VERSION}`, recipientFile: RECIPIENT_FILE, recipientFileSha256: pin, recipientSha256: sha256(recipient) },
       files: described,
     };
     fs.writeFileSync(path.join(outDirectory, RECEIPT_NAME), `${JSON.stringify(receipt, null, 2)}\n`, { mode: 0o600 });

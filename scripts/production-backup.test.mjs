@@ -7,10 +7,10 @@ import { fileURLToPath } from "node:url";
 import yaml from "js-yaml";
 
 import { FIXED_STAGING_REF } from "./staging-migrate.mjs";
-import { FIXED_PRODUCTION_REF, PRODUCTION_BACKUP_ARTIFACT_PREFIX, PRODUCTION_BACKUP_WORKFLOW } from "./production-migrate.mjs";
+import { FIXED_PRODUCTION_REF, PRODUCTION_BACKUP_ARTIFACT_PREFIX, PRODUCTION_BACKUP_JOB, PRODUCTION_BACKUP_WORKFLOW } from "./production-migrate.mjs";
 import {
   AGGREGATES_SQL, ARTIFACT_DIRECTORY, POSTGRES_IMAGE, POSTGRES_IMAGE_DIGEST, RECEIPT_NAME, RECEIPT_SCHEMA, RECIPIENT_FILE,
-  SNAPSHOT_SCRIPT, classifyDumpFailure, parseRecipient, run, sourceSessionArgs, trigramOperatorSchema,
+  AGE_VERSION, RECIPIENT_PIN_VARIABLE, SNAPSHOT_SCRIPT, classifyDumpFailure, parseRecipient, recipientFileSha256, run, sourceSessionArgs, trigramOperatorSchema,
 } from "./production-backup.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -42,11 +42,11 @@ function mounted(args, containerPath) {
  * Stands in for docker/age: the source session writes what the real psql
  * script writes (dump + markers + summaries); pg_restore answers from fixtures.
  */
-function fakeExec({ session = "ok", digest = POSTGRES_IMAGE_DIGEST, ageHeader = AGE_HEADER } = {}) {
+function fakeExec({ session = "ok", digest = POSTGRES_IMAGE_DIGEST, ageHeader = AGE_HEADER, ageVersion = AGE_VERSION } = {}) {
   const calls = [];
   const exec = (command, args, options = {}) => {
     calls.push({ command, args, env: options.env, input: options.input });
-    if (command === "age" && args[0] === "--version") return { status: 0, stdout: "v1.1.1\n", stderr: "" };
+    if (command === "age" && args[0] === "--version") return { status: 0, stdout: `${ageVersion}\n`, stderr: "" };
     if (command === "age") {
       fs.writeFileSync(args[args.indexOf("--output") + 1], `${ageHeader}ciphertext-of-${path.basename(args.at(-1))}`);
       return { status: 0, stdout: "", stderr: "" };
@@ -77,7 +77,7 @@ function harness(execOptions, { url: databaseUrl = production, recipient = `# re
   const fake = fakeExec(execOptions);
   const emitted = [];
   const result = run(
-    { PRODUCTION_DATABASE_URL: databaseUrl, GITHUB_RUN_ID: "18765432101", GITHUB_RUN_ATTEMPT: "1", GITHUB_SHA: "a".repeat(40), RUNNER_TEMP: runnerTemp, PATH: "/usr/bin", HOME: "/home/runner", ...env },
+    { PRODUCTION_DATABASE_URL: databaseUrl, GITHUB_RUN_ID: "18765432101", GITHUB_RUN_ATTEMPT: "1", GITHUB_SHA: "a".repeat(40), RUNNER_TEMP: runnerTemp, [RECIPIENT_PIN_VARIABLE]: recipientFileSha256(recipient), PATH: "/usr/bin", HOME: "/home/runner", ...env },
     {
       exec: fake.exec, statfs: () => statfs, shmRoot, readRecipientSource: () => recipient,
       now: () => new Date("2026-11-03T01:00:00.000Z"), emit: (line) => emitted.push(line),
@@ -136,7 +136,10 @@ test("aggregates match the restore runbook §C and only reference existing colum
 });
 
 test("one snapshot covers pg_dump, the migration summary and the aggregates, in the staging dump format", () => {
-  const order = ["READ ONLY", "pg_export_snapshot()", "\\setenv CD_BACKUP_SNAPSHOT :cd_backup_snapshot", "pg_dump ", "migrations.txt", "aggregates.txt", "COMMIT;"];
+  const order = [
+    "READ ONLY", "SET LOCAL statement_timeout", "SET LOCAL row_security = off;", "pg_export_snapshot()",
+    "\\setenv CD_BACKUP_SNAPSHOT :cd_backup_snapshot", "pg_dump ", "migrations.txt", "aggregates.txt", "COMMIT;",
+  ];
   const positions = order.map((needle) => SNAPSHOT_SCRIPT.indexOf(needle));
   assert.ok(positions.every((value) => value >= 0), "every step present");
   assert.deepEqual([...positions].sort((a, b) => a - b), positions);
@@ -205,6 +208,7 @@ test("failures stop before or without leaving plaintext or a partial artifact", 
 
   assert.deepEqual(harness(undefined, { env: { GITHUB_RUN_ID: "" } }).result.lines, ["PRODUCTION_BACKUP_RUN_CONTEXT_INVALID"]);
   assert.deepEqual(harness(undefined, { recipient: "age1replace_with_your_offline_backup_recipient_public_key\n" }).result.lines, ["PRODUCTION_BACKUP_RECIPIENT_INVALID"]);
+  assert.deepEqual(harness({ ageVersion: "v1.1.1" }).result.lines, ["PRODUCTION_BACKUP_AGE_UNAVAILABLE"]);
   assert.deepEqual(harness({ digest: `sha256:${"0".repeat(64)}` }).result.lines, ["PRODUCTION_BACKUP_IMAGE_UNVERIFIED"]);
   assert.deepEqual(harness(undefined, { statfs: { ...TMPFS, type: 0xef53 } }).result.lines, ["PRODUCTION_BACKUP_TMPFS_UNAVAILABLE"]);
 
@@ -219,6 +223,41 @@ test("failures stop before or without leaving plaintext or a partial artifact", 
   assert.deepEqual(fs.readdirSync(notEncrypted.shmRoot), []);
 });
 
+test("the public key is pinned by an owner-set environment variable and fails closed", () => {
+  const committed = fs.readFileSync(path.join(root, RECIPIENT_FILE), "utf8");
+  assert.equal(recipientFileSha256(committed), recipientFileSha256(committed.replace(/\n/gu, "\r\n")), "line endings do not change the pin");
+
+  const unset = harness(undefined, { env: { [RECIPIENT_PIN_VARIABLE]: undefined } });
+  assert.deepEqual(unset.result, { code: 1, lines: ["PRODUCTION_BACKUP_RECIPIENT_UNPINNED"] });
+  assert.ok(unset.calls.length === 0, "nothing runs without a pin");
+  assert.deepEqual(harness(undefined, { env: { [RECIPIENT_PIN_VARIABLE]: "not-a-digest" } }).result.lines, ["PRODUCTION_BACKUP_RECIPIENT_UNPINNED"]);
+
+  // A pull request that swaps the key file cannot also change the environment variable.
+  const swapped = harness(undefined, { recipient: `# swapped\n${RECIPIENT.replace(/q/gu, "p")}\n`, env: { [RECIPIENT_PIN_VARIABLE]: recipientFileSha256(`# reviewed\n${RECIPIENT}\n`) } });
+  assert.deepEqual(swapped.result, { code: 1, lines: ["PRODUCTION_BACKUP_RECIPIENT_PIN_MISMATCH"] });
+  assert.equal(swapped.calls.length, 0);
+
+  const upper = harness(undefined, { env: { [RECIPIENT_PIN_VARIABLE]: recipientFileSha256(`# reviewed\n${RECIPIENT}\n`).toUpperCase() } });
+  assert.equal(upper.result.code, 0, "hex case is not significant");
+});
+
+test("the backup script, which runs next to the Production secret, imports Node built-ins only", () => {
+  const pending = ["production-backup.mjs"];
+  const seen = new Set();
+  while (pending.length) {
+    const file = pending.pop();
+    if (seen.has(file)) continue;
+    seen.add(file);
+    const source = fs.readFileSync(path.join(root, "scripts", file), "utf8");
+    for (const [, specifier] of source.matchAll(/^\s*(?:import|export)\b[^;]*?\bfrom\s+["']([^"']+)["']/gmu)) {
+      if (specifier.startsWith("./")) pending.push(specifier.slice(2));
+      else assert.match(specifier, /^node:/u, `${file} imports ${specifier}`);
+    }
+    assert.doesNotMatch(source, /\bimport\(|\brequire\(/u, `${file} has no dynamic imports`);
+  }
+  assert.deepEqual([...seen].sort(), ["production-backup.mjs", "production-migrate.mjs", "staging-migrate.mjs"]);
+});
+
 test("workflow is the pinned backup path: manual, protected master, production environment, ciphertext artifact only", () => {
   const source = fs.readFileSync(path.join(root, PRODUCTION_BACKUP_WORKFLOW), "utf8");
   const workflow = yaml.load(source);
@@ -226,30 +265,50 @@ test("workflow is the pinned backup path: manual, protected master, production e
   assert.equal(workflow.on.workflow_dispatch, null, "no inputs: the target cannot be redirected");
   assert.deepEqual(workflow.permissions, { contents: "read" });
   assert.equal(workflow.concurrency["cancel-in-progress"], false);
-  assert.deepEqual(Object.keys(workflow.jobs), ["backup"]);
-  const job = workflow.jobs.backup;
-  assert.equal(job.environment, "production");
-  assert.match(job.if, /github\.ref == 'refs\/heads\/master'/u);
-  assert.match(job.if, /github\.ref_protected/u);
+  assert.deepEqual(Object.keys(workflow.jobs), ["contract", PRODUCTION_BACKUP_JOB]);
+  for (const job of Object.values(workflow.jobs)) {
+    assert.match(job.if, /github\.ref == 'refs\/heads\/master'/u);
+    assert.match(job.if, /github\.ref_protected/u);
+    assert.equal(job.name, undefined, "the jobs API must report the job id that production-migrate checks");
+  }
 
+  // npm ci and third-party test dependencies run only in a job without environment or secrets.
+  const contractJob = workflow.jobs.contract;
+  assert.equal(contractJob.environment, undefined);
+  assert.doesNotMatch(JSON.stringify(contractJob), /secrets\.|vars\./u);
+  assert.ok(contractJob.steps.some((step) => step.run === "npm ci --ignore-scripts"));
+  assert.ok(contractJob.steps.some((step) => /^node --test .*scripts\/production-backup\.test\.mjs .*scripts\/production-migrate\.test\.mjs/u.test(step.run ?? "")));
+
+  const job = workflow.jobs[PRODUCTION_BACKUP_JOB];
+  assert.equal(job.needs, "contract");
+  assert.equal(job.environment, "production");
   const steps = job.steps;
-  for (const step of steps) {
+  assert.ok(steps.every((step) => !/\bnpm\b|\bnpx\b|node --test/u.test(step.run ?? "")), "no npm packages next to the secret");
+  assert.equal(steps.find((step) => step.uses?.startsWith("actions/setup-node@"))?.with?.cache, undefined);
+  for (const step of [...contractJob.steps, ...steps]) {
     if (typeof step.run === "string") assert.doesNotMatch(step.run, /\$\{\{/u, `${step.name} must pass values through env`);
     assert.equal(step["continue-on-error"], undefined, step.name);
     assert.equal(step.if, undefined, `${step.name} runs only while every earlier step succeeded`);
   }
   const secretRefs = [...source.matchAll(/secrets\.([A-Z0-9_]+)/gu)].map((match) => match[1]);
   assert.deepEqual([...new Set(secretRefs)], ["PRODUCTION_DATABASE_URL"]);
+  const variableRefs = [...source.matchAll(/vars\.([A-Z0-9_]+)/gu)].map((match) => match[1]);
+  assert.deepEqual([...new Set(variableRefs)], [RECIPIENT_PIN_VARIABLE]);
   const backupIndex = steps.findIndex((step) => step.run === "node scripts/production-backup.mjs");
   assert.ok(backupIndex > 0);
-  assert.deepEqual(steps[backupIndex].env, { PRODUCTION_DATABASE_URL: "${{ secrets.PRODUCTION_DATABASE_URL }}" });
-  assert.ok(steps.every((step, index) => index === backupIndex || !JSON.stringify(step).includes("secrets.")));
+  assert.deepEqual(steps[backupIndex].env, {
+    PRODUCTION_DATABASE_URL: "${{ secrets.PRODUCTION_DATABASE_URL }}",
+    [RECIPIENT_PIN_VARIABLE]: `\${{ vars.${RECIPIENT_PIN_VARIABLE} }}`,
+  });
+  assert.ok(steps.every((step, index) => index === backupIndex || !/secrets\.|vars\./u.test(JSON.stringify(step))));
   const preload = steps.findIndex((step) => step.env?.PG_DIGEST);
   assert.ok(preload >= 0 && preload < backupIndex, "image and age are fetched before credentials");
   assert.equal(steps[preload].env.PG_DIGEST, POSTGRES_IMAGE_DIGEST);
   assert.ok(steps[preload].run.includes(`docker tag "$pulled" ${POSTGRES_IMAGE}`));
-  const contract = steps.findIndex((step) => /node --test .*scripts\/production-backup\.test\.mjs/u.test(step.run ?? ""));
-  assert.ok(contract >= 0 && contract < backupIndex);
+  assert.equal(steps[preload].env.AGE_VERSION, AGE_VERSION);
+  assert.match(steps[preload].env.AGE_SHA256, /^[a-f0-9]{64}$/u);
+  assert.ok(steps[preload].run.includes('sha256sum --check --strict'));
+  assert.doesNotMatch(steps[preload].run, /apt-get/u, "age comes from the checksum-pinned release, not a floating package");
 
   const upload = steps.at(-1);
   assert.equal(steps.indexOf(upload), backupIndex + 1);
