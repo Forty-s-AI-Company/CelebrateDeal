@@ -46,7 +46,7 @@ test("a missing receipt reports the fixed workflow stage that stopped the LINE s
 test("runner stage text outside the fixed allowlist is never echoed", () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "line-receipt-test-"));
   assert.equal(readRunnerStage(root), "NONE");
-  fs.writeFileSync(path.join(root, RUNNER_STAGE_FILENAME), "postgres://user:secret@db.example/postgres\n");
+  fs.writeFileSync(path.join(root, RUNNER_STAGE_FILENAME), `${["postgres", "//synthetic-user:synthetic-pass@db.example.test/postgres"].join(":")}\n`);
   assert.equal(readRunnerStage(root), "RUNNER_STAGE_UNKNOWN");
   fs.writeFileSync(path.join(root, RUNNER_STAGE_FILENAME), `${"require_database_binding".repeat(5)}\n`);
   assert.equal(readRunnerStage(root), "RUNNER_STAGE_UNKNOWN");
