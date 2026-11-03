@@ -8,6 +8,7 @@ import {
 } from "@/lib/billing";
 import { UnsupportedCurrencyError } from "@/lib/checkout-currency";
 import { getDb } from "@/lib/db";
+import { ledgerCentsToNumber } from "@/lib/ledger-cents";
 import {
   assertSettlementInputsUnchanged,
   SettlementCarryForwardError,
@@ -138,7 +139,8 @@ export async function generateSettlementForVendor(vendorId: string, monthKey: st
     if (error instanceof UnclassifiedPaymentPurposeError) throw new BillingCycleError("unclassified_payment_purpose");
     throw error;
   }
-  const adjustmentAmountCents = existingSettlement?.adjustmentAmountCents ?? 0;
+  // F-068: Settlement amounts are BigInt; the calculation stays in exact numbers.
+  const adjustmentAmountCents = existingSettlement ? ledgerCentsToNumber(existingSettlement.adjustmentAmountCents) : 0;
   const adjustmentReason = existingSettlement?.adjustmentReason ?? null;
 
   const calculatedAmounts = {

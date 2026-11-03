@@ -62,6 +62,13 @@ it("distinguishes visually identical reference names without mutating source val
 it("labels the transaction writer event results and checkout states", () => {
   const events = { paid: "已付款", refunded: "已退款", partially_refunded: "部分退款", failed: "付款失敗", dispute_opened: "付款爭議處理中", dispute_released: "付款爭議已解除", dispute_lost: "付款爭議敗訴" } satisfies Record<PaymentWebhookEventType, string>;
   for (const event of Object.keys(events) as PaymentWebhookEventType[]) {
+    if (event.startsWith("dispute_")) {
+      // F-062: a dispute never becomes the stored payment status; its result
+      // label is still defined for the event itself.
+      expect(reportStatusLabel(event, "payment")).toBe(events[event]);
+      expect(reportStatusLabel(resolvePaymentStatus("pending", event), "payment")).toBe("待付款");
+      continue;
+    }
     expect(reportStatusLabel(resolvePaymentStatus(null, event), "payment")).toBe(events[event]);
     expect(reportStatusLabel(resolvePaymentStatus("pending", event), "payment")).toBe(events[event]);
   }

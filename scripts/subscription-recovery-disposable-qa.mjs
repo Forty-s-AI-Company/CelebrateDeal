@@ -43,7 +43,7 @@ const migration = await migrate({ afterMigrate: async ({ databaseUrl, environmen
    const schemaRecoveryCase = result.testResults.flatMap(suite => suite.assertionResults).filter(test =>
     test.title === "recovers the original after schema repair once under contention without resetting the earlier marker");
    // PR #448 (F-037, R448-01/02, RR-01/02): nine PayUni UPP 2.0 callback
-   // outcome cases in wp4-buyer-ops.db.test.ts. Each must exist exactly once and pass.
+   // outcome cases, plus three TradeStatus 9/4 cases, in wp4-buyer-ops.db.test.ts. Each must exist exactly once and pass.
    const uppCallbackTitles = [
     "acknowledges issued number TradeStatus 0 without any event, payment change or commission",
     "acknowledges awaiting confirmation TradeStatus 8 without any event, payment change or commission",
@@ -54,6 +54,10 @@ const migration = await migrate({ afterMigrate: async ({ databaseUrl, environmen
     "records a failed attempt and a later paid result of one trade as two events and pays once",
     "pays once when a verified Notify follows a tampered Return and an unconfirmed Notify (RR-01)",
     "treats an unconfirmed callback after a verified payment as already processed, without a reconciliation record (RR-02)",
+    // ai/payuni-tradestatus-semantics: 9 is unpaid (pending), 4 is expired (reconciliation record, no hold).
+    "acknowledges unpaid TradeStatus 9 without any event, payment change or commission",
+    "keeps an unpaid TradeStatus 9 order pending through resends until a later verified Notify pays it once",
+    "records an expired TradeStatus 4 once for reconciliation without holding, failing or paying the order (RR-03)",
    ];
    const uppCallbackCases = result.testResults.flatMap(suite => suite.assertionResults).filter(test => uppCallbackTitles.includes(test.title));
    // PR #458 (F-003): production refuses non-PayUni events, including stored retries.
@@ -69,8 +73,9 @@ const migration = await migrate({ afterMigrate: async ({ databaseUrl, environmen
    // the F-067 refund-notice cases in wp4-buyer-ops.db.test.ts (+2) and the
    // two PR #454 A-1 ambiguous-refund cases in payment-webhooks.test.ts (+2),
    // and the PR #458 F-003 production provider case in payment-webhooks.test.ts (+1),
-   // and the PR #504 immediate receipt dispatch case in wp4-buyer-ops.db.test.ts (+1).
-   if (child.status !== 0 || !result.success || tests.total !== 90 || tests.passed !== 90 || tests.skipped !== 0
+   // and the PR #504 immediate receipt dispatch case in wp4-buyer-ops.db.test.ts (+1),
+   // and the three TradeStatus 9/4 semantics cases in wp4-buyer-ops.db.test.ts (+3).
+   if (child.status !== 0 || !result.success || tests.total !== 93 || tests.passed !== 93 || tests.skipped !== 0
     || productionProviderCase.length !== 1 || productionProviderCase[0].status !== "passed"
     || immediateReceiptCase.length !== 1 || immediateReceiptCase[0].status !== "passed"
     || uppCallbackCases.length !== uppCallbackTitles.length || new Set(uppCallbackCases.map(test => test.title)).size !== uppCallbackTitles.length

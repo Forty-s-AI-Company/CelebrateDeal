@@ -86,7 +86,19 @@ describe("public registration form DAL", () => {
       select: { id: true, title: true, description: true, scheduledAt: true, status: true, endedAt: true, sessionMode: true },
     }));
     expect(result?.sessions.map((session) => session.id)).toEqual(["live"]);
-    expect(result?.promoVideo).toEqual({ title: "預告", videoUrl: "https://cdn.example.test/promo.m3u8" });
+    expect(result?.promoVideo).toEqual({
+      title: "預告",
+      videoUrl: "https://cdn.example.test/promo.m3u8",
+      vendorId: "vendor-1",
+      signingSource: {
+        vendorId: "vendor-1",
+        sourceType: "url",
+        videoUrl: "https://cdn.example.test/promo.m3u8",
+        cloudflareStreamUid: undefined,
+        cloudflarePlaybackId: undefined,
+        cloudflareLiveInputUid: null,
+      },
+    });
     expect(result).not.toHaveProperty("vendorId");
     expect(result?.sessions[0]).not.toHaveProperty("endedAt");
   });
@@ -151,4 +163,51 @@ it.each([
 it("projects a form in its own published project", async () => {
   mocks.findFirst.mockResolvedValueOnce(formRecord({ projectId: "project-1", salesProject: { vendorId: "vendor-1", status: "published", publishedAt: new Date() } }));
   expect(await loadPublicRegistrationForm("summer")).toMatchObject({ id: "form-1" });
+});
+
+describe("promo video signing source (F-093)", () => {
+  const uid = "a1b2c3d4e5f60718293a4b5c6d7e8f90";
+  const streamUrl = `https://videodelivery.net/${uid}/manifest/video.m3u8`;
+  const cloudflarePromo = {
+    vendorId: "vendor-1",
+    title: "預告",
+    videoUrl: streamUrl,
+    sourceType: "cloudflare_stream",
+    status: "ready",
+    cloudflareReadyToStream: true,
+    cloudflareLiveInputUid: null,
+    cloudflareStreamUid: uid,
+    cloudflarePlaybackId: uid,
+    liveInputStatus: null,
+  };
+
+  it("selects the promo's stored uids and returns the bound row for the page to sign", async () => {
+    mocks.findFirst.mockResolvedValueOnce(formRecord({ promoVideo: cloudflarePromo }));
+    const result = await loadPublicRegistrationForm("summer");
+
+    expect(mocks.findFirst).toHaveBeenCalledWith(expect.objectContaining({
+      select: expect.objectContaining({
+        promoVideo: { select: expect.objectContaining({ cloudflareStreamUid: true, cloudflarePlaybackId: true }) },
+      }),
+    }));
+    // The DAL never signs (it stays importable outside Next); it only carries the validated row.
+    expect(result?.promoVideo).toEqual({
+      title: "預告",
+      videoUrl: streamUrl,
+      vendorId: "vendor-1",
+      signingSource: {
+        vendorId: "vendor-1",
+        sourceType: "cloudflare_stream",
+        videoUrl: streamUrl,
+        cloudflareStreamUid: uid,
+        cloudflarePlaybackId: uid,
+        cloudflareLiveInputUid: null,
+      },
+    });
+  });
+
+  it("drops a promo owned by another vendor before any signing", async () => {
+    mocks.findFirst.mockResolvedValueOnce(formRecord({ promoVideo: { ...cloudflarePromo, vendorId: "vendor-2" } }));
+    expect((await loadPublicRegistrationForm("summer"))?.promoVideo).toBeNull();
+  });
 });

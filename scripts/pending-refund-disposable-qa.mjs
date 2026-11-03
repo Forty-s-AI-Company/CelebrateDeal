@@ -45,7 +45,7 @@ const migration = await runMigration({ afterMigrate: async ({ databaseUrl, envir
   const report = JSON.parse(fs.readFileSync(output, "utf8"));
   summary.tests = { total: report.numTotalTests, passed: report.numPassedTests, failed: report.numFailedTests, skipped: report.numPendingTests };
   const suites = report.testResults.map((suite) => path.basename(suite.name));
-  if (child.status !== 0 || !report.success || report.numPendingTests !== 0 || report.numTotalTests !== 11
+  if (child.status !== 0 || !report.success || report.numPendingTests !== 0 || report.numTotalTests !== 12
     || suites.length !== expectedSuites.length || expectedSuites.some((suite) => !suites.includes(suite))) throw new Error("refund-db-gate-failed");
   assertCanonicalMigrationStable(before, captureCanonicalMigrationFingerprint(root, sourceFiles));
 } });

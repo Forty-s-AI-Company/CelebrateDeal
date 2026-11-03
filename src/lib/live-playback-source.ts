@@ -4,6 +4,12 @@ import { hasActiveLiveViewerSession } from "@/lib/live-quota-admission";
 import { isExistingLiveVideoReady } from "@/lib/live-video-readiness";
 import { EVERGREEN_LIVE_SELECT, resolveViewerLiveRuntime } from "@/lib/evergreen-viewer-session";
 import { FIXED_SESSION_LIVE_SELECT, resolveViewerFixedSessionForLive } from "@/lib/live-fixed-sessions-store";
+import { fixedSessionReplayAvailableUntil } from "@/lib/live-fixed-sessions";
+import {
+  signVideoUrl,
+  STREAM_LIVE_TOKEN_TTL_SECONDS,
+  STREAM_REPLAY_TOKEN_TTL_SECONDS,
+} from "@/lib/cloudflare-stream-signing";
 
 type PlaybackSourceInput = {
   vendorId: string;
@@ -16,7 +22,16 @@ type PlaybackSourceInput = {
   now?: Date;
 };
 
-/** Resolves a playback URL only for an unexpired session bound to this live and vendor. */
+/**
+ * Resolves a playback URL only for an unexpired session bound to this live and vendor.
+ *
+ * F-093: when Cloudflare Stream signing is configured, a Cloudflare video's
+ * URL is returned with a short-lived token in place of the uid bound on this
+ * vendor's own Video row (never a uid taken only from the URL), plus
+ * `expiresInSeconds` so the player re-requests this endpoint (and so passes
+ * admission again) before the token lapses. Replay tokens never outlive the
+ * replay deadline. Without signing keys the stored URL is returned unchanged.
+ */
 export async function resolveLivePlaybackSource(db: PrismaClient, input: PlaybackSourceInput) {
   const now = input.now ?? new Date();
   if (!await hasActiveLiveViewerSession(db, { ...input, now })) return null;
@@ -50,6 +65,8 @@ export async function resolveLivePlaybackSource(db: PrismaClient, input: Playbac
           status: true,
           cloudflareReadyToStream: true,
           cloudflareLiveInputUid: true,
+          cloudflareStreamUid: true,
+          cloudflarePlaybackId: true,
           liveInputStatus: true,
         },
       },
@@ -72,9 +89,27 @@ export async function resolveLivePlaybackSource(db: PrismaClient, input: Playbac
   if (live.video.sourceType === "browser_live") {
     return { protocol: "whep", playbackUrl: "/api/live-media?direction=read" };
   }
-  const playbackUrl = parseSafeExternalHttpUrl(live?.video?.videoUrl);
-  if (!playbackUrl) return null;
+  const storedUrl = parseSafeExternalHttpUrl(live?.video?.videoUrl);
+  if (!storedUrl) return null;
+  const isReplay = runtime.state === "replay";
+  const signed = signVideoUrl({ ...live.video, videoUrl: storedUrl }, {
+    vendorId: input.vendorId,
+    now,
+    ttlSeconds: isReplay ? STREAM_REPLAY_TOKEN_TTL_SECONDS : STREAM_LIVE_TOKEN_TTL_SECONDS,
+    notAfter: isReplay
+      ? fixedSession
+        ? fixedSessionReplayAvailableUntil(fixedSession, live, live.video.durationSec ?? 0)
+        : live.replayAvailableUntil
+      : null,
+  });
+  if (!signed) return null;
+  const source = signed.signed
+    ? {
+      playbackUrl: signed.url,
+      expiresInSeconds: Math.max(1, Math.floor((signed.expiresAt.getTime() - now.getTime()) / 1_000)),
+    }
+    : { playbackUrl: signed.url };
   return runtime.playbackStartSeconds === null
-    ? { playbackUrl }
-    : { playbackUrl, playbackStartSeconds: runtime.playbackStartSeconds };
+    ? source
+    : { ...source, playbackStartSeconds: runtime.playbackStartSeconds };
 }

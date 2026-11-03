@@ -21,6 +21,24 @@ export function validNewStreamUpload(value, uid) {
   } catch { return false; }
 }
 
+/**
+ * F-093: a signed playback URL from the ops status endpoint. Only Cloudflare's
+ * delivery hosts, a JWT path segment whose `sub` is this new UID, and the HLS
+ * manifest path are accepted.
+ */
+export function validSignedPlayback(value, uid) {
+  try {
+    const url = new URL(value);
+    if (!UID.test(uid) || url.protocol !== "https:" || url.username || url.password
+      || url.port || url.hash || url.search) return false;
+    if (url.hostname !== "videodelivery.net" && !/^customer-[a-z0-9]{1,64}\.cloudflarestream\.com$/u.test(url.hostname)) return false;
+    const match = /^\/([A-Za-z0-9_-]+)\.([A-Za-z0-9_-]+)\.([A-Za-z0-9_-]+)\/manifest\/video\.m3u8$/u.exec(url.pathname);
+    if (!match) return false;
+    const claims = JSON.parse(Buffer.from(match[2], "base64url").toString("utf8"));
+    return claims?.sub === uid;
+  } catch { return false; }
+}
+
 /** All provider bodies/capability URLs remain in memory; receipt contains fixed categories only. */
 export async function runStagingStreamResourceSmoke(env = process.env, dependencies = {}) {
   const receipt = {
@@ -31,6 +49,7 @@ export async function runStagingStreamResourceSmoke(env = process.env, dependenc
     accountCredentialIsolation: "UNVERIFIED", nonProductionScope: "UNVERIFIED",
     fixtureSha256: FIXTURE_HASH, resourceReceiptDigest: null,
     ready: false, durationWithinFixtureLimit: false, playbackManifest: false,
+    signedPlayback: false,
     sideEffects: { createAttempts: 0, uploadAttempts: 0, statusReads: 0, playbackReads: 0,
       existingResourceReads: 0, replacements: 0, liveInputs: 0, deletes: 0, payments: 0, refunds: 0 },
   };
@@ -87,6 +106,7 @@ export async function runStagingStreamResourceSmoke(env = process.env, dependenc
     await uploaded.body?.cancel();
     if (!uploaded.ok) { receipt.reason = "UPLOAD_REJECTED"; return receipt; }
     receipt.reason = "READY_NOT_OBSERVED";
+    let playbackUrl = body.playbackUrl;
     for (let attempt = 0; attempt < 36; attempt++) {
       if (now() >= deadline) { receipt.reason = "RESOURCE_DEADLINE_EXCEEDED"; return receipt; }
       receipt.sideEffects.statusReads++;
@@ -94,6 +114,12 @@ export async function runStagingStreamResourceSmoke(env = process.env, dependenc
       if (status.status !== 200) { await status.body?.cancel(); receipt.reason = "STATUS_REJECTED"; return receipt; }
       const state = await status.json();
       if (state?.ok !== true) { receipt.reason = "STATUS_REJECTED"; return receipt; }
+      if (state.video?.playbackUrl !== undefined) {
+        // F-093: with signing configured the status endpoint hands out a token URL.
+        if (!validSignedPlayback(state.video.playbackUrl, uid)) { receipt.reason = "STATUS_REJECTED"; return receipt; }
+        playbackUrl = state.video.playbackUrl;
+        receipt.signedPlayback = true;
+      }
       if (state.video?.readyToStream === true) {
         receipt.ready = true;
         if (Number.isFinite(state.video.durationSec) && state.video.durationSec > 2) {
@@ -109,7 +135,8 @@ export async function runStagingStreamResourceSmoke(env = process.env, dependenc
     if (!receipt.ready || !receipt.durationWithinFixtureLimit) return receipt;
     receipt.reason = "PLAYBACK_OUTCOME_UNKNOWN";
     receipt.sideEffects.playbackReads++;
-    const playback = await request(body.playbackUrl);
+    // F-093: send the app's own Origin, as the player does, so allowedOrigins is exercised; never owner auth.
+    const playback = await request(playbackUrl, { headers: { Origin: ORIGIN } });
     if (playback.status !== 200) { await playback.body?.cancel(); receipt.reason = "PLAYBACK_REJECTED"; return receipt; }
     const manifest = await playback.text();
     receipt.playbackManifest = manifest.length < 100_000 && manifest.startsWith("#EXTM3U")

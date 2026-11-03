@@ -54,6 +54,8 @@ const testExclude = [
 const resolve = {
   alias: {
     "@": path.resolve(__dirname, "src"),
+    // Next aliases `server-only` at build time; Vitest gets the empty server build.
+    "server-only": path.resolve(__dirname, "node_modules/next/dist/compiled/server-only/empty.js"),
   },
 };
 

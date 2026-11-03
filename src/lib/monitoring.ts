@@ -16,7 +16,7 @@ type SafeOperationalDiagnostic = {
 
 type CaptureOperationalErrorOptions = {
   fingerprint?: string[];
-  level?: "error" | "fatal";
+  level?: "warning" | "error" | "fatal";
 };
 
 export type SyntheticMonitoringResult = {

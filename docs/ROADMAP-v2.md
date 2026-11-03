@@ -279,6 +279,9 @@ L1 合計 39.05～66.05 人日（另 1 項未估）。
 ### 4.2 合成資料清理與客戶資料隔離
 
 - 10-30 前列出 staging 內的合成商家、合成訂單與 Cloudflare Stream 合成影片（只列清單，不刪）。刪除只針對明確標記為合成的資料、先備份、經 owner 同意，由 engineer 用腳本執行並留收據。
+- **盤點怎麼跑**：在 GitHub Actions 手動觸發 `Staging synthetic data inventory`（`.github/workflows/staging-synthetic-inventory.yml`，只能從受保護的 master、environment `Preview – celebrate-deal-staging`、只用 `STAGING_DATABASE_URL`、`permissions: contents: read`）。腳本 `scripts/staging-synthetic-inventory.ts` 在 `SET TRANSACTION READ ONLY` 的 RepeatableRead 快照內讀取，不寫入也不刪除。輸出存成 artifact `celebratedeal-staging-synthetic-inventory`（`inventory.json`＋`summary.md`，保留 14 天），Markdown 摘要同時顯示在 job summary。
+- **輸出內容**：每個商家的 id、slug 前 8 字元、建立時間、Email 網域（不輸出 Email、姓名、電話）、合成標記與判定依據（`email-domain`、`email-plus-demo`、`slug-prefix`、`name-marker`、`test-orders`），以及商品、訂單（含測試訂單）、付款交易、報名、直播、影片、客戶（CRM）筆數；另列 Cloudflare Stream 影片 uid 與所屬商家 id。合成標記只是提示，不等於可刪。
+- **清理**：看過清單後由 owner 決定範圍；實際刪除需 owner 同意、先備份，另開工作用腳本執行並留收據，本 workflow 不做任何刪除。
 - 封測客戶一律用**新建的商家帳號**；合成商家保留在各自租戶內，不影響封測客戶畫面。
 - 隔離：目前租戶隔離 100% 靠應用程式層（F-026）；B1 確認資料庫層沒有外漏缺口。CRM 與行動諮詢的租戶測試是假測試（F-133），封測期間補。
 - 客戶姓名、Email、電話、截圖、訂單內容**一律不進** repo、Issue、PR、`docs/`、`reports/`（repo 是公開的）。

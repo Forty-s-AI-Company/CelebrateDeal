@@ -85,7 +85,9 @@ test("the committed allowlist is well formed and covers the B04-04 hazards", () 
   assert.deepEqual(allowlist.notComparedByPrismaDiff.partialUniqueIndexes, [
     "ConsultationBooking_active_slot_key",
     "LiveQuestion_one_spotlight_per_live_key",
+    "PayoutItem_vendorId_settlementId_key",
     "PostPurchaseCredit_vendorId_sourceOrderId_active_key",
+    "RefundRecord_paymentTransactionId_providerEventId_key",
     "SettlementAdjustmentRequest_one_pending_per_settlement",
     "TeamMembershipRelationship_one_active_upline",
     "UserEmailChangeRequest_one_open_per_user",

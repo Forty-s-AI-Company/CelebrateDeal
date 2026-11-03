@@ -1,6 +1,7 @@
 import type { Prisma, Settlement } from "@prisma/client";
 
 import { SETTLEMENT_REVENUE_TRANSACTION_WHERE } from "@/lib/billing";
+import { ledgerCentsToNumber } from "@/lib/ledger-cents";
 
 /**
  * F-039 / B03-03 (owner decision D-32): which settlement month a refund
@@ -95,14 +96,16 @@ export async function settleNetPayable(
   });
 
   if (existing) {
-    if (existing.amountCents !== carriedOutCents) {
+    // F-068: the ledger column is BigInt; compare exact numbers.
+    const existingCents = ledgerCentsToNumber(existing.amountCents);
+    if (existingCents !== carriedOutCents) {
       const targetLocked = await tx.settlement.findFirst({
         where: { vendorId: input.vendorId, monthKey: existing.targetMonthKey, lockedAt: { not: null } },
         select: { id: true },
       });
       // A locked month already deducted this carry; changing it would pay
       // out or deduct the difference twice. Only an unused row may move.
-      if (targetLocked && existing.amountCents !== 0) throw new SettlementCarryForwardError();
+      if (targetLocked && existingCents !== 0) throw new SettlementCarryForwardError();
       await tx.settlementAdjustmentLedgerEntry.update({
         where: { id: existing.id },
         data: {
@@ -133,7 +136,7 @@ export async function carriedIntoMonthCents(db: Pick<Prisma.TransactionClient, "
     where: { vendorId, targetMonthKey: monthKey },
     _sum: { amountCents: true },
   });
-  return carried._sum.amountCents ?? 0;
+  return ledgerCentsToNumber(carried._sum.amountCents ?? 0);
 }
 
 export class SettlementInputsChangedError extends Error {
@@ -153,7 +156,10 @@ export class SettlementInputsChangedError extends Error {
  */
 export async function assertSettlementInputsUnchanged(
   tx: LockInputsDb,
-  settlement: Pick<Settlement, "vendorId" | "monthKey" | "refundAmountCents" | "carriedInCents">,
+  settlement: Pick<Settlement, "vendorId" | "monthKey"> & {
+    refundAmountCents: Settlement["refundAmountCents"] | number;
+    carriedInCents: Settlement["carriedInCents"] | number;
+  },
 ) {
   const [refunds, carriedInCents] = await Promise.all([
     tx.refundRecord.aggregate({
@@ -167,7 +173,8 @@ export async function assertSettlementInputsUnchanged(
     }),
     carriedIntoMonthCents(tx, settlement.vendorId, settlement.monthKey),
   ]);
-  if ((refunds._sum.refundAmountCents ?? 0) !== settlement.refundAmountCents || carriedInCents !== settlement.carriedInCents) {
+  if ((refunds._sum.refundAmountCents ?? 0) !== ledgerCentsToNumber(settlement.refundAmountCents)
+    || carriedInCents !== ledgerCentsToNumber(settlement.carriedInCents)) {
     throw new SettlementInputsChangedError();
   }
 }

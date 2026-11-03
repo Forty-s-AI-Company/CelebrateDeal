@@ -8,10 +8,11 @@ const cspReportOnlyDirectives = [
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data: blob: https:",
   "font-src 'self' data:",
-  "media-src 'self' blob: https://videodelivery.net https://*.videodelivery.net https:",
+  "media-src 'self' blob: https://videodelivery.net https://*.videodelivery.net https://*.cloudflarestream.com https:",
   // www.youtube-nocookie.com: the funnel video gallery embeds a YouTube video (privacy-enhanced mode) only after the visitor presses play.
   "frame-src 'self' https://challenges.cloudflare.com https://www.youtube-nocookie.com",
-  "connect-src 'self' https://*.sentry.io https://*.posthog.com https://app.posthog.com https://api.cloudflare.com https://challenges.cloudflare.com https://*.payuni.com.tw https://sandbox-api.payuni.com.tw",
+  // videodelivery.net／*.cloudflarestream.com: hls.js fetches Stream manifests and segments (F-093 signed URLs included).
+  "connect-src 'self' https://*.sentry.io https://*.posthog.com https://app.posthog.com https://api.cloudflare.com https://challenges.cloudflare.com https://videodelivery.net https://*.cloudflarestream.com https://*.payuni.com.tw https://sandbox-api.payuni.com.tw",
   "frame-ancestors 'none'",
   "base-uri 'self'",
   "form-action 'self' https://api.payuni.com.tw https://sandbox-api.payuni.com.tw",

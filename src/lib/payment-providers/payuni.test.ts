@@ -4,6 +4,8 @@ import type { BillingPlan, PaymentTransaction, Product, Vendor } from "@prisma/c
 import { payUniPaymentProvider } from "@/lib/payment-providers/payuni";
 import { buildPayUniSandboxWebhookFixture } from "@/lib/payment-providers/payuni-fixtures";
 import { UnsupportedCurrencyError } from "@/lib/checkout-currency";
+import { PaymentWebhookNotActionableError } from "@/lib/payment-providers/types";
+import { manualReconciliationEventId } from "@/lib/payment-webhook-manual-reconciliation";
 
 const currencyAuditMocks = vi.hoisted(() => ({ recordUnsupportedCurrencyRefusal: vi.fn() }));
 vi.mock("@/lib/checkout-currency-audit", () => currencyAuditMocks);
@@ -154,12 +156,20 @@ describe("documented CREDIT query v2.0 refund evidence", () => {
   });
   it.each([
     { DataSource: "B" }, { DataSource: "" },
-    { TradeStatus: "2" }, { TradeStatus: "4" }, { TradeStatus: "8" }, { TradeStatus: "6" },
+    { TradeStatus: "0" }, { TradeStatus: "2" }, { TradeStatus: "3" }, { TradeStatus: "4" }, { TradeStatus: "8" },
+    { TradeStatus: "9" }, { TradeStatus: "6" },
     { RemainAmt: "" }, { RemainAmt: "1001" }, { RemainAmt: "-1" }, { RemainAmt: "500junk" },
     { RefundAmt: "0" }, { RefundAmt: "501" }, { RefundAmt: "200junk" },
     { RefundStatus: "", RemainAmt: "500" }, { RefundStatus: "", RemainAmt: "1000", RefundAmt: "1" },
   ])("rejects incomplete or inconsistent evidence %j", async (patch) => {
     await expect(query(patch)).rejects.toMatchObject({ category: "provider_response" });
+  });
+  it("never closes an unpaid TradeStatus 9 order from a query; it stays pending for a later Notify", async () => {
+    // Query 2.0 TradeStatus 9 is "unpaid" (docs/launch/payuni-tradestatus-mapping.md):
+    // not a refund, a failure or a non-card collection, so no reconciliation outcome.
+    const error = await query({ TradeStatus: "9", PaymentType: "2" }).catch((caught: unknown) => caught);
+    expect(error).toMatchObject({ category: "provider_response" });
+    expect(error).not.toMatchObject({ category: "manual_reconciliation" });
   });
   it.each([{ PaymentType: "2" }, { PaymentType: "" }])("routes a collected non-card trade %j to manual reconciliation (R448-01)", async (patch) => {
     await expect(query(patch)).rejects.toMatchObject({ category: "manual_reconciliation" });
@@ -912,14 +922,16 @@ describe("PayUni UPP 2.0 payment callback contract (F-037)", () => {
     expect(withFees.payload).toMatchObject({ gatewayFeeCents: 5_600, netAmountCents: 193_400 });
   });
 
-  it.each(["0", "8"])("never pays a pending TradeStatus %s and leaves the payment unchanged", async (tradeStatus) => {
+  // docs/launch/payuni-tradestatus-mapping.md: 0 issued, 8 awaiting
+  // confirmation and 9 unpaid are not a decision; 9 is never a failure.
+  it.each(["0", "8", "9"])("never pays a pending TradeStatus %s and leaves the payment unchanged", async (tradeStatus) => {
     await expect(normalizeReal({ ...realPaid, TradeStatus: tradeStatus })).rejects.toMatchObject({
       name: "PaymentWebhookNotActionableError", reason: "trade_pending", requiresManualReconciliation: false,
       identifiers: { orderNumber: "CD-REAL-001", providerTradeNo: "PAYUNI-REAL-TRADE-001", tradeStatus, paymentType: "1" },
     });
   });
 
-  it.each(["2", "3", "4", "9"])("records a terminal unpaid TradeStatus %s as failed, never paid", async (tradeStatus) => {
+  it.each(["2", "3"])("records a terminal unpaid TradeStatus %s as failed, never paid", async (tradeStatus) => {
     const { payload } = await normalizeReal({ ...realPaid, TradeStatus: tradeStatus });
     expect(payload.eventType).toBe("failed");
     expect(payload.eventId).toBe(`PAYUNI-REAL-TRADE-001:${tradeStatus}`);
@@ -958,8 +970,75 @@ describe("PayUni UPP 2.0 payment callback contract (F-037)", () => {
     await expect(normalizeReal({ ...realPaid, GatewayFee: fee })).rejects.toThrow("Invalid PayUni amount field.");
   });
 
-  it.each(["5", "10", "x", ""])("fails closed on an undocumented TradeStatus %j", async (tradeStatus) => {
-    await expect(normalizeReal({ ...realPaid, TradeStatus: tradeStatus })).rejects.toThrow();
+  it("records an expired TradeStatus 4 for reconciliation without holding the payment, never paid or failed (RR-03)", async () => {
+    await expect(normalizeReal({ ...realPaid, TradeStatus: "4" })).rejects.toMatchObject({
+      name: "PaymentWebhookNotActionableError", reason: "trade_expired", requiresManualReconciliation: true,
+      holdsPaymentForReconciliation: false,
+      identifiers: { orderNumber: "CD-REAL-001", providerTradeNo: "PAYUNI-REAL-TRADE-001", tradeStatus: "4", paymentType: "1" },
+      rawSnapshot: expect.objectContaining({ TradeStatus: "4", OuterStatus: "SUCCESS" }),
+    });
+  });
+
+  it.each(["5", "6", "7", "10", "99"])(
+    "routes an unmapped TradeStatus %s to held manual reconciliation, never paid or failed",
+    async (tradeStatus) => {
+      // Signed outer and inner SUCCESS must not turn an unknown code into a decision.
+      await expect(normalizeReal({ ...realPaid, TradeStatus: tradeStatus })).rejects.toMatchObject({
+        name: "PaymentWebhookNotActionableError", reason: "trade_status_unknown", requiresManualReconciliation: true,
+        holdsPaymentForReconciliation: true,
+        identifiers: { orderNumber: "CD-REAL-001", providerTradeNo: "PAYUNI-REAL-TRADE-001", tradeStatus, paymentType: "1" },
+        rawSnapshot: expect.objectContaining({ MerTradeNo: "CD-REAL-001", TradeNo: "PAYUNI-REAL-TRADE-001", TradeStatus: tradeStatus,
+          PaymentType: "1", Status: "SUCCESS", OuterStatus: "SUCCESS" }),
+      });
+    },
+  );
+
+  it.each(["x", "", "1a", "100", "-4"])("fails closed on a malformed TradeStatus %j", async (tradeStatus) => {
+    const error = await normalizeReal({ ...realPaid, TradeStatus: tradeStatus }).catch((caught: unknown) => caught);
+    expect(error).toBeInstanceOf(Error);
+    expect(error).not.toBeInstanceOf(PaymentWebhookNotActionableError);
+  });
+
+  it.each([
+    ["unpaid 9", "9", "trade_pending"],
+    ["expired 4", "4", "trade_expired"],
+    ["unmapped 5", "5", "trade_status_unknown"],
+  ] as const)("gives a resent %s callback the same outcome every time", async (_label, tradeStatus, reason) => {
+    const first = await normalizeReal({ ...realPaid, TradeStatus: tradeStatus }).catch((caught: unknown) => caught);
+    const resent = await normalizeReal({ ...realPaid, TradeStatus: tradeStatus }).catch((caught: unknown) => caught);
+    expect(first).toBeInstanceOf(PaymentWebhookNotActionableError);
+    expect(resent).toBeInstanceOf(PaymentWebhookNotActionableError);
+    const [a, b] = [first, resent] as PaymentWebhookNotActionableError[];
+    expect([a.reason, b.reason]).toEqual([reason, reason]);
+    expect(b.identifiers).toEqual(a.identifiers);
+    expect(b.rawSnapshot).toEqual(a.rawSnapshot);
+    // Return and Notify of the same unknown state share one reconciliation key.
+    expect(manualReconciliationEventId(b.identifiers.providerTradeNo!, b.identifiers.tradeStatus!, b.identifiers.paymentType))
+      .toBe(manualReconciliationEventId(a.identifiers.providerTradeNo!, a.identifiers.tradeStatus!, a.identifiers.paymentType));
+  });
+
+  it("still settles an unpaid (9) or expired (4) trade with a later verified paid callback", async () => {
+    await expect(normalizeReal({ ...realPaid, TradeStatus: "9" })).rejects.toMatchObject({ reason: "trade_pending" });
+    await expect(normalizeReal({ ...realPaid, TradeStatus: "4" })).rejects.toMatchObject({ reason: "trade_expired" });
+    const { payload } = await normalizeReal(realPaid);
+    expect(payload).toMatchObject({ eventType: "paid", eventId: "PAYUNI-REAL-TRADE-001:1" });
+  });
+
+  it.each(["Unapproved", "UNAPPROVED", "UPP02005", "success", ""])(
+    "routes a paid card trade with an unhandled outer Status %j to the outer mismatch path",
+    async (outerStatus) => {
+      await expect(normalizeReal(realPaid, outerStatus)).rejects.toMatchObject({
+        reason: "outer_status_mismatch", requiresManualReconciliation: true,
+        identifiers: { orderNumber: "CD-REAL-001", tradeStatus: "1", paymentType: "1" },
+      });
+    },
+  );
+
+  it.each(["4", "8", "12", "99"])("never pays a signed TradeStatus 1 with an unmapped PaymentType %s", async (paymentType) => {
+    await expect(normalizeReal({ ...realPaid, PaymentType: paymentType })).rejects.toMatchObject({
+      reason: "payment_type_not_allowed", requiresManualReconciliation: true,
+      identifiers: { orderNumber: "CD-REAL-001", tradeStatus: "1", paymentType },
+    });
   });
 
   it("does not accept a signed custom EventType=paid without the PayUni trade status", async () => {

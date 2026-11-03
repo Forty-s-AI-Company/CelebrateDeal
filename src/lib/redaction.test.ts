@@ -51,4 +51,17 @@ describe("sensitive payload redaction", () => {
       BuyerEmail: "[redacted length=18]",
     });
   });
+
+  it("serializes BigInt ledger amounts exactly instead of throwing (F-068)", () => {
+    const beyondSafe = BigInt(Number.MAX_SAFE_INTEGER) + BigInt(2);
+    expect(redactedJsonSnapshot({
+      finalPayoutAmountCents: BigInt(2_147_483_648_000),
+      carriedOutCents: BigInt(-15_000),
+      nested: [{ totalAmountCents: beyondSafe }],
+    })).toEqual({
+      finalPayoutAmountCents: 2_147_483_648_000,
+      carriedOutCents: -15_000,
+      nested: [{ totalAmountCents: "9007199254740993" }],
+    });
+  });
 });

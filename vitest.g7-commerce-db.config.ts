@@ -20,7 +20,7 @@ if (
 
 export default defineConfig({
   envDir: false,
-  resolve: { alias: { "@": path.resolve(__dirname, "src") } },
+  resolve: { alias: { "@": path.resolve(__dirname, "src"), "server-only": path.resolve(__dirname, "node_modules/next/dist/compiled/server-only/empty.js") } },
   test: {
     include: [
       "src/lib/commerce-orders.db.test.ts",

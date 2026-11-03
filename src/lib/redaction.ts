@@ -14,6 +14,14 @@ export function redactSensitivePayload(value: unknown, parentKey = "", depth = 0
     return SENSITIVE_KEY_PATTERN.test(parentKey) ? redactString(value) : value;
   }
 
+  // F-068: aggregate ledger columns are BigInt, which JSON.stringify rejects.
+  // Audit snapshots keep exact values: a number when it is a safe integer
+  // (the existing JSON shape), otherwise its decimal string.
+  if (typeof value === "bigint") {
+    const asNumber = Number(value);
+    return Number.isSafeInteger(asNumber) ? asNumber : value.toString();
+  }
+
   if (typeof value !== "object") {
     return value;
   }

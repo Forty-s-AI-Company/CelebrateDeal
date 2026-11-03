@@ -13,6 +13,7 @@ import { FormSubmitButton } from "@/components/form-submit-button";
 import { Badge, Card, PageHeader, SubmitButton } from "@/components/ui";
 import { requireFinanceAdmin } from "@/lib/auth";
 import { getDb } from "@/lib/db";
+import { ledgerRowToNumbers } from "@/lib/ledger-cents";
 import { formatCurrency, formatDateTime } from "@/lib/format";
 import { financeSecondApprovalThresholdCents } from "@/lib/settlement-adjustment";
 
@@ -60,7 +61,7 @@ export default async function AdminBillingSettlementsPage({
   const statusMessage = status ? settlementStatusMessages[status] : null;
   const approvalThresholdCents = financeSecondApprovalThresholdCents();
   const db = getDb();
-  const [vendors, settlements] = await Promise.all([
+  const [vendors, settlementRows] = await Promise.all([
     db.vendor.findMany({
       orderBy: { createdAt: "desc" },
       include: { subscriptions: { where: { status: "active" }, include: { plan: true }, take: 1 } },
@@ -80,6 +81,8 @@ export default async function AdminBillingSettlementsPage({
     }),
   ]);
 
+  // F-068: Settlement amounts are BigInt; this page formats and adds exact numbers.
+  const settlements = settlementRows.map((settlement) => ledgerRowToNumbers(settlement));
   const lockedReady = settlements.filter((settlement) => settlement.lockedAt && !settlement.payoutBatchId && settlement.finalPayoutAmountCents > 0);
   const pendingPayoutAmount = lockedReady.reduce((sum, settlement) => sum + settlement.finalPayoutAmountCents, 0);
 

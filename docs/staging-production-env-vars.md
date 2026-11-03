@@ -28,6 +28,11 @@
 | `CLOUDFLARE_ACCOUNT_ID` | same or staging account | production account | Cloudflare dashboard | direct upload API 可建立 upload URL |
 | `CLOUDFLARE_STREAM_TOKEN` | staging scoped token | production scoped token | Cloudflare API Tokens | 不在 client bundle 出現 |
 | `CLOUDFLARE_STREAM_WEBHOOK_SECRET` | staging webhook secret | production webhook secret | Cloudflare Notifications | 假 secret webhook 會 401 |
+| `CLOUDFLARE_STREAM_SIGNING_KEY_ID` | staging 專用 signing key 的 `id` | production 專用 signing key 的 `id` | Cloudflare `POST /stream/keys` | F-093：與下一列同時設定才啟用簽章播放網址；未設定時 preflight WARN、播放網址維持公開（可逐環境切換）；只設一半或格式錯誤時 FAIL。部署與批次更新順序見 [stream-signed-urls-plan.md §8](operations/stream-signed-urls-plan.md) |
+| `CLOUDFLARE_STREAM_SIGNING_KEY_PEM` | staging signing key 的 `pem` | production signing key 的 `pem` | Cloudflare `POST /stream/keys`（只顯示一次，存密碼管理器） | 可貼 Cloudflare 回傳的 base64 字串或 PEM 文字；必須是 ≥2048 bits 的 RSA 私鑰。也可改設 `CLOUDFLARE_STREAM_SIGNING_KEY_JWK`（Cloudflare 回傳的 `jwk`），兩者只能擇一。不得放 `NEXT_PUBLIC_*`、不在 client bundle 出現 |
+| `STREAM_ALLOWED_ORIGINS` | 選填；Preview 網域，例如 `*.vercel.app` 或明確主機 | 選填；正式網域以外需要嵌入播放的主機 | 部署設定 | 鎖定影片時的 `allowedOrigins`＝`NEXT_PUBLIC_APP_URL` 主機名＋本變數（逗號分隔，可用 `*.example.com`，不含裸網域，不可含路徑）；無效項目 preflight FAIL |
+| `CLOUDFLARE_STREAM_LOCK_NEW_UPLOADS` | 第一次部署金鑰時不設；Staging 驗證簽章播放通過後設 `true` | 同左，Production 驗證通過後設 `true` | 部署設定 | `true` 時新上傳與新 live input 錄影要求簽章（`requireSignedURLs`＋`allowedOrigins`）；未設定或 `false` 為關閉。只接受 `true`／`false`；沒有簽章金鑰卻設 `true` 時 preflight FAIL；有金鑰但未設時 WARN |
+| `CLOUDFLARE_STREAM_CUSTOMER_CODE` | 建議與簽章金鑰一起設定 | 建議與簽章金鑰一起設定 | Cloudflare Stream 後台的 `customer-<CODE>` | 設定後簽章播放與縮圖網址改用 `customer-<CODE>.cloudflarestream.com`；未設定時沿用 DB 網址的主機（`videodelivery.net`）。只接受小寫英數 |
 | `PAYMENT_PROVIDER` | `payuni` | `payuni` | app config | preflight pass |
 | `PAYUNI_ENV` | `sandbox`；隔離的一次性正式測試可設 `production` | `production` | 部署設定 | 同時選擇 API 網址與整組商店金鑰 |
 | `PAYUNI_SANDBOX_MERCHANT_ID`、`PAYUNI_SANDBOX_HASH_KEY`、`PAYUNI_SANDBOX_HASH_IV` | Sandbox 商店完整一組 | 可保留供切換 | PAYUNi Sandbox 後台 | `PAYUNI_ENV=sandbox` 時專用，缺一即拒絕交易 |

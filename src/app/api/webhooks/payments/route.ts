@@ -142,10 +142,10 @@ async function processedPayerReturnResponse(requestUrl: URL, event: WebhookEvent
 
 /**
  * Authentic callbacks that must not change payment state automatically
- * (R448-01). A pending trade (issued/awaiting confirmation) is acknowledged
- * and audited. A reported collection we refuse to apply (non-card
- * PaymentType, or a paid trade without a final provider status) may mean the
- * buyer was charged: it becomes a needs_manual_reconciliation WebhookEvent,
+ * (R448-01). A pending trade (issued/awaiting confirmation/unpaid) is
+ * acknowledged and audited. A reported collection we refuse to apply (non-card
+ * PaymentType, a paid trade without a final provider status, or an unmapped
+ * TradeStatus) may mean the buyer was charged: it becomes a needs_manual_reconciliation WebhookEvent,
  * holds the pending payment from expiry, and raises an error-level alert.
  * Notify is acknowledged with 200 so the provider does not redeliver forever;
  * the payer sees a neutral "under review" page.
@@ -190,6 +190,23 @@ async function notActionableResponse(requestUrl: URL, providerId: string, bodyBy
       return webhookResponse(requestUrl, 500, { error: "Payment webhook processing failed", code: "processing_failed" });
     }
   }
+  if (!pendingOnly && !recorded) {
+    // A refused collection without the identifiers needed to record it (for
+    // example no MerTradeNo) must not be acknowledged: alert and let the
+    // provider redeliver.
+    captureOperationalError(new Error("Payment webhook manual reconciliation could not be recorded"), {
+      source: "payment_webhook", operation: "manual_reconciliation_unrecorded", provider: providerId, status: error.reason,
+      callbackSource: source, providerTradeStatus: error.identifiers.tradeStatus, providerPaymentType: error.identifiers.paymentType,
+    }, { level: "error", fingerprint: ["payment-webhook-manual-reconciliation-unrecorded", providerId, error.reason] });
+    await writeAuditLog({
+      actorLabel: `webhook:${providerId}`,
+      action: "payment_webhook_not_actionable",
+      targetType: "WebhookEvent",
+      before: auditSnapshot({ providerId, bodyBytes }),
+      after: auditSnapshot({ errorCode: "reconciliation_unrecorded", reason: error.reason, ...error.identifiers, manualReconciliation: false }),
+    });
+    return webhookResponse(requestUrl, 400, { error: "Payment webhook could not be recorded", code: "reconciliation_unrecorded" });
+  }
   const alreadyPaid = recorded?.alreadyPaid === true;
   const manualReconciliation = Boolean(recorded && !alreadyPaid && recorded.event);
   if (manualReconciliation) {
@@ -202,7 +219,11 @@ async function notActionableResponse(requestUrl: URL, providerId: string, bodyBy
       providerTradeStatus: error.identifiers.tradeStatus,
       providerPaymentType: error.identifiers.paymentType,
       webhookEventId: recorded?.event?.id,
-    }, { level: "error", fingerprint: ["payment-webhook-manual-reconciliation", providerId, error.reason] });
+    }, {
+      // An expired trade received no money (RR-03): recorded for review, warning only.
+      level: error.holdsPaymentForReconciliation ? "error" : "warning",
+      fingerprint: ["payment-webhook-manual-reconciliation", providerId, error.reason],
+    });
   }
   await writeAuditLog({
     vendorId: recorded?.transaction?.vendorId ?? null,
