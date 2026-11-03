@@ -1,0 +1,118 @@
+name: Production backup
+
+# O-20(b) / F-058: encrypted logical backup of the fixed Production Supabase
+# project. scripts/production-migrate.mjs accepts as `backup_run_id` only a
+# successful master run of this file (path pinned there as
+# PRODUCTION_BACKUP_WORKFLOW) whose commit is in master's history and whose
+# `backup` job (PRODUCTION_BACKUP_JOB) succeeded.
+#
+# - Manual only (workflow_dispatch, no inputs) and only from protected master.
+# - `contract` runs npm ci and the contract tests without any environment or
+#   secret. `backup` needs it, runs in the `production` GitHub environment
+#   (owner-configured required reviewers, secret PRODUCTION_DATABASE_URL,
+#   variable PRODUCTION_BACKUP_RECIPIENT_SHA256) and installs no npm package:
+#   scripts/production-backup.mjs uses Node built-ins only.
+# - The URL is validated against the fixed Production project (shared with
+#   production-migrate.mjs) and reaches pg_dump only as PG* variables.
+# - pg_dump (PostgreSQL 17.10 image pinned by digest) uses the staging backup
+#   format (custom, schema public, no owner/privileges) on an exported
+#   REPEATABLE READ snapshot; the accounting aggregates of
+#   docs/production-backup-restore-runbook.md §C are read in the same snapshot.
+# - Plaintext stays in a 0700 tmpfs directory and is deleted by the script.
+#   The artifact production-database-backup-<run id> holds only age ciphertext
+#   (recipient: ops/backup/keys/production-backup.agepub, pinned by the
+#   environment variable's SHA-256), SHA256SUMS and a receipt without data.
+#   The repository is public, so nothing else is uploaded and every printed
+#   line is a fixed code, a count or a digest.
+# Runbook: docs/operations/production-backup-restore-runbook.md.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production-backup
+  cancel-in-progress: false
+
+jobs:
+  contract:
+    if: ${{ github.ref == 'refs/heads/master' && github.ref_protected }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Checkout protected master
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: Setup Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install locked tooling without lifecycle scripts
+        run: npm ci --ignore-scripts
+
+      - name: Verify backup and migrate guard contracts
+        run: node --test scripts/production-backup.test.mjs scripts/production-migrate.test.mjs scripts/staging-migrate.test.mjs
+
+  backup:
+    needs: contract
+    if: ${{ github.ref == 'refs/heads/master' && github.ref_protected }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    environment: production
+    steps:
+      - name: Checkout protected master
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: Setup Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+
+      - name: Preload pinned PostgreSQL client and age before Production credentials
+        shell: bash
+        env:
+          PG_DIGEST: sha256:742f40ea20b9ff2ff31db5458d127452988a2164df9e17441e191f3b72252193
+          AGE_VERSION: v1.3.1
+          AGE_SHA256: bdc69c09cbdd6cf8b1f333d372a1f58247b3a33146406333e30c0f26e8f51377
+        run: |
+          set -euo pipefail
+          pulled=""
+          for attempt in 1 2 3; do
+            for source in "public.ecr.aws/docker/library/postgres@${PG_DIGEST}" "docker.io/library/postgres@${PG_DIGEST}"; do
+              if docker pull --quiet "$source"; then pulled="$source"; break 2; fi
+            done
+            sleep $((attempt * 15))
+          done
+          test -n "$pulled"
+          docker tag "$pulled" celebratedeal-production-backup-postgres:17.10-alpine
+          archive="$RUNNER_TEMP/age-${AGE_VERSION}-linux-amd64.tar.gz"
+          curl --fail --silent --show-error --location --retry 3 --output "$archive" \
+            "https://github.com/FiloSottile/age/releases/download/${AGE_VERSION}/age-${AGE_VERSION}-linux-amd64.tar.gz"
+          echo "${AGE_SHA256}  ${archive}" | sha256sum --check --strict
+          mkdir -p "$RUNNER_TEMP/age-bin"
+          tar --extract --gzip --file "$archive" --directory "$RUNNER_TEMP/age-bin" --strip-components 1 age/age age/age-keygen
+          rm -f "$archive"
+          echo "$RUNNER_TEMP/age-bin" >> "$GITHUB_PATH"
+          "$RUNNER_TEMP/age-bin/age" --version
+
+      - name: Encrypted backup of the fixed Production project
+        env:
+          PRODUCTION_DATABASE_URL: ${{ secrets.PRODUCTION_DATABASE_URL }}
+          PRODUCTION_BACKUP_RECIPIENT_SHA256: ${{ vars.PRODUCTION_BACKUP_RECIPIENT_SHA256 }}
+        run: node scripts/production-backup.mjs
+
+      - name: Upload encrypted backup and sanitized receipt
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: production-database-backup-${{ github.run_id }}
+          path: ${{ runner.temp }}/production-backup-artifact/
+          if-no-files-found: error
+          retention-days: 30
+          compression-level: 0

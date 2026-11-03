@@ -7,7 +7,7 @@ import yaml from "js-yaml";
 
 import { FIXED_STAGING_REF, MIGRATION_SESSION_OPTIONS } from "./staging-migrate.mjs";
 import {
-  BACKUP_MAX_AGE_MS, FIXED_PRODUCTION_REF, PRODUCTION_BACKUP_ARTIFACT_PREFIX, PRODUCTION_BACKUP_WORKFLOW,
+  BACKUP_MAX_AGE_MS, FIXED_PRODUCTION_REF, PRODUCTION_BACKUP_ARTIFACT_PREFIX, PRODUCTION_BACKUP_JOB, PRODUCTION_BACKUP_WORKFLOW,
   parseProductionDatabaseUrl, run, verifyBackupRun,
 } from "./production-migrate.mjs";
 
@@ -27,8 +27,10 @@ const backupEnv = {
   GITHUB_REPOSITORY: "owner/celebratedeal",
   GITHUB_TOKEN: "synthetic-token",
 };
+const headSha = "b".repeat(40);
 const goodRun = {
   path: PRODUCTION_BACKUP_WORKFLOW,
+  head_sha: headSha,
   repository: { full_name: "owner/celebratedeal" },
   head_repository: { full_name: "owner/celebratedeal" },
   head_branch: "master",
@@ -38,11 +40,20 @@ const goodRun = {
   updated_at: new Date(now - 60 * 60 * 1000).toISOString(),
 };
 const goodArtifacts = { artifacts: [{ name: `${PRODUCTION_BACKUP_ARTIFACT_PREFIX}18765432101`, expired: false, size_in_bytes: 4096 }] };
-/** Answers the run lookup and the artifact listing like the GitHub REST API. */
-const fetchReturning = (runBody, ok = true, artifactBody = goodArtifacts) => async (requestUrl) => (
-  String(requestUrl).includes("/artifacts")
-    ? { ok: true, json: async () => artifactBody }
-    : { ok, json: async () => runBody });
+const goodCompare = { status: "ahead", merge_base_commit: { sha: headSha } };
+const goodJobs = { jobs: [
+  { name: "contract", status: "completed", conclusion: "success", head_sha: headSha },
+  { name: PRODUCTION_BACKUP_JOB, status: "completed", conclusion: "success", head_sha: headSha },
+] };
+/** Answers the run, compare, jobs and artifact lookups like the GitHub REST API. */
+const fetchReturning = (runBody, ok = true, artifactBody = goodArtifacts, { compare = goodCompare, jobs = goodJobs, requests = [] } = {}) => async (requestUrl) => {
+  const value = String(requestUrl);
+  requests.push(value);
+  if (value.includes("/artifacts")) return { ok: true, json: async () => artifactBody };
+  if (value.includes("/compare/")) return compare === null ? { ok: false, json: async () => ({}) } : { ok: true, json: async () => compare };
+  if (value.includes("/jobs")) return jobs === null ? { ok: false, json: async () => ({}) } : { ok: true, json: async () => jobs };
+  return { ok, json: async () => runBody };
+};
 
 test("accepts only the fixed Production project over a TLS session connection", () => {
   assert.equal(failure(direct), null);
@@ -85,6 +96,31 @@ test("backup verification requires a fresh successful run of the designated work
   assert.equal(await verifyBackupRun(backupEnv, { fetchImpl: fetchReturning({ ...goodRun, status: "in_progress" }), now }), "BACKUP_RUN_NOT_SUCCESSFUL");
   const stale = new Date(now - BACKUP_MAX_AGE_MS - 1).toISOString();
   assert.equal(await verifyBackupRun(backupEnv, { fetchImpl: fetchReturning({ ...goodRun, updated_at: stale }), now }), "BACKUP_RUN_TOO_OLD");
+});
+
+test("backup run must come from master history and its backup job must have succeeded", async () => {
+  const requests = [];
+  assert.equal(await verifyBackupRun(backupEnv, { fetchImpl: fetchReturning(goodRun, true, goodArtifacts, { requests }), now }), null);
+  assert.ok(requests.some((value) => value === `https://api.github.com/repos/owner/celebratedeal/compare/${headSha}...master?per_page=1`));
+  assert.ok(requests.some((value) => value.endsWith(`/actions/runs/18765432101/jobs?per_page=100`)));
+  assert.equal(await verifyBackupRun(backupEnv, { fetchImpl: fetchReturning(goodRun, true, goodArtifacts, { compare: { status: "identical", merge_base_commit: { sha: headSha } } }), now }), null);
+
+  const sourceCheck = (options, runBody = goodRun) => verifyBackupRun(backupEnv, { fetchImpl: fetchReturning(runBody, true, goodArtifacts, options), now });
+  // A run on a branch that was named "master" but whose commit never reached master.
+  assert.equal(await sourceCheck({ compare: { status: "diverged", merge_base_commit: { sha: "c".repeat(40) } } }), "BACKUP_RUN_SOURCE_NOT_MASTER");
+  assert.equal(await sourceCheck({ compare: { status: "behind", merge_base_commit: { sha: "c".repeat(40) } } }), "BACKUP_RUN_SOURCE_NOT_MASTER");
+  assert.equal(await sourceCheck({ compare: { status: "ahead", merge_base_commit: { sha: "c".repeat(40) } } }), "BACKUP_RUN_SOURCE_NOT_MASTER");
+  assert.equal(await sourceCheck({ compare: null }), "BACKUP_RUN_SOURCE_NOT_MASTER");
+  assert.equal(await sourceCheck({}, { ...goodRun, head_sha: "../../evil" }), "BACKUP_RUN_SOURCE_NOT_MASTER");
+  assert.equal(await sourceCheck({}, { ...goodRun, head_sha: undefined }), "BACKUP_RUN_SOURCE_NOT_MASTER");
+
+  const job = (overrides) => ({ jobs: [{ ...goodJobs.jobs[1], ...overrides }] });
+  assert.equal(await sourceCheck({ jobs: job({ conclusion: "skipped" }) }), "BACKUP_JOB_NOT_SUCCESSFUL");
+  assert.equal(await sourceCheck({ jobs: job({ status: "in_progress", conclusion: null }) }), "BACKUP_JOB_NOT_SUCCESSFUL");
+  assert.equal(await sourceCheck({ jobs: job({ name: "contract" }) }), "BACKUP_JOB_NOT_SUCCESSFUL");
+  assert.equal(await sourceCheck({ jobs: job({ head_sha: "c".repeat(40) }) }), "BACKUP_JOB_NOT_SUCCESSFUL");
+  assert.equal(await sourceCheck({ jobs: { jobs: [goodJobs.jobs[1], goodJobs.jobs[1]] } }), "BACKUP_JOB_NOT_SUCCESSFUL");
+  assert.equal(await sourceCheck({ jobs: null }), "BACKUP_JOB_NOT_SUCCESSFUL");
 });
 
 function fakeRunner(outputs) {
