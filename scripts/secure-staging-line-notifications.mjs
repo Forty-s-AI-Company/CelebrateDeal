@@ -10,6 +10,7 @@ import {
   protectLineOfficialAccountCredentials,
   protectLineProfileValue,
 } from "../src/lib/line-credentials.ts";
+import { STAGING_ALIAS_HOST, verifyAliasAttestation } from "./secure-staging-runner.mjs";
 
 export const TASK = "line-notifications-e2e";
 export const RECEIPT_NAME = `${TASK}-receipt.json`;
@@ -143,8 +144,10 @@ function safeFailure(error) {
   return /^[A-Z0-9_]{3,80}$/u.test(code) ? code : "UNCLASSIFIED_FAILURE";
 }
 
-async function callCron(source, authorization) {
-  const response = await fetch(`https://${source.CELEBRATEDEAL_DEPLOYMENT_HOST}/api/cron/line-notifications`, {
+// Requests address the fixed alias only after it attested the lineage-verified deployment;
+// Vercel's firewall rejects direct requests to the immutable Preview host.
+async function callCron(operationHost, authorization) {
+  const response = await fetch(`https://${operationHost}/api/cron/line-notifications`, {
     method: "GET",
     headers: { authorization, accept: "application/json" },
     redirect: "error",
@@ -153,8 +156,8 @@ async function callCron(source, authorization) {
   return { status: response.status };
 }
 
-async function proveRuntimeDatabaseBinding(source, sentinelId, challenge) {
-  const response = await fetch(`https://${source.CELEBRATEDEAL_DEPLOYMENT_HOST}/api/cron/line-notifications/runtime-binding`, {
+async function proveRuntimeDatabaseBinding(source, operationHost, sentinelId, challenge) {
+  const response = await fetch(`https://${operationHost}/api/cron/line-notifications/runtime-binding`, {
     method: "GET",
     headers: {
       authorization: `Bearer ${source.CRON_SECRET}`,
@@ -204,10 +207,22 @@ async function cleanupOwned(db, ids) {
   ]);
 }
 
-export async function runLineStagingValidation(source = process.env) {
+export async function runLineStagingValidation(source = process.env, dependencies = {}) {
   const receipt = initialReceipt(source);
   const invocation = validateInvocation(source);
   if (!invocation.ok) { receipt.failureCode = invocation.reason; return receipt; }
+  // Prove the alias serves the lineage-verified deployment before touching the database.
+  try {
+    const attestation = await (dependencies.verifyAliasAttestationImpl ?? verifyAliasAttestation)({
+      sourceSha: source.CELEBRATEDEAL_SOURCE_SHA,
+      previewHost: source.CELEBRATEDEAL_DEPLOYMENT_HOST,
+    });
+    if (attestation?.host !== STAGING_ALIAS_HOST) throw new Error("ALIAS_ATTESTATION_FAILED");
+  } catch (error) {
+    receipt.failureCode = safeFailure(error);
+    return receipt;
+  }
+  const operationHost = STAGING_ALIAS_HOST;
   const runKey = digest("fixture", `${source.GITHUB_RUN_ID}:${source.GITHUB_RUN_ATTEMPT}`).slice(7, 31);
   const ids = {
     vendorId: `line-e2e-v-${runKey}`, formId: `line-e2e-f-${runKey}`,
@@ -232,7 +247,7 @@ export async function runLineStagingValidation(source = process.env) {
     });
     const runtimeChallenge = crypto.randomBytes(32).toString("hex");
     await db.vendor.create({ data: { id: ids.vendorId, name: "LINE staging validation", slug: `line-e2e-${runKey}`, email: `line-e2e-${runKey}@example.invalid`, passwordHash: runtimeChallenge } });
-    receipt.checks.runtimeDatabaseBound = await proveRuntimeDatabaseBinding(source, ids.vendorId, runtimeChallenge);
+    receipt.checks.runtimeDatabaseBound = await proveRuntimeDatabaseBinding(source, operationHost, ids.vendorId, runtimeChallenge);
     if (!receipt.checks.runtimeDatabaseBound) throw new Error("PREVIEW_DATABASE_BINDING_MISMATCH");
     await db.registrationForm.create({ data: { id: ids.formId, vendorId: ids.vendorId, name: "LINE staging form", slug: `line-e2e-form-${runKey}`, headline: "LINE staging", fields: [] } });
     await db.live.create({ data: { id: ids.liveId, vendorId: ids.vendorId, formId: ids.formId, title: "LINE staging 開播驗證", slug: `line-e2e-live-${runKey}`, scheduledAt: startedAt, startedAt, status: "live" } });
@@ -252,13 +267,13 @@ export async function runLineStagingValidation(source = process.env) {
     await db.lineUserIdentity.create({ data: { id: ids.decoyIdentityId, vendorId: ids.decoyVendorId, subjectType: "buyer_registration", subjectId: ids.submissionId, lineUserIdHash: lineUserIdHash(ids.decoyVendorId, source.LINE_STAGING_USER_ID), lineUserIdEncrypted: protectLineProfileValue(ids.decoyVendorId, "userId", source.LINE_STAGING_USER_ID) } });
 
     const beforeInvalid = await db.lineDelivery.count({ where: { vendorId: ids.vendorId } });
-    const invalid = await callCron(source, "Bearer invalid-line-e2e-secret");
+    const invalid = await callCron(operationHost, "Bearer invalid-line-e2e-secret");
     receipt.sideEffects.cronCalls += 1;
     receipt.checks.invalidBearerRejected = invalid.status === 401;
     receipt.checks.invalidBearerNoWrite = beforeInvalid === await db.lineDelivery.count({ where: { vendorId: ids.vendorId } });
     if (!receipt.checks.invalidBearerRejected || !receipt.checks.invalidBearerNoWrite) throw new Error("CRON_AUTH_BOUNDARY_FAILED");
 
-    const first = await callCron(source, `Bearer ${source.CRON_SECRET}`);
+    const first = await callCron(operationHost, `Bearer ${source.CRON_SECRET}`);
     receipt.sideEffects.cronCalls += 1;
     receipt.checks.validBearerAccepted = first.status === 200;
     if (!receipt.checks.validBearerAccepted) throw new Error("CRON_VALID_REQUEST_FAILED");
@@ -271,7 +286,7 @@ export async function runLineStagingValidation(source = process.env) {
     const firstKey = rows[0].idempotencyKey;
     const firstDeliveryFingerprint = digest("delivery", JSON.stringify(rows[0]));
 
-    const second = await callCron(source, `Bearer ${source.CRON_SECRET}`);
+    const second = await callCron(operationHost, `Bearer ${source.CRON_SECRET}`);
     receipt.sideEffects.cronCalls += 1;
     if (second.status !== 200) throw new Error("IDEMPOTENCY_PROBE_REQUEST_FAILED");
     rows = await db.lineDelivery.findMany({ where: { vendorId: ids.vendorId }, select: { id: true, idempotencyKey: true, status: true, attemptCount: true, sentAt: true, providerRequestId: true, updatedAt: true } });

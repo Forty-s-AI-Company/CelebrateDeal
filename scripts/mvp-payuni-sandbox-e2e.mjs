@@ -3,7 +3,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
-import { verifyDeployment } from "./secure-staging-runner.mjs";
+import { STAGING_ALIAS_HOST, verifyAliasAttestation, verifyDeployment } from "./secure-staging-runner.mjs";
 
 const SOURCE_SHA = /^[a-f0-9]{40}$/u;
 const PREVIEW_HOST = /^(?=.{1,253}$)[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.vercel\.app$/u;
@@ -412,8 +412,6 @@ export function validateExistingRefundRecoveryInvocation(input) {
   return { ok: true, sourceSha, previewHost, jobSecret: input.jobSecret };
 }
 
-const STAGING_ALIAS_HOST = "celebrate-deal-staging.carry-digital-nomad.in.net";
-
 /**
  * True only when the commit equals or is an ancestor of protected master, which
  * covers merge-queue commits that fast-forward master (no branch-name check).
@@ -434,16 +432,18 @@ async function isShaOnProtectedMaster(sourceSha, token, fetchImpl) {
 
 /**
  * Verifies the immutable Preview host against the protected GitHub deployment
- * record before any PayUni or application secret is injected into the job.
+ * record before any PayUni or application secret is injected into the job, then
+ * proves that the fixed staging alias is serving that exact deployment.
+ * Returns a fixed reason code ("VERIFIED" on success); never throws.
  */
-export async function verifyMvpPayUniLineage(source = process.env, dependencies = {}) {
+export async function diagnoseMvpPayUniLineage(source = process.env, dependencies = {}) {
   const sourceSha = typeof source.CELEBRATEDEAL_SOURCE_SHA === "string"
     ? source.CELEBRATEDEAL_SOURCE_SHA.trim().toLowerCase()
     : "";
   const previewHost = typeof source.CELEBRATEDEAL_DEPLOYMENT_HOST === "string"
     ? source.CELEBRATEDEAL_DEPLOYMENT_HOST.trim().toLowerCase()
     : "";
-  if (!SOURCE_SHA.test(sourceSha) || !PREVIEW_HOST.test(previewHost) || !requiredText(source.GITHUB_TOKEN)) return false;
+  if (!SOURCE_SHA.test(sourceSha) || !PREVIEW_HOST.test(previewHost) || !requiredText(source.GITHUB_TOKEN)) return "INPUT_REJECTED";
 
   try {
     const verifyDeploymentImpl = dependencies.verifyDeploymentImpl ?? verifyDeployment;
@@ -457,25 +457,63 @@ export async function verifyMvpPayUniLineage(source = process.env, dependencies 
       || lineage.deploymentMatched !== true
       || lineage.sourceMatched !== true
       || lineage.preview !== true
-      || lineage.ready !== true) return false;
+      || lineage.ready !== true) return "GITHUB_DEPLOYMENT_LINEAGE_MISMATCH";
 
     // Browser smoke only: the commit must already be on protected master.
-    // Vercel firewalls direct probes of the immutable preview host (403 deny), so
-    // a fixed_alias run probes the alias after the host-to-SHA binding above; the
-    // alias-to-deployment binding is attested next by staging-browser-smoke.mjs.
     const surface = typeof source.CELEBRATEDEAL_BROWSER_SURFACE === "string" ? source.CELEBRATEDEAL_BROWSER_SURFACE : "";
-    if (surface !== "" && surface !== "fixed_alias" && surface !== "immutable_preview") return false;
-    if (surface !== "" && !await isShaOnProtectedMaster(sourceSha, source.GITHUB_TOKEN, fetchImpl)) return false;
-    const healthHost = surface === "fixed_alias" ? STAGING_ALIAS_HOST : previewHost;
-    const health = await fetchImpl(fixedUrl(healthHost, "/api/health"), {
-      method: "HEAD",
-      redirect: "manual",
-      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-    });
-    return health.status === 200 && !health.headers.has("location");
-  } catch {
-    return false;
+    if (surface !== "" && surface !== "fixed_alias" && surface !== "immutable_preview") return "INPUT_REJECTED";
+    if (surface !== "" && !await isShaOnProtectedMaster(sourceSha, source.GITHUB_TOKEN, fetchImpl)) return "SOURCE_NOT_ON_PROTECTED_MASTER";
+    if (surface === "immutable_preview") {
+      // Explicit pre-cutover mode only: the alias does not serve this deployment yet.
+      const health = await fetchImpl(fixedUrl(previewHost, "/api/health"), {
+        method: "HEAD",
+        redirect: "manual",
+        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      });
+      return health.status === 200 && !health.headers.has("location") ? "VERIFIED" : "PREVIEW_HEALTH_FAILED";
+    }
+    // Vercel firewalls direct probes of the immutable preview host (403 deny). The
+    // alias must instead attest, from inside the deployment it routes to, the same
+    // commit SHA and Preview host that the GitHub record above bound together.
+    const verifyAliasImpl = dependencies.verifyAliasAttestationImpl ?? verifyAliasAttestation;
+    await verifyAliasImpl({ sourceSha, previewHost }, fetchImpl);
+    return "VERIFIED";
+  } catch (error) {
+    const code = typeof error?.message === "string" ? error.message : "";
+    return /^(?:GITHUB_DEPLOYMENT|ALIAS_ATTESTATION)_[A-Z0-9_]+$/u.test(code) ? code : "LINEAGE_CHECK_FAILED";
   }
+}
+
+export async function verifyMvpPayUniLineage(source = process.env, dependencies = {}) {
+  return await diagnoseMvpPayUniLineage(source, dependencies) === "VERIFIED";
+}
+
+/**
+ * Re-attests the fixed alias immediately before a secret-bearing flow. The
+ * GitHub lineage gate already ran in an earlier step of the same protected job;
+ * this repeat closes the window in which the alias could have been moved.
+ */
+export async function attestOperationHost(input, dependencies = {}) {
+  const sourceSha = typeof input?.sourceSha === "string" ? input.sourceSha.trim().toLowerCase() : "";
+  const previewHost = typeof input?.previewHost === "string" ? input.previewHost.trim().toLowerCase() : "";
+  if (!SOURCE_SHA.test(sourceSha) || !PREVIEW_HOST.test(previewHost)) return { ok: false, code: "INPUT_REJECTED" };
+  try {
+    const verifyAliasImpl = dependencies.verifyAliasAttestationImpl ?? verifyAliasAttestation;
+    const attested = await verifyAliasImpl({ sourceSha, previewHost }, dependencies.fetchImpl ?? fetch);
+    return attested?.host === STAGING_ALIAS_HOST ? { ok: true, operationHost: STAGING_ALIAS_HOST } : { ok: false, code: "ALIAS_ATTESTATION_FAILED" };
+  } catch (error) {
+    const code = typeof error?.message === "string" && /^ALIAS_ATTESTATION_[A-Z_]+$/u.test(error.message) ? error.message : "ALIAS_ATTESTATION_FAILED";
+    return { ok: false, code };
+  }
+}
+
+/**
+ * Application requests go to the attested alias only. Without an attested
+ * operation host a flow addresses the immutable Preview, which Vercel rejects;
+ * the Q1 wrapper relies on that default and rewrites it to the alias itself.
+ */
+function operationHostFor(invocation, dependencies) {
+  return dependencies?.operationHost === STAGING_ALIAS_HOST ? STAGING_ALIAS_HOST : invocation.previewHost;
 }
 
 export function createReceipt(sourceSha = "0".repeat(40)) {
@@ -1017,7 +1055,7 @@ export async function recoverExistingWp4BuyerRefund(input, dependencies = {}) {
   receipt.queryAttempts = 1;
   try {
     const response = await request({
-      url: fixedUrl(invocation.previewHost, "/api/admin/ops/payuni/wp4-refund-recovery"),
+      url: fixedUrl(operationHostFor(invocation, dependencies), "/api/admin/ops/payuni/wp4-refund-recovery"),
       headers: guardedHeaders(invocation),
       body: undefined,
     });
@@ -1105,7 +1143,7 @@ export async function checkExistingWp4BuyerPayment(input, dependencies = {}) {
   receipt.queryAttempts = 1;
   try {
     const response = await (dependencies.request ?? defaultRequest)({
-      url: fixedUrl(invocation.previewHost, "/api/admin/ops/payuni/wp4-buyer-payment-check"),
+      url: fixedUrl(operationHostFor(invocation, dependencies), "/api/admin/ops/payuni/wp4-buyer-payment-check"),
       headers: guardedHeaders(invocation), body: undefined,
     });
     if (response?.status !== 200 || !validBuyerCheckBody(response.body)) {
@@ -1171,7 +1209,7 @@ export async function retryFixedWp4BuyerCallback(input, dependencies = {}) {
   receipt.retryAttempts = 1;
   try {
     const response = await (dependencies.request ?? defaultRequest)({
-      url: fixedUrl(invocation.previewHost, "/api/admin/ops/payuni/wp4-buyer-callback-retry"),
+      url: fixedUrl(operationHostFor(invocation, dependencies), "/api/admin/ops/payuni/wp4-buyer-callback-retry"),
       headers: guardedHeaders(invocation), body: undefined,
     });
     if (response?.status !== 200 || !validBuyerRetryBody(response.body)) {
@@ -1207,29 +1245,29 @@ export async function prepareIssuedRecoveryCheckout(input, dependencies = {}) {
     throw new Error("ISSUED_RECOVERY_PREPARATION_REJECTED");
   }
   const request = dependencies.request ?? defaultRequest;
-  const base = fixedOrigin(invocation.previewHost);
+  const base = fixedOrigin(operationHostFor(invocation, dependencies));
   const guarded = guardedHeaders(invocation);
   const sideEffects = { fixturePosts: 0, admissionPosts: 0, checkoutPosts: 0, paymentAttemptPosts: 0 };
   try {
     sideEffects.fixturePosts = 1;
-    const fixture = responseJson(await request({ url: fixedUrl(invocation.previewHost, "/api/admin/ops/payuni/wp4-fixture"),
+    const fixture = responseJson(await request({ url: fixedUrl(operationHostFor(invocation, dependencies), "/api/admin/ops/payuni/wp4-fixture"),
       headers: guarded, body: undefined, outcomeHeader: "x-celebratedeal-wp4-fixture" }));
     if (!assertFixtureResponse(fixture)) throw new Error();
     sideEffects.admissionPosts = 1;
-    const admission = responseJson(await request({ url: fixedUrl(invocation.previewHost, "/api/payments/checkout/admission"),
+    const admission = responseJson(await request({ url: fixedUrl(operationHostFor(invocation, dependencies), "/api/payments/checkout/admission"),
       headers: { origin: base, "x-celebratedeal-client": "web", "content-type": "application/json" },
       body: JSON.stringify({ ...FIXED_FIXTURE, idempotencyKey: fixedCheckoutIdempotencyKey(invocation.sourceSha) }),
       cookiePrefix: "celebratedeal_checkout_session=" }));
     if (!assertAdmissionResponse(admission)) throw new Error();
     sideEffects.checkoutPosts = 1;
-    const checkout = responseJson(await request({ url: fixedUrl(invocation.previewHost, "/api/payments/checkout"),
+    const checkout = responseJson(await request({ url: fixedUrl(operationHostFor(invocation, dependencies), "/api/payments/checkout"),
       headers: { origin: base, "x-celebratedeal-client": "web", "content-type": "application/json", cookie: admission.sessionCookie },
       body: JSON.stringify({ ...FIXED_FIXTURE, idempotencyKey: admission.body.idempotencyKey,
         admissionToken: admission.body.admissionToken, buyer: SYNTHETIC_BUYER, shipping: SYNTHETIC_SHIPPING }),
       cookiePrefix: "celebrate_support_" }));
     if (!assertCheckoutResponse(checkout)) throw new Error();
     sideEffects.paymentAttemptPosts = 1;
-    const reservation = responseJson(await request({ url: fixedUrl(invocation.previewHost, "/api/admin/ops/payuni/wp4-payment-attempt"),
+    const reservation = responseJson(await request({ url: fixedUrl(operationHostFor(invocation, dependencies), "/api/admin/ops/payuni/wp4-payment-attempt"),
       headers: guarded, body: undefined }));
     if (!assertPaymentAttemptResponse(reservation) || reservation.body.status !== "SUBMIT_ALLOWED") throw new Error();
     return { invocation: { ...invocation, payuniEnv: FIXED_PAYUNI_ENV }, checkout: checkout.body, supportCookie: checkout.supportCookie, sideEffects };
@@ -1514,7 +1552,7 @@ async function runBuyerPayment(input, dependencies, paymentOnly) {
   const request = dependencies.request ?? defaultRequest;
   const browserSubmit = dependencies.browserSubmit ?? defaultBrowserSubmit;
   const wait = dependencies.wait ?? ((milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds)));
-  const base = fixedOrigin(invocation.previewHost);
+  const base = fixedOrigin(operationHostFor(invocation, dependencies));
   const guarded = guardedHeaders(invocation);
   let admission;
   let checkout;
@@ -1522,7 +1560,7 @@ async function runBuyerPayment(input, dependencies, paymentOnly) {
   try {
     receipt.sideEffects.fixturePosts = 1;
     const fixture = responseJson(await request({
-      url: fixedUrl(invocation.previewHost, "/api/admin/ops/payuni/wp4-fixture"),
+      url: fixedUrl(operationHostFor(invocation, dependencies), "/api/admin/ops/payuni/wp4-fixture"),
       headers: guarded,
       body: undefined,
       outcomeHeader: "x-celebratedeal-wp4-fixture",
@@ -1532,7 +1570,7 @@ async function runBuyerPayment(input, dependencies, paymentOnly) {
 
     receipt.sideEffects.admissionPosts = 1;
     admission = responseJson(await request({
-      url: fixedUrl(invocation.previewHost, "/api/payments/checkout/admission"),
+      url: fixedUrl(operationHostFor(invocation, dependencies), "/api/payments/checkout/admission"),
       headers: {
         origin: base,
         "x-celebratedeal-client": "web",
@@ -1549,7 +1587,7 @@ async function runBuyerPayment(input, dependencies, paymentOnly) {
 
     receipt.sideEffects.checkoutPosts = 1;
     checkout = responseJson(await request({
-      url: fixedUrl(invocation.previewHost, "/api/payments/checkout"),
+      url: fixedUrl(operationHostFor(invocation, dependencies), "/api/payments/checkout"),
       headers: {
         origin: base,
         "x-celebratedeal-client": "web",
@@ -1571,7 +1609,7 @@ async function runBuyerPayment(input, dependencies, paymentOnly) {
 
     receipt.sideEffects.paymentAttemptPosts = 1;
     const paymentAttempt = responseJson(await request({
-      url: fixedUrl(invocation.previewHost, "/api/admin/ops/payuni/wp4-payment-attempt"),
+      url: fixedUrl(operationHostFor(invocation, dependencies), "/api/admin/ops/payuni/wp4-payment-attempt"),
       headers: guarded,
       body: undefined,
     }));
@@ -1586,7 +1624,8 @@ async function runBuyerPayment(input, dependencies, paymentOnly) {
     receipt.sideEffects.paymentReservationsCreated = 1;
     receipt.sideEffects.browserPaymentSubmissions = 1;
     const callbackMapped = await browserSubmit({
-      previewHost: invocation.previewHost,
+      // The attested operation host; PayUni returns to NEXT_PUBLIC_APP_URL, which is this alias on staging.
+      previewHost: operationHostFor(invocation, dependencies),
       cardNumber: invocation.cardNumber,
       cardExpiry: invocation.cardExpiry,
       cardCvv: invocation.cardCvv,
@@ -1608,7 +1647,7 @@ async function runBuyerPayment(input, dependencies, paymentOnly) {
 
     receipt.sideEffects.orderProofPosts = 1;
     const firstProof = responseJson(await request({
-      url: fixedUrl(invocation.previewHost, "/api/admin/ops/payuni/wp4-buyer-order-proof"),
+      url: fixedUrl(operationHostFor(invocation, dependencies), "/api/admin/ops/payuni/wp4-buyer-order-proof"),
       headers: guarded, body: undefined,
     }));
     if (!validBuyerOrderProof(firstProof)) return fail(receipt, "ORDER_PROOF_REJECTED");
@@ -1618,7 +1657,7 @@ async function runBuyerPayment(input, dependencies, paymentOnly) {
     // A caller cannot choose the callback URL, event, amount or payload.
     receipt.sideEffects.callbackReplays = 1;
     const duplicate = responseJson(await request({
-      url: fixedUrl(invocation.previewHost, "/api/webhooks/payments?provider=payuni&source=notify"),
+      url: fixedUrl(operationHostFor(invocation, dependencies), "/api/webhooks/payments?provider=payuni&source=notify"),
       headers: { "content-type": callbackMapped.contentType },
       body: callbackMapped.signedReturnBody,
     }));
@@ -1626,7 +1665,7 @@ async function runBuyerPayment(input, dependencies, paymentOnly) {
 
     receipt.sideEffects.orderProofPosts = 2;
     const afterReplay = responseJson(await request({
-      url: fixedUrl(invocation.previewHost, "/api/admin/ops/payuni/wp4-buyer-order-proof"),
+      url: fixedUrl(operationHostFor(invocation, dependencies), "/api/admin/ops/payuni/wp4-buyer-order-proof"),
       headers: guarded, body: undefined,
     }));
     if (!validBuyerOrderProof(afterReplay)
@@ -1643,7 +1682,7 @@ async function runBuyerPayment(input, dependencies, paymentOnly) {
 
     receipt.sideEffects.refundPosts = 1;
     const refund = responseJson(await request({
-      url: fixedUrl(invocation.previewHost, "/api/admin/ops/payuni/wp4-refund"),
+      url: fixedUrl(operationHostFor(invocation, dependencies), "/api/admin/ops/payuni/wp4-refund"),
       headers: guarded,
       body: undefined,
     }));
@@ -1660,7 +1699,7 @@ async function runBuyerPayment(input, dependencies, paymentOnly) {
     for (let attempt = 1; attempt <= maximumReconcileAttempts; attempt += 1) {
       receipt.sideEffects.reconcilePosts = attempt;
       reconciliation = responseJson(await request({
-        url: fixedUrl(invocation.previewHost, "/api/admin/ops/payuni/wp4-reconcile"),
+        url: fixedUrl(operationHostFor(invocation, dependencies), "/api/admin/ops/payuni/wp4-reconcile"),
         headers: guarded,
         body: undefined,
       }));
@@ -1735,7 +1774,7 @@ export async function runMvpPayUniSandboxSubscriptionE2E(input, dependencies = {
   try {
     receipt.sideEffects.fixturePosts = 1;
     const fixture = responseJson(await request({
-      url: fixedUrl(invocation.previewHost, "/api/admin/ops/payuni/wp4-fixture"),
+      url: fixedUrl(operationHostFor(invocation, dependencies), "/api/admin/ops/payuni/wp4-fixture"),
       headers: guarded,
       body: undefined,
       outcomeHeader: "x-celebratedeal-wp4-fixture",
@@ -1745,7 +1784,7 @@ export async function runMvpPayUniSandboxSubscriptionE2E(input, dependencies = {
 
     receipt.sideEffects.sessionPosts = 1;
     const session = await request({
-      url: fixedUrl(invocation.previewHost, "/api/admin/ops/payuni/wp4-session"),
+      url: fixedUrl(operationHostFor(invocation, dependencies), "/api/admin/ops/payuni/wp4-session"),
       headers: guarded,
       body: undefined,
       cookiePrefix: "celebrate_session=",
@@ -1755,7 +1794,8 @@ export async function runMvpPayUniSandboxSubscriptionE2E(input, dependencies = {
 
     receipt.sideEffects.planSelections = 1;
     const callbackMapped = await browserSubmit({
-      previewHost: invocation.previewHost,
+      // The attested operation host; PayUni returns to NEXT_PUBLIC_APP_URL, which is this alias on staging.
+      previewHost: operationHostFor(invocation, dependencies),
       ownerSessionCookie: session.sessionCookie,
       cardNumber: invocation.cardNumber,
       cardExpiry: invocation.cardExpiry,
@@ -1769,7 +1809,7 @@ export async function runMvpPayUniSandboxSubscriptionE2E(input, dependencies = {
       reservePaymentAttempt: async () => {
         receipt.sideEffects.paymentAttemptPosts = 1;
         const paymentAttempt = responseJson(await request({
-          url: fixedUrl(invocation.previewHost, "/api/admin/ops/payuni/wp4-subscription-payment-attempt"),
+          url: fixedUrl(operationHostFor(invocation, dependencies), "/api/admin/ops/payuni/wp4-subscription-payment-attempt"),
           headers: guarded,
           body: undefined,
         }));
@@ -1797,7 +1837,7 @@ export async function runMvpPayUniSandboxSubscriptionE2E(input, dependencies = {
     // alone cannot prove activation or quota, and must not authorize a refund.
     receipt.sideEffects.statePosts = 1;
     const activeState = responseJson(await request({
-      url: fixedUrl(invocation.previewHost, "/api/admin/ops/payuni/wp4-subscription-state"),
+      url: fixedUrl(operationHostFor(invocation, dependencies), "/api/admin/ops/payuni/wp4-subscription-state"),
       headers: guarded,
       body: undefined,
     }));
@@ -1810,7 +1850,7 @@ export async function runMvpPayUniSandboxSubscriptionE2E(input, dependencies = {
 
     receipt.sideEffects.refundPosts = 1;
     const refund = responseJson(await request({
-      url: fixedUrl(invocation.previewHost, "/api/admin/ops/payuni/wp4-subscription-refund"),
+      url: fixedUrl(operationHostFor(invocation, dependencies), "/api/admin/ops/payuni/wp4-subscription-refund"),
       headers: guarded,
       body: undefined,
     }));
@@ -1826,7 +1866,7 @@ export async function runMvpPayUniSandboxSubscriptionE2E(input, dependencies = {
     for (let attempt = 1; attempt <= maximumReconcileAttempts; attempt += 1) {
       receipt.sideEffects.reconcilePosts = attempt;
       const reconciliation = responseJson(await request({
-        url: fixedUrl(invocation.previewHost, "/api/admin/ops/payuni/wp4-subscription-reconcile"),
+        url: fixedUrl(operationHostFor(invocation, dependencies), "/api/admin/ops/payuni/wp4-subscription-reconcile"),
         headers: guarded,
         body: undefined,
       }));
@@ -1841,7 +1881,7 @@ export async function runMvpPayUniSandboxSubscriptionE2E(input, dependencies = {
     receipt.checks.reconciled = true;
     receipt.sideEffects.statePosts = 2;
     const refundedState = responseJson(await request({
-      url: fixedUrl(invocation.previewHost, "/api/admin/ops/payuni/wp4-subscription-state"),
+      url: fixedUrl(operationHostFor(invocation, dependencies), "/api/admin/ops/payuni/wp4-subscription-state"),
       headers: guarded,
       body: undefined,
     }));
@@ -1916,7 +1956,7 @@ export async function runMvpPayUniBuyerExistingContinuation(input, dependencies 
   const request = dependencies.request ?? defaultRequest;
   const wait = dependencies.wait ?? ((milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds)));
   const headers = guardedHeaders(invocation);
-  const get = async (path) => responseJson(await request({ url: fixedUrl(invocation.previewHost, path), headers, body: undefined }));
+  const get = async (path) => responseJson(await request({ url: fixedUrl(operationHostFor(invocation, dependencies), path), headers, body: undefined }));
   try {
     receipt.sideEffects.statePosts = 1;
     const initial = await get("/api/admin/ops/payuni/wp4-buyer-existing-state");
@@ -2055,6 +2095,18 @@ export async function validateWrittenBuyerExistingContinuationReceipt(runnerTemp
   } catch { return false; }
 }
 
+/**
+ * Every secret-bearing CLI flow re-attests the alias first. A failed attestation
+ * writes no receipt and performs no application request: the job stays BLOCKED.
+ */
+async function attestedFlowDependencies(input) {
+  const attestation = await attestOperationHost(input);
+  if (attestation.ok) return { operationHost: attestation.operationHost };
+  process.stdout.write(`mvp_payuni_alias_attestation=BLOCKED; reason=${attestation.code}\n`);
+  process.exitCode = 2;
+  return null;
+}
+
 async function main() {
   const runnerTemp = process.env.RUNNER_TEMP;
   if (process.argv.length === 3 && process.argv[2] === "--validate-payment-only-receipt") {
@@ -2064,7 +2116,10 @@ async function main() {
     return;
   }
   if (process.argv.length === 3 && process.argv[2] === "--payment-only") {
-    const receipt = await runMvpPayUniPaymentOnly(readFixedInputs());
+    const input = readFixedInputs();
+    const flowDependencies = await attestedFlowDependencies(input);
+    if (!flowDependencies) return;
+    const receipt = await runMvpPayUniPaymentOnly(input, flowDependencies);
     await writePaymentOnlyReceipt(receipt, runnerTemp);
     process.stdout.write(`wp4_payment_only=${receipt.result}; failure=${receipt.failure}\n`);
     process.exitCode = receipt.result === "PASS" ? 0 : 2;
@@ -2077,7 +2132,10 @@ async function main() {
     return;
   }
   if (process.argv.length === 3 && process.argv[2] === "--retry-buyer-callback") {
-    const receipt = await retryFixedWp4BuyerCallback(readExistingRefundRecoveryInputs());
+    const input = readExistingRefundRecoveryInputs();
+    const flowDependencies = await attestedFlowDependencies(input);
+    if (!flowDependencies) return;
+    const receipt = await retryFixedWp4BuyerCallback(input, flowDependencies);
     await writeBuyerCallbackRetryReceipt(receipt, runnerTemp);
     process.stdout.write(`wp4_buyer_callback_retry=${receipt.result}; status=${receipt.status}\n`);
     process.exitCode = receipt.result === "PASS" ? 0 : 2;
@@ -2092,7 +2150,10 @@ async function main() {
     return;
   }
   if (process.argv.length === 3 && process.argv[2] === "--check-buyer-payment") {
-    const receipt = await checkExistingWp4BuyerPayment(readExistingRefundRecoveryInputs());
+    const input = readExistingRefundRecoveryInputs();
+    const flowDependencies = await attestedFlowDependencies(input);
+    if (!flowDependencies) return;
+    const receipt = await checkExistingWp4BuyerPayment(input, flowDependencies);
     if (!validateBuyerPaymentCheckReceipt(receipt).ok) { process.exitCode = 2; return; }
     await writeBuyerPaymentCheckReceipt(receipt, runnerTemp);
     process.stdout.write(`wp4_buyer_payment_check=${receipt.result}; status=${receipt.status}\n`);
@@ -2100,8 +2161,9 @@ async function main() {
     return;
   }
   if (process.argv.length === 3 && process.argv[2] === "--verify-lineage") {
-    const valid = await verifyMvpPayUniLineage();
-    process.stdout.write(`mvp_payuni_lineage=${valid ? "PASS" : "BLOCKED"}\n`);
+    const reason = await diagnoseMvpPayUniLineage();
+    const valid = reason === "VERIFIED";
+    process.stdout.write(`mvp_payuni_lineage=${valid ? "PASS" : "BLOCKED"}; reason=${reason}\n`);
     process.exitCode = valid ? 0 : 2;
     return;
   }
@@ -2130,7 +2192,10 @@ async function main() {
     return;
   }
   if (process.argv.length === 3 && process.argv[2] === "--continue-existing-buyer") {
-    const receipt = await runMvpPayUniBuyerExistingContinuation(readExistingRefundRecoveryInputs());
+    const input = readExistingRefundRecoveryInputs();
+    const flowDependencies = await attestedFlowDependencies(input);
+    if (!flowDependencies) return;
+    const receipt = await runMvpPayUniBuyerExistingContinuation(input, flowDependencies);
     if (!validateBuyerContinuationReceipt(receipt).ok) { process.exitCode = 2; return; }
     await writeBuyerExistingContinuationReceipt(receipt, runnerTemp);
     process.stdout.write(`wp4_buyer_existing_continuation=${receipt.result}; failure=${receipt.failure}\n`);
@@ -2138,7 +2203,10 @@ async function main() {
     return;
   }
   if (process.argv.length === 3 && process.argv[2] === "--recover-existing-refund") {
-    const receipt = await recoverExistingWp4BuyerRefund(readExistingRefundRecoveryInputs());
+    const input = readExistingRefundRecoveryInputs();
+    const flowDependencies = await attestedFlowDependencies(input);
+    if (!flowDependencies) return;
+    const receipt = await recoverExistingWp4BuyerRefund(input, flowDependencies);
     try {
       await writeExistingRefundRecoveryReceipt(receipt, runnerTemp);
       process.stdout.write(`mvp_payuni_refund_recovery=${receipt.result}; status=${receipt.status}\n`);
@@ -2150,9 +2218,12 @@ async function main() {
     return;
   }
   if (process.argv.length === 3 && process.argv[2] === "--subscription") {
+    const input = readFixedInputs();
+    const flowDependencies = await attestedFlowDependencies(input);
+    if (!flowDependencies) return;
     let subscriptionReceipt;
     try {
-      subscriptionReceipt = await runMvpPayUniSandboxSubscriptionE2E(readFixedInputs());
+      subscriptionReceipt = await runMvpPayUniSandboxSubscriptionE2E(input, flowDependencies);
     } catch {
       subscriptionReceipt = fail(createSubscriptionReceipt(), "INTERNAL_REJECTED");
     }
@@ -2170,8 +2241,11 @@ async function main() {
   if (process.argv.length !== 2) {
     receipt = fail(createReceipt(), "INPUT_REJECTED");
   } else {
+    const input = readFixedInputs();
+    const flowDependencies = await attestedFlowDependencies(input);
+    if (!flowDependencies) return;
     try {
-      receipt = await runMvpPayUniSandboxE2E(readFixedInputs());
+      receipt = await runMvpPayUniSandboxE2E(input, flowDependencies);
     } catch {
       receipt = fail(createReceipt(), "INTERNAL_REJECTED");
     }

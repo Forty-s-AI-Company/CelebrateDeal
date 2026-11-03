@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
-import { diagnoseStagingPreviewBinding } from "./staging-browser-smoke.mjs";
+import { diagnoseStagingAliasBindingWithFallback, diagnoseStagingPreviewBinding } from "./staging-browser-smoke.mjs";
 
 import { appNavigationSelectorForViewport, classifyBrowserExecutionFailure, classifyBrowserRequest, classifyCriticalResourceFailureKind, classifyCriticalResourceRequestFailure, classifyCriticalResourceResponse, classifyFinalPath, classifySessionStatus, classifyUnsafeRequestDetail, classifyUnsafeRequestPath, diagnoseStagingAliasBinding, hasActionableDashboardAlert, isCriticalResourceFailure, isDashboardDetailsGet, isFailedCriticalResourceRequest, runBrowserSmoke, validateBrowserSmokeBinding, verifyStagingAliasBinding } from "./staging-browser-smoke.mjs";
 
@@ -520,4 +520,63 @@ test("final URLs and blocked requests are reduced to fixed, non-sensitive catego
   assert.equal(classifyUnsafeRequestDetail("/api/analytics"), "analyticsApi");
   assert.equal(classifyUnsafeRequestDetail("/api/auth/session"), "authApi");
   assert.equal(classifyUnsafeRequestDetail("/private/sensitive-id"), "other");
+});
+
+const ALIAS_HEALTH_URL = "https://celebrate-deal-staging.carry-digital-nomad.in.net/api/health";
+
+function aliasIdentity({ commitSha = INPUT.CELEBRATEDEAL_SOURCE_SHA, vercelUrl = INPUT.CELEBRATEDEAL_DEPLOYMENT_HOST } = {}) {
+  return new Response(JSON.stringify({ ok: true, database: "ok", latencyMs: 1, deployment: { commitSha, deploymentId: "dpl_fixture", vercelUrl } }), {
+    status: 200,
+    headers: { "content-type": "application/json" },
+  });
+}
+
+function vercelThenAlias(vercelStatus, alias = () => aliasIdentity(), requests = []) {
+  return async (url) => {
+    requests.push(String(url));
+    if (String(url) === ALIAS_HEALTH_URL) return alias();
+    return { status: vercelStatus, json: async () => ({}) };
+  };
+}
+
+test("--verify-alias falls back to alias self-attestation only when the Vercel token cannot read the alias", async () => {
+  for (const status of [401, 403]) {
+    const requests = [];
+    const result = await diagnoseStagingAliasBindingWithFallback(INPUT, vercelThenAlias(status, undefined, requests));
+    assert.equal(result.reason, "VERIFIED");
+    assert.equal(result.method, "SELF_ATTESTATION");
+    assert.match(result.vercelApi, /^ALIAS_(?:AUTH_REJECTED|PERMISSION_DENIED)$/u);
+    assert.equal(requests.at(-1), ALIAS_HEALTH_URL);
+    // The immutable Preview host is never contacted directly.
+    assert.equal(requests.some((url) => url.startsWith(`https://${INPUT.CELEBRATEDEAL_DEPLOYMENT_HOST}`)), false);
+  }
+  assert.equal(await verifyStagingAliasBinding(INPUT, vercelThenAlias(403)), true);
+  const missingToken = await diagnoseStagingAliasBindingWithFallback({ ...INPUT, VERCEL_TOKEN: "" }, vercelThenAlias(403));
+  assert.deepEqual(missingToken, { reason: "VERIFIED", method: "SELF_ATTESTATION", vercelApi: "VERCEL_TOKEN_MISSING" });
+});
+
+test("--verify-alias stays NOT_VERIFIED when both proofs fail or Vercel gives a definitive negative", async () => {
+  const cases = [
+    ["ALIAS_ATTESTATION_SHA_MISMATCH", () => aliasIdentity({ commitSha: "b".repeat(40) })],
+    ["ALIAS_ATTESTATION_HOST_MISMATCH", () => aliasIdentity({ vercelUrl: "celebrate-deal-staging-older-a25814740s-projects.vercel.app" })],
+    ["ALIAS_ATTESTATION_UNREACHABLE", () => { throw new TypeError("fetch failed"); }],
+    ["ALIAS_ATTESTATION_FIELDS_MISSING", () => new Response(JSON.stringify({ ok: true, database: "ok" }), { status: 200, headers: { "content-type": "application/json" } })],
+    ["ALIAS_ATTESTATION_HTTP_REJECTED", () => new Response("{}", { status: 403, headers: { "content-type": "application/json", "x-vercel-mitigated": "deny" } })],
+  ];
+  for (const [reason, alias] of cases) {
+    assert.deepEqual(await diagnoseStagingAliasBindingWithFallback(INPUT, vercelThenAlias(403, alias)), { reason, method: "NONE", vercelApi: "ALIAS_PERMISSION_DENIED" });
+    assert.equal(await verifyStagingAliasBinding(INPUT, vercelThenAlias(403, alias)), false);
+  }
+  // A definitive Vercel answer is never overridden by the fallback, even if the alias would attest.
+  for (const [status, vercelApi] of [[404, "ALIAS_NOT_FOUND"], [500, "ALIAS_API_ERROR"]]) {
+    const requests = [];
+    assert.deepEqual(await diagnoseStagingAliasBindingWithFallback(INPUT, vercelThenAlias(status, undefined, requests)), { reason: vercelApi, method: "NONE", vercelApi });
+    assert.equal(requests.includes(ALIAS_HEALTH_URL), false);
+  }
+  const mismatch = await diagnoseStagingAliasBindingWithFallback(INPUT, async (url) => String(url) === ALIAS_HEALTH_URL
+    ? aliasIdentity()
+    : { status: 200, json: async () => (String(url).includes("/v4/aliases/")
+      ? { alias: "celebrate-deal-staging.carry-digital-nomad.in.net", deploymentId: "dpl_old", projectId: "prj_fixture" }
+      : { id: "dpl_fixture", projectId: "prj_fixture", url: INPUT.CELEBRATEDEAL_DEPLOYMENT_HOST, name: "celebrate-deal-staging", target: null, readyState: "READY" }) });
+  assert.deepEqual(mismatch, { reason: "ALIAS_DEPLOYMENT_MISMATCH", method: "NONE", vercelApi: "ALIAS_DEPLOYMENT_MISMATCH" });
 });

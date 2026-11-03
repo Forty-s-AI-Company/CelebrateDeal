@@ -92,7 +92,7 @@ UI 隱藏不能充當權限。每個新增敏感 read／mutation／export／rela
 gh workflow run staging-browser-smoke.yml --ref master -f source_sha=<sha> -f deployment_host=<host> -f surface=fixed_alias
 ```
 
-lineage 步驟（`node scripts/mvp-payuni-sandbox-e2e.mjs --verify-lineage`）依序驗證：GitHub Deployment 紀錄（environment `Preview – celebrate-deal-staging`）的最新 success status 指向 `<host>` 且 SHA 完全相同；`<sha>` 為 `master` 本身或其祖先（GitHub compare API，不比對分支名稱，因此 `gh-readonly-queue/*` ref 的 deployment 可通過）；`fixed_alias` 對 alias 的 `/api/health` 取得 200。Vercel 防火牆會以 403 拒絕直接探測 immutable host，所以只有 `immutable_preview` 才探測該 host。alias 是否確實指向 `<host>` 由下一步 `--verify-alias`（Vercel API）證明，host 與 SHA 的綁定由前述 Deployment 紀錄證明。
+lineage 步驟（`node scripts/mvp-payuni-sandbox-e2e.mjs --verify-lineage`）依序驗證：GitHub Deployment 紀錄（environment `Preview – celebrate-deal-staging`）的最新 success status 指向 `<host>` 且 SHA 完全相同；`<sha>` 為 `master` 本身或其祖先（GitHub compare API，不比對分支名稱，因此 `gh-readonly-queue/*` ref 的 deployment 可通過）；alias 自證：對 alias `GET /api/health`，回應的 `deployment.commitSha` 必須等於 `<sha>`、`deployment.vercelUrl` 必須等於 `<host>`（兩者由 Vercel 注入）。Vercel 防火牆會以 403 拒絕直接探測 immutable host，所以只有 `immutable_preview` 才探測該 host。下一步 `--verify-alias` 先用 Vercel API 查 alias 綁定；token 無權限（401／403／缺少）時改用同一個 alias 自證，兩者都失敗才 `NOT_VERIFIED`。host 與 SHA 的綁定由前述 Deployment 紀錄證明。所有受保護 runner（WP2／WP4／LINE／funnel）同樣只在 alias 自證通過後打 alias，細節見 `docs/launch/secure-staging-runner.md`「固定 alias 自證」。
 
 ## 設計與互動
 

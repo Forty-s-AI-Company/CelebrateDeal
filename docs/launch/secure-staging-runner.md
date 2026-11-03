@@ -18,7 +18,8 @@ Workflow 只有在以下條件全部成立時才會執行：
 2. GitHub 回報該分支受保護（`github.ref_protected == true`）。
 3. Job 綁定 GitHub Environment `Preview – celebrate-deal-staging`。
 4. GitHub deployment receipt 唯一對應固定 source SHA `9193326824b8b6bf774bdfa28e4783a1a1b8f304`、Preview hostname、
-   成功狀態與 non-Production environment。
+   成功狀態與 non-Production environment，且固定 staging alias 自證正在服務同一個 sha 與 Preview host
+   （見下方「固定 alias 自證」）。
 5. `STAGING_DATABASE_URL` 與 `NEXT_PUBLIC_SUPABASE_URL` 對應同一個 Supabase
    project identity。
 6. 固定 task 為 `wp2-readonly-restore`。
@@ -84,13 +85,96 @@ Preview hostname 與 sha 的對應，而且會隨 sha 在 `master` 停留的時�
 | `GITHUB_DEPLOYMENT_PAGE_LIMIT_EXHAUSTED` | 列表超過 10 頁（1000 筆）仍未結束。 |
 | `GITHUB_DEPLOYMENT_READ_BUDGET_EXHAUSTED` | 列表頁數加 Vercel statuses 讀取超過 20 次。 |
 
+## 固定 alias 自證（取代直連 Preview host）
+
+### 為什麼 Preview host 不能直連
+
+2026-11-03 實測：對 immutable Preview host（`celebrate-deal-staging-<hash>-a25814740s-projects.vercel.app`）
+做 `HEAD /api/health`，Vercel 回 `403` 並帶 `X-Vercel-Mitigated: deny`。任何 `*.vercel.app` 預覽主機
+都被 Vercel 防火牆擋下，固定 alias `celebrate-deal-staging.carry-digital-nomad.in.net` 則回 200。
+lineage 閘門本身通過（GitHub 紀錄的 sha 與 host 都相符），但後續對 Preview host 的健康探測讓
+secure-staging-validation 的 WP2／WP4／LINE task 與 funnel smoke 全部停在
+`mvp_payuni_lineage=BLOCKED`（例如 run 41573026300）。另一條證明路徑 `--verify-alias` 用
+`VERCEL_TOKEN` 查 alias 綁定，目前回 `ALIAS_PERMISSION_DENIED`（token 權限不足）。
+
+### 新流程
+
+`dispatch` 的輸入語意不變：`source_sha` 是完整 commit sha，`deployment_host` 是 GitHub 部署紀錄裡的
+immutable Preview host。差別在於這個 host 現在只當 **lineage 比對的輸入**，不再被連線：
+
+1. **Lineage 閘門**（`verifyDeployment()`，不變）：GitHub 部署紀錄（`vercel[bot]`）證明
+   `source_sha` ↔ `deployment_host`。
+2. **Alias 自證**（`verifyAliasAttestation()`，`scripts/secure-staging-runner.mjs`）：對固定 alias
+   `GET /api/health`（不跟隨 redirect、不帶任何認證），要求：
+   - HTTP 200、`content-type: application/json`、內容不超過 4 KiB、`ok === true`、`database === "ok"`；
+   - `deployment` 物件恰好有 `commitSha`、`deploymentId`、`vercelUrl` 三個欄位；
+   - `deployment.commitSha === source_sha`；
+   - `deployment.vercelUrl === deployment_host`（小寫比對）；
+   - `deployment.deploymentId` 為 `null` 或 `dpl_…` 格式。GitHub 部署紀錄沒有 Vercel deployment id，
+     所以 id 只檢查格式、不作比對依據；sha 與 host 兩者都必須相符。
+3. 只有自證通過，WP2／WP4／LINE／funnel／browser 的實際請求才改打 alias（「操作用 host」）；
+   lineage 比對仍用 Preview host。
+
+任何失敗一律 fail closed，回固定錯誤碼：
+
+| 錯誤碼 | 意義 |
+|---|---|
+| `ALIAS_ATTESTATION_INPUT_INVALID` | 預期 sha 或 Preview host 格式不對，未發出請求。 |
+| `ALIAS_ATTESTATION_UNREACHABLE` | alias 連不上（DNS、TLS、逾時）。 |
+| `ALIAS_ATTESTATION_REDIRECTED` | 回 3xx 或帶 `Location`。 |
+| `ALIAS_ATTESTATION_HTTP_REJECTED` | 非 200（含 503 資料庫失敗、403 防火牆）。 |
+| `ALIAS_ATTESTATION_RESPONSE_INVALID` | 非 JSON、超過 4 KiB 或不是物件。 |
+| `ALIAS_ATTESTATION_FIELDS_MISSING` | 缺 `deployment` 或其欄位、欄位型別或格式不符、`ok`／`database` 不是健康狀態。 |
+| `ALIAS_ATTESTATION_SHA_MISMATCH` | alias 正在服務的部署 commit 與 `source_sha` 不同（例如 alias 尚未切到這次部署）。 |
+| `ALIAS_ATTESTATION_HOST_MISMATCH` | alias 正在服務的部署 `VERCEL_URL` 與 `deployment_host` 不同。 |
+| `ALIAS_ATTESTATION_FAILED` | 其他無法分類的自證失敗。 |
+
+### 信任依據
+
+- alias 由 Vercel 的 edge 解析到它目前指向的部署；回應是那個部署的程式產生的。
+- `commitSha`（`VERCEL_GIT_COMMIT_SHA`）、`vercelUrl`（`VERCEL_URL`）與 `deploymentId`（`VERCEL_DEPLOYMENT_ID`）
+  是 Vercel 在建置／執行時注入的系統環境變數，不是 secret，也不能由請求者影響。`/api/health` 只輸出符合
+  固定格式的值，其他一律為 `null`，並帶 `Cache-Control: no-store`。
+- GitHub 紀錄證明 sha ↔ Preview host；alias 回應證明 alias ↔（sha、Preview host）。兩者串起來才等於
+  「alias 正在服務 lineage 閘門驗過的那個部署」。
+- 這個證明不需要 `VERCEL_TOKEN`，但它比 Vercel API 查詢弱：欄位由「alias 目前服務的部署」自己回報。
+  若 alias 被指到一個由未審查程式建置的部署，該程式可以偽造 `commitSha` 與 `vercelUrl`。因此它的前提是
+  alias 只由 owner 指向 `master` 上已審查 commit 的部署（staging 現行流程，見 `docs/domain-workflows.md`）；
+  browser／funnel smoke 另外要求 sha 必須是受保護 `master` 本身或其祖先。Vercel API 可用時仍優先採用 API 結果。
+
+### 各 runner 的操作 host
+
+| 入口 | lineage 比對 | 自證時點 | 實際請求 |
+|---|---|---|---|
+| `mvp-payuni-sandbox-e2e.mjs --verify-lineage`（所有 workflow 的閘門步驟） | Preview host | 閘門步驟內 | 不發業務請求 |
+| `mvp-payuni-sandbox-e2e.mjs` 各執行旗標（WP4 付款、訂閱、payment-only、recovery、payment-check、callback-retry、continuation） | 前一個閘門步驟 | 每次執行前再自證一次；失敗不寫 receipt、exit 2 | alias |
+| `secure-staging-wp4-payuni.mjs`（reconciliation） | 同一行程內 | parent 自證後才啟動 child，並只把 alias 傳給 child | alias |
+| `secure-staging-runner.mjs`（WP2） | 同一行程內 | lineage 之後、讀資料庫之前 | 不發業務請求 |
+| `secure-staging-line-notifications.mjs`（LINE） | 前一個閘門步驟 | 連資料庫之前 | alias |
+| `staging-browser-smoke.mjs` `fixed_alias`、`staging-funnel-smoke.mjs` | 閘門步驟 | 閘門 + `--verify-alias` + 每次送憑證前 | alias |
+| `staging-browser-smoke.mjs` `immutable_preview` | 閘門步驟 | 不適用（切換前模式，仍探測 Preview host） | Preview host |
+
+PayUni 的 `NotifyURL`／`ReturnURL` 由部署的 `NEXT_PUBLIC_APP_URL` 組成，staging 的值就是 alias。
+runner 的瀏覽器在 alias 自證通過後，以 alias 作為 origin，並等待導回 `https://<alias>/checkout/result`；
+回呼重送（`/api/webhooks/payments?provider=payuni&source=notify`）也只送到 alias。
+
+### `--verify-alias` 的替代證明
+
+`staging-browser-smoke.mjs --verify-alias` 先用 `VERCEL_TOKEN` 查 alias 綁定。只有當結果是
+`VERCEL_TOKEN_MISSING`、`ALIAS_AUTH_REJECTED`、`ALIAS_PERMISSION_DENIED`、`DEPLOYMENT_AUTH_REJECTED` 或
+`DEPLOYMENT_PERMISSION_DENIED`（token 無法讀取紀錄）時，才改用上述 alias 自證；兩者都失敗才
+`NOT_VERIFIED`。Vercel 明確回答不符（`ALIAS_DEPLOYMENT_MISMATCH`、`DEPLOYMENT_METADATA_INVALID`、`*_NOT_FOUND`、
+`*_API_ERROR` 等）時不改用替代證明。輸出 JSON 會帶 `method`（`VERCEL_API`／`SELF_ATTESTATION`／`NONE`）與
+`vercelApi`（Vercel API 的原始結果碼），funnel 與 browser smoke 在執行期間的重新檢查走同一個邏輯。
+
 ## 執行與網路邊界
 
 依賴安裝、contract tests 與 PostgreSQL image pull 都在注入 Secret 前完成。
 Secret-aware step 只允許連線：
 
 - GitHub Deployments API（TCP 443）
-- exact Vercel Preview hostname（TCP 443）
+- 固定 staging alias `celebrate-deal-staging.carry-digital-nomad.in.net`（TCP 443）；Preview host 不再列入
+  allowlist，因為任何 runner 都不會連它（Q1 步驟沿用原本同時列出兩者的 allowlist）
 - staging Supabase database hostname 與指定 port
 
 Runner 的 IPv4/IPv6 OUTPUT policy 在 child process 執行期間為 fail-closed；來源 database

@@ -1,8 +1,9 @@
 import assert from "node:assert/strict";
 import crypto from "node:crypto";
+import fs from "node:fs";
 import test from "node:test";
 
-import { TASK, validateInvocation, validateReceipt } from "./secure-staging-line-notifications.mjs";
+import { TASK, runLineStagingValidation, validateInvocation, validateReceipt } from "./secure-staging-line-notifications.mjs";
 
 const source = {
   STAGING_DATABASE_URL: "postgresql://staging_user@staging.invalid/postgres",
@@ -49,4 +50,28 @@ test("receipt rejects secrets, database URLs, bearer values and extra fields", (
     assert.equal(validateReceipt({ ...passingReceipt(), result: "FAILED", failureCode }).ok, false);
   }
   assert.equal(validateReceipt({ ...passingReceipt(), rawResponse: {} }).ok, false);
+});
+
+test("stops before any database or cron request unless the alias attests the exact Preview", async () => {
+  for (const failure of [
+    async () => { throw new Error("ALIAS_ATTESTATION_SHA_MISMATCH"); },
+    async () => { throw new Error("ALIAS_ATTESTATION_UNREACHABLE"); },
+    async () => ({ host: "preview.vercel.app" }),
+  ]) {
+    const receipt = await runLineStagingValidation(source, { verifyAliasAttestationImpl: failure });
+    assert.equal(receipt.result, "BLOCKED");
+    assert.match(receipt.failureCode, /^ALIAS_ATTESTATION_[A-Z_]+$/u);
+    assert.equal(receipt.sideEffects.cronCalls, 0);
+    assert.equal(receipt.cleanup.attempted, false);
+    assert.equal(receipt.checks.isolatedDatabase, false);
+  }
+  let received = null;
+  await runLineStagingValidation(source, { verifyAliasAttestationImpl: async (input) => { received = input; throw new Error("ALIAS_ATTESTATION_HOST_MISMATCH"); } });
+  assert.deepEqual(received, { sourceSha: source.CELEBRATEDEAL_SOURCE_SHA, previewHost: source.CELEBRATEDEAL_DEPLOYMENT_HOST });
+});
+
+test("cron requests address the attested alias, never the firewalled Preview host", () => {
+  const runner = fs.readFileSync(new URL("./secure-staging-line-notifications.mjs", import.meta.url), "utf8");
+  assert.doesNotMatch(runner, /https:\/\/\$\{source\.CELEBRATEDEAL_DEPLOYMENT_HOST\}/u);
+  assert.match(runner, /fetch\(`https:\/\/\$\{operationHost\}\/api\/cron\/line-notifications`/u);
 });

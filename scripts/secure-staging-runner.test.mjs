@@ -4,7 +4,9 @@ import test from "node:test";
 import { BACKUP_MIGRATION_TREE_SHA } from "./staging-backup-recovery-source.mjs";
 
 import {
+  ALIAS_ATTESTATION_FAILURES,
   BACKUP_SOURCE_SHA,
+  STAGING_ALIAS_HOST,
   classifyPostgresFailure,
   classifyRestoreFailure,
   createInitialReceipt,
@@ -13,12 +15,15 @@ import {
   isolatedRestoreArgs,
   parseExtensionPlacements,
   readOnlySql,
+  runSecureTask,
   sourceInventory,
   REQUIRED_CONFIG_KEYS,
   REQUIRED_SECRET_KEYS,
   validateInvocation,
   validateReceipt,
+  verifyAliasAttestation,
   verifyDeployment,
+  verifyDeploymentThroughAlias,
   verifyTrustedMigrationTree,
 } from "./secure-staging-runner.mjs";
 
@@ -640,4 +645,132 @@ test("receipt validation rejects extra fields, writes and secret-bearing text", 
   assert.equal(errors.includes("SCHEMA_DATABASE"), true);
   assert.equal(errors.includes("FORBIDDEN_SIDE_EFFECTS"), true);
   assert.equal(errors.includes("FORBIDDEN_TEXT"), true);
+});
+
+// ---- Alias self-attestation (Vercel firewalls the immutable Preview host) ----
+
+const previewHost = "safe-preview.vercel.app";
+const aliasHealthUrl = `https://${STAGING_ALIAS_HOST}/api/health`;
+
+function aliasHealth({ commitSha = sha, vercelUrl = previewHost, deploymentId = "dpl_Fixture123", status = 200, headers = {}, body } = {}) {
+  const payload = body ?? { ok: true, database: "ok", latencyMs: 3, deployment: { commitSha, deploymentId, vercelUrl } };
+  return new Response(typeof payload === "string" ? payload : JSON.stringify(payload), {
+    status,
+    headers: { "content-type": "application/json", ...headers },
+  });
+}
+
+test("alias attestation passes only for the exact SHA and Preview host served through the fixed alias", async () => {
+  const requests = [];
+  const result = await verifyAliasAttestation({ sourceSha: sha, previewHost }, async (url, init) => {
+    requests.push({ url: String(url), init });
+    return aliasHealth();
+  });
+  assert.deepEqual(result, { host: STAGING_ALIAS_HOST, healthStatus: 200, noRedirect: true, commitShaMatched: true, vercelUrlMatched: true });
+  assert.equal(requests.length, 1);
+  assert.equal(requests[0].url, aliasHealthUrl);
+  assert.equal(requests[0].init.method, "GET");
+  assert.equal(requests[0].init.redirect, "manual");
+  assert.equal(requests[0].init.headers.Authorization, undefined);
+  // The Preview host itself is never contacted.
+  assert.equal(requests.some((request) => request.url.includes(previewHost)), false);
+  // Vercel reports VERCEL_URL in lowercase; a null deployment id is shape-valid.
+  await verifyAliasAttestation({ sourceSha: sha, previewHost }, async () => aliasHealth({ vercelUrl: previewHost.toUpperCase(), deploymentId: null }));
+});
+
+test("alias attestation fails closed on SHA drift, host drift, missing fields and unreachable alias", async () => {
+  const attest = (fetchImpl) => verifyAliasAttestation({ sourceSha: sha, previewHost }, fetchImpl);
+  await assert.rejects(attest(async () => aliasHealth({ commitSha: "b".repeat(40) })), /^Error: ALIAS_ATTESTATION_SHA_MISMATCH$/u);
+  await assert.rejects(attest(async () => aliasHealth({ vercelUrl: "other-preview.vercel.app" })), /^Error: ALIAS_ATTESTATION_HOST_MISMATCH$/u);
+  await assert.rejects(attest(async () => { throw new TypeError("fetch failed"); }), /^Error: ALIAS_ATTESTATION_UNREACHABLE$/u);
+  await assert.rejects(attest(async () => aliasHealth({ status: 403, headers: { "x-vercel-mitigated": "deny" } })), /^Error: ALIAS_ATTESTATION_HTTP_REJECTED$/u);
+  await assert.rejects(attest(async () => aliasHealth({ status: 503, body: { ok: false, database: "failed", deployment: { commitSha: sha, deploymentId: null, vercelUrl: previewHost } } })), /^Error: ALIAS_ATTESTATION_HTTP_REJECTED$/u);
+  await assert.rejects(attest(async () => aliasHealth({ status: 307, headers: { location: "https://elsewhere.example/" } })), /^Error: ALIAS_ATTESTATION_REDIRECTED$/u);
+  await assert.rejects(attest(async () => aliasHealth({ headers: { location: "https://elsewhere.example/" } })), /^Error: ALIAS_ATTESTATION_REDIRECTED$/u);
+
+  // Responses missing the identity, or any of its fields, are never treated as proof.
+  const missing = [
+    { ok: true, database: "ok", latencyMs: 1 },
+    { ok: true, database: "ok", deployment: { commitSha: sha, vercelUrl: previewHost } },
+    { ok: true, database: "ok", deployment: { deploymentId: null, vercelUrl: previewHost } },
+    { ok: true, database: "ok", deployment: { commitSha: sha, deploymentId: null } },
+    { ok: true, database: "ok", deployment: { commitSha: null, deploymentId: null, vercelUrl: previewHost } },
+    { ok: true, database: "ok", deployment: { commitSha: sha, deploymentId: null, vercelUrl: null } },
+    { ok: true, database: "ok", deployment: { commitSha: sha, deploymentId: "not-a-dpl", vercelUrl: previewHost } },
+    { ok: true, database: "ok", deployment: { commitSha: sha, deploymentId: null, vercelUrl: previewHost, extra: "x" } },
+    { ok: false, database: "ok", deployment: { commitSha: sha, deploymentId: null, vercelUrl: previewHost } },
+    { ok: true, database: "failed", deployment: { commitSha: sha, deploymentId: null, vercelUrl: previewHost } },
+  ];
+  for (const body of missing) {
+    await assert.rejects(attest(async () => aliasHealth({ body })), /^Error: ALIAS_ATTESTATION_FIELDS_MISSING$/u, JSON.stringify(body));
+  }
+  await assert.rejects(attest(async () => new Response("<html>ok</html>", { status: 200, headers: { "content-type": "text/html" } })), /^Error: ALIAS_ATTESTATION_RESPONSE_INVALID$/u);
+  await assert.rejects(attest(async () => aliasHealth({ body: "not json" })), /^Error: ALIAS_ATTESTATION_RESPONSE_INVALID$/u);
+  await assert.rejects(attest(async () => aliasHealth({ body: "[]" })), /^Error: ALIAS_ATTESTATION_RESPONSE_INVALID$/u);
+  await assert.rejects(attest(async () => aliasHealth({ body: JSON.stringify({ padding: "x".repeat(5000) }) })), /^Error: ALIAS_ATTESTATION_RESPONSE_INVALID$/u);
+});
+
+test("alias attestation rejects malformed expectations before any request", async () => {
+  let requested = false;
+  const spy = async () => { requested = true; return aliasHealth(); };
+  for (const input of [
+    { sourceSha: "main", previewHost },
+    { sourceSha: sha, previewHost: STAGING_ALIAS_HOST },
+    { sourceSha: sha, previewHost: "https://safe-preview.vercel.app" },
+    { sourceSha: sha, previewHost: "" },
+    {},
+  ]) {
+    await assert.rejects(verifyAliasAttestation(input, spy), /^Error: ALIAS_ATTESTATION_INPUT_INVALID$/u);
+  }
+  assert.equal(requested, false);
+  for (const code of ALIAS_ATTESTATION_FAILURES) assert.match(code, /^ALIAS_ATTESTATION_[A-Z_]+$/u);
+});
+
+function lineageThenAlias(aliasResponse, requests = []) {
+  const responses = [
+    new Response(JSON.stringify([vercelDeployment(42)]), { status: 200 }),
+    new Response(JSON.stringify(exactHostSuccess), { status: 200 }),
+  ];
+  return async (url) => {
+    requests.push(String(url));
+    if (String(url) === aliasHealthUrl) return aliasResponse();
+    return responses.shift();
+  };
+}
+
+test("lineage gate and alias attestation compose into the alias-only operation host", async () => {
+  const requests = [];
+  const result = await verifyDeploymentThroughAlias(environment(), lineageThenAlias(() => aliasHealth(), requests));
+  assert.equal(result.host, previewHost);
+  assert.equal(result.operationHost, STAGING_ALIAS_HOST);
+  assert.equal(result.alias.commitShaMatched, true);
+  assert.equal(requests.at(-1), aliasHealthUrl);
+  assert.equal(requests.some((url) => url.startsWith(`https://${previewHost}`)), false);
+  await assert.rejects(
+    verifyDeploymentThroughAlias(environment(), lineageThenAlias(() => aliasHealth({ commitSha: "c".repeat(40) }))),
+    /^Error: ALIAS_ATTESTATION_SHA_MISMATCH$/u,
+  );
+});
+
+test("WP2 records the alias health and stops before any database work when the alias serves another deployment", async () => {
+  const drifted = await runSecureTask("wp2-readonly-restore", environment(), {
+    fetchImpl: lineageThenAlias(() => aliasHealth({ vercelUrl: "older-preview.vercel.app" })),
+    spawnSyncImpl: () => { throw new Error("must not inventory"); },
+  });
+  assert.equal(drifted.result, "BLOCKED");
+  assert.equal(drifted.failureCategory, "ALIAS_ATTESTATION_HOST_MISMATCH");
+  assert.equal(drifted.lineage.deploymentMatched, true);
+  assert.equal(drifted.lineage.healthStatus, null);
+  assert.equal(drifted.database.connectionAttempts, 0);
+
+  // A passing attestation proceeds to the next fixed gate (here: source inventory fails closed).
+  const attested = await runSecureTask("wp2-readonly-restore", environment(), {
+    fetchImpl: lineageThenAlias(() => aliasHealth()),
+    spawnSyncImpl: () => ({ status: 1, stdout: "" }),
+  });
+  assert.equal(attested.result, "BLOCKED");
+  assert.equal(attested.failureCategory, "SOURCE_COMMIT_UNAVAILABLE");
+  assert.equal(attested.lineage.healthStatus, 200);
+  assert.equal(attested.lineage.noRedirect, true);
+  assert.equal(attested.database.connectionAttempts, 0);
 });

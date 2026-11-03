@@ -1,10 +1,11 @@
 import { writeFile } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
 import { verifyMvpPayUniLineage } from "./mvp-payuni-sandbox-e2e.mjs";
+import { STAGING_ALIAS_HOST, verifyAliasAttestation } from "./secure-staging-runner.mjs";
 
 const SOURCE_SHA = /^[a-f0-9]{40}$/u;
 const PREVIEW_HOST = /^(?=.{1,253}$)[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.vercel\.app$/u;
-const STAGING_ALIAS = "celebrate-deal-staging.carry-digital-nomad.in.net";
+const STAGING_ALIAS = STAGING_ALIAS_HOST;
 const VERCEL_SCOPE = "a25814740s-projects";
 const VERCEL_PROJECT = "celebrate-deal-staging";
 const PRODUCT_ID = "wp4_synthetic_product_v1";
@@ -97,9 +98,47 @@ export async function diagnoseStagingAliasBinding(env, fetchImpl = fetch) {
   }
 }
 
-/** Compare trusted Vercel alias metadata with the exact immutable Preview deployment. */
+// Only answers that mean "this token cannot read the alias" fall back. A definitive
+// negative from Vercel (mismatch, invalid metadata, 404, API error) stays NOT_VERIFIED.
+const ALIAS_API_CREDENTIAL_FAILURES = new Set([
+  "VERCEL_TOKEN_MISSING",
+  "ALIAS_AUTH_REJECTED",
+  "ALIAS_PERMISSION_DENIED",
+  "DEPLOYMENT_AUTH_REJECTED",
+  "DEPLOYMENT_PERMISSION_DENIED",
+]);
+
+/**
+ * Alias binding proof with two independent methods:
+ *  1. VERCEL_API: Vercel's alias record names the exact Preview deployment.
+ *  2. SELF_ATTESTATION, only when the token cannot read that record: the alias is
+ *     resolved by Vercel, the /api/health response is produced by the deployment it
+ *     routes to, and VERCEL_GIT_COMMIT_SHA/VERCEL_URL in it are injected by Vercel.
+ *     Both must equal the source SHA and the Preview host bound by the GitHub record.
+ * Returns fixed codes only.
+ */
+export async function diagnoseStagingAliasBindingWithFallback(env, fetchImpl = fetch, dependencies = {}) {
+  const vercelApi = await (dependencies.diagnoseAlias ?? diagnoseStagingAliasBinding)(env, fetchImpl);
+  if (vercelApi === "VERIFIED") return { reason: "VERIFIED", method: "VERCEL_API", vercelApi };
+  if (!ALIAS_API_CREDENTIAL_FAILURES.has(vercelApi)) return { reason: vercelApi, method: "NONE", vercelApi };
+  try {
+    const attested = await (dependencies.verifyAliasAttestationImpl ?? verifyAliasAttestation)({
+      sourceSha: env.CELEBRATEDEAL_SOURCE_SHA,
+      previewHost: env.CELEBRATEDEAL_DEPLOYMENT_HOST,
+    }, fetchImpl);
+    if (attested?.host === STAGING_ALIAS && attested.commitShaMatched === true && attested.vercelUrlMatched === true) {
+      return { reason: "VERIFIED", method: "SELF_ATTESTATION", vercelApi };
+    }
+    return { reason: "ALIAS_ATTESTATION_FAILED", method: "NONE", vercelApi };
+  } catch (error) {
+    const code = typeof error?.message === "string" && /^ALIAS_ATTESTATION_[A-Z_]+$/u.test(error.message) ? error.message : "ALIAS_ATTESTATION_FAILED";
+    return { reason: code, method: "NONE", vercelApi };
+  }
+}
+
+/** Compare trusted Vercel alias metadata (or, without API access, the alias self-attestation) with the exact Preview. */
 export async function verifyStagingAliasBinding(env, fetchImpl = fetch) {
-  return await diagnoseStagingAliasBinding(env, fetchImpl) === "VERIFIED";
+  return (await diagnoseStagingAliasBindingWithFallback(env, fetchImpl)).reason === "VERIFIED";
 }
 
 /** Attest only this staging project's immutable Preview before sending an owner credential. */
@@ -581,8 +620,8 @@ async function main() {
     return;
   }
   if (process.argv[2] === "--verify-alias") {
-    const reason = await diagnoseStagingAliasBinding(process.env);
-    process.stdout.write(`${JSON.stringify({ aliasBinding: reason === "VERIFIED" ? "VERIFIED" : "NOT_VERIFIED", reason })}\n`);
+    const { reason, method, vercelApi } = await diagnoseStagingAliasBindingWithFallback(process.env);
+    process.stdout.write(`${JSON.stringify({ aliasBinding: reason === "VERIFIED" ? "VERIFIED" : "NOT_VERIFIED", reason, method, vercelApi })}\n`);
     if (reason !== "VERIFIED" && process.env.RUNNER_TEMP) {
       const report = emptyReport(reason, process.env.CELEBRATEDEAL_SOURCE_SHA);
       await writeFile(`${process.env.RUNNER_TEMP}/celebratedeal-staging-browser-smoke.json`, `${JSON.stringify(report)}\n`, { mode: 0o600 });

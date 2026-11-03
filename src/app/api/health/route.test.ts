@@ -12,9 +12,15 @@ vi.mock("@/lib/db", () => ({
 
 import { GET } from "./route";
 
+const NO_IDENTITY = { commitSha: null, deploymentId: null, vercelUrl: null };
+
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.getDb.mockReturnValue({ $queryRaw: mocks.queryRaw });
+  // Local runs have no Vercel system variables; keep the default shape deterministic.
+  vi.stubEnv("VERCEL_GIT_COMMIT_SHA", "");
+  vi.stubEnv("VERCEL_DEPLOYMENT_ID", "");
+  vi.stubEnv("VERCEL_URL", "");
 });
 
 afterEach(() => {
@@ -34,7 +40,9 @@ describe("GET /api/health", () => {
       ok: true,
       database: "ok",
       latencyMs: expect.any(Number),
+      deployment: NO_IDENTITY,
     });
+    expect(response.headers.get("cache-control")).toBe("no-store");
     expect(body.latencyMs).toBeGreaterThanOrEqual(0);
     expect(mocks.getDb).toHaveBeenCalledOnce();
     expect(mocks.queryRaw).toHaveBeenCalledOnce();
@@ -54,6 +62,7 @@ describe("GET /api/health", () => {
       database: "failed",
       latencyMs: expect.any(Number),
       error: "Database health check failed",
+      deployment: NO_IDENTITY,
     });
     expect(body.latencyMs).toBeGreaterThanOrEqual(0);
     expect(JSON.stringify(body)).not.toContain(sensitiveError);
@@ -86,6 +95,7 @@ describe("GET /api/health", () => {
           database: "failed",
           latencyMs: expect.any(Number),
           error: "Database health check failed",
+          deployment: NO_IDENTITY,
         });
         expect(warn).toHaveBeenCalledExactlyOnceWith("health_database_error", {
           category,
@@ -136,5 +146,74 @@ describe("GET /api/health", () => {
 
     expect(response.status).toBe(503);
     expect(warn).not.toHaveBeenCalled();
+  });
+
+  it("reports the Vercel-injected deployment identity used by the staging alias attestation", async () => {
+    mocks.queryRaw.mockResolvedValue([{ "?column?": 1 }]);
+    vi.stubEnv("VERCEL_GIT_COMMIT_SHA", "a".repeat(40));
+    vi.stubEnv("VERCEL_DEPLOYMENT_ID", "dpl_Fixture123");
+    vi.stubEnv("VERCEL_URL", "celebrate-deal-staging-abc123-a25814740s-projects.vercel.app");
+
+    const response = await GET();
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body).toEqual({
+      ok: true,
+      database: "ok",
+      latencyMs: expect.any(Number),
+      deployment: {
+        commitSha: "a".repeat(40),
+        deploymentId: "dpl_Fixture123",
+        vercelUrl: "celebrate-deal-staging-abc123-a25814740s-projects.vercel.app",
+      },
+    });
+  });
+
+  it("keeps the identity on a failed database probe so drift stays diagnosable", async () => {
+    mocks.queryRaw.mockRejectedValue(new Error("unreachable"));
+    vi.stubEnv("VERCEL_GIT_COMMIT_SHA", "b".repeat(40));
+    vi.stubEnv("VERCEL_URL", "celebrate-deal-staging-def456-a25814740s-projects.vercel.app");
+
+    const response = await GET();
+    const body = await response.json();
+
+    expect(response.status).toBe(503);
+    expect(body.deployment).toEqual({
+      commitSha: "b".repeat(40),
+      deploymentId: null,
+      vercelUrl: "celebrate-deal-staging-def456-a25814740s-projects.vercel.app",
+    });
+  });
+
+  it.each([
+    ["VERCEL_GIT_COMMIT_SHA", "HEAD; DATABASE_URL=postgresql://user:secret@private-host.example"],
+    ["VERCEL_GIT_COMMIT_SHA", "A".repeat(40)],
+    ["VERCEL_DEPLOYMENT_ID", "dpl_<script>"],
+    ["VERCEL_URL", "https://celebrate-deal-staging.vercel.app/path"],
+    ["VERCEL_URL", "celebrate-deal-staging.carry-digital-nomad.in.net"],
+    ["VERCEL_URL", "user:secret@celebrate-deal-staging.vercel.app"],
+  ] as const)("never echoes an out-of-shape %s value", async (name, value) => {
+    mocks.queryRaw.mockResolvedValue([{ "?column?": 1 }]);
+    vi.stubEnv(name, value);
+
+    const response = await GET();
+    const body = await response.json();
+
+    expect(body.deployment).toEqual(NO_IDENTITY);
+    expect(JSON.stringify(body)).not.toContain(value);
+  });
+
+  it("never includes server secrets or database configuration in the response", async () => {
+    mocks.queryRaw.mockResolvedValue([{ "?column?": 1 }]);
+    vi.stubEnv("DATABASE_URL", "postgresql://user:test-fixture-secret@private-host.example");
+    vi.stubEnv("JOB_SECRET", "test-fixture-job-secret");
+
+    const response = await GET();
+    const serialized = JSON.stringify(await response.json());
+
+    expect(serialized).not.toContain("test-fixture-secret");
+    expect(serialized).not.toContain("test-fixture-job-secret");
+    expect(serialized).not.toContain("private-host.example");
   });
 });

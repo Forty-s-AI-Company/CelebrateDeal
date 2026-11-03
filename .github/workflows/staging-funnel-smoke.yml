@@ -51,6 +51,11 @@ jobs:
       - name: Test fixed Funnel smoke contract before secret injection
         run: node --test scripts/staging-funnel-smoke.test.mjs
 
+      # deployment_host stays the immutable Preview recorded by GitHub (lineage input only).
+      # Vercel firewalls *.vercel.app Preview hosts (403 deny), so --verify-lineage proves the
+      # fixed alias serves that SHA and host via its /api/health identity, and every request
+      # below targets the alias. --verify-alias falls back to the same self-attestation when
+      # VERCEL_TOKEN cannot read the alias record (401/403/missing).
       - name: Verify exact Preview lineage before secret injection
         env:
           GITHUB_TOKEN: ${{ github.token }}

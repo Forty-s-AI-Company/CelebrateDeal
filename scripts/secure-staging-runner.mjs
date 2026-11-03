@@ -333,6 +333,98 @@ export async function verifyDeployment(source, fetchImpl = fetch) {
   return { host, deploymentMatched: true, sourceMatched: true, preview: true, ready: true, deploymentDigest: digest("deployment", deploymentId), reads };
 }
 
+// Vercel's firewall answers every direct probe of a *.vercel.app Preview host with
+// 403 (X-Vercel-Mitigated: deny). The protected runners therefore operate only on the
+// fixed staging alias, after that alias proves it is serving the lineage-verified deployment.
+export const STAGING_ALIAS_HOST = "celebrate-deal-staging.carry-digital-nomad.in.net";
+const ALIAS_ATTESTATION_PATH = "/api/health";
+const ALIAS_ATTESTATION_MAX_BYTES = 4096;
+const SAFE_VERCEL_DEPLOYMENT_ID = /^dpl_[A-Za-z0-9]{1,64}$/u;
+export const ALIAS_ATTESTATION_FAILURES = Object.freeze([
+  "ALIAS_ATTESTATION_INPUT_INVALID",
+  "ALIAS_ATTESTATION_UNREACHABLE",
+  "ALIAS_ATTESTATION_REDIRECTED",
+  "ALIAS_ATTESTATION_HTTP_REJECTED",
+  "ALIAS_ATTESTATION_RESPONSE_INVALID",
+  "ALIAS_ATTESTATION_FIELDS_MISSING",
+  "ALIAS_ATTESTATION_SHA_MISMATCH",
+  "ALIAS_ATTESTATION_HOST_MISMATCH",
+  "ALIAS_ATTESTATION_FAILED",
+]);
+
+async function readBoundedAttestationBody(response) {
+  const contentType = response.headers?.get?.("content-type")?.split(";", 1)[0]?.trim().toLowerCase();
+  if (contentType !== "application/json" || typeof response.text !== "function") throw new Error("ALIAS_ATTESTATION_RESPONSE_INVALID");
+  const text = await response.text();
+  if (typeof text !== "string" || Buffer.byteLength(text, "utf8") > ALIAS_ATTESTATION_MAX_BYTES) throw new Error("ALIAS_ATTESTATION_RESPONSE_INVALID");
+  try {
+    const body = JSON.parse(text);
+    if (body === null || typeof body !== "object" || Array.isArray(body)) throw new Error("not an object");
+    return body;
+  } catch {
+    throw new Error("ALIAS_ATTESTATION_RESPONSE_INVALID");
+  }
+}
+
+/**
+ * Proves that the fixed staging alias is serving the exact deployment that the GitHub
+ * lineage gate bound to `sourceSha`. The trust chain is:
+ *   GitHub deployment record (vercel[bot]) binds sourceSha <-> previewHost;
+ *   Vercel resolves the alias and the deployment it routes to produces this response;
+ *   VERCEL_GIT_COMMIT_SHA and VERCEL_URL inside that response are injected by Vercel.
+ * Both the SHA and the Preview host must match. Every other outcome throws a fixed code.
+ */
+export async function verifyAliasAttestation({ sourceSha, previewHost } = {}, fetchImpl = fetch) {
+  const expectedSha = typeof sourceSha === "string" ? sourceSha : "";
+  const expectedHost = typeof previewHost === "string" ? previewHost : "";
+  if (!SAFE_SHA.test(expectedSha) || !SAFE_HOST.test(expectedHost) || !expectedHost.endsWith(".vercel.app")) {
+    throw new Error("ALIAS_ATTESTATION_INPUT_INVALID");
+  }
+  let response;
+  try {
+    response = await fetchImpl(`https://${STAGING_ALIAS_HOST}${ALIAS_ATTESTATION_PATH}`, {
+      method: "GET",
+      headers: { Accept: "application/json" },
+      redirect: "manual",
+      cache: "no-store",
+      signal: AbortSignal.timeout(15_000),
+    });
+  } catch {
+    throw new Error("ALIAS_ATTESTATION_UNREACHABLE");
+  }
+  if (!response || !Number.isInteger(response.status)) throw new Error("ALIAS_ATTESTATION_UNREACHABLE");
+  if (response.redirected === true || response.headers?.has?.("location") || (response.status >= 300 && response.status < 400)) {
+    throw new Error("ALIAS_ATTESTATION_REDIRECTED");
+  }
+  if (response.status !== 200) throw new Error("ALIAS_ATTESTATION_HTTP_REJECTED");
+  const body = await readBoundedAttestationBody(response);
+  const identity = body.deployment;
+  if (body.ok !== true || body.database !== "ok"
+    || !exactKeys(identity, ["commitSha", "deploymentId", "vercelUrl"])
+    || typeof identity.commitSha !== "string"
+    || typeof identity.vercelUrl !== "string"
+    // GitHub's record carries no Vercel deployment id, so the id is shape-checked only.
+    || (identity.deploymentId !== null && (typeof identity.deploymentId !== "string" || !SAFE_VERCEL_DEPLOYMENT_ID.test(identity.deploymentId)))) {
+    throw new Error("ALIAS_ATTESTATION_FIELDS_MISSING");
+  }
+  if (identity.commitSha !== expectedSha) throw new Error("ALIAS_ATTESTATION_SHA_MISMATCH");
+  if (identity.vercelUrl.toLowerCase() !== expectedHost) throw new Error("ALIAS_ATTESTATION_HOST_MISMATCH");
+  return {
+    host: STAGING_ALIAS_HOST,
+    healthStatus: 200,
+    noRedirect: true,
+    commitShaMatched: true,
+    vercelUrlMatched: true,
+  };
+}
+
+/** Lineage gate followed by alias self-attestation; returns the alias as the only operation host. */
+export async function verifyDeploymentThroughAlias(source, fetchImpl = fetch) {
+  const lineage = await verifyDeployment(source, fetchImpl);
+  const alias = await verifyAliasAttestation({ sourceSha: source.CELEBRATEDEAL_SOURCE_SHA, previewHost: lineage.host }, fetchImpl);
+  return { ...lineage, operationHost: alias.host, alias };
+}
+
 export function verifyTrustedMigrationTree(sourceCommit, spawnImpl = spawnSync, pinnedMigrationTreeSha = null) {
   const execute = (args, encoding = "utf8") => {
     const child = spawnImpl("git", args, { cwd: ROOT, env: baseEnvironment(), encoding, shell: false, windowsHide: true, maxBuffer: 8 * 1024 * 1024 });
@@ -532,10 +624,10 @@ export async function runSecureTask(task, source = process.env, dependencies = {
     const deployment = await verifyDeployment(source, fetchImpl);
     const { host, reads, ...sanitizedDeployment } = deployment;
     receipt.lineage = { ...receipt.lineage, ...sanitizedDeployment, deploymentReads: reads };
-    const health = await fetchImpl(`https://${host}/api/health`, { method: "HEAD", redirect: "manual", signal: AbortSignal.timeout(15_000) });
-    receipt.lineage.healthStatus = health.status;
-    receipt.lineage.noRedirect = !health.redirected && !health.headers.has("location");
-    if (health.status !== 200 || !receipt.lineage.noRedirect) throw new Error("STAGING_HEALTH_FAILED");
+    // The Preview host itself is firewalled; health and identity are proven through the alias.
+    const alias = await verifyAliasAttestation({ sourceSha: source.CELEBRATEDEAL_SOURCE_SHA, previewHost: host }, fetchImpl);
+    receipt.lineage.healthStatus = alias.healthStatus;
+    receipt.lineage.noRedirect = alias.noRedirect;
 
     const inventory = sourceInventory(source.CELEBRATEDEAL_SOURCE_SHA, dependencies.spawnSyncImpl ?? spawnSync);
     pgEnvironment = databaseEnvironment(source);
