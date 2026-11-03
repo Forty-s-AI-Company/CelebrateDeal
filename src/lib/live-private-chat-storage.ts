@@ -50,3 +50,6 @@ export function decryptPrivateChatBody(envelope: string, scope: PrivateChatStora
   }
   return normalizePrivateChatBody(decryptSensitiveValue(envelope, purpose(scope)));
 }
+
+// Exact envelope purpose for scripts/reencrypt-sensitive-data.ts (F-031).
+export { purpose as livePrivateChatBodyEnvelopePurpose };

@@ -92,3 +92,6 @@ export function mayDispatchLearnerNotification(input: { purchaseGranted: boolean
     && !input.alreadyDispatched && Number.isSafeInteger(input.consentRevision) && input.consentRevision > 0
     && input.consentRevision === input.reservedConsentRevision;
 }
+
+// Exact envelope purpose for scripts/reencrypt-sensitive-data.ts (F-031).
+export { purpose as learnerNotificationDestinationEnvelopePurpose };

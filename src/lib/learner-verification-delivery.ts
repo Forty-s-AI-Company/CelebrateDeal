@@ -92,3 +92,6 @@ export async function dispatchLearnerVerificationDelivery(db:Database,raw:unknow
   }catch{return {status:"persistence_failed"} as const;}
  }
 }
+
+// Exact envelope purpose for scripts/reencrypt-sensitive-data.ts (F-031).
+export { purpose as learnerContactProofEnvelopePurpose, receiptPurpose as learnerContactReceiptEnvelopePurpose };

@@ -60,3 +60,6 @@ export function revealSupportCaseContent(envelope: string, binding: SupportCaseC
     throw new SupportCaseContentError();
   }
 }
+
+// Exact envelope purpose for scripts/reencrypt-sensitive-data.ts (F-031).
+export { purpose as supportCaseContentEnvelopePurpose };

@@ -102,8 +102,8 @@ export async function ensureStagingQaFinance(
     || input.payuniEnv !== "sandbox" || input.runtimeReady !== true || input.password.length < 24
     || input.password.length > 256) throw rejected();
   const totpSeed = normalizeQaFinanceTotpSeed(input.totpSeed);
-  // The app derives the MFA key from CSRF_SECRET before JOB_SECRET. Encrypting
-  // with the JOB_SECRET fallback would store a factor the app cannot decrypt.
+  // MFA keys come from CSRF_SECRET (or DATA_ENCRYPTION_KEYRING); JOB_SECRET is
+  // never a fallback (F-031). Refuse early instead of failing mid-transaction.
   if (totpSeed && !process.env.CSRF_SECRET?.trim()) throw rejected();
   try {
     return await db.$transaction(async (tx) => {

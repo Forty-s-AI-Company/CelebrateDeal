@@ -32,3 +32,6 @@ export function createInvoiceCheckoutIdentityHash(baseHash: string, selection: C
     .update(JSON.stringify({ baseHash, selection }))
     .digest("base64url");
 }
+
+// Exact envelope purpose for scripts/reencrypt-sensitive-data.ts (F-031).
+export { purpose as commerceOrderInvoiceEnvelopePurpose };

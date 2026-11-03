@@ -318,3 +318,6 @@ async function isCurrentFixedSessionLineReminder(
 export function stableLineIdempotencyKey(parts: readonly (string | number | Date | null)[]) {
   return `line:v1:${createHash("sha256").update(JSON.stringify(parts)).digest("hex")}`;
 }
+
+// Exact envelope purpose for scripts/reencrypt-sensitive-data.ts (F-031).
+export { deliveryPurpose as lineDeliveryPayloadEnvelopePurpose };

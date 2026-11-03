@@ -167,7 +167,7 @@
 - `staging-production-env-vars.md` §7 第 7 點「production 必做」：Production 的舊 build 曾有公開的 CSRF fingerprint oracle，且 Production 與 staging 是否共用根金鑰值不明，所以 Production 的所有衍生金鑰要視為可能外洩；**依用途改名對 Production 不夠**，服務任何人之前要由 owner 設一個新的、與 staging 不同的 `CSRF_SECRET`（至少 32 bytes 隨機值）。
 - 同一節第 1、2 點禁止在**已有資料**的環境輪替或補設根金鑰。兩者不衝突的條件是：**Production 資料庫沒有任何需要保留的加密欄位、雜湊索引或 MFA**（§7 production 必做第 3 步）。這一步其實是「Production 服務第一個人之前的首次設定」，不是對運作中資料的輪替。
 - **因此本步驟有一個前置 gate（S0 G-0.5）：owner 唯讀確認 Production 沒有需要保留的加密資料。若有，停止，改由 owner 與主對話另行決定；不得為了趕進度而換根金鑰。**
-- 一旦 Production 開始服務（有資料）之後，`CSRF_SECRET` 與（退回用的）`JOB_SECRET` 永遠不再變動；後續需要換金鑰時，只能走 `DERIVED_KEY_ROTATIONS` 的「依用途輪替」。
+- 一旦 Production 開始服務（有資料）之後，`CSRF_SECRET` 永遠不再變動（程式已不再退回 `JOB_SECRET`）；後續需要換金鑰時，token 走 `DERIVED_KEY_ROTATIONS` 的「依用途輪替」，加密欄位走 `DATA_ENCRYPTION_KEYRING`（`docs/staging-production-env-vars.md` §8）。
 
 **步驟**（依 §7 的順序）
 

@@ -32,6 +32,7 @@
 | ☐ | `JOB_SECRET` | 隨機字串（至少 16 字元；建議 32 bytes 以上）。密碼管理器。O-6(b)：Production 與 Preview 必須不同值 | owner | `JOB_SECRET: PASS`；`/api/admin/preflight` 的 Bearer 可通過；與 `CRON_SECRET` 相同會有 `[WARN]` | 待 owner |
 | ☐ | `CRON_SECRET` | 隨機字串（至少 16 字元），Vercel Cron 的 GET 入口用 | owner | `CRON_SECRET: PASS` | 待 owner |
 | ☐ | `CSRF_SECRET` | **資料加密根金鑰**，至少 32 bytes 隨機值，與 `JOB_SECRET` 不同、與 staging 不同。**禁止在有資料後輪替**（§7）。設定時機與條件見 runbook S8 | owner（Claude 不輸入、不產生、不經手） | `CSRF_SECRET: PASS`（訊息：已設定獨立且至少 32 bytes）；失敗訊息有「不得與 JOB_SECRET 共用」「至少 32 bytes」 | 待 owner；備份對應版本要記錄 |
+| ☐ | `DATA_ENCRYPTION_KEYRING` | 選填。JSON 陣列，各金鑰帶 `kid`、32 bytes 隨機值的 base64url，恰好一把 `active`；未設定時沿用 `CSRF_SECRET` 衍生的金鑰。啟用與輪替步驟見 `docs/staging-production-env-vars.md` §8.3 | owner（Claude 不輸入、不產生、不經手） | 未設定＝`[WARN]`；設定後 `PASS` 並列出 active 與 decrypt-only kid；格式錯＝`[FAIL]` | 待 owner；每個 kid 的金鑰都要隨備份保存 |
 | ☐ | `LIVE_CHAT_INGRESS_SECRET` | 隨機字串，32～上限字元，前後無空白、無換行。同一個值要放在 edge（Cloudflare Worker／Transform Rule）每個請求覆寫 `x-celebratedeal-live-chat-ingress` | owner | `LIVE_CHAT_INGRESS_SECRET: PASS` | 待 owner；edge 規則另需核對（O-7） |
 | ☐ | `RATE_LIMIT_PROVIDER` | `cloudflare_waf` 或 `upstash_redis`。**不得是 `memory`，也不得留空**（Production build 會 `[FAIL]`） | owner | `RATE_LIMIT_PROVIDER` 不出現 `[FAIL]`；`/api/admin/preflight` 的 `rateLimit` 不是 memory；實測 429 | 待 owner；選 `cloudflare_waf` 需先確認 O-7（橘雲、無直連入口，否則限流可被偽造標頭繞過） |
 | ☐ | `UPSTASH_REDIS_REST_URL`、`UPSTASH_REDIS_REST_TOKEN` | 只有 `RATE_LIMIT_PROVIDER=upstash_redis` 時必要 | owner | 兩項 `PASS`，缺一 `[FAIL]` | 視選擇；`cloudflare_waf` 時不設 |

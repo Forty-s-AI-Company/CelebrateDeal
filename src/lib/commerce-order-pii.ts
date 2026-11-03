@@ -220,3 +220,8 @@ export function revealCommerceOrderPii(
     throw retainPaymentWebhookCause(new Error("Commerce order PII envelope could not be decrypted."), error);
   }
 }
+
+// Exact envelope purpose for scripts/reencrypt-sensitive-data.ts (F-031).
+export function commerceOrderPiiEnvelopePurpose(field: "buyer" | "shipping", binding: CommerceOrderPiiBinding) {
+  return envelopePurpose(field === "buyer" ? BUYER_ENVELOPE_PURPOSE : SHIPPING_ENVELOPE_PURPOSE, binding);
+}

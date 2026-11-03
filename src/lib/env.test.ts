@@ -34,6 +34,10 @@ function configuredEnv(): NodeJS.ProcessEnv {
     [envKey("NEXT", "PUBLIC", "TURNSTILE", "SITE", "KEY")]: "0x4AAAAAAASyntheticSiteKey",
     [envKey("TURNSTILE", "SECRET", "KEY")]: "0x4AAAAAAASyntheticSecretKeyValue",
     [envKey("AFFILIATE", "PAYOUTS", "DISABLED")]: "true",
+    // Synthetic keyring built at run time (F-031); no key-shaped literal.
+    [envKey("DATA", "ENCRYPTION", "KEYRING")]: JSON.stringify([
+      { kid: "d2611a", key: Buffer.alloc(32, 9).toString("base64url"), active: true }, { kid: "legacy" },
+    ]),
   };
 }
 
@@ -637,5 +641,52 @@ describe("AFFILIATE_PAYOUTS_DISABLED preflight (F-052)", () => {
     const report = getEnvCheckReport({ ...configuredEnv(), ...overrides, [key]: undefined } as NodeJS.ProcessEnv);
     expect(check(report, key, "warning")?.message).toContain("未設定 AFFILIATE_PAYOUTS_DISABLED");
     expect(report.checks.filter((item) => item.key === key && item.status === "fail")).toHaveLength(0);
+  });
+});
+
+describe("DATA_ENCRYPTION_KEYRING preflight (F-031)", () => {
+  const key = envKey("DATA", "ENCRYPTION", "KEYRING");
+  // Synthetic key material built at run time (no key-shaped literal in the repo).
+  const material = (fill: number, length = 32) => Buffer.alloc(length, fill).toString("base64url");
+  const keyring = (entries: unknown) => ({ ...configuredEnv(), [key]: JSON.stringify(entries) });
+
+  it("warns when unset and says the root key still encrypts data", () => {
+    const report = getEnvCheckReport({ ...configuredEnv(), [key]: undefined });
+    expect(report.ok).toBe(true);
+    expect(check(report, key, "warning")?.message).toContain("仍以根金鑰 CSRF_SECRET");
+  });
+
+  it("passes a valid keyring and names only kids", () => {
+    const report = getEnvCheckReport(keyring([
+      { kid: "d2611a", key: material(1), active: true }, { kid: "d2510z", key: material(2) }, { kid: "legacy" },
+    ]));
+    const passed = check(report, key, "pass");
+    expect(report.ok).toBe(true);
+    expect(passed?.message).toBe("active kid：d2611a；decrypt-only：d2510z、legacy");
+    expect(passed?.message).not.toContain(material(1));
+  });
+
+  it("notes the staging phase and the retired legacy key", () => {
+    expect(check(getEnvCheckReport(keyring([{ kid: "legacy", active: true }, { kid: "d2611a", key: material(1) }])), key, "pass")?.message)
+      .toContain("新資料仍以 legacy 寫入");
+    expect(check(getEnvCheckReport(keyring([{ kid: "d2611a", key: material(1), active: true }])), key, "pass")?.message)
+      .toContain("不再接受 legacy");
+  });
+
+  it.each([
+    ["malformed JSON", "[{", "不是有效的 JSON"],
+    ["a non-unique active key", JSON.stringify([{ kid: "a1", key: material(1), active: true }, { kid: "b1", key: material(2), active: true }]), "超過一把"],
+    ["no active key", JSON.stringify([{ kid: "a1", key: material(1) }]), "目前沒有"],
+    ["a duplicate kid", JSON.stringify([{ kid: "a1", key: material(1), active: true }, { kid: "a1", key: material(2) }]), "kid 重複"],
+    ["a short key", JSON.stringify([{ kid: "a1", key: material(1, 24), active: true }]), "長度不足"],
+    ["a long key", JSON.stringify([{ kid: "a1", key: material(1, 64), active: true }]), "剛好是 32 bytes"],
+    ["key material on legacy", JSON.stringify([{ kid: "legacy", key: material(1), active: true }]), "不可附 key"],
+    ["an invalid kid", JSON.stringify([{ kid: "A.1", key: material(1), active: true }]), "kid 只能是"],
+  ])("fails %s without echoing the value", (_label, value, expected) => {
+    const report = getEnvCheckReport({ ...configuredEnv(), [key]: value });
+    const failed = check(report, key, "fail");
+    expect(report.ok).toBe(false);
+    expect(failed?.message).toContain(expected);
+    expect(failed?.message).not.toContain(material(1));
   });
 });

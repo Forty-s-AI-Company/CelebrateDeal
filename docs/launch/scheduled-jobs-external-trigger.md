@@ -180,7 +180,7 @@ export default {
 
 ## 6. 降低密鑰外洩範圍的選項：改用 GET＋`CRON_SECRET`
 
-`JOB_SECRET` 除了排程 POST 入口之外，還保護 5 個 `/api/admin/ops/**` 端點（F-016），也是未設定 `CSRF_SECRET` 環境的退回加密根金鑰。把它交給第三方服務，影響面比較大。
+`JOB_SECRET` 除了排程 POST 入口之外，還保護 5 個 `/api/admin/ops/**` 端點（F-016），（2026-11-03 起已不再是加密的後備根金鑰，見 `docs/staging-production-env-vars.md` §8.5）。把它交給第三方服務，影響面比較大。
 
 可排程端點都有對應的 **GET 入口，驗證的是另一把密鑰 `CRON_SECRET`**（`scheduled-jobs-runbook.md` §2、§5：「任何一把外洩只開放一半入口」）。外部觸發器可改用：
 

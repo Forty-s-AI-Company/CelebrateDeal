@@ -210,3 +210,6 @@ export async function sweepExpiredRegistrationRetryDrafts(db: DraftDatabase, now
   }
   return deleted;
 }
+
+// Exact envelope purpose for scripts/reencrypt-sensitive-data.ts (F-031).
+export { PURPOSE as REGISTRATION_FORM_RETRY_ENVELOPE_PURPOSE };

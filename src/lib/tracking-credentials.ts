@@ -28,3 +28,6 @@ export function unprotectFacebookAccessToken(vendorId: string, encryptedAccessTo
     throw new Error("Tracking credential unavailable.");
   }
 }
+
+// Exact envelope purpose for scripts/reencrypt-sensitive-data.ts (F-031).
+export { purpose as facebookAccessTokenEnvelopePurpose };

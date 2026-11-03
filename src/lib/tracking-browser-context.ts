@@ -45,3 +45,6 @@ export function revealTrackingBrowserContext(vendorId: string, sourceId: string,
   try { return validate(JSON.parse(decryptSensitiveValue(envelope, purpose(vendorId, sourceId)))); }
   catch { throw new Error("Tracking browser context unavailable."); }
 }
+
+// Exact envelope purpose for scripts/reencrypt-sensitive-data.ts (F-031).
+export { purpose as trackingBrowserContextEnvelopePurpose };

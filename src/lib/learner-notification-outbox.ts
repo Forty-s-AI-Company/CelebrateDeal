@@ -19,6 +19,7 @@ type Store = Pick<Prisma.TransactionClient, "commerceOrderItem" | "commerceOrder
 type Database = Store & Pick<PrismaClient, "$transaction">;
 const tokenHash = (token: string) => createHash("sha256").update(token).digest("hex");
 const payloadPurpose = (vendorId: string, key: string) => `learner-notification-payload-v1:${JSON.stringify([vendorId,key])}`;
+const receiptPurpose = (vendorId: string, id: string) => `learner-notification-receipt-v1:${JSON.stringify([vendorId,id])}`;
 
 /** Every supported event keeps a live vendor/customer/product purchase boundary. */
 async function hasRights(tx: Store, scope: Scope) {
@@ -94,7 +95,10 @@ export async function finishLearnerNotification(db: Database, input: { vendorId:
    nextAttemptAt: retry ? new Date(Date.now() + 30_000 * 2 ** (row.attemptCount - 1)) : null,
    dispatchedAt: input.outcome === "sent" ? new Date() : null,
    lastErrorCode: input.outcome === "sent" ? null : input.outcome === "indeterminate" ? "PROVIDER_OUTCOME_UNKNOWN" : "PROVIDER_NOT_DELIVERED",
-   providerReceiptEncryptedEnvelope: input.providerReceipt ? encryptSensitiveValue(input.providerReceipt, `learner-notification-receipt-v1:${JSON.stringify([input.vendorId,input.id])}`) : null } });
+   providerReceiptEncryptedEnvelope: input.providerReceipt ? encryptSensitiveValue(input.providerReceipt, receiptPurpose(input.vendorId, input.id)) : null } });
   return changed.count === 1;
  });
 }
+
+// Exact envelope purpose for scripts/reencrypt-sensitive-data.ts (F-031).
+export { payloadPurpose as learnerNotificationPayloadEnvelopePurpose, receiptPurpose as learnerNotificationReceiptEnvelopePurpose };

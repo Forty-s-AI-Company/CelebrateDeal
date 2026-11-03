@@ -412,3 +412,6 @@ export async function createLiveInputMapping(input: z.infer<typeof LiveInputRequ
 
   return { video, liveInput, videoUrl };
 }
+
+// Exact envelope purpose for scripts/reencrypt-sensitive-data.ts (F-031).
+export { CLOUDFLARE_STREAM_KEY_PURPOSE };
