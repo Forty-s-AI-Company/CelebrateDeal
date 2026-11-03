@@ -12,9 +12,17 @@ const TASK = "wp2-readonly-restore";
 const GITHUB_API_ORIGIN = "https://api.github.com";
 const GITHUB_REPOSITORY = "Forty-s-AI-Company/CelebrateDeal";
 const GITHUB_ENVIRONMENT = "Preview – celebrate-deal-staging";
-const GITHUB_DEPLOYMENT_PAGE_SIZE = 10;
+// GitHub caps per_page at 100; with the page limit below this covers 1000 records per sha.
+const GITHUB_DEPLOYMENT_PAGE_SIZE = 100;
 const GITHUB_STATUS_PAGE_SIZE = 1;
+// Total GitHub reads: deployment list pages plus statuses reads of Vercel-created candidates.
 const GITHUB_READ_BUDGET = 20;
+// Hard stop on list pages, independent of the read budget, so pagination can never run unbounded.
+const GITHUB_DEPLOYMENT_PAGE_LIMIT = 10;
+// Every Actions job bound to the staging environment also records a GitHub deployment for the
+// same sha (creator is a user or github-actions[bot], status URL points at the Actions run).
+// Only the record created by Vercel's GitHub integration binds the Preview host to the sha.
+const VERCEL_DEPLOYMENT_CREATOR = "vercel[bot]";
 const GITHUB_DEPLOYMENT_PAGINATION_ERROR = "GITHUB_DEPLOYMENT_PAGINATION_INVALID";
 const POSTGRES_IMAGE = "postgres:17-alpine";
 // Pin the backup gate to the exact RC source whose migration blobs are audited.
@@ -242,30 +250,54 @@ function nextDeploymentPage(response, itemCount, currentPage) {
     if (relations.has("last") && relations.get("last") < relations.get("next")) invalidDeploymentPagination();
     return relations.get("next");
   }
-  if (relations.get("last") !== currentPage) invalidDeploymentPagination();
+  // GitHub omits next/last on the final page and sends only first/prev there; a terminal page
+  // must therefore either name itself as last or carry the exact prev link checked above.
+  if (relations.has("last")) {
+    if (relations.get("last") !== currentPage) invalidDeploymentPagination();
+  } else if (!relations.has("prev")) {
+    invalidDeploymentPagination();
+  }
   return null;
+}
+
+function isVercelCreatedDeployment(item) {
+  return item?.creator?.login === VERCEL_DEPLOYMENT_CREATOR && item?.creator?.type === "Bot";
 }
 
 export async function verifyDeployment(source, fetchImpl = fetch) {
   const headers = { Accept: "application/vnd.github+json", Authorization: `Bearer ${source.GITHUB_TOKEN}`, "X-GitHub-Api-Version": "2022-11-28" };
   let page = 1;
   let reads = 0;
+  let listPages = 0;
+  let environmentCandidateCount = 0;
   let candidateCount = 0;
+  const seenCandidateIds = new Set();
   const matchedCandidates = [];
 
   while (true) {
     if (reads >= GITHUB_READ_BUDGET) throw new Error("GITHUB_DEPLOYMENT_READ_BUDGET_EXHAUSTED");
+    if (listPages >= GITHUB_DEPLOYMENT_PAGE_LIMIT) throw new Error("GITHUB_DEPLOYMENT_PAGE_LIMIT_EXHAUSTED");
     const endpoint = new URL(`/repos/${GITHUB_REPOSITORY}/deployments`, GITHUB_API_ORIGIN);
     endpoint.searchParams.set("sha", source.CELEBRATEDEAL_SOURCE_SHA);
+    // Vercel's records carry the full commit sha as ref; Actions jobs record ref "master". Filtering
+    // on ref keeps those Actions records out of the listing; the creator filter below stays as backup.
+    endpoint.searchParams.set("ref", source.CELEBRATEDEAL_SOURCE_SHA);
     endpoint.searchParams.set("environment", GITHUB_ENVIRONMENT);
     endpoint.searchParams.set("per_page", String(GITHUB_DEPLOYMENT_PAGE_SIZE));
     endpoint.searchParams.set("page", String(page));
     const response = await fetchImpl(endpoint, { headers, redirect: "manual", signal: AbortSignal.timeout(15_000) });
     reads += 1;
+    listPages += 1;
     if (response.status !== 200 || response.headers.has("location")) throw new Error("GITHUB_DEPLOYMENT_READ_FAILED");
     const deployments = await response.json();
     const pageDeployments = Array.isArray(deployments) ? deployments : [];
-    const candidates = pageDeployments.filter((item) => item?.sha === source.CELEBRATEDEAL_SOURCE_SHA && item?.environment === GITHUB_ENVIRONMENT && item?.production_environment === false && Number.isSafeInteger(item?.id));
+    const environmentCandidates = pageDeployments.filter((item) => item?.sha === source.CELEBRATEDEAL_SOURCE_SHA && item?.environment === GITHUB_ENVIRONMENT && item?.production_environment === false && Number.isSafeInteger(item?.id));
+    environmentCandidateCount += environmentCandidates.length;
+    // Records created by Actions jobs are skipped without a statuses read, so they never spend the budget.
+    // A record created while paging shifts older ones onto the next page, so the same deployment
+    // can be listed twice. Each id is read and counted once; a repeat is not a second match.
+    const candidates = environmentCandidates.filter((item) => isVercelCreatedDeployment(item) && !seenCandidateIds.has(item.id));
+    for (const candidate of candidates) seenCandidateIds.add(candidate.id);
     candidateCount += candidates.length;
     const nextPage = nextDeploymentPage(response, pageDeployments.length, page);
 
@@ -293,6 +325,7 @@ export async function verifyDeployment(source, fetchImpl = fetch) {
     page = nextPage;
   }
 
+  if (candidateCount === 0 && environmentCandidateCount > 0) throw new Error("GITHUB_DEPLOYMENT_NO_VERCEL_CANDIDATE");
   if (candidateCount === 0) throw new Error("GITHUB_DEPLOYMENT_AMBIGUOUS");
   if (matchedCandidates.length > 1) throw new Error("GITHUB_DEPLOYMENT_AMBIGUOUS");
   if (matchedCandidates.length === 0) throw new Error("GITHUB_DEPLOYMENT_LINEAGE_MISMATCH");

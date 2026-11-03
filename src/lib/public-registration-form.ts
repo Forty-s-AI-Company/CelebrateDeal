@@ -4,7 +4,7 @@ import { cache } from "react";
 import { getDb } from "@/lib/db";
 import { loadPublicLiveSessions, type PublicLiveSessionsResult } from "@/lib/live-fixed-sessions-store";
 import { parseSafeExternalHttpUrl } from "@/lib/external-url";
-import { signedVideoUrlOrNull } from "@/lib/cloudflare-stream-signing";
+import type { SignableVideo } from "@/lib/cloudflare-stream-signing";
 import { isExistingLiveVideoReady } from "@/lib/live-video-readiness";
 import { parseRegistrationFormFields, type RegistrationFormFieldSpec } from "@/lib/registration-form-fields";
 
@@ -91,7 +91,13 @@ export type PublicRegistrationForm = {
   notice: string | null;
   seoTitle: string | null;
   seoDescription: string | null;
-  promoVideo: { title: string; videoUrl: string } | null;
+  /**
+   * `videoUrl` is the stored, validated URL. F-093: the page signs it with
+   * `signingSource` (the promo's own Video row, already bound to this form's
+   * vendor here); the DAL itself stays free of `server-only` so Node-run
+   * callers (Playwright specs, jobs) can import it.
+   */
+  promoVideo: { title: string; videoUrl: string; signingSource: SignableVideo } | null;
   sessions: PublicRegistrationSession[];
 };
 
@@ -180,9 +186,6 @@ function publicFormFromRecord(
     : null;
   // F-093: the promo is public by design; a Cloudflare video still gets a
   // time-limited token bound to this vendor's own Video row.
-  const promoVideoUrl = promoVideo
-    ? signedVideoUrlOrNull({ ...form.promoVideo!, videoUrl: promoVideo }, { vendorId: form.vendorId, now })
-    : null;
 
   return {
     id: form.id,
@@ -201,7 +204,20 @@ function publicFormFromRecord(
     notice: form.notice,
     seoTitle: form.seoTitle,
     seoDescription: form.seoDescription,
-    promoVideo: promoVideoUrl ? { title: form.promoVideo!.title, videoUrl: promoVideoUrl } : null,
+    promoVideo: promoVideo
+      ? {
+        title: form.promoVideo!.title,
+        videoUrl: promoVideo,
+        signingSource: {
+          vendorId: form.promoVideo!.vendorId,
+          sourceType: form.promoVideo!.sourceType,
+          videoUrl: promoVideo,
+          cloudflareStreamUid: form.promoVideo!.cloudflareStreamUid,
+          cloudflarePlaybackId: form.promoVideo!.cloudflarePlaybackId,
+          cloudflareLiveInputUid: form.promoVideo!.cloudflareLiveInputUid,
+        },
+      }
+      : null,
     sessions: selectPublicRegistrationSessions(sessions, {
       now,
       hideExpiredSessions: form.hideExpiredSessions,

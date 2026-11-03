@@ -43,7 +43,7 @@ export type ProductFormDraft = {
 
 /** Server-detected invalid fields, keyed by the form control `name` (F-117). */
 export type ProductFieldErrors = Partial<Record<
-  | "name" | "slug" | "price" | "compareAt" | "inventory" | "description"
+  | "name" | "slug" | "price" | "compareAt" | "inventory" | "currency" | "description"
   | "imageUrl" | "checkoutUrl" | "courseContentOwnerMembershipId" | "coursePromoterShareBps"
   | "deliveryTitle" | "deliveryUrl" | "deliveryInstructions" | "deliveryHostConfirmed",
   string

@@ -43,6 +43,7 @@ function configuredEnv(): NodeJS.ProcessEnv {
     // Synthetic widget keys (not Cloudflare's public test keys, which deployments refuse).
     [envKey("NEXT", "PUBLIC", "TURNSTILE", "SITE", "KEY")]: "0x4AAAAAAASyntheticSiteKey",
     [envKey("TURNSTILE", "SECRET", "KEY")]: "0x4AAAAAAASyntheticSecretKeyValue",
+    [envKey("AFFILIATE", "PAYOUTS", "DISABLED")]: "true",
   };
 }
 
@@ -668,5 +669,31 @@ describe("Cloudflare Stream signing preflight (F-093)", () => {
     const report = getEnvCheckReport({ ...configuredEnv(), STREAM_ALLOWED_ORIGINS: "app.test/path" });
     expect(report.ok).toBe(false);
     expect(check(report, "STREAM_ALLOWED_ORIGINS", "fail")).toBeDefined();
+  });
+});
+
+describe("AFFILIATE_PAYOUTS_DISABLED preflight (F-052)", () => {
+  const key = envKey("AFFILIATE", "PAYOUTS", "DISABLED");
+
+  it.each(["true", "false", " TRUE "])("passes an explicit %j on the production deployment", (value) => {
+    const report = getEnvCheckReport({ ...configuredEnv(), VERCEL_ENV: "production", [key]: value });
+    expect(check(report, key, "pass")).toBeDefined();
+    expect(report.checks.filter((item) => item.key === key && item.status !== "pass")).toHaveLength(0);
+  });
+
+  it.each([undefined, "", "1", "yes"])("fails the production deployment for %j", (value) => {
+    const report = getEnvCheckReport({ ...configuredEnv(), VERCEL_ENV: "production", [key]: value });
+    expect(report.ok).toBe(false);
+    expect(check(report, key, "fail")?.message).toContain("true 或 false");
+  });
+
+  it.each([
+    ["preview", { VERCEL_ENV: "preview" }],
+    ["CI production build", { VERCEL_ENV: undefined }],
+    ["local", { NODE_ENV: "development", VERCEL_ENV: undefined }],
+  ])("only warns when unset outside production (%s)", (_label, overrides) => {
+    const report = getEnvCheckReport({ ...configuredEnv(), ...overrides, [key]: undefined } as NodeJS.ProcessEnv);
+    expect(check(report, key, "warning")?.message).toContain("未設定 AFFILIATE_PAYOUTS_DISABLED");
+    expect(report.checks.filter((item) => item.key === key && item.status === "fail")).toHaveLength(0);
   });
 });

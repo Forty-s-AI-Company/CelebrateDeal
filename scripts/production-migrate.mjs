@@ -37,6 +37,9 @@ const RUN_ID = /^[1-9]\d{5,14}$/u;
  */
 export const PRODUCTION_BACKUP_WORKFLOW = ".github/workflows/production-backup.yml";
 export const PRODUCTION_BACKUP_ARTIFACT_PREFIX = "production-database-backup-";
+/** The job in PRODUCTION_BACKUP_WORKFLOW that takes the backup (no `name:` override, so the API reports its id). */
+export const PRODUCTION_BACKUP_JOB = "backup";
+const COMMIT_SHA = /^[a-f0-9]{40}$/u;
 const BACKUP_EVENTS = new Set(["workflow_dispatch", "schedule"]);
 /** A deploy must follow a backup taken within this window. */
 export const BACKUP_MAX_AGE_MS = 24 * 60 * 60 * 1000;
@@ -105,9 +108,12 @@ async function githubJson(fetchImpl, url, token) {
  * Checks the backup run through the GitHub API before any database
  * connection. It must be a run of this repository's fixed Production backup
  * workflow (PRODUCTION_BACKUP_WORKFLOW), dispatched or scheduled on master,
- * completed with conclusion=success within BACKUP_MAX_AGE_MS, and it must
- * have produced the unexpired Production backup artifact. Returns a fixed
- * failure code or null.
+ * completed with conclusion=success within BACKUP_MAX_AGE_MS, built from a
+ * commit that is in master's history (compare API: master is ahead of or
+ * identical to run.head_sha, so a since-deleted branch named "master" or a
+ * rewritten tip does not count), whose PRODUCTION_BACKUP_JOB succeeded, and
+ * it must have produced the unexpired Production backup artifact. Returns a
+ * fixed failure code or null.
  */
 export async function verifyBackupRun(env, { fetchImpl = fetch, now = Date.now() } = {}) {
   const runId = env.BACKUP_RUN_ID ?? "";
@@ -129,6 +135,17 @@ export async function verifyBackupRun(env, { fetchImpl = fetch, now = Date.now()
     if (run.status !== "completed" || run.conclusion !== "success") return "BACKUP_RUN_NOT_SUCCESSFUL";
     const finishedAt = Date.parse(run.updated_at ?? "");
     if (!Number.isFinite(finishedAt) || finishedAt > now || now - finishedAt > BACKUP_MAX_AGE_MS) return "BACKUP_RUN_TOO_OLD";
+    const headSha = typeof run.head_sha === "string" ? run.head_sha : "";
+    if (!COMMIT_SHA.test(headSha)) return "BACKUP_RUN_SOURCE_NOT_MASTER";
+    const compareResult = await githubJson(fetchImpl, `https://api.github.com/repos/${repository}/compare/${headSha}...master?per_page=1`, env.GITHUB_TOKEN);
+    const comparison = compareResult.body;
+    if (compareResult.notFound || !["ahead", "identical"].includes(comparison?.status) || comparison?.merge_base_commit?.sha !== headSha) {
+      return "BACKUP_RUN_SOURCE_NOT_MASTER";
+    }
+    const jobsResult = await githubJson(fetchImpl, `${base}/jobs?per_page=100`, env.GITHUB_TOKEN);
+    const backupJobs = Array.isArray(jobsResult.body?.jobs) ? jobsResult.body.jobs.filter((job) => job?.name === PRODUCTION_BACKUP_JOB) : [];
+    if (jobsResult.notFound || backupJobs.length !== 1 || backupJobs[0].status !== "completed" || backupJobs[0].conclusion !== "success"
+      || backupJobs[0].head_sha !== headSha) return "BACKUP_JOB_NOT_SUCCESSFUL";
     const artifactResult = await githubJson(fetchImpl, `${base}/artifacts?per_page=100`, env.GITHUB_TOKEN);
     if (artifactResult.notFound) return "BACKUP_ARTIFACT_MISSING";
     artifacts = artifactResult.body?.artifacts;

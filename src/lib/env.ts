@@ -250,6 +250,23 @@ function productionPaymentProviderChecks(env: NodeJS.ProcessEnv): EnvCheck[] {
 }
 
 /**
+ * F-052: the platform affiliate payout switch must be an explicit decision on
+ * the production deployment. Unset or any value other than `true`／`false`
+ * fails production and warns everywhere else. (The runtime parser still fails
+ * closed on unknown values; this check only demands an explicit choice.)
+ */
+function affiliatePayoutSwitchCheck(env: NodeJS.ProcessEnv): EnvCheck {
+  const key = "AFFILIATE_PAYOUTS_DISABLED";
+  const value = env[key]?.trim().toLowerCase();
+  if (value === "true") return { key, status: "pass", message: "平台已停用聯盟出款（不可標記已付款、不可匯出提領 CSV）" };
+  if (value === "false") return { key, status: "pass", message: "平台允許聯盟出款；仍需商家出款政策與已匯出的扣繳快照" };
+  const message = value
+    ? "AFFILIATE_PAYOUTS_DISABLED 只接受 true 或 false；目前的值在執行時會被視為停用出款"
+    : "未設定 AFFILIATE_PAYOUTS_DISABLED；執行時視為允許聯盟出款，請明確設定 true 或 false";
+  return { key, status: isVercelProductionDeployment(env) ? "fail" : "warning", message };
+}
+
+/**
  * F-055 / B04-14: the deployed runtime reaches PostgreSQL through a
  * transaction pooler. Without pgbouncer=true Prisma's prepared statements
  * break, and without connection_limit each serverless instance opens a pool
@@ -458,6 +475,7 @@ export function getEnvCheckReport(env: NodeJS.ProcessEnv = process.env) {
   checks.push(...turnstileChecks(env));
 
   checks.push(...productionPaymentProviderChecks(env));
+  checks.push(affiliatePayoutSwitchCheck(env));
   checks.push(...databasePoolChecks(env));
 
   if (env.DATABASE_URL?.startsWith("file:")) {

@@ -1,5 +1,4 @@
-import { generateKeyPairSync } from "node:crypto";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   findFirst: vi.fn(),
@@ -87,7 +86,18 @@ describe("public registration form DAL", () => {
       select: { id: true, title: true, description: true, scheduledAt: true, status: true, endedAt: true, sessionMode: true },
     }));
     expect(result?.sessions.map((session) => session.id)).toEqual(["live"]);
-    expect(result?.promoVideo).toEqual({ title: "預告", videoUrl: "https://cdn.example.test/promo.m3u8" });
+    expect(result?.promoVideo).toEqual({
+      title: "預告",
+      videoUrl: "https://cdn.example.test/promo.m3u8",
+      signingSource: {
+        vendorId: "vendor-1",
+        sourceType: "url",
+        videoUrl: "https://cdn.example.test/promo.m3u8",
+        cloudflareStreamUid: undefined,
+        cloudflarePlaybackId: undefined,
+        cloudflareLiveInputUid: null,
+      },
+    });
     expect(result).not.toHaveProperty("vendorId");
     expect(result?.sessions[0]).not.toHaveProperty("endedAt");
   });
@@ -154,7 +164,7 @@ it("projects a form in its own published project", async () => {
   expect(await loadPublicRegistrationForm("summer")).toMatchObject({ id: "form-1" });
 });
 
-describe("promo video signing (F-093)", () => {
+describe("promo video signing source (F-093)", () => {
   const uid = "a1b2c3d4e5f60718293a4b5c6d7e8f90";
   const streamUrl = `https://videodelivery.net/${uid}/manifest/video.m3u8`;
   const cloudflarePromo = {
@@ -170,18 +180,7 @@ describe("promo video signing (F-093)", () => {
     liveInputStatus: null,
   };
 
-  beforeEach(() => {
-    // Synthetic key generated per run; never a real Cloudflare signing key.
-    vi.stubEnv("CLOUDFLARE_STREAM_SIGNING_KEY_ID", "0123456789abcdef0123456789abcdef");
-    vi.stubEnv("CLOUDFLARE_STREAM_SIGNING_KEY_PEM", generateKeyPairSync("rsa", { modulusLength: 2048 }).privateKey
-      .export({ format: "pem", type: "pkcs1" }).toString());
-  });
-
-  afterEach(() => {
-    vi.unstubAllEnvs();
-  });
-
-  it("selects the promo's stored uids and serves a time-limited token URL", async () => {
+  it("selects the promo's stored uids and returns the bound row for the page to sign", async () => {
     mocks.findFirst.mockResolvedValueOnce(formRecord({ promoVideo: cloudflarePromo }));
     const result = await loadPublicRegistrationForm("summer");
 
@@ -190,18 +189,22 @@ describe("promo video signing (F-093)", () => {
         promoVideo: { select: expect.objectContaining({ cloudflareStreamUid: true, cloudflarePlaybackId: true }) },
       }),
     }));
-    expect(result?.promoVideo?.videoUrl).toMatch(/^https:\/\/videodelivery\.net\/[\w-]+\.[\w-]+\.[\w-]+\/manifest\/video\.m3u8$/);
-    expect(result?.promoVideo?.videoUrl).not.toContain(uid);
+    // The DAL never signs (it stays importable outside Next); it only carries the validated row.
+    expect(result?.promoVideo).toEqual({
+      title: "預告",
+      videoUrl: streamUrl,
+      signingSource: {
+        vendorId: "vendor-1",
+        sourceType: "cloudflare_stream",
+        videoUrl: streamUrl,
+        cloudflareStreamUid: uid,
+        cloudflarePlaybackId: uid,
+        cloudflareLiveInputUid: null,
+      },
+    });
   });
 
-  it("leaves a url-type promo holding a Stream URL unsigned", async () => {
-    mocks.findFirst.mockResolvedValueOnce(formRecord({
-      promoVideo: { ...cloudflarePromo, sourceType: "url", cloudflareStreamUid: null, cloudflarePlaybackId: null },
-    }));
-    expect((await loadPublicRegistrationForm("summer"))?.promoVideo).toEqual({ title: "預告", videoUrl: streamUrl });
-  });
-
-  it("does not sign a promo owned by another vendor", async () => {
+  it("drops a promo owned by another vendor before any signing", async () => {
     mocks.findFirst.mockResolvedValueOnce(formRecord({ promoVideo: { ...cloudflarePromo, vendorId: "vendor-2" } }));
     expect((await loadPublicRegistrationForm("summer"))?.promoVideo).toBeNull();
   });
