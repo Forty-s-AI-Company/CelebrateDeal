@@ -1,13 +1,16 @@
 import { NextResponse } from "next/server";
-import { readJsonBody, requireJobSecret, unauthorizedJson } from "@/lib/api-security";
+import { readJsonBody, requireOpsSmokeSecret, unauthorizedJson } from "@/lib/api-security";
+import { bindOpsSmokeVendor } from "@/lib/ops-smoke";
 import { classifyCloudflareOperationError, createLiveInputMapping, LiveInputRequest } from "@/lib/cloudflare-ops";
 
 export async function POST(request: Request) {
-  if (!requireJobSecret(request)) {
+  if (!requireOpsSmokeSecret(request)) {
     return unauthorizedJson();
   }
 
-  const parsed = LiveInputRequest.safeParse(await readJsonBody(request));
+  const bound = bindOpsSmokeVendor(await readJsonBody(request));
+  if (!bound.ok) return bound.response;
+  const parsed = LiveInputRequest.safeParse(bound.payload);
   if (!parsed.success) {
     return NextResponse.json({ error: "Invalid live input request" }, { status: 400 });
   }

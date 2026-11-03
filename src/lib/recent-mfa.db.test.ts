@@ -9,7 +9,7 @@ const cookieJar = vi.hoisted(() => ({ token: "" }));
 
 vi.mock("next/headers", () => ({
   cookies: vi.fn(async () => ({
-    get: (name: string) => (name === "celebrate_session" && cookieJar.token ? { value: cookieJar.token } : undefined),
+    get: (name: string) => (name === "__Host-celebrate_session" && cookieJar.token ? { value: cookieJar.token } : undefined),
     set: vi.fn(),
     delete: vi.fn(),
   })),

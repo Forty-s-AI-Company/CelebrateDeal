@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { readJsonBody, requireJobSecret, unauthorizedJson } from "@/lib/api-security";
+import { readJsonBody, requireOpsSmokeSecret, unauthorizedJson } from "@/lib/api-security";
 import { getSmokeTestEmail, isAllowedSmokeTestRecipient, sendTransactionalEmail } from "@/lib/email";
 
 const TestEmailRequest = z.object({
@@ -8,7 +8,7 @@ const TestEmailRequest = z.object({
 });
 
 export async function POST(request: Request) {
-  if (!requireJobSecret(request)) {
+  if (!requireOpsSmokeSecret(request)) {
     return unauthorizedJson();
   }
 

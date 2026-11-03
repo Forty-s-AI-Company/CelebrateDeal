@@ -46,6 +46,7 @@ function sessionFor({ platformRole, memberRole, mfaFactor = { id: "mfa-1" }, mfa
     id: "session-1",
     vendorId: memberships[0]?.vendorId ?? null,
     revokedAt: null,
+    createdAt: new Date(),
     expiresAt: new Date("2099-01-01T00:00:00.000Z"),
     mfaVerifiedAt,
     vendor: memberships[0]?.vendor ?? null,

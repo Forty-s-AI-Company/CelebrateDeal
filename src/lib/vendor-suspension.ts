@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation";
 import { NextResponse } from "next/server";
 import type { PrismaClient } from "@prisma/client";
-import { revokeAllStudentPortalSessionsForVendor } from "@/lib/student-portal-revocation";
+import { revokeAllStudentPortalSessionsForVendor } from "@/lib/student-portal-auth";
 import {
   isVendorAvailableForPublic,
   VENDOR_SUSPENDED_CODE,
@@ -107,7 +107,7 @@ export async function suspendVendor(
       data: { suspendedAt: now, suspendedReason: reason },
     });
     if (updated.count !== 1) return { status: "conflict" as const };
-    const revokedCount = await revokeAllStudentPortalSessionsForVendor(tx, vendor.id);
+    const revokedCount = await revokeAllStudentPortalSessionsForVendor(tx, { vendorId: vendor.id });
     const revoked = { count: revokedCount };
     await tx.auditLog.create({
       data: {

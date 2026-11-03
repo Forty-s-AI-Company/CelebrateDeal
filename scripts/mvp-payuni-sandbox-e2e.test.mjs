@@ -424,7 +424,7 @@ function successfulSubscriptionDependencies(calls = []) {
       calls.push(request);
       if (request.url.endsWith("/wp4-fixture")) return response(200, { ready: true, createdCount: 6, reusedCount: 0 });
       if (request.url.endsWith("/wp4-session")) {
-        return { status: 204, sessionCookie: "celebrate_session=opaque-owner-session" };
+        return { status: 204, sessionCookie: "__Host-celebrate_session=opaque-owner-session" };
       }
       if (request.url.endsWith("/wp4-subscription-payment-attempt")) {
         return response(200, { status: "SUBMIT_ALLOWED", reservationCreated: true });
@@ -442,7 +442,7 @@ function successfulSubscriptionDependencies(calls = []) {
     async browserSubmit(browserInput) {
       calls.push({ browserInput });
       assert.equal(browserInput.previewHost, previewHost);
-      assert.equal(browserInput.ownerSessionCookie, "celebrate_session=opaque-owner-session");
+      assert.equal(browserInput.ownerSessionCookie, "__Host-celebrate_session=opaque-owner-session");
       assert.equal(browserInput.markNativePlanCheckoutCreated(), true);
       assert.equal(await browserInput.reservePaymentAttempt(), true);
       assert.equal(browserInput.markPaymentSubmission(), true);
@@ -624,7 +624,7 @@ test("uses the native fixed plan browser flow once without treating the return p
 
   const result = await defaultSubscriptionBrowserSubmit({
     previewHost,
-    ownerSessionCookie: "celebrate_session=opaque-owner-session",
+    ownerSessionCookie: "__Host-celebrate_session=opaque-owner-session",
     cardNumber: "4147631000000001",
     cardExpiry: "1230",
     cardCvv: "123",
@@ -639,7 +639,10 @@ test("uses the native fixed plan browser flow once without treating the return p
   assert.equal(marked, 1);
   assert.equal(nativeCheckouts, 1);
   assert.equal(submitted, 1);
-  assert.equal(ownerCookie.name, "celebrate_session");
+  assert.equal(ownerCookie.name, "__Host-celebrate_session");
+  assert.equal(ownerCookie.path, "/");
+  assert.equal(ownerCookie.secure, true);
+  assert.equal(ownerCookie.url, undefined);
   assert.equal(closed, 1);
 
   selected = 0;
@@ -650,7 +653,7 @@ test("uses the native fixed plan browser flow once without treating the return p
   confirmationVisible = true;
   const ambiguous = await defaultSubscriptionBrowserSubmit({
     previewHost,
-    ownerSessionCookie: "celebrate_session=opaque-owner-session",
+    ownerSessionCookie: "__Host-celebrate_session=opaque-owner-session",
     cardNumber: "4147631000000001",
     cardExpiry: "1230",
     cardCvv: "123",
@@ -716,7 +719,7 @@ test("subscription marks the native transaction before rejecting an invalid serv
 
   const result = await defaultSubscriptionBrowserSubmit({
     previewHost,
-    ownerSessionCookie: "celebrate_session=opaque-owner-session",
+    ownerSessionCookie: "__Host-celebrate_session=opaque-owner-session",
     cardNumber: "4147631000000001",
     cardExpiry: "1230",
     cardCvv: "123",

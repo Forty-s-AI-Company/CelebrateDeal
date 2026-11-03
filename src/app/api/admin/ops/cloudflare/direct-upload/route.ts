@@ -1,15 +1,15 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { readJsonBody, requireJobSecret, unauthorizedJson } from "@/lib/api-security";
+import { readJsonBody, requireOpsSmokeSecret, unauthorizedJson } from "@/lib/api-security";
 import { classifyCloudflareOperationError, createDirectUploadMapping, DirectUploadRequest } from "@/lib/cloudflare-ops";
 import { SIGNABLE_VIDEO_SELECT, signVideoUrl } from "@/lib/cloudflare-stream-signing";
 import { getDb } from "@/lib/db";
-import { withPreviewSmokeVendorId } from "@/lib/preview-smoke-config";
+import { bindOpsSmokeVendor, opsSmokeVendorId, opsSmokeVendorUnavailable } from "@/lib/ops-smoke";
 
 const VideoStatusQuery = z.string().trim().min(1).max(128);
 
 export async function GET(request: Request) {
-  if (!requireJobSecret(request)) {
+  if (!requireOpsSmokeSecret(request)) {
     return unauthorizedJson();
   }
 
@@ -17,9 +17,12 @@ export async function GET(request: Request) {
   if (!videoId.success) {
     return NextResponse.json({ error: "Invalid video status request" }, { status: 400 });
   }
+  const vendorId = opsSmokeVendorId();
+  if (!vendorId) return opsSmokeVendorUnavailable();
 
-  const video = await getDb().video.findUnique({
-    where: { id: videoId.data },
+  // Only a video owned by the configured smoke vendor is visible here.
+  const video = await getDb().video.findFirst({
+    where: { id: videoId.data, vendorId },
     select: {
       ...SIGNABLE_VIDEO_SELECT,
       status: true,
@@ -50,11 +53,13 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  if (!requireJobSecret(request)) {
+  if (!requireOpsSmokeSecret(request)) {
     return unauthorizedJson();
   }
 
-  const parsed = DirectUploadRequest.safeParse(withPreviewSmokeVendorId(await readJsonBody(request)));
+  const bound = bindOpsSmokeVendor(await readJsonBody(request));
+  if (!bound.ok) return bound.response;
+  const parsed = DirectUploadRequest.safeParse(bound.payload);
   if (!parsed.success) {
     return NextResponse.json({ error: "Invalid upload request" }, { status: 400 });
   }

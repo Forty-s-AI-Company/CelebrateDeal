@@ -1,11 +1,8 @@
 import { createHash, randomUUID } from "node:crypto";
 import { Prisma } from "@prisma/client";
+import { z } from "zod";
 import { recordLearnerPaymentNotificationSources } from "@/lib/learner-payment-notifications";
-import {
-  isStudentPortalCustomerKey,
-  revokeStudentPortalSessionsForCustomerKey,
-  studentPortalCustomerKeyForEmail,
-} from "@/lib/student-portal-revocation";
+import { revokeStudentPortalSessions } from "@/lib/student-portal-auth";
 import {
   deriveRefundOrderStatus,
   type CommerceFulfillmentType,
@@ -798,25 +795,25 @@ async function convergeFullRefundFulfillment(
 }
 
 type RefundCustomerIdentity = {
-  automationCustomerKeyHash?: string | null;
   buyerEncryptedEnvelope: string;
   shippingEncryptedEnvelope: string | null;
 };
 
+const REFUND_BUYER_EMAIL = z.string().trim().toLowerCase().email().max(254);
+
 /**
- * The learner portal key of the order's buyer: the stored key when present,
- * else derived from the decrypted buyer email (same derivation as
- * `revokeStudentPortalSessions`). Never throws: a refund must not roll back
- * because a revocation key could not be computed.
+ * The order buyer's normalized email for `revokeStudentPortalSessions`, read
+ * from the encrypted order snapshot. Never throws: a refund must not roll back
+ * because the buyer's learner sessions could not be identified.
  */
-function refundStudentPortalCustomerKey(vendorId: string, order: { id: string } & RefundCustomerIdentity) {
-  if (isStudentPortalCustomerKey(order.automationCustomerKeyHash)) return order.automationCustomerKeyHash;
+function refundBuyerEmail(vendorId: string, order: { id: string } & RefundCustomerIdentity) {
   try {
     const pii = revealCommerceOrderPii(
       { buyerEncrypted: order.buyerEncryptedEnvelope, shippingEncrypted: order.shippingEncryptedEnvelope },
       { vendorId, orderId: order.id },
     );
-    return studentPortalCustomerKeyForEmail(vendorId, pii.buyer.email);
+    const email = REFUND_BUYER_EMAIL.safeParse(pii.buyer.email);
+    return email.success ? email.data : null;
   } catch {
     return null;
   }
@@ -853,7 +850,7 @@ export async function reconcileCommerceOrderRefund(
 
   const order = await tx.commerceOrder.findUnique({
     where: { vendorId_id: { vendorId: input.vendorId, id: input.orderId } },
-    select: { id: true, vendorId: true, status: true, totalAmountCents: true, paidAmountCents: true, refundedAmountCents: true, primaryPaymentTransactionId: true, automationCustomerKeyHash: true, buyerEncryptedEnvelope: true, shippingEncryptedEnvelope: true },
+    select: { id: true, vendorId: true, status: true, totalAmountCents: true, paidAmountCents: true, refundedAmountCents: true, primaryPaymentTransactionId: true, buyerEncryptedEnvelope: true, shippingEncryptedEnvelope: true },
   }) as (OrderRecord & { primaryPaymentTransactionId: string | null } & RefundCustomerIdentity) | null;
   if (!order) throw new CommerceOrderValidationError("Canonical commerce order was not found.");
   if (input.paymentTransactionId && order.primaryPaymentTransactionId !== input.paymentTransactionId) {
@@ -886,11 +883,11 @@ export async function reconcileCommerceOrderRefund(
   // F-030: when the refund removed course/digital access, end the buyer's
   // learner portal sessions of this vendor in the same transaction. They can
   // sign in again for anything they still own; the revoked order stays closed.
-  const refundCustomerKey = fulfillmentConvergence && fulfillmentConvergence.revokedEntitlementCount > 0
-    ? refundStudentPortalCustomerKey(input.vendorId, order)
+  const refundBuyer = fulfillmentConvergence && fulfillmentConvergence.revokedEntitlementCount > 0
+    ? refundBuyerEmail(input.vendorId, order)
     : null;
-  const revokedStudentPortalTokenCount = refundCustomerKey
-    ? await revokeStudentPortalSessionsForCustomerKey(tx, { vendorId: input.vendorId, customerKeyHash: refundCustomerKey })
+  const revokedStudentPortalTokenCount = refundBuyer
+    ? await revokeStudentPortalSessions(tx, { vendorId: input.vendorId, email: refundBuyer })
     : 0;
   await appendEvent(tx, {
     vendorId: input.vendorId,

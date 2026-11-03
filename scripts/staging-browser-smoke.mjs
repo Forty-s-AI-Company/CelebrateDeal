@@ -56,14 +56,16 @@ function emptyReport(reason = "NOT_RUN", sourceSha = null) {
   };
 }
 
-export function validateBrowserSmokeBinding(env) {
+/** `secretName` selects the owner bearer the runner sends (F-016: Stream smoke uses OPS_SMOKE_SECRET). */
+export function validateBrowserSmokeBinding(env, secretName = "JOB_SECRET") {
+  const secret = env[secretName];
   return ["fixed_alias", "immutable_preview"].includes(env.CELEBRATEDEAL_BROWSER_SURFACE ?? "fixed_alias")
     && SOURCE_SHA.test(env.CELEBRATEDEAL_SOURCE_SHA ?? "")
     && PREVIEW_HOST.test(env.CELEBRATEDEAL_DEPLOYMENT_HOST ?? "")
     && typeof env.GITHUB_TOKEN === "string" && env.GITHUB_TOKEN.length > 0
     && typeof env.VERCEL_TOKEN === "string" && env.VERCEL_TOKEN.length > 0
-    && typeof env.JOB_SECRET === "string"
-    && env.JOB_SECRET.length >= 16;
+    && typeof secret === "string"
+    && secret.length >= (secretName === "OPS_SMOKE_SECRET" ? 32 : 16);
 }
 
 function vercelApiFailure(response, resource) {

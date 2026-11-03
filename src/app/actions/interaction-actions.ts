@@ -33,8 +33,7 @@ import {
   pollPercentagesFromCounts,
 } from "@/lib/live-interaction";
 import { encryptSensitiveValue } from "@/lib/sensitive-data";
-import { automationCustomerKeyHash } from "@/lib/automation-workflow";
-import { revokeStudentPortalSessionsForCustomerKey } from "@/lib/student-portal-revocation";
+import { revokeStudentPortalSessions } from "@/lib/student-portal-auth";
 import { canTransitionLiveQuestionStatus, LiveQuestionStatusSchema } from "@/lib/live-question";
 
 function text(formData: FormData, key: string, fallback = "") {
@@ -1137,7 +1136,7 @@ export async function upsertBlacklistAction(formData: FormData) {
       },
     });
     return identifierType.data === "email"
-      ? revokeStudentPortalSessionsForCustomerKey(tx, { vendorId: vendor.id, customerKeyHash: automationCustomerKeyHash(vendor.id, identifier) })
+      ? revokeStudentPortalSessions(tx, { vendorId: vendor.id, email: identifier })
       : 0;
   });
   await writeAuditLog({

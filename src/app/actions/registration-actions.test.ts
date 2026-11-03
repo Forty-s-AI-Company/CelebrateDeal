@@ -31,7 +31,7 @@ describe("workspace registration boundaries (REGISTRATION_MODE=open keeps the or
   expect(mocks.member).toHaveBeenCalledWith({data:{vendorId:"vendor-1",userId:"user-1",role:"owner",status:"active"}});
   expect(mocks.preference).toHaveBeenCalledWith({data:expect.objectContaining({taskPanelCollapsed:true})}); expect(mocks.preference).toHaveBeenCalledOnce(); expect(mocks.audit).toHaveBeenCalledOnce();
   expect(mocks.audit.mock.invocationCallOrder[0]).toBeLessThan(mocks.session.mock.invocationCallOrder[0]);
-  expect(mocks.set).toHaveBeenCalledWith("auth","synthetic-session",{httpOnly:true});
+  expect(mocks.set).toHaveBeenCalledWith("__Host-celebrate_session","synthetic-session",expect.objectContaining({httpOnly:true,secure:true,path:"/"}));
  });
  it("records the server's terms and privacy versions with the account (F-114)", async () => {
   await expect(registerAction(form())).rejects.toThrow("redirect:/welcome");
@@ -138,7 +138,7 @@ describe("invite-only registration (closed beta default)", () => {
     expect(mocks.audit).toHaveBeenCalledWith({ data: expect.objectContaining({ action: "registration_completed", after: { policyConsent: { termsVersion: policy.termsVersion, privacyVersion: policy.privacyVersion }, registrationInvite: { jti: invite.jti } } }) });
     expect(JSON.stringify(mocks.audit.mock.calls)).not.toContain(invite.token);
     expect(JSON.stringify(mocks.audit.mock.calls)).not.toContain(invite.token.split(".")[2]);
-    expect(mocks.set).toHaveBeenCalledWith("auth", "synthetic-session", { httpOnly: true });
+    expect(mocks.set).toHaveBeenCalledWith("__Host-celebrate_session", "synthetic-session", expect.objectContaining({ httpOnly: true, secure: true, path: "/" }));
   });
 
   it("keeps the verified invitation on every retryable error so the invitee can fix the form", async () => {

@@ -53,7 +53,8 @@ export async function runStagingStreamResourceSmoke(env = process.env, dependenc
     sideEffects: { createAttempts: 0, uploadAttempts: 0, statusReads: 0, playbackReads: 0,
       existingResourceReads: 0, replacements: 0, liveInputs: 0, deletes: 0, payments: 0, refunds: 0 },
   };
-  if (!validateBrowserSmokeBinding(env) || (env.CELEBRATEDEAL_BROWSER_SURFACE ?? "fixed_alias") !== "fixed_alias") return receipt;
+  // F-016: the smoke endpoint accepts only OPS_SMOKE_SECRET, never the scheduler JOB_SECRET.
+  if (!validateBrowserSmokeBinding(env, "OPS_SMOKE_SECRET") || (env.CELEBRATEDEAL_BROWSER_SURFACE ?? "fixed_alias") !== "fixed_alias") return receipt;
   const fetchImpl = dependencies.fetch ?? fetch;
   const sleep = dependencies.sleep ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
   const now = dependencies.now ?? Date.now;
@@ -65,7 +66,7 @@ export async function runStagingStreamResourceSmoke(env = process.env, dependenc
       ...options, redirect: "manual", signal: AbortSignal.timeout(Math.min(15_000, remaining)),
     });
   };
-  const authHeaders = { Authorization: `Bearer ${env.JOB_SECRET}`, "Content-Type": "application/json",
+  const authHeaders = { Authorization: `Bearer ${env.OPS_SMOKE_SECRET}`, "Content-Type": "application/json",
     "x-celebratedeal-source-sha": env.CELEBRATEDEAL_SOURCE_SHA };
   try {
     const fixture = await readFile(new URL("./fixtures/staging-stream-one-second.mp4", import.meta.url));
@@ -82,7 +83,7 @@ export async function runStagingStreamResourceSmoke(env = process.env, dependenc
     receipt.aliasBinding = "VERIFIED";
     // Bound the side-effect phase and reserve workflow time for the sanitized receipt.
     deadline = now() + 180_000;
-    // Omit vendorId to use Preview's server-owned fixture; never accept an existing videoId.
+    // Omit vendorId: the deployment binds smoke to its SMOKE_VENDOR_ID; never accept an existing videoId.
     const title = `Staging Synthetic Stream ${randomUUID()}`;
     receipt.reason = "CREATE_OUTCOME_UNKNOWN";
     receipt.sideEffects.createAttempts++;

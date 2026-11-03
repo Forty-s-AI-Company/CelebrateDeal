@@ -13,7 +13,7 @@ const CHILD_PREFIX = "SECURE_WP4_RESULT:";
 const SAFE_SHA = /^[a-f0-9]{40}$/u;
 const SAFE_HOST = /^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9](?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)$/u;
 const PURPOSES = Object.freeze(["buyer_order", "platform_subscription", "invoice_payment"]);
-const SESSION_COOKIE_NAME = "celebrate_session";
+const SESSION_COOKIE_NAME = "__Host-celebrate_session";
 const WP4_SESSION_TTL_SECONDS = 15 * 60;
 export const WP4_NETWORK_REQUEST_TIMEOUT_MS = 10_000;
 export const WP4_CHILD_TIMEOUT_MS = 60_000;
@@ -236,7 +236,7 @@ function captureSessionCookie(headers) {
     ? headers.getSetCookie()
     : [headers?.get?.("set-cookie")].filter((value) => typeof value === "string" && value.length > 0);
   if (values.length !== 1) throw new Error("SESSION_COOKIE_COUNT_INVALID");
-  const match = /^celebrate_session=([A-Za-z0-9_-]{43});(?:\s|$)/u.exec(values[0]);
+  const match = /^__Host-celebrate_session=([A-Za-z0-9_-]{43});(?:\s|$)/u.exec(values[0]);
   if (!match) throw new Error("SESSION_COOKIE_INVALID");
   return `${SESSION_COOKIE_NAME}=${match[1]}`;
 }

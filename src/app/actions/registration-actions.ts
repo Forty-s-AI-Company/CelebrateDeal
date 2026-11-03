@@ -4,7 +4,8 @@ import { randomUUID } from "node:crypto";
 import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { z } from "zod";
-import { AUTH_COOKIE, LEGACY_VENDOR_COOKIE, createUserSession, sessionCookieOptions } from "@/lib/auth";
+import { LEGACY_VENDOR_COOKIE, createUserSession } from "@/lib/auth";
+import { writeSessionCookie } from "@/lib/session-cookie";
 import { getCanonicalAppUrl } from "@/lib/app-url";
 import { assertServerActionSecurity } from "@/lib/csrf";
 import { getDb } from "@/lib/db";
@@ -130,7 +131,7 @@ export async function registerAction(formData: FormData) {
   try {
     const session = await createUserSession({ ...created, ipAddress: incoming.get("x-forwarded-for")?.split(",")[0]?.trim() ?? null, userAgent: incoming.get("user-agent") });
     const store = await cookies();
-    store.set(AUTH_COOKIE, session.token, sessionCookieOptions(session.expiresAt));
+    writeSessionCookie(store, session.token, session.expiresAt);
     store.delete(LEGACY_VENDOR_COOKIE);
   } catch {
     // Provisioning has committed: offer login recovery instead of asking for another signup.

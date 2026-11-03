@@ -116,10 +116,14 @@ async function expectNoBlockingAxeViolations(page: Page) {
 }
 
 async function installOwnerSession(page: Page) {
+  // F-036: a __Host- cookie needs Secure, Path=/ and no Domain attribute;
+  // Chromium accepts it on the http loopback origin.
   await page.context().addCookies([{
-    name: "celebrate_session",
+    name: "__Host-celebrate_session",
     value: sessionToken,
-    url: baseURL,
+    domain: new URL(baseURL).hostname,
+    path: "/",
+    secure: true,
     httpOnly: true,
     sameSite: "Lax",
   }]);
