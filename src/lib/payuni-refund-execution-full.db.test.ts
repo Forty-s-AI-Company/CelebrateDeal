@@ -2,7 +2,11 @@ import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 const providerMocks = vi.hoisted(() => ({
-  refundPayment: vi.fn(async () => ({ providerEventId: "same-provider-trade" })),
+  // PayUni answers without CloseNo/RefundNo: the provider event is the
+  // payment's TradeNo fallback for both partial refunds (F-062).
+  refundPayment: vi.fn(async (input: { transaction: { providerTradeNo: string | null } }) => ({
+    providerEventId: input.transaction.providerTradeNo ?? "missing-trade-no",
+  })),
 }));
 
 vi.mock("@/lib/payment-providers", () => ({

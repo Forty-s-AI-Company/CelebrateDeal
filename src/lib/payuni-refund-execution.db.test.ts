@@ -3,7 +3,9 @@ import { PrismaClient } from "@prisma/client";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
-  refundPayment: vi.fn(async () => ({ providerEventId: "same-provider-trade" })),
+  refundPayment: vi.fn(async (input: { transaction: { providerTradeNo: string | null } }) => ({
+    providerEventId: input.transaction.providerTradeNo as string | null,
+  })),
   applyPaymentRefundAccounting: vi.fn(async (database: unknown, input: { eventIdentity: string }) => {
     void database;
     void input;
@@ -25,6 +27,7 @@ const db = new PrismaClient();
 const suffix = randomBytes(8).toString("hex");
 const vendorId = `refund_identity_vendor_${suffix}`;
 const transactionId = `refund_identity_tx_${suffix}`;
+const tradeNo = `synthetic-trade-${suffix}`;
 
 beforeAll(async () => {
   await db.vendor.create({
@@ -41,7 +44,7 @@ beforeAll(async () => {
       id: transactionId,
       vendorId,
       providerName: "payuni",
-      providerTradeNo: `synthetic-trade-${suffix}`,
+      providerTradeNo: tradeNo,
       orderNumber: `synthetic-order-${suffix}`,
       grossAmountCents: 10_000,
       netAmountCents: 10_000,
@@ -59,17 +62,20 @@ afterAll(async () => {
 });
 
 describe("PayUni refund accounting identity on disposable PostgreSQL", () => {
-  it("uses distinct local reservation identities for two refunds with the same provider ID", async () => {
+  const base = {
+    db,
+    transactionId,
+    gatewayFeeRefundCents: 0,
+    platformFeeRefundCents: 0,
+    reason: "synthetic",
+    actor: { id: "synthetic-actor", label: "synthetic" },
+  };
+
+  it("keeps the local reservation identity when a second refund only repeats the TradeNo fallback", async () => {
     mocks.refundPayment.mockClear();
     mocks.applyPaymentRefundAccounting.mockClear();
-    const base = {
-      db,
-      transactionId,
-      gatewayFeeRefundCents: 0,
-      platformFeeRefundCents: 0,
-      reason: "synthetic",
-      actor: { id: "synthetic-actor", label: "synthetic" },
-    };
+    // No CloseNo/RefundNo in either answer: PayUni identifies both by TradeNo.
+    mocks.refundPayment.mockImplementation(async (input) => ({ providerEventId: input.transaction.providerTradeNo }));
 
     const first = await executePayUniRefund({ ...base, refundAmountCents: 2_000 });
     const second = await executePayUniRefund({ ...base, refundAmountCents: 3_000 });
@@ -82,23 +88,50 @@ describe("PayUni refund accounting identity on disposable PostgreSQL", () => {
     expect(new Set(identities).size).toBe(2);
     expect(identities.every((identity) => identity.startsWith("refund:payuni:"))).toBe(true);
     // F-062: a provider event is booked once per payment. The first refund
-    // keeps the provider identity; the second, whose provider answer repeats
-    // it, keeps its own local reservation identity.
+    // keeps the trade-only identity (the webhook ambiguity marker); the second
+    // keeps its own local reservation identity.
     const processed = await db.refundRecord.findMany({
       where: { paymentTransactionId: transactionId, status: "processed" },
       orderBy: { createdAt: "asc" },
       select: { providerEventId: true, refundAmountCents: true },
     });
     expect(processed).toHaveLength(2);
-    expect(processed[0]).toEqual({ providerEventId: "same-provider-trade", refundAmountCents: 2_000 });
+    expect(processed[0]).toEqual({ providerEventId: tradeNo, refundAmountCents: 2_000 });
     expect(processed[1]?.refundAmountCents).toBe(3_000);
     expect(processed[1]?.providerEventId).toMatch(/^request:[0-9a-f]{32}$/);
     await expect(db.refundRecord.create({
-      data: { vendorId, paymentTransactionId: transactionId, providerEventId: "same-provider-trade", monthKey: "2026-10", refundAmountCents: 1, status: "processed" },
+      data: { vendorId, paymentTransactionId: transactionId, providerEventId: tradeNo, monthKey: "2026-10", refundAmountCents: 1, status: "processed" },
     })).rejects.toMatchObject({ code: "P2002" });
     await expect(db.paymentTransaction.findUnique({ where: { id: transactionId } })).resolves.toMatchObject({
       status: "partially_refunded",
       refundedAmountCents: 5_000,
+    });
+  });
+
+  it("leaves a refund pending for reconciliation when PayUni repeats a refund serial already booked", async () => {
+    mocks.refundPayment.mockClear();
+    mocks.applyPaymentRefundAccounting.mockClear();
+    mocks.refundPayment.mockImplementation(async () => ({ providerEventId: `close-${suffix}` }));
+
+    const first = await executePayUniRefund({ ...base, refundAmountCents: 1_000 });
+    const repeated = await executePayUniRefund({ ...base, refundAmountCents: 500 });
+
+    expect(first.disposition).toBe("completed");
+    expect(repeated).toEqual({ disposition: "completion_pending_reconciliation" });
+    expect(mocks.refundPayment).toHaveBeenCalledTimes(2);
+    expect(mocks.applyPaymentRefundAccounting).toHaveBeenCalledTimes(1);
+    await expect(db.refundRecord.findMany({
+      where: { paymentTransactionId: transactionId, refundAmountCents: { in: [1_000, 500] } },
+      orderBy: { createdAt: "asc" },
+      select: { providerEventId: true, refundAmountCents: true, status: true },
+    })).resolves.toEqual([
+      { providerEventId: `close-${suffix}`, refundAmountCents: 1_000, status: "processed" },
+      { providerEventId: expect.stringMatching(/^request:[0-9a-f]{32}$/), refundAmountCents: 500, status: "pending" },
+    ]);
+    // Only the first refund is booked on the payment.
+    await expect(db.paymentTransaction.findUnique({ where: { id: transactionId } })).resolves.toMatchObject({
+      status: "partially_refunded",
+      refundedAmountCents: 6_000,
     });
   });
 });

@@ -39,6 +39,14 @@ export type PayUniRefundExecutionResult =
 
 const MAX_COMPLETION_ATTEMPTS = 3;
 
+/** F-062: the provider answered with a refund serial already booked on this payment. */
+class PayUniRefundEventAlreadyBookedError extends Error {
+  constructor() {
+    super("payuni_refund_event_already_booked");
+    this.name = "PayUniRefundEventAlreadyBookedError";
+  }
+}
+
 function isDatabaseTransactionConflict(error: unknown) {
   return typeof error === "object" && error !== null && "code" in error
     && (error.code === "P2025" || error.code === "P2034");
@@ -162,11 +170,15 @@ export async function executePayUniRefund(input: PayUniRefundExecutionInput): Pr
           // F-039: the server completion month, past any locked month.
           const settlementMonthKey = await refundSettlementMonthKey(tx, currentTransaction.vendorId, refundOccurredAt);
           // F-062: a provider event is booked at most once per payment
-          // (RefundRecord_paymentTransactionId_providerEventId_key). When the
-          // provider answer only repeats an identity already booked on this
-          // trade (the TradeNo fallback of a second partial refund), this refund
-          // keeps its unique local reservation identity. The earlier row keeps
-          // the trade-only identity that the webhook ambiguity check relies on.
+          // (RefundRecord_paymentTransactionId_providerEventId_key).
+          // - A repeated TradeNo is only PayUni's fallback when the answer has
+          //   no CloseNo/RefundNo (a second partial refund of the same trade):
+          //   this refund keeps its unique local reservation identity, and the
+          //   earlier row keeps the trade-only identity that the webhook
+          //   ambiguity check relies on.
+          // - A repeated real refund serial means the provider reported a
+          //   refund that is already booked. Nothing is completed: the
+          //   reservation stays pending for reconciliation (fail closed).
           const providerEventId = providerResult.providerEventId ?? requestReservationEventId;
           const providerEventIdTaken = providerEventId !== requestReservationEventId
             && await tx.refundRecord.count({
@@ -177,6 +189,9 @@ export async function executePayUniRefund(input: PayUniRefundExecutionInput): Pr
                 id: { not: reserved.refundId },
               },
             }) > 0;
+          if (providerEventIdTaken && providerEventId !== currentTransaction.providerTradeNo) {
+            throw new PayUniRefundEventAlreadyBookedError();
+          }
           await tx.refundRecord.update({
             where: { id: reserved.refundId, status: "pending", providerEventId: requestReservationEventId },
             data: {

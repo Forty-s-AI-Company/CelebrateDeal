@@ -17,9 +17,9 @@ ALTER TABLE "PaymentTransaction" VALIDATE CONSTRAINT "PaymentTransaction_status_
 ALTER TABLE "PaymentTransaction" VALIDATE CONSTRAINT "PaymentTransaction_amounts_check";
 ALTER TABLE "RefundRecord" VALIDATE CONSTRAINT "RefundRecord_status_check";
 ALTER TABLE "RefundRecord" VALIDATE CONSTRAINT "RefundRecord_amounts_check";
-ALTER TABLE "Settlement" VALIDATE CONSTRAINT "Settlement_status_check";
-ALTER TABLE "Settlement" VALIDATE CONSTRAINT "Settlement_amounts_check";
 ALTER TABLE "PayoutBatch" VALIDATE CONSTRAINT "PayoutBatch_status_check";
 ALTER TABLE "PayoutBatch" VALIDATE CONSTRAINT "PayoutBatch_amounts_check";
+ALTER TABLE "Settlement" VALIDATE CONSTRAINT "Settlement_status_check";
+ALTER TABLE "Settlement" VALIDATE CONSTRAINT "Settlement_amounts_check";
 ALTER TABLE "PayoutItem" VALIDATE CONSTRAINT "PayoutItem_status_check";
 ALTER TABLE "PayoutItem" VALIDATE CONSTRAINT "PayoutItem_amounts_check";

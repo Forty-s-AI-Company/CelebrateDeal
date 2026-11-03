@@ -178,9 +178,12 @@ class RefundValidationError extends Error {}
 class PayoutBatchClaimConflict extends Error {}
 class SettlementMutationConflict extends Error {}
 
+// P2002 included (F-066): a unique index such as PayoutItem
+// (vendorId, settlementId) rejecting a concurrent duplicate is a conflict,
+// reported like a lost CAS rather than as a server error.
 function isDatabaseTransactionConflict(error: unknown) {
   return typeof error === "object" && error !== null && "code" in error &&
-    (error.code === "P2025" || error.code === "P2034");
+    (error.code === "P2002" || error.code === "P2025" || error.code === "P2034");
 }
 
 function isSettlementMutationConflict(error: unknown) {

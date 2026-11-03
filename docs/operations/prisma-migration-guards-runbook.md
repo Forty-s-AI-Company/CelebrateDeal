@@ -177,7 +177,7 @@ SELECT count(*) AS plaintext_rows
 | Migration | 內容 | 鎖 |
 |---|---|---|
 | `20261103090000_ledger_aggregate_amounts_bigint` | `Settlement` 全部金額欄、`PayoutBatch.totalAmountCents`、`PayoutItem.payoutAmountCents`、`SettlementAdjustmentLedgerEntry.amountCents` 由 `INTEGER` 改 `BIGINT`。只放寬，不會因資料失敗。 | 四張表各重寫一次，ACCESS EXCLUSIVE 持有到本檔 commit；`lock_timeout = 5s` |
-| `20261103090100_ledger_integrity_constraints` | `PaymentTransaction.status` 預設改 `'pending'`；10 條 CHECK 以 `NOT VALID` 新增（只檢查之後的寫入，不掃既有列）；重複資料 preflight（只輸出組數與列數）通過後建立兩個 partial unique index。 | CHECK 只改 catalog；`CREATE UNIQUE INDEX` 不是 concurrent，建立期間擋 `RefundRecord`／`PayoutItem` 寫入；`lock_timeout = 5s` |
+| `20261103090100_ledger_integrity_constraints` | 依序：重複資料 preflight（只輸出組數與列數）→ 建立兩個 partial unique index → 五句 `ALTER TABLE`（`PaymentTransaction.status` 預設改 `'pending'`，10 條 CHECK 以 `NOT VALID` 新增，只檢查之後的寫入、不掃既有列）。`ALTER` 的表順序為 PaymentTransaction、RefundRecord、PayoutBatch、Settlement、PayoutItem，後三張與 `createPayoutBatchAction` 的寫入順序一致。 | `CREATE UNIQUE INDEX` 不是 concurrent，取 SHARE，建立期間擋 `RefundRecord`／`PayoutItem` 寫入；每句 `ALTER TABLE ... ADD CONSTRAINT ... NOT VALID` 不掃表，但取 **ACCESS EXCLUSIVE**（讀寫都會排隊）。所有鎖都持有到本檔 commit；`lock_timeout = 5s` |
 | `20261103090200_ledger_integrity_constraints_validate` | 只有 10 句 `VALIDATE CONSTRAINT`。 | 每張表 SHARE UPDATE EXCLUSIVE，不擋讀寫 |
 
 `NOT VALID` 與 `VALIDATE` 必須分在兩個檔案（理由同 §6）。既有列違反任一 CHECK 時，validate migration 失敗並整檔回滾（CHECK 維持 NOT VALID、繼續檢查新寫入），之後所有 deploy 都會被擋住；partial unique 遇到重複時，`20261103090100` 以 `ledger_integrity_preflight_failed` 中止。所以部署前必須先跑下面的唯讀查詢。
@@ -264,7 +264,7 @@ Partial unique index：`RefundRecord_paymentTransactionId_providerEventId_key`�
    `(條件) IS FALSE` 與 CHECK 的判定相同：CHECK 只拒絕結果為 false 的列，這些欄位都是 NOT NULL。
 
 2. 12 列全部為 0：把日期與結果記在下方表格，再部署。
-3. 任一列大於 0：不要部署。依規則名稱找出違規列（例如 `SELECT id, status FROM "Settlement" WHERE ("status" IN (...)) IS FALSE`，只在受控環境內看，不貼到外部），由 owner 授權後逐筆人工判斷：
+3. **staging 執行 `prisma migrate deploy` 之前**一定要先跑步驟 1 的唯讀查詢（production 亦同）。舊版 `prisma/seed.ts` 寫過 `Settlement.status = 'reviewing'`、`PayoutBatch.status = 'reviewing'`、`PayoutItem.status = 'pending_review'`，曾以舊 seed 建立資料的環境會在 `*_status_check` 出現違規，必須先依下列方式處理。任一列大於 0：不要部署。依規則名稱找出違規列（例如 `SELECT id, status FROM "Settlement" WHERE ("status" IN (...)) IS FALSE`，只在受控環境內看，不貼到外部），由 owner 授權後逐筆人工判斷：
    - 狀態不在清單內：確認該列在業務上對應哪個合法狀態（例如舊 seed 的 `reviewing`、`pending_review`），以單筆 `UPDATE` 修正並寫 `AuditLog`。不要放寬 migration 的清單。
    - 金額為負或 refunded > gross：對照 PayUni 後台與 `RefundRecord` 找出正確金額再修正。
    - 退款事件重複：同一付款同一 provider 事件有兩筆 `RefundRecord`，代表重複入帳。對照 provider 確認實際退款次數，保留一筆，另一筆連同 `refundedAmountCents` 與佣金沖回一起人工更正。
@@ -275,7 +275,12 @@ Partial unique index：`RefundRecord_paymentTransactionId_providerEventId_key`�
    - `20261103090100` 出現 `ledger_integrity_preflight_failed`（P3018／P3009）：依步驟 3 處理重複資料，執行 `npx prisma migrate resolve --rolled-back 20261103090100_ledger_integrity_constraints`，再 `npx prisma migrate deploy`。
    - `20261103090200` 出現 `check constraint ... is violated by some row`：此時 CHECK 已以 NOT VALID 存在，新寫入已受保護。依步驟 3 修正資料，執行 `npx prisma migrate resolve --rolled-back 20261103090200_ledger_integrity_constraints_validate`，再部署。
    - `lock_timeout`：等長交易結束（`pg_stat_activity`），`migrate resolve --rolled-back <該 migration>` 後重試。
-5. 部署順序：先 `prisma migrate deploy` 成功，再 promote 新版程式。新版程式把這四張表的金額讀成 JS `bigint` 再轉成精確的 number（`src/lib/ledger-cents.ts`）。舊版程式在新 schema 上會讀到 `bigint`，月結頁、撥款頁與建立撥款批次會出錯，所以 migration 與程式 promote 要在同一個部署時段內完成。
+   - `schema.prisma` 的 datasource 有 `directUrl = env("DIRECT_URL")`：在本機或 runner 執行 `prisma migrate resolve`／`migrate deploy` 時，`DATABASE_URL` 與 `DIRECT_URL` 都要注入（指向同一個目標庫），否則 Prisma 在讀設定時就以 P1012 `Environment variable not found: DIRECT_URL` 中止。
+5. 部署順序與相容性（PR #540 審查實測）：兩個方向都相容，沒有硬性的同時段要求，仍建議依慣例先 `prisma migrate deploy` 再 promote。
+   - 舊版程式（schema 宣告 `Int`）讀新 schema 的 `int8` 欄，Prisma client 回傳 number，月結、撥款頁與建立撥款批次照常運作。
+   - 新版程式（`BigInt`）在尚未 migrate 的 `int4` schema 上也正常讀寫（`src/lib/ledger-cents.ts` 轉成精確 number）。
+   - 唯一的行為差異：舊版程式在新 schema 上，同一筆付款的第二次 PayUni 部分退款若 provider 只回 `TradeNo`，退款完成時會撞 `RefundRecord_paymentTransactionId_providerEventId_key`（P2002），結果是 `completion_pending_reconciliation`：PayUni 已退款、本機保留 pending，由退款對帳補記，不會重複入帳（fail closed）。新版程式在這種情況改用本機 `request:<id>` 識別直接完成。
+   - 新的 CHECK 對舊版程式同樣生效；舊版程式寫入的狀態都在允許清單內。
 6. 部署後確認以下查詢回傳 10 列且 `convalidated` 全部為 `true`：
 
    ```sql

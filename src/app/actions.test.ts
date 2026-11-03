@@ -5293,6 +5293,24 @@ describe("createPayoutBatchAction", () => {
     expect(mocks.payoutItemCreate).not.toHaveBeenCalled();
     expect(mocks.writeAuditLog).not.toHaveBeenCalled();
   });
+
+  it("reports a conflict when the one-item-per-settlement index rejects a duplicate payout item (F-066)", async () => {
+    mocks.settlementFindMany.mockResolvedValueOnce([eligibleSettlement]);
+    mocks.settlementUpdateMany.mockResolvedValueOnce({ count: 1 });
+    mocks.payoutItemCreate.mockRejectedValueOnce(Object.assign(new Error("unique violation"), { code: "P2002" }));
+    mocks.transaction.mockImplementationOnce(async (callback: (tx: unknown) => Promise<unknown>) => callback({
+      payoutBatch: { create: mocks.payoutBatchCreate },
+      settlement: { updateMany: mocks.settlementUpdateMany },
+      payoutItem: { create: mocks.payoutItemCreate },
+    }));
+
+    await expect(createPayoutBatchAction(payoutBatchFormData())).rejects.toThrow(
+      "redirect:/admin/billing/payouts?error=conflict",
+    );
+
+    expect(mocks.payoutItemCreate).toHaveBeenCalledTimes(1);
+    expect(mocks.writeAuditLog).not.toHaveBeenCalled();
+  });
 });
 
 describe("updatePayoutItemStatusAction", () => {
