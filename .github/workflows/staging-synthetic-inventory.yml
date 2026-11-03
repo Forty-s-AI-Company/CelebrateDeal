@@ -1,0 +1,49 @@
+name: Staging synthetic data inventory
+
+# Read-only: lists synthetic vendors, record counts and Cloudflare Stream uids
+# in staging so the owner can decide what to clean. It deletes nothing.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  inventory:
+    if: ${{ github.ref == 'refs/heads/master' && github.ref_protected }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: Preview – celebrate-deal-staging
+    steps:
+      - name: Checkout protected inventory script
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: Setup Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+
+      - name: Install dependencies and Prisma client before secret injection
+        run: |
+          npm ci --ignore-scripts
+          npx prisma generate
+
+      - name: Read staging inventory in a read-only snapshot
+        env:
+          DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
+          INVENTORY_OUT_DIR: ${{ runner.temp }}/staging-synthetic-inventory
+        run: node --import tsx scripts/staging-synthetic-inventory.ts > /dev/null
+
+      - name: Show Markdown summary
+        run: cat "$RUNNER_TEMP/staging-synthetic-inventory/summary.md" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload inventory
+        if: ${{ always() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: celebratedeal-staging-synthetic-inventory
+          path: ${{ runner.temp }}/staging-synthetic-inventory/
+          if-no-files-found: ignore
+          retention-days: 14
