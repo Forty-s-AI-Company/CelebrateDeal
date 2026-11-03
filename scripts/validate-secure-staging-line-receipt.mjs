@@ -4,18 +4,47 @@ import { fileURLToPath } from "node:url";
 
 import { RECEIPT_NAME, validateReceipt } from "./secure-staging-line-notifications.mjs";
 
+// Stage names the workflow's LINE step can record before it writes a receipt.
+const RUNNER_STAGES = new Set([
+  "prepare_receipt_root", "report_missing_bindings", "require_database_binding", "require_preview_binding",
+  "validate_bindings", "resolve_allowlist", "backup_network_policy", "apply_network_policy", "execute_line_validation",
+]);
+export const RUNNER_STAGE_FILENAME = "celebratedeal-line-runner-stage";
+
+/**
+ * When no receipt exists, report the fixed stage at which the workflow step stopped.
+ * Only an exact allowlisted stage name is accepted; anything else stays UNKNOWN.
+ */
+export function readRunnerStage(runnerTemp = process.env.RUNNER_TEMP) {
+  if (!runnerTemp) return "NONE";
+  let serialized;
+  try {
+    const candidate = path.resolve(runnerTemp, RUNNER_STAGE_FILENAME);
+    const stat = fs.lstatSync(candidate);
+    if (!stat.isFile() || stat.isSymbolicLink() || stat.size > 64) return "RUNNER_STAGE_UNKNOWN";
+    serialized = fs.readFileSync(candidate, "utf8").trim();
+  } catch { return "NONE"; }
+  return RUNNER_STAGES.has(serialized) ? `RUNNER_STAGE_${serialized.toUpperCase()}` : "RUNNER_STAGE_UNKNOWN";
+}
+
 export function validateReceiptPath(candidate, runnerTemp = process.env.RUNNER_TEMP, expectedSource = process.env) {
   if (!candidate || !runnerTemp) return { ok: false, reason: "PATH_MISSING" };
   if (!expectedSource.CELEBRATEDEAL_SOURCE_SHA || !expectedSource.GITHUB_RUN_ID || !expectedSource.GITHUB_RUN_ATTEMPT) return { ok: false, reason: "EXPECTED_BINDING_MISSING" };
   let allowedRoot;
   try { allowedRoot = fs.realpathSync(path.resolve(runnerTemp, "celebratedeal-secure-receipts")); }
-  catch { return { ok: false, reason: "RECEIPT_ROOT_MISSING" }; }
+  catch {
+    const stage = readRunnerStage(runnerTemp);
+    return stage === "NONE" ? { ok: false, reason: "RECEIPT_ROOT_MISSING" } : { ok: false, reason: "RECEIPT_ROOT_MISSING", diagnostic: stage };
+  }
   let stat;
   let canonical;
   try {
     stat = fs.lstatSync(candidate);
     canonical = fs.realpathSync(candidate);
-  } catch { return { ok: false, reason: "RECEIPT_FILE_MISSING" }; }
+  } catch {
+    const stage = readRunnerStage(runnerTemp);
+    return stage === "NONE" ? { ok: false, reason: "RECEIPT_FILE_MISSING" } : { ok: false, reason: "RECEIPT_FILE_MISSING", diagnostic: stage };
+  }
   if (!stat.isFile() || stat.isSymbolicLink() || path.dirname(canonical) !== allowedRoot || path.basename(canonical) !== RECEIPT_NAME) {
     return { ok: false, reason: "PATH_OUTSIDE_RUNNER_TEMP" };
   }

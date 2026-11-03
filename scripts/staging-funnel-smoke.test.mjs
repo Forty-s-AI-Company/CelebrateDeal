@@ -60,6 +60,10 @@ test("navigation evidence contains only fixed route categories", () => {
   assert.equal(funnelRouteCategory(`${origin}/onboarding`), "ONBOARDING");
   assert.equal(funnelRouteCategory(`${origin}/projects/abc123`), "PROJECT");
   assert.equal(funnelRouteCategory(`${origin}/login`), "LOGIN");
+  assert.equal(funnelRouteCategory(`${origin}/landing-pages/abc123/operations?step=s1`), "FUNNEL_OPERATIONS");
+  assert.equal(funnelRouteCategory(`${origin}/landing-pages/abc123/edit?step=s1`), "FUNNEL_EDITOR");
+  assert.equal(funnelRouteCategory(`${origin}/projects/new`), "PROJECT_NEW");
+  assert.equal(funnelRouteCategory(`${origin}/lp/staging-synthetic-abcdef123456`), "PUBLIC_FUNNEL");
   assert.equal(funnelRouteCategory(`${origin}/arbitrary/private`), "OTHER");
   assert.equal(funnelRouteCategory("invalid"), "INVALID_URL");
 });
@@ -72,6 +76,7 @@ test("create feedback reveals only known fixed categories", () => {
   assert.equal(funnelCreateFeedbackKind(["請確認頁面內容與已選的報名表單、直播都屬於目前專案且可公開使用。"]), "BINDING_INVALID");
   assert.equal(funnelCreateFeedbackKind(["暫時無法完成操作；內容仍保留，請稍後再試。"]), "SERVER_FAILURE");
   assert.equal(funnelCreateFeedbackKind(["連線中斷，Funnel 尚未建立，請稍後再試。"]), "NETWORK_FAILURE");
+  assert.equal(funnelCreateFeedbackKind(["建立失敗，一頁式網站尚未建立，請稍後再試。"]), "NETWORK_FAILURE");
   assert.equal(funnelCreateFeedbackKind(["sensitive unknown message"]), "OTHER");
 });
 
@@ -111,4 +116,73 @@ test("create page is reported unavailable while the project guidance is still sh
   assert.equal(createPageBlocked({ status: 200, headingVisible: false, projectStillMissing: false }), true);
   assert.equal(createPageBlocked({ status: 500, headingVisible: true, projectStillMissing: false }), true);
   assert.equal(createPageBlocked({ status: null, headingVisible: true, projectStillMissing: false }), true);
+});
+
+const BINDING = {
+  CELEBRATEDEAL_SOURCE_SHA: "a".repeat(40),
+  CELEBRATEDEAL_DEPLOYMENT_HOST: "celebrate-deal-staging-abc123-a25814740s-projects.vercel.app",
+  GITHUB_TOKEN: "synthetic-github-token",
+  VERCEL_TOKEN: "synthetic-vercel-token",
+  JOB_SECRET: "synthetic-job-secret-123456",
+};
+
+function fakeFunnelBrowser({ failLabel }) {
+  const origin = "https://celebrate-deal-staging.carry-digital-nomad.in.net";
+  const calls = [];
+  const page = () => {
+    let current = "about:blank";
+    const passive = { waitFor: async () => { throw Object.assign(new Error("hidden"), { name: "TimeoutError" }); }, count: async () => 0 };
+    return {
+      on: () => {},
+      goto: async (url) => { current = url; return { status: () => 200 }; },
+      url: () => `${current}?private=${BINDING.JOB_SECRET}`,
+      getByRole: (role, options) => {
+        if (role === "heading" && options?.name === "建立新的一頁式網站") return { waitFor: async () => {} };
+        if (role === "button") return { click: async () => { calls.push(`button:${String(options?.name)}`); } };
+        if (role === "status") return { allTextContents: async () => [] };
+        return passive;
+      },
+      getByLabel: (label) => ({
+        fill: async () => {
+          calls.push(`label:${label}`);
+          if (label === failLabel) throw Object.assign(new Error(`Timeout 30000ms exceeded at ${origin}/x?secret=${BINDING.JOB_SECRET}`), { name: "TimeoutError" });
+        },
+      }),
+      waitForURL: async () => { throw Object.assign(new Error("no navigation"), { name: "TimeoutError" }); },
+    };
+  };
+  const context = {
+    route: async () => {},
+    routeWebSocket: async () => {},
+    request: {
+      post: async () => ({ status: () => 204, dispose: async () => {} }),
+      delete: async () => ({ status: () => 204, dispose: async () => {} }),
+    },
+    newPage: async () => page(),
+    close: async () => {},
+  };
+  return { calls, chromium: { launch: async () => ({ newContext: async () => context, close: async () => {} }) } };
+}
+
+test("create uses the goal picker labels and reports only the fixed failing step", async () => {
+  const passing = fakeFunnelBrowser({ failLabel: null });
+  const reached = await runStagingFunnelSmoke(BINDING, {
+    verifyLineage: async () => true, verifyAlias: async () => true, playwright: { chromium: passing.chromium },
+  });
+  assert.deepEqual(passing.calls, ["label:名稱 *", "label:一頁式網站網址 *", "button:/建立名單/u", "button:建立"]);
+  assert.equal(reached.reason, "CREATE_FAILED");
+  assert.equal(reached.failureStep, "NONE");
+
+  const failing = fakeFunnelBrowser({ failLabel: "一頁式網站網址 *" });
+  const report = await runStagingFunnelSmoke(BINDING, {
+    verifyLineage: async () => true, verifyAlias: async () => true, playwright: { chromium: failing.chromium },
+  });
+  assert.equal(report.reason, "BROWSER_EXECUTION_FAILED");
+  assert.equal(report.failureStep, "CREATE_SLUG_FILL");
+  assert.equal(report.failureCategory, "TIMEOUT");
+  assert.equal(report.failurePage, "FUNNEL_NEW");
+  assert.equal(report.sideEffects.syntheticSessionRevoked, 1);
+  const serialized = JSON.stringify(report);
+  for (const [key, value] of Object.entries(BINDING)) assert.equal(serialized.includes(value), key === "CELEBRATEDEAL_SOURCE_SHA");
+  assert.doesNotMatch(serialized, /https?:\/\//u);
 });
