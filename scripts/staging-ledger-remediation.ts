@@ -156,6 +156,16 @@ export const FIXES: readonly LedgerFix[] = Object.freeze([
     })),
     dryRun: true,
   },
+  {
+    id: "legacy-seed-status-20261103",
+    description: "staging 2026-07 示範商家 seed 的舊狀態改為 #540 seed 的合法狀態",
+    statements: [
+      { sql: `UPDATE "Settlement" SET "status" = 'ready_for_payout' WHERE "id" = 'cmrrlrumc001vvdn8gfv3163b' AND "vendorId" = 'cmrrlromk0004vdn8entl62gn' AND "status" = 'reviewing'`, expectedRows: 1 },
+      { sql: `UPDATE "PayoutBatch" SET "status" = 'draft' WHERE "id" = 'cmrrlrv0t001yvdn8ap9ketfc' AND "status" = 'reviewing'`, expectedRows: 1 },
+      { sql: `UPDATE "PayoutItem" SET "status" = 'pending' WHERE "id" = 'cmrrlrv0u0020vdn87jraqsne' AND "vendorId" = 'cmrrlromk0004vdn8entl62gn' AND "status" = 'pending_review'`, expectedRows: 1 },
+    ],
+    dryRun: false,
+  },
 ]);
 
 const FIX_ID = /^[a-z0-9][a-z0-9-]{2,79}$/u;
