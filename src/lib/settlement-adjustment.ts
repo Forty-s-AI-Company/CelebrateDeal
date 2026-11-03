@@ -1,6 +1,7 @@
 import { Prisma, type PrismaClient, type Settlement, type SettlementAdjustmentRequest } from "@prisma/client";
 
 import { auditSnapshot } from "@/lib/audit";
+import { ledgerCentsToNumber } from "@/lib/ledger-cents";
 import { parseWholeYuanToCents } from "@/lib/money-input";
 import { SettlementCarryForwardError, settleNetPayable } from "@/lib/settlement-period";
 
@@ -93,7 +94,7 @@ async function supersedePending(tx: Prisma.TransactionClient, settlement: Settle
 }
 
 function assertAdjustmentKeepsPayout(settlement: Pick<Settlement, "payoutableAmountCents">, amountCents: number) {
-  if (amountCents < 0 && settlement.payoutableAmountCents + amountCents < 0) {
+  if (amountCents < 0 && ledgerCentsToNumber(settlement.payoutableAmountCents) + amountCents < 0) {
     throw new SettlementAdjustmentError("negative_payout");
   }
 }
@@ -109,7 +110,7 @@ async function applyAdjustment(
     carry = await settleNetPayable(tx, {
       vendorId: settlement.vendorId,
       monthKey: settlement.monthKey,
-      payableCents: settlement.payoutableAmountCents,
+      payableCents: ledgerCentsToNumber(settlement.payoutableAmountCents),
       adjustmentCents: input.amountCents,
     });
   } catch (error) {
@@ -159,7 +160,7 @@ export async function submitSettlementAdjustment(db: AdjustmentDb, input: {
     assertAdjustmentKeepsPayout(settlement, input.amountCents);
     const superseded = await supersedePending(tx, settlement, input.actor.id, now);
 
-    if (requiresSecondApproval(input.amountCents, thresholdCents, settlement.adjustmentAmountCents)) {
+    if (requiresSecondApproval(input.amountCents, thresholdCents, ledgerCentsToNumber(settlement.adjustmentAmountCents))) {
       const request = await tx.settlementAdjustmentRequest.create({
         data: {
           vendorId: settlement.vendorId,

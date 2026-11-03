@@ -4,6 +4,7 @@ import { requireVendorFinance } from "@/lib/auth";
 import { maskBankAccount } from "@/lib/bank-account";
 import { getDb } from "@/lib/db";
 import { formatCurrency, formatDateTime } from "@/lib/format";
+import { ledgerCentsToNumber, sumLedgerCents } from "@/lib/ledger-cents";
 import { VENDOR_PAYOUT_ACCOUNT_MODE } from "@/lib/vendor-payout-account";
 import { PayoutAccountCard } from "./payout-account-card";
 
@@ -89,7 +90,7 @@ export default async function BillingPayoutsPage({ searchParams }: BillingPayout
                     <Badge tone={statusTone(batch.status)}>{batch.status}</Badge>
                   </div>
                   <p className="mt-1 text-sm text-slate-500">
-                    批次日 {formatDateTime(batch.batchDate)} · {batch.items.length} 筆 · {formatCurrency(batch.items.reduce((total, item) => total + item.payoutAmountCents, 0))}
+                    批次日 {formatDateTime(batch.batchDate)} · {batch.items.length} 筆 · {formatCurrency(ledgerCentsToNumber(sumLedgerCents(batch.items.map((item) => item.payoutAmountCents))))}
                   </p>
                 </div>
               </div>
@@ -121,7 +122,7 @@ export default async function BillingPayoutsPage({ searchParams }: BillingPayout
                           {bankAccount.bankCode} / {bankAccount.accountNumber}
                         </td>
                         <td className="px-5 py-4">{bankAccount.accountName}</td>
-                        <td className="px-5 py-4 font-bold text-slate-950">{formatCurrency(item.payoutAmountCents)}</td>
+                        <td className="px-5 py-4 font-bold text-slate-950">{formatCurrency(ledgerCentsToNumber(item.payoutAmountCents))}</td>
                         <td className="px-5 py-4"><Badge tone={statusTone(item.status)}>{item.status}</Badge></td>
                         <td className="px-5 py-4 text-slate-500">{item.failReason ?? "-"}</td>
                       </tr>

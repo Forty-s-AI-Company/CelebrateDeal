@@ -93,7 +93,7 @@ describe("F-038 settlement revenue excludes payments the merchant made to the pl
 
     const result = await generateSettlementForVendor(vendor.id, monthKey);
 
-    expect(result.settlement).toMatchObject({ grossRevenueCents: 0, payoutableAmountCents: 0, finalPayoutAmountCents: 0 });
+    expect(result.settlement).toMatchObject({ grossRevenueCents: BigInt(0), payoutableAmountCents: BigInt(0), finalPayoutAmountCents: BigInt(0) });
   });
 
   it("refuses to settle a month with an unclassified paid transaction instead of guessing", async () => {
@@ -130,7 +130,7 @@ describe("F-038 settlement revenue excludes payments the merchant made to the pl
 
     const result = await generateSettlementForVendor(vendor.id, monthKey);
 
-    expect(result.settlement).toMatchObject({ grossRevenueCents: 30_000, refundAmountCents: 0, finalPayoutAmountCents: 30_000 });
+    expect(result.settlement).toMatchObject({ grossRevenueCents: BigInt(30_000), refundAmountCents: BigInt(0), finalPayoutAmountCents: BigInt(30_000) });
   });
 
   it("defaults a transaction created without a purpose to unclassified", async () => {

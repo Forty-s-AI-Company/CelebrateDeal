@@ -8,7 +8,8 @@ import { getDb } from "@/lib/db";
  * rebuilds one. These indexes carry business invariants (one active booking
  * per slot, one spotlight per live, one active credit per source order, one
  * active upline, one pending settlement adjustment, one open login email
- * change per user) or keep buyer search off full-table scans, so assert the
+ * change per user, one refund row per provider event of a payment, one payout
+ * item per settlement) or keep buyer search off full-table scans, so assert the
  * complete definition (columns, method, operator class and predicate).
  */
 // pg_get_indexdef always schema-qualifies the table; the suite runs in public
@@ -26,8 +27,12 @@ function expectedIndexDefinitions(schema: string): Record<string, string> {
       `CREATE INDEX "FormSubmission_phone_trgm_idx" ON ${schema}."FormSubmission" USING gin (phone gin_trgm_ops)`,
     LiveQuestion_one_spotlight_per_live_key:
       `CREATE UNIQUE INDEX "LiveQuestion_one_spotlight_per_live_key" ON ${schema}."LiveQuestion" USING btree ("liveId") WHERE (status = 'spotlight'::"LiveQuestionStatus")`,
+    RefundRecord_paymentTransactionId_providerEventId_key:
+      `CREATE UNIQUE INDEX "RefundRecord_paymentTransactionId_providerEventId_key" ON ${schema}."RefundRecord" USING btree ("paymentTransactionId", "providerEventId") WHERE ("providerEventId" IS NOT NULL)`,
     SettlementAdjustmentRequest_one_pending_per_settlement:
       `CREATE UNIQUE INDEX "SettlementAdjustmentRequest_one_pending_per_settlement" ON ${schema}."SettlementAdjustmentRequest" USING btree ("settlementId") WHERE (status = 'pending'::text)`,
+    PayoutItem_vendorId_settlementId_key:
+      `CREATE UNIQUE INDEX "PayoutItem_vendorId_settlementId_key" ON ${schema}."PayoutItem" USING btree ("vendorId", "settlementId") WHERE ("settlementId" IS NOT NULL)`,
     PostPurchaseCredit_vendorId_sourceOrderId_active_key:
       `CREATE UNIQUE INDEX "PostPurchaseCredit_vendorId_sourceOrderId_active_key" ON ${schema}."PostPurchaseCredit" USING btree ("vendorId", "sourceOrderId") WHERE ("releasedAt" IS NULL)`,
     TeamMembershipRelationship_one_active_upline:

@@ -1768,27 +1768,29 @@ model Invoice {
   @@index([vendorId, monthKey])
 }
 
+/// F-068: every money column here is a monthly aggregate, so BigInt (int8).
+/// Application code converts with src/lib/ledger-cents.ts.
 model Settlement {
   id                          String    @id @default(cuid())
   vendorId                    String
   monthKey                    String
-  monthlyFeeCents             Int       @default(0)
-  overflowFeeCents            Int       @default(0)
-  paymentServiceFeeCents      Int       @default(0)
-  transactionServiceFeeCents  Int       @default(0)
-  affiliateManagementFeeCents Int       @default(0)
-  paymentGatewayFeeCents      Int       @default(0)
-  grossRevenueCents           Int       @default(0)
-  payoutableAmountCents       Int       @default(0)
-  adjustmentAmountCents       Int       @default(0)
+  monthlyFeeCents             BigInt    @default(0)
+  overflowFeeCents            BigInt    @default(0)
+  paymentServiceFeeCents      BigInt    @default(0)
+  transactionServiceFeeCents  BigInt    @default(0)
+  affiliateManagementFeeCents BigInt    @default(0)
+  paymentGatewayFeeCents      BigInt    @default(0)
+  grossRevenueCents           BigInt    @default(0)
+  payoutableAmountCents       BigInt    @default(0)
+  adjustmentAmountCents       BigInt    @default(0)
   adjustmentReason            String?
   /// F-039: processed buyer refunds booked into this month (input snapshot).
-  refundAmountCents           Int       @default(0)
+  refundAmountCents           BigInt    @default(0)
   /// F-039 (D-32): negative balance carried in from earlier months (<= 0).
-  carriedInCents              Int       @default(0)
+  carriedInCents              BigInt    @default(0)
   /// F-039 (D-32): negative balance carried to the next open month (<= 0).
-  carriedOutCents             Int       @default(0)
-  finalPayoutAmountCents      Int       @default(0)
+  carriedOutCents             BigInt    @default(0)
+  finalPayoutAmountCents      BigInt    @default(0)
   status                      String    @default("draft")
   lockedAt                    DateTime?
   lockedBy                    String?
@@ -1846,7 +1848,7 @@ model SettlementAdjustmentLedgerEntry {
   kind           String
   sourceMonthKey String
   targetMonthKey String
-  amountCents    Int
+  amountCents    BigInt
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
@@ -1860,7 +1862,7 @@ model PayoutBatch {
   id               String    @id @default(cuid())
   batchNumber      String    @unique
   batchDate        DateTime
-  totalAmountCents Int       @default(0)
+  totalAmountCents BigInt    @default(0)
   totalCount       Int       @default(0)
   status           String    @default("draft")
   exportedFilePath String?
@@ -1882,7 +1884,7 @@ model PayoutItem {
   bankCodeDisplay          String    @map("bankCode")
   bankAccountDisplayNumber String    @map("bankAccountNumber")
   bankAccountEncrypted     String?
-  payoutAmountCents        Int
+  payoutAmountCents        BigInt
   status                   String    @default("pending")
   failReason               String?
   /// Human-entered sanitized transfer/provider reference required before paid.
@@ -1899,6 +1901,9 @@ model PayoutItem {
 
   @@index([payoutBatchId, status])
   @@index([vendorId, createdAt])
+  /// F-066: partial unique index "PayoutItem_vendorId_settlementId_key"
+  /// ("vendorId","settlementId") WHERE "settlementId" IS NOT NULL lives in the
+  /// migration only: a settlement is paid out by at most one payout item.
 }
 
 model PaymentAccount {
@@ -2036,7 +2041,7 @@ model PaymentTransaction {
   platformFeeCents       Int       @default(0)
   netAmountCents         Int       @default(0)
   currency               String    @default("TWD")
-  status                 String    @default("paid")
+  status                 String    @default("pending")
   refundedAmountCents    Int       @default(0)
   refundReason           String?
   refundedAt             DateTime?
@@ -2750,6 +2755,9 @@ model RefundRecord {
   @@index([vendorId, monthKey])
   @@index([paymentTransactionId, processedAt])
   @@index([paymentTransactionId, providerEventId])
+  /// F-062: partial unique index "RefundRecord_paymentTransactionId_providerEventId_key"
+  /// ("paymentTransactionId","providerEventId") WHERE "providerEventId" IS NOT
+  /// NULL lives in the migration only: one refund row per provider event.
 }
 
 model AuditLog {

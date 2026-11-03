@@ -3,6 +3,7 @@ import { Badge, Card, EmptyState, PageHeader } from "@/components/ui";
 import { requireVendorFinance } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { formatCurrency, formatDateTime } from "@/lib/format";
+import { ledgerCentsToNumber } from "@/lib/ledger-cents";
 import { requireFeatureOrNotFound } from "@/lib/feature-gates";
 
 function statusTone(status: string) {
@@ -34,21 +35,21 @@ export default async function BillingSettlementsPage() {
         <div className="mb-6 grid gap-4 lg:grid-cols-4">
           <Card className="bg-gradient-to-br from-white to-blue-50">
             <p className="text-sm font-medium text-slate-500">本期成交額</p>
-            <p className="mt-2 text-3xl font-bold text-slate-950">{formatCurrency(current.grossRevenueCents)}</p>
+            <p className="mt-2 text-3xl font-bold text-slate-950">{formatCurrency(ledgerCentsToNumber(current.grossRevenueCents))}</p>
           </Card>
           <Card>
             <p className="text-sm font-medium text-slate-500">平台費用</p>
             <p className="mt-2 text-3xl font-bold text-slate-950">
-              {formatCurrency(current.monthlyFeeCents + current.overflowFeeCents + current.paymentServiceFeeCents + current.transactionServiceFeeCents)}
+              {formatCurrency(ledgerCentsToNumber(current.monthlyFeeCents + current.overflowFeeCents + current.paymentServiceFeeCents + current.transactionServiceFeeCents))}
             </p>
           </Card>
           <Card>
             <p className="text-sm font-medium text-slate-500">金流手續費</p>
-            <p className="mt-2 text-3xl font-bold text-slate-950">{formatCurrency(current.paymentGatewayFeeCents)}</p>
+            <p className="mt-2 text-3xl font-bold text-slate-950">{formatCurrency(ledgerCentsToNumber(current.paymentGatewayFeeCents))}</p>
           </Card>
           <Card className="bg-gradient-to-br from-white to-orange-50">
             <p className="text-sm font-medium text-slate-500">預計撥款</p>
-            <p className="mt-2 text-3xl font-bold text-orange-700">{formatCurrency(current.finalPayoutAmountCents)}</p>
+            <p className="mt-2 text-3xl font-bold text-orange-700">{formatCurrency(ledgerCentsToNumber(current.finalPayoutAmountCents))}</p>
           </Card>
         </div>
       ) : null}
@@ -72,17 +73,17 @@ export default async function BillingSettlementsPage() {
                 </div>
                 <div className="text-right">
                   <p className="text-xs text-slate-500">實際撥款金額</p>
-                  <p className="text-2xl font-bold text-slate-950">{formatCurrency(settlement.finalPayoutAmountCents)}</p>
+                  <p className="text-2xl font-bold text-slate-950">{formatCurrency(ledgerCentsToNumber(settlement.finalPayoutAmountCents))}</p>
                 </div>
               </div>
 
               <div className="grid gap-3 md:grid-cols-3 xl:grid-cols-6">
-                <Metric label="月費" value={settlement.monthlyFeeCents} />
-                <Metric label="超額用量" value={settlement.overflowFeeCents} />
-                <Metric label="金流服務費" value={settlement.paymentServiceFeeCents} />
-                <Metric label="交易服務費" value={settlement.transactionServiceFeeCents} />
-                <Metric label="聯盟管理費" value={settlement.affiliateManagementFeeCents} />
-                <Metric label="調整金額" value={settlement.adjustmentAmountCents} />
+                <Metric label="月費" value={ledgerCentsToNumber(settlement.monthlyFeeCents)} />
+                <Metric label="超額用量" value={ledgerCentsToNumber(settlement.overflowFeeCents)} />
+                <Metric label="金流服務費" value={ledgerCentsToNumber(settlement.paymentServiceFeeCents)} />
+                <Metric label="交易服務費" value={ledgerCentsToNumber(settlement.transactionServiceFeeCents)} />
+                <Metric label="聯盟管理費" value={ledgerCentsToNumber(settlement.affiliateManagementFeeCents)} />
+                <Metric label="調整金額" value={ledgerCentsToNumber(settlement.adjustmentAmountCents)} />
               </div>
 
               {settlement.payoutBatch ? (

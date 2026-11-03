@@ -40,19 +40,19 @@ describe("settlement adjustment second approval (F-049)", () => {
   it("applies an adjustment at the threshold immediately with an audit row", async () => {
     const row = await settlement();
     await expect(submitSettlementAdjustment(db, { settlementId: row.id, amountCents: threshold, reason: "補發活動獎勵", actor: requester, thresholdCents: threshold }))
-      .resolves.toMatchObject({ outcome: "applied", settlement: { adjustmentAmountCents: threshold, finalPayoutAmountCents: 6_000_000, adjustmentReason: "補發活動獎勵" } });
+      .resolves.toMatchObject({ outcome: "applied", settlement: { adjustmentAmountCents: BigInt(threshold), finalPayoutAmountCents: BigInt(6_000_000), adjustmentReason: "補發活動獎勵" } });
     const audit = await db.auditLog.findFirstOrThrow({ where: { vendorId: row.vendorId, targetId: row.id } });
     expect(audit).toMatchObject({ action: "update_settlement_adjustment", actorId: requester.id });
   });
 
   it("holds a larger adjustment until a different admin approves it", async () => {
     const row = await settlement(10_000_000);
-    await expect(submitSettlementAdjustment(db, { settlementId: row.id, amountCents: -(row.payoutableAmountCents + 100), reason: "超額追回", actor: requester, thresholdCents: threshold }))
+    await expect(submitSettlementAdjustment(db, { settlementId: row.id, amountCents: -(Number(row.payoutableAmountCents) + 100), reason: "超額追回", actor: requester, thresholdCents: threshold }))
       .rejects.toMatchObject({ code: "negative_payout" });
     const submitted = await submitSettlementAdjustment(db, { settlementId: row.id, amountCents: -(threshold + 100), reason: "退款追回", actor: requester, thresholdCents: threshold });
     expect(submitted.outcome).toBe("pending_approval");
     if (submitted.outcome !== "pending_approval") throw new Error("expected a pending request");
-    await expect(db.settlement.findUniqueOrThrow({ where: { id: row.id } })).resolves.toMatchObject({ adjustmentAmountCents: 0, finalPayoutAmountCents: 10_000_000 });
+    await expect(db.settlement.findUniqueOrThrow({ where: { id: row.id } })).resolves.toMatchObject({ adjustmentAmountCents: BigInt(0), finalPayoutAmountCents: BigInt(10_000_000) });
 
     await expect(approveSettlementAdjustment(db, { requestId: submitted.request.id, actor: requester })).rejects.toMatchObject({ code: "same_approver" });
     // A regenerated settlement can shrink before approval: the payable would go negative, so approval fails closed.
@@ -67,7 +67,7 @@ describe("settlement adjustment second approval (F-049)", () => {
     if (submitted.outcome !== "pending_approval") throw new Error("expected a pending request");
 
     const approved = await approveSettlementAdjustment(db, { requestId: submitted.request.id, actor: approver });
-    expect(approved.settlement).toMatchObject({ adjustmentAmountCents: 6_000_000, finalPayoutAmountCents: 16_000_000, reviewedBy: approver.id, adjustmentReason: "年度保證金退還" });
+    expect(approved.settlement).toMatchObject({ adjustmentAmountCents: BigInt(6_000_000), finalPayoutAmountCents: BigInt(16_000_000), reviewedBy: approver.id, adjustmentReason: "年度保證金退還" });
     await expect(db.settlementAdjustmentRequest.findUniqueOrThrow({ where: { id: submitted.request.id } }))
       .resolves.toMatchObject({ status: "approved", requestedBy: requester.id, reviewedBy: approver.id });
     await expect(approveSettlementAdjustment(db, { requestId: submitted.request.id, actor: approver })).rejects.toMatchObject({ code: "not_pending" });
@@ -99,7 +99,7 @@ describe("settlement adjustment second approval (F-049)", () => {
       .resolves.toMatchObject({ outcome: "applied" });
     await expect(submitSettlementAdjustment(db, { settlementId: row.id, amountCents: 4_000_000, reason: "改為補發", actor: requester, thresholdCents: threshold }))
       .resolves.toMatchObject({ outcome: "pending_approval" });
-    await expect(db.settlement.findUniqueOrThrow({ where: { id: row.id } })).resolves.toMatchObject({ adjustmentAmountCents: -4_000_000 });
+    await expect(db.settlement.findUniqueOrThrow({ where: { id: row.id } })).resolves.toMatchObject({ adjustmentAmountCents: BigInt(-4_000_000) });
   });
 
   it("closes a pending request as rejected_by_lock with an audit row when the settlement is locked (review m-4)", async () => {
