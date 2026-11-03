@@ -32,7 +32,7 @@
 
 **GitHub Production environment 的核准點（owner 必須按 Approve）**
 
-`production-migrate.yml` 的 job 掛在 `environment: production`（workflow 檔寫小寫；OWNER-ACTIONS 稱 `Production`，以 GitHub Settings 實際名稱為準，**待 owner 確認兩者是同一個 environment**）。依 O-20(a)，2026-10-27 已設定 required reviewer 為 a25814740 並限制只允許 `master`。每次 Run workflow 都會停在「Waiting for review」，owner 要在 Actions 頁面按 Approve。本 runbook 用【核准】標出。預計的核准次數：S6 三次（status、deploy、再 status）；S2 的備份 workflow 若也掛在 `production` environment，則每次備份再加一次。
+`production-migrate.yml` 的 job 掛在 `environment: production`（workflow 檔寫小寫；OWNER-ACTIONS 稱 `Production`，以 GitHub Settings 實際名稱為準，**待 owner 確認兩者是同一個 environment**）。依 O-20(a)，2026-10-27 已設定 required reviewer 為 a25814740 並限制只允許 `master`。每次 Run workflow 都會停在「Waiting for review」，owner 要在 Actions 頁面按 Approve。本 runbook 用【核准】標出。預計的核准次數：`production-backup.yml` 的 `backup` job 也掛在 `production` environment，每次備份核准一次（S2 第一次備份、S6 第 1 步重新備份各一次）；S6 的 migration 再三次（status、deploy、再 status）。
 
 ## 1. 步驟總覽
 
@@ -40,11 +40,11 @@
 |---|---|---|---|
 | S0 | 切換前的工程 gate 與決策 | 主對話、owner | 無 |
 | S1 | O-19：Production RLS 前置查詢 | owner | 無 |
-| S2 | O-20(b)：Production 備份 workflow | 工程（PR）、owner | 備份 run 若掛 environment 則需核准 |
+| S2 | O-20(b)：Production 備份 workflow | 工程（PR）、owner | 【核准】×1 |
 | S3 | 還原演練與 RTO 記錄 | owner、主對話 | 無 |
 | S4 | O-15：跨區決定（A 或 B） | owner | 無 |
 | S5 | 填齊 Production 環境變數 | owner | 無 |
-| S6 | 套用 migration | owner、主對話 | 【核准】×3 |
+| S6 | 套用 migration | owner、主對話 | 【核准】×4（重新備份 1 次＋migration 3 次） |
 | S7 | 部署含 #485 的 master（不掛公開 alias） | owner 授權、主對話或 owner 執行 | 無 |
 | S8 | 設定 Production 專屬根金鑰與衍生金鑰 | owner、主對話 | 無 |
 | S9 | 平台管理員重新登記 MFA | owner、operator | 無 |
@@ -92,23 +92,28 @@
 
 ## S2　O-20(b)：Production 備份 workflow
 
-- **現況（重要修正）**：OWNER-ACTIONS O-20(b) 與舊審查提到的 `PRODUCTION_BACKUP_WORKFLOW_PATH`，在目前的 `scripts/production-migrate.mjs` **已不讀這個變數**（只剩測試檔裡用來模擬「錯誤路徑」）。備份 workflow 路徑被寫死為 `.github/workflows/production-backup.yml`，`verifyBackupRun` 會檢查該 run 的 `path`、同一個 repository、`master` 上的 `workflow_dispatch` 或 `schedule`、`completed`／`success`、24 小時內，以及 artifact `production-database-backup-<run id>` 存在且未過期。**repo 目前沒有這個 workflow 檔**，所以 `deploy` 一律回 `BACKUP_RUN_WRONG_WORKFLOW` 或 `BACKUP_ARTIFACT_MISSING`，不會連資料庫（fail closed）。因此 O-20(b) 的實際內容是「建立這個 workflow 並產生可驗的備份」，而不是設一個 repo variable。
+- **現況**：workflow 已建立（`.github/workflows/production-backup.yml` ＋ `scripts/production-backup.mjs`，PR `ai/production-backup-workflow`），步驟、失敗代碼與還原演練見 `docs/operations/production-backup-restore-runbook.md`。`scripts/production-migrate.mjs` 不讀 `PRODUCTION_BACKUP_WORKFLOW_PATH`，備份 workflow 路徑寫死為 `.github/workflows/production-backup.yml`；`verifyBackupRun` 檢查該 run 的 `path`、同一個 repository、`master` 上的 `workflow_dispatch` 或 `schedule`、`head_sha` 在 master 歷史上、`backup` job 成功、`completed`／`success`、24 小時內，以及 artifact `production-database-backup-<run id>` 存在且未過期。沒有這樣的 run 時，`deploy` 一律在連資料庫之前停止（fail closed）。
 - **誰做**：
-  1. 工程：新增 `.github/workflows/production-backup.yml`（只備份固定的 Production 專案，不得有 target 之類的 input；成功時上傳 `production-database-backup-<run id>`）。這是資料保護路徑，派 `engineer-hard` 並經 `reviewer` 審查。可參考既有 `ops/backup`（Windows PowerShell 加密邏輯備份，`Invoke-CelebrateDealProductionBackup.ps1`）與 staging 的加密備份 runner 設計，但**本機 PowerShell 備份不會產生 GitHub artifact，不能滿足 `production-migrate` 的 gate**。若 owner 改用 Supabase 的受管備份（Pro 的每日備份或 PITR），仍需由該 workflow 產生 receipt artifact（記錄 restore point）。
-  2. owner：在 GitHub `production` environment 設定備份用 secret（Production 連線字串 `PRODUCTION_DATABASE_URL`；加密備份用的 age 公鑰，私鑰另存離線，由工程 PR 說明名稱），**只由 owner 輸入**。Production 的 Supabase 方案若仍是 Free（無受管備份），本步驟是唯一的備份來源；Pro 的設定見 `production-backup-restore-runbook.md` §A（O-4 的 Production 版本，費用由 owner 決定）。
-- **在哪裡**：本 repo（PR）；GitHub → Settings → Environments → `production`；Supabase Dashboard（若升級）。
-- **驗收證據**：手動 Run workflow 一次成功，run ID 記入 receipt；用 `gh run view <id>` 確認 artifact 名稱為 `production-database-backup-<id>`；`node --test scripts/production-migrate.test.mjs` 通過（CI 已含）。
-- **回滾**：刪除 workflow 檔或 environment secret；備份 artifact 依保留期自動過期（加密後的 artifact 不含明文）。不影響任何現有環境。
+  1. 工程：已完成（`engineer-hard` 實作、`reviewer` 審查）。workflow 分成沒有 environment 的 `contract` job（`npm ci` 與契約測試）與掛 `production` environment 的 `backup` job（不裝 npm 套件）；artifact 只含 age 密文、`SHA256SUMS` 與不含資料的 receipt。本機 PowerShell 備份（`ops/backup`）不會產生 GitHub artifact，不能滿足 gate。若 owner 改用 Supabase 的受管備份（Pro 的每日備份或 PITR），仍需由這個 workflow 產生 artifact。
+  2. owner：在 GitHub `production` environment 確認或設定，**只由 owner 輸入**：
+     - secret `PRODUCTION_DATABASE_URL`（Supavisor pooler 連線字串，與 `production-migrate.yml` 共用）；
+     - variable `PRODUCTION_BACKUP_RECIPIENT_SHA256`：`ops/backup/keys/production-backup.agepub` 的 SHA-256，在 Git Bash／Linux／macOS 以 `git show origin/master:ops/backup/keys/production-backup.agepub | sha256sum` 自行計算（取前 64 個字元）。未設定或與檔案不符時備份一律拒絕，防止有人用 PR 偷換公鑰；
+     - 確認手上有這把公鑰對應的 age 私鑰（`age-keygen -y <私鑰檔>` 的輸出要等於檔案中的 `age1…` 行），私鑰離線保管。沒有私鑰就無法還原，需開 PR 換公鑰並同步更新 variable。
+     Production 的 Supabase 方案若仍是 Free（無受管備份），本步驟是唯一的備份來源；Pro 的設定見 `production-backup-restore-runbook.md` §A（O-4 的 Production 版本，費用由 owner 決定）。
+  3. owner：Actions → `Production backup` → Run workflow（`master`）→【核准】。
+- **在哪裡**：GitHub → Settings → Environments → `production`；GitHub → Actions → `Production backup`；Supabase Dashboard（若升級）。
+- **驗收證據**：手動 Run workflow 一次成功，run ID 記入 receipt；用 `gh run view <id>` 確認 artifact 名稱為 `production-database-backup-<id>`，log 的 `PRODUCTION_BACKUP_ARCHIVE_SHA256` 與 artifact 內 `SHA256SUMS` 第一行相同；receipt 的 `dump.trigramOperatorSchema` 記錄 Production 的 `pg_trgm` 位置（F-074）；`contract` job 的契約測試通過。
+- **回滾**：刪除 workflow 檔或 environment 的 secret／variable；備份 artifact 30 天後自動過期（只含密文）。不影響任何現有環境。
 
 ## S3　還原演練
 
 - **誰做**：owner 授權並簽核；主對話整理收據。
 - **在哪裡**：隔離環境，**絕不覆寫 Production**。依 `production-backup-restore-runbook.md` §B：
-  1. 備份當下產生 §C 的帳務彙總快照並加密保存。
+  1. 備份當下產生 §C 的帳務彙總快照並加密保存（S2 的 workflow 已在同一個 snapshot 自動產生 `production-aggregates-<run id>.txt.age`）。
   2. 還原到 loopback PostgreSQL 17 或獨立的 `restore-drill` Supabase 專案。
   3. 驗證結構與筆數、§C 彙總逐列一致、**加密欄位可讀**（需用對應版本的 `CSRF_SECRET`，只在 owner 授權的環境、以合成資料或 staging 備份做；Production 備份的解密驗證另行授權）。
   4. 記錄 RTO（初始目標 60 分鐘）到 §B 的 RTO 表格。
-- **前置**：staging 的演練已有 workflow（`staging-backup-recovery.yml`，只收受保護的 staging 備份 run；`recoverability=PROVEN_ISOLATED` 不等於 migration 授權）。Production 沒有等價的 workflow，演練走 `ops/backup/Invoke-CelebrateDealRestoreDrill.ps1`（`-DryRun` 先、再 `-Execute -Confirmation RESTORE-TO-ISOLATED-TARGET`）。`pg_trgm` 位置以 S1 查到的為準（`-TrigramExtensionSchema auto` 會依 archive DDL 處理）。
+- **前置**：staging 的演練已有 workflow（`staging-backup-recovery.yml`，只收受保護的 staging 備份 run；`recoverability=PROVEN_ISOLATED` 不等於 migration 授權）。Production 用 S2 的 `Production backup` artifact，依 `docs/operations/production-backup-restore-runbook.md` §4 演練：下載並核對 `SHA256SUMS` → 解密 → 還原到隔離目標（可用 `ops/backup/Invoke-CelebrateDealRestoreDrill.ps1`，`-DryRun` 先、再 `-Execute -Confirmation RESTORE-TO-ISOLATED-TARGET`；或手動 `pg_restore`）→ 只拿 receipt 與解密後的彙總比對，不連 Production。`pg_trgm` 位置以 receipt 的 `dump.trigramOperatorSchema` 與 S1 查到的為準（`-TrigramExtensionSchema auto` 會依 archive DDL 處理）。
 - **驗收證據**：RTO 表格有一列完整資料（結構一致、帳務彙總一致、加密欄位可讀三欄都是 PASS）、簽核者；把 `CSRF_SECRET` 版本代號對應到該份備份（只記代號）。GO-NO-GO §1 的 F-058、F-074 才能勾選。
 - **回滾**：刪除隔離資料庫與暫存檔（§B 第 7 步）。
 
@@ -133,7 +138,7 @@
 - **誰做**：主對話啟動 workflow；owner 按【核准】。
 - **在哪裡**：GitHub → Actions → `Production migrate` → Run workflow（branch 必須是 `master`，且 `github.ref_protected`）。
 - **步驟**：
-  1. 在 24 小時內再跑一次 S2 的備份 workflow，記下 `backup_run_id`（超過 24 小時為 `BACKUP_RUN_TOO_OLD`）。
+  1. 在 24 小時內再跑一次 S2 的備份 workflow。【核准】。記下 `backup_run_id`（超過 24 小時為 `BACKUP_RUN_TOO_OLD`）。
   2. 先確認 staging 已套用同一批 migration（`staging-migrate.yml` 的 `status` 回「up to date」）。
   3. `mode=status`、`backup_run_id=<id>`。【核准】。輸出應只列出預期的 pending migration（Production 是 07-24 起的舊狀態，pending 會很多，含 `20261020090000_enable_rls_all_tables`、`20261021110100_payment_order_number_unique`、`20261021140200`／`140300`、`20261025120000_user_email_verified_at`，以及之後所有 migration）。
   4. `mode=deploy`，同一個 `backup_run_id`。【核准】。腳本依序驗證 URL 與專案 ref → 驗證備份 run → `migrate status` → 歷史乾淨才 `migrate deploy`；連線固定 `lock_timeout=5s`、`statement_timeout=60s`、`sslmode=require`。
