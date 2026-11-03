@@ -12,6 +12,7 @@ import {
 } from "@/lib/request-client-ip";
 import { REGISTRATION_MODES } from "@/lib/registration-mode";
 import { getTurnstileConfig } from "@/lib/turnstile";
+import { parseCspEnforce } from "@/lib/content-security-policy";
 
 const RequiredUrl = z.string().url();
 const OptionalSecret = z.string().optional();
@@ -237,6 +238,24 @@ function productionPaymentProviderChecks(env: NodeJS.ProcessEnv): EnvCheck[] {
 }
 
 /**
+ * F-156: `CSP_ENFORCE` unset／`false` keeps the CSP Report-Only; `true` also
+ * enforces it. Any other value fails preflight (the runtime then stays on
+ * Report-Only, so a typo never silently enforces or silently disables).
+ */
+function cspEnforceCheck(env: NodeJS.ProcessEnv): EnvCheck {
+  const key = "CSP_ENFORCE";
+  const setting = parseCspEnforce(env[key]);
+  if (!setting.valid) return { key, status: "fail", message: "CSP_ENFORCE 只接受 true 或 false（未設定＝只送 Report-Only）；目前的值在執行時會被視為未啟用" };
+  return {
+    key,
+    status: "pass",
+    message: setting.enforce
+      ? "CSP 已啟用強制模式（同時送出 Content-Security-Policy 與 Report-Only）；回滾＝移除此變數後重新部署"
+      : "CSP 只送 Report-Only（違規只回報、不阻擋）",
+  };
+}
+
+/**
  * F-052: the platform affiliate payout switch must be an explicit decision on
  * the production deployment. Unset or any value other than `true`／`false`
  * fails production and warns everywhere else. (The runtime parser still fails
@@ -408,6 +427,7 @@ export function getEnvCheckReport(env: NodeJS.ProcessEnv = process.env) {
 
   checks.push(...productionPaymentProviderChecks(env));
   checks.push(affiliatePayoutSwitchCheck(env));
+  checks.push(cspEnforceCheck(env));
   checks.push(...databasePoolChecks(env));
 
   if (env.DATABASE_URL?.startsWith("file:")) {

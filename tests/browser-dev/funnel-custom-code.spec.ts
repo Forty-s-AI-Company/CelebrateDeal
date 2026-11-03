@@ -11,12 +11,35 @@ async function probe(page: Page) {
 }
 
 // Chromium only (playwright.funnel-elements.config.ts). The guarantees rely on
-// standard sandbox, srcdoc CSP inheritance and COOP behaviour; WebKit/Firefox
+// standard sandbox, the sandbox document's response CSP and COOP; WebKit/Firefox
 // runs are a follow-up (COOP + popups from sandboxed frames differ most there).
 test.describe("Funnel custom code isolation (real browser)", () => {
   test.beforeEach(async ({ context }) => {
     // A readable (non-HttpOnly) platform cookie: the worst case for leakage.
     await context.addCookies([{ name: "celebrate_platform_probe", value: "platform-secret-value", domain: "127.0.0.1", path: "/", httpOnly: false, sameSite: "Lax" }]);
+  });
+
+  test("runs merchant JS in the sandbox document under the enforced nonce CSP without any page violation (F-156)", async ({ page }) => {
+    const violations: string[] = [];
+    page.on("console", (message) => {
+      if (/Content Security Policy|Refused to/u.test(message.text())) violations.push(message.text());
+    });
+    const sandboxResponse = page.waitForResponse((response) => new URL(response.url()).pathname === "/sandbox/custom-code");
+    const response = await page.goto(HARNESS);
+    const pagePolicy = response?.headers()["content-security-policy"] ?? "";
+    expect(pagePolicy).toMatch(/script-src 'self' 'nonce-[A-Za-z0-9+/]{22}==' 'strict-dynamic'/u);
+    expect(pagePolicy).not.toMatch(/script-src[^;]*'unsafe-inline'/u);
+    const sandbox = await sandboxResponse;
+    expect(sandbox.headers()["content-security-policy"]).toMatch(/^sandbox allow-scripts allow-popups allow-popups-to-escape-sandbox;/u);
+    expect(sandbox.headers()["x-frame-options"]).toBe("SAMEORIGIN");
+    await expect(page.locator(FRAME)).toHaveAttribute("src", "/sandbox/custom-code");
+    // The merchant script ran (the probe is filled in by merchant JS).
+    const result = await probe(page);
+    expect(result.origin).toBe("null");
+    await page.waitForTimeout(300);
+    // Nothing is blocked except the sandbox's own fetch (connect-src 'none'). Report-only
+    // lines are the next-step style preview (<style> without a nonce) and block nothing.
+    expect(violations.filter((text) => !/connect-src 'none'/u.test(text) && !/policy is report-only/u.test(text))).toEqual([]);
   });
 
   test("merchant JS cannot read platform cookies, the parent DOM, storage or the network, nor navigate the top page", async ({ page }) => {

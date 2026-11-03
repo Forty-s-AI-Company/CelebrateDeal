@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { FunnelCustomCodeRuntime } from "@/components/landing-pages/funnel-custom-code-runtime";
 import { PublicTrackingTagScripts } from "@/components/landing-pages/public-tracking-tags";
+import { requestCspNonce } from "@/lib/csp-nonce-server";
 import { loadPublicFunnelTrackingTags } from "@/lib/public-funnel-tracking";
 
 /**
@@ -9,8 +10,9 @@ import { loadPublicFunnelTrackingTags } from "@/lib/public-funnel-tracking";
  */
 export default async function PublicFunnelLayout({ children, params }: { children: ReactNode; params: Promise<{ slug: string }> }) {
   const tags = await loadPublicFunnelTrackingTags((await params).slug);
+  const nonce = await requestCspNonce();
   return <FunnelCustomCodeRuntime allowPopups>
     {children}
-    <PublicTrackingTagScripts tags={tags} />
+    <PublicTrackingTagScripts tags={tags} nonce={nonce} />
   </FunnelCustomCodeRuntime>;
 }

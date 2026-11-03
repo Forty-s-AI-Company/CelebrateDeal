@@ -12,6 +12,9 @@ const safeServerEnv = {
   TMP: process.env.TMP ?? "",
   E2E_TEST_MODE: "true",
   FUNNEL_ELEMENTS_E2E: "true",
+  // F-156: run the harness under the enforced CSP, so custom code and the
+  // funnel elements are proven to work once production enforces it.
+  CSP_ENFORCE: "true",
 };
 const mirrorRoot = process.env.FUNNEL_ELEMENTS_MIRROR_ROOT;
 if (!mirrorRoot || !path.isAbsolute(mirrorRoot)) {
