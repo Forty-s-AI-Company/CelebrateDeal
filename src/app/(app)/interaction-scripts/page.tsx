@@ -7,6 +7,7 @@ import { FormSubmitButton } from "@/components/form-submit-button";
 import { Badge, ButtonLink, Card, EmptyState, PageHeader } from "@/components/ui";
 import { requireVendorManager } from "@/lib/auth";
 import { getDb } from "@/lib/db";
+import { signedVideoUrlOrNull } from "@/lib/cloudflare-stream-signing";
 import { statusLabel } from "@/lib/status-labels";
 
 function pageHref(page: number, pageSize: number) {
@@ -57,7 +58,10 @@ export default async function InteractionScriptsPage({
       ) : (
         <Card>
           <div className="grid gap-3">
-            {scripts.map((script) => (
+            {scripts.map((script) => {
+              // F-093: a Cloudflare thumbnail gets a short-lived token bound to this vendor's own Video row.
+              const thumbnailUrl = signedVideoUrlOrNull(script.lives[0]?.video, { vendorId: vendor.id, kind: "thumbnail" });
+              return (
               <article
                 key={script.id}
                 id={`interaction-script-${script.id}`}
@@ -66,8 +70,8 @@ export default async function InteractionScriptsPage({
               >
                 <div className="overflow-hidden rounded-lg border border-slate-200 bg-slate-900">
                   <div className="relative aspect-video">
-                    {script.lives[0]?.video?.thumbnailUrl ? (
-                      <Image src={script.lives[0].video.thumbnailUrl} alt="" fill unoptimized className="object-cover" />
+                    {thumbnailUrl ? (
+                      <Image src={thumbnailUrl} alt="" fill unoptimized className="object-cover" />
                     ) : (
                       <div className="grid h-full place-items-center bg-gradient-to-br from-slate-900 to-blue-950 text-sm font-semibold text-white/70">尚未綁定影片</div>
                     )}
@@ -133,7 +137,8 @@ export default async function InteractionScriptsPage({
                   </form>
                 </div>
               </article>
-            ))}
+              );
+            })}
           </div>
 
           <div className="mt-5 flex flex-col gap-3 border-t border-border pt-4 md:flex-row md:items-center md:justify-between">

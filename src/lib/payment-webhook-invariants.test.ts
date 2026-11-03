@@ -29,6 +29,12 @@ describe("payment webhook invariants", () => {
 
   it("allows forward payment and refund transitions", () => {
     expect(resolvePaymentStatus("pending", "paid")).toBe("paid");
+    // F-062: a dispute never becomes a payment status.
+    for (const dispute of ["dispute_opened", "dispute_released", "dispute_lost"] as const) {
+      expect(resolvePaymentStatus("pending", dispute)).toBe("pending");
+      expect(resolvePaymentStatus("paid", dispute)).toBe("paid");
+      expect(() => resolvePaymentStatus(null, dispute)).toThrow("dispute webhook 找不到既存付款交易。");
+    }
     expect(resolvePaymentStatus("failed", "paid")).toBe("paid");
     expect(resolvePaymentStatus("paid", "partially_refunded")).toBe("partially_refunded");
     expect(resolvePaymentStatus("partially_refunded", "refunded")).toBe("refunded");

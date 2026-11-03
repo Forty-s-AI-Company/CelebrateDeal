@@ -32,7 +32,7 @@ beforeEach(() => {
   mocks.requireVendorManager.mockResolvedValue({ id: "vendor-1" });
   mocks.count.mockResolvedValue(21);
   mocks.findMany.mockResolvedValue([
-    { id: "script-1", name: "開場節奏", description: "暖場與 CTA", status: "PUBLISHED", events: [{ id: "event-1", triggerSec: 12, title: "歡迎" }], lives: [{ title: "八月直播", video: { thumbnailUrl: "https://cdn.example.test/thumb.jpg", title: "精華片段" } }] },
+    { id: "script-1", name: "開場節奏", description: "暖場與 CTA", status: "PUBLISHED", events: [{ id: "event-1", triggerSec: 12, title: "歡迎" }], lives: [{ title: "八月直播", video: { vendorId: "vendor-1", sourceType: "url", videoUrl: "https://cdn.example.test/video.m3u8", cloudflareStreamUid: null, cloudflarePlaybackId: null, cloudflareLiveInputUid: null, thumbnailUrl: "https://cdn.example.test/thumb.jpg", title: "精華片段" } }] },
     { id: "script-2", name: "草稿節奏", description: null, status: "DRAFT", events: [], lives: [{ title: null, video: null }] },
   ]);
 });

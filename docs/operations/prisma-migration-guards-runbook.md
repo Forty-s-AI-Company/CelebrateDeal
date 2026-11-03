@@ -1,6 +1,6 @@
 # Prisma migration 防護 runbook
 
-適用：F-026（B02-03、B04-08）、F-063（B04-09）、B04-04。最後更新：2026-10-20（PR #452 審查修正後）。
+適用：F-026（B02-03、B04-08）、F-063（B04-09）、B04-04；§7 為 F-062（B04-07）、F-066（B04-12）、F-068（B04-15）。最後更新：2026-11-03。
 
 ## 1. 所有 public 表啟用 RLS（`20261020090000_enable_rls_all_tables`）
 
@@ -143,7 +143,7 @@ admin、webhook、對帳與非 PayUni 手動退款都在交易內呼叫 `applyPo
    - 新增 db test，斷言這 14 條 FK 的 `pg_get_constraintdef` 完全等於預期，做法比照 partial index。
    - 把它們補進 `schema.prisma`，讓 Prisma 不再想刪除它們。
    - 為 allowlist 加上 CODEOWNERS，或規定必須經過 reviewer。
-2. **帳務與金額 CHECK 的定義守門**（MINOR-6、B04-07）：以 db test 斷言 `pg_get_constraintdef`，可與第 1 項一起處理。
+2. **帳務與金額 CHECK 的定義守門**（MINOR-6、B04-07）：§7 的 10 條帳務 CHECK 已由 `src/lib/ledger-integrity-constraints.db.test.ts` 斷言 `pg_get_constraintdef` 與 `convalidated`（2026-11-03）。其他表既有的 CHECK 仍待與第 1 項一起處理。
 3. **CI workflow 頂層 `permissions: { contents: read }`**（NIT-3）：另開 PR 處理。
 
 ## 6. 部署前檢查：商家撥款帳號 legacy 欄位（`20261021140200`／`20261021140300`，F-073）
@@ -167,5 +167,135 @@ SELECT count(*) AS plaintext_rows
 
 | 環境 | 日期 | `plaintext_rows` | 執行者 | 備註 |
 |---|---|---|---|---|
+| staging | 待執行 | — | 主對話（唯讀） | |
+| production | 待執行 | — | owner | 部署前由 owner 查詢並補記 |
+
+## 7. 部署前檢查：帳務 CHECK、退款事件與撥款項目唯一、聚合金額 BIGINT（F-062／F-066／F-068）
+
+三個 migration 依序套用：
+
+| Migration | 內容 | 鎖 |
+|---|---|---|
+| `20261103090000_ledger_aggregate_amounts_bigint` | `Settlement` 全部金額欄、`PayoutBatch.totalAmountCents`、`PayoutItem.payoutAmountCents`、`SettlementAdjustmentLedgerEntry.amountCents` 由 `INTEGER` 改 `BIGINT`。只放寬，不會因資料失敗。 | 四張表各重寫一次，ACCESS EXCLUSIVE 持有到本檔 commit；`lock_timeout = 5s` |
+| `20261103090100_ledger_integrity_constraints` | 依序：重複資料 preflight（只輸出組數與列數）→ 建立兩個 partial unique index → 五句 `ALTER TABLE`（`PaymentTransaction.status` 預設改 `'pending'`，10 條 CHECK 以 `NOT VALID` 新增，只檢查之後的寫入、不掃既有列）。`ALTER` 的表順序為 PaymentTransaction、RefundRecord、PayoutBatch、Settlement、PayoutItem，後三張與 `createPayoutBatchAction` 的寫入順序一致。 | `CREATE UNIQUE INDEX` 不是 concurrent，取 SHARE，建立期間擋 `RefundRecord`／`PayoutItem` 寫入；每句 `ALTER TABLE ... ADD CONSTRAINT ... NOT VALID` 不掃表，但取 **ACCESS EXCLUSIVE**（讀寫都會排隊）。所有鎖都持有到本檔 commit；`lock_timeout = 5s` |
+| `20261103090200_ledger_integrity_constraints_validate` | 只有 10 句 `VALIDATE CONSTRAINT`。 | 每張表 SHARE UPDATE EXCLUSIVE，不擋讀寫 |
+
+`NOT VALID` 與 `VALIDATE` 必須分在兩個檔案（理由同 §6）。既有列違反任一 CHECK 時，validate migration 失敗並整檔回滾（CHECK 維持 NOT VALID、繼續檢查新寫入），之後所有 deploy 都會被擋住；partial unique 遇到重複時，`20261103090100` 以 `ledger_integrity_preflight_failed` 中止。所以部署前必須先跑下面的唯讀查詢。
+
+**CHECK 與允許值**（與程式實際寫入的值一致；新增狀態時必須在同一個 PR 加 forward migration）
+
+| Constraint | 規則 |
+|---|---|
+| `PaymentTransaction_status_check` | `pending`、`paid`、`failed`、`expired`、`partially_refunded`、`refunded` |
+| `PaymentTransaction_amounts_check` | gross、gateway fee、platform fee、net、refunded 都 ≥ 0，且 refunded ≤ gross |
+| `RefundRecord_status_check` | `pending`、`processed`、`failed` |
+| `RefundRecord_amounts_check` | 退款金額 > 0，兩個手續費退回 ≥ 0 |
+| `Settlement_status_check` | `draft`、`locked`、`ready_for_payout`、`paid` |
+| `Settlement_amounts_check` | 6 個費用欄與 `finalPayoutAmountCents` ≥ 0（`grossRevenueCents`、`payoutableAmountCents`、`adjustmentAmountCents` 可為負，F-039） |
+| `PayoutBatch_status_check` | `draft`、`exported`、`retrying`、`failed`、`completed` |
+| `PayoutBatch_amounts_check` | `totalAmountCents` ≥ 0、`totalCount` ≥ 0 |
+| `PayoutItem_status_check` | `pending`、`paid`、`failed`、`retrying` |
+| `PayoutItem_amounts_check` | `payoutAmountCents` ≥ 0、`retryCount` ≥ 0 |
+
+Partial unique index：`RefundRecord_paymentTransactionId_providerEventId_key`（`"providerEventId" IS NOT NULL` 時，同一筆付款的同一個 provider 事件只記一次）、`PayoutItem_vendorId_settlementId_key`（`"settlementId" IS NOT NULL` 時，一筆月結只有一個撥款項目）。
+
+**步驟**
+
+1. 用唯讀連線（或 `BEGIN READ ONLY; … ROLLBACK;`）在目標資料庫執行下面的查詢。查詢只回傳每條規則的違規列數（唯一索引為重複組數），不輸出 id、金額或租戶。BIGINT migration 之前或之後執行都可以。
+
+   ```sql
+   SELECT check_name, violations
+     FROM (
+       SELECT 'PaymentTransaction_status_check' AS check_name, count(*) AS violations
+         FROM "PaymentTransaction"
+        WHERE ("status" IN ('pending', 'paid', 'failed', 'expired', 'partially_refunded', 'refunded')) IS FALSE
+       UNION ALL
+       SELECT 'PaymentTransaction_amounts_check', count(*)
+         FROM "PaymentTransaction"
+        WHERE ("grossAmountCents" >= 0 AND "gatewayFeeCents" >= 0 AND "platformFeeCents" >= 0
+               AND "netAmountCents" >= 0 AND "refundedAmountCents" >= 0
+               AND "refundedAmountCents" <= "grossAmountCents") IS FALSE
+       UNION ALL
+       SELECT 'RefundRecord_status_check', count(*)
+         FROM "RefundRecord"
+        WHERE ("status" IN ('pending', 'processed', 'failed')) IS FALSE
+       UNION ALL
+       SELECT 'RefundRecord_amounts_check', count(*)
+         FROM "RefundRecord"
+        WHERE ("refundAmountCents" > 0 AND "gatewayFeeRefundCents" >= 0 AND "platformFeeRefundCents" >= 0) IS FALSE
+       UNION ALL
+       SELECT 'Settlement_status_check', count(*)
+         FROM "Settlement"
+        WHERE ("status" IN ('draft', 'locked', 'ready_for_payout', 'paid')) IS FALSE
+       UNION ALL
+       SELECT 'Settlement_amounts_check', count(*)
+         FROM "Settlement"
+        WHERE ("monthlyFeeCents" >= 0 AND "overflowFeeCents" >= 0 AND "paymentServiceFeeCents" >= 0
+               AND "transactionServiceFeeCents" >= 0 AND "affiliateManagementFeeCents" >= 0
+               AND "paymentGatewayFeeCents" >= 0 AND "finalPayoutAmountCents" >= 0) IS FALSE
+       UNION ALL
+       SELECT 'PayoutBatch_status_check', count(*)
+         FROM "PayoutBatch"
+        WHERE ("status" IN ('draft', 'exported', 'retrying', 'failed', 'completed')) IS FALSE
+       UNION ALL
+       SELECT 'PayoutBatch_amounts_check', count(*)
+         FROM "PayoutBatch"
+        WHERE ("totalAmountCents" >= 0 AND "totalCount" >= 0) IS FALSE
+       UNION ALL
+       SELECT 'PayoutItem_status_check', count(*)
+         FROM "PayoutItem"
+        WHERE ("status" IN ('pending', 'paid', 'failed', 'retrying')) IS FALSE
+       UNION ALL
+       SELECT 'PayoutItem_amounts_check', count(*)
+         FROM "PayoutItem"
+        WHERE ("payoutAmountCents" >= 0 AND "retryCount" >= 0) IS FALSE
+       UNION ALL
+       SELECT 'RefundRecord_paymentTransactionId_providerEventId_key (duplicate groups)', count(*)
+         FROM (SELECT 1 FROM "RefundRecord" WHERE "providerEventId" IS NOT NULL
+                GROUP BY "paymentTransactionId", "providerEventId" HAVING count(*) > 1) d
+       UNION ALL
+       SELECT 'PayoutItem_vendorId_settlementId_key (duplicate groups)', count(*)
+         FROM (SELECT 1 FROM "PayoutItem" WHERE "settlementId" IS NOT NULL
+                GROUP BY "vendorId", "settlementId" HAVING count(*) > 1) d
+     ) checks
+    ORDER BY check_name;
+   ```
+
+   `(條件) IS FALSE` 與 CHECK 的判定相同：CHECK 只拒絕結果為 false 的列，這些欄位都是 NOT NULL。
+
+2. 12 列全部為 0：把日期與結果記在下方表格，再部署。
+3. **staging 執行 `prisma migrate deploy` 之前**一定要先跑步驟 1 的唯讀查詢（production 亦同）。舊版 `prisma/seed.ts` 寫過 `Settlement.status = 'reviewing'`、`PayoutBatch.status = 'reviewing'`、`PayoutItem.status = 'pending_review'`，曾以舊 seed 建立資料的環境會在 `*_status_check` 出現違規，必須先依下列方式處理。任一列大於 0：不要部署。依規則名稱找出違規列（例如 `SELECT id, status FROM "Settlement" WHERE ("status" IN (...)) IS FALSE`，只在受控環境內看，不貼到外部），由 owner 授權後逐筆人工判斷：
+   - 狀態不在清單內：確認該列在業務上對應哪個合法狀態（例如舊 seed 的 `reviewing`、`pending_review`），以單筆 `UPDATE` 修正並寫 `AuditLog`。不要放寬 migration 的清單。
+   - 金額為負或 refunded > gross：對照 PayUni 後台與 `RefundRecord` 找出正確金額再修正。
+   - 退款事件重複：同一付款同一 provider 事件有兩筆 `RefundRecord`，代表重複入帳。對照 provider 確認實際退款次數，保留一筆，另一筆連同 `refundedAmountCents` 與佣金沖回一起人工更正。
+   - 撥款項目重複：同一月結有兩筆 `PayoutItem`，可能已重複匯款。先確認銀行實際出款，再處理多出的項目。
+
+   修正後重跑查詢，全部為 0 才部署。不要修改這三個 migration。
+4. 部署時仍失敗：
+   - `20261103090100` 出現 `ledger_integrity_preflight_failed`（P3018／P3009）：依步驟 3 處理重複資料，執行 `npx prisma migrate resolve --rolled-back 20261103090100_ledger_integrity_constraints`，再 `npx prisma migrate deploy`。
+   - `20261103090200` 出現 `check constraint ... is violated by some row`：此時 CHECK 已以 NOT VALID 存在，新寫入已受保護。依步驟 3 修正資料，執行 `npx prisma migrate resolve --rolled-back 20261103090200_ledger_integrity_constraints_validate`，再部署。
+   - `lock_timeout`：等長交易結束（`pg_stat_activity`），`migrate resolve --rolled-back <該 migration>` 後重試。
+   - `schema.prisma` 的 datasource 有 `directUrl = env("DIRECT_URL")`：在本機或 runner 執行 `prisma migrate resolve`／`migrate deploy` 時，`DATABASE_URL` 與 `DIRECT_URL` 都要注入（指向同一個目標庫），否則 Prisma 在讀設定時就以 P1012 `Environment variable not found: DIRECT_URL` 中止。
+5. 部署順序與相容性（PR #540 審查實測）：兩個方向都相容，沒有硬性的同時段要求，仍建議依慣例先 `prisma migrate deploy` 再 promote。
+   - 舊版程式（schema 宣告 `Int`）讀新 schema 的 `int8` 欄，Prisma client 回傳 number，月結、撥款頁與建立撥款批次照常運作。
+   - 新版程式（`BigInt`）在尚未 migrate 的 `int4` schema 上也正常讀寫（`src/lib/ledger-cents.ts` 轉成精確 number）。
+   - 唯一的行為差異：舊版程式在新 schema 上，同一筆付款的第二次 PayUni 部分退款若 provider 只回 `TradeNo`，退款完成時會撞 `RefundRecord_paymentTransactionId_providerEventId_key`（P2002），結果是 `completion_pending_reconciliation`：PayUni 已退款、本機保留 pending，由退款對帳補記，不會重複入帳（fail closed）。新版程式在這種情況改用本機 `request:<id>` 識別直接完成。
+   - 新的 CHECK 對舊版程式同樣生效；舊版程式寫入的狀態都在允許清單內。
+6. 部署後確認以下查詢回傳 10 列且 `convalidated` 全部為 `true`：
+
+   ```sql
+   SELECT conname, convalidated FROM pg_constraint
+    WHERE conname IN ('PaymentTransaction_status_check', 'PaymentTransaction_amounts_check',
+                      'RefundRecord_status_check', 'RefundRecord_amounts_check',
+                      'Settlement_status_check', 'Settlement_amounts_check',
+                      'PayoutBatch_status_check', 'PayoutBatch_amounts_check',
+                      'PayoutItem_status_check', 'PayoutItem_amounts_check');
+   ```
+
+**查詢紀錄**
+
+| 環境 | 日期 | 結果 | 執行者 | 備註 |
+|---|---|---|---|---|
+| loopback disposable（`celebratedeal_ci`） | 2026-11-03 | 12 列皆 0；交易內人為插入違規列後對應列為 1，`VALIDATE` 與重複 preflight 都如預期失敗，交易回滾 | engineer-hard（合成資料） | 只證明查詢與 migration 行為，不代表 staging／production |
 | staging | 待執行 | — | 主對話（唯讀） | |
 | production | 待執行 | — | owner | 部署前由 owner 查詢並補記 |

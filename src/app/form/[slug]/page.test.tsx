@@ -1,5 +1,6 @@
 import { renderToStaticMarkup } from "react-dom/server";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { generateKeyPairSync } from "node:crypto";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   getPublicRegistrationForm: vi.fn(),
@@ -16,7 +17,7 @@ vi.mock("@/lib/registration-submission-receipt", () => ({ registrationResultCook
 vi.mock("next/navigation", () => ({ notFound: mocks.notFound }));
 vi.mock("@/lib/public-registration-form", () => ({ getPublicRegistrationForm: mocks.getPublicRegistrationForm }));
 vi.mock("next/image", () => ({ default: ({ alt, ...props }: { alt: string } & Record<string, unknown>) => <span role="img" aria-label={alt} {...props} /> }));
-vi.mock("@/components/promo-video-player", () => ({ PromoVideoPlayer: ({ title }: { title: string }) => <div data-testid="promo-video">{title}</div> }));
+vi.mock("@/components/promo-video-player", () => ({ PromoVideoPlayer: ({ title, src }: { title: string; src: string }) => <div data-testid="promo-video" data-src={src}>{title}</div> }));
 vi.mock("@/components/lead-form", () => ({
   FORM_SUBMISSION_VERIFICATION_MESSAGE: "請到 Email 開啟確認連結；完成確認後才會列入正式名單。",
   LeadForm: ({ fields, sessions, successMessage }: { fields: Array<{ key: string }>; sessions: Array<{ id: string }>; successMessage: string }) => (
@@ -47,7 +48,19 @@ const publicForm = {
   notice: "請提前入場",
   seoTitle: "夏季活動報名",
   seoDescription: "夏季活動說明",
-  promoVideo: { title: "活動預告", videoUrl: "https://cdn.example.test/promo.mp4" },
+  promoVideo: {
+    title: "活動預告",
+    videoUrl: "https://cdn.example.test/promo.mp4",
+    vendorId: "vendor-1",
+    signingSource: {
+      vendorId: "vendor-1",
+      sourceType: "url",
+      videoUrl: "https://cdn.example.test/promo.mp4",
+      cloudflareStreamUid: null,
+      cloudflarePlaybackId: null,
+      cloudflareLiveInputUid: null,
+    },
+  },
   vendor: { name: "測試商家" },
   sessions: [{ id: "live-1", title: "第一場", description: null, scheduledAt: "2026-08-20T01:00:00.000Z", status: "scheduled" as const }],
 };
@@ -59,6 +72,60 @@ beforeEach(() => {
 });
 
 describe("public registration form", () => {
+  describe("promo video signing (F-093)", () => {
+    const uid = "a1b2c3d4e5f60718293a4b5c6d7e8f90";
+    const streamUrl = `https://videodelivery.net/${uid}/manifest/video.m3u8`;
+    const cloudflarePromo = {
+      title: "活動預告",
+      videoUrl: streamUrl,
+      vendorId: "vendor-1",
+      signingSource: {
+        vendorId: "vendor-1",
+        sourceType: "cloudflare_stream",
+        videoUrl: streamUrl,
+        cloudflareStreamUid: uid,
+        cloudflarePlaybackId: uid,
+        cloudflareLiveInputUid: null,
+      },
+    };
+
+    beforeEach(() => {
+      // Synthetic key generated per run; never a real Cloudflare signing key.
+      vi.stubEnv("CLOUDFLARE_STREAM_SIGNING_KEY_ID", "0123456789abcdef0123456789abcdef");
+      vi.stubEnv("CLOUDFLARE_STREAM_SIGNING_KEY_PEM", generateKeyPairSync("rsa", { modulusLength: 2048 }).privateKey
+        .export({ format: "pem", type: "pkcs1" }).toString());
+    });
+
+    afterEach(() => {
+      vi.unstubAllEnvs();
+    });
+
+    async function renderPromo(promoVideo: unknown) {
+      mocks.getPublicRegistrationForm.mockResolvedValue({ ...publicForm, promoVideo });
+      return renderToStaticMarkup(await PublicFormPage({ params: Promise.resolve({ slug: "summer" }), searchParams: Promise.resolve({}) }));
+    }
+
+    it("plays a Cloudflare promo through a time-limited token", async () => {
+      const html = await renderPromo(cloudflarePromo);
+      expect(html).toMatch(/data-src="https:\/\/videodelivery\.net\/[\w-]+\.[\w-]+\.[\w-]+\/manifest\/video\.m3u8"/);
+      expect(html).not.toContain(uid);
+    });
+
+    it("renders no promo source when the row's vendor differs from the form's vendor", async () => {
+      const html = await renderPromo({ ...cloudflarePromo, vendorId: "vendor-2" });
+      expect(html).toContain('data-src=""');
+      expect(html).not.toContain(uid);
+    });
+
+    it("leaves a url-type promo holding a Stream URL unsigned", async () => {
+      const html = await renderPromo({
+        ...cloudflarePromo,
+        signingSource: { ...cloudflarePromo.signingSource, sourceType: "url", cloudflareStreamUid: null, cloudflarePlaybackId: null },
+      });
+      expect(html).toContain(`data-src="${streamUrl}"`);
+    });
+  });
+
   it("honors a selected session without mutating the shared form result", async () => {
     const form = { ...publicForm, sessions: [...publicForm.sessions, { ...publicForm.sessions[0]!, id: "live-2" }] };
     mocks.getPublicRegistrationForm.mockResolvedValue(form);

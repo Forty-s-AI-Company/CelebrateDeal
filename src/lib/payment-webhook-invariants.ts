@@ -127,9 +127,15 @@ export function resolvePaymentStatus(
   existingStatus: string | null,
   eventType: PaymentWebhookEventType,
 ) {
-  if (!existingStatus || existingStatus === "pending") return eventType;
+  // A dispute never changes the payment status (F-062: dispute_* is not a
+  // PaymentTransaction status). It needs an existing payment; on a pending
+  // payment the status stays pending.
+  if (isDisputeEvent(eventType)) {
+    if (!existingStatus) throw new Error("dispute webhook 找不到既存付款交易。");
+    return existingStatus;
+  }
 
-  if (isDisputeEvent(eventType)) return existingStatus;
+  if (!existingStatus || existingStatus === "pending") return eventType;
 
   if (existingStatus === "refunded") return "refunded";
   if (existingStatus === "partially_refunded") {

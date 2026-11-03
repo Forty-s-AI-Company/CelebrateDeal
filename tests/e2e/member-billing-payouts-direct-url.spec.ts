@@ -71,7 +71,9 @@ test("active member is denied billing payouts before tenant query or MFA", async
         batchDate: new Date("2099-02-15T06:07:08.000Z"),
         totalAmountCents: 876_543,
         totalCount: 1,
-        status: `wp82-batch-reviewing-${suffix}`,
+        // F-062: statuses are limited to the values the app writes
+        // (PayoutBatch_status_check / PayoutItem_status_check).
+        status: "exported",
         exportedFilePath: `wp82-export-a-${suffix}.csv`,
         exportedAt: new Date("2099-02-16T07:08:09.000Z"),
       },
@@ -82,7 +84,7 @@ test("active member is denied billing payouts before tenant query or MFA", async
         batchDate: new Date("2099-03-15T08:09:10.000Z"),
         totalAmountCents: 987_654,
         totalCount: 1,
-        status: `wp82-batch-failed-${suffix}`,
+        status: "failed",
         executedAt: new Date("2099-03-16T09:10:11.000Z"),
       },
     }),
@@ -97,7 +99,7 @@ test("active member is denied billing payouts before tenant query or MFA", async
         bankAccountDisplayNumber: "820000001182",
         bankAccountEncrypted: null,
         payoutAmountCents: payoutBatches[0].totalAmountCents,
-        status: `wp82-item-pending-${suffix}`,
+        status: "pending",
         failReason: null,
         retryCount: 0,
         createdAt: new Date("2099-02-15T10:11:12.000Z"),
@@ -112,7 +114,7 @@ test("active member is denied billing payouts before tenant query or MFA", async
         bankAccountDisplayNumber: "830000002283",
         bankAccountEncrypted: null,
         payoutAmountCents: payoutBatches[1].totalAmountCents,
-        status: `wp82-item-failed-${suffix}`,
+        status: "failed",
         failReason: `wp82-failure-${suffix}`,
         retryCount: 2,
         retriedAt: new Date("2099-03-17T10:11:12.000Z"),
@@ -368,12 +370,10 @@ test("active member is denied billing payouts before tenant query or MFA", async
       ...payoutBatches.flatMap((batch) => [
         batch.id,
         batch.batchNumber,
-        batch.status,
         batch.exportedFilePath,
       ]),
       ...payoutItems.flatMap((item) => [
         item.id,
-        item.status,
         item.failReason,
         item.bankAccountDisplayName,
         item.bankAccountDisplayNumber,
@@ -382,6 +382,17 @@ test("active member is denied billing payouts before tenant query or MFA", async
       (value): value is string =>
         typeof value === "string" && value.length > 0,
     );
+    // F-062: statuses are now limited to the values the app writes, so they
+    // are common words ("pending", "failed", "exported") that also occur in
+    // ordinary dashboard HTML. They can no longer be substring canaries for
+    // the protected payload or the final HTML; every row keeps unique
+    // substring canaries (ids, numbers, reasons, account fields) above, and
+    // a leaked status is checked as an element whose entire text is the
+    // status below.
+    const statusCanaries = [
+      ...payoutBatches.map((batch) => batch.status),
+      ...payoutItems.map((item) => item.status),
+    ];
 
     const posts: string[] = [];
     const external: string[] = [];
@@ -482,7 +493,7 @@ test("active member is denied billing payouts before tenant query or MFA", async
     ]) {
       await expect(page.getByText(deniedText, { exact: true })).toHaveCount(0);
     }
-    for (const canary of disclosureCanaries) {
+    for (const canary of [...disclosureCanaries, ...statusCanaries]) {
       await expect(page.getByText(canary, { exact: true })).toHaveCount(0);
     }
 

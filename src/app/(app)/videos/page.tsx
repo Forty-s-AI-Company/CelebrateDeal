@@ -7,6 +7,7 @@ import { VideoLifecycleActions } from "@/components/video-lifecycle-actions";
 import { VideoThumbnail } from "@/components/video-thumbnail";
 import { requireVendorManager } from "@/lib/auth";
 import { getDb } from "@/lib/db";
+import { signedVideoUrlOrNull } from "@/lib/cloudflare-stream-signing";
 import { applyE2eLoadingDelay } from "@/lib/e2e-loading-diagnostic";
 
 const videoStatuses = ["ready", "processing", "error", "archived"] as const;
@@ -123,7 +124,7 @@ export default async function VideosPage({
               const knownStatus = parseStatus(video.status);
               return (
                 <article key={video.id} className="grid gap-4 rounded-lg border border-border p-4 sm:grid-cols-[minmax(160px,220px)_minmax(0,1fr)_auto] sm:items-center">
-                  <VideoThumbnail title={video.title} thumbnailUrl={video.thumbnailUrl} />
+                  <VideoThumbnail title={video.title} thumbnailUrl={signedVideoUrlOrNull(video, { vendorId: vendor.id, kind: "thumbnail" })} />
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-2">
                       <h2 className="font-semibold text-slate-950 [overflow-wrap:anywhere]">{video.title}</h2>

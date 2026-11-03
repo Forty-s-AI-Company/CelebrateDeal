@@ -1,4 +1,5 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { generateKeyPairSync } from "node:crypto";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   getCurrentAuth: vi.fn(),
@@ -29,6 +30,11 @@ beforeEach(() => {
   });
   mocks.videoFindFirst.mockResolvedValue({
     id: "video-1",
+    vendorId: "vendor-1",
+    sourceType: "url",
+    cloudflareStreamUid: null,
+    cloudflarePlaybackId: null,
+    cloudflareLiveInputUid: null,
     status: "processing",
     cloudflareReadyToStream: false,
     durationSec: 92,
@@ -57,6 +63,11 @@ describe("GET /api/media/videos/status", () => {
     expect(mocks.videoFindFirst).toHaveBeenCalledWith({
       where: { id: "video-1", vendorId: "vendor-1" },
       select: {
+        vendorId: true,
+        sourceType: true,
+        cloudflareStreamUid: true,
+        cloudflarePlaybackId: true,
+        cloudflareLiveInputUid: true,
         id: true,
         status: true,
         cloudflareReadyToStream: true,
@@ -65,6 +76,41 @@ describe("GET /api/media/videos/status", () => {
         thumbnailUrl: true,
         videoUrl: true,
       },
+    });
+  });
+
+  describe("with Stream signing configured (F-093)", () => {
+    const uid = "a1b2c3d4e5f60718293a4b5c6d7e8f90";
+
+    afterEach(() => {
+      vi.unstubAllEnvs();
+    });
+
+    it("returns a signed Cloudflare thumbnail and keeps the stored video URL", async () => {
+      // Synthetic key generated per run; never a real Cloudflare signing key.
+      vi.stubEnv("CLOUDFLARE_STREAM_SIGNING_KEY_ID", "0123456789abcdef0123456789abcdef");
+      vi.stubEnv("CLOUDFLARE_STREAM_SIGNING_KEY_PEM", generateKeyPairSync("rsa", { modulusLength: 2048 }).privateKey
+        .export({ format: "pem", type: "pkcs1" }).toString());
+      const videoUrl = `https://videodelivery.net/${uid}/manifest/video.m3u8`;
+      mocks.videoFindFirst.mockResolvedValue({
+        id: "video-1",
+        vendorId: "vendor-1",
+        sourceType: "cloudflare_stream",
+        cloudflareStreamUid: uid,
+        cloudflarePlaybackId: uid,
+        cloudflareLiveInputUid: null,
+        status: "ready",
+        cloudflareReadyToStream: true,
+        durationSec: 92,
+        estimatedMinutes: 2,
+        thumbnailUrl: `https://videodelivery.net/${uid}/thumbnails/thumbnail.jpg`,
+        videoUrl,
+      });
+
+      const body = await (await GET(request())).json();
+
+      expect(body.video.thumbnailUrl).toMatch(/^https:\/\/videodelivery\.net\/[\w-]+\.[\w-]+\.[\w-]+\/thumbnails\/thumbnail\.jpg$/);
+      expect(body.video.videoUrl).toBe(videoUrl);
     });
   });
 

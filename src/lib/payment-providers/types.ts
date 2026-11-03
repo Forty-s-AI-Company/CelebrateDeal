@@ -209,6 +209,14 @@ export class PaymentMethodSetupMalformedPayloadError extends Error {
 export type PaymentWebhookNotActionableReason = "trade_pending" | "payment_type_not_allowed" | "provider_status_not_success"
   /** Signed result is a paid card trade; only the unsigned outer Status disagrees. */
   | "outer_status_mismatch"
+  /** Signed, well-formed TradeStatus outside the documented UPP table (for example 4); neither paid nor failed. */
+  | "trade_status_unknown"
+  /**
+   * Signed TradeStatus 4: "expired" in the trade query table, not in the UPP
+   * table. No money was received, so it is recorded without holding the
+   * pending payment; stock is released on the normal reservation expiry (RR-03).
+   */
+  | "trade_expired"
   /** Signed refund notice without a provider refund serial (CloseNo/RefundNo); never applied automatically. */
   | "refund_reference_missing";
 
@@ -247,12 +255,22 @@ export class PaymentWebhookNotActionableError extends Error {
   }
 
   /**
-   * The provider reported a completed collection (paid trade status) that this
-   * system refuses to apply automatically. The money may already be captured,
+   * The provider reported a completed collection (paid trade status), or a
+   * trade state this system cannot map, that it refuses to apply
+   * automatically. The money may already be captured,
    * so it must be recorded for manual reconciliation, never silently dropped.
    */
   get requiresManualReconciliation() {
     return this.reason !== "trade_pending";
+  }
+
+  /**
+   * Whether the matching pending payment is held from inventory expiry while
+   * finance reconciles. An expired trade (TradeStatus 4) received no money, so
+   * it is recorded and alerted at warning level but never holds stock (RR-03).
+   */
+  get holdsPaymentForReconciliation() {
+    return this.requiresManualReconciliation && this.reason !== "trade_expired";
   }
 }
 

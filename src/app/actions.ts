@@ -1,6 +1,7 @@
 "use server";
 
 import { requestedLiveStatus } from "@/lib/live-status-transition";
+import { sumLedgerCents } from "@/lib/ledger-cents";
 import { resolveSalesProjectBinding, SalesProjectBindingError } from "@/lib/sales-project-binding";
 import { isIP } from "node:net";
 import { redirect } from "next/navigation";
@@ -177,9 +178,12 @@ class RefundValidationError extends Error {}
 class PayoutBatchClaimConflict extends Error {}
 class SettlementMutationConflict extends Error {}
 
+// P2002 included (F-066): a unique index such as PayoutItem
+// (vendorId, settlementId) rejecting a concurrent duplicate is a conflict,
+// reported like a lost CAS rather than as a server error.
 function isDatabaseTransactionConflict(error: unknown) {
   return typeof error === "object" && error !== null && "code" in error &&
-    (error.code === "P2025" || error.code === "P2034");
+    (error.code === "P2002" || error.code === "P2025" || error.code === "P2034");
 }
 
 function isSettlementMutationConflict(error: unknown) {
@@ -2054,7 +2058,8 @@ export async function createPayoutBatchAction(formData: FormData) {
 
   const now = new Date();
   const batchNumber = payoutBatchNumber(now);
-  const totalAmountCents = settlements.reduce((sum, settlement) => sum + settlement.finalPayoutAmountCents, 0);
+  // F-068: settlement and batch totals are BigInt; sum exactly.
+  const totalAmountCents = sumLedgerCents(settlements.map((settlement) => settlement.finalPayoutAmountCents));
 
   let batch;
   try {

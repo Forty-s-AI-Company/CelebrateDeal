@@ -8,6 +8,7 @@ import { requireFinanceAdmin } from "@/lib/auth";
 import { maskBankAccount } from "@/lib/bank-account";
 import { getDb } from "@/lib/db";
 import { formatCurrency, formatDateTime } from "@/lib/format";
+import { ledgerCentsToNumber } from "@/lib/ledger-cents";
 
 function statusTone(status: string) {
   if (status === "completed" || status === "paid") return "green" as const;
@@ -59,7 +60,7 @@ export default async function AdminBillingPayoutsPage({
                     <Badge tone={statusTone(batch.status)}>{batch.status}</Badge>
                   </div>
                   <p className="mt-1 text-sm text-slate-500">
-                    {formatDateTime(batch.batchDate)} · {batch.totalCount} 筆 · {formatCurrency(batch.totalAmountCents)}
+                    {formatDateTime(batch.batchDate)} · {batch.totalCount} 筆 · {formatCurrency(ledgerCentsToNumber(batch.totalAmountCents))}
                     {batch.exportedAt ? ` · 已匯出 ${formatDateTime(batch.exportedAt)}` : ""}
                   </p>
                 </div>
@@ -117,7 +118,7 @@ export default async function AdminBillingPayoutsPage({
                           {bankAccount.bankCode} / {bankAccount.accountNumber}
                         </td>
                         <td className="px-5 py-4">{bankAccount.accountName}</td>
-                        <td className="px-5 py-4 font-bold text-slate-950">{formatCurrency(item.payoutAmountCents)}</td>
+                        <td className="px-5 py-4 font-bold text-slate-950">{formatCurrency(ledgerCentsToNumber(item.payoutAmountCents))}</td>
                         <td className="px-5 py-4">
                           <Badge tone={statusTone(item.status)}>{item.status}</Badge>
                           {item.retryCount > 0 ? <p className="mt-1 text-xs text-slate-500"><RotateCcw className="mr-1 inline" size={12} />重送 {item.retryCount} 次</p> : null}

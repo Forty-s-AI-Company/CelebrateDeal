@@ -3,6 +3,7 @@ import { PromoVideoPlayer } from "@/components/promo-video-player";
 import { Badge, ButtonLink, Card, PageHeader } from "@/components/ui";
 import { requireVendorManager } from "@/lib/auth";
 import { getDb } from "@/lib/db";
+import { signedVideoUrlOrNull } from "@/lib/cloudflare-stream-signing";
 
 const statusLabels: Record<string, string> = {
   ready: "可播放",
@@ -24,7 +25,8 @@ export default async function VideoPreviewPage({ params }: { params: Promise<{ i
   const video = await getDb().video.findFirst({ where: { id, vendorId: vendor.id } });
   if (!video) notFound();
 
-  const playbackUrl = video.videoUrl.trim();
+  // F-093: a Cloudflare video gets a short-lived token bound to this vendor's own row.
+  const playbackUrl = signedVideoUrlOrNull({ ...video, videoUrl: video.videoUrl.trim() }, { vendorId: vendor.id }) ?? "";
   const canRenderPlayer = (video.status === "ready" || video.status === "archived") && Boolean(playbackUrl);
 
   return (
