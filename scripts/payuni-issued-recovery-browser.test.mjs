@@ -7,8 +7,8 @@ const prepared = { invocation: { sourceSha: "a".repeat(40), previewHost: "synthe
 checkout: { formAction: "https://sandbox-api.payuni.com.tw/api/upp", formMethod: "POST", amountCents: 100,
   orderNumber: "synthetic_order", formPayload: { MerID: "synthetic", Version: "2.0", EncryptInfo: "synthetic", HashInfo: "synthetic" } },
 supportCookie: "celebrate_support_synthetic=synthetic" };
-function fixture({ available = true, status = "1", tradeNo = "synthetic_trade", httpOk = true, queryFails = false, replacementUpp = false } = {}) {
-  const state = { uppPosts: 0, cardSubmissions: 0, closed: 0, cards: [], queries: 0, launch: null };
+function fixture({ available = true, status = "1", tradeNo = "synthetic_trade", httpOk = true, queryFails = false, replacementUpp = false, cardPlaceholder = "new" } = {}) {
+  const state = { uppPosts: 0, cardSubmissions: 0, closed: 0, cards: [], queries: 0, launch: null, lookups: [] };
   const locator = { click: async () => {}, check: async () => {}, fill: async () => {}, pressSequentially: async () => {},
     isVisible: async () => available, isEnabled: async () => available };
   const card = { ...locator, pressSequentially: async value => state.cards.push(value) };
@@ -22,7 +22,13 @@ function fixture({ available = true, status = "1", tradeNo = "synthetic_trade", 
   } };
   const page = { setDefaultTimeout() {}, route: async () => {}, goto: async () => {},
     url: () => prepared.checkout.formAction, getByText: () => locator, getByRole: () => submit,
-    getByPlaceholder: label => label === "16 碼或 19 碼" ? card : locator,
+    getByPlaceholder: (label, options) => {
+      state.lookups.push({ label, exact: options?.exact === true });
+      const isCardLabel = label === "**** **** **** ****" || label === "16 碼或 19 碼";
+      if (!isCardLabel) return locator;
+      const present = (label === "**** **** **** ****") === (cardPlaceholder === "new");
+      return { ...(present ? card : locator), present, or: other => (present || other.present ? card : locator) };
+    },
     locator: () => ({ ...locator, filter: () => ({ count: async () => 0 }) }), waitForTimeout: async () => {} };
   const context = { route: async (pattern, handler) => { routeHandler = handler; }, addCookies: async () => {}, newPage: async () => page,
     request: { post: async () => { state.uppPosts++; return { ok: () => httpOk }; } } };
@@ -36,6 +42,17 @@ function fixture({ available = true, status = "1", tradeNo = "synthetic_trade", 
   };
   return { state, input: { prepared, queryProvider }, dependencies: { playwright: { chromium } } };
 }
+test("fills the card through the new UPP placeholder, or the old one as a fallback, always with exact lookups", async () => {
+  for (const cardPlaceholder of ["new", "legacy"]) {
+    const f = fixture({ cardPlaceholder });
+    const receipt = await observeIssuedRecoveryBrowser(f.input, f.dependencies);
+    assert.equal(receipt.result, "SAME_TRADE_PAYMENT_OBSERVED");
+    assert.deepEqual(f.state.cards, [PUBLIC_FAILURE_CARD, prepared.invocation.cardNumber]);
+    const lookups = f.state.lookups.filter(item => item.label !== "example@example.com");
+    assert.ok(lookups.length > 0 && lookups.every(item => item.exact), "card, expiry and CVV lookups are exact");
+    assert.ok(lookups.some(item => item.label === "***"));
+  }
+});
 test("keeps one UPP page and makes only one original-form retry", async () => {
   const f = fixture();
   const receipt = await observeIssuedRecoveryBrowser(f.input, f.dependencies);
