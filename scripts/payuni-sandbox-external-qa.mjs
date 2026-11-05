@@ -817,7 +817,7 @@ async function paymentPageStructure(page) {
     // It must not stop the bounded provider reconciliation that follows.
     if (safePageHttpsHostPath(page) === "unavailable") return unavailable();
     const structure = await Promise.all([
-      visibleLocatorState(page.locator('input[name="radioOptionpayGroupCredit"], input[placeholder="16 碼或 19 碼"]').first()),
+      visibleLocatorState(page.locator('input[name="radioOptionpayGroupCredit"], input[placeholder="**** **** **** ****"], input[placeholder="16 碼或 19 碼"]').first()),
       visibleLocatorState(page.getByRole("button", { name: "確認送出", exact: true })),
       visibleLocatorState(page.getByRole("button", { name: "確定", exact: true })),
       visibleLocatorState(page.locator('[role="alert"], .error, .invalid, .validation-error, .field-error').first()),
@@ -1176,9 +1176,9 @@ async function runCheckout(appUrl) {
     flowStage = "filling-payment-form";
     await page.getByText("一次付清", { exact: true }).click();
     await page.locator('input[name="radioOptionpayGroupCredit"]').check({ force: true });
-    await page.getByPlaceholder("16 碼或 19 碼").fill(cardNumber);
-    await page.getByPlaceholder("MM/YY").fill(expiry);
-    await page.getByPlaceholder("***").fill(cvv);
+    await page.getByPlaceholder("**** **** **** ****", { exact: true }).or(page.getByPlaceholder("16 碼或 19 碼", { exact: true })).fill(cardNumber);
+    await page.getByPlaceholder("MM/YY", { exact: true }).fill(expiry);
+    await page.getByPlaceholder("***", { exact: true }).fill(cvv);
     await page.getByPlaceholder("example@example.com").fill("qa-sandbox@example.com");
     flowStage = "submitting-payment";
     await page.getByRole("button", { name: "確認送出", exact: true }).click();

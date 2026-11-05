@@ -573,8 +573,9 @@ test("a rejected PayUni card field records only the fixed step, error class and 
     frames: () => [mainFrame, childFrame],
     getByText() { return { async click() {} }; },
     getByPlaceholder(placeholder, options) {
-      if (options?.exact) return { count: async () => 0 };
+      assert.equal(options?.exact, true, "every UPP placeholder lookup is exact");
       return {
+        count: async () => 0,
         async pressSequentially(value) {
           if (placeholder === "MM/YY") throw new TimeoutError(`locator.pressSequentially: Timeout 30000ms exceeded. waiting for getByPlaceholder('MM/YY') ${cardNumber}`);
           typed.push(placeholder);
@@ -594,7 +595,7 @@ test("a rejected PayUni card field records only the fixed step, error class and 
     orderNumber: "CD-20300101000000-WP4A1", captureReturnCallback: true, diagnostic,
   }, { playwright: { chromium: { async launch() { return browser; } }, errors: { TimeoutError } } });
   assert.equal(result, "PAYMENT_FIELDS_REJECTED");
-  assert.deepEqual(typed, ["16 碼或 19 碼"]);
+  assert.deepEqual(typed, ["**** **** **** ****"]);
   assert.deepEqual(diagnostic, {
     step: "CARD_EXPIRY", error: "TIMEOUT", page: "PAYUNI_UPP", mainFrameMatches: 0, childFrames: 1, childFrameMatches: 1,
     fieldSource: "PLACEHOLDER", creditTab: "NOT_TRIED",
@@ -1925,8 +1926,12 @@ test("PayUni sub-resource failures are counted by host class and type only", () 
 
 test("a missing card-number placeholder falls back to the autofill field, then to the credit tab", async () => {
   class TimeoutError extends Error { constructor(message) { super(message); this.name = "TimeoutError"; } }
-  const run = async ({ autocompleteVisible, tabCount, placeholderAfterTab }) => {
+  const NEW_CARD = "**** **** **** ****";
+  const LEGACY_CARD = "16 碼或 19 碼";
+  const run = async ({ autocompleteVisible, tabCount, placeholderAfterTab, legacyVisible = false, newVisible = false }) => {
     const typed = [];
+    const nonExactLookups = [];
+    let strictViolations = 0;
     let tabClicked = 0;
     let radioChecks = 0;
     const page = {
@@ -1938,10 +1943,19 @@ test("a missing card-number placeholder falls back to the autofill field, then t
         return { async click() {} };
       },
       getByPlaceholder(placeholder, options) {
-        const missing = placeholder === "16 碼或 19 碼" && !(options?.exact && tabClicked && placeholderAfterTab);
+        if (!options?.exact) nonExactLookups.push(placeholder);
+        // Simulated UPP page: the card placeholder contains the CVV `***` as a substring, so only an
+        // exact lookup of `***` may resolve to a single element.
+        const dom = [NEW_CARD, "MM/YY", "***", "example@example.com", ...(legacyVisible ? [LEGACY_CARD] : [])];
+        const matched = dom.filter((item) => (options?.exact ? item === placeholder : item.includes(placeholder)));
+        const newCardMissing = matched.includes(NEW_CARD) && !(newVisible || (tabClicked && placeholderAfterTab));
+        const present = matched.filter((item) => item !== NEW_CARD || !newCardMissing);
+        const missing = present.length === 0;
+        const ambiguous = present.length > 1;
         return {
-          count: async () => (missing ? 0 : 1), isVisible: async () => !missing,
+          count: async () => present.length, isVisible: async () => present.length === 1,
           async pressSequentially(value) {
+            if (ambiguous) { strictViolations += 1; throw new Error(`strict mode violation: getByPlaceholder resolved to ${present.length} elements`); }
             if (missing) throw new TimeoutError(`Timeout 20000ms exceeded ${SYNTHETIC_CARD}`);
             typed.push(`placeholder:${placeholder}`);
             assert.equal(typeof value, "string");
@@ -1970,11 +1984,36 @@ test("a missing card-number placeholder falls back to the autofill field, then t
     const browser = { async newContext() { return { async addCookies() {}, async newPage() { return page; },
       request: { async post() { return { status: () => 200, ok: () => true }; } } }; }, async close() {} };
     const diagnostic = createPayUniBrowserDiagnostic();
+    const sources = [];
+    let currentSource = diagnostic.fieldSource;
+    Object.defineProperty(diagnostic, "fieldSource", { enumerable: true, get: () => currentSource, set: (value) => { currentSource = value; sources.push(value); } });
     const result = await defaultBrowserSubmit({ previewHost, cardNumber: SYNTHETIC_CARD, cardExpiry: "1230", cardCvv: "123",
       formPayload: { MerID: "merchant" }, supportCookie: "celebrate_support_wp4=synthetic", orderNumber: "CD-20300101000000-WP4A1", diagnostic,
     }, { playwright: { chromium: { async launch() { return browser; } }, errors: { TimeoutError } }, payuniFallbackWaitMs: 50 });
-    return { result, typed, tabClicked, radioChecks, diagnostic };
+    return { result, typed, tabClicked, radioChecks, diagnostic, sources, nonExactLookups, strictViolations };
   };
+
+  // New placeholder is the primary path; the CVV `***` never matches the card field (exact lookups only).
+  const primary = await run({ autocompleteVisible: false, tabCount: 1, placeholderAfterTab: false, newVisible: true });
+  assert.equal(primary.result, true);
+  assert.equal(primary.typed[0], `placeholder:${NEW_CARD}`);
+  assert.equal(primary.sources[0], "PLACEHOLDER");
+  assert.ok(primary.typed.includes("placeholder:***"), "CVV is typed through its own exact `***` lookup");
+  assert.equal(primary.strictViolations, 0, "an exact `***` lookup never resolves to the card field");
+  assert.deepEqual(primary.nonExactLookups, []);
+  assert.equal(primary.tabClicked, 0);
+
+  // A substring lookup of `***` would hit both the card and the CVV field (documents why exact is required).
+  assert.ok(NEW_CARD.includes("***"));
+
+  // Old placeholder is the fallback path when the new one times out.
+  const legacy = await run({ autocompleteVisible: false, tabCount: 1, placeholderAfterTab: false, legacyVisible: true });
+  assert.equal(legacy.result, true);
+  assert.equal(legacy.typed[0], `placeholder:${LEGACY_CARD}`);
+  assert.equal(legacy.sources[0], "LEGACY_PLACEHOLDER");
+  assert.equal(legacy.tabClicked, 0);
+  assert.equal(legacy.strictViolations, 0);
+  assert.deepEqual(legacy.nonExactLookups, []);
 
   const autofill = await run({ autocompleteVisible: true, tabCount: 1, placeholderAfterTab: true });
   assert.equal(autofill.typed[0], "autocomplete:cc-number");
@@ -1982,7 +2021,7 @@ test("a missing card-number placeholder falls back to the autofill field, then t
   assert.equal(autofill.result, true);
 
   const tab = await run({ autocompleteVisible: false, tabCount: 1, placeholderAfterTab: true });
-  assert.equal(tab.typed[0], "placeholder:16 碼或 19 碼");
+  assert.equal(tab.typed[0], `placeholder:${NEW_CARD}`);
   assert.equal(tab.tabClicked, 1);
   assert.equal(tab.diagnostic.creditTab, "CLICKED");
   assert.ok(tab.radioChecks >= 2, "一次付清 stays selected after the tab click");

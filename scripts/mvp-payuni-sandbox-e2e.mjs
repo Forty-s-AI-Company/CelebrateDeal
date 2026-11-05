@@ -1264,9 +1264,11 @@ export async function prepareIssuedRecoveryCheckout(input, dependencies = {}) {
 // PayUni hosted payment page fields, in the order the runner fills them. `placeholder` is the
 // selector proven on the UPP page; `fallback` is the standard autofill attribute, used only when
 // the placeholder times out and exactly one visible element matches (2026-11-05 run 42064928350:
-// no card-number placeholder and no iframe on the UPP page).
+// no card-number placeholder and no iframe on the UPP page). Run 42077292610 showed the redesigned
+// UPP card placeholder `**** **** **** ****`; the old `16 碼或 19 碼` stays as `legacyPlaceholder`.
+// Every placeholder match is exact: the CVV `***` is a substring of the card placeholder.
 export const PAYUNI_CARD_FIELDS = Object.freeze([
-  Object.freeze({ step: "CARD_NUMBER", placeholder: "16 碼或 19 碼", fallback: 'input[autocomplete="cc-number"]' }),
+  Object.freeze({ step: "CARD_NUMBER", placeholder: "**** **** **** ****", legacyPlaceholder: "16 碼或 19 碼", fallback: 'input[autocomplete="cc-number"]' }),
   Object.freeze({ step: "CARD_EXPIRY", placeholder: "MM/YY", fallback: 'input[autocomplete="cc-exp"]' }),
   Object.freeze({ step: "CARD_CVV", placeholder: "***", fallback: 'input[autocomplete="cc-csc"]' }),
   Object.freeze({ step: "EMAIL", placeholder: "example@example.com", fallback: 'input[type="email"]' }),
@@ -1277,7 +1279,7 @@ const PAYUNI_FIELD_TIMEOUT_MS = 20_000;
 const PAYUNI_FALLBACK_WAIT_MS = 10_000;
 const PAYUNI_BROWSER_STEPS = new Set(["NONE", "METHOD", ...PAYUNI_CARD_FIELDS.map((field) => field.step), "SUBMIT"]);
 const DIAGNOSTIC_ENUM = /^[A-Z_]{1,24}$/u;
-const FIELD_SOURCES = new Set(["NONE", "PLACEHOLDER", "AUTOCOMPLETE", "PLACEHOLDER_AFTER_TAB", "AUTOCOMPLETE_AFTER_TAB"]);
+const FIELD_SOURCES = new Set(["NONE", "PLACEHOLDER", "LEGACY_PLACEHOLDER", "AUTOCOMPLETE", "PLACEHOLDER_AFTER_TAB", "AUTOCOMPLETE_AFTER_TAB"]);
 const CREDIT_TAB_RESULTS = new Set(["NOT_TRIED", "CLICKED", "NOT_FOUND", "AMBIGUOUS"]);
 const RESOURCE_FAILURE_KEYS = Object.freeze(["payuniScript", "payuniOther", "externalScript", "externalOther"]);
 
@@ -1518,6 +1520,10 @@ export async function clickPayUniCreditTab(page) {
 /** Fallback for a field whose proven placeholder timed out; null keeps the original failure. */
 async function findPayUniFallbackField(page, field, diagnostic, waitMs = PAYUNI_FALLBACK_WAIT_MS) {
   try {
+    if (field.legacyPlaceholder) {
+      const legacy = await uniqueVisible(page.getByPlaceholder(field.legacyPlaceholder, { exact: true }), waitMs);
+      if (legacy) return { locator: legacy, source: "LEGACY_PLACEHOLDER" };
+    }
     const fallback = await uniqueVisible(page.locator(field.fallback), waitMs);
     if (fallback) return { locator: fallback, source: "AUTOCOMPLETE" };
     if (field.step !== "CARD_NUMBER") return null;
@@ -1540,7 +1546,7 @@ async function fillPayUniCardFields(page, input, email, fallbackWaitMs = PAYUNI_
       ? locator.fill(values[field.step], { timeout })
       : locator.pressSequentially(values[field.step], { timeout }));
     try {
-      await enter(page.getByPlaceholder(field.placeholder), PAYUNI_FIELD_TIMEOUT_MS);
+      await enter(page.getByPlaceholder(field.placeholder, { exact: true }), PAYUNI_FIELD_TIMEOUT_MS);
       diagnostic.fieldSource = "PLACEHOLDER";
     } catch (error) {
       if (classifyPlaywrightErrorKind(error) !== "TIMEOUT") throw error;

@@ -52,9 +52,11 @@ export async function observeIssuedRecoveryBrowser({ prepared, queryProvider }, 
     requireSafe(page.url() === UPP);
     await page.getByText("一次付清", { exact: true }).click();
     await page.locator('input[name="radioOptionpayGroupCredit"]').check({ force: true });
-    const card = page.getByPlaceholder("16 碼或 19 碼");
-    const expiry = page.getByPlaceholder("MM/YY");
-    const cvv = page.getByPlaceholder("***");
+    // The redesigned UPP page uses `**** **** **** ****`; the old placeholder is kept as a fallback.
+    // Exact matching keeps the CVV `***` from also matching the card field.
+    const card = page.getByPlaceholder("**** **** **** ****", { exact: true }).or(page.getByPlaceholder("16 碼或 19 碼", { exact: true }));
+    const expiry = page.getByPlaceholder("MM/YY", { exact: true });
+    const cvv = page.getByPlaceholder("***", { exact: true });
     const submit = page.getByRole("button", { name: "確認送出", exact: true });
     async function fillCard(number) {
       await card.fill("");
