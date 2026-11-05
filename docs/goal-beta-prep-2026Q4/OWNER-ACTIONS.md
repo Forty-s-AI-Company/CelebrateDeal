@@ -1,5 +1,33 @@
 # 封測前 Goal：需要 owner 親自處理的事項
 
+## 2026-11-06 待 owner 處理（彙整）
+
+GitHub environment `Preview – celebrate-deal-staging`：
+
+- 補 secret：`LINE_STAGING_DATABASE_URL`、`CSRF_SECRET`、`CRON_SECRET`、`LINE_STAGING_MESSAGING_CHANNEL_ID`、`LINE_STAGING_MESSAGING_CHANNEL_SECRET`、`LINE_STAGING_MESSAGING_ACCESS_TOKEN`、`LINE_STAGING_USER_ID`
+- 補 variable：`LINE_STAGING_DATABASE_IDENTITY_SHA256`
+- 補 secret：`PAYUNI_QA_FINANCE_TOTP_SECRET`（O-14）
+- 確認 `PAYUNI_SANDBOX_ONETIME_CARD_NO`、`PAYUNI_TEST_EXPIRY`（MM/YY）、`PAYUNI_TEST_CVV` 仍有效
+
+其他：
+
+- `VERCEL_TOKEN`：換一組有 alias 讀取權限的 token。
+- 輪替 `OPS_SMOKE_SECRET`（值曾出現在工作對話中），Vercel Preview 與 GitHub environment 需同時更新。
+- Production environment：secret `PRODUCTION_DATABASE_URL`（pooler）、variable `PRODUCTION_BACKUP_RECIPIENT_SHA256`，並確認持有對應的 age 私鑰（O-20b）。
+- Production 必須明確設定 `AFFILIATE_PAYOUTS_DISABLED`（true／false），否則 preflight 會 FAIL。
+- Cloudflare Stream signing key（啟用 #538 的簽章播放網址）。
+- Cloudflare WAF：對 `/api/security/csp-report` 設 rate rule。
+- 外部排程觸發方案二選一（B-1），設定文件見 `docs/launch/scheduled-jobs-external-trigger.md`。
+- staging 合成資料清理範圍決定（#543）。
+- production 訂單 hash 回填授權（#550，runbook §9.3）。
+- 既有待辦 O-1、O-3、O-4、O-6、O-7、O-9～O-13、O-15、O-17、O-19、O-21 等仍待處理，內容見上方原表，此處不重複。
+
+待 owner 決定的政策：
+
+- 全額退款是否要登出學員（目前不登出）。
+- 凍結期間 `/support` 是否保留交付連結。
+- 黑名單 Email 是否仍可申請學員登入連結。
+
 更新：2026-10-25（主對話維護）。owner 指示「不要停下，手動部分集中成報告」，所以這份清單是 owner 回來時唯一要看的東西。每項都寫清楚：做什麼、在哪裡做、做完要回報什麼、沒做會怎樣。**不要把任何金鑰、密碼、Token 貼到對話裡。**
 
 狀態說明：⏳ 等 owner、✅ 已完成、⚠️ 逾期會影響封測。

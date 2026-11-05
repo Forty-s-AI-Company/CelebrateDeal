@@ -319,3 +319,33 @@
 - 「合併」是本表的判斷：若之後修法發現兩個來源其實要分開修，backlog 仍以來源 ID 追蹤，不會遺漏。
 - 01～04 只讀摘要與判讀段；A-04 的判讀 1（本機 Prisma Client 過期）屬工程環境問題，列為「未分級」。
 - 接手事項 T6（PWA 推播測試偶發失敗、三個後台首次進入無骨架、通知小問題）不是 Phase B 的 finding，沒有列入本表，只在 backlog L1 備註。
+
+## 6. 2026-11 處理狀態
+
+依 2026-11-03～11-06 已合併進 master 的 PR 整理。「—」表示該項在來源資料中沒有 finding ID。狀態以 PR 內容為準，未另做 staging 實測的項目以備註說明。
+
+| Finding | 狀態 | PR | 備註 |
+|---|---|---|---|
+| F-041 | 已修 | #537 | 非 TWD 結帳拒絕與稽核 |
+| F-052 | 已修 | #537 | 平台層 `AFFILIATE_PAYOUTS_DISABLED`；staging 已設 true；Production 需 owner 明確設定（見 OWNER-ACTIONS） |
+| F-025 | 已修 | #537 | 出款與作廢加 MFA step-up |
+| F-093 | 部分修 | #538 | Stream 簽章播放網址已合併；需 owner 建 signing key 才啟用 |
+| F-016② | 已修 | #539 | smoke 端點改 `OPS_SMOKE_SECRET`；staging 已設；需輪替 secret（見 OWNER-ACTIONS） |
+| F-036 | 已修 | #539、#548 | #539：session cookie `__Host-`＋平台管理員 24 小時；#548：租戶凍結 `Vendor.suspendedAt`，staging migration 已套用 |
+| F-030 | 已修 | #539 | 學員 session 可撤銷 |
+| F-062、F-066、F-068 | 已修 | #540 | 帳務 CHECK、partial unique index、BIGINT；staging migration 已套用；三筆 seed 舊狀態由 #544 workflow 修復（#549） |
+| F-091 (2) | 已修 | #536 | 聊天與互動合併輪詢；GO-NO-GO 原列為殘餘風險，範圍需 reviewer 確認 |
+| F-156 | 部分修 | #546 | CSP nonce＋strict-dynamic、`CSP_ENFORCE` 雙軌；staging 目前 Report-Only；Cloudflare WAF rate rule 待 owner |
+| F-175 | 已修 | #550 | 結帳建單寫入 `automationCustomerKeyHash`；production 訂單回填待 owner 授權（runbook §9.3） |
+| F-176、F-177 | 進行中 | #550 | #550 新增的 finding，來源資料未標示狀態 |
+| F-133 | 已修 | #459 | CRM 與行動諮詢租戶真測試（早於本段，列為追溯） |
+| F-157 | 已修 | #533 | 子網域盤點文件 |
+| B-1（外部排程觸發） | 部分修 | #533 | 設定文件已合併；待 owner 選方案（見 GO-NO-GO §5） |
+| — | 已修 | #533 | PayUni TradeStatus 對照文件 |
+| — | 已修 | #541 | PayUni TradeStatus 9 視為待付款、4 為逾期、未知代碼人工對帳 |
+| — | 已修 | #535 | Production 備份 workflow（O-20b 程式端完成）；owner 需設定 secret／variable 並做還原演練 |
+| — | 已修 | #543 | staging 合成資料唯讀盤點（4 個商家皆為合成或測試、9 支 Stream 影片）；清理範圍待 owner 決定 |
+| — | 已修 | #534、#542、#547、#551 | staging 驗證工具：lineage 閘門改以 ref=sha 查詢且只信任 vercel[bot]；受保護 runner 改用固定 alias＋`/api/health` 部署自證；smoke selector 與失敗診斷 |
+| F-031 ②③ | 進行中 | #545 | 加密 keyring |
+| — | 進行中 | #552 | 合成 owner Email 已驗證，修正漏斗 smoke 的發布前置 |
+| — | 進行中 | 未列 PR 號 | PayUni UPP 新版卡號 placeholder selector |
