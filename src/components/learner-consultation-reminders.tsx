@@ -2,7 +2,7 @@
 import { portalText } from "@/lib/student-portal-translations";
 import type { StudentPortalLocale } from "@/lib/student-portal-locale";
 import { useId, useRef, useState } from "react";
-import { z } from "zod";
+import { z } from "@/lib/zod-client";
 const Booking = z.object({ id: z.string().regex(/^[A-Za-z0-9_-]{1,128}$/u), startTime: z.string().datetime(), title: z.string().max(2000), confirmed: z.boolean() }).strict();
 const Snapshot = z.object({ bookings: z.array(Booking).max(20), nextAfter: z.string().regex(/^[A-Za-z0-9_-]{1,128}$/u).nullable(), csrfToken: z.string().min(1).max(2048) }).strict();
 class ReminderUiError extends Error {

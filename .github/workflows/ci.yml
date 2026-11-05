@@ -182,6 +182,13 @@ jobs:
       - name: Build
         run: npm run build
 
+      # F-156: zod stays out of the shared startup bundle, and `next start`
+      # with CSP_ENFORCE=true stamps the header nonce on every <script> of
+      # /login, /register and a 404 page. Uses the build above (seconds).
+      - name: CSP enforced build smoke
+        timeout-minutes: 3
+        run: node scripts/csp-build-smoke.mjs
+
       - name: Controlled production preflight and build
         run: node scripts/build/controlled-production-build.mjs
 

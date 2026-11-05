@@ -2,7 +2,7 @@
 import { portalText } from "@/lib/student-portal-translations";
 import type { StudentPortalLocale } from "@/lib/student-portal-locale";
 import { useId, useRef, useState, useSyncExternalStore } from "react";
-import { z } from "zod";
+import { z } from "@/lib/zod-client";
 import { LearnerConsultationReminders } from "./learner-consultation-reminders";
 const Channel = z.enum(["email", "sms", "whatsapp", "push"]);
 const Preference = z.object({ channel: Channel, enabled: z.boolean(), revision: z.number().int().positive(), destinationVerifiedAt: z.string().datetime().nullable() });

@@ -2,6 +2,7 @@
 
 import Script from "next/script";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useCspNonce } from "@/components/csp-nonce";
 import { TURNSTILE_RESPONSE_FIELD, TURNSTILE_SCRIPT_URL, type TurnstileAction } from "@/lib/turnstile-constants";
 
 type TurnstileApi = {
@@ -25,6 +26,7 @@ export function TurnstileWidget({ siteKey, action }: { siteKey: string; action: 
   const container = useRef<HTMLDivElement>(null);
   const widgetId = useRef<string | null>(null);
   const [loadFailed, setLoadFailed] = useState(false);
+  const nonce = useCspNonce();
 
   const renderWidget = useCallback(() => {
     const api = window.turnstile;
@@ -48,7 +50,7 @@ export function TurnstileWidget({ siteKey, action }: { siteKey: string; action: 
 
   return (
     <div className="grid gap-1.5" data-turnstile-widget="">
-      <Script src={TURNSTILE_SCRIPT_URL} strategy="afterInteractive" onReady={renderWidget} onError={() => setLoadFailed(true)} />
+      <Script src={TURNSTILE_SCRIPT_URL} strategy="afterInteractive" nonce={nonce} onReady={renderWidget} onError={() => setLoadFailed(true)} />
       <div ref={container} className="min-h-[65px]" />
       {loadFailed ? <p role="alert" className="text-sm text-red-700">真人驗證元件無法載入，請確認網路連線後重新整理頁面。</p> : null}
     </div>

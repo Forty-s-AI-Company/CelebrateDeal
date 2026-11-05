@@ -1,6 +1,6 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { z } from "zod";
+import { z } from "@/lib/zod-client";
 import { PrivateInstructorConversations, PrivateInstructorConversationsResponse } from "@/lib/live-private-chat-contract";
 import { LivePrivateConversationPanel } from "./live-private-conversation-panel";
 type Page = z.infer<typeof PrivateInstructorConversations>;

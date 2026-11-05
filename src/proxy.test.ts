@@ -1,5 +1,8 @@
+import fs from "node:fs";
+import path from "node:path";
 import { NextRequest } from "next/server";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { unstable_doesMiddlewareMatch } from "next/experimental/testing/server";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { LINEAGE_PAYLOAD } from "@/lib/preview-lineage";
 
@@ -22,12 +25,109 @@ beforeEach(() => {
   statusCheck.mockResolvedValue(200);
 });
 
-describe("Next Proxy lineage marker", () => {
-  it("matches only the public marker path", async () => {
-    expect(config.matcher).toEqual(["/__celebratedeal_wp187_fingerprint\\.json", "/lp/:path*"]);
+describe("Next Proxy matcher", () => {
+  const matches = (url: string) => unstable_doesMiddlewareMatch({ config, url });
+
+  it("runs for the marker, public funnels and every HTML document", () => {
+    for (const path of [MARKER_PATH, "/", "/login", "/register", "/dashboard", "/lp/example", "/lp/example/thank-you", "/lp/example/offer/checkout", "/lives/abc/presenter", "/admin/billing", "/policies/privacy", "/portal/shop/learn/course-1", "/browser-qa/funnel-elements/custom-code", "/apiary", "/monitoring-dashboard", "/live/abc.css", "/live/abc.js", "/p/team/logo.png", "/portal/shop/learn/notes.txt"]) {
+      expect(matches(path), path).toBe(true);
+    }
+  });
+
+  it("skips every file in /public, and only those, by extension", () => {
+    const files = (directory: string): string[] => fs.readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
+      const full = path.join(directory, entry.name);
+      return entry.isDirectory() ? files(full) : [full];
+    });
+    const publicRoot = path.resolve("public");
+    const publicPaths = files(publicRoot).map((file) => `/${path.relative(publicRoot, file).replaceAll("\\", "/")}`);
+    expect(publicPaths.length).toBeGreaterThan(10);
+    expect(publicPaths.filter((publicPath) => matches(publicPath))).toEqual([]);
+  });
+
+  it("skips API routes, build assets, the Sentry tunnel, the sandbox document, the certificate SVG and public files", () => {
+    for (const path of ["/api/security/csp-report", "/api/billing/plans/select", "/_next/static/chunks/app.js", "/_next/image?url=x", "/monitoring", "/monitoring?o=1", "/sandbox/custom-code", "/portal/shop/learn/course-1/certificate", "/favicon.ico", "/presenter-segmentation/worker.js", "/presenter-segmentation/vision_wasm_internal.wasm", "/presenter-segmentation/selfie_segmenter.tflite", "/fonts/funnel/0122c218a937e467-s.woff2", "/placeholder.svg", "/funnel-illustrations/hero.png"]) {
+      expect(matches(path), path).toBe(false);
+    }
+  });
+
+  it("still serves the marker and passes other documents through", async () => {
     expect((await proxy(request(MARKER_PATH))).status).toBe(200);
     expect((await proxy(request("/login"))).status).toBe(200);
   });
+});
+
+describe("Content Security Policy headers (F-156)", () => {
+  afterEach(() => { vi.unstubAllEnvs(); });
+
+  const nonceOf = (policy: string | null) => /'nonce-([A-Za-z0-9+/]{22}==)'/u.exec(policy ?? "")?.[1];
+
+  it("sends a Report-Only policy with a fresh nonce and hands the same nonce to rendering", async () => {
+    vi.stubEnv("CSP_ENFORCE", "");
+    const first = await proxy(request("/login"));
+    const second = await proxy(request("/login"));
+    const policy = first.headers.get("content-security-policy-report-only");
+    const nonce = nonceOf(policy);
+    expect(nonce).toBeTruthy();
+    expect(nonceOf(second.headers.get("content-security-policy-report-only"))).not.toBe(nonce);
+    expect(first.headers.get("content-security-policy")).toBeNull();
+    expect(first.headers.get("reporting-endpoints")).toBe('csp-endpoint="/api/security/csp-report"');
+    // Next.js reads the nonce from the request CSP header; Server Components read x-nonce.
+    expect(first.headers.get("x-middleware-request-x-nonce")).toBe(nonce);
+    expect(first.headers.get("x-middleware-request-content-security-policy")).toBe(policy);
+    expect(policy).toContain("'strict-dynamic'");
+    expect(policy).not.toContain("'unsafe-eval'");
+    expect(policy).not.toMatch(/script-src[^;]*'unsafe-inline'/u);
+  });
+
+  it("replaces a client-supplied nonce or CSP request header", async () => {
+    const response = await proxy(request("/login", "GET", {
+      "x-nonce": "AAAAAAAAAAAAAAAAAAAAAA==",
+      "content-security-policy": "script-src 'nonce-AAAAAAAAAAAAAAAAAAAAAA=='",
+      "content-security-policy-report-only": "script-src 'nonce-AAAAAAAAAAAAAAAAAAAAAA=='",
+    }));
+    const nonce = response.headers.get("x-middleware-request-x-nonce");
+    expect(nonce).not.toBe("AAAAAAAAAAAAAAAAAAAAAA==");
+    expect(response.headers.get("x-middleware-request-content-security-policy")).toContain(`'nonce-${nonce}'`);
+    expect(response.headers.get("x-middleware-override-headers")).toContain("content-security-policy");
+    expect(response.headers.get("x-middleware-request-content-security-policy-report-only")).toBeNull();
+  });
+
+  it("enforces the same policy and keeps a report-only preview when CSP_ENFORCE=true", async () => {
+    vi.stubEnv("CSP_ENFORCE", "true");
+    const response = await proxy(request("/dashboard"));
+    const enforced = response.headers.get("content-security-policy");
+    expect(enforced).toBeTruthy();
+    expect(enforced).toBe(response.headers.get("x-middleware-request-content-security-policy"));
+    expect(response.headers.get("content-security-policy-report-only")).toContain("style-src-elem");
+    expect(nonceOf(response.headers.get("content-security-policy-report-only"))).toBe(nonceOf(enforced));
+  });
+
+  it("stays Report-Only for an invalid CSP_ENFORCE value", async () => {
+    vi.stubEnv("CSP_ENFORCE", "yes");
+    const response = await proxy(request("/dashboard"));
+    expect(response.headers.get("content-security-policy")).toBeNull();
+    expect(response.headers.get("content-security-policy-report-only")).toBeTruthy();
+  });
+
+  it("gives public funnel documents the funnel surface, also when issuing a visitor cookie", async () => {
+    const fresh = await proxy(request("/lp/example"));
+    expect(fresh.headers.get("set-cookie")).toContain("celebratedeal_funnel_visitor=");
+    expect(fresh.headers.get("content-security-policy-report-only")).toContain("https://www.googletagmanager.com");
+    expect(fresh.headers.get("x-middleware-request-cookie")).toContain("celebratedeal_funnel_visitor=");
+    expect(fresh.headers.get("x-middleware-request-x-nonce")).toBe(nonceOf(fresh.headers.get("content-security-policy-report-only")));
+    const returning = await proxy(request("/lp/example", "GET", { cookie: `celebratedeal_funnel_visitor=${VISITOR}` }));
+    expect(returning.headers.get("content-security-policy-report-only")).toContain("https://connect.facebook.net");
+    expect((await proxy(request("/dashboard"))).headers.get("content-security-policy-report-only")).not.toContain("googletagmanager");
+  });
+
+  it("adds no policy to the marker JSON", async () => {
+    const response = await proxy(request(MARKER_PATH));
+    expect(response.headers.get("content-security-policy-report-only")).toBeNull();
+  });
+});
+
+describe("Next Proxy lineage marker", () => {
 
   it("returns the deterministic GET contract", async () => {
     const response = await proxy(request(MARKER_PATH));

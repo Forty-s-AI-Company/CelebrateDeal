@@ -57,8 +57,34 @@ export function funnelCustomCodeSandbox(mode: FunnelCustomCodeMode, options: { p
 }
 
 /**
- * iframe 內的 meta CSP。srcdoc 會「另外」繼承父頁的 CSP（兩者都必須允許），
- * 這裡只會比父頁更嚴格：connect-src、form-action、base-uri、object-src 一律關閉。
+ * script 模式的 iframe 載入同源的沙箱文件（`/sandbox/custom-code`，回應自帶
+ * CSP，見 `@/lib/content-security-policy`），不用 srcdoc：srcdoc 會繼承父頁的
+ * nonce CSP，商家的 inline script 就無法執行；反過來讓父頁 script-src 含
+ * 'unsafe-inline' 又會削弱整站防護（F-156）。父頁在沙箱文件回報 ready 後，以
+ * postMessage 送出要寫入的完整 HTML。
+ */
+export const FUNNEL_CUSTOM_CODE_READY_MESSAGE = "celebratedeal:custom-code-ready";
+export const FUNNEL_CUSTOM_CODE_DOCUMENT_MESSAGE = "celebratedeal:custom-code-document";
+
+/**
+ * 沙箱文件的啟動腳本：只在被嵌入時運作、只接受直接父頁送來的第一份文件，
+ * 接著以 document.write 取代自己（文件的回應 CSP 不變）。
+ */
+export const FUNNEL_CUSTOM_CODE_SANDBOX_BOOTSTRAP = `(function(){var p=window.parent;if(!p||p===window)return;function m(e){if(e.source!==p)return;var d=e.data;if(!d||typeof d!=="object"||d.type!==${JSON.stringify(FUNNEL_CUSTOM_CODE_DOCUMENT_MESSAGE)}||typeof d.html!=="string")return;window.removeEventListener("message",m);document.open();document.write(d.html);document.close()}window.addEventListener("message",m);try{p.postMessage({type:${JSON.stringify(FUNNEL_CUSTOM_CODE_READY_MESSAGE)}},"*")}catch(x){}})();`;
+
+export const FUNNEL_CUSTOM_CODE_SANDBOX_DOCUMENT = `<!doctype html><html><head><meta charset="utf-8"><meta name="robots" content="noindex"><script>${FUNNEL_CUSTOM_CODE_SANDBOX_BOOTSTRAP}</script></head><body></body></html>`;
+
+/** 父頁收到的 ready 訊息（呼叫端仍須先確認 event.source 是自己的 iframe）。 */
+export function isFunnelCustomCodeReadyMessage(data: unknown): boolean {
+  if (!data || typeof data !== "object" || Array.isArray(data)) return false;
+  const keys = Object.keys(data);
+  return keys.length === 1 && (data as Record<string, unknown>).type === FUNNEL_CUSTOM_CODE_READY_MESSAGE;
+}
+
+/**
+ * iframe 內的 meta CSP。static 模式的 srcdoc 會「另外」繼承父頁的 CSP（兩者都
+ * 必須允許）；script 模式寫入沙箱文件後同樣疊加在該文件的回應 CSP 上。這裡只會
+ * 更嚴格：connect-src、form-action、base-uri、object-src 一律關閉。
  */
 export function funnelCustomCodeCsp(mode: FunnelCustomCodeMode): string {
   return [

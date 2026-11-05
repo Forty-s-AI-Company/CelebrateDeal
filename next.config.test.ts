@@ -18,47 +18,51 @@ describe("isolated development build configuration", () => {
     expect(sentry.wrap).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ tunnelRoute: "/monitoring" }));
   });
 
-  it("allows Cloudflare Turnstile's script, iframe and calls in the report-only CSP", async () => {
+  it("keeps every site-wide security header and leaves the per-request nonce CSP to the proxy (F-156)", async () => {
     vi.stubEnv("NODE_ENV", "production");
     const { default: config } = await import("./next.config");
     const rules = await config.headers!();
-    const csp = rules.find((rule) => rule.source === "/:path*")!.headers.find((header) => header.key === "Content-Security-Policy-Report-Only")!.value;
-    const directive = (name: string) => csp.split("; ").find((part) => part.startsWith(`${name} `)) ?? "";
-    for (const name of ["script-src", "frame-src", "connect-src"]) expect(directive(name)).toContain("https://challenges.cloudflare.com");
-    expect(directive("frame-ancestors")).toBe("frame-ancestors 'none'");
+    const site = rules.find((rule) => rule.source === "/:path*")!.headers;
+    expect(Object.fromEntries(site.map((header) => [header.key, header.value]))).toEqual({
+      "X-Content-Type-Options": "nosniff",
+      "X-Frame-Options": "DENY",
+      "Referrer-Policy": "strict-origin-when-cross-origin",
+      "Permissions-Policy": "camera=(), microphone=(), geolocation=(), browsing-topics=()",
+      "Strict-Transport-Security": "max-age=63072000; includeSubDomains",
+    });
+    // A static CSP here would carry no nonce and, as a configured header, would replace the proxy's.
+    expect(rules.some((rule) => rule.headers.some((header) => /^Content-Security-Policy/u.test(header.key) && rule.source !== "/sandbox/custom-code"))).toBe(false);
   });
 
-  it("gives public funnel pages COOP same-origin and a report-only CSP that a custom-code srcdoc frame can live under", async () => {
+  it("gives public funnel pages COOP same-origin and nothing broader", async () => {
     vi.stubEnv("NODE_ENV", "production");
     const { default: config } = await import("./next.config");
     const rules = await config.headers!();
     const siteWide = rules.findIndex((rule) => rule.source === "/:path*");
-    const index = rules.findIndex((rule) => rule.source === "/lp/:path*");
-    // Later rules override the site-wide CSP for the same key.
-    expect(index).toBeGreaterThan(siteWide);
-    const header = (key: string) => rules[index]!.headers.find((item) => item.key === key)?.value ?? "";
-    expect(header("Cross-Origin-Opener-Policy")).toBe("same-origin");
-    const csp = header("Content-Security-Policy-Report-Only");
-    const directive = (name: string) => csp.split("; ").find((part) => part.startsWith(`${name} `)) ?? "";
-    for (const name of ["script-src", "style-src", "font-src", "frame-src"]) expect(directive(name).split(" ")).toContain("https:");
-    expect(directive("img-src").split(" ")).toContain("https:");
-    expect(directive("frame-ancestors")).toBe("frame-ancestors 'none'");
-    expect(directive("base-uri")).toBe("base-uri 'self'");
-    expect(directive("connect-src")).toContain("https://www.google-analytics.com");
-    expect(directive("connect-src").split(" ")).not.toContain("https:");
-    // The rest of the site keeps the stricter policy and no COOP change.
-    const site = rules[siteWide]!.headers;
-    expect(site.find((item) => item.key === "Content-Security-Policy-Report-Only")!.value).not.toContain("font-src 'self' data: https:");
-    expect(site.some((item) => item.key === "Cross-Origin-Opener-Policy")).toBe(false);
+    for (const source of ["/lp/:path*", "/browser-qa/:path*"]) {
+      const index = rules.findIndex((rule) => rule.source === source);
+      expect(index).toBeGreaterThan(siteWide);
+      expect(rules[index]!.headers).toEqual([{ key: "Cross-Origin-Opener-Policy", value: "same-origin" }]);
+    }
+    expect(rules[siteWide]!.headers.some((item) => item.key === "Cross-Origin-Opener-Policy")).toBe(false);
   });
 
-  it("allows only the privacy-enhanced YouTube host as an extra frame source", async () => {
+  it("lets only this origin frame the custom-code sandbox document, under its own sandbox CSP", async () => {
     vi.stubEnv("NODE_ENV", "production");
     const { default: config } = await import("./next.config");
     const rules = await config.headers!();
-    const csp = rules.find((rule) => rule.source === "/:path*")!.headers.find((header) => header.key === "Content-Security-Policy-Report-Only")!.value;
-    const frameSrc = csp.split("; ").find((part) => part.startsWith("frame-src ")) ?? "";
-    expect(frameSrc).toBe("frame-src 'self' https://challenges.cloudflare.com https://www.youtube-nocookie.com");
+    const siteWide = rules.findIndex((rule) => rule.source === "/:path*");
+    const index = rules.findIndex((rule) => rule.source === "/sandbox/custom-code");
+    // Later rules override the site-wide X-Frame-Options: DENY for the same key.
+    expect(index).toBeGreaterThan(siteWide);
+    const header = (key: string) => rules[index]!.headers.find((item) => item.key === key)?.value;
+    expect(header("X-Frame-Options")).toBe("SAMEORIGIN");
+    expect(header("Content-Security-Policy")).toMatch(/^sandbox allow-scripts allow-popups allow-popups-to-escape-sandbox; default-src 'none';/u);
+    expect(header("Content-Security-Policy")).toContain("frame-ancestors 'self'");
+    expect(header("Content-Security-Policy")).toContain("connect-src 'none'");
+    expect(header("Referrer-Policy")).toBe("no-referrer");
+    // Only this one path relaxes X-Frame-Options.
+    expect(rules.filter((rule) => rule.headers.some((item) => item.key === "X-Frame-Options" && item.value !== "DENY")).map((rule) => rule.source)).toEqual(["/sandbox/custom-code"]);
   });
 
   it("sends no Referer from the verification page and its confirm API, overriding the site-wide policy", async () => {

@@ -244,7 +244,7 @@ S＝0.5、M＝0.5–2、L＝2–4、S–M＝0.5–2、M–L＝1–4（人日）�
 | 27 | F-033 | 狀態變更請求缺 Origin 一律拒絕 | NIT | engineer-hard | 是 | — | 0.5 | 1×4÷0.5＝8.0 |
 | 28 | F-034 | helper 移到 `src/lib` | NIT | engineer | 否 | — | 0.5 | 1×4÷0.5＝8.0 |
 | 29 | F-091 | (2) 聊天與互動合併為單一 since 輪詢 | MAJOR | engineer | 否 | — | 3 | 4×5÷3＝6.7 |
-| 30 | F-015 | 內容跨請求快取、訪客寫入改 `after()`、proxy 輕量預檢 | MAJOR | engineer-hard | 是 | L1 量測結果 | 2–3 | 3×5÷2.5＝6.0 |
+| 30 | F-015 | 內容跨請求快取、訪客寫入改 `after()`、proxy 輕量預檢。注意（F-156）：所有頁面因每次請求的 CSP nonce 都是動態渲染；日後若要快取 `/lp` 的 HTML，必須重新設計 CSP（例如 hash／SRI 或把商家內容移到獨立來源），不能回到 `script-src 'unsafe-inline'`（見 `docs/launch/csp-rollout.md`） | MAJOR | engineer-hard | 是 | L1 量測結果 | 2–3 | 3×5÷2.5＝6.0 |
 | 31 | F-019 | ab-testing、ai-funnel-assistant、interaction-card-media 依 owner 決定刪或標註 | MINOR | engineer | 否 | — | 0.25 | 3×1÷0.5＝6.0 |
 | 32 | F-068 | 聚合欄位改 BIGINT | MINOR | engineer-hard | 是 | — | 1 | 3×2÷1＝6.0 |
 | 33 | F-071 | 依索引建議表補索引 | MINOR | engineer-hard | 是 | — | 1 | 2×3÷1＝6.0 |
