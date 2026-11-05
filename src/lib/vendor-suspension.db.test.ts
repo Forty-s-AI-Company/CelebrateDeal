@@ -150,9 +150,11 @@ async function digitalCheckout(vendorId: string, buyerEmail: string) {
     fulfillmentType: "digital", isActive: true, title: "合成下載", destinationUrl: "https://delivery.example.com/buyer/content",
     instructions: "付款後從訂單頁取得內容。", hostConfirmed: true,
   })!;
-  const allowlist = await db.vendorDeliveryUrlAllowlist.create({
-    data: { vendorId, hostname: delivery.destinationHostname!, pathPrefix: delivery.destinationPathPrefix!, allowQuery: false, status: "active" },
-  });
+  // One allowlist row per vendor host/prefix; a second checkout of the same vendor reuses it.
+  const allowlist = await db.vendorDeliveryUrlAllowlist.findFirst({ where: { vendorId, hostname: delivery.destinationHostname!, pathPrefix: delivery.destinationPathPrefix! } })
+    ?? await db.vendorDeliveryUrlAllowlist.create({
+      data: { vendorId, hostname: delivery.destinationHostname!, pathPrefix: delivery.destinationPathPrefix!, allowQuery: false, status: "active" },
+    });
   const configId = randomUUID();
   await db.productDeliveryConfig.create({
     data: {
