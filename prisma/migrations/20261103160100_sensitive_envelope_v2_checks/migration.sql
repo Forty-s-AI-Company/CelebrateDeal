@@ -9,16 +9,22 @@
 -- the handoff trigger kept it immutable, so a re-encryption run could never
 -- move it off a retired kid. Only a transaction that sets
 -- celebratedeal.sensitive_data_reencrypt = on (the re-encrypt script) may
--- change it, and only to another well-formed envelope; every other column and
--- every other rule of the trigger is unchanged (copied from
--- 20260809050000_g7_26_split_refund_handoff).
+-- change it, only from one well-formed envelope to a different one under a
+-- different key id (re-encryption always moves a row to another kid); every
+-- other column and every other rule of the trigger is unchanged (copied from
+-- 20260809050000_g7_26_split_refund_handoff). The flag is set per write with
+-- set_config(..., true) and lapses at commit; it must never be set with
+-- ALTER ROLE / ALTER DATABASE ... SET or a connection-string options=-c
+-- (docs/staging-production-env-vars.md §8.6).
 --
 -- Forward-only. Each table drops and re-adds its CHECK in one ALTER TABLE
 -- (one short ACCESS EXCLUSIVE lock per table). Every existing row is a v1
 -- envelope, which the new constraints still accept, so validation cannot
--- fail. The patterns match src/lib/sensitive-data.ts
--- (isWellFormedSensitiveEnvelope): kid 1–32 of [a-z0-9_-] starting with a
--- letter or digit, 12-byte IV (16 base64url chars), 16-byte tag (22 chars).
+-- fail. The database patterns are a superset of the application check
+-- (isWellFormedSensitiveEnvelope in src/lib/sensitive-data.ts, which also
+-- refuses the reserved kid "legacy" in v2): kid 1–32 of [a-z0-9_-] starting
+-- with a letter or digit, 12-byte IV (16 base64url chars), 16-byte tag
+-- (22 chars).
 SELECT pg_catalog.set_config('lock_timeout', '5s', true);
 
 ALTER TABLE "LivePrivateChatMessage"
@@ -51,6 +57,8 @@ DECLARE
   completion_link_count INTEGER;
   completion_amount INTEGER;
   invalid_completion_count INTEGER;
+  old_reason_kid TEXT;
+  new_reason_kid TEXT;
 BEGIN
   SELECT "primaryPaymentTransactionId", "status", "paidAmountCents", "refundedAmountCents"
   INTO order_payment_id, order_status, order_paid, order_refunded
@@ -65,6 +73,17 @@ BEGIN
       USING ERRCODE = '23514', CONSTRAINT = 'SupportRefundHandoff_order_check';
   END IF;
 
+  IF TG_OP = 'UPDATE' THEN
+    old_reason_kid := CASE
+      WHEN OLD."reasonEncryptedEnvelope" ~ '^v1\.[A-Za-z0-9_-]{16}\.[A-Za-z0-9_-]{22}\.[A-Za-z0-9_-]+$' THEN 'legacy'
+      WHEN OLD."reasonEncryptedEnvelope" ~ '^v2\.[a-z0-9][a-z0-9_-]{0,31}\.[A-Za-z0-9_-]{16}\.[A-Za-z0-9_-]{22}\.[A-Za-z0-9_-]+$' THEN split_part(OLD."reasonEncryptedEnvelope", '.', 2)
+    END;
+    new_reason_kid := CASE
+      WHEN NEW."reasonEncryptedEnvelope" ~ '^v1\.[A-Za-z0-9_-]{16}\.[A-Za-z0-9_-]{22}\.[A-Za-z0-9_-]+$' THEN 'legacy'
+      WHEN NEW."reasonEncryptedEnvelope" ~ '^v2\.[a-z0-9][a-z0-9_-]{0,31}\.[A-Za-z0-9_-]{16}\.[A-Za-z0-9_-]{22}\.[A-Za-z0-9_-]+$' THEN split_part(NEW."reasonEncryptedEnvelope", '.', 2)
+    END;
+  END IF;
+
   IF TG_OP = 'UPDATE' AND (
     NEW."vendorId" IS DISTINCT FROM OLD."vendorId"
     OR NEW."supportCaseId" IS DISTINCT FROM OLD."supportCaseId"
@@ -73,18 +92,19 @@ BEGIN
     OR NEW."requestedByMemberId" IS DISTINCT FROM OLD."requestedByMemberId"
     OR NEW."requestedAmountCents" IS DISTINCT FROM OLD."requestedAmountCents"
     -- F-031: the reason may change only as a re-encryption run, which sets the
-    -- transaction-local flag (scripts/reencrypt-sensitive-data.ts), and only
-    -- into another well-formed sensitive-data envelope. The script writes it
-    -- after decrypting the old value and checking the new one decrypts to the
-    -- same plaintext; application code never sets the flag.
+    -- transaction-local flag (scripts/reencrypt-sensitive-data.ts), only from
+    -- one well-formed sensitive-data envelope to a different one, and only to
+    -- another key id. The script writes it after decrypting the old value and
+    -- checking the new one decrypts to the same plaintext; application code
+    -- never sets the flag. A value whose kid cannot be read is refused.
     OR (
       NEW."reasonEncryptedEnvelope" IS DISTINCT FROM OLD."reasonEncryptedEnvelope"
       AND NOT (
         COALESCE(current_setting('celebratedeal.sensitive_data_reencrypt', true), '') = 'on'
-        AND (
-          NEW."reasonEncryptedEnvelope" ~ '^v1\.[A-Za-z0-9_-]{16}\.[A-Za-z0-9_-]{22}\.[A-Za-z0-9_-]+$'
-          OR NEW."reasonEncryptedEnvelope" ~ '^v2\.[a-z0-9][a-z0-9_-]{0,31}\.[A-Za-z0-9_-]{16}\.[A-Za-z0-9_-]{22}\.[A-Za-z0-9_-]+$'
-        )
+        AND NEW."reasonEncryptedEnvelope" <> OLD."reasonEncryptedEnvelope"
+        AND old_reason_kid IS NOT NULL
+        AND new_reason_kid IS NOT NULL
+        AND new_reason_kid <> old_reason_kid
       )
     )
     OR NEW."createdAt" IS DISTINCT FROM OLD."createdAt"

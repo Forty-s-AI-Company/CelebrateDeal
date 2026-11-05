@@ -10,10 +10,12 @@
  * dry run reports no unreadable rows, --apply leaves nothing pending, and with
  * `legacy` removed from the keyring everything still reads back.
  *
- * Only parent rows are skipped: the inserts run with
- * session_replication_role = replica, which turns off foreign-key triggers
- * for this transaction only. CHECK and NOT NULL constraints still apply, so
- * the stored envelopes meet the real column rules.
+ * Only parent rows are skipped: the seed transactions (and only those) run
+ * with SET LOCAL session_replication_role = replica, which disables every
+ * trigger that is not ENABLE ALWAYS, including foreign-key enforcement and
+ * the application's validation triggers. CHECK and NOT NULL constraints still
+ * apply, so the stored envelopes meet the real column rules. The
+ * re-encryption writes run in normal mode, so every trigger fires there.
  */
 import { randomBytes, randomUUID } from "node:crypto";
 import type { Prisma } from "@prisma/client";
@@ -82,7 +84,7 @@ async function columns(table: string) {
     `SELECT a.attname AS name, t.typname AS udt, format_type(a.atttypid, a.atttypmod) AS quoted,
             (a.attnotnull AND NOT a.atthasdef) AS required
        FROM pg_attribute a JOIN pg_class c ON c.oid = a.attrelid JOIN pg_type t ON t.oid = a.atttypid
-      WHERE c.relname = $1 AND c.relnamespace = 'public'::regnamespace AND a.attnum > 0 AND NOT a.attisdropped`, table);
+      WHERE c.relname = $1 AND c.relnamespace = pg_catalog.current_schema()::regnamespace AND a.attnum > 0 AND NOT a.attisdropped`, table);
   const map = new Map(rows.map((row) => [row.name, { udt: row.udt, required: row.required, quotedType: row.quoted }]));
   columnCache.set(table, map);
   return map;
@@ -90,7 +92,9 @@ async function columns(table: string) {
 
 async function firstEnumLabel(udt: string) {
   const [row] = await getDb().$queryRawUnsafe<Array<{ label: string }>>(
-    `SELECT e.enumlabel AS label FROM pg_enum e JOIN pg_type t ON t.oid = e.enumtypid WHERE t.typname = $1 ORDER BY e.enumsortorder LIMIT 1`, udt);
+    `SELECT e.enumlabel AS label FROM pg_enum e JOIN pg_type t ON t.oid = e.enumtypid
+       JOIN pg_namespace n ON n.oid = t.typnamespace AND n.nspname = pg_catalog.current_schema()
+      WHERE t.typname = $1 ORDER BY e.enumsortorder LIMIT 1`, udt);
   return row?.label ?? null;
 }
 
@@ -449,23 +453,35 @@ describe("re-encryption across every envelope target (PostgreSQL)", () => {
     await expect(db.$executeRawUnsafe(`UPDATE "RegistrationFormRetryDraft" SET "encryptedPayload" = 'v2.' || repeat('a', 533414) WHERE "idHash" = $1`, draft.id)).rejects.toThrow();
     expect(await db.$executeRawUnsafe(`UPDATE "RegistrationFormRetryDraft" SET "encryptedPayload" = 'v2.' || repeat('a', 533413) WHERE "idHash" = $1`, draft.id)).toBe(1);
 
-    // The refund reason stays immutable for the application; only a
-    // re-encryption transaction may swap it, and only for a well-formed envelope.
+    // The refund reason stays immutable for the application. A re-encryption
+    // transaction may swap it only between well-formed envelopes with
+    // different key ids; a value whose kid cannot be read is never replaced.
     const handoff = tenant.cells.find((cell) => cell.label === "SupportRefundHandoff.reasonEncryptedEnvelope")!;
     const reason = String((await storedRow(handoff)).reasonEncryptedEnvelope);
-    const other = encryptSensitiveValue("另一個原因", "synthetic-other-purpose");
-    const swap = (value: string) => db.$executeRawUnsafe(`UPDATE "SupportRefundHandoff" SET "reasonEncryptedEnvelope" = $1 WHERE "id" = $2`, value, handoff.id);
-    await expect(swap(other)).rejects.toThrow("commercial identity is immutable");
-    await expect(db.$transaction(async (tx) => {
+    expect(sensitiveEnvelopeKeyId(reason)).toBe("k2026a");
+    const sameKid = encryptSensitiveValue("另一個原因", "synthetic-other-purpose");
+    vi.stubEnv("DATA_ENCRYPTION_KEYRING", "");
+    const legacyKid = encryptSensitiveValue("另一個原因", "synthetic-other-purpose");
+    const plainSwap = (value: string) => db.$executeRawUnsafe(`UPDATE "SupportRefundHandoff" SET "reasonEncryptedEnvelope" = $1 WHERE "id" = $2`, value, handoff.id);
+    const flaggedSwap = (value: string) => db.$transaction(async (tx) => {
       await tx.$queryRawUnsafe(`SELECT pg_catalog.set_config('${REENCRYPT_SESSION_FLAG}', 'on', true)`);
-      return tx.$executeRawUnsafe(`UPDATE "SupportRefundHandoff" SET "reasonEncryptedEnvelope" = 'not-an-envelope' WHERE "id" = $1`, handoff.id);
-    })).rejects.toThrow("commercial identity is immutable");
-    expect(await db.$transaction(async (tx) => {
-      await tx.$queryRawUnsafe(`SELECT pg_catalog.set_config('${REENCRYPT_SESSION_FLAG}', 'on', true)`);
-      return tx.$executeRawUnsafe(`UPDATE "SupportRefundHandoff" SET "reasonEncryptedEnvelope" = $1 WHERE "id" = $2`, other, handoff.id);
-    })).toBe(1);
+      return tx.$executeRawUnsafe(`UPDATE "SupportRefundHandoff" SET "reasonEncryptedEnvelope" = $1 WHERE "id" = $2`, value, handoff.id);
+    });
+    await expect(plainSwap(legacyKid)).rejects.toThrow("commercial identity is immutable");
+    await expect(flaggedSwap("not-an-envelope")).rejects.toThrow("commercial identity is immutable");
+    await expect(flaggedSwap(sameKid)).rejects.toThrow("commercial identity is immutable");
+    expect(await flaggedSwap(legacyKid)).toBe(1);
     // The flag is transaction-local: the next plain statement is refused again.
-    await expect(swap(reason)).rejects.toThrow("commercial identity is immutable");
+    await expect(plainSwap(reason)).rejects.toThrow("commercial identity is immutable");
+    expect(await flaggedSwap(reason)).toBe(1);
+
+    // A stored value whose kid cannot be read is never replaced, even by a
+    // well-formed envelope under the flag.
+    await db.$transaction(async (tx) => {
+      await tx.$executeRawUnsafe("SET LOCAL session_replication_role = replica");
+      await tx.$executeRawUnsafe(`UPDATE "SupportRefundHandoff" SET "reasonEncryptedEnvelope" = 'damaged' WHERE "id" = $1`, handoff.id);
+    });
+    await expect(flaggedSwap(legacyKid)).rejects.toThrow("commercial identity is immutable");
   });
 });
 

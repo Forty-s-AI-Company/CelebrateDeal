@@ -136,7 +136,7 @@ describe("DATA_ENCRYPTION_KEYRING configured", () => {
     expect(decryptSensitiveValue(envelope, PURPOSE)).toBe("buyer");
   });
 
-  it("checks the well-formed v1 and v2 shapes the database CHECKs also enforce", () => {
+  it("checks the well-formed v1 and v2 shapes (the database CHECKs accept a superset)", () => {
     const v1 = encryptSensitiveValue("buyer", PURPOSE);
     useKeyring([{ kid: "k".repeat(32), key: KEY_A, active: true }]);
     const v2 = encryptSensitiveValue("buyer", PURPOSE);

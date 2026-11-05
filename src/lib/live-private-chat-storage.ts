@@ -45,7 +45,8 @@ export function encryptPrivateChatBody(body: string, scope: PrivateChatStorageSc
 
 export function decryptPrivateChatBody(envelope: string, scope: PrivateChatStorageScope) {
   // Reject extra envelope fields and oversized input before the common decoder.
-  // Same bound and formats (v1 and keyring v2) as LivePrivateChatMessage_envelope_check.
+  // Same bound as LivePrivateChatMessage_envelope_check; its v1／v2 patterns are a
+  // superset of this application check (which also refuses the reserved kid).
   if (envelope.length > 8_192 || !isWellFormedSensitiveEnvelope(envelope)) {
     throw new Error("invalid_private_chat_envelope");
   }

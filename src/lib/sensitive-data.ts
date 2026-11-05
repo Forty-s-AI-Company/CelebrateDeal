@@ -252,7 +252,7 @@ export function sensitiveEnvelopeKeyId(envelope: string): string | null {
 /**
  * True for a v1 or v2 envelope with a 12-byte IV and a 16-byte tag. Shared
  * with readers that pre-check stored values (live-private-chat-storage.ts);
- * the same patterns are the database CHECKs in
+ * the database CHECKs in
  * 20261103160100_sensitive_envelope_v2_checks.
  */
 export function isWellFormedSensitiveEnvelope(envelope: string) {

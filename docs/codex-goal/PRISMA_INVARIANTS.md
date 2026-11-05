@@ -687,10 +687,10 @@ Current source inventory: 145 models and 99 forward migrations. Previous checkpo
 ## 2026-11-03 資料加密 keyring：v2 密文 CHECK 與退款原因重新加密（F-031 ②③）
 
 - `20261103160100_sensitive_envelope_v2_checks`：forward-only，排在 `20261103090200_ledger_integrity_constraints_validate` 之後（並刻意晚於另一條線的 `20261103150000_vendor_suspension`）；交易層級 `lock_timeout = 5s`。不新增 model、欄位或 index，不改資料。
-  - `LivePrivateChatMessage_envelope_check`：DROP 後重建，長度上限仍 8192，格式由只接受 `v1.<16>.<22>.<data>` 改為 v1 或 `v2.<kid>.<16>.<22>.<data>`（kid 為 1–32 個 `[a-z0-9_-]`、首字英數）。與 `src/lib/sensitive-data.ts` 的 `isWellFormedSensitiveEnvelope` 同一組 pattern，`live-private-chat-storage.ts` 讀取前也用它檢查。
+  - `LivePrivateChatMessage_envelope_check`：DROP 後重建，長度上限仍 8192，格式由只接受 `v1.<16>.<22>.<data>` 改為 v1 或 `v2.<kid>.<16>.<22>.<data>`（kid 為 1–32 個 `[a-z0-9_-]`、首字英數）。DB pattern 是 `src/lib/sensitive-data.ts` 的 `isWellFormedSensitiveEnvelope` 的超集（應用程式另外拒絕 v2 的保留 kid `legacy`），`live-private-chat-storage.ts` 讀取前用應用程式的檢查。
   - `RegistrationFormRetryDraft_payload_check`：DROP 後重建，`^v1\.` 改為 `^v[12]\.`，長度上限 533400 → 533416（v2 標頭最長 76 字元；`registration-form-retry.ts` 的 `envelopeChars` 餘裕 64 → 80，匯出 `REGISTRATION_RETRY_MAX_ENVELOPE_CHARS` 與 CHECK 一致）。
-  - 既有列全是 v1，新 CHECK 是舊 CHECK 的超集，重建時驗證不會失敗。
-  - `enforce_support_refund_handoff_order()`：`CREATE OR REPLACE`，內容照抄 `20260809050000_g7_26_split_refund_handoff`，只改一處：`reasonEncryptedEnvelope` 原本完全不可變，改為只有交易內設定 `celebratedeal.sensitive_data_reencrypt = on`（`scripts/reencrypt-sensitive-data.ts` 每筆寫入時以 `set_config(..., true)` 設定）且新值是格式正確的 v1／v2 密文時才可更換；其他欄位與規則不變。應用程式不設這個旗標。
+  - 既有列全是 v1，新 CHECK 是舊 CHECK 的超集，重建時驗證不會失敗。重建 CHECK 會在 ACCESS EXCLUSIVE 鎖下全表驗證，封測資料量下可接受；資料量大時改為 `ADD CONSTRAINT ... NOT VALID` 再另一個 migration `VALIDATE CONSTRAINT`。
+  - `enforce_support_refund_handoff_order()`：`CREATE OR REPLACE`，內容照抄 `20260809050000_g7_26_split_refund_handoff`，只改一處：`reasonEncryptedEnvelope` 原本完全不可變，改為只有交易內設定 `celebratedeal.sensitive_data_reencrypt = on`（`scripts/reencrypt-sensitive-data.ts` 每筆寫入時以 `set_config(..., true)` 設定）、新舊值都是格式正確的 v1／v2 密文、兩者不同且 kid 不同時才可更換（舊值 kid 讀不出來即拒絕）；其他欄位與規則不變。應用程式不設這個旗標；禁止以 `ALTER ROLE／DATABASE ... SET` 或連線字串 `options=-c` 設定它。
 - 沒有 partial index、allowlist 項目，`prisma-drift-check` 不需新增例外（Prisma 不管理 CHECK 與 trigger）。
 - 測試：`scripts/reencrypt-sensitive-data-all-targets.db.test.ts`（38 個加密欄位各以應用程式寫入函式建列，v1／v2 都寫得進；兩個 CHECK 拒絕畸形值與超長值、533416 邊界可寫入；退款原因在沒有旗標、或有旗標但新值畸形時仍被 trigger 拒絕，旗標只在該交易有效）。已在 loopback 拋棄式庫（全新建立、套用本分支 137 條 migration）執行。
 - 部署順序：migration 先於程式；**切換 `DATA_ENCRYPTION_KEYRING` 的 active kid 之前必須已部署本 migration**。
