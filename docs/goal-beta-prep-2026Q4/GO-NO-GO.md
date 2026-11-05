@@ -166,9 +166,10 @@
 
 ## 7. 2026-11-06 staging 驗證狀態
 
-- staging alias 指向 master `3f8113dc`。
-- 瀏覽器 smoke：PASS（run 42077280153）。
-- 漏斗 smoke：停在發布前置，原因是合成 owner Email 未驗證；修正見 #552（進行中）。
-- PayUni 付款驗證：停在新版 UPP 卡號欄位，selector 修正中（進行中）。
+- staging alias 指向 master `a00c4aa4`（含 #545 keyring、#546 CSP Report-Only、#548 租戶凍結、#550 訂單 hash）；所有 migration 已以 `staging-migrate` 套用。
+- 瀏覽器 smoke：PASS（run 42077280153、42098595751）。
+- 漏斗 smoke：PASS（run 42098588540）：建立、套模板、存草稿、發布、桌機與手機公開頁都通過（#552 修正合成 owner Email 驗證後）。
+- PayUni Sandbox 付款（payment-only）：PASS（run 42106106294）：PayUni 接受表單、回跳對應、訂單持久化、重複回呼冪等皆成立（#554 更新新版 UPP 卡號欄位後）。前一次 run 42098319335 為 `PAYMENT_CONFIRMATION_AMBIGUOUS` 且查無交易（未扣款），原因未取得；#556 已加送出後診斷。
 - 買家回呼重試：PASS（run 41604153122）。
+- 含退款的對帳（reconciliation）：尚未執行，需 QA 財務帳號 TOTP secret（O-14）；同一 sha 只能跑 payment-only 或 reconciliation 其中一個。
 - LINE E2E：缺 secret，見 OWNER-ACTIONS 彙整。
