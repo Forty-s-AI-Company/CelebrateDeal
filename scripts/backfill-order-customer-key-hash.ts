@@ -21,36 +21,42 @@
  * - The key is derived with the app's own helper from the decrypted,
  *   normalized buyer e-mail, exactly as checkout and the portal derive it.
  *   Rows that do not decrypt (e.g. a run with the wrong root key) are never
- *   written and block `--apply` unless `--allow-unreadable` is passed.
- *   Orders de-identified by scripts/anonymize-customer.ts are skipped so their
- *   placeholder address never becomes a lookup key again.
+ *   written and block `--apply` unless `--allow-unreadable` is passed. Rows
+ *   that decrypt but hold no valid buyer contact are counted as `invalid`,
+ *   never written, and do not block `--apply`. Orders de-identified by
+ *   scripts/anonymize-customer.ts (its shared ANONYMIZED_EMAIL_PATTERN) are
+ *   skipped so their placeholder address never becomes a lookup key again.
  * - Each write is a compare-and-swap on `automationCustomerKeyHash IS NULL`
- *   bound to the order's own vendor: an existing key is never overwritten, a
- *   rerun is a no-op, and an interrupted run resumes where it stopped.
+ *   AND the exact buyer envelope that was decrypted, bound to the order's own
+ *   vendor: an existing key is never overwritten, an envelope replaced
+ *   meanwhile (e.g. by a concurrent de-identification) is left alone and
+ *   counted as `changed`, a rerun is a no-op, and an interrupted run resumes
+ *   where it stopped.
+ * - `--write-ids <path>` (with `--apply`) appends the ID of every order this
+ *   run wrote, one per line, so the run can be reverted exactly.
  * - Never prints e-mail addresses, names or key hashes; vendor IDs and counts
  *   only.
  *
  * Usage (the target environment's root key must be injected by the operator):
  *   DATABASE_URL=<staging> node --import tsx scripts/backfill-order-customer-key-hash.ts --target=staging
  *   BACKFILL_CONFIRM=BACKFILL_ORDER_CUSTOMER_KEY_HASH DATABASE_URL=<staging> \
- *     node --import tsx scripts/backfill-order-customer-key-hash.ts --target=staging --apply
+ *     node --import tsx scripts/backfill-order-customer-key-hash.ts --target=staging --apply --write-ids <path>
  * Options: --batch-size <1-500> (default 100), --vendor-id <id> (one tenant),
- *          --allow-unreadable.
+ *          --allow-unreadable, --write-ids <path>.
  */
+import fs from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { PrismaClient } from "@prisma/client";
-import { revealCommerceOrderPii } from "../src/lib/commerce-order-pii";
+import { CommerceOrderPiiValidationError, revealCommerceOrderPii } from "../src/lib/commerce-order-pii";
 import { automationCustomerKeyHash } from "../src/lib/customer-key-hash";
 import { isStagingDatabaseUrl } from "../src/lib/database-identity";
+import { ANONYMIZED_EMAIL_PATTERN } from "./anonymize-customer";
 import { classifyLocalTestDatabase } from "./local-database-safety";
 
 export const APPLY_CONFIRMATION = "BACKFILL_ORDER_CUSTOMER_KEY_HASH";
 export const PRODUCTION_APPROVAL = "OWNER_APPROVED_PRODUCTION_ORDER_KEY_BACKFILL";
 const DEFAULT_BATCH_SIZE = 100;
-// scripts/anonymize-customer.ts replaces the buyer e-mail with a per-order
-// placeholder under this reserved domain.
-const ANONYMIZED_EMAIL_DOMAIN = "@redacted.invalid";
 
 type Environment = Readonly<Record<string, string | undefined>>;
 type Db = Pick<PrismaClient, "commerceOrder">;
@@ -68,10 +74,11 @@ export type OrderKeyBackfillOptions = {
   batchSize: number;
   allowUnreadable: boolean;
   vendorId: string | null;
+  writeIds: string | null;
 };
 
 export function parseOrderKeyBackfillArguments(argv: readonly string[]): OrderKeyBackfillOptions {
-  const options: OrderKeyBackfillOptions = { apply: false, target: null, batchSize: DEFAULT_BATCH_SIZE, allowUnreadable: false, vendorId: null };
+  const options: OrderKeyBackfillOptions = { apply: false, target: null, batchSize: DEFAULT_BATCH_SIZE, allowUnreadable: false, vendorId: null, writeIds: null };
   for (let index = 0; index < argv.length; index += 1) {
     const argument = argv[index]!;
     if (argument === "--apply") options.apply = true;
@@ -90,10 +97,16 @@ export function parseOrderKeyBackfillArguments(argv: readonly string[]): OrderKe
       if (!value || value.length > 191 || /[\s\u0000-\u001f\u007f]/u.test(value)) throw new OrderKeyBackfillRefusedError("invalid-vendor-id");
       options.vendorId = value;
       index += 1;
+    } else if (argument === "--write-ids") {
+      const value = argv[index + 1]?.trim();
+      if (!value || value.startsWith("--") || /[\u0000-\u001f\u007f]/u.test(value)) throw new OrderKeyBackfillRefusedError("invalid-write-ids");
+      options.writeIds = value;
+      index += 1;
     } else {
       throw new OrderKeyBackfillRefusedError("unknown-argument");
     }
   }
+  if (options.writeIds && !options.apply) throw new OrderKeyBackfillRefusedError("write-ids-without-apply");
   return options;
 }
 
@@ -130,10 +143,13 @@ function classify(order: MissingOrder): Classified {
   let email: string;
   try {
     email = revealCommerceOrderPii({ buyerEncrypted: order.buyerEncryptedEnvelope, shippingEncrypted: null }, { vendorId: order.vendorId, orderId: order.id }).buyer.email;
-  } catch {
+  } catch (error) {
+    // Decrypted fine but is not a valid buyer contact: nothing to derive, and
+    // unlike a key problem it says nothing about the run's root secret.
+    if (error instanceof CommerceOrderPiiValidationError) return { kind: "invalid" };
     return { kind: "unreadable" };
   }
-  if (email.endsWith(ANONYMIZED_EMAIL_DOMAIN)) return { kind: "anonymized" };
+  if (ANONYMIZED_EMAIL_PATTERN.test(email)) return { kind: "anonymized" };
   try {
     return { kind: "computable", customerKeyHash: automationCustomerKeyHash(order.vendorId, email) };
   } catch {
@@ -190,10 +206,17 @@ export async function planOrderKeyBackfill(db: Db, batchSize = DEFAULT_BATCH_SIZ
 
 /**
  * Writes the key on every computable order still missing it. `changed` counts
- * rows that gained a key between the read and the compare-and-swap (a
- * concurrent writer); they are left as they are.
+ * rows that, between the read and the compare-and-swap, gained a key or had
+ * their buyer envelope replaced (a concurrent writer such as
+ * anonymize-customer); they are left as they are. `onUpdated` receives the ID
+ * of each order this call actually wrote.
  */
-export async function backfillOrderCustomerKeyHash(db: Db, batchSize = DEFAULT_BATCH_SIZE, scope: OrderKeyBackfillScope = {}) {
+export async function backfillOrderCustomerKeyHash(
+  db: Db,
+  batchSize = DEFAULT_BATCH_SIZE,
+  scope: OrderKeyBackfillScope = {},
+  onUpdated: (orderId: string) => void = () => undefined,
+) {
   const result = { updated: 0, changed: 0, anonymized: 0, unreadable: 0, invalid: 0 };
   await forEachMissingOrder(db, batchSize, scope, async (order) => {
     const outcome = classify(order);
@@ -202,11 +225,15 @@ export async function backfillOrderCustomerKeyHash(db: Db, batchSize = DEFAULT_B
       return;
     }
     const written = await db.commerceOrder.updateMany({
-      where: { id: order.id, vendorId: order.vendorId, automationCustomerKeyHash: null },
+      where: { id: order.id, vendorId: order.vendorId, automationCustomerKeyHash: null, buyerEncryptedEnvelope: order.buyerEncryptedEnvelope },
       data: { automationCustomerKeyHash: outcome.customerKeyHash },
     });
-    if (written.count === 1) result.updated += 1;
-    else result.changed += 1;
+    if (written.count === 1) {
+      result.updated += 1;
+      onUpdated(order.id);
+    } else {
+      result.changed += 1;
+    }
   });
   return result;
 }
@@ -217,7 +244,27 @@ export async function runOrderKeyBackfill(db: Db, options: OrderKeyBackfillOptio
   if (!options.apply) return { mode: "plan" as const, ...plan };
   if (env.BACKFILL_CONFIRM !== APPLY_CONFIRMATION) throw new OrderKeyBackfillRefusedError("confirmation-missing");
   if (plan.unreadable > 0 && !options.allowUnreadable) throw new OrderKeyBackfillRefusedError("unreadable-rows");
-  const result = await backfillOrderCustomerKeyHash(db, options.batchSize, effectiveScope);
+  // Opened for append before the first write, so an unwritable path fails the
+  // run before any order changes; each ID is written as soon as its row lands.
+  let idsFd: number | null = null;
+  if (options.writeIds) {
+    try {
+      idsFd = fs.openSync(options.writeIds, "a");
+      // Windows opens a directory for append without error; only a regular file will do.
+      if (!fs.fstatSync(idsFd).isFile()) throw new Error("not a regular file");
+    } catch {
+      if (idsFd !== null) fs.closeSync(idsFd);
+      throw new OrderKeyBackfillRefusedError("write-ids-unwritable");
+    }
+  }
+  const fd = idsFd;
+  let result: Awaited<ReturnType<typeof backfillOrderCustomerKeyHash>>;
+  try {
+    result = await backfillOrderCustomerKeyHash(db, options.batchSize, effectiveScope,
+      fd === null ? undefined : (orderId) => { fs.writeSync(fd, `${orderId}\n`); });
+  } finally {
+    if (fd !== null) fs.closeSync(fd);
+  }
   const after = await planOrderKeyBackfill(db, options.batchSize, effectiveScope);
   return { mode: "apply" as const, ...result, remainingComputable: after.computable, remainingMissing: after.missing };
 }

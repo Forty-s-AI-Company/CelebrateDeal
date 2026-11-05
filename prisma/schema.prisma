@@ -2130,6 +2130,8 @@ model CommerceOrder {
   @@index([vendorId, projectId, status, createdAt])
   @@index([vendorId, isTestOrder, status, createdAt])
   @@index([vendorId, paidAt])
+  // Created by 20260908113000; learner portal, course access and CRM look up by it.
+  @@index([vendorId, automationCustomerKeyHash, status], map: "CommerceOrder_vendorId_automationCustomerKeyHash_status_idx")
   @@unique([vendorId, primaryPaymentTransactionId, id])
 }
 

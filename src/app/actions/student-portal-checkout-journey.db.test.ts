@@ -4,6 +4,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 // Only the request/transport edges are replaced. The order, PII, key hash,
 // portal action, token, dashboard and course access code paths are real and
 // run against the disposable PostgreSQL database.
+//
+// Scope: the checkout leg calls the route's order writer
+// (createReservedPaymentTransaction + createCommerceOrderForCheckout) and the
+// provider-paid transition (reconcileCommerceOrderPaymentTransition) directly.
+// It does not go through the POST /api/payments/checkout HTTP route (admission,
+// rate limits, PayUni session) nor the PayUni webhook; those layers are covered
+// by their own route tests and browser QA.
 const edges = vi.hoisted(() => ({ dispatch: vi.fn() }));
 vi.mock("next/headers", () => ({ headers: async () => new Headers(), cookies: async () => ({ get: () => undefined, getAll: () => [], set: vi.fn(), delete: vi.fn() }) }));
 vi.mock("next/navigation", () => ({ redirect: (url: string) => { throw new Error(`redirect:${url}`); } }));
