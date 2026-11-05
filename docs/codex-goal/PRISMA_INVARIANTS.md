@@ -85,7 +85,7 @@
 | `20260809020000_g7_13b_form_submission_verification` | one-time form submission verification state and token identity |
 | `20260809030000_g7_21_live_reminder_email` | live reminder scheduling fields and delivery linkage |
 | `20260906013000_smart_automation_workflows` | automation rules, execution logs, customer tags, voucher grants |
-| `20260908113000_automation_customer_funnel_identity` | commerce order automation customer identity |
+| `20260908113000_automation_customer_funnel_identity` | commerce order automation customer identity; written at checkout from the buyer e-mail by `protectCommerceOrderPii` (F-175), older orders filled by `scripts/backfill-order-customer-key-hash.ts` |
 | `20260908143000_customer_crm_cockpit` | CRM identity/status and consultant notes |
 | `20260912103000_sales_workspace_onboarding` | sales projects, customer membership, onboarding preferences/state |
 | `20260912123000_test_order_signal` | server-owned non-charging test-order marker and lookup index |

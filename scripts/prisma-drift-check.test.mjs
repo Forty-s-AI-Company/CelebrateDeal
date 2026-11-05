@@ -76,7 +76,11 @@ test("the committed allowlist is well formed and covers the B04-04 hazards", () 
   for (const index of ["FormSubmission_email_trgm_idx", "FormSubmission_name_trgm_idx", "FormSubmission_phone_trgm_idx"]) {
     assert.ok(entries.some((entry) => entry.category === "trgm_gin_index" && entry.statement === `DROP INDEX "${index}";`));
   }
-  assert.ok(statements.includes("DROP INDEX \"CommerceOrder_vendorId_automationCustomerKeyHash_status_idx\";"));
+  assert.ok(statements.includes("DROP INDEX \"ConsultationBooking_vendorId_customerKeyHash_startTime_idx\";"));
+  // F-175: declared in schema.prisma under its migration name, so it is no longer drift.
+  assert.ok(!statements.includes("DROP INDEX \"CommerceOrder_vendorId_automationCustomerKeyHash_status_idx\";"));
+  assert.match(fs.readFileSync(path.join(root, "prisma", "schema.prisma"), "utf8"),
+    /@@index\(\[vendorId, automationCustomerKeyHash, status\], map: "CommerceOrder_vendorId_automationCustomerKeyHash_status_idx"\)/u);
   assert.ok(statements.includes("ALTER INDEX \"LiveMediaSession_scope_key\" RENAME TO \"LiveMediaSession_vendorId_liveId_principal_direction_key\";"));
   assert.ok(statements.includes("ALTER INDEX \"PlatformReferralCommissionLedgerEntry_commissionId_createdAt_id\" RENAME TO \"prc_ledger_comm_created_idx\";"));
   const counts = {};

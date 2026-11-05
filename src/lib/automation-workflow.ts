@@ -1,4 +1,4 @@
-import { createHash, createHmac } from "node:crypto";
+import { createHash } from "node:crypto";
 import { Prisma, type PrismaClient } from "@prisma/client";
 import { z } from "zod";
 import { getCanonicalAppUrl } from "@/lib/app-url";
@@ -11,7 +11,7 @@ import {
   recordLegacyDerivedKeyUse,
   signWithRotation,
 } from "@/lib/derived-key-rotation";
-import { deriveSensitiveDataKey } from "@/lib/sensitive-data";
+import { automationCustomerKeyHash } from "@/lib/customer-key-hash";
 import { protectEmailDeliveryPayload } from "@/lib/email-delivery-pii";
 import { scheduleImmediateEmailDispatch } from "@/lib/email-delivery-immediate";
 import { isSafeExternalHttpsUrl } from "@/lib/safe-url";
@@ -32,13 +32,9 @@ export const AUTOMATION_TRIGGERS = [
 ] as const;
 export type AutomationTrigger = typeof AUTOMATION_TRIGGERS[number];
 
-export function automationCustomerKeyHash(vendorId: string, email: string) {
-  const normalized = email.trim().toLowerCase();
-  if (!vendorId || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/u.test(normalized)) throw new Error("Invalid automation customer identity.");
-  return createHmac("sha256", deriveSensitiveDataKey("automation-customer-key-v1"))
-    .update(`${vendorId}\n${normalized}`)
-    .digest("base64url");
-}
+// Re-exported so existing callers keep one import path; the implementation
+// lives in a dependency-free module the order PII boundary also imports.
+export { automationCustomerKeyHash };
 
 const AutomationConditionSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("always") }).strict(),

@@ -82,7 +82,14 @@ export function resolveAnonymizeTarget(env: Environment = process.env, approved 
   return { url, target: "workflow" as const };
 }
 
-function anonymizedEmail(rowId: string) {
+/**
+ * Every placeholder written by `anonymizedEmail`. Shared with
+ * scripts/backfill-order-customer-key-hash.ts so a de-identified order never
+ * gets a lookup key again; keep both in sync with the function below.
+ */
+export const ANONYMIZED_EMAIL_PATTERN = /^anonymized\+[a-z0-9]+@redacted\.invalid$/u;
+
+export function anonymizedEmail(rowId: string) {
   // Unique per row: legacy CRM grouping (hash of email) must not merge every
   // anonymized person into one synthetic customer.
   return `anonymized+${rowId.toLowerCase().replace(/[^a-z0-9]/g, "")}@redacted.invalid`;

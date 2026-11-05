@@ -9,6 +9,7 @@ vi.mock("@/lib/commerce-order-pii", () => ({
     buyerPhoneMasked: "****1234",
     shippingSummaryMasked: "TW · Taipei · Da-an · …",
     checkoutIdentityHash: "opaque-checkout-identity",
+    customerKeyHash: "opaque-customer-key",
   })),
 }));
 vi.mock("@/lib/commerce-entitlement-access", () => ({
@@ -248,6 +249,41 @@ describe("commerce orders database service", () => {
       expect(persisted).not.toContain("https://delivery.example.com/buyer/content");
       expect(persisted).not.toContain("安全交付說明");
     }
+  });
+
+  // Every checkout order (plain, plan/funnel project, order bump, voucher,
+  // post-purchase target, course, custom answers) is created here; the learner
+  // portal, course access, payment notifications and CRM find it by this key.
+  it.each([
+    { path: "physical", products: [product("physical")], input: {} },
+    { path: "digital", products: [product("digital")], input: {} },
+    { path: "service", products: [product("service")], input: {} },
+    { path: "course", products: [product("course")], input: {} },
+    { path: "funnel/plan project", products: [product("course")], input: { projectId: "project-1" } },
+    {
+      path: "order bump",
+      products: [product("physical"), { ...product("digital"), id: "bump-1", name: "加購包", slug: "bump", priceCents: 300 }],
+      input: { totalAmountCents: 1_500, orderBumpProductId: "bump-1" },
+    },
+    { path: "voucher / post-purchase credit", products: [product("course")], input: { totalAmountCents: 900, discountAmountCents: 300 } },
+    {
+      path: "custom checkout answers",
+      products: [{ ...product("physical"), customCheckoutFields: [{ key: "engraving", label: "刻字內容", type: "text" as const, required: true }] }],
+      input: { customCheckoutAnswers: { engraving: "生日快樂" } },
+    },
+  ])("persists the buyer's tenant-bound customer key for a $path order", async ({ products, input }) => {
+    vi.stubEnv("CSRF_SECRET", "commerce-orders-test-secret-that-is-at-least-32-bytes");
+    const tx = transaction();
+    for (const row of products) tx.product.findFirst.mockResolvedValueOnce(row);
+
+    await createCommerceOrderForCheckout(tx as never, { ...checkoutInput, ...input });
+
+    expect(tx.commerceOrder.create).toHaveBeenCalledOnce();
+    expect(tx.commerceOrder.create.mock.calls[0]?.[0]?.data).toMatchObject({
+      vendorId: "vendor-1",
+      automationCustomerKeyHash: "opaque-customer-key",
+    });
+    vi.unstubAllEnvs();
   });
 
   it("persists server-authorized voucher discount separately from the product subtotal", async () => {

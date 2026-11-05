@@ -6,7 +6,7 @@
     "migrations": "through 20261021110400_settlement_adjustment_rejected_by_lock",
     "counts": {
       "trgm_gin_index": 3,
-      "index_missing_in_schema": 3,
+      "index_missing_in_schema": 2,
       "foreign_key_missing_in_schema": 11,
       "foreign_key_shape_mismatch": 3,
       "column_default_mismatch": 1,
@@ -42,11 +42,6 @@
       "category": "trgm_gin_index",
       "statement": "DROP INDEX \"FormSubmission_phone_trgm_idx\";",
       "reason": "pg_trgm GIN index (20260810051000_g7_54_form_submission_search_indexes); Prisma 6 cannot express gin_trgm_ops. Must never be dropped."
-    },
-    {
-      "category": "index_missing_in_schema",
-      "statement": "DROP INDEX \"CommerceOrder_vendorId_automationCustomerKeyHash_status_idx\";",
-      "reason": "Index created by a hand-written migration but not declared in schema.prisma. Fix by adding @@index(..., map: \"<name>\") to the model, then remove this entry."
     },
     {
       "category": "index_missing_in_schema",
