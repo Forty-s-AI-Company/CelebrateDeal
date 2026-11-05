@@ -5,6 +5,10 @@ import path from "node:path";
 import test from "node:test";
 
 import {
+  classifyPayUniBrowserPage,
+  classifyPlaywrightErrorKind,
+  createPayUniBrowserDiagnostic,
+  formatPayUniBrowserDiagnostic,
   prepareIssuedRecoveryCheckout,
   runMvpPayUniPaymentOnly,
   validatePaymentOnlyReceipt,
@@ -374,9 +378,17 @@ test("payment-only stops on ambiguous submission, rejects original source and ne
   const calls = [];
   const dependencies = successfulDependencies(calls);
   let submits = 0;
-  dependencies.browserSubmit = async () => { submits++; return "PAYMENT_CONFIRMATION_AMBIGUOUS"; };
+  const browserDiagnostic = createPayUniBrowserDiagnostic();
+  dependencies.browserDiagnostic = browserDiagnostic;
+  dependencies.browserSubmit = async (browserInput) => {
+    submits++;
+    // The CLI-owned diagnostic sink reaches the browser step unchanged.
+    assert.equal(browserInput.diagnostic, browserDiagnostic);
+    return "PAYMENT_CONFIRMATION_AMBIGUOUS";
+  };
   const receipt = await runMvpPayUniPaymentOnly(validInput, dependencies);
   assert.equal(submits, 1);
+  assert.equal(Object.hasOwn(receipt, "diagnostic"), false);
   assert.equal(receipt.result, "BLOCKED");
   assert.equal(receipt.failure, "PAYMENT_CONFIRMATION_AMBIGUOUS");
   assert.equal(receipt.sideEffects.callbackReplays, 0);
@@ -540,6 +552,57 @@ test("buyer browser captures only the exact signed Return POST after the real 30
   }, { playwright: { chromium: { async launch() { return browser; } }, errors: { TimeoutError } } });
   assert.deepEqual(result, { mapped: true, firstStatus: 303, signedReturnBody: signed,
     contentType: "application/x-www-form-urlencoded" });
+});
+
+test("a rejected PayUni card field records only the fixed step, error class and frame counts", async () => {
+  class TimeoutError extends Error { constructor(message) { super(message); this.name = "TimeoutError"; } }
+  const cardNumber = "4147631000000001";
+  const mainFrame = { marker: "main" };
+  const childFrame = { getByPlaceholder: (placeholder) => ({ count: async () => (placeholder === "MM/YY" ? 1 : 0) }) };
+  const typed = [];
+  const page = {
+    on() {}, async goto() {}, async route() {}, async waitForURL() {},
+    url: () => `https://sandbox-api.payuni.com.tw/api/upp?EncryptInfo=private-cipher&card=${cardNumber}`,
+    mainFrame: () => mainFrame,
+    frames: () => [mainFrame, childFrame],
+    getByText() { return { async click() {} }; },
+    getByPlaceholder(placeholder, options) {
+      if (options?.exact) return { count: async () => 0 };
+      return {
+        async pressSequentially(value) {
+          if (placeholder === "MM/YY") throw new TimeoutError(`locator.pressSequentially: Timeout 30000ms exceeded. waiting for getByPlaceholder('MM/YY') ${cardNumber}`);
+          typed.push(placeholder);
+          assert.equal(typeof value, "string");
+        },
+        async fill() {},
+      };
+    },
+    getByRole() { throw new Error("submit must not be reached"); },
+    locator() { return { async check() {} }; },
+  };
+  const browser = { async newContext() { return { async addCookies() {}, async newPage() { return page; },
+    request: { async post() { return { status: () => 200, ok: () => true }; } } }; }, async close() {} };
+  const diagnostic = createPayUniBrowserDiagnostic();
+  const result = await defaultBrowserSubmit({ previewHost, cardNumber, cardExpiry: "1230", cardCvv: "123",
+    formPayload: { MerID: "merchant" }, supportCookie: "celebrate_support_wp4=synthetic",
+    orderNumber: "CD-20300101000000-WP4A1", captureReturnCallback: true, diagnostic,
+  }, { playwright: { chromium: { async launch() { return browser; } }, errors: { TimeoutError } } });
+  assert.equal(result, "PAYMENT_FIELDS_REJECTED");
+  assert.deepEqual(typed, ["16 碼或 19 碼"]);
+  assert.deepEqual(diagnostic, { step: "CARD_EXPIRY", error: "TIMEOUT", page: "PAYUNI_UPP", mainFrameMatches: 0, childFrames: 1, childFrameMatches: 1 });
+  const line = formatPayUniBrowserDiagnostic(diagnostic);
+  assert.equal(line, "step=CARD_EXPIRY; error=TIMEOUT; page=PAYUNI_UPP; mainFrameMatches=0; childFrames=1; childFrameMatches=1");
+  assert.equal(line.includes(cardNumber), false);
+});
+
+test("browser diagnostic formatting rejects free text and unbounded counts", () => {
+  assert.equal(formatPayUniBrowserDiagnostic({ step: "https://private", error: "x y", page: "PAYUNI_UPP", mainFrameMatches: 42, childFrames: -1, childFrameMatches: "1" }),
+    "step=UNKNOWN; error=UNKNOWN; page=PAYUNI_UPP; mainFrameMatches=9; childFrames=UNKNOWN; childFrameMatches=UNKNOWN");
+  assert.equal(classifyPayUniBrowserPage(`https://${previewHost}/checkout/result?payment=updated`, previewHost), "OPERATION_HOST");
+  assert.equal(classifyPayUniBrowserPage("https://sandbox-vendor.payuni.com.tw/x", previewHost), "PAYUNI_OTHER_HOST");
+  assert.equal(classifyPayUniBrowserPage("https://evil.example.test/", previewHost), "OTHER");
+  assert.equal(classifyPlaywrightErrorKind(new Error("strict mode violation: getByPlaceholder resolved to 2 elements")), "STRICT_MODE");
+  assert.equal(classifyPlaywrightErrorKind("not an error"), "OTHER");
 });
 
 test("buyer fixture contract rejects stale five-entity and invalid counts", async () => {

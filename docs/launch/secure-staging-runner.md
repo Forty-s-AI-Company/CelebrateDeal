@@ -218,6 +218,29 @@ funnel 與 browser smoke 在執行期間的重新檢查走同一個邏輯。
 4. 依序重跑 `staging-funnel-smoke`、`staging-browser-smoke`（`fixed_alias`）與 secure-staging-validation 的
    WP4 task，確認閘門輸出 `mvp_payuni_lineage=PASS; reason=VERIFIED`。
 
+### #542 合併後首次執行的診斷（2026-11-03，部署 `cd901c3e`）
+
+六個 workflow 的 lineage 與 alias 自證都 PASS；後續失敗都不是 alias 假設造成的：
+
+| Run | 結果 | 根因 | 處理 |
+|---|---|---|---|
+| 41604147001 `wp4-payuni-sandbox-payment-only` | `PAYMENT_FIELDS_REJECTED` | 已過付款預約（server 端 `wp4PaymentSubmissionReserved` 已標記），在 PayUni Sandbox 頁面「選一次付清」之後、填卡號／到期日／CVV／Email 其中一欄時逾時。log 沒說是哪一欄，也無法區分欄位改名、改成 iframe，或其他原因。 | runner 現在會多印一行 `wp4_payuni_browser_diagnostic=step=<CARD_NUMBER/CARD_EXPIRY/CARD_CVV/EMAIL/...>; error=<TIMEOUT/...>; page=<PAYUNI_UPP/...>; mainFrameMatches=n; childFrames=n; childFrameMatches=n`，只有固定代碼與 0–9 的計數。 |
+| 41604158597 `wp4-payuni-sandbox-reconciliation` | `PAYMENT_ATTEMPT_ALREADY_RESERVED`（只在 artifact） | 與 payment-only 同一個 `source_sha`、同時派送。兩者都是 `buyer_order`，每個 sha 只允許一次 PayUni 送出；payment-only 先預約，reconciliation 就被拒。這是設計，不是 bug。 | stdout 現在印出 `mvp_payuni_sandbox_e2e=BLOCKED; failure=<代碼>`（訂閱 task 也一樣）。 |
+| 41604164926 `line-notifications-e2e` | `RECEIPT_FILE_MISSING; diagnostic=NONE` | `Preview – celebrate-deal-staging` environment 沒有任何 LINE 用的 secret／variable，step 停在 `require_database_binding`，沒有寫 receipt。 | step 先印 `secure_line_missing_bindings=<名稱>`（只有名稱）；validator 讀固定的 stage 檔，改印 `diagnostic=RUNNER_STAGE_<STAGE>`。 |
+| 41604170566 `staging-funnel-smoke` | `BROWSER_EXECUTION_FAILED; stage=CREATE` | runner 的 selector 過時：#498 之後建立頁的網址欄是「一頁式網站網址 *」（舊：「Funnel 網址 *」），送出鈕是「建立」（舊：「儲存」）。 | 改用與 CI e2e（`tests/e2e/landing-page-flow.spec.ts`）相同的 label；失敗時多記 `failureStep`、`failureCategory`、`failurePage`。 |
+| 41604176472 `staging-browser-smoke` | `BROWSER_EXECUTION_FAILED`（`HYDRATION_INTERACTION`/`TIMEOUT`/`product_edit`） | 已知的過時處：Dashboard 標題是「營運總覽」（舊：「Dashboard」），商品列表是「商品」（舊：「商品管理」），就算互動通過也會 `BROWSER_JOURNEY_FAILED`。商品編輯頁的交付方式互動在本機正式建置（實體商品、同一組 selector）四步都能通過，staging 上逾時的步驟仍未確定。 | 標題更新；改用 `select[name="fulfillmentType"]`（與 CI e2e 相同）；失敗時多記 `failureStep`（哪個等待）、`failurePath`（路由類別）與 `failureDom`（select 數、選中的固定選項、交付設定區塊數、是否出現全站錯誤頁）。 |
+
+`scripts/staging-smoke-selectors.test.mjs`（由 `npm run test:contracts` 執行）會在 PR 改掉這些標題或 label 時直接失敗，不用等 staging 才發現。
+
+**重新派送注意**
+
+1. `cd901c3e` 的 buyer 交易已被 payment-only 預約，之後對同一個 sha 跑 payment-only 或 reconciliation 都會得到
+   `PAYMENT_ATTEMPT_ALREADY_RESERVED`。需要合併新的 commit、讓 alias 指到新部署後，用新的 sha 重跑；
+   每個 sha **只派送** payment-only 與 reconciliation 其中之一。
+2. callback-retry、payment-check 等「既有交易」task 綁固定的歷史 sha，不受影響。
+3. LINE 要等 owner 在 environment 補齊 secret 後再派送；否則只會得到 `secure_line_missing_bindings=...`。
+4. browser smoke 與 funnel smoke 不會碰付款，可以先派送；失敗時看 artifact 的 `failureStep`／`failureDom`。
+
 ## 執行與網路邊界
 
 依賴安裝、contract tests 與 PostgreSQL image pull 都在注入 Secret 前完成。
