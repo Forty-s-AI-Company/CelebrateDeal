@@ -3,7 +3,9 @@ import { notFound } from "next/navigation";
 import { PolicyDocument } from "@/components/public-policy";
 import { publicPolicies, resolvePublicPolicy } from "@/lib/public-policy-content";
 
-// 生效狀態依台灣時間的日期在轉譯時判斷，每小時重新產生一次，生效日過後頁面會自動更新。
+// 生效狀態依台灣時間的日期在轉譯時判斷。F-156 起 root layout 讀取每次請求的 CSP nonce，
+// 所有頁面都是動態渲染，這裡的 revalidate 與 generateStaticParams 目前沒有作用（每次請求都重新判斷）；
+// 保留是為了日後若改用不需 nonce 的靜態政策頁時仍維持每小時更新的契約。
 export const revalidate = 3600;
 
 function resolvePolicy(slug: string) {

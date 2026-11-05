@@ -7,9 +7,16 @@ import {
 import { isLiveVideoReady, liveReadyVideoWhere } from "@/lib/live-video-readiness";
 import { resolveLiveRuntime } from "@/lib/live-runtime-state";
 import { parseRegistrationFormFields } from "@/lib/registration-form-fields";
+import { ACTIVE_VENDOR_RELATION } from "@/lib/vendor-suspension-state";
 
+/**
+ * Every audience read of a Live (watch page, evergreen session, quota
+ * admission, playback source) goes through this predicate. A suspended
+ * vendor's lives are not public (F-036).
+ */
 export function publicLiveAvailabilityWhere(): Prisma.LiveWhereInput {
   return {
+    ...ACTIVE_VENDOR_RELATION,
     OR: [
       { status: { in: ["scheduled", "live"] } },
       { status: "ended", replayEnabled: true },

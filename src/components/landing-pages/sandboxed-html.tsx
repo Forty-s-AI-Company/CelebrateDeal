@@ -2,11 +2,14 @@
 
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { safeContentHref } from "@/lib/safe-url";
+import { FUNNEL_CUSTOM_CODE_SANDBOX_PATH } from "@/lib/content-security-policy";
 import {
   buildFunnelCustomCodeSrcDoc,
   FUNNEL_CUSTOM_CODE_DEFAULT_HEIGHT,
+  FUNNEL_CUSTOM_CODE_DOCUMENT_MESSAGE,
   FUNNEL_CUSTOM_CODE_MAX_HEIGHT,
   funnelCustomCodeSandbox,
+  isFunnelCustomCodeReadyMessage,
   parseFunnelCustomCodeHeightMessage,
   type FunnelCustomCode,
   type FunnelCustomCodeMode,
@@ -77,10 +80,12 @@ function clampHeight(value: number | undefined): number {
 
 /**
  * 自訂程式碼 iframe。
- * - static：sandbox=""，HTML 先 sanitize，不執行任何腳本，固定高度。
+ * - static：sandbox=""，srcdoc，HTML 先 sanitize，不執行任何腳本，固定高度。
  * - script：sandbox="allow-scripts"（公開頁另加 allow-popups 與
- *   allow-popups-to-escape-sandbox），商家 HTML／CSS／JS 原樣在不透明來源執行；
- *   高度只接受來自這個 iframe（event.source）且在範圍內的數字。
+ *   allow-popups-to-escape-sandbox），載入同源沙箱文件（自帶 CSP，不繼承父頁的
+ *   nonce CSP；F-156），收到該 iframe 的 ready 後以 postMessage 送出商家
+ *   HTML／CSS／JS，在不透明來源執行；高度只接受來自這個 iframe（event.source）
+ *   且在範圍內的數字。
  */
 export function SandboxedCustomCode({ code, mode: requestedMode, label, height }: { code: FunnelCustomCode; mode: FunnelCustomCodeMode; label: string; height?: number }) {
   const { allowPopups, scriptsEnabled } = useContext(FunnelCustomCodeSurfaceContext);
@@ -92,22 +97,32 @@ export function SandboxedCustomCode({ code, mode: requestedMode, label, height }
   const srcDoc = buildFunnelCustomCodeSrcDoc(mode === "static" ? { html: sanitizeFunnelHtml(code.html), css: code.css, js: "" } : code, mode);
   useEffect(() => {
     if (mode !== "script") return;
+    // 不透明來源無法指定 targetOrigin；內容就是這個區塊的商家程式碼本身。
+    const sendDocument = () => frameRef.current?.contentWindow?.postMessage({ type: FUNNEL_CUSTOM_CODE_DOCUMENT_MESSAGE, html: srcDoc }, "*");
     const onMessage = (event: MessageEvent) => {
       const frameWindow = frameRef.current?.contentWindow;
       // 只信任這個 iframe 自己的訊息；event.origin 對不透明來源永遠是 "null"，不能用來判斷。
       if (!frameWindow || event.source !== frameWindow) return;
+      if (isFunnelCustomCodeReadyMessage(event.data)) {
+        sendDocument();
+        return;
+      }
       const next = parseFunnelCustomCodeHeightMessage(event.data);
       if (next !== null) setReportedHeight(next);
     };
     window.addEventListener("message", onMessage);
+    // 沙箱文件可能在 hydration 前就送出 ready；已載入時這次會被它接收，尚未載入時會被丟棄。
+    sendDocument();
     return () => window.removeEventListener("message", onMessage);
-  }, [mode]);
+  }, [mode, srcDoc]);
   const frame = <iframe
+    // 程式碼改變時換一個 iframe：沙箱文件只接受第一份文件。
+    key={mode === "script" ? srcDoc : "static"}
     ref={frameRef}
     title={label}
     sandbox={funnelCustomCodeSandbox(mode, { popups: allowPopups })}
     referrerPolicy="no-referrer"
-    srcDoc={srcDoc}
+    {...(mode === "script" ? { src: FUNNEL_CUSTOM_CODE_SANDBOX_PATH } : { srcDoc })}
     data-funnel-custom-code={mode}
     style={{ height: `${reportedHeight ?? initialHeight}px` }}
     className="block w-full border-0"

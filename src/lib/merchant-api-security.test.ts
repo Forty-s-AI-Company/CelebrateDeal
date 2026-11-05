@@ -53,6 +53,17 @@ describe("requireMerchantApiActor", () => {
     expect(mocks.verifyCsrfToken).not.toHaveBeenCalled();
   });
 
+  it("answers VENDOR_SUSPENDED for a member of a suspended vendor before the CSRF check (F-036)", async () => {
+    mocks.getCurrentAuth.mockResolvedValue({ vendor: null, member: null, suspendedVendor: { id: "suspended-vendor", name: "A", suspendedAt: new Date() } });
+
+    const result = await requireMerchantApiActor(request());
+
+    expect(result.actor).toBeUndefined();
+    expect(result.response?.status).toBe(403);
+    await expect(result.response?.json()).resolves.toEqual({ error: { code: "VENDOR_SUSPENDED" } });
+    expect(mocks.verifyCsrfToken).not.toHaveBeenCalled();
+  });
+
   it.each([
     { member: { id: "member-1", status: "inactive", role: "owner" } },
     { member: { id: "member-1", status: "active", role: "member" } },

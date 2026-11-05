@@ -6,7 +6,7 @@ import {
 } from "@/lib/commerce-orders";
 import { getDb } from "@/lib/db";
 import { releasePostPurchaseCreditForTerminalPayment } from "@/lib/post-purchase-credit-release";
-import { runSerializable as runSharedSerializable } from "@/lib/serializable-retry";
+import { isTransientTransactionConflict, runSerializable as runSharedSerializable } from "@/lib/serializable-retry";
 
 export const INVENTORY_RESERVATION_TTL_MS = 30 * 60 * 1000;
 
@@ -178,6 +178,9 @@ function runSerializable<T>(
 ) {
   return runSharedSerializable(getDb(), operation, {
     ...policy,
+    // F-036: a raw `FOR SHARE` read (order paid transition) reports a
+    // serialization failure as 40001 rather than P2034; retry both.
+    retryOn: isTransientTransactionConflict,
     // Production intentionally runs with a small serverless connection
     // pool. Concurrent checkout attempts should queue long enough to
     // resolve through the inventory invariant, not fail at pool admission.

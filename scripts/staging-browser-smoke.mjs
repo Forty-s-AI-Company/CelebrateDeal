@@ -9,13 +9,93 @@ const STAGING_ALIAS = STAGING_ALIAS_HOST;
 const VERCEL_SCOPE = "a25814740s-projects";
 const VERCEL_PROJECT = "celebrate-deal-staging";
 const PRODUCT_ID = "wp4_synthetic_product_v1";
-const ROUTES = [
-  { id: "dashboard", path: "/dashboard", heading: "Dashboard" },
-  { id: "products", path: "/products", heading: "商品管理" },
+// Headings follow the merged UI copy (PageHeader titles); scripts/staging-smoke-selectors.test.mjs
+// fails when a page renames them, so the staging run cannot silently go stale again.
+export const ROUTES = [
+  { id: "dashboard", path: "/dashboard", heading: "營運總覽" },
+  { id: "products", path: "/products", heading: "商品" },
   { id: "product_preview", path: `/products/${PRODUCT_ID}/preview`, heading: "商品預覽" },
   { id: "product_edit", path: `/products/${PRODUCT_ID}/edit`, heading: "編輯商品" },
   { id: "billing_plans", path: "/billing/plans", heading: "方案" },
 ];
+
+// The app-shell navigation lands on the product list; same PageHeader title as ROUTES.products.
+export const PRODUCTS_HEADING = ROUTES.find((route) => route.id === "products").heading;
+export const FULFILLMENT_SELECT = 'select[name="fulfillmentType"]';
+export const DELIVERY_GROUP_NAME = "付款後交付設定";
+const GLOBAL_ERROR_HEADING = "系統暫時無法顯示這個頁面";
+const BROWSER_FAILURE_STEPS = new Set([
+  "NONE", "FULFILLMENT_HYDRATED", "FULFILLMENT_SELECT_DIGITAL", "DELIVERY_GROUP_VISIBLE", "FULFILLMENT_SELECT_PHYSICAL", "DELIVERY_GROUP_HIDDEN",
+  "NAV_MORE_OPEN", "NAV_MORE_PRODUCTS_LINK", "NAV_PRODUCTS_LINK", "NAV_PRODUCTS_URL",
+]);
+const FULFILLMENT_VALUES = new Set(["physical", "digital", "service", "course"]);
+const READY_STATES = new Set(["loading", "interactive", "complete"]);
+const HYDRATION_TIMEOUT_MS = 20_000;
+
+/**
+ * True once React has attached its props to the element (React DOM stores them under a
+ * `__reactProps$<random>` key during hydration). Runs in the page; returns only a boolean.
+ */
+export function elementHydratedInPage(selector) {
+  const element = document.querySelector(selector);
+  return Boolean(element) && Object.keys(element).some((key) => key.startsWith("__reactProps$"));
+}
+
+/**
+ * 2026-11-05 run 42064913257: the select already showed "digital" but the delivery fieldset
+ * never rendered. `page.goto` only waits for DOMContentLoaded, so on staging the option was
+ * chosen on server HTML before React hydrated the form; the change event never reached React
+ * state. Wait for React to own the select before interacting.
+ */
+export async function waitForFulfillmentHydration(page, timeout = HYDRATION_TIMEOUT_MS) {
+  await page.waitForFunction(elementHydratedInPage, FULFILLMENT_SELECT, { timeout });
+}
+
+export function browserFailureStep(step) {
+  return BROWSER_FAILURE_STEPS.has(step) ? step : "UNKNOWN";
+}
+
+/** Path class of the page when the browser stopped; ROUTES ids only, never the URL. */
+export function classifyFailurePath(url, targetHost = STAGING_ALIAS) {
+  try {
+    const parsed = new URL(url);
+    if (parsed.href === "about:blank") return "BLANK";
+    if (parsed.hostname !== targetHost) return "OFF_HOST";
+    const route = ROUTES.find((item) => item.path === parsed.pathname);
+    if (route) return route.id.toUpperCase();
+    if (/^\/(?:login|mfa)(?:\/|$)/u.test(parsed.pathname)) return "AUTH_REDIRECT";
+    return "OTHER_SAME_HOST";
+  } catch { return "INVALID_URL"; }
+}
+
+/**
+ * DOM counts for the product-edit interaction after a failure: is the select there, which
+ * fixed option is selected, is the delivery group rendered, did the root error boundary
+ * replace the page. Counts are bounded to 0-9; the option value is a fixed enum.
+ */
+export async function captureFailureDom(page) {
+  const bounded = (value) => (Number.isSafeInteger(value) && value >= 0 ? Math.min(value, 9) : null);
+  const within = (promise) => Promise.race([promise, new Promise((resolve) => { setTimeout(() => resolve(null), 1_500); })]);
+  try {
+    const select = page.locator(FULFILLMENT_SELECT);
+    const selectCount = bounded(await within(select.count()));
+    const selected = selectCount === 1 ? await within(select.inputValue({ timeout: 1_000 }).catch(() => null)) : null;
+    // Booleans and a fixed enum only; the page function never returns DOM text.
+    const hydrated = typeof page.evaluate === "function"
+      ? await within(page.evaluate(elementHydratedInPage, FULFILLMENT_SELECT).catch(() => null)) : null;
+    const readyState = typeof page.evaluate === "function"
+      ? await within(page.evaluate(() => document.readyState).catch(() => null)) : null;
+    return {
+      fulfillmentSelects: selectCount,
+      fulfillmentValue: FULFILLMENT_VALUES.has(selected) ? selected : selectCount === 1 ? "OTHER" : "NONE",
+      fulfillmentHydrated: typeof hydrated === "boolean" ? hydrated : null,
+      documentReadyState: READY_STATES.has(readyState) ? readyState : "UNKNOWN",
+      deliveryGroups: bounded(await within(page.getByRole("group", { name: DELIVERY_GROUP_NAME }).count())),
+      globalErrorVisible: (await within(page.getByRole("heading", { name: GLOBAL_ERROR_HEADING, exact: true }).count())) > 0,
+      mainContent: bounded(await within(page.locator("#main-content").count())),
+    };
+  } catch { return null; }
+}
 
 /** Match only the fixed read-only Dashboard details endpoint; never persist the URL. */
 export function isDashboardDetailsGet(request, targetHost = STAGING_ALIAS) {
@@ -51,6 +131,9 @@ function emptyReport(reason = "NOT_RUN", sourceSha = null) {
       unsafeRequestDetails: { vercelTelemetry: 0, sentryTunnel: 0, cspReportApi: 0, analyticsApi: 0, authApi: 0, otherApi: 0, other: 0 },
       executionPhase: "NOT_STARTED", failureCategory: "NONE",
       activeViewport: "NONE", activeRoute: "NONE",
+      // Fixed name of the wait that threw, the route class the page was on, and DOM counts
+      // for the product-edit interaction. Never a URL, selector text from the page, or value.
+      failureStep: "NONE", failurePath: "NONE", failureDom: null,
     },
     sideEffects: { syntheticSessionCreated: 0, syntheticSessionRevoked: 0, checkoutPosts: 0, paymentSubmissions: 0, uploads: 0, emails: 0 },
   };
@@ -397,6 +480,8 @@ export async function runBrowserSmoke(env = process.env, dependencies = {}) {
     args: ["--no-proxy-server", "--disable-quic"],
   });
   let cleanupFailed = false;
+  let activeStep = "NONE";
+  let activePage = null;
   try {
     for (const viewport of [{ id: "desktop", width: 1365, height: 768 }, { id: "mobile", width: 390, height: 844 }]) {
       report.browser.activeViewport = viewport.id;
@@ -468,6 +553,7 @@ export async function runBrowserSmoke(env = process.env, dependencies = {}) {
         sessionIssued = true;
         report.browser.executionPhase = "PAGE_OPEN";
         const page = await context.newPage();
+        activePage = page;
         let navigationProgress = null;
         const dashboardDetailsNetwork = { requests: 0, responses: 0, finished: 0, failures: 0, lastStatusClass: "NONE" };
         page.on("pageerror", () => { report.browser.pageErrors += 1; });
@@ -572,11 +658,21 @@ export async function runBrowserSmoke(env = process.env, dependencies = {}) {
           if (route.id === "product_edit") {
             report.browser.executionPhase = "HYDRATION_INTERACTION";
             // React state alone reveals this fieldset; do not submit or persist the form.
-            await page.getByLabel("交付方式").selectOption("digital", { timeout: 8_000 });
-            const deliverySettings = page.getByRole("group", { name: "付款後交付設定" });
+            // The select is addressed by its form name, as in tests/e2e/commerce-orders.spec.ts:
+            // its wrapping label also contains every option's text.
+            const fulfillmentType = page.locator(FULFILLMENT_SELECT);
+            const deliverySettings = page.getByRole("group", { name: DELIVERY_GROUP_NAME });
+            activeStep = "FULFILLMENT_HYDRATED";
+            await waitForFulfillmentHydration(page);
+            activeStep = "FULFILLMENT_SELECT_DIGITAL";
+            await fulfillmentType.selectOption("digital", { timeout: 8_000 });
+            activeStep = "DELIVERY_GROUP_VISIBLE";
             await deliverySettings.waitFor({ state: "visible", timeout: 8_000 });
-            await page.getByLabel("交付方式").selectOption("physical", { timeout: 8_000 });
+            activeStep = "FULFILLMENT_SELECT_PHYSICAL";
+            await fulfillmentType.selectOption("physical", { timeout: 8_000 });
+            activeStep = "DELIVERY_GROUP_HIDDEN";
             await deliverySettings.waitFor({ state: "hidden", timeout: 8_000 });
+            activeStep = "NONE";
             report.browser.hydrationInteractionsPassed += 1;
           }
         }
@@ -584,15 +680,28 @@ export async function runBrowserSmoke(env = process.env, dependencies = {}) {
         report.browser.executionPhase = "APP_NAVIGATION";
         if (viewport.id === "mobile") {
           // F-122: 手機底部導覽只列 4 個常用入口，商品在「更多」抽屜內。
+          activeStep = "NAV_MORE_OPEN";
           await page.locator(`${appNavigationSelectorForViewport("mobile")} button[aria-haspopup="dialog"]`).click({ timeout: 8_000 });
+          activeStep = "NAV_MORE_PRODUCTS_LINK";
           await page.locator('[role="dialog"][aria-label="更多功能"] a[href="/products"]').click({ timeout: 8_000 });
         } else {
+          activeStep = "NAV_PRODUCTS_LINK";
           await page.locator(`${appNavigationSelectorForViewport(viewport.id)} a[href="/products"]`).click({ timeout: 8_000 });
         }
+        activeStep = "NAV_PRODUCTS_URL";
         await page.waitForURL(`${origin}/products`, { timeout: 8_000 });
+        activeStep = "NONE";
         const navigationPassed = classifyFinalPath(page.url(), "/products", targetHost) === "EXPECTED"
-          && await visible(page.getByRole("heading", { name: "商品管理", exact: true }));
+          && await visible(page.getByRole("heading", { name: PRODUCTS_HEADING, exact: true }));
         if (navigationPassed) report.browser.navigationInteractionsPassed += 1;
+      } catch (error) {
+        // Capture while the page is still open; the context closes in finally.
+        report.browser.failureStep = browserFailureStep(activeStep);
+        if (activePage) {
+          try { report.browser.failurePath = classifyFailurePath(activePage.url(), targetHost); } catch { report.browser.failurePath = "INVALID_URL"; }
+          if (report.browser.activeRoute === "product_edit") report.browser.failureDom = await captureFailureDom(activePage);
+        }
+        throw error;
       } finally {
         if (sessionIssued) {
           try {

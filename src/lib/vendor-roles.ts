@@ -14,6 +14,8 @@
  * (manager, support, finance, owner) decides on its own. Roles stored in
  * production have not been inventoried, so they are not locked out here.
  */
+import { VENDOR_SUSPENDED_PATH } from "@/lib/vendor-suspension-state";
+
 export const VENDOR_PARTNER_ROLE = "partner" as const;
 export const PARTNER_PORTAL_PATH = "/affiliate-portal";
 
@@ -38,8 +40,10 @@ export function accountSecurityPath(auth: { isPlatformAdmin: boolean; partnerPor
 }
 
 /** Where a signed-in account lands by default: platform back office, merchant back office or partner portal. */
-export function signedInHomePath(auth: { isPlatformAdmin: boolean; partnerPortalOnly?: boolean }) {
+export function signedInHomePath(auth: { isPlatformAdmin: boolean; partnerPortalOnly?: boolean; suspendedVendor?: unknown }) {
   if (auth.isPlatformAdmin) return "/admin/billing/dashboard";
+  // F-036: a member of a suspended vendor only ever sees the suspended page.
+  if (auth.suspendedVendor) return VENDOR_SUSPENDED_PATH;
   return auth.partnerPortalOnly ? PARTNER_PORTAL_PATH : "/dashboard";
 }
 

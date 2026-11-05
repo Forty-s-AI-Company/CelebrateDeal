@@ -9,6 +9,7 @@ import { checkRateLimit } from "@/lib/rate-limit";
 import { resolveBuyerSupportGrant } from "@/lib/buyer-support-access";
 import { issuePostPurchaseCheckoutToken, postPurchaseCheckoutHref } from "@/lib/post-purchase-upsell";
 import { resolvePaidOrderPostPurchaseOffer } from "@/lib/post-purchase-upsell-access";
+import { isVendorAvailableForPublic } from "@/lib/vendor-suspension-state";
 
 const RequestSchema = z.object({
   grantId: z.string().trim().min(1).max(191).regex(/^[A-Za-z0-9_-]+$/u),
@@ -27,6 +28,8 @@ async function choose(request: Request): Promise<Response> {
   const db = getDb(); const cookieStore = await cookies();
   const initialGrant = await resolveBuyerSupportGrant(db, cookieStore, parsed.data.grantId);
   if (!initialGrant || initialGrant.order.status !== "paid") return json({ error: "Post-purchase offer unavailable" }, 404);
+  // F-036: a suspended vendor makes no post-purchase offer (answered like an unavailable one).
+  if (!await isVendorAvailableForPublic(db, initialGrant.vendorId)) return json({ error: "Post-purchase offer unavailable" }, 404);
   // A verified grant owns the decision bucket. Forged forwarded headers cannot
   // rotate its identity or bypass the bounded retry limit.
   const identity = createHash("sha256").update(initialGrant.id).digest("hex");

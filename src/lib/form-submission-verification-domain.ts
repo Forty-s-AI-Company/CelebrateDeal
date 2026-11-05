@@ -5,6 +5,7 @@ import type { EvergreenLiveRecord } from "@/lib/evergreen-viewer-session";
 import { verifyFormSubmissionVerificationToken } from "@/lib/form-submission-verification";
 import { enqueueAuthoritativeTrackingEvent } from "@/lib/tracking-event-outbox";
 import type { TrackingBrowserContext } from "@/lib/tracking-browser-context";
+import { isVendorSuspended } from "@/lib/vendor-suspension-state";
 
 export type FormSubmissionVerificationResult =
   | { status: "invalid" }
@@ -105,7 +106,7 @@ export async function verifyFormSubmission(
         form: {
           select: {
             vendorId: true,
-            vendor: { select: { name: true, senderName: true, supportEmail: true, contactUrl: true, timezone: true } },
+            vendor: { select: { name: true, senderName: true, supportEmail: true, contactUrl: true, timezone: true, suspendedAt: true } },
           },
         },
         affiliateClick: {
@@ -151,7 +152,8 @@ export async function verifyFormSubmission(
         },
       },
     });
-    if (!submission) return { status: "invalid" as const };
+    // F-036: a suspended vendor's link verifies nothing (same answer as an invalid link).
+    if (!submission || isVendorSuspended(submission.form.vendor)) return { status: "invalid" as const };
     if (
       submission.liveId !== null
       && (!submission.live

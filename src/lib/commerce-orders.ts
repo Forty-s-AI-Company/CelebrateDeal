@@ -43,6 +43,7 @@ export type CommerceOrdersTransaction = Pick<
   | "vendor"
   | "learnerNotificationSourceEvent"
   | "trackingSetting"
+  | "$queryRaw"
 >;
 
 type OrderRecord = {
@@ -621,6 +622,18 @@ async function grantPaidEntitlements(
   return granted.count;
 }
 
+/**
+ * F-036: a suspended vendor's paid callback is still recorded (the buyer's
+ * money already moved), but access is not opened. `FOR SHARE` makes a
+ * concurrent suspend/resume wait for this transaction (or abort it as a
+ * serialization failure that the payment retry absorbs), so `resumeVendor`
+ * always sees the entitlements this transaction left pending.
+ */
+async function vendorFulfillmentHeld(tx: CommerceOrdersTransaction, vendorId: string) {
+  const rows = await tx.$queryRaw<Array<{ suspendedAt: Date | null }>>`SELECT "suspendedAt" FROM "Vendor" WHERE "id" = ${vendorId} FOR SHARE`;
+  return rows[0]?.suspendedAt instanceof Date;
+}
+
 /** Reconciles a provider paid or failed notification without ever downgrading paid money. */
 export async function reconcileCommerceOrderPaymentTransition(
   tx: CommerceOrdersTransaction,
@@ -634,7 +647,8 @@ export async function reconcileCommerceOrderPaymentTransition(
   const dedupKey = `payment.${input.transition}:${input.eventIdentity}`;
   const now = input.occurredAt ?? new Date();
   if (await eventExists(tx, input.vendorId, order.id, dedupKey)) {
-    if (input.transition === "paid" && ["paid", "partially_refunded"].includes(order.status)) {
+    if (input.transition === "paid" && ["paid", "partially_refunded"].includes(order.status)
+      && !await vendorFulfillmentHeld(tx, input.vendorId)) {
       await grantPaidEntitlements(tx, input.vendorId, order.id, now);
     }
     return { orderId: order.id, changed: false, status: order.status };
@@ -642,7 +656,7 @@ export async function reconcileCommerceOrderPaymentTransition(
 
   if (input.transition === "paid") {
     if (["paid", "partially_refunded", "refunded"].includes(order.status)) {
-      if (order.status !== "refunded") {
+      if (order.status !== "refunded" && !await vendorFulfillmentHeld(tx, input.vendorId)) {
         await grantPaidEntitlements(tx, input.vendorId, order.id, now);
       }
       return { orderId: order.id, changed: false, status: order.status };
@@ -659,9 +673,15 @@ export async function reconcileCommerceOrderPaymentTransition(
       data: { status: "paid", paidAmountCents: order.totalAmountCents, paidAt: now, failedAt: null },
     });
     if (updated.count !== 1) throw new CommerceOrderConflictError();
-    const grantedEntitlementCount = await grantPaidEntitlements(tx, input.vendorId, order.id, now);
-    await appendEvent(tx, { vendorId: input.vendorId, orderId: order.id, dedupKey, eventType: "payment.paid", occurredAt: now, data: sanitizedOrderData({ ...order, status: "paid", paidAmountCents: order.totalAmountCents }, { paymentTransactionId: input.paymentTransactionId, paidAmountCents: order.totalAmountCents, grantedEntitlementCount }) });
-    await recordLearnerPaymentNotificationSources(tx, { vendorId: input.vendorId, orderId: order.id, customerKeyHash: order.automationCustomerKeyHash ?? null, occurredAt: now });
+    // F-036: the money is recorded either way. A suspended vendor's order stays
+    // un-provisioned (entitlements pending, no learner notifications) until
+    // resumeVendor releases it.
+    const fulfillmentHeld = await vendorFulfillmentHeld(tx, input.vendorId);
+    const grantedEntitlementCount = fulfillmentHeld ? 0 : await grantPaidEntitlements(tx, input.vendorId, order.id, now);
+    await appendEvent(tx, { vendorId: input.vendorId, orderId: order.id, dedupKey, eventType: "payment.paid", occurredAt: now, data: sanitizedOrderData({ ...order, status: "paid", paidAmountCents: order.totalAmountCents }, { paymentTransactionId: input.paymentTransactionId, paidAmountCents: order.totalAmountCents, grantedEntitlementCount, ...(fulfillmentHeld ? { fulfillmentHeld: "vendor_suspended" } : {}) }) });
+    if (!fulfillmentHeld) {
+      await recordLearnerPaymentNotificationSources(tx, { vendorId: input.vendorId, orderId: order.id, customerKeyHash: order.automationCustomerKeyHash ?? null, occurredAt: now });
+    }
     return { orderId: order.id, changed: true, status: "paid" as const };
   }
 
@@ -828,6 +848,10 @@ export async function reconcileCommerceOrderRefund(
   await tx.commerceOrderRefund.create({
     data: { id: refundId, vendorId: input.vendorId, orderId: order.id, paymentTransactionId: input.paymentTransactionId ?? order.primaryPaymentTransactionId, refundRecordId: input.refundRecordId ?? null, providerName: input.providerName, eventIdentity: input.eventIdentity, amountCents: input.amountCents, cumulativeAmountCents: nextRefundedAmount, status: "processed", occurredAt: input.occurredAt },
   });
+  // A refund deliberately does not end the buyer's learner portal session
+  // (F-030 review): the revoked entitlement is refused per request (404), and
+  // a refunded buyer must stay signed in to withdraw notification consent for
+  // the refunded product (tests/e2e/learner-notifications.spec.ts).
   const fulfillmentConvergence = nextStatus === "refunded"
     ? await convergeFullRefundFulfillment(tx, input.vendorId, order.id, input.occurredAt)
     : null;

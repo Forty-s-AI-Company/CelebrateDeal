@@ -1261,6 +1261,297 @@ export async function prepareIssuedRecoveryCheckout(input, dependencies = {}) {
   }
 }
 
+// PayUni hosted payment page fields, in the order the runner fills them. `placeholder` is the
+// selector proven on the UPP page; `fallback` is the standard autofill attribute, used only when
+// the placeholder times out and exactly one visible element matches (2026-11-05 run 42064928350:
+// no card-number placeholder and no iframe on the UPP page).
+export const PAYUNI_CARD_FIELDS = Object.freeze([
+  Object.freeze({ step: "CARD_NUMBER", placeholder: "16 碼或 19 碼", fallback: 'input[autocomplete="cc-number"]' }),
+  Object.freeze({ step: "CARD_EXPIRY", placeholder: "MM/YY", fallback: 'input[autocomplete="cc-exp"]' }),
+  Object.freeze({ step: "CARD_CVV", placeholder: "***", fallback: 'input[autocomplete="cc-csc"]' }),
+  Object.freeze({ step: "EMAIL", placeholder: "example@example.com", fallback: 'input[type="email"]' }),
+]);
+// Credit-card tab on the UPP page; clicked only when no card-number field is found.
+export const PAYUNI_CREDIT_TAB_TEXT = "信用卡";
+const PAYUNI_FIELD_TIMEOUT_MS = 20_000;
+const PAYUNI_FALLBACK_WAIT_MS = 10_000;
+const PAYUNI_BROWSER_STEPS = new Set(["NONE", "METHOD", ...PAYUNI_CARD_FIELDS.map((field) => field.step), "SUBMIT"]);
+const DIAGNOSTIC_ENUM = /^[A-Z_]{1,24}$/u;
+const FIELD_SOURCES = new Set(["NONE", "PLACEHOLDER", "AUTOCOMPLETE", "PLACEHOLDER_AFTER_TAB", "AUTOCOMPLETE_AFTER_TAB"]);
+const CREDIT_TAB_RESULTS = new Set(["NOT_TRIED", "CLICKED", "NOT_FOUND", "AMBIGUOUS"]);
+const RESOURCE_FAILURE_KEYS = Object.freeze(["payuniScript", "payuniOther", "externalScript", "externalOther"]);
+
+/**
+ * De-identified diagnostic for a failed PayUni page step. It holds only fixed enums and
+ * small bounded counts: never a URL, provider text, card value, e-mail or identifier.
+ */
+export function createPayUniBrowserDiagnostic() {
+  return {
+    step: "NONE", error: "NONE", page: "NONE", mainFrameMatches: null, childFrames: null, childFrameMatches: null,
+    fieldSource: "NONE", creditTab: "NOT_TRIED",
+    // Sub-resource failures after the PayUni document opened (egress allowlist, CDN move). Counts only.
+    resourceFailures: { payuniScript: 0, payuniOther: 0, externalScript: 0, externalOther: 0 },
+    // Sanitized form-structure summary of the PayUni page; see sanitizePayUniPageStructure.
+    structure: null,
+  };
+}
+
+/** Count a failed sub-resource of the PayUni page by host class and type; never the URL. */
+export function recordPayUniResourceFailure(diagnostic, request) {
+  if (!diagnostic?.resourceFailures) return;
+  try {
+    if (request.isNavigationRequest()) return;
+    const host = new URL(request.url()).hostname;
+    const script = request.resourceType() === "script";
+    const payuni = host === "payuni.com.tw" || host.endsWith(".payuni.com.tw");
+    const key = payuni ? (script ? "payuniScript" : "payuniOther") : (script ? "externalScript" : "externalOther");
+    diagnostic.resourceFailures[key] += 1;
+  } catch { /* Unclassifiable failures are not counted. */ }
+}
+
+export function markPayUniBrowserStep(diagnostic, step) {
+  if (diagnostic && typeof diagnostic === "object" && PAYUNI_BROWSER_STEPS.has(step)) diagnostic.step = step;
+}
+
+/** Playwright errors reduced to a fixed vocabulary; their messages can include URLs or selectors. */
+export function classifyPlaywrightErrorKind(error) {
+  if (!(error instanceof Error)) return "OTHER";
+  if (error.name === "TimeoutError" || /Timeout \d+ms exceeded/u.test(error.message)) return "TIMEOUT";
+  if (/strict mode violation/iu.test(error.message)) return "STRICT_MODE";
+  if (/Target page, context or browser has been closed|TargetClosedError/iu.test(error.message)) return "TARGET_CLOSED";
+  return "OTHER";
+}
+
+/** Only the page class is reported: the PayUni payment host, the operation host, or other. */
+export function classifyPayUniBrowserPage(url, operationHost) {
+  try {
+    const parsed = new URL(url);
+    if (parsed.href === "about:blank") return "BLANK";
+    if (parsed.protocol !== "https:") return "OTHER";
+    if (parsed.hostname === PAYUNI_PAYMENT_HOST) return parsed.pathname === "/api/upp" ? "PAYUNI_UPP" : "PAYUNI_OTHER_PATH";
+    if (parsed.hostname.endsWith(".payuni.com.tw")) return "PAYUNI_OTHER_HOST";
+    if (parsed.hostname === operationHost) return "OPERATION_HOST";
+    return "OTHER";
+  } catch { return "INVALID"; }
+}
+
+function boundedDiagnosticCount(value) {
+  return Number.isSafeInteger(value) && value >= 0 ? String(Math.min(value, 9)) : "UNKNOWN";
+}
+
+/** One log line of fixed enums and counts 0-9; anything unexpected prints as UNKNOWN. */
+export function formatPayUniBrowserDiagnostic(diagnostic) {
+  const failures = diagnostic?.resourceFailures;
+  return [
+    `step=${PAYUNI_BROWSER_STEPS.has(diagnostic?.step) ? diagnostic.step : "UNKNOWN"}`,
+    `error=${DIAGNOSTIC_ENUM.test(diagnostic?.error ?? "") ? diagnostic.error : "UNKNOWN"}`,
+    `page=${DIAGNOSTIC_ENUM.test(diagnostic?.page ?? "") ? diagnostic.page : "UNKNOWN"}`,
+    `mainFrameMatches=${boundedDiagnosticCount(diagnostic?.mainFrameMatches)}`,
+    `childFrames=${boundedDiagnosticCount(diagnostic?.childFrames)}`,
+    `childFrameMatches=${boundedDiagnosticCount(diagnostic?.childFrameMatches)}`,
+    `fieldSource=${FIELD_SOURCES.has(diagnostic?.fieldSource) ? diagnostic.fieldSource : "UNKNOWN"}`,
+    `creditTab=${CREDIT_TAB_RESULTS.has(diagnostic?.creditTab) ? diagnostic.creditTab : "UNKNOWN"}`,
+    ...RESOURCE_FAILURE_KEYS.map((key) => `failed_${key}=${boundedDiagnosticCount(failures?.[key])}`),
+  ].join("; ");
+}
+
+const STRUCTURE_MAX_ITEMS = 25;
+const STRUCTURE_MAX_FRAMES = 4;
+const STRUCTURE_TEXT_MAX = 40;
+
+/**
+ * Whitelist sanitizer for page-structure text. E-mail addresses and URLs become fixed tokens, every
+ * run of 3+ digits (card numbers, CVV, amounts, trade numbers) becomes "#", and only ASCII letters,
+ * digits, a few punctuation marks and CJK characters survive. Truncated to 40 characters.
+ */
+export function sanitizeStructureText(value, max = STRUCTURE_TEXT_MAX) {
+  if (typeof value !== "string") return "";
+  let text = value.replace(/[\uFF10-\uFF19]/gu, (digit) => String.fromCharCode(digit.charCodeAt(0) - 0xFEE0));
+  text = text.replace(/\s+/gu, " ").trim();
+  text = text.replace(/[^\s@\uFF20]+[@\uFF20][^\s@\uFF20]+/gu, "EMAIL");
+  text = text.replace(/(?:[a-z][a-z0-9+.-]*:)?\/\/\S*/giu, "URL");
+  text = text.replace(/\d{3,}/gu, "#");
+  text = text.replace(/[^A-Za-z0-9 _\-./*:()#~\u3000-\u303F\u4E00-\u9FFF\uFF01-\uFF1F\uFF21-\uFF5E]/gu, "");
+  return text.length > max ? `${text.slice(0, max)}~` : text;
+}
+
+/**
+ * Runs inside the PayUni page. Reads only tag, type, name, placeholder, aria-label and autocomplete
+ * of form fields (never `value`) and the visible text of buttons, tabs and labels; hidden inputs
+ * are counted, not listed. Node sanitizes everything again before printing.
+ */
+export function collectPageStructureInPage(limit) {
+  const shown = (element) => {
+    try {
+      const box = element.getBoundingClientRect();
+      const style = getComputedStyle(element);
+      return box.width > 0 && box.height > 0 && style.visibility !== "hidden" && style.display !== "none";
+    } catch { return false; }
+  };
+  const attribute = (element, name) => String(element.getAttribute(name) ?? "").slice(0, 200);
+  const fields = [];
+  let hiddenInputs = 0;
+  for (const element of document.querySelectorAll("input, select, textarea")) {
+    if (element.tagName === "INPUT" && attribute(element, "type").toLowerCase() === "hidden") { hiddenInputs += 1; continue; }
+    if (fields.length >= limit) continue;
+    fields.push({
+      tag: element.tagName.toLowerCase(), type: attribute(element, "type"), name: attribute(element, "name"),
+      placeholder: attribute(element, "placeholder"), ariaLabel: attribute(element, "aria-label"),
+      autocomplete: attribute(element, "autocomplete"), visible: shown(element),
+    });
+  }
+  const controls = [];
+  for (const element of document.querySelectorAll('button, [role="tab"], [role="button"], [role="radio"], label, a')) {
+    if (controls.length >= limit) break;
+    if (!shown(element)) continue;
+    const text = String(element.innerText ?? element.textContent ?? "").slice(0, 200);
+    if (text.trim() === "") continue;
+    controls.push({ role: String(element.getAttribute("role") || element.tagName.toLowerCase()).slice(0, 20), text });
+  }
+  return { fields, controls, hiddenInputs };
+}
+
+/** Sanitize one frame's raw structure; unknown shapes yield empty lists. */
+export function sanitizePayUniPageStructure(raw, frame = 0) {
+  const kind = (value) => (typeof value === "string" && /^[a-z-]{1,16}$/u.test(value.toLowerCase()) ? value.toLowerCase() : value ? "other" : "");
+  const list = (value) => (Array.isArray(value) ? value.slice(0, STRUCTURE_MAX_ITEMS) : []);
+  return {
+    frame: Number.isSafeInteger(frame) && frame >= 0 ? Math.min(frame, 9) : 0,
+    hiddenInputs: Number.isSafeInteger(raw?.hiddenInputs) && raw.hiddenInputs >= 0 ? Math.min(raw.hiddenInputs, 99) : 0,
+    fields: list(raw?.fields).map((field) => ({
+      tag: ["input", "select", "textarea"].includes(field?.tag) ? field.tag : "other",
+      type: kind(field?.type),
+      name: sanitizeStructureText(field?.name),
+      placeholder: sanitizeStructureText(field?.placeholder),
+      ariaLabel: sanitizeStructureText(field?.ariaLabel),
+      autocomplete: kind(field?.autocomplete),
+      visible: field?.visible === true,
+    })),
+    controls: list(raw?.controls).map((control) => ({
+      role: kind(control?.role),
+      text: sanitizeStructureText(control?.text, 20),
+    })),
+  };
+}
+
+/** Collect the sanitized structure of the main frame and up to three child frames; time-boxed. */
+export async function capturePayUniPageStructure(page) {
+  const frames = [];
+  try {
+    const all = page.frames().slice(0, STRUCTURE_MAX_FRAMES);
+    for (const [index, frame] of all.entries()) {
+      const raw = await withinMs(frame.evaluate(collectPageStructureInPage, STRUCTURE_MAX_ITEMS).catch(() => null), 2_000);
+      if (raw) frames.push(sanitizePayUniPageStructure(raw, index));
+    }
+  } catch { /* No structure is better than a failed diagnostic. */ }
+  return frames;
+}
+
+function withinMs(promise, milliseconds) {
+  return Promise.race([promise, new Promise((resolve) => { setTimeout(() => resolve(null), milliseconds); })]);
+}
+
+/**
+ * After a failed step, count where the expected field is: in the main frame, or in a child
+ * frame (a provider move to hosted iframes shows up here). Counts only, bounded and time-boxed.
+ */
+export async function recordPayUniBrowserFailure(page, diagnostic, error, operationHost) {
+  if (!diagnostic || typeof diagnostic !== "object") return;
+  try {
+    diagnostic.error = classifyPlaywrightErrorKind(error);
+    diagnostic.page = classifyPayUniBrowserPage(page.url(), operationHost);
+    if (diagnostic.page.startsWith("PAYUNI_") && diagnostic.step !== "NONE") diagnostic.structure = await capturePayUniPageStructure(page);
+    const field = PAYUNI_CARD_FIELDS.find((item) => item.step === diagnostic.step);
+    if (!field) return;
+    diagnostic.mainFrameMatches = await withinMs(page.getByPlaceholder(field.placeholder, { exact: true }).count(), 2_000);
+    const children = page.frames().filter((frame) => frame !== page.mainFrame());
+    diagnostic.childFrames = children.length;
+    let matches = 0;
+    for (const frame of children.slice(0, 9)) {
+      const count = await withinMs(frame.getByPlaceholder(field.placeholder, { exact: true }).count().catch(() => 0), 1_000);
+      if (Number.isSafeInteger(count) && count > 0) matches += 1;
+    }
+    diagnostic.childFrameMatches = matches;
+  } catch { /* Diagnostics never change the fixed failure code. */ }
+}
+
+async function selectPayUniOneTimeCredit(page, diagnostic) {
+  markPayUniBrowserStep(diagnostic, "METHOD");
+  await page.getByText("一次付清", { exact: true }).click();
+  await page.locator('input[name="radioOptionpayGroupCredit"]').check({ force: true });
+}
+
+async function sleep(milliseconds) {
+  await new Promise((resolve) => { setTimeout(resolve, milliseconds); });
+}
+
+/** The locator when exactly one visible element matches within `waitMs`; otherwise null. */
+async function uniqueVisible(locator, waitMs) {
+  const deadline = Date.now() + waitMs;
+  do {
+    try {
+      if (await withinMs(locator.count(), 1_000) === 1 && await locator.isVisible()) return locator;
+    } catch { return null; }
+    await sleep(250);
+  } while (Date.now() < deadline);
+  return null;
+}
+
+/** Click the credit-card tab only when exactly one visible element carries its exact text. */
+export async function clickPayUniCreditTab(page) {
+  try {
+    for (const locator of [page.getByRole("tab", { name: PAYUNI_CREDIT_TAB_TEXT, exact: true }), page.getByText(PAYUNI_CREDIT_TAB_TEXT, { exact: true })]) {
+      const count = await withinMs(locator.count(), 1_000);
+      if (count === 1 && await locator.isVisible()) {
+        await locator.click({ timeout: 5_000 });
+        // The tab may re-render the installment choice; keep 一次付清 selected if it is there.
+        const credit = page.locator('input[name="radioOptionpayGroupCredit"]');
+        if (await withinMs(credit.count(), 1_000) > 0) await credit.first().check({ force: true, timeout: 5_000 });
+        return "CLICKED";
+      }
+      if (Number.isSafeInteger(count) && count > 1) return "AMBIGUOUS";
+    }
+    return "NOT_FOUND";
+  } catch { return "NOT_FOUND"; }
+}
+
+/** Fallback for a field whose proven placeholder timed out; null keeps the original failure. */
+async function findPayUniFallbackField(page, field, diagnostic, waitMs = PAYUNI_FALLBACK_WAIT_MS) {
+  try {
+    const fallback = await uniqueVisible(page.locator(field.fallback), waitMs);
+    if (fallback) return { locator: fallback, source: "AUTOCOMPLETE" };
+    if (field.step !== "CARD_NUMBER") return null;
+    diagnostic.creditTab = await clickPayUniCreditTab(page);
+    if (diagnostic.creditTab !== "CLICKED") return null;
+    const primary = await uniqueVisible(page.getByPlaceholder(field.placeholder, { exact: true }), waitMs);
+    if (primary) return { locator: primary, source: "PLACEHOLDER_AFTER_TAB" };
+    const afterTab = await uniqueVisible(page.locator(field.fallback), 2_000);
+    return afterTab ? { locator: afterTab, source: "AUTOCOMPLETE_AFTER_TAB" } : null;
+  } catch { return null; }
+}
+
+/** Fills the card fields in a fixed order and records only which step is active; never submits. */
+async function fillPayUniCardFields(page, input, email, fallbackWaitMs = PAYUNI_FALLBACK_WAIT_MS) {
+  const values = { CARD_NUMBER: input.cardNumber, CARD_EXPIRY: input.cardExpiry, CARD_CVV: input.cardCvv, EMAIL: email };
+  const diagnostic = input.diagnostic ?? createPayUniBrowserDiagnostic();
+  for (const field of PAYUNI_CARD_FIELDS) {
+    markPayUniBrowserStep(input.diagnostic, field.step);
+    const enter = (locator, timeout) => (field.step === "EMAIL"
+      ? locator.fill(values[field.step], { timeout })
+      : locator.pressSequentially(values[field.step], { timeout }));
+    try {
+      await enter(page.getByPlaceholder(field.placeholder), PAYUNI_FIELD_TIMEOUT_MS);
+      diagnostic.fieldSource = "PLACEHOLDER";
+    } catch (error) {
+      if (classifyPlaywrightErrorKind(error) !== "TIMEOUT") throw error;
+      const fallback = await findPayUniFallbackField(page, field, diagnostic, fallbackWaitMs);
+      if (!fallback) throw error;
+      diagnostic.fieldSource = fallback.source;
+      await enter(fallback.locator, PAYUNI_FIELD_TIMEOUT_MS);
+    }
+  }
+}
+
 export async function defaultBrowserSubmit(input, dependencies = {}) {
   const { chromium, errors } = dependencies.playwright ?? await import("playwright");
   // The trusted runner already pins every allowlisted A record in /etc/hosts
@@ -1288,6 +1579,7 @@ export async function defaultBrowserSubmit(input, dependencies = {}) {
   let signedReturnContentType = null;
   let returnRequestCount = 0;
   let returnStatus = null;
+  let paymentPageOpened = false;
   try {
     page.on("request", (request) => {
       try {
@@ -1313,6 +1605,7 @@ export async function defaultBrowserSubmit(input, dependencies = {}) {
       } catch {}
     });
     page.on("requestfailed", (request) => {
+      if (paymentPageOpened) recordPayUniResourceFailure(input.diagnostic, request);
       try {
         const url = new URL(request.url());
         if (
@@ -1344,6 +1637,7 @@ export async function defaultBrowserSubmit(input, dependencies = {}) {
     apiStatus = paymentDocument.status();
     if (!paymentDocument.ok()) throw new Error("PAYMENT_PROVIDER_HTTP_REJECTED");
     await page.route(PAYUNI_UPP_URL, (route) => route.fulfill({ response: paymentDocument }), { times: 1 });
+    paymentPageOpened = true;
     await page.goto(PAYUNI_UPP_URL, {
       // Optional third-party resources remain blocked by the fixed egress
       // allowlist; the committed provider document is sufficient for the
@@ -1352,14 +1646,11 @@ export async function defaultBrowserSubmit(input, dependencies = {}) {
       timeout: REQUEST_TIMEOUT_MS,
     });
     stage = "PAYMENT_METHOD_UNAVAILABLE";
-    await page.getByText("一次付清", { exact: true }).click();
-    await page.locator('input[name="radioOptionpayGroupCredit"]').check({ force: true });
+    await selectPayUniOneTimeCredit(page, input.diagnostic);
     stage = "PAYMENT_FIELDS_REJECTED";
-    await page.getByPlaceholder("16 碼或 19 碼").pressSequentially(input.cardNumber);
-    await page.getByPlaceholder("MM/YY").pressSequentially(input.cardExpiry);
-    await page.getByPlaceholder("***").pressSequentially(input.cardCvv);
-    await page.getByPlaceholder("example@example.com").fill("wp4-buyer-v1@invalid.example");
+    await fillPayUniCardFields(page, input, "wp4-buyer-v1@invalid.example", dependencies.payuniFallbackWaitMs);
     stage = "PAYMENT_SUBMIT_REJECTED";
+    markPayUniBrowserStep(input.diagnostic, "SUBMIT");
     await page.getByRole("button", { name: "確認送出", exact: true }).click();
     const confirmation = page.getByRole("button", { name: "確定", exact: true });
     try {
@@ -1393,7 +1684,8 @@ export async function defaultBrowserSubmit(input, dependencies = {}) {
     }
     // The signed provider body remains in process memory until one replay. It never enters a receipt.
     return { mapped: true, firstStatus: 303, signedReturnBody, contentType: signedReturnContentType };
-  } catch {
+  } catch (error) {
+    await recordPayUniBrowserFailure(page, input.diagnostic, error, input.previewHost);
     if (stage !== "PAYMENT_PAGE_UNREACHED") return stage;
     if (!apiPostSeen) return "PAYMENT_FORM_NOT_SUBMITTED";
     if (Number.isInteger(apiStatus) && apiStatus >= 400) return "PAYMENT_PROVIDER_HTTP_REJECTED";
@@ -1420,6 +1712,7 @@ export async function defaultSubscriptionBrowserSubmit(input, dependencies = {})
   const page = await context.newPage();
   const origin = fixedOrigin(input.previewHost);
   let stage = "CHECKOUT_REJECTED";
+  let paymentPageOpened = false;
   let apiPostSeen = false;
   let apiStatus = null;
   let apiNetworkRejected = false;
@@ -1438,6 +1731,7 @@ export async function defaultSubscriptionBrowserSubmit(input, dependencies = {})
       } catch {}
     });
     page.on("requestfailed", (request) => {
+      if (paymentPageOpened) recordPayUniResourceFailure(input.diagnostic, request);
       try {
         const url = new URL(request.url());
         if (request.isNavigationRequest() && request.method() === "POST" && isPayUniPaymentPageUrl(url)) {
@@ -1477,17 +1771,15 @@ export async function defaultSubscriptionBrowserSubmit(input, dependencies = {})
     apiStatus = paymentDocument.status();
     if (!paymentDocument.ok()) throw new Error("PAYMENT_PROVIDER_HTTP_REJECTED");
     await page.route(PAYUNI_UPP_URL, (route) => route.fulfill({ response: paymentDocument }), { times: 1 });
+    paymentPageOpened = true;
     await page.goto(PAYUNI_UPP_URL, { waitUntil: "commit", timeout: REQUEST_TIMEOUT_MS });
     stage = "PAYMENT_METHOD_UNAVAILABLE";
-    await page.getByText("一次付清", { exact: true }).click();
-    await page.locator('input[name="radioOptionpayGroupCredit"]').check({ force: true });
+    await selectPayUniOneTimeCredit(page, input.diagnostic);
     stage = "PAYMENT_FIELDS_REJECTED";
-    await page.getByPlaceholder("16 碼或 19 碼").pressSequentially(input.cardNumber);
-    await page.getByPlaceholder("MM/YY").pressSequentially(input.cardExpiry);
-    await page.getByPlaceholder("***").pressSequentially(input.cardCvv);
-    await page.getByPlaceholder("example@example.com").fill("wp4-subscription-v1@invalid.example");
+    await fillPayUniCardFields(page, input, "wp4-subscription-v1@invalid.example", dependencies.payuniFallbackWaitMs);
     stage = "PAYMENT_SUBMIT_REJECTED";
     if (input.markPaymentSubmission?.() !== true) return "PAYMENT_SUBMIT_REJECTED";
+    markPayUniBrowserStep(input.diagnostic, "SUBMIT");
     await page.getByRole("button", { name: "確認送出", exact: true }).click();
     const confirmation = page.getByRole("button", { name: "確定", exact: true });
     try {
@@ -1502,7 +1794,8 @@ export async function defaultSubscriptionBrowserSubmit(input, dependencies = {})
     // no buyer-order capability on this page. The fixed subscription refund and
     // reconciliation operations provide the trusted paid/refund evidence.
     return true;
-  } catch {
+  } catch (error) {
+    await recordPayUniBrowserFailure(page, input.diagnostic, error, input.previewHost);
     if (stage !== "PAYMENT_PAGE_UNREACHED") return stage;
     if (!apiPostSeen) return "PAYMENT_FORM_NOT_SUBMITTED";
     if (Number.isInteger(apiStatus) && apiStatus >= 400) return "PAYMENT_PROVIDER_HTTP_REJECTED";
@@ -1620,6 +1913,7 @@ async function runBuyerPayment(input, dependencies, paymentOnly) {
       orderNumber: checkout.body.orderNumber,
       transactionId: checkout.body.transactionId,
       captureReturnCallback: true,
+      diagnostic: dependencies.browserDiagnostic,
     });
     if (!validSignedReturnCapture(callbackMapped)) {
       const browserFailure = typeof callbackMapped === "string" && FAILURE_CODES.has(callbackMapped)
@@ -1786,6 +2080,7 @@ export async function runMvpPayUniSandboxSubscriptionE2E(input, dependencies = {
       cardNumber: invocation.cardNumber,
       cardExpiry: invocation.cardExpiry,
       cardCvv: invocation.cardCvv,
+      diagnostic: dependencies.browserDiagnostic,
       markNativePlanCheckoutCreated: () => {
         if (receipt.checks.nativePlanCheckoutCreated || receipt.sideEffects.transactionsCreated !== 0) return false;
         receipt.checks.nativePlanCheckoutCreated = true;
@@ -2087,10 +2382,26 @@ export async function validateWrittenBuyerExistingContinuationReceipt(runnerTemp
  */
 async function attestedFlowDependencies(input) {
   const attestation = await attestOperationHost(input);
-  if (attestation.ok) return { operationHost: attestation.operationHost };
+  if (attestation.ok) return { operationHost: attestation.operationHost, browserDiagnostic: createPayUniBrowserDiagnostic() };
   process.stdout.write(`mvp_payuni_alias_attestation=BLOCKED; reason=${attestation.code}\n`);
   process.exitCode = 2;
   return null;
+}
+
+/** Prints the de-identified PayUni page diagnostic only when a browser step failed. */
+function printBrowserDiagnostic(flowDependencies, result) {
+  const diagnostic = flowDependencies?.browserDiagnostic;
+  if (result === "PASS" || !diagnostic || (diagnostic.step === "NONE" && diagnostic.error === "NONE")) return;
+  process.stdout.write(`wp4_payuni_browser_diagnostic=${formatPayUniBrowserDiagnostic(diagnostic)}\n`);
+  const structure = formatPayUniPageStructure(diagnostic);
+  if (structure) process.stdout.write(`wp4_payuni_page_structure=${structure}\n`);
+}
+
+/** JSON of the already-sanitized frames, re-sanitized and capped; null when nothing was captured. */
+export function formatPayUniPageStructure(diagnostic) {
+  if (!Array.isArray(diagnostic?.structure) || diagnostic.structure.length === 0) return null;
+  const frames = diagnostic.structure.slice(0, STRUCTURE_MAX_FRAMES).map((frame) => sanitizePayUniPageStructure(frame, frame?.frame));
+  return JSON.stringify(frames);
 }
 
 async function main() {
@@ -2108,6 +2419,7 @@ async function main() {
     const receipt = await runMvpPayUniPaymentOnly(input, flowDependencies);
     await writePaymentOnlyReceipt(receipt, runnerTemp);
     process.stdout.write(`wp4_payment_only=${receipt.result}; failure=${receipt.failure}\n`);
+    printBrowserDiagnostic(flowDependencies, receipt.result);
     process.exitCode = receipt.result === "PASS" ? 0 : 2;
     return;
   }
@@ -2215,7 +2527,8 @@ async function main() {
     }
     try {
       await writeMvpPayUniSubscriptionReceipt(subscriptionReceipt, runnerTemp);
-      process.stdout.write(`mvp_payuni_subscription=${subscriptionReceipt.result}\n`);
+      process.stdout.write(`mvp_payuni_subscription=${subscriptionReceipt.result}; failure=${subscriptionReceipt.failure}\n`);
+      printBrowserDiagnostic(flowDependencies, subscriptionReceipt.result);
       process.exitCode = subscriptionReceipt.result === "PASS" ? 0 : 2;
     } catch {
       process.stdout.write("mvp_payuni_subscription=BLOCKED\n");
@@ -2224,11 +2537,12 @@ async function main() {
     return;
   }
   let receipt;
+  let flowDependencies = null;
   if (process.argv.length !== 2) {
     receipt = fail(createReceipt(), "INPUT_REJECTED");
   } else {
     const input = readFixedInputs();
-    const flowDependencies = await attestedFlowDependencies(input);
+    flowDependencies = await attestedFlowDependencies(input);
     if (!flowDependencies) return;
     try {
       receipt = await runMvpPayUniSandboxE2E(input, flowDependencies);
@@ -2238,7 +2552,9 @@ async function main() {
   }
   try {
     await writeMvpPayUniReceipt(receipt, runnerTemp);
-    process.stdout.write(`mvp_payuni_sandbox_e2e=${receipt.result}\n`);
+    // The failure is a fixed receipt enum; it never carries provider text, URLs or identifiers.
+    process.stdout.write(`mvp_payuni_sandbox_e2e=${receipt.result}; failure=${receipt.failure}\n`);
+    printBrowserDiagnostic(flowDependencies, receipt.result);
     process.exitCode = receipt.result === "PASS" ? 0 : 2;
   } catch {
     process.stdout.write("mvp_payuni_sandbox_e2e=BLOCKED\n");

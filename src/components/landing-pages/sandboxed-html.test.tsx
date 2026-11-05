@@ -4,7 +4,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ReactNode } from "react";
-import { FUNNEL_CUSTOM_CODE_HEIGHT_MESSAGE } from "@/lib/funnel-custom-code";
+import { FUNNEL_CUSTOM_CODE_DOCUMENT_MESSAGE, FUNNEL_CUSTOM_CODE_HEIGHT_MESSAGE, FUNNEL_CUSTOM_CODE_READY_MESSAGE } from "@/lib/funnel-custom-code";
 import { FunnelCustomCodeSurfaceProvider, SandboxedCustomCode } from "./sandboxed-html";
 import { FunnelPageDocumentRenderer } from "./funnel-page-document-renderer";
 import { PublicFunnelDocument } from "./public-funnel-document";
@@ -37,15 +37,15 @@ function page(nodes: FunnelNode[], customCss?: string): PageDocument {
 }
 
 describe("SandboxedCustomCode markup", () => {
-  it("script mode: exactly allow-scripts, merchant code raw inside an opaque-origin srcdoc with the frame CSP", () => {
-    const frame = frameOf(renderToStaticMarkup(enabled(<SandboxedCustomCode code={code} mode="script" label="自訂" />)));
+  it("script mode: exactly allow-scripts, the same-origin sandbox document instead of a srcdoc that would inherit the page's nonce CSP", () => {
+    const html = renderToStaticMarkup(enabled(<SandboxedCustomCode code={code} mode="script" label="自訂" />));
+    const frame = frameOf(html);
     expect(frame.getAttribute("sandbox")).toBe("allow-scripts");
     expect(frame.getAttribute("referrerpolicy")).toBe("no-referrer");
-    const srcDoc = frame.getAttribute("srcdoc")!;
-    expect(srcDoc).toContain("connect-src 'none'; form-action 'none'; base-uri 'none'; object-src 'none'");
-    expect(srcDoc).toContain("script-src 'unsafe-inline' https:");
-    expect(srcDoc).toContain("<script>inline()</script>");
-    expect(srcDoc).toContain("document.body.dataset.ran");
+    expect(frame.getAttribute("src")).toBe("/sandbox/custom-code");
+    expect(frame.hasAttribute("srcdoc")).toBe(false);
+    // The merchant code is posted to the frame after it loads, never put in the page markup.
+    expect(html).not.toContain("inline()");
   });
 
   it("only public pages add popups, always together with escape-sandbox and never anything broader", () => {
@@ -79,11 +79,45 @@ describe("SandboxedCustomCode height messages", () => {
     container.remove();
   });
 
-  it("accepts a valid height only from its own iframe and ignores everything else", async () => {
-    await act(async () => { root.render(enabled(<><SandboxedCustomCode code={code} mode="script" label="A" height={200} /><iframe title="other" /></>)); });
+  /** happy-dom does not load `src` frames; give the script frame a stand-in window. */
+  function stubFrameWindow(frame: HTMLIFrameElement) {
+    const frameWindow = { postMessage: vi.fn() };
+    Object.defineProperty(frame, "contentWindow", { configurable: true, get: () => frameWindow });
+    return frameWindow;
+  }
+
+  it("posts the merchant document with the frame CSP only to its own frame when that frame is ready", async () => {
+    await act(async () => { root.render(enabled(<><SandboxedCustomCode code={code} mode="script" label="A" /><iframe title="other" srcDoc="<p>other</p>" /></>)); });
     const frame = container.querySelector<HTMLIFrameElement>('iframe[title="A"]')!;
     const other = container.querySelector<HTMLIFrameElement>('iframe[title="other"]')!;
+    const frameWindow = stubFrameWindow(frame);
+    const otherPost = vi.spyOn(other.contentWindow!, "postMessage");
+    const send = async (data: unknown, source: unknown) => {
+      await act(async () => { window.dispatchEvent(new MessageEvent("message", { data, source: source as MessageEventSource | null })); });
+    };
+    await send({ type: FUNNEL_CUSTOM_CODE_READY_MESSAGE }, other.contentWindow);
+    await send({ type: FUNNEL_CUSTOM_CODE_READY_MESSAGE }, window);
+    await send({ type: FUNNEL_CUSTOM_CODE_READY_MESSAGE, extra: true }, frameWindow);
+    expect(frameWindow.postMessage).not.toHaveBeenCalled();
+    expect(otherPost).not.toHaveBeenCalled();
+    await send({ type: FUNNEL_CUSTOM_CODE_READY_MESSAGE }, frameWindow);
+    expect(frameWindow.postMessage).toHaveBeenCalledTimes(1);
+    const [message, targetOrigin] = frameWindow.postMessage.mock.calls[0]!;
+    expect(targetOrigin).toBe("*");
+    expect(message.type).toBe(FUNNEL_CUSTOM_CODE_DOCUMENT_MESSAGE);
+    expect(message.html).toContain("connect-src 'none'; form-action 'none'; base-uri 'none'; object-src 'none'");
+    expect(message.html).toContain("script-src 'unsafe-inline' https:");
+    expect(message.html).toContain("<script>inline()</script>");
+    expect(message.html).toContain("document.body.dataset.ran");
+  });
+
+  it("accepts a valid height only from its own iframe and ignores everything else", async () => {
+    await act(async () => { root.render(enabled(<><SandboxedCustomCode code={code} mode="script" label="A" height={200} /><iframe title="other" srcDoc="<p>other</p>" /></>)); });
+    const frame = container.querySelector<HTMLIFrameElement>('iframe[title="A"]')!;
+    const other = container.querySelector<HTMLIFrameElement>('iframe[title="other"]')!;
+    stubFrameWindow(frame);
     expect(frame.contentWindow).toBeTruthy();
+    expect(other.contentWindow).toBeTruthy();
     const send = async (data: unknown, source: Window | null) => {
       await act(async () => { window.dispatchEvent(new MessageEvent("message", { data, source: source as MessageEventSource | null })); });
     };

@@ -787,3 +787,24 @@ describe("DATA_ENCRYPTION_KEYRING preflight (F-031)", () => {
     expect(failed?.message).not.toContain(material(1));
   });
 });
+
+describe("CSP_ENFORCE preflight (F-156)", () => {
+  it.each([undefined, "", "false", "true", " TRUE "])("passes %j", (value) => {
+    const report = getEnvCheckReport({ ...configuredEnv(), VERCEL_ENV: "production", CSP_ENFORCE: value });
+    expect(check(report, "CSP_ENFORCE", "pass")).toBeDefined();
+    expect(report.checks.filter((item) => item.key === "CSP_ENFORCE" && item.status !== "pass")).toHaveLength(0);
+  });
+
+  it("says which mode is active", () => {
+    expect(check(getEnvCheckReport({ ...configuredEnv(), CSP_ENFORCE: "true" }), "CSP_ENFORCE", "pass")?.message).toContain("強制模式");
+    expect(check(getEnvCheckReport({ ...configuredEnv(), CSP_ENFORCE: undefined }), "CSP_ENFORCE", "pass")?.message).toContain("Report-Only");
+  });
+
+  it.each(["1", "yes", "enforce", "on"])("fails a malformed value %j everywhere", (value) => {
+    for (const vercelEnv of ["production", "preview", undefined]) {
+      const report = getEnvCheckReport({ ...configuredEnv(), VERCEL_ENV: vercelEnv, CSP_ENFORCE: value } as NodeJS.ProcessEnv);
+      expect(report.ok).toBe(false);
+      expect(check(report, "CSP_ENFORCE", "fail")?.message).toContain("true 或 false");
+    }
+  });
+});

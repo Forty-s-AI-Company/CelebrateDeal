@@ -217,6 +217,11 @@ describe("fixed session storage and tenant binding", () => {
     // A Live with one shared start has no session list.
     const single = await fixture("public-single", { sessionMode: "single" });
     expect(await loadPublicLiveSessions(getDb(), { liveId: single.live.id, now })).toBeNull();
+    // F-036: a suspended vendor offers no sessions; lifting it restores them.
+    await getDb().vendor.update({ where: { id: fx.vendor.id }, data: { suspendedAt: new Date(), suspendedReason: "合成" } });
+    expect(await loadPublicLiveSessions(getDb(), { liveId: fx.live.id, now })).toBeNull();
+    await getDb().vendor.update({ where: { id: fx.vendor.id }, data: { suspendedAt: null, suspendedReason: null } });
+    expect(await loadPublicLiveSessions(getDb(), { liveId: fx.live.id, now })).toMatchObject({ liveId: fx.live.id });
   });
 });
 

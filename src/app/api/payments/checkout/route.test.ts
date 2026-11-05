@@ -3,6 +3,8 @@ import { createHash } from "node:crypto";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const db = {
+  // F-036: the route resolves the vendor's suspension before anything else.
+  vendor: { findFirst: vi.fn() },
   product: { findFirst: vi.fn() },
   affiliateClick: { findFirst: vi.fn() },
   formSubmission: { findFirst: vi.fn() },
@@ -167,6 +169,7 @@ beforeEach(() => {
   postPurchaseMocks.consume.mockResolvedValue({ id: "credit-1" });
   postPurchaseMocks.replay.mockResolvedValue(upgradeQuote);
   vi.stubEnv("CSRF_SECRET", "checkout-route-test-secret-that-is-at-least-32-bytes");
+  db.vendor.findFirst.mockResolvedValue({ id: "vendor-1" });
   db.product.findFirst.mockResolvedValue({
     id: "product-1",
     name: "Test product",
@@ -682,6 +685,18 @@ describe("successful checkout response", () => {
     const invalid = await POST(checkoutRequest(undefined, { customCheckoutAnswers: { engraving: "生日快樂", forged: "x" } }));
     expect(invalid.status).toBe(400);
     expect(inventoryMocks.createReservedPaymentTransaction).toHaveBeenCalledTimes(1);
+  });
+
+  it("starts no checkout, not even an idempotent replay, for a suspended vendor (F-036)", async () => {
+    db.vendor.findFirst.mockResolvedValue(null);
+    const response = await POST(checkoutRequest(undefined, { shipping: null }));
+    expect(response.status).toBe(404);
+    await expect(response.json()).resolves.toEqual({ error: "Product not available" });
+    expect(db.vendor.findFirst).toHaveBeenCalledWith({ where: { id: "vendor-1", suspendedAt: null }, select: { id: true } });
+    expect(db.paymentTransaction.findUnique).not.toHaveBeenCalled();
+    expect(db.product.findFirst).not.toHaveBeenCalled();
+    expect(db.paymentTransaction.create).not.toHaveBeenCalled();
+    expect(inventoryMocks.createReservedPaymentTransaction).not.toHaveBeenCalled();
   });
 
   it("refuses to sell a course product while the vendor's courses module is closed (F-001)", async () => {

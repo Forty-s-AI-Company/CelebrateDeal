@@ -6,10 +6,14 @@ import {
   describeFunnelCustomCodeProblem,
   diffFunnelCustomCode,
   documentCustomCodeSummary,
+  FUNNEL_CUSTOM_CODE_DOCUMENT_MESSAGE,
   FUNNEL_CUSTOM_CODE_HEIGHT_MESSAGE,
+  FUNNEL_CUSTOM_CODE_READY_MESSAGE,
+  FUNNEL_CUSTOM_CODE_SANDBOX_BOOTSTRAP,
   funnelCustomCodeCsp,
   funnelCustomCodeSandbox,
   isFunnelCustomCodeDisabled,
+  isFunnelCustomCodeReadyMessage,
   parseFunnelCustomCodeHeightMessage,
   withoutFunnelCustomScripts,
 } from "./funnel-custom-code";
@@ -180,5 +184,52 @@ describe("emergency switch", () => {
     expect(collectFunnelCustomCode(stripped).nodes.get("page/node:a")).toMatchObject({ html: "<p>a</p>", css: "p{}", js: "" });
     expect(contentHasCustomScript(stored)).toBe(true);
     expect(stored.settings.customCss).toBe("body{display:none}");
+  });
+});
+
+describe("custom-code sandbox document bootstrap (F-156)", () => {
+  type Listener = (event: { source: unknown; data: unknown }) => void;
+
+  function runBootstrap(options: { topLevel?: boolean } = {}) {
+    const listeners = new Set<Listener>();
+    const posted: Array<[unknown, string]> = [];
+    const written: string[] = [];
+    const parent = { postMessage: (data: unknown, origin: string) => posted.push([data, origin]) };
+    const frameWindow: Record<string, unknown> = {
+      addEventListener: (_type: string, listener: Listener) => listeners.add(listener),
+      removeEventListener: (_type: string, listener: Listener) => listeners.delete(listener),
+    };
+    frameWindow.parent = options.topLevel ? frameWindow : parent;
+    const document = { open: () => written.push("<open>"), write: (html: string) => written.push(html), close: () => written.push("<close>") };
+    new Function("window", "document", FUNNEL_CUSTOM_CODE_SANDBOX_BOOTSTRAP)(frameWindow, document);
+    const deliver = (source: unknown, data: unknown) => { for (const listener of [...listeners]) listener({ source, data }); };
+    return { parent, posted, written, listeners, deliver };
+  }
+
+  it("announces itself to the parent and writes only the first well-formed document from the parent", () => {
+    const frame = runBootstrap();
+    expect(frame.posted).toEqual([[{ type: FUNNEL_CUSTOM_CODE_READY_MESSAGE }, "*"]]);
+    frame.deliver({}, { type: FUNNEL_CUSTOM_CODE_DOCUMENT_MESSAGE, html: "<p>other source</p>" });
+    frame.deliver(frame.parent, { type: "other", html: "<p>wrong type</p>" });
+    frame.deliver(frame.parent, { type: FUNNEL_CUSTOM_CODE_DOCUMENT_MESSAGE, html: 42 });
+    frame.deliver(frame.parent, "<p>string</p>");
+    expect(frame.written).toEqual([]);
+    frame.deliver(frame.parent, { type: FUNNEL_CUSTOM_CODE_DOCUMENT_MESSAGE, html: "<p>merchant</p>" });
+    frame.deliver(frame.parent, { type: FUNNEL_CUSTOM_CODE_DOCUMENT_MESSAGE, html: "<p>second</p>" });
+    expect(frame.written).toEqual(["<open>", "<p>merchant</p>", "<close>"]);
+    expect(frame.listeners.size).toBe(0);
+  });
+
+  it("does nothing when opened as a top-level page", () => {
+    const frame = runBootstrap({ topLevel: true });
+    expect(frame.posted).toEqual([]);
+    expect(frame.listeners.size).toBe(0);
+  });
+
+  it("recognizes only the exact ready message", () => {
+    expect(isFunnelCustomCodeReadyMessage({ type: FUNNEL_CUSTOM_CODE_READY_MESSAGE })).toBe(true);
+    for (const data of [null, "x", [], { type: FUNNEL_CUSTOM_CODE_READY_MESSAGE, extra: 1 }, { type: FUNNEL_CUSTOM_CODE_HEIGHT_MESSAGE }]) {
+      expect(isFunnelCustomCodeReadyMessage(data)).toBe(false);
+    }
   });
 });

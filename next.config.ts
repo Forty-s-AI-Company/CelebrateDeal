@@ -1,54 +1,14 @@
 import { withSentryConfig } from "@sentry/nextjs/config";
 import type { NextConfig } from "next";
+import { FUNNEL_CUSTOM_CODE_SANDBOX_HEADERS, FUNNEL_CUSTOM_CODE_SANDBOX_PATH } from "./src/lib/content-security-policy";
 
-const cspReportOnlyDirectives = [
-  "default-src 'self'",
-  // challenges.cloudflare.com: Turnstile on /register and /verify-email (script, iframe, siteverify calls from the widget).
-  "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://*.sentry.io https://*.posthog.com https://app.posthog.com https://challenges.cloudflare.com",
-  "style-src 'self' 'unsafe-inline'",
-  "img-src 'self' data: blob: https:",
-  "font-src 'self' data:",
-  "media-src 'self' blob: https://videodelivery.net https://*.videodelivery.net https://*.cloudflarestream.com https:",
-  // www.youtube-nocookie.com: the funnel video gallery embeds a YouTube video (privacy-enhanced mode) only after the visitor presses play.
-  "frame-src 'self' https://challenges.cloudflare.com https://www.youtube-nocookie.com",
-  // videodelivery.net／*.cloudflarestream.com: hls.js fetches Stream manifests and segments (F-093 signed URLs included).
-  "connect-src 'self' https://*.sentry.io https://*.posthog.com https://app.posthog.com https://api.cloudflare.com https://challenges.cloudflare.com https://videodelivery.net https://*.cloudflarestream.com https://*.payuni.com.tw https://sandbox-api.payuni.com.tw",
-  "frame-ancestors 'none'",
-  "base-uri 'self'",
-  "form-action 'self' https://api.payuni.com.tw https://sandbox-api.payuni.com.tw",
-  "report-uri /api/security/csp-report",
-];
-const cspReportOnly = cspReportOnlyDirectives.join("; ");
-
-/**
- * Public funnel pages (`/lp/*`). A custom-code iframe is a `srcdoc` document,
- * which inherits this page's policy in addition to its own meta CSP, so the
- * page policy must allow what the sandboxed frame may load (https scripts,
- * styles, fonts, frames). The frame's own meta CSP still sets connect-src,
- * form-action, base-uri and object-src to 'none'. The analytics hosts are for
- * the platform-rendered GA4 / Meta Pixel snippets (IDs only, no merchant code).
- *
- * Enforcement note: this stays compatible with custom code only while
- * script-src keeps 'unsafe-inline' and https:. Moving /lp to a nonce or
- * 'strict-dynamic' policy would block the srcdoc frame's inline scripts
- * (they cannot carry the page nonce); custom code must then move to its own
- * origin (a separate sandbox domain) before that change. Admin pages keep the
- * stricter site-wide policy, so their editor preview may report (and, once
- * enforced, block) external https scripts used by merchant code.
+/*
+ * F-156: the Content Security Policy is not set here. It carries a fresh
+ * script nonce per request, so `src/proxy.ts` builds it for every HTML
+ * document (Report-Only, plus an enforced copy when CSP_ENFORCE=true) from
+ * `src/lib/content-security-policy.ts`, where every source names its feature.
  */
-const PUBLIC_FUNNEL_EXTRA_SOURCES: Readonly<Record<string, string>> = {
-  "script-src": "https:",
-  "style-src": "https:",
-  "font-src": "https:",
-  "frame-src": "https:",
-  "connect-src": "https://www.google-analytics.com https://*.google-analytics.com https://*.analytics.google.com https://www.googletagmanager.com https://www.facebook.com",
-};
-const cspReportOnlyPublicFunnel = cspReportOnlyDirectives
-  .map((directive) => {
-    const name = directive.split(" ")[0]!;
-    return PUBLIC_FUNNEL_EXTRA_SOURCES[name] ? `${directive} ${PUBLIC_FUNNEL_EXTRA_SOURCES[name]}` : directive;
-  })
-  .join("; ");
+
 /**
  * Custom code may open new tabs (allow-popups + allow-popups-to-escape-sandbox)
  * only on these pages. COOP same-origin makes every popup opened from the
@@ -56,7 +16,6 @@ const cspReportOnlyPublicFunnel = cspReportOnlyDirectives
  * (reverse tabnabbing). The development-only browser QA harness mirrors it.
  */
 const publicFunnelHeaders = [
-  { key: "Content-Security-Policy-Report-Only", value: cspReportOnlyPublicFunnel },
   { key: "Cross-Origin-Opener-Policy", value: "same-origin" },
 ];
 
@@ -85,8 +44,14 @@ const nextConfig: NextConfig = {
           { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
           { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=(), browsing-topics=()" },
           { key: "Strict-Transport-Security", value: "max-age=63072000; includeSubDomains" },
-          { key: "Content-Security-Policy-Report-Only", value: cspReportOnly },
         ],
+      },
+      // The custom-code sandbox document must be frameable by this origin and
+      // carries its own CSP (sandbox, no network APIs). Configured headers win
+      // over the route handler's, so they are set here (later rule wins).
+      {
+        source: FUNNEL_CUSTOM_CODE_SANDBOX_PATH,
+        headers: Object.entries(FUNNEL_CUSTOM_CODE_SANDBOX_HEADERS).map(([key, value]) => ({ key, value })),
       },
       // Verification links carry a bearer token in the URL; never leak it in a
       // Referer (later rules override the site-wide policy above).

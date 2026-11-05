@@ -7,6 +7,7 @@ import { claimLearnerVerificationDelivery, dispatchLearnerVerificationDelivery }
 import type { NotificationProviderConfiguration } from "./learner-notification-providers";
 import { LearnerPhoneDestination } from "./learner-notification-contract";
 import { captureOperationalError } from "./monitoring";
+import { ACTIVE_VENDOR_WHERE } from "./vendor-suspension-state";
 
 /** Configuration comes only from the approved server process. No browser input
  * can change a provider endpoint, sender, VAPID key or tenant execution scope. */
@@ -83,8 +84,8 @@ async function runBounded<T>(items:readonly T[],deadline:number,run:(item:T)=>Pr
 export async function processDueLearnerNotifications(env:NodeJS.ProcessEnv=process.env):Promise<LearnerNotificationJobSummary> {
  const empty=(status?:string):LearnerNotificationJobSummary=>({results:status?[{status}]:[],backlog:null});
  if(env.LEARNER_NOTIFICATIONS_EXECUTOR_ENABLED!=="true")return empty();
- const vendors=[...new Set((env.LEARNER_NOTIFICATIONS_JOB_VENDOR_IDS??"").split(",").map(value=>value.trim()).filter(Boolean))];
- if(vendors.length<1 || vendors.length>25 || vendors.some(value=>!/^[A-Za-z0-9_-]{1,128}$/u.test(value)))return empty("configuration_missing");
+ const configuredVendors=[...new Set((env.LEARNER_NOTIFICATIONS_JOB_VENDOR_IDS??"").split(",").map(value=>value.trim()).filter(Boolean))];
+ if(configuredVendors.length<1 || configuredVendors.length>25 || configuredVendors.some(value=>!/^[A-Za-z0-9_-]{1,128}$/u.test(value)))return empty("configuration_missing");
  const configuration=readLearnerNotificationProviderConfiguration(env);
  const channels=Object.keys(configuration);
  if(channels.length===0)return empty("configuration_missing");
@@ -92,6 +93,12 @@ export async function processDueLearnerNotifications(env:NodeJS.ProcessEnv=proce
  try{appOrigin=getCanonicalAppUrl(env);if(new URL(appOrigin).protocol!=="https:")return empty("configuration_missing");}
  catch{return empty("configuration_missing");}
  const db=getDb(),results:Array<{status:string}>=[],deadline=Date.now()+LEARNER_NOTIFICATION_JOB_LIMITS.deadlineMs;
+ // F-036: a suspended vendor gets no learner email/LINE/SMS; its sources,
+ // proofs and deliveries simply wait. Unknown configured ids drop out too.
+ let activeVendorIds:Set<string>;
+ try{activeVendorIds=new Set((await db.vendor.findMany({where:{id:{in:configuredVendors},...ACTIVE_VENDOR_WHERE},select:{id:true}})).map(row=>row.id));}
+ catch(error){report(error,"vendor_scope","failed");return empty("vendor_scope_unavailable");}
+ const vendors=configuredVendors.filter(vendorId=>activeVendorIds.has(vendorId));
  const limits=LEARNER_NOTIFICATION_JOB_LIMITS;
  const sourceDue=(now:Date)=>({completedAt:null,deadLetteredAt:null,availableAt:{lte:now},OR:[{nextAttemptAt:null},{nextAttemptAt:{lte:now}}]});
  const proofDue=(now:Date)=>({deliveryStatus:"queued",deliveryAttemptCount:0,deliveryNextAttemptAt:{lte:now},preference:{is:{channel:{in:channels}}}});

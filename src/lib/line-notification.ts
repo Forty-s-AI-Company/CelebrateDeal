@@ -5,6 +5,7 @@ import { LineFetchClient, LineMessagingError, type LineFlexContents, type LineMe
 import { unprotectLineOfficialAccountCredentials, unprotectLineProfileValue } from "@/lib/line-credentials";
 import { decryptSensitiveValue, encryptSensitiveValue } from "@/lib/sensitive-data";
 import { formatTwd } from "@/lib/format";
+import { ACTIVE_VENDOR_RELATION } from "@/lib/vendor-suspension-state";
 
 export const LINE_NOTIFICATION_TRIGGERS = [
   "live_reminder",
@@ -202,7 +203,9 @@ export async function processDueLineDeliveries(
     data: { status: "failed", claimedAt: null, nextAttemptAt: now, lastErrorCode: "worker_lease_expired" },
   });
   const due = await db.lineDelivery.findMany({
-    where: { ...scopeWhere, status: { in: ["queued", "failed"] }, nextAttemptAt: { lte: now } },
+    // F-036: no LINE push for a suspended vendor; its rows stay queued (not
+    // claimed) until the suspension is lifted, without starving other tenants.
+    where: { ...scopeWhere, status: { in: ["queued", "failed"] }, nextAttemptAt: { lte: now }, ...ACTIVE_VENDOR_RELATION },
     orderBy: [{ nextAttemptAt: "asc" }, { id: "asc" }],
     take: 50,
     include: { account: true, identity: true },

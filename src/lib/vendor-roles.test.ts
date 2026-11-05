@@ -44,6 +44,9 @@ describe("vendor role boundary", () => {
     expect(signedInHomePath({ isPlatformAdmin: false, partnerPortalOnly: true })).toBe(PARTNER_PORTAL_PATH);
     expect(signedInHomePath({ isPlatformAdmin: false, partnerPortalOnly: false })).toBe("/dashboard");
     expect(signedInHomePath({ isPlatformAdmin: false })).toBe("/dashboard");
+    // F-036: a suspended vendor's member lands on the suspended page; a platform admin keeps the admin home.
+    expect(signedInHomePath({ isPlatformAdmin: false, suspendedVendor: { id: "vendor-a" } })).toBe("/vendor-suspended");
+    expect(signedInHomePath({ isPlatformAdmin: true, suspendedVendor: { id: "vendor-a" } })).toBe("/admin/billing/dashboard");
     expect(PARTNER_PORTAL_PATH).toBe("/affiliate-portal");
   });
 });

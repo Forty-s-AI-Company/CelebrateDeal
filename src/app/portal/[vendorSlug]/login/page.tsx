@@ -5,6 +5,7 @@ import { notFound } from "next/navigation";
 import { StudentPortalLoginForm } from "@/components/student-portal-login-form";
 import { getCsrfToken } from "@/lib/csrf";
 import { getDb } from "@/lib/db";
+import { ACTIVE_VENDOR_WHERE } from "@/lib/vendor-suspension-state";
 export const dynamic = "force-dynamic";
 // The magic-link Server Action sends its 15-minute link with `after()` inside
 // this limit (see IMMEDIATE_EMAIL_DISPATCH_MAX_DURATION_SECONDS).
@@ -25,9 +26,11 @@ export default async function StudentPortalLoginPage({
   const {
     vendorSlug
   } = await params;
-  const [vendor, csrfToken] = await Promise.all([getDb().vendor.findUnique({
+  const [vendor, csrfToken] = await Promise.all([getDb().vendor.findFirst({
     where: {
-      slug: vendorSlug
+      slug: vendorSlug,
+      // F-036: a suspended vendor has no learner portal (404 like an unknown slug).
+      ...ACTIVE_VENDOR_WHERE
     },
     select: {
       name: true,

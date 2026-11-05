@@ -3,6 +3,13 @@ import { NextResponse } from "next/server";
 
 import { LINEAGE_PAYLOAD } from "@/lib/preview-lineage";
 import { FUNNEL_VISITOR_COOKIE, isFunnelVisitorId } from "@/lib/funnel-runtime-visitor";
+import {
+  contentSecurityPolicyHeaders,
+  createCspNonce,
+  CSP_NONCE_HEADER,
+  cspSurfaceForPath,
+  parseCspEnforce,
+} from "@/lib/content-security-policy";
 
 const MARKER_PATH = "/__celebratedeal_wp187_fingerprint.json";
 const JSON_HEADERS = Object.freeze({
@@ -29,7 +36,9 @@ export async function proxy(request: NextRequest): Promise<Response> {
   // The App Router treats folders beginning with `_` as private; this exact
   // proxy matcher keeps the public marker contract available at its URL.
   if (request.nextUrl.pathname === MARKER_PATH) return markerResponse(request.method);
-  if (!request.nextUrl.pathname.startsWith("/lp/")) return NextResponse.next();
+  const csp = documentCsp(request);
+  const next = (headers: Headers) => withCsp(NextResponse.next({ request: { headers } }), csp.responseHeaders);
+  if (!request.nextUrl.pathname.startsWith("/lp/")) return next(csp.requestHeaders);
 
   const existingVisitorId = cookieValue(request.headers.get("cookie"), FUNNEL_VISITOR_COOKIE);
   const hasVisitorId = isFunnelVisitorId(existingVisitorId);
@@ -47,14 +56,14 @@ export async function proxy(request: NextRequest): Promise<Response> {
       return publicUnavailable(request.method, 503);
     }
   }
-  if (hasVisitorId) return NextResponse.next();
+  if (hasVisitorId) return next(csp.requestHeaders);
 
   // Server Components cannot set cookies. Inject the generated pseudonym into
   // this request as well as the response so the first SSR decision and the
   // browser's next request use the same non-authorizing identifier.
-  const headers = new Headers(request.headers);
+  const headers = csp.requestHeaders;
   headers.set("cookie", replaceCookie(request.headers.get("cookie"), FUNNEL_VISITOR_COOKIE, visitorId));
-  const response = NextResponse.next({ request: { headers } });
+  const response = next(headers);
   response.cookies.set(FUNNEL_VISITOR_COOKIE, visitorId, {
     httpOnly: true,
     sameSite: "lax",
@@ -62,6 +71,32 @@ export async function proxy(request: NextRequest): Promise<Response> {
     path: "/",
     maxAge: 60 * 60 * 24 * 30,
   });
+  return response;
+}
+
+/**
+ * F-156: a fresh nonce per document. Next.js reads it from the request's
+ * Content-Security-Policy header and stamps it on its own scripts; the root
+ * layout reads `x-nonce` for `next/script`. Client-supplied values of these
+ * request headers are always replaced.
+ */
+function documentCsp(request: NextRequest) {
+  const nonce = createCspNonce();
+  const set = contentSecurityPolicyHeaders({
+    nonce,
+    surface: cspSurfaceForPath(request.nextUrl.pathname),
+    development: process.env.NODE_ENV === "development",
+    enforce: parseCspEnforce(process.env.CSP_ENFORCE).enforce,
+  });
+  const requestHeaders = new Headers(request.headers);
+  requestHeaders.delete("content-security-policy-report-only");
+  requestHeaders.set("content-security-policy", set.requestPolicy);
+  requestHeaders.set(CSP_NONCE_HEADER, nonce);
+  return { requestHeaders, responseHeaders: set.response };
+}
+
+function withCsp(response: NextResponse, headers: Record<string, string>) {
+  for (const [key, value] of Object.entries(headers)) response.headers.set(key, value);
   return response;
 }
 
@@ -125,6 +160,21 @@ function replaceCookie(header: string | null, name: string, value: string) {
   return [...retained, replacement].join("; ");
 }
 
+/**
+ * Every HTML document gets the CSP (F-156). Not matched: API routes (JSON;
+ * the PayUni hand-off page sends its own hash-based CSP), build assets, the
+ * Sentry tunnel, the custom-code sandbox document (own CSP, next.config.ts),
+ * the course certificate SVG (own `sandbox` CSP, which a proxy header would
+ * replace) and static files from /public such as the presenter segmentation
+ * worker, which must not run under the page's nonce policy. The static-file
+ * exclusion is limited to files at the root and the /public directories
+ * below (proxy.test.ts checks that the list covers /public), so an app path
+ * such as /live/abc.css still gets the policy.
+ */
 export const config = {
-  matcher: ["/__celebratedeal_wp187_fingerprint\\.json", "/lp/:path*"],
+  matcher: [
+    "/__celebratedeal_wp187_fingerprint\\.json",
+    "/lp/:path*",
+    "/((?!api/|_next/static/|_next/image|monitoring(?:/|$)|sandbox/custom-code$|portal/[^/]+/learn/[^/]+/certificate$|(?:(?:fonts|funnel-illustrations)/(?:.*/)?|(?:portal|presenter-segmentation)/)[^/]+\\.(?:js|json|txt|md|html|webmanifest|png|svg|woff2|wasm|tflite)$|[^/]+\\.(?:ico|png|svg|txt|xml|webmanifest|json)$).*)",
+  ],
 };

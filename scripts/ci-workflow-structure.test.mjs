@@ -175,6 +175,11 @@ const expectedRunSteps = {
     env: null,
     shell: null,
   },
+  "CSP enforced build smoke": {
+    run: "node scripts/csp-build-smoke.mjs",
+    env: null,
+    shell: null,
+  },
   "Controlled production preflight and build": {
     run: "node scripts/build/controlled-production-build.mjs",
     env: null,
@@ -302,6 +307,7 @@ const requiredGateSteps = [
   "Subscription recovery database and browser gate",
   "Release browser gates",
   "Build",
+  "CSP enforced build smoke",
   "Controlled production preflight and build",
   "Preflight",
 ];
@@ -369,7 +375,10 @@ test("ordering dependencies stay inside one job", () => {
   const [buildJobId, buildJob] = jobOf("Build");
   assert.equal(jobOf("Controlled production preflight and build")[0], buildJobId);
   assert.equal(jobOf("Preflight")[0], buildJobId);
+  // The CSP smoke serves the `.next` output of the Build step right before it.
+  assert.equal(jobOf("CSP enforced build smoke")[0], buildJobId);
   const order = (name) => buildJob.steps.findIndex((step) => step.name === name);
+  assert.equal(order("CSP enforced build smoke"), order("Build") + 1);
   assert.ok(order("Build") < order("Controlled production preflight and build"));
   assert.ok(order("Controlled production preflight and build") < order("Preflight"));
 });

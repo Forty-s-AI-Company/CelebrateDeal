@@ -5,6 +5,66 @@ import { diagnoseStagingAliasBindingWithFallback, diagnoseStagingPreviewBinding 
 
 import { appNavigationSelectorForViewport, classifyBrowserExecutionFailure, classifyBrowserRequest, classifyCriticalResourceFailureKind, classifyCriticalResourceRequestFailure, classifyCriticalResourceResponse, classifyFinalPath, classifySessionStatus, classifyUnsafeRequestDetail, classifyUnsafeRequestPath, diagnoseStagingAliasBinding, hasActionableDashboardAlert, isCriticalResourceFailure, isDashboardDetailsGet, isFailedCriticalResourceRequest, runBrowserSmoke, validateBrowserSmokeBinding, verifyStagingAliasBinding } from "./staging-browser-smoke.mjs";
 
+import { browserFailureStep, captureFailureDom, classifyFailurePath, elementHydratedInPage, waitForFulfillmentHydration } from "./staging-browser-smoke.mjs";
+
+test("failure diagnostics stay inside fixed step and route vocabularies", () => {
+  const alias = "celebrate-deal-staging.carry-digital-nomad.in.net";
+  assert.equal(browserFailureStep("DELIVERY_GROUP_VISIBLE"), "DELIVERY_GROUP_VISIBLE");
+  assert.equal(browserFailureStep("private selector text"), "UNKNOWN");
+  assert.equal(classifyFailurePath(`https://${alias}/products/wp4_synthetic_product_v1/edit?token=secret`), "PRODUCT_EDIT");
+  assert.equal(classifyFailurePath(`https://${alias}/dashboard`), "DASHBOARD");
+  assert.equal(classifyFailurePath(`https://${alias}/login?next=/private`), "AUTH_REDIRECT");
+  assert.equal(classifyFailurePath(`https://${alias}/private/path`), "OTHER_SAME_HOST");
+  assert.equal(classifyFailurePath("https://evil.example.test/dashboard"), "OFF_HOST");
+  assert.equal(classifyFailurePath("about:blank"), "BLANK");
+  assert.equal(classifyFailurePath("not a url"), "INVALID_URL");
+});
+
+test("product-edit DOM diagnostic returns bounded counts and a fixed option enum", async () => {
+  const page = (selected, groups = 0) => ({
+    locator: (selector) => selector === 'select[name="fulfillmentType"]'
+      ? { count: async () => 1, inputValue: async () => selected }
+      : { count: async () => 1 },
+    getByRole: (role) => ({ count: async () => (role === "group" ? groups : 0) }),
+  });
+  assert.deepEqual(await captureFailureDom(page("digital", 0)), {
+    fulfillmentSelects: 1, fulfillmentValue: "digital", fulfillmentHydrated: null, documentReadyState: "UNKNOWN",
+    deliveryGroups: 0, globalErrorVisible: false, mainContent: 1,
+  });
+  // In-page reads return only a boolean and a fixed readyState enum; anything else is dropped.
+  const evaluated = { ...page("digital", 0), evaluate: async (fn) => (fn === elementHydratedInPage ? false : "complete") };
+  assert.deepEqual(await captureFailureDom(evaluated), {
+    fulfillmentSelects: 1, fulfillmentValue: "digital", fulfillmentHydrated: false, documentReadyState: "complete",
+    deliveryGroups: 0, globalErrorVisible: false, mainContent: 1,
+  });
+  const leaky = { ...page("digital", 0), evaluate: async () => "private page text" };
+  const leakyDom = await captureFailureDom(leaky);
+  assert.equal(leakyDom.fulfillmentHydrated, null);
+  assert.equal(leakyDom.documentReadyState, "UNKNOWN");
+  assert.equal((await captureFailureDom(page("private-value"))).fulfillmentValue, "OTHER");
+  assert.equal(await captureFailureDom({ locator: () => { throw new Error("closed"); } }), null);
+});
+
+test("product-edit interaction waits for React to hydrate the fulfillment select", async () => {
+  const calls = [];
+  await waitForFulfillmentHydration({ waitForFunction: async (fn, arg, options) => { calls.push({ fn, arg, options }); } });
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].fn, elementHydratedInPage);
+  assert.equal(calls[0].arg, 'select[name="fulfillmentType"]');
+  assert.equal(calls[0].options.timeout, 20_000);
+  assert.equal(browserFailureStep("FULFILLMENT_HYDRATED"), "FULFILLMENT_HYDRATED");
+  // The page function only checks React's props key; it works on a plain DOM stand-in.
+  const original = globalThis.document;
+  try {
+    globalThis.document = { querySelector: () => ({ value: "digital" }) };
+    assert.equal(elementHydratedInPage('select[name="fulfillmentType"]'), false);
+    globalThis.document = { querySelector: () => ({ "__reactProps$abc": {} }) };
+    assert.equal(elementHydratedInPage('select[name="fulfillmentType"]'), true);
+    globalThis.document = { querySelector: () => null };
+    assert.equal(elementHydratedInPage('select[name="fulfillmentType"]'), false);
+  } finally { globalThis.document = original; }
+});
+
 const INPUT = {
   CELEBRATEDEAL_SOURCE_SHA: "9193326824b8b6bf774bdfa28e4783a1a1b8f304",
   CELEBRATEDEAL_DEPLOYMENT_HOST: "celebrate-deal-staging-jtozttm8m-a25814740s-projects.vercel.app",
@@ -186,7 +246,7 @@ test("a rendered journey remains blocked when an unexpected browser POST occurs"
       let handler;
       let currentUrl = origin;
       const locator = { first: () => locator, waitFor: async () => {}, count: async () => 0, getAttribute: async () => "6",
-        click: async () => { currentUrl = `${origin}/products`; } };
+        selectOption: async () => {}, click: async () => { currentUrl = `${origin}/products`; } };
       return {
         route: async (_pattern, callback) => { handler = callback; },
         routeWebSocket: async () => {},
@@ -253,6 +313,7 @@ test("a rendered journey remains blocked when an unexpected browser POST occurs"
           getByText: () => locator,
           locator: () => locator,
           waitForURL: async () => {},
+          waitForFunction: async () => true,
           url: () => currentUrl,
         }; },
         close: async () => {},

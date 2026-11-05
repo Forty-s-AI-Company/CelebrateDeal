@@ -85,13 +85,14 @@ type StudentPortalAccessTokenStore = {
     select: { id: true };
   }): Promise<{ id: string } | null>;
   deleteMany(args: {
-    where: { vendorId: string; customerKeyHash: string; tokenHash?: string; consumedAt?: { not: null } };
+    // customerKeyHash is omitted only by the vendor-wide batch revocation (F-036).
+    where: { vendorId: string; customerKeyHash?: string; tokenHash?: string; consumedAt?: { not: null } };
   }): Promise<{ count: number }>;
 };
 
 type StudentPortalVendorStore = {
   findFirst(args: {
-    where: { id: string; slug: string };
+    where: { id: string; slug: string; suspendedAt: null };
     select: { id: true; slug: true; name: true; logoUrl: true; primaryColor: true };
   }): Promise<{ id: string; slug: string; name: string; logoUrl: string | null; primaryColor: string } | null>;
 };
@@ -403,6 +404,19 @@ export async function revokeStudentPortalSessions(
   return count;
 }
 
+/**
+ * Batch form for a whole tenant (F-036 vendor suspension): one tenant-scoped
+ * statement ends every portal session and unused link of the vendor.
+ */
+export async function revokeAllStudentPortalSessionsForVendor(
+  db: { studentPortalAccessToken: Pick<StudentPortalAccessTokenStore, "deleteMany"> },
+  input: { vendorId: string },
+) {
+  const vendorId = z.string().regex(IDENTIFIER).parse(input.vendorId);
+  const { count } = await db.studentPortalAccessToken.deleteMany({ where: { vendorId } });
+  return count;
+}
+
 export function studentPortalSessionCookieOptions(secure = process.env.NODE_ENV === "production") {
   return {
     httpOnly: true as const,
@@ -472,7 +486,8 @@ export async function requireStudentPortalSession(vendorSlug: string) {
   if (!session) redirect(studentPortalLoginPath(vendorSlug));
 
   const vendor = await database().vendor.findFirst({
-    where: { id: session.vendorId, slug: vendorSlug },
+    // F-036: a suspended vendor's portal is closed even for a session issued before the suspension.
+    where: { id: session.vendorId, slug: vendorSlug, suspendedAt: null },
     select: { id: true, slug: true, name: true, logoUrl: true, primaryColor: true },
   });
   if (!vendor) redirect(`${studentPortalLoginPath(vendorSlug)}?error=unauthorized`);
