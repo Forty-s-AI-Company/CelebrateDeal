@@ -138,7 +138,7 @@ describe("scripts/backfill-order-customer-key-hash (PostgreSQL)", () => {
 
 describe("order key backfill guards", () => {
   const loopback = "postgresql://postgres:postgres@localhost:54329/celebratedeal_test?schema=public";
-  const remote = "postgresql://user:pass@db.example.test:5432/app";
+  const remote = "postgresql://user:pass@db.example.test:5432/celebratedeal?schema=public"; // secret-scan: allow-test-fixture (reserved .test host, fake credentials)
 
   it("parses only known arguments", () => {
     expect(parseOrderKeyBackfillArguments([])).toEqual({ apply: false, target: null, batchSize: 100, allowUnreadable: false, vendorId: null });

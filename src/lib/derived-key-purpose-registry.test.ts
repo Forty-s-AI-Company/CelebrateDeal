@@ -54,7 +54,7 @@ const REGISTRY_VARIABLE = "值在執行時取自 DERIVED_KEY_ROTATIONS 的 curre
 const ALLOWED_UNREGISTERED: Record<string, string> = {
   "app/actions/interaction-actions.ts luckyDrawClaimEnvelopePurpose(vendor.id, winner.id)": AT_REST,
   "lib/live-interaction-viewer-state.ts luckyDrawClaimEnvelopePurpose(run.vendorId, winnerResponse.id)": AT_REST,
-  "lib/automation-workflow.ts \"automation-customer-key-v1\"": HASH_INDEX,
+  "lib/customer-key-hash.ts \"automation-customer-key-v1\"": HASH_INDEX,
   "lib/cloudflare-ops.ts CLOUDFLARE_STREAM_KEY_PURPOSE": AT_REST,
   "lib/commerce-custom-checkout.ts CHECKOUT_IDENTITY_FINGERPRINT_PURPOSE": HASH_INDEX,
   "lib/commerce-custom-checkout.ts purpose(binding)": AT_REST,
