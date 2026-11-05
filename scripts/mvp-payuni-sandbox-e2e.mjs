@@ -1295,6 +1295,8 @@ export function createPayUniBrowserDiagnostic() {
     resourceFailures: { payuniScript: 0, payuniOther: 0, externalScript: 0, externalOther: 0 },
     // Sanitized form-structure summary of the PayUni page; see sanitizePayUniPageStructure.
     structure: null,
+    // Post-submit summary (dialogs, modal, host/path class, field errors); see capturePayUniSubmitDiagnostic.
+    submit: { captured: false, dialogs: [], modal: "NONE", host: "NONE", path: "NONE", errors: [] },
   };
 }
 
@@ -1453,6 +1455,184 @@ function withinMs(promise, milliseconds) {
   return Promise.race([promise, new Promise((resolve) => { setTimeout(() => resolve(null), milliseconds); })]);
 }
 
+// ---- Post-submit diagnostics (2026-11-06 run 42098319335: submit accepted by the UI, PayUni never
+// created the transaction, and the runner could not say why). Only fixed enums are ever stored or
+// printed: dialog type, message category, host/path class and field step. Never message text,
+// field values, e-mail, identifiers or URL query strings.
+const SUBMIT_MESSAGE_CATEGORIES = new Set(["CARD_EXPIRED", "CARD_NUMBER_INVALID", "CVV_INVALID", "EMAIL_INVALID", "OTHER"]);
+const SUBMIT_DIALOG_TYPES = new Set(["ALERT", "CONFIRM", "PROMPT", "OTHER"]);
+const SUBMIT_ERROR_STEPS = new Set([...PAYUNI_CARD_FIELDS.map((field) => field.step), "UNKNOWN"]);
+const SUBMIT_LOCATION_HOSTS = new Set(["NONE", "PAYUNI_UPP", "APP", "OTHER"]);
+const SUBMIT_LOCATION_PATHS = new Set(["NONE", "UPP", "CHECKOUT", "CHECKOUT_RESULT", "ROOT", "OTHER"]);
+const SUBMIT_MAX_ENTRIES = 8;
+
+/** Fixed category of a dialog, modal or inline error message; the text itself is never kept. */
+export function classifyPayUniSubmitMessage(text) {
+  if (typeof text !== "string" || text.length > 4096) return "OTHER";
+  if (/(?:過期|到期|有效期)/u.test(text)) return "CARD_EXPIRED";
+  if (/(?:卡號|card\s*number)/iu.test(text)) return "CARD_NUMBER_INVALID";
+  if (/(?:安全碼|檢查碼|CVV|CVC)/iu.test(text)) return "CVV_INVALID";
+  if (/(?:e-?mail|電子郵件|電子信箱|信箱)/iu.test(text)) return "EMAIL_INVALID";
+  return "OTHER";
+}
+
+/** Host class (PayUni UPP / this app / other) and path class of the page. The query is never read. */
+export function classifyPayUniSubmitLocation(url, operationHost) {
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol !== "https:") return { host: "OTHER", path: "NONE" };
+    if (parsed.hostname === PAYUNI_PAYMENT_HOST) return { host: "PAYUNI_UPP", path: parsed.pathname === "/api/upp" ? "UPP" : "OTHER" };
+    if (parsed.hostname === operationHost) {
+      const pathname = parsed.pathname;
+      if (pathname === "/checkout/result") return { host: "APP", path: "CHECKOUT_RESULT" };
+      if (pathname === "/checkout" || pathname.startsWith("/checkout/")) return { host: "APP", path: "CHECKOUT" };
+      return { host: "APP", path: pathname === "/" ? "ROOT" : "OTHER" };
+    }
+    return { host: "OTHER", path: "NONE" };
+  } catch { return { host: "NONE", path: "NONE" }; }
+}
+
+/** Map a failing form field (placeholder / autocomplete / type, never its value) to a card-field step. */
+export function classifyPayUniSubmitFieldStep(field) {
+  const placeholder = typeof field?.placeholder === "string" ? field.placeholder : "";
+  const autocomplete = typeof field?.autocomplete === "string" ? field.autocomplete : "";
+  const type = typeof field?.type === "string" ? field.type.toLowerCase() : "";
+  for (const item of PAYUNI_CARD_FIELDS) {
+    if (placeholder === item.placeholder || (item.legacyPlaceholder && placeholder === item.legacyPlaceholder)) return item.step;
+  }
+  if (autocomplete === "cc-number") return "CARD_NUMBER";
+  if (autocomplete === "cc-exp") return "CARD_EXPIRY";
+  if (autocomplete === "cc-csc") return "CARD_CVV";
+  if (type === "email") return "EMAIL";
+  return "UNKNOWN";
+}
+
+/** Reduce raw in-page error elements to unique {step, category} pairs. */
+export function sanitizePayUniSubmitErrors(raw) {
+  const seen = new Set();
+  const errors = [];
+  for (const item of Array.isArray(raw) ? raw.slice(0, 40) : []) {
+    const step = classifyPayUniSubmitFieldStep(item);
+    const category = classifyPayUniSubmitMessage(item?.text);
+    const key = `${step}:${category}`;
+    if (seen.has(key) || errors.length >= SUBMIT_MAX_ENTRIES) continue;
+    seen.add(key);
+    errors.push({ step, category });
+  }
+  return errors;
+}
+
+/**
+ * Runs inside the PayUni page. Collects visible validation-error elements and, for each, only the
+ * placeholder / autocomplete / type of the associated field (never `value`) plus the raw message
+ * text, which Node reduces to a fixed category and discards.
+ */
+export function collectSubmitErrorsInPage() {
+  const shown = (element) => {
+    try {
+      const box = element.getBoundingClientRect();
+      const style = getComputedStyle(element);
+      return box.width > 0 && box.height > 0 && style.visibility !== "hidden" && style.display !== "none";
+    } catch { return false; }
+  };
+  const attribute = (element, name) => String(element?.getAttribute?.(name) ?? "").slice(0, 100);
+  const isField = (element) => element.matches?.("input, select, textarea") === true;
+  const nearestField = (element) => {
+    if (isField(element)) return element;
+    let scope = element;
+    for (let depth = 0; depth < 3 && scope; depth += 1, scope = scope.parentElement) {
+      const field = scope.querySelector?.("input, select, textarea");
+      if (field) return field;
+    }
+    return null;
+  };
+  const found = [];
+  const elements = document.querySelectorAll('.error, [role="alert"], .invalid-feedback, [aria-invalid="true"]');
+  for (const element of elements) {
+    if (found.length >= 20) break;
+    if (!shown(element)) continue;
+    const field = nearestField(element);
+    let text = isField(element) ? "" : String(element.innerText ?? element.textContent ?? "").slice(0, 200);
+    if (text.trim() === "" && field) {
+      const sibling = field.parentElement?.querySelector?.('.error, [role="alert"], .invalid-feedback');
+      text = String(sibling?.innerText ?? sibling?.textContent ?? "").slice(0, 200);
+    }
+    found.push({ text, placeholder: attribute(field, "placeholder"), autocomplete: attribute(field, "autocomplete"), type: attribute(field, "type") });
+  }
+  return found;
+}
+
+/** Record a dialog's type and message category, then dismiss it. Never accepts, so it never re-submits. */
+export function recordPayUniSubmitDialog(diagnostic, dialog) {
+  try {
+    const submit = diagnostic?.submit;
+    if (submit && diagnostic.step === "SUBMIT" && submit.dialogs.length < SUBMIT_MAX_ENTRIES) {
+      const rawType = String(dialog.type?.() ?? "").toUpperCase();
+      submit.dialogs.push({
+        type: ["ALERT", "CONFIRM", "PROMPT"].includes(rawType) ? rawType : "OTHER",
+        category: classifyPayUniSubmitMessage(dialog.message?.()),
+      });
+    }
+  } catch { /* Diagnostics never change behaviour. */ }
+  return Promise.resolve().then(() => dialog.dismiss()).catch(() => {});
+}
+
+/** Register the dismiss-only dialog observer; call before the submit click. */
+export function observePayUniSubmitDialogs(page, diagnostic) {
+  try {
+    page.on("dialog", (dialog) => { void recordPayUniSubmitDialog(diagnostic, dialog); });
+  } catch { /* A page without dialog events is simply not observed. */ }
+}
+
+/** Category of the in-page "確定" modal text; OTHER when the modal text could not be read. */
+export function recordPayUniSubmitModal(diagnostic, text) {
+  if (!diagnostic?.submit) return;
+  diagnostic.submit.modal = typeof text === "string" && text.trim() !== "" ? classifyPayUniSubmitMessage(text) : "OTHER";
+}
+
+/**
+ * After a non-successful submit: where the browser is (host/path class only), which validation
+ * errors are visible on the PayUni page, and a fresh sanitized page structure. Time-boxed; never throws.
+ */
+export async function capturePayUniSubmitDiagnostic(page, diagnostic, operationHost) {
+  if (!diagnostic?.submit) return;
+  const submit = diagnostic.submit;
+  submit.captured = true;
+  try {
+    const location = classifyPayUniSubmitLocation(page.url(), operationHost);
+    submit.host = location.host;
+    submit.path = location.path;
+    if (location.host !== "PAYUNI_UPP") return;
+    const frames = page.frames().slice(0, STRUCTURE_MAX_FRAMES);
+    const collected = [];
+    for (const frame of frames) {
+      const raw = await withinMs(frame.evaluate(collectSubmitErrorsInPage).catch(() => null), 2_000);
+      if (Array.isArray(raw)) collected.push(...raw);
+    }
+    submit.errors = sanitizePayUniSubmitErrors(collected);
+    const structure = await capturePayUniPageStructure(page);
+    if (structure.length > 0) diagnostic.structure = structure;
+  } catch { /* No diagnostic is better than a changed failure code. */ }
+}
+
+/** One fixed-vocabulary log line; every value is re-validated against its whitelist. */
+export function formatPayUniSubmitDiagnostic(diagnostic) {
+  const submit = diagnostic?.submit;
+  if (!submit || submit.captured !== true) return null;
+  const dialogs = (Array.isArray(submit.dialogs) ? submit.dialogs : []).slice(0, SUBMIT_MAX_ENTRIES).map((item) =>
+    `${SUBMIT_DIALOG_TYPES.has(item?.type) ? item.type : "OTHER"}:${SUBMIT_MESSAGE_CATEGORIES.has(item?.category) ? item.category : "OTHER"}`);
+  const errors = (Array.isArray(submit.errors) ? submit.errors : []).slice(0, SUBMIT_MAX_ENTRIES).map((item) =>
+    `${SUBMIT_ERROR_STEPS.has(item?.step) ? item.step : "UNKNOWN"}:${SUBMIT_MESSAGE_CATEGORIES.has(item?.category) ? item.category : "OTHER"}`);
+  const modal = submit.modal === "NONE" ? "NONE" : (SUBMIT_MESSAGE_CATEGORIES.has(submit.modal) ? submit.modal : "OTHER");
+  return [
+    `dialogs=${dialogs.length > 0 ? dialogs.join(",") : "NONE"}`,
+    `modal=${modal}`,
+    `host=${SUBMIT_LOCATION_HOSTS.has(submit.host) ? submit.host : "NONE"}`,
+    `path=${SUBMIT_LOCATION_PATHS.has(submit.path) ? submit.path : "NONE"}`,
+    `errors=${errors.length > 0 ? errors.join(",") : "NONE"}`,
+  ].join("; ");
+}
+
 /**
  * After a failed step, count where the expected field is: in the main frame, or in a child
  * frame (a provider move to hosted iframes shows up here). Counts only, bounded and time-boxed.
@@ -1462,7 +1642,8 @@ export async function recordPayUniBrowserFailure(page, diagnostic, error, operat
   try {
     diagnostic.error = classifyPlaywrightErrorKind(error);
     diagnostic.page = classifyPayUniBrowserPage(page.url(), operationHost);
-    if (diagnostic.page.startsWith("PAYUNI_") && diagnostic.step !== "NONE") diagnostic.structure = await capturePayUniPageStructure(page);
+    if (diagnostic.step === "SUBMIT") await capturePayUniSubmitDiagnostic(page, diagnostic, operationHost);
+    else if (diagnostic.page.startsWith("PAYUNI_") && diagnostic.step !== "NONE") diagnostic.structure = await capturePayUniPageStructure(page);
     const field = PAYUNI_CARD_FIELDS.find((item) => item.step === diagnostic.step);
     if (!field) return;
     diagnostic.mainFrameMatches = await withinMs(page.getByPlaceholder(field.placeholder, { exact: true }).count(), 2_000);
@@ -1575,6 +1756,7 @@ export async function defaultBrowserSubmit(input, dependencies = {}) {
   });
   const context = await browser.newContext({ locale: "zh-TW" });
   const page = await context.newPage();
+  observePayUniSubmitDialogs(page, input.diagnostic);
   const origin = fixedOrigin(input.previewHost);
   let stage = "PAYMENT_PAGE_UNREACHED";
   let apiPostSeen = false;
@@ -1668,6 +1850,8 @@ export async function defaultBrowserSubmit(input, dependencies = {}) {
         confirmationText = await confirmation.evaluate((button) =>
           button.closest('[role="dialog"], .modal, .swal2-popup')?.innerText?.slice(0, 4097) ?? "");
       } catch { /* Unreadable/unknown dialogs stay ambiguous. */ }
+      recordPayUniSubmitModal(input.diagnostic, confirmationText);
+      await capturePayUniSubmitDiagnostic(page, input.diagnostic, input.previewHost);
       return classifyPayUniConfirmation(confirmationText);
     } catch (error) {
       if (!(error instanceof errors.TimeoutError)) throw error;
@@ -1681,7 +1865,10 @@ export async function defaultBrowserSubmit(input, dependencies = {}) {
     ), { waitUntil: "domcontentloaded", timeout: 60_000 });
     stage = "RETURN_RESULT_UNMAPPED";
     const resultText = await page.locator("body").innerText();
-    if (!resultText.includes(input.orderNumber) || !resultText.includes("付款完成")) return false;
+    if (!resultText.includes(input.orderNumber) || !resultText.includes("付款完成")) {
+      await capturePayUniSubmitDiagnostic(page, input.diagnostic, input.previewHost);
+      return false;
+    }
     if (input.captureReturnCallback !== true) return true;
     if (returnRequestCount !== 1 || returnStatus !== 303 || !Buffer.isBuffer(signedReturnBody)
       || signedReturnBody.length === 0 || signedReturnBody.length > 16_384
@@ -1716,6 +1903,7 @@ export async function defaultSubscriptionBrowserSubmit(input, dependencies = {})
   });
   const context = await browser.newContext({ locale: "zh-TW" });
   const page = await context.newPage();
+  observePayUniSubmitDialogs(page, input.diagnostic);
   const origin = fixedOrigin(input.previewHost);
   let stage = "CHECKOUT_REJECTED";
   let paymentPageOpened = false;
@@ -1790,6 +1978,14 @@ export async function defaultSubscriptionBrowserSubmit(input, dependencies = {})
     const confirmation = page.getByRole("button", { name: "確定", exact: true });
     try {
       await confirmation.waitFor({ state: "visible", timeout: 5_000 });
+      // Same dismiss-only handling: read the modal into a fixed category, never click it.
+      let confirmationText = "";
+      try {
+        confirmationText = await confirmation.evaluate((button) =>
+          button.closest('[role="dialog"], .modal, .swal2-popup')?.innerText?.slice(0, 4097) ?? "");
+      } catch { /* Unreadable modal stays OTHER. */ }
+      recordPayUniSubmitModal(input.diagnostic, confirmationText);
+      await capturePayUniSubmitDiagnostic(page, input.diagnostic, input.previewHost);
       return "PAYMENT_CONFIRMATION_AMBIGUOUS";
     } catch (error) {
       if (!(error instanceof errors.TimeoutError)) throw error;
@@ -2401,6 +2597,8 @@ function printBrowserDiagnostic(flowDependencies, result) {
   process.stdout.write(`wp4_payuni_browser_diagnostic=${formatPayUniBrowserDiagnostic(diagnostic)}\n`);
   const structure = formatPayUniPageStructure(diagnostic);
   if (structure) process.stdout.write(`wp4_payuni_page_structure=${structure}\n`);
+  const submit = formatPayUniSubmitDiagnostic(diagnostic);
+  if (submit) process.stdout.write(`wp4_payuni_submit_diagnostic=${submit}\n`);
 }
 
 /** JSON of the already-sanitized frames, re-sanitized and capped; null when nothing was captured. */

@@ -22,6 +22,8 @@
 
 付款頁若出現「確定」視窗，不會再次點擊提交。只將可辨識的欄位驗證訊息降為固定 CARD／EXPIRY／CVV／EMAIL／FIELD 分類；未知內容保持 PAYMENT_CONFIRMATION_AMBIGUOUS。不保存視窗原文、卡片或交易識別資料。
 
+送出後只要結果不是成功（含 PAYMENT_CONFIRMATION_AMBIGUOUS），會多輸出一行 `wp4_payuni_submit_diagnostic=dialogs=...; modal=...; host=...; path=...; errors=...`，並重新輸出一次 `wp4_payuni_page_structure`。`dialogs` 為 `page.on("dialog")` 的類型（ALERT／CONFIRM／PROMPT／OTHER）與訊息分類；`modal` 為「確定」視窗的訊息分類；`host`／`path` 只記頁面所在主機類別（PAYUNI_UPP／APP／OTHER）與路徑類別，不含 query；`errors` 為 PayUni 頁面可見錯誤提示對應的欄位（CARD_NUMBER／CARD_EXPIRY／CARD_CVV／EMAIL／UNKNOWN）與訊息分類。訊息分類固定為 CARD_EXPIRED／CARD_NUMBER_INVALID／CVV_INVALID／EMAIL_INVALID／OTHER；dialog 只 dismiss，不輸出原文、卡片值、Email、交易識別或網址 query。
+
 收到失敗收據先診斷該分類、查核交易狀態，不盲目重跑。未知付款結果不能推斷為失敗，也不能藉更換來源繞過舊訂單的單次保護。本文件與本機契約測試不是外部 Sandbox PASS；實際 run 收據另行記入 CURRENT。
 
 ## 程式驗證與交接

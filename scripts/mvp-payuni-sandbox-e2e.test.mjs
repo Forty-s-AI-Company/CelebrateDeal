@@ -12,6 +12,14 @@ import {
   sanitizePayUniPageStructure,
   sanitizeStructureText,
   classifyPayUniBrowserPage,
+  classifyPayUniSubmitMessage,
+  classifyPayUniSubmitLocation,
+  sanitizePayUniSubmitErrors,
+  formatPayUniSubmitDiagnostic,
+  collectSubmitErrorsInPage,
+  capturePayUniSubmitDiagnostic,
+  observePayUniSubmitDialogs,
+  recordPayUniSubmitDialog,
   classifyPlaywrightErrorKind,
   createPayUniBrowserDiagnostic,
   formatPayUniBrowserDiagnostic,
@@ -600,6 +608,7 @@ test("a rejected PayUni card field records only the fixed step, error class and 
     step: "CARD_EXPIRY", error: "TIMEOUT", page: "PAYUNI_UPP", mainFrameMatches: 0, childFrames: 1, childFrameMatches: 1,
     fieldSource: "PLACEHOLDER", creditTab: "NOT_TRIED",
     resourceFailures: { payuniScript: 0, payuniOther: 0, externalScript: 0, externalOther: 0 }, structure: [],
+    submit: { captured: false, dialogs: [], modal: "NONE", host: "NONE", path: "NONE", errors: [] },
   });
   const line = formatPayUniBrowserDiagnostic(diagnostic);
   assert.equal(line, "step=CARD_EXPIRY; error=TIMEOUT; page=PAYUNI_UPP; mainFrameMatches=0; childFrames=1; childFrameMatches=1; fieldSource=PLACEHOLDER; creditTab=NOT_TRIED; failed_payuniScript=0; failed_payuniOther=0; failed_externalScript=0; failed_externalOther=0");
@@ -2047,4 +2056,185 @@ test("credit tab is clicked only when exactly one visible element matches", asyn
   assert.equal(await clickPayUniCreditTab(page(0, 0)), "NOT_FOUND");
   assert.equal(await clickPayUniCreditTab(page(3, 1)), "AMBIGUOUS");
   assert.equal(await clickPayUniCreditTab({ getByRole: () => { throw new Error("closed"); } }), "NOT_FOUND");
+});
+
+// ---- Post-submit diagnostics (wp4_payuni_submit_diagnostic) ----
+
+test("submit messages map to fixed categories and never echo the text", () => {
+  const cases = [
+    ["信用卡已過期", "CARD_EXPIRED"], ["到期日不正確", "CARD_EXPIRED"], ["有效期限錯誤", "CARD_EXPIRED"],
+    ["卡號不正確", "CARD_NUMBER_INVALID"], ["Invalid card number", "CARD_NUMBER_INVALID"],
+    ["安全碼錯誤", "CVV_INVALID"], ["CVV is required", "CVV_INVALID"],
+    ["Email 格式錯誤", "EMAIL_INVALID"], ["請輸入電子信箱", "EMAIL_INVALID"],
+    ["交易失敗", "OTHER"], ["", "OTHER"], [undefined, "OTHER"], [42, "OTHER"], ["過期".repeat(3000), "OTHER"],
+  ];
+  for (const [text, expected] of cases) assert.equal(classifyPayUniSubmitMessage(text), expected, String(text).slice(0, 20));
+});
+
+test("submit location reports only host and path classes, never the query", () => {
+  assert.deepEqual(classifyPayUniSubmitLocation("https://sandbox-api.payuni.com.tw/api/upp?EncryptInfo=secret", previewHost), { host: "PAYUNI_UPP", path: "UPP" });
+  assert.deepEqual(classifyPayUniSubmitLocation("https://sandbox-api.payuni.com.tw/api/other", previewHost), { host: "PAYUNI_UPP", path: "OTHER" });
+  assert.deepEqual(classifyPayUniSubmitLocation(`https://${previewHost}/checkout/result?payment=updated&order=CD-1`, previewHost), { host: "APP", path: "CHECKOUT_RESULT" });
+  assert.deepEqual(classifyPayUniSubmitLocation(`https://${previewHost}/checkout/abc`, previewHost), { host: "APP", path: "CHECKOUT" });
+  assert.deepEqual(classifyPayUniSubmitLocation(`https://${previewHost}/`, previewHost), { host: "APP", path: "ROOT" });
+  assert.deepEqual(classifyPayUniSubmitLocation(`https://${previewHost}/x`, previewHost), { host: "APP", path: "OTHER" });
+  assert.deepEqual(classifyPayUniSubmitLocation("https://evil.example/api/upp", previewHost), { host: "OTHER", path: "NONE" });
+  assert.deepEqual(classifyPayUniSubmitLocation("not a url", previewHost), { host: "NONE", path: "NONE" });
+});
+
+test("error elements map to card-field steps by placeholder, autocomplete or type", () => {
+  const errors = sanitizePayUniSubmitErrors([
+    { text: "卡號不正確 4147631000000001", placeholder: "**** **** **** ****" },
+    { text: "有效期限已過期", placeholder: "MM/YY" },
+    { text: "安全碼錯誤", autocomplete: "cc-csc" },
+    { text: "請輸入電子信箱 buyer@example.test", type: "email" },
+    { text: "請輸入電子信箱 buyer@example.test", type: "email" },
+    { text: "系統忙碌", placeholder: "something else" },
+  ]);
+  assert.deepEqual(errors, [
+    { step: "CARD_NUMBER", category: "CARD_NUMBER_INVALID" }, { step: "CARD_EXPIRY", category: "CARD_EXPIRED" },
+    { step: "CARD_CVV", category: "CVV_INVALID" }, { step: "EMAIL", category: "EMAIL_INVALID" },
+    { step: "UNKNOWN", category: "OTHER" },
+  ]);
+  assert.deepEqual(sanitizePayUniSubmitErrors("nope"), []);
+  assert.equal(JSON.stringify(errors).includes("4147631000000001"), false);
+  assert.equal(JSON.stringify(errors).includes("buyer@example.test"), false);
+});
+
+test("the submit diagnostic line is re-validated against its whitelists", () => {
+  assert.equal(formatPayUniSubmitDiagnostic(createPayUniBrowserDiagnostic()), null);
+  assert.equal(formatPayUniSubmitDiagnostic(null), null);
+  const diagnostic = createPayUniBrowserDiagnostic();
+  diagnostic.submit = {
+    captured: true, modal: "free text 4147631000000001", host: "https://x.example/?q=1", path: "buyer@example.test",
+    dialogs: [{ type: "ALERT", category: "CARD_EXPIRED" }, { type: "weird 123", category: "raw message" }],
+    errors: [{ step: "CARD_EXPIRY", category: "CARD_EXPIRED" }, { step: "secret", category: "secret" }],
+  };
+  const line = formatPayUniSubmitDiagnostic(diagnostic);
+  assert.equal(line, "dialogs=ALERT:CARD_EXPIRED,OTHER:OTHER; modal=OTHER; host=NONE; path=NONE; errors=CARD_EXPIRY:CARD_EXPIRED,UNKNOWN:OTHER");
+  const empty = createPayUniBrowserDiagnostic();
+  empty.submit.captured = true;
+  assert.equal(formatPayUniSubmitDiagnostic(empty), "dialogs=NONE; modal=NONE; host=NONE; path=NONE; errors=NONE");
+});
+
+test("collectSubmitErrorsInPage reads visible error elements and the field's attributes, never values", () => {
+  const element = (props) => ({
+    getBoundingClientRect: () => ({ width: 10, height: 10 }), matches: (selector) => props.isField === true && selector.includes("input"),
+    innerText: props.text, getAttribute: (name) => props.attrs?.[name] ?? null, parentElement: props.parent ?? null,
+    querySelector: () => props.field ?? null,
+  });
+  const field = element({ isField: true, attrs: { placeholder: "MM/YY", autocomplete: "cc-exp", type: "text", value: "12/30" } });
+  const hiddenBox = { ...element({ text: "hidden" }), getBoundingClientRect: () => ({ width: 0, height: 0 }) };
+  const previous = { document: globalThis.document, getComputedStyle: globalThis.getComputedStyle };
+  globalThis.document = { querySelectorAll: () => [element({ text: "有效期限已過期", field }), hiddenBox, field] };
+  globalThis.getComputedStyle = () => ({ visibility: "visible", display: "block" });
+  let raw;
+  try { raw = collectSubmitErrorsInPage(); } finally {
+    globalThis.document = previous.document; globalThis.getComputedStyle = previous.getComputedStyle;
+  }
+  assert.equal(raw.length, 2);
+  assert.deepEqual(raw[0], { text: "有效期限已過期", placeholder: "MM/YY", autocomplete: "cc-exp", type: "text" });
+  assert.equal(raw[1].text, "");
+  assert.equal(JSON.stringify(raw).includes("12/30"), false);
+});
+
+async function runSubmitScenario({ confirmationText = null, dialog = null, url, errors = [], structureText = "確認送出" }) {
+  class TimeoutError extends Error { constructor(message) { super(message); this.name = "TimeoutError"; } }
+  const handlers = new Map();
+  const dialogCalls = { dismiss: 0, accept: 0 };
+  let submitted = 0;
+  let confirmationClicks = 0;
+  const frame = {
+    async evaluate(fn) {
+      if (fn === collectSubmitErrorsInPage) return errors;
+      return { fields: [{ tag: "input", type: "text", name: "n", placeholder: "MM/YY", ariaLabel: "", autocomplete: "", value: SYNTHETIC_CARD, visible: true }],
+        controls: [{ role: "button", text: structureText }], hiddenInputs: 2 };
+    },
+  };
+  const page = {
+    on(event, handler) { handlers.set(event, handler); },
+    async goto() {}, async route() {}, async waitForURL() { throw new TimeoutError("Timeout 60000ms exceeded"); },
+    url: () => url, frames: () => [frame],
+    getByText() { return { async click() {} }; },
+    getByPlaceholder() { return { async pressSequentially() {}, async fill() {} }; },
+    getByRole(_role, options) {
+      if (options.name === "確認送出") {
+        return { async click() {
+          submitted += 1;
+          if (dialog) await handlers.get("dialog")?.({
+            type: () => dialog.type, message: () => dialog.message,
+            async dismiss() { dialogCalls.dismiss += 1; }, async accept() { dialogCalls.accept += 1; },
+          });
+        } };
+      }
+      if (options.name === "確定") {
+        if (confirmationText === null) return { async waitFor() { throw new TimeoutError("none"); } };
+        return { async waitFor() {}, async evaluate() { return confirmationText; }, async click() { confirmationClicks += 1; } };
+      }
+      throw new Error("unexpected role");
+    },
+    locator() { return { async check() {} }; },
+  };
+  const browser = { async newContext() { return { async addCookies() {}, async newPage() { return page; },
+    request: { async post() { return { status: () => 200, ok: () => true }; } } }; }, async close() {} };
+  const diagnostic = createPayUniBrowserDiagnostic();
+  const result = await defaultBrowserSubmit({ previewHost, cardNumber: SYNTHETIC_CARD, cardExpiry: "1230", cardCvv: "123",
+    formPayload: { MerID: "merchant" }, supportCookie: "celebrate_support_wp4=synthetic", orderNumber: "CD-20300101000000-WP4A1", diagnostic,
+  }, { playwright: { chromium: { async launch() { return browser; } }, errors: { TimeoutError } } });
+  return { result, diagnostic, submitted, confirmationClicks, dialogCalls };
+}
+
+test("an unaccepted submit reports a dismissed dialog, the page class, field errors and a fresh page structure", async () => {
+  const { result, diagnostic, submitted, confirmationClicks, dialogCalls } = await runSubmitScenario({
+    dialog: { type: "alert", message: `信用卡已過期 ${SYNTHETIC_CARD} buyer@example.test` },
+    url: `https://sandbox-api.payuni.com.tw/api/upp?EncryptInfo=private-cipher&card=${SYNTHETIC_CARD}`,
+    errors: [{ text: `有效期限不正確 ${SYNTHETIC_CARD}`, placeholder: "MM/YY" }, { text: "請輸入電子信箱 buyer@example.test", type: "email" }],
+  });
+  assert.equal(result, "RETURN_CALLBACK_UNMAPPED");
+  assert.equal(submitted, 1, "a dialog never triggers a second submit");
+  assert.equal(confirmationClicks, 0);
+  assert.deepEqual(dialogCalls, { dismiss: 1, accept: 0 });
+  const line = formatPayUniSubmitDiagnostic(diagnostic);
+  assert.equal(line, "dialogs=ALERT:CARD_EXPIRED; modal=NONE; host=PAYUNI_UPP; path=UPP; errors=CARD_EXPIRY:CARD_EXPIRED,EMAIL:EMAIL_INVALID");
+  const structure = formatPayUniPageStructure(diagnostic);
+  assert.ok(structure.includes("確認送出"));
+  for (const secret of [SYNTHETIC_CARD, "buyer@example.test", "private-cipher", "EncryptInfo", "已過期", "不正確"]) {
+    assert.equal(line.includes(secret), false, `line leaked ${secret}`);
+    assert.equal(structure.includes(secret), false, `structure leaked ${secret}`);
+  }
+});
+
+test("each dialog type records only its type and a category; confirm and prompt are dismissed too", async () => {
+  for (const [type, message, category] of [["confirm", "請確認卡號", "CARD_NUMBER_INVALID"], ["prompt", "輸入安全碼", "CVV_INVALID"], ["beforeunload", "x", "OTHER"]]) {
+    const { diagnostic, dialogCalls, submitted } = await runSubmitScenario({
+      dialog: { type, message }, url: "https://sandbox-api.payuni.com.tw/api/upp",
+    });
+    assert.deepEqual(diagnostic.submit.dialogs, [{ type: type === "beforeunload" ? "OTHER" : type.toUpperCase(), category }]);
+    assert.deepEqual(dialogCalls, { dismiss: 1, accept: 0 });
+    assert.equal(submitted, 1);
+  }
+});
+
+test("a visible 確定 modal is categorised, left unclicked, and the redirect-back page class is reported", async () => {
+  const modal = await runSubmitScenario({
+    confirmationText: "此卡片已到期", url: "https://sandbox-api.payuni.com.tw/api/upp?x=1",
+  });
+  assert.equal(modal.result, "PAYMENT_CONFIRMATION_AMBIGUOUS");
+  assert.equal(modal.confirmationClicks, 0);
+  assert.equal(modal.submitted, 1);
+  assert.equal(formatPayUniSubmitDiagnostic(modal.diagnostic), "dialogs=NONE; modal=CARD_EXPIRED; host=PAYUNI_UPP; path=UPP; errors=NONE");
+
+  const back = await runSubmitScenario({ url: `https://${previewHost}/checkout/result?payment=failed&order=CD-1` });
+  assert.equal(formatPayUniSubmitDiagnostic(back.diagnostic), "dialogs=NONE; modal=NONE; host=APP; path=CHECKOUT_RESULT; errors=NONE");
+  assert.equal(back.diagnostic.structure, null, "no PayUni structure is read once the browser left PayUni");
+});
+
+test("an unreadable page never changes the failure code and still prints a closed diagnostic", async () => {
+  const diagnostic = createPayUniBrowserDiagnostic();
+  diagnostic.step = "SUBMIT";
+  await capturePayUniSubmitDiagnostic({ url() { throw new Error("closed"); } }, diagnostic, previewHost);
+  assert.equal(formatPayUniSubmitDiagnostic(diagnostic), "dialogs=NONE; modal=NONE; host=NONE; path=NONE; errors=NONE");
+  await capturePayUniSubmitDiagnostic(null, null, previewHost);
+  observePayUniSubmitDialogs({ on() { throw new Error("no events"); } }, diagnostic);
+  await recordPayUniSubmitDialog(null, { dismiss: async () => { throw new Error("gone"); } });
 });
