@@ -7,6 +7,7 @@ import { parseSafeExternalHttpUrl } from "@/lib/external-url";
 import type { SignableVideo } from "@/lib/cloudflare-stream-signing";
 import { isExistingLiveVideoReady } from "@/lib/live-video-readiness";
 import { parseRegistrationFormFields, type RegistrationFormFieldSpec } from "@/lib/registration-form-fields";
+import { ACTIVE_VENDOR_RELATION } from "@/lib/vendor-suspension-state";
 
 const PUBLIC_REGISTRATION_FORM_SELECT = {
   id: true,
@@ -233,6 +234,8 @@ export async function loadPublicRegistrationForm(slug: string, now = new Date())
   const form = await db.registrationForm.findFirst({
     where: {
       slug, isActive: true,
+      // F-036: a suspended vendor's form does not exist publicly.
+      ...ACTIVE_VENDOR_RELATION,
       OR: [{ projectId: null }, { salesProject: { is: { status: "published", publishedAt: { not: null } } } }],
     },
     select: PUBLIC_REGISTRATION_FORM_SELECT,

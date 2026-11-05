@@ -12,12 +12,13 @@ const mocks = vi.hoisted(() => ({
   eventCreate: vi.fn(),
   csrf: vi.fn(),
   transaction: vi.fn(),
+  vendorFindFirst: vi.fn(),
 }));
 
 vi.mock("next/headers", () => ({ cookies: mocks.cookies }));
 vi.mock("@/lib/api-security", () => ({ requireSameOriginRequest: mocks.boundary, readJsonBody: mocks.readJson }));
 vi.mock("@/lib/rate-limit", () => ({ checkRateLimit: mocks.rateLimit }));
-vi.mock("@/lib/db", () => ({ getDb: () => ({ $transaction: mocks.transaction }) }));
+vi.mock("@/lib/db", () => ({ getDb: () => ({ $transaction: mocks.transaction, vendor: { findFirst: mocks.vendorFindFirst } }) }));
 vi.mock("@/lib/csrf", () => ({ verifyCsrfToken: mocks.csrf }));
 vi.mock("@/lib/buyer-support-access", () => ({ resolveBuyerSupportGrant: mocks.resolveGrant }));
 vi.mock("@/lib/post-purchase-upsell-access", () => ({ resolvePaidOrderPostPurchaseOffer: mocks.resolveOffer }));
@@ -37,6 +38,7 @@ function request(csrf: string | null = "synthetic-csrf") {
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.boundary.mockReturnValue(null);
+  mocks.vendorFindFirst.mockResolvedValue({ id: "vendor-1" });
   mocks.csrf.mockResolvedValue(true);
   mocks.transaction.mockImplementation(async callback => callback({ commerceOrderEvent: { createMany: mocks.eventCreate } }));
   mocks.rateLimit.mockResolvedValue(null);
@@ -142,6 +144,15 @@ describe("post-purchase upsell route", () => {
     mocks.resolveOffer.mockResolvedValue({ ...offer, offer: { ...offer.offer, amountCents: 1000 } });
     expect((await POST(request())).status).toBe(200);
     expect(mocks.eventCreate.mock.calls[2][0].data.dedupKey).not.toBe(firstKey);
+  });
+
+  it("makes no offer and records nothing for a suspended vendor (F-036)", async () => {
+    mocks.vendorFindFirst.mockResolvedValue(null);
+    const response = await POST(request());
+    expect(response.status).toBe(404);
+    expect(mocks.vendorFindFirst).toHaveBeenCalledWith({ where: { id: "vendor-1", suspendedAt: null }, select: { id: true } });
+    expect(mocks.transaction).not.toHaveBeenCalled();
+    expect(mocks.issueToken).not.toHaveBeenCalled();
   });
 
   it("retries only serialization conflicts, with the same verified rate bucket", async () => {

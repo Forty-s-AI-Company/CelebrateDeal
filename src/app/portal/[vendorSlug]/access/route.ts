@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getCanonicalAppUrl } from "@/lib/app-url";
 import { getDb } from "@/lib/db";
+import { ACTIVE_VENDOR_WHERE } from "@/lib/vendor-suspension-state";
 import {
   consumeStudentPortalAccessToken,
   setStudentPortalSessionCookie,
@@ -24,7 +25,8 @@ export async function GET(request: Request, { params }: { params: Promise<{ vend
   }
   const verified = verifyStudentPortalAccessToken({ token, expectedPurpose: purpose });
   if (!verified) return redirectPrivate(`/portal/${encodeURIComponent(vendorSlug)}/login?error=invalid_or_expired`);
-  const vendor = await getDb().vendor.findFirst({ where: { id: verified.vendorId, slug: vendorSlug }, select: { id: true } });
+  // F-036: a suspended vendor's links never mint a session (its token rows are also deleted on suspension).
+  const vendor = await getDb().vendor.findFirst({ where: { id: verified.vendorId, slug: vendorSlug, ...ACTIVE_VENDOR_WHERE }, select: { id: true } });
   if (!vendor) return redirectPrivate(`/portal/${encodeURIComponent(vendorSlug)}/login?error=unauthorized`);
   const claim = await consumeStudentPortalAccessToken(getDb(), { token, expectedPurpose: purpose });
   if (!claim) return redirectPrivate(`/portal/${encodeURIComponent(vendorSlug)}/login?error=invalid_or_expired`);

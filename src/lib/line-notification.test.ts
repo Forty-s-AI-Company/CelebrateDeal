@@ -188,6 +188,21 @@ describe("LINE notification outbox", () => {
     }));
   });
 
+  it("never selects a suspended vendor's deliveries, scoped or not (F-036)", async () => {
+    const db = {
+      lineDelivery: {
+        findMany: vi.fn().mockResolvedValue([]),
+        updateMany: vi.fn().mockResolvedValue({ count: 0 }),
+      },
+    };
+    await processDueLineDeliveries(db as never, () => new MockLineMessagingClient(), new Date("2026-09-05T00:00:00Z"));
+    await processDueLineDeliveries(db as never, () => new MockLineMessagingClient(), new Date("2026-09-05T00:00:00Z"), { vendorId: "vendor-1" });
+    for (const [args] of db.lineDelivery.findMany.mock.calls) {
+      expect(args).toEqual(expect.objectContaining({ where: expect.objectContaining({ vendor: { is: { suspendedAt: null } } }) }));
+    }
+    expect(db.lineDelivery.findMany).toHaveBeenCalledTimes(2);
+  });
+
   it("rejects a delivery-ID-only scope because it cannot establish tenant ownership", async () => {
     const db = { lineDelivery: { findMany: vi.fn(), updateMany: vi.fn() } };
     await expect(processDueLineDeliveries(db as never, () => new MockLineMessagingClient(), new Date(), {

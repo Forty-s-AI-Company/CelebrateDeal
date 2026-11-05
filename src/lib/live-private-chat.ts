@@ -7,6 +7,7 @@ import { normalizeClientIp } from "./request-client-ip";
 import { DERIVED_KEY_ROTATIONS } from "./derived-key-rotation";
 import { deriveSensitiveDataKey } from "./sensitive-data";
 import { isVendorBackofficeRole } from "./vendor-roles";
+import { isVendorSuspended } from "./vendor-suspension-state";
 
 type Proof = { admissionToken: string | null; chatSessionToken: string | null; ipAddress: string | null; now?: Date };
 type Scope = { vendorId: string; liveId: string; submissionId: string };
@@ -120,13 +121,17 @@ async function instructorScope(tx: Prisma.TransactionClient, input: Instructor, 
   }, select: { vendorId: true, mfaVerifiedAt: true, user: { select: { mfaFactor: { select: { id: true } } } } } });
   if (!session || (session.user.mfaFactor && !session.mfaVerifiedAt)) throw new LiveChatError("access_denied");
   const memberships = await tx.vendorMember.findMany({ where: { userId: input.userId, status: "active" },
-    orderBy: { createdAt: "asc" }, select: { id: true, vendorId: true, role: true } });
+    orderBy: { createdAt: "asc" }, select: { id: true, vendorId: true, role: true, vendor: { select: { suspendedAt: true } } } });
   // Match auth.chooseVendor for legacy sessions without a selected vendor.
   // Re-read the choice rather than letting the caller choose any membership.
   // Partner memberships never become the vendor context there either (same rule as auth.chooseVendor).
   const backoffice = memberships.filter(candidate => isVendorBackofficeRole(candidate.role));
-  const member = backoffice.find(candidate => candidate.vendorId === session.vendorId) ?? backoffice[0];
-  if (!member || member.id !== input.memberId || member.vendorId !== input.vendorId || !["owner", "admin"].includes(member.role)) throw new LiveChatError("access_denied");
+  // F-036: same order as auth.chooseVendor (session vendor, else the first
+  // active tenant); a suspended vendor never yields an instructor, re-checked
+  // inside this transaction for every private read and write.
+  const member = backoffice.find(candidate => candidate.vendorId === session.vendorId)
+    ?? backoffice.find(candidate => !isVendorSuspended(candidate.vendor)) ?? backoffice[0];
+  if (!member || isVendorSuspended(member.vendor) || member.id !== input.memberId || member.vendorId !== input.vendorId || !["owner", "admin"].includes(member.role)) throw new LiveChatError("access_denied");
   const preference = await tx.userOnboardingPreference.findUnique({
     where: { userId_vendorId: { userId: input.userId, vendorId: input.vendorId } },
     select: { selectedProject: { select: { id: true, status: true } } },

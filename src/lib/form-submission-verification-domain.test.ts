@@ -99,6 +99,14 @@ describe("verifyFormSubmission evergreen projection", () => {
     });
   });
 
+  it("verifies nothing for a suspended vendor: same answer as an invalid link, no write (F-036)", async () => {
+    const row = submission();
+    const { db, tx } = database({ ...row, form: { ...row.form, vendor: { ...row.form.vendor, suspendedAt: new Date("2026-10-29T00:00:00.000Z") } } } as ReturnType<typeof submission>);
+    await expect(verifyFormSubmission(db as never, token(), now)).resolves.toEqual({ status: "invalid" });
+    expect(tx.formSubmission.updateMany).not.toHaveBeenCalled();
+    expect(tx.analyticsEvent.create).not.toHaveBeenCalled();
+  });
+
   it("keeps a missing vendor timezone as null for the session resolver to default", async () => {
     const { db } = database(submission({}, null));
     await expect(verifyFormSubmission(db as never, token(), now)).resolves.toMatchObject({

@@ -2,11 +2,12 @@ import { readFileSync } from "node:fs";
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const mocks = vi.hoisted(() => ({ requireFinanceAdmin: vi.fn(), findMany: vi.fn() }));
+const mocks = vi.hoisted(() => ({ requireFinanceAdmin: vi.fn(), findMany: vi.fn(), heldGroupBy: vi.fn() }));
 
 vi.mock("@/lib/auth", () => ({ requireFinanceAdmin: mocks.requireFinanceAdmin }));
-vi.mock("@/lib/db", () => ({ getDb: () => ({ vendor: { findMany: mocks.findMany } }) }));
+vi.mock("@/lib/db", () => ({ getDb: () => ({ vendor: { findMany: mocks.findMany }, commerceEntitlement: { groupBy: mocks.heldGroupBy } }) }));
 vi.mock("@/app/actions/vendor-beta-feature-actions", () => ({ updateVendorBetaFeatureGrantsAction: vi.fn() }));
+vi.mock("@/app/actions/vendor-suspension-actions", () => ({ suspendVendorAction: vi.fn(), resumeVendorAction: vi.fn(), releaseHeldEntitlementsAction: vi.fn() }));
 vi.mock("@/components/csrf-field", () => ({ CsrfField: () => null }));
 
 import AdminVendorFeaturesPage from "./page";
@@ -20,6 +21,7 @@ async function render(searchParams: Record<string, string>) {
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.requireFinanceAdmin.mockResolvedValue({ user: { id: "admin-1" } });
+  mocks.heldGroupBy.mockResolvedValue([]);
   mocks.findMany.mockResolvedValue([
     { id: "vendor-1", name: "商家甲", slug: "a", betaFeatureGrants: [] },
     { id: "vendor-2", name: "商家乙", slug: "b", betaFeatureGrants: ["billing"] },
@@ -65,5 +67,38 @@ describe("/admin/vendor-features route", () => {
       expect(html).not.toContain("ghost");
     }
     expect(await render({ error: "not_found" })).toContain("找不到這個商家");
+  });
+
+  it("offers suspension per vendor and shows a suspended vendor's state with a resume control (F-036)", async () => {
+    mocks.findMany.mockResolvedValue([
+      { id: "vendor-1", name: "商家甲", slug: "a", betaFeatureGrants: [], suspendedAt: null, suspendedReason: null },
+      { id: "vendor-2", name: "商家乙", slug: "b", betaFeatureGrants: [], suspendedAt: new Date("2026-11-03T01:00:00.000Z"), suspendedReason: "合成：違規" },
+    ]);
+    const html = await render({});
+    expect(mocks.findMany).toHaveBeenCalledWith(expect.objectContaining({ select: expect.objectContaining({ suspendedAt: true, suspendedReason: true }) }));
+    const first = html.slice(html.indexOf('id="vendor-suspension-vendor-1"'), html.indexOf('id="vendor-vendor-2"'));
+    expect(first).toContain("凍結商家");
+    expect(first).toContain('name="reason"');
+    const second = html.slice(html.indexOf('id="vendor-suspension-vendor-2"'));
+    expect(second).toContain("解除凍結");
+    expect(second).toContain("合成：違規");
+    expect(html).toContain("已凍結");
+    // The step-up notice is rendered for the operation.
+    expect(html).toContain("凍結或解除凍結商家");
+  });
+
+  it("offers a release retry only for an active vendor that still has held paid access", async () => {
+    mocks.heldGroupBy.mockResolvedValue([{ vendorId: "vendor-2", _count: { _all: 3 } }]);
+    const html = await render({});
+    expect(html).not.toContain('id="vendor-release-vendor-1"');
+    expect(html).toContain('id="vendor-release-vendor-2"');
+    expect(html).toContain("有 3 筆已付款但尚未開通的權限");
+  });
+
+  it("shows a suspension result inside the focused vendor's card without the beta-module feedback", async () => {
+    const html = await render({ suspension: "suspended", vendor: "vendor-1" });
+    expect(html).toContain("已凍結商家");
+    expect(html).not.toContain("data-feedback");
+    expect(await render({ suspensionError: "reason_required" })).toContain("請填寫凍結原因");
   });
 });

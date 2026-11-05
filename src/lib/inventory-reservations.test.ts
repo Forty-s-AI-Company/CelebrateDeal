@@ -529,3 +529,31 @@ describe("inventory reservations", () => {
     })).toMatchObject({ status: "released", releaseReason: "expired" });
   });
 });
+
+describe("inventory transaction retry (F-036 M1)", () => {
+  it("retries a raw serialization failure (P2010 / 40001) like P2034 and releases exactly once", async () => {
+    const { db, vendor, product, suffix } = await createFixture(1);
+    const transaction = await createReservedPaymentTransaction({
+      vendorId: vendor.id,
+      productId: product.id,
+      transactionData: transactionData(vendor.id, product.id, suffix),
+    });
+    const original = db.$transaction.bind(db);
+    // The vendor `FOR SHARE` read surfaces a concurrent update as a raw-query error, not P2034.
+    const spy = vi.spyOn(db, "$transaction").mockImplementationOnce(() => {
+      throw new Prisma.PrismaClientKnownRequestError("could not serialize access due to concurrent update", {
+        code: "P2010", clientVersion: "synthetic", meta: { code: "40001" },
+      });
+    }).mockImplementation(original as never);
+    let attempts = 0;
+    try {
+      await failPendingCheckoutAndReleaseInventory({ vendorId: vendor.id, transactionId: transaction.id, reason: "provider_checkout_failed" });
+      attempts = spy.mock.calls.length;
+    } finally {
+      spy.mockRestore();
+    }
+    expect(attempts).toBe(2);
+    expect(await db.paymentTransaction.findUniqueOrThrow({ where: { id: transaction.id } })).toMatchObject({ status: "failed" });
+    expect(await db.product.findUniqueOrThrow({ where: { id: product.id } })).toMatchObject({ inventory: 1 });
+  });
+});

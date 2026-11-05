@@ -11,7 +11,7 @@ vi.mock("@/lib/buyer-support-access", () => ({ resolveBuyerSupportGrant: m.resol
 vi.mock("@/lib/commerce-order-pii", () => ({ revealCommerceOrderPii: () => ({ buyer: { email: "other-student@example.test" } }) }));
 vi.mock("@/lib/email-delivery-pii", () => ({ protectEmailDeliveryPayload: () => ({ payloadEncryptedEnvelope: "synthetic-encrypted-payload" }) }));
 vi.mock("@/lib/student-portal-auth", () => ({ createStudentPortalAccessToken: m.token, createCheckoutStudentPortalAccessToken: m.checkoutToken, clearStudentPortalSessionCookie: vi.fn() }));
-vi.mock("@/lib/db", () => ({ getDb: () => ({ vendor: { findUnique: m.vendor }, commerceOrder: { count: async () => 1, findFirst: m.order }, consultationBooking: { count: async () => 0 }, automationVoucherGrant: { count: async () => 0 }, emailDelivery: { create: m.email } }) }));
+vi.mock("@/lib/db", () => ({ getDb: () => ({ vendor: { findFirst: m.vendor, findUnique: m.vendor }, commerceOrder: { count: async () => 1, findFirst: m.order }, consultationBooking: { count: async () => 0 }, automationVoucherGrant: { count: async () => 0 }, emailDelivery: { create: m.email } }) }));
 import { requestMagicLinkAction, enterStudentPortalFromCheckoutAction } from "@/app/actions/student-portal-actions";
 const form = () => { const f = new FormData(); f.set("vendorSlug", "teacher"); f.set("email", "other-student@example.test"); f.set("grantId", "own-order-grant"); return f; };
 beforeEach(() => {

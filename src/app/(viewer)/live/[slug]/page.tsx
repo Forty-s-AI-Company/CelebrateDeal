@@ -29,15 +29,18 @@ import { isProductPurchasable } from "@/lib/feature-gates";
 
 const loadPublicLive = cache(async (slug: string) => {
   const serverNow = new Date();
-  const publicAvailability = publicLiveAvailabilityWhere();
+  // Every non-status condition of the shared gate (the F-036 vendor
+  // suspension) applies unchanged; only the status list is widened below.
+  const { OR: publicStatuses, ...publicScope } = publicLiveAvailabilityWhere();
   const live = await getDb().live.findFirst({
     where: {
       slug,
+      ...publicScope,
       // Keep the shared public gate for playable lives, but retain ended
       // lifecycle records locally so an expired replay can render a truthful
       // unavailable state instead of becoming an indistinguishable 404.
       OR: [
-        ...(publicAvailability.OR ?? []),
+        ...(publicStatuses ?? []),
         { status: "ended", replayEnabled: false },
         { status: "ended", replayAvailableUntil: { lte: serverNow } },
       ],

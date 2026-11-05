@@ -2,7 +2,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({ vendor: vi.fn(), csrf: vi.fn(), notFound: vi.fn(), locale: vi.fn() }));
-vi.mock("@/lib/db", () => ({ getDb: () => ({ vendor: { findUnique: mocks.vendor } }) }));
+vi.mock("@/lib/db", () => ({ getDb: () => ({ vendor: { findFirst: mocks.vendor } }) }));
 vi.mock("@/lib/csrf", () => ({ getCsrfToken: mocks.csrf }));
 vi.mock("@/lib/student-portal-locale", () => ({resolveStudentPortalLocale:mocks.locale}));
 vi.mock("next/navigation", () => ({ notFound: mocks.notFound }));
@@ -20,11 +20,11 @@ describe("student portal login page", () => {
     expect(html).toContain("老師品牌");
     expect(html).toContain('data-vendor="teacher"');
     expect(html).toContain('data-locale="en"');
-    expect(mocks.vendor.mock.calls[0][0].where).toEqual({slug:"teacher"});
+    expect(mocks.vendor.mock.calls[0][0].where).toEqual({slug:"teacher",suspendedAt:null});
   });
   it("loads only public brand fields and explains passwordless privacy", async () => {
     const html = renderToStaticMarkup(await StudentPortalLoginPage({ params: Promise.resolve({ vendorSlug: "teacher" }) }));
-    expect(mocks.vendor).toHaveBeenCalledWith({ where: { slug: "teacher" }, select: { name: true, slug: true, logoUrl: true, primaryColor: true } });
+    expect(mocks.vendor).toHaveBeenCalledWith({ where: { slug: "teacher", suspendedAt: null }, select: { name: true, slug: true, logoUrl: true, primaryColor: true } });
     expect(html).toContain("回到你的學習中心");
     expect(html).toContain("不會透露這個 Email 是否已存在");
     expect(html).toContain('data-vendor="teacher"');

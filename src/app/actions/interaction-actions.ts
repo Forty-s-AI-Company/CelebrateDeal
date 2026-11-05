@@ -33,6 +33,7 @@ import {
   pollPercentagesFromCounts,
 } from "@/lib/live-interaction";
 import { encryptSensitiveValue } from "@/lib/sensitive-data";
+import { revokeStudentPortalSessions } from "@/lib/student-portal-auth";
 import { canTransitionLiveQuestionStatus, LiveQuestionStatusSchema } from "@/lib/live-question";
 
 function text(formData: FormData, key: string, fallback = "") {
@@ -1122,20 +1123,27 @@ export async function upsertBlacklistAction(formData: FormData) {
   if (!identifierType.success || !identifier) {
     redirect("/blacklists?error=invalid_identifier");
   }
-  await getDb().blacklist.create({
-    data: {
-      vendorId: vendor.id,
-      identifier,
-      identifierType: identifierType.data,
-      reason: text(formData, "reason"),
-      notes: optionalText(formData, "notes"),
-    },
+  // F-030: blocking an email also ends that customer's learner portal
+  // sessions of this vendor, in the same transaction as the block itself.
+  const revokedStudentPortalTokenCount = await getDb().$transaction(async (tx) => {
+    await tx.blacklist.create({
+      data: {
+        vendorId: vendor.id,
+        identifier,
+        identifierType: identifierType.data,
+        reason: text(formData, "reason"),
+        notes: optionalText(formData, "notes"),
+      },
+    });
+    return identifierType.data === "email"
+      ? revokeStudentPortalSessions(tx, { vendorId: vendor.id, email: identifier })
+      : 0;
   });
   await writeAuditLog({
     vendorId: vendor.id,
     action: "blacklist_created",
     targetType: "Blacklist",
-    after: auditSnapshot({ identifierType: identifierType.data, isActive: true }),
+    after: auditSnapshot({ identifierType: identifierType.data, isActive: true, revokedStudentPortalTokenCount }),
   });
   revalidatePath("/blacklists");
 }

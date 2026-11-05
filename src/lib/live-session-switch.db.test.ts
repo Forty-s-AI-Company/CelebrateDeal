@@ -245,6 +245,20 @@ describe("「更換場次」 link in the already-registered notice", () => {
     expect(await redemptions(registrant.id)).toBe(1);
   });
 
+  it("answers a suspended vendor's link as invalid and records nothing (F-036)", async () => {
+    const fx = await fixture("suspended");
+    const registrant = await verifiedRegistrant(fx, fx.sessions[0]!.id, "suspended");
+    const token = createLiveSessionSwitchToken({ vendorId: fx.vendor.id, submissionId: registrant.id, sessionId: fx.sessions[0]!.id });
+    await getDb().vendor.update({ where: { id: fx.vendor.id }, data: { suspendedAt: new Date(), suspendedReason: "合成" } });
+    const response = await press(token);
+    expect(response.headers.get("location")).toBe(INVALID);
+    expect(cookieFrom(response)).toBeNull();
+    expect(await redemptions(registrant.id)).toBe(0);
+    // The same link works once the suspension is lifted.
+    await getDb().vendor.update({ where: { id: fx.vendor.id }, data: { suspendedAt: null, suspendedReason: null } });
+    expect(cookieFrom(await press(token))).not.toBeNull();
+  });
+
   it("lets a registrant of a cancelled session use the link even after its start, and shows the retry page", async () => {
     const fx = await fixture("cancelled");
     const registrant = await verifiedRegistrant(fx, fx.sessions[0]!.id, "cancelled");

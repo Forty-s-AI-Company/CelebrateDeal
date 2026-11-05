@@ -1,5 +1,6 @@
 import { Prisma } from "@prisma/client";
 import { getDb } from "@/lib/db";
+import { isVendorAvailableForPublic } from "@/lib/vendor-suspension-state";
 import { createFormSubmissionChatSessionToken } from "@/lib/form-submission-chat-session";
 import { resolveFixedSessionRechooseUrl } from "@/lib/live-fixed-session-notices";
 import { liveSessionSwitchRedemptionId, verifyLiveSessionSwitchToken } from "@/lib/live-session-switch-token";
@@ -31,6 +32,8 @@ export async function redeemLiveSessionSwitchToken(token: string, now = new Date
   const claim = verifyLiveSessionSwitchToken(token, now);
   if (!claim) return { ok: false };
   const db = getDb();
+  // F-036: a suspended vendor's links share the invalid-link answer and touch nothing.
+  if (!await isVendorAvailableForPublic(db, claim.vendorId)) return { ok: false };
   const submission = await db.formSubmission.findFirst({
     where: {
       id: claim.submissionId,

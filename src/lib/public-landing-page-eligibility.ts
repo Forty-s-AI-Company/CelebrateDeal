@@ -4,6 +4,7 @@ import { parsePageDocument, type PageDocument } from "@/lib/funnel-page-document
 import { parseFunnelStepPages, type FunnelStepPages } from "@/lib/funnel-step-pages";
 import { getFunnelStepCatalog, type FunnelStepGroup, type FunnelStepType } from "@/lib/funnel-flow";
 import { pageDocumentCommerceKinds, pageDocumentHasCommerce, type PageDocumentCommerceKind } from "@/lib/funnel-registration-surface";
+import { ACTIVE_VENDOR_RELATION } from "@/lib/vendor-suspension-state";
 
 /**
  * Public-URL eligibility shared by the full public loader and the proxy's
@@ -108,6 +109,8 @@ const PUBLISHED_SALES_PROJECT = { status: "published", publishedAt: { not: null 
  */
 export function publicFunnelProjectGateWhere(): Prisma.LandingPageWhereInput {
   return {
+    // F-036: no page of a suspended vendor is public (proxy status, page, runtime and lead gates).
+    ...ACTIVE_VENDOR_RELATION,
     OR: [
       { project: { is: PUBLISHED_SALES_PROJECT } },
       {

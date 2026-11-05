@@ -164,6 +164,20 @@ it("rejects foreign instructors and immediately revoked role before reads and re
   await expect(listPrivateInstructorConversations(db, input)).rejects.toMatchObject({ code: "access_denied" });
   expect(await db.livePrivateChatMessage.count({ where: { liveId: f.live.id } })).toBe(1);
 });
+it("refuses every instructor read and reply once the vendor is suspended, and resumes after (F-036)", async () => {
+  const f = await fixture(), other = await fixture();
+  const input = { conversationBinding: f.instructorBinding, vendorId: f.vendor.id, liveId: f.live.id, userId: f.member.userId, memberId: f.member.id, sessionId: f.session.id, submissionId: f.submission.id, body: "合成講師回覆", clientMessageId: randomUUID() };
+  await db.vendor.update({ where: { id: f.vendor.id }, data: { suspendedAt: new Date(), suspendedReason: "合成" } });
+  await expect(createPrivateInstructorChat(db, input)).rejects.toMatchObject({ code: "access_denied" });
+  await expect(listPrivateInstructorChat(db, input)).rejects.toMatchObject({ code: "access_denied" });
+  await expect(listPrivateInstructorConversations(db, input)).rejects.toMatchObject({ code: "access_denied" });
+  expect(await db.livePrivateChatMessage.count({ where: { liveId: f.live.id } })).toBe(0);
+  // The other tenant is unaffected.
+  await expect(listPrivateInstructorConversations(db, { vendorId: other.vendor.id, liveId: other.live.id, userId: other.member.userId, memberId: other.member.id, sessionId: other.session.id })).resolves.toMatchObject({ nextCursor: null });
+  await db.vendor.update({ where: { id: f.vendor.id }, data: { suspendedAt: null, suspendedReason: null } });
+  await expect(createPrivateInstructorChat(db, input)).resolves.toBeTruthy();
+});
+
 it("keeps aggregate project scope read-only for instructor replies", async () => {
   const f = await fixture(); await createPrivateViewerChat(db, f.input);
   const input = { conversationBinding: f.instructorBinding, vendorId: f.vendor.id, liveId: f.live.id, userId: f.member.userId, memberId: f.member.id, sessionId: f.session.id, submissionId: f.submission.id, body: "合成講師回覆", clientMessageId: randomUUID() };

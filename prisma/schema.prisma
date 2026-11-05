@@ -82,6 +82,11 @@ model Vendor {
   enabledFeatureModules String[] @default(["funnel_builder", "live_webinar", "affiliate_program", "tax_remuneration", "analytics_advanced"])
   /// 封測期間預設關閉、只能由平台管理員逐商家開啟的模組（F-001／F-002）；商家不能自行寫入。
   betaFeatureGrants     String[] @default([])
+  /// F-036（B02-14）平台凍結整個租戶：有值時後台只顯示「商家已暫停」、公開頁 404、排程跳過寄信與 LINE。
+  /// 只由平台管理員經 `/admin/vendor-features`（15 分鐘內 MFA step-up＋audit）寫入；判斷一律走 `src/lib/vendor-suspension.ts`。
+  suspendedAt           DateTime?
+  /// 凍結原因（平台內部紀錄，只在 /admin 顯示；商家暫停頁與公開頁都不顯示）；只在 suspendedAt 有值時存在（CHECK `Vendor_suspension_check`）。
+  suspendedReason       String?
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 

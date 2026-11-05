@@ -39,7 +39,7 @@ const testRuntime = vi.hoisted(() => {
   };
 
   const db = {
-    vendor: { findUnique: vi.fn() },
+    vendor: { findUnique: vi.fn(), findFirst: vi.fn() },
     live: { findFirst: vi.fn() },
     affiliate: { findFirst: vi.fn() },
     affiliateClick: { create: vi.fn(), findFirst: vi.fn(), updateMany: vi.fn() },
@@ -152,6 +152,8 @@ beforeEach(() => {
   });
 
   testRuntime.db.vendor.findUnique.mockResolvedValue({ id: vendorId });
+  // F-036: checkout first confirms the vendor is not suspended.
+  testRuntime.db.vendor.findFirst.mockResolvedValue({ id: vendorId });
   testRuntime.db.live.findFirst.mockResolvedValue({
     id: liveId,
     title: "Commercial flow live",

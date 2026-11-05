@@ -9,7 +9,7 @@ beforeEach(() => { vi.clearAllMocks(); mocks.verify.mockReturnValue({ vendorId: 
 describe("student portal access route", () => {
   it("verifies the slug before consuming the one-time token and creates the session", async () => {
     const response = await GET(new Request("https://app.example.test/portal/teacher/access?token=signed"), { params: Promise.resolve({ vendorSlug: "teacher" }) });
-    expect(mocks.vendor).toHaveBeenCalledWith({ where: { id: "vendor-1", slug: "teacher" }, select: { id: true } });
+    expect(mocks.vendor).toHaveBeenCalledWith({ where: { id: "vendor-1", slug: "teacher", suspendedAt: null }, select: { id: true } });
     expect(mocks.consume).toHaveBeenCalledAfter(mocks.vendor);
     expect(mocks.setCookie).toHaveBeenCalledWith({ vendorId: "vendor-1", customerKeyHash: "hash" });
     expect(response.status).toBe(303);

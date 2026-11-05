@@ -1,6 +1,7 @@
 import { Prisma, type PrismaClient } from "@prisma/client";
 import { z } from "zod";
 import { affiliateCommissionSource } from "@/lib/affiliate-commission-source";
+import { ACTIVE_VENDOR_WHERE } from "@/lib/vendor-suspension-state";
 
 const id = z.string().regex(/^[A-Za-z0-9_-]{1,160}$/u);
 export const AffiliatePortalAccessInput = z.object({ affiliateId: id, vendorMemberId: id, active: z.boolean(), expectedRevision: z.number().int().min(0).max(2147483646) }).strict();
@@ -46,7 +47,8 @@ const cents = (value: number | null) => z.number().int().safe().parse(value ?? 0
 export async function getAffiliatePortalStatement(db: Database, actor: { userId: string }, vendorId: string, affiliateId: string, cursor?: string) {
   if (![actor.userId,vendorId,affiliateId,...(cursor?[cursor]:[])].every(value=>id.safeParse(value).success)) return null;
   return db.$transaction(async tx => {
-    const access = await tx.affiliatePortalAccess.findFirst({where:{vendorId,affiliateId,active:true,affiliate:{isActive:true},member:{status:"active",userId:actor.userId,user:{status:"active"}}},select:{affiliate:{select:{id:true,name:true,code:true}},revision:true}});
+    // F-036: partners of a suspended vendor lose the portal with the rest of the tenant.
+    const access = await tx.affiliatePortalAccess.findFirst({where:{vendorId,affiliateId,active:true,affiliate:{isActive:true},member:{status:"active",userId:actor.userId,user:{status:"active"},vendor:{is:ACTIVE_VENDOR_WHERE}}},select:{affiliate:{select:{id:true,name:true,code:true}},revision:true}});
     if (!access) return null;
     const where = {vendorId,affiliateId};
     const anchor = cursor ? await tx.affiliateCommission.findFirst({where:{...where,id:cursor},select:{id:true,attributedAt:true}}) : null;
@@ -66,7 +68,7 @@ export async function listAffiliatePortalAccess(db: Database, actor: {userId:str
  const parts=cursor?.split(".");
  if(parts&&(parts.length!==2||!parts.every(part=>id.safeParse(part).success)))return null;
  return db.$transaction(async tx=>{
-  const where={active:true,affiliate:{isActive:true},member:{userId:actor.userId,status:"active",user:{status:"active"}}};
+  const where={active:true,affiliate:{isActive:true},member:{userId:actor.userId,status:"active",user:{status:"active"},vendor:{is:ACTIVE_VENDOR_WHERE}}};
   const anchor=parts?await tx.affiliatePortalAccess.findFirst({where:{...where,vendorId:parts[0]!,affiliateId:parts[1]!},select:{vendorId:true,affiliateId:true}}):null;
   if(parts&&!anchor)return null;
   const rows=await tx.affiliatePortalAccess.findMany({where:{...where,...(anchor?{OR:[{vendorId:{gt:anchor.vendorId}},{vendorId:anchor.vendorId,affiliateId:{gt:anchor.affiliateId}}]}:{})},orderBy:[{vendorId:"asc"},{affiliateId:"asc"}],take:21,select:{vendorId:true,affiliateId:true,affiliate:{select:{name:true}},member:{select:{vendor:{select:{slug:true,name:true}}}}}});

@@ -155,7 +155,8 @@ describe("student portal encrypted sessions", () => {
       session: { vendorId: "vendor_1", customerKeyHash }, vendor: { slug: "acme" },
     });
     expect(mocks.vendorFindFirst).toHaveBeenCalledWith({
-      where: { id: "vendor_1", slug: "acme" },
+      // F-036: the session's vendor must also not be suspended.
+      where: { id: "vendor_1", slug: "acme", suspendedAt: null },
       select: { id: true, slug: true, name: true, logoUrl: true, primaryColor: true },
     });
   });

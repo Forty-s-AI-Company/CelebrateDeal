@@ -11,6 +11,7 @@
 - `JOB_SECRET` 與 `CRON_SECRET` 都使用 Bearer token、嚴格兩段解析與 timing-safe comparison；沒有設定時 fail closed。`CRON_SECRET` 供核准的 scheduler（Production 若啟用 Vercel Cron）使用 `GET` 排程入口，`JOB_SECRET` 保留給受控人工／job runner 的 `POST` 入口；Preview 不註冊 Vercel Cron。
 - Provider webhook 使用原始 body 驗證簽章，再做 runtime schema validation。
 - 受保護資源的 tenant／ownership 判斷位於 route 或 domain layer；不存在、跨 tenant 與拒絕存取盡量回傳相同 404，避免資源探測。
+- 商家凍結（F-036，`Vendor.suspendedAt`）：`getCurrentAuth` 不給凍結商家 vendor／member，cookie-authenticated 商家 route 因此回 401／403，`requireMerchantApiActor` 明確回 403 `{ error: { code: "VENDOR_SUSPENDED" } }`。公開與買家 route 對凍結商家的回應與「不存在」相同（404），不揭露凍結：`POST /api/payments/checkout` 在讀取冪等重放前回 404 `Product not available`，`POST /api/form-submissions` 回 404 `Form not found`，直播入場／回放來源／常青場次查不到直播。付款 webhook 照常入帳但不開通權限（見 `docs/domain-workflows.md`「商家凍結」）。
 - 每條 route 都有同路徑 `route.test.ts`。本 registry 另外標示仍需 DB／browser／外部平台證據的 contract。
 
 ## Route handlers
