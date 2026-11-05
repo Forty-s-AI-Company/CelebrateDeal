@@ -10,6 +10,7 @@ import {
   protectLineOfficialAccountCredentials,
   protectLineProfileValue,
 } from "../src/lib/line-credentials.ts";
+import { inspectDataEncryptionKeyring } from "../src/lib/sensitive-data.ts";
 import { STAGING_ALIAS_HOST, verifyAliasAttestation, verifyShaOnProtectedMaster } from "./secure-staging-runner.mjs";
 
 export const TASK = "line-notifications-e2e";
@@ -68,6 +69,9 @@ function initialReceipt(source = process.env) {
 
 export function validateInvocation(source = process.env) {
   if (REQUIRED.some((key) => typeof source[key] !== "string" || source[key].length === 0)) return { ok: false, reason: "REQUIRED_BINDING_MISSING" };
+  // Optional, like the deployment: the seeded LINE envelopes must use the
+  // same DATA_ENCRYPTION_KEYRING the Preview reads (unset = CSRF_SECRET key).
+  try { inspectDataEncryptionKeyring(source.DATA_ENCRYPTION_KEYRING); } catch { return { ok: false, reason: "DATA_ENCRYPTION_KEYRING_INVALID" }; }
   if (!SAFE_SHA.test(source.CELEBRATEDEAL_SOURCE_SHA)) return { ok: false, reason: "SOURCE_SHA_INVALID" };
   if (!SAFE_HOST.test(source.CELEBRATEDEAL_DEPLOYMENT_HOST) || !source.CELEBRATEDEAL_DEPLOYMENT_HOST.endsWith(".vercel.app")) return { ok: false, reason: "DEPLOYMENT_HOST_INVALID" };
   const expectedReceiptPath = path.resolve(source.RUNNER_TEMP, "celebratedeal-secure-receipts", RECEIPT_NAME);

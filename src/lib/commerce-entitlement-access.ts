@@ -55,3 +55,6 @@ export function revealCommerceEntitlementAccess(
   }
   return payload as { version: 1; entitlementId: string; orderItemId: string; grantSecret: string };
 }
+
+// Exact envelope purpose for scripts/reencrypt-sensitive-data.ts (F-031).
+export { purpose as commerceEntitlementAccessEnvelopePurpose };

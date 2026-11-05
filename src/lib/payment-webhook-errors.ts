@@ -41,13 +41,15 @@ const ERROR_CLASSES = new Set([
 type ReviewedErrorClass = typeof ERROR_CLASSES extends Set<infer T> ? T : never;
 export type PaymentWebhookErrorClass = ReviewedErrorClass | `P20${number}`
   | "SENSITIVE_KEY_MISSING" | "SENSITIVE_KEY_TOO_SHORT" | "SENSITIVE_ENVELOPE_INVALID"
-  | "SENSITIVE_ENVELOPE_AUTH_FAILED" | "OTHER";
+  | "SENSITIVE_ENVELOPE_AUTH_FAILED" | "SENSITIVE_KEY_ID_UNKNOWN" | "SENSITIVE_KEYRING_INVALID" | "OTHER";
 
 const CRYPTO_ERROR_CLASSES = new Map<string, PaymentWebhookErrorClass>([
   ["Sensitive data encryption key is not configured.", "SENSITIVE_KEY_MISSING"],
   ["Sensitive data encryption key is too short.", "SENSITIVE_KEY_TOO_SHORT"],
   ["Invalid sensitive data envelope.", "SENSITIVE_ENVELOPE_INVALID"],
   ["Unsupported state or unable to authenticate data", "SENSITIVE_ENVELOPE_AUTH_FAILED"],
+  ["Sensitive data key id is not in the keyring.", "SENSITIVE_KEY_ID_UNKNOWN"],
+  ["Sensitive data keyring is invalid.", "SENSITIVE_KEYRING_INVALID"],
 ]);
 
 export const PAYMENT_WEBHOOK_STAGES = ["PAYMENT_UPDATE", "INVENTORY", "ORDER_TRANSITION",

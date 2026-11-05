@@ -23,7 +23,8 @@
 | `OPS_SMOKE_SECRET` | **必填**（Staging Stream／external smoke 需要）：獨立 random secret，至少 32 字元；GitHub Actions `Preview – celebrate-deal-staging` environment secret 用同一個值 | **選填，預設不設**：只在驗證期間設定，完成後移除 | Password manager | F-016：只開放 `/api/admin/ops/test-email`、`test-analytics`、`test-monitoring`、`/api/admin/ops/cloudflare/{direct-upload,live-input}` 與 `/api/cloudflare/{direct-upload,live-inputs}`。未設定、短於 32 字元、前後有空白或與 `JOB_SECRET`／`CRON_SECRET`／`CSRF_SECRET` 相同時，這些端點一律回 401（不退回 `JOB_SECRET`）；preflight 對後三種情況回 FAIL、Preview 未設定回 WARNING、Production 已設定回 WARNING |
 | `SMOKE_VENDOR_ID` | Staging 合成 smoke vendor 的 ID | 只在 Production smoke 期間設定，指向專用的 smoke vendor | 維運設定 | F-016：Cloudflare smoke 一律綁定這個 vendor；呼叫端帶其他 `vendorId` 回 403，未設定或格式不符回 503，狀態查詢只看得到這個 vendor 的影片 |
 | `CRON_SECRET` | staging random secret | production random secret | Password manager | Vercel Cron 對 `/api/jobs/email-deliveries` 的 Bearer 驗證可通過；不得輸出值 |
-| `CSRF_SECRET` | staging random secret | production 獨立 random secret | Password manager | preflight 通過；不得與 `JOB_SECRET` 共用。**這是應用層資料加密根金鑰：禁止輪替；備份時必須一併保存對應版本**（見 §7） |
+| `CSRF_SECRET` | staging random secret | production 獨立 random secret | Password manager | preflight 通過；不得與 `JOB_SECRET` 共用。**這是應用層資料加密根金鑰：禁止輪替；備份時必須一併保存對應版本**（見 §7）。沒有它時不再退回 `JOB_SECRET`（§8.5） |
+| `DATA_ENCRYPTION_KEYRING` | 選填；JSON 陣列，各金鑰帶 `kid`，恰好一把 `active`，其餘 decrypt-only（§8） | 同左，值與 staging 不同 | owner 產生的 32 bytes 隨機值＋Password manager | 未設定＝`[WARN]`、仍以 `CSRF_SECRET` 衍生的金鑰加密（kid `legacy`）；格式錯、active 不唯一、kid 重複、金鑰長度不足＝`[FAIL]`。輪替步驟見 §8.3，備份要保存對應版本（§8.4） |
 | `LIVE_CHAT_INGRESS_SECRET` | staging random secret，至少 32 字元 | production random secret，至少 32 字元 | Password manager＋edge secret store | preflight 通過；不得輸出或進入 client bundle |
 | `RATE_LIMIT_PROVIDER` | `cloudflare_waf` 或 `upstash_redis` | `cloudflare_waf` 或 `upstash_redis` | Cloudflare / Upstash | preflight 不得顯示 `memory`；Staging 實測 429 |
 | `CLOUDFLARE_ACCOUNT_ID` | same or staging account | production account | Cloudflare dashboard | direct upload API 可建立 upload URL |
@@ -123,18 +124,18 @@ RUN_DEMO_PAYMENT_WEBHOOK_SMOKE=true SMOKE_VENDOR_SLUG=your-vendor npm run extern
 
 `CSRF_SECRET` 的名稱容易讓人以為只管 CSRF token，實際上它是**應用層資料加密的根金鑰**：
 
-- `src/lib/sensitive-data.ts` 的 `deriveSensitiveDataKey()` 以 `CSRF_SECRET` 經 HMAC-SHA256 依用途衍生 AES-256-GCM 金鑰與雜湊索引金鑰（沒有 `CSRF_SECRET` 時改用 `JOB_SECRET`）。
+- `src/lib/sensitive-data.ts` 的 `deriveSensitiveDataKey()` 以 `CSRF_SECRET` 經 HMAC-SHA256 依用途衍生 AES-256-GCM 金鑰與雜湊索引金鑰。2026-11-03 起不再退回 `JOB_SECRET`：沒有 `CSRF_SECRET` 時一律拒絕（§8.5）。
 - 受影響的資料包含：MFA secret、LINE 憑證、訂單買家與收件個資、私訊、tracking token、學員通知、發票請求、交付網址，以及各種 token 雜湊與查詢用雜湊索引（例如 customerKeyHash、destinationKeyHash）。
-- 通用密文格式只有 `v1`，沒有 key id。2026-10-25 起改以「換用途名稱」做依用途輪替（第 7 點）：MFA secret 另有 `m2.` 格式，其餘用途由 `src/lib/derived-key-rotation.ts` 以「新鑰優先、舊鑰後備」驗證或解密。銀行帳號另用 `BANK_ACCOUNT_KEYRING_JSON`，有輪替設計，不在此列。
+- 通用密文格式只有 `v1`，沒有 key id。2026-10-25 起改以「換用途名稱」做依用途輪替（第 7 點）：MFA secret 另有 `m2.` 格式，其餘用途由 `src/lib/derived-key-rotation.ts` 以「新鑰優先、舊鑰後備」驗證或解密。銀行帳號另用 `BANK_ACCOUNT_KEYRING_JSON`，有輪替設計，不在此列。2026-11-03 起另有 `DATA_ENCRYPTION_KEYRING`（§8）：新密文 `v2.<kid>.…` 帶 key id，加密欄位可以輪替；`v1.` 視為 kid `legacy`。
 
 因此：
 
-1. **禁止輪替 `CSRF_SECRET`**，包括資安事件時。換掉它，上述密文會永久無法解密，雜湊索引全部對不上（GCM auth failure）。要能輪替，必須先完成 B04-03 ②③：獨立的 `DATA_ENCRYPTION_KEYRING`（含 key id、decrypt-only 舊金鑰）與可重跑的 re-encrypt 腳本。
-2. **不可在已有資料的環境「補設」或「改設」**：某環境原本沒有 `CSRF_SECRET`、一直用 `JOB_SECRET` 加密，之後才補上 `CSRF_SECRET`，效果等同輪替。這種環境的 `JOB_SECRET` 也同樣不可輪替。
-3. **備份必須一併保存對應版本**：每一份資料庫備份都要能對應到「備份當下」的 `CSRF_SECRET`（必要時含 `JOB_SECRET`）。金鑰存放在與備份分開的密碼管理器，記錄「哪一段期間的備份對應哪一版」；不得與備份檔放在同一處，不得寫進 repo、log、收據或聊天。
+1. **禁止輪替 `CSRF_SECRET`**，包括資安事件時。換掉它，上述密文會永久無法解密，雜湊索引全部對不上（GCM auth failure）。B04-03 ②③ 已完成（§8：`DATA_ENCRYPTION_KEYRING`＋`scripts/reencrypt-sensitive-data.ts`），但它**只讓加密欄位可以輪替**：雜湊索引、token MAC 與 CSRF MAC 仍由 `CSRF_SECRET` 衍生，所以 `CSRF_SECRET` 本身仍然禁止輪替。
+2. **不可在已有資料的環境「補設」或「改設」**：某環境原本沒有 `CSRF_SECRET`、一直用 `JOB_SECRET` 加密，之後才補上 `CSRF_SECRET`，效果等同輪替。這種環境的 `JOB_SECRET` 也同樣不可輪替。2026-11-03 起程式不再退回 `JOB_SECRET`；若有環境曾只靠 `JOB_SECRET` 加密，部署前必須先停下來處理（§8.5）。
+3. **備份必須一併保存對應版本**：每一份資料庫備份都要能對應到「備份當下」的 `CSRF_SECRET`（必要時含 `JOB_SECRET`），設定 keyring 後再加上當時 keyring 內所有 kid 的金鑰（§8.4）。金鑰存放在與備份分開的密碼管理器，記錄「哪一段期間的備份對應哪一版」；不得與備份檔放在同一處，不得寫進 repo、log、收據或聊天。
 4. **還原時缺它，加密資料全部不可讀**：資料表與筆數都會還原成功，但所有加密欄位與雜湊查詢失效，等同遺失個資與 MFA。隔離還原演練必須用對應版本的金鑰抽查加密欄位可讀，見 `docs/production-backup-restore-runbook.md` §B 第 6 步與 §E。
 5. staging 與 production 必須使用不同值；staging 值外洩不影響 production 資料。
-6. **根金鑰只能用在 KDF（domain separation）**：根金鑰（`CSRF_SECRET`，或退回時的 `JOB_SECRET`）只能出現在 `deriveKeyFromRootSecret()`，也就是 `HMAC(root, "CelebrateDeal:" + purpose)`。任何其他 HMAC／雜湊都必須先用自己的 purpose 衍生金鑰，再在該金鑰下計算，並在訊息前加固定標籤。**絕對不可直接用根金鑰 HMAC 攻擊者可控的輸入**（cookie、header、表單值、URL）：只要輸出會回到使用者手上，攻擊者送出 `CelebrateDeal:<purpose>` 就能讀到該用途的衍生金鑰。2026-10-25 前的 CSRF fingerprint 就是這個漏洞（`HMAC(CSRF_SECRET, session cookie)`），現已改為 CSRF 專用衍生金鑰（#485 時為 `csrf-hmac-v1`，2026-10-25 起為 `csrf-hmac:r2:…`，見第 7 點）＋`csrf-fp:v1:`／`csrf-token:v1:` 標籤；修正後部署時，既有 CSRF token（最長 2 小時）會失效，行為與 token 過期相同。`deriveSensitiveDataKey()` 的輸出不得改變，`src/lib/sensitive-data.test.ts` 以合成秘密的 golden 值鎖住既有用途；`src/lib/sensitive-data-root-key-boundary.test.ts` 確保通用 KDF helper 不外露，且只有 `csrf.ts` 使用 `deriveCsrfMacKey()`。
+6. **根金鑰只能用在 KDF（domain separation）**：根金鑰（`CSRF_SECRET`）只能出現在 `deriveKeyFromRootSecret()`，也就是 `HMAC(root, "CelebrateDeal:" + purpose)`。任何其他 HMAC／雜湊都必須先用自己的 purpose 衍生金鑰，再在該金鑰下計算，並在訊息前加固定標籤。**絕對不可直接用根金鑰 HMAC 攻擊者可控的輸入**（cookie、header、表單值、URL）：只要輸出會回到使用者手上，攻擊者送出 `CelebrateDeal:<purpose>` 就能讀到該用途的衍生金鑰。2026-10-25 前的 CSRF fingerprint 就是這個漏洞（`HMAC(CSRF_SECRET, session cookie)`），現已改為 CSRF 專用衍生金鑰（#485 時為 `csrf-hmac-v1`，2026-10-25 起為 `csrf-hmac:r2:…`，見第 7 點）＋`csrf-fp:v1:`／`csrf-token:v1:` 標籤；修正後部署時，既有 CSRF token（最長 2 小時）會失效，行為與 token 過期相同。`deriveSensitiveDataKey()` 的輸出不得改變，`src/lib/sensitive-data.test.ts` 以合成秘密的 golden 值鎖住既有用途；`src/lib/sensitive-data-root-key-boundary.test.ts` 確保通用 KDF helper 不外露，且只有 `csrf.ts` 使用 `deriveCsrfMacKey()`。
    - **修正前的曝露無法偵測**：任何人都可能已從公開頁取得各用途衍生金鑰的前 192 bits，且不會留下可辨識的紀錄，因此應視為可能已外洩。
    - **依用途輪替，絕不為此輪替根金鑰 `CSRF_SECRET`**（換根金鑰會讓所有密文失效，見第 1 點）。優先順序併入 keyring 工作 B04-03 追蹤：
      1. 第 1 級：尚未正式使用的用途直接改名，例如商家邀請（先改為 `merchant-registration-invite-v2`，2026-10-25 再改為帶隨機後綴的名稱，見第 7 點）。新用途一律用**不可猜的隨機後綴**（例如商家 Email 驗證連結用 `merchant-email-verification:r2:5a881e5879ba6156`，已登記在 `DERIVED_KEY_ROTATIONS`、沒有 legacy），不用 `-v1`、`-v2` 這類可預先猜到的名稱。
@@ -211,7 +212,7 @@ RUN_DEMO_PAYMENT_WEBHOOK_SMOKE=true SMOKE_VENDOR_SLUG=your-vendor npm run extern
 
    **在 staging 執行 MFA 重新加密（owner／operator）**
 
-   1. 在受保護的環境注入 staging 的 `DATABASE_URL` 與 staging 的根金鑰（`CSRF_SECRET`，沒有時 `JOB_SECRET`）。不得貼到聊天、log 或 repo；不讀 `.env*` 檔。
+   1. 在受保護的環境注入 staging 的 `DATABASE_URL` 與 staging 的根金鑰（`CSRF_SECRET`；已設定 keyring 時一併注入同一份 `DATA_ENCRYPTION_KEYRING`）。不得貼到聊天、log 或 repo；不讀 `.env*` 檔。
    2. Dry run（只輸出筆數）：`node --import tsx scripts/reencrypt-mfa-secrets.ts --target=staging`。確認 `unreadable` 為 0；不為 0 代表根金鑰不對或有損壞資料，先停下來查。
    3. 執行：`MFA_REENCRYPT_CONFIRM=REENCRYPT_MFA_SECRETS node --import tsx scripts/reencrypt-mfa-secrets.ts --target=staging --execute`。輸出應為 `remainingLegacy: 0`。可重跑：已是新格式的列不會再寫；`changed` 代表執行期間該使用者剛登入或重新註冊，重跑即可。
    4. 用 staging 的 QA 帳號實際完成一次 `/mfa/verify`，確認新格式可登入。
@@ -220,6 +221,8 @@ RUN_DEMO_PAYMENT_WEBHOOK_SMOKE=true SMOKE_VENDOR_SLUG=your-vendor npm run extern
 
    **下一步：PII 與雜湊索引（B04-03，尚未輪替）**
 
+   > 2026-11-03：下方第 1 點（加密欄位）改由 §8 的 `DATA_ENCRYPTION_KEYRING`＋`scripts/reencrypt-sensitive-data.ts` 處理（換金鑰而不是換用途名稱）；第 2 點（雜湊索引）仍未處理。
+
    本次**沒有**重新加密下列用途，仍以 2026-10-25 前的金鑰運作（`:<scope>` 代表用途字串後接 vendorId／記錄 ID）：`commerce-order-buyer`／`-shipping`／`-identity-fingerprint`、`commerce-custom-checkout:<scope>` 與 `commerce-custom-checkout-identity-fingerprint`、`commerce-entitlement-access:<scope>`、`product-delivery-config:<scope>`、`commerce-order-item-delivery:<scope>`、`commerce-order-invoice:<scope>` 與 `commerce-order-invoice-fingerprint`、`email-delivery-recipient:<scope>`／`email-delivery-recipient-hash`、`src/lib/support-case-pii.ts` 的案件內容、`line-official-account:<scope>`（LINE 憑證）、`line-profile:<scope>`、`line-user-lookup:<vendor>`、`line-login-state:<scope>`、`line-delivery:<scope>`、`server-side-tracking:<scope>`（tracking 憑證與 browser context）、`learner-notification-*`／`learner-contact-proof-v1:<scope>`、`live-private-chat-body:<scope>`、`live-lucky-draw-claim-hash:v1` 與 `live-lucky-draw-claim:v1:<scope>`、`cloudflare-live-stream-key`、`registration-form-retry-v1`、`automation-customer-key-v1`。
 
    1. **加密欄位（lazy＋batch）**：讓 envelope 帶 key 版本（例如 `v2.` 表示新用途名稱、`v1.` 表示舊用途），解密依版本選鑰、加密一律用新鑰；寫入路徑自然換新，再為每張表寫一支與本腳本相同模式的批次腳本（cursor 分頁、先解密成功再寫、以舊密文做 CAS、dry run／確認值／資料庫守門、可重跑）。用途字串多半含 vendorId／記錄 ID，新名稱以「新前綴＋原本的 scope」組成即可。
@@ -227,3 +230,102 @@ RUN_DEMO_PAYMENT_WEBHOOK_SMOKE=true SMOKE_VENDOR_SLUG=your-vendor npm run extern
    3. **優先順序**：訂單買家個資與身分 fingerprint → LINE 與 tracking 憑證（同時建議到供應商端換發憑證，舊密文即失去價值）→ 其餘 PII。短效資料（`registration-form-retry-v1` 10 分鐘、LINE Login verifier）只要改名即可；`cloudflare-live-stream-key` 以在 Cloudflare 換發 stream key 處理較省事。
    4. **PayUni EncryptInfo 的 GCM tag 長度（另案，尚未強制）**：其他 AES-GCM 解密已固定 16-byte tag（`sensitive-data.ts`、`mfa.ts`，`bank-account.ts`／`affiliate-tax-identity.ts` 指定 `authTagLength: 16`），但 `src/lib/payment-providers/payuni.ts` 的 `decryptInfo` 維持原樣：repo 內沒有 PayUni 實際 tag 長度的證據，而 callback 的真正完整性檢查是 `HashInfo`（以秘密 hashKey 計算的 SHA-256，常數時間比對）。貿然強制 16 bytes 可能靜默丟掉真實付款通知。步驟：先只記錄觀察到的 tag byte 長度（只記長度）；在 sandbox 跑完 Notify、Return、查詢、退款、綁卡全部路徑並確認一律 16 bytes；之後才強制，`scripts/payuni-sandbox-external-qa.mjs` 一併處理。
    5. #485 引入、名稱可猜的 `csrf-hmac-v1`、`merchant-registration-invite-v2`、`merchant-invite-email-v1` 已於 2026-10-25 一併改為帶隨機後綴的名稱（見上表）。之後新增任何用途，名稱都要帶隨機後綴，並登記到 `DERIVED_KEY_ROTATIONS`。
+
+## 8. `DATA_ENCRYPTION_KEYRING`：可輪替的資料加密金鑰（F-031②③）
+
+`CSRF_SECRET` 仍是根金鑰且**仍然禁止輪替**（§7 第 1 點）：雜湊索引、各種 token MAC 與 CSRF MAC 都由它衍生。`DATA_ENCRYPTION_KEYRING` 只接手「加密欄位」：設定後，新寫入的密文改用 keyring 裡的 active 金鑰並在密文標上 kid，讀取依 kid 選金鑰，舊金鑰可留作 decrypt-only，再用 re-encrypt 腳本把資料搬到新 kid。資料層因此可以輪替，不必動根金鑰。
+
+### 8.1 格式
+
+JSON 陣列，每一項 `{"kid": "<id>", "key": "<base64url>", "active": true}`：
+
+```json
+[{"kid":"d2611a","key":"<32 bytes 隨機值的 base64url，43 字元>","active":true},{"kid":"legacy"}]
+```
+
+- **恰好一把 `active`**（加密用）；其他項目都是 decrypt-only（`active` 省略或 `false`）。
+- `kid`：1–32 個小寫英數字、`_`、`-`，以英數字開頭，不可重複、不可含 `.`。kid 不是秘密，會出現在密文、preflight 與腳本輸出。建議用「d＋年月＋序號」，例如 `d2611a`。
+- `key`：32 bytes 隨機值的 base64url（無 padding）。由 owner 在自己的終端機產生，例如 `node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))"`，直接貼進 Vercel 環境變數與密碼管理器。Claude 不產生、不輸入、不經手正式值。
+- `{"kid":"legacy"}`（不可帶 `key`）代表 `CSRF_SECRET` 衍生的舊金鑰：列出它才接受舊密文（`v1.`、MFA 的 `m2.` 與更舊格式）；`{"kid":"legacy","active":true}` 代表新資料仍以舊格式寫入（輪替第 1 階段用）。
+- **未設定（或空字串）＝ `[{"kid":"legacy","active":true}]`**：行為與本變更前完全相同，所以部署本版不需要先設定，零停機。
+- preflight（`src/lib/env.ts`）：未設定 → `[WARN]`（說明仍以根金鑰加密）；JSON 錯誤、不是陣列、空陣列、欄位不明、kid 格式錯或重複、active 不是恰好一把、`legacy` 帶 key、其他 kid 缺 key、key 不是 base64url、長度不足或超過 32 bytes → `[FAIL]`；訊息只含 kid 與問題種類，不印金鑰。
+- 執行期 keyring 格式錯時，所有加密欄位的讀寫都拒絕（`Sensitive data keyring is invalid.`），不會退回根金鑰；雜湊查詢不受影響。
+
+### 8.2 密文格式
+
+| 格式 | kid | 金鑰 |
+|---|---|---|
+| `v1.<iv>.<tag>.<data>`（舊格式，維持不變） | `legacy` | `HMAC-SHA256(CSRF_SECRET, "CelebrateDeal:" + purpose)` |
+| `v2.<kid>.<iv>.<tag>.<data>` | keyring 的 kid | `HMAC-SHA256(keyring key, "CelebrateDeal:data-encryption-keyring:k1:7a098f46d67bd2f1:" + purpose)`；AAD＝`CelebrateDeal:sensitive-data:v2:<kid>` |
+| MFA `m2.<iv>.<tag>.<data>` 與 2026-10-25 前的三段格式 | `legacy` | 根金鑰衍生（§7 第 7 點） |
+| MFA（keyring active 不是 legacy 時） | keyring 的 kid | 與 `v2.` 相同，用途為 `mfa-encryption:r2:…` |
+
+- 皆為 AES-256-GCM、12-byte IV、16-byte tag。兩種格式可並存，`v1.` 不需要遷移就能繼續讀。
+- 讀取只用密文標示的 kid 對應的金鑰，不輪流嘗試。kid 不在 keyring（含已移除的 `legacy`）時明確失敗：`Sensitive data key id is not in the keyring.`（付款 webhook 錯誤分類 `SENSITIVE_KEY_ID_UNKNOWN`；keyring 格式錯為 `SENSITIVE_KEYRING_INVALID`）。
+- keyring 的 KDF 標籤登記在 `src/lib/derived-key-purposes.ts` 的 `DATA_ENCRYPTION_KEYRING_KDF_LABEL`（帶隨機後綴，改了會讓所有 `v2.` 密文失效；`src/lib/sensitive-data-keyring.test.ts` 以 golden 密文鎖住）。
+- 不在 keyring 範圍：雜湊索引與 token MAC（仍由 `CSRF_SECRET` 衍生，見 §7「下一步」第 2 點）、銀行與稅籍資料（`BANK_ACCOUNT_KEYRING_JSON`）。
+- 加密 cookie／ticket（學員入口 session 30 天、Cloudflare 上傳 ticket 7 天、報名結果 cookie、MFA 設定與復原碼 cookie）也會自動改用 active kid；移除某個 kid 後，仍帶該 kid 的 cookie 會被當成無效（學員需重新登入、上傳需重新開始）。
+
+### 8.3 輪替步驟
+
+**第一次啟用（legacy → keyring）**
+
+1. 新增 kid（先 decrypt-only）：owner 產生金鑰，設定 `[{"kid":"legacy","active":true},{"kid":"d2611a","key":"…"}]`，部署。preflight 顯示「新資料仍以 legacy 寫入」。這一步讓所有執行中的實例先認得新 kid，避免切換當下舊實例讀不到新密文。
+2. 切換 active：改為 `[{"kid":"d2611a","key":"…","active":true},{"kid":"legacy"}]`，部署。之後新寫入的資料都是 `v2.d2611a.…`。
+3. re-encrypt：**先備份資料庫**（staging 用 `docs/production-backup-restore-runbook.md` 的備份流程，並記錄備份對應的 keyring 版本，§8.4），再在受保護的環境注入該環境的 `DATABASE_URL`、`CSRF_SECRET` 與同一份 `DATA_ENCRYPTION_KEYRING`，先 dry run，確認 `unreadable: 0`，再 `--apply`，輸出應為 `remainingPending: 0`（§8.6）。中斷或 `changed` 不為 0 時重跑即可。
+4. 移除舊 kid：再跑一次 dry run，確認每個欄位的 `byKeyId` 都沒有 `legacy`，並等到第 2 步之後至少 30 天（最長的加密 cookie 壽命），才把 `{"kid":"legacy"}` 從 keyring 移除並部署。preflight 會顯示「不再接受 legacy」。`CSRF_SECRET` 仍要保留（雜湊索引需要），而且仍不可輪替。**同一份 keyring 也要放進 GitHub environment secret `DATA_ENCRYPTION_KEYRING`**（`Preview – celebrate-deal-staging`）：`staging-qa-finance-bootstrap.yml` 寫入 QA 財務帳號的 MFA secret、`secure-staging-validation.yml` 的 LINE 任務（`scripts/secure-staging-line-notifications.mjs`）寫入 LINE 憑證與個資，都會讀它；沒設定時沿用 `CSRF_SECRET` 衍生的金鑰，移除 `legacy` 之後就必須設定，否則這兩個 runner 寫入的密文 Preview 讀不到。
+
+**之後的輪替（例如 d2611a → d2705b）**：新增 kid → 部署 → re-encrypt → 移除舊 kid。
+
+1. 新增 `{"kid":"d2705b","key":"…"}` 為 decrypt-only，部署。
+2. 把 active 移到 `d2705b`、`d2611a` 改為 decrypt-only，部署。
+3. 跑 re-encrypt（dry run → `--apply`），確認 `remainingPending: 0`。
+4. 等 30 天並確認 dry run 沒有 `d2611a`，再移除它並部署。舊金鑰仍要留在密碼管理器，直到含它的備份全部過期（§8.4）。
+
+**回滾**：一旦有 `v2.` 密文，就不能回滾到本變更之前的 build（舊程式讀不懂 `v2.`）。需要退回時，先把 active 改回 `legacy`（保留 keyring kid 為 decrypt-only），再跑 re-encrypt 把資料搬回 `v1.`，確認 `remainingPending: 0` 後才可回滾。金鑰外洩時：照上面步驟換新 kid 並 re-encrypt，移除外洩的 kid；外洩金鑰仍可解開移除前的備份。
+
+### 8.4 備份與還原
+
+- 每份備份都要能對應到「備份當下」的 `CSRF_SECRET` **與** keyring 內所有 kid 的金鑰。從環境變數移除某個 kid 不會讓舊備份裡的密文消失；該金鑰要在密碼管理器保留到最後一份含它的備份過期為止，紀錄只寫 kid 與期間，不寫值。
+- 還原演練抽查加密欄位時，要用與備份同一期的 keyring；可先對還原出的資料庫跑 re-encrypt 的 dry run，`unreadable: 0` 才算金鑰齊全。
+
+### 8.5 拿掉 `JOB_SECRET` 退回（fail-closed）
+
+本變更前有兩處把 `JOB_SECRET` 當成加密／簽章的後備根金鑰，現在都移除：
+
+| 位置 | 之前 | 現在 |
+|---|---|---|
+| `src/lib/sensitive-data.ts` `deriveSensitiveDataKey()` | `CSRF_SECRET` 沒設定時改用 `JOB_SECRET` | 只用 `CSRF_SECRET`；沒設定時丟出 `Sensitive data encryption key is not configured.` |
+| `src/lib/csrf.ts` `csrfSecret()`（非 production） | `CSRF_SECRET` → `JOB_SECRET` → 固定開發值 | `CSRF_SECRET` → 固定開發值（只限本機與測試；production 一樣沒設定就拒絕） |
+
+沒有 `CSRF_SECRET` 時會明確失敗的功能（`DATA_ENCRYPTION_KEYRING` 的 active kid 不是 `legacy` 時，加密欄位本身不需要 `CSRF_SECRET`，但雜湊與 token 仍需要）：
+
+- MFA：TOTP 驗證與設定、復原碼雜湊、MFA 設定與復原碼 cookie。
+- 訂單：買家與收件個資、身分 fingerprint、發票請求與電子發票、自訂結帳欄位、權益存取、交付網址與說明。
+- Email：寄送 payload、收件人雜湊、退訂連結；學員通知（目的地、payload、驗證 token、回執與各種索引）。
+- LINE：官方帳號憑證、使用者個資與查詢雜湊、LINE Login verifier、推播 payload。
+- 直播：私訊內容與 cursor、聊天 cursor、viewer pass、抽獎領獎碼與雜湊、指定場次結果 cookie 與更換場次連結。
+- 追蹤：Facebook access token、browser context；自動化 customer key 與優惠券 bearer。
+- 其他：客服案件內容、報名表重送暫存與報名結果 cookie、表單 Email 驗證連結、聊天 session、LINE 綁定、歸因 cookie、結帳 admission、加購 token、Evergreen 觀看 session、學員入口 magic link 與 session、Cloudflare stream key 與上傳 ticket、商家邀請與 Email 驗證、帳號 Email 變更連結。
+
+不受影響（不是後備用途）：`JOB_SECRET` 作為排程與 `/api/admin/ops/**` 的 Bearer；`src/lib/provider-runtime-identity.ts` 以 `JOB_SECRET` 計算的 provider 綁定摘要（只供已通過 `JOB_SECRET` 授權的維運端點比對，不保護資料）。
+
+**本機開發**：本機或測試環境若只設了 `JOB_SECRET`、沒設 `CSRF_SECRET`，之前會默默拿 `JOB_SECRET` 當根金鑰；現在 MFA、訂單個資、各種 token 與雜湊都會丟出 `Sensitive data encryption key is not configured.`。請另設至少 32 bytes 的 `CSRF_SECRET`（Vitest 各測試自行注入；CI 用 `.github/workflows/ci.yml` 的合成值）。以 `JOB_SECRET` 為根金鑰寫入的本機資料會讀不到，本機資料庫直接重建即可。CSRF token 在非 production 沒有 `CSRF_SECRET` 時改用固定開發值。
+
+**部署前檢查**：每個要部署的環境都必須已設定 `CSRF_SECRET`（Preview／Production 的 preflight `CSRF_SECRET: PASS` 本來就要求）。如果某環境曾在沒有 `CSRF_SECRET` 的情況下寫入加密資料（當時退回 `JOB_SECRET`），部署本版後那些資料會讀不到：先停下來由 owner 決定，不要直接部署。
+
+### 8.6 re-encrypt 腳本（`scripts/reencrypt-sensitive-data.ts`）
+
+- 涵蓋 `scripts/sensitive-data-envelope-targets.ts` 列出的 38 個加密欄位（含 `UserMfaFactor.secretEncrypted`），每一欄都用寫入模組匯出的用途函式重建 purpose。防漏登有兩道測試（`scripts/sensitive-data-envelope-targets.test.ts`）：
+  - 掃 `prisma/schema.prisma`：名稱含 `Encrypted`／`Envelope` 的欄位必須列入或註明排除理由（銀行與稅籍資料用 `BANK_ACCOUNT_KEYRING_JSON`）。
+  - 掃 `src/` 的每個 `encryptSensitiveValue`／`encryptWithRotation` 呼叫點：都要登記在 `ENVELOPE_WRITERS`，指向它寫入的欄位，或註明不落地（cookie、ticket）與壽命；每個欄位也都要有寫入它的呼叫點。新增加密欄位或呼叫點時要一起登記。
+  - `scripts/reencrypt-sensitive-data-all-targets.db.test.ts` 對 38 個欄位各用應用程式的寫入／讀取函式建一列（客服五種內容、追蹤四種來源），驗證 v1 與 v2 都寫得進、讀得回，dry run `unreadable: 0`、`--apply` 後 `remainingPending: 0`，移除 `legacy` 後仍全部可讀。
+- Dry run（預設，唯讀）：`DATABASE_URL=<目標> node --import tsx scripts/reencrypt-sensitive-data.ts --target=staging`。每個欄位輸出 `rows`、`byKeyId`（各 kid 筆數）、`pending`（需搬移且可解密）、`unreadable`、`unrecognized`（不是密文，例如舊的明文 stream key，不會被改動）。
+- 執行：`DATA_REENCRYPT_CONFIRM=REENCRYPT_SENSITIVE_DATA DATABASE_URL=<目標> node --import tsx scripts/reencrypt-sensitive-data.ts --target=staging --apply`。每批輸出表名、欄位、批次、筆數與 kid 前後（`before`／`after`），最後輸出 `remainingPending`、`remainingUnreadable`。
+- 選項：`--batch-size N`（1–1000，預設 200）、`--only=<Table.column>`（可重複）、`--allow-unreadable`（有無法解密的列時仍處理其他列；那些列不會被寫）。
+- 守門與 MFA 腳本相同：loopback `celebratedeal_*` 直接允許；`--target=staging` 時 URL 必須是 staging 資料庫；其他資料庫需要 `--target=production` 與 `DATA_REENCRYPT_PRODUCTION_APPROVAL=OWNER_APPROVED_PRODUCTION_DATA_REENCRYPT`（只在 owner 明確授權後設定）。腳本不讀 `.env*`。
+- 每列先以原 kid 與正確 purpose 解密成功、新密文解回同一明文，才以 compare-and-swap（`WHERE id = … AND 欄位 = 舊密文`，raw SQL，不更新 `updatedAt`）寫入；已在 active kid 的列不動，所以可中斷、可重跑。
+- 每筆寫入在自己的交易裡先設定交易層級旗標 `celebratedeal.sensitive_data_reencrypt = on`。`SupportRefundHandoff` 的 trigger 原本把退款原因密文視為不可變，`20261103160100_sensitive_envelope_v2_checks` 改為只有帶這個旗標、新舊值都是格式正確的密文、兩者不同且 kid 不同時才允許更換（舊值的 kid 讀不出來就拒絕）；應用程式不設這個旗標，所以對應用程式而言仍不可變。
+  - **禁止**用 `ALTER ROLE … SET`、`ALTER DATABASE … SET`、連線字串的 `options=-c celebratedeal.sensitive_data_reencrypt=on` 或任何 session 層級方式設定這個旗標：那會讓同一個 role、資料庫或連線上的應用程式寫入也能改退款原因。只有腳本在每筆寫入的交易內以 `set_config(..., true)` 設定，交易結束即失效。寫入也會觸發 `CommerceEntitlement`、`SupportRefundHandoff` 既有的關聯驗證 trigger（只驗證，不改資料）。
+- 同一個 migration 把 `LivePrivateChatMessage.bodyEncrypted` 與 `RegistrationFormRetryDraft.encryptedPayload` 原本只接受 `v1.` 的 CHECK 放寬為 v1 或 v2（重送暫存長度上限 533400 → 533416，配合 v2 最長 76 字元的標頭）。**這個 migration 必須在切換 active kid 之前部署**；否則私訊寫不進、重送暫存失效。輸出只有表名、欄位、筆數與 kid，不含明文、密文、金鑰、列 ID 或綁定值。
+- `scripts/reencrypt-mfa-secrets.ts` 仍可單獨使用；設定 keyring 後它會把 MFA secret 搬到 active kid（`remainingLegacy` 改為「不在 active 格式」的筆數）。

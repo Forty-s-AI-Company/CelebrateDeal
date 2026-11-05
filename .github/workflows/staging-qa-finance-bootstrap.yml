@@ -55,6 +55,9 @@ jobs:
           # Encrypting it requires the deployment's CSRF_SECRET-derived MFA key.
           PAYUNI_QA_FINANCE_TOTP_SECRET: ${{ secrets.PAYUNI_QA_FINANCE_TOTP_SECRET }}
           CSRF_SECRET: ${{ secrets.CSRF_SECRET }}
+          # F-031: with a keyring, the MFA secret is written under its active kid
+          # (empty when unset = CSRF_SECRET-derived key, as before).
+          DATA_ENCRYPTION_KEYRING: ${{ secrets.DATA_ENCRYPTION_KEYRING }}
         shell: bash
         run: |
           set -euo pipefail

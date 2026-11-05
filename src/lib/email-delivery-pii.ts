@@ -258,3 +258,6 @@ export function createEmailUnsubscribeUrl(deliveryId: string) {
   url.searchParams.set("token", createEmailUnsubscribeToken(deliveryId));
   return url.toString();
 }
+
+// Exact envelope purpose for scripts/reencrypt-sensitive-data.ts (F-031).
+export { recipientPurpose as emailDeliveryPayloadEnvelopePurpose };

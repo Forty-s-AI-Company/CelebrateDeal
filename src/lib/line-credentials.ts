@@ -119,10 +119,17 @@ export function lineUserIdHash(vendorId: string, lineUserId: string) {
     .digest("hex");
 }
 
+export function lineProfileEnvelopePurpose(vendorId: string, field: "userId" | "displayName" | "pictureUrl") {
+  return `line-profile:${vendorId}:${field}`;
+}
+
 export function protectLineProfileValue(vendorId: string, field: "userId" | "displayName" | "pictureUrl", value: string) {
-  return encryptSensitiveValue(value.trim(), `line-profile:${vendorId}:${field}`);
+  return encryptSensitiveValue(value.trim(), lineProfileEnvelopePurpose(vendorId, field));
 }
 
 export function unprotectLineProfileValue(vendorId: string, field: "userId" | "displayName" | "pictureUrl", value: string) {
-  return decryptSensitiveValue(value, `line-profile:${vendorId}:${field}`);
+  return decryptSensitiveValue(value, lineProfileEnvelopePurpose(vendorId, field));
 }
+
+// Exact envelope purpose for scripts/reencrypt-sensitive-data.ts (F-031).
+export { credentialPurpose as lineOfficialAccountCredentialEnvelopePurpose };

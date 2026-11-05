@@ -148,8 +148,8 @@ ORDER BY 1;
 
 ## E. `CSRF_SECRET`：備份與還原必須一併處理的加密根金鑰（F-031①／B04-03）
 
-- `CSRF_SECRET` 是應用層資料加密根金鑰（`src/lib/sensitive-data.ts` 以它經 HMAC 衍生 AES-256-GCM 金鑰；沒有它時改用 `JOB_SECRET`）。MFA secret、LINE 憑證、買家與收件個資、私訊、tracking token、學員通知、發票請求、交付網址與各種雜湊索引都依賴它。詳細清單見 `docs/staging-production-env-vars.md` §7。
-- **禁止輪替。** 目前密文沒有 key id，換金鑰等於所有加密資料永久不可讀。
-- **每份備份都要能對應到備份當下的 `CSRF_SECRET` 版本**（若該環境曾以 `JOB_SECRET` 作為來源，也要保存）。金鑰放在與備份分開保管的密碼管理器，備份清單只記「金鑰版本代號」，不記值。
+- `CSRF_SECRET` 是應用層資料加密根金鑰（`src/lib/sensitive-data.ts` 以它經 HMAC 衍生 AES-256-GCM 金鑰；2026-11-03 起不再退回 `JOB_SECRET`）。MFA secret、LINE 憑證、買家與收件個資、私訊、tracking token、學員通知、發票請求、交付網址與各種雜湊索引都依賴它。詳細清單見 `docs/staging-production-env-vars.md` §7。
+- **禁止輪替。** `v1.` 密文沒有 key id，雜湊索引也依賴它，換金鑰等於這些資料永久不可讀。加密欄位可改用 `DATA_ENCRYPTION_KEYRING` 輪替（`docs/staging-production-env-vars.md` §8），但 `CSRF_SECRET` 本身仍不可換。
+- **每份備份都要能對應到備份當下的 `CSRF_SECRET` 版本**（若該環境曾以 `JOB_SECRET` 作為來源，也要保存），以及備份當下 `DATA_ENCRYPTION_KEYRING` 內所有 kid 的金鑰；已從環境移除的 kid 也要保留到含它的備份過期。金鑰放在與備份分開保管的密碼管理器，備份清單只記「金鑰版本代號」，不記值。
 - **還原時缺對應金鑰＝加密資料全部不可讀**：資料表、筆數、§C 的帳務彙總都會一致，但個資與 MFA 無法解密、雜湊查詢全部對不上。因此 §B 第 6 步「加密欄位可讀」是必要驗收項，不可省略。
 - age 私鑰（解密備份檔）與 `CSRF_SECRET`（解密欄位）是兩把不同的金鑰，兩把都要在還原時可取得，且都不得與備份檔放在同一處。

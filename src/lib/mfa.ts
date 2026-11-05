@@ -4,7 +4,16 @@ import {
   verifyPasswordAsync,
 } from "@/lib/password";
 import { DERIVED_KEY_ROTATIONS, acceptedLegacyPurpose, recordLegacyDerivedKeyUse } from "@/lib/derived-key-rotation";
-import { GCM_AUTH_TAG_BYTES, deriveSensitiveDataKey } from "@/lib/sensitive-data";
+import {
+  GCM_AUTH_TAG_BYTES,
+  LEGACY_DATA_KEY_ID,
+  activeDataEncryptionKeyId,
+  assertLegacyDataKeyAccepted,
+  decryptSensitiveValue,
+  deriveSensitiveDataKey,
+  encryptSensitiveValue,
+  sensitiveEnvelopeKeyId,
+} from "@/lib/sensitive-data";
 
 const TOTP_DIGITS = 6;
 const TOTP_PERIOD_SECONDS = 30;
@@ -21,7 +30,12 @@ const RECOVERY_CODE_KEY = DERIVED_KEY_ROTATIONS.mfaRecoveryCode;
 // under the new key. The legacy "<iv>.<tag>.<data>" form (old key) is still
 // read for stored MFA secrets until scripts/reencrypt-mfa-secrets.ts has run
 // everywhere; the 15-minute setup and recovery-code cookies accept only m2.
+// F-031: once DATA_ENCRYPTION_KEYRING has a non-legacy active key, new MFA
+// ciphertext is the keyring envelope "v2.<kid>.<iv>.<tag>.<data>" under the
+// same current purpose. "m2." and the legacy form both count as kid `legacy`
+// and stop decrypting when the keyring no longer lists `legacy`.
 const MFA_CIPHERTEXT_VERSION = "m2";
+const KEYRING_ENVELOPE_PREFIX = "v2.";
 const MFA_ENCRYPTION_KEY = DERIVED_KEY_ROTATIONS.mfaEncryption;
 
 export const MFA_SETUP_COOKIE = "celebrate_mfa_setup";
@@ -71,6 +85,7 @@ function base32Decode(input: string) {
 }
 
 function encryptText(value: string) {
+  if (activeDataEncryptionKeyId() !== LEGACY_DATA_KEY_ID) return encryptSensitiveValue(value, MFA_ENCRYPTION_KEY.current);
   const iv = randomBytes(12);
   const cipher = createCipheriv("aes-256-gcm", deriveSensitiveDataKey(MFA_ENCRYPTION_KEY.current), iv);
   const encrypted = Buffer.concat([cipher.update(value, "utf8"), cipher.final()]);
@@ -91,6 +106,8 @@ function decryptParts(key: Buffer, ivPart: string, tagPart: string, encryptedPar
 }
 
 function decryptText(value: string, options: { allowLegacy: boolean }) {
+  if (value.startsWith(KEYRING_ENVELOPE_PREFIX)) return decryptSensitiveValue(value, MFA_ENCRYPTION_KEY.current);
+  assertLegacyDataKeyAccepted();
   const parts = value.split(".");
   if (parts.length === 4 && parts[0] === MFA_CIPHERTEXT_VERSION && parts[1] && parts[2] && parts[3]) {
     return decryptParts(deriveSensitiveDataKey(MFA_ENCRYPTION_KEY.current), parts[1], parts[2], parts[3]);
@@ -145,9 +162,24 @@ export function decryptMfaSecret(secretEncrypted: string) {
   return decryptText(secretEncrypted, { allowLegacy: true });
 }
 
-/** True for a stored secret that is not yet in the current (m2) format. */
+/**
+ * True for a stored secret that is not in the format encryptMfaSecret writes
+ * now: "m2." while the active data key is `legacy`, otherwise a keyring
+ * envelope under the active kid.
+ */
 export function mfaSecretNeedsReencryption(secretEncrypted: string) {
-  return !secretEncrypted.startsWith(`${MFA_CIPHERTEXT_VERSION}.`);
+  const activeKeyId = activeDataEncryptionKeyId();
+  if (activeKeyId === LEGACY_DATA_KEY_ID) return !secretEncrypted.startsWith(`${MFA_CIPHERTEXT_VERSION}.`);
+  return !secretEncrypted.startsWith(KEYRING_ENVELOPE_PREFIX) || sensitiveEnvelopeKeyId(secretEncrypted) !== activeKeyId;
+}
+
+/** The data key id a stored MFA secret was written with, or null when malformed. */
+export function mfaSecretKeyId(secretEncrypted: string) {
+  if (secretEncrypted.startsWith(KEYRING_ENVELOPE_PREFIX)) return sensitiveEnvelopeKeyId(secretEncrypted);
+  const parts = secretEncrypted.split(".");
+  if (parts.length === 4 && parts[0] === MFA_CIPHERTEXT_VERSION && parts.slice(1).every(Boolean)) return LEGACY_DATA_KEY_ID;
+  if (parts.length === 3 && parts.every(Boolean)) return LEGACY_DATA_KEY_ID;
+  return null;
 }
 
 /**

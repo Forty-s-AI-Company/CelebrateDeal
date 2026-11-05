@@ -24,6 +24,7 @@ const APPROVED_BACKUP_BLOBS = Object.freeze({
     "b92f66538312734e9d70e9616ec6aedacc8d5236", // #448 (F-168): Q1 refund step env PAYUNI_QA_FINANCE_OTP -> PAYUNI_QA_FINANCE_TOTP_SECRET only; WP2 source, secrets, backup and artifacts unchanged.
     "444df9ac757384d88cf85a6b5d83f87181a2138a", // #542: WP4/LINE egress allowlists the fixed staging alias instead of the firewalled Preview host, LINE gets the read-only token for the protected-master check, WP2 egress drops every application host (Q1 unchanged); WP2 source, secrets, backup and artifacts unchanged.
     "019e6e1679b83cc2c4e0eb7f9e49030de64114ab", // LINE step prints missing binding names (never values) and records its fixed failure stage for the receipt validator; WP2 source, secrets, backup and artifacts unchanged.
+    "90c630bad001e1fc04a483d7736523cef34b1bbc", // #545: #547 LINE diagnostics (missing binding names, fixed failure stage) plus the F-031 DATA_ENCRYPTION_KEYRING secret on the LINE task step only; WP2 source, secrets, backup and artifacts unchanged.
   ],
   "scripts/staging-retained-backup.mjs": ["acf26bf628903feef3d549e4500b5c478e7e4312"],
   "scripts/validate-staging-retained-backup.mjs": [

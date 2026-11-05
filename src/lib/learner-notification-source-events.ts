@@ -100,3 +100,6 @@ export async function recordLearnerNotificationSourceFailure(db:Pick<PrismaClien
  if(changed.count!==1)return "not_pending" as const;
  return dead?"dead_lettered" as const:"retry_scheduled" as const;
 }
+
+// Exact envelope purpose for scripts/reencrypt-sensitive-data.ts (F-031).
+export { purpose as learnerNotificationSourceEnvelopePurpose };

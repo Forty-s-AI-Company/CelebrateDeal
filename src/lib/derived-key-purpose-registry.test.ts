@@ -43,7 +43,7 @@ const KDF_IMPLEMENTATION_FILES = new Set([
 ]);
 
 /** Reasons, so each allow-listed purpose says why it is not in the registry yet. */
-const AT_REST = "第 4 級：靜態資料加密金鑰（依紀錄綁定的用途），尚未輪替；改名需要 re-encrypt migration（B04-03 的 PII 階段）";
+const AT_REST = "第 4 級：靜態資料加密金鑰（依紀錄綁定的用途）；不改用途名稱，改由 DATA_ENCRYPTION_KEYRING＋scripts/reencrypt-sensitive-data.ts 輪替（F-031，docs/staging-production-env-vars.md §8）";
 const HASH_INDEX = "第 4 級：雜湊索引／去重金鑰，尚未輪替；改名需要重算既有索引（B04-03 的 PII 階段）";
 const REGISTRY_VARIABLE = "值在執行時取自 DERIVED_KEY_ROTATIONS 的 current／legacy（mfaEncryption、mfaRecoveryCode、livePrivateChatCursor），靜態掃描無法追蹤這個變數";
 
@@ -70,13 +70,13 @@ const ALLOWED_UNREGISTERED: Record<string, string> = {
   "lib/learner-notification-contract.ts \"learner-notification-delivery-key-v1\"": HASH_INDEX,
   "lib/learner-notification-contract.ts binding": AT_REST,
   "lib/learner-notification-contract.ts purpose(scope, channel)": AT_REST,
-  "lib/learner-notification-dispatch.ts `learner-notification-payload-v1:${JSON.stringify([input.vendorId,row.deduplicationKey])}`": AT_REST,
+  "lib/learner-notification-dispatch.ts learnerNotificationPayloadEnvelopePurpose(input.vendorId,row.deduplicationKey)": AT_REST,
   "lib/learner-notification-outbox.ts payloadPurpose(scope.vendorId,key)": AT_REST,
-  "lib/learner-notification-outbox.ts `learner-notification-receipt-v1:${JSON.stringify([input.vendorId,input.id])}`": AT_REST,
+  "lib/learner-notification-outbox.ts receiptPurpose(input.vendorId, input.id)": AT_REST,
   "lib/learner-notification-outbox.ts payloadPurpose(vendorId,row.deduplicationKey)": AT_REST,
   "lib/learner-notification-source-events.ts purpose(input)": AT_REST,
   "lib/learner-notification-source-events.ts purpose({...source,event:LearnerNotificationEvent.parse(source.event)})": AT_REST,
-  "lib/learner-notification-verification.ts `learner-contact-proof-v1:${JSON.stringify([scope.vendorId,challengeId])}`": AT_REST,
+  "lib/learner-notification-verification.ts learnerContactProofEnvelopePurpose(scope.vendorId,challengeId)": AT_REST,
   "lib/learner-verification-delivery.ts receiptPurpose(input.vendorId,input.id)": AT_REST,
   "lib/learner-verification-delivery.ts purpose(row.vendorId,row.id)": AT_REST,
   "lib/line-credentials.ts `line-user-lookup:${vendorId}`": HASH_INDEX,
@@ -85,7 +85,7 @@ const ALLOWED_UNREGISTERED: Record<string, string> = {
   "lib/line-credentials.ts credentialPurpose(vendorId, \"messagingAccessToken\")": AT_REST,
   "lib/line-credentials.ts credentialPurpose(vendorId, \"loginChannelId\")": AT_REST,
   "lib/line-credentials.ts credentialPurpose(vendorId, \"loginChannelSecret\")": AT_REST,
-  "lib/line-credentials.ts `line-profile:${vendorId}:${field}`": AT_REST,
+  "lib/line-credentials.ts lineProfileEnvelopePurpose(vendorId, field)": AT_REST,
   "lib/line-login.ts verifierPurpose(input.vendorId, stateId)": AT_REST,
   "lib/line-login.ts verifierPurpose(attempt.vendorId, attempt.id)": AT_REST,
   "lib/line-notification.ts deliveryPurpose(input.vendorId, id)": AT_REST,

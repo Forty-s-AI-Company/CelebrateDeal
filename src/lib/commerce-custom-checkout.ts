@@ -151,3 +151,6 @@ export function revealCustomCheckoutAnswers(
     throw new Error("Custom checkout answers could not be decrypted.");
   }
 }
+
+// Exact envelope purpose for scripts/reencrypt-sensitive-data.ts (F-031).
+export { purpose as customCheckoutAnswersEnvelopePurpose };

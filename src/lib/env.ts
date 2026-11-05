@@ -5,7 +5,15 @@ import { payUniStagingPlanTestScope } from "@/lib/payuni-staging-plan-test";
 import { isStagingPayUniPreviewCandidate } from "@/lib/database-identity";
 import { payUniCredentialKeys } from "@/lib/payuni-credentials";
 import { isVercelProductionDeployment, PRODUCTION_PAYMENT_PROVIDER } from "@/lib/payment-providers/runtime-policy";
-import { MINIMUM_ENCRYPTION_SECRET_BYTES } from "@/lib/sensitive-data";
+import {
+  DATA_ENCRYPTION_KEY_BYTES,
+  DATA_ENCRYPTION_KEYRING_ENV,
+  DataEncryptionKeyringError,
+  LEGACY_DATA_KEY_ID,
+  MINIMUM_ENCRYPTION_SECRET_BYTES,
+  inspectDataEncryptionKeyring,
+  type DataEncryptionKeyringIssue,
+} from "@/lib/sensitive-data";
 import {
   LIVE_CHAT_INGRESS_SECRET_MAX_LENGTH,
   LIVE_CHAT_INGRESS_SECRET_MIN_LENGTH,
@@ -132,6 +140,47 @@ function csrfSecretDeploymentCheck(env: NodeJS.ProcessEnv): EnvCheck {
     status: csrfSecretStrong && csrfSecretIsDistinct ? "pass" : "fail",
     message,
   };
+}
+
+const KEYRING_ISSUE_MESSAGES: Record<DataEncryptionKeyringIssue, string> = {
+  invalid_json: "不是有效的 JSON",
+  not_a_list: "必須是 JSON 陣列，例如 [{\"kid\":\"d2611a\",\"key\":\"…\",\"active\":true},{\"kid\":\"legacy\"}]",
+  empty: "不可為空陣列；不使用 keyring 時請整個不設定",
+  invalid_entry: "每一項只能有 kid、key、active（布林值）三個欄位",
+  invalid_key_id: "kid 只能是 1–32 個小寫英數字、底線或連字號，且以英數字開頭",
+  duplicate_key_id: "kid 重複",
+  duplicate_key_material: "兩個 kid 使用同一把金鑰；每個 kid 必須是不同的隨機值",
+  no_active_key: "必須恰好有一把 active 金鑰，目前沒有",
+  multiple_active_keys: "必須恰好有一把 active 金鑰，目前超過一把",
+  legacy_key_material: "kid legacy 代表 CSRF_SECRET 衍生的金鑰，不可附 key",
+  missing_key_material: "非 legacy 的 kid 必須附 key",
+  invalid_key_encoding: "key 必須是無 padding 的 base64url",
+  key_too_short: `key 長度不足：必須是 ${DATA_ENCRYPTION_KEY_BYTES} bytes 隨機值（base64url 後 43 字元）`,
+  key_too_long: `key 長度必須剛好是 ${DATA_ENCRYPTION_KEY_BYTES} bytes（base64url 後 43 字元）`,
+};
+
+/**
+ * F-031 ②③: DATA_ENCRYPTION_KEYRING makes the data-encryption key rotatable.
+ * Unset keeps encrypting with the CSRF_SECRET-derived key (warning); a
+ * malformed value fails, because the runtime then refuses every envelope.
+ * Messages carry only kids and issue codes, never key material.
+ */
+function dataEncryptionKeyringCheck(env: NodeJS.ProcessEnv): EnvCheck {
+  const key = DATA_ENCRYPTION_KEYRING_ENV;
+  try {
+    const summary = inspectDataEncryptionKeyring(env[key]);
+    if (!summary.configured) {
+      return { key, status: "warning", message: "未設定；敏感資料仍以根金鑰 CSRF_SECRET 衍生的金鑰加密（kid legacy），資料金鑰無法輪替。設定方式與輪替步驟見 docs/staging-production-env-vars.md §8" };
+    }
+    const decryptOnly = summary.decryptOnlyKeyIds.length ? summary.decryptOnlyKeyIds.join("、") : "無";
+    const legacyNote = summary.activeKeyId === LEGACY_DATA_KEY_ID
+      ? "；新資料仍以 legacy 寫入（輪替第 1 階段）"
+      : summary.acceptsLegacy ? "" : "；不再接受 legacy（CSRF_SECRET 衍生）密文，必須已完成 re-encrypt";
+    return { key, status: "pass", message: `active kid：${summary.activeKeyId}；decrypt-only：${decryptOnly}${legacyNote}` };
+  } catch (error) {
+    const issue = error instanceof DataEncryptionKeyringError ? error.issue : "invalid_json";
+    return { key, status: "fail", message: `DATA_ENCRYPTION_KEYRING 格式錯誤：${KEYRING_ISSUE_MESSAGES[issue]}；執行時所有敏感資料加解密都會拒絕` };
+  }
 }
 
 /**
@@ -568,6 +617,8 @@ export function getEnvCheckReport(env: NodeJS.ProcessEnv = process.env) {
       });
     }
   }
+
+  checks.push(dataEncryptionKeyringCheck(env));
 
   if (deploymentSecurityRequired) {
     checks.push(csrfSecretDeploymentCheck(env));

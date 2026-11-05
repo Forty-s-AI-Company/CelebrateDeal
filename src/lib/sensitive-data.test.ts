@@ -137,10 +137,11 @@ describe("deriveSensitiveDataKey compatibility", () => {
     }
   });
 
-  it("keeps the JOB_SECRET fallback root unchanged when CSRF_SECRET is absent", () => {
+  it("never falls back to JOB_SECRET when CSRF_SECRET is absent (F-031)", () => {
     vi.stubEnv("CSRF_SECRET", "");
     vi.stubEnv("JOB_SECRET", SYNTHETIC_ROOT_SECRET);
 
-    expect(deriveSensitiveDataKey("mfa-encryption").toString("hex")).toBe(GOLDEN_KEYS[0][1]);
+    expect(() => deriveSensitiveDataKey("mfa-encryption")).toThrow("Sensitive data encryption key is not configured.");
+    expect(() => encryptSensitiveValue("secret", "cloudflare-live-stream-key")).toThrow("Sensitive data encryption key is not configured.");
   });
 });

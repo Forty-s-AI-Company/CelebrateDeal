@@ -234,3 +234,6 @@ export function revealOrderItemDeliverySnapshot(
       : null,
   };
 }
+
+// Exact envelope purpose for scripts/reencrypt-sensitive-data.ts (F-031).
+export { configPurpose as productDeliveryConfigEnvelopePurpose, snapshotPurpose as orderItemDeliverySnapshotEnvelopePurpose };

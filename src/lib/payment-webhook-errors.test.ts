@@ -50,6 +50,8 @@ describe("payment webhook failure classification", () => {
     ["Sensitive data encryption key is too short.", "SENSITIVE_KEY_TOO_SHORT"],
     ["Invalid sensitive data envelope.", "SENSITIVE_ENVELOPE_INVALID"],
     ["Unsupported state or unable to authenticate data", "SENSITIVE_ENVELOPE_AUTH_FAILED"],
+    ["Sensitive data key id is not in the keyring.", "SENSITIVE_KEY_ID_UNKNOWN"],
+    ["Sensitive data keyring is invalid.", "SENSITIVE_KEYRING_INVALID"],
   ])("classifies crypto failure without key or envelope data %s", (message, expected) => {
     expect(classifyPaymentWebhookErrorClass(new Error(message))).toBe(expected);
   });

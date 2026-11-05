@@ -252,3 +252,6 @@ export async function completeLineLogin(
     return { identity, redirectPath: attempt.redirectPath, login: false as const };
   }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
 }
+
+// Exact envelope purpose for scripts/reencrypt-sensitive-data.ts (F-031).
+export { verifierPurpose as lineLoginVerifierEnvelopePurpose };

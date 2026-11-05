@@ -8,6 +8,7 @@ import {
   hashRecoveryCode,
   hashRecoveryCodeAsync,
   generateTotpSecret,
+  mfaSecretKeyId,
   mfaSecretNeedsReencryption,
   reencryptMfaSecret,
   serializePendingMfaSetup,
@@ -198,5 +199,50 @@ describe("mfa key rotation (B04-03 tier 4)", () => {
     // A v2 label on a legacy digest does not verify under the new key.
     expect(verifyRecoveryCode(code, legacyHash.replace("hmac-sha256-v1:", "hmac-sha256-v2:"))).toBe(false);
     expect(hashRecoveryCode(code)).not.toBe(legacyHash.replace("hmac-sha256-v1:", "hmac-sha256-v2:"));
+  });
+});
+
+describe("mfa secrets under DATA_ENCRYPTION_KEYRING (F-031)", () => {
+  const keyringKey = (fill: number) => Buffer.alloc(32, fill).toString("base64url");
+  const useKeyring = (entries: Array<{ kid: string; key?: string; active?: boolean }>) =>
+    vi.stubEnv("DATA_ENCRYPTION_KEYRING", JSON.stringify(entries));
+
+  it("writes keyring envelopes under the active kid and reads m2 while legacy is listed", () => {
+    const secret = generateTotpSecret();
+    const m2 = encryptMfaSecret(secret);
+    useKeyring([{ kid: "k2026a", key: keyringKey(31), active: true }, { kid: "legacy" }]);
+
+    const keyring = encryptMfaSecret(secret);
+    expect(keyring.startsWith("v2.k2026a.")).toBe(true);
+    expect(mfaSecretKeyId(keyring)).toBe("k2026a");
+    expect(mfaSecretKeyId(m2)).toBe("legacy");
+    expect(decryptMfaSecret(keyring)).toBe(secret);
+    expect(decryptMfaSecret(m2)).toBe(secret);
+    expect(mfaSecretNeedsReencryption(m2)).toBe(true);
+    expect(mfaSecretNeedsReencryption(keyring)).toBe(false);
+    const moved = reencryptMfaSecret(m2);
+    expect(mfaSecretKeyId(moved)).toBe("k2026a");
+    expect(decryptMfaSecret(moved)).toBe(secret);
+    expect(parsePendingMfaSetup(serializePendingMfaSetup(secret, "user-1"))).toMatchObject({ secret, userId: "user-1" });
+  });
+
+  it("marks a decrypt-only kid for re-encryption and refuses m2 once legacy is removed", () => {
+    const secret = generateTotpSecret();
+    const m2 = encryptMfaSecret(secret);
+    useKeyring([{ kid: "k2026a", key: keyringKey(31), active: true }]);
+    const first = encryptMfaSecret(secret);
+    useKeyring([{ kid: "k2026b", key: keyringKey(32), active: true }, { kid: "k2026a", key: keyringKey(31) }]);
+
+    expect(mfaSecretNeedsReencryption(first)).toBe(true);
+    expect(mfaSecretKeyId(reencryptMfaSecret(first))).toBe("k2026b");
+    expect(() => decryptMfaSecret(m2)).toThrow("Sensitive data key id is not in the keyring.");
+    expect(mfaSecretKeyId("not.valid")).toBeNull();
+  });
+
+  it("returns to m2 when legacy is active again", () => {
+    useKeyring([{ kid: "legacy", active: true }, { kid: "k2026a", key: keyringKey(31) }]);
+    const secret = generateTotpSecret();
+
+    expect(encryptMfaSecret(secret).startsWith("m2.")).toBe(true);
   });
 });

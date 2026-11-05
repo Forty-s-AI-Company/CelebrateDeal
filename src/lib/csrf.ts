@@ -14,7 +14,9 @@ function csrfSecret() {
 
   if (process.env.NODE_ENV === "production") return "";
 
-  return process.env.JOB_SECRET?.trim() || "development-csrf-secret";
+  // Local development and tests only. JOB_SECRET is never a CSRF fallback
+  // (F-031): it authorizes ops endpoints and must not double as a MAC root.
+  return "development-csrf-secret";
 }
 
 // CSRF_SECRET is also the sensitive-data KDF root, and the session cookie is

@@ -166,3 +166,15 @@ export const DERIVED_KEY_ROTATIONS = Object.freeze({
     legacyUntil("mfa-recovery-code-authentication", null),
   ),
 } satisfies Record<string, DerivedKeyRotation>);
+
+/**
+ * F-031 ②③: KDF label for keys from DATA_ENCRYPTION_KEYRING (not from the
+ * root secret). Each keyring key derives one AES-256-GCM key per purpose as
+ * HMAC-SHA256(keyring key, "CelebrateDeal:" + this label + ":" + purpose), so
+ * a keyring key never serves two purposes directly. It is registered here
+ * rather than in DERIVED_KEY_ROTATIONS because it never touches CSRF_SECRET
+ * and has no legacy name; rotating it means adding a keyring key, not
+ * renaming this label. Like every purpose name it carries a random suffix
+ * (see the top of this file). Changing it orphans every v2 envelope.
+ */
+export const DATA_ENCRYPTION_KEYRING_KDF_LABEL = "data-encryption-keyring:k1:7a098f46d67bd2f1";

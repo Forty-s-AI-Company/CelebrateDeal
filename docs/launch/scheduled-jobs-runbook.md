@@ -120,7 +120,7 @@ Production 專案確認是 Pro 方案、由 owner 決定 D-06 之後，把下面
 
 | 密鑰 | 誰持有 | 用在哪 | 輪替影響 |
 |---|---|---|---|
-| `JOB_SECRET` | GitHub environment `Preview – celebrate-deal-staging`、Vercel staging 專案 | 受控 runner（本 workflow、手動維運）呼叫 POST 入口 | 兩邊同時更新即可。注意：未設定 `CSRF_SECRET` 的環境會拿它當應用層加密金鑰（見 `src/lib/sensitive-data.ts`），那種環境**不可輪替** |
+| `JOB_SECRET` | GitHub environment `Preview – celebrate-deal-staging`、Vercel staging 專案 | 受控 runner（本 workflow、手動維運）呼叫 POST 入口 | 兩邊同時更新即可。2026-11-03 起它不再是應用層加密的後備金鑰（`docs/staging-production-env-vars.md` §8.5）；但若某環境過去曾在沒有 `CSRF_SECRET` 時寫入加密資料，輪替前仍要先確認 |
 | `CRON_SECRET` | Vercel 專案環境變數（Vercel Cron 會自動帶 `Authorization: Bearer <CRON_SECRET>`） | Vercel Cron 呼叫 GET 入口；也保護 `runtime-binding` 探針 | 更新 Vercel 環境變數並重新部署 |
 
 兩把密鑰必須不同值。GitHub Actions 不持有 `CRON_SECRET`，Vercel Cron 不持有 `JOB_SECRET`，任何一把外洩只開放一半入口。

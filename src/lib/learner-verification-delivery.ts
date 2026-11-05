@@ -2,7 +2,7 @@ import { learnerNotificationPurchaseIsCurrent } from "./learner-notification-acc
 import { createHash, randomBytes } from "node:crypto";
 import { type PrismaClient } from "@prisma/client";
 import { z } from "zod";
-import { LearnerNotificationChannel, revealLearnerNotificationDestination } from "./learner-notification-contract";
+import { LearnerNotificationChannel, learnerContactProofEnvelopePurpose, learnerContactReceiptEnvelopePurpose, revealLearnerNotificationDestination } from "./learner-notification-contract";
 import { LEARNER_NOTIFICATION_LOCK_TIMEOUT_SQL, LEARNER_NOTIFICATION_PRESEND_TRANSACTION } from "./learner-notification-dispatch";
 import { learnerNotificationLink } from "./learner-notification-links";
 import { decryptSensitiveValue, encryptSensitiveValue } from "./sensitive-data";
@@ -11,8 +11,8 @@ import { sendLearnerNotificationProvider, type NotificationProviderConfiguration
 type Database = Pick<PrismaClient,"$transaction" | "learnerNotificationVerification">;
 const Identity = z.object({vendorId:z.string().regex(/^[A-Za-z0-9_-]{1,128}$/u),id:z.string().regex(/^[A-Za-z0-9_-]{1,128}$/u)}).strict();
 const hash = (value:string) => createHash("sha256").update(value).digest("hex");
-const purpose = (vendorId:string,id:string) => `learner-contact-proof-v1:${JSON.stringify([vendorId,id])}`;
-const receiptPurpose = (vendorId:string,id:string) => `learner-contact-receipt-v1:${JSON.stringify([vendorId,id])}`;
+const purpose = learnerContactProofEnvelopePurpose;
+const receiptPurpose = learnerContactReceiptEnvelopePurpose;
 
 /** Persist a single exact attempt before HTTP. A lost worker never auto-reclaims
  * processing: acceptance may already have occurred, including after a DB rollback. */
@@ -92,3 +92,4 @@ export async function dispatchLearnerVerificationDelivery(db:Database,raw:unknow
   }catch{return {status:"persistence_failed"} as const;}
  }
 }
+
