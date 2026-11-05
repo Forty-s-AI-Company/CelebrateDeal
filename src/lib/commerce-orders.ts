@@ -433,6 +433,9 @@ export async function createCommerceOrderForCheckout(
     orderNumber: input.orderNumber,
     checkoutIdempotencyKey: input.checkoutIdempotencyKey,
     checkoutIdentityHash,
+    // Learner portal sign-in, course access, payment notifications and CRM all
+    // look orders up by this tenant-bound key of the buyer e-mail.
+    automationCustomerKeyHash: pii.customerKeyHash,
     primaryPaymentTransactionId: input.paymentTransactionId,
     status: "pending_payment" as const,
     currency: input.currency,

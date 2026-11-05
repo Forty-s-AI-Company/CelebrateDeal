@@ -203,6 +203,9 @@
 | F-172 | B11-06 | B11 | NIT | 沒有因子的 admin 登入後多一次轉址 | `src/app/actions/auth-security-actions.ts:128` | 15 分鐘 | 否 | 否 | engineer | L3 | auth／tenant |
 | F-173 | B11-07 | B11 | NIT | 兩個 admin route handler 以 307 轉址回 HTML，日後被 fetch 呼叫會拿到 HTML | `src/app/admin/billing/payouts/[id]/csv/route.ts`、`reconciliation/route.ts` | 1 小時 | 否 | 否 | engineer | L3 | auth／tenant |
 | F-174 | A04-判讀1 | A-04 | 未分級 | 本機 Prisma Client 過期，使 `npm run typecheck`／`typecheck:strict-index` 在此工作樹失敗（313／125 個錯誤，程式本身無型別缺陷） | 本機 `node_modules/.prisma`、`prisma/schema.prisma` | 未估 | 否 | 否 | 設定 | L0 前置（工程環境） | infra／CI |
+| F-175 | PR #548 審查 | B04 | MAJOR | `CommerceOrder.automationCustomerKeyHash`（migration `20260908113000` 新增）從未在任何建單路徑寫入，測試都直接把 hash 種進資料所以沒抓到：只透過結帳下單的買家申請學員登入連結時顯示已寄出但不會寄、學員中心看不到訂單、課程無法存取、付款通知來源為 null、CRM 歸不到訂單。修法：建單時在 PII 邊界寫入、既有訂單以 `scripts/backfill-order-customer-key-hash.ts` 回填（staging 先跑、production 需 owner 授權，見 `docs/production-database-runbook.md`） | `src/lib/commerce-orders.ts`、`src/lib/commerce-order-pii.ts`、`scripts/backfill-order-customer-key-hash.ts` | 未估 | 是（production 回填授權） | 是 | engineer-hard＋reviewer | L0 核心 | courses／portal |
+
+> F-175 為 2026-11-03 追加列（來源是 PR #548 的審查，不是 Phase B 報告），不計入第 0 節與第 4 節的 174 列統計。
 
 ## 3. 去重對照（合併列）
 

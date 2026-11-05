@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { automationCustomerKeyHash } from "@/lib/automation-workflow";
 import {
   CommerceOrderPiiValidationError,
   commerceOrderIdentityMatches,
@@ -59,6 +60,20 @@ describe("commerce order PII boundary", () => {
         countryCode: "TW",
       },
     });
+  });
+
+  it("derives the learner customer key exactly as the portal sign-in does", () => {
+    vi.stubEnv("CSRF_SECRET", "test-csrf-secret-for-commerce-order-pii-32-bytes");
+    const protectedPii = protectCommerceOrderPii(input, binding);
+    // requestMagicLinkAction normalizes with z.string().trim().toLowerCase().email().
+    const portalEmail = input.buyer.email.trim().toLowerCase();
+
+    expect(protectedPii.customerKeyHash).toBe(automationCustomerKeyHash(binding.vendorId, portalEmail));
+    expect(protectedPii.customerKeyHash).toMatch(/^[A-Za-z0-9_-]{43}$/u);
+    // One key per buyer per tenant: independent of the order, never shared across vendors.
+    expect(protectCommerceOrderPii(input, { ...binding, orderId: "order-2" }).customerKeyHash).toBe(protectedPii.customerKeyHash);
+    expect(protectCommerceOrderPii(input, { ...binding, vendorId: "vendor-2" }).customerKeyHash).not.toBe(protectedPii.customerKeyHash);
+    expect(protectedPii.customerKeyHash).not.toContain("buyer");
   });
 
   it("binds envelopes to the vendor and order instead of allowing cross-tenant replay", () => {

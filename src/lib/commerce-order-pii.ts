@@ -1,5 +1,6 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { z } from "zod";
+import { automationCustomerKeyHash } from "./customer-key-hash";
 import { retainPaymentWebhookCause } from "./payment-webhook-errors";
 import {
   decryptSensitiveValue,
@@ -71,6 +72,12 @@ export type ProtectedCommerceOrderPii = {
   buyerPhoneMasked: string | null;
   shippingSummaryMasked: string | null;
   checkoutIdentityHash: string;
+  /**
+   * Tenant-bound learner/CRM key of the buyer e-mail
+   * (`CommerceOrder.automationCustomerKeyHash`). Derived with the same helper
+   * the learner portal uses for its sign-in lookup.
+   */
+  customerKeyHash: string;
 };
 
 export class CommerceOrderPiiValidationError extends Error {
@@ -197,6 +204,7 @@ export function protectCommerceOrderPii(
     buyerPhoneMasked: maskPhone(pii.buyer.phone),
     shippingSummaryMasked: maskShippingSummary(pii.shipping),
     checkoutIdentityHash: fingerprintParsedPii(pii, safeBinding.vendorId),
+    customerKeyHash: automationCustomerKeyHash(safeBinding.vendorId, pii.buyer.email),
   };
 }
 

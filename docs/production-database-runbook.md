@@ -363,6 +363,40 @@ ORDER BY "createdAt";
 不要直接 retry。部署後若退款通知與只帶 TradeNo 的既有退款無法區分，webhook 會以 `order_ambiguous` 失敗，
 同樣交由財務人工對帳。
 
+### 9.3 訂單學員識別鍵回填（F-175，部署後執行）
+
+`CommerceOrder.automationCustomerKeyHash`（migration `20260908113000`）在修正前從未寫入：只透過結帳下單的買家無法
+申請學員登入連結、學員中心看不到訂單、課程無法存取、付款通知與 CRM 找不到訂單。修正部署後新訂單會在建單時寫入，
+既有訂單用 `scripts/backfill-order-customer-key-hash.ts` 回填。腳本不是 migration，不改 schema。
+
+- 預設是唯讀 dry run：在記憶體解密買家 Email，只輸出各商家缺鍵筆數與分類（可回填、已去識別化、無法解密、Email 無效），
+  不輸出 Email、姓名或 hash。
+- 寫入需要 `--apply` 且 `BACKFILL_CONFIRM=BACKFILL_ORDER_CUSTOMER_KEY_HASH`。每筆以 `automationCustomerKeyHash IS NULL`
+  加上該訂單 `vendorId` 做 compare-and-swap：已有鍵不覆蓋、重跑不變、中斷後直接重跑即可續行。
+- 需要目標環境的根密鑰（`CSRF_SECRET`，沒有時為 `JOB_SECRET`），由操作者注入；不讀 `.env*`。用錯密鑰時所有列都會
+  被分類為「無法解密」，`--apply` 會拒絕（除非加 `--allow-unreadable`，此時仍不會寫入無法解密的列）。
+- 已由 `scripts/anonymize-customer.ts` 去識別化的訂單（Email 為 `@redacted.invalid`）會略過，不會重新產生查詢鍵。
+
+步驟（先 staging、後 production）：
+
+```bash
+# 1. staging dry run，確認 unreadable = 0、computable 數字合理
+DATABASE_URL=<staging> node --import tsx scripts/backfill-order-customer-key-hash.ts --target=staging
+# 2. staging 寫入；結果 remainingComputable 應為 0，重跑 updated 應為 0
+BACKFILL_CONFIRM=BACKFILL_ORDER_CUSTOMER_KEY_HASH DATABASE_URL=<staging> \
+  node --import tsx scripts/backfill-order-customer-key-hash.ts --target=staging --apply
+# 3. 在 staging 以一筆回填訂單的買家 Email 申請學員登入連結，確認收到信並看到訂單與課程
+# 4. production：dry run 也會解密買家資料，需 owner 明確授權後才設定核准值
+BACKFILL_PRODUCTION_APPROVAL=OWNER_APPROVED_PRODUCTION_ORDER_KEY_BACKFILL DATABASE_URL=<production> \
+  node --import tsx scripts/backfill-order-customer-key-hash.ts --target=production
+BACKFILL_PRODUCTION_APPROVAL=OWNER_APPROVED_PRODUCTION_ORDER_KEY_BACKFILL \
+BACKFILL_CONFIRM=BACKFILL_ORDER_CUSTOMER_KEY_HASH DATABASE_URL=<production> \
+  node --import tsx scripts/backfill-order-customer-key-hash.ts --target=production --apply
+```
+
+可用 `--vendor-id <id>` 先只回填一個商家，`--batch-size <1-500>` 調整每頁筆數（預設 100）。
+回填只新增查詢鍵，不改金額、狀態或 PII；若需撤回，以同一批訂單 id 把該欄設回 `NULL` 即回到修正前的行為。
+
 ## 10. 參考資料
 
 - Supabase Prisma guide: https://supabase.com/docs/guides/database/prisma
