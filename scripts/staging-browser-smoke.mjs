@@ -19,14 +19,37 @@ export const ROUTES = [
   { id: "billing_plans", path: "/billing/plans", heading: "方案" },
 ];
 
+// The app-shell navigation lands on the product list; same PageHeader title as ROUTES.products.
+export const PRODUCTS_HEADING = ROUTES.find((route) => route.id === "products").heading;
 export const FULFILLMENT_SELECT = 'select[name="fulfillmentType"]';
 export const DELIVERY_GROUP_NAME = "付款後交付設定";
 const GLOBAL_ERROR_HEADING = "系統暫時無法顯示這個頁面";
 const BROWSER_FAILURE_STEPS = new Set([
-  "NONE", "FULFILLMENT_SELECT_DIGITAL", "DELIVERY_GROUP_VISIBLE", "FULFILLMENT_SELECT_PHYSICAL", "DELIVERY_GROUP_HIDDEN",
+  "NONE", "FULFILLMENT_HYDRATED", "FULFILLMENT_SELECT_DIGITAL", "DELIVERY_GROUP_VISIBLE", "FULFILLMENT_SELECT_PHYSICAL", "DELIVERY_GROUP_HIDDEN",
   "NAV_MORE_OPEN", "NAV_MORE_PRODUCTS_LINK", "NAV_PRODUCTS_LINK", "NAV_PRODUCTS_URL",
 ]);
 const FULFILLMENT_VALUES = new Set(["physical", "digital", "service", "course"]);
+const READY_STATES = new Set(["loading", "interactive", "complete"]);
+const HYDRATION_TIMEOUT_MS = 20_000;
+
+/**
+ * True once React has attached its props to the element (React DOM stores them under a
+ * `__reactProps$<random>` key during hydration). Runs in the page; returns only a boolean.
+ */
+export function elementHydratedInPage(selector) {
+  const element = document.querySelector(selector);
+  return Boolean(element) && Object.keys(element).some((key) => key.startsWith("__reactProps$"));
+}
+
+/**
+ * 2026-11-05 run 42064913257: the select already showed "digital" but the delivery fieldset
+ * never rendered. `page.goto` only waits for DOMContentLoaded, so on staging the option was
+ * chosen on server HTML before React hydrated the form; the change event never reached React
+ * state. Wait for React to own the select before interacting.
+ */
+export async function waitForFulfillmentHydration(page, timeout = HYDRATION_TIMEOUT_MS) {
+  await page.waitForFunction(elementHydratedInPage, FULFILLMENT_SELECT, { timeout });
+}
 
 export function browserFailureStep(step) {
   return BROWSER_FAILURE_STEPS.has(step) ? step : "UNKNOWN";
@@ -57,9 +80,16 @@ export async function captureFailureDom(page) {
     const select = page.locator(FULFILLMENT_SELECT);
     const selectCount = bounded(await within(select.count()));
     const selected = selectCount === 1 ? await within(select.inputValue({ timeout: 1_000 }).catch(() => null)) : null;
+    // Booleans and a fixed enum only; the page function never returns DOM text.
+    const hydrated = typeof page.evaluate === "function"
+      ? await within(page.evaluate(elementHydratedInPage, FULFILLMENT_SELECT).catch(() => null)) : null;
+    const readyState = typeof page.evaluate === "function"
+      ? await within(page.evaluate(() => document.readyState).catch(() => null)) : null;
     return {
       fulfillmentSelects: selectCount,
       fulfillmentValue: FULFILLMENT_VALUES.has(selected) ? selected : selectCount === 1 ? "OTHER" : "NONE",
+      fulfillmentHydrated: typeof hydrated === "boolean" ? hydrated : null,
+      documentReadyState: READY_STATES.has(readyState) ? readyState : "UNKNOWN",
       deliveryGroups: bounded(await within(page.getByRole("group", { name: DELIVERY_GROUP_NAME }).count())),
       globalErrorVisible: (await within(page.getByRole("heading", { name: GLOBAL_ERROR_HEADING, exact: true }).count())) > 0,
       mainContent: bounded(await within(page.locator("#main-content").count())),
@@ -632,6 +662,8 @@ export async function runBrowserSmoke(env = process.env, dependencies = {}) {
             // its wrapping label also contains every option's text.
             const fulfillmentType = page.locator(FULFILLMENT_SELECT);
             const deliverySettings = page.getByRole("group", { name: DELIVERY_GROUP_NAME });
+            activeStep = "FULFILLMENT_HYDRATED";
+            await waitForFulfillmentHydration(page);
             activeStep = "FULFILLMENT_SELECT_DIGITAL";
             await fulfillmentType.selectOption("digital", { timeout: 8_000 });
             activeStep = "DELIVERY_GROUP_VISIBLE";
@@ -660,7 +692,7 @@ export async function runBrowserSmoke(env = process.env, dependencies = {}) {
         await page.waitForURL(`${origin}/products`, { timeout: 8_000 });
         activeStep = "NONE";
         const navigationPassed = classifyFinalPath(page.url(), "/products", targetHost) === "EXPECTED"
-          && await visible(page.getByRole("heading", { name: "商品管理", exact: true }));
+          && await visible(page.getByRole("heading", { name: PRODUCTS_HEADING, exact: true }));
         if (navigationPassed) report.browser.navigationInteractionsPassed += 1;
       } catch (error) {
         // Capture while the page is still open; the context closes in finally.

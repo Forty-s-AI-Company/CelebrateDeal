@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 import { classifyFunnelRequest, createPageBlocked, funnelCreateFeedbackKind, funnelEditorNavigationKind, funnelRouteCategory, inspectSyntheticProjectStatus, inspectPublicSurface, syntheticFunnelSlug, runStagingFunnelSmoke } from "./staging-funnel-smoke.mjs";
+import { classifyPublishDiagnosis, classifyRequestFailureKind, classifyRouteGetKind, formatPublishSummary, publishBlockedReason, runPublishStage } from "./staging-funnel-smoke.mjs";
 
 test("read-only diagnostics reject arbitrary paths and emit only fixed surface categories", async () => {
   assert.equal(syntheticFunnelSlug('/lp/staging-synthetic-abcdef123456'), 'staging-synthetic-abcdef123456');
@@ -185,4 +186,109 @@ test("create uses the goal picker labels and reports only the fixed failing step
   const serialized = JSON.stringify(report);
   for (const [key, value] of Object.entries(BINDING)) assert.equal(serialized.includes(value), key === "CELEBRATEDEAL_SOURCE_SHA");
   assert.doesNotMatch(serialized, /https?:\/\//u);
+});
+
+// Publish stage (2026-11-05 run 42064920668 stopped at PUBLISH without a failure step).
+const OPERATIONS = "https://celebrate-deal-staging.carry-digital-nomad.in.net/landing-pages/abc123/operations?step=s1";
+const EMAIL_UNVERIFIED_TEXT = "目前是草稿 一頁式網站尚未發布。這個商家的註冊 Email 還沒有完成驗證，所以目前無法發布 owner@example.com";
+const LIMIT_TEXT = "免費帳號最多可同時有 3 個不需發布專案就公開的名單型網站，目前已達上限";
+const READY_TEXT = "一頁式網站尚未發布，公開網址目前無法開啟。名單型網站發布後即可開啟，不需要先發布專案。";
+
+function fakePublishPage({ reachOperations = true, chipText = READY_TEXT, enabled = true, publishes = false, feedback = [] } = {}) {
+  const calls = [];
+  const hidden = { waitFor: async () => { throw Object.assign(new Error("hidden"), { name: "TimeoutError" }); }, count: async () => 0 };
+  const shown = { waitFor: async () => {} };
+  const page = {
+    calls,
+    url: () => OPERATIONS,
+    waitForURL: async () => { if (!reachOperations) throw Object.assign(new Error(`Timeout at ${OPERATIONS}`), { name: "TimeoutError" }); },
+    getByRole: (role, options) => {
+      if (role === "button" && options?.name === "發布狀態：草稿") {
+        return chipText === null ? hidden : { ...shown, click: async () => { calls.push("chip"); } };
+      }
+      if (role === "region" && options?.name === "公開網址狀態") return { ...shown, innerText: async () => chipText };
+      if (role === "button" && options?.name === "發布") {
+        return { isEnabled: async () => enabled, click: async () => { calls.push("publish"); } };
+      }
+      if (role === "button" && options?.name instanceof RegExp) return publishes ? shown : hidden;
+      if (role === "status") return { allTextContents: async () => feedback };
+      return hidden;
+    },
+  };
+  return page;
+}
+
+test("publish diagnosis keeps only fixed categories and never the page text", () => {
+  assert.equal(classifyPublishDiagnosis(EMAIL_UNVERIFIED_TEXT), "EMAIL_UNVERIFIED");
+  assert.equal(classifyPublishDiagnosis([LIMIT_TEXT]), "LIMIT_REACHED");
+  assert.equal(classifyPublishDiagnosis(READY_TEXT), "READY");
+  assert.equal(classifyPublishDiagnosis(["", "  "]), "NONE");
+  assert.equal(classifyPublishDiagnosis(["owner@example.com 其他訊息"]), "OTHER");
+  assert.equal(classifyPublishDiagnosis([null, 42]), "NONE");
+  assert.equal(publishBlockedReason("EMAIL_UNVERIFIED"), "PUBLISH_BLOCKED_EMAIL_UNVERIFIED");
+  assert.equal(publishBlockedReason("LIMIT_REACHED"), "PUBLISH_LIMIT_REACHED");
+  assert.equal(publishBlockedReason("PLATFORM_DISABLED"), "PUBLISH_DISABLED_BY_PLATFORM");
+  assert.equal(publishBlockedReason("READY"), null);
+  assert.equal(publishBlockedReason("toString"), null);
+});
+
+test("an unverified owner e-mail stops before the publish click with its own reason", async () => {
+  const page = fakePublishPage({ chipText: EMAIL_UNVERIFIED_TEXT });
+  const result = { reason: "INVALID_BINDING", failureStep: "NONE", failureCategory: "NONE", failurePage: "NOT_OBSERVED" };
+  assert.equal(await runPublishStage(page, result, { funnelPath: "/landing-pages/abc123" }), false);
+  assert.deepEqual(page.calls, ["chip", "chip"]);
+  assert.equal(result.reason, "PUBLISH_BLOCKED_EMAIL_UNVERIFIED");
+  assert.equal(result.publishPreflight, "EMAIL_UNVERIFIED");
+  assert.equal(result.publishOutcome, "NOT_CLICKED");
+  assert.equal(result.failureStep, "PUBLISH_PREFLIGHT");
+  assert.equal(result.failureCategory, "DATA_PRECONDITION");
+  assert.equal(result.failurePage, "FUNNEL_OPERATIONS");
+  assert.doesNotMatch(JSON.stringify(result), /@|https?:|驗證/u);
+});
+
+test("publish stage reports which step stopped it", async () => {
+  const leave = { reason: "x" };
+  assert.equal(await runPublishStage(fakePublishPage({ reachOperations: false }), leave, { funnelPath: "/landing-pages/abc123" }), false);
+  assert.deepEqual([leave.reason, leave.failureStep, leave.failureCategory, leave.publishOutcome], ["PUBLISH_FAILED", "EDITOR_LEAVE", "CONDITION_NOT_MET", "LEAVE_ROUTE_NOT_REACHED"]);
+
+  const disabled = { reason: "x" };
+  const disabledPage = fakePublishPage({ enabled: false });
+  assert.equal(await runPublishStage(disabledPage, disabled, { funnelPath: "/landing-pages/abc123", enabledTimeout: 50 }), false);
+  assert.equal(disabled.failureStep, "PUBLISH_BUTTON_ENABLED");
+  assert.equal(disabled.publishPreflight, "READY");
+  assert.ok(!disabledPage.calls.includes("publish"));
+
+  const refused = { reason: "x" };
+  let clicked = 0;
+  const refusedPage = fakePublishPage({ feedback: [LIMIT_TEXT] });
+  assert.equal(await runPublishStage(refusedPage, refused, { funnelPath: "/landing-pages/abc123", onPublishClick: () => { clicked += 1; } }), false);
+  assert.equal(clicked, 1);
+  assert.deepEqual([refused.reason, refused.failureStep, refused.failureCategory, refused.publishOutcome], ["PUBLISH_LIMIT_REACHED", "PUBLISH_RESULT", "DATA_PRECONDITION", "REFUSED_LIMIT_REACHED"]);
+
+  const silent = { reason: "x" };
+  assert.equal(await runPublishStage(fakePublishPage(), silent, { funnelPath: "/landing-pages/abc123" }), false);
+  assert.deepEqual([silent.reason, silent.failureStep, silent.publishOutcome], ["PUBLISH_FAILED", "PUBLISH_RESULT", "NO_FEEDBACK"]);
+
+  const missingChip = { reason: "x" };
+  assert.equal(await runPublishStage(fakePublishPage({ chipText: null, publishes: true }), missingChip, { funnelPath: "/landing-pages/abc123" }), true);
+  assert.equal(missingChip.publishPreflight, "NOT_OBSERVED");
+  assert.equal(missingChip.publishOutcome, "PUBLISHED");
+});
+
+test("route GET evidence keeps only the request class and abort kind", () => {
+  const request = (type, headers = {}, errorText = "") => ({ resourceType: () => type, headers: () => headers, failure: () => ({ errorText }) });
+  assert.equal(classifyRouteGetKind(request("document")), "document");
+  assert.equal(classifyRouteGetKind(request("fetch", { rsc: "1", "next-router-prefetch": "1" })), "prefetch");
+  assert.equal(classifyRouteGetKind(request("fetch", { rsc: "1" })), "rsc");
+  assert.equal(classifyRouteGetKind(request("fetch")), "other");
+  assert.equal(classifyRouteGetKind({ resourceType: () => { throw new Error("closed"); } }), "other");
+  assert.equal(classifyRequestFailureKind(request("fetch", {}, "net::ERR_ABORTED")), "aborted");
+  assert.equal(classifyRequestFailureKind(request("fetch", {}, "net::ERR_CONNECTION_RESET")), "other");
+  assert.equal(classifyRequestFailureKind({ failure: () => null }), "other");
+});
+
+test("publish summary line prints fixed enums only", () => {
+  assert.equal(formatPublishSummary({ publishPreflight: "EMAIL_UNVERIFIED", publishOutcome: "NOT_CLICKED", reason: "PUBLISH_BLOCKED_EMAIL_UNVERIFIED", failureStep: "PUBLISH_PREFLIGHT" }),
+    "staging_funnel_publish=preflight=EMAIL_UNVERIFIED; outcome=NOT_CLICKED; reason=PUBLISH_BLOCKED_EMAIL_UNVERIFIED; failureStep=PUBLISH_PREFLIGHT");
+  assert.match(formatPublishSummary({ publishPreflight: "https://x/?a=b", publishOutcome: "owner@example.com" }), /preflight=UNKNOWN; outcome=UNKNOWN/u);
 });
