@@ -362,3 +362,53 @@ describe("run guards", () => {
     expect(sanitizeError("LEDGER_REMEDIATION_DATABASE_FAILED", error)).toBe("LEDGER_REMEDIATION_DATABASE_FAILED PRISMA_ERROR P2010 SQLSTATE 23514");
   });
 });
+
+describe("legacy-seed-status-20261103", () => {
+  const fix = FIXES.find((entry) => entry.id === "legacy-seed-status-20261103")!;
+  const vendor = "cmrrlromk0004vdn8entl62gn";
+  const rowStatus = async (table: string, id: string) =>
+    (await db.$queryRawUnsafe<Array<{ status: string }>>(`SELECT "status" FROM ${q(table)} WHERE "id" = $1`, id))[0].status;
+
+  // The NOT VALID CHECKs reject inserting the legacy rows directly, so drop them for the setup only.
+  async function seedLegacyRows() {
+    for (const name of ["Settlement_status_check", "PayoutBatch_status_check", "PayoutItem_status_check"]) {
+      const check = CHECKS.find((entry) => entry.name === name)!;
+      await db.$executeRawUnsafe(`ALTER TABLE ${q(check.table)} DROP CONSTRAINT "${name}"`);
+    }
+    await insert("Settlement", { id: "cmrrlrumc001vvdn8gfv3163b", vendorId: vendor, status: "reviewing", monthlyFeeCents: 0, overflowFeeCents: 0, paymentServiceFeeCents: 0, transactionServiceFeeCents: 0, affiliateManagementFeeCents: 0, paymentGatewayFeeCents: 0, finalPayoutAmountCents: 0 });
+    await insert("PayoutBatch", { id: "cmrrlrv0t001yvdn8ap9ketfc", status: "reviewing", totalAmountCents: 0, totalCount: 0 });
+    await insert("PayoutItem", { id: "cmrrlrv0u0020vdn87jraqsne", vendorId: vendor, payoutBatchId: "cmrrlrv0t001yvdn8ap9ketfc", status: "pending_review", payoutAmountCents: 0, retryCount: 0 });
+    for (const name of ["Settlement_status_check", "PayoutBatch_status_check", "PayoutItem_status_check"]) {
+      const check = CHECKS.find((entry) => entry.name === name)!;
+      await db.$executeRawUnsafe(`ALTER TABLE ${q(check.table)} ADD CONSTRAINT "${name}" CHECK (${check.predicate}) NOT VALID`);
+    }
+  }
+
+  it("is a valid fix definition whose targets are legal statuses", () => {
+    expect(fix).toBeDefined();
+    expect(fixDefinitionProblem(fix)).toBeNull();
+    expect(fix.dryRun).toBe(false);
+    expect(fix.statements.map((statement) => statement.expectedRows)).toEqual([1, 1, 1]);
+  });
+
+  it("repairs the three legacy rows in one commit and is already_applied afterwards", async () => {
+    await seedLegacyRows();
+    try {
+      const before = (await inspectLedger(scratch)).totalViolations;
+      const report = await applyFix(scratch, fix);
+      expect(report).toMatchObject({ outcome: "committed", statementRows: [1, 1, 1], rowsMatch: true });
+      expect(await rowStatus("Settlement", "cmrrlrumc001vvdn8gfv3163b")).toBe("ready_for_payout");
+      expect(await rowStatus("PayoutBatch", "cmrrlrv0t001yvdn8ap9ketfc")).toBe("draft");
+      expect(await rowStatus("PayoutItem", "cmrrlrv0u0020vdn87jraqsne")).toBe("pending");
+      expect((await inspectLedger(scratch)).totalViolations).toBe(before - 3);
+
+      const rerun = await applyFix(scratch, fix);
+      expect(rerun).toMatchObject({ outcome: "already_applied", statementRows: [0, 0, 0] });
+    } finally {
+      await db.$executeRawUnsafe(`DELETE FROM ${q("PayoutItem")} WHERE "id" = 'cmrrlrv0u0020vdn87jraqsne'`);
+      await db.$executeRawUnsafe(`DELETE FROM ${q("PayoutBatch")} WHERE "id" = 'cmrrlrv0t001yvdn8ap9ketfc'`);
+      await db.$executeRawUnsafe(`DELETE FROM ${q("Settlement")} WHERE "id" = 'cmrrlrumc001vvdn8gfv3163b'`);
+      await db.$executeRawUnsafe(`DELETE FROM ${q("AuditLog")}`);
+    }
+  });
+});
