@@ -104,7 +104,7 @@ async function ensureOwner(db: FixtureDb) {
         { email: WP4_SANDBOX_FIXTURE.userEmail },
       ],
     },
-    select: { id: true, email: true, name: true, status: true },
+    select: { id: true, email: true, name: true, status: true, emailVerifiedAt: true },
   });
   if (existing) {
     assertIdentity(
@@ -113,6 +113,17 @@ async function ensureOwner(db: FixtureDb) {
       && existing.name === "WP4 Synthetic Sandbox Owner"
       && existing.status === "active",
     );
+    // The synthetic owner uses an `invalid.example` address and has login
+    // disabled, so it can never receive a verification email. Staging smoke
+    // runs publish an audience site for this vendor, which requires a
+    // verified owner (#487). Mark only this fixture identity as verified,
+    // once; an already verified timestamp is never moved.
+    if (existing.emailVerifiedAt === null) {
+      await db.user.update({
+        where: { id: WP4_SANDBOX_FIXTURE.userId },
+        data: { emailVerifiedAt: new Date() },
+      });
+    }
     return false;
   }
   await db.user.create({
@@ -122,6 +133,7 @@ async function ensureOwner(db: FixtureDb) {
       name: "WP4 Synthetic Sandbox Owner",
       passwordHash: "wp4-synthetic-login-disabled",
       status: "active",
+      emailVerifiedAt: new Date(),
     },
   });
   return true;

@@ -51,7 +51,11 @@ describe("ensureWp4SandboxFixture", () => {
       }),
     }));
     expect(transactionDb.user.create).toHaveBeenCalledWith(expect.objectContaining({
-      data: expect.objectContaining({ id: WP4_SANDBOX_FIXTURE.userId, email: WP4_SANDBOX_FIXTURE.userEmail }),
+      data: expect.objectContaining({
+        id: WP4_SANDBOX_FIXTURE.userId,
+        email: WP4_SANDBOX_FIXTURE.userEmail,
+        emailVerifiedAt: expect.any(Date),
+      }),
     }));
     expect(transactionDb.product.create).toHaveBeenCalledWith(expect.objectContaining({
       data: expect.objectContaining({ id: WP4_SANDBOX_FIXTURE.productId, vendorId: WP4_SANDBOX_FIXTURE.vendorId }),
@@ -123,6 +127,35 @@ describe("ensureWp4SandboxFixture", () => {
     expect(transactionDb.product.update).not.toHaveBeenCalled();
     expect(transactionDb.billingPlan.update).toHaveBeenCalledWith({ where: { id: WP4_SANDBOX_FIXTURE.planId }, data: { isActive: false } });
     expect(transactionDb.invoice.update).not.toHaveBeenCalled();
+  });
+
+  it("marks an existing unverified synthetic owner as verified once, and never moves a verified timestamp", async () => {
+    const owner = {
+      id: WP4_SANDBOX_FIXTURE.userId,
+      email: WP4_SANDBOX_FIXTURE.userEmail,
+      name: "WP4 Synthetic Sandbox Owner",
+      status: "active",
+    };
+    const unverified = fixtureDb({
+      user: { findFirst: vi.fn().mockResolvedValue({ ...owner, emailVerifiedAt: null }), create: vi.fn(), update: vi.fn() },
+    });
+    await ensureWp4SandboxFixture(unverified.db);
+    expect(unverified.transactionDb.user.create).not.toHaveBeenCalled();
+    expect(unverified.transactionDb.user.update).toHaveBeenCalledTimes(1);
+    expect(unverified.transactionDb.user.update).toHaveBeenCalledWith({
+      where: { id: WP4_SANDBOX_FIXTURE.userId },
+      data: { emailVerifiedAt: expect.any(Date) },
+    });
+
+    const verified = fixtureDb({
+      user: {
+        findFirst: vi.fn().mockResolvedValue({ ...owner, emailVerifiedAt: new Date("2026-11-01T00:00:00Z") }),
+        create: vi.fn(),
+        update: vi.fn(),
+      },
+    });
+    await ensureWp4SandboxFixture(verified.db);
+    expect(verified.transactionDb.user.update).not.toHaveBeenCalled();
   });
 
   it("adds only the missing closed-beta grants to an existing fixture vendor (F-001)", async () => {
