@@ -7,8 +7,8 @@ import { requireAuth, requireFinanceAdmin } from "@/lib/auth";
 import { assertServerActionSecurity } from "@/lib/csrf";
 import { getDb } from "@/lib/db";
 import { requireRecentMfa } from "@/lib/recent-mfa";
-import { isVendorBackofficeRole } from "@/lib/vendor-roles";
-import { normalizeVendorSuspensionReason, resumeVendor, suspendVendor } from "@/lib/vendor-suspension";
+import { isVendorBackofficeRole, signedInHomePath } from "@/lib/vendor-roles";
+import { normalizeVendorSuspensionReason, releaseHeldEntitlements, resumeVendor, suspendVendor } from "@/lib/vendor-suspension";
 import { ACTIVE_VENDOR_WHERE, VENDOR_SUSPENDED_PATH } from "@/lib/vendor-suspension-state";
 
 const ADMIN_PATH = "/admin/vendor-features";
@@ -68,8 +68,29 @@ export async function resumeVendorAction(formData: FormData) {
     userAgent: meta.userAgent ?? null,
   });
   revalidatePath("/", "layout");
-  if (result.status === "resumed") redirect(resultPath({ suspension: "resumed" }, result.vendorId));
+  if (result.status === "resumed") redirect(resultPath(result.complete ? { suspension: "resumed" } : { suspensionError: "release_incomplete" }, result.vendorId));
   redirect(resultPath({ suspensionError: result.status }));
+}
+
+/**
+ * Repeats the release of held paid entitlements for a vendor that is no
+ * longer suspended (after an incomplete release). Idempotent; same guards.
+ */
+export async function releaseHeldEntitlementsAction(formData: FormData) {
+  await assertServerActionSecurity(formData);
+  const { user, session } = await requireFinanceAdmin();
+  requireRecentMfa({ user, session }, { nextPath: ADMIN_PATH });
+  const vendorId = vendorIdFrom(formData);
+  if (!vendorId) redirect(resultPath({ suspensionError: "invalid" }));
+  const vendor = await getDb().vendor.findUnique({ where: { id: vendorId }, select: { id: true, suspendedAt: true } });
+  if (!vendor) redirect(resultPath({ suspensionError: "not_found" }));
+  if (vendor.suspendedAt) redirect(resultPath({ suspensionError: "already_suspended" }, vendor.id));
+  const meta = await requestAuditMeta();
+  const result = await releaseHeldEntitlements(getDb(), {
+    vendorId: vendor.id, actorUserId: user.id, ipAddress: meta.ipAddress ?? null, userAgent: meta.userAgent ?? null,
+  });
+  revalidatePath(ADMIN_PATH);
+  redirect(resultPath(result.complete ? { suspension: "released" } : { suspensionError: "release_incomplete" }, vendor.id));
 }
 
 /**
@@ -81,25 +102,31 @@ export async function resumeVendorAction(formData: FormData) {
 export async function switchFromSuspendedVendorAction(formData: FormData) {
   await assertServerActionSecurity(formData);
   const auth = await requireAuth({ nextPath: VENDOR_SUSPENDED_PATH });
+  // Only reachable while the session's vendor is suspended; this is not a general vendor switcher.
+  if (!auth.suspendedVendor) redirect(signedInHomePath(auth));
   const vendorId = vendorIdFrom(formData);
   if (!vendorId) redirect(VENDOR_SUSPENDED_PATH);
-  const db = getDb();
-  const membership = await db.vendorMember.findFirst({
-    where: { userId: auth.user.id, vendorId, status: "active", vendor: { is: ACTIVE_VENDOR_WHERE } },
-    select: { vendorId: true, role: true },
-  });
-  if (!membership || !isVendorBackofficeRole(membership.role)) redirect(VENDOR_SUSPENDED_PATH);
-  const switched = await db.userSession.updateMany({
-    where: { id: auth.session.id, userId: auth.user.id, revokedAt: null },
-    data: { vendorId: membership.vendorId },
-  });
-  if (switched.count !== 1) redirect(VENDOR_SUSPENDED_PATH);
   const meta = await requestAuditMeta();
-  await db.auditLog.create({ data: {
-    vendorId: membership.vendorId, actorId: auth.user.id, actorLabel: membership.role, action: "session_vendor_switched",
-    targetType: "UserSession", targetId: auth.session.id,
-    before: { vendorId: auth.suspendedVendor?.id ?? auth.vendor?.id ?? null }, after: { vendorId: membership.vendorId },
-    ipAddress: meta.ipAddress ?? null, userAgent: meta.userAgent ?? null,
-  } });
-  redirect("/dashboard");
+  // The membership re-check, the session change and its audit row commit together.
+  const switched = await getDb().$transaction(async (tx) => {
+    const membership = await tx.vendorMember.findFirst({
+      where: { userId: auth.user.id, vendorId, status: "active", vendor: { is: ACTIVE_VENDOR_WHERE } },
+      select: { vendorId: true, role: true },
+    });
+    if (!membership || !isVendorBackofficeRole(membership.role)) return false;
+    const updated = await tx.userSession.updateMany({
+      where: { id: auth.session.id, userId: auth.user.id, revokedAt: null },
+      data: { vendorId: membership.vendorId },
+    });
+    if (updated.count !== 1) return false;
+    await tx.auditLog.create({ data: {
+      vendorId: membership.vendorId, actorId: auth.user.id, actorLabel: membership.role, action: "session_vendor_switched",
+      targetType: "UserSession", targetId: auth.session.id,
+      // The suspended tenant is not named in another tenant's audit trail.
+      before: { from: "suspended_vendor" }, after: { vendorId: membership.vendorId },
+      ipAddress: meta.ipAddress ?? null, userAgent: meta.userAgent ?? null,
+    } });
+    return true;
+  });
+  redirect(switched ? "/dashboard" : VENDOR_SUSPENDED_PATH);
 }

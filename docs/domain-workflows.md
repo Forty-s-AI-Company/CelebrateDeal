@@ -78,7 +78,7 @@
 
 | 入口 | 凍結中的行為 |
 | --- | --- |
-| 後台登入 | 可以登入（session 記錄該 vendor），落地 `/vendor-suspended`「商家已暫停」頁；同時是其他未凍結商家成員的人可在該頁「切換商家」（只改目前 session、寫 `session_vendor_switched` audit）；平台管理員仍回平台後台 |
+| 後台登入 | 可以登入（session 記錄該 vendor），落地 `/vendor-suspended`「商家已暫停」頁；同時是其他未凍結商家成員的人可在該頁「切換商家」（只在目前 session 的商家已凍結時可用；只能切到自己 active、非 partner、未凍結的成員身分；session 變更與 `session_vendor_switched` audit 同一交易，audit 只記「切換自凍結商家」不記原商家）；平台管理員仍回平台後台 |
 | 平台凍結操作 | `/admin/vendor-features`：需填原因、勾選確認、15 分鐘內 MFA step-up；原因只在平台後台顯示 |
 | 後台頁面與 layout、Server Action | `getCurrentAuth` 不給 vendor／member，`requireVendorContext`／`requireVendorOwner` 一律導向 `/vendor-suspended`，不做任何寫入 |
 | 後台 API | `requireMerchantApiActor` 回 403 `VENDOR_SUSPENDED`；其他以 `auth.vendor` 判斷的 route 回 401／403 |
@@ -95,7 +95,7 @@
 | Email 與 LINE 排程、付款收據 | 不寄、不推播、不 claim，列維持 queued；解除後照常寄送（仍套用寄送前檢查）。學員通知 job 跳過該 vendor |
 | 電子發票、月結、webhook 重試、追蹤事件 | 不變（金流與法定義務照常） |
 
-已接受的取捨：凍結期間排隊的行銷信在解除後才會寄出，依賴既有寄送前檢查（例如直播已結束的提醒會被 supersede）；解除凍結不補寫凍結期間略過的學員付款通知。解除時每張被開通的訂單寫一筆 `fulfillment.released_after_suspension` 事件。
+已接受的取捨：凍結期間排隊的行銷信在解除後才會寄出，依賴既有寄送前檢查（例如直播已結束的提醒會被 supersede）；解除凍結不補寫凍結期間略過的學員付款通知。解除時先以短交易解除凍結，再分批（每批 500 筆、各自交易）開通，每張被開通的訂單寫一筆 `fulfillment.released_after_suspension` 事件；中途失敗時其餘權限維持 pending，平台後台會顯示「開通暫停期間的付款」可重跑。
 
 待 owner 決定（m5）：買家客服頁（`/support`，依結帳時的 buyer grant cookie）目前維持可用，已付款買家仍能查看訂單、聯絡商家；凍結不收回凍結前已開通項目的交付內容，這條路徑也沒有加凍結檢查。是否在凍結期間隱藏 `/support` 的交付連結，由 owner 決定。
 

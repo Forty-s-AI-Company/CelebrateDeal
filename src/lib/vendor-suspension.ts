@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation";
 import { NextResponse } from "next/server";
 import { randomUUID } from "node:crypto";
-import type { Prisma, PrismaClient } from "@prisma/client";
+import type { PrismaClient } from "@prisma/client";
 import { revokeAllStudentPortalSessionsForVendor } from "@/lib/student-portal-auth";
 import {
   isVendorAvailableForPublic,
@@ -75,8 +75,15 @@ export type SuspendVendorResult =
   | { status: "suspended"; vendorId: string; suspendedAt: Date; revokedStudentPortalTokenCount: number }
   | { status: "not_found" | "already_suspended" | "conflict" | "invalid" };
 
+export type ReleaseHeldEntitlementsResult = {
+  /** false when a batch failed; the rest stays pending and `releaseHeldEntitlements` can be run again. */
+  complete: boolean;
+  grantedEntitlementCount: number;
+  orderIds: string[];
+};
+
 export type ResumeVendorResult =
-  | { status: "resumed"; vendorId: string; previousSuspendedAt: Date; grantedEntitlementCount: number }
+  | ({ status: "resumed"; vendorId: string; previousSuspendedAt: Date } & Omit<ReleaseHeldEntitlementsResult, "orderIds">)
   | { status: "not_found" | "not_suspended" | "conflict" | "invalid" };
 
 type SuspensionDatabase = Pick<PrismaClient, "$transaction">;
@@ -131,28 +138,27 @@ export async function suspendVendor(
 
 const RELEASE_BATCH_SIZE = 500;
 const RELEASED_ORDER_AUDIT_LIMIT = 1_000;
+const RELEASE_BATCH_TIMEOUT_MS = 30_000;
+
+type HeldBatch = { granted: number; orderIds: string[]; done: boolean; suspended: boolean };
 
 /**
- * Grants, in id-ordered batches, every pending digital/course entitlement of a
- * paid (or partially refunded) order of this vendor, and appends one
- * `fulfillment.released_after_suspension` event per order. The dedupKey names
- * the suspension being lifted, so a retried resume cannot write it twice.
+ * One short transaction: re-checks under `FOR SHARE` (the lock the payment
+ * path takes) that the vendor is still not suspended, grants up to
+ * RELEASE_BATCH_SIZE pending digital/course entitlements of paid (or partially
+ * refunded) orders, and appends one `fulfillment.released_after_suspension`
+ * event per order. The event dedupKey names the lifted suspension, so a rerun
+ * never writes an order's event twice; granted rows are no longer pending, so
+ * a rerun never grants twice.
  */
-async function releaseHeldEntitlements(
-  tx: Prisma.TransactionClient,
-  vendorId: string,
-  suspendedAt: Date,
-  now: Date,
-) {
-  const orderIds = new Set<string>();
-  let grantedEntitlementCount = 0;
-  let cursor: string | undefined;
-  for (;;) {
+async function releaseHeldBatch(db: SuspensionDatabase, vendorId: string, releasedFrom: string, now: Date): Promise<HeldBatch> {
+  return db.$transaction(async (tx) => {
+    const lock = await tx.$queryRaw<Array<{ suspendedAt: Date | null }>>`SELECT "suspendedAt" FROM "Vendor" WHERE "id" = ${vendorId} FOR SHARE`;
+    if (!lock[0] || lock[0].suspendedAt instanceof Date) return { granted: 0, orderIds: [], done: true, suspended: true };
     const batch = await tx.commerceEntitlement.findMany({
       where: {
         vendorId,
         status: "pending",
-        ...(cursor ? { id: { gt: cursor } } : {}),
         orderItem: {
           is: {
             vendorId,
@@ -165,41 +171,89 @@ async function releaseHeldEntitlements(
       take: RELEASE_BATCH_SIZE,
       select: { id: true, orderItem: { select: { orderId: true } } },
     });
-    if (batch.length === 0) break;
-    cursor = batch[batch.length - 1]!.id;
+    if (batch.length === 0) return { granted: 0, orderIds: [], done: true, suspended: false };
     const granted = await tx.commerceEntitlement.updateMany({
       where: { vendorId, status: "pending", id: { in: batch.map((row) => row.id) } },
       data: { status: "granted", grantedAt: now, revision: { increment: 1 } },
     });
-    grantedEntitlementCount += granted.count;
-    const batchOrders = [...new Set(batch.map((row) => row.orderItem.orderId))].filter((orderId) => !orderIds.has(orderId));
-    batchOrders.forEach((orderId) => orderIds.add(orderId));
-    if (batchOrders.length > 0) {
-      await tx.commerceOrderEvent.createMany({
-        data: batchOrders.map((orderId) => ({
-          id: randomUUID(),
-          vendorId,
-          orderId,
-          dedupKey: `fulfillment.released_after_suspension:${suspendedAt.toISOString()}`,
-          eventType: "fulfillment.released_after_suspension",
-          actorType: "system",
-          actorId: null,
-          sanitizedData: { orderId, suspendedAt: suspendedAt.toISOString(), releasedAt: now.toISOString() },
-          occurredAt: now,
-        })),
-        skipDuplicates: true,
-      });
-    }
-    if (batch.length < RELEASE_BATCH_SIZE) break;
-  }
-  return { grantedEntitlementCount, orderIds: [...orderIds] };
+    const orderIds = [...new Set(batch.map((row) => row.orderItem.orderId))];
+    await tx.commerceOrderEvent.createMany({
+      data: orderIds.map((orderId) => ({
+        id: randomUUID(),
+        vendorId,
+        orderId,
+        dedupKey: `fulfillment.released_after_suspension:${releasedFrom}`,
+        eventType: "fulfillment.released_after_suspension",
+        actorType: "system",
+        actorId: null,
+        sanitizedData: { orderId, suspendedAt: releasedFrom, releasedAt: now.toISOString() },
+        occurredAt: now,
+      })),
+      skipDuplicates: true,
+    });
+    return { granted: granted.count, orderIds, done: batch.length < RELEASE_BATCH_SIZE, suspended: false };
+  }, { timeout: RELEASE_BATCH_TIMEOUT_MS });
 }
 
 /**
- * Lifts a suspension and releases what the payment path held back: every
- * pending digital/course entitlement of an order that is already paid (or
- * partially refunded) is granted, exactly what `grantPaidEntitlements` would
- * have done when the callback arrived. Refunded orders stay revoked.
+ * Releases what the payment path held back while the vendor was suspended,
+ * in batches that each commit on their own (no long transaction). Safe to run
+ * again: after a failed batch the remaining entitlements stay pending and the
+ * platform admin can repeat the release from /admin/vendor-features. Stops at
+ * once if the vendor is suspended again. One audit row records the outcome.
+ */
+export async function releaseHeldEntitlements(
+  db: SuspensionDatabase,
+  input: { vendorId: string; actorUserId: string; releasedFrom?: Date | null; now?: Date } & AuditRequestMeta,
+): Promise<ReleaseHeldEntitlementsResult> {
+  if (!VENDOR_ID.test(input.vendorId)) return { complete: false, grantedEntitlementCount: 0, orderIds: [] };
+  const now = input.now ?? new Date();
+  const releasedFrom = input.releasedFrom?.toISOString() ?? "manual_release";
+  const orderIds = new Set<string>();
+  let grantedEntitlementCount = 0;
+  let complete = false;
+  try {
+    for (;;) {
+      const batch = await releaseHeldBatch(db, input.vendorId, releasedFrom, now);
+      grantedEntitlementCount += batch.granted;
+      batch.orderIds.forEach((orderId) => orderIds.add(orderId));
+      if (batch.suspended) break;
+      if (batch.done) { complete = true; break; }
+    }
+  } catch {
+    // A failed batch rolled back on its own; what is left stays pending, is audited below and can be released again.
+  }
+  const releasedOrderIds = [...orderIds];
+  await db.$transaction((tx) => tx.auditLog.create({
+    data: {
+      vendorId: input.vendorId,
+      actorId: input.actorUserId,
+      actorLabel: "platform_admin",
+      action: complete ? "vendor_suspension_release_completed" : "vendor_suspension_release_incomplete",
+      targetType: "Vendor",
+      targetId: input.vendorId,
+      after: {
+        releasedFrom,
+        grantedEntitlementCount,
+        releasedOrderCount: releasedOrderIds.length,
+        // Bounded so a long suspension cannot produce an oversized audit row; every order also has its own event.
+        releasedOrderIds: releasedOrderIds.slice(0, RELEASED_ORDER_AUDIT_LIMIT),
+      },
+      ipAddress: input.ipAddress ?? null,
+      userAgent: input.userAgent ?? null,
+    },
+  }));
+  return { complete, grantedEntitlementCount, orderIds: releasedOrderIds };
+}
+
+/**
+ * Lifts a suspension in one short transaction (compare-and-set + audit),
+ * then releases what the payment path held back: every pending
+ * digital/course entitlement of an already paid (or partially refunded)
+ * order is granted, exactly what `grantPaidEntitlements` would have done
+ * when the callback arrived. Refunded orders stay revoked. A payment
+ * transaction that read the suspension under `FOR SHARE` commits before the
+ * lifting UPDATE proceeds, so the release batches see its pending rows.
  */
 export async function resumeVendor(
   db: SuspensionDatabase,
@@ -207,7 +261,7 @@ export async function resumeVendor(
 ): Promise<ResumeVendorResult> {
   if (!VENDOR_ID.test(input.vendorId)) return { status: "invalid" };
   const now = input.now ?? new Date();
-  return db.$transaction(async (tx) => {
+  const lifted = await db.$transaction(async (tx) => {
     const vendor = await tx.vendor.findUnique({ where: { id: input.vendorId }, select: { id: true, suspendedAt: true } });
     if (!vendor) return { status: "not_found" as const };
     if (!vendor.suspendedAt) return { status: "not_suspended" as const };
@@ -216,8 +270,6 @@ export async function resumeVendor(
       data: { suspendedAt: null, suspendedReason: null },
     });
     if (updated.count !== 1) return { status: "conflict" as const };
-    const released = await releaseHeldEntitlements(tx, vendor.id, vendor.suspendedAt, now);
-    const granted = { count: released.grantedEntitlementCount };
     await tx.auditLog.create({
       data: {
         vendorId: vendor.id,
@@ -227,17 +279,39 @@ export async function resumeVendor(
         targetType: "Vendor",
         targetId: vendor.id,
         before: { suspendedAt: vendor.suspendedAt.toISOString() },
-        after: {
-          suspendedAt: null,
-          grantedEntitlementCount: granted.count,
-          releasedOrderCount: released.orderIds.length,
-          // Bounded so a long suspension cannot produce an oversized audit row; every order also has its own event.
-          releasedOrderIds: released.orderIds.slice(0, RELEASED_ORDER_AUDIT_LIMIT),
-        },
+        after: { suspendedAt: null },
         ipAddress: input.ipAddress ?? null,
         userAgent: input.userAgent ?? null,
       },
     });
-    return { status: "resumed" as const, vendorId: vendor.id, previousSuspendedAt: vendor.suspendedAt, grantedEntitlementCount: granted.count };
+    return { status: "lifted" as const, vendorId: vendor.id, suspendedAt: vendor.suspendedAt };
   });
+  if (lifted.status !== "lifted") return lifted;
+  const released = await releaseHeldEntitlements(db, {
+    vendorId: lifted.vendorId, actorUserId: input.actorUserId, releasedFrom: lifted.suspendedAt, now,
+    ipAddress: input.ipAddress, userAgent: input.userAgent,
+  });
+  return {
+    status: "resumed",
+    vendorId: lifted.vendorId,
+    previousSuspendedAt: lifted.suspendedAt,
+    complete: released.complete,
+    grantedEntitlementCount: released.grantedEntitlementCount,
+  };
+}
+
+/** Pending digital/course entitlements of paid orders per (not suspended) vendor: what a release would grant. */
+export async function countHeldEntitlements(db: Pick<PrismaClient, "commerceEntitlement">, vendorIds: string[]) {
+  if (vendorIds.length === 0) return new Map<string, number>();
+  const rows = await db.commerceEntitlement.groupBy({
+    by: ["vendorId"],
+    where: {
+      vendorId: { in: vendorIds },
+      status: "pending",
+      vendor: { is: { suspendedAt: null } },
+      orderItem: { is: { fulfillmentType: { in: ["digital", "course"] }, order: { is: { status: { in: ["paid", "partially_refunded"] } } } } },
+    },
+    _count: { _all: true },
+  });
+  return new Map(rows.map((row) => [row.vendorId, row._count._all]));
 }

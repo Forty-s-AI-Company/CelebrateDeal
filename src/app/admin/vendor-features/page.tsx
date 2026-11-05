@@ -1,5 +1,5 @@
 import { updateVendorBetaFeatureGrantsAction } from "@/app/actions/vendor-beta-feature-actions";
-import { resumeVendorAction, suspendVendorAction } from "@/app/actions/vendor-suspension-actions";
+import { releaseHeldEntitlementsAction, resumeVendorAction, suspendVendorAction } from "@/app/actions/vendor-suspension-actions";
 import { CsrfField } from "@/components/csrf-field";
 import { FormSubmitButton } from "@/components/form-submit-button";
 import { StepUpMfaNotice } from "@/components/step-up-mfa-notice";
@@ -9,6 +9,7 @@ import { getDb } from "@/lib/db";
 import { formatDateTime } from "@/lib/format";
 import { recentMfaStatus } from "@/lib/recent-mfa";
 import { BETA_FEATURE_LABELS, BETA_GATED_FEATURES, normalizeBetaFeatureGrants } from "@/lib/vendor-feature-toggles";
+import { countHeldEntitlements } from "@/lib/vendor-suspension";
 import { VENDOR_SUSPENSION_REASON_MAX_LENGTH } from "@/lib/vendor-suspension-state";
 
 const ADMIN_PATH = "/admin/vendor-features";
@@ -22,12 +23,14 @@ const MESSAGES: Record<string, string> = {
 const SUSPENSION_MESSAGES: Record<string, string> = {
   suspended: "已凍結商家：後台只顯示「商家已暫停」，公開頁不再顯示，學員登入已全部撤銷。",
   resumed: "已解除凍結：商家恢復使用，暫停期間已付款但未開通的權限已開通。",
+  released: "已開通暫停期間已付款但未開通的權限。",
 };
 
 const SUSPENSION_ERRORS: Record<string, string> = {
   invalid: "資料格式不正確，未做任何變更。",
   reason_required: `請填寫凍結原因（1–${VENDOR_SUSPENSION_REASON_MAX_LENGTH} 字），未做任何變更。`,
   confirm_required: "請先勾選確認凍結，未做任何變更。",
+  release_incomplete: "商家已解除凍結，但部分暫停期間的付款權限尚未開通，請按「開通暫停期間的付款」重試。",
   not_found: "找不到這個商家，未做任何變更。",
   already_suspended: "這個商家已經是凍結狀態，未做任何變更。",
   not_suspended: "這個商家目前沒有凍結，未做任何變更。",
@@ -54,6 +57,8 @@ export default async function AdminVendorFeaturesPage({ searchParams }: { search
   const focusedVendorId = typeof params.vendor === "string" && vendors.some((vendor) => vendor.id === params.vendor) ? params.vendor : null;
   const isError = !params.saved && Boolean(params.error);
   const mfaStatus = recentMfaStatus({ user, session });
+  // F-036: paid access still held from a suspension whose release did not finish.
+  const heldByVendor = await countHeldEntitlements(getDb(), vendors.filter((vendor) => !(vendor.suspendedAt instanceof Date)).map((vendor) => vendor.id));
 
   return (
     <>
@@ -152,6 +157,20 @@ export default async function AdminVendorFeaturesPage({ searchParams }: { search
                     </>
                   )}
                 </form>
+                {!suspendedAt && (heldByVendor.get(vendor.id) ?? 0) > 0 ? (
+                  <form id={`vendor-release-${vendor.id}`} action={releaseHeldEntitlementsAction} aria-label={`${vendor.name} 暫停期間的付款`} className="flex flex-wrap items-center gap-3 rounded-lg border border-amber-300 bg-amber-50 p-4">
+                    <CsrfField />
+                    <input type="hidden" name="vendorId" value={vendor.id} />
+                    <p className="text-sm text-amber-900">有 {heldByVendor.get(vendor.id)} 筆已付款但尚未開通的權限（解除凍結時未完成）。</p>
+                    <FormSubmitButton
+                      className="min-h-11 rounded-md border border-amber-400 bg-white px-4 text-sm font-semibold text-amber-900"
+                      pendingChildren="開通中…"
+                      pendingMessage="正在開通暫停期間的付款，請勿重複送出。"
+                    >
+                      開通暫停期間的付款
+                    </FormSubmitButton>
+                  </form>
+                ) : null}
               </div>
             );
           })}

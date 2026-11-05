@@ -69,7 +69,7 @@ import { protectProductDeliveryConfig, validateProductDeliveryDraft } from "@/li
 import { loadPublicRegistrationForm } from "@/lib/public-registration-form";
 import { publicLiveAvailabilityWhere } from "@/lib/sellable-live";
 import { createStudentPortalAccessToken } from "@/lib/student-portal-auth";
-import { isVendorAvailableForPublic, resumeVendor, suspendVendor } from "@/lib/vendor-suspension";
+import { isVendorAvailableForPublic, releaseHeldEntitlements, resumeVendor, suspendVendor } from "@/lib/vendor-suspension";
 
 const db = getDb();
 const vendorIds: string[] = [];
@@ -237,8 +237,37 @@ describe("F-036 vendor suspension: back office", () => {
     await expect(outcome(() => switchFromSuspendedVendorAction(form({ vendorId: stranger.vendorId })))).resolves.toBe("redirect:/vendor-suspended");
     await expect(outcome(() => switchFromSuspendedVendorAction(form({ vendorId: b.vendorId })))).resolves.toBe("redirect:/dashboard");
     cookieJar.token = token;
-    await expect(getCurrentAuth()).resolves.toMatchObject({ vendor: { id: b.vendorId }, suspendedVendor: null });
-    await expect(db.auditLog.count({ where: { vendorId: b.vendorId, action: "session_vendor_switched", actorId: a.ownerId } })).resolves.toBe(1);
+    // The member's role is recomputed for the new vendor (owner of A, admin of B).
+    await expect(getCurrentAuth()).resolves.toMatchObject({ vendor: { id: b.vendorId }, member: { vendorId: b.vendorId, role: "admin" }, suspendedVendor: null });
+    const audit = await db.auditLog.findFirstOrThrow({ where: { vendorId: b.vendorId, action: "session_vendor_switched", actorId: a.ownerId } });
+    // The suspended tenant is not named in the other tenant's audit trail.
+    expect(audit.before).toEqual({ from: "suspended_vendor" });
+    expect(JSON.stringify(audit.before)).not.toContain(a.vendorId);
+    // Once off the suspended vendor, the switch is no longer available.
+    await expect(outcome(() => switchFromSuspendedVendorAction(form({ vendorId: b.vendorId })))).resolves.toBe("redirect:/dashboard");
+    await expect(db.auditLog.count({ where: { action: "session_vendor_switched", actorId: a.ownerId } })).resolves.toBe(1);
+  });
+
+  it("refuses a switch to another suspended vendor, a partner membership or an inactive membership", async () => {
+    const a = await createTenant("A");
+    const alsoSuspended = await createTenant("S");
+    const partnerOnly = await createTenant("P");
+    const deactivated = await createTenant("D");
+    await db.vendorMember.createMany({ data: [
+      { vendorId: alsoSuspended.vendorId, userId: a.ownerId, role: "admin" },
+      { vendorId: partnerOnly.vendorId, userId: a.ownerId, role: "partner" },
+      { vendorId: deactivated.vendorId, userId: a.ownerId, role: "admin", status: "inactive" },
+    ] });
+    const admin = await createPlatformAdmin(new Date());
+    await suspendVendor(db, { vendorId: a.vendorId, reason: "合成", actorUserId: admin.id });
+    await suspendVendor(db, { vendorId: alsoSuspended.vendorId, reason: "合成", actorUserId: admin.id });
+    const token = await signIn(a.ownerId, a.vendorId);
+    for (const target of [alsoSuspended, partnerOnly, deactivated]) {
+      cookieJar.token = token;
+      await expect(outcome(() => switchFromSuspendedVendorAction(form({ vendorId: target.vendorId })))).resolves.toBe("redirect:/vendor-suspended");
+    }
+    await expect(db.userSession.findFirstOrThrow({ where: { userId: a.ownerId, tokenHash: createHash("sha256").update(token).digest("hex") } })).resolves.toMatchObject({ vendorId: a.vendorId });
+    await expect(db.auditLog.count({ where: { action: "session_vendor_switched", actorId: a.ownerId } })).resolves.toBe(0);
   });
 });
 
@@ -371,16 +400,52 @@ describe("F-036 resume releases held orders with events and audit (m3)", () => {
     await suspendVendor(db, { vendorId: a.vendorId, reason: "合成", actorUserId: admin.id });
     await processPaymentWebhook(paid(a.vendorId, first.orderNumber));
     await processPaymentWebhook(paid(a.vendorId, second.orderNumber));
-    await expect(resumeVendor(db, { vendorId: a.vendorId, actorUserId: admin.id })).resolves.toMatchObject({ status: "resumed", grantedEntitlementCount: 2 });
+    await expect(resumeVendor(db, { vendorId: a.vendorId, actorUserId: admin.id })).resolves.toMatchObject({ status: "resumed", complete: true, grantedEntitlementCount: 2 });
 
     const orders = [await orderState(first.transaction.id), await orderState(second.transaction.id)];
     for (const order of orders) {
       expect(order.items[0]?.entitlement).toMatchObject({ status: "granted" });
       await expect(db.commerceOrderEvent.count({ where: { vendorId: a.vendorId, orderId: order.id, eventType: "fulfillment.released_after_suspension" } })).resolves.toBe(1);
     }
-    const audit = await db.auditLog.findFirstOrThrow({ where: { vendorId: a.vendorId, action: "vendor_suspension_lifted" } });
+    await expect(db.auditLog.count({ where: { vendorId: a.vendorId, action: "vendor_suspension_lifted" } })).resolves.toBe(1);
+    const audit = await db.auditLog.findFirstOrThrow({ where: { vendorId: a.vendorId, action: "vendor_suspension_release_completed" } });
     expect(audit.after).toMatchObject({ grantedEntitlementCount: 2, releasedOrderCount: 2 });
     expect([...(audit.after as { releasedOrderIds: string[] }).releasedOrderIds].sort()).toEqual(orders.map((order) => order.id).sort());
+    // A repeated release finds nothing left and writes no duplicate order event.
+    await expect(releaseHeldEntitlements(db, { vendorId: a.vendorId, actorUserId: admin.id })).resolves.toMatchObject({ complete: true, grantedEntitlementCount: 0 });
+    await expect(db.commerceOrderEvent.count({ where: { vendorId: a.vendorId, eventType: "fulfillment.released_after_suspension" } })).resolves.toBe(2);
+  });
+
+  it("releases more than one batch (501 held entitlements) in separate short transactions", async () => {
+    const a = await createTenant("A");
+    const admin = await createPlatformAdmin(new Date());
+    await suspendVendor(db, { vendorId: a.vendorId, reason: "合成", actorUserId: admin.id });
+    const orderId = randomUUID();
+    const count = 501;
+    await db.commerceOrder.create({ data: {
+      id: orderId, vendorId: a.vendorId, orderNumber: `HELD-${orderId}`, checkoutIdempotencyKey: randomUUID(),
+      checkoutIdentityHash: createHash("sha256").update(orderId).digest("base64url"), status: "paid", currency: "TWD",
+      subtotalAmountCents: count * 100, totalAmountCents: count * 100, paidAmountCents: count * 100, paidAt: new Date(),
+      buyerEncryptedEnvelope: "synthetic-envelope", buyerMaskedName: "合成買家", buyerMaskedEmail: "h***@example.test",
+    } });
+    const items = Array.from({ length: count }, (_, lineIndex) => ({
+      id: randomUUID(), vendorId: a.vendorId, orderId, lineIndex, productName: "合成數位", productSlug: `held-${lineIndex}`,
+      commerceDomain: "merchant", fulfillmentType: "digital" as const, unitPriceCents: 100, quantity: 1, lineTotalCents: 100, nonSensitiveSnapshot: {},
+    }));
+    await db.commerceOrderItem.createMany({ data: items });
+    await db.commerceEntitlement.createMany({ data: items.map((item) => ({
+      vendorId: a.vendorId, orderItemId: item.id, accessEncryptedEnvelope: "v1.synthetic", accessMaskedSummary: "合成",
+    })) });
+    const transactions = vi.spyOn(db, "$transaction");
+    try {
+      await expect(resumeVendor(db, { vendorId: a.vendorId, actorUserId: admin.id })).resolves.toMatchObject({ status: "resumed", complete: true, grantedEntitlementCount: count });
+      // lift + two release batches + the empty check + the outcome audit, each its own transaction.
+      expect(transactions.mock.calls.length).toBeGreaterThanOrEqual(4);
+    } finally {
+      transactions.mockRestore();
+    }
+    await expect(db.commerceEntitlement.count({ where: { vendorId: a.vendorId, status: "granted" } })).resolves.toBe(count);
+    await expect(db.commerceOrderEvent.count({ where: { vendorId: a.vendorId, orderId, eventType: "fulfillment.released_after_suspension" } })).resolves.toBe(1);
   });
 });
 
