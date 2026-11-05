@@ -323,4 +323,5 @@ staging 沒有直接 SQL 存取權，步驟 1、3、4 在 staging 一律透過 `
 |---|---|---|---|---|
 | loopback disposable（`celebratedeal_ci`） | 2026-11-03 | 12 列皆 0；交易內人為插入違規列後對應列為 1，`VALIDATE` 與重複 preflight 都如預期失敗，交易回滾 | engineer-hard（合成資料） | 只證明查詢與 migration 行為，不代表 staging／production |
 | staging | 2026-11-03 | `Staging migrate deploy`（run 41580688491）：`090000`、`090100` 已套用，`090200` 以 P3018／SQLSTATE 23514 失敗並標為 failed | 主對話 | 以上方 remediation workflow 診斷與修復，修復後補記 inspect 結果 |
+| staging | 2026-11-03 | `Staging ledger remediation` inspect（run 41608382196）：3 筆違規（`Settlement` `reviewing`、`PayoutBatch` `reviewing`、`PayoutItem` `pending_review`，皆為 2026-07 seed 舊狀態）；已登記 fix `legacy-seed-status-20261103`（改為 #540 seed 的 `ready_for_payout`／`draft`／`pending`），尚未執行 | 主對話 | apply-fix 執行並確認違規為 0 後再補記 |
 | production | 待執行 | — | owner | 部署前由 owner 查詢並補記 |
