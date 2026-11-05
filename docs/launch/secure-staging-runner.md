@@ -241,6 +241,31 @@ funnel 與 browser smoke 在執行期間的重新檢查走同一個邏輯。
 3. LINE 要等 owner 在 environment 補齊 secret 後再派送；否則只會得到 `secure_line_missing_bindings=...`。
 4. browser smoke 與 funnel smoke 不會碰付款，可以先派送；失敗時看 artifact 的 `failureStep`／`failureDom`。
 
+### #547 合併後重跑的診斷（2026-11-05，部署 `93f26e00`）
+
+alias 自證 PASS，三個 workflow 都靠 #547 的診斷輸出縮小了範圍：
+
+| Run | #547 診斷 | 根因判斷 | 處理（`ai/staging-smoke-round2`） |
+|---|---|---|---|
+| 42064913257 `staging-browser-smoke` | `failureStep=DELIVERY_GROUP_VISIBLE`、`failureDom.fulfillmentValue=digital`、`deliveryGroups=0` | **推斷**：商品編輯頁的「付款後交付設定」`<fieldset>`／`<legend>` 結構沒變（`getByRole("group", { name: "付款後交付設定" })` 仍對），但它只在 React state 變成非實體後才渲染。runner 用 `waitUntil: "domcontentloaded"` 開頁後立刻 `selectOption`，staging 遠端載入 JS 較慢，選項是在 hydration 之前改到 server HTML 上，change 事件沒進 React state，所以 select 顯示 digital、fieldset 卻沒出現。本機正式建置與 CI e2e 先填其他欄位才選交付方式，hydration 已完成，所以沒出現。 | 選取前先等 React 接手這個 select（`waitForFulfillmentHydration`：元素上出現 React 的 `__reactProps$` 屬性，最多 20 秒），新步驟 `FULFILLMENT_HYDRATED`；`failureDom` 多 `fulfillmentHydrated`（布林）與 `documentReadyState`（固定 enum）。另修正接在後面的導覽檢查仍在找舊標題「商品管理」（現為「商品」），否則互動通過後仍會 `BROWSER_JOURNEY_FAILED`。 |
+| 42064920668 `staging-funnel-smoke` | `stage=PUBLISH`、`reason=PUBLISH_FAILED`、`failureStep=NONE` | **推斷（高可信）**：資料前置條件。smoke 建在「Staging Synthetic Project」（runner 以 `/projects/new` 建立，預設為草稿）底下的名單型網站，發布屬於「不需發布專案就公開」的獨立發布（#478／#482）。`vendorEmailVerificationState` 先找 email 等於商家 email（`wp4-synthetic-vendor-v1@invalid.example`）的使用者，fixture 沒有這個帳號，於是退回「任一 active owner 已驗證」；唯一的 owner `wp4_synthetic_owner_v1` 由 `src/lib/wp4-sandbox-fixture.ts` 建立時沒有 `emailVerifiedAt`，`20261025120000_user_email_verified_at` 也不回填，所以 `independentPublishAllowance` 回 `emailUnverified`，server 拒絕發布（#487）。舊 runner 在這條路徑是 `return` 而不是丟例外，所以沒有 `failureStep`。 | 發布前先開管理頁的「發布狀態：草稿」chip，讀 server 的公開網址診斷並只保留固定分類（`publishPreflight`）；若是資料前置條件就不按「發布」，直接以 `PUBLISH_BLOCKED_EMAIL_UNVERIFIED`／`PUBLISH_LIMIT_REACHED`／`PUBLISH_DISABLED_BY_PLATFORM`／`PUBLISH_BLOCKED_LIVE_REQUIRES_PROJECT` 結束。發布階段每個停止點都設 `failureStep`（`EDITOR_LEAVE`／`PUBLISH_PREFLIGHT`／`PUBLISH_BUTTON_ENABLED`／`PUBLISH_RESULT`）與 `failureCategory`（`CONDITION_NOT_MET`／`DATA_PRECONDITION`），另記 `publishOutcome` 與 `publishActionStatus`，stdout 多一行 `staging_funnel_publish=preflight=…; outcome=…; reason=…; failureStep=…`。 |
+| 同上 | `operationsGetFailures=3`、`editorGetFailures=1`（`lastStatus=200`、`Finished=0`） | **推斷**：不是錯誤。這兩個計數只比對路徑，三個請求都收到 200 回應、沒有一個「finished」，符合 App Router 的 RSC 串流（導覽 fetch 或 Link prefetch）在離開頁面或被新導覽取代時被中止（`net::ERR_ABORTED`）。create、模板、編輯器都正常完成，與這個推斷一致。 | receipt 多 `operationsGetKinds`／`editorGetKinds`（`document`／`rsc`／`prefetch`／`other`）與 `operationsGetFailureKinds`／`editorGetFailureKinds`（`aborted`／`other`），下次 run 可直接確認。 |
+| 42064928350 `wp4-payuni-sandbox-payment-only` | `step=CARD_NUMBER; error=TIMEOUT; page=PAYUNI_UPP; mainFrameMatches=0; childFrames=0` | **未確定**。「一次付清」與 `radioOptionpayGroupCredit` 都找得到，卡號 placeholder `16 碼或 19 碼` 在主頁與 iframe 都沒有。可能是 PayUni Sandbox UPP 改版（欄位改名／改 placeholder、需先點「信用卡」分頁），也可能是卡號欄位由 runner egress 擋掉的外部腳本渲染（WP4 egress 只放行 `sandbox-api`／`sandbox-vendor.payuni.com.tw`）。repo 與 PayUni 文件沒有新版 UPP 的欄位描述可以對照。 | 保留舊 placeholder 為第一選擇；逾時才退到標準 autofill 屬性（`cc-number`／`cc-exp`／`cc-csc`／`type=email`，必須恰好一個可見元素），卡號仍找不到時才點「信用卡」分頁（恰好一個可見元素才點，點完重新勾一次付清）再找。診斷行多 `fieldSource`、`creditTab` 與 `failed_payuniScript`／`failed_payuniOther`／`failed_externalScript`／`failed_externalOther`（PayUni 頁開啟後子資源失敗數）；另印一行 `wp4_payuni_page_structure=<JSON>`：每個 frame 的非 hidden `input`／`select`／`textarea` 的 `type`、`name`、`placeholder`、`aria-label`、`autocomplete` 與是否可見，以及可見按鈕／分頁／label 文字。 |
+
+**頁面結構摘要的去識別化規則**（`sanitizeStructureText`、`sanitizePayUniPageStructure`）：在頁面內只讀上述屬性，從不讀 `value`；hidden input 只計數；連結不讀 `href`。回到 Node 後每個字串再過白名單：Email 改成 `EMAIL`、URL（含 query）改成 `URL`、全形數字先轉半形、連續 3 位以上數字改成 `#`（卡號、CVV、金額、交易編號）、只留 ASCII 英數、少數標點與 CJK 字元，屬性值截斷到 40 字、按鈕文字 20 字，每個 frame 最多 25 個欄位與 25 個控制項、最多 4 個 frame。
+
+這一輪只改 `scripts/staging-browser-smoke.mjs`、`scripts/staging-funnel-smoke.mjs`、`scripts/mvp-payuni-sandbox-e2e.mjs` 與測試；沒有動 `secure-staging-runner.mjs` 或任何 workflow，所以 `APPROVED_BACKUP_BLOBS` 不用重新登記。
+
+**Owner／資料前置**
+
+1. funnel smoke 要能發布，合成商家必須通過獨立發布條件，二選一：
+   - 讓合成 owner（`wp4_synthetic_owner_v1`）的 `emailVerifiedAt` 有值。這個帳號用 `invalid.example` 網域，收不到驗證信，只能由 owner 決定是否在 staging 以受控的資料修正標記（不得用正式資料庫）；或
+   - 讓「Staging Synthetic Project」成為已發布專案（專案內的網站不受 Email 驗證與上限限制），但專案發布需要可販售商品等前置條件。
+2. 即使 Email 已驗證，smoke 每次都建立並發布一個新的名單型網站且不取消發布；免費商家最多同時 3 個，第 4 次起會得到 `PUBLISH_LIMIT_REACHED`。需要 owner 擇一：給合成商家有效付費方案或已驗證付款方式（解除上限）、定期在 staging 取消發布舊的 `staging-synthetic-*` 網站，或另案讓 smoke 在公開頁驗證後自行取消發布。
+3. PayUni：下一次 payment-only 若仍失敗，先看 `wp4_payuni_page_structure` 找新版欄位名稱；若 `failed_externalScript`／`failed_payuniScript` 大於 0，代表欄位可能由被 egress 擋掉的腳本渲染，要另案在 `secure-staging-validation.yml` 放行對應主機（屆時才需要重新登記 workflow blob）。`payuni-issued-recovery-browser.mjs` 與 `payuni-sandbox-external-qa.mjs` 仍使用舊 placeholder，確認新版欄位後一起更新。
+
+**重新派送注意**：`93f26e00` 的 buyer 交易已被這次 payment-only 預約，要合併本分支、讓 alias 指到新部署後用新 sha 重跑；每個 sha 仍只派送 payment-only 與 reconciliation 其中之一。browser smoke 與 funnel smoke 不碰付款，可先派送；funnel smoke 在資料前置完成前預期會停在 `PUBLISH_BLOCKED_EMAIL_UNVERIFIED`，這是正確的分類，不是新的失敗。
+
 ## 執行與網路邊界
 
 依賴安裝、contract tests 與 PostgreSQL image pull 都在注入 Secret 前完成。

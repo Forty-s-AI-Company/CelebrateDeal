@@ -5,7 +5,7 @@ import { diagnoseStagingAliasBindingWithFallback, diagnoseStagingPreviewBinding 
 
 import { appNavigationSelectorForViewport, classifyBrowserExecutionFailure, classifyBrowserRequest, classifyCriticalResourceFailureKind, classifyCriticalResourceRequestFailure, classifyCriticalResourceResponse, classifyFinalPath, classifySessionStatus, classifyUnsafeRequestDetail, classifyUnsafeRequestPath, diagnoseStagingAliasBinding, hasActionableDashboardAlert, isCriticalResourceFailure, isDashboardDetailsGet, isFailedCriticalResourceRequest, runBrowserSmoke, validateBrowserSmokeBinding, verifyStagingAliasBinding } from "./staging-browser-smoke.mjs";
 
-import { browserFailureStep, captureFailureDom, classifyFailurePath } from "./staging-browser-smoke.mjs";
+import { browserFailureStep, captureFailureDom, classifyFailurePath, elementHydratedInPage, waitForFulfillmentHydration } from "./staging-browser-smoke.mjs";
 
 test("failure diagnostics stay inside fixed step and route vocabularies", () => {
   const alias = "celebrate-deal-staging.carry-digital-nomad.in.net";
@@ -28,10 +28,41 @@ test("product-edit DOM diagnostic returns bounded counts and a fixed option enum
     getByRole: (role) => ({ count: async () => (role === "group" ? groups : 0) }),
   });
   assert.deepEqual(await captureFailureDom(page("digital", 0)), {
-    fulfillmentSelects: 1, fulfillmentValue: "digital", deliveryGroups: 0, globalErrorVisible: false, mainContent: 1,
+    fulfillmentSelects: 1, fulfillmentValue: "digital", fulfillmentHydrated: null, documentReadyState: "UNKNOWN",
+    deliveryGroups: 0, globalErrorVisible: false, mainContent: 1,
   });
+  // In-page reads return only a boolean and a fixed readyState enum; anything else is dropped.
+  const evaluated = { ...page("digital", 0), evaluate: async (fn) => (fn === elementHydratedInPage ? false : "complete") };
+  assert.deepEqual(await captureFailureDom(evaluated), {
+    fulfillmentSelects: 1, fulfillmentValue: "digital", fulfillmentHydrated: false, documentReadyState: "complete",
+    deliveryGroups: 0, globalErrorVisible: false, mainContent: 1,
+  });
+  const leaky = { ...page("digital", 0), evaluate: async () => "private page text" };
+  const leakyDom = await captureFailureDom(leaky);
+  assert.equal(leakyDom.fulfillmentHydrated, null);
+  assert.equal(leakyDom.documentReadyState, "UNKNOWN");
   assert.equal((await captureFailureDom(page("private-value"))).fulfillmentValue, "OTHER");
   assert.equal(await captureFailureDom({ locator: () => { throw new Error("closed"); } }), null);
+});
+
+test("product-edit interaction waits for React to hydrate the fulfillment select", async () => {
+  const calls = [];
+  await waitForFulfillmentHydration({ waitForFunction: async (fn, arg, options) => { calls.push({ fn, arg, options }); } });
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].fn, elementHydratedInPage);
+  assert.equal(calls[0].arg, 'select[name="fulfillmentType"]');
+  assert.equal(calls[0].options.timeout, 20_000);
+  assert.equal(browserFailureStep("FULFILLMENT_HYDRATED"), "FULFILLMENT_HYDRATED");
+  // The page function only checks React's props key; it works on a plain DOM stand-in.
+  const original = globalThis.document;
+  try {
+    globalThis.document = { querySelector: () => ({ value: "digital" }) };
+    assert.equal(elementHydratedInPage('select[name="fulfillmentType"]'), false);
+    globalThis.document = { querySelector: () => ({ "__reactProps$abc": {} }) };
+    assert.equal(elementHydratedInPage('select[name="fulfillmentType"]'), true);
+    globalThis.document = { querySelector: () => null };
+    assert.equal(elementHydratedInPage('select[name="fulfillmentType"]'), false);
+  } finally { globalThis.document = original; }
 });
 
 const INPUT = {
@@ -282,6 +313,7 @@ test("a rendered journey remains blocked when an unexpected browser POST occurs"
           getByText: () => locator,
           locator: () => locator,
           waitForURL: async () => {},
+          waitForFunction: async () => true,
           url: () => currentUrl,
         }; },
         close: async () => {},

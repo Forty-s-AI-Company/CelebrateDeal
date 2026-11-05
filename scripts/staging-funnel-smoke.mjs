@@ -14,9 +14,35 @@ export const CREATE_SUBMIT_LABEL = "建立";
 const FUNNEL_STEPS = new Set([
   "CONTEXT_SETUP", "PAGE_OPEN", "CREATE_PAGE_OPEN", "PROJECT_PAGE_OPEN", "PROJECT_NAME_FILL", "PROJECT_SLUG_FILL",
   "PROJECT_SUBMIT", "CREATE_NAME_FILL", "CREATE_SLUG_FILL", "CREATE_GOAL_SELECT", "CREATE_SUBMIT", "CREATE_DESTINATION",
-  "TEMPLATE_APPLY", "EDITOR_OPEN", "EDITOR_ADD_SECTION", "EDITOR_SAVE", "EDITOR_LEAVE", "PUBLISH", "PUBLIC_OPEN",
-  "PUBLIC_MOBILE_RELOAD",
+  "TEMPLATE_APPLY", "EDITOR_OPEN", "EDITOR_ADD_SECTION", "EDITOR_SAVE", "EDITOR_LEAVE", "PUBLISH_PREFLIGHT",
+  "PUBLISH_BUTTON_ENABLED", "PUBLISH", "PUBLISH_RESULT", "PUBLIC_OPEN", "PUBLIC_MOBILE_RELOAD",
 ]);
+// Management-page publication chip (src/components/landing-page-publication-chip.tsx) and the
+// header publish button (src/components/landing-pages/funnel-operations-panel.tsx).
+export const PUBLICATION_CHIP_DRAFT_LABEL = "發布狀態：草稿";
+export const PUBLICATION_REGION_LABEL = "公開網址狀態";
+export const PUBLISH_BUTTON_LABEL = "發布";
+export const PUBLISHED_CHIP_PATTERN = /^發布狀態：(已發布|公開網址無法開啟)/u;
+/**
+ * Fixed fragments of the server's publication diagnosis (src/lib/independent-publish-limit.ts and
+ * audienceFunnelPreflightStatus in src/lib/landing-page-service.ts). Only the matching category is
+ * kept; the page text itself is never stored. Order matters: the server checks e-mail first.
+ */
+export const PUBLISH_DIAGNOSIS_FRAGMENTS = Object.freeze([
+  Object.freeze(["PLATFORM_DISABLED", "平台目前暫停「不需發布專案就公開」的名單型網站新發布"]),
+  Object.freeze(["EMAIL_UNVERIFIED", "這個商家的註冊 Email 還沒有完成驗證"]),
+  Object.freeze(["LIMIT_REACHED", "免費帳號最多可同時有"]),
+  Object.freeze(["LIVE_REQUIRES_PROJECT", "直播要等所屬專案發布後才能公開"]),
+  Object.freeze(["REVISION_CONFLICT", "這個頁面已有較新的版本"]),
+  Object.freeze(["READY", "名單型網站發布後即可開啟"]),
+]);
+// Data preconditions the runner cannot fix; each maps to its own receipt reason.
+const PUBLISH_BLOCKED_REASONS = Object.freeze({
+  PLATFORM_DISABLED: "PUBLISH_DISABLED_BY_PLATFORM",
+  EMAIL_UNVERIFIED: "PUBLISH_BLOCKED_EMAIL_UNVERIFIED",
+  LIMIT_REACHED: "PUBLISH_LIMIT_REACHED",
+  LIVE_REQUIRES_PROJECT: "PUBLISH_BLOCKED_LIVE_REQUIRES_PROJECT",
+});
 
 const ALIAS = "celebrate-deal-staging.carry-digital-nomad.in.net";
 const FUNNEL_PATH = /^\/landing-pages\/[a-z0-9]+(?:\/operations|\/edit)?$/u;
@@ -35,11 +61,17 @@ function receipt(sourceSha) {
     operationsGetRequests: 0, operationsGetResponses: 0, operationsGetFinished: 0, operationsGetFailures: 0, operationsGetLastStatus: null,
     editorGetRequests: 0, editorGetResponses: 0, editorGetFinished: 0, editorGetFailures: 0, editorGetLastStatus: null,
     editorDialogs: 0, editorNavigation: "NOT_OBSERVED",
+    // How the page's same-route GETs ended: document load, RSC navigation fetch or router prefetch,
+    // and whether a failure was an abort (navigation superseded or page left) or something else.
+    operationsGetKinds: { document: 0, rsc: 0, prefetch: 0, other: 0 }, operationsGetFailureKinds: { aborted: 0, other: 0 },
+    editorGetKinds: { document: 0, rsc: 0, prefetch: 0, other: 0 }, editorGetFailureKinds: { aborted: 0, other: 0 },
+    publishPreflight: "NOT_OBSERVED", publishOutcome: "NOT_OBSERVED", publishActionStatus: null,
     publicStatus: null, publicRouteMatched: false, publicRendererVisible: false,
     publicSurface: "NOT_OBSERVED",
     syntheticProjectStatus: "NOT_OBSERVED",
     pageErrors: 0, blockedWrites: 0, blockedExternal: 0,
-    // Set only when an exception stopped the browser: which fixed step, which error class, which route class.
+    // Which fixed step stopped the run, why (an exception class, CONDITION_NOT_MET or DATA_PRECONDITION)
+    // and on which route class. Exceptions set it everywhere; the publish stage also sets it without one.
     failureStep: "NONE", failureCategory: "NONE", failurePage: "NOT_OBSERVED",
     sideEffects: { syntheticSessionCreated: 0, syntheticSessionRevoked: 0, projectCreates: 0, funnelCreates: 0, funnelWrites: 0, paymentSubmissions: 0, refundSubmissions: 0, emailSubmissions: 0 },
   };
@@ -80,6 +112,106 @@ export function funnelEditorNavigationKind({ dialogs, requests, responses, finis
   if (responses === 0) return failures > 0 ? "REQUEST_FAILED" : "NO_RESPONSE";
   if (finished === 0) return failures > 0 ? "RESPONSE_ABORTED" : "RESPONSE_UNFINISHED";
   return "RESPONSE_FINISHED_NO_ROUTE";
+}
+
+/** Reduce the publication diagnosis or action feedback to a fixed category; never keep the text. */
+export function classifyPublishDiagnosis(texts) {
+  const joined = (Array.isArray(texts) ? texts : [texts]).filter((text) => typeof text === "string").join("\n");
+  if (joined.trim() === "") return "NONE";
+  for (const [category, fragment] of PUBLISH_DIAGNOSIS_FRAGMENTS) if (joined.includes(fragment)) return category;
+  return "OTHER";
+}
+
+export function publishBlockedReason(category) {
+  return Object.hasOwn(PUBLISH_BLOCKED_REASONS, category) ? PUBLISH_BLOCKED_REASONS[category] : null;
+}
+
+/** Same-route GET class from request metadata only (resource type and Next router headers). */
+export function classifyRouteGetKind(request) {
+  try {
+    if (request.resourceType() === "document") return "document";
+    const headers = request.headers();
+    if (headers["next-router-prefetch"]) return "prefetch";
+    if (headers.rsc) return "rsc";
+  } catch { /* Unknown requests stay "other". */ }
+  return "other";
+}
+
+export function classifyRequestFailureKind(request) {
+  try { return /net::ERR_ABORTED|NS_BINDING_ABORTED/u.test(request.failure()?.errorText ?? "") ? "aborted" : "other"; }
+  catch { return "other"; }
+}
+
+async function waitEnabled(locator, timeout) {
+  const deadline = Date.now() + timeout;
+  while (Date.now() < deadline) {
+    try { if (await locator.isEnabled({ timeout: 1_000 })) return true; } catch { /* Not rendered yet. */ }
+    await new Promise((resolve) => { setTimeout(resolve, 250); });
+  }
+  return false;
+}
+
+/**
+ * Read-only check of the draft's publication diagnosis before pressing 發布: open the status chip,
+ * classify its fixed message, close it. Returns a category from PUBLISH_DIAGNOSIS_FRAGMENTS,
+ * "NONE", "OTHER" or "NOT_OBSERVED" (chip or popover missing).
+ */
+export async function inspectPublishPreflight(page) {
+  try {
+    const chip = page.getByRole("button", { name: PUBLICATION_CHIP_DRAFT_LABEL, exact: true });
+    if (!await visible(chip, 10_000)) return "NOT_OBSERVED";
+    await chip.click({ timeout: 5_000 });
+    const region = page.getByRole("region", { name: PUBLICATION_REGION_LABEL, exact: true });
+    if (!await visible(region, 5_000)) return "NOT_OBSERVED";
+    const category = classifyPublishDiagnosis(await region.innerText({ timeout: 5_000 }));
+    await chip.click({ timeout: 5_000 }).catch(() => {});
+    return category;
+  } catch { return "NOT_OBSERVED"; }
+}
+
+/**
+ * Publish stage on the management page. Every stop sets reason, failureStep, failureCategory and
+ * failurePage; data preconditions (unverified owner e-mail, free-plan limit, platform switch) stop
+ * before the click with their own reason. Returns true only when the published chip appears.
+ */
+export async function runPublishStage(page, result, { funnelPath, onPublishClick = () => {}, enabledTimeout = 15_000 } = {}) {
+  const stop = (reason, step, category) => {
+    result.reason = reason;
+    result.failureStep = step;
+    result.failureCategory = category;
+    try { result.failurePage = funnelRouteCategory(page.url()); } catch { result.failurePage = "INVALID_URL"; }
+    return false;
+  };
+  try { await page.waitForURL((url) => url.pathname === `${funnelPath}/operations`, { timeout: 15_000 }); }
+  catch {
+    result.publishOutcome = "LEAVE_ROUTE_NOT_REACHED";
+    return stop("PUBLISH_FAILED", "EDITOR_LEAVE", "CONDITION_NOT_MET");
+  }
+  result.publishPreflight = await inspectPublishPreflight(page);
+  const blocked = publishBlockedReason(result.publishPreflight);
+  if (blocked) {
+    result.publishOutcome = "NOT_CLICKED";
+    return stop(blocked, "PUBLISH_PREFLIGHT", "DATA_PRECONDITION");
+  }
+  const publishButton = page.getByRole("button", { name: PUBLISH_BUTTON_LABEL, exact: true });
+  if (!await waitEnabled(publishButton, enabledTimeout)) {
+    result.publishOutcome = "BUTTON_DISABLED_OR_MISSING";
+    return stop("PUBLISH_FAILED", "PUBLISH_BUTTON_ENABLED", "CONDITION_NOT_MET");
+  }
+  result.failureStep = "NONE";
+  onPublishClick();
+  await publishButton.click({ timeout: 10_000 });
+  if (await visible(page.getByRole("button", { name: PUBLISHED_CHIP_PATTERN }), 20_000)) {
+    result.publishOutcome = "PUBLISHED";
+    return true;
+  }
+  let feedback = "NOT_OBSERVED";
+  try { feedback = classifyPublishDiagnosis(await page.getByRole("status").allTextContents()); } catch { /* Stays NOT_OBSERVED. */ }
+  result.publishOutcome = feedback === "NONE" || feedback === "NOT_OBSERVED" ? "NO_FEEDBACK" : `REFUSED_${feedback}`;
+  const refused = publishBlockedReason(feedback);
+  return refused
+    ? stop(refused, "PUBLISH_RESULT", "DATA_PRECONDITION")
+    : stop("PUBLISH_FAILED", "PUBLISH_RESULT", "CONDITION_NOT_MET");
 }
 
 function browserEnvironment() {
@@ -228,12 +360,19 @@ export async function runStagingFunnelSmoke(env = process.env, dependencies = {}
           && allowedFunnelPath !== null && url.pathname === `${allowedFunnelPath}/edit`;
       } catch { return false; }
     };
-    page.on("request", (request) => { if (isOperationsGet(request)) result.operationsGetRequests += 1; });
-    page.on("requestfinished", (request) => { if (isOperationsGet(request)) result.operationsGetFinished += 1; });
-    page.on("requestfailed", (request) => { if (isOperationsGet(request)) result.operationsGetFailures += 1; });
-    page.on("request", (request) => { if (isEditorGet(request)) result.editorGetRequests += 1; });
-    page.on("requestfinished", (request) => { if (isEditorGet(request)) result.editorGetFinished += 1; });
-    page.on("requestfailed", (request) => { if (isEditorGet(request)) result.editorGetFailures += 1; });
+    page.on("request", (request) => {
+      if (isOperationsGet(request)) { result.operationsGetRequests += 1; result.operationsGetKinds[classifyRouteGetKind(request)] += 1; }
+      if (isEditorGet(request)) { result.editorGetRequests += 1; result.editorGetKinds[classifyRouteGetKind(request)] += 1; }
+    });
+    page.on("requestfinished", (request) => {
+      if (isOperationsGet(request)) result.operationsGetFinished += 1;
+      if (isEditorGet(request)) result.editorGetFinished += 1;
+    });
+    page.on("requestfailed", (request) => {
+      if (isOperationsGet(request)) { result.operationsGetFailures += 1; result.operationsGetFailureKinds[classifyRequestFailureKind(request)] += 1; }
+      if (isEditorGet(request)) { result.editorGetFailures += 1; result.editorGetFailureKinds[classifyRequestFailureKind(request)] += 1; }
+    });
+    let publishClicked = false;
     page.on("dialog", (dialog) => {
       if (editorNavigationStarted) result.editorDialogs += 1;
       // Preserve Playwright's default dismissal while recording only its count.
@@ -253,6 +392,8 @@ export async function runStagingFunnelSmoke(env = process.env, dependencies = {}
       try {
         const url = new URL(request.url());
         if (url.hostname === ALIAS && url.pathname === "/landing-pages/new") result.createActionStatus = response.status();
+        if (publishClicked && url.hostname === ALIAS && allowedFunnelPath !== null
+          && url.pathname === `${allowedFunnelPath}/operations`) result.publishActionStatus = response.status();
       } catch { /* The action status stays unknown. */ }
     });
     let slug;
@@ -356,11 +497,8 @@ export async function runStagingFunnelSmoke(env = process.env, dependencies = {}
     // Publishing lives on the management page header, not in the editor.
     step = "EDITOR_LEAVE";
     await toolbar.getByRole("button", { name: "離開", exact: true }).click({ timeout: 10_000 });
-    try { await page.waitForURL((url) => url.pathname === `${funnelPath}/operations`, { timeout: 15_000 }); }
-    catch { result.reason = "PUBLISH_FAILED"; return result; }
     step = "PUBLISH";
-    await page.getByRole("button", { name: "發布", exact: true }).click({ timeout: 10_000 });
-    if (!await visible(page.getByRole("button", { name: /^發布狀態：(已發布|公開網址無法開啟)/u }))) { result.reason = "PUBLISH_FAILED"; return result; }
+    if (!await runPublishStage(page, result, { funnelPath, onPublishClick: () => { publishClicked = true; } })) return result;
     result.published = true;
     }
 
@@ -431,8 +569,15 @@ export async function runStagingFunnelSmoke(env = process.env, dependencies = {}
   return result;
 }
 
+/** One grep-able line for the publish stage; fixed enums only. */
+export function formatPublishSummary(result) {
+  const safe = (value) => (typeof value === "string" && /^[A-Z_]{1,40}$/u.test(value) ? value : "UNKNOWN");
+  return `staging_funnel_publish=preflight=${safe(result.publishPreflight)}; outcome=${safe(result.publishOutcome)}; reason=${safe(result.reason)}; failureStep=${safe(result.failureStep)}`;
+}
+
 async function main() {
   const result = await runStagingFunnelSmoke();
+  if (result.stage === "PUBLISH") process.stdout.write(`${formatPublishSummary(result)}\n`);
   if (process.env.RUNNER_TEMP) await writeFile(`${process.env.RUNNER_TEMP}/celebratedeal-staging-funnel-smoke.json`, `${JSON.stringify(result)}\n`, { mode: 0o600 });
   process.stdout.write(`${JSON.stringify(result)}\n`);
   process.exitCode = result.result === "PASS" ? 0 : 2;

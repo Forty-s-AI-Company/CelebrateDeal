@@ -5,6 +5,12 @@ import path from "node:path";
 import test from "node:test";
 
 import {
+  clickPayUniCreditTab,
+  collectPageStructureInPage,
+  formatPayUniPageStructure,
+  recordPayUniResourceFailure,
+  sanitizePayUniPageStructure,
+  sanitizeStructureText,
   classifyPayUniBrowserPage,
   classifyPlaywrightErrorKind,
   createPayUniBrowserDiagnostic,
@@ -589,15 +595,19 @@ test("a rejected PayUni card field records only the fixed step, error class and 
   }, { playwright: { chromium: { async launch() { return browser; } }, errors: { TimeoutError } } });
   assert.equal(result, "PAYMENT_FIELDS_REJECTED");
   assert.deepEqual(typed, ["16 碼或 19 碼"]);
-  assert.deepEqual(diagnostic, { step: "CARD_EXPIRY", error: "TIMEOUT", page: "PAYUNI_UPP", mainFrameMatches: 0, childFrames: 1, childFrameMatches: 1 });
+  assert.deepEqual(diagnostic, {
+    step: "CARD_EXPIRY", error: "TIMEOUT", page: "PAYUNI_UPP", mainFrameMatches: 0, childFrames: 1, childFrameMatches: 1,
+    fieldSource: "PLACEHOLDER", creditTab: "NOT_TRIED",
+    resourceFailures: { payuniScript: 0, payuniOther: 0, externalScript: 0, externalOther: 0 }, structure: [],
+  });
   const line = formatPayUniBrowserDiagnostic(diagnostic);
-  assert.equal(line, "step=CARD_EXPIRY; error=TIMEOUT; page=PAYUNI_UPP; mainFrameMatches=0; childFrames=1; childFrameMatches=1");
+  assert.equal(line, "step=CARD_EXPIRY; error=TIMEOUT; page=PAYUNI_UPP; mainFrameMatches=0; childFrames=1; childFrameMatches=1; fieldSource=PLACEHOLDER; creditTab=NOT_TRIED; failed_payuniScript=0; failed_payuniOther=0; failed_externalScript=0; failed_externalOther=0");
   assert.equal(line.includes(cardNumber), false);
 });
 
 test("browser diagnostic formatting rejects free text and unbounded counts", () => {
-  assert.equal(formatPayUniBrowserDiagnostic({ step: "https://private", error: "x y", page: "PAYUNI_UPP", mainFrameMatches: 42, childFrames: -1, childFrameMatches: "1" }),
-    "step=UNKNOWN; error=UNKNOWN; page=PAYUNI_UPP; mainFrameMatches=9; childFrames=UNKNOWN; childFrameMatches=UNKNOWN");
+  assert.equal(formatPayUniBrowserDiagnostic({ step: "https://private", error: "x y", page: "PAYUNI_UPP", mainFrameMatches: 42, childFrames: -1, childFrameMatches: "1", fieldSource: "card 4147631000000001", creditTab: "x", resourceFailures: { payuniScript: 12, externalScript: "1" } }),
+    "step=UNKNOWN; error=UNKNOWN; page=PAYUNI_UPP; mainFrameMatches=9; childFrames=UNKNOWN; childFrameMatches=UNKNOWN; fieldSource=UNKNOWN; creditTab=UNKNOWN; failed_payuniScript=9; failed_payuniOther=UNKNOWN; failed_externalScript=UNKNOWN; failed_externalOther=UNKNOWN");
   assert.equal(classifyPayUniBrowserPage(`https://${previewHost}/checkout/result?payment=updated`, previewHost), "OPERATION_HOST");
   assert.equal(classifyPayUniBrowserPage("https://sandbox-vendor.payuni.com.tw/x", previewHost), "PAYUNI_OTHER_HOST");
   assert.equal(classifyPayUniBrowserPage("https://evil.example.test/", previewHost), "OTHER");
@@ -1824,4 +1834,178 @@ test("refuses to persist an invalid continuation receipt", async () => {
   } finally {
     await rm(temporaryRoot, { recursive: true, force: true, maxRetries: 0 });
   }
+});
+
+const SYNTHETIC_CARD = "4147631000000001";
+
+test("PayUni page-structure text keeps only whitelisted characters and never values", () => {
+  assert.equal(sanitizeStructureText("16 碼或 19 碼"), "16 碼或 19 碼");
+  assert.equal(sanitizeStructureText("MM/YY"), "MM/YY");
+  assert.equal(sanitizeStructureText("example@example.com"), "EMAIL");
+  assert.equal(sanitizeStructureText("寄送至 buyer.private@example.test 的收據"), "寄送至 EMAIL 的收據");
+  assert.equal(sanitizeStructureText("付款 https://sandbox-api.payuni.com.tw/api/upp?EncryptInfo=abc&MerTradeNo=CD123"), "付款 URL");
+  assert.equal(sanitizeStructureText(`卡號 ${SYNTHETIC_CARD}`), "卡號 #");
+  assert.equal(sanitizeStructureText("4147 6310 0000 0001"), "# # # #");
+  assert.equal(sanitizeStructureText("ＣＶＶ １２３"), "ＣＶＶ #");
+  assert.equal(sanitizeStructureText("NT$ 1,280 元"), "NT 1# 元");
+  assert.equal(sanitizeStructureText('"><script>alert(1)</script>'), "scriptalert(1)/script");
+  assert.equal(sanitizeStructureText("a".repeat(60)), `${"a".repeat(40)}~`);
+  assert.equal(sanitizeStructureText(42), "");
+  assert.equal(sanitizeStructureText(null), "");
+});
+
+test("PayUni page structure lists attribute names and visible control text, never field values", async () => {
+  const valueRead = [];
+  const element = (tag, attributes, options = {}) => ({
+    tagName: tag.toUpperCase(),
+    getAttribute: (name) => attributes[name] ?? null,
+    getBoundingClientRect: () => ({ width: options.hidden ? 0 : 100, height: options.hidden ? 0 : 20 }),
+    get value() { valueRead.push(tag); return SYNTHETIC_CARD; },
+    innerText: options.text,
+  });
+  const inputs = [
+    element("input", { type: "hidden", name: "EncryptInfo", value: "cipher" }),
+    element("input", { type: "tel", name: "CardNo", placeholder: "請輸入卡號", "aria-label": "信用卡卡號", autocomplete: "cc-number", value: SYNTHETIC_CARD }),
+    element("input", { type: "email", name: "Email", placeholder: "example@example.com", value: "buyer@example.test" }),
+    element("select", { name: "Installment" }, { hidden: true }),
+  ];
+  const controls = [
+    element("button", { role: "tab" }, { text: "信用卡" }),
+    element("button", {}, { text: `確認送出 ${SYNTHETIC_CARD}` }),
+    element("a", { href: "https://example.test/?token=x" }, { text: "說明" }),
+    element("label", {}, { text: "   " }),
+    element("button", {}, { text: "隱藏", hidden: true }),
+  ];
+  const original = { document: globalThis.document, getComputedStyle: globalThis.getComputedStyle };
+  let raw;
+  try {
+    globalThis.document = { querySelectorAll: (selector) => (selector.startsWith("input") ? inputs : controls) };
+    globalThis.getComputedStyle = () => ({ visibility: "visible", display: "block" });
+    raw = collectPageStructureInPage(25);
+  } finally {
+    globalThis.document = original.document;
+    globalThis.getComputedStyle = original.getComputedStyle;
+  }
+  assert.deepEqual(valueRead, []);
+  assert.equal(raw.hiddenInputs, 1);
+  const structure = sanitizePayUniPageStructure({ ...raw, fields: raw.fields.map((field) => ({ ...field, value: SYNTHETIC_CARD })) }, 0);
+  assert.deepEqual(structure, {
+    frame: 0,
+    hiddenInputs: 1,
+    fields: [
+      { tag: "input", type: "tel", name: "CardNo", placeholder: "請輸入卡號", ariaLabel: "信用卡卡號", autocomplete: "cc-number", visible: true },
+      { tag: "input", type: "email", name: "Email", placeholder: "EMAIL", ariaLabel: "", autocomplete: "", visible: true },
+      { tag: "select", type: "", name: "Installment", placeholder: "", ariaLabel: "", autocomplete: "", visible: false },
+    ],
+    controls: [{ role: "tab", text: "信用卡" }, { role: "button", text: "確認送出 #" }, { role: "a", text: "說明" }],
+  });
+  const line = formatPayUniPageStructure({ structure: [structure] });
+  for (const secret of [SYNTHETIC_CARD, "cipher", "buyer@example.test", "token", "https:", "EncryptInfo"]) assert.equal(line.includes(secret), false, secret);
+  assert.equal(formatPayUniPageStructure({ structure: [] }), null);
+  assert.equal(formatPayUniPageStructure(null), null);
+  // A tampered structure is sanitized again before printing.
+  const tampered = formatPayUniPageStructure({ structure: [{ frame: 99, hiddenInputs: -1, fields: [{ tag: "script", name: `x ${SYNTHETIC_CARD}`, type: "<b>" }], controls: "x" }] });
+  assert.equal(tampered.includes(SYNTHETIC_CARD), false);
+  assert.match(tampered, /"frame":9,"hiddenInputs":0/u);
+  assert.match(tampered, /"tag":"other","type":"other"/u);
+});
+
+test("PayUni sub-resource failures are counted by host class and type only", () => {
+  const diagnostic = createPayUniBrowserDiagnostic();
+  const request = (url, type, navigation = false) => ({ url: () => url, resourceType: () => type, isNavigationRequest: () => navigation });
+  recordPayUniResourceFailure(diagnostic, request("https://sandbox-api.payuni.com.tw/js/app.js", "script"));
+  recordPayUniResourceFailure(diagnostic, request("https://static.payuni.com.tw/css/a.css", "stylesheet"));
+  recordPayUniResourceFailure(diagnostic, request("https://cdn.example.test/vue.js?x=1", "script"));
+  recordPayUniResourceFailure(diagnostic, request("https://fonts.example.test/a.woff2", "font"));
+  recordPayUniResourceFailure(diagnostic, request("https://sandbox-api.payuni.com.tw/api/upp", "document", true));
+  recordPayUniResourceFailure(diagnostic, { url: () => "not a url", resourceType: () => "script", isNavigationRequest: () => false });
+  recordPayUniResourceFailure(null, request("https://cdn.example.test/vue.js", "script"));
+  assert.deepEqual(diagnostic.resourceFailures, { payuniScript: 1, payuniOther: 1, externalScript: 1, externalOther: 1 });
+});
+
+test("a missing card-number placeholder falls back to the autofill field, then to the credit tab", async () => {
+  class TimeoutError extends Error { constructor(message) { super(message); this.name = "TimeoutError"; } }
+  const run = async ({ autocompleteVisible, tabCount, placeholderAfterTab }) => {
+    const typed = [];
+    let tabClicked = 0;
+    let radioChecks = 0;
+    const page = {
+      on() {}, async goto() {}, async route() {}, async waitForURL() {},
+      url: () => "https://sandbox-api.payuni.com.tw/api/upp",
+      mainFrame: () => page, frames: () => [],
+      getByText(text) {
+        if (text === "信用卡") return { count: async () => tabCount, isVisible: async () => true, click: async () => { tabClicked += 1; } };
+        return { async click() {} };
+      },
+      getByPlaceholder(placeholder, options) {
+        const missing = placeholder === "16 碼或 19 碼" && !(options?.exact && tabClicked && placeholderAfterTab);
+        return {
+          count: async () => (missing ? 0 : 1), isVisible: async () => !missing,
+          async pressSequentially(value) {
+            if (missing) throw new TimeoutError(`Timeout 20000ms exceeded ${SYNTHETIC_CARD}`);
+            typed.push(`placeholder:${placeholder}`);
+            assert.equal(typeof value, "string");
+          },
+          async fill() { typed.push(`placeholder:${placeholder}`); },
+        };
+      },
+      getByRole(role, options) {
+        if (role === "tab") return { count: async () => 0, isVisible: async () => false };
+        if (options?.name === "確認送出") return { async click() { typed.push("submit"); } };
+        if (options?.name === "確定") return { async waitFor() { throw new TimeoutError("none"); } };
+        throw new Error("unexpected role");
+      },
+      locator(selector) {
+        if (selector === 'input[autocomplete="cc-number"]') {
+          return { count: async () => (autocompleteVisible ? 1 : 0), isVisible: async () => autocompleteVisible,
+            async pressSequentially() { typed.push("autocomplete:cc-number"); } };
+        }
+        if (selector === 'input[name="radioOptionpayGroupCredit"]') {
+          return { count: async () => 1, first: () => ({ async check() { radioChecks += 1; } }), async check() { radioChecks += 1; } };
+        }
+        if (selector === "body") return { async innerText() { return "CD-20300101000000-WP4A1 付款完成"; } };
+        return { count: async () => 0, isVisible: async () => false, async check() {} };
+      },
+    };
+    const browser = { async newContext() { return { async addCookies() {}, async newPage() { return page; },
+      request: { async post() { return { status: () => 200, ok: () => true }; } } }; }, async close() {} };
+    const diagnostic = createPayUniBrowserDiagnostic();
+    const result = await defaultBrowserSubmit({ previewHost, cardNumber: SYNTHETIC_CARD, cardExpiry: "1230", cardCvv: "123",
+      formPayload: { MerID: "merchant" }, supportCookie: "celebrate_support_wp4=synthetic", orderNumber: "CD-20300101000000-WP4A1", diagnostic,
+    }, { playwright: { chromium: { async launch() { return browser; } }, errors: { TimeoutError } }, payuniFallbackWaitMs: 50 });
+    return { result, typed, tabClicked, radioChecks, diagnostic };
+  };
+
+  const autofill = await run({ autocompleteVisible: true, tabCount: 1, placeholderAfterTab: true });
+  assert.equal(autofill.typed[0], "autocomplete:cc-number");
+  assert.equal(autofill.tabClicked, 0);
+  assert.equal(autofill.result, true);
+
+  const tab = await run({ autocompleteVisible: false, tabCount: 1, placeholderAfterTab: true });
+  assert.equal(tab.typed[0], "placeholder:16 碼或 19 碼");
+  assert.equal(tab.tabClicked, 1);
+  assert.equal(tab.diagnostic.creditTab, "CLICKED");
+  assert.ok(tab.radioChecks >= 2, "一次付清 stays selected after the tab click");
+  assert.equal(tab.result, true);
+
+  const ambiguous = await run({ autocompleteVisible: false, tabCount: 2, placeholderAfterTab: true });
+  assert.equal(ambiguous.result, "PAYMENT_FIELDS_REJECTED");
+  assert.equal(ambiguous.tabClicked, 0);
+  assert.equal(ambiguous.diagnostic.creditTab, "AMBIGUOUS");
+  assert.equal(ambiguous.diagnostic.step, "CARD_NUMBER");
+  assert.equal(ambiguous.typed.includes("submit"), false);
+  assert.equal(formatPayUniBrowserDiagnostic(ambiguous.diagnostic).includes(SYNTHETIC_CARD), false);
+});
+
+test("credit tab is clicked only when exactly one visible element matches", async () => {
+  const page = (tabs, texts) => ({
+    getByRole: () => ({ count: async () => tabs, isVisible: async () => true, click: async () => {} }),
+    getByText: () => ({ count: async () => texts, isVisible: async () => true, click: async () => {} }),
+    locator: () => ({ count: async () => 0 }),
+  });
+  assert.equal(await clickPayUniCreditTab(page(1, 0)), "CLICKED");
+  assert.equal(await clickPayUniCreditTab(page(0, 1)), "CLICKED");
+  assert.equal(await clickPayUniCreditTab(page(0, 0)), "NOT_FOUND");
+  assert.equal(await clickPayUniCreditTab(page(3, 1)), "AMBIGUOUS");
+  assert.equal(await clickPayUniCreditTab({ getByRole: () => { throw new Error("closed"); } }), "NOT_FOUND");
 });
