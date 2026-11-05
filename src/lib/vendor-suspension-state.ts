@@ -33,7 +33,7 @@ export type VendorReader = {
 
 /** Public entry points that only know a vendor id. Unknown and suspended vendors are both "not available". */
 export async function isVendorAvailableForPublic(db: VendorReader, vendorId: string): Promise<boolean> {
-  if (typeof vendorId !== "string" || vendorId.length === 0 || vendorId.length > 191) return false;
+  if (typeof vendorId !== "string" || vendorId.length === 0 || vendorId.length > 128) return false;
   const vendor = await db.vendor.findFirst({ where: { id: vendorId, ...ACTIVE_VENDOR_WHERE }, select: { id: true } });
   return Boolean(vendor);
 }

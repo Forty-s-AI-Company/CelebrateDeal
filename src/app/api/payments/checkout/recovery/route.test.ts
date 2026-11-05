@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const findUnique = vi.fn();
+const vendorFindFirst = vi.fn();
 const credit = vi.hoisted(() => ({ replay: vi.fn() }));
 const recovery = vi.hoisted(() => ({ resume: vi.fn() }));
 vi.mock("@/lib/post-purchase-checkout-recovery", () => ({ resumePostPurchaseCheckout: recovery.resume }));
@@ -8,7 +9,7 @@ vi.mock("@/lib/post-purchase-credit", async importOriginal => {
   const original = await importOriginal<typeof import("@/lib/post-purchase-credit")>();
   return { ...original, assertPostPurchaseCreditReplay: credit.replay };
 });
-vi.mock("@/lib/db", () => ({ getDb: () => ({ paymentTransaction: { findUnique } }) }));
+vi.mock("@/lib/db", () => ({ getDb: () => ({ paymentTransaction: { findUnique }, vendor: { findFirst: vendorFindFirst } }) }));
 vi.mock("@/lib/rate-limit", () => ({ checkRateLimit: vi.fn(async () => null) }));
 
 import { POST } from "@/app/api/payments/checkout/recovery/route";
@@ -60,11 +61,21 @@ function pendingTransaction() {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  vendorFindFirst.mockReset().mockResolvedValue({ id: "vendor-1" });
   credit.replay.mockResolvedValue({ checkoutAmountCents: 400 });
   findUnique.mockResolvedValue(pendingTransaction());
 });
 
 describe("checkout recovery snapshot", () => {
+  it("resumes nothing for a suspended vendor, answered like an unknown checkout (F-036)", async () => {
+    vendorFindFirst.mockResolvedValue(null);
+    const response = await POST(request());
+    expect(response.status).toBe(404);
+    await expect(response.json()).resolves.toEqual({ error: "Checkout recovery not found" });
+    expect(findUnique).not.toHaveBeenCalled();
+    expect(recovery.resume).not.toHaveBeenCalled();
+  });
+
   function failedPreparation() {
     return { ...pendingTransaction(), status: "failed", metadata: {
       productId: "product-1", postPurchaseCredit: { sourceOrderId: "original" }, postPurchaseSessionState: "unissued",

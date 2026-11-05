@@ -1,8 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import { Prisma } from "@prisma/client";
-import { z } from "zod";
 import { recordLearnerPaymentNotificationSources } from "@/lib/learner-payment-notifications";
-import { revokeStudentPortalSessions } from "@/lib/student-portal-auth";
 import {
   deriveRefundOrderStatus,
   type CommerceFulfillmentType,
@@ -10,7 +8,6 @@ import {
 } from "@/lib/commerce-order-domain";
 import {
   protectCommerceOrderPii,
-  revealCommerceOrderPii,
   type CommerceOrderBuyerContact,
   type CommerceOrderShippingAddress,
 } from "@/lib/commerce-order-pii";
@@ -46,7 +43,6 @@ export type CommerceOrdersTransaction = Pick<
   | "vendor"
   | "learnerNotificationSourceEvent"
   | "trackingSetting"
-  | "studentPortalAccessToken"
   | "$queryRaw"
 >;
 
@@ -794,31 +790,6 @@ async function convergeFullRefundFulfillment(
   };
 }
 
-type RefundCustomerIdentity = {
-  buyerEncryptedEnvelope: string;
-  shippingEncryptedEnvelope: string | null;
-};
-
-const REFUND_BUYER_EMAIL = z.string().trim().toLowerCase().email().max(254);
-
-/**
- * The order buyer's normalized email for `revokeStudentPortalSessions`, read
- * from the encrypted order snapshot. Never throws: a refund must not roll back
- * because the buyer's learner sessions could not be identified.
- */
-function refundBuyerEmail(vendorId: string, order: { id: string } & RefundCustomerIdentity) {
-  try {
-    const pii = revealCommerceOrderPii(
-      { buyerEncrypted: order.buyerEncryptedEnvelope, shippingEncrypted: order.shippingEncryptedEnvelope },
-      { vendorId, orderId: order.id },
-    );
-    const email = REFUND_BUYER_EMAIL.safeParse(pii.buyer.email);
-    return email.success ? email.data : null;
-  } catch {
-    return null;
-  }
-}
-
 /** Records an immutable provider refund after a guarded cumulative-order update. */
 export async function reconcileCommerceOrderRefund(
   tx: CommerceOrdersTransaction,
@@ -850,8 +821,8 @@ export async function reconcileCommerceOrderRefund(
 
   const order = await tx.commerceOrder.findUnique({
     where: { vendorId_id: { vendorId: input.vendorId, id: input.orderId } },
-    select: { id: true, vendorId: true, status: true, totalAmountCents: true, paidAmountCents: true, refundedAmountCents: true, primaryPaymentTransactionId: true, buyerEncryptedEnvelope: true, shippingEncryptedEnvelope: true },
-  }) as (OrderRecord & { primaryPaymentTransactionId: string | null } & RefundCustomerIdentity) | null;
+    select: { id: true, vendorId: true, status: true, totalAmountCents: true, paidAmountCents: true, refundedAmountCents: true, primaryPaymentTransactionId: true },
+  }) as (OrderRecord & { primaryPaymentTransactionId: string | null }) | null;
   if (!order) throw new CommerceOrderValidationError("Canonical commerce order was not found.");
   if (input.paymentTransactionId && order.primaryPaymentTransactionId !== input.paymentTransactionId) {
     throw new CommerceOrderValidationError("Refund payment transaction does not match order.");
@@ -877,18 +848,13 @@ export async function reconcileCommerceOrderRefund(
   await tx.commerceOrderRefund.create({
     data: { id: refundId, vendorId: input.vendorId, orderId: order.id, paymentTransactionId: input.paymentTransactionId ?? order.primaryPaymentTransactionId, refundRecordId: input.refundRecordId ?? null, providerName: input.providerName, eventIdentity: input.eventIdentity, amountCents: input.amountCents, cumulativeAmountCents: nextRefundedAmount, status: "processed", occurredAt: input.occurredAt },
   });
+  // A refund deliberately does not end the buyer's learner portal session
+  // (F-030 review): the revoked entitlement is refused per request (404), and
+  // a refunded buyer must stay signed in to withdraw notification consent for
+  // the refunded product (tests/e2e/learner-notifications.spec.ts).
   const fulfillmentConvergence = nextStatus === "refunded"
     ? await convergeFullRefundFulfillment(tx, input.vendorId, order.id, input.occurredAt)
     : null;
-  // F-030: when the refund removed course/digital access, end the buyer's
-  // learner portal sessions of this vendor in the same transaction. They can
-  // sign in again for anything they still own; the revoked order stays closed.
-  const refundBuyer = fulfillmentConvergence && fulfillmentConvergence.revokedEntitlementCount > 0
-    ? refundBuyerEmail(input.vendorId, order)
-    : null;
-  const revokedStudentPortalTokenCount = refundBuyer
-    ? await revokeStudentPortalSessions(tx, { vendorId: input.vendorId, email: refundBuyer })
-    : 0;
   await appendEvent(tx, {
     vendorId: input.vendorId,
     orderId: order.id,
@@ -902,7 +868,6 @@ export async function reconcileCommerceOrderRefund(
         amountCents: input.amountCents,
         cumulativeAmountCents: nextRefundedAmount,
         ...(fulfillmentConvergence ? { fulfillmentConvergence } : {}),
-        ...(revokedStudentPortalTokenCount > 0 ? { revokedStudentPortalTokenCount } : {}),
       },
     ),
   });

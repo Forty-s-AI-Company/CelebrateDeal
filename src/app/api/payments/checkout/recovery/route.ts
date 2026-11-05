@@ -5,6 +5,7 @@ import { readJsonBody, requireSameOriginRequest } from "@/lib/api-security";
 import { CommerceCheckoutRecoveryResponseSchema } from "@/lib/commerce-checkout";
 import { safeParseCustomCheckoutFields } from "@/lib/commerce-custom-checkout";
 import { getDb } from "@/lib/db";
+import { isVendorAvailableForPublic } from "@/lib/vendor-suspension-state";
 import { FunnelCheckoutReferenceSchema } from "@/lib/funnel-commerce";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { assertPostPurchaseCreditReplay, postPurchaseRequestCookies, PostPurchaseUnavailableError } from "@/lib/post-purchase-credit";
@@ -115,6 +116,8 @@ export async function POST(request: Request) {
   const parsed = RecoveryRequest.safeParse(await readJsonBody(request));
   if (!parsed.success) return NextResponse.json({ error: "Invalid checkout recovery request" }, { status: 400 });
   const { vendorId, productId, idempotencyKey } = parsed.data;
+  // F-036: a suspended vendor resumes no checkout; answered like an unknown one.
+  if (!await isVendorAvailableForPublic(getDb(), vendorId)) return NextResponse.json({ error: "Checkout recovery not found" }, { status: 404 });
   let transaction = await getDb().paymentTransaction.findUnique({
     where: { vendorId_checkoutIdempotencyKey: { vendorId, checkoutIdempotencyKey: idempotencyKey } },
     select: { status: true, metadata: true, primaryCommerceOrder: { select: recoveryOrderSelect } },

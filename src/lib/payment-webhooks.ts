@@ -43,7 +43,7 @@ import { reconcileElectronicInvoiceAfterPayment } from "@/lib/taiwan-electronic-
 import { applyPostRefundAfterCommit, applyPostRefundInTransaction, type PostRefundCommerceOrderRefund } from "@/lib/payment-post-refund";
 import { resolveWebhookPaymentAmounts } from "@/lib/payment-gateway-fee";
 import { refundSettlementMonthKey } from "@/lib/settlement-period";
-import { withSerializableRetry } from "@/lib/serializable-retry";
+import { isTransientTransactionConflict, withSerializableRetry } from "@/lib/serializable-retry";
 import { PaymentProviderNotAllowedError, paymentProviderAllowedInRuntime } from "@/lib/payment-providers/runtime-policy";
 import {
   isRefundEvent,
@@ -1367,6 +1367,8 @@ export async function processPaymentWebhook(payload: PaymentWebhookPayloadInput,
     attempts: PAYMENT_WEBHOOK_MAX_ATTEMPTS,
     baseDelayMs: 50,
     maxDelayMs: 500,
-    retryOn: isRetryableCommissionWriteConflict,
+    // F-036: the vendor `FOR SHARE` read in the order transition surfaces a
+    // concurrent suspend/resume as a raw 40001 (P2010), not P2034.
+    retryOn: (error) => isRetryableCommissionWriteConflict(error) || isTransientTransactionConflict(error),
   });
 }

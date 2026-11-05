@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import { NextResponse } from "next/server";
-import type { PrismaClient } from "@prisma/client";
+import { randomUUID } from "node:crypto";
+import type { Prisma, PrismaClient } from "@prisma/client";
 import { revokeAllStudentPortalSessionsForVendor } from "@/lib/student-portal-auth";
 import {
   isVendorAvailableForPublic,
@@ -68,7 +69,7 @@ export function normalizeVendorSuspensionReason(value: unknown): string | null {
   return reason.length >= 1 && reason.length <= VENDOR_SUSPENSION_REASON_MAX_LENGTH ? reason : null;
 }
 
-const VENDOR_ID = /^[A-Za-z0-9_-]{1,191}$/u;
+const VENDOR_ID = /^[A-Za-z0-9_-]{1,128}$/u;
 
 export type SuspendVendorResult =
   | { status: "suspended"; vendorId: string; suspendedAt: Date; revokedStudentPortalTokenCount: number }
@@ -128,6 +129,72 @@ export async function suspendVendor(
   });
 }
 
+const RELEASE_BATCH_SIZE = 500;
+const RELEASED_ORDER_AUDIT_LIMIT = 1_000;
+
+/**
+ * Grants, in id-ordered batches, every pending digital/course entitlement of a
+ * paid (or partially refunded) order of this vendor, and appends one
+ * `fulfillment.released_after_suspension` event per order. The dedupKey names
+ * the suspension being lifted, so a retried resume cannot write it twice.
+ */
+async function releaseHeldEntitlements(
+  tx: Prisma.TransactionClient,
+  vendorId: string,
+  suspendedAt: Date,
+  now: Date,
+) {
+  const orderIds = new Set<string>();
+  let grantedEntitlementCount = 0;
+  let cursor: string | undefined;
+  for (;;) {
+    const batch = await tx.commerceEntitlement.findMany({
+      where: {
+        vendorId,
+        status: "pending",
+        ...(cursor ? { id: { gt: cursor } } : {}),
+        orderItem: {
+          is: {
+            vendorId,
+            fulfillmentType: { in: ["digital", "course"] },
+            order: { is: { vendorId, status: { in: ["paid", "partially_refunded"] } } },
+          },
+        },
+      },
+      orderBy: { id: "asc" },
+      take: RELEASE_BATCH_SIZE,
+      select: { id: true, orderItem: { select: { orderId: true } } },
+    });
+    if (batch.length === 0) break;
+    cursor = batch[batch.length - 1]!.id;
+    const granted = await tx.commerceEntitlement.updateMany({
+      where: { vendorId, status: "pending", id: { in: batch.map((row) => row.id) } },
+      data: { status: "granted", grantedAt: now, revision: { increment: 1 } },
+    });
+    grantedEntitlementCount += granted.count;
+    const batchOrders = [...new Set(batch.map((row) => row.orderItem.orderId))].filter((orderId) => !orderIds.has(orderId));
+    batchOrders.forEach((orderId) => orderIds.add(orderId));
+    if (batchOrders.length > 0) {
+      await tx.commerceOrderEvent.createMany({
+        data: batchOrders.map((orderId) => ({
+          id: randomUUID(),
+          vendorId,
+          orderId,
+          dedupKey: `fulfillment.released_after_suspension:${suspendedAt.toISOString()}`,
+          eventType: "fulfillment.released_after_suspension",
+          actorType: "system",
+          actorId: null,
+          sanitizedData: { orderId, suspendedAt: suspendedAt.toISOString(), releasedAt: now.toISOString() },
+          occurredAt: now,
+        })),
+        skipDuplicates: true,
+      });
+    }
+    if (batch.length < RELEASE_BATCH_SIZE) break;
+  }
+  return { grantedEntitlementCount, orderIds: [...orderIds] };
+}
+
 /**
  * Lifts a suspension and releases what the payment path held back: every
  * pending digital/course entitlement of an order that is already paid (or
@@ -149,20 +216,8 @@ export async function resumeVendor(
       data: { suspendedAt: null, suspendedReason: null },
     });
     if (updated.count !== 1) return { status: "conflict" as const };
-    const granted = await tx.commerceEntitlement.updateMany({
-      where: {
-        vendorId: vendor.id,
-        status: "pending",
-        orderItem: {
-          is: {
-            vendorId: vendor.id,
-            fulfillmentType: { in: ["digital", "course"] },
-            order: { is: { vendorId: vendor.id, status: { in: ["paid", "partially_refunded"] } } },
-          },
-        },
-      },
-      data: { status: "granted", grantedAt: now, revision: { increment: 1 } },
-    });
+    const released = await releaseHeldEntitlements(tx, vendor.id, vendor.suspendedAt, now);
+    const granted = { count: released.grantedEntitlementCount };
     await tx.auditLog.create({
       data: {
         vendorId: vendor.id,
@@ -172,7 +227,13 @@ export async function resumeVendor(
         targetType: "Vendor",
         targetId: vendor.id,
         before: { suspendedAt: vendor.suspendedAt.toISOString() },
-        after: { suspendedAt: null, grantedEntitlementCount: granted.count },
+        after: {
+          suspendedAt: null,
+          grantedEntitlementCount: granted.count,
+          releasedOrderCount: released.orderIds.length,
+          // Bounded so a long suspension cannot produce an oversized audit row; every order also has its own event.
+          releasedOrderIds: released.orderIds.slice(0, RELEASED_ORDER_AUDIT_LIMIT),
+        },
         ipAddress: input.ipAddress ?? null,
         userAgent: input.userAgent ?? null,
       },

@@ -234,5 +234,7 @@ describe("resolveAnonymizeTarget", () => {
     });
     expect(result.status).toBe(1);
     expect(result.stderr).toContain("target-refused:confirmation-missing");
-  });
+    // A cold `node --import tsx` child takes about 11 s on Windows runners; the
+    // test budget matches the child process timeout instead of Vitest's 5 s default.
+  }, 60_000);
 });

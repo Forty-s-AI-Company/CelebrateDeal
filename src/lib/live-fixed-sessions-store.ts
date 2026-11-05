@@ -1,6 +1,7 @@
 import type { Prisma, PrismaClient } from "@prisma/client";
 import { getRuntimeLivePublishReadiness } from "@/lib/live-runtime-readiness";
 import { isTransientTransactionConflict } from "@/lib/serializable-retry";
+import { ACTIVE_VENDOR_RELATION } from "@/lib/vendor-suspension-state";
 import { readCookieHeaderValue } from "@/lib/evergreen-viewer-session";
 import {
   FORM_SUBMISSION_CHAT_SESSION_COOKIE,
@@ -227,6 +228,8 @@ export async function loadPublicLiveSessions(
       ...(input.vendorId ? { vendorId: input.vendorId } : {}),
       status: { in: ["scheduled", "live"] },
       sessionMode: "fixed_sessions",
+      // F-036: a suspended vendor's sessions are not offered publicly.
+      ...ACTIVE_VENDOR_RELATION,
     },
     select: {
       id: true,

@@ -31,13 +31,33 @@ vi.mock("@/lib/email-delivery-immediate", async (original) => ({
   ...await original<typeof import("@/lib/email-delivery-immediate")>(),
   scheduleImmediateEmailDispatch: vi.fn(),
 }));
+// M1: lets one test commit a concurrent Vendor update between the webhook
+// transaction's snapshot and its `FOR SHARE` read of the vendor.
+const race = vi.hoisted(() => ({ vendorId: "", pending: false, orderTransitionRuns: 0 }));
+vi.mock("@/lib/payment-webhook-errors", async (original) => {
+  const actual = await original<typeof import("@/lib/payment-webhook-errors")>();
+  return {
+    ...actual,
+    withPaymentWebhookStage: async <T,>(stage: Parameters<typeof actual.withPaymentWebhookStage>[0], action: () => T | Promise<T>) => {
+      if (stage === "ORDER_TRANSITION" && race.vendorId) {
+        race.orderTransitionRuns += 1;
+        if (race.pending) {
+          race.pending = false;
+          const { getDb: outside } = await import("@/lib/db");
+          await outside().vendor.update({ where: { id: race.vendorId }, data: { name: `Concurrent rename ${Date.now()}` } });
+        }
+      }
+      return actual.withPaymentWebhookStage(stage, action);
+    },
+  };
+});
 vi.mock("@/lib/email", async (original) => ({
   ...await original<typeof import("@/lib/email")>(),
   sendTransactionalEmail: mail.send,
 }));
 
 import { upsertBlacklistAction } from "@/app/actions/interaction-actions";
-import { resumeVendorAction, suspendVendorAction } from "@/app/actions/vendor-suspension-actions";
+import { resumeVendorAction, suspendVendorAction, switchFromSuspendedVendorAction } from "@/app/actions/vendor-suspension-actions";
 import { getCurrentAuth, requireVendorContext } from "@/lib/auth";
 import { createCommerceOrderForCheckout, reconcileCommerceOrderRefund } from "@/lib/commerce-orders";
 import { getDb } from "@/lib/db";
@@ -63,6 +83,7 @@ beforeAll(() => {
 
 afterEach(async () => {
   cookieJar.token = "";
+  race.vendorId = ""; race.pending = false; race.orderTransitionRuns = 0;
   mail.send.mockReset();
   await db.auditLog.deleteMany({ where: { vendorId: { in: vendorIds } } });
   await db.vendor.deleteMany({ where: { id: { in: vendorIds.splice(0) } } });
@@ -207,8 +228,15 @@ describe("F-036 vendor suspension: back office", () => {
     await signIn(a.ownerId, null);
     await expect(getCurrentAuth()).resolves.toMatchObject({ vendor: { id: b.vendorId }, suspendedVendor: null });
     // An explicit session vendor is honoured even when suspended.
-    await signIn(a.ownerId, a.vendorId);
+    const token = await signIn(a.ownerId, a.vendorId);
     await expect(getCurrentAuth()).resolves.toMatchObject({ vendor: null, suspendedVendor: { id: a.vendorId } });
+    // The suspended page can move this session only to the user's own active vendor.
+    const stranger = await createTenant("C");
+    await expect(outcome(() => switchFromSuspendedVendorAction(form({ vendorId: stranger.vendorId })))).resolves.toBe("redirect:/vendor-suspended");
+    await expect(outcome(() => switchFromSuspendedVendorAction(form({ vendorId: b.vendorId })))).resolves.toBe("redirect:/dashboard");
+    cookieJar.token = token;
+    await expect(getCurrentAuth()).resolves.toMatchObject({ vendor: { id: b.vendorId }, suspendedVendor: null });
+    await expect(db.auditLog.count({ where: { vendorId: b.vendorId, action: "session_vendor_switched", actorId: a.ownerId } })).resolves.toBe(1);
   });
 });
 
@@ -227,13 +255,14 @@ describe("F-036 platform admin actions", () => {
     const b = await createTenant("B");
     const admin = await createPlatformAdmin(new Date());
     await expect(outcome(() => suspendVendorAction(form({ vendorId: a.vendorId, reason: "  " })))).resolves.toBe("redirect:/admin/vendor-features?suspensionError=reason_required");
-    await expect(outcome(() => suspendVendorAction(form({ vendorId: a.vendorId, reason: " 合成：退款爭議過多 " }))))
+    await expect(outcome(() => suspendVendorAction(form({ vendorId: a.vendorId, reason: "合成" })))).resolves.toBe("redirect:/admin/vendor-features?suspensionError=confirm_required");
+    await expect(outcome(() => suspendVendorAction(form({ vendorId: a.vendorId, reason: " 合成：退款爭議過多 ", confirm: "on" }))))
       .resolves.toBe(`redirect:/admin/vendor-features?suspension=suspended&vendor=${a.vendorId}#vendor-${a.vendorId}`);
     const suspended = await db.vendor.findUniqueOrThrow({ where: { id: a.vendorId } });
     expect(suspended).toMatchObject({ suspendedAt: expect.any(Date), suspendedReason: "合成：退款爭議過多" });
     await expect(db.auditLog.findFirstOrThrow({ where: { vendorId: a.vendorId, action: "vendor_suspended" } }))
       .resolves.toMatchObject({ actorId: admin.id, actorLabel: "platform_admin", targetType: "Vendor", targetId: a.vendorId, userAgent: "synthetic-agent", after: expect.objectContaining({ reason: "合成：退款爭議過多" }) });
-    await expect(outcome(() => suspendVendorAction(form({ vendorId: a.vendorId, reason: "again" })))).resolves.toBe("redirect:/admin/vendor-features?suspensionError=already_suspended");
+    await expect(outcome(() => suspendVendorAction(form({ vendorId: a.vendorId, reason: "again", confirm: "on" })))).resolves.toBe("redirect:/admin/vendor-features?suspensionError=already_suspended");
 
     await expect(outcome(() => resumeVendorAction(form({ vendorId: a.vendorId }))))
       .resolves.toBe(`redirect:/admin/vendor-features?suspension=resumed&vendor=${a.vendorId}#vendor-${a.vendorId}`);
@@ -313,6 +342,46 @@ describe("F-036 payments and jobs", () => {
   });
 });
 
+describe("F-036 concurrency of the vendor FOR SHARE read (M1)", () => {
+  it("retries a webhook whose vendor row changed mid-transaction and still books the payment once", async () => {
+    const a = await createTenant("A");
+    const checkout = await digitalCheckout(a.vendorId, "race-buyer@example.test");
+    race.vendorId = a.vendorId; race.pending = true;
+
+    await processPaymentWebhook(paid(a.vendorId, checkout.orderNumber));
+
+    // The first attempt hit the concurrent update (40001 on FOR SHARE) and was retried.
+    expect(race.orderTransitionRuns).toBeGreaterThanOrEqual(2);
+    await expect(db.paymentTransaction.findUniqueOrThrow({ where: { id: checkout.transaction.id } })).resolves.toMatchObject({ status: "paid" });
+    const order = await orderState(checkout.transaction.id);
+    expect(order).toMatchObject({ status: "paid" });
+    expect(order.events).toHaveLength(1);
+    expect(order.items[0]?.entitlement).toMatchObject({ status: "granted" });
+  });
+});
+
+describe("F-036 resume releases held orders with events and audit (m3)", () => {
+  it("appends one release event per held order and names the orders in the audit", async () => {
+    const a = await createTenant("A");
+    const admin = await createPlatformAdmin(new Date());
+    const first = await digitalCheckout(a.vendorId, "held-1@example.test");
+    const second = await digitalCheckout(a.vendorId, "held-2@example.test");
+    await suspendVendor(db, { vendorId: a.vendorId, reason: "合成", actorUserId: admin.id });
+    await processPaymentWebhook(paid(a.vendorId, first.orderNumber));
+    await processPaymentWebhook(paid(a.vendorId, second.orderNumber));
+    await expect(resumeVendor(db, { vendorId: a.vendorId, actorUserId: admin.id })).resolves.toMatchObject({ status: "resumed", grantedEntitlementCount: 2 });
+
+    const orders = [await orderState(first.transaction.id), await orderState(second.transaction.id)];
+    for (const order of orders) {
+      expect(order.items[0]?.entitlement).toMatchObject({ status: "granted" });
+      await expect(db.commerceOrderEvent.count({ where: { vendorId: a.vendorId, orderId: order.id, eventType: "fulfillment.released_after_suspension" } })).resolves.toBe(1);
+    }
+    const audit = await db.auditLog.findFirstOrThrow({ where: { vendorId: a.vendorId, action: "vendor_suspension_lifted" } });
+    expect(audit.after).toMatchObject({ grantedEntitlementCount: 2, releasedOrderCount: 2 });
+    expect([...(audit.after as { releasedOrderIds: string[] }).releasedOrderIds].sort()).toEqual(orders.map((order) => order.id).sort());
+  });
+});
+
 describe("F-030 learner portal revocation wiring", () => {
   async function tokens(vendorId: string, email: string) {
     await createStudentPortalAccessToken(db, { vendorId, email, purpose: "magic_link" });
@@ -349,14 +418,11 @@ describe("F-030 learner portal revocation wiring", () => {
     expect(await tokenCount(b.vendorId)).toBe(1);
   });
 
-  it("a full refund that revokes course/digital access revokes the buyer's portal capabilities only", async () => {
+  it("a full refund keeps the buyer's learner session: access is refused per request, consent can still be withdrawn", async () => {
     const b = await createTenant("B");
-    const other = await createTenant("Other");
     const checkout = await digitalCheckout(b.vendorId, "refund-buyer@example.test");
     await processPaymentWebhook(paid(b.vendorId, checkout.orderNumber));
     await tokens(b.vendorId, "refund-buyer@example.test");
-    await tokens(b.vendorId, "someone-else@example.test");
-    await tokens(other.vendorId, "refund-buyer@example.test");
     const order = await orderState(checkout.transaction.id);
 
     await db.$transaction((tx) => reconcileCommerceOrderRefund(tx, {
@@ -365,9 +431,7 @@ describe("F-030 learner portal revocation wiring", () => {
     }), { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
 
     expect((await orderState(checkout.transaction.id)).items[0]?.entitlement).toMatchObject({ status: "revoked" });
+    // Same contract as tests/e2e/learner-notifications.spec.ts: the session row survives the refund.
     expect(await tokenCount(b.vendorId)).toBe(1);
-    expect(await tokenCount(other.vendorId)).toBe(1);
-    const refundEvent = await db.commerceOrderEvent.findFirstOrThrow({ where: { vendorId: b.vendorId, orderId: order.id, eventType: "refund.processed" } });
-    expect(refundEvent.sanitizedData).toMatchObject({ revokedStudentPortalTokenCount: 1 });
   });
 });

@@ -59,8 +59,6 @@ function transaction() {
     commerceOrderItemDeliverySnapshot: { create: vi.fn(), updateMany: vi.fn().mockResolvedValue({ count: 0 }) },
     // F-036: the paid transition reads the vendor's suspension under FOR SHARE.
     $queryRaw: vi.fn().mockResolvedValue([{ suspendedAt: null }]),
-    // F-030: a full refund that revokes access also revokes learner portal sessions.
-    studentPortalAccessToken: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
   };
 }
 

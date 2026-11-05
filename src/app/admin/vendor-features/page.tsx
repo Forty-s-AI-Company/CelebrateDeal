@@ -27,6 +27,7 @@ const SUSPENSION_MESSAGES: Record<string, string> = {
 const SUSPENSION_ERRORS: Record<string, string> = {
   invalid: "資料格式不正確，未做任何變更。",
   reason_required: `請填寫凍結原因（1–${VENDOR_SUSPENSION_REASON_MAX_LENGTH} 字），未做任何變更。`,
+  confirm_required: "請先勾選確認凍結，未做任何變更。",
   not_found: "找不到這個商家，未做任何變更。",
   already_suspended: "這個商家已經是凍結狀態，未做任何變更。",
   not_suspended: "這個商家目前沒有凍結，未做任何變更。",
@@ -133,6 +134,10 @@ export default async function AdminVendorFeaturesPage({ searchParams }: { search
                       <label className="block text-sm font-semibold text-slate-700">
                         凍結原因（平台內部紀錄）
                         <textarea name="reason" required minLength={1} maxLength={VENDOR_SUSPENSION_REASON_MAX_LENGTH} rows={2} className="mt-1 block w-full rounded-md border border-border px-3 py-2 font-normal" />
+                      </label>
+                      <label className="mt-2 inline-flex min-h-11 items-center gap-2 text-sm text-slate-700">
+                        <input type="checkbox" name="confirm" required className="h-4 w-4" />
+                        我了解凍結後該商家後台與公開頁會立即停用、學員登入全部撤銷
                       </label>
                       <div className="mt-3 flex flex-wrap items-center gap-3">
                         <FormSubmitButton
