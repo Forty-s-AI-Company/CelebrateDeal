@@ -221,7 +221,7 @@ describe("POST /api/form-submissions/verify", () => {
       vi.setSystemTime(new Date("2026-10-29T06:03:00.000Z"));
       const issuedFor = "live" in variant ? variant.live : evergreenLive;
       const session = resolveEvergreenViewerSession({ live: issuedFor, vendorTimezone: "Asia/Taipei", token: null, intent: "claim" })!;
-      const token = "tamper" in variant ? `${session.issuedToken!.slice(0, -2)}AA` : session.issuedToken!;
+      const token = "tamper" in variant ? `${session.issuedToken!.slice(0, -2)}${session.issuedToken!.endsWith("AA") ? "BB" : "AA"}` : session.issuedToken!;
       mocks.verifyFormSubmission.mockResolvedValue({ status: "verified", confirmation: evergreenConfirmation });
       const withCookie = request();
       // Always presented under live-1's cookie name, as a moved or forged cookie would be.

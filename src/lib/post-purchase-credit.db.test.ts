@@ -602,7 +602,7 @@ describe("post-purchase credit rejections and replay", () => {
     await expect(assertPostPurchaseCreditReplay(getDb(), input.cookies, { vendorId: input.vendor.id,
       targetOrderId: result.targetOrderId, productId: input.target.id, token: expired })).resolves.toMatchObject({ targetOrderId: result.targetOrderId });
     // Signature and bindings are still enforced for an expired token.
-    for (const token of [freshToken(input, { now: past, amountCents: 9_400 }), `${expired.slice(0, -2)}AA`]) {
+    for (const token of [freshToken(input, { now: past, amountCents: 9_400 }), `${expired.slice(0, -2)}${expired.endsWith("AA") ? "BB" : "AA"}`]) {
       await expect(assertPostPurchaseCreditReplay(getDb(), input.cookies, { vendorId: input.vendor.id,
         targetOrderId: result.targetOrderId, productId: input.target.id, token })).rejects.toThrow(PostPurchaseUnavailableError);
     }
