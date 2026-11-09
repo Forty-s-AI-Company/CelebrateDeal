@@ -337,3 +337,7 @@ npm run secret:scan
 
 `npm run secure:staging:wp2` 只保留給核准的 GitHub Environment runner，不得透過
 `.env*`、`vercel env pull` 或 `vercel env run` 執行。
+
+### Funnel smoke 自動取消發布舊的合成網站（2026-11-10）
+
+`scripts/staging-funnel-smoke.mjs` 在建立新 Funnel 前新增 `STALE_CLEANUP` 階段：以合成 owner 的 session 開 `/landing-pages`，只挑「名稱恰為 `Staging Synthetic Funnel`、網址為 `/lp/staging-synthetic-<12 位 hex>`、狀態已發布」的列，逐一開管理頁按「取消發布」（最多 10 個；寫入只放行該頁自己的 server action，由 server 端 vendor ownership 把關）。產品的發布上限不變、不 skip；仍達上限時 `PUBLISH_PREFLIGHT` 照舊回報 `PUBLISH_LIMIT_REACHED`。收據新增 `staleCleanup`（`NONE_FOUND`／`UNPUBLISHED`／`UNPUBLISH_FAILED`／`LINK_INVALID`／`LIMIT_EXCEEDED`／`UNAVAILABLE`）、`staleFound` 與 `sideEffects.staleUnpublishes`。這取代上一節第 2 點的人工清理選項。

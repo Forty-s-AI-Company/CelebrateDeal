@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
-import { classifyFunnelRequest, createPageBlocked, funnelCreateFeedbackKind, funnelEditorNavigationKind, funnelRouteCategory, inspectSyntheticProjectStatus, inspectPublicSurface, syntheticFunnelSlug, runStagingFunnelSmoke } from "./staging-funnel-smoke.mjs";
+import { classifyFunnelRequest, createPageBlocked, funnelCreateFeedbackKind, funnelEditorNavigationKind, funnelRouteCategory, inspectSyntheticProjectStatus, inspectPublicSurface, syntheticFunnelSlug, runStagingFunnelSmoke, unpublishStaleSyntheticFunnels, MAX_STALE_UNPUBLISH } from "./staging-funnel-smoke.mjs";
 import { classifyPublishDiagnosis, classifyRequestFailureKind, classifyRouteGetKind, formatPublishSummary, publishBlockedReason, runPublishStage } from "./staging-funnel-smoke.mjs";
 
 test("read-only diagnostics reject arbitrary paths and emit only fixed surface categories", async () => {
@@ -291,4 +291,63 @@ test("publish summary line prints fixed enums only", () => {
   assert.equal(formatPublishSummary({ publishPreflight: "EMAIL_UNVERIFIED", publishOutcome: "NOT_CLICKED", reason: "PUBLISH_BLOCKED_EMAIL_UNVERIFIED", failureStep: "PUBLISH_PREFLIGHT" }),
     "staging_funnel_publish=preflight=EMAIL_UNVERIFIED; outcome=NOT_CLICKED; reason=PUBLISH_BLOCKED_EMAIL_UNVERIFIED; failureStep=PUBLISH_PREFLIGHT");
   assert.match(formatPublishSummary({ publishPreflight: "https://x/?a=b", publishOutcome: "owner@example.com" }), /preflight=UNKNOWN; outcome=UNKNOWN/u);
+});
+
+// Stale cleanup (2026-11-10 run 42715715208: PUBLISH_LIMIT_REACHED from earlier smoke Funnels).
+function fakeStalePage({ published, href = "/landing-pages/abc123/operations", unpublishWorks = true }) {
+  const calls = [];
+  let remaining = published;
+  const never = { waitFor: async () => { throw Object.assign(new Error("hidden"), { name: "TimeoutError" }); } };
+  const row = {
+    filter: () => row, first: () => row,
+    waitFor: async () => { if (remaining === 0) throw Object.assign(new Error("none"), { name: "TimeoutError" }); },
+    getByRole: () => ({ getAttribute: async () => href }),
+  };
+  const page = {
+    goto: async (url) => { calls.push(`goto:${new URL(url).pathname}`); },
+    getByText: () => ({}),
+    getByRole: (role, options) => {
+      if (role === "row") return row;
+      if (options?.name === "發布") return unpublishWorks ? { waitFor: async () => {} } : never;
+      return { click: async () => { calls.push(`click:${options.name}`); if (options.name === "取消發布") remaining -= 1; } };
+    },
+  };
+  return { page, calls };
+}
+
+test("stale cleanup unpublishes only generated smoke Funnels, one allowed path at a time", async () => {
+  const { page, calls } = fakeStalePage({ published: 2 });
+  const result = { staleCleanup: "NOT_RUN", staleFound: 0 };
+  const paths = [];
+  await unpublishStaleSyntheticFunnels(page, result, {
+    origin: "https://celebrate-deal-staging.carry-digital-nomad.in.net",
+    begin: (path) => paths.push(`begin:${path}`), end: () => paths.push("end"),
+  });
+  assert.equal(result.staleFound, 2);
+  assert.equal(result.staleCleanup, "UNPUBLISHED");
+  assert.deepEqual(paths, ["begin:/landing-pages/abc123", "end", "begin:/landing-pages/abc123", "end"]);
+  assert.equal(calls.filter((call) => call === "click:取消發布").length, 2);
+  assert.ok(MAX_STALE_UNPUBLISH >= 3);
+});
+
+test("stale cleanup reports fixed outcomes without throwing", async () => {
+  const origin = "https://celebrate-deal-staging.carry-digital-nomad.in.net";
+  const hooks = { origin, begin: () => {}, end: () => {} };
+  const none = { staleCleanup: "NOT_RUN", staleFound: 0 };
+  await unpublishStaleSyntheticFunnels(fakeStalePage({ published: 0 }).page, none, hooks);
+  assert.equal(none.staleCleanup, "NONE_FOUND");
+
+  const badLink = { staleCleanup: "NOT_RUN", staleFound: 0 };
+  await unpublishStaleSyntheticFunnels(fakeStalePage({ published: 1, href: "/admin/other" }).page, badLink, hooks);
+  assert.equal(badLink.staleCleanup, "LINK_INVALID");
+
+  const failed = { staleCleanup: "NOT_RUN", staleFound: 0 };
+  let ended = 0;
+  await unpublishStaleSyntheticFunnels(fakeStalePage({ published: 1, unpublishWorks: false }).page, failed, { ...hooks, end: () => { ended += 1; } });
+  assert.equal(failed.staleCleanup, "UNPUBLISH_FAILED");
+  assert.equal(ended, 1);
+
+  const broken = { staleCleanup: "NOT_RUN", staleFound: 0 };
+  await unpublishStaleSyntheticFunnels({ goto: async () => { throw new Error("boom"); } }, broken, hooks);
+  assert.equal(broken.staleCleanup, "UNAVAILABLE");
 });
