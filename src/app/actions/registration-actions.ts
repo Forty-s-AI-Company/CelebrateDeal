@@ -19,6 +19,7 @@ import { registrationMode } from "@/lib/registration-mode";
 import { assertLoginEmailAvailableForNewAccount, LoginEmailReservedError } from "@/lib/login-email-reservation";
 import { scheduleMerchantEmailVerification } from "@/lib/merchant-email-verification";
 import { TURNSTILE_ACTIONS, TURNSTILE_RESPONSE_FIELD, turnstileErrorCode, verifyTurnstileToken } from "@/lib/turnstile";
+import { isFirstSuccessTurnstileExempt } from "@/lib/staging-first-success";
 
 const RegistrationInput = z.object({
   name: z.string().trim().min(2).max(120),
@@ -98,7 +99,10 @@ export async function registerAction(formData: FormData) {
   if (limited) redirect(failure(limited.status === 429 ? "rate_limited" : "temporarily_unavailable"));
   // Bot protection (disabled only while no Turnstile key is configured). Any
   // siteverify failure, including a network error, refuses before any write.
-  const turnstile = await verifyTurnstileToken({
+  // The staging first-success runner cannot (and must not) solve a challenge: a
+  // valid signed invite to its Resend test mailbox skips it on the bound staging
+  // runtime only (staging-first-success.ts). Everywhere else this is false.
+  const turnstile = usedInvite && isFirstSuccessTurnstileExempt(usedInvite.email) ? { ok: true as const } : await verifyTurnstileToken({
     token: formData.get(TURNSTILE_RESPONSE_FIELD),
     action: TURNSTILE_ACTIONS.register,
     remoteIp: incoming.get("cf-connecting-ip") ?? incoming.get("x-forwarded-for")?.split(",")[0]?.trim() ?? null,
