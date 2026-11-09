@@ -44,6 +44,7 @@ const errorGuidance: Record<string, string> = {
   internal: "系統處理失敗。請稍後重試，若持續發生請聯絡客服。",
   stale_delivery_lease: "先前的寄送工作中斷，系統已回收並準備重試。",
   recipient_suppressed: "收件者已退訂，此信不會寄送。",
+  recipient_blacklisted: "收件者在本商家黑名單中，此信（含學員登入信）不會寄送。",
   config_superseded: "直播或模板設定已更新，舊排程不會寄送。",
   verification_superseded: "驗證已完成、連結已過期或已有新版驗證信。",
   schedule_superseded: "直播排程已更新，舊提醒不會寄送。",

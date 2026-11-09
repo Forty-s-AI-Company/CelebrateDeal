@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 
 // Owner policies decided 2026-11-10 (refund, suspension, blacklist), on real
@@ -6,10 +6,17 @@ import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 // limiter, mail transport and the post-response hook) is synthetic; payment
 // callbacks, refunds, grants, portal capabilities and the blacklist run for real.
 const mail = vi.hoisted(() => ({ send: vi.fn() }));
+const cookieJar = vi.hoisted(() => ({ token: "" }));
 
 vi.mock("next/headers", () => ({
   headers: vi.fn(async () => new Headers({ "user-agent": "synthetic-agent" })),
-  cookies: vi.fn(async () => ({ get: () => undefined, getAll: () => [], set: vi.fn(), delete: vi.fn() })),
+  // Only the back-office session cookie is ever present (for the merchant blacklist action).
+  cookies: vi.fn(async () => ({
+    get: (name: string) => (name.endsWith("celebrate_session") && cookieJar.token ? { value: cookieJar.token } : undefined),
+    getAll: () => [],
+    set: vi.fn(),
+    delete: vi.fn(),
+  })),
 }));
 vi.mock("next/navigation", () => ({
   redirect: (url: string): never => {
@@ -34,14 +41,15 @@ vi.mock("@/lib/email", async (original) => ({
   sendTransactionalEmail: mail.send,
 }));
 
+import { upsertBlacklistAction } from "@/app/actions/interaction-actions";
 import { requestMagicLinkAction } from "@/app/actions/student-portal-actions";
 import { issueBuyerSupportGrant, resolveBuyerOrderDetail, resolveBuyerOrderItemDelivery } from "@/lib/buyer-support-access";
-import { createCommerceOrderForCheckout, reconcileCommerceOrderRefund } from "@/lib/commerce-orders";
+import { CommerceOrderValidationError, createCommerceOrderForCheckout, reconcileCommerceOrderRefund } from "@/lib/commerce-orders";
 import { getDb } from "@/lib/db";
 import { dispatchEmailDelivery } from "@/lib/email-delivery";
 import { createReservedPaymentTransaction } from "@/lib/inventory-reservations";
 import { generatePaymentOrderNumber } from "@/lib/payment-order-number";
-import { PaymentWebhookPayload, processPaymentWebhook } from "@/lib/payment-webhooks";
+import { PaymentWebhookPayload, processPaymentWebhook, UnknownCheckoutTransactionError } from "@/lib/payment-webhooks";
 import { protectProductDeliveryConfig, validateProductDeliveryDraft } from "@/lib/product-delivery";
 import { getStudentPortalDashboard } from "@/lib/student-portal";
 import { STUDENT_PORTAL_INITIAL_STATE } from "@/lib/student-portal-action-state";
@@ -67,6 +75,7 @@ beforeAll(() => {
 });
 
 afterEach(async () => {
+  cookieJar.token = "";
   mail.send.mockReset();
   await db.auditLog.deleteMany({ where: { vendorId: { in: vendorIds } } });
   await db.vendor.deleteMany({ where: { id: { in: vendorIds.splice(0) } } });
@@ -82,22 +91,28 @@ async function tenant(label: string): Promise<Tenant> {
   return { vendorId: vendor.id, slug: vendor.slug };
 }
 
-async function digitalCheckout(vendorId: string, buyerEmail: string): Promise<Checkout> {
+const SERVICE_INSTRUCTIONS = "付款後依此說明預約一對一服務。";
+
+async function digitalCheckout(vendorId: string, buyerEmail: string, fulfillmentType: "digital" | "service" = "digital"): Promise<Checkout> {
   const product = await db.product.create({
-    data: { vendorId, name: `合成數位商品 ${randomUUID().slice(0, 8)}`, slug: `digital-${randomUUID()}`, priceCents: 1_200, currency: "TWD", inventory: 5, isActive: true, commerceDomain: "merchant", fulfillmentType: "digital", fulfillmentTypeConfirmed: true },
+    data: { vendorId, name: `合成${fulfillmentType === "service" ? "服務" : "數位"}商品 ${randomUUID().slice(0, 8)}`, slug: `${fulfillmentType}-${randomUUID()}`, priceCents: 1_200, currency: "TWD", inventory: 5, isActive: true, commerceDomain: "merchant", fulfillmentType, fulfillmentTypeConfirmed: true },
   });
-  const delivery = validateProductDeliveryDraft({
-    fulfillmentType: "digital", isActive: true, title: "合成下載", destinationUrl: DESTINATION,
-    instructions: "付款後從訂單頁取得內容。", hostConfirmed: true,
-  })!;
-  const allowlist = await db.vendorDeliveryUrlAllowlist.findFirst({ where: { vendorId, hostname: delivery.destinationHostname!, pathPrefix: delivery.destinationPathPrefix! } })
-    ?? await db.vendorDeliveryUrlAllowlist.create({
-      data: { vendorId, hostname: delivery.destinationHostname!, pathPrefix: delivery.destinationPathPrefix!, allowQuery: false, status: "active" },
-    });
+  const delivery = fulfillmentType === "service"
+    ? validateProductDeliveryDraft({ fulfillmentType, isActive: true, title: "合成服務說明", instructions: SERVICE_INSTRUCTIONS, hostConfirmed: false })!
+    : validateProductDeliveryDraft({
+      fulfillmentType, isActive: true, title: "合成下載", destinationUrl: DESTINATION,
+      instructions: "付款後從訂單頁取得內容。", hostConfirmed: true,
+    })!;
+  const allowlist = delivery.destinationHostname
+    ? await db.vendorDeliveryUrlAllowlist.findFirst({ where: { vendorId, hostname: delivery.destinationHostname, pathPrefix: delivery.destinationPathPrefix! } })
+      ?? await db.vendorDeliveryUrlAllowlist.create({
+        data: { vendorId, hostname: delivery.destinationHostname, pathPrefix: delivery.destinationPathPrefix!, allowQuery: false, status: "active" },
+      })
+    : null;
   const configId = randomUUID();
   await db.productDeliveryConfig.create({
     data: {
-      id: configId, vendorId, productId: product.id, allowlistId: allowlist.id, revision: 1, status: "active", fulfillmentType: "digital",
+      id: configId, vendorId, productId: product.id, allowlistId: allowlist?.id ?? null, revision: 1, status: "active", fulfillmentType,
       deliveryKind: delivery.deliveryKind, title: delivery.title,
       ...protectProductDeliveryConfig(delivery, { vendorId, productId: product.id, configId, revision: 1 }),
       activatedAt: new Date(),
@@ -166,6 +181,27 @@ async function dashboardAccess(session: StudentPortalSession) {
   return new Map(dashboard.courses.map((course) => [course.orderId, { accessStatus: course.accessStatus, destinationUrl: course.destinationUrl }]));
 }
 
+/** Signs the vendor's owner into the back office, as the merchant blacklist page requires. */
+async function signInOwner(vendorId: string) {
+  const key = randomUUID();
+  const owner = await db.user.create({ data: { name: "Owner", email: `owner-${key}@example.test`, passwordHash: "synthetic-only" } });
+  userIds.push(owner.id);
+  await db.vendorMember.create({ data: { vendorId, userId: owner.id, role: "owner" } });
+  const token = randomBytes(32).toString("base64url");
+  await db.userSession.create({
+    data: { userId: owner.id, vendorId, tokenHash: createHash("sha256").update(token).digest("hex"), expiresAt: new Date(Date.now() + 3_600_000) },
+  });
+  cookieJar.token = token;
+}
+
+function blacklistForm(identifier: string) {
+  const data = new FormData();
+  data.set("identifierType", "email");
+  data.set("identifier", identifier);
+  data.set("reason", "synthetic");
+  return data;
+}
+
 async function platformAdmin() {
   const key = randomUUID();
   const admin = await db.user.create({ data: { name: "Platform admin", email: `admin-${key}@example.test`, passwordHash: "synthetic-only", platformRole: "platform_admin" } });
@@ -200,7 +236,9 @@ describe("owner policy 2026-11-10: a full refund withdraws only that order's del
     const afterFull = await order(refunded);
     await processPaymentWebhook(full);
     // A late replay of the earlier partial event fails closed instead of reopening anything.
-    await expect(processPaymentWebhook(partial)).rejects.toThrow();
+    const lateReplay = processPaymentWebhook(partial);
+    await expect(lateReplay).rejects.toBeInstanceOf(Error);
+    await expect(lateReplay).rejects.toThrow("退款 webhook 事件類型與既存退款紀錄不一致。");
     const afterReplay = await order(refunded);
     expect(afterFull).toMatchObject({ status: "refunded", refundedAmountCents: 1_200 });
     expect(afterFull.items[0]?.entitlement).toMatchObject({ status: "revoked", revokedAt: expect.any(Date), accessEncryptedEnvelope: null });
@@ -240,8 +278,8 @@ describe("owner policy 2026-11-10: a full refund withdraws only that order's del
     // Vendor B's scope cannot refund vendor A's order, by order id or by order number.
     await expect(db.$transaction((tx) => reconcileCommerceOrderRefund(tx, {
       vendorId: b.vendorId, orderId: orderA.id, providerName: "payuni", eventIdentity: `cross-${randomUUID()}`, amountCents: 1_200, occurredAt: new Date(),
-    }))).rejects.toThrow();
-    await processPaymentWebhook(refund(b.vendorId, checkoutA, "refunded", 1_200)).catch(() => undefined);
+    }))).rejects.toThrow(new CommerceOrderValidationError("Canonical commerce order was not found."));
+    await expect(processPaymentWebhook(refund(b.vendorId, checkoutA, "refunded", 1_200))).rejects.toBeInstanceOf(UnknownCheckoutTransactionError);
     expect(await order(checkoutA)).toMatchObject({ status: "paid", refundedAmountCents: 0 });
     expect((await order(checkoutA)).items[0]?.entitlement).toMatchObject({ status: "granted" });
 
@@ -299,6 +337,28 @@ describe("owner policy 2026-11-10: /support keeps paid buyers' delivery while th
     const otherOrder = await order(otherTenant);
     await expect(resolveBuyerOrderItemDelivery(db, browser, { grantId: beforeGrant.id, itemId: otherOrder.items[0]!.id })).resolves.toBeNull();
   });
+
+  it("deliberately keeps service instructions for a buyer who paid during the suspension", async () => {
+    const a = await tenant("A");
+    const admin = await platformAdmin();
+    const service = await digitalCheckout(a.vendorId, "service-buyer@example.test", "service");
+    const browser = await supportBrowser(a.vendorId, [(await order(service)).id]);
+    await suspendVendor(db, { vendorId: a.vendorId, reason: "合成：凍結", actorUserId: admin.id });
+
+    await processPaymentWebhook(paid(a.vendorId, service));
+
+    // Only digital/course entitlements are held; a service has none, and its
+    // delivery instructions stay available because the buyer has paid.
+    const serviceOrder = await order(service);
+    expect(serviceOrder).toMatchObject({ status: "paid" });
+    expect(serviceOrder.items[0]?.entitlement).toBeNull();
+    await expect(supportDelivery(browser, serviceOrder)).resolves.toMatchObject({ title: "合成服務說明", instructions: SERVICE_INSTRUCTIONS, destinationUrl: null });
+    await expect(isVendorAvailableForPublic(db, a.vendorId)).resolves.toBe(false);
+
+    // A full refund still withdraws it.
+    await processPaymentWebhook(refund(a.vendorId, service, "refunded", 1_200));
+    await expect(supportDelivery(browser, await order(service))).resolves.toBeNull();
+  });
 });
 
 describe("owner policy 2026-11-10: a blacklisted email cannot request a learner sign-in link", () => {
@@ -318,7 +378,12 @@ describe("owner policy 2026-11-10: a blacklisted email cannot request a learner 
     const checkoutB = await digitalCheckout(b.vendorId, email);
     await processPaymentWebhook(paid(a.vendorId, checkoutA));
     await processPaymentWebhook(paid(b.vendorId, checkoutB));
-    const block = await db.blacklist.create({ data: { vendorId: a.vendorId, identifier: email, identifierType: "email", reason: "synthetic" } });
+    // The merchant blocks the address through the real action, typed in mixed case.
+    await signInOwner(a.vendorId);
+    await upsertBlacklistAction(blacklistForm(" Blocked-Learner@EXAMPLE.test "));
+    cookieJar.token = "";
+    const block = await db.blacklist.findFirstOrThrow({ where: { vendorId: a.vendorId } });
+    expect(block).toMatchObject({ identifierType: "email", identifier: email, isActive: true });
 
     const blocked = await requestMagicLinkAction(STUDENT_PORTAL_INITIAL_STATE, form({ email: " Blocked-Learner@Example.test ", vendorSlug: a.slug }));
     const unknown = await requestMagicLinkAction(STUDENT_PORTAL_INITIAL_STATE, form({ email: "nobody@example.test", vendorSlug: a.slug }));
@@ -352,5 +417,35 @@ describe("owner policy 2026-11-10: a blacklisted email cannot request a learner 
     await expect(dispatchEmailDelivery(queued.id)).resolves.toEqual({ status: "suppressed" });
     expect(mail.send).not.toHaveBeenCalled();
     await expect(db.emailDelivery.findUniqueOrThrow({ where: { id: queued.id } })).resolves.toMatchObject({ status: "suppressed", lastErrorCode: "recipient_blacklisted" });
+  });
+
+  it("revokes again after commit, so a link committed after the in-transaction revocation cannot mint a session", async () => {
+    const a = await tenant("A");
+    const b = await tenant("B");
+    const email = "late-link@example.test";
+    await signInOwner(a.vendorId);
+    const keptAtB = await createStudentPortalAccessToken(db, { vendorId: b.vendorId, email, purpose: "magic_link" });
+    // Commit the block's transaction, then land a link the in-transaction revocation could not see
+    // (a request that passed its blacklist check while the block was still uncommitted).
+    let lateLink = "";
+    const original = db.$transaction.bind(db);
+    const transactions = vi.spyOn(db, "$transaction").mockImplementationOnce(async (...args: unknown[]) => {
+      const result = await (original as (...input: unknown[]) => Promise<unknown>)(...args);
+      lateLink = await createStudentPortalAccessToken(db, { vendorId: a.vendorId, email, purpose: "magic_link" });
+      return result;
+    });
+    try {
+      await upsertBlacklistAction(blacklistForm("Late-Link@Example.Test"));
+    } finally {
+      transactions.mockRestore();
+    }
+
+    expect(lateLink).not.toBe("");
+    await expect(consumeStudentPortalAccessToken(db, { token: lateLink, expectedPurpose: "magic_link" })).resolves.toBeNull();
+    expect(await portalTokens(a.vendorId)).toBe(0);
+    // The post-commit pass is bound to this vendor: the same address elsewhere keeps its link.
+    await expect(consumeStudentPortalAccessToken(db, { token: keptAtB, expectedPurpose: "magic_link" })).resolves.not.toBeNull();
+    // The persisted audit redacts token-named fields; the summed count is covered in src/app/actions.test.ts.
+    await expect(db.auditLog.count({ where: { vendorId: a.vendorId, action: "blacklist_created" } })).resolves.toBe(1);
   });
 });
