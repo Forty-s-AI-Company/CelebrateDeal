@@ -241,12 +241,16 @@ export async function runStagingFirstSuccess(env = process.env, dependencies = {
   });
 
   let runId = null;
+  // A slow or failed status call is one missed poll (null), not a failed step.
   const readStatus = async () => {
-    const response = await ownerContext.request.post(`${ORIGIN}/api/admin/ops/first-success/status`, {
-      headers: opsHeaders({ "x-celebratedeal-first-success-run": runId }), maxRedirects: 0, timeout: 30_000, failOnStatusCode: false,
-    });
-    try { return response.status() === 200 ? sanitizeStatus(await response.json()) : null; }
-    finally { await response.dispose(); }
+    let response;
+    try {
+      response = await ownerContext.request.post(`${ORIGIN}/api/admin/ops/first-success/status`, {
+        headers: opsHeaders({ "x-celebratedeal-first-success-run": runId }), maxRedirects: 0, timeout: 45_000, failOnStatusCode: false,
+      });
+      return response.status() === 200 ? sanitizeStatus(await response.json()) : null;
+    } catch { return null; }
+    finally { await response?.dispose().catch(() => {}); }
   };
   const pollStatus = async (done, { attempts = 20, intervalMs = 5_000, onAttempt } = {}) => {
     let last = null;

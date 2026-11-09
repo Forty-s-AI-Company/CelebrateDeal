@@ -106,7 +106,7 @@ export async function lookupProviderEmail(
       headers: { Authorization: `Bearer ${apiKey}` },
       cache: "no-store",
       redirect: "manual",
-      signal: AbortSignal.timeout(10_000),
+      signal: AbortSignal.timeout(5_000),
     });
     if (response.status === 429 && retryAfter429) {
       // Resend allows only a few requests per second per team: wait once as asked, then give up.
