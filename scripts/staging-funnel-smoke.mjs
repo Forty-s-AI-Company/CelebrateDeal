@@ -14,7 +14,7 @@ export const CREATE_SUBMIT_LABEL = "建立";
 const FUNNEL_STEPS = new Set([
   "CONTEXT_SETUP", "PAGE_OPEN", "CREATE_PAGE_OPEN", "PROJECT_PAGE_OPEN", "PROJECT_NAME_FILL", "PROJECT_SLUG_FILL",
   "PROJECT_SUBMIT", "CREATE_NAME_FILL", "CREATE_SLUG_FILL", "CREATE_GOAL_SELECT", "CREATE_SUBMIT", "CREATE_DESTINATION",
-  "TEMPLATE_APPLY", "EDITOR_OPEN", "EDITOR_ADD_SECTION", "EDITOR_SAVE", "EDITOR_LEAVE", "PUBLISH_PREFLIGHT",
+  "TEMPLATE_APPLY", "EDITOR_OPEN", "EDITOR_ADD_SECTION", "EDITOR_SAVE", "EDITOR_LEAVE", "STALE_CLEANUP", "PUBLISH_PREFLIGHT",
   "PUBLISH_BUTTON_ENABLED", "PUBLISH", "PUBLISH_RESULT", "PUBLIC_OPEN", "PUBLIC_MOBILE_RELOAD",
 ]);
 // Management-page publication chip (src/components/landing-page-publication-chip.tsx) and the
@@ -65,6 +65,7 @@ function receipt(sourceSha) {
     // and whether a failure was an abort (navigation superseded or page left) or something else.
     operationsGetKinds: { document: 0, rsc: 0, prefetch: 0, other: 0 }, operationsGetFailureKinds: { aborted: 0, other: 0 },
     editorGetKinds: { document: 0, rsc: 0, prefetch: 0, other: 0 }, editorGetFailureKinds: { aborted: 0, other: 0 },
+    staleCleanup: "NOT_RUN", staleFound: 0,
     publishPreflight: "NOT_OBSERVED", publishOutcome: "NOT_OBSERVED", publishActionStatus: null,
     publicStatus: null, publicRouteMatched: false, publicRendererVisible: false,
     publicSurface: "NOT_OBSERVED",
@@ -73,7 +74,7 @@ function receipt(sourceSha) {
     // Which fixed step stopped the run, why (an exception class, CONDITION_NOT_MET or DATA_PRECONDITION)
     // and on which route class. Exceptions set it everywhere; the publish stage also sets it without one.
     failureStep: "NONE", failureCategory: "NONE", failurePage: "NOT_OBSERVED",
-    sideEffects: { syntheticSessionCreated: 0, syntheticSessionRevoked: 0, projectCreates: 0, funnelCreates: 0, funnelWrites: 0, paymentSubmissions: 0, refundSubmissions: 0, emailSubmissions: 0 },
+    sideEffects: { syntheticSessionCreated: 0, syntheticSessionRevoked: 0, projectCreates: 0, funnelCreates: 0, funnelWrites: 0, staleUnpublishes: 0, paymentSubmissions: 0, refundSubmissions: 0, emailSubmissions: 0 },
   };
 }
 
@@ -240,6 +241,45 @@ async function visible(locator, timeout = 10_000) {
   try { await locator.waitFor({ state: "visible", timeout }); return true; } catch { return false; }
 }
 
+export const MAX_STALE_UNPUBLISH = 10;
+const STALE_NAME = "Staging Synthetic Funnel";
+const STALE_SLUG = /^\/lp\/staging-synthetic-[a-f0-9]{12}$/u;
+
+/**
+ * Unpublish Funnels this smoke created earlier (exact name + generated slug) so the synthetic owner's
+ * free-plan publication limit is not exhausted. The list only shows the signed-in synthetic owner's
+ * own vendor, and the management action re-checks ownership server-side. Never throws; the outcome
+ * is a fixed enum on the receipt and the publish preflight still reports a real limit.
+ */
+export async function unpublishStaleSyntheticFunnels(page, result, { origin, begin, end }) {
+  result.staleCleanup = "NONE_FOUND";
+  try {
+    for (let index = 0; index < MAX_STALE_UNPUBLISH; index += 1) {
+      await page.goto(`${origin}/landing-pages`, { waitUntil: "domcontentloaded", timeout: 20_000 });
+      const row = page.getByRole("row")
+        .filter({ has: page.getByText(STALE_NAME, { exact: true }) })
+        .filter({ has: page.getByText(STALE_SLUG) })
+        .filter({ hasText: "已發布" }).first();
+      if (!await visible(row, index === 0 ? 8_000 : 3_000)) return;
+      result.staleFound += 1;
+      const href = await row.getByRole("link", { name: /開啟/u }).getAttribute("href");
+      const match = /^\/landing-pages\/([a-z0-9]+)\/operations$/u.exec(href ?? "");
+      if (!match) { result.staleCleanup = "LINK_INVALID"; return; }
+      await page.goto(`${origin}${href}`, { waitUntil: "domcontentloaded", timeout: 20_000 });
+      begin(`/landing-pages/${match[1]}`);
+      try {
+        await page.getByRole("button", { name: "更多網站操作", exact: true }).click({ timeout: 10_000 });
+        await page.getByRole("button", { name: "取消發布", exact: true }).click({ timeout: 10_000 });
+        if (!await visible(page.getByRole("button", { name: PUBLISH_BUTTON_LABEL, exact: true }), 20_000)) {
+          result.staleCleanup = "UNPUBLISH_FAILED"; return;
+        }
+      } finally { end(); }
+      result.staleCleanup = "UNPUBLISHED";
+    }
+    result.staleCleanup = "LIMIT_EXCEEDED";
+  } catch { result.staleCleanup = "UNAVAILABLE"; }
+}
+
 /** Read only the named synthetic project's status; never publish or return IDs. */
 export async function inspectSyntheticProjectStatus(page) {
   try {
@@ -305,6 +345,7 @@ export async function runStagingFunnelSmoke(env = process.env, dependencies = {}
   let sessionIssued = false;
   let cleanupFailed = false;
   let allowedFunnelPath = null;
+  let cleaningStale = false;
   // Fixed name of the browser action in progress; reported only if an exception stops the run.
   let step = "CONTEXT_SETUP";
   let activePage = null;
@@ -315,6 +356,10 @@ export async function runStagingFunnelSmoke(env = process.env, dependencies = {}
       if (kind === "READ") return route.continue();
       if (!diagnosticOnly && kind === "PROJECT_CREATE" && result.sideEffects.projectCreates === 0) {
         result.sideEffects.projectCreates += 1;
+        return route.continue();
+      }
+      if (!diagnosticOnly && kind === "FUNNEL_WRITE" && cleaningStale) {
+        result.sideEffects.staleUnpublishes += 1;
         return route.continue();
       }
       if (!diagnosticOnly && kind === "FUNNEL_WRITE" && !(new URL(route.request().url()).pathname === "/landing-pages/new" && result.sideEffects.funnelCreates > 0)) {
@@ -406,6 +451,14 @@ export async function runStagingFunnelSmoke(env = process.env, dependencies = {}
       if (!slug) { result.reason = "EXISTING_FUNNEL_INVALID"; return result; }
       result.syntheticProjectStatus = await inspectSyntheticProjectStatus(page);
     } else {
+    // Free-plan accounts cap concurrent publications, and earlier runs leave their Funnels published.
+    result.stage = "STALE_CLEANUP";
+    step = "STALE_CLEANUP";
+    await unpublishStaleSyntheticFunnels(page, result, {
+      origin,
+      begin: (path) => { allowedFunnelPath = path; cleaningStale = true; },
+      end: () => { allowedFunnelPath = null; cleaningStale = false; },
+    });
     slug = `staging-synthetic-${randomUUID().replaceAll("-", "").slice(0, 12)}`;
     result.stage = "CREATE";
     step = "CREATE_PAGE_OPEN";
