@@ -135,6 +135,7 @@ const mocks = vi.hoisted(() => ({
   partnerFunnelPageFindFirst: vi.fn(),
   partnerFunnelPageUpdateMany: vi.fn(),
   blacklistCreate: vi.fn(),
+  studentPortalTokenLateDeleteMany: vi.fn(),
   registrationFormCreate: vi.fn(),
   registrationFormUpdate: vi.fn(),
   teamMembershipFindFirst: vi.fn(),
@@ -422,6 +423,7 @@ vi.mock("@/lib/db", () => ({
     },
     auditLog: { create: mocks.auditLogCreate },
     blacklist: { create: mocks.blacklistCreate },
+    studentPortalAccessToken: { deleteMany: mocks.studentPortalTokenLateDeleteMany },
     registrationForm: {
       create: mocks.registrationFormCreate,
       findFirst: mocks.registrationFormFindFirst,
@@ -1360,6 +1362,7 @@ describe("upsertBlacklistAction", () => {
   const studentPortalTokenDeleteMany = vi.fn();
   beforeEach(() => {
     studentPortalTokenDeleteMany.mockReset().mockResolvedValue({ count: 2 });
+    mocks.studentPortalTokenLateDeleteMany.mockReset().mockResolvedValue({ count: 0 });
     mocks.transaction.mockImplementation(async (callback: (tx: unknown) => Promise<unknown>) => callback({
       blacklist: { create: mocks.blacklistCreate },
       studentPortalAccessToken: { deleteMany: studentPortalTokenDeleteMany },
@@ -1382,8 +1385,22 @@ describe("upsertBlacklistAction", () => {
     expect(studentPortalTokenDeleteMany).toHaveBeenCalledWith({
       where: { vendorId: "vendor-1", customerKeyHash: expect.stringMatching(/^[A-Za-z0-9_-]{43}$/u) },
     });
+    // Owner policy 2026-11-10: the same tenant-scoped revocation runs again after commit.
+    expect(mocks.studentPortalTokenLateDeleteMany).toHaveBeenCalledExactlyOnceWith(studentPortalTokenDeleteMany.mock.calls[0]?.[0]);
+    expect(mocks.studentPortalTokenLateDeleteMany.mock.invocationCallOrder[0]).toBeGreaterThan(studentPortalTokenDeleteMany.mock.invocationCallOrder[0]!);
     expect(mocks.writeAuditLog).toHaveBeenCalledWith(expect.objectContaining({
       after: { identifierType: "email", isActive: true, revokedStudentPortalTokenCount: 2 },
+    }));
+  });
+
+  it("counts a link revoked only by the post-commit pass in the audit", async () => {
+    mocks.requireVendor.mockResolvedValue({ id: "vendor-1" });
+    mocks.studentPortalTokenLateDeleteMany.mockResolvedValue({ count: 1 });
+
+    await upsertBlacklistAction(blacklistFormData("email", "raced@example.test"));
+
+    expect(mocks.writeAuditLog).toHaveBeenCalledWith(expect.objectContaining({
+      after: { identifierType: "email", isActive: true, revokedStudentPortalTokenCount: 3 },
     }));
   });
 
@@ -1408,6 +1425,7 @@ describe("upsertBlacklistAction", () => {
     });
     expect(JSON.stringify(mocks.writeAuditLog.mock.calls[0])).not.toContain("foo bar");
     expect(studentPortalTokenDeleteMany).not.toHaveBeenCalled();
+    expect(mocks.studentPortalTokenLateDeleteMany).not.toHaveBeenCalled();
   });
 
   it.each([

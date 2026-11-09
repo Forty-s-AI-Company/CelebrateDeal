@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
-  security: vi.fn(), headers: vi.fn(), rateLimit: vi.fn(), vendor: vi.fn(), orderCount: vi.fn(), bookingCount: vi.fn(), voucherCount: vi.fn(),
+  security: vi.fn(), headers: vi.fn(), rateLimit: vi.fn(), vendor: vi.fn(), orderCount: vi.fn(), bookingCount: vi.fn(), voucherCount: vi.fn(), blacklist: vi.fn(),
   createToken: vi.fn(), scheduleImmediate: vi.fn(), accountRateLimit: vi.fn(async (): Promise<Response | null> => null), emailCreate: vi.fn(), clearCookie: vi.fn(), redirect: vi.fn(), hash: vi.fn(() => "customer-hash"), protect: vi.fn(() => ({ payloadEncryptedEnvelope: "encrypted", recipientHash: "hash", recipientMaskedEmail: "s***@example.test" })),
 }));
 vi.mock("next/headers", () => ({ headers: mocks.headers }));
@@ -14,7 +14,7 @@ vi.mock("@/lib/email-delivery-pii", () => ({ protectEmailDeliveryPayload: mocks.
 vi.mock("@/lib/email-delivery-immediate", () => ({ scheduleImmediateEmailDispatch: mocks.scheduleImmediate }));
 vi.mock("@/lib/student-portal-auth", () => ({ createStudentPortalAccessToken: mocks.createToken, clearStudentPortalSessionCookie: mocks.clearCookie }));
 vi.mock("@/lib/app-url", () => ({ getCanonicalAppUrl: () => "https://app.example.test" }));
-vi.mock("@/lib/db", () => ({ getDb: () => ({ vendor: { findFirst: mocks.vendor }, commerceOrder: { count: mocks.orderCount }, consultationBooking: { count: mocks.bookingCount }, automationVoucherGrant: { count: mocks.voucherCount }, emailDelivery: { create: mocks.emailCreate } }) }));
+vi.mock("@/lib/db", () => ({ getDb: () => ({ vendor: { findFirst: mocks.vendor }, commerceOrder: { count: mocks.orderCount }, consultationBooking: { count: mocks.bookingCount }, automationVoucherGrant: { count: mocks.voucherCount }, blacklist: { findFirst: mocks.blacklist }, emailDelivery: { create: mocks.emailCreate } }) }));
 
 import * as studentPortalActions from "@/app/actions/student-portal-actions";
 import { STUDENT_PORTAL_INITIAL_STATE } from "@/lib/student-portal-action-state";
@@ -26,7 +26,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   mocks.headers.mockResolvedValue(new Headers()); mocks.rateLimit.mockResolvedValue(null);
   mocks.vendor.mockResolvedValue({ id: "vendor-1", slug: "teacher", name: "老師品牌", senderName: null, supportEmail: null, contactUrl: null });
-  mocks.orderCount.mockResolvedValue(1); mocks.bookingCount.mockResolvedValue(0); mocks.voucherCount.mockResolvedValue(0);
+  mocks.orderCount.mockResolvedValue(1); mocks.bookingCount.mockResolvedValue(0); mocks.voucherCount.mockResolvedValue(0); mocks.blacklist.mockResolvedValue(null);
   mocks.createToken.mockResolvedValue("signed-token"); mocks.emailCreate.mockResolvedValue({ id: "email-1" });
 });
 afterEach(() => vi.unstubAllEnvs());
@@ -98,6 +98,43 @@ describe("student portal actions", () => {
     mocks.orderCount.mockResolvedValue(0); mocks.createToken.mockClear(); mocks.emailCreate.mockClear();
     expect(await requestMagicLinkAction(STUDENT_PORTAL_INITIAL_STATE, form({ email: "unknown@example.test", vendorSlug: "teacher", locale: "en" }))).toEqual(eligible);
     expect(mocks.createToken).not.toHaveBeenCalled(); expect(mocks.emailCreate).not.toHaveBeenCalled();
+  });
+
+  it("issues no link to a blacklisted email and answers exactly as for an unknown one (owner policy 2026-11-10)", async () => {
+    mocks.blacklist.mockResolvedValue({ id: "blacklist-1" });
+    const blocked = await requestMagicLinkAction(STUDENT_PORTAL_INITIAL_STATE, form({ email: " Blocked@Example.test ", vendorSlug: "teacher" }));
+    // The lookup is bound to this vendor and the normalized address, and only to active blocks.
+    expect(mocks.blacklist).toHaveBeenCalledExactlyOnceWith({
+      where: { vendorId: "vendor-1", identifierType: "email", identifier: "blocked@example.test", isActive: true, unblockedAt: null },
+      select: { id: true },
+    });
+    expect(mocks.createToken).not.toHaveBeenCalled();
+    expect(mocks.emailCreate).not.toHaveBeenCalled();
+    expect(mocks.scheduleImmediate).not.toHaveBeenCalled();
+
+    mocks.blacklist.mockResolvedValue(null); mocks.orderCount.mockResolvedValue(0);
+    const unknown = await requestMagicLinkAction(STUDENT_PORTAL_INITIAL_STATE, form({ email: "nobody@example.test", vendorSlug: "teacher" }));
+    expect(blocked).toEqual(unknown);
+    expect(mocks.createToken).not.toHaveBeenCalled();
+  });
+
+  it("runs the same reads for blocked, unknown and eligible addresses so the work done does not reveal the list", async () => {
+    const reads = () => [mocks.orderCount, mocks.bookingCount, mocks.voucherCount, mocks.blacklist].map((mock) => mock.mock.calls.length);
+    for (const [blacklisted, orders] of [[{ id: "blacklist-1" }, 1], [null, 0], [null, 1]] as const) {
+      vi.clearAllMocks();
+      mocks.blacklist.mockResolvedValue(blacklisted); mocks.orderCount.mockResolvedValue(orders);
+      mocks.createToken.mockResolvedValue("signed-token"); mocks.emailCreate.mockResolvedValue({ id: "email-1" });
+      await requestMagicLinkAction(STUDENT_PORTAL_INITIAL_STATE, form({ email: "student@example.test", vendorSlug: "teacher" }));
+      expect(reads()).toEqual([1, 1, 1, 1]);
+      expect(mocks.accountRateLimit).toHaveBeenCalledOnce();
+    }
+  });
+
+  it("checks the blacklist of the requested vendor only", async () => {
+    mocks.vendor.mockResolvedValue({ id: "vendor-2", slug: "other-teacher", name: "其他品牌", senderName: null, supportEmail: null, contactUrl: null });
+    await requestMagicLinkAction(STUDENT_PORTAL_INITIAL_STATE, form({ email: "student@example.test", vendorSlug: "other-teacher" }));
+    expect(mocks.blacklist).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ vendorId: "vendor-2" }) }));
+    expect(mocks.createToken).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ vendorId: "vendor-2" }));
   });
 
   it("clears the encrypted session after CSRF validation and redirects within the validated tenant slug", async () => {
