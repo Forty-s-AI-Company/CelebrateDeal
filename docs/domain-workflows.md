@@ -97,14 +97,14 @@
 
 已接受的取捨：凍結期間排隊的行銷信在解除後才會寄出，依賴既有寄送前檢查（例如直播已結束的提醒會被 supersede）；解除凍結不補寫凍結期間略過的學員付款通知。解除時先以短交易解除凍結，再分批（每批 500 筆、各自交易）開通，每張被開通的訂單寫一筆 `fulfillment.released_after_suspension` 事件；中途失敗時其餘權限維持 pending，平台後台會顯示「開通暫停期間的付款」可重跑。
 
-待 owner 決定（m5）：買家客服頁（`/support`，依結帳時的 buyer grant cookie）目前維持可用，已付款買家仍能查看訂單、聯絡商家；凍結不收回凍結前已開通項目的交付內容，這條路徑也沒有加凍結檢查。是否在凍結期間隱藏 `/support` 的交付連結，由 owner 決定。
+買家客服頁（`/support`，依結帳時的 buyer grant cookie）在凍結期間**保留已付款買家的交付連結**（2026-11-10 owner 決定，原 m5）：買家已付款，要保障其取得內容，所以 `/support` 刻意不加凍結檢查，已付款買家仍能查看訂單、開啟凍結前已開通的交付內容、建立客服案件。這不會讓凍結商家新增銷售或發布：結帳、一頁式網站、報名與直播入口仍依上表關閉；凍結期間才入帳的付款仍維持 pending，`/support` 顯示「付款確認並開通後」而不給連結，解除凍結後才開通；全額退款照常撤銷該筆訂單的交付內容。回歸測試見 `src/lib/owner-learner-access-policy.db.test.ts`。
 
 ### 學員 portal session 撤銷（F-030）
 
 學員 session 只在當初兌換的 magic-link 列存在時有效，刪除該 vendor＋customer 的列即撤銷。以下流程會撤銷，且每處都綁目前 vendor：
 
-- 商家封鎖 Email（`upsertBlacklistAction`，類型 `email`）：與封鎖同一交易呼叫 `revokeStudentPortalSessions`，撤銷該 Email 在本商家的學員 session；其他商家不受影響。被封鎖的 Email 仍可重新申請登入連結（封鎖目前只擋聊天與報名，是否也擋學員中心待 owner 決定）。
-- 全額退款：**刻意不撤銷** session。退款撤銷的課程／數位權限由每次請求的權益檢查擋下（課程頁、證書、社群回 404），而退款後的學員仍須保持登入，才能取消該商品的通知同意（既有 e2e `tests/e2e/learner-notifications.spec.ts`、`native-course-learning.spec.ts` 鎖住此行為）。本 PR 一度在退款時撤銷，造成 Release browser gates 5 個 spec 失敗，已移除；若要改成退款即登出，需 owner 決定並同時調整上述產品契約。
+- 商家封鎖 Email（`upsertBlacklistAction`，類型 `email`）：與封鎖同一交易呼叫 `revokeStudentPortalSessions`，撤銷該 Email 在本商家的學員 session；其他商家不受影響。被封鎖的 Email **不能再申請學員登入連結**（2026-11-10 owner 決定）：`requestMagicLinkAction` 對每個請求都與資格查詢並行查本商家的有效 Email 黑名單，封鎖中的 Email 不建立 token、不排信，回應與「沒有可存取內容」的 Email 完全相同（同樣的查詢、同樣的通用訊息），不洩漏是否被封鎖或是否存在；寄送前 `dispatchEmailDelivery` 再查一次，封鎖前一刻排入的登入信改為 `suppressed`（`recipient_blacklisted`）。解除封鎖後即可重新申請；其他商家的黑名單不適用。
+- 全額退款：**刻意不撤銷** session。退款撤銷的課程／數位權限由每次請求的權益檢查擋下（課程頁、證書、社群回 404），而退款後的學員仍須保持登入，才能取消該商品的通知同意（既有 e2e `tests/e2e/learner-notifications.spec.ts`、`native-course-learning.spec.ts` 鎖住此行為）。本 PR 一度在退款時撤銷，造成 Release browser gates 5 個 spec 失敗，已移除。2026-11-10 owner 確認此政策：全額退款只撤銷**該筆訂單**所交付的內容（`convergeFullRefundFulfillment` 在退款交易內撤銷該訂單所有品項的 entitlement 與交付快照、取消未完成的服務與出貨），學員中心、課程、證書、社群與 `/support` 的交付連結都依此擋下；不登出學員，同一學員其他已付款訂單不受影響；部分退款不撤銷任何權限，累計退款達訂單全額時才撤銷；重複的退款回呼不會再改動權限。回歸測試見 `src/lib/owner-learner-access-policy.db.test.ts`。
 - 商家被凍結：`revokeAllStudentPortalSessionsForVendor` 在凍結交易內批次撤銷該 vendor 全部學員 session（見上）。
 - 客戶匿名化（`scripts/anonymize-customer.ts`，個資刪除請求）：原本就在同一交易刪除該 vendor＋customer 的列。
 - 客戶 Email 變更：目前沒有任何「變更客戶 Email」的流程（商家或學員都無法改買家 Email），所以沒有接線；日後新增時必須在同一交易對舊 Email 呼叫 `revokeStudentPortalSessions`。

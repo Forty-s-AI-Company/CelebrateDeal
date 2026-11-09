@@ -1124,6 +1124,26 @@ describe("student portal login delivery", () => {
     expect(mocks.sendTransactionalEmail).not.toHaveBeenCalled();
     expect(mocks.db.emailDelivery.updateMany).toHaveBeenLastCalledWith(expect.objectContaining({ data: expect.objectContaining({ lastErrorCode: "verification_superseded" }) }));
   });
+  it("suppresses a still-valid sign-in link whose recipient the vendor has since blacklisted", async () => {
+    mocks.db.emailDelivery.findUnique.mockResolvedValue(candidate({ trigger: "student_portal_magic_link", idempotencyKey }));
+    mocks.db.studentPortalAccessToken.findFirst.mockResolvedValue({ id: "portal-token-1" });
+    mocks.db.blacklist.findFirst.mockResolvedValue({ id: "blacklist-1" });
+    await expect(dispatchEmailDelivery("delivery-1")).resolves.toEqual({ status: "suppressed" });
+    expect(mocks.sendTransactionalEmail).not.toHaveBeenCalled();
+    expect(mocks.db.blacklist.findFirst).toHaveBeenCalledWith({
+      where: { vendorId: "vendor-1", identifierType: "email", identifier: "lead@example.test", isActive: true, unblockedAt: null },
+      select: { id: true },
+    });
+    expect(mocks.db.emailDelivery.updateMany).toHaveBeenLastCalledWith(expect.objectContaining({ data: expect.objectContaining({ status: "suppressed", lastErrorCode: "recipient_blacklisted" }) }));
+  });
+  it("still sends a requested sign-in link to an address that is not blacklisted", async () => {
+    mocks.db.emailDelivery.findUnique.mockResolvedValue(candidate({ trigger: "student_portal_magic_link", idempotencyKey }));
+    mocks.db.studentPortalAccessToken.findFirst.mockResolvedValue({ id: "portal-token-1" });
+    mocks.sendTransactionalEmail.mockResolvedValue({ id: "synthetic-message" });
+    await expect(dispatchEmailDelivery("delivery-1")).resolves.toEqual({ status: "sent" });
+    expect(mocks.db.blacklist.findFirst).toHaveBeenCalledOnce();
+    expect(mocks.sendTransactionalEmail).toHaveBeenCalledOnce();
+  });
   it("rejects malformed portal identity before database lookup or provider send", async () => {
     mocks.db.emailDelivery.findUnique.mockResolvedValue(candidate({ trigger: "student_portal_magic_link", idempotencyKey: "student-portal:invalid" }));
     await expect(dispatchEmailDelivery("delivery-1")).resolves.toEqual({ status: "superseded" });

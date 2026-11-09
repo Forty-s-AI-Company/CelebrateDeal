@@ -16,6 +16,7 @@ import { createLiveSessionSwitchToken, createLiveSessionSwitchUrl, LIVE_SESSION_
 import { EVERGREEN_ACTIVATION_SELECT, isActiveEvergreenLive } from "@/lib/evergreen-activation";
 import { isFixedSessionLive } from "@/lib/live-fixed-sessions";
 import { normalizeBlacklistIdentifier } from "@/lib/blacklist-identifiers";
+import { isEmailBlacklistedForVendor } from "@/lib/email-blacklist";
 import { captureOperationalError } from "@/lib/monitoring";
 import {
   createFormSubmissionVerificationToken,
@@ -1435,17 +1436,35 @@ async function writeDeliveryAuditSafely(input: Parameters<typeof writeAuditLog>[
   }
 }
 
-async function finalizeSuppressed(delivery: ClaimedDelivery) {
+async function finalizeSuppressed(delivery: ClaimedDelivery, errorCode = "recipient_suppressed") {
   const result = await getDb().emailDelivery.updateMany({
     where: { id: delivery.id, status: "sending", attemptCount: delivery.attemptCount },
     data: {
       status: "suppressed",
       nextAttemptAt: null,
       claimedAt: null,
-      lastErrorCode: "recipient_suppressed",
+      lastErrorCode: errorCode,
     },
   });
   return result.count === 1 ? { status: "suppressed" as const } : { status: "claimed_elsewhere" as const };
+}
+
+/** Send-time blacklist guard for learner sign-in links; reads the recipient only from the encrypted payload. */
+async function isStudentPortalRecipientBlacklisted(
+  db: Parameters<typeof isEmailBlacklistedForVendor>[0],
+  delivery: ClaimedDelivery,
+) {
+  let recipientEmail: string;
+  try {
+    recipientEmail = revealEmailDeliveryPayload(delivery.payloadEncryptedEnvelope, {
+      vendorId: delivery.vendorId,
+      deliveryId: delivery.id,
+    }).recipientEmail;
+  } catch {
+    // An unreadable payload fails, and is reported, in the provider step.
+    return false;
+  }
+  return isEmailBlacklistedForVendor(db, delivery.vendorId, recipientEmail);
 }
 
 async function finalizeSuperseded(delivery: ClaimedDelivery, errorCode = "config_superseded") {
@@ -1510,6 +1529,12 @@ export async function dispatchEmailDelivery(deliveryId: string, actorLabel = "jo
       delivery,
       ["form_submission_verification", "student_portal_magic_link"].includes(delivery.trigger) ? "verification_superseded" : "config_superseded",
     );
+  }
+  // Owner policy 2026-11-10: a learner sign-in link never reaches an address
+  // this vendor has blacklisted, including one queued just before the block
+  // committed (the request-time check in requestMagicLinkAction is the first gate).
+  if (delivery.trigger === "student_portal_magic_link" && await isStudentPortalRecipientBlacklisted(db, delivery)) {
+    return finalizeSuppressed(delivery, "recipient_blacklisted");
   }
 
   let sent: { id: string };
