@@ -96,6 +96,7 @@ type ProviderEmail = { event: ProviderEvent; html: string; text: string };
 export async function lookupProviderEmail(
   providerMessageId: string | null | undefined,
   fetchImpl: typeof fetch = fetch,
+  retryAfter429 = true,
 ): Promise<ProviderEmail> {
   const apiKey = process.env.RESEND_API_KEY;
   if (!providerMessageId) return { event: "NOT_LOOKED_UP", html: "", text: "" };
@@ -107,6 +108,12 @@ export async function lookupProviderEmail(
       redirect: "manual",
       signal: AbortSignal.timeout(10_000),
     });
+    if (response.status === 429 && retryAfter429) {
+      // Resend allows only a few requests per second per team: wait once as asked, then give up.
+      const seconds = Number(response.headers.get("retry-after"));
+      await new Promise((resolve) => { setTimeout(resolve, Number.isFinite(seconds) && seconds > 0 ? Math.min(seconds, 3) * 1_000 : 1_000); });
+      return lookupProviderEmail(providerMessageId, fetchImpl, false);
+    }
     if (response.status !== 200) return { event: "LOOKUP_UNAVAILABLE", html: "", text: "" };
     const body = await response.json() as { last_event?: unknown; html?: unknown; text?: unknown };
     const event = typeof body.last_event === "string" && RESEND_EVENTS.has(body.last_event)
@@ -204,17 +211,19 @@ export async function readFirstSuccessStatus(runId: string, fetchImpl: typeof fe
     status.merchantVerificationEmail.status = verificationAudit.action === "merchant_email_verification_sent"
       ? "SENT" : verificationAudit.action === "merchant_email_verification_email_failed" ? "FAILED" : "SUPPRESSED";
     const after = verificationAudit.after as { providerMessageId?: unknown } | null;
-    if (status.merchantVerificationEmail.status === "SENT") {
+    // Once the owner is verified the mail has done its job; skip the provider call (rate limit).
+    if (status.merchantVerificationEmail.status === "SENT" && !status.ownerEmailVerified) {
       const provider = await lookupProviderEmail(typeof after?.providerMessageId === "string" ? after.providerMessageId : null, fetchImpl);
       status.merchantVerificationEmail.providerEvent = provider.event;
-      if (!status.ownerEmailVerified) {
-        status.merchantVerificationLinkPath = extractOwnLinkPath(`${provider.text}\n${provider.html}`, "/verify-email");
-      }
+      status.merchantVerificationLinkPath = extractOwnLinkPath(`${provider.text}\n${provider.html}`, "/verify-email");
     }
   }
 
-  // The registration creates exactly one vendor whose founder is this user.
-  const vendor = await db.vendor.findUnique({ where: { email: firstSuccessOwnerEmail(runId) }, select: { id: true } });
+  // The registration creates exactly one vendor whose active owner is this user.
+  const vendor = await db.vendor.findFirst({
+    where: { email: firstSuccessOwnerEmail(runId), members: { some: { userId: user.id, role: "owner", status: "active" } } },
+    select: { id: true },
+  });
   if (!vendor) return status;
   const buyerEmail = firstSuccessBuyerEmail(runId);
   const recipientHash = createEmailRecipientHash(buyerEmail, vendor.id);
@@ -232,16 +241,17 @@ export async function readFirstSuccessStatus(runId: string, fetchImpl: typeof fe
   const verification = deliveries.find((delivery) => delivery.trigger === "form_submission_verification");
   if (verification) {
     status.buyerVerificationEmail.status = deliveryStatus(verification.status);
-    const provider = await lookupProviderEmail(verification.providerMessageId, fetchImpl);
-    status.buyerVerificationEmail.providerEvent = provider.event;
+    // After the buyer confirmed, the verification mail is not looked up again (rate limit).
     if (status.buyerVerifiedSubmissions === 0) {
+      const provider = await lookupProviderEmail(verification.providerMessageId, fetchImpl);
+      status.buyerVerificationEmail.providerEvent = provider.event;
       status.buyerVerificationLinkPath = extractOwnLinkPath(`${provider.text}\n${provider.html}`, "/verify-registration");
       if (status.buyerVerificationLinkPath) status.buyerVerificationEmail.linkSource = "PROVIDER";
       else if (verification.status === "sent") {
         // The provider copy could not be read: fall back to the envelope that was sent, and say so.
         try {
           const payload = revealEmailDeliveryPayload(verification.payloadEncryptedEnvelope, { vendorId: verification.vendorId, deliveryId: verification.id });
-          status.buyerVerificationLinkPath = extractOwnLinkPath(payload.body, "/verify-registration");
+          if (payload.recipientEmail === buyerEmail) status.buyerVerificationLinkPath = extractOwnLinkPath(payload.body, "/verify-registration");
           if (status.buyerVerificationLinkPath) status.buyerVerificationEmail.linkSource = "LOCAL_ENVELOPE";
         } catch { /* Stays NONE. */ }
       }

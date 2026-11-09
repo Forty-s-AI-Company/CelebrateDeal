@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 import {
   ALIAS, STEPS, classifyRequest, createReceipt, finalVerdict, formatStepSummary, routeCategory, runStagingFirstSuccess,
-  sanitizeStatus, taipeiDateTimeLocal,
+  providerOutcome, providerSettled, sanitizeStatus, taipeiDateTimeLocal,
 } from "./staging-first-success.mjs";
 
 const origin = `https://${ALIAS}`;
@@ -96,6 +96,13 @@ test("the receipt is de-identified: fixed keys, no email, name, URL or token", (
   const serialized = JSON.stringify(receipt);
   for (const forbidden of ["@", "http", "token", "invite=", "runId", "email\":\"", "name\":"]) assert.ok(!serialized.includes(forbidden), forbidden);
   assert.equal(createReceipt("not-a-sha").sourceSha, null);
+});
+
+test("provider events: only a final answer stops polling; bounces fail, unknowns are not verifiable", () => {
+  for (const event of ["DELIVERED", "OPENED", "CLICKED"]) { assert.equal(providerSettled(event), true); assert.equal(providerOutcome(event), "PASS"); }
+  for (const event of ["BOUNCED", "COMPLAINED", "FAILED", "CANCELED", "SUPPRESSED"]) { assert.equal(providerSettled(event), true); assert.equal(providerOutcome(event), "FAIL"); }
+  // A 429 surfaces as LOOKUP_UNAVAILABLE and must keep polling instead of ending the step.
+  for (const event of ["LOOKUP_UNAVAILABLE", "NOT_LOOKED_UP", "SENT", "QUEUED", "DELIVERY_DELAYED", "OTHER"]) { assert.equal(providerSettled(event), false); assert.equal(providerOutcome(event), "NOT_VERIFIABLE"); }
 });
 
 test("live schedule is entered in Taiwan time", () => {

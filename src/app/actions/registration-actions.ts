@@ -102,7 +102,8 @@ export async function registerAction(formData: FormData) {
   // The staging first-success runner cannot (and must not) solve a challenge: a
   // valid signed invite to its Resend test mailbox skips it on the bound staging
   // runtime only (staging-first-success.ts). Everywhere else this is false.
-  const turnstile = usedInvite && isFirstSuccessTurnstileExempt(usedInvite.email) ? { ok: true as const } : await verifyTurnstileToken({
+  const turnstileExempt = Boolean(usedInvite && isFirstSuccessTurnstileExempt(usedInvite.email));
+  const turnstile = turnstileExempt ? { ok: true as const } : await verifyTurnstileToken({
     token: formData.get(TURNSTILE_RESPONSE_FIELD),
     action: TURNSTILE_ACTIONS.register,
     remoteIp: incoming.get("cf-connecting-ip") ?? incoming.get("x-forwarded-for")?.split(",")[0]?.trim() ?? null,
@@ -123,7 +124,7 @@ export async function registerAction(formData: FormData) {
       await tx.userOnboardingPreference.create({ data: { userId: user.id, vendorId: vendor.id, questionnaireStep: 0, taskPanelCollapsed: true } });
       await tx.userPolicyConsent.create({ data: { userId: user.id, vendorId: vendor.id, context: "merchant_registration", termsVersion: policyVersions.termsVersion, privacyVersion: policyVersions.privacyVersion } });
       await tx.auditLog.create({ data: { vendorId: vendor.id, actorId: user.id, actorLabel: "owner", action: "registration_completed", targetType: "User", targetId: user.id,
-        after: { policyConsent: { termsVersion: policyVersions.termsVersion, privacyVersion: policyVersions.privacyVersion }, ...(usedInvite ? { registrationInvite: { jti: usedInvite.jti } } : {}) } } });
+        after: { policyConsent: { termsVersion: policyVersions.termsVersion, privacyVersion: policyVersions.privacyVersion }, ...(usedInvite ? { registrationInvite: { jti: usedInvite.jti } } : {}), ...(turnstileExempt ? { turnstile: "first_success_exempt" } : {}) } } });
       return { userId: user.id, vendorId: vendor.id };
     });
   } catch (error) {

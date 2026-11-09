@@ -216,4 +216,49 @@ describe("invitation recording in open mode (n-3)", () => {
     for (const call of mocks.audit.mock.calls) expect(call[0]).toEqual({ data: expect.objectContaining({ after: consentOnly }) });
     expect(mocks.audit).toHaveBeenCalledTimes(2);
   });
+
+});
+
+describe("staging first-success Turnstile exemption (invite-only)", () => {
+  beforeEach(() => {
+    vi.stubEnv("CSRF_SECRET", "synthetic-registration-invite-secret-32-bytes");
+    vi.stubEnv("REGISTRATION_MODE", "");
+  });
+
+  const runnerEmail = "delivered+cdfs-owner-0123456789abcdef01234567@resend.dev";
+  const stagingDb = "postgresql://db.ocbugvgojrunvenozsbx.supabase.co:5432/postgres";
+  const bindStaging = () => {
+    vi.stubEnv("VERCEL_ENV", "preview"); vi.stubEnv("PAYUNI_ENV", "sandbox"); vi.stubEnv("WP4_SANDBOX_EXECUTOR_ENABLED", "true");
+    vi.stubEnv("VERCEL_PROJECT_ID", "prj_3d4ib8cXrF3f3HsqdSwfabpBWvZn");
+    vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://celebrate-deal-staging.carry-digital-nomad.in.net");
+    vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", "https://ocbugvgojrunvenozsbx.supabase.co");
+    vi.stubEnv("DATABASE_URL", stagingDb); vi.stubEnv("DIRECT_URL", stagingDb); vi.stubEnv("STAGING_DATABASE_URL", stagingDb);
+  };
+
+  it("skips Turnstile only for the runner's mailbox on the bound staging runtime, and audits it", async () => {
+    bindStaging();
+    const invite = createMerchantRegistrationInvite({ email: runnerEmail });
+    await expect(registerAction(form({ invite: invite.token, email: runnerEmail }))).rejects.toThrow("redirect:/welcome");
+    expect(mocks.turnstile).not.toHaveBeenCalled();
+    expect(mocks.audit).toHaveBeenCalledWith({ data: expect.objectContaining({ action: "registration_completed", after: expect.objectContaining({ registrationInvite: { jti: invite.jti }, turnstile: "first_success_exempt" }) }) });
+  });
+
+  it("still verifies Turnstile off the bound runtime, for other mailboxes and for revoked invitations", async () => {
+    const invite = createMerchantRegistrationInvite({ email: runnerEmail });
+    await expect(registerAction(form({ invite: invite.token, email: runnerEmail }))).rejects.toThrow("redirect:/welcome");
+    expect(mocks.turnstile).toHaveBeenCalledOnce();
+    expect(JSON.stringify(mocks.audit.mock.calls)).not.toContain("first_success_exempt");
+
+    bindStaging();
+    mocks.turnstile.mockClear();
+    const other = createMerchantRegistrationInvite({ email: "owner@example.test" });
+    await expect(registerAction(form({ invite: other.token }))).rejects.toThrow("redirect:/welcome");
+    expect(mocks.turnstile).toHaveBeenCalledOnce();
+
+    mocks.turnstile.mockClear();
+    mocks.revoked.mockResolvedValue({ id: "audit-revoked" });
+    await expect(registerAction(form({ invite: invite.token, email: runnerEmail }))).rejects.toThrow(/error=invite_revoked/u);
+    expect(mocks.hash).toHaveBeenCalledTimes(2);
+    expect(mocks.transaction).toHaveBeenCalledTimes(2);
+  });
 });

@@ -39,6 +39,16 @@ const INVITE_PATH = /^\/register\?invite=[A-Za-z0-9._%~-]{20,1200}$/u;
 const MERCHANT_LINK = /^\/verify-email\?token=[A-Za-z0-9._%~-]{16,2048}$/u;
 const BUYER_LINK = /^\/verify-registration\?token=[A-Za-z0-9._%~-]{16,2048}$/u;
 
+const PROVIDER_DELIVERED = new Set(["DELIVERED", "OPENED", "CLICKED"]);
+const PROVIDER_FAILED = new Set(["BOUNCED", "COMPLAINED", "FAILED", "CANCELED", "SUPPRESSED"]);
+/** Polling stops only on a final provider answer; an unavailable lookup (e.g. 429) is retried. */
+export function providerSettled(event) { return PROVIDER_DELIVERED.has(event) || PROVIDER_FAILED.has(event); }
+/** DELIVERED (or later) passes, a bounce or failure fails, anything still unknown is NOT_VERIFIABLE. */
+export function providerOutcome(event) {
+  if (PROVIDER_DELIVERED.has(event)) return "PASS";
+  return PROVIDER_FAILED.has(event) ? "FAIL" : "NOT_VERIFIABLE";
+}
+
 function emptyEmail() { return { status: "NOT_FOUND", providerEvent: "NOT_LOOKED_UP" }; }
 
 export function createReceipt(sourceSha) {
@@ -243,11 +253,14 @@ export async function runStagingFirstSuccess(env = process.env, dependencies = {
     for (let attempt = 0; attempt < attempts; attempt += 1) {
       if (attempt > 0) await wait(intervalMs);
       if (onAttempt) await onAttempt(attempt);
-      last = await readStatus();
-      if (last && done(last)) return last;
+      // A transient null (503) keeps the last good answer.
+      const value = await readStatus();
+      if (value) last = value;
+      if (value && done(value)) return value;
     }
     return last;
   };
+  // Fallback only: the shared job sends every tenant's due staging deliveries (synthetic data only).
   const runEmailJob = async () => {
     const response = await ownerContext.request.post(`${ORIGIN}/api/jobs/email-deliveries`, {
       headers: { Authorization: `Bearer ${env.JOB_SECRET}` }, maxRedirects: 0, timeout: 60_000, failOnStatusCode: false,
@@ -301,12 +314,12 @@ export async function runStagingFirstSuccess(env = process.env, dependencies = {
 
     await step("MERCHANT_VERIFICATION_EMAIL", async () => {
       const status = await pollStatus((value) => value.merchantVerificationEmail.status !== "NOT_FOUND"
-        && (["DELIVERED", "LOOKUP_UNAVAILABLE"].includes(value.merchantVerificationEmail.providerEvent) || value.merchantVerificationEmail.status !== "SENT"));
+        && (providerSettled(value.merchantVerificationEmail.providerEvent) || value.merchantVerificationEmail.status !== "SENT"));
       if (!status) return "NOT_VERIFIABLE";
       result.evidence.ownerConsentRecorded = status.ownerConsentRecorded;
       result.emails.merchantVerification = status.merchantVerificationEmail;
-      return status.ownerConsentRecorded && status.merchantVerificationEmail.providerEvent === "DELIVERED" ? "PASS"
-        : status.merchantVerificationEmail.providerEvent === "LOOKUP_UNAVAILABLE" ? "NOT_VERIFIABLE" : "FAIL";
+      if (!status.ownerConsentRecorded || status.merchantVerificationEmail.status !== "SENT") return "FAIL";
+      return providerOutcome(status.merchantVerificationEmail.providerEvent);
     });
 
     await step("WELCOME", async () => {
@@ -453,7 +466,7 @@ export async function runStagingFirstSuccess(env = process.env, dependencies = {
     await step("BUYER_VERIFICATION_EMAIL", async () => {
       // Sent right after the response; one email job run recovers a missed after() dispatch.
       const status = await pollStatus((value) => value.buyerVerificationLinkPath !== null
-        && ["DELIVERED", "LOOKUP_UNAVAILABLE"].includes(value.buyerVerificationEmail.providerEvent), {
+        && providerSettled(value.buyerVerificationEmail.providerEvent), {
         onAttempt: async (attempt) => { if (attempt === 6) await runEmailJob(); },
       });
       if (!status) return "FAIL";
@@ -461,10 +474,10 @@ export async function runStagingFirstSuccess(env = process.env, dependencies = {
       result.emails.buyerVerification = status.buyerVerificationEmail;
       buyerLink = status.buyerVerificationLinkPath;
       ensure(buyerLink !== null && status.buyerSubmissions === 1);
-      return status.buyerVerificationEmail.providerEvent === "DELIVERED" ? "PASS" : "NOT_VERIFIABLE";
+      return providerOutcome(status.buyerVerificationEmail.providerEvent);
     }).catch((error) => {
-      // Without provider proof the journey can still finish from the sent envelope; the step stays non-PASS.
-      if (!(error instanceof ConditionNotMet) || buyerLink === null) throw error;
+      // Only a missing provider proof lets the journey finish from the sent envelope; the step stays non-PASS.
+      if (!(error instanceof ConditionNotMet) || buyerLink === null || entry("BUYER_VERIFICATION_EMAIL").status !== "NOT_VERIFIABLE") throw error;
     });
 
     await step("BUYER_VERIFY", async () => {
@@ -477,7 +490,7 @@ export async function runStagingFirstSuccess(env = process.env, dependencies = {
     });
 
     await step("REGISTRATION_CONFIRMATION_EMAIL", async () => {
-      const status = await pollStatus((value) => ["DELIVERED", "LOOKUP_UNAVAILABLE"].includes(value.registrationConfirmationEmail.providerEvent)
+      const status = await pollStatus((value) => providerSettled(value.registrationConfirmationEmail.providerEvent)
         || ["FAILED", "EXHAUSTED", "SUPPRESSED"].includes(value.registrationConfirmationEmail.status), {
         onAttempt: async (attempt) => { if (attempt === 6) await runEmailJob(); },
       });
@@ -485,8 +498,8 @@ export async function runStagingFirstSuccess(env = process.env, dependencies = {
       result.evidence.buyerVerifiedSubmissions = status.buyerVerifiedSubmissions;
       result.emails.registrationConfirmation = status.registrationConfirmationEmail;
       if (status.buyerVerifiedSubmissions !== 1) return "FAIL";
-      if (status.registrationConfirmationEmail.providerEvent === "DELIVERED") return "PASS";
-      return status.registrationConfirmationEmail.providerEvent === "LOOKUP_UNAVAILABLE" && status.registrationConfirmationEmail.status === "SENT" ? "NOT_VERIFIABLE" : "FAIL";
+      if (status.registrationConfirmationEmail.status !== "SENT") return "FAIL";
+      return providerOutcome(status.registrationConfirmationEmail.providerEvent);
     });
 
     Object.assign(result, finalVerdict(result));
