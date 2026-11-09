@@ -1,5 +1,18 @@
 # 封測前 Goal：需要 owner 親自處理的事項
 
+## 2026-11-10 owner 決定（已定案）
+
+- **O-1 PayUni 信用卡約定 Token**：Sandbox 測試站沒有這項功能，改用正式站。staging 繼續關閉「平台服務綁卡」與依賴綁卡的 Funnel 發布（O-23 不再等 O-1）；約定 Token 的第一次驗證在 PayUni 正式站以真實小額交易進行，屬正式金流操作，執行前需 owner 另外授權。
+- **政策（採主對話建議）**：
+  - 全額退款：撤銷該訂單所交付商品的存取權，但不登出整個學員帳號、不影響其他已付款商品；部分退款不撤銷。
+  - 商家凍結期間：`/support` 保留已付款買家的交付連結。
+  - 黑名單 Email：不能申請學員登入連結，回應不透露是否在黑名單。
+  - 程式實作另開 PR（`ai/owner-policy-refund-suspend-blacklist`），合併前需獨立審查。
+- **O-15 跨區**：選 A，正式上線前（還原演練通過後）把 Supabase 正式專案遷到東京。
+- **B-1 外部排程**：選方案 B（Cloudflare Worker cron），密鑰留在 owner 的 Cloudflare 帳號、之後可延伸到 Production；heartbeat 保留作備援。owner 仍需依 `docs/launch/scheduled-jobs-external-trigger.md` §5 執行 `wrangler login`、`wrangler secret put JOB_SECRET`、`wrangler deploy`。
+- **O-21 個資保存期限**：先採預設（WebhookEvent payload 180 天、AnalyticsEvent 365 天、AuditLog IP 365 天），律師意見回來後再調整；開啟排程另開工作。
+- **staging 合成資料（#543）**：封測期間不刪除。盤點的 4 個商家（含封測用的 Wuhe Select、Merchant2 測試商店）與 9 支 Stream 影片保留在各自租戶內；封測客戶一律新建商家帳號（BETA-OPS (b)(c)）。正式上線前再依盤點決定刪除範圍，屆時先備份、經 owner 同意、用腳本執行並留收據。
+
 ## 2026-11-06 待 owner 處理（彙整）
 
 GitHub environment `Preview – celebrate-deal-staging`：
@@ -17,16 +30,12 @@ GitHub environment `Preview – celebrate-deal-staging`：
 - Production 必須明確設定 `AFFILIATE_PAYOUTS_DISABLED`（true／false），否則 preflight 會 FAIL。
 - Cloudflare Stream signing key（啟用 #538 的簽章播放網址）。
 - Cloudflare WAF：對 `/api/security/csp-report` 設 rate rule。
-- 外部排程觸發方案二選一（B-1），設定文件見 `docs/launch/scheduled-jobs-external-trigger.md`。
-- staging 合成資料清理範圍決定（#543）。
+- 外部排程觸發：2026-11-10 已選方案 B（Cloudflare Worker），owner 依 `docs/launch/scheduled-jobs-external-trigger.md` §5 部署。
+- ~~staging 合成資料清理範圍決定（#543）~~：2026-11-10 決定封測期間不刪。
 - production 訂單 hash 回填授權（#550，runbook §9.3）。
-- 既有待辦 O-1、O-3、O-4、O-6、O-7、O-9～O-13、O-15、O-17、O-19、O-21 等仍待處理，內容見上方原表，此處不重複。
+- 既有待辦 O-3、O-4、O-6、O-7、O-9～O-13、O-17、O-19 等仍待處理，內容見下方原表，此處不重複（O-1、O-15、O-21 已於 2026-11-10 定案）。
 
-待 owner 決定的政策：
-
-- 全額退款是否要登出學員（目前不登出）。
-- 凍結期間 `/support` 是否保留交付連結。
-- 黑名單 Email 是否仍可申請學員登入連結。
+~~待 owner 決定的政策~~：2026-11-10 已定案，見最上方。
 
 更新：2026-10-25（主對話維護）。owner 指示「不要停下，手動部分集中成報告」，所以這份清單是 owner 回來時唯一要看的東西。每項都寫清楚：做什麼、在哪裡做、做完要回報什麼、沒做會怎樣。**不要把任何金鑰、密碼、Token 貼到對話裡。**
 
@@ -36,22 +45,22 @@ GitHub environment `Preview – celebrate-deal-staging`：
 
 | # | 狀態 | 動作 | 在哪裡做 | 做完回報什麼 | 沒做的後果 | 對應 |
 |---|---|---|---|---|---|---|
-| O-1 | ⏳ | **PayUni Sandbox 商店是否開通「信用卡約定 Token」**：登入 PayUni Sandbox 後台，看商店「賀成交AI x CelebrateDeal」的功能列表 | PayUni 後台 | 回「已開通」「未開通」或「不確定」三選一 | 未開通則封測隱藏 Funnel 綁卡與依賴綁卡的發布（已預設如此） | D-03、T1 |
+| O-1 | ✅ | **2026-11-10 owner：Sandbox 沒有此功能，改在正式站驗證（需另外授權），staging 維持關閉綁卡。**原說明：**PayUni Sandbox 商店是否開通「信用卡約定 Token」**：登入 PayUni Sandbox 後台，看商店「賀成交AI x CelebrateDeal」的功能列表 | PayUni 後台 | 回「已開通」「未開通」或「不確定」三選一 | 未開通則封測隱藏 Funnel 綁卡與依賴綁卡的發布（已預設如此） | D-03、T1 |
 | O-2 | ✅ | **跑一筆 Sandbox 測試付款**：**2026-10-25 完成兩筆**（CD-261025-GQNTR9NNRJB9FK 經 TESTP1、CD-261025-WNZT87JQZ5AWHA 經 TESTP2，皆已付款且佣金正確入帳；LINE 內建瀏覽器那次尚未做，可併入 O-12）。原說明：主對話會在 staging 建一筆合成訂單並給你付款頁連結，你只要輸入 PayUni 公開的測試卡號；建議順便在 LINE 內建瀏覽器開一次 | staging 付款頁（連結由主對話提供） | 回「付了」即可；工程端會從 staging 稽核紀錄取去識別化的回呼樣本 | 付款判斷修正（F-037）只能依文件寫，10-30 才能驗證 | D-04、T2 |
 | O-3 | ⏳ | **平台管理員全部登記 TOTP**：所有 `platform_admin` 帳號登入後到 `/mfa/setup` 完成登記；bootstrap 管理員換掉初始密碼 | staging 與（若有）Production 的 `/mfa/setup` | 回「都登記了」 | #436 合併後，沒登記的管理員下次進財務後台會被導去登記頁（不會被鎖死，只是多一步） | D-05 |
 | O-4 | ⏳⚠️ | **Supabase 升級與備份**：封測資料所在的 Supabase 專案升到 Pro、開每日備份；並告訴主對話「哪一個專案是 staging」（專案名稱即可） | Supabase Dashboard → Billing、Backups | 回專案名稱與「已升級」 | 沒有備份就沒有還原演練，封測出事資料救不回（BLOCKER F-058） | D-07 |
 | O-5 | ✅ | **GitHub 安全設定（2026-10-27 owner 同意後由主對話以 gh 設定完成）**：secret scanning、push protection、Dependabot security updates 已開；fork PR workflow 改為所有外部貢獻者都需核准；只允許 squash merge、合併後自動刪分支；`Preview – celebrate-deal-staging` 原本就只允許受保護分支；`Production` 加上只允許受保護分支（master）與 required reviewer（a25814740）。原說明：**GitHub 安全設定**（若主對話用 CLI 權限不足會在下方註明哪些沒做成）：Settings → Code security：secret scanning、push protection、Dependabot security updates；Actions：fork PR 需核准改為「所有外部貢獻者」；General：只允許 squash merge、自動刪分支；Environments：staging 與 production 只允許 `master` 部署，production 加 reviewer | GitHub repo Settings | 回「設了」 | 公開 repo 的 secret 洩漏偵測全關；曾貢獻過的外部帳號可直接跑 workflow | D-08、D-22 |
 | O-6 | ⏳ | **Vercel 三件事**：(a) 看方案是 Hobby 還是 Pro（影響 cron 次數上限）；(b) 看 Production 與 Preview 環境的 `JOB_SECRET` 是不是同一個值（只需回「相同／不同」，不要貼值；相同就換掉 Production 的）；(c) 在 claude.ai 連接器設定重新授權 Vercel connector（目前對 staging 讀取回 403） | Vercel Dashboard → Settings；claude.ai → Connectors | 回方案名稱、相同／不同、已重新授權 | (a) 排程設定可能超過方案上限；(b) Preview 外洩等於 Production 跨租戶寫入權限外洩 | D-06、D-18、D-21 |
 | O-14 | ⏳ | **新增 GitHub environment secret `PAYUNI_QA_FINANCE_TOTP_SECRET`**（環境 `Preview – celebrate-deal-staging`）：值是一組 base32 的 TOTP seed，用任何 TOTP 產生器或 `node -e "console.log(require('crypto').randomBytes(20).toString('base64'))"` 轉 base32 皆可；主對話沒有權限新增 secret。工作線 A 的 runner 會用它讓 staging 財務 QA 帳號通過雙重驗證 | GitHub → Settings → Environments → Preview – celebrate-deal-staging → Add secret | 回「加了」 | #436 合併後，PayUni 退款自動化 runner 會卡在 `/mfa/setup` | A1、F-168 |
-| O-15 | ⏳ | **資料庫與主機跨區二選一**：Supabase 正式專案「CelebrateDeal」在孟買（ap-south-1），Vercel 函式設在東京（hnd1），正式上線會跨區、後台容易逾時。A（建議）：正式上線前把 Supabase 正式專案遷到東京（等還原演練通過後再做，主對話會備好步驟）；B：Vercel Production 改設孟買 `bom1`。封測跑 staging（兩邊都在東京），所以不急，但要在正式上線前決定 | 回「A」或「B」 | 回「A」或「B」 | 正式環境後台逾時 | B3、F-090、D-19 |
+| O-15 | ✅ | **2026-11-10 owner 選 A。**原說明：**資料庫與主機跨區二選一**：Supabase 正式專案「CelebrateDeal」在孟買（ap-south-1），Vercel 函式設在東京（hnd1），正式上線會跨區、後台容易逾時。A（建議）：正式上線前把 Supabase 正式專案遷到東京（等還原演練通過後再做，主對話會備好步驟）；B：Vercel Production 改設孟買 `bom1`。封測跑 staging（兩邊都在東京），所以不急，但要在正式上線前決定 | 回「A」或「B」 | 回「A」或「B」 | 正式環境後台逾時 | B3、F-090、D-19 |
 | O-16 | ⏳ | **Vercel staging 專案是 Hobby 方案**：GitHub Actions 排程每 5 分鐘呼叫 staging，每天約 290 筆 deployment／function 紀錄；若 Hobby 的用量上限被撞到，排程會失敗。建議把 staging 專案升 Pro，或接受較低頻率（主對話會先用 5 分鐘觀察一週） | Vercel Dashboard | 回「升了」或「維持」 | 排程可能被限流 | B2、F-042 |
 | O-17 | ⏳ | **Sentry 告警規則**：在 Sentry 的 staging 專案建立 alert rule：事件 tag 或 message 含 `webhook-retry exhausted` 或 `InventoryUnavailableError` 時，以 Email（或 LINE Notify 替代管道）通知你；另外確認 Sentry 專案已連到正確的 DSN 環境 | Sentry Dashboard → Alerts | 回「建了」 | 付款通知重試失敗或超賣時沒人知道（B03-07） | B2、M2 |
 | O-18 | ✅ | **固定 staging 網址已切到與 master 相同的部署（2026-10-25 主對話完成）**：`celebrate-deal-staging.carry-digital-nomad.in.net` 現在指向 `dpl_2NRwSRDjhhXNGKX216BrKgzCwKQ7`（commit `585385cc`，tree 與 master `a9291147` 完全相同，包含 #484 邀請制註冊與 #485 CSRF 金鑰分離修正）；上一個目標 `dpl_FPzL7VRCHnCgeJQhmTdzHj6f4XYQ` 保留作為回滾選項。Smoke 通過：`/api/health` 200 且 db ok、`/login` 顯示「受邀商家註冊」、`/register` 顯示邀請制說明。**之後每次合併都要再切一次**：staging 是只有 preview 部署的專案（沒有 master／production 部署），合併後必須把 alias 指到 tree 與 master 相同的部署，staging 才會更新。Production（`celebratedeal.carry-digital-nomad.in.net`，Vercel 專案 `celebrate-deal`）仍是 2026-07-24 的 build，**刻意不更新**：它的資料庫 migration 必須先完成 O-4 備份與還原演練、O-19 RLS 前置查詢、O-20 production migration 設定；Production 目前不服務封測商家 | — | 無需動作 | — | B2 證據、STATE |
 | O-19 | ⏳ | **RLS migration 部署前置查詢（Production 才需要）**：PR #452 會對全部資料表啟用 RLS，執行 migration 的角色必須是每張表的 owner 或可繼承的成員。staging 已由主對話唯讀查證通過（postgres 是 prisma 的成員）；Production 專案主對話無法讀取，請在正式部署前依 `docs/operations/prisma-migration-guards-runbook.md` 的前置 SQL 查一次並回報「通過」 | Supabase SQL editor（Production 專案） | 回「通過」或貼出 owner 清單（不含資料） | migration 在 Production 會整批 RAISE 停止，不會部分成功，但部署會失敗 | B04-08、PR #452 |
 | O-20 | ⏳（a ✅） | **Production migration 的前置（PR #457 之後）**：(a) 已於 2026-10-27 設定（GitHub `Production` environment：required reviewer a25814740、只允許 master）；剩 (b)。原說明：(a) GitHub `production` environment 設定 required reviewers（你自己）；(b) **2026-11-03 更新**：`.github/workflows/production-backup.yml` 已建立（路徑寫死在 `scripts/production-migrate.mjs`，不再需要 `PRODUCTION_BACKUP_WORKFLOW_PATH` 變數）。它掛在同一個 `production` environment，只用你在該 environment 設定的 secret `PRODUCTION_DATABASE_URL`（與 `production-migrate.yml` 共用），以 repo 內的公鑰 `ops/backup/keys/production-backup.agepub` 加密。你要做的：① 確認 `PRODUCTION_DATABASE_URL` 已設定；② 確認手上有這把公鑰對應的 age 私鑰（`age-keygen -y <私鑰檔>` 的輸出要等於檔案中的 `age1…` 行；沒有就無法還原，需開 PR 換公鑰）；③ **在 `production` environment 新增 variable `PRODUCTION_BACKUP_RECIPIENT_SHA256`**，值是公鑰檔的 SHA-256，用 `git show origin/master:ops/backup/keys/production-backup.agepub | sha256sum` 自行計算（在 Git Bash、Linux 或 macOS 執行，取輸出的前 64 個字元；不要用 PowerShell 轉存檔案再算，換行可能被改成 CRLF 而得到不同值）。未設定或與檔案不符時備份一律拒絕（防止有人用 PR 偷換公鑰）；④ Run workflow 並核准一次，再依 `docs/operations/production-backup-restore-runbook.md` §4 做還原演練並記 RTO。`production-migrate` 的 `backup_run_id` 只接受這個 workflow 24 小時內在 master 成功、且有 `production-database-backup-<run id>` artifact 的 run，沒有就一律拒絕部署，這是刻意的；正式上線前仍要先完成 O-4 的備份與還原演練 | GitHub Settings → Environments；Actions → Production backup | 回「設了」與第一次備份的 run ID | 正式 migration 無法執行（封測不受影響，封測跑 staging） | F-064、D-41 |
-| O-21 | ⏳ | **個資保存期限定案**：`/api/cron/data-retention` 預設關閉，期限預設 WebhookEvent payload 180 天、AnalyticsEvent 365 天、AuditLog IP 365 天，請依律師建議回「採預設」或改數字；定案後主對話再開啟排程 | 回覆即可 | 回「採預設」或數字 | 保存期限未定前不清理（只影響儲存量） | F-070、D-38 |
+| O-21 | ✅ | **2026-11-10 owner：先採預設，律師意見後再調；開啟排程另開工作。**原說明：**個資保存期限定案**：`/api/cron/data-retention` 預設關閉，期限預設 WebhookEvent payload 180 天、AnalyticsEvent 365 天、AuditLog IP 365 天，請依律師建議回「採預設」或改數字；定案後主對話再開啟排程 | 回覆即可 | 回「採預設」或數字 | 保存期限未定前不清理（只影響儲存量） | F-070、D-38 |
 | O-22 | ⏳ | **直播分鐘額度即將第一次真正生效**：審查發現 master 上的用量心跳從 #136 起每次都 500，帳本是空的，所以「方案分鐘額度」從未擋過任何人。PR #461 合併後額度會真的生效。封測前請確認每個封測商家的方案額度足夠（或先設為不限），並在封測說明中告知「超過額度播放會暫停」 | 商家後台方案設定 | 回「確認了」 | 封測客戶直播到一半被暫停 | R461-02 |
-| O-23 | ✅ | **封測商家功能授權**：**2026-10-25 已設定**：Wuhe Select、Merchant2 測試商店開啟課程、平台方案／帳單、諮詢預約、瀏覽器直播、彈幕；「平台服務綁卡」等 O-1 確認後再開。新封測商家開通時再逐一設定。原說明：PR #465 之後課程、billing、Funnel 綁卡、諮詢預約、瀏覽器直播、彈幕六個模組在伺服器端預設關閉，只有平台管理員能在 `/admin/vendor-features` 逐商家開啟。封測前請為每位封測商家決定要開哪些（預設全關；顧問型客戶可開諮詢預約） | staging `/admin/vendor-features` | 回「設了」 | 封測商家看不到這些模組（這是預設行為） | F-001、D-02 |
+| O-23 | ✅ | **封測商家功能授權**：**2026-10-25 已設定**：Wuhe Select、Merchant2 測試商店開啟課程、平台方案／帳單、諮詢預約、瀏覽器直播、彈幕；「平台服務綁卡」在 staging 維持關閉（O-1：Sandbox 無約定 Token），正式站開通時再開。新封測商家開通時再逐一設定。原說明：PR #465 之後課程、billing、Funnel 綁卡、諮詢預約、瀏覽器直播、彈幕六個模組在伺服器端預設關閉，只有平台管理員能在 `/admin/vendor-features` 逐商家開啟。封測前請為每位封測商家決定要開哪些（預設全關；顧問型客戶可開諮詢預約） | staging `/admin/vendor-features` | 回「設了」 | 封測商家看不到這些模組（這是預設行為） | F-001、D-02 |
 | O-24 | ⏳ | **Vercel Hobby build 速率上限**：10-22 PR #465 的兩個 Vercel preview 檢查因 build-rate-limit 失敗（非程式問題，`quality` 綠）。切 alias（O-18）或之後自動部署若再遇到，等一小時重試；或與 O-6 一併評估升 Pro | Vercel | 無需立即動作 | 只影響 preview 部署時效 |
 | O-7 | ⏳ | **Cloudflare**：正式網域是否全程經 Cloudflare 代理（橘雲）且沒有其他直連入口 | Cloudflare DNS | 回「是／否」 | 否則限流可被偽造標頭繞過，要多修 1～1.5 人日 | D-20 |
 
