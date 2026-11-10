@@ -41,11 +41,13 @@ async function main() {
     stage = "sandbox-runtime-preflight";
     const response = await fetch(`${APP_ORIGIN}/api/admin/ops/payuni/wp4-preflight`, {
       method: "POST", redirect: "error", signal: AbortSignal.timeout(10000),
-      headers: { authorization: `Bearer ${env.JOB_SECRET}`, "x-celebratedeal-source-sha": env.CELEBRATEDEAL_SOURCE_SHA! },
+      headers: { authorization: `Bearer ${env.JOB_SECRET}`, "x-celebratedeal-source-sha": env.CELEBRATEDEAL_SOURCE_SHA!,
+        // QA 財務帳號只需要買家訂單 readiness；完整 gate 還要求 billing 方案與待付發票。
+        "x-celebratedeal-wp4-preflight-scope": "buyer_order" },
     });
     if (response.status !== 200) throw new Error();
     const readiness = await response.json();
-    if (readiness.ready !== true || readiness.buyerOrder !== true) throw new Error();
+    if (readiness.ready !== true || readiness.buyerOrder !== true || readiness.scope !== "buyer_order") throw new Error();
     stage = "fixed-synthetic-account";
     db = new PrismaClient({ datasources: { db: { url: databaseUrl } } });
     const result = await ensureStagingQaFinance(db, { databaseUrl, sourceSha: env.CELEBRATEDEAL_SOURCE_SHA!,

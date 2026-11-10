@@ -53,3 +53,8 @@ test("network destination builder admits only the fixed staging database identit
   for (const url of ["postgresql://synthetic@db.production.supabase.co/postgres", "postgresql://postgres.production@aws-0.example.pooler.supabase.com/postgres", "https://db.ocbugvgojrunvenozsbx.supabase.co",
     "postgresql://synthetic@db.ocbugvgojrunvenozsbx.supabase.co/postgres?%68ost=127.0.0.1"]) assert.equal(evaluate(url), null);
 });
+test("finance bootstrap requests and verifies the buyer_order preflight scope", () => {
+  const source = fs.readFileSync(new URL("./bootstrap-staging-qa-finance.ts", import.meta.url), "utf8");
+  assert.match(source, /"x-celebratedeal-wp4-preflight-scope":\s*"buyer_order"/u);
+  assert.match(source, /readiness\.scope !== "buyer_order"/u);
+});
