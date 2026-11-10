@@ -329,7 +329,7 @@ describe("GET /api/live-updates", () => {
       const otherLive = encodeLiveUpdatesCursor({ liveId: "l2", createdAt: t0, id: "a" });
       const backward = encodeLiveChatCursor({ createdAt: t0, id: "a" });
       const own = encodeLiveUpdatesCursor({ liveId: "l1", createdAt: t0, id: "a" });
-      for (const since of [otherLive, backward, `${own}x`, `${own.slice(0, -2)}AA`]) {
+      for (const since of [otherLive, backward, `${own}x`, `${own.slice(0, -2)}${own.endsWith("AA") ? "BB" : "AA"}`]) {
         const response = await GET(request(`vendorId=v1&liveId=l1&include=chat&since=${since}`));
         expect(response.status).toBe(400);
         expect(response.headers.get("cache-control")).toBe("private, no-store");
