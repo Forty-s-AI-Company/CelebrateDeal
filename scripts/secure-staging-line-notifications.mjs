@@ -39,7 +39,7 @@ function digest(label, value) {
   return `sha256:${crypto.createHash("sha256").update(`line-e2e/v1/${label}/${String(value)}`).digest("hex")}`;
 }
 
-function initialReceipt(source = process.env) {
+export function initialReceipt(source = process.env) {
   return {
     schemaVersion: "celebratedeal-line-notifications-e2e/v1",
     task: TASK,
