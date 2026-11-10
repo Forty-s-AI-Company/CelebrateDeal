@@ -1,0 +1,111 @@
+name: Security audit (weekly)
+
+# The CI gate only audits production dependencies at `high` on pull requests.
+# This workflow audits every dependency (dev included) once a week, so an
+# advisory published after the last merge is still noticed. When a high or
+# critical advisory exists it opens one issue labelled `security-audit`
+# (assigned to the repository owner) and comments on it every week until the
+# advisory is gone, then closes it. The run itself fails only when the audit
+# could not be produced. Triage steps: SECURITY.md.
+on:
+  schedule:
+    # Mondays 09:17 Asia/Taipei.
+    - cron: "17 1 * * 1"
+  workflow_dispatch:
+
+concurrency:
+  group: security-audit
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    name: npm audit (all dependencies)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+
+      # Reads package-lock.json only; nothing is installed or executed.
+      - name: Audit the lockfile
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm audit --package-lock-only --json > audit-all.json || true
+          npm audit --package-lock-only --omit=dev --json > audit-prod.json || true
+          # A registry or lockfile error produces no vulnerability metadata.
+          jq -e '.metadata.vulnerabilities' audit-all.json > /dev/null
+          jq -e '.metadata.vulnerabilities' audit-prod.json > /dev/null
+
+      - name: Summarise advisories
+        id: summary
+        shell: bash
+        run: |
+          set -euo pipefail
+          count() { jq -r ".metadata.vulnerabilities.$1 // 0" "$2"; }
+          critical=$(count critical audit-all.json)
+          high=$(count high audit-all.json)
+          moderate=$(count moderate audit-all.json)
+          prod_critical=$(count critical audit-prod.json)
+          prod_high=$(count high audit-prod.json)
+          echo "blocking=$((critical + high))" >> "$GITHUB_OUTPUT"
+
+          jq -r '.vulnerabilities | keys[]' audit-prod.json > prod-names.txt
+          {
+            echo "## 每週相依性安全稽核"
+            echo
+            echo "- 全部相依：critical ${critical}、high ${high}、moderate ${moderate}"
+            echo "- 正式環境相依（\`--omit=dev\`）：critical ${prod_critical}、high ${prod_high}"
+            echo "- 來源：[workflow run](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID})，commit \`${GITHUB_SHA::8}\`"
+            echo
+            if [ "$((critical + high))" -gt 0 ]; then
+              echo "| 套件 | 嚴重度 | 受影響範圍 | 相依 | 正式環境 | Advisory |"
+              echo "|---|---|---|---|---|---|"
+              jq -r --rawfile prod prod-names.txt '
+                ($prod | split("\n") | map(select(length > 0))) as $prodNames
+                | .vulnerabilities | to_entries[]
+                | select(.value.severity == "high" or .value.severity == "critical")
+                | "| `\(.key)` | \(.value.severity) | `\(.value.range)` | \(if .value.isDirect then "直接" else "間接" end) | \(if (.key | IN($prodNames[])) then "是" else "否" end) | \([.value.via[] | if type == "object" then .url else "經由 `\(.)`" end] | unique | join("<br>")) |"
+              ' audit-all.json
+              echo
+              echo "處理步驟與時限見 [SECURITY.md](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/blob/master/SECURITY.md)。"
+            else
+              echo "沒有 high 或 critical 的 advisory。"
+            fi
+          } > report.md
+          cat report.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Open, update or close the tracking issue
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          BLOCKING: ${{ steps.summary.outputs.blocking }}
+          OWNER: ${{ github.repository_owner }}
+        run: |
+          set -euo pipefail
+          gh label create security-audit --color B60205 \
+            --description "Weekly dependency audit found a high or critical advisory" --force
+          existing=$(gh issue list --label security-audit --state open --json number --jq '.[0].number // empty')
+          if [ "$BLOCKING" -gt 0 ]; then
+            if [ -n "$existing" ]; then
+              gh issue edit "$existing" --body-file report.md
+              gh issue comment "$existing" --body "本週稽核仍有 ${BLOCKING} 項 high／critical advisory，內容已更新在本 issue 的說明。"
+            else
+              gh issue create --title "相依性安全稽核：發現 high／critical advisory" \
+                --label security-audit --assignee "$OWNER" --body-file report.md
+            fi
+          elif [ -n "$existing" ]; then
+            gh issue close "$existing" --comment "本週稽核已無 high／critical advisory，自動關閉。"
+          fi

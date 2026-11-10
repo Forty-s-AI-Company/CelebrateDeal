@@ -1,0 +1,35 @@
+name: Dependency review
+
+# Blocks a pull request that introduces a dependency with a known high or
+# critical advisory. It only runs when the dependency manifests or the CI
+# definitions change. This check is not a required status; a failure here is a
+# signal to fix the dependency before queueing the PR. Policy: SECURITY.md.
+on:
+  pull_request:
+    paths:
+      - package.json
+      - package-lock.json
+      - .github/workflows/**
+      - .github/actions/**
+
+concurrency:
+  group: dependency-review-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  review:
+    name: Dependency review
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Review dependency changes
+        uses: actions/dependency-review-action@v4
+        with:
+          fail-on-severity: high
+          comment-summary-in-pr: never
