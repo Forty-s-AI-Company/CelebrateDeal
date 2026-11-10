@@ -27,6 +27,20 @@ export function readRunnerStage(runnerTemp = process.env.RUNNER_TEMP) {
   return RUNNER_STAGES.has(serialized) ? `RUNNER_STAGE_${serialized.toUpperCase()}` : "RUNNER_STAGE_UNKNOWN";
 }
 
+/** Only a code matching the receipt writer's own allowlist is echoed; anything else is UNCLASSIFIED_FAILURE. */
+export function sanitizeFailureCode(code) {
+  if (code === null || code === undefined) return "NONE";
+  return typeof code === "string" && /^[A-Z0-9_]{3,80}$/u.test(code) ? code : "UNCLASSIFIED_FAILURE";
+}
+
+// Key names of boolean checks that are false. validateReceipt already enforced the exact check key set,
+// so these are fixed identifiers, never receipt free text.
+const CHECK_KEY_ALLOWLIST = new Set(["isolatedDatabase", "runtimeDatabaseBound", "invalidBearerRejected", "invalidBearerNoWrite", "validBearerAccepted", "sentAtPresent", "idempotencyProbePassed", "tenantIsolationPassed"]);
+export function falseCheckKeys(checks) {
+  const keys = Object.keys(checks ?? {}).filter((key) => CHECK_KEY_ALLOWLIST.has(key) && checks[key] === false);
+  return keys.length ? keys.join(",") : "NONE";
+}
+
 export function validateReceiptPath(candidate, runnerTemp = process.env.RUNNER_TEMP, expectedSource = process.env) {
   if (!candidate || !runnerTemp) return { ok: false, reason: "PATH_MISSING" };
   if (!expectedSource.CELEBRATEDEAL_SOURCE_SHA || !expectedSource.GITHUB_RUN_ID || !expectedSource.GITHUB_RUN_ATTEMPT) return { ok: false, reason: "EXPECTED_BINDING_MISSING" };
@@ -57,7 +71,7 @@ export function validateReceiptPath(candidate, runnerTemp = process.env.RUNNER_T
   catch { return { ok: false, reason: "RECEIPT_JSON_INVALID" }; }
   const validation = validateReceipt(receipt, { sourceCommit: expectedSource.CELEBRATEDEAL_SOURCE_SHA, runId: expectedSource.GITHUB_RUN_ID, runAttempt: expectedSource.GITHUB_RUN_ATTEMPT });
   return validation.ok
-    ? { ok: true, result: receipt.result }
+    ? { ok: true, result: receipt.result, failure: sanitizeFailureCode(receipt.failureCode), failedChecks: falseCheckKeys(receipt.checks) }
     : { ok: false, reason: "RECEIPT_INVALID", diagnostic: validation.errors[0] ?? "UNKNOWN" };
 }
 
