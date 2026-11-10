@@ -77,7 +77,7 @@ export const WORKSPACE_ONBOARDING_TASKS: readonly OnboardingTaskDefinition[] = [
   { key: "workspace_test_order", title: "完成測試訂單", estimatedMinutes: 3, required: true, skipImpact: "已略過測試訂單，付款與交付流程尚未驗證。" },
 ];
 
-const LIVE_PROJECT_TASKS: readonly OnboardingTaskDefinition[] = [
+export const LIVE_PROJECT_TASKS: readonly OnboardingTaskDefinition[] = [
   { key: "project_created", title: "建立專案", estimatedMinutes: 1, required: true },
   { key: "project_product", title: "建立商品", estimatedMinutes: 3, required: true },
   { key: "project_funnel", title: "選擇漏斗頁模板", estimatedMinutes: 3, required: true },
@@ -87,7 +87,7 @@ const LIVE_PROJECT_TASKS: readonly OnboardingTaskDefinition[] = [
   { key: "project_publish", title: "發布並取得分享連結", estimatedMinutes: 1, required: true },
 ];
 
-const CONSULTATION_PROJECT_TASKS: readonly OnboardingTaskDefinition[] = [
+export const CONSULTATION_PROJECT_TASKS: readonly OnboardingTaskDefinition[] = [
   { key: "project_created", title: "建立專案", estimatedMinutes: 1, required: true },
   { key: "project_consultation", title: "建立諮詢服務", estimatedMinutes: 3, required: true },
   { key: "project_price", title: "設定價格", estimatedMinutes: 2, required: true },

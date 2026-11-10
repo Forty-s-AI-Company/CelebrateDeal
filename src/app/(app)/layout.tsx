@@ -8,6 +8,7 @@ import { verifiedVendorPaymentMethodWhere } from "@/lib/payment-method-reference
 import { enabledFeaturesForVendor } from "@/lib/vendor-feature-toggles";
 import { isCardBindingRequired } from "@/lib/feature-gates";
 import { persistTaskPanelCollapsedAction, selectSalesProjectAction } from "@/app/actions/sales-workspace-actions";
+import { isPaymentOnboardingTask, onboardingTaskHref } from "@/lib/onboarding-task-links";
 import { evaluateProjectOnboarding, evaluateWorkspaceOnboarding } from "@/lib/sales-workspace";
 import { hasActiveAffiliatePortalAccess } from "@/lib/affiliate-portal";
 
@@ -98,6 +99,6 @@ export default async function ProtectedLayout({ children }: { children: React.Re
     taskProgress = evaluateWorkspaceOnboarding({ hasBasicProfile: Boolean(vendor.name.trim() && vendor.email.trim()), hasLogo: Boolean(vendor.logoUrl), hasPaymentMethod: payments > 0, hasSupportContact: Boolean(vendor.supportEmail?.trim()), hasInvitedTeamMember: members > 1, hasTestOrder: testOrders > 0 }, states);
   }
   const guideHidden = Boolean(preference?.guideDismissedAt || (preference?.taskPanelHiddenUntil && preference.taskPanelHiddenUntil > new Date()));
-  const onboardingTasks = guideHidden ? [] : taskProgress.tasks.filter((task) => cardBindingRequired || !task.key.includes("payment")).map((task) => ({ key: task.key, title: task.title, status: task.status, scopeKey: selectedProject?.id ?? "workspace", required: task.required, estimateMinutes: task.estimatedMinutes, impact: task.impact, href: task.key === "project_publish" && selectedProject ? `/projects/${encodeURIComponent(selectedProject.id)}` : task.key.includes("payment") ? "/billing/payment-methods" : task.key.includes("logo") || task.key.includes("profile") || task.key.includes("support") ? "/settings/brand" : task.key.includes("team") ? "/settings/team" : task.key.includes("product") || task.key.includes("price") ? `/products/new` : task.key.includes("funnel") ? `/forms/new` : task.key.includes("live") ? `/lives/new` : task.key.includes("consultation") || task.key.includes("availability") ? "/consultations" : "/onboarding" }));
+  const onboardingTasks = guideHidden ? [] : taskProgress.tasks.filter((task) => cardBindingRequired || !isPaymentOnboardingTask(task.key)).map((task) => ({ key: task.key, title: task.title, status: task.status, scopeKey: selectedProject?.id ?? "workspace", required: task.required, estimateMinutes: task.estimatedMinutes, impact: task.impact, href: onboardingTaskHref(task.key, selectedProject?.id ?? null) }));
   return <AppShell vendorName={vendor.name} memberRole={auth.member?.role ?? null} enabledModules={enabledFeaturesForVendor(vendor)} planLabel={activeSubscription?.plan.name ?? "Free"} hasPartnerPortal={hasPartnerPortal} projects={projects} selectedProjectId={selectedProject?.id ?? null} onboardingTasks={onboardingTasks} taskPanelCollapsed={preference?.taskPanelCollapsed ?? true} selectProject={selectSalesProjectAction} persistTaskPanelCollapsed={persistTaskPanelCollapsedAction}>{content}</AppShell>;
 }
