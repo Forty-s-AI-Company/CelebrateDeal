@@ -143,7 +143,13 @@ export function validateReceipt(receipt, expected = null) {
   return { ok: errors.length === 0, errors };
 }
 
-function safeFailure(error) {
+// Maps Prisma errors to a fixed-vocabulary code (never message text, hosts or URLs).
+export function safeFailure(error) {
+  const prismaCode = typeof error?.errorCode === "string" ? error.errorCode : error?.code;
+  if (typeof prismaCode === "string" && /^P\d{4}$/u.test(prismaCode)) return `PRISMA_${prismaCode}`;
+  if (error?.name === "PrismaClientInitializationError") return "PRISMA_INIT_FAILED";
+  if (error?.name === "PrismaClientUnknownRequestError") return "PRISMA_UNKNOWN_REQUEST";
+  if (error?.name === "PrismaClientRustPanicError") return "PRISMA_RUST_PANIC";
   const code = error instanceof Error ? error.message : "UNKNOWN_FAILURE";
   return /^[A-Z0-9_]{3,80}$/u.test(code) ? code : "UNCLASSIFIED_FAILURE";
 }
@@ -237,7 +243,7 @@ export async function runLineStagingValidation(source = process.env, dependencie
     decoyVendorId: `line-e2e-dv-${runKey}`, decoyAccountId: `line-e2e-da-${runKey}`,
     decoyIdentityId: `line-e2e-di-${runKey}`,
   };
-  const db = new PrismaClient({ datasources: { db: { url: source.STAGING_DATABASE_URL } }, log: [] });
+  const db = dependencies.createDb ? dependencies.createDb() : new PrismaClient({ datasources: { db: { url: source.STAGING_DATABASE_URL } }, log: [] });
   try {
     const [accounts, identities, deliveries] = await Promise.all([
       db.lineOfficialAccount.count(), db.lineUserIdentity.count(), db.lineDelivery.count(),
@@ -316,8 +322,9 @@ export async function runLineStagingValidation(source = process.env, dependencie
       receipt.cleanup.verified = receipt.cleanup.remainingOwnedRows === 0;
       if (!receipt.cleanup.verified) throw new Error("CLEANUP_FAILED");
     } catch {
+      // Keep the root cause; the cleanup outcome is already recorded in receipt.cleanup.
       receipt.result = "FAILED";
-      receipt.failureCode = "CLEANUP_FAILED";
+      receipt.failureCode ??= "CLEANUP_FAILED";
     }
     await db.$disconnect().catch(() => undefined);
   }

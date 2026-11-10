@@ -3,7 +3,7 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import test from "node:test";
 
-import { TASK, runLineStagingValidation, validateInvocation, validateReceipt } from "./secure-staging-line-notifications.mjs";
+import { TASK, runLineStagingValidation, safeFailure, validateInvocation, validateReceipt } from "./secure-staging-line-notifications.mjs";
 
 const source = {
   STAGING_DATABASE_URL: "postgresql://staging_user@staging.invalid/postgres",
@@ -99,4 +99,61 @@ test("a non-master SHA is BLOCKED before alias attestation, even if the alias wo
   const tokenless = await runLineStagingValidation(source, { verifyAliasAttestationImpl: async () => { attested = true; return {}; } });
   assert.equal(tokenless.failureCode, "PROTECTED_MASTER_CHECK_FAILED");
   assert.equal(attested, false);
+});
+
+const attestedDeps = {
+  verifyShaOnProtectedMasterImpl: async () => true,
+  verifyAliasAttestationImpl: async () => ({ host: "celebrate-deal-staging.carry-digital-nomad.in.net" }),
+};
+
+function prismaLikeError(name, props, message) {
+  const error = new Error(message);
+  error.name = name;
+  return Object.assign(error, props);
+}
+
+function brokenDb(rootError) {
+  const fail = async () => { throw rootError; };
+  return {
+    lineOfficialAccount: { count: fail }, lineUserIdentity: { count: fail }, lineDelivery: { count: fail },
+    $transaction: fail, $disconnect: async () => undefined,
+  };
+}
+
+test("keeps the root failure code when cleanup also fails", async () => {
+  const root = prismaLikeError("PrismaClientInitializationError", { errorCode: "P1001" }, "Can't reach database server at `db.secret-host.example:5432`");
+  const receipt = await runLineStagingValidation(source, { ...attestedDeps, createDb: () => brokenDb(root) });
+  assert.equal(receipt.result, "FAILED");
+  assert.equal(receipt.failureCode, "PRISMA_P1001");
+  assert.equal(receipt.cleanup.attempted, true);
+  assert.equal(receipt.cleanup.verified, false);
+  assert.equal(receipt.checks.isolatedDatabase, false);
+  assert.equal(validateReceipt(receipt).ok, true);
+  assert.doesNotMatch(JSON.stringify(receipt), /secret-host|5432/u);
+});
+
+test("root failure survives a failing cleanup for our own coded errors too", async () => {
+  const dirty = async () => 1;
+  const db = {
+    lineOfficialAccount: { count: dirty }, lineUserIdentity: { count: dirty }, lineDelivery: { count: dirty },
+    $transaction: async () => { throw new Error("tx failed"); }, $disconnect: async () => undefined,
+  };
+  const receipt = await runLineStagingValidation(source, { ...attestedDeps, createDb: () => db });
+  assert.equal(receipt.failureCode, "DATABASE_NOT_ISOLATED");
+  assert.equal(receipt.cleanup.verified, false);
+});
+
+test("safeFailure maps Prisma errors to fixed codes and never leaks message text", () => {
+  const secret = ["postgresql", "//user:pw@db.secret-host.example:5432/postgres"].join(":");
+  assert.equal(safeFailure(prismaLikeError("PrismaClientInitializationError", { errorCode: "P1001" }, secret)), "PRISMA_P1001");
+  assert.equal(safeFailure(prismaLikeError("PrismaClientKnownRequestError", { code: "P2021" }, secret)), "PRISMA_P2021");
+  assert.equal(safeFailure(prismaLikeError("PrismaClientInitializationError", {}, secret)), "PRISMA_INIT_FAILED");
+  assert.equal(safeFailure(prismaLikeError("PrismaClientUnknownRequestError", {}, secret)), "PRISMA_UNKNOWN_REQUEST");
+  assert.equal(safeFailure(prismaLikeError("PrismaClientRustPanicError", {}, secret)), "PRISMA_RUST_PANIC");
+  assert.equal(safeFailure(prismaLikeError("PrismaClientInitializationError", { errorCode: "bad code" }, secret)), "PRISMA_INIT_FAILED");
+  assert.equal(safeFailure(new Error(secret)), "UNCLASSIFIED_FAILURE");
+  assert.equal(safeFailure(new Error("DATABASE_NOT_ISOLATED")), "DATABASE_NOT_ISOLATED");
+  for (const error of [prismaLikeError("PrismaClientInitializationError", { errorCode: "P1001" }, secret), new Error(secret)]) {
+    assert.doesNotMatch(safeFailure(error), /secret-host|postgresql|pw/u);
+  }
 });
