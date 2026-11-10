@@ -286,7 +286,7 @@ function showPublishPreview(tree: unknown) {
   }
 
   const publishPanel = findElement(currentTree, (candidate) => (
-    candidate.props.active === true && candidate.props.index === 7
+    candidate.props.active === true && candidate.props.step === "review"
   ));
   expect(publishPanel).toBeDefined();
   return renderToStaticMarkup(publishPanel as unknown as ReactElement);
@@ -478,10 +478,13 @@ describe("LiveStepperForm", () => {
     const basicsButton = stepButton(form, "用途與基本資料");
 
     expect(basicsButton?.props["aria-current"]).toBe("step");
-    expect(basicsButton?.props["aria-controls"]).toBe("live-step-panel-0");
-    const labels = ["用途與基本資料", "影片與即時直播", "商品優惠", "報名頁", "時間、回放與品牌", "Email", "留言、商品浮窗與 CTA", "桌機／手機預覽發布"];
-    labels.forEach((label, index) => {
-      expect(stepButton(form, label)?.props["aria-controls"]).toBe(`live-step-panel-${index}`);
+    expect(basicsButton?.props["aria-controls"]).toBe("live-step-panel-purpose");
+    const labels = [
+      ["purpose", "用途與基本資料"], ["media", "影片與即時直播"], ["products", "商品優惠"], ["registration", "報名頁"],
+      ["schedule", "時間、回放與品牌"], ["emails", "Email"], ["interactions", "留言、商品浮窗與 CTA"], ["review", "桌機／手機預覽發布"],
+    ] as const;
+    labels.forEach(([key, label]) => {
+      expect(stepButton(form, label)?.props["aria-controls"]).toBe(`live-step-panel-${key}`);
     });
   });
 
@@ -494,7 +497,7 @@ describe("LiveStepperForm", () => {
     const labels = ["用途與基本資料", "影片與即時直播", "商品優惠", "報名頁", "時間、回放與品牌", "Email", "留言、商品浮窗與 CTA", "桌機／手機預覽發布"];
     const onSelect = vi.fn();
     const picker = renderToStaticMarkup(
-      <LiveStepPicker activeStep={2} steps={labels.map((label, index) => ({ key: String(index), label }))} completion={labels.map((_, index) => index < 2)} compact onSelect={onSelect} />,
+      <LiveStepPicker activeStep="2" steps={labels.map((label, index) => ({ key: String(index), label }))} completion={Object.fromEntries(labels.map((_, index) => [String(index), index < 2]))} compact onSelect={onSelect} />,
     );
     expect(picker).toContain("第 3 步／共 8 步");
     expect(picker).toContain('aria-label="切換步驟"');
@@ -520,37 +523,37 @@ describe("LiveStepperForm", () => {
   it("keeps every field in its canonical eight-step panel", () => {
     const form = renderForm();
     const expectedFields = [
-      [0, ["studioPreset", "title", "slug", "description"]],
-      [1, ["streamMode", "videoId"]],
-      [2, ["accentCopy"]],
-      [3, ["formId"]],
-      [4, ["replayEnabled", "replayAvailableUntil"]],
-      [5, ["messageTemplateId", "liveReminderTemplateId", "liveReminderOffsetMinutes"]],
-      [6, ["interactionScriptId"]],
+      ["purpose", ["studioPreset", "title", "slug", "description"]],
+      ["media", ["streamMode", "videoId"]],
+      ["products", ["accentCopy"]],
+      ["registration", ["formId"]],
+      ["schedule", ["replayEnabled", "replayAvailableUntil"]],
+      ["emails", ["messageTemplateId", "liveReminderTemplateId", "liveReminderOffsetMinutes"]],
+      ["interactions", ["interactionScriptId"]],
     ] as const;
 
-    for (const [index, names] of expectedFields) {
-      const panel = findElement(form, (candidate) => candidate.props.index === index && "active" in candidate.props);
+    for (const [step, names] of expectedFields) {
+      const panel = findElement(form, (candidate) => candidate.props.step === step && "active" in candidate.props);
       expect(panel).toBeDefined();
       for (const name of names) {
         expect(
           findElement(panel?.props.children, (candidate) => (
             name === "slug" ? candidate.type === LiveSlugField : candidate.props.name === name
           )),
-          `step ${index + 1} should own ${name}`,
+          `step ${step} should own ${name}`,
         ).toBeDefined();
       }
     }
-    const productPanel = findElement(form, (candidate) => candidate.props.index === 2 && "active" in candidate.props);
+    const productPanel = findElement(form, (candidate) => candidate.props.step === "products" && "active" in candidate.props);
     expect(findElement(productPanel?.props.children, (candidate) => typeof candidate.type === "function" && candidate.type.name === "ProductSelection")).toBeDefined();
-    const brandPanel = findElement(form, (candidate) => candidate.props.index === 4 && "active" in candidate.props);
+    const brandPanel = findElement(form, (candidate) => candidate.props.step === "schedule" && "active" in candidate.props);
     expect(findElement(brandPanel?.props.children, (candidate) => (
       typeof candidate.type === "function" && candidate.type.name === "ScheduleDateTimeField"
     ))).toBeDefined();
     expect(findElement(brandPanel?.props.children, (candidate) => (
       typeof candidate.type === "function" && candidate.type.name === "MediaUploadField" && candidate.props.urlInputName === "heroImageUrl"
     ))).toBeDefined();
-    const interactionPanel = findElement(form, (candidate) => candidate.props.index === 6 && "active" in candidate.props);
+    const interactionPanel = findElement(form, (candidate) => candidate.props.step === "interactions" && "active" in candidate.props);
     expect(findElement(interactionPanel?.props.children, (candidate) => (
       typeof candidate.type === "function" && candidate.type.name === "LiveRulesFields"
     ))).toBeDefined();
@@ -597,9 +600,9 @@ describe("LiveStepperForm", () => {
     const conversionForm = renderForm();
     const conversionButton = stepButton(conversionForm, "影片與即時直播");
     expect(conversionButton?.props["aria-current"]).toBe("step");
-    expect(conversionButton?.props["aria-controls"]).toBe("live-step-panel-1");
+    expect(conversionButton?.props["aria-controls"]).toBe("live-step-panel-media");
     const activePanel = findElement(conversionForm, (candidate) => candidate.props.active === true);
-    expect(activePanel?.props.index).toBe(1);
+    expect(activePanel?.props.step).toBe("media");
 
     const previousButton = findElement(conversionForm, (candidate) => (
       candidate.type === "button" && textContent(candidate.props.children) === "上一步"
@@ -658,7 +661,7 @@ describe("LiveStepperForm", () => {
 
     class SyntheticHTMLElement {
       focus = vi.fn();
-      closest = vi.fn(() => ({ dataset: { stepIndex: "3" } }));
+      closest = vi.fn(() => ({ dataset: { stepKey: "registration" } }));
     }
 
     globalScope.HTMLElement = SyntheticHTMLElement;
@@ -679,7 +682,7 @@ describe("LiveStepperForm", () => {
       onInvalid({ preventDefault, target: control });
       const movedForm = renderForm(products, { error: "invalid_reference" });
       const activePanel = findElement(movedForm, (candidate) => candidate.props.active === true);
-      expect(activePanel?.props.index).toBe(3);
+      expect(activePanel?.props.step).toBe("registration");
       expect(control.focus).toHaveBeenCalledTimes(1);
       expect(preventDefault).toHaveBeenCalledTimes(1);
 
@@ -915,7 +918,7 @@ describe("LiveStepperForm", () => {
     (fixMedia?.props.onClick as () => void)();
     const moved = renderForm([], { initialValues });
 
-    expect(findElement(moved, (candidate) => candidate.props.active === true)?.props.index).toBe(1);
+    expect(findElement(moved, (candidate) => candidate.props.active === true)?.props.step).toBe("media");
     expect(querySelector).toHaveBeenCalledWith('[name="videoId"]');
     expect(target.focus).toHaveBeenCalledOnce();
   });

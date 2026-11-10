@@ -8,6 +8,7 @@ import { isFeatureEnabled } from "@/lib/feature-gates";
 import { getCsrfToken } from "@/lib/csrf";
 import { getDb } from "@/lib/db";
 import { LiveStudioDraftPayloadSchema } from "@/lib/live-studio-draft";
+import { LIVE_STUDIO_FIRST_STEP_INDEX } from "@/lib/live-studio-steps";
 import { parseLiveQuotaPolicy } from "@/lib/live-quota-policy";
 import { liveReadyVideoWhere } from "@/lib/live-video-readiness";
 import { formatZonedDateTimeLocal } from "@/lib/zoned-date-time";
@@ -323,7 +324,7 @@ export default async function EditLivePage({
       ? formatZonedDateTimeLocal(live.replayAvailableUntil, vendor.timezone)
       : "",
     ...fixedSessionStudio.payloadFields,
-    activeStep: 0,
+    activeStep: LIVE_STUDIO_FIRST_STEP_INDEX,
   });
   const fixedSessionSummaries = fixedSessionStudio.summaries;
   const savedPayload = savedDraft ? LiveStudioDraftPayloadSchema.safeParse(savedDraft.payload) : null;

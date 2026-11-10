@@ -141,6 +141,30 @@ describe("saveLiveStudioDraft", () => {
     });
   });
 
+  it("lets a page-hide flush outlive the page only when the body fits the keepalive budget", async () => {
+    const respond = (payload: unknown) => new Response(JSON.stringify({
+      id: "draft-1",
+      revision: 2,
+      payload,
+      updatedAt: "2026-08-08T01:00:00.000Z",
+    }), { status: 200, headers: { "content-type": "application/json" } });
+    const small = emptyLiveStudioDraft();
+    const large = { ...emptyLiveStudioDraft(), customAllocations: "x".repeat(20_000), memberQuotas: "y".repeat(20_000), pageQuotas: "z".repeat(20_000), description: "長".repeat(5_000) };
+    const fetchMock = vi.fn()
+      .mockImplementationOnce(async () => respond(small))
+      .mockImplementationOnce(async () => respond(large))
+      .mockImplementationOnce(async () => respond(small));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await saveLiveStudioDraft({ csrfToken: "csrf-test", draftId: "draft-1", liveId: "", revision: 1, payload: small, keepalive: true });
+    await saveLiveStudioDraft({ csrfToken: "csrf-test", draftId: "draft-1", liveId: "", revision: 1, payload: large, keepalive: true });
+    await saveLiveStudioDraft({ csrfToken: "csrf-test", draftId: "draft-1", liveId: "", revision: 1, payload: small });
+
+    expect(fetchMock.mock.calls[0]?.[1]).toMatchObject({ keepalive: true });
+    expect(fetchMock.mock.calls[1]?.[1]).not.toHaveProperty("keepalive");
+    expect(fetchMock.mock.calls[2]?.[1]).not.toHaveProperty("keepalive");
+  });
+
   it("surfaces optimistic conflicts without leaking arbitrary response details", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({ error: { code: "DRAFT_CONFLICT" }, detail: "database-secret" }), {
       status: 409,

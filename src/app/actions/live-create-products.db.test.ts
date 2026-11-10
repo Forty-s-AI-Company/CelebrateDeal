@@ -14,6 +14,7 @@ vi.mock("@/lib/live-notification-delivery", () => ({ materializeLiveNotification
 
 import { upsertLiveAction } from "@/app/actions";
 import { liveStudioDraftFromFormData } from "@/lib/live-studio-draft-client";
+import { LIVE_STUDIO_LAST_STEP_INDEX } from "@/lib/live-studio-steps";
 
 // Actual PostgreSQL writes; only request/session boundaries are synthetic.
 const prisma = new PrismaClient();
@@ -61,7 +62,7 @@ async function savedDraft(vendorId: string, fields: Record<string, string>, prod
   })) data.set(key, value);
   for (const productId of productIds) data.append("productIds", productId);
   const saved = await prisma.liveStudioDraft.create({ data: {
-    vendorId, updatedByMemberId: "synthetic-member", payload: liveStudioDraftFromFormData(data, 7), expiresAt: new Date(Date.now() + 60_000),
+    vendorId, updatedByMemberId: "synthetic-member", payload: liveStudioDraftFromFormData(data, LIVE_STUDIO_LAST_STEP_INDEX), expiresAt: new Date(Date.now() + 60_000),
   } });
   data.set("liveDraftId", saved.id);
   data.set("liveDraftRevision", String(saved.revision));

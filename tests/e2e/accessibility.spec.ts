@@ -471,9 +471,10 @@ test("live stepper has no blocking axe violations on any of the eight steps or o
   await page.getByLabel("直播標題", { exact: true }).fill("A11y 步驟掃描");
   await page.getByLabel("直播網址").fill(`a11y-stepper-${runId}`);
 
+  const stepKeys = ["purpose", "media", "products", "registration", "schedule", "emails", "interactions", "review"] as const;
   const scanned: number[] = [];
   const scanStep = async (step: number) => {
-    await expect(page.locator(`[data-step-index="${step}"]`)).toBeVisible();
+    await expect(page.locator(`[data-step-key="${stepKeys[step]}"]`)).toBeVisible();
     const violations = await blockingAxeViolations(page);
     expect(violations, `stepper 第 ${step + 1} 步`).toEqual([]);
     scanned.push(step + 1);
@@ -498,7 +499,7 @@ test("live stepper has no blocking axe violations on any of the eight steps or o
   await scanStep(7);
   expect(scanned).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
   // F-118：切換步驟後焦點在新步驟的標題。
-  await expect(page.locator(`[data-step-index="7"] h2, [data-step-index="7"] h3`).first()).toBeFocused();
+  await expect(page.locator(`[data-step-key="review"] h2, [data-step-key="review"] h3`).first()).toBeFocused();
 });
 
 test("platform-admin MFA and static operations routes have no blocking axe violations", async ({ page }) => {

@@ -154,7 +154,7 @@ describe("LiveStepperForm draft resume", () => {
     expect(control('input[type="datetime-local"][name="replayAvailableUntil"]').value).toBe("2026-11-15T23:59");
     expect(control('[name="liveDraftId"]').value).toBe("draft-resumed");
     expect(control('[name="liveDraftRevision"]').value).toBe("2");
-    expect(control('[data-step-index="7"]').hidden).toBe(false);
+    expect(control('[data-step-key="review"]').hidden).toBe(false);
     // Round trip: what the restored form would save is exactly the saved draft.
     expect(serializeLiveStudioDraft(form, 7)).toEqual(reportedPayload);
   });
@@ -187,6 +187,53 @@ describe("LiveStepperForm draft resume", () => {
 
     expect(control('[name="title"]')).toBe(title);
     expect(control('[name="liveDraftId"]').value).toBe("draft-created");
+  });
+});
+
+describe("LiveStepperForm leaving with an unsaved edit", () => {
+  it("saves the newest edit when a 新增… link replaces the studio before the autosave fires", async () => {
+    await act(async () => { root.render(studio(resumedDraft)); });
+    await type(control('[name="title"]'), "離開前改的標題");
+    expect(mocks.saveLiveStudioDraft).not.toHaveBeenCalled();
+
+    // A client navigation (e.g. 「新增商品」) unmounts the studio inside the same document.
+    await act(async () => { root.render(<main>新增商品頁</main>); });
+    await settle();
+
+    expect(mocks.saveLiveStudioDraft).toHaveBeenCalledTimes(1);
+    expect(mocks.saveLiveStudioDraft).toHaveBeenCalledWith(expect.objectContaining({
+      draftId: "draft-resumed",
+      revision: 2,
+      payload: expect.objectContaining({ title: "離開前改的標題", activeStep: reportedPayload.activeStep }),
+    }));
+  });
+
+  it("does not rewrite the next page's URL when the flushed create draft finishes", async () => {
+    await act(async () => { root.render(studio()); });
+    await type(control('[name="title"]'), "尚未建立的草稿");
+    window.history.replaceState({}, "", "/products/new");
+    await act(async () => { root.render(<main>新增商品頁</main>); });
+    await settle();
+
+    expect(mocks.saveLiveStudioDraft).toHaveBeenCalledTimes(1);
+    expect(mocks.saveLiveStudioDraft).toHaveBeenCalledWith(expect.objectContaining({ draftId: "", revision: null }));
+    expect(window.location.pathname).toBe("/products/new");
+    expect(window.location.search).toBe("");
+  });
+
+  it("flushes the pending edit when the page is hidden and does not save it twice", async () => {
+    await act(async () => { root.render(studio(resumedDraft)); });
+    await type(control('[name="accentCopy"]'), "切換分頁前的優惠");
+    await act(async () => { window.dispatchEvent(new Event("pagehide")); });
+    await settle();
+
+    expect(mocks.saveLiveStudioDraft).toHaveBeenCalledTimes(1);
+    expect(mocks.saveLiveStudioDraft).toHaveBeenCalledWith(expect.objectContaining({
+      keepalive: true,
+      payload: expect.objectContaining({ accentCopy: "切換分頁前的優惠" }),
+    }));
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 800)); });
+    expect(mocks.saveLiveStudioDraft).toHaveBeenCalledTimes(1);
   });
 });
 

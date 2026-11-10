@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { emptyLiveStudioDraft, type LiveStudioDraftEnvelope } from "@/lib/live-studio-draft";
 import { LiveStudioDraftClientError } from "@/lib/live-studio-draft-client";
 import {
@@ -395,6 +395,79 @@ describe("Live Studio draft hook beforeunload lifecycle", () => {
     expect(savedEvent.returnValue).toBe("initial");
 
     hook.unmount();
+  });
+});
+
+describe("Live Studio draft hook flush when leaving", () => {
+  beforeEach(() => {
+    liveDraftClientMock.saveLiveStudioDraft.mockClear();
+    liveDraftClientMock.serializeLiveStudioDraft.mockClear();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+    liveDraftClientMock.saveLiveStudioDraft.mockClear();
+    liveDraftClientMock.serializeLiveStudioDraft.mockClear();
+  });
+
+  it("saves the debounced edit once when the studio unmounts before the timer fires", async () => {
+    vi.useFakeTimers();
+    createWindowListenerMock();
+    const hook = LiveStudioDraftHarness(undefined, 3);
+
+    hook.result.scheduleSave();
+    expect(liveDraftClientMock.saveLiveStudioDraft).not.toHaveBeenCalled();
+    hook.unmount();
+
+    expect(liveDraftClientMock.saveLiveStudioDraft).toHaveBeenCalledOnce();
+    expect(liveDraftClientMock.saveLiveStudioDraft).toHaveBeenCalledWith(expect.objectContaining({
+      draftId: "",
+      revision: null,
+      payload: { flowVersion: 2, activeStep: 3 },
+    }));
+    expect(liveDraftClientMock.saveLiveStudioDraft.mock.calls[0]?.[0]).not.toHaveProperty("keepalive");
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(liveDraftClientMock.saveLiveStudioDraft).toHaveBeenCalledOnce();
+  });
+
+  it("does not save on unmount when no edit is waiting for the debounce", () => {
+    vi.useFakeTimers();
+    createWindowListenerMock();
+    const hook = LiveStudioDraftHarness();
+
+    hook.unmount();
+
+    expect(liveDraftClientMock.saveLiveStudioDraft).not.toHaveBeenCalled();
+  });
+
+  it("does not save the same edit twice when the debounce already started it", async () => {
+    vi.useFakeTimers();
+    createWindowListenerMock();
+    const hook = LiveStudioDraftHarness();
+
+    hook.result.scheduleSave();
+    await vi.advanceTimersByTimeAsync(700);
+    expect(liveDraftClientMock.saveLiveStudioDraft).toHaveBeenCalledOnce();
+    hook.unmount();
+
+    expect(liveDraftClientMock.saveLiveStudioDraft).toHaveBeenCalledOnce();
+  });
+
+  it("flushes the debounced edit with keepalive when the page is hidden", () => {
+    vi.useFakeTimers();
+    const browser = createWindowListenerMock();
+    const hook = LiveStudioDraftHarness(undefined, 5);
+
+    hook.result.scheduleSave();
+    browser.dispatchEvent({ type: "pagehide" } as Event);
+
+    expect(liveDraftClientMock.saveLiveStudioDraft).toHaveBeenCalledOnce();
+    expect(liveDraftClientMock.saveLiveStudioDraft).toHaveBeenCalledWith(expect.objectContaining({
+      keepalive: true,
+      payload: { flowVersion: 2, activeStep: 5 },
+    }));
+    hook.unmount();
+    expect(liveDraftClientMock.saveLiveStudioDraft).toHaveBeenCalledOnce();
+    expect(browser.removeEventListener).toHaveBeenCalledWith("pagehide", expect.any(Function));
   });
 });
 

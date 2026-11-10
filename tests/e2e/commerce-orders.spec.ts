@@ -132,7 +132,7 @@ async function installOwnerSession(page: Page) {
 type LiveWizardControlName = "scheduledAt" | "messageTemplateId";
 
 async function openWizardPanelForControl(page: Page, controlName: LiveWizardControlName) {
-  const panels = page.locator("[data-step-index]").filter({
+  const panels = page.locator("[data-step-key]").filter({
     // controlName is restricted to fixed internal form names before it is used in a selector.
     has: page.locator(`[name="${controlName}"]`),
   });

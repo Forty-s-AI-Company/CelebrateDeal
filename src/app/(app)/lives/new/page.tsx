@@ -9,6 +9,7 @@ import { resolveBoundProjectName, resolveDefaultProjectCandidate } from "@/lib/s
 import { getCsrfToken } from "@/lib/csrf";
 import { getDb } from "@/lib/db";
 import { LiveStudioDraftPayloadSchema } from "@/lib/live-studio-draft";
+import { liveStudioStepAt } from "@/lib/live-studio-steps";
 import { liveReadyVideoWhere } from "@/lib/live-video-readiness";
 import {
   hasUsableMessageTemplateContent,
@@ -16,8 +17,6 @@ import {
   REGISTRATION_CONFIRMATION_EMAIL_TEMPLATE_WHERE,
 } from "@/lib/message-template";
 import { parseRegistrationFormFields } from "@/lib/registration-form-fields";
-
-const liveStudioStepLabels = ["用途與基本資料", "影片與即時直播", "商品優惠", "報名頁", "時間、回放與品牌", "Email", "留言、商品浮窗與 CTA", "桌機／手機預覽發布"] as const;
 
 type ResumableLiveDraft = {
   id: string;
@@ -39,7 +38,7 @@ function LiveDraftResumeNotice({ drafts, timeZone }: { drafts: ResumableLiveDraf
             <div>
               <p className="font-semibold text-slate-950">{draft.title || "未命名直播"}</p>
               <p className="mt-1 text-xs text-slate-600">
-                第 {draft.activeStep + 1} 步：{liveStudioStepLabels[draft.activeStep]} · 上次儲存於{" "}
+                第 {draft.activeStep + 1} 步：{liveStudioStepAt(draft.activeStep).label} · 上次儲存於{" "}
                 <time dateTime={draft.updatedAt.toISOString()}>
                   {draft.updatedAt.toLocaleString("zh-TW", { timeZone, hour12: false })}
                 </time>

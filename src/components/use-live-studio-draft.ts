@@ -56,6 +56,7 @@ type SaveDraft = (input: {
   revision: number | null;
   payload: LiveStudioDraftPayload;
   overwrite?: boolean;
+  keepalive?: boolean;
 }) => Promise<LiveStudioDraftEnvelope & { slugTaken?: boolean; slugCheckFailed?: boolean }>;
 
 /**
@@ -68,6 +69,7 @@ export class LiveStudioDraftSaveQueue {
   private activeSave: Promise<boolean> | null = null;
   private conflictLocked = false;
   private overwriteNext = false;
+  private keepaliveNext = false;
   private draftId: string;
   private revision: number | null;
   private updatedAt: string;
@@ -99,10 +101,12 @@ export class LiveStudioDraftSaveQueue {
     this.options.onTransition = onTransition;
   }
 
-  enqueue(payload: LiveStudioDraftPayload) {
+  /** `keepalive` lets the next request outlive a page that is being hidden or unloaded. */
+  enqueue(payload: LiveStudioDraftPayload, options: { keepalive?: boolean } = {}) {
     if (this.conflictLocked) return;
     this.latestLocalPayload = payload;
     this.pendingPayload = payload;
+    if (options.keepalive) this.keepaliveNext = true;
     void this.ensureDrain();
   }
 
@@ -156,6 +160,8 @@ export class LiveStudioDraftSaveQueue {
       this.transition("saving");
       const overwrite = this.overwriteNext;
       this.overwriteNext = false;
+      const keepalive = this.keepaliveNext;
+      this.keepaliveNext = false;
       try {
         const saved = await this.options.save({
           draftId: this.draftId,
@@ -163,6 +169,7 @@ export class LiveStudioDraftSaveQueue {
           revision: this.revision,
           payload,
           ...(overwrite ? { overwrite: true } : {}),
+          ...(keepalive ? { keepalive: true } : {}),
         });
         this.draftId = saved.id;
         this.revision = saved.revision;
@@ -253,6 +260,8 @@ export function useLiveStudioDraft({
   const [state, setState] = useState<LiveStudioDraftSaveState>(() => initialSaveState(initialDraft));
   const statusRef = useRef(state.status);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /** The payload the debounce timer will save, so leaving the page can save it right away. */
+  const pendingPayloadRef = useRef<LiveStudioDraftPayload | null>(null);
   const mountSaveStartedRef = useRef(false);
 
   const setDraftState = useCallback((nextState: LiveStudioDraftSaveState) => {
@@ -277,6 +286,9 @@ export function useLiveStudioDraft({
       setDraftState(nextState);
       if (!liveId && nextState.status === "saved") replaceCreateDraftQuery(nextState.draftId);
     });
+    // A save flushed while leaving finishes after this studio is gone: it must
+    // not touch the next page's URL or this unmounted state.
+    return () => queue.setTransitionHandler(() => undefined);
   }, [liveId, queue, setDraftState]);
 
   const payloadForStep = useCallback((step: number) => {
@@ -294,11 +306,27 @@ export function useLiveStudioDraft({
     if (!payload) return;
     queue.markDirty(payload);
     if (timerRef.current) clearTimeout(timerRef.current);
+    pendingPayloadRef.current = payload;
     timerRef.current = setTimeout(() => {
       timerRef.current = null;
+      pendingPayloadRef.current = null;
       queue.enqueue(payload);
     }, 700);
   }, [activeStep, payloadForStep, queue]);
+
+  /**
+   * Starts the debounced save now instead of dropping it: the studio is being
+   * left (a 「新增…」 link, back navigation) or the page is being hidden. It
+   * goes through the same queue, so revision checks and conflicts still apply.
+   */
+  const flushPendingSave = useCallback((keepalive = false) => {
+    if (!timerRef.current) return;
+    clearTimeout(timerRef.current);
+    timerRef.current = null;
+    const payload = pendingPayloadRef.current;
+    pendingPayloadRef.current = null;
+    if (payload) queue.enqueue(payload, { keepalive });
+  }, [queue]);
 
   const saveNow = useCallback(async (step = activeStep) => {
     const payload = payloadForStep(step);
@@ -306,6 +334,7 @@ export function useLiveStudioDraft({
     if (timerRef.current) {
       clearTimeout(timerRef.current);
       timerRef.current = null;
+      pendingPayloadRef.current = null;
     }
     const saved = await queue.flush(payload);
     return saved ? queue.currentClaim() : null;
@@ -328,9 +357,7 @@ export function useLiveStudioDraft({
     return Boolean(payload && queue.matches(payload));
   }, [activeStep, payloadForStep, queue]);
 
-  useEffect(() => () => {
-    if (timerRef.current) clearTimeout(timerRef.current);
-  }, []);
+  useEffect(() => () => flushPendingSave(), [flushPendingSave]);
 
   useEffect(() => {
     const handleBeforeUnload = (event: BeforeUnloadEvent) => {
@@ -339,6 +366,19 @@ export function useLiveStudioDraft({
     window.addEventListener("beforeunload", handleBeforeUnload);
     return () => window.removeEventListener("beforeunload", handleBeforeUnload);
   }, []);
+
+  useEffect(() => {
+    const handlePageHide = () => flushPendingSave(true);
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "hidden") flushPendingSave(true);
+    };
+    window.addEventListener("pagehide", handlePageHide);
+    if (typeof document !== "undefined") document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => {
+      window.removeEventListener("pagehide", handlePageHide);
+      if (typeof document !== "undefined") document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [flushPendingSave]);
 
   useEffect(() => {
     if (!saveOnMount || mountSaveStartedRef.current) return;

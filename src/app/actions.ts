@@ -35,6 +35,7 @@ import { isLiveSlugRace, liveSlugTakenPath, resolveLiveSlugConflict } from "@/li
 import { parseLiveQuotaPolicyForm, LiveQuotaPolicyValidationError, type LiveQuotaPolicy } from "@/lib/live-quota-policy";
 import { liveInvalidFieldName, liveStudioDraftFromFormData } from "@/lib/live-studio-draft-client";
 import type { LiveStudioDraftPayload } from "@/lib/live-studio-draft";
+import { LIVE_STUDIO_LAST_STEP_INDEX } from "@/lib/live-studio-steps";
 import {
   expectedTemplateTrigger,
   haveValidLiveNotificationRuleTemplates,
@@ -944,7 +945,8 @@ function parseSubmittedLiveDraft(
     : `/lives/new?error=invalid_draft${suffix}`;
   let payload: LiveStudioDraftPayload;
   try {
-    payload = liveStudioDraftFromFormData(formData, 7);
+    // The client saves the claimed draft from the final step; the payload claim compares it exactly.
+    payload = liveStudioDraftFromFormData(formData, LIVE_STUDIO_LAST_STEP_INDEX);
   } catch (error) {
     const field = liveInvalidFieldName(error);
     redirect(field ? `${invalidDraftPath}&field=${encodeURIComponent(field)}` : invalidDraftPath);

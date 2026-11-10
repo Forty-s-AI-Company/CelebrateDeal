@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { LiveNotificationRuleDraftListSchema } from "@/lib/live-notification-rules";
 import { MAX_FIXED_SESSIONS } from "@/lib/live-fixed-sessions";
+import { LIVE_STUDIO_STEP_COUNT } from "@/lib/live-studio-steps";
 
 const boundedReference = z.string().trim().min(1).max(128);
 const optionalReference = z.union([boundedReference, z.literal("")]).default("");
@@ -26,7 +27,6 @@ export const FixedSessionDraftRowSchema = z.object({
 }).strict();
 
 export const LIVE_STUDIO_FLOW_VERSION = 2 as const;
-export const LIVE_STUDIO_STEP_COUNT = 8;
 
 const liveStudioDraftFields = {
   // Optional for existing saved drafts; ownership is checked at final creation.
