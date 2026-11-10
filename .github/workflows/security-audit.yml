@@ -105,8 +105,9 @@ jobs:
               gh issue edit "$existing" --body-file report.md
               gh issue comment "$existing" --body "本週稽核仍有 ${BLOCKING} 項 high／critical advisory，內容已更新在本 issue 的說明。"
             else
-              gh issue create --title "相依性安全稽核：發現 high／critical advisory" \
-                --label security-audit --assignee "$OWNER" --body-file report.md
+              args=(--title "相依性安全稽核：發現 high／critical advisory" --label security-audit --body-file report.md)
+              if [ -n "$ASSIGNEE" ]; then args+=(--assignee "$ASSIGNEE"); fi
+              gh issue create "${args[@]}"
             fi
           elif [ -n "$existing" ]; then
             gh issue close "$existing" --comment "本週稽核已無 high／critical advisory，自動關閉。"
