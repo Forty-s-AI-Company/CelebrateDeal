@@ -26,7 +26,7 @@
 | Dependabot version updates（`.github/dependabot.yml`） | 每週一（npm）、每月（GitHub Actions） | 分組的 minor／patch 更新 PR；major 升級不自動開 |
 | CI `Production dependency audit`（`.github/workflows/ci.yml`） | 每個 PR 與 merge queue | 正式環境相依有 high 以上即失敗 |
 | Dependency review（`.github/workflows/dependency-review.yml`） | 動到相依清單或 CI 定義的 PR | 新引入 high 以上 advisory 即失敗 |
-| 每週稽核（`.github/workflows/security-audit.yml`） | 每週一 09:17（台北） | 含開發相依；有 high／critical 時開一張 `security-audit` issue 並指派給 repo owner，每週留言直到解決 |
+| 每週稽核（`.github/workflows/security-audit.yml`） | 每週一 09:17（台北） | 含開發相依；有 high／critical 時開一張 `security-audit` issue，每週留言直到解決；設定 repo variable `SECURITY_AUDIT_ASSIGNEE` 可自動指派 |
 | Secret scanning 與 push protection（repo 設定） | 每次 push | 擋下已知格式的密鑰 |
 | `npm run secret:scan`（CI） | 每個 PR | 掃描私鑰、token、正式金流金鑰與外部資料庫連線字串 |
 

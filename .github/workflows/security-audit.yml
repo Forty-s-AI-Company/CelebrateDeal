@@ -3,9 +3,11 @@ name: Security audit (weekly)
 # The CI gate only audits production dependencies at `high` on pull requests.
 # This workflow audits every dependency (dev included) once a week, so an
 # advisory published after the last merge is still noticed. When a high or
-# critical advisory exists it opens one issue labelled `security-audit`
-# (assigned to the repository owner) and comments on it every week until the
-# advisory is gone, then closes it. The run itself fails only when the audit
+# critical advisory exists it opens one issue labelled `security-audit` and
+# comments on it every week until the advisory is gone, then closes it. Set
+# the repository variable SECURITY_AUDIT_ASSIGNEE to a GitHub login to have
+# the issue assigned (the repository belongs to an organisation, so there is
+# no owner login to assign by default). The run itself fails only when the audit
 # could not be produced. Triage steps: SECURITY.md.
 on:
   schedule:
@@ -92,7 +94,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           BLOCKING: ${{ steps.summary.outputs.blocking }}
-          OWNER: ${{ github.repository_owner }}
+          ASSIGNEE: ${{ vars.SECURITY_AUDIT_ASSIGNEE }}
         run: |
           set -euo pipefail
           gh label create security-audit --color B60205 \
