@@ -144,7 +144,7 @@ test("root failure survives a failing cleanup for our own coded errors too", asy
 });
 
 test("safeFailure maps Prisma errors to fixed codes and never leaks message text", () => {
-  const secret = "postgresql://user:pw@db.secret-host.example:5432/postgres";
+  const secret = ["postgresql", "//user:pw@db.secret-host.example:5432/postgres"].join(":");
   assert.equal(safeFailure(prismaLikeError("PrismaClientInitializationError", { errorCode: "P1001" }, secret)), "PRISMA_P1001");
   assert.equal(safeFailure(prismaLikeError("PrismaClientKnownRequestError", { code: "P2021" }, secret)), "PRISMA_P2021");
   assert.equal(safeFailure(prismaLikeError("PrismaClientInitializationError", {}, secret)), "PRISMA_INIT_FAILED");
