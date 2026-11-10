@@ -78,9 +78,12 @@ export function validateReceiptPath(candidate, runnerTemp = process.env.RUNNER_T
 function main() {
   const result = validateReceiptPath(process.env.SECURE_RECEIPT_PATH ?? process.argv[2]);
   // Only fixed validator codes are emitted. Receipt contents and bindings stay private.
-  process.stdout.write(`secure_line_receipt_validation=${result.ok ? "PASS" : "FAIL"}; result=${result.result ?? "BLOCKED"}; reason=${result.reason ?? "NONE"}; diagnostic=${result.diagnostic ?? "NONE"}\n`);
+  process.stdout.write(`secure_line_receipt_validation=${result.ok ? "PASS" : "FAIL"}; result=${result.result ?? "BLOCKED"}; reason=${result.reason ?? "NONE"}; diagnostic=${result.diagnostic ?? "NONE"}${result.ok ? `; failure=${result.failure}; false_checks=${result.failedChecks}` : ""}\n`);
   if (!result.ok && process.env.GITHUB_ACTIONS === "true") {
     process.stdout.write(`::error title=Sanitized LINE receipt validation::reason=${result.reason ?? "UNKNOWN"}; diagnostic=${result.diagnostic ?? "NONE"}\n`);
+  }
+  if (result.ok && result.result !== "PASS" && process.env.GITHUB_ACTIONS === "true") {
+    process.stdout.write(`::error title=Sanitized LINE receipt::result=${result.result}; failure=${result.failure}; false_checks=${result.failedChecks}\n`);
   }
   if (!result.ok) process.exitCode = 2;
 }
