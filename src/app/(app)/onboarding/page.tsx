@@ -1,4 +1,4 @@
-import { CheckCircle2, Circle } from "lucide-react";
+import { Check, CheckCircle2, Circle } from "lucide-react";
 import Link from "next/link";
 
 import { SettingsBackLink } from "@/components/settings-back-link";
@@ -126,7 +126,7 @@ export default async function OnboardingPage() {
                   {step.requirements.map((requirement) => (
                     <li key={requirement.label} className={`flex flex-wrap items-center justify-between gap-2 ${requirement.done ? "text-emerald-700" : "text-slate-700"}`}>
                       <span>
-                        <span aria-hidden="true">{requirement.done ? "✓" : "○"}</span> {requirement.label}
+                        {requirement.done ? <Check size={14} aria-hidden="true" className="mr-1 inline-block align-[-2px]" /> : <Circle size={14} aria-hidden="true" className="mr-1 inline-block align-[-2px]" />}{requirement.label}
                         <span className="sr-only">：{requirement.done ? "已完成" : "尚未完成"}</span>
                       </span>
                       {!requirement.done && requirement.href ? (
@@ -144,7 +144,7 @@ export default async function OnboardingPage() {
                       {step.suggestions.map((suggestion) => (
                         <li key={suggestion.label} className="flex flex-wrap items-center justify-between gap-2 text-slate-600">
                           <span>
-                            <span aria-hidden="true">{suggestion.done ? "✓" : "○"}</span> {suggestion.label}
+                            {suggestion.done ? <Check size={14} aria-hidden="true" className="mr-1 inline-block align-[-2px]" /> : <Circle size={14} aria-hidden="true" className="mr-1 inline-block align-[-2px]" />}{suggestion.label}
                             <span className="sr-only">：{suggestion.done ? "已完成" : "尚未設定，可稍後再做"}</span>
                           </span>
                           {!suggestion.done && suggestion.href ? (
