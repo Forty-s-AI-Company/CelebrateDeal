@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { emptyLiveStudioDraft } from "./live-studio-draft";
 import { LiveStudioDraftClientError, liveInvalidFieldName, liveStudioDraftFromFormData, saveLiveStudioDraft } from "./live-studio-draft-client";
+import { LIVE_STUDIO_LAST_STEP_INDEX } from "./live-studio-steps";
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -46,7 +47,7 @@ describe("serializeLiveStudioDraft", () => {
       ["cloudflareLiveInputUid", "forged-provider-uid"],
     ]);
 
-    const draft = liveStudioDraftFromFormData(form, 7);
+    const draft = liveStudioDraftFromFormData(form, LIVE_STUDIO_LAST_STEP_INDEX);
 
     expect(draft).toMatchObject({
       studioPreset: "COMMERCE",
@@ -58,8 +59,8 @@ describe("serializeLiveStudioDraft", () => {
       notificationRules: [expect.objectContaining({ id: "rule-1", trigger: "before_live", offsetMinutes: 60 })],
       replayEnabled: true,
       replayAvailableUntil: "2026-08-21T20:00",
-      flowVersion: 2,
-      activeStep: 7,
+      flowVersion: 3,
+      activeStep: 3,
     });
     expect(draft).not.toHaveProperty("cloudflareLiveInputUid");
   });
@@ -109,7 +110,7 @@ describe("serializeLiveStudioDraft", () => {
       ["splitOwnerBps", "3000"],
       ["splitPromoterBps", "7000"],
       ["replayAvailableUntil", "2026-08-21T20:00"],
-    ]), 4);
+    ]), 0);
 
     expect(draft.replayEnabled).toBe(false);
     expect(draft.replayAvailableUntil).toBe("");
@@ -137,7 +138,7 @@ describe("saveLiveStudioDraft", () => {
       draftId: "draft-1",
       liveId: "live-1",
       revision: 1,
-      payload: { flowVersion: 2, activeStep: 0, replayAvailableUntil: "2026-08-21T20:00" },
+      payload: { flowVersion: 3, activeStep: 0, replayAvailableUntil: "2026-08-21T20:00" },
     });
   });
 
@@ -195,7 +196,7 @@ describe("liveInvalidFieldName (F-117)", () => {
     const form = new FormData();
     form.set("title", "x".repeat(500));
     let caught: unknown;
-    try { liveStudioDraftFromFormData(form, 7); } catch (error) { caught = error; }
+    try { liveStudioDraftFromFormData(form, LIVE_STUDIO_LAST_STEP_INDEX); } catch (error) { caught = error; }
     expect(caught).toBeDefined();
     expect(liveInvalidFieldName(caught)).toMatch(/^[A-Za-z][A-Za-z0-9]*$/u);
   });

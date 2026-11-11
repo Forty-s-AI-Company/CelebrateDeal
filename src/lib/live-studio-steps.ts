@@ -6,17 +6,14 @@
  * and never by a hard-coded index.
  *
  * The draft payload still persists the position (`activeStep`) as an index
- * into this list for the current `flowVersion`.
+ * into this list for the current `flowVersion`; older flow versions are
+ * mapped onto these keys in `live-studio-draft.ts`.
  */
 export const LIVE_STUDIO_STEPS = [
-  { key: "purpose", label: "用途與基本資料" },
-  { key: "media", label: "影片與即時直播" },
-  { key: "products", label: "商品優惠" },
-  { key: "registration", label: "報名頁" },
-  { key: "schedule", label: "時間、回放與品牌" },
-  { key: "emails", label: "Email" },
-  { key: "interactions", label: "留言、商品浮窗與 CTA" },
-  { key: "review", label: "桌機／手機預覽發布" },
+  { key: "content", label: "內容", description: "標題、影片、報名頁與開播時間" },
+  { key: "sales", label: "成交", description: "主打商品、促銷短句與互動腳本" },
+  { key: "notifications", label: "通知", description: "報名成功信與開播、課後通知" },
+  { key: "publish", label: "發布", description: "檢查發布條件、預覽並送出" },
 ] as const;
 
 export type LiveStudioStep = (typeof LIVE_STUDIO_STEPS)[number];
@@ -39,4 +36,9 @@ export function liveStudioStepIndex(key: LiveStudioStepKey): number {
 /** The step persisted at `index`; out-of-range or non-integer positions fall back to the first step. */
 export function liveStudioStepAt(index: number): LiveStudioStep {
   return (Number.isInteger(index) ? LIVE_STUDIO_STEPS[index] : undefined) ?? LIVE_STUDIO_STEPS[LIVE_STUDIO_FIRST_STEP_INDEX];
+}
+
+/** Merchant-facing summary such as 「4 個步驟（內容、成交、通知、發布）」. */
+export function liveStudioStepSummary() {
+  return `${LIVE_STUDIO_STEP_COUNT} 個步驟（${LIVE_STUDIO_STEPS.map((step) => step.label).join("、")}）`;
 }

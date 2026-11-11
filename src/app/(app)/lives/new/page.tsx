@@ -8,8 +8,8 @@ import { ProjectBoundNotice, ProjectUnboundNotice } from "@/components/project-u
 import { resolveBoundProjectName, resolveDefaultProjectCandidate } from "@/lib/sales-project-scope";
 import { getCsrfToken } from "@/lib/csrf";
 import { getDb } from "@/lib/db";
-import { LiveStudioDraftPayloadSchema } from "@/lib/live-studio-draft";
-import { liveStudioStepAt } from "@/lib/live-studio-steps";
+import { LiveStudioDraftPayloadSchema, parseStoredLiveStudioDraft } from "@/lib/live-studio-draft";
+import { liveStudioStepAt, liveStudioStepSummary } from "@/lib/live-studio-steps";
 import { liveReadyVideoWhere } from "@/lib/live-video-readiness";
 import {
   hasUsableMessageTemplateContent,
@@ -145,9 +145,15 @@ export default async function NewLivePage({ searchParams }: { searchParams: Prom
   const templates = templateCandidates
     .filter(hasUsableMessageTemplateContent)
     .map(({ id, name, channel, trigger }) => ({ id, name, channel, trigger }));
-  const parsedDraft = savedDraft ? LiveStudioDraftPayloadSchema.safeParse(savedDraft.payload) : null;
-  const initialDraft = savedDraft && parsedDraft?.success
-    ? { id: savedDraft.id, revision: savedDraft.revision, payload: parsedDraft.data, updatedAt: savedDraft.updatedAt.toISOString() }
+  const parsedDraft = savedDraft ? parseStoredLiveStudioDraft(savedDraft.payload) : null;
+  const initialDraft = savedDraft && parsedDraft
+    ? {
+        id: savedDraft.id,
+        revision: savedDraft.revision,
+        payload: parsedDraft.payload,
+        updatedAt: savedDraft.updatedAt.toISOString(),
+        ...(parsedDraft.outdated ? { storedPayloadOutdated: true } : {}),
+      }
     : undefined;
   // A resumed draft keeps its original scope: a projectId param must equal the draft's
   // (a draft without a project counts as a mismatch), otherwise the URL is rejected.
@@ -174,7 +180,7 @@ export default async function NewLivePage({ searchParams }: { searchParams: Prom
 
   return (
     <>
-      <PageHeader title="建立直播間" description="用八個清楚步驟完成設定；每次變更都會建立可復原、具版本保護的伺服器草稿。" />
+      <PageHeader title="建立直播間" description={`用 ${liveStudioStepSummary()}完成設定；每次變更都會建立可復原、具版本保護的伺服器草稿。`} />
       <ProjectBoundNotice name={projectName} />
       {!projectId && defaultProject.isAggregate ? <ProjectUnboundNotice resource="直播" /> : null}
       {draft && !initialDraft ? (

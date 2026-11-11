@@ -63,16 +63,39 @@ describe("POST /api/live-studio/drafts", () => {
 
   it("normalizes a legacy v1 payload once before persisting and responding", async () => {
     const { flowVersion, ...legacyPayload } = payload;
-    expect(flowVersion).toBe(2);
+    expect(flowVersion).toBe(3);
     mocks.readJsonBody.mockResolvedValue({ draftId: "", revision: null, payload: { ...legacyPayload, activeStep: 1 } });
 
     const response = await POST(request());
 
-    const canonicalPayload = expect.objectContaining({ flowVersion: 2, activeStep: 2, title: "新品直播" });
+    // v1 step 1 (products) → v2 step 2 → 成交 (index 1).
+    const canonicalPayload = expect.objectContaining({ flowVersion: 3, activeStep: 1, title: "新品直播" });
     await expect(response.json()).resolves.toMatchObject({ payload: canonicalPayload });
     expect(mocks.create).toHaveBeenCalledWith(expect.objectContaining({
       data: expect.objectContaining({ payload: canonicalPayload }),
     }));
+  });
+
+  it("writes an eight-step v2 payload from an older tab as v3", async () => {
+    mocks.readJsonBody.mockResolvedValue({ draftId: "draft-1", revision: 1, payload: { ...payload, flowVersion: 2, activeStep: 5 } });
+
+    const response = await POST(request());
+
+    // v2 step 5 (Email) → 通知 (index 2).
+    const canonicalPayload = expect.objectContaining({ flowVersion: 3, activeStep: 2, title: "新品直播" });
+    await expect(response.json()).resolves.toMatchObject({ payload: canonicalPayload });
+    expect(mocks.updateManyAndReturn).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ payload: canonicalPayload }),
+    }));
+  });
+
+  it("rejects a v3 payload whose step is outside the four-step studio", async () => {
+    mocks.readJsonBody.mockResolvedValue({ draftId: "", revision: null, payload: { ...payload, activeStep: 4 } });
+
+    const response = await POST(request());
+
+    expect(response.status).toBe(400);
+    expect(mocks.create).not.toHaveBeenCalled();
   });
 
   it("updates only the matching current-vendor revision", async () => {

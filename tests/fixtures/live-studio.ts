@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { PrismaClient } from "@prisma/client";
-import type { Page } from "@playwright/test";
+import { expect, type Page } from "@playwright/test";
 import { hashPassword } from "../../src/lib/password";
 
 /**
@@ -116,27 +116,41 @@ export async function loginLiveStudioOwner(page: Page, fixture: LiveStudioFixtur
   await page.waitForURL(/\/dashboard$/u);
 }
 
-/** Fills all eight steps with the reported staging state and stops on step 8. */
+/** Opens a step's collapsed 「進階設定」 (a native <details>) if it is still closed. */
+export async function openLiveStudioAdvancedSettings(page: Page, step: "content" | "sales") {
+  const details = page.locator(`details[data-advanced-settings="${step}"]`);
+  if (!await details.evaluate((element) => (element as HTMLDetailsElement).open)) {
+    await details.locator(":scope > summary").click();
+  }
+  await expect(details).toHaveAttribute("open", "");
+}
+
+/** The single step navigation button for a step (its accessible name also carries the step status). */
+export function liveStudioStepButton(page: Page, step: "content" | "sales" | "notifications" | "publish") {
+  return page.locator(`button[aria-controls="live-step-panel-${step}"]`);
+}
+
+/** Fills all four steps with the reported staging state and stops on 發布. */
 export async function fillReportedLiveStudioState(page: Page, fixture: LiveStudioFixture, slug: string) {
   const next = () => page.getByRole("button", { name: "下一步", exact: true }).click();
+  // 內容
   await page.getByLabel("直播標題").fill("我吃原型食物就好!?");
-  await page.getByLabel("直播網址").fill(slug);
-  await page.getByLabel("直播說明").fill("合成說明：原型食物入門。");
-  await next();
   await page.locator("select[name=streamMode]").selectOption("vod");
   await page.locator("select[name=videoId]").selectOption(fixture.video.id);
-  await next();
-  await page.getByRole("checkbox", { name: /合成原型食物餐盒/u }).check();
-  await page.getByLabel("促銷短句").fill("直播限定原型食物優惠");
-  await next();
   await page.locator("select[name=formId]").selectOption(fixture.form.id);
-  await next();
   await page.getByLabel(/^開播時間/u).fill("2026-11-29T20:00");
   await page.getByLabel("直播結束後允許回放").check();
+  await openLiveStudioAdvancedSettings(page, "content");
+  await page.getByLabel("直播網址").fill(slug);
+  await page.getByLabel("直播說明").fill("合成說明：原型食物入門。");
   await page.getByLabel(/^回放觀看期限/u).fill("2026-12-15T23:59");
   await next();
-  await page.locator("select[name=messageTemplateId]").selectOption(fixture.template.id);
-  await next();
+  // 成交
+  await page.getByRole("checkbox", { name: /合成原型食物餐盒/u }).check();
+  await page.getByLabel("促銷短句").fill("直播限定原型食物優惠");
   await page.locator("select[name=interactionScriptId]").selectOption(fixture.script.id);
+  await next();
+  // 通知
+  await page.locator("select[name=messageTemplateId]").selectOption(fixture.template.id);
   await next();
 }

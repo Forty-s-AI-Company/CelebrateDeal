@@ -88,7 +88,11 @@ export class LiveStudioDraftSaveQueue {
     this.revision = options.initialDraft?.revision ?? null;
     this.updatedAt = options.initialDraft?.updatedAt ?? "";
     this.latestLocalPayload = options.initialDraft?.payload ?? null;
-    this.lastSavedPayload = options.initialDraft?.payload ?? null;
+    // A row still stored in an older shape (e.g. an eight-step v2 draft) is not
+    // what the publish claim will compare against: never treat it as saved.
+    this.lastSavedPayload = options.initialDraft && !options.initialDraft.storedPayloadOutdated
+      ? options.initialDraft.payload
+      : null;
   }
 
   markDirty(payload?: LiveStudioDraftPayload) {

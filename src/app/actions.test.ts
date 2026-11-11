@@ -2046,8 +2046,9 @@ describe("upsertLiveAction", () => {
         payload: { equals: expect.objectContaining({
           title: "租戶限定直播",
           affiliateMode: "disabled",
-          flowVersion: 2,
-          activeStep: 7,
+          // The publish claim compares the v3 payload saved from the final (發布) step.
+          flowVersion: 3,
+          activeStep: 3,
         }) },
         consumedAt: null,
         expiresAt: { gt: expect.any(Date) },
@@ -2658,8 +2659,9 @@ describe("upsertLiveAction", () => {
         revision: 3,
         payload: { equals: expect.objectContaining({
           title: "租戶限定直播",
-          flowVersion: 2,
-          activeStep: 7,
+          // The publish claim compares the v3 payload saved from the final (發布) step.
+          flowVersion: 3,
+          activeStep: 3,
         }) },
         consumedAt: null,
         expiresAt: { gt: expect.any(Date) },

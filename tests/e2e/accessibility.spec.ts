@@ -458,7 +458,7 @@ test("onboarding and welcome routes have no blocking axe violations (F-126)", as
   expect(failures, "onboarding／welcome 不可出現 axe critical/serious").toEqual([]);
 });
 
-test("live stepper has no blocking axe violations on any of the eight steps or on the validation error state (F-126)", async ({ page }) => {
+test("live stepper has no blocking axe violations on any of the four steps, in 進階設定 or on the validation error state (F-126)", async ({ page }) => {
   test.setTimeout(120_000);
   await loginOwner(page);
   await gotoStableRoute(page, "/lives/new");
@@ -469,37 +469,43 @@ test("live stepper has no blocking axe violations on any of the eight steps or o
   expect(await blockingAxeViolations(page), "stepper 驗證錯誤狀態").toEqual([]);
 
   await page.getByLabel("直播標題", { exact: true }).fill("A11y 步驟掃描");
+  // 進階設定預設收合；以鍵盤展開，展開狀態也要可被掃描。
+  const contentAdvanced = page.locator('details[data-advanced-settings="content"]');
+  await expect(contentAdvanced).not.toHaveAttribute("open", "");
+  await contentAdvanced.locator(":scope > summary").focus();
+  await page.keyboard.press("Enter");
+  await expect(contentAdvanced).toHaveAttribute("open", "");
   await page.getByLabel("直播網址").fill(`a11y-stepper-${runId}`);
 
-  const stepKeys = ["purpose", "media", "products", "registration", "schedule", "emails", "interactions", "review"] as const;
+  const stepKeys = ["content", "sales", "notifications", "publish"] as const;
   const scanned: number[] = [];
   const scanStep = async (step: number) => {
     await expect(page.locator(`[data-step-key="${stepKeys[step]}"]`)).toBeVisible();
+    await expect(page.locator(`button[aria-controls="live-step-panel-${stepKeys[step]}"]`)).toHaveAttribute("aria-current", "step");
     const violations = await blockingAxeViolations(page);
     expect(violations, `stepper 第 ${step + 1} 步`).toEqual([]);
     scanned.push(step + 1);
   };
+  await page.getByLabel("影片／即時直播").selectOption(fixture.videoId);
+  await page.getByLabel("報名頁").selectOption(fixture.formId);
+  await page.getByLabel(/開播時間/).fill("2026-12-20T20:00");
   await scanStep(0);
   await page.getByRole("button", { name: "下一步" }).click();
-  await page.getByLabel("影片／即時直播").selectOption(fixture.videoId);
+  await page.locator('details[data-advanced-settings="sales"] > summary').click();
   await scanStep(1);
   await page.getByRole("button", { name: "下一步" }).click();
   await scanStep(2);
   await page.getByRole("button", { name: "下一步" }).click();
-  await page.getByLabel("報名頁").selectOption(fixture.formId);
   await scanStep(3);
-  await page.getByRole("button", { name: "下一步" }).click();
-  await page.getByLabel(/開播時間/).fill("2026-12-20T20:00");
-  await scanStep(4);
-  await page.getByRole("button", { name: "下一步" }).click();
-  await scanStep(5);
-  await page.getByRole("button", { name: "下一步" }).click();
-  await scanStep(6);
-  await page.getByRole("button", { name: "下一步" }).click();
-  await scanStep(7);
-  expect(scanned).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
+  expect(scanned).toEqual([1, 2, 3, 4]);
   // F-118：切換步驟後焦點在新步驟的標題。
-  await expect(page.locator(`[data-step-key="review"] h2, [data-step-key="review"] h3`).first()).toBeFocused();
+  await expect(page.locator(`[data-step-key="publish"] h2, [data-step-key="publish"] h3`).first()).toBeFocused();
+  // 發布步只有一份可切換的預覽。
+  await expect(page.getByRole("button", { name: "手機預覽" })).toHaveAttribute("aria-pressed", "true");
+  await page.getByRole("button", { name: "桌機預覽" }).click();
+  await expect(page.getByRole("button", { name: "桌機預覽" })).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByRole("complementary", { name: "即時手機預覽" })).toHaveCount(0);
+  expect(await blockingAxeViolations(page), "發布步桌機預覽").toEqual([]);
 });
 
 test("platform-admin MFA and static operations routes have no blocking axe violations", async ({ page }) => {

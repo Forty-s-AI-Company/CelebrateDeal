@@ -2,7 +2,8 @@
 import { act, Profiler, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { LiveStudioDraftPayloadSchema, type LiveStudioDraftEnvelope, type LiveStudioDraftPayload } from "@/lib/live-studio-draft";
+import { LiveStudioDraftPayloadSchema, parseStoredLiveStudioDraft, type LiveStudioDraftEnvelope, type LiveStudioDraftPayload } from "@/lib/live-studio-draft";
+import { LIVE_STUDIO_LAST_STEP_INDEX, liveStudioStepIndex } from "@/lib/live-studio-steps";
 
 const mocks = vi.hoisted(() => ({
   upsertLiveAction: vi.fn(async (formData: FormData) => { void formData; }),
@@ -44,7 +45,7 @@ const resources = {
 
 /** The staging state from 2026-10-29: every select, checkbox, slug and replay deadline filled. */
 const reportedPayload: LiveStudioDraftPayload = LiveStudioDraftPayloadSchema.parse({
-  flowVersion: 2,
+  flowVersion: 3,
   title: "我吃原型食物就好!?",
   slug: "whole-food-live",
   description: "原型食物入門。",
@@ -61,7 +62,7 @@ const reportedPayload: LiveStudioDraftPayload = LiveStudioDraftPayloadSchema.par
   customAllocations: "[]",
   memberQuotas: "[]",
   pageQuotas: "[]",
-  activeStep: 7,
+  activeStep: LIVE_STUDIO_LAST_STEP_INDEX,
 });
 
 const resumedDraft: LiveStudioDraftEnvelope = {
@@ -75,7 +76,7 @@ let container: HTMLDivElement;
 let root: Root;
 let commits = 0;
 
-function studio(initialDraft?: LiveStudioDraftEnvelope, extra: { liveId?: string; currentStatus?: string; error?: string } = {}) {
+function studio(initialDraft?: LiveStudioDraftEnvelope, extra: { liveId?: string; currentStatus?: string; error?: string; invalidField?: string } = {}) {
   return (
     <Profiler id="live-studio" onRender={() => { commits += 1; }}>
       <LiveStepperForm {...resources} initialDraft={initialDraft} {...extra} />
@@ -154,9 +155,9 @@ describe("LiveStepperForm draft resume", () => {
     expect(control('input[type="datetime-local"][name="replayAvailableUntil"]').value).toBe("2026-11-15T23:59");
     expect(control('[name="liveDraftId"]').value).toBe("draft-resumed");
     expect(control('[name="liveDraftRevision"]').value).toBe("2");
-    expect(control('[data-step-key="review"]').hidden).toBe(false);
+    expect(control('[data-step-key="publish"]').hidden).toBe(false);
     // Round trip: what the restored form would save is exactly the saved draft.
-    expect(serializeLiveStudioDraft(form, 7)).toEqual(reportedPayload);
+    expect(serializeLiveStudioDraft(form, LIVE_STUDIO_LAST_STEP_INDEX)).toEqual(reportedPayload);
   });
 
   it("saves a resumed draft into its existing row instead of creating another draft", async () => {
@@ -187,6 +188,103 @@ describe("LiveStepperForm draft resume", () => {
 
     expect(control('[name="title"]')).toBe(title);
     expect(control('[name="liveDraftId"]').value).toBe("draft-created");
+  });
+});
+
+/** A row saved by the eight-step (v2) studio, as the resume pages hand it over. */
+function versionTwoDraft(activeStep: number): LiveStudioDraftEnvelope {
+  const stored = { ...reportedPayload, flowVersion: 2, activeStep };
+  const parsed = parseStoredLiveStudioDraft(stored);
+  if (!parsed) throw new Error("v2 fixture must parse");
+  return { id: "draft-v2", revision: 7, payload: parsed.payload, updatedAt: "2026-10-29T08:00:00.000Z", storedPayloadOutdated: parsed.outdated };
+}
+
+function advancedSettings(step: string) {
+  return control<HTMLDetailsElement>(`details[data-advanced-settings="${step}"]`);
+}
+
+describe("LiveStepperForm eight-step (v2) draft resume", () => {
+  it("resumes a v2 draft saved on its Email step on the 通知 step with every field restored", async () => {
+    await act(async () => { root.render(studio(versionTwoDraft(5))); });
+
+    expect(control('[data-step-key="notifications"]').hidden).toBe(false);
+    expect(control('[data-step-key="content"]').hidden).toBe(true);
+    expect(control('button[aria-controls="live-step-panel-notifications"]').getAttribute("aria-current")).toBe("step");
+    expect(control<HTMLSelectElement>('select[name="messageTemplateId"]').value).toBe("template-confirmed");
+    expect(control('[name="flowVersion"]').value).toBe("3");
+    expect(serializeLiveStudioDraft(control<HTMLFormElement>("form"), liveStudioStepIndex("notifications")))
+      .toEqual({ ...reportedPayload, activeStep: liveStudioStepIndex("notifications") });
+  });
+
+  it("re-saves the v2 row as v3 before its publish claim, then submits once", async () => {
+    await act(async () => { root.render(studio(versionTwoDraft(7))); });
+    expect(control('[data-step-key="publish"]').hidden).toBe(false);
+
+    await act(async () => { button("建立並排程").click(); });
+    await act(async () => { button("確認建立並排程", control('[role="alertdialog"]')).click(); });
+    await settle();
+
+    expect(mocks.saveLiveStudioDraft).toHaveBeenCalledTimes(1);
+    expect(mocks.saveLiveStudioDraft).toHaveBeenCalledWith(expect.objectContaining({
+      draftId: "draft-v2",
+      revision: 7,
+      payload: { ...reportedPayload, flowVersion: 3, activeStep: LIVE_STUDIO_LAST_STEP_INDEX },
+    }));
+    expect(mocks.upsertLiveAction).toHaveBeenCalledTimes(1);
+    const submitted = mocks.upsertLiveAction.mock.calls[0]![0];
+    expect(submitted.get("status")).toBe("scheduled");
+    expect(submitted.get("liveDraftId")).toBe("draft-v2");
+    expect(submitted.get("liveDraftRevision")).toBe("8");
+  });
+});
+
+describe("LiveStepperForm advanced settings", () => {
+  it("keeps 進階設定 collapsed by default and still submits its fields", async () => {
+    await act(async () => { root.render(studio(resumedDraft)); });
+
+    expect(advancedSettings("content").open).toBe(false);
+    expect(advancedSettings("sales").open).toBe(false);
+    expect(advancedSettings("content").contains(control('[name="slug"]'))).toBe(true);
+    expect(advancedSettings("content").contains(control('[name="description"]'))).toBe(true);
+    expect(advancedSettings("sales").contains(control('[name="maxConcurrentViewers"]'))).toBe(true);
+    const data = new FormData(control<HTMLFormElement>("form"));
+    expect(data.get("slug")).toBe("whole-food-live");
+    expect(data.get("description")).toBe("原型食物入門。");
+    expect(data.get("affiliateMode")).toBe("enabled");
+  });
+
+  it("opens the collapsed section and focuses the field when browser validation rejects it", async () => {
+    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => { callback(0); return 0; });
+    await act(async () => { root.render(studio(resumedDraft)); });
+    const viewers = control('[name="maxConcurrentViewers"]');
+    expect(advancedSettings("sales").open).toBe(false);
+
+    await act(async () => { viewers.dispatchEvent(new Event("invalid", { cancelable: true })); });
+
+    expect(control('[data-step-key="sales"]').hidden).toBe(false);
+    expect(advancedSettings("sales").open).toBe(true);
+    expect(advancedSettings("content").open).toBe(false);
+    expect(document.activeElement).toBe(viewers);
+    expect(container.querySelector('[role="status"]')?.textContent).toBe("請先完成本步驟的必填欄位，再繼續下一步。");
+  });
+
+  it("opens the section that holds a field the server rejected and moves to its step", async () => {
+    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => { callback(0); return 0; });
+    await act(async () => { root.render(studio(resumedDraft, { error: "invalid_draft", invalidField: "description" })); });
+    const description = control<HTMLTextAreaElement>('[name="description"]');
+
+    expect(control('[data-step-key="content"]').hidden).toBe(false);
+    expect(advancedSettings("content").open).toBe(true);
+    expect(description.getAttribute("aria-invalid")).toBe("true");
+    expect(document.activeElement).toBe(description);
+    expect(control('[role="alert"]').textContent).toContain("直播說明");
+  });
+
+  it("opens the address section when the address is already taken", async () => {
+    await act(async () => { root.render(studio(resumedDraft, { error: "slug_taken" })); });
+
+    expect(advancedSettings("content").open).toBe(true);
+    expect(advancedSettings("sales").open).toBe(false);
   });
 });
 

@@ -329,9 +329,47 @@ describe("NewLivePage data minimization", () => {
       initialDraft: expect.objectContaining({
         id: "draft-1",
         revision: 4,
-        payload: expect.objectContaining({ flowVersion: 2, activeStep: 0, title: "可復原直播" }),
+        payload: expect.objectContaining({ flowVersion: 3, activeStep: 0, title: "可復原直播" }),
+        // The stored row is a partial legacy payload, so the studio re-saves it before publishing.
+        storedPayloadOutdated: true,
       }),
     }), undefined);
+  });
+
+  it("resumes an eight-step v2 create draft on the 通知 step", async () => {
+    mocks.liveStudioDraftFindFirst.mockResolvedValue({
+      id: "draft-v2",
+      revision: 6,
+      payload: { ...emptyLiveStudioDraft(), flowVersion: 2, title: "八步草稿", activeStep: 5 },
+      updatedAt: new Date("2026-08-08T01:00:00.000Z"),
+    });
+
+    renderToStaticMarkup(await NewLivePage({ searchParams: Promise.resolve({ draft: "draft-v2" }) }));
+
+    expect(mocks.liveStepperForm).toHaveBeenCalledWith(expect.objectContaining({
+      initialDraft: expect.objectContaining({
+        id: "draft-v2",
+        revision: 6,
+        payload: expect.objectContaining({ flowVersion: 3, activeStep: 2, title: "八步草稿" }),
+        storedPayloadOutdated: true,
+      }),
+    }), undefined);
+  });
+
+  it("does not flag a stored v3 create draft for a re-save", async () => {
+    mocks.liveStudioDraftFindFirst.mockResolvedValue({
+      id: "draft-v3",
+      revision: 2,
+      payload: { ...emptyLiveStudioDraft(), title: "四步草稿", activeStep: 1 },
+      updatedAt: new Date("2026-08-08T01:00:00.000Z"),
+    });
+
+    const html = renderToStaticMarkup(await NewLivePage({ searchParams: Promise.resolve({ draft: "draft-v3" }) }));
+
+    expect(html).toContain("4 個步驟（內容、成交、通知、發布）");
+    const initialDraft = (mocks.liveStepperForm.mock.calls.at(-1) as unknown as [{ initialDraft?: unknown }] | undefined)?.[0].initialDraft;
+    expect(initialDraft).toMatchObject({ id: "draft-v3", payload: { flowVersion: 3, activeStep: 1 } });
+    expect(initialDraft).not.toHaveProperty("storedPayloadOutdated");
   });
 
   it("offers tenant-scoped unconsumed drafts when the merchant returns without a draft URL", async () => {
@@ -363,8 +401,9 @@ describe("NewLivePage data minimization", () => {
     });
     expect(html).toContain("找到未完成的直播草稿");
     expect(html).toContain("週五新品直播");
-    expect(html).toContain("第 4 步：報名頁");
-    expect(html).toContain("第 3 步：商品優惠");
+    // A v3 row at its last step, and a five-step legacy row at its products step (→ v2 step 2 → 成交).
+    expect(html).toContain("第 4 步：發布");
+    expect(html).toContain("第 2 步：成交");
     expect(html).toContain("/lives/new?draft=draft-latest");
     expect(html).toContain("會員回饋場");
     expect(mocks.liveStepperForm).toHaveBeenCalledWith(expect.objectContaining({ initialDraft: undefined }), undefined);
