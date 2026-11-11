@@ -4,6 +4,12 @@ import type { Product } from "@prisma/client";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { emptyLiveStudioDraft } from "@/lib/live-studio-draft";
 import { liveStudioDraftFromFormData } from "@/lib/live-studio-draft-client";
+import { LIVE_STUDIO_LAST_STEP_INDEX, liveStudioStepIndex } from "@/lib/live-studio-steps";
+
+const CONTENT_STEP = liveStudioStepIndex("content");
+const SALES_STEP = liveStudioStepIndex("sales");
+const NOTIFICATIONS_STEP = liveStudioStepIndex("notifications");
+const PUBLISH_STEP = LIVE_STUDIO_LAST_STEP_INDEX;
 
 const hookState = vi.hoisted(() => ({
   cursor: 0,
@@ -63,7 +69,7 @@ vi.mock("@/components/use-live-studio-draft", () => ({
 vi.mock("@/components/stream-allocation-editor", () => ({
   StreamAllocationEditor: ({ members, pages }: { members: Array<{ label: string }>; pages: Array<{ label: string }> }) => (
     <section>
-      <h3>Stream 用量與額度分配</h3>
+      <h3>觀看用量與額度分配</h3>
       {members.map((member) => <span key={member.label}>{member.label}</span>)}
       {pages.map((page) => <span key={page.label}>{page.label}</span>)}
       <input type="hidden" name="customAllocations" value="[]" />
@@ -73,7 +79,7 @@ vi.mock("@/components/stream-allocation-editor", () => ({
   ),
 }));
 
-import { LiveStepPicker, LiveStudioStepperForm } from "./live-stepper-form";
+import { LiveStudioStepNav, LiveStudioStepperForm } from "./live-stepper-form";
 import { LiveSlugField } from "./live-slug-field";
 
 type ElementNode = {
@@ -270,13 +276,20 @@ function submitAction(tree: unknown, label: string) {
 
 function stepButton(tree: unknown, label: string) {
   return findElement(tree, (candidate) => (
-    candidate.type === "button" && textContent(candidate.props.children).includes(label)
+    candidate.type === "button" && candidate.props["aria-controls"] !== undefined && textContent(candidate.props.children).includes(label)
   ));
+}
+
+/** Renders the studio's single step navigation so its buttons can be inspected. */
+function renderedStepNav(tree: unknown) {
+  const nav = findElement(tree, (candidate) => typeof candidate.type === "function" && candidate.type.name === "LiveStudioStepNav");
+  expect(nav).toBeDefined();
+  return (nav?.type as (props: Record<string, unknown>) => unknown)(nav?.props ?? {});
 }
 
 function showPublishPreview(tree: unknown) {
   let currentTree = tree;
-  for (let step = 0; step < 7; step += 1) {
+  for (let step = 0; step < PUBLISH_STEP; step += 1) {
     const nextButton = findElement(currentTree, (candidate) => (
       candidate.type === "button" && textContent(candidate.props.children) === "下一步"
     ));
@@ -286,7 +299,7 @@ function showPublishPreview(tree: unknown) {
   }
 
   const publishPanel = findElement(currentTree, (candidate) => (
-    candidate.props.active === true && candidate.props.index === 7
+    candidate.props.active === true && candidate.props.step === "publish"
   ));
   expect(publishPanel).toBeDefined();
   return renderToStaticMarkup(publishPanel as unknown as ReactElement);
@@ -324,7 +337,7 @@ describe("LiveStepperForm", () => {
       ...emptyLiveStudioDraft(),
       replayEnabled: true,
       replayAvailableUntil: "2026-08-21T20:00",
-      activeStep: 4,
+      activeStep: CONTENT_STEP,
     };
     let form = renderForm([], { initialValues, timeZone: "America/New_York" });
     let deadline = findElement(form, (candidate) => (
@@ -371,7 +384,7 @@ describe("LiveStepperForm", () => {
       ...emptyLiveStudioDraft(),
       replayEnabled: true,
       replayAvailableUntil: "2026-08-21T20:00",
-      activeStep: 4,
+      activeStep: CONTENT_STEP,
     };
     const form = renderForm([], { initialValues });
     const deadline = findElement(form, (candidate) => (
@@ -386,7 +399,7 @@ describe("LiveStepperForm", () => {
     formData.set("replayAvailableUntil", "2026-08-22T09:30");
     const autosavedPayloads: ReturnType<typeof liveStudioDraftFromFormData>[] = [];
     draftMocks.scheduleSave.mockImplementationOnce(() => {
-      autosavedPayloads.push(liveStudioDraftFromFormData(formData, 4));
+      autosavedPayloads.push(liveStudioDraftFromFormData(formData, CONTENT_STEP));
     });
 
     (deadline?.props.onChange as (event: { target: { value: string } }) => void)({ target: { value: "2026-08-22T09:30" } });
@@ -401,7 +414,7 @@ describe("LiveStepperForm", () => {
       ...emptyLiveStudioDraft(),
       replayEnabled: true,
       replayAvailableUntil: "2026-08-21T20:00",
-      activeStep: 4,
+      activeStep: CONTENT_STEP,
     };
     const form = renderForm([], { initialValues });
     const formData = new FormData();
@@ -412,7 +425,7 @@ describe("LiveStepperForm", () => {
     formData.set("replayAvailableUntil", "2026-08-21T20:00");
     const autosavedPayloads: ReturnType<typeof liveStudioDraftFromFormData>[] = [];
     draftMocks.scheduleSave.mockImplementationOnce(() => {
-      autosavedPayloads.push(liveStudioDraftFromFormData(formData, 4));
+      autosavedPayloads.push(liveStudioDraftFromFormData(formData, CONTENT_STEP));
     });
 
     control(form, "replayEnabled").props.onChange({ target: { checked: false } });
@@ -475,33 +488,42 @@ describe("LiveStepperForm", () => {
 
   it("marks the current step and connects every step control to its panel", () => {
     const form = renderForm();
-    const basicsButton = stepButton(form, "用途與基本資料");
+    const nav = renderedStepNav(form);
+    const contentButton = stepButton(nav, "內容");
 
-    expect(basicsButton?.props["aria-current"]).toBe("step");
-    expect(basicsButton?.props["aria-controls"]).toBe("live-step-panel-0");
-    const labels = ["用途與基本資料", "影片與即時直播", "商品優惠", "報名頁", "時間、回放與品牌", "Email", "留言、商品浮窗與 CTA", "桌機／手機預覽發布"];
-    labels.forEach((label, index) => {
-      expect(stepButton(form, label)?.props["aria-controls"]).toBe(`live-step-panel-${index}`);
+    expect(contentButton?.props["aria-current"]).toBe("step");
+    expect(contentButton?.props["aria-controls"]).toBe("live-step-panel-content");
+    const labels = [["content", "內容"], ["sales", "成交"], ["notifications", "通知"], ["publish", "發布"]] as const;
+    labels.forEach(([key, label]) => {
+      expect(stepButton(nav, label)?.props["aria-controls"]).toBe(`live-step-panel-${key}`);
+      expect(findElement(form, (candidate) => candidate.props.step === key && "active" in candidate.props)).toBeDefined();
     });
+    expect(findElement(nav, (candidate) => candidate.type === "button")).toBeDefined();
   });
 
-  it("renders the mobile step position and, once compact, a 44px step picker (F-118)", () => {
+  it("keeps one responsive step navigation with the mobile position and 44px controls (F-118)", () => {
     const html = renderToStaticMarkup(renderForm() as ReactElement);
-    expect(html).toContain("第 1 步／共 8 步");
-    expect(html).toMatch(/class="[^"]*hidden[^"]*md:grid[^"]*"/);
+    expect(html).toContain("第 1 步／共 4 步：內容");
+    expect(html).toContain('aria-label="直播設定步驟"');
+    // One navigation: no separate mobile picker and no second desktop button grid.
     expect(html).not.toContain("切換步驟");
+    expect(html.match(/aria-controls="live-step-panel-content"/g)).toHaveLength(1);
+    expect(html.match(/aria-current="step"/g)).toHaveLength(1);
 
-    const labels = ["用途與基本資料", "影片與即時直播", "商品優惠", "報名頁", "時間、回放與品牌", "Email", "留言、商品浮窗與 CTA", "桌機／手機預覽發布"];
     const onSelect = vi.fn();
-    const picker = renderToStaticMarkup(
-      <LiveStepPicker activeStep={2} steps={labels.map((label, index) => ({ key: String(index), label }))} completion={labels.map((_, index) => index < 2)} compact onSelect={onSelect} />,
+    const nav = renderToStaticMarkup(
+      <LiveStudioStepNav activeStep="sales" statuses={{ content: "complete", sales: "optional", notifications: "required", publish: "required" }} onSelect={onSelect} />,
     );
-    expect(picker).toContain("第 3 步／共 8 步");
-    expect(picker).toContain('aria-label="切換步驟"');
-    expect(picker).toContain("min-h-11");
-    expect(picker.match(/<option/g)).toHaveLength(8);
-    expect(picker).toContain("第 8 步：桌機／手機預覽發布（待完成）");
-    expect(picker).toContain("第 1 步：用途與基本資料（已完成）");
+    expect(nav).toContain("第 2 步／共 4 步：成交");
+    expect(nav.match(/<button/g)).toHaveLength(4);
+    expect(nav).toContain("min-h-14");
+    expect(nav).toMatch(/aria-controls="live-step-panel-sales" aria-current="step"/);
+    // Status is text (full label for assistive tech, short label on phones), never colour alone.
+    expect(nav).toContain("已完成");
+    expect(nav).toContain("選配未設定");
+    expect(nav).toContain("尚有必填");
+    expect(nav).toContain("選配");
+    expect(nav).toContain("待補");
 
     const form = renderForm();
     for (const label of ["上一步", "下一步"]) {
@@ -517,48 +539,66 @@ describe("LiveStepperForm", () => {
     expect(html).not.toContain("Slug");
   });
 
-  it("keeps every field in its canonical eight-step panel", () => {
+  it("keeps every field in its canonical four-step panel, with optional fields in 進階設定", () => {
     const form = renderForm();
+    const ownsField = (scope: unknown, name: string) => findElement(scope, (candidate) => (
+      name === "slug" ? candidate.type === LiveSlugField : candidate.props.name === name
+    ));
     const expectedFields = [
-      [0, ["studioPreset", "title", "slug", "description"]],
-      [1, ["streamMode", "videoId"]],
-      [2, ["accentCopy"]],
-      [3, ["formId"]],
-      [4, ["replayEnabled", "replayAvailableUntil"]],
-      [5, ["messageTemplateId", "liveReminderTemplateId", "liveReminderOffsetMinutes"]],
-      [6, ["interactionScriptId"]],
+      ["content", ["studioPreset", "title", "streamMode", "videoId", "formId", "replayEnabled"], ["slug", "description", "replayAvailableUntil"]],
+      ["sales", ["accentCopy", "interactionScriptId"], []],
+      ["notifications", ["messageTemplateId", "liveReminderTemplateId", "liveReminderOffsetMinutes"], []],
     ] as const;
 
-    for (const [index, names] of expectedFields) {
-      const panel = findElement(form, (candidate) => candidate.props.index === index && "active" in candidate.props);
+    for (const [step, mainNames, advancedNames] of expectedFields) {
+      const panel = findElement(form, (candidate) => candidate.props.step === step && "active" in candidate.props);
       expect(panel).toBeDefined();
-      for (const name of names) {
-        expect(
-          findElement(panel?.props.children, (candidate) => (
-            name === "slug" ? candidate.type === LiveSlugField : candidate.props.name === name
-          )),
-          `step ${index + 1} should own ${name}`,
-        ).toBeDefined();
+      const advanced = findElement(panel?.props.children, (candidate) => typeof candidate.type === "function" && candidate.type.name === "AdvancedSettings");
+      for (const name of mainNames) {
+        expect(ownsField(panel?.props.children, name), `step ${step} should own ${name}`).toBeDefined();
+        expect(ownsField(advanced?.props.children, name), `${name} stays outside 進階設定`).toBeUndefined();
+      }
+      for (const name of advancedNames) {
+        expect(ownsField(advanced?.props.children, name), `step ${step} should keep ${name} in 進階設定`).toBeDefined();
       }
     }
-    const productPanel = findElement(form, (candidate) => candidate.props.index === 2 && "active" in candidate.props);
-    expect(findElement(productPanel?.props.children, (candidate) => typeof candidate.type === "function" && candidate.type.name === "ProductSelection")).toBeDefined();
-    const brandPanel = findElement(form, (candidate) => candidate.props.index === 4 && "active" in candidate.props);
-    expect(findElement(brandPanel?.props.children, (candidate) => (
+    const contentPanel = findElement(form, (candidate) => candidate.props.step === "content" && "active" in candidate.props);
+    expect(findElement(contentPanel?.props.children, (candidate) => (
       typeof candidate.type === "function" && candidate.type.name === "ScheduleDateTimeField"
     ))).toBeDefined();
-    expect(findElement(brandPanel?.props.children, (candidate) => (
+    expect(findElement(contentPanel?.props.children, (candidate) => (
+      typeof candidate.type === "function" && candidate.type.name === "LiveFixedSessionsEditor" && candidate.props.showSessionSettings === false
+    ))).toBeDefined();
+    const contentAdvanced = findElement(contentPanel?.props.children, (candidate) => typeof candidate.type === "function" && candidate.type.name === "AdvancedSettings");
+    expect(findElement(contentAdvanced?.props.children, (candidate) => (
       typeof candidate.type === "function" && candidate.type.name === "MediaUploadField" && candidate.props.urlInputName === "heroImageUrl"
     ))).toBeDefined();
-    const interactionPanel = findElement(form, (candidate) => candidate.props.index === 6 && "active" in candidate.props);
-    expect(findElement(interactionPanel?.props.children, (candidate) => (
+    const salesPanel = findElement(form, (candidate) => candidate.props.step === "sales" && "active" in candidate.props);
+    expect(findElement(salesPanel?.props.children, (candidate) => typeof candidate.type === "function" && candidate.type.name === "ProductSelection")).toBeDefined();
+    const salesAdvanced = findElement(salesPanel?.props.children, (candidate) => typeof candidate.type === "function" && candidate.type.name === "AdvancedSettings");
+    expect(findElement(salesAdvanced?.props.children, (candidate) => (
       typeof candidate.type === "function" && candidate.type.name === "LiveRulesFields"
     ))).toBeDefined();
+    const notificationsPanel = findElement(form, (candidate) => candidate.props.step === "notifications" && "active" in candidate.props);
+    expect(findElement(notificationsPanel?.props.children, (candidate) => typeof candidate.type === "function" && candidate.type.name === "AdvancedSettings")).toBeUndefined();
+    // Advanced sections are collapsed by default.
+    expect(renderToStaticMarkup(form as ReactElement)).not.toMatch(/<details[^>]*data-advanced-settings="[^"]*"[^>]*open/);
+  });
+
+  it("names the fixed-session settings only inside the content step's 進階設定", () => {
+    const form = renderForm([], { initialValues: { ...emptyLiveStudioDraft(), sessionMode: "fixed_sessions", fixedSessions: [], sessionRegistrationCutoffMinutes: "15", sessionReplayWindowHours: "48" } });
+    const contentPanel = findElement(form, (candidate) => candidate.props.step === "content" && "active" in candidate.props);
+    const advanced = findElement(contentPanel?.props.children, (candidate) => typeof candidate.type === "function" && candidate.type.name === "AdvancedSettings");
+    const settings = findElement(advanced?.props.children, (candidate) => typeof candidate.type === "function" && candidate.type.name === "LiveFixedSessionSettingsFields");
+    expect(settings?.props).toMatchObject({ initialCutoffMinutes: "15", initialReplayWindowHours: "48" });
+    const html = renderToStaticMarkup(form as ReactElement);
+    expect(html.match(/name="sessionRegistrationCutoffMinutes"/g)).toHaveLength(1);
+    expect(html.match(/name="sessionReplayWindowHours"/g)).toHaveLength(1);
   });
 
   it("shows an instructive empty product state instead of a blank panel", () => {
     const form = renderForm([]);
-    const productButton = stepButton(form, "商品優惠");
+    const productButton = stepButton(renderedStepNav(form), "成交");
     expect(productButton).toBeDefined();
 
     const onClick = productButton?.props.onClick as () => void;
@@ -595,11 +635,11 @@ describe("LiveStepperForm", () => {
     (nextButton?.props.onClick as () => void)();
 
     const conversionForm = renderForm();
-    const conversionButton = stepButton(conversionForm, "影片與即時直播");
+    const conversionButton = stepButton(renderedStepNav(conversionForm), "成交");
     expect(conversionButton?.props["aria-current"]).toBe("step");
-    expect(conversionButton?.props["aria-controls"]).toBe("live-step-panel-1");
+    expect(conversionButton?.props["aria-controls"]).toBe("live-step-panel-sales");
     const activePanel = findElement(conversionForm, (candidate) => candidate.props.active === true);
-    expect(activePanel?.props.index).toBe(1);
+    expect(activePanel?.props.step).toBe("sales");
 
     const previousButton = findElement(conversionForm, (candidate) => (
       candidate.type === "button" && textContent(candidate.props.children) === "上一步"
@@ -607,7 +647,7 @@ describe("LiveStepperForm", () => {
     expect(previousButton).toBeDefined();
     (previousButton?.props.onClick as () => void)();
     const basicsForm = renderForm();
-    const basicsButton = stepButton(basicsForm, "用途與基本資料");
+    const basicsButton = stepButton(renderedStepNav(basicsForm), "內容");
     expect(basicsButton?.props["aria-current"]).toBe("step");
     expect(findElement(basicsForm, (candidate) => (
       candidate.type === "button" && textContent(candidate.props.children) === "上一步"
@@ -647,7 +687,7 @@ describe("LiveStepperForm", () => {
     expect(retryButton).toBeDefined();
     (retryButton?.props.onClick as () => void)();
     const advancedForm = renderForm();
-    const conversionButton = stepButton(advancedForm, "影片與即時直播");
+    const conversionButton = stepButton(renderedStepNav(advancedForm), "成交");
     expect(conversionButton?.props["aria-current"]).toBe("step");
   });
 
@@ -658,7 +698,7 @@ describe("LiveStepperForm", () => {
 
     class SyntheticHTMLElement {
       focus = vi.fn();
-      closest = vi.fn(() => ({ dataset: { stepIndex: "3" } }));
+      closest = vi.fn(() => ({ dataset: { stepKey: "notifications" } }));
     }
 
     globalScope.HTMLElement = SyntheticHTMLElement;
@@ -679,7 +719,7 @@ describe("LiveStepperForm", () => {
       onInvalid({ preventDefault, target: control });
       const movedForm = renderForm(products, { error: "invalid_reference" });
       const activePanel = findElement(movedForm, (candidate) => candidate.props.active === true);
-      expect(activePanel?.props.index).toBe(3);
+      expect(activePanel?.props.step).toBe("notifications");
       expect(control.focus).toHaveBeenCalledTimes(1);
       expect(preventDefault).toHaveBeenCalledTimes(1);
 
@@ -729,7 +769,7 @@ describe("LiveStepperForm", () => {
 
   it("disables suggestions with a clear explanation when no notification templates exist", () => {
     const editor = renderNotificationRulesEditor(renderForm([], {
-      initialValues: { ...emptyLiveStudioDraft(), activeStep: 5 },
+      initialValues: { ...emptyLiveStudioDraft(), activeStep: NOTIFICATIONS_STEP },
     }));
     const suggestionButton = findElement(editor, (candidate) => candidate.type === "button" && textContent(candidate.props.children) === "套用建議設定");
     expect(suggestionButton?.props.disabled).toBe(true);
@@ -744,7 +784,7 @@ describe("LiveStepperForm", () => {
 
   it("suggests only post rules when only a post-live template exists", () => {
     const overrides: FormOverrides = {
-      initialValues: { ...emptyLiveStudioDraft(), activeStep: 5 },
+      initialValues: { ...emptyLiveStudioDraft(), activeStep: NOTIFICATIONS_STEP },
       templates: [{ id: "followup-1", name: "課後追蹤", channel: "email", trigger: "post_live_followup" }] as FormOverrides["templates"],
     };
     const editor = renderNotificationRulesEditor(renderForm([], overrides));
@@ -763,7 +803,7 @@ describe("LiveStepperForm", () => {
 
   it("supports empty, suggested, add, delete, reorder, enable, and template controls across 3/3/8 groups", () => {
     const overrides: FormOverrides = {
-      initialValues: { ...emptyLiveStudioDraft(), activeStep: 5 },
+      initialValues: { ...emptyLiveStudioDraft(), activeStep: NOTIFICATIONS_STEP },
       templates: [
         { id: "registration-1", name: "報名成功", channel: "email", trigger: "registration_confirmed" },
         { id: "reminder-1", name: "直播提醒", channel: "email", trigger: "live_reminder" },
@@ -838,7 +878,7 @@ describe("LiveStepperForm", () => {
   it("shows a readonly selected-script summary with an edit-timeline link", () => {
     const markup = renderToStaticMarkup(renderForm([], {
       scripts: [{ id: "script-1", name: "首波促購腳本" }] as FormOverrides["scripts"],
-      initialValues: { ...emptyLiveStudioDraft(), interactionScriptId: "script-1", activeStep: 6 },
+      initialValues: { ...emptyLiveStudioDraft(), interactionScriptId: "script-1", activeStep: SALES_STEP },
     }) as ReactElement);
 
     expect(markup).toContain("已選腳本");
@@ -849,7 +889,7 @@ describe("LiveStepperForm", () => {
 
   it("renders the final confirmation step and submit action", () => {
     const form = renderForm();
-    const publishButton = stepButton(form, "桌機／手機預覽發布");
+    const publishButton = stepButton(renderedStepNav(form), "發布");
     expect(publishButton).toBeDefined();
     (publishButton?.props.onClick as () => void)();
 
@@ -858,6 +898,12 @@ describe("LiveStepperForm", () => {
     expect(markup).toContain("確認直播間設定");
     expect(markup).toContain("桌機預覽");
     expect(markup).toContain("手機預覽");
+    // One switchable preview on the publish step: no side preview and no collapsed phone preview beside it.
+    const publishPanel = findElement(reviewForm, (candidate) => candidate.props.active === true && candidate.props.step === "publish");
+    expect(renderToStaticMarkup(publishPanel as unknown as ReactElement).match(/aria-pressed=/g)).toHaveLength(2);
+    expect(markup).not.toContain("即時手機預覽");
+    expect(markup).not.toContain("查看即時手機預覽");
+    expect(markup.match(/>LIVE</g)).toHaveLength(1);
     expect(markup).toContain("建立草稿並預覽");
     expect(markup).toContain('name="liveDraftRevision"');
     expect(findElement(reviewForm, (candidate) => (
@@ -876,7 +922,7 @@ describe("LiveStepperForm", () => {
       formId: "form-1",
       messageTemplateId: "template-1",
       liveReminderTemplateId: "template-2",
-      activeStep: 7,
+      activeStep: PUBLISH_STEP,
     };
     const markup = renderToStaticMarkup(renderForm([], {
       initialValues,
@@ -888,22 +934,65 @@ describe("LiveStepperForm", () => {
       ] as FormOverrides["templates"],
     }) as ReactElement);
 
-    for (const label of ["用途與基本資料", "影片與即時直播", "商品優惠", "報名頁", "時間、回放與品牌", "Email", "留言、商品浮窗與 CTA", "桌機／手機預覽發布"]) {
-      expect(textContent(stepButton(renderForm([], {
-        initialValues,
-        videos: [{ id: "video-1", title: "影片" }],
-        forms: [{ id: "form-1", name: "報名頁" }] as FormOverrides["forms"],
-        templates: [
-          { id: "template-1", name: "報名信", channel: "email", trigger: "registration_confirmed" },
-          { id: "template-2", name: "提醒信", channel: "email", trigger: "live_reminder" },
-        ] as FormOverrides["templates"],
-      }), label)?.props.children)).toContain("已完成");
-    }
-    expect(markup).not.toContain(">待完成<");
+    const nav = renderedStepNav(renderForm([], {
+      initialValues,
+      videos: [{ id: "video-1", title: "影片" }],
+      forms: [{ id: "form-1", name: "報名頁" }] as FormOverrides["forms"],
+      templates: [
+        { id: "template-1", name: "報名信", channel: "email", trigger: "registration_confirmed" },
+        { id: "template-2", name: "提醒信", channel: "email", trigger: "live_reminder" },
+      ] as FormOverrides["templates"],
+    }));
+    // Required items are complete; the optional products and script are shown as optional, not as complete or pending.
+    expect(textContent(stepButton(nav, "內容")?.props.children)).toContain("已完成");
+    expect(textContent(stepButton(nav, "成交")?.props.children)).toContain("選配未設定");
+    expect(textContent(stepButton(nav, "成交")?.props.children)).not.toContain("已完成");
+    expect(textContent(stepButton(nav, "通知")?.props.children)).toContain("已完成");
+    expect(textContent(stepButton(nav, "發布")?.props.children)).toContain("已完成");
+    expect(markup).not.toContain("尚有必填");
+  });
+
+  it("shows three distinct step states and never marks a step without products or a script as complete", () => {
+    const resources: FormOverrides = {
+      videos: [{ id: "video-1", title: "影片" }],
+      forms: [{ id: "form-1", name: "報名頁" }] as FormOverrides["forms"],
+      templates: [{ id: "template-1", name: "報名信", channel: "email", trigger: "registration_confirmed" }] as FormOverrides["templates"],
+      scripts: [{ id: "script-1", name: "腳本" }] as FormOverrides["scripts"],
+    };
+    const base = {
+      ...emptyLiveStudioDraft(),
+      title: "狀態測試",
+      slug: "state-test",
+      scheduledAt: "2026-08-20T20:00",
+      videoId: "video-1",
+      formId: "form-1",
+      messageTemplateId: "template-1",
+    };
+    const statusOf = (overrides: Partial<typeof base>, label: string) => {
+      // Each case is a fresh studio mount.
+      hookState.values = [];
+      hookState.refs = [];
+      return textContent(
+        stepButton(renderedStepNav(renderForm(products, { ...resources, initialValues: { ...base, ...overrides } })), label)?.props.children,
+      );
+    };
+
+    // Commerce live with products but no script: optional, not complete.
+    expect(statusOf({ studioPreset: "COMMERCE", productIds: [products[0].id] }, "成交")).toContain("選配未設定");
+    // Commerce live without products: the product requirement is missing.
+    expect(statusOf({ studioPreset: "COMMERCE" }, "成交")).toContain("尚有必填");
+    // Products and a script: complete.
+    expect(statusOf({ productIds: [products[0].id], interactionScriptId: "script-1" }, "成交")).toContain("已完成");
+    // Registration email missing: required; present without extra notifications: optional.
+    expect(statusOf({ messageTemplateId: "" }, "通知")).toContain("尚有必填");
+    expect(statusOf({}, "通知")).toContain("選配未設定");
+    expect(statusOf({ notificationRules: [{ id: "rule-1", trigger: "before_live", messageTemplateId: "template-1", offsetMinutes: 60, sortOrder: 0, isActive: true }] }, "通知")).toContain("已完成");
+    // Missing schedule keeps 內容 required.
+    expect(statusOf({ scheduledAt: "" }, "內容")).toContain("尚有必填");
   });
 
   it("moves a readiness blocker to its exact step and focuses its control after render", () => {
-    const initialValues = { ...emptyLiveStudioDraft(), activeStep: 7 };
+    const initialValues = { ...emptyLiveStudioDraft(), activeStep: PUBLISH_STEP };
     const form = renderForm([], { initialValues });
     const target = { focus: vi.fn() };
     const querySelector = vi.fn(() => target);
@@ -915,7 +1004,7 @@ describe("LiveStepperForm", () => {
     (fixMedia?.props.onClick as () => void)();
     const moved = renderForm([], { initialValues });
 
-    expect(findElement(moved, (candidate) => candidate.props.active === true)?.props.index).toBe(1);
+    expect(findElement(moved, (candidate) => candidate.props.active === true)?.props.step).toBe("content");
     expect(querySelector).toHaveBeenCalledWith('[name="videoId"]');
     expect(target.focus).toHaveBeenCalledOnce();
   });
@@ -931,7 +1020,7 @@ describe("LiveStepperForm", () => {
       formId: "form-1",
       messageTemplateId: "template-1",
       liveReminderTemplateId: "template-2",
-      activeStep: 7,
+      activeStep: PUBLISH_STEP,
     };
     const form = renderForm([], {
       initialValues,
@@ -963,7 +1052,7 @@ describe("LiveStepperForm", () => {
       videoId: "video-1",
       formId: "form-1",
       messageTemplateId: "template-1",
-      activeStep: 7,
+      activeStep: PUBLISH_STEP,
     };
     const overrides: FormOverrides = {
       initialValues,
@@ -995,7 +1084,7 @@ describe("LiveStepperForm", () => {
       messageTemplateId: "template-1",
       liveReminderTemplateId: "template-2",
       interactionScriptId: "script-1",
-      activeStep: 7,
+      activeStep: PUBLISH_STEP,
     };
     const form = renderForm(products, {
       liveId: "live-1",
@@ -1030,7 +1119,7 @@ describe("LiveStepperForm", () => {
       messageTemplateId: "template-1",
       liveReminderTemplateId: "template-2",
       interactionScriptId: "",
-      activeStep: 7,
+      activeStep: PUBLISH_STEP,
     };
     const form = renderForm(products, {
       liveId: "live-1",
@@ -1065,7 +1154,7 @@ describe("LiveStepperForm", () => {
       messageTemplateId: "template-1",
       liveReminderTemplateId: "template-2",
       interactionScriptId: "script-1",
-      activeStep: 7,
+      activeStep: PUBLISH_STEP,
     };
     const form = renderForm(products, {
       liveId: "live-1",
@@ -1098,7 +1187,7 @@ describe("LiveStepperForm", () => {
       formId: "form-1",
       messageTemplateId: "template-1",
       liveReminderTemplateId: "template-2",
-      activeStep: 7,
+      activeStep: PUBLISH_STEP,
     };
     const form = renderForm(products, {
       liveId: "live-1",

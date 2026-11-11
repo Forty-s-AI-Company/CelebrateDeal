@@ -158,7 +158,7 @@ describe("EditLivePage unified Live Studio", () => {
         interactionScriptId: "",
         replayEnabled: true,
         replayAvailableUntil: "2026-08-09T09:00",
-        flowVersion: 2,
+        flowVersion: 3,
         activeStep: 0,
       }),
       timeZone: "Asia/Taipei",
@@ -339,6 +339,53 @@ describe("EditLivePage unified Live Studio", () => {
         id: "draft-live-1",
         revision: 7,
         payload: expect.objectContaining({ scheduledAt: "2026-08-09T10:00", replayAvailableUntil: "" }),
+      }),
+    }), undefined);
+    // A stored v3 row is exactly what the publish claim compares: no re-save needed.
+    expect((mocks.liveStepperForm.mock.calls.at(-1) as unknown as [{ initialDraft?: unknown }] | undefined)?.[0].initialDraft).not.toHaveProperty("storedPayloadOutdated");
+  });
+
+  it("resumes an eight-step v2 edit draft on the matching four-step step and flags it for a re-save", async () => {
+    mocks.draftFindFirst.mockResolvedValue({
+      id: "draft-live-v2",
+      revision: 3,
+      payload: { ...emptyLiveStudioDraft(), flowVersion: 2, title: "八步草稿", activeStep: 5 },
+      updatedAt: new Date("2026-08-08T02:00:00.000Z"),
+    });
+
+    renderToStaticMarkup(await EditLivePage({
+      params: Promise.resolve({ id: "live-1" }),
+      searchParams: Promise.resolve({}),
+    }));
+
+    expect(mocks.liveStepperForm).toHaveBeenCalledWith(expect.objectContaining({
+      initialDraft: expect.objectContaining({
+        id: "draft-live-v2",
+        revision: 3,
+        payload: expect.objectContaining({ flowVersion: 3, activeStep: 2, title: "八步草稿" }),
+        storedPayloadOutdated: true,
+      }),
+    }), undefined);
+  });
+
+  it("falls back to the Live's values for an unreadable draft row and flags it for a re-save", async () => {
+    mocks.draftFindFirst.mockResolvedValue({
+      id: "draft-live-broken",
+      revision: 2,
+      payload: { flowVersion: 3, activeStep: 9 },
+      updatedAt: new Date("2026-08-08T02:00:00.000Z"),
+    });
+
+    renderToStaticMarkup(await EditLivePage({
+      params: Promise.resolve({ id: "live-1" }),
+      searchParams: Promise.resolve({}),
+    }));
+
+    expect(mocks.liveStepperForm).toHaveBeenCalledWith(expect.objectContaining({
+      initialDraft: expect.objectContaining({
+        id: "draft-live-broken",
+        payload: expect.objectContaining({ title: "測試直播", flowVersion: 3, activeStep: 0 }),
+        storedPayloadOutdated: true,
       }),
     }), undefined);
   });

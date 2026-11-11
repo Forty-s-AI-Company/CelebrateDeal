@@ -8,7 +8,8 @@ import { ProjectBoundNotice, ProjectUnboundNotice } from "@/components/project-u
 import { resolveBoundProjectName, resolveDefaultProjectCandidate } from "@/lib/sales-project-scope";
 import { getCsrfToken } from "@/lib/csrf";
 import { getDb } from "@/lib/db";
-import { LiveStudioDraftPayloadSchema } from "@/lib/live-studio-draft";
+import { LiveStudioDraftPayloadSchema, parseStoredLiveStudioDraft } from "@/lib/live-studio-draft";
+import { liveStudioStepAt, liveStudioStepSummary } from "@/lib/live-studio-steps";
 import { liveReadyVideoWhere } from "@/lib/live-video-readiness";
 import {
   hasUsableMessageTemplateContent,
@@ -16,8 +17,6 @@ import {
   REGISTRATION_CONFIRMATION_EMAIL_TEMPLATE_WHERE,
 } from "@/lib/message-template";
 import { parseRegistrationFormFields } from "@/lib/registration-form-fields";
-
-const liveStudioStepLabels = ["用途與基本資料", "影片與即時直播", "商品優惠", "報名頁", "時間、回放與品牌", "Email", "留言、商品浮窗與 CTA", "桌機／手機預覽發布"] as const;
 
 type ResumableLiveDraft = {
   id: string;
@@ -39,7 +38,7 @@ function LiveDraftResumeNotice({ drafts, timeZone }: { drafts: ResumableLiveDraf
             <div>
               <p className="font-semibold text-slate-950">{draft.title || "未命名直播"}</p>
               <p className="mt-1 text-xs text-slate-600">
-                第 {draft.activeStep + 1} 步：{liveStudioStepLabels[draft.activeStep]} · 上次儲存於{" "}
+                第 {draft.activeStep + 1} 步：{liveStudioStepAt(draft.activeStep).label} · 上次儲存於{" "}
                 <time dateTime={draft.updatedAt.toISOString()}>
                   {draft.updatedAt.toLocaleString("zh-TW", { timeZone, hour12: false })}
                 </time>
@@ -146,9 +145,15 @@ export default async function NewLivePage({ searchParams }: { searchParams: Prom
   const templates = templateCandidates
     .filter(hasUsableMessageTemplateContent)
     .map(({ id, name, channel, trigger }) => ({ id, name, channel, trigger }));
-  const parsedDraft = savedDraft ? LiveStudioDraftPayloadSchema.safeParse(savedDraft.payload) : null;
-  const initialDraft = savedDraft && parsedDraft?.success
-    ? { id: savedDraft.id, revision: savedDraft.revision, payload: parsedDraft.data, updatedAt: savedDraft.updatedAt.toISOString() }
+  const parsedDraft = savedDraft ? parseStoredLiveStudioDraft(savedDraft.payload) : null;
+  const initialDraft = savedDraft && parsedDraft
+    ? {
+        id: savedDraft.id,
+        revision: savedDraft.revision,
+        payload: parsedDraft.payload,
+        updatedAt: savedDraft.updatedAt.toISOString(),
+        ...(parsedDraft.outdated ? { storedPayloadOutdated: true } : {}),
+      }
     : undefined;
   // A resumed draft keeps its original scope: a projectId param must equal the draft's
   // (a draft without a project counts as a mismatch), otherwise the URL is rejected.
@@ -175,7 +180,7 @@ export default async function NewLivePage({ searchParams }: { searchParams: Prom
 
   return (
     <>
-      <PageHeader title="建立直播間" description="用八個清楚步驟完成設定；每次變更都會建立可復原、具版本保護的伺服器草稿。" />
+      <PageHeader title="建立直播間" description={`用 ${liveStudioStepSummary()}完成設定；每次變更都會建立可復原、具版本保護的伺服器草稿。`} />
       <ProjectBoundNotice name={projectName} />
       {!projectId && defaultProject.isAggregate ? <ProjectUnboundNotice resource="直播" /> : null}
       {draft && !initialDraft ? (

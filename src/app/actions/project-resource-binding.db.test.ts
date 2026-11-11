@@ -14,6 +14,7 @@ vi.mock("@/lib/live-notification-delivery", () => ({ materializeLiveNotification
 
 import { upsertLiveAction } from "@/app/actions";
 import { liveStudioDraftFromFormData } from "@/lib/live-studio-draft-client";
+import { LIVE_STUDIO_LAST_STEP_INDEX } from "@/lib/live-studio-steps";
 import { mutateProduct } from "./product-actions";
 import { upsertFormBuilderAction } from "./form-actions";
 import { initialProductActionState } from "@/lib/product-action-state";
@@ -82,7 +83,7 @@ describe("project resource binding PostgreSQL transactions", () => {
 async function liveDraft(projectId?: string) {
   const data = new FormData();
   for (const [key, value] of Object.entries({ title: "Synthetic live", slug: randomUUID(), scheduledAt: "2026-12-01T12:00", streamMode: "vod", affiliateMode: "disabled", maxConcurrentViewers: "500", stopWhenCreditsBelow: "300", usageAttributionMode: "PROMOTER", quotaPayerScope: "VENDOR", splitOwnerBps: "3000", splitPromoterBps: "7000", status: "draft", ...(projectId ? { projectId } : {}) })) data.set(key, value);
-  const saved = await db.liveStudioDraft.create({ data: { vendorId: runtime.vendorId, updatedByMemberId: "synthetic-member", payload: liveStudioDraftFromFormData(data, 7), expiresAt: new Date(Date.now() + 60_000) } });
+  const saved = await db.liveStudioDraft.create({ data: { vendorId: runtime.vendorId, updatedByMemberId: "synthetic-member", payload: liveStudioDraftFromFormData(data, LIVE_STUDIO_LAST_STEP_INDEX), expiresAt: new Date(Date.now() + 60_000) } });
   data.set("liveDraftId", saved.id); data.set("liveDraftRevision", String(saved.revision));
   return { data, id: saved.id };
 }

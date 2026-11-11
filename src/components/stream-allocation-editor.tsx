@@ -203,7 +203,7 @@ export function StreamAllocationEditor({
   return (
     <section aria-labelledby="stream-allocation-heading" className="grid gap-4 rounded-lg border border-blue-100 bg-blue-50/40 p-4">
       <div>
-        <h3 id="stream-allocation-heading" className="font-semibold text-slate-950">Stream 用量與額度分配</h3>
+        <h3 id="stream-allocation-heading" className="font-semibold text-slate-950">觀看用量與額度分配</h3>
         <p className="mt-1 text-sm leading-6 text-slate-600">
           選擇誰負責這場直播的觀看用量。系統會把設定存成不可變更的用量快照，不需要手寫 ID 或 JSON。
         </p>
@@ -298,7 +298,7 @@ export function StreamAllocationEditor({
 
       <details className="rounded-md border border-border bg-white p-3">
         <summary className="cursor-pointer text-sm font-semibold text-slate-900">進階：個別成員與推廣頁額度</summary>
-        <p className="mt-2 text-xs leading-5 text-slate-500">只有真的需要限制特定成員或推廣頁時才設定；留空會使用商家整體 Stream 額度。</p>
+        <p className="mt-2 text-xs leading-5 text-slate-500">只有真的需要限制特定成員或推廣頁時才設定；留空會使用商家整體的觀看額度。</p>
         <div className="mt-4 grid gap-5 lg:grid-cols-2">
           <div className="grid content-start gap-3">
             <div className="flex items-center justify-between gap-2">
@@ -349,7 +349,7 @@ export function StreamAllocationEditor({
       <input type="hidden" name="memberQuotas" value={memberQuotaValue} />
       <input type="hidden" name="pageQuotas" value={pageQuotaValue} />
       <p id="stream-policy-status" role={policyIssue ? "alert" : "status"} aria-live="polite" className={`text-sm font-medium ${policyIssue ? "text-red-700" : "text-emerald-700"}`}>
-        {policyIssue || "Stream 用量設定完整，會隨直播草稿一起安全儲存。"}
+        {policyIssue || "觀看用量設定完整，會隨直播草稿一起安全儲存。"}
       </p>
     </section>
   );

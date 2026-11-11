@@ -215,7 +215,7 @@ test("G7-45 focused mode keeps the Live Studio contract and both responsive scre
   assert.match(source, /--focus-live-studio-starter/u);
   assert.match(source, /focusStreamRetry \? "G7-51" : focusCheckoutRecovery \? "G7-57" : focusMessageTemplateDraft \? "G7-58" : focusInteractionRole \? "G7-52" : focusLiveStudioStarter \? "G7-46" : "G7-45"/u);
   assert.match(source, /focusStreamRetry \? \[streamRetryContract\][\s\S]*focusCheckoutRecovery \? \[checkoutRecoveryContract\][\s\S]*focusMessageTemplateDraft \? \[messageTemplateDraftContract\][\s\S]*focusInteractionRole \? \[interactionRoleContract\][\s\S]*focusPersistentPlayer \? \[persistentPlayerContract\][\s\S]*focusLiveStudio \? \[liveStudioContract\] : expectedBrowserContracts/u);
-  for (const path of ["src/components/use-live-studio-draft.ts", "src/lib/live-studio-draft.ts", "src/lib/live-studio-draft-client.ts"]) {
+  for (const path of ["src/components/use-live-studio-draft.ts", "src/lib/live-studio-draft.ts", "src/lib/live-studio-draft-client.ts", "src/lib/live-studio-steps.ts"]) {
     assert.equal(source.includes(`"${path}"`), true, `${path} must be source-attested`);
   }
   assert.match(source, /\["liveStudioDesktop", "liveStudioMobile"\]/u);

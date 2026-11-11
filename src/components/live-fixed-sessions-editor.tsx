@@ -58,6 +58,34 @@ export function fixedSessionRowProblems(
   });
 }
 
+/**
+ * Registration cutoff and per-session replay window of a 指定場次 Live. The
+ * studio shows them in its collapsed 「進階設定」; they exist (and are
+ * submitted) only while the Live uses fixed sessions.
+ */
+export function LiveFixedSessionSettingsFields({
+  initialCutoffMinutes,
+  initialReplayWindowHours,
+}: {
+  initialCutoffMinutes: string;
+  initialReplayWindowHours: string;
+}) {
+  return (
+    <div className="grid gap-3 sm:grid-cols-2">
+      <label className="grid gap-1.5 text-sm font-medium text-slate-700">
+        開播後仍可報名（分鐘）
+        <input name="sessionRegistrationCutoffMinutes" type="number" inputMode="numeric" min={0} max={1440} defaultValue={initialCutoffMinutes || "0"} className="h-11 rounded-md border border-border px-3" />
+        <span className="text-xs font-normal text-slate-500">0 代表場次開始後就不再接受報名。</span>
+      </label>
+      <label className="grid gap-1.5 text-sm font-medium text-slate-700">
+        每場回放保留（小時，選填）
+        <input name="sessionReplayWindowHours" type="number" inputMode="numeric" min={1} max={8760} defaultValue={initialReplayWindowHours} placeholder="依回放期限" className="h-11 rounded-md border border-border px-3" />
+        <span className="text-xs font-normal text-slate-500">從各場次結束起算；仍受回放開關與回放期限限制。</span>
+      </label>
+    </div>
+  );
+}
+
 function dayHeading(date: string) {
   const [year, month, day] = date.split("-").map(Number);
   const weekday = new Date(Date.UTC(year!, month! - 1, day!)).getUTCDay();
@@ -75,6 +103,7 @@ export function LiveFixedSessionsEditor({
   streamMode,
   onModeChange,
   onRowsChange,
+  showSessionSettings = true,
 }: {
   timeZoneLabel: string;
   /** Current wall-clock `YYYY-MM-DDTHH:mm` in the studio timezone. */
@@ -87,6 +116,8 @@ export function LiveFixedSessionsEditor({
   streamMode: string;
   onModeChange: (mode: "single" | "fixed_sessions") => void;
   onRowsChange: (rows: FixedSessionDraftRow[]) => void;
+  /** False when the host renders `LiveFixedSessionSettingsFields` elsewhere (the studio's 進階設定). */
+  showSessionSettings?: boolean;
 }) {
   const [mode, setMode] = useState(initialMode);
   const [rows, setRows] = useState<EditorRow[]>(initialRows.map(withKey));
@@ -144,7 +175,7 @@ export function LiveFixedSessionsEditor({
             每個場次都會在開播時間播放同一支預錄影片；報名者在報名頁選一場，確認信、提醒、觀看頁與回放都依該場次時間計算。時間依{timeZoneLabel}輸入，最多 {MAX_FIXED_SESSIONS} 場。
           </p>
           {streamMode !== "vod" ? (
-            <p role="alert" className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">指定場次只適用預錄影片播放；請在「媒體」步驟改用影片播放。</p>
+            <p role="alert" className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">指定場次只適用預錄影片；請把上方的「播放方式」改成預錄影片。</p>
           ) : null}
           <input type="hidden" name="fixedSessions" value={JSON.stringify(sorted)} readOnly />
           <ol className="grid gap-3" aria-label="場次列表">
@@ -226,18 +257,9 @@ export function LiveFixedSessionsEditor({
           {cancelledWithRegistrations.length > 0 ? (
             <p className="text-xs text-slate-500">另有 {cancelledWithRegistrations.length} 個已取消的場次保留報名紀錄；重新加入相同時間即可恢復。</p>
           ) : null}
-          <div className="grid gap-3 sm:grid-cols-2">
-            <label className="grid gap-1.5 text-sm font-medium text-slate-700">
-              開播後仍可報名（分鐘）
-              <input name="sessionRegistrationCutoffMinutes" type="number" inputMode="numeric" min={0} max={1440} defaultValue={initialCutoffMinutes || "0"} className="h-11 rounded-md border border-border px-3" />
-              <span className="text-xs font-normal text-slate-500">0 代表場次開始後就不再接受報名。</span>
-            </label>
-            <label className="grid gap-1.5 text-sm font-medium text-slate-700">
-              每場回放保留（小時，選填）
-              <input name="sessionReplayWindowHours" type="number" inputMode="numeric" min={1} max={8760} defaultValue={initialReplayWindowHours} placeholder="依回放期限" className="h-11 rounded-md border border-border px-3" />
-              <span className="text-xs font-normal text-slate-500">從各場次結束起算；仍受上方回放開關與回放期限限制。</span>
-            </label>
-          </div>
+          {showSessionSettings ? (
+            <LiveFixedSessionSettingsFields initialCutoffMinutes={initialCutoffMinutes} initialReplayWindowHours={initialReplayWindowHours} />
+          ) : null}
           <section aria-label="場次一覽" className="grid gap-2 rounded-md bg-slate-50 px-3 py-2">
             <h3 className="text-sm font-semibold text-slate-900">場次一覽（共 {sorted.filter((row) => LOCAL_DATE_TIME.test(row.startAt)).length} 場）</h3>
             {grouped.size === 0 ? <p className="text-sm text-slate-500">尚未設定場次。</p> : (

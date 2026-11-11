@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { LiveNotificationRuleDraftListSchema } from "@/lib/live-notification-rules";
 import { MAX_FIXED_SESSIONS } from "@/lib/live-fixed-sessions";
+import { LIVE_STUDIO_STEP_COUNT, liveStudioStepIndex, type LiveStudioStepKey } from "@/lib/live-studio-steps";
 
 const boundedReference = z.string().trim().min(1).max(128);
 const optionalReference = z.union([boundedReference, z.literal("")]).default("");
@@ -25,8 +26,14 @@ export const FixedSessionDraftRowSchema = z.object({
   status: z.enum(["open", "closed"]).default("open"),
 }).strict();
 
-export const LIVE_STUDIO_FLOW_VERSION = 2 as const;
-export const LIVE_STUDIO_STEP_COUNT = 8;
+/**
+ * Draft flow versions:
+ * - (none) the original five-step studio;
+ * - 2 the eight-step studio;
+ * - 3 the current four-step studio (`LIVE_STUDIO_STEPS`).
+ * Every read accepts all three and returns version 3; every write is version 3.
+ */
+export const LIVE_STUDIO_FLOW_VERSION = 3 as const;
 
 const liveStudioDraftFields = {
   // Optional for existing saved drafts; ownership is checked at final creation.
@@ -75,23 +82,50 @@ const LegacyLiveStudioDraftPayloadSchema = z.object({
   activeStep: z.number().int().min(0).max(4).default(0),
 }).strict();
 
+const VersionTwoLiveStudioDraftPayloadSchema = z.object({
+  ...liveStudioDraftFields,
+  flowVersion: z.literal(2),
+  activeStep: z.number().int().min(0).max(7).default(0),
+}).strict();
+
 const CanonicalLiveStudioDraftPayloadSchema = z.object({
   ...liveStudioDraftFields,
   flowVersion: z.literal(LIVE_STUDIO_FLOW_VERSION),
   activeStep: z.number().int().min(0).max(LIVE_STUDIO_STEP_COUNT - 1).default(0),
 }).strict();
 
+type CanonicalLiveStudioDraftPayload = z.infer<typeof CanonicalLiveStudioDraftPayloadSchema>;
+
+/** Five-step (no flowVersion) position → eight-step (v2) position. */
 const legacyStepToVersionTwo = [0, 2, 1, 6, 7] as const;
+
+/**
+ * Eight-step (v2) position → four-step key: purpose, media, registration and
+ * schedule became 內容; products and interactions became 成交; emails became
+ * 通知; review became 發布.
+ */
+export const LIVE_STUDIO_V2_STEP_KEYS = [
+  "content", // 0 purpose
+  "content", // 1 media
+  "sales", // 2 products
+  "content", // 3 registration
+  "content", // 4 schedule
+  "notifications", // 5 emails
+  "sales", // 6 interactions
+  "publish", // 7 review
+] as const satisfies readonly LiveStudioStepKey[];
 
 export const LiveStudioDraftPayloadSchema = z.union([
   CanonicalLiveStudioDraftPayloadSchema,
+  VersionTwoLiveStudioDraftPayloadSchema,
   LegacyLiveStudioDraftPayloadSchema,
-]).transform((payload) => {
-  if ("flowVersion" in payload) return payload;
+]).transform((payload): CanonicalLiveStudioDraftPayload => {
+  if ("flowVersion" in payload && payload.flowVersion === LIVE_STUDIO_FLOW_VERSION) return payload;
+  const versionTwoStep = "flowVersion" in payload ? payload.activeStep : legacyStepToVersionTwo[payload.activeStep]!;
   return {
     ...payload,
     flowVersion: LIVE_STUDIO_FLOW_VERSION,
-    activeStep: legacyStepToVersionTwo[payload.activeStep]!,
+    activeStep: liveStudioStepIndex(LIVE_STUDIO_V2_STEP_KEYS[versionTwoStep]!),
   };
 });
 
@@ -111,8 +145,61 @@ export type LiveStudioDraftEnvelope = {
   revision: number;
   payload: LiveStudioDraftPayload;
   updatedAt: string;
+  /**
+   * The stored JSON is not this canonical payload (an older flow version, a
+   * field added since, or a payload that no longer parsed). A publish claim
+   * compares the stored JSON exactly, so the studio re-saves before it submits.
+   */
+  storedPayloadOutdated?: boolean;
 };
+
+export type VersionTwoLiveStudioDraftPayload = z.infer<typeof VersionTwoLiveStudioDraftPayloadSchema>;
+
+/**
+ * Deployment skew: a tab opened before the four-step studio shipped still runs
+ * the eight-step client. That client only parses a `flowVersion: 2` response,
+ * keeps it as its last saved snapshot and compares it with what it sent, so a
+ * v3 response would leave it in a save error with a stale revision (and the
+ * next save would then hit a false 409). The row always stores the canonical
+ * v3 payload; only the response to a v2 request echoes the request's own flow
+ * version and step. Any other request gets the canonical payload back.
+ */
+export function liveStudioDraftResponsePayload(
+  requestPayload: unknown,
+  canonical: LiveStudioDraftPayload,
+): LiveStudioDraftPayload | VersionTwoLiveStudioDraftPayload {
+  const versionTwo = VersionTwoLiveStudioDraftPayloadSchema.safeParse(requestPayload);
+  if (!versionTwo.success) return canonical;
+  return { ...canonical, flowVersion: 2, activeStep: versionTwo.data.activeStep };
+}
 
 export function emptyLiveStudioDraft(): LiveStudioDraftPayload {
   return LiveStudioDraftPayloadSchema.parse({});
+}
+
+/** Structural JSON equality that ignores object key order, like PostgreSQL jsonb. */
+function sameJsonValue(left: unknown, right: unknown): boolean {
+  if (Object.is(left, right)) return true;
+  if (Array.isArray(left) || Array.isArray(right)) {
+    return Array.isArray(left) && Array.isArray(right)
+      && left.length === right.length
+      && left.every((item, index) => sameJsonValue(item, right[index]));
+  }
+  if (!left || !right || typeof left !== "object" || typeof right !== "object") return false;
+  const leftEntries = Object.entries(left).filter(([, value]) => value !== undefined);
+  const rightRecord = right as Record<string, unknown>;
+  const rightKeys = Object.keys(rightRecord).filter((key) => rightRecord[key] !== undefined);
+  return leftEntries.length === rightKeys.length
+    && leftEntries.every(([key, value]) => Object.prototype.hasOwnProperty.call(rightRecord, key) && sameJsonValue(value, rightRecord[key]));
+}
+
+/**
+ * Reads a stored draft into the current flow version. `outdated` tells the
+ * studio the row still holds another JSON shape (for example an eight-step
+ * v2 draft), so it must be saved again before its publish claim can match.
+ */
+export function parseStoredLiveStudioDraft(stored: unknown) {
+  const parsed = LiveStudioDraftPayloadSchema.safeParse(stored);
+  if (!parsed.success) return null;
+  return { payload: parsed.data, outdated: !sameJsonValue(parsed.data, stored) };
 }

@@ -15,6 +15,7 @@ import {
   resolveFixedSessionRuntime,
 } from "@/lib/live-fixed-sessions";
 import { LiveStudioDraftPayloadSchema } from "@/lib/live-studio-draft";
+import { liveStudioStepIndex } from "@/lib/live-studio-steps";
 import { liveStudioDraftFromFormData } from "@/lib/live-studio-draft-client";
 
 const TZ = "Asia/Taipei";
@@ -194,7 +195,7 @@ describe("studio draft payload", () => {
   }
 
   it("keeps a single-start Live's payload free of session keys", () => {
-    const payload = liveStudioDraftFromFormData(studioForm([["sessionMode", "single"]]), 4);
+    const payload = liveStudioDraftFromFormData(studioForm([["sessionMode", "single"]]), liveStudioStepIndex("content"));
     expect(Object.keys(payload).filter((key) => key.startsWith("session") || key === "fixedSessions")).toEqual([]);
     // A draft saved before the field existed parses unchanged.
     expect("sessionMode" in LiveStudioDraftPayloadSchema.parse({ title: "Legacy" })).toBe(false);
@@ -207,7 +208,7 @@ describe("studio draft payload", () => {
       ["fixedSessions", JSON.stringify(rows)],
       ["sessionRegistrationCutoffMinutes", "15"],
       ["sessionReplayWindowHours", "48"],
-    ]), 4);
+    ]), liveStudioStepIndex("content"));
     expect(payload).toMatchObject({ sessionMode: "fixed_sessions", fixedSessions: rows, sessionRegistrationCutoffMinutes: "15", sessionReplayWindowHours: "48" });
     // Resume: the saved payload parses back to the same rows.
     expect(LiveStudioDraftPayloadSchema.parse(JSON.parse(JSON.stringify(payload)))).toEqual(payload);

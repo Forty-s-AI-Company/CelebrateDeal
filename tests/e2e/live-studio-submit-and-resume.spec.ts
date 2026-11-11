@@ -1,9 +1,11 @@
 import { expect, test } from "@playwright/test";
 import { PrismaClient } from "@prisma/client";
+import { emptyLiveStudioDraft } from "../../src/lib/live-studio-draft";
 import {
   createLiveStudioFixture,
   deleteLiveStudioFixture,
   fillReportedLiveStudioState,
+  liveStudioStepButton,
   loginLiveStudioOwner,
   type LiveStudioFixture,
 } from "../fixtures/live-studio";
@@ -42,12 +44,12 @@ test("resumed live studio draft keeps every binding, reuses its row and schedule
     await page.getByRole("link", { name: "繼續這份草稿" }).click();
     await expect(page).toHaveURL(new RegExp(`/lives/new\\?draft=${savedDraft.id}$`, "u"));
 
-    await expect(page.getByRole("button", { name: /桌機／手機預覽發布/u })).toHaveAttribute("aria-current", "step");
+    await expect(liveStudioStepButton(page, "publish")).toHaveAttribute("aria-current", "step");
     await expect(page.getByLabel("直播標題")).toHaveValue("我吃原型食物就好!?");
     await expect(page.getByLabel("直播網址")).toHaveValue(slug);
     await expect(page.getByLabel("直播說明")).toHaveValue("合成說明：原型食物入門。");
     await expect(page.locator("select[name=videoId]")).toHaveValue(fixture.video.id);
-    // Earlier step panels are `hidden`, so query by name rather than accessible role.
+    // Earlier step panels are `hidden` (and 進階設定 collapsed), so query by name rather than accessible role.
     await expect(page.locator(`input[name=productIds][value="${fixture.product.id}"]`)).toBeChecked();
     await expect(page.getByLabel("促銷短句")).toHaveValue("直播限定原型食物優惠");
     await expect(page.locator("select[name=formId]")).toHaveValue(fixture.form.id);
@@ -107,6 +109,85 @@ test("resumed live studio draft keeps every binding, reuses its row and schedule
     expect(drafts).toHaveLength(1);
     expect(drafts[0]?.id).toBe(savedDraft.id);
     expect(drafts[0]?.consumedAt).not.toBeNull();
+    expect(nativeDialogs).toEqual([]);
+  } finally {
+    await deleteLiveStudioFixture(db, fixture);
+  }
+});
+
+test("an eight-step (v2) draft already in the database resumes on 通知 and schedules after one re-save", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  const nativeDialogs: string[] = [];
+  page.on("dialog", (dialog) => {
+    nativeDialogs.push(dialog.message());
+    void dialog.dismiss();
+  });
+  let fixture: LiveStudioFixture | undefined;
+  try {
+    fixture = await createLiveStudioFixture(db);
+    const slug = `whole-food-v2-${fixture.id.slice(0, 8)}`;
+    // Exactly what the eight-step studio stored: flowVersion 2, saved on its Email step (index 5).
+    const versionTwoPayload = {
+      ...emptyLiveStudioDraft(),
+      flowVersion: 2,
+      activeStep: 5,
+      studioPreset: "COMMERCE",
+      title: "八步草稿續編",
+      slug,
+      scheduledAt: "2026-11-29T20:00",
+      videoId: fixture.video.id,
+      formId: fixture.form.id,
+      messageTemplateId: fixture.template.id,
+      interactionScriptId: fixture.script.id,
+      productIds: [fixture.product.id],
+      accentCopy: "直播限定原型食物優惠",
+      replayAvailableUntil: "2026-12-15T23:59",
+    };
+    const stored = await db.liveStudioDraft.create({ data: {
+      vendorId: fixture.vendor.id,
+      updatedByMemberId: "synthetic-v2-member",
+      payload: versionTwoPayload,
+      expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+    } });
+    await loginLiveStudioOwner(page, fixture);
+
+    await page.goto("/lives/new");
+    await expect(page.getByText("第 3 步：通知")).toBeVisible();
+    await page.getByRole("link", { name: "繼續這份草稿" }).click();
+    await expect(page).toHaveURL(new RegExp(`/lives/new\\?draft=${stored.id}$`, "u"));
+    await expect(liveStudioStepButton(page, "notifications")).toHaveAttribute("aria-current", "step");
+    await expect(page.locator("select[name=messageTemplateId]")).toHaveValue(fixture.template.id);
+    await expect(page.locator("select[name=videoId]")).toHaveValue(fixture.video.id);
+    await expect(page.locator(`input[name=productIds][value="${fixture.product.id}"]`)).toBeChecked();
+
+    await liveStudioStepButton(page, "publish").click();
+    await expect(page.getByText("發布條件已完成")).toBeVisible();
+    await page.getByRole("button", { name: "建立並排程", exact: true }).click();
+    await page.getByRole("alertdialog", { name: "確定要建立並排程這場直播嗎？" })
+      .getByRole("button", { name: "確認建立並排程", exact: true }).click();
+
+    await expect(page).toHaveURL(/\/lives\/[^/]+\/preview$/u, { timeout: 60_000 });
+    const liveId = new URL(page.url()).pathname.split("/")[2]!;
+    const live = await db.live.findUniqueOrThrow({
+      where: { id: liveId },
+      select: { vendorId: true, title: true, slug: true, status: true, videoId: true, formId: true, messageTemplateId: true, products: { select: { productId: true } } },
+    });
+    expect(live).toEqual({
+      vendorId: fixture.vendor.id,
+      title: "八步草稿續編",
+      slug,
+      status: "scheduled",
+      videoId: fixture.video.id,
+      formId: fixture.form.id,
+      messageTemplateId: fixture.template.id,
+      products: [{ productId: fixture.product.id }],
+    });
+    const consumed = await db.liveStudioDraft.findUniqueOrThrow({ where: { id: stored.id } });
+    expect(consumed.consumedAt).not.toBeNull();
+    // The row was re-saved as v3 (from the 發布 step) before the publish claim compared it.
+    expect(consumed.payload).toMatchObject({ flowVersion: 3, activeStep: 3, title: "八步草稿續編" });
+    expect(consumed.revision).toBeGreaterThan(stored.revision);
+    expect(await db.liveStudioDraft.count({ where: { vendorId: fixture.vendor.id } })).toBe(1);
     expect(nativeDialogs).toEqual([]);
   } finally {
     await deleteLiveStudioFixture(db, fixture);

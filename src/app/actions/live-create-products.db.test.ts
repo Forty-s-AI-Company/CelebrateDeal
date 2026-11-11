@@ -14,6 +14,8 @@ vi.mock("@/lib/live-notification-delivery", () => ({ materializeLiveNotification
 
 import { upsertLiveAction } from "@/app/actions";
 import { liveStudioDraftFromFormData } from "@/lib/live-studio-draft-client";
+import { parseStoredLiveStudioDraft } from "@/lib/live-studio-draft";
+import { LIVE_STUDIO_LAST_STEP_INDEX, liveStudioStepIndex } from "@/lib/live-studio-steps";
 
 // Actual PostgreSQL writes; only request/session boundaries are synthetic.
 const prisma = new PrismaClient();
@@ -61,7 +63,7 @@ async function savedDraft(vendorId: string, fields: Record<string, string>, prod
   })) data.set(key, value);
   for (const productId of productIds) data.append("productIds", productId);
   const saved = await prisma.liveStudioDraft.create({ data: {
-    vendorId, updatedByMemberId: "synthetic-member", payload: liveStudioDraftFromFormData(data, 7), expiresAt: new Date(Date.now() + 60_000),
+    vendorId, updatedByMemberId: "synthetic-member", payload: liveStudioDraftFromFormData(data, LIVE_STUDIO_LAST_STEP_INDEX), expiresAt: new Date(Date.now() + 60_000),
   } });
   data.set("liveDraftId", saved.id);
   data.set("liveDraftRevision", String(saved.revision));
@@ -72,7 +74,40 @@ beforeEach(async () => { db.client = prisma; runtime.vendorId = await vendor(); 
 afterEach(async () => { await prisma.vendor.deleteMany({ where: { id: { in: vendors.splice(0) } } }); });
 afterAll(async () => prisma.$disconnect());
 
-describe("creating a live with products from the eight-step studio", () => {
+describe("publishing a draft saved by the eight-step (v2) studio", () => {
+  it("refuses the stale v2 row as a claim and schedules once the studio re-saved it as v3", async () => {
+    const resources = await reportedStudioResources(runtime.vendorId);
+    const offered = await product(runtime.vendorId, "Synthetic whole-food box");
+    const draft = await savedDraft(runtime.vendorId, {
+      videoId: resources.video.id, formId: resources.form.id, messageTemplateId: resources.template.id,
+      interactionScriptId: resources.script.id, studioPreset: "COMMERCE",
+    }, [offered.id]);
+    const current = await prisma.liveStudioDraft.findUniqueOrThrow({ where: { id: draft.id } });
+    // The same content as the eight-step studio stored it: flowVersion 2, on its Email step.
+    const versionTwo = { ...(current.payload as Record<string, unknown>), flowVersion: 2, activeStep: 5 };
+    await prisma.liveStudioDraft.update({ where: { id: draft.id }, data: { payload: versionTwo } });
+
+    // A claim never matches a row the studio has not re-saved: nothing is written.
+    await expect(upsertLiveAction(draft.data)).rejects.toThrow("error=draft_conflict");
+    expect(await prisma.live.count({ where: { vendorId: runtime.vendorId } })).toBe(0);
+
+    // Resuming reads it as v3 on 通知 and flags it; the studio re-saves (v3 from the 發布 step), then claims.
+    const resumed = parseStoredLiveStudioDraft(versionTwo);
+    expect(resumed).toMatchObject({ outdated: true, payload: { flowVersion: 3, activeStep: liveStudioStepIndex("notifications") } });
+    const resaved = await prisma.liveStudioDraft.update({
+      where: { id: draft.id },
+      data: { payload: { ...resumed!.payload, activeStep: LIVE_STUDIO_LAST_STEP_INDEX }, revision: { increment: 1 } },
+    });
+    draft.data.set("liveDraftRevision", String(resaved.revision));
+
+    await expect(upsertLiveAction(draft.data)).rejects.toThrow(/redirect:\/lives\/[^/]+\/preview/u);
+    const live = await prisma.live.findFirstOrThrow({ where: { vendorId: runtime.vendorId }, select: { status: true, videoId: true, messageTemplateId: true } });
+    expect(live).toEqual({ status: "scheduled", videoId: resources.video.id, messageTemplateId: resources.template.id });
+    expect((await prisma.liveStudioDraft.findUniqueOrThrow({ where: { id: draft.id } })).consumedAt).not.toBeNull();
+  });
+});
+
+describe("creating a live with products from the four-step studio", () => {
   it("schedules a new commerce live and binds its product under the current vendor", async () => {
     const resources = await reportedStudioResources(runtime.vendorId);
     const offered = await product(runtime.vendorId, "Synthetic whole-food box");

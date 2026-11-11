@@ -169,6 +169,7 @@ const attestedSourcePaths = [
   "src/components/use-live-studio-draft.ts",
   "src/lib/live-studio-draft.ts",
   "src/lib/live-studio-draft-client.ts",
+  "src/lib/live-studio-steps.ts",
   "src/app/(app)/messages/templates/page.tsx",
   "src/app/(app)/messages/deliveries/page.tsx",
   "src/app/(app)/lives/new/page.tsx",
