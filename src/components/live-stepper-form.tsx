@@ -1526,8 +1526,12 @@ function useLiveResourceDrawers(input: {
    * unsaved edits so that refresh does not remount it and drop the selection.
    */
   const [creating, setCreating] = useState(false);
-  /** Set when a drawer created something: the control to focus (if any) and whether the draft changed. */
-  const focusPendingRef = useRef<{ selector?: string; save: boolean } | null>(null);
+  /**
+   * Set when a drawer created something (or a background video became ready):
+   * the control to focus (if any), whether the draft changed, and, for a drawer
+   * result, that the focus waits until the drawer is gone from the render.
+   */
+  const focusPendingRef = useRef<{ selector?: string; save: boolean; afterDrawerClose?: boolean } | null>(null);
   const { formRef, scheduleSave } = input;
   /** The result is in the DOM and queued for saving; a no-op when nothing is in flight. */
   const settleCreate = () => setCreating(false);
@@ -1537,6 +1541,11 @@ function useLiveResourceDrawers(input: {
   useEffect(() => {
     const pending = focusPendingRef.current;
     if (!pending) return;
+    // The effect of an earlier commit can flush after a drawer result set the
+    // pending focus but before the commit that closes the drawer. Its drawer is
+    // still open there, and the drawer's cleanup would later hand focus back to
+    // its trigger over ours; only the commit without the drawer may place it.
+    if (pending.afterDrawerClose && drawer) return;
     focusPendingRef.current = null;
     const target = pending.selector ? formRef.current?.querySelector<HTMLElement>(pending.selector) : null;
     if (target) {
@@ -1588,7 +1597,7 @@ function useLiveResourceDrawers(input: {
     markManualVideoSelection();
     input.selectVideo(option.id);
     setAnnouncement(`已建立並選取影片「${option.title}」。`);
-    focusPendingRef.current = { selector: '[name="videoId"]', save: true };
+    focusPendingRef.current = { selector: '[name="videoId"]', save: true, afterDrawerClose: true };
   }
 
   /** An uploaded file reached Cloudflare: wait for processing under the select. */
@@ -1603,7 +1612,7 @@ function useLiveResourceDrawers(input: {
     ]);
     setDrawer(null);
     setAnnouncement(`影片「${option.title}」已上傳，正在轉檔；完成後會自動選取。可以先繼續其他步驟。`);
-    focusPendingRef.current = { save: false };
+    focusPendingRef.current = { save: false, afterDrawerClose: true };
   }
 
   /**
@@ -1658,7 +1667,7 @@ function useLiveResourceDrawers(input: {
     input.selectForm(option.id);
     setDrawer(null);
     setAnnouncement(`已建立並選取報名表「${option.name}」。`);
-    focusPendingRef.current = { selector: '[name="formId"]', save: true };
+    focusPendingRef.current = { selector: '[name="formId"]', save: true, afterDrawerClose: true };
   }
 
   function templateCreated(option: LiveQuickTemplateOption, ruleTrigger?: LiveNotificationRuleTrigger) {
@@ -1668,13 +1677,14 @@ function useLiveResourceDrawers(input: {
     if (option.trigger === "registration_confirmed") {
       input.selectRegistrationTemplate(option.id);
       setAnnouncement(`已建立並選取報名成功 Email「${option.name}」。`);
-      focusPendingRef.current = { selector: '[name="messageTemplateId"]', save: true };
+      focusPendingRef.current = { selector: '[name="messageTemplateId"]', save: true, afterDrawerClose: true };
       return;
     }
     setAnnouncement(`已建立 Email 模板「${option.name}」，現在可以新增通知規則。`);
     focusPendingRef.current = {
       selector: ruleTrigger ? `[data-notification-add="${ruleTrigger}"]` : '[name="messageTemplateId"]',
       save: false,
+      afterDrawerClose: true,
     };
   }
 

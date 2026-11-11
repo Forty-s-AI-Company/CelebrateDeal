@@ -823,6 +823,45 @@ describe("LiveStepperForm 就地建立 drawers", () => {
     expect(mocks.upsertLiveAction).not.toHaveBeenCalled();
   });
 
+  it("leaves focus on the new select when an earlier commit's effects flush before the drawer closes", async () => {
+    // Real scheduler (no act) so a transition commit can leave its passive effects
+    // pending while the create result arrives; that is the order a slow browser run hit.
+    let onRefreshCommit: (() => void) | null = null;
+    const tree = (forms: typeof resources.forms) => (
+      <Profiler id="refresh" onRender={() => onRefreshCommit?.()}>{emptyStudio({ forms })}</Profiler>
+    );
+    await act(async () => { root.render(tree([])); });
+    const trigger = button("新增報名表");
+    trigger.focus();
+    await act(async () => { trigger.click(); });
+    await type(drawerControl('[name="name"]'), "週五講座報名表");
+    await type(drawerControl('[name="headline"]'), "週五講座");
+    let release!: () => void;
+    mocks.createRegistrationFormQuickAction.mockReturnValueOnce(new Promise((resolve) => {
+      release = () => resolve({ status: "success", option: { id: "form-quick", name: "週五講座報名表" } });
+    }));
+    await submitDrawer();
+    expect(dialog()).not.toBeNull();
+
+    (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = false;
+    try {
+      // The create revalidation commits first; its result reaches the studio right after, before that commit's effects ran.
+      onRefreshCommit = () => { onRefreshCommit = null; release(); };
+      root.render(tree([{ id: "form-other", name: "其他表單" }]));
+      await vi.waitFor(() => {
+        expect(dialog()).toBeNull();
+        expect(container.querySelector("[data-live-resource-status]")?.textContent).toContain("已建立並選取報名表");
+      });
+      const select = control<HTMLSelectElement>('select[name="formId"]');
+      await vi.waitFor(() => expect(document.activeElement).toBe(select));
+      // Nothing moves it back to the trigger afterwards.
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      expect(document.activeElement).toBe(select);
+    } finally {
+      (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+    }
+  });
+
   describe("while a create is in flight", () => {
     const contentPayload = LiveStudioDraftPayloadSchema.parse({
       ...reportedPayload,
