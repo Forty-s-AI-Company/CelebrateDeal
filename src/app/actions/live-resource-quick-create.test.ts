@@ -275,6 +275,22 @@ describe("createUrlVideoQuickAction", () => {
     expect(mocks.saveVideo).not.toHaveBeenCalled();
   });
 
+  it("refuses an over-long URL instead of saving a truncated one", async () => {
+    const tooLong = `https://media.example.test/${"a".repeat(2048 - "https://media.example.test/".length)}b`;
+    const result = await createUrlVideoQuickAction(formInput({ title: "x", videoUrl: `  ${tooLong}  ` }));
+    expect(result).toMatchObject({ status: "error", fieldErrors: { videoUrl: expect.any(String) } });
+    expect(mocks.saveVideo).not.toHaveBeenCalled();
+  });
+
+  it("accepts a URL of exactly the limit even with surrounding whitespace", async () => {
+    const atLimit = `https://media.example.test/${"a".repeat(2048 - "https://media.example.test/".length)}`;
+    expect(atLimit).toHaveLength(2048);
+    const result = await createUrlVideoQuickAction(formInput({ title: "x", videoUrl: `
+  ${atLimit}  ` }));
+    expect(result.status).toBe("success");
+    expect(sentVideo().videoUrl).toBe(atLimit);
+  });
+
   it("refuses duplicated fields instead of picking one", async () => {
     const data = formInput({ title: "x" });
     data.append("videoUrl", "https://media.example.test/a.mp4");

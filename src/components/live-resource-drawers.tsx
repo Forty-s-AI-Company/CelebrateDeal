@@ -69,7 +69,8 @@ function DrawerTextField({
 }: {
   label: string;
   name: string;
-  maxLength: number;
+  /** Omit for a pasted address: the browser would cut it silently; the validator reports it instead. */
+  maxLength?: number;
   defaultValue: string;
   hint?: string;
   error?: string;
@@ -403,6 +404,18 @@ export function VideoQuickCreateDrawer({
   const uploading = BUSY_UPLOAD_PHASES.has(uploadPhase);
   const busy = uploading || creatingUrl;
   useFocusFirstError(formRef, errorVersion, busy);
+  // Leaving the page while the file is being sent would cut the upload off:
+  // ask the browser to confirm. Removed when the upload ends, is paused or
+  // fails, and when the drawer unmounts.
+  useEffect(() => {
+    if (!uploading) return;
+    const warn = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [uploading]);
   const callbacksRef = useRef({ onUploaded, onInFlightChange });
   useEffect(() => { callbacksRef.current = { onUploaded, onInFlightChange }; });
 
@@ -519,7 +532,6 @@ export function VideoQuickCreateDrawer({
               name="videoUrl"
               type="url"
               placeholder="https://..."
-              maxLength={LIVE_QUICK_VIDEO_LIMITS.videoUrl}
               defaultValue=""
               error={errors.videoUrl}
               disabled={busy}

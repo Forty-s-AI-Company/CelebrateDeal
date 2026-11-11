@@ -1,5 +1,9 @@
+// @vitest-environment happy-dom
+import { act } from "react";
+import { createRoot, type Root } from "react-dom/client";
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { MediaUploadClientError } from "@/lib/media-upload-client";
 import {
   MediaUploadField,
   cropAspectRatio,
@@ -8,8 +12,23 @@ import {
   mediaUploadPersistedValue,
   mediaUploadReducer,
   shouldAutoUploadThumbnail,
+  type MediaUploadPhase,
   type MediaUploadState,
 } from "./media-upload-field";
+
+const mediaMocks = vi.hoisted(() => ({
+  requestMediaJson: vi.fn(),
+  uploadFileWithProgress: vi.fn(),
+  /** Resolves the upload that is currently being sent. */
+  finishUpload: () => undefined as void,
+}));
+
+// Only the network edge is replaced; validation, parsing and the component are the real ones.
+vi.mock("@/lib/media-upload-client", async (importOriginal) => ({
+  ...await importOriginal<typeof import("@/lib/media-upload-client")>(),
+  requestMediaJson: mediaMocks.requestMediaJson,
+  uploadFileWithProgress: mediaMocks.uploadFileWithProgress,
+}));
 
 const baseState: MediaUploadState = {
   phase: "idle",
@@ -283,5 +302,145 @@ describe("mediaUploadReducer", () => {
       .toBe("");
     expect(mediaUploadReducer(resumable, { type: "error", code: "video_upload_failed" }).resumableUploadTicket)
       .toBe("");
+  });
+});
+
+describe("MediaUploadField video upload (real component)", () => {
+  const defaultSuccess = "檔案已送達 Cloudflare Stream，正在處理，尚未可播放；儲存表單後會套用。";
+  let host: HTMLDivElement;
+  let root: Root;
+  let phases: Array<[MediaUploadPhase, string]>;
+  let thumbnailEvents: Event[];
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    phases = [];
+    thumbnailEvents = [];
+    (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+    URL.createObjectURL = vi.fn(() => "blob:video-preview");
+    URL.revokeObjectURL = vi.fn();
+    // A canvas that can "capture" a frame, so the default case really dispatches.
+    vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue({ drawImage: vi.fn() } as unknown as CanvasRenderingContext2D);
+    vi.spyOn(HTMLCanvasElement.prototype, "toBlob").mockImplementation((callback) => callback(new Blob(["frame"], { type: "image/jpeg" })));
+    mediaMocks.requestMediaJson.mockResolvedValue({ videoId: "video-1", uploadUrl: "https://upload.videodelivery.net/one-time", method: "POST" });
+    mediaMocks.uploadFileWithProgress.mockImplementation(({ signal }: { signal: AbortSignal }) => new Promise<void>((resolve, reject) => {
+      signal.addEventListener("abort", () => reject(new MediaUploadClientError("cancelled")));
+      mediaMocks.finishUpload = () => resolve();
+    }));
+    host = document.createElement("div");
+    document.body.append(host);
+    root = createRoot(host);
+  });
+
+  afterEach(async () => {
+    await act(async () => { root.unmount(); });
+    host.remove();
+    vi.restoreAllMocks();
+  });
+
+  async function renderField(extra: { allowFrameCapture?: boolean; successMessage?: string } = {}) {
+    await act(async () => {
+      root.render(
+        <form>
+          <input type="hidden" name="_csrf" value="csrf-test" />
+          <input name="title" defaultValue="新品介紹" />
+          <input name="durationSec" defaultValue="0" />
+          <input name="estimatedMinutes" defaultValue="0" />
+          <MediaUploadField
+            kind="video"
+            label="影片檔案"
+            description="直接上傳到 Stream。"
+            titleInputName="title"
+            durationInputName="durationSec"
+            estimatedMinutesInputName="estimatedMinutes"
+            onPhaseChange={(phase, resourceId) => phases.push([phase, resourceId])}
+            {...extra}
+          />
+        </form>,
+      );
+    });
+    host.querySelector("form")!.addEventListener("video-thumbnail-selected", (event) => thumbnailEvents.push(event));
+  }
+
+  async function chooseFile() {
+    const input = host.querySelector<HTMLInputElement>('input[type="file"]')!;
+    Object.defineProperty(input, "files", { configurable: true, value: [new File(["video"], "clip.mp4", { type: "video/mp4" })] });
+    await act(async () => { input.dispatchEvent(new Event("change", { bubbles: true })); });
+  }
+
+  /** The preview video reports its length and size, then finishes seeking to the default frame. */
+  async function loadVideoMetadata() {
+    const video = host.querySelector("video")!;
+    Object.defineProperty(video, "duration", { configurable: true, value: 90 });
+    Object.defineProperty(video, "videoWidth", { configurable: true, value: 1280 });
+    Object.defineProperty(video, "videoHeight", { configurable: true, value: 720 });
+    await act(async () => { video.dispatchEvent(new Event("loadedmetadata")); });
+    await act(async () => { video.dispatchEvent(new Event("seeked")); });
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); });
+  }
+
+  function actionButton(label: string) {
+    return Array.from(host.querySelectorAll("button")).find((candidate) => candidate.textContent?.includes(label));
+  }
+
+  it("offers 使用目前畫面作為縮圖 and the original success message by default", async () => {
+    await renderField();
+    await chooseFile();
+    await loadVideoMetadata();
+
+    expect(actionButton("使用目前畫面作為縮圖")).toBeDefined();
+    expect(host.querySelector('input[type="range"]')?.getAttribute("aria-label")).toBe("選取影片縮圖畫面");
+    // The default frame is captured on its own once the preview has seeked.
+    expect(thumbnailEvents).toHaveLength(1);
+    expect((thumbnailEvents[0] as CustomEvent).detail).toMatchObject({ autoUpload: true });
+
+    await act(async () => { actionButton("開始上傳")!.click(); });
+    await act(async () => { mediaMocks.finishUpload(); });
+    expect(host.textContent).toContain(defaultSuccess);
+  });
+
+  it("shows no capture button, picks no frame and uses neutral wording when allowFrameCapture is false", async () => {
+    await renderField({ allowFrameCapture: false, successMessage: "檔案已送達，正在轉檔。" });
+    await chooseFile();
+    await loadVideoMetadata();
+
+    expect(actionButton("使用目前畫面作為縮圖")).toBeUndefined();
+    expect(host.textContent).not.toContain("使用目前畫面作為縮圖");
+    expect(thumbnailEvents).toHaveLength(0);
+    // The slider still scrubs the preview, but does not claim to pick a thumbnail.
+    expect(host.querySelector('input[type="range"]')?.getAttribute("aria-label")).toBe("預覽播放位置");
+
+    await act(async () => { actionButton("開始上傳")!.click(); });
+    await act(async () => { mediaMocks.finishUpload(); });
+    expect(host.textContent).toContain("檔案已送達，正在轉檔。");
+    expect(host.textContent).not.toContain(defaultSuccess);
+    expect(thumbnailEvents).toHaveLength(0);
+  });
+
+  it("reports the phases of an upload, a pause, a retry and the success through onPhaseChange", async () => {
+    await renderField();
+    await chooseFile();
+    expect(phases).toEqual([["ready", ""]]);
+
+    await act(async () => { actionButton("開始上傳")!.click(); });
+    await act(async () => { await Promise.resolve(); });
+    expect(phases.map(([phase]) => phase)).toEqual(["ready", "uploading", "uploading"]);
+    expect(phases.at(-1)).toEqual(["uploading", "video-1"]);
+
+    await act(async () => { actionButton("暫停上傳")!.click(); });
+    await act(async () => { await Promise.resolve(); });
+    expect(phases.at(-1)).toEqual(["error", "video-1"]);
+
+    // 重試 reuses the provisioned row.
+    await act(async () => { actionButton("重試上傳")!.click(); });
+    await act(async () => { await Promise.resolve(); });
+    expect(phases.at(-1)).toEqual(["uploading", "video-1"]);
+    expect(mediaMocks.requestMediaJson).toHaveBeenLastCalledWith(expect.objectContaining({ payload: expect.objectContaining({ videoId: "video-1" }) }));
+
+    await act(async () => { mediaMocks.finishUpload(); });
+    await act(async () => { await Promise.resolve(); });
+    expect(phases.at(-1)).toEqual(["success", "video-1"]);
+    // Never the same pair twice in a row.
+    for (let index = 1; index < phases.length; index += 1) expect(phases[index]).not.toEqual(phases[index - 1]);
   });
 });

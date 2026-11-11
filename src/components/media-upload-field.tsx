@@ -450,6 +450,8 @@ function VideoPreview({
   captureEnabled: boolean;
 }) {
   if (!url) return null;
+  // Without frame capture the slider only scrubs the preview; it picks no thumbnail.
+  const timelineLabel = captureEnabled ? "選取影片縮圖畫面" : "預覽播放位置";
   return (
     <div className="grid gap-3 overflow-hidden rounded-lg border border-border bg-slate-950 p-2">
       <video
@@ -473,7 +475,7 @@ function VideoPreview({
             step="0.1"
             value={Math.min(duration, currentTime)}
             onChange={(event) => onSeek(Number(event.target.value))}
-            aria-label="選取影片縮圖畫面"
+            aria-label={timelineLabel}
           />
           {captureEnabled ? <button
             type="button"

@@ -29,8 +29,16 @@ export type LivePendingVideo = {
   title: string;
   /** The studio's manual video selection count when the upload finished. */
   manualSelectionAtStart: number;
+  /** The video select's value when the upload finished: auto-select only if it still holds this. */
+  selectedVideoIdAtStart: string;
+  /** Upload order; a video is never auto-selected once a later upload exists. */
+  uploadSeq: number;
   outcome?: "selected" | "added";
+  /** Why a ready video was only added to the options (set with `outcome: "added"`). */
+  addedReason?: LivePendingAddedReason;
 };
+
+export type LivePendingAddedReason = "other-selection" | "newer-upload" | "submitting";
 
 export type LivePendingVideoProblem = "failed" | "archived" | "missing";
 
@@ -139,7 +147,12 @@ function PendingVideoRow({
   if (video.outcome === "selected") {
     body = <p className="font-medium text-emerald-800">{name}已可播放，已自動選為這場直播的影片。</p>;
   } else if (video.outcome === "added") {
-    body = <p className="font-medium text-emerald-800">{name}已可播放並加入選單；你已選了其他影片，所以沒有自動切換。</p>;
+    const reason = video.addedReason === "submitting"
+      ? "精靈正在送出，所以沒有自動選取；請在送出完成後從影片選單手動選取。"
+      : video.addedReason === "newer-upload"
+        ? "你之後又新增了其他影片，所以沒有自動切換。"
+        : "你已選了其他影片，所以沒有自動切換。";
+    body = <p className="font-medium text-emerald-800">{name}已可播放並加入選單；{reason}</p>;
   } else if (poll.state === "failed") {
     body = <p className="text-red-800">{name}轉檔失敗，無法播放。請重新上傳，或<VideosLink />。</p>;
   } else if (poll.state === "archived") {
@@ -199,7 +212,7 @@ export function LivePendingVideos({
       </ul>
       {waiting ? (
         <p className="text-xs leading-5 text-slate-600">
-          可以先繼續其他步驟。離開或重新整理這頁後這裡不會再顯示，但影片仍在「影片」列表，轉檔完成後也會出現在上方選單。
+          可以先繼續其他步驟。離開或重新整理這頁後這裡不會再顯示，但影片仍在「影片」列表，轉檔完成後也會出現在上方選單。重新整理或重新載入精靈後這份清單會消失，屆時請從影片下拉手動選取。
         </p>
       ) : null}
     </div>

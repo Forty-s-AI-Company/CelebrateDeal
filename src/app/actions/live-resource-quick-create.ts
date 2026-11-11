@@ -39,6 +39,17 @@ function boundedText(formData: FormData, key: string, maximum: number) {
   return values[0].slice(0, maximum + 1);
 }
 
+/**
+ * Like `boundedText` for a pasted address: trimmed first, so surrounding
+ * whitespace never counts against (or hides) the length, and an over-long
+ * address stays over-long for the validator instead of being cut to fit.
+ */
+function boundedTrimmedText(formData: FormData, key: string, maximum: number) {
+  const values = formData.getAll(key);
+  if (values.length !== 1 || typeof values[0] !== "string") return "";
+  return values[0].trim().slice(0, maximum + 1);
+}
+
 function randomSlugSuffix() {
   return randomBytes(8).toString("hex").slice(0, SLUG_SUFFIX_LENGTH);
 }
@@ -208,7 +219,7 @@ export async function createUrlVideoQuickAction(formData: FormData): Promise<Liv
   const vendor = await requireVendorManager();
   const draft = {
     title: boundedText(formData, "title", LIVE_QUICK_VIDEO_LIMITS.title),
-    videoUrl: boundedText(formData, "videoUrl", LIVE_QUICK_VIDEO_LIMITS.videoUrl),
+    videoUrl: boundedTrimmedText(formData, "videoUrl", LIVE_QUICK_VIDEO_LIMITS.videoUrl),
   };
   const fieldErrors = liveQuickVideoFieldErrors(draft);
   if (Object.keys(fieldErrors).length > 0) {

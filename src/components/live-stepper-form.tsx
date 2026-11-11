@@ -23,7 +23,7 @@ import { FormSubmitButton } from "@/components/form-submit-button";
 import { LIVE_DRAFT_SAVE_FAILED_EVENT, LiveConfirmedSubmitButton, LiveFormPendingLock } from "@/components/live-submit-confirmation";
 import { MediaUploadField } from "@/components/media-upload-field";
 import { MessageTemplateQuickCreateDrawer, RegistrationFormQuickCreateDrawer, VideoQuickCreateDrawer } from "@/components/live-resource-drawers";
-import { LivePendingVideos, type LivePendingVideo, type LivePendingVideoProblem } from "@/components/live-pending-videos";
+import { LivePendingVideos, type LivePendingAddedReason, type LivePendingVideo, type LivePendingVideoProblem } from "@/components/live-pending-videos";
 import {
   liveQuickTemplateCopy,
   mergeLiveResourceOptions,
@@ -1497,6 +1497,7 @@ function useLiveResourceDrawers(input: {
   projectId?: string | null;
   liveTitle: string;
   submitBusy: boolean;
+  selectedVideoId: string;
   scheduleSave: () => void;
   selectVideo: (videoId: string) => void;
   selectForm: (formId: string) => void;
@@ -1507,6 +1508,13 @@ function useLiveResourceDrawers(input: {
   const [pendingVideos, setPendingVideos] = useState<LivePendingVideo[]>([]);
   /** Counts the merchant's own changes of the video select; an upload only auto-selects if it did not move. */
   const manualVideoSelectionRef = useRef(0);
+  /** The video select's current value, for the comparison when a pending upload becomes ready. */
+  const selectedVideoIdRef = useRef(input.selectedVideoId);
+  useEffect(() => { selectedVideoIdRef.current = input.selectedVideoId; });
+  /** Counts finished uploads; only the newest one may auto-select. */
+  const latestUploadSeqRef = useRef(0);
+  /** A drawer upload or create is running; its result has not been handed to the studio yet. */
+  const inFlightRef = useRef(false);
   const [createdForms, setCreatedForms] = useState<LiveQuickFormOption[]>([]);
   const [createdTemplates, setCreatedTemplates] = useState<LiveQuickTemplateOption[]>([]);
   const [drawer, setDrawer] = useState<LiveResourceDrawer | null>(null);
@@ -1537,8 +1545,16 @@ function useLiveResourceDrawers(input: {
     }
     if (pending.save) scheduleSave();
     // Same batch as the save's dirty status, so "unsaved" never dips in between.
-    settleCreate();
+    // A background result (a video that finished processing) must not clear the
+    // hold of another upload or create that is still running in a drawer.
+    if (!inFlightRef.current) settleCreate();
   });
+
+  /** The drawers' in-flight report; a result handler below clears the flag when the result arrives. */
+  const trackInFlight = (inFlight: boolean) => {
+    inFlightRef.current = inFlight;
+    setCreating(inFlight);
+  };
 
   /** True while the studio's own submit (pending lock, or the pre-submit draft flush) runs. */
   const studioSubmitting = () => input.submitBusy || formRef.current?.getAttribute("aria-busy") === "true";
@@ -1565,7 +1581,11 @@ function useLiveResourceDrawers(input: {
       videoUploaded(option);
       return;
     }
+    inFlightRef.current = false;
     addVideoOption(option);
+    // A pick made through the drawer is the merchant's own choice: a video still
+    // processing from an earlier upload must not replace it when it becomes ready.
+    markManualVideoSelection();
     input.selectVideo(option.id);
     setAnnouncement(`已建立並選取影片「${option.title}」。`);
     focusPendingRef.current = { selector: '[name="videoId"]', save: true };
@@ -1573,26 +1593,52 @@ function useLiveResourceDrawers(input: {
 
   /** An uploaded file reached Cloudflare: wait for processing under the select. */
   function videoUploaded(option: LiveQuickVideoOption) {
+    inFlightRef.current = false;
+    latestUploadSeqRef.current += 1;
+    const uploadSeq = latestUploadSeqRef.current;
+    const selectedVideoIdAtStart = selectedVideoIdRef.current;
     setPendingVideos((current) => [
       ...current.filter((candidate) => candidate.id !== option.id),
-      { ...option, manualSelectionAtStart: manualVideoSelectionRef.current },
+      { ...option, manualSelectionAtStart: manualVideoSelectionRef.current, selectedVideoIdAtStart, uploadSeq },
     ]);
     setDrawer(null);
     setAnnouncement(`影片「${option.title}」已上傳，正在轉檔；完成後會自動選取。可以先繼續其他步驟。`);
     focusPendingRef.current = { save: false };
   }
 
+  /**
+   * A processed video is selected for the Live only if nothing has taken the
+   * select's place since its upload finished. All of these must hold:
+   * - the studio is not submitting (the selection would race the submit);
+   * - no later upload exists (the newest upload wins; an older one that
+   *   finishes processing afterwards is only added to the options);
+   * - the merchant did not change the select by hand, or pick a video through
+   *   the drawer (a URL video), since then;
+   * - the select still holds the value it held when this upload finished, so a
+   *   draft restore or any other change of the selection is respected too.
+   * Otherwise the video is only added to the options and the row says why.
+   */
   function pendingVideoReady(video: LivePendingVideo) {
-    // Never move the selection under the merchant's own change, or during the studio's submit.
-    const select = manualVideoSelectionRef.current === video.manualSelectionAtStart && !studioSubmitting();
+    const submitting = studioSubmitting();
+    const newerUpload = video.uploadSeq < latestUploadSeqRef.current;
+    const selectionMoved = manualVideoSelectionRef.current !== video.manualSelectionAtStart
+      || selectedVideoIdRef.current !== video.selectedVideoIdAtStart;
+    const select = !submitting && !newerUpload && !selectionMoved;
+    const addedReason: LivePendingAddedReason = submitting ? "submitting" : newerUpload ? "newer-upload" : "other-selection";
     addVideoOption({ id: video.id, title: video.title });
     setPendingVideos((current) => current.map((candidate) => (
-      candidate.id === video.id ? { ...candidate, outcome: select ? "selected" : "added" } : candidate
+      candidate.id === video.id
+        ? { ...candidate, outcome: select ? "selected" : "added", addedReason: select ? undefined : addedReason }
+        : candidate
     )));
     if (select) {
       input.selectVideo(video.id);
       focusPendingRef.current = { save: true };
       setAnnouncement(`影片「${video.title}」已可播放，已自動選為這場直播的影片。`);
+    } else if (submitting) {
+      setAnnouncement(`影片「${video.title}」已可播放並加入選單；精靈正在送出，沒有自動選取，請在送出完成後手動選取。`);
+    } else if (newerUpload) {
+      setAnnouncement(`影片「${video.title}」已可播放並加入選單；你之後又新增了其他影片，所以沒有自動切換。`);
     } else {
       setAnnouncement(`影片「${video.title}」已可播放並加入選單；目前仍保留你選的影片。`);
     }
@@ -1607,6 +1653,7 @@ function useLiveResourceDrawers(input: {
   }
 
   function formCreated(option: LiveQuickFormOption) {
+    inFlightRef.current = false;
     setCreatedForms((current) => [option, ...current.filter((candidate) => candidate.id !== option.id)]);
     input.selectForm(option.id);
     setDrawer(null);
@@ -1615,6 +1662,7 @@ function useLiveResourceDrawers(input: {
   }
 
   function templateCreated(option: LiveQuickTemplateOption, ruleTrigger?: LiveNotificationRuleTrigger) {
+    inFlightRef.current = false;
     setCreatedTemplates((current) => [option, ...current.filter((candidate) => candidate.id !== option.id)]);
     setDrawer(null);
     if (option.trigger === "registration_confirmed") {
@@ -1636,15 +1684,15 @@ function useLiveResourceDrawers(input: {
   let drawerElement: React.ReactNode = null;
   if (drawer?.kind === "video") {
     drawerElement = (
-      <VideoQuickCreateDrawer csrfToken={input.csrfToken} defaultTitle={input.liveTitle} onClose={close} onUploaded={videoUploaded} onUrlCreated={urlVideoCreated} onInFlightChange={setCreating} />
+      <VideoQuickCreateDrawer csrfToken={input.csrfToken} defaultTitle={input.liveTitle} onClose={close} onUploaded={videoUploaded} onUrlCreated={urlVideoCreated} onInFlightChange={trackInFlight} />
     );
   } else if (drawer?.kind === "form") {
     drawerElement = (
-      <RegistrationFormQuickCreateDrawer csrfToken={input.csrfToken} projectId={input.projectId} defaultTitle={input.liveTitle} onClose={close} onCreated={formCreated} onInFlightChange={setCreating} />
+      <RegistrationFormQuickCreateDrawer csrfToken={input.csrfToken} projectId={input.projectId} defaultTitle={input.liveTitle} onClose={close} onCreated={formCreated} onInFlightChange={trackInFlight} />
     );
   } else if (drawer?.kind === "template") {
     drawerElement = (
-      <MessageTemplateQuickCreateDrawer key={`${drawer.trigger}:${drawer.ruleTrigger ?? ""}`} csrfToken={input.csrfToken} trigger={drawer.trigger} ruleTrigger={drawer.ruleTrigger} onClose={close} onCreated={(option) => templateCreated(option, drawer.ruleTrigger)} onInFlightChange={setCreating} />
+      <MessageTemplateQuickCreateDrawer key={`${drawer.trigger}:${drawer.ruleTrigger ?? ""}`} csrfToken={input.csrfToken} trigger={drawer.trigger} ruleTrigger={drawer.ruleTrigger} onClose={close} onCreated={(option) => templateCreated(option, drawer.ruleTrigger)} onInFlightChange={trackInFlight} />
     );
   }
 
@@ -1766,7 +1814,7 @@ export function LiveStudioStepperForm({
     csrfToken,
     projectId,
     liveTitle: previewTitle,
-    submitBusy: submitFlush.busy,
+    submitBusy: submitFlush.busy, selectedVideoId,
     scheduleSave: draft.scheduleSave,
     selectVideo: setSelectedVideoId,
     selectForm: setSelectedFormId,

@@ -124,13 +124,43 @@ function statusResponse(status: string, cloudflareReadyToStream: boolean) {
 }
 
 /** Opens the drawer, names the video and runs a whole upload until the file reached Cloudflare. */
-async function uploadVideo(title = "週五講座錄影") {
+async function uploadVideo(title = "週五講座錄影", id = "video-uploaded") {
   await act(async () => { button("上傳影片或貼上影片網址").click(); });
   await type(control('[name="title"]', dialog()!), title);
   await uploadPhase("ready", "");
   await uploadPhase("provisioning", "");
-  await uploadPhase("uploading", "video-uploaded");
-  await uploadPhase("success", "video-uploaded");
+  await uploadPhase("uploading", id);
+  await uploadPhase("success", id);
+}
+
+/** Creates an external URL video through the drawer; the action answers that it can play at once. */
+async function createUrlVideo(id: string, title: string) {
+  await act(async () => { button("上傳影片或貼上影片網址").click(); });
+  const drawerForm = control<HTMLFormElement>("form", dialog()!);
+  control<HTMLDetailsElement>("details", dialog()!).open = true;
+  await type(control('[name="title"]', drawerForm), title);
+  await type(control('[name="videoUrl"]', drawerForm), "https://media.example.test/live.mp4");
+  mocks.createUrlVideoQuickAction.mockResolvedValueOnce({ status: "success", option: { id, title }, ready: true });
+  await act(async () => { drawerForm.requestSubmit(); });
+  await settle();
+}
+
+/** Status answers per video id: ready once the id is in the set, otherwise still processing. */
+function answerStatusFor(readyIds: Set<string>) {
+  fetchMock.mockImplementation(async (url: string) => {
+    const id = new URL(String(url), "http://localhost").searchParams.get("id") ?? "";
+    return readyIds.has(id) ? statusResponse("ready", true) : statusResponse("processing", false);
+  });
+}
+
+function pendingRowOf(id: string) {
+  return container.querySelector<HTMLElement>(`[data-pending-video="${id}"]`);
+}
+
+function beforeUnloadPrevented() {
+  const event = new Event("beforeunload", { cancelable: true });
+  window.dispatchEvent(event);
+  return event.defaultPrevented;
 }
 
 beforeEach(() => {
@@ -256,6 +286,143 @@ describe("LiveStepperForm 影片抽屜", () => {
     expect(Array.from(select.options).map((option) => option.value)).toEqual(["", "video-uploaded", existingVideo.id]);
     expect(pendingRow()?.textContent).toContain("你已選了其他影片，所以沒有自動切換");
     expect(announcement()).toContain("目前仍保留你選的影片");
+  });
+
+  it("keeps the URL video the merchant created while an earlier upload was still processing", async () => {
+    await act(async () => { root.render(studio()); });
+    const readyIds = new Set<string>();
+    answerStatusFor(readyIds);
+    await uploadVideo("上傳的錄影", "video-A");
+    await createUrlVideo("video-url", "外部錄影");
+    expect(videoSelect().value).toBe("video-url");
+
+    readyIds.add("video-A");
+    await advance(LIVE_PENDING_VIDEO_POLL_DELAYS_MS[0]!);
+
+    // A is only added to the options and says so; the choice made through the drawer stays.
+    expect(videoSelect().value).toBe("video-url");
+    expect(Array.from(videoSelect().options).map((option) => option.value).sort()).toEqual(["", "video-A", "video-url"]);
+    expect(pendingRowOf("video-A")?.textContent).toContain("已可播放並加入選單；你已選了其他影片，所以沒有自動切換");
+    expect(announcement()).toContain("目前仍保留你選的影片");
+    expect(serializeLiveStudioDraft(control<HTMLFormElement>("form"), liveStudioStepIndex("content")).videoId).toBe("video-url");
+  });
+
+  it("selects only the newest upload when two uploads are processing", async () => {
+    await act(async () => { root.render(studio()); });
+    const readyIds = new Set<string>();
+    answerStatusFor(readyIds);
+    await uploadVideo("第一支", "video-A");
+    await uploadVideo("第二支", "video-B");
+
+    // The older upload finishes first: a newer upload exists, so it is not selected.
+    readyIds.add("video-A");
+    await advance(LIVE_PENDING_VIDEO_POLL_DELAYS_MS[0]!);
+    expect(videoSelect().value).toBe("");
+    expect(Array.from(videoSelect().options).map((option) => option.value)).toEqual(["", "video-A"]);
+    expect(pendingRowOf("video-A")?.textContent).toContain("你之後又新增了其他影片，所以沒有自動切換");
+    expect(pendingRowOf("video-B")?.textContent).toContain("處理中的影片");
+
+    // The newest one is selected when it is ready, because the select still holds what it held at its upload.
+    readyIds.add("video-B");
+    await advance(LIVE_PENDING_VIDEO_POLL_DELAYS_MS[1]!);
+    expect(videoSelect().value).toBe("video-B");
+    expect(pendingRowOf("video-B")?.textContent).toContain("已自動選為這場直播的影片");
+    expect(pendingRowOf("video-A")?.textContent).toContain("你之後又新增了其他影片");
+  });
+
+  it("does not let an older upload replace the newest one when both become ready at the same check", async () => {
+    await act(async () => { root.render(studio()); });
+    answerStatusFor(new Set(["video-A", "video-B"]));
+    await uploadVideo("第一支", "video-A");
+    await uploadVideo("第二支", "video-B");
+    await advance(LIVE_PENDING_VIDEO_POLL_DELAYS_MS[0]!);
+    expect(videoSelect().value).toBe("video-B");
+    expect(pendingRowOf("video-A")?.textContent).toContain("你之後又新增了其他影片");
+    expect(pendingRowOf("video-B")?.textContent).toContain("已自動選為這場直播的影片");
+  });
+
+  it("does not select a ready video while the studio is submitting and says so", async () => {
+    await act(async () => { root.render(studio()); });
+    const readyIds = new Set<string>();
+    answerStatusFor(readyIds);
+    await uploadVideo("週五講座錄影", "video-A");
+    control<HTMLFormElement>("form").setAttribute("aria-busy", "true");
+    readyIds.add("video-A");
+    await advance(LIVE_PENDING_VIDEO_POLL_DELAYS_MS[0]!);
+
+    expect(videoSelect().value).toBe("");
+    expect(Array.from(videoSelect().options).map((option) => option.value)).toEqual(["", "video-A"]);
+    const text = pendingRowOf("video-A")?.textContent ?? "";
+    expect(text).toContain("精靈正在送出");
+    expect(text).toContain("送出完成後");
+    expect(text).not.toContain("你已選了其他影片");
+    expect(announcement()).toContain("精靈正在送出");
+    expect(announcement()).not.toContain("目前仍保留你選的影片");
+  });
+
+  it("tells the merchant that the pending list disappears when the studio is reloaded", async () => {
+    await act(async () => { root.render(studio()); });
+    answerStatusFor(new Set());
+    await uploadVideo();
+    expect(container.querySelector("[data-live-pending-videos]")?.textContent).toContain("重新整理或重新載入精靈後這份清單會消失，屆時請從影片下拉手動選取。");
+  });
+
+  it("asks the browser to confirm leaving only while a file is being sent", async () => {
+    await act(async () => { root.render(studio()); });
+    await act(async () => { button("上傳影片或貼上影片網址").click(); });
+    await type(control('[name="title"]', dialog()!), "週五講座錄影");
+    expect(beforeUnloadPrevented()).toBe(false);
+
+    for (const phase of ["provisioning", "uploading", "finalizing"] as const) {
+      await uploadPhase(phase, "video-uploaded");
+      expect(beforeUnloadPrevented()).toBe(true);
+    }
+    // Paused or failed: leaving is safe again; a retry asks again.
+    await uploadPhase("error", "video-uploaded");
+    expect(beforeUnloadPrevented()).toBe(false);
+    await uploadPhase("uploading", "video-uploaded");
+    expect(beforeUnloadPrevented()).toBe(true);
+    // The file arrived: the row keeps processing at Cloudflare without the page.
+    await uploadPhase("success", "video-uploaded");
+    expect(beforeUnloadPrevented()).toBe(false);
+  });
+
+  it("removes the leave warning when the drawer unmounts during an upload", async () => {
+    await act(async () => { root.render(studio()); });
+    await act(async () => { button("上傳影片或貼上影片網址").click(); });
+    await uploadPhase("uploading", "video-uploaded");
+    expect(beforeUnloadPrevented()).toBe(true);
+    await act(async () => { root.render(<></>); });
+    expect(beforeUnloadPrevented()).toBe(false);
+  });
+
+  it("keeps holding the studio while another upload is in flight when a background video becomes ready", async () => {
+    // A slug is set so nothing autofills: the studio starts with no unsaved edits of its own.
+    const payload = LiveStudioDraftPayloadSchema.parse({ ...emptyLiveStudioDraft(), title: "週五講座", slug: "weekly-talk", activeStep: liveStudioStepIndex("content") });
+    const envelope = { id: "draft-edit", revision: 4, payload, updatedAt: "2026-11-11T08:00:00.000Z" };
+    const edit = (revision: number) => <LiveStepperForm {...resources} videos={[]} initialDraft={{ ...envelope, revision }} liveId="live-1" currentStatus="scheduled" />;
+    await act(async () => { root.render(edit(4)); });
+    const studioForm = control<HTMLFormElement>("form");
+    const readyIds = new Set<string>();
+    answerStatusFor(readyIds);
+
+    await uploadVideo("第一支", "video-A");
+    // A second file is being sent in a new drawer while A is still processing.
+    await act(async () => { button("上傳影片或貼上影片網址").click(); });
+    await uploadPhase("provisioning", "");
+    await uploadPhase("uploading", "video-B");
+
+    // A becomes ready in the background (selected, saved) while B is still being sent.
+    readyIds.add("video-A");
+    await advance(LIVE_PENDING_VIDEO_POLL_DELAYS_MS[0]!);
+    expect(videoSelect().value).toBe("video-A");
+    await advance(2_000);
+    expect(mocks.saveLiveStudioDraft).toHaveBeenCalled();
+
+    // The draft is saved and a newer revision arrives: the studio still counts the running upload as unsaved work.
+    await act(async () => { root.render(edit(9)); });
+    expect(control<HTMLFormElement>("form")).toBe(studioForm);
+    expect(dialog()).not.toBeNull();
   });
 
   it("offers 重新檢查 after the last scheduled check and starts again from it", async () => {
