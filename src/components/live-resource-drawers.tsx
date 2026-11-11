@@ -1,0 +1,350 @@
+"use client";
+
+import { useEffect, useId, useRef, useState, useTransition, type FormEvent, type RefObject } from "react";
+import { createMessageTemplateQuickAction, createRegistrationFormQuickAction } from "@/app/actions/live-resource-quick-create";
+import { RichTextEditor } from "@/components/rich-text-editor";
+import { SideDrawer } from "@/components/side-drawer";
+import { CSRF_FIELD_NAME } from "@/lib/csrf-constants";
+import {
+  LIVE_QUICK_FORM_LIMITS,
+  LIVE_QUICK_TEMPLATE_LIMITS,
+  liveQuickTemplateCopy,
+  liveQuickTemplateFieldErrors,
+  type LiveQuickFormField,
+  type LiveQuickFormOption,
+  type LiveQuickTemplateField,
+  type LiveQuickTemplateOption,
+  type LiveQuickTemplateTrigger,
+} from "@/lib/live-resource-quick-create";
+import type { LiveNotificationRuleTrigger } from "@/lib/live-notification-rules";
+import { MESSAGE_TEMPLATE_VARIABLES, messageTemplateVariableLabel } from "@/lib/message-template";
+
+/**
+ * The action threw (network drop, timeout): the server may or may not have
+ * created the resource, so this never promises that nothing was created.
+ */
+const NETWORK_ERROR = "連線中斷，無法確認是否已建立。請先關閉抽屜、重新整理頁面確認清單後再試，避免重複建立。";
+const inputClass = "h-11 rounded-md border border-border-control bg-white px-3 text-sm font-normal text-slate-900 aria-[invalid=true]:border-red-600 disabled:bg-slate-100";
+const primaryButtonClass = "inline-flex min-h-11 items-center justify-center rounded-md bg-primary px-4 text-sm font-semibold text-white hover:bg-primary-dark focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60";
+const secondaryButtonClass = "inline-flex min-h-11 items-center justify-center rounded-md border border-border bg-white px-4 text-sm font-semibold text-slate-700 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:cursor-not-allowed disabled:opacity-50";
+
+type FieldErrors<Field extends string> = Partial<Record<Field, string>>;
+
+/**
+ * Focuses the first field with an error, in DOM order, once an error has
+ * rendered and the fields are enabled again (they are disabled while saving).
+ */
+function useFocusFirstError(formRef: { current: HTMLFormElement | null }, errorVersion: number, pending: boolean) {
+  const focusedVersionRef = useRef(0);
+  useEffect(() => {
+    if (pending || errorVersion === 0 || focusedVersionRef.current === errorVersion) return;
+    focusedVersionRef.current = errorVersion;
+    const target = formRef.current?.querySelector<HTMLElement>('[aria-invalid="true"]')
+      ?? formRef.current?.querySelector<HTMLElement>("[data-quick-create-error]");
+    target?.focus();
+  }, [formRef, errorVersion, pending]);
+}
+
+function FieldError({ id, message }: { id: string; message?: string }) {
+  return message ? <span id={id} className="text-xs font-medium text-red-700">{message}</span> : null;
+}
+
+/** A labelled text input whose hint and error are described by, not part of, its label. */
+function DrawerTextField({
+  label,
+  name,
+  maxLength,
+  defaultValue,
+  hint,
+  error,
+  disabled,
+  inputRef,
+}: {
+  label: string;
+  name: string;
+  maxLength: number;
+  defaultValue: string;
+  hint?: string;
+  error?: string;
+  disabled: boolean;
+  inputRef?: RefObject<HTMLInputElement | null>;
+}) {
+  const inputId = useId();
+  const hintId = useId();
+  const errorId = useId();
+  const describedBy = [hint ? hintId : "", error ? errorId : ""].filter(Boolean).join(" ") || undefined;
+  return (
+    <div className="grid gap-1.5">
+      <label htmlFor={inputId} className="text-sm font-medium text-slate-700">{label}</label>
+      <input
+        ref={inputRef}
+        id={inputId}
+        name={name}
+        required
+        maxLength={maxLength}
+        autoComplete="off"
+        defaultValue={defaultValue}
+        disabled={disabled}
+        aria-invalid={error ? true : undefined}
+        aria-describedby={describedBy}
+        className={inputClass}
+      />
+      {hint ? <span id={hintId} className="text-xs text-slate-600">{hint}</span> : null}
+      <FieldError id={errorId} message={error} />
+    </div>
+  );
+}
+
+function RootError({ message, detail }: { message: string; detail?: string }) {
+  if (!message) return null;
+  return (
+    <div data-quick-create-error="true" tabIndex={-1} role="alert" className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
+      <p className="font-semibold">{message}</p>
+      {detail ? <p className="mt-1">{detail}</p> : null}
+    </div>
+  );
+}
+
+function DrawerActions({ formId, pending, submitLabel, pendingLabel, onCancel }: { formId: string; pending: boolean; submitLabel: string; pendingLabel: string; onCancel: () => void }) {
+  return (
+    <div className="flex flex-wrap justify-end gap-2">
+      <button type="button" onClick={onCancel} disabled={pending} className={secondaryButtonClass}>取消</button>
+      <button type="submit" form={formId} disabled={pending} aria-disabled={pending} className={primaryButtonClass}>
+        {pending ? pendingLabel : submitLabel}
+      </button>
+    </div>
+  );
+}
+
+/**
+ * 「新增報名表」 inside the live studio: a name and a public headline; the
+ * form gets the default name／Email／phone fields and default copy and is
+ * active right away. On success the studio selects it; on error the drawer
+ * stays open with the field messages.
+ */
+export function RegistrationFormQuickCreateDrawer({
+  csrfToken,
+  projectId,
+  defaultTitle,
+  onClose,
+  onCreated,
+  onInFlightChange,
+}: {
+  csrfToken: string;
+  projectId?: string | null;
+  defaultTitle: string;
+  onClose: () => void;
+  onCreated: (option: LiveQuickFormOption) => void;
+  /** true when the create starts; false when it ends without `onCreated` (an error). */
+  onInFlightChange?: (inFlight: boolean) => void;
+}) {
+  const formId = useId();
+  const formRef = useRef<HTMLFormElement>(null);
+  const nameRef = useRef<HTMLInputElement>(null);
+  const [pending, startTransition] = useTransition();
+  const [message, setMessage] = useState("");
+  const [errors, setErrors] = useState<FieldErrors<LiveQuickFormField>>({});
+  const [errorVersion, setErrorVersion] = useState(0);
+  useFocusFirstError(formRef, errorVersion, pending);
+  const trimmedTitle = defaultTitle.trim();
+
+  function fail(nextMessage: string, nextErrors: FieldErrors<LiveQuickFormField>) {
+    setMessage(nextMessage);
+    setErrors(nextErrors);
+    setErrorVersion((version) => version + 1);
+  }
+
+  function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (pending) return;
+    const data = new FormData(event.currentTarget);
+    const name = String(data.get("name") ?? "").trim();
+    const headline = String(data.get("headline") ?? "").trim();
+    const localErrors: FieldErrors<LiveQuickFormField> = {};
+    if (!name) localErrors.name = "請填寫表單名稱。";
+    if (!headline) localErrors.headline = "請填寫公開標題。";
+    if (Object.keys(localErrors).length > 0) {
+      fail("有幾個欄位需要調整；內容仍保留在抽屜中。", localErrors);
+      return;
+    }
+    onInFlightChange?.(true);
+    startTransition(async () => {
+      try {
+        const result = await createRegistrationFormQuickAction(data);
+        if (result.status === "success") {
+          onCreated(result.option);
+        } else {
+          onInFlightChange?.(false);
+          fail(result.message, result.fieldErrors);
+        }
+      } catch {
+        onInFlightChange?.(false);
+        fail(NETWORK_ERROR, {});
+      }
+    });
+  }
+
+  return (
+    <SideDrawer
+      title="新增報名表"
+      description="建立後會自動選為這場直播的報名頁。表單含姓名、Email 與手機欄位，之後可在「報名表」頁調整欄位與版面。"
+      busy={pending}
+      onClose={onClose}
+      initialFocusRef={nameRef}
+      footer={<DrawerActions formId={formId} pending={pending} submitLabel="建立並選取" pendingLabel="建立中…" onCancel={onClose} />}
+    >
+      <form id={formId} ref={formRef} noValidate onSubmit={submit} aria-busy={pending} className="grid gap-4">
+        <input type="hidden" name={CSRF_FIELD_NAME} value={csrfToken} />
+        {projectId ? <input type="hidden" name="projectId" value={projectId} /> : null}
+        <RootError message={message} detail={errors.root} />
+        <DrawerTextField
+          label="表單名稱"
+          name="name"
+          maxLength={LIVE_QUICK_FORM_LIMITS.name}
+          defaultValue={trimmedTitle ? `${trimmedTitle} 報名表` : ""}
+          hint="只在後台顯示，用來辨識這張表單；公開網址會依名稱自動產生。"
+          error={errors.name}
+          disabled={pending}
+          inputRef={nameRef}
+        />
+        <DrawerTextField
+          label="公開標題"
+          name="headline"
+          maxLength={LIVE_QUICK_FORM_LIMITS.headline}
+          defaultValue={trimmedTitle}
+          hint="報名者在報名頁最上方看到的標題。"
+          error={errors.headline}
+          disabled={pending}
+        />
+      </form>
+    </SideDrawer>
+  );
+}
+
+/**
+ * 「建立 Email 模板」 inside the live studio, for one of the three triggers
+ * the studio binds (fixed by where it was opened). Starts from sendable
+ * default copy; only the supported variables are accepted.
+ */
+export function MessageTemplateQuickCreateDrawer({
+  csrfToken,
+  trigger,
+  ruleTrigger,
+  onClose,
+  onCreated,
+  onInFlightChange,
+}: {
+  csrfToken: string;
+  trigger: LiveQuickTemplateTrigger;
+  /** The rule group the drawer was opened from; 「直播中」 gets its own copy for the same trigger. */
+  ruleTrigger?: LiveNotificationRuleTrigger;
+  onClose: () => void;
+  onCreated: (option: LiveQuickTemplateOption) => void;
+  /** true when the create starts; false when it ends without `onCreated` (an error). */
+  onInFlightChange?: (inFlight: boolean) => void;
+}) {
+  const copy = liveQuickTemplateCopy(trigger, ruleTrigger);
+  const formId = useId();
+  const bodyErrorId = useId();
+  const formRef = useRef<HTMLFormElement>(null);
+  const nameRef = useRef<HTMLInputElement>(null);
+  const [pending, startTransition] = useTransition();
+  const [body, setBody] = useState(copy.body);
+  const [message, setMessage] = useState("");
+  const [errors, setErrors] = useState<FieldErrors<LiveQuickTemplateField>>({});
+  const [errorVersion, setErrorVersion] = useState(0);
+  useFocusFirstError(formRef, errorVersion, pending);
+
+  function fail(nextMessage: string, nextErrors: FieldErrors<LiveQuickTemplateField>) {
+    setMessage(nextMessage);
+    setErrors(nextErrors);
+    setErrorVersion((version) => version + 1);
+  }
+
+  function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (pending) return;
+    const data = new FormData(event.currentTarget);
+    const localErrors = liveQuickTemplateFieldErrors({
+      name: String(data.get("name") ?? ""),
+      subject: String(data.get("subject") ?? ""),
+      body: String(data.get("body") ?? ""),
+    });
+    if (Object.keys(localErrors).length > 0) {
+      fail("有幾個欄位需要調整；內容仍保留在抽屜中。", localErrors);
+      return;
+    }
+    onInFlightChange?.(true);
+    startTransition(async () => {
+      try {
+        const result = await createMessageTemplateQuickAction(data);
+        if (result.status === "success") {
+          onCreated(result.option);
+        } else {
+          onInFlightChange?.(false);
+          fail(result.message, result.fieldErrors);
+        }
+      } catch {
+        onInFlightChange?.(false);
+        fail(NETWORK_ERROR, {});
+      }
+    });
+  }
+
+  return (
+    <SideDrawer
+      title={`建立${copy.label}`}
+      description="建立後立即啟用並可在這場直播選用；寄送時會自動附上退訂連結。"
+      busy={pending}
+      onClose={onClose}
+      initialFocusRef={nameRef}
+      footer={<DrawerActions formId={formId} pending={pending} submitLabel="建立並選取" pendingLabel="建立中…" onCancel={onClose} />}
+    >
+      <form id={formId} ref={formRef} noValidate onSubmit={submit} aria-busy={pending} className="grid gap-4">
+        <input type="hidden" name={CSRF_FIELD_NAME} value={csrfToken} />
+        <input type="hidden" name="trigger" value={trigger} />
+        <RootError message={message} detail={errors.root ?? errors.trigger} />
+        <p className="rounded-md border border-border bg-slate-50 px-3 py-2 text-sm text-slate-700">
+          用途：<strong className="font-semibold text-slate-900">{copy.label}</strong>（Email）
+        </p>
+        <DrawerTextField
+          label="模板名稱"
+          name="name"
+          maxLength={LIVE_QUICK_TEMPLATE_LIMITS.name}
+          defaultValue={copy.name}
+          error={errors.name}
+          disabled={pending}
+          inputRef={nameRef}
+        />
+        <DrawerTextField
+          label="Email 主旨"
+          name="subject"
+          maxLength={LIVE_QUICK_TEMPLATE_LIMITS.subject}
+          defaultValue={copy.subject}
+          error={errors.subject}
+          disabled={pending}
+        />
+        <div className="grid gap-1.5">
+          <RichTextEditor
+            label="Email 內容"
+            name="body"
+            required
+            rows={8}
+            maxLength={LIVE_QUICK_TEMPLATE_LIMITS.body}
+            value={body}
+            onChange={setBody}
+            disabled={pending}
+            invalid={Boolean(errors.body)}
+            errorId={errors.body ? bodyErrorId : undefined}
+            insertTokens={MESSAGE_TEMPLATE_VARIABLES.map((variable) => ({
+              value: messageTemplateVariableLabel(variable),
+              label: messageTemplateVariableLabel(variable),
+            }))}
+            insertTokensLabel="點選插入變數"
+          />
+          <FieldError id={bodyErrorId} message={errors.body} />
+        </div>
+      </form>
+    </SideDrawer>
+  );
+}

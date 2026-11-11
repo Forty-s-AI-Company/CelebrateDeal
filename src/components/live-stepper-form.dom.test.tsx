@@ -8,9 +8,15 @@ import { LIVE_STUDIO_LAST_STEP_INDEX, liveStudioStepIndex } from "@/lib/live-stu
 const mocks = vi.hoisted(() => ({
   upsertLiveAction: vi.fn(async (formData: FormData) => { void formData; }),
   saveLiveStudioDraft: vi.fn(),
+  createRegistrationFormQuickAction: vi.fn(),
+  createMessageTemplateQuickAction: vi.fn(),
 }));
 
 vi.mock("@/app/actions", () => ({ upsertLiveAction: mocks.upsertLiveAction }));
+vi.mock("@/app/actions/live-resource-quick-create", () => ({
+  createRegistrationFormQuickAction: mocks.createRegistrationFormQuickAction,
+  createMessageTemplateQuickAction: mocks.createMessageTemplateQuickAction,
+}));
 vi.mock("next/link", () => ({
   default: ({ href, children, ...props }: { href: string; children: ReactNode }) => <a href={href} {...props}>{children}</a>,
 }));
@@ -636,6 +642,22 @@ describe("LiveStepperForm edit page status actions", () => {
     expect(control('[name="liveDraftRevision"]').value).toBe("6");
   });
 
+  it("keeps the same studio and its unsaved value when a revalidated edit page hands over a newer revision", async () => {
+    const props = { liveId: "live-1", currentStatus: "scheduled" };
+    await act(async () => { root.render(studio(editDraft, props)); });
+    const studioForm = control<HTMLFormElement>("form");
+    const accent = control('[name="accentCopy"]');
+    await type(accent, "尚未儲存的優惠文案");
+
+    // What revalidatePath on /lives/live-1/edit re-renders: same draft, newer revision.
+    await act(async () => { root.render(studio({ ...editDraft, revision: 7 }, props)); });
+
+    expect(control<HTMLFormElement>("form")).toBe(studioForm);
+    expect(control('[name="accentCopy"]')).toBe(accent);
+    expect(control('[name="accentCopy"]').value).toBe("尚未儲存的優惠文案");
+    expect(control('[name="liveDraftRevision"]').value).toBe("4");
+  });
+
   it("keeps the studio when a refresh only reports the revision it already saved", async () => {
     await act(async () => { root.render(studio(editDraft, { liveId: "live-1", currentStatus: "scheduled" })); });
     const title = control('[name="title"]');
@@ -644,5 +666,274 @@ describe("LiveStepperForm edit page status actions", () => {
     await act(async () => { root.render(studio({ ...editDraft, revision: 5 }, { liveId: "live-1", currentStatus: "scheduled" })); });
 
     expect(control('[name="title"]')).toBe(title);
+  });
+});
+
+describe("LiveStepperForm 就地建立 drawers", () => {
+  function emptyStudio(overrides: { forms?: typeof resources.forms; templates?: typeof resources.templates; projectId?: string | null } = {}) {
+    return (
+      <LiveStepperForm {...resources} forms={overrides.forms ?? []} templates={overrides.templates ?? []} projectId={overrides.projectId ?? "project-1"} />
+    );
+  }
+
+  function dialog() {
+    return document.body.querySelector<HTMLElement>('[role="dialog"]');
+  }
+
+  function drawerControl<T extends Element = HTMLInputElement>(selector: string) {
+    const element = dialog()?.querySelector<T>(selector);
+    if (!element) throw new Error(`missing drawer ${selector}`);
+    return element;
+  }
+
+  async function submitDrawer() {
+    const drawerForm = drawerControl<HTMLFormElement>("form");
+    await act(async () => { drawerForm.requestSubmit(); });
+    await settle();
+  }
+
+  /** Lets the studio's 700 ms autosave debounce run, if anything scheduled it. */
+  async function waitForAutosaveWindow() {
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 800)); });
+    await settle();
+  }
+
+  it("creates a registration form in the drawer without touching the studio form, then selects and saves it", async () => {
+    await act(async () => { root.render(emptyStudio()); });
+    const studioForm = control<HTMLFormElement>("form");
+    const statusBefore = container.querySelector('[role="status"][aria-live="polite"]:not([data-live-resource-status])')?.textContent;
+    const trigger = button("新增報名表");
+    trigger.focus();
+    await act(async () => { trigger.click(); });
+
+    const drawer = dialog();
+    expect(drawer).not.toBeNull();
+    expect(drawer!.getAttribute("aria-modal")).toBe("true");
+    expect(studioForm.contains(drawer)).toBe(false);
+    expect(document.activeElement).toBe(drawerControl('[name="name"]'));
+
+    await type(drawerControl('[name="name"]'), "週五講座報名表");
+    await type(drawerControl('[name="headline"]'), "週五講座");
+    // The drawer's fields never reach the studio's FormData or its autosave.
+    const studioData = new FormData(studioForm);
+    expect(studioData.has("headline")).toBe(false);
+    expect([...studioData.values()]).not.toContain("週五講座報名表");
+
+    mocks.createRegistrationFormQuickAction.mockResolvedValueOnce({ status: "error", message: "有幾個欄位需要調整；內容仍保留在畫面上。", fieldErrors: { headline: "公開標題不可超過 200 個字。" } });
+    await submitDrawer();
+    expect(dialog()).not.toBeNull();
+    expect(drawerControl('[name="headline"]').getAttribute("aria-invalid")).toBe("true");
+    expect(dialog()!.textContent).toContain("公開標題不可超過 200 個字。");
+    expect(dialog()!.querySelector('[role="alert"]')?.textContent).toContain("有幾個欄位需要調整");
+    expect(document.activeElement).toBe(drawerControl('[name="headline"]'));
+    await waitForAutosaveWindow();
+    expect(mocks.saveLiveStudioDraft).not.toHaveBeenCalled();
+    expect(mocks.upsertLiveAction).not.toHaveBeenCalled();
+    expect(container.querySelector('[role="status"][aria-live="polite"]:not([data-live-resource-status])')?.textContent).toBe(statusBefore);
+
+    const sent = mocks.createRegistrationFormQuickAction.mock.calls[0]![0] as FormData;
+    expect(sent.get("_csrf")).toBe("test-fixture-csrf-token");
+    expect(sent.get("projectId")).toBe("project-1");
+
+    mocks.createRegistrationFormQuickAction.mockResolvedValueOnce({ status: "success", option: { id: "form-quick", name: "週五講座報名表" } });
+    await submitDrawer();
+    await waitForAutosaveWindow();
+
+    expect(dialog()).toBeNull();
+    const select = control<HTMLSelectElement>('select[name="formId"]');
+    expect(select.value).toBe("form-quick");
+    expect(document.activeElement).toBe(select);
+    expect(container.querySelector("[data-live-resource-status]")?.textContent).toBe("已建立並選取報名表「週五講座報名表」。");
+    expect(serializeLiveStudioDraft(studioForm, liveStudioStepIndex("content")).formId).toBe("form-quick");
+    expect(mocks.saveLiveStudioDraft).toHaveBeenCalledTimes(1);
+    expect(mocks.saveLiveStudioDraft).toHaveBeenCalledWith(expect.objectContaining({ payload: expect.objectContaining({ formId: "form-quick" }) }));
+    expect(mocks.upsertLiveAction).not.toHaveBeenCalled();
+  });
+
+  it("keeps an option it created when the server props refresh without it", async () => {
+    await act(async () => { root.render(emptyStudio()); });
+    await act(async () => { button("新增報名表").click(); });
+    await type(drawerControl('[name="name"]'), "週五講座報名表");
+    await type(drawerControl('[name="headline"]'), "週五講座");
+    mocks.createRegistrationFormQuickAction.mockResolvedValueOnce({ status: "success", option: { id: "form-quick", name: "週五講座報名表" } });
+    await submitDrawer();
+    const select = control<HTMLSelectElement>('select[name="formId"]');
+
+    await act(async () => { root.render(emptyStudio({ forms: [{ id: "form-other", name: "其他表單" }] })); });
+
+    expect(control<HTMLSelectElement>('select[name="formId"]')).toBe(select);
+    expect(select.value).toBe("form-quick");
+    expect(Array.from(select.options).map((option) => option.value)).toEqual(["", "form-quick", "form-other"]);
+  });
+
+  it("closes on Escape and the close button, returns focus to the trigger and never opens while the studio submits", async () => {
+    await act(async () => { root.render(emptyStudio()); });
+    const trigger = button("新增報名表");
+    trigger.focus();
+    await act(async () => { trigger.click(); });
+    expect(document.body.style.overflow).toBe("hidden");
+    await act(async () => {
+      drawerControl('[name="name"]').dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    });
+    expect(dialog()).toBeNull();
+    expect(document.activeElement).toBe(trigger);
+    expect(document.body.style.overflow).toBe("");
+
+    await act(async () => { trigger.click(); });
+    await act(async () => { drawerControl<HTMLButtonElement>('button[aria-label="關閉"]').click(); });
+    expect(dialog()).toBeNull();
+    expect(document.activeElement).toBe(trigger);
+
+    control<HTMLFormElement>("form").setAttribute("aria-busy", "true");
+    await act(async () => { trigger.click(); });
+    expect(dialog()).toBeNull();
+  });
+
+  it("creates the registration Email and a reminder template, selecting one and enabling the other's rules", async () => {
+    await act(async () => { root.render(emptyStudio()); });
+    const studioForm = control<HTMLFormElement>("form");
+    const addBeforeLive = control<HTMLButtonElement>('[data-notification-add="before_live"]');
+    expect(addBeforeLive.disabled).toBe(true);
+
+    await act(async () => { button("建立報名成功 Email").click(); });
+    expect(dialog()?.getAttribute("aria-labelledby")).toBeTruthy();
+    expect(document.getElementById(dialog()!.getAttribute("aria-labelledby")!)?.textContent).toBe("建立報名成功 Email");
+    expect(drawerControl('[name="trigger"]').value).toBe("registration_confirmed");
+    expect(new FormData(studioForm).has("subject")).toBe(false);
+    mocks.createMessageTemplateQuickAction.mockResolvedValueOnce({ status: "success", option: { id: "template-quick", name: "報名成功通知", channel: "email", trigger: "registration_confirmed" } });
+    await submitDrawer();
+
+    const registrationSelect = control<HTMLSelectElement>('select[name="messageTemplateId"]');
+    expect(registrationSelect.value).toBe("template-quick");
+    expect(document.activeElement).toBe(registrationSelect);
+    expect(serializeLiveStudioDraft(studioForm, liveStudioStepIndex("notifications")).messageTemplateId).toBe("template-quick");
+
+    const createReminder = Array.from(container.querySelectorAll("button")).find((candidate) => candidate.textContent === "建立開播提醒 Email");
+    await act(async () => { createReminder!.click(); });
+    expect(drawerControl('[name="trigger"]').value).toBe("live_reminder");
+    mocks.createMessageTemplateQuickAction.mockResolvedValueOnce({ status: "success", option: { id: "template-reminder", name: "開播提醒", channel: "email", trigger: "live_reminder" } });
+    await submitDrawer();
+
+    expect(dialog()).toBeNull();
+    expect(addBeforeLive.disabled).toBe(false);
+    expect(document.activeElement).toBe(addBeforeLive);
+    expect(control<HTMLButtonElement>('[data-notification-add="during_live"]').disabled).toBe(false);
+    expect(control<HTMLButtonElement>('[data-notification-add="post_live_followup"]').disabled).toBe(true);
+    expect(container.querySelector("[data-live-resource-status]")?.textContent).toContain("現在可以新增通知規則");
+    expect(mocks.upsertLiveAction).not.toHaveBeenCalled();
+  });
+
+  describe("while a create is in flight", () => {
+    const contentPayload = LiveStudioDraftPayloadSchema.parse({
+      ...reportedPayload,
+      formId: "",
+      messageTemplateId: "",
+      activeStep: liveStudioStepIndex("content"),
+    });
+    const draftEnvelope: LiveStudioDraftEnvelope = { id: "draft-edit", revision: 4, payload: contentPayload, updatedAt: "2026-10-29T08:00:00.000Z" };
+    const editProps = { liveId: "live-1", currentStatus: "scheduled" };
+
+    function draftStudio(revision: number, forms: typeof resources.forms = []) {
+      return <LiveStepperForm {...resources} forms={forms} templates={[]} projectId="project-1" initialDraft={{ ...draftEnvelope, revision }} {...editProps} />;
+    }
+
+    async function startFormCreate() {
+      await act(async () => { button("新增報名表").click(); });
+      await type(drawerControl('[name="name"]'), "週五講座報名表");
+      await type(drawerControl('[name="headline"]'), "週五講座");
+      await act(async () => { drawerControl<HTMLFormElement>("form").requestSubmit(); });
+      await settle();
+    }
+
+    it("does not remount the studio when the create's revalidation brings a newer draft revision, then selects the new form", async () => {
+      let finishCreate!: (result: unknown) => void;
+      mocks.createRegistrationFormQuickAction.mockImplementationOnce(() => new Promise((resolve) => { finishCreate = resolve; }));
+      await act(async () => { root.render(draftStudio(4)); });
+      const studioForm = control<HTMLFormElement>("form");
+      const title = control('[name="title"]');
+      await startFormCreate();
+      expect(drawerControl('button[aria-label="關閉"]').hasAttribute("disabled")).toBe(true);
+
+      // The action's revalidatePath re-renders the edit page with the newer revision.
+      await act(async () => { root.render(draftStudio(6)); });
+      expect(control<HTMLFormElement>("form")).toBe(studioForm);
+      expect(control('[name="title"]')).toBe(title);
+
+      await act(async () => { finishCreate({ status: "success", option: { id: "form-quick", name: "週五講座報名表" } }); });
+      await settle();
+      await waitForAutosaveWindow();
+
+      expect(dialog()).toBeNull();
+      expect(control<HTMLFormElement>("form")).toBe(studioForm);
+      expect(control<HTMLSelectElement>('select[name="formId"]').value).toBe("form-quick");
+      // The newer revision is not adopted, so the save reports a conflict instead of overwriting.
+      expect(mocks.saveLiveStudioDraft).toHaveBeenCalledWith(expect.objectContaining({
+        draftId: "draft-edit",
+        revision: 4,
+        payload: expect.objectContaining({ formId: "form-quick" }),
+      }));
+    });
+
+    it("lets a newer revision remount again once the create failed and nothing is unsaved", async () => {
+      mocks.createRegistrationFormQuickAction.mockResolvedValueOnce({ status: "error", message: "有幾個欄位需要調整；內容仍保留在畫面上。", fieldErrors: { headline: "公開標題不可超過 200 個字。" } });
+      await act(async () => { root.render(draftStudio(4)); });
+      const studioForm = control<HTMLFormElement>("form");
+      await startFormCreate();
+      expect(dialog()).not.toBeNull();
+
+      await act(async () => { root.render(draftStudio(6)); });
+
+      expect(control<HTMLFormElement>("form")).not.toBe(studioForm);
+    });
+
+    it("says it cannot confirm the create when the action throws, and keeps the drawer open", async () => {
+      mocks.createRegistrationFormQuickAction.mockRejectedValueOnce(new Error("network down"));
+      await act(async () => { root.render(emptyStudio()); });
+      await startFormCreate();
+
+      const alert = dialog()!.querySelector('[role="alert"]')!.textContent!;
+      expect(alert).toContain("無法確認是否已建立");
+      expect(alert).toContain("重新整理頁面確認清單");
+      expect(alert).not.toContain("沒有建立任何資料");
+      expect(dialog()).not.toBeNull();
+      expect(drawerControl('button[aria-label="關閉"]').hasAttribute("disabled")).toBe(false);
+    });
+  });
+
+  it("opens the 直播中 group's template drawer with copy for a stream that is already live, still bound to live_reminder", async () => {
+    await act(async () => { root.render(emptyStudio()); });
+    const duringLive = control<HTMLFieldSetElement>('[data-notification-add="during_live"]').closest("fieldset")!;
+    await act(async () => { button("建立直播中通知 Email", duringLive).click(); });
+
+    expect(document.getElementById(dialog()!.getAttribute("aria-labelledby")!)?.textContent).toBe("建立直播中通知 Email");
+    expect(drawerControl('[name="trigger"]').value).toBe("live_reminder");
+    expect(drawerControl('[name="name"]').value).toBe("直播中通知");
+    expect(drawerControl('[name="subject"]').value).toBe("{{live_title}} 正在直播中");
+    expect(drawerControl('[name="body"]').value).toContain("正在直播中");
+    expect(drawerControl('[name="body"]').value).not.toContain("即將開始");
+
+    mocks.createMessageTemplateQuickAction.mockResolvedValueOnce({ status: "success", option: { id: "template-live", name: "直播中通知", channel: "email", trigger: "live_reminder" } });
+    await submitDrawer();
+    expect((mocks.createMessageTemplateQuickAction.mock.calls[0]![0] as FormData).get("trigger")).toBe("live_reminder");
+    expect(dialog()).toBeNull();
+    expect(control<HTMLButtonElement>('[data-notification-add="during_live"]').disabled).toBe(false);
+    expect(document.activeElement).toBe(control('[data-notification-add="during_live"]'));
+  });
+
+  it("keeps the before-live group's drawer on the reminder copy", async () => {
+    await act(async () => { root.render(emptyStudio()); });
+    const beforeLive = control('[data-notification-add="before_live"]').closest("fieldset")!;
+    await act(async () => { button("建立開播提醒 Email", beforeLive).click(); });
+
+    expect(drawerControl('[name="subject"]').value).toBe("{{live_title}} 即將開始");
+  });
+
+  it("links to the full editors in a new tab", async () => {
+    await act(async () => { root.render(emptyStudio()); });
+    for (const href of ["/forms/new", "/messages/templates/new"]) {
+      const link = control<HTMLAnchorElement>(`a[href="${href}"]`);
+      expect(link.target).toBe("_blank");
+      expect(link.rel).toBe("noopener");
+    }
   });
 });

@@ -3,7 +3,7 @@ import { CsrfField } from "@/components/csrf-field";
 import { FormBuilderClient, type FormBuilderValues, type FormPromoVideoOption } from "@/components/form-builder-client";
 import { Card } from "@/components/ui";
 import { registrationFormDraftScopes } from "@/lib/registration-form-draft";
-import { defaultRegistrationFormBuilderFields } from "@/lib/registration-form-builder";
+import { defaultRegistrationFormBuilderFields, REGISTRATION_FORM_DEFAULT_COPY } from "@/lib/registration-form-builder";
 import { parseRegistrationFormFields } from "@/lib/registration-form-fields";
 
 const NEW_FORM_VALUES: FormBuilderValues = {
@@ -11,8 +11,8 @@ const NEW_FORM_VALUES: FormBuilderValues = {
   slug: "",
   headline: "",
   description: "",
-  submitLabel: "送出報名",
-  successMessage: "已收到你的資料，開播前會再提醒你。",
+  submitLabel: REGISTRATION_FORM_DEFAULT_COPY.submitLabel,
+  successMessage: REGISTRATION_FORM_DEFAULT_COPY.successMessage,
   heroImageUrl: null,
   heroImageAssetId: null,
   backgroundImageUrl: null,

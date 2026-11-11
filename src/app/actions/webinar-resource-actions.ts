@@ -1,7 +1,7 @@
 "use server";
 
 import { redirect } from "next/navigation";
-import { Prisma } from "@prisma/client";
+import { type Prisma } from "@prisma/client";
 import { requireVendorManager, requireVendorManagerContext } from "@/lib/auth";
 import { auditSnapshot, writeAuditLog } from "@/lib/audit";
 import { assertServerActionSecurity } from "@/lib/csrf";
@@ -10,18 +10,8 @@ import { parseSafeExternalHttpUrl } from "@/lib/external-url";
 import { toSlug } from "@/lib/format";
 import { resolveReadyImageAsset } from "@/lib/image-assets";
 import { isLiveVideoReady } from "@/lib/live-video-readiness";
-import { EVERGREEN_ACTIVATION_SELECT, isActiveEvergreenLive } from "@/lib/evergreen-activation";
-import {
-  createLiveReminderReconciliationSnapshot,
-  queueLiveReminderReconciliation,
-} from "@/lib/live-reminder-reconciliation";
-import { supersedeLiveNotificationDeliveriesForTemplate } from "@/lib/live-notification-delivery";
-import {
-  normalizeMessageTemplateDraft,
-  type MessageTemplateActionError,
-  type MessageTemplateActionState,
-  type MessageTemplateFormDraft,
-} from "@/lib/message-template";
+import { type MessageTemplateActionState } from "@/lib/message-template";
+import { saveMessageTemplate } from "@/lib/message-template-save";
 import { parseRegistrationFormFields } from "@/lib/registration-form-fields";
 
 function text(formData: FormData, key: string, fallback = "") {
@@ -81,10 +71,6 @@ function managerAuditIdentity(auth: Awaited<ReturnType<typeof requireVendorManag
     actorId: auth.user.id,
     actorLabel: auth.member?.role ?? "vendor_manager",
   };
-}
-
-function isRecordNotFoundError(error: unknown) {
-  return typeof error === "object" && error !== null && "code" in error && error.code === "P2025";
 }
 
 export async function upsertVideoAction(formData: FormData) {
@@ -297,158 +283,21 @@ export async function upsertFormAction(formData: FormData) {
   redirect("/forms");
 }
 
-function messageTemplateFormDraft(formData: FormData): MessageTemplateFormDraft {
-  const boundedValue = (key: string, maximum: number) => {
-    const value = formData.get(key);
-    return typeof value === "string" ? value.slice(0, maximum + 1) : "";
-  };
-  return {
-    name: boundedValue("name", 160),
-    channel: boundedValue("channel", 32),
-    trigger: boundedValue("trigger", 64),
-    subject: boundedValue("subject", 200),
-    body: boundedValue("body", 20_000),
-    isActive: formData.get("isActive") === "on",
-  };
-}
-
-function messageTemplateActionError(
-  previousState: MessageTemplateActionState,
-  error: MessageTemplateActionError,
-  draft: MessageTemplateFormDraft,
-  expectedUpdatedAt: string | null = null,
-): MessageTemplateActionState {
-  return {
-    status: "error",
-    error,
-    draft,
-    expectedUpdatedAt,
-    version: previousState.version + 1,
-  };
-}
-
 export async function upsertTemplateAction(
   previousState: MessageTemplateActionState,
   formData: FormData,
 ): Promise<MessageTemplateActionState> {
   await assertServerActionSecurity(formData);
   const { auth, vendor } = await requireVendorManagerContext();
-  const auditActor = managerAuditIdentity(auth);
-  const id = optionalText(formData, "id");
-  const expectedUpdatedAtValue = optionalText(formData, "expectedUpdatedAt");
-  const expectedUpdatedAt = expectedUpdatedAtValue ? new Date(expectedUpdatedAtValue) : null;
-  const expectedUpdatedAtIsValid = Boolean(
-    expectedUpdatedAt
-    && !Number.isNaN(expectedUpdatedAt.getTime())
-    && expectedUpdatedAt.toISOString() === expectedUpdatedAtValue,
-  );
-  const submittedDraft = messageTemplateFormDraft(formData);
-  if (
-    id
-    && (
-      id.length > 128
-      || !expectedUpdatedAtIsValid
-    )
-  ) {
-    return messageTemplateActionError(previousState, "invalid_template", submittedDraft);
-  }
-  const normalized = normalizeMessageTemplateDraft(submittedDraft);
-  if (!normalized.success) {
-    return messageTemplateActionError(
-      previousState,
-      "invalid_template",
-      submittedDraft,
-      expectedUpdatedAtIsValid ? expectedUpdatedAtValue : null,
-    );
-  }
-  const data = normalized.data;
-
-  const db = getDb();
-  let outcome: {
-    template: Awaited<ReturnType<typeof db.messageTemplate.create>>;
-    reconciliationStatuses: string[];
-  };
-  try {
-    // READ COMMITTED (B-3): the update takes the template's row lock, so it
-    // waits for any live notification materialization holding the template
-    // FOR SHARE, and the supersede below is a new statement that sees the row
-    // that materialization committed. Under SERIALIZABLE the supersede read
-    // the snapshot from before the wait and missed it. The update is guarded
-    // by the expected `updatedAt` (re-checked on the latest row version after
-    // a wait); reminder reconciliation already runs at READ COMMITTED from
-    // the live studio save.
-    outcome = await db.$transaction(async (tx) => {
-      const template = id
-        ? await tx.messageTemplate.update({ where: { id, vendorId: vendor.id, updatedAt: expectedUpdatedAt ?? undefined }, data })
-        : await tx.messageTemplate.create({ data: { ...data, vendorId: vendor.id } });
-      if (!id) return { template, reconciliationStatuses: [] };
-
-      await supersedeLiveNotificationDeliveriesForTemplate(tx, {
-        vendorId: vendor.id,
-        templateId: template.id,
-      });
-
-      const linkedLives = await tx.live.findMany({
-        where: { vendorId: vendor.id, liveReminderTemplateId: template.id },
-        select: {
-          id: true, slug: true, title: true, scheduledAt: true, liveReminderOffsetMinutes: true,
-          ...EVERGREEN_ACTIVATION_SELECT,
-          video: { select: { durationSec: true } },
-        },
-      });
-      const reconciliationStatuses: string[] = [];
-      for (const live of linkedLives) {
-        const queued = await queueLiveReminderReconciliation(tx, createLiveReminderReconciliationSnapshot({
-          vendorId: vendor.id,
-          liveId: live.id,
-          liveSlug: live.slug,
-          liveTitle: live.title,
-          liveStatus: live.status,
-          scheduledAt: live.scheduledAt,
-          reminderOffsetMinutes: live.liveReminderOffsetMinutes,
-          template,
-          evergreenActive: isActiveEvergreenLive(live),
-        }));
-        reconciliationStatuses.push(queued.status);
-      }
-      return { template, reconciliationStatuses };
-    }, { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted });
-  } catch (error) {
-    if (isRecordNotFoundError(error)) {
-      const current = id
-        ? await db.messageTemplate.findFirst({
-            where: { id, vendorId: vendor.id },
-            select: { updatedAt: true },
-          })
-        : null;
-      return messageTemplateActionError(
-        previousState,
-        current ? "conflict" : "missing_template",
-        submittedDraft,
-        current?.updatedAt.toISOString() ?? null,
-      );
-    }
-    throw error;
-  }
-  const { template, reconciliationStatuses } = outcome;
-
-  await writeAuditLog({
+  const result = await saveMessageTemplate({
     vendorId: vendor.id,
-    ...auditActor,
-    action: id ? "message_template_updated" : "message_template_created",
-    targetType: "MessageTemplate",
-    targetId: template.id,
-    after: auditSnapshot({
-      name: data.name,
-      channel: data.channel,
-      trigger: data.trigger,
-      isActive: data.isActive,
-      hasSubject: true,
-      bodyLength: data.body.length,
-    }),
+    auditActor: managerAuditIdentity(auth),
+    previousState,
+    formData,
   });
+  if (!result.ok) return result.state;
 
-  redirect(reconciliationStatuses.length > 0
+  redirect(result.reconciliationStatuses.length > 0
     ? "/messages/templates?notice=reminders_reconciling"
     : "/messages/templates");
 }

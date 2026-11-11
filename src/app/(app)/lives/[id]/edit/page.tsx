@@ -453,6 +453,9 @@ export default async function EditLivePage({
         initialDraft={initialDraft}
         initialValues={basePayload}
         liveId={live.id}
+        // The editor lists only this project's forms; a form created in the
+        // studio's drawer is bound to it (re-checked on the server) so it stays listed.
+        projectId={scope.projectId}
         currentStatus={live.status}
         timeZone={vendor.timezone}
         fixedSessionSummaries={fixedSessionSummaries}

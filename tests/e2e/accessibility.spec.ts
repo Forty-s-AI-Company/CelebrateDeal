@@ -491,11 +491,40 @@ test("live stepper has no blocking axe violations on any of the four steps, in �
   await page.getByLabel("報名頁").selectOption(fixture.formId);
   await page.getByLabel(/開播時間/).fill("2026-12-20T20:00");
   await scanStep(0);
+  // 就地建立抽屜：開啟狀態（含欄位錯誤）也要可被掃描，Escape 關閉後焦點回到按鈕。
+  const openFormDrawer = page.getByRole("button", { name: "新增報名表", exact: true });
+  await openFormDrawer.click();
+  const formDrawer = page.getByRole("dialog", { name: "新增報名表" });
+  await expect(formDrawer).toBeVisible();
+  expect(await blockingAxeViolations(page), "新增報名表抽屜").toEqual([]);
+  await formDrawer.getByLabel("表單名稱").fill("");
+  await formDrawer.getByRole("button", { name: "建立並選取" }).click();
+  await expect(formDrawer.getByText("請填寫表單名稱。")).toBeVisible();
+  expect(await blockingAxeViolations(page), "新增報名表抽屜欄位錯誤").toEqual([]);
+  await page.keyboard.press("Escape");
+  await expect(formDrawer).toBeHidden();
+  await expect(openFormDrawer).toBeFocused();
   await page.getByRole("button", { name: "下一步" }).click();
   await openLiveStudioAdvancedSettings(page, "sales");
   await scanStep(1);
   await page.getByRole("button", { name: "下一步" }).click();
   await scanStep(2);
+  const openTemplateDrawer = page.getByRole("button", { name: "建立報名成功 Email", exact: true });
+  await openTemplateDrawer.click();
+  await expect(page.getByRole("dialog", { name: "建立報名成功 Email" })).toBeVisible();
+  // 滑入動畫進行到一半時掃描也不能有對比違規（CI 上掃描常落在動畫途中）。
+  const drawerSlide = (mode: "midway" | "finish") => page.evaluate((nextMode) => {
+    for (const animation of document.getAnimations()) {
+      if ((animation as CSSAnimation).animationName !== "side-drawer-in") continue;
+      if (nextMode === "midway") { animation.pause(); animation.currentTime = 90; } else animation.finish();
+    }
+  }, mode);
+  await drawerSlide("midway");
+  expect(await blockingAxeViolations(page), "建立報名成功 Email 抽屜（滑入動畫中）").toEqual([]);
+  await drawerSlide("finish");
+  expect(await blockingAxeViolations(page), "建立報名成功 Email 抽屜").toEqual([]);
+  await page.keyboard.press("Escape");
+  await expect(openTemplateDrawer).toBeFocused();
   await page.getByRole("button", { name: "下一步" }).click();
   await scanStep(3);
   expect(scanned).toEqual([1, 2, 3, 4]);

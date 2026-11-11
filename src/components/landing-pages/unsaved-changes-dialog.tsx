@@ -13,8 +13,10 @@ export function trapDialogFocus(container: HTMLElement, event: Pick<KeyboardEven
   const first = focusable[0]!;
   const last = focusable.at(-1)!;
   const active = container.ownerDocument.activeElement;
-  if (event.shiftKey && (active === first || !container.contains(active))) { event.preventDefault(); last.focus(); }
-  else if (!event.shiftKey && (active === last || !container.contains(active))) { event.preventDefault(); first.focus(); }
+  // The container itself (a tabindex=-1 panel) is not a stop: Tab from it must wrap, not leave.
+  const outside = active === container || !container.contains(active);
+  if (event.shiftKey && (active === first || outside)) { event.preventDefault(); last.focus(); }
+  else if (!event.shiftKey && (active === last || outside)) { event.preventDefault(); first.focus(); }
 }
 
 /**

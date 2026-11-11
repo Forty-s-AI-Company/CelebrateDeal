@@ -105,6 +105,26 @@ body:has([data-live-player-mode="checkout"]) [data-testid="announcement-center-l
   }
 }
 
+/*
+ * SideDrawer (side-drawer.tsx): slides in from the right edge; no motion when reduced.
+ * Transform only: a fading opacity would make axe (and any contrast checker)
+ * read the drawer's text against a half-transparent panel while it animates.
+ */
+@keyframes side-drawer-in {
+  from { transform: translateX(24px); }
+  to { transform: translateX(0); }
+}
+
+.side-drawer-panel {
+  animation: side-drawer-in 180ms ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .side-drawer-panel {
+    animation: none;
+  }
+}
+
 /* Funnel testimonial wall: the track holds the items twice, so -50% loops seamlessly. */
 @keyframes funnel-marquee {
   from { transform: translateX(0); }
