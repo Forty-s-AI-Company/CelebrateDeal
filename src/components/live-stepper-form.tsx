@@ -22,6 +22,13 @@ import { LiveSlugField } from "@/components/live-slug-field";
 import { FormSubmitButton } from "@/components/form-submit-button";
 import { LIVE_DRAFT_SAVE_FAILED_EVENT, LiveConfirmedSubmitButton, LiveFormPendingLock } from "@/components/live-submit-confirmation";
 import { MediaUploadField } from "@/components/media-upload-field";
+import { MessageTemplateQuickCreateDrawer, RegistrationFormQuickCreateDrawer } from "@/components/live-resource-drawers";
+import {
+  mergeLiveResourceOptions,
+  type LiveQuickFormOption,
+  type LiveQuickTemplateOption,
+  type LiveQuickTemplateTrigger,
+} from "@/lib/live-resource-quick-create";
 import {
   LiveFixedSessionSettingsFields,
   LiveFixedSessionsEditor,
@@ -85,6 +92,21 @@ const stepStatusCopy: Record<LiveStudioStepStatus, { label: string; shortLabel: 
   optional: { label: "選配未設定", shortLabel: "選配", icon: CircleDashed, className: "border-slate-300 bg-white text-slate-600" },
 };
 const requiredFieldsMessage = "請先完成本步驟的必填欄位，再繼續下一步。";
+const inlineCreateButtonClass = "inline-flex min-h-11 items-center justify-center rounded-md border border-blue-200 bg-white px-4 text-sm font-semibold text-primary hover:bg-blue-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2";
+
+/** Secondary way out of the drawer: the full editor in a new tab, so the studio keeps its state. */
+function FullEditorLink({ href }: { href: string }) {
+  return (
+    <Link href={href} target="_blank" rel="noopener" className="text-sm font-semibold text-primary underline">
+      用完整編輯器建立<span className="sr-only">（另開新分頁）</span>
+    </Link>
+  );
+}
+
+/** Which 「就地建立」 drawer is open; a template drawer remembers the rule group it was opened from. */
+type LiveResourceDrawer =
+  | { kind: "form" }
+  | { kind: "template"; trigger: LiveQuickTemplateTrigger; ruleTrigger?: LiveNotificationRuleTrigger };
 
 type LiveProductOption = Pick<Product, "id" | "name" | "inventory">;
 type LiveFormOption = Pick<RegistrationForm, "id" | "name">;
@@ -817,7 +839,9 @@ type LiveStudioContentStepOptions = {
   selectedVideoId: string;
   onVideoChange: (value: string) => void;
   forms: LiveFormOption[];
+  selectedFormId: string;
   onFormChange: (value: string) => void;
+  onCreateForm: () => void;
   timeZone: string;
   replayEnabled: boolean;
   replayAvailableUntil: string;
@@ -860,6 +884,7 @@ type LiveStudioNotificationsStepOptions = {
   notificationTemplates: LiveTemplateOption[];
   notificationRules: LiveNotificationRuleDraft[];
   onNotificationRulesChange: (rules: LiveNotificationRuleDraft[]) => void;
+  onCreateTemplate: (trigger: LiveQuickTemplateTrigger, ruleTrigger?: LiveNotificationRuleTrigger) => void;
 };
 
 function StepHeading({ title, description }: { title: string; description: string }) {
@@ -890,10 +915,13 @@ function NotificationRulesEditor({
   rules,
   templates,
   onChange,
+  onCreateTemplate,
 }: {
   rules: LiveNotificationRuleDraft[];
   templates: LiveTemplateOption[];
   onChange: (rules: LiveNotificationRuleDraft[]) => void;
+  /** Opens the template drawer for a group that has no usable template yet. */
+  onCreateTemplate?: (trigger: LiveQuickTemplateTrigger, ruleTrigger: LiveNotificationRuleTrigger) => void;
 }) {
   const hasSuggestionTemplates = templates.some((template) => (
     template.trigger === "live_reminder" || template.trigger === "post_live_followup"
@@ -1006,11 +1034,21 @@ function NotificationRulesEditor({
                 </div>
               </div>
             ))}
-            <div className="flex flex-col items-start gap-1 sm:flex-row sm:items-center sm:gap-3">
-              <button type="button" aria-describedby={availableTemplates.length === 0 ? addButtonDescriptionId : undefined} disabled={group.length >= LIVE_NOTIFICATION_RULE_LIMITS[trigger] || availableTemplates.length === 0} onClick={() => addRule(trigger)} className="min-h-11 rounded-md border border-border bg-white px-4 text-sm font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-40">
+            <div className="flex flex-col items-start gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:gap-3">
+              <button type="button" data-notification-add={trigger} aria-describedby={availableTemplates.length === 0 ? addButtonDescriptionId : undefined} disabled={group.length >= LIVE_NOTIFICATION_RULE_LIMITS[trigger] || availableTemplates.length === 0} onClick={() => addRule(trigger)} className="min-h-11 rounded-md border border-border bg-white px-4 text-sm font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-40">
                 新增{notificationRuleGroupCopy[trigger].title}通知
               </button>
               {availableTemplates.length === 0 ? <span id={addButtonDescriptionId} className="text-xs text-amber-800">{missingTemplateReason}</span> : null}
+              {availableTemplates.length === 0 && onCreateTemplate ? (
+                <button
+                  type="button"
+                  aria-haspopup="dialog"
+                  onClick={() => onCreateTemplate(expectedTemplateTrigger(trigger), trigger)}
+                  className={inlineCreateButtonClass}
+                >
+                  {expectedTemplateTrigger(trigger) === "post_live_followup" ? "建立課後 Email" : "建立開播提醒 Email"}
+                </button>
+              ) : null}
             </div>
           </fieldset>
         );
@@ -1056,12 +1094,17 @@ function renderLiveStudioContentStep(input: LiveStudioContentStepOptions) {
       <div className="grid gap-2">
         <label className="grid gap-1.5 text-sm font-medium text-slate-700">
           報名頁
-          <select name="formId" defaultValue={input.initialValues.formId} onChange={(event) => input.onFormChange(event.target.value)} className="h-11 rounded-md border border-border px-3">
+          {/* Controlled, so an option created in the drawer can be selected; the draft still serializes the DOM value. */}
+          <select name="formId" value={input.selectedFormId} onChange={(event) => input.onFormChange(event.target.value)} className="h-11 rounded-md border border-border px-3">
             <option value="">不綁定表單</option>
             {input.forms.map((form) => <option key={form.id} value={form.id}>{form.name}</option>)}
           </select>
         </label>
-        {input.forms.length === 0 ? <p className="rounded-md bg-slate-50 px-4 py-3 text-sm text-slate-600">目前沒有可用報名頁。<Link href="/forms/new" className="ml-1 font-semibold text-primary underline">新增報名頁</Link></p> : null}
+        {input.forms.length === 0 ? <p className="text-sm text-slate-600">目前沒有可用報名頁，可以在這裡直接建立。</p> : null}
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+          <button type="button" aria-haspopup="dialog" onClick={input.onCreateForm} className={inlineCreateButtonClass}>新增報名表</button>
+          <FullEditorLink href="/forms/new" />
+        </div>
       </div>
 
       <LiveFixedSessionsEditor
@@ -1180,20 +1223,32 @@ function renderLiveStudioNotificationsStep(input: LiveStudioNotificationsStepOpt
   return (
     <StepPanel active={input.activeStep === "notifications"} step="notifications">
       <StepHeading title="通知" description="報名成功信是發布必要條件；開播前、直播中與課後通知皆可選配。" />
-      <div className="grid gap-4 sm:grid-cols-2">
-        <label className="grid gap-1.5 text-sm font-medium text-slate-700">
-          報名成功 Email
-          <select name="messageTemplateId" defaultValue={input.selectedTemplateId} onChange={(event) => input.onTemplateChange(event.target.value)} className="h-11 rounded-md border border-border px-3">
-            <option value="">不綁定模板</option>
-            {input.registrationTemplates.map((template) => <option key={template.id} value={template.id}>{template.name} · {template.channel}</option>)}
-          </select>
-        </label>
+      <div className="grid gap-2">
+        <div className="grid gap-4 sm:grid-cols-2">
+          <label className="grid gap-1.5 text-sm font-medium text-slate-700">
+            報名成功 Email
+            {/* Controlled, so a template created in the drawer can be selected; the draft still serializes the DOM value. */}
+            <select name="messageTemplateId" value={input.selectedTemplateId} onChange={(event) => input.onTemplateChange(event.target.value)} className="h-11 rounded-md border border-border px-3">
+              <option value="">不綁定模板</option>
+              {input.registrationTemplates.map((template) => <option key={template.id} value={template.id}>{template.name} · {template.channel}</option>)}
+            </select>
+          </label>
+        </div>
+        {input.registrationTemplates.length === 0 ? <p className="text-sm text-slate-600">目前沒有可寄送的報名成功 Email，可以在這裡直接建立。</p> : null}
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+          <button type="button" aria-haspopup="dialog" onClick={() => input.onCreateTemplate("registration_confirmed")} className={inlineCreateButtonClass}>建立報名成功 Email</button>
+        </div>
       </div>
       {/* Legacy single reminder binding: kept unchanged and submitted with the form. */}
       <input type="hidden" name="liveReminderTemplateId" value={input.initialValues.liveReminderTemplateId} readOnly />
       <input type="hidden" name="liveReminderOffsetMinutes" value={input.initialValues.liveReminderOffsetMinutes} readOnly />
-      <NotificationRulesEditor rules={input.notificationRules} templates={input.notificationTemplates} onChange={input.onNotificationRulesChange} />
-      {input.registrationTemplates.length === 0 || input.notificationTemplates.length === 0 ? <p className="rounded-md bg-slate-50 px-4 py-3 text-sm text-slate-600">缺少可用 Email 模板。<Link href="/messages/templates/new" className="ml-1 font-semibold text-primary underline">新增訊息模板</Link></p> : null}
+      <NotificationRulesEditor rules={input.notificationRules} templates={input.notificationTemplates} onChange={input.onNotificationRulesChange} onCreateTemplate={input.onCreateTemplate} />
+      {input.registrationTemplates.length === 0 || input.notificationTemplates.length === 0 ? (
+        <p className="rounded-md bg-slate-50 px-4 py-3 text-sm text-slate-600">
+          缺少可用 Email 模板時，可以用上方的按鈕直接建立；需要其他觸發條件或進階設定時，
+          <FullEditorLink href="/messages/templates/new" />。
+        </p>
+      ) : null}
       <p className="rounded-md border border-blue-100 bg-blue-50 px-3 py-2 text-sm text-blue-800">開播前與直播中通知已接通排程；課後通知維持既有排程。</p>
     </StepPanel>
   );
@@ -1405,6 +1460,103 @@ function useSubmitFlushGuard() {
   };
 }
 
+/**
+ * The 「就地建立」 drawers of the studio: which one is open, the options they
+ * created, and what happens after a create. Created options are merged with
+ * the server props instead of replacing them: the props may refresh (a form
+ * create revalidates the page) or, behind the edit page's project filter,
+ * never list them. Only useState／useRef／useEffect, like the studio itself.
+ */
+function useLiveResourceDrawers(input: {
+  formRef: { current: HTMLFormElement | null };
+  forms: LiveFormOption[];
+  templates: LiveTemplateOption[];
+  csrfToken: string;
+  projectId?: string | null;
+  liveTitle: string;
+  submitBusy: boolean;
+  scheduleSave: () => void;
+  selectForm: (formId: string) => void;
+  selectRegistrationTemplate: (templateId: string) => void;
+}) {
+  const [createdForms, setCreatedForms] = useState<LiveQuickFormOption[]>([]);
+  const [createdTemplates, setCreatedTemplates] = useState<LiveQuickTemplateOption[]>([]);
+  const [drawer, setDrawer] = useState<LiveResourceDrawer | null>(null);
+  const [announcement, setAnnouncement] = useState("");
+  /** Set when a drawer created something: the control to focus and whether the draft changed. */
+  const focusPendingRef = useRef<{ selector: string; save: boolean } | null>(null);
+  const { formRef, scheduleSave } = input;
+  // Runs once the new option is in the DOM and after the drawer's own cleanup
+  // returned focus to its trigger, so the draft serializes the new value and
+  // focus lands on the field that now holds it.
+  useEffect(() => {
+    const pending = focusPendingRef.current;
+    if (!pending) return;
+    focusPendingRef.current = null;
+    const target = formRef.current?.querySelector<HTMLElement>(pending.selector);
+    if (target) {
+      revealCollapsedAncestors(target);
+      target.focus();
+    }
+    if (pending.save) scheduleSave();
+  });
+
+  /** The studio's own submit (pending lock, or the pre-submit draft flush) must finish first. */
+  function open(next: LiveResourceDrawer) {
+    if (input.submitBusy || formRef.current?.getAttribute("aria-busy") === "true") return;
+    setAnnouncement("");
+    setDrawer(next);
+  }
+
+  function formCreated(option: LiveQuickFormOption) {
+    setCreatedForms((current) => [option, ...current.filter((candidate) => candidate.id !== option.id)]);
+    input.selectForm(option.id);
+    setDrawer(null);
+    setAnnouncement(`已建立並選取報名表「${option.name}」。`);
+    focusPendingRef.current = { selector: '[name="formId"]', save: true };
+  }
+
+  function templateCreated(option: LiveQuickTemplateOption, ruleTrigger?: LiveNotificationRuleTrigger) {
+    setCreatedTemplates((current) => [option, ...current.filter((candidate) => candidate.id !== option.id)]);
+    setDrawer(null);
+    if (option.trigger === "registration_confirmed") {
+      input.selectRegistrationTemplate(option.id);
+      setAnnouncement(`已建立並選取報名成功 Email「${option.name}」。`);
+      focusPendingRef.current = { selector: '[name="messageTemplateId"]', save: true };
+      return;
+    }
+    setAnnouncement(`已建立 Email 模板「${option.name}」，現在可以新增通知規則。`);
+    focusPendingRef.current = {
+      selector: ruleTrigger ? `[data-notification-add="${ruleTrigger}"]` : '[name="messageTemplateId"]',
+      save: false,
+    };
+  }
+
+  const close = () => setDrawer(null);
+  // Portalled to <body>: their <form>s are outside the studio form's DOM and
+  // their React events stop at the drawer root.
+  let drawerElement: React.ReactNode = null;
+  if (drawer?.kind === "form") {
+    drawerElement = (
+      <RegistrationFormQuickCreateDrawer csrfToken={input.csrfToken} projectId={input.projectId} defaultTitle={input.liveTitle} onClose={close} onCreated={formCreated} />
+    );
+  } else if (drawer?.kind === "template") {
+    drawerElement = (
+      <MessageTemplateQuickCreateDrawer key={drawer.trigger} csrfToken={input.csrfToken} trigger={drawer.trigger} onClose={close} onCreated={(option) => templateCreated(option, drawer.ruleTrigger)} />
+    );
+  }
+
+  const templates = mergeLiveResourceOptions(input.templates, createdTemplates);
+  return {
+    forms: mergeLiveResourceOptions(input.forms, createdForms),
+    registrationTemplates: templates.filter((template) => template.trigger === "registration_confirmed"),
+    notificationTemplates: templates.filter((template) => template.trigger === "live_reminder" || template.trigger === "post_live_followup"),
+    announcement,
+    open,
+    drawerElement,
+  };
+}
+
 type LiveStepperFormProps = {
   videos: Array<Pick<Video, "id" | "title">>;
   products: LiveProductOption[];
@@ -1455,8 +1607,6 @@ export function LiveStudioStepperForm({
   onUnsavedChange?: (unsaved: boolean) => void;
 }) {
   const initialValues = initialDraft?.payload ?? suppliedInitialValues ?? emptyLiveStudioDraft();
-  const registrationTemplates = templates.filter((template) => template.trigger === "registration_confirmed");
-  const notificationTemplates = templates.filter((template) => template.trigger === "live_reminder" || template.trigger === "post_live_followup");
   const [activeStepKey, setActiveStepKey] = useState<LiveStudioStepKey>(liveStudioStepAt(initialValues.activeStep).key);
   /** The persisted position of the active step in the current flow version. */
   const activeStep = liveStudioStepIndex(activeStepKey);
@@ -1501,8 +1651,21 @@ export function LiveStudioStepperForm({
   useEffect(() => { onUnsavedChange?.(unsaved); }, [unsaved, onUnsavedChange]);
   useRevealTakenSlug(formRef, error === "slug_taken" || Boolean(draft.slugTaken));
   const submitFlush = useSubmitFlushGuard();
+  const resources = useLiveResourceDrawers({
+    formRef,
+    forms,
+    templates,
+    csrfToken,
+    projectId,
+    liveTitle: previewTitle,
+    submitBusy: submitFlush.busy,
+    scheduleSave: draft.scheduleSave,
+    selectForm: setSelectedFormId,
+    selectRegistrationTemplate: setSelectedTemplateId,
+  });
+  const { forms: availableForms, registrationTemplates, notificationTemplates } = resources;
   const preview = buildLivePreview(previewTitle, previewAccentCopy, products, selectedProductIds); const statusAction = liveId ? fixedSessionStatusAction(liveStatusAction(currentStatus), sessionMode) : null;
-  const publishReadiness = buildLivePublishReadiness({ studioPreset, products, productIds: selectedProductIds, videos, videoId: selectedVideoId, forms, formId: selectedFormId, templates: registrationTemplates, templateId: selectedTemplateId, scripts, scriptId: selectedScriptId });
+  const publishReadiness = buildLivePublishReadiness({ studioPreset, products, productIds: selectedProductIds, videos, videoId: selectedVideoId, forms: availableForms, formId: selectedFormId, templates: registrationTemplates, templateId: selectedTemplateId, scripts, scriptId: selectedScriptId });
   const stepStatus = liveStudioStepStatuses({
     readiness: publishReadiness,
     title: previewTitle,
@@ -1601,6 +1764,9 @@ export function LiveStudioStepperForm({
       <p role="status" aria-live="polite" className="min-h-5 text-sm font-medium text-red-700">
         {validationMessage}
       </p>
+      <p role="status" aria-live="polite" data-live-resource-status="true" className={resources.announcement ? "rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-900" : "sr-only"}>
+        {resources.announcement}
+      </p>
       <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-blue-100 bg-blue-50 px-4 py-3">
         <p
           role={draft.status === "conflict" || draft.status === "error" ? "alert" : "status"}
@@ -1642,8 +1808,10 @@ export function LiveStudioStepperForm({
             videos,
             selectedVideoId,
             onVideoChange: setSelectedVideoId,
-            forms,
+            forms: availableForms,
+            selectedFormId,
             onFormChange: setSelectedFormId,
+            onCreateForm: () => resources.open({ kind: "form" }),
             timeZone,
             replayEnabled,
             replayAvailableUntil,
@@ -1688,6 +1856,7 @@ export function LiveStudioStepperForm({
             notificationTemplates,
             notificationRules,
             onNotificationRulesChange: updateNotificationRules,
+            onCreateTemplate: (trigger, ruleTrigger) => resources.open({ kind: "template", trigger, ruleTrigger }),
           })}
 
           <StepPanel active={onPublishStep} step="publish">
@@ -1718,6 +1887,7 @@ export function LiveStudioStepperForm({
 
         <LiveSidePreview preview={preview} hidden={onPublishStep} />
       </div>
+      {resources.drawerElement}
     </form>
   );
 }

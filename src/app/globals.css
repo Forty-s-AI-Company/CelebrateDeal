@@ -105,6 +105,22 @@ body:has([data-live-player-mode="checkout"]) [data-testid="announcement-center-l
   }
 }
 
+/* SideDrawer (side-drawer.tsx): slides in from the right edge; no motion when reduced. */
+@keyframes side-drawer-in {
+  from { transform: translateX(24px); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+
+.side-drawer-panel {
+  animation: side-drawer-in 180ms ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .side-drawer-panel {
+    animation: none;
+  }
+}
+
 /* Funnel testimonial wall: the track holds the items twice, so -50% loops seamlessly. */
 @keyframes funnel-marquee {
   from { transform: translateX(0); }
