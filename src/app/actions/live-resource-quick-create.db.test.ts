@@ -16,7 +16,8 @@ vi.mock("next/headers", () => ({ headers: vi.fn(async () => new Headers()) }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 
 import { toSlug } from "@/lib/format";
-import { createMessageTemplateQuickAction, createRegistrationFormQuickAction } from "./live-resource-quick-create";
+import { liveReadyVideoWhere } from "@/lib/live-video-readiness";
+import { createMessageTemplateQuickAction, createRegistrationFormQuickAction, createUrlVideoQuickAction } from "./live-resource-quick-create";
 
 // Actual PostgreSQL writes; only the request, CSRF and session boundaries are synthetic.
 const db = new PrismaClient();
@@ -105,6 +106,36 @@ describe("live studio quick create on PostgreSQL", () => {
     expect(rows[0]).toMatchObject({ vendorId: runtime.vendorId, channel: "email", trigger: "live_reminder", isActive: true, name: "開播提醒" });
     expect(result).toEqual({ status: "success", option: { id: rows[0]!.id, name: "開播提醒", channel: "email", trigger: "live_reminder" } });
     expect(await db.auditLog.count({ where: { vendorId: runtime.vendorId, action: "message_template_created", targetId: rows[0]!.id } })).toBe(1);
+  });
+
+  it("creates a live-ready external URL video for the session vendor only, ignoring a forged id and vendor", async () => {
+    const otherVendorId = await vendor();
+    const foreign = await db.video.create({ data: { vendorId: otherVendorId, title: "別家影片", sourceType: "url", videoUrl: "https://media.example.test/foreign.mp4", status: "ready" } });
+
+    const result = await createUrlVideoQuickAction(input({
+      title: "週五講座錄影",
+      videoUrl: "https://media.example.test/live.mp4",
+      id: foreign.id,
+      vendorId: otherVendorId,
+      status: "archived",
+    }));
+
+    expect(result.status).toBe("success");
+    const rows = await db.video.findMany({ where: { vendorId: runtime.vendorId } });
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ vendorId: runtime.vendorId, title: "週五講座錄影", sourceType: "url", status: "ready", videoUrl: "https://media.example.test/live.mp4" });
+    expect(result).toEqual({ status: "success", option: { id: rows[0]!.id, title: "週五講座錄影" }, ready: true });
+    // The same selector the live pages use lists it right away.
+    expect(await db.video.count({ where: liveReadyVideoWhere(runtime.vendorId, rows[0]!.id) })).toBe(1);
+    // The other vendor's video is untouched.
+    expect(await db.video.findUniqueOrThrow({ where: { id: foreign.id } })).toMatchObject({ vendorId: otherVendorId, title: "別家影片", status: "ready" });
+    expect(await db.video.count({ where: { vendorId: otherVendorId } })).toBe(1);
+  });
+
+  it("writes no video for an unsafe URL", async () => {
+    const result = await createUrlVideoQuickAction(input({ title: "x", videoUrl: "javascript:alert(1)" }));
+    expect(result.status).toBe("error");
+    expect(await db.video.count({ where: { vendorId: runtime.vendorId } })).toBe(0);
   });
 
   it("writes no template for a trigger the studio cannot bind", async () => {

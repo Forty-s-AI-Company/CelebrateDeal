@@ -6,13 +6,11 @@ import { requireVendorManager, requireVendorManagerContext } from "@/lib/auth";
 import { auditSnapshot, writeAuditLog } from "@/lib/audit";
 import { assertServerActionSecurity } from "@/lib/csrf";
 import { getDb } from "@/lib/db";
-import { parseSafeExternalHttpUrl } from "@/lib/external-url";
 import { toSlug } from "@/lib/format";
-import { resolveReadyImageAsset } from "@/lib/image-assets";
-import { isLiveVideoReady } from "@/lib/live-video-readiness";
 import { type MessageTemplateActionState } from "@/lib/message-template";
 import { saveMessageTemplate } from "@/lib/message-template-save";
 import { parseRegistrationFormFields } from "@/lib/registration-form-fields";
+import { saveVideo, type VideoSaveFailure } from "@/lib/video-save";
 
 function text(formData: FormData, key: string, fallback = "") {
   const value = formData.get(key);
@@ -22,48 +20,6 @@ function text(formData: FormData, key: string, fallback = "") {
 function optionalText(formData: FormData, key: string) {
   const value = text(formData, key);
   return value.length > 0 ? value : null;
-}
-
-function safeExternalUrl(value: string | null, label: string) {
-  if (!value) return null;
-  const safeUrl = parseSafeExternalHttpUrl(value);
-  if (!safeUrl) throw new Error(`${label}必須是有效的 HTTP 或 HTTPS 完整網址。`);
-  return safeUrl;
-}
-
-function optionalExternalUrl(formData: FormData, key: string, label: string) {
-  return safeExternalUrl(optionalText(formData, key), label);
-}
-
-function requiredExternalUrl(formData: FormData, key: string, label: string) {
-  const safeUrl = parseSafeExternalHttpUrl(text(formData, key));
-  if (!safeUrl) throw new Error(`${label}必須是有效的 HTTP 或 HTTPS 完整網址。`);
-  return safeUrl;
-}
-
-const MAX_MANUAL_VIDEO_DURATION_SECONDS = 24 * 60 * 60;
-const MAX_MANUAL_VIDEO_ESTIMATED_MINUTES = 24 * 60;
-
-function boundedNonNegativeIntValue(formData: FormData, key: string, maximum: number, fallback = 0) {
-  const raw = text(formData, key, String(fallback));
-  if (!/^\d+$/.test(raw)) return null;
-  const parsed = Number(raw);
-  return Number.isSafeInteger(parsed) && parsed >= 0 && parsed <= maximum ? parsed : null;
-}
-
-function manualVideoMetadata(formData: FormData, invalidVideoPath: string) {
-  const durationSec = boundedNonNegativeIntValue(
-    formData,
-    "durationSec",
-    MAX_MANUAL_VIDEO_DURATION_SECONDS,
-  );
-  const estimatedMinutes = boundedNonNegativeIntValue(
-    formData,
-    "estimatedMinutes",
-    MAX_MANUAL_VIDEO_ESTIMATED_MINUTES,
-  );
-  if (durationSec === null || estimatedMinutes === null) redirect(invalidVideoPath);
-  return { durationSec, estimatedMinutes };
 }
 
 function managerAuditIdentity(auth: Awaited<ReturnType<typeof requireVendorManagerContext>>["auth"]) {
@@ -77,68 +33,19 @@ export async function upsertVideoAction(formData: FormData) {
   await assertServerActionSecurity(formData);
   const vendor = await requireVendorManager();
   const id = optionalText(formData, "id");
-  const invalidVideoPath = id
-    ? `/videos/${encodeURIComponent(id)}/edit?error=invalid_video`
-    : "/videos/new?error=invalid_video";
-  if (id && id.length > 128) redirect("/videos/new?error=invalid_video");
-  const db = getDb();
-  const thumbnailAssetId = optionalText(formData, "thumbnailAssetId");
-  const invalidImageAssetPath = id
-    ? `/videos/${encodeURIComponent(id)}/edit?error=invalid_image_asset`
-    : "/videos/new?error=invalid_image_asset";
-  const thumbnailAsset = await resolveReadyImageAsset(db, { vendorId: vendor.id, assetId: thumbnailAssetId })
-    .catch(() => redirect(invalidImageAssetPath));
-  const thumbnailUrl = thumbnailAsset?.publicUrl
-    ?? optionalExternalUrl(formData, "thumbnailUrl", "影片縮圖網址");
-  const editableData = {
-    title: text(formData, "title"),
-    description: optionalText(formData, "description"),
-    thumbnailUrl,
-    thumbnailAssetId: thumbnailAsset?.id ?? null,
-  };
-
-  if (id) {
-    const existingVideo = await db.video.findFirst({
-      where: { id, vendorId: vendor.id },
-      select: {
-        id: true,
-        sourceType: true,
-        status: true,
-        cloudflareReadyToStream: true,
-        cloudflareLiveInputUid: true,
-        liveInputStatus: true,
-      },
-    });
-    if (!existingVideo) redirect("/videos?error=not_found");
-    if (existingVideo.sourceType !== "url" && !isLiveVideoReady(existingVideo)) {
-      redirect(`/videos/${encodeURIComponent(id)}/edit?error=video_processing`);
-    }
-
-    const data = existingVideo.sourceType === "url"
-      ? {
-          ...editableData,
-          ...manualVideoMetadata(formData, invalidVideoPath),
-          videoUrl: requiredExternalUrl(formData, "videoUrl", "影片網址"),
-          status: text(formData, "status") === "archived" ? "archived" : "ready",
-        }
-      : editableData;
-    await db.video.update({ where: { id, vendorId: vendor.id }, data });
-  } else {
-    const externalVideoUrl = parseSafeExternalHttpUrl(text(formData, "videoUrl"));
-    if (!externalVideoUrl) redirect(invalidVideoPath);
-    await db.video.create({
-      data: {
-        ...editableData,
-        ...manualVideoMetadata(formData, invalidVideoPath),
-        vendorId: vendor.id,
-        sourceType: "url",
-        videoUrl: externalVideoUrl,
-        status: "ready",
-      },
-    });
-  }
+  const result = await saveVideo(vendor.id, formData);
+  if (!result.ok) redirect(videoSaveFailurePath(result.reason, id));
 
   redirect("/videos");
+}
+
+/** Where the video editor returns after a failed save; the paths predate the shared core. */
+function videoSaveFailurePath(reason: VideoSaveFailure, id: string | null) {
+  if (reason === "not_found") return "/videos?error=not_found";
+  if (reason === "invalid_id" || !id) {
+    return `/videos/new?error=${reason === "invalid_image_asset" ? "invalid_image_asset" : "invalid_video"}`;
+  }
+  return `/videos/${encodeURIComponent(id)}/edit?error=${reason}`;
 }
 
 type ManagedVideoForArchive = {

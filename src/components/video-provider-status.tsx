@@ -54,6 +54,33 @@ export function parseVideoProviderSnapshot(value: unknown, fallbackId: string): 
   };
 }
 
+/**
+ * A failed status request. `httpStatus` is set when the server answered (404
+ * means the video is not this vendor's or no longer exists).
+ */
+export class VideoProviderStatusError extends Error {
+  constructor(readonly code: "status_request_failed" | "invalid_status_response", readonly httpStatus?: number) {
+    super(code);
+  }
+}
+
+/** One tenant-scoped provider status read for the merchant editors. */
+export async function fetchVideoProviderSnapshot(videoId: string, signal: AbortSignal) {
+  const response = await fetch(`/api/media/videos/status?id=${encodeURIComponent(videoId)}`, {
+    method: "GET",
+    cache: "no-store",
+    signal,
+    headers: {
+      accept: "application/json",
+      "x-celebratedeal-client": "web",
+    },
+  });
+  if (!response.ok) throw new VideoProviderStatusError("status_request_failed", response.status);
+  const next = parseVideoProviderSnapshot(await response.json(), videoId);
+  if (!next) throw new VideoProviderStatusError("invalid_status_response", response.status);
+  return next;
+}
+
 function updateFormNumber(root: HTMLElement | null, name: string | undefined, value: number) {
   if (!root || !name) return;
   const input = root.closest("form")?.elements.namedItem(name);
@@ -95,18 +122,7 @@ export function VideoProviderStatus({
       attempts += 1;
       setPhase("checking");
       try {
-        const response = await fetch(`/api/media/videos/status?id=${encodeURIComponent(videoId)}`, {
-          method: "GET",
-          cache: "no-store",
-          signal: controller.signal,
-          headers: {
-            accept: "application/json",
-            "x-celebratedeal-client": "web",
-          },
-        });
-        if (!response.ok) throw new Error("status_request_failed");
-        const next = parseVideoProviderSnapshot(await response.json(), videoId);
-        if (!next) throw new Error("invalid_status_response");
+        const next = await fetchVideoProviderSnapshot(videoId, controller.signal);
         setSnapshot(next);
         setError("");
         if (isVideoProviderReady(next) || isVideoProviderError(next)) return;

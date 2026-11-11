@@ -504,6 +504,21 @@ test("live stepper has no blocking axe violations on any of the four steps, in �
   await page.keyboard.press("Escape");
   await expect(formDrawer).toBeHidden();
   await expect(openFormDrawer).toBeFocused();
+  // 影片抽屜：上傳區與展開的外部網址區（含欄位錯誤）。不選檔、不上傳，不會呼叫任何影片服務。
+  const openVideoDrawer = page.getByRole("button", { name: "上傳影片或貼上影片網址", exact: true });
+  await openVideoDrawer.click();
+  const videoDrawer = page.getByRole("dialog", { name: "新增影片" });
+  await expect(videoDrawer).toBeVisible();
+  await expect(videoDrawer.getByLabel("影片名稱")).toBeFocused();
+  expect(await blockingAxeViolations(page), "新增影片抽屜").toEqual([]);
+  await videoDrawer.getByText("改用外部影片網址", { exact: true }).click();
+  await videoDrawer.getByLabel("影片網址").fill("not-a-url");
+  await videoDrawer.getByRole("button", { name: "以網址建立並選取" }).click();
+  await expect(videoDrawer.getByText("影片網址必須是有效的 HTTP 或 HTTPS 完整網址。")).toBeVisible();
+  expect(await blockingAxeViolations(page), "新增影片抽屜外部網址欄位錯誤").toEqual([]);
+  await page.keyboard.press("Escape");
+  await expect(videoDrawer).toBeHidden();
+  await expect(openVideoDrawer).toBeFocused();
   await page.getByRole("button", { name: "下一步" }).click();
   await openLiveStudioAdvancedSettings(page, "sales");
   await scanStep(1);

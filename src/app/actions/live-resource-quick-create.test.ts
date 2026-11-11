@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
   revalidatePath: vi.fn(),
   saveRegistrationForm: vi.fn(),
   saveMessageTemplate: vi.fn(),
+  saveVideo: vi.fn(),
 }));
 
 vi.mock("@/lib/csrf", () => ({ assertServerActionSecurity: mocks.assertSecurity }));
@@ -17,8 +18,9 @@ vi.mock("@/lib/auth", () => ({
 vi.mock("next/cache", () => ({ revalidatePath: mocks.revalidatePath }));
 vi.mock("@/lib/registration-form-save", () => ({ saveRegistrationForm: mocks.saveRegistrationForm }));
 vi.mock("@/lib/message-template-save", () => ({ saveMessageTemplate: mocks.saveMessageTemplate }));
+vi.mock("@/lib/video-save", () => ({ saveVideo: mocks.saveVideo }));
 
-import { createMessageTemplateQuickAction, createRegistrationFormQuickAction } from "./live-resource-quick-create";
+import { createMessageTemplateQuickAction, createRegistrationFormQuickAction, createUrlVideoQuickAction } from "./live-resource-quick-create";
 
 function formInput(values: Record<string, string>) {
   const data = new FormData();
@@ -44,6 +46,7 @@ beforeEach(() => {
     template: { id: "template-new", name: "報名成功通知", channel: "email", trigger: "registration_confirmed", subject: "{{live_title}} 報名成功", body: "{{name}} 你好", isActive: true },
     reconciliationStatuses: [],
   });
+  mocks.saveVideo.mockResolvedValue({ ok: true, video: { id: "video-new", title: "週五講座錄影", created: true, liveReady: true } });
 });
 
 describe("createRegistrationFormQuickAction", () => {
@@ -225,5 +228,82 @@ describe("createMessageTemplateQuickAction", () => {
     expect((await createMessageTemplateQuickAction(formInput({ ...sendable, trigger: "live_reminder" }))).status).toBe("error");
     expect(mocks.requireVendorManagerContext).not.toHaveBeenCalled();
     expect(mocks.saveMessageTemplate).not.toHaveBeenCalled();
+  });
+});
+
+describe("createUrlVideoQuickAction", () => {
+  function sentVideo(call = 0) {
+    return Object.fromEntries((mocks.saveVideo.mock.calls[call]![1] as FormData).entries());
+  }
+
+  it("creates an external URL video for the session vendor from whitelisted fields only", async () => {
+    const result = await createUrlVideoQuickAction(formInput({
+      title: " 週五講座錄影 ",
+      videoUrl: " https://media.example.test/live.mp4 ",
+      id: "video-existing",
+      vendorId: "vendor-forged",
+      sourceType: "cloudflare_live",
+      status: "archived",
+      thumbnailAssetId: "asset-foreign",
+      durationSec: "999",
+    }));
+
+    expect(result).toEqual({ status: "success", option: { id: "video-new", title: "週五講座錄影" }, ready: true });
+    expect(mocks.saveVideo).toHaveBeenCalledOnce();
+    expect(mocks.saveVideo.mock.calls[0]![0]).toBe("vendor-session");
+    // No id reaches the core, so it can only create; nothing else the client sent passes through.
+    expect(sentVideo()).toEqual({
+      title: "週五講座錄影",
+      videoUrl: "https://media.example.test/live.mp4",
+      durationSec: "0",
+      estimatedMinutes: "0",
+    });
+    expect(mocks.revalidatePath).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    [{ title: "x", videoUrl: "javascript:alert(1)" }, "videoUrl"],
+    [{ title: "x", videoUrl: "ftp://media.example.test/a.mp4" }, "videoUrl"],
+    [{ title: "x", videoUrl: "" }, "videoUrl"],
+    [{ title: "   ", videoUrl: "https://media.example.test/a.mp4" }, "title"],
+    [{ title: "x".repeat(161), videoUrl: "https://media.example.test/a.mp4" }, "title"],
+    [{ title: "x", videoUrl: `https://media.example.test/${"a".repeat(2048)}` }, "videoUrl"],
+  ])("refuses %j before writing", async (values, field) => {
+    const result = await createUrlVideoQuickAction(formInput(values));
+
+    expect(result).toMatchObject({ status: "error", fieldErrors: { [field]: expect.any(String) } });
+    expect(mocks.saveVideo).not.toHaveBeenCalled();
+  });
+
+  it("refuses duplicated fields instead of picking one", async () => {
+    const data = formInput({ title: "x" });
+    data.append("videoUrl", "https://media.example.test/a.mp4");
+    data.append("videoUrl", "https://media.example.test/b.mp4");
+    expect((await createUrlVideoQuickAction(data)).status).toBe("error");
+    expect(mocks.saveVideo).not.toHaveBeenCalled();
+  });
+
+  it("keeps the drawer open when the core refuses the URL", async () => {
+    mocks.saveVideo.mockResolvedValueOnce({ ok: false, reason: "invalid_video" });
+    expect(await createUrlVideoQuickAction(formInput({ title: "x", videoUrl: "https://media.example.test/a.mp4" }))).toMatchObject({
+      status: "error",
+      fieldErrors: { videoUrl: "影片網址無法使用。" },
+    });
+  });
+
+  it("passes on a created row that is not live ready so the studio waits instead of selecting it", async () => {
+    mocks.saveVideo.mockResolvedValueOnce({ ok: true, video: { id: "video-new", title: "x", created: true, liveReady: false } });
+    expect(await createUrlVideoQuickAction(formInput({ title: "x", videoUrl: "https://media.example.test/a.mp4" }))).toEqual({
+      status: "success",
+      option: { id: "video-new", title: "x" },
+      ready: false,
+    });
+  });
+
+  it("rejects an expired CSRF token before reading the session or writing", async () => {
+    mocks.assertSecurity.mockRejectedValueOnce(new Error("Invalid CSRF token."));
+    expect((await createUrlVideoQuickAction(formInput({ title: "x", videoUrl: "https://media.example.test/a.mp4" }))).status).toBe("error");
+    expect(mocks.requireVendorManager).not.toHaveBeenCalled();
+    expect(mocks.saveVideo).not.toHaveBeenCalled();
   });
 });
