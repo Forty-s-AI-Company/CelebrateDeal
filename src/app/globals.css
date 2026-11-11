@@ -105,10 +105,14 @@ body:has([data-live-player-mode="checkout"]) [data-testid="announcement-center-l
   }
 }
 
-/* SideDrawer (side-drawer.tsx): slides in from the right edge; no motion when reduced. */
+/*
+ * SideDrawer (side-drawer.tsx): slides in from the right edge; no motion when reduced.
+ * Transform only: a fading opacity would make axe (and any contrast checker)
+ * read the drawer's text against a half-transparent panel while it animates.
+ */
 @keyframes side-drawer-in {
-  from { transform: translateX(24px); opacity: 0; }
-  to { transform: translateX(0); opacity: 1; }
+  from { transform: translateX(24px); }
+  to { transform: translateX(0); }
 }
 
 .side-drawer-panel {

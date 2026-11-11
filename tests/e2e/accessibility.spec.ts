@@ -527,6 +527,16 @@ test("live stepper has no blocking axe violations on any of the four steps, in �
   const openTemplateDrawer = page.getByRole("button", { name: "建立報名成功 Email", exact: true });
   await openTemplateDrawer.click();
   await expect(page.getByRole("dialog", { name: "建立報名成功 Email" })).toBeVisible();
+  // 滑入動畫進行到一半時掃描也不能有對比違規（CI 上掃描常落在動畫途中）。
+  const drawerSlide = (mode: "midway" | "finish") => page.evaluate((nextMode) => {
+    for (const animation of document.getAnimations()) {
+      if ((animation as CSSAnimation).animationName !== "side-drawer-in") continue;
+      if (nextMode === "midway") { animation.pause(); animation.currentTime = 90; } else animation.finish();
+    }
+  }, mode);
+  await drawerSlide("midway");
+  expect(await blockingAxeViolations(page), "建立報名成功 Email 抽屜（滑入動畫中）").toEqual([]);
+  await drawerSlide("finish");
   expect(await blockingAxeViolations(page), "建立報名成功 Email 抽屜").toEqual([]);
   await page.keyboard.press("Escape");
   await expect(openTemplateDrawer).toBeFocused();
