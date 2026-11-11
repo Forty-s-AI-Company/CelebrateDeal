@@ -111,6 +111,27 @@ export async function createLiveStudioFixtureWithoutRegistrationResources(db: Pr
   return fixture;
 }
 
+/**
+ * The same synthetic tenant without any video, for the studio's video drawer.
+ * `video` is replaced by a processing Cloudflare Stream row: the row the
+ * direct-upload route creates when it signs an upload, which the spec's
+ * mocked route hands back instead of calling Cloudflare.
+ */
+export async function createLiveStudioFixtureWithUploadPendingVideo(db: PrismaClient) {
+  const fixture = await createLiveStudioFixture(db);
+  await db.video.delete({ where: { id: fixture.video.id } });
+  const video = await db.video.create({ data: {
+    vendorId: fixture.vendor.id,
+    title: "合成上傳講座影片",
+    sourceType: "cloudflare_stream",
+    status: "processing",
+    cloudflareReadyToStream: false,
+    cloudflareStreamUid: `synthetic-upload-${fixture.id}`,
+    videoUrl: `https://video.example.test/upload-${fixture.id}.m3u8`,
+  } });
+  return { ...fixture, video };
+}
+
 export type LiveStudioFixture = Awaited<ReturnType<typeof createLiveStudioFixture>>;
 
 export async function deleteLiveStudioFixture(db: PrismaClient, fixture: LiveStudioFixture | undefined) {

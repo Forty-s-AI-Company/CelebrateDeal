@@ -22,13 +22,15 @@ import { LiveSlugField } from "@/components/live-slug-field";
 import { FormSubmitButton } from "@/components/form-submit-button";
 import { LIVE_DRAFT_SAVE_FAILED_EVENT, LiveConfirmedSubmitButton, LiveFormPendingLock } from "@/components/live-submit-confirmation";
 import { MediaUploadField } from "@/components/media-upload-field";
-import { MessageTemplateQuickCreateDrawer, RegistrationFormQuickCreateDrawer } from "@/components/live-resource-drawers";
+import { MessageTemplateQuickCreateDrawer, RegistrationFormQuickCreateDrawer, VideoQuickCreateDrawer } from "@/components/live-resource-drawers";
+import { LivePendingVideos, type LivePendingAddedReason, type LivePendingVideo, type LivePendingVideoProblem } from "@/components/live-pending-videos";
 import {
   liveQuickTemplateCopy,
   mergeLiveResourceOptions,
   type LiveQuickFormOption,
   type LiveQuickTemplateOption,
   type LiveQuickTemplateTrigger,
+  type LiveQuickVideoOption,
 } from "@/lib/live-resource-quick-create";
 import {
   LiveFixedSessionSettingsFields,
@@ -106,6 +108,7 @@ function FullEditorLink({ href }: { href: string }) {
 
 /** Which 「就地建立」 drawer is open; a template drawer remembers the rule group it was opened from. */
 type LiveResourceDrawer =
+  | { kind: "video" }
   | { kind: "form" }
   | { kind: "template"; trigger: LiveQuickTemplateTrigger; ruleTrigger?: LiveNotificationRuleTrigger };
 
@@ -839,6 +842,10 @@ type LiveStudioContentStepOptions = {
   videos: Array<Pick<Video, "id" | "title">>;
   selectedVideoId: string;
   onVideoChange: (value: string) => void;
+  onCreateVideo: () => void;
+  pendingVideos: LivePendingVideo[];
+  onPendingVideoReady: (video: LivePendingVideo) => void;
+  onPendingVideoProblem: (video: LivePendingVideo, problem: LivePendingVideoProblem) => void;
   forms: LiveFormOption[];
   selectedFormId: string;
   onFormChange: (value: string) => void;
@@ -1090,13 +1097,19 @@ function renderLiveStudioContentStep(input: LiveStudioContentStepOptions) {
           </label>
           <label className="grid gap-1.5 text-sm font-medium text-slate-700">
             影片／即時直播
-            <select name="videoId" defaultValue={input.selectedVideoId} onChange={(event) => input.onVideoChange(event.target.value)} className="h-11 rounded-md border border-border px-3">
+            {/* Controlled, so a video created in the drawer can be selected; the draft still serializes the DOM value. */}
+            <select name="videoId" value={input.selectedVideoId} onChange={(event) => input.onVideoChange(event.target.value)} className="h-11 rounded-md border border-border px-3">
               <option value="">不綁定影片</option>
               {input.videos.map((video) => <option key={video.id} value={video.id}>{video.title}</option>)}
             </select>
           </label>
         </div>
-        {input.videos.length === 0 ? <p className="rounded-md bg-slate-50 px-4 py-3 text-sm text-slate-600">目前沒有可用的影片或即時直播。<Link href="/videos/new" className="ml-1 font-semibold text-primary underline">新增影片或即時直播</Link></p> : null}
+        {input.videos.length === 0 && input.pendingVideos.length === 0 ? <p className="text-sm text-slate-600">目前沒有可播放的影片，可以在這裡直接上傳。</p> : null}
+        <LivePendingVideos videos={input.pendingVideos} onReady={input.onPendingVideoReady} onProblem={input.onPendingVideoProblem} />
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+          <button type="button" aria-haspopup="dialog" onClick={input.onCreateVideo} className={inlineCreateButtonClass}>上傳影片或貼上影片網址</button>
+          <FullEditorLink href="/videos/new" />
+        </div>
       </fieldset>
 
       <div className="grid gap-2">
@@ -1477,16 +1490,31 @@ function useSubmitFlushGuard() {
  */
 function useLiveResourceDrawers(input: {
   formRef: { current: HTMLFormElement | null };
+  videos: Array<Pick<Video, "id" | "title">>;
   forms: LiveFormOption[];
   templates: LiveTemplateOption[];
   csrfToken: string;
   projectId?: string | null;
   liveTitle: string;
   submitBusy: boolean;
+  selectedVideoId: string;
   scheduleSave: () => void;
+  selectVideo: (videoId: string) => void;
   selectForm: (formId: string) => void;
   selectRegistrationTemplate: (templateId: string) => void;
 }) {
+  const [createdVideos, setCreatedVideos] = useState<LiveQuickVideoOption[]>([]);
+  /** Uploaded videos still processing at Cloudflare, or settled after being so; lost on remount by design. */
+  const [pendingVideos, setPendingVideos] = useState<LivePendingVideo[]>([]);
+  /** Counts the merchant's own changes of the video select; an upload only auto-selects if it did not move. */
+  const manualVideoSelectionRef = useRef(0);
+  /** The video select's current value, for the comparison when a pending upload becomes ready. */
+  const selectedVideoIdRef = useRef(input.selectedVideoId);
+  useEffect(() => { selectedVideoIdRef.current = input.selectedVideoId; });
+  /** Counts finished uploads; only the newest one may auto-select. */
+  const latestUploadSeqRef = useRef(0);
+  /** A drawer upload or create is running; its result has not been handed to the studio yet. */
+  const inFlightRef = useRef(false);
   const [createdForms, setCreatedForms] = useState<LiveQuickFormOption[]>([]);
   const [createdTemplates, setCreatedTemplates] = useState<LiveQuickTemplateOption[]>([]);
   const [drawer, setDrawer] = useState<LiveResourceDrawer | null>(null);
@@ -1498,8 +1526,12 @@ function useLiveResourceDrawers(input: {
    * unsaved edits so that refresh does not remount it and drop the selection.
    */
   const [creating, setCreating] = useState(false);
-  /** Set when a drawer created something: the control to focus and whether the draft changed. */
-  const focusPendingRef = useRef<{ selector: string; save: boolean } | null>(null);
+  /**
+   * Set when a drawer created something (or a background video became ready):
+   * the control to focus (if any), whether the draft changed, and, for a drawer
+   * result, that the focus waits until the drawer is gone from the render.
+   */
+  const focusPendingRef = useRef<{ selector?: string; save: boolean; afterDrawerClose?: boolean } | null>(null);
   const { formRef, scheduleSave } = input;
   /** The result is in the DOM and queued for saving; a no-op when nothing is in flight. */
   const settleCreate = () => setCreating(false);
@@ -1509,45 +1541,150 @@ function useLiveResourceDrawers(input: {
   useEffect(() => {
     const pending = focusPendingRef.current;
     if (!pending) return;
+    // The effect of an earlier commit can flush after a drawer result set the
+    // pending focus but before the commit that closes the drawer. Its drawer is
+    // still open there, and the drawer's cleanup would later hand focus back to
+    // its trigger over ours; only the commit without the drawer may place it.
+    if (pending.afterDrawerClose && drawer) return;
     focusPendingRef.current = null;
-    const target = formRef.current?.querySelector<HTMLElement>(pending.selector);
+    const target = pending.selector ? formRef.current?.querySelector<HTMLElement>(pending.selector) : null;
     if (target) {
       revealCollapsedAncestors(target);
       target.focus();
     }
     if (pending.save) scheduleSave();
     // Same batch as the save's dirty status, so "unsaved" never dips in between.
-    settleCreate();
+    // A background result (a video that finished processing) must not clear the
+    // hold of another upload or create that is still running in a drawer.
+    if (!inFlightRef.current) settleCreate();
   });
 
-  /** The studio's own submit (pending lock, or the pre-submit draft flush) must finish first. */
+  /** The drawers' in-flight report; a result handler below clears the flag when the result arrives. */
+  const trackInFlight = (inFlight: boolean) => {
+    inFlightRef.current = inFlight;
+    setCreating(inFlight);
+  };
+
+  /** True while the studio's own submit (pending lock, or the pre-submit draft flush) runs. */
+  const studioSubmitting = () => input.submitBusy || formRef.current?.getAttribute("aria-busy") === "true";
+
+  /** The studio's own submit must finish first. */
   function open(next: LiveResourceDrawer) {
-    if (input.submitBusy || formRef.current?.getAttribute("aria-busy") === "true") return;
+    if (studioSubmitting()) return;
     setAnnouncement("");
     setDrawer(next);
   }
 
+  function addVideoOption(option: LiveQuickVideoOption) {
+    setCreatedVideos((current) => [option, ...current.filter((candidate) => candidate.id !== option.id)]);
+  }
+
+  function markManualVideoSelection() {
+    manualVideoSelectionRef.current += 1;
+  }
+
+  /** An external URL video: ready at once, so it is selected like a created form. */
+  function urlVideoCreated(option: LiveQuickVideoOption, ready: boolean) {
+    setDrawer(null);
+    if (!ready) {
+      videoUploaded(option);
+      return;
+    }
+    inFlightRef.current = false;
+    addVideoOption(option);
+    // A pick made through the drawer is the merchant's own choice: a video still
+    // processing from an earlier upload must not replace it when it becomes ready.
+    markManualVideoSelection();
+    input.selectVideo(option.id);
+    setAnnouncement(`已建立並選取影片「${option.title}」。`);
+    focusPendingRef.current = { selector: '[name="videoId"]', save: true, afterDrawerClose: true };
+  }
+
+  /** An uploaded file reached Cloudflare: wait for processing under the select. */
+  function videoUploaded(option: LiveQuickVideoOption) {
+    inFlightRef.current = false;
+    latestUploadSeqRef.current += 1;
+    const uploadSeq = latestUploadSeqRef.current;
+    const selectedVideoIdAtStart = selectedVideoIdRef.current;
+    setPendingVideos((current) => [
+      ...current.filter((candidate) => candidate.id !== option.id),
+      { ...option, manualSelectionAtStart: manualVideoSelectionRef.current, selectedVideoIdAtStart, uploadSeq },
+    ]);
+    setDrawer(null);
+    setAnnouncement(`影片「${option.title}」已上傳，正在轉檔；完成後會自動選取。可以先繼續其他步驟。`);
+    focusPendingRef.current = { save: false, afterDrawerClose: true };
+  }
+
+  /**
+   * A processed video is selected for the Live only if nothing has taken the
+   * select's place since its upload finished. All of these must hold:
+   * - the studio is not submitting (the selection would race the submit);
+   * - no later upload exists (the newest upload wins; an older one that
+   *   finishes processing afterwards is only added to the options);
+   * - the merchant did not change the select by hand, or pick a video through
+   *   the drawer (a URL video), since then;
+   * - the select still holds the value it held when this upload finished, so a
+   *   draft restore or any other change of the selection is respected too.
+   * Otherwise the video is only added to the options and the row says why.
+   */
+  function pendingVideoReady(video: LivePendingVideo) {
+    const submitting = studioSubmitting();
+    const newerUpload = video.uploadSeq < latestUploadSeqRef.current;
+    const selectionMoved = manualVideoSelectionRef.current !== video.manualSelectionAtStart
+      || selectedVideoIdRef.current !== video.selectedVideoIdAtStart;
+    const select = !submitting && !newerUpload && !selectionMoved;
+    const addedReason: LivePendingAddedReason = submitting ? "submitting" : newerUpload ? "newer-upload" : "other-selection";
+    addVideoOption({ id: video.id, title: video.title });
+    setPendingVideos((current) => current.map((candidate) => (
+      candidate.id === video.id
+        ? { ...candidate, outcome: select ? "selected" : "added", addedReason: select ? undefined : addedReason }
+        : candidate
+    )));
+    if (select) {
+      input.selectVideo(video.id);
+      focusPendingRef.current = { save: true };
+      setAnnouncement(`影片「${video.title}」已可播放，已自動選為這場直播的影片。`);
+    } else if (submitting) {
+      setAnnouncement(`影片「${video.title}」已可播放並加入選單；精靈正在送出，沒有自動選取，請在送出完成後手動選取。`);
+    } else if (newerUpload) {
+      setAnnouncement(`影片「${video.title}」已可播放並加入選單；你之後又新增了其他影片，所以沒有自動切換。`);
+    } else {
+      setAnnouncement(`影片「${video.title}」已可播放並加入選單；目前仍保留你選的影片。`);
+    }
+  }
+
+  function pendingVideoProblem(video: LivePendingVideo, problem: LivePendingVideoProblem) {
+    setAnnouncement(problem === "failed"
+      ? `影片「${video.title}」轉檔失敗，無法播放。`
+      : problem === "archived"
+        ? `影片「${video.title}」已被封存，不能選為直播影片。`
+        : `找不到影片「${video.title}」，可能已被刪除。`);
+  }
+
   function formCreated(option: LiveQuickFormOption) {
+    inFlightRef.current = false;
     setCreatedForms((current) => [option, ...current.filter((candidate) => candidate.id !== option.id)]);
     input.selectForm(option.id);
     setDrawer(null);
     setAnnouncement(`已建立並選取報名表「${option.name}」。`);
-    focusPendingRef.current = { selector: '[name="formId"]', save: true };
+    focusPendingRef.current = { selector: '[name="formId"]', save: true, afterDrawerClose: true };
   }
 
   function templateCreated(option: LiveQuickTemplateOption, ruleTrigger?: LiveNotificationRuleTrigger) {
+    inFlightRef.current = false;
     setCreatedTemplates((current) => [option, ...current.filter((candidate) => candidate.id !== option.id)]);
     setDrawer(null);
     if (option.trigger === "registration_confirmed") {
       input.selectRegistrationTemplate(option.id);
       setAnnouncement(`已建立並選取報名成功 Email「${option.name}」。`);
-      focusPendingRef.current = { selector: '[name="messageTemplateId"]', save: true };
+      focusPendingRef.current = { selector: '[name="messageTemplateId"]', save: true, afterDrawerClose: true };
       return;
     }
     setAnnouncement(`已建立 Email 模板「${option.name}」，現在可以新增通知規則。`);
     focusPendingRef.current = {
       selector: ruleTrigger ? `[data-notification-add="${ruleTrigger}"]` : '[name="messageTemplateId"]',
       save: false,
+      afterDrawerClose: true,
     };
   }
 
@@ -1555,18 +1692,27 @@ function useLiveResourceDrawers(input: {
   // Portalled to <body>: their <form>s are outside the studio form's DOM and
   // their React events stop at the drawer root.
   let drawerElement: React.ReactNode = null;
-  if (drawer?.kind === "form") {
+  if (drawer?.kind === "video") {
     drawerElement = (
-      <RegistrationFormQuickCreateDrawer csrfToken={input.csrfToken} projectId={input.projectId} defaultTitle={input.liveTitle} onClose={close} onCreated={formCreated} onInFlightChange={setCreating} />
+      <VideoQuickCreateDrawer csrfToken={input.csrfToken} defaultTitle={input.liveTitle} onClose={close} onUploaded={videoUploaded} onUrlCreated={urlVideoCreated} onInFlightChange={trackInFlight} />
+    );
+  } else if (drawer?.kind === "form") {
+    drawerElement = (
+      <RegistrationFormQuickCreateDrawer csrfToken={input.csrfToken} projectId={input.projectId} defaultTitle={input.liveTitle} onClose={close} onCreated={formCreated} onInFlightChange={trackInFlight} />
     );
   } else if (drawer?.kind === "template") {
     drawerElement = (
-      <MessageTemplateQuickCreateDrawer key={`${drawer.trigger}:${drawer.ruleTrigger ?? ""}`} csrfToken={input.csrfToken} trigger={drawer.trigger} ruleTrigger={drawer.ruleTrigger} onClose={close} onCreated={(option) => templateCreated(option, drawer.ruleTrigger)} onInFlightChange={setCreating} />
+      <MessageTemplateQuickCreateDrawer key={`${drawer.trigger}:${drawer.ruleTrigger ?? ""}`} csrfToken={input.csrfToken} trigger={drawer.trigger} ruleTrigger={drawer.ruleTrigger} onClose={close} onCreated={(option) => templateCreated(option, drawer.ruleTrigger)} onInFlightChange={trackInFlight} />
     );
   }
 
   const templates = mergeLiveResourceOptions(input.templates, createdTemplates);
   return {
+    videos: mergeLiveResourceOptions(input.videos, createdVideos),
+    pendingVideos,
+    pendingVideoReady,
+    pendingVideoProblem,
+    markManualVideoSelection,
     forms: mergeLiveResourceOptions(input.forms, createdForms),
     registrationTemplates: templates.filter((template) => template.trigger === "registration_confirmed"),
     notificationTemplates: templates.filter((template) => template.trigger === "live_reminder" || template.trigger === "post_live_followup"),
@@ -1672,22 +1818,24 @@ export function LiveStudioStepperForm({
   const submitFlush = useSubmitFlushGuard();
   const resources = useLiveResourceDrawers({
     formRef,
+    videos,
     forms,
     templates,
     csrfToken,
     projectId,
     liveTitle: previewTitle,
-    submitBusy: submitFlush.busy,
+    submitBusy: submitFlush.busy, selectedVideoId,
     scheduleSave: draft.scheduleSave,
+    selectVideo: setSelectedVideoId,
     selectForm: setSelectedFormId,
     selectRegistrationTemplate: setSelectedTemplateId,
   });
-  const { forms: availableForms, registrationTemplates, notificationTemplates } = resources;
+  const { videos: availableVideos, forms: availableForms, registrationTemplates, notificationTemplates } = resources;
   // A drawer create in flight counts as unsaved edits (see useLiveResourceDrawers).
   const holdsUnsavedEdits = unsaved || resources.creating;
   useEffect(() => { onUnsavedChange?.(holdsUnsavedEdits); }, [holdsUnsavedEdits, onUnsavedChange]);
   const preview = buildLivePreview(previewTitle, previewAccentCopy, products, selectedProductIds); const statusAction = liveId ? fixedSessionStatusAction(liveStatusAction(currentStatus), sessionMode) : null;
-  const publishReadiness = buildLivePublishReadiness({ studioPreset, products, productIds: selectedProductIds, videos, videoId: selectedVideoId, forms: availableForms, formId: selectedFormId, templates: registrationTemplates, templateId: selectedTemplateId, scripts, scriptId: selectedScriptId });
+  const publishReadiness = buildLivePublishReadiness({ studioPreset, products, productIds: selectedProductIds, videos: availableVideos, videoId: selectedVideoId, forms: availableForms, formId: selectedFormId, templates: registrationTemplates, templateId: selectedTemplateId, scripts, scriptId: selectedScriptId });
   const stepStatus = liveStudioStepStatuses({
     readiness: publishReadiness,
     title: previewTitle,
@@ -1827,9 +1975,13 @@ export function LiveStudioStepperForm({
             slugTakenOnSubmit: error === "slug_taken",
             slugTakenInDraft: Boolean(draft.slugTaken),
             slugCheckFailed: Boolean(draft.slugCheckFailed),
-            videos,
+            videos: availableVideos,
             selectedVideoId,
-            onVideoChange: setSelectedVideoId,
+            onVideoChange: (videoId) => { resources.markManualVideoSelection(); setSelectedVideoId(videoId); },
+            onCreateVideo: () => resources.open({ kind: "video" }),
+            pendingVideos: resources.pendingVideos,
+            onPendingVideoReady: resources.pendingVideoReady,
+            onPendingVideoProblem: resources.pendingVideoProblem,
             forms: availableForms,
             selectedFormId,
             onFormChange: setSelectedFormId,

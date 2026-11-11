@@ -1,3 +1,4 @@
+import { parseSafeExternalHttpUrl } from "@/lib/external-url";
 import type { LiveNotificationRuleTrigger } from "@/lib/live-notification-rules";
 import { hasOnlySupportedMessageTemplateVariables } from "@/lib/message-template";
 
@@ -28,6 +29,20 @@ export type LiveQuickCreateResult<Option, Field extends string> =
 
 export type LiveQuickFormResult = LiveQuickCreateResult<LiveQuickFormOption, LiveQuickFormField>;
 export type LiveQuickTemplateResult = LiveQuickCreateResult<LiveQuickTemplateOption, LiveQuickTemplateField>;
+
+/** Same shape the live pages hand the studio for its video select. */
+export type LiveQuickVideoOption = { id: string; title: string };
+export type LiveQuickVideoField = "root" | "title" | "videoUrl";
+/**
+ * `ready` is the shared live readiness of the created row: only a ready video
+ * may join the studio's select; anything else waits in its processing list.
+ */
+export type LiveQuickVideoResult =
+  | { status: "success"; option: LiveQuickVideoOption; ready: boolean }
+  | { status: "error"; message: string; fieldErrors: Partial<Record<LiveQuickVideoField, string>> };
+
+/** The Cloudflare upload routes accept titles up to 160 characters. */
+export const LIVE_QUICK_VIDEO_LIMITS = { title: 160, videoUrl: 2048 } as const;
 
 export const LIVE_QUICK_FORM_LIMITS = { name: 120, headline: 200 } as const;
 export const LIVE_QUICK_TEMPLATE_LIMITS = { name: 160, subject: 200, body: 20_000 } as const;
@@ -89,6 +104,21 @@ export function liveQuickTemplateFieldErrors(draft: { name: string; subject: str
   if (!body) errors.body = "請填寫 Email 內容。";
   else if (body.length > LIVE_QUICK_TEMPLATE_LIMITS.body) errors.body = `Email 內容不可超過 ${LIVE_QUICK_TEMPLATE_LIMITS.body.toLocaleString("en-US")} 個字。`;
   else if (!hasOnlySupportedMessageTemplateVariables(body)) errors.body = "內容含有不支援的變數，只能使用下方列出的變數。";
+  return errors;
+}
+
+/**
+ * Field-level checks for the external-URL video in the studio's video drawer;
+ * the server validates the URL again with the same parser as the video editor.
+ */
+export function liveQuickVideoFieldErrors(draft: { title: string; videoUrl: string }) {
+  const errors: Partial<Record<LiveQuickVideoField, string>> = {};
+  const title = draft.title.trim();
+  const videoUrl = draft.videoUrl.trim();
+  if (!title) errors.title = "請填寫影片名稱。";
+  else if (title.length > LIVE_QUICK_VIDEO_LIMITS.title) errors.title = `影片名稱不可超過 ${LIVE_QUICK_VIDEO_LIMITS.title} 個字。`;
+  if (!videoUrl) errors.videoUrl = "請貼上影片網址。";
+  else if (videoUrl.length > LIVE_QUICK_VIDEO_LIMITS.videoUrl || !parseSafeExternalHttpUrl(videoUrl)) errors.videoUrl = "影片網址必須是有效的 HTTP 或 HTTPS 完整網址。";
   return errors;
 }
 

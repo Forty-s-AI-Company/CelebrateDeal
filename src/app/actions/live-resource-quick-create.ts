@@ -9,10 +9,13 @@ import {
   isLiveQuickTemplateTrigger,
   LIVE_QUICK_FORM_LIMITS,
   LIVE_QUICK_TEMPLATE_LIMITS,
+  LIVE_QUICK_VIDEO_LIMITS,
   liveQuickTemplateFieldErrors,
+  liveQuickVideoFieldErrors,
   type LiveQuickFormField,
   type LiveQuickFormResult,
   type LiveQuickTemplateResult,
+  type LiveQuickVideoResult,
 } from "@/lib/live-resource-quick-create";
 import {
   hasUsableMessageTemplateContent,
@@ -22,6 +25,7 @@ import {
 import { saveMessageTemplate } from "@/lib/message-template-save";
 import { defaultRegistrationFormBuilderFields, REGISTRATION_FORM_DEFAULT_COPY } from "@/lib/registration-form-builder";
 import { saveRegistrationForm } from "@/lib/registration-form-save";
+import { saveVideo } from "@/lib/video-save";
 
 const SECURITY_EXPIRED = "安全驗證已失效，請重新整理頁面後再送出。";
 /** The base address plus three random suffixes before giving up. */
@@ -33,6 +37,17 @@ function boundedText(formData: FormData, key: string, maximum: number) {
   const values = formData.getAll(key);
   if (values.length !== 1 || typeof values[0] !== "string") return "";
   return values[0].slice(0, maximum + 1);
+}
+
+/**
+ * Like `boundedText` for a pasted address: trimmed first, so surrounding
+ * whitespace never counts against (or hides) the length, and an over-long
+ * address stays over-long for the validator instead of being cut to fit.
+ */
+function boundedTrimmedText(formData: FormData, key: string, maximum: number) {
+  const values = formData.getAll(key);
+  if (values.length !== 1 || typeof values[0] !== "string") return "";
+  return values[0].trim().slice(0, maximum + 1);
 }
 
 function randomSlugSuffix() {
@@ -185,4 +200,46 @@ export async function createMessageTemplateQuickAction(formData: FormData): Prom
     status: "success",
     option: { id: result.template.id, name: result.template.name, channel: result.template.channel, trigger: result.template.trigger },
   };
+}
+
+/**
+ * 「貼上影片網址」 from the live studio's video drawer: a title and an
+ * external HTTP(S) URL, created through the video editor's core (vendor from
+ * the session; always a new external-URL video, never an update). Uploaded
+ * files do not come through here: the upload routes create the provider row
+ * and the studio waits for Cloudflare to finish processing.
+ */
+export async function createUrlVideoQuickAction(formData: FormData): Promise<LiveQuickVideoResult> {
+  try {
+    await assertServerActionSecurity(formData);
+  } catch {
+    return { status: "error", message: SECURITY_EXPIRED, fieldErrors: { root: "本頁的安全驗證已過期。" } };
+  }
+
+  const vendor = await requireVendorManager();
+  const draft = {
+    title: boundedText(formData, "title", LIVE_QUICK_VIDEO_LIMITS.title),
+    videoUrl: boundedTrimmedText(formData, "videoUrl", LIVE_QUICK_VIDEO_LIMITS.videoUrl),
+  };
+  const fieldErrors = liveQuickVideoFieldErrors(draft);
+  if (Object.keys(fieldErrors).length > 0) {
+    return { status: "error", message: "有幾個欄位需要調整；內容仍保留在抽屜中。", fieldErrors };
+  }
+
+  // Only these fields reach the core; without an id it can only create.
+  const data = new FormData();
+  data.set("title", draft.title.trim());
+  data.set("videoUrl", draft.videoUrl.trim());
+  data.set("durationSec", "0");
+  data.set("estimatedMinutes", "0");
+  const result = await saveVideo(vendor.id, data);
+  if (!result.ok || !result.video.created) {
+    return {
+      status: "error",
+      message: "影片沒有建立；請確認網址是有效的 HTTP 或 HTTPS 完整網址後再試。",
+      fieldErrors: { videoUrl: "影片網址無法使用。" },
+    };
+  }
+  // No revalidation, like the video editor: the studio adds the returned option itself.
+  return { status: "success", option: { id: result.video.id, title: result.video.title }, ready: result.video.liveReady };
 }

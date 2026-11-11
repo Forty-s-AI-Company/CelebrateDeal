@@ -6,6 +6,8 @@ import {
   LIVE_QUICK_TEMPLATE_TRIGGERS,
   liveQuickTemplateCopy,
   liveQuickTemplateFieldErrors,
+  LIVE_QUICK_VIDEO_LIMITS,
+  liveQuickVideoFieldErrors,
 } from "./live-resource-quick-create";
 import { hasUsableMessageTemplateContent, normalizeMessageTemplateDraft } from "./message-template";
 
@@ -45,5 +47,20 @@ describe("live quick template copy", () => {
       body: copy.body,
       isActive: true,
     }).success).toBe(true);
+  });
+});
+
+describe("live quick video field errors", () => {
+  it("accepts a title and an absolute HTTP(S) URL", () => {
+    expect(liveQuickVideoFieldErrors({ title: " 講座 ", videoUrl: " https://media.example.test/a.mp4 " })).toEqual({});
+    expect(liveQuickVideoFieldErrors({ title: "講座", videoUrl: "http://media.example.test/a.mp4" })).toEqual({});
+  });
+
+  it("points at the field to fix", () => {
+    expect(liveQuickVideoFieldErrors({ title: "", videoUrl: "" })).toEqual({ title: "請填寫影片名稱。", videoUrl: "請貼上影片網址。" });
+    expect(liveQuickVideoFieldErrors({ title: "x".repeat(LIVE_QUICK_VIDEO_LIMITS.title + 1), videoUrl: "https://a.test/v" }).title).toBeTruthy();
+    for (const videoUrl of ["javascript:alert(1)", "/videos/a.mp4", "//cdn.test/a.mp4", "https://user:pass@cdn.test/a.mp4"]) {
+      expect(liveQuickVideoFieldErrors({ title: "x", videoUrl }).videoUrl).toBe("影片網址必須是有效的 HTTP 或 HTTPS 完整網址。");
+    }
   });
 });
