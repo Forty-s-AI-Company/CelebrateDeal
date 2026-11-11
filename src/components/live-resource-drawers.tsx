@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useId, useRef, useState, useTransition, type FormEvent } from "react";
+import { useEffect, useId, useRef, useState, useTransition, type FormEvent, type RefObject } from "react";
 import { createMessageTemplateQuickAction, createRegistrationFormQuickAction } from "@/app/actions/live-resource-quick-create";
 import { RichTextEditor } from "@/components/rich-text-editor";
 import { SideDrawer } from "@/components/side-drawer";
@@ -44,6 +44,52 @@ function FieldError({ id, message }: { id: string; message?: string }) {
   return message ? <span id={id} className="text-xs font-medium text-red-700">{message}</span> : null;
 }
 
+/** A labelled text input whose hint and error are described by, not part of, its label. */
+function DrawerTextField({
+  label,
+  name,
+  maxLength,
+  defaultValue,
+  hint,
+  error,
+  disabled,
+  inputRef,
+}: {
+  label: string;
+  name: string;
+  maxLength: number;
+  defaultValue: string;
+  hint?: string;
+  error?: string;
+  disabled: boolean;
+  inputRef?: RefObject<HTMLInputElement | null>;
+}) {
+  const inputId = useId();
+  const hintId = useId();
+  const errorId = useId();
+  const describedBy = [hint ? hintId : "", error ? errorId : ""].filter(Boolean).join(" ") || undefined;
+  return (
+    <div className="grid gap-1.5">
+      <label htmlFor={inputId} className="text-sm font-medium text-slate-700">{label}</label>
+      <input
+        ref={inputRef}
+        id={inputId}
+        name={name}
+        required
+        maxLength={maxLength}
+        autoComplete="off"
+        defaultValue={defaultValue}
+        disabled={disabled}
+        aria-invalid={error ? true : undefined}
+        aria-describedby={describedBy}
+        className={inputClass}
+      />
+      {hint ? <span id={hintId} className="text-xs text-slate-600">{hint}</span> : null}
+      <FieldError id={errorId} message={error} />
+    </div>
+  );
+}
+
 function RootError({ message, detail }: { message: string; detail?: string }) {
   if (!message) return null;
   return (
@@ -85,8 +131,6 @@ export function RegistrationFormQuickCreateDrawer({
   onCreated: (option: LiveQuickFormOption) => void;
 }) {
   const formId = useId();
-  const nameErrorId = useId();
-  const headlineErrorId = useId();
   const formRef = useRef<HTMLFormElement>(null);
   const nameRef = useRef<HTMLInputElement>(null);
   const [pending, startTransition] = useTransition();
@@ -139,39 +183,25 @@ export function RegistrationFormQuickCreateDrawer({
         <input type="hidden" name={CSRF_FIELD_NAME} value={csrfToken} />
         {projectId ? <input type="hidden" name="projectId" value={projectId} /> : null}
         <RootError message={message} detail={errors.root} />
-        <label className="grid gap-1.5 text-sm font-medium text-slate-700">
-          表單名稱
-          <input
-            ref={nameRef}
-            name="name"
-            required
-            maxLength={LIVE_QUICK_FORM_LIMITS.name}
-            autoComplete="off"
-            defaultValue={trimmedTitle ? `${trimmedTitle} 報名表` : ""}
-            disabled={pending}
-            aria-invalid={errors.name ? true : undefined}
-            aria-describedby={errors.name ? nameErrorId : undefined}
-            className={inputClass}
-          />
-          <span className="text-xs font-normal text-slate-500">只在後台顯示，用來辨識這張表單；公開網址會依名稱自動產生。</span>
-          <FieldError id={nameErrorId} message={errors.name} />
-        </label>
-        <label className="grid gap-1.5 text-sm font-medium text-slate-700">
-          公開標題
-          <input
-            name="headline"
-            required
-            maxLength={LIVE_QUICK_FORM_LIMITS.headline}
-            autoComplete="off"
-            defaultValue={trimmedTitle}
-            disabled={pending}
-            aria-invalid={errors.headline ? true : undefined}
-            aria-describedby={errors.headline ? headlineErrorId : undefined}
-            className={inputClass}
-          />
-          <span className="text-xs font-normal text-slate-500">報名者在報名頁最上方看到的標題。</span>
-          <FieldError id={headlineErrorId} message={errors.headline} />
-        </label>
+        <DrawerTextField
+          label="表單名稱"
+          name="name"
+          maxLength={LIVE_QUICK_FORM_LIMITS.name}
+          defaultValue={trimmedTitle ? `${trimmedTitle} 報名表` : ""}
+          hint="只在後台顯示，用來辨識這張表單；公開網址會依名稱自動產生。"
+          error={errors.name}
+          disabled={pending}
+          inputRef={nameRef}
+        />
+        <DrawerTextField
+          label="公開標題"
+          name="headline"
+          maxLength={LIVE_QUICK_FORM_LIMITS.headline}
+          defaultValue={trimmedTitle}
+          hint="報名者在報名頁最上方看到的標題。"
+          error={errors.headline}
+          disabled={pending}
+        />
       </form>
     </SideDrawer>
   );
@@ -195,8 +225,6 @@ export function MessageTemplateQuickCreateDrawer({
 }) {
   const copy = LIVE_QUICK_TEMPLATE_COPY[trigger];
   const formId = useId();
-  const nameErrorId = useId();
-  const subjectErrorId = useId();
   const bodyErrorId = useId();
   const formRef = useRef<HTMLFormElement>(null);
   const nameRef = useRef<HTMLInputElement>(null);
@@ -253,37 +281,23 @@ export function MessageTemplateQuickCreateDrawer({
         <p className="rounded-md border border-border bg-slate-50 px-3 py-2 text-sm text-slate-700">
           用途：<strong className="font-semibold text-slate-900">{copy.label}</strong>（Email）
         </p>
-        <label className="grid gap-1.5 text-sm font-medium text-slate-700">
-          模板名稱
-          <input
-            ref={nameRef}
-            name="name"
-            required
-            maxLength={LIVE_QUICK_TEMPLATE_LIMITS.name}
-            autoComplete="off"
-            defaultValue={copy.name}
-            disabled={pending}
-            aria-invalid={errors.name ? true : undefined}
-            aria-describedby={errors.name ? nameErrorId : undefined}
-            className={inputClass}
-          />
-          <FieldError id={nameErrorId} message={errors.name} />
-        </label>
-        <label className="grid gap-1.5 text-sm font-medium text-slate-700">
-          Email 主旨
-          <input
-            name="subject"
-            required
-            maxLength={LIVE_QUICK_TEMPLATE_LIMITS.subject}
-            autoComplete="off"
-            defaultValue={copy.subject}
-            disabled={pending}
-            aria-invalid={errors.subject ? true : undefined}
-            aria-describedby={errors.subject ? subjectErrorId : undefined}
-            className={inputClass}
-          />
-          <FieldError id={subjectErrorId} message={errors.subject} />
-        </label>
+        <DrawerTextField
+          label="模板名稱"
+          name="name"
+          maxLength={LIVE_QUICK_TEMPLATE_LIMITS.name}
+          defaultValue={copy.name}
+          error={errors.name}
+          disabled={pending}
+          inputRef={nameRef}
+        />
+        <DrawerTextField
+          label="Email 主旨"
+          name="subject"
+          maxLength={LIVE_QUICK_TEMPLATE_LIMITS.subject}
+          defaultValue={copy.subject}
+          error={errors.subject}
+          disabled={pending}
+        />
         <div className="grid gap-1.5">
           <RichTextEditor
             label="Email 內容"

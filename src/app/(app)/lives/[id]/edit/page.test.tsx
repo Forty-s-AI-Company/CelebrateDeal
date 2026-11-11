@@ -165,6 +165,19 @@ describe("EditLivePage unified Live Studio", () => {
     }), undefined);
   });
 
+  it("hands the project scope to the studio so a form created in its drawer stays listed", async () => {
+    mocks.getSalesProjectScope.mockResolvedValue({ projectId: "project-1" });
+    renderToStaticMarkup(await EditLivePage({
+      params: Promise.resolve({ id: "live-1" }),
+      searchParams: Promise.resolve({}),
+    }));
+
+    expect(mocks.formFindMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: { vendorId: "vendor-1", isActive: true, projectId: "project-1" },
+    }));
+    expect(mocks.liveStepperForm).toHaveBeenCalledWith(expect.objectContaining({ liveId: "live-1", projectId: "project-1" }), undefined);
+  });
+
   it("formats the same UTC instant using another merchant timezone", async () => {
     mocks.requireVendorManagerContext.mockResolvedValue({
       auth: { user: { id: "user-1" } },

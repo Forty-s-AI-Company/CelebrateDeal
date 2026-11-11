@@ -100,6 +100,17 @@ export async function createLiveStudioFixture(db: PrismaClient) {
   return { id, password, vendor, user, video, product, form, template, script };
 }
 
+/**
+ * The same synthetic tenant without any registration form or message
+ * template, for the studio's 「就地建立」 drawers.
+ */
+export async function createLiveStudioFixtureWithoutRegistrationResources(db: PrismaClient) {
+  const fixture = await createLiveStudioFixture(db);
+  await db.messageTemplate.deleteMany({ where: { vendorId: fixture.vendor.id } });
+  await db.registrationForm.deleteMany({ where: { vendorId: fixture.vendor.id } });
+  return fixture;
+}
+
 export type LiveStudioFixture = Awaited<ReturnType<typeof createLiveStudioFixture>>;
 
 export async function deleteLiveStudioFixture(db: PrismaClient, fixture: LiveStudioFixture | undefined) {
