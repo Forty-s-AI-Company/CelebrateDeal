@@ -280,6 +280,35 @@ describe("LiveStepperForm advanced settings", () => {
     expect(control('[role="alert"]').textContent).toContain("直播說明");
   });
 
+  it("focuses the visible replay deadline, not its hidden fallback, when the server rejects it", async () => {
+    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => { callback(0); return 0; });
+    await act(async () => { root.render(studio(resumedDraft, { error: "invalid_draft", invalidField: "replayAvailableUntil" })); });
+    // Two controls share the name, so namedItem returns a RadioNodeList.
+    expect(container.querySelectorAll('[name="replayAvailableUntil"]')).toHaveLength(2);
+    const deadline = control('input[type="datetime-local"][name="replayAvailableUntil"]');
+    const fallback = control('input[type="hidden"][name="replayAvailableUntil"]');
+
+    expect(control('[data-step-key="content"]').hidden).toBe(false);
+    expect(control('[data-step-key="publish"]').hidden).toBe(true);
+    expect(advancedSettings("content").open).toBe(true);
+    expect(deadline.getAttribute("aria-invalid")).toBe("true");
+    expect(deadline.getAttribute("aria-describedby")).toBe("live-form-error");
+    expect(fallback.hasAttribute("aria-invalid")).toBe(false);
+    expect(document.activeElement).toBe(deadline);
+    expect(control('[role="alert"]').textContent).toContain("回放");
+  });
+
+  it("does not move the studio when no control with the rejected name is editable", async () => {
+    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => { callback(0); return 0; });
+    const replayOff = { ...resumedDraft, payload: { ...reportedPayload, replayEnabled: false, replayAvailableUntil: "" } };
+    await act(async () => { root.render(studio(replayOff, { error: "invalid_draft", invalidField: "replayAvailableUntil" })); });
+
+    expect(control('input[type="datetime-local"][name="replayAvailableUntil"]').disabled).toBe(true);
+    expect(control('[data-step-key="publish"]').hidden).toBe(false);
+    expect(advancedSettings("content").open).toBe(false);
+    expect(container.querySelector('[aria-invalid="true"]')).toBeNull();
+  });
+
   it("opens the address section when the address is already taken", async () => {
     await act(async () => { root.render(studio(resumedDraft, { error: "slug_taken" })); });
 

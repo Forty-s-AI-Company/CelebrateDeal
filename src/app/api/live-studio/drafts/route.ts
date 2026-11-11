@@ -5,7 +5,7 @@ import { getDb } from "@/lib/db";
 import { toSlug } from "@/lib/format";
 import { isLiveSlugTaken } from "@/lib/live-slug";
 import {
-  type LiveStudioDraftPayload,
+  liveStudioDraftResponsePayload,
   SaveLiveStudioDraftRequestSchema,
 } from "@/lib/live-studio-draft";
 import { requireMerchantApiActor } from "@/lib/merchant-api-security";
@@ -17,10 +17,17 @@ export async function POST(request: Request) {
   const authorization = await requireMerchantApiActor(request);
   if (authorization.response) return authorization.response;
 
-  const parsed = SaveLiveStudioDraftRequestSchema.safeParse(await readJsonBody(request, 96 * 1024));
+  const body = await readJsonBody(request, 96 * 1024);
+  const parsed = SaveLiveStudioDraftRequestSchema.safeParse(body);
   if (!parsed.success || Boolean(parsed.data.draftId) !== (parsed.data.revision !== null)) {
     return error("INVALID_DRAFT", 400);
   }
+  // The row always stores the canonical (v3) payload; a tab still running the
+  // eight-step client gets its own v2 shape back (see liveStudioDraftResponsePayload).
+  const responsePayload = liveStudioDraftResponsePayload(
+    body && typeof body === "object" ? (body as Record<string, unknown>).payload : undefined,
+    parsed.data.payload,
+  );
 
   const db = getDb();
   const liveId = parsed.data.liveId || null;
@@ -60,7 +67,7 @@ export async function POST(request: Request) {
         });
         const [revivedDraft, ...additionalRevivedDrafts] = revived;
         if (revivedDraft && additionalRevivedDrafts.length === 0) {
-          return NextResponse.json(envelope(revivedDraft, parsed.data.payload, slugCheck));
+          return NextResponse.json(envelope(revivedDraft, responsePayload, slugCheck));
         }
         if (additionalRevivedDrafts.length > 0) return error("DRAFT_CONFLICT", 409);
       }
@@ -74,7 +81,7 @@ export async function POST(request: Request) {
         },
         select: { id: true, revision: true, updatedAt: true },
       });
-      return NextResponse.json(envelope(created, parsed.data.payload, slugCheck));
+      return NextResponse.json(envelope(created, responsePayload, slugCheck));
     }
 
     const revision = parsed.data.revision;
@@ -99,7 +106,7 @@ export async function POST(request: Request) {
     });
     const [updatedDraft] = updated;
     if (!updatedDraft || updated.length !== 1) return error("DRAFT_CONFLICT", 409);
-    return NextResponse.json(envelope(updatedDraft, parsed.data.payload, slugCheck));
+    return NextResponse.json(envelope(updatedDraft, responsePayload, slugCheck));
   } catch (reason) {
     if (liveId && isUniqueConstraint(reason)) return error("DRAFT_CONFLICT", 409);
     return error("DRAFT_SAVE_FAILED", 500);
@@ -123,7 +130,7 @@ function isUniqueConstraint(reason: unknown) {
 
 function envelope(
   record: { id: string; revision: number; updatedAt: Date },
-  payload: LiveStudioDraftPayload,
+  payload: ReturnType<typeof liveStudioDraftResponsePayload>,
   slugCheck: { slugTaken: boolean; slugCheckFailed: boolean },
 ) {
   return {

@@ -76,17 +76,49 @@ describe("POST /api/live-studio/drafts", () => {
     }));
   });
 
-  it("writes an eight-step v2 payload from an older tab as v3", async () => {
-    mocks.readJsonBody.mockResolvedValue({ draftId: "draft-1", revision: 1, payload: { ...payload, flowVersion: 2, activeStep: 5 } });
+  it("stores an eight-step v2 payload from an older tab as v3 but answers in that tab's v2 shape", async () => {
+    const versionTwoPayload = { ...payload, flowVersion: 2, activeStep: 5 };
+    mocks.readJsonBody.mockResolvedValue({ draftId: "draft-1", revision: 1, payload: versionTwoPayload });
 
     const response = await POST(request());
 
-    // v2 step 5 (Email) → 通知 (index 2).
-    const canonicalPayload = expect.objectContaining({ flowVersion: 3, activeStep: 2, title: "新品直播" });
-    await expect(response.json()).resolves.toMatchObject({ payload: canonicalPayload });
+    // v2 step 5 (Email) → 通知 (index 2) in the stored row.
+    expect(mocks.updateManyAndReturn).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({
+        payload: { ...payload, flowVersion: 3, activeStep: 2 },
+      }),
+    }));
+    // The eight-step client parses only flowVersion 2 and compares the response with what it sent.
+    expect(response.status).toBe(200);
+    const body = await response.json() as { revision: number; payload: unknown };
+    expect(body.revision).toBe(2);
+    expect(body.payload).toEqual(versionTwoPayload);
+  });
+
+  it("echoes the v2 step unchanged when an older tab saves from its last (review) step", async () => {
+    const versionTwoPayload = { ...payload, flowVersion: 2, activeStep: 7 };
+    mocks.readJsonBody.mockResolvedValue({ draftId: "", revision: null, payload: versionTwoPayload });
+
+    const response = await POST(request());
+
+    // v2 step 7 (review) → 發布 (index 3) in the stored row.
+    expect(mocks.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ payload: { ...payload, flowVersion: 3, activeStep: 3 } }),
+    }));
+    await expect(response.json()).resolves.toMatchObject({ payload: versionTwoPayload });
+  });
+
+  it("answers a v3 request with the stored canonical v3 payload", async () => {
+    mocks.readJsonBody.mockResolvedValue({ draftId: "draft-1", revision: 1, payload: { ...payload, activeStep: 3 } });
+
+    const response = await POST(request());
+
+    const canonicalPayload = { ...payload, flowVersion: 3, activeStep: 3 };
     expect(mocks.updateManyAndReturn).toHaveBeenCalledWith(expect.objectContaining({
       data: expect.objectContaining({ payload: canonicalPayload }),
     }));
+    const body = await response.json() as { payload: unknown };
+    expect(body.payload).toEqual(canonicalPayload);
   });
 
   it("rejects a v3 payload whose step is outside the four-step studio", async () => {

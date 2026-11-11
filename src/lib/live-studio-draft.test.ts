@@ -3,6 +3,7 @@ import {
   emptyLiveStudioDraft,
   LIVE_STUDIO_V2_STEP_KEYS,
   LiveStudioDraftPayloadSchema,
+  liveStudioDraftResponsePayload,
   parseStoredLiveStudioDraft,
   SaveLiveStudioDraftRequestSchema,
 } from "./live-studio-draft";
@@ -136,6 +137,34 @@ describe("parseStoredLiveStudioDraft", () => {
     expect(parseStoredLiveStudioDraft({ flowVersion: 3, title: "缺欄位", activeStep: 0 })?.outdated).toBe(true);
     expect(parseStoredLiveStudioDraft({ flowVersion: 3, activeStep: 9 })).toBeNull();
     expect(parseStoredLiveStudioDraft("not-a-draft")).toBeNull();
+  });
+});
+
+describe("liveStudioDraftResponsePayload", () => {
+  it("echoes a v2 request's flow version and step over the canonical fields", () => {
+    const request = { ...emptyLiveStudioDraft(), title: "舊分頁", flowVersion: 2, activeStep: 6 };
+    const canonical = LiveStudioDraftPayloadSchema.parse(request);
+    expect(canonical).toMatchObject({ flowVersion: 3, activeStep: liveStudioStepIndex("sales") });
+
+    expect(liveStudioDraftResponsePayload(request, canonical)).toEqual(request);
+    // An omitted v2 step defaults to the first step, as the eight-step schema did.
+    const withoutStep: Record<string, unknown> = { ...request };
+    delete withoutStep.activeStep;
+    expect(liveStudioDraftResponsePayload(withoutStep, LiveStudioDraftPayloadSchema.parse(withoutStep)))
+      .toMatchObject({ flowVersion: 2, activeStep: 0 });
+  });
+
+  it("returns the canonical payload for v3, versionless and malformed requests", () => {
+    const v3 = LiveStudioDraftPayloadSchema.parse({ title: "新分頁", activeStep: 1 });
+    expect(liveStudioDraftResponsePayload({ ...v3 }, v3)).toBe(v3);
+
+    const versionless: Record<string, unknown> = { ...emptyLiveStudioDraft(), activeStep: 3 };
+    delete versionless.flowVersion;
+    const fromVersionless = LiveStudioDraftPayloadSchema.parse(versionless);
+    expect(liveStudioDraftResponsePayload(versionless, fromVersionless)).toBe(fromVersionless);
+
+    expect(liveStudioDraftResponsePayload(undefined, v3)).toBe(v3);
+    expect(liveStudioDraftResponsePayload({ flowVersion: 2, activeStep: 8 }, v3)).toBe(v3);
   });
 });
 

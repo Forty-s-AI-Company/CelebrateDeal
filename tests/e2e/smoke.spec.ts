@@ -5,6 +5,7 @@ import { hashPassword } from "../../src/lib/password";
 import { totpCodeForTimestamp, verifyRecoveryCode, verifyTotpCode } from "../../src/lib/mfa";
 import { createPasswordResetToken } from "../../src/lib/password-reset";
 import { protectProductDeliveryConfig, validateProductDeliveryDraft } from "../../src/lib/product-delivery";
+import { openLiveStudioAdvancedSettings } from "../fixtures/live-studio";
 import { createTeamFunnelFixture, TEAM_FUNNEL_TEST_ONLY } from "../fixtures/team-funnel";
 import { navigateAndAssertDirectUrlGuard } from "./helpers/direct-url-guard";
 
@@ -1420,7 +1421,7 @@ test("live creation stepper blocks incomplete forward jumps and explains the nex
   await expect(page.getByRole("status").filter({ hasText: "請先完成本步驟的必填欄位" })).toBeVisible();
 
   await page.getByLabel("直播標題", { exact: true }).fill("E2E 建立流程驗收");
-  await page.locator('details[data-advanced-settings="content"] > summary').click();
+  await openLiveStudioAdvancedSettings(page, "content");
   await page.getByLabel("直播網址").fill(`e2e-stepper-${stamp}`);
   // 開播時間 is a required field of the same 內容 step; the jump is still refused without it.
   await reviewStep.click();
@@ -1454,7 +1455,7 @@ test("merchant can create and schedule a prerecorded content webinar from the fo
     await page.getByLabel("影片／即時直播").selectOption(seed.readyVideoId);
     await page.getByLabel("報名頁").selectOption(seed.formId);
     await page.getByLabel(/開播時間/).fill("2026-08-20T20:00");
-    await page.locator('details[data-advanced-settings="content"] > summary').click();
+    await openLiveStudioAdvancedSettings(page, "content");
     await page.getByLabel("直播網址").fill(slug);
     await page.getByRole("button", { name: "下一步" }).click();
 

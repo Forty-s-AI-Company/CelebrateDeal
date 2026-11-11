@@ -6,6 +6,7 @@ import { totpCodeForTimestamp } from "../../src/lib/mfa";
 import { hashPassword } from "../../src/lib/password";
 import { createMerchantRegistrationInvite } from "../../src/lib/merchant-registration-invite";
 import { createMerchantEmailVerificationToken } from "../../src/lib/merchant-email-verification-token";
+import { openLiveStudioAdvancedSettings } from "../fixtures/live-studio";
 
 const db = new PrismaClient();
 const password = "A11y-Test-Password-123!";
@@ -491,7 +492,7 @@ test("live stepper has no blocking axe violations on any of the four steps, in �
   await page.getByLabel(/開播時間/).fill("2026-12-20T20:00");
   await scanStep(0);
   await page.getByRole("button", { name: "下一步" }).click();
-  await page.locator('details[data-advanced-settings="sales"] > summary').click();
+  await openLiveStudioAdvancedSettings(page, "sales");
   await scanStep(1);
   await page.getByRole("button", { name: "下一步" }).click();
   await scanStep(2);

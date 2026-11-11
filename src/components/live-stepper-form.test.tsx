@@ -69,7 +69,7 @@ vi.mock("@/components/use-live-studio-draft", () => ({
 vi.mock("@/components/stream-allocation-editor", () => ({
   StreamAllocationEditor: ({ members, pages }: { members: Array<{ label: string }>; pages: Array<{ label: string }> }) => (
     <section>
-      <h3>Stream 用量與額度分配</h3>
+      <h3>觀看用量與額度分配</h3>
       {members.map((member) => <span key={member.label}>{member.label}</span>)}
       {pages.map((page) => <span key={page.label}>{page.label}</span>)}
       <input type="hidden" name="customAllocations" value="[]" />

@@ -2147,7 +2147,21 @@ describe("upsertLiveAction", () => {
     formData.set("replayAvailableUntil", "2026-08-08T20:10");
 
     await expect(upsertLiveAction(formData)).rejects.toThrow(
-      "redirect:/lives/new?error=invalid_draft&draft=draft-1",
+      "redirect:/lives/new?error=invalid_draft&draft=draft-1&field=replayAvailableUntil",
+    );
+
+    expect(mocks.liveStudioDraftUpdateMany).not.toHaveBeenCalled();
+    expect(mocks.liveCreate).not.toHaveBeenCalled();
+  });
+
+  it("points a VOD replay deadline at the field when the video has no known duration", async () => {
+    allowCurrentVendorLiveReferences();
+    mocks.videoFindFirst.mockResolvedValue({ id: "video-1", durationSec: null });
+    const formData = liveFormData();
+    formData.set("replayAvailableUntil", "2026-08-09T21:00");
+
+    await expect(upsertLiveAction(formData)).rejects.toThrow(
+      "redirect:/lives/new?error=invalid_draft&draft=draft-1&field=replayAvailableUntil",
     );
 
     expect(mocks.liveStudioDraftUpdateMany).not.toHaveBeenCalled();
@@ -2161,7 +2175,7 @@ describe("upsertLiveAction", () => {
     formData.set("replayAvailableUntil", "2026-08-08T20:00");
 
     await expect(upsertLiveAction(formData)).rejects.toThrow(
-      "redirect:/lives/new?error=invalid_draft&draft=draft-1",
+      "redirect:/lives/new?error=invalid_draft&draft=draft-1&field=replayAvailableUntil",
     );
 
     expect(mocks.liveStudioDraftUpdateMany).not.toHaveBeenCalled();

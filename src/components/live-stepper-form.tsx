@@ -1243,6 +1243,24 @@ function useRevealTakenSlug(formRef: { current: HTMLFormElement | null }, slugTa
   }, [formRef, slugTaken]);
 }
 
+/**
+ * `namedItem` returns a RadioNodeList when several controls share a name, such
+ * as the hidden fallback next to the visible replay deadline input. Only a
+ * control the merchant can edit (not a hidden input, not disabled) is worth
+ * revealing and focusing; a single named control is used as before.
+ */
+function editableNamedControl(item: Element | RadioNodeList | null): HTMLElement | null {
+  if (!item) return null;
+  if (item instanceof Element) return item instanceof HTMLElement ? item : null;
+  for (const node of Array.from(item)) {
+    if (!(node instanceof HTMLElement)) continue;
+    if (node instanceof HTMLInputElement && node.type === "hidden") continue;
+    if (node.matches(":disabled")) continue;
+    return node;
+  }
+  return null;
+}
+
 /** F-117: 伺服器指出第一個無效欄位時，切到該步驟、標示 aria-invalid 並把焦點移過去；回傳欄位名稱供彙總訊息使用。 */
 function useServerInvalidField(
   formRef: { current: HTMLFormElement | null },
@@ -1253,8 +1271,8 @@ function useServerInvalidField(
   const [label, setLabel] = useState("");
   useEffect(() => {
     if (error !== "invalid_draft" || !invalidField || !/^[A-Za-z][A-Za-z0-9]{0,63}$/u.test(invalidField)) return;
-    const control = formRef.current?.elements.namedItem(invalidField);
-    if (!(control instanceof HTMLElement)) return;
+    const control = editableNamedControl(formRef.current?.elements.namedItem(invalidField) ?? null);
+    if (!control) return;
     const step = control.closest<HTMLElement>("[data-step-key]")?.dataset.stepKey;
     if (isLiveStudioStepKey(step)) setActiveStep(step);
     revealCollapsedAncestors(control);

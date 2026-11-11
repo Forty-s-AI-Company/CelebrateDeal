@@ -153,6 +153,26 @@ export type LiveStudioDraftEnvelope = {
   storedPayloadOutdated?: boolean;
 };
 
+export type VersionTwoLiveStudioDraftPayload = z.infer<typeof VersionTwoLiveStudioDraftPayloadSchema>;
+
+/**
+ * Deployment skew: a tab opened before the four-step studio shipped still runs
+ * the eight-step client. That client only parses a `flowVersion: 2` response,
+ * keeps it as its last saved snapshot and compares it with what it sent, so a
+ * v3 response would leave it in a save error with a stale revision (and the
+ * next save would then hit a false 409). The row always stores the canonical
+ * v3 payload; only the response to a v2 request echoes the request's own flow
+ * version and step. Any other request gets the canonical payload back.
+ */
+export function liveStudioDraftResponsePayload(
+  requestPayload: unknown,
+  canonical: LiveStudioDraftPayload,
+): LiveStudioDraftPayload | VersionTwoLiveStudioDraftPayload {
+  const versionTwo = VersionTwoLiveStudioDraftPayloadSchema.safeParse(requestPayload);
+  if (!versionTwo.success) return canonical;
+  return { ...canonical, flowVersion: 2, activeStep: versionTwo.data.activeStep };
+}
+
 export function emptyLiveStudioDraft(): LiveStudioDraftPayload {
   return LiveStudioDraftPayloadSchema.parse({});
 }
