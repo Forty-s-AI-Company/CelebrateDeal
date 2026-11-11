@@ -43,6 +43,7 @@ export function SideDrawer({
   children: ReactNode;
   footer?: ReactNode;
 }) {
+  const rootRef = useRef<HTMLDivElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   const titleId = useId();
   const descriptionId = useId();
@@ -57,6 +58,28 @@ export function SideDrawer({
     // Only when the drawer opens.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+  // While busy every control is disabled and the browser may drop focus to
+  // <body>; park it on the panel so Tab stays in the dialog and screen readers
+  // keep their place.
+  useEffect(() => {
+    if (!busy) return;
+    const panel = panelRef.current;
+    if (!panel) return;
+    const active = document.activeElement;
+    const onFocusableControl = active instanceof HTMLElement && active !== panel && panel.contains(active) && active.matches(focusableSelector);
+    if (!onFocusableControl) panel.focus();
+  }, [busy]);
+  // Focus on <body> (or anywhere outside the drawer) never reaches the
+  // drawer's own key handler; keep Tab inside from the document.
+  useEffect(() => {
+    const trapOutsideTab = (event: KeyboardEvent) => {
+      const panel = panelRef.current;
+      if (event.key !== "Tab" || !panel || rootRef.current?.contains(event.target as Node)) return;
+      trapDialogFocus(panel, event);
+    };
+    document.addEventListener("keydown", trapOutsideTab);
+    return () => document.removeEventListener("keydown", trapOutsideTab);
+  }, []);
   useEffect(() => {
     const { body } = document;
     const previousOverflow = body.style.overflow;
@@ -67,6 +90,7 @@ export function SideDrawer({
   if (typeof document === "undefined") return null;
   return createPortal(
     <div
+      ref={rootRef}
       data-side-drawer="true"
       className="fixed inset-0 z-[150] flex justify-end bg-slate-950/50"
       onMouseDown={(event) => {

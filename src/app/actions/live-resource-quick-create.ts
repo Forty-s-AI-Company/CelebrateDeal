@@ -176,14 +176,9 @@ export async function createMessageTemplateQuickAction(formData: FormData): Prom
       fieldErrors: { root: "模板沒有建立。" },
     };
   }
-  // The page only lists sendable templates; never hand the studio one it would hide.
-  if (!hasUsableMessageTemplateContent(result.template)) {
-    return {
-      status: "error",
-      message: "模板已儲存但內容無法寄送；請到訊息模板頁修正後再選取。",
-      fieldErrors: { root: "模板內容無法寄送。" },
-    };
-  }
+  // No post-write usability check: the same content was already verified as
+  // sendable before the write, and answering "error" here would leave an
+  // orphan template behind while the drawer keeps asking to create it again.
   // No revalidation: the template editor does not refresh other pages either,
   // and the studio adds the returned option to its own list.
   return {

@@ -7,8 +7,8 @@ import { SideDrawer } from "@/components/side-drawer";
 import { CSRF_FIELD_NAME } from "@/lib/csrf-constants";
 import {
   LIVE_QUICK_FORM_LIMITS,
-  LIVE_QUICK_TEMPLATE_COPY,
   LIVE_QUICK_TEMPLATE_LIMITS,
+  liveQuickTemplateCopy,
   liveQuickTemplateFieldErrors,
   type LiveQuickFormField,
   type LiveQuickFormOption,
@@ -16,9 +16,14 @@ import {
   type LiveQuickTemplateOption,
   type LiveQuickTemplateTrigger,
 } from "@/lib/live-resource-quick-create";
+import type { LiveNotificationRuleTrigger } from "@/lib/live-notification-rules";
 import { MESSAGE_TEMPLATE_VARIABLES, messageTemplateVariableLabel } from "@/lib/message-template";
 
-const NETWORK_ERROR = "連線中斷，沒有建立任何資料；請稍後再試。";
+/**
+ * The action threw (network drop, timeout): the server may or may not have
+ * created the resource, so this never promises that nothing was created.
+ */
+const NETWORK_ERROR = "連線中斷，無法確認是否已建立。請先關閉抽屜、重新整理頁面確認清單後再試，避免重複建立。";
 const inputClass = "h-11 rounded-md border border-border-control bg-white px-3 text-sm font-normal text-slate-900 aria-[invalid=true]:border-red-600 disabled:bg-slate-100";
 const primaryButtonClass = "inline-flex min-h-11 items-center justify-center rounded-md bg-primary px-4 text-sm font-semibold text-white hover:bg-primary-dark focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60";
 const secondaryButtonClass = "inline-flex min-h-11 items-center justify-center rounded-md border border-border bg-white px-4 text-sm font-semibold text-slate-700 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:cursor-not-allowed disabled:opacity-50";
@@ -123,12 +128,15 @@ export function RegistrationFormQuickCreateDrawer({
   defaultTitle,
   onClose,
   onCreated,
+  onInFlightChange,
 }: {
   csrfToken: string;
   projectId?: string | null;
   defaultTitle: string;
   onClose: () => void;
   onCreated: (option: LiveQuickFormOption) => void;
+  /** true when the create starts; false when it ends without `onCreated` (an error). */
+  onInFlightChange?: (inFlight: boolean) => void;
 }) {
   const formId = useId();
   const formRef = useRef<HTMLFormElement>(null);
@@ -159,12 +167,18 @@ export function RegistrationFormQuickCreateDrawer({
       fail("有幾個欄位需要調整；內容仍保留在抽屜中。", localErrors);
       return;
     }
+    onInFlightChange?.(true);
     startTransition(async () => {
       try {
         const result = await createRegistrationFormQuickAction(data);
-        if (result.status === "success") onCreated(result.option);
-        else fail(result.message, result.fieldErrors);
+        if (result.status === "success") {
+          onCreated(result.option);
+        } else {
+          onInFlightChange?.(false);
+          fail(result.message, result.fieldErrors);
+        }
       } catch {
+        onInFlightChange?.(false);
         fail(NETWORK_ERROR, {});
       }
     });
@@ -215,15 +229,21 @@ export function RegistrationFormQuickCreateDrawer({
 export function MessageTemplateQuickCreateDrawer({
   csrfToken,
   trigger,
+  ruleTrigger,
   onClose,
   onCreated,
+  onInFlightChange,
 }: {
   csrfToken: string;
   trigger: LiveQuickTemplateTrigger;
+  /** The rule group the drawer was opened from; 「直播中」 gets its own copy for the same trigger. */
+  ruleTrigger?: LiveNotificationRuleTrigger;
   onClose: () => void;
   onCreated: (option: LiveQuickTemplateOption) => void;
+  /** true when the create starts; false when it ends without `onCreated` (an error). */
+  onInFlightChange?: (inFlight: boolean) => void;
 }) {
-  const copy = LIVE_QUICK_TEMPLATE_COPY[trigger];
+  const copy = liveQuickTemplateCopy(trigger, ruleTrigger);
   const formId = useId();
   const bodyErrorId = useId();
   const formRef = useRef<HTMLFormElement>(null);
@@ -254,12 +274,18 @@ export function MessageTemplateQuickCreateDrawer({
       fail("有幾個欄位需要調整；內容仍保留在抽屜中。", localErrors);
       return;
     }
+    onInFlightChange?.(true);
     startTransition(async () => {
       try {
         const result = await createMessageTemplateQuickAction(data);
-        if (result.status === "success") onCreated(result.option);
-        else fail(result.message, result.fieldErrors);
+        if (result.status === "success") {
+          onCreated(result.option);
+        } else {
+          onInFlightChange?.(false);
+          fail(result.message, result.fieldErrors);
+        }
       } catch {
+        onInFlightChange?.(false);
         fail(NETWORK_ERROR, {});
       }
     });

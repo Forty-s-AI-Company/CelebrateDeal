@@ -14,7 +14,7 @@ const parentHandlers = {
   invalid: vi.fn(),
 };
 
-function Harness({ busy = false, onClose = vi.fn() }: { busy?: boolean; onClose?: () => void }) {
+function Harness({ busy = false, onClose = vi.fn(), disableWhenBusy = false }: { busy?: boolean; onClose?: () => void; disableWhenBusy?: boolean }) {
   const [open, setOpen] = useState(false);
   return (
     <form
@@ -27,8 +27,8 @@ function Harness({ busy = false, onClose = vi.fn() }: { busy?: boolean; onClose?
       {open ? (
         <SideDrawer title="抽屜標題" description="說明" busy={busy} onClose={() => { onClose(); setOpen(false); }}>
           <form onSubmit={(event) => event.preventDefault()}>
-            <input name="inside" required />
-            <button type="submit">送出</button>
+            <input name="inside" required disabled={disableWhenBusy && busy} />
+            <button type="submit" disabled={disableWhenBusy && busy}>送出</button>
           </form>
         </SideDrawer>
       ) : null}
@@ -132,5 +132,103 @@ describe("SideDrawer", () => {
     submit.focus();
     await act(async () => { submit.dispatchEvent(new KeyboardEvent("keydown", { key: "Tab", bubbles: true, cancelable: true })); });
     expect(document.activeElement).toBe(dialog()!.querySelector('button[aria-label="關閉"]'));
+  });
+
+  describe("while busy", () => {
+    function tab(target: Element, shiftKey = false) {
+      const event = new KeyboardEvent("keydown", { key: "Tab", shiftKey, bubbles: true, cancelable: true });
+      target.dispatchEvent(event);
+      return event;
+    }
+
+    it("moves focus from a control that just became disabled to the dialog panel", async () => {
+      await act(async () => { root.render(<Harness disableWhenBusy />); });
+      await open();
+      const input = dialog()!.querySelector<HTMLInputElement>('[name="inside"]')!;
+      input.focus();
+      expect(document.activeElement).toBe(input);
+
+      await act(async () => { root.render(<Harness disableWhenBusy busy />); });
+
+      expect(input.disabled).toBe(true);
+      expect(document.activeElement).toBe(dialog());
+      expect(dialog()!.getAttribute("tabindex")).toBe("-1");
+    });
+
+    it("moves focus to the panel when focus fell back to the body", async () => {
+      await act(async () => { root.render(<Harness disableWhenBusy />); });
+      await open();
+      (document.activeElement as HTMLElement).blur();
+      expect(document.activeElement).toBe(document.body);
+
+      await act(async () => { root.render(<Harness disableWhenBusy busy />); });
+
+      expect(document.activeElement).toBe(dialog());
+    });
+
+    it("leaves focus alone when it is still on an enabled control of the drawer", async () => {
+      await act(async () => { root.render(<Harness />); });
+      await open();
+      const close = dialog()!.querySelector<HTMLButtonElement>('button[aria-label="關閉"]')!;
+      const submit = Array.from(dialog()!.querySelectorAll("button")).find((candidate) => candidate.textContent === "送出")!;
+      submit.focus();
+
+      // Busy disables the close button only here; the focused submit stays enabled.
+      await act(async () => { root.render(<Harness busy />); });
+
+      expect(close.disabled).toBe(true);
+      expect(document.activeElement).toBe(submit);
+    });
+
+    it("keeps Tab and Shift+Tab trapped when every control is disabled and the panel has focus", async () => {
+      await act(async () => { root.render(<Harness disableWhenBusy />); });
+      await open();
+      await act(async () => { root.render(<Harness disableWhenBusy busy />); });
+      const panel = dialog()!;
+      expect(document.activeElement).toBe(panel);
+
+      expect(tab(panel).defaultPrevented).toBe(true);
+      expect(tab(panel, true).defaultPrevented).toBe(true);
+      expect(document.activeElement).toBe(panel);
+    });
+
+    it("keeps Tab trapped when the body has focus", async () => {
+      await act(async () => { root.render(<Harness disableWhenBusy />); });
+      await open();
+      await act(async () => { root.render(<Harness disableWhenBusy busy />); });
+      (document.activeElement as HTMLElement).blur();
+      expect(document.activeElement).toBe(document.body);
+
+      expect(tab(document.body).defaultPrevented).toBe(true);
+      expect(tab(document.body, true).defaultPrevented).toBe(true);
+    });
+  });
+
+  describe("focus on the panel itself", () => {
+    it("wraps Tab to the first control and Shift+Tab to the last instead of leaving the drawer", async () => {
+      await act(async () => { root.render(<Harness />); });
+      await open();
+      const panel = dialog()!;
+      const first = panel.querySelector('button[aria-label="關閉"]');
+      const last = Array.from(panel.querySelectorAll("button")).find((candidate) => candidate.textContent === "送出");
+
+      panel.focus();
+      await act(async () => { panel.dispatchEvent(new KeyboardEvent("keydown", { key: "Tab", bubbles: true, cancelable: true })); });
+      expect(document.activeElement).toBe(first);
+
+      panel.focus();
+      await act(async () => { panel.dispatchEvent(new KeyboardEvent("keydown", { key: "Tab", shiftKey: true, bubbles: true, cancelable: true })); });
+      expect(document.activeElement).toBe(last);
+    });
+
+    it("pulls Tab from the body back into the drawer", async () => {
+      await act(async () => { root.render(<Harness />); });
+      await open();
+      (document.activeElement as HTMLElement).blur();
+
+      await act(async () => { document.body.dispatchEvent(new KeyboardEvent("keydown", { key: "Tab", bubbles: true, cancelable: true })); });
+
+      expect(dialog()!.contains(document.activeElement)).toBe(true);
+    });
   });
 });

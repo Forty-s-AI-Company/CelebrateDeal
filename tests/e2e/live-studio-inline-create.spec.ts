@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { PrismaClient } from "@prisma/client";
+import { formatZonedDateTimeLocal } from "../../src/lib/zoned-date-time";
 import {
   createLiveStudioFixtureWithoutRegistrationResources,
   deleteLiveStudioFixture,
@@ -68,7 +69,8 @@ test("a merchant without a form or template creates both in the studio's drawers
     expect(await titleNode!.evaluate((node) => node.isConnected)).toBe(true);
     await expect(title).toHaveValue("就地建立的週五講座");
 
-    await page.getByLabel(/^開播時間/u).fill("2026-12-04T20:00");
+    // A week from now in the studio's Taipei time, so the schedule never becomes a past time.
+    await page.getByLabel(/^開播時間/u).fill(formatZonedDateTimeLocal(new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), "Asia/Taipei"));
     await openLiveStudioAdvancedSettings(page, "content");
     await page.getByLabel("直播網址").fill(slug);
     await page.getByRole("button", { name: "下一步", exact: true }).click();

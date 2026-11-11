@@ -1,3 +1,4 @@
+import type { LiveNotificationRuleTrigger } from "@/lib/live-notification-rules";
 import { hasOnlySupportedMessageTemplateVariables } from "@/lib/message-template";
 
 /**
@@ -51,6 +52,24 @@ export const LIVE_QUICK_TEMPLATE_COPY: Record<LiveQuickTemplateTrigger, { label:
     body: "{{name}} 你好：\n\n謝謝你參加「{{live_title}}」。如果想回顧內容，可以從這個連結回到直播頁：\n{{live_url}}\n\n{{vendor_name}}",
   },
 };
+
+/**
+ * Starting copy for a template opened from the 「直播中」 rule group. It is
+ * still a `live_reminder` template (the only trigger the studio binds for
+ * that group), but it must read right for viewers who are already live.
+ */
+export const LIVE_QUICK_DURING_LIVE_TEMPLATE_COPY = {
+  label: "直播中通知 Email",
+  name: "直播中通知",
+  subject: "{{live_title}} 正在直播中",
+  body: "{{name}} 你好：\n\n「{{live_title}}」正在直播中，現在就可以從這個連結進入直播間：\n{{live_url}}\n\n{{vendor_name}}",
+} as const;
+
+/** Title and starting copy of the template drawer for the trigger and the rule group it was opened from. */
+export function liveQuickTemplateCopy(trigger: LiveQuickTemplateTrigger, ruleTrigger?: LiveNotificationRuleTrigger) {
+  if (trigger === "live_reminder" && ruleTrigger === "during_live") return LIVE_QUICK_DURING_LIVE_TEMPLATE_COPY;
+  return LIVE_QUICK_TEMPLATE_COPY[trigger];
+}
 
 /**
  * Field-level checks for the quick template drawer. They mirror the template

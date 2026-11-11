@@ -24,6 +24,7 @@ import { LIVE_DRAFT_SAVE_FAILED_EVENT, LiveConfirmedSubmitButton, LiveFormPendin
 import { MediaUploadField } from "@/components/media-upload-field";
 import { MessageTemplateQuickCreateDrawer, RegistrationFormQuickCreateDrawer } from "@/components/live-resource-drawers";
 import {
+  liveQuickTemplateCopy,
   mergeLiveResourceOptions,
   type LiveQuickFormOption,
   type LiveQuickTemplateOption,
@@ -896,6 +897,13 @@ function StepHeading({ title, description }: { title: string; description: strin
   );
 }
 
+/** Label of the 「建立…」 button of a rule group without a template; 「直播中」 reads as its own notice. */
+function createTemplateButtonLabel(trigger: LiveNotificationRuleTrigger) {
+  if (trigger === "post_live_followup") return "建立課後 Email";
+  if (trigger === "during_live") return `建立${liveQuickTemplateCopy("live_reminder", "during_live").label}`;
+  return "建立開播提醒 Email";
+}
+
 const notificationRuleGroupCopy: Record<LiveNotificationRuleTrigger, { title: string; timing: string }> = {
   before_live: { title: "開播前", timing: "開播前幾分鐘寄送" },
   during_live: { title: "直播中", timing: "開播後幾分鐘寄送" },
@@ -1046,7 +1054,7 @@ function NotificationRulesEditor({
                   onClick={() => onCreateTemplate(expectedTemplateTrigger(trigger), trigger)}
                   className={inlineCreateButtonClass}
                 >
-                  {expectedTemplateTrigger(trigger) === "post_live_followup" ? "建立課後 Email" : "建立開播提醒 Email"}
+                  {createTemplateButtonLabel(trigger)}
                 </button>
               ) : null}
             </div>
@@ -1483,9 +1491,18 @@ function useLiveResourceDrawers(input: {
   const [createdTemplates, setCreatedTemplates] = useState<LiveQuickTemplateOption[]>([]);
   const [drawer, setDrawer] = useState<LiveResourceDrawer | null>(null);
   const [announcement, setAnnouncement] = useState("");
+  /**
+   * True from the moment a drawer submits until its result is in the studio's
+   * DOM and queued for saving. The create revalidates the page, which can hand
+   * the studio a newer draft revision; this keeps the studio counted as having
+   * unsaved edits so that refresh does not remount it and drop the selection.
+   */
+  const [creating, setCreating] = useState(false);
   /** Set when a drawer created something: the control to focus and whether the draft changed. */
   const focusPendingRef = useRef<{ selector: string; save: boolean } | null>(null);
   const { formRef, scheduleSave } = input;
+  /** The result is in the DOM and queued for saving; a no-op when nothing is in flight. */
+  const settleCreate = () => setCreating(false);
   // Runs once the new option is in the DOM and after the drawer's own cleanup
   // returned focus to its trigger, so the draft serializes the new value and
   // focus lands on the field that now holds it.
@@ -1499,6 +1516,8 @@ function useLiveResourceDrawers(input: {
       target.focus();
     }
     if (pending.save) scheduleSave();
+    // Same batch as the save's dirty status, so "unsaved" never dips in between.
+    settleCreate();
   });
 
   /** The studio's own submit (pending lock, or the pre-submit draft flush) must finish first. */
@@ -1538,11 +1557,11 @@ function useLiveResourceDrawers(input: {
   let drawerElement: React.ReactNode = null;
   if (drawer?.kind === "form") {
     drawerElement = (
-      <RegistrationFormQuickCreateDrawer csrfToken={input.csrfToken} projectId={input.projectId} defaultTitle={input.liveTitle} onClose={close} onCreated={formCreated} />
+      <RegistrationFormQuickCreateDrawer csrfToken={input.csrfToken} projectId={input.projectId} defaultTitle={input.liveTitle} onClose={close} onCreated={formCreated} onInFlightChange={setCreating} />
     );
   } else if (drawer?.kind === "template") {
     drawerElement = (
-      <MessageTemplateQuickCreateDrawer key={drawer.trigger} csrfToken={input.csrfToken} trigger={drawer.trigger} onClose={close} onCreated={(option) => templateCreated(option, drawer.ruleTrigger)} />
+      <MessageTemplateQuickCreateDrawer key={`${drawer.trigger}:${drawer.ruleTrigger ?? ""}`} csrfToken={input.csrfToken} trigger={drawer.trigger} ruleTrigger={drawer.ruleTrigger} onClose={close} onCreated={(option) => templateCreated(option, drawer.ruleTrigger)} onInFlightChange={setCreating} />
     );
   }
 
@@ -1552,6 +1571,7 @@ function useLiveResourceDrawers(input: {
     registrationTemplates: templates.filter((template) => template.trigger === "registration_confirmed"),
     notificationTemplates: templates.filter((template) => template.trigger === "live_reminder" || template.trigger === "post_live_followup"),
     announcement,
+    creating,
     open,
     drawerElement,
   };
@@ -1648,7 +1668,6 @@ export function LiveStudioStepperForm({
   useLiveStudioPresetSave(studioPreset, draft.scheduleSave);
   useReportedDraft(draft.draftId, draft.revision, onDraftSaved);
   const unsaved = unsavedDraftStatuses.has(draft.status);
-  useEffect(() => { onUnsavedChange?.(unsaved); }, [unsaved, onUnsavedChange]);
   useRevealTakenSlug(formRef, error === "slug_taken" || Boolean(draft.slugTaken));
   const submitFlush = useSubmitFlushGuard();
   const resources = useLiveResourceDrawers({
@@ -1664,6 +1683,9 @@ export function LiveStudioStepperForm({
     selectRegistrationTemplate: setSelectedTemplateId,
   });
   const { forms: availableForms, registrationTemplates, notificationTemplates } = resources;
+  // A drawer create in flight counts as unsaved edits (see useLiveResourceDrawers).
+  const holdsUnsavedEdits = unsaved || resources.creating;
+  useEffect(() => { onUnsavedChange?.(holdsUnsavedEdits); }, [holdsUnsavedEdits, onUnsavedChange]);
   const preview = buildLivePreview(previewTitle, previewAccentCopy, products, selectedProductIds); const statusAction = liveId ? fixedSessionStatusAction(liveStatusAction(currentStatus), sessionMode) : null;
   const publishReadiness = buildLivePublishReadiness({ studioPreset, products, productIds: selectedProductIds, videos, videoId: selectedVideoId, forms: availableForms, formId: selectedFormId, templates: registrationTemplates, templateId: selectedTemplateId, scripts, scriptId: selectedScriptId });
   const stepStatus = liveStudioStepStatuses({

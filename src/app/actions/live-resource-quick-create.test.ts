@@ -189,13 +189,30 @@ describe("createMessageTemplateQuickAction", () => {
     });
   });
 
-  it("reports a saved template that the studio would hide instead of selecting it", async () => {
+  it("never turns an already written template into an error after the write", async () => {
     mocks.saveMessageTemplate.mockResolvedValueOnce({
       ok: true,
       template: { id: "template-x", name: "x", channel: "email", trigger: "live_reminder", subject: "", body: "x", isActive: true },
       reconciliationStatuses: [],
     });
-    expect((await createMessageTemplateQuickAction(formInput({ ...sendable, trigger: "live_reminder" }))).status).toBe("error");
+
+    // An error here would leave this template behind while the drawer asks to create it again.
+    expect(await createMessageTemplateQuickAction(formInput({ ...sendable, trigger: "live_reminder" }))).toEqual({
+      status: "success",
+      option: { id: "template-x", name: "x", channel: "email", trigger: "live_reminder" },
+    });
+    expect(mocks.saveMessageTemplate).toHaveBeenCalledOnce();
+  });
+
+  it("still refuses unsendable content before anything is written", async () => {
+    for (const draft of [
+      { ...sendable, subject: "   " },
+      { ...sendable, body: "{{not_a_variable}}" },
+      { ...sendable, name: "" },
+    ]) {
+      expect((await createMessageTemplateQuickAction(formInput({ ...draft, trigger: "live_reminder" }))).status).toBe("error");
+    }
+    expect(mocks.saveMessageTemplate).not.toHaveBeenCalled();
   });
 
   it("keeps the drawer open when the core refuses the template", async () => {
