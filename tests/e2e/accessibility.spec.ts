@@ -355,6 +355,7 @@ test("static authenticated owner routes have no blocking axe violations", async 
     "/blacklists",
     "/affiliates",
     "/affiliates/new",
+    "/affiliates/policy",
     "/team-templates",
     "/team-templates/new",
     "/team-performance",
