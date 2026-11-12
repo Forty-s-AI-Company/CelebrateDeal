@@ -42,7 +42,9 @@ CI 帶出 `color-contrast` 規則後，Opus 找到根因：停用按鈕恢復可
   - db test 涵蓋：場次指派、開與關常青、模板改版、重複寄送防護。
   - 合併前要經過 reviewer 獨立審查（migration 加上寄信）。
 
-## F-3：Email 追銷序列（drip）
+## F-3：Email 追銷序列（drip）（第一個 PR 已完成，PR 連結待補）
+
+**結果**：依 `docs/product/delayed-steps-design.md` 完成 PR 1（分支 `ai/f3-email-sequences`）。新增 `EmailSequence`、`EmailSequenceStep`、`DelayedStepRun` 與 migration `20261113150000_email_sequences`；報名者完成 Email 驗證後加入該直播啟用中的序列（job 另有 48 小時補漏），job 每輪每人最多推進一步、逾期 24 小時的步驟跳過，每一步建立附退訂連結的 `sequence_email` 寄送；退訂、黑名單、序列暫停或刪除、報名刪除都會停止。後台 `/messages/sequences` 受 beta 開關 `email_sequences` 控制（平台在 `/admin/vendor-features` 逐商家開通）。**仍未做**：PR 2 的「買了就停」（`stopOnPurchase` 欄位已建立、預設開啟，但目前不讀）、不綁直播的序列（漏斗名單表單等其他起點與 LINE 步驟）、Email 用量計量或每日上限（目前只有每商家 5 條、每條 10 步的上限）。以下保留開工前的紀錄。
 
 - **分支與 commit**：沒有，尚未開工。
 - **卡住的原因**：規劃矩陣 P1（「Email 追銷序列」，價值高、成本中高），前置條件是「排程機制確認」。目前只有事件觸發的單封信，沒有 broadcast 或 drip 的 model。需要新的資料模型（序列、步驟、報名者進度）、排程設計（沿用 `email-deliveries` job 或另開）、退訂與黑名單、和現有課後信的關係，都屬於跨模組並影響資料模型的設計。
