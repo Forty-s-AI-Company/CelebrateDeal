@@ -355,7 +355,9 @@ test("opens playback for a recurring-daily session that has already started", as
 });
 
 test("records a verified registrant's existing session once their registration cookie arrives (F-2)", async ({ page, context, baseURL }) => {
-  const slug = `evergreen-record-${runId}`;
+  // Unique per run, so --repeat-each never collides on the global slug or the registration.
+  const recordId = randomUUID();
+  const slug = `evergreen-record-${recordId}`;
   // A daily session two hours ahead: the page stays in the waiting room for the whole test.
   const liveId = await createLive(slug, "recurring_daily");
   await setDailyTimes(liveId, [120]);
@@ -364,7 +366,7 @@ test("records a verified registrant's existing session once their registration c
       formId: fixture.formId,
       liveId,
       name: "Evergreen Registrant",
-      email: `evergreen-registrant-${runId}@example.test`,
+      email: `evergreen-registrant-${recordId}@example.test`,
       verificationStatus: "VERIFIED",
       verifiedAt: new Date(),
     },
