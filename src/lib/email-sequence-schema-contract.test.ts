@@ -30,6 +30,14 @@ describe("F-3 email sequence schema contract", () => {
     expect(modelOf("EmailSequenceStep")).toContain("@@unique([vendorId, emailSequenceId, delayMinutes])");
     expect(modelOf("DelayedStepRun")).toContain("@@unique([vendorId, emailSequenceId, formSubmissionId])");
     expect(modelOf("DelayedStepRun")).toContain("@@index([status, nextRunAt])");
+    // One place per recipient and sequence (M3); the backfill's index (M4).
+    expect(modelOf("DelayedStepRun")).toContain("@@unique([vendorId, emailSequenceId, recipientHash])");
+    expect(migration).toContain('CREATE UNIQUE INDEX "DelayedStepRun_vendorId_emailSequenceId_recipientHash_key"');
+    expect(modelOf("FormSubmission")).toContain("@@index([liveId, verificationStatus, verifiedAt])");
+    expect(migration).toContain('CREATE INDEX "FormSubmission_liveId_verificationStatus_verifiedAt_idx"');
+    // The Vendor CHECK is rebuilt last, so its ACCESS EXCLUSIVE lock is held briefly.
+    expect(migration.trimEnd().endsWith(");")).toBe(true);
+    expect(migration.lastIndexOf('ALTER TABLE "Vendor"')).toBeGreaterThan(migration.lastIndexOf("ENABLE ROW LEVEL SECURITY"));
     // F-4 adds automationRuleId with its own migration; PR 1 has only e-mail sequences.
     expect(modelOf("DelayedStepRun")).not.toMatch(/^\s+automationRuleId\s/mu);
     expect(migration).toContain('CHECK ("emailSequenceId" IS NOT NULL)');

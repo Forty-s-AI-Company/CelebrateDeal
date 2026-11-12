@@ -76,6 +76,8 @@ function StepFields({
   onRemove: () => void;
 }) {
   const selected = templates.find((template) => template.id === row.messageTemplateId);
+  // The browser limit follows the unit: 90 days is 2,160 hours.
+  const [unit, setUnit] = useState<StepRow["delayUnit"]>(row.delayUnit);
   return (
     <fieldset className="grid gap-3 rounded-lg border border-border p-4" data-sequence-step={index}>
       <legend className="px-1 text-sm font-semibold text-slate-900">第 {index + 1} 封</legend>
@@ -86,7 +88,7 @@ function StepFields({
           name={stepFieldName(index, "delayValue")}
           type="number"
           min={1}
-          max={2_160}
+          max={unit === "days" ? 90 : 2_160}
           step={1}
           required
           readOnly={disabled}
@@ -94,7 +96,13 @@ function StepFields({
           error={errors[stepFieldName(index, "delayValue")]}
           hint="從報名者完成 Email 驗證的時間起算，最短 1 小時、最長 90 天。"
         />
-        <SelectField label="單位" name={stepFieldName(index, "delayUnit")} defaultValue={row.delayUnit} error={errors[stepFieldName(index, "delayUnit")]}>
+        <SelectField
+          label="單位"
+          name={stepFieldName(index, "delayUnit")}
+          value={unit}
+          onChange={(event) => setUnit(event.target.value === "hours" ? "hours" : "days")}
+          error={errors[stepFieldName(index, "delayUnit")]}
+        >
           <option value="hours">小時</option>
           <option value="days">天</option>
         </SelectField>

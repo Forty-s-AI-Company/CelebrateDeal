@@ -240,6 +240,7 @@ export async function requeueEmailDelivery(input: {
         sourceLiveId: true,
         sourceFormSubmissionId: true,
         trigger: true,
+        createdAt: true,
         status: true,
         attemptCount: true,
         maxAttempts: true,

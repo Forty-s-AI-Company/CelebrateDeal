@@ -1196,9 +1196,13 @@ describe("email delivery outbox", () => {
   it("recovers a stale lease without retrying the same in-flight claim", async () => {
     mocks.db.emailDelivery.findMany
       .mockResolvedValueOnce([candidate({ status: "sending", attemptCount: 1, claimedAt: new Date(0) })])
+      .mockResolvedValueOnce([])
+      // F-3: sequence e-mails are read on their own quota after the time-bound mail.
       .mockResolvedValueOnce([]);
 
     await expect(processDueEmailDeliveries()).resolves.toEqual([{ deliveryId: "delivery-1", status: "recovered" }]);
+    expect(mocks.db.emailDelivery.findMany).toHaveBeenNthCalledWith(2, expect.objectContaining({ where: expect.objectContaining({ trigger: { not: "sequence_email" } }) }));
+    expect(mocks.db.emailDelivery.findMany).toHaveBeenNthCalledWith(3, expect.objectContaining({ where: expect.objectContaining({ trigger: "sequence_email" }), take: 20 }));
     expect(mocks.sendTransactionalEmail).not.toHaveBeenCalled();
   });
 });

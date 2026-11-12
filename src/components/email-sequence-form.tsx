@@ -20,7 +20,7 @@ export async function EmailSequenceForm({
   initialDraft: EmailSequenceFormDraft;
 }) {
   const db = getDb();
-  const [lives, templates] = await Promise.all([
+  const [recentLives, templates] = await Promise.all([
     db.live.findMany({
       where: { vendorId },
       orderBy: [{ scheduledAt: "desc" }],
@@ -34,6 +34,13 @@ export async function EmailSequenceForm({
       select: { id: true, name: true, subject: true, body: true, isActive: true },
     }),
   ]);
+  // The Live the sequence (or the form draft) is bound to is always offered,
+  // even when it is older than the 200 most recent ones.
+  const boundLiveId = initialDraft.liveId;
+  const bound = boundLiveId && !recentLives.some((live) => live.id === boundLiveId)
+    ? await db.live.findFirst({ where: { id: boundLiveId, vendorId }, select: { id: true, title: true, scheduledAt: true } })
+    : null;
+  const lives = bound ? [bound, ...recentLives] : recentLives;
   return (
     <Card>
       <EmailSequenceFormClient

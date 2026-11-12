@@ -5,7 +5,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const hookState = vi.hoisted(() => ({
   actionState: null as {
     status: "idle" | "error";
-    error: "invalid_template" | "missing_template" | "conflict" | null;
+    error: "invalid_template" | "missing_template" | "conflict" | "in_use_by_sequence" | null;
     draft: {
       name: string;
       channel: string;
@@ -60,6 +60,13 @@ describe("MessageTemplateForm sequence e-mail trigger (F-3)", () => {
     const granted = renderToStaticMarkup(<MessageTemplateForm template={template} sequenceEmailAvailable />);
     expect(granted).toContain('<option value="sequence_email">追銷序列信</option>');
     expect(granted).toContain("一定會附退訂連結");
+  });
+
+  it("explains in plain words why an in-use sequence template cannot be switched off", () => {
+    hookState.actionState = { status: "error", error: "in_use_by_sequence", draft: null, expectedUpdatedAt: null, version: 1 };
+    const html = renderToStaticMarkup(<MessageTemplateForm template={{ ...template, trigger: "sequence_email" }} sequenceEmailAvailable />);
+    expect(html).toContain("寄送中的追銷序列正在用這個模板");
+    expect(html).toContain("已經排進佇列、還沒寄出的那一封會被略過");
   });
 
   it("keeps an existing sequence template's trigger selectable even after the grant was closed", () => {

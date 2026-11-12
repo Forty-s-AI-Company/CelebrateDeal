@@ -130,24 +130,33 @@ export async function saveEmailSequence(
       version = created.version;
     }
 
-    // A step keeps its id while its delay is unchanged. A step whose delay
-    // changed is replaced: it now sits at another point of the timeline, and
-    // replacing it never collides with the per-sequence unique delay.
-    const keep = data.steps.filter((step) => step.id && existingSteps.get(step.id)?.delayMinutes === step.delayMinutes);
-    const keepIds = new Set(keep.map((step) => step.id));
+    // Every existing step keeps its id, also when its delay changes (B1): the
+    // id is part of each sent e-mail's identity, so a moved step is still the
+    // step people already received. Moved steps are deleted and re-inserted
+    // with their own id in this transaction, which never collides with the
+    // per-sequence unique delay (final delays are unique) or the delay CHECK.
+    const existingIds = new Set(data.steps.map((step) => step.id).filter((id): id is string => Boolean(id)));
+    const unchanged = data.steps.filter((step) => step.id && existingSteps.get(step.id)?.delayMinutes === step.delayMinutes);
+    const unchangedIds = new Set(unchanged.map((step) => step.id));
     await tx.emailSequenceStep.deleteMany({
-      where: { vendorId: input.vendorId, emailSequenceId: sequenceId, id: { notIn: [...keepIds].filter((id): id is string => Boolean(id)) } },
+      where: {
+        vendorId: input.vendorId,
+        emailSequenceId: sequenceId,
+        // Removed steps and moved ones (re-inserted below with the same id).
+        id: { notIn: [...unchangedIds].filter((id): id is string => Boolean(id)) },
+      },
     });
-    for (const step of keep) {
+    for (const step of unchanged) {
       await tx.emailSequenceStep.updateMany({
         where: { id: step.id!, vendorId: input.vendorId, emailSequenceId: sequenceId },
         data: { messageTemplateId: step.messageTemplateId, isActive: step.isActive },
       });
     }
-    const fresh = data.steps.filter((step) => !keepIds.has(step.id));
-    if (fresh.length > 0) {
+    const insert = data.steps.filter((step) => !unchangedIds.has(step.id));
+    if (insert.length > 0) {
       await tx.emailSequenceStep.createMany({
-        data: fresh.map((step) => ({
+        data: insert.map((step) => ({
+          ...(step.id && existingIds.has(step.id) ? { id: step.id } : {}),
           vendorId: input.vendorId,
           emailSequenceId: sequenceId,
           delayMinutes: step.delayMinutes,
@@ -246,11 +255,12 @@ export async function deleteEmailSequence(
 
 export type EmailSequenceRunCounts = { active: number; completed: number; cancelled: number };
 
-/** 進行中／完成／停止 per sequence, for this vendor only. */
+/** 進行中／完成／停止 per sequence, for this vendor only; 停止 includes people who could not join (unsubscribed, blacklisted, unusable address). */
 export async function emailSequenceRunCounts(vendorId: string, db: PrismaClient = getDb()) {
   const rows = await db.delayedStepRun.groupBy({
     by: ["emailSequenceId", "status"],
-    where: { vendorId, emailSequenceId: { not: null } },
+    // A duplicate registration of someone already in the sequence is not a person of its own.
+    where: { vendorId, emailSequenceId: { not: null }, OR: [{ cancelReason: null }, { cancelReason: { not: "duplicate" } }] },
     _count: { _all: true },
   });
   const counts = new Map<string, EmailSequenceRunCounts>();

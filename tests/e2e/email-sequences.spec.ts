@@ -1,7 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { expect, test, type Page } from "@playwright/test";
 import { PrismaClient } from "@prisma/client";
-import { processDueDelayedStepRuns } from "../../src/lib/delayed-step-runs";
 import { revealEmailDeliveryPayload } from "../../src/lib/email-delivery-pii";
 import { createFormSubmissionVerificationToken } from "../../src/lib/form-submission-verification";
 import { hashPassword } from "../../src/lib/password";
@@ -10,8 +9,8 @@ import { hashPassword } from "../../src/lib/password";
  * F-3 Email 追銷序列, end to end on the production build: the merchant creates
  * a sequence template and a three-step sequence in the back office and
  * activates it; a synthetic registrant verifies their e-mail through the real
- * verify route; the step worker is then driven with an explicit clock (as the
- * job would run later, without waiting) to the first and second steps; the
+ * verify route; the scheduled job route is then called with the registrant's
+ * timeline moved back (no waiting) to reach the first and second steps; the
  * registrant unsubscribes through the link in the e-mail and the third step is
  * never queued. Every run creates its own vendor, user and Live (uuid slugs).
  */
@@ -22,6 +21,8 @@ const e2ePort = process.env.E2E_PORT ?? "31023";
 process.env.NEXT_PUBLIC_APP_URL = `http://127.0.0.1:${e2ePort}`;
 const password = "Sequence-e2e-password-2026!";
 const MINUTE = 60_000;
+// Same synthetic value the Playwright web server is started with (playwright.config.ts).
+const jobSecret = process.env.JOB_SECRET || "e2e-job-secret-at-least-16-chars";
 
 test.use({ trace: "off", screenshot: "off", video: "off" });
 test.setTimeout(120_000);
@@ -155,11 +156,38 @@ test("a verified registrant gets the sequence's first two e-mails on time, and n
     expect(run).toMatchObject({ emailSequenceId: sequence.id, status: "active", cursorDelayMinutes: -1, anchorAt: verified.verifiedAt });
     const anchor = run.anchorAt.getTime();
 
-    // 4. The worker, driven with an explicit clock, queues one e-mail per due step.
-    const work = (offsetMs: number) => processDueDelayedStepRuns({ now: new Date(anchor + offsetMs), vendorId: fixture!.vendor.id });
-    await expect(work(59 * MINUTE)).resolves.toEqual([]);
-    await expect(work(61 * MINUTE)).resolves.toEqual([{ runId: run.id, status: "queued" }]);
-    await expect(work(24 * 60 * MINUTE + MINUTE)).resolves.toEqual([{ runId: run.id, status: "queued" }]);
+    expect(anchor).toBeLessThanOrEqual(Date.now());
+
+    // 4. The scheduled job (real route, synthetic JOB_SECRET) queues one e-mail
+    // per due step. Instead of waiting, the registrant's timeline is moved back:
+    // verified `offset` ago, with the run's next due time and the sequence's
+    // activation moved along, exactly as if that much time had passed.
+    const sequenceId = sequence.id;
+    const runId = run.id;
+    async function elapse(offsetMs: number, nextDelayMinutes: number) {
+      const shiftedAnchor = new Date(Date.now() - offsetMs);
+      await db.emailSequence.update({ where: { id: sequenceId }, data: { activatedAt: new Date(shiftedAnchor.getTime() - MINUTE) } });
+      await db.delayedStepRun.updateMany({
+        where: { id: runId, status: "active" },
+        data: { anchorAt: shiftedAnchor, nextRunAt: new Date(shiftedAnchor.getTime() + nextDelayMinutes * MINUTE) },
+      });
+    }
+    async function runJob() {
+      const response = await page.request.post("/api/jobs/email-deliveries", { headers: { authorization: `Bearer ${jobSecret}` } });
+      expect(response.status()).toBe(200);
+      return await response.json() as { ok: boolean; sequenceStepResults: Array<{ status: string }> };
+    }
+    const sequenceMails = () => db.emailDelivery.findMany({ where: { vendorId: fixture!.vendor.id, trigger: "sequence_email" }, orderBy: { createdAt: "asc" } });
+    await elapse(59 * MINUTE, 60);
+    await runJob();
+    await expect(sequenceMails()).resolves.toHaveLength(0);
+    await elapse(61 * MINUTE, 60);
+    expect((await runJob()).sequenceStepResults).toContainEqual({ status: "queued" });
+    await expect(db.delayedStepRun.findUniqueOrThrow({ where: { id: runId } })).resolves.toMatchObject({ cursorDelayMinutes: 60, status: "active" });
+    await expect(sequenceMails()).resolves.toHaveLength(1);
+    await elapse(24 * 60 * MINUTE + MINUTE, 1_440);
+    expect((await runJob()).sequenceStepResults).toContainEqual({ status: "queued" });
+    await expect(db.delayedStepRun.findUniqueOrThrow({ where: { id: runId } })).resolves.toMatchObject({ cursorDelayMinutes: 1_440, status: "active" });
     const deliveries = await db.emailDelivery.findMany({
       where: { vendorId: fixture.vendor.id, trigger: "sequence_email" },
       orderBy: { createdAt: "asc" },
@@ -178,7 +206,9 @@ test("a verified registrant gets the sequence's first two e-mails on time, and n
     await page.getByRole("button", { name: "確認停止通知" }).click();
     await expect(page).toHaveURL(/\/unsubscribe\?status=done$/u);
     await expect(db.delayedStepRun.findUniqueOrThrow({ where: { id: run.id } })).resolves.toMatchObject({ status: "cancelled", cancelReason: "unsubscribed", nextRunAt: null });
-    await expect(work(3 * 24 * 60 * MINUTE + MINUTE)).resolves.toEqual([]);
+    await elapse(3 * 24 * 60 * MINUTE + MINUTE, 4_320);
+    await runJob();
+    await expect(db.delayedStepRun.findUniqueOrThrow({ where: { id: runId } })).resolves.toMatchObject({ status: "cancelled", cursorDelayMinutes: 1_440 });
     await expect(db.emailDelivery.count({ where: { vendorId: fixture.vendor.id, trigger: "sequence_email" } })).resolves.toBe(2);
   } finally {
     await cleanup(fixture);

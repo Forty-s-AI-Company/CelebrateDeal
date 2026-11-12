@@ -38,7 +38,22 @@ export const DELAYED_STEP_MAX_ATTEMPTS = 5;
  * The cursor still moves past it.
  */
 export const DELAYED_STEP_STALE_AFTER_MS = 24 * 60 * 60 * 1_000;
+/** Runs looked at per round, all vendors together. */
 export const DELAYED_STEP_BATCH_LIMIT = 100;
+/**
+ * Sequence e-mails dispatched per job round, on their own quota after the
+ * time-bound mail (processDueEmailDeliveries). Throughput is this number per
+ * round: every 5 minutes that is 240 sequence e-mails an hour, every hour 20.
+ */
+export const SEQUENCE_EMAIL_DISPATCH_LIMIT = 20;
+/** Step e-mails created per round: twice what one round dispatches, so the queue never grows faster than two rounds can drain. */
+export const SEQUENCE_EMAILS_PER_ROUND = 2 * SEQUENCE_EMAIL_DISPATCH_LIMIT;
+/** One vendor's large webinar cannot take a whole round from the others. */
+export const SEQUENCE_EMAILS_PER_VENDOR_PER_ROUND = 10;
+const DELAYED_STEP_VENDORS_PER_ROUND = 50;
+const DELAYED_STEP_RUNS_PER_VENDOR_PER_ROUND = 25;
+/** A step whose template is switched off is retried this much later (roughly the next round), until it is 24 hours late. */
+export const DELAYED_STEP_TEMPLATE_RETRY_MS = 5 * 60 * 1_000;
 /** The job re-checks registrations verified this recently that have no run yet (§4「補漏」). */
 export const SEQUENCE_BACKFILL_WINDOW_MS = 48 * 60 * 60 * 1_000;
 const SEQUENCE_BACKFILL_PAGE_SIZE = 100;
@@ -53,6 +68,8 @@ export const DELAYED_STEP_CANCEL_REASONS = [
   "definition_deleted",
   "subject_gone",
   "failed",
+  // A second registration with the same address for the same sequence (M3).
+  "duplicate",
 ] as const;
 export type DelayedStepCancelReason = (typeof DELAYED_STEP_CANCEL_REASONS)[number];
 
@@ -90,8 +107,12 @@ export function stableSequenceDeliveryId(input: {
   return `email_${digest}`;
 }
 
+export function sequenceEmailIdempotencyPrefix(runId: string, stepId: string) {
+  return `sequence-email/${runId}/${stepId}/`;
+}
+
 export function sequenceEmailIdempotencyKey(runId: string, stepId: string, deliveryId: string) {
-  return `sequence-email/${runId}/${stepId}/${deliveryId}`;
+  return `${sequenceEmailIdempotencyPrefix(runId, stepId)}${deliveryId}`;
 }
 
 function parseSequenceEmailIdempotencyKey(value: string | undefined) {
@@ -109,32 +130,44 @@ type SequenceTemplate = {
   isActive: boolean;
 };
 
-function usableSequenceTemplate(template: SequenceTemplate | null | undefined, vendorId: string): template is SequenceTemplate & { subject: string } {
+/** The template still belongs to this vendor and is an active sequence e-mail. */
+function isSequenceTemplateAvailable(template: SequenceTemplate | null | undefined, vendorId: string): template is SequenceTemplate {
   return Boolean(
     template
     && template.isActive
     && template.vendorId === vendorId
     && template.channel === "email"
-    && template.trigger === SEQUENCE_EMAIL_TRIGGER
-    && template.subject?.trim()
+    && template.trigger === SEQUENCE_EMAIL_TRIGGER,
+  );
+}
+
+/** Subject and body are present and use only the supported variables. */
+function hasValidSequenceTemplateContent(template: Pick<SequenceTemplate, "subject" | "body">) {
+  return Boolean(
+    template.subject?.trim()
     && template.body.trim()
     && hasOnlySupportedMessageTemplateVariables(template.subject)
     && hasOnlySupportedMessageTemplateVariables(template.body),
   );
 }
 
+function usableSequenceTemplate(template: SequenceTemplate | null | undefined, vendorId: string): template is SequenceTemplate & { subject: string } {
+  return isSequenceTemplateAvailable(template, vendorId) && hasValidSequenceTemplateContent(template);
+}
+
 type RecipientCheckDatabase = Pick<Prisma.TransactionClient, "emailSuppression" | "blacklist">;
 
-/** Whether the recipient may receive this vendor's marketing mail right now. */
+const DELIVERABLE_EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/u;
+
+/**
+ * Whether the recipient may receive this vendor's marketing mail right now.
+ * Only an address that can never be sent to counts as `subject_gone`; a key
+ * or configuration error while hashing is thrown (the caller retries).
+ */
 async function recipientBlock(db: RecipientCheckDatabase, vendorId: string, email: string) {
   const normalized = normalizeBlacklistIdentifier("email", email);
-  if (!normalized) return { blocked: "subject_gone" as const };
-  let recipientHash: string;
-  try {
-    recipientHash = createEmailRecipientHash(normalized, vendorId);
-  } catch {
-    return { blocked: "subject_gone" as const };
-  }
+  if (!normalized || normalized.length > 320 || !DELIVERABLE_EMAIL.test(normalized)) return { blocked: "subject_gone" as const };
+  const recipientHash = createEmailRecipientHash(normalized, vendorId);
   const [suppression, blacklist] = await Promise.all([
     db.emailSuppression.findUnique({
       where: { vendorId_recipientHash: { vendorId, recipientHash } },
@@ -145,12 +178,12 @@ async function recipientBlock(db: RecipientCheckDatabase, vendorId: string, emai
       select: { id: true },
     }),
   ]);
-  if (suppression && !suppression.resubscribedAt) return { blocked: "unsubscribed" as const };
-  if (blacklist) return { blocked: "blacklisted" as const };
+  if (suppression && !suppression.resubscribedAt) return { blocked: "unsubscribed" as const, normalized, recipientHash };
+  if (blacklist) return { blocked: "blacklisted" as const, normalized, recipientHash };
   return { blocked: null, normalized, recipientHash };
 }
 
-async function emailSequencesEnabled(db: Pick<Database, "vendor">, vendorId: string) {
+async function emailSequencesEnabled(db: Pick<Prisma.TransactionClient, "vendor">, vendorId: string) {
   const vendor = await db.vendor.findUnique({
     where: { id: vendorId },
     select: { enabledFeatureModules: true, betaFeatureGrants: true, suspendedAt: true },
@@ -202,30 +235,52 @@ export async function enrollSubmissionInEmailSequences(
   });
   if (sequences.length === 0) return { status: "no_sequence", created: 0 };
   const recipient = await recipientBlock(db, input.vendorId, submission.email);
-  if (recipient.blocked) return { status: recipient.blocked, created: 0 };
-  let subjectKeyHash: string;
-  try {
-    subjectKeyHash = automationCustomerKeyHash(input.vendorId, recipient.normalized);
-  } catch {
-    return { status: "subject_gone", created: 0 };
-  }
+  const hashes = recipient.blocked === "subject_gone"
+    ? { subjectKeyHash: null, recipientHash: null }
+    : { subjectKeyHash: automationCustomerKeyHash(input.vendorId, recipient.normalized), recipientHash: recipient.recipientHash };
   const anchorAt = submission.verifiedAt;
-  const created = await db.delayedStepRun.createMany({
-    data: sequences.map((sequence) => ({
+  let created = 0;
+  for (const sequence of sequences) {
+    const base = {
       vendorId: input.vendorId,
       emailSequenceId: sequence.id,
       formSubmissionId: submission.id,
-      subjectKeyHash,
-      recipientHash: recipient.recipientHash,
+      subjectKeyHash: hashes.subjectKeyHash,
       anchorAt,
       cursorDelayMinutes: -1,
-      // No active step yet: due now, so the worker completes it.
-      nextRunAt: sequence.steps[0] ? new Date(anchorAt.getTime() + sequence.steps[0].delayMinutes * 60_000) : anchorAt,
-      status: "active",
-    })),
-    skipDuplicates: true,
-  });
-  return { status: created.count > 0 ? "enrolled" : "duplicate", created: created.count };
+    };
+    // Not eligible right now: recorded as stopped, so the backfill never scans
+    // this registration again. A later resubscribe or unblock does not revive it.
+    const row: Prisma.DelayedStepRunCreateManyInput = recipient.blocked
+      ? { ...base, recipientHash: hashes.recipientHash, status: "cancelled", cancelReason: recipient.blocked, nextRunAt: null }
+      : {
+          ...base,
+          recipientHash: hashes.recipientHash,
+          status: "active",
+          // No active step yet: due now, so the worker completes it.
+          nextRunAt: sequence.steps[0] ? new Date(anchorAt.getTime() + sequence.steps[0].delayMinutes * 60_000) : anchorAt,
+        };
+    const inserted = await db.delayedStepRun.createMany({ data: [row], skipDuplicates: true });
+    if (inserted.count === 1) {
+      if (!recipient.blocked) created += 1;
+      continue;
+    }
+    // Nothing inserted: this registration already has its run, or another
+    // registration with the same address (another form of this Live) holds
+    // the recipient's place in the sequence. The latter gets a stopped
+    // `duplicate` row without the hash, so the backfill skips it from now on.
+    const own = await db.delayedStepRun.findFirst({
+      where: { vendorId: input.vendorId, emailSequenceId: sequence.id, formSubmissionId: submission.id },
+      select: { id: true },
+    });
+    if (!own) {
+      await db.delayedStepRun.createMany({
+        data: [{ ...base, recipientHash: null, status: "cancelled", cancelReason: "duplicate", nextRunAt: null }],
+        skipDuplicates: true,
+      });
+    }
+  }
+  return { status: recipient.blocked ?? (created > 0 ? "enrolled" : "duplicate"), created };
 }
 
 type BackfillCandidate = { formSubmissionId: string; vendorId: string; liveId: string; verifiedAt: Date };
@@ -322,6 +377,9 @@ export type DelayedStepResult = {
     | "queued"
     | "skipped_stale"
     | "skipped_template"
+    | "skipped_already_sent"
+    | "waiting_template"
+    | "definition_changed"
     | "rescheduled"
     | "completed"
     | "cancelled"
@@ -382,6 +440,59 @@ async function sequenceLiveStartText(
   return assignment ? formatLiveStartAt(assignment.sessionStartAt) : EVERGREEN_NEUTRAL_START_TEXT;
 }
 
+class DefinitionChangedError extends Error {
+  constructor() {
+    super("Email sequence changed while the step ran.");
+    this.name = "DefinitionChangedError";
+  }
+}
+
+/**
+ * Every write that follows from the steps the worker read: inside one
+ * transaction, the sequence row is read FOR SHARE and must still be active at
+ * the version the steps were read with (M1). A save in between makes the
+ * worker drop its result and release the lease, so the next round recomputes
+ * from the new steps instead of overwriting the save's re-timing.
+ */
+async function commitWithDefinition(
+  db: Database,
+  lease: Lease,
+  sequence: { id: string; version: number },
+  work: (tx: Prisma.TransactionClient) => Promise<void>,
+): Promise<"committed" | "lease_lost" | "definition_changed"> {
+  try {
+    await db.$transaction(async (tx) => {
+      const [current] = await tx.$queryRaw<Array<{ version: number }>>`
+        SELECT "version" FROM "EmailSequence"
+        WHERE "id" = ${sequence.id} AND "vendorId" = ${lease.vendorId} AND "status" = 'active'
+        FOR SHARE
+      `;
+      if (!current || current.version !== sequence.version) throw new DefinitionChangedError();
+      await work(tx);
+    });
+    return "committed";
+  } catch (error) {
+    if (error instanceof LeaseLostError) return "lease_lost";
+    if (error instanceof DefinitionChangedError) {
+      // Give the attempt back: nothing was done, the next round starts over.
+      await db.delayedStepRun.updateMany({
+        where: leaseWhere(lease),
+        data: { claimedAt: null, attemptCount: Math.max(0, lease.attemptCount - 1) },
+      });
+      return "definition_changed";
+    }
+    throw error;
+  }
+}
+
+function outcomeOf(lease: Lease, committed: Awaited<ReturnType<typeof commitWithDefinition>>, status: DelayedStepResult["status"]): DelayedStepResult {
+  if (committed === "committed") return { runId: lease.id, status };
+  return { runId: lease.id, status: committed === "definition_changed" ? "definition_changed" : "claimed_elsewhere" };
+}
+
+const SUBJECT_MAX_LENGTH = 200;
+const BODY_MAX_LENGTH = 25_000;
+
 async function processClaimedRun(db: Database, lease: Lease, now: Date): Promise<DelayedStepResult> {
   // The worker never takes an id from outside: vendorId comes from the run
   // row and every read below is scoped to it.
@@ -398,6 +509,8 @@ async function processClaimedRun(db: Database, lease: Lease, now: Date): Promise
           vendorId: true,
           liveId: true,
           status: true,
+          version: true,
+          activatedAt: true,
           steps: {
             where: { isActive: true, delayMinutes: { gt: lease.cursorDelayMinutes } },
             orderBy: { delayMinutes: "asc" },
@@ -418,6 +531,11 @@ async function processClaimedRun(db: Database, lease: Lease, now: Date): Promise
   const sequence = run.emailSequence;
   if (!sequence || sequence.vendorId !== lease.vendorId) return cancelLeasedRun(db, lease, "definition_deleted");
   if (sequence.status !== "active") return cancelLeasedRun(db, lease, "definition_paused");
+  // Pausing cancels every active run and resuming moves activatedAt forward,
+  // so an active run anchored before the current activation was added while
+  // the sequence was paused (an enrollment racing the pause): it never
+  // continues after the resume.
+  if (sequence.activatedAt && run.anchorAt < sequence.activatedAt) return cancelLeasedRun(db, lease, "definition_paused");
   if (!run.formSubmissionId) return cancelLeasedRun(db, lease, "subject_gone");
 
   const [live, submission] = await Promise.all([
@@ -444,21 +562,41 @@ async function processClaimedRun(db: Database, lease: Lease, now: Date): Promise
 
   const [step, following] = sequence.steps;
   if (!step) {
-    const completed = await db.delayedStepRun.updateMany({
-      where: leaseWhere(lease),
-      data: { status: "completed", nextRunAt: null, claimedAt: null, attemptCount: 0 },
-    });
-    return { runId: lease.id, status: completed.count === 1 ? "completed" : "claimed_elsewhere" };
+    return outcomeOf(lease, await commitWithDefinition(db, lease, sequence, async (tx) => {
+      const completed = await tx.delayedStepRun.updateMany({
+        where: leaseWhere(lease),
+        data: { status: "completed", nextRunAt: null, claimedAt: null, attemptCount: 0 },
+      });
+      if (completed.count !== 1) throw new LeaseLostError();
+    }), "completed");
   }
 
   const dueAt = new Date(run.anchorAt.getTime() + step.delayMinutes * 60_000);
   if (dueAt > now) {
     // The step moved later (or the earlier one was switched off): wait for it.
-    const rescheduled = await db.delayedStepRun.updateMany({
-      where: leaseWhere(lease),
-      data: { nextRunAt: dueAt, claimedAt: null, attemptCount: 0 },
-    });
-    return { runId: lease.id, status: rescheduled.count === 1 ? "rescheduled" : "claimed_elsewhere" };
+    return outcomeOf(lease, await commitWithDefinition(db, lease, sequence, async (tx) => {
+      const rescheduled = await tx.delayedStepRun.updateMany({
+        where: leaseWhere(lease),
+        data: { nextRunAt: dueAt, claimedAt: null, attemptCount: 0 },
+      });
+      if (rescheduled.count !== 1) throw new LeaseLostError();
+    }), "rescheduled");
+  }
+
+  const stale = now.getTime() - dueAt.getTime() > DELAYED_STEP_STALE_AFTER_MS;
+  const template = step.messageTemplate;
+  if (!stale && !isSequenceTemplateAvailable(template, lease.vendorId)) {
+    // The template was switched off or re-purposed (the template editor
+    // refuses this while an active sequence uses it, so this is e.g. a
+    // sequence resumed after the change). Keep the cursor and try again next
+    // round; once the step is more than 24 hours late it is skipped below.
+    return outcomeOf(lease, await commitWithDefinition(db, lease, sequence, async (tx) => {
+      const waiting = await tx.delayedStepRun.updateMany({
+        where: leaseWhere(lease),
+        data: { nextRunAt: new Date(now.getTime() + DELAYED_STEP_TEMPLATE_RETRY_MS), claimedAt: null, attemptCount: 0 },
+      });
+      if (waiting.count !== 1) throw new LeaseLostError();
+    }), "waiting_template");
   }
 
   const advance: Prisma.DelayedStepRunUpdateManyMutationInput = following
@@ -472,35 +610,41 @@ async function processClaimedRun(db: Database, lease: Lease, now: Date): Promise
 
   let delivery: Prisma.EmailDeliveryCreateManyInput | null = null;
   let outcome: DelayedStepResult["status"] = "queued";
-  const template = step.messageTemplate;
-  if (now.getTime() - dueAt.getTime() > DELAYED_STEP_STALE_AFTER_MS) {
+  if (stale) {
     outcome = "skipped_stale";
-  } else if (!usableSequenceTemplate(template, lease.vendorId)) {
-    // A template switched off, re-purposed or broken: skip this step like a
-    // disabled one instead of holding the whole sequence back.
+  } else if (!hasValidSequenceTemplateContent(template)) {
+    // Missing subject or body, or an unknown variable: retrying cannot fix it.
     outcome = "skipped_template";
   } else {
     const deliveryId = stableSequenceDeliveryId({
       vendorId: lease.vendorId,
       runId: run.id,
       stepId: step.id,
-      template: { id: template.id, subject: template.subject, body: template.body },
+      template: { id: template.id, subject: template.subject ?? "", body: template.body },
     });
-    try {
-      const unsubscribeUrl = createEmailUnsubscribeUrl(deliveryId);
-      const variables = {
-        name: submission.name,
-        live_title: live.title,
-        live_url: createLiveViewerUrl(live.slug),
-        live_start_at: await sequenceLiveStartText(db, live, submission, now),
-        vendor_name: live.vendor.name,
-        unsubscribe_url: unsubscribeUrl,
-      };
+    // Configuration, key and database errors below are thrown on purpose: the
+    // lease keeps the run and a later round retries the same step (S3).
+    const unsubscribeUrl = createEmailUnsubscribeUrl(deliveryId);
+    const variables = {
+      name: submission.name,
+      live_title: live.title,
+      live_url: createLiveViewerUrl(live.slug),
+      live_start_at: await sequenceLiveStartText(db, live, submission, now),
+      vendor_name: live.vendor.name,
+      unsubscribe_url: unsubscribeUrl,
+    };
+    const subject = renderMessageTemplate(template.subject ?? "", variables).replace(/\s+/gu, " ").trim();
+    // Marketing mail: the unsubscribe link is always there.
+    const body = ensureEmailUnsubscribeFooter(renderMessageTemplate(template.body, variables), unsubscribeUrl);
+    if (!subject || subject.length > SUBJECT_MAX_LENGTH || !body.trim() || body.length > BODY_MAX_LENGTH) {
+      // The rendered mail does not fit the delivery limits (deterministic).
+      reportFailure(new Error("Rendered sequence e-mail exceeds the delivery limits."), "render_step", "skipped");
+      outcome = "skipped_template";
+    } else {
       const payload = protectEmailDeliveryPayload({
         recipientEmail: recipient.normalized,
-        subject: renderMessageTemplate(template.subject, variables).replace(/\s+/gu, " ").trim(),
-        // Marketing mail: the unsubscribe link is always there.
-        body: ensureEmailUnsubscribeFooter(renderMessageTemplate(template.body, variables), unsubscribeUrl),
+        subject,
+        body,
         brand: {
           senderName: live.vendor.senderName,
           supportEmail: live.vendor.supportEmail,
@@ -519,98 +663,151 @@ async function processClaimedRun(db: Database, lease: Lease, now: Date): Promise
         status: "queued",
         maxAttempts: MAX_ATTEMPTS_PER_DELIVERY,
         nextAttemptAt: now,
+        // The send-time guard ages a step e-mail from this moment.
+        createdAt: now,
       };
-    } catch (error) {
-      // The rendered mail does not fit the delivery limits; retrying cannot fix it.
-      reportFailure(error, "render_step", "skipped");
-      outcome = "skipped_template";
     }
   }
 
-  try {
-    await db.$transaction(async (tx) => {
-      // Moving the cursor and creating the step's e-mail commit together.
-      const advanced = await tx.delayedStepRun.updateMany({ where: leaseWhere(lease), data: advance });
-      if (advanced.count !== 1) throw new LeaseLostError();
-      if (delivery) await tx.emailDelivery.createMany({ data: [delivery], skipDuplicates: true });
+  const committed = await commitWithDefinition(db, lease, sequence, async (tx) => {
+    // Moving the cursor and creating the step's e-mail commit together.
+    const advanced = await tx.delayedStepRun.updateMany({ where: leaseWhere(lease), data: advance });
+    if (advanced.count !== 1) throw new LeaseLostError();
+    if (!delivery) return;
+    // One e-mail per person and step, whatever the step edits did (B1): any
+    // earlier e-mail of this run and step, in any state, means this step is
+    // done. Read by the registration index, bound to the vendor.
+    const earlier = await tx.emailDelivery.findFirst({
+      where: {
+        vendorId: lease.vendorId,
+        sourceFormSubmissionId: submission.id,
+        trigger: SEQUENCE_EMAIL_TRIGGER,
+        idempotencyKey: { startsWith: sequenceEmailIdempotencyPrefix(run.id, step.id) },
+      },
+      select: { id: true },
     });
-  } catch (error) {
-    if (error instanceof LeaseLostError) return { runId: lease.id, status: "claimed_elsewhere" };
-    throw error;
-  }
-  return { runId: lease.id, status: outcome };
+    if (earlier) {
+      outcome = "skipped_already_sent";
+      return;
+    }
+    await tx.emailDelivery.createMany({ data: [delivery], skipDuplicates: true });
+  });
+  return outcomeOf(lease, committed, outcome);
 }
 
+export type DelayedStepBudget = {
+  /** Runs looked at (claimed) per round, all vendors together. */
+  runs: number;
+  /** Step e-mails created per round, all vendors together. */
+  emails: number;
+  /** Step e-mails created per round for one vendor. */
+  emailsPerVendor: number;
+};
+
+export const DEFAULT_DELAYED_STEP_BUDGET: DelayedStepBudget = {
+  runs: DELAYED_STEP_BATCH_LIMIT,
+  emails: SEQUENCE_EMAILS_PER_ROUND,
+  emailsPerVendor: SEQUENCE_EMAILS_PER_VENDOR_PER_ROUND,
+};
+
 /**
- * The job's worker (§3「Worker」). Each round takes up to `limit` due active
- * runs of active, non-suspended vendors that hold the email_sequences grant
- * (a closed grant keeps the runs but never runs them), claims each with a
- * compare-and-set and executes at most one step per run.
+ * The job's worker (§3「Worker」). Each round takes due active runs of
+ * active, non-suspended vendors that hold the email_sequences grant (a closed
+ * grant keeps the runs but never runs them), vendor by vendor starting with
+ * the one waiting longest, claims each with a compare-and-set and executes at
+ * most one step per run. A round stops creating e-mails at the budget (S1):
+ * at most `emails` in total and `emailsPerVendor` per vendor, sized to the
+ * dispatch quota for sequence e-mails. Runs not reached stay active with
+ * their nextRunAt unchanged for the next round; their 24-hour lateness is
+ * still measured from the step's own due time.
  */
 export async function processDueDelayedStepRuns(
   /** `vendorId` scopes one run to a single tenant (tests, operations); the job runs unscoped. */
-  options: { now?: Date; limit?: number; vendorId?: string } = {},
+  options: { now?: Date; vendorId?: string; budget?: Partial<DelayedStepBudget> } = {},
   db: Database = getDb(),
 ): Promise<DelayedStepResult[]> {
   const now = options.now ?? new Date();
-  const limit = Math.min(Math.max(options.limit ?? DELAYED_STEP_BATCH_LIMIT, 1), 500);
+  const budget = { ...DEFAULT_DELAYED_STEP_BUDGET, ...options.budget };
   const leaseCutoff = new Date(now.getTime() - DELAYED_STEP_LEASE_MS);
-  const candidates = await db.delayedStepRun.findMany({
-    where: {
-      ...(options.vendorId ? { vendorId: options.vendorId } : {}),
-      status: "active",
-      nextRunAt: { lte: now },
-      OR: [{ claimedAt: null }, { claimedAt: { lte: leaseCutoff } }],
-      vendor: { is: { suspendedAt: null, betaFeatureGrants: { has: EMAIL_SEQUENCES_FEATURE } } },
-    },
-    orderBy: [{ nextRunAt: "asc" }, { id: "asc" }],
-    take: limit,
-    select: { id: true, vendorId: true, updatedAt: true, cursorDelayMinutes: true, attemptCount: true },
+  const dueWhere: Prisma.DelayedStepRunWhereInput = {
+    ...(options.vendorId ? { vendorId: options.vendorId } : {}),
+    status: "active",
+    nextRunAt: { lte: now },
+    OR: [{ claimedAt: null }, { claimedAt: { lte: leaseCutoff } }],
+    vendor: { is: { suspendedAt: null, betaFeatureGrants: { has: EMAIL_SEQUENCES_FEATURE } } },
+  };
+  const vendors = await db.delayedStepRun.groupBy({
+    by: ["vendorId"],
+    where: dueWhere,
+    _min: { nextRunAt: true },
+    orderBy: { _min: { nextRunAt: "asc" } },
+    take: DELAYED_STEP_VENDORS_PER_ROUND,
   });
   const results: DelayedStepResult[] = [];
-  for (const candidate of candidates) {
-    try {
-      if (candidate.attemptCount >= DELAYED_STEP_MAX_ATTEMPTS) {
-        const exhausted = await db.delayedStepRun.updateMany({
-          where: { id: candidate.id, vendorId: candidate.vendorId, status: "active", updatedAt: candidate.updatedAt },
-          data: { status: "cancelled", cancelReason: "failed", nextRunAt: null, claimedAt: null },
-        });
-        if (exhausted.count === 1) reportFailure(new Error("Delayed step run exhausted its attempts."), "retry_limit", "cancelled");
-        results.push(exhausted.count === 1
-          ? { runId: candidate.id, status: "cancelled", cancelReason: "failed" }
-          : { runId: candidate.id, status: "claimed_elsewhere" });
-        continue;
+  let emails = 0;
+  for (const { vendorId } of vendors) {
+    if (results.length >= budget.runs || emails >= budget.emails) break;
+    const candidates = await db.delayedStepRun.findMany({
+      where: { ...dueWhere, vendorId },
+      orderBy: [{ nextRunAt: "asc" }, { id: "asc" }],
+      take: Math.min(budget.runs - results.length, DELAYED_STEP_RUNS_PER_VENDOR_PER_ROUND),
+      select: { id: true, vendorId: true, updatedAt: true, cursorDelayMinutes: true, attemptCount: true },
+    });
+    let vendorEmails = 0;
+    for (const candidate of candidates) {
+      if (emails >= budget.emails || vendorEmails >= budget.emailsPerVendor) break;
+      const result = await processCandidate(db, candidate, now);
+      results.push(result);
+      if (result.status === "queued") {
+        emails += 1;
+        vendorEmails += 1;
       }
-      const claimedAt = now;
-      const claimed = await db.delayedStepRun.updateMany({
-        where: {
-          id: candidate.id,
-          vendorId: candidate.vendorId,
-          status: "active",
-          updatedAt: candidate.updatedAt,
-          cursorDelayMinutes: candidate.cursorDelayMinutes,
-          attemptCount: candidate.attemptCount,
-        },
-        data: { claimedAt, attemptCount: { increment: 1 } },
-      });
-      if (claimed.count !== 1) {
-        results.push({ runId: candidate.id, status: "claimed_elsewhere" });
-        continue;
-      }
-      results.push(await processClaimedRun(db, {
-        id: candidate.id,
-        vendorId: candidate.vendorId,
-        claimedAt,
-        attemptCount: candidate.attemptCount + 1,
-        cursorDelayMinutes: candidate.cursorDelayMinutes,
-      }, now));
-    } catch (error) {
-      // The lease stays; the run is claimable again after DELAYED_STEP_LEASE_MS.
-      reportFailure(error, "process_step", "failed");
-      results.push({ runId: candidate.id, status: "failed" });
     }
   }
   return results;
+}
+
+async function processCandidate(
+  db: Database,
+  candidate: { id: string; vendorId: string; updatedAt: Date; cursorDelayMinutes: number; attemptCount: number },
+  now: Date,
+): Promise<DelayedStepResult> {
+  try {
+    if (candidate.attemptCount >= DELAYED_STEP_MAX_ATTEMPTS) {
+      const exhausted = await db.delayedStepRun.updateMany({
+        where: { id: candidate.id, vendorId: candidate.vendorId, status: "active", updatedAt: candidate.updatedAt },
+        data: { status: "cancelled", cancelReason: "failed", nextRunAt: null, claimedAt: null },
+      });
+      if (exhausted.count === 1) reportFailure(new Error("Delayed step run exhausted its attempts."), "retry_limit", "cancelled");
+      return exhausted.count === 1
+        ? { runId: candidate.id, status: "cancelled", cancelReason: "failed" }
+        : { runId: candidate.id, status: "claimed_elsewhere" };
+    }
+    const claimedAt = now;
+    const claimed = await db.delayedStepRun.updateMany({
+      where: {
+        id: candidate.id,
+        vendorId: candidate.vendorId,
+        status: "active",
+        updatedAt: candidate.updatedAt,
+        cursorDelayMinutes: candidate.cursorDelayMinutes,
+        attemptCount: candidate.attemptCount,
+      },
+      data: { claimedAt, attemptCount: { increment: 1 } },
+    });
+    if (claimed.count !== 1) return { runId: candidate.id, status: "claimed_elsewhere" };
+    return await processClaimedRun(db, {
+      id: candidate.id,
+      vendorId: candidate.vendorId,
+      claimedAt,
+      attemptCount: candidate.attemptCount + 1,
+      cursorDelayMinutes: candidate.cursorDelayMinutes,
+    }, now);
+  } catch (error) {
+    // The lease stays; the run is claimable again after DELAYED_STEP_LEASE_MS.
+    reportFailure(error, "process_step", "failed");
+    return { runId: candidate.id, status: "failed" };
+  }
 }
 
 /**
@@ -658,14 +855,15 @@ export async function rescheduleActiveRunsForSequence(
   `;
 }
 
-type SequenceSnapshotDatabase = Pick<Prisma.TransactionClient, "delayedStepRun" | "blacklist">;
+type SequenceSnapshotDatabase = Pick<Prisma.TransactionClient, "delayedStepRun" | "blacklist" | "vendor">;
 
 /**
  * Send-time guard for `sequence_email` (§4「寄信」): the run is still active or
  * completed, its sequence is active, the step is still active, the template is
- * still usable and its id and content still produce this delivery's id, and
- * the recipient is not on the vendor's blacklist. Otherwise the delivery is
- * superseded.
+ * still usable and its id and content still produce this delivery's id, the
+ * recipient is not on the vendor's blacklist, the vendor still holds the
+ * email_sequences grant (M2), and the e-mail was created less than 24 hours
+ * ago (the worker's lateness rule, S1). Otherwise the delivery is superseded.
  */
 export async function isCurrentSequenceEmailDelivery(
   delivery: {
@@ -675,11 +873,15 @@ export async function isCurrentSequenceEmailDelivery(
     sourceFormSubmissionId: string | null;
     trigger: string;
     idempotencyKey?: string;
+    createdAt?: Date;
   },
+  now: Date,
   database: SequenceSnapshotDatabase,
 ) {
   if (delivery.trigger !== SEQUENCE_EMAIL_TRIGGER) return true;
   if (!delivery.sourceLiveId || !delivery.sourceFormSubmissionId) return false;
+  if (!delivery.createdAt || now.getTime() - delivery.createdAt.getTime() > DELAYED_STEP_STALE_AFTER_MS) return false;
+  if (!await emailSequencesEnabled(database, delivery.vendorId)) return false;
   // The idempotency key names the run and step, but the merchant retry path
   // does not read it, so the match is recomputed from the source records: a
   // registration has at most a few runs and each sequence at most 10 steps.

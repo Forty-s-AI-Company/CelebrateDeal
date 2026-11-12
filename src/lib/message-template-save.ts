@@ -30,6 +30,9 @@ function optionalText(formData: FormData, key: string) {
   return text.length > 0 ? text : null;
 }
 
+/** F-3: the template is sent by a step of an active sequence and may not stop being a usable sequence e-mail. */
+class TemplateInUseBySequenceError extends Error {}
+
 function isRecordNotFoundError(error: unknown) {
   return typeof error === "object" && error !== null && "code" in error && error.code === "P2025";
 }
@@ -134,6 +137,19 @@ export async function saveMessageTemplate({
         : await tx.messageTemplate.create({ data: { ...data, vendorId } });
       if (!id) return { template, reconciliationStatuses: [] };
 
+      // F-3 (S4): an active step of an active sequence keeps sending this
+      // template, so it may not be switched off or moved to another trigger or
+      // channel. Checked after the update (the template row is locked) and
+      // rolled back with it; the merchant pauses the sequence or picks another
+      // template first. Content edits stay allowed.
+      if (!data.isActive || data.trigger !== "sequence_email" || data.channel !== "email") {
+        const inUse = await tx.emailSequenceStep.findFirst({
+          where: { vendorId, messageTemplateId: template.id, isActive: true, sequence: { is: { vendorId, status: "active" } } },
+          select: { id: true },
+        });
+        if (inUse) throw new TemplateInUseBySequenceError();
+      }
+
       await supersedeLiveNotificationDeliveriesForTemplate(tx, {
         vendorId,
         templateId: template.id,
@@ -165,6 +181,12 @@ export async function saveMessageTemplate({
       return { template, reconciliationStatuses };
     }, { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted });
   } catch (error) {
+    if (error instanceof TemplateInUseBySequenceError) {
+      return {
+        ok: false,
+        state: messageTemplateActionError(previousState, "in_use_by_sequence", submittedDraft, expectedUpdatedAtValue),
+      };
+    }
     if (isRecordNotFoundError(error)) {
       const current = id
         ? await db.messageTemplate.findFirst({

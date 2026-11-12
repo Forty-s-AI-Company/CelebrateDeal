@@ -798,6 +798,8 @@ model FormSubmission {
   @@unique([formId, id])
   @@index([formId, verificationStatus, createdAt])
   @@index([liveId, verificationStatus, createdAt])
+  /// F-3 補漏：某場直播最近驗證的報名。
+  @@index([liveId, verificationStatus, verifiedAt])
   @@index([affiliateClickId])
   @@index([formId, customerKeyHash, createdAt])
   @@index([liveId, liveSessionId])
@@ -1163,8 +1165,8 @@ model DelayedStepRun {
   /// F-4 會加 `automationRuleId`；屆時 CHECK 改成兩者恰好一個有值。
   emailSequenceId    String?
   formSubmissionId   String?
-  /// 對象的 `automationCustomerKeyHash`（PR 2「買了就停」用）。
-  subjectKeyHash     String
+  /// 對象的 `automationCustomerKeyHash`（PR 2「買了就停」用）；報名的 Email 無法使用時為 null。
+  subjectKeyHash     String?
   /// `createEmailRecipientHash` 的值；退訂時以它取消同一收件人的 run。
   recipientHash      String?
   /// 時間線起點（報名驗證時間）。
@@ -1175,7 +1177,7 @@ model DelayedStepRun {
   nextRunAt          DateTime?
   /// active | completed | cancelled
   status             String    @default("active")
-  /// unsubscribed | blacklisted | purchased | definition_paused | definition_deleted | subject_gone | failed
+  /// unsubscribed | blacklisted | purchased | definition_paused | definition_deleted | subject_gone | failed | duplicate
   cancelReason       String?
   claimedAt          DateTime?
   attemptCount       Int       @default(0)
@@ -1188,6 +1190,8 @@ model DelayedStepRun {
 
   @@unique([vendorId, id])
   @@unique([vendorId, emailSequenceId, formSubmissionId])
+  /// 同一收件人在同一序列只會有一列（不同表單報名同一場也一樣）；recipientHash 為 null 的列不受限。
+  @@unique([vendorId, emailSequenceId, recipientHash])
   @@index([status, nextRunAt])
   @@index([formSubmissionId])
   @@index([vendorId, recipientHash, status])

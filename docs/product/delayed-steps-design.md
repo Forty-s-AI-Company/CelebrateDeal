@@ -72,6 +72,12 @@
 - 每一步的產出用決定性 id：`hash(vendorId, runId, stepId, 模板內容)`。重跑同一步只會撞到 unique，不會寄第二封。
 - 租約 10 分鐘過期可重領，重試上限 5 次，超過標 `cancelled`（`cancelReason: "failed"`）並 `captureOperationalError`。
 
+### 吞吐量（PR 1 審查 S1）
+
+- 每輪 job 先寄有時效的信（確認信、提醒、課後信、通知；沿用每輪 20 封），序列信用另一份額度：每輪最多 20 封（`SEQUENCE_EMAIL_DISPATCH_LIMIT`），且這一段最多花 20 秒（`SEQUENCE_EMAIL_DISPATCH_TIME_BUDGET_MS`），剩下的留給下一輪。
+- worker 每輪最多建 40 封序列信（寄送額度的 2 倍），每個商家每輪最多 10 封；沒輪到的人維持 `active`、`nextRunAt` 不變，下一輪繼續。逾期 24 小時跳過仍以步驟本身的到期時間計算。
+- 因此全平台的序列信上限約為「每輪 20 封 × job 頻率」：每 5 分鐘一輪是每小時 240 封，每小時一輪是每小時 20 封；單一商家每輪最多建 10 封。一場 500 人的直播，同一步要花好幾輪才寄完，排在後面的人可能晚數小時，超過 24 小時的會被跳過。**開放給一般商家前，owner 需決定 job 頻率與這些額度（見第 9 節第 7 點）。**
+
 ### 時間精度
 
 精度等於 job 的頻率。production 若是每小時跑一次，「10 分鐘後」的步驟實際可能晚 50 分鐘。因此 UI 的延遲單位只提供小時與天（最小 1 小時），不提供分鐘。
@@ -98,14 +104,18 @@
 - 時機：報名的 Email 驗證成功時（`src/app/api/form-submissions/verify/route.ts`，和確認信同一段）。加入失敗不影響驗證結果，只記錄錯誤。
 - 補漏：job 每輪掃過去 48 小時內驗證、該直播有啟用中序列、卻沒有 run 的報名，補建。
 - 只加入 `verifiedAt >= activatedAt` 的報名。啟用序列不會回頭寄給以前的報名者。
-- 加入當下就被退訂或在黑名單的人不建 run。
+- 加入當下就被退訂、在黑名單或 Email 無法使用的人不會開始收信：寫一筆 `cancelled` 的 run（`unsubscribed`／`blacklisted`／`subject_gone`），補漏因此不會每輪重掃他們；之後重新訂閱或解除封鎖也不會自動復活（PR 1 審查 S2）。
+- 同一個 Email 透過不同表單報名同一場直播，同一條序列只收一份：`(vendorId, emailSequenceId, recipientHash)` unique，第二筆報名寫 `cancelled`／`duplicate`、不存 recipientHash，不算在人數裡（M3）。
 
 ### 寄信
 
 每一步建立一筆 `EmailDelivery`，`trigger: "sequence_email"`，之後完全走既有的寄信流程（claim、重試、送出前檢查）。
 
 - 一律加退訂 footer（`ensureEmailUnsubscribeFooter`）。這是行銷信。
-- 建立時查退訂與黑名單，命中就建成 `suppressed`，並把 run 標 `cancelled`。
+- 步驟到點時查退訂與黑名單，命中就把 run 標 `cancelled`、不建信（實作與原設計不同：不另建 `suppressed` 的寄送紀錄）。
+- 同一人同一步最多一封：步驟改延遲時保留步驟 id，worker 建信前也會查這個 run 的這一步有沒有任何一封信（任何狀態），有就只推進游標（PR 1 審查 B1）。被移到某人目前進度之前的步驟，他不會補收。
+- 模板：寄送中的序列正在用的模板，模板編輯頁不能停用或改觸發條件；仍遇到不可用的模板（例如暫停時改過、恢復後到點）時不推進游標、約 5 分鐘後重試，逾期 24 小時才跳過。只改內容時，已排隊還沒寄出的那一封在寄送前被略過，不改寄新版本。
+- 寄送前另外檢查：商家仍有 `email_sequences` 授權、這封信建立未超過 24 小時。
 - `isCurrentEmailDeliverySnapshot` 加一段 `sequence_email` 的檢查：run 仍是 `active` 或 `completed`、序列不是 `draft`、步驟仍啟用、模板仍啟用且內容與 id 相符、收件人不在黑名單。不符就 `superseded`。
 - 退訂 API 目前會把該收件人排隊中的信轉成 `suppressed`；另外要把他在這個商家所有 `active` 的 run 標 `cancelled`。
 
@@ -180,3 +190,4 @@ F-3 會照下列預設值直接做；有不同想法再調整。F-4 等確認後
 4. **F-4 的範圍**：照第 8 節——延遲步驟、不做視覺化編輯器、補退訂與黑名單、接上 `payment_paid`、隱藏另外三個沒接上的 trigger、權限統一成 owner 與 admin。
 5. **production 排程頻率**（D-06）：這會決定延遲步驟的準時程度。每小時一次的話，所有步驟最多晚一小時。
 6. **Email 用量**：序列會明顯增加寄信量。要不要在開放給一般商家前先做計量或每日上限？
+7. **序列信吞吐量**：目前每輪最多寄 20 封序列信、每商家每輪最多建 10 封（第 3 節「吞吐量」）。開放給一般商家前要決定 job 頻率與這兩個額度，大場次才不會讓後面的人晚到被跳過。

@@ -5,32 +5,18 @@
 -- The job (/api/jobs/email-deliveries -> processDueDelayedStepRuns) advances
 -- each run one step at a time and queues an EmailDelivery per step.
 --
--- Forward-only and additive: three new tables, plus the closed-beta grant
--- CHECK on "Vendor" rebuilt to also allow 'email_sequences'. The new CHECK is
--- a superset of the old one (20261021171100_vendor_beta_feature_grants), so
--- re-validating the existing rows cannot fail; "Vendor" is small, so the
--- validation scan under the ACCESS EXCLUSIVE lock is short. No existing row
--- changes, no grant is given to anyone.
+-- Forward-only and additive: three new tables, one index on "FormSubmission"
+-- for the enrollment backfill, and the closed-beta grant CHECK on "Vendor"
+-- rebuilt to also allow 'email_sequences'. The new CHECK is a superset of the
+-- old one (20261021171100_vendor_beta_feature_grants), so re-validating the
+-- existing rows cannot fail; it runs last so the ACCESS EXCLUSIVE lock on
+-- "Vendor" is held only for the final statements. No existing row changes, no
+-- grant is given to anyone.
 DO $$
 BEGIN
   PERFORM pg_catalog.set_config('lock_timeout', '5s', true);
 END
 $$;
-
--- Closed-beta module grant: add 'email_sequences' (src/lib/vendor-feature-toggles.ts).
-ALTER TABLE "Vendor" DROP CONSTRAINT "Vendor_betaFeatureGrants_check";
-ALTER TABLE "Vendor"
-  ADD CONSTRAINT "Vendor_betaFeatureGrants_check" CHECK (
-    "betaFeatureGrants" <@ ARRAY[
-      'courses',
-      'billing',
-      'funnel_binding',
-      'consultation_booking',
-      'browser_live',
-      'danmaku',
-      'email_sequences'
-    ]::TEXT[]
-  );
 
 -- CreateTable
 CREATE TABLE "EmailSequence" (
@@ -75,7 +61,7 @@ CREATE TABLE "DelayedStepRun" (
     "vendorId" TEXT NOT NULL,
     "emailSequenceId" TEXT,
     "formSubmissionId" TEXT,
-    "subjectKeyHash" TEXT NOT NULL,
+    "subjectKeyHash" TEXT,
     "recipientHash" TEXT,
     "anchorAt" TIMESTAMP(3) NOT NULL,
     "cursorDelayMinutes" INTEGER NOT NULL DEFAULT -1,
@@ -95,7 +81,7 @@ CREATE TABLE "DelayedStepRun" (
       ("status" = 'cancelled') = ("cancelReason" IS NOT NULL)
       AND ("cancelReason" IS NULL OR "cancelReason" IN (
         'unsubscribed', 'blacklisted', 'purchased', 'definition_paused',
-        'definition_deleted', 'subject_gone', 'failed'
+        'definition_deleted', 'subject_gone', 'failed', 'duplicate'
       ))
     ),
     CONSTRAINT "DelayedStepRun_counters_check" CHECK ("cursorDelayMinutes" >= -1 AND "attemptCount" >= 0),
@@ -139,6 +125,18 @@ CREATE UNIQUE INDEX "DelayedStepRun_vendorId_id_key" ON "DelayedStepRun"("vendor
 -- backfill sweep racing the verify route only hits this key.
 CREATE UNIQUE INDEX "DelayedStepRun_vendorId_emailSequenceId_formSubmissionId_key" ON "DelayedStepRun"("vendorId", "emailSequenceId", "formSubmissionId");
 
+-- CreateIndex
+-- One run per recipient and sequence: a second registration with the same
+-- address (another form of the same Live) gets a cancelled 'duplicate' row
+-- whose recipientHash is NULL, which this index does not restrict.
+CREATE UNIQUE INDEX "DelayedStepRun_vendorId_emailSequenceId_recipientHash_key" ON "DelayedStepRun"("vendorId", "emailSequenceId", "recipientHash");
+
+-- CreateIndex
+-- Enrollment backfill: a Live's registrations verified in the last 48 hours.
+-- Plain (non-concurrent) build inside the migration transaction: writes to
+-- "FormSubmission" wait for it; the table is small during the closed beta.
+CREATE INDEX "FormSubmission_liveId_verificationStatus_verifiedAt_idx" ON "FormSubmission"("liveId", "verificationStatus", "verifiedAt");
+
 -- AddForeignKey
 ALTER TABLE "EmailSequence" ADD CONSTRAINT "EmailSequence_vendorId_liveId_fkey" FOREIGN KEY ("vendorId", "liveId") REFERENCES "Live"("vendorId", "id") ON DELETE CASCADE ON UPDATE CASCADE;
 
@@ -169,3 +167,18 @@ ALTER TABLE "DelayedStepRun" ADD CONSTRAINT "DelayedStepRun_formSubmissionId_fke
 ALTER TABLE "EmailSequence" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "EmailSequenceStep" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "DelayedStepRun" ENABLE ROW LEVEL SECURITY;
+
+-- Closed-beta module grant: add 'email_sequences' (src/lib/vendor-feature-toggles.ts).
+ALTER TABLE "Vendor" DROP CONSTRAINT "Vendor_betaFeatureGrants_check";
+ALTER TABLE "Vendor"
+  ADD CONSTRAINT "Vendor_betaFeatureGrants_check" CHECK (
+    "betaFeatureGrants" <@ ARRAY[
+      'courses',
+      'billing',
+      'funnel_binding',
+      'consultation_booking',
+      'browser_live',
+      'danmaku',
+      'email_sequences'
+    ]::TEXT[]
+  );

@@ -9,6 +9,8 @@ import {
   saveEmailSequence,
 } from "@/lib/email-sequences";
 import { MAX_ACTIVE_EMAIL_SEQUENCES_PER_VENDOR, MAX_EMAIL_SEQUENCE_STEPS } from "@/lib/email-sequence-rules";
+import { initialMessageTemplateActionState } from "@/lib/message-template";
+import { saveMessageTemplate } from "@/lib/message-template-save";
 
 /**
  * F-3 merchant-side writes (docs/product/delayed-steps-design.md §4, §6, §7):
@@ -221,6 +223,31 @@ describe("activate / pause / delete", () => {
     expect(await db.emailSequenceStep.count({ where: { emailSequenceId: created.id } })).toBe(0);
     // The template itself stays, and can now be deleted with the vendor.
     await expect(db.messageTemplate.findUnique({ where: { id: t.mail.id } })).resolves.not.toBeNull();
+  });
+
+  it("refuses to switch off or re-purpose a template an active sequence sends, and allows it once paused (S4)", async () => {
+    const t = await tenant();
+    const created = await create(t, [60]);
+    await activateEmailSequence({ vendorId: t.vendor.id, sequenceId: created.id, expectedVersion: 1, now });
+    const current = await db.messageTemplate.findUniqueOrThrow({ where: { id: t.mail.id } });
+    const form = (values: Record<string, string>) => {
+      const data = new FormData();
+      const fields = { id: t.mail.id, expectedUpdatedAt: current.updatedAt.toISOString(), name: "序列信", channel: "email", trigger: "sequence_email", subject: "{{live_title}} 的下一步", body: "{{name}} 你好 {{unsubscribe_url}}", isActive: "on", ...values };
+      for (const [key, value] of Object.entries(fields)) if (value !== "") data.set(key, value);
+      return data;
+    };
+    const actor = { actorId: "user-1", actorLabel: "owner" };
+    for (const values of [{ isActive: "" }, { trigger: "post_live_followup" }] as Array<Record<string, string>>) {
+      const result = await saveMessageTemplate({ vendorId: t.vendor.id, auditActor: actor, previousState: initialMessageTemplateActionState, formData: form(values) });
+      expect(result).toMatchObject({ ok: false, state: { error: "in_use_by_sequence", expectedUpdatedAt: current.updatedAt.toISOString() } });
+    }
+    await expect(db.messageTemplate.findUniqueOrThrow({ where: { id: t.mail.id } })).resolves.toMatchObject({ isActive: true, trigger: "sequence_email", updatedAt: current.updatedAt });
+    // A content edit is allowed.
+    await expect(saveMessageTemplate({ vendorId: t.vendor.id, auditActor: actor, previousState: initialMessageTemplateActionState, formData: form({ body: "新的內容 {{unsubscribe_url}}" }) })).resolves.toMatchObject({ ok: true });
+    // Once the sequence is paused, the template can be switched off.
+    await pauseEmailSequence({ vendorId: t.vendor.id, sequenceId: created.id, expectedVersion: 2 });
+    const latest = await db.messageTemplate.findUniqueOrThrow({ where: { id: t.mail.id } });
+    await expect(saveMessageTemplate({ vendorId: t.vendor.id, auditActor: actor, previousState: initialMessageTemplateActionState, formData: form({ isActive: "", expectedUpdatedAt: latest.updatedAt.toISOString() }) })).resolves.toMatchObject({ ok: true });
   });
 
   it("refuses to delete a template a step still uses", async () => {

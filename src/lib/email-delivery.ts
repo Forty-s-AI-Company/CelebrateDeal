@@ -41,7 +41,7 @@ import {
 } from "@/lib/live-notification-delivery";
 import { ACTIVE_VENDOR_RELATION, isVendorSuspendedById } from "@/lib/vendor-suspension-state";
 import { ensureEmailUnsubscribeFooter, formatLiveStartAt } from "@/lib/email-delivery-format";
-import { isCurrentSequenceEmailDelivery, SEQUENCE_EMAIL_TRIGGER } from "@/lib/delayed-step-runs";
+import { isCurrentSequenceEmailDelivery, SEQUENCE_EMAIL_DISPATCH_LIMIT, SEQUENCE_EMAIL_TRIGGER } from "@/lib/delayed-step-runs";
 
 const DELIVERY_LEASE_MS = 10 * 60 * 1_000;
 const MAX_ATTEMPTS = 5;
@@ -1357,6 +1357,7 @@ function deliveryError(error: unknown) {
 
 type ClaimedDelivery = {
   id: string;
+  createdAt: Date;
   vendorId: string;
   sourceLiveId: string | null;
   sourceFormSubmissionId: string | null;
@@ -1368,13 +1369,13 @@ type ClaimedDelivery = {
   maxAttempts: number;
 };
 
-type DeliverySnapshotDatabase = Pick<Prisma.TransactionClient, "live" | "liveNotificationRule" | "formSubmission" | "blacklist" | "evergreenSessionAssignment" | "delayedStepRun">
+type DeliverySnapshotDatabase = Pick<Prisma.TransactionClient, "live" | "liveNotificationRule" | "formSubmission" | "blacklist" | "evergreenSessionAssignment" | "delayedStepRun" | "vendor">
   & Partial<Pick<Prisma.TransactionClient, "studentPortalAccessToken">>;
 
 export type EmailDeliverySnapshotIdentity = Pick<
   ClaimedDelivery,
   "id" | "vendorId" | "sourceLiveId" | "sourceFormSubmissionId" | "trigger"
-> & { idempotencyKey?: string };
+> & { idempotencyKey?: string; createdAt?: Date };
 
 async function isCurrentLiveReminderDelivery(
   delivery: EmailDeliverySnapshotIdentity,
@@ -1650,7 +1651,7 @@ export async function isCurrentEmailDeliverySnapshot(
     && await isCurrentFixedSessionCancelledDelivery(delivery, database)
     && await isCurrentFixedSessionAlreadyRegisteredDelivery(delivery, database)
     && await isCurrentStudentPortalDelivery(delivery, now, database)
-    && await isCurrentSequenceEmailDelivery(delivery, database);
+    && await isCurrentSequenceEmailDelivery(delivery, now, database);
 }
 
 function reportDeliveryFailure(error: unknown, operation: string, status: string) {
@@ -1836,7 +1837,14 @@ export async function dispatchEmailDelivery(deliveryId: string, actorLabel = "jo
   return { status: "sent" as const };
 }
 
-export async function processDueEmailDeliveries(limit = 20) {
+/**
+ * Wall-clock budget for the sequence-e-mail pass of one round. Each provider
+ * call can take up to 10 s, so the pass stops starting new sends after this
+ * and leaves the rest to the next round.
+ */
+export const SEQUENCE_EMAIL_DISPATCH_TIME_BUDGET_MS = 20_000;
+
+export async function processDueEmailDeliveries(limit = 20, options: { sequenceLimit?: number } = {}) {
   const db = getDb();
   const now = new Date();
   const staleCutoff = new Date(now.getTime() - DELIVERY_LEASE_MS);
@@ -1867,19 +1875,38 @@ export async function processDueEmailDeliveries(limit = 20) {
   }
 
   const remaining = Math.max(0, limit - results.length);
-  if (remaining === 0) return results;
-  const due = await db.emailDelivery.findMany({
-    where: {
-      status: { in: ["queued", "failed"] },
-      nextAttemptAt: { lte: now },
-      // F-036: a suspended vendor's queue waits without starving other tenants.
-      ...ACTIVE_VENDOR_RELATION,
-    },
+  // Time-bound mail first (confirmations, reminders, follow-ups, notices) with
+  // the existing quota and order. F-3 sequence e-mails follow on their own
+  // quota, so a large sequence can never delay another tenant's reminder until
+  // it is superseded (S1).
+  const dueWhere = {
+    status: { in: ["queued", "failed"] },
+    nextAttemptAt: { lte: now },
+    // F-036: a suspended vendor's queue waits without starving other tenants.
+    ...ACTIVE_VENDOR_RELATION,
+  } satisfies Prisma.EmailDeliveryWhereInput;
+  const due = remaining === 0 ? [] : await db.emailDelivery.findMany({
+    where: { ...dueWhere, trigger: { not: SEQUENCE_EMAIL_TRIGGER } },
     orderBy: { nextAttemptAt: "asc" },
     take: remaining,
     select: { id: true },
   });
   for (const delivery of due) {
+    const result = await dispatchEmailDelivery(delivery.id);
+    results.push({ deliveryId: delivery.id, status: result.status });
+  }
+  const sequenceLimit = Math.max(0, options.sequenceLimit ?? SEQUENCE_EMAIL_DISPATCH_LIMIT);
+  if (sequenceLimit === 0) return results;
+  const sequenceDue = await db.emailDelivery.findMany({
+    where: { ...dueWhere, trigger: SEQUENCE_EMAIL_TRIGGER },
+    orderBy: { nextAttemptAt: "asc" },
+    take: sequenceLimit,
+    select: { id: true },
+  });
+  const sequenceDeadline = Date.now() + SEQUENCE_EMAIL_DISPATCH_TIME_BUDGET_MS;
+  for (const delivery of sequenceDue) {
+    // Whatever is left waits for the next round; the job's other passes run after this.
+    if (Date.now() > sequenceDeadline) break;
     const result = await dispatchEmailDelivery(delivery.id);
     results.push({ deliveryId: delivery.id, status: result.status });
   }

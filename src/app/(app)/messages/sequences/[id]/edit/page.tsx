@@ -35,7 +35,7 @@ export default async function EditEmailSequencePage({ params }: { params: Promis
       <PageHeader
         title="編輯追銷序列"
         description={status === "active"
-          ? "儲存後，進行中的人會照新的時間收下一封；已經過了的時間點不會補寄。"
+          ? "儲存後，進行中的人照新的時間收下一封。每一封對同一個人最多寄一次，改了時間也不會重寄；被移到某人目前進度之前的那一封，他不會補收。"
           : "調整序列內容；啟用與暫停在序列列表操作。"}
         action={<Badge tone={status === "active" ? "green" : status === "paused" ? "orange" : "gray"}>{EMAIL_SEQUENCE_STATUS_LABELS[status]}</Badge>}
       />

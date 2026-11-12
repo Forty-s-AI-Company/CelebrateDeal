@@ -69,7 +69,7 @@ describe("/messages/sequences", () => {
   it("lists the vendor's sequences with live, steps, status and per-status people counts", async () => {
     const html = await render();
     expect(mocks.sequenceFindMany).toHaveBeenCalledWith(expect.objectContaining({ where: { vendorId: "vendor-1" } }));
-    expect(mocks.groupBy).toHaveBeenCalledWith(expect.objectContaining({ where: { vendorId: "vendor-1", emailSequenceId: { not: null } } }));
+    expect(mocks.groupBy).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ vendorId: "vendor-1", emailSequenceId: { not: null } }) }));
     expect(html).toContain("報名後三天追銷");
     expect(html).toContain("直播：春季直播");
     expect(html).toContain("2 封：驗證後 1 小時、驗證後第 1 天");

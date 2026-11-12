@@ -7,6 +7,7 @@ import {
   DELAYED_STEP_LEASE_MS,
   DELAYED_STEP_MAX_ATTEMPTS,
   DELAYED_STEP_STALE_AFTER_MS,
+  DELAYED_STEP_TEMPLATE_RETRY_MS,
   enrollSubmissionInEmailSequences,
   isCurrentSequenceEmailDelivery,
   processDueDelayedStepRuns,
@@ -14,6 +15,7 @@ import {
   SEQUENCE_BACKFILL_WINDOW_MS,
 } from "@/lib/delayed-step-runs";
 import { dispatchEmailDelivery, isCurrentEmailDeliverySnapshot } from "@/lib/email-delivery";
+import { activateEmailSequence, emailSequenceRunCounts, pauseEmailSequence, saveEmailSequence } from "@/lib/email-sequences";
 import { createEmailRecipientHash, createEmailUnsubscribeToken, revealEmailDeliveryPayload } from "@/lib/email-delivery-pii";
 import { POST as unsubscribe } from "@/app/api/email/unsubscribe/route";
 
@@ -200,11 +202,12 @@ describe("加入序列", () => {
     expect(await runsOf(t.vendor.id)).toHaveLength(0);
   });
 
-  it("creates no run for a recipient who already unsubscribed or is on the blacklist", async () => {
+  it("records an unsubscribed, blacklisted or unusable recipient as stopped, never active, and does not revive them", async () => {
     const t = await tenant();
-    await sequence(t, [{ delayMinutes: 60 }]);
+    const seq = await sequence(t, [{ delayMinutes: 60 }]);
     const unsubscribed = await submission(t, { email: "gone@example.test" });
     const blocked = await submission(t, { email: "Blocked@Example.test" });
+    const unusable = await submission(t, { email: "not-an-address" });
     await db.emailSuppression.create({
       data: {
         vendorId: t.vendor.id,
@@ -218,7 +221,62 @@ describe("加入序列", () => {
 
     await expect(enroll(t, unsubscribed.id)).resolves.toEqual({ status: "unsubscribed", created: 0 });
     await expect(enroll(t, blocked.id)).resolves.toEqual({ status: "blacklisted", created: 0 });
-    expect(await runsOf(t.vendor.id)).toHaveLength(0);
+    await expect(enroll(t, unusable.id)).resolves.toEqual({ status: "subject_gone", created: 0 });
+    const runs = await runsOf(t.vendor.id);
+    expect(runs.map((row) => [row.formSubmissionId, row.status, row.cancelReason, row.nextRunAt])).toEqual(expect.arrayContaining([
+      [unsubscribed.id, "cancelled", "unsubscribed", null],
+      [blocked.id, "cancelled", "blacklisted", null],
+      [unusable.id, "cancelled", "subject_gone", null],
+    ]));
+    expect(runs.find((row) => row.formSubmissionId === unusable.id)).toMatchObject({ recipientHash: null, subjectKeyHash: null });
+    expect(await emailSequenceRunCounts(t.vendor.id)).toEqual(new Map([[seq.id, { active: 0, completed: 0, cancelled: 3 }]]));
+
+    // Resubscribing or unblocking later does not bring them into the sequence.
+    await db.emailSuppression.updateMany({ where: { vendorId: t.vendor.id }, data: { resubscribedAt: new Date() } });
+    await db.blacklist.updateMany({ where: { vendorId: t.vendor.id }, data: { isActive: false, unblockedAt: new Date() } });
+    await expect(enroll(t, unsubscribed.id)).resolves.toEqual({ status: "duplicate", created: 0 });
+    await expect(backfillEmailSequenceEnrollments({ now: at(1_000), vendorId: t.vendor.id })).resolves.toEqual([]);
+    expect((await runsOf(t.vendor.id)).every((row) => row.status === "cancelled")).toBe(true);
+  });
+
+  it("keeps backfilling past more ineligible registrations than one scan holds (S2)", async () => {
+    const t = await tenant();
+    await sequence(t, [{ delayMinutes: 60 }]);
+    for (let index = 0; index < 6; index += 1) {
+      await submission(t, { email: `broken-${index}`, verifiedAt: new Date(verifiedAt.getTime() - (10 - index) * 60_000) });
+    }
+    const later = await submission(t, { verifiedAt });
+    const first = await backfillEmailSequenceEnrollments({ now: at(HOUR), vendorId: t.vendor.id, scanLimit: 5 });
+    expect(first.map((result) => result.status)).toEqual(Array(5).fill("subject_gone"));
+    const second = await backfillEmailSequenceEnrollments({ now: at(HOUR), vendorId: t.vendor.id, scanLimit: 5 });
+    expect(second.map((result) => result.status)).toEqual(["subject_gone", "enrolled"]);
+    expect(await runsOf(t.vendor.id)).toEqual(expect.arrayContaining([expect.objectContaining({ formSubmissionId: later.id, status: "active" })]));
+    await expect(backfillEmailSequenceEnrollments({ now: at(HOUR), vendorId: t.vendor.id, scanLimit: 5 })).resolves.toEqual([]);
+  });
+
+  it("adds one person once per sequence even when they registered through two forms of the same Live (M3)", async () => {
+    const t = await tenant();
+    const seq = await sequence(t, [{ delayMinutes: 60 }]);
+    const secondForm = await db.registrationForm.create({
+      data: { vendorId: t.vendor.id, name: "第二張表", slug: `sequence-form-2-${randomUUID().slice(0, 8)}`, headline: "報名", fields: [] },
+    });
+    const first = await submission(t, { email: "same@example.test" });
+    const second = await submission(t, { email: " Same@Example.test ", formId: secondForm.id });
+    await expect(enroll(t, first.id)).resolves.toEqual({ status: "enrolled", created: 1 });
+    await expect(enroll(t, second.id)).resolves.toEqual({ status: "duplicate", created: 0 });
+    const runs = await runsOf(t.vendor.id);
+    expect(runs.map((row) => [row.formSubmissionId, row.status, row.cancelReason])).toEqual([
+      [first.id, "active", null],
+      [second.id, "cancelled", "duplicate"],
+    ]);
+    // Neither is scanned again, and the duplicate is not counted as a person.
+    await expect(backfillEmailSequenceEnrollments({ now: at(1_000), vendorId: t.vendor.id })).resolves.toEqual([]);
+    expect(await emailSequenceRunCounts(t.vendor.id)).toEqual(new Map([[seq.id, { active: 1, completed: 0, cancelled: 0 }]]));
+    // The database itself refuses a second active place for the same recipient.
+    const third = await submission(t);
+    await expect(db.delayedStepRun.create({
+      data: { vendorId: t.vendor.id, emailSequenceId: seq.id, formSubmissionId: third.id, subjectKeyHash: "x", recipientHash: runs[0]!.recipientHash, anchorAt: verifiedAt, nextRunAt: verifiedAt },
+    })).rejects.toMatchObject({ code: "P2002" });
   });
 
   it("adds nobody while the vendor lacks the email_sequences grant or is suspended", async () => {
@@ -373,12 +431,146 @@ describe("worker", () => {
     expect(await runsOf(t.vendor.id)).toEqual([expect.objectContaining({ status: "completed", cursorDelayMinutes: 8_640 })]);
   });
 
-  it("skips a step whose template was switched off instead of holding the sequence", async () => {
-    const { t, run } = await enrolled([{ delayMinutes: 60 }, { delayMinutes: 120 }]);
+  it("waits for a switched-off template instead of moving on, and skips the step only once it is 24 hours late (S4)", async () => {
+    const { t, run } = await enrolled([{ delayMinutes: 60 }, { delayMinutes: 2 * 1_440 + 60 }]);
     await db.messageTemplate.update({ where: { id: t.templates[0]!.id }, data: { isActive: false } });
-    await expect(work(t, at(HOUR + 60_000))).resolves.toEqual([{ runId: run.id, status: "skipped_template" }]);
+    const now = at(HOUR + 60_000);
+    await expect(work(t, now)).resolves.toEqual([{ runId: run.id, status: "waiting_template" }]);
+    expect(await runsOf(t.vendor.id)).toEqual([expect.objectContaining({
+      cursorDelayMinutes: -1, status: "active", attemptCount: 0, claimedAt: null, nextRunAt: new Date(now.getTime() + DELAYED_STEP_TEMPLATE_RETRY_MS),
+    })]);
+    // Switched back on before the step is a day late: it is sent after all.
+    await db.messageTemplate.update({ where: { id: t.templates[0]!.id }, data: { isActive: true } });
+    await expect(work(t, at(5 * HOUR))).resolves.toEqual([{ runId: run.id, status: "queued" }]);
+
+    const late = await enrolled([{ delayMinutes: 60 }, { delayMinutes: 2 * 1_440 + 60 }]);
+    await db.messageTemplate.update({ where: { id: late.t.templates[0]!.id }, data: { isActive: false } });
+    await expect(work(late.t, at(2 * HOUR))).resolves.toEqual([{ runId: late.run.id, status: "waiting_template" }]);
+    await expect(work(late.t, new Date(at(HOUR).getTime() + DELAYED_STEP_STALE_AFTER_MS + 60_000))).resolves.toEqual([{ runId: late.run.id, status: "skipped_stale" }]);
+    expect(await runsOf(late.t.vendor.id)).toEqual([expect.objectContaining({ cursorDelayMinutes: 60, status: "active" })]);
+    expect(await deliveriesOf(late.t.vendor.id)).toHaveLength(0);
+  });
+
+  it("skips only deterministic content problems: unknown variables or a rendered mail over the limits (S3)", async () => {
+    const unknownVariable = await enrolled([{ delayMinutes: 60 }, { delayMinutes: 120 }]);
+    await db.messageTemplate.update({ where: { id: unknownVariable.t.templates[0]!.id }, data: { body: "{{coupon_code}}" } });
+    await expect(work(unknownVariable.t, at(HOUR + 60_000))).resolves.toEqual([{ runId: unknownVariable.run.id, status: "skipped_template" }]);
+    expect(await runsOf(unknownVariable.t.vendor.id)).toEqual([expect.objectContaining({ cursorDelayMinutes: 60 })]);
+
+    const oversized = await enrolled([{ delayMinutes: 60 }, { delayMinutes: 120 }]);
+    await db.messageTemplate.update({ where: { id: oversized.t.templates[0]!.id }, data: { body: "{{live_url}}".repeat(2_000) } });
+    await expect(work(oversized.t, at(HOUR + 60_000))).resolves.toEqual([{ runId: oversized.run.id, status: "skipped_template" }]);
+    expect(await deliveriesOf(oversized.t.vendor.id)).toHaveLength(0);
+  });
+
+  it("keeps the step and retries it through the lease when configuration is missing (S3)", async () => {
+    const { t, run } = await enrolled([{ delayMinutes: 60 }, { delayMinutes: 120 }]);
+    vi.stubEnv("NEXT_PUBLIC_APP_URL", "");
+    await expect(work(t, at(HOUR + 60_000))).resolves.toEqual([{ runId: run.id, status: "failed" }]);
+    expect(await runsOf(t.vendor.id)).toEqual([expect.objectContaining({ cursorDelayMinutes: -1, status: "active", attemptCount: 1 })]);
     expect(await deliveriesOf(t.vendor.id)).toHaveLength(0);
-    expect(await runsOf(t.vendor.id)).toEqual([expect.objectContaining({ cursorDelayMinutes: 60, status: "active" })]);
+    vi.stubEnv("NEXT_PUBLIC_APP_URL", APP_URL);
+    await expect(work(t, new Date(at(HOUR + 60_000).getTime() + DELAYED_STEP_LEASE_MS))).resolves.toEqual([{ runId: run.id, status: "queued" }]);
+  });
+
+  it("never sends a step twice to the same person: moving a sent step later or swapping two steps through the editor (B1)", async () => {
+    const t = await tenant();
+    const created = await saveEmailSequence({
+      vendorId: t.vendor.id, sequenceId: null, expectedVersion: null, now: activatedAt,
+      data: { name: "報名後追銷", liveId: t.live.id, steps: [{ id: null, delayMinutes: 60, messageTemplateId: t.templates[0]!.id, isActive: true }, { id: null, delayMinutes: 1_440, messageTemplateId: t.templates[1]!.id, isActive: true }] },
+    });
+    if (!created.ok) throw new Error("create failed");
+    await activateEmailSequence({ vendorId: t.vendor.id, sequenceId: created.id, expectedVersion: 1, now: activatedAt });
+    const lead = await submission(t);
+    await enroll(t, lead.id);
+    await work(t, at(HOUR + 60_000));
+    const [stepA, stepB] = await db.emailSequenceStep.findMany({ where: { emailSequenceId: created.id }, orderBy: { delayMinutes: "asc" } });
+
+    // A (already sent at 1 hour) moves to 3 days: same step id, never sent again.
+    await expect(saveEmailSequence({
+      vendorId: t.vendor.id, sequenceId: created.id, expectedVersion: 2, now: at(2 * HOUR),
+      data: { name: "報名後追銷", liveId: t.live.id, steps: [{ id: stepA!.id, delayMinutes: 4_320, messageTemplateId: t.templates[0]!.id, isActive: true }, { id: stepB!.id, delayMinutes: 1_440, messageTemplateId: t.templates[1]!.id, isActive: true }] },
+    })).resolves.toMatchObject({ ok: true });
+    const moved = await db.emailSequenceStep.findMany({ where: { emailSequenceId: created.id }, orderBy: { delayMinutes: "asc" } });
+    expect(moved.map((step) => [step.id, step.delayMinutes])).toEqual([[stepB!.id, 1_440], [stepA!.id, 4_320]]);
+    await expect(work(t, at(DAY + 60_000))).resolves.toEqual([expect.objectContaining({ status: "queued" })]);
+    await expect(work(t, at(3 * DAY + 60_000))).resolves.toEqual([expect.objectContaining({ status: "skipped_already_sent" })]);
+    expect((await deliveriesOf(t.vendor.id)).map((row) => row.sourceTemplateId)).toEqual([t.templates[0]!.id, t.templates[1]!.id]);
+    expect(await runsOf(t.vendor.id)).toEqual([expect.objectContaining({ status: "completed" })]);
+
+    // Swapping two steps: the step moved before someone's position is not sent to them (§3), and nothing is sent twice.
+    const t2 = await tenant();
+    const swap = await saveEmailSequence({
+      vendorId: t2.vendor.id, sequenceId: null, expectedVersion: null, now: activatedAt,
+      data: { name: "互換", liveId: t2.live.id, steps: [{ id: null, delayMinutes: 60, messageTemplateId: t2.templates[0]!.id, isActive: true }, { id: null, delayMinutes: 1_440, messageTemplateId: t2.templates[1]!.id, isActive: true }] },
+    });
+    if (!swap.ok) throw new Error("create failed");
+    await activateEmailSequence({ vendorId: t2.vendor.id, sequenceId: swap.id, expectedVersion: 1, now: activatedAt });
+    await enroll(t2, (await submission(t2)).id);
+    await work(t2, at(HOUR + 60_000));
+    const [a2, b2] = await db.emailSequenceStep.findMany({ where: { emailSequenceId: swap.id }, orderBy: { delayMinutes: "asc" } });
+    await expect(saveEmailSequence({
+      vendorId: t2.vendor.id, sequenceId: swap.id, expectedVersion: 2, now: at(2 * HOUR),
+      data: { name: "互換", liveId: t2.live.id, steps: [{ id: a2!.id, delayMinutes: 1_440, messageTemplateId: t2.templates[0]!.id, isActive: true }, { id: b2!.id, delayMinutes: 60, messageTemplateId: t2.templates[1]!.id, isActive: true }] },
+    })).resolves.toMatchObject({ ok: true });
+    const swapped = await db.emailSequenceStep.findMany({ where: { emailSequenceId: swap.id }, orderBy: { delayMinutes: "asc" } });
+    expect(swapped.map((step) => step.id)).toEqual([b2!.id, a2!.id]);
+    await expect(work(t2, at(DAY + 60_000))).resolves.toEqual([expect.objectContaining({ status: "skipped_already_sent" })]);
+    await expect(work(t2, at(10 * DAY))).resolves.toEqual([]);
+    expect((await deliveriesOf(t2.vendor.id)).map((row) => row.sourceTemplateId)).toEqual([t2.templates[0]!.id]);
+  });
+
+  it("drops its result when the merchant saves the steps while it runs, and recomputes next round (M1)", async () => {
+    const { t, seq, run } = await enrolled([{ delayMinutes: 60 }, { delayMinutes: 1_440 }]);
+    let release: () => void = () => undefined;
+    let markLocked: () => void = () => undefined;
+    const locked = new Promise<void>((resolve) => { markLocked = resolve; });
+    const holder = db.$transaction(async (tx) => {
+      // A save in progress: the sequence row is locked and its version moves on.
+      await tx.emailSequence.update({ where: { id: seq.id }, data: { version: { increment: 1 } } });
+      await tx.emailSequenceStep.updateMany({ where: { emailSequenceId: seq.id, delayMinutes: 1_440 }, data: { delayMinutes: 2_880 } });
+      markLocked();
+      await new Promise<void>((resolve) => { release = resolve; });
+    }, { timeout: 20_000 });
+    await locked;
+    const racing = work(t, at(HOUR + 60_000));
+    await new Promise((resolve) => setTimeout(resolve, 1_000));
+    release();
+    await holder;
+    await expect(racing).resolves.toEqual([{ runId: run.id, status: "definition_changed" }]);
+    expect(await deliveriesOf(t.vendor.id)).toHaveLength(0);
+    expect(await runsOf(t.vendor.id)).toEqual([expect.objectContaining({ cursorDelayMinutes: -1, claimedAt: null, attemptCount: 0, status: "active" })]);
+    await expect(work(t, at(HOUR + 2 * 60_000))).resolves.toEqual([{ runId: run.id, status: "queued" }]);
+    expect(await runsOf(t.vendor.id)).toEqual([expect.objectContaining({ cursorDelayMinutes: 60, nextRunAt: at(2 * DAY) })]);
+  });
+
+  it("does not continue a run that was added while the sequence was paused (resume re-anchors activation)", async () => {
+    const { t, seq, run } = await enrolled([{ delayMinutes: 60 }]);
+    await pauseEmailSequence({ vendorId: t.vendor.id, sequenceId: seq.id, expectedVersion: 1 });
+    // An enrollment that raced the pause and left an active run behind.
+    await db.delayedStepRun.update({ where: { id: run.id }, data: { status: "active", cancelReason: null, nextRunAt: at(HOUR) } });
+    await activateEmailSequence({ vendorId: t.vendor.id, sequenceId: seq.id, expectedVersion: 2, now: at(30 * 60_000) });
+    await expect(work(t, at(2 * HOUR))).resolves.toEqual([{ runId: run.id, status: "cancelled", cancelReason: "definition_paused" }]);
+    expect(await deliveriesOf(t.vendor.id)).toHaveLength(0);
+  });
+
+  it("caps the e-mails one round creates, per vendor and in total, and leaves the rest untouched for the next round (S1)", async () => {
+    const big = await tenant();
+    await sequence(big, [{ delayMinutes: 60 }]);
+    for (let index = 0; index < 4; index += 1) await enroll(big, (await submission(big)).id);
+    const small = await tenant();
+    await sequence(small, [{ delayMinutes: 60 }]);
+    await enroll(small, (await submission(small)).id);
+    const now = at(HOUR + 60_000);
+    const results = await processDueDelayedStepRuns({ now, budget: { emails: 3, emailsPerVendor: 2 } });
+    expect(results.filter((result) => result.status === "queued")).toHaveLength(3);
+    expect(await deliveriesOf(big.vendor.id)).toHaveLength(2);
+    expect(await deliveriesOf(small.vendor.id)).toHaveLength(1);
+    const waiting = (await runsOf(big.vendor.id)).filter((row) => row.cursorDelayMinutes === -1);
+    expect(waiting).toHaveLength(2);
+    expect(waiting.every((row) => row.nextRunAt?.getTime() === at(HOUR).getTime() && row.attemptCount === 0 && row.claimedAt === null)).toBe(true);
+    await processDueDelayedStepRuns({ now, budget: { emails: 3, emailsPerVendor: 2 } });
+    expect(await deliveriesOf(big.vendor.id)).toHaveLength(4);
   });
 
   it("reclaims a lease only after it expired, and cancels after the attempt limit", async () => {
@@ -506,8 +698,19 @@ describe("寄送前檢查與退訂", () => {
     await expect(isCurrentEmailDeliverySnapshot(delivery, at(HOUR + 60_000))).resolves.toBe(true);
     const { idempotencyKey: ignored, ...withoutKey } = delivery;
     void ignored;
-    await expect(isCurrentSequenceEmailDelivery({ ...withoutKey }, db)).resolves.toBe(true);
-    await expect(isCurrentSequenceEmailDelivery({ ...delivery, idempotencyKey: "sequence-email/forged" }, db)).resolves.toBe(false);
+    const sendAt = at(HOUR + 2 * 60_000);
+    await expect(isCurrentSequenceEmailDelivery({ ...withoutKey }, sendAt, db)).resolves.toBe(true);
+    await expect(isCurrentSequenceEmailDelivery({ ...delivery, idempotencyKey: "sequence-email/forged" }, sendAt, db)).resolves.toBe(false);
+  });
+
+  it("supersedes a step e-mail still unsent 24 hours after it was created, and any once the grant is closed (S1, M2)", async () => {
+    const { t, delivery } = await queued();
+    expect(delivery.createdAt).toEqual(at(HOUR + 60_000));
+    await expect(isCurrentSequenceEmailDelivery(delivery, new Date(delivery.createdAt.getTime() + DELAYED_STEP_STALE_AFTER_MS), db)).resolves.toBe(true);
+    await expect(isCurrentSequenceEmailDelivery(delivery, new Date(delivery.createdAt.getTime() + DELAYED_STEP_STALE_AFTER_MS + 1), db)).resolves.toBe(false);
+    await expect(isCurrentSequenceEmailDelivery({ ...delivery, createdAt: undefined }, at(HOUR + 2 * 60_000), db)).resolves.toBe(false);
+    await db.vendor.update({ where: { id: t.vendor.id }, data: { betaFeatureGrants: [] } });
+    await expect(isCurrentEmailDeliverySnapshot(delivery, at(HOUR + 2 * 60_000))).resolves.toBe(false);
   });
 
   it("supersedes when the sequence is paused, the step or template changed, the run was cancelled or the recipient is blacklisted", async () => {
