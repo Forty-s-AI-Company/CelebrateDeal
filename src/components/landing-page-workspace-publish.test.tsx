@@ -317,6 +317,24 @@ describe("publish in the editor", () => {
     expect(operations()).toEqual(["save"]);
   });
 
+  it("shows the reason in the page when the drawer was closed before its save failed", async () => {
+    let resolve: (value: LandingPageActionState) => void = () => undefined;
+    mocks.action.mockReturnValueOnce(new Promise((done) => { resolve = done; }));
+    const container = await mount(workspace());
+    await edit(container);
+    await click(button(toolbar(), "發布"));
+    await flush();
+    expect(operations()).toEqual(["save"]);
+    await click(button(drawer()!, "取消"));
+    expect(drawer()).toBeNull();
+    await act(async () => { resolve({ status: "error", code: "landing_page_conflict", message: "這個頁面已有較新的版本，系統沒有覆蓋它。請重新整理後再試。" }); });
+    await flush();
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain("這個頁面已有較新的版本");
+    expect(saveButtonText()).toBe("儲存失敗（重試）");
+    // The closed flow does not go on to check or publish.
+    expect(operations()).toEqual(["save"]);
+  });
+
   it("reports a publish refused after a passing check without closing the drawer", async () => {
     mocks.action
       .mockResolvedValueOnce(checked)

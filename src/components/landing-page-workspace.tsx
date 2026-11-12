@@ -334,6 +334,8 @@ export function LandingPageWorkspace({ initialPublication, page, forms, lives, c
     saveBlocked: settingsIncomplete,
     execute,
     onCommerceRefused: () => router.refresh(),
+    // The drawer was closed while its save ran: report a failure in the page instead.
+    onClosedSaveFailure: (message) => setNotice({ text: message, tone: "error" }),
     onPublished: (result) => { const message = publishedToast(result, slug); showToast(message.text, { tone: message.tone, link: message.link, duration: 12_000 }); },
   });
   const webinarResource = resolveWebinarResource(webinarResources, lives, liveId, formId);
@@ -432,13 +434,14 @@ function useAutosave({ enabled, due, snapshot, save }: { enabled: boolean; due: 
  * server's publish check, and publish only after the merchant confirms. Every
  * step is the existing CSRF-protected page action; nothing is decided here.
  */
-function usePublishFlow({ canPublish, waitForIdle, needsSave, saveBlocked, execute, onCommerceRefused, onPublished }: {
+function usePublishFlow({ canPublish, waitForIdle, needsSave, saveBlocked, execute, onCommerceRefused, onClosedSaveFailure, onPublished }: {
   canPublish: boolean;
   waitForIdle: () => Promise<unknown>;
   needsSave: () => boolean;
   saveBlocked: boolean;
   execute: (operation: string, noticeMode: NoticeMode) => Promise<LandingPageActionState | null>;
   onCommerceRefused: () => void;
+  onClosedSaveFailure: (message: string) => void;
   onPublished: (result: LandingPageActionState) => void;
 }) {
   const [state, setState] = useState<PublishFlowState | null>(null);
@@ -455,8 +458,9 @@ function usePublishFlow({ canPublish, waitForIdle, needsSave, saveBlocked, execu
     if (needsSave()) {
       if (saveBlocked) { setState({ phase: "save_failed", message: "頁面名稱、公開網址或頁面設定尚未完成，草稿無法儲存。請先修正再發布。", code: "settings_invalid" }); return; }
       const saved = await execute("save", "none");
-      if (!current()) return;
-      if (saved?.status !== "success") { setState({ phase: "save_failed", message: saved?.message ?? "連線中斷，內容仍保留在編輯器，請稍後再試。", code: saved?.code }); return; }
+      const failure = saved?.status === "success" ? null : saved?.message ?? "連線中斷，內容仍保留在編輯器，請稍後再試。";
+      if (!current()) { if (failure) onClosedSaveFailure(failure); return; }
+      if (failure) { setState({ phase: "save_failed", message: failure, code: saved?.code }); return; }
     }
     setState({ phase: "checking" });
     const checked = await execute("check_publish", "none");
