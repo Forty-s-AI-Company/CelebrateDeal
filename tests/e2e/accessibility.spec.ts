@@ -30,6 +30,7 @@ const fixture = {
   roleId: "",
   scriptId: "",
   templateId: "",
+  sequenceId: "",
   affiliateId: "",
   adminEmail: `a11y-admin-${runId}@celebratedeal.local`,
   adminUserId: "",
@@ -134,7 +135,7 @@ async function enableOwnerMfa(page: Page) {
 test.beforeAll(async () => {
   const vendor = await db.vendor.create({
     data: {
-      betaFeatureGrants: ["courses", "billing", "funnel_binding", "consultation_booking", "browser_live", "danmaku"], enabledFeatureModules: ["funnel_builder", "live_webinar", "affiliate_program", "tax_remuneration", "analytics_advanced", "consultation_booking"],
+      betaFeatureGrants: ["courses", "billing", "funnel_binding", "consultation_booking", "browser_live", "danmaku", "email_sequences"], enabledFeatureModules: ["funnel_builder", "live_webinar", "affiliate_program", "tax_remuneration", "analytics_advanced", "consultation_booking"],
       name: "Accessibility Test Vendor",
       slug: fixture.slug,
       email: fixture.email,
@@ -294,6 +295,13 @@ test.beforeAll(async () => {
   fixture.scriptId = script.id;
   fixture.templateId = messageTemplate.id;
   fixture.affiliateId = affiliate.id;
+  // F-3: one draft sequence so the edit page is scanned too.
+  const sequenceTemplate = await db.messageTemplate.create({
+    data: { vendorId: vendor.id, name: "Accessibility sequence mail", trigger: "sequence_email", subject: "{{live_title}} 下一步", body: "{{name}} 你好 {{unsubscribe_url}}" },
+  });
+  const sequence = await db.emailSequence.create({ data: { vendorId: vendor.id, liveId: live.id, name: "Accessibility sequence" } });
+  await db.emailSequenceStep.create({ data: { vendorId: vendor.id, emailSequenceId: sequence.id, delayMinutes: 1_440, messageTemplateId: sequenceTemplate.id } });
+  fixture.sequenceId = sequence.id;
 });
 
 test.afterAll(async () => {
@@ -364,6 +372,8 @@ test("static authenticated owner routes have no blocking axe violations", async 
     "/forms/new",
     "/messages/templates",
     "/messages/templates/new",
+    "/messages/sequences",
+    "/messages/sequences/new",
     "/interaction-scripts",
     "/interaction-scripts/new",
     "/interaction-roles",
@@ -423,6 +433,7 @@ test("dynamic owner and public commerce routes have no blocking axe violations",
     `/interaction-roles/${fixture.roleId}/edit`,
     `/interaction-scripts/${fixture.scriptId}/edit`,
     `/messages/templates/${fixture.templateId}/edit`,
+    `/messages/sequences/${fixture.sequenceId}/edit`,
     `/affiliates/${fixture.affiliateId}`,
     `/affiliates/${fixture.affiliateId}/edit`,
     `/live/${fixture.liveSlug}`,
