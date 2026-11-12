@@ -40,7 +40,7 @@ const status = () => container.querySelector<HTMLElement>('[role="status"]')!;
 const closeButton = () => container.querySelector<HTMLButtonElement>('button[aria-label="關閉通知"]');
 const saveButton = () => [...container.querySelectorAll("button")].find((button) => button.textContent === "儲存")!;
 
-async function show(text: string, options?: { tone?: ToastTone; duration?: number | null }) {
+async function show(text: string, options?: { tone?: ToastTone; duration?: number | null; link?: { href: string; label: string; external?: boolean } }) {
   await act(async () => { handle.current!.showToast(text, options); });
 }
 
@@ -49,6 +49,19 @@ async function advance(ms: number) {
 }
 
 describe("Toast", () => {
+  it("renders an optional follow-up link after the announced text, outside the live region", async () => {
+    await show("已發布版本 v2。公開網址：http://127.0.0.1/lp/synthetic", { link: { href: "/lp/synthetic", label: "開啟公開頁", external: true } });
+    const link = container.querySelector<HTMLAnchorElement>("[data-ui-toast] a")!;
+    expect(link.textContent).toBe("開啟公開頁");
+    expect(link.getAttribute("href")).toBe("/lp/synthetic");
+    expect(link.getAttribute("target")).toBe("_blank");
+    expect(link.getAttribute("rel")).toBe("noreferrer");
+    expect(status().contains(link)).toBe(false);
+    expect(status().textContent).toBe("已發布版本 v2。公開網址：http://127.0.0.1/lp/synthetic");
+    await show("已複製連結。");
+    expect(container.querySelector("[data-ui-toast] a")).toBeNull();
+  });
+
   it("keeps an empty polite live region mounted before any message", () => {
     expect(status().getAttribute("aria-live")).toBe("polite");
     expect(status().getAttribute("aria-atomic")).toBe("true");

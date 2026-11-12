@@ -706,3 +706,11 @@ Current source inventory: 145 models and 99 forward migrations. Previous checkpo
 - 測試：`scripts/reencrypt-sensitive-data-all-targets.db.test.ts`（38 個加密欄位各以應用程式寫入函式建列，v1／v2 都寫得進；兩個 CHECK 拒絕畸形值與超長值、533416 邊界可寫入；退款原因在沒有旗標、或有旗標但新值畸形時仍被 trigger 拒絕，旗標只在該交易有效）。已在 loopback 拋棄式庫（全新建立、套用合併 master 後的 138 條 migration；public 與非 public schema 各一次）執行。
 - 部署順序：migration 先於程式；**切換 `DATA_ENCRYPTION_KEYRING` 的 active kid 之前必須已部署本 migration**。
 - 目前 158 models、138 forward migrations（含 master 的 `20261103150000_vendor_suspension`）；既有 SQL／checksum 不變。
+
+## 2026-11-12 漏斗編輯器內發布、自動儲存與結帳商品就地綁定（無 migration）
+
+- 沒有新增 model、欄位或 migration。只讀寫既有的 `LandingPage`（`draftContent`、`revision`、發布欄位）、`LandingPageVersion` 與 `RegistrationForm`（名單網站自動表單）。
+- 發布檢查：`checkLandingPagePublishable(pageId, expectedRevision)`（頁面 action 的 `check_publish`）執行與 `publishLandingPage` 完全相同的交易（同一個 vendor 發布鎖、`requireScopedPage` 的 vendor＋project＋`archivedAt: null`、revision、自訂程式碼、名單網站獨立發布上限與開關、自動名單表單、`validateBindings` 含商品綁定），最後丟出內部 rollback 錯誤讓整筆交易回滾，所以不建立版本、不改 revision、不建立表單、不寫 audit。它不放寬任何規則；正式發布仍重跑全部檢查。檢查成功不 `revalidatePath`。失敗回傳 `failure()` 的訊息、服務的原因代碼（`code`，例如 `landing_page_commerce_invalid`）與範圍內的發布狀態診斷；跨租戶或不存在的頁面一律 `landing_page_not_found`、不附診斷。
+- 自動儲存：沿用既有 `save`（`saveLandingPageDraft` 以 `id`＋`vendorId`＋`projectId`＋`revision` 做 CAS）。編輯器在最後一次變更 3 秒後送出，同時只有一個請求；revision 不符時伺服器拒絕（`landing_page_conflict`），編輯器不覆蓋、停止自動儲存並要求重新整理。舊版頁面轉換後不自動儲存。
+- 結帳商品就地綁定：屬性面板寫入與「頁面設定 › 商品與結帳」相同的 `pages[stepId].commerce`（只存 `productId`、`formMode` 等參照，嚴格 schema 不收價格）。儲存與發布都由 `validateFunnelCommerceBindings` 以目前 vendor＋project、可販售、已連結專案的商品重新驗證；其他商家、其他專案或不可販售的商品回 `landing_page_commerce_invalid`，草稿不變。公開頁價格只來自伺服器商品紀錄。
+- 測試：`src/lib/landing-page-editor-publish.db.test.ts`（檢查不留下版本／revision／自動表單、過期 revision 與他人商品被拒、跨租戶頁面不能檢查或發布、就地綁定拒絕他人商品／他專案商品／售完商品／他人頁面、綁定不可夾帶價格）、`src/lib/landing-page-service.test.ts`、`src/app/actions/landing-page-actions.test.ts`、`src/components/landing-page-workspace-publish.test.tsx`、`tests/e2e/funnel-editor-publish.spec.ts`。

@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
   save: vi.fn(),
   saveSteps: vi.fn(),
   publish: vi.fn(),
+  check: vi.fn(),
   publication: vi.fn(),
   unpublish: vi.fn(),
   duplicate: vi.fn(),
@@ -29,6 +30,7 @@ vi.mock("@/lib/landing-page-service", () => ({
   saveLandingPageDraft: mocks.save,
   saveLandingPageStepMetadata: mocks.saveSteps,
   publishLandingPage: mocks.publish,
+  checkLandingPagePublishable: mocks.check,
   getLandingPagePublicationStatus: mocks.publication,
   unpublishLandingPage: mocks.unpublish,
   duplicateLandingPage: mocks.duplicate,
@@ -60,6 +62,7 @@ beforeEach(() => {
   mocks.save.mockResolvedValue({ id: "page-1", revision: 2 });
   mocks.saveSteps.mockResolvedValue({ id: "page-1", revision: 3 });
   mocks.publish.mockResolvedValue({ id: "page-1", revision: 3, version: 1 });
+  mocks.check.mockResolvedValue({ id: "page-1", revision: 2 });
   mocks.unpublish.mockResolvedValue({ id: "page-1", revision: 4 });
   mocks.duplicate.mockResolvedValue({ id: "page-copy", revision: 1 });
   mocks.rollback.mockResolvedValue({ id: "page-1", revision: 5 });
@@ -170,6 +173,7 @@ describe("dual publication feedback", () => {
     const result = await landingPageAction(idle, form({ operation: "publish", id: "page-1", revision: "2" }));
     expect(result).toEqual({
       status: "error",
+      code: "landing_page_independent_publish_limit",
       message: "免費帳號最多可同時有 3 個不需發布專案就公開的名單型網站，目前已達上限，所以這個網站現在無法發布。發布所屬專案（專案內的網站不計入上限）、新增已驗證的付款方式或升級付費方案即可解除限制；也可以先取消發布其他名單型網站。",
       publication: diagnosis,
     });
@@ -202,11 +206,45 @@ describe("dual publication feedback", () => {
   });
 });
 
+describe("editor publish check", () => {
+  it("runs the rolled-back publish check, returns the scoped diagnosis and revalidates nothing", async () => {
+    const result = await landingPageAction(idle, form({ operation: "check_publish", id: "page-1", revision: "2", content: "ignored" }));
+    expect(mocks.check).toHaveBeenCalledWith("page-1", 2);
+    expect(mocks.publish).not.toHaveBeenCalled();
+    expect(mocks.save).not.toHaveBeenCalled();
+    expect(result).toMatchObject({ status: "success", id: "page-1", message: "發布檢查通過，可以發布。", publication: { available: false } });
+    expect(result.revision).toBeUndefined();
+    expect(mocks.revalidatePath).not.toHaveBeenCalled();
+  });
+
+  it("returns the refusal with its reason code and the diagnosis, like a refused publish", async () => {
+    mocks.check.mockRejectedValueOnce(new errorTypes.Input("landing_page_commerce_invalid"));
+    const result = await landingPageAction(idle, form({ operation: "check_publish", id: "page-1", revision: "2" }));
+    expect(result).toMatchObject({ status: "error", code: "landing_page_commerce_invalid", message: expect.stringContaining("已綁定的商品必須屬於目前銷售專案") });
+    expect(result.publication).toBeDefined();
+    mocks.check.mockRejectedValueOnce(new errorTypes.Conflict());
+    const conflict = await landingPageAction(idle, form({ operation: "check_publish", id: "page-1", revision: "2" }));
+    expect(conflict).toMatchObject({ status: "error", message: expect.stringContaining("較新的版本") });
+    expect(mocks.revalidatePath).not.toHaveBeenCalled();
+  });
+
+  it("requires the page id and revision before checking", async () => {
+    const result = await landingPageAction(idle, form({ operation: "check_publish", id: "page-1" }));
+    expect(result.status).toBe("error");
+    expect(mocks.check).not.toHaveBeenCalled();
+  });
+
+  it("returns the new version number after publishing", async () => {
+    const result = await landingPageAction(idle, form({ operation: "publish", id: "page-1", revision: "2" }));
+    expect(result).toMatchObject({ status: "success", version: 1, revision: 3 });
+  });
+});
+
 describe("live and form binding errors", () => {
   it("explains a registration button that does not use the bound live's form", async () => {
     mocks.save.mockRejectedValueOnce(new errorTypes.Input("landing_page_live_form_mismatch"));
     const result = await landingPageAction({ status: "success", message: "" }, form({ operation: "save", id: "page-1", revision: "2", name: "頁面", slug: "page", content: "{}" }));
-    expect(result).toEqual({ status: "error", message: "這個頁面已綁定活動場次，所有報名按鈕都必須使用該場次的報名表。請把按鈕改成該場次的報名表，或在頁面設定改選場次後再試。" });
+    expect(result).toEqual({ status: "error", code: "landing_page_live_form_mismatch", message: "這個頁面已綁定活動場次，所有報名按鈕都必須使用該場次的報名表。請把按鈕改成該場次的報名表，或在頁面設定改選場次後再試。" });
     mocks.publish.mockRejectedValueOnce(new errorTypes.Input("landing_page_live_form_mismatch"));
     expect((await landingPageAction({ status: "success", message: "" }, form({ operation: "publish", id: "page-1", revision: "2" }))).message).toContain("所有報名按鈕都必須使用該場次的報名表");
   });

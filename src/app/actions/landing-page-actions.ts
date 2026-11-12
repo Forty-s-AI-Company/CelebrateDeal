@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { assertServerActionSecurity } from "@/lib/csrf";
 import {
+  checkLandingPagePublishable,
   createLandingPage,
   deleteLandingPage,
   duplicateLandingPage,
@@ -27,7 +28,7 @@ const INDEPENDENT_PUBLISH_REFUSALS = new Set(["landing_page_independent_publish_
 
 const MAX_CONTENT_BYTES = LANDING_PAGE_MAX_CONTENT_BYTES;
 
-type LandingPageOperation = "create" | "save" | "save_steps" | "publish" | "unpublish" | "duplicate" | "rollback" | "delete";
+type LandingPageOperation = "create" | "save" | "save_steps" | "check_publish" | "publish" | "unpublish" | "duplicate" | "rollback" | "delete";
 
 function value(formData: FormData, key: string) {
   const raw = formData.get(key);
@@ -48,7 +49,7 @@ function revision(formData: FormData, key = "revision") {
 
 function operation(formData: FormData): LandingPageOperation | null {
   const raw = value(formData, "operation");
-  return raw === "create" || raw === "save" || raw === "save_steps" || raw === "publish" || raw === "unpublish" || raw === "duplicate" || raw === "rollback" || raw === "delete"
+  return raw === "create" || raw === "save" || raw === "save_steps" || raw === "check_publish" || raw === "publish" || raw === "unpublish" || raw === "duplicate" || raw === "rollback" || raw === "delete"
     ? raw
     : null;
 }
@@ -115,6 +116,17 @@ function failure(error: unknown): LandingPageActionState {
   return { status: "error", message: "暫時無法完成操作；內容仍保留，請稍後再試。" };
 }
 
+/** A stable reason code for the editor's fix links; never a database or provider detail. */
+function failureCode(error: unknown): string | undefined {
+  if (error instanceof LandingPageConflictError || error instanceof LandingPageScopeError || error instanceof LandingPageNotFoundError || error instanceof LandingPageInputError) return error.message;
+  return undefined;
+}
+
+function failureWithCode(error: unknown): LandingPageActionState {
+  const code = failureCode(error);
+  return { ...failure(error), ...(code ? { code } : {}) };
+}
+
 function success(message: string, result: { id: string; revision?: number }) {
   revalidatePath("/landing-pages");
   revalidatePath(`/landing-pages/${encodeURIComponent(result.id)}`);
@@ -137,9 +149,25 @@ async function publishWithDiagnosis(id: string, expectedRevision: number): Promi
   } catch (error) {
     if (!(error instanceof LandingPageInputError && INDEPENDENT_PUBLISH_REFUSALS.has(error.message))) throw error;
     const publication = await getLandingPagePublicationStatus(id).catch(() => undefined);
-    return { ...failure(error), ...(publication ? { publication } : {}) };
+    return { ...failureWithCode(error), ...(publication ? { publication } : {}) };
   }
-  return { ...await successWithPublication(`Funnel 版本 v${published.version} 已儲存為發布版本。`, published), formId: published.formId };
+  return { ...await successWithPublication(`Funnel 版本 v${published.version} 已儲存為發布版本。`, published), formId: published.formId, version: published.version };
+}
+
+/**
+ * The editor's pre-publish check: the publish transaction rolled back. Nothing
+ * changes, so nothing is revalidated; every refusal carries its reason code
+ * and the same scoped diagnosis the publish refusal would.
+ */
+async function checkPublishWithDiagnosis(id: string, expectedRevision: number): Promise<LandingPageActionState> {
+  try {
+    await checkLandingPagePublishable(id, expectedRevision);
+  } catch (error) {
+    const publication = error instanceof LandingPageInputError ? await getLandingPagePublicationStatus(id).catch(() => undefined) : undefined;
+    return { ...failureWithCode(error), ...(publication ? { publication } : {}) };
+  }
+  const publication = await getLandingPagePublicationStatus(id).catch(() => PUBLICATION_UNKNOWN);
+  return { status: "success", message: "發布檢查通過，可以發布。", id, publication };
 }
 
 /**
@@ -171,11 +199,11 @@ export async function landingPageAction(
       return success("草稿已儲存。", saved);
     }
 
-    if (command === "publish") {
+    if (command === "check_publish" || command === "publish") {
       const expectedRevision = revision(formData);
       if (!id || !expectedRevision) return { status: "error", message: "頁面版本資訊不完整，請重新整理後再發布。" };
       // Awaited so that other publish errors still reach the shared mapping below.
-      return await publishWithDiagnosis(id, expectedRevision);
+      return await (command === "publish" ? publishWithDiagnosis : checkPublishWithDiagnosis)(id, expectedRevision);
     }
 
     if (command === "unpublish") {
@@ -215,6 +243,6 @@ export async function landingPageAction(
     if (!id || !expectedRevision || !targetVersion) return { status: "error", message: "版本資訊不完整，請重新整理後再回復草稿。" };
     return success("已從歷史版本重建草稿；公開頁面不會在再次發布前改變。", await rollbackLandingPage(id, targetVersion, expectedRevision));
   } catch (error) {
-    return failure(error);
+    return failureWithCode(error);
   }
 }
