@@ -303,6 +303,7 @@ describe("LiveStepperForm 新增商品 drawer", () => {
 
     const alert = dialog()!.querySelector('[role="alert"]')!.textContent!;
     expect(alert).toContain("無法確認是否已建立");
+    expect(alert).toContain("重送前可先到「商品」頁確認是否已建立。");
     expect(control<HTMLButtonElement>('button[aria-label="關閉"]', dialog()!).disabled).toBe(false);
   });
 

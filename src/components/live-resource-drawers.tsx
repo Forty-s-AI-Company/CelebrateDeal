@@ -36,6 +36,8 @@ import { MESSAGE_TEMPLATE_VARIABLES, messageTemplateVariableLabel } from "@/lib/
  * created the resource, so this never promises that nothing was created.
  */
 const NETWORK_ERROR = "連線中斷，無法確認是否已建立。請先關閉抽屜、重新整理頁面確認清單後再試，避免重複建立。";
+/** A product created on the server is listed (and sellable) at once; say where to check before sending it again. */
+const PRODUCT_NETWORK_ERROR = `${NETWORK_ERROR}重送前可先到「商品」頁確認是否已建立。`;
 const inputClass = "h-11 rounded-md border border-border-control bg-white px-3 text-sm font-normal text-slate-900 aria-[invalid=true]:border-red-600 disabled:bg-slate-100";
 const primaryButtonClass = "inline-flex min-h-11 items-center justify-center rounded-md bg-primary px-4 text-sm font-semibold text-white hover:bg-primary-dark focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60";
 const secondaryButtonClass = "inline-flex min-h-11 items-center justify-center rounded-md border border-border bg-white px-4 text-sm font-semibold text-slate-700 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:cursor-not-allowed disabled:opacity-50";
@@ -445,7 +447,7 @@ export function ProductQuickCreateDrawer({
         }
       } catch {
         onInFlightChange?.(false);
-        fail(NETWORK_ERROR, {});
+        fail(PRODUCT_NETWORK_ERROR, {});
       }
     });
   }
