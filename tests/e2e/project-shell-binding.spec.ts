@@ -10,7 +10,8 @@ for (const viewport of [{ width: 1440, height: 1000 }, { width: 390, height: 844
   test(`project shell form completion and switching at ${viewport.width}px`, async ({ page }) => {
     await page.setViewportSize(viewport);
     const id = randomUUID(); const password = "SyntheticShellPassword!42";
-    const vendor = await db.vendor.create({ data: { name: "Synthetic shell workspace", slug: id, email: `${id}@example.test`, passwordHash: hashPassword(password) } });
+    // A support email completes the first 上線任務 step, so the next one is the registration form.
+    const vendor = await db.vendor.create({ data: { name: "Synthetic shell workspace", slug: id, email: `${id}@example.test`, supportEmail: `support-${id}@example.test`, passwordHash: hashPassword(password) } });
     const user = await db.user.create({ data: { email: `owner-${id}@example.test`, name: "Synthetic owner", passwordHash: hashPassword(password), status: "active", memberships: { create: { vendorId: vendor.id, role: "owner", status: "active" } } } });
     try {
       const project = await db.salesProject.create({ data: { vendorId: vendor.id, name: "Browser project", slug: id, mode: "live_course", primaryFlow: "live" } });
@@ -22,7 +23,7 @@ for (const viewport of [{ width: 1440, height: 1000 }, { width: 390, height: 844
       await page.getByLabel("密碼").fill(password);
       await page.getByRole("button", { name: "登入", exact: true }).click();
       await expect(page).toHaveURL(/\/dashboard$/u);
-      const panel = page.locator('section:visible').filter({ has: page.getByRole('button', { name: /專案上線任務/u }) });
+      const panel = page.locator('section:visible').filter({ has: page.getByRole('button', { name: /^上線任務 /u }) });
       const next = panel.getByRole('link', { name: /繼續/u });
       await expect(next).toHaveAttribute('href', '/forms/new');
       await next.click();
@@ -34,8 +35,11 @@ for (const viewport of [{ width: 1440, height: 1000 }, { width: 390, height: 844
       await page.getByRole('button', { name: '儲存表單', exact: true }).click();
       await expect(page).toHaveURL(/\/forms$/u);
       // No reload: server-action invalidation must update the parent shell itself.
-      await expect(next).toHaveAttribute('href', '/lives/new');
+      // U1: the panel follows the unified list, whose next item after the form is the registration Email.
+      await expect(next).toHaveAttribute('href', '/messages/templates/new');
       await next.click();
+      await expect(page).toHaveURL(/\/messages\/templates\/new$/u);
+      await page.goto('/lives/new');
       await expect(page).toHaveURL(/\/lives\/new$/u);
       await expect(page.getByText('將建立於專案：Browser project', { exact: true })).toBeVisible();
       expect(await db.registrationForm.count({ where: { vendorId: vendor.id, projectId: project.id } })).toBe(1);
@@ -45,7 +49,8 @@ for (const viewport of [{ width: 1440, height: 1000 }, { width: 390, height: 844
       await switcher.getByRole('button', { name: /Browser project/u }).click();
       await switcher.getByRole('menuitemradio', { name: /全部專案總覽/u }).click();
       await expect.poll(async () => (await db.userOnboardingPreference.findUniqueOrThrow({ where: { userId_vendorId: { userId: user.id, vendorId: vendor.id } } })).selectedProjectId).toBeNull();
-      await expect(page.getByRole('button', { name: /商家上線任務/u }).filter({ visible: true })).toBeVisible();
+      // U1: one title for the one list, with or without a selected project.
+      await expect(page.getByRole('button', { name: /^上線任務 /u }).filter({ visible: true })).toBeVisible();
     } finally {
       await db.vendor.delete({ where: { id: vendor.id } });
       await db.user.delete({ where: { id: user.id } });

@@ -103,7 +103,7 @@ export function AppShell({
         </Link>
 
         {!isPlatformAdmin && selectProject ? <WorkspaceProjectSwitcher workspaceName={vendorName} projects={projects} selectedProjectId={selectedProjectId} selectProject={selectProject} /> : null}
-        {!isPlatformAdmin && persistTaskPanelCollapsed ? <OnboardingTaskPanel title={selectedProjectId ? "專案上線任務" : "商家上線任務"} tasks={onboardingTasks} initiallyCollapsed={taskPanelCollapsed} persistCollapsed={persistTaskPanelCollapsed} /> : null}
+        {!isPlatformAdmin && persistTaskPanelCollapsed ? <OnboardingTaskPanel title="上線任務" tasks={onboardingTasks} initiallyCollapsed={taskPanelCollapsed} persistCollapsed={persistTaskPanelCollapsed} /> : null}
 
         <CommandPalette entries={paletteEntries} />
         <nav className="min-h-0 flex-1 space-y-2 overflow-y-auto pr-1 [scrollbar-color:rgba(148,163,184,0.45)_transparent] [scrollbar-width:thin]" aria-label="主要導覽">
@@ -192,7 +192,7 @@ export function AppShell({
       <main id="main-content" tabIndex={-1} className="px-4 pb-24 pt-6 lg:ml-72 lg:px-8 lg:pb-6 xl:px-10">
         {/* Place mobile guidance in normal document flow, outside the sticky header. */}
         <div className="lg:hidden">
-        {!isPlatformAdmin && persistTaskPanelCollapsed ? <OnboardingTaskPanel title={selectedProjectId ? "專案上線任務" : "商家上線任務"} tasks={onboardingTasks} initiallyCollapsed={taskPanelCollapsed} persistCollapsed={persistTaskPanelCollapsed} /> : null}
+        {!isPlatformAdmin && persistTaskPanelCollapsed ? <OnboardingTaskPanel title="上線任務" tasks={onboardingTasks} initiallyCollapsed={taskPanelCollapsed} persistCollapsed={persistTaskPanelCollapsed} /> : null}
         </div>
         <FeatureAccessBoundary enabledModules={enabledModules}>{children}</FeatureAccessBoundary>
         <footer className="mx-auto mt-12 max-w-5xl border-t border-border pt-5">

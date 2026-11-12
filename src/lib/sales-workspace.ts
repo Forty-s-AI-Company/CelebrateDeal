@@ -80,7 +80,8 @@ export const WORKSPACE_ONBOARDING_TASKS: readonly OnboardingTaskDefinition[] = [
 export const LIVE_PROJECT_TASKS: readonly OnboardingTaskDefinition[] = [
   { key: "project_created", title: "建立專案", estimatedMinutes: 1, required: true },
   { key: "project_product", title: "建立商品", estimatedMinutes: 3, required: true },
-  { key: "project_funnel", title: "選擇漏斗頁模板", estimatedMinutes: 3, required: true },
+  // Completed by an active registration form in the project, the publish gate's own check (onboarding-task-links.ts).
+  { key: "project_funnel", title: "建立報名表單", estimatedMinutes: 3, required: true },
   { key: "project_live", title: "設定直播場次", estimatedMinutes: 3, required: true },
   { key: "project_payment", title: "檢查發布所需付款驗證", estimatedMinutes: 1, required: true, skipImpact: "已略過發布所需付款驗證，未通過前專案無法發布；顧客收款狀態需另行確認。" },
   { key: "project_preview", title: "預覽流程", estimatedMinutes: 2, required: true },
@@ -92,7 +93,7 @@ export const CONSULTATION_PROJECT_TASKS: readonly OnboardingTaskDefinition[] = [
   { key: "project_consultation", title: "建立諮詢服務", estimatedMinutes: 3, required: true },
   { key: "project_price", title: "設定價格", estimatedMinutes: 2, required: true },
   { key: "project_availability", title: "設定可預約時間", estimatedMinutes: 3, required: true },
-  { key: "project_funnel", title: "建立漏斗頁", estimatedMinutes: 3, required: true },
+  { key: "project_funnel", title: "建立報名表單", estimatedMinutes: 3, required: true },
   { key: "project_payment", title: "檢查發布所需付款驗證", estimatedMinutes: 1, required: true, skipImpact: "已略過發布所需付款驗證，未通過前專案無法發布；顧客收款狀態需另行確認。" },
   { key: "project_preview", title: "預覽流程", estimatedMinutes: 2, required: true },
   { key: "project_publish", title: "發布並取得分享連結", estimatedMinutes: 1, required: true },
