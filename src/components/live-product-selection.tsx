@@ -1,6 +1,6 @@
 "use client";
 
-import { useId, useState, useSyncExternalStore, type ReactNode } from "react";
+import { useId, useLayoutEffect, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 
 export type LiveProductSelectionOption = { id: string; name: string; inventory: number };
 
@@ -68,6 +68,15 @@ export function LiveProductSelection({
   const orderedIds = submittedProductIds(products, selectedProductIds);
   const names = new Map(products.map((product) => [product.id, product.name]));
   const nameOf = (productId: string | undefined) => (productId ? names.get(productId) ?? "" : "");
+  const checkboxId = (index: number) => `${idPrefix}-option-${index}`;
+  /** The product just pinned: its row's pin button is gone after the commit, so focus moves to its checkbox then. */
+  const focusAfterPinRef = useRef<string | null>(null);
+  useLayoutEffect(() => {
+    const productId = focusAfterPinRef.current;
+    if (!productId) return;
+    focusAfterPinRef.current = null;
+    document.getElementById(checkboxId(products.findIndex((product) => product.id === productId)))?.focus();
+  });
 
   function toggle(productId: string, checked: boolean) {
     const pinnedId = orderedIds[0];
@@ -81,11 +90,10 @@ export function LiveProductSelection({
     onSelectionChange(productId, checked);
   }
 
-  function pin(productId: string, checkbox: HTMLInputElement | null) {
+  function pin(productId: string) {
     onPin(productId);
     setMessage(`已將「${nameOf(productId)}」設為置頂商品。`);
-    // The pin button leaves this row once it is pinned; keep focus on the row.
-    checkbox?.focus();
+    focusAfterPinRef.current = productId;
   }
 
   return (
@@ -104,14 +112,14 @@ export function LiveProductSelection({
           <ul className="grid gap-2">
             {products.map((product, index) => {
               const position = orderedIds.indexOf(product.id);
-              const checkboxId = `${idPrefix}-option-${index}`;
-              const orderId = `${checkboxId}-order`;
+              const optionId = checkboxId(index);
+              const orderId = `${optionId}-order`;
               return (
                 <li key={product.id} data-live-product-row={product.id} className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-border p-3">
-                  <label htmlFor={checkboxId} className="flex min-w-0 flex-1 items-center gap-3">
+                  <label htmlFor={optionId} className="flex min-w-0 flex-1 items-center gap-3">
                     {/* Controlled and without a name: the hidden productIds fields above carry the order. */}
                     <input
-                      id={checkboxId}
+                      id={optionId}
                       type="checkbox"
                       value={product.id}
                       data-live-product-option={product.id}
@@ -134,7 +142,7 @@ export function LiveProductSelection({
                       <button
                         type="button"
                         disabled={!hydrated}
-                        onClick={(event) => pin(product.id, event.currentTarget.closest("li")?.querySelector<HTMLInputElement>('input[type="checkbox"]') ?? null)}
+                        onClick={() => pin(product.id)}
                         // The visible text starts the name; one string, so every browser computes the same name.
                         aria-label={`設為置頂：${product.name}`}
                         className={pinButtonClass}
