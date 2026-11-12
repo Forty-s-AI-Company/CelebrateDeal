@@ -76,6 +76,27 @@ export function legacyChapterTitle(chapterTitle: string) {
   return chapterTitle.trim() || UNCATEGORIZED_CHAPTER_TITLE;
 }
 
+/**
+ * F-5: the one definition of which chapter a lesson belongs to. Every reader
+ * and writer (learner tree, manager page, rename, repair) uses it.
+ *
+ * A lesson belongs to the chapter titled `legacyChapterTitle(chapterTitle)`;
+ * chapter titles are unique per course, so the title names at most one chapter
+ * row. `chapterId` is a cache of that answer: it is trusted only when the linked
+ * chapter carries the same title. A lesson without a link (written by code older
+ * than F-5 during a rollout) or with a stale link (an old deployment changed its
+ * `chapterTitle` without touching `chapterId`) still belongs by its title, as it
+ * did before F-5. `repairCourseChapterLinks` rewrites such links.
+ */
+export function lessonChapterTitle(lesson: Pick<CourseLesson, "chapterTitle">) {
+  return legacyChapterTitle(lesson.chapterTitle);
+}
+
+/** The lesson's chapter link when it agrees with `lessonChapterTitle`, otherwise null. */
+export function trustedChapterLink<Chapter extends { id: string; title: string }>(lesson: { chapterTitle: string; chapter?: Chapter | null }) {
+  return lesson.chapter && lesson.chapter.title === lessonChapterTitle(lesson) ? lesson.chapter : null;
+}
+
 export type CourseChapterGroup<Lesson extends CourseLesson = CourseLesson> = {
   /** The CourseChapter id; null when no lesson of the group is linked to a chapter. */
   id: string | null;
@@ -83,16 +104,13 @@ export type CourseChapterGroup<Lesson extends CourseLesson = CourseLesson> = {
   lessons: Lesson[];
 };
 
+const byPosition = <Lesson extends Pick<CourseLesson, "id" | "position">>(a: Lesson, b: Lesson) => a.position - b.position || a.id.localeCompare(b.id);
+
 /**
  * Groups a flat lesson list into the player sidebar's chapter tree.
  *
- * Identity: a lesson linked to a chapter belongs to that chapter. A lesson
- * without one (written by code older than F-5 during a rollout) falls back to
- * its trimmed `chapterTitle`, and joins a linked chapter with the same title,
- * since a title names exactly one chapter in a course (unique in the database).
- * A link whose chapter title disagrees with the lesson's `chapterTitle` (an old
- * deployment moved the lesson without updating `chapterId`) is not trusted
- * either; the lesson falls back the same way, as it would have before F-5.
+ * Membership follows `lessonChapterTitle` (see above). A group carries the
+ * chapter id when at least one of its lessons has a trusted link to it.
  *
  * Order (deliberate trade-off): chapters follow their first lesson in the given
  * list, by lesson position, which is the pre-F-5 rule. The learner list holds
@@ -103,21 +121,47 @@ export type CourseChapterGroup<Lesson extends CourseLesson = CourseLesson> = {
  * chapter-reordering feature; that feature decides when learners follow it.
  */
 export function courseChapters<Lesson extends CourseLesson>(lessons: readonly Lesson[]): CourseChapterGroup<Lesson>[] {
-  const ordered = [...lessons].sort((a, b) => a.position - b.position || a.id.localeCompare(b.id));
-  const trusted = (lesson: Lesson) => lesson.chapter && lesson.chapter.title === legacyChapterTitle(lesson.chapterTitle) ? lesson.chapter : null;
+  const ordered = [...lessons].sort(byPosition);
   const chapterIdByTitle = new Map<string, string>();
   for (const lesson of ordered) {
-    const chapter = trusted(lesson);
+    const chapter = trustedChapterLink(lesson);
     if (chapter && !chapterIdByTitle.has(chapter.title)) chapterIdByTitle.set(chapter.title, chapter.id);
   }
   const groups = new Map<string, CourseChapterGroup<Lesson>>();
   for (const lesson of ordered) {
-    const title = trusted(lesson)?.title ?? legacyChapterTitle(lesson.chapterTitle);
-    const id = chapterIdByTitle.get(title) ?? null;
-    const key = id ? `chapter:${id}` : `title:${title}`;
-    const group = groups.get(key);
+    const title = lessonChapterTitle(lesson);
+    const group = groups.get(title);
     if (group) group.lessons.push(lesson);
-    else groups.set(key, { id, title, lessons: [lesson] });
+    else groups.set(title, { id: chapterIdByTitle.get(title) ?? null, title, lessons: [lesson] });
   }
   return [...groups.values()];
+}
+
+/**
+ * The manager curriculum page: every chapter row in `CourseChapter.position`
+ * order (empty ones too), each holding the lessons that belong to it by
+ * `lessonChapterTitle`, whatever their `chapterId` says. Lessons whose title
+ * names no chapter row yet come after, grouped by title, in first-lesson order.
+ * Restricted to published lessons, the partition is the learner tree's.
+ */
+export function managerChapterGroups<Lesson extends Pick<CourseLesson, "id" | "position" | "chapterTitle">>(
+  chapters: readonly { id: string; title: string }[],
+  lessons: readonly Lesson[],
+) {
+  const ordered = [...lessons].sort(byPosition);
+  const linked = chapters.map((chapter) => ({ id: chapter.id, title: chapter.title, lessons: [] as Lesson[] }));
+  const unlinked: Array<{ id: null; title: string; lessons: Lesson[] }> = [];
+  const byTitle = new Map<string, { lessons: Lesson[] }>(linked.map((group) => [group.title, group]));
+  for (const lesson of ordered) {
+    const title = lessonChapterTitle(lesson);
+    let group = byTitle.get(title);
+    if (!group) {
+      const created = { id: null, title, lessons: [] as Lesson[] };
+      unlinked.push(created);
+      byTitle.set(title, created);
+      group = created;
+    }
+    group.lessons.push(lesson);
+  }
+  return { chapters: linked, unlinked };
 }

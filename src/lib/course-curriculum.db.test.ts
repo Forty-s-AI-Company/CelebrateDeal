@@ -6,7 +6,7 @@ import { automationCustomerKeyHash } from "@/lib/automation-workflow";
 import { protectCommerceOrderPii } from "@/lib/commerce-order-pii";
 import { grantCommerceEntitlement } from "@/lib/commerce-order-fulfillment";
 import { ChapterTitleTaken, CurriculumConflict, renameCourseChapter, saveCourseLesson } from "@/lib/course-curriculum";
-import { courseChapters } from "@/lib/course-learning";
+import { courseChapters, managerChapterGroups } from "@/lib/course-learning";
 import { getDb } from "@/lib/db";
 import { getStudentCourse, saveStudentLessonProgress, studentCertificateDetails } from "@/lib/student-course-learning";
 
@@ -210,3 +210,93 @@ describe("renameCourseChapter (F-5)", () => {
     expect(await db.courseLesson.count({ where: { chapterTitle: "竄改" } })).toBe(0);
   });
 });
+
+/** F-5 rollout: pre-F-5 code may still write lessons while the new code runs. It
+ * only knows chapterTitle, so it leaves chapterId empty (new lesson) or stale
+ * (chapterTitle changed, chapterId kept). These writes are simulated directly. */
+describe("chapter membership during a rollout (F-5 review M-1)", () => {
+  const lessonRows = (vendorId: string) => db.courseLesson.findMany({ where: { vendorId }, orderBy: { position: "asc" }, select: { id: true, chapterTitle: true, chapterId: true } });
+  const legacyInsert = async (f: Awaited<ReturnType<typeof course>>, chapterTitle: string, title: string, published = true) => {
+    const last = await db.courseLesson.aggregate({ where: { vendorId: f.vendor.id, productId: f.product.id }, _max: { position: true } });
+    return (await db.courseLesson.create({ data: { vendorId: f.vendor.id, productId: f.product.id, chapterTitle, title, position: (last._max.position ?? -1) + 1, videoUrl: "https://media.example.test/course.mp4", durationSeconds: 100, publishedAt: published ? new Date() : null } })).id;
+  };
+
+  it("A: renaming a chapter leaves a lesson that old code moved to another chapter where it is, and saving it fixes its link", async () => {
+    const f = await course();
+    const opener = await addLesson(f, "第一章", "開場");
+    const moved = await addLesson(f, "第一章", "框架");
+    await addLesson(f, "第二章", "演練");
+    const [first, second] = await chapters(f.vendor.id, f.product.id);
+    // Old code moves `moved` to 第二章 without touching chapterId.
+    await db.courseLesson.update({ where: { id: moved }, data: { chapterTitle: "第二章" } });
+
+    await renameCourseChapter(db, f.vendor.id, { productId: f.product.id, chapterId: first!.id, revision: await revision(f.product.id), title: "開場與準備" });
+    const rows = await lessonRows(f.vendor.id);
+    expect(rows.find((row) => row.id === opener)).toMatchObject({ chapterTitle: "開場與準備", chapterId: first!.id });
+    // Still in 第二章 by its title; its stale link is not used to drag it back.
+    expect(rows.find((row) => row.id === moved)).toMatchObject({ chapterTitle: "第二章", chapterId: first!.id });
+    expect((await learnerTree(f)).map(([, title, ids]) => [title, (ids as string[]).length])).toEqual([["開場與準備", 1], ["第二章", 2]]);
+
+    // Saving the lesson in the new admin re-links it to the chapter its title names.
+    await addLesson(f, "第二章", "框架", { lessonId: moved });
+    expect((await lessonRows(f.vendor.id)).find((row) => row.id === moved)).toMatchObject({ chapterTitle: "第二章", chapterId: second!.id });
+  });
+
+  it("B: renaming a chapter takes along an unlinked lesson that old code added to it", async () => {
+    const f = await course();
+    const opener = await addLesson(f, "第一章", "開場");
+    const [first] = await chapters(f.vendor.id, f.product.id);
+    const late = await legacyInsert(f, " 第一章", "補充");
+    expect((await learnerTree(f)).map(([id, title]) => [id, title])).toEqual([[first!.id, "第一章"]]);
+
+    await renameCourseChapter(db, f.vendor.id, { productId: f.product.id, chapterId: first!.id, revision: await revision(f.product.id), title: "開場與準備" });
+    expect(await lessonRows(f.vendor.id)).toEqual([
+      { id: opener, chapterTitle: "開場與準備", chapterId: first!.id },
+      { id: late, chapterTitle: "開場與準備", chapterId: first!.id },
+    ]);
+    expect(await learnerTree(f)).toEqual([[first!.id, "開場與準備", [opener, late]]]);
+  });
+
+  it("C: renaming onto the title of unlinked or stale-linked lessons is rejected instead of merging them", async () => {
+    const f = await course();
+    await addLesson(f, "第一章", "開場");
+    const stale = await addLesson(f, "第二章", "演練");
+    const [first, second] = await chapters(f.vendor.id, f.product.id);
+    await legacyInsert(f, "附錄", "補充教材");
+    await db.courseLesson.update({ where: { id: stale }, data: { chapterTitle: "番外" } });
+    const before = await revision(f.product.id);
+    for (const title of ["附錄", " 番外 "]) {
+      await expect(renameCourseChapter(db, f.vendor.id, { productId: f.product.id, chapterId: first!.id, revision: before, title })).rejects.toBeInstanceOf(ChapterTitleTaken);
+    }
+    expect(await revision(f.product.id)).toBe(before);
+    expect((await chapters(f.vendor.id, f.product.id)).map((row) => [row.id, row.title])).toEqual([[first!.id, "第一章"], [second!.id, "第二章"]]);
+    expect((await learnerTree(f)).map(([, title]) => title)).toEqual(["第一章", "番外", "附錄"]);
+  });
+
+  it("groups the manager page with the learner rule: published lessons partition the same way", async () => {
+    const f = await course();
+    await addLesson(f, "第一章", "a", { published: false, videoUrl: "" });
+    await addLesson(f, "第二章", "b");
+    const stale = await addLesson(f, "第一章", "c");
+    await addLesson(f, "第三章", "d", { published: false, videoUrl: "" });
+    await legacyInsert(f, "第三章", "e");
+    await legacyInsert(f, "附錄", "f");
+    await legacyInsert(f, "第一章", "g", false);
+    await db.courseLesson.update({ where: { id: stale }, data: { chapterTitle: "  第二章" } });
+    const product = await db.product.findUniqueOrThrow({ where: { id: f.product.id }, include: {
+      courseLessons: { orderBy: [{ position: "asc" }, { id: "asc" }] },
+      courseChapters: { orderBy: [{ position: "asc" }, { id: "asc" }], select: { id: true, title: true } },
+    } });
+    const manager = managerChapterGroups(product.courseChapters, product.courseLessons);
+    expect(manager.chapters.map((group) => [group.title, group.lessons.map((lesson) => lesson.title)])).toEqual([["第一章", ["a", "g"]], ["第二章", ["b", "c"]], ["第三章", ["d", "e"]]]);
+    expect(manager.unlinked.map((group) => [group.title, group.lessons.map((lesson) => lesson.title)])).toEqual([["附錄", ["f"]]]);
+    const published = new Set(product.courseLessons.filter((lesson) => lesson.publishedAt).map((lesson) => lesson.id));
+    const managerPartition = [...manager.chapters, ...manager.unlinked]
+      .map((group) => [group.title, group.lessons.filter((lesson) => published.has(lesson.id)).map((lesson) => lesson.id)] as const)
+      .filter(([, ids]) => ids.length > 0);
+    const learnerPartition = (await learnerTree(f)).map(([, title, ids]) => [title, ids] as const);
+    const byTitle = (rows: ReadonlyArray<readonly [unknown, unknown]>) => [...rows].sort((a, b) => String(a[0]).localeCompare(String(b[0])));
+    expect(byTitle(learnerPartition)).toEqual(byTitle(managerPartition));
+  });
+});
+

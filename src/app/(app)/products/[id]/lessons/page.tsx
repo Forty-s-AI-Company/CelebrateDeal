@@ -4,7 +4,7 @@ import { renameCourseChapterAction, saveCourseLessonAction } from "@/app/actions
 import { CsrfField } from "@/components/csrf-field";
 import { ButtonLink, Field, FormErrorSummary, PageHeader, SubmitButton } from "@/components/ui";
 import { requireVendorManager } from "@/lib/auth";
-import { legacyChapterTitle } from "@/lib/course-learning";
+import { managerChapterGroups } from "@/lib/course-learning";
 import { getDb } from "@/lib/db";
 import { requireFeatureOrNotFound } from "@/lib/feature-gates";
 
@@ -31,18 +31,14 @@ export default async function CourseLessonsPage({ params, searchParams }: {
   });
   if (!product) notFound();
   type Lesson = (typeof product.courseLessons)[number];
-  const chapters = product.courseChapters.map((chapter) => ({ ...chapter, lessons: product.courseLessons.filter((lesson) => lesson.chapterId === chapter.id) }));
-  // Lessons written by code older than F-5 have no chapter yet; saving them links them.
-  const unlinked = new Map<string, Lesson[]>();
-  for (const lesson of product.courseLessons) {
-    if (lesson.chapterId && chapters.some((chapter) => chapter.id === lesson.chapterId)) continue;
-    const title = legacyChapterTitle(lesson.chapterTitle);
-    unlinked.set(title, [...(unlinked.get(title) ?? []), lesson]);
-  }
+  // Same membership rule as the learner player (lessonChapterTitle): a lesson sits
+  // under the chapter its chapterTitle names, whatever its chapterId says. Lessons
+  // whose title names no chapter row yet (pre-F-5 writes) are listed after.
+  const { chapters, unlinked } = managerChapterGroups(product.courseChapters, product.courseLessons);
   const chapterError = query.chapterError ? CHAPTER_ERRORS[query.chapterError] ?? CHAPTER_ERRORS.invalid : null;
 
-  const lessonForm = (lesson: Lesson | null) => <form key={lesson?.id ?? "new"} action={saveCourseLessonAction} className="space-y-4 rounded-xl border bg-white p-5">
-    <h3 className="text-lg font-bold">{lesson ? `單元 ${lesson.position + 1}` : "新增單元"}</h3>
+  const lessonForm = (lesson: Lesson | null) => <form key={lesson?.id ?? "new"} action={saveCourseLessonAction} aria-labelledby={lesson ? undefined : "new-lesson-heading"} className="space-y-4 rounded-xl border bg-white p-5">
+    {lesson ? <h3 className="text-lg font-bold">{`單元 ${lesson.position + 1}`}</h3> : null}
     <CsrfField /><input type="hidden" name="productId" value={id} /><input type="hidden" name="revision" value={product.revision} />
     {lesson ? <input type="hidden" name="lessonId" value={lesson.id} /> : null}
     <label className="block">章節<input className="mt-1 block w-full rounded border p-2" name="chapterTitle" required maxLength={120} defaultValue={lesson?.chapterTitle ?? ""} /></label>
@@ -79,14 +75,17 @@ export default async function CourseLessonsPage({ params, searchParams }: {
           {chapter.lessons.length ? chapter.lessons.map(lessonForm) : <p className="rounded-md border border-dashed border-border px-4 py-3 text-sm text-slate-600">這個章節目前沒有單元，學員端不會顯示。</p>}
         </section>;
       })}
-      {[...unlinked].map(([title, lessons]) => <section key={`unlinked:${title}`} aria-labelledby={`unlinked-${lessons[0]!.id}`} className="space-y-4">
+      {unlinked.map(({ title, lessons }) => <section key={`unlinked:${title}`} aria-labelledby={`unlinked-${lessons[0]!.id}`} className="space-y-4">
         <div className="border-b border-border pb-2">
           <h2 id={`unlinked-${lessons[0]!.id}`} className="text-xl font-semibold text-slate-950 [overflow-wrap:anywhere]">{title}</h2>
           <p className="mt-1 text-sm text-slate-600">這些單元還沒有對應的章節，儲存單元後會自動歸入同名章節。</p>
         </div>
         {lessons.map(lessonForm)}
       </section>)}
-      <section aria-label="新增單元">{lessonForm(null)}</section>
+      <section aria-labelledby="new-lesson-heading" className="space-y-4">
+        <h2 id="new-lesson-heading" className="border-b border-border pb-2 text-xl font-semibold text-slate-950">新增單元</h2>
+        {lessonForm(null)}
+      </section>
     </div>
   </>;
 }

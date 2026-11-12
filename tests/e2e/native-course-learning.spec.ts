@@ -91,7 +91,7 @@ test("manager publishes a lesson; a purchasing learner saves, resumes, completes
     expect((await db.courseLesson.findFirstOrThrow({ where: { id: lesson.id } })).chapterTitle).toBe("第一章：開場");
     // An unpublished lesson in a second chapter; renaming it onto the first
     // chapter's title is refused instead of merging the chapters.
-    const newLesson = page.locator("form").filter({ has: page.getByRole("heading", { name: "新增單元", exact: true }) });
+    const newLesson = page.getByRole("form", { name: "新增單元" });
     await newLesson.getByLabel("章節", { exact: true }).fill("附錄");
     await newLesson.getByLabel("單元名稱").fill("補充教材");
     await newLesson.getByRole("button", { name: "新增單元", exact: true }).click();

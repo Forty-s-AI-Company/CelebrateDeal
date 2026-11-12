@@ -3,6 +3,7 @@ import { Prisma, type PrismaClient } from "@prisma/client";
 import { learnerNotificationLink, safeLearnerNotificationLink } from "./learner-notification-links";
 import { boundLearnerNotificationText, recordLearnerNotificationSourceEvent } from "./learner-notification-source-events";
 import { z } from "zod";
+import { lessonChapterTitle } from "./course-learning";
 
 export const curriculumInput = z.object({
   productId: z.string().min(1).max(160),
@@ -32,8 +33,9 @@ export class ChapterTitleTaken extends Error {}
 
 /** F-5: the chapter with this exact (already trimmed) title in this course, created
  * at the end of the course's chapter order when it does not exist yet. Runs inside
- * the caller's Serializable transaction, after the product revision CAS. */
-async function findOrCreateChapter(tx: Prisma.TransactionClient, vendorId: string, productId: string, title: string) {
+ * the caller's Serializable transaction (after the product revision CAS for manager
+ * edits); every query is bound to the vendor and the course. */
+export async function findOrCreateChapter(tx: Prisma.TransactionClient, vendorId: string, productId: string, title: string) {
   const existing = await tx.courseChapter.findFirst({ where: { vendorId, productId, title }, select: { id: true } });
   if (existing) return existing.id;
   const last = await tx.courseChapter.aggregate({ where: { vendorId, productId }, _max: { position: true } });
@@ -46,7 +48,8 @@ async function findOrCreateChapter(tx: Prisma.TransactionClient, vendorId: strin
 
 /** Manager authorization is required at the caller. Every resource is tenant scoped;
  * the existing product revision also protects parallel curriculum/product edits.
- * A lesson moved to another chapter leaves its old chapter in place even when it is
+ * Saving always re-links the lesson to the chapter its (trimmed) chapterTitle names,
+ * so it also repairs a missing or stale chapterId left by pre-F-5 code. A lesson moved to another chapter leaves its old chapter in place even when it is
  * now empty; learners never see an empty chapter because they only see chapters
  * through their published lessons. */
 export async function saveCourseLesson(db: PrismaClient, vendorId: string, raw: unknown) {
@@ -79,10 +82,17 @@ export async function saveCourseLesson(db: PrismaClient, vendorId: string, raw: 
   }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
 }
 
-/** F-5: renames one chapter of a course and rewrites `chapterTitle` on all of its
- * lessons in the same transaction. Manager authorization is required at the caller.
- * The product revision CAS serializes this with every other curriculum edit; a title
- * another chapter of the course already uses is rejected, never merged. */
+/** F-5: renames one chapter of a course. Manager authorization is required at the caller.
+ *
+ * The chapter's lessons are the ones `lessonChapterTitle` assigns to its current
+ * title, whatever their chapterId says (see course-learning.ts): a lesson linked to
+ * this chapter whose chapterTitle names another chapter stays where it is, and an
+ * unlinked or stale-linked lesson with this title moves along. Those lessons get the
+ * new title and a link to this chapter in the same transaction.
+ *
+ * A title that already names a chapter of the course, either a chapter row or a
+ * lesson that belongs to it by title, is rejected, never merged. The product
+ * revision CAS serializes this with every other curriculum edit. */
 export async function renameCourseChapter(db: PrismaClient, vendorId: string, raw: unknown) {
   if (!vendorId) throw new Error("Vendor identity is required.");
   const input = chapterRenameInput.parse(raw);
@@ -95,15 +105,20 @@ export async function renameCourseChapter(db: PrismaClient, vendorId: string, ra
     const scope = { vendorId, productId: input.productId };
     const chapter = await tx.courseChapter.findFirst({ where: { ...scope, id: input.chapterId }, select: { id: true, title: true } });
     if (!chapter) throw new CurriculumConflict("Chapter is unavailable.");
+    const lessons = await tx.courseLesson.findMany({ where: scope, select: { id: true, chapterTitle: true } });
     if (chapter.title !== input.title) {
-      const taken = await tx.courseChapter.findFirst({ where: { ...scope, title: input.title, id: { not: chapter.id } }, select: { id: true } });
-      if (taken) throw new ChapterTitleTaken("Another chapter of this course already uses this title.");
+      const takenByChapter = await tx.courseChapter.findFirst({ where: { ...scope, title: input.title, id: { not: chapter.id } }, select: { id: true } });
+      const takenByLesson = lessons.some((lesson) => lessonChapterTitle(lesson) === input.title);
+      if (takenByChapter || takenByLesson) throw new ChapterTitleTaken("Another chapter of this course already uses this title.");
       const renamed = await tx.courseChapter.updateMany({ where: { ...scope, id: chapter.id }, data: { title: input.title } });
       if (renamed.count !== 1) throw new CurriculumConflict("Chapter is unavailable.");
     }
-    // Also run when the title is unchanged: it repairs lessons whose chapterTitle
-    // still carries the untrimmed text from before the F-5 backfill.
-    await tx.courseLesson.updateMany({ where: { ...scope, chapterId: chapter.id }, data: { chapterTitle: input.title } });
+    // Also runs when the title is unchanged: it normalizes untrimmed pre-F-5
+    // chapterTitle text and re-links unlinked or stale-linked members.
+    const members = lessons.filter((lesson) => lessonChapterTitle(lesson) === chapter.title).map((lesson) => lesson.id);
+    if (members.length > 0) {
+      await tx.courseLesson.updateMany({ where: { ...scope, id: { in: members } }, data: { chapterId: chapter.id, chapterTitle: input.title } });
+    }
     return chapter.id;
   }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
 }

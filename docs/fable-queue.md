@@ -60,7 +60,7 @@ CI 帶出 `color-contrast` 規則後，Opus 找到根因：停用按鈕恢復可
 
 ## F-5：課程獨立章節 model 與 AI 課程大綱（AI M4）（章節 model 已完成，PR 連結待補；AI 課程大綱待 AI M1）
 
-章節已拆成 `CourseChapter`，migration `20261113120000_course_chapter` 把既有的 `chapterTitle` 回填成章節，學員看到的章節名稱、順序與進度不變；後台課程內容頁依章節分組，可以就地重新命名章節。`CourseLesson.chapterId` 暫時可為空，等部署穩定後另開 migration 重跑回填並設為 NOT NULL。之後的項目：章節排序、刪除章節、搬移單元的專用介面，以及 AI 課程大綱（等 AI M1）。以下保留開工前的紀錄。
+章節已拆成 `CourseChapter`，migration `20261113120000_course_chapter` 把既有的 `chapterTitle` 回填成章節，學員看到的章節名稱、順序與進度不變；後台課程內容頁依章節分組，可以就地重新命名章節。`CourseLesson.chapterId` 暫時可為空，等部署穩定後另開 migration 重跑回填並設為 NOT NULL。之後的項目：章節排序、刪除章節、搬移單元的專用介面，以及 AI 課程大綱（等 AI M1）；另外，單元全部搬走後的空章節目前沒有刪除介面，會一直佔住那個章節名稱（同課程不能再改成這個名字）。以下保留開工前的紀錄。
 
 - **分支與 commit**：`ai/f5-course-chapter-model`（章節 model 與回填）。
 - **卡住的原因**：`CourseLesson` 的章節目前只是 `chapterTitle` 字串欄位。拆成獨立章節 model 需要 migration 與資料回填，牽動學員 portal、進度、證書。AI M4 也依賴 M1 到 M3（需要 Cloudflare token）。

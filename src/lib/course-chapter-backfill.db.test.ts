@@ -76,8 +76,27 @@ describe("F-5 course chapter backfill (migration SQL)", () => {
     expect(BACKFILL.split(TRIM_PATTERN!).length).toBe(3);
   });
 
+  it("refuses to backfill unless backslash escapes reach the regex engine in a UTF8 database", async () => {
+    const settings = dollarBlock("course_chapter_backfill_settings");
+    expect(MIGRATION.indexOf(settings)).toBeLessThan(MIGRATION.indexOf(BACKFILL));
+    await expect(db.$executeRawUnsafe(settings)).resolves.toBeDefined();
+    await expect(db.$transaction(async (tx) => {
+      await tx.$executeRawUnsafe("SET LOCAL standard_conforming_strings = off");
+      await tx.$executeRawUnsafe(settings);
+    })).rejects.toThrow(/standard_conforming_strings = on/u);
+  });
+
+  it("takes the Vendor and Product locks before the CourseLesson lock, before any DDL", () => {
+    const vendorProduct = MIGRATION.indexOf('LOCK TABLE "Vendor", "Product" IN SHARE ROW EXCLUSIVE MODE;');
+    const lesson = MIGRATION.indexOf('LOCK TABLE "CourseLesson" IN ACCESS EXCLUSIVE MODE;');
+    expect(vendorProduct).toBeGreaterThan(MIGRATION.indexOf("SET LOCAL lock_timeout = '5s';"));
+    expect(lesson).toBeGreaterThan(vendorProduct);
+    expect(MIGRATION.indexOf("ALTER TABLE")).toBeGreaterThan(lesson);
+    expect(MIGRATION.indexOf("CREATE TABLE")).toBeGreaterThan(lesson);
+  });
+
   it("trims exactly like String.prototype.trim, which the player used", async () => {
-    const samples = [" 第一章 ", "\t第一章\n", "第一章　", " 第一章 ", "﻿第一章 ", "　", "  ", "第 一 章", "​第一章", "\u0085第一章", "第一章\r\n"];
+    const samples = [" 第一章 ", "\t第一章\n", "第一章\u3000", "\u00a0第一章\u2003", "\ufeff第一章\u2028", "\u3000", "  ", "第 一 章", "\u200b第一章", "\u0085第一章", "第一章\r\n"];
     for (const sample of samples) {
       const [row] = await db.$queryRaw<Array<{ trimmed: string }>>`SELECT regexp_replace(${sample}::text, ${TRIM_PATTERN!}::text, '', 'g') AS trimmed`;
       expect([sample, row?.trimmed]).toEqual([sample, sample.trim()]);
@@ -89,10 +108,10 @@ describe("F-5 course chapter backfill (migration SQL)", () => {
     const l0 = await legacyLesson(vendor.id, course!.id, 0, "第一章", false); // first lesson unpublished
     const l1 = await legacyLesson(vendor.id, course!.id, 1, "  第二章 ");
     const l2 = await legacyLesson(vendor.id, course!.id, 2, "第一章");
-    const l3 = await legacyLesson(vendor.id, course!.id, 3, "第二章　");
+    const l3 = await legacyLesson(vendor.id, course!.id, 3, "第二章\u3000");
     const l4 = await legacyLesson(vendor.id, course!.id, 4, "第三章", false);
     const l5 = await legacyLesson(vendor.id, course!.id, 5, "第一章"); // non-adjacent repeat
-    const l6 = await legacyLesson(vendor.id, course!.id, 6, "　"); // empty after trim
+    const l6 = await legacyLesson(vendor.id, course!.id, 6, "\u3000"); // empty after trim
     await runBackfill();
 
     const chapters = await chaptersOf(vendor.id, course!.id);
@@ -105,7 +124,7 @@ describe("F-5 course chapter backfill (migration SQL)", () => {
       [l4.id, byTitle.get("第三章")], [l5.id, byTitle.get("第一章")], [l6.id, byTitle.get("未分類章節")],
     ]);
     // The original free text is not rewritten.
-    expect(lessons.map((lesson) => lesson.chapterTitle)).toEqual(["第一章", "  第二章 ", "第一章", "第二章　", "第三章", "第一章", "　"]);
+    expect(lessons.map((lesson) => lesson.chapterTitle)).toEqual(["第一章", "  第二章 ", "第一章", "第二章\u3000", "第三章", "第一章", "\u3000"]);
     for (const lesson of lessons) expect(lesson.chapter?.title).toBe(legacyChapterTitle(lesson.chapterTitle));
 
     // What learners see (published lessons only) is unchanged, including a chapter

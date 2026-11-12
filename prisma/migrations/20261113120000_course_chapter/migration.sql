@@ -14,11 +14,22 @@
 -- readers fall back to "chapterTitle" for those rows, and a later migration
 -- reruns the backfill below and adds NOT NULL.
 --
--- Locks: ADD COLUMN takes ACCESS EXCLUSIVE on "CourseLesson" first, so no
--- lesson can be written between the backfill and the check at the end. The
--- closed-beta course tables are small; every statement waits at most 5s for
--- a lock and the whole migration is one transaction.
+-- Locks are taken up front in one fixed order. The new foreign keys need SHARE
+-- ROW EXCLUSIVE on "Vendor" and "Product", and "CourseLesson" needs ACCESS
+-- EXCLUSIVE. saveCourseLesson (old and new) updates "Product" first and then
+-- reads "CourseLesson"; taking "CourseLesson" first and "Product" later (at the
+-- ADD FOREIGN KEY) could deadlock with it. With this order the migration either
+-- waits for that transaction to finish or that transaction waits for the
+-- migration. Holding "CourseLesson" from the start also means no lesson can be
+-- written between the backfill and the check at the end.
+--
+-- Every lock waits at most 5s and the whole migration is one transaction. On a
+-- lock_timeout failure nothing is applied: mark it rolled back with
+-- `prisma migrate resolve --rolled-back 20261113120000_course_chapter` and run
+-- `migrate deploy` again.
 SET LOCAL lock_timeout = '5s';
+LOCK TABLE "Vendor", "Product" IN SHARE ROW EXCLUSIVE MODE;
+LOCK TABLE "CourseLesson" IN ACCESS EXCLUSIVE MODE;
 
 ALTER TABLE "CourseLesson" ADD COLUMN "chapterId" TEXT;
 
@@ -87,6 +98,18 @@ $course_chapter_data_api$;
 --   lesson id keeps it from colliding with a chapter that was later renamed
 --   away from the same title.
 -- * Only lessons without a chapterId are touched; "chapterTitle" is not changed.
+-- The trim pattern below relies on backslash escapes reaching the regular
+-- expression engine (standard_conforming_strings = on) and on \uXXXX naming
+-- Unicode code points (a UTF8 database). Refuse to run otherwise.
+DO $course_chapter_backfill_settings$
+BEGIN
+  IF current_setting('standard_conforming_strings') <> 'on' OR current_setting('server_encoding') <> 'UTF8' THEN
+    RAISE EXCEPTION 'course chapter backfill needs standard_conforming_strings = on and a UTF8 database (got %, %)',
+      current_setting('standard_conforming_strings'), current_setting('server_encoding');
+  END IF;
+END
+$course_chapter_backfill_settings$;
+
 -- BEGIN course_chapter_backfill
 DO $course_chapter_backfill$
 BEGIN
@@ -96,7 +119,7 @@ BEGIN
       lesson."vendorId",
       lesson."productId",
       lesson."position",
-      COALESCE(NULLIF(regexp_replace(lesson."chapterTitle", '^[ \t\n\v\f\r   -     　﻿]+|[ \t\n\v\f\r   -     　﻿]+$', '', 'g'), ''), '未分類章節') AS "title"
+      COALESCE(NULLIF(regexp_replace(lesson."chapterTitle", '^[ \t\n\v\f\r\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000\ufeff]+|[ \t\n\v\f\r\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000\ufeff]+$', '', 'g'), ''), '未分類章節') AS "title"
     FROM "CourseLesson" AS lesson
     WHERE lesson."chapterId" IS NULL
   ),
@@ -135,7 +158,7 @@ BEGIN
   WHERE lesson."chapterId" IS NULL
     AND chapter."vendorId" = lesson."vendorId"
     AND chapter."productId" = lesson."productId"
-    AND chapter."title" = COALESCE(NULLIF(regexp_replace(lesson."chapterTitle", '^[ \t\n\v\f\r   -     　﻿]+|[ \t\n\v\f\r   -     　﻿]+$', '', 'g'), ''), '未分類章節');
+    AND chapter."title" = COALESCE(NULLIF(regexp_replace(lesson."chapterTitle", '^[ \t\n\v\f\r\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000\ufeff]+|[ \t\n\v\f\r\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000\ufeff]+$', '', 'g'), ''), '未分類章節');
 END
 $course_chapter_backfill$;
 -- END course_chapter_backfill

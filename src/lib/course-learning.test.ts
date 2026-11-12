@@ -63,10 +63,10 @@ describe("learner chapter tree is unchanged by F-5 chapter rows", () => {
       { id: "a", chapterTitle: "第一章", title: "unpublished first lesson", durationSeconds: 10, position: 0, published: false },
       { id: "b", chapterTitle: "  第二章 ", title: "b", durationSeconds: 10, position: 1, published: true },
       { id: "c", chapterTitle: "第一章", title: "c", durationSeconds: 10, position: 2, published: true },
-      { id: "d", chapterTitle: "第二章　", title: "d", durationSeconds: 10, position: 3, published: true },
+      { id: "d", chapterTitle: "第二章\u3000", title: "d", durationSeconds: 10, position: 3, published: true },
       { id: "e", chapterTitle: "第三章", title: "e", durationSeconds: 10, position: 4, published: false },
       { id: "f", chapterTitle: "第一章", title: "f", durationSeconds: 10, position: 5, published: true },
-      { id: "g", chapterTitle: "　", title: "g", durationSeconds: 10, position: 6, published: true },
+      { id: "g", chapterTitle: "\u3000", title: "g", durationSeconds: 10, position: 6, published: true },
     ]);
     const learner = visible(course);
     // 第一章's first lesson is unpublished, so 第二章 comes first for learners even
@@ -83,7 +83,7 @@ describe("learner chapter tree is unchanged by F-5 chapter rows", () => {
     let seed = 20261113;
     const random = () => { seed = (seed * 1103515245 + 12345) % 2147483648; return seed / 2147483648; };
     const pick = <T,>(items: readonly T[]) => items[Math.floor(random() * items.length)]!;
-    const titles = ["第一章", " 第一章", "第一章　", "第二章", "\t第二章\n", "第三章", "　", "未分類章節", "Intro", "intro"];
+    const titles = ["第一章", " 第一章", "第一章\u3000", "第二章", "\t第二章\n", "第三章", "\u3000", "未分類章節", "Intro", "intro"];
     for (let round = 0; round < 500; round += 1) {
       const count = 1 + Math.floor(random() * 12);
       const positions = [...Array(count).keys()].sort(() => random() - 0.5);
