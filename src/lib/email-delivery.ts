@@ -664,6 +664,14 @@ export async function processDuePostLiveFollowups(
 
   for (const rule of rules) {
     const live = rule.live;
+    // An active evergreen Live gives every visitor their own session, so the
+    // shared scheduledAt says nothing about when a registrant's webinar ends.
+    // Like live_reminder, no follow-up is scheduled from it (per-visitor
+    // follow-ups are not implemented yet).
+    if (isActiveEvergreenLive(live, { vendorTimezone: live.vendor.timezone, now })) {
+      results.push({ status: "not_scheduled" });
+      continue;
+    }
     const fixedSessionsDueBefore = isFixedSessionLive(live)
       ? fixedSessionPostLiveCutoff(live, rule.offsetMinutes, now)
       : null;
@@ -1247,6 +1255,7 @@ async function isCurrentPostLiveFollowupDelivery(
     database.live.findFirst({
       where: { id: delivery.sourceLiveId, vendorId: delivery.vendorId },
       select: {
+        ...EVERGREEN_ACTIVATION_SELECT,
         id: true,
         vendorId: true,
         slug: true,
@@ -1284,6 +1293,9 @@ async function isCurrentPostLiveFollowupDelivery(
     }),
   ]);
   if (!live || !submission) return false;
+  // A follow-up queued before evergreen was enabled must not be sent: it is
+  // anchored on the shared scheduledAt, not the registrant's own session.
+  if (isActiveEvergreenLive(live, { now })) return false;
   // A fixed-session registrant's follow-up is anchored on their own session.
   const session = submission.liveSession;
   const fixed = live.sessionMode === "fixed_sessions";

@@ -135,6 +135,9 @@ async function saveEvergreenTransaction(
       if (updated.count !== 1) return updated;
       // Enabling: queued before_live / during_live emails anchored on the old
       // fixed time are cancelled in the same commit instead of at send time.
+      // post_live_followup is cancelled only by the post-commit pass below,
+      // which re-checks that evergreen is actually active: enabling the flag
+      // on an ended Live must not drop that Live's due follow-ups.
       if (input.enabling) {
         await supersedeLiveNotificationDeliveriesForLifecycle(tx, {
           vendorId: input.vendorId,

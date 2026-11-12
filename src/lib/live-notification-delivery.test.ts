@@ -657,7 +657,7 @@ describe("evergreen in-flight sweep", () => {
     evergreenDailyTimes: [], evergreenSessionStartAt: null, video: { durationSec: 1_800 },
   };
 
-  it("supersedes queued and failed before/during rows of an active evergreen live under a vendor-bound Live lock", async () => {
+  it("supersedes queued and failed before/during/post-live rows of an active evergreen live under a vendor-bound Live lock", async () => {
     mocks.db.live.findFirst.mockResolvedValue(evergreen);
     mocks.db.emailDelivery.updateMany.mockResolvedValue({ count: 2 });
     await expect(supersedeFixedTimeNotificationsForActiveEvergreen({ vendorId: "vendor-1", liveId: "live-1" }, now)).resolves.toBe(2);
@@ -670,7 +670,7 @@ describe("evergreen in-flight sweep", () => {
     expect(lock!.slice(1)).toEqual(["live-1", "vendor-1"]);
     expect(mocks.db.live.findFirst).toHaveBeenCalledWith(expect.objectContaining({ where: { id: "live-1", vendorId: "vendor-1" } }));
     expect(mocks.db.emailDelivery.updateMany).toHaveBeenCalledWith({
-      where: { vendorId: "vendor-1", sourceLiveId: "live-1", trigger: { in: ["before_live", "during_live"] }, status: { in: ["queued", "failed"] } },
+      where: { vendorId: "vendor-1", sourceLiveId: "live-1", trigger: { in: ["before_live", "during_live", "post_live_followup"] }, status: { in: ["queued", "failed"] } },
       data: { status: "superseded", nextAttemptAt: null, claimedAt: null, lastErrorCode: "lifecycle_superseded" },
     });
   });

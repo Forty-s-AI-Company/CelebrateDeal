@@ -48,6 +48,7 @@ const errorGuidance: Record<string, string> = {
   config_superseded: "直播或模板設定已更新，舊排程不會寄送。",
   verification_superseded: "驗證已完成、連結已過期或已有新版驗證信。",
   schedule_superseded: "直播排程已更新，舊提醒不會寄送。",
+  lifecycle_superseded: "直播狀態已改變（例如已開播、已結束或已開啟常青場），舊排程不會寄送。",
 };
 
 function DeliveryBadge({ status }: { status: string }) {

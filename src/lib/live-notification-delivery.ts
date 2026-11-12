@@ -783,7 +783,7 @@ export async function isCurrentLiveNotificationDeliverySnapshot(
 
 export async function supersedeLiveNotificationDeliveriesForLifecycle(
   tx: Pick<Prisma.TransactionClient, "emailDelivery">,
-  input: { vendorId: string; liveId: string; triggers: LiveNotificationDeliveryTrigger[] },
+  input: { vendorId: string; liveId: string; triggers: Array<LiveNotificationDeliveryTrigger | "post_live_followup"> },
 ) {
   return tx.emailDelivery.updateMany({
     where: {
@@ -830,7 +830,8 @@ export async function supersedeFixedTimeNotificationsForActiveEvergreen(
     const superseded = await supersedeLiveNotificationDeliveriesForLifecycle(tx, {
       vendorId: input.vendorId,
       liveId: input.liveId,
-      triggers: [...LIVE_NOTIFICATION_DELIVERY_TRIGGERS],
+      // post_live_followup is anchored on the shared scheduledAt as well.
+      triggers: [...LIVE_NOTIFICATION_DELIVERY_TRIGGERS, "post_live_followup"],
     });
     return superseded.count;
   }, { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted });

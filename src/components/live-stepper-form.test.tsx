@@ -780,6 +780,7 @@ describe("LiveStepperForm", () => {
     }
     expect(markup).toContain("需要啟用中的 Email 開播提醒模板（live_reminder）才能新增。");
     expect(markup).toContain("需要啟用中的課後 Email 模板（post_live_followup）才能新增。");
+    expect(markup).toContain("常青 Webinar 生效時，目前不寄課後通知。");
   });
 
   it("suggests only post rules when only a post-live template exists", () => {

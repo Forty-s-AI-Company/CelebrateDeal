@@ -1004,6 +1004,7 @@ function NotificationRulesEditor({
             <legend className="px-1 font-semibold text-slate-900">
               {notificationRuleGroupCopy[trigger].title} {group.length}/{LIVE_NOTIFICATION_RULE_LIMITS[trigger]}
             </legend>
+            {trigger === "post_live_followup" ? <p className="text-xs text-slate-500">常青 Webinar 生效時，目前不寄課後通知。</p> : null}
             {group.length === 0 ? <p className="text-sm text-slate-500">尚未設定通知。</p> : null}
             {group.map((rule, index) => (
               <div key={rule.id} className="grid gap-3 rounded-md bg-slate-50 p-3 lg:grid-cols-[auto_minmax(0,1fr)_150px_auto] lg:items-end">
