@@ -478,6 +478,19 @@ test("onboarding and welcome routes have no blocking axe violations (F-126)", as
 
 test("live stepper has no blocking axe violations on any of the four steps, in 進階設定 or on the validation error state (F-126)", async ({ page }) => {
   test.setTimeout(120_000);
+  // A second listed product, so 成交 is scanned with the 置頂 label and a 設為置頂 button.
+  await db.product.create({
+    data: {
+      vendorId: fixture.vendorId,
+      name: "Accessibility Pin Product",
+      slug: `a11y-pin-product-${runId}`,
+      priceCents: 4_500,
+      currency: "TWD",
+      inventory: 5,
+      isActive: true,
+      fulfillmentTypeConfirmed: true,
+    },
+  });
   await loginOwner(page);
   await gotoStableRoute(page, "/lives/new");
 
@@ -550,6 +563,11 @@ test("live stepper has no blocking axe violations on any of the four steps, in �
   await expect(openVideoDrawer).toBeFocused();
   await page.getByRole("button", { name: "下一步" }).click();
   await openLiveStudioAdvancedSettings(page, "sales");
+  const salesPanel = page.locator('[data-step-key="sales"]');
+  await salesPanel.getByRole("checkbox", { name: /Accessibility Test Product/u }).check();
+  await salesPanel.getByRole("checkbox", { name: /Accessibility Pin Product/u }).check();
+  await expect(salesPanel.locator('[data-live-product-row] [data-live-product-pinned]')).toHaveText("置頂");
+  await expect(salesPanel.getByRole("button", { name: "設為置頂：Accessibility Pin Product", exact: true })).toBeVisible();
   await scanStep(1);
   // 互動腳本：「重新整理清單」後顯示的公告也要可被掃描；新增元素（新分頁連結、說明）已含在上一步掃描內。
   await page.locator('[data-step-key="sales"]').getByRole("button", { name: "重新整理清單", exact: true }).click();

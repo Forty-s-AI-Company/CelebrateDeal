@@ -24,6 +24,7 @@ import { LIVE_DRAFT_SAVE_FAILED_EVENT, LiveConfirmedSubmitButton, LiveFormPendin
 import { MediaUploadField } from "@/components/media-upload-field";
 import { Stepper } from "@/components/stepper";
 import { MessageTemplateQuickCreateDrawer, ProductQuickCreateDrawer, RegistrationFormQuickCreateDrawer, VideoQuickCreateDrawer } from "@/components/live-resource-drawers";
+import { LiveProductSelection, pinSelectedProductId, productCheckboxSelector, updateSelectedProductIds } from "@/components/live-product-selection";
 import { LivePendingVideos, type LivePendingAddedReason, type LivePendingVideo, type LivePendingVideoProblem } from "@/components/live-pending-videos";
 import {
   liveQuickTemplateCopy,
@@ -295,62 +296,6 @@ function ScheduleDateTimeField({ timeZone, defaultValue, onChange }: { timeZone:
       <span className="text-xs font-normal text-slate-500">請依商家時區輸入，提醒與公開頁會使用同一時間。</span>
     </label>
   );
-}
-
-const productIdSelectorPattern = /^[A-Za-z0-9_-]{1,128}$/u;
-
-/** The checkbox of one product option, for focusing it; the products block when the id is not selector-safe. */
-function productCheckboxSelector(productId: string) {
-  return productIdSelectorPattern.test(productId)
-    ? `input[name="productIds"][value="${productId}"]`
-    : '[data-readiness-focus="products"]';
-}
-
-function ProductSelection({
-  products,
-  selectedProductIds,
-  onSelectionChange,
-  onCreateProduct,
-}: {
-  products: LiveProductOption[];
-  selectedProductIds: string[];
-  onSelectionChange: (productId: string, checked: boolean) => void;
-  onCreateProduct?: () => void;
-}) {
-  return (
-    <>
-      {products.length === 0 ? (
-        <p className="rounded-md bg-slate-50 px-4 py-3 text-sm text-slate-600">
-          目前沒有可綁定的啟用商品，可以在這裡直接建立；內容型直播也可以不選商品，先建立草稿。
-        </p>
-      ) : products.map((product) => (
-        <label key={product.id} className="flex items-center justify-between gap-3 rounded-md border border-border p-3">
-          <span>
-            <span className="block text-sm font-semibold text-slate-900">{product.name}</span>
-            <span className="block text-xs text-slate-500">庫存 {product.inventory}</span>
-          </span>
-          {/* Controlled, so a product created in the drawer can be ticked; the draft still serializes the DOM value. */}
-          <input
-            name="productIds"
-            type="checkbox"
-            value={product.id}
-            checked={selectedProductIds.includes(product.id)}
-            onChange={(event) => onSelectionChange(product.id, event.target.checked)}
-            className="h-5 w-5 accent-blue-600"
-          />
-        </label>
-      ))}
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-        {onCreateProduct ? <button type="button" aria-haspopup="dialog" onClick={onCreateProduct} className={inlineCreateButtonClass}>新增商品</button> : null}
-        <FullEditorLink href="/products/new" />
-      </div>
-    </>
-  );
-}
-
-function updateSelectedProductIds(currentIds: string[], productId: string, checked: boolean) {
-  if (!checked) return currentIds.filter((currentProductId) => currentProductId !== productId);
-  return currentIds.includes(productId) ? currentIds : [...currentIds, productId];
 }
 
 function buildLivePreview(title: string, accentCopy: string, products: LiveProductOption[], selectedProductIds: string[]) {
@@ -859,6 +804,8 @@ type LiveStudioSalesStepOptions = {
   products: LiveProductOption[];
   selectedProductIds: string[];
   onProductSelectionChange: (productId: string, checked: boolean) => void;
+  /** Moves a ticked product to the front: it becomes the Live's pinned product. */
+  onProductPin: (productId: string) => void;
   onCreateProduct: () => void;
   onAccentCopyChange: (value: string) => void;
   scripts: LiveScriptOption[];
@@ -1193,11 +1140,17 @@ function renderLiveStudioSalesStep(input: LiveStudioSalesStepOptions) {
     <StepPanel active={input.activeStep === "sales"} step="sales">
       <StepHeading title="成交" description="選擇主打商品與直播促銷短句，並可搭配互動腳本帶動下單；內容型直播可以不選商品。" />
       <div data-readiness-focus="products" tabIndex={-1} className="grid gap-3">
-        <ProductSelection
+        <LiveProductSelection
           products={input.products}
           selectedProductIds={input.selectedProductIds}
           onSelectionChange={input.onProductSelectionChange}
-          onCreateProduct={input.onCreateProduct}
+          onPin={input.onProductPin}
+          actions={(
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+              <button type="button" aria-haspopup="dialog" onClick={input.onCreateProduct} className={inlineCreateButtonClass}>新增商品</button>
+              <FullEditorLink href="/products/new" />
+            </div>
+          )}
         />
       </div>
       <label className="grid gap-1.5 text-sm font-medium text-slate-700">
@@ -1458,6 +1411,38 @@ export function LiveStepperForm(props: LiveStepperFormProps) {
   return <LiveStudioStepperForm key={current.generation} {...props} onDraftSaved={adoptDraft} onUnsavedChange={setHasUnsavedEdits} />;
 }
 
+/**
+ * The ticked products in selection order (the first is the pinned product).
+ * A tick or pin saves the draft once it is in the DOM: the submitted order is
+ * in hidden fields that React writes on commit, after the form's change
+ * handler has already serialized the form.
+ */
+function useProductSelectionOrder(initialProductIds: string[], save: () => void) {
+  const [selectedProductIds, setSelectedProductIds] = useState<string[]>(initialProductIds);
+  const [saveRequests, setSaveRequests] = useState(0);
+  const saveRef = useRef(save);
+  useEffect(() => { saveRef.current = save; });
+  useEffect(() => { if (saveRequests > 0) saveRef.current(); }, [saveRequests]);
+  const change = (update: (currentIds: string[]) => string[]) => {
+    setSelectedProductIds(update);
+    setSaveRequests((count) => count + 1);
+  };
+  return {
+    selectedProductIds,
+    setSelectedProductIds,
+    toggle: (productId: string, checked: boolean) => change((currentIds) => updateSelectedProductIds(currentIds, productId, checked)),
+    pin: (productId: string) => change((currentIds) => pinSelectedProductId(currentIds, productId)),
+  };
+}
+
+/** The 成交 step's tick and pin handlers; both count as the merchant's own change of the selection. */
+function productSelectionHandlers(markManual: () => void, selection: Pick<ReturnType<typeof useProductSelectionOrder>, "toggle" | "pin">) {
+  return {
+    onProductSelectionChange: (productId: string, checked: boolean) => { markManual(); selection.toggle(productId, checked); },
+    onProductPin: (productId: string) => { markManual(); selection.pin(productId); },
+  };
+}
+
 function useReportedDraft(draftId: string, revision: number | null, onDraftSaved?: (draftId: string, revision: number) => void) {
   useEffect(() => {
     if (draftId && revision) onDraftSaved?.(draftId, revision);
@@ -1683,11 +1668,11 @@ function useLiveResourceDrawers(input: {
 
   /**
    * A created product joins the checkboxes, first in the list. It is ticked
-   * only when nothing is ticked yet: ticked products are bound in list order
-   * and the first one is the Live's pinned (主打) product, so ticking it next
-   * to existing picks would silently replace the pinned product. Like a
-   * processed upload, it is also not ticked when the merchant changed the
-   * selection while it was created. Focus moves to its checkbox either way.
+   * only when nothing is ticked yet, and then it is the Live's pinned (主打)
+   * product; next to existing picks it is left for the merchant to tick (it
+   * would join the end of the selection order) or pin. Like a processed
+   * upload, it is also not ticked when the merchant changed the selection
+   * while it was created. Focus moves to its checkbox either way.
    */
   function productCreated(option: LiveQuickProductOption) {
     inFlightRef.current = false;
@@ -1703,7 +1688,7 @@ function useLiveResourceDrawers(input: {
     }
     setAnnouncement(selectionMoved
       ? `已建立商品「${option.name}」並加入清單；你在建立期間改過商品勾選，所以沒有自動勾選。`
-      : `已建立商品「${option.name}」並加入清單最前面，沒有自動勾選，目前的置頂（主打）商品不變。勾選的商品依清單順序排列，勾選它就會成為置頂商品。`);
+      : `已建立商品「${option.name}」並加入清單最前面，沒有自動勾選，目前的置頂（主打）商品不變。勾選後它會排在已勾選商品之後，可以再按「設為置頂」改成置頂商品。`);
     focusPendingRef.current = { selector, save: false, afterDrawerClose: true };
   }
 
@@ -1934,7 +1919,6 @@ export function LiveStudioStepperForm({
   const [slug, setSlug] = useState(initialValues.slug);
   const [scheduledAt, setScheduledAt] = useState(initialValues.scheduledAt);
   const [previewAccentCopy, setPreviewAccentCopy] = useState(initialValues.accentCopy);
-  const [selectedProductIds, setSelectedProductIds] = useState<string[]>(initialValues.productIds);
   const [validationMessage, setValidationMessage] = useState("");
   const formRef = useRef<HTMLFormElement>(null);
   const invalidFocusPendingRef = useRef(false);
@@ -1966,6 +1950,7 @@ export function LiveStudioStepperForm({
     saveOnMount: Boolean(liveId && !initialDraft),
   });
   useLiveStudioPresetSave(studioPreset, draft.scheduleSave);
+  const { selectedProductIds, setSelectedProductIds, ...productSelection } = useProductSelectionOrder(initialValues.productIds, draft.scheduleSave);
   useReportedDraft(draft.draftId, draft.revision, onDraftSaved);
   const unsaved = unsavedDraftStatuses.has(draft.status);
   useRevealTakenSlug(formRef, error === "slug_taken" || Boolean(draft.slugTaken));
@@ -2164,7 +2149,7 @@ export function LiveStudioStepperForm({
             initialValues,
             products: availableProducts,
             selectedProductIds,
-            onProductSelectionChange: (productId, checked) => { resources.markManualProductSelection(); setSelectedProductIds((currentIds) => updateSelectedProductIds(currentIds, productId, checked)); },
+            ...productSelectionHandlers(resources.markManualProductSelection, productSelection),
             onCreateProduct: () => resources.open({ kind: "product" }),
             onAccentCopyChange: setPreviewAccentCopy,
             scripts: availableScripts,

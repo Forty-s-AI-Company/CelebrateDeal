@@ -210,7 +210,9 @@ export default async function EditLivePage({
     db.live.findFirst({
       where: { id, vendorId: vendor.id, ...resourceScope.liveAndForm },
       include: {
-        products: true,
+        // The studio's selection order is the binding order: the pinned product
+        // first, then the bound order. Saving keeps the first one pinned.
+        products: { orderBy: [{ isPinned: "desc" }, { sortOrder: "asc" }, { id: "asc" }] },
         notificationRules: { orderBy: [{ trigger: "asc" }, { sortOrder: "asc" }, { id: "asc" }] },
         sessions: { orderBy: [{ startAt: "asc" }, { id: "asc" }], select: { startAt: true, capacity: true, registeredCount: true, status: true } },
       },

@@ -234,7 +234,7 @@ function control(tree: unknown, name: string, value?: string) {
 
 function productSelection(tree: unknown) {
   const element = findElement(tree, (candidate) => (
-    typeof candidate.type === "function" && candidate.type.name === "ProductSelection"
+    typeof candidate.type === "function" && candidate.type.name === "LiveProductSelection"
   ));
   expect(element).toBeDefined();
   return element as ElementNode & {
@@ -577,7 +577,7 @@ describe("LiveStepperForm", () => {
       typeof candidate.type === "function" && candidate.type.name === "MediaUploadField" && candidate.props.urlInputName === "heroImageUrl"
     ))).toBeDefined();
     const salesPanel = findElement(form, (candidate) => candidate.props.step === "sales" && "active" in candidate.props);
-    expect(findElement(salesPanel?.props.children, (candidate) => typeof candidate.type === "function" && candidate.type.name === "ProductSelection")).toBeDefined();
+    expect(findElement(salesPanel?.props.children, (candidate) => typeof candidate.type === "function" && candidate.type.name === "LiveProductSelection")).toBeDefined();
     const salesAdvanced = findElement(salesPanel?.props.children, (candidate) => typeof candidate.type === "function" && candidate.type.name === "AdvancedSettings");
     expect(findElement(salesAdvanced?.props.children, (candidate) => (
       typeof candidate.type === "function" && candidate.type.name === "LiveRulesFields"
@@ -667,7 +667,7 @@ describe("LiveStepperForm", () => {
       querySelector: vi.fn(() => panel),
     };
     const form = renderForm();
-    const formRef = hookState.refs[7];
+    const formRef = hookState.refs[6];
     expect(formRef).toBeDefined();
     formRef.current = formNode;
 
@@ -1000,7 +1000,7 @@ describe("LiveStepperForm", () => {
     const form = renderForm([], { initialValues });
     const target = { focus: vi.fn() };
     const querySelector = vi.fn(() => target);
-    hookState.refs[7].current = { querySelector };
+    hookState.refs[6].current = { querySelector };
     const review = findElement(form, (candidate) => typeof candidate.type === "function" && candidate.type.name === "LiveReviewPanel");
     const renderedReview = (review?.type as (props: Record<string, unknown>) => unknown)(review?.props ?? {});
     const fixMedia = findElement(renderedReview, (candidate) => candidate.type === "button" && textContent(candidate.props.children) === "前往媒體");
@@ -1221,7 +1221,7 @@ describe("LiveStepperForm", () => {
     const requestSubmit = vi.fn();
     const draftIdControl = { value: "draft-1" };
     const revisionControl = { value: "3" };
-    const formRef = hookState.refs[7];
+    const formRef = hookState.refs[6];
     formRef.current = {
       requestSubmit,
       elements: {
