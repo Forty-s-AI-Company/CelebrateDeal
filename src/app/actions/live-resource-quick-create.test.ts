@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   saveRegistrationForm: vi.fn(),
   saveMessageTemplate: vi.fn(),
   saveVideo: vi.fn(),
+  mutateProduct: vi.fn(),
 }));
 
 vi.mock("@/lib/csrf", () => ({ assertServerActionSecurity: mocks.assertSecurity }));
@@ -19,8 +20,9 @@ vi.mock("next/cache", () => ({ revalidatePath: mocks.revalidatePath }));
 vi.mock("@/lib/registration-form-save", () => ({ saveRegistrationForm: mocks.saveRegistrationForm }));
 vi.mock("@/lib/message-template-save", () => ({ saveMessageTemplate: mocks.saveMessageTemplate }));
 vi.mock("@/lib/video-save", () => ({ saveVideo: mocks.saveVideo }));
+vi.mock("@/lib/product-save", () => ({ mutateProduct: mocks.mutateProduct }));
 
-import { createMessageTemplateQuickAction, createRegistrationFormQuickAction, createUrlVideoQuickAction } from "./live-resource-quick-create";
+import { createMessageTemplateQuickAction, createProductQuickAction, createRegistrationFormQuickAction, createUrlVideoQuickAction } from "./live-resource-quick-create";
 
 function formInput(values: Record<string, string>) {
   const data = new FormData();
@@ -47,6 +49,7 @@ beforeEach(() => {
     reconciliationStatuses: [],
   });
   mocks.saveVideo.mockResolvedValue({ ok: true, video: { id: "video-new", title: "週五講座錄影", created: true, liveReady: true } });
+  mocks.mutateProduct.mockResolvedValue({ ok: true, destination: "/products?updated=created", product: { id: "product-new", name: "原型食物餐盒" } });
 });
 
 describe("createRegistrationFormQuickAction", () => {
@@ -321,5 +324,160 @@ describe("createUrlVideoQuickAction", () => {
     expect((await createUrlVideoQuickAction(formInput({ title: "x", videoUrl: "https://media.example.test/a.mp4" }))).status).toBe("error");
     expect(mocks.requireVendorManager).not.toHaveBeenCalled();
     expect(mocks.saveVideo).not.toHaveBeenCalled();
+  });
+});
+
+describe("createProductQuickAction", () => {
+  const valid = { name: " 原型食物餐盒 ", price: "1290", inventory: "20", fulfillmentType: "physical" };
+
+  function sentProduct(call = 0) {
+    return Object.fromEntries((mocks.mutateProduct.mock.calls[call]![2] as FormData).entries());
+  }
+
+  it("creates a listed physical product for the session vendor from whitelisted fields and the editor's defaults", async () => {
+    const result = await createProductQuickAction(formInput({
+      ...valid,
+      projectId: "project-1",
+      // Everything below is forged and must never reach the core.
+      vendorId: "vendor-forged",
+      id: "product-existing",
+      revision: "3",
+      inventoryBaseline: "20",
+      priceCents: "1",
+      compareAt: "99999",
+      currency: "USD",
+      commerceDomain: "course",
+      checkoutUrl: "https://evil.example.test/pay",
+      imageAssetId: "asset-foreign",
+      upsellProductId: "product-foreign",
+      upsellDiscount: "1000",
+      deliveryUrl: "https://evil.example.test/file",
+      customCheckoutFields: JSON.stringify([{ key: "x" }]),
+      isActive: "",
+    }));
+
+    expect(result).toEqual({ status: "success", option: { id: "product-new", name: "原型食物餐盒", inventory: 20 } });
+    expect(mocks.mutateProduct).toHaveBeenCalledOnce();
+    expect(mocks.mutateProduct.mock.calls[0]![0]).toBe("vendor-session");
+    expect(mocks.mutateProduct.mock.calls[0]![1]).toEqual({ version: 0 });
+    // Exactly the product editor's fields for a new listed physical product; no id, so it can only create.
+    expect(sentProduct()).toEqual({
+      name: "原型食物餐盒",
+      slug: "原型食物餐盒",
+      price: "1290",
+      compareAt: "",
+      currency: "TWD",
+      inventory: "20",
+      fulfillmentType: "physical",
+      description: "",
+      imageUrl: "",
+      imageAssetId: "",
+      checkoutUrl: "",
+      customCheckoutFields: "[]",
+      upsellProductId: "",
+      downsellProductId: "",
+      upsellDiscount: "0",
+      isActive: "on",
+      projectId: "project-1",
+    });
+    expect(mocks.revalidatePath).toHaveBeenCalledWith("/(app)", "layout");
+  });
+
+  it("forwards the parsed whole-dollar price, never the submitted text", async () => {
+    await createProductQuickAction(formInput({ ...valid, price: " 0001290 ", inventory: " 007 " }));
+    expect(sentProduct()).toMatchObject({ price: "1290", inventory: "7" });
+  });
+
+  it.each([
+    [{ price: "1290.5" }, "price"],
+    [{ price: "0" }, "price"],
+    [{ price: "21474837" }, "price"],
+    [{ price: "-1" }, "price"],
+    [{ inventory: "0" }, "inventory"],
+    [{ name: "" }, "name"],
+    [{ name: "x".repeat(201) }, "name"],
+    [{ fulfillmentType: "digital" }, "fulfillmentType"],
+    [{ fulfillmentType: "service" }, "fulfillmentType"],
+    [{ fulfillmentType: "course" }, "fulfillmentType"],
+  ])("refuses %j before writing", async (patch, field) => {
+    const result = await createProductQuickAction(formInput({ ...valid, ...patch }));
+
+    expect(result).toMatchObject({ status: "error", fieldErrors: { [field]: expect.any(String) } });
+    expect(mocks.mutateProduct).not.toHaveBeenCalled();
+    expect(mocks.revalidatePath).not.toHaveBeenCalled();
+  });
+
+  it("refuses duplicated fields instead of picking one", async () => {
+    for (const key of ["price", "inventory", "fulfillmentType", "name"]) {
+      const data = formInput(valid);
+      data.append(key, key === "fulfillmentType" ? "physical" : "1");
+      expect((await createProductQuickAction(data)).status).toBe("error");
+    }
+    const projects = formInput(valid);
+    projects.append("projectId", "project-1");
+    projects.append("projectId", "project-2");
+    expect((await createProductQuickAction(projects)).status).toBe("error");
+    expect(mocks.mutateProduct).not.toHaveBeenCalled();
+  });
+
+  it("retries a taken product address with a random suffix", async () => {
+    mocks.mutateProduct.mockResolvedValueOnce({ ok: false, state: { version: 1, error: "duplicate_slug" } });
+
+    const result = await createProductQuickAction(formInput({ ...valid, name: "Whole Food Box" }));
+
+    expect(result.status).toBe("success");
+    expect(mocks.mutateProduct).toHaveBeenCalledTimes(2);
+    expect(sentProduct(0).slug).toBe("whole-food-box");
+    expect(sentProduct(1).slug).toMatch(/^whole-food-box-[0-9a-f]{6}$/u);
+  });
+
+  it("always suffixes a name without address characters and gives up after four taken addresses", async () => {
+    mocks.mutateProduct.mockResolvedValue({ ok: false, state: { version: 1, error: "duplicate_slug" } });
+
+    const result = await createProductQuickAction(formInput({ ...valid, name: "！！！" }));
+
+    expect(result).toEqual({ status: "error", message: expect.stringContaining("商品網址"), fieldErrors: { root: "商品網址產生失敗。" } });
+    expect(mocks.mutateProduct).toHaveBeenCalledTimes(4);
+    for (let call = 0; call < 4; call += 1) expect(sentProduct(call).slug).toMatch(/^product-[0-9a-f]{6}$/u);
+    expect(mocks.revalidatePath).not.toHaveBeenCalled();
+  });
+
+  it("passes the core's field errors for the drawer's fields and keeps the rest at the root", async () => {
+    mocks.mutateProduct.mockResolvedValueOnce({ ok: false, state: { version: 1, error: "invalid_product", fieldErrors: { price: "售價須為整數新台幣元。", slug: "請填寫商品網址（可用英數字與連字號）。" } } });
+    expect(await createProductQuickAction(formInput(valid))).toEqual({
+      status: "error",
+      message: "有幾個欄位需要調整；內容仍保留在抽屜中。",
+      fieldErrors: { price: "售價須為整數新台幣元。" },
+    });
+
+    mocks.mutateProduct.mockResolvedValueOnce({ ok: false, state: { version: 1, error: "not_found" } });
+    expect(await createProductQuickAction(formInput({ ...valid, projectId: "project-foreign" }))).toEqual({
+      status: "error",
+      message: "找不到目前商家可用的專案，未儲存本次變更。",
+      fieldErrors: { root: "請重新整理頁面後再建立。" },
+    });
+    expect(mocks.revalidatePath).not.toHaveBeenCalled();
+  });
+
+  it("reports a failed write without claiming success when the core throws", async () => {
+    mocks.mutateProduct.mockRejectedValueOnce(new Error("synthetic database detail"));
+    const result = await createProductQuickAction(formInput(valid));
+    expect(result).toEqual({ status: "error", message: expect.stringContaining("商品沒有建立"), fieldErrors: { root: "商品暫時無法建立。" } });
+    expect(JSON.stringify(result)).not.toContain("synthetic database detail");
+    expect(mocks.revalidatePath).not.toHaveBeenCalled();
+  });
+
+  it("uses the product editor's permission check and never writes when it refuses", async () => {
+    mocks.requireVendorManager.mockRejectedValueOnce(new Error("NEXT_REDIRECT:/dashboard?error=insufficient_role"));
+    await expect(createProductQuickAction(formInput(valid))).rejects.toThrow("insufficient_role");
+    expect(mocks.requireVendorManager).toHaveBeenCalledOnce();
+    expect(mocks.mutateProduct).not.toHaveBeenCalled();
+  });
+
+  it("rejects an expired CSRF token before reading the session or writing", async () => {
+    mocks.assertSecurity.mockRejectedValueOnce(new Error("Invalid CSRF token."));
+    expect(await createProductQuickAction(formInput(valid))).toMatchObject({ status: "error", fieldErrors: { root: "本頁的安全驗證已過期。" } });
+    expect(mocks.requireVendorManager).not.toHaveBeenCalled();
+    expect(mocks.mutateProduct).not.toHaveBeenCalled();
   });
 });

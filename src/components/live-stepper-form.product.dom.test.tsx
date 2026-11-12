@@ -1,0 +1,390 @@
+// @vitest-environment happy-dom
+import { act, type ReactNode } from "react";
+import { createRoot, type Root } from "react-dom/client";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { emptyLiveStudioDraft, LiveStudioDraftPayloadSchema, type LiveStudioDraftEnvelope, type LiveStudioDraftPayload } from "@/lib/live-studio-draft";
+import { liveStudioStepIndex } from "@/lib/live-studio-steps";
+
+const mocks = vi.hoisted(() => ({
+  upsertLiveAction: vi.fn(async (formData: FormData) => { void formData; }),
+  saveLiveStudioDraft: vi.fn(),
+  createProductQuickAction: vi.fn(),
+}));
+
+vi.mock("@/app/actions", () => ({ upsertLiveAction: mocks.upsertLiveAction }));
+vi.mock("@/app/actions/live-resource-quick-create", () => ({
+  createRegistrationFormQuickAction: vi.fn(),
+  createMessageTemplateQuickAction: vi.fn(),
+  createUrlVideoQuickAction: vi.fn(),
+  createProductQuickAction: mocks.createProductQuickAction,
+}));
+vi.mock("next/link", () => ({
+  default: ({ href, children, ...props }: { href: string; children: ReactNode }) => <a href={href} {...props}>{children}</a>,
+}));
+vi.mock("@/components/media-upload-field", () => ({
+  MediaUploadField: ({ defaultUrl, defaultAssetId }: { defaultUrl?: string; defaultAssetId?: string }) => (
+    <>
+      <input type="hidden" name="heroImageUrl" value={defaultUrl ?? ""} readOnly />
+      <input type="hidden" name="heroImageAssetId" value={defaultAssetId ?? ""} readOnly />
+    </>
+  ),
+}));
+vi.mock("@/lib/live-studio-draft-client", async (importOriginal) => ({
+  ...await importOriginal<typeof import("@/lib/live-studio-draft-client")>(),
+  saveLiveStudioDraft: mocks.saveLiveStudioDraft,
+}));
+
+import { LiveStepperForm } from "./live-stepper-form";
+import { serializeLiveStudioDraft } from "@/lib/live-studio-draft-client";
+
+type ProductOption = { id: string; name: string; inventory: number };
+const existingProduct: ProductOption = { id: "product-existing", name: "既有餐盒", inventory: 5 };
+const resources = {
+  videos: [],
+  forms: [],
+  templates: [],
+  scripts: [],
+  affiliates: [],
+  streamMembers: [],
+  streamPages: [],
+  csrfToken: "test-fixture-csrf-token",
+  timeZone: "Asia/Taipei",
+};
+const salesStep = liveStudioStepIndex("sales");
+
+let container: HTMLDivElement;
+let root: Root;
+
+/** A studio opened on 成交, like a merchant who has reached the product step. */
+function studio(products: ProductOption[], overrides: { productIds?: string[]; projectId?: string | null; initialDraft?: LiveStudioDraftEnvelope } = {}) {
+  const initialValues: LiveStudioDraftPayload = { ...emptyLiveStudioDraft(), activeStep: salesStep, productIds: overrides.productIds ?? [] };
+  return (
+    <LiveStepperForm
+      {...resources}
+      products={products}
+      initialValues={initialValues}
+      initialDraft={overrides.initialDraft}
+      projectId={overrides.projectId === undefined ? "project-1" : overrides.projectId}
+    />
+  );
+}
+
+function control<T extends Element = HTMLInputElement>(selector: string, scope: ParentNode = container) {
+  const element = scope.querySelector<T>(selector);
+  if (!element) throw new Error(`missing ${selector}`);
+  return element;
+}
+
+function button(label: string, scope: ParentNode = container) {
+  const match = Array.from(scope.querySelectorAll("button")).find((candidate) => candidate.textContent?.trim() === label);
+  if (!match) throw new Error(`missing button ${label}`);
+  return match;
+}
+
+function dialog() {
+  return document.body.querySelector<HTMLElement>('[role="dialog"]');
+}
+
+function checkbox(productId: string) {
+  return control<HTMLInputElement>(`input[name="productIds"][value="${productId}"]`);
+}
+
+function announcement() {
+  return container.querySelector("[data-live-resource-status]")?.textContent ?? "";
+}
+
+async function type(input: HTMLInputElement, value: string) {
+  Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, value);
+  await act(async () => { input.dispatchEvent(new Event("input", { bubbles: true })); });
+}
+
+async function settle() {
+  for (let index = 0; index < 5; index += 1) await act(async () => { await Promise.resolve(); });
+}
+
+/** Lets the studio's 700 ms autosave debounce run, if anything scheduled it. */
+async function waitForAutosaveWindow() {
+  await act(async () => { await new Promise((resolve) => setTimeout(resolve, 800)); });
+  await settle();
+}
+
+async function openDrawer() {
+  const trigger = button("新增商品");
+  trigger.focus();
+  await act(async () => { trigger.click(); });
+  return trigger;
+}
+
+async function fillDrawer(values: { name?: string; price?: string; inventory?: string } = {}) {
+  const drawer = dialog()!;
+  await type(control('[name="name"]', drawer), values.name ?? "原型食物餐盒");
+  await type(control('[name="price"]', drawer), values.price ?? "1290");
+  await type(control('[name="inventory"]', drawer), values.inventory ?? "20");
+}
+
+async function submitDrawer() {
+  await act(async () => { control<HTMLFormElement>("form", dialog()!).requestSubmit(); });
+  await settle();
+}
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  window.history.replaceState({}, "", "/lives/new");
+  mocks.saveLiveStudioDraft.mockImplementation(async (input: { draftId: string; revision: number | null; payload: LiveStudioDraftPayload }) => ({
+    id: input.draftId || "draft-created",
+    revision: (input.revision ?? 0) + 1,
+    payload: input.payload,
+    updatedAt: "2026-11-12T08:05:00.000Z",
+    slugTaken: false,
+    slugCheckFailed: false,
+  }));
+  container = document.createElement("div");
+  document.body.append(container);
+  root = createRoot(container);
+  (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+});
+
+afterEach(async () => {
+  await act(async () => { root.unmount(); });
+  container.remove();
+  document.body.innerHTML = "";
+});
+
+describe("LiveStepperForm 新增商品 drawer", () => {
+  it("creates a product in the drawer, ticks it next to the ticked products, focuses it and saves the draft", async () => {
+    await act(async () => { root.render(studio([existingProduct], { productIds: [existingProduct.id] })); });
+    const studioForm = control<HTMLFormElement>("form");
+    expect(checkbox(existingProduct.id).checked).toBe(true);
+    const trigger = await openDrawer();
+    expect(trigger.getAttribute("aria-haspopup")).toBe("dialog");
+
+    const drawer = dialog()!;
+    expect(drawer.getAttribute("aria-modal")).toBe("true");
+    expect(document.getElementById(drawer.getAttribute("aria-labelledby")!)?.textContent).toBe("新增商品");
+    expect(studioForm.contains(drawer)).toBe(false);
+    expect(document.activeElement).toBe(control('[name="name"]', drawer));
+    // Only the physical type, fixed; the others link to the full editor in a new tab with the project.
+    expect(control('[name="fulfillmentType"]', drawer).value).toBe("physical");
+    const moreSettings = control<HTMLAnchorElement>('a[href="/products/new?projectId=project-1"]', drawer);
+    expect(moreSettings.target).toBe("_blank");
+    expect(moreSettings.rel).toBe("noopener");
+    expect(moreSettings.textContent).toContain("更多設定");
+    expect(control('[name="price"]', drawer).getAttribute("inputmode")).toBe("numeric");
+    expect(control('[name="price"]', drawer).type).toBe("text");
+
+    await fillDrawer();
+    // The drawer's fields never reach the studio's FormData or its autosave.
+    const studioData = new FormData(studioForm);
+    expect(studioData.has("price")).toBe(false);
+    expect(studioData.has("inventory")).toBe(false);
+
+    mocks.createProductQuickAction.mockResolvedValueOnce({ status: "success", option: { id: "product-quick", name: "原型食物餐盒", inventory: 20 } });
+    await submitDrawer();
+    await waitForAutosaveWindow();
+
+    const sent = mocks.createProductQuickAction.mock.calls[0]![0] as FormData;
+    expect(Object.fromEntries(sent.entries())).toEqual({
+      _csrf: "test-fixture-csrf-token",
+      projectId: "project-1",
+      name: "原型食物餐盒",
+      price: "1290",
+      inventory: "20",
+      fulfillmentType: "physical",
+    });
+    expect(dialog()).toBeNull();
+    const created = checkbox("product-quick");
+    expect(created.checked).toBe(true);
+    expect(checkbox(existingProduct.id).checked).toBe(true);
+    expect(document.activeElement).toBe(created);
+    expect(announcement()).toBe("已建立並選取商品「原型食物餐盒」。");
+    expect(created.closest("label")?.textContent).toContain("庫存 20");
+    // The draft follows the list order, newest first like the live pages' `createdAt desc` list.
+    expect(serializeLiveStudioDraft(studioForm, salesStep).productIds).toEqual(["product-quick", "product-existing"]);
+    expect(mocks.saveLiveStudioDraft).toHaveBeenCalledTimes(1);
+    expect(mocks.saveLiveStudioDraft).toHaveBeenCalledWith(expect.objectContaining({ payload: expect.objectContaining({ productIds: ["product-quick", "product-existing"] }) }));
+    expect(mocks.upsertLiveAction).not.toHaveBeenCalled();
+  });
+
+  it("offers the drawer from the empty state and counts the created product as ready", async () => {
+    await act(async () => { root.render(studio([])); });
+    expect(control('[data-step-key="sales"]').textContent).toContain("目前沒有可綁定的啟用商品，可以在這裡直接建立");
+    expect(container.querySelector('input[name="productIds"]')).toBeNull();
+    await openDrawer();
+    await fillDrawer();
+    mocks.createProductQuickAction.mockResolvedValueOnce({ status: "success", option: { id: "product-quick", name: "原型食物餐盒", inventory: 20 } });
+    await submitDrawer();
+
+    expect(checkbox("product-quick").checked).toBe(true);
+    expect(control('[data-step-key="sales"]').textContent).not.toContain("目前沒有可綁定的啟用商品");
+    // The 發布 step's checklist sees the new product as a listed, selected product.
+    expect(control('[data-step-key="publish"]').textContent).toContain("原型食物餐盒");
+  });
+
+  it("keeps the drawer open with the field messages and never calls the action for local errors", async () => {
+    await act(async () => { root.render(studio([])); });
+    await openDrawer();
+    await fillDrawer({ name: "原型食物餐盒", price: "1290.5", inventory: "0" });
+    await submitDrawer();
+
+    expect(mocks.createProductQuickAction).not.toHaveBeenCalled();
+    const drawer = dialog()!;
+    expect(control('[name="price"]', drawer).getAttribute("aria-invalid")).toBe("true");
+    expect(control('[name="inventory"]', drawer).getAttribute("aria-invalid")).toBe("true");
+    expect(drawer.textContent).toContain("售價須為新台幣整數元，不含小數點、逗號或符號。");
+    expect(drawer.textContent).toContain("可售庫存至少為 1");
+    // The error is described by, not part of, the label; focus moves to the first invalid field.
+    const price = control('[name="price"]', drawer);
+    expect(price.getAttribute("aria-describedby")?.split(" ")).toHaveLength(2);
+    expect(document.activeElement).toBe(price);
+  });
+
+  it("shows the server's field errors, keeps the values and does not touch the selection", async () => {
+    await act(async () => { root.render(studio([existingProduct], { productIds: [existingProduct.id] })); });
+    await openDrawer();
+    await fillDrawer();
+    mocks.createProductQuickAction.mockResolvedValueOnce({ status: "error", message: "有幾個欄位需要調整；內容仍保留在抽屜中。", fieldErrors: { name: "商品名稱最多 200 字。" } });
+    await submitDrawer();
+    await waitForAutosaveWindow();
+
+    const drawer = dialog()!;
+    expect(drawer.querySelector('[role="alert"]')?.textContent).toContain("有幾個欄位需要調整");
+    expect(control('[name="name"]', drawer).getAttribute("aria-invalid")).toBe("true");
+    expect(document.activeElement).toBe(control('[name="name"]', drawer));
+    expect(control('[name="price"]', drawer).value).toBe("1290");
+    expect(mocks.saveLiveStudioDraft).not.toHaveBeenCalled();
+    expect(checkbox(existingProduct.id).checked).toBe(true);
+    expect(container.querySelectorAll('input[name="productIds"]')).toHaveLength(1);
+  });
+
+  it("says it cannot confirm the create when the action throws, and keeps the drawer open", async () => {
+    await act(async () => { root.render(studio([])); });
+    await openDrawer();
+    await fillDrawer();
+    mocks.createProductQuickAction.mockRejectedValueOnce(new Error("network down"));
+    await submitDrawer();
+
+    const alert = dialog()!.querySelector('[role="alert"]')!.textContent!;
+    expect(alert).toContain("無法確認是否已建立");
+    expect(control<HTMLButtonElement>('button[aria-label="關閉"]', dialog()!).disabled).toBe(false);
+  });
+
+  it("does not tick the new product when the selection changed by hand while it was being created", async () => {
+    await act(async () => { root.render(studio([existingProduct], { productIds: [existingProduct.id] })); });
+    await openDrawer();
+    await fillDrawer();
+    let finish!: (result: unknown) => void;
+    mocks.createProductQuickAction.mockImplementationOnce(() => new Promise((resolve) => { finish = resolve; }));
+    await submitDrawer();
+    expect(control<HTMLButtonElement>('button[aria-label="關閉"]', dialog()!).disabled).toBe(true);
+
+    // A change of the selection that reached the studio while the create ran.
+    await act(async () => { checkbox(existingProduct.id).click(); });
+    expect(checkbox(existingProduct.id).checked).toBe(false);
+    await act(async () => { finish({ status: "success", option: { id: "product-quick", name: "原型食物餐盒", inventory: 20 } }); });
+    await settle();
+
+    expect(dialog()).toBeNull();
+    expect(checkbox("product-quick").checked).toBe(false);
+    expect(checkbox(existingProduct.id).checked).toBe(false);
+    expect(announcement()).toContain("你在建立期間改過商品勾選，所以沒有自動勾選");
+    expect(document.activeElement).toBe(checkbox("product-quick"));
+  });
+
+  it("does not tick a new product beyond the 100 products a live may hold", async () => {
+    const many = Array.from({ length: 100 }, (_, index) => ({ id: `product-${index}`, name: `商品 ${index}`, inventory: 1 }));
+    await act(async () => { root.render(studio(many, { productIds: many.map((product) => product.id) })); });
+    await openDrawer();
+    await fillDrawer();
+    mocks.createProductQuickAction.mockResolvedValueOnce({ status: "success", option: { id: "product-quick", name: "原型食物餐盒", inventory: 20 } });
+    await submitDrawer();
+
+    expect(checkbox("product-quick").checked).toBe(false);
+    expect(announcement()).toContain("最多綁定 100 件商品");
+    expect(serializeLiveStudioDraft(control<HTMLFormElement>("form"), salesStep).productIds).toHaveLength(100);
+  });
+
+  it("keeps a product it created when the server props refresh without it", async () => {
+    await act(async () => { root.render(studio([])); });
+    await openDrawer();
+    await fillDrawer();
+    mocks.createProductQuickAction.mockResolvedValueOnce({ status: "success", option: { id: "product-quick", name: "原型食物餐盒", inventory: 20 } });
+    await submitDrawer();
+    const created = checkbox("product-quick");
+
+    await act(async () => { root.render(studio([existingProduct])); });
+
+    expect(checkbox("product-quick")).toBe(created);
+    expect(created.checked).toBe(true);
+    expect(Array.from(container.querySelectorAll<HTMLInputElement>('input[name="productIds"]')).map((input) => input.value)).toEqual(["product-quick", "product-existing"]);
+  });
+
+  it("does not remount the studio when the create's revalidation brings a newer draft revision", async () => {
+    const payload = LiveStudioDraftPayloadSchema.parse({ ...emptyLiveStudioDraft(), title: "週五講座", activeStep: salesStep });
+    const envelope = (revision: number): LiveStudioDraftEnvelope => ({ id: "draft-edit", revision, payload, updatedAt: "2026-11-12T08:00:00.000Z" });
+    const edit = (revision: number) => (
+      <LiveStepperForm {...resources} products={[]} projectId="project-1" initialDraft={envelope(revision)} liveId="live-1" currentStatus="scheduled" />
+    );
+    await act(async () => { root.render(edit(4)); });
+    const studioForm = control<HTMLFormElement>("form");
+    await openDrawer();
+    await fillDrawer();
+    let finish!: (result: unknown) => void;
+    mocks.createProductQuickAction.mockImplementationOnce(() => new Promise((resolve) => { finish = resolve; }));
+    await submitDrawer();
+
+    await act(async () => { root.render(edit(6)); });
+    expect(control<HTMLFormElement>("form")).toBe(studioForm);
+
+    await act(async () => { finish({ status: "success", option: { id: "product-quick", name: "原型食物餐盒", inventory: 20 } }); });
+    await settle();
+    await waitForAutosaveWindow();
+
+    expect(control<HTMLFormElement>("form")).toBe(studioForm);
+    expect(checkbox("product-quick").checked).toBe(true);
+    // The newer revision is not adopted, so the save reports a conflict instead of overwriting.
+    expect(mocks.saveLiveStudioDraft).toHaveBeenCalledWith(expect.objectContaining({
+      draftId: "draft-edit",
+      revision: 4,
+      payload: expect.objectContaining({ productIds: ["product-quick"] }),
+    }));
+  });
+
+  it("closes on Escape and the close button, returns focus to the trigger and never opens while the studio submits", async () => {
+    await act(async () => { root.render(studio([])); });
+    const trigger = await openDrawer();
+    await act(async () => {
+      control('[name="name"]', dialog()!).dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    });
+    expect(dialog()).toBeNull();
+    expect(document.activeElement).toBe(trigger);
+
+    await act(async () => { trigger.click(); });
+    await act(async () => { control<HTMLButtonElement>('button[aria-label="關閉"]', dialog()!).click(); });
+    expect(dialog()).toBeNull();
+    expect(document.activeElement).toBe(trigger);
+
+    control<HTMLFormElement>("form").setAttribute("aria-busy", "true");
+    await act(async () => { trigger.click(); });
+    expect(dialog()).toBeNull();
+  });
+
+  it("keeps Tab inside the drawer", async () => {
+    await act(async () => { root.render(studio([])); });
+    await openDrawer();
+    const drawer = dialog()!;
+    const focusable = Array.from(drawer.querySelectorAll<HTMLElement>("button:not([disabled]), [href], input:not([disabled]):not([type=hidden])"));
+    const last = focusable.at(-1)!;
+    last.focus();
+    await act(async () => { last.dispatchEvent(new KeyboardEvent("keydown", { key: "Tab", bubbles: true })); });
+    expect(drawer.contains(document.activeElement)).toBe(true);
+  });
+
+  it("links to the full product editor without a project when the studio has none", async () => {
+    await act(async () => { root.render(studio([], { projectId: null })); });
+    const studioLink = control<HTMLAnchorElement>('a[href="/products/new"]');
+    expect(studioLink.target).toBe("_blank");
+    await openDrawer();
+    expect(control<HTMLAnchorElement>('a[href="/products/new"]', dialog()!).target).toBe("_blank");
+    expect(dialog()!.querySelector('[name="projectId"]')).toBeNull();
+  });
+});

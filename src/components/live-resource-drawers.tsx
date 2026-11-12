@@ -1,20 +1,27 @@
 "use client";
 
 import { useCallback, useEffect, useId, useRef, useState, useTransition, type FormEvent, type RefObject } from "react";
-import { createMessageTemplateQuickAction, createRegistrationFormQuickAction, createUrlVideoQuickAction } from "@/app/actions/live-resource-quick-create";
+import Link from "next/link";
+import { createMessageTemplateQuickAction, createProductQuickAction, createRegistrationFormQuickAction, createUrlVideoQuickAction } from "@/app/actions/live-resource-quick-create";
 import { MediaUploadField, type MediaUploadPhase } from "@/components/media-upload-field";
 import { RichTextEditor } from "@/components/rich-text-editor";
 import { SideDrawer } from "@/components/side-drawer";
 import { CSRF_FIELD_NAME } from "@/lib/csrf-constants";
+import { formatTwd } from "@/lib/format";
 import {
   LIVE_QUICK_FORM_LIMITS,
+  LIVE_QUICK_PRODUCT_FULFILLMENT_TYPES,
+  LIVE_QUICK_PRODUCT_LIMITS,
   LIVE_QUICK_TEMPLATE_LIMITS,
   LIVE_QUICK_VIDEO_LIMITS,
   liveQuickTemplateCopy,
   liveQuickTemplateFieldErrors,
   liveQuickVideoFieldErrors,
+  parseLiveQuickProductDraft,
   type LiveQuickFormField,
   type LiveQuickFormOption,
+  type LiveQuickProductField,
+  type LiveQuickProductOption,
   type LiveQuickTemplateField,
   type LiveQuickTemplateOption,
   type LiveQuickTemplateTrigger,
@@ -76,7 +83,8 @@ function DrawerTextField({
   error?: string;
   disabled: boolean;
   inputRef?: RefObject<HTMLInputElement | null>;
-  type?: "text" | "url";
+  /** "number" is a text field with the numeric keypad: no spinner, no wheel changes, no silent rounding. */
+  type?: "text" | "url" | "number";
   placeholder?: string;
 }) {
   const inputId = useId();
@@ -90,9 +98,9 @@ function DrawerTextField({
         ref={inputRef}
         id={inputId}
         name={name}
-        type={type}
-        inputMode={type === "url" ? "url" : undefined}
-        spellCheck={type === "url" ? false : undefined}
+        type={type === "url" ? "url" : "text"}
+        inputMode={type === "url" ? "url" : type === "number" ? "numeric" : undefined}
+        spellCheck={type === "text" ? undefined : false}
         placeholder={placeholder}
         required
         maxLength={maxLength}
@@ -357,6 +365,139 @@ export function MessageTemplateQuickCreateDrawer({
             insertTokensLabel="點選插入變數"
           />
           <FieldError id={bodyErrorId} message={errors.body} />
+        </div>
+      </form>
+    </SideDrawer>
+  );
+}
+
+/**
+ * 「新增商品」 inside the live studio's 成交 step: a listed physical product
+ * from a name, a whole-dollar TWD price and stock; every other setting keeps
+ * the product editor's default and can be filled in there later. Other types
+ * need a post-purchase delivery setup, so they link to the full editor in a
+ * new tab. On success the studio ticks the new product; on error the drawer
+ * stays open with the field messages.
+ */
+export function ProductQuickCreateDrawer({
+  csrfToken,
+  projectId,
+  onClose,
+  onCreated,
+  onInFlightChange,
+}: {
+  csrfToken: string;
+  projectId?: string | null;
+  onClose: () => void;
+  onCreated: (option: LiveQuickProductOption) => void;
+  /** true when the create starts; false when it ends without `onCreated` (an error). */
+  onInFlightChange?: (inFlight: boolean) => void;
+}) {
+  const formId = useId();
+  const typeLabelId = useId();
+  const typeHintId = useId();
+  const formRef = useRef<HTMLFormElement>(null);
+  const nameRef = useRef<HTMLInputElement>(null);
+  const [pending, startTransition] = useTransition();
+  const [message, setMessage] = useState("");
+  const [errors, setErrors] = useState<FieldErrors<LiveQuickProductField>>({});
+  const [errorVersion, setErrorVersion] = useState(0);
+  useFocusFirstError(formRef, errorVersion, pending);
+  const fullEditorHref = projectId ? `/products/new?projectId=${encodeURIComponent(projectId)}` : "/products/new";
+
+  function fail(nextMessage: string, nextErrors: FieldErrors<LiveQuickProductField>) {
+    setMessage(nextMessage);
+    setErrors(nextErrors);
+    setErrorVersion((version) => version + 1);
+  }
+
+  function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (pending) return;
+    const data = new FormData(event.currentTarget);
+    const parsed = parseLiveQuickProductDraft({
+      name: String(data.get("name") ?? ""),
+      price: String(data.get("price") ?? ""),
+      inventory: String(data.get("inventory") ?? ""),
+      fulfillmentType: String(data.get("fulfillmentType") ?? ""),
+    });
+    if (!parsed.success) {
+      fail("有幾個欄位需要調整；內容仍保留在抽屜中。", parsed.errors);
+      return;
+    }
+    onInFlightChange?.(true);
+    startTransition(async () => {
+      try {
+        const result = await createProductQuickAction(data);
+        if (result.status === "success") {
+          onCreated(result.option);
+        } else {
+          onInFlightChange?.(false);
+          fail(result.message, result.fieldErrors);
+        }
+      } catch {
+        onInFlightChange?.(false);
+        fail(NETWORK_ERROR, {});
+      }
+    });
+  }
+
+  return (
+    <SideDrawer
+      title="新增商品"
+      description="建立後立即上架，並自動勾選為這場直播的商品。圖片、描述與原價可以之後在「商品」頁補上。"
+      busy={pending}
+      onClose={onClose}
+      initialFocusRef={nameRef}
+      footer={<DrawerActions formId={formId} pending={pending} submitLabel="建立並選取" pendingLabel="建立中…" onCancel={onClose} />}
+    >
+      <form id={formId} ref={formRef} noValidate onSubmit={submit} aria-busy={pending} className="grid gap-4">
+        <input type="hidden" name={CSRF_FIELD_NAME} value={csrfToken} />
+        {projectId ? <input type="hidden" name="projectId" value={projectId} /> : null}
+        <RootError message={message} detail={errors.root ?? errors.fulfillmentType} />
+        <DrawerTextField
+          label="商品名稱"
+          name="name"
+          maxLength={LIVE_QUICK_PRODUCT_LIMITS.name}
+          defaultValue=""
+          hint="買家在直播間與結帳頁看到的名稱；商品網址會依名稱自動產生。"
+          error={errors.name}
+          disabled={pending}
+          inputRef={nameRef}
+        />
+        <DrawerTextField
+          label="售價（新台幣整數元）"
+          name="price"
+          type="number"
+          placeholder="例如 1290"
+          defaultValue=""
+          hint={`平台結帳只收新台幣，請填整數元，不含小數點與逗號；上限 ${formatTwd(LIVE_QUICK_PRODUCT_LIMITS.priceMax * 100)}。`}
+          error={errors.price}
+          disabled={pending}
+        />
+        <DrawerTextField
+          label="可售庫存"
+          name="inventory"
+          type="number"
+          placeholder="例如 50"
+          defaultValue=""
+          hint="買家結帳時扣除；庫存用完後無法再結帳。"
+          error={errors.inventory}
+          disabled={pending}
+        />
+        <div role="group" aria-labelledby={typeLabelId} aria-describedby={typeHintId} className="grid gap-1.5">
+          <span id={typeLabelId} className="text-sm font-medium text-slate-700">商品類型</span>
+          <input type="hidden" name="fulfillmentType" value={LIVE_QUICK_PRODUCT_FULFILLMENT_TYPES[0]} />
+          <p className="rounded-md border border-border bg-slate-50 px-3 py-2 text-sm text-slate-900">
+            <strong className="font-semibold">實體商品</strong>：買家結帳時填寫收件地址，由你出貨。
+          </p>
+          <p id={typeHintId} className="text-xs leading-5 text-slate-600">
+            數位內容、服務與課程需要付款後的交付設定，請到完整商品頁的
+            <Link href={fullEditorHref} target="_blank" rel="noopener" className="mx-0.5 font-semibold text-primary underline">
+              更多設定<span className="sr-only">（另開新分頁）</span>
+            </Link>
+            建立。
+          </p>
         </div>
       </form>
     </SideDrawer>

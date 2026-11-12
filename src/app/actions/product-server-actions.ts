@@ -2,7 +2,7 @@
 
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
-import { mutateProduct } from "@/app/actions/product-actions";
+import { mutateProduct } from "@/lib/product-save";
 import { requireVendorManager } from "@/lib/auth";
 import { assertServerActionSecurity } from "@/lib/csrf";
 import type { ProductActionState } from "@/lib/product-action-state";

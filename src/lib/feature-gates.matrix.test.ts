@@ -254,7 +254,7 @@ const STATIC_MATRIX: Array<{ feature: string; file: string; gate: RegExp; count?
   { feature: "courses", file: "src/app/(app)/products/[id]/community/page.tsx", gate: /requireFeatureOrNotFound\(vendor, "courses"\)/u },
   { feature: "courses", file: "src/app/actions/course-curriculum-actions.ts", gate: /requireFeature\(vendor, "courses"\)/u },
   { feature: "courses", file: "src/app/actions/course-community-actions.ts", gate: /requireFeature\(vendor, "courses"\)/u },
-  { feature: "courses", file: "src/app/actions/product-actions.ts", gate: /isVendorFeatureEnabled\(db, vendorId, "courses"\)/u },
+  { feature: "courses", file: "src/lib/product-save.ts", gate: /isVendorFeatureEnabled\(db, vendorId, "courses"\)/u },
   { feature: "courses", file: "src/app/portal/[vendorSlug]/learn/[courseId]/page.tsx", gate: /requireVendorFeatureOrNotFound\(getDb\(\), session\.vendorId, "courses"\)/u },
   { feature: "courses", file: "src/app/portal/[vendorSlug]/learn/[courseId]/community/page.tsx", gate: /requireVendorFeatureOrNotFound\(getDb\(\), session\.vendorId, "courses"\)/u },
   { feature: "courses", file: "src/app/portal/[vendorSlug]/learn/[courseId]/community/[postId]/page.tsx", gate: /requireVendorFeatureOrNotFound\(getDb\(\), session\.vendorId, "courses"\)/u },

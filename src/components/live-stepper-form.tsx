@@ -22,12 +22,13 @@ import { LiveSlugField } from "@/components/live-slug-field";
 import { FormSubmitButton } from "@/components/form-submit-button";
 import { LIVE_DRAFT_SAVE_FAILED_EVENT, LiveConfirmedSubmitButton, LiveFormPendingLock } from "@/components/live-submit-confirmation";
 import { MediaUploadField } from "@/components/media-upload-field";
-import { MessageTemplateQuickCreateDrawer, RegistrationFormQuickCreateDrawer, VideoQuickCreateDrawer } from "@/components/live-resource-drawers";
+import { MessageTemplateQuickCreateDrawer, ProductQuickCreateDrawer, RegistrationFormQuickCreateDrawer, VideoQuickCreateDrawer } from "@/components/live-resource-drawers";
 import { LivePendingVideos, type LivePendingAddedReason, type LivePendingVideo, type LivePendingVideoProblem } from "@/components/live-pending-videos";
 import {
   liveQuickTemplateCopy,
   mergeLiveResourceOptions,
   type LiveQuickFormOption,
+  type LiveQuickProductOption,
   type LiveQuickTemplateOption,
   type LiveQuickTemplateTrigger,
   type LiveQuickVideoOption,
@@ -110,6 +111,7 @@ function FullEditorLink({ href }: { href: string }) {
 type LiveResourceDrawer =
   | { kind: "video" }
   | { kind: "form" }
+  | { kind: "product" }
   | { kind: "template"; trigger: LiveQuickTemplateTrigger; ruleTrigger?: LiveNotificationRuleTrigger };
 
 type LiveProductOption = Pick<Product, "id" | "name" | "inventory">;
@@ -326,46 +328,62 @@ function ScheduleDateTimeField({ timeZone, defaultValue, onChange }: { timeZone:
   );
 }
 
+/** The live action and the draft accept at most this many products per Live. */
+const LIVE_PRODUCT_SELECTION_LIMIT = 100;
+const productIdSelectorPattern = /^[A-Za-z0-9_-]{1,128}$/u;
+
+/** The checkbox of one product option, for focusing it; the products block when the id is not selector-safe. */
+function productCheckboxSelector(productId: string) {
+  return productIdSelectorPattern.test(productId)
+    ? `input[name="productIds"][value="${productId}"]`
+    : '[data-readiness-focus="products"]';
+}
+
 function ProductSelection({
   products,
   selectedProductIds,
   onSelectionChange,
+  onCreateProduct,
 }: {
   products: LiveProductOption[];
   selectedProductIds: string[];
   onSelectionChange: (productId: string, checked: boolean) => void;
+  onCreateProduct?: () => void;
 }) {
-  if (products.length === 0) {
-    return (
-      <div data-readiness-focus="products" tabIndex={-1} className="rounded-md bg-slate-50 px-4 py-3 text-sm text-slate-600">
-        <p>目前沒有可綁定的啟用商品。你仍可先建立草稿，或先建立商品。</p>
-        <Link href="/products/new" className="mt-2 inline-flex font-semibold text-primary underline">新增商品</Link>
+  return (
+    <>
+      {products.length === 0 ? (
+        <p className="rounded-md bg-slate-50 px-4 py-3 text-sm text-slate-600">
+          目前沒有可綁定的啟用商品，可以在這裡直接建立；內容型直播也可以不選商品，先建立草稿。
+        </p>
+      ) : products.map((product) => (
+        <label key={product.id} className="flex items-center justify-between gap-3 rounded-md border border-border p-3">
+          <span>
+            <span className="block text-sm font-semibold text-slate-900">{product.name}</span>
+            <span className="block text-xs text-slate-500">庫存 {product.inventory}</span>
+          </span>
+          {/* Controlled, so a product created in the drawer can be ticked; the draft still serializes the DOM value. */}
+          <input
+            name="productIds"
+            type="checkbox"
+            value={product.id}
+            checked={selectedProductIds.includes(product.id)}
+            onChange={(event) => onSelectionChange(product.id, event.target.checked)}
+            className="h-5 w-5 accent-blue-600"
+          />
+        </label>
+      ))}
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+        {onCreateProduct ? <button type="button" aria-haspopup="dialog" onClick={onCreateProduct} className={inlineCreateButtonClass}>新增商品</button> : null}
+        <FullEditorLink href="/products/new" />
       </div>
-    );
-  }
-
-  return products.map((product) => (
-    <label key={product.id} className="flex items-center justify-between gap-3 rounded-md border border-border p-3">
-      <span>
-        <span className="block text-sm font-semibold text-slate-900">{product.name}</span>
-        <span className="block text-xs text-slate-500">庫存 {product.inventory}</span>
-      </span>
-      <input
-        name="productIds"
-        type="checkbox"
-        value={product.id}
-        defaultChecked={selectedProductIds.includes(product.id)}
-        onChange={(event) => onSelectionChange(product.id, event.target.checked)}
-        className="h-5 w-5 accent-blue-600"
-      />
-    </label>
-  ));
+    </>
+  );
 }
 
 function updateSelectedProductIds(currentIds: string[], productId: string, checked: boolean) {
-  return checked
-    ? [...currentIds, productId]
-    : currentIds.filter((currentProductId) => currentProductId !== productId);
+  if (!checked) return currentIds.filter((currentProductId) => currentProductId !== productId);
+  return currentIds.includes(productId) ? currentIds : [...currentIds, productId];
 }
 
 function buildLivePreview(title: string, accentCopy: string, products: LiveProductOption[], selectedProductIds: string[]) {
@@ -874,6 +892,7 @@ type LiveStudioSalesStepOptions = {
   products: LiveProductOption[];
   selectedProductIds: string[];
   onProductSelectionChange: (productId: string, checked: boolean) => void;
+  onCreateProduct: () => void;
   onAccentCopyChange: (value: string) => void;
   scripts: LiveScriptOption[];
   selectedScriptId: string;
@@ -1208,6 +1227,7 @@ function renderLiveStudioSalesStep(input: LiveStudioSalesStepOptions) {
           products={input.products}
           selectedProductIds={input.selectedProductIds}
           onSelectionChange={input.onProductSelectionChange}
+          onCreateProduct={input.onCreateProduct}
         />
       </div>
       <label className="grid gap-1.5 text-sm font-medium text-slate-700">
@@ -1491,6 +1511,7 @@ function useSubmitFlushGuard() {
 function useLiveResourceDrawers(input: {
   formRef: { current: HTMLFormElement | null };
   videos: Array<Pick<Video, "id" | "title">>;
+  products: LiveProductOption[];
   forms: LiveFormOption[];
   templates: LiveTemplateOption[];
   csrfToken: string;
@@ -1498,12 +1519,21 @@ function useLiveResourceDrawers(input: {
   liveTitle: string;
   submitBusy: boolean;
   selectedVideoId: string;
+  selectedProductIds: string[];
   scheduleSave: () => void;
   selectVideo: (videoId: string) => void;
+  /** Adds one product to the selection, keeping every product already ticked. */
+  selectProduct: (productId: string) => void;
   selectForm: (formId: string) => void;
   selectRegistrationTemplate: (templateId: string) => void;
 }) {
   const [createdVideos, setCreatedVideos] = useState<LiveQuickVideoOption[]>([]);
+  const [createdProducts, setCreatedProducts] = useState<LiveQuickProductOption[]>([]);
+  /** Counts the merchant's own ticks and unticks; a created product is only ticked if none happened while it was created. */
+  const manualProductSelectionRef = useRef(0);
+  const manualProductSelectionAtCreateRef = useRef(0);
+  const selectedProductIdsRef = useRef(input.selectedProductIds);
+  useEffect(() => { selectedProductIdsRef.current = input.selectedProductIds; });
   /** Uploaded videos still processing at Cloudflare, or settled after being so; lost on remount by design. */
   const [pendingVideos, setPendingVideos] = useState<LivePendingVideo[]>([]);
   /** Counts the merchant's own changes of the video select; an upload only auto-selects if it did not move. */
@@ -1661,6 +1691,42 @@ function useLiveResourceDrawers(input: {
         : `找不到影片「${video.title}」，可能已被刪除。`);
   }
 
+  function markManualProductSelection() {
+    manualProductSelectionRef.current += 1;
+  }
+
+  /** The product drawer's in-flight report; remembers the selection count the create started from. */
+  const trackProductInFlight = (inFlight: boolean) => {
+    if (inFlight) manualProductSelectionAtCreateRef.current = manualProductSelectionRef.current;
+    trackInFlight(inFlight);
+  };
+
+  /**
+   * A created product joins the checkboxes and is ticked next to the products
+   * already ticked; nothing is unticked. Like a processed upload, it is not
+   * ticked when the merchant changed the selection while it was created, or
+   * when the Live already holds as many products as it may.
+   */
+  function productCreated(option: LiveQuickProductOption) {
+    inFlightRef.current = false;
+    setCreatedProducts((current) => [option, ...current.filter((candidate) => candidate.id !== option.id)]);
+    setDrawer(null);
+    const selectionMoved = manualProductSelectionRef.current !== manualProductSelectionAtCreateRef.current;
+    const selectionFull = !selectedProductIdsRef.current.includes(option.id)
+      && selectedProductIdsRef.current.length >= LIVE_PRODUCT_SELECTION_LIMIT;
+    const selector = productCheckboxSelector(option.id);
+    if (!selectionMoved && !selectionFull) {
+      input.selectProduct(option.id);
+      setAnnouncement(`已建立並選取商品「${option.name}」。`);
+      focusPendingRef.current = { selector, save: true, afterDrawerClose: true };
+      return;
+    }
+    setAnnouncement(selectionFull
+      ? `已建立商品「${option.name}」並加入清單；這場直播最多綁定 ${LIVE_PRODUCT_SELECTION_LIMIT} 件商品，所以沒有自動勾選。`
+      : `已建立商品「${option.name}」並加入清單；你在建立期間改過商品勾選，所以沒有自動勾選。`);
+    focusPendingRef.current = { selector, save: false, afterDrawerClose: true };
+  }
+
   function formCreated(option: LiveQuickFormOption) {
     inFlightRef.current = false;
     setCreatedForms((current) => [option, ...current.filter((candidate) => candidate.id !== option.id)]);
@@ -1696,6 +1762,10 @@ function useLiveResourceDrawers(input: {
     drawerElement = (
       <VideoQuickCreateDrawer csrfToken={input.csrfToken} defaultTitle={input.liveTitle} onClose={close} onUploaded={videoUploaded} onUrlCreated={urlVideoCreated} onInFlightChange={trackInFlight} />
     );
+  } else if (drawer?.kind === "product") {
+    drawerElement = (
+      <ProductQuickCreateDrawer csrfToken={input.csrfToken} projectId={input.projectId} onClose={close} onCreated={productCreated} onInFlightChange={trackProductInFlight} />
+    );
   } else if (drawer?.kind === "form") {
     drawerElement = (
       <RegistrationFormQuickCreateDrawer csrfToken={input.csrfToken} projectId={input.projectId} defaultTitle={input.liveTitle} onClose={close} onCreated={formCreated} onInFlightChange={trackInFlight} />
@@ -1713,6 +1783,8 @@ function useLiveResourceDrawers(input: {
     pendingVideoReady,
     pendingVideoProblem,
     markManualVideoSelection,
+    products: mergeLiveResourceOptions(input.products, createdProducts),
+    markManualProductSelection,
     forms: mergeLiveResourceOptions(input.forms, createdForms),
     registrationTemplates: templates.filter((template) => template.trigger === "registration_confirmed"),
     notificationTemplates: templates.filter((template) => template.trigger === "live_reminder" || template.trigger === "post_live_followup"),
@@ -1818,24 +1890,23 @@ export function LiveStudioStepperForm({
   const submitFlush = useSubmitFlushGuard();
   const resources = useLiveResourceDrawers({
     formRef,
-    videos,
-    forms,
-    templates,
+    videos, products, forms, templates,
     csrfToken,
     projectId,
     liveTitle: previewTitle,
-    submitBusy: submitFlush.busy, selectedVideoId,
+    submitBusy: submitFlush.busy, selectedVideoId, selectedProductIds,
     scheduleSave: draft.scheduleSave,
     selectVideo: setSelectedVideoId,
+    selectProduct: (productId) => setSelectedProductIds((currentIds) => updateSelectedProductIds(currentIds, productId, true)),
     selectForm: setSelectedFormId,
     selectRegistrationTemplate: setSelectedTemplateId,
   });
-  const { videos: availableVideos, forms: availableForms, registrationTemplates, notificationTemplates } = resources;
+  const { videos: availableVideos, products: availableProducts, forms: availableForms, registrationTemplates, notificationTemplates } = resources;
   // A drawer create in flight counts as unsaved edits (see useLiveResourceDrawers).
   const holdsUnsavedEdits = unsaved || resources.creating;
   useEffect(() => { onUnsavedChange?.(holdsUnsavedEdits); }, [holdsUnsavedEdits, onUnsavedChange]);
-  const preview = buildLivePreview(previewTitle, previewAccentCopy, products, selectedProductIds); const statusAction = liveId ? fixedSessionStatusAction(liveStatusAction(currentStatus), sessionMode) : null;
-  const publishReadiness = buildLivePublishReadiness({ studioPreset, products, productIds: selectedProductIds, videos: availableVideos, videoId: selectedVideoId, forms: availableForms, formId: selectedFormId, templates: registrationTemplates, templateId: selectedTemplateId, scripts, scriptId: selectedScriptId });
+  const preview = buildLivePreview(previewTitle, previewAccentCopy, availableProducts, selectedProductIds); const statusAction = liveId ? fixedSessionStatusAction(liveStatusAction(currentStatus), sessionMode) : null;
+  const publishReadiness = buildLivePublishReadiness({ studioPreset, products: availableProducts, productIds: selectedProductIds, videos: availableVideos, videoId: selectedVideoId, forms: availableForms, formId: selectedFormId, templates: registrationTemplates, templateId: selectedTemplateId, scripts, scriptId: selectedScriptId });
   const stepStatus = liveStudioStepStatuses({
     readiness: publishReadiness,
     title: previewTitle,
@@ -2007,11 +2078,10 @@ export function LiveStudioStepperForm({
           {renderLiveStudioSalesStep({
             activeStep: activeStepKey,
             initialValues,
-            products,
+            products: availableProducts,
             selectedProductIds,
-            onProductSelectionChange: (productId, checked) => setSelectedProductIds(
-              (currentIds) => updateSelectedProductIds(currentIds, productId, checked),
-            ),
+            onProductSelectionChange: (productId, checked) => { resources.markManualProductSelection(); setSelectedProductIds((currentIds) => updateSelectedProductIds(currentIds, productId, checked)); },
+            onCreateProduct: () => resources.open({ kind: "product" }),
             onAccentCopyChange: setPreviewAccentCopy,
             scripts,
             selectedScriptId,
