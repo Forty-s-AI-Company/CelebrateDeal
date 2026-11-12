@@ -163,3 +163,12 @@ useEffect(() => { if (errorVersion) focusFirstInvalidField(formRef.current); }, 
 - 商品佣金篩選：只用 `hidden` 隱藏列，欄位仍一起送出；有錯誤或選單裡找不到商品的列一律顯示，避免看不到的必填欄位擋住送出。篩選框在 `<form>` 內，按 Enter 只篩選、不隱式送出。
 - hydrate 前：比例輸入框與件數欄位 `readOnly`、商品選單停用（商品由隱藏欄位送出），避免 hydrate 時 React 把先改的值還原而發布舊設定。
 - 「暫停」按鈕以 `onClick` 標記，暫停時不檢查政策內容；件數欄位的 `validity.badInput` 與已刪除的商品也會列在摘要。
+
+## 後台導覽與指令面板
+
+導覽資料只有一份：[app-navigation.ts](../../src/lib/app-navigation.ts) 的 `navigationForRole`（側欄）與 `settingsHubForRole`（設定樞紐）。側欄、手機抽屜、設定樞紐與指令面板都由它們推導，權限與模組過濾因此一致；新增頁面只改這裡。
+
+- **預設收合**：`NavGroup.flows` 標記群組主要服務哪種專案流程（`live`、`consultation`）。未設定表示一律展開；設定後只在符合的流程（或尚未選專案）預設展開；`[]` 表示次要群組，選了專案就預設收合。只改預設，入口仍在，也不影響權限。`isGroupExpandedByDefault` 判斷，`AppShell` 由目前專案的 `primaryFlow` 傳入 `AppShellNavGroup`。
+- **記住展開狀態**：[nav-group-state.ts](../../src/lib/nav-group-state.ts) 把使用者手動展開／收合存在 localStorage（`celebratedeal:nav-groups:v1`），所有存取都有 try/catch；無法使用時退回預設，本次頁面內仍可切換。目前頁面所在的群組一律展開，且不能被收合。
+- **圖示與名稱**：每個頁面的圖示不重複，群組名稱不與群組內項目同名（測試會檢查）。新增項目時挑沒用過的圖示。
+- **指令面板**：[command-palette.tsx](../../src/components/command-palette.tsx)，Ctrl+K／⌘K 開啟；符合 WAI-ARIA combobox + listbox（焦點留在輸入框，用 `aria-activedescendant` 指向目前選項），↑／↓ 移動並循環、Enter 前往、Esc 關閉並還原焦點。資料來自 `paletteEntriesFromNavigation(navigationForRole(...), settingsHubForRole(...))`，不另外維護清單；搜尋在 [command-palette.ts](../../src/lib/command-palette.ts)（不分大小寫與全半形的子字串比對，標題前綴優先）。目前只做頁面導覽；日後的動作或 AI 助理從這個元件擴充。小螢幕用 `variant="icon"` 的第二個實例，並設 `registerShortcut={false}`，避免快速鍵被處理兩次。

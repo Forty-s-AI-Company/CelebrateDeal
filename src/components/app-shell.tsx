@@ -10,7 +10,9 @@ import { CsrfField } from "@/components/csrf-field";
 import { FormSubmitButton } from "@/components/form-submit-button";
 import { FeatureAccessBoundary } from "@/components/feature-access-boundary";
 import { type GatedFeature } from "@/lib/vendor-feature-toggles";
-import { navigationForRole, SECURITY_SETTINGS_PATH, SETTINGS_HUB_PATH, settingsHubForRole } from "@/lib/app-navigation";
+import { isGroupExpandedByDefault, navigationForRole, SECURITY_SETTINGS_PATH, SETTINGS_HUB_PATH, settingsHubForRole } from "@/lib/app-navigation";
+import { CommandPalette } from "@/components/command-palette";
+import { paletteEntriesFromNavigation } from "@/lib/command-palette";
 import { WorkspaceProjectSwitcher, type ProjectSwitcherItem } from "@/components/workspace-project-switcher";
 import { SystemStatusIndicator } from "@/components/system-status-indicator";
 import { OnboardingTaskPanel, type SidebarOnboardingTask } from "@/components/onboarding-task-panel";
@@ -25,6 +27,10 @@ const ROLE_LABELS: Record<string, string> = {
   support: "客服協作者",
   partner: "夥伴",
 };
+
+function flowOfProject(projects: ProjectSwitcherItem[], projectId: string | null) {
+  return projects.find((project) => project.id === projectId)?.primaryFlow ?? null;
+}
 
 function roleLabelFor(memberRole: string | null, isPlatformAdmin: boolean) {
   if (isPlatformAdmin) return "平台管理員";
@@ -65,6 +71,9 @@ export function AppShell({
   // billing page lives behind the single 設定 hub.
   const settingsGroups = settingsHubForRole(memberRole, isPlatformAdmin, enabledModules);
   const showSettingsLink = settingsGroups.length > 0;
+  // Same filtered data as the sidebar and the settings hub, so the palette never offers a page they hide.
+  const paletteEntries = paletteEntriesFromNavigation(visibleGroups, settingsGroups);
+  const selectedProjectFlow = flowOfProject(projects, selectedProjectId);
   const showSecurityLink = settingsGroups.some((group) => group.items.some((item) => item.href === SECURITY_SETTINGS_PATH));
   // Platform administrators have no merchant security page; they use the standalone MFA page.
   const securityHref = isPlatformAdmin ? "/mfa/setup" : showSecurityLink ? SECURITY_SETTINGS_PATH : null;
@@ -96,6 +105,7 @@ export function AppShell({
         {!isPlatformAdmin && selectProject ? <WorkspaceProjectSwitcher workspaceName={vendorName} projects={projects} selectedProjectId={selectedProjectId} selectProject={selectProject} /> : null}
         {!isPlatformAdmin && persistTaskPanelCollapsed ? <OnboardingTaskPanel title={selectedProjectId ? "專案上線任務" : "商家上線任務"} tasks={onboardingTasks} initiallyCollapsed={taskPanelCollapsed} persistCollapsed={persistTaskPanelCollapsed} /> : null}
 
+        <CommandPalette entries={paletteEntries} />
         <nav className="min-h-0 flex-1 space-y-2 overflow-y-auto pr-1 [scrollbar-color:rgba(148,163,184,0.45)_transparent] [scrollbar-width:thin]" aria-label="主要導覽">
           {visibleGroups.map((group) => {
             if (group.items.length === 1 && (group.items[0]?.href === "/dashboard" || group.items[0]?.href === SETTINGS_HUB_PATH)) {
@@ -109,7 +119,7 @@ export function AppShell({
             }
 
             return (
-              <AppShellNavGroup key={group.label} label={group.label} hrefs={group.items.map((item) => item.href)}>
+              <AppShellNavGroup key={group.label} label={group.label} hrefs={group.items.map((item) => item.href)} defaultOpen={isGroupExpandedByDefault(group, selectedProjectFlow)}>
                 {group.items.map((item) => (
                   <AppShellNavLink key={item.href} href={item.href}>
                     <item.icon className="size-4 shrink-0 text-slate-500 transition-colors group-hover:text-slate-700 group-aria-[current=page]:text-blue-600" strokeWidth={1.8} aria-hidden="true" />
@@ -161,6 +171,8 @@ export function AppShell({
             <span className="grid size-8 place-items-center rounded-lg bg-gradient-to-br from-blue-500 to-indigo-600"><Tags className="size-4" aria-hidden="true" /></span>
             <span><span className="block text-sm">CelebrateDeal</span><span className="block max-w-40 truncate text-[10px] font-medium text-slate-500">{vendorName}</span></span>
           </Link>
+          <div className="flex items-center gap-2">
+          <CommandPalette entries={paletteEntries} variant="icon" registerShortcut={false} />
           <form action={logoutAction}>
             <CsrfField />
             <FormSubmitButton
@@ -172,6 +184,7 @@ export function AppShell({
               登出
             </FormSubmitButton>
           </form>
+          </div>
         </div>
         {!isPlatformAdmin && selectProject ? <details className="mt-2"><summary className="min-h-11 cursor-pointer rounded-lg border border-slate-200 px-3 py-3 text-sm font-semibold focus-visible:ring-2 focus-visible:ring-blue-700">專案：{projects.find((project) => project.id === selectedProjectId)?.name ?? "全部專案總覽"}</summary><div className="mt-2"><WorkspaceProjectSwitcher workspaceName={vendorName} projects={projects} selectedProjectId={selectedProjectId} selectProject={selectProject} /></div></details> : null}
       </header>
