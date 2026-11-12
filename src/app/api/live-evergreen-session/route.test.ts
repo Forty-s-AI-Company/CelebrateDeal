@@ -1,12 +1,18 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const db = { live: { findFirst: vi.fn() } };
+const db = { live: { findFirst: vi.fn() }, $queryRaw: vi.fn() };
+const monitoring = vi.hoisted(() => ({ captureOperationalError: vi.fn() }));
 
 vi.mock("@/lib/db", () => ({ getDb: () => db }));
 vi.mock("@/lib/rate-limit", () => ({ checkRateLimit: vi.fn(async () => null) }));
+vi.mock("@/lib/monitoring", () => monitoring);
 
 import { GET, POST } from "@/app/api/live-evergreen-session/route";
 import { evergreenSessionCookieName } from "@/lib/evergreen-viewer-session";
+import {
+  createFormSubmissionChatSessionToken,
+  FORM_SUBMISSION_CHAT_SESSION_COOKIE,
+} from "@/lib/form-submission-chat-session";
 
 const evergreenLive = {
   id: "live-1",
@@ -183,5 +189,88 @@ describe("evergreen session cookie lifetime", () => {
     db.live.findFirst.mockResolvedValue({ ...evergreenLive, replayEnabled: true, replayAvailableUntil: null });
     const header = setCookie(await POST(post({ vendorId: "vendor-1", liveId: "live-1" })))!;
     expect(maxAge(header)).toBe(7 * 24 * 60 * 60);
+  });
+});
+
+describe("verified registrant session record (F-2)", () => {
+  const submissionId = "submission-1";
+  function registrationCookie(id = submissionId) {
+    return `${FORM_SUBMISSION_CHAT_SESSION_COOKIE}=${encodeURIComponent(createFormSubmissionChatSessionToken({ submissionId: id }))}`;
+  }
+  /** The bound values of the single recording statement. */
+  function recordedValues() {
+    expect(db.$queryRaw).toHaveBeenCalledTimes(1);
+    return db.$queryRaw.mock.calls[0]!.slice(1) as unknown[];
+  }
+
+  beforeEach(() => {
+    db.$queryRaw.mockResolvedValue([{ id: "assignment-1" }]);
+  });
+
+  it("never touches the table for a visitor without a registration cookie", async () => {
+    const response = await POST(post({ vendorId: "vendor-1", liveId: "live-1" }));
+    expect(response.status).toBe(200);
+    expect(setCookie(response)).not.toBeNull();
+    expect(db.$queryRaw).not.toHaveBeenCalled();
+  });
+
+  it("ignores a forged or expired registration cookie", async () => {
+    const forged = registrationCookie().replace(/.{2}$/u, "xx");
+    await POST(post({ vendorId: "vendor-1", liveId: "live-1" }, forged));
+    const valid = registrationCookie();
+    vi.setSystemTime(new Date("2026-12-15T06:03:00.000Z"));
+    await POST(post({ vendorId: "vendor-1", liveId: "live-1" }, valid));
+    expect(db.$queryRaw).not.toHaveBeenCalled();
+  });
+
+  it("records the server-assigned session of a first claim for the signed registration", async () => {
+    const response = await POST(post({ vendorId: "vendor-1", liveId: "live-1" }, registrationCookie()));
+    expect(await response.json()).toMatchObject({ assigned: true, sessionStartAt: "2026-10-29T06:15:00.000Z" });
+    const values = recordedValues();
+    expect(values).toEqual(expect.arrayContaining(["vendor-1", "live-1", submissionId, "2026-10-29T06:15:00.000Z"]));
+    expect(values.some((value) => typeof value === "string" && /^[0-9a-f]{32}$/u.test(value))).toBe(true);
+  });
+
+  it("records a claim that keeps an existing session cookie, and a rejoin's new session", async () => {
+    const first = setCookie(await POST(post({ vendorId: "vendor-1", liveId: "live-1" })))!;
+    expect(db.$queryRaw).not.toHaveBeenCalled();
+    const cookies = `${cookieName}=${cookieValue(first)}; ${registrationCookie()}`;
+
+    vi.setSystemTime(new Date("2026-10-29T06:20:00.000Z"));
+    const kept = await POST(post({ vendorId: "vendor-1", liveId: "live-1" }, cookies));
+    expect(setCookie(kept)).toBeNull();
+    expect(recordedValues()).toContain("2026-10-29T06:15:00.000Z");
+
+    db.$queryRaw.mockClear();
+    vi.setSystemTime(new Date("2026-10-29T06:50:00.000Z"));
+    const rejoined = await POST(post({ vendorId: "vendor-1", liveId: "live-1", intent: "rejoin" }, cookies));
+    expect(await rejoined.json()).toMatchObject({ sessionStartAt: "2026-10-29T07:00:00.000Z" });
+    expect(recordedValues()).toContain("2026-10-29T07:00:00.000Z");
+  });
+
+  it("records the merchant's shared start for a registrant", async () => {
+    db.live.findFirst.mockResolvedValue({ ...evergreenLive, evergreenSessionStartAt: new Date("2026-10-29T08:00:00.000Z") });
+    const response = await POST(post({ vendorId: "vendor-1", liveId: "live-1" }, registrationCookie()));
+    expect(await response.json()).toMatchObject({ sessionStartAt: "2026-10-29T08:00:00.000Z" });
+    expect(recordedValues()).toContain("2026-10-29T08:00:00.000Z");
+  });
+
+  it("does not write on GET, even with both cookies", async () => {
+    const first = setCookie(await POST(post({ vendorId: "vendor-1", liveId: "live-1" })))!;
+    const response = await GET(get("liveId=live-1&vendorId=vendor-1", `${cookieName}=${cookieValue(first)}; ${registrationCookie()}`));
+    expect(await response.json()).toMatchObject({ assigned: true });
+    expect(db.$queryRaw).not.toHaveBeenCalled();
+  });
+
+  it("answers exactly as before when recording fails", async () => {
+    db.$queryRaw.mockRejectedValue(new Error("database unavailable"));
+    const response = await POST(post({ vendorId: "vendor-1", liveId: "live-1" }, registrationCookie()));
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ assigned: true, sessionStartAt: "2026-10-29T06:15:00.000Z" });
+    expect(setCookie(response)).not.toBeNull();
+    expect(monitoring.captureOperationalError).toHaveBeenCalledWith(expect.any(Error), expect.objectContaining({
+      source: "evergreen_session_assignment",
+      operation: "viewer_session",
+    }));
   });
 });
