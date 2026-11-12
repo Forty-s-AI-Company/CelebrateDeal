@@ -35,13 +35,13 @@ import { LANDING_PAGE_TEMPLATE_NAME_MAX_LENGTH, LANDING_PAGE_TEMPLATE_VENDOR_LIM
 import type { LandingPageTemplateSummary, LandingPageTemplateTarget, LandingPageTemplateTargetStep } from "@/lib/landing-page-template-service";
 import { useDialogBehavior } from "@/lib/use-dialog-behavior";
 import { TabPanel, Tabs } from "@/components/tabs";
+import { Toast, useToast } from "@/components/toast";
 
 export type TemplateLibraryTab = "platform" | "mine";
 type Selected =
   | { kind: "platform"; id: string; name: string; eyebrow: string; goal: FunnelTemplateCatalogEntry["goal"]; stepTypes: readonly FunnelStepType[] }
   | { kind: "mine"; id: string; name: string; eyebrow: string };
 type Preview = { selected: Selected; document: PageDocument; hasScript: boolean };
-type Notice = { tone: "success" | "error"; text: string } | null;
 
 const secondaryButton = "inline-flex min-h-10 items-center justify-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 disabled:cursor-not-allowed disabled:opacity-50";
 const primaryButton = "inline-flex min-h-10 items-center justify-center gap-1.5 rounded-lg bg-blue-700 px-3 text-sm font-bold text-white transition-colors hover:bg-blue-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50";
@@ -124,7 +124,9 @@ export function LandingPageTemplateLibrary({ csrfName, csrfToken, platformTempla
   const [using, setUsing] = useState<Selected | null>(null);
   const [renaming, setRenaming] = useState<LandingPageTemplateSummary | null>(null);
   const [deleting, setDeleting] = useState<LandingPageTemplateSummary | null>(null);
-  const [notice, setNotice] = useState<Notice>(null);
+  /** Preview read failures stay inline as an alert; confirmations go to the toast. */
+  const [readError, setReadError] = useState<string | null>(null);
+  const { toast, showToast, dismissToast } = useToast();
   // A refreshed server list replaces the local copy (render-time sync, no effect).
   const [mineSource, setMineSource] = useState(myTemplates);
   if (mineSource !== myTemplates) { setMineSource(myTemplates); setMine(myTemplates); }
@@ -143,9 +145,9 @@ export function LandingPageTemplateLibrary({ csrfName, csrfToken, platformTempla
     try {
       const response = await readLandingPageTemplateDocumentAction(template.id);
       if (response.ok) openPreview(mineSelection(template), response.document);
-      else setNotice({ tone: "error", text: response.message });
+      else setReadError(response.message);
     } catch {
-      setNotice({ tone: "error", text: "無法讀取範本內容，請稍後再試。" });
+      setReadError("無法讀取範本內容，請稍後再試。");
     } finally {
       setLoadingPreviewId(null);
     }
@@ -157,9 +159,9 @@ export function LandingPageTemplateLibrary({ csrfName, csrfToken, platformTempla
     try {
       const response = await readPlatformTemplateDocumentAction(entry.id);
       if (response.ok) openPreview(platformSelection(entry), response.document);
-      else setNotice({ tone: "error", text: response.message });
+      else setReadError(response.message);
     } catch {
-      setNotice({ tone: "error", text: "無法讀取範本內容，請稍後再試。" });
+      setReadError("無法讀取範本內容，請稍後再試。");
     } finally {
       setLoadingPreviewId(null);
     }
@@ -172,7 +174,7 @@ export function LandingPageTemplateLibrary({ csrfName, csrfToken, platformTempla
       { key: "mine", label: <>我的範本 <span className="ml-1 text-xs font-normal text-slate-500">{mine.length}</span></> },
     ]} />
 
-    {notice ? <p role={notice.tone === "error" ? "alert" : "status"} className={`mb-4 rounded-lg border p-3 text-sm ${notice.tone === "error" ? "border-red-200 bg-red-50 text-red-800" : "border-emerald-200 bg-emerald-50 text-emerald-900"}`}>{notice.text}</p> : null}
+    {readError ? <p role="alert" className="mb-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">{readError}</p> : null}
 
     {tab === "platform" ? <TabPanel idPrefix="template" tabKey="platform">
       <div className="mb-4 grid gap-2 rounded-xl border border-slate-200 bg-white p-3">
@@ -204,8 +206,9 @@ export function LandingPageTemplateLibrary({ csrfName, csrfToken, platformTempla
 
     {preview ? <FunnelTemplatePreviewDialog eyebrow={preview.selected.eyebrow} title={preview.selected.name} document={preview.document} viewport={viewport} onViewport={setViewport} onClose={() => setPreview(null)} actionLabel="使用這個範本" onAction={() => openUse(preview.selected)} note={preview.hasScript ? "這個範本含自訂 JavaScript：JS 只會在公開頁的隔離沙箱中執行，預覽不執行；其他內容與使用後的頁面相同。" : "預覽與使用後的頁面內容與顯示方式相同。"} /> : null}
     {using ? <UseTemplateDialog csrfName={csrfName} csrfToken={csrfToken} selected={using} sites={sites} projects={projects} onClose={() => setUsing(null)} /> : null}
-    {renaming ? <RenameTemplateDialog csrfName={csrfName} csrfToken={csrfToken} template={renaming} onClose={() => setRenaming(null)} onRenamed={(name) => { setMine((items) => items.map((item) => item.id === renaming.id ? { ...item, name } : item)); setNotice({ tone: "success", text: `範本已改名為「${name}」。` }); setRenaming(null); router.refresh(); }} /> : null}
-    {deleting ? <DeleteTemplateDialog csrfName={csrfName} csrfToken={csrfToken} template={deleting} onClose={() => setDeleting(null)} onDeleted={() => { setMine((items) => items.filter((item) => item.id !== deleting.id)); setNotice({ tone: "success", text: `已刪除範本「${deleting.name}」；已套用過的網站內容不受影響。` }); setDeleting(null); router.refresh(); }} /> : null}
+    {renaming ? <RenameTemplateDialog csrfName={csrfName} csrfToken={csrfToken} template={renaming} onClose={() => setRenaming(null)} onRenamed={(name) => { setMine((items) => items.map((item) => item.id === renaming.id ? { ...item, name } : item)); setReadError(null); showToast(`範本已改名為「${name}」。`); setRenaming(null); router.refresh(); }} /> : null}
+    {deleting ? <DeleteTemplateDialog csrfName={csrfName} csrfToken={csrfToken} template={deleting} onClose={() => setDeleting(null)} onDeleted={() => { setMine((items) => items.filter((item) => item.id !== deleting.id)); setReadError(null); showToast(`已刪除範本「${deleting.name}」；已套用過的網站內容不受影響。`); setDeleting(null); router.refresh(); }} /> : null}
+    <Toast toast={toast} onDismiss={dismissToast} />
   </div>;
 }
 

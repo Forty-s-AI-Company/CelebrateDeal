@@ -125,6 +125,48 @@ body:has([data-live-player-mode="checkout"]) [data-testid="announcement-center-l
   }
 }
 
+/*
+ * Toast (toast.tsx): rises in; transform only for the same contrast reason as
+ * the drawer, and no motion when reduced. The region sits above the
+ * announcement launcher on phones and above the mobile bottom navigation.
+ */
+@keyframes ui-toast-in {
+  from { transform: translateY(8px); }
+  to { transform: translateY(0); }
+}
+
+.ui-toast-card {
+  animation: ui-toast-in 160ms ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ui-toast-card {
+    animation: none;
+  }
+}
+
+.ui-toast-region {
+  bottom: calc(1rem + env(safe-area-inset-bottom));
+}
+
+@media (max-width: 639px) {
+  .ui-toast-region {
+    bottom: calc(4.5rem + env(safe-area-inset-bottom));
+  }
+}
+
+@media (max-width: 1023px) {
+  body:has(nav[aria-label="行動版主要導覽"]) .ui-toast-region {
+    bottom: calc(5.5rem + env(safe-area-inset-bottom));
+  }
+}
+
+@media (max-width: 639px) {
+  body:has(nav[aria-label="行動版主要導覽"]) .ui-toast-region {
+    bottom: calc(8.5rem + env(safe-area-inset-bottom));
+  }
+}
+
 /* Funnel testimonial wall: the track holds the items twice, so -50% loops seamlessly. */
 @keyframes funnel-marquee {
   from { transform: translateX(0); }
