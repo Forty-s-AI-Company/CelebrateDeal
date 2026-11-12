@@ -1307,6 +1307,7 @@ async function isCurrentPostLiveFollowupDelivery(
     database.live.findFirst({
       where: { id: delivery.sourceLiveId, vendorId: delivery.vendorId },
       select: {
+        // Includes status, streamMode and sessionMode.
         ...EVERGREEN_ACTIVATION_SELECT,
         id: true,
         vendorId: true,
@@ -1314,9 +1315,6 @@ async function isCurrentPostLiveFollowupDelivery(
         title: true,
         scheduledAt: true,
         endedAt: true,
-        status: true,
-        streamMode: true,
-        sessionMode: true,
         video: { select: { durationSec: true } },
         notificationRules: {
           where: { trigger: "post_live_followup", isActive: true },

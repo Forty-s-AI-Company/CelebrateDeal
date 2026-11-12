@@ -811,6 +811,12 @@ export async function supersedeLiveNotificationDeliveriesForLifecycle(
  * The Live row lock and the re-check keep a concurrent "turn evergreen off
  * again" from having its fresh rows cancelled: if the Live is no longer an
  * active evergreen one, nothing is touched. Tenant-bound on every statement.
+ *
+ * post_live_followup is swept here too, but its writer
+ * (processDuePostLiveFollowups) does not lock the Live row, so a follow-up
+ * committed after this pass is not covered by the lock argument above. Such a
+ * row is stopped by the send-time guard (isCurrentPostLiveFollowupDelivery
+ * rejects an active evergreen Live) and becomes `superseded` there.
  */
 export async function supersedeFixedTimeNotificationsForActiveEvergreen(
   input: { vendorId: string; liveId: string },
