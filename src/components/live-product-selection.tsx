@@ -84,6 +84,8 @@ export function LiveProductSelection({
       setMessage(`已取消勾選「${nameOf(productId)}」，「${nameOf(orderedIds[1])}」成為置頂商品。`);
     } else if (checked && orderedIds.length === 0) {
       setMessage(`「${nameOf(productId)}」是置頂商品。`);
+    } else if (checked && !orderedIds.includes(productId)) {
+      setMessage(`已勾選「${nameOf(productId)}」，排第 ${orderedIds.length + 1} 個。`);
     } else {
       setMessage("");
     }

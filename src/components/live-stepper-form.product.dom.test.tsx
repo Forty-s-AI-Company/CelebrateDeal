@@ -457,7 +457,9 @@ describe("LiveStepperForm 商品勾選順序與置頂", () => {
     expect(submittedProductIds()).toEqual([]);
 
     await act(async () => { checkbox(productC.id).click(); });
+    expect(orderStatus()).toBe("「商品丙」是置頂商品。");
     await act(async () => { checkbox(productA.id).click(); });
+    expect(orderStatus()).toBe("已勾選「商品甲」，排第 2 個。");
 
     expect(submittedProductIds()).toEqual([productC.id, productA.id]);
     expect(serializeLiveStudioDraft(studioForm, salesStep).productIds).toEqual([productC.id, productA.id]);
@@ -470,11 +472,14 @@ describe("LiveStepperForm 商品勾選順序與置頂", () => {
     expect(row(productA.id).querySelector("button")?.textContent).toBe("設為置頂");
     expect(row(productB.id).querySelector("button")).toBeNull();
     expect(row(productC.id).querySelector("button")).toBeNull();
-    expect(orderStatus()).toBe("");
+    // A third tick says where it lands.
+    await act(async () => { checkbox(productB.id).click(); });
+    expect(orderStatus()).toBe("已勾選「商品乙」，排第 3 個。");
+    expect(submittedProductIds()).toEqual([productC.id, productA.id, productB.id]);
 
     // The autosave runs after the hidden fields are in the DOM, so it saves the new order.
     await waitForAutosaveWindow();
-    expect(mocks.saveLiveStudioDraft).toHaveBeenLastCalledWith(expect.objectContaining({ payload: expect.objectContaining({ productIds: [productC.id, productA.id] }) }));
+    expect(mocks.saveLiveStudioDraft).toHaveBeenLastCalledWith(expect.objectContaining({ payload: expect.objectContaining({ productIds: [productC.id, productA.id, productB.id] }) }));
   });
 
   it("設為置頂 moves a ticked product to the front, keeps focus on its row, announces it and saves the order", async () => {
