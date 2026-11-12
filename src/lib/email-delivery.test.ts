@@ -656,6 +656,93 @@ describe("email delivery outbox", () => {
     expect(mocks.db.emailDelivery.create).not.toHaveBeenCalled();
   });
 
+  describe("post-live follow-up revision that already exists", () => {
+    const followupInput = () => ({
+      ...input,
+      template: { ...input.template, trigger: "post_live_followup" },
+      rule: {
+        id: "rule-1",
+        vendorId: "vendor-1",
+        liveId: "live-1",
+        trigger: "post_live_followup",
+        offsetMinutes: 0,
+        isActive: true,
+      },
+      streamMode: "vod",
+      endedAt: null,
+      videoDurationSec: 3_600,
+      verificationStatus: "VERIFIED",
+    });
+    const at = new Date("2026-08-08T06:00:00.000Z");
+    const updatedAt = new Date("2026-08-08T05:59:00.000Z");
+    const isReactivation = (call: unknown[]) => (call[0] as { where?: { status?: unknown } }).where?.status === "superseded";
+
+    beforeEach(() => {
+      mocks.db.emailDelivery.create.mockRejectedValue(Object.assign(new Error("duplicate follow-up"), { code: "P2002" }));
+    });
+
+    it("returns already_sent from the reactivation path when another revision of the rule was sent", async () => {
+      mocks.db.emailDelivery.findFirst
+        .mockResolvedValueOnce(null) // create path: nothing sent yet
+        .mockResolvedValueOnce({ id: "email_existing", status: "superseded", nextAttemptAt: null, updatedAt })
+        .mockResolvedValueOnce({ id: "older-sent" }); // reactivation path: a sibling was sent meanwhile
+
+      await expect(ensurePostLiveFollowupDelivery(followupInput(), at)).resolves.toEqual({
+        status: "already_sent",
+        deliveryId: "older-sent",
+        nextAttemptAt: null,
+      });
+      expect(mocks.db.emailDelivery.findFirst).toHaveBeenNthCalledWith(3, expect.objectContaining({
+        where: expect.objectContaining({
+          vendorId: "vendor-1",
+          sourceLiveId: "live-1",
+          sourceFormSubmissionId: "submission-1",
+          trigger: "post_live_followup",
+          idempotencyKey: { startsWith: "post-live-followup/rule-1/" },
+        }),
+      }));
+      expect(mocks.db.emailDelivery.updateMany.mock.calls.some(isReactivation)).toBe(false);
+    });
+
+    it("reactivates a superseded revision with a fresh payload when nothing under the rule was sent", async () => {
+      mocks.db.emailDelivery.findFirst
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce({ id: "email_existing", status: "superseded", nextAttemptAt: null, updatedAt })
+        .mockResolvedValueOnce(null);
+
+      await expect(ensurePostLiveFollowupDelivery(followupInput(), at)).resolves.toEqual({
+        status: "reactivated",
+        deliveryId: "email_existing",
+        nextAttemptAt: at,
+      });
+      const reactivation = mocks.db.emailDelivery.updateMany.mock.calls.find(isReactivation)?.[0];
+      expect(reactivation.where).toEqual({ id: "email_existing", vendorId: "vendor-1", status: "superseded", updatedAt });
+      expect(reactivation.data).toMatchObject({
+        status: "queued",
+        attemptCount: 0,
+        nextAttemptAt: at,
+        claimedAt: null,
+        failedAt: null,
+        lastErrorCode: null,
+        payloadEncryptedEnvelope: expect.any(String),
+      });
+    });
+
+    it("returns a plain duplicate for an existing revision that is not superseded", async () => {
+      mocks.db.emailDelivery.findFirst
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce({ id: "email_existing", status: "queued", nextAttemptAt: at, updatedAt });
+
+      await expect(ensurePostLiveFollowupDelivery(followupInput(), at)).resolves.toEqual({
+        status: "duplicate",
+        deliveryId: "email_existing",
+        deliveryStatus: "queued",
+        nextAttemptAt: at,
+      });
+      expect(mocks.db.emailDelivery.updateMany.mock.calls.some(isReactivation)).toBe(false);
+    });
+  });
+
   it("scans only active rules and same-vendor verified registrations with bounded batches", async () => {
     const template = { ...input.template, id: "followup-template-1", trigger: "post_live_followup" };
     mocks.db.liveNotificationRule.findMany.mockResolvedValue([{

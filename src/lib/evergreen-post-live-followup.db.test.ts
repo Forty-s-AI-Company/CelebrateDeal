@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { getDb } from "@/lib/db";
 import { isCurrentEmailDeliverySnapshot, processDuePostLiveFollowups } from "@/lib/email-delivery";
+import { createEmailRecipientHash, revealEmailDeliveryPayload } from "@/lib/email-delivery-pii";
 import { supersedeFixedTimeNotificationsForActiveEvergreen } from "@/lib/live-notification-delivery";
 
 /**
@@ -171,6 +172,7 @@ describe("evergreen post_live_followup disposable database integration", () => {
   });
 
   it("reactivates the superseded follow-up once evergreen is turned off again, ready to send", async () => {
+    const db = getDb();
     const { vendor, live, submission } = await createFixture({ isEvergreen: false });
     await processDuePostLiveFollowups({ now, vendorId: vendor.id });
     const [queued] = await followupDeliveries(vendor.id, live.id);
@@ -183,8 +185,10 @@ describe("evergreen post_live_followup disposable database integration", () => {
     await expect(processDuePostLiveFollowups({ now, vendorId: vendor.id }))
       .resolves.toEqual([{ status: "not_scheduled" }]);
 
-    // Off: the next run brings the same deterministic row back.
+    // Off: the next run brings the same deterministic row back. The name is
+    // not part of the revision id, so this proves the payload is rebuilt.
     await setEvergreen(vendor.id, live.id, false);
+    await db.formSubmission.update({ where: { id: submission.id }, data: { name: "Renamed Lead" } });
     const later = new Date(now.getTime() + 60_000);
     await expect(processDuePostLiveFollowups({ now: later, vendorId: vendor.id }))
       .resolves.toEqual([{ status: "reactivated" }]);
@@ -200,8 +204,12 @@ describe("evergreen post_live_followup disposable database integration", () => {
         nextAttemptAt: later,
       }),
     ]);
-    // The payload was re-encrypted, and the row passes the send-time guard.
-    expect(deliveries[0]!.payloadEncryptedEnvelope).not.toBe(queued!.payloadEncryptedEnvelope);
+    // The payload was rebuilt from current data, and the row passes the send-time guard.
+    const before = revealEmailDeliveryPayload(queued!.payloadEncryptedEnvelope, { vendorId: vendor.id, deliveryId: queued!.id });
+    const after = revealEmailDeliveryPayload(deliveries[0]!.payloadEncryptedEnvelope, { vendorId: vendor.id, deliveryId: queued!.id });
+    expect(before.body).toContain("謝謝 Evergreen Lead 參加。");
+    expect(after.body).toContain("謝謝 Renamed Lead 參加。");
+    expect(after.body).not.toContain("Evergreen Lead");
     await expect(isCurrentEmailDeliverySnapshot(deliveries[0]!, later)).resolves.toBe(true);
 
     // A further run is a plain duplicate, not another reactivation.
@@ -209,7 +217,10 @@ describe("evergreen post_live_followup disposable database integration", () => {
       .resolves.toEqual([{ status: "duplicate" }]);
   });
 
-  it("never re-sends a follow-up that was already sent before the on/off round trip", async () => {
+  // The next two cases stop in the create path's already_sent check, before
+  // the unique conflict that leads to reactivation; the reactivation path's
+  // own check is covered by the unit tests in email-delivery.test.ts.
+  it("returns already_sent from the create path for a follow-up sent before the on/off round trip", async () => {
     const db = getDb();
     const { vendor, live } = await createFixture({ isEvergreen: false });
     await processDuePostLiveFollowups({ now, vendorId: vendor.id });
@@ -231,7 +242,7 @@ describe("evergreen post_live_followup disposable database integration", () => {
     ]);
   });
 
-  it("does not reactivate a superseded revision when another revision of the same rule was sent", async () => {
+  it("returns already_sent from the create path, leaving a superseded revision alone, when another revision of the same rule was sent", async () => {
     const db = getDb();
     const { vendor, live } = await createFixture({ isEvergreen: false });
     await processDuePostLiveFollowups({ now, vendorId: vendor.id });
@@ -265,6 +276,77 @@ describe("evergreen post_live_followup disposable database integration", () => {
       .resolves.toEqual([{ status: "already_sent" }]);
     await expect(db.emailDelivery.findUniqueOrThrow({ where: { id: queued!.id }, select: { status: true } }))
       .resolves.toEqual({ status: "superseded" });
+  });
+
+  it("reactivates revision A and supersedes revision B when a template edit A -> B -> A is reverted, leaving one sendable row", async () => {
+    const db = getDb();
+    const { vendor, live } = await createFixture({ isEvergreen: false });
+    const template = await db.messageTemplate.findFirstOrThrow({ where: { vendorId: vendor.id, trigger: "post_live_followup" } });
+    const originalSubject = template.subject!;
+
+    await expect(processDuePostLiveFollowups({ now, vendorId: vendor.id })).resolves.toEqual([{ status: "queued" }]);
+    const [revisionA] = await followupDeliveries(vendor.id, live.id);
+
+    // A -> B: B is a new revision of the same rule; A is superseded.
+    await db.messageTemplate.updateMany({ where: { id: template.id, vendorId: vendor.id }, data: { subject: `${originalSubject}（更新）` } });
+    await expect(processDuePostLiveFollowups({ now, vendorId: vendor.id })).resolves.toEqual([{ status: "queued" }]);
+    const afterB = await followupDeliveries(vendor.id, live.id);
+    const revisionB = afterB.find((delivery) => delivery.id !== revisionA!.id)!;
+    expect(revisionB.idempotencyKey.slice(0, -revisionB.id.length)).toBe(revisionA!.idempotencyKey.slice(0, -revisionA!.id.length));
+    expect(afterB).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: revisionA!.id, status: "superseded" }),
+      expect.objectContaining({ id: revisionB.id, status: "queued" }),
+    ]));
+
+    // B -> A: A comes back and B is superseded, so exactly one row can be sent.
+    await db.messageTemplate.updateMany({ where: { id: template.id, vendorId: vendor.id }, data: { subject: originalSubject } });
+    await expect(processDuePostLiveFollowups({ now, vendorId: vendor.id })).resolves.toEqual([{ status: "reactivated" }]);
+    const afterRevert = await followupDeliveries(vendor.id, live.id);
+    expect(afterRevert).toHaveLength(2);
+    expect(afterRevert).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: revisionA!.id, status: "queued" }),
+      expect.objectContaining({ id: revisionB.id, status: "superseded", lastErrorCode: "config_superseded" }),
+    ]));
+    const sendable = [];
+    for (const delivery of afterRevert) {
+      if (delivery.status === "queued" && await isCurrentEmailDeliverySnapshot(delivery, now)) sendable.push(delivery.id);
+    }
+    expect(sendable).toEqual([revisionA!.id]);
+  });
+
+  it.each([
+    ["an unsubscribe", "recipient_suppressed"],
+    ["a vendor blacklist entry", "recipient_blacklisted"],
+  ] as const)("reactivates as suppressed when the recipient now has %s", async (_label, lastErrorCode) => {
+    const db = getDb();
+    const { vendor, live, submission } = await createFixture({ isEvergreen: false });
+    await processDuePostLiveFollowups({ now, vendorId: vendor.id });
+    const [queued] = await followupDeliveries(vendor.id, live.id);
+    await setEvergreen(vendor.id, live.id, true);
+    await expect(supersedeFixedTimeNotificationsForActiveEvergreen({ vendorId: vendor.id, liveId: live.id }, now))
+      .resolves.toBe(1);
+
+    if (lastErrorCode === "recipient_suppressed") {
+      await db.emailSuppression.create({
+        data: {
+          vendorId: vendor.id,
+          recipientHash: createEmailRecipientHash(submission.email, vendor.id),
+          recipientMaskedEmail: "l***@example.test",
+          reason: "unsubscribe",
+          source: "disposable-test",
+        },
+      });
+    } else {
+      await db.blacklist.create({
+        data: { vendorId: vendor.id, identifier: submission.email.toLowerCase(), identifierType: "email", reason: "disposable-test" },
+      });
+    }
+    await setEvergreen(vendor.id, live.id, false);
+
+    await expect(processDuePostLiveFollowups({ now, vendorId: vendor.id })).resolves.toEqual([{ status: "suppressed" }]);
+    await expect(followupDeliveries(vendor.id, live.id)).resolves.toEqual([
+      expect.objectContaining({ id: queued!.id, status: "suppressed", lastErrorCode, nextAttemptAt: null }),
+    ]);
   });
 
   it("keeps an ended Live's follow-up when the evergreen flag is set on it (evergreen is not active)", async () => {
