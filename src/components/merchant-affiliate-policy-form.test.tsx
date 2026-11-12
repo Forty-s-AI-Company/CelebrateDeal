@@ -147,6 +147,22 @@ describe("欄位層級錯誤", () => {
     expect(container.querySelector("[data-form-error-summary]")!.textContent).toContain("佣金總比例上限：最高直接佣金 10% 加上線合計 95.01%，超過上限 100%。");
   });
 
+  it("摘要的每一則錯誤都是連到那一列欄位的連結，點擊後聚焦該欄位", async () => {
+    await render({ ...baseTerms, tiers: [{ minQuantity: 1, maxQuantity: 10, rateBps: 1000 }, { minQuantity: 11, maxQuantity: null, rateBps: 1500 }] });
+    await setValue(control("tierStart-1"), "12");
+    await setValue(control("uplineRate-0"), "150");
+    await submit();
+    const links = [...container.querySelectorAll<HTMLAnchorElement>("[data-form-error-summary] a[data-field-link]")];
+    expect(links.map(link => [link.getAttribute("href"), link.textContent])).toEqual([
+      ["#policy-field-tierStart-1", "第 2 階起始件數：要接續上一階，填 11。"],
+      ["#policy-field-uplineRate-0", "第 1 層佣金：請填 0 到 100 的數字，最多兩位小數。"],
+    ]);
+    for (const link of links) expect(container.querySelector(link.getAttribute("href")!)).toBe(control(link.getAttribute("data-field-link")!));
+    expect(document.activeElement).toBe(control("tierStart-1"));
+    await act(async () => { links[1]!.click(); });
+    expect(document.activeElement).toBe(control("uplineRate-0"));
+  });
+
   it("瀏覽器原生驗證擋下時（不會觸發 submit）同樣標出欄位與摘要，焦點交給瀏覽器", async () => {
     await render();
     await setValue(control("tierRate-0"), "12.345");

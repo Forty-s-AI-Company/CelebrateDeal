@@ -51,7 +51,11 @@ describe("bpsToPercentText", () => {
     }
   });
 
-  it.each([-1, 100_000, 1.5, Number.NaN])("拒絕 %d", (bps) => {
+  it("超過 99999 仍照位數換算（商品表單會把伺服器的原值顯示回去）", () => {
+    expect(bpsToPercentText(123_456)).toBe("1234.56");
+  });
+
+  it.each([-1, 1.5, Number.NaN, Number.MAX_SAFE_INTEGER + 1])("拒絕 %d", (bps) => {
     expect(() => bpsToPercentText(bps)).toThrow(RangeError);
   });
 });

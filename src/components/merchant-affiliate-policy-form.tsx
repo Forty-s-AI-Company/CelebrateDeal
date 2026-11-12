@@ -11,6 +11,9 @@ import {
 } from "@/lib/merchant-affiliate-policy-draft";
 
 const subscribeNever = () => () => {};
+/** 欄位鍵只由 `validatePolicyDraft` 產生（英數與連字號）；摘要連結以它當錨點。 */
+const SAFE_FIELD_KEY = /^[A-Za-z0-9-]+$/u;
+const policyControlId = (fieldKey: string) => `policy-field-${fieldKey}`;
 const inputBase = "min-h-11 w-full rounded border px-3 py-2";
 /** 商品佣金超過這個數量才顯示篩選。 */
 const OVERRIDE_FILTER_THRESHOLD = 6;
@@ -35,7 +38,7 @@ function PercentField({ label, name, fieldKey, value, onChange, error, hint, edi
   return <div className="grid gap-1.5">
     <label className="grid gap-1 text-sm font-medium text-slate-800">{label}
       <input className={`${inputBase} ${field.controlClass}`} type="text" inputMode="decimal" autoComplete="off" required pattern={PERCENT_INPUT_PATTERN}
-        readOnly={!editable} value={value} onChange={event => onChange(event.target.value)} data-policy-field={fieldKey} {...field.controlProps} />
+        readOnly={!editable} value={value} onChange={event => onChange(event.target.value)} id={policyControlId(fieldKey)} data-policy-field={fieldKey} {...field.controlProps} />
     </label>
     {field.messages}
     <input type="hidden" name={name} value={percentTextToPercentWire(value)} />
@@ -50,7 +53,7 @@ function QuantityField({ label, name, fieldKey, value, onChange, error, required
   return <div className="grid gap-1.5">
     <label className="grid gap-1 text-sm font-medium text-slate-800">{label}
       <input className={`${inputBase} ${field.controlClass}`} name={name} type="number" min="1" step="1" required={required} value={value}
-        onChange={event => onChange(event.target.value)} data-policy-field={fieldKey} {...field.controlProps} />
+        onChange={event => onChange(event.target.value)} id={policyControlId(fieldKey)} data-policy-field={fieldKey} {...field.controlProps} />
     </label>
     {field.messages}
   </div>;
@@ -93,6 +96,13 @@ export function MerchantAffiliatePolicyForm({ initial, revision, csrfToken, csrf
   useEffect(() => { if (blocked?.focus) focusFirstInvalidField(formRef.current); }, [blocked]);
   // 伺服器退回時，等欄位恢復可編輯（pending 結束）後聚焦第一個錯誤欄位；沒有可定位的欄位就聚焦摘要。
   useEffect(() => { if (serverError && !pending) focusFirstInvalidField(formRef.current); }, [serverError, pending, state]);
+
+  /** 摘要裡的連結：聚焦那一列的欄位（瀏覽器會捲到它）；欄位停用（送出中）時不動。 */
+  function focusField(key: string) {
+    if (!SAFE_FIELD_KEY.test(key)) return;
+    const control = formRef.current?.querySelector<HTMLElement>(`[data-policy-field="${key}"]`);
+    if (control && !control.matches(":disabled")) control.focus();
+  }
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     const submitter = (event.nativeEvent as SubmitEvent).submitter;
@@ -143,7 +153,7 @@ export function MerchantAffiliatePolicyForm({ initial, revision, csrfToken, csrf
       <form ref={formRef} key={state.revision ?? revision} action={action} onSubmit={handleSubmit} onInvalidCapture={handleInvalid} className="grid gap-8 rounded-xl border border-slate-200 bg-white p-5">
         <input type="hidden" name={csrfFieldName} value={csrfToken} />
         <input type="hidden" name="expectedRevision" value={state.revision ?? revision} />
-        <FormErrorSummary message={summaryMessage} errors={summaryErrors} />
+        <FormErrorSummary message={summaryMessage} errors={summaryErrors} fieldHref={key => SAFE_FIELD_KEY.test(key) ? `#${policyControlId(key)}` : undefined} onFieldSelect={focusField} />
         {hydrated ? null : <p data-policy-loading="" className="text-sm text-slate-600">頁面載入完成後才能修改佣金比例。</p>}
         <fieldset disabled={pending} className="grid gap-8">
           <Section id="policy-cap" title="佣金總比例上限" description="直接佣金最高的一階（或商品）加上所有上線層級，合計不可超過這個比例。">
@@ -215,7 +225,7 @@ function OverrideRow({ index, uiId, hidden, productId, ratePercent, products, ed
   return <li hidden={hidden} data-policy-row={`override-${uiId}`} className="grid gap-3 rounded-md border border-slate-200 p-3 sm:grid-cols-[2fr_1fr_auto]">
     <div className="grid gap-1.5">
       <label className="grid gap-1 text-sm font-medium text-slate-800">佣金商品 {index + 1}
-        <select name="overrideProduct" className={`${inputBase} ${field.controlClass}`} required value={productId} onChange={event => onProduct(event.target.value)} data-policy-field={policyFieldKey.overrideProduct(uiId)} {...field.controlProps}>
+        <select name="overrideProduct" className={`${inputBase} ${field.controlClass}`} required value={productId} onChange={event => onProduct(event.target.value)} id={policyControlId(policyFieldKey.overrideProduct(uiId))} data-policy-field={policyFieldKey.overrideProduct(uiId)} {...field.controlProps}>
           <option value="">選擇商品</option>
           {products.map(product => <option key={product.id} value={product.id}>{product.name}</option>)}
         </select>
