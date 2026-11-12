@@ -55,6 +55,7 @@ bash scripts/validate-local.sh
 - 目前 revision 進度、QA 與評分：[Codex Goal](docs/codex-goal/README.md)
 - 團隊展業 Epic 稽核與交接：[Team Funnel Replication Audit](docs/team-funnel-replication.md)
 - 正式環境與上線：[Production Infrastructure Plan](docs/production-infrastructure-plan.md)、[Production Go-live Checklist](docs/production-go-live-checklist.md)
+- AI 助理評測集：[AI 助理繁中評測集 v1](docs/ai/eval/README.md)
 - Cloudflare：[Cloudflare Stream Dashboard Checklist](docs/cloudflare-stream-dashboard-checklist.md)
 - 付款：[PayUni Sandbox Checkout Runbook](docs/payuni-sandbox-checkout-runbook.md)
 - 安全性：[Admin MFA Hardening Plan](docs/admin-mfa-hardening-plan.md)、[Production Rate Limit Runbook](docs/production-rate-limit-runbook.md)
