@@ -104,7 +104,7 @@ vi.mock("next/headers", () => ({
 }));
 vi.mock("next/cache", () => ({ revalidatePath: () => undefined, revalidateTag: () => undefined }));
 
-const ALL_GRANTS = ["courses", "billing", "funnel_binding", "consultation_booking", "browser_live", "danmaku"];
+const ALL_GRANTS = ["courses", "billing", "funnel_binding", "consultation_booking", "browser_live", "danmaku", "email_sequences"];
 
 function closeModule(feature: string) {
   state.vendor.enabledFeatureModules = ["funnel_builder", "live_webinar", "affiliate_program", "tax_remuneration", "analytics_advanced", "consultation_booking"];
@@ -172,6 +172,13 @@ const ENTRIES: Entry[] = [
   { feature: "browser_live", kind: "page", name: "/lives/[id]/presenter", run: async () => (await import("@/app/(app)/lives/[id]/presenter/page")).default({ params: Promise.resolve({ id: "live-1" }) }) },
   // danmaku (no Server Action exists; the page-level gate is the studio prop, covered in live-interaction-studio.test.tsx)
   { feature: "danmaku", kind: "route", name: "GET /api/live-danmaku/scripted", run: async () => (await import("@/app/api/live-danmaku/scripted/route")).GET(jsonRequest("https://app.example.test/api/live-danmaku/scripted?liveId=live-1")) },
+  // email_sequences (F-3; no route handler: the job and the verify route check the grant per vendor in delayed-step-runs.ts)
+  { feature: "email_sequences", kind: "action", name: "saveEmailSequenceAction", run: async () => (await import("@/app/actions/email-sequence-actions")).saveEmailSequenceAction(
+    { status: "idle", message: null, fieldErrors: {}, draft: null, expectedVersion: null, errorVersion: 0 },
+    form({ name: "序列", liveId: "live-1", stepCount: "1", "steps.0.delayValue": "1", "steps.0.delayUnit": "days", "steps.0.messageTemplateId": "template-1", "steps.0.isActive": "on" }),
+  ) },
+  { feature: "email_sequences", kind: "action", name: "activateEmailSequenceAction", run: async () => (await import("@/app/actions/email-sequence-actions")).activateEmailSequenceAction(form({ sequenceId: "seq-1", expectedVersion: "1" })) },
+  { feature: "email_sequences", kind: "page", name: "/messages/sequences", run: async () => (await import("@/app/(app)/messages/sequences/page")).default({ searchParams: Promise.resolve({}) }) },
   { feature: "danmaku", kind: "route", name: "GET /api/live-danmaku (viewer)", run: async () => (await import("@/app/api/live-danmaku/route")).GET(jsonRequest("https://app.example.test/api/live-danmaku?vendorId=vendor-1&liveId=live-1", { headers: { cookie: "celebratedeal_live_viewer=" + "a".repeat(43) } })) },
 ];
 
@@ -187,6 +194,7 @@ describe("closed-beta module × entry matrix (F-001 / F-002)", () => {
     expect([...kinds("funnel_binding")].sort()).toEqual(["action", "page"]);
     expect([...kinds("browser_live")].sort()).toEqual(["page", "route"]);
     expect([...kinds("danmaku")]).toEqual(["route"]);
+    expect([...kinds("email_sequences")].sort()).toEqual(["action", "page"]);
   });
 
   it.each(ENTRIES)("$feature $kind $name is blocked while the module is closed", async (entry) => {
@@ -279,6 +287,10 @@ const STATIC_MATRIX: Array<{ feature: string; file: string; gate: RegExp; count?
   { feature: "danmaku", file: "src/app/api/live-danmaku/route.ts", gate: /featureGateResponse\(auth\.vendor, "danmaku"\)|isVendorFeatureEnabled\(getDb\(\), vendorId, "danmaku"\)/gu, count: 2 },
   { feature: "danmaku", file: "src/app/api/live-danmaku/scripted/route.ts", gate: /featureGateResponse\(auth\.vendor, "danmaku"\)/u },
   { feature: "danmaku", file: "src/app/(app)/lives/[id]/edit/page.tsx", gate: /danmakuEnabled=\{isFeatureEnabled\(vendor, "danmaku"\)\}/u },
+  // email_sequences (F-3): pages, Server Actions, and the per-vendor check of enrollment, backfill and worker
+  ...["page.tsx", "new/page.tsx", "[id]/edit/page.tsx"].map((file) => ({ feature: "email_sequences", file: `src/app/(app)/messages/sequences/${file}`, gate: /requireFeatureOrNotFound\(vendor, "email_sequences"\)/u })),
+  { feature: "email_sequences", file: "src/app/actions/email-sequence-actions.ts", gate: /requireFeature\(vendor, "email_sequences"\)/u },
+  { feature: "email_sequences", file: "src/lib/delayed-step-runs.ts", gate: /isFeatureEnabled\(vendor, EMAIL_SEQUENCES_FEATURE\)|betaFeatureGrants: \{ has: EMAIL_SEQUENCES_FEATURE \}|\$\{EMAIL_SEQUENCES_FEATURE\} = ANY\(v\."betaFeatureGrants"\)/gu, count: 3 },
 ];
 
 describe("static gate inventory (F-001 / F-002)", () => {

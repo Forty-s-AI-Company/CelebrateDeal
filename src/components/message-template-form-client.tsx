@@ -41,10 +41,12 @@ export function MessageTemplateFormClient({
   template,
   initialError = null,
   csrfField,
+  sequenceEmailAvailable = false,
 }: {
   template?: MessageTemplateFormTemplate;
   initialError?: MessageTemplateActionError | null;
   csrfField: ReactNode;
+  sequenceEmailAvailable?: boolean;
 }) {
   const initialState = initialError
     ? { ...initialMessageTemplateActionState, status: "error" as const, error: initialError }
@@ -54,6 +56,8 @@ export function MessageTemplateFormClient({
   const recoverAsNew = state.error === "missing_template";
   const expectedUpdatedAt = state.expectedUpdatedAt ?? template?.updatedAt ?? null;
   const message = errorMessage(state.error);
+  // An existing sequence template keeps its trigger visible even if the grant was closed again.
+  const showSequenceEmail = sequenceEmailAvailable || draft.trigger === "sequence_email";
 
   return (
     <form key={state.version} action={formAction} aria-busy={pending} className="grid gap-4">
@@ -76,6 +80,7 @@ export function MessageTemplateFormClient({
           <option value="registration_confirmed">報名成功</option>
           <option value="live_reminder">開播提醒</option>
           <option value="post_live_followup">課後通知</option>
+          {showSequenceEmail ? <option value="sequence_email">追銷序列信</option> : null}
           <option value="cart_followup" disabled>購買追蹤（購物車事件尚未接通）</option>
         </SelectField>
       </div>
@@ -99,6 +104,9 @@ export function MessageTemplateFormClient({
           {MESSAGE_TEMPLATE_VARIABLES.map(messageTemplateVariableLabel).join(" · ")}
         </p>
         <p className="mt-2 text-xs text-blue-700">報名成功、開播提醒與課後通知會自動附上退訂連結；購買追蹤、SMS、LINE 在事件來源或串接服務完成前保持停用。</p>
+        {showSequenceEmail ? (
+          <p className="mt-2 text-xs text-blue-700">「追銷序列信」是報名後依序寄出的行銷信，在「Email 追銷序列」頁排進序列才會寄，一定會附退訂連結。{"{{live_start_at}}"} 依報名者自己的場次顯示。</p>
+        ) : null}
       </div>
       <label className="flex items-center gap-2 text-sm font-medium text-slate-700">
         <input name="isActive" type="checkbox" defaultChecked={draft.isActive} className="h-4 w-4 accent-blue-600" />

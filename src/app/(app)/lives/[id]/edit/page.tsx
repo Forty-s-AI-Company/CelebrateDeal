@@ -2,7 +2,7 @@ import { notFound } from "next/navigation";
 import { LiveStepperForm } from "@/components/live-stepper-form";
 import { LiveInteractionStudio } from "@/components/live-interaction-studio";
 import { EvergreenWebinarSettings, type EvergreenWebinarSettingsValue } from "@/components/evergreen-webinar-settings";
-import { PageHeader } from "@/components/ui";
+import { ButtonLink, PageHeader } from "@/components/ui";
 import { requireVendorManagerContext } from "@/lib/auth";
 import { isFeatureEnabled } from "@/lib/feature-gates";
 import { getCsrfToken } from "@/lib/csrf";
@@ -396,7 +396,14 @@ export default async function EditLivePage({
 
   return (
     <>
-      <PageHeader title="編輯直播間" description={`用同一套 ${liveStudioStepSummary()}調整內容；草稿與公開狀態分開儲存。`} />
+      <PageHeader
+        title="編輯直播間"
+        description={`用同一套 ${liveStudioStepSummary()}調整內容；草稿與公開狀態分開儲存。`}
+        action={isFeatureEnabled(vendor, "email_sequences") ? (
+          // F-3: the sequences of this Live (closed beta, only with the grant).
+          <ButtonLink href={`/messages/sequences?liveId=${encodeURIComponent(live.id)}`} tone="secondary">報名後追銷序列</ButtonLink>
+        ) : undefined}
+      />
       {notice === "reminders_reconciling" ? (
         <p role="status" aria-live="polite" className="mb-4 rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-950">
           直播設定已儲存。系統正在分批更新已驗證報名者的開播提醒，寄送紀錄會保留最新排程與被取代版本。

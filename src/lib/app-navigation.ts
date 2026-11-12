@@ -1,6 +1,6 @@
 import {
   Activity, Ban, Banknote, BarChart3, Bell, Bot, Boxes, Building2, CalendarCheck, ClipboardList, Cloud, Coins, CreditCard, DoorOpen, FileText, FlaskConical, Gauge,
-  GitCompareArrows, Globe, GraduationCap, Handshake, Headphones, Landmark, LayoutTemplate, LifeBuoy, Lock, MessageSquareText, PackageCheck, Palette, PlaySquare,
+  GitCompareArrows, Globe, GraduationCap, Handshake, Headphones, Landmark, LayoutTemplate, LifeBuoy, Lock, MailPlus, MessageSquareText, PackageCheck, Palette, PlaySquare,
   Radio, ReceiptText, Rocket, ScrollText, Send, Settings2, Shield, ShieldAlert, Tags, Target, TextCursorInput, ToggleRight, UserPlus, Users, UsersRound,
   WalletCards, Webhook, Workflow, type LucideIcon,
 } from "lucide-react";
@@ -133,6 +133,7 @@ const operationalGroups: NavGroup[] = [
     items: [
       { href: "/messages/templates", label: "訊息模板", icon: MessageSquareText, managerOnly: true },
       { href: "/messages/deliveries", label: "寄送管理", icon: Send, managerOnly: true },
+      { href: "/messages/sequences", label: "追銷序列", icon: MailPlus, managerOnly: true, feature: "email_sequences" },
       { href: "/interaction-scripts", label: "互動腳本", icon: ScrollText, managerOnly: true, feature: "live_webinar" },
       { href: "/interaction-roles", label: "互動角色", icon: Bot, managerOnly: true, feature: "live_webinar" },
       { href: "/blacklists", label: "封鎖名單", icon: Ban, managerOnly: true },
