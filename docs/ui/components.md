@@ -160,4 +160,6 @@ useEffect(() => { if (errorVersion) focusFirstInvalidField(formRef.current); }, 
 
 - 欄位錯誤：[merchant-affiliate-policy-draft.ts](../../src/lib/merchant-affiliate-policy-draft.ts) 的 `validatePolicyDraft` 依伺服器規則逐欄定位（第幾階、第幾層、哪一列商品、總上限），測試以大量隨機草稿比對它與伺服器解析的結果一致。發布前有錯就不送出，`FormErrorSummary` 的連結直接聚焦那一列的欄位。
 - 試算：直接呼叫伺服器結算用的 `calculateMerchantAffiliatePlan`，捨入完全相同；試算放在 `<form>` 外，輸入都沒有 `name`。畫面標示「僅供估算，實際依結算為準」（實際依每筆付款、團隊關係與退款計算）。
-- 商品佣金篩選：只用 `hidden` 隱藏列，欄位仍一起送出；有錯誤或選單裡找不到商品的列一律顯示，避免看不到的必填欄位擋住送出。
+- 商品佣金篩選：只用 `hidden` 隱藏列，欄位仍一起送出；有錯誤或選單裡找不到商品的列一律顯示，避免看不到的必填欄位擋住送出。篩選框在 `<form>` 內，按 Enter 只篩選、不隱式送出。
+- hydrate 前：比例輸入框與件數欄位 `readOnly`、商品選單停用（商品由隱藏欄位送出），避免 hydrate 時 React 把先改的值還原而發布舊設定。
+- 「暫停」按鈕以 `onClick` 標記，暫停時不檢查政策內容；件數欄位的 `validity.badInput` 與已刪除的商品也會列在摘要。
