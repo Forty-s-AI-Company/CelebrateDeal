@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { expect, test } from "@playwright/test";
 import { PrismaClient } from "@prisma/client";
+import { createFormSubmissionChatSessionToken, FORM_SUBMISSION_CHAT_SESSION_COOKIE } from "../../src/lib/form-submission-chat-session";
 
 /**
  * Evergreen (常青) Webinar public watch page on synthetic loopback data:
@@ -351,4 +352,60 @@ test("opens playback for a recurring-daily session that has already started", as
   await page.reload();
   await expect(page.getByText("預錄場次播放中")).toBeVisible();
   expect((await evergreenCookie(context))?.value).toBe(cookie?.value);
+});
+
+test("records a verified registrant's existing session once their registration cookie arrives (F-2)", async ({ page, context, baseURL }) => {
+  // Unique per run, so --repeat-each never collides on the global slug or the registration.
+  const recordId = randomUUID();
+  const slug = `evergreen-record-${recordId}`;
+  // A daily session two hours ahead: the page stays in the waiting room for the whole test.
+  const liveId = await createLive(slug, "recurring_daily");
+  await setDailyTimes(liveId, [120]);
+  const submission = await db.formSubmission.create({
+    data: {
+      formId: fixture.formId,
+      liveId,
+      name: "Evergreen Registrant",
+      email: `evergreen-registrant-${recordId}@example.test`,
+      verificationStatus: "VERIFIED",
+      verifiedAt: new Date(),
+    },
+  });
+  const claims: string[] = [];
+  page.on("request", (request) => {
+    if (request.method() === "POST" && new URL(request.url()).pathname === "/api/live-evergreen-session") claims.push(request.url());
+  });
+
+  // First visit without a registration cookie: a session is claimed, nothing is recorded.
+  await page.goto(`/live/${slug}`);
+  await expect(page.getByTestId("live-waiting-room")).toContainText("你的場次：");
+  expect(await page.content()).not.toContain("recordRegistration");
+  await expect.poll(async () => (await evergreenCookie(context))?.value ?? "").toMatch(/^eg1\./u);
+  const cookie = await evergreenCookie(context);
+  await expect.poll(() => claims.length).toBe(1);
+  expect(await db.evergreenSessionAssignment.count({ where: { vendorId: fixture.vendorId, liveId } })).toBe(0);
+
+  // The same browser later holds the signed registration cookie (as after verifying).
+  await context.addCookies([{
+    name: FORM_SUBMISSION_CHAT_SESSION_COOKIE,
+    value: createFormSubmissionChatSessionToken({ submissionId: submission.id }),
+    url: baseURL!,
+  }]);
+  await page.reload();
+  await expect(page.getByTestId("live-waiting-room")).toBeVisible();
+  // The server flagged this render: the flag is in the page payload.
+  expect(await page.content()).toContain("recordRegistration");
+  await expect.poll(() => db.evergreenSessionAssignment.count({ where: { vendorId: fixture.vendorId, liveId, formSubmissionId: submission.id } })).toBe(1);
+  const session = await readSession(context, baseURL!, liveId);
+  const recorded = await db.evergreenSessionAssignment.findFirstOrThrow({ where: { vendorId: fixture.vendorId, liveId, formSubmissionId: submission.id } });
+  // The existing session is kept (same cookie) and is the one recorded.
+  expect((await evergreenCookie(context))?.value).toBe(cookie?.value);
+  expect(recorded.sessionStartAt.toISOString()).toBe(session.sessionStartAt);
+  expect(claims).toHaveLength(2);
+
+  // Once recorded, the server no longer flags the page, so nothing asks for another claim.
+  await page.reload();
+  await expect(page.getByTestId("live-waiting-room")).toBeVisible();
+  expect(await page.content()).not.toContain("recordRegistration");
+  expect(claims).toHaveLength(2);
 });

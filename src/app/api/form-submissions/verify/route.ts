@@ -21,7 +21,9 @@ import {
   EVERGREEN_NEUTRAL_START_TEXT,
   evergreenRegistrationStartText,
   evergreenSessionTokenFromRequest,
+  resolveEvergreenViewerSession,
 } from "@/lib/evergreen-viewer-session";
+import { recordEvergreenSessionForRegistrant } from "@/lib/evergreen-session-assignment";
 import { captureTrackingBrowserContext } from "@/lib/tracking-browser-context";
 import { captureOperationalError } from "@/lib/monitoring";
 import { checkRateLimit } from "@/lib/rate-limit";
@@ -103,6 +105,46 @@ async function releaseSeatOfExpiredLink(token: string) {
   }
 }
 
+/**
+ * A visitor who opened the evergreen viewer page before verifying already
+ * holds a signed session cookie: record that session for the now-VERIFIED
+ * registration so the post-live follow-up follows it. Nothing is recorded
+ * without that cookie, or for a merchant anchor (shared start), whose
+ * follow-up uses the current anchor for every verified registrant. Never
+ * fails the verified result.
+ */
+async function recordVerifiedEvergreenSession(
+  request: Request,
+  evergreen: NonNullable<VerifiedConfirmation["evergreen"]>,
+  submissionId: string,
+) {
+  const now = new Date();
+  let session: ReturnType<typeof resolveEvergreenViewerSession> = null;
+  try {
+    session = resolveEvergreenViewerSession({
+      live: evergreen.live,
+      vendorTimezone: evergreen.vendorTimezone,
+      token: evergreenSessionTokenFromRequest(request, evergreen.live.id),
+      intent: "read",
+      now,
+    });
+  } catch (error) {
+    try {
+      captureOperationalError(error, { source: "form_submission_verification", operation: "evergreen_session_resolve", status: "failed" });
+    } catch {
+      // Monitoring cannot change the verified result.
+    }
+    return;
+  }
+  await recordEvergreenSessionForRegistrant({
+    live: evergreen.live,
+    session,
+    registration: { submissionId },
+    now,
+    operation: "verification",
+  });
+}
+
 // Confirmation and due reminder emails are sent by `after()` within this
 // limit (see IMMEDIATE_EMAIL_DISPATCH_MAX_DURATION_SECONDS).
 export const maxDuration = 60;
@@ -181,6 +223,7 @@ export async function POST(request: Request) {
           // Monitoring cannot change the verified result.
         }
       }
+      await recordVerifiedEvergreenSession(request, evergreen, confirmation.formSubmissionId);
     }
     const sendNow: string[] = [];
     try {

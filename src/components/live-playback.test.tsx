@@ -1962,6 +1962,34 @@ describe("LivePlayback evergreen session", () => {
     expect(navigation.refresh).toHaveBeenCalled();
   });
 
+  it("re-claims once, without re-rendering, when the server flags an unrecorded verified registration", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true });
+    stubBrowser(fetchMock);
+    const flagged = { status: "scheduled", runtimeState: "waiting" as const, admissionRequired: true, evergreen: evergreenData(60_000, { recordRegistration: true }) };
+
+    renderLive(flagged);
+    await flushHookEffects();
+    await settle();
+    expect(fetchMock).toHaveBeenCalledExactlyOnceWith("/api/live-evergreen-session", expect.objectContaining({ method: "POST" }));
+    expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toEqual({ vendorId: live.vendorId, liveId: live.id, intent: "claim" });
+    expect(navigation.refresh).not.toHaveBeenCalled();
+
+    // The same session is never claimed twice from this page.
+    renderLive(flagged);
+    await flushHookEffects();
+    await settle();
+    expect(fetchMock).toHaveBeenCalledOnce();
+  });
+
+  it("does not claim for an assigned session the server did not flag", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true });
+    stubBrowser(fetchMock);
+    renderLive({ status: "scheduled", runtimeState: "waiting" as const, admissionRequired: true, evergreen: evergreenData(60_000) });
+    await flushHookEffects();
+    await settle();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   it("offers an ended visitor the next session through the server", async () => {
     const fetchMock = vi.fn().mockResolvedValue({ ok: true });
     stubBrowser(fetchMock);

@@ -220,6 +220,24 @@ describe("POST /api/jobs/email-deliveries", () => {
     });
     expect(JSON.stringify(await response.json())).not.toContain("serialization-private-detail");
   });
+
+  it("does not let a failing post-live follow-up pass abort the rest of the round", async () => {
+    mocks.processDuePostLiveFollowups.mockRejectedValueOnce(new Error("followup-private-detail"));
+    mocks.processDueEmailDeliveries.mockResolvedValue([{ deliveryId: "private-due", status: "sent" }]);
+    const response = await POST(request("g7-07-job-secret"));
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body).toMatchObject({ ok: true, followups: 0, followupResults: [], processed: 1, results: [{ status: "sent" }] });
+    expect(mocks.processDueEmailDeliveries).toHaveBeenCalledOnce();
+    expect(mocks.processDueLineDeliveries).toHaveBeenCalledOnce();
+    expect(mocks.processDueLearnerNotifications).toHaveBeenCalledOnce();
+    expect(mocks.captureOperationalError).toHaveBeenCalledWith(expect.any(Error), {
+      source: "email_delivery_job",
+      operation: "post_live_followups",
+      status: "failed",
+    });
+    expect(JSON.stringify(body)).not.toContain("followup-private-detail");
+  });
 });
 
 describe("GET /api/jobs/email-deliveries", () => {
