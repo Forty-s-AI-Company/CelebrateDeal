@@ -61,7 +61,9 @@ export async function getStudentCourse(db: CourseLearningStore, scope: StudentPo
   const lessons = (await db.courseLesson.findMany({
     where: { vendorId: scope.vendorId, productId: courseId, publishedAt: { not: null } },
     orderBy: [{ position: "asc" }, { id: "asc" }],
-    select: { id: true, chapterTitle: true, title: true, videoUrl: true, durationSeconds: true, position: true },
+    // The chapter relation's FK includes vendorId and productId, so the joined
+    // chapter is always this vendor's chapter of this course.
+    select: { id: true, chapterTitle: true, chapter: { select: { id: true, title: true } }, title: true, videoUrl: true, durationSeconds: true, position: true },
   })).map((lesson) => ({ ...lesson, videoUrl: safePublicVideoUrl(lesson.videoUrl) }));
   const progress = await db.courseLessonProgress.findMany({
     where: { vendorId: scope.vendorId, productId: courseId, customerKeyHash: scope.customerKeyHash },
