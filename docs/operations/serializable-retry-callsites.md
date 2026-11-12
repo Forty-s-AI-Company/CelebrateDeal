@@ -144,7 +144,7 @@ npm run db:migrate:deploy && npm run test:db:stress
 
 ### B-2 修正後（`ai/checkout-stock-version`）
 
-做法：`Product.revision` 只代表商品**內容**版本（價格、名稱、選項、課程／交付設定），只有商家編輯（`product-actions.ts`）與課程大綱（`course-curriculum.ts`）會推進。庫存寫入（保留、釋放、過期回補、晚到付款重新扣、恢復結帳重新扣）不再推進 revision。沒有新增欄位或 migration。
+做法：`Product.revision` 只代表商品**內容**版本（價格、名稱、選項、課程／交付設定），只有商家編輯（`src/lib/product-save.ts`）與課程大綱（`course-curriculum.ts`）會推進。庫存寫入（保留、釋放、過期回補、晚到付款重新扣、恢復結帳重新扣）不再推進 revision。沒有新增欄位或 migration。
 
 - 不超賣：保留仍是同一句 `updateMany where { id, vendorId, isActive, inventory >= 數量, revision = admission 的版本 }`。庫存條件守住數量，revision 條件守住過期內容；兩者在同一個 Serializable 交易裡和付款、訂單、保留紀錄一起提交。
 - 過期價格仍會被擋：商家改價會推進 revision，admission 帶舊版本的買家在 route（`admission.productRevision !== product.revision`）或保留的 CAS 拿到 409「Product changed; reload checkout」，重新載入後用新價格。

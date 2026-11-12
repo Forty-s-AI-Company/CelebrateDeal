@@ -11,7 +11,7 @@ import {
   ProductChangedError,
 } from "@/lib/inventory-reservations";
 import { initialProductActionState } from "@/lib/product-action-state";
-import { mutateProduct } from "./product-actions";
+import { mutateProduct } from "@/lib/product-save";
 
 /**
  * B-2: sales no longer move Product.revision, so the merchant edit form guards
@@ -71,7 +71,7 @@ describe("merchant stock edit versus concurrent sales (B-2)", () => {
 
     // A content-only edit from the same stale page still saves, without touching stock.
     const renamed = await mutateProduct(vendor.id, initialProductActionState, editForm(product, { inventory: 5, inventoryBaseline: 5, name: "Renamed" }));
-    expect(renamed).toEqual({ ok: true, destination: "/products?updated=saved" });
+    expect(renamed).toEqual({ ok: true, destination: "/products?updated=saved", product: { id: product.id, name: "Renamed" } });
     expect(await db.product.findUniqueOrThrow({ where: { id: product.id } })).toMatchObject({ inventory: 2, revision: product.revision + 1, name: "Renamed" });
 
     // An edit loaded at the current stock applies.

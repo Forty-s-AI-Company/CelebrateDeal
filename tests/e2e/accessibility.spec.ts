@@ -535,6 +535,28 @@ test("live stepper has no blocking axe violations on any of the four steps, in �
   await page.getByRole("button", { name: "下一步" }).click();
   await openLiveStudioAdvancedSettings(page, "sales");
   await scanStep(1);
+  // 互動腳本：「重新整理清單」後顯示的公告也要可被掃描；新增元素（新分頁連結、說明）已含在上一步掃描內。
+  await page.locator('[data-step-key="sales"]').getByRole("button", { name: "重新整理清單", exact: true }).click();
+  await expect(page.locator("[data-live-script-status]")).toContainText("已更新清單");
+  expect(await blockingAxeViolations(page), "互動腳本重新整理公告").toEqual([]);
+  // 新增商品抽屜：開啟（含滑入動畫中點）與欄位錯誤狀態；不送出，不建立商品。
+  const openProductDrawer = page.locator('[data-step-key="sales"]').getByRole("button", { name: "新增商品", exact: true });
+  await openProductDrawer.click();
+  const productDrawer = page.getByRole("dialog", { name: "新增商品" });
+  await expect(productDrawer).toBeVisible();
+  await expect(productDrawer.getByLabel("商品名稱")).toBeFocused();
+  await drawerSlide("midway");
+  expect(await blockingAxeViolations(page), "新增商品抽屜（滑入動畫中）").toEqual([]);
+  await drawerSlide("finish");
+  expect(await blockingAxeViolations(page), "新增商品抽屜").toEqual([]);
+  await productDrawer.getByLabel("售價（新台幣整數元）").fill("12.5");
+  await productDrawer.getByRole("button", { name: "建立並選取" }).click();
+  await expect(productDrawer.getByText("請填寫商品名稱。")).toBeVisible();
+  await expect(productDrawer.getByText("售價須為新台幣整數元，不含小數點、逗號或符號。")).toBeVisible();
+  expect(await blockingAxeViolations(page), "新增商品抽屜欄位錯誤").toEqual([]);
+  await page.keyboard.press("Escape");
+  await expect(productDrawer).toBeHidden();
+  await expect(openProductDrawer).toBeFocused();
   await page.getByRole("button", { name: "下一步" }).click();
   await scanStep(2);
   const openTemplateDrawer = page.getByRole("button", { name: "建立報名成功 Email", exact: true });

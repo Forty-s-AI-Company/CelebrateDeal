@@ -15,7 +15,7 @@ vi.mock("@/lib/live-notification-delivery", () => ({ materializeLiveNotification
 import { upsertLiveAction } from "@/app/actions";
 import { liveStudioDraftFromFormData } from "@/lib/live-studio-draft-client";
 import { LIVE_STUDIO_LAST_STEP_INDEX } from "@/lib/live-studio-steps";
-import { mutateProduct } from "./product-actions";
+import { mutateProduct } from "@/lib/product-save";
 import { upsertFormBuilderAction } from "./form-actions";
 import { initialProductActionState } from "@/lib/product-action-state";
 

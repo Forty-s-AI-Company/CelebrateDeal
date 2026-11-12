@@ -93,7 +93,7 @@ const attestedSourcePaths = [
   "src/lib/product-action-state.ts",
   "src/lib/product-delivery.ts",
   "src/lib/external-url.ts",
-  "src/app/actions/product-actions.ts",
+  "src/lib/product-save.ts",
   "src/app/actions/product-server-actions.ts",
   "src/app/api/products/upsert/route.ts",
   "src/components/product-form-client.tsx",

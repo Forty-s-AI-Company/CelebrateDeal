@@ -445,7 +445,7 @@ test("G7-48A focused mode requires encrypted delivery source, migration, immutab
   assert.match(source, /"g7-48a-product-delivery-browser-qa"/u);
   for (const path of [
     "src/lib/product-delivery.ts",
-    "src/app/actions/product-actions.ts",
+    "src/lib/product-save.ts",
     "src/lib/commerce-orders.ts",
     "prisma/schema.prisma",
     "prisma/migrations/20260809072000_g7_48_product_delivery_snapshot/migration.sql",
