@@ -1,10 +1,11 @@
 "use client";
 
-import { useActionState, useEffect, useRef, useState, type FormEvent } from "react";
+import { useActionState, useEffect, useRef, useState, useSyncExternalStore, type FormEvent } from "react";
 import { upsertProductAction } from "@/app/actions/product-server-actions";
 import { MediaUploadField } from "@/components/media-upload-field";
 import { Field, FormErrorSummary, SelectField, SubmitButton, TextArea, useFieldMessages } from "@/components/ui";
 import {
+  isKnownField,
   jumpToSection,
   ProductFormSection,
   ProductFormSectionNav,
@@ -16,8 +17,7 @@ import {
   bpsToPercentText,
   percentTextToBps,
   SHARE_PERCENT_ERROR,
-  SHARE_PERCENT_MAX,
-  SHARE_PERCENT_MIN,
+  SHARE_PERCENT_INPUT_PATTERN,
 } from "@/lib/product-share-percent";
 import {
   initialProductActionState,
@@ -155,7 +155,8 @@ function pickFieldErrors(nativeError: ProductActionError | undefined, nativeErro
 
 /** 伺服器的分潤錯誤訊息用「萬分比」；畫面一律改成百分比說法（欄位名稱與送出值不變）。 */
 function displayFieldErrors(errors: ProductFieldErrors): ProductFieldErrors {
-  return errors.coursePromoterShareBps ? { ...errors, coursePromoterShareBps: SHARE_PERCENT_ERROR } : errors;
+  // 只替換伺服器的範圍／格式錯誤（訊息含「萬分比」）；其他訊息原樣顯示。
+  return errors.coursePromoterShareBps?.includes("萬分比") ? { ...errors, coursePromoterShareBps: SHARE_PERCENT_ERROR } : errors;
 }
 
 function safeFieldErrors(value: unknown): ProductFieldErrors {
@@ -264,12 +265,17 @@ function CustomCheckoutFieldEditor({
   );
 }
 
+const subscribeNever = () => () => {};
+
 /**
  * 分潤比例用百分比輸入；伺服器欄位仍是 `coursePromoterShareBps`（萬分比整數），
  * 由隱藏欄位送出換算後的值。換算規則見 `@/lib/product-share-percent`。
  */
 function PromoterSharePercentField({ initialBps, error }: { initialBps: string; error?: string }) {
   const [percent, setPercent] = useState(() => bpsToPercentText(initialBps));
+  // 實際送出的是下方隱藏欄位，它的值靠 React state 同步。hydrate 前（或 JS 停用）輸入框改了也不會更新
+  // 隱藏欄位，所以此時鎖成唯讀，避免商家以為已改成新值、伺服器卻收到舊值。
+  const mounted = useSyncExternalStore(subscribeNever, () => true, () => false);
   const field = useFieldMessages(error, "填 20 代表推廣者拿 20%，最多兩位小數（0.01% 到 99.99%）。其餘歸課程內容所有人。");
   return (
     <div className="grid gap-1.5">
@@ -279,17 +285,18 @@ function PromoterSharePercentField({ initialBps, error }: { initialBps: string; 
           {...field.controlProps}
           className={`h-11 rounded-md border bg-white px-3 text-sm transition ${field.controlClass}`}
           data-field-name="coursePromoterShareBps"
-          type="number"
+          type="text"
           inputMode="decimal"
-          min={SHARE_PERCENT_MIN}
-          max={SHARE_PERCENT_MAX}
-          step={0.01}
+          pattern={SHARE_PERCENT_INPUT_PATTERN}
+          title="0.01 到 99.99 的數字，最多兩位小數"
+          readOnly={!mounted}
           value={percent}
           onChange={(event) => setPercent(event.target.value)}
           placeholder="例如 20"
         />
       </label>
       <input type="hidden" name="coursePromoterShareBps" value={percentTextToBps(percent)} />
+      {mounted ? null : <span data-share-loading="" className="text-xs font-normal text-slate-600">頁面載入完成後才能修改。</span>}
       {field.messages}
     </div>
   );
@@ -355,7 +362,10 @@ export function ProductFormClient({
 
   function focusErrorField(name: string) {
     const section = sectionOfField(name);
-    const control = formRef.current?.querySelector<HTMLElement>(`[data-field-name="${name}"], [name="${name}"]:not([type="hidden"])`);
+    // 欄位名稱只接受已知欄位，不把任意字串放進選擇器。
+    const control = isKnownField(name)
+      ? formRef.current?.querySelector<HTMLElement>(`[data-field-name="${name}"], [name="${name}"]:not([type="hidden"])`)
+      : null;
     setActiveSection(section);
     if (control && !control.hasAttribute("disabled")) {
       control.focus();

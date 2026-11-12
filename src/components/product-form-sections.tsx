@@ -22,6 +22,10 @@ const FIELD_SECTION: Record<string, ProductFormSectionKey> = {
   checkoutUrl: "advanced",
 };
 
+export function isKnownField(name: string) {
+  return Object.hasOwn(FIELD_SECTION, name);
+}
+
 export function sectionOfField(name: string): ProductFormSectionKey {
   return FIELD_SECTION[name] ?? "basic";
 }
