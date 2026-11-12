@@ -7,6 +7,8 @@ import { hashPassword } from "../../src/lib/password";
 import { createMerchantRegistrationInvite } from "../../src/lib/merchant-registration-invite";
 import { createMerchantEmailVerificationToken } from "../../src/lib/merchant-email-verification-token";
 import { openLiveStudioAdvancedSettings } from "../fixtures/live-studio";
+import { createLandingPageFixture } from "../fixtures/landing-page";
+import { createGoalFunnelStepPages } from "../../src/lib/funnel-goal-step-pages";
 import { formatSanitizedAxeBlockingError } from "../../scripts/playwright-ci-reporter";
 
 const db = new PrismaClient();
@@ -715,5 +717,53 @@ test("mobile shell has no horizontal page overflow and primary targets are touch
   for (let index = 0; index < count; index += 1) {
     const box = await mobileTargets.nth(index).boundingBox();
     expect(box?.height ?? 0, `mobile target ${index + 1} height`).toBeGreaterThanOrEqual(44);
+  }
+});
+
+test("funnel editor publish drawer has no blocking axe violations while sliding in, when ready and after publishing", async ({ page }) => {
+  test.setTimeout(120_000);
+  // A separate project-scoped tenant: the shared a11y vendor has no sales project.
+  const funnel = await createLandingPageFixture(db, randomUUID());
+  const content = createGoalFunnelStepPages({ id: "flow_a11y_publish", name: "A11y 發布抽屜", goal: "sell", domain: `a11y-publish-${runId}` })!;
+  const landing = await db.landingPage.create({ data: { vendorId: funnel.vendor.id, projectId: funnel.project.id, name: "A11y 發布抽屜", slug: `a11y-publish-${runId}`, draftContent: JSON.parse(JSON.stringify(content)) } });
+  try {
+    await gotoStableRoute(page, "/login");
+    await page.getByLabel("Email").fill(funnel.owner.email);
+    await page.getByLabel("密碼").fill(funnel.password);
+    await page.getByRole("button", { name: "登入" }).click();
+    await expect(page).toHaveURL(/\/dashboard/);
+    await page.goto(`/landing-pages/${landing.id}/edit?step=order_form`, { waitUntil: "load" });
+    const toolbar = page.getByLabel("編輯器工具列", { exact: true });
+    await expect(toolbar.getByRole("button", { name: "已儲存", exact: true })).toBeDisabled();
+    const drawerSlide = (mode: "midway" | "finish") => page.evaluate((nextMode) => {
+      for (const animation of document.getAnimations()) {
+        if ((animation as CSSAnimation).animationName !== "side-drawer-in") continue;
+        if (nextMode === "midway") { animation.pause(); animation.currentTime = 90; } else animation.finish();
+      }
+    }, mode);
+    const publish = toolbar.getByRole("button", { name: "發布", exact: true });
+    await publish.click();
+    const drawer = page.getByRole("dialog", { name: "發布網站" });
+    await expect(drawer).toBeVisible();
+    await drawerSlide("midway");
+    await expectNoBlockingAxe(page, "發布抽屜（滑入動畫中）");
+    await drawerSlide("finish");
+    await expect(drawer.getByText("檢查通過，可以發布。", { exact: true })).toBeVisible();
+    await expectNoBlockingAxe(page, "發布抽屜（檢查通過）");
+    // Escape closes the drawer and returns focus to 發布.
+    await page.keyboard.press("Escape");
+    await expect(drawer).toBeHidden();
+    await expect(publish).toBeFocused();
+    await publish.click();
+    await expect(drawer.getByText("檢查通過，可以發布。", { exact: true })).toBeVisible();
+    await drawer.getByRole("button", { name: "確認發布", exact: true }).click();
+    await expect(drawer).toBeHidden();
+    await expect(page.locator("[data-ui-toast]")).toContainText("已發布版本 v1");
+    await expectNoBlockingAxe(page, "發布成功 Toast");
+  } finally {
+    await db.landingPage.updateMany({ where: { vendorId: funnel.vendor.id }, data: { status: "draft", publishedVersionId: null } });
+    await db.landingPage.deleteMany({ where: { vendorId: funnel.vendor.id } });
+    await db.vendor.deleteMany({ where: { id: funnel.vendor.id } });
+    await db.user.deleteMany({ where: { id: funnel.owner.id } });
   }
 });
