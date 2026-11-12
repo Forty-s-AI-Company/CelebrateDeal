@@ -328,8 +328,6 @@ function ScheduleDateTimeField({ timeZone, defaultValue, onChange }: { timeZone:
   );
 }
 
-/** The live action and the draft accept at most this many products per Live. */
-const LIVE_PRODUCT_SELECTION_LIMIT = 100;
 const productIdSelectorPattern = /^[A-Za-z0-9_-]{1,128}$/u;
 
 /** The checkbox of one product option, for focusing it; the products block when the id is not selector-safe. */
@@ -1702,28 +1700,28 @@ function useLiveResourceDrawers(input: {
   };
 
   /**
-   * A created product joins the checkboxes and is ticked next to the products
-   * already ticked; nothing is unticked. Like a processed upload, it is not
-   * ticked when the merchant changed the selection while it was created, or
-   * when the Live already holds as many products as it may.
+   * A created product joins the checkboxes, first in the list. It is ticked
+   * only when nothing is ticked yet: ticked products are bound in list order
+   * and the first one is the Live's pinned (主打) product, so ticking it next
+   * to existing picks would silently replace the pinned product. Like a
+   * processed upload, it is also not ticked when the merchant changed the
+   * selection while it was created. Focus moves to its checkbox either way.
    */
   function productCreated(option: LiveQuickProductOption) {
     inFlightRef.current = false;
     setCreatedProducts((current) => [option, ...current.filter((candidate) => candidate.id !== option.id)]);
     setDrawer(null);
     const selectionMoved = manualProductSelectionRef.current !== manualProductSelectionAtCreateRef.current;
-    const selectionFull = !selectedProductIdsRef.current.includes(option.id)
-      && selectedProductIdsRef.current.length >= LIVE_PRODUCT_SELECTION_LIMIT;
     const selector = productCheckboxSelector(option.id);
-    if (!selectionMoved && !selectionFull) {
+    if (!selectionMoved && selectedProductIdsRef.current.length === 0) {
       input.selectProduct(option.id);
-      setAnnouncement(`已建立並選取商品「${option.name}」。`);
+      setAnnouncement(`已建立並選取商品「${option.name}」，它是這場直播的置頂（主打）商品。`);
       focusPendingRef.current = { selector, save: true, afterDrawerClose: true };
       return;
     }
-    setAnnouncement(selectionFull
-      ? `已建立商品「${option.name}」並加入清單；這場直播最多綁定 ${LIVE_PRODUCT_SELECTION_LIMIT} 件商品，所以沒有自動勾選。`
-      : `已建立商品「${option.name}」並加入清單；你在建立期間改過商品勾選，所以沒有自動勾選。`);
+    setAnnouncement(selectionMoved
+      ? `已建立商品「${option.name}」並加入清單；你在建立期間改過商品勾選，所以沒有自動勾選。`
+      : `已建立商品「${option.name}」並加入清單最前面，沒有自動勾選，目前的置頂（主打）商品不變。勾選的商品依清單順序排列，勾選它就會成為置頂商品。`);
     focusPendingRef.current = { selector, save: false, afterDrawerClose: true };
   }
 
@@ -1764,7 +1762,7 @@ function useLiveResourceDrawers(input: {
     );
   } else if (drawer?.kind === "product") {
     drawerElement = (
-      <ProductQuickCreateDrawer csrfToken={input.csrfToken} projectId={input.projectId} onClose={close} onCreated={productCreated} onInFlightChange={trackProductInFlight} />
+      <ProductQuickCreateDrawer csrfToken={input.csrfToken} projectId={input.projectId} autoSelect={input.selectedProductIds.length === 0} onClose={close} onCreated={productCreated} onInFlightChange={trackProductInFlight} />
     );
   } else if (drawer?.kind === "form") {
     drawerElement = (

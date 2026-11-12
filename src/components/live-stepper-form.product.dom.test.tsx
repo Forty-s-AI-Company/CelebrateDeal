@@ -151,10 +151,10 @@ afterEach(async () => {
 });
 
 describe("LiveStepperForm 新增商品 drawer", () => {
-  it("creates a product in the drawer, ticks it next to the ticked products, focuses it and saves the draft", async () => {
-    await act(async () => { root.render(studio([existingProduct], { productIds: [existingProduct.id] })); });
+  it("creates a product in the drawer and, with nothing ticked yet, ticks it as the pinned product, focuses it and saves the draft", async () => {
+    await act(async () => { root.render(studio([existingProduct])); });
     const studioForm = control<HTMLFormElement>("form");
-    expect(checkbox(existingProduct.id).checked).toBe(true);
+    expect(checkbox(existingProduct.id).checked).toBe(false);
     const trigger = await openDrawer();
     expect(trigger.getAttribute("aria-haspopup")).toBe("dialog");
 
@@ -171,6 +171,8 @@ describe("LiveStepperForm 新增商品 drawer", () => {
     expect(moreSettings.textContent).toContain("更多設定");
     expect(control('[name="price"]', drawer).getAttribute("inputmode")).toBe("numeric");
     expect(control('[name="price"]', drawer).type).toBe("text");
+    expect(document.getElementById(drawer.getAttribute("aria-describedby")!)?.textContent).toContain("自動勾選為這場直播的置頂（主打）商品");
+    expect(button("建立並選取", drawer).getAttribute("type")).toBe("submit");
 
     await fillDrawer();
     // The drawer's fields never reach the studio's FormData or its autosave.
@@ -194,15 +196,51 @@ describe("LiveStepperForm 新增商品 drawer", () => {
     expect(dialog()).toBeNull();
     const created = checkbox("product-quick");
     expect(created.checked).toBe(true);
-    expect(checkbox(existingProduct.id).checked).toBe(true);
+    expect(checkbox(existingProduct.id).checked).toBe(false);
     expect(document.activeElement).toBe(created);
-    expect(announcement()).toBe("已建立並選取商品「原型食物餐盒」。");
+    expect(announcement()).toBe("已建立並選取商品「原型食物餐盒」，它是這場直播的置頂（主打）商品。");
     expect(created.closest("label")?.textContent).toContain("庫存 20");
-    // The draft follows the list order, newest first like the live pages' `createdAt desc` list.
-    expect(serializeLiveStudioDraft(studioForm, salesStep).productIds).toEqual(["product-quick", "product-existing"]);
+    expect(serializeLiveStudioDraft(studioForm, salesStep).productIds).toEqual(["product-quick"]);
     expect(mocks.saveLiveStudioDraft).toHaveBeenCalledTimes(1);
-    expect(mocks.saveLiveStudioDraft).toHaveBeenCalledWith(expect.objectContaining({ payload: expect.objectContaining({ productIds: ["product-quick", "product-existing"] }) }));
+    expect(mocks.saveLiveStudioDraft).toHaveBeenCalledWith(expect.objectContaining({ payload: expect.objectContaining({ productIds: ["product-quick"] }) }));
     expect(mocks.upsertLiveAction).not.toHaveBeenCalled();
+  });
+
+  it("with a product already ticked, only lists the new product first and keeps the pinned product", async () => {
+    const second: ProductOption = { id: "product-second", name: "第二件商品", inventory: 3 };
+    await act(async () => { root.render(studio([existingProduct, second], { productIds: [existingProduct.id, second.id] })); });
+    const studioForm = control<HTMLFormElement>("form");
+    // The first ticked product in list order is the Live's pinned product.
+    expect(serializeLiveStudioDraft(studioForm, salesStep).productIds).toEqual(["product-existing", "product-second"]);
+    await openDrawer();
+    const drawer = dialog()!;
+    const description = document.getElementById(drawer.getAttribute("aria-describedby")!)?.textContent ?? "";
+    expect(description).toContain("不會自動勾選");
+    expect(description).toContain("第一個就是置頂商品");
+    expect(button("建立並加入清單", drawer).getAttribute("type")).toBe("submit");
+    expect(Array.from(drawer.querySelectorAll("button")).some((candidate) => candidate.textContent?.trim() === "建立並選取")).toBe(false);
+
+    await fillDrawer();
+    mocks.createProductQuickAction.mockResolvedValueOnce({ status: "success", option: { id: "product-quick", name: "原型食物餐盒", inventory: 20 } });
+    await submitDrawer();
+    await waitForAutosaveWindow();
+
+    expect(dialog()).toBeNull();
+    const created = checkbox("product-quick");
+    expect(created.checked).toBe(false);
+    expect(document.activeElement).toBe(created);
+    expect(checkbox(existingProduct.id).checked).toBe(true);
+    expect(checkbox(second.id).checked).toBe(true);
+    expect(Array.from(container.querySelectorAll<HTMLInputElement>('input[name="productIds"]')).map((input) => input.value)).toEqual(["product-quick", "product-existing", "product-second"]);
+    // The bound products and their order, so the pinned first one, are unchanged; nothing new to save.
+    expect(serializeLiveStudioDraft(studioForm, salesStep).productIds).toEqual(["product-existing", "product-second"]);
+    expect(mocks.saveLiveStudioDraft).not.toHaveBeenCalled();
+    expect(announcement()).toContain("已建立商品「原型食物餐盒」並加入清單最前面，沒有自動勾選，目前的置頂（主打）商品不變");
+    expect(announcement()).toContain("勾選它就會成為置頂商品");
+
+    // Ticking it by hand is the merchant's choice and makes it the pinned product, as announced.
+    await act(async () => { created.click(); });
+    expect(serializeLiveStudioDraft(studioForm, salesStep).productIds).toEqual(["product-quick", "product-existing", "product-second"]);
   });
 
   it("offers the drawer from the empty state and counts the created product as ready", async () => {
@@ -288,19 +326,6 @@ describe("LiveStepperForm 新增商品 drawer", () => {
     expect(checkbox(existingProduct.id).checked).toBe(false);
     expect(announcement()).toContain("你在建立期間改過商品勾選，所以沒有自動勾選");
     expect(document.activeElement).toBe(checkbox("product-quick"));
-  });
-
-  it("does not tick a new product beyond the 100 products a live may hold", async () => {
-    const many = Array.from({ length: 100 }, (_, index) => ({ id: `product-${index}`, name: `商品 ${index}`, inventory: 1 }));
-    await act(async () => { root.render(studio(many, { productIds: many.map((product) => product.id) })); });
-    await openDrawer();
-    await fillDrawer();
-    mocks.createProductQuickAction.mockResolvedValueOnce({ status: "success", option: { id: "product-quick", name: "原型食物餐盒", inventory: 20 } });
-    await submitDrawer();
-
-    expect(checkbox("product-quick").checked).toBe(false);
-    expect(announcement()).toContain("最多綁定 100 件商品");
-    expect(serializeLiveStudioDraft(control<HTMLFormElement>("form"), salesStep).productIds).toHaveLength(100);
   });
 
   it("keeps a product it created when the server props refresh without it", async () => {

@@ -376,18 +376,26 @@ export function MessageTemplateQuickCreateDrawer({
  * from a name, a whole-dollar TWD price and stock; every other setting keeps
  * the product editor's default and can be filled in there later. Other types
  * need a post-purchase delivery setup, so they link to the full editor in a
- * new tab. On success the studio ticks the new product; on error the drawer
+ * new tab. On success the studio adds the new product to its list (and ticks
+ * it only when nothing is ticked yet, see `autoSelect`); on error the drawer
  * stays open with the field messages.
  */
 export function ProductQuickCreateDrawer({
   csrfToken,
   projectId,
+  autoSelect,
   onClose,
   onCreated,
   onInFlightChange,
 }: {
   csrfToken: string;
   projectId?: string | null;
+  /**
+   * The studio ticks the new product only when no product is ticked yet: the
+   * first ticked product is the Live's pinned one, and the new product is
+   * listed first, so ticking it would replace the merchant's pinned product.
+   */
+  autoSelect: boolean;
   onClose: () => void;
   onCreated: (option: LiveQuickProductOption) => void;
   /** true when the create starts; false when it ends without `onCreated` (an error). */
@@ -445,11 +453,13 @@ export function ProductQuickCreateDrawer({
   return (
     <SideDrawer
       title="新增商品"
-      description="建立後立即上架，並自動勾選為這場直播的商品。圖片、描述與原價可以之後在「商品」頁補上。"
+      description={autoSelect
+        ? "建立後立即上架，並自動勾選為這場直播的置頂（主打）商品。圖片、描述與原價可以之後在「商品」頁補上。"
+        : "建立後立即上架並加入商品清單最前面，但不會自動勾選，目前的置頂（主打）商品不變：勾選的商品依清單順序排列，第一個就是置頂商品。圖片、描述與原價可以之後在「商品」頁補上。"}
       busy={pending}
       onClose={onClose}
       initialFocusRef={nameRef}
-      footer={<DrawerActions formId={formId} pending={pending} submitLabel="建立並選取" pendingLabel="建立中…" onCancel={onClose} />}
+      footer={<DrawerActions formId={formId} pending={pending} submitLabel={autoSelect ? "建立並選取" : "建立並加入清單"} pendingLabel="建立中…" onCancel={onClose} />}
     >
       <form id={formId} ref={formRef} noValidate onSubmit={submit} aria-busy={pending} className="grid gap-4">
         <input type="hidden" name={CSRF_FIELD_NAME} value={csrfToken} />

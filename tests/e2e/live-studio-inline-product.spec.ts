@@ -113,7 +113,7 @@ test("a merchant without a listed product creates one in the studio's drawer, it
 
     await drawer.getByRole("button", { name: "建立並選取" }).click();
     await expect(drawer).toBeHidden();
-    await expect(page.getByText(`已建立並選取商品「${productName}」。`)).toBeVisible();
+    await expect(page.getByText(`已建立並選取商品「${productName}」，它是這場直播的置頂（主打）商品。`)).toBeVisible();
     const created = await db.product.findFirstOrThrow({ where: { vendorId: fixture.vendor.id, name: productName } });
     expect(created).toMatchObject({
       priceCents: 129_000,
@@ -133,6 +133,24 @@ test("a merchant without a listed product creates one in the studio's drawer, it
     // The create revalidates the page; the studio keeps its DOM and edits.
     expect(await titleNode!.evaluate((node) => node.isConnected)).toBe(true);
     await expect(title).toHaveValue("就地建立商品的週五直播");
+
+    // A second product, created while one is ticked, is only listed first: the pinned product stays.
+    const secondName = `直播加購小菜 ${fixture.id.slice(0, 6)}`;
+    await openProduct.click();
+    await expect(drawer).toBeVisible();
+    await expect(drawer).toContainText("不會自動勾選");
+    await name.fill(secondName);
+    await price.fill("390");
+    await inventory.fill("12");
+    await drawer.getByRole("button", { name: "建立並加入清單" }).click();
+    await expect(drawer).toBeHidden();
+    await expect(page.getByText(new RegExp(`已建立商品「${secondName}」並加入清單最前面，沒有自動勾選，目前的置頂（主打）商品不變`, "u"))).toBeVisible();
+    const secondCheckbox = salesPanel.getByRole("checkbox", { name: new RegExp(secondName, "u") });
+    await expect(secondCheckbox).not.toBeChecked();
+    await expect(secondCheckbox).toBeFocused();
+    await expect(productCheckbox).toBeChecked();
+    const second = await db.product.findFirstOrThrow({ where: { vendorId: fixture.vendor.id, name: secondName } });
+    expect(second).toMatchObject({ priceCents: 39_000, inventory: 12, isActive: true });
 
     await page.getByRole("button", { name: "下一步", exact: true }).click();
     // 通知
