@@ -535,6 +535,10 @@ test("live stepper has no blocking axe violations on any of the four steps, in �
   await page.getByRole("button", { name: "下一步" }).click();
   await openLiveStudioAdvancedSettings(page, "sales");
   await scanStep(1);
+  // 互動腳本：「重新整理清單」後顯示的公告也要可被掃描；新增元素（新分頁連結、說明）已含在上一步掃描內。
+  await page.locator('[data-step-key="sales"]').getByRole("button", { name: "重新整理清單", exact: true }).click();
+  await expect(page.locator("[data-live-script-status]")).toContainText("已更新清單");
+  expect(await blockingAxeViolations(page), "互動腳本重新整理公告").toEqual([]);
   // 新增商品抽屜：開啟（含滑入動畫中點）與欄位錯誤狀態；不送出，不建立商品。
   const openProductDrawer = page.locator('[data-step-key="sales"]').getByRole("button", { name: "新增商品", exact: true });
   await openProductDrawer.click();
