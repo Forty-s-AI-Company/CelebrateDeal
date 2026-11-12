@@ -30,7 +30,7 @@ vi.mock("react-dom", async (importOriginal) => {
 });
 
 import { navigationForRole } from "./app-shell";
-import { settingsGroups, settingsHubForRole } from "@/lib/app-navigation";
+import { isGroupExpandedByDefault, settingsGroups, settingsHubForRole } from "@/lib/app-navigation";
 import type { VendorFeatureModule } from "@/lib/vendor-feature-toggles";
 import { AppShell } from "./app-shell";
 
@@ -42,9 +42,10 @@ function hubLinksFor(role: string | null, isPlatformAdmin = false, enabledModule
   return settingsHubForRole(role, isPlatformAdmin, enabledModules).flatMap((group) => group.items.map((item) => item.href));
 }
 
-function renderShell({ memberRole, isPlatformAdmin = false, vendorName = "測試商家", hasPartnerPortal }: { memberRole: string | null; isPlatformAdmin?: boolean; vendorName?: string; hasPartnerPortal?: boolean }) {
+function renderShell({ memberRole, isPlatformAdmin = false, vendorName = "測試商家", hasPartnerPortal, primaryFlow }: { memberRole: string | null; isPlatformAdmin?: boolean; vendorName?: string; hasPartnerPortal?: boolean; primaryFlow?: "live" | "consultation" }) {
   formStatuses.cursor = 0;
-  const props = { memberRole, isPlatformAdmin, vendorName, ...(hasPartnerPortal === undefined ? {} : { hasPartnerPortal }) } as Parameters<typeof AppShell>[0];
+  const project = primaryFlow ? { projects: [{ id: "project-1", name: "測試專案", status: "draft", primaryFlow }], selectedProjectId: "project-1", selectProject: vi.fn() } : {};
+  const props = { memberRole, isPlatformAdmin, vendorName, ...project, ...(hasPartnerPortal === undefined ? {} : { hasPartnerPortal }) } as Parameters<typeof AppShell>[0];
   return renderToStaticMarkup(createElement(AppShell, props, createElement("p", null, "shell content") as ReactNode));
 }
 
@@ -355,7 +356,7 @@ describe("settings hub role and feature filtering", () => {
     expect(linksFor("owner")).toContain("/settings");
     expect(linksFor("member")).not.toContain("/settings");
     expect(linksFor(null, true)).not.toContain("/settings");
-    expect(navigationForRole("partner")).toEqual([expect.objectContaining({ label: "夥伴入口" })]);
+    expect(navigationForRole("partner")).toEqual([expect.objectContaining({ label: "夥伴專區", items: [expect.objectContaining({ label: "夥伴入口" })] })]);
   });
 
   it("keeps every hub label aligned with its destination title", () => {
@@ -368,5 +369,70 @@ describe("settings hub role and feature filtering", () => {
 
   it("describes every hub page", () => {
     for (const item of settingsGroups.flatMap((group) => group.items)) expect(item.description?.length, item.href).toBeGreaterThan(0);
+  });
+});
+
+describe("sidebar group defaults by sales project flow", () => {
+  const groupExpanded = (html: string, label: string) => {
+    const match = html.match(new RegExp(`<button[^>]*aria-expanded="(true|false)"[^>]*>${label}<`, "u"));
+    expect(match, `${label} group header`).not.toBeNull();
+    return match![1] === "true";
+  };
+  const defaults = (html: string) => Object.fromEntries(["銷講中心", "成交管理", "互動與行銷", "夥伴成長"].map((label) => [label, groupExpanded(html, label)]));
+
+  it("keeps the core groups open and collapses the secondary partner group without a project", () => {
+    expect(defaults(renderShell({ memberRole: "owner" }))).toEqual({ 銷講中心: true, 成交管理: true, 互動與行銷: true, 夥伴成長: false });
+  });
+
+  it("collapses only the partner group for a live project", () => {
+    expect(defaults(renderShell({ memberRole: "owner", primaryFlow: "live" }))).toEqual({ 銷講中心: true, 成交管理: true, 互動與行銷: true, 夥伴成長: false });
+  });
+
+  it("collapses live-only groups for a consultation project", () => {
+    expect(defaults(renderShell({ memberRole: "owner", primaryFlow: "consultation" }))).toEqual({ 銷講中心: false, 成交管理: true, 互動與行銷: false, 夥伴成長: false });
+  });
+
+  it("only collapses: every permitted entry is still rendered for a consultation project", () => {
+    const collapsed = renderShell({ memberRole: "owner", primaryFlow: "consultation" });
+    const expanded = renderShell({ memberRole: "owner" });
+    for (const href of linksFor("owner")) {
+      expect(collapsed, href).toContain(`href="${href}"`);
+      expect(expanded, href).toContain(`href="${href}"`);
+    }
+  });
+
+  it("resolves the default per group flows", () => {
+    expect(isGroupExpandedByDefault({}, "consultation")).toBe(true);
+    expect(isGroupExpandedByDefault({ flows: ["live"] }, null)).toBe(true);
+    expect(isGroupExpandedByDefault({ flows: ["live"] }, "live")).toBe(true);
+    expect(isGroupExpandedByDefault({ flows: ["live"] }, "consultation")).toBe(false);
+    expect(isGroupExpandedByDefault({ flows: [] }, null)).toBe(false);
+    expect(isGroupExpandedByDefault({ flows: [] }, "live")).toBe(false);
+  });
+});
+
+describe("navigation naming and icons", () => {
+  const allGroups = [
+    ...navigationForRole("owner", false, undefined, { hasPartnerPortal: true }),
+    ...navigationForRole(null, true),
+    ...settingsHubForRole("owner"),
+  ];
+  const allItems = allGroups.flatMap((group) => group.items);
+
+  it("never gives a group the same name as one of its entries when the group shows a header", () => {
+    for (const group of allGroups) {
+      if (group.items.length < 2) continue;
+      expect(group.items.map((item) => item.label), group.label).not.toContain(group.label);
+    }
+    expect(navigationForRole("owner").map((group) => group.label)).toEqual(["總覽與專案", "銷講中心", "成交管理", "互動與行銷", "夥伴成長", "系統管理"]);
+  });
+
+  it("gives every distinct page its own icon and every page a distinct label", () => {
+    const byHref = new Map(allItems.map((item) => [item.href, item]));
+    const items = [...byHref.values()];
+    const duplicateIcons = items.filter((item, index) => items.findIndex((other) => other.icon === item.icon) !== index).map((item) => `${item.href} ${item.label}`);
+    expect(duplicateIcons).toEqual([]);
+    const labels = items.map((item) => item.label);
+    expect(labels.filter((label, index) => labels.indexOf(label) !== index)).toEqual([]);
   });
 });
