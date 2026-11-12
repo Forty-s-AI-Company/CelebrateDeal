@@ -218,7 +218,20 @@ describe("AppShell role navigation", () => {
     expect((html.match(/aria-busy="false"/g) ?? [])).toHaveLength(1);
     expect((html.match(/data-loading-indicator="true"/g) ?? [])).toHaveLength(1);
     expect((html.match(/正在結束目前登入並登出/g) ?? [])).toHaveLength(1);
-    expect((html.match(/ disabled=""/g) ?? [])).toHaveLength(1);
+    // Only the logout buttons count; the palette triggers are disabled until hydration.
+    const buttons = html.match(/<button[^>]*>[\s\S]*?<\/button>/g) ?? [];
+    const logoutButtons = buttons.filter((button) => button.includes("登出"));
+    expect(logoutButtons).toHaveLength(2);
+    expect(logoutButtons.filter((button) => / disabled=""/.test(button))).toHaveLength(1);
+  });
+
+  it("server-renders the command palette triggers disabled until hydration", () => {
+    const html = renderShell({ memberRole: "owner" });
+    const buttons = html.match(/<button[^>]*>[\s\S]*?<\/button>/g) ?? [];
+    const triggers = buttons.filter((button) => button.includes('aria-haspopup="dialog"') && button.includes("搜尋頁面"));
+
+    expect(triggers).toHaveLength(2);
+    for (const trigger of triggers) expect(trigger).toMatch(/ disabled=""/);
   });
 
   it("server-renders platform-admin operations without vendor or affiliate navigation", () => {
