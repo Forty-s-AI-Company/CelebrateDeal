@@ -24,7 +24,7 @@ import { LIVE_DRAFT_SAVE_FAILED_EVENT, LiveConfirmedSubmitButton, LiveFormPendin
 import { MediaUploadField } from "@/components/media-upload-field";
 import { Stepper } from "@/components/stepper";
 import { MessageTemplateQuickCreateDrawer, ProductQuickCreateDrawer, RegistrationFormQuickCreateDrawer, VideoQuickCreateDrawer } from "@/components/live-resource-drawers";
-import { LiveProductSelection, pinSelectedProductId, productCheckboxSelector, updateSelectedProductIds } from "@/components/live-product-selection";
+import { LiveProductSelection, pinSelectedProductId, productCheckboxSelector, submittedProductIds, updateSelectedProductIds } from "@/components/live-product-selection";
 import { LivePendingVideos, type LivePendingAddedReason, type LivePendingVideo, type LivePendingVideoProblem } from "@/components/live-pending-videos";
 import {
   liveQuickTemplateCopy,
@@ -1497,8 +1497,14 @@ function useLiveResourceDrawers(input: {
   /** Counts the merchant's own ticks and unticks; a created product is only ticked if none happened while it was created. */
   const manualProductSelectionRef = useRef(0);
   const manualProductSelectionAtCreateRef = useRef(0);
-  const selectedProductIdsRef = useRef(input.selectedProductIds);
-  useEffect(() => { selectedProductIdsRef.current = input.selectedProductIds; });
+  /**
+   * The selected products that are listed, as the form submits them. A saved
+   * draft can still name a product that is no longer offered; it is never
+   * submitted, so it counts neither for publishing nor as a selection.
+   */
+  const listedSelectedProductIds = submittedProductIds(mergeLiveResourceOptions(input.products, createdProducts), input.selectedProductIds);
+  const selectedProductIdsRef = useRef(listedSelectedProductIds);
+  useEffect(() => { selectedProductIdsRef.current = listedSelectedProductIds; });
   /** Uploaded videos still processing at Cloudflare, or settled after being so; lost on remount by design. */
   const [pendingVideos, setPendingVideos] = useState<LivePendingVideo[]>([]);
   /** Counts the merchant's own changes of the video select; an upload only auto-selects if it did not move. */
@@ -1729,7 +1735,7 @@ function useLiveResourceDrawers(input: {
     );
   } else if (drawer?.kind === "product") {
     drawerElement = (
-      <ProductQuickCreateDrawer csrfToken={input.csrfToken} projectId={input.projectId} autoSelect={input.selectedProductIds.length === 0} onClose={close} onCreated={productCreated} onInFlightChange={trackProductInFlight} />
+      <ProductQuickCreateDrawer csrfToken={input.csrfToken} projectId={input.projectId} autoSelect={listedSelectedProductIds.length === 0} onClose={close} onCreated={productCreated} onInFlightChange={trackProductInFlight} />
     );
   } else if (drawer?.kind === "form") {
     drawerElement = (
@@ -1749,6 +1755,7 @@ function useLiveResourceDrawers(input: {
     pendingVideoProblem,
     markManualVideoSelection,
     products: mergeLiveResourceOptions(input.products, createdProducts),
+    listedSelectedProductIds,
     markManualProductSelection,
     forms: mergeLiveResourceOptions(input.forms, createdForms),
     registrationTemplates: templates.filter((template) => template.trigger === "registration_confirmed"),
@@ -1968,19 +1975,19 @@ export function LiveStudioStepperForm({
     selectForm: setSelectedFormId,
     selectRegistrationTemplate: setSelectedTemplateId,
   });
-  const { videos: availableVideos, products: availableProducts, forms: availableForms, registrationTemplates, notificationTemplates } = resources;
+  const { videos: availableVideos, products: availableProducts, forms: availableForms, registrationTemplates, notificationTemplates, listedSelectedProductIds } = resources;
   const scriptOptions = useLiveScriptOptions({ formRef, scripts, csrfToken, selectedScriptId, submitBusy: submitFlush.busy, selectScript: setSelectedScriptId, scheduleSave: draft.scheduleSave }); const availableScripts = scriptOptions.scripts;
   // A drawer create in flight counts as unsaved edits (see useLiveResourceDrawers).
   const holdsUnsavedEdits = unsaved || resources.creating;
   useEffect(() => { onUnsavedChange?.(holdsUnsavedEdits); }, [holdsUnsavedEdits, onUnsavedChange]);
   const preview = buildLivePreview(previewTitle, previewAccentCopy, availableProducts, selectedProductIds); const statusAction = liveId ? fixedSessionStatusAction(liveStatusAction(currentStatus), sessionMode) : null;
-  const publishReadiness = buildLivePublishReadiness({ studioPreset, products: availableProducts, productIds: selectedProductIds, videos: availableVideos, videoId: selectedVideoId, forms: availableForms, formId: selectedFormId, templates: registrationTemplates, templateId: selectedTemplateId, scripts: availableScripts, scriptId: selectedScriptId });
+  const publishReadiness = buildLivePublishReadiness({ studioPreset, products: availableProducts, productIds: listedSelectedProductIds, videos: availableVideos, videoId: selectedVideoId, forms: availableForms, formId: selectedFormId, templates: registrationTemplates, templateId: selectedTemplateId, scripts: availableScripts, scriptId: selectedScriptId });
   const stepStatus = liveStudioStepStatuses({
     readiness: publishReadiness,
     title: previewTitle,
     slug,
     scheduleSet: sessionMode === "fixed_sessions" ? Boolean(latestFixedSessionStart) : Boolean(scheduledAt),
-    productCount: selectedProductIds.length,
+    productCount: listedSelectedProductIds.length,
     scriptSelected: availableScripts.some((script) => script.id === selectedScriptId),
     notificationRules,
     legacyReminderTemplateId: initialValues.liveReminderTemplateId,

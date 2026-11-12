@@ -575,3 +575,56 @@ describe("LiveStepperForm 商品勾選順序與置頂", () => {
     });
   });
 });
+
+describe("LiveStepperForm 草稿含已不提供的商品", () => {
+  const publishResources = {
+    ...resources,
+    videos: [{ id: "video-ready", title: "可播放影片" }],
+    forms: [{ id: "form-signup", name: "報名表" }],
+    templates: [{ id: "template-confirmed", name: "報名成功", channel: "email", trigger: "registration_confirmed" }],
+  };
+
+  function resumed(productIds: string[], activeStep: number) {
+    const payload = LiveStudioDraftPayloadSchema.parse({
+      ...emptyLiveStudioDraft(),
+      studioPreset: "COMMERCE",
+      activeStep,
+      productIds,
+      videoId: "video-ready",
+      formId: "form-signup",
+      messageTemplateId: "template-confirmed",
+    });
+    const draft: LiveStudioDraftEnvelope = { id: "draft-retired", revision: 2, payload, updatedAt: "2026-11-12T08:00:00.000Z" };
+    return <LiveStepperForm {...publishResources} products={[existingProduct]} initialDraft={draft} projectId="project-1" />;
+  }
+
+  it("does not block publishing on a product that is no longer listed: it is never submitted", async () => {
+    await act(async () => { root.render(resumed(["product-retired", existingProduct.id], liveStudioStepIndex("publish"))); });
+
+    expect(submittedProductIds()).toEqual([existingProduct.id]);
+    const publish = control<HTMLElement>('[data-step-key="publish"]');
+    expect(publish.textContent).toContain("發布條件已完成");
+    expect(publish.textContent).not.toContain("待完成");
+    // The step badge of 成交 counts the listed product too.
+    expect(container.querySelector('button[aria-controls="live-step-panel-sales"]')?.textContent).not.toContain("尚有必填");
+  });
+
+  it("with only an unlisted product in the draft, the drawer still ticks the new product as the pinned one", async () => {
+    await act(async () => { root.render(resumed(["product-retired"], salesStep)); });
+    expect(submittedProductIds()).toEqual([]);
+    expect(control<HTMLElement>('[data-step-key="publish"]').textContent).toContain("待完成");
+
+    await openDrawer();
+    const drawer = dialog()!;
+    expect(document.getElementById(drawer.getAttribute("aria-describedby")!)?.textContent).toContain("自動勾選為這場直播的置頂（主打）商品");
+    expect(button("建立並選取", drawer).getAttribute("type")).toBe("submit");
+    await fillDrawer();
+    mocks.createProductQuickAction.mockResolvedValueOnce({ status: "success", option: { id: "product-quick", name: "原型食物餐盒", inventory: 20 } });
+    await submitDrawer();
+
+    expect(checkbox("product-quick").checked).toBe(true);
+    expect(announcement()).toBe("已建立並選取商品「原型食物餐盒」，它是這場直播的置頂（主打）商品。");
+    expect(submittedProductIds()).toEqual(["product-quick"]);
+    expect(control<HTMLElement>('[data-step-key="publish"]').textContent).toContain("發布條件已完成");
+  });
+});
