@@ -141,7 +141,8 @@ describe("leaving with unsaved changes", () => {
     expect(mocks.push).not.toHaveBeenCalled();
     expect(container.querySelector('[role="dialog"]')).toBeNull();
     expect(container.querySelector('[role="alert"]')?.textContent).toContain("已有較新的版本");
-    expect(button(container, "儲存").disabled).toBe(false);
+    // The failed content stays in the editor and the save button offers a retry.
+    expect(button(container, "儲存失敗（重試）").disabled).toBe(false);
   });
 
   it("warns on browser unload only while there are unsaved changes", async () => {
@@ -314,7 +315,9 @@ describe("publication chip", () => {
     expect(region.querySelector('a[href="/products"]')?.textContent).toBe("連結商品");
     expect(region.querySelector('a[href="/projects/p1"]')?.textContent).toBe("前往專案檢查與發布");
     expect(region.textContent).not.toContain("發布已儲存草稿");
-    await click(button(region, "前往管理頁發布或管理網站"));
+    // Publishing happens in the editor; the management page keeps unpublish, duplicate and delete.
+    expect(region.textContent).toContain("按工具列的「發布」後訪客才會看到最新內容");
+    await click(button(region, "前往管理頁（取消發布、複製或刪除）"));
     expect(mocks.push).toHaveBeenCalledWith("/landing-pages/page-1/operations?step=s1&tab=configuration");
   });
 

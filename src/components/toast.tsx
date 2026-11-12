@@ -13,6 +13,8 @@ export type ToastMessage = {
   tone: ToastTone;
   /** Milliseconds before it disappears on its own; `null` keeps it until it is closed. */
   duration: number | null;
+  /** Optional follow-up link (for example the page that was just published); the text must still make sense without it. */
+  link?: { href: string; label: string; external?: boolean };
 };
 
 export const DEFAULT_TOAST_DURATION_MS = 5_000;
@@ -25,13 +27,14 @@ export const DEFAULT_TOAST_DURATION_MS = 5_000;
 export function useToast() {
   const [toast, setToast] = useState<ToastMessage | null>(null);
   const nextId = useRef(0);
-  const showToast = useCallback((text: string, options: { tone?: ToastTone; duration?: number | null } = {}) => {
+  const showToast = useCallback((text: string, options: { tone?: ToastTone; duration?: number | null; link?: ToastMessage["link"] } = {}) => {
     nextId.current += 1;
     setToast({
       id: nextId.current,
       text,
       tone: options.tone ?? "success",
       duration: options.duration === undefined ? DEFAULT_TOAST_DURATION_MS : options.duration,
+      ...(options.link ? { link: options.link } : {}),
     });
   }, []);
   const dismissToast = useCallback(() => setToast(null), []);
@@ -123,6 +126,15 @@ export function Toast({
             </>
           ) : null}
         </p>
+        {toast?.link ? (
+          <a
+            href={toast.link.href}
+            {...(toast.link.external ? { target: "_blank", rel: "noreferrer" } : {})}
+            className="flex min-h-11 shrink-0 items-center rounded-md px-2 font-semibold underline hover:bg-black/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+          >
+            {toast.link.label}
+          </a>
+        ) : null}
         {toast ? (
           <button
             type="button"

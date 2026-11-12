@@ -9,7 +9,7 @@
 | `Stepper` | [stepper.tsx](../../src/components/stepper.tsx) | 多步驟精靈的步驟導覽 |
 | `Tabs`、`TabPanel`、`tabId`、`tabPanelId` | [tabs.tsx](../../src/components/tabs.tsx) | 同一頁內切換幾組內容 |
 | `Toast`、`useToast` | [toast.tsx](../../src/components/toast.tsx) | 不打斷操作的短暫確認（「已儲存」「已複製」） |
-| `SideDrawer` | [side-drawer.tsx](../../src/components/side-drawer.tsx) | 就地建立或編輯，不離開目前頁面 |
+| `SideDrawer` | [side-drawer.tsx](../../src/components/side-drawer.tsx) | 就地建立或編輯，不離開目前頁面（例如漏斗編輯器的發布檢查抽屜 [funnel-publish-drawer.tsx](../../src/components/landing-pages/funnel-publish-drawer.tsx)） |
 | `useDialogBehavior` | [use-dialog-behavior.ts](../../src/lib/use-dialog-behavior.ts) | 自製 modal 的 Escape、焦點圈限與還原 |
 
 `ui.tsx` 不是 Client Component，Server Component 也能直接用；`stepper.tsx`、`tabs.tsx`、`toast.tsx` 有 `"use client"`，事件處理函式只能從 Client Component 傳入。
@@ -88,17 +88,19 @@ const { toast, showToast, dismissToast } = useToast();
 showToast(`範本已改名為「${name}」。`);
 showToast("已複製連結。", { tone: "info", duration: 3_000 });
 showToast("設定已套用，重新整理後生效。", { duration: null }); // 不自動消失
+showToast(`已發布版本 v2。公開網址：${url}`, { link: { href: "/lp/spring", label: "開啟公開頁", external: true } });
 // 同一個元件內一定要渲染：
 <Toast toast={toast} onDismiss={dismissToast} />
 ```
 
 | API | 說明 |
 |---|---|
-| `useToast()` | 回傳 `{ toast, showToast(text, { tone?, duration? }), dismissToast }`。`tone` 為 `"success"`（預設）或 `"info"`；`duration` 預設 `DEFAULT_TOAST_DURATION_MS`（5000 ms），`null` 為不自動消失。 |
+| `useToast()` | 回傳 `{ toast, showToast(text, { tone?, duration?, link? }), dismissToast }`。`tone` 為 `"success"`（預設）或 `"info"`；`duration` 預設 `DEFAULT_TOAST_DURATION_MS`（5000 ms），`null` 為不自動消失；`link`（`{ href, label, external? }`）在文字後加一個後續連結（例如剛發布的公開頁），文字本身仍要完整說明結果。 |
 | `<Toast toast onDismiss dismissLabel? />` | 顯示區域；`dismissLabel` 預設「關閉通知」。 |
 
 - 無障礙：`role="status"`、`aria-live="polite"`、`aria-atomic="true"` 的區域從第一次渲染就存在，訊息插入同一區域才會被可靠朗讀；同一句話再顯示一次也會重新朗讀。
 - 不搶焦點。滑鼠停在上面或焦點在裡面時暫停計時；關閉按鈕（44px）或 Escape 可關閉，從鍵盤關閉時焦點回到進入前的元素。
+- 連結：放在 `role="status"` 區域之外，不會被朗讀成訊息的一部分；可用 Tab 進入（進入時暫停計時）。`external` 會開新分頁。
 - 動態：只用 transform 進場（`.ui-toast-card`），`prefers-reduced-motion: reduce` 時不動。
 - 位置：桌面左下；手機置底並避開「最新消息」按鈕與底部主要導覽（見 `globals.css` 的 `.ui-toast-region`）。不使用 portal，所以祖先元素不能有 `transform`／`filter`，否則 `position: fixed` 會失準。
 - 不要用 Toast 顯示錯誤或需要使用者處理的事：錯誤留在頁內，用 `role="alert"` 或下方的欄位錯誤模式。
