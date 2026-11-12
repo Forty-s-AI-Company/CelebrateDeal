@@ -238,9 +238,17 @@ describe("欄位層級錯誤", () => {
 
     mocks.save.mockResolvedValue({ message: "政策已暫停；既有結帳仍依原始政策計算。", revision: 2 });
     await setValue(control("tierRate-0"), "150");
-    const pause = [...container.querySelectorAll("button")].find(button => button.textContent === "暫停新結帳政策")!;
-    await act(async () => { container.querySelector("form")!.dispatchEvent(new SubmitEvent("submit", { bubbles: true, cancelable: true, submitter: pause })); });
+    // 按鈕 onClick 標記暫停；submit 事件不帶 submitter 也照樣略過政策檢查。
+    await click("暫停新結帳政策");
+    await submit();
     expect(mocks.save).toHaveBeenCalledTimes(2);
+    expect((mocks.save.mock.lastCall![1] as FormData).getAll("tierRate")).toEqual(["150"]);
+    // 標記只用一次：接著一般送出（Enter 或發布）仍會擋下不合法的政策。
+    mocks.save.mockResolvedValue({ message: "已發布", revision: 3 });
+    await setValue(control("tierRate-0"), "150");
+    await submit();
+    expect(mocks.save).toHaveBeenCalledTimes(2);
+    expect(container.querySelector("[data-form-error-summary]")!.textContent).toContain("第 1 階直接佣金");
   });
 });
 

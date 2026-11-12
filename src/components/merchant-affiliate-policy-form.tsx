@@ -84,6 +84,8 @@ export function MerchantAffiliatePolicyForm({ initial, revision, csrfToken, csrf
   const [overrideFilter, setOverrideFilter] = useState("");
   const hydrated = useSyncExternalStore(subscribeNever, () => true, () => false);
   const formRef = useRef<HTMLFormElement>(null);
+  /** 這次送出是否由「暫停」按鈕觸發；按鈕 onClick 設定，submit 時讀取後清除（不依賴 SubmitEvent.submitter）。 */
+  const pauseRequested = useRef(false);
 
   const liveErrors = useMemo(() => validatePolicyDraft(draft), [draft]);
   const terms = useMemo(() => draftToTerms(draft), [draft]);
@@ -108,8 +110,9 @@ export function MerchantAffiliatePolicyForm({ initial, revision, csrfToken, csrf
   }
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
-    const submitter = (event.nativeEvent as SubmitEvent).submitter;
-    if (submitter instanceof HTMLButtonElement && submitter.value === "pause") return; // 暫停不需要合法的政策內容。
+    const pausing = pauseRequested.current;
+    pauseRequested.current = false;
+    if (pausing) return; // 暫停不需要合法的政策內容。
     if (Object.keys(liveErrors).length === 0) return;
     event.preventDefault();
     setBlocked(previous => ({ state, count: (previous?.count ?? 0) + 1, focus: true }));
@@ -211,8 +214,8 @@ export function MerchantAffiliatePolicyForm({ initial, revision, csrfToken, csrf
           </Section>
 
           <div className="flex flex-wrap gap-3">
-            <button name="intent" value="publish" className="min-h-11 rounded bg-blue-700 px-4 font-semibold text-white hover:bg-blue-800">{pending ? "處理中…" : "發布佣金政策"}</button>
-            <button name="intent" value="pause" formNoValidate className={buttonClass} disabled={(state.revision ?? revision) === 0}>暫停新結帳政策</button>
+            <button name="intent" value="publish" onClick={() => { pauseRequested.current = false; }} className="min-h-11 rounded bg-blue-700 px-4 font-semibold text-white hover:bg-blue-800">{pending ? "處理中…" : "發布佣金政策"}</button>
+            <button name="intent" value="pause" formNoValidate onClick={() => { pauseRequested.current = true; }} className={buttonClass} disabled={(state.revision ?? revision) === 0}>暫停新結帳政策</button>
           </div>
         </fieldset>
         {state.message && !serverError ? <p role="status" aria-live="polite">{state.message}</p> : null}
