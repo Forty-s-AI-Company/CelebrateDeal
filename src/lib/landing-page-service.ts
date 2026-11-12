@@ -92,7 +92,11 @@ export type LandingPageActionState = {
   revision?: number;
   /** After a publish: the form the published version uses (an audience page may get one automatically). */
   formId?: string | null;
+  /** After a publish: the new version number. */
+  version?: number;
   publication?: LandingPagePublicationStatus;
+  /** On failure: the service's reason code (for example `landing_page_commerce_invalid`), so the editor can link to the fix. */
+  code?: string;
 };
 
 /** Merchant-only diagnosis of the public URL; it never changes a public or project publication decision. */
@@ -731,7 +735,32 @@ async function assertAudienceLiveProjectPublished(
   if (!isPublishedSalesProject(project)) throw new LandingPageInputError("landing_page_audience_live_requires_project");
 }
 
+type PublishResult = { id: string; revision: number; version: number; formId: string | null };
+
+/** Thrown at the end of a publish check so every statement of the publish transaction rolls back. */
+class PublishCheckRollback extends Error {
+  constructor(readonly result: PublishResult) {
+    super("landing_page_publish_check_rollback");
+    this.name = "PublishCheckRollback";
+  }
+}
+
 export async function publishLandingPage(pageId: string, expectedRevision: number) {
+  return runPublishTransaction(pageId, expectedRevision, "publish");
+}
+
+/**
+ * The editor's 發布檢查: runs exactly the publish transaction below (same
+ * scope, lock, revision, custom-code, independent-publish, lead-form and
+ * binding checks) and then rolls it back, so nothing it writes is committed.
+ * It never relaxes a rule: the real publish re-runs all of them.
+ */
+export async function checkLandingPagePublishable(pageId: string, expectedRevision: number): Promise<{ id: string; revision: number }> {
+  const result = await runPublishTransaction(pageId, expectedRevision, "check");
+  return { id: result.id, revision: expectedRevision };
+}
+
+async function runPublishTransaction(pageId: string, expectedRevision: number, mode: "publish" | "check"): Promise<PublishResult> {
   const { scope, actor } = await editorContext();
   const id = identifier(pageId);
   const revision = positiveRevision(expectedRevision);
@@ -763,9 +792,12 @@ export async function publishLandingPage(pageId: string, expectedRevision: numbe
       });
       if (updated.count !== 1) throw new LandingPageConflictError();
       if (publishesCustomCode) await recordFunnelCustomCodePublish(transaction, { vendorId: scope.vendorId, actorId: actor.userId, pageId: id, version: version.version, content });
-      return { id, revision: revision + 1, version: version.version, formId };
+      const result = { id, revision: revision + 1, version: version.version, formId };
+      if (mode === "check") throw new PublishCheckRollback(result);
+      return result;
     }, { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted });
   } catch (error) {
+    if (error instanceof PublishCheckRollback) return error.result;
     // Concurrent publishers can both read the next version number. The unique
     // version key is the final compare-and-swap guard, so expose no DB detail.
     if (databaseErrorCode(error) === "P2002") throw new LandingPageConflictError();
