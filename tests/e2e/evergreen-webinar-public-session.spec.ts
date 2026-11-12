@@ -356,7 +356,9 @@ test("opens playback for a recurring-daily session that has already started", as
 
 test("records a verified registrant's existing session once their registration cookie arrives (F-2)", async ({ page, context, baseURL }) => {
   const slug = `evergreen-record-${runId}`;
-  const liveId = await createLive(slug, "just_in_time");
+  // A daily session two hours ahead: the page stays in the waiting room for the whole test.
+  const liveId = await createLive(slug, "recurring_daily");
+  await setDailyTimes(liveId, [120]);
   const submission = await db.formSubmission.create({
     data: {
       formId: fixture.formId,
@@ -375,6 +377,7 @@ test("records a verified registrant's existing session once their registration c
   // First visit without a registration cookie: a session is claimed, nothing is recorded.
   await page.goto(`/live/${slug}`);
   await expect(page.getByTestId("live-waiting-room")).toContainText("你的場次：");
+  expect(await page.content()).not.toContain("recordRegistration");
   await expect.poll(async () => (await evergreenCookie(context))?.value ?? "").toMatch(/^eg1\./u);
   const cookie = await evergreenCookie(context);
   await expect.poll(() => claims.length).toBe(1);
@@ -388,6 +391,8 @@ test("records a verified registrant's existing session once their registration c
   }]);
   await page.reload();
   await expect(page.getByTestId("live-waiting-room")).toBeVisible();
+  // The server flagged this render: the flag is in the page payload.
+  expect(await page.content()).toContain("recordRegistration");
   await expect.poll(() => db.evergreenSessionAssignment.count({ where: { vendorId: fixture.vendorId, liveId, formSubmissionId: submission.id } })).toBe(1);
   const session = await readSession(context, baseURL!, liveId);
   const recorded = await db.evergreenSessionAssignment.findFirstOrThrow({ where: { vendorId: fixture.vendorId, liveId, formSubmissionId: submission.id } });
@@ -396,9 +401,9 @@ test("records a verified registrant's existing session once their registration c
   expect(recorded.sessionStartAt.toISOString()).toBe(session.sessionStartAt);
   expect(claims).toHaveLength(2);
 
-  // Once recorded, a reload claims nothing more.
+  // Once recorded, the server no longer flags the page, so nothing asks for another claim.
   await page.reload();
   await expect(page.getByTestId("live-waiting-room")).toBeVisible();
-  await page.waitForLoadState("networkidle");
+  expect(await page.content()).not.toContain("recordRegistration");
   expect(claims).toHaveLength(2);
 });

@@ -27,7 +27,9 @@ CI 帶出 `color-contrast` 規則後，Opus 找到根因：停用按鈕恢復可
      - CI 才有的環境變數（例如 `NEXT_PUBLIC_POSTHOG_KEY`）注入了元素。
 - **完成標準**：找到根因並修產品或測試的定位，不可以加 retry、放寬門檻或 skip。這支測試在 CI 連續 5 次（含 merge queue）通過。
 
-## F-2：常青場觀眾依自己的場次寄課後信（已完成，PR 連結待補）
+## F-2：常青場觀眾依自己的場次寄課後信（已完成，[#596](https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/596)）
+
+**結果**：新增 `EvergreenSessionAssignment`，在同一個瀏覽器完成 Email 驗證並進入觀看頁的報名者，會在自己的常青場次結束後依規則時間收到課後信；商家設定共用開場時間時，改為以目前的共用開場時間寄給所有已驗證報名者。規則與限制見 `docs/domain-workflows.md`「常青場課後信（F-2）」。**已知限制**：驗證與觀看不在同一個瀏覽器時不會記錄；報名 cookie 只保留最後一筆，同一瀏覽器報名多場時只記最後一場；`{{live_start_at}}` 在課後信用 Asia/Taipei、在常青確認信用商家時區，時區不一致列為後續項目。以下保留開工前的紀錄。
 
 - **分支與 commit**：沒有。目前行為由 #582（`8a01921d`）定義：常青生效期間不寄課後信；關閉常青、結束或改回草稿後，依原開播時間補寄。
 - **卡住的原因**：需要資料模型設計與 migration。觀眾的常青場次目前只存在簽章的 httpOnly cookie（`src/lib/evergreen-viewer-session.ts`），在第一次進觀看頁時才計算。`LiveViewerSession` 沒有連到報名紀錄（`FormSubmission`），也沒有存場次時間。

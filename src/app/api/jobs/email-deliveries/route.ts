@@ -105,7 +105,18 @@ async function processEmailDeliveries() {
     // 指定場次: give back unverified seats whose window passed and queue the
     // notices of cancelled sessions before this round's dispatch sends them.
     const fixedSessions = await processFixedSessionHousekeeping();
-    const followups = await processDuePostLiveFollowups();
+    let followups: Array<{ status: string }> = [];
+    try {
+      followups = await processDuePostLiveFollowups();
+    } catch (error) {
+      // A failed follow-up pass (one tenant's data, a conflict) must not stop
+      // this round's dispatch, LINE or learner notifications for every tenant.
+      try {
+        captureOperationalError(error, { source: "email_delivery_job", operation: "post_live_followups", status: "failed" });
+      } catch {
+        // Monitoring must never change the job outcome.
+      }
+    }
     const reconciliations = await processLiveReminderReconciliationJobs();
     const results = await processDueEmailDeliveries();
     const lineMaterialized = await materializeLineNotifications();
