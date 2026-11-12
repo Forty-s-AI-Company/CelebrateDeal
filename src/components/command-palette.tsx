@@ -39,8 +39,14 @@ function CommandPaletteInner({
   const isApple = useSyncExternalStore(subscribeNothing, readIsApplePlatform, readServerPlatform);
   const shortcutLabel = isApple ? "⌘K" : "Ctrl K";
   const dialogId = useId();
+  // The trigger stays disabled until this effect has run, i.e. until React has
+  // hydrated and the Ctrl+K listener is attached. An enabled trigger therefore
+  // means the shortcut works; before that a key press would be silently lost.
+  const [ready, setReady] = useState(false);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- marks "hydrated and listener attached"
+    setReady(true);
     if (!registerShortcut) return;
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key.toLowerCase() !== "k" || !(event.ctrlKey || event.metaKey) || event.altKey || event.shiftKey) return;
@@ -60,6 +66,7 @@ function CommandPaletteInner({
           aria-haspopup="dialog"
           aria-expanded={open}
           aria-controls={open ? dialogId : undefined}
+          disabled={!ready}
           onClick={() => setOpen(true)}
           className="grid size-11 place-items-center rounded-lg border border-slate-200 bg-white text-slate-700 hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40"
         >
@@ -72,6 +79,7 @@ function CommandPaletteInner({
           aria-expanded={open}
           aria-controls={open ? dialogId : undefined}
           aria-keyshortcuts="Control+K Meta+K"
+          disabled={!ready}
           onClick={() => setOpen(true)}
           className="mb-3 flex min-h-10 w-full shrink-0 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40"
         >

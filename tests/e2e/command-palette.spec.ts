@@ -38,6 +38,13 @@ async function cleanup({ vendor, user }: Awaited<ReturnType<typeof createMember>
 const sidebar = (page: Page) => page.getByRole("navigation", { name: "主要導覽" });
 const groupHeader = (page: Page, name: string) => sidebar(page).getByRole("button", { name, exact: true });
 const combobox = (page: Page) => page.getByRole("combobox", { name: "搜尋頁面" });
+// The trigger is disabled until React has hydrated and attached the Ctrl+K listener.
+// Only the sidebar trigger advertises the shortcut; the small-screen icon trigger does not.
+const paletteTrigger = (page: Page) => page.locator("button[aria-keyshortcuts~='Control+K']");
+async function openWithShortcut(page: Page) {
+  await expect(paletteTrigger(page)).toBeEnabled();
+  await page.keyboard.press("Control+K");
+}
 const options = (page: Page) => page.getByRole("listbox", { name: "頁面" }).getByRole("option");
 
 test("owner on a consultation project: groups start by flow, remember toggles, and the palette opens pages", async ({ page }) => {
@@ -71,6 +78,7 @@ test("owner on a consultation project: groups start by flow, remember toggles, a
     // The visible trigger shows the shortcut and opens the dialog; Escape returns focus to it.
     const trigger = page.getByRole("button", { name: /搜尋頁面/u });
     await expect(trigger).toContainText(/Ctrl K|⌘K/u);
+    await expect(trigger).toBeEnabled();
     await trigger.click();
     await expect(combobox(page)).toBeFocused();
     await expect(page.getByRole("dialog", { name: "快速前往頁面" })).toBeVisible();
@@ -83,7 +91,7 @@ test("owner on a consultation project: groups start by flow, remember toggles, a
     await expect(trigger).toBeFocused();
 
     // Keyboard: Ctrl+K, filter by Chinese substring, Enter goes to the page.
-    await page.keyboard.press("Control+K");
+    await openWithShortcut(page);
     await expect(combobox(page)).toBeFocused();
     await combobox(page).fill("訂單");
     await expect(options(page).first()).toHaveText(/訂單與履約/u);
@@ -93,7 +101,7 @@ test("owner on a consultation project: groups start by flow, remember toggles, a
     await expect(page.getByRole("dialog")).toHaveCount(0);
 
     // Arrow keys move the highlighted option; the owner sees owner-only and settings pages.
-    await page.keyboard.press("Control+K");
+    await openWithShortcut(page);
     await combobox(page).fill("設定");
     await expect(options(page).first()).toHaveText(/^設定/u);
     await page.keyboard.press("ArrowDown");
@@ -115,7 +123,7 @@ test("the palette lists only pages the accountant may open", async ({ page }) =>
   const member = await createMember("accountant");
   try {
     await login(page, member.user.email);
-    await page.keyboard.press("Control+K");
+    await openWithShortcut(page);
     await expect(combobox(page)).toBeFocused();
     await expect(options(page).filter({ hasText: "電子發票" }).first()).toBeVisible();
     for (const hidden of ["訂單與履約", "報名管理", "品牌設定", "LINE 整合", "團隊管理"]) {
@@ -136,7 +144,7 @@ test("owner sees the owner-only pages in the palette that the accountant does no
   const member = await createMember("owner");
   try {
     await login(page, member.user.email);
-    await page.keyboard.press("Control+K");
+    await openWithShortcut(page);
     for (const visible of ["訂單與履約", "品牌設定", "LINE 整合"]) {
       await combobox(page).fill(visible);
       await expect(options(page).filter({ hasText: visible }).first()).toBeVisible();
