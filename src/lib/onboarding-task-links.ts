@@ -3,14 +3,17 @@
  * substring matching let unrelated keys collide, and an unknown key must fall back
  * to the onboarding overview instead of an arbitrary editor.
  *
- * `project_funnel` intentionally points at /forms/new: the task is completed (and the
- * project publish gate is satisfied) by an active registration form in the project,
- * see `hasFunnelTemplate` in the app layout. Landing pages only create such a form on
- * independent publish, so linking there would not complete the task.
+ * `project_funnel` points at /forms/new and is titled 建立報名表單 in both flows: the
+ * task (and the project publish gate in `publishSalesProjectAction`) is completed by an
+ * active registration form in the project (`hasFunnelTemplate`, loaded in
+ * `merchant-onboarding-data.ts`). Re-checked for U1: a landing page creates such a form
+ * only when an audience Funnel is published independently (`ensureAudienceLeadForm`),
+ * so a funnel-template link would neither match the gate nor complete the task.
+ * `onboarding-task-links.test.ts` checks every href against the real routes in src/app.
  */
 export const ONBOARDING_TASK_FALLBACK_HREF = "/onboarding";
 
-const TASK_HREFS: Readonly<Record<string, string>> = {
+export const ONBOARDING_TASK_HREFS: Readonly<Record<string, string>> = {
   workspace_profile: "/settings/brand",
   workspace_logo: "/settings/brand",
   workspace_support: "/settings/brand",
@@ -36,8 +39,9 @@ export function isPaymentOnboardingTask(taskKey: string) {
 }
 
 export function onboardingTaskHref(taskKey: string, selectedProjectId: string | null) {
-  if (taskKey === "project_publish" && selectedProjectId) return `/projects/${encodeURIComponent(selectedProjectId)}`;
-  return Object.hasOwn(TASK_HREFS, taskKey) ? TASK_HREFS[taskKey]! : ONBOARDING_TASK_FALLBACK_HREF;
+  // Preview and publish both happen on the project page; /onboarding would only link to itself.
+  if ((taskKey === "project_publish" || taskKey === "project_preview") && selectedProjectId) return `/projects/${encodeURIComponent(selectedProjectId)}`;
+  return Object.hasOwn(ONBOARDING_TASK_HREFS, taskKey) ? ONBOARDING_TASK_HREFS[taskKey]! : ONBOARDING_TASK_FALLBACK_HREF;
 }
 
-export const KNOWN_ONBOARDING_TASK_HREF_KEYS: readonly string[] = Object.keys(TASK_HREFS);
+export const KNOWN_ONBOARDING_TASK_HREF_KEYS: readonly string[] = Object.keys(ONBOARDING_TASK_HREFS);

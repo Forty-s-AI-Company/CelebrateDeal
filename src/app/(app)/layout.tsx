@@ -4,18 +4,12 @@ import { requireVendorContext } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { maskEmailRecipient } from "@/lib/email-delivery-pii";
 import { vendorEmailVerificationState } from "@/lib/merchant-email-verification";
-import { verifiedVendorPaymentMethodWhere } from "@/lib/payment-method-reference";
 import { enabledFeaturesForVendor } from "@/lib/vendor-feature-toggles";
 import { isCardBindingRequired } from "@/lib/feature-gates";
 import { persistTaskPanelCollapsedAction, selectSalesProjectAction } from "@/app/actions/sales-workspace-actions";
-import { isPaymentOnboardingTask, onboardingTaskHref } from "@/lib/onboarding-task-links";
-import { evaluateProjectOnboarding, evaluateWorkspaceOnboarding } from "@/lib/sales-workspace";
+import { onboardingChecklistItems } from "@/lib/merchant-onboarding";
+import { loadOnboardingChecklist, trackingConfiguredFor } from "@/lib/merchant-onboarding-data";
 import { hasActiveAffiliatePortalAccess } from "@/lib/affiliate-portal";
-
-/** While funnel_binding is closed there is no card to bind; the step counts as satisfied (F-002). */
-function verifiedPaymentMethodCount(vendorId: string, cardBindingRequired: boolean) {
-  return cardBindingRequired ? getDb().paymentMethodReference.count({ where: verifiedVendorPaymentMethodWhere(vendorId, new Date()) }) : Promise.resolve(1);
-}
 
 /**
  * Owners only: the banner is about the owner's own account and the vendor's
@@ -58,47 +52,21 @@ export default async function ProtectedLayout({ children }: { children: React.Re
     return <AppShell vendorName={vendor.name} memberRole={auth.member?.role ?? null} enabledModules={enabledFeaturesForVendor(vendor)} planLabel="工作區" hasPartnerPortal={hasPartnerPortal}>{content}</AppShell>;
   }
 
-  const activeSubscription = await getDb().vendorSubscription.findFirst({
-    where: { vendorId: vendor.id, status: "active" },
-    select: { plan: { select: { name: true } } },
-  });
   const db = getDb();
-  const [projects, preference] = await Promise.all([
+  const [activeSubscription, projects, preference] = await Promise.all([
+    db.vendorSubscription.findFirst({ where: { vendorId: vendor.id, status: "active" }, select: { plan: { select: { name: true } } } }),
     db.salesProject.findMany({ where: { vendorId: vendor.id, status: { not: "archived" } }, orderBy: { updatedAt: "desc" }, select: { id: true, name: true, status: true, primaryFlow: true, publishedAt: true } }),
     db.userOnboardingPreference.findUnique({ where: { userId_vendorId: { userId: auth.user.id, vendorId: vendor.id } } }),
   ]);
   const selectedProject = projects.find((project) => project.id === preference?.selectedProjectId) ?? null;
-  const scopeKey = selectedProject?.id ?? "workspace";
-  // While funnel_binding is closed there is no card to bind, so the binding
-  // task is neither required nor shown (F-002).
-  const cardBindingRequired = isCardBindingRequired(vendor);
-  const states = await db.onboardingTaskState.findMany({ where: { vendorId: vendor.id, scopeKey }, select: { taskKey: true, status: true, skipImpact: true, archivedAt: true } });
-  let taskProgress;
-  if (selectedProject) {
-    const [productLinks, pricedProducts, forms, lives, consultations, paymentMethods] = await Promise.all([
-      db.salesProjectProduct.count({ where: { vendorId: vendor.id, projectId: selectedProject.id } }),
-      db.salesProjectProduct.count({ where: { vendorId: vendor.id, projectId: selectedProject.id, product: { isActive: true, priceCents: { gt: 0 } } } }),
-      // Match the canonical project publication gate: current forms have no templateId.
-      db.registrationForm.count({ where: { vendorId: vendor.id, projectId: selectedProject.id, isActive: true } }),
-      db.live.count({ where: { vendorId: vendor.id, projectId: selectedProject.id } }),
-      db.consultationEvent.findMany({ where: { vendorId: vendor.id, projectId: selectedProject.id, isActive: true }, select: { weeklySchedule: true } }),
-      verifiedPaymentMethodCount(vendor.id, cardBindingRequired),
-    ]);
-    const hasAvailability = consultations.some(({ weeklySchedule }) => Array.isArray(weeklySchedule) && weeklySchedule.some((entry) => {
-      if (!entry || typeof entry !== "object") return false;
-      const ranges = (entry as { ranges?: unknown }).ranges;
-      return Array.isArray(ranges) && ranges.some((range) => typeof range === "string" && range.length > 0);
-    }));
-    taskProgress = evaluateProjectOnboarding(selectedProject.primaryFlow, { exists: true, hasLinkedProduct: productLinks > 0, hasPricedProduct: pricedProducts > 0, hasFunnelTemplate: forms > 0, hasLiveSession: lives > 0, hasConsultationService: consultations.length > 0, hasAvailability, hasPaymentMethod: paymentMethods > 0, hasPreviewableFlow: productLinks > 0 && (forms > 0 || lives > 0 || consultations.length > 0), isPublished: Boolean(selectedProject.publishedAt) }, states);
-  } else {
-    const [payments, members, testOrders] = await Promise.all([
-      verifiedPaymentMethodCount(vendor.id, cardBindingRequired),
-      db.vendorMember.count({ where: { vendorId: vendor.id, status: "active" } }),
-      db.commerceOrder.count({ where: { vendorId: vendor.id, isTestOrder: true, status: "paid" } }),
-    ]);
-    taskProgress = evaluateWorkspaceOnboarding({ hasBasicProfile: Boolean(vendor.name.trim() && vendor.email.trim()), hasLogo: Boolean(vendor.logoUrl), hasPaymentMethod: payments > 0, hasSupportContact: Boolean(vendor.supportEmail?.trim()), hasInvitedTeamMember: members > 1, hasTestOrder: testOrders > 0 }, states);
-  }
   const guideHidden = Boolean(preference?.guideDismissedAt || (preference?.taskPanelHiddenUntil && preference.taskPanelHiddenUntil > new Date()));
-  const onboardingTasks = guideHidden ? [] : taskProgress.tasks.filter((task) => cardBindingRequired || !isPaymentOnboardingTask(task.key)).map((task) => ({ key: task.key, title: task.title, status: task.status, scopeKey: selectedProject?.id ?? "workspace", required: task.required, estimateMinutes: task.estimatedMinutes, impact: task.impact, href: onboardingTaskHref(task.key, selectedProject?.id ?? null) }));
+  // The panel is a compact view of /onboarding: the same loader, the same steps.
+  const onboardingTasks = guideHidden ? [] : onboardingChecklistItems(await loadOnboardingChecklist(db, {
+    vendorId: vendor.id,
+    supportEmailConfigured: Boolean(vendor.supportEmail?.trim()),
+    trackingConfigured: trackingConfiguredFor(vendor.tracking),
+    cardBindingRequired: isCardBindingRequired(vendor),
+    selectedProject,
+  }));
   return <AppShell vendorName={vendor.name} memberRole={auth.member?.role ?? null} enabledModules={enabledFeaturesForVendor(vendor)} planLabel={activeSubscription?.plan.name ?? "Free"} hasPartnerPortal={hasPartnerPortal} projects={projects} selectedProjectId={selectedProject?.id ?? null} onboardingTasks={onboardingTasks} taskPanelCollapsed={preference?.taskPanelCollapsed ?? true} selectProject={selectSalesProjectAction} persistTaskPanelCollapsed={persistTaskPanelCollapsedAction}>{content}</AppShell>;
 }

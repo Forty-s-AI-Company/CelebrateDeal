@@ -10,7 +10,8 @@ for (const viewport of [{ width: 1440, height: 1000 }, { width: 390, height: 844
   test(`project shell form completion and switching at ${viewport.width}px`, async ({ page }) => {
     await page.setViewportSize(viewport);
     const id = randomUUID(); const password = "SyntheticShellPassword!42";
-    const vendor = await db.vendor.create({ data: { name: "Synthetic shell workspace", slug: id, email: `${id}@example.test`, passwordHash: hashPassword(password) } });
+    // A support email completes the first 上線任務 step, so the next one is the registration form.
+    const vendor = await db.vendor.create({ data: { name: "Synthetic shell workspace", slug: id, email: `${id}@example.test`, supportEmail: `support-${id}@example.test`, passwordHash: hashPassword(password) } });
     const user = await db.user.create({ data: { email: `owner-${id}@example.test`, name: "Synthetic owner", passwordHash: hashPassword(password), status: "active", memberships: { create: { vendorId: vendor.id, role: "owner", status: "active" } } } });
     try {
       const project = await db.salesProject.create({ data: { vendorId: vendor.id, name: "Browser project", slug: id, mode: "live_course", primaryFlow: "live" } });
@@ -34,8 +35,9 @@ for (const viewport of [{ width: 1440, height: 1000 }, { width: 390, height: 844
       await page.getByRole('button', { name: '儲存表單', exact: true }).click();
       await expect(page).toHaveURL(/\/forms$/u);
       // No reload: server-action invalidation must update the parent shell itself.
-      await expect(next).toHaveAttribute('href', '/lives/new');
-      await next.click();
+      // U1: the panel follows the unified list, whose next item after the form is the registration Email.
+      await expect(next).toHaveAttribute('href', '/messages/templates/new');
+      await page.goto('/lives/new');
       await expect(page).toHaveURL(/\/lives\/new$/u);
       await expect(page.getByText('將建立於專案：Browser project', { exact: true })).toBeVisible();
       expect(await db.registrationForm.count({ where: { vendorId: vendor.id, projectId: project.id } })).toBe(1);

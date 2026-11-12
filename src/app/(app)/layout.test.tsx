@@ -20,15 +20,26 @@ function context(role: string | null, emailVerifiedAt: Date | null = new Date("2
 /** Any manager-table access throws; only the (mocked) verification state may receive the client. */
 const managerDataTrap = new Proxy({}, { get: () => { throw new Error("Manager data must not be queried"); } });
 
+/** The tables the unified onboarding loader (`loadOnboardingChecklist`) reads for the merchant steps. */
+function merchantOnboardingTables() {
+  return {
+    paymentMethodReference: { count: vi.fn().mockResolvedValue(0) },
+    product: { count: vi.fn().mockResolvedValue(0) },
+    registrationForm: { findMany: vi.fn().mockResolvedValue([]), count: vi.fn().mockResolvedValue(0) },
+    interactionRole: { count: vi.fn().mockResolvedValue(0) },
+    interactionScript: { count: vi.fn().mockResolvedValue(0) },
+    messageTemplate: { findMany: vi.fn().mockResolvedValue([]) },
+    video: { count: vi.fn().mockResolvedValue(0) },
+    live: { findMany: vi.fn().mockResolvedValue([]), count: vi.fn().mockResolvedValue(0) },
+  };
+}
+
 function managerDb() {
   return {
     vendorSubscription: { findFirst: vi.fn().mockResolvedValue(null) },
     salesProject: { findMany: vi.fn().mockResolvedValue([]) },
     userOnboardingPreference: { findUnique: vi.fn().mockResolvedValue(null) },
-    onboardingTaskState: { findMany: vi.fn().mockResolvedValue([]) },
-    paymentMethodReference: { count: vi.fn().mockResolvedValue(0) },
-    vendorMember: { count: vi.fn().mockResolvedValue(1) },
-    commerceOrder: { count: vi.fn().mockResolvedValue(0) },
+    ...merchantOnboardingTables(),
   };
 }
 
@@ -137,55 +148,68 @@ describe("protected shell data boundary", () => {
   it.each(["owner", "admin"])("loads tenant-scoped onboarding for %s", async (role) => {
     mocks.requireVendorContext.mockResolvedValue(context(role));
     const db = {
+      ...managerDb(),
       vendorSubscription: { findFirst: vi.fn().mockResolvedValue({ plan: { name: "Test plan" } }) },
-      salesProject: { findMany: vi.fn().mockResolvedValue([]) },
-      userOnboardingPreference: { findUnique: vi.fn().mockResolvedValue(null) },
       onboardingTaskState: { findMany: vi.fn().mockResolvedValue([]) },
-      paymentMethodReference: { count: vi.fn().mockResolvedValue(0) },
-      vendorMember: { count: vi.fn().mockResolvedValue(1) },
-      commerceOrder: { count: vi.fn().mockResolvedValue(0) },
+      salesProjectProduct: { count: vi.fn().mockResolvedValue(0) },
     };
     mocks.getDb.mockReturnValue(db);
     const view = await ProtectedLayout({ children: "protected content" });
     expect(view.props.planLabel).toBe("Test plan");
     expect(view.props.taskPanelCollapsed).toBe(true);
     expect(view.props.projects).toEqual([]);
-    expect(view.props.onboardingTasks.length).toBeGreaterThan(0);
+    // The panel shows the /onboarding steps, not a separate workspace task list.
+    expect(view.props.onboardingTasks.map((task: { title: string }) => task.title)).toEqual(["商店與客服資料", "平台服務付款驗證", "建立可販售商品", "完成報名流程", "準備第一場可販售直播"]);
     expect(db.userOnboardingPreference.findUnique).toHaveBeenCalledWith({ where: { userId_vendorId: { userId: "user-1", vendorId: "vendor-1" } } });
-    for (const query of [db.vendorSubscription.findFirst, db.salesProject.findMany, db.onboardingTaskState.findMany, db.paymentMethodReference.count, db.vendorMember.count, db.commerceOrder.count]) {
+    for (const query of [db.vendorSubscription.findFirst, db.salesProject.findMany, db.paymentMethodReference.count, db.product.count, db.registrationForm.findMany, db.interactionRole.count, db.interactionScript.count, db.messageTemplate.findMany, db.video.count]) {
       expect(query).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ vendorId: "vendor-1" }) }));
     }
+    expect(db.live.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ vendorId: "vendor-1" }) }));
     expect(db.paymentMethodReference.count).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ verifiedAt: { not: null, lte: expect.any(Date) } }) }));
+    // Without a selected project nothing project-scoped is read.
+    expect(db.onboardingTaskState.findMany).not.toHaveBeenCalled();
+    expect(db.salesProjectProduct.count).not.toHaveBeenCalled();
   });
+
+  it("does not read onboarding data while the guide is hidden", async () => {
+    mocks.requireVendorContext.mockResolvedValue(context("owner"));
+    const db = managerDb();
+    db.userOnboardingPreference.findUnique.mockResolvedValue({ guideDismissedAt: new Date("2026-10-01T00:00:00Z"), taskPanelCollapsed: true });
+    mocks.getDb.mockReturnValue(db);
+    const view = await ProtectedLayout({ children: "protected content" });
+    expect(view.props.onboardingTasks).toEqual([]);
+    expect(db.product.count).not.toHaveBeenCalled();
+    expect(db.paymentMethodReference.count).not.toHaveBeenCalled();
+  });
+
   it.each(["own-project", "foreign-project"])("binds selected preference %s to the current tenant project list", async (selectedProjectId) => {
     mocks.requireVendorContext.mockResolvedValue(context("owner"));
     const project = { id: "own-project", name: "Own project", status: "draft", primaryFlow: "live", publishedAt: null };
     const db = {
-      vendorSubscription: { findFirst: vi.fn().mockResolvedValue(null) },
+      ...managerDb(),
       salesProject: { findMany: vi.fn().mockResolvedValue([project]) },
       userOnboardingPreference: { findUnique: vi.fn().mockResolvedValue({ selectedProjectId, taskPanelCollapsed: false }) },
       onboardingTaskState: { findMany: vi.fn().mockResolvedValue([]) },
       salesProjectProduct: { count: vi.fn().mockResolvedValue(1) },
-      registrationForm: { count: vi.fn().mockResolvedValue(0) },
-      live: { count: vi.fn().mockResolvedValue(0) },
       consultationEvent: { findMany: vi.fn().mockResolvedValue([]) },
-      paymentMethodReference: { count: vi.fn().mockResolvedValue(0) },
-      vendorMember: { count: vi.fn().mockResolvedValue(1) },
-      commerceOrder: { count: vi.fn().mockResolvedValue(0) },
     };
     mocks.getDb.mockReturnValue(db);
     const view = await ProtectedLayout({ children: "protected content" });
     expect(view.props.taskPanelCollapsed).toBe(false);
     const own = selectedProjectId === "own-project";
     expect(view.props.selectedProjectId).toBe(own ? "own-project" : null);
-    expect(db.onboardingTaskState.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { vendorId: "vendor-1", scopeKey: own ? "own-project" : "workspace" } }));
+    if (own) expect(db.onboardingTaskState.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { vendorId: "vendor-1", scopeKey: "own-project" } }));
+    else expect(db.onboardingTaskState.findMany).not.toHaveBeenCalled();
     for (const query of [db.salesProjectProduct.count, db.registrationForm.count, db.live.count, db.consultationEvent.findMany]) {
       if (own) expect(query).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ vendorId: "vendor-1", projectId: "own-project" }) }));
       else expect(query).not.toHaveBeenCalled();
     }
     if (own) {
-      expect(view.props.onboardingTasks).toEqual(expect.arrayContaining([expect.objectContaining({ key: "project_publish", href: "/projects/own-project" })]));
+      // The project's publish tasks are the last step; it links to the first missing one (an active registration form).
+      expect(view.props.onboardingTasks.at(-1)).toEqual(expect.objectContaining({ key: "project", title: "發布專案「Own project」", href: "/forms/new", status: "not_started" }));
       expect(db.salesProjectProduct.count).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ product: { isActive: true, priceCents: { gt: 0 } } }) }));
+    } else {
+      expect(view.props.onboardingTasks).toHaveLength(5);
     }
   });
 

@@ -5,11 +5,8 @@ import {
   readDashboardLiveSubmissionCounts,
   type DashboardMeasurementSnapshot,
 } from "@/lib/dashboard-read-model";
-import { merchantOnboardingProgress } from "@/lib/merchant-onboarding";
-import { verifiedVendorPaymentMethodWhere } from "@/lib/payment-method-reference";
+import { findSelectedOnboardingProject, loadOnboardingChecklist } from "@/lib/merchant-onboarding-data";
 import { isCardBindingRequiredForVendor } from "@/lib/feature-gates";
-import { REGISTRATION_CONFIRMATION_EMAIL_TEMPLATE_WHERE } from "@/lib/message-template";
-import { countSellableLiveReadinessCandidates, sellableLiveReadinessQuery } from "@/lib/sellable-live";
 
 function getDateDaysAgo(days: number) {
   return new Date(Date.now() - 1000 * 60 * 60 * 24 * days);
@@ -25,6 +22,8 @@ async function applyDashboardDetailsDiagnosticDelay(delayMs: number) {
 
 export type DashboardDetailsProps = {
   vendorId: string;
+  /** Selects the member's current project for the onboarding summary. */
+  userId: string;
   memberRole: string | null;
   supportEmailConfigured: boolean;
   trackingConfigured: boolean;
@@ -49,6 +48,7 @@ export type DashboardDetailsLoadResult = {
 
 export async function loadDashboardDetails({
   vendorId,
+  userId,
   memberRole,
   supportEmailConfigured,
   trackingConfigured,
@@ -62,9 +62,7 @@ export async function loadDashboardDetails({
     await applyDashboardDetailsDiagnosticDelay(diagnosticDelayMs ?? 0);
     // Bound concurrent database reads to avoid serial round trips delaying the
     // final HTML chunk while keeping connection pressure predictable.
-    const [liveCount, productCount, recentLives, upcomingLives] = await Promise.all([
-      measurement.measure("live.count", () => db.live.count({ where: { vendorId } })),
-      measurement.measure("product.count", () => db.product.count({ where: { vendorId, isActive: true, fulfillmentTypeConfirmed: true } })),
+    const [recentLives, upcomingLives] = await Promise.all([
       measurement.measure("recent-live.select", () => db.live.findMany({
         where: { vendorId },
         orderBy: { scheduledAt: "desc" },
@@ -78,7 +76,8 @@ export async function loadDashboardDetails({
         select: { id: true, title: true, scheduledAt: true },
       })),
     ]);
-    const [recentLiveSubmissionCounts, affiliates, usageLimit, scripts] = await Promise.all([
+    const isManager = isDashboardManagerRole(memberRole);
+    const [recentLiveSubmissionCounts, affiliates, usageLimit, onboarding] = await Promise.all([
       measurement.measure(
         "recent-live-submission.grouped-count",
         () => readDashboardLiveSubmissionCounts(db, vendorId, recentLives.map((live) => live.id)),
@@ -92,38 +91,18 @@ export async function loadDashboardDetails({
         where: { vendorId },
         select: { creditsUsed: true, creditsLimit: true, billingPlan: { select: { name: true } } },
       })),
-      measurement.measure("published-script.count", () => db.interactionScript.count({ where: { vendorId, status: "published" } })),
+      // The same loader as /onboarding and the sidebar panel; only managers see setup steps.
+      isManager ? measurement.measure("onboarding-checklist.load", async () => loadOnboardingChecklist(db, {
+        vendorId,
+        supportEmailConfigured,
+        trackingConfigured,
+        // While funnel_binding is closed no card can be bound, so the step counts as satisfied (F-002).
+        cardBindingRequired: await isCardBindingRequiredForVendor(db, vendorId),
+        selectedProject: await findSelectedOnboardingProject(db, vendorId, userId),
+        now,
+      })) : Promise.resolve(null),
     ]);
-    const [roles, verifiedPaymentMethodCount, formCount, registrationEmailTemplateCount] = await Promise.all([
-      measurement.measure("active-role.count", () => db.interactionRole.count({ where: { vendorId, isActive: true } })),
-      // While funnel_binding is closed no card can be bound, so the step counts as satisfied (F-002).
-      measurement.measure("verified-payment-method.count", async () => (await isCardBindingRequiredForVendor(db, vendorId)) ? db.paymentMethodReference.count({ where: verifiedVendorPaymentMethodWhere(vendorId, now) }) : 1),
-      measurement.measure("active-form.count", () => db.registrationForm.count({ where: { vendorId, isActive: true } })),
-      measurement.measure("registration-template.count", () => db.messageTemplate.count({ where: { vendorId, ...REGISTRATION_CONFIRMATION_EMAIL_TEMPLATE_WHERE } })),
-    ]);
-    const sellableLiveCandidates = await measurement.measure("sellable-live.select", () => db.live.findMany(sellableLiveReadinessQuery(vendorId)));
-    const sellableLiveCount = countSellableLiveReadinessCandidates(sellableLiveCandidates);
-    const isManager = isDashboardManagerRole(memberRole);
-    const onboarding = merchantOnboardingProgress({
-      supportEmailConfigured,
-      verifiedVendorPaymentMethodCount: verifiedPaymentMethodCount,
-      sellableProductCount: productCount,
-      activeFormCount: formCount,
-      activeInteractionRoleCount: roles,
-      publishedInteractionScriptCount: scripts,
-      registrationEmailTemplateCount,
-      sellableLiveCount,
-      trackingConfigured,
-    });
-    const checklist = dashboardChecklistForRole({
-      productCount,
-      liveCount,
-      interactionRoleCount: roles,
-      interactionScriptCount: scripts,
-      trackingConfigured,
-      verifiedPaymentMethodCount,
-      onboardingComplete: onboarding.complete,
-    }, memberRole);
+    const checklist = dashboardChecklistForRole(onboarding, memberRole);
     return {
       measurement: measurement.snapshot(),
       data: {

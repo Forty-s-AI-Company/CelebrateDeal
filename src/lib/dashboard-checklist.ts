@@ -1,18 +1,9 @@
+import { onboardingChecklistItems, type OnboardingChecklist } from "@/lib/merchant-onboarding";
+
 export type DashboardChecklistItem = {
   label: string;
   href: string;
   done: boolean;
-  managerOnly?: boolean;
-};
-
-export type DashboardChecklistCounts = {
-  productCount: number;
-  liveCount: number;
-  interactionRoleCount: number;
-  interactionScriptCount: number;
-  trackingConfigured: boolean;
-  verifiedPaymentMethodCount: number;
-  onboardingComplete: boolean;
 };
 
 const MANAGER_ROLES = new Set(["owner", "admin"]);
@@ -21,63 +12,14 @@ export function isDashboardManagerRole(memberRole: string | null) {
   return memberRole !== null && MANAGER_ROLES.has(memberRole);
 }
 
-export function filterDashboardChecklistForRole(
-  items: DashboardChecklistItem[],
-  memberRole: string | null,
-) {
-  const isManager = isDashboardManagerRole(memberRole);
-  return items.filter((item) => !item.managerOnly || isManager);
-}
-
+/**
+ * The dashboard card is a summary of the single 上線任務 list (`/onboarding`);
+ * it no longer keeps its own steps. Setup links are for managers only.
+ */
 export function dashboardChecklistForRole(
-  counts: DashboardChecklistCounts,
+  checklist: OnboardingChecklist | null,
   memberRole: string | null,
-) {
-  return filterDashboardChecklistForRole(
-    [
-      {
-        label: "建立商品",
-        href: "/products/new",
-        done: counts.productCount > 0,
-        managerOnly: true,
-      },
-      {
-        label: "建立直播間",
-        href: "/lives/new",
-        done: counts.liveCount > 0,
-        managerOnly: true,
-      },
-      {
-        label: "建立互動角色",
-        href: "/interaction-roles/new",
-        done: counts.interactionRoleCount > 0,
-        managerOnly: true,
-      },
-      {
-        label: "建立互動腳本",
-        href: "/interaction-scripts/new",
-        done: counts.interactionScriptCount > 0,
-        managerOnly: true,
-      },
-      {
-        label: "設定追蹤",
-        href: "/settings/tracking",
-        done: counts.trackingConfigured,
-        managerOnly: true,
-      },
-      {
-        label: "設定付款方式",
-        href: "/billing/payment-methods",
-        done: counts.verifiedPaymentMethodCount > 0,
-        managerOnly: true,
-      },
-      {
-        label: "完成商家 onboarding",
-        href: "/onboarding",
-        done: counts.onboardingComplete,
-        managerOnly: true,
-      },
-    ],
-    memberRole,
-  );
+): DashboardChecklistItem[] {
+  if (!checklist || !isDashboardManagerRole(memberRole)) return [];
+  return onboardingChecklistItems(checklist).map((item) => ({ label: item.title, href: item.href, done: item.status === "completed" }));
 }

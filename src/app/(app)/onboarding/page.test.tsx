@@ -2,7 +2,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
-  requireVendorManager: vi.fn(),
+  requireVendorManagerContext: vi.fn(),
   paymentMethodCount: vi.fn(),
   productCount: vi.fn(),
   formFindMany: vi.fn(),
@@ -11,19 +11,31 @@ const mocks = vi.hoisted(() => ({
   templateFindMany: vi.fn(),
   videoCount: vi.fn(),
   liveFindMany: vi.fn(),
+  preference: vi.fn(),
+  projectFindFirst: vi.fn(),
+  taskStates: vi.fn(),
+  projectProductCount: vi.fn(),
+  projectFormCount: vi.fn(),
+  liveCount: vi.fn(),
+  consultations: vi.fn(),
 }));
 
-vi.mock("@/lib/auth", () => ({ requireVendorManager: mocks.requireVendorManager }));
+vi.mock("@/lib/auth", () => ({ requireVendorManagerContext: mocks.requireVendorManagerContext }));
 vi.mock("@/lib/db", () => ({
   getDb: () => ({
     paymentMethodReference: { count: mocks.paymentMethodCount },
     product: { count: mocks.productCount },
-    registrationForm: { findMany: mocks.formFindMany },
+    registrationForm: { findMany: mocks.formFindMany, count: mocks.projectFormCount },
     interactionRole: { count: mocks.roleCount },
     interactionScript: { count: mocks.scriptCount },
     messageTemplate: { findMany: mocks.templateFindMany },
     video: { count: mocks.videoCount },
-    live: { findMany: mocks.liveFindMany },
+    live: { findMany: mocks.liveFindMany, count: mocks.liveCount },
+    userOnboardingPreference: { findUnique: mocks.preference },
+    salesProject: { findFirst: mocks.projectFindFirst },
+    onboardingTaskState: { findMany: mocks.taskStates },
+    salesProjectProduct: { count: mocks.projectProductCount },
+    consultationEvent: { findMany: mocks.consultations },
   }),
 }));
 
@@ -39,7 +51,10 @@ const vendor = {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  mocks.requireVendorManager.mockResolvedValue(vendor);
+  mocks.requireVendorManagerContext.mockResolvedValue({ auth: { user: { id: "user-onboarding" } }, vendor });
+  mocks.preference.mockResolvedValue(null);
+  mocks.taskStates.mockResolvedValue([]);
+  mocks.consultations.mockResolvedValue([]);
   for (const count of [
     mocks.paymentMethodCount,
     mocks.productCount,
@@ -80,7 +95,9 @@ describe("/onboarding route", () => {
   it("derives a complete refresh-safe journey from tenant-scoped sellable data", async () => {
     const html = renderToStaticMarkup(await OnboardingPage());
 
-    expect(mocks.requireVendorManager).toHaveBeenCalledExactlyOnceWith();
+    expect(mocks.requireVendorManagerContext).toHaveBeenCalledExactlyOnceWith();
+    expect(mocks.preference).toHaveBeenCalledWith({ where: { userId_vendorId: { userId: "user-onboarding", vendorId: vendor.id } }, select: { selectedProjectId: true } });
+    expect(mocks.projectFindFirst).not.toHaveBeenCalled();
     expect(mocks.paymentMethodCount).toHaveBeenCalledWith({
       where: {
         vendorId: vendor.id,
@@ -118,7 +135,7 @@ describe("/onboarding route", () => {
   });
 
   it("links directly to the first missing persisted requirement", async () => {
-    mocks.requireVendorManager.mockResolvedValue({ ...vendor, supportEmail: null, tracking: null });
+    mocks.requireVendorManagerContext.mockResolvedValue({ auth: { user: { id: "user-onboarding" } }, vendor: { ...vendor, supportEmail: null, tracking: null } });
     for (const count of [
       mocks.paymentMethodCount,
       mocks.productCount,
@@ -152,5 +169,41 @@ describe("/onboarding route", () => {
     expect(html).toContain("準備有效報名表單");
     expect(html).toContain("啟用報名成功 Email");
     expect(html).toContain("外部驗證，可稍後");
+  });
+
+  it("adds the selected project's publish tasks as the last step, bound to this vendor", async () => {
+    mocks.preference.mockResolvedValue({ selectedProjectId: "project-onboarding" });
+    mocks.projectFindFirst.mockResolvedValue({ id: "project-onboarding", name: "春季講座", primaryFlow: "live", publishedAt: null });
+    mocks.projectProductCount.mockResolvedValue(1);
+    mocks.projectFormCount.mockResolvedValue(0);
+    mocks.liveCount.mockResolvedValue(1);
+
+    const html = renderToStaticMarkup(await OnboardingPage());
+
+    expect(mocks.projectFindFirst).toHaveBeenCalledWith({ where: { id: "project-onboarding", vendorId: vendor.id, status: { not: "archived" } }, select: { id: true, name: true, primaryFlow: true, publishedAt: true } });
+    for (const query of [mocks.projectProductCount, mocks.projectFormCount, mocks.liveCount, mocks.consultations]) {
+      expect(query).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ vendorId: vendor.id, projectId: "project-onboarding" }) }));
+    }
+    expect(mocks.taskStates).toHaveBeenCalledWith(expect.objectContaining({ where: { vendorId: vendor.id, scopeKey: "project-onboarding" } }));
+    expect(html).toContain("5 / 6");
+    expect(html).toContain("Step 6. 發布專案「春季講座」");
+    expect(html).toContain("建立報名表單");
+    expect(html).not.toContain("選擇漏斗頁模板");
+    expect(html).toContain("繼續：建立報名表單");
+    expect(html).toContain('href="/forms/new"');
+  });
+
+  it("does not ask a consultation project to build a sellable live first", async () => {
+    mocks.preference.mockResolvedValue({ selectedProjectId: "project-consult" });
+    mocks.projectFindFirst.mockResolvedValue({ id: "project-consult", name: "一對一諮詢", primaryFlow: "consultation", publishedAt: null });
+    mocks.projectProductCount.mockResolvedValue(0);
+    mocks.projectFormCount.mockResolvedValue(0);
+    mocks.liveCount.mockResolvedValue(0);
+    mocks.liveFindMany.mockResolvedValue([]);
+
+    const html = renderToStaticMarkup(await OnboardingPage());
+
+    expect(html).toContain("諮詢專案不需要，可稍後");
+    expect(html).toContain("繼續：建立諮詢服務");
   });
 });

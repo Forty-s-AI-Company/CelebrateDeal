@@ -21,6 +21,7 @@ export async function GET(request: Request) {
   );
   const result = await loadDashboardDetails({
     vendorId: vendor.id,
+    userId: auth.user.id,
     memberRole,
     supportEmailConfigured: Boolean(vendor.supportEmail?.trim()),
     trackingConfigured,
