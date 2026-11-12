@@ -24,7 +24,7 @@ import { createFunnelFlow } from "@/lib/funnel-flow";
 import { createFunnelStepPages, parseFunnelStepPages, type FunnelStepPages } from "@/lib/funnel-step-pages";
 import { createGoalFunnelStepPages } from "@/lib/funnel-goal-step-pages";
 import { applyFunnelTemplateChange } from "@/lib/funnel-template-transaction";
-import type { FunnelNode, PageDocument } from "@/lib/funnel-page-document";
+import { createEmptyPageDocument, type FunnelNode, type PageDocument } from "@/lib/funnel-page-document";
 import {
   checkLandingPagePublishable,
   LandingPageInputError,
@@ -95,7 +95,15 @@ function audienceFunnel(): FunnelStepPages {
   return { ...state, pages: { ...state.pages, [first.id]: applied.document } };
 }
 
-async function createPage(tenant: Tenant, content: FunnelStepPages, name = "合成網站") {
+/** A single page with an owner's custom HTML／CSS block: publishing it writes a custom-code audit entry. */
+function customCodeDocument(): PageDocument {
+  const document = createEmptyPageDocument("doc-code", "合成自訂頁");
+  const code: FunnelNode = { ...leaf("code_main", "raw_html"), props: { html: "<p>合成自訂區塊</p>", css: "p { color: #1d4ed8; }" } };
+  document.root = [{ ...leaf("section_code", "section"), children: [{ ...leaf("row_code", "row"), children: [code] }] }];
+  return JSON.parse(JSON.stringify(document)) as PageDocument;
+}
+
+async function createPage(tenant: Tenant, content: FunnelStepPages | PageDocument, name = "合成網站") {
   return getDb().landingPage.create({
     data: { vendorId: tenant.vendorId, projectId: tenant.projectId, name, slug: `editor-${randomUUID()}`, draftContent: content as unknown as Prisma.InputJsonValue },
   });
@@ -117,6 +125,7 @@ beforeEach(() => { vi.clearAllMocks(); });
 afterEach(async () => {
   const db = getDb();
   const ids = vendorIds.splice(0);
+  await db.auditLog.deleteMany({ where: { vendorId: { in: ids } } });
   // Versions RESTRICT their page; clear the publication pointer before the vendor cascade.
   await db.landingPage.updateMany({ where: { vendorId: { in: ids } }, data: { status: "draft", publishedVersionId: null } });
   await db.landingPage.deleteMany({ where: { vendorId: { in: ids } } });
@@ -141,6 +150,42 @@ describe("editor publish check (PostgreSQL)", () => {
     await expect(publishLandingPage(page.id, page.revision)).resolves.toMatchObject({ revision: page.revision + 1, version: 1 });
     expect(await versionCount(page.id)).toBe(1);
     expect(await autoForms()).toBe(1);
+  });
+
+  it("rolls back the custom-code publish audit, which the real publish then writes", async () => {
+    const tenant = await createTenant("audit", { projectPublished: true });
+    actAs(tenant);
+    // Written directly: the editor's save would add its own save audit entry.
+    const page = await createPage(tenant, customCodeDocument());
+    const audits = () => getDb().auditLog.count({ where: { vendorId: tenant.vendorId, targetId: page.id } });
+
+    await expect(checkLandingPagePublishable(page.id, page.revision)).resolves.toEqual({ id: page.id, revision: page.revision });
+    expect(await audits()).toBe(0);
+    expect(await versionCount(page.id)).toBe(0);
+    await expect(publishLandingPage(page.id, page.revision)).resolves.toMatchObject({ version: 1 });
+    expect(await audits()).toBe(1);
+    expect(await getDb().auditLog.findFirst({ where: { vendorId: tenant.vendorId, targetId: page.id } })).toMatchObject({ action: "funnel_custom_code_published", actorId: tenant.userId });
+  });
+
+  it("rolls back the owner-fallback audit of an independent publication, which the real publish then writes", async () => {
+    const db = getDb();
+    const suffix = randomUUID();
+    // No founding account (no user with the vendor's email): an active verified owner decides, and that pass is audited.
+    const vendor = await db.vendor.create({ data: { name: "Synthetic fallback vendor", slug: `editor-fallback-${suffix}`, email: `editor-fallback-${suffix}@example.test`, passwordHash: "synthetic-only" } });
+    vendorIds.push(vendor.id);
+    const owner = await db.user.create({ data: { name: "Synthetic fallback owner", email: `editor-fallback-owner-${suffix}@example.test`, passwordHash: "synthetic-only", emailVerifiedAt: new Date(), memberships: { create: { vendorId: vendor.id, role: "owner", status: "active" } } } });
+    userIds.push(owner.id);
+    const project = await db.salesProject.create({ data: { vendorId: vendor.id, name: "Synthetic draft project", slug: `editor-fallback-project-${suffix}`, mode: "live_course", primaryFlow: "live" } });
+    const tenant = { vendorId: vendor.id, userId: owner.id, projectId: project.id };
+    actAs(tenant);
+    const page = await createPage(tenant, audienceFunnel());
+    const fallbackAudits = () => db.auditLog.count({ where: { vendorId: vendor.id, targetId: page.id, action: "independent_publish_email_gate_owner_fallback" } });
+
+    await expect(checkLandingPagePublishable(page.id, page.revision)).resolves.toEqual({ id: page.id, revision: page.revision });
+    expect(await fallbackAudits()).toBe(0);
+    await expect(publishLandingPage(page.id, page.revision)).resolves.toMatchObject({ version: 1 });
+    expect(await fallbackAudits()).toBe(1);
+    expect(await db.auditLog.findFirst({ where: { vendorId: vendor.id, targetId: page.id, action: "independent_publish_email_gate_owner_fallback" } })).toMatchObject({ after: { reason: "no_founder_account" } });
   });
 
   it("refuses a stale revision and a binding that is not this vendor's sellable product, writing nothing", async () => {
