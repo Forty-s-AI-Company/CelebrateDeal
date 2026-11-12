@@ -153,17 +153,23 @@ describe("live product pin order through the studio", () => {
     expect((await renderEditPage(live.id)).initialValues.productIds).toEqual([res.c.id, res.a.id]);
   });
 
-  it("puts the pinned binding first even when its sort order is not the lowest", async () => {
+  it("opens in the order viewers see: sort order, then id, regardless of the isPinned flag", async () => {
     const res = await resources();
     const live = await prisma.live.create({ data: {
       vendorId: vendorId(), title: "既有直播", slug: `pin-legacy-${randomUUID()}`, scheduledAt: new Date(Date.now() + 7 * 24 * 60 * 60_000),
       products: { create: [
-        { productId: res.a.id, sortOrder: 0, isPinned: false },
-        { productId: res.b.id, sortOrder: 1, isPinned: false },
         { productId: res.c.id, sortOrder: 2, isPinned: true },
+        { productId: res.b.id, sortOrder: 0, isPinned: false },
+        { productId: res.a.id, sortOrder: 1, isPinned: false },
       ] },
     } });
-    expect((await renderEditPage(live.id)).initialValues.productIds).toEqual([res.c.id, res.a.id, res.b.id]);
+    // The public live page's own query: what a viewer sees first (and an evergreen pitch takes as products[0]).
+    const viewerOrder = (await prisma.live.findFirstOrThrow({
+      where: { id: live.id },
+      include: { products: { orderBy: [{ sortOrder: "asc" }, { id: "asc" }], include: { product: true } } },
+    })).products.map((binding) => binding.productId);
+    expect(viewerOrder).toEqual([res.b.id, res.a.id, res.c.id]);
+    expect((await renderEditPage(live.id)).initialValues.productIds).toEqual(viewerOrder);
   });
 
   it("resumes an unsaved edit draft in the draft's own order", async () => {
