@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, useTransition, type KeyboardEvent, type ReactNode } from "react";
+import { useEffect, useRef, useState, useTransition, type ReactNode } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Eye, Pencil, Trash2, WandSparkles } from "lucide-react";
@@ -34,6 +34,7 @@ import { contentHasCustomScript } from "@/lib/funnel-custom-code";
 import { LANDING_PAGE_TEMPLATE_NAME_MAX_LENGTH, LANDING_PAGE_TEMPLATE_VENDOR_LIMIT, templateDisplayDocument } from "@/lib/landing-page-template-document";
 import type { LandingPageTemplateSummary, LandingPageTemplateTarget, LandingPageTemplateTargetStep } from "@/lib/landing-page-template-service";
 import { useDialogBehavior } from "@/lib/use-dialog-behavior";
+import { TabPanel, Tabs } from "@/components/tabs";
 
 export type TemplateLibraryTab = "platform" | "mine";
 type Selected =
@@ -124,8 +125,6 @@ export function LandingPageTemplateLibrary({ csrfName, csrfToken, platformTempla
   const [renaming, setRenaming] = useState<LandingPageTemplateSummary | null>(null);
   const [deleting, setDeleting] = useState<LandingPageTemplateSummary | null>(null);
   const [notice, setNotice] = useState<Notice>(null);
-  const platformTabRef = useRef<HTMLButtonElement>(null);
-  const mineTabRef = useRef<HTMLButtonElement>(null);
   // A refreshed server list replaces the local copy (render-time sync, no effect).
   const [mineSource, setMineSource] = useState(myTemplates);
   if (mineSource !== myTemplates) { setMineSource(myTemplates); setMine(myTemplates); }
@@ -167,23 +166,15 @@ export function LandingPageTemplateLibrary({ csrfName, csrfToken, platformTempla
   }
   const openUse = (selected: Selected) => { setPreview(null); setUsing(selected); };
 
-  function onTabKey(event: KeyboardEvent<HTMLButtonElement>) {
-    if (event.key !== "ArrowLeft" && event.key !== "ArrowRight" && event.key !== "Home" && event.key !== "End") return;
-    event.preventDefault();
-    const next: TemplateLibraryTab = event.key === "Home" ? "platform" : event.key === "End" ? "mine" : tab === "platform" ? "mine" : "platform";
-    setTab(next);
-    (next === "platform" ? platformTabRef : mineTabRef).current?.focus();
-  }
-
   return <div className="min-w-0">
-    <div role="tablist" aria-label="範本來源" className="mb-5 flex gap-1 border-b border-slate-200">
-      <button ref={platformTabRef} id="template-tab-platform" role="tab" type="button" aria-selected={tab === "platform"} aria-controls="template-panel-platform" tabIndex={tab === "platform" ? 0 : -1} onKeyDown={onTabKey} onClick={() => setTab("platform")} className={`-mb-px min-h-11 border-b-2 px-4 text-sm font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500 ${tab === "platform" ? "border-blue-700 text-slate-950" : "border-transparent text-slate-600 hover:text-slate-900"}`}>平台範本 <span className="ml-1 text-xs font-normal text-slate-500">{catalog.length}</span></button>
-      <button ref={mineTabRef} id="template-tab-mine" role="tab" type="button" aria-selected={tab === "mine"} aria-controls="template-panel-mine" tabIndex={tab === "mine" ? 0 : -1} onKeyDown={onTabKey} onClick={() => setTab("mine")} className={`-mb-px min-h-11 border-b-2 px-4 text-sm font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500 ${tab === "mine" ? "border-blue-700 text-slate-950" : "border-transparent text-slate-600 hover:text-slate-900"}`}>我的範本 <span className="ml-1 text-xs font-normal text-slate-500">{mine.length}</span></button>
-    </div>
+    <Tabs idPrefix="template" label="範本來源" className="mb-5" value={tab} onChange={setTab} items={[
+      { key: "platform", label: <>平台範本 <span className="ml-1 text-xs font-normal text-slate-500">{catalog.length}</span></> },
+      { key: "mine", label: <>我的範本 <span className="ml-1 text-xs font-normal text-slate-500">{mine.length}</span></> },
+    ]} />
 
     {notice ? <p role={notice.tone === "error" ? "alert" : "status"} className={`mb-4 rounded-lg border p-3 text-sm ${notice.tone === "error" ? "border-red-200 bg-red-50 text-red-800" : "border-emerald-200 bg-emerald-50 text-emerald-900"}`}>{notice.text}</p> : null}
 
-    {tab === "platform" ? <section id="template-panel-platform" role="tabpanel" aria-labelledby="template-tab-platform">
+    {tab === "platform" ? <TabPanel idPrefix="template" tabKey="platform">
       <div className="mb-4 grid gap-2 rounded-xl border border-slate-200 bg-white p-3">
         <FilterGroup label="用途" options={FUNNEL_TEMPLATE_PURPOSES} labels={FUNNEL_TEMPLATE_PURPOSE_LABELS} value={purpose} onChange={setPurpose} />
         <FilterGroup label="風格" options={FUNNEL_TEMPLATE_STYLES} labels={FUNNEL_TEMPLATE_STYLE_LABELS} value={style} onChange={setStyle} />
@@ -197,7 +188,7 @@ export function LandingPageTemplateLibrary({ csrfName, csrfToken, platformTempla
           <button type="button" aria-label={`使用 ${entry.name}`} onClick={() => openUse(platformSelection(entry))} className={primaryButton}>使用這個範本</button>
         </TemplateCard>)}
       </ul> : <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-8 text-center"><p className="font-semibold text-slate-900">沒有符合條件的範本</p><p className="mt-1 text-sm text-slate-600">換一個用途或風格，或清除篩選看全部範本。</p><button type="button" onClick={() => { setPurpose(null); setStyle(null); }} className={`${secondaryButton} mt-4`}>清除篩選</button></div>}
-    </section> : <section id="template-panel-mine" role="tabpanel" aria-labelledby="template-tab-mine">
+    </TabPanel> : <TabPanel idPrefix="template" tabKey="mine">
       <p className="mb-3 text-sm text-slate-600">在編輯器或網站管理頁按「存成範本」，就能把做好的頁面留著重複使用。每個商家最多 {LANDING_PAGE_TEMPLATE_VENDOR_LIMIT} 個。</p>
       {mine.length ? <ul aria-label="我的範本" className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
         {mine.map((template) => <TemplateCard key={template.id} document={template.thumbnail} title={template.name} eyebrow={`更新於 ${formatDate(template.updatedAt)}`} description={template.readable ? undefined : "內容格式已無法讀取，不能預覽或使用；刪除後即可釋出名額。"}>
@@ -209,7 +200,7 @@ export function LandingPageTemplateLibrary({ csrfName, csrfToken, platformTempla
           <button type="button" aria-label={`刪除 ${template.name}`} onClick={() => setDeleting(template)} className={`${secondaryButton} border-red-200 text-red-700 hover:bg-red-50`}><Trash2 size={16} aria-hidden />刪除</button>
         </TemplateCard>)}
       </ul> : <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-8 text-center"><p className="font-semibold text-slate-900">還沒有自己的範本</p><p className="mx-auto mt-1 max-w-md text-sm leading-6 text-slate-600">打開任一個一頁式網站的編輯器，按工具列的「存成範本」，或在網站管理頁的步驟設定按「存成範本」。</p><Link href="/landing-pages" className={`${secondaryButton} mt-4`}>前往一頁式網站</Link></div>}
-    </section>}
+    </TabPanel>}
 
     {preview ? <FunnelTemplatePreviewDialog eyebrow={preview.selected.eyebrow} title={preview.selected.name} document={preview.document} viewport={viewport} onViewport={setViewport} onClose={() => setPreview(null)} actionLabel="使用這個範本" onAction={() => openUse(preview.selected)} note={preview.hasScript ? "這個範本含自訂 JavaScript：JS 只會在公開頁的隔離沙箱中執行，預覽不執行；其他內容與使用後的頁面相同。" : "預覽與使用後的頁面內容與顯示方式相同。"} /> : null}
     {using ? <UseTemplateDialog csrfName={csrfName} csrfToken={csrfToken} selected={using} sites={sites} projects={projects} onClose={() => setUsing(null)} /> : null}
