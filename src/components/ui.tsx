@@ -77,7 +77,7 @@ export function SubmitButton({
       pendingChildren={pendingChildren}
       pendingMessage={pendingMessage}
       disabled={disabled}
-      className="inline-flex min-h-11 items-center justify-center rounded-md bg-primary px-4 text-sm font-semibold text-white transition hover:bg-primary-dark"
+      className="inline-flex min-h-11 items-center justify-center rounded-md bg-primary px-4 text-sm font-semibold text-white transition-colors hover:bg-primary-dark"
     >
       {children}
     </FormSubmitButton>
@@ -89,7 +89,7 @@ export function DangerButton({ children }: { children: React.ReactNode }) {
     <FormSubmitButton
       pendingChildren="處理中…"
       pendingMessage="正在處理，請勿重複送出。"
-      className="inline-flex min-h-11 items-center justify-center rounded-md bg-red-600 px-4 text-sm font-semibold text-white transition hover:bg-red-700"
+      className="inline-flex min-h-11 items-center justify-center rounded-md bg-red-600 px-4 text-sm font-semibold text-white transition-colors hover:bg-red-700"
     >
       {children}
     </FormSubmitButton>

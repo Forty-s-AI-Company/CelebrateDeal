@@ -30,7 +30,7 @@ export default async function InteractionRolesPage({
             <FormSubmitButton
               pendingChildren="匯入中…"
               pendingMessage="正在匯入官方互動角色"
-              className="inline-flex h-10 items-center justify-center rounded-md border border-blue-200 bg-blue-50 px-4 text-sm font-semibold text-blue-700 shadow-sm transition hover:bg-blue-100"
+              className="inline-flex h-10 items-center justify-center rounded-md border border-blue-200 bg-blue-50 px-4 text-sm font-semibold text-blue-700 shadow-sm transition-colors hover:bg-blue-100"
             >
               匯入 10 個官方角色
             </FormSubmitButton>

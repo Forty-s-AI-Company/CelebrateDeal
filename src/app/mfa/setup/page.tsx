@@ -157,7 +157,7 @@ export default async function MfaSetupPage({
                       <CsrfField />
                       <MfaReturnField nextPath={nextPath} />
                       <FormSubmitButton
-                        className="min-h-11 rounded-xl bg-blue-600 px-4 text-sm font-semibold text-white shadow-sm shadow-blue-200 transition hover:bg-blue-700"
+                        className="min-h-11 rounded-xl bg-blue-600 px-4 text-sm font-semibold text-white shadow-sm shadow-blue-200 transition-colors hover:bg-blue-700"
                         pendingChildren="產生中…"
                         pendingMessage="正在產生 QR code。"
                       >
