@@ -148,6 +148,22 @@ useEffect(() => { if (errorVersion) focusFirstInvalidField(formRef.current); }, 
 - 錯誤跳轉：`sectionOfField(name)` 對應欄位所在段落，摘要連結先到欄位，沒有可聚焦的欄位（固定幣別、圖片）就改到段落標題。新增欄位時記得補進 `FIELD_SECTION`。
 - 百分比顯示：課程分潤欄位在畫面上用百分比（最多兩位小數），隱藏欄位仍以 `coursePromoterShareBps`（萬分比整數）送出，換算在 [product-share-percent.ts](../../src/lib/product-share-percent.ts)，全程用字串與整數運算、不四捨五入；超過兩位小數的輸入會以伺服器必拒的 `invalid:…` 送出並顯示錯誤。輸入框是 `type="text" inputMode="decimal"` 加 `pattern`（`SHARE_PERCENT_INPUT_PATTERN`，與換算器接受的格式一致），大多數情況下原生驗證會先擋下超過兩位小數、科學記號與負數；`.5`、`0020` 這類合法寫法會被換算並正規化。可見輸入框沒有 `name`，實際送出的是隱藏欄位，所以 hydrate 前輸入框是 `readOnly` 並提示「頁面載入完成後才能修改」，避免改了卻送出舊值。
 
+## 百分比與 bps 換算
+
+比例欄位一律在畫面上用百分比（最多兩位小數），伺服器欄位與整數 bps 不變。共用換算在 [percent-bps.ts](../../src/lib/percent-bps.ts)：`parsePercentText`（字串與整數運算，不經浮點、不四捨五入）、`bpsToPercentText`、`PERCENT_INPUT_PATTERN`（與換算器接受的格式一致），以及兩種送出值：`percentTextToPercentWire`（伺服器收百分比字串，例如聯盟政策的 `tierRate`）與 `percentTextToBpsWire`（伺服器收整數 bps，例如聯盟夥伴的 `commissionRateBps`；空白也送 `invalid:`，因為 `Number("")` 是合法的 0）。[product-share-percent.ts](../../src/lib/product-share-percent.ts) 保留商品表單原本的介面（先 trim），內部改用這個模組。
+
+做法一致：可見輸入框 `type="text" inputMode="decimal"` 加 `pattern`、沒有 `name`；隱藏欄位送換算後的值；hydrate 前輸入框 `readOnly`。
+
+## 聯盟佣金政策表單
+
+[merchant-affiliate-policy-form.tsx](../../src/components/merchant-affiliate-policy-form.tsx) 分成總上限、成交件數階梯、團隊上線佣金、商品直接佣金四段，旁邊是唯讀的[佣金試算](../../src/components/merchant-affiliate-commission-estimate.tsx)。
+
+- 欄位錯誤：[merchant-affiliate-policy-draft.ts](../../src/lib/merchant-affiliate-policy-draft.ts) 的 `validatePolicyDraft` 依伺服器規則逐欄定位（第幾階、第幾層、哪一列商品、總上限），測試以大量隨機草稿比對它與伺服器解析的結果一致。發布前有錯就不送出，`FormErrorSummary` 的連結直接聚焦那一列的欄位。
+- 試算：直接呼叫伺服器結算用的 `calculateMerchantAffiliatePlan`，捨入完全相同；試算放在 `<form>` 外，輸入都沒有 `name`。畫面標示「僅供估算，實際依結算為準」（實際依每筆付款、團隊關係與退款計算）。
+- 商品佣金篩選：只用 `hidden` 隱藏列，欄位仍一起送出；有錯誤或選單裡找不到商品的列一律顯示，避免看不到的必填欄位擋住送出。篩選框在 `<form>` 內，按 Enter 只篩選、不隱式送出。
+- hydrate 前：比例輸入框與件數欄位 `readOnly`、商品選單停用（商品由隱藏欄位送出），避免 hydrate 時 React 把先改的值還原而發布舊設定。
+- 「暫停」按鈕以 `onClick` 標記，暫停時不檢查政策內容；件數欄位的 `validity.badInput` 與已刪除的商品也會列在摘要。
+
 ## 後台導覽與指令面板
 
 導覽資料只有一份：[app-navigation.ts](../../src/lib/app-navigation.ts) 的 `navigationForRole`（側欄）與 `settingsHubForRole`（設定樞紐）。側欄、手機抽屜、設定樞紐與指令面板都由它們推導，權限與模組過濾因此一致；新增頁面只改這裡。
