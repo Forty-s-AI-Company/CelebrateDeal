@@ -193,7 +193,7 @@ describe("/onboarding route", () => {
     expect(html).toContain('href="/forms/new"');
   });
 
-  it("does not ask a consultation project to build a sellable live first", async () => {
+  it("shows the sellable-live step as not applicable for a consultation project", async () => {
     mocks.preference.mockResolvedValue({ selectedProjectId: "project-consult" });
     mocks.projectFindFirst.mockResolvedValue({ id: "project-consult", name: "一對一諮詢", primaryFlow: "consultation", publishedAt: null });
     mocks.projectProductCount.mockResolvedValue(0);
@@ -203,7 +203,9 @@ describe("/onboarding route", () => {
 
     const html = renderToStaticMarkup(await OnboardingPage());
 
-    expect(html).toContain("諮詢專案不需要，可稍後");
+    expect(html).toContain("諮詢專案不適用");
+    // 4 applicable merchant steps done + the unfinished project step.
+    expect(html).toContain("4 / 5");
     expect(html).toContain("繼續：建立諮詢服務");
   });
 });

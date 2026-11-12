@@ -162,13 +162,61 @@ describe("buildOnboardingChecklist (the single 上線任務 list)", () => {
     expect(published).toMatchObject({ complete: true, completedSteps: 6, totalSteps: 6, percentage: 100, nextStep: null });
   });
 
-  it("does not send a consultation project to build a sellable live first", () => {
+  it("marks the sellable-live step not applicable for a consultation project and leaves it out of the counts", () => {
     const checklist = buildOnboardingChecklist(
       merchantOnboardingProgress({ ...completeSignals, sellableLiveCount: 0, readyVideoCount: 0 }),
       { id: "c1", name: "諮詢", primaryFlow: "consultation", progress: projectProgress("consultation"), cardBindingRequired: true },
     );
-    expect(checklist.steps.find((item) => item.key === "launch")).toMatchObject({ done: false, deferred: true, deferredLabel: "諮詢專案不需要，可稍後" });
+    expect(checklist.steps.find((item) => item.key === "launch")).toMatchObject({ done: false, notApplicable: "諮詢專案不適用", requirements: [] });
+    // 4 applicable merchant steps (all done) + the project step.
+    expect(checklist).toMatchObject({ completedSteps: 4, totalSteps: 5, percentage: 80, complete: false });
     expect(checklist.nextStep).toMatchObject({ key: "project", href: "/consultations", actionLabel: "建立諮詢服務" });
+    expect(onboardingChecklistItems(checklist).map((item) => item.key)).toEqual(["profile", "payment", "catalog", "journey", "project"]);
+  });
+
+  it("is complete with no next step once a consultation project is published, without any sellable live", () => {
+    const checklist = buildOnboardingChecklist(
+      merchantOnboardingProgress({ ...completeSignals, sellableLiveCount: 0, readyVideoCount: 0 }),
+      {
+        id: "c1", name: "諮詢", primaryFlow: "consultation", cardBindingRequired: true,
+        progress: projectProgress("consultation", { hasFunnelTemplate: true, hasConsultationService: true, hasAvailability: true, hasLiveSession: false, isPublished: true }),
+      },
+    );
+    expect(checklist).toMatchObject({ complete: true, nextStep: null, completedSteps: 5, totalSteps: 5, percentage: 100 });
+  });
+});
+
+describe("platform payment while funnel_binding is closed", () => {
+  const closed = merchantOnboardingProgress({ ...completeSignals, verifiedVendorPaymentMethodCount: 0, platformPaymentRequired: false });
+
+  it("says the step is not needed instead of claiming a valid payment record", () => {
+    const payment = closed.steps.find((item) => item.key === "payment")!;
+    expect(payment).toMatchObject({ done: false, notApplicable: "目前不需要", requirements: [] });
+    expect(payment.description).toContain("目前未開放");
+    expect(payment.description).not.toContain("有效的商家平台服務付款紀錄");
+    expect(JSON.stringify(payment)).not.toContain("有效的商家平台服務付款紀錄");
+  });
+
+  it("leaves the step out of the total, the next step and the compact views", () => {
+    expect(closed).toMatchObject({ completedSteps: 4, totalSteps: 4, percentage: 100, complete: true, nextStep: null });
+    const checklist = buildOnboardingChecklist(closed);
+    expect(onboardingChecklistItems(checklist).map((item) => item.key)).toEqual(["profile", "catalog", "journey", "launch"]);
+  });
+
+  it("keeps the project step consistent: no payment requirement either", () => {
+    const progress = evaluateProjectOnboarding("live", {
+      exists: true, hasLinkedProduct: true, hasPricedProduct: true, hasFunnelTemplate: false, hasLiveSession: true,
+      hasConsultationService: false, hasAvailability: false, hasPaymentMethod: true, hasPreviewableFlow: true, isPublished: false,
+    });
+    const checklist = buildOnboardingChecklist(closed, { id: "p1", name: "P", primaryFlow: "live", progress, cardBindingRequired: false });
+    expect(checklist.steps.at(-1)!.requirements.map((item) => item.label)).not.toContain("檢查發布所需付款驗證");
+    expect(checklist.totalSteps).toBe(5);
+  });
+
+  it("still requires the verified record while card binding is open", () => {
+    const open = merchantOnboardingProgress({ ...completeSignals, verifiedVendorPaymentMethodCount: 0, platformPaymentRequired: true });
+    expect(open.steps.find((item) => item.key === "payment")).toMatchObject({ done: false, deferred: true, requirements: [{ label: "有效的商家平台服務付款紀錄", done: false }] });
+    expect(open.totalSteps).toBe(5);
   });
 });
 

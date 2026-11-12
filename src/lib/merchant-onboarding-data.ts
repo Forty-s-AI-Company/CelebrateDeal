@@ -71,6 +71,7 @@ async function loadMerchantProgress(db: Db, input: OnboardingChecklistInput, pay
   return merchantOnboardingProgress({
     supportEmailConfigured: input.supportEmailConfigured,
     verifiedVendorPaymentMethodCount,
+    platformPaymentRequired: input.cardBindingRequired,
     sellableProductCount,
     // Malformed forms and empty templates cannot carry a registration, so they do not count.
     activeFormCount: activeFormCandidates.filter((form) => parseRegistrationFormFields(form.fields).success).length,

@@ -1,4 +1,4 @@
-import { Check, CheckCircle2, Circle } from "lucide-react";
+import { Check, CheckCircle2, Circle, MinusCircle } from "lucide-react";
 import Link from "next/link";
 
 import { SettingsBackLink } from "@/components/settings-back-link";
@@ -65,14 +65,16 @@ export default async function OnboardingPage() {
             <Card className="grid gap-4 md:grid-cols-[auto_1fr_auto] md:items-start">
               {step.done ? (
                 <CheckCircle2 aria-hidden="true" className="mt-0.5 text-emerald-600" />
+              ) : step.notApplicable ? (
+                <MinusCircle aria-hidden="true" className="mt-0.5 text-slate-300" />
               ) : (
                 <Circle aria-hidden="true" className="mt-0.5 text-slate-300" />
               )}
               <div>
                 <div className="flex flex-wrap items-center gap-2">
                   <h2 className="font-semibold text-slate-950">Step {index + 1}. {step.title}</h2>
-                  <Badge tone={step.done ? "green" : step.deferred ? "orange" : "gray"}>
-                    {step.done ? "已完成" : step.deferred ? step.deferredLabel ?? "外部驗證，可稍後" : "待完成"}
+                  <Badge tone={step.done ? "green" : step.notApplicable ? "gray" : step.deferred ? "orange" : "gray"}>
+                    {step.done ? "已完成" : step.notApplicable ?? (step.deferred ? "外部驗證，可稍後" : "待完成")}
                   </Badge>
                 </div>
                 <p className="mt-2 text-sm leading-6 text-slate-600">{step.description}</p>
@@ -113,7 +115,7 @@ export default async function OnboardingPage() {
                   </div>
                 ) : null}
               </div>
-              {step.key === "launch" && !step.done ? null : (
+              {step.notApplicable || (step.key === "launch" && !step.done) ? null : (
                 <ButtonLink href={step.href} tone={step.done || step.deferred ? "secondary" : "cta"}>
                   {step.done ? "檢查設定" : step.actionLabel}
                 </ButtonLink>
