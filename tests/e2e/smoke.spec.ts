@@ -749,11 +749,17 @@ test("dashboard onboarding card shows the /onboarding steps with concrete next-s
   const checklist = page.getByRole("heading", { name: "上線導引", exact: true }).locator("../..");
 
   await expect(checklist.getByRole("link", { name: /商店與客服資料/ })).toHaveAttribute("href", "/settings/brand");
-  await expect(checklist.getByRole("link", { name: /平台服務付款驗證/ })).toHaveAttribute("href", "/billing/payment-methods");
   await expect(checklist.getByRole("link", { name: /建立可販售商品/ })).toHaveAttribute("href", "/products/new");
   await expect(checklist.getByRole("link", { name: /完成報名流程/ })).toBeVisible();
   await expect(checklist.getByRole("link", { name: /準備第一場可販售直播/ })).toBeVisible();
   await expect(checklist.getByRole("link", { name: "查看完整清單", exact: true })).toHaveAttribute("href", "/onboarding");
+  // The payment step is listed only while card binding applies; /onboarding must agree either way.
+  const paymentLinks = await checklist.getByRole("link", { name: /平台服務付款驗證/ }).count();
+  if (paymentLinks > 0) await expect(checklist.getByRole("link", { name: /平台服務付款驗證/ })).toHaveAttribute("href", "/billing/payment-methods");
+  await page.goto("/onboarding");
+  const paymentStep = page.locator("li").filter({ has: page.getByRole("heading", { name: /平台服務付款驗證$/u }) });
+  if (paymentLinks > 0) await expect(paymentStep.getByText("目前不需要", { exact: true })).toHaveCount(0);
+  else await expect(paymentStep.getByText("目前不需要", { exact: true })).toBeVisible();
 });
 
 test("merchant can drag the last template message to the first timeline slot", async ({ page }) => {
