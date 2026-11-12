@@ -33,15 +33,29 @@
 
 ### 常青場課後信（F-2）
 
-常青場（`isActiveEvergreenLive`）的觀眾場次只存在簽章 httpOnly cookie。課後信（`post_live_followup`）依觀眾自己的場次寄送，權威資料是 `EvergreenSessionAssignment`（每筆報名一列）：
+常青場（`isActiveEvergreenLive`）的觀眾場次只存在簽章 httpOnly cookie。課後信（`post_live_followup`）依常青模式分兩種：
 
-- **記錄時機**：`POST /api/live-evergreen-session`（claim／rejoin）回應已指派的場次，且請求帶有效的報名簽章 cookie（`FORM_SUBMISSION_CHAT_SESSION_COOKIE`）時記錄；Email 驗證成功時，若請求帶的常青 cookie 解析出已指派場次（先進觀看頁、後驗證）也記錄。商家設定共用開場時間（`evergreenSessionStartAt`）時，每位觀眾的場次就是該時間，驗證成功時不需常青 cookie 也記錄。GET 不寫入；沒有報名 cookie 的訪客不會寫入這張表。寫入失敗只回報監控，不影響回應。
+- **商家設定共用開場時間（`evergreenSessionStartAt`）**：這場等同單一固定時間的場次。排程對**所有已驗證報名者**以**目前的**共用開場時間計算（開場＋影片長度＋規則分鐘數），走一般單一時間的路徑，不讀也不寫 `EvergreenSessionAssignment`；設定共用開場前就驗證的人也會收到。商家改動開場時間時，舊時間尚未寄出的那封在寄送前被 supersede，新時間到期才寄；已寄過就不再寄。
+- **逐觀眾場次（即時入場、每日固定場次、隨選播放）**：權威資料是 `EvergreenSessionAssignment`（每筆報名一列），只有「在同一個瀏覽器完成 Email 驗證並進入觀看頁」的報名者會有列，常青期間只寄給他們。
+
+逐觀眾場次的規則：
+
+- **記錄時機**（皆需同一瀏覽器上有效的報名簽章 cookie `FORM_SUBMISSION_CHAT_SESSION_COOKIE`，且報名屬於這場、已驗證）：
+  - `POST /api/live-evergreen-session`（claim／rejoin）回應已指派場次時記錄。
+  - Email 驗證成功時，若請求帶的常青 cookie 解析出已指派場次（先進觀看頁、後驗證）也記錄。
+  - 瀏覽器已有常青 cookie（觀看頁 client 不會再 claim）時，觀看頁（Server Component，只讀）若發現這位報名者目前的場次尚未記錄（沒有相同 fingerprint、開始時間不早於目前場次的列），就給 client 一個 `recordRegistration` 旗標，client 送一次 claim（沿用既有場次）由 Route Handler 寫入。沒有報名 cookie 或沒有逐觀眾場次的訪客不會多任何查詢。
+  - GET 不寫入；寫入失敗只回報監控，不影響回應。
 - **綁定**：寫入是單一條件式 `INSERT ... SELECT ... ON CONFLICT`，只從「這場直播、`VERIFIED`、表單屬於這個商家」的報名取 id；`(vendorId, liveId)` 與 `(liveId, formSubmissionId)` 複合 FK 再綁一次。`sessionStartAt` 只來自伺服器解析的場次。
 - **更新規則**：排程 fingerprint 不同就取代；相同時只往較晚的場次移（兩個瀏覽器各有場次時以較晚者為準）。
-- **寄送**：排程取 `sessionStartAt` 在「現在 − 影片長度 − 規則分鐘數」之前、72 小時內的列（逾期超過 72 小時不補寄），以場次開始時間當 `liveScheduledAt` 建立快照；`{{live_start_at}}` 是觀眾自己的場次（與指定場次相同，以 Asia/Taipei 顯示）。不看 fingerprint：排程改掉之前已指派的場次照記錄的時間寄。同一規則每位報名者最多一封：rejoin 把場次往後移時，舊場次未寄出的那封被 supersede，已寄過就不再寄。寄送前檢查重新讀這位報名者的 assignment，場次不同或沒有 assignment 就不寄。
-- **沒進過觀看頁的報名者**：常青期間不寄。
+- **寄送**：排程取 `sessionStartAt` 在「現在 − 影片長度 − 規則分鐘數」之前、72 小時內的列（逾期超過 72 小時不補寄），排除這位報名者在這條規則底下已有非 `superseded` 課後信的列，依場次開始時間由舊到新、每輪最多 `recipientLimit` 位；Email 無法使用的報名者跳過且不佔名額。以場次開始時間當 `liveScheduledAt` 建立快照；`{{live_start_at}}` 是觀眾自己的場次（與指定場次相同，以 Asia/Taipei 顯示）。不看 fingerprint：排程改掉之前已指派的場次照記錄的時間寄。寄送前檢查重新讀這位報名者的 assignment，場次不同或沒有 assignment 就不寄。
+- **一位報名者、一條規則最多一封**：rejoin 把場次往後移時，舊場次尚未寄出的那封在寄送前被 supersede，新場次到期後的下一輪才建立新的那封；模板改版也一樣（舊版在寄送前被 supersede，下一輪建立新版）。已寄過就不再寄。
 - **常青關閉、結束或改回草稿**：沿用 #582，依原開播時間補寄給已驗證報名者；常青期間已收到同一規則課後信的人不會再收到（待 owner 決定是否改變補寄對象）。
-- **已知限制**：常青生效時儲存常青設定，會在 commit 後把這場直播所有排隊中的課後信標為 `superseded`（`supersedeFixedTimeNotificationsForActiveEvergreen`）；下一次排程（72 小時內）會依同一個 id 重新啟用，所以只是延後，不會漏寄或重寄。
+- **設定重存**：常青生效時儲存常青設定，會在 commit 後把這場直播所有排隊中的課後信標為 `superseded`（`supersedeFixedTimeNotificationsForActiveEvergreen`）；這些報名者會重新出現在排程查詢，若場次仍在 72 小時內，下一輪依同一個 id 重新啟用；超過 72 小時的就不再寄。
+- **涵蓋不到的情況**（不是錯誤，是目前設計的限制）：
+  - 在 A 裝置看、在 B 裝置驗證：A 沒有報名 cookie，不會記錄；B 只有在自己進入觀看頁後才記錄 B 的場次。
+  - 報名 cookie 是全域單一 cookie，以最後一筆報名為準：同一瀏覽器報名多場常青直播時，只有最後那場會記錄。
+  - 回訪或換裝置 rejoin 會把場次往後移，尚未寄出的課後信跟著延後。
+  - 從未在已驗證的瀏覽器進入觀看頁的報名者，常青期間不寄。
 
 ## 歸因與佣金
 
