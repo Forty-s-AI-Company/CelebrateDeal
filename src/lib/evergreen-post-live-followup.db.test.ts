@@ -349,6 +349,46 @@ describe("evergreen post_live_followup disposable database integration", () => {
     ]);
   });
 
+  it("treats a revision that is being sent right now as sent: no new revision and no reactivation", async () => {
+    const db = getDb();
+    const { vendor, live } = await createFixture({ isEvergreen: false });
+    await processDuePostLiveFollowups({ now, vendorId: vendor.id });
+    const [queued] = await followupDeliveries(vendor.id, live.id);
+    // The current revision was superseded while an older revision of the same
+    // rule is claimed by the dispatcher (status "sending").
+    await db.emailDelivery.updateMany({
+      where: { id: queued!.id, vendorId: vendor.id },
+      data: { status: "superseded", nextAttemptAt: null, lastErrorCode: "lifecycle_superseded" },
+    });
+    const prefix = queued!.idempotencyKey.slice(0, -queued!.id.length);
+    const full = await db.emailDelivery.findUniqueOrThrow({ where: { id: queued!.id } });
+    await db.emailDelivery.create({
+      data: {
+        id: `${queued!.id}-sending`,
+        vendorId: vendor.id,
+        sourceTemplateId: full.sourceTemplateId,
+        sourceLiveId: live.id,
+        sourceFormSubmissionId: full.sourceFormSubmissionId,
+        trigger: "post_live_followup",
+        payloadEncryptedEnvelope: "disposable-not-dispatched",
+        recipientHash: full.recipientHash,
+        recipientMaskedEmail: full.recipientMaskedEmail,
+        idempotencyKey: `${prefix}${queued!.id}-sending`,
+        status: "sending",
+        claimedAt: now,
+        attemptCount: 1,
+      },
+    });
+
+    await expect(processDuePostLiveFollowups({ now, vendorId: vendor.id }))
+      .resolves.toEqual([{ status: "already_sent" }]);
+    await expect(followupDeliveries(vendor.id, live.id)).resolves.toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: queued!.id, status: "superseded" }),
+      expect.objectContaining({ id: `${queued!.id}-sending`, status: "sending" }),
+    ]));
+    expect(await db.emailDelivery.count({ where: { vendorId: vendor.id, sourceLiveId: live.id, trigger: "post_live_followup" } })).toBe(2);
+  });
+
   it("does not queue a follow-up for an address the send-time guard can never accept", async () => {
     const db = getDb();
     const { vendor, live, submission } = await createFixture({ isEvergreen: false });

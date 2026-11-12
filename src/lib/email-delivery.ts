@@ -539,6 +539,17 @@ export async function ensurePostLiveFollowupDelivery(
   const isBlacklisted = Boolean(blacklist);
   const idempotencyPrefix = postLiveFollowupIdempotencyPrefix(rule.id);
   const idempotencyKey = `${idempotencyPrefix}${deliveryId}`;
+  // A revision of this rule that reached, or is being handed to, the provider.
+  // Either one means the recipient gets (or got) this follow-up, so no other
+  // revision may be created or reactivated next to it.
+  const sentOrSendingRevision: Prisma.EmailDeliveryWhereInput = {
+    vendorId: input.vendorId,
+    sourceLiveId: input.liveId,
+    sourceFormSubmissionId: input.formSubmissionId,
+    trigger: "post_live_followup",
+    idempotencyKey: { startsWith: idempotencyPrefix },
+    status: { in: ["sent", "sending"] },
+  };
   const supersedeOlder: Prisma.EmailDeliveryUpdateManyArgs = {
     where: {
       vendorId: input.vendorId,
@@ -559,17 +570,7 @@ export async function ensurePostLiveFollowupDelivery(
 
   try {
     const delivery = await db.$transaction(async (tx) => {
-      const alreadySent = await tx.emailDelivery.findFirst({
-        where: {
-          vendorId: input.vendorId,
-          sourceLiveId: input.liveId,
-          sourceFormSubmissionId: input.formSubmissionId,
-          trigger: "post_live_followup",
-          idempotencyKey: { startsWith: idempotencyPrefix },
-          status: "sent",
-        },
-        select: { id: true },
-      });
+      const alreadySent = await tx.emailDelivery.findFirst({ where: sentOrSendingRevision, select: { id: true } });
       if (alreadySent) return { id: alreadySent.id, status: "sent", nextAttemptAt: null };
       await tx.emailDelivery.updateMany(supersedeOlder);
       return tx.emailDelivery.create({
@@ -623,17 +624,7 @@ export async function ensurePostLiveFollowupDelivery(
         nextAttemptAt: existing.nextAttemptAt,
       };
       if (existing.status !== "superseded") return duplicate;
-      const alreadySent = await tx.emailDelivery.findFirst({
-        where: {
-          vendorId: input.vendorId,
-          sourceLiveId: input.liveId,
-          sourceFormSubmissionId: input.formSubmissionId,
-          trigger: "post_live_followup",
-          idempotencyKey: { startsWith: idempotencyPrefix },
-          status: "sent",
-        },
-        select: { id: true },
-      });
+      const alreadySent = await tx.emailDelivery.findFirst({ where: sentOrSendingRevision, select: { id: true } });
       if (alreadySent) return { status: "already_sent" as const, deliveryId: alreadySent.id, nextAttemptAt: null };
       const blocked = isSuppressed || isBlacklisted;
       const reactivated = await tx.emailDelivery.updateMany({

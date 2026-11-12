@@ -657,6 +657,13 @@ describe("email delivery outbox", () => {
       status: "already_sent",
       deliveryId: "already-sent",
     });
+    // A revision being handed to the provider right now counts as sent.
+    expect(mocks.db.emailDelivery.findFirst).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({
+        idempotencyKey: { startsWith: "post-live-followup/rule-1/" },
+        status: { in: ["sent", "sending"] },
+      }),
+    }));
     expect(mocks.db.emailDelivery.create).not.toHaveBeenCalled();
   });
 
@@ -703,6 +710,8 @@ describe("email delivery outbox", () => {
           sourceFormSubmissionId: "submission-1",
           trigger: "post_live_followup",
           idempotencyKey: { startsWith: "post-live-followup/rule-1/" },
+          // A revision being handed to the provider right now counts as sent.
+          status: { in: ["sent", "sending"] },
         }),
       }));
       expect(mocks.db.emailDelivery.updateMany.mock.calls.some(isReactivation)).toBe(false);
