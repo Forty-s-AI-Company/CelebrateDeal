@@ -4,26 +4,21 @@ import Link from "next/link";
 import { SettingsBackLink } from "@/components/settings-back-link";
 import { Badge, ButtonLink, Card, PageHeader } from "@/components/ui";
 import { requireVendorManagerContext } from "@/lib/auth";
-import { getDb } from "@/lib/db";
 import { isCardBindingRequired } from "@/lib/feature-gates";
-import {
-  findSelectedOnboardingProject,
-  loadOnboardingChecklist,
-  trackingConfiguredFor,
-} from "@/lib/merchant-onboarding-data";
+import { getOnboardingChecklist, trackingConfiguredFor } from "@/lib/merchant-onboarding-data";
 
 /** The complete 上線任務 list; the sidebar panel and the dashboard show the same steps. */
 export default async function OnboardingPage() {
   const { auth, vendor } = await requireVendorManagerContext();
-  const db = getDb();
-  const progress = await loadOnboardingChecklist(db, {
-    vendorId: vendor.id,
-    supportEmailConfigured: Boolean(vendor.supportEmail?.trim()),
-    trackingConfigured: trackingConfiguredFor(vendor.tracking),
-    // While funnel_binding is closed no card can be bound, so the step counts as satisfied (F-002).
-    cardBindingRequired: isCardBindingRequired(vendor),
-    selectedProject: await findSelectedOnboardingProject(db, vendor.id, auth.user.id),
-  });
+  // Same request-cached load as the sidebar panel in the app layout.
+  const progress = await getOnboardingChecklist(
+    vendor.id,
+    auth.user.id,
+    Boolean(vendor.supportEmail?.trim()),
+    trackingConfiguredFor(vendor.tracking),
+    // While funnel_binding is closed no card can be bound, so the payment step does not apply (F-002).
+    isCardBindingRequired(vendor),
+  );
 
   return (
     <>

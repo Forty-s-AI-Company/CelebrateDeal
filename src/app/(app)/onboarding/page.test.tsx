@@ -108,7 +108,10 @@ describe("/onboarding route", () => {
         OR: [{ expiresAt: null }, { expiresAt: { gt: expect.any(Date) } }],
       },
     });
-    expect(mocks.liveFindMany).toHaveBeenCalledWith(sellableLiveReadinessQuery(vendor.id));
+    // Readiness reads stop at the first usable row (batches of ONBOARDING_READINESS_BATCH_SIZE, by id).
+    const live = sellableLiveReadinessQuery(vendor.id);
+    expect(mocks.liveFindMany).toHaveBeenCalledExactlyOnceWith({ where: live.where, select: { ...live.select, id: true }, orderBy: { id: "asc" }, take: 50 });
+    expect(mocks.formFindMany).toHaveBeenCalledExactlyOnceWith({ where: { vendorId: vendor.id, isActive: true }, select: { id: true, fields: true }, orderBy: { id: "asc" }, take: 50 });
     expect(html).toContain(">上線導引<");
     expect(html).toContain("5 / 5");
     expect(html).toContain("核心流程完成");

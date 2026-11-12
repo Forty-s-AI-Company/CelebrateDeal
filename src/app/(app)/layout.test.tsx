@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const mocks = vi.hoisted(() => ({ requireVendorContext: vi.fn(), getDb: vi.fn(), state: vi.fn(), portal: vi.fn() }));
+const mocks = vi.hoisted(() => ({ requireVendorContext: vi.fn(), getDb: vi.fn(), state: vi.fn(), portal: vi.fn(), capture: vi.fn() }));
+vi.mock("@/lib/monitoring", () => ({ captureOperationalError: mocks.capture }));
 vi.mock("@/lib/auth", () => ({ requireVendorContext: mocks.requireVendorContext }));
 vi.mock("@/lib/db", () => ({ getDb: mocks.getDb }));
 vi.mock("@/lib/merchant-email-verification", () => ({ vendorEmailVerificationState: mocks.state }));
@@ -37,7 +38,7 @@ function merchantOnboardingTables() {
 function managerDb() {
   return {
     vendorSubscription: { findFirst: vi.fn().mockResolvedValue(null) },
-    salesProject: { findMany: vi.fn().mockResolvedValue([]) },
+    salesProject: { findMany: vi.fn().mockResolvedValue([]), findFirst: vi.fn().mockResolvedValue(null) },
     userOnboardingPreference: { findUnique: vi.fn().mockResolvedValue(null) },
     ...merchantOnboardingTables(),
   };
@@ -171,6 +172,18 @@ describe("protected shell data boundary", () => {
     expect(db.salesProjectProduct.count).not.toHaveBeenCalled();
   });
 
+  it("hides the panel instead of failing the back office when the onboarding read fails", async () => {
+    mocks.requireVendorContext.mockResolvedValue(context("owner"));
+    const db = managerDb();
+    const failure = Object.assign(new Error("synthetic read failure"), { code: "P1001" });
+    db.product.count.mockRejectedValue(failure);
+    mocks.getDb.mockReturnValue(db);
+    const view = await ProtectedLayout({ children: "protected content" });
+    expect(view.props.onboardingTasks).toEqual([]);
+    expect(view.props.children).toBe("protected content");
+    expect(mocks.capture).toHaveBeenCalledExactlyOnceWith(failure, { source: "app-layout", operation: "onboarding-checklist" }, { level: "warning" });
+  });
+
   it("does not read onboarding data while the guide is hidden", async () => {
     mocks.requireVendorContext.mockResolvedValue(context("owner"));
     const db = managerDb();
@@ -187,7 +200,11 @@ describe("protected shell data boundary", () => {
     const project = { id: "own-project", name: "Own project", status: "draft", primaryFlow: "live", publishedAt: null };
     const db = {
       ...managerDb(),
-      salesProject: { findMany: vi.fn().mockResolvedValue([project]) },
+      // Like the database: the lookup only matches a project of this vendor.
+      salesProject: {
+        findMany: vi.fn().mockResolvedValue([project]),
+        findFirst: vi.fn(async ({ where }: { where: { id: string; vendorId: string } }) => where.id === project.id && where.vendorId === "vendor-1" ? project : null),
+      },
       userOnboardingPreference: { findUnique: vi.fn().mockResolvedValue({ selectedProjectId, taskPanelCollapsed: false }) },
       onboardingTaskState: { findMany: vi.fn().mockResolvedValue([]) },
       salesProjectProduct: { count: vi.fn().mockResolvedValue(1) },
@@ -198,6 +215,7 @@ describe("protected shell data boundary", () => {
     expect(view.props.taskPanelCollapsed).toBe(false);
     const own = selectedProjectId === "own-project";
     expect(view.props.selectedProjectId).toBe(own ? "own-project" : null);
+    expect(db.salesProject.findFirst).toHaveBeenCalledWith(expect.objectContaining({ where: { id: selectedProjectId, vendorId: "vendor-1", status: { not: "archived" } } }));
     if (own) expect(db.onboardingTaskState.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { vendorId: "vendor-1", scopeKey: "own-project" } }));
     else expect(db.onboardingTaskState.findMany).not.toHaveBeenCalled();
     for (const query of [db.salesProjectProduct.count, db.registrationForm.count, db.live.count, db.consultationEvent.findMany]) {

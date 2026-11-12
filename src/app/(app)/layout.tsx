@@ -8,7 +8,8 @@ import { enabledFeaturesForVendor } from "@/lib/vendor-feature-toggles";
 import { isCardBindingRequired } from "@/lib/feature-gates";
 import { persistTaskPanelCollapsedAction, selectSalesProjectAction } from "@/app/actions/sales-workspace-actions";
 import { onboardingChecklistItems } from "@/lib/merchant-onboarding";
-import { loadOnboardingChecklist, trackingConfiguredFor } from "@/lib/merchant-onboarding-data";
+import { getOnboardingChecklist, trackingConfiguredFor } from "@/lib/merchant-onboarding-data";
+import { captureOperationalError } from "@/lib/monitoring";
 import { hasActiveAffiliatePortalAccess } from "@/lib/affiliate-portal";
 
 /**
@@ -43,6 +44,26 @@ async function memberShellState(
   return { content, hasPartnerPortal };
 }
 
+/**
+ * The panel is a compact view of /onboarding: the same request-cached loader,
+ * the same steps. A failed read hides the panel instead of failing every
+ * back-office page; the error is reported without tenant data.
+ */
+async function sidebarOnboardingTasks(vendor: Awaited<ReturnType<typeof requireVendorContext>>["vendor"], userId: string) {
+  try {
+    return onboardingChecklistItems(await getOnboardingChecklist(
+      vendor.id,
+      userId,
+      Boolean(vendor.supportEmail?.trim()),
+      trackingConfiguredFor(vendor.tracking),
+      isCardBindingRequired(vendor),
+    ));
+  } catch (error) {
+    captureOperationalError(error, { source: "app-layout", operation: "onboarding-checklist" }, { level: "warning" });
+    return [];
+  }
+}
+
 export default async function ProtectedLayout({ children }: { children: React.ReactNode }) {
   const { auth, vendor } = await requireVendorContext();
   const { content, hasPartnerPortal } = await memberShellState(auth, vendor.id, children);
@@ -60,13 +81,6 @@ export default async function ProtectedLayout({ children }: { children: React.Re
   ]);
   const selectedProject = projects.find((project) => project.id === preference?.selectedProjectId) ?? null;
   const guideHidden = Boolean(preference?.guideDismissedAt || (preference?.taskPanelHiddenUntil && preference.taskPanelHiddenUntil > new Date()));
-  // The panel is a compact view of /onboarding: the same loader, the same steps.
-  const onboardingTasks = guideHidden ? [] : onboardingChecklistItems(await loadOnboardingChecklist(db, {
-    vendorId: vendor.id,
-    supportEmailConfigured: Boolean(vendor.supportEmail?.trim()),
-    trackingConfigured: trackingConfiguredFor(vendor.tracking),
-    cardBindingRequired: isCardBindingRequired(vendor),
-    selectedProject,
-  }));
+  const onboardingTasks = guideHidden ? [] : await sidebarOnboardingTasks(vendor, auth.user.id);
   return <AppShell vendorName={vendor.name} memberRole={auth.member?.role ?? null} enabledModules={enabledFeaturesForVendor(vendor)} planLabel={activeSubscription?.plan.name ?? "Free"} hasPartnerPortal={hasPartnerPortal} projects={projects} selectedProjectId={selectedProject?.id ?? null} onboardingTasks={onboardingTasks} taskPanelCollapsed={preference?.taskPanelCollapsed ?? true} selectProject={selectSalesProjectAction} persistTaskPanelCollapsed={persistTaskPanelCollapsedAction}>{content}</AppShell>;
 }

@@ -1,4 +1,6 @@
-import type { getDb } from "@/lib/db";
+import { cache } from "react";
+import type { Prisma } from "@prisma/client";
+import { getDb } from "@/lib/db";
 import { liveReadyVideoWhere } from "@/lib/live-video-readiness";
 import {
   buildOnboardingChecklist,
@@ -22,19 +24,23 @@ export type OnboardingChecklistInput = {
   vendorId: string;
   supportEmailConfigured: boolean;
   trackingConfigured: boolean;
-  /** While funnel_binding is closed there is no card to bind; the payment step counts as satisfied (F-002). */
+  /** While funnel_binding is closed there is no card to bind; the payment step does not apply (F-002). */
   cardBindingRequired: boolean;
   /** Must already be bound to `vendorId` (see `findSelectedOnboardingProject`). */
   selectedProject: OnboardingSelectedProject | null;
   now?: Date;
 };
 
+/**
+ * Rows read per batch while looking for the first usable form, Email template
+ * or sellable live. Only "is there one?" matters, so a merchant with many rows
+ * stops at the first match, and invalid rows at the front never hide a valid
+ * one further back.
+ */
+export const ONBOARDING_READINESS_BATCH_SIZE = 50;
+
 export function trackingConfiguredFor(tracking: { googleTagManagerId?: string | null; facebookPixelId?: string | null; tiktokPixelId?: string | null } | null | undefined) {
   return Boolean(tracking?.googleTagManagerId || tracking?.facebookPixelId || tracking?.tiktokPixelId);
-}
-
-function verifiedPaymentMethodCount(db: Db, vendorId: string, cardBindingRequired: boolean, now: Date) {
-  return cardBindingRequired ? db.paymentMethodReference.count({ where: verifiedVendorPaymentMethodWhere(vendorId, now) }) : Promise.resolve(1);
 }
 
 /** The member's selected project, only when it belongs to this vendor and is not archived. */
@@ -47,38 +53,91 @@ export async function findSelectedOnboardingProject(db: Db, vendorId: string, us
   });
 }
 
+/** Reads `id`-ordered batches until `accept` finds a usable row or the rows run out. */
+async function hasUsableRow<T extends { id: string }>(readBatch: (afterId: string | null) => Promise<T[]>, accept: (rows: T[]) => boolean) {
+  let afterId: string | null = null;
+  for (;;) {
+    const rows = await readBatch(afterId);
+    if (accept(rows)) return true;
+    if (rows.length < ONBOARDING_READINESS_BATCH_SIZE) return false;
+    afterId = rows.at(-1)!.id;
+  }
+}
+
+function afterIdWhere(afterId: string | null) {
+  return afterId ? { id: { gt: afterId } } : {};
+}
+
+function hasUsableRegistrationForm(db: Db, vendorId: string) {
+  return hasUsableRow(
+    (afterId) => db.registrationForm.findMany({
+      where: { vendorId, isActive: true, ...afterIdWhere(afterId) },
+      select: { id: true, fields: true },
+      orderBy: { id: "asc" },
+      take: ONBOARDING_READINESS_BATCH_SIZE,
+    }),
+    // Malformed forms cannot carry a registration, so they do not count.
+    (rows) => rows.some((form) => parseRegistrationFormFields(form.fields).success),
+  );
+}
+
+function hasUsableRegistrationEmail(db: Db, vendorId: string) {
+  return hasUsableRow(
+    (afterId) => db.messageTemplate.findMany({
+      where: { vendorId, ...REGISTRATION_CONFIRMATION_EMAIL_TEMPLATE_WHERE, ...afterIdWhere(afterId) },
+      select: { id: true, subject: true, body: true },
+      orderBy: { id: "asc" },
+      take: ONBOARDING_READINESS_BATCH_SIZE,
+    }),
+    (rows) => rows.some(hasUsableMessageTemplateContent),
+  );
+}
+
+function hasSellableLive(db: Db, vendorId: string) {
+  const query = sellableLiveReadinessQuery(vendorId);
+  return hasUsableRow(
+    (afterId) => db.live.findMany({
+      where: { ...query.where, ...afterIdWhere(afterId) } satisfies Prisma.LiveWhereInput,
+      select: { ...query.select, id: true },
+      orderBy: { id: "asc" },
+      take: ONBOARDING_READINESS_BATCH_SIZE,
+    }),
+    (rows) => countSellableLiveReadinessCandidates(rows) > 0,
+  );
+}
+
 async function loadMerchantProgress(db: Db, input: OnboardingChecklistInput, paymentMethodCount: Promise<number>) {
   const { vendorId } = input;
   const [
     verifiedVendorPaymentMethodCount,
     sellableProductCount,
-    activeFormCandidates,
+    usableForm,
     activeInteractionRoleCount,
     publishedInteractionScriptCount,
-    registrationEmailTemplateCandidates,
+    usableRegistrationEmail,
     readyVideoCount,
-    sellableLiveCandidates,
+    sellableLive,
   ] = await Promise.all([
     paymentMethodCount,
     db.product.count({ where: { vendorId, isActive: true, fulfillmentTypeConfirmed: true } }),
-    db.registrationForm.findMany({ where: { vendorId, isActive: true }, select: { fields: true } }),
+    hasUsableRegistrationForm(db, vendorId),
     db.interactionRole.count({ where: { vendorId, isActive: true } }),
     db.interactionScript.count({ where: { vendorId, status: "published" } }),
-    db.messageTemplate.findMany({ where: { vendorId, ...REGISTRATION_CONFIRMATION_EMAIL_TEMPLATE_WHERE }, select: { subject: true, body: true } }),
+    hasUsableRegistrationEmail(db, vendorId),
     db.video.count({ where: liveReadyVideoWhere(vendorId) }),
-    db.live.findMany(sellableLiveReadinessQuery(vendorId)),
+    hasSellableLive(db, vendorId),
   ]);
   return merchantOnboardingProgress({
     supportEmailConfigured: input.supportEmailConfigured,
     verifiedVendorPaymentMethodCount,
     platformPaymentRequired: input.cardBindingRequired,
     sellableProductCount,
-    // Malformed forms and empty templates cannot carry a registration, so they do not count.
-    activeFormCount: activeFormCandidates.filter((form) => parseRegistrationFormFields(form.fields).success).length,
+    // The steps only ask whether one usable row exists.
+    activeFormCount: usableForm ? 1 : 0,
     activeInteractionRoleCount,
     publishedInteractionScriptCount,
-    registrationEmailTemplateCount: registrationEmailTemplateCandidates.filter(hasUsableMessageTemplateContent).length,
-    sellableLiveCount: countSellableLiveReadinessCandidates(sellableLiveCandidates),
+    registrationEmailTemplateCount: usableRegistrationEmail ? 1 : 0,
+    sellableLiveCount: sellableLive ? 1 : 0,
     readyVideoCount,
     trackingConfigured: input.trackingConfigured,
   });
@@ -120,7 +179,10 @@ export async function loadOnboardingChecklist(db: Db, input: OnboardingChecklist
   const now = input.now ?? new Date();
   const project = input.selectedProject;
   // One payment read feeds both the merchant step and the project gate, so they always agree.
-  const paymentMethodCount = verifiedPaymentMethodCount(db, input.vendorId, input.cardBindingRequired, now);
+  // While funnel_binding is closed the publish gate treats payment as satisfied, like publishSalesProjectAction.
+  const paymentMethodCount = input.cardBindingRequired
+    ? db.paymentMethodReference.count({ where: verifiedVendorPaymentMethodWhere(input.vendorId, now) })
+    : Promise.resolve(1);
   const [merchant, projectProgress] = await Promise.all([
     loadMerchantProgress(db, input, paymentMethodCount),
     project ? loadProjectProgress(db, input.vendorId, project, paymentMethodCount) : Promise.resolve(null),
@@ -133,3 +195,26 @@ export async function loadOnboardingChecklist(db: Db, input: OnboardingChecklist
     cardBindingRequired: input.cardBindingRequired,
   } : null);
 }
+
+/**
+ * Request-scoped entry for Server Components: the app layout (sidebar panel)
+ * and /onboarding render in the same request and share one load. Arguments are
+ * primitives so React `cache()` can match them; the selected project is
+ * re-resolved here and bound to `vendorId`.
+ */
+export const getOnboardingChecklist = cache(async (
+  vendorId: string,
+  userId: string,
+  supportEmailConfigured: boolean,
+  trackingConfigured: boolean,
+  cardBindingRequired: boolean,
+) => {
+  const db = getDb();
+  return loadOnboardingChecklist(db, {
+    vendorId,
+    supportEmailConfigured,
+    trackingConfigured,
+    cardBindingRequired,
+    selectedProject: await findSelectedOnboardingProject(db, vendorId, userId),
+  });
+});
