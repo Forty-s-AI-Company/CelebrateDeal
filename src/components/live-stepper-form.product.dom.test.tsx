@@ -565,8 +565,11 @@ describe("LiveStepperForm 商品勾選順序與置頂", () => {
       host.innerHTML = renderToString(element);
       document.body.append(host);
       let hydrated: Root | undefined;
+      const recoverableErrors: unknown[] = [];
       try {
-        await act(async () => { hydrated = hydrateRoot(host, element, { onRecoverableError: () => undefined }); });
+        await act(async () => { hydrated = hydrateRoot(host, element, { onRecoverableError: (error) => { recoverableErrors.push(error); } }); });
+        // The server markup matched: React did not have to throw it away and render on the client.
+        expect(recoverableErrors).toEqual([]);
         const boxes = Array.from(host.querySelectorAll<HTMLInputElement>('input[type="checkbox"][data-live-product-option]'));
         expect(boxes).toHaveLength(3);
         expect(boxes.some((input) => input.disabled)).toBe(false);
