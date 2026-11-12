@@ -71,6 +71,8 @@
 | D-42 | 舊 worktree 強制移除（T5） | **A：封測後依安全步驟移除**（先拆 `node_modules` 連結、缺 tag 的先補 tag、commission policy 分支與 staging 回復點先由 owner 確認）；同時刪除本機 `prisma/dev.db`、`error.log`<br>B：現在移除 | 6 個 Codex 舊 worktree 含未追蹤檔案（已有 archive tag 備份）；10-17 曾因移除 worktree 清空主目錄的 `node_modules` | 封測後 | T5；B10-13、B10-14 |
 | D-43 | `docs/` 歸檔 | **A：封測後分批搬到 `reports/archive/2026/`**，先改掉被測試與 CI 寫死路徑的 43 個檔案再搬；PNG 是否保留由 owner 決定<br>B：搬到獨立 repo | `docs/` 1,885 個檔案中約 91.5% 是可封存的收據（F-164）；直接搬會讓 CI 變紅（F-165） | 封測後 | B10-10、B10-11；goal plan §9 Q8 |
 | D-44 | 課程模組、常青場與 3 個未接線功能（A/B 測試、AI 漏斗助理、互動卡片媒體）的去留 | **A：封測後依訪談與使用數據決定；未接線的 3 個先標註「未上線」** | 常青場設定可儲存但排程沒有被呼叫（F-019）；課程是市場報告的 Defer 項目 | 2026-12 封測回顧 | B01-19、B10-08 |
+
+> 2026-11-12 依程式現況更新（D-44 原文保留）：常青場排程已接線（請求當下依伺服器時間計算場次，`src/lib/evergreen-viewer-session.ts`、`src/lib/evergreen-activation.ts`；#505、#507、#520）；課程已有 `courses` 功能開關與伺服器端檢查（#465，`src/lib/feature-gates.ts`）；A/B 測試要分兩種——`src/lib/ab-testing.ts` 仍未被正式程式呼叫，但漏斗的分流實驗已接線（`src/lib/funnel-runtime.ts`、`funnel-operations-service.ts`）；AI 漏斗助理（`src/lib/ai-funnel-assistant.ts`）與互動卡片媒體仍只被各自的測試引用（`src/lib/ai-funnel-assistant.test.ts`、`src/lib/interaction-card-timeline.test.ts`），未接線。細節與依據見 `docs/ROADMAP-v2.md` 的「現況更新」。
 | D-45 | 公開價格頁與方案定價 | **A：依回顧訪談第 8 題的價格帶，在公開上線前發布透明價格頁**；方案內含觀看分鐘額度、超量另計 | 透明定價是對幫賣的差異點；常青場是唯一會隨使用量線性放大的成本 | 公開上線前 | 市場報告 billing 列與單位成本模型 |
 | D-46 | 何時、以什麼條件正式上 Production | **A：L2 完成、律師與會計師確認、備份與 migration 流程演練後**，另行授權 | Production 部署與正式付款依規則都需 owner 另外授權 | 封測回顧後 | AGENTS.md；ROADMAP §3.4 |
 
