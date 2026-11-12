@@ -41,6 +41,10 @@ describe("merchant policy continuous publishing", () => {
     await render();
     await setValue(control("uplineRate-0"), "8"); await setValue(control("overrideRate-u0"), "12"); await setValue(control("overrideProduct-u0"), "second");
     expect(field("overrideProduct").value).toBe("second");
+    // 選單的標籤只含標籤文字（不包住選單，選項文字不會算進名稱）。
+    const select = control("overrideProduct-u0") as HTMLSelectElement;
+    expect(select.closest("label")).toBeNull();
+    expect([...select.labels].map(label => label.textContent)).toEqual(["佣金商品 1"]);
     for (const revision of [2, 3]) {
       await submit();
       expect(field("expectedRevision").value).toBe(String(revision));

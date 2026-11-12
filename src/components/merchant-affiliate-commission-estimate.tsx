@@ -51,12 +51,14 @@ export function MerchantAffiliateCommissionEstimate({ terms, products }: {
       <span id={`${id}-sold-hint`} className="text-xs text-slate-600">階梯依新政策開始後的累計已付款件數決定；0 代表第一筆。</span>
       {errorFor("soldBefore") ? <span id={`${id}-soldBefore-error`} className="text-xs font-medium text-red-700">{errorFor("soldBefore")}</span> : null}
     </div>
-    {products.length ? <label className="grid gap-1 text-sm font-medium text-slate-800">套用商品佣金
-      <select className={inputClass} value={productId} onChange={set("productId")}>
+    {products.length ? <div className="grid gap-1">
+      {/* 選單不包在 <label> 裡：否則標籤文字會連同選項文字一起算進名稱。 */}
+      <label htmlFor={`${id}-product`} className="text-sm font-medium text-slate-800">套用商品佣金</label>
+      <select id={`${id}-product`} className={inputClass} value={productId} onChange={set("productId")}>
         <option value="">不指定商品（依件數階梯）</option>
         {products.map(product => <option key={product.id} value={product.id}>{product.name}</option>)}
       </select>
-    </label> : null}
+    </div> : null}
     <div aria-live="polite" data-commission-estimate={result.kind} className="grid gap-2 rounded-md bg-slate-50 p-3 text-sm">
       {result.kind === "invalid-policy" ? <p>左側設定有需要修正的欄位，修正後才會顯示試算。</p> : null}
       {result.kind === "invalid-input" ? <p>請先修正試算條件。</p> : null}

@@ -224,12 +224,12 @@ function OverrideRow({ index, uiId, hidden, productId, ratePercent, products, ed
   const field = useFieldMessages(productError);
   return <li hidden={hidden} data-policy-row={`override-${uiId}`} className="grid gap-3 rounded-md border border-slate-200 p-3 sm:grid-cols-[2fr_1fr_auto]">
     <div className="grid gap-1.5">
-      <label className="grid gap-1 text-sm font-medium text-slate-800">佣金商品 {index + 1}
-        <select name="overrideProduct" className={`${inputBase} ${field.controlClass}`} required value={productId} onChange={event => onProduct(event.target.value)} id={policyControlId(policyFieldKey.overrideProduct(uiId))} data-policy-field={policyFieldKey.overrideProduct(uiId)} {...field.controlProps}>
-          <option value="">選擇商品</option>
-          {products.map(product => <option key={product.id} value={product.id}>{product.name}</option>)}
-        </select>
-      </label>
+      {/* 選單不包在 <label> 裡：否則標籤文字會連同選項文字一起算進名稱。 */}
+      <label htmlFor={policyControlId(policyFieldKey.overrideProduct(uiId))} className="text-sm font-medium text-slate-800">佣金商品 {index + 1}</label>
+      <select name="overrideProduct" className={`${inputBase} ${field.controlClass}`} required value={productId} onChange={event => onProduct(event.target.value)} id={policyControlId(policyFieldKey.overrideProduct(uiId))} data-policy-field={policyFieldKey.overrideProduct(uiId)} {...field.controlProps}>
+        <option value="">選擇商品</option>
+        {products.map(product => <option key={product.id} value={product.id}>{product.name}</option>)}
+      </select>
       {field.messages}
     </div>
     <PercentField label={`商品 ${index + 1} 佣金（%）`} name="overrideRate" fieldKey={policyFieldKey.overrideRate(uiId)} value={ratePercent} onChange={onRate} error={rateError} editable={editable} />
