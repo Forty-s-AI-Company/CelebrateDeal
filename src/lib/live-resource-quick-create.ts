@@ -1,10 +1,13 @@
 import { parseSafeExternalHttpUrl } from "@/lib/external-url";
+import { formatTwd } from "@/lib/format";
 import type { LiveNotificationRuleTrigger } from "@/lib/live-notification-rules";
 import { hasOnlySupportedMessageTemplateVariables } from "@/lib/message-template";
+import { MAX_PRODUCT_NAME_LENGTH } from "@/lib/product-name-contract";
 
 /**
  * Shared contract of the live studio's 「就地建立」 drawers: the registration
- * form and the three Email templates the studio can bind. Client-safe; the
+ * form, the three Email templates the studio can bind, the video and the
+ * product. Client-safe; the
  * Server Actions in `src/app/actions/live-resource-quick-create.ts` re-check
  * everything here.
  */
@@ -120,6 +123,86 @@ export function liveQuickVideoFieldErrors(draft: { title: string; videoUrl: stri
   if (!videoUrl) errors.videoUrl = "請貼上影片網址。";
   else if (videoUrl.length > LIVE_QUICK_VIDEO_LIMITS.videoUrl || !parseSafeExternalHttpUrl(videoUrl)) errors.videoUrl = "影片網址必須是有效的 HTTP 或 HTTPS 完整網址。";
   return errors;
+}
+
+/**
+ * Product types the studio's product drawer may create: only types that can be
+ * put on sale without a post-purchase delivery setup. Digital content and
+ * courses need a delivery URL and services need buyer instructions before
+ * they can be listed, so those go to the full product editor.
+ */
+export const LIVE_QUICK_PRODUCT_FULFILLMENT_TYPES = ["physical"] as const;
+export type LiveQuickProductFulfillmentType = (typeof LIVE_QUICK_PRODUCT_FULFILLMENT_TYPES)[number];
+
+export function isLiveQuickProductFulfillmentType(value: unknown): value is LiveQuickProductFulfillmentType {
+  return typeof value === "string" && (LIVE_QUICK_PRODUCT_FULFILLMENT_TYPES as readonly string[]).includes(value);
+}
+
+/**
+ * The product editor's bounds (`src/lib/product-save.ts`): the name length,
+ * a price stored in cents in a 32-bit column (so NT$21,474,836 is the largest
+ * whole price) and greater than 0 for a listed product, and a 32-bit stock.
+ * The studio creates a listed product to sell in this live, and checkout
+ * refuses a product without stock, so stock starts at 1 here.
+ */
+export const LIVE_QUICK_PRODUCT_LIMITS = {
+  name: MAX_PRODUCT_NAME_LENGTH,
+  priceMin: 1,
+  priceMax: Math.floor(2_147_483_647 / 100),
+  inventoryMin: 1,
+  inventoryMax: 2_147_483_647,
+} as const;
+
+/** Same shape the live pages hand the studio for its product checkboxes. */
+export type LiveQuickProductOption = { id: string; name: string; inventory: number };
+export type LiveQuickProductField = "root" | "name" | "price" | "inventory" | "fulfillmentType";
+export type LiveQuickProductResult = LiveQuickCreateResult<LiveQuickProductOption, LiveQuickProductField>;
+
+export type LiveQuickProductDraft = { name: string; price: string; inventory: string; fulfillmentType: string };
+export type LiveQuickProductInput = { name: string; priceTwd: number; inventory: number; fulfillmentType: LiveQuickProductFulfillmentType };
+
+const wholeNumberPattern = /^\d+$/u;
+
+function wholeNumber(value: string) {
+  return wholeNumberPattern.test(value) ? Number(value) : null;
+}
+
+/**
+ * Field-level checks for the studio's product drawer, run by the drawer and
+ * again by the Server Action, which only ever forwards the parsed whole
+ * numbers. The product core validates the price and stock a third time.
+ */
+export function parseLiveQuickProductDraft(draft: LiveQuickProductDraft):
+  | { success: true; data: LiveQuickProductInput }
+  | { success: false; errors: Partial<Record<LiveQuickProductField, string>> } {
+  const errors: Partial<Record<LiveQuickProductField, string>> = {};
+  const { priceMin, priceMax, inventoryMin, inventoryMax } = LIVE_QUICK_PRODUCT_LIMITS;
+  const name = draft.name.trim();
+  if (!name) errors.name = "請填寫商品名稱。";
+  else if (name.length > LIVE_QUICK_PRODUCT_LIMITS.name) errors.name = `商品名稱最多 ${LIVE_QUICK_PRODUCT_LIMITS.name} 字。`;
+
+  const priceText = draft.price.trim();
+  const priceTwd = wholeNumber(priceText);
+  if (!priceText) errors.price = "請填寫售價。";
+  else if (priceTwd === null) errors.price = "售價須為新台幣整數元，不含小數點、逗號或符號。";
+  else if (priceTwd < priceMin) errors.price = "售價必須大於 0。";
+  else if (priceTwd > priceMax) errors.price = `售價不可超過 ${formatTwd(priceMax * 100)}。`;
+
+  const inventoryText = draft.inventory.trim();
+  const inventory = wholeNumber(inventoryText);
+  if (!inventoryText) errors.inventory = "請填寫可售庫存。";
+  else if (inventory === null) errors.inventory = "可售庫存須為整數。";
+  else if (inventory < inventoryMin) errors.inventory = "可售庫存至少為 1，庫存為 0 的商品無法結帳。";
+  else if (inventory > inventoryMax) errors.inventory = `可售庫存不可超過 ${inventoryMax.toLocaleString("en-US")}。`;
+
+  if (!isLiveQuickProductFulfillmentType(draft.fulfillmentType)) {
+    errors.fulfillmentType = "這裡只能建立實體商品；數位內容、服務或課程請到完整商品頁設定。";
+  }
+
+  if (Object.keys(errors).length > 0 || priceTwd === null || inventory === null || !isLiveQuickProductFulfillmentType(draft.fulfillmentType)) {
+    return { success: false, errors };
+  }
+  return { success: true, data: { name, priceTwd, inventory, fulfillmentType: draft.fulfillmentType } };
 }
 
 /** Puts locally created options first, then the server's, without duplicates. */

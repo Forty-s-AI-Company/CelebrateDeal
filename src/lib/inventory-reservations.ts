@@ -192,7 +192,7 @@ function runSerializable<T>(
 /**
  * B-2: `Product.revision` is the product *content* version (price, title,
  * options, offer configuration). It moves only when the merchant edits the
- * product (product-actions, course-curriculum). Stock writes in this module
+ * product (product-save, course-curriculum). Stock writes in this module
  * never move it: the `inventory >= quantity` conditional decrement is the
  * stock invariant, and merchant stock edits use their own compare-and-set on
  * the inventory value they loaded. Concurrent buyers of an unchanged product
