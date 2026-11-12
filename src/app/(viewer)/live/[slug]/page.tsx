@@ -23,6 +23,7 @@ import { publicLiveAvailabilityWhere } from "@/lib/sellable-live";
 import { resolveLiveRuntime, type LiveRuntimeState } from "@/lib/live-runtime-state";
 import { isFixedSessionLive, resolveFixedSessionRuntime } from "@/lib/live-fixed-sessions";
 import { registrationSessionTokenFromCookieHeader, resolveViewerFixedSessionForLive } from "@/lib/live-fixed-sessions-store";
+import { evergreenRegistrationRecordNeeded } from "@/lib/evergreen-session-assignment";
 import { buildShareMetadata, shareDescription, unavailableShareMetadata } from "@/lib/public-share-metadata";
 import { publicInteractionMetadata } from "@/lib/public-interaction-metadata";
 import { isProductPurchasable } from "@/lib/feature-gates";
@@ -233,6 +234,17 @@ export default async function PublicLivePage({ params }: { params: Promise<{ slu
   // The evergreen rule itself is off for a fixed-session Live.
   const fixedSession = await readFixedSession(live, serverNow);
   const evergreen = await readEvergreenSession(live, serverNow);
+  // Read-only: a verified registrant whose existing session is not recorded
+  // yet is asked to claim once (the Route Handler records it). No query runs
+  // without a valid registration cookie and a per-visitor session.
+  const recordRegistration = evergreen
+    ? await evergreenRegistrationRecordNeeded({
+        live,
+        session: evergreen,
+        cookieHeader: (await headers()).get("cookie"),
+        now: serverNow,
+      })
+    : false;
   const schedule = viewerSchedule({ runtime, evergreen, fixedSession, liveScheduledAt: live.scheduledAt });
   const runtimeState = schedule.runtimeState;
   const sameVendorActiveForm = Boolean(live.form?.vendorId === live.vendorId && live.form.isActive);
@@ -321,7 +333,9 @@ export default async function PublicLivePage({ params }: { params: Promise<{ slu
         status: live.status,
         runtimeState,
         scheduledAt: schedule.scheduledAt,
-        ...(projected ? { evergreen: projected.evergreen } : {}),
+        ...(projected
+          ? { evergreen: { ...projected.evergreen, ...(recordRegistration ? { recordRegistration: true as const } : {}) } }
+          : {}),
         serverNow: serverNow.toISOString(),
         description: live.description,
         accentCopy: live.accentCopy,

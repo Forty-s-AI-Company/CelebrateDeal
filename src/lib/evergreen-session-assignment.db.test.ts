@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { getDb } from "@/lib/db";
 import {
+  evergreenRegistrationRecordNeeded,
   recordEvergreenSessionAssignment,
   recordEvergreenSessionForRegistrant,
 } from "@/lib/evergreen-session-assignment";
@@ -215,6 +216,21 @@ describe("recordEvergreenSessionForRegistrant", () => {
     ]);
   });
 
+  it("records nothing for a merchant anchor (shared start)", async () => {
+    const fx = await fixture("shared");
+    const submission = await fx.register(fx.live.id, "shared");
+    const shared = evergreenScheduleForLive({ ...fx.live, evergreenSessionStartAt: at(60) }, "Asia/Taipei", T0)!;
+    expect(shared.sharedStartAt).toEqual(at(60));
+    await expect(recordEvergreenSessionForRegistrant({
+      live: fx.live,
+      session: { assigned: true, sessionStartAt: at(60), schedule: shared },
+      registration: { submissionId: submission.id },
+      now: T0,
+      operation: "verification",
+    })).resolves.toBe("skipped");
+    await expect(rows(fx.vendor.id)).resolves.toEqual([]);
+  });
+
   it("does not record an unassigned (read-only) session", async () => {
     const fx = await fixture("unassigned");
     const submission = await fx.register(fx.live.id, "unassigned");
@@ -226,5 +242,56 @@ describe("recordEvergreenSessionForRegistrant", () => {
       operation: "verification",
     })).resolves.toBe("skipped");
     await expect(rows(fx.vendor.id)).resolves.toEqual([]);
+  });
+});
+
+describe("evergreenRegistrationRecordNeeded (viewer page, read-only)", () => {
+  function cookieFor(submissionId: string) {
+    return `analytics=1; ${FORM_SUBMISSION_CHAT_SESSION_COOKIE}=${encodeURIComponent(createFormSubmissionChatSessionToken({ submissionId, now: T0 }))}`;
+  }
+
+  it("asks for a claim only while a verified registrant's current session is unrecorded", async () => {
+    const fx = await fixture("needed");
+    const submission = await fx.register(fx.live.id, "needed");
+    const schedule = evergreenScheduleForLive(fx.live, "Asia/Taipei", T0)!;
+    const session = { assigned: true, sessionStartAt: at(15), schedule };
+    const needed = (overrides: Partial<Parameters<typeof evergreenRegistrationRecordNeeded>[0]> = {}) => evergreenRegistrationRecordNeeded({
+      live: fx.live, session, cookieHeader: cookieFor(submission.id), now: T0, ...overrides,
+    });
+
+    await expect(needed()).resolves.toBe(true);
+    // Same schedule but an earlier recorded start (another browser): still needed.
+    await recordEvergreenSessionAssignment({ vendorId: fx.vendor.id, liveId: fx.live.id, formSubmissionId: submission.id, sessionStartAt: at(0), scheduleFingerprint: evergreenScheduleFingerprint(schedule) });
+    await expect(needed()).resolves.toBe(true);
+    // Recorded at this start: nothing to do.
+    await recordEvergreenSessionAssignment({ vendorId: fx.vendor.id, liveId: fx.live.id, formSubmissionId: submission.id, sessionStartAt: at(15), scheduleFingerprint: evergreenScheduleFingerprint(schedule) });
+    await expect(needed()).resolves.toBe(false);
+    // A row from an older schedule does not count.
+    await recordEvergreenSessionAssignment({ vendorId: fx.vendor.id, liveId: fx.live.id, formSubmissionId: submission.id, sessionStartAt: at(15), scheduleFingerprint: FP_B });
+    await expect(needed()).resolves.toBe(true);
+  });
+
+  it("answers false without a valid cookie, for other registrations, or without a per-visitor session", async () => {
+    const fx = await fixture("not-needed");
+    const other = await fixture("not-needed-other");
+    const unverified = await fx.register(fx.live.id, "unverified", "UNVERIFIED");
+    const otherLive = await fx.register(fx.otherLive.id, "other-live");
+    const foreign = await other.register(other.live.id, "foreign");
+    const own = await fx.register(fx.live.id, "own");
+    const schedule = evergreenScheduleForLive(fx.live, "Asia/Taipei", T0)!;
+    const session = { assigned: true, sessionStartAt: at(15), schedule };
+    const check = (cookieHeader: string | null, input: Partial<Parameters<typeof evergreenRegistrationRecordNeeded>[0]> = {}) => evergreenRegistrationRecordNeeded({
+      live: fx.live, session, cookieHeader, now: T0, ...input,
+    });
+
+    await expect(check(null)).resolves.toBe(false);
+    await expect(check(`${FORM_SUBMISSION_CHAT_SESSION_COOKIE}=forged`)).resolves.toBe(false);
+    await expect(check(cookieFor(unverified.id))).resolves.toBe(false);
+    await expect(check(cookieFor(otherLive.id))).resolves.toBe(false);
+    await expect(check(cookieFor(foreign.id))).resolves.toBe(false);
+    await expect(check(cookieFor(own.id), { session: { ...session, assigned: false } })).resolves.toBe(false);
+    const shared = evergreenScheduleForLive({ ...fx.live, evergreenSessionStartAt: at(60) }, "Asia/Taipei", T0)!;
+    await expect(check(cookieFor(own.id), { session: { assigned: true, sessionStartAt: at(60), schedule: shared } })).resolves.toBe(false);
+    await expect(check(cookieFor(own.id))).resolves.toBe(true);
   });
 });

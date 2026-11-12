@@ -248,11 +248,11 @@ describe("verified registrant session record (F-2)", () => {
     expect(recordedValues()).toContain("2026-10-29T07:00:00.000Z");
   });
 
-  it("records the merchant's shared start for a registrant", async () => {
+  it("records nothing for a merchant's shared start (the job follows the current anchor)", async () => {
     db.live.findFirst.mockResolvedValue({ ...evergreenLive, evergreenSessionStartAt: new Date("2026-10-29T08:00:00.000Z") });
     const response = await POST(post({ vendorId: "vendor-1", liveId: "live-1" }, registrationCookie()));
     expect(await response.json()).toMatchObject({ sessionStartAt: "2026-10-29T08:00:00.000Z" });
-    expect(recordedValues()).toContain("2026-10-29T08:00:00.000Z");
+    expect(db.$queryRaw).not.toHaveBeenCalled();
   });
 
   it("does not write on GET, even with both cookies", async () => {

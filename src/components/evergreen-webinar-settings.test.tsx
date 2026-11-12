@@ -30,9 +30,10 @@ describe("EvergreenWebinarSettings", () => {
     expect(html).toContain("依開播時間排定的 LINE／Email 開播提醒不會寄出");
     expect(html).not.toContain("常青生效期間也不寄課後 Email 通知");
     expect(html).toContain("課後 Email 通知改依觀眾自己的場次寄送");
-    expect(html).toContain("完成 Email 驗證並進過觀看頁的觀眾，會在自己的場次結束後依設定時間收到課後信");
-    expect(html).toContain("沒進過觀看頁的報名者在常青期間不會收到");
-    expect(html).toContain("常青期間完成驗證的報名者都以這個開場時間計算");
+    expect(html).toContain("在同一個瀏覽器完成 Email 驗證並進入觀看頁的觀眾，會在自己的場次結束後依設定時間收到課後信");
+    expect(html).toContain("在別的裝置驗證、或同一瀏覽器之後又報名其他場的報名者，常青期間不會收到");
+    expect(html).toContain("還沒寄出的課後信會延到新場次之後");
+    expect(html).toContain("有設定共用開場時間時，所有已驗證報名者都在共用場次結束後依設定時間收到");
     expect(html).toContain("關閉常青設定、常青場結束或改回草稿後，會依原開播時間補寄給還沒收過課後信的已驗證報名者");
     expect(html).toContain("若要保留原場次的課後信，請先結束直播，或等課後信寄完再開啟常青");
     expect(html).toContain("以下全場共用互動會停用");

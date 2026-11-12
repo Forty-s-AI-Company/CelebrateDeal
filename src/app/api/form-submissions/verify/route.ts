@@ -108,9 +108,10 @@ async function releaseSeatOfExpiredLink(token: string) {
 /**
  * A visitor who opened the evergreen viewer page before verifying already
  * holds a signed session cookie: record that session for the now-VERIFIED
- * registration so the post-live follow-up follows it. With a merchant anchor
- * (shared start) every visitor's session is that anchor, so it is recorded
- * without a cookie. Never fails the verified result.
+ * registration so the post-live follow-up follows it. Nothing is recorded
+ * without that cookie, or for a merchant anchor (shared start), whose
+ * follow-up uses the current anchor for every verified registrant. Never
+ * fails the verified result.
  */
 async function recordVerifiedEvergreenSession(
   request: Request,

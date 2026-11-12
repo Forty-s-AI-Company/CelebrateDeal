@@ -820,7 +820,8 @@ export async function supersedeLiveNotificationDeliveriesForLifecycle(
  * registrant's own EvergreenSessionAssignment) and becomes `superseded` there.
  * The sweep also cancels queued per-registrant evergreen follow-ups when the
  * settings are saved again while evergreen is active; the job reactivates
- * those (same revision id) on its next run, so they are delayed, not lost.
+ * those (same revision id) on its next run while their session is still in
+ * the 72-hour look-back window.
  */
 export async function supersedeFixedTimeNotificationsForActiveEvergreen(
   input: { vendorId: string; liveId: string },

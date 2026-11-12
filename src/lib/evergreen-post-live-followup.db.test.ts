@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { getDb } from "@/lib/db";
 import {
+  dispatchEmailDelivery,
   EVERGREEN_FOLLOWUP_LOOKBACK_MS,
   isCurrentEmailDeliverySnapshot,
   processDuePostLiveFollowups,
@@ -26,6 +27,9 @@ const createdVendorIds: string[] = [];
 beforeEach(() => {
   vi.stubEnv("CSRF_SECRET", "evergreen-post-live-disposable-secret-longer-than-thirty-two-bytes");
   vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://evergreen-followup.example.test");
+  // dispatchEmailDelivery is only used on rows its send-time guard rejects;
+  // no provider key exists here even if one were ever reached.
+  vi.stubEnv("RESEND_API_KEY", "");
 });
 
 afterEach(async () => {
@@ -477,8 +481,8 @@ describe("evergreen per-registrant post_live_followup", () => {
     expect(payload.body).not.toContain(taipei(scheduledAt));
     // Send-time guard: current while evergreen is active and the session matches.
     await expect(isCurrentEmailDeliverySnapshot(queued!, due)).resolves.toBe(true);
-    // A further run is a duplicate, not a second email.
-    await expect(processDuePostLiveFollowups({ now: due, vendorId: vendor.id })).resolves.toEqual([{ status: "duplicate" }]);
+    // A further run does not revisit a registrant who already has this rule's email.
+    await expect(processDuePostLiveFollowups({ now: due, vendorId: vendor.id })).resolves.toEqual([]);
   });
 
   it("follows up only registrants with a recorded session", async () => {
@@ -520,6 +524,11 @@ describe("evergreen per-registrant post_live_followup", () => {
     await expect(assign(vendor.id, live.id, submission.id, later)).resolves.toBe("recorded");
     await expect(isCurrentEmailDeliverySnapshot(first!, now)).resolves.toBe(false);
     await expect(processDuePostLiveFollowups({ now, vendorId: vendor.id })).resolves.toEqual([]);
+    // The dispatcher's send-time guard supersedes the stale email instead of sending it.
+    await expect(dispatchEmailDelivery(first!.id)).resolves.toMatchObject({ status: "superseded" });
+    await expect(followupDeliveries(vendor.id, live.id)).resolves.toEqual([
+      expect.objectContaining({ id: first!.id, status: "superseded", lastErrorCode: "config_superseded" }),
+    ]);
 
     const due = new Date(later.getTime() + 41 * MINUTE);
     await expect(processDuePostLiveFollowups({ now: due, vendorId: vendor.id })).resolves.toEqual([{ status: "queued" }]);
@@ -543,7 +552,8 @@ describe("evergreen per-registrant post_live_followup", () => {
     await db.emailDelivery.updateMany({ where: { id: first!.id, vendorId: vendor.id }, data: { status: "sent", sentAt: now, nextAttemptAt: null } });
 
     await assign(vendor.id, live.id, submission.id, before(2 * HOUR));
-    await expect(processDuePostLiveFollowups({ now, vendorId: vendor.id })).resolves.toEqual([{ status: "already_sent" }]);
+    // The sent email keeps this registrant out of the job's query entirely.
+    await expect(processDuePostLiveFollowups({ now, vendorId: vendor.id })).resolves.toEqual([]);
     await expect(followupDeliveries(vendor.id, live.id)).resolves.toEqual([expect.objectContaining({ id: first!.id, status: "sent" })]);
   });
 
@@ -555,6 +565,10 @@ describe("evergreen per-registrant post_live_followup", () => {
     const [revisionA] = await followupDeliveries(vendor.id, live.id);
 
     await db.messageTemplate.updateMany({ where: { vendorId: vendor.id }, data: { subject: "{{live_title}} 課後通知 v2" } });
+    // Revision A is still queued, so the registrant is not revisited yet; the
+    // dispatcher's send-time guard supersedes it, and the next run builds B.
+    await expect(processDuePostLiveFollowups({ now, vendorId: vendor.id })).resolves.toEqual([]);
+    await expect(dispatchEmailDelivery(revisionA!.id)).resolves.toMatchObject({ status: "superseded" });
     await expect(processDuePostLiveFollowups({ now, vendorId: vendor.id })).resolves.toEqual([{ status: "queued" }]);
     const deliveries = await followupDeliveries(vendor.id, live.id);
     const revisionB = deliveries.find((delivery) => delivery.id !== revisionA!.id)!;
@@ -648,5 +662,160 @@ describe("evergreen per-registrant post_live_followup", () => {
       expect.objectContaining({ id: queued!.id, status: "queued", nextAttemptAt: later }),
     ]);
     await expect(isCurrentEmailDeliverySnapshot(queued!, later)).resolves.toBe(true);
+  });
+
+  it("reaches every due registrant in order without revisiting handled ones", async () => {
+    const db = getDb();
+    const { vendor, live, submission } = await createFixture({ isEvergreen: true });
+    const form = await db.registrationForm.findFirstOrThrow({ where: { vendorId: vendor.id } });
+    const suffix = randomUUID();
+    await db.formSubmission.createMany({
+      data: Array.from({ length: 149 }, (_, index) => ({
+        formId: form.id, liveId: live.id, name: `Bulk ${index}`, email: `bulk-${index}-${suffix}@example.test`, verificationStatus: "VERIFIED" as const,
+      })),
+    });
+    const registrants = await db.formSubmission.findMany({ where: { liveId: live.id }, select: { id: true } });
+    expect(registrants).toHaveLength(150);
+    for (const [index, registrant] of registrants.entries()) {
+      await assign(vendor.id, live.id, registrant.id, new Date(before(3 * HOUR).getTime() + index * 1_000));
+    }
+    expect(registrants.map((registrant) => registrant.id)).toContain(submission.id);
+
+    const first = await processDuePostLiveFollowups({ now, vendorId: vendor.id, recipientLimitPerRule: 100 });
+    expect(first).toHaveLength(100);
+    expect(first.every((result) => result.status === "queued")).toBe(true);
+    const second = await processDuePostLiveFollowups({ now, vendorId: vendor.id, recipientLimitPerRule: 100 });
+    expect(second).toHaveLength(50);
+    expect(second.every((result) => result.status === "queued")).toBe(true);
+    const deliveries = await followupDeliveries(vendor.id, live.id);
+    expect(new Set(deliveries.map((delivery) => delivery.sourceFormSubmissionId))).toEqual(new Set(registrants.map((registrant) => registrant.id)));
+    // A third run hands nobody to ensurePostLiveFollowupDelivery.
+    await expect(processDuePostLiveFollowups({ now, vendorId: vendor.id, recipientLimitPerRule: 100 })).resolves.toEqual([]);
+    expect(await db.emailDelivery.count({ where: { vendorId: vendor.id, sourceLiveId: live.id } })).toBe(150);
+  });
+
+  it("does not let unsendable addresses at the head of the queue starve later registrants", async () => {
+    const db = getDb();
+    const { vendor, live, submission } = await createFixture({ isEvergreen: true });
+    const broken = [submission, await addRegistrant(vendor.id, live.id, "broken-2"), await addRegistrant(vendor.id, live.id, "broken-3")];
+    for (const [index, registrant] of broken.entries()) {
+      await db.formSubmission.update({ where: { id: registrant.id }, data: { email: `not-an-email-${index}` } });
+      await assign(vendor.id, live.id, registrant.id, new Date(before(5 * HOUR).getTime() + index * 1_000));
+    }
+    const fine = [await addRegistrant(vendor.id, live.id, "fine-1"), await addRegistrant(vendor.id, live.id, "fine-2")];
+    for (const registrant of fine) await assign(vendor.id, live.id, registrant.id, before(2 * HOUR));
+
+    for (const at of [now, new Date(now.getTime() + MINUTE)]) {
+      await processDuePostLiveFollowups({ now: at, vendorId: vendor.id, recipientLimitPerRule: 2 });
+    }
+    const deliveries = await followupDeliveries(vendor.id, live.id);
+    expect(deliveries.map((delivery) => delivery.sourceFormSubmissionId).sort()).toEqual(fine.map((registrant) => registrant.id).sort());
+  });
+
+  it("stops after one call when the rule's template cannot be used", async () => {
+    const db = getDb();
+    const { vendor, live, submission } = await createFixture({ isEvergreen: true });
+    await assign(vendor.id, live.id, submission.id, before(3 * HOUR));
+    for (const label of ["a", "b"]) await assign(vendor.id, live.id, (await addRegistrant(vendor.id, live.id, label)).id, before(2 * HOUR));
+    await db.messageTemplate.updateMany({ where: { vendorId: vendor.id }, data: { isActive: false } });
+
+    await expect(processDuePostLiveFollowups({ now, vendorId: vendor.id })).resolves.toEqual([{ status: "not_configured" }]);
+    await expect(followupDeliveries(vendor.id, live.id)).resolves.toEqual([]);
+  });
+});
+
+/**
+ * An evergreen Live with a merchant anchor (evergreenSessionStartAt) is one
+ * shared session: every VERIFIED registrant is followed up after the CURRENT
+ * anchor, and no assignment is read or written.
+ */
+describe("evergreen post_live_followup with a shared start", () => {
+  const MINUTE = 60_000;
+  const HOUR = 60 * MINUTE;
+  const before = (ms: number) => new Date(now.getTime() - ms);
+  const after = (ms: number) => new Date(now.getTime() + ms);
+
+  function setAnchor(vendorId: string, liveId: string, evergreenSessionStartAt: Date) {
+    return getDb().live.updateMany({ where: { id: liveId, vendorId }, data: { evergreenSessionStartAt } });
+  }
+
+  async function sharedFixture(anchor: Date) {
+    // The registrant verified before the anchor was set and never opened the viewer page.
+    const fixture = await createFixture({ isEvergreen: true });
+    await setAnchor(fixture.vendor.id, fixture.live.id, anchor);
+    return fixture;
+  }
+
+  it("follows up every verified registrant after the anchor, without any recorded session", async () => {
+    const db = getDb();
+    const { vendor, live, submission } = await sharedFixture(before(2 * HOUR));
+    await db.messageTemplate.updateMany({ where: { vendorId: vendor.id }, data: { body: "謝謝 {{name}} 參加 {{live_start_at}} 場。\n{{unsubscribe_url}}" } });
+
+    await expect(processDuePostLiveFollowups({ now, vendorId: vendor.id })).resolves.toEqual([{ status: "queued" }]);
+    const [queued] = await followupDeliveries(vendor.id, live.id);
+    expect(queued).toMatchObject({ sourceFormSubmissionId: submission.id, status: "queued" });
+    const payload = revealEmailDeliveryPayload(queued!.payloadEncryptedEnvelope, { vendorId: vendor.id, deliveryId: queued!.id });
+    const taipei = new Intl.DateTimeFormat("zh-TW", { dateStyle: "medium", timeStyle: "short", timeZone: "Asia/Taipei" }).format(before(2 * HOUR));
+    expect(payload.body).toContain(`參加 ${taipei} 場。`);
+    await expect(db.evergreenSessionAssignment.count({ where: { vendorId: vendor.id } })).resolves.toBe(0);
+    await expect(isCurrentEmailDeliverySnapshot(queued!, now)).resolves.toBe(true);
+  });
+
+  it("ignores a recorded session: only the current anchor counts", async () => {
+    const { vendor, live, submission } = await sharedFixture(after(HOUR));
+    // A row left from before the anchor was set (or written directly) is never read.
+    await recordEvergreenSessionAssignment({ vendorId: vendor.id, liveId: live.id, formSubmissionId: submission.id, sessionStartAt: before(3 * HOUR), scheduleFingerprint: "d".repeat(32), now });
+
+    await expect(processDuePostLiveFollowups({ now, vendorId: vendor.id })).resolves.toEqual([{ status: "not_due" }]);
+    await expect(followupDeliveries(vendor.id, live.id)).resolves.toEqual([]);
+  });
+
+  it("moves with the anchor: the old time sends nothing once moved later, the new time does", async () => {
+    const { vendor, live } = await sharedFixture(before(2 * HOUR));
+    await processDuePostLiveFollowups({ now, vendorId: vendor.id });
+    const [stale] = await followupDeliveries(vendor.id, live.id);
+    expect(stale).toMatchObject({ status: "queued" });
+
+    // Moved to a session that has not started yet: no "thanks for attending" before it.
+    const moved = after(HOUR);
+    await setAnchor(vendor.id, live.id, moved);
+    await expect(isCurrentEmailDeliverySnapshot(stale!, now)).resolves.toBe(false);
+    await expect(processDuePostLiveFollowups({ now, vendorId: vendor.id })).resolves.toEqual([{ status: "not_due" }]);
+    await expect(processDuePostLiveFollowups({ now: new Date(moved.getTime() + 30 * MINUTE), vendorId: vendor.id }))
+      .resolves.toEqual([{ status: "not_due" }]);
+
+    const due = new Date(moved.getTime() + 41 * MINUTE);
+    await expect(processDuePostLiveFollowups({ now: due, vendorId: vendor.id })).resolves.toEqual([{ status: "queued" }]);
+    const deliveries = await followupDeliveries(vendor.id, live.id);
+    const current = deliveries.find((delivery) => delivery.id !== stale!.id)!;
+    expect(deliveries).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: stale!.id, status: "superseded" }),
+      expect.objectContaining({ id: current.id, status: "queued" }),
+    ]));
+    await expect(isCurrentEmailDeliverySnapshot(current, due)).resolves.toBe(true);
+    // Re-running is a plain duplicate; the stale revision never comes back.
+    await expect(processDuePostLiveFollowups({ now: due, vendorId: vendor.id })).resolves.toEqual([{ status: "duplicate" }]);
+  });
+
+  it("sends at the earlier time when the anchor is moved earlier", async () => {
+    const { vendor, live } = await sharedFixture(after(HOUR));
+    await expect(processDuePostLiveFollowups({ now, vendorId: vendor.id })).resolves.toEqual([{ status: "not_due" }]);
+
+    await setAnchor(vendor.id, live.id, before(2 * HOUR));
+    await expect(processDuePostLiveFollowups({ now, vendorId: vendor.id })).resolves.toEqual([{ status: "queued" }]);
+    const [queued] = await followupDeliveries(vendor.id, live.id);
+    await expect(isCurrentEmailDeliverySnapshot(queued!, now)).resolves.toBe(true);
+  });
+
+  it("does not send again after the anchor moves once the follow-up was sent", async () => {
+    const db = getDb();
+    const { vendor, live } = await sharedFixture(before(2 * HOUR));
+    await processDuePostLiveFollowups({ now, vendorId: vendor.id });
+    const [sent] = await followupDeliveries(vendor.id, live.id);
+    await db.emailDelivery.updateMany({ where: { id: sent!.id, vendorId: vendor.id }, data: { status: "sent", sentAt: now, nextAttemptAt: null } });
+
+    await setAnchor(vendor.id, live.id, before(HOUR));
+    await expect(processDuePostLiveFollowups({ now, vendorId: vendor.id })).resolves.toEqual([{ status: "already_sent" }]);
+    await expect(followupDeliveries(vendor.id, live.id)).resolves.toEqual([expect.objectContaining({ id: sent!.id, status: "sent" })]);
   });
 });

@@ -269,7 +269,7 @@ describe("POST /api/form-submissions/verify", () => {
         expect(mocks.db.$queryRaw).not.toHaveBeenCalled();
       });
 
-      it("records the merchant's shared start without a cookie", async () => {
+      it("records nothing for a merchant's shared start (the job follows the current anchor)", async () => {
         vi.useFakeTimers({ toFake: ["Date"] });
         vi.setSystemTime(new Date("2026-10-29T06:03:00.000Z"));
         const sharedLive = { ...evergreenLive, evergreenSessionStartAt: new Date("2026-10-29T08:00:00.000Z") };
@@ -277,8 +277,9 @@ describe("POST /api/form-submissions/verify", () => {
           status: "verified",
           confirmation: { ...confirmation, evergreen: { live: sharedLive, vendorTimezone: "Asia/Taipei" } },
         });
-        await POST(request());
-        expect(recordedValues()).toEqual(expect.arrayContaining(["formsub_test", "2026-10-29T08:00:00.000Z"]));
+        const response = await POST(request());
+        expect(response.headers.get("location")).toBe("https://app.example.test/verify-registration?status=verified");
+        expect(mocks.db.$queryRaw).not.toHaveBeenCalled();
       });
 
       it("keeps the verified result, confirmation and cookie when recording fails", async () => {

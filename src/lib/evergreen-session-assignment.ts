@@ -6,7 +6,10 @@ import {
   type EvergreenViewerSession,
 } from "@/lib/evergreen-viewer-session";
 import { verifyFormSubmissionChatSessionToken } from "@/lib/form-submission-chat-session";
-import { registrationSessionTokenFromRequest } from "@/lib/live-fixed-sessions-store";
+import {
+  registrationSessionTokenFromCookieHeader,
+  registrationSessionTokenFromRequest,
+} from "@/lib/live-fixed-sessions-store";
 import { captureOperationalError } from "@/lib/monitoring";
 
 /**
@@ -106,6 +109,61 @@ export async function recordEvergreenSessionAssignment(
   return rows.length === 1 ? "recorded" : "skipped";
 }
 
+/**
+ * Read-only check for the viewer page (a Server Component, which must not
+ * write): true when this visitor holds a validly signed registration cookie
+ * of a VERIFIED registration of this Live and vendor, has an assigned
+ * per-visitor session, and that session is not recorded yet (no row with the
+ * same schedule fingerprint at the same or a later start). The page then asks
+ * the client to claim once, which keeps the session and records it.
+ *
+ * Anonymous visitors and visitors without an assigned per-visitor session
+ * cause no query. The answer reveals nothing beyond what the cookie holder
+ * already knows (their own registration). Any failure answers false.
+ */
+export async function evergreenRegistrationRecordNeeded(input: {
+  live: { id: string; vendorId: string };
+  session: Pick<EvergreenViewerSession, "assigned" | "sessionStartAt" | "schedule"> | null;
+  cookieHeader: string | null | undefined;
+  now: Date;
+}) {
+  const session = input.session;
+  if (!session?.assigned || session.schedule.sharedStartAt) return false;
+  try {
+    const token = registrationSessionTokenFromCookieHeader(input.cookieHeader);
+    const submissionId = token ? verifyFormSubmissionChatSessionToken(token, input.now)?.submissionId : null;
+    if (!submissionId) return false;
+    const submission = await getDb().formSubmission.findFirst({
+      where: {
+        id: submissionId,
+        liveId: input.live.id,
+        verificationStatus: "VERIFIED",
+        form: { vendorId: input.live.vendorId },
+      },
+      select: {
+        evergreenSessionAssignments: {
+          where: {
+            vendorId: input.live.vendorId,
+            liveId: input.live.id,
+            scheduleFingerprint: evergreenScheduleFingerprint(session.schedule),
+            sessionStartAt: { gte: session.sessionStartAt },
+          },
+          select: { id: true },
+          take: 1,
+        },
+      },
+    });
+    return Boolean(submission && submission.evergreenSessionAssignments.length === 0);
+  } catch (error) {
+    try {
+      captureOperationalError(error, { source: "evergreen_session_assignment", operation: "viewer_record_check", status: "failed" });
+    } catch {
+      // Monitoring cannot change the page.
+    }
+    return false;
+  }
+}
+
 /** The submission id of an authentic, unexpired registration cookie, or null. */
 export function registrationSubmissionIdFromRequest(request: Request, now: Date) {
   const token = registrationSessionTokenFromRequest(request);
@@ -131,6 +189,9 @@ export async function recordEvergreenSessionForRegistrant(input: {
   operation: "viewer_session" | "verification";
 }): Promise<EvergreenSessionAssignmentResult> {
   if (!input.session?.assigned) return "skipped";
+  // A merchant anchor is one shared session: the follow-up job uses the
+  // current anchor for every verified registrant, so nothing is recorded.
+  if (input.session.schedule.sharedStartAt) return "skipped";
   try {
     const formSubmissionId = "request" in input.registration
       ? registrationSubmissionIdFromRequest(input.registration.request, input.now)

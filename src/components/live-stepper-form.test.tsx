@@ -789,7 +789,7 @@ describe("LiveStepperForm", () => {
     }
     expect(markup).toContain("需要啟用中的 Email 開播提醒模板（live_reminder）才能新增。");
     expect(markup).toContain("需要啟用中的課後 Email 模板（post_live_followup）才能新增。");
-    expect(markup).toContain("常青 Webinar 生效期間，完成 Email 驗證並進過觀看頁的觀眾，會在自己的場次結束後依設定時間收到課後通知；沒進過觀看頁的報名者在常青期間不會收到。關閉常青設定、常青場結束或改回草稿後，會依原開播時間補寄給還沒收過的已驗證報名者。");
+    expect(markup).toContain("常青 Webinar 生效期間，在同一個瀏覽器完成 Email 驗證並進入觀看頁的觀眾，會在自己的場次結束後依設定時間收到課後通知，其他報名者在常青期間不會收到；有設定共用開場時間時，所有已驗證報名者都在共用場次結束後收到。關閉常青設定、常青場結束或改回草稿後，會依原開播時間補寄給還沒收過的已驗證報名者。");
   });
 
   it("suggests only post rules when only a post-live template exists", () => {
