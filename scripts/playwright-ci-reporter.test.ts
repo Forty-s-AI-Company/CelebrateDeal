@@ -64,6 +64,45 @@ describe("SanitizedPlaywrightCiReporter", () => {
     expect(message).not.toContain("secret-token-must-not-appear");
   });
 
+  it("adds only a fixed ASCII scan point and tag/class/colour node fingerprints", () => {
+    const message = formatSanitizedAxeBlockingError([{ id: "color-contrast" }], {
+      at: "publish-desktop-preview",
+      nodes: [
+        { tag: "button", classes: ["min-h-11", "bg-primary", "text-white", "hover:bg-primary-dark", "w-[secret]", "a/b", "Secret-Token"], fg: "#FFFFFF", bg: "#7da2ef", ratio: 2.614 },
+        { tag: "p", classes: ["text-xs", "text-slate-500"], fg: "#64748b", bg: "url(secret)", ratio: 4.1 },
+        { tag: "<script>", classes: "secret-token-must-not-appear" },
+      ],
+    });
+    expect(message).toBe("AXE_BLOCKING:RULES:color-contrast:AT:publish-desktop-preview:NODES:button.min-h-11.bg-primary.text-white(fg=#ffffff,bg=#7da2ef,ratio=2.61);p.text-xs.text-slate-500;node");
+    expect(classifySanitizedAxeError(`Error: ${message}`)).toBe("axe_blocking rules=color-contrast at=publish-desktop-preview nodes=button.min-h-11.bg-primary.text-white(fg=#ffffff,bg=#7da2ef,ratio=2.61);p.text-xs.text-slate-500;node");
+    expect(message).not.toContain("secret");
+    expect(message).not.toContain("Secret");
+  });
+
+  it("drops a non-ASCII or malformed scan point and caps the node list", () => {
+    const nodes = Array.from({ length: 9 }, () => ({ tag: "span", classes: ["text-xs"] }));
+    const message = formatSanitizedAxeBlockingError([{ id: "color-contrast" }], { at: "發布步 secret", nodes });
+    expect(message).toBe(`AXE_BLOCKING:RULES:color-contrast:NODES:${Array.from({ length: 5 }, () => "span.text-xs").join(";")}`);
+    expect(classifySanitizedAxeError(message)).toBe(`axe_blocking rules=color-contrast nodes=${Array.from({ length: 5 }, () => "span.text-xs").join(";")}`);
+    expect(formatSanitizedAxeBlockingError([{ id: "color-contrast" }], { at: "Bad_ID" })).toBe("AXE_BLOCKING:RULES:color-contrast");
+  });
+
+  it("rejects axe context outside the closed scan-point and node grammar", () => {
+    for (const value of [
+      "AXE_BLOCKING:RULES:color-contrast:AT:",
+      "AXE_BLOCKING:RULES:color-contrast:AT:Secret",
+      "AXE_BLOCKING:RULES:color-contrast:AT:a b",
+      "AXE_BLOCKING:RULES:color-contrast:NODES:",
+      "AXE_BLOCKING:RULES:color-contrast:NODES:#private-customer",
+      "AXE_BLOCKING:RULES:color-contrast:NODES:button[name=secret]",
+      "AXE_BLOCKING:RULES:color-contrast:NODES:div.hover:bg-slate-50",
+      "AXE_BLOCKING:RULES:color-contrast:NODES:p(fg=red,bg=#ffffff,ratio=2.00)",
+      "AXE_BLOCKING:RULES:color-contrast:NODES:p\n::error::secret",
+      "AXE_BLOCKING:RULES:color-contrast:NODES:a;b;c;d;e;f",
+      "AXE_BLOCKING:RULES:color-contrast:NODES:p:AT:live-step-4",
+    ]) expect(classifySanitizedAxeError(value)).toBeNull();
+  });
+
   it("rejects partial axe messages, raw JSON, unknown rules and annotation injection", () => {
     for (const value of [
       null, "AXE_BLOCKING:RULES:", "TypeError: AXE_BLOCKING:RULES:document-title", "AXE_BLOCKING:RULES:document-title\nsecret",

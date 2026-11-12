@@ -46,7 +46,7 @@ export function BillingPlanCheckoutForm({
         pendingOverride={submitting}
         pendingChildren="前往結帳中…"
         pendingMessage="正在建立結帳，請勿重複送出。"
-        className="inline-flex h-10 w-full items-center justify-center rounded-md bg-primary px-4 text-sm font-semibold text-white transition hover:bg-primary-dark"
+        className="inline-flex h-10 w-full items-center justify-center rounded-md bg-primary px-4 text-sm font-semibold text-white transition-colors hover:bg-primary-dark"
       >
         {label}
       </FormSubmitButton>
