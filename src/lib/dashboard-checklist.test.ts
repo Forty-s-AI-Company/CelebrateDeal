@@ -1,20 +1,20 @@
 import { describe, expect, it } from "vitest";
-import {
-  dashboardChecklistForRole,
-  filterDashboardChecklistForRole,
-  isDashboardManagerRole,
-  type DashboardChecklistCounts,
-} from "@/lib/dashboard-checklist";
+import { dashboardChecklistForRole, isDashboardManagerRole } from "@/lib/dashboard-checklist";
+import { buildOnboardingChecklist, merchantOnboardingProgress, type MerchantOnboardingSignals } from "@/lib/merchant-onboarding";
 
-const counts: DashboardChecklistCounts = {
-  productCount: 1,
-  liveCount: 0,
-  interactionRoleCount: 1,
-  interactionScriptCount: 0,
+const signals: MerchantOnboardingSignals = {
+  supportEmailConfigured: true,
+  verifiedVendorPaymentMethodCount: 0,
+  sellableProductCount: 1,
+  activeFormCount: 0,
+  activeInteractionRoleCount: 1,
+  publishedInteractionScriptCount: 0,
+  registrationEmailTemplateCount: 0,
+  sellableLiveCount: 0,
+  readyVideoCount: 0,
   trackingConfigured: true,
-  verifiedPaymentMethodCount: 0,
-  onboardingComplete: false,
 };
+const checklist = buildOnboardingChecklist(merchantOnboardingProgress(signals));
 
 describe("dashboardChecklistForRole", () => {
   it.each(["owner", "admin"])("identifies %s as a dashboard manager", (role) => {
@@ -28,43 +28,25 @@ describe("dashboardChecklistForRole", () => {
     },
   );
 
-  it.each(["owner", "admin"])("keeps manager-only setup links for %s", (role) => {
-    expect(dashboardChecklistForRole(counts, role).map((item) => item.href)).toEqual([
-      "/products/new",
-      "/lives/new",
-      "/interaction-roles/new",
-      "/interaction-scripts/new",
-      "/settings/tracking",
-      "/billing/payment-methods",
-      "/onboarding",
+  it.each(["owner", "admin"])("shows %s the same steps, links and status as /onboarding", (role) => {
+    expect(dashboardChecklistForRole(checklist, role)).toEqual(checklist.steps.map((step) => ({ label: step.title, href: step.href, done: step.done })));
+    expect(dashboardChecklistForRole(checklist, role)).toEqual([
+      { label: "商店與客服資料", href: "/settings/brand", done: true },
+      { label: "平台服務付款驗證", href: "/billing/payment-methods", done: false },
+      { label: "建立可販售商品", href: "/products/new", done: true },
+      { label: "完成報名流程", href: "/forms/new", done: false },
+      { label: "準備第一場可販售直播", href: "/videos/new", done: false },
     ]);
-  });
-
-  it("reflects real onboarding completion instead of a permanently false item", () => {
-    const item = dashboardChecklistForRole({ ...counts, onboardingComplete: true }, "owner")
-      .find((candidate) => candidate.href === "/onboarding");
-
-    expect(item).toMatchObject({ label: "完成商家 onboarding", done: true });
   });
 
   it.each(["accountant", "member", null])(
     "removes manager-only setup links for non-manager role %s",
     (role) => {
-      expect(dashboardChecklistForRole(counts, role)).toEqual([]);
+      expect(dashboardChecklistForRole(checklist, role)).toEqual([]);
     },
   );
 
-  it("does not remove a checklist item that is not manager-only", () => {
-    const publicItem = { label: "查看個人設定", href: "/settings/security", done: false };
-    const managerItem = {
-      label: "建立互動角色",
-      href: "/interaction-roles/new",
-      done: false,
-      managerOnly: true,
-    };
-
-    expect(filterDashboardChecklistForRole([publicItem, managerItem], "accountant")).toEqual([
-      publicItem,
-    ]);
+  it("shows nothing when the onboarding list was not loaded", () => {
+    expect(dashboardChecklistForRole(null, "owner")).toEqual([]);
   });
 });

@@ -59,16 +59,26 @@ export default function DashboardDetailsContent({ data }: { data: DashboardDetai
           )}
         </Card>
         <Card>
-          <h2 className="mb-4 text-lg font-semibold text-slate-950">Onboarding checklist</h2>
-          <div className="grid gap-2">
-            {checklist.map((item) => (
-              <Link key={item.label} href={item.href} className="flex min-h-11 items-center gap-2 rounded-md px-2 text-sm hover:bg-slate-50">
-                <CheckCircle2 size={18} aria-hidden="true" className={item.done ? "text-emerald-600" : "text-slate-300"} />
-                <span className={item.done ? "text-slate-700" : "font-medium text-primary"}>{item.label}</span>
-                <span className="sr-only">{item.done ? "已完成" : "尚未完成，前往設定"}</span>
-              </Link>
-            ))}
+          <div className="mb-4 flex items-center justify-between gap-3">
+            <h2 className="text-lg font-semibold text-slate-950">上線導引</h2>
+            {checklist.length > 0 ? <span className="text-sm text-slate-500">{checklist.filter((item) => item.done).length} / {checklist.length} 已完成</span> : null}
           </div>
+          {checklist.length > 0 ? (
+            <>
+              <ol className="grid gap-2">
+                {checklist.map((item) => (
+                  <li key={item.href + item.label}>
+                    <Link href={item.href} className="flex min-h-11 items-center gap-2 rounded-md px-2 text-sm hover:bg-slate-50">
+                      <CheckCircle2 size={18} aria-hidden="true" className={item.done ? "text-emerald-600" : "text-slate-300"} />
+                      <span className={item.done ? "text-slate-700" : "font-medium text-primary"}>{item.label}</span>
+                      <span className="sr-only">{item.done ? "已完成" : "尚未完成，前往設定"}</span>
+                    </Link>
+                  </li>
+                ))}
+              </ol>
+              <Link href="/onboarding" className="mt-3 inline-flex min-h-11 items-center px-2 text-sm font-semibold text-primary hover:underline">查看完整清單</Link>
+            </>
+          ) : <p className="text-sm text-slate-600">上線設定由品牌擁有者或管理員處理。</p>}
         </Card>
       </div>
       <div className="mt-6 grid gap-6 lg:grid-cols-3">

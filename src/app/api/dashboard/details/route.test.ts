@@ -8,7 +8,7 @@ import { GET } from "./route";
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.auth.mockResolvedValue({
-    auth: { member: { role: "owner" } },
+    auth: { user: { id: "user-synthetic" }, member: { role: "owner" } },
     vendor: { id: "vendor-synthetic", supportEmail: "help@example.invalid", tracking: { googleTagManagerId: "GTM-SYNTHETIC" } },
   });
 });
@@ -18,7 +18,7 @@ it("uses only the authenticated tenant and returns a private read-only snapshot"
   mocks.load.mockResolvedValue(snapshot);
   const response = await GET(new Request("https://staging.example/api/dashboard/details?vendorId=foreign"));
   expect(mocks.load).toHaveBeenCalledWith({
-    vendorId: "vendor-synthetic", memberRole: "owner", supportEmailConfigured: true,
+    vendorId: "vendor-synthetic", userId: "user-synthetic", memberRole: "owner", supportEmailConfigured: true,
     trackingConfigured: true, diagnosticDelayMs: 0,
   });
   expect(response.status).toBe(200);
