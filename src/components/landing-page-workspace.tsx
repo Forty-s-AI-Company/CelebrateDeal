@@ -149,8 +149,13 @@ function initialWorkspace(page: PageInput | undefined, forms: LandingPageRenderC
 export const AUTOSAVE_DELAY_MS = 3_000;
 
 const isSaveOperation = (operation: string | null) => operation === "save" || operation === "create";
-/** Operations that leave the canvas editable: saves (autosave must not take focus) and the publish steps, which run behind the modal drawer on the stored draft. */
-const UNLOCKED_OPERATIONS = new Set(["save", "create", "check_publish", "publish"]);
+/**
+ * Operations that leave the canvas editable: saving a stored page (autosave
+ * must not take focus) and the publish steps, which run behind the modal
+ * drawer on the stored draft. `create` stays locked: it navigates to the new
+ * page, so edits made meanwhile would be lost.
+ */
+const UNLOCKED_OPERATIONS = new Set(["save", "check_publish", "publish"]);
 
 function saveStateFor(pendingOperation: string | null, dirty: boolean, failed: boolean): FunnelEditorSaveState {
   if (isSaveOperation(pendingOperation)) return "saving";
