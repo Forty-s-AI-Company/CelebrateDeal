@@ -790,20 +790,20 @@ function LiveSubmitActions({
     || Boolean(statusAction && requiresLivePublishReadiness(statusAction.value, replayEnabled) && !publishReady);
   return (
     <div className="flex flex-wrap justify-end gap-2">
-      <FormSubmitButton name="status" value={liveId ? currentStatus : "draft"} disabled={saveDisabled} pendingChildren="儲存中…" pendingMessage="正在儲存直播間，請勿重複送出。" className="inline-flex min-h-11 items-center justify-center rounded-md bg-primary px-4 text-sm font-semibold text-white transition hover:bg-primary-dark">
+      <FormSubmitButton name="status" value={liveId ? currentStatus : "draft"} disabled={saveDisabled} pendingChildren="儲存中…" pendingMessage="正在儲存直播間，請勿重複送出。" className="inline-flex min-h-11 items-center justify-center rounded-md bg-primary px-4 text-sm font-semibold text-white transition-colors hover:bg-primary-dark">
         {liveId ? "儲存變更" : "建立草稿並預覽"}
       </FormSubmitButton>
       {!liveId ? (
-        <LiveConfirmedSubmitButton key="create-scheduled" savingBeforeSubmit={savingBeforeSubmit} name="status" value="scheduled" disabled={!canSubmit || (requiresLivePublishReadiness("scheduled", replayEnabled) && !publishReady)} confirmMessage="確定要建立並排程這場直播嗎？" confirmLabel="確認建立並排程" pendingChildren="排程中…" pendingMessage="正在建立並排程直播間，請勿重複送出。" className="inline-flex min-h-11 items-center justify-center rounded-md bg-cta px-4 text-sm font-semibold text-white transition hover:bg-cta-dark">
+        <LiveConfirmedSubmitButton key="create-scheduled" savingBeforeSubmit={savingBeforeSubmit} name="status" value="scheduled" disabled={!canSubmit || (requiresLivePublishReadiness("scheduled", replayEnabled) && !publishReady)} confirmMessage="確定要建立並排程這場直播嗎？" confirmLabel="確認建立並排程" pendingChildren="排程中…" pendingMessage="正在建立並排程直播間，請勿重複送出。" className="inline-flex min-h-11 items-center justify-center rounded-md bg-cta px-4 text-sm font-semibold text-white transition-colors hover:bg-cta-dark">
           建立並排程
         </LiveConfirmedSubmitButton>
       ) : statusAction ? (
-        <LiveConfirmedSubmitButton key={`${currentStatus}-to-${statusAction.value}`} savingBeforeSubmit={savingBeforeSubmit} name="status" value={statusAction.value} disabled={actionDisabled} confirmMessage={statusAction.confirm} confirmLabel={`確認${statusAction.label}`} pendingChildren="處理中…" pendingMessage="正在更新直播公開狀態，請勿重複送出。" className="inline-flex min-h-11 items-center justify-center rounded-md bg-cta px-4 text-sm font-semibold text-white transition hover:bg-cta-dark">
+        <LiveConfirmedSubmitButton key={`${currentStatus}-to-${statusAction.value}`} savingBeforeSubmit={savingBeforeSubmit} name="status" value={statusAction.value} disabled={actionDisabled} confirmMessage={statusAction.confirm} confirmLabel={`確認${statusAction.label}`} pendingChildren="處理中…" pendingMessage="正在更新直播公開狀態，請勿重複送出。" className="inline-flex min-h-11 items-center justify-center rounded-md bg-cta px-4 text-sm font-semibold text-white transition-colors hover:bg-cta-dark">
           {statusAction.label}
         </LiveConfirmedSubmitButton>
       ) : null}
       {canUnpublish ? (
-        <LiveConfirmedSubmitButton key={`${currentStatus}-to-draft`} savingBeforeSubmit={savingBeforeSubmit} name="status" value="draft" disabled={!canSubmit} confirmMessage="確定要將這場直播下架並回到草稿嗎？公開連結會立即停止顯示。" confirmLabel="確認下架為草稿" pendingChildren="下架中…" pendingMessage="正在將直播下架為草稿，請勿重複送出。" className="inline-flex min-h-11 items-center justify-center rounded-md border border-slate-300 bg-white px-4 text-sm font-semibold text-slate-700 transition hover:bg-slate-50">
+        <LiveConfirmedSubmitButton key={`${currentStatus}-to-draft`} savingBeforeSubmit={savingBeforeSubmit} name="status" value="draft" disabled={!canSubmit} confirmMessage="確定要將這場直播下架並回到草稿嗎？公開連結會立即停止顯示。" confirmLabel="確認下架為草稿" pendingChildren="下架中…" pendingMessage="正在將直播下架為草稿，請勿重複送出。" className="inline-flex min-h-11 items-center justify-center rounded-md border border-slate-300 bg-white px-4 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-50">
           下架為草稿
         </LiveConfirmedSubmitButton>
       ) : null}
