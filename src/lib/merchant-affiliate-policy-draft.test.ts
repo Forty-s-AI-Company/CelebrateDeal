@@ -91,6 +91,14 @@ describe("欄位錯誤定位到具體列", () => {
     expect(errors["overrideProduct-u9"]!.label).toBe("佣金商品 2");
   });
 
+  it("給了可選商品集合時，不在其中的商品（例如已刪除）標在那一列；未給時不檢查", () => {
+    const value = draft({ overrides: [{ uiId: 3, productId: "p1", ratePercent: "5" }, { uiId: 7, productId: "gone", ratePercent: "5" }] });
+    expect(validatePolicyDraft(value, { availableProductIds: new Set(["p1", "p2"]) })).toEqual({
+      "overrideProduct-u7": { label: "佣金商品 2", message: "這個商品已不存在或無法設定佣金，請改選其他商品或移除這一列。" },
+    });
+    expect(validatePolicyDraft(value)).toEqual({});
+  });
+
   it("超過總上限：標在總上限欄位，並排在第一個", () => {
     const errors = validatePolicyDraft(draft({ maxTotalPercent: "20", tiers: [{ minQuantity: "1", maxQuantity: "", ratePercent: "15" }], uplines: [{ ratePercent: "3" }, { ratePercent: "2.01" }], overrides: [{ uiId: 0, productId: "", ratePercent: "1" }] }));
     expect(Object.keys(errors)).toEqual(["maxTotalPercent", "overrideProduct-u0"]);

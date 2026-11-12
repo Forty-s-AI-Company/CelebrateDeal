@@ -87,7 +87,8 @@ export function MerchantAffiliatePolicyForm({ initial, revision, csrfToken, csrf
   /** 這次送出是否由「暫停」按鈕觸發；按鈕 onClick 設定，submit 時讀取後清除（不依賴 SubmitEvent.submitter）。 */
   const pauseRequested = useRef(false);
 
-  const liveErrors = useMemo(() => validatePolicyDraft(draft), [draft]);
+  const availableProductIds = useMemo(() => new Set(products.map(product => product.id)), [products]);
+  const liveErrors = useMemo(() => validatePolicyDraft(draft, { availableProductIds }), [draft, availableProductIds]);
   const terms = useMemo(() => draftToTerms(draft), [draft]);
   const serverError = Boolean(state.message) && state.revision === null;
   const clientBlocked = blocked !== null && blocked.state === state;

@@ -227,6 +227,21 @@ describe("欄位層級錯誤", () => {
     expect([...container.querySelectorAll("[data-form-error-summary] li")].map(item => item.textContent)).toEqual(["佣金商品 2：請選擇商品。"]);
   });
 
+  it("已發布的商品佣金指向已刪除的商品：摘要列出那一列、不送出，該列在篩選時仍顯示", async () => {
+    const many = Array.from({ length: 6 }, (_, index) => ({ id: `p${index}`, name: `商品 ${index}` }));
+    await render({ ...baseTerms, productOverrides: [...many.slice(0, 5).map(product => ({ productId: product.id, rateBps: 100 })), { productId: "deleted-product", rateBps: 200 }] }, many);
+    await submit();
+    expect(mocks.save).not.toHaveBeenCalled();
+    expect([...container.querySelectorAll("[data-form-error-summary] li")].map(item => item.textContent)).toEqual(["佣金商品 6：這個商品已不存在或無法設定佣金，請改選其他商品或移除這一列。"]);
+    expect(document.activeElement).toBe(control("overrideProduct-u5"));
+    await setValue(container.querySelector<HTMLInputElement>('input[type="search"]')!, "商品 1");
+    expect(container.querySelector<HTMLLIElement>('[data-policy-row="override-5"]')!.hidden).toBe(false);
+    await click("移除商品 6");
+    mocks.save.mockResolvedValue({ message: "已發布", revision: 2 });
+    await submit();
+    expect((mocks.save.mock.lastCall![1] as FormData).getAll("overrideProduct")).toEqual(["p0", "p1", "p2", "p3", "p4"]);
+  });
+
   it("伺服器退回時顯示伺服器訊息並聚焦摘要；暫停不檢查政策內容", async () => {
     mocks.save.mockResolvedValue({ message: "無權設定政策，或所選商品不屬於此商家。", revision: null });
     await render();

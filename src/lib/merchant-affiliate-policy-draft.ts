@@ -71,7 +71,15 @@ export function parsePolicyQuantity(text: string): number | null {
  * 「欄位鍵 → 錯誤」；空物件代表伺服器會接受（商品是否屬於這個商家仍由伺服器檢查）。
  * 鍵的順序就是畫面順序，`FormErrorSummary` 依此列出。`policy-draft` 測試以大量隨機草稿比對兩邊結果一致。
  */
-export function validatePolicyDraft(draft: MerchantAffiliatePolicyDraft): Record<string, PolicyFieldError> {
+export type PolicyValidationOptions = {
+  /**
+   * 這個商家目前可選的商品 ID。給了就把不在其中的商品（例如已刪除或不再是商務商品）標成錯誤；
+   * 伺服器在交易內另外檢查 ownership，這裡只是讓錯誤落在那一列。
+   */
+  availableProductIds?: ReadonlySet<string>;
+};
+
+export function validatePolicyDraft(draft: MerchantAffiliatePolicyDraft, options: PolicyValidationOptions = {}): Record<string, PolicyFieldError> {
   const errors: Record<string, PolicyFieldError> = {};
   const maxTotal = rateBps(draft.maxTotalPercent);
   if (maxTotal === null) errors[policyFieldKey.maxTotal()] = { label: "佣金總比例上限", message: POLICY_RATE_MESSAGE };
@@ -107,6 +115,7 @@ export function validatePolicyDraft(draft: MerchantAffiliatePolicyDraft): Record
     const name = `商品 ${index + 1}`;
     if (override.productId.trim() === "" || override.productId.length > 191) errors[policyFieldKey.overrideProduct(override.uiId)] = { label: `佣金${name}`, message: "請選擇商品。" };
     else if (seen.has(override.productId.trim())) errors[policyFieldKey.overrideProduct(override.uiId)] = { label: `佣金${name}`, message: "同一商品只能設定一次。" };
+    else if (options.availableProductIds && !options.availableProductIds.has(override.productId)) errors[policyFieldKey.overrideProduct(override.uiId)] = { label: `佣金${name}`, message: "這個商品已不存在或無法設定佣金，請改選其他商品或移除這一列。" };
     seen.add(override.productId.trim());
     if (rateBps(override.ratePercent) === null) errors[policyFieldKey.overrideRate(override.uiId)] = { label: `${name}佣金`, message: POLICY_RATE_MESSAGE };
   });
