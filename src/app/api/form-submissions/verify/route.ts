@@ -24,6 +24,7 @@ import {
   resolveEvergreenViewerSession,
 } from "@/lib/evergreen-viewer-session";
 import { recordEvergreenSessionForRegistrant } from "@/lib/evergreen-session-assignment";
+import { enrollSubmissionInEmailSequences } from "@/lib/delayed-step-runs";
 import { captureTrackingBrowserContext } from "@/lib/tracking-browser-context";
 import { captureOperationalError } from "@/lib/monitoring";
 import { checkRateLimit } from "@/lib/rate-limit";
@@ -145,6 +146,28 @@ async function recordVerifiedEvergreenSession(
   });
 }
 
+/**
+ * F-3: a newly verified registrant joins the Live's active e-mail sequences.
+ * The ids come from the verified server record, and the enrollment re-reads
+ * the registration and sequences for that vendor. A failure is only reported:
+ * the job's backfill retries it and the verified result never changes.
+ */
+async function enrollVerifiedSubmissionInSequences(confirmation: { vendorId: string; liveId: string; formSubmissionId: string }) {
+  try {
+    await enrollSubmissionInEmailSequences({
+      vendorId: confirmation.vendorId,
+      liveId: confirmation.liveId,
+      formSubmissionId: confirmation.formSubmissionId,
+    });
+  } catch (error) {
+    try {
+      captureOperationalError(error, { source: "form_submission_verification", operation: "email_sequence_enroll", status: "failed" });
+    } catch {
+      // Monitoring cannot change the verified result.
+    }
+  }
+}
+
 // Confirmation and due reminder emails are sent by `after()` within this
 // limit (see IMMEDIATE_EMAIL_DISPATCH_MAX_DURATION_SECONDS).
 export const maxDuration = 60;
@@ -192,6 +215,8 @@ export async function POST(request: Request) {
 
   if (result.status === "verified" && result.confirmation?.fixedSession?.status === "cancelled") {
     await notifyCancelledSession(result.confirmation, result.confirmation.fixedSession);
+    // Still a verified registrant of this Live (the job's backfill would add them anyway).
+    await enrollVerifiedSubmissionInSequences(result.confirmation);
     // The page resolves the re-choose link itself from the signed registration
     // cookie set here, so the URL carries nothing a phishing link could forge.
     return redirectResult(request, "session_cancelled", result.chatSession);
@@ -273,6 +298,7 @@ export async function POST(request: Request) {
       }
     }
     scheduleImmediateEmailDispatch(sendNow);
+    await enrollVerifiedSubmissionInSequences(confirmation);
   }
   return redirectResult(request, "verified", result.chatSession);
 }

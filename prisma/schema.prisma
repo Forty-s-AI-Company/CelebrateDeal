@@ -213,6 +213,8 @@ model Vendor {
   merchantAffiliateCounters MerchantAffiliateSalesCounter[]
   merchantAffiliateCalculations MerchantAffiliateCalculation[]
   merchantAffiliateProductRates MerchantAffiliateProductRate[]
+  delayedStepRuns DelayedStepRun[]
+  emailSequenceSteps EmailSequenceStep[]
 }
 
 model User {
@@ -786,6 +788,7 @@ model FormSubmission {
   funnelSubmission         FunnelSubmission?
   liveSessionSwitchRedemptions LiveSessionSwitchRedemption[]
   evergreenSessionAssignments  EvergreenSessionAssignment[]
+  delayedStepRuns              DelayedStepRun[]
 
   trackingDeliveries TrackingDelivery[]
 
@@ -887,6 +890,7 @@ model Live {
   mediaSessions              LiveMediaSession[]
   sessions                   LiveSession[]
   evergreenSessionAssignments EvergreenSessionAssignment[]
+  emailSequences             EmailSequence[]
   landingPages              LandingPage[]        @relation("LandingPageDraftLive")
   landingPageVersions        LandingPageVersion[] @relation("LandingPageVersionLive")
 
@@ -1092,8 +1096,99 @@ model MessageTemplate {
   reminderLives     Live[]                 @relation("LiveReminderTemplate")
   notificationRules LiveNotificationRule[] @relation("LiveNotificationRuleTemplate")
   lineDeliveries    LineDelivery[]
+  emailSequenceSteps EmailSequenceStep[]
 
   @@unique([vendorId, id])
+}
+
+/// F-3 Email 追銷序列（docs/product/delayed-steps-design.md §4）。第一版一條序列綁
+/// 一場直播，對象是這場直播 Email 已驗證的報名者；只有 `verifiedAt >= activatedAt`
+/// 的報名會加入。只由 `/messages/sequences` 的 Server Action（owner／admin，beta
+/// 開關 `email_sequences`）寫入。
+model EmailSequence {
+  id             String    @id @default(cuid())
+  vendorId       String
+  liveId         String
+  name           String
+  /// draft | active | paused（CHECK `EmailSequence_status_check`）
+  status         String    @default("draft")
+  /// 最近一次啟用的時間；暫停後再啟用會更新，所以暫停期間驗證的人不會被補加入。
+  activatedAt    DateTime?
+  /// 「買了就停」；PR 2 才讀這欄。
+  stopOnPurchase Boolean   @default(true)
+  /// 樂觀鎖：每次儲存、啟用、暫停都 +1。
+  version        Int       @default(1)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  live  Live                @relation(fields: [vendorId, liveId], references: [vendorId, id], onDelete: Cascade)
+  steps EmailSequenceStep[]
+  runs  DelayedStepRun[]
+
+  @@unique([vendorId, id])
+  @@index([vendorId, liveId, status])
+}
+
+/// 序列的一步：從報名驗證時間（run 的 anchorAt）起算 `delayMinutes` 分鐘後寄一封
+/// `sequence_email` 模板。同一條序列的延遲值不重複，它就是步驟的定位。
+model EmailSequenceStep {
+  id                String   @id @default(cuid())
+  vendorId          String
+  emailSequenceId   String
+  /// 60–129600（1 小時到 90 天；CHECK `EmailSequenceStep_delayMinutes_check`）
+  delayMinutes      Int
+  messageTemplateId String
+  isActive          Boolean  @default(true)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  /// Direct cascade so deleting the vendor removes steps before the template RESTRICT is checked.
+  vendor          Vendor          @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  sequence        EmailSequence   @relation(fields: [vendorId, emailSequenceId], references: [vendorId, id], onDelete: Cascade)
+  messageTemplate MessageTemplate @relation(fields: [vendorId, messageTemplateId], references: [vendorId, id], onDelete: Restrict)
+
+  @@unique([vendorId, id])
+  @@unique([vendorId, emailSequenceId, delayMinutes])
+  @@index([vendorId, messageTemplateId])
+}
+
+/// 一個對象在一條延遲流程上的進度（docs/product/delayed-steps-design.md §3）。
+/// 不存 Email 明文、姓名或 token：收件人每一步都從報名重新讀取；`recipientHash`
+/// 與 `EmailDelivery.recipientHash` 同一個商家專屬雜湊，只用來在退訂時取消。
+model DelayedStepRun {
+  id                 String    @id @default(cuid())
+  vendorId           String
+  /// F-4 會加 `automationRuleId`；屆時 CHECK 改成兩者恰好一個有值。
+  emailSequenceId    String?
+  formSubmissionId   String?
+  /// 對象的 `automationCustomerKeyHash`（PR 2「買了就停」用）。
+  subjectKeyHash     String
+  /// `createEmailRecipientHash` 的值；退訂時以它取消同一收件人的 run。
+  recipientHash      String?
+  /// 時間線起點（報名驗證時間）。
+  anchorAt           DateTime
+  /// 已處理到的步驟延遲值，起始 -1。
+  cursorDelayMinutes Int       @default(-1)
+  /// 下一步到期時間；只有 active 時有值。
+  nextRunAt          DateTime?
+  /// active | completed | cancelled
+  status             String    @default("active")
+  /// unsubscribed | blacklisted | purchased | definition_paused | definition_deleted | subject_gone | failed
+  cancelReason       String?
+  claimedAt          DateTime?
+  attemptCount       Int       @default(0)
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  vendor         Vendor          @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  emailSequence  EmailSequence?  @relation(fields: [vendorId, emailSequenceId], references: [vendorId, id], onDelete: Cascade)
+  formSubmission FormSubmission? @relation(fields: [formSubmissionId], references: [id], onDelete: Cascade)
+
+  @@unique([vendorId, id])
+  @@unique([vendorId, emailSequenceId, formSubmissionId])
+  @@index([status, nextRunAt])
+  @@index([formSubmissionId])
+  @@index([vendorId, recipientHash, status])
 }
 
 /// A tenant-owned LINE channel connection. Every provider credential, including

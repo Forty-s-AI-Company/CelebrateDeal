@@ -14,6 +14,7 @@ import { getDb } from "@/lib/db";
 import { sweepExpiredRegistrationRetryDrafts } from "@/lib/registration-form-retry";
 import { releaseExpiredFixedSessionSeats } from "@/lib/live-fixed-sessions-store";
 import { queueFixedSessionCancellationNotices } from "@/lib/live-fixed-session-notices";
+import { backfillEmailSequenceEnrollments, processDueDelayedStepRuns } from "@/lib/delayed-step-runs";
 
 const SAFE_STATUSES = new Set([
   "sent",
@@ -85,6 +86,50 @@ async function processFixedSessionHousekeeping() {
   return { seatsReleased, cancellationNotices };
 }
 
+const SAFE_SEQUENCE_STEP_STATUSES = new Set([
+  "queued",
+  "skipped_stale",
+  "skipped_template",
+  "rescheduled",
+  "completed",
+  "cancelled",
+  "claimed_elsewhere",
+  "failed",
+]);
+
+/**
+ * F-3 Email 追銷序列: add verified registrants the verify route missed, then
+ * run due sequence steps. Runs before processDueEmailDeliveries so a step's
+ * e-mail is sent in the same round. Either pass failing never stops the rest
+ * of the round for every tenant.
+ */
+async function processEmailSequenceSteps() {
+  let enrollments: Array<{ status: string }> = [];
+  let steps: Array<{ status: string }> = [];
+  try {
+    enrollments = await backfillEmailSequenceEnrollments();
+  } catch (error) {
+    try {
+      captureOperationalError(error, { source: "email_delivery_job", operation: "email_sequence_backfill", status: "failed" });
+    } catch {
+      // Monitoring must never change the job outcome.
+    }
+  }
+  try {
+    steps = await processDueDelayedStepRuns();
+  } catch (error) {
+    try {
+      captureOperationalError(error, { source: "email_delivery_job", operation: "delayed_step_runs", status: "failed" });
+    } catch {
+      // Monitoring must never change the job outcome.
+    }
+  }
+  return {
+    enrolled: enrollments.filter((result) => result.status === "enrolled").length,
+    steps,
+  };
+}
+
 async function processEmailDeliveries() {
   try {
     // Cut over only proven-equivalent legacy schedules before materializing the
@@ -117,6 +162,7 @@ async function processEmailDeliveries() {
         // Monitoring must never change the job outcome.
       }
     }
+    const sequences = await processEmailSequenceSteps();
     const reconciliations = await processLiveReminderReconciliationJobs();
     const results = await processDueEmailDeliveries();
     const lineMaterialized = await materializeLineNotifications();
@@ -162,6 +208,11 @@ async function processEmailDeliveries() {
         status: SAFE_STATUSES.has(result.status) || SAFE_MATERIALIZATION_STATUSES.has(result.status)
           ? result.status
           : "unknown",
+      })),
+      sequenceEnrollments: safeCount(sequences.enrolled),
+      sequenceSteps: sequences.steps.length,
+      sequenceStepResults: sequences.steps.slice(0, 20).map((result) => ({
+        status: SAFE_SEQUENCE_STEP_STATUSES.has(result.status) ? result.status : "unknown",
       })),
       reconciled: reconciliations.length,
       reconciliationResults: reconciliations.slice(0, 20).map((result) => ({

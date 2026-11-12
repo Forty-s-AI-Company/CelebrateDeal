@@ -16,6 +16,7 @@ const triggerLabels: Record<MessageTemplateTrigger, string> = {
   order_paid: "付款成功",
   commission_credited: "佣金入帳",
   post_live_followup: "課後通知",
+  sequence_email: "追銷序列信",
 };
 
 function singleSearchParam(value: string | string[] | undefined) {

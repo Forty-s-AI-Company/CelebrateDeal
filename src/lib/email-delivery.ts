@@ -40,6 +40,8 @@ import {
   materializeLiveNotificationsForSubmission,
 } from "@/lib/live-notification-delivery";
 import { ACTIVE_VENDOR_RELATION, isVendorSuspendedById } from "@/lib/vendor-suspension-state";
+import { ensureEmailUnsubscribeFooter, formatLiveStartAt } from "@/lib/email-delivery-format";
+import { isCurrentSequenceEmailDelivery, SEQUENCE_EMAIL_TRIGGER } from "@/lib/delayed-step-runs";
 
 const DELIVERY_LEASE_MS = 10 * 60 * 1_000;
 const MAX_ATTEMPTS = 5;
@@ -117,12 +119,6 @@ function stableDeliveryId(input: Pick<RegistrationConfirmationInput, "vendorId" 
   return `email_${digest}`;
 }
 
-function ensureEmailUnsubscribeFooter(body: string, unsubscribeUrl: string) {
-  const renderedBody = body.trim();
-  if (renderedBody.includes(unsubscribeUrl)) return renderedBody;
-  return [renderedBody, `退訂：${unsubscribeUrl}`].filter(Boolean).join("\n\n");
-}
-
 /**
  * A confirmed registration must be actionable even when a merchant's custom
  * template forgot to insert {{live_url}}. This is intentionally limited to
@@ -133,14 +129,6 @@ function ensureRegistrationLiveEntry(body: string, liveUrl: string) {
   const renderedBody = body.trim();
   if (renderedBody.includes(liveUrl)) return renderedBody;
   return [renderedBody, `直播入口：${liveUrl}`].filter(Boolean).join("\n\n");
-}
-
-function formatLiveStartAt(value: Date) {
-  return new Intl.DateTimeFormat("zh-TW", {
-    dateStyle: "medium",
-    timeStyle: "short",
-    timeZone: "Asia/Taipei",
-  }).format(value);
 }
 
 function isUniqueConflict(error: unknown) {
@@ -1380,7 +1368,7 @@ type ClaimedDelivery = {
   maxAttempts: number;
 };
 
-type DeliverySnapshotDatabase = Pick<Prisma.TransactionClient, "live" | "liveNotificationRule" | "formSubmission" | "blacklist" | "evergreenSessionAssignment">
+type DeliverySnapshotDatabase = Pick<Prisma.TransactionClient, "live" | "liveNotificationRule" | "formSubmission" | "blacklist" | "evergreenSessionAssignment" | "delayedStepRun">
   & Partial<Pick<Prisma.TransactionClient, "studentPortalAccessToken">>;
 
 export type EmailDeliverySnapshotIdentity = Pick<
@@ -1661,7 +1649,8 @@ export async function isCurrentEmailDeliverySnapshot(
     && await isCurrentFormVerificationDelivery(delivery, now, database)
     && await isCurrentFixedSessionCancelledDelivery(delivery, database)
     && await isCurrentFixedSessionAlreadyRegisteredDelivery(delivery, database)
-    && await isCurrentStudentPortalDelivery(delivery, now, database);
+    && await isCurrentStudentPortalDelivery(delivery, now, database)
+    && await isCurrentSequenceEmailDelivery(delivery, database);
 }
 
 function reportDeliveryFailure(error: unknown, operation: string, status: string) {
@@ -1771,7 +1760,9 @@ export async function dispatchEmailDelivery(deliveryId: string, actorLabel = "jo
   if (!(await isCurrentEmailDeliverySnapshot(delivery, new Date()))) {
     return finalizeSuperseded(
       delivery,
-      ["form_submission_verification", "student_portal_magic_link"].includes(delivery.trigger) ? "verification_superseded" : "config_superseded",
+      ["form_submission_verification", "student_portal_magic_link"].includes(delivery.trigger)
+        ? "verification_superseded"
+        : delivery.trigger === SEQUENCE_EMAIL_TRIGGER ? "sequence_superseded" : "config_superseded",
     );
   }
   // Owner policy 2026-11-10: a learner sign-in link never reaches an address
