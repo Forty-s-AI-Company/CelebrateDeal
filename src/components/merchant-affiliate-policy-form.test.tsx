@@ -322,6 +322,39 @@ describe("商品佣金篩選", () => {
   });
 });
 
+describe("篩選中刪除、新增商品後送出", () => {
+  it("商品與比例仍逐列配對，隱藏列照樣送出", async () => {
+    const many = Array.from({ length: 9 }, (_, index) => ({ id: `p${index}`, name: index % 2 ? `課程 ${index}` : `實體 ${index}` }));
+    // p0..p7 已有商品佣金，比例 1%..8%；p8 尚未設定。
+    await render({ ...baseTerms, productOverrides: many.slice(0, 8).map((product, index) => ({ productId: product.id, rateBps: 100 * (index + 1) })) }, many);
+    await setValue(container.querySelector<HTMLInputElement>('input[type="search"]')!, "課程");
+    // 篩選後可見 p1、p3、p5、p7；刪除中間的 p3（第 4 列）。
+    expect(container.querySelector<HTMLLIElement>('[data-policy-row="override-3"]')!.hidden).toBe(false);
+    await click("移除商品 4");
+    expect(container.querySelector('[data-policy-row="override-3"]')).toBeNull();
+    // 新增一列：未選商品時一律顯示，選了不符合篩選的商品（實體 8）後隱藏，但仍一起送出。
+    await click("新增商品佣金");
+    const added = control("overrideProduct-u8") as HTMLSelectElement;
+    expect(added.closest("li")!.hidden).toBe(false);
+    await setValue(added, "p8");
+    await setValue(control("overrideRate-u8"), "9.5");
+    expect(added.closest("li")!.hidden).toBe(true);
+    // 改一個隱藏列（p2）的比例前先清掉篩選，再套回篩選。
+    await setValue(container.querySelector<HTMLInputElement>('input[type="search"]')!, "");
+    await setValue(control("overrideRate-u2"), "3.25");
+    await setValue(container.querySelector<HTMLInputElement>('input[type="search"]')!, "課程");
+    mocks.save.mockResolvedValue({ message: "已發布", revision: 2 });
+    await submit();
+    expect(mocks.save).toHaveBeenCalledTimes(1);
+    const submitted = mocks.save.mock.lastCall![1] as FormData;
+    const products = submitted.getAll("overrideProduct"), rates = submitted.getAll("overrideRate");
+    expect(products.map((product, index) => [product, rates[index]])).toEqual([
+      ["p0", "1"], ["p1", "2"], ["p2", "3.25"], ["p4", "5"], ["p5", "6"], ["p6", "7"], ["p7", "8"], ["p8", "9.5"],
+    ]);
+    expect(rates).toHaveLength(products.length);
+  });
+});
+
 describe("篩選框按 Enter", () => {
   it("只篩選、不隱式送出發布", async () => {
     const many = Array.from({ length: 6 }, (_, index) => ({ id: `p${index}`, name: `商品 ${index}` }));
