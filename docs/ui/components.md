@@ -145,3 +145,12 @@ useEffect(() => { if (errorVersion) focusFirstInvalidField(formRef.current); }, 
 - 導覽（`ProductFormSectionNav`）：桌機（`lg` 以上）在左側 sticky，手機收成頂部「跳到段落」`<details>`。兩者都是一般錨點連結；點擊後捲動並把焦點移到段落標題（`tabIndex=-1`），手機選單自動收合。目前段落由 `IntersectionObserver` 追蹤，用 `aria-current="location"` 標示（沒有 `IntersectionObserver` 時停在第一段）。這不是 `Stepper`：段落可以任意順序填寫，沒有「步驟」語意。
 - 錯誤跳轉：`sectionOfField(name)` 對應欄位所在段落，摘要連結先到欄位，沒有可聚焦的欄位（固定幣別、圖片）就改到段落標題。新增欄位時記得補進 `FIELD_SECTION`。
 - 百分比顯示：課程分潤欄位在畫面上用百分比（最多兩位小數），隱藏欄位仍以 `coursePromoterShareBps`（萬分比整數）送出，換算在 [product-share-percent.ts](../../src/lib/product-share-percent.ts)，全程用字串與整數運算、不四捨五入；超過兩位小數的輸入會以伺服器必拒的 `invalid:…` 送出並顯示錯誤。輸入框是 `type="text" inputMode="decimal"` 加 `pattern`（`SHARE_PERCENT_INPUT_PATTERN`，與換算器接受的格式一致），大多數情況下原生驗證會先擋下超過兩位小數、科學記號與負數；`.5`、`0020` 這類合法寫法會被換算並正規化。可見輸入框沒有 `name`，實際送出的是隱藏欄位，所以 hydrate 前輸入框是 `readOnly` 並提示「頁面載入完成後才能修改」，避免改了卻送出舊值。
+
+## 後台導覽與指令面板
+
+導覽資料只有一份：[app-navigation.ts](../../src/lib/app-navigation.ts) 的 `navigationForRole`（側欄）與 `settingsHubForRole`（設定樞紐）。側欄、手機抽屜、設定樞紐與指令面板都由它們推導，權限與模組過濾因此一致；新增頁面只改這裡。
+
+- **預設收合**：`NavGroup.flows` 標記群組主要服務哪種專案流程（`live`、`consultation`）。未設定表示一律展開；設定後只在符合的流程（或尚未選專案）預設展開；`[]` 表示次要群組，選了專案就預設收合。只改預設，入口仍在，也不影響權限。`isGroupExpandedByDefault` 判斷，`AppShell` 由目前專案的 `primaryFlow` 傳入 `AppShellNavGroup`。
+- **記住展開狀態**：[nav-group-state.ts](../../src/lib/nav-group-state.ts) 把使用者手動展開／收合存在 localStorage（`celebratedeal:nav-groups:v1`），所有存取都有 try/catch；無法使用時退回預設，本次頁面內仍可切換。目前頁面所在的群組一律展開，且不能被收合。
+- **圖示與名稱**：每個頁面的圖示不重複，群組名稱不與群組內項目同名（測試會檢查）。新增項目時挑沒用過的圖示。
+- **指令面板**：[command-palette.tsx](../../src/components/command-palette.tsx)，Ctrl+K／⌘K 開啟；符合 WAI-ARIA combobox + listbox（焦點留在輸入框，用 `aria-activedescendant` 指向目前選項），↑／↓ 移動並循環、Enter 前往、Esc 關閉並還原焦點。資料來自 `paletteEntriesFromNavigation(navigationForRole(...), settingsHubForRole(...))`，不另外維護清單；搜尋在 [command-palette.ts](../../src/lib/command-palette.ts)（不分大小寫與全半形的子字串比對，標題前綴優先）。目前只做頁面導覽；日後的動作或 AI 助理從這個元件擴充。小螢幕用 `variant="icon"` 的第二個實例，並設 `registerShortcut={false}`，避免快速鍵被處理兩次。
