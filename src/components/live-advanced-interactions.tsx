@@ -304,7 +304,7 @@ function ActiveLiveAdvancedInteractions({
               if (run.metadata.kind !== "flash_sale") return;
               void respond("view_deal");
             }}
-            className="min-h-12 rounded-2xl bg-red-600 px-5 text-lg font-black text-white shadow-lg shadow-red-200 disabled:opacity-50 hover:bg-red-700 transition"
+            className="min-h-12 rounded-2xl bg-red-600 px-5 text-lg font-black text-white shadow-lg shadow-red-200 disabled:opacity-50 hover:bg-red-700 transition-colors"
           >
             立即搶購特惠方案
           </button>

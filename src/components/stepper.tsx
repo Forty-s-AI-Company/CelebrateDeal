@@ -87,7 +87,7 @@ export function Stepper<Key extends string>({
                 aria-controls={step.panelId}
                 aria-current={current ? "step" : undefined}
                 disabled={step.disabled}
-                className={`flex h-full min-h-14 w-full flex-col items-center justify-center gap-1.5 rounded-md border px-1 py-2 text-center text-sm font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60 md:items-start md:justify-start md:px-3 md:py-3 md:text-left ${
+                className={`flex h-full min-h-14 w-full flex-col items-center justify-center gap-1.5 rounded-md border px-1 py-2 text-center text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60 md:items-start md:justify-start md:px-3 md:py-3 md:text-left ${
                   current
                     ? "border-primary bg-blue-50 text-primary"
                     : "border-border bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50"
