@@ -231,8 +231,7 @@ describe("live studio product quick create on PostgreSQL", () => {
   it("adds a suffix when the vendor already has a product at the address derived from the name", async () => {
     const otherVendorId = await vendor();
     await db.product.create({ data: { vendorId: runtime.vendorId, name: "Whole Food Box", slug: "whole-food-box", priceCents: 100, inventory: 1 } });
-    // Another merchant using the same address does not matter: addresses are unique per merchant.
-    await db.product.create({ data: { vendorId: otherVendorId, name: "Whole Food Box", slug: "whole-food-box-2", priceCents: 100, inventory: 1 } });
+    await db.product.create({ data: { vendorId: otherVendorId, name: "Whole Food Box", slug: "whole-food-box", priceCents: 100, inventory: 1 } });
 
     const result = await createProductQuickAction(input({ name: "Whole Food Box", price: "990", inventory: "5", fulfillmentType: "physical" }));
 
@@ -240,7 +239,19 @@ describe("live studio product quick create on PostgreSQL", () => {
     const created = await db.product.findFirstOrThrow({ where: { vendorId: runtime.vendorId, slug: { not: "whole-food-box" } } });
     expect(created.slug).toMatch(/^whole-food-box-[0-9a-f]{6}$/u);
     expect(created.priceCents).toBe(99_000);
-    expect(await db.product.count({ where: { vendorId: otherVendorId } })).toBe(1);
+    expect(await db.product.findMany({ where: { vendorId: otherVendorId }, select: { slug: true, priceCents: true } })).toEqual([{ slug: "whole-food-box", priceCents: 100 }]);
+  });
+
+  it("keeps the address derived from the name when only another merchant uses it", async () => {
+    const otherVendorId = await vendor();
+    // Addresses are unique per merchant: another merchant's product at the same address does not matter.
+    await db.product.create({ data: { vendorId: otherVendorId, name: "Whole Food Box", slug: "whole-food-box", priceCents: 100, inventory: 1 } });
+
+    const result = await createProductQuickAction(input({ name: "Whole Food Box", price: "990", inventory: "5", fulfillmentType: "physical" }));
+
+    expect(result.status).toBe("success");
+    expect(await db.product.findMany({ where: { vendorId: runtime.vendorId }, select: { slug: true, priceCents: true } })).toEqual([{ slug: "whole-food-box", priceCents: 99_000 }]);
+    expect(await db.product.findMany({ where: { vendorId: otherVendorId }, select: { slug: true, priceCents: true } })).toEqual([{ slug: "whole-food-box", priceCents: 100 }]);
   });
 
   it.each([
