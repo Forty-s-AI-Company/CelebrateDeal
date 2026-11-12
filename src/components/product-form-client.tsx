@@ -1,9 +1,24 @@
 "use client";
 
-import { useActionState, useEffect, useRef, useState, type FormEvent } from "react";
+import { useActionState, useEffect, useRef, useState, useSyncExternalStore, type FormEvent } from "react";
 import { upsertProductAction } from "@/app/actions/product-server-actions";
 import { MediaUploadField } from "@/components/media-upload-field";
-import { Field, FormErrorSummary, SelectField, SubmitButton, TextArea } from "@/components/ui";
+import { Field, FormErrorSummary, SelectField, SubmitButton, TextArea, useFieldMessages } from "@/components/ui";
+import {
+  isKnownField,
+  jumpToSection,
+  ProductFormSection,
+  ProductFormSectionNav,
+  sectionAnchor,
+  sectionOfField,
+  useActiveSection,
+} from "@/components/product-form-sections";
+import {
+  bpsToPercentText,
+  percentTextToBps,
+  SHARE_PERCENT_ERROR,
+  SHARE_PERCENT_INPUT_PATTERN,
+} from "@/lib/product-share-percent";
 import {
   initialProductActionState,
   type ProductActionError,
@@ -138,6 +153,12 @@ function pickFieldErrors(nativeError: ProductActionError | undefined, nativeErro
   return (nativeError ? nativeErrors : actionErrors) ?? {};
 }
 
+/** 伺服器的分潤錯誤訊息用「萬分比」；畫面一律改成百分比說法（欄位名稱與送出值不變）。 */
+function displayFieldErrors(errors: ProductFieldErrors): ProductFieldErrors {
+  // 只替換伺服器的範圍／格式錯誤（訊息含「萬分比」）；其他訊息原樣顯示。
+  return errors.coursePromoterShareBps?.includes("萬分比") ? { ...errors, coursePromoterShareBps: SHARE_PERCENT_ERROR } : errors;
+}
+
 function safeFieldErrors(value: unknown): ProductFieldErrors {
   if (typeof value !== "object" || value === null) return {};
   const result: Record<string, string> = {};
@@ -244,6 +265,43 @@ function CustomCheckoutFieldEditor({
   );
 }
 
+const subscribeNever = () => () => {};
+
+/**
+ * 分潤比例用百分比輸入；伺服器欄位仍是 `coursePromoterShareBps`（萬分比整數），
+ * 由隱藏欄位送出換算後的值。換算規則見 `@/lib/product-share-percent`。
+ */
+function PromoterSharePercentField({ initialBps, error }: { initialBps: string; error?: string }) {
+  const [percent, setPercent] = useState(() => bpsToPercentText(initialBps));
+  // 實際送出的是下方隱藏欄位，它的值靠 React state 同步。hydrate 前（或 JS 停用）輸入框改了也不會更新
+  // 隱藏欄位，所以此時鎖成唯讀，避免商家以為已改成新值、伺服器卻收到舊值。
+  const mounted = useSyncExternalStore(subscribeNever, () => true, () => false);
+  const field = useFieldMessages(error, "填 20 代表推廣者拿 20%，最多兩位小數（0.01% 到 99.99%）。其餘歸課程內容所有人。");
+  return (
+    <div className="grid gap-1.5">
+      <label className="grid gap-1.5 text-sm font-medium text-slate-700">
+        課程推廣者分潤比例（%）
+        <input
+          {...field.controlProps}
+          className={`h-11 rounded-md border bg-white px-3 text-sm transition ${field.controlClass}`}
+          data-field-name="coursePromoterShareBps"
+          type="text"
+          inputMode="decimal"
+          pattern={SHARE_PERCENT_INPUT_PATTERN}
+          title="0.01 到 99.99 的數字，最多兩位小數"
+          readOnly={!mounted}
+          value={percent}
+          onChange={(event) => setPercent(event.target.value)}
+          placeholder="例如 20"
+        />
+      </label>
+      <input type="hidden" name="coursePromoterShareBps" value={percentTextToBps(percent)} />
+      {mounted ? null : <span data-share-loading="" className="text-xs font-normal text-slate-600">頁面載入完成後才能修改。</span>}
+      {field.messages}
+    </div>
+  );
+}
+
 function CourseSplitFields({ visible, draft, memberships, fieldErrors }: {
   fieldErrors: ProductFieldErrors;
   visible: boolean;
@@ -258,7 +316,7 @@ function CourseSplitFields({ visible, draft, memberships, fieldErrors }: {
         <option value="">一般商品／直購不指定</option>
         {memberships.map((membership) => <option key={membership.id} value={membership.id}>{membership.memberName} · {membership.teamName}</option>)}
       </SelectField>
-      <Field label="課程推廣者分潤比例（萬分比）" name="coursePromoterShareBps" error={fieldErrors.coursePromoterShareBps} type="number" min={1} max={9999} defaultValue={draft.coursePromoterShareBps} placeholder="例如 2000 = 20%" />
+      <PromoterSharePercentField initialBps={draft.coursePromoterShareBps} error={fieldErrors.coursePromoterShareBps} />
       <p className="self-end text-xs leading-5 text-slate-600">付款成功會鎖定分潤比例與收款人；沒有推廣者歸因時，款項全數給課程內容所有人。</p>
     </>
   );
@@ -296,10 +354,26 @@ export function ProductFormClient({
   const [selectedFulfillmentType, setSelectedFulfillmentType] = useState(draft.fulfillmentType);
   const [customCheckoutFields, setCustomCheckoutFields] = useState<CustomCheckoutFields>(draft.customCheckoutFields ?? []);
   const error = errorMessage(nativeError ?? state.error);
-  const fieldErrors = pickFieldErrors(nativeError, nativeFieldErrors, state.fieldErrors);
+  const fieldErrors = displayFieldErrors(pickFieldErrors(nativeError, nativeFieldErrors, state.fieldErrors));
+  const [activeSection, setActiveSection] = useActiveSection();
   const errorToken = `${state.version}:${nativeErrorTick}`;
 
   useFocusFirstInvalid(formRef, errorToken);
+
+  function focusErrorField(name: string) {
+    const section = sectionOfField(name);
+    // 欄位名稱只接受已知欄位，不把任意字串放進選擇器。
+    const control = isKnownField(name)
+      ? formRef.current?.querySelector<HTMLElement>(`[data-field-name="${name}"], [name="${name}"]:not([type="hidden"])`)
+      : null;
+    setActiveSection(section);
+    if (control && !control.hasAttribute("disabled")) {
+      control.focus();
+      return;
+    }
+    // 沒有可聚焦的欄位（例如圖片或固定幣別）時，改移到所在段落的標題。
+    jumpToSection(section);
+  }
 
   async function submitNatively(event: FormEvent<HTMLFormElement>) {
     if (!nativeAction) return;
@@ -354,7 +428,7 @@ export function ProductFormClient({
       {projectId ? <input type="hidden" name="projectId" value={projectId} /> : null}
       <input type="hidden" name="_csrf" value={csrfToken} />
       {product ? <><input type="hidden" name="id" value={product.id} /><input type="hidden" name="revision" value={product.revision} /><input type="hidden" name="inventoryBaseline" value={product.inventory} /></> : null}
-      <FormErrorSummary message={error} errors={fieldErrors} />
+      <FormErrorSummary message={error} errors={fieldErrors} fieldHref={(name) => sectionAnchor(sectionOfField(name))} onFieldSelect={focusErrorField} />
       {product && !product.fulfillmentTypeConfirmed ? (
         <p role="status" className="rounded-md border border-orange-200 bg-orange-50 px-3 py-2 text-sm font-medium text-orange-900">
           這是既有商品，交付方式尚未確認。請選擇正確類型並儲存；確認前不會開放結帳或綁定新的販售流程。
@@ -370,118 +444,135 @@ export function ProductFormClient({
         </div>
       ) : null}
       {!product ? <p role="status" className="rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-900">新商品會先儲存為草稿；確認預覽、價格、庫存與交付方式後，再勾選上架。</p> : null}
-      <div className="grid gap-4 md:grid-cols-2">
-        <Field label="商品名稱" name="name" error={fieldErrors.name} required maxLength={200} defaultValue={draft.name} />
-        <Field label="商品網址" name="slug" error={fieldErrors.slug} required maxLength={200} defaultValue={draft.slug} />
-        <Field label="售價（元）" name="price" error={fieldErrors.price} type="number" min={0} step={1} required defaultValue={draft.price} />
-        <Field label="原價（元）" name="compareAt" error={fieldErrors.compareAt} type="number" min={0.01} step={0.01} defaultValue={draft.compareAt} />
-        <div className="grid gap-1 text-sm font-medium text-slate-700">
-          <span>幣別</span>
-          <input type="hidden" name="currency" value={SUPPORTED_CHECKOUT_CURRENCY} />
-          <p className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-slate-900">新台幣（TWD）</p>
-          <span className="text-xs font-normal text-slate-500">平台結帳、退款與月結目前只支援新台幣，售價須為整數元。</span>
-          {fieldErrors.currency ? <span className="text-xs font-normal text-red-700">{fieldErrors.currency}</span> : null}
+      <div className="grid gap-4 lg:grid-cols-[13rem_minmax(0,1fr)] lg:gap-8">
+        <ProductFormSectionNav active={activeSection} onSelect={setActiveSection} />
+        <div className="grid gap-8">
+          <ProductFormSection sectionKey="basic">
+            <div className="grid gap-4 md:grid-cols-2">
+              <Field label="商品名稱" name="name" error={fieldErrors.name} required maxLength={200} defaultValue={draft.name} />
+              <Field label="商品網址" name="slug" error={fieldErrors.slug} required maxLength={200} defaultValue={draft.slug} />
+            </div>
+            <TextArea label="商品描述" name="description" error={fieldErrors.description} maxLength={10_000} defaultValue={draft.description} />
+            <MediaUploadField
+              kind="image"
+              label="商品圖片"
+              description="直接拖拉或選擇商品主圖；上傳成功後會立即預覽，儲存商品時才正式套用。"
+              defaultUrl={draft.imageUrl}
+              defaultAssetId={draft.imageAssetId}
+              urlInputName="imageUrl"
+              assetIdInputName="imageAssetId"
+              statusInputName="imageUploadPhase"
+              onBlockingChange={setMediaBlocked}
+            />
+          </ProductFormSection>
+          <ProductFormSection sectionKey="pricing">
+            <div className="grid gap-4 md:grid-cols-2">
+              <Field label="售價（元）" name="price" error={fieldErrors.price} type="number" min={0} step={1} required defaultValue={draft.price} />
+              <Field label="原價（元）" name="compareAt" error={fieldErrors.compareAt} type="number" min={0.01} step={0.01} defaultValue={draft.compareAt} />
+              <div className="grid gap-1 text-sm font-medium text-slate-700">
+                <span>幣別</span>
+                <input type="hidden" name="currency" value={SUPPORTED_CHECKOUT_CURRENCY} />
+                <p className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-slate-900">新台幣（TWD）</p>
+                <span className="text-xs font-normal text-slate-500">平台結帳、退款與月結目前只支援新台幣，售價須為整數元。</span>
+                {fieldErrors.currency ? <span className="text-xs font-normal text-red-700">{fieldErrors.currency}</span> : null}
+              </div>
+              <Field label="可售庫存" name="inventory" error={fieldErrors.inventory} type="number" min={0} step={1} required defaultValue={draft.inventory} />
+            </div>
+          </ProductFormSection>
+          <ProductFormSection sectionKey="delivery">
+            <div className="grid gap-4 rounded-md border border-blue-100 bg-blue-50/50 p-4 md:grid-cols-2">
+              <SelectField
+                label="交付方式"
+                name="fulfillmentType"
+                value={selectedFulfillmentType}
+                onChange={(event) => setSelectedFulfillmentType(event.target.value)}
+              >
+                <option value="physical">實體商品（需要收件地址與出貨）</option>
+                <option value="digital">數位內容（付款後建立授權）</option>
+                <option value="service">服務（付款後安排時間）</option>
+                <option value="course">課程（付款後授權並啟用課程分潤）</option>
+              </SelectField>
+              <CourseSplitFields visible={selectedFulfillmentType === "course"} draft={draft} memberships={memberships} fieldErrors={fieldErrors} />
+            </div>
+            {selectedFulfillmentType !== "physical" ? (
+              <fieldset className="grid gap-4 rounded-md border border-emerald-200 bg-emerald-50/50 p-4">
+                <legend className="px-1 text-sm font-semibold text-emerald-950">付款後交付設定</legend>
+                <p className="text-sm leading-6 text-emerald-950">
+                  這些內容會在買家付款後依訂單保存。商品之後改網址或說明，不會改寫已成立訂單。
+                </p>
+                <div className="grid gap-4 md:grid-cols-2">
+                  <Field
+                    label="買家看到的交付標題"
+                    name="deliveryTitle" error={fieldErrors.deliveryTitle}
+                    maxLength={120}
+                    defaultValue={draft.deliveryTitle}
+                    placeholder={selectedFulfillmentType === "service" ? "例如：一對一諮詢安排" : selectedFulfillmentType === "course" ? "例如：課程內容入口" : "例如：教材下載"}
+                  />
+                  <Field
+                    label={selectedFulfillmentType === "service" ? "會議／服務入口（選填）" : "付款後入口 URL"}
+                    name="deliveryUrl" error={fieldErrors.deliveryUrl}
+                    type="url"
+                    maxLength={2_048}
+                    defaultValue={draft.deliveryUrl}
+                    placeholder="https://..."
+                  />
+                </div>
+                <TextArea
+                  label={selectedFulfillmentType === "service" ? "服務安排與準備說明" : "付款後說明（選填）"}
+                  name="deliveryInstructions" error={fieldErrors.deliveryInstructions}
+                  maxLength={4_000}
+                  defaultValue={draft.deliveryInstructions}
+                  placeholder={selectedFulfillmentType === "service" ? "說明預約方式、服務前準備與聯絡流程。" : "說明如何開始使用內容；請勿貼上 API secret 或內部憑證。"}
+                />
+                <label className="flex items-start gap-2 text-sm font-medium text-emerald-950">
+                  <input
+                    name="deliveryHostConfirmed"
+                    type="checkbox"
+                    defaultChecked={draft.deliveryHostConfirmed}
+                    className="mt-0.5 h-4 w-4 accent-emerald-700"
+                  />
+                  <span>
+                    我確認這是商家授權的公開 HTTPS 交付網域
+                    <span className="mt-1 block text-xs font-normal leading-5 text-emerald-900">
+                      系統拒絕 localhost、IP、內網網址、帳密、query 與 fragment；網址會加密保存，公開頁只顯示安全摘要。
+                    </span>
+                  </span>
+                </label>
+                {!draft.isActive ? <p role="status" className="text-xs leading-5 text-slate-700">草稿可先保存未完成設定；勾選上架前必須補齊必要交付內容。</p> : null}
+              </fieldset>
+            ) : null}
+          </ProductFormSection>
+          <ProductFormSection sectionKey="checkout">
+            <CustomCheckoutFieldEditor fields={customCheckoutFields} onChange={setCustomCheckoutFields} />
+            <fieldset className="grid gap-4 rounded-md border border-slate-200 p-4 md:grid-cols-2">
+              <legend className="px-1 text-sm font-semibold">購買後加購</legend>
+              <p className="text-sm leading-6 text-slate-600 md:col-span-2">買家付款後可用原訂單實付金額折抵一次升級。拒絕加購時可改選備選商品；原訂單退款會撤銷升級權益。</p>
+              <SelectField label="加購商品" name="upsellProductId" defaultValue={draft.upsellProductId ?? ""}>
+                <option value="">不提供加購</option>
+                {offerProducts.filter(option => option.id !== product?.id).map(option => <option key={option.id} value={option.id}>{option.name} · {formatCurrency(option.priceCents, option.currency)}</option>)}
+              </SelectField>
+              <Field label="加購額外折扣（元）" name="upsellDiscount" type="number" min={0} step={0.01} defaultValue={draft.upsellDiscount ?? "0"} />
+              <SelectField label="拒絕加購後的備選商品" name="downsellProductId" defaultValue={draft.downsellProductId ?? ""}>
+                <option value="">不提供備選商品</option>
+                {offerProducts.filter(option => option.id !== product?.id).map(option => <option key={option.id} value={option.id}>{option.name} · {formatCurrency(option.priceCents, option.currency)}</option>)}
+              </SelectField>
+              <p className="self-end text-xs leading-5 text-slate-600">限同商家、同幣別且使用本站結帳的已上架商品；折抵後應付金額必須大於零。</p>
+            </fieldset>
+          </ProductFormSection>
+          <ProductFormSection sectionKey="advanced">
+            <div className="grid gap-2">
+              <Field label="外部結帳 URL（選填／進階）" name="checkoutUrl" error={fieldErrors.checkoutUrl} defaultValue={draft.checkoutUrl} placeholder="https://..." />
+              <p className="text-xs leading-5 text-orange-800">使用外部結帳會離開 CelebrateDeal，平台無法保證取得本地訂單、付款、退款與分潤閉環證據。需要完整交易追蹤時請留空。</p>
+            </div>
+            <label className="flex items-start gap-2 text-sm font-medium text-slate-700">
+              <input name="isActive" type="checkbox" defaultChecked={draft.isActive} className="mt-0.5 h-4 w-4 accent-blue-600" />
+              <span>上架商品<span className="mt-1 block text-xs font-normal text-slate-500">勾選後，符合價格、庫存與交付條件的商品可進入販售流程。</span></span>
+            </label>
+          </ProductFormSection>
+          {mediaBlocked ? <p role="status" className="text-sm font-medium text-orange-800">請先完成圖片上傳，或移除尚未上傳的檔案。</p> : null}
+          <SubmitButton disabled={mediaBlocked || nativePending} />
         </div>
-        <Field label="可售庫存" name="inventory" error={fieldErrors.inventory} type="number" min={0} step={1} required defaultValue={draft.inventory} />
       </div>
-      <div className="grid gap-4 rounded-md border border-blue-100 bg-blue-50/50 p-4 md:grid-cols-2">
-        <SelectField
-          label="交付方式"
-          name="fulfillmentType"
-          value={selectedFulfillmentType}
-          onChange={(event) => setSelectedFulfillmentType(event.target.value)}
-        >
-          <option value="physical">實體商品（需要收件地址與出貨）</option>
-          <option value="digital">數位內容（付款後建立授權）</option>
-          <option value="service">服務（付款後安排時間）</option>
-          <option value="course">課程（付款後授權並啟用課程分潤）</option>
-        </SelectField>
-        <CourseSplitFields visible={selectedFulfillmentType === "course"} draft={draft} memberships={memberships} fieldErrors={fieldErrors} />
-      </div>
-      {selectedFulfillmentType !== "physical" ? (
-        <fieldset className="grid gap-4 rounded-md border border-emerald-200 bg-emerald-50/50 p-4">
-          <legend className="px-1 text-sm font-semibold text-emerald-950">付款後交付設定</legend>
-          <p className="text-sm leading-6 text-emerald-950">
-            這些內容會在買家付款後依訂單保存。商品之後改網址或說明，不會改寫已成立訂單。
-          </p>
-          <div className="grid gap-4 md:grid-cols-2">
-            <Field
-              label="買家看到的交付標題"
-              name="deliveryTitle" error={fieldErrors.deliveryTitle}
-              maxLength={120}
-              defaultValue={draft.deliveryTitle}
-              placeholder={selectedFulfillmentType === "service" ? "例如：一對一諮詢安排" : selectedFulfillmentType === "course" ? "例如：課程內容入口" : "例如：教材下載"}
-            />
-            <Field
-              label={selectedFulfillmentType === "service" ? "會議／服務入口（選填）" : "付款後入口 URL"}
-              name="deliveryUrl" error={fieldErrors.deliveryUrl}
-              type="url"
-              maxLength={2_048}
-              defaultValue={draft.deliveryUrl}
-              placeholder="https://..."
-            />
-          </div>
-          <TextArea
-            label={selectedFulfillmentType === "service" ? "服務安排與準備說明" : "付款後說明（選填）"}
-            name="deliveryInstructions" error={fieldErrors.deliveryInstructions}
-            maxLength={4_000}
-            defaultValue={draft.deliveryInstructions}
-            placeholder={selectedFulfillmentType === "service" ? "說明預約方式、服務前準備與聯絡流程。" : "說明如何開始使用內容；請勿貼上 API secret 或內部憑證。"}
-          />
-          <label className="flex items-start gap-2 text-sm font-medium text-emerald-950">
-            <input
-              name="deliveryHostConfirmed"
-              type="checkbox"
-              defaultChecked={draft.deliveryHostConfirmed}
-              className="mt-0.5 h-4 w-4 accent-emerald-700"
-            />
-            <span>
-              我確認這是商家授權的公開 HTTPS 交付網域
-              <span className="mt-1 block text-xs font-normal leading-5 text-emerald-900">
-                系統拒絕 localhost、IP、內網網址、帳密、query 與 fragment；網址會加密保存，公開頁只顯示安全摘要。
-              </span>
-            </span>
-          </label>
-          {!draft.isActive ? <p role="status" className="text-xs leading-5 text-slate-700">草稿可先保存未完成設定；勾選上架前必須補齊必要交付內容。</p> : null}
-        </fieldset>
-      ) : null}
-      <CustomCheckoutFieldEditor fields={customCheckoutFields} onChange={setCustomCheckoutFields} />
-      <fieldset className="grid gap-4 rounded-md border border-slate-200 p-4 md:grid-cols-2">
-        <legend className="px-1 text-sm font-semibold">購買後加購</legend>
-        <p className="text-sm leading-6 text-slate-600 md:col-span-2">買家付款後可用原訂單實付金額折抵一次升級。拒絕加購時可改選備選商品；原訂單退款會撤銷升級權益。</p>
-        <SelectField label="加購商品" name="upsellProductId" defaultValue={draft.upsellProductId ?? ""}>
-          <option value="">不提供加購</option>
-          {offerProducts.filter(option => option.id !== product?.id).map(option => <option key={option.id} value={option.id}>{option.name} · {formatCurrency(option.priceCents, option.currency)}</option>)}
-        </SelectField>
-        <Field label="加購額外折扣（元）" name="upsellDiscount" type="number" min={0} step={0.01} defaultValue={draft.upsellDiscount ?? "0"} />
-        <SelectField label="拒絕加購後的備選商品" name="downsellProductId" defaultValue={draft.downsellProductId ?? ""}>
-          <option value="">不提供備選商品</option>
-          {offerProducts.filter(option => option.id !== product?.id).map(option => <option key={option.id} value={option.id}>{option.name} · {formatCurrency(option.priceCents, option.currency)}</option>)}
-        </SelectField>
-        <p className="self-end text-xs leading-5 text-slate-600">限同商家、同幣別且使用本站結帳的已上架商品；折抵後應付金額必須大於零。</p>
-      </fieldset>
-      <TextArea label="商品描述" name="description" error={fieldErrors.description} maxLength={10_000} defaultValue={draft.description} />
-      <MediaUploadField
-        kind="image"
-        label="商品圖片"
-        description="直接拖拉或選擇商品主圖；上傳成功後會立即預覽，儲存商品時才正式套用。"
-        defaultUrl={draft.imageUrl}
-        defaultAssetId={draft.imageAssetId}
-        urlInputName="imageUrl"
-        assetIdInputName="imageAssetId"
-        statusInputName="imageUploadPhase"
-        onBlockingChange={setMediaBlocked}
-      />
-      <div className="grid gap-2">
-        <Field label="外部結帳 URL（選填／進階）" name="checkoutUrl" error={fieldErrors.checkoutUrl} defaultValue={draft.checkoutUrl} placeholder="https://..." />
-        <p className="text-xs leading-5 text-orange-800">使用外部結帳會離開 CelebrateDeal，平台無法保證取得本地訂單、付款、退款與分潤閉環證據。需要完整交易追蹤時請留空。</p>
-      </div>
-      <label className="flex items-start gap-2 text-sm font-medium text-slate-700">
-        <input name="isActive" type="checkbox" defaultChecked={draft.isActive} className="mt-0.5 h-4 w-4 accent-blue-600" />
-        <span>上架商品<span className="mt-1 block text-xs font-normal text-slate-500">勾選後，符合價格、庫存與交付條件的商品可進入販售流程。</span></span>
-      </label>
-      {mediaBlocked ? <p role="status" className="text-sm font-medium text-orange-800">請先完成圖片上傳，或移除尚未上傳的檔案。</p> : null}
-      <SubmitButton disabled={mediaBlocked || nativePending} />
     </form>
   );
 }
