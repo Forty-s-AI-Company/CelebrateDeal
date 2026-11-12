@@ -149,6 +149,8 @@ function initialWorkspace(page: PageInput | undefined, forms: LandingPageRenderC
 export const AUTOSAVE_DELAY_MS = 3_000;
 
 const isSaveOperation = (operation: string | null) => operation === "save" || operation === "create";
+/** Operations that leave the canvas editable: saves (autosave must not take focus) and the publish steps, which run behind the modal drawer on the stored draft. */
+const UNLOCKED_OPERATIONS = new Set(["save", "create", "check_publish", "publish"]);
 
 function saveStateFor(pendingOperation: string | null, dirty: boolean, failed: boolean): FunnelEditorSaveState {
   if (isSaveOperation(pendingOperation)) return "saving";
@@ -362,14 +364,14 @@ export function LandingPageWorkspace({ initialPublication, page, forms, lives, c
 type SaveFailure = { snapshot: string; conflict: boolean };
 
 /**
- * Save-related flags. Saving never locks the canvas or the settings (autosave
- * would steal focus from an input); other operations do. Autosave runs only
+ * Save-related flags. Saving and the publish steps never lock the canvas or
+ * the settings (autosave would steal focus from an input); other operations do. Autosave runs only
  * for a stored page, never for a pristine legacy conversion, never twice for
  * content whose save failed, and not at all after a revision conflict.
  */
 function saveFlags(input: { pendingOperation: string | null; dirty: boolean; snapshot: string; saveFailure: SaveFailure | null; stored: boolean; legacy: boolean; valid: boolean; name: string; slug: string }) {
   const pending = input.pendingOperation !== null;
-  const locked = pending && !isSaveOperation(input.pendingOperation);
+  const locked = pending && !UNLOCKED_OPERATIONS.has(input.pendingOperation ?? "");
   const settingsIncomplete = !input.valid || !input.name.trim() || !input.slug.trim();
   const saveBlocked = locked || settingsIncomplete;
   const conflict = Boolean(input.saveFailure?.conflict);
@@ -385,7 +387,8 @@ function publishChrome({ publishing, published, locked, managementHref, commerce
   if (!publishing.available) return {};
   const state = publishing.state;
   return {
-    publish: { label: published ? "更新發布" : "發布", disabled: state !== null || locked, onPublish: publishing.open },
+    // Not disabled while the (modal) drawer is open: a disabled trigger would drop the focus the drawer returns to.
+    publish: { label: published ? "更新發布" : "發布", disabled: locked, onPublish: publishing.open },
     renderOverlay: state ? (navigation) => <FunnelPublishDrawer state={state} published={published} commerce={commerce()} managementHref={managementHref}
       onPublish={publishing.confirm} onRetry={publishing.open} onClose={publishing.close} onFix={(kind) => publishing.fix(kind, navigation)} /> : undefined,
   };

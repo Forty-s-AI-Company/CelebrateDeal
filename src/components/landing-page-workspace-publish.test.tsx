@@ -214,7 +214,6 @@ describe("publish in the editor", () => {
     expect(dialog.querySelector('[data-publish-check="儲存草稿"]')?.getAttribute("data-status")).toBe("passed");
     expect(dialog.querySelector('[data-publish-check="發布檢查"]')?.getAttribute("data-status")).toBe("passed");
     expect(dialog.textContent).toContain("一頁式網站尚未發布，公開網址目前無法開啟。");
-    expect(button(toolbar(), "發布").disabled).toBe(true);
     await click(button(dialog, "確認發布"));
     await flush();
     expect(operations()).toEqual(["save", "check_publish", "publish"]);
@@ -228,14 +227,20 @@ describe("publish in the editor", () => {
     expect(button(toolbar(), "發布狀態：已發布")).toBeTruthy();
   });
 
-  it("skips the save when nothing changed and never publishes without the check", async () => {
+  it("skips the save when nothing changed, never publishes without the check, and returns focus to 發布", async () => {
     mocks.action.mockResolvedValueOnce(checked);
-    await mount(workspace());
-    await click(button(toolbar(), "發布"));
+    const container = await mount(workspace());
+    const trigger = button(toolbar(), "發布");
+    trigger.focus();
+    await click(trigger);
     await flush();
     expect(operations()).toEqual(["check_publish"]);
+    // The canvas behind the modal drawer is not disabled by the check (no flicker, no lost focus).
+    expect(button(container, "區段").disabled).toBe(false);
+    expect(trigger.disabled).toBe(false);
     await click(button(drawer()!, "取消"));
     expect(drawer()).toBeNull();
+    expect(document.activeElement).toBe(trigger);
     expect(operations()).toEqual(["check_publish"]);
   });
 
