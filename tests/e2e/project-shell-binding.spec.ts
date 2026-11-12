@@ -23,7 +23,7 @@ for (const viewport of [{ width: 1440, height: 1000 }, { width: 390, height: 844
       await page.getByLabel("密碼").fill(password);
       await page.getByRole("button", { name: "登入", exact: true }).click();
       await expect(page).toHaveURL(/\/dashboard$/u);
-      const panel = page.locator('section:visible').filter({ has: page.getByRole('button', { name: /專案上線任務/u }) });
+      const panel = page.locator('section:visible').filter({ has: page.getByRole('button', { name: /^上線任務 /u }) });
       const next = panel.getByRole('link', { name: /繼續/u });
       await expect(next).toHaveAttribute('href', '/forms/new');
       await next.click();
@@ -47,7 +47,8 @@ for (const viewport of [{ width: 1440, height: 1000 }, { width: 390, height: 844
       await switcher.getByRole('button', { name: /Browser project/u }).click();
       await switcher.getByRole('menuitemradio', { name: /全部專案總覽/u }).click();
       await expect.poll(async () => (await db.userOnboardingPreference.findUniqueOrThrow({ where: { userId_vendorId: { userId: user.id, vendorId: vendor.id } } })).selectedProjectId).toBeNull();
-      await expect(page.getByRole('button', { name: /商家上線任務/u }).filter({ visible: true })).toBeVisible();
+      // U1: one title for the one list, with or without a selected project.
+      await expect(page.getByRole('button', { name: /^上線任務 /u }).filter({ visible: true })).toBeVisible();
     } finally {
       await db.vendor.delete({ where: { id: vendor.id } });
       await db.user.delete({ where: { id: user.id } });

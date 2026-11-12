@@ -47,7 +47,7 @@ afterEach(() => {
 });
 
 function renderPanel(items: ReturnType<typeof onboardingChecklistItems>) {
-  act(() => root.render(<OnboardingTaskPanel title="商家上線任務" tasks={items} initiallyCollapsed={false} persistCollapsed={async () => {}} />));
+  act(() => root.render(<OnboardingTaskPanel title="上線任務" tasks={items} initiallyCollapsed={false} persistCollapsed={async () => {}} />));
 }
 
 describe("every entry point shows the same onboarding steps and status", () => {
@@ -57,7 +57,7 @@ describe("every entry point shows the same onboarding steps and status", () => {
   it("sidebar panel: same count, progress and next step as /onboarding", () => {
     renderPanel(items);
     const toggle = container.querySelector("button[aria-expanded]")!;
-    expect(toggle.textContent).toContain(`商家上線任務 ${checklist.completedSteps}/${checklist.totalSteps}`);
+    expect(toggle.textContent).toContain(`上線任務 ${checklist.completedSteps}/${checklist.totalSteps}`);
     const progressbar = container.querySelector('[role="progressbar"]')!;
     expect(progressbar.getAttribute("aria-valuenow")).toBe(String(checklist.percentage));
     // The deferred external payment step is not offered first, exactly like /onboarding's「繼續」.
