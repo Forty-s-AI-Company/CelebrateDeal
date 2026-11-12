@@ -158,7 +158,10 @@ function FunnelPageEditorSession({ document, disabled = false, onChange, commerc
     }
     if (shortcut === "save") {
       event.preventDefault();
-      if (chrome && (chrome.saveState === "dirty" || chrome.saveState === "error") && !chrome.saveBlocked) chrome.onSave();
+      if (chrome && (chrome.saveState === "dirty" || chrome.saveState === "error")) {
+        if (!chrome.saveBlocked) chrome.onSave();
+        else chrome.onSaveBlocked?.();
+      }
       return;
     }
     if (previewing) return;

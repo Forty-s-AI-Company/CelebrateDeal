@@ -27,6 +27,10 @@ export type FunnelEditorChrome = {
   saveState: FunnelEditorSaveState;
   /** Blocks saving even with unsaved changes (invalid settings, missing name). */
   saveBlocked?: boolean;
+  /** Why saving is blocked when it is not the settings (shown as the save button's title). */
+  saveBlockedReason?: string;
+  /** Called instead of `onSave` when Ctrl+S is pressed while saving is blocked. */
+  onSaveBlocked?: () => void;
   onSave: () => void;
   /** True when edits are saved automatically a few seconds after the last change. */
   autosave?: boolean;

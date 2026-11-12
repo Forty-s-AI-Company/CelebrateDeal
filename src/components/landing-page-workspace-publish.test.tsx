@@ -244,6 +244,29 @@ describe("publish in the editor", () => {
     expect(operations()).toEqual(["check_publish"]);
   });
 
+  it("does not silently drop 儲存, Ctrl+S or 離開 while the publish check runs", async () => {
+    let resolve: (value: LandingPageActionState) => void = () => undefined;
+    mocks.action.mockReturnValueOnce(new Promise((done) => { resolve = done; }));
+    const container = await mount(workspace());
+    await click(button(toolbar(), "發布"));
+    await flush();
+    expect(operations()).toEqual(["check_publish"]);
+    // An edit made meanwhile (the canvas is not locked) cannot be saved until the check ends, and says why.
+    await edit(container);
+    const save = button(toolbar(), "儲存");
+    expect(save.disabled).toBe(true);
+    expect(save.title).toBe("發布檢查或發布進行中，完成後再儲存。");
+    await act(async () => { window.dispatchEvent(new KeyboardEvent("keydown", { key: "s", ctrlKey: true, bubbles: true, cancelable: true })); });
+    expect(container.querySelector('p[role="status"].fixed')?.textContent).toBe("發布檢查或發布進行中，完成後再儲存。");
+    await click(button(toolbar(), "離開"));
+    expect(container.querySelector('p[role="status"].fixed')?.textContent).toBe("發布檢查或發布進行中，完成後再離開。");
+    expect(mocks.push).not.toHaveBeenCalled();
+    expect(operations()).toEqual(["check_publish"]);
+    await act(async () => { resolve(checked); });
+    await flush();
+    expect(button(toolbar(), "儲存").disabled).toBe(false);
+  });
+
   it("lists a refused check with the server's reason and leads to the in-place product picker", async () => {
     mocks.action.mockResolvedValueOnce({ status: "error", code: "landing_page_commerce_invalid", message: "已綁定的商品必須屬於目前銷售專案，且目前可販售。", publication: { available: false, message: "一頁式網站尚未發布，公開網址目前無法開啟。", projectHref: "/projects/p1", missing: [] } });
     const container = await mount(workspace({ commerce: { schemaVersion: 1, productId: "product-gone", formMode: "single" } }));

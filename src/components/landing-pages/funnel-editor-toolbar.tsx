@@ -32,7 +32,7 @@ function saveAnnouncement(state: FunnelEditorChrome["saveState"], autosave: bool
 }
 
 function saveTitle(chrome: FunnelEditorChrome) {
-  if (chrome.saveBlocked && (chrome.saveState === "dirty" || chrome.saveState === "error")) return "請先修正設定再儲存";
+  if (chrome.saveBlocked && (chrome.saveState === "dirty" || chrome.saveState === "error")) return chrome.saveBlockedReason ?? "請先修正設定再儲存";
   if (chrome.saveState === "error") return "重新儲存（Ctrl+S）";
   return chrome.autosave ? "停止編輯幾秒後會自動儲存；也可以立即儲存（Ctrl+S）" : "儲存（Ctrl+S）";
 }

@@ -156,6 +156,10 @@ const isSaveOperation = (operation: string | null) => operation === "save" || op
  * page, so edits made meanwhile would be lost.
  */
 const UNLOCKED_OPERATIONS = new Set(["save", "check_publish", "publish"]);
+/** While these run, 儲存 and 離開 wait (the server dispatches page actions one at a time) and say so. */
+const PUBLISH_OPERATIONS = new Set(["check_publish", "publish"]);
+const PUBLISH_BUSY_SAVE = "發布檢查或發布進行中，完成後再儲存。";
+const PUBLISH_BUSY_EXIT = "發布檢查或發布進行中，完成後再離開。";
 
 function saveStateFor(pendingOperation: string | null, dirty: boolean, failed: boolean): FunnelEditorSaveState {
   if (isSaveOperation(pendingOperation)) return "saving";
@@ -315,13 +319,13 @@ export function LandingPageWorkspace({ initialPublication, page, forms, lives, c
       if (pendingOperation === "save") {
         setExitQueued(true);
         setNotice({ text: "儲存完成後會返回管理頁。", tone: "info" });
-      }
+      } else if (PUBLISH_OPERATIONS.has(pendingOperation ?? "")) setNotice({ text: PUBLISH_BUSY_EXIT, tone: "info" });
       return;
     }
     if (dirty) { setExitPrompt(true); return; }
     router.push(exitHref);
   }
-  const { locked, settingsIncomplete, saveBlocked, saveFailed, autosave, autosaveEnabled, autosaveDue } = saveFlags({ pendingOperation, dirty, snapshot, saveFailure, stored: Boolean(page), legacy: Boolean(legacy), valid, name, slug });
+  const { locked, settingsIncomplete, saveBlocked, publishBusy, saveFailed, autosave, autosaveEnabled, autosaveDue } = saveFlags({ pendingOperation, dirty, snapshot, saveFailure, stored: Boolean(page), legacy: Boolean(legacy), valid, name, slug });
   useAutosave({ enabled: autosaveEnabled, due: autosaveDue, snapshot, save: () => { void execute("save", "errors"); } });
   const publishing = usePublishFlow({
     canPublish: Boolean(page && managementHref),
@@ -346,6 +350,7 @@ export function LandingPageWorkspace({ initialPublication, page, forms, lives, c
   const templateTarget = saveAsTemplateTarget(page, content, Boolean(legacy), name);
   const chrome: FunnelEditorChrome = {
     title: name, saveState: saveStateFor(pendingOperation, dirty, saveFailed), saveBlocked, onSave: save, onExit: exitEditor, autosave,
+    ...publishBusyChrome(publishBusy, () => setNotice({ text: PUBLISH_BUSY_SAVE, tone: "info" })),
     status: page ? <PublicationChip published={published} publication={publication} slug={slug} publishInEditor={publishing.available} onManage={managementHref ? () => { if (dirty) setExitPrompt(true); else router.push(exitHref); } : undefined} actions={legacyActions} /> : null,
     pageSettings: settings, versions,
     renderPreview: (viewport) => <CurrentWorkspacePreview content={content} slug={slug} resource={webinarResource} viewport={viewport} commerceProducts={commerceProducts} />,
@@ -378,11 +383,17 @@ function saveFlags(input: { pendingOperation: string | null; dirty: boolean; sna
   const pending = input.pendingOperation !== null;
   const locked = pending && !UNLOCKED_OPERATIONS.has(input.pendingOperation ?? "");
   const settingsIncomplete = !input.valid || !input.name.trim() || !input.slug.trim();
-  const saveBlocked = locked || settingsIncomplete;
+  const publishBusy = PUBLISH_OPERATIONS.has(input.pendingOperation ?? "");
+  const saveBlocked = locked || settingsIncomplete || publishBusy;
   const conflict = Boolean(input.saveFailure?.conflict);
   const saveFailed = conflict || input.saveFailure?.snapshot === input.snapshot;
   const autosave = input.stored && !input.legacy;
-  return { locked, settingsIncomplete, saveBlocked, saveFailed, autosave, autosaveEnabled: autosave && !conflict, autosaveDue: input.dirty && !pending && !saveBlocked && !saveFailed };
+  return { locked, settingsIncomplete, saveBlocked, publishBusy, saveFailed, autosave, autosaveEnabled: autosave && !conflict, autosaveDue: input.dirty && !pending && !saveBlocked && !saveFailed };
+}
+
+/** While a publish step runs, 儲存 is disabled with the reason and Ctrl+S answers with a notice instead of doing nothing. */
+function publishBusyChrome(busy: boolean, onBlocked: () => void): Pick<FunnelEditorChrome, "saveBlockedReason" | "onSaveBlocked"> {
+  return busy ? { saveBlockedReason: PUBLISH_BUSY_SAVE, onSaveBlocked: onBlocked } : {};
 }
 
 /** Toolbar 發布 and its drawer, only for funnels (they have a management page). */
