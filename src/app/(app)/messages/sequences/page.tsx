@@ -41,7 +41,7 @@ const STATUS_TONES: Record<EmailSequenceStatus, "green" | "gray" | "orange"> = {
   paused: "orange",
 };
 
-const secondaryButton = "inline-flex min-h-11 items-center justify-center rounded-md border border-border bg-white px-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50";
+const secondaryButton = "inline-flex min-h-11 items-center justify-center rounded-md border border-border bg-white px-3 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-50";
 
 function single(value: string | string[] | undefined) {
   return typeof value === "string" ? value : undefined;
@@ -154,7 +154,7 @@ export default async function EmailSequencesPage({
                     <div className="rounded-md bg-slate-50 px-3 py-2"><dt className="text-slate-600">已停止</dt><dd className="font-semibold text-slate-950">{runCounts.cancelled} 人</dd></div>
                   </dl>
                   <div className="flex flex-wrap gap-2">
-                    <Link href={`/messages/sequences/${encodeURIComponent(sequence.id)}/edit`} className="inline-flex min-h-11 items-center justify-center rounded-md bg-primary px-3 text-sm font-semibold text-white transition hover:bg-primary-dark">
+                    <Link href={`/messages/sequences/${encodeURIComponent(sequence.id)}/edit`} className="inline-flex min-h-11 items-center justify-center rounded-md bg-primary px-3 text-sm font-semibold text-white transition-colors hover:bg-primary-dark">
                       編輯
                     </Link>
                     {status === "active" ? (
@@ -181,7 +181,7 @@ export default async function EmailSequencesPage({
                         pendingMessage="正在刪除序列。"
                         confirmDestructive
                         confirmMessage={`刪除「${sequence.name}」後，序列和每個人的進度都會移除，還沒寄出的信也不會再寄。確定刪除？`}
-                        className="inline-flex min-h-11 items-center justify-center rounded-md border border-red-200 bg-white px-3 text-sm font-semibold text-red-700 transition hover:bg-red-50"
+                        className="inline-flex min-h-11 items-center justify-center rounded-md border border-red-200 bg-white px-3 text-sm font-semibold text-red-700 transition-colors hover:bg-red-50"
                       >
                         刪除
                       </FormSubmitButton>

@@ -118,7 +118,7 @@ function StepFields({
             type="button"
             onClick={onRemove}
             disabled={disabled}
-            className="inline-flex min-h-11 items-center rounded-md border border-border bg-white px-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+            className="inline-flex min-h-11 items-center rounded-md border border-border bg-white px-3 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
           >
             移除第 {index + 1} 封
           </button>
@@ -191,7 +191,7 @@ function SequenceFields({
             type="button"
             onClick={() => setRows((current) => [...current, ...toRows([emptyStep(current.at(-1))])])}
             disabled={disabled || rows.length >= MAX_EMAIL_SEQUENCE_STEPS}
-            className="inline-flex min-h-11 items-center rounded-md border border-border bg-white px-4 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+            className="inline-flex min-h-11 items-center rounded-md border border-border bg-white px-4 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
           >
             新增一封
           </button>
@@ -255,7 +255,7 @@ export function EmailSequenceFormClient({
         <SubmitButton disabled={!hydrated} pendingChildren="儲存中…" pendingMessage="正在儲存追銷序列，請勿重複送出。">
           儲存序列
         </SubmitButton>
-        <Link href="/messages/sequences" className="inline-flex min-h-11 items-center rounded-md border border-border bg-white px-4 text-sm font-semibold text-slate-700 transition hover:bg-slate-50">
+        <Link href="/messages/sequences" className="inline-flex min-h-11 items-center rounded-md border border-border bg-white px-4 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-50">
           返回列表
         </Link>
         {!hydrated ? <span className="text-sm text-slate-500">頁面載入完成後才能儲存。</span> : null}
