@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { bpsToPercentText, percentTextToBps } from "./product-share-percent";
+import { bpsToPercentText, percentTextToBps, SHARE_PERCENT_INPUT_PATTERN } from "./product-share-percent";
 
 describe("bpsToPercentText", () => {
   it.each([
@@ -35,6 +35,8 @@ describe("percentTextToBps", () => {
     ["12.34", "1234"],
     ["20", "2000"],
     ["20.", "invalid:20."],
+    [".5", "50"], [".05", "5"], [".99", "99"], ["0020", "2000"], ["00.5", "50"], ["0100", "10000"], ["000", "0"],
+    [".", "invalid:."], ["0.", "invalid:0."], ["1000", "invalid:1000"], [".123", "invalid:.123"], ["2e1", "invalid:2e1"], ["+5", "invalid:+5"],
     ["20.5", "2050"],
     ["99.99", "9999"],
     [" 20 ", "2000"],
@@ -52,6 +54,15 @@ describe("percentTextToBps", () => {
     ["1,5", "invalid:1,5"],
   ])("converts %j to %j", (percent, expected) => {
     expect(percentTextToBps(percent)).toBe(expected);
+  });
+
+  it("accepts exactly the same formats as the native input pattern", () => {
+    const pattern = new RegExp(`^(?:${SHARE_PERCENT_INPUT_PATTERN})$`, "u");
+    const samples = ["0", "1", "20", "0020", "100", "999", "1000", ".5", ".05", "0.5", "20.5", "20.55", "20.555", "20.", ".", "1e3", "2e1", "-5", "+5", "1,5", "abc", "1_0"];
+    for (const sample of samples) {
+      const convertible = !percentTextToBps(sample).startsWith("invalid:");
+      expect(pattern.test(sample), sample).toBe(convertible);
+    }
   });
 
   it("round-trips every valid server value without loss", () => {
