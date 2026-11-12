@@ -31,6 +31,18 @@
 - **換裝置觀看**：觀看頁以報名驗證後設定的簽章 cookie（30 天）辨識報名者。在沒有這個 cookie 的裝置（例如在電腦報名、用手機開信）上，觀看者跟隨公開時程：正在播的場次，否則下一場，最後一場之後則是最近一場的回放。這是 Phase 1 的已知限制。
 - **公開回放**：每場回放期限是「場次結束＋`sessionReplayWindowHours`」與直播 `replayAvailableUntil` 中較早者。沒有 cookie 的觀看者在最後一場之後看到的是最後一場的回放，所以任何人在回放開啟期間都能看到回放，不限於報名者；與單一開播時間的直播相同，回放不是報名者限定內容。
 
+### 常青場課後信（F-2）
+
+常青場（`isActiveEvergreenLive`）的觀眾場次只存在簽章 httpOnly cookie。課後信（`post_live_followup`）依觀眾自己的場次寄送，權威資料是 `EvergreenSessionAssignment`（每筆報名一列）：
+
+- **記錄時機**：`POST /api/live-evergreen-session`（claim／rejoin）回應已指派的場次，且請求帶有效的報名簽章 cookie（`FORM_SUBMISSION_CHAT_SESSION_COOKIE`）時記錄；Email 驗證成功時，若請求帶的常青 cookie 解析出已指派場次（先進觀看頁、後驗證）也記錄。商家設定共用開場時間（`evergreenSessionStartAt`）時，每位觀眾的場次就是該時間，驗證成功時不需常青 cookie 也記錄。GET 不寫入；沒有報名 cookie 的訪客不會寫入這張表。寫入失敗只回報監控，不影響回應。
+- **綁定**：寫入是單一條件式 `INSERT ... SELECT ... ON CONFLICT`，只從「這場直播、`VERIFIED`、表單屬於這個商家」的報名取 id；`(vendorId, liveId)` 與 `(liveId, formSubmissionId)` 複合 FK 再綁一次。`sessionStartAt` 只來自伺服器解析的場次。
+- **更新規則**：排程 fingerprint 不同就取代；相同時只往較晚的場次移（兩個瀏覽器各有場次時以較晚者為準）。
+- **寄送**：排程取 `sessionStartAt` 在「現在 − 影片長度 − 規則分鐘數」之前、72 小時內的列（逾期超過 72 小時不補寄），以場次開始時間當 `liveScheduledAt` 建立快照；`{{live_start_at}}` 是觀眾自己的場次（與指定場次相同，以 Asia/Taipei 顯示）。不看 fingerprint：排程改掉之前已指派的場次照記錄的時間寄。同一規則每位報名者最多一封：rejoin 把場次往後移時，舊場次未寄出的那封被 supersede，已寄過就不再寄。寄送前檢查重新讀這位報名者的 assignment，場次不同或沒有 assignment 就不寄。
+- **沒進過觀看頁的報名者**：常青期間不寄。
+- **常青關閉、結束或改回草稿**：沿用 #582，依原開播時間補寄給已驗證報名者；常青期間已收到同一規則課後信的人不會再收到（待 owner 決定是否改變補寄對象）。
+- **已知限制**：常青生效時儲存常青設定，會在 commit 後把這場直播所有排隊中的課後信標為 `superseded`（`supersedeFixedTimeNotificationsForActiveEvergreen`）；下一次排程（72 小時內）會依同一個 id 重新啟用，所以只是延後，不會漏寄或重寄。
+
 ## 歸因與佣金
 
 先固定 provider、event ID、order number、pending transaction、vendor、affiliate、product／live、visitor／session 與 attribution record。URL／cookie／session 僅是候選來源，接受的歸因與價格由 checkout 伺服器綁定並凍結。
