@@ -1,4 +1,9 @@
-import { Ban, Banknote, BarChart3, Bell, Bot, Boxes, CalendarCheck, ClipboardList, Cloud, CreditCard, Gauge, GitCompareArrows, Handshake, Headphones, Lock, PackageCheck, Palette, PlaySquare, Radio, ReceiptText, Rocket, ScrollText, Settings2, Shield, Tags, UserPlus, UsersRound, WalletCards, type LucideIcon } from "lucide-react";
+import {
+  Activity, Ban, Banknote, BarChart3, Bell, Bot, Boxes, Building2, CalendarCheck, ClipboardList, Cloud, Coins, CreditCard, DoorOpen, FileText, FlaskConical, Gauge,
+  GitCompareArrows, Globe, GraduationCap, Handshake, Headphones, Landmark, LayoutTemplate, LifeBuoy, Lock, MessageSquareText, PackageCheck, Palette, PlaySquare,
+  Radio, ReceiptText, Rocket, ScrollText, Send, Settings2, Shield, ShieldAlert, Tags, Target, TextCursorInput, ToggleRight, UserPlus, Users, UsersRound,
+  WalletCards, Webhook, Workflow, type LucideIcon,
+} from "lucide-react";
 import { hasVendorFeature, type GatedFeature } from "@/lib/vendor-feature-toggles";
 import { SECURITY_SETTINGS_PATH, SETTINGS_HUB_PATH } from "@/lib/settings-paths";
 import { isVendorBackofficeRole, isVendorPartnerRole, PARTNER_PORTAL_PATH } from "@/lib/vendor-roles";
@@ -17,7 +22,26 @@ export type NavItem = {
   /** Extra path prefixes that also highlight this entry as the current page. */
   activePrefixes?: readonly string[];
 };
-export type NavGroup = { label: string; items: NavItem[] };
+export type NavGroup = {
+  label: string;
+  items: NavItem[];
+  /**
+   * Sales-project flows this group is core to. Omitted: always expanded by
+   * default. Set: expanded by default only for those flows (and when no
+   * project is selected); `[]` means secondary, collapsed whenever a project
+   * is selected. Only the default changes; the entries stay reachable.
+   */
+  flows?: readonly SalesProjectFlowKey[];
+};
+/** Mirrors the Prisma `SalesProjectFlow` enum without importing the client into UI code. */
+export type SalesProjectFlowKey = "live" | "consultation";
+
+/** Whether a sidebar group starts expanded for the selected project's flow (`null`: no project selected). */
+export function isGroupExpandedByDefault(group: Pick<NavGroup, "flows">, projectFlow: SalesProjectFlowKey | null): boolean {
+  if (!group.flows) return true;
+  if (projectFlow === null) return group.flows.length > 0;
+  return group.flows.includes(projectFlow);
+}
 
 export { SECURITY_SETTINGS_PATH, SETTINGS_HUB_PATH };
 
@@ -36,32 +60,32 @@ export const settingsGroups: NavGroup[] = [
   {
     label: "工作區",
     items: [
-      { href: "/settings/brand", label: "品牌設定", icon: Palette, managerOnly: true, description: "品牌名稱、Logo、主色、寄件人與公開頁聯絡資訊。" },
+      { href: "/settings/brand", label: "品牌設定", icon: Building2, managerOnly: true, description: "品牌名稱、Logo、主色、寄件人與公開頁聯絡資訊。" },
       { href: "/onboarding", label: "上線導引", icon: Rocket, managerOnly: true, description: "依步驟完成開賣前的必要設定，掌握目前進度。" },
     ],
   },
   {
     label: "系統設定",
     items: [
-      { href: "/settings/tracking", label: "追蹤設定", icon: BarChart3, managerOnly: true, description: "設定 Pixel、GTM 與事件開關。" },
-      { href: "/settings/features", label: "功能模組", icon: Settings2, managerOnly: true, description: "開啟或停用工作區使用的功能模組。" },
+      { href: "/settings/tracking", label: "追蹤設定", icon: Target, managerOnly: true, description: "設定 Pixel、GTM 與事件開關。" },
+      { href: "/settings/features", label: "功能模組", icon: ToggleRight, managerOnly: true, description: "開啟或停用工作區使用的功能模組。" },
       { href: "/settings/line", label: "LINE 整合", icon: Bell, ownerOnly: true, description: "連結 LINE 官方帳號推播與 LINE Login。" },
-      { href: "/settings/automations", label: "自動化", icon: Bot, managerOnly: true, description: "串接報名、直播、諮詢與訂單的行銷自動化流程。" },
-      { href: "/settings/team", label: "團隊管理", icon: UsersRound, managerOnly: true, description: "管理銷售團隊、商家成員與分潤歸屬關係。" },
+      { href: "/settings/automations", label: "自動化", icon: Workflow, managerOnly: true, description: "串接報名、直播、諮詢與訂單的行銷自動化流程。" },
+      { href: "/settings/team", label: "團隊管理", icon: Users, managerOnly: true, description: "管理銷售團隊、商家成員與分潤歸屬關係。" },
     ],
   },
   {
     label: "帳務與方案",
     items: [
-      { href: "/billing/usage", label: "用量與扣點", icon: CreditCard, financeOnly: true, feature: "billing", description: "查看串流、場次與儲存用量及服務費估算。" },
+      { href: "/billing/usage", label: "用量與扣點", icon: Activity, financeOnly: true, feature: "billing", description: "查看串流、場次與儲存用量及服務費估算。" },
       { href: "/billing/payment-methods", label: "平台服務付款方式", icon: CreditCard, financeOnly: true, feature: "funnel_binding", description: "綁定與管理支付平台服務費的付款方式。" },
       { href: "/billing/plans", label: "方案", icon: Tags, financeOnly: true, feature: "billing", description: "比較並變更平台月費方案。" },
       { href: "/billing/invoices", label: "帳單", icon: ReceiptText, financeOnly: true, feature: "billing", description: "查看與下載平台帳單紀錄。" },
-      { href: "/billing/electronic-invoices", label: "電子發票", icon: ReceiptText, financeOnly: true, description: "查看發票紀錄、發票需求與退款折讓狀態。" },
+      { href: "/billing/electronic-invoices", label: "電子發票", icon: FileText, financeOnly: true, description: "查看發票紀錄、發票需求與退款折讓狀態。" },
       { href: "/billing/settlements", label: "月結", icon: WalletCards, financeOnly: true, feature: "billing", description: "核對每月結算明細與對帳狀態。" },
       { href: "/billing/payouts", label: "批次出款", icon: Banknote, financeOnly: true, feature: "tax_remuneration", description: "建立與追蹤批次出款，並管理收款帳戶。" },
-      { href: "/affiliates/commissions", label: "佣金結算", icon: Handshake, financeOnly: true, feature: "affiliate_program", description: "審核與結算推廣夥伴的佣金。" },
-      { href: "/billing/course-payouts", label: "課程分潤", icon: WalletCards, financeOnly: true, feature: "tax_remuneration", description: "查看課程分潤明細與撥款進度。" },
+      { href: "/affiliates/commissions", label: "佣金結算", icon: Coins, financeOnly: true, feature: "affiliate_program", description: "審核與結算推廣夥伴的佣金。" },
+      { href: "/billing/course-payouts", label: "課程分潤", icon: GraduationCap, financeOnly: true, feature: "tax_remuneration", description: "查看課程分潤明細與撥款進度。" },
     ],
   },
 ];
@@ -77,7 +101,7 @@ const settingsEntry: NavItem = { href: SETTINGS_HUB_PATH, label: "設定", icon:
 
 const operationalGroups: NavGroup[] = [
   {
-    label: "營運總覽",
+    label: "總覽與專案",
     items: [
       { href: "/dashboard", label: "營運總覽", icon: Gauge },
       { href: "/projects", label: "銷售專案", icon: ClipboardList, managerOnly: true },
@@ -85,11 +109,12 @@ const operationalGroups: NavGroup[] = [
   },
   {
     label: "銷講中心",
+    flows: ["live"],
     items: [
       { href: "/lives", label: "直播間", icon: Radio, managerOnly: true, feature: "live_webinar" },
       { href: "/videos", label: "影片素材", icon: PlaySquare, managerOnly: true, feature: "live_webinar" },
       { href: "/landing-pages", label: "一頁式網站", icon: Palette, managerOnly: true, feature: "funnel_builder" },
-      { href: "/forms", label: "報名管理", icon: ClipboardList, managerOnly: true, feature: "funnel_builder" },
+      { href: "/forms", label: "報名管理", icon: TextCursorInput, managerOnly: true, feature: "funnel_builder" },
     ],
   },
   {
@@ -104,9 +129,10 @@ const operationalGroups: NavGroup[] = [
   },
   {
     label: "互動與行銷",
+    flows: ["live"],
     items: [
-      { href: "/messages/templates", label: "訊息模板", icon: Bell, managerOnly: true },
-      { href: "/messages/deliveries", label: "寄送管理", icon: ReceiptText, managerOnly: true },
+      { href: "/messages/templates", label: "訊息模板", icon: MessageSquareText, managerOnly: true },
+      { href: "/messages/deliveries", label: "寄送管理", icon: Send, managerOnly: true },
       { href: "/interaction-scripts", label: "互動腳本", icon: ScrollText, managerOnly: true, feature: "live_webinar" },
       { href: "/interaction-roles", label: "互動角色", icon: Bot, managerOnly: true, feature: "live_webinar" },
       { href: "/blacklists", label: "封鎖名單", icon: Ban, managerOnly: true },
@@ -114,10 +140,11 @@ const operationalGroups: NavGroup[] = [
   },
   {
     label: "夥伴成長",
+    flows: [],
     items: [
       { href: "/affiliates", label: "推廣夥伴", icon: Handshake, managerOnly: true, feature: "affiliate_program" },
-      { href: "/team-templates", label: "團隊模板", icon: UsersRound, feature: "funnel_builder" },
-      { href: "/partner-pages", label: "我的夥伴頁", icon: Palette, feature: "funnel_builder" },
+      { href: "/team-templates", label: "團隊模板", icon: LayoutTemplate, feature: "funnel_builder" },
+      { href: "/partner-pages", label: "我的夥伴頁", icon: Globe, feature: "funnel_builder" },
       { href: "/team-performance", label: "成效分析", icon: BarChart3, feature: "affiliate_program" },
     ],
   },
@@ -126,13 +153,13 @@ const operationalGroups: NavGroup[] = [
 const platformGroup: NavGroup = {
   label: "平台營運",
   items: [
-    { href: "/admin/billing/dashboard", label: "平台財務管理", icon: Shield, adminOnly: true },
+    { href: "/admin/billing/dashboard", label: "平台財務管理", icon: Landmark, adminOnly: true },
     { href: "/admin/billing/stream-reconciliation", label: "Stream 用量對帳", icon: GitCompareArrows, adminOnly: true },
-    { href: "/admin/billing/webhooks", label: "系統通知對帳", icon: ReceiptText, adminOnly: true },
-    { href: "/admin/support-cases", label: "退款客服交接", icon: Headphones, adminOnly: true },
-    { href: "/admin/vendor-features", label: "商家封測模組", icon: Settings2, adminOnly: true },
+    { href: "/admin/billing/webhooks", label: "系統通知對帳", icon: Webhook, adminOnly: true },
+    { href: "/admin/support-cases", label: "退款客服交接", icon: LifeBuoy, adminOnly: true },
+    { href: "/admin/vendor-features", label: "商家封測模組", icon: FlaskConical, adminOnly: true },
     { href: "/admin/merchant-invitations", label: "商家邀請", icon: UserPlus, adminOnly: true },
-    { href: "/admin/account-holds", label: "帳號安全暫停", icon: Ban, adminOnly: true },
+    { href: "/admin/account-holds", label: "帳號安全暫停", icon: ShieldAlert, adminOnly: true },
     { href: "/admin/cloudflare/videos", label: "Stream 檢查", icon: Cloud, adminOnly: true },
     { href: "/mfa/setup", label: "MFA 安全設定", icon: Lock, adminOnly: true },
   ],
@@ -140,8 +167,8 @@ const platformGroup: NavGroup = {
 
 /** The portal lives outside the merchant back office and authorizes per grant. */
 const partnerPortalGroup: NavGroup = {
-  label: "夥伴入口",
-  items: [{ href: PARTNER_PORTAL_PATH, label: "夥伴入口", icon: Handshake }],
+  label: "夥伴專區",
+  items: [{ href: PARTNER_PORTAL_PATH, label: "夥伴入口", icon: DoorOpen }],
 };
 
 function filterGroups(groups: NavGroup[], keep: (item: NavItem) => boolean): NavGroup[] {
@@ -195,7 +222,7 @@ export function navigationForRole(
   // The whole settings area collapses into one entry, shown only when the
   // hub has at least one page this member can open.
   if (settingsHubForRole(memberRole, false, enabledModules).length > 0) {
-    groups.push({ label: "設定", items: [settingsEntry] });
+    groups.push({ label: "系統管理", items: [settingsEntry] });
   }
   return hasPartnerPortal && isVendorBackofficeRole(memberRole) ? [...groups, partnerPortalGroup] : groups;
 }
