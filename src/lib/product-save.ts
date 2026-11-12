@@ -509,8 +509,11 @@ async function courseModuleClosed(
  * (the product editor's route and action, the live studio's quick create) own
  * request security and authentication; this service owns validation, the
  * course feature gate and the tenant-scoped transaction (project binding,
- * post-purchase policy, delivery config). Prices are parsed here from the
- * submitted major-unit `price`, never taken from a client-derived value.
+ * post-purchase policy, delivery config). The price is parsed here from the
+ * submitted major-unit `price` when present; the legacy cents field
+ * `priceCents` is read only when `price` is missing (the live studio's quick
+ * create never sends it). Either way the value is validated here and only
+ * written to this vendor's own product.
  */
 export async function mutateProduct(
   vendorId: string,
