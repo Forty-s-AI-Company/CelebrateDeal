@@ -135,6 +135,16 @@ async function saveEvergreenTransaction(
       if (updated.count !== 1) return updated;
       // Enabling: queued before_live / during_live emails anchored on the old
       // fixed time are cancelled in the same commit instead of at send time.
+      // post_live_followup is cancelled only by the post-commit pass below,
+      // which re-checks that evergreen is actually active: enabling the flag
+      // on an ended Live must not drop that Live's due follow-ups. A
+      // fixed-time VOD that has finished playing but is still `scheduled`
+      // does become an active evergreen Live, so its original audience's
+      // queued follow-ups ARE cancelled (and none are scheduled while it
+      // stays evergreen); the settings page tells the merchant to end the
+      // Live, or wait for the follow-ups to go out, before enabling. Once
+      // evergreen is no longer active (switched off, ended or back to draft)
+      // the job reactivates those follow-ups from the original scheduledAt.
       if (input.enabling) {
         await supersedeLiveNotificationDeliveriesForLifecycle(tx, {
           vendorId: input.vendorId,

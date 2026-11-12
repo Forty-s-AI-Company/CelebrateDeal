@@ -27,6 +27,16 @@ const SAFE_STATUSES = new Set([
   "claimed_elsewhere",
 ]);
 
+// Outcomes of materializing live notifications and post-live follow-ups.
+const SAFE_MATERIALIZATION_STATUSES = new Set([
+  "queued",
+  "duplicate",
+  "already_sent",
+  "reactivated",
+  "not_scheduled",
+  "not_configured",
+]);
+
 const SAFE_LEARNER_NOTIFICATION_STATUSES = new Set(["sent","failed","suppressed","indeterminate","queued","not_claimed","persistence_failed","configuration_missing","not_delivered","claimed_elsewhere","completed","page_materialized","not_pending","not_due","retry_scheduled","dead_lettered"]);
 const safeCount = (value: unknown) => typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : null;
 
@@ -132,13 +142,13 @@ async function processEmailDeliveries() {
       })),
       liveNotifications: liveNotifications.length,
       liveNotificationResults: liveNotifications.slice(0, 20).map((result) => ({
-        status: SAFE_STATUSES.has(result.status) || new Set(["queued", "duplicate", "already_sent"]).has(result.status)
+        status: SAFE_STATUSES.has(result.status) || SAFE_MATERIALIZATION_STATUSES.has(result.status)
           ? result.status
           : "unknown",
       })),
       followups: followups.length,
       followupResults: followups.slice(0, 20).map((result) => ({
-        status: SAFE_STATUSES.has(result.status) || new Set(["queued", "duplicate", "already_sent"]).has(result.status)
+        status: SAFE_STATUSES.has(result.status) || SAFE_MATERIALIZATION_STATUSES.has(result.status)
           ? result.status
           : "unknown",
       })),

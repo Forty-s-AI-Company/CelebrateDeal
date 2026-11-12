@@ -7,6 +7,7 @@ import { hashPassword } from "../../src/lib/password";
 import { createMerchantRegistrationInvite } from "../../src/lib/merchant-registration-invite";
 import { createMerchantEmailVerificationToken } from "../../src/lib/merchant-email-verification-token";
 import { openLiveStudioAdvancedSettings } from "../fixtures/live-studio";
+import { formatSanitizedAxeBlockingError } from "../../scripts/playwright-ci-reporter";
 
 const db = new PrismaClient();
 const password = "A11y-Test-Password-123!";
@@ -43,6 +44,19 @@ async function blockingAxeViolations(page: Page) {
       impact: violation.impact,
       targets: violation.nodes.map((node) => node.target),
     }));
+}
+
+/**
+ * Same gate as `expect(await blockingAxeViolations(page)).toEqual([])`: any
+ * critical/serious violation fails. The thrown message uses the sanitized
+ * AXE_BLOCKING:RULES grammar so the CI reporter can name the axe rules (it
+ * never forwards raw diffs); the full targets go to stdout for local runs.
+ */
+async function expectNoBlockingAxe(page: Page, label: string) {
+  const blocking = await blockingAxeViolations(page);
+  if (blocking.length === 0) return;
+  console.log(`[axe] ${label}: ${JSON.stringify(blocking)}`);
+  throw new Error(formatSanitizedAxeBlockingError(blocking));
 }
 
 async function waitForStableRoute(page: Page, expectedPath: string) {
@@ -467,7 +481,7 @@ test("live stepper has no blocking axe violations on any of the four steps, in �
   // 錯誤狀態：未填必填欄位就按「下一步」，驗證訊息與焦點狀態都要可被掃描。
   await page.getByRole("button", { name: "下一步" }).click();
   await expect(page.getByRole("status").filter({ hasText: "請先完成本步驟的必填欄位" })).toBeVisible();
-  expect(await blockingAxeViolations(page), "stepper 驗證錯誤狀態").toEqual([]);
+  await expectNoBlockingAxe(page, "stepper 驗證錯誤狀態");
 
   await page.getByLabel("直播標題", { exact: true }).fill("A11y 步驟掃描");
   // 進階設定預設收合；以鍵盤展開，展開狀態也要可被掃描。
@@ -483,8 +497,7 @@ test("live stepper has no blocking axe violations on any of the four steps, in �
   const scanStep = async (step: number) => {
     await expect(page.locator(`[data-step-key="${stepKeys[step]}"]`)).toBeVisible();
     await expect(page.locator(`button[aria-controls="live-step-panel-${stepKeys[step]}"]`)).toHaveAttribute("aria-current", "step");
-    const violations = await blockingAxeViolations(page);
-    expect(violations, `stepper 第 ${step + 1} 步`).toEqual([]);
+    await expectNoBlockingAxe(page, `stepper 第 ${step + 1} 步`);
     scanned.push(step + 1);
   };
   await page.getByLabel("影片／即時直播").selectOption(fixture.videoId);
@@ -504,13 +517,13 @@ test("live stepper has no blocking axe violations on any of the four steps, in �
   const formDrawer = page.getByRole("dialog", { name: "新增報名表" });
   await expect(formDrawer).toBeVisible();
   await drawerSlide("midway");
-  expect(await blockingAxeViolations(page), "新增報名表抽屜（滑入動畫中）").toEqual([]);
+  await expectNoBlockingAxe(page, "新增報名表抽屜（滑入動畫中）");
   await drawerSlide("finish");
-  expect(await blockingAxeViolations(page), "新增報名表抽屜").toEqual([]);
+  await expectNoBlockingAxe(page, "新增報名表抽屜");
   await formDrawer.getByLabel("表單名稱").fill("");
   await formDrawer.getByRole("button", { name: "建立並選取" }).click();
   await expect(formDrawer.getByText("請填寫表單名稱。")).toBeVisible();
-  expect(await blockingAxeViolations(page), "新增報名表抽屜欄位錯誤").toEqual([]);
+  await expectNoBlockingAxe(page, "新增報名表抽屜欄位錯誤");
   await page.keyboard.press("Escape");
   await expect(formDrawer).toBeHidden();
   await expect(openFormDrawer).toBeFocused();
@@ -521,14 +534,14 @@ test("live stepper has no blocking axe violations on any of the four steps, in �
   await expect(videoDrawer).toBeVisible();
   await expect(videoDrawer.getByLabel("影片名稱")).toBeFocused();
   await drawerSlide("midway");
-  expect(await blockingAxeViolations(page), "新增影片抽屜（滑入動畫中）").toEqual([]);
+  await expectNoBlockingAxe(page, "新增影片抽屜（滑入動畫中）");
   await drawerSlide("finish");
-  expect(await blockingAxeViolations(page), "新增影片抽屜").toEqual([]);
+  await expectNoBlockingAxe(page, "新增影片抽屜");
   await videoDrawer.getByText("改用外部影片網址", { exact: true }).click();
   await videoDrawer.getByLabel("影片網址").fill("not-a-url");
   await videoDrawer.getByRole("button", { name: "以網址建立並選取" }).click();
   await expect(videoDrawer.getByText("影片網址必須是有效的 HTTP 或 HTTPS 完整網址。")).toBeVisible();
-  expect(await blockingAxeViolations(page), "新增影片抽屜外部網址欄位錯誤").toEqual([]);
+  await expectNoBlockingAxe(page, "新增影片抽屜外部網址欄位錯誤");
   await page.keyboard.press("Escape");
   await expect(videoDrawer).toBeHidden();
   await expect(openVideoDrawer).toBeFocused();
@@ -538,7 +551,7 @@ test("live stepper has no blocking axe violations on any of the four steps, in �
   // 互動腳本：「重新整理清單」後顯示的公告也要可被掃描；新增元素（新分頁連結、說明）已含在上一步掃描內。
   await page.locator('[data-step-key="sales"]').getByRole("button", { name: "重新整理清單", exact: true }).click();
   await expect(page.locator("[data-live-script-status]")).toContainText("已更新清單");
-  expect(await blockingAxeViolations(page), "互動腳本重新整理公告").toEqual([]);
+  await expectNoBlockingAxe(page, "互動腳本重新整理公告");
   // 新增商品抽屜：開啟（含滑入動畫中點）與欄位錯誤狀態；不送出，不建立商品。
   const openProductDrawer = page.locator('[data-step-key="sales"]').getByRole("button", { name: "新增商品", exact: true });
   await openProductDrawer.click();
@@ -546,14 +559,14 @@ test("live stepper has no blocking axe violations on any of the four steps, in �
   await expect(productDrawer).toBeVisible();
   await expect(productDrawer.getByLabel("商品名稱")).toBeFocused();
   await drawerSlide("midway");
-  expect(await blockingAxeViolations(page), "新增商品抽屜（滑入動畫中）").toEqual([]);
+  await expectNoBlockingAxe(page, "新增商品抽屜（滑入動畫中）");
   await drawerSlide("finish");
-  expect(await blockingAxeViolations(page), "新增商品抽屜").toEqual([]);
+  await expectNoBlockingAxe(page, "新增商品抽屜");
   await productDrawer.getByLabel("售價（新台幣整數元）").fill("12.5");
   await productDrawer.getByRole("button", { name: "建立並選取" }).click();
   await expect(productDrawer.getByText("請填寫商品名稱。")).toBeVisible();
   await expect(productDrawer.getByText("售價須為新台幣整數元，不含小數點、逗號或符號。")).toBeVisible();
-  expect(await blockingAxeViolations(page), "新增商品抽屜欄位錯誤").toEqual([]);
+  await expectNoBlockingAxe(page, "新增商品抽屜欄位錯誤");
   await page.keyboard.press("Escape");
   await expect(productDrawer).toBeHidden();
   await expect(openProductDrawer).toBeFocused();
@@ -563,9 +576,9 @@ test("live stepper has no blocking axe violations on any of the four steps, in �
   await openTemplateDrawer.click();
   await expect(page.getByRole("dialog", { name: "建立報名成功 Email" })).toBeVisible();
   await drawerSlide("midway");
-  expect(await blockingAxeViolations(page), "建立報名成功 Email 抽屜（滑入動畫中）").toEqual([]);
+  await expectNoBlockingAxe(page, "建立報名成功 Email 抽屜（滑入動畫中）");
   await drawerSlide("finish");
-  expect(await blockingAxeViolations(page), "建立報名成功 Email 抽屜").toEqual([]);
+  await expectNoBlockingAxe(page, "建立報名成功 Email 抽屜");
   await page.keyboard.press("Escape");
   await expect(openTemplateDrawer).toBeFocused();
   await page.getByRole("button", { name: "下一步" }).click();
@@ -578,7 +591,7 @@ test("live stepper has no blocking axe violations on any of the four steps, in �
   await page.getByRole("button", { name: "桌機預覽" }).click();
   await expect(page.getByRole("button", { name: "桌機預覽" })).toHaveAttribute("aria-pressed", "true");
   await expect(page.getByRole("complementary", { name: "即時手機預覽" })).toHaveCount(0);
-  expect(await blockingAxeViolations(page), "發布步桌機預覽").toEqual([]);
+  await expectNoBlockingAxe(page, "發布步桌機預覽");
 });
 
 test("platform-admin MFA and static operations routes have no blocking axe violations", async ({ page }) => {

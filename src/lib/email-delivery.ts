@@ -481,6 +481,11 @@ export async function ensurePostLiveFollowupDelivery(
     videoDurationSec: input.videoDurationSec,
   }, rule.offsetMinutes);
   if (!completionAt || !deliveryAt || deliveryAt > now) return { status: "not_due" as const };
+  // The send-time guard rejects an address it cannot normalize, so a row for
+  // it could never be sent; skip it here (as the guard does) instead of
+  // queuing it, or of failing the whole run while building its payload.
+  const normalizedEmail = normalizeBlacklistIdentifier("email", input.recipientEmail);
+  if (!normalizedEmail) return { status: "not_configured" as const };
 
   const deliveryId = stablePostLiveFollowupDeliveryId({
     vendorId: input.vendorId,
@@ -509,7 +514,6 @@ export async function ensurePostLiveFollowupDelivery(
     brand: input.emailBrand,
   }, { vendorId: input.vendorId, deliveryId });
   const db = getDb();
-  const normalizedEmail = normalizeBlacklistIdentifier("email", input.recipientEmail);
   const [suppression, blacklist] = await Promise.all([
     db.emailSuppression.findUnique({
       where: {
@@ -520,23 +524,32 @@ export async function ensurePostLiveFollowupDelivery(
       },
       select: { id: true, resubscribedAt: true },
     }),
-    normalizedEmail
-      ? db.blacklist.findFirst({
-          where: {
-            vendorId: input.vendorId,
-            identifierType: "email",
-            identifier: normalizedEmail,
-            isActive: true,
-            unblockedAt: null,
-          },
-          select: { id: true },
-        })
-      : Promise.resolve(null),
+    db.blacklist.findFirst({
+      where: {
+        vendorId: input.vendorId,
+        identifierType: "email",
+        identifier: normalizedEmail,
+        isActive: true,
+        unblockedAt: null,
+      },
+      select: { id: true },
+    }),
   ]);
   const isSuppressed = Boolean(suppression && !suppression.resubscribedAt);
   const isBlacklisted = Boolean(blacklist);
   const idempotencyPrefix = postLiveFollowupIdempotencyPrefix(rule.id);
   const idempotencyKey = `${idempotencyPrefix}${deliveryId}`;
+  // A revision of this rule that reached, or is being handed to, the provider.
+  // Either one means the recipient gets (or got) this follow-up, so no other
+  // revision may be created or reactivated next to it.
+  const sentOrSendingRevision: Prisma.EmailDeliveryWhereInput = {
+    vendorId: input.vendorId,
+    sourceLiveId: input.liveId,
+    sourceFormSubmissionId: input.formSubmissionId,
+    trigger: "post_live_followup",
+    idempotencyKey: { startsWith: idempotencyPrefix },
+    status: { in: ["sent", "sending"] },
+  };
   const supersedeOlder: Prisma.EmailDeliveryUpdateManyArgs = {
     where: {
       vendorId: input.vendorId,
@@ -557,17 +570,7 @@ export async function ensurePostLiveFollowupDelivery(
 
   try {
     const delivery = await db.$transaction(async (tx) => {
-      const alreadySent = await tx.emailDelivery.findFirst({
-        where: {
-          vendorId: input.vendorId,
-          sourceLiveId: input.liveId,
-          sourceFormSubmissionId: input.formSubmissionId,
-          trigger: "post_live_followup",
-          idempotencyKey: { startsWith: idempotencyPrefix },
-          status: "sent",
-        },
-        select: { id: true },
-      });
+      const alreadySent = await tx.emailDelivery.findFirst({ where: sentOrSendingRevision, select: { id: true } });
       if (alreadySent) return { id: alreadySent.id, status: "sent", nextAttemptAt: null };
       await tx.emailDelivery.updateMany(supersedeOlder);
       return tx.emailDelivery.create({
@@ -597,17 +600,54 @@ export async function ensurePostLiveFollowupDelivery(
     };
   } catch (error) {
     if (!isUniqueConflict(error)) throw error;
-    const existing = await db.emailDelivery.findUnique({
-      where: { vendorId_idempotencyKey: { vendorId: input.vendorId, idempotencyKey } },
-      select: { id: true, status: true, nextAttemptAt: true },
-    });
-    if (!existing) throw error;
-    return {
-      status: "duplicate" as const,
-      deliveryId: existing.id,
-      deliveryStatus: existing.status,
-      nextAttemptAt: existing.nextAttemptAt,
-    };
+    // The same revision already exists. If it was superseded (e.g. evergreen
+    // was switched on and then off again) and nothing under this rule reached
+    // the recipient, bring it back with a freshly encrypted payload, like
+    // before_live / during_live do; otherwise it is a plain duplicate.
+    return db.$transaction(async (tx) => {
+      const existing = await tx.emailDelivery.findFirst({
+        where: {
+          id: deliveryId,
+          vendorId: input.vendorId,
+          sourceLiveId: input.liveId,
+          sourceFormSubmissionId: input.formSubmissionId,
+          trigger: "post_live_followup",
+          idempotencyKey,
+        },
+        select: { id: true, status: true, nextAttemptAt: true, updatedAt: true },
+      });
+      if (!existing) throw error;
+      const duplicate = {
+        status: "duplicate" as const,
+        deliveryId: existing.id,
+        deliveryStatus: existing.status,
+        nextAttemptAt: existing.nextAttemptAt,
+      };
+      if (existing.status !== "superseded") return duplicate;
+      const alreadySent = await tx.emailDelivery.findFirst({ where: sentOrSendingRevision, select: { id: true } });
+      if (alreadySent) return { status: "already_sent" as const, deliveryId: alreadySent.id, nextAttemptAt: null };
+      const blocked = isSuppressed || isBlacklisted;
+      const reactivated = await tx.emailDelivery.updateMany({
+        where: { id: existing.id, vendorId: input.vendorId, status: "superseded", updatedAt: existing.updatedAt },
+        data: {
+          sourceTemplateId: template.id,
+          ...protectedPayload,
+          status: blocked ? "suppressed" : "queued",
+          attemptCount: 0,
+          nextAttemptAt: blocked ? null : now,
+          claimedAt: null,
+          failedAt: null,
+          lastErrorCode: isBlacklisted ? "recipient_blacklisted" : isSuppressed ? "recipient_suppressed" : null,
+        },
+      });
+      if (reactivated.count !== 1) return duplicate;
+      await tx.emailDelivery.updateMany(supersedeOlder);
+      return {
+        status: blocked ? "suppressed" as const : "reactivated" as const,
+        deliveryId: existing.id,
+        nextAttemptAt: blocked ? null : now,
+      };
+    }, { isolationLevel: "Serializable" });
   }
 }
 
@@ -642,13 +682,18 @@ function fixedSessionPlayedUntil(live: { status: string; endedAt: Date | null },
 }
 
 export async function processDuePostLiveFollowups(
-  options: { now?: Date; ruleLimit?: number; recipientLimitPerRule?: number } = {},
+  /** `vendorId` scopes one run to a single tenant (tests, operations); the job runs unscoped. */
+  options: { now?: Date; ruleLimit?: number; recipientLimitPerRule?: number; vendorId?: string } = {},
 ) {
   const now = options.now ?? new Date();
   const ruleLimit = Math.min(Math.max(options.ruleLimit ?? 20, 1), 50);
   const recipientLimit = Math.min(Math.max(options.recipientLimitPerRule ?? 100, 1), 250);
   const db = getDb();
-  const ruleWhere = { trigger: "post_live_followup", isActive: true } as const;
+  const ruleWhere = {
+    ...(options.vendorId ? { vendorId: options.vendorId } : {}),
+    trigger: "post_live_followup",
+    isActive: true,
+  } as const;
   const ruleCount = await db.liveNotificationRule.count({ where: ruleWhere });
   const rules = await db.liveNotificationRule.findMany({
     where: ruleWhere,
@@ -664,6 +709,14 @@ export async function processDuePostLiveFollowups(
 
   for (const rule of rules) {
     const live = rule.live;
+    // An active evergreen Live gives every visitor their own session, so the
+    // shared scheduledAt says nothing about when a registrant's webinar ends.
+    // Like live_reminder, no follow-up is scheduled from it (per-visitor
+    // follow-ups are not implemented yet).
+    if (isActiveEvergreenLive(live, { vendorTimezone: live.vendor.timezone, now })) {
+      results.push({ status: "not_scheduled" });
+      continue;
+    }
     const fixedSessionsDueBefore = isFixedSessionLive(live)
       ? fixedSessionPostLiveCutoff(live, rule.offsetMinutes, now)
       : null;
@@ -1247,15 +1300,14 @@ async function isCurrentPostLiveFollowupDelivery(
     database.live.findFirst({
       where: { id: delivery.sourceLiveId, vendorId: delivery.vendorId },
       select: {
+        // Includes status, streamMode and sessionMode.
+        ...EVERGREEN_ACTIVATION_SELECT,
         id: true,
         vendorId: true,
         slug: true,
         title: true,
         scheduledAt: true,
         endedAt: true,
-        status: true,
-        streamMode: true,
-        sessionMode: true,
         video: { select: { durationSec: true } },
         notificationRules: {
           where: { trigger: "post_live_followup", isActive: true },
@@ -1284,6 +1336,9 @@ async function isCurrentPostLiveFollowupDelivery(
     }),
   ]);
   if (!live || !submission) return false;
+  // A follow-up queued before evergreen was enabled must not be sent: it is
+  // anchored on the shared scheduledAt, not the registrant's own session.
+  if (isActiveEvergreenLive(live, { now })) return false;
   // A fixed-session registrant's follow-up is anchored on their own session.
   const session = submission.liveSession;
   const fixed = live.sessionMode === "fixed_sessions";
