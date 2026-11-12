@@ -198,6 +198,7 @@ model Vendor {
   consultationEvents               ConsultationEvent[]
   consultationBookings             ConsultationBooking[]
   studentPortalAccessTokens         StudentPortalAccessToken[]
+  courseChapters CourseChapter[]
   courseLessons CourseLesson[]
   courseLessonProgress CourseLessonProgress[]
 
@@ -674,6 +675,7 @@ model Product {
   @@index([vendorId, upsellProductId])
   @@index([vendorId, downsellProductId])
   @@index([imageAssetId])
+  courseChapters CourseChapter[]
   courseLessons CourseLesson[]
   communityPosts CourseCommunityPost[]
   courseLessonProgress CourseLessonProgress[]
@@ -4298,11 +4300,39 @@ model StudentPortalAccessToken {
 }
 
 
+/// F-5: a chapter of one vendor-qualified course. The title is unique per
+/// course, so a chapter title and its id map one to one. `position` orders the
+/// manager curriculum page only; the learner player keeps ordering chapters by
+/// their first visible lesson (see `courseChapters` in src/lib/course-learning.ts).
+model CourseChapter {
+  id        String   @id @default(cuid())
+  vendorId  String
+  productId String
+  title     String
+  position  Int
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  vendor  Vendor         @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  product Product        @relation(fields: [vendorId, productId], references: [vendorId, id], onDelete: Cascade)
+  lessons CourseLesson[]
+
+  @@unique([vendorId, id])
+  @@unique([vendorId, productId, id])
+  @@unique([vendorId, productId, position])
+  @@unique([vendorId, productId, title])
+}
+
 /// Native curriculum belongs to exactly one vendor-qualified course product.
+/// `chapterTitle` is kept (forward-only migrations never drop columns) and is
+/// written with the chapter title. `chapterId` stays nullable until a later
+/// migration: a lesson written by code older than F-5 has none, and readers
+/// fall back to grouping it by `chapterTitle`.
 model CourseLesson {
   id              String   @id @default(cuid())
   vendorId        String
   productId       String
+  chapterId       String?
   chapterTitle    String
   title           String
   videoUrl        String?
@@ -4314,12 +4344,16 @@ model CourseLesson {
 
   vendor   Vendor                 @relation(fields: [vendorId], references: [id], onDelete: Cascade)
   product  Product                @relation(fields: [vendorId, productId], references: [vendorId, id], onDelete: Cascade)
+  /// The FK includes the tenant and the course, so a lesson can only join a
+  /// chapter of its own course. A chapter that still has lessons cannot be deleted.
+  chapter  CourseChapter?         @relation(fields: [vendorId, productId, chapterId], references: [vendorId, productId, id], onDelete: Restrict)
   progress CourseLessonProgress[]
 
   @@unique([vendorId, id])
   @@unique([vendorId, productId, id])
   @@unique([vendorId, productId, position])
   @@index([vendorId, productId, publishedAt])
+  @@index([vendorId, productId, chapterId])
 }
 
 /// The lesson FK includes its product, preventing cross-course progress even
