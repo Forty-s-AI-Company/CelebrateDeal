@@ -306,7 +306,7 @@ test("active accountant is denied affiliates/new before the affiliate form is re
       "推廣碼",
       "來源渠道",
       "聯絡 Email",
-      "佣金 BPS",
+      "佣金比例（%）",
       "啟用推廣碼",
     ]) {
       await expect(page.getByText(label, { exact: true })).toHaveCount(0);

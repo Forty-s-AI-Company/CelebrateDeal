@@ -77,3 +77,46 @@ describe("percentTextToBps", () => {
     }
   });
 });
+
+describe("改用共用的 percent-bps 後行為不變", () => {
+  // #584 合併時的原始實作，逐字保留作為比對基準。
+  const legacyPattern = /^(\d*)(?:\.(\d{1,2}))?$/u;
+  function legacyBpsToPercentText(bps: string): string {
+    const text = bps.trim();
+    if (text.startsWith("invalid:")) return text.slice("invalid:".length);
+    if (!/^\d{1,9}$/u.test(text)) return text;
+    const value = Number(text);
+    const whole = Math.floor(value / 100);
+    const fraction = value % 100;
+    if (fraction === 0) return String(whole);
+    return `${whole}.${String(fraction).padStart(2, "0").replace(/0$/u, "")}`;
+  }
+  function legacyPercentTextToBps(percent: string): string {
+    const text = percent.trim();
+    if (text === "") return "";
+    const match = legacyPattern.exec(text);
+    if (!match || (match[1] === "" && match[2] === undefined)) return `invalid:${text}`;
+    const wholeDigits = (match[1] ?? "").replace(/^0+/u, "");
+    if (wholeDigits.length > 3) return `invalid:${text}`;
+    const whole = Number(wholeDigits || "0");
+    const fraction = Number((match[2] ?? "").padEnd(2, "0"));
+    return String(whole * 100 + fraction);
+  }
+
+  it("bps 0 到 120000 與各種字串的顯示結果相同", () => {
+    for (let bps = 0; bps <= 120_000; bps += 1) {
+      if (bpsToPercentText(String(bps)) !== legacyBpsToPercentText(String(bps))) throw new Error(`bps ${bps}`);
+    }
+    for (const text of ["", " ", " 123 ", "999999999", "1000000000", "-1", "1.5", "invalid:", "invalid:abc", " invalid:20.005 ", "abc", "０"]) {
+      expect(bpsToPercentText(text)).toBe(legacyBpsToPercentText(text));
+    }
+  });
+
+  it("百分比文字的換算結果相同", () => {
+    const pieces = ["", "0", "00", "1", "12", "123", "1234", ".", ".5", ".55", ".555", "-", "+", "e", " ", "１", ","];
+    for (const a of pieces) for (const b of pieces) for (const c of ["", " ", "0"]) {
+      const text = `${a}${b}${c}`;
+      expect(percentTextToBps(text), JSON.stringify(text)).toBe(legacyPercentTextToBps(text));
+    }
+  });
+});
