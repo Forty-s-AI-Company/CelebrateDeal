@@ -37,6 +37,8 @@ for (const viewport of [{ width: 1440, height: 1000 }, { width: 390, height: 844
       // No reload: server-action invalidation must update the parent shell itself.
       // U1: the panel follows the unified list, whose next item after the form is the registration Email.
       await expect(next).toHaveAttribute('href', '/messages/templates/new');
+      await next.click();
+      await expect(page).toHaveURL(/\/messages\/templates\/new$/u);
       await page.goto('/lives/new');
       await expect(page).toHaveURL(/\/lives\/new$/u);
       await expect(page.getByText('將建立於專案：Browser project', { exact: true })).toBeVisible();
