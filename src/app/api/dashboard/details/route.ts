@@ -1,6 +1,7 @@
 import { requireVendorContext } from "@/lib/auth";
 import { loadDashboardDetails } from "@/app/(app)/dashboard/dashboard-details";
 import { parseDashboardDetailsDiagnosticDelay } from "@/app/(app)/dashboard/dashboard-details-diagnostic";
+import { trackingConfiguredFor } from "@/lib/merchant-onboarding-data";
 
 const headers = { "Cache-Control": "private, no-store" };
 
@@ -11,11 +12,7 @@ export async function GET(request: Request) {
     return Response.json({ error: "UNAVAILABLE" }, { status: 403, headers });
   }
   const memberRole = auth.member?.role ?? null;
-  const trackingConfigured = Boolean(
-    vendor.tracking?.googleTagManagerId
-    || vendor.tracking?.facebookPixelId
-    || vendor.tracking?.tiktokPixelId,
-  );
+  const trackingConfigured = trackingConfiguredFor(vendor.tracking);
   const diagnosticDelayMs = parseDashboardDetailsDiagnosticDelay(
     new URL(request.url).searchParams.get("e2eDashboardDetailsDelayMs") ?? undefined,
   );

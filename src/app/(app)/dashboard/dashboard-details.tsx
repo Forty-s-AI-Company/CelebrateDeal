@@ -92,15 +92,14 @@ export async function loadDashboardDetails({
         select: { creditsUsed: true, creditsLimit: true, billingPlan: { select: { name: true } } },
       })),
       // The same loader as /onboarding and the sidebar panel; only managers see setup steps.
-      isManager ? measurement.measure("onboarding-checklist.load", async () => loadOnboardingChecklist(db, {
-        vendorId,
-        supportEmailConfigured,
-        trackingConfigured,
-        // While funnel_binding is closed no card can be bound, so the step counts as satisfied (F-002).
-        cardBindingRequired: await isCardBindingRequiredForVendor(db, vendorId),
-        selectedProject: await findSelectedOnboardingProject(db, vendorId, userId),
-        now,
-      })) : Promise.resolve(null),
+      isManager ? measurement.measure("onboarding-checklist.load", async () => {
+        const [cardBindingRequired, selectedProject] = await Promise.all([
+          // While funnel_binding is closed no card can be bound, so the payment step does not apply (F-002).
+          isCardBindingRequiredForVendor(db, vendorId),
+          findSelectedOnboardingProject(db, vendorId, userId),
+        ]);
+        return loadOnboardingChecklist(db, { vendorId, supportEmailConfigured, trackingConfigured, cardBindingRequired, selectedProject, now });
+      }) : Promise.resolve(null),
     ]);
     const checklist = dashboardChecklistForRole(onboarding, memberRole);
     return {
