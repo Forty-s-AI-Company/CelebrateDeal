@@ -77,6 +77,30 @@ describe("POST /api/jobs/email-deliveries", () => {
     expect(mocks.processLegacyReminderCutovers).not.toHaveBeenCalled();
   });
 
+  it("reports reactivated, not_scheduled and not_configured follow-up and notification outcomes instead of unknown", async () => {
+    mocks.processDuePostLiveFollowups.mockResolvedValue([
+      { status: "reactivated" },
+      { status: "not_scheduled" },
+      { status: "not_configured" },
+      { status: "already_sent" },
+      { status: "unexpected" },
+    ]);
+    mocks.processDueLiveNotifications
+      .mockResolvedValueOnce([{ status: "reactivated" }, { status: "unexpected" }])
+      .mockResolvedValueOnce([]);
+    const body = await (await POST(request("g7-07-job-secret"))).json();
+
+    expect(body.followups).toBe(5);
+    expect(body.followupResults).toEqual([
+      { status: "reactivated" },
+      { status: "not_scheduled" },
+      { status: "not_configured" },
+      { status: "already_sent" },
+      { status: "unknown" },
+    ]);
+    expect(body.liveNotificationResults).toEqual([{ status: "reactivated" }, { status: "unknown" }]);
+  });
+
   it("returns only bounded status evidence without delivery identifiers", async () => {
     mocks.processDueEmailDeliveries.mockResolvedValue([
       { deliveryId: "private-delivery-1", status: "sent" },
