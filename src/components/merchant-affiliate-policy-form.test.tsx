@@ -229,6 +229,23 @@ describe("商品佣金篩選", () => {
   });
 });
 
+describe("篩選框按 Enter", () => {
+  it("只篩選、不隱式送出發布", async () => {
+    const many = Array.from({ length: 6 }, (_, index) => ({ id: `p${index}`, name: `商品 ${index}` }));
+    await render({ ...baseTerms, productOverrides: many.map(product => ({ productId: product.id, rateBps: 100 })) }, many);
+    const filter = container.querySelector<HTMLInputElement>('input[type="search"]')!;
+    await setValue(filter, "商品 1");
+    const enter = new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true });
+    await act(async () => { filter.dispatchEvent(enter); });
+    expect(enter.defaultPrevented).toBe(true);
+    expect(mocks.save).not.toHaveBeenCalled();
+    // 其他按鍵照常輸入。
+    const other = new KeyboardEvent("keydown", { key: "a", bubbles: true, cancelable: true });
+    await act(async () => { filter.dispatchEvent(other); });
+    expect(other.defaultPrevented).toBe(false);
+  });
+});
+
 describe("佣金試算", () => {
   it("依目前表單設定試算，修改設定後即時更新；設定不合法時不顯示金額", async () => {
     await render({ schemaVersion: 1, currency: "TWD", maxTotalBps: 3000, tiers: [{ minQuantity: 1, maxQuantity: 10, rateBps: 1000 }, { minQuantity: 11, maxQuantity: null, rateBps: 2000 }], uplines: [{ level: 1, rateBps: 500 }], productOverrides: [] });

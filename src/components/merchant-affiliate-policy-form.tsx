@@ -191,7 +191,9 @@ export function MerchantAffiliatePolicyForm({ initial, revision, csrfToken, csrf
           <Section id="policy-overrides" title="商品直接佣金" description={`指定商品取代件數階梯的直接佣金，團隊上線比例仍適用。已設定 ${draft.overrides.length}／${MAX_POLICY_OVERRIDES} 筆。`}>
             {draft.overrides.length >= OVERRIDE_FILTER_THRESHOLD ? <div className="grid gap-1.5 sm:max-w-sm">
               <label className="grid gap-1 text-sm font-medium text-slate-800">篩選商品佣金
-                <input type="search" className={`${inputBase} border-border-control focus:border-primary`} value={overrideFilter} onChange={event => setOverrideFilter(event.target.value)} autoComplete="off" />
+                <input type="search" className={`${inputBase} border-border-control focus:border-primary`} value={overrideFilter} onChange={event => setOverrideFilter(event.target.value)} autoComplete="off"
+                  // 篩選框在 <form> 內：Enter 會隱式送出（發布政策），這裡只篩選、不送出。輸入法選字中的 Enter 不攔。
+                  onKeyDown={event => { if (event.key === "Enter" && !event.nativeEvent.isComposing) event.preventDefault(); }} />
               </label>
               <p className="text-xs text-slate-600" role="status" data-override-filter-status="">{filter ? `顯示 ${visibleOverrides}／${draft.overrides.length} 筆；需要修正的商品一律顯示。` : `共 ${draft.overrides.length} 筆。`}</p>
             </div> : null}
