@@ -96,8 +96,12 @@ export function DangerButton({ children }: { children: React.ReactNode }) {
   );
 }
 
-/** Shared error/hint slot wiring for form controls (F-117): aria-invalid + aria-describedby; forms announce a summary alert. */
-function useFieldMessages(error?: string | null, hint?: string | null) {
+/**
+ * Shared error/hint slot wiring for form controls (F-117): aria-invalid + aria-describedby; forms announce a summary alert.
+ * Exported for hand-written controls: spread `controlProps` on the control, add `controlClass` to its border classes and
+ * render `messages` after (never inside) its <label>, so the label alone stays the accessible name.
+ */
+export function useFieldMessages(error?: string | null, hint?: string | null) {
   const id = useId();
   const errorId = error ? `${id}-error` : undefined;
   const hintId = hint ? `${id}-hint` : undefined;
@@ -256,6 +260,46 @@ export function SelectField({
     </label>
     </FieldShell>
   );
+}
+
+/**
+ * The form-level half of the field error pattern: one `role="alert"` summary
+ * above the form with the overall message and, when given, each field's
+ * message as a list. Render nothing until there is a message. It can take
+ * programmatic focus (`tabIndex={-1}`) for errors no field shows; otherwise
+ * move focus to the first invalid field with `focusFirstInvalidField`.
+ */
+export function FormErrorSummary({
+  message,
+  errors,
+}: {
+  message?: string | null;
+  /** Field messages keyed by field name; empty entries are skipped. */
+  errors?: Readonly<Record<string, string | null | undefined>>;
+}) {
+  if (!message) return null;
+  const entries = Object.entries(errors ?? {}).filter((entry): entry is [string, string] => Boolean(entry[1]));
+  return (
+    <div role="alert" tabIndex={-1} data-form-error-summary="" className="grid gap-1 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm font-medium text-red-800">
+      <p>{message}</p>
+      {entries.length > 0 ? (
+        <ul className="list-disc pl-5 font-normal">
+          {entries.map(([name, text]) => <li key={name}>{text}</li>)}
+        </ul>
+      ) : null}
+    </div>
+  );
+}
+
+/**
+ * Focuses the first `aria-invalid="true"` control inside `scope` (DOM order),
+ * falling back to the form's `FormErrorSummary`. Call it from an effect once
+ * the errors have rendered and the controls are enabled again.
+ */
+export function focusFirstInvalidField(scope: ParentNode | null | undefined): HTMLElement | null {
+  const target = scope?.querySelector<HTMLElement>('[aria-invalid="true"]') ?? scope?.querySelector<HTMLElement>("[data-form-error-summary]") ?? null;
+  target?.focus();
+  return target;
 }
 
 export function Badge({ children, tone = "blue" }: { children: React.ReactNode; tone?: "blue" | "orange" | "gray" | "green" | "red" }) {

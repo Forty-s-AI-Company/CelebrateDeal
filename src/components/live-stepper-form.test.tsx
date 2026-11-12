@@ -284,7 +284,10 @@ function stepButton(tree: unknown, label: string) {
 function renderedStepNav(tree: unknown) {
   const nav = findElement(tree, (candidate) => typeof candidate.type === "function" && candidate.type.name === "LiveStudioStepNav");
   expect(nav).toBeDefined();
-  return (nav?.type as (props: Record<string, unknown>) => unknown)(nav?.props ?? {});
+  // LiveStudioStepNav delegates to the shared Stepper; render that as well so the step buttons are in the tree.
+  const stepper = (nav?.type as (props: Record<string, unknown>) => unknown)(nav?.props ?? {}) as ElementNode;
+  expect(typeof stepper.type === "function" && stepper.type.name).toBe("Stepper");
+  return (stepper.type as (props: Record<string, unknown>) => unknown)(stepper.props);
 }
 
 function showPublishPreview(tree: unknown) {

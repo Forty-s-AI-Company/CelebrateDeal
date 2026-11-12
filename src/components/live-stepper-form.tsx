@@ -22,6 +22,7 @@ import { LiveSlugField } from "@/components/live-slug-field";
 import { FormSubmitButton } from "@/components/form-submit-button";
 import { LIVE_DRAFT_SAVE_FAILED_EVENT, LiveConfirmedSubmitButton, LiveFormPendingLock } from "@/components/live-submit-confirmation";
 import { MediaUploadField } from "@/components/media-upload-field";
+import { Stepper } from "@/components/stepper";
 import { MessageTemplateQuickCreateDrawer, ProductQuickCreateDrawer, RegistrationFormQuickCreateDrawer, VideoQuickCreateDrawer } from "@/components/live-resource-drawers";
 import { LivePendingVideos, type LivePendingAddedReason, type LivePendingVideo, type LivePendingVideoProblem } from "@/components/live-pending-videos";
 import {
@@ -218,47 +219,13 @@ export function LiveStudioStepNav({
   statuses: Readonly<Record<LiveStudioStepKey, LiveStudioStepStatus>>;
   onSelect: (step: LiveStudioStepKey) => void;
 }) {
-  const position = liveStudioStepIndex(activeStep);
   return (
-    <nav aria-label="直播設定步驟" className="grid gap-2">
-      <p className="text-sm font-semibold text-slate-900 md:hidden">
-        第 {position + 1} 步／共 {steps.length} 步：{steps[position]?.label}
-      </p>
-      <ol className="grid grid-cols-4 gap-2">
-        {steps.map((step, index) => {
-          const current = step.key === activeStep;
-          const status = stepStatusCopy[statuses[step.key]];
-          return (
-            <li key={step.key} className="min-w-0">
-              <button
-                type="button"
-                onClick={() => onSelect(step.key)}
-                aria-controls={`live-step-panel-${step.key}`}
-                aria-current={current ? "step" : undefined}
-                className={`flex h-full min-h-14 w-full flex-col items-center justify-center gap-1.5 rounded-md border px-1 py-2 text-center text-sm font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 md:items-start md:justify-start md:px-3 md:py-3 md:text-left ${
-                  current
-                    ? "border-primary bg-blue-50 text-primary"
-                    : "border-border bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50"
-                }`}
-              >
-                <span className="flex min-w-0 items-center gap-2">
-                  <span aria-hidden="true" className={`hidden h-7 w-7 shrink-0 place-items-center rounded-full md:grid ${current ? "bg-white text-primary" : "bg-slate-100 text-slate-600"}`}>
-                    <step.icon size={15} />
-                  </span>
-                  <span className="block">{index + 1}. {step.label}</span>
-                </span>
-                <span className="hidden text-xs font-normal text-slate-600 xl:block">{step.description}</span>
-                <span className={`inline-flex max-w-full items-center gap-1 rounded-full border px-1.5 py-0.5 text-xs font-medium ${status.className}`}>
-                  <status.icon size={12} aria-hidden="true" className="shrink-0" />
-                  <span aria-hidden="true" className="md:hidden">{status.shortLabel}</span>
-                  <span className="sr-only md:not-sr-only">{status.label}</span>
-                </span>
-              </button>
-            </li>
-          );
-        })}
-      </ol>
-    </nav>
+    <Stepper
+      label="直播設定步驟"
+      activeKey={activeStep}
+      onSelect={onSelect}
+      steps={steps.map((step) => ({ ...step, status: stepStatusCopy[statuses[step.key]], panelId: `live-step-panel-${step.key}` }))}
+    />
   );
 }
 

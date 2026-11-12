@@ -421,6 +421,18 @@ describe("own template management", () => {
     expect(dialog()).toBeNull();
     expect(cardTitles("我的範本")).toHaveLength(0);
   });
+
+  it("confirms a deletion in the toast live region without moving focus into it", async () => {
+    await render(library({ initialTab: "mine" }));
+    await click(buttonNamed("刪除 我的秋季名單頁"));
+    mocks.remove.mockResolvedValueOnce({ status: "success", message: "ok", id: "tpl_own_1" });
+    await click(buttonNamed("刪除範本", dialog()!));
+    const toast = container.querySelector("[data-ui-toast] [role=status]");
+    expect(toast?.getAttribute("aria-live")).toBe("polite");
+    expect(toast?.textContent).toContain("已刪除範本「我的秋季名單頁」");
+    expect(container.querySelector("[data-ui-toast]")!.contains(document.activeElement)).toBe(false);
+    expect(container.querySelector("[role=alert]")).toBeNull();
+  });
 });
 
 describe("save as template dialog", () => {
