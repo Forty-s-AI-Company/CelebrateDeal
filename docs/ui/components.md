@@ -144,4 +144,4 @@ useEffect(() => { if (errorVersion) focusFirstInvalidField(formRef.current); }, 
 
 - 導覽（`ProductFormSectionNav`）：桌機（`lg` 以上）在左側 sticky，手機收成頂部「跳到段落」`<details>`。兩者都是一般錨點連結；點擊後捲動並把焦點移到段落標題（`tabIndex=-1`），手機選單自動收合。目前段落由 `IntersectionObserver` 追蹤，用 `aria-current="location"` 標示（沒有 `IntersectionObserver` 時停在第一段）。這不是 `Stepper`：段落可以任意順序填寫，沒有「步驟」語意。
 - 錯誤跳轉：`sectionOfField(name)` 對應欄位所在段落，摘要連結先到欄位，沒有可聚焦的欄位（固定幣別、圖片）就改到段落標題。新增欄位時記得補進 `FIELD_SECTION`。
-- 百分比顯示：課程分潤欄位在畫面上用百分比（最多兩位小數），隱藏欄位仍以 `coursePromoterShareBps`（萬分比整數）送出，換算在 [product-share-percent.ts](../../src/lib/product-share-percent.ts)，全程用字串與整數運算、不四捨五入；超過兩位小數的輸入會以伺服器必拒的 `invalid:…` 送出並顯示錯誤。
+- 百分比顯示：課程分潤欄位在畫面上用百分比（最多兩位小數），隱藏欄位仍以 `coursePromoterShareBps`（萬分比整數）送出，換算在 [product-share-percent.ts](../../src/lib/product-share-percent.ts)，全程用字串與整數運算、不四捨五入；超過兩位小數的輸入會以伺服器必拒的 `invalid:…` 送出並顯示錯誤。輸入框是 `type="text" inputMode="decimal"` 加 `pattern`（`SHARE_PERCENT_INPUT_PATTERN`，與換算器接受的格式一致），大多數情況下原生驗證會先擋下超過兩位小數、科學記號與負數；`.5`、`0020` 這類合法寫法會被換算並正規化。可見輸入框沒有 `name`，實際送出的是隱藏欄位，所以 hydrate 前輸入框是 `readOnly` 並提示「頁面載入完成後才能修改」，避免改了卻送出舊值。
