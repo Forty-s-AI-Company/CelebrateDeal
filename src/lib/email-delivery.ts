@@ -13,7 +13,11 @@ import {
 import { hasOnlySupportedMessageTemplateVariables, renderMessageTemplate } from "@/lib/message-template";
 import { createLiveViewerUrl } from "@/lib/live-public-url";
 import { createLiveSessionSwitchToken, createLiveSessionSwitchUrl, LIVE_SESSION_SWITCH_TTL_SECONDS } from "@/lib/live-session-switch-token";
-import { EVERGREEN_ACTIVATION_SELECT, isActiveEvergreenLive } from "@/lib/evergreen-activation";
+import {
+  EVERGREEN_ACTIVATION_SELECT,
+  evergreenVideoDurationSeconds,
+  isActiveEvergreenLive,
+} from "@/lib/evergreen-activation";
 import { isFixedSessionLive } from "@/lib/live-fixed-sessions";
 import { normalizeBlacklistIdentifier } from "@/lib/blacklist-identifiers";
 import { isEmailBlacklistedForVendor } from "@/lib/email-blacklist";
@@ -681,6 +685,89 @@ function fixedSessionPlayedUntil(live: { status: string; endedAt: Date | null },
   return null;
 }
 
+/**
+ * How far back the job looks for evergreen sessions whose follow-up is due.
+ * An evergreen Live runs forever, so without a lower bound the rows scanned
+ * per rule would grow without limit. A follow-up more than 72 hours overdue
+ * (for example after a long job outage, or a session recorded long after it
+ * ended) is deliberately not sent late.
+ */
+export const EVERGREEN_FOLLOWUP_LOOKBACK_MS = 72 * 60 * 60 * 1_000;
+
+/**
+ * Latest evergreen session start whose follow-up is due now (start + video
+ * length + rule offset <= now), or null when the length or offset is unusable.
+ */
+function evergreenPostLiveCutoff(durationSec: number | null | undefined, offsetMinutes: number, now: Date) {
+  const duration = evergreenVideoDurationSeconds(durationSec);
+  if (!duration || !Number.isInteger(offsetMinutes) || offsetMinutes < 0 || offsetMinutes > 10_080) return null;
+  return new Date(now.getTime() - duration * 1_000 - offsetMinutes * 60_000);
+}
+
+type PostLiveFollowupRule = Prisma.LiveNotificationRuleGetPayload<{
+  include: { messageTemplate: true; live: { include: { vendor: true; video: true } } };
+}>;
+
+/**
+ * Queues the follow-ups of one rule on an active evergreen Live: one per
+ * VERIFIED registrant whose recorded session (EvergreenSessionAssignment)
+ * ended at least the rule offset ago, within the look-back window.
+ */
+async function queueEvergreenPostLiveFollowups(rule: PostLiveFollowupRule, now: Date, recipientLimit: number) {
+  const db = getDb();
+  const live = rule.live;
+  const results: Array<{ status: string }> = [];
+  const dueBefore = evergreenPostLiveCutoff(live.video?.durationSec, rule.offsetMinutes, now);
+  if (!dueBefore) return [{ status: "not_scheduled" }];
+  // The schedule fingerprint is deliberately not checked: a session
+  // assigned before the merchant changed the schedule still happened (the
+  // visitor may have watched it), so its follow-up keeps its recorded time.
+  const assignmentWhere: Prisma.EvergreenSessionAssignmentWhereInput = {
+    vendorId: rule.vendorId,
+    liveId: live.id,
+    sessionStartAt: { gt: new Date(dueBefore.getTime() - EVERGREEN_FOLLOWUP_LOOKBACK_MS), lte: dueBefore },
+    formSubmission: { liveId: live.id, verificationStatus: "VERIFIED", form: { vendorId: rule.vendorId } },
+  };
+  const assignmentCount = await db.evergreenSessionAssignment.count({ where: assignmentWhere });
+  const assignments = await db.evergreenSessionAssignment.findMany({
+    where: assignmentWhere,
+    orderBy: [{ sessionStartAt: "asc" }, { id: "asc" }],
+    skip: rotatingPostLivePageSkip(assignmentCount, recipientLimit, now),
+    take: recipientLimit,
+    select: {
+      sessionStartAt: true,
+      formSubmission: { select: { id: true, name: true, email: true, verificationStatus: true } },
+    },
+  });
+  for (const assignment of assignments) {
+    const submission = assignment.formSubmission;
+    const result = await ensurePostLiveFollowupDelivery({
+      vendorId: rule.vendorId,
+      vendorName: live.vendor.name,
+      liveId: live.id,
+      liveSlug: live.slug,
+      liveTitle: live.title,
+      formSubmissionId: submission.id,
+      recipientName: submission.name,
+      recipientEmail: submission.email,
+      liveScheduledAt: assignment.sessionStartAt,
+      template: rule.messageTemplate,
+      rule,
+      streamMode: "vod",
+      endedAt: null,
+      videoDurationSec: live.video?.durationSec ?? null,
+      verificationStatus: submission.verificationStatus,
+      emailBrand: {
+        senderName: live.vendor.senderName,
+        supportEmail: live.vendor.supportEmail,
+        contactUrl: live.vendor.contactUrl,
+      },
+    }, now);
+    results.push({ status: result.status });
+  }
+  return results;
+}
+
 export async function processDuePostLiveFollowups(
   /** `vendorId` scopes one run to a single tenant (tests, operations); the job runs unscoped. */
   options: { now?: Date; ruleLimit?: number; recipientLimitPerRule?: number; vendorId?: string } = {},
@@ -711,10 +798,12 @@ export async function processDuePostLiveFollowups(
     const live = rule.live;
     // An active evergreen Live gives every visitor their own session, so the
     // shared scheduledAt says nothing about when a registrant's webinar ends.
-    // Like live_reminder, no follow-up is scheduled from it (per-visitor
-    // follow-ups are not implemented yet).
+    // Each VERIFIED registrant whose session was recorded
+    // (EvergreenSessionAssignment) is followed up after that session, like a
+    // fixed session; registrants without a recorded session get nothing while
+    // evergreen stays active.
     if (isActiveEvergreenLive(live, { vendorTimezone: live.vendor.timezone, now })) {
-      results.push({ status: "not_scheduled" });
+      results.push(...await queueEvergreenPostLiveFollowups(rule, now, recipientLimit));
       continue;
     }
     const fixedSessionsDueBefore = isFixedSessionLive(live)
@@ -1204,7 +1293,7 @@ type ClaimedDelivery = {
   maxAttempts: number;
 };
 
-type DeliverySnapshotDatabase = Pick<Prisma.TransactionClient, "live" | "liveNotificationRule" | "formSubmission" | "blacklist">
+type DeliverySnapshotDatabase = Pick<Prisma.TransactionClient, "live" | "liveNotificationRule" | "formSubmission" | "blacklist" | "evergreenSessionAssignment">
   & Partial<Pick<Prisma.TransactionClient, "studentPortalAccessToken">>;
 
 export type EmailDeliverySnapshotIdentity = Pick<
@@ -1336,17 +1425,27 @@ async function isCurrentPostLiveFollowupDelivery(
     }),
   ]);
   if (!live || !submission) return false;
-  // A follow-up queued before evergreen was enabled must not be sent: it is
-  // anchored on the shared scheduledAt, not the registrant's own session.
-  if (isActiveEvergreenLive(live, { now })) return false;
+  // While evergreen is active a follow-up is anchored on the registrant's own
+  // recorded session. One queued before evergreen was enabled (anchored on the
+  // shared scheduledAt), or for an earlier session the registrant has since
+  // replaced, no longer matches the current revision id below.
+  const evergreenSession = isActiveEvergreenLive(live, { now })
+    ? await database.evergreenSessionAssignment.findFirst({
+        where: { vendorId: delivery.vendorId, liveId: live.id, formSubmissionId: submission.id },
+        select: { sessionStartAt: true },
+      })
+    : undefined;
+  if (evergreenSession === null) return false;
   // A fixed-session registrant's follow-up is anchored on their own session.
   const session = submission.liveSession;
-  const fixed = live.sessionMode === "fixed_sessions";
+  const fixed = !evergreenSession && live.sessionMode === "fixed_sessions";
   if (fixed && (!session || session.vendorId !== delivery.vendorId || session.liveId !== live.id || session.status === "cancelled")) return false;
   if (fixed && session && session.startAt.getTime() > (fixedSessionPlayedUntil(live, live.video?.durationSec ?? 0) ?? Number.NEGATIVE_INFINITY)) return false;
-  const schedule = fixed && session
-    ? { streamMode: "vod", scheduledAt: session.startAt, endedAt: null }
-    : { streamMode: live.streamMode, scheduledAt: live.scheduledAt, endedAt: live.endedAt };
+  const schedule = evergreenSession
+    ? { streamMode: "vod", scheduledAt: evergreenSession.sessionStartAt, endedAt: null }
+    : fixed && session
+      ? { streamMode: "vod", scheduledAt: session.startAt, endedAt: null }
+      : { streamMode: live.streamMode, scheduledAt: live.scheduledAt, endedAt: live.endedAt };
   const normalizedEmail = normalizeBlacklistIdentifier("email", submission.email);
   if (!normalizedEmail) return false;
   const blacklist = await database.blacklist.findFirst({

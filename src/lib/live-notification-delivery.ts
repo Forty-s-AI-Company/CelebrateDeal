@@ -816,7 +816,11 @@ export async function supersedeLiveNotificationDeliveriesForLifecycle(
  * (processDuePostLiveFollowups) does not lock the Live row, so a follow-up
  * committed after this pass is not covered by the lock argument above. Such a
  * row is stopped by the send-time guard (isCurrentPostLiveFollowupDelivery
- * rejects an active evergreen Live) and becomes `superseded` there.
+ * only accepts, on an active evergreen Live, the revision anchored on the
+ * registrant's own EvergreenSessionAssignment) and becomes `superseded` there.
+ * The sweep also cancels queued per-registrant evergreen follow-ups when the
+ * settings are saved again while evergreen is active; the job reactivates
+ * those (same revision id) on its next run, so they are delayed, not lost.
  */
 export async function supersedeFixedTimeNotificationsForActiveEvergreen(
   input: { vendorId: string; liveId: string },
