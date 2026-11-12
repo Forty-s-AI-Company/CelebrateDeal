@@ -25,10 +25,12 @@ const dotClass: Record<Tone, string> = { draft: "bg-slate-400", live: "bg-emeral
 
 /**
  * Toolbar status chip (replaces the editor's publication banners). The popover
- * lists the existing diagnosis and points to the management page, where
- * publishing happens; `actions` is only used for pages without one.
+ * lists the existing diagnosis and points to the management page. With
+ * `publishInEditor` the toolbar's 發布 button publishes, and the management
+ * page keeps unpublish, duplicate and delete; `actions` is only used for
+ * pages without a management page.
  */
-export function PublicationChip({ published, publication, slug, onManage, actions }: { published: boolean; publication?: LandingPagePublicationStatus; slug: string; onManage?: () => void; actions?: ReactNode }) {
+export function PublicationChip({ published, publication, slug, onManage, actions, publishInEditor = false }: { published: boolean; publication?: LandingPagePublicationStatus; slug: string; onManage?: () => void; actions?: ReactNode; publishInEditor?: boolean }) {
   const [open, setOpen] = useState(false);
   const id = useId();
   const root = useRef<HTMLDivElement>(null);
@@ -50,10 +52,10 @@ export function PublicationChip({ published, publication, slug, onManage, action
       {publication ? <p className="mt-2 leading-6">{publication.message}</p> : null}
       {publication?.missing.length ? <ul aria-label="尚未完成" className="mt-2 list-disc space-y-1 pl-5">{publication.missing.map((item) => <li key={item.label}><a className="text-blue-700 underline" href={item.href}>{item.label}</a></li>)}</ul> : null}
       {publication?.warnings?.length ? <ul aria-label="需要注意" className="mt-2 list-disc space-y-1 pl-5 text-amber-900">{publication.warnings.map((item) => <li key={item.label}><a className="underline" href={item.href}>{item.label}</a></li>)}</ul> : null}
-      <p className="mt-3 text-xs leading-5 text-slate-500">編輯器只儲存草稿；發布後訪客才會看到最新內容。</p>
+      <p className="mt-3 text-xs leading-5 text-slate-500">{publishInEditor ? "編輯器會自動儲存草稿；按工具列的「發布」後訪客才會看到最新內容。" : "編輯器只儲存草稿；發布後訪客才會看到最新內容。"}</p>
       <div className="mt-3 grid gap-2">
         {publication && !publication.available ? <a className="font-semibold text-blue-700 underline" href={publication.projectHref}>前往專案檢查與發布</a> : null}
-        {onManage ? <button type="button" className="cursor-pointer text-left font-semibold text-blue-700 underline" onClick={() => { setOpen(false); onManage(); }}>前往管理頁發布或管理網站</button> : null}
+        {onManage ? <button type="button" className="cursor-pointer text-left font-semibold text-blue-700 underline" onClick={() => { setOpen(false); onManage(); }}>{publishInEditor ? "前往管理頁（取消發布、複製或刪除）" : "前往管理頁發布或管理網站"}</button> : null}
         {published && slug ? <a className="inline-flex items-center gap-1 font-semibold text-blue-700 underline" href={`/lp/${slug}`} target="_blank" rel="noreferrer">查看公開頁<ExternalLink size={14} aria-hidden /></a> : null}
         {actions}
       </div>

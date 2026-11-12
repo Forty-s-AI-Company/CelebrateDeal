@@ -7,10 +7,10 @@ import { FunnelPopupPreview } from "./funnel-popup-preview";
 import { FunnelEditorToolbar, type FunnelEditorView } from "./funnel-editor-toolbar";
 import { EditorLibrary, funnelNodeLabel } from "./funnel-editor-library";
 import { NodeSettingsPanel, PageSettingsPanel, PanelHeader, PopupsPanel } from "./funnel-editor-panels";
-import { editorShortcutFor, type EditorShortcut, type FunnelEditorChrome } from "./funnel-editor-chrome";
+import { editorShortcutFor, type EditorShortcut, type FunnelEditorChrome, type FunnelEditorNavigation } from "./funnel-editor-chrome";
 import { EditorCanvas, FunnelNodeToolbar, startNodeDrag } from "./funnel-editor-canvas-view";
 import { endFunnelDrag } from "./funnel-editor-drag";
-import { commerceViewForBinding, type FunnelCommerceProduct } from "@/lib/funnel-commerce";
+import { commerceViewForBinding, firstFunnelCommerceNodeId, type FunnelCommerceProduct } from "@/lib/funnel-commerce";
 import { funnelDropCommand, type FunnelDragPayload, type FunnelDropTarget } from "@/lib/funnel-editor-canvas";
 import { funnelInlineField, funnelInlineTextCommand, isFunnelInlineEditable } from "@/lib/funnel-inline-text";
 import {
@@ -70,6 +70,16 @@ function applyHistoryDirection(history: History, direction: "undo" | "redo") {
 /** Narrow screens open with the panel collapsed so it overlays instead of squeezing the canvas. */
 function initiallyCollapsed() {
   return typeof window !== "undefined" && typeof window.matchMedia === "function" && window.matchMedia("(max-width: 1023px)").matches;
+}
+
+/** Focuses a control in the left panel once React has rendered it (a heading gets a temporary tabindex). */
+function focusPanelControl(selector: string) {
+  window.setTimeout(() => {
+    const target = document.querySelector<HTMLElement>(`#funnel-editor-left-panel ${selector}`);
+    if (!target) return;
+    if (target.tabIndex < 0 && !target.matches("select, input, button, textarea, a[href]")) target.setAttribute("tabindex", "-1");
+    target.focus();
+  }, 0);
 }
 
 /** Window-level shortcuts; the latest handler always runs (no stale closures). */
@@ -148,7 +158,7 @@ function FunnelPageEditorSession({ document, disabled = false, onChange, commerc
     }
     if (shortcut === "save") {
       event.preventDefault();
-      if (chrome && chrome.saveState === "dirty" && !chrome.saveBlocked) chrome.onSave();
+      if (chrome && (chrome.saveState === "dirty" || chrome.saveState === "error") && !chrome.saveBlocked) chrome.onSave();
       return;
     }
     if (previewing) return;
@@ -322,11 +332,33 @@ function FunnelPageEditorSession({ document, disabled = false, onChange, commerc
     if (popupId) setLeftView("library");
   }
 
+  /**
+   * Lets the publish drawer lead the merchant to the setting that blocks
+   * publishing. Focus moves to that setting after the drawer has closed and
+   * returned focus to its trigger.
+   */
+  const navigation: FunnelEditorNavigation = {
+    openPageSettings: () => {
+      setPreviewing(false); select(undefined); setEditingPopupId(undefined);
+      setCollapsed(false); setLeftView("page");
+      focusPanelControl("[data-funnel-page-settings] h2");
+    },
+    selectCommerceElement: () => {
+      const id = firstFunnelCommerceNodeId(history.present.root);
+      if (!id) return false;
+      setPreviewing(false); setEditingPopupId(undefined);
+      inspect(id);
+      focusPanelControl("[data-funnel-commerce-quick-bind] select");
+      return true;
+    },
+  };
+
   function renderPanel() {
     if (leftView === "page") return <PageSettingsPanel document={history.present} disabled={disabled} commerceEnabled={commerceEnabled} commerceProducts={commerceProducts} workspaceSettings={chrome?.pageSettings} onCommand={commit} onReplace={replaceDocument} onBack={backToCanvasPanel} />;
     if (leftView === "popups") return <PopupsPanel document={history.present} disabled={disabled} editingPopupId={editingPopupId} onReplace={replaceDocument} onEdit={editPopup} onPreview={setPreviewPopupId} onBack={backToCanvasPanel} />;
     if (leftView === "versions" && chrome?.versions) return <div><PanelHeader title="版本紀錄" onBack={backToCanvasPanel} />{chrome.versions}</div>;
-    if (leftView === "node" && selected && path) return <NodeSettingsPanel node={selected} path={path} disabled={disabled} viewport={viewport} popups={history.present.popups} stepIds={resolvedStepIds} stepNames={resolvedStepNames} onCommand={commit} onBack={deselect} onDuplicate={duplicateSelected} onDelete={removeSelected} />;
+    if (leftView === "node" && selected && path) return <NodeSettingsPanel node={selected} path={path} disabled={disabled} viewport={viewport} popups={history.present.popups} stepIds={resolvedStepIds} stepNames={resolvedStepNames} onCommand={commit} onBack={deselect} onDuplicate={duplicateSelected} onDelete={removeSelected}
+      commerce={{ enabled: commerceEnabled, binding: history.present.commerce, products: commerceProducts, onChange: (commerce) => replaceDocument({ ...history.present, commerce }), onOpenSettings: navigation.openPageSettings }} />;
     return <EditorLibrary disabled={disabled} settings={history.present.settings} onAddElement={add} onAddBlock={addBlock} />;
   }
   function renderCanvas() {
@@ -364,6 +396,7 @@ function FunnelPageEditorSession({ document, disabled = false, onChange, commerc
         regionRef={canvasRegion} containerRef={canvasContainer} onExitPopup={() => editPopup("")} onDeselect={deselect} onDrop={dropOnCanvas}>{renderCanvas()}</EditorCanvas>
     </div>
     <p role="status" aria-live="polite" className="sr-only">{announcement}</p>
+    {chrome?.renderOverlay?.(navigation)}
     {previewPopupId ? <FunnelPopupPreview document={history.present} commerce={commerceViewForBinding(history.present.commerce, commerceProducts)} popupId={previewPopupId} viewport={viewport} previewEnabled onTriggerStatus={() => undefined} /> : null}
   </div>;
 }

@@ -1,8 +1,20 @@
 import type { ReactNode } from "react";
 import type { FunnelViewport } from "./funnel-page-document-renderer";
 
-/** Persisted-revision state shown by the toolbar's save button (EDT-SAVE-001). */
-export type FunnelEditorSaveState = "dirty" | "saving" | "saved";
+/**
+ * Persisted-revision state shown by the toolbar's save button (EDT-SAVE-001).
+ * `error` means the last save of the current content failed; the button
+ * becomes 儲存失敗（重試）.
+ */
+export type FunnelEditorSaveState = "dirty" | "saving" | "saved" | "error";
+
+/** Editor-session moves another surface (the publish drawer) may ask for to lead the merchant to a fix. */
+export type FunnelEditorNavigation = {
+  /** Opens 頁面設定 in the left panel. */
+  openPageSettings: () => void;
+  /** Selects the first checkout element on the canvas (its settings offer the product picker); false when there is none. */
+  selectCommerceElement: () => boolean;
+};
 
 /**
  * Everything the full-screen editor shell needs from its persistence owner
@@ -16,7 +28,13 @@ export type FunnelEditorChrome = {
   /** Blocks saving even with unsaved changes (invalid settings, missing name). */
   saveBlocked?: boolean;
   onSave: () => void;
+  /** True when edits are saved automatically a few seconds after the last change. */
+  autosave?: boolean;
   onExit: () => void;
+  /** 發布／更新發布 in the toolbar; omitted for pages that publish elsewhere. */
+  publish?: { label: string; disabled?: boolean; onPublish: () => void };
+  /** Surfaces rendered inside the editor session (for example the publish drawer) that can move the selection. */
+  renderOverlay?: (navigation: FunnelEditorNavigation) => ReactNode;
   /** Compact publication status chip with its own popover. */
   status?: ReactNode;
   /** Workspace-level settings (name, URL, form, live) rendered inside 頁面設定. */

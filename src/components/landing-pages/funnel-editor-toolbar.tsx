@@ -1,7 +1,7 @@
 "use client";
 
 import type { ComponentType } from "react";
-import { ArrowLeft, BookmarkPlus, ChevronRight, Eye, History, Monitor, Pencil, Redo2, Settings, Smartphone, SquareStack, Tablet, Undo2 } from "lucide-react";
+import { ArrowLeft, BookmarkPlus, ChevronRight, Eye, History, Monitor, Pencil, Redo2, Rocket, Settings, Smartphone, SquareStack, Tablet, Undo2 } from "lucide-react";
 import type { FunnelEditorChrome } from "./funnel-editor-chrome";
 import type { FunnelViewport } from "./funnel-page-document-renderer";
 
@@ -20,12 +20,40 @@ function ToolbarButton({ label, icon: Icon, onClick, disabled, pressed, showLabe
 
 function saveLabel(state: FunnelEditorChrome["saveState"]) {
   if (state === "saving") return "儲存中…";
+  if (state === "error") return "儲存失敗（重試）";
   return state === "dirty" ? "儲存" : "已儲存";
 }
 
-function saveAnnouncement(state: FunnelEditorChrome["saveState"]) {
+function saveAnnouncement(state: FunnelEditorChrome["saveState"], autosave: boolean) {
   if (state === "saving") return "正在儲存";
-  return state === "dirty" ? "有尚未儲存的變更" : "所有變更都已儲存";
+  if (state === "error") return "儲存失敗，變更仍保留在編輯器，請按重試";
+  if (state === "dirty") return autosave ? "有尚未儲存的變更，停止編輯後會自動儲存" : "有尚未儲存的變更";
+  return "所有變更都已儲存";
+}
+
+function saveTitle(chrome: FunnelEditorChrome) {
+  if (chrome.saveBlocked && (chrome.saveState === "dirty" || chrome.saveState === "error")) return "請先修正設定再儲存";
+  if (chrome.saveState === "error") return "重新儲存（Ctrl+S）";
+  return chrome.autosave ? "停止編輯幾秒後會自動儲存；也可以立即儲存（Ctrl+S）" : "儲存（Ctrl+S）";
+}
+
+const saveTone: Record<FunnelEditorChrome["saveState"], string> = {
+  dirty: "border-blue-700 bg-white text-blue-800 hover:bg-blue-50",
+  saving: "border-slate-300 bg-white text-slate-700",
+  saved: "border-slate-200 bg-white text-slate-600",
+  error: "border-red-700 bg-red-50 text-red-800 hover:bg-red-100",
+};
+
+/** Save status and manual save (always available next to autosave), then 發布 as the primary action. */
+function SaveAndPublish({ chrome }: { chrome: FunnelEditorChrome }) {
+  const state = chrome.saveState;
+  const canSave = (state === "dirty" || state === "error") && !chrome.saveBlocked;
+  return <>
+    <button type="button" disabled={!canSave} onClick={chrome.onSave} title={saveTitle(chrome)} className={`inline-flex h-9 shrink-0 cursor-pointer items-center justify-center rounded-lg border px-2.5 text-sm font-bold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 disabled:cursor-not-allowed sm:min-w-[4.5rem] sm:px-3 ${saveTone[state]}`}>{saveLabel(state)}</button>
+    {chrome.publish ? <button type="button" aria-label={chrome.publish.label} disabled={chrome.publish.disabled} onClick={chrome.publish.onPublish} className="inline-flex h-9 shrink-0 cursor-pointer items-center justify-center gap-1.5 rounded-lg bg-emerald-700 px-2.5 text-sm font-bold text-white transition-colors hover:bg-emerald-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300 disabled:cursor-not-allowed disabled:opacity-50 sm:px-3">
+      <Rocket size={16} aria-hidden /><span className="max-sm:sr-only">{chrome.publish.label}</span>
+    </button> : null}
+  </>;
 }
 
 function Breadcrumb({ crumbs, context, title, onSelect }: { crumbs: readonly FunnelEditorCrumb[]; context?: string; title: string; onSelect: (id: string) => void }) {
@@ -85,9 +113,9 @@ export function FunnelEditorToolbar({ chrome, history, views, view, onToggleView
       </div> : null}
       {onTogglePreview ? <ToolbarButton label={previewing ? "返回編輯" : "預覽"} icon={previewing ? Pencil : Eye} showLabel labelClassName="hidden md:inline" pressed={previewing} onClick={onTogglePreview} /> : null}
       {chrome ? <>
-        <button type="button" disabled={saveState !== "dirty" || chrome.saveBlocked} onClick={chrome.onSave} title={chrome.saveBlocked && saveState === "dirty" ? "請先修正設定再儲存" : "儲存（Ctrl+S）"} className="inline-flex h-9 shrink-0 cursor-pointer items-center justify-center rounded-lg bg-blue-700 px-2.5 sm:min-w-[4.5rem] sm:px-3 text-sm font-bold text-white transition-colors hover:bg-blue-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 disabled:cursor-not-allowed disabled:bg-blue-100 disabled:text-blue-800">{saveLabel(saveState)}</button>
+        <SaveAndPublish chrome={chrome} />
         <button type="button" onClick={chrome.onExit} className="inline-flex h-9 shrink-0 cursor-pointer items-center justify-center rounded-lg bg-slate-900 px-2.5 sm:px-3 text-sm font-bold text-white transition-colors hover:bg-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300">離開</button>
-        <span role="status" className="sr-only">{saveAnnouncement(saveState)}</span>
+        <span role="status" className="sr-only">{saveAnnouncement(saveState, Boolean(chrome.autosave))}</span>
       </> : null}
     </div>
   </header>;

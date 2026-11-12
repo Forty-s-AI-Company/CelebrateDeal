@@ -15,14 +15,17 @@ import type { FunnelEditorChrome, FunnelEditorSaveState } from "@/components/lan
 import { UnsavedChangesDialog } from "@/components/landing-pages/unsaved-changes-dialog";
 import { SaveAsTemplateDialog } from "@/components/landing-pages/save-as-template-dialog";
 import { PublicationChip } from "@/components/landing-page-publication-chip";
+import { Toast, useToast } from "@/components/toast";
+import { FunnelPublishDrawer, type PublishCommerceStatus, type PublishFixKind, type PublishFlowState } from "@/components/landing-pages/funnel-publish-drawer";
+import type { FunnelEditorNavigation } from "@/components/landing-pages/funnel-editor-chrome";
 import { landingPageAction } from "@/app/actions/landing-page-actions";
 import type { LandingPageRenderContext } from "@/lib/landing-page-content";
 import { createEmptyPageDocument, type FunnelNode, type PageDocument } from "@/lib/funnel-page-document";
-import type { FunnelWebinarResources, LandingPageEditorPage, LandingPagePublicationStatus, LandingPageStoredContent } from "@/lib/landing-page-service";
+import type { FunnelWebinarResources, LandingPageActionState, LandingPageEditorPage, LandingPagePublicationStatus, LandingPageStoredContent } from "@/lib/landing-page-service";
 import type { FunnelGoal } from "@/components/landing-pages/funnel-goal-picker";
 import { getActiveFunnelStepPage, type FunnelStepPages } from "@/lib/funnel-step-pages";
 import { createGoalFunnelStepPages } from "@/lib/funnel-goal-step-pages";
-import { commerceViewForBinding, type FunnelCommerceProduct } from "@/lib/funnel-commerce";
+import { commerceViewForBinding, funnelCommerceBindingStatus, type FunnelCommerceProduct } from "@/lib/funnel-commerce";
 import { landingPageEditorHref } from "@/lib/landing-page-editor-href";
 import { convertParsedLegacyLandingPage, type LegacyConversionIssue } from "@/lib/legacy-landing-page-converter";
 
@@ -142,18 +145,43 @@ function initialWorkspace(page: PageInput | undefined, forms: LandingPageRenderC
   };
 }
 
-function saveStateFor(pendingOperation: string | null, dirty: boolean): FunnelEditorSaveState {
-  if (pendingOperation === "save" || pendingOperation === "create") return "saving";
+/** Edits are saved this long after the last change (the save-state chip shows 儲存中… while it runs). */
+export const AUTOSAVE_DELAY_MS = 3_000;
+
+const isSaveOperation = (operation: string | null) => operation === "save" || operation === "create";
+
+function saveStateFor(pendingOperation: string | null, dirty: boolean, failed: boolean): FunnelEditorSaveState {
+  if (isSaveOperation(pendingOperation)) return "saving";
+  if (dirty && failed) return "error";
   return dirty ? "dirty" : "saved";
+}
+
+/** Which feedback an operation shows in the bottom notice: manual actions all, autosave only failures, the publish drawer none. */
+type NoticeMode = "all" | "errors" | "none";
+
+/** Commerce state of the step being edited, for the publish drawer's non-blocking note. */
+function publishCommerceStatus(content: WorkspaceEditorContent, products: FunnelCommerceProduct[]): PublishCommerceStatus {
+  if (!isFunnelStepPages(content)) return "none";
+  const active = getActiveFunnelStepPage(content);
+  if (!active || active.step.type !== "order_form") return "none";
+  return funnelCommerceBindingStatus(active.page, products);
+}
+
+function publishedToast(result: LandingPageActionState, slug: string) {
+  const url = `${window.location.origin}/lp/${slug}`;
+  const version = result.version ? `版本 v${result.version}` : "";
+  const unavailable = result.publication && !result.publication.available ? `（${result.publication.message}）` : "";
+  return { text: `已發布${version}。公開網址：${url}${unavailable}`, tone: unavailable ? "info" as const : "success" as const, link: { href: `/lp/${slug}`, label: "開啟公開頁", external: true } };
 }
 
 type WorkspaceProps = { initialPublication?: LandingPagePublicationStatus; commerceProducts?: FunnelCommerceProduct[]; webinarResources?: FunnelWebinarResources; page?: PageInput; forms: LandingPageRenderContext["forms"]; lives: Lives; csrfToken: string; csrfName: string; initialGoal?: FunnelGoal; initialName?: string; initialSlug?: string; initialCurrency?: string; returnHref?: string; managementHref?: string };
 
 /**
- * Persistence owner of the full-screen editor: save/exit, page metadata,
- * version restore and the publication chip. The canvas editor renders the
- * shared toolbar; legacy pages open converted, with a notice, and keep their
- * stored legacy draft until the merchant saves.
+ * Persistence owner of the full-screen editor: save (manual and automatic),
+ * exit, page metadata, version restore, the publication chip and in-editor
+ * publishing. The canvas editor renders the shared toolbar; legacy pages open
+ * converted, with a notice, and keep their stored legacy draft until the
+ * merchant saves (they are never autosaved).
  */
 export function LandingPageWorkspace({ initialPublication, page, forms, lives, csrfToken, csrfName, initialGoal, initialName, initialSlug, initialCurrency, webinarResources, commerceProducts: products, returnHref, managementHref }: WorkspaceProps) {
   const commerceProducts = products ?? [];
@@ -170,6 +198,8 @@ export function LandingPageWorkspace({ initialPublication, page, forms, lives, c
   const [revision, setRevision] = useState(initial.revision);
   const snapshot = useMemo(() => workspaceSnapshot({ content, name, slug, formId, liveId }), [content, name, slug, formId, liveId]);
   const [savedSnapshot, setSavedSnapshot] = useState<string | null>(() => page ? workspaceSnapshot({ ...initial, content: initial.storedContent }) : null);
+  // Read by the publish flow after an await, when this render's values may be stale.
+  const savedSnapshotRef = useRef(savedSnapshot);
   const dirty = snapshot !== savedSnapshot;
   // A legacy page opens with conversion-only "changes"; they must not block actions that never send content.
   const [convertedSnapshot] = useState(() => initial.legacy && "issues" in initial.legacy ? workspaceSnapshot(initial) : null);
@@ -185,9 +215,13 @@ export function LandingPageWorkspace({ initialPublication, page, forms, lives, c
   const [exitPrompt, setExitPrompt] = useState(false);
   const [templateDialogOpen, setTemplateDialogOpen] = useState(false);
   const inFlight = useRef(false);
+  const request = useRef<Promise<LandingPageActionState | null> | null>(null);
   const revisionRef = useRef(initial.revision);
   const [published, setPublished] = useState(initial.published);
   const [version, setVersion] = useState(initial.version);
+  // The last failed save: the content it tried to store and, for a revision conflict, a stop to autosave.
+  const [saveFailure, setSaveFailure] = useState<SaveFailure | null>(null);
+  const { toast: publishToast, showToast, dismissToast } = useToast();
   const selectedVersion = version || String(page?.versions[0]?.version ?? "");
   const exitHref = returnHref ?? "/landing-pages";
   useEffect(() => {
@@ -206,8 +240,11 @@ export function LandingPageWorkspace({ initialPublication, page, forms, lives, c
     return () => window.clearTimeout(timer);
   }, [notice]);
 
-  function run(operation: string) {
-    if (inFlight.current) return;
+  function currentSnapshot() { return workspaceSnapshot({ content: contentRef.current, name, slug, formId, liveId }); }
+
+  /** Runs one action; resolves with its result, or null when another one is still running or the request failed. */
+  function execute(operation: string, noticeMode: NoticeMode = "all"): Promise<LandingPageActionState | null> {
+    if (inFlight.current) return Promise.resolve(null);
     inFlight.current = true;
     setPendingOperation(operation);
     const data = new FormData();
@@ -221,28 +258,46 @@ export function LandingPageWorkspace({ initialPublication, page, forms, lives, c
     const sentContent = contentRef.current;
     const sentSnapshot = workspaceSnapshot({ content: sentContent, name, slug, formId, liveId });
     data.set("content", JSON.stringify(sentContent)); data.set("version", selectedVersion);
-    startTransition(async () => {
-      try {
-        const result = await landingPageAction({ status: "success", message: "" }, data);
-        setNotice({ text: result.message, tone: result.status === "success" ? "info" : "error" });
-        if (result.status !== "success") { setExitQueued(false); setExitPrompt(false); return; }
-        if (result.revision) { revisionRef.current = result.revision; setRevision(result.revision); }
-        if (result.publication) setPublicationResult({ source: initialPublication, value: result.publication });
-        if (operation === "publish") setPublished(true);
-        if (operation === "unpublish") setPublished(false);
-        if (operation === "save" || operation === "create") { setSavedSnapshot(sentSnapshot); setLegacy(undefined); }
-        if ((operation === "create" || operation === "duplicate") && result.id) router.push(landingPageEditorHref(result.id));
-        // Restoring a historical snapshot intentionally starts a fresh editing
-        // session. Ordinary save/publish must preserve current UI and history.
-        if (operation === "rollback") window.location.reload();
-        if (operation === "delete") router.push("/landing-pages");
-      } catch { setExitQueued(false); setExitPrompt(false); setNotice({ text: "連線中斷，內容仍保留，請稍後再試。", tone: "error" }); }
-      finally {
-        inFlight.current = false;
-        setPendingOperation(null);
-      }
+    const saving = isSaveOperation(operation);
+    const started = new Promise<LandingPageActionState | null>((resolve) => {
+      startTransition(async () => {
+        let outcome: LandingPageActionState | null = null;
+        try {
+          const result = await landingPageAction({ status: "success", message: "" }, data);
+          outcome = result;
+          const ok = result.status === "success";
+          if (noticeMode === "all" || (noticeMode === "errors" && !ok)) setNotice({ text: result.message, tone: ok ? "info" : "error" });
+          if (!ok) {
+            setExitQueued(false); setExitPrompt(false);
+            if (saving) setSaveFailure({ snapshot: sentSnapshot, conflict: result.code === "landing_page_conflict" });
+            return;
+          }
+          if (result.revision) { revisionRef.current = result.revision; setRevision(result.revision); }
+          if (result.publication) setPublicationResult({ source: initialPublication, value: result.publication });
+          if (operation === "publish") setPublished(true);
+          if (operation === "unpublish") setPublished(false);
+          if (saving) { savedSnapshotRef.current = sentSnapshot; setSavedSnapshot(sentSnapshot); setLegacy(undefined); setSaveFailure(null); }
+          if ((operation === "create" || operation === "duplicate") && result.id) router.push(landingPageEditorHref(result.id));
+          // Restoring a historical snapshot intentionally starts a fresh editing
+          // session. Ordinary save/publish must preserve current UI and history.
+          if (operation === "rollback") window.location.reload();
+          if (operation === "delete") router.push("/landing-pages");
+        } catch {
+          setExitQueued(false); setExitPrompt(false);
+          if (saving) setSaveFailure({ snapshot: sentSnapshot, conflict: false });
+          if (noticeMode !== "none") setNotice({ text: "連線中斷，內容仍保留，請稍後再試。", tone: "error" });
+        } finally {
+          inFlight.current = false;
+          request.current = null;
+          setPendingOperation(null);
+          resolve(outcome);
+        }
+      });
     });
+    request.current = started;
+    return started;
   }
+  function run(operation: string) { void execute(operation); }
   function updateContent(next: WorkspaceEditorContent) {
     contentRef.current = next;
     setContent(next);
@@ -259,13 +314,23 @@ export function LandingPageWorkspace({ initialPublication, page, forms, lives, c
     if (dirty) { setExitPrompt(true); return; }
     router.push(exitHref);
   }
-  const saveBlocked = pending || !valid || !name.trim() || !slug.trim();
+  const { locked, settingsIncomplete, saveBlocked, saveFailed, autosave, autosaveEnabled, autosaveDue } = saveFlags({ pendingOperation, dirty, snapshot, saveFailure, stored: Boolean(page), legacy: Boolean(legacy), valid, name, slug });
+  useAutosave({ enabled: autosaveEnabled, due: autosaveDue, snapshot, save: () => { void execute("save", "errors"); } });
+  const publishing = usePublishFlow({
+    canPublish: Boolean(page && managementHref),
+    waitForIdle: () => request.current ?? Promise.resolve(null),
+    needsSave: () => currentSnapshot() !== savedSnapshotRef.current,
+    saveBlocked: settingsIncomplete,
+    execute,
+    onCommerceRefused: () => router.refresh(),
+    onPublished: (result) => { const message = publishedToast(result, slug); showToast(message.text, { tone: message.tone, link: message.link, duration: 12_000 }); },
+  });
   const webinarResource = resolveWebinarResource(webinarResources, lives, liveId, formId);
   // Registration buttons resolve the form slug and the currently selected live at render time.
   const selectedLive = lives.find((live) => live.id === liveId);
   const registrationLinks = useMemo<FunnelRegistrationLinks>(() => ({ forms, ...(selectedLive ? { live: selectedLive } : {}) }), [forms, selectedLive]);
-  const settings = <WorkspaceSettingsFields name={name} slug={slug} formId={formId} liveId={liveId} forms={forms} lives={lives} disabled={pending} onName={setName} onSlug={setSlug} onForm={setFormId} onLive={setLiveId}>
-    <WebinarWorkspaceSettings content={content} pending={pending} resources={webinarResources} lives={lives} liveId={liveId} onValidityChange={setValid} onChange={updateContent} onSelect={(id, form) => { setLiveId(id); if (form) setFormId(form); }} />
+  const settings = <WorkspaceSettingsFields name={name} slug={slug} formId={formId} liveId={liveId} forms={forms} lives={lives} disabled={locked} onName={setName} onSlug={setSlug} onForm={setFormId} onLive={setLiveId}>
+    <WebinarWorkspaceSettings content={content} pending={locked} resources={webinarResources} lives={lives} liveId={liveId} onValidityChange={setValid} onChange={updateContent} onSelect={(id, form) => { setLiveId(id); if (form) setFormId(form); }} />
   </WorkspaceSettingsFields>;
   // Publish, unpublish, duplicate, delete and restore act on the stored draft; only real edits make them misleading.
   const editedSinceSave = dirty && !pristineConversion(legacy, snapshot, convertedSnapshot);
@@ -273,23 +338,136 @@ export function LandingPageWorkspace({ initialPublication, page, forms, lives, c
   const legacyActions = page && !managementHref ? <LegacyPublishActions published={published} disabled={pending || editedSinceSave} onRun={run} /> : undefined;
   const templateTarget = saveAsTemplateTarget(page, content, Boolean(legacy), name);
   const chrome: FunnelEditorChrome = {
-    title: name, saveState: saveStateFor(pendingOperation, dirty), saveBlocked, onSave: save, onExit: exitEditor,
-    status: page ? <PublicationChip published={published} publication={publication} slug={slug} onManage={managementHref ? () => { if (dirty) setExitPrompt(true); else router.push(exitHref); } : undefined} actions={legacyActions} /> : null,
+    title: name, saveState: saveStateFor(pendingOperation, dirty, saveFailed), saveBlocked, onSave: save, onExit: exitEditor, autosave,
+    status: page ? <PublicationChip published={published} publication={publication} slug={slug} publishInEditor={publishing.available} onManage={managementHref ? () => { if (dirty) setExitPrompt(true); else router.push(exitHref); } : undefined} actions={legacyActions} /> : null,
     pageSettings: settings, versions,
     renderPreview: (viewport) => <CurrentWorkspacePreview content={content} slug={slug} resource={webinarResource} viewport={viewport} commerceProducts={commerceProducts} />,
     notice: legacyNotice(legacy, published),
     onSaveAsTemplate: templateTarget ? () => setTemplateDialogOpen(true) : undefined,
+    ...publishChrome({ publishing, published, locked, managementHref, commerce: () => publishCommerceStatus(content, commerceProducts) }),
   };
   const toast = notice ? <p role={notice.tone === "error" ? "alert" : "status"} className={`fixed bottom-4 left-1/2 z-[150] max-w-[min(36rem,calc(100vw-2rem))] -translate-x-1/2 rounded-lg px-4 py-2 text-sm font-semibold shadow-lg ${notice.tone === "error" ? "bg-red-700 text-white" : "bg-slate-900 text-white"}`}>{notice.text}{notice.tone === "error" ? <button type="button" aria-label="關閉訊息" className="ml-3 cursor-pointer underline" onClick={() => setNotice(null)}>關閉</button> : null}</p> : null;
   if (legacyFailed(legacy)) return <LegacyConversionFailure published={published} pending={pending} onRun={run} onExit={() => router.push(exitHref)} toast={toast} />;
   return <div className="flex h-dvh min-h-0 flex-col overflow-hidden bg-slate-100">
     <FunnelRegistrationLinkProvider value={registrationLinks}>
-      <div className="min-h-0 flex-1"><FunnelEditorAssetsProvider csrfToken={csrfToken}><WorkspaceEditor content={content} commerceProducts={commerceProducts} pending={pending} revision={revision} onDocumentChange={updateContent} chrome={chrome} /></FunnelEditorAssetsProvider></div>
+      <div className="min-h-0 flex-1"><FunnelEditorAssetsProvider csrfToken={csrfToken}><WorkspaceEditor content={content} commerceProducts={commerceProducts} pending={locked} revision={revision} onDocumentChange={updateContent} chrome={chrome} /></FunnelEditorAssetsProvider></div>
     </FunnelRegistrationLinkProvider>
     {toast}
+    <Toast toast={publishToast} onDismiss={dismissToast} />
     <WorkspaceSaveAsTemplate open={templateDialogOpen} target={templateTarget} dirty={dirty} csrfName={csrfName} csrfToken={csrfToken} onClose={() => setTemplateDialogOpen(false)} />
-    {exitPrompt ? <UnsavedChangesDialog saving={pendingOperation === "save" || pendingOperation === "create"} saveBlocked={saveBlocked && !pending} onCancel={() => setExitPrompt(false)} onDiscard={() => { setExitPrompt(false); router.push(exitHref); }} onSave={() => { setExitQueued(true); save(); }} /> : null}
+    {exitPrompt ? <UnsavedChangesDialog saving={isSaveOperation(pendingOperation)} saveBlocked={saveBlocked && !pending} onCancel={() => setExitPrompt(false)} onDiscard={() => { setExitPrompt(false); router.push(exitHref); }} onSave={() => { setExitQueued(true); save(); }} /> : null}
   </div>;
+}
+
+type SaveFailure = { snapshot: string; conflict: boolean };
+
+/**
+ * Save-related flags. Saving never locks the canvas or the settings (autosave
+ * would steal focus from an input); other operations do. Autosave runs only
+ * for a stored page, never for a pristine legacy conversion, never twice for
+ * content whose save failed, and not at all after a revision conflict.
+ */
+function saveFlags(input: { pendingOperation: string | null; dirty: boolean; snapshot: string; saveFailure: SaveFailure | null; stored: boolean; legacy: boolean; valid: boolean; name: string; slug: string }) {
+  const pending = input.pendingOperation !== null;
+  const locked = pending && !isSaveOperation(input.pendingOperation);
+  const settingsIncomplete = !input.valid || !input.name.trim() || !input.slug.trim();
+  const saveBlocked = locked || settingsIncomplete;
+  const conflict = Boolean(input.saveFailure?.conflict);
+  const saveFailed = conflict || input.saveFailure?.snapshot === input.snapshot;
+  const autosave = input.stored && !input.legacy;
+  return { locked, settingsIncomplete, saveBlocked, saveFailed, autosave, autosaveEnabled: autosave && !conflict, autosaveDue: input.dirty && !pending && !saveBlocked && !saveFailed };
+}
+
+/** Toolbar 發布 and its drawer, only for funnels (they have a management page). */
+function publishChrome({ publishing, published, locked, managementHref, commerce }: {
+  publishing: ReturnType<typeof usePublishFlow>; published: boolean; locked: boolean; managementHref?: string; commerce: () => PublishCommerceStatus;
+}): Pick<FunnelEditorChrome, "publish" | "renderOverlay"> {
+  if (!publishing.available) return {};
+  const state = publishing.state;
+  return {
+    publish: { label: published ? "更新發布" : "發布", disabled: state !== null || locked, onPublish: publishing.open },
+    renderOverlay: state ? (navigation) => <FunnelPublishDrawer state={state} published={published} commerce={commerce()} managementHref={managementHref}
+      onPublish={publishing.confirm} onRetry={publishing.open} onClose={publishing.close} onFix={(kind) => publishing.fix(kind, navigation)} /> : undefined,
+  };
+}
+
+/**
+ * Debounced autosave: `due` while there are unsaved, savable changes and
+ * nothing else runs. Every edit (new snapshot) restarts the delay, so one
+ * pause saves once; a save that failed is not retried for the same content.
+ * Saves go through the same revision-checked action as 儲存, which refuses
+ * to overwrite a newer stored version.
+ */
+function useAutosave({ enabled, due, snapshot, save }: { enabled: boolean; due: boolean; snapshot: string; save: () => void }) {
+  const saveRef = useRef(save);
+  useEffect(() => { saveRef.current = save; });
+  useEffect(() => {
+    if (!enabled || !due) return;
+    const timer = window.setTimeout(() => saveRef.current(), AUTOSAVE_DELAY_MS);
+    return () => window.clearTimeout(timer);
+  }, [enabled, due, snapshot]);
+}
+
+/**
+ * 發布 in the editor: wait for a running save, save unsaved changes, run the
+ * server's publish check, and publish only after the merchant confirms. Every
+ * step is the existing CSRF-protected page action; nothing is decided here.
+ */
+function usePublishFlow({ canPublish, waitForIdle, needsSave, saveBlocked, execute, onCommerceRefused, onPublished }: {
+  canPublish: boolean;
+  waitForIdle: () => Promise<unknown>;
+  needsSave: () => boolean;
+  saveBlocked: boolean;
+  execute: (operation: string, noticeMode: NoticeMode) => Promise<LandingPageActionState | null>;
+  onCommerceRefused: () => void;
+  onPublished: (result: LandingPageActionState) => void;
+}) {
+  const [state, setState] = useState<PublishFlowState | null>(null);
+  // A closed (or restarted) flow ignores results that arrive later.
+  const run = useRef(0);
+  const refused = (result: LandingPageActionState | null): PublishFlowState => ({ phase: "blocked", message: result?.message ?? "連線中斷，網站沒有變更，請稍後再試。", code: result?.code, publication: result?.publication });
+
+  async function open() {
+    const id = ++run.current;
+    const current = () => run.current === id;
+    setState({ phase: "saving" });
+    await waitForIdle();
+    if (!current()) return;
+    if (needsSave()) {
+      if (saveBlocked) { setState({ phase: "save_failed", message: "頁面名稱、公開網址或頁面設定尚未完成，草稿無法儲存。請先修正再發布。", code: "settings_invalid" }); return; }
+      const saved = await execute("save", "none");
+      if (!current()) return;
+      if (saved?.status !== "success") { setState({ phase: "save_failed", message: saved?.message ?? "連線中斷，內容仍保留在編輯器，請稍後再試。", code: saved?.code }); return; }
+    }
+    setState({ phase: "checking" });
+    const checked = await execute("check_publish", "none");
+    if (!current()) return;
+    if (checked?.status !== "success") {
+      setState(refused(checked));
+      // The editor's catalog may be stale; reload it so the in-place picker shows the current products.
+      if (checked?.code === "landing_page_commerce_invalid") onCommerceRefused();
+      return;
+    }
+    setState({ phase: "ready", publication: checked.publication });
+  }
+  async function confirm() {
+    const id = run.current;
+    setState((value) => ({ phase: "publishing", publication: value && "publication" in value ? value.publication : undefined }));
+    const result = await execute("publish", "none");
+    if (run.current !== id) return;
+    if (result?.status !== "success") { setState(refused(result)); return; }
+    run.current += 1;
+    setState(null);
+    onPublished(result);
+  }
+  function close() { run.current += 1; setState(null); }
+  function fix(kind: PublishFixKind, navigation: FunnelEditorNavigation) {
+    if (kind === "reload") { window.location.reload(); return; }
+    close();
+    if (kind === "commerce" && navigation.selectCommerceElement()) return;
+    if (kind === "commerce" || kind === "page_settings") navigation.openPageSettings();
+  }
+  return { available: canPublish, state, open: () => { void open(); }, confirm: () => { void confirm(); }, close, fix };
 }
 
 function WorkspaceSettingsFields({ name, slug, formId, liveId, forms, lives, disabled, onName, onSlug, onForm, onLive, children }: { name: string; slug: string; formId: string; liveId: string; forms: LandingPageRenderContext["forms"]; lives: Lives; disabled: boolean; onName: (value: string) => void; onSlug: (value: string) => void; onForm: (value: string) => void; onLive: (value: string) => void; children?: React.ReactNode }) {
