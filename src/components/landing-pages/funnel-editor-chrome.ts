@@ -37,6 +37,8 @@ export type FunnelEditorChrome = {
   onExit: () => void;
   /** 發布／更新發布 in the toolbar; omitted for pages that publish elsewhere. */
   publish?: { label: string; disabled?: boolean; onPublish: () => void };
+  /** Receives the editor session's navigation after every render (for fix links rendered outside the session). */
+  onNavigation?: (navigation: FunnelEditorNavigation) => void;
   /** Surfaces rendered inside the editor session (for example the publish drawer) that can move the selection. */
   renderOverlay?: (navigation: FunnelEditorNavigation) => ReactNode;
   /** Compact publication status chip with its own popover. */

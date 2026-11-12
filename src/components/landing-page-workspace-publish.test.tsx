@@ -389,7 +389,16 @@ describe("binding a product in place", () => {
     await advance(AUTOSAVE_DELAY_MS);
     expect(JSON.parse(String(sent(0).get("content"))).pages.order_form.commerce.productId).toBe("foreign-product");
     expect(saveButtonText()).toBe("儲存失敗（重試）");
-    expect(container.querySelector('[role="alert"]')?.textContent).toContain("已綁定的商品必須屬於目前銷售專案");
+    const alert = container.querySelector<HTMLElement>('[role="alert"]')!;
+    expect(alert.textContent).toContain("已綁定的商品必須屬於目前銷售專案");
+    // The catalog is refreshed and the alert leads back to the product picker.
+    expect(mocks.refresh).toHaveBeenCalledOnce();
+    await click(container.querySelector<HTMLElement>('[data-funnel-node-id="section_main"]')!);
+    expect(container.querySelector("[data-funnel-commerce-quick-bind]")).toBeNull();
+    await click(button(alert, "重新選擇結帳商品"));
+    expect(container.querySelector('[role="alert"]')).toBeNull();
+    expect(container.querySelector('[data-funnel-node-id="offer_main"]')?.getAttribute("data-funnel-selected")).toBe("true");
+    expect(container.querySelector("[data-funnel-commerce-quick-bind] select")).not.toBeNull();
   });
 
   it("explains that only order-form steps bind products", async () => {

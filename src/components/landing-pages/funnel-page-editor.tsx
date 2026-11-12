@@ -356,6 +356,9 @@ function FunnelPageEditorSession({ document, disabled = false, onChange, commerc
     },
   };
 
+  const reportNavigation = chrome?.onNavigation;
+  useEffect(() => { reportNavigation?.(navigation); });
+
   function renderPanel() {
     if (leftView === "page") return <PageSettingsPanel document={history.present} disabled={disabled} commerceEnabled={commerceEnabled} commerceProducts={commerceProducts} workspaceSettings={chrome?.pageSettings} onCommand={commit} onReplace={replaceDocument} onBack={backToCanvasPanel} />;
     if (leftView === "popups") return <PopupsPanel document={history.present} disabled={disabled} editingPopupId={editingPopupId} onReplace={replaceDocument} onEdit={editPopup} onPreview={setPreviewPopupId} onBack={backToCanvasPanel} />;

@@ -34,7 +34,18 @@ import { FunnelWebinarExperience } from "@/components/landing-pages/funnel-webin
 
 type PageInput = Omit<LandingPageEditorPage, "publishedAt" | "updatedAt" | "versions"> & { versions: Array<{ version: number }> };
 type Lives = NonNullable<LandingPageRenderContext["live"]>[];
-type Notice = { text: string; tone: "info" | "error" };
+/** `fix` adds a button that leads to the setting the failure is about. */
+type Notice = { text: string; tone: "info" | "error"; fix?: "commerce" };
+
+/** Bottom notice: confirmations as status, failures as alert (with an optional way to the fix). */
+function WorkspaceNotice({ notice, onDismiss, onFix }: { notice: Notice; onDismiss: () => void; onFix: (fix: "commerce") => void }) {
+  const error = notice.tone === "error";
+  return <p role={error ? "alert" : "status"} className={`fixed bottom-4 left-1/2 z-[150] max-w-[min(36rem,calc(100vw-2rem))] -translate-x-1/2 rounded-lg px-4 py-2 text-sm font-semibold shadow-lg ${error ? "bg-red-700 text-white" : "bg-slate-900 text-white"}`}>
+    {notice.text}
+    {notice.fix === "commerce" ? <button type="button" className="ml-3 cursor-pointer underline" onClick={() => onFix("commerce")}>重新選擇結帳商品</button> : null}
+    {error ? <button type="button" aria-label="關閉訊息" className="ml-3 cursor-pointer underline" onClick={onDismiss}>關閉</button> : null}
+  </p>;
+}
 
 function starterDocument(goal: FunnelGoal = "custom"): PageDocument {
   const leaf = (id: string, type: FunnelNode["type"], props: Record<string, unknown>): FunnelNode => ({ schemaVersion: 1, id, type, props, style: {}, overrides: {}, visible: true, actions: [], attributes: {} });
@@ -233,6 +244,8 @@ export function LandingPageWorkspace({ initialPublication, page, forms, lives, c
   // The last failed save: the content it tried to store and, for a revision conflict, a stop to autosave.
   const [saveFailure, setSaveFailure] = useState<SaveFailure | null>(null);
   const { toast: publishToast, showToast, dismissToast } = useToast();
+  // The editor session reports how to move its selection (for fix links outside the publish drawer).
+  const navigationRef = useRef<FunnelEditorNavigation | null>(null);
   const selectedVersion = version || String(page?.versions[0]?.version ?? "");
   const exitHref = returnHref ?? "/landing-pages";
   useEffect(() => {
@@ -277,7 +290,10 @@ export function LandingPageWorkspace({ initialPublication, page, forms, lives, c
           const result = await landingPageAction({ status: "success", message: "" }, data);
           outcome = result;
           const ok = result.status === "success";
-          if (noticeMode === "all" || (noticeMode === "errors" && !ok)) setNotice({ text: result.message, tone: ok ? "info" : "error" });
+          const commerceRefused = result.code === "landing_page_commerce_invalid";
+          if (noticeMode === "all" || (noticeMode === "errors" && !ok)) setNotice({ text: result.message, tone: ok ? "info" : "error", ...(commerceRefused ? { fix: "commerce" as const } : {}) });
+          // The editor's catalog may be stale; reload it so the in-place picker shows the current products.
+          if (saving && commerceRefused) router.refresh();
           if (!ok) {
             setExitQueued(false); setExitPrompt(false);
             if (saving) setSaveFailure({ snapshot: sentSnapshot, conflict: result.code === "landing_page_conflict" });
@@ -352,6 +368,7 @@ export function LandingPageWorkspace({ initialPublication, page, forms, lives, c
   const templateTarget = saveAsTemplateTarget(page, content, Boolean(legacy), name);
   const chrome: FunnelEditorChrome = {
     title: name, saveState: saveStateFor(pendingOperation, dirty, saveFailed), saveBlocked, onSave: save, onExit: exitEditor, autosave,
+    onNavigation: (navigation) => { navigationRef.current = navigation; },
     ...publishBusyChrome(publishBusy, () => setNotice({ text: PUBLISH_BUSY_SAVE, tone: "info" })),
     status: page ? <PublicationChip published={published} publication={publication} slug={slug} publishInEditor={publishing.available} onManage={managementHref ? () => { if (dirty) setExitPrompt(true); else router.push(exitHref); } : undefined} actions={legacyActions} /> : null,
     pageSettings: settings, versions,
@@ -360,7 +377,11 @@ export function LandingPageWorkspace({ initialPublication, page, forms, lives, c
     onSaveAsTemplate: templateTarget ? () => setTemplateDialogOpen(true) : undefined,
     ...publishChrome({ publishing, published, locked, managementHref, commerce: () => publishCommerceStatus(content, commerceProducts) }),
   };
-  const toast = notice ? <p role={notice.tone === "error" ? "alert" : "status"} className={`fixed bottom-4 left-1/2 z-[150] max-w-[min(36rem,calc(100vw-2rem))] -translate-x-1/2 rounded-lg px-4 py-2 text-sm font-semibold shadow-lg ${notice.tone === "error" ? "bg-red-700 text-white" : "bg-slate-900 text-white"}`}>{notice.text}{notice.tone === "error" ? <button type="button" aria-label="關閉訊息" className="ml-3 cursor-pointer underline" onClick={() => setNotice(null)}>關閉</button> : null}</p> : null;
+  const toast = notice ? <WorkspaceNotice notice={notice} onDismiss={() => setNotice(null)} onFix={() => {
+    setNotice(null);
+    const navigation = navigationRef.current;
+    if (navigation && !navigation.selectCommerceElement()) navigation.openPageSettings();
+  }} /> : null;
   if (legacyFailed(legacy)) return <LegacyConversionFailure published={published} pending={pending} onRun={run} onExit={() => router.push(exitHref)} toast={toast} />;
   return <div className="flex h-dvh min-h-0 flex-col overflow-hidden bg-slate-100">
     <FunnelRegistrationLinkProvider value={registrationLinks}>
