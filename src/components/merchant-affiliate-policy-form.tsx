@@ -45,14 +45,17 @@ function PercentField({ label, name, fieldKey, value, onChange, error, hint, edi
   </div>;
 }
 
-/** 件數欄位：直接以 name 送出畫面上的值（伺服器只收 1 到 10 位整數）。 */
-function QuantityField({ label, name, fieldKey, value, onChange, error, required }: {
-  label: string; name: string; fieldKey: string; value: string; onChange: (value: string) => void; error?: string; required?: boolean;
+/**
+ * 件數欄位：直接以 name 送出畫面上的值（伺服器只收 1 到 10 位整數）。hydrate 前 readOnly：
+ * 否則 hydrate 時 React 會把使用者先改的值還原成 state，畫面與送出的階梯邊界就不是使用者以為的值。
+ */
+function QuantityField({ label, name, fieldKey, value, onChange, error, required, editable }: {
+  label: string; name: string; fieldKey: string; value: string; onChange: (value: string) => void; error?: string; required?: boolean; editable: boolean;
 }) {
   const field = useFieldMessages(error);
   return <div className="grid gap-1.5">
     <label className="grid gap-1 text-sm font-medium text-slate-800">{label}
-      <input className={`${inputBase} ${field.controlClass}`} name={name} type="number" min="1" step="1" required={required} value={value}
+      <input className={`${inputBase} ${field.controlClass}`} name={name} type="number" min="1" step="1" required={required} readOnly={!editable} value={value}
         onChange={event => onChange(event.target.value)} id={policyControlId(fieldKey)} data-policy-field={fieldKey} {...field.controlProps} />
     </label>
     {field.messages}
@@ -154,7 +157,7 @@ export function MerchantAffiliatePolicyForm({ initial, revision, csrfToken, csrf
         <input type="hidden" name={csrfFieldName} value={csrfToken} />
         <input type="hidden" name="expectedRevision" value={state.revision ?? revision} />
         <FormErrorSummary message={summaryMessage} errors={summaryErrors} fieldHref={key => SAFE_FIELD_KEY.test(key) ? `#${policyControlId(key)}` : undefined} onFieldSelect={focusField} />
-        {hydrated ? null : <p data-policy-loading="" className="text-sm text-slate-600">頁面載入完成後才能修改佣金比例。</p>}
+        {hydrated ? null : <p data-policy-loading="" className="text-sm text-slate-600">頁面載入完成後才能修改政策。</p>}
         <fieldset disabled={pending} className="grid gap-8">
           <Section id="policy-cap" title="佣金總比例上限" description="直接佣金最高的一階（或商品）加上所有上線層級，合計不可超過這個比例。">
             <div className="max-w-xs">
@@ -165,8 +168,8 @@ export function MerchantAffiliatePolicyForm({ initial, revision, csrfToken, csrf
           <Section id="policy-tiers" title="成交件數階梯" description={`依新政策開始後累計已付款件數計算，退款不會倒扣件數。最後一階的結束件數留空。已設定 ${draft.tiers.length}／${MAX_POLICY_TIERS} 階。`}>
             <ol className="grid gap-3">
               {draft.tiers.map((tier, index) => <li key={index} data-policy-row={`tier-${index}`} className="grid gap-3 rounded-md border border-slate-200 p-3 sm:grid-cols-3">
-                <QuantityField label={`第 ${index + 1} 階起始件數`} name="tierStart" fieldKey={policyFieldKey.tierStart(index)} required value={tier.minQuantity} onChange={value => setTier(index, { minQuantity: value })} error={errorOf(policyFieldKey.tierStart(index))} />
-                <QuantityField label={`第 ${index + 1} 階結束件數`} name="tierEnd" fieldKey={policyFieldKey.tierEnd(index)} value={tier.maxQuantity} onChange={value => setTier(index, { maxQuantity: value })} error={errorOf(policyFieldKey.tierEnd(index))} />
+                <QuantityField label={`第 ${index + 1} 階起始件數`} name="tierStart" fieldKey={policyFieldKey.tierStart(index)} required value={tier.minQuantity} onChange={value => setTier(index, { minQuantity: value })} error={errorOf(policyFieldKey.tierStart(index))} editable={hydrated} />
+                <QuantityField label={`第 ${index + 1} 階結束件數`} name="tierEnd" fieldKey={policyFieldKey.tierEnd(index)} value={tier.maxQuantity} onChange={value => setTier(index, { maxQuantity: value })} error={errorOf(policyFieldKey.tierEnd(index))} editable={hydrated} />
                 <PercentField label={`第 ${index + 1} 階直接佣金（%）`} name="tierRate" fieldKey={policyFieldKey.tierRate(index)} value={tier.ratePercent} onChange={value => setTier(index, { ratePercent: value })} error={errorOf(policyFieldKey.tierRate(index))} editable={hydrated} />
               </li>)}
             </ol>
@@ -228,11 +231,13 @@ function OverrideRow({ index, uiId, hidden, productId, ratePercent, products, ed
     <div className="grid gap-1.5">
       {/* 選單不包在 <label> 裡：否則標籤文字會連同選項文字一起算進名稱。 */}
       <label htmlFor={policyControlId(policyFieldKey.overrideProduct(uiId))} className="text-sm font-medium text-slate-800">佣金商品 {index + 1}</label>
-      <select name="overrideProduct" className={`${inputBase} ${field.controlClass}`} required value={productId} onChange={event => onProduct(event.target.value)} id={policyControlId(policyFieldKey.overrideProduct(uiId))} data-policy-field={policyFieldKey.overrideProduct(uiId)} {...field.controlProps}>
+      {/* 送出的是隱藏欄位；選單在 hydrate 前停用，避免 hydrate 時被還原成 state 而送出使用者沒看到的商品。 */}
+      <select className={`${inputBase} ${field.controlClass}`} required disabled={!editable} value={productId} onChange={event => onProduct(event.target.value)} id={policyControlId(policyFieldKey.overrideProduct(uiId))} data-policy-field={policyFieldKey.overrideProduct(uiId)} {...field.controlProps}>
         <option value="">選擇商品</option>
         {products.map(product => <option key={product.id} value={product.id}>{product.name}</option>)}
       </select>
       {field.messages}
+      <input type="hidden" name="overrideProduct" value={productId} />
     </div>
     <PercentField label={`商品 ${index + 1} 佣金（%）`} name="overrideRate" fieldKey={policyFieldKey.overrideRate(uiId)} value={ratePercent} onChange={onRate} error={rateError} editable={editable} />
     <button type="button" className={`${buttonClass} self-end`} onClick={onRemove}>移除商品 {index + 1}</button>

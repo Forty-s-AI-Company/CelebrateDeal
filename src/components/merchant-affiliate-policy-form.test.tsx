@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { act } from "react";
-import { createRoot, type Root } from "react-dom/client";
-import { renderToStaticMarkup } from "react-dom/server";
+import { createRoot, hydrateRoot, type Root } from "react-dom/client";
+import { renderToStaticMarkup, renderToString } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { MerchantAffiliateTerms } from "@/lib/affiliate-tier-policy";
 import { MerchantAffiliatePolicyForm } from "./merchant-affiliate-policy-form";
@@ -106,7 +106,46 @@ describe("hydrate 前（SSR）", () => {
     expect(doc.querySelector('[data-policy-field="tierRate-1"]')!.getAttribute("value")).toBe("20.5");
     expect([...doc.querySelectorAll<HTMLInputElement>('input[type="hidden"][name="tierRate"]')].map(input => input.getAttribute("value"))).toEqual(["12.34", "20.5"]);
     expect(doc.querySelector('input[type="hidden"][name="maxTotalPercent"]')!.getAttribute("value")).toBe("100");
-    expect(doc.querySelector("[data-policy-loading]")?.textContent).toBe("頁面載入完成後才能修改佣金比例。");
+    expect(doc.querySelector("[data-policy-loading]")?.textContent).toBe("頁面載入完成後才能修改政策。");
+  });
+
+  it("件數欄位 readOnly、商品選單停用且沒有 name，商品由隱藏欄位送出原值", () => {
+    const html = renderToStaticMarkup(<MerchantAffiliatePolicyForm initial={{ ...baseTerms, tiers: [{ minQuantity: 1, maxQuantity: 9, rateBps: 1234 }, { minQuantity: 10, maxQuantity: null, rateBps: 2050 }] }} revision={1} csrfToken="synthetic" csrfFieldName="_csrf" products={products} />);
+    const doc = new DOMParser().parseFromString(html, "text/html");
+    const quantities = [...doc.querySelectorAll<HTMLInputElement>('input[name="tierStart"], input[name="tierEnd"]')];
+    expect(quantities.map(input => [input.getAttribute("name"), input.getAttribute("value"), input.hasAttribute("readonly")])).toEqual([
+      ["tierStart", "1", true], ["tierEnd", "9", true], ["tierStart", "10", true], ["tierEnd", "", true],
+    ]);
+    const select = doc.querySelector<HTMLSelectElement>('[data-policy-field="overrideProduct-u0"]')!;
+    expect(select.tagName).toBe("SELECT");
+    expect(select.hasAttribute("disabled")).toBe(true);
+    expect(select.hasAttribute("name")).toBe(false);
+    expect([...doc.querySelectorAll('input[type="hidden"][name="overrideProduct"]')].map(input => input.getAttribute("value"))).toEqual(["first"]);
+    // 所有帶 name、可由使用者改動的控制項在 hydrate 前都鎖住（隱藏欄位、CSRF 與送出按鈕除外）。
+    const editable = [...doc.querySelectorAll<HTMLInputElement | HTMLSelectElement>("form input[name], form select[name], form textarea[name]")]
+      .filter(element => element.getAttribute("type") !== "hidden" && !element.hasAttribute("readonly") && !element.hasAttribute("disabled"));
+    expect(editable).toEqual([]);
+  });
+
+  it("hydrate 後件數與商品選單解除鎖定，值仍是伺服器給的原值", async () => {
+    const element = <MerchantAffiliatePolicyForm initial={{ ...baseTerms, tiers: [{ minQuantity: 1, maxQuantity: 9, rateBps: 1234 }, { minQuantity: 10, maxQuantity: null, rateBps: 2050 }] }} revision={1} csrfToken="synthetic" csrfFieldName="_csrf" products={products} />;
+    // 用獨立容器 hydrate，不與 beforeEach 的 createRoot 共用。
+    const host = document.createElement("div"); document.body.append(host);
+    host.innerHTML = renderToString(element);
+    const inHost = (key: string) => host.querySelector<HTMLInputElement | HTMLSelectElement>(`[data-policy-field="${key}"]`)!;
+    expect((inHost("tierEnd-0") as HTMLInputElement).readOnly).toBe(true);
+    let hydrated: Root | undefined;
+    await act(async () => { hydrated = hydrateRoot(host, element); });
+    try {
+      expect((inHost("tierEnd-0") as HTMLInputElement).readOnly).toBe(false);
+      expect(inHost("tierEnd-0").value).toBe("9");
+      expect((inHost("overrideProduct-u0") as HTMLSelectElement).disabled).toBe(false);
+      expect(inHost("overrideProduct-u0").value).toBe("first");
+      expect(host.querySelector("[data-policy-loading]")).toBeNull();
+      await setValue(inHost("tierEnd-0"), "12");
+      expect(host.querySelector<HTMLInputElement>('input[name="tierEnd"]')!.value).toBe("12");
+      expect(inHost("tierStart-1").value).toBe("10");
+    } finally { await act(async () => hydrated?.unmount()); host.remove(); }
   });
 
   it("hydrate 後解除唯讀並移除說明", async () => {
