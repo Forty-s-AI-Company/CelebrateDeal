@@ -8,6 +8,9 @@ import { supersedeFixedTimeNotificationsForActiveEvergreen } from "@/lib/live-no
  * shared `scheduledAt` says nothing about when a registrant's webinar ends.
  * Until per-visitor follow-ups exist, post_live_followup must not be queued
  * or sent for it (same rule as live_reminder / before_live / during_live).
+ *
+ * Every job call is scoped to this test's vendor, so the global rule paging
+ * and other vendors' rows cannot change what these assertions see.
  */
 
 const createdVendorIds: string[] = [];
@@ -107,49 +110,161 @@ async function createFixture(options: { isEvergreen: boolean }) {
 function followupDeliveries(vendorId: string, liveId: string) {
   return getDb().emailDelivery.findMany({
     where: { vendorId, sourceLiveId: liveId, trigger: "post_live_followup" },
-    select: { id: true, vendorId: true, sourceLiveId: true, sourceFormSubmissionId: true, trigger: true, idempotencyKey: true, status: true, lastErrorCode: true },
+    select: {
+      id: true,
+      vendorId: true,
+      sourceLiveId: true,
+      sourceFormSubmissionId: true,
+      trigger: true,
+      idempotencyKey: true,
+      status: true,
+      lastErrorCode: true,
+      attemptCount: true,
+      nextAttemptAt: true,
+      payloadEncryptedEnvelope: true,
+    },
   });
+}
+
+function setEvergreen(vendorId: string, liveId: string, isEvergreen: boolean) {
+  return getDb().live.updateMany({ where: { id: liveId, vendorId }, data: { isEvergreen } });
 }
 
 describe("evergreen post_live_followup disposable database integration", () => {
   it("does not queue a follow-up from the shared scheduledAt while evergreen is active", async () => {
     const { vendor, live } = await createFixture({ isEvergreen: true });
 
-    const results = await processDuePostLiveFollowups({ now, ruleLimit: 50 });
-
-    expect(results).toEqual(expect.arrayContaining([{ status: "not_scheduled" }]));
+    await expect(processDuePostLiveFollowups({ now, vendorId: vendor.id }))
+      .resolves.toEqual([{ status: "not_scheduled" }]);
     await expect(followupDeliveries(vendor.id, live.id)).resolves.toEqual([]);
   });
 
   it("still queues the follow-up for the same fixed-time Live (control)", async () => {
-    const { vendor, live } = await createFixture({ isEvergreen: false });
+    const { vendor, live, submission } = await createFixture({ isEvergreen: false });
 
-    await processDuePostLiveFollowups({ now, ruleLimit: 50 });
+    await expect(processDuePostLiveFollowups({ now, vendorId: vendor.id }))
+      .resolves.toEqual([{ status: "queued" }]);
 
     const deliveries = await followupDeliveries(vendor.id, live.id);
     expect(deliveries).toHaveLength(1);
-    expect(deliveries[0]).toMatchObject({ status: "queued" });
-    await expect(isCurrentEmailDeliverySnapshot(deliveries[0], now)).resolves.toBe(true);
+    expect(deliveries[0]).toMatchObject({ status: "queued", sourceFormSubmissionId: submission.id });
+    await expect(isCurrentEmailDeliverySnapshot(deliveries[0]!, now)).resolves.toBe(true);
   });
 
   it("rejects at send time, and supersedes on enabling, a follow-up queued before evergreen was enabled", async () => {
-    const db = getDb();
     const { vendor, live } = await createFixture({ isEvergreen: false });
-    await processDuePostLiveFollowups({ now, ruleLimit: 50 });
+    await processDuePostLiveFollowups({ now, vendorId: vendor.id });
     const [queued] = await followupDeliveries(vendor.id, live.id);
     expect(queued).toMatchObject({ status: "queued" });
 
-    await db.live.updateMany({ where: { id: live.id, vendorId: vendor.id }, data: { isEvergreen: true } });
+    await setEvergreen(vendor.id, live.id, true);
 
     // Send-time guard: the stale row is no longer a current snapshot.
-    await expect(isCurrentEmailDeliverySnapshot(queued, now)).resolves.toBe(false);
+    await expect(isCurrentEmailDeliverySnapshot(queued!, now)).resolves.toBe(false);
 
     // Post-commit pass after enabling cancels it outright.
     await expect(supersedeFixedTimeNotificationsForActiveEvergreen({ vendorId: vendor.id, liveId: live.id }, now))
-      .resolves.toBeGreaterThanOrEqual(1);
+      .resolves.toBe(1);
     await expect(followupDeliveries(vendor.id, live.id)).resolves.toEqual([
-      expect.objectContaining({ id: queued.id, status: "superseded", lastErrorCode: "lifecycle_superseded" }),
+      expect.objectContaining({ id: queued!.id, status: "superseded", lastErrorCode: "lifecycle_superseded" }),
     ]);
+  });
+
+  it("reactivates the superseded follow-up once evergreen is turned off again, ready to send", async () => {
+    const { vendor, live, submission } = await createFixture({ isEvergreen: false });
+    await processDuePostLiveFollowups({ now, vendorId: vendor.id });
+    const [queued] = await followupDeliveries(vendor.id, live.id);
+    expect(queued).toMatchObject({ status: "queued" });
+
+    // On: the queued row is cancelled and nothing new is scheduled.
+    await setEvergreen(vendor.id, live.id, true);
+    await expect(supersedeFixedTimeNotificationsForActiveEvergreen({ vendorId: vendor.id, liveId: live.id }, now))
+      .resolves.toBe(1);
+    await expect(processDuePostLiveFollowups({ now, vendorId: vendor.id }))
+      .resolves.toEqual([{ status: "not_scheduled" }]);
+
+    // Off: the next run brings the same deterministic row back.
+    await setEvergreen(vendor.id, live.id, false);
+    const later = new Date(now.getTime() + 60_000);
+    await expect(processDuePostLiveFollowups({ now: later, vendorId: vendor.id }))
+      .resolves.toEqual([{ status: "reactivated" }]);
+
+    const deliveries = await followupDeliveries(vendor.id, live.id);
+    expect(deliveries).toEqual([
+      expect.objectContaining({
+        id: queued!.id,
+        sourceFormSubmissionId: submission.id,
+        status: "queued",
+        lastErrorCode: null,
+        attemptCount: 0,
+        nextAttemptAt: later,
+      }),
+    ]);
+    // The payload was re-encrypted, and the row passes the send-time guard.
+    expect(deliveries[0]!.payloadEncryptedEnvelope).not.toBe(queued!.payloadEncryptedEnvelope);
+    await expect(isCurrentEmailDeliverySnapshot(deliveries[0]!, later)).resolves.toBe(true);
+
+    // A further run is a plain duplicate, not another reactivation.
+    await expect(processDuePostLiveFollowups({ now: later, vendorId: vendor.id }))
+      .resolves.toEqual([{ status: "duplicate" }]);
+  });
+
+  it("never re-sends a follow-up that was already sent before the on/off round trip", async () => {
+    const db = getDb();
+    const { vendor, live } = await createFixture({ isEvergreen: false });
+    await processDuePostLiveFollowups({ now, vendorId: vendor.id });
+    const [queued] = await followupDeliveries(vendor.id, live.id);
+    await db.emailDelivery.updateMany({
+      where: { id: queued!.id, vendorId: vendor.id },
+      data: { status: "sent", sentAt: now, nextAttemptAt: null },
+    });
+
+    await setEvergreen(vendor.id, live.id, true);
+    await expect(supersedeFixedTimeNotificationsForActiveEvergreen({ vendorId: vendor.id, liveId: live.id }, now))
+      .resolves.toBe(0);
+    await setEvergreen(vendor.id, live.id, false);
+
+    await expect(processDuePostLiveFollowups({ now, vendorId: vendor.id }))
+      .resolves.toEqual([{ status: "already_sent" }]);
+    await expect(followupDeliveries(vendor.id, live.id)).resolves.toEqual([
+      expect.objectContaining({ id: queued!.id, status: "sent" }),
+    ]);
+  });
+
+  it("does not reactivate a superseded revision when another revision of the same rule was sent", async () => {
+    const db = getDb();
+    const { vendor, live } = await createFixture({ isEvergreen: false });
+    await processDuePostLiveFollowups({ now, vendorId: vendor.id });
+    const [queued] = await followupDeliveries(vendor.id, live.id);
+    // The current revision was superseded; an older revision of the same rule
+    // (same idempotency prefix, different id) already reached the recipient.
+    await db.emailDelivery.updateMany({
+      where: { id: queued!.id, vendorId: vendor.id },
+      data: { status: "superseded", nextAttemptAt: null, lastErrorCode: "lifecycle_superseded" },
+    });
+    const prefix = queued!.idempotencyKey.slice(0, queued!.idempotencyKey.length - queued!.id.length);
+    const full = await db.emailDelivery.findUniqueOrThrow({ where: { id: queued!.id } });
+    await db.emailDelivery.create({
+      data: {
+        id: `${queued!.id}-older`,
+        vendorId: vendor.id,
+        sourceTemplateId: full.sourceTemplateId,
+        sourceLiveId: live.id,
+        sourceFormSubmissionId: full.sourceFormSubmissionId,
+        trigger: "post_live_followup",
+        payloadEncryptedEnvelope: "disposable-not-dispatched",
+        recipientHash: full.recipientHash,
+        recipientMaskedEmail: full.recipientMaskedEmail,
+        idempotencyKey: `${prefix}${queued!.id}-older`,
+        status: "sent",
+        sentAt: now,
+      },
+    });
+
+    await expect(processDuePostLiveFollowups({ now, vendorId: vendor.id }))
+      .resolves.toEqual([{ status: "already_sent" }]);
+    await expect(db.emailDelivery.findUniqueOrThrow({ where: { id: queued!.id }, select: { status: true } }))
+      .resolves.toEqual({ status: "superseded" });
   });
 
   it("keeps an ended Live's follow-up when the evergreen flag is set on it (evergreen is not active)", async () => {
@@ -159,17 +274,17 @@ describe("evergreen post_live_followup disposable database integration", () => {
       where: { id: live.id, vendorId: vendor.id },
       data: { status: "ended", endedAt: new Date("2026-09-01T02:10:00.000Z") },
     });
-    await processDuePostLiveFollowups({ now, ruleLimit: 50 });
+    await processDuePostLiveFollowups({ now, vendorId: vendor.id });
     const [queued] = await followupDeliveries(vendor.id, live.id);
     expect(queued).toMatchObject({ status: "queued" });
 
-    await db.live.updateMany({ where: { id: live.id, vendorId: vendor.id }, data: { isEvergreen: true } });
+    await setEvergreen(vendor.id, live.id, true);
 
     await expect(supersedeFixedTimeNotificationsForActiveEvergreen({ vendorId: vendor.id, liveId: live.id }, now))
       .resolves.toBe(0);
-    await expect(isCurrentEmailDeliverySnapshot(queued, now)).resolves.toBe(true);
+    await expect(isCurrentEmailDeliverySnapshot(queued!, now)).resolves.toBe(true);
     await expect(followupDeliveries(vendor.id, live.id)).resolves.toEqual([
-      expect.objectContaining({ id: queued.id, status: "queued" }),
+      expect.objectContaining({ id: queued!.id, status: "queued" }),
     ]);
   });
 });

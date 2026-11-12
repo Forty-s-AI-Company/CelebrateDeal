@@ -597,17 +597,64 @@ export async function ensurePostLiveFollowupDelivery(
     };
   } catch (error) {
     if (!isUniqueConflict(error)) throw error;
-    const existing = await db.emailDelivery.findUnique({
-      where: { vendorId_idempotencyKey: { vendorId: input.vendorId, idempotencyKey } },
-      select: { id: true, status: true, nextAttemptAt: true },
-    });
-    if (!existing) throw error;
-    return {
-      status: "duplicate" as const,
-      deliveryId: existing.id,
-      deliveryStatus: existing.status,
-      nextAttemptAt: existing.nextAttemptAt,
-    };
+    // The same revision already exists. If it was superseded (e.g. evergreen
+    // was switched on and then off again) and nothing under this rule reached
+    // the recipient, bring it back with a freshly encrypted payload, like
+    // before_live / during_live do; otherwise it is a plain duplicate.
+    return db.$transaction(async (tx) => {
+      const existing = await tx.emailDelivery.findFirst({
+        where: {
+          id: deliveryId,
+          vendorId: input.vendorId,
+          sourceLiveId: input.liveId,
+          sourceFormSubmissionId: input.formSubmissionId,
+          trigger: "post_live_followup",
+          idempotencyKey,
+        },
+        select: { id: true, status: true, nextAttemptAt: true, updatedAt: true },
+      });
+      if (!existing) throw error;
+      const duplicate = {
+        status: "duplicate" as const,
+        deliveryId: existing.id,
+        deliveryStatus: existing.status,
+        nextAttemptAt: existing.nextAttemptAt,
+      };
+      if (existing.status !== "superseded") return duplicate;
+      const alreadySent = await tx.emailDelivery.findFirst({
+        where: {
+          vendorId: input.vendorId,
+          sourceLiveId: input.liveId,
+          sourceFormSubmissionId: input.formSubmissionId,
+          trigger: "post_live_followup",
+          idempotencyKey: { startsWith: idempotencyPrefix },
+          status: "sent",
+        },
+        select: { id: true },
+      });
+      if (alreadySent) return { status: "already_sent" as const, deliveryId: alreadySent.id, nextAttemptAt: null };
+      const blocked = isSuppressed || isBlacklisted;
+      const reactivated = await tx.emailDelivery.updateMany({
+        where: { id: existing.id, vendorId: input.vendorId, status: "superseded", updatedAt: existing.updatedAt },
+        data: {
+          sourceTemplateId: template.id,
+          ...protectedPayload,
+          status: blocked ? "suppressed" : "queued",
+          attemptCount: 0,
+          nextAttemptAt: blocked ? null : now,
+          claimedAt: null,
+          failedAt: null,
+          lastErrorCode: isBlacklisted ? "recipient_blacklisted" : isSuppressed ? "recipient_suppressed" : null,
+        },
+      });
+      if (reactivated.count !== 1) return duplicate;
+      await tx.emailDelivery.updateMany(supersedeOlder);
+      return {
+        status: blocked ? "suppressed" as const : "reactivated" as const,
+        deliveryId: existing.id,
+        nextAttemptAt: blocked ? null : now,
+      };
+    }, { isolationLevel: "Serializable" });
   }
 }
 
@@ -642,13 +689,18 @@ function fixedSessionPlayedUntil(live: { status: string; endedAt: Date | null },
 }
 
 export async function processDuePostLiveFollowups(
-  options: { now?: Date; ruleLimit?: number; recipientLimitPerRule?: number } = {},
+  /** `vendorId` scopes one run to a single tenant (tests, operations); the job runs unscoped. */
+  options: { now?: Date; ruleLimit?: number; recipientLimitPerRule?: number; vendorId?: string } = {},
 ) {
   const now = options.now ?? new Date();
   const ruleLimit = Math.min(Math.max(options.ruleLimit ?? 20, 1), 50);
   const recipientLimit = Math.min(Math.max(options.recipientLimitPerRule ?? 100, 1), 250);
   const db = getDb();
-  const ruleWhere = { trigger: "post_live_followup", isActive: true } as const;
+  const ruleWhere = {
+    ...(options.vendorId ? { vendorId: options.vendorId } : {}),
+    trigger: "post_live_followup",
+    isActive: true,
+  } as const;
   const ruleCount = await db.liveNotificationRule.count({ where: ruleWhere });
   const rules = await db.liveNotificationRule.findMany({
     where: ruleWhere,
