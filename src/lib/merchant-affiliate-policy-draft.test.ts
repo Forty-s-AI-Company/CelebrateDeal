@@ -99,6 +99,17 @@ describe("欄位錯誤定位到具體列", () => {
     expect(validatePolicyDraft(value)).toEqual({});
   });
 
+  it("瀏覽器回報 badInput 的件數欄位（值為空字串）也標錯，包含本來可留空的最後一階結束件數", () => {
+    const value = draft({ tiers: [{ minQuantity: "1", maxQuantity: "5", ratePercent: "10" }, { minQuantity: "6", maxQuantity: "", ratePercent: "10" }] });
+    expect(validatePolicyDraft(value)).toEqual({});
+    expect(validatePolicyDraft(value, { badInputKeys: new Set(["tierEnd-1"]) })).toEqual({
+      "tierEnd-1": { label: "第 2 階結束件數", message: "請填 1 以上的整數，最後一階要留空。" },
+    });
+    expect(validatePolicyDraft(draft({ tiers: [{ minQuantity: "", maxQuantity: "", ratePercent: "10" }] }), { badInputKeys: new Set(["tierStart-0"]) })).toEqual({
+      "tierStart-0": { label: "第 1 階起始件數", message: "請填 1 以上的整數。" },
+    });
+  });
+
   it("超過總上限：標在總上限欄位，並排在第一個", () => {
     const errors = validatePolicyDraft(draft({ maxTotalPercent: "20", tiers: [{ minQuantity: "1", maxQuantity: "", ratePercent: "15" }], uplines: [{ ratePercent: "3" }, { ratePercent: "2.01" }], overrides: [{ uiId: 0, productId: "", ratePercent: "1" }] }));
     expect(Object.keys(errors)).toEqual(["maxTotalPercent", "overrideProduct-u0"]);

@@ -49,14 +49,16 @@ function PercentField({ label, name, fieldKey, value, onChange, error, hint, edi
  * 件數欄位：直接以 name 送出畫面上的值（伺服器只收 1 到 10 位整數）。hydrate 前 readOnly：
  * 否則 hydrate 時 React 會把使用者先改的值還原成 state，畫面與送出的階梯邊界就不是使用者以為的值。
  */
-function QuantityField({ label, name, fieldKey, value, onChange, error, required, editable }: {
-  label: string; name: string; fieldKey: string; value: string; onChange: (value: string) => void; error?: string; required?: boolean; editable: boolean;
+function QuantityField({ label, name, fieldKey, value, onChange, onBadInput, error, required, editable }: {
+  label: string; name: string; fieldKey: string; value: string; onChange: (value: string) => void; onBadInput: (badInput: boolean) => void; error?: string; required?: boolean; editable: boolean;
 }) {
   const field = useFieldMessages(error);
   return <div className="grid gap-1.5">
     <label className="grid gap-1 text-sm font-medium text-slate-800">{label}
       <input className={`${inputBase} ${field.controlClass}`} name={name} type="number" min="1" step="1" required={required} readOnly={!editable} value={value}
-        onChange={event => onChange(event.target.value)} id={policyControlId(fieldKey)} data-policy-field={fieldKey} {...field.controlProps} />
+        onChange={event => onChange(event.target.value)}
+        // 從空白直接輸入「e」時 value 仍是空字串，React 不會觸發 onChange；badInput 改由每次原生 input 事件回報。
+        onInput={event => onBadInput(event.currentTarget.validity.badInput)} id={policyControlId(fieldKey)} data-policy-field={fieldKey} {...field.controlProps} />
     </label>
     {field.messages}
   </div>;
@@ -88,7 +90,9 @@ export function MerchantAffiliatePolicyForm({ initial, revision, csrfToken, csrf
   const pauseRequested = useRef(false);
 
   const availableProductIds = useMemo(() => new Set(products.map(product => product.id)), [products]);
-  const liveErrors = useMemo(() => validatePolicyDraft(draft, { availableProductIds }), [draft, availableProductIds]);
+  // 件數欄位的 badInput（例如輸入「1e」時 value 是空字串）：只有瀏覽器知道，由欄位回報。
+  const [badInputKeys, setBadInputKeys] = useState<ReadonlySet<string>>(() => new Set());
+  const liveErrors = useMemo(() => validatePolicyDraft(draft, { availableProductIds, badInputKeys }), [draft, availableProductIds, badInputKeys]);
   const terms = useMemo(() => draftToTerms(draft), [draft]);
   const serverError = Boolean(state.message) && state.revision === null;
   const clientBlocked = blocked !== null && blocked.state === state;
@@ -126,6 +130,18 @@ export function MerchantAffiliatePolicyForm({ initial, revision, csrfToken, csrf
 
   const update = (change: (current: MerchantAffiliatePolicyDraft) => MerchantAffiliatePolicyDraft) => setDraft(current => change(current));
   const setTier = (index: number, patch: Partial<MerchantAffiliatePolicyDraft["tiers"][number]>) => update(current => ({ ...current, tiers: current.tiers.map((tier, position) => position === index ? { ...tier, ...patch } : tier) }));
+  const setBadInput = (key: string, bad: boolean) => setBadInputKeys(current => {
+    if (current.has(key) === bad) return current;
+    const next = new Set(current);
+    if (bad) next.add(key); else next.delete(key);
+    return next;
+  });
+  function removeLastTier() {
+    const index = draft.tiers.length - 1;
+    setBadInput(policyFieldKey.tierStart(index), false);
+    setBadInput(policyFieldKey.tierEnd(index), false);
+    update(current => ({ ...current, tiers: current.tiers.slice(0, -1) }));
+  }
   const setUpline = (index: number, ratePercent: string) => update(current => ({ ...current, uplines: current.uplines.map((level, position) => position === index ? { ratePercent } : level) }));
   const setOverride = (uiId: number, patch: Partial<MerchantAffiliatePolicyDraft["overrides"][number]>) => update(current => ({ ...current, overrides: current.overrides.map(item => item.uiId === uiId ? { ...item, ...patch } : item) }));
   function addTier() {
@@ -172,14 +188,14 @@ export function MerchantAffiliatePolicyForm({ initial, revision, csrfToken, csrf
           <Section id="policy-tiers" title="成交件數階梯" description={`依新政策開始後累計已付款件數計算，退款不會倒扣件數。最後一階的結束件數留空。已設定 ${draft.tiers.length}／${MAX_POLICY_TIERS} 階。`}>
             <ol className="grid gap-3">
               {draft.tiers.map((tier, index) => <li key={index} data-policy-row={`tier-${index}`} className="grid gap-3 rounded-md border border-slate-200 p-3 sm:grid-cols-3">
-                <QuantityField label={`第 ${index + 1} 階起始件數`} name="tierStart" fieldKey={policyFieldKey.tierStart(index)} required value={tier.minQuantity} onChange={value => setTier(index, { minQuantity: value })} error={errorOf(policyFieldKey.tierStart(index))} editable={hydrated} />
-                <QuantityField label={`第 ${index + 1} 階結束件數`} name="tierEnd" fieldKey={policyFieldKey.tierEnd(index)} value={tier.maxQuantity} onChange={value => setTier(index, { maxQuantity: value })} error={errorOf(policyFieldKey.tierEnd(index))} editable={hydrated} />
+                <QuantityField label={`第 ${index + 1} 階起始件數`} name="tierStart" fieldKey={policyFieldKey.tierStart(index)} required value={tier.minQuantity} onChange={value => setTier(index, { minQuantity: value })} onBadInput={bad => setBadInput(policyFieldKey.tierStart(index), bad)} error={errorOf(policyFieldKey.tierStart(index))} editable={hydrated} />
+                <QuantityField label={`第 ${index + 1} 階結束件數`} name="tierEnd" fieldKey={policyFieldKey.tierEnd(index)} value={tier.maxQuantity} onChange={value => setTier(index, { maxQuantity: value })} onBadInput={bad => setBadInput(policyFieldKey.tierEnd(index), bad)} error={errorOf(policyFieldKey.tierEnd(index))} editable={hydrated} />
                 <PercentField label={`第 ${index + 1} 階直接佣金（%）`} name="tierRate" fieldKey={policyFieldKey.tierRate(index)} value={tier.ratePercent} onChange={value => setTier(index, { ratePercent: value })} error={errorOf(policyFieldKey.tierRate(index))} editable={hydrated} />
               </li>)}
             </ol>
             <div className="flex flex-wrap gap-3">
               <button type="button" className={buttonClass} disabled={draft.tiers.length >= MAX_POLICY_TIERS} onClick={addTier}>新增階梯</button>
-              <button type="button" className={buttonClass} disabled={draft.tiers.length <= 1} onClick={() => update(current => ({ ...current, tiers: current.tiers.slice(0, -1) }))}>移除最後階梯</button>
+              <button type="button" className={buttonClass} disabled={draft.tiers.length <= 1} onClick={removeLastTier}>移除最後階梯</button>
             </div>
           </Section>
 

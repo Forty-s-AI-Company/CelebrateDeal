@@ -218,6 +218,37 @@ describe("欄位層級錯誤", () => {
     expect(mocks.save).not.toHaveBeenCalled();
   });
 
+  it("件數欄位 badInput（例如輸入 1e）時，原生驗證擋下送出並在摘要列出該欄位；改回合法值後消失", async () => {
+    await render({ ...baseTerms, tiers: [{ minQuantity: 1, maxQuantity: 5, rateBps: 1000 }, { minQuantity: 6, maxQuantity: null, rateBps: 1000 }] });
+    const end = control("tierEnd-1") as HTMLInputElement;
+    let bad = true;
+    Object.defineProperty(end, "validity", { configurable: true, get: () => ({ badInput: bad, valid: !bad }) });
+    await setValue(end, "");
+    // 瀏覽器在送出時對 badInput 欄位觸發 invalid、不觸發 submit。
+    await act(async () => { end.dispatchEvent(new Event("invalid", { cancelable: true })); });
+    expect(mocks.save).not.toHaveBeenCalled();
+    expect([...container.querySelectorAll("[data-form-error-summary] li")].map(item => item.textContent)).toEqual(["第 2 階結束件數：請填 1 以上的整數，最後一階要留空。"]);
+    expect(end.getAttribute("aria-invalid")).toBe("true");
+    bad = false;
+    await setValue(end, "");
+    expect(end.getAttribute("aria-invalid")).toBeNull();
+    expect(container.querySelector("[data-form-error-summary]")).toBeNull();
+  });
+
+  it("移除最後一階時一併清除它的 badInput，重新新增的階梯不會帶著舊錯誤", async () => {
+    await render({ ...baseTerms, tiers: [{ minQuantity: 1, maxQuantity: 5, rateBps: 1000 }, { minQuantity: 6, maxQuantity: null, rateBps: 1000 }] });
+    const start = control("tierStart-1") as HTMLInputElement;
+    Object.defineProperty(start, "validity", { configurable: true, get: () => ({ badInput: true, valid: false }) });
+    await setValue(start, "");
+    await click("移除最後階梯");
+    await click("新增階梯");
+    mocks.save.mockResolvedValue({ message: "已發布", revision: 2 });
+    await setValue(control("tierEnd-0"), "5");
+    await submit();
+    expect(mocks.save).toHaveBeenCalledTimes(1);
+    expect((mocks.save.mock.lastCall![1] as FormData).getAll("tierStart")).toEqual(["1", "6"]);
+  });
+
   it("商品佣金的錯誤指到那一列的商品選單", async () => {
     await render();
     await click("新增商品佣金");

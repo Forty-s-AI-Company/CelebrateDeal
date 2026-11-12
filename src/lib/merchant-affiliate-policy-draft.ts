@@ -77,6 +77,11 @@ export type PolicyValidationOptions = {
    * 伺服器在交易內另外檢查 ownership，這裡只是讓錯誤落在那一列。
    */
   availableProductIds?: ReadonlySet<string>;
+  /**
+   * 瀏覽器回報 `validity.badInput` 的件數欄位鍵（例如輸入了「1e」）。這時欄位值是空字串，
+   * 原生驗證會擋下送出，但空的最後一階結束件數本身合法，所以要另外標出來。
+   */
+  badInputKeys?: ReadonlySet<string>;
 };
 
 export function validatePolicyDraft(draft: MerchantAffiliatePolicyDraft, options: PolicyValidationOptions = {}): Record<string, PolicyFieldError> {
@@ -89,13 +94,15 @@ export function validatePolicyDraft(draft: MerchantAffiliatePolicyDraft, options
     const name = `第 ${index + 1} 階`;
     const start = parsePolicyQuantity(tier.minQuantity);
     const isLast = index === tierCount - 1;
-    if (start === null) errors[policyFieldKey.tierStart(index)] = { label: `${name}起始件數`, message: "請填 1 以上的整數。" };
+    if (start === null || options.badInputKeys?.has(policyFieldKey.tierStart(index))) errors[policyFieldKey.tierStart(index)] = { label: `${name}起始件數`, message: "請填 1 以上的整數。" };
     else if (index === 0 && start !== 1) errors[policyFieldKey.tierStart(index)] = { label: `${name}起始件數`, message: "第一階必須從第 1 件開始。" };
     else if (index > 0) {
       const previousEnd = parsePolicyQuantity(draft.tiers[index - 1]!.maxQuantity);
       if (previousEnd !== null && start !== previousEnd + 1) errors[policyFieldKey.tierStart(index)] = { label: `${name}起始件數`, message: `要接續上一階，填 ${previousEnd + 1}。` };
     }
-    if (isLast) {
+    if (options.badInputKeys?.has(policyFieldKey.tierEnd(index))) {
+      errors[policyFieldKey.tierEnd(index)] = { label: `${name}結束件數`, message: isLast ? "請填 1 以上的整數，最後一階要留空。" : "請填 1 以上的整數。" };
+    } else if (isLast) {
       if (tier.maxQuantity !== "") errors[policyFieldKey.tierEnd(index)] = { label: `${name}結束件數`, message: "最後一階的結束件數要留空。" };
     } else {
       const end = parsePolicyQuantity(tier.maxQuantity);
