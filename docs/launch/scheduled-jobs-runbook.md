@@ -23,7 +23,7 @@
 
 每個可排程端點的 GET 與 POST 共用同一個 handler，只差驗證哪一把密鑰。GET 不接受 `JOB_SECRET`，POST 不接受 `CRON_SECRET`（`scripts/scheduled-jobs-runner.test.mjs` 與各 `route.test.ts` 有斷言）。
 
-> 2026-11-12 依程式現況更新：常青場（evergreen）的場次**不經由**本文件的任何排程。場次在觀眾進入時由 `src/app/api/live-evergreen-session/route.ts` 依伺服器時間即時計算並寫入簽章 cookie（`src/lib/evergreen-viewer-session.ts`）。本節的背景工作與常青場的關係只有一點：生效中的常青場不會被排固定時間提醒，常青生效期間也不排課後通知（`post_live_followup`；逐觀眾的課後通知尚未實作，常青場結束或改回草稿後，會依原開播時間補寄給已驗證的報名者），`email-deliveries` 與 live 通知物化會略過它們（`src/lib/email-delivery.ts`、`src/lib/live-notification-delivery.ts`）。因此 production 排程（D-06）尚未決定，不會讓常青場的觀看與場次分配失效，只影響報名信、LINE 與其他提醒類通知。
+> 2026-11-12 依程式現況更新：常青場（evergreen）的場次**不經由**本文件的任何排程。場次在觀眾進入時由 `src/app/api/live-evergreen-session/route.ts` 依伺服器時間即時計算並寫入簽章 cookie（`src/lib/evergreen-viewer-session.ts`）。本節的背景工作與常青場的關係只有一點：生效中的常青場不會被排固定時間提醒，常青生效期間也不排課後通知（`post_live_followup`；逐觀眾的課後通知尚未實作，關閉常青設定、常青場結束或改回草稿後，會依原開播時間補寄給已驗證的報名者），`email-deliveries` 與 live 通知物化會略過它們（`src/lib/email-delivery.ts`、`src/lib/live-notification-delivery.ts`）。因此 production 排程（D-06）尚未決定，不會讓常青場的觀看與場次分配失效，只影響報名信、LINE 與其他提醒類通知。
 
 ## 3. 主要路徑：GitHub Actions 排程（staging）
 
