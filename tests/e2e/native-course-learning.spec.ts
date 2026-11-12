@@ -76,6 +76,41 @@ test("manager publishes a lesson; a purchasing learner saves, resumes, completes
     await expect(learner.getByText("100% 完成")).toBeVisible();
     await learner.reload();
     await expect(learner.getByRole("button", { name: "已標記完成" })).toBeVisible();
+
+    // F-5: the manager renames the chapter in place; the learner sees the new
+    // title on reload and keeps the saved progress and completion.
+    await expect(learner.getByRole("heading", { name: "第一章", exact: true })).toBeVisible();
+    const progressBeforeRename = await db.courseLessonProgress.findFirstOrThrow({ where: { vendorId: vendor.id } });
+    await page.goto(`/products/${product.id}/lessons`);
+    await expect(page.getByRole("heading", { name: "第一章", level: 2, exact: true })).toBeVisible();
+    await page.getByText("重新命名章節").click();
+    await page.getByLabel("章節名稱").fill("第一章：開場");
+    await page.getByRole("button", { name: "儲存章節名稱" }).click();
+    await expect(page.getByText("章節名稱已更新，學員端會看到新名稱。")).toBeVisible();
+    await expect(page.getByRole("heading", { name: "第一章：開場", level: 2 })).toBeVisible();
+    expect((await db.courseLesson.findFirstOrThrow({ where: { id: lesson.id } })).chapterTitle).toBe("第一章：開場");
+    // An unpublished lesson in a second chapter; renaming it onto the first
+    // chapter's title is refused instead of merging the chapters.
+    const newLesson = page.locator("form").filter({ has: page.getByRole("heading", { name: "新增單元", exact: true }) });
+    await newLesson.getByLabel("章節", { exact: true }).fill("附錄");
+    await newLesson.getByLabel("單元名稱").fill("補充教材");
+    await newLesson.getByRole("button", { name: "新增單元", exact: true }).click();
+    await expect(page.locator('[role="status"]:not(.sr-only)')).toHaveText("課程單元已儲存。");
+    const appendix = page.locator("section").filter({ has: page.getByRole("heading", { name: "附錄", level: 2 }) });
+    await appendix.getByText("重新命名章節").click();
+    await appendix.getByLabel("章節名稱").fill("第一章：開場");
+    await appendix.getByRole("button", { name: "儲存章節名稱" }).click();
+    await expect(page.getByRole("alert").filter({ hasText: "章節名稱沒有更新。" })).toContainText("這門課已經有同名的章節，請換一個名稱。");
+    await expect(page.getByLabel("章節名稱", { exact: true }).and(page.locator('[aria-invalid="true"]'))).toHaveValue("附錄");
+    expect(await db.courseChapter.count({ where: { vendorId: vendor.id } })).toBe(2);
+
+    await learner.reload();
+    await expect(learner.getByRole("heading", { name: "第一章：開場" })).toBeVisible();
+    await expect(learner.getByRole("heading", { name: "第一章", exact: true })).toHaveCount(0);
+    await expect(learner.getByRole("heading", { name: "附錄" })).toHaveCount(0);
+    await expect(learner.getByText("100% 完成")).toBeVisible();
+    await expect(learner.getByRole("button", { name: "已標記完成" })).toBeVisible();
+    expect(await db.courseLessonProgress.findFirstOrThrow({ where: { vendorId: vendor.id } })).toEqual(progressBeforeRename);
     // Use the browser transport used by the actual download link. A standalone
     // APIRequestContext has different Secure-cookie handling on local HTTP.
     const certificate = await learner.evaluate(async (url) => {
