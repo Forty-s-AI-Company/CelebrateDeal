@@ -20,13 +20,14 @@
 | [#585](https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/585) | U3：漏斗編輯器內發布（以回滾交易做發布檢查）、自動儲存、結帳元件就地綁定商品。已審查 |
 | [#586](https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/586) | U6：側欄依專案流程預設收合、修正同名與重複圖示、新增 Ctrl+K 指令面板 |
 | [#587](https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/587) | U5：聯盟政策改用百分比，加分段、欄位錯誤與佣金試算（重用伺服器結算函式）。已審查，30 萬份隨機草稿與伺服器比對 0 筆不一致 |
+| [#588](https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/588) | U1 單一上線路徑：五份上線清單合為單一來源；修正 `project_funnel` 導向與 PayUni 文案；不適用的步驟不計入，諮詢專案可以完成到 100%。已審查 |
 | [#589](https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/589) | S5：加入 CodeQL 靜態分析（PR、merge queue、每週） |
 | [#590](https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/590) | 學員討論區在 hydration 完成前停用表單。原本在慢網路下送出會把心得內容放進網址，這也是 CI 偶發失敗的根因 |
 | [#591](https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/591) | 修正 CI 才出現的直播精靈 axe 對比失敗：停用按鈕恢復可用時的 opacity 淡入。加了守門測試，CI annotation 也會帶出掃描點 |
 | [#592](https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/592) | 直播商品改依勾選順序決定置頂，並可「設為置頂」；編輯頁與觀看頁用同一排序。已審查 |
 | [#593](https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/593) | 指令面板的觸發按鈕要等快捷鍵掛上後才可用，修正 CI 偶發失敗 |
 
-尚在 merge queue：[#588](https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/588) U1 單一上線路徑。五份上線清單合為單一來源，修正 `project_funnel` 導向與 PayUni 文案，諮詢專案可以完成到 100%。已審查，CI 曾被上面的偶發失敗擋住，已合入修正後重跑。
+共 18 個 PR 合併，目前沒有開著的 PR。
 
 ## 2. 等 Fable 的項目
 
