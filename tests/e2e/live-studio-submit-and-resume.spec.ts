@@ -50,7 +50,10 @@ test("resumed live studio draft keeps every binding, reuses its row and schedule
     await expect(page.getByLabel("直播說明")).toHaveValue("合成說明：原型食物入門。");
     await expect(page.locator("select[name=videoId]")).toHaveValue(fixture.video.id);
     // Earlier step panels are `hidden` (and 進階設定 collapsed), so query by name rather than accessible role.
-    await expect(page.locator(`input[name=productIds][value="${fixture.product.id}"]`)).toBeChecked();
+    // The visible checkbox has no name; the submitted productIds are hidden fields in selection order.
+    await expect(page.locator(`input[type=checkbox][data-live-product-option="${fixture.product.id}"]`)).toBeChecked();
+    await expect(page.locator("input[name=productIds]")).toHaveCount(1);
+    await expect(page.locator("input[name=productIds]")).toHaveValue(fixture.product.id);
     await expect(page.getByLabel("促銷短句")).toHaveValue("直播限定原型食物優惠");
     await expect(page.locator("select[name=formId]")).toHaveValue(fixture.form.id);
     await expect(page.getByLabel(/^開播時間/u)).toHaveValue("2026-11-29T20:00");
@@ -158,7 +161,10 @@ test("an eight-step (v2) draft already in the database resumes on 通知 and sch
     await expect(liveStudioStepButton(page, "notifications")).toHaveAttribute("aria-current", "step");
     await expect(page.locator("select[name=messageTemplateId]")).toHaveValue(fixture.template.id);
     await expect(page.locator("select[name=videoId]")).toHaveValue(fixture.video.id);
-    await expect(page.locator(`input[name=productIds][value="${fixture.product.id}"]`)).toBeChecked();
+    // The visible checkbox has no name; the submitted productIds are hidden fields in selection order.
+    await expect(page.locator(`input[type=checkbox][data-live-product-option="${fixture.product.id}"]`)).toBeChecked();
+    await expect(page.locator("input[name=productIds]")).toHaveCount(1);
+    await expect(page.locator("input[name=productIds]")).toHaveValue(fixture.product.id);
 
     await liveStudioStepButton(page, "publish").click();
     await expect(page.getByText("發布條件已完成")).toBeVisible();

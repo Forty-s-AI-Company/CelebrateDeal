@@ -210,7 +210,9 @@ export default async function EditLivePage({
     db.live.findFirst({
       where: { id, vendorId: vendor.id, ...resourceScope.liveAndForm },
       include: {
-        products: true,
+        // The studio's selection order is the order viewers see (the public live
+        // page sorts by sortOrder, then id); saving pins the first one again.
+        products: { orderBy: [{ sortOrder: "asc" }, { id: "asc" }] },
         notificationRules: { orderBy: [{ trigger: "asc" }, { sortOrder: "asc" }, { id: "asc" }] },
         sessions: { orderBy: [{ startAt: "asc" }, { id: "asc" }], select: { startAt: true, capacity: true, registeredCount: true, status: true } },
       },

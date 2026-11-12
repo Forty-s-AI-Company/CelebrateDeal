@@ -19,7 +19,7 @@ test.use({ trace: "off", screenshot: "off", video: "off" });
 test.setTimeout(180_000);
 test.afterAll(async () => db.$disconnect());
 
-test("a merchant without a listed product creates one in the studio's drawer, it is ticked and published with the live without leaving /lives/new", async ({ page }) => {
+test("a merchant without a listed product creates one in the studio's drawer, it is ticked, a second one is pinned with 設為置頂, and both are published with the live without leaving /lives/new", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 800 });
   const nativeDialogs: string[] = [];
   page.on("dialog", (dialog) => {
@@ -152,6 +152,28 @@ test("a merchant without a listed product creates one in the studio's drawer, it
     const second = await db.product.findFirstOrThrow({ where: { vendorId: fixture.vendor.id, name: secondName } });
     expect(second).toMatchObject({ priceCents: 39_000, inventory: 12, isActive: true });
 
+    // Ticking the second product appends it in selection order. It is listed first, but the
+    // pinned product stays the first one ticked (the studio used to bind in list order).
+    const firstRow = salesPanel.locator(`[data-live-product-row="${created.id}"]`);
+    const secondRow = salesPanel.locator(`[data-live-product-row="${second.id}"]`);
+    await secondCheckbox.check();
+    await expect(firstRow.getByText("置頂", { exact: true })).toBeVisible();
+    await expect(secondRow.getByText("第 2 個", { exact: true })).toBeVisible();
+    await expect(salesPanel.locator("input[name=productIds]")).toHaveCount(2);
+    expect(await salesPanel.locator("input[name=productIds]").evaluateAll((inputs) => inputs.map((input) => (input as HTMLInputElement).value))).toEqual([created.id, second.id]);
+    await expect(firstRow.getByRole("button")).toHaveCount(0);
+
+    // 設為置頂 with the keyboard: the second product becomes the pinned one and focus stays on its row.
+    const pinSecond = secondRow.getByRole("button", { name: `設為置頂：${secondName}`, exact: true });
+    await pinSecond.focus();
+    await page.keyboard.press("Enter");
+    await expect(secondRow.getByText("置頂", { exact: true })).toBeVisible();
+    await expect(secondCheckbox).toBeFocused();
+    await expect(firstRow.getByText("第 2 個", { exact: true })).toBeVisible();
+    await expect(firstRow.getByRole("button", { name: `設為置頂：${productName}`, exact: true })).toBeVisible();
+    await expect(salesPanel.locator("[data-live-product-order-status]")).toHaveText(`已將「${secondName}」設為置頂商品。`);
+    expect(await salesPanel.locator("input[name=productIds]").evaluateAll((inputs) => inputs.map((input) => (input as HTMLInputElement).value))).toEqual([second.id, created.id]);
+
     await page.getByRole("button", { name: "下一步", exact: true }).click();
     // 通知
     await expect(liveStudioStepButton(page, "notifications")).toHaveAttribute("aria-current", "step");
@@ -165,20 +187,23 @@ test("a merchant without a listed product creates one in the studio's drawer, it
     expect(new URL(page.url()).pathname).toBe("/lives/new");
     expect(documentNavigations.filter((pathname) => pathname !== "/lives/new")).toEqual([]);
 
-    // The autosaved draft carries the new product, and scheduling binds it.
+    // The autosaved draft carries both products in the chosen order, and scheduling binds them so.
     await expect.poll(async () => {
       const draft = await db.liveStudioDraft.findFirst({ where: { vendorId: fixture!.vendor.id }, select: { payload: true } });
       return (draft?.payload as { productIds?: string[] } | undefined)?.productIds ?? null;
-    }).toEqual([created.id]);
+    }).toEqual([second.id, created.id]);
     await page.getByRole("button", { name: "建立並排程", exact: true }).click();
     await page.getByRole("alertdialog", { name: "確定要建立並排程這場直播嗎？" })
       .getByRole("button", { name: "確認建立並排程", exact: true }).click();
     await expect(page).toHaveURL(/\/lives\/[^/]+\/preview$/u, { timeout: 60_000 });
     const live = await db.live.findFirstOrThrow({
       where: { vendorId: fixture.vendor.id },
-      select: { status: true, products: { select: { productId: true, vendorId: true, isPinned: true } } },
+      select: { status: true, products: { select: { productId: true, vendorId: true, sortOrder: true, isPinned: true }, orderBy: { sortOrder: "asc" } } },
     });
-    expect(live).toEqual({ status: "scheduled", products: [{ productId: created.id, vendorId: fixture.vendor.id, isPinned: true }] });
+    expect(live).toEqual({ status: "scheduled", products: [
+      { productId: second.id, vendorId: fixture.vendor.id, sortOrder: 1, isPinned: true },
+      { productId: created.id, vendorId: fixture.vendor.id, sortOrder: 2, isPinned: false },
+    ] });
     expect(await db.product.count({ where: { vendorId: otherVendor.id } })).toBe(0);
     expect(nativeDialogs).toEqual([]);
   } finally {

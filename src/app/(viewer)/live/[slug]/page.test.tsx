@@ -209,7 +209,7 @@ describe("PublicLivePage", () => {
     expect(mocks.findFirst).toHaveBeenCalledWith(expect.objectContaining({
       include: expect.objectContaining({
         products: {
-          orderBy: { sortOrder: "asc" },
+          orderBy: [{ sortOrder: "asc" }, { id: "asc" }],
           include: { product: true },
         },
         video: true,
