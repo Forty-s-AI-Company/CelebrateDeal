@@ -272,10 +272,18 @@ export function SelectField({
 export function FormErrorSummary({
   message,
   errors,
+  fieldHref,
+  onFieldSelect,
 }: {
   message?: string | null;
   /** Field messages keyed by field name; empty entries are skipped. */
   errors?: Readonly<Record<string, string | null | undefined>>;
+  /**
+   * Turns each field message into a link. Return the in-page anchor to use as the `href` (the fallback when
+   * scripting is unavailable); `onFieldSelect` then moves focus to the field and the default jump is skipped.
+   */
+  fieldHref?: (name: string) => string | undefined;
+  onFieldSelect?: (name: string) => void;
 }) {
   if (!message) return null;
   const entries = Object.entries(errors ?? {}).filter((entry): entry is [string, string] => Boolean(entry[1]));
@@ -284,7 +292,21 @@ export function FormErrorSummary({
       <p>{message}</p>
       {entries.length > 0 ? (
         <ul className="list-disc pl-5 font-normal">
-          {entries.map(([name, text]) => <li key={name}>{text}</li>)}
+          {entries.map(([name, text]) => {
+            const href = fieldHref?.(name);
+            return (
+              <li key={name}>
+                {href ? (
+                  <a
+                    href={href}
+                    data-field-link={name}
+                    className="underline underline-offset-2 hover:text-red-950"
+                    onClick={onFieldSelect ? (event) => { event.preventDefault(); onFieldSelect(name); } : undefined}
+                  >{text}</a>
+                ) : text}
+              </li>
+            );
+          })}
         </ul>
       ) : null}
     </div>
