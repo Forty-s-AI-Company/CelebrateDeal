@@ -787,6 +787,7 @@ model FormSubmission {
   liveInteractionResponses LiveInteractionResponse[]
   funnelSubmission         FunnelSubmission?
   liveSessionSwitchRedemptions LiveSessionSwitchRedemption[]
+  evergreenSessionAssignments  EvergreenSessionAssignment[]
 
   trackingDeliveries TrackingDelivery[]
 
@@ -887,7 +888,8 @@ model Live {
   notificationRules          LiveNotificationRule[]
   mediaSessions              LiveMediaSession[]
   sessions                   LiveSession[]
-  landingPages               LandingPage[]        @relation("LandingPageDraftLive")
+  evergreenSessionAssignments EvergreenSessionAssignment[]
+  landingPages              LandingPage[]        @relation("LandingPageDraftLive")
   landingPageVersions        LandingPageVersion[] @relation("LandingPageVersionLive")
 
   @@unique([vendorId, id])
@@ -945,6 +947,30 @@ model LiveSessionSwitchRedemption {
 
   @@index([formSubmissionId])
   @@index([vendorId, liveSessionId])
+}
+
+/// 常青場: the evergreen session a VERIFIED registrant was assigned on the
+/// viewer page (src/lib/evergreen-session-assignment.ts). The browser keeps the
+/// session in a signed cookie; this row lets the post-live follow-up job send
+/// the registrant's email after their own session. sessionStartAt is always
+/// resolved on the server; no personal data or token is stored here.
+model EvergreenSessionAssignment {
+  id                  String   @id @default(cuid())
+  vendorId            String
+  liveId              String
+  formSubmissionId    String
+  sessionStartAt      DateTime
+  /// evergreenScheduleFingerprint of the schedule the session came from.
+  scheduleFingerprint String
+  assignedAt          DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  live           Live           @relation(fields: [vendorId, liveId], references: [vendorId, id], onDelete: Cascade)
+  /// The registration's own (liveId, id) key: it always belongs to this Live.
+  formSubmission FormSubmission @relation(fields: [liveId, formSubmissionId], references: [liveId, id], onDelete: Cascade)
+
+  @@unique([vendorId, formSubmissionId])
+  @@index([vendorId, liveId, sessionStartAt])
 }
 
 /// Private WHIP/WHEP resources. Never expose upstream session URLs to viewers.

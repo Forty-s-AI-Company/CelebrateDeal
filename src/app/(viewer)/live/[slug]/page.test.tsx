@@ -801,6 +801,72 @@ describe("PublicLivePage evergreen session", () => {
     expect(element.props.live.products).toEqual([]);
   });
 
+  describe("verified registrant session record (F-2)", () => {
+    async function registrationCookie(submissionId = "submission-1") {
+      const { createFormSubmissionChatSessionToken, FORM_SUBMISSION_CHAT_SESSION_COOKIE } = await import("@/lib/form-submission-chat-session");
+      return `${FORM_SUBMISSION_CHAT_SESSION_COOKIE}=${encodeURIComponent(createFormSubmissionChatSessionToken({ submissionId }))}`;
+    }
+    function withCookies(...cookies: string[]) {
+      mocks.headers.mockResolvedValue(new Headers({ cookie: cookies.join("; ") }));
+    }
+
+    it("flags an assigned session of a verified registrant that is not recorded yet", async () => {
+      const cookie = await sessionCookie(new Date("2026-10-29T06:03:00.000Z"));
+      vi.setSystemTime(new Date("2026-10-29T06:05:00.000Z"));
+      withCookies(`${cookie.name}=${cookie.value}`, await registrationCookie());
+      mocks.findFirst.mockResolvedValue(evergreenSalesLive());
+      mocks.formSubmissionFindFirst.mockResolvedValue({ evergreenSessionAssignments: [] });
+
+      const element = await PublicLivePage({ params: Promise.resolve({ slug: "public-live" }) });
+      expect(element.props.live.evergreen).toMatchObject({ assigned: true, recordRegistration: true });
+      // The lookup is bound to this registration, Live and vendor, and to the session shown.
+      expect(mocks.formSubmissionFindFirst).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({
+        where: { id: "submission-1", liveId: "live-1", verificationStatus: "VERIFIED", form: { vendorId: "vendor-1" } },
+        select: {
+          evergreenSessionAssignments: expect.objectContaining({
+            where: expect.objectContaining({ vendorId: "vendor-1", liveId: "live-1", sessionStartAt: { gte: new Date("2026-10-29T06:15:00.000Z") } }),
+          }),
+        },
+      }));
+      expect(JSON.stringify(element.props.live)).not.toContain("submission-1");
+    });
+
+    it("does not flag a registrant whose session is already recorded, or a registration of another Live", async () => {
+      const cookie = await sessionCookie(new Date("2026-10-29T06:03:00.000Z"));
+      vi.setSystemTime(new Date("2026-10-29T06:05:00.000Z"));
+      withCookies(`${cookie.name}=${cookie.value}`, await registrationCookie());
+      mocks.findFirst.mockResolvedValue(evergreenSalesLive());
+      mocks.formSubmissionFindFirst.mockResolvedValueOnce({ evergreenSessionAssignments: [{ id: "assignment-1" }] }).mockResolvedValueOnce(null);
+
+      for (let round = 0; round < 2; round += 1) {
+        const element = await PublicLivePage({ params: Promise.resolve({ slug: "public-live" }) });
+        expect(element.props.live.evergreen).toMatchObject({ assigned: true });
+        expect(element.props.live.evergreen).not.toHaveProperty("recordRegistration");
+      }
+    });
+
+    it("runs no query for an anonymous visitor, a forged registration cookie, a first visit or a shared start", async () => {
+      const cookie = await sessionCookie(new Date("2026-10-29T06:03:00.000Z"));
+      vi.setSystemTime(new Date("2026-10-29T06:05:00.000Z"));
+      mocks.findFirst.mockResolvedValue(evergreenSalesLive());
+      for (const cookies of [
+        [`${cookie.name}=${cookie.value}`],
+        [`${cookie.name}=${cookie.value}`, "celebratedeal_form_submission_chat_session=fss1.forged.1.x"],
+        [await registrationCookie()],
+      ]) {
+        withCookies(...cookies);
+        const element = await PublicLivePage({ params: Promise.resolve({ slug: "public-live" }) });
+        expect(element.props.live.evergreen).not.toHaveProperty("recordRegistration");
+      }
+      mocks.findFirst.mockResolvedValue(evergreenSalesLive({ evergreenSessionStartAt: new Date("2026-10-29T08:00:00.000Z") }));
+      withCookies(await registrationCookie());
+      const shared = await PublicLivePage({ params: Promise.resolve({ slug: "public-live" }) });
+      expect(shared.props.live.evergreen).toMatchObject({ assigned: true });
+      expect(shared.props.live.evergreen).not.toHaveProperty("recordRegistration");
+      expect(mocks.formSubmissionFindFirst).not.toHaveBeenCalled();
+    });
+  });
+
   it("keeps a merchant-ended evergreen live on the regular lifecycle", async () => {
     vi.setSystemTime(new Date("2026-10-29T06:03:00.000Z"));
     withCookie(null);

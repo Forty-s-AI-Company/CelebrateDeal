@@ -3,7 +3,7 @@ import { Prisma } from "@prisma/client";
 import { NextRequest } from "next/server";
 
 const mocks = vi.hoisted(() => ({
-  db: { marker: "verification-db" },
+  db: { marker: "verification-db", $queryRaw: vi.fn() },
   checkRateLimit: vi.fn(),
   verifyFormSubmission: vi.fn(),
   ensureRegistrationConfirmationDelivery: vi.fn(),
@@ -83,6 +83,7 @@ beforeEach(() => {
   mocks.verifyFormSubmission.mockResolvedValue({ status: "invalid" });
   mocks.ensureRegistrationConfirmationDelivery.mockResolvedValue({ status: "not_configured" });
   mocks.ensureLiveReminderDelivery.mockResolvedValue({ status: "not_configured" });
+  mocks.db.$queryRaw.mockResolvedValue([{ id: "assignment-1" }]);
 });
 
 afterEach(() => vi.unstubAllEnvs());
@@ -230,6 +231,79 @@ describe("POST /api/form-submissions/verify", () => {
       await POST(withCookie);
 
       expect(mocks.ensureRegistrationConfirmationDelivery).toHaveBeenCalledWith(expect.objectContaining({ liveStartAtText: "依你的觀看時段開始" }));
+      // A cookie that does not verify for this Live records nothing.
+      expect(mocks.db.$queryRaw).not.toHaveBeenCalled();
+    });
+
+    describe("records the session of a visitor who claimed before verifying (F-2)", () => {
+      function recordedValues() {
+        expect(mocks.db.$queryRaw).toHaveBeenCalledTimes(1);
+        return mocks.db.$queryRaw.mock.calls[0]!.slice(1) as unknown[];
+      }
+
+      it("records the claimed session for the verified submission", async () => {
+        vi.useFakeTimers({ toFake: ["Date"] });
+        vi.setSystemTime(new Date("2026-10-29T06:03:00.000Z"));
+        const session = resolveEvergreenViewerSession({ live: evergreenLive, vendorTimezone: "Asia/Taipei", token: null, intent: "claim" })!;
+        // The visitor watched for a while before clicking the verification link.
+        vi.setSystemTime(new Date("2026-10-29T06:30:00.000Z"));
+        mocks.verifyFormSubmission.mockResolvedValue({ status: "verified", confirmation: evergreenConfirmation, chatSession: { submissionId: "formsub_test" } });
+        const withCookie = request();
+        withCookie.headers.set("cookie", `${evergreenSessionCookieName("live-1")}=${session.issuedToken}`);
+
+        const response = await POST(withCookie);
+
+        expect(response.headers.get("location")).toBe("https://app.example.test/verify-registration?status=verified");
+        expect(recordedValues()).toEqual(expect.arrayContaining(["vendor-1", "live-1", "formsub_test", "2026-10-29T06:15:00.000Z"]));
+      });
+
+      it("records nothing without the visitor's session cookie", async () => {
+        mocks.verifyFormSubmission.mockResolvedValue({ status: "verified", confirmation: evergreenConfirmation });
+        await POST(request());
+        expect(mocks.db.$queryRaw).not.toHaveBeenCalled();
+      });
+
+      it("records nothing for a regular (non-evergreen) Live", async () => {
+        mocks.verifyFormSubmission.mockResolvedValue({ status: "verified", confirmation });
+        await POST(request());
+        expect(mocks.db.$queryRaw).not.toHaveBeenCalled();
+      });
+
+      it("records nothing for a merchant's shared start (the job follows the current anchor)", async () => {
+        vi.useFakeTimers({ toFake: ["Date"] });
+        vi.setSystemTime(new Date("2026-10-29T06:03:00.000Z"));
+        const sharedLive = { ...evergreenLive, evergreenSessionStartAt: new Date("2026-10-29T08:00:00.000Z") };
+        mocks.verifyFormSubmission.mockResolvedValue({
+          status: "verified",
+          confirmation: { ...confirmation, evergreen: { live: sharedLive, vendorTimezone: "Asia/Taipei" } },
+        });
+        const response = await POST(request());
+        expect(response.headers.get("location")).toBe("https://app.example.test/verify-registration?status=verified");
+        expect(mocks.db.$queryRaw).not.toHaveBeenCalled();
+      });
+
+      it("keeps the verified result, confirmation and cookie when recording fails", async () => {
+        vi.useFakeTimers({ toFake: ["Date"] });
+        vi.setSystemTime(new Date("2026-10-29T06:03:00.000Z"));
+        const session = resolveEvergreenViewerSession({ live: evergreenLive, vendorTimezone: "Asia/Taipei", token: null, intent: "claim" })!;
+        mocks.db.$queryRaw.mockRejectedValue(new Error("database unavailable"));
+        mocks.verifyFormSubmission.mockResolvedValue({ status: "verified", confirmation: evergreenConfirmation, chatSession: { submissionId: "formsub_test" } });
+        const withCookie = request();
+        withCookie.headers.set("cookie", `${evergreenSessionCookieName("live-1")}=${session.issuedToken}`);
+
+        const response = await POST(withCookie);
+
+        expect(response.status).toBe(303);
+        expect(response.headers.get("location")).toBe("https://app.example.test/verify-registration?status=verified");
+        expect(response.cookies.get(FORM_SUBMISSION_CHAT_SESSION_COOKIE)).toBeDefined();
+        expect(mocks.ensureRegistrationConfirmationDelivery).toHaveBeenCalledTimes(1);
+        expect(mocks.ensureLiveReminderDelivery).toHaveBeenCalledTimes(1);
+        expect(mocks.captureOperationalError).toHaveBeenCalledWith(expect.any(Error), {
+          source: "evergreen_session_assignment",
+          operation: "verification",
+          status: "failed",
+        });
+      });
     });
 
     it("keeps the verified result when the session time cannot be resolved", async () => {
