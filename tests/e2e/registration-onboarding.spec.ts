@@ -28,7 +28,8 @@ for(const width of [1440,390])test(`registration and questionnaire round trip at
    if(step===2)await page.getByRole('checkbox').first().click();else await page.getByRole('radio').first().click();
    const next=page.getByRole('button',{name:step===3?'產生我的工作空間':'下一題',exact:true});await expect(next).toBeEnabled();await next.click();
   }
-  await expect(page).toHaveURL(/\/welcome\/preparing$/u);await page.getByRole('link',{name:'進入我的工作空間'}).click();await expect(page).toHaveURL(/\/dashboard$/u);
+  // U1: the questionnaire's next step is the unified 上線任務 list, including the project it just created.
+  await expect(page).toHaveURL(/\/onboarding$/u);await expect(page.getByRole('heading',{name:'上線導引',exact:true})).toBeVisible();await expect(page.getByRole('heading',{name:'Step 6. 發布專案「我的第一個銷售專案」',exact:true})).toBeVisible();
   // A new account is not locked out; the back office only asks for email verification.
   await expect(page.locator('[data-email-verification-banner]')).toBeVisible();expect((await db.user.findUniqueOrThrow({where:{email}})).emailVerifiedAt).toBeNull();
   // The e-mailed link opens a confirm page; only the POST behind its button verifies (the test process signs with the server's synthetic secret).

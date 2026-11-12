@@ -8,6 +8,7 @@ import { verifiedVendorPaymentMethodWhere } from "@/lib/payment-method-reference
 import { isCardBindingRequired } from "@/lib/feature-gates";
 import { canPublishSalesProject, parseSalesWorkspaceQuestionnaire, projectOnboardingTasks, recommendSalesWorkspaceMode, SalesProjectCreateSchema, WORKSPACE_ONBOARDING_TASKS, type SalesWorkspaceQuestionnaire } from "@/lib/sales-workspace";
 import { assertServerActionOrigin, assertServerActionSecurity } from "@/lib/csrf";
+import { ONBOARDING_HOME_PATH } from "@/lib/onboarding-entry";
 
 function nextQuestionnaireStep(answers: SalesWorkspaceQuestionnaire) {
   if (!answers.sellingApproach) return 0;
@@ -57,7 +58,8 @@ export async function completePersonalizedOnboardingAction() {
       await tx.onboardingTaskState.createMany({ data: projectOnboardingTasks(flow).map((task) => ({ vendorId: vendor.id, projectId: project.id, scopeKey: project.id, taskKey: task.key, status: "not_started" })), skipDuplicates: true });
     }
   });
-  redirect("/welcome/preparing");
+  // The questionnaire's next step is the unified 上線任務 list (no separate interstitial).
+  redirect(ONBOARDING_HOME_PATH);
 }
 
 export async function selectSalesProjectAction(projectId: string | null) {
@@ -94,7 +96,7 @@ export async function createSalesProjectAction(formData: FormData) {
   // The current App Router layout may survive the redirect; invalidate it so
   // the Sidebar immediately reflects the newly selected project.
   revalidatePath("/", "layout");
-  redirect(parsed.onboardingEnabled ? "/onboarding" : `/projects/${project.id}`);
+  redirect(parsed.onboardingEnabled ? ONBOARDING_HOME_PATH : `/projects/${project.id}`);
 }
 
 /**
