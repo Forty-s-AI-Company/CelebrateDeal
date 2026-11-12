@@ -95,3 +95,31 @@ describe("focusFirstInvalidField", () => {
     expect(focusFirstInvalidField(null)).toBeNull();
   });
 });
+
+describe("FormErrorSummary field links", () => {
+  it("renders each field message as an anchor and routes clicks to onFieldSelect", async () => {
+    const selected: string[] = [];
+    await act(async () => {
+      root.render(
+        <FormErrorSummary
+          message="請修正下列欄位。"
+          errors={{ name: "請填寫名稱。", price: "請填寫售價。", slug: "網址已被使用。" }}
+          fieldHref={(name) => (name === "slug" ? undefined : `#section-${name}`)}
+          onFieldSelect={(name) => selected.push(name)}
+        />,
+      );
+    });
+    const links = [...container.querySelectorAll("a")];
+    expect(links.map((link) => link.getAttribute("href"))).toEqual(["#section-name", "#section-price"]);
+    expect(container.querySelectorAll("li")).toHaveLength(3);
+    expect(container.querySelectorAll("li")[2]!.textContent).toBe("網址已被使用。");
+    const event = new MouseEvent("click", { bubbles: true, cancelable: true });
+    await act(async () => { links[1]!.dispatchEvent(event); });
+    expect(selected).toEqual(["price"]);
+    expect(event.defaultPrevented).toBe(true);
+  });
+
+  it("leaves the plain list untouched without fieldHref", () => {
+    expect(renderToStaticMarkup(<FormErrorSummary message="x" errors={{ name: "必填" }} />)).toContain("<li>必填</li>");
+  });
+});

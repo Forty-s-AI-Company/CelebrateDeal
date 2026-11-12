@@ -123,7 +123,7 @@ useEffect(() => { if (errorVersion) focusFirstInvalidField(formRef.current); }, 
 |---|---|
 | `Field`／`TextArea`／`SelectField` 的 `error`、`hint` | 有 `error` 時控制項加 `aria-invalid="true"` 與紅框；`aria-describedby` 依序指向錯誤與提示。訊息放在 `<label>` 外，標籤本身仍是唯一的無障礙名稱；外層元素固定，切換錯誤不會重新掛載（清空）輸入框。 |
 | `useFieldMessages(error, hint)` | 給手寫控制項用：回傳 `controlProps`（展開到控制項上）、`controlClass`（邊框色）與 `messages`（放在 label 之後）。 |
-| `FormErrorSummary({ message, errors? })` | 沒有 `message` 時不渲染；有時是 `role="alert"`、`tabIndex={-1}`、`data-form-error-summary` 的摘要，`errors` 中非空的欄位訊息列成清單。 |
+| `FormErrorSummary({ message, errors?, fieldHref?, onFieldSelect? })` | 沒有 `message` 時不渲染；有時是 `role="alert"`、`tabIndex={-1}`、`data-form-error-summary` 的摘要，`errors` 中非空的欄位訊息列成清單。給 `fieldHref(name)`（回傳頁內錨點，沒有 JavaScript 時的退路）時，每則訊息變成 `<a>`；再給 `onFieldSelect(name)` 就攔截點擊，由呼叫端把焦點移到欄位。商品表單用它跳到對應段落與欄位。 |
 | `focusFirstInvalidField(scope)` | 聚焦 `scope` 內第一個 `aria-invalid="true"` 的控制項；沒有的話聚焦摘要；都沒有就不動。回傳被聚焦的元素。 |
 
 - 伺服器回傳的欄位錯誤與瀏覽器原生驗證都用同一組 `error` prop 顯示。
@@ -137,3 +137,11 @@ useEffect(() => { if (errorVersion) focusFirstInvalidField(formRef.current); }, 
 - `Toast`：用 `role="status"` 段落顯示短暫確認的 Client Component，例如 [referral-share-controls.tsx](../../src/components/referral-share-controls.tsx)、[team-template-list.tsx](../../src/components/team-template-list.tsx)、[recovery-codes-actions.tsx](../../src/components/recovery-codes-actions.tsx) 的「已複製」，以及 [line-rich-menu-studio.tsx](../../src/components/line-rich-menu-studio.tsx) 的「草稿已儲存」。由 query string 帶出、在 Server Component 渲染的「已儲存」提示（例如各 `settings/*` 頁）不適合直接改，需先改成 Client Component。
 - 欄位錯誤：[live-resource-drawers.tsx](../../src/components/live-resource-drawers.tsx) 的 `FieldError`／`RootError`／`useFocusFirstError`、[product-form-client.tsx](../../src/components/product-form-client.tsx) 的 `useFocusFirstInvalid` 可改用 `useFieldMessages` 與 `focusFirstInvalidField`；其餘手寫輸入框另案處理。
 - `Stepper`：[commerce-checkout-form.tsx](../../src/components/commerce-checkout-form.tsx) 的結帳進度是純文字 `aria-current="step"`，不是可點的步驟，不需要改；U5 表單分段可直接使用 `Stepper`。
+
+## 商品表單段落
+
+[product-form-sections.tsx](../../src/components/product-form-sections.tsx) 把長表單分成「基本資料、價格與庫存、交付、結帳與加購、進階與上架」五段（`ProductFormSection`：`<section aria-labelledby>` 加 `h2` 標題與一句說明）。
+
+- 導覽（`ProductFormSectionNav`）：桌機（`lg` 以上）在左側 sticky，手機收成頂部「跳到段落」`<details>`。兩者都是一般錨點連結；點擊後捲動並把焦點移到段落標題（`tabIndex=-1`），手機選單自動收合。目前段落由 `IntersectionObserver` 追蹤，用 `aria-current="location"` 標示（沒有 `IntersectionObserver` 時停在第一段）。這不是 `Stepper`：段落可以任意順序填寫，沒有「步驟」語意。
+- 錯誤跳轉：`sectionOfField(name)` 對應欄位所在段落，摘要連結先到欄位，沒有可聚焦的欄位（固定幣別、圖片）就改到段落標題。新增欄位時記得補進 `FIELD_SECTION`。
+- 百分比顯示：課程分潤欄位在畫面上用百分比（最多兩位小數），隱藏欄位仍以 `coursePromoterShareBps`（萬分比整數）送出，換算在 [product-share-percent.ts](../../src/lib/product-share-percent.ts)，全程用字串與整數運算、不四捨五入；超過兩位小數的輸入會以伺服器必拒的 `invalid:…` 送出並顯示錯誤。
