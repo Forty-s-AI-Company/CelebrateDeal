@@ -636,3 +636,55 @@ describe("LiveStepperForm 草稿含已不提供的商品", () => {
     expect(control<HTMLElement>('[data-step-key="publish"]').textContent).toContain("發布條件已完成");
   });
 });
+
+describe("LiveStepperForm 商品順序的草稿儲存時機", () => {
+  const productA: ProductOption = { id: "product-a", name: "商品甲", inventory: 4 };
+  const productB: ProductOption = { id: "product-b", name: "商品乙", inventory: 6 };
+  const productC: ProductOption = { id: "product-c", name: "商品丙", inventory: 8 };
+  const listed = [productA, productB, productC];
+
+  function savedProductIds() {
+    return mocks.saveLiveStudioDraft.mock.calls.map(([input]) => (input as { payload: LiveStudioDraftPayload }).payload.productIds);
+  }
+
+  it("a pagehide right after a tick, before any timer runs, flushes the new order", async () => {
+    await act(async () => { root.render(studio(listed, { productIds: [productA.id] })); });
+
+    await act(async () => { checkbox(productC.id).click(); });
+    // Same task as the tick's commit: no timer has run, so this is the pending debounced save.
+    await act(async () => { window.dispatchEvent(new Event("pagehide")); });
+    await settle();
+
+    expect(savedProductIds()).toEqual([[productA.id, productC.id]]);
+    expect(mocks.saveLiveStudioDraft).toHaveBeenCalledWith(expect.objectContaining({ keepalive: true }));
+  });
+
+  it("a pagehide right after 設為置頂 flushes the pinned order", async () => {
+    await act(async () => { root.render(studio(listed, { productIds: [productA.id, productB.id] })); });
+
+    await act(async () => { row(productB.id).querySelector("button")!.click(); });
+    await act(async () => { window.dispatchEvent(new Event("pagehide")); });
+    await settle();
+
+    expect(savedProductIds()).toEqual([[productB.id, productA.id]]);
+  });
+
+  it("quick successive ticks and a pin are saved once, in their final order", async () => {
+    await act(async () => { root.render(studio(listed)); });
+
+    await act(async () => { checkbox(productB.id).click(); });
+    await act(async () => { checkbox(productC.id).click(); });
+    await act(async () => { checkbox(productA.id).click(); });
+    await act(async () => { row(productA.id).querySelector("button")!.click(); });
+    await act(async () => { checkbox(productB.id).click(); });
+    expect(mocks.saveLiveStudioDraft).not.toHaveBeenCalled();
+    await waitForAutosaveWindow();
+
+    expect(savedProductIds()).toEqual([[productA.id, productC.id]]);
+    expect(submittedProductIds()).toEqual([productA.id, productC.id]);
+  });
+
+  function row(productId: string) {
+    return control<HTMLElement>(`[data-live-product-row="${productId}"]`);
+  }
+});
