@@ -28,7 +28,8 @@ describe("EvergreenWebinarSettings", () => {
     // Enabling evergreen ignores the original scheduledAt and turns shared interactions off.
     expect(html).toContain("不再使用這場直播原本設定的開播時間");
     expect(html).toContain("依開播時間排定的 LINE／Email 開播提醒不會寄出");
-    expect(html).toContain("課後 Email 通知目前也不會寄出");
+    expect(html).toContain("常青生效期間也不寄課後 Email 通知");
+    expect(html).toContain("常青場結束或改回草稿後，會依原開播時間補寄給已驗證的報名者");
     expect(html).toContain("以下全場共用互動會停用");
     for (const text of ["幸運抽獎", "投票", "空投限時紅包", "限時快閃搶購"]) expect(html).toContain(text);
     expect(html).toContain("商品揭露只影響頁面呈現，不是購買授權");
