@@ -563,11 +563,6 @@ test("live stepper has no blocking axe violations on any of the four steps, in �
   await expect(openVideoDrawer).toBeFocused();
   await page.getByRole("button", { name: "下一步" }).click();
   await openLiveStudioAdvancedSettings(page, "sales");
-  const salesPanel = page.locator('[data-step-key="sales"]');
-  await salesPanel.getByRole("checkbox", { name: /Accessibility Test Product/u }).check();
-  await salesPanel.getByRole("checkbox", { name: /Accessibility Pin Product/u }).check();
-  await expect(salesPanel.locator('[data-live-product-row] [data-live-product-pinned]')).toHaveText("置頂");
-  await expect(salesPanel.getByRole("button", { name: "設為置頂：Accessibility Pin Product", exact: true })).toBeVisible();
   await scanStep(1);
   // 互動腳本：「重新整理清單」後顯示的公告也要可被掃描；新增元素（新分頁連結、說明）已含在上一步掃描內。
   await page.locator('[data-step-key="sales"]').getByRole("button", { name: "重新整理清單", exact: true }).click();
@@ -591,6 +586,13 @@ test("live stepper has no blocking axe violations on any of the four steps, in �
   await page.keyboard.press("Escape");
   await expect(productDrawer).toBeHidden();
   await expect(openProductDrawer).toBeFocused();
+  // 兩件商品勾選後的置頂標示與「設為置頂」按鈕（勾選在抽屜之後，抽屜仍是「建立並選取」模式）。
+  const salesPanel = page.locator('[data-step-key="sales"]');
+  await salesPanel.getByRole("checkbox", { name: /Accessibility Test Product/u }).check();
+  await salesPanel.getByRole("checkbox", { name: /Accessibility Pin Product/u }).check();
+  await expect(salesPanel.locator('[data-live-product-row] [data-live-product-pinned]')).toHaveText("置頂");
+  await expect(salesPanel.getByRole("button", { name: "設為置頂：Accessibility Pin Product", exact: true })).toBeVisible();
+  await expectNoBlockingAxe(page, "成交步驟置頂標示與設為置頂");
   await page.getByRole("button", { name: "下一步" }).click();
   await scanStep(2);
   const openTemplateDrawer = page.getByRole("button", { name: "建立報名成功 Email", exact: true });

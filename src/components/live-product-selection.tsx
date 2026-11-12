@@ -135,9 +135,11 @@ export function LiveProductSelection({
                         type="button"
                         disabled={!hydrated}
                         onClick={(event) => pin(product.id, event.currentTarget.closest("li")?.querySelector<HTMLInputElement>('input[type="checkbox"]') ?? null)}
+                        // The visible text starts the name; one string, so every browser computes the same name.
+                        aria-label={`設為置頂：${product.name}`}
                         className={pinButtonClass}
                       >
-                        設為置頂<span className="sr-only">：{product.name}</span>
+                        設為置頂
                       </button>
                     </span>
                   ) : null}

@@ -466,7 +466,8 @@ describe("LiveStepperForm 商品勾選順序與置頂", () => {
     expect(document.getElementById(checkbox(productC.id).getAttribute("aria-describedby")!)?.textContent).toBe("置頂");
     expect(document.getElementById(checkbox(productA.id).getAttribute("aria-describedby")!)?.textContent).toBe("第 2 個");
     expect(checkbox(productB.id).hasAttribute("aria-describedby")).toBe(false);
-    expect(row(productA.id).querySelector("button")?.textContent).toBe("設為置頂：商品甲");
+    expect(row(productA.id).querySelector("button")?.getAttribute("aria-label")).toBe("設為置頂：商品甲");
+    expect(row(productA.id).querySelector("button")?.textContent).toBe("設為置頂");
     expect(row(productB.id).querySelector("button")).toBeNull();
     expect(row(productC.id).querySelector("button")).toBeNull();
     expect(orderStatus()).toBe("");
@@ -489,7 +490,7 @@ describe("LiveStepperForm 商品勾選順序與置頂", () => {
     expect(pinnedRows()).toEqual([productC.id]);
     expect(document.activeElement).toBe(checkbox(productC.id));
     expect(orderStatus()).toBe("已將「商品丙」設為置頂商品。");
-    expect(row(productA.id).querySelector("button")?.textContent).toBe("設為置頂：商品甲");
+    expect(row(productA.id).querySelector("button")?.getAttribute("aria-label")).toBe("設為置頂：商品甲");
     expect(mocks.upsertLiveAction).not.toHaveBeenCalled();
 
     await waitForAutosaveWindow();
