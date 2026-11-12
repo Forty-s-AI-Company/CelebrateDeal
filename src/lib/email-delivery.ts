@@ -481,6 +481,11 @@ export async function ensurePostLiveFollowupDelivery(
     videoDurationSec: input.videoDurationSec,
   }, rule.offsetMinutes);
   if (!completionAt || !deliveryAt || deliveryAt > now) return { status: "not_due" as const };
+  // The send-time guard rejects an address it cannot normalize, so a row for
+  // it could never be sent; skip it here (as the guard does) instead of
+  // queuing it, or of failing the whole run while building its payload.
+  const normalizedEmail = normalizeBlacklistIdentifier("email", input.recipientEmail);
+  if (!normalizedEmail) return { status: "not_configured" as const };
 
   const deliveryId = stablePostLiveFollowupDeliveryId({
     vendorId: input.vendorId,
@@ -509,7 +514,6 @@ export async function ensurePostLiveFollowupDelivery(
     brand: input.emailBrand,
   }, { vendorId: input.vendorId, deliveryId });
   const db = getDb();
-  const normalizedEmail = normalizeBlacklistIdentifier("email", input.recipientEmail);
   const [suppression, blacklist] = await Promise.all([
     db.emailSuppression.findUnique({
       where: {
@@ -520,18 +524,16 @@ export async function ensurePostLiveFollowupDelivery(
       },
       select: { id: true, resubscribedAt: true },
     }),
-    normalizedEmail
-      ? db.blacklist.findFirst({
-          where: {
-            vendorId: input.vendorId,
-            identifierType: "email",
-            identifier: normalizedEmail,
-            isActive: true,
-            unblockedAt: null,
-          },
-          select: { id: true },
-        })
-      : Promise.resolve(null),
+    db.blacklist.findFirst({
+      where: {
+        vendorId: input.vendorId,
+        identifierType: "email",
+        identifier: normalizedEmail,
+        isActive: true,
+        unblockedAt: null,
+      },
+      select: { id: true },
+    }),
   ]);
   const isSuppressed = Boolean(suppression && !suppression.resubscribedAt);
   const isBlacklisted = Boolean(blacklist);

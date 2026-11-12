@@ -591,7 +591,11 @@ describe("email delivery outbox", () => {
       .resolves.toEqual({ status: "not_configured" });
     await expect(ensurePostLiveFollowupDelivery(base, new Date("2026-08-08T05:20:00.000Z")))
       .resolves.toEqual({ status: "not_due" });
+    // An address the send-time guard cannot normalize is never queued.
+    await expect(ensurePostLiveFollowupDelivery({ ...base, recipientEmail: "not-an-email-address" }, new Date("2026-08-08T06:00:00.000Z")))
+      .resolves.toEqual({ status: "not_configured" });
     expect(mocks.db.emailDelivery.create).not.toHaveBeenCalled();
+    expect(mocks.db.$transaction).not.toHaveBeenCalled();
   });
 
   it("records an active vendor email blacklist as a suppressed follow-up", async () => {

@@ -349,6 +349,20 @@ describe("evergreen post_live_followup disposable database integration", () => {
     ]);
   });
 
+  it("does not queue a follow-up for an address the send-time guard can never accept", async () => {
+    const db = getDb();
+    const { vendor, live, submission } = await createFixture({ isEvergreen: false });
+    await db.formSubmission.update({ where: { id: submission.id }, data: { email: "not-an-email-address" } });
+
+    // Queuing it would only be superseded at send time and come back every
+    // minute; the job reports it as not configured and writes nothing.
+    for (const at of [now, new Date(now.getTime() + 60_000)]) {
+      await expect(processDuePostLiveFollowups({ now: at, vendorId: vendor.id }))
+        .resolves.toEqual([{ status: "not_configured" }]);
+    }
+    await expect(followupDeliveries(vendor.id, live.id)).resolves.toEqual([]);
+  });
+
   it("keeps an ended Live's follow-up when the evergreen flag is set on it (evergreen is not active)", async () => {
     const db = getDb();
     const { vendor, live } = await createFixture({ isEvergreen: false });
