@@ -48,8 +48,9 @@ export async function renameCourseChapterAction(form: FormData) {
   // Only echoed back to locate the field error; renameCourseChapter validates it again.
   const chapterRef = typeof chapterId === "string" && chapterId.length > 0 && chapterId.length <= 160 ? encodeURIComponent(chapterId) : "";
   // A missing or malformed revision is a stale form, not a bad title.
-  const revision = Number(form.get("revision"));
-  if (!Number.isSafeInteger(revision) || revision < 0) redirect(`${path}?error=conflict`);
+  const rawRevision = form.get("revision");
+  const revision = typeof rawRevision === "string" && /^\d+$/u.test(rawRevision) ? Number(rawRevision) : Number.NaN;
+  if (!Number.isSafeInteger(revision)) redirect(`${path}?error=conflict`);
   let error: "invalid" | "duplicate" | "conflict" | null = null;
   try {
     await renameCourseChapter(getDb(), vendor.id, {

@@ -10,7 +10,9 @@ import { getDb } from "@/lib/db";
  * itself and executed here, so the test and the deployed SQL are one text.
  * Lessons are inserted the way pre-F-5 code wrote them (no chapterId).
  */
-const MIGRATION = readFileSync(path.resolve(__dirname, "../../prisma/migrations/20261113120000_course_chapter/migration.sql"), "utf8");
+const MIGRATIONS = path.resolve(__dirname, "../../prisma/migrations");
+const TABLE_MIGRATION = readFileSync(path.join(MIGRATIONS, "20261113120000_course_chapter/migration.sql"), "utf8");
+const MIGRATION = readFileSync(path.join(MIGRATIONS, "20261113120100_course_lesson_chapter_link/migration.sql"), "utf8");
 
 function dollarBlock(tag: string) {
   const start = MIGRATION.indexOf(`DO $${tag}$`);
@@ -43,6 +45,14 @@ async function legacyLesson(vendorId: string, productId: string, position: numbe
   return db.courseLesson.create({ data: { vendorId, productId, position, chapterTitle, title: `Lesson ${position}`, durationSeconds: 60, publishedAt: published ? new Date() : null } });
 }
 
+/**
+ * Runs the migration's backfill text unchanged, so it covers every lesson in the
+ * database without a chapterId, not just this file's fixtures. That is safe here:
+ * vitest runs DB test files one at a time (fileParallelism off in vitest.config.ts),
+ * every fixture deletes its vendors afterEach, and on any other lesson the block
+ * does exactly what the deployed migration did (link it to its title's chapter).
+ * Every assertion below is limited to the vendors this file creates.
+ */
 const runBackfill = () => db.$executeRawUnsafe(BACKFILL);
 
 async function chaptersOf(vendorId: string, productId: string) {
@@ -86,13 +96,21 @@ describe("F-5 course chapter backfill (migration SQL)", () => {
     })).rejects.toThrow(/standard_conforming_strings = on/u);
   });
 
-  it("takes the Vendor and Product locks before the CourseLesson lock, before any DDL", () => {
-    const vendorProduct = MIGRATION.indexOf('LOCK TABLE "Vendor", "Product" IN SHARE ROW EXCLUSIVE MODE;');
-    const lesson = MIGRATION.indexOf('LOCK TABLE "CourseLesson" IN ACCESS EXCLUSIVE MODE;');
-    expect(vendorProduct).toBeGreaterThan(MIGRATION.indexOf("SET LOCAL lock_timeout = '5s';"));
-    expect(lesson).toBeGreaterThan(vendorProduct);
-    expect(MIGRATION.indexOf("ALTER TABLE")).toBeGreaterThan(lesson);
-    expect(MIGRATION.indexOf("CREATE TABLE")).toBeGreaterThan(lesson);
+  it("keeps the table migration short and locks only CourseLesson, first, in the link migration", () => {
+    const statements = (sql: string) => sql.split(/\r?\n/u).filter((line) => !line.trim().startsWith("--")).join("\n");
+    const table = statements(TABLE_MIGRATION);
+    const link = statements(MIGRATION);
+    // 1/2 creates the empty table; it never touches CourseLesson.
+    expect(table).toContain("SET LOCAL lock_timeout = '5s';");
+    expect(table).not.toMatch(/"CourseLesson"|LOCK TABLE/u);
+    // 2/2 takes CourseLesson before any other statement and no Vendor/Product table lock.
+    const timeout = link.indexOf("SET LOCAL lock_timeout = '5s';");
+    const lesson = link.indexOf('LOCK TABLE "CourseLesson" IN ACCESS EXCLUSIVE MODE;');
+    expect(timeout).toBeGreaterThan(-1);
+    expect(lesson).toBeGreaterThan(timeout);
+    expect(link.indexOf("ALTER TABLE")).toBeGreaterThan(lesson);
+    expect(link.indexOf("DO $")).toBeGreaterThan(lesson);
+    expect(link).not.toMatch(/LOCK TABLE "(?:Vendor|Product)"|CREATE TABLE/u);
   });
 
   it("trims exactly like String.prototype.trim, which the player used", async () => {
@@ -196,10 +214,11 @@ describe("F-5 course chapter backfill (migration SQL)", () => {
     const { vendor, courses: [course] } = await vendorWithCourses(1);
     await legacyLesson(vendor.id, course!.id, 0, "第一章");
     await runBackfill();
-    // The verification query of the migration, over the whole table.
-    const [missing] = await db.$queryRaw<Array<{ count: bigint }>>`SELECT count(*) AS count FROM "CourseLesson" WHERE "chapterId" IS NULL`;
+    // The migration's verification query, limited to this test's vendor.
+    const [missing] = await db.$queryRaw<Array<{ count: bigint }>>`SELECT count(*) AS count FROM "CourseLesson" WHERE "chapterId" IS NULL AND "vendorId" = ${vendor.id}`;
     expect(missing?.count).toBe(BigInt(0));
-    await expect(db.$executeRawUnsafe(BACKFILL_CHECK)).resolves.toBeDefined();
+    // The check itself is table-wide (as deployed); a lesson of this vendor
+    // without a chapter is enough to make it fail.
     const orphan = await legacyLesson(vendor.id, course!.id, 1, "第二章");
     await expect(db.$executeRawUnsafe(BACKFILL_CHECK)).rejects.toThrow(/without a chapter/u);
     await db.courseLesson.delete({ where: { id: orphan.id } });

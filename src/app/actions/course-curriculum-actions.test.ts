@@ -71,9 +71,12 @@ describe("renameCourseChapterAction (F-5)", () => {
   });
 
   it("treats a missing or malformed revision as a stale form, not a bad title", async () => {
-    for (const revision of ["abc", "1.5", "-1"]) {
+    for (const revision of ["abc", "1.5", "-1", "", " 1", "1e3", "0x1", "9".repeat(20)]) {
       expect(await redirectOf(form({ revision }))).toBe(`redirect:${lessons}?error=conflict`);
     }
+    const missing = form({});
+    missing.delete("revision");
+    expect(await redirectOf(missing)).toBe(`redirect:${lessons}?error=conflict`);
     expect(mocks.rename).not.toHaveBeenCalled();
   });
 
