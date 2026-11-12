@@ -59,7 +59,7 @@ const loadPublicLive = cache(async (slug: string) => {
         },
       },
       products: {
-        orderBy: { sortOrder: "asc" },
+        orderBy: [{ sortOrder: "asc" }, { id: "asc" }],
         include: { product: true },
       },
     },

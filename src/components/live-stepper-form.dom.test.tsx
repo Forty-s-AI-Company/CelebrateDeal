@@ -154,7 +154,8 @@ describe("LiveStepperForm draft resume", () => {
     expect(control('[name="title"]').value).toBe("我吃原型食物就好!?");
     expect(control('[name="slug"]').value).toBe("whole-food-live");
     expect(control<HTMLSelectElement>('select[name="videoId"]').value).toBe("video-cf-3341");
-    expect(control('input[name="productIds"]').checked).toBe(true);
+    expect(control('input[type="checkbox"][data-live-product-option="product-whole-food"]').checked).toBe(true);
+    expect(Array.from(container.querySelectorAll<HTMLInputElement>('input[name="productIds"]')).map((input) => [input.type, input.value])).toEqual([["hidden", "product-whole-food"]]);
     expect(control<HTMLSelectElement>('select[name="formId"]').value).toBe("form-signup");
     expect(control<HTMLSelectElement>('select[name="messageTemplateId"]').value).toBe("template-confirmed");
     expect(control<HTMLSelectElement>('select[name="interactionScriptId"]').value).toBe("script-13-events");
