@@ -1,6 +1,6 @@
 # 延遲步驟：Email 追銷序列與自動化多步驟的共用設計
 
-狀態：F-3（Email 追銷序列）定案，依本文拆 PR 實作。F-4（自動化多步驟與延遲）範圍 owner 已確認；第一個 PR（第 8 節「一併要修的既有缺口」）已完成，延遲步驟與接上 `payment_paid` 在後續 PR。
+狀態：F-3（Email 追銷序列）定案，依本文拆 PR 實作。F-4（自動化多步驟與延遲）範圍 owner 已確認；第一個 PR（第 8 節「一併要修的既有缺口」）與第二個 PR（延遲步驟，第 8 節「做法」）已完成，接上 `payment_paid` 在下一個 PR。
 日期：2026-11-13。對應 `docs/fable-queue.md` 的 F-3、F-4。
 
 ## 1. 要解決的問題
@@ -175,6 +175,24 @@
 - run 只存對象的參照（`formSubmissionId` 或訂單 id、`subjectKeyHash`、來源 `AutomationExecutionLog` id），不存事件 payload 裡的個資。每一步執行時重新讀取收件人，並重新評估該步的 condition（例如「到現在還沒買」）。
 - 每一步的執行寫一筆 `AutomationExecutionLog`，冪等鍵加上步驟 id。
 - 不做視覺化流程編輯器。規則編輯頁改成「立即執行」加一個可增減的延遲步驟清單。
+
+### 實作狀態與決定（F-4 PR 2，分支 `ai/f4-automation-delayed-steps`）
+
+上面「做法」已完成，現行規則見 `docs/domain-workflows.md`「自動化規則」，資料庫約束見 `docs/codex-goal/PRISMA_INVARIANTS.md` 2026-11-14 一節。實作時的決定：
+
+1. **資料模型**：`AutomationRuleStep`（複合外鍵指向規則、Cascade；延遲 60–129600 分鐘；同一規則延遲不重複；每條最多 10 步，具名常數 `MAX_AUTOMATION_RULE_STEPS`）。`DelayedStepRun` 加 `automationRuleId`、`sourceExecutionLogId`、`consultationBookingId`（三個都是含 vendorId 的複合外鍵），CHECK 換成「`emailSequenceId` 與 `automationRuleId` 恰好一個有值」：新 CHECK 與外鍵先 `NOT VALID`，第二個 migration 才 `VALIDATE` 並刪掉舊 CHECK（Prisma 每個 migration 是一個交易，拆兩個檔才真的縮短鎖）。
+2. **對象的參照**：三個可用 trigger 盤點後，`form_registered` 的 `subjectId` 是報名（`FormSubmission`，有 Email），兩個諮詢 trigger 的是預約（`ConsultationBooking`，有 `clientEmail` 與 `meetingUrl`），都能在之後可靠地重新讀到收件人，所以 run 存 `formSubmissionId` 或新的 `consultationBookingId`，不存事件 payload。`payment_paid`（訂單）下一個 PR 再加。
+3. **去重**：`(vendorId, automationRuleId, sourceExecutionLogId)` unique。執行紀錄本身已依「規則＋事件對象＋規則版本」唯一，所以一個事件一條規則只有一列 run；與序列的兩個 unique 因為 NULL 不受 unique 限制而互不干擾。
+4. **起點**：`anchorAt` 用觸發事件第一次執行紀錄的 `createdAt`，重送或重領都不會改變起點。立即動作完成或失敗都建 run（延遲步驟到點時會重新檢查一切）；條件不符（`skipped`）不建。
+5. **刪除規則**：有 run 的規則一定有執行紀錄，依 #599 不能刪，只能停用；停用後 run 在下一步停止（`definition_paused`），重新啟用不復活（與序列暫停相同）。刪除交易內另外數一次 run 作為防禦。能刪的規則（無紀錄、無 run）連同步驟 cascade。worker 遇到規則或對象消失只停止那一個 run，不影響同一輪的其他 run。
+6. **冪等**：每一步一筆 `AutomationExecutionLog`，id 與冪等鍵由 `(vendorId, runId, stepId)` 決定。動作沒辦法和推進游標放在同一個資料庫交易（LINE、折價券等沿用 `executeAction`，它要求一般 client），所以改成「先執行動作、再在交易內推進游標」：中途死掉或租約過期時，重領會找到同一筆紀錄，已完成就只推進游標，失敗或執行中就重跑，所有產出都由紀錄 id 決定（折價券 id 與 bearer、LINE 冪等鍵、Email id），不會重複。改延遲的步驟保留 id，所以 #598 審查 B1 的情況（已執行的步驟被移到後面）只會推進游標。
+7. **推進游標與商家儲存**：推進時在交易內先 `FOR SHARE` 規則列、再依當下的步驟算下一步；商家儲存步驟時 `FOR UPDATE` 同一列並重新排定 run，所以兩者不會互相蓋掉（取代序列的 version 比對；規則的 `version` 是立即執行冪等鍵的一部分，不能拿來代表步驟版本）。
+8. **Email 額度**：延遲步驟的信用新的 `automation_step` trigger，與序列信共用寄送額度（每輪 20 封）、佇列上限與商家公平分配；一步的 Email 數量放不進剩下的額度就整步等下一輪（不計重試次數）。佇列滿時沒有 Email 的步驟（只貼標籤、LINE）這一輪也會等，最多晚到佇列消化為止。寄送前另有 6 小時逾時與黑名單檢查。
+9. **收件人**：報名尚未完成 Email 驗證時，延遲步驟不寄 Email（記為 `recipient_not_linked`），其他動作照做；立即動作的行為不變。`consultation_booked` 的預約被商家取消後停止（`subject_gone`）。退訂不停止自動化 run（只略過之後的 Email），所以自動化 run 不存 `recipientHash`。
+10. **條件**：沿用現有 condition schema，不新增語法。三個可用 trigger 的事件沒有金額或觀看秒數，所以目前延遲步驟只會用到「事件發生時」；「到現在還沒買」等條件與 `payment_paid` 一起在下一個 PR。
+11. **後台**：每條規則下方列出延遲步驟（新增、修改、刪除；單位只有小時與天），顯示進行中／完成／停止人數；執行日誌標出延遲步驟。沒有改成可編輯規則的立即動作（原本就只能在建立時設定），也沒有做視覺化編輯器。
+12. **模組循環**：worker（`delayed-step-runs.ts`）要用自動化引擎，而引擎經由 `email-delivery-immediate` 又會載入 `email-delivery.ts`，它再 import `delayed-step-runs.ts`，形成循環。`email-delivery.ts` 在模組載入時需要的 trigger 常數因此移到不依賴任何模組的 `automation-email-trigger.ts`（`delayed-step-runs.ts` 照舊 re-export `SEQUENCE_EMAIL_TRIGGER`），循環中的其他模組在載入時只定義函式。曾試過動態 import，但 Playwright 測試程序裡動態載入的模組解析不到 `@/` 路徑別名，所以改回靜態 import。
+13. **未做**：寄信服務未設定時整個 worker 不跑（沿用 F-3 的探測），只有 LINE／標籤的延遲步驟也會等；同一人前一封延遲步驟信還在佇列時，下一步不等（序列的 `waiting_previous` 沒有套用，因為自動化信的冪等鍵不含 run id）。
 
 ### 一併要修的既有缺口
 

@@ -42,8 +42,10 @@ describe("F-3 email sequence schema contract", () => {
     expect(migration).not.toContain('ALTER TABLE "Vendor"');
     expect(grantMigration.match(/^ALTER TABLE "Vendor"/gmu)).toHaveLength(2);
     expect(grantMigration).not.toMatch(/CREATE|INSERT|UPDATE|DELETE/u);
-    // F-4 adds automationRuleId with its own migration; PR 1 has only e-mail sequences.
-    expect(modelOf("DelayedStepRun")).not.toMatch(/^\s+automationRuleId\s/mu);
+    // PR 1 had only e-mail sequences. F-4 adds automationRuleId in its own
+    // migrations (automation-step-schema-contract.test.ts); this PR 1
+    // migration itself stays unchanged.
+    expect(migration).not.toContain('"automationRuleId"');
     expect(migration).toContain('CHECK ("emailSequenceId" IS NOT NULL)');
   });
 

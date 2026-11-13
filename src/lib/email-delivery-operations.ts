@@ -1,7 +1,7 @@
 import type { Prisma, PrismaClient } from "@prisma/client";
 import { getDb } from "@/lib/db";
 import { createEmailRecipientHash } from "@/lib/email-delivery-pii";
-import { isCurrentEmailDeliverySnapshot } from "@/lib/email-delivery";
+import { isCurrentEmailDeliverySnapshot, supersededCodeForTrigger } from "@/lib/email-delivery";
 import { EMAIL_DELIVERY_QUERY_MAX_LENGTH } from "@/lib/email-delivery-operations-contract";
 import { formatDateTime } from "@/lib/format";
 
@@ -268,7 +268,7 @@ export async function requeueEmailDelivery(input: {
           claimedAt: null,
           lastErrorCode: candidate.trigger === "form_submission_verification"
             ? "verification_superseded"
-            : candidate.trigger === "sequence_email" ? "sequence_superseded" : "config_superseded",
+            : supersededCodeForTrigger(candidate.trigger),
         },
       });
       if (stale.count !== 1) return { status: "conflict" as const };

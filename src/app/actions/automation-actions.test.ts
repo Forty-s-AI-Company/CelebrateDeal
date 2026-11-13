@@ -1,12 +1,12 @@
 import { Prisma } from "@prisma/client";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-const runtime = vi.hoisted(() => ({ db: { product: { findFirst: vi.fn() }, automationRule: { create: vi.fn(), findFirst: vi.fn(), updateMany: vi.fn(), delete: vi.fn() }, automationExecutionLog: { count: vi.fn() }, $queryRaw: vi.fn(), $executeRaw: vi.fn(), $transaction: vi.fn() }, auth: { vendor: { id: "v1" }, user: { id: "u1" }, member: { role: "admin" } }, security: vi.fn(), manager: vi.fn(), audit: vi.fn(), revalidate: vi.fn(), redirect: vi.fn((path: string): never => { throw new Error(`redirect:${path}`); }) }));
+const runtime = vi.hoisted(() => ({ db: { product: { findFirst: vi.fn() }, automationRule: { create: vi.fn(), findFirst: vi.fn(), updateMany: vi.fn(), delete: vi.fn() }, automationExecutionLog: { count: vi.fn() }, delayedStepRun: { count: vi.fn() }, $queryRaw: vi.fn(), $executeRaw: vi.fn(), $transaction: vi.fn() }, auth: { vendor: { id: "v1" }, user: { id: "u1" }, member: { role: "admin" } }, security: vi.fn(), manager: vi.fn(), audit: vi.fn(), revalidate: vi.fn(), redirect: vi.fn((path: string): never => { throw new Error(`redirect:${path}`); }) }));
 vi.mock("next/cache", () => ({ revalidatePath: runtime.revalidate })); vi.mock("next/navigation", () => ({ redirect: runtime.redirect })); vi.mock("@/lib/csrf", () => ({ assertServerActionSecurity: runtime.security })); vi.mock("@/lib/auth", () => ({ requireVendorManagerMember: runtime.manager })); vi.mock("@/lib/db", () => ({ getDb: () => runtime.db })); vi.mock("@/lib/audit", () => ({ auditSnapshot: (v: unknown) => v, writeAuditLog: runtime.audit }));
 import { createAutomationRecipeAction, createAutomationRuleAction, deleteAutomationRuleAction, dryRunAutomationRuleAction, toggleAutomationRuleAction } from "./automation-actions";
 function form(trigger = "form_registered") { const f = new FormData(); f.set("name", "報名追蹤"); f.set("trigger", trigger); f.set("actionLine", "on"); f.set("lineMessage", "謝謝報名"); return f; }
 function ruleForm(id = "r1") { const f = new FormData(); f.set("ruleId", id); return f; }
 const HIDDEN_TRIGGERS = ["payment_paid", "form_no_show", "viewer_watch_progress", "webinar_attended_duration_gte"] as const;
-beforeEach(() => { vi.clearAllMocks(); runtime.manager.mockResolvedValue(runtime.auth); runtime.db.automationRule.create.mockResolvedValue({ id: "r1", vendorId: "v1" }); runtime.db.automationRule.findFirst.mockResolvedValue({ id: "r1", isActive: true, trigger: "form_registered" }); runtime.db.automationRule.updateMany.mockResolvedValue({ count: 1 }); runtime.db.automationRule.delete.mockResolvedValue({ id: "r1" }); runtime.db.automationExecutionLog.count.mockResolvedValue(0); runtime.db.$queryRaw.mockResolvedValue([{ id: "r1" }]); runtime.db.$transaction.mockImplementation(async (work: (tx: unknown) => unknown) => work(runtime.db)); });
+beforeEach(() => { vi.clearAllMocks(); runtime.manager.mockResolvedValue(runtime.auth); runtime.db.automationRule.create.mockResolvedValue({ id: "r1", vendorId: "v1" }); runtime.db.automationRule.findFirst.mockResolvedValue({ id: "r1", isActive: true, trigger: "form_registered" }); runtime.db.automationRule.updateMany.mockResolvedValue({ count: 1 }); runtime.db.automationRule.delete.mockResolvedValue({ id: "r1" }); runtime.db.automationExecutionLog.count.mockResolvedValue(0); runtime.db.delayedStepRun.count.mockResolvedValue(0); runtime.db.$queryRaw.mockResolvedValue([{ id: "r1" }]); runtime.db.$transaction.mockImplementation(async (work: (tx: unknown) => unknown) => work(runtime.db)); });
 describe("automation actions", () => { it("requires CSRF and writes tenant-scoped rules", async () => { await expect(createAutomationRuleAction(form())).rejects.toThrow("redirect:/settings/automations?updated=created"); expect(runtime.security).toHaveBeenCalled(); expect(runtime.manager).toHaveBeenCalledWith("/settings/automations"); expect(runtime.db.automationRule.create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ vendorId: "v1", trigger: "form_registered", condition: { type: "always" } }) })); expect(runtime.audit).toHaveBeenCalledWith(expect.objectContaining({ vendorId: "v1", actorId: "u1", actorLabel: "admin" })); }); it("toggles only a rule in the current vendor", async () => { await expect(toggleAutomationRuleAction(ruleForm())).rejects.toThrow("redirect:/settings/automations?updated=toggled"); expect(runtime.db.automationRule.findFirst).toHaveBeenCalledWith({ where: { id: "r1", vendorId: "v1" }, select: { id: true, isActive: true, trigger: true } }); expect(runtime.db.automationRule.updateMany).toHaveBeenCalledWith({ where: { id: "r1", vendorId: "v1", isActive: true }, data: { isActive: false } }); });
 
   it("converts fixed voucher dollars to cents and rejects a free-order percentage", async () => {
@@ -159,6 +159,16 @@ describe("automation actions", () => { it("requires CSRF and writes tenant-scope
   ])("answers delete_busy after %s and changes nothing", async (_label, error) => {
     runtime.db.$transaction.mockRejectedValueOnce(error());
     await expect(deleteAutomationRuleAction(ruleForm())).rejects.toThrow("redirect:/settings/automations?error=delete_busy");
+    expect(runtime.audit).not.toHaveBeenCalled();
+  });
+
+  it("keeps a rule with delayed-step runs (F-4), counted for the current vendor after the lock", async () => {
+    runtime.db.automationRule.findFirst.mockResolvedValue({ id: "r1", name: "規則", trigger: "form_registered", funnelPageId: null, isActive: false });
+    runtime.db.delayedStepRun.count.mockResolvedValue(1);
+    await expect(deleteAutomationRuleAction(ruleForm())).rejects.toThrow("redirect:/settings/automations?error=delete_has_history");
+    expect(runtime.db.delayedStepRun.count).toHaveBeenCalledWith({ where: { vendorId: "v1", automationRuleId: "r1" } });
+    expect(runtime.db.$queryRaw.mock.invocationCallOrder[0]).toBeLessThan(runtime.db.delayedStepRun.count.mock.invocationCallOrder[0]!);
+    expect(runtime.db.automationRule.delete).not.toHaveBeenCalled();
     expect(runtime.audit).not.toHaveBeenCalled();
   });
 
