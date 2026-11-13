@@ -23,6 +23,7 @@ import {
 import { isFixedSessionLive } from "@/lib/live-fixed-sessions";
 import { normalizeBlacklistIdentifier } from "@/lib/blacklist-identifiers";
 import { isEmailBlacklistedForVendor } from "@/lib/email-blacklist";
+import { AUTOMATION_EMAIL_TRIGGER } from "@/lib/automation-email-trigger";
 import { captureOperationalError } from "@/lib/monitoring";
 import {
   createFormSubmissionVerificationToken,
@@ -1688,9 +1689,9 @@ async function finalizeSuppressed(delivery: ClaimedDelivery, errorCode = "recipi
  * time when the recipient is on this vendor's Email blacklist: learner sign-in
  * links (owner policy 2026-11-10) and automation e-mails (F-4 gap 1, checked
  * at creation too). Sequence e-mails have their own check in
- * isCurrentSequenceEmailDelivery. The literal matches automation-workflow.ts.
+ * isCurrentSequenceEmailDelivery.
  */
-const SEND_TIME_BLACKLIST_TRIGGERS: ReadonlySet<string> = new Set(["student_portal_magic_link", "automation"]);
+const SEND_TIME_BLACKLIST_TRIGGERS: ReadonlySet<string> = new Set(["student_portal_magic_link", AUTOMATION_EMAIL_TRIGGER]);
 
 /** Send-time blacklist guard; reads the recipient only from the encrypted payload. */
 async function isDeliveryRecipientBlacklisted(

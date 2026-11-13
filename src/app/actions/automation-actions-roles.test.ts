@@ -11,8 +11,10 @@ const mocks = vi.hoisted(() => ({
   redirect: vi.fn((path: string): never => { throw new Error(`redirect:${path}`); }),
   db: {
     product: { findFirst: vi.fn(), findMany: vi.fn() },
-    automationRule: { create: vi.fn(), findFirst: vi.fn(), findMany: vi.fn(), update: vi.fn(), deleteMany: vi.fn() },
-    automationExecutionLog: { findMany: vi.fn() },
+    automationRule: { create: vi.fn(), findFirst: vi.fn(), findMany: vi.fn(), updateMany: vi.fn(), delete: vi.fn() },
+    automationExecutionLog: { findMany: vi.fn(), count: vi.fn() },
+    $queryRaw: vi.fn(),
+    $transaction: vi.fn(),
   },
   audit: vi.fn(),
 }));
@@ -70,7 +72,7 @@ const ACTIONS = [
 ] as const;
 
 function databaseCalls() {
-  return [...Object.values(mocks.db.automationRule), ...Object.values(mocks.db.product), mocks.db.automationExecutionLog.findMany]
+  return [...Object.values(mocks.db.automationRule), ...Object.values(mocks.db.product), ...Object.values(mocks.db.automationExecutionLog), mocks.db.$queryRaw, mocks.db.$transaction]
     .reduce((total, method) => total + method.mock.calls.length, 0);
 }
 
@@ -80,8 +82,11 @@ beforeEach(() => {
   mocks.redirect.mockImplementation((path: string): never => { throw new Error(`redirect:${path}`); });
   mocks.db.automationRule.create.mockResolvedValue({ id: "rule-1", vendorId: "vendor-1" });
   mocks.db.automationRule.findFirst.mockResolvedValue({ id: "rule-1", name: "規則", trigger: "consultation_booked", isActive: false, funnelPageId: null, condition: { type: "always" }, actions: [{ type: "add_customer_tag", tag: "VIP" }], _count: { executionLogs: 0 } });
-  mocks.db.automationRule.update.mockResolvedValue({ id: "rule-1", isActive: true });
-  mocks.db.automationRule.deleteMany.mockResolvedValue({ count: 1 });
+  mocks.db.automationRule.updateMany.mockResolvedValue({ count: 1 });
+  mocks.db.automationRule.delete.mockResolvedValue({ id: "rule-1" });
+  mocks.db.automationExecutionLog.count.mockResolvedValue(0);
+  mocks.db.$queryRaw.mockResolvedValue([{ id: "rule-1" }]);
+  mocks.db.$transaction.mockImplementation(async (work: (tx: unknown) => unknown) => work(mocks.db));
   mocks.db.automationRule.findMany.mockResolvedValue([]);
   mocks.db.product.findMany.mockResolvedValue([]);
   mocks.db.automationExecutionLog.findMany.mockResolvedValue([]);
@@ -113,6 +118,7 @@ describe("/settings/automations role boundary", () => {
       await expect(run()).rejects.toThrow(success);
       const firstQuery = [...mocks.db.automationRule.findFirst.mock.calls, ...mocks.db.automationRule.create.mock.calls][0]?.[0] as { where?: { vendorId?: string }; data?: { vendorId?: string } };
       expect(firstQuery.where?.vendorId ?? firstQuery.data?.vendorId).toBe("vendor-1");
+      for (const [, ...values] of mocks.db.$queryRaw.mock.calls) expect(values).toContain("vendor-1");
     });
 
     it.each(["accountant", "support", "member", "partner"])("refuses a vendor %s without touching the database", async (role) => {

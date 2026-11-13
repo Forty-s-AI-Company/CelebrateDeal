@@ -12,9 +12,11 @@ import {
   signWithRotation,
 } from "@/lib/derived-key-rotation";
 import { automationCustomerKeyHash } from "@/lib/customer-key-hash";
-import { createEmailUnsubscribeUrl, protectEmailDeliveryPayload } from "@/lib/email-delivery-pii";
+import { createEmailRecipientHash, createEmailUnsubscribeUrl, protectEmailDeliveryPayload } from "@/lib/email-delivery-pii";
 import { ensureEmailUnsubscribeFooter } from "@/lib/email-delivery-format";
 import { isEmailBlacklistedForVendor } from "@/lib/email-blacklist";
+import { AUTOMATION_EMAIL_TRIGGER } from "@/lib/automation-email-trigger";
+import { captureOperationalError } from "@/lib/monitoring";
 import { scheduleImmediateEmailDispatch } from "@/lib/email-delivery-immediate";
 import { isSafeExternalHttpsUrl } from "@/lib/safe-url";
 import {
@@ -234,13 +236,18 @@ const EMAIL_SKIP_NOTES: Record<AutomationEmailSkipReason, string> = {
   recipient_blacklisted: "Email 未寄出：收件人在本商家黑名單中",
 };
 
-/** Merchant-readable notes for actions an execution skipped on purpose (stored actionResults are untrusted JSON). */
+/** Reason of a failed automation e-mail action whose unsubscribe link could not be built. */
+export const AUTOMATION_UNSUBSCRIBE_URL_UNAVAILABLE = "unsubscribe_url_unavailable";
+
+/** Merchant-readable notes for e-mail actions an execution skipped or could not queue (stored actionResults are untrusted JSON). */
 export function automationExecutionNotes(actionResults: unknown) {
   if (!Array.isArray(actionResults)) return [];
   const notes = actionResults.flatMap((result) => {
     if (!result || typeof result !== "object") return [];
     const { type, status, reason } = result as Record<string, unknown>;
-    if (type !== "send_email_notification" || status !== "skipped") return [];
+    if (type !== "send_email_notification") return [];
+    if (status === "failed" && reason === AUTOMATION_UNSUBSCRIBE_URL_UNAVAILABLE) return ["Email 未寄出：系統暫時無法產生退訂連結"];
+    if (status !== "skipped") return [];
     return reason === "recipient_suppressed" || reason === "recipient_blacklisted" ? [EMAIL_SKIP_NOTES[reason]] : [];
   });
   return [...new Set(notes)];
@@ -358,6 +365,29 @@ function isUniqueConflict(error: unknown) {
   return error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002";
 }
 
+function isForeignKeyViolation(error: unknown) {
+  return error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2003";
+}
+
+function isRecordNotFound(error: unknown) {
+  return error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2025";
+}
+
+/**
+ * Records how an execution ended. Returns false when its log row is gone:
+ * the only way is a cascade from deleting the rule (or the vendor) while it
+ * ran, and that rule is then simply over for this event.
+ */
+async function finishExecution(db: AutomationDb, logId: string, data: Prisma.AutomationExecutionLogUpdateInput) {
+  try {
+    await db.automationExecutionLog.update({ where: { id: logId }, data });
+    return true;
+  } catch (error) {
+    if (isRecordNotFound(error)) return false;
+    throw error;
+  }
+}
+
 function replaceArtifacts(value: string | null | undefined, artifacts: { voucherUrl?: string; consultationUrl?: string; webinarUrl?: string }) {
   if (!value) return value ?? null;
   return value
@@ -470,27 +500,38 @@ async function executeAction(
     if (!event.recipientEmail) return { type: action.type, status: "recipient_not_linked" } as const;
     const id = deterministicActionId(executionLogId, actionIndex);
     const copy = EMAIL_COPY[action.template];
-    // Marketing mail (F-4 gap 1): the same signed /unsubscribe link and
-    // footer as sequence e-mails. The token names this delivery, so the
-    // unsubscribe lands on this vendor's EmailSuppression only.
-    const unsubscribeUrl = createEmailUnsubscribeUrl(id);
-    const protectedPayload = protectEmailDeliveryPayload({
-      recipientEmail: event.recipientEmail,
-      subject: copy.subject,
-      body: ensureEmailUnsubscribeFooter(replaceArtifacts(copy.body, artifacts) ?? copy.body, unsubscribeUrl),
-    }, { vendorId: event.vendorId, deliveryId: id });
-    const blocked = await automationEmailRecipientBlock(db, event.vendorId, event.recipientEmail, protectedPayload.recipientHash);
+    // The recipient lists come first, so an unsubscribed or blacklisted
+    // person is recorded as skipped even when the link below cannot be built.
+    const blocked = await automationEmailRecipientBlock(db, event.vendorId, event.recipientEmail, createEmailRecipientHash(event.recipientEmail, event.vendorId));
     if (blocked) {
       // Not an error: the execution completes and the log records why, so
       // nothing retries it. dispatchEmailDelivery checks both again at send.
       return { type: action.type, status: "skipped", reason: blocked, template: action.template } as const;
     }
+    // Marketing mail (F-4 gap 1): the same signed /unsubscribe link and
+    // footer as sequence e-mails. The token names this delivery, so the
+    // unsubscribe lands on this vendor's EmailSuppression only.
+    let unsubscribeUrl: string;
+    try {
+      unsubscribeUrl = createEmailUnsubscribeUrl(id);
+    } catch (error) {
+      // Missing public URL or signing key: never queue the mail without its
+      // link. This action fails on its own; the rest of the rule still runs
+      // and the execution is recorded as failed (see runAutomationEvent).
+      captureOperationalError(error, { area: "automation_email", operation: "unsubscribe_url", vendorId: event.vendorId });
+      return { type: action.type, status: "failed", reason: AUTOMATION_UNSUBSCRIBE_URL_UNAVAILABLE, template: action.template } as const;
+    }
+    const protectedPayload = protectEmailDeliveryPayload({
+      recipientEmail: event.recipientEmail,
+      subject: copy.subject,
+      body: ensureEmailUnsubscribeFooter(replaceArtifacts(copy.body, artifacts) ?? copy.body, unsubscribeUrl),
+    }, { vendorId: event.vendorId, deliveryId: id });
     try {
       await db.emailDelivery.create({ data: {
         id,
         vendorId: event.vendorId,
         sourceTemplateId: `automation_${action.template}_v1`,
-        trigger: "automation",
+        trigger: AUTOMATION_EMAIL_TRIGGER,
         ...protectedPayload,
         idempotencyKey: stableLineIdempotencyKey(["automation-email", executionLogId, actionIndex]),
         status: "queued",
@@ -588,6 +629,16 @@ async function runAutomationEvent(db: AutomationDb, event: AutomationEvent, queu
         select: { id: true },
       });
     } catch (error) {
+      if (isForeignKeyViolation(error)) {
+        // The rule was deleted after it was selected above (the delete holds
+        // the rule row FOR UPDATE, so this insert waited and then lost its
+        // parent). Confirm that, rather than assume it for every foreign key
+        // of the log, and move on to the event's other rules.
+        const stillThere = await db.automationRule.findFirst({ where: { id: rule.id, vendorId: event.vendorId }, select: { id: true } });
+        if (stillThere) throw error;
+        results.push({ ruleId: rule.id, status: "rule_deleted" });
+        continue;
+      }
       if (!isUniqueConflict(error)) throw error;
       const existing = await db.automationExecutionLog.findUnique({
         where: { vendorId_idempotencyKey: { vendorId: event.vendorId, idempotencyKey } },
@@ -617,11 +668,8 @@ async function runAutomationEvent(db: AutomationDb, event: AutomationEvent, queu
     }
 
     if (!matched) {
-      await db.automationExecutionLog.update({
-        where: { id: log.id },
-        data: { status: "skipped", conditionMatched: false, completedAt: new Date() },
-      });
-      results.push({ ruleId: rule.id, status: "skipped" });
+      const recorded = await finishExecution(db, log.id, { status: "skipped", conditionMatched: false, completedAt: new Date() });
+      results.push({ ruleId: rule.id, status: recorded ? "skipped" : "rule_deleted" });
       continue;
     }
 
@@ -652,28 +700,36 @@ async function runAutomationEvent(db: AutomationDb, event: AutomationEvent, queu
         });
         actionResults.push({ type: "line_push", status: delivery.status, source: "voucher_delivery" });
       }
-      await db.automationExecutionLog.update({
-        where: { id: log.id },
-        data: {
-          status: "completed",
-          conditionMatched: true,
-          actionResults: actionResults as Prisma.InputJsonArray,
-          completedAt: new Date(),
-        },
+      // An action that reports its own failure (today only an automation
+      // e-mail without an unsubscribe link) lets the other actions run, but
+      // the execution is recorded as failed, like a thrown action, so the
+      // same event can reclaim it. A reclaim repeats every action safely: the
+      // tag is an upsert, the voucher, LINE and e-mail rows have
+      // deterministic ids or idempotency keys.
+      const reportedFailure = actionResults.find((result): result is { status: "failed"; reason: string } => (
+        Boolean(result) && typeof result === "object" && (result as { status?: unknown }).status === "failed"
+      ));
+      const recorded = await finishExecution(db, log.id, {
+        status: reportedFailure ? "failed" : "completed",
+        conditionMatched: true,
+        actionResults: actionResults as Prisma.InputJsonArray,
+        ...(reportedFailure ? { errorCode: reportedFailure.reason } : {}),
+        completedAt: new Date(),
       });
-      results.push({ ruleId: rule.id, status: "completed" });
+      results.push({ ruleId: rule.id, status: !recorded ? "rule_deleted" : reportedFailure ? "failed" : "completed" });
     } catch {
-      await db.automationExecutionLog.update({
-        where: { id: log.id },
-        data: {
-          status: "failed",
-          conditionMatched: true,
-          actionResults: actionResults as Prisma.InputJsonArray,
-          errorCode: "action_failed",
-          completedAt: new Date(),
-        },
+      // A thrown action ends this rule only (as before). When the rule was
+      // deleted meanwhile (e.g. a tag whose sourceExecutionLogId no longer
+      // exists), the failed-state write finds no log row either; that is the
+      // P2025 finishExecution absorbs, and the event's other rules still run.
+      const recorded = await finishExecution(db, log.id, {
+        status: "failed",
+        conditionMatched: true,
+        actionResults: actionResults as Prisma.InputJsonArray,
+        errorCode: "action_failed",
+        completedAt: new Date(),
       });
-      results.push({ ruleId: rule.id, status: "failed" });
+      results.push({ ruleId: rule.id, status: recorded ? "failed" : "rule_deleted" });
     }
   }
   return results;

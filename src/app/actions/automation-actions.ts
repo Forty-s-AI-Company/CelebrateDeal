@@ -127,7 +127,7 @@ export async function dryRunAutomationRuleAction(formData: FormData) {
   // A rule whose trigger never fires would always "dispatch" in a simulation;
   // say that it does not run instead of a misleading result.
   if (!isAvailableAutomationTrigger(existing.trigger)) {
-    redirect(`${PATH}?dryRun=trigger_unavailable&rule=${encodeURIComponent(id)}`);
+    redirect(`${PATH}?dryRun=trigger_unavailable`);
   }
   const result = dryRunAutomationRule({ condition: existing.condition, actions: existing.actions }, {
     vendorId: vendor.id,
@@ -140,7 +140,7 @@ export async function dryRunAutomationRuleAction(formData: FormData) {
     watchSecondsTotal: Math.round(number(formData, "watchSeconds")),
     hasPurchased: formData.get("hasPurchased") === "on",
   });
-  redirect(`${PATH}?dryRun=${encodeURIComponent(result.status)}&rule=${encodeURIComponent(id)}`);
+  redirect(`${PATH}?dryRun=${encodeURIComponent(result.status)}`);
 }
 
 export async function createAutomationRuleAction(formData: FormData) {
@@ -165,40 +165,61 @@ export async function toggleAutomationRuleAction(formData: FormData) {
   if (!existing) fail("not_found");
   // Switching off always works; switching on needs a trigger that can run.
   if (!existing.isActive && !isAvailableAutomationTrigger(existing.trigger)) fail("trigger_unavailable");
-  const updated = await getDb().automationRule.update({
-    where: { vendorId_id: { vendorId: vendor.id, id: existing.id } },
+  // Conditional on the state just read, so a rule deleted (or switched) in
+  // the meantime is reported instead of throwing.
+  const updated = await getDb().automationRule.updateMany({
+    where: { id: existing.id, vendorId: vendor.id, isActive: existing.isActive },
     data: { isActive: !existing.isActive },
   });
-  await writeAuditLog({ vendorId: vendor.id, actorId: user.id, actorLabel: member.role, action: updated.isActive ? "activate_automation_rule" : "deactivate_automation_rule", targetType: "AutomationRule", targetId: updated.id, before: auditSnapshot(existing), after: auditSnapshot(updated) });
+  if (updated.count !== 1) fail("not_found");
+  const after = { ...existing, isActive: !existing.isActive };
+  await writeAuditLog({ vendorId: vendor.id, actorId: user.id, actorLabel: member.role, action: after.isActive ? "activate_automation_rule" : "deactivate_automation_rule", targetType: "AutomationRule", targetId: existing.id, before: auditSnapshot(existing), after: auditSnapshot(after) });
   revalidatePath(PATH);
   redirect(`${PATH}?updated=toggled`);
 }
 
+/** A delete waits at most this long for a running execution to commit its log row. */
+const DELETE_TRANSACTION_OPTIONS = { maxWait: 5_000, timeout: 15_000 } as const;
+
+type DeleteOutcome =
+  | { code: "not_found" | "delete_requires_inactive" | "delete_has_history" }
+  | { code: "deleted"; before: { id: string; name: string; trigger: string; isActive: boolean; funnelPageId: string | null } };
+
 /**
  * Deletes a switched-off rule that has never run. Execution logs cascade to
  * the tags and vouchers they issued (schema onDelete: Cascade), so a rule with
- * history is kept and can only be switched off. The guards are part of the
- * delete itself, so a run or a re-enable in between leaves the rule in place.
+ * history is kept and can only be switched off.
+ *
+ * The rule row is locked FOR UPDATE first. An execution log being written
+ * holds a key-share lock on it (its foreign key), so the delete waits for that
+ * write to commit; the checks then run as new statements and see the log, and
+ * the rule stays. An execution that starts after the lock waits instead and
+ * finds its rule gone (runAutomationEvent skips it). A concurrent re-enable is
+ * serialized the same way.
  */
 export async function deleteAutomationRuleAction(formData: FormData) {
   await assertServerActionSecurity(formData);
   const { user, vendor, member } = await requireVendorManagerMember(PATH);
   const id = text(formData, "ruleId");
   if (!id) fail("invalid_rule");
-  const db = getDb();
-  const existing = await db.automationRule.findFirst({
-    where: { id, vendorId: vendor.id },
-    select: { id: true, name: true, trigger: true, isActive: true, funnelPageId: true, _count: { select: { executionLogs: true } } },
-  });
-  if (!existing) fail("not_found");
-  if (existing.isActive) fail("delete_requires_inactive");
-  if (existing._count.executionLogs > 0) fail("delete_has_history");
-  const deleted = await db.automationRule.deleteMany({
-    where: { id: existing.id, vendorId: vendor.id, isActive: false, executionLogs: { none: {} } },
-  });
-  if (deleted.count !== 1) fail("delete_conflict");
-  const before = { id: existing.id, name: existing.name, trigger: existing.trigger, isActive: existing.isActive, funnelPageId: existing.funnelPageId };
-  await writeAuditLog({ vendorId: vendor.id, actorId: user.id, actorLabel: member.role, action: "delete_automation_rule", targetType: "AutomationRule", targetId: existing.id, before: auditSnapshot(before) });
+  const outcome = await getDb().$transaction(async (tx): Promise<DeleteOutcome> => {
+    const locked = await tx.$queryRaw<Array<{ id: string }>>`
+      SELECT "id" FROM "AutomationRule" WHERE "id" = ${id} AND "vendorId" = ${vendor.id} FOR UPDATE
+    `;
+    if (locked.length === 0) return { code: "not_found" };
+    const rule = await tx.automationRule.findFirst({
+      where: { id, vendorId: vendor.id },
+      select: { id: true, name: true, trigger: true, isActive: true, funnelPageId: true },
+    });
+    if (!rule) return { code: "not_found" };
+    if (rule.isActive) return { code: "delete_requires_inactive" };
+    const history = await tx.automationExecutionLog.count({ where: { vendorId: vendor.id, ruleId: rule.id } });
+    if (history > 0) return { code: "delete_has_history" };
+    await tx.automationRule.delete({ where: { vendorId_id: { vendorId: vendor.id, id: rule.id } } });
+    return { code: "deleted", before: rule };
+  }, DELETE_TRANSACTION_OPTIONS);
+  if (outcome.code !== "deleted") fail(outcome.code);
+  await writeAuditLog({ vendorId: vendor.id, actorId: user.id, actorLabel: member.role, action: "delete_automation_rule", targetType: "AutomationRule", targetId: outcome.before.id, before: auditSnapshot(outcome.before) });
   revalidatePath(PATH);
   redirect(`${PATH}?updated=deleted`);
 }

@@ -66,8 +66,7 @@ async function tenant() {
   return { vendor, rule };
 }
 
-function booked(vendorId: string, email: string) {
-  const bookingId = `booking-${randomUUID()}`;
+function booked(vendorId: string, email: string, bookingId = `booking-${randomUUID()}`) {
   return dispatchAutomationEvent(db, {
     vendorId,
     eventId: `consultation-booked:${bookingId}`,
@@ -164,6 +163,109 @@ describe("automation e-mail unsubscribe and blacklist (F-4 gap 1)", () => {
     const other = await db.emailDelivery.findFirstOrThrow({ where: { vendorId: b.vendor.id } });
     await expect(dispatchEmailDelivery(other.id)).resolves.toEqual({ status: "sent" });
     expect(provider.send).toHaveBeenCalledOnce();
+  });
+});
+
+describe("automation e-mail without an unsubscribe link (review M2)", () => {
+  it("never queues the mail, still runs the rule's other actions, and a reclaim of the same event sends it once", async () => {
+    const a = await tenant();
+    vi.stubEnv("NEXT_PUBLIC_APP_URL", "");
+    await expect(booked(a.vendor.id, "lead@example.test", "booking-retry")).resolves.toEqual([{ ruleId: a.rule.id, status: "failed" }]);
+    expect(await latestLog(a.vendor.id)).toMatchObject({ status: "failed", errorCode: "unsubscribe_url_unavailable" });
+    expect(await db.emailDelivery.count({ where: { vendorId: a.vendor.id } })).toBe(0);
+    expect(await db.customerTagAssignment.count({ where: { vendorId: a.vendor.id } })).toBe(1);
+
+    // The same event again (same booking) reclaims the failed execution.
+    vi.stubEnv("NEXT_PUBLIC_APP_URL", APP_URL);
+    await expect(booked(a.vendor.id, "lead@example.test", "booking-retry")).resolves.toEqual([{ ruleId: a.rule.id, status: "completed" }]);
+    expect(await db.automationExecutionLog.count({ where: { vendorId: a.vendor.id } })).toBe(1);
+    expect(await latestLog(a.vendor.id)).toMatchObject({ status: "completed", errorCode: null });
+    expect(await db.customerTagAssignment.count({ where: { vendorId: a.vendor.id } })).toBe(1);
+    const delivery = await db.emailDelivery.findFirstOrThrow({ where: { vendorId: a.vendor.id } });
+    expect(unsubscribeLink(delivery).pathname).toBe("/unsubscribe");
+    // A third delivery of the same event is a duplicate: nothing new.
+    await expect(booked(a.vendor.id, "lead@example.test", "booking-retry")).resolves.toEqual([{ ruleId: a.rule.id, status: "duplicate" }]);
+    expect(await db.emailDelivery.count({ where: { vendorId: a.vendor.id } })).toBe(1);
+  });
+});
+
+/** Waits until another connection is blocked on a row lock in a statement matching `fragment`; fails if it never is. */
+async function waitForLockWait(fragment: string) {
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    const [row] = await db.$queryRaw<Array<{ waiting: number }>>`
+      SELECT count(*)::int AS waiting FROM pg_stat_activity
+      WHERE datname = current_database() AND wait_event_type = 'Lock' AND query LIKE ${`%${fragment}%`}
+    `;
+    if ((row?.waiting ?? 0) > 0) return;
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  throw new Error(`No statement waited on a lock for ${fragment}`);
+}
+
+describe("deleting a rule while it runs (review M1)", () => {
+  const form = (entries: Record<string, string>) => {
+    const value = new FormData();
+    for (const [key, entry] of Object.entries(entries)) value.set(key, entry);
+    return value;
+  };
+
+  it("waits for an execution log still being written and then keeps the rule and its log", async () => {
+    const a = await tenant();
+    await db.automationRule.update({ where: { id: a.rule.id }, data: { isActive: false } });
+    runtime.actor = { user: { id: "synthetic-user" }, vendor: { id: a.vendor.id }, member: { role: "admin" } };
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    let written!: () => void;
+    const logWritten = new Promise<void>((resolve) => { written = resolve; });
+    const writer = db.$transaction(async (tx) => {
+      await tx.automationExecutionLog.create({
+        data: { vendorId: a.vendor.id, ruleId: a.rule.id, idempotencyKey: `concurrent-${randomUUID()}`, eventId: "concurrent", trigger: "consultation_booked", subjectType: "buyer_registration", status: "running" },
+      });
+      written();
+      await gate;
+    }, { timeout: 30_000 });
+    await logWritten;
+
+    const deletion = deleteAutomationRuleAction(form({ ruleId: a.rule.id })).catch((error: Error) => error.message);
+    await waitForLockWait("AutomationRule\"");
+    release();
+    await writer;
+    expect(await deletion).toBe("redirect:/settings/automations?error=delete_has_history");
+    expect(await db.automationRule.count({ where: { id: a.rule.id } })).toBe(1);
+    expect(await db.automationExecutionLog.count({ where: { ruleId: a.rule.id } })).toBe(1);
+  });
+
+  it("lets an execution that starts during the delete skip the deleted rule and run the event's other rules", async () => {
+    const a = await tenant();
+    const next = await db.automationRule.create({
+      data: { vendorId: a.vendor.id, name: "第二條", trigger: "consultation_booked", condition: { type: "always" } as Prisma.InputJsonValue, actions: [{ type: "add_customer_tag", tag: "第二條" }] as Prisma.InputJsonArray },
+    });
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    let locked!: () => void;
+    const deleteLocked = new Promise<void>((resolve) => { locked = resolve; });
+    // The same statements as deleteAutomationRuleAction, held open.
+    const deleter = db.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT "id" FROM "AutomationRule" WHERE "id" = ${a.rule.id} AND "vendorId" = ${a.vendor.id} FOR UPDATE`;
+      await tx.automationRule.delete({ where: { vendorId_id: { vendorId: a.vendor.id, id: a.rule.id } } });
+      locked();
+      await gate;
+    }, { timeout: 30_000 });
+    await deleteLocked;
+
+    // The engine still sees the rule (the delete is not committed) and its
+    // log insert waits on the locked rule row.
+    const dispatched = booked(a.vendor.id, "lead@example.test");
+    await waitForLockWait("AutomationExecutionLog");
+    release();
+    await deleter;
+    await expect(dispatched).resolves.toEqual([
+      { ruleId: a.rule.id, status: "rule_deleted" },
+      { ruleId: next.id, status: "completed" },
+    ]);
+    expect(await db.automationRule.count({ where: { id: a.rule.id } })).toBe(0);
+    expect(await db.customerTagAssignment.findMany({ where: { vendorId: a.vendor.id }, select: { tag: true } })).toEqual([{ tag: "第二條" }]);
+    expect(await db.emailDelivery.count({ where: { vendorId: a.vendor.id } })).toBe(0);
   });
 });
 

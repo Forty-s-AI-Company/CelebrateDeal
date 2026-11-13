@@ -7,11 +7,13 @@ const mocks = vi.hoisted(() => ({
   stableLineIdempotencyKey: vi.fn((parts: Array<string | number>) => parts.join(":")),
   getDb: vi.fn(),
   scheduleImmediateEmailDispatch: vi.fn(),
+  captureOperationalError: vi.fn(),
 }));
 
 vi.mock("@/lib/app-url", () => ({ getCanonicalAppUrl: () => "https://app.example.test" }));
 vi.mock("@/lib/db", () => ({ getDb: mocks.getDb }));
 vi.mock("@/lib/email-delivery-immediate", () => ({ scheduleImmediateEmailDispatch: mocks.scheduleImmediateEmailDispatch }));
+vi.mock("@/lib/monitoring", () => ({ captureOperationalError: mocks.captureOperationalError }));
 vi.mock("@/lib/line-notification", () => ({
   enqueueLineNotification: mocks.enqueueLineNotification,
   buildAutomationLineMessage: mocks.buildAutomationLineMessage,
@@ -215,6 +217,94 @@ describe("smart automation workflow engine", () => {
     const db = emailRuleDb({ suppression: { resubscribedAt: new Date("2026-11-01T00:00:00.000Z") } });
     await expect(dispatchAutomationEvent(db as never, bookedEvent)).resolves.toEqual([{ ruleId: "rule-email", status: "completed" }]);
     expect(db.emailDelivery.create).toHaveBeenCalledTimes(1);
+  });
+
+  it("fails only the e-mail action when no unsubscribe link can be built, runs the rest and records a reclaimable failure", async () => {
+    vi.stubEnv("NEXT_PUBLIC_APP_URL", "");
+    const db = emailRuleDb({ actions: [{ type: "send_email_notification", template: "consultation_confirmation" }, { type: "add_customer_tag", tag: "諮詢學員" }] });
+    await expect(dispatchAutomationEvent(db as never, bookedEvent)).resolves.toEqual([{ ruleId: "rule-email", status: "failed" }]);
+    // Never queued without its link; the tag still runs.
+    expect(db.emailDelivery.create).not.toHaveBeenCalled();
+    expect(db.customerTagAssignment.upsert).toHaveBeenCalledTimes(1);
+    expect(mocks.captureOperationalError).toHaveBeenCalledOnce();
+    const finished = db.automationExecutionLog.update.mock.calls.at(-1)?.[0].data;
+    expect(finished).toMatchObject({ status: "failed", errorCode: "unsubscribe_url_unavailable", conditionMatched: true });
+    expect(finished.actionResults).toEqual([
+      { type: "send_email_notification", status: "failed", reason: "unsubscribe_url_unavailable", template: "consultation_confirmation" },
+      { type: "add_customer_tag", status: "tagged", tag: "諮詢學員" },
+    ]);
+    expect(automationExecutionNotes(finished.actionResults)).toEqual(["Email 未寄出：系統暫時無法產生退訂連結"]);
+  });
+
+  it("checks the recipient lists before the unsubscribe link, so a blocked recipient is a skip even without a link", async () => {
+    vi.stubEnv("NEXT_PUBLIC_APP_URL", "");
+    const db = emailRuleDb({ blacklisted: true });
+    await expect(dispatchAutomationEvent(db as never, bookedEvent)).resolves.toEqual([{ ruleId: "rule-email", status: "completed" }]);
+    expect(mocks.captureOperationalError).not.toHaveBeenCalled();
+    expect(db.automationExecutionLog.update.mock.calls.at(-1)?.[0].data.actionResults).toEqual([
+      { type: "send_email_notification", status: "skipped", reason: "recipient_blacklisted", template: "consultation_confirmation" },
+    ]);
+  });
+
+  function twoTagRules() {
+    return {
+      automationRule: {
+        findMany: vi.fn().mockResolvedValue([
+          { id: "rule-gone", condition: { type: "always" }, actions: [{ type: "add_customer_tag", tag: "一" }] },
+          { id: "rule-next", condition: { type: "always" }, actions: [{ type: "add_customer_tag", tag: "二" }] },
+        ]),
+        findFirst: vi.fn().mockResolvedValue(null),
+      },
+      automationExecutionLog: { create: vi.fn(), update: vi.fn().mockResolvedValue({}), findUnique: vi.fn(), updateMany: vi.fn() },
+      customerTagAssignment: { upsert: vi.fn().mockResolvedValue({}) },
+      automationVoucherGrant: {}, product: {}, lineOfficialAccount: {}, lineUserIdentity: {}, lineDelivery: {}, emailDelivery: {}, emailSuppression: {}, blacklist: {},
+    };
+  }
+  const prismaError = (code: string) => new Prisma.PrismaClientKnownRequestError(code, { code, clientVersion: Prisma.prismaVersion.client });
+
+  it("skips a rule deleted before its execution log was written and still runs the event's other rules", async () => {
+    const db = twoTagRules();
+    db.automationExecutionLog.create.mockRejectedValueOnce(prismaError("P2003")).mockResolvedValueOnce({ id: "log-next" });
+    await expect(dispatchAutomationEvent(db as never, event)).resolves.toEqual([
+      { ruleId: "rule-gone", status: "rule_deleted" },
+      { ruleId: "rule-next", status: "completed" },
+    ]);
+    expect(db.automationRule.findFirst).toHaveBeenCalledWith({ where: { id: "rule-gone", vendorId: "vendor-1" }, select: { id: true } });
+    expect(db.customerTagAssignment.upsert).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps throwing a foreign-key error that is not about a deleted rule", async () => {
+    const db = twoTagRules();
+    db.automationRule.findFirst.mockResolvedValue({ id: "rule-gone" });
+    db.automationExecutionLog.create.mockRejectedValueOnce(prismaError("P2003"));
+    await expect(dispatchAutomationEvent(db as never, event)).rejects.toMatchObject({ code: "P2003" });
+  });
+
+  it("treats a log row that vanished mid-execution as a deleted rule, without breaking the event", async () => {
+    const db = twoTagRules();
+    db.automationExecutionLog.create.mockResolvedValueOnce({ id: "log-gone" }).mockResolvedValueOnce({ id: "log-next" });
+    // The tag write loses its parent log (P2003), then both outcome writes find no row (P2025).
+    db.customerTagAssignment.upsert.mockRejectedValueOnce(prismaError("P2003"));
+    db.automationExecutionLog.update.mockRejectedValueOnce(prismaError("P2025")).mockResolvedValueOnce({});
+    await expect(dispatchAutomationEvent(db as never, event)).resolves.toEqual([
+      { ruleId: "rule-gone", status: "rule_deleted" },
+      { ruleId: "rule-next", status: "completed" },
+    ]);
+
+    // A completion write that finds no row is the same case.
+    const later = twoTagRules();
+    later.automationExecutionLog.create.mockResolvedValueOnce({ id: "log-gone" }).mockResolvedValueOnce({ id: "log-next" });
+    later.automationExecutionLog.update.mockRejectedValueOnce(prismaError("P2025")).mockResolvedValueOnce({});
+    await expect(dispatchAutomationEvent(later as never, event)).resolves.toEqual([
+      { ruleId: "rule-gone", status: "rule_deleted" },
+      { ruleId: "rule-next", status: "completed" },
+    ]);
+
+    // Any other outcome-write error still surfaces.
+    const broken = twoTagRules();
+    broken.automationExecutionLog.create.mockResolvedValueOnce({ id: "log-1" });
+    broken.automationExecutionLog.update.mockRejectedValueOnce(new Error("connection lost")).mockRejectedValueOnce(new Error("connection lost"));
+    await expect(dispatchAutomationEvent(broken as never, event)).rejects.toThrow("connection lost");
   });
 
   it("offers only triggers with a production caller, and only their recipes", () => {

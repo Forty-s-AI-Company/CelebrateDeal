@@ -22,7 +22,6 @@ const ERROR_MESSAGES: Record<string, string> = {
   trigger_unavailable: "這個觸發條件目前不會執行，不能用來建立或啟用規則。",
   delete_requires_inactive: "請先停用規則，再刪除。",
   delete_has_history: "這條規則已有執行紀錄，為保留紀錄與已發出的標籤、折價券，只能停用、不能刪除。",
-  delete_conflict: "規則剛被其他人變更，沒有刪除。請重新整理後再試。",
   not_found: "找不到這條規則，或你沒有管理權限。",
 };
 const UNAVAILABLE_TRIGGER_NOTE = "此觸發條件目前不會執行：系統尚未接上這個事件，規則不會被觸發。可以停用或刪除，但不能重新啟用。";

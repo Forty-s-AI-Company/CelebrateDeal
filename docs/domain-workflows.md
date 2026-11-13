@@ -75,14 +75,16 @@
 
 - **權限**：兩處都是 owner 與 admin（`requireVendorManagerMember`／`requireVendorManagerContext`），accountant、support、其他舊角色與 partner 都被拒；頁面與每個 Server Action（建立、套用劇本、模擬、啟用／停用、刪除）各自檢查，每個規則 id 在最後的查詢綁目前商家。導覽與設定 hub 原本就只對 owner／admin 顯示。沒有管理規則的 API route（`/api/automation/vouchers/redeem` 是買家兌換折價券，不在此範圍）。
 - **可用的觸發條件**：只有 `AVAILABLE_AUTOMATION_TRIGGERS` 裡的 `form_registered`（`/api/form-submissions`）、`consultation_booked`（公開預約）、`consultation_no_show`（商家標記未出席）。`payment_paid`、`form_no_show`、`viewer_watch_progress`、`webinar_attended_duration_gte` 沒有正式呼叫端，後台不提供，伺服器端也拒絕用它們建立規則、套用劇本或重新啟用（`trigger_unavailable`）；`payment_paid` 會在接上付款流程的 F-4 PR 放回。用到它們的既有規則照常列出並標示「此觸發條件目前不會執行」，可以停用與刪除，模擬只回「目前不會執行」。劇本只顯示觸發條件可用的（目前只有「諮詢預約提醒與防爽約」）。
-- **刪除**：只有已停用、且從未執行過的規則可以刪除。執行紀錄會連帶刪除它發出的客戶標籤與折價券（schema 的 Cascade），所以有執行紀錄的規則只能停用；刪除的條件寫在同一個 DELETE 裡，期間被重新啟用或執行過就不刪。寫 AuditLog `delete_automation_rule`。
+- **刪除**：只有已停用、且從未執行過的規則可以刪除。執行紀錄會連帶刪除它發出的客戶標籤與折價券（schema 的 Cascade），所以有執行紀錄的規則只能停用。刪除在一個交易內進行：先以 `SELECT ... FOR UPDATE` 鎖住這條規則（綁目前商家），取得鎖之後才用新的查詢確認「已停用」且「沒有任何執行紀錄」，都成立才刪，交易最多等 5 秒取得連線、15 秒完成。正在寫入的執行紀錄會先鎖住規則（外鍵），刪除會等它 commit，之後看到這筆紀錄而回 `delete_has_history`；刪除先拿到鎖時，之後才開始的執行會等刪除 commit，寫執行紀錄時發現規則已不存在（外鍵錯誤 P2003，並再查一次確認規則真的不在），該規則對這個事件記為 `rule_deleted` 並略過，同一事件的其他規則照常執行。執行中途才失去執行紀錄（P2025）時同樣只結束該規則。寫 AuditLog `delete_automation_rule`。
 - **Email 動作**：`trigger: "automation"` 的 `EmailDelivery`，視為行銷信。
-  - 內容一律附退訂連結：與序列信相同的 `createEmailUnsubscribeUrl`（簽章綁這封信的 id）與 `ensureEmailUnsubscribeFooter`，連結進 `/unsubscribe`，退訂記在寄信商家的 `EmailSuppression`。目前整個平台都沒有 `List-Unsubscribe` header，序列信也沒有。
-  - 建立時：收件人在本商家有未恢復的 `EmailSuppression`（退訂、退信、投訴都算）或有效的 Email 黑名單，就不建立寄送；規則仍算完成（不重試），執行紀錄的 `actionResults` 記 `{ status: "skipped", reason: "recipient_suppressed" | "recipient_blacklisted" }`，後台執行日誌的「說明」欄顯示原因。同一規則的其他動作照常執行。
+  - 建立時先查名單：收件人在本商家有未恢復的 `EmailSuppression`（退訂、退信、投訴都算）或有效的 Email 黑名單，就不建立寄送；這不算失敗，規則記為完成（不會被重領），執行紀錄的 `actionResults` 記 `{ status: "skipped", reason: "recipient_suppressed" | "recipient_blacklisted" }`，後台執行日誌的「說明」欄顯示原因，同一規則的其他動作照常執行。
+  - 名單通過後才產生退訂連結：與序列信相同的 `createEmailUnsubscribeUrl`（簽章綁這封信的 id）與 `ensureEmailUnsubscribeFooter`，連結進 `/unsubscribe`，退訂記在寄信商家的 `EmailSuppression`。目前整個平台都沒有 `List-Unsubscribe` header，序列信也沒有。
+  - 連結產生失敗（例如缺 `NEXT_PUBLIC_APP_URL` 或簽章金鑰）時絕不寄出沒有退訂連結的信：這個動作回 `{ status: "failed", reason: "unsubscribe_url_unavailable" }` 並送一次 `captureOperationalError`，同一規則的其他動作照常執行，但整筆執行記為 `failed`（`errorCode: unsubscribe_url_unavailable`），與「某個動作丟出錯誤」相同可被同一事件重領。差別是丟出錯誤時後面的動作不會執行，這種情況其他動作會先執行完。重領時所有動作再跑一次也不會重複：貼標籤是 upsert，派券、LINE 與 Email 都有決定性的 id 或冪等鍵。只有同一個事件再次送進來才會重領（例如同一筆報名的重送），不會自動排程重試。
   - 送出前：`dispatchEmailDelivery` 照既有規則查退訂（`automation` 不在任何豁免名單），另外查本商家 Email 黑名單，命中改 `suppressed`、`recipient_blacklisted`（與學員登入信相同）。
   - 都只看寄信商家自己的名單，其他商家的退訂與黑名單不影響。
   - 諮詢相關的觸發條件可能被商家拿來寄預約確認這類近似交易通知的信，但範本與觸發條件可以任意搭配、文案是行銷用途，所以全部比照行銷信處理，沒有豁免。
-- **LINE 推播、貼標籤、派券**：本 PR 不變。
+- **LINE 推播**：權限統一成 owner 與 admin 之後（owner 已確認），admin 可以在自動化規則裡寫自訂的 LINE 推播文字與按鈕網址，透過商家已連結的 LINE 官方帳號推送給符合條件的對象。LINE 官方帳號的連結設定（`/settings/line`）與 rich menu 仍只限 owner。按鈕網址的檢查（只收 HTTPS 且不含帳密，或核准的佔位符）不變。
+- **貼標籤、派券**：本 PR 不變。
 
 ## 歸因與佣金
 
