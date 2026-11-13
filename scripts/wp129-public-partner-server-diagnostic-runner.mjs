@@ -19,7 +19,7 @@ export const CLASSIFICATIONS = Object.freeze({
 });
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const requiredInputs = ["package.json", "next.config.ts", "tsconfig.json", "src/app/p/[slug]/page.tsx", "src/components/team-funnel-public-page.tsx"];
+const requiredInputs = ["package.json", "next.config.ts", "tsconfig.json", "tsconfig.build.json", "src/app/p/[slug]/page.tsx", "src/components/team-funnel-public-page.tsx"];
 function isForbiddenPath(relative) {
   const normalized = relative.toLowerCase();
   return normalized.split("/").some((segment) => segment.startsWith(".env"))

@@ -9,7 +9,7 @@ import { fileURLToPath } from 'node:url';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const work = fs.mkdtempSync(path.join(os.tmpdir(), 'celebratedeal-funnel-elements-'));
 const mirror = path.join(work, 'app');
-const allowedFiles = ['package.json', 'tsconfig.json', 'next.config.ts', 'postcss.config.mjs', 'sentry.server.config.ts', 'sentry.edge.config.ts'];
+const allowedFiles = ['package.json', 'tsconfig.json', 'tsconfig.build.json', 'next.config.ts', 'postcss.config.mjs', 'sentry.server.config.ts', 'sentry.edge.config.ts'];
 const environment = {
   PATH: process.env.PATH ?? '',
   SystemRoot: process.env.SystemRoot ?? '',

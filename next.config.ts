@@ -29,6 +29,15 @@ const nextConfig: NextConfig = {
   // without sharing its build lock or cache.
   ...(process.env.FUNNEL_ELEMENTS_E2E === "true" ? { distDir: ".next-funnel-elements" } : {}),
   allowedDevOrigins: ["127.0.0.1"],
+  typescript: {
+    // The build's type check (`next build` runs the project tsc with the
+    // default Node heap) covers the application only: tsconfig.build.json
+    // extends tsconfig.json and leaves out test files and test runners, which
+    // `npm run typecheck` still checks in full. Checking everything needs
+    // 4.2-4.4 GB and ran out of the default heap; see
+    // docs/operations/build-typecheck-memory.md. Never use ignoreBuildErrors.
+    tsconfigPath: "tsconfig.build.json",
+  },
   images: {
     // 商家圖片直接由瀏覽器向來源站載入；專案所有 Image 目前也都明確
     // 使用 unoptimized。不要保留可代理任意 HTTPS 主機的 Image Optimizer。

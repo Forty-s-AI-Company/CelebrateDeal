@@ -21,7 +21,7 @@ const ownedPaths = new Set([
   "docs/ai-team/evidence/wp-136-next-temp-isolation-audit.md",
 ]);
 
-const protectedInputs = ["package.json", "package-lock.json", "next.config.ts", "tsconfig.json"];
+const protectedInputs = ["package.json", "package-lock.json", "next.config.ts", "tsconfig.json", "tsconfig.build.json"];
 
 function normalizeRelativePath(value) {
   return String(value ?? "")

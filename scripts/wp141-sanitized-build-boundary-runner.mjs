@@ -24,6 +24,7 @@ const PROTECTED_PATHS = [
   'package-lock.json',
   'next.config.ts',
   'tsconfig.json',
+  'tsconfig.build.json',
   'src/app/api/cloudflare/stream-webhook/route.ts',
   '.ai-team/reports/wp138-generated-target-reference-receipt.json',
 ];
