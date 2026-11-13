@@ -32,6 +32,13 @@ class ServiceFailure extends Error {
   }
 }
 
+/**
+ * Activation serializes on a per-vendor advisory lock and every change reads
+ * template and sequence rows FOR SHARE, so a transaction may wait a little for
+ * another merchant tab or the worker: allow it to wait for a connection.
+ */
+const SERVICE_TRANSACTION_OPTIONS = { maxWait: 10_000, timeout: 15_000 } as const;
+
 function invalid(fieldErrors: EmailSequenceFieldErrors, message = "有幾個欄位需要修正，內容已保留。"): never {
   throw new ServiceFailure({ ok: false, code: "invalid", message, fieldErrors });
 }
@@ -185,7 +192,7 @@ export async function saveEmailSequence(
     }
     if (willBeActive) await rescheduleActiveRunsForSequence(tx, { vendorId: input.vendorId, emailSequenceId: sequenceId, now });
     return { ok: true as const, id: sequenceId, version, created: !existing };
-  }));
+  }, SERVICE_TRANSACTION_OPTIONS));
 }
 
 export async function activateEmailSequence(
@@ -230,7 +237,7 @@ export async function activateEmailSequence(
     });
     if (updated.count !== 1) throw new ServiceFailure({ ok: false, code: "conflict" });
     return { ok: true as const, status: "activated" as const };
-  }));
+  }, SERVICE_TRANSACTION_OPTIONS));
 }
 
 export async function pauseEmailSequence(
@@ -257,7 +264,7 @@ export async function pauseEmailSequence(
       data: { status: "cancelled", cancelReason: "definition_paused", nextRunAt: null, claimedAt: null },
     });
     return { ok: true as const, status: "paused" as const, cancelledRuns: cancelled.count };
-  }));
+  }, SERVICE_TRANSACTION_OPTIONS));
 }
 
 /** Deletes the sequence with its steps and runs; queued e-mails of it are superseded at send time. */

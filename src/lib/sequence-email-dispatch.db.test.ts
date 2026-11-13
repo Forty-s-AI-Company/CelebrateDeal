@@ -10,6 +10,7 @@ vi.mock("@/lib/email", async (importOriginal) => ({
   sendTransactionalEmail: mocks.sendTransactionalEmail,
 }));
 
+import type { Prisma } from "@prisma/client";
 import { getDb } from "@/lib/db";
 import { enrollSubmissionInEmailSequences, processDueDelayedStepRuns } from "@/lib/delayed-step-runs";
 import { dispatchEmailDelivery, processDueEmailDeliveries, processDueSequenceEmailDeliveries } from "@/lib/email-delivery";
@@ -97,17 +98,36 @@ describe("sequence e-mail dispatch", () => {
         nextAttemptAt,
       };
     };
-    // The sequence e-mails have been waiting longer than the reminder.
-    const sequenceRows = [row("sequence_email", earlier), row("sequence_email", earlier)];
+    // The sequence e-mails have been waiting longer than the reminder (and than anything else due).
+    const sequenceRows = [row("sequence_email", new Date(1_000)), row("sequence_email", new Date(2_000))];
+    void earlier;
     const reminder = row("registration_confirmed", later);
     await db.emailDelivery.createMany({ data: [...sequenceRows, reminder] });
 
     const mine = (rows: Array<{ deliveryId: string; status: string }>) => rows.filter((result) => [reminder.id, ...sequenceRows.map((entry) => entry.id)].includes(result.deliveryId));
-    // The time-bound pass never takes a sequence e-mail, however long it waited.
-    expect(mine(await processDueEmailDeliveries(1))).toEqual([{ deliveryId: reminder.id, status: "sent" }]);
-    const sequencePass = mine(await processDueSequenceEmailDeliveries({ limit: 1 }));
+    // The queue is shared with every other test file of the run, which may
+    // leave due rows behind (CI does): size each pass from what is due now.
+    const dueNow = (trigger: Prisma.EmailDeliveryWhereInput["trigger"]) => db.emailDelivery.count({
+      where: {
+        trigger,
+        OR: [
+          { status: { in: ["queued", "failed"] }, nextAttemptAt: { lte: new Date() } },
+          { status: "sending", claimedAt: { lte: new Date(Date.now() - 10 * 60_000) } },
+        ],
+      },
+    });
+    // The time-bound pass never takes a sequence e-mail, however long it
+    // waited: with room for everything due, it sends the reminder and none of them.
+    const timeBound = await processDueEmailDeliveries((await dueNow({ not: "sequence_email" })) + 5);
+    expect(mine(timeBound)).toEqual([{ deliveryId: reminder.id, status: "sent" }]);
+    const timeBoundTriggers = await db.emailDelivery.findMany({ where: { id: { in: timeBound.map((result) => result.deliveryId) } }, select: { trigger: true } });
+    expect(timeBoundTriggers.some((entry) => entry.trigger === "sequence_email")).toBe(false);
+    // The sequence pass takes them oldest first, on its own quota. Stale leases
+    // are recovered first, so leave room for those plus exactly one of ours.
+    const staleSequenceLeases = await db.emailDelivery.count({ where: { trigger: "sequence_email", status: "sending", claimedAt: { lte: new Date(Date.now() - 10 * 60_000) } } });
+    const sequencePass = mine(await processDueSequenceEmailDeliveries({ limit: staleSequenceLeases + 1 }));
     expect(sequencePass).toHaveLength(1);
-    expect(sequenceRows.map((entry) => entry.id)).toContain(sequencePass[0]!.deliveryId);
+    expect(sequencePass[0]!.deliveryId).toBe(sequenceRows[0]!.id);
     // Its own deadline stops it before the next send.
     expect(mine(await processDueSequenceEmailDeliveries({ limit: 5, deadline: Date.now() - 1 }))).toEqual([]);
     // One sequence e-mail waits for the next round instead of taking the reminder's place.

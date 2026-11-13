@@ -81,6 +81,7 @@ const mocks = vi.hoisted(() => ({
   messageTemplateFindMany: vi.fn(),
   messageTemplateCreate: vi.fn(),
   messageTemplateUpdate: vi.fn(),
+  emailSequenceStepFindFirst: vi.fn(),
   interactionScriptFindFirst: vi.fn(),
   markCurrentSessionMfaVerified: vi.fn(),
   paymentTransactionUpdate: vi.fn(),
@@ -978,6 +979,8 @@ beforeEach(() => {
     liveStudioDraft: { updateMany: mocks.liveStudioDraftUpdateMany, findFirst: mocks.liveStudioDraftFindFirst },
     live: { create: mocks.liveCreate, findFirst: mocks.liveFindFirst, findMany: mocks.liveFindMany, update: mocks.liveUpdate, updateMany: mocks.liveUpdateMany },
     messageTemplate: { create: mocks.messageTemplateCreate, update: mocks.messageTemplateUpdate },
+    // F-3: the template save refuses to switch off a template an active sequence step sends.
+    emailSequenceStep: { findFirst: mocks.emailSequenceStepFindFirst },
     liveProduct: { create: mocks.liveProductCreate, deleteMany: mocks.liveProductDeleteMany },
     liveNotificationRule: {
       findMany: mocks.liveNotificationRuleFindMany,
@@ -4465,6 +4468,11 @@ describe("message template actions", () => {
     expect(mocks.messageTemplateUpdate).toHaveBeenCalledWith({
       where: { id: "template-1", vendorId: "vendor-1", updatedAt: new Date("2026-08-09T04:00:00.000Z") },
       data: expect.objectContaining({ trigger: "post_live_followup" }),
+    });
+    // A non-sequence trigger is checked against active sequence steps of this vendor only.
+    expect(mocks.emailSequenceStepFindFirst).toHaveBeenCalledWith({
+      where: { vendorId: "vendor-1", messageTemplateId: "template-1", isActive: true, sequence: { is: { vendorId: "vendor-1", status: "active" } } },
+      select: { id: true },
     });
     expect(mocks.queueLiveReminderReconciliation).not.toHaveBeenCalled();
     expect(mocks.createLiveReminderReconciliationSnapshot).not.toHaveBeenCalled();
