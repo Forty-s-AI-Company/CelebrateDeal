@@ -9,6 +9,7 @@ import {
   queueLiveReminderReconciliation,
 } from "@/lib/live-reminder-reconciliation";
 import { supersedeLiveNotificationDeliveriesForTemplate } from "@/lib/live-notification-delivery";
+import { isFeatureEnabled } from "@/lib/vendor-feature-toggles";
 import {
   normalizeMessageTemplateDraft,
   type MessageTemplateActionError,
@@ -118,6 +119,24 @@ export async function saveMessageTemplate({
   const data = normalized.data;
 
   const db = getDb();
+  // F-3: only a vendor holding the email_sequences grant may create a
+  // sequence e-mail template or turn a template into one. An existing one
+  // keeps its trigger (and stays editable) if the grant is closed later.
+  if (data.trigger === "sequence_email") {
+    const vendor = await db.vendor.findUnique({
+      where: { id: vendorId },
+      select: { enabledFeatureModules: true, betaFeatureGrants: true },
+    });
+    if (!isFeatureEnabled(vendor, "email_sequences")) {
+      const current = id ? await db.messageTemplate.findFirst({ where: { id, vendorId }, select: { trigger: true } }) : null;
+      if (current?.trigger !== "sequence_email") {
+        return {
+          ok: false,
+          state: messageTemplateActionError(previousState, "sequence_email_unavailable", submittedDraft, expectedUpdatedAtIsValid ? expectedUpdatedAtValue : null),
+        };
+      }
+    }
+  }
   let outcome: {
     template: Awaited<ReturnType<typeof db.messageTemplate.create>>;
     reconciliationStatuses: string[];

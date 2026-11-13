@@ -1193,6 +1193,7 @@ model DelayedStepRun {
   /// 同一收件人在同一序列只會有一列（不同表單報名同一場也一樣）；recipientHash 為 null 的列不受限。
   @@unique([vendorId, emailSequenceId, recipientHash])
   @@index([status, nextRunAt])
+  @@index([vendorId, status, nextRunAt])
   @@index([formSubmissionId])
   @@index([vendorId, recipientHash, status])
 }

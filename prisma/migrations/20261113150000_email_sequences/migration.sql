@@ -5,13 +5,11 @@
 -- The job (/api/jobs/email-deliveries -> processDueDelayedStepRuns) advances
 -- each run one step at a time and queues an EmailDelivery per step.
 --
--- Forward-only and additive: three new tables, one index on "FormSubmission"
--- for the enrollment backfill, and the closed-beta grant CHECK on "Vendor"
--- rebuilt to also allow 'email_sequences'. The new CHECK is a superset of the
--- old one (20261021171100_vendor_beta_feature_grants), so re-validating the
--- existing rows cannot fail; it runs last so the ACCESS EXCLUSIVE lock on
--- "Vendor" is held only for the final statements. No existing row changes, no
--- grant is given to anyone.
+-- Forward-only and additive: three new tables and one index on
+-- "FormSubmission" for the enrollment backfill. The closed-beta grant value
+-- is added separately (20261113150100_email_sequences_grant), so this
+-- migration never takes the ACCESS EXCLUSIVE lock on "Vendor". No existing
+-- row changes, no grant is given to anyone.
 DO $$
 BEGIN
   PERFORM pg_catalog.set_config('lock_timeout', '5s', true);
@@ -114,6 +112,10 @@ CREATE INDEX "DelayedStepRun_status_nextRunAt_idx" ON "DelayedStepRun"("status",
 CREATE INDEX "DelayedStepRun_formSubmissionId_idx" ON "DelayedStepRun"("formSubmissionId");
 
 -- CreateIndex
+-- Worker: one vendor's due active runs (the round serves vendors in turn).
+CREATE INDEX "DelayedStepRun_vendorId_status_nextRunAt_idx" ON "DelayedStepRun"("vendorId", "status", "nextRunAt");
+
+-- CreateIndex
 -- Unsubscribe: cancel one recipient's active runs of this vendor.
 CREATE INDEX "DelayedStepRun_vendorId_recipientHash_status_idx" ON "DelayedStepRun"("vendorId", "recipientHash", "status");
 
@@ -167,18 +169,3 @@ ALTER TABLE "DelayedStepRun" ADD CONSTRAINT "DelayedStepRun_formSubmissionId_fke
 ALTER TABLE "EmailSequence" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "EmailSequenceStep" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "DelayedStepRun" ENABLE ROW LEVEL SECURITY;
-
--- Closed-beta module grant: add 'email_sequences' (src/lib/vendor-feature-toggles.ts).
-ALTER TABLE "Vendor" DROP CONSTRAINT "Vendor_betaFeatureGrants_check";
-ALTER TABLE "Vendor"
-  ADD CONSTRAINT "Vendor_betaFeatureGrants_check" CHECK (
-    "betaFeatureGrants" <@ ARRAY[
-      'courses',
-      'billing',
-      'funnel_binding',
-      'consultation_booking',
-      'browser_live',
-      'danmaku',
-      'email_sequences'
-    ]::TEXT[]
-  );

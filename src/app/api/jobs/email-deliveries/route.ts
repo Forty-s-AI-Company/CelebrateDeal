@@ -1,7 +1,7 @@
 import { processDueLearnerNotifications } from "@/lib/learner-notification-job";
 import { NextResponse } from "next/server";
 import { requireCronSecret, requireJobSecret, unauthorizedJson } from "@/lib/api-security";
-import { processDueEmailDeliveries, processDuePostLiveFollowups } from "@/lib/email-delivery";
+import { processDueEmailDeliveries, processDuePostLiveFollowups, processDueSequenceEmailDeliveries } from "@/lib/email-delivery";
 import { processLiveReminderReconciliationJobs } from "@/lib/live-reminder-reconciliation";
 import {
   processDueLiveNotifications,
@@ -14,7 +14,12 @@ import { getDb } from "@/lib/db";
 import { sweepExpiredRegistrationRetryDrafts } from "@/lib/registration-form-retry";
 import { releaseExpiredFixedSessionSeats } from "@/lib/live-fixed-sessions-store";
 import { queueFixedSessionCancellationNotices } from "@/lib/live-fixed-session-notices";
-import { backfillEmailSequenceEnrollments, processDueDelayedStepRuns } from "@/lib/delayed-step-runs";
+import {
+  backfillEmailSequenceEnrollments,
+  EMAIL_SEQUENCE_DEADLINE_MS,
+  EMAIL_SEQUENCE_START_CUTOFF_MS,
+  processDueDelayedStepRuns,
+} from "@/lib/delayed-step-runs";
 
 const SAFE_STATUSES = new Set([
   "sent",
@@ -92,6 +97,7 @@ const SAFE_SEQUENCE_STEP_STATUSES = new Set([
   "skipped_template",
   "skipped_already_sent",
   "waiting_template",
+  "waiting_previous",
   "definition_changed",
   "rescheduled",
   "completed",
@@ -101,39 +107,60 @@ const SAFE_SEQUENCE_STEP_STATUSES = new Set([
 ]);
 
 /**
- * F-3 Email 追銷序列: add verified registrants the verify route missed, then
- * run due sequence steps. Runs before processDueEmailDeliveries so a step's
- * e-mail is sent in the same round. Either pass failing never stops the rest
- * of the round for every tenant.
+ * The whole round may run up to the platform's 300 s (Fluid Compute default).
+ * Sequence work (F-3) is the last, most deferrable part of it.
  */
-async function processEmailSequenceSteps() {
+export const maxDuration = 300;
+
+async function reportSequenceFailure(error: unknown, operation: string) {
+  try {
+    captureOperationalError(error, { source: "email_delivery_job", operation, status: "failed" });
+  } catch {
+    // Monitoring must never change the job outcome.
+  }
+}
+
+/**
+ * F-3 Email 追銷序列, at the very end of the round: add verified registrants
+ * the verify route missed, run due steps, then send sequence e-mails on their
+ * own quota. Everything time-bound has been handled before it. It is skipped
+ * when the round already ran past EMAIL_SEQUENCE_START_CUTOFF_MS, every part
+ * stops at EMAIL_SEQUENCE_DEADLINE_MS, and no part failing changes the
+ * response of the rest of the round.
+ */
+async function processEmailSequences(startedAt: number) {
+  if (Date.now() - startedAt > EMAIL_SEQUENCE_START_CUTOFF_MS) {
+    return { skipped: true, enrolled: 0, steps: [] as Array<{ status: string }>, dispatched: [] as Array<{ status: string }> };
+  }
+  const deadline = startedAt + EMAIL_SEQUENCE_DEADLINE_MS;
   let enrollments: Array<{ status: string }> = [];
   let steps: Array<{ status: string }> = [];
+  let dispatched: Array<{ status: string }> = [];
   try {
-    enrollments = await backfillEmailSequenceEnrollments();
+    enrollments = await backfillEmailSequenceEnrollments({ deadline });
   } catch (error) {
-    try {
-      captureOperationalError(error, { source: "email_delivery_job", operation: "email_sequence_backfill", status: "failed" });
-    } catch {
-      // Monitoring must never change the job outcome.
-    }
+    await reportSequenceFailure(error, "email_sequence_backfill");
   }
   try {
-    steps = await processDueDelayedStepRuns();
+    steps = await processDueDelayedStepRuns({ deadline });
   } catch (error) {
-    try {
-      captureOperationalError(error, { source: "email_delivery_job", operation: "delayed_step_runs", status: "failed" });
-    } catch {
-      // Monitoring must never change the job outcome.
-    }
+    await reportSequenceFailure(error, "delayed_step_runs");
+  }
+  try {
+    dispatched = await processDueSequenceEmailDeliveries({ deadline });
+  } catch (error) {
+    await reportSequenceFailure(error, "sequence_email_dispatch");
   }
   return {
+    skipped: false,
     enrolled: enrollments.filter((result) => result.status === "enrolled").length,
     steps,
+    dispatched,
   };
 }
 
 async function processEmailDeliveries() {
+  const startedAt = Date.now();
   try {
     // Cut over only proven-equivalent legacy schedules before materializing the
     // canonical rule-scoped snapshots in this bounded invocation.
@@ -165,7 +192,6 @@ async function processEmailDeliveries() {
         // Monitoring must never change the job outcome.
       }
     }
-    const sequences = await processEmailSequenceSteps();
     const reconciliations = await processLiveReminderReconciliationJobs();
     const results = await processDueEmailDeliveries();
     const lineMaterialized = await materializeLineNotifications();
@@ -194,6 +220,8 @@ async function processEmailDeliveries() {
         // Purge is best effort after due dispatch has completed.
       }
     }
+    // F-3: last, after every time-bound pass of the round.
+    const sequences = await processEmailSequences(startedAt);
     return NextResponse.json({
       ok: true,
       cutovers: cutovers.length,
@@ -212,10 +240,15 @@ async function processEmailDeliveries() {
           ? result.status
           : "unknown",
       })),
+      sequenceSkipped: sequences.skipped,
       sequenceEnrollments: safeCount(sequences.enrolled),
       sequenceSteps: sequences.steps.length,
       sequenceStepResults: sequences.steps.slice(0, 20).map((result) => ({
         status: SAFE_SEQUENCE_STEP_STATUSES.has(result.status) ? result.status : "unknown",
+      })),
+      sequenceDispatched: sequences.dispatched.length,
+      sequenceDispatchResults: sequences.dispatched.slice(0, 20).map((result) => ({
+        status: SAFE_STATUSES.has(result.status) ? result.status : "unknown",
       })),
       reconciled: reconciliations.length,
       reconciliationResults: reconciliations.slice(0, 20).map((result) => ({

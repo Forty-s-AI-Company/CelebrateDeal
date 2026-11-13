@@ -49,7 +49,7 @@ const errorGuidance: Record<string, string> = {
   config_superseded: "直播或模板設定已更新，舊排程不會寄送。",
   verification_superseded: "驗證已完成、連結已過期或已有新版驗證信。",
   schedule_superseded: "直播排程已更新，舊提醒不會寄送。",
-  sequence_superseded: "追銷序列已暫停、刪除或改了這一封，或收件者已停止接收序列，此信不會寄送。",
+  sequence_superseded: "這封追銷序列信不會寄送：可能排隊太久（建立超過 6 小時未寄出）、追銷序列功能已關閉、序列已暫停或刪除、這一封或它的模板已修改，或收件者已停止接收序列。",
   lifecycle_superseded: "直播狀態已改變（例如已開播、已結束或已開啟常青場），舊排程不會寄送。",
 };
 

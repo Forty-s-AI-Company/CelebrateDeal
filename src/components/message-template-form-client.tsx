@@ -31,6 +31,9 @@ function errorMessage(error: MessageTemplateActionError | null) {
   if (error === "invalid_template") {
     return "模板資料無效，內容已保留。請檢查 Email 主旨、內容、觸發條件與可用變數後再儲存。";
   }
+  if (error === "sequence_email_unavailable") {
+    return "「追銷序列信」要先由平台為你的商店開通追銷序列功能，目前不能建立或改成這個觸發條件。你輸入的內容已保留。";
+  }
   if (error === "in_use_by_sequence") {
     return "寄送中的追銷序列正在用這個模板，不能停用或改成其他觸發條件。請先到「追銷序列」暫停那條序列，或把那一封換成別的模板，再回來儲存。你輸入的內容已保留。";
   }

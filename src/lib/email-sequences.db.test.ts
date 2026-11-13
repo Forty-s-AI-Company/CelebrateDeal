@@ -250,6 +250,73 @@ describe("activate / pause / delete", () => {
     await expect(saveMessageTemplate({ vendorId: t.vendor.id, auditActor: actor, previousState: initialMessageTemplateActionState, formData: form({ isActive: "", expectedUpdatedAt: latest.updatedAt.toISOString() }) })).resolves.toMatchObject({ ok: true });
   });
 
+  it("does not let an activation pass a template being switched off at the same moment (MINOR 4)", async () => {
+    const t = await tenant();
+    const created = await create(t, [60]);
+    let release: () => void = () => undefined;
+    let markLocked: () => void = () => undefined;
+    const locked = new Promise<void>((resolve) => { markLocked = resolve; });
+    // The template editor's transaction: the row is updated (locked) and not yet committed.
+    const editor = db.$transaction(async (tx) => {
+      await tx.messageTemplate.update({ where: { id: t.mail.id }, data: { isActive: false } });
+      markLocked();
+      await new Promise<void>((resolve) => { release = resolve; });
+    }, { timeout: 20_000 });
+    await locked;
+    const activation = activateEmailSequence({ vendorId: t.vendor.id, sequenceId: created.id, expectedVersion: 1, now });
+    await new Promise((resolve) => setTimeout(resolve, 1_000));
+    release();
+    await editor;
+    // The activation waited for the template row and then saw it switched off.
+    await expect(activation).resolves.toMatchObject({ ok: false, code: "not_ready" });
+    await expect(db.emailSequence.findUniqueOrThrow({ where: { id: created.id } })).resolves.toMatchObject({ status: "draft" });
+  });
+
+  it("does not let the template editor switch off a template while an activation holds it (MINOR 4)", async () => {
+    const t = await tenant();
+    const created = await create(t, [60]);
+    let release: () => void = () => undefined;
+    let markLocked: () => void = () => undefined;
+    const locked = new Promise<void>((resolve) => { markLocked = resolve; });
+    // An activation in progress: the template row is held FOR SHARE and the sequence becomes active.
+    const activation = db.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT "id" FROM "MessageTemplate" WHERE "id" = ${t.mail.id} FOR SHARE`;
+      await tx.emailSequence.update({ where: { id: created.id }, data: { status: "active", activatedAt: now, version: { increment: 1 } } });
+      markLocked();
+      await new Promise<void>((resolve) => { release = resolve; });
+    }, { timeout: 20_000 });
+    await locked;
+    const current = await db.messageTemplate.findUniqueOrThrow({ where: { id: t.mail.id } });
+    const data = new FormData();
+    for (const [key, value] of Object.entries({ id: t.mail.id, expectedUpdatedAt: current.updatedAt.toISOString(), name: "序列信", channel: "email", trigger: "sequence_email", subject: "{{live_title}} 的下一步", body: "{{name}} 你好 {{unsubscribe_url}}" })) data.set(key, value);
+    const editor = saveMessageTemplate({ vendorId: t.vendor.id, auditActor: { actorId: "user-1", actorLabel: "owner" }, previousState: initialMessageTemplateActionState, formData: data });
+    await new Promise((resolve) => setTimeout(resolve, 1_000));
+    release();
+    await activation;
+    await expect(editor).resolves.toMatchObject({ ok: false, state: { error: "in_use_by_sequence" } });
+    await expect(db.messageTemplate.findUniqueOrThrow({ where: { id: t.mail.id } })).resolves.toMatchObject({ isActive: true });
+  });
+
+  it("only a vendor with the email_sequences grant may create or turn a template into a sequence e-mail", async () => {
+    const t = await tenant();
+    await db.vendor.update({ where: { id: t.vendor.id }, data: { betaFeatureGrants: [] } });
+    const actor = { actorId: "user-1", actorLabel: "owner" };
+    const form = (values: Record<string, string>) => {
+      const data = new FormData();
+      for (const [key, value] of Object.entries({ name: "序列信", channel: "email", trigger: "sequence_email", subject: "主旨", body: "內容 {{unsubscribe_url}}", isActive: "on", ...values })) data.set(key, value);
+      return data;
+    };
+    await expect(saveMessageTemplate({ vendorId: t.vendor.id, auditActor: actor, previousState: initialMessageTemplateActionState, formData: form({}) }))
+      .resolves.toMatchObject({ ok: false, state: { error: "sequence_email_unavailable" } });
+    const other = await t.template({ trigger: "post_live_followup" });
+    await expect(saveMessageTemplate({ vendorId: t.vendor.id, auditActor: actor, previousState: initialMessageTemplateActionState, formData: form({ id: other.id, expectedUpdatedAt: other.updatedAt.toISOString() }) }))
+      .resolves.toMatchObject({ ok: false, state: { error: "sequence_email_unavailable" } });
+    await expect(db.messageTemplate.findUniqueOrThrow({ where: { id: other.id } })).resolves.toMatchObject({ trigger: "post_live_followup" });
+    // A template that already is a sequence e-mail stays editable after the grant is closed.
+    await expect(saveMessageTemplate({ vendorId: t.vendor.id, auditActor: actor, previousState: initialMessageTemplateActionState, formData: form({ id: t.mail.id, expectedUpdatedAt: t.mail.updatedAt.toISOString(), body: "改過 {{unsubscribe_url}}" }) }))
+      .resolves.toMatchObject({ ok: true });
+  });
+
   it("refuses to delete a template a step still uses", async () => {
     const t = await tenant();
     await create(t, [60]);

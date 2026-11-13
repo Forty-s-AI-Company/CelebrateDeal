@@ -1840,21 +1840,26 @@ export async function dispatchEmailDelivery(deliveryId: string, actorLabel = "jo
 /**
  * Wall-clock budget for the sequence-e-mail pass of one round. Each provider
  * call can take up to 10 s, so the pass stops starting new sends after this
- * and leaves the rest to the next round.
+ * (or earlier at the caller's deadline) and leaves the rest to the next round.
  */
 export const SEQUENCE_EMAIL_DISPATCH_TIME_BUDGET_MS = 20_000;
 
-export async function processDueEmailDeliveries(limit = 20, options: { sequenceLimit?: number } = {}) {
-  const db = getDb();
-  const now = new Date();
+/** Sequence e-mails (F-3) are dispatched on their own quota; every other trigger here. */
+const TIME_BOUND_TRIGGERS = { not: SEQUENCE_EMAIL_TRIGGER } as const;
+
+async function recoverStaleLeases(
+  db: ReturnType<typeof getDb>,
+  now: Date,
+  limit: number,
+  trigger: Prisma.EmailDeliveryWhereInput["trigger"],
+) {
   const staleCutoff = new Date(now.getTime() - DELIVERY_LEASE_MS);
   const stale = await db.emailDelivery.findMany({
-    where: { status: "sending", claimedAt: { lte: staleCutoff } },
+    where: { status: "sending", claimedAt: { lte: staleCutoff }, trigger },
     orderBy: { claimedAt: "asc" },
     take: limit,
   });
   const results: Array<{ deliveryId: string; status: string }> = [];
-
   for (const delivery of stale) {
     const exhausted = delivery.attemptCount >= delivery.maxAttempts;
     const recovered = await db.emailDelivery.updateMany({
@@ -1873,20 +1878,32 @@ export async function processDueEmailDeliveries(limit = 20, options: { sequenceL
     });
     results.push({ deliveryId: delivery.id, status: recovered.count === 1 ? (exhausted ? "exhausted" : "recovered") : "claimed_elsewhere" });
   }
+  return results;
+}
 
-  const remaining = Math.max(0, limit - results.length);
-  // Time-bound mail first (confirmations, reminders, follow-ups, notices) with
-  // the existing quota and order. F-3 sequence e-mails follow on their own
-  // quota, so a large sequence can never delay another tenant's reminder until
-  // it is superseded (S1).
-  const dueWhere = {
+function dueDeliveryWhere(now: Date, trigger: Prisma.EmailDeliveryWhereInput["trigger"]): Prisma.EmailDeliveryWhereInput {
+  return {
     status: { in: ["queued", "failed"] },
     nextAttemptAt: { lte: now },
+    trigger,
     // F-036: a suspended vendor's queue waits without starving other tenants.
     ...ACTIVE_VENDOR_RELATION,
-  } satisfies Prisma.EmailDeliveryWhereInput;
-  const due = remaining === 0 ? [] : await db.emailDelivery.findMany({
-    where: { ...dueWhere, trigger: { not: SEQUENCE_EMAIL_TRIGGER } },
+  };
+}
+
+/**
+ * Time-bound mail (confirmations, reminders, follow-ups, notices): the round's
+ * first dispatch pass, unchanged except that F-3 sequence e-mails are left to
+ * processDueSequenceEmailDeliveries, so they never take this quota (S1).
+ */
+export async function processDueEmailDeliveries(limit = 20) {
+  const db = getDb();
+  const now = new Date();
+  const results = await recoverStaleLeases(db, now, limit, TIME_BOUND_TRIGGERS);
+  const remaining = Math.max(0, limit - results.length);
+  if (remaining === 0) return results;
+  const due = await db.emailDelivery.findMany({
+    where: dueDeliveryWhere(now, TIME_BOUND_TRIGGERS),
     orderBy: { nextAttemptAt: "asc" },
     take: remaining,
     select: { id: true },
@@ -1895,18 +1912,30 @@ export async function processDueEmailDeliveries(limit = 20, options: { sequenceL
     const result = await dispatchEmailDelivery(delivery.id);
     results.push({ deliveryId: delivery.id, status: result.status });
   }
-  const sequenceLimit = Math.max(0, options.sequenceLimit ?? SEQUENCE_EMAIL_DISPATCH_LIMIT);
-  if (sequenceLimit === 0) return results;
-  const sequenceDue = await db.emailDelivery.findMany({
-    where: { ...dueWhere, trigger: SEQUENCE_EMAIL_TRIGGER },
+  return results;
+}
+
+/**
+ * F-3 sequence e-mails, on their own quota at the end of the job round. Stops
+ * starting sends after SEQUENCE_EMAIL_DISPATCH_TIME_BUDGET_MS or at
+ * `deadline` (epoch ms), whichever comes first; the rest waits.
+ */
+export async function processDueSequenceEmailDeliveries(options: { limit?: number; deadline?: number } = {}) {
+  const db = getDb();
+  const now = new Date();
+  const limit = Math.max(0, options.limit ?? SEQUENCE_EMAIL_DISPATCH_LIMIT);
+  const stopAt = Math.min(Date.now() + SEQUENCE_EMAIL_DISPATCH_TIME_BUDGET_MS, options.deadline ?? Number.POSITIVE_INFINITY);
+  const results = await recoverStaleLeases(db, now, limit, SEQUENCE_EMAIL_TRIGGER);
+  const remaining = Math.max(0, limit - results.length);
+  if (remaining === 0) return results;
+  const due = await db.emailDelivery.findMany({
+    where: dueDeliveryWhere(now, SEQUENCE_EMAIL_TRIGGER),
     orderBy: { nextAttemptAt: "asc" },
-    take: sequenceLimit,
+    take: remaining,
     select: { id: true },
   });
-  const sequenceDeadline = Date.now() + SEQUENCE_EMAIL_DISPATCH_TIME_BUDGET_MS;
-  for (const delivery of sequenceDue) {
-    // Whatever is left waits for the next round; the job's other passes run after this.
-    if (Date.now() > sequenceDeadline) break;
+  for (const delivery of due) {
+    if (Date.now() >= stopAt) break;
     const result = await dispatchEmailDelivery(delivery.id);
     results.push({ deliveryId: delivery.id, status: result.status });
   }

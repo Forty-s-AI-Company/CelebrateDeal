@@ -12,6 +12,7 @@ import { BETA_GATED_FEATURES } from "@/lib/vendor-feature-toggles";
 describe("F-3 email sequence schema contract", () => {
   const schema = fs.readFileSync("prisma/schema.prisma", "utf8");
   const migration = fs.readFileSync("prisma/migrations/20261113150000_email_sequences/migration.sql", "utf8");
+  const grantMigration = fs.readFileSync("prisma/migrations/20261113150100_email_sequences_grant/migration.sql", "utf8");
   const modelOf = (name: string) => new RegExp(`model ${name} \\{[\\s\\S]*?\\n\\}`, "u").exec(schema)?.[0] ?? "";
 
   it("keeps the three Prisma models and the additive migration aligned", () => {
@@ -35,9 +36,12 @@ describe("F-3 email sequence schema contract", () => {
     expect(migration).toContain('CREATE UNIQUE INDEX "DelayedStepRun_vendorId_emailSequenceId_recipientHash_key"');
     expect(modelOf("FormSubmission")).toContain("@@index([liveId, verificationStatus, verifiedAt])");
     expect(migration).toContain('CREATE INDEX "FormSubmission_liveId_verificationStatus_verifiedAt_idx"');
-    // The Vendor CHECK is rebuilt last, so its ACCESS EXCLUSIVE lock is held briefly.
-    expect(migration.trimEnd().endsWith(");")).toBe(true);
-    expect(migration.lastIndexOf('ALTER TABLE "Vendor"')).toBeGreaterThan(migration.lastIndexOf("ENABLE ROW LEVEL SECURITY"));
+    expect(modelOf("DelayedStepRun")).toContain("@@index([vendorId, status, nextRunAt])");
+    expect(migration).toContain('CREATE INDEX "DelayedStepRun_vendorId_status_nextRunAt_idx"');
+    // The Vendor CHECK is rebuilt in its own migration (MINOR 2): the table migration never locks Vendor that way.
+    expect(migration).not.toContain('ALTER TABLE "Vendor"');
+    expect(grantMigration.match(/^ALTER TABLE "Vendor"/gmu)).toHaveLength(2);
+    expect(grantMigration).not.toMatch(/CREATE|INSERT|UPDATE|DELETE/u);
     // F-4 adds automationRuleId with its own migration; PR 1 has only e-mail sequences.
     expect(modelOf("DelayedStepRun")).not.toMatch(/^\s+automationRuleId\s/mu);
     expect(migration).toContain('CHECK ("emailSequenceId" IS NOT NULL)');
@@ -50,15 +54,16 @@ describe("F-3 email sequence schema contract", () => {
     expect(migration).toContain('FOREIGN KEY ("formSubmissionId") REFERENCES "FormSubmission"("id") ON DELETE CASCADE');
     expect(migration).not.toMatch(/^\s*GRANT\b/imu);
     expect(migration).not.toMatch(/\bDROP\s+(TABLE|COLUMN|INDEX)\b/iu);
-    // The only DROP is the beta-grant CHECK, re-added in the same migration as a superset.
-    expect(migration.match(/\bDROP CONSTRAINT\b/gu)).toEqual(["DROP CONSTRAINT"]);
-    expect(migration).toContain("pg_catalog.set_config('lock_timeout', '5s', true)");
+    expect(migration).not.toMatch(/\bDROP\b/u);
+    // The only DROP of the grant migration is the CHECK, re-added right after it as a superset.
+    expect(grantMigration.match(/\bDROP CONSTRAINT\b/gu)).toEqual(["DROP CONSTRAINT"]);
+    for (const sql of [migration, grantMigration]) expect(sql).toContain("pg_catalog.set_config('lock_timeout', '5s', true)");
   });
 
   it("keeps the database limits and values equal to the application constants", () => {
     expect(migration).toContain(`CHECK ("delayMinutes" BETWEEN ${SEQUENCE_STEP_MIN_DELAY_MINUTES} AND ${SEQUENCE_STEP_MAX_DELAY_MINUTES})`);
     for (const reason of DELAYED_STEP_CANCEL_REASONS) expect(migration).toContain(`'${reason}'`);
-    for (const feature of BETA_GATED_FEATURES) expect(migration).toContain(`'${feature}'`);
+    for (const feature of BETA_GATED_FEATURES) expect(grantMigration).toContain(`'${feature}'`);
     expect(MAX_ACTIVE_EMAIL_SEQUENCES_PER_VENDOR).toBe(5);
     expect(MAX_EMAIL_SEQUENCE_STEPS).toBe(10);
   });

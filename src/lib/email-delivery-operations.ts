@@ -268,7 +268,7 @@ export async function requeueEmailDelivery(input: {
           claimedAt: null,
           lastErrorCode: candidate.trigger === "form_submission_verification"
             ? "verification_superseded"
-            : "config_superseded",
+            : candidate.trigger === "sequence_email" ? "sequence_superseded" : "config_superseded",
         },
       });
       if (stale.count !== 1) return { status: "conflict" as const };

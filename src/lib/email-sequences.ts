@@ -47,6 +47,23 @@ async function run<T>(work: () => Promise<T>): Promise<T | EmailSequenceServiceF
 
 const TEMPLATE_SELECT = { id: true, channel: true, trigger: true, subject: true, body: true, isActive: true } as const;
 
+/**
+ * MINOR 4: the template rows a save or an activation is about to validate are
+ * read FOR SHARE (this vendor's only). The template editor updates the row
+ * first and then refuses to switch off a template an active sequence uses
+ * (message-template-save.ts), so the two can no longer pass each other: one of
+ * them waits for the other and then sees its result.
+ */
+async function lockTemplates(tx: Prisma.TransactionClient, vendorId: string, templateIds: string[]) {
+  if (templateIds.length === 0) return;
+  await tx.$queryRaw`
+    SELECT "id" FROM "MessageTemplate"
+    WHERE "vendorId" = ${vendorId} AND "id" = ANY(${templateIds}::text[])
+    ORDER BY "id"
+    FOR SHARE
+  `;
+}
+
 function isUsableSequenceTemplate(template: { channel: string; trigger: string; subject: string | null; body: string; isActive: boolean }) {
   return template.isActive
     && template.channel === "email"
@@ -87,6 +104,7 @@ export async function saveEmailSequence(
     }
 
     const templateIds = [...new Set(data.steps.map((step) => step.messageTemplateId))];
+    await lockTemplates(tx, input.vendorId, templateIds);
     const templates = new Map((await tx.messageTemplate.findMany({
       where: { id: { in: templateIds }, vendorId: input.vendorId },
       select: TEMPLATE_SELECT,
@@ -179,6 +197,11 @@ export async function activateEmailSequence(
     // Serializes activations of one vendor so two tabs cannot pass the
     // active-sequence limit together.
     await tx.$executeRaw(Prisma.sql`SELECT pg_advisory_xact_lock(hashtextextended(${`email-sequence-activation:${input.vendorId}`}, 0))`);
+    const stepTemplates = await tx.emailSequenceStep.findMany({
+      where: { vendorId: input.vendorId, emailSequenceId: input.sequenceId, isActive: true },
+      select: { messageTemplateId: true },
+    });
+    await lockTemplates(tx, input.vendorId, [...new Set(stepTemplates.map((step) => step.messageTemplateId))]);
     const sequence = await tx.emailSequence.findFirst({
       where: { id: input.sequenceId, vendorId: input.vendorId },
       select: {

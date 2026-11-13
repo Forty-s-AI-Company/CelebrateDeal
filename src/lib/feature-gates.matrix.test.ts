@@ -291,7 +291,7 @@ const STATIC_MATRIX: Array<{ feature: string; file: string; gate: RegExp; count?
   // email_sequences (F-3): pages, Server Actions, and the per-vendor check of enrollment, backfill and worker
   ...["page.tsx", "new/page.tsx", "[id]/edit/page.tsx"].map((file) => ({ feature: "email_sequences", file: `src/app/(app)/messages/sequences/${file}`, gate: /requireFeatureOrNotFound\(vendor, "email_sequences"\)/u })),
   { feature: "email_sequences", file: "src/app/actions/email-sequence-actions.ts", gate: /requireFeature\(vendor, "email_sequences"\)/u },
-  { feature: "email_sequences", file: "src/lib/delayed-step-runs.ts", gate: /isFeatureEnabled\(vendor, EMAIL_SEQUENCES_FEATURE\)|betaFeatureGrants: \{ has: EMAIL_SEQUENCES_FEATURE \}|\$\{EMAIL_SEQUENCES_FEATURE\} = ANY\(v\."betaFeatureGrants"\)/gu, count: 3 },
+  { feature: "email_sequences", file: "src/lib/delayed-step-runs.ts", gate: /isFeatureEnabled\(vendor, EMAIL_SEQUENCES_FEATURE\)|betaFeatureGrants: \{ has: EMAIL_SEQUENCES_FEATURE \}|\$\{EMAIL_SEQUENCES_FEATURE\} = ANY\(v\."betaFeatureGrants"\)/gu, count: 4 },
 ];
 
 describe("static gate inventory (F-001 / F-002)", () => {

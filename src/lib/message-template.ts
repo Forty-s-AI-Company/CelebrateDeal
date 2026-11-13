@@ -72,7 +72,7 @@ export type MessageTemplateFormTemplate = MessageTemplateFormDraft & {
   updatedAt: string;
 };
 
-export type MessageTemplateActionError = "invalid_template" | "missing_template" | "conflict" | "in_use_by_sequence";
+export type MessageTemplateActionError = "invalid_template" | "missing_template" | "conflict" | "in_use_by_sequence" | "sequence_email_unavailable";
 
 export type MessageTemplateActionState = {
   status: "idle" | "error";

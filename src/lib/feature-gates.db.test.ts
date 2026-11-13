@@ -57,7 +57,7 @@ describe("Vendor.betaFeatureGrants", () => {
     await expect(db.vendor.update({ where: { id: created.id }, data: { betaFeatureGrants: ["courses", "danmaku"] } })).resolves.toMatchObject({ betaFeatureGrants: ["courses", "danmaku"] });
   });
 
-  it("accepts the email_sequences grant (F-3, 20261113150000_email_sequences) and still rejects unknown values", async () => {
+  it("accepts the email_sequences grant (F-3, 20261113150100_email_sequences_grant) and still rejects unknown values", async () => {
     const created = await vendor();
     await expect(db.vendor.update({ where: { id: created.id }, data: { betaFeatureGrants: ["email_sequences"] } })).resolves.toMatchObject({ betaFeatureGrants: ["email_sequences"] });
     await expect(isVendorFeatureEnabled(db, created.id, "email_sequences")).resolves.toBe(true);

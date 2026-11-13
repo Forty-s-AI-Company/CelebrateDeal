@@ -12,7 +12,7 @@ vi.mock("@/lib/email", async (importOriginal) => ({
 
 import { getDb } from "@/lib/db";
 import { enrollSubmissionInEmailSequences, processDueDelayedStepRuns } from "@/lib/delayed-step-runs";
-import { dispatchEmailDelivery, processDueEmailDeliveries } from "@/lib/email-delivery";
+import { dispatchEmailDelivery, processDueEmailDeliveries, processDueSequenceEmailDeliveries } from "@/lib/email-delivery";
 import { protectEmailDeliveryPayload } from "@/lib/email-delivery-pii";
 
 /**
@@ -77,7 +77,7 @@ describe("sequence e-mail dispatch", () => {
     expect(mocks.sendTransactionalEmail).toHaveBeenCalledTimes(1);
   });
 
-  it("dispatches time-bound mail before sequence e-mails, each on its own quota (S1)", async () => {
+  it("keeps sequence e-mails out of the time-bound pass and sends them on their own quota (S1, MAJOR 1)", async () => {
     const f = await fixture();
     const earlier = new Date(Date.now() - 60 * 60_000);
     const later = new Date(Date.now() - 60_000);
@@ -99,10 +99,14 @@ describe("sequence e-mail dispatch", () => {
     const reminder = row("registration_confirmed", later);
     await db.emailDelivery.createMany({ data: [...sequenceRows, reminder] });
 
-    const results = (await processDueEmailDeliveries(1, { sequenceLimit: 1 })).filter((result) => [reminder.id, ...sequenceRows.map((entry) => entry.id)].includes(result.deliveryId));
-    expect(results[0]).toEqual({ deliveryId: reminder.id, status: "sent" });
-    expect(results).toHaveLength(2);
-    expect(sequenceRows.map((entry) => entry.id)).toContain(results[1]!.deliveryId);
+    const mine = (rows: Array<{ deliveryId: string; status: string }>) => rows.filter((result) => [reminder.id, ...sequenceRows.map((entry) => entry.id)].includes(result.deliveryId));
+    // The time-bound pass never takes a sequence e-mail, however long it waited.
+    expect(mine(await processDueEmailDeliveries(1))).toEqual([{ deliveryId: reminder.id, status: "sent" }]);
+    const sequencePass = mine(await processDueSequenceEmailDeliveries({ limit: 1 }));
+    expect(sequencePass).toHaveLength(1);
+    expect(sequenceRows.map((entry) => entry.id)).toContain(sequencePass[0]!.deliveryId);
+    // Its own deadline stops it before the next send.
+    expect(mine(await processDueSequenceEmailDeliveries({ limit: 5, deadline: Date.now() - 1 }))).toEqual([]);
     // One sequence e-mail waits for the next round instead of taking the reminder's place.
     const waiting = await db.emailDelivery.findMany({ where: { vendorId: f.vendor.id, trigger: "sequence_email", status: "queued" } });
     expect(waiting).toHaveLength(1);

@@ -184,7 +184,16 @@ test("a verified registrant gets the sequence's first two e-mails on time, and n
     await elapse(61 * MINUTE, 60);
     expect((await runJob()).sequenceStepResults).toContainEqual({ status: "queued" });
     await expect(db.delayedStepRun.findUniqueOrThrow({ where: { id: runId } })).resolves.toMatchObject({ cursorDelayMinutes: 60, status: "active" });
+    const [first] = await sequenceMails();
+    // This browser QA server has no e-mail provider, so the job's send attempt
+    // failed and the first e-mail is still waiting for a retry: the next step
+    // waits too (one step in the queue per person).
+    expect(first).toMatchObject({ status: "failed", lastErrorCode: "configuration" });
+    await elapse(24 * 60 * MINUTE + MINUTE, 1_440);
+    expect((await runJob()).sequenceStepResults).toContainEqual({ status: "waiting_previous" });
     await expect(sequenceMails()).resolves.toHaveLength(1);
+    // Stand in for the provider accepting the first e-mail, then the next round sends step 2.
+    await db.emailDelivery.update({ where: { id: first!.id }, data: { status: "sent", sentAt: new Date(), nextAttemptAt: null } });
     await elapse(24 * 60 * MINUTE + MINUTE, 1_440);
     expect((await runJob()).sequenceStepResults).toContainEqual({ status: "queued" });
     await expect(db.delayedStepRun.findUniqueOrThrow({ where: { id: runId } })).resolves.toMatchObject({ cursorDelayMinutes: 1_440, status: "active" });

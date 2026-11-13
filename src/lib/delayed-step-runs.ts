@@ -38,20 +38,37 @@ export const DELAYED_STEP_MAX_ATTEMPTS = 5;
  * The cursor still moves past it.
  */
 export const DELAYED_STEP_STALE_AFTER_MS = 24 * 60 * 60 * 1_000;
-/** Runs looked at per round, all vendors together. */
-export const DELAYED_STEP_BATCH_LIMIT = 100;
+/** Runs claimed per round, all vendors together (skips and waits included). */
+export const DELAYED_STEP_BATCH_LIMIT = 200;
 /**
- * Sequence e-mails dispatched per job round, on their own quota after the
- * time-bound mail (processDueEmailDeliveries). Throughput is this number per
- * round: every 5 minutes that is 240 sequence e-mails an hour, every hour 20.
+ * Sequence e-mails dispatched per job round, on their own quota after all
+ * time-bound mail (processDueSequenceEmailDeliveries). Throughput is this
+ * number per round: every 5 minutes that is 240 sequence e-mails an hour,
+ * every hour 20.
  */
 export const SEQUENCE_EMAIL_DISPATCH_LIMIT = 20;
-/** Step e-mails created per round: twice what one round dispatches, so the queue never grows faster than two rounds can drain. */
-export const SEQUENCE_EMAILS_PER_ROUND = 2 * SEQUENCE_EMAIL_DISPATCH_LIMIT;
-/** One vendor's large webinar cannot take a whole round from the others. */
-export const SEQUENCE_EMAILS_PER_VENDOR_PER_ROUND = 10;
-const DELAYED_STEP_VENDORS_PER_ROUND = 50;
-const DELAYED_STEP_RUNS_PER_VENDOR_PER_ROUND = 25;
+/**
+ * The worker creates step e-mails only into free dispatch capacity: each
+ * round at most SEQUENCE_EMAIL_DISPATCH_LIMIT minus the sequence e-mails
+ * still waiting to be sent (MAJOR 2). A backlog therefore waits as runs, whose
+ * lateness is measured from each step's own due time, never as queued mail.
+ */
+export const SEQUENCE_EMAIL_CREATE_LIMIT = SEQUENCE_EMAIL_DISPATCH_LIMIT;
+/**
+ * A step e-mail is normally created and sent in the same round. One still
+ * unsent this long after it was created is superseded at send time.
+ */
+export const SEQUENCE_EMAIL_SEND_STALE_MS = 6 * 60 * 60 * 1_000;
+/** Job round (/api/jobs/email-deliveries): past this point the sequence work is skipped and left to the next round. */
+export const EMAIL_SEQUENCE_START_CUTOFF_MS = 90_000;
+/** Job round: the sequence work stops starting new items at this point (route maxDuration is 300 s). */
+export const EMAIL_SEQUENCE_DEADLINE_MS = 240_000;
+/** Vendors with due runs considered per round; the starting vendor rotates every round. */
+const DELAYED_STEP_VENDORS_PER_ROUND = 500;
+/** Runs one vendor may claim per round beyond its e-mail share (waits, reschedules, cancellations). */
+const DELAYED_STEP_EXTRA_RUNS_PER_VENDOR = 10;
+/** Rounds are numbered by this period for the rotation of the starting vendor. */
+const DELAYED_STEP_ROTATION_PERIOD_MS = 60 * 1_000;
 /** A step whose template is switched off is retried this much later (roughly the next round), until it is 24 hours late. */
 export const DELAYED_STEP_TEMPLATE_RETRY_MS = 5 * 60 * 1_000;
 /** The job re-checks registrations verified this recently that have no run yet (§4「補漏」). */
@@ -76,6 +93,30 @@ export type DelayedStepCancelReason = (typeof DELAYED_STEP_CANCEL_REASONS)[numbe
 type Database = PrismaClient;
 
 const utcTimestamp = (value: Date) => Prisma.sql`(${value.toISOString()}::timestamptz AT TIME ZONE 'UTC')`;
+
+/**
+ * A deployment problem (public URL, signing or encryption key) met while
+ * building a step e-mail. It says nothing about the run, so the run keeps its
+ * attempts and the round stops (MINOR 1).
+ */
+export class SequenceConfigurationError extends Error {
+  constructor(readonly causeError: unknown) {
+    super("Email sequences cannot build e-mails: deployment configuration is missing.");
+    this.name = "SequenceConfigurationError";
+  }
+}
+
+/** Runs the builder and turns any error into a SequenceConfigurationError. */
+function configured<T>(build: () => T): T {
+  try {
+    return build();
+  } catch (error) {
+    throw error instanceof SequenceConfigurationError ? error : new SequenceConfigurationError(error);
+  }
+}
+
+/** Up to one pass per possible step: every overdue step of a run is skipped in one round. */
+const MAX_STALE_SKIP_PASSES = 10;
 
 function reportFailure(error: unknown, operation: string, status: string) {
   try {
@@ -167,7 +208,7 @@ const DELIVERABLE_EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/u;
 async function recipientBlock(db: RecipientCheckDatabase, vendorId: string, email: string) {
   const normalized = normalizeBlacklistIdentifier("email", email);
   if (!normalized || normalized.length > 320 || !DELIVERABLE_EMAIL.test(normalized)) return { blocked: "subject_gone" as const };
-  const recipientHash = createEmailRecipientHash(normalized, vendorId);
+  const recipientHash = configured(() => createEmailRecipientHash(normalized, vendorId));
   const [suppression, blacklist] = await Promise.all([
     db.emailSuppression.findUnique({
       where: { vendorId_recipientHash: { vendorId, recipientHash } },
@@ -237,7 +278,7 @@ export async function enrollSubmissionInEmailSequences(
   const recipient = await recipientBlock(db, input.vendorId, submission.email);
   const hashes = recipient.blocked === "subject_gone"
     ? { subjectKeyHash: null, recipientHash: null }
-    : { subjectKeyHash: automationCustomerKeyHash(input.vendorId, recipient.normalized), recipientHash: recipient.recipientHash };
+    : { subjectKeyHash: configured(() => automationCustomerKeyHash(input.vendorId, recipient.normalized)), recipientHash: recipient.recipientHash };
   const anchorAt = submission.verifiedAt;
   let created = 0;
   for (const sequence of sequences) {
@@ -285,61 +326,83 @@ export async function enrollSubmissionInEmailSequences(
 
 type BackfillCandidate = { formSubmissionId: string; vendorId: string; liveId: string; verifiedAt: Date };
 
+/** Rounds are numbered by this period to move the backfill's starting point. */
+const SEQUENCE_BACKFILL_ROTATION_PERIOD_MS = 5 * 60 * 1_000;
+/** About 0.618 of the window: consecutive rounds start far apart and cover it evenly. */
+const SEQUENCE_BACKFILL_ROTATION_STEP = 0.6180339887;
+
 /**
  * Safety net for the verify route (§4「補漏」): registrations verified in the
  * last 48 hours for a Live with an active sequence, activated before the
  * verification, that still have no run. Keyset-paged and bounded per round.
+ * Each round starts at a different point of the 48-hour window and wraps
+ * around, so a registration whose enrollment keeps failing cannot hold the
+ * front of every scan (ineligible people get a stopped run and leave the
+ * scan for good). A configuration error stops the round with one report.
+ * `deadline` (epoch ms) stops it before the next candidate.
  */
 export async function backfillEmailSequenceEnrollments(
-  options: { now?: Date; scanLimit?: number; vendorId?: string } = {},
+  options: { now?: Date; scanLimit?: number; vendorId?: string; deadline?: number } = {},
   db: Database = getDb(),
 ) {
   const now = options.now ?? new Date();
   const since = new Date(now.getTime() - SEQUENCE_BACKFILL_WINDOW_MS);
   const scanLimit = Math.min(Math.max(options.scanLimit ?? SEQUENCE_BACKFILL_SCAN_LIMIT, 1), 1_000);
+  const round = Math.floor(now.getTime() / SEQUENCE_BACKFILL_ROTATION_PERIOD_MS);
+  const pivot = new Date(since.getTime() + Math.floor(((round * SEQUENCE_BACKFILL_ROTATION_STEP) % 1) * SEQUENCE_BACKFILL_WINDOW_MS));
   const results: Array<{ status: EnrollmentResult["status"] }> = [];
-  let after: BackfillCandidate | null = null;
-  while (results.length < scanLimit) {
-    const take = Math.min(SEQUENCE_BACKFILL_PAGE_SIZE, scanLimit - results.length);
-    const cursor: BackfillCandidate | null = after;
-    const page: BackfillCandidate[] = await db.$queryRaw<BackfillCandidate[]>`
-      SELECT DISTINCT f."id" AS "formSubmissionId", s."vendorId", s."liveId", f."verifiedAt"
-      FROM "EmailSequence" s
-      JOIN "Vendor" v ON v."id" = s."vendorId"
-      JOIN "FormSubmission" f ON f."liveId" = s."liveId"
-      JOIN "RegistrationForm" rf ON rf."id" = f."formId" AND rf."vendorId" = s."vendorId"
-      WHERE s."status" = 'active'
-        AND v."suspendedAt" IS NULL
-        AND ${EMAIL_SEQUENCES_FEATURE} = ANY(v."betaFeatureGrants")
-        ${options.vendorId ? Prisma.sql`AND s."vendorId" = ${options.vendorId}` : Prisma.empty}
-        AND f."verificationStatus" = 'VERIFIED'
-        AND f."verifiedAt" >= ${utcTimestamp(since)}
-        AND f."verifiedAt" <= ${utcTimestamp(now)}
-        AND f."verifiedAt" >= s."activatedAt"
-        AND NOT EXISTS (
-          SELECT 1 FROM "DelayedStepRun" r
-          WHERE r."vendorId" = s."vendorId" AND r."emailSequenceId" = s."id" AND r."formSubmissionId" = f."id"
-        )
-        ${cursor ? Prisma.sql`AND (f."verifiedAt", f."id") > (${utcTimestamp(cursor.verifiedAt)}, ${cursor.formSubmissionId})` : Prisma.empty}
-      ORDER BY f."verifiedAt" ASC, f."id" ASC
-      LIMIT ${take}
-    `;
-    for (const candidate of page) {
-      after = candidate;
-      try {
-        const result = await enrollSubmissionInEmailSequences({
-          vendorId: candidate.vendorId,
-          liveId: candidate.liveId,
-          formSubmissionId: candidate.formSubmissionId,
-          now,
-        }, db);
-        results.push({ status: result.status });
-      } catch (error) {
-        reportFailure(error, "backfill_enrollment", "failed");
-        results.push({ status: "not_eligible" });
+  // [pivot, now] first, then [since, pivot).
+  for (const range of [{ from: pivot, to: now, toInclusive: true }, { from: since, to: pivot, toInclusive: false }]) {
+    let after: BackfillCandidate | null = null;
+    while (results.length < scanLimit) {
+      if (options.deadline !== undefined && Date.now() >= options.deadline) return results;
+      const take = Math.min(SEQUENCE_BACKFILL_PAGE_SIZE, scanLimit - results.length);
+      const cursor: BackfillCandidate | null = after;
+      const page: BackfillCandidate[] = await db.$queryRaw<BackfillCandidate[]>`
+        SELECT DISTINCT f."id" AS "formSubmissionId", s."vendorId", s."liveId", f."verifiedAt"
+        FROM "EmailSequence" s
+        JOIN "Vendor" v ON v."id" = s."vendorId"
+        JOIN "FormSubmission" f ON f."liveId" = s."liveId"
+        JOIN "RegistrationForm" rf ON rf."id" = f."formId" AND rf."vendorId" = s."vendorId"
+        WHERE s."status" = 'active'
+          AND v."suspendedAt" IS NULL
+          AND ${EMAIL_SEQUENCES_FEATURE} = ANY(v."betaFeatureGrants")
+          ${options.vendorId ? Prisma.sql`AND s."vendorId" = ${options.vendorId}` : Prisma.empty}
+          AND f."verificationStatus" = 'VERIFIED'
+          AND f."verifiedAt" >= ${utcTimestamp(range.from)}
+          AND ${range.toInclusive ? Prisma.sql`f."verifiedAt" <= ${utcTimestamp(range.to)}` : Prisma.sql`f."verifiedAt" < ${utcTimestamp(range.to)}`}
+          AND f."verifiedAt" >= s."activatedAt"
+          AND NOT EXISTS (
+            SELECT 1 FROM "DelayedStepRun" r
+            WHERE r."vendorId" = s."vendorId" AND r."emailSequenceId" = s."id" AND r."formSubmissionId" = f."id"
+          )
+          ${cursor ? Prisma.sql`AND (f."verifiedAt", f."id") > (${utcTimestamp(cursor.verifiedAt)}, ${cursor.formSubmissionId})` : Prisma.empty}
+        ORDER BY f."verifiedAt" ASC, f."id" ASC
+        LIMIT ${take}
+      `;
+      for (const candidate of page) {
+        if (options.deadline !== undefined && Date.now() >= options.deadline) return results;
+        after = candidate;
+        try {
+          const result = await enrollSubmissionInEmailSequences({
+            vendorId: candidate.vendorId,
+            liveId: candidate.liveId,
+            formSubmissionId: candidate.formSubmissionId,
+            now,
+          }, db);
+          results.push({ status: result.status });
+        } catch (error) {
+          if (error instanceof SequenceConfigurationError) {
+            reportFailure(error, "configuration", "skipped");
+            return results;
+          }
+          // Skipped for this round only; the next round starts elsewhere in the window.
+          reportFailure(error, "backfill_enrollment", "failed");
+          results.push({ status: "not_eligible" });
+        }
       }
+      if (page.length < take) break;
     }
-    if (page.length < take) break;
   }
   return results;
 }
@@ -379,6 +442,7 @@ export type DelayedStepResult = {
     | "skipped_template"
     | "skipped_already_sent"
     | "waiting_template"
+    | "waiting_previous"
     | "definition_changed"
     | "rescheduled"
     | "completed"
@@ -599,6 +663,30 @@ async function processClaimedRun(db: Database, lease: Lease, now: Date): Promise
     }), "waiting_template");
   }
 
+  if (!stale) {
+    // One step in the queue per person (MAJOR 2): while an earlier step e-mail
+    // of this run still waits to be sent (or retried), this step waits too.
+    const previousPending = await db.emailDelivery.findFirst({
+      where: {
+        vendorId: lease.vendorId,
+        sourceFormSubmissionId: submission.id,
+        trigger: SEQUENCE_EMAIL_TRIGGER,
+        idempotencyKey: { startsWith: `sequence-email/${run.id}/` },
+        status: { in: ["queued", "failed", "sending"] },
+      },
+      select: { id: true },
+    });
+    if (previousPending) {
+      return outcomeOf(lease, await commitWithDefinition(db, lease, sequence, async (tx) => {
+        const waiting = await tx.delayedStepRun.updateMany({
+          where: leaseWhere(lease),
+          data: { nextRunAt: new Date(now.getTime() + DELAYED_STEP_TEMPLATE_RETRY_MS), claimedAt: null, attemptCount: 0 },
+        });
+        if (waiting.count !== 1) throw new LeaseLostError();
+      }), "waiting_previous");
+    }
+  }
+
   const advance: Prisma.DelayedStepRunUpdateManyMutationInput = following
     ? {
         cursorDelayMinutes: step.delayMinutes,
@@ -624,11 +712,12 @@ async function processClaimedRun(db: Database, lease: Lease, now: Date): Promise
     });
     // Configuration, key and database errors below are thrown on purpose: the
     // lease keeps the run and a later round retries the same step (S3).
-    const unsubscribeUrl = createEmailUnsubscribeUrl(deliveryId);
+    const unsubscribeUrl = configured(() => createEmailUnsubscribeUrl(deliveryId));
+    const liveUrl = configured(() => createLiveViewerUrl(live.slug));
     const variables = {
       name: submission.name,
       live_title: live.title,
-      live_url: createLiveViewerUrl(live.slug),
+      live_url: liveUrl,
       live_start_at: await sequenceLiveStartText(db, live, submission, now),
       vendor_name: live.vendor.name,
       unsubscribe_url: unsubscribeUrl,
@@ -641,7 +730,8 @@ async function processClaimedRun(db: Database, lease: Lease, now: Date): Promise
       reportFailure(new Error("Rendered sequence e-mail exceeds the delivery limits."), "render_step", "skipped");
       outcome = "skipped_template";
     } else {
-      const payload = protectEmailDeliveryPayload({
+      // Lengths and the address were checked above, so a failure here is a key problem.
+      const payload = configured(() => protectEmailDeliveryPayload({
         recipientEmail: recipient.normalized,
         subject,
         body,
@@ -650,7 +740,7 @@ async function processClaimedRun(db: Database, lease: Lease, now: Date): Promise
           supportEmail: live.vendor.supportEmail,
           contactUrl: live.vendor.contactUrl,
         },
-      }, { vendorId: lease.vendorId, deliveryId });
+      }, { vendorId: lease.vendorId, deliveryId }));
       delivery = {
         id: deliveryId,
         vendorId: lease.vendorId,
@@ -696,38 +786,144 @@ async function processClaimedRun(db: Database, lease: Lease, now: Date): Promise
 }
 
 export type DelayedStepBudget = {
-  /** Runs looked at (claimed) per round, all vendors together. */
+  /** Runs claimed per round, all vendors together. */
   runs: number;
-  /** Step e-mails created per round, all vendors together. */
+  /**
+   * Step e-mails this round may create before subtracting the sequence
+   * e-mails still waiting to be sent (defaults to the dispatch quota).
+   */
   emails: number;
-  /** Step e-mails created per round for one vendor. */
-  emailsPerVendor: number;
 };
 
 export const DEFAULT_DELAYED_STEP_BUDGET: DelayedStepBudget = {
   runs: DELAYED_STEP_BATCH_LIMIT,
-  emails: SEQUENCE_EMAILS_PER_ROUND,
-  emailsPerVendor: SEQUENCE_EMAILS_PER_VENDOR_PER_ROUND,
+  emails: SEQUENCE_EMAIL_CREATE_LIMIT,
 };
 
+/** Sequence e-mails of active vendors that are still waiting to be sent (or being sent). */
+export async function countPendingSequenceEmails(db: Pick<Database, "emailDelivery">, vendorId?: string) {
+  return db.emailDelivery.count({
+    where: {
+      ...(vendorId ? { vendorId } : {}),
+      trigger: SEQUENCE_EMAIL_TRIGGER,
+      status: { in: ["queued", "failed", "sending"] },
+      // A suspended vendor's queue is not dispatched and must not block others.
+      vendor: { is: { suspendedAt: null } },
+    },
+  });
+}
+
 /**
- * The job's worker (§3「Worker」). Each round takes due active runs of
- * active, non-suspended vendors that hold the email_sequences grant (a closed
- * grant keeps the runs but never runs them), vendor by vendor starting with
- * the one waiting longest, claims each with a compare-and-set and executes at
- * most one step per run. A round stops creating e-mails at the budget (S1):
- * at most `emails` in total and `emailsPerVendor` per vendor, sized to the
- * dispatch quota for sequence e-mails. Runs not reached stay active with
- * their nextRunAt unchanged for the next round; their 24-hour lateness is
- * still measured from the step's own due time.
+ * Probes, once per round, everything a step e-mail needs from the deployment
+ * (public URL, signing and encryption keys). A missing one is a platform
+ * problem, not a problem of any run: the round stops before claiming anything
+ * and reports one event (MINOR 1).
+ */
+function sequenceRuntimeConfigured() {
+  try {
+    const probeId = `email_${"0".repeat(32)}`;
+    createEmailUnsubscribeUrl(probeId);
+    createLiveViewerUrl("probe");
+    createEmailRecipientHash("probe@example.invalid", "probe");
+    automationCustomerKeyHash("probe", "probe@example.invalid");
+    protectEmailDeliveryPayload({ recipientEmail: "probe@example.invalid", subject: "probe", body: "probe" }, { vendorId: "probe", deliveryId: probeId });
+    return true;
+  } catch (error) {
+    reportFailure(new SequenceConfigurationError(error), "configuration", "skipped");
+    return false;
+  }
+}
+
+/**
+ * Steps more than 24 hours late are skipped in bulk, before any run is
+ * claimed (MAJOR 3): they send nothing, so they must not take a vendor's turn
+ * or the round's run budget. Each pass moves every such run past one step;
+ * a run with no step left after it is made due now so the worker completes it.
+ * Leased runs, paused sequences, suspended vendors and closed grants are left
+ * alone, like in the worker.
+ */
+async function skipStaleSteps(db: Database, now: Date, vendorId: string | undefined) {
+  const staleBefore = new Date(now.getTime() - DELAYED_STEP_STALE_AFTER_MS);
+  const leaseCutoff = new Date(now.getTime() - DELAYED_STEP_LEASE_MS);
+  let skipped = 0;
+  for (let pass = 0; pass < MAX_STALE_SKIP_PASSES; pass += 1) {
+    const updated = await db.$executeRaw`
+      WITH due AS (
+        SELECT r."id",
+          (
+            SELECT MIN(s."delayMinutes") FROM "EmailSequenceStep" s
+            WHERE s."vendorId" = r."vendorId" AND s."emailSequenceId" = r."emailSequenceId"
+              AND s."isActive" AND s."delayMinutes" > r."cursorDelayMinutes"
+          ) AS "nextDelay"
+        FROM "DelayedStepRun" r
+        JOIN "EmailSequence" q ON q."id" = r."emailSequenceId" AND q."vendorId" = r."vendorId" AND q."status" = 'active'
+        JOIN "Vendor" v ON v."id" = r."vendorId"
+        WHERE r."status" = 'active'
+          ${vendorId ? Prisma.sql`AND r."vendorId" = ${vendorId}` : Prisma.empty}
+          AND r."nextRunAt" <= ${utcTimestamp(now)}
+          AND (r."claimedAt" IS NULL OR r."claimedAt" <= ${utcTimestamp(leaseCutoff)})
+          AND v."suspendedAt" IS NULL
+          AND ${EMAIL_SEQUENCES_FEATURE} = ANY(v."betaFeatureGrants")
+          AND r."anchorAt" >= q."activatedAt"
+      )
+      UPDATE "DelayedStepRun" AS r
+      SET "cursorDelayMinutes" = due."nextDelay",
+          "nextRunAt" = COALESCE(
+            r."anchorAt" + make_interval(mins => (
+              SELECT MIN(s."delayMinutes") FROM "EmailSequenceStep" s
+              WHERE s."vendorId" = r."vendorId" AND s."emailSequenceId" = r."emailSequenceId"
+                AND s."isActive" AND s."delayMinutes" > due."nextDelay"
+            )),
+            ${utcTimestamp(now)}
+          ),
+          "claimedAt" = NULL,
+          "updatedAt" = ${utcTimestamp(now)}
+      FROM due
+      WHERE r."id" = due."id"
+        AND r."status" = 'active'
+        AND due."nextDelay" IS NOT NULL
+        AND r."anchorAt" + make_interval(mins => due."nextDelay") < ${utcTimestamp(staleBefore)}
+    `;
+    skipped += updated;
+    if (updated === 0) break;
+  }
+  return skipped;
+}
+
+/** The vendor this round starts with moves on every round, so no vendor is always first. */
+function rotate<T>(items: T[], now: Date) {
+  if (items.length === 0) return items;
+  const start = Math.floor(now.getTime() / DELAYED_STEP_ROTATION_PERIOD_MS) % items.length;
+  return [...items.slice(start), ...items.slice(0, start)];
+}
+
+/**
+ * The job's worker (§3「Worker」). Each round:
+ * 1. stops at once (nothing claimed, one monitoring event) when the
+ *    deployment cannot build step e-mails;
+ * 2. skips steps more than 24 hours late in bulk (no claim, no budget);
+ * 3. creates step e-mails only into free dispatch capacity: the dispatch
+ *    quota minus the sequence e-mails still waiting (MAJOR 2);
+ * 4. shares that capacity evenly between the vendors with due runs, starting
+ *    from a vendor that rotates every round (MAJOR 3), and executes at most one
+ *    step per run, claimed with a compare-and-set.
+ * Runs not reached stay active with nextRunAt unchanged. Active,
+ * non-suspended vendors with the email_sequences grant only; a closed grant
+ * keeps the runs but never runs them. `deadline` (epoch ms) stops the round
+ * before the next run.
  */
 export async function processDueDelayedStepRuns(
   /** `vendorId` scopes one run to a single tenant (tests, operations); the job runs unscoped. */
-  options: { now?: Date; vendorId?: string; budget?: Partial<DelayedStepBudget> } = {},
+  options: { now?: Date; vendorId?: string; budget?: Partial<DelayedStepBudget>; deadline?: number } = {},
   db: Database = getDb(),
 ): Promise<DelayedStepResult[]> {
   const now = options.now ?? new Date();
   const budget = { ...DEFAULT_DELAYED_STEP_BUDGET, ...options.budget };
+  const pastDeadline = () => options.deadline !== undefined && Date.now() >= options.deadline;
+  if (!sequenceRuntimeConfigured()) return [];
+  await skipStaleSteps(db, now, options.vendorId);
+  const pending = await countPendingSequenceEmails(db, options.vendorId);
+  const emailCapacity = Math.max(0, budget.emails - pending);
   const leaseCutoff = new Date(now.getTime() - DELAYED_STEP_LEASE_MS);
   const dueWhere: Prisma.DelayedStepRunWhereInput = {
     ...(options.vendorId ? { vendorId: options.vendorId } : {}),
@@ -736,27 +932,34 @@ export async function processDueDelayedStepRuns(
     OR: [{ claimedAt: null }, { claimedAt: { lte: leaseCutoff } }],
     vendor: { is: { suspendedAt: null, betaFeatureGrants: { has: EMAIL_SEQUENCES_FEATURE } } },
   };
-  const vendors = await db.delayedStepRun.groupBy({
+  const vendorRows = await db.delayedStepRun.groupBy({
     by: ["vendorId"],
     where: dueWhere,
-    _min: { nextRunAt: true },
-    orderBy: { _min: { nextRunAt: "asc" } },
+    orderBy: { vendorId: "asc" },
     take: DELAYED_STEP_VENDORS_PER_ROUND,
   });
+  const vendors = rotate(vendorRows.map((row) => row.vendorId), now);
+  // Every vendor with due runs gets an equal share, at least one e-mail.
+  const share = Math.max(1, Math.floor(emailCapacity / Math.max(1, vendors.length)));
   const results: DelayedStepResult[] = [];
   let emails = 0;
-  for (const { vendorId } of vendors) {
-    if (results.length >= budget.runs || emails >= budget.emails) break;
+  for (const vendorId of vendors) {
+    if (results.length >= budget.runs || emails >= emailCapacity || pastDeadline()) break;
     const candidates = await db.delayedStepRun.findMany({
       where: { ...dueWhere, vendorId },
       orderBy: [{ nextRunAt: "asc" }, { id: "asc" }],
-      take: Math.min(budget.runs - results.length, DELAYED_STEP_RUNS_PER_VENDOR_PER_ROUND),
+      take: Math.min(budget.runs - results.length, share + DELAYED_STEP_EXTRA_RUNS_PER_VENDOR),
       select: { id: true, vendorId: true, updatedAt: true, cursorDelayMinutes: true, attemptCount: true },
     });
     let vendorEmails = 0;
     for (const candidate of candidates) {
-      if (emails >= budget.emails || vendorEmails >= budget.emailsPerVendor) break;
+      if (emails >= emailCapacity || vendorEmails >= share || pastDeadline()) break;
       const result = await processCandidate(db, candidate, now);
+      if (result === CONFIGURATION_FAILED) {
+        // A deployment problem showed up mid-round: the lease was given back
+        // without using an attempt; stop and report it once.
+        return results;
+      }
       results.push(result);
       if (result.status === "queued") {
         emails += 1;
@@ -767,11 +970,14 @@ export async function processDueDelayedStepRuns(
   return results;
 }
 
+const CONFIGURATION_FAILED = Symbol("configuration_failed");
+
 async function processCandidate(
   db: Database,
   candidate: { id: string; vendorId: string; updatedAt: Date; cursorDelayMinutes: number; attemptCount: number },
   now: Date,
-): Promise<DelayedStepResult> {
+): Promise<DelayedStepResult | typeof CONFIGURATION_FAILED> {
+  let lease: Lease | null = null;
   try {
     if (candidate.attemptCount >= DELAYED_STEP_MAX_ATTEMPTS) {
       const exhausted = await db.delayedStepRun.updateMany({
@@ -796,15 +1002,26 @@ async function processCandidate(
       data: { claimedAt, attemptCount: { increment: 1 } },
     });
     if (claimed.count !== 1) return { runId: candidate.id, status: "claimed_elsewhere" };
-    return await processClaimedRun(db, {
+    lease = {
       id: candidate.id,
       vendorId: candidate.vendorId,
       claimedAt,
       attemptCount: candidate.attemptCount + 1,
       cursorDelayMinutes: candidate.cursorDelayMinutes,
-    }, now);
+    };
+    return await processClaimedRun(db, lease, now);
   } catch (error) {
-    // The lease stays; the run is claimable again after DELAYED_STEP_LEASE_MS.
+    if (error instanceof SequenceConfigurationError && lease) {
+      // Not this run's fault: give the lease back without using an attempt.
+      await db.delayedStepRun.updateMany({
+        where: leaseWhere(lease),
+        data: { claimedAt: null, attemptCount: candidate.attemptCount },
+      }).catch(() => undefined);
+      reportFailure(error, "configuration", "skipped");
+      return CONFIGURATION_FAILED;
+    }
+    // The lease stays; the run is claimable again after DELAYED_STEP_LEASE_MS,
+    // and only these run-specific failures count towards the attempt limit.
     reportFailure(error, "process_step", "failed");
     return { runId: candidate.id, status: "failed" };
   }
@@ -880,7 +1097,7 @@ export async function isCurrentSequenceEmailDelivery(
 ) {
   if (delivery.trigger !== SEQUENCE_EMAIL_TRIGGER) return true;
   if (!delivery.sourceLiveId || !delivery.sourceFormSubmissionId) return false;
-  if (!delivery.createdAt || now.getTime() - delivery.createdAt.getTime() > DELAYED_STEP_STALE_AFTER_MS) return false;
+  if (!delivery.createdAt || now.getTime() - delivery.createdAt.getTime() > SEQUENCE_EMAIL_SEND_STALE_MS) return false;
   if (!await emailSequencesEnabled(database, delivery.vendorId)) return false;
   // The idempotency key names the run and step, but the merchant retry path
   // does not read it, so the match is recomputed from the source records: a

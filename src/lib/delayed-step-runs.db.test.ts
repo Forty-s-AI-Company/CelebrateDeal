@@ -1,5 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+const monitoring = vi.hoisted(() => ({ captureOperationalError: vi.fn() }));
+vi.mock("@/lib/monitoring", () => ({ captureOperationalError: monitoring.captureOperationalError }));
 import { getDb } from "@/lib/db";
 import { automationCustomerKeyHash } from "@/lib/customer-key-hash";
 import {
@@ -13,6 +16,8 @@ import {
   processDueDelayedStepRuns,
   rescheduleActiveRunsForSequence,
   SEQUENCE_BACKFILL_WINDOW_MS,
+  SEQUENCE_EMAIL_DISPATCH_LIMIT,
+  SEQUENCE_EMAIL_SEND_STALE_MS,
 } from "@/lib/delayed-step-runs";
 import { dispatchEmailDelivery, isCurrentEmailDeliverySnapshot } from "@/lib/email-delivery";
 import { activateEmailSequence, emailSequenceRunCounts, pauseEmailSequence, saveEmailSequence } from "@/lib/email-sequences";
@@ -145,7 +150,19 @@ function deliveriesOf(vendorId: string) {
   return db.emailDelivery.findMany({ where: { vendorId, trigger: "sequence_email" }, orderBy: { createdAt: "asc" } });
 }
 
-const work = (t: Tenant, now: Date) => processDueDelayedStepRuns({ now, vendorId: t.vendor.id });
+/**
+ * One job round for this test's vendor: the sequence e-mails queued by earlier
+ * rounds count as dispatched first (as processDueSequenceEmailDeliveries would
+ * do in the same round), then the worker runs. Tests of the queue limit itself
+ * call processDueDelayedStepRuns directly.
+ */
+async function work(t: Tenant, now: Date) {
+  await db.emailDelivery.updateMany({
+    where: { vendorId: t.vendor.id, trigger: "sequence_email", status: { in: ["queued", "failed"] } },
+    data: { status: "sent", sentAt: now, nextAttemptAt: null },
+  });
+  return processDueDelayedStepRuns({ now, vendorId: t.vendor.id });
+}
 
 describe("加入序列", () => {
   it("adds a registration verified after activation with the anchor, first due time and hashed identities only", async () => {
@@ -247,9 +264,10 @@ describe("加入序列", () => {
     }
     const later = await submission(t, { verifiedAt });
     const first = await backfillEmailSequenceEnrollments({ now: at(HOUR), vendorId: t.vendor.id, scanLimit: 5 });
-    expect(first.map((result) => result.status)).toEqual(Array(5).fill("subject_gone"));
+    expect(first).toHaveLength(5);
     const second = await backfillEmailSequenceEnrollments({ now: at(HOUR), vendorId: t.vendor.id, scanLimit: 5 });
-    expect(second.map((result) => result.status)).toEqual(["subject_gone", "enrolled"]);
+    expect(second).toHaveLength(2);
+    expect([...first, ...second].map((result) => result.status).sort()).toEqual([...Array(6).fill("subject_gone"), "enrolled"].sort());
     expect(await runsOf(t.vendor.id)).toEqual(expect.arrayContaining([expect.objectContaining({ formSubmissionId: later.id, status: "active" })]));
     await expect(backfillEmailSequenceEnrollments({ now: at(HOUR), vendorId: t.vendor.id, scanLimit: 5 })).resolves.toEqual([]);
   });
@@ -395,8 +413,10 @@ describe("worker", () => {
   it("skips a step overdue by more than 24 hours, only moving the cursor", async () => {
     const { t, run } = await enrolled([{ delayMinutes: 60 }, { delayMinutes: 2 * 1_440 + 60 }]);
     const late = new Date(at(HOUR).getTime() + DELAYED_STEP_STALE_AFTER_MS + 60_000);
-    await expect(work(t, late)).resolves.toEqual([{ runId: run.id, status: "skipped_stale" }]);
+    // Skipped in bulk before any run is claimed: no result, no budget used.
+    await expect(work(t, late)).resolves.toEqual([]);
     expect(await deliveriesOf(t.vendor.id)).toHaveLength(0);
+    expect(run.id).toBeTruthy();
     expect(await runsOf(t.vendor.id)).toEqual([expect.objectContaining({ cursorDelayMinutes: 60, status: "active", nextRunAt: at(2 * DAY + HOUR) })]);
     // Exactly 24 hours late is still sent.
     const { t: t2, run: run2 } = await enrolled([{ delayMinutes: 60 }]);
@@ -446,7 +466,7 @@ describe("worker", () => {
     const late = await enrolled([{ delayMinutes: 60 }, { delayMinutes: 2 * 1_440 + 60 }]);
     await db.messageTemplate.update({ where: { id: late.t.templates[0]!.id }, data: { isActive: false } });
     await expect(work(late.t, at(2 * HOUR))).resolves.toEqual([{ runId: late.run.id, status: "waiting_template" }]);
-    await expect(work(late.t, new Date(at(HOUR).getTime() + DELAYED_STEP_STALE_AFTER_MS + 60_000))).resolves.toEqual([{ runId: late.run.id, status: "skipped_stale" }]);
+    await expect(work(late.t, new Date(at(HOUR).getTime() + DELAYED_STEP_STALE_AFTER_MS + 60_000))).resolves.toEqual([]);
     expect(await runsOf(late.t.vendor.id)).toEqual([expect.objectContaining({ cursorDelayMinutes: 60, status: "active" })]);
     expect(await deliveriesOf(late.t.vendor.id)).toHaveLength(0);
   });
@@ -463,14 +483,34 @@ describe("worker", () => {
     expect(await deliveriesOf(oversized.t.vendor.id)).toHaveLength(0);
   });
 
-  it("keeps the step and retries it through the lease when configuration is missing (S3)", async () => {
+  it("stops the round on a configuration error without using any run's attempts, many rounds in a row (MINOR 1)", async () => {
     const { t, run } = await enrolled([{ delayMinutes: 60 }, { delayMinutes: 120 }]);
     vi.stubEnv("NEXT_PUBLIC_APP_URL", "");
-    await expect(work(t, at(HOUR + 60_000))).resolves.toEqual([{ runId: run.id, status: "failed" }]);
-    expect(await runsOf(t.vendor.id)).toEqual([expect.objectContaining({ cursorDelayMinutes: -1, status: "active", attemptCount: 1 })]);
+    monitoring.captureOperationalError.mockClear();
+    for (let round = 0; round < DELAYED_STEP_MAX_ATTEMPTS + 2; round += 1) {
+      await expect(work(t, at(HOUR + (round + 1) * 60_000))).resolves.toEqual([]);
+    }
+    expect(await runsOf(t.vendor.id)).toEqual([expect.objectContaining({ cursorDelayMinutes: -1, status: "active", attemptCount: 0, claimedAt: null })]);
     expect(await deliveriesOf(t.vendor.id)).toHaveLength(0);
+    // One monitoring event per round, not one per run.
+    const configurationEvents = monitoring.captureOperationalError.mock.calls.filter(([, context]) => (context as { operation?: string }).operation === "configuration");
+    expect(configurationEvents).toHaveLength(DELAYED_STEP_MAX_ATTEMPTS + 2);
     vi.stubEnv("NEXT_PUBLIC_APP_URL", APP_URL);
-    await expect(work(t, new Date(at(HOUR + 60_000).getTime() + DELAYED_STEP_LEASE_MS))).resolves.toEqual([{ runId: run.id, status: "queued" }]);
+    await expect(work(t, at(3 * HOUR))).resolves.toEqual([{ runId: run.id, status: "queued" }]);
+  });
+
+  it("gives the lease back without an attempt when a key fails in the middle of a round (MINOR 1)", async () => {
+    const { t, run } = await enrolled([{ delayMinutes: 60 }]);
+    const pii = await import("@/lib/email-delivery-pii");
+    const spy = vi.spyOn(pii, "protectEmailDeliveryPayload");
+    // The round's probe succeeds, the run's own e-mail hits the missing key.
+    spy.mockImplementationOnce(pii.protectEmailDeliveryPayload).mockImplementation(() => { throw new Error("Sensitive data key is not configured."); });
+    try {
+      await expect(processDueDelayedStepRuns({ now: at(2 * HOUR), vendorId: t.vendor.id })).resolves.toEqual([]);
+    } finally {
+      spy.mockRestore();
+    }
+    expect(await runsOf(t.vendor.id)).toEqual([expect.objectContaining({ id: run.id, cursorDelayMinutes: -1, attemptCount: 0, claimedAt: null, status: "active" })]);
   });
 
   it("never sends a step twice to the same person: moving a sent step later or swapping two steps through the editor (B1)", async () => {
@@ -554,23 +594,84 @@ describe("worker", () => {
     expect(await deliveriesOf(t.vendor.id)).toHaveLength(0);
   });
 
-  it("caps the e-mails one round creates, per vendor and in total, and leaves the rest untouched for the next round (S1)", async () => {
-    const big = await tenant();
-    await sequence(big, [{ delayMinutes: 60 }]);
-    for (let index = 0; index < 4; index += 1) await enroll(big, (await submission(big)).id);
+  it("never queues more sequence e-mails than one round dispatches, nor two steps of one person (MAJOR 2)", async () => {
+    const t = await tenant();
+    await sequence(t, [{ delayMinutes: 60 }, { delayMinutes: 120 }, { delayMinutes: 180 }]);
+    const people = SEQUENCE_EMAIL_DISPATCH_LIMIT + 5;
+    for (let index = 0; index < people; index += 1) await enroll(t, (await submission(t)).id);
+    const pending = () => db.emailDelivery.count({ where: { vendorId: t.vendor.id, trigger: "sequence_email", status: { in: ["queued", "failed", "sending"] } } });
+    for (let round = 0; round < 4; round += 1) {
+      // Nothing is dispatched between these rounds: the queue only fills up.
+      await processDueDelayedStepRuns({ now: at(4 * HOUR + round * 60_000), vendorId: t.vendor.id });
+      expect(await pending()).toBeLessThanOrEqual(SEQUENCE_EMAIL_DISPATCH_LIMIT);
+    }
+    expect(await pending()).toBe(SEQUENCE_EMAIL_DISPATCH_LIMIT);
+    const queued = await db.emailDelivery.findMany({ where: { vendorId: t.vendor.id, trigger: "sequence_email" }, select: { sourceFormSubmissionId: true } });
+    const perPerson = new Map<string, number>();
+    for (const row of queued) perPerson.set(row.sourceFormSubmissionId!, (perPerson.get(row.sourceFormSubmissionId!) ?? 0) + 1);
+    expect(Math.max(...perPerson.values())).toBe(1);
+    // The backlog waits on the runs, not in the queue: nobody was pushed past a step.
+    const waiting = (await runsOf(t.vendor.id)).filter((row) => row.cursorDelayMinutes === -1);
+    expect(waiting).toHaveLength(people - SEQUENCE_EMAIL_DISPATCH_LIMIT);
+    expect(waiting.every((row) => row.status === "active" && row.attemptCount === 0)).toBe(true);
+    // A person whose first e-mail is still queued waits with the next step.
+    const firstPerson = [...perPerson.keys()][0]!;
+    const firstRun = (await runsOf(t.vendor.id)).find((row) => row.formSubmissionId === firstPerson)!;
+    await db.emailDelivery.updateMany({ where: { vendorId: t.vendor.id, NOT: { sourceFormSubmissionId: firstPerson } }, data: { status: "sent" } });
+    const results = await processDueDelayedStepRuns({ now: at(4 * HOUR + 10 * 60_000), vendorId: t.vendor.id });
+    expect(results).toContainEqual({ runId: firstRun.id, status: "waiting_previous" });
+  });
+
+  it("supersedes a step e-mail still unsent six hours after it was created (MAJOR 2)", async () => {
+    const { t } = await enrolled([{ delayMinutes: 60 }]);
+    await processDueDelayedStepRuns({ now: at(HOUR + 60_000), vendorId: t.vendor.id });
+    const [delivery] = await deliveriesOf(t.vendor.id);
+    await expect(isCurrentSequenceEmailDelivery(delivery!, new Date(delivery!.createdAt.getTime() + SEQUENCE_EMAIL_SEND_STALE_MS), db)).resolves.toBe(true);
+    await expect(isCurrentSequenceEmailDelivery(delivery!, new Date(delivery!.createdAt.getTime() + SEQUENCE_EMAIL_SEND_STALE_MS + 1), db)).resolves.toBe(false);
+  });
+
+  it("serves a small vendor within a few rounds while four large vendors have many due runs (MAJOR 3)", async () => {
+    const large: Tenant[] = [];
+    for (let index = 0; index < 4; index += 1) {
+      const t = await tenant();
+      await sequence(t, [{ delayMinutes: 60 }]);
+      for (let person = 0; person < 12; person += 1) await enroll(t, (await submission(t)).id);
+      large.push(t);
+    }
     const small = await tenant();
     await sequence(small, [{ delayMinutes: 60 }]);
     await enroll(small, (await submission(small)).id);
-    const now = at(HOUR + 60_000);
-    const results = await processDueDelayedStepRuns({ now, budget: { emails: 3, emailsPerVendor: 2 } });
-    expect(results.filter((result) => result.status === "queued")).toHaveLength(3);
-    expect(await deliveriesOf(big.vendor.id)).toHaveLength(2);
+    const all = [...large, small];
+    let served = false;
+    for (let round = 0; round < 6 && !served; round += 1) {
+      // Each round dispatches what the previous one created, then the worker runs unscoped.
+      await db.emailDelivery.updateMany({ where: { vendorId: { in: all.map((t) => t.vendor.id) }, status: "queued" }, data: { status: "sent" } });
+      await processDueDelayedStepRuns({ now: new Date(at(2 * HOUR).getTime() + round * 60_000), budget: { emails: 3 } });
+      served = (await deliveriesOf(small.vendor.id)).length === 1;
+    }
+    expect(served).toBe(true);
+  });
+
+  it("still serves a small vendor when the large ones only have a big overdue backlog (MAJOR 3)", async () => {
+    const large: Tenant[] = [];
+    for (let index = 0; index < 4; index += 1) {
+      const t = await tenant();
+      // One step two days ago (overdue) and the next one far ahead.
+      await sequence(t, [{ delayMinutes: 60 }, { delayMinutes: 10 * 1_440 }]);
+      for (let person = 0; person < 15; person += 1) await enroll(t, (await submission(t)).id);
+      large.push(t);
+    }
+    const small = await tenant();
+    await sequence(small, [{ delayMinutes: 2 * 1_440 }]);
+    await enroll(small, (await submission(small)).id);
+    const now = new Date(at(2 * DAY).getTime() + 60_000);
+    const results = await processDueDelayedStepRuns({ now, budget: { emails: 1, runs: 5 } });
+    expect(results).toEqual([expect.objectContaining({ status: "queued" })]);
     expect(await deliveriesOf(small.vendor.id)).toHaveLength(1);
-    const waiting = (await runsOf(big.vendor.id)).filter((row) => row.cursorDelayMinutes === -1);
-    expect(waiting).toHaveLength(2);
-    expect(waiting.every((row) => row.nextRunAt?.getTime() === at(HOUR).getTime() && row.attemptCount === 0 && row.claimedAt === null)).toBe(true);
-    await processDueDelayedStepRuns({ now, budget: { emails: 3, emailsPerVendor: 2 } });
-    expect(await deliveriesOf(big.vendor.id)).toHaveLength(4);
+    for (const t of large) {
+      expect((await runsOf(t.vendor.id)).every((row) => row.cursorDelayMinutes === 60 && row.status === "active")).toBe(true);
+      expect(await deliveriesOf(t.vendor.id)).toHaveLength(0);
+    }
   });
 
   it("reclaims a lease only after it expired, and cancels after the attempt limit", async () => {
@@ -703,11 +804,11 @@ describe("寄送前檢查與退訂", () => {
     await expect(isCurrentSequenceEmailDelivery({ ...delivery, idempotencyKey: "sequence-email/forged" }, sendAt, db)).resolves.toBe(false);
   });
 
-  it("supersedes a step e-mail still unsent 24 hours after it was created, and any once the grant is closed (S1, M2)", async () => {
+  it("supersedes a step e-mail still unsent six hours after it was created, and any once the grant is closed (S1, M2)", async () => {
     const { t, delivery } = await queued();
     expect(delivery.createdAt).toEqual(at(HOUR + 60_000));
-    await expect(isCurrentSequenceEmailDelivery(delivery, new Date(delivery.createdAt.getTime() + DELAYED_STEP_STALE_AFTER_MS), db)).resolves.toBe(true);
-    await expect(isCurrentSequenceEmailDelivery(delivery, new Date(delivery.createdAt.getTime() + DELAYED_STEP_STALE_AFTER_MS + 1), db)).resolves.toBe(false);
+    await expect(isCurrentSequenceEmailDelivery(delivery, new Date(delivery.createdAt.getTime() + SEQUENCE_EMAIL_SEND_STALE_MS), db)).resolves.toBe(true);
+    await expect(isCurrentSequenceEmailDelivery(delivery, new Date(delivery.createdAt.getTime() + SEQUENCE_EMAIL_SEND_STALE_MS + 1), db)).resolves.toBe(false);
     await expect(isCurrentSequenceEmailDelivery({ ...delivery, createdAt: undefined }, at(HOUR + 2 * 60_000), db)).resolves.toBe(false);
     await db.vendor.update({ where: { id: t.vendor.id }, data: { betaFeatureGrants: [] } });
     await expect(isCurrentEmailDeliverySnapshot(delivery, at(HOUR + 2 * 60_000))).resolves.toBe(false);
