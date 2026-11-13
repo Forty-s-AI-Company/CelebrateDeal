@@ -171,7 +171,7 @@ async function sha256File(filePath) {
 
 async function digestLineage(wp143) {
   const files = ['package.json', 'package-lock.json'];
-  for (const candidate of ['next.config.js', 'next.config.mjs', 'next.config.ts', 'tsconfig.json']) if (fs.existsSync(path.join(REPO_ROOT, candidate))) files.push(candidate);
+  for (const candidate of ['next.config.js', 'next.config.mjs', 'next.config.ts', 'tsconfig.json', 'tsconfig.build.json']) if (fs.existsSync(path.join(REPO_ROOT, candidate))) files.push(candidate);
   const entries = {};
   for (const file of files) entries[file] = await sha256File(path.join(REPO_ROOT, file));
   return {

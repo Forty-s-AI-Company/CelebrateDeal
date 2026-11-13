@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import ts from "typescript";
 import { describe, expect, it, vi } from "vitest";
@@ -73,6 +73,31 @@ describe("build-time type check configuration", () => {
       .filter((file) => file.endsWith(".ts") || file.endsWith(".tsx"))
       .filter((file) => /from\s+["'](@\/test\/|(\.\.?\/)+test\/)/u.test(readFileSync(path.join(root, file), "utf8")));
     expect(importers).toEqual([]);
+  });
+
+  it("every script file list that carries tsconfig.json also carries tsconfig.build.json", () => {
+    // QA gates copy an allowlist of root files into a temporary mirror and run
+    // `next build` there. Next resolves the `@/*` paths alias from the file
+    // named by typescript.tsconfigPath, so a mirror without
+    // tsconfig.build.json fails with "Module not found: Can't resolve '@/...'"
+    // (PR #600, Tracking browser gate). Hash and input lists follow the same
+    // rule so a change to the build config is part of their fingerprint.
+    const scriptsDirectory = path.join(root, "scripts");
+    const offenders: string[] = [];
+    let lists = 0;
+    for (const entry of readdirSync(scriptsDirectory, { recursive: true, withFileTypes: true })) {
+      if (!entry.isFile() || !/\.(mjs|ts)$/u.test(entry.name) || /\.test\.(mjs|ts)$/u.test(entry.name)) continue;
+      const file = path.join(entry.parentPath, entry.name);
+      const source = readFileSync(file, "utf8");
+      for (const list of source.match(/\[[^[\]]*\]/gu) ?? []) {
+        if (!/["']tsconfig\.json["']/u.test(list)) continue;
+        lists += 1;
+        if (!/["']tsconfig\.build\.json["']/u.test(list)) offenders.push(relative(file));
+      }
+    }
+    expect(offenders).toEqual([]);
+    // The four CI browser gates and the other mirrors are all covered.
+    expect(lists).toBeGreaterThanOrEqual(30);
   });
 
   it("the full type check scripts still cover every file, tests included, with an explicit heap", () => {

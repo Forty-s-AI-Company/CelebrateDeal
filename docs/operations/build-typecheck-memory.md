@@ -22,4 +22,6 @@ master 本身就貼在上限，任何 PR 稍微增加型別都可能讓建置隨
 - 測試檔仍完整型別檢查：CI 的 `npm run typecheck` 檢查主 `tsconfig.json` 的全部檔案；它與 `typecheck:strict-index` 以 `node --max-old-space-size=6144` 執行。CI 是公開 repo 的 `ubuntu-latest` 標準 runner（16 GB RAM），6 GB heap 留有餘裕；CI 不快取 `tsconfig.tsbuildinfo`，每次都是完整檢查。本機的 `tsconfig.tsbuildinfo` 若是新的，`npm run typecheck` 可能沿用而不重新檢查，要確認時先刪掉它。
 - `scripts/build-typecheck-config.test.ts` 守住這個約定：建置設定只能排除上述測試檔、應用程式檔全部仍在、`next.config.ts` 指向它、兩個 typecheck script 帶明確 heap。
 
-Vercel（production 與 staging）都經由 `next build` 載入 `next.config.ts`，同樣只檢查應用程式。
+- Next 也從 `typescript.tsconfigPath` 指定的檔案讀 `@/*` 路徑別名，所以任何把 repo 複製到暫存目錄再 `next build`／`next start` 的腳本，複製清單都必須帶 `tsconfig.build.json`；少了它會在 webpack 階段出現 `Module not found: Can't resolve '@/...'`（#600 的 Tracking browser gate 就是這樣失敗，瀏覽器測試一個都沒跑）。`scripts/` 下所有含 `tsconfig.json` 的檔案清單（QA mirror 的白名單、來源指紋與輸入雜湊清單）都已加上它，同一個 contract 測試會擋下漏帶的清單。受控建置的 mirror 是排除式複製，會自動帶到。
+
+Vercel（production 與 staging）都經由 `next build` 載入 `next.config.ts`，同樣只檢查應用程式；`.vercelignore` 沒有排除 `tsconfig.build.json`。
