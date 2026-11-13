@@ -7,9 +7,12 @@ import type { MessageTemplateActionError, MessageTemplateFormTemplate } from "@/
 export function MessageTemplateForm({
   template,
   error,
+  sequenceEmailAvailable = false,
 }: {
   template?: MessageTemplate;
   error?: MessageTemplateActionError | null;
+  /** The vendor holds the email_sequences grant (F-3), so 追銷序列信 can be chosen. */
+  sequenceEmailAvailable?: boolean;
 }) {
   return (
     <Card>
@@ -25,6 +28,7 @@ export function MessageTemplateForm({
           updatedAt: template.updatedAt.toISOString(),
         } satisfies MessageTemplateFormTemplate : undefined}
         initialError={error}
+        sequenceEmailAvailable={sequenceEmailAvailable}
         csrfField={<CsrfField />}
       />
     </Card>

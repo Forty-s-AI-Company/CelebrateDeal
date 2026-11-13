@@ -4,6 +4,7 @@ const mocks = vi.hoisted(() => {
   const tx = {
     messageTemplate: { create: vi.fn(), update: vi.fn() },
     live: { findMany: vi.fn() },
+    emailSequenceStep: { findFirst: vi.fn(async () => null) },
   };
   return {
     tx,

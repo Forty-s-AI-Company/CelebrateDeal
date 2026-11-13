@@ -55,6 +55,10 @@ exports[`keeps every merchant navigation label aligned with its destination titl
     "label": "寄送管理",
   },
   {
+    "href": "/messages/sequences",
+    "label": "追銷序列",
+  },
+  {
     "href": "/interaction-scripts",
     "label": "互動腳本",
   },

@@ -80,13 +80,13 @@ test("WP-88 verifies every guarded page belongs to a browser-proven direct-URL g
 
   // These counts are intentionally exact. A new protected page must update
   // this matrix, so it cannot silently evade direct-URL review.
-  expect(sourceFiles).toHaveLength(100);
+  expect(sourceFiles).toHaveLength(103);
   expect(familyCounts).toEqual({
     vendorContext: 8,
     vendorManagerMember: 2,
     vendorSupportMember: 2,
     vendorOwner: 3,
-    vendorManager: 57,
+    vendorManager: 60,
     vendorFinance: 12,
     authenticated: 1,
     platformFinance: 15,
@@ -98,6 +98,13 @@ test("WP-88 verifies every guarded page belongs to a browser-proven direct-URL g
   const landingPageTemplatesPage = path.join(workspaceRoot, "src", "app", "(app)", "landing-pages", "templates", "page.tsx");
   expect(sourceFiles).toContain(landingPageTemplatesPage);
   expect(guardFor(readFileSync(landingPageTemplatesPage, "utf8"))).toBe("vendorManager");
+  // F-3 Email 追銷序列（list、new、edit）：owner／admin 才能管理，與訊息模板相同；另受 email_sequences 開關。
+  for (const segments of [["page.tsx"], ["new", "page.tsx"], ["[id]", "edit", "page.tsx"]]) {
+    const sequencePage = path.join(workspaceRoot, "src", "app", "(app)", "messages", "sequences", ...segments);
+    expect(sourceFiles).toContain(sequencePage);
+    expect(guardFor(readFileSync(sequencePage, "utf8"))).toBe("vendorManager");
+    expect(readFileSync(sequencePage, "utf8")).toContain('requireFeatureOrNotFound(vendor, "email_sequences")');
+  }
   // 設定 hub: any signed-in back-office member; the page itself filters links by role and feature.
   const settingsHubPage = path.join(workspaceRoot, "src", "app", "(app)", "settings", "page.tsx");
   expect(sourceFiles).toContain(settingsHubPage);

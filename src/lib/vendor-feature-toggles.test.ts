@@ -53,6 +53,9 @@ describe("vendor feature toggles", () => {
     expect(requiredFeatureForPath("/products/p-1/lessons")).toBe("courses");
     expect(requiredFeatureForPath("/products/p-1/community")).toBe("courses");
     expect(requiredFeatureForPath("/products/p-1")).toBeNull();
+    expect(requiredFeatureForPath("/messages/sequences")).toBe("email_sequences");
+    expect(requiredFeatureForPath("/messages/sequences/seq-1/edit")).toBe("email_sequences");
+    expect(requiredFeatureForPath("/messages/templates")).toBeNull();
   });
 });
 
@@ -86,6 +89,14 @@ describe("closed-beta grants (F-001 / F-002)", () => {
     expect(isFeatureEnabled({ enabledFeatureModules: ["consultation_booking"], betaFeatureGrants: [] }, "consultation_booking")).toBe(false);
     expect(isFeatureEnabled({ enabledFeatureModules: [], betaFeatureGrants: ["consultation_booking"] }, "consultation_booking")).toBe(false);
     expect(isFeatureEnabled({ enabledFeatureModules: ["consultation_booking"], betaFeatureGrants: ["consultation_booking"] }, "consultation_booking")).toBe(true);
+  });
+
+  it("lists email_sequences (F-3) as a closed-beta module that a platform grant opens", () => {
+    expect(BETA_GATED_FEATURES).toContain("email_sequences");
+    expect(parseBetaFeatureGrants(["email_sequences", "billing"])).toEqual(["billing", "email_sequences"]);
+    expect(isFeatureEnabled({ betaFeatureGrants: [] }, "email_sequences")).toBe(false);
+    expect(isFeatureEnabled({ betaFeatureGrants: ["email_sequences"] }, "email_sequences")).toBe(true);
+    expect(enabledFeaturesForVendor({ enabledFeatureModules: [], betaFeatureGrants: ["email_sequences"] })).toEqual(["email_sequences"]);
   });
 
   it("hands the shell the effective module list", () => {

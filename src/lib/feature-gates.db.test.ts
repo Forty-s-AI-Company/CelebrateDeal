@@ -27,7 +27,7 @@ describe("Vendor.betaFeatureGrants", () => {
   it("starts empty, so every closed-beta module is off for a new vendor", async () => {
     const created = await vendor();
     expect(created.betaFeatureGrants).toEqual([]);
-    for (const feature of ["courses", "billing", "funnel_binding", "consultation_booking", "browser_live", "danmaku"] as const) {
+    for (const feature of ["courses", "billing", "funnel_binding", "consultation_booking", "browser_live", "danmaku", "email_sequences"] as const) {
       await expect(isVendorFeatureEnabled(db, created.id, feature)).resolves.toBe(false);
     }
     await expect(isCardBindingRequiredForVendor(db, created.id)).resolves.toBe(false);
@@ -55,6 +55,19 @@ describe("Vendor.betaFeatureGrants", () => {
     const created = await vendor();
     await expect(db.vendor.update({ where: { id: created.id }, data: { betaFeatureGrants: ["billing", "everything"] } })).rejects.toThrow();
     await expect(db.vendor.update({ where: { id: created.id }, data: { betaFeatureGrants: ["courses", "danmaku"] } })).resolves.toMatchObject({ betaFeatureGrants: ["courses", "danmaku"] });
+  });
+
+  it("accepts the email_sequences grant (F-3, 20261113150100_email_sequences_grant) and still rejects unknown values", async () => {
+    const created = await vendor();
+    await expect(db.vendor.update({ where: { id: created.id }, data: { betaFeatureGrants: ["email_sequences"] } })).resolves.toMatchObject({ betaFeatureGrants: ["email_sequences"] });
+    await expect(isVendorFeatureEnabled(db, created.id, "email_sequences")).resolves.toBe(true);
+    await expect(db.vendor.update({ where: { id: created.id }, data: { betaFeatureGrants: ["email_sequences", "email_sequence"] } })).rejects.toThrow();
+    const [constraint] = await db.$queryRaw<Array<{ definition: string }>>`
+      SELECT pg_get_constraintdef(oid) AS definition FROM pg_constraint WHERE conname = 'Vendor_betaFeatureGrants_check'
+    `;
+    for (const value of ["courses", "billing", "funnel_binding", "consultation_booking", "browser_live", "danmaku", "email_sequences"]) {
+      expect(constraint?.definition).toContain(`'${value}'`);
+    }
   });
 });
 

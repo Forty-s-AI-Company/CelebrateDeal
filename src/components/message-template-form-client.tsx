@@ -31,6 +31,12 @@ function errorMessage(error: MessageTemplateActionError | null) {
   if (error === "invalid_template") {
     return "模板資料無效，內容已保留。請檢查 Email 主旨、內容、觸發條件與可用變數後再儲存。";
   }
+  if (error === "sequence_email_unavailable") {
+    return "「追銷序列信」要先由平台為你的商店開通追銷序列功能，目前不能建立或改成這個觸發條件。你輸入的內容已保留。";
+  }
+  if (error === "in_use_by_sequence") {
+    return "寄送中的追銷序列正在用這個模板，不能停用或改成其他觸發條件。請先到「追銷序列」暫停那條序列，或把那一封換成別的模板，再回來儲存。你輸入的內容已保留。";
+  }
   if (error === "conflict") {
     return "這個模板在其他分頁已有新版，你輸入的內容已保留。請確認後再次儲存，才會覆蓋目前伺服器版本。";
   }
@@ -41,10 +47,12 @@ export function MessageTemplateFormClient({
   template,
   initialError = null,
   csrfField,
+  sequenceEmailAvailable = false,
 }: {
   template?: MessageTemplateFormTemplate;
   initialError?: MessageTemplateActionError | null;
   csrfField: ReactNode;
+  sequenceEmailAvailable?: boolean;
 }) {
   const initialState = initialError
     ? { ...initialMessageTemplateActionState, status: "error" as const, error: initialError }
@@ -54,6 +62,8 @@ export function MessageTemplateFormClient({
   const recoverAsNew = state.error === "missing_template";
   const expectedUpdatedAt = state.expectedUpdatedAt ?? template?.updatedAt ?? null;
   const message = errorMessage(state.error);
+  // An existing sequence template keeps its trigger visible even if the grant was closed again.
+  const showSequenceEmail = sequenceEmailAvailable || draft.trigger === "sequence_email";
 
   return (
     <form key={state.version} action={formAction} aria-busy={pending} className="grid gap-4">
@@ -76,6 +86,7 @@ export function MessageTemplateFormClient({
           <option value="registration_confirmed">報名成功</option>
           <option value="live_reminder">開播提醒</option>
           <option value="post_live_followup">課後通知</option>
+          {showSequenceEmail ? <option value="sequence_email">追銷序列信</option> : null}
           <option value="cart_followup" disabled>購買追蹤（購物車事件尚未接通）</option>
         </SelectField>
       </div>
@@ -99,6 +110,9 @@ export function MessageTemplateFormClient({
           {MESSAGE_TEMPLATE_VARIABLES.map(messageTemplateVariableLabel).join(" · ")}
         </p>
         <p className="mt-2 text-xs text-blue-700">報名成功、開播提醒與課後通知會自動附上退訂連結；購買追蹤、SMS、LINE 在事件來源或串接服務完成前保持停用。</p>
+        {showSequenceEmail ? (
+          <p className="mt-2 text-xs text-blue-700">「追銷序列信」是報名後依序寄出的行銷信，在「Email 追銷序列」頁排進序列才會寄，一定會附退訂連結。{"{{live_start_at}}"} 依報名者自己的場次顯示。修改內容後，已經排進佇列、還沒寄出的那一封會被略過、不會改寄新版本；之後到點的信才用新內容。寄送中的序列在用的模板不能停用或改觸發條件。</p>
+        ) : null}
       </div>
       <label className="flex items-center gap-2 text-sm font-medium text-slate-700">
         <input name="isActive" type="checkbox" defaultChecked={draft.isActive} className="h-4 w-4 accent-blue-600" />

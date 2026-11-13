@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
   captureOperationalError: vi.fn(),
   startTextFailure: vi.fn((): Error | null => null),
   scheduleImmediateEmailDispatch: vi.fn(),
+  enrollSubmissionInEmailSequences: vi.fn(),
 }));
 
 vi.mock("@/lib/db", () => ({ getDb: () => mocks.db }));
@@ -23,6 +24,7 @@ vi.mock("@/lib/email-delivery", () => ({
   ensureLiveReminderDelivery: mocks.ensureLiveReminderDelivery,
 }));
 vi.mock("@/lib/monitoring", () => ({ captureOperationalError: mocks.captureOperationalError }));
+vi.mock("@/lib/delayed-step-runs", () => ({ enrollSubmissionInEmailSequences: mocks.enrollSubmissionInEmailSequences }));
 vi.mock("@/lib/evergreen-viewer-session", async (importOriginal) => {
   const original = await importOriginal<typeof import("@/lib/evergreen-viewer-session")>();
   return {
@@ -84,6 +86,7 @@ beforeEach(() => {
   mocks.ensureRegistrationConfirmationDelivery.mockResolvedValue({ status: "not_configured" });
   mocks.ensureLiveReminderDelivery.mockResolvedValue({ status: "not_configured" });
   mocks.db.$queryRaw.mockResolvedValue([{ id: "assignment-1" }]);
+  mocks.enrollSubmissionInEmailSequences.mockResolvedValue({ status: "no_sequence", created: 0 });
 });
 
 afterEach(() => vi.unstubAllEnvs());
@@ -363,6 +366,50 @@ describe("POST /api/form-submissions/verify", () => {
     const responseBody = await response.text();
     expect(responseBody).not.toContain(confirmation.formSubmissionId);
     expect(responseBody).not.toContain(token);
+  });
+
+  it("驗證成功後以伺服器紀錄的 vendor／直播／報名 id 加入 Email 追銷序列（F-3）", async () => {
+    mocks.verifyFormSubmission.mockResolvedValue({ status: "verified", confirmation });
+    mocks.enrollSubmissionInEmailSequences.mockResolvedValue({ status: "enrolled", created: 1 });
+
+    const response = await POST(request());
+
+    expect(response.headers.get("location")).toBe("https://app.example.test/verify-registration?status=verified");
+    expect(mocks.enrollSubmissionInEmailSequences).toHaveBeenCalledTimes(1);
+    expect(mocks.enrollSubmissionInEmailSequences).toHaveBeenCalledWith({
+      vendorId: "vendor-1",
+      liveId: "live-1",
+      formSubmissionId: "formsub_test",
+    });
+  });
+
+  it("加入序列失敗只記錄去識別監控，驗證結果、確認信與 cookie 不變（F-3）", async () => {
+    const error = new Error(`enroll failed for ${confirmation.recipientEmail} ${token}`);
+    mocks.verifyFormSubmission.mockResolvedValue({ status: "verified", confirmation, chatSession: { submissionId: "formsub_test" } });
+    mocks.ensureRegistrationConfirmationDelivery.mockResolvedValue({ status: "queued", deliveryId: "email_confirmation" });
+    mocks.enrollSubmissionInEmailSequences.mockRejectedValue(error);
+
+    const response = await POST(request());
+
+    expect(response.status).toBe(303);
+    expect(response.headers.get("location")).toBe("https://app.example.test/verify-registration?status=verified");
+    expect(response.headers.getSetCookie().some((value) => value.startsWith(`${FORM_SUBMISSION_CHAT_SESSION_COOKIE}=`))).toBe(true);
+    expect(mocks.scheduleImmediateEmailDispatch).toHaveBeenCalledWith(["email_confirmation"]);
+    expect(mocks.captureOperationalError).toHaveBeenCalledWith(error, {
+      source: "form_submission_verification",
+      operation: "email_sequence_enroll",
+      status: "failed",
+    });
+    expect(JSON.stringify(mocks.captureOperationalError.mock.calls)).not.toContain(confirmation.recipientEmail);
+    expect(JSON.stringify(mocks.captureOperationalError.mock.calls)).not.toContain(token);
+  });
+
+  it("無效連結與已驗證的重複請求都不加入序列（F-3）", async () => {
+    mocks.verifyFormSubmission.mockResolvedValue({ status: "invalid" });
+    await POST(request());
+    mocks.verifyFormSubmission.mockResolvedValue({ status: "already_verified" });
+    await POST(request());
+    expect(mocks.enrollSubmissionInEmailSequences).not.toHaveBeenCalled();
   });
 
   it("已驗證的重複請求不再寄送確認信", async () => {

@@ -9,6 +9,7 @@ import {
   queueLiveReminderReconciliation,
 } from "@/lib/live-reminder-reconciliation";
 import { supersedeLiveNotificationDeliveriesForTemplate } from "@/lib/live-notification-delivery";
+import { isFeatureEnabled } from "@/lib/vendor-feature-toggles";
 import {
   normalizeMessageTemplateDraft,
   type MessageTemplateActionError,
@@ -29,6 +30,9 @@ function optionalText(formData: FormData, key: string) {
   const text = typeof value === "string" ? value.trim() : "";
   return text.length > 0 ? text : null;
 }
+
+/** F-3: the template is sent by a step of an active sequence and may not stop being a usable sequence e-mail. */
+class TemplateInUseBySequenceError extends Error {}
 
 function isRecordNotFoundError(error: unknown) {
   return typeof error === "object" && error !== null && "code" in error && error.code === "P2025";
@@ -115,6 +119,24 @@ export async function saveMessageTemplate({
   const data = normalized.data;
 
   const db = getDb();
+  // F-3: only a vendor holding the email_sequences grant may create a
+  // sequence e-mail template or turn a template into one. An existing one
+  // keeps its trigger (and stays editable) if the grant is closed later.
+  if (data.trigger === "sequence_email") {
+    const vendor = await db.vendor.findUnique({
+      where: { id: vendorId },
+      select: { enabledFeatureModules: true, betaFeatureGrants: true },
+    });
+    if (!isFeatureEnabled(vendor, "email_sequences")) {
+      const current = id ? await db.messageTemplate.findFirst({ where: { id, vendorId }, select: { trigger: true } }) : null;
+      if (current?.trigger !== "sequence_email") {
+        return {
+          ok: false,
+          state: messageTemplateActionError(previousState, "sequence_email_unavailable", submittedDraft, expectedUpdatedAtIsValid ? expectedUpdatedAtValue : null),
+        };
+      }
+    }
+  }
   let outcome: {
     template: Awaited<ReturnType<typeof db.messageTemplate.create>>;
     reconciliationStatuses: string[];
@@ -133,6 +155,19 @@ export async function saveMessageTemplate({
         ? await tx.messageTemplate.update({ where: { id, vendorId, updatedAt: expectedUpdatedAt ?? undefined }, data })
         : await tx.messageTemplate.create({ data: { ...data, vendorId } });
       if (!id) return { template, reconciliationStatuses: [] };
+
+      // F-3 (S4): an active step of an active sequence keeps sending this
+      // template, so it may not be switched off or moved to another trigger or
+      // channel. Checked after the update (the template row is locked) and
+      // rolled back with it; the merchant pauses the sequence or picks another
+      // template first. Content edits stay allowed.
+      if (!data.isActive || data.trigger !== "sequence_email" || data.channel !== "email") {
+        const inUse = await tx.emailSequenceStep.findFirst({
+          where: { vendorId, messageTemplateId: template.id, isActive: true, sequence: { is: { vendorId, status: "active" } } },
+          select: { id: true },
+        });
+        if (inUse) throw new TemplateInUseBySequenceError();
+      }
 
       await supersedeLiveNotificationDeliveriesForTemplate(tx, {
         vendorId,
@@ -165,6 +200,12 @@ export async function saveMessageTemplate({
       return { template, reconciliationStatuses };
     }, { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted });
   } catch (error) {
+    if (error instanceof TemplateInUseBySequenceError) {
+      return {
+        ok: false,
+        state: messageTemplateActionError(previousState, "in_use_by_sequence", submittedDraft, expectedUpdatedAtValue),
+      };
+    }
     if (isRecordNotFoundError(error)) {
       const current = id
         ? await db.messageTemplate.findFirst({

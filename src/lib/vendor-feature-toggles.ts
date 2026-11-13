@@ -23,6 +23,7 @@ export const BETA_GATED_FEATURES = [
   "consultation_booking",
   "browser_live",
   "danmaku",
+  "email_sequences",
 ] as const;
 
 export type BetaGatedFeature = (typeof BETA_GATED_FEATURES)[number];
@@ -37,6 +38,7 @@ export const BETA_FEATURE_LABELS: Record<BetaGatedFeature, string> = {
   consultation_booking: "諮詢預約",
   browser_live: "瀏覽器直播",
   danmaku: "彈幕與暖場控制台",
+  email_sequences: "Email 追銷序列",
 };
 
 export const FEATURE_PRESETS = {
@@ -115,6 +117,7 @@ const ROUTE_FEATURES: ReadonlyArray<{ prefixes: readonly string[]; feature: Gate
   { prefixes: ["/lives", "/videos", "/interaction-scripts", "/interaction-roles"], feature: "live_webinar" },
   { prefixes: ["/affiliates", "/team-performance", "/settings/commissions"], feature: "affiliate_program" },
   { prefixes: ["/consultations"], feature: "consultation_booking" },
+  { prefixes: ["/messages/sequences"], feature: "email_sequences" },
 ];
 
 export function requiredFeatureForPath(pathname: string | null | undefined): GatedFeature | null {

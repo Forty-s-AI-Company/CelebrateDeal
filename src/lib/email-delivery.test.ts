@@ -1199,6 +1199,10 @@ describe("email delivery outbox", () => {
       .mockResolvedValueOnce([]);
 
     await expect(processDueEmailDeliveries()).resolves.toEqual([{ deliveryId: "delivery-1", status: "recovered" }]);
+    // F-3: sequence e-mails, and their stale leases, are left to processDueSequenceEmailDeliveries.
+    expect(mocks.db.emailDelivery.findMany).toHaveBeenNthCalledWith(1, expect.objectContaining({ where: expect.objectContaining({ status: "sending", trigger: { not: "sequence_email" } }) }));
+    expect(mocks.db.emailDelivery.findMany).toHaveBeenNthCalledWith(2, expect.objectContaining({ where: expect.objectContaining({ trigger: { not: "sequence_email" } }) }));
+    expect(mocks.db.emailDelivery.findMany).toHaveBeenCalledTimes(2);
     expect(mocks.sendTransactionalEmail).not.toHaveBeenCalled();
   });
 });

@@ -144,6 +144,19 @@ describe("AppShell role navigation", () => {
     expect(hubLinksFor("owner", false, ["funnel_builder"])).not.toContain("/billing/payouts");
   });
 
+  it("shows the email sequences entry only to managers of a vendor with the email_sequences grant (F-3)", () => {
+    for (const role of ["owner", "admin"]) {
+      const withGrant = navigationForRole(role, false, ["funnel_builder", "email_sequences"]).flatMap((group) => group.items.map((item) => item.href));
+      expect(withGrant).toContain("/messages/sequences");
+      expect(linksFor(role, false, ["funnel_builder"])).not.toContain("/messages/sequences");
+    }
+    for (const role of ["accountant", "support", "member", null]) {
+      expect(navigationForRole(role, false, ["email_sequences"]).flatMap((group) => group.items.map((item) => item.href))).not.toContain("/messages/sequences");
+    }
+    const group = navigationForRole("owner", false, ["email_sequences"]).find((entry) => entry.items.some((item) => item.href === "/messages/sequences"));
+    expect(group?.label).toBe("互動與行銷");
+  });
+
   it("hides every finance route from a non-finance member", () => {
     const links = linksFor("member");
 

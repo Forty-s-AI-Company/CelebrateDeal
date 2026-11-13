@@ -100,6 +100,9 @@ const FLUID_HOBBY_MAX_DURATION_SECONDS = 300;
 /** Entries whose exact limit is pinned: batches that need more than the email dispatch limit, and bounded retry queues. */
 const BATCH_ENTRY_MAX_DURATIONS: Record<string, number> = {
   "src/app/api/jobs/webhook-retry/route.ts": 300,
+  // F-3: not an after() entry; the email job round runs up to the platform's
+  // 300 s, with the sequence work last and bounded by its own deadlines.
+  "src/app/api/jobs/email-deliveries/route.ts": 300,
   // B-2: not an after() entry; its limit bounds the inventory reservation's
   // Serializable retry queue (12 attempts, about 6.6 s of backoff) plus the
   // provider call, instead of the 300 s platform default.

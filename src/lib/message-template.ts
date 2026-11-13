@@ -9,6 +9,8 @@ export const MESSAGE_TEMPLATE_TRIGGERS = [
   "order_paid",
   "commission_credited",
   "post_live_followup",
+  // F-3 Email 追銷序列的每一步（src/lib/delayed-step-runs.ts）。
+  "sequence_email",
 ] as const;
 export const MESSAGE_TEMPLATE_VARIABLES = [
   "name",
@@ -28,6 +30,12 @@ export const REGISTRATION_CONFIRMATION_EMAIL_TEMPLATE_WHERE = {
 export const LIVE_REMINDER_EMAIL_TEMPLATE_WHERE = {
   channel: "email",
   trigger: "live_reminder",
+  isActive: true,
+} as const;
+
+export const SEQUENCE_EMAIL_TEMPLATE_WHERE = {
+  channel: "email",
+  trigger: "sequence_email",
   isActive: true,
 } as const;
 
@@ -64,7 +72,7 @@ export type MessageTemplateFormTemplate = MessageTemplateFormDraft & {
   updatedAt: string;
 };
 
-export type MessageTemplateActionError = "invalid_template" | "missing_template" | "conflict";
+export type MessageTemplateActionError = "invalid_template" | "missing_template" | "conflict" | "in_use_by_sequence" | "sequence_email_unavailable";
 
 export type MessageTemplateActionState = {
   status: "idle" | "error";

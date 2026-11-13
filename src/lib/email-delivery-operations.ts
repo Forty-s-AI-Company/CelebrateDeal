@@ -24,7 +24,8 @@ export type EmailDeliveryTriggerFilter =
   | "registration_confirmed"
   | "form_submission_verification"
   | "live_reminder"
-  | "post_live_followup";
+  | "post_live_followup"
+  | "sequence_email";
 
 export type EmailDeliverySearchCriteria = {
   query: string;
@@ -71,7 +72,7 @@ const STATUS_FILTERS = new Set<EmailDeliveryStatusFilter>([
   "ALL", "ATTENTION", "queued", "sending", "sent", "failed", "exhausted", "suppressed", "superseded",
 ]);
 const TRIGGER_FILTERS = new Set<EmailDeliveryTriggerFilter>([
-  "ALL", "registration_confirmed", "form_submission_verification", "live_reminder", "post_live_followup",
+  "ALL", "registration_confirmed", "form_submission_verification", "live_reminder", "post_live_followup", "sequence_email",
 ]);
 
 function readText(formData: FormData, name: string) {
@@ -239,6 +240,7 @@ export async function requeueEmailDelivery(input: {
         sourceLiveId: true,
         sourceFormSubmissionId: true,
         trigger: true,
+        createdAt: true,
         status: true,
         attemptCount: true,
         maxAttempts: true,
@@ -266,7 +268,7 @@ export async function requeueEmailDelivery(input: {
           claimedAt: null,
           lastErrorCode: candidate.trigger === "form_submission_verification"
             ? "verification_superseded"
-            : "config_superseded",
+            : candidate.trigger === "sequence_email" ? "sequence_superseded" : "config_superseded",
         },
       });
       if (stale.count !== 1) return { status: "conflict" as const };

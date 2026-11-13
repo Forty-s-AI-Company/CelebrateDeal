@@ -68,6 +68,10 @@ GitHub 的 `*/5 * * * *` 實測約每 2～5 小時才跑一次（中位數 184 �
 4. 交叉比對：Vercel → `celebrate-deal-staging` → Logs，篩選路徑（例如 `/api/jobs/webhook-retry`）與方法 POST，時間應該與 Actions run 對得上。
 5. `outcome` 對照：`unauthorized`＝staging 的 `JOB_SECRET` 與 GitHub environment 的值不一致；`route_missing`＝staging 部署還沒有本次的 POST／GET 入口；`job_reported_failure`＝handler 回 503（看 Sentry 的 `captureOperationalError`）；`redirected`＝alias 被部署保護或網域設定攔截；`timeout`／`network_error`＝staging 沒有回應；`needs_attention`＝HTTP 200，但 webhook-retry 回報 `exhausted` 或 `inventoryUnavailable` 大於 0（見 §3.1），該行會附上這兩個數字，run 會標紅。
 
+### 3.0.1 `email-deliveries` 的序列工作與 runner 逾時（F-3）
+
+`scripts/scheduled-jobs-runner.mjs` 對每個呼叫最多等 120 秒（`REQUEST_TIMEOUT_MS`），超過就記為 `timeout`。`email-deliveries` 的 route `maxDuration` 是 300 秒（平台上限），但 Email 追銷序列的工作排在每輪最後並有自己的期限：這一輪開始超過 60 秒才輪到序列時整段跳過（Sentry 會有 `email_sequences_skipped` 事件），序列工作在第 100 秒後不再接新項目，已開始的寄送最多再 10 秒（寄信 provider 的逾時），所以整輪約在 110 秒內回應，早於 runner 的 120 秒。兩個數字在 `src/lib/delayed-step-runs.ts` 的 `EMAIL_SEQUENCE_START_CUTOFF_MS`、`EMAIL_SEQUENCE_DEADLINE_MS`；調整 runner 逾時或這兩個數字時要一起看。持續看到 `email_sequences_skipped` 表示前面的工作常常超過 60 秒，序列信會一直延後。
+
 ### 3.1 webhook-retry 的人工處理訊號（B03-07）
 
 排程啟用後，保留超過 30 分鐘的庫存會被釋放、交易改成 `expired`。若 PayUni 之後才送來 `paid` 而商品已售完，`InventoryUnavailableError` 會讓整筆付款處理 rollback，重試 5 次後變成 `exhausted`：**買家已付款，訂單卻停在未付**。目前的最小保護：
