@@ -1,6 +1,6 @@
 # 延遲步驟：Email 追銷序列與自動化多步驟的共用設計
 
-狀態：F-3（Email 追銷序列）定案，依本文拆 PR 實作。F-4（自動化多步驟與延遲）設計完成，範圍待 owner 確認（見第 9 節）。
+狀態：F-3（Email 追銷序列）定案，依本文拆 PR 實作。F-4（自動化多步驟與延遲）範圍 owner 已確認；第一個 PR（第 8 節「一併要修的既有缺口」）已完成，延遲步驟與接上 `payment_paid` 在後續 PR。
 日期：2026-11-13。對應 `docs/fable-queue.md` 的 F-3、F-4。
 
 ## 1. 要解決的問題
@@ -178,9 +178,11 @@
 
 ### 一併要修的既有缺口
 
-1. 自動化寄的信沒有退訂連結，也不查黑名單。只要它會被延遲步驟拿來追銷，就屬於行銷信，必須補上。
-2. 四個 trigger 沒有呼叫端。`payment_paid` 是追銷最需要的起點，接上它會碰付款流程，需要獨立審查；其餘三個建議先從後台隱藏，等真的接上再放出來。
-3. `/settings/automations` 只有 owner 能用，漏斗內的自動化 admin 也能用。建議統一成 owner 與 admin。
+三項都已在 F-4 第一個 PR 完成（分支 `ai/f4-automation-gaps`），現行規則見 `docs/domain-workflows.md`「自動化規則」。
+
+1. **已完成**：自動化寄的信沒有退訂連結，也不查黑名單。只要它會被延遲步驟拿來追銷，就屬於行銷信，必須補上。→ 一律附退訂連結（與序列信同一套）；建立時查本商家退訂與 Email 黑名單，命中就略過並記在執行紀錄；送出前另查黑名單（`recipient_blacklisted`）。
+2. **已完成**：四個 trigger 沒有呼叫端。`payment_paid` 是追銷最需要的起點，接上它會碰付款流程，需要獨立審查；其餘三個建議先從後台隱藏，等真的接上再放出來。→ 四個都先隱藏（含 `payment_paid`，接上付款流程的 PR 會放回 `AVAILABLE_AUTOMATION_TRIGGERS`）；伺服器端拒絕新建、套用劇本與重新啟用；既有規則仍列出、可停用與刪除。
+3. **已完成**：`/settings/automations` 只有 owner 能用，漏斗內的自動化 admin 也能用。建議統一成 owner 與 admin。→ 頁面與所有 Server Action 改用 `requireVendorManagerMember`。
 
 ## 9. 需要 owner 確認的事
 

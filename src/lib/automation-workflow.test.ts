@@ -7,11 +7,13 @@ const mocks = vi.hoisted(() => ({
   stableLineIdempotencyKey: vi.fn((parts: Array<string | number>) => parts.join(":")),
   getDb: vi.fn(),
   scheduleImmediateEmailDispatch: vi.fn(),
+  captureOperationalError: vi.fn(),
 }));
 
 vi.mock("@/lib/app-url", () => ({ getCanonicalAppUrl: () => "https://app.example.test" }));
 vi.mock("@/lib/db", () => ({ getDb: mocks.getDb }));
 vi.mock("@/lib/email-delivery-immediate", () => ({ scheduleImmediateEmailDispatch: mocks.scheduleImmediateEmailDispatch }));
+vi.mock("@/lib/monitoring", () => ({ captureOperationalError: mocks.captureOperationalError }));
 vi.mock("@/lib/line-notification", () => ({
   enqueueLineNotification: mocks.enqueueLineNotification,
   buildAutomationLineMessage: mocks.buildAutomationLineMessage,
@@ -22,7 +24,8 @@ import { createHmac } from "node:crypto";
 import { legacyDerivedKeyUseCount, resetLegacyDerivedKeyUseCounts } from "@/lib/derived-key-rotation";
 import { hashInteractionBearer } from "@/lib/live-interaction";
 import { deriveSensitiveDataKey } from "@/lib/sensitive-data";
-import { AUTOMATION_BUTTON_URL_ERROR_MESSAGE, AUTOMATION_RECIPES, AUTOMATION_TRIGGERS, automationConditionMatches, isSafeNewAutomationButtonUrl, automationCustomerKeyHash, dispatchAutomationEvent, dispatchFormNoShowAutomationsForLive, dispatchPaymentPaidAutomationByOrder, dryRunAutomationRule, maskAutomationTarget, materializeAutomationRecipe, parseAutomationRule } from "@/lib/automation-workflow";
+import { revealEmailDeliveryPayload, verifyEmailUnsubscribeToken } from "@/lib/email-delivery-pii";
+import { AUTOMATION_BUTTON_URL_ERROR_MESSAGE, AUTOMATION_RECIPES, AUTOMATION_TRIGGERS, AVAILABLE_AUTOMATION_RECIPES, AVAILABLE_AUTOMATION_TRIGGERS, automationExecutionNotes, isAvailableAutomationTrigger, automationConditionMatches, isSafeNewAutomationButtonUrl, automationCustomerKeyHash, dispatchAutomationEvent, dispatchFormNoShowAutomationsForLive, dispatchPaymentPaidAutomationByOrder, dryRunAutomationRule, maskAutomationTarget, materializeAutomationRecipe, parseAutomationRule } from "@/lib/automation-workflow";
 
 const event = {
   vendorId: "vendor-1",
@@ -44,6 +47,7 @@ describe("smart automation workflow engine", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.stubEnv("CSRF_SECRET", "automation-workflow-test-secret-longer-than-32-bytes");
+    vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://app.example.test");
     mocks.enqueueLineNotification.mockResolvedValue({ status: "queued", deliveryId: "delivery-1" });
   });
   afterEach(() => vi.unstubAllEnvs());
@@ -143,6 +147,8 @@ describe("smart automation workflow engine", () => {
       automationRule: { findMany: vi.fn().mockResolvedValue([{ id: "rule-email", condition: { type: "always" }, actions: [{ type: "send_email_notification", template: "webinar_replay" }] }]) },
       automationExecutionLog: { create: vi.fn().mockResolvedValue({ id: "log-email" }), update },
       emailDelivery: { create: vi.fn().mockResolvedValue({ id: "email-1" }) },
+      emailSuppression: { findUnique: vi.fn().mockResolvedValue(null) },
+      blacklist: { findFirst: vi.fn().mockResolvedValue(null) },
       customerTagAssignment: {}, automationVoucherGrant: {}, product: {}, lineOfficialAccount: {}, lineUserIdentity: {}, lineDelivery: {},
     };
     const emailEvent = { ...event, trigger: "form_no_show" as const, recipientEmail: "buyer@example.test", webinarUrl: "https://app.example.test/replay", consultationUrl: "https://app.example.test/book" };
@@ -155,6 +161,164 @@ describe("smart automation workflow engine", () => {
     expect(JSON.stringify(update.mock.calls.at(-1)?.[0].data)).not.toContain("buyer@example.test");
   });
 
+  function emailRuleDb(input: { suppression?: { resubscribedAt: Date | null } | null; blacklisted?: boolean; actions?: unknown[] }) {
+    return {
+      automationRule: { findMany: vi.fn().mockResolvedValue([{ id: "rule-email", condition: { type: "always" }, actions: input.actions ?? [{ type: "send_email_notification", template: "consultation_confirmation" }] }]) },
+      automationExecutionLog: { create: vi.fn().mockResolvedValue({ id: "log-email" }), update: vi.fn().mockResolvedValue({}) },
+      emailDelivery: { create: vi.fn().mockResolvedValue({}) },
+      emailSuppression: { findUnique: vi.fn().mockResolvedValue(input.suppression ?? null) },
+      blacklist: { findFirst: vi.fn().mockResolvedValue(input.blacklisted ? { id: "blacklist-1" } : null) },
+      customerTagAssignment: { upsert: vi.fn().mockResolvedValue({}) },
+      automationVoucherGrant: {}, product: {}, lineOfficialAccount: {}, lineUserIdentity: {}, lineDelivery: {},
+    };
+  }
+  const bookedEvent = { ...event, trigger: "consultation_booked" as const, subjectType: "buyer_registration" as const, subjectId: "booking-1", recipientEmail: " Buyer@Example.test ", consultationUrl: "https://meet.example.test/room" };
+
+  it("adds this delivery's signed unsubscribe link and checks only this vendor's lists before queueing", async () => {
+    const db = emailRuleDb({});
+    await expect(dispatchAutomationEvent(db as never, bookedEvent)).resolves.toEqual([{ ruleId: "rule-email", status: "completed" }]);
+    const delivery = db.emailDelivery.create.mock.calls[0]?.[0].data;
+    expect(delivery).toMatchObject({ vendorId: "vendor-1", trigger: "automation", status: "queued" });
+    const payload = revealEmailDeliveryPayload(delivery.payloadEncryptedEnvelope, { vendorId: "vendor-1", deliveryId: delivery.id });
+    const link = payload.body.match(/退訂：(\S+)/u)?.[1];
+    expect(link).toMatch(/^https:\/\/app\.example\.test\/unsubscribe\?token=/u);
+    // The token names this very delivery, so the unsubscribe route records it
+    // for the delivery's vendor only (src/app/api/email/unsubscribe/route.ts).
+    expect(verifyEmailUnsubscribeToken(new URL(link!).searchParams.get("token")!)).toBe(delivery.id);
+    expect(payload.body).toContain("https://meet.example.test/room");
+    expect(db.emailSuppression.findUnique).toHaveBeenCalledWith({
+      where: { vendorId_recipientHash: { vendorId: "vendor-1", recipientHash: delivery.recipientHash } },
+      select: { resubscribedAt: true },
+    });
+    expect(db.blacklist.findFirst).toHaveBeenCalledWith(expect.objectContaining({
+      where: { vendorId: "vendor-1", identifierType: "email", identifier: "buyer@example.test", isActive: true, unblockedAt: null },
+    }));
+    expect(mocks.scheduleImmediateEmailDispatch).toHaveBeenCalledExactlyOnceWith([delivery.id]);
+  });
+
+  it.each([
+    ["an unsubscribed", { suppression: { resubscribedAt: null } }, "recipient_suppressed", "收件人已退訂"],
+    ["a blacklisted", { blacklisted: true }, "recipient_blacklisted", "黑名單"],
+  ] as const)("skips the e-mail to %s recipient without failing or retrying the execution", async (_label, lists, reason, note) => {
+    const db = emailRuleDb({ ...lists, actions: [{ type: "send_email_notification", template: "consultation_confirmation" }, { type: "add_customer_tag", tag: "諮詢學員" }] });
+    await expect(dispatchAutomationEvent(db as never, bookedEvent)).resolves.toEqual([{ ruleId: "rule-email", status: "completed" }]);
+    expect(db.emailDelivery.create).not.toHaveBeenCalled();
+    // The other actions of the rule still run.
+    expect(db.customerTagAssignment.upsert).toHaveBeenCalledTimes(1);
+    expect(mocks.scheduleImmediateEmailDispatch).toHaveBeenCalledExactlyOnceWith([]);
+    const completion = db.automationExecutionLog.update.mock.calls.at(-1)?.[0].data;
+    expect(completion).toMatchObject({ status: "completed", conditionMatched: true });
+    expect(completion.errorCode).toBeUndefined();
+    expect(completion.actionResults).toContainEqual({ type: "send_email_notification", status: "skipped", reason, template: "consultation_confirmation" });
+    expect(automationExecutionNotes(completion.actionResults)).toEqual([expect.stringContaining(note)]);
+  });
+
+  it("queues again for a recipient who resubscribed", async () => {
+    const db = emailRuleDb({ suppression: { resubscribedAt: new Date("2026-11-01T00:00:00.000Z") } });
+    await expect(dispatchAutomationEvent(db as never, bookedEvent)).resolves.toEqual([{ ruleId: "rule-email", status: "completed" }]);
+    expect(db.emailDelivery.create).toHaveBeenCalledTimes(1);
+  });
+
+  it("fails only the e-mail action when no unsubscribe link can be built, runs the rest and records a reclaimable failure", async () => {
+    vi.stubEnv("NEXT_PUBLIC_APP_URL", "");
+    const db = emailRuleDb({ actions: [{ type: "send_email_notification", template: "consultation_confirmation" }, { type: "add_customer_tag", tag: "諮詢學員" }] });
+    await expect(dispatchAutomationEvent(db as never, bookedEvent)).resolves.toEqual([{ ruleId: "rule-email", status: "failed" }]);
+    // Never queued without its link; the tag still runs.
+    expect(db.emailDelivery.create).not.toHaveBeenCalled();
+    expect(db.customerTagAssignment.upsert).toHaveBeenCalledTimes(1);
+    expect(mocks.captureOperationalError).toHaveBeenCalledOnce();
+    const finished = db.automationExecutionLog.update.mock.calls.at(-1)?.[0].data;
+    expect(finished).toMatchObject({ status: "failed", errorCode: "unsubscribe_url_unavailable", conditionMatched: true });
+    expect(finished.actionResults).toEqual([
+      { type: "send_email_notification", status: "failed", reason: "unsubscribe_url_unavailable", template: "consultation_confirmation" },
+      { type: "add_customer_tag", status: "tagged", tag: "諮詢學員" },
+    ]);
+    expect(automationExecutionNotes(finished.actionResults)).toEqual(["Email 未寄出：系統暫時無法產生退訂連結"]);
+  });
+
+  it("checks the recipient lists before the unsubscribe link, so a blocked recipient is a skip even without a link", async () => {
+    vi.stubEnv("NEXT_PUBLIC_APP_URL", "");
+    const db = emailRuleDb({ blacklisted: true });
+    await expect(dispatchAutomationEvent(db as never, bookedEvent)).resolves.toEqual([{ ruleId: "rule-email", status: "completed" }]);
+    expect(mocks.captureOperationalError).not.toHaveBeenCalled();
+    expect(db.automationExecutionLog.update.mock.calls.at(-1)?.[0].data.actionResults).toEqual([
+      { type: "send_email_notification", status: "skipped", reason: "recipient_blacklisted", template: "consultation_confirmation" },
+    ]);
+  });
+
+  function twoTagRules() {
+    return {
+      automationRule: {
+        findMany: vi.fn().mockResolvedValue([
+          { id: "rule-gone", condition: { type: "always" }, actions: [{ type: "add_customer_tag", tag: "一" }] },
+          { id: "rule-next", condition: { type: "always" }, actions: [{ type: "add_customer_tag", tag: "二" }] },
+        ]),
+        findFirst: vi.fn().mockResolvedValue(null),
+      },
+      automationExecutionLog: { create: vi.fn(), update: vi.fn().mockResolvedValue({}), findUnique: vi.fn(), updateMany: vi.fn() },
+      customerTagAssignment: { upsert: vi.fn().mockResolvedValue({}) },
+      automationVoucherGrant: {}, product: {}, lineOfficialAccount: {}, lineUserIdentity: {}, lineDelivery: {}, emailDelivery: {}, emailSuppression: {}, blacklist: {},
+    };
+  }
+  const prismaError = (code: string) => new Prisma.PrismaClientKnownRequestError(code, { code, clientVersion: Prisma.prismaVersion.client });
+
+  it("skips a rule deleted before its execution log was written and still runs the event's other rules", async () => {
+    const db = twoTagRules();
+    db.automationExecutionLog.create.mockRejectedValueOnce(prismaError("P2003")).mockResolvedValueOnce({ id: "log-next" });
+    await expect(dispatchAutomationEvent(db as never, event)).resolves.toEqual([
+      { ruleId: "rule-gone", status: "rule_deleted" },
+      { ruleId: "rule-next", status: "completed" },
+    ]);
+    expect(db.automationRule.findFirst).toHaveBeenCalledWith({ where: { id: "rule-gone", vendorId: "vendor-1" }, select: { id: true } });
+    expect(db.customerTagAssignment.upsert).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps throwing a foreign-key error that is not about a deleted rule", async () => {
+    const db = twoTagRules();
+    db.automationRule.findFirst.mockResolvedValue({ id: "rule-gone" });
+    db.automationExecutionLog.create.mockRejectedValueOnce(prismaError("P2003"));
+    await expect(dispatchAutomationEvent(db as never, event)).rejects.toMatchObject({ code: "P2003" });
+  });
+
+  it("treats a log row that vanished mid-execution as a deleted rule, without breaking the event", async () => {
+    const db = twoTagRules();
+    db.automationExecutionLog.create.mockResolvedValueOnce({ id: "log-gone" }).mockResolvedValueOnce({ id: "log-next" });
+    // The tag write loses its parent log (P2003), then both outcome writes find no row (P2025).
+    db.customerTagAssignment.upsert.mockRejectedValueOnce(prismaError("P2003"));
+    db.automationExecutionLog.update.mockRejectedValueOnce(prismaError("P2025")).mockResolvedValueOnce({});
+    await expect(dispatchAutomationEvent(db as never, event)).resolves.toEqual([
+      { ruleId: "rule-gone", status: "rule_deleted" },
+      { ruleId: "rule-next", status: "completed" },
+    ]);
+
+    // A completion write that finds no row is the same case.
+    const later = twoTagRules();
+    later.automationExecutionLog.create.mockResolvedValueOnce({ id: "log-gone" }).mockResolvedValueOnce({ id: "log-next" });
+    later.automationExecutionLog.update.mockRejectedValueOnce(prismaError("P2025")).mockResolvedValueOnce({});
+    await expect(dispatchAutomationEvent(later as never, event)).resolves.toEqual([
+      { ruleId: "rule-gone", status: "rule_deleted" },
+      { ruleId: "rule-next", status: "completed" },
+    ]);
+
+    // Any other outcome-write error still surfaces.
+    const broken = twoTagRules();
+    broken.automationExecutionLog.create.mockResolvedValueOnce({ id: "log-1" });
+    broken.automationExecutionLog.update.mockRejectedValueOnce(new Error("connection lost")).mockRejectedValueOnce(new Error("connection lost"));
+    await expect(dispatchAutomationEvent(broken as never, event)).rejects.toThrow("connection lost");
+  });
+
+  it("offers only triggers with a production caller, and only their recipes", () => {
+    expect([...AVAILABLE_AUTOMATION_TRIGGERS]).toEqual(["form_registered", "consultation_booked", "consultation_no_show"]);
+    for (const hidden of ["payment_paid", "form_no_show", "viewer_watch_progress", "webinar_attended_duration_gte"]) {
+      expect(AUTOMATION_TRIGGERS).toContain(hidden);
+      expect(isAvailableAutomationTrigger(hidden)).toBe(false);
+    }
+    expect(isAvailableAutomationTrigger("unknown")).toBe(false);
+    expect(AVAILABLE_AUTOMATION_RECIPES.map((recipe) => recipe.id)).toEqual(["consultation_confirmer"]);
+    expect(automationExecutionNotes(null)).toEqual([]);
+    expect(automationExecutionNotes([{ type: "send_email_notification", status: "skipped", reason: "other" }, "junk", { type: "line_push", status: "skipped", reason: "recipient_blacklisted" }])).toEqual([]);
+  });
+
   it("hands every email queued by one event to a single post-response hook, even when a later rule fails", async () => {
     const update = vi.fn().mockResolvedValue({});
     const db = {
@@ -165,6 +329,8 @@ describe("smart automation workflow engine", () => {
       ]) },
       automationExecutionLog: { create: vi.fn().mockResolvedValueOnce({ id: "log-1" }).mockResolvedValueOnce({ id: "log-2" }).mockResolvedValueOnce({ id: "log-3" }), update },
       emailDelivery: { create: vi.fn().mockResolvedValueOnce({}).mockResolvedValueOnce({}).mockResolvedValueOnce({}).mockRejectedValueOnce(new Error("synthetic write failure")) },
+      emailSuppression: { findUnique: vi.fn().mockResolvedValue(null) },
+      blacklist: { findFirst: vi.fn().mockResolvedValue(null) },
       customerTagAssignment: {}, automationVoucherGrant: {}, product: {}, lineOfficialAccount: {}, lineUserIdentity: {}, lineDelivery: {},
     };
     const emailEvent = { ...event, trigger: "form_no_show" as const, recipientEmail: "buyer@example.test", webinarUrl: "https://app.example.test/replay", consultationUrl: "https://app.example.test/book" };

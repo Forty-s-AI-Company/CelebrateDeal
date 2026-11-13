@@ -4,15 +4,31 @@ import { Prisma } from "@prisma/client";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { auditSnapshot, writeAuditLog } from "@/lib/audit";
-import { requireVendorOwner } from "@/lib/auth";
+import { requireVendorManagerMember } from "@/lib/auth";
 import { assertServerActionSecurity } from "@/lib/csrf";
-import { AUTOMATION_TRIGGERS, dryRunAutomationRule, isSafeNewAutomationButtonUrl, materializeAutomationRecipe } from "@/lib/automation-workflow";
+import {
+  automationTriggerNeedsThreshold,
+  dryRunAutomationRule,
+  isAutomationTrigger,
+  isAvailableAutomationTrigger,
+  isSafeNewAutomationButtonUrl,
+  materializeAutomationRecipe,
+} from "@/lib/automation-workflow";
 import { getDb } from "@/lib/db";
+import { isLockTimeout } from "@/lib/serializable-retry";
 
+// Owner and admin manage automations here, the same roles as the funnel
+// automation panel (requireVendorManagerContext) and message templates (F-4
+// gap 3). Every action resolves the vendor from the session and binds each
+// rule id to it in the final query.
 const PATH = "/settings/automations";
 const text = (form: FormData, name: string) => String(form.get(name) ?? "").trim();
 const number = (form: FormData, name: string) => Number(text(form, name));
 function fail(code: string): never { redirect(`${PATH}?error=${encodeURIComponent(code)}`); }
+
+class TriggerUnavailableError extends Error {
+  constructor() { super("trigger_unavailable"); }
+}
 
 function lineAction(form: FormData): Record<string, unknown> | null {
   if (form.get("actionLine") !== "on") return null;
@@ -54,18 +70,23 @@ function emailAction(form: FormData): Record<string, unknown> | null {
   return { type: "send_email_notification", template };
 }
 
+/** Kept for every known trigger, so the threshold triggers work again once they are made available. */
+function ruleCondition(trigger: string, conditionValue: number) {
+  if (automationTriggerNeedsThreshold(trigger) && (!Number.isInteger(conditionValue) || conditionValue < 1)) throw new Error("invalid");
+  if (trigger === "payment_paid") return { type: "order_amount_gte", amountCents: Math.round(conditionValue * 100) };
+  if (trigger === "viewer_watch_progress" || trigger === "webinar_attended_duration_gte") return { type: "watch_seconds_gte", seconds: Math.round(conditionValue) };
+  return { type: "always" };
+}
+
 function parseRule(form: FormData) {
   const name = text(form, "name");
   const trigger = text(form, "trigger");
   const conditionValue = number(form, "conditionValue");
-  if (!name || name.length > 120 || !AUTOMATION_TRIGGERS.includes(trigger as typeof AUTOMATION_TRIGGERS[number])) throw new Error("invalid");
-  const needsThreshold = ["payment_paid", "viewer_watch_progress", "webinar_attended_duration_gte"].includes(trigger);
-  const condition = trigger === "payment_paid"
-    ? { type: "order_amount_gte", amountCents: Math.round(conditionValue * 100) }
-    : ["viewer_watch_progress", "webinar_attended_duration_gte"].includes(trigger)
-      ? { type: "watch_seconds_gte", seconds: Math.round(conditionValue) }
-      : { type: "always" };
-  if (needsThreshold && (!Number.isInteger(conditionValue) || conditionValue < 1)) throw new Error("invalid");
+  if (!name || name.length > 120 || !isAutomationTrigger(trigger)) throw new Error("invalid");
+  // A known trigger without a production caller (F-4 gap 2) is refused here,
+  // not only hidden in the form.
+  if (!isAvailableAutomationTrigger(trigger)) throw new TriggerUnavailableError();
+  const condition = ruleCondition(trigger, conditionValue);
   const actions = [voucherAction(form), lineAction(form), emailAction(form), tagAction(form)]
     .filter((action): action is Record<string, unknown> => action !== null);
   if (!actions.length) throw new Error("no_action");
@@ -75,38 +96,44 @@ function parseRule(form: FormData) {
 
 export async function createAutomationRecipeAction(formData: FormData) {
   await assertServerActionSecurity(formData);
-  const auth = await requireVendorOwner();
+  const { user, vendor, member } = await requireVendorManagerMember(PATH);
   const recipeId = text(formData, "recipeId");
   const productId = text(formData, "productId") || undefined;
   const recipe = materializeAutomationRecipe(recipeId, productId);
   if (!recipe) fail(productId ? "invalid_recipe" : "recipe_requires_product");
+  if (!isAvailableAutomationTrigger(recipe.trigger)) fail("trigger_unavailable");
   if (recipe.actions.some((action) => action.type === "issue_repurchase_voucher")) {
-    const validProduct = await getDb().product.findFirst({ where: { id: productId, vendorId: auth.vendor.id, isActive: true }, select: { id: true } });
+    const validProduct = await getDb().product.findFirst({ where: { id: productId, vendorId: vendor.id, isActive: true }, select: { id: true } });
     if (!validProduct) fail("invalid_product");
   }
   const created = await getDb().automationRule.create({ data: {
-    vendorId: auth.vendor.id,
+    vendorId: vendor.id,
     name: recipe.name,
     description: recipe.description,
     trigger: recipe.trigger,
     condition: recipe.condition as Prisma.InputJsonValue,
     actions: recipe.actions as Prisma.InputJsonArray,
   } });
-  await writeAuditLog({ vendorId: auth.vendor.id, actorId: auth.user.id, actorLabel: auth.member.role, action: "create_automation_recipe", targetType: "AutomationRule", targetId: created.id, after: auditSnapshot(created) });
+  await writeAuditLog({ vendorId: vendor.id, actorId: user.id, actorLabel: member.role, action: "create_automation_recipe", targetType: "AutomationRule", targetId: created.id, after: auditSnapshot(created) });
   revalidatePath(PATH);
   redirect(`${PATH}?updated=recipe_created`);
 }
 
 export async function dryRunAutomationRuleAction(formData: FormData) {
   await assertServerActionSecurity(formData);
-  const auth = await requireVendorOwner();
+  const { vendor } = await requireVendorManagerMember(PATH);
   const id = text(formData, "ruleId");
-  const existing = await getDb().automationRule.findFirst({ where: { id, vendorId: auth.vendor.id }, select: { id: true, condition: true, actions: true, trigger: true } });
-  if (!existing || !AUTOMATION_TRIGGERS.includes(existing.trigger as typeof AUTOMATION_TRIGGERS[number])) fail("not_found");
+  const existing = await getDb().automationRule.findFirst({ where: { id, vendorId: vendor.id }, select: { id: true, condition: true, actions: true, trigger: true } });
+  if (!existing || !isAutomationTrigger(existing.trigger)) fail("not_found");
+  // A rule whose trigger never fires would always "dispatch" in a simulation;
+  // say that it does not run instead of a misleading result.
+  if (!isAvailableAutomationTrigger(existing.trigger)) {
+    redirect(`${PATH}?dryRun=trigger_unavailable`);
+  }
   const result = dryRunAutomationRule({ condition: existing.condition, actions: existing.actions }, {
-    vendorId: auth.vendor.id,
+    vendorId: vendor.id,
     eventId: "dry-run",
-    trigger: existing.trigger as typeof AUTOMATION_TRIGGERS[number],
+    trigger: existing.trigger,
     subjectType: "buyer_registration",
     subjectId: "dry-run",
     subjectKeyHash: "dry-run",
@@ -114,34 +141,108 @@ export async function dryRunAutomationRuleAction(formData: FormData) {
     watchSecondsTotal: Math.round(number(formData, "watchSeconds")),
     hasPurchased: formData.get("hasPurchased") === "on",
   });
-  redirect(`${PATH}?dryRun=${encodeURIComponent(result.status)}&rule=${encodeURIComponent(id)}`);
+  redirect(`${PATH}?dryRun=${encodeURIComponent(result.status)}`);
 }
 
 export async function createAutomationRuleAction(formData: FormData) {
   await assertServerActionSecurity(formData);
-  const auth = await requireVendorOwner();
+  const { user, vendor, member } = await requireVendorManagerMember(PATH);
   let parsed: ReturnType<typeof parseRule>;
-  try { parsed = parseRule(formData); } catch (error) { fail(error instanceof Error && (error.message === "no_action" || error.message === "invalid_button_url") ? error.message : "invalid_rule"); }
+  try { parsed = parseRule(formData); } catch (error) { fail(error instanceof Error && (error.message === "no_action" || error.message === "invalid_button_url" || error.message === "trigger_unavailable") ? error.message : "invalid_rule"); }
   const productId = parsed.actions.find((a) => a.type === "issue_repurchase_voucher")?.productId;
-  if (productId && !(await getDb().product.findFirst({ where: { id: String(productId), vendorId: auth.vendor.id, isActive: true }, select: { id: true } }))) fail("invalid_product");
-  const created = await getDb().automationRule.create({ data: { vendorId: auth.vendor.id, name: parsed.name, trigger: parsed.trigger, condition: parsed.condition as Prisma.InputJsonValue, actions: parsed.actions as Prisma.InputJsonArray } });
-  await writeAuditLog({ vendorId: auth.vendor.id, actorId: auth.user.id, actorLabel: auth.member.role, action: "create_automation_rule", targetType: "AutomationRule", targetId: created.id, after: auditSnapshot(created) });
+  if (productId && !(await getDb().product.findFirst({ where: { id: String(productId), vendorId: vendor.id, isActive: true }, select: { id: true } }))) fail("invalid_product");
+  const created = await getDb().automationRule.create({ data: { vendorId: vendor.id, name: parsed.name, trigger: parsed.trigger, condition: parsed.condition as Prisma.InputJsonValue, actions: parsed.actions as Prisma.InputJsonArray } });
+  await writeAuditLog({ vendorId: vendor.id, actorId: user.id, actorLabel: member.role, action: "create_automation_rule", targetType: "AutomationRule", targetId: created.id, after: auditSnapshot(created) });
   revalidatePath(PATH);
   redirect(`${PATH}?updated=created`);
 }
 
 export async function toggleAutomationRuleAction(formData: FormData) {
   await assertServerActionSecurity(formData);
-  const auth = await requireVendorOwner();
+  const { user, vendor, member } = await requireVendorManagerMember(PATH);
   const id = text(formData, "ruleId");
   if (!id) fail("invalid_rule");
-  const existing = await getDb().automationRule.findFirst({ where: { id, vendorId: auth.vendor.id }, select: { id: true, isActive: true } });
+  const existing = await getDb().automationRule.findFirst({ where: { id, vendorId: vendor.id }, select: { id: true, isActive: true, trigger: true } });
   if (!existing) fail("not_found");
-  const updated = await getDb().automationRule.update({
-    where: { vendorId_id: { vendorId: auth.vendor.id, id: existing.id } },
+  // Switching off always works; switching on needs a trigger that can run.
+  if (!existing.isActive && !isAvailableAutomationTrigger(existing.trigger)) fail("trigger_unavailable");
+  // Conditional on the state just read, so a rule deleted (or switched) in
+  // the meantime is reported instead of throwing.
+  const updated = await getDb().automationRule.updateMany({
+    where: { id: existing.id, vendorId: vendor.id, isActive: existing.isActive },
     data: { isActive: !existing.isActive },
   });
-  await writeAuditLog({ vendorId: auth.vendor.id, actorId: auth.user.id, actorLabel: auth.member.role, action: updated.isActive ? "activate_automation_rule" : "deactivate_automation_rule", targetType: "AutomationRule", targetId: updated.id, before: auditSnapshot(existing), after: auditSnapshot(updated) });
+  if (updated.count !== 1) {
+    const stillThere = await getDb().automationRule.findFirst({ where: { id: existing.id, vendorId: vendor.id }, select: { id: true } });
+    fail(stillThere ? "toggle_conflict" : "not_found");
+  }
+  const after = { ...existing, isActive: !existing.isActive };
+  await writeAuditLog({ vendorId: vendor.id, actorId: user.id, actorLabel: member.role, action: after.isActive ? "activate_automation_rule" : "deactivate_automation_rule", targetType: "AutomationRule", targetId: existing.id, before: auditSnapshot(existing), after: auditSnapshot(after) });
   revalidatePath(PATH);
   redirect(`${PATH}?updated=toggled`);
+}
+
+/** A delete waits at most this long for a running execution to commit its log row. */
+const DELETE_TRANSACTION_OPTIONS = { maxWait: 5_000, timeout: 15_000 } as const;
+
+type DeleteOutcome =
+  | { code: "not_found" | "delete_requires_inactive" | "delete_has_history" }
+  | { code: "deleted"; before: { id: string; name: string; trigger: string; isActive: boolean; funnelPageId: string | null } };
+
+/**
+ * Deletes a switched-off rule that has never run. Execution logs cascade to
+ * the tags and vouchers they issued (schema onDelete: Cascade), so a rule with
+ * history is kept and can only be switched off.
+ *
+ * The rule row is locked FOR UPDATE first. An execution log being written
+ * holds a key-share lock on it (its foreign key), so the delete waits for that
+ * write to commit; the checks then run as new statements and see the log, and
+ * the rule stays. An execution that starts after the lock waits instead and
+ * finds its rule gone (runAutomationEvent skips it). A concurrent re-enable is
+ * serialized the same way.
+ */
+export async function deleteAutomationRuleAction(formData: FormData) {
+  await assertServerActionSecurity(formData);
+  const { user, vendor, member } = await requireVendorManagerMember(PATH);
+  const id = text(formData, "ruleId");
+  if (!id) fail("invalid_rule");
+  let outcome: DeleteOutcome;
+  try {
+    outcome = await deleteRuleIfUnused(vendor.id, id);
+  } catch (error) {
+    if (!isDeleteBusy(error)) throw error;
+    // The rule stayed locked by a running execution (or no connection was
+    // free) for too long: nothing changed, the merchant can simply retry.
+    fail("delete_busy");
+  }
+  if (outcome.code !== "deleted") fail(outcome.code);
+  await writeAuditLog({ vendorId: vendor.id, actorId: user.id, actorLabel: member.role, action: "delete_automation_rule", targetType: "AutomationRule", targetId: outcome.before.id, before: auditSnapshot(outcome.before) });
+  revalidatePath(PATH);
+  redirect(`${PATH}?updated=deleted`);
+}
+
+/** lock_timeout (55P03) on the rule row, or the transaction could not start or finish in time (P2028). */
+function isDeleteBusy(error: unknown) {
+  return isLockTimeout(error) || (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2028");
+}
+
+function deleteRuleIfUnused(vendorId: string, id: string) {
+  return getDb().$transaction(async (tx): Promise<DeleteOutcome> => {
+    // Waiting for a running execution is bounded well inside the transaction timeout.
+    await tx.$executeRaw`SET LOCAL lock_timeout = '5s'`;
+    const locked = await tx.$queryRaw<Array<{ id: string }>>`
+      SELECT "id" FROM "AutomationRule" WHERE "id" = ${id} AND "vendorId" = ${vendorId} FOR UPDATE
+    `;
+    if (locked.length === 0) return { code: "not_found" };
+    const rule = await tx.automationRule.findFirst({
+      where: { id, vendorId },
+      select: { id: true, name: true, trigger: true, isActive: true, funnelPageId: true },
+    });
+    if (!rule) return { code: "not_found" };
+    if (rule.isActive) return { code: "delete_requires_inactive" };
+    const history = await tx.automationExecutionLog.count({ where: { vendorId, ruleId: rule.id } });
+    if (history > 0) return { code: "delete_has_history" };
+    await tx.automationRule.delete({ where: { vendorId_id: { vendorId, id: rule.id } } });
+    return { code: "deleted", before: rule };
+  }, DELETE_TRANSACTION_OPTIONS);
 }

@@ -1208,6 +1208,35 @@ describe("email delivery outbox", () => {
 });
 
 
+describe("automation e-mail send-time checks (F-4)", () => {
+  const automation = () => candidate({ trigger: "automation", idempotencyKey: "automation-email:log-1:0" });
+  it("suppresses a queued automation e-mail whose recipient this vendor has since blacklisted", async () => {
+    mocks.db.emailDelivery.findUnique.mockResolvedValue(automation());
+    mocks.db.blacklist.findFirst.mockResolvedValue({ id: "blacklist-1" });
+    await expect(dispatchEmailDelivery("delivery-1")).resolves.toEqual({ status: "suppressed" });
+    expect(mocks.sendTransactionalEmail).not.toHaveBeenCalled();
+    expect(mocks.db.blacklist.findFirst).toHaveBeenCalledWith({
+      where: { vendorId: "vendor-1", identifierType: "email", identifier: "lead@example.test", isActive: true, unblockedAt: null },
+      select: { id: true },
+    });
+    expect(mocks.db.emailDelivery.updateMany).toHaveBeenLastCalledWith(expect.objectContaining({ data: expect.objectContaining({ status: "suppressed", lastErrorCode: "recipient_blacklisted" }) }));
+  });
+  it("suppresses a queued automation e-mail to a recipient who unsubscribed, including by a merchant-list request", async () => {
+    mocks.db.emailDelivery.findUnique.mockResolvedValue(automation());
+    mocks.db.emailSuppression.findUnique.mockResolvedValue({ resubscribedAt: null, reason: "recipient_request" });
+    await expect(dispatchEmailDelivery("delivery-1")).resolves.toEqual({ status: "suppressed" });
+    expect(mocks.sendTransactionalEmail).not.toHaveBeenCalled();
+    expect(mocks.db.emailDelivery.updateMany).toHaveBeenLastCalledWith(expect.objectContaining({ data: expect.objectContaining({ status: "suppressed", lastErrorCode: "recipient_suppressed" }) }));
+  });
+  it("sends an automation e-mail to a recipient on neither list", async () => {
+    mocks.db.emailDelivery.findUnique.mockResolvedValue(automation());
+    mocks.sendTransactionalEmail.mockResolvedValue({ id: "synthetic-message" });
+    await expect(dispatchEmailDelivery("delivery-1")).resolves.toEqual({ status: "sent" });
+    expect(mocks.db.blacklist.findFirst).toHaveBeenCalledOnce();
+    expect(mocks.sendTransactionalEmail).toHaveBeenCalledOnce();
+  });
+});
+
 describe("student portal login delivery", () => {
   const idempotencyKey = `student-portal:${"ab".repeat(32)}`;
   it("delivers an explicitly requested valid login despite marketing suppression", async () => {
