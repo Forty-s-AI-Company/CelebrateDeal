@@ -1,10 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-const runtime = vi.hoisted(() => ({ db: { product: { findFirst: vi.fn() }, automationRule: { create: vi.fn(), findFirst: vi.fn(), update: vi.fn() } }, auth: { vendor: { id: "v1" }, user: { id: "u1" }, member: { role: "owner" } }, security: vi.fn(), owner: vi.fn(), audit: vi.fn(), revalidate: vi.fn(), redirect: vi.fn((path: string): never => { throw new Error(`redirect:${path}`); }) }));
-vi.mock("next/cache", () => ({ revalidatePath: runtime.revalidate })); vi.mock("next/navigation", () => ({ redirect: runtime.redirect })); vi.mock("@/lib/csrf", () => ({ assertServerActionSecurity: runtime.security })); vi.mock("@/lib/auth", () => ({ requireVendorOwner: runtime.owner })); vi.mock("@/lib/db", () => ({ getDb: () => runtime.db })); vi.mock("@/lib/audit", () => ({ auditSnapshot: (v: unknown) => v, writeAuditLog: runtime.audit }));
-import { createAutomationRecipeAction, createAutomationRuleAction, dryRunAutomationRuleAction, toggleAutomationRuleAction } from "./automation-actions";
-function form() { const f = new FormData(); f.set("name", "付款回購"); f.set("trigger", "payment_paid"); f.set("conditionValue", "100"); f.set("actionLine", "on"); f.set("lineMessage", "謝謝購買"); return f; }
-beforeEach(() => { vi.clearAllMocks(); runtime.owner.mockResolvedValue(runtime.auth); runtime.db.automationRule.create.mockResolvedValue({ id: "r1", vendorId: "v1" }); runtime.db.automationRule.findFirst.mockResolvedValue({ id: "r1", isActive: true }); runtime.db.automationRule.update.mockResolvedValue({ id: "r1", isActive: false }); });
-describe("automation actions", () => { it("requires CSRF and writes tenant-scoped rules", async () => { await expect(createAutomationRuleAction(form())).rejects.toThrow("redirect:/settings/automations?updated=created"); expect(runtime.security).toHaveBeenCalled(); expect(runtime.db.automationRule.create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ vendorId: "v1", trigger: "payment_paid" }) })); expect(runtime.audit).toHaveBeenCalled(); }); it("toggles only a rule in the current vendor", async () => { const f = new FormData(); f.set("ruleId", "r1"); await expect(toggleAutomationRuleAction(f)).rejects.toThrow("redirect:/settings/automations?updated=toggled"); expect(runtime.db.automationRule.findFirst).toHaveBeenCalledWith({ where: { id: "r1", vendorId: "v1" }, select: { id: true, isActive: true } }); });
+const runtime = vi.hoisted(() => ({ db: { product: { findFirst: vi.fn() }, automationRule: { create: vi.fn(), findFirst: vi.fn(), update: vi.fn(), deleteMany: vi.fn() } }, auth: { vendor: { id: "v1" }, user: { id: "u1" }, member: { role: "admin" } }, security: vi.fn(), manager: vi.fn(), audit: vi.fn(), revalidate: vi.fn(), redirect: vi.fn((path: string): never => { throw new Error(`redirect:${path}`); }) }));
+vi.mock("next/cache", () => ({ revalidatePath: runtime.revalidate })); vi.mock("next/navigation", () => ({ redirect: runtime.redirect })); vi.mock("@/lib/csrf", () => ({ assertServerActionSecurity: runtime.security })); vi.mock("@/lib/auth", () => ({ requireVendorManagerMember: runtime.manager })); vi.mock("@/lib/db", () => ({ getDb: () => runtime.db })); vi.mock("@/lib/audit", () => ({ auditSnapshot: (v: unknown) => v, writeAuditLog: runtime.audit }));
+import { createAutomationRecipeAction, createAutomationRuleAction, deleteAutomationRuleAction, dryRunAutomationRuleAction, toggleAutomationRuleAction } from "./automation-actions";
+function form(trigger = "form_registered") { const f = new FormData(); f.set("name", "報名追蹤"); f.set("trigger", trigger); f.set("actionLine", "on"); f.set("lineMessage", "謝謝報名"); return f; }
+function ruleForm(id = "r1") { const f = new FormData(); f.set("ruleId", id); return f; }
+const HIDDEN_TRIGGERS = ["payment_paid", "form_no_show", "viewer_watch_progress", "webinar_attended_duration_gte"] as const;
+beforeEach(() => { vi.clearAllMocks(); runtime.manager.mockResolvedValue(runtime.auth); runtime.db.automationRule.create.mockResolvedValue({ id: "r1", vendorId: "v1" }); runtime.db.automationRule.findFirst.mockResolvedValue({ id: "r1", isActive: true, trigger: "form_registered" }); runtime.db.automationRule.update.mockResolvedValue({ id: "r1", isActive: false }); runtime.db.automationRule.deleteMany.mockResolvedValue({ count: 1 }); });
+describe("automation actions", () => { it("requires CSRF and writes tenant-scoped rules", async () => { await expect(createAutomationRuleAction(form())).rejects.toThrow("redirect:/settings/automations?updated=created"); expect(runtime.security).toHaveBeenCalled(); expect(runtime.manager).toHaveBeenCalledWith("/settings/automations"); expect(runtime.db.automationRule.create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ vendorId: "v1", trigger: "form_registered", condition: { type: "always" } }) })); expect(runtime.audit).toHaveBeenCalledWith(expect.objectContaining({ vendorId: "v1", actorId: "u1", actorLabel: "admin" })); }); it("toggles only a rule in the current vendor", async () => { await expect(toggleAutomationRuleAction(ruleForm())).rejects.toThrow("redirect:/settings/automations?updated=toggled"); expect(runtime.db.automationRule.findFirst).toHaveBeenCalledWith({ where: { id: "r1", vendorId: "v1" }, select: { id: true, isActive: true, trigger: true } }); expect(runtime.db.automationRule.update).toHaveBeenCalledWith(expect.objectContaining({ where: { vendorId_id: { vendorId: "v1", id: "r1" } } })); });
 
   it("converts fixed voucher dollars to cents and rejects a free-order percentage", async () => {
     runtime.db.product.findFirst.mockResolvedValue({ id: "p1" });
@@ -19,6 +21,7 @@ describe("automation actions", () => { it("requires CSRF and writes tenant-scope
     expect(runtime.db.automationRule.create).toHaveBeenCalledWith(expect.objectContaining({
       data: expect.objectContaining({ actions: [expect.objectContaining({ discountValue: 10_000 })] }),
     }));
+    expect(runtime.db.product.findFirst).toHaveBeenCalledWith(expect.objectContaining({ where: { id: "p1", vendorId: "v1", isActive: true } }));
 
     const freeOrder = new FormData();
     for (const [key, value] of fixed.entries()) freeOrder.set(key, value);
@@ -42,21 +45,107 @@ describe("automation actions", () => { it("requires CSRF and writes tenant-scope
     expect(runtime.db.automationRule.create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ actions: [expect.objectContaining({ type: "line_push", buttonUrl })] }) }));
   });
 
-  it("creates a tenant-scoped built-in recipe and dry-runs only an owned rule", async () => {
-    runtime.db.product.findFirst.mockResolvedValue({ id: "p1" });
+  it.each(["form_registered", "consultation_booked", "consultation_no_show"])("creates a rule on the available trigger %s", async (trigger) => {
+    await expect(createAutomationRuleAction(form(trigger))).rejects.toThrow("redirect:/settings/automations?updated=created");
+    expect(runtime.db.automationRule.create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ vendorId: "v1", trigger }) }));
+  });
+
+  it.each(HIDDEN_TRIGGERS)("refuses to create a rule on the hidden trigger %s, even with a valid threshold", async (trigger) => {
+    const f = form(trigger);
+    f.set("conditionValue", "100");
+    await expect(createAutomationRuleAction(f)).rejects.toThrow("redirect:/settings/automations?error=trigger_unavailable");
+    expect(runtime.db.automationRule.create).not.toHaveBeenCalled();
+    expect(runtime.audit).not.toHaveBeenCalled();
+  });
+
+  it("refuses an unknown trigger as an invalid rule", async () => {
+    await expect(createAutomationRuleAction(form("made_up"))).rejects.toThrow("redirect:/settings/automations?error=invalid_rule");
+    expect(runtime.db.automationRule.create).not.toHaveBeenCalled();
+  });
+
+  it("creates the available built-in recipe and refuses the ones on hidden triggers", async () => {
     const recipe = new FormData();
-    recipe.set("recipeId", "vip_auto_tiering");
-    recipe.set("productId", "p1");
+    recipe.set("recipeId", "consultation_confirmer");
     await expect(createAutomationRecipeAction(recipe)).rejects.toThrow("redirect:/settings/automations?updated=recipe_created");
     expect(runtime.db.automationRule.create).toHaveBeenCalledWith(expect.objectContaining({
-      data: expect.objectContaining({ vendorId: "v1", trigger: "payment_paid", name: "高客單 VIP 自動尊榮升級" }),
+      data: expect.objectContaining({ vendorId: "v1", trigger: "consultation_booked", name: "諮詢預約提醒與防爽約" }),
     }));
 
-    runtime.db.automationRule.findFirst.mockResolvedValue({ id: "r1", trigger: "payment_paid", condition: { type: "order_amount_gte", amountCents: 30_000 }, actions: [{ type: "add_customer_tag", tag: "VIP" }] });
-    const dryRun = new FormData();
-    dryRun.set("ruleId", "r1");
-    dryRun.set("orderAmount", "300");
-    await expect(dryRunAutomationRuleAction(dryRun)).rejects.toThrow("dryRun=would_dispatch");
+    runtime.db.automationRule.create.mockClear();
+    runtime.db.product.findFirst.mockResolvedValue({ id: "p1" });
+    for (const recipeId of ["vip_auto_tiering", "high_intent_chaser", "no_show_reactivation"]) {
+      const hidden = new FormData();
+      hidden.set("recipeId", recipeId);
+      hidden.set("productId", "p1");
+      await expect(createAutomationRecipeAction(hidden)).rejects.toThrow("redirect:/settings/automations?error=trigger_unavailable");
+    }
+    expect(runtime.db.automationRule.create).not.toHaveBeenCalled();
+  });
+
+  it("dry-runs only an owned rule and reports a hidden trigger as not running", async () => {
+    runtime.db.automationRule.findFirst.mockResolvedValue({ id: "r1", trigger: "consultation_booked", condition: { type: "always" }, actions: [{ type: "add_customer_tag", tag: "VIP" }] });
+    await expect(dryRunAutomationRuleAction(ruleForm())).rejects.toThrow("dryRun=would_dispatch");
     expect(runtime.db.automationRule.findFirst).toHaveBeenLastCalledWith(expect.objectContaining({ where: { id: "r1", vendorId: "v1" } }));
+
+    runtime.db.automationRule.findFirst.mockResolvedValue({ id: "r1", trigger: "payment_paid", condition: { type: "order_amount_gte", amountCents: 30_000 }, actions: [{ type: "add_customer_tag", tag: "VIP" }] });
+    const paid = ruleForm();
+    paid.set("orderAmount", "300");
+    await expect(dryRunAutomationRuleAction(paid)).rejects.toThrow("redirect:/settings/automations?dryRun=trigger_unavailable&rule=r1");
+
+    runtime.db.automationRule.findFirst.mockResolvedValue(null);
+    await expect(dryRunAutomationRuleAction(ruleForm("foreign"))).rejects.toThrow("redirect:/settings/automations?error=not_found");
+  });
+
+  it.each(HIDDEN_TRIGGERS)("lets an existing %s rule be switched off but never on again", async (trigger) => {
+    runtime.db.automationRule.findFirst.mockResolvedValueOnce({ id: "r1", isActive: true, trigger });
+    await expect(toggleAutomationRuleAction(ruleForm())).rejects.toThrow("redirect:/settings/automations?updated=toggled");
+    expect(runtime.db.automationRule.update).toHaveBeenCalledWith(expect.objectContaining({ data: { isActive: false } }));
+
+    runtime.db.automationRule.update.mockClear();
+    runtime.db.automationRule.findFirst.mockResolvedValueOnce({ id: "r1", isActive: false, trigger });
+    await expect(toggleAutomationRuleAction(ruleForm())).rejects.toThrow("redirect:/settings/automations?error=trigger_unavailable");
+    expect(runtime.db.automationRule.update).not.toHaveBeenCalled();
+  });
+
+  it("deletes a switched-off rule without history, bound to the current vendor", async () => {
+    runtime.db.automationRule.findFirst.mockResolvedValue({ id: "r1", name: "舊規則", trigger: "form_no_show", isActive: false, funnelPageId: null, _count: { executionLogs: 0 } });
+    await expect(deleteAutomationRuleAction(ruleForm())).rejects.toThrow("redirect:/settings/automations?updated=deleted");
+    expect(runtime.db.automationRule.findFirst).toHaveBeenCalledWith(expect.objectContaining({ where: { id: "r1", vendorId: "v1" } }));
+    expect(runtime.db.automationRule.deleteMany).toHaveBeenCalledWith({ where: { id: "r1", vendorId: "v1", isActive: false, executionLogs: { none: {} } } });
+    expect(runtime.audit).toHaveBeenCalledWith(expect.objectContaining({ action: "delete_automation_rule", targetId: "r1", before: expect.objectContaining({ trigger: "form_no_show" }) }));
+  });
+
+  it.each([
+    ["an active rule", { isActive: true, _count: { executionLogs: 0 } }, "delete_requires_inactive"],
+    ["a rule with history", { isActive: false, _count: { executionLogs: 2 } }, "delete_has_history"],
+  ] as const)("keeps %s", async (_label, state, code) => {
+    runtime.db.automationRule.findFirst.mockResolvedValue({ id: "r1", name: "規則", trigger: "form_registered", funnelPageId: null, ...state });
+    await expect(deleteAutomationRuleAction(ruleForm())).rejects.toThrow(`redirect:/settings/automations?error=${code}`);
+    expect(runtime.db.automationRule.deleteMany).not.toHaveBeenCalled();
+  });
+
+  it("reports another vendor's rule as not found and a concurrent change as a conflict", async () => {
+    runtime.db.automationRule.findFirst.mockResolvedValue(null);
+    await expect(deleteAutomationRuleAction(ruleForm("foreign"))).rejects.toThrow("redirect:/settings/automations?error=not_found");
+    expect(runtime.db.automationRule.deleteMany).not.toHaveBeenCalled();
+
+    runtime.db.automationRule.findFirst.mockResolvedValue({ id: "r1", name: "規則", trigger: "form_registered", funnelPageId: null, isActive: false, _count: { executionLogs: 0 } });
+    runtime.db.automationRule.deleteMany.mockResolvedValue({ count: 0 });
+    await expect(deleteAutomationRuleAction(ruleForm())).rejects.toThrow("redirect:/settings/automations?error=delete_conflict");
+    expect(runtime.audit).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["createAutomationRuleAction", () => createAutomationRuleAction(form())],
+    ["createAutomationRecipeAction", () => { const f = new FormData(); f.set("recipeId", "consultation_confirmer"); return createAutomationRecipeAction(f); }],
+    ["dryRunAutomationRuleAction", () => dryRunAutomationRuleAction(ruleForm())],
+    ["toggleAutomationRuleAction", () => toggleAutomationRuleAction(ruleForm())],
+    ["deleteAutomationRuleAction", () => deleteAutomationRuleAction(ruleForm())],
+  ])("%s stops at the owner/admin guard before touching the database", async (_name, run) => {
+    runtime.manager.mockRejectedValueOnce(new Error("redirect:/dashboard?error=insufficient_role"));
+    await expect(run()).rejects.toThrow("redirect:/dashboard?error=insufficient_role");
+    expect(runtime.security).toHaveBeenCalled();
+    for (const method of Object.values(runtime.db.automationRule)) expect(method).not.toHaveBeenCalled();
+    expect(runtime.db.product.findFirst).not.toHaveBeenCalled();
   });
 });

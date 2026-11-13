@@ -69,6 +69,21 @@
 - **停止**：退訂（同一交易停止該收件人在這個商家所有進行中的序列）、黑名單、序列暫停（進行中的人停止，重新啟用不復活）、序列刪除、報名刪除。「買了就停」是下一個 PR。
 - **上限**：每商家 5 條寄送中的序列、每條 10 封；目前沒有 Email 用量計量。
 
+### 自動化規則（F-4 第一個 PR：既有缺口）
+
+設計見 `docs/product/delayed-steps-design.md` 第 8 節。規則在 `/settings/automations`（全商家）與漏斗編輯器（只限該漏斗頁的 `form_registered`＋貼標籤）管理；事件發生時在同一個 request 內同步執行（`src/lib/automation-workflow.ts`）。
+
+- **權限**：兩處都是 owner 與 admin（`requireVendorManagerMember`／`requireVendorManagerContext`），accountant、support、其他舊角色與 partner 都被拒；頁面與每個 Server Action（建立、套用劇本、模擬、啟用／停用、刪除）各自檢查，每個規則 id 在最後的查詢綁目前商家。導覽與設定 hub 原本就只對 owner／admin 顯示。沒有管理規則的 API route（`/api/automation/vouchers/redeem` 是買家兌換折價券，不在此範圍）。
+- **可用的觸發條件**：只有 `AVAILABLE_AUTOMATION_TRIGGERS` 裡的 `form_registered`（`/api/form-submissions`）、`consultation_booked`（公開預約）、`consultation_no_show`（商家標記未出席）。`payment_paid`、`form_no_show`、`viewer_watch_progress`、`webinar_attended_duration_gte` 沒有正式呼叫端，後台不提供，伺服器端也拒絕用它們建立規則、套用劇本或重新啟用（`trigger_unavailable`）；`payment_paid` 會在接上付款流程的 F-4 PR 放回。用到它們的既有規則照常列出並標示「此觸發條件目前不會執行」，可以停用與刪除，模擬只回「目前不會執行」。劇本只顯示觸發條件可用的（目前只有「諮詢預約提醒與防爽約」）。
+- **刪除**：只有已停用、且從未執行過的規則可以刪除。執行紀錄會連帶刪除它發出的客戶標籤與折價券（schema 的 Cascade），所以有執行紀錄的規則只能停用；刪除的條件寫在同一個 DELETE 裡，期間被重新啟用或執行過就不刪。寫 AuditLog `delete_automation_rule`。
+- **Email 動作**：`trigger: "automation"` 的 `EmailDelivery`，視為行銷信。
+  - 內容一律附退訂連結：與序列信相同的 `createEmailUnsubscribeUrl`（簽章綁這封信的 id）與 `ensureEmailUnsubscribeFooter`，連結進 `/unsubscribe`，退訂記在寄信商家的 `EmailSuppression`。目前整個平台都沒有 `List-Unsubscribe` header，序列信也沒有。
+  - 建立時：收件人在本商家有未恢復的 `EmailSuppression`（退訂、退信、投訴都算）或有效的 Email 黑名單，就不建立寄送；規則仍算完成（不重試），執行紀錄的 `actionResults` 記 `{ status: "skipped", reason: "recipient_suppressed" | "recipient_blacklisted" }`，後台執行日誌的「說明」欄顯示原因。同一規則的其他動作照常執行。
+  - 送出前：`dispatchEmailDelivery` 照既有規則查退訂（`automation` 不在任何豁免名單），另外查本商家 Email 黑名單，命中改 `suppressed`、`recipient_blacklisted`（與學員登入信相同）。
+  - 都只看寄信商家自己的名單，其他商家的退訂與黑名單不影響。
+  - 諮詢相關的觸發條件可能被商家拿來寄預約確認這類近似交易通知的信，但範本與觸發條件可以任意搭配、文案是行銷用途，所以全部比照行銷信處理，沒有豁免。
+- **LINE 推播、貼標籤、派券**：本 PR 不變。
+
 ## 歸因與佣金
 
 先固定 provider、event ID、order number、pending transaction、vendor、affiliate、product／live、visitor／session 與 attribution record。URL／cookie／session 僅是候選來源，接受的歸因與價格由 checkout 伺服器綁定並凍結。

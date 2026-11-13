@@ -12,7 +12,9 @@ import {
   signWithRotation,
 } from "@/lib/derived-key-rotation";
 import { automationCustomerKeyHash } from "@/lib/customer-key-hash";
-import { protectEmailDeliveryPayload } from "@/lib/email-delivery-pii";
+import { createEmailUnsubscribeUrl, protectEmailDeliveryPayload } from "@/lib/email-delivery-pii";
+import { ensureEmailUnsubscribeFooter } from "@/lib/email-delivery-format";
+import { isEmailBlacklistedForVendor } from "@/lib/email-blacklist";
 import { scheduleImmediateEmailDispatch } from "@/lib/email-delivery-immediate";
 import { isSafeExternalHttpsUrl } from "@/lib/safe-url";
 import {
@@ -21,6 +23,11 @@ import {
   stableLineIdempotencyKey,
 } from "@/lib/line-notification";
 
+/**
+ * Every trigger the engine understands. Stored rules may use any of them and
+ * keep parsing, so this list never shrinks; what a merchant may choose is
+ * AVAILABLE_AUTOMATION_TRIGGERS below.
+ */
 export const AUTOMATION_TRIGGERS = [
   "payment_paid",
   "viewer_watch_progress",
@@ -31,6 +38,50 @@ export const AUTOMATION_TRIGGERS = [
   "form_no_show",
 ] as const;
 export type AutomationTrigger = typeof AUTOMATION_TRIGGERS[number];
+
+/**
+ * The single list of triggers a merchant may put on a new rule, or switch a
+ * rule on with (F-4 gap 2). The UI and every Server Action read it.
+ *
+ * Only these three have a production caller today (form submission route and
+ * the two consultation actions). `form_no_show`, `viewer_watch_progress` and
+ * `webinar_attended_duration_gte` have none, so a rule using them would never
+ * run. `payment_paid` has none either: the next F-4 PR wires it into the
+ * payment flow (with its own independent review) and adds it back here.
+ * Existing rules with a hidden trigger stay listed and can be switched off or
+ * deleted, but not created, switched on or edited into one.
+ */
+export const AVAILABLE_AUTOMATION_TRIGGERS = [
+  "form_registered",
+  "consultation_booked",
+  "consultation_no_show",
+] as const satisfies readonly AutomationTrigger[];
+export type AvailableAutomationTrigger = typeof AVAILABLE_AUTOMATION_TRIGGERS[number];
+
+export function isAvailableAutomationTrigger(value: unknown): value is AvailableAutomationTrigger {
+  return typeof value === "string" && (AVAILABLE_AUTOMATION_TRIGGERS as readonly string[]).includes(value);
+}
+
+export function isAutomationTrigger(value: unknown): value is AutomationTrigger {
+  return typeof value === "string" && (AUTOMATION_TRIGGERS as readonly string[]).includes(value);
+}
+
+const THRESHOLD_TRIGGERS: ReadonlySet<string> = new Set(["payment_paid", "viewer_watch_progress", "webinar_attended_duration_gte"]);
+
+/** Whether a rule on this trigger takes an amount or watch-seconds threshold. */
+export function automationTriggerNeedsThreshold(trigger: string) {
+  return THRESHOLD_TRIGGERS.has(trigger);
+}
+
+export const AUTOMATION_TRIGGER_LABELS: Record<AutomationTrigger, string> = {
+  payment_paid: "訂單付款完成",
+  viewer_watch_progress: "觀看進度更新",
+  webinar_attended_duration_gte: "觀看累積秒數達標",
+  form_registered: "表單報名成功",
+  consultation_booked: "諮詢預約成功",
+  consultation_no_show: "諮詢未出席",
+  form_no_show: "報名但未出席直播",
+};
 
 // Re-exported so existing callers keep one import path; the implementation
 // lives in a dependency-free module the order PII boundary also imports.
@@ -151,6 +202,9 @@ export const AUTOMATION_RECIPES = [
 
 export type AutomationRecipeId = typeof AUTOMATION_RECIPES[number]["id"];
 
+/** Recipes offered to merchants: only those whose trigger can run today. */
+export const AVAILABLE_AUTOMATION_RECIPES = AUTOMATION_RECIPES.filter((recipe) => isAvailableAutomationTrigger(recipe.trigger));
+
 export function materializeAutomationRecipe(recipeId: string, productId?: string) {
   const recipe = AUTOMATION_RECIPES.find((candidate) => candidate.id === recipeId);
   if (!recipe) return null;
@@ -173,6 +227,23 @@ export function maskAutomationTarget(value: string | null | undefined) {
     return `${local.slice(0, 1)}***@${domain}`;
   }
   return normalized.length <= 8 ? `${normalized.slice(0, 2)}***` : `${normalized.slice(0, 4)}…${normalized.slice(-4)}`;
+}
+
+const EMAIL_SKIP_NOTES: Record<AutomationEmailSkipReason, string> = {
+  recipient_suppressed: "Email 未寄出：收件人已退訂或停止接收",
+  recipient_blacklisted: "Email 未寄出：收件人在本商家黑名單中",
+};
+
+/** Merchant-readable notes for actions an execution skipped on purpose (stored actionResults are untrusted JSON). */
+export function automationExecutionNotes(actionResults: unknown) {
+  if (!Array.isArray(actionResults)) return [];
+  const notes = actionResults.flatMap((result) => {
+    if (!result || typeof result !== "object") return [];
+    const { type, status, reason } = result as Record<string, unknown>;
+    if (type !== "send_email_notification" || status !== "skipped") return [];
+    return reason === "recipient_suppressed" || reason === "recipient_blacklisted" ? [EMAIL_SKIP_NOTES[reason]] : [];
+  });
+  return [...new Set(notes)];
 }
 
 export type AutomationEvent = {
@@ -201,7 +272,7 @@ export type AutomationEvent = {
 
 type AutomationDb = Pick<
   PrismaClient,
-  "automationRule" | "automationExecutionLog" | "automationVoucherGrant" | "customerTagAssignment" | "product" | "lineOfficialAccount" | "lineUserIdentity" | "lineDelivery" | "emailDelivery"
+  "automationRule" | "automationExecutionLog" | "automationVoucherGrant" | "customerTagAssignment" | "product" | "lineOfficialAccount" | "lineUserIdentity" | "lineDelivery" | "emailDelivery" | "emailSuppression" | "blacklist"
 >;
 
 type ParsedRule = {
@@ -302,6 +373,32 @@ const EMAIL_COPY = {
   webinar_replay: { subject: "錯過直播也別擔心：精華回放與諮詢邀請", body: "精華回放：{{webinar_url}}\n預約 1 對 1 諮詢：{{consultation_url}}" },
 } as const;
 
+export type AutomationEmailSkipReason = "recipient_suppressed" | "recipient_blacklisted";
+
+/**
+ * Creation-time gate for an automation e-mail, bound to this vendor only:
+ * an unsubscribe (or other EmailSuppression not yet resubscribed) or an
+ * active merchant Email blacklist entry stops it. Another vendor's lists
+ * never apply.
+ */
+async function automationEmailRecipientBlock(
+  db: Pick<AutomationDb, "emailSuppression" | "blacklist">,
+  vendorId: string,
+  recipientEmail: string,
+  recipientHash: string,
+): Promise<AutomationEmailSkipReason | null> {
+  const [suppression, blacklisted] = await Promise.all([
+    db.emailSuppression.findUnique({
+      where: { vendorId_recipientHash: { vendorId, recipientHash } },
+      select: { resubscribedAt: true },
+    }),
+    isEmailBlacklistedForVendor(db, vendorId, recipientEmail),
+  ]);
+  if (suppression && !suppression.resubscribedAt) return "recipient_suppressed";
+  if (blacklisted) return "recipient_blacklisted";
+  return null;
+}
+
 async function executeAction(
   db: AutomationDb,
   rule: ParsedRule,
@@ -373,11 +470,21 @@ async function executeAction(
     if (!event.recipientEmail) return { type: action.type, status: "recipient_not_linked" } as const;
     const id = deterministicActionId(executionLogId, actionIndex);
     const copy = EMAIL_COPY[action.template];
+    // Marketing mail (F-4 gap 1): the same signed /unsubscribe link and
+    // footer as sequence e-mails. The token names this delivery, so the
+    // unsubscribe lands on this vendor's EmailSuppression only.
+    const unsubscribeUrl = createEmailUnsubscribeUrl(id);
     const protectedPayload = protectEmailDeliveryPayload({
       recipientEmail: event.recipientEmail,
       subject: copy.subject,
-      body: replaceArtifacts(copy.body, artifacts) ?? copy.body,
+      body: ensureEmailUnsubscribeFooter(replaceArtifacts(copy.body, artifacts) ?? copy.body, unsubscribeUrl),
     }, { vendorId: event.vendorId, deliveryId: id });
+    const blocked = await automationEmailRecipientBlock(db, event.vendorId, event.recipientEmail, protectedPayload.recipientHash);
+    if (blocked) {
+      // Not an error: the execution completes and the log records why, so
+      // nothing retries it. dispatchEmailDelivery checks both again at send.
+      return { type: action.type, status: "skipped", reason: blocked, template: action.template } as const;
+    }
     try {
       await db.emailDelivery.create({ data: {
         id,

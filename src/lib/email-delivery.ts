@@ -1683,8 +1683,17 @@ async function finalizeSuppressed(delivery: ClaimedDelivery, errorCode = "recipi
   return result.count === 1 ? { status: "suppressed" as const } : { status: "claimed_elsewhere" as const };
 }
 
-/** Send-time blacklist guard for learner sign-in links; reads the recipient only from the encrypted payload. */
-async function isStudentPortalRecipientBlacklisted(
+/**
+ * Triggers whose queued mail is suppressed (`recipient_blacklisted`) at send
+ * time when the recipient is on this vendor's Email blacklist: learner sign-in
+ * links (owner policy 2026-11-10) and automation e-mails (F-4 gap 1, checked
+ * at creation too). Sequence e-mails have their own check in
+ * isCurrentSequenceEmailDelivery. The literal matches automation-workflow.ts.
+ */
+const SEND_TIME_BLACKLIST_TRIGGERS: ReadonlySet<string> = new Set(["student_portal_magic_link", "automation"]);
+
+/** Send-time blacklist guard; reads the recipient only from the encrypted payload. */
+async function isDeliveryRecipientBlacklisted(
   db: Parameters<typeof isEmailBlacklistedForVendor>[0],
   delivery: ClaimedDelivery,
 ) {
@@ -1768,8 +1777,9 @@ export async function dispatchEmailDelivery(deliveryId: string, actorLabel = "jo
   }
   // Owner policy 2026-11-10: a learner sign-in link never reaches an address
   // this vendor has blacklisted, including one queued just before the block
-  // committed (the request-time check in requestMagicLinkAction is the first gate).
-  if (delivery.trigger === "student_portal_magic_link" && await isStudentPortalRecipientBlacklisted(db, delivery)) {
+  // committed (the request-time check in requestMagicLinkAction is the first
+  // gate). Automation e-mails get the same send-time check (F-4).
+  if (SEND_TIME_BLACKLIST_TRIGGERS.has(delivery.trigger) && await isDeliveryRecipientBlacklisted(db, delivery)) {
     return finalizeSuppressed(delivery, "recipient_blacklisted");
   }
 
