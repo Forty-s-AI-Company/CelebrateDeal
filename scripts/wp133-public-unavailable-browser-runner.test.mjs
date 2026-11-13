@@ -67,6 +67,7 @@ test("WP133 required-input inspection reports missing and forbidden mirror entri
     "package.json",
     "next.config.ts",
     "tsconfig.json",
+    "tsconfig.build.json",
     "prisma/schema.prisma",
     "src/app/p/[slug]/page.tsx",
     "src/components/team-funnel-public-page.tsx",

@@ -15,6 +15,7 @@ const requiredInputs = [
   "package.json",
   "next.config.ts",
   "tsconfig.json",
+  "tsconfig.build.json",
   "prisma/schema.prisma",
   "src/app/p/[slug]/page.tsx",
   componentPath,

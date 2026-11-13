@@ -16,7 +16,7 @@ function captureSource() {
   if (files.status !== 0) throw new Error("tracking-source-inventory-failed");
   const sourceFiles = [...new Set(files.stdout.split(/\r?\n/u).filter(file => file && !file.split(/[\\/]/u).some(part => part.startsWith(".env")) &&
   (file.startsWith("src/") || file.startsWith("public/") || file.startsWith("tests/") || file.startsWith("scripts/") ||
-   ["package.json", "package-lock.json", "prisma/schema.prisma", "prisma.playwright.config.ts", "vitest.tracking-settings-db.config.ts", "vitest.tracking-payment-boundaries-db.config.ts", "tsconfig.json", "next.config.ts", ".github/workflows/ci.yml",
+   ["package.json", "package-lock.json", "prisma/schema.prisma", "prisma.playwright.config.ts", "vitest.tracking-settings-db.config.ts", "vitest.tracking-payment-boundaries-db.config.ts", "tsconfig.json", "tsconfig.build.json", "next.config.ts", ".github/workflows/ci.yml",
     "playwright.config.ts", "playwright.tracking.config.ts", "postcss.config.mjs", "sentry.server.config.ts", "sentry.edge.config.ts", "vitest.config.ts"].includes(file))))];
   return captureCanonicalMigrationFingerprint(root, sourceFiles);
 }
@@ -46,7 +46,7 @@ const migration = await main({ afterMigrate: async ({ databaseUrl, environment, 
     if (!fs.existsSync(executable)) throw new Error("tracking-browser-executable-missing");
     const mirror = path.join(tempRoot, "browser-app"); fs.mkdirSync(mirror, { recursive: true });
     for (const directory of ["src", "public", "prisma"]) fs.cpSync(path.join(root, directory), path.join(mirror, directory), { recursive: true, filter: candidate => !path.basename(candidate).startsWith(".env") });
-    for (const file of ["package.json", "tsconfig.json", "next.config.ts", "postcss.config.mjs", "sentry.server.config.ts", "sentry.edge.config.ts", "prisma.playwright.config.ts"]) fs.copyFileSync(path.join(root, file), path.join(mirror, file));
+    for (const file of ["package.json", "tsconfig.json", "tsconfig.build.json", "next.config.ts", "postcss.config.mjs", "sentry.server.config.ts", "sentry.edge.config.ts", "prisma.playwright.config.ts"]) fs.copyFileSync(path.join(root, file), path.join(mirror, file));
     fs.mkdirSync(path.join(mirror, "scripts")); fs.copyFileSync(path.join(root, "scripts/local-database-safety.ts"), path.join(mirror, "scripts/local-database-safety.ts"));
     fs.symlinkSync(path.join(root, "node_modules"), path.join(mirror, "node_modules"), process.platform === "win32" ? "junction" : "dir");
     const browserReport = path.join(tempRoot, "tracking-browser.json");

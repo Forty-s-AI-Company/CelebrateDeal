@@ -186,7 +186,7 @@ function scoreImpact(success) {
 
 async function receiptLineage(wp144Digest) {
   const entries = {};
-  for (const candidate of ['package.json', 'package-lock.json', 'tsconfig.json']) entries[candidate] = await hashFile(path.join(REPO_ROOT, candidate));
+  for (const candidate of ['package.json', 'package-lock.json', 'tsconfig.json', 'tsconfig.build.json']) entries[candidate] = await hashFile(path.join(REPO_ROOT, candidate));
   return { wp144Receipt: wp144Digest, sourceConfigPackageLockfile: hashBytes(Buffer.from(JSON.stringify(entries))) };
 }
 

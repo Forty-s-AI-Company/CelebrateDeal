@@ -149,7 +149,7 @@ function inventory() {
 }
 
 function requiredInputs(mirror) {
-  return ["package.json", "next.config.ts", "tsconfig.json", "src/app", "public", "prisma/schema.prisma"]
+  return ["package.json", "next.config.ts", "tsconfig.json", "tsconfig.build.json", "src/app", "public", "prisma/schema.prisma"]
     .filter((rel) => !fs.existsSync(path.join(mirror, rel)));
 }
 

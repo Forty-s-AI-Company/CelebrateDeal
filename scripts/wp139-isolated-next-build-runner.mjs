@@ -297,7 +297,7 @@ function dirtyInventory() {
 }
 
 function protectedDigests() {
-  const paths = ["package.json", "package-lock.json", "next.config.ts", "tsconfig.json", targetRoute, ".ai-team/reports/wp138-generated-target-reference-receipt.json"];
+  const paths = ["package.json", "package-lock.json", "next.config.ts", "tsconfig.json", "tsconfig.build.json", targetRoute, ".ai-team/reports/wp138-generated-target-reference-receipt.json"];
   return Object.fromEntries(paths.map((relativePath) => {
     const absolute = safeResolve(root, relativePath);
     if (!absolute || !fs.existsSync(absolute)) return [relativePath, { missing: true }];
