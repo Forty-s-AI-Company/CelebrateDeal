@@ -16,12 +16,14 @@ const mocks = vi.hoisted(() => ({
   backfillEmailSequenceEnrollments: vi.fn(),
   processDueDelayedStepRuns: vi.fn(),
   processDueSequenceEmailDeliveries: vi.fn(),
+  onConfigurationError: vi.fn(),
 }));
 vi.mock("@/lib/delayed-step-runs", () => ({
   backfillEmailSequenceEnrollments: mocks.backfillEmailSequenceEnrollments,
   processDueDelayedStepRuns: mocks.processDueDelayedStepRuns,
-  EMAIL_SEQUENCE_START_CUTOFF_MS: 90_000,
-  EMAIL_SEQUENCE_DEADLINE_MS: 240_000,
+  EMAIL_SEQUENCE_START_CUTOFF_MS: 60_000,
+  EMAIL_SEQUENCE_DEADLINE_MS: 100_000,
+  onceConfigurationReporter: () => mocks.onConfigurationError,
 }));
 vi.mock("@/lib/live-fixed-sessions-store", () => ({ releaseExpiredFixedSessionSeats: mocks.releaseExpiredFixedSessionSeats }));
 vi.mock("@/lib/live-fixed-session-notices", () => ({ queueFixedSessionCancellationNotices: mocks.queueFixedSessionCancellationNotices }));
@@ -293,20 +295,21 @@ describe("F-3 email sequence work in the job", () => {
     expect(order(mocks.backfillEmailSequenceEnrollments)).toBeGreaterThan(lastOther);
     expect(order(mocks.processDueDelayedStepRuns)).toBeGreaterThan(order(mocks.backfillEmailSequenceEnrollments));
     expect(order(mocks.processDueSequenceEmailDeliveries)).toBeGreaterThan(order(mocks.processDueDelayedStepRuns));
-    // One deadline, 240 s after the round started, for all three.
+    // One deadline, 100 s after the round started (inside the runner's 120 s), and one configuration reporter.
     const deadline = (mocks.processDueDelayedStepRuns.mock.calls[0]![0] as { deadline: number }).deadline;
-    expect(deadline).toBeGreaterThanOrEqual(before + 240_000);
-    expect(deadline).toBeLessThanOrEqual(Date.now() + 240_000);
-    expect(mocks.backfillEmailSequenceEnrollments).toHaveBeenCalledWith({ deadline });
+    expect(deadline).toBeGreaterThanOrEqual(before + 100_000);
+    expect(deadline).toBeLessThanOrEqual(Date.now() + 100_000);
+    expect(mocks.processDueDelayedStepRuns).toHaveBeenCalledWith({ deadline, onConfigurationError: mocks.onConfigurationError });
+    expect(mocks.backfillEmailSequenceEnrollments).toHaveBeenCalledWith({ deadline, onConfigurationError: mocks.onConfigurationError });
     expect(mocks.processDueSequenceEmailDeliveries).toHaveBeenCalledWith({ deadline });
   });
 
-  it("skips the sequence work when the round already ran past 90 seconds", async () => {
+  it("skips the sequence work, and says so to monitoring, when the round already ran past 60 seconds", async () => {
     vi.useFakeTimers({ toFake: ["Date"] });
     const start = new Date("2026-11-13T00:00:00.000Z").getTime();
     vi.setSystemTime(start);
     mocks.sweepExpiredRegistrationRetryDrafts.mockImplementationOnce(async () => {
-      vi.setSystemTime(start + 91_000);
+      vi.setSystemTime(start + 61_000);
       return 0;
     });
     const body = await (await POST(request("g7-07-job-secret"))).json();
@@ -315,6 +318,24 @@ describe("F-3 email sequence work in the job", () => {
     expect(mocks.processDueDelayedStepRuns).not.toHaveBeenCalled();
     expect(mocks.processDueSequenceEmailDeliveries).not.toHaveBeenCalled();
     expect(mocks.processDueEmailDeliveries).toHaveBeenCalledOnce();
+    expect(mocks.captureOperationalError).toHaveBeenCalledWith(expect.any(Error), {
+      source: "email_delivery_job",
+      operation: "email_sequences_skipped",
+      status: "skipped",
+    });
+  });
+
+  it("still runs the sequence work at exactly the 60-second cutoff", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    const start = new Date("2026-11-13T00:00:00.000Z").getTime();
+    vi.setSystemTime(start);
+    mocks.sweepExpiredRegistrationRetryDrafts.mockImplementationOnce(async () => {
+      vi.setSystemTime(start + 60_000);
+      return 0;
+    });
+    const body = await (await POST(request("g7-07-job-secret"))).json();
+    expect(body.sequenceSkipped).toBe(false);
+    expect(mocks.processDueDelayedStepRuns).toHaveBeenCalledWith(expect.objectContaining({ deadline: start + 100_000 }));
   });
 
   it("keeps the response and the other passes when any sequence part fails", async () => {

@@ -18,6 +18,7 @@ import {
   backfillEmailSequenceEnrollments,
   EMAIL_SEQUENCE_DEADLINE_MS,
   EMAIL_SEQUENCE_START_CUTOFF_MS,
+  onceConfigurationReporter,
   processDueDelayedStepRuns,
 } from "@/lib/delayed-step-runs";
 
@@ -130,19 +131,31 @@ async function reportSequenceFailure(error: unknown, operation: string) {
  */
 async function processEmailSequences(startedAt: number) {
   if (Date.now() - startedAt > EMAIL_SEQUENCE_START_CUTOFF_MS) {
+    // m4: visible in monitoring when rounds keep running too long for it.
+    try {
+      captureOperationalError(new Error("Email sequence work skipped: the round ran past its start cutoff."), {
+        source: "email_delivery_job",
+        operation: "email_sequences_skipped",
+        status: "skipped",
+      });
+    } catch {
+      // Monitoring must never change the job outcome.
+    }
     return { skipped: true, enrolled: 0, steps: [] as Array<{ status: string }>, dispatched: [] as Array<{ status: string }> };
   }
   const deadline = startedAt + EMAIL_SEQUENCE_DEADLINE_MS;
+  // One configuration report per round, whichever part meets the problem first.
+  const onConfigurationError = onceConfigurationReporter();
   let enrollments: Array<{ status: string }> = [];
   let steps: Array<{ status: string }> = [];
   let dispatched: Array<{ status: string }> = [];
   try {
-    enrollments = await backfillEmailSequenceEnrollments({ deadline });
+    enrollments = await backfillEmailSequenceEnrollments({ deadline, onConfigurationError });
   } catch (error) {
     await reportSequenceFailure(error, "email_sequence_backfill");
   }
   try {
-    steps = await processDueDelayedStepRuns({ deadline });
+    steps = await processDueDelayedStepRuns({ deadline, onConfigurationError });
   } catch (error) {
     await reportSequenceFailure(error, "delayed_step_runs");
   }

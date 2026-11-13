@@ -86,6 +86,17 @@ function appendBrandFooter(input: SendEmailInput, contactUrl: string | undefined
   };
 }
 
+/**
+ * Whether the provider settings sendTransactionalEmail needs are present: an
+ * API key and a sender it can parse. Reads the same variables with the same
+ * rules, so a caller can stop before creating mail that could never be sent.
+ */
+export function isTransactionalEmailConfigured(env: NodeJS.ProcessEnv = process.env) {
+  const apiKey = env.RESEND_API_KEY;
+  const configuredFrom = env.EMAIL_FROM;
+  return Boolean(apiKey && configuredFrom && parsePlatformFrom(configuredFrom));
+}
+
 export async function sendTransactionalEmail(input: SendEmailInput) {
   const apiKey = process.env.RESEND_API_KEY;
   const configuredFrom = process.env.EMAIL_FROM;

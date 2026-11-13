@@ -13,6 +13,7 @@ import {
   DELAYED_STEP_TEMPLATE_RETRY_MS,
   enrollSubmissionInEmailSequences,
   isCurrentSequenceEmailDelivery,
+  onceConfigurationReporter,
   processDueDelayedStepRuns,
   rescheduleActiveRunsForSequence,
   SEQUENCE_BACKFILL_WINDOW_MS,
@@ -41,7 +42,10 @@ const DAY = 24 * HOUR;
 beforeEach(() => {
   vi.stubEnv("CSRF_SECRET", "delayed-step-run-disposable-secret-longer-than-thirty-two-bytes");
   vi.stubEnv("NEXT_PUBLIC_APP_URL", APP_URL);
-  vi.stubEnv("RESEND_API_KEY", "");
+  // Synthetic provider settings: the worker only checks that they exist (m1);
+  // nothing in this file reaches the provider.
+  vi.stubEnv("RESEND_API_KEY", "re_synthetic_sequence_test");
+  vi.stubEnv("EMAIL_FROM", "CelebrateDeal <no-reply@example.test>");
 });
 
 afterEach(async () => {
@@ -502,9 +506,11 @@ describe("worker", () => {
   it("gives the lease back without an attempt when a key fails in the middle of a round (MINOR 1)", async () => {
     const { t, run } = await enrolled([{ delayMinutes: 60 }]);
     const pii = await import("@/lib/email-delivery-pii");
+    const original = pii.protectEmailDeliveryPayload;
     const spy = vi.spyOn(pii, "protectEmailDeliveryPayload");
-    // The round's probe succeeds, the run's own e-mail hits the missing key.
-    spy.mockImplementationOnce(pii.protectEmailDeliveryPayload).mockImplementation(() => { throw new Error("Sensitive data key is not configured."); });
+    // The round's probe succeeds, the run's own e-mail hits the missing key,
+    // and the probe repeated after the error fails too: a platform problem.
+    spy.mockImplementationOnce(original).mockImplementation(() => { throw new Error("Sensitive data key is not configured."); });
     try {
       await expect(processDueDelayedStepRuns({ now: at(2 * HOUR), vendorId: t.vendor.id })).resolves.toEqual([]);
     } finally {
@@ -512,6 +518,134 @@ describe("worker", () => {
     }
     expect(await runsOf(t.vendor.id)).toEqual([expect.objectContaining({ id: run.id, cursorDelayMinutes: -1, attemptCount: 0, claimedAt: null, status: "active" })]);
   });
+
+  it("counts a key error as the run's own failure when the deployment probe passes again (m2)", async () => {
+    const { t, run } = await enrolled([{ delayMinutes: 60 }]);
+    const pii = await import("@/lib/email-delivery-pii");
+    const original = pii.protectEmailDeliveryPayload;
+    const spy = vi.spyOn(pii, "protectEmailDeliveryPayload");
+    spy
+      .mockImplementationOnce(original)
+      .mockImplementationOnce(() => { throw new Error("Payload could not be sealed."); })
+      .mockImplementation(original);
+    try {
+      await expect(processDueDelayedStepRuns({ now: at(2 * HOUR), vendorId: t.vendor.id })).resolves.toEqual([{ runId: run.id, status: "failed" }]);
+    } finally {
+      spy.mockRestore();
+    }
+    expect(await runsOf(t.vendor.id)).toEqual([expect.objectContaining({ id: run.id, cursorDelayMinutes: -1, attemptCount: 1, status: "active" })]);
+  });
+
+  it("creates nothing and leaves runs untouched while the e-mail provider is not configured, reporting once (m1)", async () => {
+    const { t, run } = await enrolled([{ delayMinutes: 60 }]);
+    vi.stubEnv("RESEND_API_KEY", "");
+    monitoring.captureOperationalError.mockClear();
+    const reporter = onceConfigurationReporter();
+    await expect(processDueDelayedStepRuns({ now: at(2 * HOUR), vendorId: t.vendor.id, onConfigurationError: reporter })).resolves.toEqual([]);
+    await expect(processDueDelayedStepRuns({ now: at(2 * HOUR), vendorId: t.vendor.id, onConfigurationError: reporter })).resolves.toEqual([]);
+    expect(monitoring.captureOperationalError.mock.calls.filter(([, context]) => (context as { operation?: string }).operation === "configuration")).toHaveLength(1);
+    expect(await runsOf(t.vendor.id)).toEqual([expect.objectContaining({ id: run.id, cursorDelayMinutes: -1, attemptCount: 0, claimedAt: null, updatedAt: run.updatedAt })]);
+    vi.stubEnv("RESEND_API_KEY", "re_synthetic_sequence_test");
+    vi.stubEnv("EMAIL_FROM", "not a sender");
+    await expect(processDueDelayedStepRuns({ now: at(2 * HOUR), vendorId: t.vendor.id })).resolves.toEqual([]);
+    vi.stubEnv("EMAIL_FROM", "CelebrateDeal <no-reply@example.test>");
+    await expect(processDueDelayedStepRuns({ now: at(2 * HOUR), vendorId: t.vendor.id })).resolves.toEqual([{ runId: run.id, status: "queued" }]);
+  });
+
+  it("does not let the bulk overdue skip overwrite a step change saved at the same time (m3)", async () => {
+    const { t, seq, run } = await enrolled([{ delayMinutes: 60 }, { delayMinutes: 10 * 1_440 }]);
+    let release: () => void = () => undefined;
+    let markLocked: () => void = () => undefined;
+    const locked = new Promise<void>((resolve) => { markLocked = resolve; });
+    // A merchant save in progress: the 10-day step becomes 5 days and the runs are re-timed.
+    const save = db.$transaction(async (tx) => {
+      await tx.emailSequence.update({ where: { id: seq.id }, data: { version: { increment: 1 } } });
+      await tx.emailSequenceStep.updateMany({ where: { emailSequenceId: seq.id, delayMinutes: 10 * 1_440 }, data: { delayMinutes: 5 * 1_440 } });
+      await rescheduleActiveRunsForSequence(tx, { vendorId: t.vendor.id, emailSequenceId: seq.id, now: at(3 * DAY) });
+      markLocked();
+      await new Promise<void>((resolve) => { release = resolve; });
+    }, { timeout: 20_000 });
+    await locked;
+    // The 1-hour step is three days late: the bulk skip runs while the save is open.
+    const round = processDueDelayedStepRuns({ now: at(3 * DAY), vendorId: t.vendor.id });
+    await new Promise((resolve) => setTimeout(resolve, 1_000));
+    release();
+    await save;
+    await round;
+    // Computed from the saved steps: the next step is the 5-day one, not the old 10-day one.
+    expect(await runsOf(t.vendor.id)).toEqual([expect.objectContaining({ id: run.id, cursorDelayMinutes: 60, nextRunAt: at(5 * DAY), status: "active" })]);
+  });
+
+  it("gives leftover capacity to the vendor that can use it: one large and four small vendors, capacity 20 (M2)", async () => {
+    const big = await tenant();
+    await sequence(big, [{ delayMinutes: 60 }]);
+    for (let person = 0; person < 30; person += 1) await enroll(big, (await submission(big)).id);
+    const small: Tenant[] = [];
+    for (let index = 0; index < 4; index += 1) {
+      const t = await tenant();
+      await sequence(t, [{ delayMinutes: 60 }]);
+      await enroll(t, (await submission(t)).id);
+      small.push(t);
+    }
+    // Whichever vendor the round starts with, the small ones take 1 each and the large one the other 16.
+    const results = await processDueDelayedStepRuns({ now: at(2 * HOUR), budget: { emails: 20 } });
+    expect(results.filter((result) => result.status === "queued")).toHaveLength(20);
+    expect(await deliveriesOf(big.vendor.id)).toHaveLength(16);
+    for (const t of small) expect(await deliveriesOf(t.vendor.id)).toHaveLength(1);
+  });
+
+  it("gives the large vendor the same 16 when it comes first in the round (M2)", async () => {
+    const big = await tenant();
+    await sequence(big, [{ delayMinutes: 60 }]);
+    for (let person = 0; person < 30; person += 1) await enroll(big, (await submission(big)).id);
+    const vendors = [big];
+    for (let index = 0; index < 4; index += 1) {
+      const t = await tenant();
+      await sequence(t, [{ delayMinutes: 60 }]);
+      await enroll(t, (await submission(t)).id);
+      vendors.push(t);
+    }
+    // Try every starting vendor: the share is recomputed and a second pass hands over what is left.
+    const ids = vendors.map((t) => t.vendor.id).sort();
+    const bigIndex = ids.indexOf(big.vendor.id);
+    const now = at(2 * HOUR);
+    const spread = ((Math.floor(now.getTime() / 60_000) * 0.6180339887498949) % 1);
+    // A random value that makes the large vendor the starting one.
+    const random = () => (((bigIndex + 0.5) / ids.length - spread) % 1 + 1) % 1;
+    await processDueDelayedStepRuns({ now, budget: { emails: 20 }, random });
+    expect(await deliveriesOf(big.vendor.id)).toHaveLength(16);
+  });
+
+  it("reaches every vendor within a few rounds on a 5-minute cadence with less capacity than vendors (M1)", async () => {
+    // Reproducible random source (mulberry32).
+    const seeded = (seed: number) => () => {
+      seed = (seed + 0x6D2B79F5) | 0;
+      let value = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+      value = (value + Math.imul(value ^ (value >>> 7), 61 | value)) ^ value;
+      return ((value ^ (value >>> 14)) >>> 0) / 4_294_967_296;
+    };
+    for (const [vendorCount, random] of [[5, seeded(7)], [10, seeded(42)], [10, () => 0.25]] as const) {
+      const tenants: Tenant[] = [];
+      for (let index = 0; index < vendorCount; index += 1) {
+        const t = await tenant();
+        await sequence(t, [{ delayMinutes: 60 }]);
+        for (let person = 0; person < 3; person += 1) await enroll(t, (await submission(t)).id);
+        tenants.push(t);
+      }
+      const ids = tenants.map((t) => t.vendor.id);
+      const served = new Set<string>();
+      let rounds = 0;
+      // Every round 5 minutes later (the staging heartbeat); capacity 2 for up to 10 vendors.
+      for (; rounds < 30 && served.size < vendorCount; rounds += 1) {
+        await db.emailDelivery.updateMany({ where: { vendorId: { in: ids }, status: "queued" }, data: { status: "sent" } });
+        await processDueDelayedStepRuns({ now: new Date(at(2 * HOUR).getTime() + rounds * 5 * 60_000), budget: { emails: 2 }, random });
+        for (const row of await db.emailDelivery.findMany({ where: { vendorId: { in: ids } }, select: { vendorId: true } })) served.add(row.vendorId);
+      }
+      expect({ vendorCount, served: served.size }).toEqual({ vendorCount, served: vendorCount });
+      expect(rounds).toBeLessThanOrEqual(20);
+      await db.vendor.deleteMany({ where: { id: { in: ids } } });
+    }
+  }, 180_000);
 
   it("never sends a step twice to the same person: moving a sent step later or swapping two steps through the editor (B1)", async () => {
     const t = await tenant();
@@ -560,7 +694,7 @@ describe("worker", () => {
     expect((await deliveriesOf(t2.vendor.id)).map((row) => row.sourceTemplateId)).toEqual([t2.templates[0]!.id]);
   });
 
-  it("drops its result when the merchant saves the steps while it runs, and recomputes next round (M1)", async () => {
+  it("waits for a step save that is in progress and then works from the saved steps (M1, m3)", async () => {
     const { t, seq, run } = await enrolled([{ delayMinutes: 60 }, { delayMinutes: 1_440 }]);
     let release: () => void = () => undefined;
     let markLocked: () => void = () => undefined;
@@ -577,11 +711,13 @@ describe("worker", () => {
     await new Promise((resolve) => setTimeout(resolve, 1_000));
     release();
     await holder;
-    await expect(racing).resolves.toEqual([{ runId: run.id, status: "definition_changed" }]);
-    expect(await deliveriesOf(t.vendor.id)).toHaveLength(0);
-    expect(await runsOf(t.vendor.id)).toEqual([expect.objectContaining({ cursorDelayMinutes: -1, claimedAt: null, attemptCount: 0, status: "active" })]);
-    await expect(work(t, at(HOUR + 2 * 60_000))).resolves.toEqual([{ runId: run.id, status: "queued" }]);
-    expect(await runsOf(t.vendor.id)).toEqual([expect.objectContaining({ cursorDelayMinutes: 60, nextRunAt: at(2 * DAY) })]);
+    // The round's first step (the bulk overdue skip) reads the sequence FOR SHARE, so it
+    // waited for the save; the step it then sent was timed with the saved steps.
+    // (The in-transaction version check of commitWithDefinition stays as the
+    // guard for a save landing between that skip and the step's commit.)
+    await expect(racing).resolves.toEqual([{ runId: run.id, status: "queued" }]);
+    expect(await deliveriesOf(t.vendor.id)).toHaveLength(1);
+    expect(await runsOf(t.vendor.id)).toEqual([expect.objectContaining({ cursorDelayMinutes: 60, nextRunAt: at(2 * DAY), claimedAt: null, attemptCount: 0, status: "active" })]);
   });
 
   it("does not continue a run that was added while the sequence was paused (resume re-anchors activation)", async () => {

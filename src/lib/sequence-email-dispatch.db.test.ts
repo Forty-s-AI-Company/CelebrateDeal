@@ -28,6 +28,9 @@ const APP_URL = "https://sequence-dispatch.example.test";
 beforeEach(() => {
   vi.stubEnv("CSRF_SECRET", "sequence-dispatch-disposable-secret-longer-than-thirty-two-bytes");
   vi.stubEnv("NEXT_PUBLIC_APP_URL", APP_URL);
+  // Synthetic provider settings for the worker's check; the provider itself is the mock above.
+  vi.stubEnv("RESEND_API_KEY", "re_synthetic_dispatch_test");
+  vi.stubEnv("EMAIL_FROM", "CelebrateDeal <no-reply@example.test>");
   mocks.sendTransactionalEmail.mockReset();
   mocks.sendTransactionalEmail.mockImplementation(async (input: { idempotencyKey?: string }) => ({ id: `provider-${input.idempotencyKey ?? "x"}` }));
 });

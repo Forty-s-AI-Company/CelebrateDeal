@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { expect, test, type Page } from "@playwright/test";
 import { PrismaClient } from "@prisma/client";
+import { processDueDelayedStepRuns } from "../../src/lib/delayed-step-runs";
 import { revealEmailDeliveryPayload } from "../../src/lib/email-delivery-pii";
 import { createFormSubmissionVerificationToken } from "../../src/lib/form-submission-verification";
 import { hashPassword } from "../../src/lib/password";
@@ -9,8 +10,8 @@ import { hashPassword } from "../../src/lib/password";
  * F-3 Email 追銷序列, end to end on the production build: the merchant creates
  * a sequence template and a three-step sequence in the back office and
  * activates it; a synthetic registrant verifies their e-mail through the real
- * verify route; the scheduled job route is then called with the registrant's
- * timeline moved back (no waiting) to reach the first and second steps; the
+ * verify route; with the registrant's timeline moved back (no waiting), the
+ * scheduled job route and the step worker reach the first and second steps; the
  * registrant unsubscribes through the link in the e-mail and the third step is
  * never queued. Every run creates its own vendor, user and Live (uuid slugs).
  */
@@ -158,9 +159,8 @@ test("a verified registrant gets the sequence's first two e-mails on time, and n
 
     expect(anchor).toBeLessThanOrEqual(Date.now());
 
-    // 4. The scheduled job (real route, synthetic JOB_SECRET) queues one e-mail
-    // per due step. Instead of waiting, the registrant's timeline is moved back:
-    // verified `offset` ago, with the run's next due time and the sequence's
+    // 4. Instead of waiting, the registrant's timeline is moved back: verified
+    // `offset` ago, with the run's next due time and the sequence's
     // activation moved along, exactly as if that much time had passed.
     const sequenceId = sequence.id;
     const runId = run.id;
@@ -172,30 +172,59 @@ test("a verified registrant gets the sequence's first two e-mails on time, and n
         data: { anchorAt: shiftedAnchor, nextRunAt: new Date(shiftedAnchor.getTime() + nextDelayMinutes * MINUTE) },
       });
     }
+    /** The real scheduled job route with the synthetic JOB_SECRET. */
     async function runJob() {
       const response = await page.request.post("/api/jobs/email-deliveries", { headers: { authorization: `Bearer ${jobSecret}` } });
       expect(response.status()).toBe(200);
-      return await response.json() as { ok: boolean; sequenceStepResults: Array<{ status: string }> };
+      return await response.json() as { ok: boolean; sequenceSkipped: boolean; sequenceStepResults: Array<{ status: string }>; sequenceDispatchResults: Array<{ status: string }> };
+    }
+    /**
+     * This browser QA server deliberately has no e-mail provider, and the
+     * worker creates no step e-mail without one (it would never be sent). The
+     * steps are therefore created by the same worker in this test process,
+     * with synthetic provider settings that exist only here (the worker only
+     * checks that they are present and never calls the provider); the job
+     * route still does everything else: backfill, dispatch, staleness.
+     */
+    async function workerWithSyntheticProvider() {
+      const saved = { key: process.env.RESEND_API_KEY, from: process.env.EMAIL_FROM };
+      process.env.RESEND_API_KEY = "re_synthetic_e2e_only";
+      process.env.EMAIL_FROM = "CelebrateDeal <no-reply@example.test>";
+      try {
+        return await processDueDelayedStepRuns({ vendorId: fixture!.vendor.id });
+      } finally {
+        if (saved.key === undefined) delete process.env.RESEND_API_KEY; else process.env.RESEND_API_KEY = saved.key;
+        if (saved.from === undefined) delete process.env.EMAIL_FROM; else process.env.EMAIL_FROM = saved.from;
+      }
     }
     const sequenceMails = () => db.emailDelivery.findMany({ where: { vendorId: fixture!.vendor.id, trigger: "sequence_email" }, orderBy: { createdAt: "asc" } });
-    await elapse(59 * MINUTE, 60);
-    await runJob();
-    await expect(sequenceMails()).resolves.toHaveLength(0);
+
+    // Due, but the server has no provider: the job creates nothing and the run is untouched.
     await elapse(61 * MINUTE, 60);
-    expect((await runJob()).sequenceStepResults).toContainEqual({ status: "queued" });
+    const withoutProvider = await runJob();
+    expect(withoutProvider.sequenceSkipped).toBe(false);
+    expect(withoutProvider.sequenceStepResults).toEqual([]);
+    await expect(sequenceMails()).resolves.toHaveLength(0);
+    await expect(db.delayedStepRun.findUniqueOrThrow({ where: { id: runId } })).resolves.toMatchObject({ cursorDelayMinutes: -1, attemptCount: 0, status: "active" });
+
+    // Not yet due: nothing. Due: step 1 is created.
+    await elapse(59 * MINUTE, 60);
+    await expect(workerWithSyntheticProvider()).resolves.toEqual([]);
+    await elapse(61 * MINUTE, 60);
+    await expect(workerWithSyntheticProvider()).resolves.toEqual([{ runId, status: "queued" }]);
     await expect(db.delayedStepRun.findUniqueOrThrow({ where: { id: runId } })).resolves.toMatchObject({ cursorDelayMinutes: 60, status: "active" });
+    // The job's sequence pass tries to send it; without a provider the attempt fails and waits for a retry.
+    await runJob();
     const [first] = await sequenceMails();
-    // This browser QA server has no e-mail provider, so the job's send attempt
-    // failed and the first e-mail is still waiting for a retry: the next step
-    // waits too (one step in the queue per person).
     expect(first).toMatchObject({ status: "failed", lastErrorCode: "configuration" });
+    // One step in the queue per person: step 2 waits while step 1 waits for its retry.
     await elapse(24 * 60 * MINUTE + MINUTE, 1_440);
-    expect((await runJob()).sequenceStepResults).toContainEqual({ status: "waiting_previous" });
+    await expect(workerWithSyntheticProvider()).resolves.toEqual([{ runId, status: "waiting_previous" }]);
     await expect(sequenceMails()).resolves.toHaveLength(1);
-    // Stand in for the provider accepting the first e-mail, then the next round sends step 2.
+    // Stand in for the provider accepting step 1; the next round creates step 2.
     await db.emailDelivery.update({ where: { id: first!.id }, data: { status: "sent", sentAt: new Date(), nextAttemptAt: null } });
     await elapse(24 * 60 * MINUTE + MINUTE, 1_440);
-    expect((await runJob()).sequenceStepResults).toContainEqual({ status: "queued" });
+    await expect(workerWithSyntheticProvider()).resolves.toEqual([{ runId, status: "queued" }]);
     await expect(db.delayedStepRun.findUniqueOrThrow({ where: { id: runId } })).resolves.toMatchObject({ cursorDelayMinutes: 1_440, status: "active" });
     const deliveries = await db.emailDelivery.findMany({
       where: { vendorId: fixture.vendor.id, trigger: "sequence_email" },
@@ -217,6 +246,7 @@ test("a verified registrant gets the sequence's first two e-mails on time, and n
     await expect(db.delayedStepRun.findUniqueOrThrow({ where: { id: run.id } })).resolves.toMatchObject({ status: "cancelled", cancelReason: "unsubscribed", nextRunAt: null });
     await elapse(3 * 24 * 60 * MINUTE + MINUTE, 4_320);
     await runJob();
+    await expect(workerWithSyntheticProvider()).resolves.toEqual([]);
     await expect(db.delayedStepRun.findUniqueOrThrow({ where: { id: runId } })).resolves.toMatchObject({ status: "cancelled", cursorDelayMinutes: 1_440 });
     await expect(db.emailDelivery.count({ where: { vendorId: fixture.vendor.id, trigger: "sequence_email" } })).resolves.toBe(2);
   } finally {
