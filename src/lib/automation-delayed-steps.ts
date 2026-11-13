@@ -15,8 +15,10 @@ import {
   DELAYED_STEP_STALE_AFTER_MS,
   LeaseLostError,
   leaseWhere,
+  processDueDelayedStepRuns,
   reportDelayedStepFailure,
   utcTimestamp,
+  type AutomationRunProcessor,
   type DelayedStepResult,
   type Lease,
 } from "@/lib/delayed-step-runs";
@@ -152,7 +154,9 @@ export async function processClaimedAutomationRun(
     where: { id: lease.id, vendorId: lease.vendorId, status: "active", automationRuleId: { not: null } },
     select: { id: true, anchorAt: true, automationRuleId: true, formSubmissionId: true, consultationBookingId: true, subjectKeyHash: true },
   });
-  if (!run?.automationRuleId || !run.subjectKeyHash) return { runId: lease.id, status: "claimed_elsewhere" };
+  if (!run?.automationRuleId) return { runId: lease.id, status: "claimed_elsewhere" };
+  // The CHECK guarantees the customer key; without it no tag could be written.
+  if (!run.subjectKeyHash) return cancelLeasedRun(db, lease, "subject_gone");
   const rule = await db.automationRule.findFirst({
     where: { id: run.automationRuleId, vendorId: lease.vendorId },
     select: {
@@ -334,6 +338,27 @@ export async function rescheduleActiveRunsForAutomationRule(
       AND r."automationRuleId" = ${input.ruleId}
       AND r."status" = 'active'
   `;
+}
+
+/** The automation half of the shared worker. */
+export const AUTOMATION_RUN_PROCESSOR: AutomationRunProcessor = {
+  processClaimed: processClaimedAutomationRun,
+  skipStale: skipStaleAutomationSteps,
+};
+
+/**
+ * The job's delayed-step worker: processDueDelayedStepRuns with the
+ * automation processor, so e-mail sequence runs and automation runs share one
+ * round, one lease rule and one e-mail capacity. The processor is passed in
+ * (not imported by delayed-step-runs.ts) because this module reaches
+ * email-delivery.ts through the automation engine, and email-delivery.ts
+ * imports delayed-step-runs.ts.
+ */
+export function runDelayedStepWorker(
+  options: Omit<NonNullable<Parameters<typeof processDueDelayedStepRuns>[0]>, "automation"> = {},
+  db: Database = getDb(),
+) {
+  return processDueDelayedStepRuns({ ...options, automation: AUTOMATION_RUN_PROCESSOR }, db);
 }
 
 // ---------------------------------------------------------------------------

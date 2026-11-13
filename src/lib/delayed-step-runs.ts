@@ -18,7 +18,6 @@ import { isTransactionalEmailConfigured } from "@/lib/email";
 import { captureOperationalError } from "@/lib/monitoring";
 import { isFeatureEnabled } from "@/lib/vendor-feature-toggles";
 import { AUTOMATION_STEP_EMAIL_TRIGGER, DELAYED_STEP_EMAIL_TRIGGERS, SEQUENCE_EMAIL_TRIGGER } from "@/lib/automation-email-trigger";
-import { processClaimedAutomationRun, skipStaleAutomationSteps } from "@/lib/automation-delayed-steps";
 
 /**
  * Shared delayed-step mechanism (docs/product/delayed-steps-design.md §3).
@@ -1012,6 +1011,13 @@ export async function processDueDelayedStepRuns(
     /** Source of the random starting vendor (tests pass a reproducible one). */
     random?: () => number;
     onConfigurationError?: ConfigurationReporter;
+    /**
+     * F-4 automation runs. Injected (runDelayedStepWorker in
+     * automation-delayed-steps.ts passes it) because the automation engine
+     * reaches email-delivery.ts, which imports this module. Without it only
+     * sequence runs are selected.
+     */
+    automation?: AutomationRunProcessor;
   } = {},
   db: Database = getDb(),
 ): Promise<DelayedStepResult[]> {
@@ -1029,8 +1035,10 @@ export async function processDueDelayedStepRuns(
   await skipStaleSteps(db, now, options.vendorId, pastDeadline);
   if (pastDeadline()) return [];
   // F-4: the same bulk skip for automation runs (rules locked FOR SHARE).
-  await skipStaleAutomationSteps(db, now, options.vendorId, pastDeadline, MAX_STALE_SKIP_PASSES);
-  if (pastDeadline()) return [];
+  if (options.automation) {
+    await options.automation.skipStale(db, now, options.vendorId, pastDeadline, MAX_STALE_SKIP_PASSES);
+    if (pastDeadline()) return [];
+  }
   const pending = await countPendingSequenceEmails(db, options.vendorId);
   const emailCapacity = Math.max(0, budget.emails - pending);
   const leaseCutoff = new Date(now.getTime() - DELAYED_STEP_LEASE_MS);
@@ -1044,8 +1052,9 @@ export async function processDueDelayedStepRuns(
         OR: [
           // F-3 sequences: only vendors holding the email_sequences grant.
           { emailSequenceId: { not: null }, vendor: { is: { suspendedAt: null, betaFeatureGrants: { has: EMAIL_SEQUENCES_FEATURE } } } },
-          // F-4 automation rules are not a beta module: any non-suspended vendor.
-          { automationRuleId: { not: null }, vendor: { is: { suspendedAt: null } } },
+          // F-4 automation rules are not a beta module: any non-suspended
+          // vendor, and only when the caller brings the automation processor.
+          ...(options.automation ? [{ automationRuleId: { not: null }, vendor: { is: { suspendedAt: null } } }] : []),
         ],
       },
     ],
@@ -1076,7 +1085,7 @@ export async function processDueDelayedStepRuns(
       let vendorEmails = 0;
       for (const candidate of candidates) {
         if (emails >= emailCapacity || vendorEmails >= share || pastDeadline()) break;
-        const result = await processCandidate(db, candidate, now, reportConfiguration, emailCapacity - emails);
+        const result = await processCandidate(db, candidate, now, reportConfiguration, emailCapacity - emails, options.automation);
         if (result === CONFIGURATION_FAILED) {
           // A deployment problem showed up mid-round: the lease was given back
           // without using an attempt and the problem was reported; stop.
@@ -1096,12 +1105,21 @@ export async function processDueDelayedStepRuns(
 
 const CONFIGURATION_FAILED = Symbol("configuration_failed");
 
+/** The automation half of the worker (implemented in automation-delayed-steps.ts). */
+export type AutomationRunProcessor = {
+  /** One leased automation run; `emailRoom` is what the round may still create. */
+  processClaimed: (db: Database, lease: Lease, now: Date, emailRoom: number) => Promise<DelayedStepResult>;
+  /** Bulk skip of steps more than 24 hours late, before any claim. */
+  skipStale: (db: Database, now: Date, vendorId: string | undefined, pastDeadline: () => boolean, maxPasses: number) => Promise<number>;
+};
+
 async function processCandidate(
   db: Database,
   candidate: { id: string; vendorId: string; updatedAt: Date; cursorDelayMinutes: number; attemptCount: number; automationRuleId: string | null },
   now: Date,
   reportConfiguration: ConfigurationReporter,
   emailRoom: number,
+  automation: AutomationRunProcessor | undefined,
 ): Promise<DelayedStepResult | typeof CONFIGURATION_FAILED> {
   let lease: Lease | null = null;
   try {
@@ -1135,9 +1153,12 @@ async function processCandidate(
       attemptCount: candidate.attemptCount + 1,
       cursorDelayMinutes: candidate.cursorDelayMinutes,
     };
-    return candidate.automationRuleId
-      ? await processClaimedAutomationRun(db, lease, now, emailRoom)
-      : await processClaimedRun(db, lease, now);
+    if (candidate.automationRuleId) {
+      // Not selected without a processor (dueWhere); kept as a guard.
+      if (!automation) return { runId: candidate.id, status: "claimed_elsewhere" };
+      return await automation.processClaimed(db, lease, now, emailRoom);
+    }
+    return await processClaimedRun(db, lease, now);
   } catch (error) {
     // m2: a key or URL error is only the platform's when the deployment probe
     // fails again now; otherwise it is this run's own failure and counts.

@@ -191,7 +191,7 @@
 9. **收件人**：報名尚未完成 Email 驗證時，延遲步驟不寄 Email（記為 `recipient_not_linked`），其他動作照做；立即動作的行為不變。`consultation_booked` 的預約被商家取消後停止（`subject_gone`）。退訂不停止自動化 run（只略過之後的 Email），所以自動化 run 不存 `recipientHash`。
 10. **條件**：沿用現有 condition schema，不新增語法。三個可用 trigger 的事件沒有金額或觀看秒數，所以目前延遲步驟只會用到「事件發生時」；「到現在還沒買」等條件與 `payment_paid` 一起在下一個 PR。
 11. **後台**：每條規則下方列出延遲步驟（新增、修改、刪除；單位只有小時與天），顯示進行中／完成／停止人數；執行日誌標出延遲步驟。沒有改成可編輯規則的立即動作（原本就只能在建立時設定），也沒有做視覺化編輯器。
-12. **模組循環**：worker（`delayed-step-runs.ts`）要用自動化引擎，而引擎經由 `email-delivery-immediate` 又會載入 `email-delivery.ts`，它再 import `delayed-step-runs.ts`，形成循環。`email-delivery.ts` 在模組載入時需要的 trigger 常數因此移到不依賴任何模組的 `automation-email-trigger.ts`（`delayed-step-runs.ts` 照舊 re-export `SEQUENCE_EMAIL_TRIGGER`），循環中的其他模組在載入時只定義函式。曾試過動態 import，但 Playwright 測試程序裡動態載入的模組解析不到 `@/` 路徑別名，所以改回靜態 import。
+12. **模組循環**：自動化引擎經由 `email-delivery-immediate` 會載入 `email-delivery.ts`，而它 import `delayed-step-runs.ts`，所以 `delayed-step-runs.ts` 不能 import 自動化的程式（`scripts/architecture-boundaries.test.ts` 禁止 src 內的執行期循環；動態 import 在 Playwright 測試程序裡又解析不到 `@/` 別名）。做法是注入：`processDueDelayedStepRuns` 多一個 `automation` 參數，沒有傳時只撈序列 run；`automation-delayed-steps.ts` 的 `runDelayedStepWorker` 帶著自動化處理器呼叫它，job route 改用 `runDelayedStepWorker`，序列與自動化在同一輪、同一個額度。`email-delivery.ts` 在載入時需要的 trigger 常數放在不依賴任何模組的 `automation-email-trigger.ts`（`delayed-step-runs.ts` 照舊 re-export `SEQUENCE_EMAIL_TRIGGER`）。
 13. **未做**：寄信服務未設定時整個 worker 不跑（沿用 F-3 的探測），只有 LINE／標籤的延遲步驟也會等；同一人前一封延遲步驟信還在佇列時，下一步不等（序列的 `waiting_previous` 沒有套用，因為自動化信的冪等鍵不含 run id）。
 
 ### 一併要修的既有缺口

@@ -19,8 +19,8 @@ import {
   EMAIL_SEQUENCE_DEADLINE_MS,
   EMAIL_SEQUENCE_START_CUTOFF_MS,
   onceConfigurationReporter,
-  processDueDelayedStepRuns,
 } from "@/lib/delayed-step-runs";
+import { runDelayedStepWorker } from "@/lib/automation-delayed-steps";
 
 const SAFE_STATUSES = new Set([
   "sent",
@@ -161,7 +161,8 @@ async function processEmailSequences(startedAt: number) {
     await reportSequenceFailure(error, "email_sequence_backfill");
   }
   try {
-    steps = await processDueDelayedStepRuns({ deadline, onConfigurationError });
+    // Sequence and automation runs (F-4) in one worker round.
+    steps = await runDelayedStepWorker({ deadline, onConfigurationError });
   } catch (error) {
     await reportSequenceFailure(error, "delayed_step_runs");
   }

@@ -25,6 +25,9 @@ vi.mock("@/lib/delayed-step-runs", () => ({
   EMAIL_SEQUENCE_DEADLINE_MS: 100_000,
   onceConfigurationReporter: () => mocks.onConfigurationError,
 }));
+// F-4: the route runs the worker with the automation processor; the same mock
+// stands for the worker round.
+vi.mock("@/lib/automation-delayed-steps", () => ({ runDelayedStepWorker: mocks.processDueDelayedStepRuns }));
 vi.mock("@/lib/live-fixed-sessions-store", () => ({ releaseExpiredFixedSessionSeats: mocks.releaseExpiredFixedSessionSeats }));
 vi.mock("@/lib/live-fixed-session-notices", () => ({ queueFixedSessionCancellationNotices: mocks.queueFixedSessionCancellationNotices }));
 vi.mock("@/lib/db", () => ({ getDb: () => ({}) }));

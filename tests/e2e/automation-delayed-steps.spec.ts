@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { expect, test, type Page } from "@playwright/test";
 import { PrismaClient } from "@prisma/client";
-import { processDueDelayedStepRuns } from "../../src/lib/delayed-step-runs";
+import { runDelayedStepWorker } from "../../src/lib/automation-delayed-steps";
 import { revealEmailDeliveryPayload } from "../../src/lib/email-delivery-pii";
 import { createFormSubmissionVerificationToken } from "../../src/lib/form-submission-verification";
 import { hashPassword } from "../../src/lib/password";
@@ -183,7 +183,7 @@ test("a registration gets the rule's 2-hour step from the worker, after the owne
       process.env.RESEND_API_KEY = "re_synthetic_e2e_only";
       process.env.EMAIL_FROM = "CelebrateDeal <no-reply@example.test>";
       try {
-        return await processDueDelayedStepRuns({ vendorId: fixture!.vendor.id });
+        return await runDelayedStepWorker({ vendorId: fixture!.vendor.id });
       } finally {
         if (saved.key === undefined) delete process.env.RESEND_API_KEY; else process.env.RESEND_API_KEY = saved.key;
         if (saved.from === undefined) delete process.env.EMAIL_FROM; else process.env.EMAIL_FROM = saved.from;

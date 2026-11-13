@@ -38,8 +38,10 @@ import {
   createAutomationRuleStep,
   deleteAutomationRuleStep,
   MAX_AUTOMATION_RULE_STEPS,
+  runDelayedStepWorker as processDueDelayedStepRuns,
   updateAutomationRuleStep,
 } from "@/lib/automation-delayed-steps";
+import { processDueDelayedStepRuns as sequenceOnlyWorker } from "@/lib/delayed-step-runs";
 import { AUTOMATION_STEP_EMAIL_TRIGGER } from "@/lib/automation-email-trigger";
 import {
   automationCustomerKeyHash,
@@ -53,7 +55,6 @@ import {
   DELAYED_STEP_MAX_ATTEMPTS,
   DELAYED_STEP_STALE_AFTER_MS,
   isCurrentAutomationStepEmailDelivery,
-  processDueDelayedStepRuns,
   SEQUENCE_EMAIL_DISPATCH_LIMIT,
   SEQUENCE_EMAIL_SEND_STALE_MS,
 } from "@/lib/delayed-step-runs";
@@ -361,6 +362,16 @@ describe("worker：到點執行", () => {
     await expect(db.delayedStepRun.findUniqueOrThrow({ where: { id: run.id } })).resolves.toMatchObject({ status: "completed", cursorDelayMinutes: 1_440, nextRunAt: null });
     await expect(db.automationExecutionLog.count({ where: { id: automationStepExecutionLogId(t.vendor.id, run.id, second.id) } })).resolves.toBe(1);
     await expect(work(t, after(run.anchorAt, 3 * DAY))).resolves.toEqual([]);
+  });
+
+  it("leaves automation runs alone in a worker round without the automation processor", async () => {
+    const t = await tenant();
+    const r = await rule(t);
+    await step(t, r.id, 60);
+    await registered(t, await registration(t));
+    const run = await onlyRun(t);
+    await expect(sequenceOnlyWorker({ now: after(run.anchorAt, 2 * DAY), vendorId: t.vendor.id })).resolves.toEqual([]);
+    await expect(db.delayedStepRun.findUniqueOrThrow({ where: { id: run.id } })).resolves.toMatchObject({ status: "active", cursorDelayMinutes: -1, attemptCount: 0, claimedAt: null });
   });
 
   it("runs at most one step per round and skips a step more than 24 hours late without running it", async () => {
