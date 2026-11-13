@@ -2,7 +2,7 @@
 
 這些項目留給 Fable 5.2 處理，原因是 Opus 或 Sonnet 試過仍失敗，或判斷錯誤的代價高（跨多個模組、影響資料模型或金流設計）。每項從列出的分支或 commit 接續，達到完成標準後依一般流程合併：測試、必要的獨立審查、CI、merge queue。完成後在該項標題後加上「（已完成，PR 連結）」。
 
-最後更新：2026-11-12。
+最後更新：2026-11-13。F-2、F-5 與 F-3 的第一個 PR 已完成；F-4 等 owner 確認範圍。
 
 ---
 
@@ -55,7 +55,9 @@ CI 帶出 `color-contrast` 規則後，Opus 找到根因：停用按鈕恢復可
   - 設計確認後再拆成 PR。
 - **完成標準**：設計文件定案，第一個 PR 至少能讓「報名後第 N 天寄第 N 封」端到端運作，含 db test 與 e2e；migration 與寄信邏輯要經過獨立審查。
 
-## F-4：自動化規則的多步驟與延遲
+## F-4：自動化規則的多步驟與延遲（設計已完成，[#595](https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/595)；等 owner 確認範圍後才開工）
+
+**狀態**：設計寫在 `docs/product/delayed-steps-design.md` 第 8 節，與 F-3 共用 `DelayedStepRun`（F-3 已在 #598 建好這張表與 worker）。依完成標準需要 owner 確認範圍，確認項目在同一份文件第 9 節第 4 點：延遲步驟、不做視覺化編輯器、自動化信補退訂連結與黑名單檢查、接上 `payment_paid`（會碰付款流程，需要獨立審查）、隱藏另外三個沒有呼叫端的 trigger、權限統一成 owner 與 admin。開工時注意：`DelayedStepRun` 目前有 `emailSequenceId IS NOT NULL` 的 CHECK，要以 `NOT VALID` 加 `VALIDATE` 的方式換掉。以下保留開工前的紀錄。
 
 - **分支與 commit**：沒有，尚未開工。
 - **卡住的原因**：規劃矩陣 P2。目前是 7 個 trigger、4 種 action 的單層規則。要加延遲與多步驟，需要持久化的執行狀態與排程（migration），也會和 F-3 的序列設計重疊。應該和 F-3 一起決定，避免做出兩套排程。
