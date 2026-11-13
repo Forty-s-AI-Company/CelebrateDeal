@@ -15,6 +15,7 @@ import {
   materializeAutomationRecipe,
 } from "@/lib/automation-workflow";
 import { getDb } from "@/lib/db";
+import { isLockTimeout } from "@/lib/serializable-retry";
 
 // Owner and admin manage automations here, the same roles as the funnel
 // automation panel (requireVendorManagerContext) and message templates (F-4
@@ -171,7 +172,10 @@ export async function toggleAutomationRuleAction(formData: FormData) {
     where: { id: existing.id, vendorId: vendor.id, isActive: existing.isActive },
     data: { isActive: !existing.isActive },
   });
-  if (updated.count !== 1) fail("not_found");
+  if (updated.count !== 1) {
+    const stillThere = await getDb().automationRule.findFirst({ where: { id: existing.id, vendorId: vendor.id }, select: { id: true } });
+    fail(stillThere ? "toggle_conflict" : "not_found");
+  }
   const after = { ...existing, isActive: !existing.isActive };
   await writeAuditLog({ vendorId: vendor.id, actorId: user.id, actorLabel: member.role, action: after.isActive ? "activate_automation_rule" : "deactivate_automation_rule", targetType: "AutomationRule", targetId: existing.id, before: auditSnapshot(existing), after: auditSnapshot(after) });
   revalidatePath(PATH);
@@ -202,24 +206,43 @@ export async function deleteAutomationRuleAction(formData: FormData) {
   const { user, vendor, member } = await requireVendorManagerMember(PATH);
   const id = text(formData, "ruleId");
   if (!id) fail("invalid_rule");
-  const outcome = await getDb().$transaction(async (tx): Promise<DeleteOutcome> => {
-    const locked = await tx.$queryRaw<Array<{ id: string }>>`
-      SELECT "id" FROM "AutomationRule" WHERE "id" = ${id} AND "vendorId" = ${vendor.id} FOR UPDATE
-    `;
-    if (locked.length === 0) return { code: "not_found" };
-    const rule = await tx.automationRule.findFirst({
-      where: { id, vendorId: vendor.id },
-      select: { id: true, name: true, trigger: true, isActive: true, funnelPageId: true },
-    });
-    if (!rule) return { code: "not_found" };
-    if (rule.isActive) return { code: "delete_requires_inactive" };
-    const history = await tx.automationExecutionLog.count({ where: { vendorId: vendor.id, ruleId: rule.id } });
-    if (history > 0) return { code: "delete_has_history" };
-    await tx.automationRule.delete({ where: { vendorId_id: { vendorId: vendor.id, id: rule.id } } });
-    return { code: "deleted", before: rule };
-  }, DELETE_TRANSACTION_OPTIONS);
+  let outcome: DeleteOutcome;
+  try {
+    outcome = await deleteRuleIfUnused(vendor.id, id);
+  } catch (error) {
+    if (!isDeleteBusy(error)) throw error;
+    // The rule stayed locked by a running execution (or no connection was
+    // free) for too long: nothing changed, the merchant can simply retry.
+    fail("delete_busy");
+  }
   if (outcome.code !== "deleted") fail(outcome.code);
   await writeAuditLog({ vendorId: vendor.id, actorId: user.id, actorLabel: member.role, action: "delete_automation_rule", targetType: "AutomationRule", targetId: outcome.before.id, before: auditSnapshot(outcome.before) });
   revalidatePath(PATH);
   redirect(`${PATH}?updated=deleted`);
+}
+
+/** lock_timeout (55P03) on the rule row, or the transaction could not start or finish in time (P2028). */
+function isDeleteBusy(error: unknown) {
+  return isLockTimeout(error) || (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2028");
+}
+
+function deleteRuleIfUnused(vendorId: string, id: string) {
+  return getDb().$transaction(async (tx): Promise<DeleteOutcome> => {
+    // Waiting for a running execution is bounded well inside the transaction timeout.
+    await tx.$executeRaw`SET LOCAL lock_timeout = '5s'`;
+    const locked = await tx.$queryRaw<Array<{ id: string }>>`
+      SELECT "id" FROM "AutomationRule" WHERE "id" = ${id} AND "vendorId" = ${vendorId} FOR UPDATE
+    `;
+    if (locked.length === 0) return { code: "not_found" };
+    const rule = await tx.automationRule.findFirst({
+      where: { id, vendorId },
+      select: { id: true, name: true, trigger: true, isActive: true, funnelPageId: true },
+    });
+    if (!rule) return { code: "not_found" };
+    if (rule.isActive) return { code: "delete_requires_inactive" };
+    const history = await tx.automationExecutionLog.count({ where: { vendorId, ruleId: rule.id } });
+    if (history > 0) return { code: "delete_has_history" };
+    await tx.automationRule.delete({ where: { vendorId_id: { vendorId, id: rule.id } } });
+    return { code: "deleted", before: rule };
+  }, DELETE_TRANSACTION_OPTIONS);
 }

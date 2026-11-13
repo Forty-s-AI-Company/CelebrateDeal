@@ -209,6 +209,9 @@ describe("deleting a rule while it runs (review M1)", () => {
     return value;
   };
 
+  // Each case holds a row lock from one connection while another waits. The
+  // finally blocks release the lock and settle the other side even when an
+  // assertion fails, so a failure never leaves a lock behind for later tests.
   it("waits for an execution log still being written and then keeps the rule and its log", async () => {
     const a = await tenant();
     await db.automationRule.update({ where: { id: a.rule.id }, data: { isActive: false } });
@@ -223,17 +226,20 @@ describe("deleting a rule while it runs (review M1)", () => {
       });
       written();
       await gate;
-    }, { timeout: 30_000 });
-    await logWritten;
-
-    const deletion = deleteAutomationRuleAction(form({ ruleId: a.rule.id })).catch((error: Error) => error.message);
-    await waitForLockWait("AutomationRule\"");
-    release();
-    await writer;
+    }, { timeout: 15_000 });
+    let deletion: Promise<unknown> | undefined;
+    try {
+      await logWritten;
+      deletion = deleteAutomationRuleAction(form({ ruleId: a.rule.id })).catch((error: Error) => error.message);
+      await waitForLockWait("AutomationRule\"");
+    } finally {
+      release();
+      await writer.catch(() => {});
+    }
     expect(await deletion).toBe("redirect:/settings/automations?error=delete_has_history");
     expect(await db.automationRule.count({ where: { id: a.rule.id } })).toBe(1);
     expect(await db.automationExecutionLog.count({ where: { ruleId: a.rule.id } })).toBe(1);
-  });
+  }, 20_000);
 
   it("lets an execution that starts during the delete skip the deleted rule and run the event's other rules", async () => {
     const a = await tenant();
@@ -250,15 +256,18 @@ describe("deleting a rule while it runs (review M1)", () => {
       await tx.automationRule.delete({ where: { vendorId_id: { vendorId: a.vendor.id, id: a.rule.id } } });
       locked();
       await gate;
-    }, { timeout: 30_000 });
-    await deleteLocked;
-
-    // The engine still sees the rule (the delete is not committed) and its
-    // log insert waits on the locked rule row.
-    const dispatched = booked(a.vendor.id, "lead@example.test");
-    await waitForLockWait("AutomationExecutionLog");
-    release();
-    await deleter;
+    }, { timeout: 15_000 });
+    let dispatched: ReturnType<typeof booked> | undefined;
+    try {
+      await deleteLocked;
+      // The engine still sees the rule (the delete is not committed) and its
+      // log insert waits on the locked rule row.
+      dispatched = booked(a.vendor.id, "lead@example.test");
+      await waitForLockWait("AutomationExecutionLog");
+    } finally {
+      release();
+      await deleter.catch(() => {});
+    }
     await expect(dispatched).resolves.toEqual([
       { ruleId: a.rule.id, status: "rule_deleted" },
       { ruleId: next.id, status: "completed" },
@@ -266,7 +275,38 @@ describe("deleting a rule while it runs (review M1)", () => {
     expect(await db.automationRule.count({ where: { id: a.rule.id } })).toBe(0);
     expect(await db.customerTagAssignment.findMany({ where: { vendorId: a.vendor.id }, select: { tag: true } })).toEqual([{ tag: "第二條" }]);
     expect(await db.emailDelivery.count({ where: { vendorId: a.vendor.id } })).toBe(0);
-  });
+  }, 20_000);
+
+  it("gives up after the lock timeout while the rule stays locked and answers delete_busy", async () => {
+    const a = await tenant();
+    await db.automationRule.update({ where: { id: a.rule.id }, data: { isActive: false } });
+    runtime.actor = { user: { id: "synthetic-user" }, vendor: { id: a.vendor.id }, member: { role: "owner" } };
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    let locked!: () => void;
+    const rowLocked = new Promise<void>((resolve) => { locked = resolve; });
+    // Stands in for a long-running execution holding the rule row.
+    const holder = db.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT "id" FROM "AutomationRule" WHERE "id" = ${a.rule.id} FOR UPDATE`;
+      locked();
+      await gate;
+    }, { timeout: 15_000 });
+    let outcome: unknown;
+    const started = Date.now();
+    try {
+      await rowLocked;
+      outcome = await deleteAutomationRuleAction(form({ ruleId: a.rule.id })).catch((error: Error) => error.message);
+    } finally {
+      release();
+      await holder.catch(() => {});
+    }
+    expect(outcome).toBe("redirect:/settings/automations?error=delete_busy");
+    // lock_timeout is 5 s, well before the 15 s transaction timeout.
+    expect(Date.now() - started).toBeGreaterThanOrEqual(4_500);
+    expect(Date.now() - started).toBeLessThan(12_000);
+    expect(await db.automationRule.count({ where: { id: a.rule.id } })).toBe(1);
+    expect(await db.auditLog.count({ where: { vendorId: a.vendor.id, action: "delete_automation_rule" } })).toBe(0);
+  }, 20_000);
 });
 
 describe("hidden automation triggers on stored rules (F-4 gap 2)", () => {

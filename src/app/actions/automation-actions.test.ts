@@ -1,5 +1,6 @@
+import { Prisma } from "@prisma/client";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-const runtime = vi.hoisted(() => ({ db: { product: { findFirst: vi.fn() }, automationRule: { create: vi.fn(), findFirst: vi.fn(), updateMany: vi.fn(), delete: vi.fn() }, automationExecutionLog: { count: vi.fn() }, $queryRaw: vi.fn(), $transaction: vi.fn() }, auth: { vendor: { id: "v1" }, user: { id: "u1" }, member: { role: "admin" } }, security: vi.fn(), manager: vi.fn(), audit: vi.fn(), revalidate: vi.fn(), redirect: vi.fn((path: string): never => { throw new Error(`redirect:${path}`); }) }));
+const runtime = vi.hoisted(() => ({ db: { product: { findFirst: vi.fn() }, automationRule: { create: vi.fn(), findFirst: vi.fn(), updateMany: vi.fn(), delete: vi.fn() }, automationExecutionLog: { count: vi.fn() }, $queryRaw: vi.fn(), $executeRaw: vi.fn(), $transaction: vi.fn() }, auth: { vendor: { id: "v1" }, user: { id: "u1" }, member: { role: "admin" } }, security: vi.fn(), manager: vi.fn(), audit: vi.fn(), revalidate: vi.fn(), redirect: vi.fn((path: string): never => { throw new Error(`redirect:${path}`); }) }));
 vi.mock("next/cache", () => ({ revalidatePath: runtime.revalidate })); vi.mock("next/navigation", () => ({ redirect: runtime.redirect })); vi.mock("@/lib/csrf", () => ({ assertServerActionSecurity: runtime.security })); vi.mock("@/lib/auth", () => ({ requireVendorManagerMember: runtime.manager })); vi.mock("@/lib/db", () => ({ getDb: () => runtime.db })); vi.mock("@/lib/audit", () => ({ auditSnapshot: (v: unknown) => v, writeAuditLog: runtime.audit }));
 import { createAutomationRecipeAction, createAutomationRuleAction, deleteAutomationRuleAction, dryRunAutomationRuleAction, toggleAutomationRuleAction } from "./automation-actions";
 function form(trigger = "form_registered") { const f = new FormData(); f.set("name", "報名追蹤"); f.set("trigger", trigger); f.set("actionLine", "on"); f.set("lineMessage", "謝謝報名"); return f; }
@@ -107,8 +108,17 @@ describe("automation actions", () => { it("requires CSRF and writes tenant-scope
     expect(runtime.db.automationRule.updateMany).not.toHaveBeenCalled();
   });
 
-  it("reports a rule deleted or switched between the read and the update", async () => {
+  it("reports a rule switched by someone else between the read and the update as a conflict", async () => {
     runtime.db.automationRule.updateMany.mockResolvedValueOnce({ count: 0 });
+    runtime.db.automationRule.findFirst.mockResolvedValueOnce({ id: "r1", isActive: true, trigger: "form_registered" }).mockResolvedValueOnce({ id: "r1" });
+    await expect(toggleAutomationRuleAction(ruleForm())).rejects.toThrow("redirect:/settings/automations?error=toggle_conflict");
+    expect(runtime.db.automationRule.findFirst).toHaveBeenLastCalledWith({ where: { id: "r1", vendorId: "v1" }, select: { id: true } });
+    expect(runtime.audit).not.toHaveBeenCalled();
+  });
+
+  it("reports a rule deleted between the read and the update as not found", async () => {
+    runtime.db.automationRule.updateMany.mockResolvedValueOnce({ count: 0 });
+    runtime.db.automationRule.findFirst.mockResolvedValueOnce({ id: "r1", isActive: true, trigger: "form_registered" }).mockResolvedValueOnce(null);
     await expect(toggleAutomationRuleAction(ruleForm())).rejects.toThrow("redirect:/settings/automations?error=not_found");
     expect(runtime.audit).not.toHaveBeenCalled();
   });
@@ -117,6 +127,10 @@ describe("automation actions", () => { it("requires CSRF and writes tenant-scope
     runtime.db.automationRule.findFirst.mockResolvedValue({ id: "r1", name: "舊規則", trigger: "form_no_show", isActive: false, funnelPageId: null });
     await expect(deleteAutomationRuleAction(ruleForm())).rejects.toThrow("redirect:/settings/automations?updated=deleted");
     expect(runtime.db.$transaction).toHaveBeenCalledWith(expect.any(Function), expect.objectContaining({ timeout: expect.any(Number) }));
+    // The lock wait is bounded before the rule row is locked.
+    const [setLocal] = runtime.db.$executeRaw.mock.calls[0] as [TemplateStringsArray];
+    expect(setLocal.join("?")).toBe("SET LOCAL lock_timeout = '5s'");
+    expect(runtime.db.$executeRaw.mock.invocationCallOrder[0]).toBeLessThan(runtime.db.$queryRaw.mock.invocationCallOrder[0]!);
     const [sql, ...values] = runtime.db.$queryRaw.mock.calls[0] as [TemplateStringsArray, ...unknown[]];
     expect(sql.join("?")).toMatch(/FROM "AutomationRule" WHERE "id" = \? AND "vendorId" = \? FOR UPDATE/u);
     expect(values).toEqual(["r1", "v1"]);
@@ -139,6 +153,20 @@ describe("automation actions", () => { it("requires CSRF and writes tenant-scope
     expect(runtime.audit).not.toHaveBeenCalled();
   });
 
+  it.each([
+    ["a lock timeout (55P03)", () => new Prisma.PrismaClientKnownRequestError("canceling statement due to lock timeout", { code: "P2010", clientVersion: Prisma.prismaVersion.client, meta: { code: "55P03" } })],
+    ["a transaction timeout (P2028)", () => new Prisma.PrismaClientKnownRequestError("Transaction API error", { code: "P2028", clientVersion: Prisma.prismaVersion.client })],
+  ])("answers delete_busy after %s and changes nothing", async (_label, error) => {
+    runtime.db.$transaction.mockRejectedValueOnce(error());
+    await expect(deleteAutomationRuleAction(ruleForm())).rejects.toThrow("redirect:/settings/automations?error=delete_busy");
+    expect(runtime.audit).not.toHaveBeenCalled();
+  });
+
+  it("still surfaces any other delete failure", async () => {
+    runtime.db.$transaction.mockRejectedValueOnce(new Error("connection lost"));
+    await expect(deleteAutomationRuleAction(ruleForm())).rejects.toThrow("connection lost");
+  });
+
   it("reports another vendor's (or an already deleted) rule as not found", async () => {
     runtime.db.$queryRaw.mockResolvedValue([]);
     await expect(deleteAutomationRuleAction(ruleForm("foreign"))).rejects.toThrow("redirect:/settings/automations?error=not_found");
@@ -156,7 +184,7 @@ describe("automation actions", () => { it("requires CSRF and writes tenant-scope
     runtime.manager.mockRejectedValueOnce(new Error("redirect:/dashboard?error=insufficient_role"));
     await expect(run()).rejects.toThrow("redirect:/dashboard?error=insufficient_role");
     expect(runtime.security).toHaveBeenCalled();
-    for (const method of [...Object.values(runtime.db.automationRule), runtime.db.$transaction, runtime.db.$queryRaw]) expect(method).not.toHaveBeenCalled();
+    for (const method of [...Object.values(runtime.db.automationRule), runtime.db.$transaction, runtime.db.$queryRaw, runtime.db.$executeRaw]) expect(method).not.toHaveBeenCalled();
     expect(runtime.db.product.findFirst).not.toHaveBeenCalled();
   });
 });

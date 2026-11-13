@@ -23,6 +23,8 @@ const ERROR_MESSAGES: Record<string, string> = {
   delete_requires_inactive: "請先停用規則，再刪除。",
   delete_has_history: "這條規則已有執行紀錄，為保留紀錄與已發出的標籤、折價券，只能停用、不能刪除。",
   not_found: "找不到這條規則，或你沒有管理權限。",
+  toggle_conflict: "規則剛被其他人變更，請重新整理後再試。",
+  delete_busy: "規則正在執行，請稍後再試。",
 };
 const UNAVAILABLE_TRIGGER_NOTE = "此觸發條件目前不會執行：系統尚未接上這個事件，規則不會被觸發。可以停用或刪除，但不能重新啟用。";
 

@@ -571,6 +571,12 @@ async function executeAction(
  *
  * Every email queued across all matched rules is handed to one post-response
  * hook, bounded by its shared per-call cap; the job sends anything beyond it.
+ *
+ * `db` must be the regular client, never an interactive transaction client.
+ * A rule deleted mid-event is recovered from a caught foreign-key error (P2003)
+ * or missing row (P2025) by issuing further queries; inside a PostgreSQL
+ * transaction the failed statement would abort it and those queries would
+ * fail too. Every caller today passes getDb().
  */
 export async function dispatchAutomationEvent(db: AutomationDb, event: AutomationEvent) {
   const queuedEmailIds: string[] = [];

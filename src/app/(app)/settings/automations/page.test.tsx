@@ -59,6 +59,8 @@ describe("AutomationSettingsPage", () => {
     ["error", "trigger_unavailable", "這個觸發條件目前不會執行，不能用來建立或啟用規則。"],
     ["error", "delete_has_history", "只能停用、不能刪除"],
     ["dryRun", "trigger_unavailable", "這條規則的觸發條件目前不會執行"],
+    ["error", "toggle_conflict", "規則剛被其他人變更，請重新整理後再試。"],
+    ["error", "delete_busy", "規則正在執行，請稍後再試。"],
   ])("explains %s=%s", async (key, value, message) => {
     expect(await render({ [key]: value })).toContain(message);
   });

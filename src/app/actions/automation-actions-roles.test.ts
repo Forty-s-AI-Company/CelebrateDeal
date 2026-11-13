@@ -14,6 +14,7 @@ const mocks = vi.hoisted(() => ({
     automationRule: { create: vi.fn(), findFirst: vi.fn(), findMany: vi.fn(), updateMany: vi.fn(), delete: vi.fn() },
     automationExecutionLog: { findMany: vi.fn(), count: vi.fn() },
     $queryRaw: vi.fn(),
+    $executeRaw: vi.fn(),
     $transaction: vi.fn(),
   },
   audit: vi.fn(),
@@ -72,7 +73,7 @@ const ACTIONS = [
 ] as const;
 
 function databaseCalls() {
-  return [...Object.values(mocks.db.automationRule), ...Object.values(mocks.db.product), ...Object.values(mocks.db.automationExecutionLog), mocks.db.$queryRaw, mocks.db.$transaction]
+  return [...Object.values(mocks.db.automationRule), ...Object.values(mocks.db.product), ...Object.values(mocks.db.automationExecutionLog), mocks.db.$queryRaw, mocks.db.$executeRaw, mocks.db.$transaction]
     .reduce((total, method) => total + method.mock.calls.length, 0);
 }
 
