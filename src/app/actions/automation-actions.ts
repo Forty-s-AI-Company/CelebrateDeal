@@ -22,6 +22,12 @@ import {
   updateAutomationRuleStep,
   type AutomationStepInput,
 } from "@/lib/automation-delayed-steps";
+import {
+  LINE_PUSH_OWNER_ONLY,
+  mayConfigureAutomationLinePush,
+  mayWriteAutomationActions,
+  storedAutomationRuleIncludesLinePush,
+} from "@/lib/automation-line-push-policy";
 import { getDb } from "@/lib/db";
 import { requireFeature } from "@/lib/feature-gates";
 import { isLockTimeout } from "@/lib/serializable-retry";
@@ -29,7 +35,9 @@ import { isLockTimeout } from "@/lib/serializable-retry";
 // Owner and admin manage automations here, the same roles as the funnel
 // automation panel (requireVendorManagerContext) and message templates (F-4
 // gap 3). Every action resolves the vendor from the session and binds each
-// rule id to it in the final query.
+// rule id to it in the final query. The custom LINE push action is owner-only
+// (owner decision 2026-11-14, src/lib/automation-line-push-policy.ts): judged
+// on the server-parsed actions and the stored rule, before anything is written.
 const PATH = "/settings/automations";
 const text = (form: FormData, name: string) => String(form.get(name) ?? "").trim();
 const number = (form: FormData, name: string) => Number(text(form, name));
@@ -121,6 +129,7 @@ export async function createAutomationRecipeAction(formData: FormData) {
   const recipe = materializeAutomationRecipe(recipeId, productId);
   if (!recipe) fail(productId ? "invalid_recipe" : "recipe_requires_product");
   if (!isAvailableAutomationTrigger(recipe.trigger)) fail("trigger_unavailable");
+  if (!mayWriteAutomationActions(member.role, recipe.actions)) fail(LINE_PUSH_OWNER_ONLY);
   if (recipe.actions.some((action) => action.type === "issue_repurchase_voucher")) {
     const validProduct = await getDb().product.findFirst({ where: { id: productId, vendorId: vendor.id, isActive: true }, select: { id: true } });
     if (!validProduct) fail("invalid_product");
@@ -168,6 +177,7 @@ export async function createAutomationRuleAction(formData: FormData) {
   const { user, vendor, member } = await requireVendorManagerMember(PATH);
   let parsed: ReturnType<typeof parseRule>;
   try { parsed = parseRule(formData); } catch (error) { fail(error instanceof Error && (error.message === "no_action" || error.message === "invalid_button_url" || error.message === "trigger_unavailable") ? error.message : "invalid_rule"); }
+  if (!mayWriteAutomationActions(member.role, parsed.actions)) fail(LINE_PUSH_OWNER_ONLY);
   const productId = parsed.actions.find((a) => a.type === "issue_repurchase_voucher")?.productId;
   if (productId && !(await getDb().product.findFirst({ where: { id: String(productId), vendorId: vendor.id, isActive: true }, select: { id: true } }))) fail("invalid_product");
   const created = await getDb().automationRule.create({ data: { vendorId: vendor.id, name: parsed.name, trigger: parsed.trigger, condition: parsed.condition as Prisma.InputJsonValue, actions: parsed.actions as Prisma.InputJsonArray } });
@@ -187,7 +197,7 @@ export async function toggleAutomationRuleAction(formData: FormData) {
   if (!existing.isActive && !isAvailableAutomationTrigger(existing.trigger)) fail("trigger_unavailable");
   let outcome: ToggleOutcome;
   try {
-    outcome = await toggleRule(vendor.id, existing);
+    outcome = await toggleRule(vendor.id, existing, mayConfigureAutomationLinePush(member.role));
   } catch (error) {
     if (!isDeleteBusy(error)) throw error;
     fail("toggle_busy");
@@ -199,7 +209,7 @@ export async function toggleAutomationRuleAction(formData: FormData) {
   redirect(`${PATH}?updated=toggled`);
 }
 
-type ToggleOutcome = { code: "toggled"; cancelledRuns: number } | { code: "toggle_conflict" | "not_found" };
+type ToggleOutcome = { code: "toggled"; cancelledRuns: number } | { code: "toggle_conflict" | "not_found" | typeof LINE_PUSH_OWNER_ONLY };
 
 /**
  * Switches a rule on or off. The rule row is locked FOR UPDATE first (bound to
@@ -210,11 +220,20 @@ type ToggleOutcome = { code: "toggled"; cancelledRuns: number } | { code: "toggl
  * active delayed-step run of the rule in the same transaction
  * (`definition_paused`, F-4 review M1): switching it on again never revives
  * them, even before their next step was due.
+ *
+ * Switching on starts the rule's custom LINE pushes again, so without
+ * `linePushAllowed` (not the owner) a rule that has one (immediate actions or
+ * any step, read after the lock) stays off. Switching off is always allowed.
  */
-function toggleRule(vendorId: string, existing: { id: string; isActive: boolean }) {
+function toggleRule(vendorId: string, existing: { id: string; isActive: boolean }, linePushAllowed: boolean) {
   return getDb().$transaction(async (tx): Promise<ToggleOutcome> => {
     await tx.$executeRaw`SET LOCAL lock_timeout = '5s'`;
     await tx.$queryRaw`SELECT "id" FROM "AutomationRule" WHERE "id" = ${existing.id} AND "vendorId" = ${vendorId} FOR UPDATE`;
+    if (!existing.isActive && !linePushAllowed) {
+      const hasLinePush = await storedAutomationRuleIncludesLinePush(tx, { vendorId, ruleId: existing.id });
+      if (hasLinePush === null) return { code: "not_found" };
+      if (hasLinePush) return { code: LINE_PUSH_OWNER_ONLY };
+    }
     const updated = await tx.automationRule.updateMany({
       where: { id: existing.id, vendorId, isActive: existing.isActive },
       data: { isActive: !existing.isActive },
@@ -322,6 +341,7 @@ const STEP_ERROR_CODES = new Set([
   "step_busy",
   "no_action",
   "invalid_button_url",
+  LINE_PUSH_OWNER_ONLY,
 ]);
 
 function stepFail(code: string): never {
@@ -366,7 +386,10 @@ export async function createAutomationRuleStepAction(formData: FormData) {
   const ruleId = text(formData, "ruleId");
   if (!ruleId) stepFail("not_found");
   const step = parsedStepOrFail(formData);
-  const result = await createAutomationRuleStep({ vendorId: vendor.id, ruleId, step });
+  const linePushAllowed = mayConfigureAutomationLinePush(member.role);
+  // Refused before any query; the rule's own LINE push is checked under its lock.
+  if (!mayWriteAutomationActions(member.role, step.actions)) stepFail(LINE_PUSH_OWNER_ONLY);
+  const result = await createAutomationRuleStep({ vendorId: vendor.id, ruleId, step, linePushAllowed });
   if (!result.ok) stepFail(result.code);
   await writeAuditLog({ vendorId: vendor.id, actorId: user.id, actorLabel: member.role, action: "create_automation_rule_step", targetType: "AutomationRuleStep", targetId: result.id, after: auditSnapshot({ ruleId, ...result.after }) });
   revalidatePath(PATH);
@@ -381,7 +404,9 @@ export async function updateAutomationRuleStepAction(formData: FormData) {
   const stepId = text(formData, "stepId");
   if (!ruleId || !stepId) stepFail("not_found");
   const step = parsedStepOrFail(formData);
-  const result = await updateAutomationRuleStep({ vendorId: vendor.id, ruleId, stepId, step });
+  const linePushAllowed = mayConfigureAutomationLinePush(member.role);
+  if (!mayWriteAutomationActions(member.role, step.actions)) stepFail(LINE_PUSH_OWNER_ONLY);
+  const result = await updateAutomationRuleStep({ vendorId: vendor.id, ruleId, stepId, step, linePushAllowed });
   if (!result.ok) stepFail(result.code);
   await writeAuditLog({ vendorId: vendor.id, actorId: user.id, actorLabel: member.role, action: "update_automation_rule_step", targetType: "AutomationRuleStep", targetId: result.id, before: auditSnapshot({ ruleId, ...result.before }), after: auditSnapshot({ ruleId, ...result.after }) });
   revalidatePath(PATH);

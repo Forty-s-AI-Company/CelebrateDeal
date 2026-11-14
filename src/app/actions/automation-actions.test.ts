@@ -3,7 +3,11 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const runtime = vi.hoisted(() => ({ db: { product: { findFirst: vi.fn() }, automationRule: { create: vi.fn(), findFirst: vi.fn(), updateMany: vi.fn(), delete: vi.fn() }, automationExecutionLog: { count: vi.fn() }, delayedStepRun: { count: vi.fn(), updateMany: vi.fn() }, $queryRaw: vi.fn(), $executeRaw: vi.fn(), $transaction: vi.fn() }, auth: { vendor: { id: "v1" }, user: { id: "u1" }, member: { role: "admin" } }, security: vi.fn(), manager: vi.fn(), audit: vi.fn(), revalidate: vi.fn(), redirect: vi.fn((path: string): never => { throw new Error(`redirect:${path}`); }) }));
 vi.mock("next/cache", () => ({ revalidatePath: runtime.revalidate })); vi.mock("next/navigation", () => ({ redirect: runtime.redirect })); vi.mock("@/lib/csrf", () => ({ assertServerActionSecurity: runtime.security })); vi.mock("@/lib/auth", () => ({ requireVendorManagerMember: runtime.manager })); vi.mock("@/lib/db", () => ({ getDb: () => runtime.db })); vi.mock("@/lib/audit", () => ({ auditSnapshot: (v: unknown) => v, writeAuditLog: runtime.audit }));
 import { createAutomationRecipeAction, createAutomationRuleAction, deleteAutomationRuleAction, dryRunAutomationRuleAction, toggleAutomationRuleAction } from "./automation-actions";
-function form(trigger = "form_registered") { const f = new FormData(); f.set("name", "報名追蹤"); f.set("trigger", trigger); f.set("actionLine", "on"); f.set("lineMessage", "謝謝報名"); return f; }
+// The default actor is an admin, so the default rule tags the customer; a
+// LINE push is owner-only (owner decision 2026-11-14) and uses lineForm + owner.
+function form(trigger = "form_registered") { const f = new FormData(); f.set("name", "報名追蹤"); f.set("trigger", trigger); f.set("actionTag", "on"); f.set("customerTag", "已報名"); return f; }
+function lineForm(trigger = "form_registered") { const f = form(trigger); f.delete("actionTag"); f.set("actionLine", "on"); f.set("lineMessage", "謝謝報名"); return f; }
+const asOwner = () => runtime.manager.mockResolvedValue({ ...runtime.auth, member: { role: "owner" } });
 function ruleForm(id = "r1") { const f = new FormData(); f.set("ruleId", id); return f; }
 const HIDDEN_TRIGGERS = ["form_no_show", "viewer_watch_progress", "webinar_attended_duration_gte"] as const;
 beforeEach(() => { vi.clearAllMocks(); runtime.manager.mockResolvedValue(runtime.auth); runtime.db.automationRule.create.mockResolvedValue({ id: "r1", vendorId: "v1" }); runtime.db.automationRule.findFirst.mockResolvedValue({ id: "r1", isActive: true, trigger: "form_registered" }); runtime.db.automationRule.updateMany.mockResolvedValue({ count: 1 }); runtime.db.automationRule.delete.mockResolvedValue({ id: "r1" }); runtime.db.automationExecutionLog.count.mockResolvedValue(0); runtime.db.delayedStepRun.count.mockResolvedValue(0); runtime.db.delayedStepRun.updateMany.mockResolvedValue({ count: 0 }); runtime.db.$queryRaw.mockResolvedValue([{ id: "r1" }]); runtime.db.$transaction.mockImplementation(async (work: (tx: unknown) => unknown) => work(runtime.db)); });
@@ -23,7 +27,7 @@ describe("automation actions", () => { it("requires CSRF and writes tenant-scope
   it("converts fixed voucher dollars to cents and rejects a free-order percentage", async () => {
     runtime.db.product.findFirst.mockResolvedValue({ id: "p1" });
     const fixed = form();
-    fixed.delete("actionLine");
+    fixed.delete("actionTag");
     fixed.set("actionVoucher", "on");
     fixed.set("productId", "p1");
     fixed.set("discountType", "fixed");
@@ -42,7 +46,8 @@ describe("automation actions", () => { it("requires CSRF and writes tenant-scope
   });
 
   it.each(["https://brand.example@evil.example/offer", "https://user:pass@evil.example", "https://:@evil.example", "https:///evil.example", "http://evil.example", "javascript:alert(1)", "/\\evil.example"])("rejects the LINE button URL %s with a dedicated error and writes nothing", async (buttonUrl) => {
-    const f = form();
+    asOwner();
+    const f = lineForm();
     f.set("buttonLabel", "立即查看");
     f.set("buttonUrl", buttonUrl);
     await expect(createAutomationRuleAction(f)).rejects.toThrow("redirect:/settings/automations?error=invalid_button_url");
@@ -50,7 +55,8 @@ describe("automation actions", () => { it("requires CSRF and writes tenant-scope
   });
 
   it.each(["https://shop.example/offer?x=1", "{{voucher_url}}", "{{webinar_url}}"])("accepts the LINE button URL %s", async (buttonUrl) => {
-    const f = form();
+    asOwner();
+    const f = lineForm();
     f.set("buttonLabel", "立即查看");
     f.set("buttonUrl", buttonUrl);
     await expect(createAutomationRuleAction(f)).rejects.toThrow("redirect:/settings/automations?updated=created");
@@ -93,6 +99,8 @@ describe("automation actions", () => { it("requires CSRF and writes tenant-scope
   });
 
   it("creates the available built-in recipes and refuses the ones on hidden triggers", async () => {
+    // 「諮詢預約提醒與防爽約」 sends a LINE push, so the owner applies it.
+    asOwner();
     const recipe = new FormData();
     recipe.set("recipeId", "consultation_confirmer");
     await expect(createAutomationRecipeAction(recipe)).rejects.toThrow("redirect:/settings/automations?updated=recipe_created");
@@ -234,6 +242,95 @@ describe("automation actions", () => { it("requires CSRF and writes tenant-scope
     await expect(deleteAutomationRuleAction(ruleForm("foreign"))).rejects.toThrow("redirect:/settings/automations?error=not_found");
     expect(runtime.db.automationRule.delete).not.toHaveBeenCalled();
     expect(runtime.audit).not.toHaveBeenCalled();
+  });
+
+  describe("owner-only LINE push (owner decision 2026-11-14)", () => {
+    it.each([
+      ["a LINE push alone", () => lineForm()],
+      ["a LINE push next to a tag", () => { const f = lineForm(); f.set("actionTag", "on"); f.set("customerTag", "已報名"); return f; }],
+      ["a LINE push on payment_paid", () => { const f = lineForm("payment_paid"); f.set("conditionValue", "300"); return f; }],
+    ])("refuses an admin's rule with %s before any query or audit", async (_label, build) => {
+      await expect(createAutomationRuleAction(build())).rejects.toThrow("redirect:/settings/automations?error=line_push_owner_only");
+      expect(runtime.db.automationRule.create).not.toHaveBeenCalled();
+      expect(runtime.db.product.findFirst).not.toHaveBeenCalled();
+      expect(runtime.audit).not.toHaveBeenCalled();
+    });
+
+    it("still runs the existing input checks first (an unsafe button URL stays invalid_button_url)", async () => {
+      const f = lineForm();
+      f.set("buttonLabel", "看");
+      f.set("buttonUrl", "http://evil.example");
+      await expect(createAutomationRuleAction(f)).rejects.toThrow("redirect:/settings/automations?error=invalid_button_url");
+    });
+
+    it("judges the server-parsed actions, not a form flag: an unchecked LINE box with text in the fields is no LINE push", async () => {
+      const f = form();
+      f.set("lineMessage", "沒有勾選");
+      await expect(createAutomationRuleAction(f)).rejects.toThrow("redirect:/settings/automations?updated=created");
+      expect(runtime.db.automationRule.create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ actions: [{ type: "add_customer_tag", tag: "已報名" }] }) }));
+    });
+
+    it("lets the owner create a rule with a LINE push", async () => {
+      asOwner();
+      await expect(createAutomationRuleAction(lineForm())).rejects.toThrow("redirect:/settings/automations?updated=created");
+      expect(runtime.db.automationRule.create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ vendorId: "v1", actions: [expect.objectContaining({ type: "line_push", message: "謝謝報名" })] }) }));
+      expect(runtime.audit).toHaveBeenCalledWith(expect.objectContaining({ actorLabel: "owner", action: "create_automation_rule" }));
+    });
+
+    it("refuses an admin the LINE push recipe and still lets them apply one without", async () => {
+      const confirmer = new FormData();
+      confirmer.set("recipeId", "consultation_confirmer");
+      await expect(createAutomationRecipeAction(confirmer)).rejects.toThrow("redirect:/settings/automations?error=line_push_owner_only");
+      expect(runtime.db.automationRule.create).not.toHaveBeenCalled();
+      expect(runtime.audit).not.toHaveBeenCalled();
+
+      runtime.db.product.findFirst.mockResolvedValue({ id: "p1" });
+      const vip = new FormData();
+      vip.set("recipeId", "vip_auto_tiering");
+      vip.set("productId", "p1");
+      await expect(createAutomationRecipeAction(vip)).rejects.toThrow("redirect:/settings/automations?updated=recipe_created");
+      expect(runtime.db.automationRule.create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ vendorId: "v1", trigger: "payment_paid" }) }));
+    });
+
+    it.each([
+      ["its immediate actions", { actions: [{ type: "line_push", message: "嗨" }], steps: [] }],
+      ["a switched-off delayed step", { actions: [{ type: "add_customer_tag", tag: "x" }], steps: [{ actions: [{ type: "add_customer_tag", tag: "y" }] }, { actions: [{ type: "line_push", message: "第二天" }] }] }],
+    ])("keeps a rule with a LINE push in %s switched off for an admin, read after the vendor-bound lock", async (_label, stored) => {
+      runtime.db.automationRule.findFirst
+        .mockResolvedValueOnce({ id: "r1", isActive: false, trigger: "form_registered" })
+        .mockResolvedValueOnce({ id: "r1", ...stored });
+      await expect(toggleAutomationRuleAction(ruleForm())).rejects.toThrow("redirect:/settings/automations?error=line_push_owner_only");
+      expect(runtime.db.automationRule.findFirst).toHaveBeenLastCalledWith({
+        where: { id: "r1", vendorId: "v1" },
+        select: { actions: true, steps: { where: { vendorId: "v1" }, select: { actions: true } } },
+      });
+      expect(runtime.db.$queryRaw.mock.invocationCallOrder[0]).toBeLessThan(runtime.db.automationRule.findFirst.mock.invocationCallOrder[1]!);
+      expect(runtime.db.automationRule.updateMany).not.toHaveBeenCalled();
+      expect(runtime.audit).not.toHaveBeenCalled();
+    });
+
+    it("lets an admin switch a rule with a LINE push off, without reading its actions", async () => {
+      runtime.db.automationRule.findFirst.mockResolvedValueOnce({ id: "r1", isActive: true, trigger: "form_registered" });
+      await expect(toggleAutomationRuleAction(ruleForm())).rejects.toThrow("redirect:/settings/automations?updated=toggled");
+      expect(runtime.db.automationRule.findFirst).toHaveBeenCalledTimes(1);
+      expect(runtime.db.automationRule.updateMany).toHaveBeenCalledWith({ where: { id: "r1", vendorId: "v1", isActive: true }, data: { isActive: false } });
+    });
+
+    it("lets the owner switch a rule with a LINE push on", async () => {
+      asOwner();
+      runtime.db.automationRule.findFirst.mockResolvedValueOnce({ id: "r1", isActive: false, trigger: "form_registered" });
+      await expect(toggleAutomationRuleAction(ruleForm())).rejects.toThrow("redirect:/settings/automations?updated=toggled");
+      // The owner needs no LINE push check, so the rule's actions are not read.
+      expect(runtime.db.automationRule.findFirst).toHaveBeenCalledTimes(1);
+      expect(runtime.db.automationRule.updateMany).toHaveBeenCalledWith({ where: { id: "r1", vendorId: "v1", isActive: false }, data: { isActive: true } });
+      expect(runtime.audit).toHaveBeenCalledWith(expect.objectContaining({ action: "activate_automation_rule", actorLabel: "owner" }));
+    });
+
+    it("answers not_found when an admin switches on a rule that disappeared before the lock", async () => {
+      runtime.db.automationRule.findFirst.mockResolvedValueOnce({ id: "r1", isActive: false, trigger: "form_registered" }).mockResolvedValueOnce(null);
+      await expect(toggleAutomationRuleAction(ruleForm())).rejects.toThrow("redirect:/settings/automations?error=not_found");
+      expect(runtime.db.automationRule.updateMany).not.toHaveBeenCalled();
+    });
   });
 
   it.each([

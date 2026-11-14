@@ -106,6 +106,7 @@ test("WP-88 verifies every guarded page belongs to a browser-proven direct-URL g
     expect(readFileSync(sequencePage, "utf8")).toContain('requireFeatureOrNotFound(vendor, "email_sequences")');
   }
   // F-4: 自動化設定改為 owner／admin（與漏斗內的自動化、訊息模板一致），不再是 owner 限定。
+  // 其中自訂 LINE 推播動作只限 owner（2026-11-14），由頁面內與 Server Action 判斷，守門函式不變。
   const automationsPage = path.join(workspaceRoot, "src", "app", "(app)", "settings", "automations", "page.tsx");
   expect(sourceFiles).toContain(automationsPage);
   expect(guardFor(readFileSync(automationsPage, "utf8"))).toBe("vendorManagerMember");
@@ -210,6 +211,12 @@ test("WP-88 verifies every guarded page belongs to a browser-proven direct-URL g
     await adminSession.page.goto("/settings/automations");
     await expect(adminSession.page).toHaveURL(/\/settings\/automations$/);
     await expect(adminSession.page.getByRole("heading", { name: "自動化", level: 1, exact: true })).toBeVisible();
+    // Owner decision 2026-11-14: an admin manages automations but cannot set up a custom LINE push.
+    await expect(adminSession.page.getByText("LINE 推播僅限擁有者設定。", { exact: true }).first()).toBeVisible();
+    await expect(adminSession.page.locator('input[name="actionLine"]')).toHaveCount(0);
+    await ownerSession.page.goto("/settings/automations");
+    await expect(ownerSession.page.getByRole("heading", { name: "自動化", level: 1, exact: true })).toBeVisible();
+    await expect(ownerSession.page.locator('input[name="actionLine"]')).toHaveCount(1);
 
     const accountantSession = await signedInPage(browser, accountant.email);
     contexts.push(accountantSession.context);

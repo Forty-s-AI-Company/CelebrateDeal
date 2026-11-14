@@ -2,10 +2,12 @@ import { renderToStaticMarkup } from "react-dom/server"; import { beforeEach, de
 const mocks = vi.hoisted(() => ({ manager: vi.fn(), products: vi.fn(), rules: vi.fn(), logs: vi.fn(), runCounts: vi.fn() })); vi.mock("@/lib/auth", () => ({ requireVendorManagerMember: mocks.manager })); vi.mock("@/lib/db", () => ({ getDb: () => ({ product: { findMany: mocks.products }, automationRule: { findMany: mocks.rules }, automationExecutionLog: { findMany: mocks.logs }, delayedStepRun: { groupBy: mocks.runCounts } }) })); vi.mock("@/app/actions/automation-actions", () => ({ createAutomationRuleAction: vi.fn(), createAutomationRecipeAction: vi.fn(), deleteAutomationRuleAction: vi.fn(), dryRunAutomationRuleAction: vi.fn(), toggleAutomationRuleAction: vi.fn(), createAutomationRuleStepAction: vi.fn(), updateAutomationRuleStepAction: vi.fn(), deleteAutomationRuleStepAction: vi.fn() })); vi.mock("@/components/csrf-field", () => ({ CsrfField: () => <input type="hidden" name="csrf" /> }));
 import Page from "./page";
 const rule = (overrides: Record<string, unknown>) => ({ id: "r1", name: "報名回購", trigger: "form_registered", condition: { type: "always" }, actions: [{ type: "line_push" }], isActive: true, createdAt: new Date("2026-01-01"), _count: { executionLogs: 0 }, steps: [], ...overrides });
-beforeEach(() => { vi.clearAllMocks(); mocks.manager.mockResolvedValue({ vendor: { id: "v1" }, user: { id: "u1" }, member: { role: "admin" } }); mocks.products.mockResolvedValue([{ id: "p1", name: "課程" }]); mocks.runCounts.mockResolvedValue([]); mocks.rules.mockResolvedValue([rule({})]); mocks.logs.mockResolvedValue([{ id: "l1", eventId: "form-registered:s1", rule: { name: "報名回購" }, trigger: "form_registered", subjectKeyHash: "abcdefgh12345678", status: "failed", errorCode: "action_failed", actionResults: null, createdAt: new Date("2026-01-02") }]); });
+beforeEach(() => { vi.clearAllMocks(); mocks.manager.mockResolvedValue({ vendor: { id: "v1" }, user: { id: "u1" }, member: { role: "owner" } }); mocks.products.mockResolvedValue([{ id: "p1", name: "課程" }]); mocks.runCounts.mockResolvedValue([]); mocks.rules.mockResolvedValue([rule({})]); mocks.logs.mockResolvedValue([{ id: "l1", eventId: "form-registered:s1", rule: { name: "報名回購" }, trigger: "form_registered", subjectKeyHash: "abcdefgh12345678", status: "failed", errorCode: "action_failed", actionResults: null, createdAt: new Date("2026-01-02") }]); });
 const render = async (searchParams: Record<string, string> = {}) => renderToStaticMarkup(await Page({ searchParams: Promise.resolve(searchParams) }));
 describe("AutomationSettingsPage", () => {
-  it("renders recipes, visual rules, dry-run and masked logs for an owner or admin", async () => {
+  // The default actor is the owner, whose page is unchanged by the 2026-11-14
+  // owner-only LINE push decision; the admin's view is covered further down.
+  it("renders recipes, visual rules, dry-run and masked logs for an owner", async () => {
     const html = await render();
     expect(mocks.manager).toHaveBeenCalledWith("/settings/automations");
     expect(mocks.rules).toHaveBeenCalledWith(expect.objectContaining({ where: { vendorId: "v1" } }));
@@ -60,7 +62,7 @@ describe("AutomationSettingsPage", () => {
     expect(html).toContain("諮詢預約成功（延遲步驟）");
   });
 
-  const granted = () => mocks.manager.mockResolvedValue({ vendor: { id: "v1", betaFeatureGrants: ["automation_delayed_steps"] }, user: { id: "u1" }, member: { role: "admin" } });
+  const granted = (role = "owner") => mocks.manager.mockResolvedValue({ vendor: { id: "v1", betaFeatureGrants: ["automation_delayed_steps"] }, user: { id: "u1" }, member: { role } });
 
   it("shows no delayed-step section without the automation_delayed_steps grant (closed beta)", async () => {
     mocks.rules.mockResolvedValue([rule({ steps: [{ id: "s1", delayMinutes: 120, isActive: true, actions: [{ type: "add_customer_tag", tag: "x" }] }] })]);
@@ -137,7 +139,123 @@ describe("AutomationSettingsPage", () => {
     ["dryRun", "trigger_unavailable", "這條規則的觸發條件目前不會執行"],
     ["error", "toggle_conflict", "規則剛被其他人變更，請重新整理後再試。"],
     ["error", "delete_busy", "規則正在執行，請稍後再試。"],
+    ["error", "line_push_owner_only", "LINE 推播僅限擁有者設定。含 LINE 推播的規則，管理員只能停用、刪除規則或刪除步驟。"],
   ])("explains %s=%s", async (key, value, message) => {
     expect(await render({ [key]: value })).toContain(message);
+  });
+
+  describe("owner-only LINE push (owner decision 2026-11-14)", () => {
+    const TAG = [{ type: "add_customer_tag", tag: "x" }];
+    const admin = () => mocks.manager.mockResolvedValue({ vendor: { id: "v1" }, user: { id: "u1" }, member: { role: "admin" } });
+    const ruleArticle = (html: string, name: string) => html.match(new RegExp(`<article aria-label="${name}"[\\s\\S]*?</article>`, "u"))?.[0] ?? "";
+
+    it("gives an admin no LINE push fields, explains why, and keeps a LINE push recipe out of reach", async () => {
+      admin();
+      mocks.rules.mockResolvedValue([]);
+      const html = await render();
+      expect(html).toContain("LINE 推播僅限擁有者設定");
+      const createForm = html.match(/<form[^>]*aria-label="建立自訂規則"[\s\S]*?<\/form>/u)?.[0] ?? "";
+      expect(createForm).toContain("LINE 推播僅限擁有者設定。");
+      for (const field of ['name="actionLine"', 'name="lineMessage"', 'name="buttonLabel"', 'name="buttonUrl"']) expect(html).not.toContain(field);
+      // The other actions stay.
+      for (const field of ['name="actionEmail"', 'name="actionVoucher"', 'name="actionTag"']) expect(createForm).toContain(field);
+      // 「諮詢預約提醒與防爽約」 sends a LINE push: no apply button for an admin. The VIP recipe has none and stays.
+      const recipes = [...html.matchAll(/<form[^>]*>(?:(?!<\/form>)[\s\S])*?name="recipeId" value="([^"]+)"[\s\S]*?<\/form>/gu)].map((match) => [match[1], match[0]] as const);
+      const confirmer = recipes.find(([id]) => id === "consultation_confirmer")?.[1] ?? "";
+      const vip = recipes.find(([id]) => id === "vip_auto_tiering")?.[1] ?? "";
+      expect(confirmer).toContain("這個劇本含 LINE 推播。LINE 推播僅限擁有者設定。");
+      expect(confirmer).not.toContain("一鍵套用劇本");
+      expect(vip).toContain("一鍵套用劇本");
+    });
+
+    it("keeps the owner's LINE push fields and recipe button", async () => {
+      mocks.rules.mockResolvedValue([]);
+      const html = await render();
+      expect(html).toContain('name="actionLine"');
+      expect(html).not.toContain("這個劇本含 LINE 推播");
+      expect(html).not.toContain("LINE 推播僅限擁有者設定");
+      expect(html.match(/一鍵套用劇本/gu)).toHaveLength(2);
+    });
+
+    it("lets an admin switch off and delete a rule with a LINE push, but not switch it on or touch its steps", async () => {
+      admin();
+      granted("admin");
+      mocks.rules.mockResolvedValue([
+        rule({ id: "line-on", name: "立即推播", actions: [{ type: "line_push", message: "嗨" }], isActive: true }),
+        rule({ id: "line-off", name: "停用推播", actions: [{ type: "line_push", message: "嗨" }], isActive: false }),
+        // The LINE push is only in a (switched-off) delayed step: the rule still counts.
+        rule({ id: "step-line", name: "步驟推播", actions: TAG, isActive: false, steps: [
+          { id: "s-line", delayMinutes: 120, isActive: false, actions: [{ type: "line_push", message: "第二天" }] },
+          { id: "s-tag", delayMinutes: 240, isActive: true, actions: TAG },
+        ] }),
+        rule({ id: "plain", name: "一般規則", actions: TAG, isActive: false, steps: [{ id: "s-plain", delayMinutes: 60, isActive: true, actions: TAG }] }),
+      ]);
+      const html = await render();
+
+      const on = ruleArticle(html, "立即推播");
+      expect(on).toContain("僅限擁有者修改");
+      expect(on).toContain("這條規則含 LINE 推播。LINE 推播僅限擁有者設定。");
+      expect(on).toContain(">停用<");
+      expect(on).toContain("Dry-run 測試");
+      expect(on).not.toContain("新增延遲步驟");
+
+      const off = ruleArticle(html, "停用推播");
+      expect(off).not.toContain(">啟用<");
+      expect(off).toContain("刪除規則");
+
+      const steps = ruleArticle(html, "步驟推播");
+      expect(steps).toContain("僅限擁有者修改");
+      expect(steps).not.toContain(">啟用<");
+      expect(steps).not.toContain("編輯步驟：");
+      expect(steps).not.toContain("新增延遲步驟");
+      expect(steps).not.toContain('name="actionLine"');
+      // Each step keeps only its delete form (no edit form): one stepId field per step.
+      expect(steps.match(/name="stepId" value="s-line"/gu)).toHaveLength(1);
+      expect(steps.match(/name="stepId" value="s-tag"/gu)).toHaveLength(1);
+      expect(steps.match(/>刪除步驟</gu)).toHaveLength(2);
+      expect(steps).toContain("刪除規則");
+
+      // A rule without any LINE push is managed by an admin as before.
+      const plain = ruleArticle(html, "一般規則");
+      expect(plain).not.toContain("僅限擁有者修改");
+      expect(plain).toContain(">啟用<");
+      expect(plain).toContain("編輯步驟：事件後 1 小時");
+      expect(plain).toContain("新增延遲步驟");
+      expect(plain).not.toContain('name="actionLine"');
+      expect(plain).toContain("LINE 推播僅限擁有者設定。");
+    });
+
+    it("words the read-only note for where the LINE push is and which controls the page shows (NIT-3)", async () => {
+      const note = (html: string) => html.match(/<p class="[^"]*">([^<]*LINE 推播僅限擁有者設定。[^<]*)<\/p>/u)?.[1] ?? "";
+      // Steps shown, LINE push only in a step.
+      granted("admin");
+      mocks.rules.mockResolvedValue([rule({ name: "步驟推播", actions: TAG, isActive: false, steps: [{ id: "s1", delayMinutes: 60, isActive: true, actions: [{ type: "line_push", message: "x" }] }] })]);
+      expect(note(ruleArticle(await render(), "步驟推播"))).toBe("這條規則的延遲步驟含 LINE 推播。LINE 推播僅限擁有者設定。你可以停用、刪除規則或刪除步驟，但不能啟用、新增或修改步驟。");
+
+      // payment_paid takes no steps: nothing about steps.
+      mocks.rules.mockResolvedValue([rule({ name: "付款推播", trigger: "payment_paid", condition: { type: "order_amount_gte", amountCents: 10_000 }, actions: [{ type: "line_push", message: "x" }], isActive: false })]);
+      const paid = ruleArticle(await render(), "付款推播");
+      expect(note(paid)).toBe("這條規則含 LINE 推播。LINE 推播僅限擁有者設定。你可以停用或刪除規則，但不能啟用。");
+      expect(paid).not.toContain("刪除步驟");
+
+      // Beta off: the step section is hidden, so say the LINE push sits in a delayed step that is not shown.
+      admin();
+      mocks.rules.mockResolvedValue([rule({ name: "隱藏步驟", actions: TAG, isActive: false, steps: [{ id: "s1", delayMinutes: 60, isActive: true, actions: [{ type: "line_push", message: "x" }] }] })]);
+      const hidden = ruleArticle(await render(), "隱藏步驟");
+      expect(note(hidden)).toBe("這條規則的延遲步驟含 LINE 推播（延遲步驟目前不在此頁顯示）。LINE 推播僅限擁有者設定。你可以停用或刪除規則，但不能啟用。");
+      expect(hidden).not.toContain("刪除步驟");
+      expect(hidden).not.toContain(">啟用<");
+    });
+
+    it("leaves every control of a LINE push rule to the owner", async () => {
+      granted("owner");
+      mocks.rules.mockResolvedValue([rule({ id: "step-line", name: "步驟推播", actions: TAG, isActive: false, steps: [{ id: "s-line", delayMinutes: 120, isActive: false, actions: [{ type: "line_push", message: "第二天" }] }] })]);
+      const html = ruleArticle(await render(), "步驟推播");
+      expect(html).not.toContain("僅限擁有者修改");
+      expect(html).toContain(">啟用<");
+      expect(html).toContain("編輯步驟：事件後 2 小時");
+      expect(html).toContain("新增延遲步驟");
+      expect(html).toMatch(/name="lineMessage"[^>]*>第二天<\/textarea>/u);
+    });
   });
 });
