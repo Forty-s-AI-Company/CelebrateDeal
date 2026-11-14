@@ -21,7 +21,7 @@ vi.mock("@/lib/line-notification", () => ({
 }));
 
 import { createHmac } from "node:crypto";
-import { legacyDerivedKeyUseCount, resetLegacyDerivedKeyUseCounts } from "@/lib/derived-key-rotation";
+import { DERIVED_KEY_ROTATIONS, legacyDerivedKeyUseCount, resetLegacyDerivedKeyUseCounts, signWithRotation } from "@/lib/derived-key-rotation";
 import { hashInteractionBearer } from "@/lib/live-interaction";
 import { deriveSensitiveDataKey } from "@/lib/sensitive-data";
 import { revealEmailDeliveryPayload, verifyEmailUnsubscribeToken } from "@/lib/email-delivery-pii";
@@ -572,6 +572,56 @@ describe("smart automation workflow engine", () => {
     expect(retryText).toContain("token=");
     expect(retryText).toBe(firstText);
     expect(update.mock.calls.at(-1)?.[0].data.status).toBe("completed");
+  });
+
+  it.each([
+    { label: "on", flag: { lineNotification: true }, sent: 1 },
+    { label: "missing", flag: {}, sent: 1 },
+    { label: "off", flag: { lineNotification: false }, sent: 0 },
+  ])("on a reclaimed execution whose voucher was already issued, a voucher-only rule's LINE notification is $sent time(s) when the flag is $label", async ({ flag, sent }) => {
+    const conflict = new Prisma.PrismaClientKnownRequestError("duplicate", {
+      code: "P2002",
+      clientVersion: Prisma.prismaVersion.client,
+    });
+    const update = vi.fn().mockResolvedValue({});
+    const db = {
+      automationRule: { findMany: vi.fn().mockResolvedValue([{
+        id: "rule-voucher-only", version: 1, createdAt: new Date(), condition: { type: "always" },
+        actions: [{ type: "issue_repurchase_voucher", productId: "product-1", discountType: "fixed", discountValue: 1_000, expiresInDays: 7, ...flag }],
+      }]) },
+      automationExecutionLog: {
+        // The first claim collides with an earlier failed attempt, so the run reclaims it.
+        create: vi.fn().mockRejectedValueOnce(conflict),
+        findUnique: vi.fn().mockResolvedValue({ id: "log-reclaim", status: "failed", startedAt: new Date() }),
+        updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+        update,
+      },
+      automationVoucherGrant: {
+        // The voucher was issued by the earlier attempt: create collides, the row is read back.
+        create: vi.fn().mockRejectedValueOnce(conflict),
+        findUnique: vi.fn().mockResolvedValue({
+          vendorId: event.vendorId,
+          // The bearer the earlier attempt stored for this execution log's first action.
+          claimTokenHash: hashInteractionBearer(signWithRotation(DERIVED_KEY_ROTATIONS.automationVoucherBearer, "log-reclaim:0")),
+          createdAt: new Date(),
+        }),
+      },
+      product: { findFirst: vi.fn().mockResolvedValue({ id: "product-1", currency: "TWD" }) },
+      customerTagAssignment: {}, lineOfficialAccount: {}, lineUserIdentity: {}, lineDelivery: {},
+    };
+    mocks.enqueueLineNotification.mockResolvedValue({ status: "queued" });
+
+    await expect(dispatchAutomationEvent(db as never, event)).resolves.toEqual([{ ruleId: "rule-voucher-only", status: "completed" }]);
+    expect(db.automationVoucherGrant.create).toHaveBeenCalledTimes(1);
+    expect(db.automationVoucherGrant.findUnique).toHaveBeenCalledTimes(1);
+    expect(mocks.enqueueLineNotification).toHaveBeenCalledTimes(sent);
+    if (sent) {
+      expect(mocks.enqueueLineNotification).toHaveBeenCalledWith(db, expect.objectContaining({
+        trigger: "automation",
+        idempotencyKey: "automation-voucher:log-reclaim",
+        messages: [expect.objectContaining({ text: "感謝支持，您的專屬回購折價券已經準備好了。" })],
+      }));
+    }
   });
 
   it("rebuilds the link of a grant issued under the legacy voucher key on retry", async () => {

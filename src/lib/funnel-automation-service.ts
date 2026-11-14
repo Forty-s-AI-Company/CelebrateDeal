@@ -236,8 +236,9 @@ export async function setFunnelAutomationRuleEnabled(input: { pageId: unknown; r
   // every writer of delayed-step runs uses (rule, then runs). Switching off
   // also stops the rule's active delayed-step runs in the same transaction
   // (F-4 review M1, same as /settings/automations): switching on again never
-  // revives them. Switching on starts a custom LINE push again, so it is
-  // owner-only for a rule that has one; switching off is always allowed.
+  // revives them. Switching on starts a rule that sends LINE again (a LINE
+  // push or a voucher's LINE notification), so it is owner-only for such a
+  // rule; switching off is always allowed.
   let updated: { count: number };
   try {
     updated = await database.$transaction(async (tx) => {

@@ -35,6 +35,7 @@ vi.mock("@/lib/db", async () => {
 // that decides whether a LINE outbox row (LineDelivery) is written is the rule.
 const runtime = vi.hoisted(() => ({
   actor: null as null | { user: { id: string }; vendor: { id: string; betaFeatureGrants?: string[] }; member: { role: string } },
+  projectId: "",
 }));
 vi.mock("@/lib/monitoring", () => ({ captureOperationalError: vi.fn() }));
 vi.mock("@/lib/email-delivery-immediate", () => ({ scheduleImmediateEmailDispatch: vi.fn() }));
@@ -46,7 +47,12 @@ vi.mock("@/lib/auth", () => ({
     if (!runtime.actor) throw new Error("redirect:/login");
     return { auth: {}, ...runtime.actor };
   },
+  requireVendorManagerContext: async () => {
+    if (!runtime.actor) throw new Error("redirect:/login");
+    return { auth: { user: runtime.actor.user, member: { id: "member", role: runtime.actor.member.role } }, vendor: runtime.actor.vendor };
+  },
 }));
+vi.mock("@/lib/sales-project-scope", () => ({ requireEditableSalesProjectScope: async () => ({ projectId: runtime.projectId }) }));
 
 import {
   createAutomationRecipeAction,
@@ -57,6 +63,7 @@ import {
   toggleAutomationRuleAction,
   updateAutomationRuleStepAction,
 } from "@/app/actions/automation-actions";
+import { FunnelAutomationLinePushOwnerOnlyError, setFunnelAutomationRuleEnabled, updateFunnelAutomationRule } from "@/lib/funnel-automation-service";
 import { createAutomationRuleStep, runDelayedStepWorker, updateAutomationRuleStep } from "@/lib/automation-delayed-steps";
 import { automationCustomerKeyHash, automationStepExecutionLogId, dispatchAutomationEvent } from "@/lib/automation-workflow";
 import { getDb } from "@/lib/db";
@@ -73,6 +80,7 @@ beforeEach(() => {
   vi.stubEnv("CSRF_SECRET", "voucher-line-disposable-secret-longer-than-thirty-two-bytes");
   vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://voucher-line.example.test");
   runtime.actor = null;
+  runtime.projectId = "";
 });
 
 afterEach(async () => {
@@ -127,12 +135,13 @@ function voucher(t: Tenant, flag: Record<string, unknown> = {}) {
   return { type: "issue_repurchase_voucher", productId: t.product.id, discountType: "fixed", discountValue: 10_000, expiresInDays: 7, ...flag };
 }
 
-async function rule(t: Tenant, options: { actions?: unknown[]; isActive?: boolean } = {}) {
+async function rule(t: Tenant, options: { actions?: unknown[]; isActive?: boolean; funnelPageId?: string } = {}) {
   return db.automationRule.create({
     data: {
       vendorId: t.vendor.id,
       name: `規則 ${randomUUID().slice(0, 6)}`,
       trigger: "form_registered",
+      funnelPageId: options.funnelPageId ?? null,
       condition: { type: "always" } as Prisma.InputJsonValue,
       actions: (options.actions ?? [TAG]) as Prisma.InputJsonArray,
       isActive: options.isActive ?? true,
@@ -402,6 +411,28 @@ describe("tenant boundary", () => {
     await expect(createAutomationRuleStepAction(stepFields(ra.id, voucherFields(b)))).rejects.toThrow("error=invalid_product");
     expect(await snapshot(b.vendor.id)).toEqual(before);
     await expect(db.auditLog.count({ where: { vendorId: { in: [a.vendor.id, b.vendor.id] } } })).resolves.toBe(0);
+  });
+});
+
+describe("funnel editor: a delayed voucher step without the flag", () => {
+  it("refuses an admin's edit and switch-on of a funnel rule whose step voucher has no flag, and lets the admin switch it off", async () => {
+    const t = await tenant();
+    const project = await db.salesProject.create({ data: { vendorId: t.vendor.id, name: "合成專案", slug: `voucher-project-${randomUUID()}`, mode: "live_course", primaryFlow: "live" } });
+    const page = await db.landingPage.create({ data: { vendorId: t.vendor.id, projectId: project.id, name: "單頁網站", slug: `voucher-page-${randomUUID()}`, draftContent: {} } });
+    runtime.projectId = project.id;
+    // Stored before the flag existed: a missing flag still sends LINE.
+    const off = await rule(t, { funnelPageId: page.id, isActive: false });
+    await step(t, off.id, 60, [voucher(t)]);
+    const on = await rule(t, { funnelPageId: page.id, isActive: true });
+    await step(t, on.id, 60, [voucher(t)]);
+
+    as("admin", t);
+    await expect(updateFunnelAutomationRule({ pageId: page.id, ruleId: off.id, version: 1, name: "改名", tag: "改標籤" })).rejects.toBeInstanceOf(FunnelAutomationLinePushOwnerOnlyError);
+    await expect(setFunnelAutomationRuleEnabled({ pageId: page.id, ruleId: off.id, version: 1, isActive: true })).rejects.toBeInstanceOf(FunnelAutomationLinePushOwnerOnlyError);
+    await expect(db.automationRule.findUniqueOrThrow({ where: { id: off.id } })).resolves.toMatchObject({ name: off.name, isActive: false, version: 1 });
+    // Switching off is always allowed.
+    await expect(setFunnelAutomationRuleEnabled({ pageId: page.id, ruleId: on.id, version: 1, isActive: false })).resolves.toBeUndefined();
+    await expect(db.automationRule.findUniqueOrThrow({ where: { id: on.id } })).resolves.toMatchObject({ isActive: false, version: 2 });
   });
 });
 

@@ -66,20 +66,24 @@ const ERROR_MESSAGES: Record<string, string> = {
  * How a buyer still gets a voucher sent without a LINE notification, shown to
  * a non-owner next to the voucher fields and on voucher recipes.
  */
-const VOUCHER_WITHOUT_LINE_NOTE = `${VOUCHER_LINE_NOTIFICATION_OWNER_ONLY_MESSAGE}你設定的派券不會用 LINE 通知買家：買家可在學員專區的「專屬優惠券」看到這張券；要主動通知，請同時勾選 Email 通知並選「追購通知」範本，信中會附領券連結。`;
+const VOUCHER_WITHOUT_LINE_NOTE = `${VOUCHER_LINE_NOTIFICATION_OWNER_ONLY_MESSAGE}你設定的派券不會用 LINE 通知買家：買家可在學員專區的「專屬優惠券」看到這張券（限可在本平台結帳的商品）；要主動通知，請同時勾選 Email 通知並選「追購通知」範本，信中會附領券連結。`;
 /**
  * Shown to a non-owner on a rule that sends LINE: a custom LINE push, or
  * (owner decision 2026-11-15) a voucher with its LINE notification on.
  * `stepsShown`: the delayed-step section is on the page (beta grant and a
  * trigger that takes steps, or a hidden one whose steps can still be
  * deleted). A LINE push is named first; the note says whether what sends LINE
- * is in a delayed step only.
+ * is in a delayed step only; when both the immediate actions and a step send
+ * LINE, the note names both.
  */
 function lineRuleNote({ stepsShown, rule }: { stepsShown: boolean; rule: { actions: unknown; steps: Array<{ actions: unknown }> } }) {
   const push = automationRuleIncludesLinePush(rule);
   const inStepsOnly = push ? !automationActionsIncludeLinePush(rule.actions) : !automationActionsSendLine(rule.actions);
   const what = push ? "含 LINE 推播" : "派券時會用 LINE 通知買家";
-  const where = inStepsOnly
+  const both = automationActionsSendLine(rule.actions) && rule.steps.some((step) => automationActionsSendLine(step.actions));
+  const where = both
+    ? `這條規則和它的延遲步驟都會發 LINE 訊息（LINE 推播或派券通知）${stepsShown ? "" : "，延遲步驟目前不在此頁顯示"}。`
+    : inStepsOnly
     ? stepsShown ? `這條規則的延遲步驟${what}。` : `這條規則的延遲步驟${what}（延遲步驟目前不在此頁顯示）。`
     : `這條規則${what}。`;
   const allowed = stepsShown

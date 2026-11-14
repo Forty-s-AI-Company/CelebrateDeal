@@ -280,7 +280,7 @@ describe("AutomationSettingsPage", () => {
         expect(html).not.toContain('name="voucherLineNotification"');
         expect(html).not.toContain('name="voucherLineNotificationShown"');
         const createForm = html.match(/<form[^>]*aria-label="建立自訂規則"[\s\S]*?<\/form>/u)?.[0] ?? "";
-        const explanation = "派券的 LINE 通知僅限擁有者設定。你設定的派券不會用 LINE 通知買家：買家可在學員專區的「專屬優惠券」看到這張券；要主動通知，請同時勾選 Email 通知並選「追購通知」範本，信中會附領券連結。";
+        const explanation = "派券的 LINE 通知僅限擁有者設定。你設定的派券不會用 LINE 通知買家：買家可在學員專區的「專屬優惠券」看到這張券（限可在本平台結帳的商品）；要主動通知，請同時勾選 Email 通知並選「追購通知」範本，信中會附領券連結。";
         expect(createForm).toContain(explanation);
         const vip = html.match(/<form[^>]*>(?:(?!<\/form>)[\s\S])*?name="recipeId" value="vip_auto_tiering"[\s\S]*?<\/form>/u)?.[0] ?? "";
         expect(vip).toContain(explanation);
@@ -321,6 +321,24 @@ describe("AutomationSettingsPage", () => {
         mocks.rules.mockResolvedValue([rule({ name: "推播＋派券", actions: [VOUCHER, { type: "line_push", message: "x" }], isActive: false })]);
         const article = ruleArticle(await render(), "推播＋派券");
         expect(article).toContain("這條規則含 LINE 推播。LINE 推播僅限擁有者設定。你可以停用或刪除規則，但不能啟用。");
+      });
+
+      it("names both the immediate actions and the delayed step when each of them sends LINE", async () => {
+        const push = { type: "line_push", message: "x" };
+        const bothNote = (html: string) => html.match(/<p class="[^"]*">([^<]*這條規則和它的延遲步驟[^<]*)<\/p>/u)?.[1] ?? "";
+        granted("admin");
+        mocks.rules.mockResolvedValue([
+          rule({ id: "both-voucher", name: "雙派券", actions: [VOUCHER], isActive: false, steps: [{ id: "s1", delayMinutes: 60, isActive: true, actions: [VOUCHER] }] }),
+          rule({ id: "both-mixed", name: "派券加步驟推播", actions: [VOUCHER], isActive: false, steps: [{ id: "s2", delayMinutes: 60, isActive: true, actions: [push] }] }),
+        ]);
+        const html = await render();
+        expect(bothNote(ruleArticle(html, "雙派券"))).toBe("這條規則和它的延遲步驟都會發 LINE 訊息（LINE 推播或派券通知）。派券的 LINE 通知僅限擁有者設定。你可以停用、刪除規則或刪除步驟，但不能啟用、新增或修改步驟。");
+        expect(bothNote(ruleArticle(html, "派券加步驟推播"))).toBe("這條規則和它的延遲步驟都會發 LINE 訊息（LINE 推播或派券通知）。LINE 推播僅限擁有者設定。你可以停用、刪除規則或刪除步驟，但不能啟用、新增或修改步驟。");
+
+        // Beta off: the delayed-step section is hidden, and the note says so.
+        admin();
+        mocks.rules.mockResolvedValue([rule({ name: "隱藏雙推播", actions: [push], isActive: false, steps: [{ id: "s3", delayMinutes: 60, isActive: true, actions: [push] }] })]);
+        expect(bothNote(ruleArticle(await render(), "隱藏雙推播"))).toBe("這條規則和它的延遲步驟都會發 LINE 訊息（LINE 推播或派券通知），延遲步驟目前不在此頁顯示。LINE 推播僅限擁有者設定。你可以停用或刪除規則，但不能啟用。");
       });
     });
 
