@@ -129,7 +129,8 @@ describe("sending merchant verification mail (PostgreSQL)", () => {
     expect(token).not.toContain(user.email.split("@")[0]!);
     expect(Buffer.from(token.split(".")[1]!, "base64url").toString("utf8")).not.toContain(user.email);
     const audit = await getDb().auditLog.findFirstOrThrow({ where: { targetId: user.id, action: "merchant_email_verification_sent" } });
-    expect(audit.after).toMatchObject({ source: "resend" });
+    // The provider's message id lets the staging first-success runner read the delivery back.
+    expect(audit.after).toMatchObject({ source: "resend", providerMessageId: "synthetic-1" });
     expect(JSON.stringify(audit)).not.toContain(token.split(".")[2]!);
     await expect(confirmMerchantEmailVerification(token)).resolves.toEqual({ status: "verified" });
   });
