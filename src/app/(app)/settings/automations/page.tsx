@@ -58,11 +58,20 @@ const ERROR_MESSAGES: Record<string, string> = {
   toggle_busy: "規則正在被其他人修改或執行，請稍後再試。",
   [LINE_PUSH_OWNER_ONLY]: `${LINE_PUSH_OWNER_ONLY_MESSAGE}含 LINE 推播的規則，管理員只能停用、刪除規則或刪除步驟。`,
 };
-/** Shown to a non-owner on a rule (or recipe) that has a custom LINE push. */
-function linePushRuleNote(delayedSteps: boolean) {
-  return delayedSteps
-    ? `這條規則含 LINE 推播。${LINE_PUSH_OWNER_ONLY_MESSAGE}你可以停用、刪除規則或刪除步驟，但不能啟用、新增或修改步驟。`
-    : `這條規則含 LINE 推播。${LINE_PUSH_OWNER_ONLY_MESSAGE}你可以停用或刪除規則，但不能啟用。`;
+/**
+ * Shown to a non-owner on a rule that has a custom LINE push. `stepsShown`:
+ * the delayed-step section is on the page (beta grant and a trigger that takes
+ * steps, or a hidden one whose steps can still be deleted); `inStepsOnly`: the
+ * LINE push is in a delayed step, not in the immediate actions.
+ */
+function linePushRuleNote({ stepsShown, inStepsOnly }: { stepsShown: boolean; inStepsOnly: boolean }) {
+  const where = inStepsOnly
+    ? stepsShown ? "這條規則的延遲步驟含 LINE 推播。" : "這條規則的延遲步驟含 LINE 推播（延遲步驟目前不在此頁顯示）。"
+    : "這條規則含 LINE 推播。";
+  const allowed = stepsShown
+    ? "你可以停用、刪除規則或刪除步驟，但不能啟用、新增或修改步驟。"
+    : "你可以停用或刪除規則，但不能啟用。";
+  return `${where}${LINE_PUSH_OWNER_ONLY_MESSAGE}${allowed}`;
 }
 const UPDATED_MESSAGES: Record<string, string> = {
   step_created: "延遲步驟已新增。",
@@ -266,12 +275,14 @@ export default async function AutomationSettingsPage({ searchParams }: { searchP
       // A rule with a custom LINE push (immediate or any step) is read-only for
       // a non-owner except switching off and deleting; the actions refuse the rest.
       const linePushOwnerOnly = !linePushAllowed && automationRuleIncludesLinePush(rule);
+      // The delayed-step section shows for a trigger that takes steps, or a hidden one (its steps can still be deleted).
+      const stepsShown = delayedSteps && (automationTriggerSupportsDelayedSteps(rule.trigger) || !available);
       return <article key={rule.id} aria-label={rule.name} className="grid gap-3 rounded-xl border border-border p-4">
         <div className="flex flex-wrap items-center justify-between gap-3"><div><h3 className="font-semibold text-slate-900">{rule.name}</h3><p className="text-xs text-slate-500">{rule.createdAt.toLocaleString("zh-TW")}</p></div><div className="flex flex-wrap gap-2">{available ? null : <Badge tone="gray">目前不會執行</Badge>}{linePushOwnerOnly ? <Badge tone="gray">僅限擁有者修改</Badge> : null}<Badge tone={rule.isActive ? "green" : "gray"}>{rule.isActive ? "啟用中" : "已停用"}</Badge></div></div>
         <div className="flex flex-wrap items-center gap-2 text-sm"><span className="rounded-md bg-slate-100 px-3 py-2">觸發：{triggerLabel(rule.trigger)}</span><span>→</span><span className="rounded-md bg-amber-50 px-3 py-2">條件：{conditionLabel(rule.condition)}</span><span>→</span><span className="rounded-md bg-emerald-50 px-3 py-2">立即執行：{actionLabels(rule.actions).join(" + ")}</span></div>
         {available ? null : <p className="rounded-md border border-border bg-slate-50 px-3 py-2 text-sm text-slate-700">{UNAVAILABLE_TRIGGER_NOTE}</p>}
-        {linePushOwnerOnly ? <p className="rounded-md border border-border bg-slate-50 px-3 py-2 text-sm text-slate-700">{linePushRuleNote(delayedSteps)}</p> : null}
-        {delayedSteps ? (automationTriggerSupportsDelayedSteps(rule.trigger) || !available
+        {linePushOwnerOnly ? <p className="rounded-md border border-border bg-slate-50 px-3 py-2 text-sm text-slate-700">{linePushRuleNote({ stepsShown, inStepsOnly: !automationActionsIncludeLinePush(rule.actions) })}</p> : null}
+        {delayedSteps ? (stepsShown
           ? <RuleSteps rule={rule} editable={available && !linePushOwnerOnly} linePushAllowed={linePushAllowed} products={products} counts={runCounts.get(rule.id)} />
           : <p className="rounded-md border border-border bg-slate-50 px-3 py-2 text-sm text-slate-700">{NO_DELAYED_STEPS_NOTE}</p>) : null}
         <div className="flex flex-wrap items-end gap-3">

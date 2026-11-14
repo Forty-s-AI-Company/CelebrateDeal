@@ -136,8 +136,11 @@ async function listForPage(database: FunnelAutomationDb, page: ScopedPage) {
  */
 async function assertFunnelRuleWritable(tx: Pick<Prisma.TransactionClient, "automationRule">, page: ScopedPage, id: string) {
   if (page.linePushAllowed) return;
-  // null (another vendor's rule, or gone) falls through to the scoped CAS below, which reports not found.
-  if (await storedAutomationRuleIncludesLinePush(tx, { vendorId: page.vendorId, ruleId: id })) throw new FunnelAutomationLinePushOwnerOnlyError();
+  // Scoped like the CAS below (this page's form_registered rules), so a rule
+  // of another page or of /settings/automations is "not found" here, never
+  // "owner only". null falls through to the CAS, which reports not found.
+  const hasLinePush = await storedAutomationRuleIncludesLinePush(tx, { vendorId: page.vendorId, ruleId: id, funnelPageId: page.pageId, trigger: "form_registered" });
+  if (hasLinePush) throw new FunnelAutomationLinePushOwnerOnlyError();
 }
 
 /** lock_timeout (55P03) on the rule row, or the transaction could not start or finish in time (P2028). */

@@ -38,6 +38,7 @@ import {
 import { createAutomationRuleStep, updateAutomationRuleStep } from "@/lib/automation-delayed-steps";
 import { getDb } from "@/lib/db";
 import {
+  FunnelAutomationBusyError,
   FunnelAutomationLinePushOwnerOnlyError,
   FunnelAutomationNotFoundError,
   listFunnelAutomationRules,
@@ -267,6 +268,23 @@ describe("funnel editor: a LINE push is the owner's", () => {
     await expect(db.automationRule.findUniqueOrThrow({ where: { id: withLine.id } })).resolves.toMatchObject({ name: "老闆改名", isActive: false, version: 4 });
   });
 
+  it("keeps a LINE push rule of another page of the same vendor, or of /settings/automations, not_found from this page (NIT-2)", async () => {
+    const { vendor, page, withLine } = await funnel();
+    const otherPage = await db.landingPage.create({ data: { vendorId: vendor.id, projectId: runtime.projectId, name: "另一頁", slug: `line-page-${randomUUID()}`, draftContent: {} } });
+    const otherPageRule = await rule(vendor.id, { funnelPageId: otherPage.id, actions: [{ type: "add_customer_tag", tag: "另一頁" }] });
+    await step(vendor.id, otherPageRule.id, 60, LINE);
+    const settingsRule = await rule(vendor.id, { actions: [{ type: "add_customer_tag", tag: "全商家" }] });
+    await step(vendor.id, settingsRule.id, 60, LINE);
+    as("admin", vendor);
+    for (const id of [otherPageRule.id, settingsRule.id]) {
+      await expect(updateFunnelAutomationRule({ pageId: page.id, ruleId: id, version: 1, name: "改名", tag: "改標籤" })).rejects.toBeInstanceOf(FunnelAutomationNotFoundError);
+      await expect(setFunnelAutomationRuleEnabled({ pageId: page.id, ruleId: id, version: 1, isActive: true })).rejects.toBeInstanceOf(FunnelAutomationNotFoundError);
+    }
+    // This page's own LINE push rule is still owner-only.
+    await expect(setFunnelAutomationRuleEnabled({ pageId: page.id, ruleId: withLine.id, version: 1, isActive: true })).rejects.toBeInstanceOf(FunnelAutomationLinePushOwnerOnlyError);
+    await expect(db.automationRule.findMany({ where: { id: { in: [otherPageRule.id, settingsRule.id] } }, select: { isActive: true, version: true } })).resolves.toEqual([{ isActive: false, version: 1 }, { isActive: false, version: 1 }]);
+  });
+
   it("keeps another tenant's funnel rule not_found for an admin, without revealing its LINE push", async () => {
     const other = await funnel();
     const vendor = await tenant();
@@ -278,4 +296,133 @@ describe("funnel editor: a LINE push is the owner's", () => {
     await expect(setFunnelAutomationRuleEnabled({ pageId: page.id, ruleId: other.withLine.id, version: 1, isActive: true })).rejects.toBeInstanceOf(FunnelAutomationNotFoundError);
     await expect(db.automationRule.findUniqueOrThrow({ where: { id: other.withLine.id } })).resolves.toMatchObject({ isActive: false, version: 1 });
   });
+});
+
+// MINOR-1: the LINE push check is read after the rule row is locked FOR UPDATE.
+// An owner transaction holds the row, adds a LINE push step and commits only
+// once every admin call is waiting on the lock; each call must then see the
+// step and refuse. A second case holds the row past lock_timeout (5 s) and
+// checks every writer gives up as busy, twice in a row on the same pool.
+describe("concurrency with an owner holding the rule row", () => {
+  type Held = { done: Promise<void>; release: () => void };
+
+  /** Locks the rule row in its own transaction (pinned connection), runs `work`, and commits only on release(). */
+  async function holdRule(vendorId: string, ruleId: string, work: (tx: Prisma.TransactionClient) => Promise<unknown> = async () => undefined): Promise<Held> {
+    let release!: () => void;
+    const released = new Promise<void>((resolve) => { release = resolve; });
+    let ready!: () => void;
+    let failed!: (error: unknown) => void;
+    const locked = new Promise<void>((resolve, reject) => { ready = resolve; failed = reject; });
+    const done = db.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT "id" FROM "AutomationRule" WHERE "id" = ${ruleId} AND "vendorId" = ${vendorId} FOR UPDATE`;
+      await work(tx);
+      ready();
+      await released;
+    }, { maxWait: 5_000, timeout: 30_000 }).then(() => undefined, (error: unknown) => { failed(error); throw error; });
+    await locked;
+    return { done, release };
+  }
+
+  /** Backends of this database waiting for a lock on an AutomationRule FOR UPDATE (each admin call queues there). */
+  async function waitersOnRule() {
+    const [row] = await db.$queryRaw<Array<{ n: number }>>`
+      SELECT count(*)::int AS n FROM pg_stat_activity
+      WHERE datname = current_database() AND wait_event_type = 'Lock' AND query LIKE '%"AutomationRule"%FOR UPDATE%'
+    `;
+    return row?.n ?? 0;
+  }
+
+  async function untilWaiting(count: number, withinMs: number) {
+    const deadline = Date.now() + withinMs;
+    while (Date.now() < deadline) {
+      if ((await waitersOnRule()) >= count) return;
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+    throw new Error(`fewer than ${count} calls waited on the rule lock`);
+  }
+
+  const settle = (promise: Promise<unknown>) => promise.then(() => ({ ok: true as const }), (error: unknown) => ({ ok: false as const, error }));
+
+  async function funnelRule() {
+    const vendor = await tenant();
+    const project = await db.salesProject.create({ data: { vendorId: vendor.id, name: "合成專案", slug: `line-project-${randomUUID()}`, mode: "live_course", primaryFlow: "live" } });
+    const page = await db.landingPage.create({ data: { vendorId: vendor.id, projectId: project.id, name: "單頁網站", slug: `line-page-${randomUUID()}`, draftContent: {} } });
+    runtime.projectId = project.id;
+    // A funnel rule (so the funnel editor can act on it too), switched off, no LINE push yet.
+    const r = await rule(vendor.id, { funnelPageId: page.id, actions: [{ type: "add_customer_tag", tag: "漏斗" }] });
+    return { vendor, page, r };
+  }
+
+  function adminCalls(vendorId: string, pageId: string, ruleId: string) {
+    return [
+      settle(toggleAutomationRuleAction(form({ ruleId }))),
+      settle(createAutomationRuleStepAction(stepFields(ruleId, { delayValue: "3", ...tagFields }))),
+      settle(updateFunnelAutomationRule({ pageId, ruleId, version: 1, name: "改名", tag: "改標籤" })),
+      settle(setFunnelAutomationRuleEnabled({ pageId, ruleId, version: 1, isActive: true })),
+    ];
+  }
+
+  it("refuses an admin's switch-on, new step, funnel edit and funnel switch-on that waited for an owner adding a LINE push step", async () => {
+    const { vendor, page, r } = await funnelRule();
+    as("admin", vendor);
+    const held = await holdRule(vendor.id, r.id, (tx) => tx.automationRuleStep.create({
+      data: { vendorId: vendor.id, ruleId: r.id, delayMinutes: 60, condition: { type: "always" }, actions: LINE as Prisma.InputJsonArray, isActive: true },
+    }));
+    let calls: Array<Promise<{ ok: boolean; error?: unknown }>> = [];
+    try {
+      calls = adminCalls(vendor.id, page.id, r.id);
+      // Every call is queued on the row lock before the owner commits (well inside lock_timeout).
+      await untilWaiting(4, 3_000);
+    } finally {
+      held.release();
+      await held.done;
+    }
+    const results = await Promise.all(calls);
+    expect(results.map((result) => result.ok)).toEqual([false, false, false, false]);
+    const [toggle, create, funnelEdit, funnelEnable] = results.map((result) => result.error);
+    expect(String((toggle as Error).message)).toBe(ERROR);
+    expect(String((create as Error).message)).toBe(ERROR);
+    expect(funnelEdit).toBeInstanceOf(FunnelAutomationLinePushOwnerOnlyError);
+    expect(funnelEnable).toBeInstanceOf(FunnelAutomationLinePushOwnerOnlyError);
+    // Only the owner's step was written.
+    await expect(db.automationRule.findUniqueOrThrow({ where: { id: r.id } })).resolves.toMatchObject({ name: r.name, isActive: false, version: 1, actions: [{ type: "add_customer_tag", tag: "漏斗" }] });
+    await expect(db.automationRuleStep.findMany({ where: { ruleId: r.id }, select: { delayMinutes: true, actions: true } })).resolves.toEqual([{ delayMinutes: 60, actions: LINE }]);
+    await expect(db.auditLog.count({ where: { vendorId: vendor.id } })).resolves.toBe(0);
+  });
+
+  it("gives up after lock_timeout as busy on every writer, also on a second consecutive round", async () => {
+    const { vendor, page, r } = await funnelRule();
+    as("admin", vendor);
+    for (let round = 0; round < 2; round += 1) {
+      const held = await holdRule(vendor.id, r.id);
+      let results: Array<{ ok: boolean; error?: unknown; ms: number }> = [];
+      try {
+        const started = Date.now();
+        results = await Promise.all(adminCalls(vendor.id, page.id, r.id).map((call) => call.then((result) => ({ ...result, ms: Date.now() - started }))));
+      } finally {
+        held.release();
+        await held.done;
+      }
+      const [toggle, create, funnelEdit, funnelEnable] = results;
+      expect(String((toggle!.error as Error).message)).toBe("redirect:/settings/automations?error=toggle_busy");
+      expect(String((create!.error as Error).message)).toBe("redirect:/settings/automations?error=step_busy");
+      expect(funnelEdit!.error).toBeInstanceOf(FunnelAutomationBusyError);
+      expect(funnelEnable!.error).toBeInstanceOf(FunnelAutomationBusyError);
+      // Nothing waited for the owner's commit (released only afterwards) or
+      // for the 15 s transaction timeout. PostgreSQL applies lock_timeout to
+      // each lock acquisition: the first queued FOR UPDATE waits on the
+      // holder's transaction id, the others first on the row's tuple lock, and
+      // the one that gets the tuple lock when the first gives up then waits
+      // again on the transaction id. So a call gives up after 5 s or, queued
+      // behind another, after up to about 10 s (2 × lock_timeout).
+      for (const result of results) {
+        expect(result.ms).toBeGreaterThanOrEqual(4_500);
+        expect(result.ms).toBeLessThan(12_500);
+      }
+      expect(Math.min(...results.map((result) => result.ms))).toBeLessThan(7_000);
+    }
+    await expect(db.automationRule.findUniqueOrThrow({ where: { id: r.id } })).resolves.toMatchObject({ isActive: false, version: 1 });
+    await expect(db.automationRuleStep.count({ where: { ruleId: r.id } })).resolves.toBe(0);
+    await expect(db.auditLog.count({ where: { vendorId: vendor.id } })).resolves.toBe(0);
+  }, 40_000);
 });

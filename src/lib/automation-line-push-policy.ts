@@ -46,16 +46,22 @@ export function mayWriteAutomationActions(role: string | null | undefined, actio
 
 /**
  * Whether the stored rule `ruleId` of `vendorId` has a LINE push anywhere.
- * `null` when the rule is not this vendor's (or is gone). Callers that change
- * the rule read it inside the transaction that holds the rule row FOR UPDATE,
- * so an owner adding a LINE push step at the same moment is serialized.
+ * `null` when the rule is not this vendor's (or is gone, or outside the
+ * optional funnel page / trigger scope). Callers that change the rule read it
+ * inside the transaction that holds the rule row FOR UPDATE, so an owner
+ * adding a LINE push step at the same moment is serialized.
  */
 export async function storedAutomationRuleIncludesLinePush(
   db: Pick<Prisma.TransactionClient, "automationRule">,
-  input: { vendorId: string; ruleId: string },
+  input: { vendorId: string; ruleId: string; funnelPageId?: string; trigger?: string },
 ) {
   const rule = await db.automationRule.findFirst({
-    where: { id: input.ruleId, vendorId: input.vendorId },
+    where: {
+      id: input.ruleId,
+      vendorId: input.vendorId,
+      ...(input.funnelPageId === undefined ? {} : { funnelPageId: input.funnelPageId }),
+      ...(input.trigger === undefined ? {} : { trigger: input.trigger }),
+    },
     select: { actions: true, steps: { where: { vendorId: input.vendorId }, select: { actions: true } } },
   });
   return rule ? automationRuleIncludesLinePush(rule) : null;

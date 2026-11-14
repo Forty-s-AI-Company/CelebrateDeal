@@ -225,6 +225,28 @@ describe("AutomationSettingsPage", () => {
       expect(plain).toContain("LINE 推播僅限擁有者設定。");
     });
 
+    it("words the read-only note for where the LINE push is and which controls the page shows (NIT-3)", async () => {
+      const note = (html: string) => html.match(/<p class="[^"]*">([^<]*LINE 推播僅限擁有者設定。[^<]*)<\/p>/u)?.[1] ?? "";
+      // Steps shown, LINE push only in a step.
+      granted("admin");
+      mocks.rules.mockResolvedValue([rule({ name: "步驟推播", actions: TAG, isActive: false, steps: [{ id: "s1", delayMinutes: 60, isActive: true, actions: [{ type: "line_push", message: "x" }] }] })]);
+      expect(note(ruleArticle(await render(), "步驟推播"))).toBe("這條規則的延遲步驟含 LINE 推播。LINE 推播僅限擁有者設定。你可以停用、刪除規則或刪除步驟，但不能啟用、新增或修改步驟。");
+
+      // payment_paid takes no steps: nothing about steps.
+      mocks.rules.mockResolvedValue([rule({ name: "付款推播", trigger: "payment_paid", condition: { type: "order_amount_gte", amountCents: 10_000 }, actions: [{ type: "line_push", message: "x" }], isActive: false })]);
+      const paid = ruleArticle(await render(), "付款推播");
+      expect(note(paid)).toBe("這條規則含 LINE 推播。LINE 推播僅限擁有者設定。你可以停用或刪除規則，但不能啟用。");
+      expect(paid).not.toContain("刪除步驟");
+
+      // Beta off: the step section is hidden, so say the LINE push sits in a delayed step that is not shown.
+      admin();
+      mocks.rules.mockResolvedValue([rule({ name: "隱藏步驟", actions: TAG, isActive: false, steps: [{ id: "s1", delayMinutes: 60, isActive: true, actions: [{ type: "line_push", message: "x" }] }] })]);
+      const hidden = ruleArticle(await render(), "隱藏步驟");
+      expect(note(hidden)).toBe("這條規則的延遲步驟含 LINE 推播（延遲步驟目前不在此頁顯示）。LINE 推播僅限擁有者設定。你可以停用或刪除規則，但不能啟用。");
+      expect(hidden).not.toContain("刪除步驟");
+      expect(hidden).not.toContain(">啟用<");
+    });
+
     it("leaves every control of a LINE push rule to the owner", async () => {
       granted("owner");
       mocks.rules.mockResolvedValue([rule({ id: "step-line", name: "步驟推播", actions: TAG, isActive: false, steps: [{ id: "s-line", delayMinutes: 120, isActive: false, actions: [{ type: "line_push", message: "第二天" }] }] })]);

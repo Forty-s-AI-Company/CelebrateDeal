@@ -174,7 +174,8 @@ describe("funnel automation service", () => {
       runtime.db.automationRule.findFirst.mockResolvedValue(withLineStep);
       await expect(updateFunnelAutomationRule({ pageId: "page-1", ruleId: "rule-1", version: 2, name: "新名稱", tag: "新標籤" }, runtime.db as never)).rejects.toBeInstanceOf(FunnelAutomationLinePushOwnerOnlyError);
       expect(runtime.db.automationRule.findFirst).toHaveBeenCalledWith({
-        where: { id: "rule-1", vendorId: "vendor-1" },
+        // Scoped like the CAS: this page's form_registered rules only (NIT-2).
+        where: { id: "rule-1", vendorId: "vendor-1", funnelPageId: "page-1", trigger: "form_registered" },
         select: { actions: true, steps: { where: { vendorId: "vendor-1" }, select: { actions: true } } },
       });
       expect(runtime.db.$queryRaw.mock.invocationCallOrder[0]).toBeLessThan(runtime.db.automationRule.findFirst.mock.invocationCallOrder[0]!);
@@ -218,6 +219,31 @@ describe("funnel automation service", () => {
       runtime.db.automationRule.create.mockResolvedValue({ ...tagRule, isActive: true });
       await expect(createFunnelAutomationRule({ pageId: "page-1", name: "九月報名", tag: "講座已報名" }, runtime.db as never)).resolves.toMatchObject({ id: "rule-1", linePushOwnerOnly: false });
     });
+  });
+
+  it("bounds the edit's wait for the rule lock and reports a held rule as busy, writing nothing (MINOR-1)", async () => {
+    runtime.db.$transaction.mockImplementation(async (work: (tx: unknown) => unknown) => work(runtime.db));
+    runtime.db.$queryRaw.mockResolvedValue([{ id: "rule-1" }]);
+    runtime.db.automationRule.updateMany.mockResolvedValue({ count: 1 });
+    await updateFunnelAutomationRule({ pageId: "page-1", ruleId: "rule-1", version: 2, name: "新版", tag: "新標籤" }, runtime.db as never);
+    // SET LOCAL lock_timeout runs on the transaction client before the FOR UPDATE.
+    const [setLocal] = runtime.db.$executeRaw.mock.calls[0] as [TemplateStringsArray];
+    expect(setLocal.join("?")).toBe("SET LOCAL lock_timeout = '5s'");
+    expect(runtime.db.$executeRaw.mock.invocationCallOrder[0]).toBeLessThan(runtime.db.$queryRaw.mock.invocationCallOrder[0]!);
+    expect(runtime.db.$transaction).toHaveBeenCalledWith(expect.any(Function), { maxWait: 5_000, timeout: 15_000 });
+    runtime.db.automationRule.updateMany.mockClear();
+    runtime.audit.mockClear();
+    for (const error of [
+      new Prisma.PrismaClientKnownRequestError("canceling statement due to lock timeout", { code: "P2010", clientVersion: Prisma.prismaVersion.client, meta: { code: "55P03" } }),
+      new Prisma.PrismaClientKnownRequestError("Transaction API error", { code: "P2028", clientVersion: Prisma.prismaVersion.client }),
+    ]) {
+      runtime.db.$transaction.mockRejectedValueOnce(error);
+      await expect(updateFunnelAutomationRule({ pageId: "page-1", ruleId: "rule-1", version: 2, name: "新版", tag: "新標籤" }, runtime.db as never)).rejects.toBeInstanceOf(FunnelAutomationBusyError);
+    }
+    runtime.db.$transaction.mockRejectedValueOnce(new Error("connection lost"));
+    await expect(updateFunnelAutomationRule({ pageId: "page-1", ruleId: "rule-1", version: 2, name: "新版", tag: "新標籤" }, runtime.db as never)).rejects.toThrow("connection lost");
+    expect(runtime.db.automationRule.updateMany).not.toHaveBeenCalled();
+    expect(runtime.audit).not.toHaveBeenCalled();
   });
 
   it("does not reveal or mutate a page outside the selected project", async () => {
