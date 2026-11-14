@@ -2,7 +2,6 @@ import { createHash } from "node:crypto";
 import { Prisma, type PrismaClient } from "@prisma/client";
 import { z } from "zod";
 import { getCanonicalAppUrl } from "@/lib/app-url";
-import { getDb } from "@/lib/db";
 import { isFeatureEnabled } from "@/lib/vendor-feature-toggles";
 import { hashInteractionBearer } from "@/lib/live-interaction";
 import {
@@ -52,23 +51,42 @@ export type AutomationTrigger = typeof AUTOMATION_TRIGGERS[number];
  * The single list of triggers a merchant may put on a new rule, or switch a
  * rule on with (F-4 gap 2). The UI and every Server Action read it.
  *
- * Only these three have a production caller today (form submission route and
- * the two consultation actions). `form_no_show`, `viewer_watch_progress` and
- * `webinar_attended_duration_gte` have none, so a rule using them would never
- * run. `payment_paid` has none either: the next F-4 PR wires it into the
- * payment flow (with its own independent review) and adds it back here.
- * Existing rules with a hidden trigger stay listed and can be switched off or
- * deleted, but not created, switched on or edited into one.
+ * Only these four have a production caller today: the form submission route,
+ * the two consultation actions, and the first paid transition of a canonical
+ * order in the payment webhook (F-4 PR 3, src/lib/payment-paid-automation.ts).
+ * `form_no_show`, `viewer_watch_progress` and `webinar_attended_duration_gte`
+ * have none, so a rule using them would never run. Existing rules with a
+ * hidden trigger stay listed and can be switched off or deleted, but not
+ * created, switched on or edited into one.
  */
 export const AVAILABLE_AUTOMATION_TRIGGERS = [
   "form_registered",
   "consultation_booked",
   "consultation_no_show",
+  "payment_paid",
 ] as const satisfies readonly AutomationTrigger[];
 export type AvailableAutomationTrigger = typeof AVAILABLE_AUTOMATION_TRIGGERS[number];
 
 export function isAvailableAutomationTrigger(value: unknown): value is AvailableAutomationTrigger {
   return typeof value === "string" && (AVAILABLE_AUTOMATION_TRIGGERS as readonly string[]).includes(value);
+}
+
+/**
+ * Triggers whose rules may have delayed steps (F-4 PR 2): their subject is a
+ * registration or a consultation booking, which a DelayedStepRun can point at
+ * and the worker can read again later. `payment_paid` runs its immediate
+ * actions only: a run has no order reference yet (DelayedStepRun's CHECK), so
+ * its delayed steps wait for a later PR. Step changes on any other rule are
+ * refused (`steps_unsupported`), no run is started and the worker stops one.
+ */
+export const DELAYED_STEP_AUTOMATION_TRIGGERS = [
+  "form_registered",
+  "consultation_booked",
+  "consultation_no_show",
+] as const satisfies readonly AvailableAutomationTrigger[];
+
+export function automationTriggerSupportsDelayedSteps(value: unknown): value is typeof DELAYED_STEP_AUTOMATION_TRIGGERS[number] {
+  return typeof value === "string" && (DELAYED_STEP_AUTOMATION_TRIGGERS as readonly string[]).includes(value);
 }
 
 export function isAutomationTrigger(value: unknown): value is AutomationTrigger {
@@ -623,7 +641,8 @@ async function executeAction(
  * A rule deleted mid-event is recovered from a caught foreign-key error (P2003)
  * or missing row (P2025) by issuing further queries; inside a PostgreSQL
  * transaction the failed statement would abort it and those queries would
- * fail too. Every caller today passes getDb().
+ * fail too. Every caller today passes getDb() (payment_paid:
+ * src/lib/payment-paid-automation.ts, after the payment transaction committed).
  */
 export async function dispatchAutomationEvent(db: AutomationDb, event: AutomationEvent) {
   const queuedEmailIds: string[] = [];
@@ -864,7 +883,8 @@ async function runAutomationEvent(db: AutomationDb, event: AutomationEvent, queu
  * F-4 (docs/product/delayed-steps-design.md §8): one DelayedStepRun per rule
  * and triggering event, anchored at the event's first execution, due when the
  * rule's first active step is. Only for a trigger merchants may use today and
- * whose subject the worker can read again later: the registration of
+ * whose subject the worker can read again later (DELAYED_STEP_AUTOMATION_
+ * TRIGGERS): the registration of
  * `form_registered`, the booking of the two consultation triggers. The run
  * stores references only (rule, execution log, subject, customer key), never
  * the event's e-mail address.
@@ -880,7 +900,8 @@ async function startDelayedSteps(
 ) {
   const { event } = input;
   try {
-    if (!isAvailableAutomationTrigger(event.trigger) || event.subjectType !== "buyer_registration" || !event.subjectKeyHash) return;
+    // payment_paid (an order subject) never starts a run: see DELAYED_STEP_AUTOMATION_TRIGGERS.
+    if (!automationTriggerSupportsDelayedSteps(event.trigger) || event.subjectType !== "buyer_registration" || !event.subjectKeyHash) return;
     // Closed beta (M3): only a vendor holding the grant, and not suspended.
     const vendor = await db.vendor.findUnique({ where: { id: event.vendorId }, select: { betaFeatureGrants: true, suspendedAt: true } });
     if (!vendor || vendor.suspendedAt || !isFeatureEnabled(vendor, AUTOMATION_DELAYED_STEPS_FEATURE)) return;
@@ -1181,56 +1202,4 @@ export async function dispatchFormNoShowAutomationsForLive(
     cursor = submissions.length === 200 ? submissions.at(-1)?.id : undefined;
   } while (cursor);
   return { dispatched };
-}
-
-export async function dispatchPaymentPaidAutomation(input: {
-  vendorId: string;
-  webhookEventId: string;
-  transactionId: string;
-}) {
-  const db = getDb();
-  const order = await db.commerceOrder.findFirst({
-    where: { vendorId: input.vendorId, primaryPaymentTransactionId: input.transactionId, status: "paid" },
-    select: { id: true, totalAmountCents: true, currency: true, checkoutIdentityHash: true, automationCustomerKeyHash: true },
-  });
-  if (!order) return [];
-  const results = await dispatchAutomationEvent(db, {
-    vendorId: input.vendorId,
-    eventId: input.webhookEventId,
-    trigger: "payment_paid",
-    subjectType: "buyer_order",
-    subjectId: order.id,
-    subjectKeyHash: order.automationCustomerKeyHash ?? order.checkoutIdentityHash,
-    orderAmountCents: order.totalAmountCents,
-    currency: order.currency,
-  });
-  if (results.some((result) => result.status === "failed")) throw new Error("Payment automation action failed.");
-  return results;
-}
-
-/** Recovers a post-commit automation dispatch from a repeated provider callback. */
-export async function dispatchPaymentPaidAutomationByOrder(input: {
-  webhookEventId: string;
-  providerName: string;
-  orderNumber: string;
-  vendorId?: string;
-}) {
-  const db = getDb();
-  const transactions = await db.paymentTransaction.findMany({
-    where: {
-      providerName: input.providerName,
-      orderNumber: input.orderNumber,
-      status: "paid",
-      ...(input.vendorId ? { vendorId: input.vendorId } : {}),
-    },
-    orderBy: { createdAt: "desc" },
-    take: 2,
-    select: { id: true, vendorId: true },
-  });
-  if (transactions.length !== 1 || !transactions[0]) throw new Error("Automation payment source is ambiguous.");
-  return dispatchPaymentPaidAutomation({
-    vendorId: transactions[0].vendorId,
-    webhookEventId: input.webhookEventId,
-    transactionId: transactions[0].id,
-  });
 }

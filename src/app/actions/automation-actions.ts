@@ -79,7 +79,11 @@ function emailAction(form: FormData): Record<string, unknown> | null {
   return { type: "send_email_notification", template };
 }
 
-/** Kept for every known trigger, so the threshold triggers work again once they are made available. */
+/**
+ * payment_paid needs a paid-amount threshold (NT$, stored in cents and
+ * compared with the order's server-recorded paidAmountCents). The watch
+ * triggers keep theirs for when they are made available again.
+ */
 function ruleCondition(trigger: string, conditionValue: number) {
   if (automationTriggerNeedsThreshold(trigger) && (!Number.isInteger(conditionValue) || conditionValue < 1)) throw new Error("invalid");
   if (trigger === "payment_paid") return { type: "order_amount_gte", amountCents: Math.round(conditionValue * 100) };
@@ -309,6 +313,7 @@ function deleteRuleIfUnused(vendorId: string, id: string) {
 const STEP_ERROR_CODES = new Set([
   "not_found",
   "trigger_unavailable",
+  "steps_unsupported",
   "invalid_step",
   "invalid_delay",
   "duplicate_delay",
@@ -336,8 +341,9 @@ function parseStep(form: FormData): AutomationStepInput {
   try { delayMinutes = stepDelayMinutes(form); } catch { throw new Error("invalid_delay"); }
   return {
     delayMinutes,
-    // The three triggers merchants can use carry no amount or watch time, so
-    // the existing condition schema only has "always" for them.
+    // The three triggers that take delayed steps (DELAYED_STEP_AUTOMATION_
+    // TRIGGERS) carry no amount or watch time, so the existing condition
+    // schema only has "always" for them. payment_paid rules take no steps.
     condition: { type: "always" },
     actions: parseActions(form),
     isActive: form.get("stepActive") === "on",

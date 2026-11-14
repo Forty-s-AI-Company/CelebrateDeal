@@ -20,6 +20,7 @@ import {
   AUTOMATION_DELAYED_STEPS_FEATURE,
   automationExecutionNotes,
   automationTriggerNeedsThreshold,
+  automationTriggerSupportsDelayedSteps,
   isAutomationStepExecution,
   isAvailableAutomationTrigger,
   maskAutomationTarget,
@@ -34,6 +35,7 @@ const PATH = "/settings/automations";
 const ACTIONS: Record<string, string> = { line_push: "LINE 推播", send_email_notification: "Email 通知", add_customer_tag: "客戶打標", issue_repurchase_voucher: "派發回購券" };
 const ERROR_MESSAGES: Record<string, string> = {
   trigger_unavailable: "這個觸發條件目前不會執行，不能用來建立或啟用規則。",
+  steps_unsupported: "「訂單付款完成」的規則目前只能設定立即執行的動作，不能加延遲步驟。",
   delete_requires_inactive: "請先停用規則，再刪除。",
   delete_has_history: "這條規則已有執行紀錄，為保留紀錄與已發出的標籤、折價券，只能停用、不能刪除。",
   not_found: "找不到這條規則或步驟，或你沒有管理權限。",
@@ -54,6 +56,7 @@ const UPDATED_MESSAGES: Record<string, string> = {
   step_deleted: "延遲步驟已刪除。",
 };
 const UNAVAILABLE_TRIGGER_NOTE = "此觸發條件目前不會執行：系統尚未接上這個事件，規則不會被觸發。可以停用或刪除，但不能重新啟用。";
+const NO_DELAYED_STEPS_NOTE = "「訂單付款完成」的規則目前只有立即執行的動作，還不能加延遲步驟。";
 const EMAIL_TEMPLATES: Array<[string, string]> = [
   ["consultation_confirmation", "諮詢預約確認"],
   ["class_reminder", "課前提醒"],
@@ -219,8 +222,8 @@ export default async function AutomationSettingsPage({ searchParams }: { searchP
     db.automationExecutionLog.findMany({ where: { vendorId: vendor.id }, orderBy: { createdAt: "desc" }, take: 50, include: { rule: { select: { name: true } } } }),
     delayedSteps ? automationRuleRunCounts(vendor.id, db) : Promise.resolve(new Map<string, { active: number; completed: number; cancelled: number }>()),
   ]);
-  // The threshold field only matters for amount/watch triggers; it returns
-  // with them (payment_paid in the next F-4 PR).
+  // The threshold field only matters for amount/watch triggers (today only
+  // payment_paid, F-4 PR 3).
   const showThreshold = AVAILABLE_AUTOMATION_TRIGGERS.some((trigger) => automationTriggerNeedsThreshold(trigger));
   return <>
     <PageHeader title="自動化" description="把報名、直播、諮詢與訂單串成跨管道行銷流程。商家 owner 與管理員可以管理。" />
@@ -230,7 +233,7 @@ export default async function AutomationSettingsPage({ searchParams }: { searchP
 
     <Card className="mb-6"><h2 className="text-lg font-semibold text-slate-950">熱門劇本一鍵套用</h2><p className="mb-4 text-sm text-slate-600">需要派券的劇本請先選商品。</p><div className="grid gap-4 lg:grid-cols-2">{AVAILABLE_AUTOMATION_RECIPES.map((recipe) => <form action={createAutomationRecipeAction} key={recipe.id} className="grid gap-3 rounded-xl border border-border p-4"><CsrfField /><input type="hidden" name="recipeId" value={recipe.id} /><div><h3 className="font-semibold text-slate-900">{recipe.name}</h3><p className="mt-1 text-sm text-slate-600">{recipe.description}</p></div><p className="text-xs font-medium text-slate-500">{triggerLabel(recipe.trigger)} → {actionLabels(recipe.actions).join(" + ")}</p>{recipe.actions.some((action) => action.type === "issue_repurchase_voucher") ? <SelectField label="套券商品" name="productId"><option value="">請選擇商品</option>{products.map((product) => <option key={product.id} value={product.id}>{product.name}</option>)}</SelectField> : null}<SubmitButton pendingChildren="套用中…">一鍵套用劇本</SubmitButton></form>)}</div></Card>
 
-    <Card className="mb-6"><h2 className="mb-4 text-lg font-semibold text-slate-950">自訂規則</h2><form action={createAutomationRuleAction} className="grid gap-4" aria-label="建立自訂規則"><CsrfField /><div className="grid gap-4 md:grid-cols-2"><Field label="規則名稱" name="name" required maxLength={120} /><SelectField label="觸發事件" name="trigger" defaultValue={AVAILABLE_AUTOMATION_TRIGGERS[0]}>{AVAILABLE_AUTOMATION_TRIGGERS.map((value) => <option key={value} value={value}>{triggerLabel(value)}</option>)}</SelectField></div>{showThreshold ? <Field label="條件門檻（付款金額元／觀看秒數；事件型觸發可留空）" name="conditionValue" type="number" min={1} step={1} /> : null}<p className="text-sm text-slate-600">以下是事件發生時「立即執行」的動作{delayedSteps ? "；建立後可在規則下方加上延遲步驟（例如 1 天後再寄一封）" : ""}。</p><ActionFields products={products} /><SubmitButton pendingChildren="建立中…">建立規則</SubmitButton></form></Card>
+    <Card className="mb-6"><h2 className="mb-4 text-lg font-semibold text-slate-950">自訂規則</h2><form action={createAutomationRuleAction} className="grid gap-4" aria-label="建立自訂規則"><CsrfField /><div className="grid gap-4 md:grid-cols-2"><Field label="規則名稱" name="name" required maxLength={120} /><SelectField label="觸發事件" name="trigger" defaultValue={AVAILABLE_AUTOMATION_TRIGGERS[0]}>{AVAILABLE_AUTOMATION_TRIGGERS.map((value) => <option key={value} value={value}>{triggerLabel(value)}</option>)}</SelectField></div>{showThreshold ? <Field label="付款金額門檻（元；只用於「訂單付款完成」，其他觸發條件留空）" name="conditionValue" type="number" min={1} step={1} /> : null}<p className="text-sm text-slate-600">以下是事件發生時「立即執行」的動作{delayedSteps ? "；建立後可在規則下方加上延遲步驟（例如 1 天後再寄一封，「訂單付款完成」除外）" : ""}。「訂單付款完成」在付款確認後執行一次，金額以訂單實際付款金額判斷，Email 寄給訂單的買家。</p><ActionFields products={products} /><SubmitButton pendingChildren="建立中…">建立規則</SubmitButton></form></Card>
 
     <Card className="mb-6"><h2 className="mb-4 text-lg font-semibold text-slate-950">規則</h2><div className="grid gap-4">{rules.length ? rules.map((rule) => {
       const available = isAvailableAutomationTrigger(rule.trigger);
@@ -239,7 +242,9 @@ export default async function AutomationSettingsPage({ searchParams }: { searchP
         <div className="flex flex-wrap items-center justify-between gap-3"><div><h3 className="font-semibold text-slate-900">{rule.name}</h3><p className="text-xs text-slate-500">{rule.createdAt.toLocaleString("zh-TW")}</p></div><div className="flex flex-wrap gap-2">{available ? null : <Badge tone="gray">目前不會執行</Badge>}<Badge tone={rule.isActive ? "green" : "gray"}>{rule.isActive ? "啟用中" : "已停用"}</Badge></div></div>
         <div className="flex flex-wrap items-center gap-2 text-sm"><span className="rounded-md bg-slate-100 px-3 py-2">觸發：{triggerLabel(rule.trigger)}</span><span>→</span><span className="rounded-md bg-amber-50 px-3 py-2">條件：{conditionLabel(rule.condition)}</span><span>→</span><span className="rounded-md bg-emerald-50 px-3 py-2">立即執行：{actionLabels(rule.actions).join(" + ")}</span></div>
         {available ? null : <p className="rounded-md border border-border bg-slate-50 px-3 py-2 text-sm text-slate-700">{UNAVAILABLE_TRIGGER_NOTE}</p>}
-        {delayedSteps ? <RuleSteps rule={rule} available={available} products={products} counts={runCounts.get(rule.id)} /> : null}
+        {delayedSteps ? (automationTriggerSupportsDelayedSteps(rule.trigger) || !available
+          ? <RuleSteps rule={rule} available={available} products={products} counts={runCounts.get(rule.id)} />
+          : <p className="rounded-md border border-border bg-slate-50 px-3 py-2 text-sm text-slate-700">{NO_DELAYED_STEPS_NOTE}</p>) : null}
         <div className="flex flex-wrap items-end gap-3">
           {rule.isActive || available ? <form action={toggleAutomationRuleAction}><CsrfField /><input type="hidden" name="ruleId" value={rule.id} /><SubmitButton pendingChildren="更新中…">{rule.isActive ? "停用" : "啟用"}</SubmitButton></form> : null}
           {available ? <form action={dryRunAutomationRuleAction} className="flex flex-wrap items-end gap-2"><CsrfField /><input type="hidden" name="ruleId" value={rule.id} /><Field label="模擬訂單（元）" name="orderAmount" type="number" min={0} defaultValue={30000} /><Field label="模擬觀看（秒）" name="watchSeconds" type="number" min={0} defaultValue={1800} /><label className="mb-2 flex items-center gap-2 text-xs"><input type="checkbox" name="hasPurchased" /> 已購買</label><SubmitButton pendingChildren="測試中…">Dry-run 測試</SubmitButton></form> : null}

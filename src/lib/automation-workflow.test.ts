@@ -25,7 +25,7 @@ import { legacyDerivedKeyUseCount, resetLegacyDerivedKeyUseCounts } from "@/lib/
 import { hashInteractionBearer } from "@/lib/live-interaction";
 import { deriveSensitiveDataKey } from "@/lib/sensitive-data";
 import { revealEmailDeliveryPayload, verifyEmailUnsubscribeToken } from "@/lib/email-delivery-pii";
-import { AUTOMATION_BUTTON_URL_ERROR_MESSAGE, AUTOMATION_RECIPES, AUTOMATION_TRIGGERS, AVAILABLE_AUTOMATION_RECIPES, AVAILABLE_AUTOMATION_TRIGGERS, automationExecutionNotes, isAvailableAutomationTrigger, automationConditionMatches, isSafeNewAutomationButtonUrl, automationCustomerKeyHash, dispatchAutomationEvent, dispatchFormNoShowAutomationsForLive, dispatchPaymentPaidAutomationByOrder, dryRunAutomationRule, maskAutomationTarget, materializeAutomationRecipe, parseAutomationRule } from "@/lib/automation-workflow";
+import { AUTOMATION_BUTTON_URL_ERROR_MESSAGE, AUTOMATION_RECIPES, AUTOMATION_TRIGGERS, AVAILABLE_AUTOMATION_RECIPES, AVAILABLE_AUTOMATION_TRIGGERS, automationExecutionNotes, isAvailableAutomationTrigger, automationConditionMatches, isSafeNewAutomationButtonUrl, automationCustomerKeyHash, dispatchAutomationEvent, DELAYED_STEP_AUTOMATION_TRIGGERS, automationTriggerSupportsDelayedSteps, dispatchFormNoShowAutomationsForLive, dryRunAutomationRule, maskAutomationTarget, materializeAutomationRecipe, parseAutomationRule } from "@/lib/automation-workflow";
 
 const event = {
   vendorId: "vendor-1",
@@ -308,13 +308,18 @@ describe("smart automation workflow engine", () => {
   });
 
   it("offers only triggers with a production caller, and only their recipes", () => {
-    expect([...AVAILABLE_AUTOMATION_TRIGGERS]).toEqual(["form_registered", "consultation_booked", "consultation_no_show"]);
-    for (const hidden of ["payment_paid", "form_no_show", "viewer_watch_progress", "webinar_attended_duration_gte"]) {
+    // F-4 PR 3: payment_paid has its caller (the payment webhook) again.
+    expect([...AVAILABLE_AUTOMATION_TRIGGERS]).toEqual(["form_registered", "consultation_booked", "consultation_no_show", "payment_paid"]);
+    for (const hidden of ["form_no_show", "viewer_watch_progress", "webinar_attended_duration_gte"]) {
       expect(AUTOMATION_TRIGGERS).toContain(hidden);
       expect(isAvailableAutomationTrigger(hidden)).toBe(false);
+      expect(automationTriggerSupportsDelayedSteps(hidden)).toBe(false);
     }
     expect(isAvailableAutomationTrigger("unknown")).toBe(false);
-    expect(AVAILABLE_AUTOMATION_RECIPES.map((recipe) => recipe.id)).toEqual(["consultation_confirmer"]);
+    expect(AVAILABLE_AUTOMATION_RECIPES.map((recipe) => recipe.id)).toEqual(["consultation_confirmer", "vip_auto_tiering"]);
+    // payment_paid runs immediate actions only; delayed steps stay with registrations and bookings.
+    expect([...DELAYED_STEP_AUTOMATION_TRIGGERS]).toEqual(["form_registered", "consultation_booked", "consultation_no_show"]);
+    expect(automationTriggerSupportsDelayedSteps("payment_paid")).toBe(false);
     expect(automationExecutionNotes(null)).toEqual([]);
     expect(automationExecutionNotes([{ type: "send_email_notification", status: "skipped", reason: "other" }, "junk", { type: "line_push", status: "skipped", reason: "recipient_blacklisted" }])).toEqual([]);
     // A delayed step's log keeps { actions, results } (F-4 review m2) and may skip an unconfirmed address (M2).
@@ -658,22 +663,5 @@ describe("smart automation workflow engine", () => {
     expect(deliveryKeys).toHaveLength(1);
     expect(mocks.enqueueLineNotification.mock.calls[0]?.[1].idempotencyKey)
       .toBe(mocks.enqueueLineNotification.mock.calls[1]?.[1].idempotencyKey);
-  });
-
-  it("recovers a committed payment by an unambiguous provider order", async () => {
-    const db = {
-      paymentTransaction: { findMany: vi.fn().mockResolvedValue([{ id: "transaction-1", vendorId: "vendor-1" }]) },
-      commerceOrder: { findFirst: vi.fn().mockResolvedValue({
-        id: "order-1", totalAmountCents: 12_000, currency: "TWD", checkoutIdentityHash: "customer-hash",
-      }) },
-      automationRule: { findMany: vi.fn().mockResolvedValue([]) },
-    };
-    mocks.getDb.mockReturnValue(db);
-    await expect(dispatchPaymentPaidAutomationByOrder({
-      webhookEventId: "webhook-1",
-      providerName: "payuni",
-      orderNumber: "CD-1",
-    })).resolves.toEqual([]);
-    expect(db.paymentTransaction.findMany).toHaveBeenCalledWith(expect.objectContaining({ take: 2 }));
   });
 });
