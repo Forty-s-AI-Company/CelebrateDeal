@@ -141,6 +141,14 @@ describe("automation actions", () => { it("requires CSRF and writes tenant-scope
     await expect(dryRunAutomationRuleAction(ruleForm("foreign"))).rejects.toThrow("redirect:/settings/automations?error=not_found");
   });
 
+  // Review MAJOR-1: the migration switches existing payment_paid rules off; the merchant switches them on again here.
+  it("switches a paused payment_paid rule on again like any switched-off rule", async () => {
+    runtime.db.automationRule.findFirst.mockResolvedValueOnce({ id: "r1", isActive: false, trigger: "payment_paid" });
+    await expect(toggleAutomationRuleAction(ruleForm())).rejects.toThrow("redirect:/settings/automations?updated=toggled");
+    expect(runtime.db.automationRule.updateMany).toHaveBeenCalledWith({ where: { id: "r1", vendorId: "v1", isActive: false }, data: { isActive: true } });
+    expect(runtime.audit).toHaveBeenCalledWith(expect.objectContaining({ action: "activate_automation_rule", targetId: "r1" }));
+  });
+
   it.each(HIDDEN_TRIGGERS)("lets an existing %s rule be switched off but never on again", async (trigger) => {
     runtime.db.automationRule.findFirst.mockResolvedValueOnce({ id: "r1", isActive: true, trigger });
     await expect(toggleAutomationRuleAction(ruleForm())).rejects.toThrow("redirect:/settings/automations?updated=toggled");

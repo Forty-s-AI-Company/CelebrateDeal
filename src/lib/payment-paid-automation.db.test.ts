@@ -13,6 +13,8 @@ const hooks = vi.hoisted(() => ({
   after: (() => { throw new Error("`after` was called outside a request scope"); }) as (callback: () => unknown) => void,
   dispatch: null as null | ((...args: unknown[]) => Promise<unknown>),
   line: null as null | ((...args: unknown[]) => Promise<unknown>),
+  invoice: null as null | ((...args: unknown[]) => Promise<unknown>),
+  audit: null as null | ((input: { action: string }) => Promise<unknown>),
 }));
 const monitoring = vi.hoisted(() => ({ captureOperationalError: vi.fn() }));
 
@@ -36,6 +38,23 @@ vi.mock("@/lib/automation-workflow", async (original) => {
       hooks.dispatch ? hooks.dispatch(...args) : actual.dispatchAutomationEvent(...args),
   };
 });
+// Review MINOR-2: the post-commit steps around the trigger can be made to fail.
+vi.mock("@/lib/taiwan-electronic-invoice", async (original) => {
+  const actual = await original<typeof import("@/lib/taiwan-electronic-invoice")>();
+  return {
+    ...actual,
+    reconcileElectronicInvoiceAfterPayment: (...args: Parameters<typeof actual.reconcileElectronicInvoiceAfterPayment>) =>
+      hooks.invoice ? hooks.invoice(...args) : actual.reconcileElectronicInvoiceAfterPayment(...args),
+  };
+});
+vi.mock("@/lib/audit", async (original) => {
+  const actual = await original<typeof import("@/lib/audit")>();
+  return {
+    ...actual,
+    writeAuditLog: (...args: Parameters<typeof actual.writeAuditLog>) =>
+      hooks.audit ? hooks.audit(args[0]) : actual.writeAuditLog(...args),
+  };
+});
 vi.mock("@/lib/line-notification", async (original) => {
   const actual = await original<typeof import("@/lib/line-notification")>();
   return {
@@ -52,6 +71,7 @@ import { revealEmailDeliveryPayload } from "@/lib/email-delivery-pii";
 import { createReservedPaymentTransaction } from "@/lib/inventory-reservations";
 import { dispatchPaymentPaidAutomationForOrder } from "@/lib/payment-paid-automation";
 import { PaymentWebhookPayload, processPaymentWebhook } from "@/lib/payment-webhooks";
+import { retryWebhookEvent } from "@/lib/webhook-retry";
 
 const db = getDb();
 const vendorIds: string[] = [];
@@ -64,6 +84,8 @@ beforeEach(() => {
   hooks.after = () => { throw new Error("`after` was called outside a request scope"); };
   hooks.dispatch = null;
   hooks.line = null;
+  hooks.invoice = null;
+  hooks.audit = null;
   monitoring.captureOperationalError.mockClear();
 });
 
@@ -316,7 +338,7 @@ describe("失敗隔離：自動化不影響付款結果", () => {
     const result = await processPaymentWebhook(callback(t, c, "paid"));
     expect(result.transaction).toMatchObject({ id: c.transactionId, status: "paid" });
     expect(await paymentState(c)).toEqual(PAID_STATE);
-    expect(monitoring.captureOperationalError).toHaveBeenCalledWith(expect.any(Error), expect.objectContaining({ area: "payment_paid_automation", operation: "dispatch", vendorId: t.vendor.id }));
+    expect(monitoring.captureOperationalError).toHaveBeenCalledWith(expect.any(Error), { source: "payment_paid_automation", operation: "dispatch" });
   });
 
   it("through the route: a hook that throws after the response changes neither the 200 nor the payment", async () => {
@@ -351,7 +373,7 @@ describe("失敗隔離：自動化不影響付款結果", () => {
     expect(log).toMatchObject({ status: "failed", errorCode: "unsubscribe_url_unavailable" });
     expect(await db.customerTagAssignment.count({ where: { vendorId: t.vendor.id } })).toBe(1);
     expect(await db.emailDelivery.count({ where: { vendorId: t.vendor.id, trigger: "automation" } })).toBe(0);
-    expect(monitoring.captureOperationalError).toHaveBeenCalledWith(expect.any(Error), expect.objectContaining({ area: "payment_paid_automation", operation: "rule_failed", failedRules: 1 }));
+    expect(monitoring.captureOperationalError).toHaveBeenCalledWith(expect.any(Error), { source: "payment_paid_automation", operation: "rule_failed" });
   });
 
   it("an action that throws fails its rule only; the other rule still runs and the payment stands", async () => {
@@ -420,5 +442,81 @@ describe("跨租戶、退款、失敗、停權", () => {
     await processPaymentWebhook(callback(t, c, "paid"));
     expect(await paymentState(c)).toEqual(PAID_STATE);
     expect(await logsOf(t)).toEqual([]);
+  });
+});
+
+describe("付款收尾步驟失敗時（審查 MINOR-2）", () => {
+  /** Collects the post-response hooks as a request scope would. */
+  function collectHooks() {
+    const scheduled: Array<() => unknown> = [];
+    hooks.after = (work) => { scheduled.push(work); };
+    return scheduled;
+  }
+
+  it("an e-invoice step that rejects: same error out, payment paid, the hook registered and run once, a resend triggers nothing", async () => {
+    const t = await tenant("invoice-fails");
+    await paymentRule(t);
+    const c = await checkout(t);
+    const scheduled = collectHooks();
+    const outage = new Error("synthetic e-invoice outage");
+    hooks.invoice = async () => { throw outage; };
+    const first = callback(t, c, "paid");
+    await expect(processPaymentWebhook(first)).rejects.toBe(outage);
+    expect(await paymentState(c)).toEqual(PAID_STATE);
+    expect(scheduled).toHaveLength(1);
+    await Promise.all(scheduled.map((work) => work()));
+    expect((await logsOf(t)).map((log) => log.status)).toEqual(["completed"]);
+
+    hooks.invoice = null;
+    await processPaymentWebhook(first);
+    await processPaymentWebhook(callback(t, c, "paid"));
+    expect(scheduled).toHaveLength(1);
+    expect((await logsOf(t)).map((log) => log.status)).toEqual(["completed"]);
+    expect(await paymentState(c)).toEqual(PAID_STATE);
+  });
+
+  it("an audit write that rejects: same error out, payment paid, the hook registered and run once, a resend triggers nothing", async () => {
+    const t = await tenant("audit-fails");
+    await paymentRule(t);
+    const c = await checkout(t);
+    const scheduled = collectHooks();
+    const outage = new Error("synthetic audit outage");
+    hooks.audit = async (input) => {
+      if (input.action === "payment_webhook_paid") throw outage;
+    };
+    const first = callback(t, c, "paid");
+    await expect(processPaymentWebhook(first)).rejects.toBe(outage);
+    expect(await paymentState(c)).toEqual(PAID_STATE);
+    expect(scheduled).toHaveLength(1);
+    await Promise.all(scheduled.map((work) => work()));
+    expect((await logsOf(t)).map((log) => log.status)).toEqual(["completed"]);
+
+    hooks.audit = null;
+    await processPaymentWebhook(first);
+    expect(scheduled).toHaveLength(1);
+    expect((await logsOf(t)).map((log) => log.status)).toEqual(["completed"]);
+  });
+
+  it("a stored paid event replayed by the webhook-retry job (retryWebhookEvent) triggers once; a second replay does nothing", async () => {
+    const t = await tenant("retry-job");
+    await paymentRule(t);
+    const c = await checkout(t, "demo");
+    const scheduled = collectHooks();
+    const normalized = { provider: "demo", eventId: `paid-auto-retry-${randomUUID()}`, eventType: "paid", vendorId: t.vendor.id, orderNumber: c.orderNumber, grossAmountCents: PRICE_CENTS, currency: "TWD" };
+    const event = await db.webhookEvent.create({
+      data: { provider: "demo", eventId: normalized.eventId, eventType: "paid", status: "failed", retryCount: 1, maxRetries: 5, nextRetryAt: new Date(Date.now() - 1_000), payload: { normalized } },
+    });
+    await expect(retryWebhookEvent(event.id, "synthetic-retry-job")).resolves.toMatchObject({ status: "processed" });
+    expect(await paymentState(c)).toEqual(PAID_STATE);
+    // The job's response goes out first: nothing ran yet.
+    expect(await logsOf(t)).toEqual([]);
+    expect(scheduled).toHaveLength(1);
+    await Promise.all(scheduled.map((work) => work()));
+    expect((await logsOf(t)).map((log) => log.status)).toEqual(["completed"]);
+    // Already processed: a second replay neither reprocesses nor schedules.
+    await retryWebhookEvent(event.id, "synthetic-retry-job");
+    expect(scheduled).toHaveLength(1);
+    expect((await logsOf(t)).map((log) => log.status)).toEqual(["completed"]);
+    await db.webhookEvent.deleteMany({ where: { id: event.id } });
   });
 });

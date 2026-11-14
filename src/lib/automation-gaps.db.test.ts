@@ -351,6 +351,18 @@ describe("hidden automation triggers on stored rules (F-4 gap 2)", () => {
     expect(await db.auditLog.count({ where: { vendorId: a.vendor.id, action: "delete_automation_rule", targetId: paid.id } })).toBe(1);
   });
 
+  it("switches a payment_paid rule paused by the F-4 PR 3 migration on again, for its own vendor only (review MAJOR-1)", async () => {
+    const a = await tenant();
+    const b = await tenant();
+    const paused = await storedRule(a.vendor.id, "payment_paid", false);
+    runtime.actor = { user: { id: "synthetic-user-b" }, vendor: { id: b.vendor.id }, member: { role: "owner" } };
+    await expect(toggleAutomationRuleAction(form({ ruleId: paused.id }))).rejects.toThrow("error=not_found");
+    runtime.actor = { user: { id: "synthetic-user" }, vendor: { id: a.vendor.id }, member: { role: "admin" } };
+    await expect(toggleAutomationRuleAction(form({ ruleId: paused.id }))).rejects.toThrow("updated=toggled");
+    expect(await db.automationRule.findUniqueOrThrow({ where: { id: paused.id } })).toMatchObject({ isActive: true, trigger: "payment_paid" });
+    expect(await db.auditLog.count({ where: { vendorId: a.vendor.id, action: "activate_automation_rule", targetId: paused.id } })).toBe(1);
+  });
+
   it("keeps a switched-off rule that has run, with the tags it issued", async () => {
     const a = await tenant();
     runtime.actor = { user: { id: "synthetic-user" }, vendor: { id: a.vendor.id }, member: { role: "owner" } };

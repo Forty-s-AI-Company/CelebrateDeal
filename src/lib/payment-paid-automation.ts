@@ -44,13 +44,14 @@ function buyerEmail(order: { id: string; buyerEncryptedEnvelope: string; shippin
   } catch (error) {
     // The e-mail action then reports `recipient_not_linked`; tags, vouchers
     // and LINE still run.
-    report(error, "buyer_email", vendorId);
+    report(error, "buyer_email");
     return null;
   }
 }
 
 /**
- * Runs the vendor's active `payment_paid` rules for one order. The order must
+ * Runs the vendor's active `payment_paid` rules for one order. A vendor without
+ * one stops at the first query. The order must
  * be this vendor's, still `paid` with nothing refunded, not a test order, and
  * the vendor not suspended (F-036: a suspended vendor's payment is recorded
  * but nothing is provisioned or sent). Rules only ever see the server's
@@ -62,6 +63,12 @@ export async function dispatchPaymentPaidAutomationForOrder(
   input: { vendorId: string; orderId: string },
   db: PaymentPaidAutomationDb = getDb(),
 ): Promise<PaymentPaidAutomationOutcome> {
+  // Most vendors have no payment rule: they never read (or decrypt) the order.
+  const rule = await db.automationRule.findFirst({
+    where: { vendorId: input.vendorId, trigger: "payment_paid", isActive: true },
+    select: { id: true },
+  });
+  if (!rule) return { status: "no_rules" };
   const order = await db.commerceOrder.findFirst({
     where: {
       id: input.orderId,
@@ -82,12 +89,6 @@ export async function dispatchPaymentPaidAutomationForOrder(
     },
   });
   if (!order) return { status: "not_applicable" };
-  // Most vendors have no payment rule: do not decrypt the buyer for nothing.
-  const rule = await db.automationRule.findFirst({
-    where: { vendorId: input.vendorId, trigger: "payment_paid", isActive: true },
-    select: { id: true },
-  });
-  if (!rule) return { status: "no_rules" };
   const recipientEmail = buyerEmail(order, input.vendorId);
   const results = await dispatchAutomationEvent(db, {
     vendorId: input.vendorId,
@@ -104,9 +105,16 @@ export async function dispatchPaymentPaidAutomationForOrder(
   return { status: "dispatched", results };
 }
 
-function report(error: unknown, operation: string, vendorId: string, extra: Record<string, unknown> = {}) {
+/** What a report says: which step failed. */
+export type PaymentPaidAutomationReport = "dispatch" | "rule_failed" | "buyer_email" | "inline" | "inline_timeout";
+
+/**
+ * Only keys of monitoring.ts SAFE_CONTEXT_KEYS reach Sentry, so the report is
+ * `source` + `operation` (fixed values, no vendor, order or buyer data).
+ */
+function report(error: unknown, operation: PaymentPaidAutomationReport) {
   try {
-    captureOperationalError(error, { area: "payment_paid_automation", operation, vendorId, ...extra });
+    captureOperationalError(error, { source: "payment_paid_automation", operation });
   } catch {
     // Monitoring must never reach the payment.
   }
@@ -121,21 +129,21 @@ async function runContained(input: { vendorId: string; orderId: string }) {
   try {
     const outcome = await dispatchPaymentPaidAutomationForOrder(input);
     if (outcome.status !== "dispatched") return;
-    const failedRules = outcome.results.filter((result) => result.status === "failed").length;
-    if (failedRules > 0) report(new Error("Payment-paid automation rule failed."), "rule_failed", input.vendorId, { failedRules });
+    // Which rule and why stays on its execution log, visible to the merchant.
+    if (outcome.results.some((result) => result.status === "failed")) report(new Error("Payment-paid automation rule failed."), "rule_failed");
   } catch (error) {
-    report(error, "dispatch", input.vendorId);
+    report(error, "dispatch");
   }
 }
 
-async function waitAtMost(work: Promise<void>, ms: number, vendorId: string) {
+async function waitAtMost(work: Promise<void>, ms: number) {
   let timer: ReturnType<typeof setTimeout> | undefined;
   const timedOut = new Promise<"timeout">((resolve) => {
     timer = setTimeout(() => resolve("timeout"), ms);
   });
   try {
     const result = await Promise.race([work.then(() => "done" as const), timedOut]);
-    if (result === "timeout") report(new Error("Payment-paid automation timed out."), "inline_timeout", vendorId);
+    if (result === "timeout") report(new Error("Payment-paid automation timed out."), "inline_timeout");
   } finally {
     if (timer) clearTimeout(timer);
   }
@@ -158,9 +166,9 @@ export async function runPaymentPaidAutomationAfterCommit(input: { vendorId: str
     // Outside a request scope (or `after` unavailable): run it now instead.
   }
   try {
-    await waitAtMost(runContained(input), PAYMENT_PAID_AUTOMATION_INLINE_TIMEOUT_MS, input.vendorId);
+    await waitAtMost(runContained(input), PAYMENT_PAID_AUTOMATION_INLINE_TIMEOUT_MS);
   } catch (error) {
-    report(error, "inline", input.vendorId);
+    report(error, "inline");
   }
   return "ran_inline";
 }

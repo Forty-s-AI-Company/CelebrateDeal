@@ -117,6 +117,15 @@ describe("AutomationSettingsPage", () => {
     expect(html).not.toContain("延遲步驟（0／10）");
   });
 
+  it("shows a payment_paid rule paused by the deploy migration like any switched-off rule, with its switch-on button", async () => {
+    mocks.rules.mockResolvedValue([rule({ id: "paid-off", name: "付款回購", trigger: "payment_paid", condition: { type: "order_amount_gte", amountCents: 10_000 }, isActive: false })]);
+    const html = await render();
+    expect(html).toContain("已停用");
+    expect(html).toContain(">啟用<");
+    expect(html).not.toContain("此觸發條件目前不會執行");
+    expect(html).not.toContain("目前不會執行</span>");
+  });
+
   it.each([
     ["error", "steps_unsupported", "「訂單付款完成」的規則目前只能設定立即執行的動作，不能加延遲步驟。"],
     ["updated", "step_created", "延遲步驟已新增。"],
