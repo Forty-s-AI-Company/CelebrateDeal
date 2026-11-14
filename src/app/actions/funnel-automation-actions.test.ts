@@ -14,6 +14,7 @@ vi.mock("@/lib/funnel-automation-service", () => {
   class FunnelAutomationScopeError extends Error {}
   class FunnelAutomationNotFoundError extends Error {}
   class FunnelAutomationConflictError extends Error {}
+  class FunnelAutomationBusyError extends Error {}
   return {
     listFunnelAutomationRules: runtime.list,
     createFunnelAutomationRule: runtime.create,
@@ -23,6 +24,7 @@ vi.mock("@/lib/funnel-automation-service", () => {
     FunnelAutomationScopeError,
     FunnelAutomationNotFoundError,
     FunnelAutomationConflictError,
+    FunnelAutomationBusyError,
   };
 });
 
@@ -62,6 +64,12 @@ describe("funnel automation actions", () => {
     await setFunnelAutomationRuleEnabledAction(form({ pageId: "page-1", ruleId: "rule-1", version: "4", isActive: "false", _csrf: "csrf" }));
     expect(runtime.update).toHaveBeenCalledWith({ pageId: "page-1", ruleId: "rule-1", version: 3, name: "新版", tag: "新標籤" });
     expect(runtime.setEnabled).toHaveBeenCalledWith({ pageId: "page-1", ruleId: "rule-1", version: 4, isActive: false });
+  });
+
+  it("reports a rule held by the delayed-step worker or another tab as busy, without changing anything", async () => {
+    const { FunnelAutomationBusyError } = await import("@/lib/funnel-automation-service");
+    runtime.setEnabled.mockRejectedValueOnce(new FunnelAutomationBusyError());
+    await expect(setFunnelAutomationRuleEnabledAction(form({ pageId: "page-1", ruleId: "rule-1", version: "4", isActive: "false", _csrf: "csrf" }))).resolves.toMatchObject({ status: "error", message: "規則正在被其他人修改或執行，請稍後再試。" });
   });
 
   it("returns a visible input error before an invalid enable operation reaches the service", async () => {

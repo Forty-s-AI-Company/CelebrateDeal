@@ -66,6 +66,7 @@ vi.mock("@/lib/auth", async (importOriginal) => ({
   requireVendorContext: async () => vendorContext(),
   requireVendorManagerContext: async () => vendorContext(),
   requireVendorManager: async () => state.vendor,
+  requireVendorManagerMember: async () => vendorContext(),
   requireVendorFinance: async () => vendorContext(),
   requireVendorOwnerFinance: async () => vendorContext(),
 }));
@@ -104,7 +105,7 @@ vi.mock("next/headers", () => ({
 }));
 vi.mock("next/cache", () => ({ revalidatePath: () => undefined, revalidateTag: () => undefined }));
 
-const ALL_GRANTS = ["courses", "billing", "funnel_binding", "consultation_booking", "browser_live", "danmaku", "email_sequences"];
+const ALL_GRANTS = ["courses", "billing", "funnel_binding", "consultation_booking", "browser_live", "danmaku", "email_sequences", "automation_delayed_steps"];
 
 function closeModule(feature: string) {
   state.vendor.enabledFeatureModules = ["funnel_builder", "live_webinar", "affiliate_program", "tax_remuneration", "analytics_advanced", "consultation_booking"];
@@ -180,6 +181,10 @@ const ENTRIES: Entry[] = [
   ) },
   { feature: "email_sequences", kind: "action", name: "activateEmailSequenceAction", run: async () => (await import("@/app/actions/email-sequence-actions")).activateEmailSequenceAction(form({ sequenceId: "seq-1", expectedVersion: "1" })) },
   { feature: "email_sequences", kind: "page", name: "/messages/sequences", run: async () => (await import("@/app/(app)/messages/sequences/page")).default({ searchParams: Promise.resolve({}) }) },
+  // automation_delayed_steps (F-4 PR 2; the page only hides its section, the event and the worker check the grant per vendor)
+  { feature: "automation_delayed_steps", kind: "action", name: "createAutomationRuleStepAction", run: async () => (await import("@/app/actions/automation-actions")).createAutomationRuleStepAction(form({ ruleId: "rule-1", delayValue: "1", delayUnit: "days", actionTag: "on", customerTag: "第二天", stepActive: "on" })) },
+  { feature: "automation_delayed_steps", kind: "action", name: "updateAutomationRuleStepAction", run: async () => (await import("@/app/actions/automation-actions")).updateAutomationRuleStepAction(form({ ruleId: "rule-1", stepId: "step-1", delayValue: "2", delayUnit: "hours", actionTag: "on", customerTag: "第二天" })) },
+  { feature: "automation_delayed_steps", kind: "action", name: "deleteAutomationRuleStepAction", run: async () => (await import("@/app/actions/automation-actions")).deleteAutomationRuleStepAction(form({ ruleId: "rule-1", stepId: "step-1" })) },
   { feature: "danmaku", kind: "route", name: "GET /api/live-danmaku (viewer)", run: async () => (await import("@/app/api/live-danmaku/route")).GET(jsonRequest("https://app.example.test/api/live-danmaku?vendorId=vendor-1&liveId=live-1", { headers: { cookie: "celebratedeal_live_viewer=" + "a".repeat(43) } })) },
 ];
 
@@ -196,6 +201,7 @@ describe("closed-beta module × entry matrix (F-001 / F-002)", () => {
     expect([...kinds("browser_live")].sort()).toEqual(["page", "route"]);
     expect([...kinds("danmaku")]).toEqual(["route"]);
     expect([...kinds("email_sequences")].sort()).toEqual(["action", "page"]);
+    expect([...kinds("automation_delayed_steps")]).toEqual(["action"]);
   });
 
   it.each(ENTRIES)("$feature $kind $name is blocked while the module is closed", async (entry) => {
@@ -292,6 +298,12 @@ const STATIC_MATRIX: Array<{ feature: string; file: string; gate: RegExp; count?
   ...["page.tsx", "new/page.tsx", "[id]/edit/page.tsx"].map((file) => ({ feature: "email_sequences", file: `src/app/(app)/messages/sequences/${file}`, gate: /requireFeatureOrNotFound\(vendor, "email_sequences"\)/u })),
   { feature: "email_sequences", file: "src/app/actions/email-sequence-actions.ts", gate: /requireFeature\(vendor, "email_sequences"\)/u },
   { feature: "email_sequences", file: "src/lib/delayed-step-runs.ts", gate: /isFeatureEnabled\(vendor, EMAIL_SEQUENCES_FEATURE\)|betaFeatureGrants: \{ has: EMAIL_SEQUENCES_FEATURE \}|\$\{EMAIL_SEQUENCES_FEATURE\} = ANY\(v\."betaFeatureGrants"\)/gu, count: 5 },
+  // automation_delayed_steps (F-4 PR 2): step Server Actions, the page section, run creation, the worker and the send-time check
+  { feature: "automation_delayed_steps", file: "src/app/actions/automation-actions.ts", gate: /requireFeature\(vendor, AUTOMATION_DELAYED_STEPS_FEATURE\)/gu, count: 3 },
+  { feature: "automation_delayed_steps", file: "src/app/(app)/settings/automations/page.tsx", gate: /isFeatureEnabled\(vendor, AUTOMATION_DELAYED_STEPS_FEATURE\)/u },
+  { feature: "automation_delayed_steps", file: "src/lib/automation-workflow.ts", gate: /isFeatureEnabled\(vendor, AUTOMATION_DELAYED_STEPS_FEATURE\)/u },
+  { feature: "automation_delayed_steps", file: "src/lib/delayed-step-runs.ts", gate: /betaFeatureGrants: \{ has: AUTOMATION_DELAYED_STEPS_GRANT \}|isFeatureEnabled\(vendor, AUTOMATION_DELAYED_STEPS_GRANT\)/gu, count: 2 },
+  { feature: "automation_delayed_steps", file: "src/lib/automation-delayed-steps.ts", gate: /\$\{AUTOMATION_DELAYED_STEPS_FEATURE\} = ANY\(v\."betaFeatureGrants"\)/gu, count: 3 },
 ];
 
 describe("static gate inventory (F-001 / F-002)", () => {

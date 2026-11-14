@@ -42,8 +42,10 @@ describe("F-3 email sequence schema contract", () => {
     expect(migration).not.toContain('ALTER TABLE "Vendor"');
     expect(grantMigration.match(/^ALTER TABLE "Vendor"/gmu)).toHaveLength(2);
     expect(grantMigration).not.toMatch(/CREATE|INSERT|UPDATE|DELETE/u);
-    // F-4 adds automationRuleId with its own migration; PR 1 has only e-mail sequences.
-    expect(modelOf("DelayedStepRun")).not.toMatch(/^\s+automationRuleId\s/mu);
+    // PR 1 had only e-mail sequences. F-4 adds automationRuleId in its own
+    // migrations (automation-step-schema-contract.test.ts); this PR 1
+    // migration itself stays unchanged.
+    expect(migration).not.toContain('"automationRuleId"');
     expect(migration).toContain('CHECK ("emailSequenceId" IS NOT NULL)');
   });
 
@@ -63,7 +65,8 @@ describe("F-3 email sequence schema contract", () => {
   it("keeps the database limits and values equal to the application constants", () => {
     expect(migration).toContain(`CHECK ("delayMinutes" BETWEEN ${SEQUENCE_STEP_MIN_DELAY_MINUTES} AND ${SEQUENCE_STEP_MAX_DELAY_MINUTES})`);
     for (const reason of DELAYED_STEP_CANCEL_REASONS) expect(migration).toContain(`'${reason}'`);
-    for (const feature of BETA_GATED_FEATURES) expect(grantMigration).toContain(`'${feature}'`);
+    // Every grant that existed at F-3; later grants rebuild the CHECK in their own migration (automation-step-schema-contract.test.ts).
+    for (const feature of BETA_GATED_FEATURES.filter((value) => value !== "automation_delayed_steps")) expect(grantMigration).toContain(`'${feature}'`);
     expect(MAX_ACTIVE_EMAIL_SEQUENCES_PER_VENDOR).toBe(5);
     expect(MAX_EMAIL_SEQUENCE_STEPS).toBe(10);
   });

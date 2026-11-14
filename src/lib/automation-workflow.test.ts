@@ -317,6 +317,9 @@ describe("smart automation workflow engine", () => {
     expect(AVAILABLE_AUTOMATION_RECIPES.map((recipe) => recipe.id)).toEqual(["consultation_confirmer"]);
     expect(automationExecutionNotes(null)).toEqual([]);
     expect(automationExecutionNotes([{ type: "send_email_notification", status: "skipped", reason: "other" }, "junk", { type: "line_push", status: "skipped", reason: "recipient_blacklisted" }])).toEqual([]);
+    // A delayed step's log keeps { actions, results } (F-4 review m2) and may skip an unconfirmed address (M2).
+    expect(automationExecutionNotes({ actions: [], results: [{ type: "send_email_notification", status: "skipped", reason: "recipient_unverified" }] })).toEqual(["Email 未寄出：收件人的 Email 尚未在本商家完成驗證"]);
+    expect(automationExecutionNotes({ actions: [], results: "junk" })).toEqual([]);
   });
 
   it("hands every email queued by one event to a single post-response hook, even when a later rule fails", async () => {

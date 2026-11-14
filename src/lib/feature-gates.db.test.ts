@@ -27,7 +27,7 @@ describe("Vendor.betaFeatureGrants", () => {
   it("starts empty, so every closed-beta module is off for a new vendor", async () => {
     const created = await vendor();
     expect(created.betaFeatureGrants).toEqual([]);
-    for (const feature of ["courses", "billing", "funnel_binding", "consultation_booking", "browser_live", "danmaku", "email_sequences"] as const) {
+    for (const feature of ["courses", "billing", "funnel_binding", "consultation_booking", "browser_live", "danmaku", "email_sequences", "automation_delayed_steps"] as const) {
       await expect(isVendorFeatureEnabled(db, created.id, feature)).resolves.toBe(false);
     }
     await expect(isCardBindingRequiredForVendor(db, created.id)).resolves.toBe(false);
@@ -65,9 +65,17 @@ describe("Vendor.betaFeatureGrants", () => {
     const [constraint] = await db.$queryRaw<Array<{ definition: string }>>`
       SELECT pg_get_constraintdef(oid) AS definition FROM pg_constraint WHERE conname = 'Vendor_betaFeatureGrants_check'
     `;
-    for (const value of ["courses", "billing", "funnel_binding", "consultation_booking", "browser_live", "danmaku", "email_sequences"]) {
+    for (const value of ["courses", "billing", "funnel_binding", "consultation_booking", "browser_live", "danmaku", "email_sequences", "automation_delayed_steps"]) {
       expect(constraint?.definition).toContain(`'${value}'`);
     }
+  });
+
+  it("accepts the automation_delayed_steps grant (F-4, 20261114090200_automation_delayed_steps_grant) and still rejects unknown values", async () => {
+    const created = await vendor();
+    await expect(isVendorFeatureEnabled(db, created.id, "automation_delayed_steps")).resolves.toBe(false);
+    await expect(db.vendor.update({ where: { id: created.id }, data: { betaFeatureGrants: ["email_sequences", "automation_delayed_steps"] } })).resolves.toMatchObject({ betaFeatureGrants: ["email_sequences", "automation_delayed_steps"] });
+    await expect(isVendorFeatureEnabled(db, created.id, "automation_delayed_steps")).resolves.toBe(true);
+    await expect(db.vendor.update({ where: { id: created.id }, data: { betaFeatureGrants: ["automation_delayed_step"] } })).rejects.toThrow();
   });
 });
 

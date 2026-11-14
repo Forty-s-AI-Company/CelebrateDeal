@@ -19,8 +19,8 @@ import {
   EMAIL_SEQUENCE_DEADLINE_MS,
   EMAIL_SEQUENCE_START_CUTOFF_MS,
   onceConfigurationReporter,
-  processDueDelayedStepRuns,
 } from "@/lib/delayed-step-runs";
+import { runDelayedStepWorker } from "@/lib/automation-delayed-steps";
 
 const SAFE_STATUSES = new Set([
   "sent",
@@ -105,6 +105,11 @@ const SAFE_SEQUENCE_STEP_STATUSES = new Set([
   "cancelled",
   "claimed_elsewhere",
   "failed",
+  // F-4 delayed automation steps share the worker (and these result slots).
+  "executed",
+  "condition_not_met",
+  "skipped_invalid",
+  "waiting_capacity",
 ]);
 
 /**
@@ -123,8 +128,9 @@ async function reportSequenceFailure(error: unknown, operation: string) {
 
 /**
  * F-3 Email 追銷序列, at the very end of the round: add verified registrants
- * the verify route missed, run due steps, then send sequence e-mails on their
- * own quota. Everything time-bound has been handled before it. It is skipped
+ * the verify route missed, run due steps (F-4 delayed automation steps too,
+ * on the same worker and e-mail capacity), then send sequence and delayed
+ * automation e-mails on their own quota. Everything time-bound has been handled before it. It is skipped
  * when the round already ran past EMAIL_SEQUENCE_START_CUTOFF_MS, every part
  * stops at EMAIL_SEQUENCE_DEADLINE_MS, and no part failing changes the
  * response of the rest of the round.
@@ -155,7 +161,8 @@ async function processEmailSequences(startedAt: number) {
     await reportSequenceFailure(error, "email_sequence_backfill");
   }
   try {
-    steps = await processDueDelayedStepRuns({ deadline, onConfigurationError });
+    // Sequence and automation runs (F-4) in one worker round.
+    steps = await runDelayedStepWorker({ deadline, onConfigurationError });
   } catch (error) {
     await reportSequenceFailure(error, "delayed_step_runs");
   }

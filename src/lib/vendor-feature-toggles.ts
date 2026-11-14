@@ -24,6 +24,8 @@ export const BETA_GATED_FEATURES = [
   "browser_live",
   "danmaku",
   "email_sequences",
+  // F-4: delayed steps of automation rules (docs/product/delayed-steps-design.md §8).
+  "automation_delayed_steps",
 ] as const;
 
 export type BetaGatedFeature = (typeof BETA_GATED_FEATURES)[number];
@@ -39,6 +41,7 @@ export const BETA_FEATURE_LABELS: Record<BetaGatedFeature, string> = {
   browser_live: "瀏覽器直播",
   danmaku: "彈幕與暖場控制台",
   email_sequences: "Email 追銷序列",
+  automation_delayed_steps: "自動化延遲步驟",
 };
 
 export const FEATURE_PRESETS = {

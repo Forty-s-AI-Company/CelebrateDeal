@@ -1,7 +1,7 @@
 import type { Prisma, PrismaClient } from "@prisma/client";
 import { getDb } from "@/lib/db";
 import { createEmailRecipientHash } from "@/lib/email-delivery-pii";
-import { isCurrentEmailDeliverySnapshot } from "@/lib/email-delivery";
+import { isCurrentEmailDeliverySnapshot, supersededCodeForTrigger } from "@/lib/email-delivery";
 import { EMAIL_DELIVERY_QUERY_MAX_LENGTH } from "@/lib/email-delivery-operations-contract";
 import { formatDateTime } from "@/lib/format";
 
@@ -25,7 +25,8 @@ export type EmailDeliveryTriggerFilter =
   | "form_submission_verification"
   | "live_reminder"
   | "post_live_followup"
-  | "sequence_email";
+  | "sequence_email"
+  | "automation_step";
 
 export type EmailDeliverySearchCriteria = {
   query: string;
@@ -72,7 +73,7 @@ const STATUS_FILTERS = new Set<EmailDeliveryStatusFilter>([
   "ALL", "ATTENTION", "queued", "sending", "sent", "failed", "exhausted", "suppressed", "superseded",
 ]);
 const TRIGGER_FILTERS = new Set<EmailDeliveryTriggerFilter>([
-  "ALL", "registration_confirmed", "form_submission_verification", "live_reminder", "post_live_followup", "sequence_email",
+  "ALL", "registration_confirmed", "form_submission_verification", "live_reminder", "post_live_followup", "sequence_email", "automation_step",
 ]);
 
 function readText(formData: FormData, name: string) {
@@ -240,6 +241,8 @@ export async function requeueEmailDelivery(input: {
         sourceLiveId: true,
         sourceFormSubmissionId: true,
         trigger: true,
+        // The send-time checks of sequence and delayed automation e-mails read their key.
+        idempotencyKey: true,
         createdAt: true,
         status: true,
         attemptCount: true,
@@ -268,7 +271,7 @@ export async function requeueEmailDelivery(input: {
           claimedAt: null,
           lastErrorCode: candidate.trigger === "form_submission_verification"
             ? "verification_superseded"
-            : candidate.trigger === "sequence_email" ? "sequence_superseded" : "config_superseded",
+            : supersededCodeForTrigger(candidate.trigger),
         },
       });
       if (stale.count !== 1) return { status: "conflict" as const };

@@ -1,8 +1,10 @@
 import { Prisma, type PrismaClient } from "@prisma/client";
 import { requireVendorManagerContext } from "@/lib/auth";
 import { auditSnapshot, writeAuditLog } from "@/lib/audit";
+import { stopDelayedStepRunsOfRule } from "@/lib/automation-delayed-steps";
 import { getDb } from "@/lib/db";
 import { requireEditableSalesProjectScope } from "@/lib/sales-project-scope";
+import { isLockTimeout } from "@/lib/serializable-retry";
 
 const MAX_NAME_LENGTH = 120;
 const MAX_TAG_LENGTH = 50;
@@ -29,11 +31,16 @@ export class FunnelAutomationNotFoundError extends Error {
   constructor() { super("funnel_automation_not_found"); }
 }
 
+/** The rule stayed locked (the delayed-step worker or another tab) for too long; nothing changed. */
+export class FunnelAutomationBusyError extends Error {
+  constructor() { super("funnel_automation_busy"); }
+}
+
 export class FunnelAutomationConflictError extends Error {
   constructor() { super("funnel_automation_conflict"); }
 }
 
-type FunnelAutomationDb = Pick<PrismaClient, "landingPage" | "automationRule">;
+type FunnelAutomationDb = Pick<PrismaClient, "landingPage" | "automationRule" | "$transaction">;
 
 type ScopedPage = {
   vendorId: string;
@@ -151,10 +158,30 @@ export async function setFunnelAutomationRuleEnabled(input: { pageId: unknown; r
   const id = ruleId(input.ruleId);
   const version = expectedVersion(input.version);
   if (!id || !version || typeof input.isActive !== "boolean") throw new FunnelAutomationInputError();
-  const updated = await database.automationRule.updateMany({
-    where: { id, vendorId: page.vendorId, funnelPageId: page.pageId, trigger: "form_registered", version },
-    data: { isActive: input.isActive, version: { increment: 1 } },
-  });
+  const isActive = input.isActive;
+  // The rule row is locked FOR UPDATE first (bound to the vendor), the order
+  // every writer of delayed-step runs uses (rule, then runs). Switching off
+  // also stops the rule's active delayed-step runs in the same transaction
+  // (F-4 review M1, same as /settings/automations): switching on again never
+  // revives them.
+  let updated: { count: number };
+  try {
+    updated = await database.$transaction(async (tx) => {
+      // Waiting for the delayed-step worker or another tab is bounded.
+      await tx.$executeRaw`SET LOCAL lock_timeout = '5s'`;
+      await tx.$queryRaw`SELECT "id" FROM "AutomationRule" WHERE "id" = ${id} AND "vendorId" = ${page.vendorId} FOR UPDATE`;
+      const result = await tx.automationRule.updateMany({
+        where: { id, vendorId: page.vendorId, funnelPageId: page.pageId, trigger: "form_registered", version },
+        data: { isActive, version: { increment: 1 } },
+      });
+      if (result.count === 1 && !isActive) await stopDelayedStepRunsOfRule(tx, { vendorId: page.vendorId, ruleId: id });
+      return result;
+    }, { maxWait: 5_000, timeout: 15_000 });
+  } catch (error) {
+    // lock_timeout (55P03) on the rule row, or the transaction could not start or finish in time (P2028).
+    if (isLockTimeout(error) || (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2028")) throw new FunnelAutomationBusyError();
+    throw error;
+  }
   if (updated.count === 0) await noUpdate(database, page, id);
   await writeAuditLog({ vendorId: page.vendorId, actorId: page.actorId, actorLabel: page.actorLabel, action: input.isActive ? "enable_funnel_automation_rule" : "disable_funnel_automation_rule", targetType: "AutomationRule", targetId: id, after: { isActive: input.isActive, version: version + 1 } });
 }

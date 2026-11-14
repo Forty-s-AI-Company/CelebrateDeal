@@ -23,7 +23,13 @@ import {
 import { isFixedSessionLive } from "@/lib/live-fixed-sessions";
 import { normalizeBlacklistIdentifier } from "@/lib/blacklist-identifiers";
 import { isEmailBlacklistedForVendor } from "@/lib/email-blacklist";
-import { AUTOMATION_EMAIL_TRIGGER } from "@/lib/automation-email-trigger";
+// Values used at module load come from the dependency-free trigger module:
+// delayed-step-runs.ts reaches this module again through the automation
+// engine (delayed-step-runs -> automation-delayed-steps -> automation-workflow
+// -> email-delivery-immediate -> email-delivery), so this module may be
+// evaluated before delayed-step-runs.ts has finished; its functions are only
+// called later.
+import { AUTOMATION_EMAIL_TRIGGER, AUTOMATION_STEP_EMAIL_TRIGGER, DELAYED_STEP_EMAIL_TRIGGERS, SEQUENCE_EMAIL_TRIGGER } from "@/lib/automation-email-trigger";
 import { captureOperationalError } from "@/lib/monitoring";
 import {
   createFormSubmissionVerificationToken,
@@ -42,7 +48,11 @@ import {
 } from "@/lib/live-notification-delivery";
 import { ACTIVE_VENDOR_RELATION, isVendorSuspendedById } from "@/lib/vendor-suspension-state";
 import { ensureEmailUnsubscribeFooter, formatLiveStartAt } from "@/lib/email-delivery-format";
-import { isCurrentSequenceEmailDelivery, SEQUENCE_EMAIL_DISPATCH_LIMIT, SEQUENCE_EMAIL_TRIGGER } from "@/lib/delayed-step-runs";
+import {
+  isCurrentAutomationStepEmailDelivery,
+  isCurrentSequenceEmailDelivery,
+  SEQUENCE_EMAIL_DISPATCH_LIMIT,
+} from "@/lib/delayed-step-runs";
 
 const DELIVERY_LEASE_MS = 10 * 60 * 1_000;
 const MAX_ATTEMPTS = 5;
@@ -1370,7 +1380,7 @@ type ClaimedDelivery = {
   maxAttempts: number;
 };
 
-type DeliverySnapshotDatabase = Pick<Prisma.TransactionClient, "live" | "liveNotificationRule" | "formSubmission" | "blacklist" | "evergreenSessionAssignment" | "delayedStepRun" | "vendor">
+type DeliverySnapshotDatabase = Pick<Prisma.TransactionClient, "live" | "liveNotificationRule" | "formSubmission" | "blacklist" | "evergreenSessionAssignment" | "delayedStepRun" | "vendor" | "automationExecutionLog" | "automationRule">
   & Partial<Pick<Prisma.TransactionClient, "studentPortalAccessToken">>;
 
 export type EmailDeliverySnapshotIdentity = Pick<
@@ -1652,7 +1662,8 @@ export async function isCurrentEmailDeliverySnapshot(
     && await isCurrentFixedSessionCancelledDelivery(delivery, database)
     && await isCurrentFixedSessionAlreadyRegisteredDelivery(delivery, database)
     && await isCurrentStudentPortalDelivery(delivery, now, database)
-    && await isCurrentSequenceEmailDelivery(delivery, now, database);
+    && await isCurrentSequenceEmailDelivery(delivery, now, database)
+    && await isCurrentAutomationStepEmailDelivery(delivery, now, database);
 }
 
 function reportDeliveryFailure(error: unknown, operation: string, status: string) {
@@ -1687,11 +1698,11 @@ async function finalizeSuppressed(delivery: ClaimedDelivery, errorCode = "recipi
 /**
  * Triggers whose queued mail is suppressed (`recipient_blacklisted`) at send
  * time when the recipient is on this vendor's Email blacklist: learner sign-in
- * links (owner policy 2026-11-10) and automation e-mails (F-4 gap 1, checked
- * at creation too). Sequence e-mails have their own check in
- * isCurrentSequenceEmailDelivery.
+ * links (owner policy 2026-11-10) and automation e-mails, immediate and
+ * delayed (F-4, checked at creation too). Sequence e-mails have their own
+ * check in isCurrentSequenceEmailDelivery.
  */
-const SEND_TIME_BLACKLIST_TRIGGERS: ReadonlySet<string> = new Set(["student_portal_magic_link", AUTOMATION_EMAIL_TRIGGER]);
+const SEND_TIME_BLACKLIST_TRIGGERS: ReadonlySet<string> = new Set(["student_portal_magic_link", AUTOMATION_EMAIL_TRIGGER, AUTOMATION_STEP_EMAIL_TRIGGER]);
 
 /** Send-time blacklist guard; reads the recipient only from the encrypted payload. */
 async function isDeliveryRecipientBlacklisted(
@@ -1773,7 +1784,7 @@ export async function dispatchEmailDelivery(deliveryId: string, actorLabel = "jo
       delivery,
       ["form_submission_verification", "student_portal_magic_link"].includes(delivery.trigger)
         ? "verification_superseded"
-        : delivery.trigger === SEQUENCE_EMAIL_TRIGGER ? "sequence_superseded" : "config_superseded",
+        : supersededCodeForTrigger(delivery.trigger),
     );
   }
   // Owner policy 2026-11-10: a learner sign-in link never reaches an address
@@ -1855,8 +1866,19 @@ export async function dispatchEmailDelivery(deliveryId: string, actorLabel = "jo
  */
 export const SEQUENCE_EMAIL_DISPATCH_TIME_BUDGET_MS = 20_000;
 
-/** Sequence e-mails (F-3) are dispatched on their own quota; every other trigger here. */
-const TIME_BOUND_TRIGGERS = { not: SEQUENCE_EMAIL_TRIGGER } as const;
+/**
+ * Sequence e-mails (F-3) and delayed automation step e-mails (F-4) are
+ * dispatched on their own quota; every other trigger here.
+ */
+const TIME_BOUND_TRIGGERS = { notIn: [...DELAYED_STEP_EMAIL_TRIGGERS] };
+const DELAYED_STEP_TRIGGERS = { in: [...DELAYED_STEP_EMAIL_TRIGGERS] };
+
+/** lastErrorCode of a delivery the send-time snapshot checks superseded (not a verification mail). */
+export function supersededCodeForTrigger(trigger: string) {
+  if (trigger === SEQUENCE_EMAIL_TRIGGER) return "sequence_superseded";
+  if (trigger === AUTOMATION_STEP_EMAIL_TRIGGER) return "automation_step_superseded";
+  return "config_superseded";
+}
 
 async function recoverStaleLeases(
   db: ReturnType<typeof getDb>,
@@ -1904,8 +1926,9 @@ function dueDeliveryWhere(now: Date, trigger: Prisma.EmailDeliveryWhereInput["tr
 
 /**
  * Time-bound mail (confirmations, reminders, follow-ups, notices): the round's
- * first dispatch pass, unchanged except that F-3 sequence e-mails are left to
- * processDueSequenceEmailDeliveries, so they never take this quota (S1).
+ * first dispatch pass, unchanged except that F-3 sequence e-mails and F-4
+ * delayed automation step e-mails are left to processDueSequenceEmailDeliveries,
+ * so they never take this quota (S1).
  */
 export async function processDueEmailDeliveries(limit = 20) {
   const db = getDb();
@@ -1927,7 +1950,8 @@ export async function processDueEmailDeliveries(limit = 20) {
 }
 
 /**
- * F-3 sequence e-mails, on their own quota at the end of the job round. Stops
+ * F-3 sequence e-mails and F-4 delayed automation step e-mails, on their own
+ * quota at the end of the job round. Stops
  * starting sends after SEQUENCE_EMAIL_DISPATCH_TIME_BUDGET_MS or at
  * `deadline` (epoch ms), whichever comes first; the rest waits.
  */
@@ -1936,11 +1960,11 @@ export async function processDueSequenceEmailDeliveries(options: { limit?: numbe
   const now = new Date();
   const limit = Math.max(0, options.limit ?? SEQUENCE_EMAIL_DISPATCH_LIMIT);
   const stopAt = Math.min(Date.now() + SEQUENCE_EMAIL_DISPATCH_TIME_BUDGET_MS, options.deadline ?? Number.POSITIVE_INFINITY);
-  const results = await recoverStaleLeases(db, now, limit, SEQUENCE_EMAIL_TRIGGER);
+  const results = await recoverStaleLeases(db, now, limit, DELAYED_STEP_TRIGGERS);
   const remaining = Math.max(0, limit - results.length);
   if (remaining === 0) return results;
   const due = await db.emailDelivery.findMany({
-    where: dueDeliveryWhere(now, SEQUENCE_EMAIL_TRIGGER),
+    where: dueDeliveryWhere(now, DELAYED_STEP_TRIGGERS),
     orderBy: { nextAttemptAt: "asc" },
     take: remaining,
     select: { id: true },

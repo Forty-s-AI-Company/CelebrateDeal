@@ -7,6 +7,7 @@ import { auditSnapshot, writeAuditLog } from "@/lib/audit";
 import { requireVendorManagerMember } from "@/lib/auth";
 import { assertServerActionSecurity } from "@/lib/csrf";
 import {
+  AUTOMATION_DELAYED_STEPS_FEATURE,
   automationTriggerNeedsThreshold,
   dryRunAutomationRule,
   isAutomationTrigger,
@@ -14,7 +15,15 @@ import {
   isSafeNewAutomationButtonUrl,
   materializeAutomationRecipe,
 } from "@/lib/automation-workflow";
+import {
+  createAutomationRuleStep,
+  deleteAutomationRuleStep,
+  stopDelayedStepRunsOfRule,
+  updateAutomationRuleStep,
+  type AutomationStepInput,
+} from "@/lib/automation-delayed-steps";
 import { getDb } from "@/lib/db";
+import { requireFeature } from "@/lib/feature-gates";
 import { isLockTimeout } from "@/lib/serializable-retry";
 
 // Owner and admin manage automations here, the same roles as the funnel
@@ -78,6 +87,14 @@ function ruleCondition(trigger: string, conditionValue: number) {
   return { type: "always" };
 }
 
+/** The action checkboxes and fields shared by the rule form and every delayed-step form. */
+function parseActions(form: FormData) {
+  const actions = [voucherAction(form), lineAction(form), emailAction(form), tagAction(form)]
+    .filter((action): action is Record<string, unknown> => action !== null);
+  if (!actions.length) throw new Error("no_action");
+  return actions;
+}
+
 function parseRule(form: FormData) {
   const name = text(form, "name");
   const trigger = text(form, "trigger");
@@ -87,9 +104,7 @@ function parseRule(form: FormData) {
   // not only hidden in the form.
   if (!isAvailableAutomationTrigger(trigger)) throw new TriggerUnavailableError();
   const condition = ruleCondition(trigger, conditionValue);
-  const actions = [voucherAction(form), lineAction(form), emailAction(form), tagAction(form)]
-    .filter((action): action is Record<string, unknown> => action !== null);
-  if (!actions.length) throw new Error("no_action");
+  const actions = parseActions(form);
   return { name, trigger, condition, actions };
 }
 
@@ -166,20 +181,48 @@ export async function toggleAutomationRuleAction(formData: FormData) {
   if (!existing) fail("not_found");
   // Switching off always works; switching on needs a trigger that can run.
   if (!existing.isActive && !isAvailableAutomationTrigger(existing.trigger)) fail("trigger_unavailable");
-  // Conditional on the state just read, so a rule deleted (or switched) in
-  // the meantime is reported instead of throwing.
-  const updated = await getDb().automationRule.updateMany({
-    where: { id: existing.id, vendorId: vendor.id, isActive: existing.isActive },
-    data: { isActive: !existing.isActive },
-  });
-  if (updated.count !== 1) {
-    const stillThere = await getDb().automationRule.findFirst({ where: { id: existing.id, vendorId: vendor.id }, select: { id: true } });
-    fail(stillThere ? "toggle_conflict" : "not_found");
+  let outcome: ToggleOutcome;
+  try {
+    outcome = await toggleRule(vendor.id, existing);
+  } catch (error) {
+    if (!isDeleteBusy(error)) throw error;
+    fail("toggle_busy");
   }
-  const after = { ...existing, isActive: !existing.isActive };
+  if (outcome.code !== "toggled") fail(outcome.code);
+  const after = { ...existing, isActive: !existing.isActive, cancelledRuns: outcome.cancelledRuns };
   await writeAuditLog({ vendorId: vendor.id, actorId: user.id, actorLabel: member.role, action: after.isActive ? "activate_automation_rule" : "deactivate_automation_rule", targetType: "AutomationRule", targetId: existing.id, before: auditSnapshot(existing), after: auditSnapshot(after) });
   revalidatePath(PATH);
   redirect(`${PATH}?updated=toggled`);
+}
+
+type ToggleOutcome = { code: "toggled"; cancelledRuns: number } | { code: "toggle_conflict" | "not_found" };
+
+/**
+ * Switches a rule on or off. The rule row is locked FOR UPDATE first (bound to
+ * the vendor), in the same order as the delayed-step worker (rule FOR SHARE,
+ * then the run) and the step editor (rule FOR UPDATE). The update stays
+ * conditional on the state read before, so a rule switched or deleted in the
+ * meantime is reported instead of overwritten. Switching off also stops every
+ * active delayed-step run of the rule in the same transaction
+ * (`definition_paused`, F-4 review M1): switching it on again never revives
+ * them, even before their next step was due.
+ */
+function toggleRule(vendorId: string, existing: { id: string; isActive: boolean }) {
+  return getDb().$transaction(async (tx): Promise<ToggleOutcome> => {
+    await tx.$executeRaw`SET LOCAL lock_timeout = '5s'`;
+    await tx.$queryRaw`SELECT "id" FROM "AutomationRule" WHERE "id" = ${existing.id} AND "vendorId" = ${vendorId} FOR UPDATE`;
+    const updated = await tx.automationRule.updateMany({
+      where: { id: existing.id, vendorId, isActive: existing.isActive },
+      data: { isActive: !existing.isActive },
+    });
+    if (updated.count !== 1) {
+      const stillThere = await tx.automationRule.findFirst({ where: { id: existing.id, vendorId }, select: { id: true } });
+      return { code: stillThere ? "toggle_conflict" : "not_found" };
+    }
+    if (!existing.isActive) return { code: "toggled", cancelledRuns: 0 };
+    const cancelled = await stopDelayedStepRunsOfRule(tx, { vendorId, ruleId: existing.id });
+    return { code: "toggled", cancelledRuns: cancelled };
+  }, DELETE_TRANSACTION_OPTIONS);
 }
 
 /** A delete waits at most this long for a running execution to commit its log row. */
@@ -192,7 +235,9 @@ type DeleteOutcome =
 /**
  * Deletes a switched-off rule that has never run. Execution logs cascade to
  * the tags and vouchers they issued (schema onDelete: Cascade), so a rule with
- * history is kept and can only be switched off.
+ * history is kept and can only be switched off. The same holds for a rule
+ * with delayed-step runs (F-4): it is never deleted, only switched off, which
+ * stops its active runs at their next step (definition_paused).
  *
  * The rule row is locked FOR UPDATE first. An execution log being written
  * holds a key-share lock on it (its foreign key), so the delete waits for that
@@ -242,7 +287,111 @@ function deleteRuleIfUnused(vendorId: string, id: string) {
     if (rule.isActive) return { code: "delete_requires_inactive" };
     const history = await tx.automationExecutionLog.count({ where: { vendorId, ruleId: rule.id } });
     if (history > 0) return { code: "delete_has_history" };
+    // F-4: a delayed-step run is only ever created after the event's
+    // execution log, so a rule with runs already has history; checked here
+    // too so a rule with people part-way through can never be deleted (its
+    // steps would cascade under them). Its steps go with the rule.
+    const runs = await tx.delayedStepRun.count({ where: { vendorId, automationRuleId: rule.id } });
+    if (runs > 0) return { code: "delete_has_history" };
     await tx.automationRule.delete({ where: { vendorId_id: { vendorId, id: rule.id } } });
     return { code: "deleted", before: rule };
   }, DELETE_TRANSACTION_OPTIONS);
+}
+
+// ---------------------------------------------------------------------------
+// F-4 delayed steps (docs/product/delayed-steps-design.md §8). Same roles and
+// CSRF check as every action above; the rule and step ids from the form are
+// bound to the session's vendor in the final query (automation-delayed-steps.ts
+// locks the rule row by id AND vendorId, and reads or writes the step by id,
+// vendorId AND ruleId), so another tenant's rule or step is "not_found".
+// ---------------------------------------------------------------------------
+
+const STEP_ERROR_CODES = new Set([
+  "not_found",
+  "trigger_unavailable",
+  "invalid_step",
+  "invalid_delay",
+  "duplicate_delay",
+  "step_limit",
+  "invalid_product",
+  "step_busy",
+  "no_action",
+  "invalid_button_url",
+]);
+
+function stepFail(code: string): never {
+  fail(STEP_ERROR_CODES.has(code) ? code : "invalid_step");
+}
+
+/** Hours or days only (the job runs at most every few minutes; §3「時間精度」). */
+function stepDelayMinutes(form: FormData) {
+  const value = number(form, "delayValue");
+  const unit = text(form, "delayUnit");
+  if (!Number.isInteger(value) || value < 1 || (unit !== "hours" && unit !== "days")) throw new Error("invalid_delay");
+  return value * (unit === "days" ? 1_440 : 60);
+}
+
+function parseStep(form: FormData): AutomationStepInput {
+  let delayMinutes: number;
+  try { delayMinutes = stepDelayMinutes(form); } catch { throw new Error("invalid_delay"); }
+  return {
+    delayMinutes,
+    // The three triggers merchants can use carry no amount or watch time, so
+    // the existing condition schema only has "always" for them.
+    condition: { type: "always" },
+    actions: parseActions(form),
+    isActive: form.get("stepActive") === "on",
+  };
+}
+
+function parsedStepOrFail(form: FormData) {
+  try {
+    return parseStep(form);
+  } catch (error) {
+    stepFail(error instanceof Error ? error.message : "invalid_step");
+  }
+}
+
+export async function createAutomationRuleStepAction(formData: FormData) {
+  await assertServerActionSecurity(formData);
+  const { user, vendor, member } = await requireVendorManagerMember(PATH);
+  // Closed beta (F-4 review M3): only a vendor holding the grant.
+  requireFeature(vendor, AUTOMATION_DELAYED_STEPS_FEATURE);
+  const ruleId = text(formData, "ruleId");
+  if (!ruleId) stepFail("not_found");
+  const step = parsedStepOrFail(formData);
+  const result = await createAutomationRuleStep({ vendorId: vendor.id, ruleId, step });
+  if (!result.ok) stepFail(result.code);
+  await writeAuditLog({ vendorId: vendor.id, actorId: user.id, actorLabel: member.role, action: "create_automation_rule_step", targetType: "AutomationRuleStep", targetId: result.id, after: auditSnapshot({ ruleId, ...result.after }) });
+  revalidatePath(PATH);
+  redirect(`${PATH}?updated=step_created`);
+}
+
+export async function updateAutomationRuleStepAction(formData: FormData) {
+  await assertServerActionSecurity(formData);
+  const { user, vendor, member } = await requireVendorManagerMember(PATH);
+  requireFeature(vendor, AUTOMATION_DELAYED_STEPS_FEATURE);
+  const ruleId = text(formData, "ruleId");
+  const stepId = text(formData, "stepId");
+  if (!ruleId || !stepId) stepFail("not_found");
+  const step = parsedStepOrFail(formData);
+  const result = await updateAutomationRuleStep({ vendorId: vendor.id, ruleId, stepId, step });
+  if (!result.ok) stepFail(result.code);
+  await writeAuditLog({ vendorId: vendor.id, actorId: user.id, actorLabel: member.role, action: "update_automation_rule_step", targetType: "AutomationRuleStep", targetId: result.id, before: auditSnapshot({ ruleId, ...result.before }), after: auditSnapshot({ ruleId, ...result.after }) });
+  revalidatePath(PATH);
+  redirect(`${PATH}?updated=step_updated`);
+}
+
+export async function deleteAutomationRuleStepAction(formData: FormData) {
+  await assertServerActionSecurity(formData);
+  const { user, vendor, member } = await requireVendorManagerMember(PATH);
+  requireFeature(vendor, AUTOMATION_DELAYED_STEPS_FEATURE);
+  const ruleId = text(formData, "ruleId");
+  const stepId = text(formData, "stepId");
+  if (!ruleId || !stepId) stepFail("not_found");
+  const result = await deleteAutomationRuleStep({ vendorId: vendor.id, ruleId, stepId });
+  if (!result.ok) stepFail(result.code);
+  await writeAuditLog({ vendorId: vendor.id, actorId: user.id, actorLabel: member.role, action: "delete_automation_rule_step", targetType: "AutomationRuleStep", targetId: result.id, before: auditSnapshot({ ruleId, ...result.before }) });
+  revalidatePath(PATH);
+  redirect(`${PATH}?updated=step_deleted`);
 }

@@ -1160,11 +1160,17 @@ model EmailSequenceStep {
 /// 不存 Email 明文、姓名或 token：收件人每一步都從報名重新讀取；`recipientHash`
 /// 與 `EmailDelivery.recipientHash` 同一個商家專屬雜湊，只用來在退訂時取消。
 model DelayedStepRun {
-  id                 String    @id @default(cuid())
-  vendorId           String
-  /// F-4 會加 `automationRuleId`；屆時 CHECK 改成兩者恰好一個有值。
-  emailSequenceId    String?
-  formSubmissionId   String?
+  id                    String    @id @default(cuid())
+  vendorId              String
+  /// `emailSequenceId` 與 `automationRuleId` 恰好一個有值（CHECK `DelayedStepRun_definition_exactly_one_check`）。
+  emailSequenceId       String?
+  /// F-4：自動化規則的延遲步驟。有值時 `sourceExecutionLogId` 與 `subjectKeyHash` 也必有值。
+  automationRuleId      String?
+  /// F-4：觸發這條 run 的事件在該規則的執行紀錄（同一規則、同一事件只有一列）。
+  sourceExecutionLogId  String?
+  /// F-4：對象是諮詢預約時填（`consultation_booked`／`consultation_no_show`）。
+  consultationBookingId String?
+  formSubmissionId      String?
   /// 對象的 `automationCustomerKeyHash`（PR 2「買了就停」用）；報名的 Email 無法使用時為 null。
   subjectKeyHash     String?
   /// `createEmailRecipientHash` 的值；退訂時以它取消同一收件人的 run。
@@ -1184,18 +1190,25 @@ model DelayedStepRun {
   createdAt          DateTime  @default(now())
   updatedAt          DateTime  @updatedAt
 
-  vendor         Vendor          @relation(fields: [vendorId], references: [id], onDelete: Cascade)
-  emailSequence  EmailSequence?  @relation(fields: [vendorId, emailSequenceId], references: [vendorId, id], onDelete: Cascade)
-  formSubmission FormSubmission? @relation(fields: [formSubmissionId], references: [id], onDelete: Cascade)
+  vendor              Vendor                  @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  emailSequence       EmailSequence?          @relation(fields: [vendorId, emailSequenceId], references: [vendorId, id], onDelete: Cascade)
+  automationRule      AutomationRule?         @relation(fields: [vendorId, automationRuleId], references: [vendorId, id], onDelete: Cascade)
+  sourceExecutionLog  AutomationExecutionLog? @relation(fields: [vendorId, sourceExecutionLogId], references: [vendorId, id], onDelete: Cascade)
+  consultationBooking ConsultationBooking?    @relation(fields: [vendorId, consultationBookingId], references: [vendorId, id], onDelete: Cascade)
+  formSubmission      FormSubmission?         @relation(fields: [formSubmissionId], references: [id], onDelete: Cascade)
 
   @@unique([vendorId, id])
   @@unique([vendorId, emailSequenceId, formSubmissionId])
   /// 同一收件人在同一序列只會有一列（不同表單報名同一場也一樣）；recipientHash 為 null 的列不受限。
   @@unique([vendorId, emailSequenceId, recipientHash])
+  /// F-4：同一規則、同一觸發事件（執行紀錄）只建一列；序列的列兩欄都是 null，不受限。
+  @@unique([vendorId, automationRuleId, sourceExecutionLogId])
   @@index([status, nextRunAt])
   @@index([vendorId, status, nextRunAt])
   @@index([formSubmissionId])
   @@index([vendorId, recipientHash, status])
+  @@index([vendorId, sourceExecutionLogId])
+  @@index([vendorId, consultationBookingId])
 }
 
 /// A tenant-owned LINE channel connection. Every provider credential, including
@@ -3963,6 +3976,7 @@ model ConsultationBooking {
   event  ConsultationEvent @relation(fields: [vendorId, eventId], references: [vendorId, id], onDelete: Cascade)
 
   trackingDeliveries TrackingDelivery[]
+  delayedStepRuns    DelayedStepRun[]
 
   @@unique([vendorId, id])
   @@index([vendorId, eventId, startTime])
@@ -3983,12 +3997,36 @@ model AutomationRule {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  vendor        Vendor                   @relation(fields: [vendorId], references: [id], onDelete: Cascade)
-  executionLogs AutomationExecutionLog[]
+  vendor          Vendor                   @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  executionLogs   AutomationExecutionLog[]
+  steps           AutomationRuleStep[]
+  delayedStepRuns DelayedStepRun[]
 
   @@unique([vendorId, id])
   @@index([vendorId, trigger, isActive])
   @@index([vendorId, funnelPageId, trigger, isActive])
+}
+
+/// F-4 自動化規則的延遲步驟（docs/product/delayed-steps-design.md §8）：事件發生後
+/// `delayMinutes` 分鐘（從 run 的 anchorAt 起算）重新評估 `condition` 並執行
+/// `actions`。condition／actions 沿用 `AutomationRule` 的 schema 與數量上限；同一條
+/// 規則的延遲值不重複，它就是步驟的定位。每條規則最多 `MAX_AUTOMATION_RULE_STEPS` 步。
+model AutomationRuleStep {
+  id           String   @id @default(cuid())
+  vendorId     String
+  ruleId       String
+  /// 60–129600（1 小時到 90 天；CHECK `AutomationRuleStep_delayMinutes_check`）
+  delayMinutes Int
+  condition    Json
+  actions      Json
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  rule AutomationRule @relation(fields: [vendorId, ruleId], references: [vendorId, id], onDelete: Cascade)
+
+  @@unique([vendorId, id])
+  @@unique([vendorId, ruleId, delayMinutes])
 }
 
 model AutomationExecutionLog {
@@ -4014,6 +4052,7 @@ model AutomationExecutionLog {
   live                   Live?                    @relation(fields: [vendorId, liveId], references: [vendorId, id], onDelete: Restrict)
   customerTagAssignments CustomerTagAssignment[]
   voucherGrants          AutomationVoucherGrant[]
+  delayedStepRuns        DelayedStepRun[]
 
   @@unique([vendorId, id])
   @@unique([vendorId, idempotencyKey])

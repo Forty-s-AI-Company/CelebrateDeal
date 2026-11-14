@@ -403,7 +403,9 @@ describe("worker", () => {
     expect(payload.body).toContain(`退訂：${APP_URL}/unsubscribe?token=`);
     expect(payload.body).toContain(createEmailUnsubscribeToken(first.id));
 
-    await expect(work(t, at(3 * HOUR))).resolves.toEqual([{ runId: run.id, status: "queued" }]);
+    // A minute later: each step e-mail is created at the round's `now`, so equal
+    // times would leave the order of the two rows to the query plan.
+    await expect(work(t, at(3 * HOUR + 60_000))).resolves.toEqual([{ runId: run.id, status: "queued" }]);
     deliveries = await deliveriesOf(t.vendor.id);
     expect(deliveries.map((row) => row.sourceTemplateId)).toEqual([t.templates[0]!.id, t.templates[1]!.id]);
     // The third step is not due yet.

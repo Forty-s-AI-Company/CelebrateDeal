@@ -85,6 +85,13 @@ describe("closed-beta grants (F-001 / F-002)", () => {
     expect(isFeatureEnabled({ betaFeatureGrants: ["billing"] }, "courses")).toBe(false);
   });
 
+  it("lists automation_delayed_steps (F-4) as a closed-beta module that only a platform grant opens", () => {
+    expect(BETA_GATED_FEATURES).toContain("automation_delayed_steps");
+    expect(isFeatureEnabled({ enabledFeatureModules: [...ALL_VENDOR_FEATURE_MODULES], betaFeatureGrants: [] }, "automation_delayed_steps")).toBe(false);
+    expect(isFeatureEnabled({ betaFeatureGrants: ["automation_delayed_steps"] }, "automation_delayed_steps")).toBe(true);
+    expect(parseBetaFeatureGrants(["automation_delayed_steps", "email_sequences"])).toEqual(["email_sequences", "automation_delayed_steps"]);
+  });
+
   it("requires both the platform grant and the merchant toggle for consultation booking", () => {
     expect(isFeatureEnabled({ enabledFeatureModules: ["consultation_booking"], betaFeatureGrants: [] }, "consultation_booking")).toBe(false);
     expect(isFeatureEnabled({ enabledFeatureModules: [], betaFeatureGrants: ["consultation_booking"] }, "consultation_booking")).toBe(false);

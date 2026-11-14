@@ -17,6 +17,13 @@ import { hasOnlySupportedMessageTemplateVariables, renderMessageTemplate } from 
 import { isTransactionalEmailConfigured } from "@/lib/email";
 import { captureOperationalError } from "@/lib/monitoring";
 import { isFeatureEnabled } from "@/lib/vendor-feature-toggles";
+import {
+  AUTOMATION_STEP_EMAIL_TRIGGER,
+  DELAYED_STEP_EMAIL_TRIGGERS,
+  parseAutomationStepEmailIdempotencyKey,
+  parseAutomationStepEventId,
+  SEQUENCE_EMAIL_TRIGGER,
+} from "@/lib/automation-email-trigger";
 
 /**
  * Shared delayed-step mechanism (docs/product/delayed-steps-design.md §3).
@@ -26,7 +33,7 @@ import { isFeatureEnabled } from "@/lib/vendor-feature-toggles";
  * steps while people are part-way through stays deterministic.
  */
 
-export const SEQUENCE_EMAIL_TRIGGER = "sequence_email";
+export { SEQUENCE_EMAIL_TRIGGER, DELAYED_STEP_EMAIL_TRIGGERS } from "@/lib/automation-email-trigger";
 export const EMAIL_SEQUENCES_FEATURE = "email_sequences";
 /** A claimed run whose worker died is claimable again after this long. */
 export const DELAYED_STEP_LEASE_MS = 10 * 60 * 1_000;
@@ -106,7 +113,7 @@ export type DelayedStepCancelReason = (typeof DELAYED_STEP_CANCEL_REASONS)[numbe
 
 type Database = PrismaClient;
 
-const utcTimestamp = (value: Date) => Prisma.sql`(${value.toISOString()}::timestamptz AT TIME ZONE 'UTC')`;
+export const utcTimestamp = (value: Date) => Prisma.sql`(${value.toISOString()}::timestamptz AT TIME ZONE 'UTC')`;
 
 /**
  * A deployment problem (public URL, signing or encryption key) met while
@@ -139,6 +146,9 @@ function reportFailure(error: unknown, operation: string, status: string) {
     // Monitoring must never change the run state.
   }
 }
+
+/** Monitoring for the automation half of the worker (automation-delayed-steps.ts). */
+export const reportDelayedStepFailure = reportFailure;
 
 /** Deterministic id of one step's e-mail: re-running the same step only hits the primary key. */
 export function stableSequenceDeliveryId(input: {
@@ -422,7 +432,7 @@ export async function backfillEmailSequenceEnrollments(
   return results;
 }
 
-type Lease = {
+export type Lease = {
   id: string;
   vendorId: string;
   claimedAt: Date;
@@ -431,7 +441,7 @@ type Lease = {
 };
 
 /** Every write after the claim must still hold this exact lease. */
-function leaseWhere(lease: Lease): Prisma.DelayedStepRunWhereInput {
+export function leaseWhere(lease: Lease): Prisma.DelayedStepRunWhereInput {
   return {
     id: lease.id,
     vendorId: lease.vendorId,
@@ -442,7 +452,7 @@ function leaseWhere(lease: Lease): Prisma.DelayedStepRunWhereInput {
   };
 }
 
-class LeaseLostError extends Error {
+export class LeaseLostError extends Error {
   constructor() {
     super("Delayed step run lease lost.");
     this.name = "LeaseLostError";
@@ -463,11 +473,24 @@ export type DelayedStepResult = {
     | "completed"
     | "cancelled"
     | "claimed_elsewhere"
-    | "failed";
+    | "failed"
+    // F-4 automation steps (automation-delayed-steps.ts).
+    | "executed"
+    | "condition_not_met"
+    | "skipped_invalid"
+    | "waiting_capacity";
   cancelReason?: DelayedStepCancelReason;
+  /** E-mails an automation step queued (a sequence step's `queued` counts as one). */
+  emailsQueued?: number;
 };
 
-async function cancelLeasedRun(db: Database, lease: Lease, reason: DelayedStepCancelReason): Promise<DelayedStepResult> {
+/** E-mails one result put into the sequence queue, for the round's creation quota. */
+function emailsQueuedBy(result: DelayedStepResult) {
+  if (result.status === "queued") return 1;
+  return result.emailsQueued ?? 0;
+}
+
+export async function cancelLeasedRun(db: Database, lease: Lease, reason: DelayedStepCancelReason): Promise<DelayedStepResult> {
   const cancelled = await db.delayedStepRun.updateMany({
     where: leaseWhere(lease),
     data: { status: "cancelled", cancelReason: reason, nextRunAt: null, claimedAt: null },
@@ -815,12 +838,12 @@ export const DEFAULT_DELAYED_STEP_BUDGET: DelayedStepBudget = {
   emails: SEQUENCE_EMAIL_CREATE_LIMIT,
 };
 
-/** Sequence e-mails of active vendors that are still waiting to be sent (or being sent). */
+/** Sequence and delayed-automation e-mails of active vendors still waiting to be sent (or being sent). */
 export async function countPendingSequenceEmails(db: Pick<Database, "emailDelivery">, vendorId?: string) {
   return db.emailDelivery.count({
     where: {
       ...(vendorId ? { vendorId } : {}),
-      trigger: SEQUENCE_EMAIL_TRIGGER,
+      trigger: { in: [...DELAYED_STEP_EMAIL_TRIGGERS] },
       status: { in: ["queued", "failed", "sending"] },
       // A suspended vendor's queue is not dispatched and must not block others.
       vendor: { is: { suspendedAt: null } },
@@ -834,9 +857,9 @@ export async function countPendingSequenceEmails(db: Pick<Database, "emailDelive
  * requires them), the public URL and the signing and encryption keys. Returns
  * the problem, or null. A problem belongs to the platform, not to any run.
  */
-export function sequenceRuntimeProblem(): SequenceConfigurationError | null {
+export function sequenceRuntimeProblem(options: { requireProvider?: boolean } = {}): SequenceConfigurationError | null {
   try {
-    if (!isTransactionalEmailConfigured()) throw new Error("E-mail provider settings are missing.");
+    if (options.requireProvider !== false && !isTransactionalEmailConfigured()) throw new Error("E-mail provider settings are missing.");
     const probeId = `email_${"0".repeat(32)}`;
     createEmailUnsubscribeUrl(probeId);
     createLiveViewerUrl("probe");
@@ -976,10 +999,13 @@ function rotate<T>(items: T[], now: Date, random: () => number) {
  *    by the vendors still to come, and a second pass hands leftover capacity
  *    to vendors that used their whole share (MAJOR 3, M1, M2). At most one
  *    step per run, claimed with a compare-and-set.
- * Runs not reached stay active with nextRunAt unchanged. Active,
- * non-suspended vendors with the email_sequences grant only; a closed grant
- * keeps the runs but never runs them. `deadline` (epoch ms) stops the round
- * before the next run.
+ * Runs not reached stay active with nextRunAt unchanged. Sequence runs only
+ * for non-suspended vendors with the email_sequences grant (a closed grant
+ * keeps the runs but never runs them); F-4 automation runs for any
+ * non-suspended vendor, on the same claims, lateness rule and e-mail capacity
+ * (an automation step starts only when all its e-mails fit, and each one it
+ * queues counts like a sequence e-mail). `deadline` (epoch ms) stops the
+ * round before the next run.
  */
 export async function processDueDelayedStepRuns(
   /** `vendorId` scopes one run to a single tenant (tests, operations); the job runs unscoped. */
@@ -991,6 +1017,13 @@ export async function processDueDelayedStepRuns(
     /** Source of the random starting vendor (tests pass a reproducible one). */
     random?: () => number;
     onConfigurationError?: ConfigurationReporter;
+    /**
+     * F-4 automation runs. Injected (runDelayedStepWorker in
+     * automation-delayed-steps.ts passes it) because the automation engine
+     * reaches email-delivery.ts, which imports this module. Without it only
+     * sequence runs are selected.
+     */
+    automation?: AutomationRunProcessor;
   } = {},
   db: Database = getDb(),
 ): Promise<DelayedStepResult[]> {
@@ -999,38 +1032,90 @@ export async function processDueDelayedStepRuns(
   const reportConfiguration = options.onConfigurationError ?? reportConfigurationProblem;
   const pastDeadline = () => options.deadline !== undefined && Date.now() >= options.deadline;
   if (pastDeadline()) return [];
-  const problem = sequenceRuntimeProblem();
-  if (problem) {
-    // m1: no provider, URL or key: nothing is claimed and no run changes.
-    reportConfiguration(problem);
+  // A missing URL or key stops the whole round (nothing is claimed).
+  const keyProblem = sequenceRuntimeProblem({ requireProvider: false });
+  if (keyProblem) {
+    reportConfiguration(keyProblem);
     return [];
   }
-  await skipStaleSteps(db, now, options.vendorId, pastDeadline);
-  if (pastDeadline()) return [];
-  const pending = await countPendingSequenceEmails(db, options.vendorId);
-  const emailCapacity = Math.max(0, budget.emails - pending);
+  // m1: without an e-mail provider no sequence run is claimed or changed and
+  // no e-mail is created; automation steps without an e-mail still run (M3).
+  // (One probe of the keys per round; the provider is only its settings.)
+  const providerProblem = isTransactionalEmailConfigured() ? null : new SequenceConfigurationError(new Error("E-mail provider settings are missing."));
+  if (providerProblem) reportConfiguration(providerProblem);
+  if (!providerProblem) {
+    await skipStaleSteps(db, now, options.vendorId, pastDeadline);
+    if (pastDeadline()) return [];
+  }
+  // F-4: the same bulk skip for automation runs (rules locked FOR SHARE).
+  if (options.automation) {
+    await options.automation.skipStale(db, now, options.vendorId, pastDeadline, MAX_STALE_SKIP_PASSES);
+    if (pastDeadline()) return [];
+  }
+  const pending = providerProblem ? 0 : await countPendingSequenceEmails(db, options.vendorId);
+  const emailCapacity = providerProblem ? 0 : Math.max(0, budget.emails - pending);
+  const dueWhere = dueRunWhere(now, options.vendorId, Boolean(options.automation));
+  const round: WorkerRound = { db, now, budget, pastDeadline, reportConfiguration, automation: options.automation, results: [] };
+  const stopped = await runFairPasses(round, dueWhere, emailCapacity, options.random ?? Math.random);
+  if (stopped || !options.automation) return round.results;
+  await runEmailFreeAutomationRuns(round, options.vendorId);
+  return round.results;
+}
+
+/** Due, unleased runs of active vendors holding the grant of their kind. */
+function dueRunWhere(now: Date, vendorId: string | undefined, withAutomation: boolean): Prisma.DelayedStepRunWhereInput {
   const leaseCutoff = new Date(now.getTime() - DELAYED_STEP_LEASE_MS);
-  const dueWhere: Prisma.DelayedStepRunWhereInput = {
-    ...(options.vendorId ? { vendorId: options.vendorId } : {}),
+  return {
+    ...(vendorId ? { vendorId } : {}),
     status: "active",
     nextRunAt: { lte: now },
-    OR: [{ claimedAt: null }, { claimedAt: { lte: leaseCutoff } }],
-    vendor: { is: { suspendedAt: null, betaFeatureGrants: { has: EMAIL_SEQUENCES_FEATURE } } },
+    AND: [
+      { OR: [{ claimedAt: null }, { claimedAt: { lte: leaseCutoff } }] },
+      {
+        OR: [
+          // F-3 sequences: only vendors holding the email_sequences grant.
+          { emailSequenceId: { not: null }, vendor: { is: { suspendedAt: null, betaFeatureGrants: { has: EMAIL_SEQUENCES_FEATURE } } } },
+          // F-4 automation rules: only vendors holding the
+          // automation_delayed_steps grant, and only when the caller brings the
+          // automation processor.
+          ...(withAutomation ? [{ automationRuleId: { not: null }, vendor: { is: { suspendedAt: null, betaFeatureGrants: { has: AUTOMATION_DELAYED_STEPS_GRANT } } } }] : []),
+        ],
+      },
+    ],
   };
+}
+
+type WorkerRound = {
+  db: Database;
+  now: Date;
+  budget: DelayedStepBudget;
+  pastDeadline: () => boolean;
+  reportConfiguration: ConfigurationReporter;
+  automation: AutomationRunProcessor | undefined;
+  results: DelayedStepResult[];
+};
+
+/**
+ * The e-mail-bound part of a round: vendors in turn, each with its share of
+ * the e-mail capacity (M1, M2, MAJOR 3). Returns true when a deployment
+ * problem stopped the round.
+ */
+async function runFairPasses(round: WorkerRound, dueWhere: Prisma.DelayedStepRunWhereInput, emailCapacity: number, random: () => number) {
+  const { db, now, budget, results, pastDeadline } = round;
+  if (emailCapacity <= 0) return false;
   const vendorRows = await db.delayedStepRun.groupBy({
     by: ["vendorId"],
     where: dueWhere,
     orderBy: { vendorId: "asc" },
     take: DELAYED_STEP_VENDORS_PER_ROUND,
   });
-  let vendors = rotate(vendorRows.map((row) => row.vendorId), now, options.random ?? Math.random);
-  const results: DelayedStepResult[] = [];
+  let vendors = rotate(vendorRows.map((row) => row.vendorId), now, random);
   let emails = 0;
   for (let pass = 0; pass < DELAYED_STEP_VENDOR_PASSES && vendors.length > 0; pass += 1) {
     // Vendors that used their whole share may have more due runs for the next pass.
     const stillDue: string[] = [];
     for (const [index, vendorId] of vendors.entries()) {
-      if (results.length >= budget.runs || emails >= emailCapacity || pastDeadline()) return results;
+      if (results.length >= budget.runs || emails >= emailCapacity || pastDeadline()) return false;
       // M2: the share is recomputed before each vendor from what is left, so
       // capacity a vendor does not need flows to the vendors after it.
       const share = Math.max(1, Math.floor((emailCapacity - emails) / (vendors.length - index)));
@@ -1038,37 +1123,74 @@ export async function processDueDelayedStepRuns(
         where: { ...dueWhere, vendorId },
         orderBy: [{ nextRunAt: "asc" }, { id: "asc" }],
         take: Math.min(budget.runs - results.length, share + DELAYED_STEP_EXTRA_RUNS_PER_VENDOR),
-        select: { id: true, vendorId: true, updatedAt: true, cursorDelayMinutes: true, attemptCount: true },
+        select: { id: true, vendorId: true, updatedAt: true, cursorDelayMinutes: true, attemptCount: true, automationRuleId: true },
       });
       let vendorEmails = 0;
       for (const candidate of candidates) {
         if (emails >= emailCapacity || vendorEmails >= share || pastDeadline()) break;
-        const result = await processCandidate(db, candidate, now, reportConfiguration);
-        if (result === CONFIGURATION_FAILED) {
-          // A deployment problem showed up mid-round: the lease was given back
-          // without using an attempt and the problem was reported; stop.
-          return results;
-        }
+        const result = await processCandidate(db, candidate, now, round.reportConfiguration, emailCapacity - emails, round.automation);
+        // A deployment problem showed up mid-round: the lease was given back
+        // without using an attempt and the problem was reported; stop.
+        if (result === CONFIGURATION_FAILED) return true;
         results.push(result);
-        if (result.status === "queued") {
-          emails += 1;
-          vendorEmails += 1;
-        }
+        const queued = emailsQueuedBy(result);
+        emails += queued;
+        vendorEmails += queued;
       }
       if (vendorEmails >= share) stillDue.push(vendorId);
     }
     vendors = stillDue;
   }
-  return results;
+  return false;
 }
+
+/**
+ * M3: automation steps without an e-mail never wait for e-mail capacity (or
+ * for an e-mail provider). Once the e-mail capacity is used up, or when there
+ * is none, they run in due order on the rest of the run budget. A run already
+ * handled this round is left alone (one step per run and round).
+ */
+async function runEmailFreeAutomationRuns(round: WorkerRound, vendorId: string | undefined) {
+  const { automation, results } = round;
+  const room = round.budget.runs - results.length;
+  if (!automation || room <= 0 || round.pastDeadline()) return;
+  const emailFree = await automation.dueWithoutEmail(round.db, { now: round.now, vendorId, exclude: results.map((result) => result.runId), limit: room });
+  for (const candidate of emailFree) {
+    if (round.pastDeadline()) break;
+    const result = await processCandidate(round.db, candidate, round.now, round.reportConfiguration, 0, automation);
+    if (result === CONFIGURATION_FAILED) return;
+    results.push(result);
+  }
+}
+
+/** Grant checked by the worker for automation runs (automation-workflow.ts AUTOMATION_DELAYED_STEPS_FEATURE). */
+const AUTOMATION_DELAYED_STEPS_GRANT = "automation_delayed_steps";
 
 const CONFIGURATION_FAILED = Symbol("configuration_failed");
 
+/** The automation half of the worker (implemented in automation-delayed-steps.ts). */
+export type AutomationRunProcessor = {
+  /** One leased automation run; `emailRoom` is what the round may still create. */
+  processClaimed: (db: Database, lease: Lease, now: Date, emailRoom: number) => Promise<DelayedStepResult>;
+  /**
+   * Due automation runs whose next step queues no e-mail (or that only need
+   * completing), oldest first, without `exclude`; the same claim fields as
+   * the fair loop's candidates.
+   */
+  dueWithoutEmail: (db: Database, input: { now: Date; vendorId: string | undefined; exclude: string[]; limit: number }) => Promise<Array<{
+    id: string; vendorId: string; updatedAt: Date; cursorDelayMinutes: number; attemptCount: number; automationRuleId: string | null;
+  }>>;
+  /** Bulk skip of steps more than 24 hours late, before any claim. */
+  skipStale: (db: Database, now: Date, vendorId: string | undefined, pastDeadline: () => boolean, maxPasses: number) => Promise<number>;
+};
+
 async function processCandidate(
   db: Database,
-  candidate: { id: string; vendorId: string; updatedAt: Date; cursorDelayMinutes: number; attemptCount: number },
+  candidate: { id: string; vendorId: string; updatedAt: Date; cursorDelayMinutes: number; attemptCount: number; automationRuleId: string | null },
   now: Date,
   reportConfiguration: ConfigurationReporter,
+  emailRoom: number,
+  automation: AutomationRunProcessor | undefined,
 ): Promise<DelayedStepResult | typeof CONFIGURATION_FAILED> {
   let lease: Lease | null = null;
   try {
@@ -1102,6 +1224,11 @@ async function processCandidate(
       attemptCount: candidate.attemptCount + 1,
       cursorDelayMinutes: candidate.cursorDelayMinutes,
     };
+    if (candidate.automationRuleId) {
+      // Not selected without a processor (dueWhere); kept as a guard.
+      if (!automation) return { runId: candidate.id, status: "claimed_elsewhere" };
+      return await automation.processClaimed(db, lease, now, emailRoom);
+    }
     return await processClaimedRun(db, lease, now);
   } catch (error) {
     // m2: a key or URL error is only the platform's when the deployment probe
@@ -1166,6 +1293,43 @@ export async function rescheduleActiveRunsForSequence(
       AND r."emailSequenceId" = ${input.emailSequenceId}
       AND r."status" = 'active'
   `;
+}
+
+/**
+ * Send-time guard for `automation_step` (F-4): the e-mail is normally created
+ * and sent in the same round; one still unsent SEQUENCE_EMAIL_SEND_STALE_MS
+ * after it was created is superseded, like a sequence e-mail, and so is any
+ * once the vendor's automation_delayed_steps grant is closed. Unsubscribe and
+ * blacklist are checked at send like every automation e-mail
+ * (dispatchEmailDelivery).
+ */
+export async function isCurrentAutomationStepEmailDelivery(
+  delivery: { trigger: string; vendorId: string; createdAt?: Date; idempotencyKey?: string },
+  now: Date,
+  database: Pick<Prisma.TransactionClient, "vendor" | "automationExecutionLog" | "automationRule" | "delayedStepRun">,
+) {
+  if (delivery.trigger !== AUTOMATION_STEP_EMAIL_TRIGGER) return true;
+  if (!delivery.createdAt || now.getTime() - delivery.createdAt.getTime() > SEQUENCE_EMAIL_SEND_STALE_MS) return false;
+  // M3: a vendor whose automation_delayed_steps grant was closed sends none of its queued step e-mails.
+  const vendor = await database.vendor.findUnique({ where: { id: delivery.vendorId }, select: { betaFeatureGrants: true, suspendedAt: true } });
+  if (!vendor || vendor.suspendedAt || !isFeatureEnabled(vendor, AUTOMATION_DELAYED_STEPS_GRANT)) return false;
+  // Review MINOR-3: the e-mail's key names its step execution; the rule must
+  // still be switched on and the run not stopped (a switch-off or another
+  // stop that came after the step ran supersedes the e-mail). All reads are
+  // bound to the delivery's vendor.
+  const key = parseAutomationStepEmailIdempotencyKey(delivery.idempotencyKey);
+  if (!key) return false;
+  const log = await database.automationExecutionLog.findFirst({
+    where: { id: key.executionLogId, vendorId: delivery.vendorId },
+    select: { ruleId: true, eventId: true },
+  });
+  const step = log ? parseAutomationStepEventId(log.eventId) : null;
+  if (!log || !step) return false;
+  const [rule, run] = await Promise.all([
+    database.automationRule.findFirst({ where: { id: log.ruleId, vendorId: delivery.vendorId, isActive: true }, select: { id: true } }),
+    database.delayedStepRun.findFirst({ where: { id: step.runId, vendorId: delivery.vendorId, automationRuleId: log.ruleId }, select: { status: true } }),
+  ]);
+  return Boolean(rule && run && run.status !== "cancelled");
 }
 
 type SequenceSnapshotDatabase = Pick<Prisma.TransactionClient, "delayedStepRun" | "blacklist" | "vendor">;
