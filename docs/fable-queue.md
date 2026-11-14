@@ -2,7 +2,7 @@
 
 這些項目留給 Fable 5.2 處理，原因是 Opus 或 Sonnet 試過仍失敗，或判斷錯誤的代價高（跨多個模組、影響資料模型或金流設計）。每項從列出的分支或 commit 接續，達到完成標準後依一般流程合併：測試、必要的獨立審查、CI、merge queue。完成後在該項標題後加上「（已完成，PR 連結）」。
 
-最後更新：2026-11-13。F-2、F-5 與 F-3 的第一個 PR 已完成；F-4 等 owner 確認範圍。
+最後更新：2026-11-14。F-2、F-4、F-5 與 F-3 的第一個 PR 已完成；F-4 的後續項目列在該節。
 
 ---
 
@@ -55,9 +55,34 @@ CI 帶出 `color-contrast` 規則後，Opus 找到根因：停用按鈕恢復可
   - 設計確認後再拆成 PR。
 - **完成標準**：設計文件定案，第一個 PR 至少能讓「報名後第 N 天寄第 N 封」端到端運作，含 db test 與 e2e；migration 與寄信邏輯要經過獨立審查。
 
-## F-4：自動化規則的多步驟與延遲（設計已完成，[#595](https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/595)；等 owner 確認範圍後才開工）
+## F-4：自動化規則的多步驟與延遲（已完成，[#599](https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/599)、[#601](https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/601)、[#602](https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/602)）
 
-**狀態**：設計寫在 `docs/product/delayed-steps-design.md` 第 8 節，與 F-3 共用 `DelayedStepRun`（F-3 已在 #598 建好這張表與 worker）。依完成標準需要 owner 確認範圍，確認項目在同一份文件第 9 節第 4 點：延遲步驟、不做視覺化編輯器、自動化信補退訂連結與黑名單檢查、接上 `payment_paid`（會碰付款流程，需要獨立審查）、隱藏另外三個沒有呼叫端的 trigger、權限統一成 owner 與 admin。開工時注意：`DelayedStepRun` 目前有 `emailSequenceId IS NOT NULL` 的 CHECK，要以 `NOT VALID` 加 `VALIDATE` 的方式換掉。以下保留開工前的紀錄。
+**結果**：owner 於 2026-11-13 確認照設計第 8 節開工，分三個 PR 完成，實作決定記在 `docs/product/delayed-steps-design.md` 第 8 節。
+
+- **#599**：自動化信附退訂連結，建立時與送出前都查退訂與黑名單；四個沒有呼叫端的 trigger 從後台隱藏、伺服器端拒絕；`/settings/automations` 開放給 owner 與 admin；可以刪除已停用且從未執行過的規則。
+- **#601**：延遲步驟。新增 `AutomationRuleStep`，`DelayedStepRun` 接到自動化規則，worker 併入 `/api/jobs/email-deliveries`。由 beta 開關 `automation_delayed_steps` 控制，預設關閉，平台在 `/admin/vendor-features` 逐商家開通。規則停用時立即停止進行中的延遲步驟；諮詢類延遲步驟的 Email 只寄給在同一商家有已驗證報名的地址。
+- **#602**：訂單第一次轉成已付款時，在付款交易 commit 之後觸發 `payment_paid` 規則，只做立即動作；自動化失敗不影響付款結果與 webhook 回應。部署時的 migration 會停用既有啟用中的 `payment_paid` 規則（它們先前從未執行過），商家需要自行重新啟用。同一個 PR 把 CI 併發測試步驟的時間上限由 10 分鐘調為 20 分鐘。
+
+**開通 `automation_delayed_steps` 前要處理**：
+
+- owner 決定 job 頻率與寄送額度（設計文件第 9 節）。延遲步驟的信與 Email 序列共用每輪 20 封的額度。
+- 商家儲存步驟時若鎖住規則超過 2 秒，這段時間進來的報名或預約不會建立延遲步驟，也沒有補建（審查時依程式推論，未重現）。
+
+**仍未做**：
+
+- `payment_paid` 規則的延遲步驟：`DelayedStepRun` 需要加訂單欄位的 migration，到點時重讀訂單，並決定買家 Email 是否視為已驗證。
+- `payment_paid` 沒有補跑機制：回應後的工作被平台中止或資料庫短暫故障時，那筆訂單的自動化會漏掉，只能從執行紀錄發現。設計文件第 8 節記有以 job 補跑的做法。
+- 另外三個 trigger（`form_no_show`、`viewer_watch_progress`、`webinar_attended_duration_gte`）仍沒有呼叫端，維持隱藏。
+- 延遲步驟的細節：動作清單快照損壞時會重試 5 次才放棄；後面某一步失敗會連帶撤回前面還沒寄出的信；諮詢地址比對沒有索引；不含 Email 的補跑不在商家之間輪流。
+- 視覺化編輯器不在範圍內。
+
+**待 owner 決定**：admin 可以透過規則自訂 LINE 推播，是否要限制為 owner；既有 `payment_paid` 規則被停用後要不要通知商家。
+
+**未驗證**：沒有在 staging 套用這幾個 migration；沒有在 PayUni Sandbox 或 Vercel 上驗證付款 route 的 `after()` 實際行為；沒有人工目視檢查新的後台介面與手機版。
+
+以下保留開工前的紀錄。
+
+**開工前的狀態**：設計寫在 `docs/product/delayed-steps-design.md` 第 8 節，與 F-3 共用 `DelayedStepRun`（F-3 已在 #598 建好這張表與 worker）。依完成標準需要 owner 確認範圍，確認項目在同一份文件第 9 節第 4 點：延遲步驟、不做視覺化編輯器、自動化信補退訂連結與黑名單檢查、接上 `payment_paid`（會碰付款流程，需要獨立審查）、隱藏另外三個沒有呼叫端的 trigger、權限統一成 owner 與 admin。開工時注意：`DelayedStepRun` 目前有 `emailSequenceId IS NOT NULL` 的 CHECK，要以 `NOT VALID` 加 `VALIDATE` 的方式換掉。以下保留開工前的紀錄。
 
 - **分支與 commit**：沒有，尚未開工。
 - **卡住的原因**：規劃矩陣 P2。目前是 7 個 trigger、4 種 action 的單層規則。要加延遲與多步驟，需要持久化的執行狀態與排程（migration），也會和 F-3 的序列設計重疊。應該和 F-3 一起決定，避免做出兩套排程。
