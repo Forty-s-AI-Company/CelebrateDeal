@@ -71,7 +71,8 @@ function data(entries: Record<string, string>) {
 
 const ACTIONS = [
   ["createAutomationRuleAction", () => createAutomationRuleAction(data({ name: "報名標籤", trigger: "form_registered", actionTag: "on", customerTag: "報名" })), "updated=created"],
-  ["createAutomationRecipeAction", () => createAutomationRecipeAction(data({ recipeId: "consultation_confirmer" })), "updated=recipe_created"],
+  // A recipe without a LINE push (that one is owner-only, covered below), so both roles apply it.
+  ["createAutomationRecipeAction", () => createAutomationRecipeAction(data({ recipeId: "vip_auto_tiering", productId: "product-1" })), "updated=recipe_created"],
   ["dryRunAutomationRuleAction", () => dryRunAutomationRuleAction(data({ ruleId: "rule-1" })), "dryRun=would_dispatch"],
   ["toggleAutomationRuleAction", () => toggleAutomationRuleAction(data({ ruleId: "rule-1" })), "updated=toggled"],
   ["deleteAutomationRuleAction", () => deleteAutomationRuleAction(data({ ruleId: "rule-1" })), "updated=deleted"],
@@ -91,6 +92,7 @@ beforeEach(() => {
   mocks.cookies.mockResolvedValue({ get: (name: string) => (name === "__Host-celebrate_session" ? { value: "synthetic-session-token" } : undefined) });
   mocks.redirect.mockImplementation((path: string): never => { throw new Error(`redirect:${path}`); });
   mocks.db.automationRule.create.mockResolvedValue({ id: "rule-1", vendorId: "vendor-1" });
+  mocks.db.product.findFirst.mockResolvedValue({ id: "product-1" });
   mocks.db.automationRule.findFirst.mockResolvedValue({ id: "rule-1", name: "規則", trigger: "consultation_booked", isActive: false, funnelPageId: null, condition: { type: "always" }, actions: [{ type: "add_customer_tag", tag: "VIP" }], _count: { executionLogs: 0 } });
   mocks.db.automationRule.updateMany.mockResolvedValue({ count: 1 });
   mocks.db.automationRule.delete.mockResolvedValue({ id: "rule-1" });
@@ -160,5 +162,125 @@ describe("/settings/automations role boundary", () => {
       await expect(run()).rejects.toThrow("redirect:/login");
       expect(databaseCalls()).toBe(0);
     });
+  });
+});
+
+// Owner decision 2026-11-14: the custom LINE push is owner-only. Judged from
+// the real membership role (same guard as above) and the server-parsed or
+// stored actions, never a form flag.
+describe("/settings/automations owner-only LINE push", () => {
+  const LINE = { actionLine: "on", lineMessage: "第二天的提醒" };
+  const TAG = [{ type: "add_customer_tag", tag: "VIP" }];
+  const STORED_LINE = [{ type: "line_push", message: "老闆寫的推播" }];
+  const stepForm = (extra: Record<string, string>) => data({ ruleId: "rule-1", delayValue: "1", delayUnit: "days", stepActive: "on", ...extra });
+  /** The stored rule as storedAutomationRuleIncludesLinePush reads it (actions + steps' actions, bound to the vendor). */
+  const storedRule = (rule: { actions: unknown; steps?: Array<{ actions: unknown }> }) => {
+    mocks.db.automationRule.findFirst.mockImplementation(async (query: { select?: { steps?: unknown } }) => (
+      query.select?.steps ? { steps: [], ...rule } : { id: "rule-1", name: "規則", trigger: "consultation_booked", isActive: false, funnelPageId: null, condition: { type: "always" }, actions: rule.actions, _count: { executionLogs: 0 } }
+    ));
+  };
+  const expectNoWrite = () => {
+    for (const method of [mocks.db.automationRule.create, mocks.db.automationRule.updateMany, mocks.db.automationRule.delete, mocks.db.automationRuleStep.create, mocks.db.automationRuleStep.updateMany, mocks.db.automationRuleStep.deleteMany, mocks.db.delayedStepRun.updateMany]) {
+      expect(method).not.toHaveBeenCalled();
+    }
+    expect(mocks.audit).not.toHaveBeenCalled();
+  };
+  const expectLinePushReadBoundToVendor = () => {
+    expect(mocks.db.automationRule.findFirst).toHaveBeenCalledWith({
+      where: { id: "rule-1", vendorId: "vendor-1" },
+      select: { actions: true, steps: { where: { vendorId: "vendor-1" }, select: { actions: true } } },
+    });
+  };
+
+  it.each([
+    ["createAutomationRuleAction", () => createAutomationRuleAction(data({ name: "推播", trigger: "form_registered", ...LINE }))],
+    ["createAutomationRecipeAction", () => createAutomationRecipeAction(data({ recipeId: "consultation_confirmer" }))],
+    ["createAutomationRuleStepAction", () => createAutomationRuleStepAction(stepForm(LINE))],
+    ["updateAutomationRuleStepAction", () => updateAutomationRuleStepAction(stepForm({ stepId: "step-1", ...LINE }))],
+  ])("%s with a LINE push: an admin is refused before any query", async (_name, run) => {
+    mocks.findSession.mockResolvedValue(sessionFor("admin"));
+    await expect(run()).rejects.toThrow("redirect:/settings/automations?error=line_push_owner_only");
+    expect(databaseCalls()).toBe(0);
+    expect(mocks.audit).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["createAutomationRuleAction", () => createAutomationRuleAction(data({ name: "推播", trigger: "form_registered", ...LINE })), "updated=created", () => mocks.db.automationRule.create],
+    ["createAutomationRecipeAction", () => createAutomationRecipeAction(data({ recipeId: "consultation_confirmer" })), "updated=recipe_created", () => mocks.db.automationRule.create],
+    ["createAutomationRuleStepAction", () => createAutomationRuleStepAction(stepForm(LINE)), "updated=step_created", () => mocks.db.automationRuleStep.create],
+    ["updateAutomationRuleStepAction", () => updateAutomationRuleStepAction(stepForm({ stepId: "step-1", ...LINE })), "updated=step_updated", () => mocks.db.automationRuleStep.updateMany],
+  ])("%s with a LINE push: the owner saves it", async (_name, run, success, writer) => {
+    mocks.findSession.mockResolvedValue(sessionFor("owner"));
+    await expect(run()).rejects.toThrow(success);
+    const [[query]] = writer().mock.calls as Array<[{ where?: { vendorId?: string }; data: { actions?: unknown; vendorId?: string } }]>;
+    expect(query.where?.vendorId ?? query.data.vendorId).toBe("vendor-1");
+    expect(query.data.actions).toEqual(expect.arrayContaining([expect.objectContaining({ type: "line_push" })]));
+    expect(mocks.audit).toHaveBeenCalledWith(expect.objectContaining({ actorLabel: "owner" }));
+  });
+
+  it.each([
+    ["its immediate actions", { actions: STORED_LINE, steps: [] }],
+    ["another delayed step", { actions: TAG, steps: [{ actions: TAG }, { actions: STORED_LINE }] }],
+    // The step being edited itself (it carries the LINE push): even editing it into a tag is the owner's.
+    ["the step being edited", { actions: TAG, steps: [{ actions: STORED_LINE }] }],
+  ])("an admin cannot add or edit a tag-only step on a rule with a LINE push in %s", async (_label, rule) => {
+    mocks.findSession.mockResolvedValue(sessionFor("admin"));
+    storedRule(rule);
+    await expect(createAutomationRuleStepAction(stepForm({ actionTag: "on", customerTag: "第二天" }))).rejects.toThrow("redirect:/settings/automations?error=line_push_owner_only");
+    await expect(updateAutomationRuleStepAction(stepForm({ stepId: "step-1", actionTag: "on", customerTag: "第二天" }))).rejects.toThrow("redirect:/settings/automations?error=line_push_owner_only");
+    // Read after the rule row is locked FOR UPDATE by id and vendor.
+    expectLinePushReadBoundToVendor();
+    const [lockSql, ...lockValues] = mocks.db.$queryRaw.mock.calls[0] as [TemplateStringsArray, ...unknown[]];
+    expect(lockSql.join("?")).toMatch(/FROM "AutomationRule" WHERE "id" = \? AND "vendorId" = \? FOR UPDATE/u);
+    expect(lockValues).toEqual(["rule-1", "vendor-1"]);
+    expect(mocks.db.$queryRaw.mock.invocationCallOrder[0]).toBeLessThan(mocks.db.automationRule.findFirst.mock.invocationCallOrder[0]!);
+    expectNoWrite();
+  });
+
+  it("an admin switches a rule with a LINE push off, deletes its steps and deletes the rule, but cannot switch it on", async () => {
+    mocks.findSession.mockResolvedValue(sessionFor("admin"));
+    storedRule({ actions: TAG, steps: [{ actions: STORED_LINE }] });
+    // Switching on: refused after the lock, nothing written.
+    await expect(toggleAutomationRuleAction(data({ ruleId: "rule-1" }))).rejects.toThrow("redirect:/settings/automations?error=line_push_owner_only");
+    expectLinePushReadBoundToVendor();
+    expectNoWrite();
+
+    // Deleting a step and the (switched-off, unused) rule stays allowed.
+    await expect(deleteAutomationRuleStepAction(data({ ruleId: "rule-1", stepId: "step-1" }))).rejects.toThrow("updated=step_deleted");
+    expect(mocks.db.automationRuleStep.deleteMany).toHaveBeenCalledWith({ where: { id: "step-1", vendorId: "vendor-1", ruleId: "rule-1" } });
+    await expect(deleteAutomationRuleAction(data({ ruleId: "rule-1" }))).rejects.toThrow("updated=deleted");
+    expect(mocks.db.automationRule.delete).toHaveBeenCalledWith({ where: { vendorId_id: { vendorId: "vendor-1", id: "rule-1" } } });
+
+    // Switching off is always allowed (and stops the rule's delayed-step runs).
+    mocks.db.delayedStepRun.updateMany.mockResolvedValue({ count: 0 });
+    mocks.db.automationRule.findFirst.mockResolvedValueOnce({ id: "rule-1", isActive: true, trigger: "consultation_booked" });
+    await expect(toggleAutomationRuleAction(data({ ruleId: "rule-1" }))).rejects.toThrow("updated=toggled");
+    expect(mocks.db.automationRule.updateMany).toHaveBeenCalledWith({ where: { id: "rule-1", vendorId: "vendor-1", isActive: true }, data: { isActive: false } });
+  });
+
+  it("the owner switches a rule with a LINE push on and edits its steps", async () => {
+    mocks.findSession.mockResolvedValue(sessionFor("owner"));
+    storedRule({ actions: STORED_LINE, steps: [{ actions: STORED_LINE }] });
+    await expect(toggleAutomationRuleAction(data({ ruleId: "rule-1" }))).rejects.toThrow("updated=toggled");
+    expect(mocks.db.automationRule.updateMany).toHaveBeenCalledWith({ where: { id: "rule-1", vendorId: "vendor-1", isActive: false }, data: { isActive: true } });
+    await expect(updateAutomationRuleStepAction(stepForm({ stepId: "step-1", actionTag: "on", customerTag: "第二天" }))).rejects.toThrow("updated=step_updated");
+    await expect(createAutomationRuleStepAction(stepForm({ actionTag: "on", customerTag: "第三天" }))).rejects.toThrow("updated=step_created");
+  });
+
+  it("an admin keeps managing a rule without a LINE push (switch on, add and edit steps)", async () => {
+    mocks.findSession.mockResolvedValue(sessionFor("admin"));
+    storedRule({ actions: TAG, steps: [{ actions: [{ type: "send_email_notification", template: "class_reminder" }] }] });
+    await expect(toggleAutomationRuleAction(data({ ruleId: "rule-1" }))).rejects.toThrow("updated=toggled");
+    await expect(createAutomationRuleStepAction(stepForm({ actionTag: "on", customerTag: "第三天" }))).rejects.toThrow("updated=step_created");
+    await expect(updateAutomationRuleStepAction(stepForm({ stepId: "step-1", actionEmail: "on", emailTemplate: "class_reminder" }))).rejects.toThrow("updated=step_updated");
+    expect(mocks.audit).toHaveBeenCalledTimes(3);
+  });
+
+  it("another vendor's rule stays not_found for an admin, before any LINE push check", async () => {
+    mocks.findSession.mockResolvedValue(sessionFor("admin"));
+    mocks.db.$queryRaw.mockResolvedValue([]);
+    await expect(createAutomationRuleStepAction(stepForm({ actionTag: "on", customerTag: "x" }))).rejects.toThrow("redirect:/settings/automations?error=not_found");
+    expect(mocks.db.automationRule.findFirst).not.toHaveBeenCalled();
+    expectNoWrite();
   });
 });

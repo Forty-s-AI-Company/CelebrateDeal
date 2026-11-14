@@ -109,19 +109,24 @@ export function FunnelAutomationSettings({ pageId, csrfName, csrfToken }: { page
     <div className="grid gap-3" aria-busy={loading}>
       {loading ? <p className="text-sm text-slate-600">載入規則中…</p> : null}
       {!loading && !rules.length ? <p className="text-sm text-slate-600">這個漏斗尚未建立報名後自動化。</p> : null}
-      {rules.map((rule) => <article key={`${rule.id}:${reloadEpoch}`} className="grid gap-3 rounded-lg border border-violet-200 bg-white p-3">
-        <form className="grid gap-3" onSubmit={(event) => void submit(event, updateFunnelAutomationRuleAction)}>
-          <input type="hidden" name={csrfName} value={csrfToken} /><input type="hidden" name="pageId" value={pageId} /><input type="hidden" name="ruleId" value={rule.id} /><input type="hidden" name="version" value={rule.version} />
-          <div className="flex flex-wrap items-center justify-between gap-2"><p className="text-sm font-semibold text-slate-900">報名完成 → 加上標籤</p><span className={rule.isActive ? "rounded-full bg-emerald-100 px-2 py-1 text-xs text-emerald-800" : "rounded-full bg-slate-100 px-2 py-1 text-xs text-slate-700"}>{rule.isActive ? "啟用中" : "已停用"}</span></div>
-          <label className="grid gap-1 text-xs font-semibold text-slate-700">規則名稱<input required maxLength={120} name="name" className={control} defaultValue={rule.name} disabled={loading || submitting} /></label>
-          <label className="grid gap-1 text-xs font-semibold text-slate-700">客戶標籤<input required maxLength={50} name="tag" className={control} defaultValue={rule.tag} disabled={loading || submitting} /></label>
-          <button type="submit" disabled={loading || submitting} className="min-h-10 rounded-lg border border-violet-300 px-4 text-sm font-semibold text-violet-900 disabled:opacity-50">儲存變更</button>
-        </form>
-        <form onSubmit={(event) => void submit(event, setFunnelAutomationRuleEnabledAction)}>
-          <input type="hidden" name={csrfName} value={csrfToken} /><input type="hidden" name="pageId" value={pageId} /><input type="hidden" name="ruleId" value={rule.id} /><input type="hidden" name="version" value={rule.version} /><input type="hidden" name="isActive" value={String(!rule.isActive)} />
-          <button type="submit" disabled={loading || submitting} className="min-h-10 rounded-lg border border-slate-300 px-4 text-sm font-semibold text-slate-800 disabled:opacity-50">{rule.isActive ? "停用規則" : "啟用規則"}</button>
-        </form>
-      </article>)}
+      {rules.map((rule) => {
+        // A rule with a custom LINE push is read-only for a non-owner; switching it off stays available.
+        const readOnly = rule.linePushOwnerOnly;
+        return <article key={`${rule.id}:${reloadEpoch}`} className="grid gap-3 rounded-lg border border-violet-200 bg-white p-3">
+          <form className="grid gap-3" onSubmit={(event) => void submit(event, updateFunnelAutomationRuleAction)}>
+            <input type="hidden" name={csrfName} value={csrfToken} /><input type="hidden" name="pageId" value={pageId} /><input type="hidden" name="ruleId" value={rule.id} /><input type="hidden" name="version" value={rule.version} />
+            <div className="flex flex-wrap items-center justify-between gap-2"><p className="text-sm font-semibold text-slate-900">報名完成 → 加上標籤</p><span className={rule.isActive ? "rounded-full bg-emerald-100 px-2 py-1 text-xs text-emerald-800" : "rounded-full bg-slate-100 px-2 py-1 text-xs text-slate-700"}>{rule.isActive ? "啟用中" : "已停用"}</span></div>
+            {readOnly ? <p className="rounded-lg bg-slate-50 p-2 text-xs text-slate-700">這條規則含 LINE 推播，LINE 推播僅限擁有者設定：你只能停用它。</p> : null}
+            <label className="grid gap-1 text-xs font-semibold text-slate-700">規則名稱<input required maxLength={120} name="name" className={control} defaultValue={rule.name} disabled={loading || submitting || readOnly} /></label>
+            <label className="grid gap-1 text-xs font-semibold text-slate-700">客戶標籤<input required maxLength={50} name="tag" className={control} defaultValue={rule.tag} disabled={loading || submitting || readOnly} /></label>
+            {readOnly ? null : <button type="submit" disabled={loading || submitting} className="min-h-10 rounded-lg border border-violet-300 px-4 text-sm font-semibold text-violet-900 disabled:opacity-50">儲存變更</button>}
+          </form>
+          {readOnly && !rule.isActive ? null : <form onSubmit={(event) => void submit(event, setFunnelAutomationRuleEnabledAction)}>
+            <input type="hidden" name={csrfName} value={csrfToken} /><input type="hidden" name="pageId" value={pageId} /><input type="hidden" name="ruleId" value={rule.id} /><input type="hidden" name="version" value={rule.version} /><input type="hidden" name="isActive" value={String(!rule.isActive)} />
+            <button type="submit" disabled={loading || submitting} className="min-h-10 rounded-lg border border-slate-300 px-4 text-sm font-semibold text-slate-800 disabled:opacity-50">{rule.isActive ? "停用規則" : "啟用規則"}</button>
+          </form>}
+        </article>;
+      })}
     </div>
   </section>;
 }

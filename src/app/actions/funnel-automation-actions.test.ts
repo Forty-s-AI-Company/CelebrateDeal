@@ -15,7 +15,9 @@ vi.mock("@/lib/funnel-automation-service", () => {
   class FunnelAutomationNotFoundError extends Error {}
   class FunnelAutomationConflictError extends Error {}
   class FunnelAutomationBusyError extends Error {}
+  class FunnelAutomationLinePushOwnerOnlyError extends Error {}
   return {
+    FunnelAutomationLinePushOwnerOnlyError,
     listFunnelAutomationRules: runtime.list,
     createFunnelAutomationRule: runtime.create,
     updateFunnelAutomationRule: runtime.update,
@@ -70,6 +72,17 @@ describe("funnel automation actions", () => {
     const { FunnelAutomationBusyError } = await import("@/lib/funnel-automation-service");
     runtime.setEnabled.mockRejectedValueOnce(new FunnelAutomationBusyError());
     await expect(setFunnelAutomationRuleEnabledAction(form({ pageId: "page-1", ruleId: "rule-1", version: "4", isActive: "false", _csrf: "csrf" }))).resolves.toMatchObject({ status: "error", message: "規則正在被其他人修改或執行，請稍後再試。" });
+  });
+
+  it("explains that a rule with a LINE push is the owner's to edit or switch on (owner decision 2026-11-14)", async () => {
+    const { FunnelAutomationLinePushOwnerOnlyError } = await import("@/lib/funnel-automation-service");
+    runtime.update.mockRejectedValueOnce(new FunnelAutomationLinePushOwnerOnlyError());
+    runtime.setEnabled.mockRejectedValueOnce(new FunnelAutomationLinePushOwnerOnlyError());
+    const message = "這條規則含 LINE 推播，LINE 推播僅限擁有者設定；你可以停用它。";
+    await expect(updateFunnelAutomationRuleAction(form({ pageId: "page-1", ruleId: "rule-1", version: "3", name: "新版", tag: "新標籤", _csrf: "csrf" }))).resolves.toEqual({ status: "error", message });
+    await expect(setFunnelAutomationRuleEnabledAction(form({ pageId: "page-1", ruleId: "rule-1", version: "3", isActive: "true", _csrf: "csrf" }))).resolves.toEqual({ status: "error", message });
+    // A refusal returns no rules list, so the editor keeps what it shows.
+    expect(runtime.list).not.toHaveBeenCalled();
   });
 
   it("returns a visible input error before an invalid enable operation reaches the service", async () => {

@@ -695,11 +695,11 @@ describe("後台：步驟的新增、修改與刪除", () => {
     const sb = await step(b, rb.id, 60);
     const input = { delayMinutes: 120, condition: { type: "always" }, actions: [TAG_ACTION], isActive: true };
     // A's vendor with B's rule, B's step under A's rule, B's product in A's voucher.
-    await expect(createAutomationRuleStep({ vendorId: a.vendor.id, ruleId: rb.id, step: input })).resolves.toEqual({ ok: false, code: "not_found" });
-    await expect(updateAutomationRuleStep({ vendorId: a.vendor.id, ruleId: ra.id, stepId: sb.id, step: input })).resolves.toEqual({ ok: false, code: "not_found" });
-    await expect(updateAutomationRuleStep({ vendorId: a.vendor.id, ruleId: rb.id, stepId: sb.id, step: input })).resolves.toEqual({ ok: false, code: "not_found" });
+    await expect(createAutomationRuleStep({ linePushAllowed: true, vendorId: a.vendor.id, ruleId: rb.id, step: input })).resolves.toEqual({ ok: false, code: "not_found" });
+    await expect(updateAutomationRuleStep({ linePushAllowed: true, vendorId: a.vendor.id, ruleId: ra.id, stepId: sb.id, step: input })).resolves.toEqual({ ok: false, code: "not_found" });
+    await expect(updateAutomationRuleStep({ linePushAllowed: true, vendorId: a.vendor.id, ruleId: rb.id, stepId: sb.id, step: input })).resolves.toEqual({ ok: false, code: "not_found" });
     await expect(deleteAutomationRuleStep({ vendorId: a.vendor.id, ruleId: rb.id, stepId: sb.id })).resolves.toEqual({ ok: false, code: "not_found" });
-    await expect(createAutomationRuleStep({ vendorId: a.vendor.id, ruleId: ra.id, step: { ...input, actions: [{ type: "issue_repurchase_voucher", productId: b.product.id, discountType: "fixed", discountValue: 100, expiresInDays: 3 }] } })).resolves.toEqual({ ok: false, code: "invalid_product" });
+    await expect(createAutomationRuleStep({ linePushAllowed: true, vendorId: a.vendor.id, ruleId: ra.id, step: { ...input, actions: [{ type: "issue_repurchase_voucher", productId: b.product.id, discountType: "fixed", discountValue: 100, expiresInDays: 3 }] } })).resolves.toEqual({ ok: false, code: "invalid_product" });
     await expect(db.automationRuleStep.findUniqueOrThrow({ where: { id: sb.id } })).resolves.toMatchObject({ ruleId: rb.id, delayMinutes: 60 });
     // Not even a direct write can hang A's step on B's rule (composite foreign key).
     await expect(db.automationRuleStep.create({ data: { vendorId: a.vendor.id, ruleId: rb.id, delayMinutes: 90, condition: {}, actions: [TAG_ACTION] as Prisma.InputJsonArray } })).rejects.toMatchObject({ code: "P2003" });
@@ -709,25 +709,25 @@ describe("後台：步驟的新增、修改與刪除", () => {
     await expect(db.automationRuleStep.count({ where: { id: sb.id } })).resolves.toBe(1);
     // Limits and ranges.
     for (let index = 0; index < MAX_AUTOMATION_RULE_STEPS; index += 1) {
-      await expect(createAutomationRuleStep({ vendorId: a.vendor.id, ruleId: ra.id, step: { ...input, delayMinutes: (index + 1) * 60 } })).resolves.toMatchObject({ ok: true });
+      await expect(createAutomationRuleStep({ linePushAllowed: true, vendorId: a.vendor.id, ruleId: ra.id, step: { ...input, delayMinutes: (index + 1) * 60 } })).resolves.toMatchObject({ ok: true });
     }
-    await expect(createAutomationRuleStep({ vendorId: a.vendor.id, ruleId: ra.id, step: { ...input, delayMinutes: 100 * 60 } })).resolves.toEqual({ ok: false, code: "step_limit" });
+    await expect(createAutomationRuleStep({ linePushAllowed: true, vendorId: a.vendor.id, ruleId: ra.id, step: { ...input, delayMinutes: 100 * 60 } })).resolves.toEqual({ ok: false, code: "step_limit" });
     for (const delayMinutes of [AUTOMATION_STEP_MIN_DELAY_MINUTES - 1, AUTOMATION_STEP_MAX_DELAY_MINUTES + 1, 90.5]) {
-      await expect(updateAutomationRuleStep({ vendorId: a.vendor.id, ruleId: ra.id, stepId: (await db.automationRuleStep.findFirstOrThrow({ where: { ruleId: ra.id } })).id, step: { ...input, delayMinutes } })).resolves.toEqual({ ok: false, code: "invalid_delay" });
+      await expect(updateAutomationRuleStep({ linePushAllowed: true, vendorId: a.vendor.id, ruleId: ra.id, stepId: (await db.automationRuleStep.findFirstOrThrow({ where: { ruleId: ra.id } })).id, step: { ...input, delayMinutes } })).resolves.toEqual({ ok: false, code: "invalid_delay" });
     }
     await expect(db.automationRuleStep.create({ data: { vendorId: a.vendor.id, ruleId: ra.id, delayMinutes: 59, condition: {}, actions: [TAG_ACTION] as Prisma.InputJsonArray } })).rejects.toThrow(/AutomationRuleStep_delayMinutes_check/u);
     await expect(db.automationRuleStep.create({ data: { vendorId: a.vendor.id, ruleId: ra.id, delayMinutes: 5_000, condition: {}, actions: [] as Prisma.InputJsonArray } })).rejects.toThrow(/AutomationRuleStep_actions_check/u);
     // A hidden trigger: no new or edited step, but deleting one still works.
     const hidden = await rule(a, { trigger: "form_no_show" });
     const hiddenStep = await step(a, hidden.id, 60);
-    await expect(createAutomationRuleStep({ vendorId: a.vendor.id, ruleId: hidden.id, step: input })).resolves.toEqual({ ok: false, code: "trigger_unavailable" });
-    await expect(updateAutomationRuleStep({ vendorId: a.vendor.id, ruleId: hidden.id, stepId: hiddenStep.id, step: input })).resolves.toEqual({ ok: false, code: "trigger_unavailable" });
+    await expect(createAutomationRuleStep({ linePushAllowed: true, vendorId: a.vendor.id, ruleId: hidden.id, step: input })).resolves.toEqual({ ok: false, code: "trigger_unavailable" });
+    await expect(updateAutomationRuleStep({ linePushAllowed: true, vendorId: a.vendor.id, ruleId: hidden.id, stepId: hiddenStep.id, step: input })).resolves.toEqual({ ok: false, code: "trigger_unavailable" });
     await expect(deleteAutomationRuleStep({ vendorId: a.vendor.id, ruleId: hidden.id, stepId: hiddenStep.id })).resolves.toMatchObject({ ok: true });
     // F-4 PR 3: payment_paid is available but runs immediate actions only.
     const paid = await rule(a, { trigger: "payment_paid" });
-    await expect(createAutomationRuleStep({ vendorId: a.vendor.id, ruleId: paid.id, step: input })).resolves.toEqual({ ok: false, code: "steps_unsupported" });
+    await expect(createAutomationRuleStep({ linePushAllowed: true, vendorId: a.vendor.id, ruleId: paid.id, step: input })).resolves.toEqual({ ok: false, code: "steps_unsupported" });
     const paidStep = await step(a, paid.id, 60);
-    await expect(updateAutomationRuleStep({ vendorId: a.vendor.id, ruleId: paid.id, stepId: paidStep.id, step: input })).resolves.toEqual({ ok: false, code: "steps_unsupported" });
+    await expect(updateAutomationRuleStep({ linePushAllowed: true, vendorId: a.vendor.id, ruleId: paid.id, stepId: paidStep.id, step: input })).resolves.toEqual({ ok: false, code: "steps_unsupported" });
     await expect(deleteAutomationRuleStep({ vendorId: a.vendor.id, ruleId: paid.id, stepId: paidStep.id })).resolves.toMatchObject({ ok: true });
     runtime.actor = { user: { id: "user-a" }, vendor: { id: a.vendor.id, betaFeatureGrants: ["automation_delayed_steps"] }, member: { role: "owner" } };
     await expect(createAutomationRuleStepAction(form({ ruleId: paid.id, delayValue: "1", delayUnit: "days", actionTag: "on", customerTag: "x", stepActive: "on" })))
@@ -764,15 +764,15 @@ describe("後台：步驟的新增、修改與刪除", () => {
     await expect(work(t, after(run.anchorAt, 61 * MINUTE))).resolves.toEqual([{ runId: run.id, status: "executed" }]);
     const input = (delayMinutes: number, tag: string, isActive = true) => ({ delayMinutes, condition: { type: "always" }, actions: [{ type: "add_customer_tag", tag }], isActive });
     // The executed step moves after the next one: same id, so it is not run again for this person.
-    await expect(updateAutomationRuleStep({ vendorId: t.vendor.id, ruleId: r.id, stepId: s60.id, step: input(240, "一") })).resolves.toMatchObject({ ok: true, id: s60.id });
+    await expect(updateAutomationRuleStep({ linePushAllowed: true, vendorId: t.vendor.id, ruleId: r.id, stepId: s60.id, step: input(240, "一") })).resolves.toMatchObject({ ok: true, id: s60.id });
     // A new step after this person's position runs at its time (the save re-times the run).
-    await expect(createAutomationRuleStep({ vendorId: t.vendor.id, ruleId: r.id, step: input(120, "二") })).resolves.toMatchObject({ ok: true });
+    await expect(createAutomationRuleStep({ linePushAllowed: true, vendorId: t.vendor.id, ruleId: r.id, step: input(120, "二") })).resolves.toMatchObject({ ok: true });
     await expect(db.delayedStepRun.findUniqueOrThrow({ where: { id: run.id } })).resolves.toMatchObject({ cursorDelayMinutes: 60, nextRunAt: after(run.anchorAt, 120 * MINUTE) });
     await expect(work(t, after(run.anchorAt, 121 * MINUTE))).resolves.toEqual([{ runId: run.id, status: "executed" }]);
     // A new step before this person's position: never back-filled.
-    await expect(createAutomationRuleStep({ vendorId: t.vendor.id, ruleId: r.id, step: input(90, "早") })).resolves.toMatchObject({ ok: true });
+    await expect(createAutomationRuleStep({ linePushAllowed: true, vendorId: t.vendor.id, ruleId: r.id, step: input(90, "早") })).resolves.toMatchObject({ ok: true });
     // A switched-off step is skipped.
-    await expect(updateAutomationRuleStep({ vendorId: t.vendor.id, ruleId: r.id, stepId: s180.id, step: input(180, "三", false) })).resolves.toMatchObject({ ok: true });
+    await expect(updateAutomationRuleStep({ linePushAllowed: true, vendorId: t.vendor.id, ruleId: r.id, stepId: s180.id, step: input(180, "三", false) })).resolves.toMatchObject({ ok: true });
     await expect(db.delayedStepRun.findUniqueOrThrow({ where: { id: run.id } })).resolves.toMatchObject({ cursorDelayMinutes: 120, nextRunAt: after(run.anchorAt, 240 * MINUTE) });
     // At 240 the moved step meets its own execution: only the cursor moves.
     await expect(work(t, after(run.anchorAt, 241 * MINUTE))).resolves.toEqual([{ runId: run.id, status: "skipped_already_sent" }]);
@@ -989,7 +989,7 @@ describe("審查修正（PR #601）", () => {
     // The step moves to 1 hour between the event reading the rule and starting the run.
     const original = db.automationExecutionLog.create.bind(db.automationExecutionLog);
     const moveFirstStep = async (args: Parameters<typeof original>[0]) => {
-      await updateAutomationRuleStep({ vendorId: t.vendor.id, ruleId: r.id, stepId: first.id, step: { delayMinutes: 60, condition: { type: "always" }, actions: [TAG_ACTION], isActive: true } });
+      await updateAutomationRuleStep({ linePushAllowed: true, vendorId: t.vendor.id, ruleId: r.id, stepId: first.id, step: { delayMinutes: 60, condition: { type: "always" }, actions: [TAG_ACTION], isActive: true } });
       return original(args);
     };
     vi.spyOn(db.automationExecutionLog, "create").mockImplementationOnce(moveFirstStep as never);
@@ -1015,7 +1015,7 @@ describe("審查修正（PR #601）", () => {
     vi.spyOn(db.lineDelivery, "create").mockRejectedValueOnce(new Error("synthetic LINE failure"));
     await expect(work(t, due)).resolves.toEqual([{ runId: run.id, status: "failed", emailsQueued: 1 }]);
     // The merchant swaps the two actions before the retry.
-    await updateAutomationRuleStep({ vendorId: t.vendor.id, ruleId: r.id, stepId: s.id, step: { delayMinutes: 60, condition: { type: "always" }, actions: [line, EMAIL_ACTION], isActive: true } });
+    await updateAutomationRuleStep({ linePushAllowed: true, vendorId: t.vendor.id, ruleId: r.id, stepId: s.id, step: { delayMinutes: 60, condition: { type: "always" }, actions: [line, EMAIL_ACTION], isActive: true } });
     await db.delayedStepRun.update({ where: { id: run.id }, data: { claimedAt: new Date(due.getTime() - DELAYED_STEP_LEASE_MS - MINUTE) } });
     await expect(work(t, due)).resolves.toEqual([{ runId: run.id, status: "executed" }]);
     await expect(stepMails(t)).resolves.toHaveLength(1);
@@ -1066,7 +1066,7 @@ describe("第二輪審查修正（PR #601）", () => {
     vi.spyOn(db.lineDelivery, "create").mockRejectedValueOnce(new Error("synthetic LINE failure"));
     await expect(work(t, due)).resolves.toEqual([{ runId: run.id, status: "failed" }]);
     // The merchant removes the e-mail; the job runs without an e-mail provider.
-    await updateAutomationRuleStep({ vendorId: t.vendor.id, ruleId: r.id, stepId: s.id, step: { delayMinutes: 60, condition: { type: "always" }, actions: [line], isActive: true } });
+    await updateAutomationRuleStep({ linePushAllowed: true, vendorId: t.vendor.id, ruleId: r.id, stepId: s.id, step: { delayMinutes: 60, condition: { type: "always" }, actions: [line], isActive: true } });
     await db.delayedStepRun.update({ where: { id: run.id }, data: { claimedAt: new Date(due.getTime() - DELAYED_STEP_LEASE_MS - MINUTE) } });
     const before = await db.delayedStepRun.findUniqueOrThrow({ where: { id: run.id } });
     vi.stubEnv("RESEND_API_KEY", "");

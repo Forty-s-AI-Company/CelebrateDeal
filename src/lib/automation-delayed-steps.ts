@@ -10,6 +10,11 @@ import {
   automationStepEventId,
   type AutomationEvent,
 } from "@/lib/automation-workflow";
+import {
+  automationActionsIncludeLinePush,
+  LINE_PUSH_OWNER_ONLY,
+  storedAutomationRuleIncludesLinePush,
+} from "@/lib/automation-line-push-policy";
 import { getDb } from "@/lib/db";
 import { isLockTimeout } from "@/lib/serializable-retry";
 import {
@@ -484,7 +489,7 @@ export type AutomationStepInput = {
 
 export type AutomationStepChangeResult =
   | { ok: true; id: string; before?: { delayMinutes: number; isActive: boolean; actions: unknown }; after?: { delayMinutes: number; isActive: boolean; actions: unknown } }
-  | { ok: false; code: "not_found" | "trigger_unavailable" | "steps_unsupported" | "invalid_step" | "invalid_delay" | "duplicate_delay" | "step_limit" | "invalid_product" | "step_busy" };
+  | { ok: false; code: "not_found" | "trigger_unavailable" | "steps_unsupported" | "invalid_step" | "invalid_delay" | "duplicate_delay" | "step_limit" | "invalid_product" | "step_busy" | typeof LINE_PUSH_OWNER_ONLY };
 
 class StepChangeRejected extends Error {
   constructor(readonly code: Extract<AutomationStepChangeResult, { ok: false }>["code"]) {
@@ -557,11 +562,28 @@ async function assertDelayFree(tx: Prisma.TransactionClient, vendorId: string, r
   if (taken) throw new StepChangeRejected("duplicate_delay");
 }
 
+/**
+ * Owner decision 2026-11-14 (src/lib/automation-line-push-policy.ts): without
+ * `linePushAllowed` (the actor is not the vendor owner), a step may neither
+ * carry a LINE push nor be added to or edited on a rule that already has one
+ * (its immediate actions or any step). Read after the rule row is locked FOR
+ * UPDATE, so an owner's concurrent LINE push step is serialized with it.
+ */
+async function assertLinePushPolicy(tx: Prisma.TransactionClient, input: { vendorId: string; linePushAllowed: boolean; step: AutomationStepInput }, ruleId: string) {
+  if (input.linePushAllowed) return;
+  if (automationActionsIncludeLinePush(input.step.actions)) throw new StepChangeRejected(LINE_PUSH_OWNER_ONLY);
+  const stored = await storedAutomationRuleIncludesLinePush(tx, { vendorId: input.vendorId, ruleId });
+  if (stored === null) throw new StepChangeRejected("not_found");
+  if (stored) throw new StepChangeRejected(LINE_PUSH_OWNER_ONLY);
+}
+
+/** `linePushAllowed`: the actor is the vendor owner (mayConfigureAutomationLinePush); every caller decides it. */
 export async function createAutomationRuleStep(
-  input: { vendorId: string; ruleId: string; step: AutomationStepInput; now?: Date },
+  input: { vendorId: string; ruleId: string; step: AutomationStepInput; linePushAllowed: boolean; now?: Date },
   db: Database = getDb(),
 ): Promise<AutomationStepChangeResult> {
   return withLockedRule(db, { vendorId: input.vendorId, ruleId: input.ruleId, now: input.now ?? new Date(), requireAvailableTrigger: true }, async (tx, rule) => {
+    await assertLinePushPolicy(tx, input, rule.id);
     const count = await tx.automationRuleStep.count({ where: { vendorId: input.vendorId, ruleId: rule.id } });
     if (count >= MAX_AUTOMATION_RULE_STEPS) throw new StepChangeRejected("step_limit");
     const parsed = await validateStep(tx, input.vendorId, rule.id, input.step);
@@ -588,10 +610,13 @@ export async function createAutomationRuleStep(
  * again (#598 review B1).
  */
 export async function updateAutomationRuleStep(
-  input: { vendorId: string; ruleId: string; stepId: string; step: AutomationStepInput; now?: Date },
+  input: { vendorId: string; ruleId: string; stepId: string; step: AutomationStepInput; linePushAllowed: boolean; now?: Date },
   db: Database = getDb(),
 ): Promise<AutomationStepChangeResult> {
   return withLockedRule(db, { vendorId: input.vendorId, ruleId: input.ruleId, now: input.now ?? new Date(), requireAvailableTrigger: true }, async (tx, rule) => {
+    // A step that has a LINE push is part of the rule, so an admin cannot edit
+    // it either, even into one without (deleting it stays possible).
+    await assertLinePushPolicy(tx, input, rule.id);
     const existing = await tx.automationRuleStep.findFirst({
       where: { id: input.stepId, vendorId: input.vendorId, ruleId: rule.id },
       select: { id: true, delayMinutes: true, isActive: true, actions: true },
