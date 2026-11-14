@@ -183,6 +183,7 @@ const ENTRIES: Entry[] = [
   { feature: "email_sequences", kind: "page", name: "/messages/sequences", run: async () => (await import("@/app/(app)/messages/sequences/page")).default({ searchParams: Promise.resolve({}) }) },
   // automation_delayed_steps (F-4 PR 2; the page only hides its section, the event and the worker check the grant per vendor)
   { feature: "automation_delayed_steps", kind: "action", name: "createAutomationRuleStepAction", run: async () => (await import("@/app/actions/automation-actions")).createAutomationRuleStepAction(form({ ruleId: "rule-1", delayValue: "1", delayUnit: "days", actionTag: "on", customerTag: "第二天", stepActive: "on" })) },
+  { feature: "automation_delayed_steps", kind: "action", name: "updateAutomationRuleStepAction", run: async () => (await import("@/app/actions/automation-actions")).updateAutomationRuleStepAction(form({ ruleId: "rule-1", stepId: "step-1", delayValue: "2", delayUnit: "hours", actionTag: "on", customerTag: "第二天" })) },
   { feature: "automation_delayed_steps", kind: "action", name: "deleteAutomationRuleStepAction", run: async () => (await import("@/app/actions/automation-actions")).deleteAutomationRuleStepAction(form({ ruleId: "rule-1", stepId: "step-1" })) },
   { feature: "danmaku", kind: "route", name: "GET /api/live-danmaku (viewer)", run: async () => (await import("@/app/api/live-danmaku/route")).GET(jsonRequest("https://app.example.test/api/live-danmaku?vendorId=vendor-1&liveId=live-1", { headers: { cookie: "celebratedeal_live_viewer=" + "a".repeat(43) } })) },
 ];

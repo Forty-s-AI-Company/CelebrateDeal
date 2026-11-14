@@ -241,6 +241,8 @@ export async function requeueEmailDelivery(input: {
         sourceLiveId: true,
         sourceFormSubmissionId: true,
         trigger: true,
+        // The send-time checks of sequence and delayed automation e-mails read their key.
+        idempotencyKey: true,
         createdAt: true,
         status: true,
         attemptCount: true,

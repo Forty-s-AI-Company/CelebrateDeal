@@ -1,3 +1,4 @@
+import { Prisma } from "@prisma/client";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const runtime = vi.hoisted(() => ({
@@ -10,6 +11,7 @@ const runtime = vi.hoisted(() => ({
     automationRule: { findMany: vi.fn(), create: vi.fn(), updateMany: vi.fn(), findFirst: vi.fn() },
     delayedStepRun: { updateMany: vi.fn() },
     $queryRaw: vi.fn(),
+    $executeRaw: vi.fn(),
     $transaction: vi.fn(),
   },
 }));
@@ -21,6 +23,7 @@ vi.mock("@/lib/db", () => ({ getDb: () => runtime.db }));
 
 import {
   createFunnelAutomationRule,
+  FunnelAutomationBusyError,
   FunnelAutomationConflictError,
   FunnelAutomationNotFoundError,
   listFunnelAutomationRules,
@@ -115,6 +118,25 @@ describe("funnel automation service", () => {
     runtime.db.delayedStepRun.updateMany.mockClear();
     await expect(setFunnelAutomationRuleEnabled({ pageId: "page-1", ruleId: "rule-1", version: 3, isActive: true }, runtime.db as never)).resolves.toBeUndefined();
     expect(runtime.db.delayedStepRun.updateMany).not.toHaveBeenCalled();
+  });
+
+  it("bounds the wait for the rule lock and reports a held rule as busy", async () => {
+    runtime.db.$transaction.mockImplementation(async (work: (tx: unknown) => unknown) => work(runtime.db));
+    runtime.db.$queryRaw.mockResolvedValue([{ id: "rule-1" }]);
+    runtime.db.automationRule.updateMany.mockResolvedValue({ count: 1 });
+    await setFunnelAutomationRuleEnabled({ pageId: "page-1", ruleId: "rule-1", version: 2, isActive: true }, runtime.db as never);
+    const [setLocal] = runtime.db.$executeRaw.mock.calls[0] as [TemplateStringsArray];
+    expect(setLocal.join("?")).toBe("SET LOCAL lock_timeout = '5s'");
+    expect(runtime.db.$executeRaw.mock.invocationCallOrder[0]).toBeLessThan(runtime.db.$queryRaw.mock.invocationCallOrder[0]!);
+    for (const error of [
+      new Prisma.PrismaClientKnownRequestError("canceling statement due to lock timeout", { code: "P2010", clientVersion: Prisma.prismaVersion.client, meta: { code: "55P03" } }),
+      new Prisma.PrismaClientKnownRequestError("Transaction API error", { code: "P2028", clientVersion: Prisma.prismaVersion.client }),
+    ]) {
+      runtime.db.$transaction.mockRejectedValueOnce(error);
+      await expect(setFunnelAutomationRuleEnabled({ pageId: "page-1", ruleId: "rule-1", version: 2, isActive: false }, runtime.db as never)).rejects.toBeInstanceOf(FunnelAutomationBusyError);
+    }
+    runtime.db.$transaction.mockRejectedValueOnce(new Error("connection lost"));
+    await expect(setFunnelAutomationRuleEnabled({ pageId: "page-1", ruleId: "rule-1", version: 2, isActive: false }, runtime.db as never)).rejects.toThrow("connection lost");
   });
 
   it("does not reveal or mutate a page outside the selected project", async () => {

@@ -34,3 +34,31 @@ export const SEQUENCE_EMAIL_TRIGGER = "sequence_email";
  * they never exceed one round's dispatch quota.
  */
 export const DELAYED_STEP_EMAIL_TRIGGERS = [SEQUENCE_EMAIL_TRIGGER, AUTOMATION_STEP_EMAIL_TRIGGER] as const;
+
+const AUTOMATION_STEP_EVENT_PREFIX = "delayed-step:";
+
+/** `AutomationExecutionLog.eventId` of a delayed step's execution. */
+export function automationStepEventId(runId: string, stepId: string) {
+  return `${AUTOMATION_STEP_EVENT_PREFIX}${runId}:${stepId}`;
+}
+
+/** The run and step a delayed step's execution log belongs to, or null for any other log. */
+export function parseAutomationStepEventId(eventId: string) {
+  const match = /^delayed-step:([A-Za-z0-9_-]{1,191}):([A-Za-z0-9_-]{1,191})$/u.exec(eventId);
+  return match ? { runId: match[1]!, stepId: match[2]! } : null;
+}
+
+/**
+ * `EmailDelivery.idempotencyKey` of a delayed step's e-mail: it names the
+ * step's execution log, so the send-time check can find the rule and the run
+ * behind the e-mail (review MINOR-3). Immediate automation e-mails keep their
+ * hashed key.
+ */
+export function automationStepEmailIdempotencyKey(executionLogId: string, actionIndex: number) {
+  return `automation-step-email/${executionLogId}/${actionIndex}`;
+}
+
+export function parseAutomationStepEmailIdempotencyKey(value: string | undefined) {
+  const match = /^automation-step-email\/(aes_[a-f0-9]{28})\/(\d{1,2})$/u.exec(value ?? "");
+  return match ? { executionLogId: match[1]! } : null;
+}

@@ -17,7 +17,13 @@ import { hasOnlySupportedMessageTemplateVariables, renderMessageTemplate } from 
 import { isTransactionalEmailConfigured } from "@/lib/email";
 import { captureOperationalError } from "@/lib/monitoring";
 import { isFeatureEnabled } from "@/lib/vendor-feature-toggles";
-import { AUTOMATION_STEP_EMAIL_TRIGGER, DELAYED_STEP_EMAIL_TRIGGERS, SEQUENCE_EMAIL_TRIGGER } from "@/lib/automation-email-trigger";
+import {
+  AUTOMATION_STEP_EMAIL_TRIGGER,
+  DELAYED_STEP_EMAIL_TRIGGERS,
+  parseAutomationStepEmailIdempotencyKey,
+  parseAutomationStepEventId,
+  SEQUENCE_EMAIL_TRIGGER,
+} from "@/lib/automation-email-trigger";
 
 /**
  * Shared delayed-step mechanism (docs/product/delayed-steps-design.md §3).
@@ -1298,15 +1304,32 @@ export async function rescheduleActiveRunsForSequence(
  * (dispatchEmailDelivery).
  */
 export async function isCurrentAutomationStepEmailDelivery(
-  delivery: { trigger: string; vendorId: string; createdAt?: Date },
+  delivery: { trigger: string; vendorId: string; createdAt?: Date; idempotencyKey?: string },
   now: Date,
-  database: Pick<Prisma.TransactionClient, "vendor">,
+  database: Pick<Prisma.TransactionClient, "vendor" | "automationExecutionLog" | "automationRule" | "delayedStepRun">,
 ) {
   if (delivery.trigger !== AUTOMATION_STEP_EMAIL_TRIGGER) return true;
   if (!delivery.createdAt || now.getTime() - delivery.createdAt.getTime() > SEQUENCE_EMAIL_SEND_STALE_MS) return false;
   // M3: a vendor whose automation_delayed_steps grant was closed sends none of its queued step e-mails.
   const vendor = await database.vendor.findUnique({ where: { id: delivery.vendorId }, select: { betaFeatureGrants: true, suspendedAt: true } });
-  return Boolean(vendor && !vendor.suspendedAt && isFeatureEnabled(vendor, AUTOMATION_DELAYED_STEPS_GRANT));
+  if (!vendor || vendor.suspendedAt || !isFeatureEnabled(vendor, AUTOMATION_DELAYED_STEPS_GRANT)) return false;
+  // Review MINOR-3: the e-mail's key names its step execution; the rule must
+  // still be switched on and the run not stopped (a switch-off or another
+  // stop that came after the step ran supersedes the e-mail). All reads are
+  // bound to the delivery's vendor.
+  const key = parseAutomationStepEmailIdempotencyKey(delivery.idempotencyKey);
+  if (!key) return false;
+  const log = await database.automationExecutionLog.findFirst({
+    where: { id: key.executionLogId, vendorId: delivery.vendorId },
+    select: { ruleId: true, eventId: true },
+  });
+  const step = log ? parseAutomationStepEventId(log.eventId) : null;
+  if (!log || !step) return false;
+  const [rule, run] = await Promise.all([
+    database.automationRule.findFirst({ where: { id: log.ruleId, vendorId: delivery.vendorId, isActive: true }, select: { id: true } }),
+    database.delayedStepRun.findFirst({ where: { id: step.runId, vendorId: delivery.vendorId, automationRuleId: log.ruleId }, select: { status: true } }),
+  ]);
+  return Boolean(rule && run && run.status !== "cancelled");
 }
 
 type SequenceSnapshotDatabase = Pick<Prisma.TransactionClient, "delayedStepRun" | "blacklist" | "vendor">;

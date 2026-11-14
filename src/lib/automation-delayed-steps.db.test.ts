@@ -996,3 +996,118 @@ describe("審查修正（PR #601）", () => {
     expect(log).toMatchObject({ status: "completed", actionResults: { actions: [EMAIL_ACTION, line] } });
   });
 });
+
+describe("第二輪審查修正（PR #601）", () => {
+  it("MINOR-1: finds the exact verified address among many similar ones (exact match after trim + lowercase)", async () => {
+    const t = await tenant();
+    const r = await rule(t, { trigger: "consultation_booked" });
+    await step(t, r.id, 60, [EMAIL_ACTION]);
+    const base = `client.${randomUUID().slice(0, 6)}`;
+    // 25 verified addresses that contain the booking address but are not it.
+    for (let index = 0; index < 25; index += 1) await registration(t, { email: `x${index}${base}@example.test.tw` });
+    await registration(t, { email: `  ${base.toUpperCase()}@EXAMPLE.TEST ` });
+    const row = await booking(t, `${base}@example.test`);
+    await booked(t, row);
+    const run = await onlyRun(t);
+    await expect(work(t, after(run.anchorAt, 61 * MINUTE))).resolves.toEqual([{ runId: run.id, status: "executed", emailsQueued: 1 }]);
+    // Only similar addresses: not confirmed.
+    const other = await tenant();
+    const ro = await rule(other, { trigger: "consultation_booked" });
+    await step(other, ro.id, 60, [EMAIL_ACTION]);
+    await registration(other, { email: `a${base}@example.test` });
+    await registration(other, { email: `${base}@example.test.tw` });
+    await booked(other, await booking(other, `${base}@example.test`));
+    const otherRun = await onlyRun(other);
+    await work(other, after(otherRun.anchorAt, 61 * MINUTE));
+    await expect(stepMails(other)).resolves.toEqual([]);
+  });
+
+  it("MINOR-2: a resumed step counts the e-mails of its snapshot, so no e-mail is created without room or an e-mail provider", async () => {
+    const t = await tenant({ line: true });
+    const r = await rule(t);
+    const line = { type: "line_push", message: "第二天的提醒" };
+    const s = await step(t, r.id, 60, [line, EMAIL_ACTION]);
+    const lead = await registration(t);
+    await db.lineUserIdentity.create({
+      data: { vendorId: t.vendor.id, subjectType: "buyer_registration", subjectId: lead.id, lineUserIdHash: createHash("sha256").update(randomUUID()).digest("hex"), lineUserIdEncrypted: "v1.synthetic" },
+    });
+    await registered(t, lead);
+    const run = await onlyRun(t);
+    const due = after(run.anchorAt, 61 * MINUTE);
+    // The LINE message fails first: nothing else ran.
+    vi.spyOn(db.lineDelivery, "create").mockRejectedValueOnce(new Error("synthetic LINE failure"));
+    await expect(work(t, due)).resolves.toEqual([{ runId: run.id, status: "failed" }]);
+    // The merchant removes the e-mail; the job runs without an e-mail provider.
+    await updateAutomationRuleStep({ vendorId: t.vendor.id, ruleId: r.id, stepId: s.id, step: { delayMinutes: 60, condition: { type: "always" }, actions: [line], isActive: true } });
+    await db.delayedStepRun.update({ where: { id: run.id }, data: { claimedAt: new Date(due.getTime() - DELAYED_STEP_LEASE_MS - MINUTE) } });
+    const before = await db.delayedStepRun.findUniqueOrThrow({ where: { id: run.id } });
+    vi.stubEnv("RESEND_API_KEY", "");
+    await expect(processDueDelayedStepRuns({ now: due, vendorId: t.vendor.id, onConfigurationError: () => undefined })).resolves.toEqual([{ runId: run.id, status: "waiting_capacity" }]);
+    await expect(stepMails(t)).resolves.toEqual([]);
+    await expect(db.delayedStepRun.findUniqueOrThrow({ where: { id: run.id } })).resolves.toMatchObject({ attemptCount: before.attemptCount, claimedAt: null, cursorDelayMinutes: -1 });
+    // With a provider and room it resumes its snapshot: one LINE message and one e-mail.
+    vi.stubEnv("RESEND_API_KEY", "re_synthetic_automation_steps");
+    await expect(work(t, due)).resolves.toEqual([{ runId: run.id, status: "executed", emailsQueued: 1 }]);
+    await expect(stepMails(t)).resolves.toHaveLength(1);
+    await expect(db.lineDelivery.count({ where: { vendorId: t.vendor.id } })).resolves.toBe(1);
+  });
+
+  it("MINOR-2 (fail closed): a resumed step whose recorded snapshot does not parse fails without running the current actions", async () => {
+    const t = await tenant();
+    const r = await rule(t);
+    const s = await step(t, r.id, 60, [TAG_ACTION]);
+    await registered(t, await registration(t));
+    const run = await onlyRun(t);
+    const logId = automationStepExecutionLogId(t.vendor.id, run.id, s.id);
+    await db.automationExecutionLog.create({
+      data: { id: logId, vendorId: t.vendor.id, ruleId: r.id, idempotencyKey: `synthetic-${randomUUID()}`, eventId: `delayed-step:${run.id}:${s.id}`, trigger: "form_registered", subjectType: "buyer_registration", status: "failed", actionResults: { actions: "junk", results: [] } },
+    });
+    await expect(work(t, after(run.anchorAt, 61 * MINUTE))).resolves.toEqual([{ runId: run.id, status: "failed" }]);
+    await expect(db.automationExecutionLog.findUniqueOrThrow({ where: { id: logId } })).resolves.toMatchObject({ status: "failed", errorCode: "snapshot_invalid" });
+    await expect(db.customerTagAssignment.count({ where: { vendorId: t.vendor.id, tag: "第二天" } })).resolves.toBe(0);
+  });
+
+  it("MINOR-3: a rule switched off after the worker read it runs nothing, and a queued step e-mail of a stopped rule or run is not sent", async () => {
+    const t = await tenant();
+    const r = await rule(t);
+    await step(t, r.id, 60, [TAG_ACTION, EMAIL_ACTION]);
+    const lead = await registration(t);
+    await registered(t, lead);
+    const run = await onlyRun(t);
+    // Switched off between the worker reading the rule and running the step.
+    const original = db.formSubmission.findFirst.bind(db.formSubmission);
+    const switchOff = async (args: Parameters<typeof original>[0]) => {
+      await db.automationRule.update({ where: { id: r.id }, data: { isActive: false } });
+      return original(args);
+    };
+    vi.spyOn(db.formSubmission, "findFirst").mockImplementationOnce(switchOff as never);
+    await expect(work(t, after(run.anchorAt, 61 * MINUTE))).resolves.toEqual([{ runId: run.id, status: "cancelled", cancelReason: "definition_paused" }]);
+    await expect(db.customerTagAssignment.count({ where: { vendorId: t.vendor.id, tag: "第二天" } })).resolves.toBe(0);
+    await expect(db.automationExecutionLog.count({ where: { vendorId: t.vendor.id, eventId: { startsWith: "delayed-step:" } } })).resolves.toBe(0);
+    await expect(stepMails(t)).resolves.toEqual([]);
+
+    // Send time: a queued step e-mail goes only while its rule is on and its run not stopped.
+    const t2 = await tenant();
+    const r2 = await rule(t2);
+    await step(t2, r2.id, 60, [EMAIL_ACTION]);
+    const leads = [await registration(t2), await registration(t2)];
+    for (const one of leads) await registered(t2, one);
+    const runs = await runsOf(t2);
+    await processDueDelayedStepRuns({ now: after(runs[0]!.anchorAt, 61 * MINUTE), vendorId: t2.vendor.id });
+    const mails = await stepMails(t2);
+    expect(mails).toHaveLength(2);
+    for (const mail of mails) expect(mail.idempotencyKey).toMatch(/^automation-step-email\/aes_[a-f0-9]{28}\/0$/u);
+    // A completed run with the rule on: still sendable.
+    await expect(isCurrentEmailDeliverySnapshot(mails[0]!, new Date())).resolves.toBe(true);
+    // A cancelled run: superseded.
+    const firstLog = await db.automationExecutionLog.findFirstOrThrow({ where: { id: mails[0]!.idempotencyKey.split("/")[1]! } });
+    const firstRunId = firstLog.eventId.split(":")[1]!;
+    await db.delayedStepRun.update({ where: { id: firstRunId }, data: { status: "cancelled", cancelReason: "unsubscribed", nextRunAt: null } });
+    await expect(dispatchEmailDelivery(mails[0]!.id)).resolves.toEqual({ status: "superseded" });
+    await expect(db.emailDelivery.findUniqueOrThrow({ where: { id: mails[0]!.id } })).resolves.toMatchObject({ lastErrorCode: "automation_step_superseded" });
+    // The rule switched off: superseded too.
+    await db.automationRule.update({ where: { id: r2.id }, data: { isActive: false } });
+    await expect(dispatchEmailDelivery(mails[1]!.id)).resolves.toEqual({ status: "superseded" });
+    expect(provider.send).not.toHaveBeenCalled();
+  });
+});

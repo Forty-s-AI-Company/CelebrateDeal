@@ -3,12 +3,12 @@ import {
   AUTOMATION_DELAYED_STEPS_FEATURE,
   AVAILABLE_AUTOMATION_TRIGGERS,
   executeAutomationStep,
+  plannedAutomationStepEmailCount,
   isAvailableAutomationTrigger,
   parseAutomationRule,
   automationStepEventId,
   type AutomationEvent,
 } from "@/lib/automation-workflow";
-import { automationCustomerKeyHash } from "@/lib/customer-key-hash";
 import { getDb } from "@/lib/db";
 import { isLockTimeout } from "@/lib/serializable-retry";
 import {
@@ -60,39 +60,25 @@ type AutomationSubject = {
   consultationUrl?: string;
 };
 
-/** Verified registrations of one address considered at most (case-insensitive matches of the same address). */
-const VERIFIED_REGISTRATION_SCAN = 20;
-
 /**
  * M2: a booking's address is typed into the public booking form and nobody
  * confirms it there. It counts as confirmed only when this vendor has a
- * VERIFIED registration with the same address: same customer key
- * (automationCustomerKeyHash, trim + lowercase), bound through the form.
+ * VERIFIED registration with exactly the same address after the customer-key
+ * normalization (trim + lowercase, automationCustomerKeyHash), bound through
+ * the registration's form (review MINOR-1: an exact match, no fuzzy candidates).
  */
-async function hasVerifiedRegistration(
-  db: Pick<Database, "formSubmission">,
-  vendorId: string,
-  email: string,
-  subjectKeyHash: string,
-) {
-  const candidates = await db.formSubmission.findMany({
-    where: {
-      form: { vendorId },
-      verificationStatus: "VERIFIED",
-      // Contains, then the exact customer key below: a stored address may keep stray spaces.
-      OR: [{ customerKeyHash: subjectKeyHash }, { email: { contains: email.trim(), mode: "insensitive" } }],
-    },
-    take: VERIFIED_REGISTRATION_SCAN,
-    select: { email: true, customerKeyHash: true },
-  });
-  return candidates.some((row) => {
-    if (row.customerKeyHash === subjectKeyHash) return true;
-    try {
-      return automationCustomerKeyHash(vendorId, row.email) === subjectKeyHash;
-    } catch {
-      return false;
-    }
-  });
+async function hasVerifiedRegistration(db: Pick<Database, "$queryRaw">, vendorId: string, email: string) {
+  const normalized = email.trim().toLowerCase();
+  if (!normalized) return false;
+  const rows = await db.$queryRaw<Array<{ id: string }>>`
+    SELECT f."id" FROM "FormSubmission" f
+    JOIN "RegistrationForm" rf ON rf."id" = f."formId"
+    WHERE rf."vendorId" = ${vendorId}
+      AND f."verificationStatus" = 'VERIFIED'
+      AND lower(btrim(f."email")) = ${normalized}
+    LIMIT 1
+  `;
+  return rows.length > 0;
 }
 
 /**
@@ -109,7 +95,7 @@ async function hasVerifiedRegistration(
  * `recipient_unverified` and its other actions run.
  */
 async function readSubject(
-  db: Pick<Database, "formSubmission" | "consultationBooking">,
+  db: Pick<Database, "formSubmission" | "consultationBooking" | "$queryRaw">,
   vendorId: string,
   trigger: string,
   run: { formSubmissionId: string | null; consultationBookingId: string | null; subjectKeyHash: string },
@@ -134,7 +120,7 @@ async function readSubject(
     return {
       subjectId: booking.id,
       recipientEmail: booking.clientEmail,
-      recipientVerified: await hasVerifiedRegistration(db, vendorId, booking.clientEmail, run.subjectKeyHash),
+      recipientVerified: await hasVerifiedRegistration(db, vendorId, booking.clientEmail),
       ...(booking.meetingUrl ? { consultationUrl: booking.meetingUrl } : {}),
     };
   }
@@ -244,9 +230,14 @@ export async function processClaimedAutomationRun(
   }
 
   // The step's e-mails must fit into what this round may still create (the
-  // sequence queue cap, §3「吞吐量」). If they do not, give the lease back
-  // without using an attempt; the run stays due for a later round.
-  if (automationStepEmailCount(step.actions) > emailRoom) {
+  // sequence queue cap, §3「吞吐量」). Counted from what the execution will
+  // really run: a resumed step runs its recorded snapshot (review MINOR-2).
+  // If they do not fit (also: room 0 without an e-mail provider), give the
+  // lease back without using an attempt; the run stays due for a later round.
+  const plannedEmails = await plannedAutomationStepEmailCount(db, {
+    vendorId: lease.vendorId, ruleId: rule.id, runId: run.id, stepId: step.id, condition: step.condition, actions: step.actions,
+  });
+  if (plannedEmails > emailRoom) {
     const released = await db.delayedStepRun.updateMany({
       where: leaseWhere(lease),
       data: { claimedAt: null, attemptCount: Math.max(0, lease.attemptCount - 1) },
@@ -274,6 +265,8 @@ export async function processClaimedAutomationRun(
     event,
   });
   if (outcome.status === "rule_deleted") return cancelLeasedRun(db, lease, "definition_deleted");
+  // Switched off (or the run stopped) after the rule was read: nothing ran.
+  if (outcome.status === "rule_inactive") return cancelLeasedRun(db, lease, "definition_paused");
   if (outcome.status === "failed") {
     // The lease stays: the run is claimable again after DELAYED_STEP_LEASE_MS
     // and the same step resumes on the same execution log (nothing repeats).
