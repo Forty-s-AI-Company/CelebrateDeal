@@ -5,7 +5,7 @@ vi.mock("next/cache", () => ({ revalidatePath: runtime.revalidate })); vi.mock("
 import { createAutomationRecipeAction, createAutomationRuleAction, deleteAutomationRuleAction, dryRunAutomationRuleAction, toggleAutomationRuleAction } from "./automation-actions";
 function form(trigger = "form_registered") { const f = new FormData(); f.set("name", "報名追蹤"); f.set("trigger", trigger); f.set("actionLine", "on"); f.set("lineMessage", "謝謝報名"); return f; }
 function ruleForm(id = "r1") { const f = new FormData(); f.set("ruleId", id); return f; }
-const HIDDEN_TRIGGERS = ["payment_paid", "form_no_show", "viewer_watch_progress", "webinar_attended_duration_gte"] as const;
+const HIDDEN_TRIGGERS = ["form_no_show", "viewer_watch_progress", "webinar_attended_duration_gte"] as const;
 beforeEach(() => { vi.clearAllMocks(); runtime.manager.mockResolvedValue(runtime.auth); runtime.db.automationRule.create.mockResolvedValue({ id: "r1", vendorId: "v1" }); runtime.db.automationRule.findFirst.mockResolvedValue({ id: "r1", isActive: true, trigger: "form_registered" }); runtime.db.automationRule.updateMany.mockResolvedValue({ count: 1 }); runtime.db.automationRule.delete.mockResolvedValue({ id: "r1" }); runtime.db.automationExecutionLog.count.mockResolvedValue(0); runtime.db.delayedStepRun.count.mockResolvedValue(0); runtime.db.delayedStepRun.updateMany.mockResolvedValue({ count: 0 }); runtime.db.$queryRaw.mockResolvedValue([{ id: "r1" }]); runtime.db.$transaction.mockImplementation(async (work: (tx: unknown) => unknown) => work(runtime.db)); });
 describe("automation actions", () => { it("requires CSRF and writes tenant-scoped rules", async () => { await expect(createAutomationRuleAction(form())).rejects.toThrow("redirect:/settings/automations?updated=created"); expect(runtime.security).toHaveBeenCalled(); expect(runtime.manager).toHaveBeenCalledWith("/settings/automations"); expect(runtime.db.automationRule.create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ vendorId: "v1", trigger: "form_registered", condition: { type: "always" } }) })); expect(runtime.audit).toHaveBeenCalledWith(expect.objectContaining({ vendorId: "v1", actorId: "u1", actorLabel: "admin" })); }); it("toggles only a rule in the current vendor", async () => { await expect(toggleAutomationRuleAction(ruleForm())).rejects.toThrow("redirect:/settings/automations?updated=toggled"); expect(runtime.db.automationRule.findFirst).toHaveBeenCalledWith({ where: { id: "r1", vendorId: "v1" }, select: { id: true, isActive: true, trigger: true } }); expect(runtime.db.automationRule.updateMany).toHaveBeenCalledWith({ where: { id: "r1", vendorId: "v1", isActive: true }, data: { isActive: false } });
     // F-4 review M1: the rule row is locked FOR UPDATE (bound to the vendor) and its active delayed-step runs stop in the same transaction.
@@ -62,6 +62,23 @@ describe("automation actions", () => { it("requires CSRF and writes tenant-scope
     expect(runtime.db.automationRule.create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ vendorId: "v1", trigger }) }));
   });
 
+  // F-4 PR 3: payment_paid is wired to the payment webhook and back on the list, with a paid-amount threshold in NT$.
+  it("creates a payment_paid rule with its threshold stored in cents", async () => {
+    const f = form("payment_paid");
+    f.set("conditionValue", "300");
+    await expect(createAutomationRuleAction(f)).rejects.toThrow("redirect:/settings/automations?updated=created");
+    expect(runtime.db.automationRule.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ vendorId: "v1", trigger: "payment_paid", condition: { type: "order_amount_gte", amountCents: 30_000 } }),
+    }));
+  });
+
+  it.each(["", "0", "-5", "1.5"])("refuses a payment_paid rule without a whole, positive threshold (%j)", async (value) => {
+    const f = form("payment_paid");
+    f.set("conditionValue", value);
+    await expect(createAutomationRuleAction(f)).rejects.toThrow("redirect:/settings/automations?error=invalid_rule");
+    expect(runtime.db.automationRule.create).not.toHaveBeenCalled();
+  });
+
   it.each(HIDDEN_TRIGGERS)("refuses to create a rule on the hidden trigger %s, even with a valid threshold", async (trigger) => {
     const f = form(trigger);
     f.set("conditionValue", "100");
@@ -75,7 +92,7 @@ describe("automation actions", () => { it("requires CSRF and writes tenant-scope
     expect(runtime.db.automationRule.create).not.toHaveBeenCalled();
   });
 
-  it("creates the available built-in recipe and refuses the ones on hidden triggers", async () => {
+  it("creates the available built-in recipes and refuses the ones on hidden triggers", async () => {
     const recipe = new FormData();
     recipe.set("recipeId", "consultation_confirmer");
     await expect(createAutomationRecipeAction(recipe)).rejects.toThrow("redirect:/settings/automations?updated=recipe_created");
@@ -85,7 +102,17 @@ describe("automation actions", () => { it("requires CSRF and writes tenant-scope
 
     runtime.db.automationRule.create.mockClear();
     runtime.db.product.findFirst.mockResolvedValue({ id: "p1" });
-    for (const recipeId of ["vip_auto_tiering", "high_intent_chaser", "no_show_reactivation"]) {
+    const vip = new FormData();
+    vip.set("recipeId", "vip_auto_tiering");
+    vip.set("productId", "p1");
+    await expect(createAutomationRecipeAction(vip)).rejects.toThrow("redirect:/settings/automations?updated=recipe_created");
+    expect(runtime.db.product.findFirst).toHaveBeenCalledWith(expect.objectContaining({ where: { id: "p1", vendorId: "v1", isActive: true } }));
+    expect(runtime.db.automationRule.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ vendorId: "v1", trigger: "payment_paid", condition: { type: "order_amount_gte", amountCents: 3_000_000 } }),
+    }));
+
+    runtime.db.automationRule.create.mockClear();
+    for (const recipeId of ["high_intent_chaser", "no_show_reactivation"]) {
       const hidden = new FormData();
       hidden.set("recipeId", recipeId);
       hidden.set("productId", "p1");
@@ -99,10 +126,16 @@ describe("automation actions", () => { it("requires CSRF and writes tenant-scope
     await expect(dryRunAutomationRuleAction(ruleForm())).rejects.toThrow("dryRun=would_dispatch");
     expect(runtime.db.automationRule.findFirst).toHaveBeenLastCalledWith(expect.objectContaining({ where: { id: "r1", vendorId: "v1" } }));
 
+    // payment_paid is available again: the simulated amount decides.
     runtime.db.automationRule.findFirst.mockResolvedValue({ id: "r1", trigger: "payment_paid", condition: { type: "order_amount_gte", amountCents: 30_000 }, actions: [{ type: "add_customer_tag", tag: "VIP" }] });
     const paid = ruleForm();
     paid.set("orderAmount", "300");
-    await expect(dryRunAutomationRuleAction(paid)).rejects.toThrow("redirect:/settings/automations?dryRun=trigger_unavailable");
+    await expect(dryRunAutomationRuleAction(paid)).rejects.toThrow("redirect:/settings/automations?dryRun=would_dispatch");
+    paid.set("orderAmount", "299");
+    await expect(dryRunAutomationRuleAction(paid)).rejects.toThrow("redirect:/settings/automations?dryRun=would_skip");
+
+    runtime.db.automationRule.findFirst.mockResolvedValue({ id: "r1", trigger: "form_no_show", condition: { type: "always" }, actions: [{ type: "add_customer_tag", tag: "VIP" }] });
+    await expect(dryRunAutomationRuleAction(ruleForm())).rejects.toThrow("redirect:/settings/automations?dryRun=trigger_unavailable");
 
     runtime.db.automationRule.findFirst.mockResolvedValue(null);
     await expect(dryRunAutomationRuleAction(ruleForm("foreign"))).rejects.toThrow("redirect:/settings/automations?error=not_found");

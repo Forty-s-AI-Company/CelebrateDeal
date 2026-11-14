@@ -1,7 +1,8 @@
 import { Prisma, type PrismaClient } from "@prisma/client";
 import {
   AUTOMATION_DELAYED_STEPS_FEATURE,
-  AVAILABLE_AUTOMATION_TRIGGERS,
+  DELAYED_STEP_AUTOMATION_TRIGGERS,
+  automationTriggerSupportsDelayedSteps,
   executeAutomationStep,
   plannedAutomationStepEmailCount,
   isAvailableAutomationTrigger,
@@ -209,9 +210,12 @@ export async function processClaimedAutomationRun(
   });
   if (!rule) return cancelLeasedRun(db, lease, "definition_deleted");
   // A switched-off rule, or one whose trigger was hidden from merchants
-  // (AVAILABLE_AUTOMATION_TRIGGERS), stops; switching it on again does not
-  // revive the run (the same as a paused sequence).
-  if (!rule.isActive || !isAvailableAutomationTrigger(rule.trigger)) return cancelLeasedRun(db, lease, "definition_paused");
+  // (AVAILABLE_AUTOMATION_TRIGGERS) or takes no delayed steps
+  // (DELAYED_STEP_AUTOMATION_TRIGGERS, e.g. payment_paid), stops; switching it
+  // on again does not revive the run (the same as a paused sequence).
+  if (!rule.isActive || !isAvailableAutomationTrigger(rule.trigger) || !automationTriggerSupportsDelayedSteps(rule.trigger)) {
+    return cancelLeasedRun(db, lease, "definition_paused");
+  }
   const subject = await readSubject(db, lease.vendorId, rule.trigger, { ...run, subjectKeyHash: run.subjectKeyHash });
   if (!subject) return cancelLeasedRun(db, lease, "subject_gone");
 
@@ -292,7 +296,7 @@ export async function processClaimedAutomationRun(
 export async function skipStaleAutomationSteps(db: Database, now: Date, vendorId: string | undefined, pastDeadline: () => boolean, maxPasses: number) {
   const staleBefore = new Date(now.getTime() - DELAYED_STEP_STALE_AFTER_MS);
   const leaseCutoff = new Date(now.getTime() - DELAYED_STEP_LEASE_MS);
-  const triggers = [...AVAILABLE_AUTOMATION_TRIGGERS] as string[];
+  const triggers = [...DELAYED_STEP_AUTOMATION_TRIGGERS] as string[];
   let skipped = 0;
   for (let pass = 0; pass < maxPasses; pass += 1) {
     if (pastDeadline()) break;
@@ -480,7 +484,7 @@ export type AutomationStepInput = {
 
 export type AutomationStepChangeResult =
   | { ok: true; id: string; before?: { delayMinutes: number; isActive: boolean; actions: unknown }; after?: { delayMinutes: number; isActive: boolean; actions: unknown } }
-  | { ok: false; code: "not_found" | "trigger_unavailable" | "invalid_step" | "invalid_delay" | "duplicate_delay" | "step_limit" | "invalid_product" | "step_busy" };
+  | { ok: false; code: "not_found" | "trigger_unavailable" | "steps_unsupported" | "invalid_step" | "invalid_delay" | "duplicate_delay" | "step_limit" | "invalid_product" | "step_busy" };
 
 class StepChangeRejected extends Error {
   constructor(readonly code: Extract<AutomationStepChangeResult, { ok: false }>["code"]) {
@@ -512,6 +516,8 @@ async function withLockedRule(
       const rule = locked[0];
       if (!rule) throw new StepChangeRejected("not_found");
       if (input.requireAvailableTrigger && !isAvailableAutomationTrigger(rule.trigger)) throw new StepChangeRejected("trigger_unavailable");
+      // F-4 PR 3: payment_paid runs immediate actions only (no order reference on a run yet).
+      if (input.requireAvailableTrigger && !automationTriggerSupportsDelayedSteps(rule.trigger)) throw new StepChangeRejected("steps_unsupported");
       const result = await change(tx, rule);
       await rescheduleActiveRunsForAutomationRule(tx, { vendorId: input.vendorId, ruleId: rule.id, now: input.now });
       return result;

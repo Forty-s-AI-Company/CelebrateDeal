@@ -326,17 +326,18 @@ describe("hidden automation triggers on stored rules (F-4 gap 2)", () => {
     const b = await tenant();
     runtime.actor = { user: { id: "synthetic-user" }, vendor: { id: a.vendor.id }, member: { role: "admin" } };
 
-    for (const trigger of ["payment_paid", "form_no_show", "viewer_watch_progress", "webinar_attended_duration_gte"]) {
+    // payment_paid is available again since F-4 PR 3 (payment-paid-automation.db.test.ts).
+    for (const trigger of ["form_no_show", "viewer_watch_progress", "webinar_attended_duration_gte"]) {
       await expect(createAutomationRuleAction(form({ name: "新規則", trigger, conditionValue: "100", actionTag: "on", customerTag: "x" })))
         .rejects.toThrow("redirect:/settings/automations?error=trigger_unavailable");
     }
     expect(await db.automationRule.count({ where: { vendorId: a.vendor.id } })).toBe(1);
 
-    const paid = await storedRule(a.vendor.id, "payment_paid", true);
+    const paid = await storedRule(a.vendor.id, "viewer_watch_progress", true);
     // Switching off works; switching back on does not.
     await expect(toggleAutomationRuleAction(form({ ruleId: paid.id }))).rejects.toThrow("updated=toggled");
     await expect(toggleAutomationRuleAction(form({ ruleId: paid.id }))).rejects.toThrow("error=trigger_unavailable");
-    expect(await db.automationRule.findUniqueOrThrow({ where: { id: paid.id } })).toMatchObject({ isActive: false, trigger: "payment_paid" });
+    expect(await db.automationRule.findUniqueOrThrow({ where: { id: paid.id } })).toMatchObject({ isActive: false, trigger: "viewer_watch_progress" });
 
     // Another vendor's admin cannot touch it.
     runtime.actor = { user: { id: "synthetic-user-b" }, vendor: { id: b.vendor.id }, member: { role: "owner" } };

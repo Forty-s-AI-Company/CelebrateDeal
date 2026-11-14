@@ -22,20 +22,23 @@ describe("AutomationSettingsPage", () => {
   it("offers only the triggers and recipes that can run", async () => {
     const html = await render();
     const triggerSelect = html.match(/<select[^>]*name="trigger"[^>]*>([\s\S]*?)<\/select>/u)?.[1] ?? "";
-    expect([...triggerSelect.matchAll(/value="([^"]+)"/gu)].map((match) => match[1])).toEqual(["form_registered", "consultation_booked", "consultation_no_show"]);
-    for (const hiddenRecipe of ["高意向追單漏斗", "高客單 VIP 自動尊榮升級", "開播缺席喚醒再行銷"]) expect(html).not.toContain(hiddenRecipe);
-    // No available trigger takes a threshold, so the field is not shown.
-    expect(html).not.toContain('name="conditionValue"');
+    expect([...triggerSelect.matchAll(/value="([^"]+)"/gu)].map((match) => match[1])).toEqual(["form_registered", "consultation_booked", "consultation_no_show", "payment_paid"]);
+    // F-4 PR 3: payment_paid and its recipe are back; the watch and no-show ones stay hidden.
+    expect(html).toContain("高客單 VIP 自動尊榮升級");
+    for (const hiddenRecipe of ["高意向追單漏斗", "開播缺席喚醒再行銷"]) expect(html).not.toContain(hiddenRecipe);
+    // payment_paid takes a paid-amount threshold.
+    expect(html).toContain('name="conditionValue"');
+    expect(html).toContain("付款金額門檻（元；只用於「訂單付款完成」，其他觸發條件留空）");
   });
 
   it("keeps listing a rule on a hidden trigger, explains it, and only offers switching off and deleting", async () => {
     mocks.rules.mockResolvedValue([
-      rule({ id: "paid-on", name: "付款回購", trigger: "payment_paid", condition: { type: "order_amount_gte", amountCents: 10000 }, isActive: true }),
+      rule({ id: "watch-on", name: "觀看追單", trigger: "viewer_watch_progress", condition: { type: "watch_seconds_gte", seconds: 600 }, isActive: true }),
       rule({ id: "noshow-off", name: "缺席喚醒", trigger: "form_no_show", isActive: false }),
     ]);
     const html = await render();
-    expect(html).toContain("付款回購");
-    expect(html).toContain("觸發：訂單付款完成");
+    expect(html).toContain("觀看追單");
+    expect(html).toContain("觸發：觀看進度更新");
     expect(html).toContain("觸發：報名但未出席直播");
     expect(html.match(/此觸發條件目前不會執行/gu)).toHaveLength(2);
     expect(html.match(/目前不會執行<\/span>/gu)).toHaveLength(2);
@@ -101,7 +104,21 @@ describe("AutomationSettingsPage", () => {
     expect(html).not.toContain("新增延遲步驟");
   });
 
+  it("lists a payment_paid rule as running, with its dry-run, and offers no delayed steps for it", async () => {
+    granted();
+    mocks.rules.mockResolvedValue([rule({ id: "paid-on", name: "付款回購", trigger: "payment_paid", condition: { type: "order_amount_gte", amountCents: 10_000 }, isActive: true })]);
+    const html = await render();
+    expect(html).toContain("觸發：訂單付款完成");
+    expect(html).toContain("條件：訂單滿");
+    expect(html).not.toContain("此觸發條件目前不會執行");
+    expect(html).toContain("Dry-run 測試");
+    expect(html).toContain("「訂單付款完成」的規則目前只有立即執行的動作，還不能加延遲步驟。");
+    expect(html).not.toContain("新增延遲步驟");
+    expect(html).not.toContain("延遲步驟（0／10）");
+  });
+
   it.each([
+    ["error", "steps_unsupported", "「訂單付款完成」的規則目前只能設定立即執行的動作，不能加延遲步驟。"],
     ["updated", "step_created", "延遲步驟已新增。"],
     ["error", "duplicate_delay", "同一條規則已經有這個延遲時間的步驟"],
     ["error", "step_limit", "每條規則最多 10 個延遲步驟"],

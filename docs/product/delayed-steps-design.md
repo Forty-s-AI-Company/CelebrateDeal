@@ -1,6 +1,6 @@
 # 延遲步驟：Email 追銷序列與自動化多步驟的共用設計
 
-狀態：F-3（Email 追銷序列）定案，依本文拆 PR 實作。F-4（自動化多步驟與延遲）範圍 owner 已確認；第一個 PR（第 8 節「一併要修的既有缺口」）與第二個 PR（延遲步驟，第 8 節「做法」）已完成，接上 `payment_paid` 在下一個 PR。
+狀態：F-3（Email 追銷序列）定案，依本文拆 PR 實作。F-4（自動化多步驟與延遲）範圍 owner 已確認；第一個 PR（第 8 節「一併要修的既有缺口」）、第二個 PR（延遲步驟，第 8 節「做法」）與第三個 PR（接上 `payment_paid`，只有立即動作，第 8 節「F-4 PR 3」）已完成；`payment_paid` 的延遲步驟與「到現在還沒買」條件留到之後的 PR。
 日期：2026-11-13。對應 `docs/fable-queue.md` 的 F-3、F-4。
 
 ## 1. 要解決的問題
@@ -195,6 +195,18 @@
 13. **未做與已知限制**：同一人前一封延遲步驟信還在佇列時，下一步不等（序列的 `waiting_previous` 沒有套用）。「不含 Email 的補跑」依到期時間排序、用剩下的 run 預算，不像公平分配那樣在商家之間輪流：某一家有大量到期的無 Email 步驟時，其他商家的這類步驟可能晚幾輪才輪到（第二輪審查 NIT，暫不改）。商家刪掉 Email 動作、但續跑中的快照仍含 Email 時，這個 run 每一輪會被補跑撈到、判斷放不下而交還租約，直到有寄送額度。建立 run 的交易 `lock_timeout` 2 秒，逾時只回報監控、那個事件不會有 run。
 14. **封測開關**（審查 M3）：`automation_delayed_steps` 是獨立的 beta 授權，預設關閉，由平台在 `/admin/vendor-features` 對個別商家開通（允許值由 `20261114090200_automation_delayed_steps_grant` 加入）。沒有授權：規則頁不顯示延遲步驟區塊、三個步驟 Server Action 在伺服器端拒絕（`FeatureDisabledError`）、事件不建立 run、worker（公平分配、無 Email 補跑、逾期跳過）都不撈該商家的自動化 run。授權收回後既有 run 保留不執行，已排隊還沒寄出的延遲步驟信在寄送前 `superseded`（與序列收回授權相同）。開放給一般商家前，owner 仍需決定第 9 節第 5、7 點（job 頻率與額度）。
 15. **部署與回滾**（審查 m3）：三條 migration 先於程式部署。回滾到本 PR 之前的程式時，舊的 worker 不認得自動化 run：同時持有 `email_sequences` 授權的商家，其到期的自動化 run 會被舊 worker 撈到、讀不到序列而標成 `cancelled / definition_deleted`（不會寄信或執行動作，但進度不會恢復，重新部署後也不會復活）；沒有 `email_sequences` 授權的商家，舊 worker 不撈，進度原封不動。舊 worker 不看 `automation_delayed_steps` 授權，所以收回這個授權擋不住；回滾時接受這些進度被停止，或先暫時收回相關商家的 `email_sequences` 授權。
+
+### 實作狀態與決定（F-4 PR 3，分支 `ai/f4-automation-payment-paid`）
+
+接上 `payment_paid`。現行規則見 `docs/domain-workflows.md`「自動化規則」的「付款完成」，應用層不變式見 `docs/codex-goal/PRISMA_INVARIANTS.md` 2026-11-14 F-4 PR 3 一節。實作時的決定：
+
+1. **只做立即動作，延遲步驟延後**：`DelayedStepRun` 的 CHECK 要求自動化 run 的對象是報名或預約恰好一個，`payment_paid` 的對象是訂單。要支援就得加 `commerceOrderId`（含 vendorId 的複合外鍵、CHECK 改成三選一、`NOT VALID` 加 `VALIDATE` 分檔），到點時重讀訂單（全額退款或取消就停止）、解密買家 Email 並決定它算不算已確認。這些和付款流程的接線放在同一個 PR 會讓需要獨立審查的範圍加倍，所以拆開：本 PR 新增 `DELAYED_STEP_AUTOMATION_TRIGGERS`（報名與兩個諮詢 trigger），`payment_paid` 規則在後台不顯示延遲步驟區塊、步驟 Server Action 回 `steps_unsupported`、不建 run、worker 遇到就停止。之後做的時候，買家 Email 建議比照諮詢預約：本商家有同一個地址的已驗證報名才算已確認（付款不證明地址屬於本人，付款收據寄到哪裡也沒有回饋）。
+2. **觸發點**：所有讓 canonical 訂單變成已付款的正式路徑都經過 `processPaymentWebhookOnce` 交易內的 `reconcileCommerceOrderPaymentTransition`，只有它回 `changed: true, status: "paid"`（第一次轉成已付款）時觸發。PayUni 的 return 與 notify 在同一個交易狀態收斂成同一個 `WebhookEvent`，webhook-retry job 與平台管理員的重跑也走同一個函式。庫存到期對帳 job 的補轉、平台訂閱扣款（沒有 `CommerceOrder`）、測試訂單、凍結中的商家都不觸發。沒有買家端的訂閱續扣，也沒有零元訂單或後台手動標記已付款的流程。
+3. **失敗隔離**：交易 commit 之後才呼叫，放在電子發票與 audit 之後的 `finally`（它們丟錯時付款仍已 commit，重送只會看到 `changed: false`，所以這裡不觸發就永遠不會觸發）。request 內只註冊 `after()`（Next.js 允許巢狀 `after`，規則自己的 Email 立即寄送也是 `after()`），webhook 先回應；request 外就地執行並最多等 15 秒。呼叫永不丟錯，錯誤只回報監控。原本 `dispatchPaymentPaidAutomation` 在規則失敗時 throw、`dispatchPaymentPaidAutomationByOrder` 在來源不明時 throw，兩個都沒有呼叫端，已刪除，改成 `src/lib/payment-paid-automation.ts`。
+4. **重試**：不自動重試。依原設計「同一事件再次送進來才重領」，但付款只在第一次轉成已付款時觸發，之後的通知不會重跑失敗的規則（若改成每次已付款通知都重跑，商家在付款後才建立的規則會被重複通知觸發，違反「重複的已付款通知不觸發」）。after hook 沒跑完（平台在回應後終止 function）時那筆訂單的自動化也會遺漏。若要補跑，建議之後在 job 加一段：掃最近 N 小時第一次付款、規則建立早於付款時間、沒有成功執行紀錄的訂單，用同一個冪等鍵重跑。
+5. **冪等**：沿用執行紀錄的 `order:{orderId}:version:{n}` 鍵（`eventId` = `payment-paid:{orderId}`）。規則版本目前不會變（立即動作建立後不能改），所以同一筆訂單同一條規則最多一筆執行紀錄。
+6. **資料來源**：回應後重新讀訂單（綁商家、`paid`、未退款、非測試、商家未凍結），條件金額用 `paidAmountCents`，客戶鍵用 `automationCustomerKeyHash`，Email 收件人是解密的買家 Email（立即動作，與其他立即規則相同不要求已驗證；仍查退訂與黑名單、附退訂連結）。沒有啟用中的 `payment_paid` 規則時不解密。
+7. **後台**：觸發條件下拉多了「訂單付款完成」，門檻欄位改成「付款金額門檻（元）」；劇本「高客單 VIP 自動尊榮升級」恢復。
 
 ### 一併要修的既有缺口
 

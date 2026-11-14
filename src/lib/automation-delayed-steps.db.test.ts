@@ -723,6 +723,34 @@ describe("後台：步驟的新增、修改與刪除", () => {
     await expect(createAutomationRuleStep({ vendorId: a.vendor.id, ruleId: hidden.id, step: input })).resolves.toEqual({ ok: false, code: "trigger_unavailable" });
     await expect(updateAutomationRuleStep({ vendorId: a.vendor.id, ruleId: hidden.id, stepId: hiddenStep.id, step: input })).resolves.toEqual({ ok: false, code: "trigger_unavailable" });
     await expect(deleteAutomationRuleStep({ vendorId: a.vendor.id, ruleId: hidden.id, stepId: hiddenStep.id })).resolves.toMatchObject({ ok: true });
+    // F-4 PR 3: payment_paid is available but runs immediate actions only.
+    const paid = await rule(a, { trigger: "payment_paid" });
+    await expect(createAutomationRuleStep({ vendorId: a.vendor.id, ruleId: paid.id, step: input })).resolves.toEqual({ ok: false, code: "steps_unsupported" });
+    const paidStep = await step(a, paid.id, 60);
+    await expect(updateAutomationRuleStep({ vendorId: a.vendor.id, ruleId: paid.id, stepId: paidStep.id, step: input })).resolves.toEqual({ ok: false, code: "steps_unsupported" });
+    await expect(deleteAutomationRuleStep({ vendorId: a.vendor.id, ruleId: paid.id, stepId: paidStep.id })).resolves.toMatchObject({ ok: true });
+    runtime.actor = { user: { id: "user-a" }, vendor: { id: a.vendor.id, betaFeatureGrants: ["automation_delayed_steps"] }, member: { role: "owner" } };
+    await expect(createAutomationRuleStepAction(form({ ruleId: paid.id, delayValue: "1", delayUnit: "days", actionTag: "on", customerTag: "x", stepActive: "on" })))
+      .rejects.toThrow("error=steps_unsupported");
+    await expect(db.automationRuleStep.count({ where: { ruleId: paid.id } })).resolves.toBe(0);
+  });
+
+  it("never starts or advances a delayed-step run for a payment_paid rule (F-4 PR 3)", async () => {
+    const t = await tenant();
+    const paid = await rule(t, { trigger: "payment_paid" });
+    // Only a direct write can give such a rule a step and a run (the actions refuse it).
+    await step(t, paid.id, 60);
+    const submission = await registration(t);
+    const log = await db.automationExecutionLog.create({
+      data: { vendorId: t.vendor.id, ruleId: paid.id, idempotencyKey: `synthetic-${randomUUID()}`, eventId: "synthetic", trigger: "payment_paid", subjectType: "buyer_order", subjectKeyHash: "synthetic-key", status: "completed" },
+    });
+    const anchorAt = new Date(Date.now() - 2 * HOUR);
+    const run = await db.delayedStepRun.create({
+      data: { vendorId: t.vendor.id, automationRuleId: paid.id, sourceExecutionLogId: log.id, formSubmissionId: submission.id, subjectKeyHash: "synthetic-key", anchorAt, cursorDelayMinutes: -1, status: "active", nextRunAt: after(anchorAt, HOUR) },
+    });
+    await work(t, new Date());
+    await expect(db.delayedStepRun.findUniqueOrThrow({ where: { id: run.id } })).resolves.toMatchObject({ status: "cancelled", cancelReason: "definition_paused" });
+    await expect(db.customerTagAssignment.count({ where: { vendorId: t.vendor.id } })).resolves.toBe(0);
   });
 
   it("follows §3 for people part-way through: a moved step never runs twice, an earlier new step is not back-filled, a switched-off step is skipped", async () => {

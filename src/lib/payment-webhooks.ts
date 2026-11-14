@@ -35,6 +35,7 @@ import { reconcileCommerceOrderPaymentTransition } from "@/lib/commerce-orders";
 import { ensureCommerceOrderPaidDelivery } from "@/lib/commerce-order-email";
 import { deliveryIdForStatuses, scheduleImmediateEmailDispatch } from "@/lib/email-delivery-immediate";
 import { enqueuePaidPurchaseTracking } from "@/lib/tracking-purchase-outbox";
+import { runPaymentPaidAutomationAfterCommit } from "@/lib/payment-paid-automation";
 import { getDb } from "@/lib/db";
 import { applyPaymentInventoryTransition } from "@/lib/inventory-reservations";
 import { releasePostPurchaseCreditForTerminalPayment } from "@/lib/post-purchase-credit-release";
@@ -964,6 +965,18 @@ async function reconcileCommercePaymentLifecycle(
   return transition;
 }
 
+/**
+ * F-4 PR 3: the order a paid callback moved to `paid` for the first time, or
+ * null. A repeated or later paid callback reports `changed: false`; failed,
+ * refund and dispute events never qualify.
+ */
+function firstPaidOrderIdOf(
+  eventType: PaymentWebhookPayloadInput["eventType"],
+  transition: Awaited<ReturnType<typeof reconcileCommercePaymentLifecycle>>,
+) {
+  return eventType === "paid" && transition?.changed === true && transition.status === "paid" ? transition.orderId : null;
+}
+
 /** Refunds share the post-refund hook with the admin PayUni path (F-045). */
 function applyLifecycleInventory(
   tx: Prisma.TransactionClient,
@@ -1019,6 +1032,10 @@ async function processPaymentWebhookOnce(payload: PaymentWebhookPayloadInput, ev
   // commit. Each serializable retry calls this function afresh, so an id from
   // a rolled-back attempt is never scheduled.
   let paidReceiptDeliveryId: string | null = null;
+  // F-4 PR 3: the canonical order this attempt moved to `paid` for the first
+  // time. Set inside the transaction like the receipt id above, read only
+  // after it committed; a rolled-back attempt never reaches that point.
+  let firstPaidOrderId: string | null = null;
   const {
     transaction,
     commission,
@@ -1145,10 +1162,11 @@ async function processPaymentWebhookOnce(payload: PaymentWebhookPayloadInput, ev
 
       await withPaymentWebhookStage("INVENTORY", () => applyLifecycleInventory(tx, savedTransaction, lifecycleEventType, existingMetadata, occurredAt));
 
-      await withPaymentWebhookStage("ORDER_TRANSITION", () => reconcileCommercePaymentLifecycle(tx, {
+      const orderTransition = await withPaymentWebhookStage("ORDER_TRANSITION", () => reconcileCommercePaymentLifecycle(tx, {
         vendorId: vendor.id, transactionId: savedTransaction.id,
         eventType: payload.eventType, eventIdentity: payload.eventId, occurredAt,
       }));
+      firstPaidOrderId = firstPaidOrderIdOf(payload.eventType, orderTransition);
       if (payload.eventType === "paid") {
         await enqueuePaidPurchaseTracking(tx, { vendorId: vendor.id, paymentTransactionId: savedTransaction.id });
         const paidDelivery = await withPaymentWebhookStage("PAID_DELIVERY_DECRYPT", () => ensureCommerceOrderPaidDelivery(tx, {
@@ -1329,19 +1347,27 @@ async function processPaymentWebhookOnce(payload: PaymentWebhookPayloadInput, ev
   // the email job remains the retry path if the hook cannot run or fails.
   scheduleImmediateEmailDispatch([paidReceiptDeliveryId]);
 
-  // Fiscal issuance is deliberately outside the payment transaction. An
-  // adapter or queue outage must never roll back an already-successful payment.
-  await reconcileInvoiceAfterWebhookCommit(db, payload, vendor.id, transaction, occurredAt, commerceOrderRefund);
+  try {
+    // Fiscal issuance is deliberately outside the payment transaction. An
+    // adapter or queue outage must never roll back an already-successful payment.
+    await reconcileInvoiceAfterWebhookCommit(db, payload, vendor.id, transaction, occurredAt, commerceOrderRefund);
 
-  await writeAuditLog({
-    vendorId: vendor.id,
-    actorLabel: `webhook:${payload.provider}`,
-    action: `payment_webhook_${payload.eventType}`,
-    targetType: "WebhookEvent",
-    targetId: event?.id ?? payload.eventId,
-    before: auditSnapshot(existingTransaction),
+    await writeAuditLog({
+      vendorId: vendor.id,
+      actorLabel: `webhook:${payload.provider}`,
+      action: `payment_webhook_${payload.eventType}`,
+      targetType: "WebhookEvent",
+      targetId: event?.id ?? payload.eventId,
+      before: auditSnapshot(existingTransaction),
       after: auditSnapshot({ transaction, commission, refundCommission, platformReferralCommission, platformReferralRefund, platformReferralDispute, platformSubscription, invoicePayment, disputeEntry, courseAllocations, courseRefundAllocations, courseDisputeEntries, commerceOrderRefund, eventId: payload.eventId }),
-  });
+    });
+  } finally {
+    // F-4 PR 3: `payment_paid` automations, once per order, after commit and
+    // after the steps above (also when one of them throws: the payment is
+    // committed and a replay would see `changed: false`). Never throws; in a
+    // request it only registers an after() hook (src/lib/payment-paid-automation.ts).
+    if (firstPaidOrderId) await runPaymentPaidAutomationAfterCommit({ vendorId: vendor.id, orderId: firstPaidOrderId });
+  }
 
   return { vendor, transaction, commission, refundCommission, platformReferralCommission, platformReferralRefund, platformReferralDispute, platformSubscription, invoicePayment, disputeEntry, courseAllocations, courseRefundAllocations, courseDisputeEntries, commerceOrderRefund };
 }
