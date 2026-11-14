@@ -139,7 +139,7 @@ describe("AutomationSettingsPage", () => {
     ["dryRun", "trigger_unavailable", "這條規則的觸發條件目前不會執行"],
     ["error", "toggle_conflict", "規則剛被其他人變更，請重新整理後再試。"],
     ["error", "delete_busy", "規則正在執行，請稍後再試。"],
-    ["error", "line_push_owner_only", "LINE 推播僅限擁有者設定。含 LINE 推播的規則，管理員只能停用、刪除規則或刪除步驟。"],
+    ["error", "line_push_owner_only", "LINE 推播與派券的 LINE 通知僅限擁有者設定。會發 LINE 訊息的規則，管理員只能停用、刪除規則或刪除步驟。"],
   ])("explains %s=%s", async (key, value, message) => {
     expect(await render({ [key]: value })).toContain(message);
   });
@@ -245,6 +245,83 @@ describe("AutomationSettingsPage", () => {
       expect(note(hidden)).toBe("這條規則的延遲步驟含 LINE 推播（延遲步驟目前不在此頁顯示）。LINE 推播僅限擁有者設定。你可以停用或刪除規則，但不能啟用。");
       expect(hidden).not.toContain("刪除步驟");
       expect(hidden).not.toContain(">啟用<");
+    });
+
+    // Owner decision 2026-11-15: a voucher's fixed-text LINE notification is the owner's too.
+    describe("voucher LINE notification (owner decision 2026-11-15)", () => {
+      const VOUCHER = { type: "issue_repurchase_voucher", productId: "p1", discountType: "fixed", discountValue: 15_000, expiresInDays: 7 };
+      const voucherNote = (html: string) => html.match(/<p class="[^"]*">([^<]*派券的 LINE 通知僅限擁有者設定。[^<]*)<\/p>/u)?.[1] ?? "";
+
+      it("gives the owner the checkbox, ticked for a new voucher and showing a stored voucher's flag", async () => {
+        granted("owner");
+        mocks.rules.mockResolvedValue([rule({ id: "v", name: "派券", actions: TAG, isActive: false, steps: [
+          { id: "s-on", delayMinutes: 60, isActive: true, actions: [VOUCHER] },
+          { id: "s-off", delayMinutes: 120, isActive: true, actions: [{ ...VOUCHER, lineNotification: false }] },
+        ] })]);
+        const html = await render();
+        const createForm = html.match(/<form[^>]*aria-label="建立自訂規則"[\s\S]*?<\/form>/u)?.[0] ?? "";
+        expect(createForm).toContain('<input type="hidden" name="voucherLineNotificationShown" value="1"/>');
+        expect(createForm).toMatch(/<input type="checkbox" name="voucherLineNotification" checked=""\/> 同時用 LINE 通知買家領券/u);
+        expect(createForm).toContain("同一條規則或同一步已勾選 LINE 推播時，不會另外再發這則通知。");
+        expect(createForm).not.toContain("派券的 LINE 通知僅限擁有者設定");
+        const editForm = (label: string) => html.match(new RegExp(`<form[^>]*aria-label="編輯步驟：${label}"[\\s\\S]*?</form>`, "u"))?.[0] ?? "";
+        // A voucher stored before the flag existed shows ticked (it still sends); one stored off shows unticked.
+        expect(editForm("事件後 1 小時")).toMatch(/name="voucherLineNotification" checked=""/u);
+        expect(editForm("事件後 2 小時")).toMatch(/name="voucherLineNotification"\/>/u);
+        expect(html).toContain("派發回購券（不發 LINE 通知）");
+        // The owner's rule is not read-only.
+        expect(ruleArticle(html, "派券")).not.toContain("僅限擁有者修改");
+      });
+
+      it("gives an admin no checkbox and says how the buyer still gets the voucher, on the form and the voucher recipe", async () => {
+        admin();
+        mocks.rules.mockResolvedValue([]);
+        const html = await render();
+        expect(html).not.toContain('name="voucherLineNotification"');
+        expect(html).not.toContain('name="voucherLineNotificationShown"');
+        const createForm = html.match(/<form[^>]*aria-label="建立自訂規則"[\s\S]*?<\/form>/u)?.[0] ?? "";
+        const explanation = "派券的 LINE 通知僅限擁有者設定。你設定的派券不會用 LINE 通知買家：買家可在學員專區的「專屬優惠券」看到這張券；要主動通知，請同時勾選 Email 通知並選「追購通知」範本，信中會附領券連結。";
+        expect(createForm).toContain(explanation);
+        const vip = html.match(/<form[^>]*>(?:(?!<\/form>)[\s\S])*?name="recipeId" value="vip_auto_tiering"[\s\S]*?<\/form>/u)?.[0] ?? "";
+        expect(vip).toContain(explanation);
+        expect(vip).toContain("一鍵套用劇本");
+      });
+
+      it("makes a rule whose voucher still sends LINE read-only for an admin, and leaves one saved without it to the admin", async () => {
+        granted("admin");
+        mocks.rules.mockResolvedValue([
+          // Stored before the flag existed (an admin's old voucher rule): it still sends LINE.
+          rule({ id: "legacy", name: "舊派券", actions: [VOUCHER], isActive: false }),
+          rule({ id: "step-voucher", name: "步驟派券", actions: TAG, isActive: false, steps: [{ id: "s-v", delayMinutes: 60, isActive: true, actions: [{ ...VOUCHER, lineNotification: true }] }] }),
+          rule({ id: "silent", name: "不通知派券", actions: [{ ...VOUCHER, lineNotification: false }], isActive: false, steps: [{ id: "s-silent", delayMinutes: 60, isActive: true, actions: [{ ...VOUCHER, lineNotification: false }] }] }),
+        ]);
+        const html = await render();
+
+        const legacy = ruleArticle(html, "舊派券");
+        expect(legacy).toContain("僅限擁有者修改");
+        expect(voucherNote(legacy)).toBe("這條規則派券時會用 LINE 通知買家。派券的 LINE 通知僅限擁有者設定。你可以停用、刪除規則或刪除步驟，但不能啟用、新增或修改步驟。");
+        expect(legacy).not.toContain(">啟用<");
+        expect(legacy).not.toContain("新增延遲步驟");
+        expect(legacy).toContain("刪除規則");
+
+        const steps = ruleArticle(html, "步驟派券");
+        expect(voucherNote(steps)).toBe("這條規則的延遲步驟派券時會用 LINE 通知買家。派券的 LINE 通知僅限擁有者設定。你可以停用、刪除規則或刪除步驟，但不能啟用、新增或修改步驟。");
+        expect(steps).not.toContain("編輯步驟：");
+        expect(steps.match(/>刪除步驟</gu)).toHaveLength(1);
+
+        const silent = ruleArticle(html, "不通知派券");
+        expect(silent).not.toContain("僅限擁有者修改");
+        expect(silent).toContain(">啟用<");
+        expect(silent).toContain("編輯步驟：事件後 1 小時");
+        expect(silent).toContain("立即執行：派發回購券（不發 LINE 通知）");
+      });
+
+      it("names a LINE push first when a rule has both", async () => {
+        admin();
+        mocks.rules.mockResolvedValue([rule({ name: "推播＋派券", actions: [VOUCHER, { type: "line_push", message: "x" }], isActive: false })]);
+        const article = ruleArticle(await render(), "推播＋派券");
+        expect(article).toContain("這條規則含 LINE 推播。LINE 推播僅限擁有者設定。你可以停用或刪除規則，但不能啟用。");
+      });
     });
 
     it("leaves every control of a LINE push rule to the owner", async () => {

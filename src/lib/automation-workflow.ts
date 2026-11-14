@@ -30,6 +30,7 @@ import {
   enqueueLineNotification,
   stableLineIdempotencyKey,
 } from "@/lib/line-notification";
+import { voucherActionSendsLine } from "@/lib/automation-line-push-policy";
 
 /**
  * Every trigger the engine understands. Stored rules may use any of them and
@@ -160,6 +161,10 @@ const AutomationActionSchema = z.discriminatedUnion("type", [
     discountType: z.enum(["fixed", "percentage"]),
     discountValue: z.number().int().min(1).max(100_000_000),
     expiresInDays: z.number().int().min(1).max(365),
+    // Owner-only (src/lib/automation-line-push-policy.ts): whether the voucher
+    // is announced by LINE with the platform's fixed text. Absent on actions
+    // stored before 2026-11-15, which keep sending (voucherActionSendsLine).
+    lineNotification: z.boolean().optional(),
   }).strict(),
   z.object({ type: z.literal("add_customer_tag"), tag: z.string().trim().min(1).max(50) }).strict(),
   z.object({
@@ -659,7 +664,11 @@ type ActionArtifacts = { voucherUrl?: string; consultationUrl?: string; webinarU
 /**
  * Runs a rule's (or a delayed step's) actions in their fixed order: vouchers
  * first, so the other actions can link to them, then a LINE follow-up for a
- * voucher when the actions have no LINE push of their own. Results are pushed
+ * voucher when the actions have no LINE push of their own and that voucher's
+ * LINE notification is on (owner-only, voucherActionSendsLine: an explicit
+ * `false` turns it off, an action stored without the flag keeps sending). A
+ * delayed step that resumes runs its snapshot, so the flag it had when it
+ * first ran decides. Results are pushed
  * into `actionResults` as they finish, so a thrown action leaves the earlier
  * ones recorded. Every output has a deterministic id or idempotency key bound
  * to `logId`, so running the same execution again repeats nothing.
@@ -680,10 +689,16 @@ async function runRuleActions(
   const orderedActions = rule.actions
     .map((action, index) => ({ action, index }))
     .sort((left, right) => Number(right.action.type === "issue_repurchase_voucher") - Number(left.action.type === "issue_repurchase_voucher"));
+  // The link of the last voucher issued by an action whose LINE notification is on.
+  let lineVoucherUrl: string | undefined;
   for (const { action, index } of orderedActions) {
-    actionResults.push(await executeAction(db, rule, event, logId, action, index, artifacts, queuedEmailIds, context));
+    const result = await executeAction(db, rule, event, logId, action, index, artifacts, queuedEmailIds, context);
+    actionResults.push(result);
+    if (action.type === "issue_repurchase_voucher" && (result.status === "issued" || result.status === "already_issued") && voucherActionSendsLine(action)) {
+      lineVoucherUrl = artifacts.voucherUrl;
+    }
   }
-  if (artifacts.voucherUrl && !rule.actions.some((action) => action.type === "line_push") && event.subjectType !== "viewer_session") {
+  if (lineVoucherUrl && !rule.actions.some((action) => action.type === "line_push") && event.subjectType !== "viewer_session") {
     const delivery = await enqueueLineNotification(db, {
       vendorId: event.vendorId,
       subjectType: event.subjectType,
@@ -693,7 +708,7 @@ async function runRuleActions(
       messages: [buildAutomationLineMessage({
         message: "感謝支持，您的專屬回購折價券已經準備好了。",
         buttonLabel: "立即使用",
-        buttonUrl: artifacts.voucherUrl,
+        buttonUrl: lineVoucherUrl,
       })],
     });
     actionResults.push({ type: "line_push", status: delivery.status, source: "voucher_delivery" });

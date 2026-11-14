@@ -141,6 +141,72 @@ describe("smart automation workflow engine", () => {
     expect(JSON.stringify(completion)).not.toContain("token=");
   });
 
+  // Owner decision 2026-11-15: a voucher's fixed-text LINE notification follows
+  // its lineNotification flag; an action stored without the flag keeps sending.
+  it.each([
+    ["on", { lineNotification: true }, 1],
+    ["missing (stored before the flag)", {}, 1],
+    ["off", { lineNotification: false }, 0],
+  ] as const)("sends the voucher's fixed-text LINE notification when its flag is %s", async (_label, flag, sent) => {
+    const update = vi.fn().mockResolvedValue({});
+    const db = {
+      automationRule: { findMany: vi.fn().mockResolvedValue([{
+        id: "rule-voucher",
+        condition: { type: "always" },
+        actions: [{ type: "issue_repurchase_voucher", productId: "product-1", discountType: "fixed", discountValue: 1_000, expiresInDays: 7, ...flag }],
+      }]) },
+      automationExecutionLog: { create: vi.fn().mockResolvedValue({ id: "log-voucher" }), update },
+      customerTagAssignment: {},
+      automationVoucherGrant: { create: vi.fn().mockResolvedValue({}) },
+      product: { findFirst: vi.fn().mockResolvedValue({ id: "product-1", currency: "TWD" }) },
+      lineOfficialAccount: {}, lineUserIdentity: {}, lineDelivery: {},
+    };
+    await expect(dispatchAutomationEvent(db as never, { ...event, trigger: "payment_paid" })).resolves.toEqual([{ ruleId: "rule-voucher", status: "completed" }]);
+    expect(db.automationVoucherGrant.create).toHaveBeenCalledTimes(1);
+    expect(mocks.enqueueLineNotification).toHaveBeenCalledTimes(sent);
+    if (sent) {
+      expect(mocks.enqueueLineNotification).toHaveBeenCalledWith(db, expect.objectContaining({
+        idempotencyKey: "automation-voucher:log-voucher",
+        messages: [expect.objectContaining({ text: "感謝支持，您的專屬回購折價券已經準備好了。" })],
+      }));
+    }
+    const results = update.mock.calls.at(-1)?.[0].data.actionResults as Array<{ type: string; source?: string }>;
+    expect(results.filter((result) => result.source === "voucher_delivery")).toHaveLength(sent);
+  });
+
+  it("sends the fixed-text LINE notification only for a voucher whose flag is on when a rule issues two", async () => {
+    const db = {
+      automationRule: { findMany: vi.fn().mockResolvedValue([{
+        id: "rule-two",
+        condition: { type: "always" },
+        actions: [
+          { type: "issue_repurchase_voucher", productId: "product-1", discountType: "fixed", discountValue: 1_000, expiresInDays: 7, lineNotification: true },
+          { type: "issue_repurchase_voucher", productId: "product-1", discountType: "fixed", discountValue: 2_000, expiresInDays: 7, lineNotification: false },
+        ],
+      }]) },
+      automationExecutionLog: { create: vi.fn().mockResolvedValue({ id: "log-two" }), update: vi.fn().mockResolvedValue({}) },
+      customerTagAssignment: {},
+      automationVoucherGrant: { create: vi.fn().mockResolvedValue({}) },
+      product: { findFirst: vi.fn().mockResolvedValue({ id: "product-1", currency: "TWD" }) },
+      lineOfficialAccount: {}, lineUserIdentity: {}, lineDelivery: {},
+    };
+    await dispatchAutomationEvent(db as never, event);
+    expect(mocks.enqueueLineNotification).toHaveBeenCalledTimes(1);
+    // The button links to the first voucher (index 0), not the silent one.
+    const grantIds = db.automationVoucherGrant.create.mock.calls.map((call) => call[0].data.id as string);
+    const buttonUrl = new URL(String(mocks.buildAutomationLineMessage.mock.calls.at(-1)?.[0].buttonUrl));
+    const token = buttonUrl.searchParams.get("token") ?? "";
+    expect(db.automationVoucherGrant.create.mock.calls[0]?.[0].data.claimTokenHash).toBe(hashInteractionBearer(token));
+    expect(grantIds).toHaveLength(2);
+  });
+
+  it("parses a voucher with or without its LINE notification flag and refuses a non-boolean one", () => {
+    const voucher = { type: "issue_repurchase_voucher", productId: "p1", discountType: "fixed", discountValue: 100, expiresInDays: 7 };
+    expect(parseAutomationRule({ id: "r", condition: { type: "always" }, actions: [voucher] })?.actions).toEqual([voucher]);
+    expect(parseAutomationRule({ id: "r", condition: { type: "always" }, actions: [{ ...voucher, lineNotification: false }] })?.actions).toEqual([{ ...voucher, lineNotification: false }]);
+    expect(parseAutomationRule({ id: "r", condition: { type: "always" }, actions: [{ ...voucher, lineNotification: "yes" }] })).toBeNull();
+  });
+
   it("queues an encrypted email action without writing recipient PII to execution logs", async () => {
     const update = vi.fn().mockResolvedValue({});
     const db = {

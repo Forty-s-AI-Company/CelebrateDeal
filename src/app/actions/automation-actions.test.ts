@@ -45,6 +45,67 @@ describe("automation actions", () => { it("requires CSRF and writes tenant-scope
     await expect(createAutomationRuleAction(freeOrder)).rejects.toThrow("redirect:/settings/automations?error=invalid_rule");
   });
 
+  // Owner decision 2026-11-15: a voucher's LINE notification is the owner's.
+  // The server sets the flag explicitly on every new voucher: always false for
+  // an admin (even when the form says otherwise, so an admin can still create
+  // voucher rules), the ticked box for the owner, on when the form predates it.
+  describe("voucher LINE notification", () => {
+    function voucherForm(extra: Record<string, string> = {}) {
+      const f = form();
+      f.delete("actionTag");
+      for (const [key, value] of Object.entries({ actionVoucher: "on", productId: "p1", discountType: "fixed", discountValue: "100", expiresInDays: "30", ...extra })) f.set(key, value);
+      return f;
+    }
+    const savedVoucher = () => (runtime.db.automationRule.create.mock.calls.at(-1)?.[0] as { data: { actions: Array<Record<string, unknown>> } }).data.actions[0];
+    beforeEach(() => { runtime.db.product.findFirst.mockResolvedValue({ id: "p1" }); });
+
+    it.each([
+      ["no checkbox", {}],
+      ["a forged ticked checkbox", { voucherLineNotificationShown: "1", voucherLineNotification: "on" }],
+      ["a ticked checkbox without the marker", { voucherLineNotification: "on" }],
+    ])("saves an admin's voucher with the LINE notification off (%s) and lets the rule through", async (_label, extra) => {
+      await expect(createAutomationRuleAction(voucherForm(extra))).rejects.toThrow("redirect:/settings/automations?updated=created");
+      expect(savedVoucher()).toEqual({ type: "issue_repurchase_voucher", productId: "p1", discountType: "fixed", discountValue: 10_000, expiresInDays: 30, lineNotification: false });
+    });
+
+    it.each([
+      ["ticked", { voucherLineNotificationShown: "1", voucherLineNotification: "on" }, true],
+      ["unticked", { voucherLineNotificationShown: "1" }, false],
+      ["absent from a form rendered before the checkbox existed", {}, true],
+    ])("saves the owner's voucher with the checkbox %s", async (_label, extra, expected) => {
+      asOwner();
+      await expect(createAutomationRuleAction(voucherForm(extra))).rejects.toThrow("redirect:/settings/automations?updated=created");
+      expect(savedVoucher()).toMatchObject({ type: "issue_repurchase_voucher", lineNotification: expected });
+    });
+
+    it.each([["admin", false], ["owner", true]] as const)("applies a voucher recipe for the %s with the LINE notification %s", async (role, expected) => {
+      runtime.manager.mockResolvedValue({ ...runtime.auth, member: { role } });
+      const vip = new FormData();
+      vip.set("recipeId", "vip_auto_tiering");
+      vip.set("productId", "p1");
+      await expect(createAutomationRecipeAction(vip)).rejects.toThrow("redirect:/settings/automations?updated=recipe_created");
+      const actions = (runtime.db.automationRule.create.mock.calls.at(-1)?.[0] as { data: { actions: Array<Record<string, unknown>> } }).data.actions;
+      expect(actions).toEqual([
+        { type: "add_customer_tag", tag: "VIP 客戶" },
+        { type: "issue_repurchase_voucher", productId: "p1", discountType: "percentage", discountValue: 10, expiresInDays: 30, lineNotification: expected },
+      ]);
+    });
+
+    it("refuses an admin switching on a rule whose stored voucher still sends LINE (flag missing), read after the lock", async () => {
+      runtime.db.automationRule.findFirst
+        .mockResolvedValueOnce({ id: "r1", isActive: false, trigger: "payment_paid" })
+        .mockResolvedValueOnce({ actions: [{ type: "issue_repurchase_voucher", productId: "p1", discountType: "fixed", discountValue: 100, expiresInDays: 7 }], steps: [] });
+      await expect(toggleAutomationRuleAction(ruleForm())).rejects.toThrow("redirect:/settings/automations?error=line_push_owner_only");
+      expect(runtime.db.automationRule.updateMany).not.toHaveBeenCalled();
+      expect(runtime.audit).not.toHaveBeenCalled();
+      // The same rule saved with the flag off is the admin's to switch on.
+      runtime.db.automationRule.findFirst
+        .mockResolvedValueOnce({ id: "r1", isActive: false, trigger: "payment_paid" })
+        .mockResolvedValueOnce({ actions: [{ type: "issue_repurchase_voucher", productId: "p1", discountType: "fixed", discountValue: 100, expiresInDays: 7, lineNotification: false }], steps: [] });
+      await expect(toggleAutomationRuleAction(ruleForm())).rejects.toThrow("redirect:/settings/automations?updated=toggled");
+    });
+  });
+
   it.each(["https://brand.example@evil.example/offer", "https://user:pass@evil.example", "https://:@evil.example", "https:///evil.example", "http://evil.example", "javascript:alert(1)", "/\\evil.example"])("rejects the LINE button URL %s with a dedicated error and writes nothing", async (buttonUrl) => {
     asOwner();
     const f = lineForm();

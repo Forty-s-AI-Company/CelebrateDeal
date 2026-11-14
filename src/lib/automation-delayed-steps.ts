@@ -11,9 +11,10 @@ import {
   type AutomationEvent,
 } from "@/lib/automation-workflow";
 import {
-  automationActionsIncludeLinePush,
+  automationActionsSendLine,
   LINE_PUSH_OWNER_ONLY,
-  storedAutomationRuleIncludesLinePush,
+  storedAutomationRuleSendsLine,
+  withVoucherLineNotification,
 } from "@/lib/automation-line-push-policy";
 import { getDb } from "@/lib/db";
 import { isLockTimeout } from "@/lib/serializable-retry";
@@ -563,25 +564,38 @@ async function assertDelayFree(tx: Prisma.TransactionClient, vendorId: string, r
 }
 
 /**
- * Owner decision 2026-11-14 (src/lib/automation-line-push-policy.ts): without
- * `linePushAllowed` (the actor is not the vendor owner), a step may neither
- * carry a LINE push nor be added to or edited on a rule that already has one
- * (its immediate actions or any step). Read after the rule row is locked FOR
- * UPDATE, so an owner's concurrent LINE push step is serialized with it.
+ * Owner decisions 2026-11-14 and 2026-11-15 (src/lib/automation-line-push-
+ * policy.ts): without `linePushAllowed` (the actor is not the vendor owner), a
+ * step may neither send LINE (a LINE push, or a voucher with its LINE
+ * notification on) nor be added to or edited on a rule that already does (its
+ * immediate actions or any step). `input.step` is already normalized
+ * (stepWithVoucherLineNotification), so an admin's voucher counts as silent.
+ * Read after the rule row is locked FOR UPDATE, so an owner's concurrent LINE
+ * step is serialized with it.
  */
 async function assertLinePushPolicy(tx: Prisma.TransactionClient, input: { vendorId: string; linePushAllowed: boolean; step: AutomationStepInput }, ruleId: string) {
   if (input.linePushAllowed) return;
-  if (automationActionsIncludeLinePush(input.step.actions)) throw new StepChangeRejected(LINE_PUSH_OWNER_ONLY);
-  const stored = await storedAutomationRuleIncludesLinePush(tx, { vendorId: input.vendorId, ruleId });
+  if (automationActionsSendLine(input.step.actions)) throw new StepChangeRejected(LINE_PUSH_OWNER_ONLY);
+  const stored = await storedAutomationRuleSendsLine(tx, { vendorId: input.vendorId, ruleId });
   if (stored === null) throw new StepChangeRejected("not_found");
   if (stored) throw new StepChangeRejected(LINE_PUSH_OWNER_ONLY);
 }
 
+/**
+ * Every voucher action of the step saved with its LINE notification flag set
+ * explicitly: false for a non-owner whatever was asked, the requested value
+ * (on unless `false`) for the owner (withVoucherLineNotification).
+ */
+function stepWithVoucherLineNotification<T extends { step: AutomationStepInput; linePushAllowed: boolean }>(input: T): T {
+  return { ...input, step: { ...input.step, actions: withVoucherLineNotification(input.step.actions, input.linePushAllowed) } };
+}
+
 /** `linePushAllowed`: the actor is the vendor owner (mayConfigureAutomationLinePush); every caller decides it. */
 export async function createAutomationRuleStep(
-  input: { vendorId: string; ruleId: string; step: AutomationStepInput; linePushAllowed: boolean; now?: Date },
+  rawInput: { vendorId: string; ruleId: string; step: AutomationStepInput; linePushAllowed: boolean; now?: Date },
   db: Database = getDb(),
 ): Promise<AutomationStepChangeResult> {
+  const input = stepWithVoucherLineNotification(rawInput);
   return withLockedRule(db, { vendorId: input.vendorId, ruleId: input.ruleId, now: input.now ?? new Date(), requireAvailableTrigger: true }, async (tx, rule) => {
     await assertLinePushPolicy(tx, input, rule.id);
     const count = await tx.automationRuleStep.count({ where: { vendorId: input.vendorId, ruleId: rule.id } });
@@ -610,12 +624,13 @@ export async function createAutomationRuleStep(
  * again (#598 review B1).
  */
 export async function updateAutomationRuleStep(
-  input: { vendorId: string; ruleId: string; stepId: string; step: AutomationStepInput; linePushAllowed: boolean; now?: Date },
+  rawInput: { vendorId: string; ruleId: string; stepId: string; step: AutomationStepInput; linePushAllowed: boolean; now?: Date },
   db: Database = getDb(),
 ): Promise<AutomationStepChangeResult> {
+  const input = stepWithVoucherLineNotification(rawInput);
   return withLockedRule(db, { vendorId: input.vendorId, ruleId: input.ruleId, now: input.now ?? new Date(), requireAvailableTrigger: true }, async (tx, rule) => {
-    // A step that has a LINE push is part of the rule, so an admin cannot edit
-    // it either, even into one without (deleting it stays possible).
+    // A step that sends LINE is part of the rule, so an admin cannot edit it
+    // either, even into one that does not (deleting it stays possible).
     await assertLinePushPolicy(tx, input, rule.id);
     const existing = await tx.automationRuleStep.findFirst({
       where: { id: input.stepId, vendorId: input.vendorId, ruleId: rule.id },

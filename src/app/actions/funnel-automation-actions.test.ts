@@ -78,7 +78,7 @@ describe("funnel automation actions", () => {
     const { FunnelAutomationLinePushOwnerOnlyError } = await import("@/lib/funnel-automation-service");
     runtime.update.mockRejectedValueOnce(new FunnelAutomationLinePushOwnerOnlyError());
     runtime.setEnabled.mockRejectedValueOnce(new FunnelAutomationLinePushOwnerOnlyError());
-    const message = "這條規則含 LINE 推播，LINE 推播僅限擁有者設定；你可以停用它。";
+    const message = "這條規則會發 LINE 訊息（LINE 推播或派券通知），僅限擁有者設定；你可以停用它。";
     await expect(updateFunnelAutomationRuleAction(form({ pageId: "page-1", ruleId: "rule-1", version: "3", name: "新版", tag: "新標籤", _csrf: "csrf" }))).resolves.toEqual({ status: "error", message });
     await expect(setFunnelAutomationRuleEnabledAction(form({ pageId: "page-1", ruleId: "rule-1", version: "3", isActive: "true", _csrf: "csrf" }))).resolves.toEqual({ status: "error", message });
     // A refusal returns no rules list, so the editor keeps what it shows.
