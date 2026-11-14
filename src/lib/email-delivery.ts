@@ -1663,7 +1663,7 @@ export async function isCurrentEmailDeliverySnapshot(
     && await isCurrentFixedSessionAlreadyRegisteredDelivery(delivery, database)
     && await isCurrentStudentPortalDelivery(delivery, now, database)
     && await isCurrentSequenceEmailDelivery(delivery, now, database)
-    && isCurrentAutomationStepEmailDelivery(delivery, now);
+    && await isCurrentAutomationStepEmailDelivery(delivery, now, database);
 }
 
 function reportDeliveryFailure(error: unknown, operation: string, status: string) {

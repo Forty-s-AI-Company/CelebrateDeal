@@ -8,6 +8,7 @@ import {
   toggleAutomationRuleAction,
   updateAutomationRuleStepAction,
 } from "@/app/actions/automation-actions";
+import { AutomationStepDelayFields } from "@/components/automation-step-delay-fields";
 import { ConfirmActionButton } from "@/components/confirm-action-button";
 import { CsrfField } from "@/components/csrf-field";
 import { Badge, Card, Field, PageHeader, SelectField, SubmitButton, TextArea } from "@/components/ui";
@@ -16,6 +17,7 @@ import {
   AUTOMATION_TRIGGER_LABELS,
   AVAILABLE_AUTOMATION_RECIPES,
   AVAILABLE_AUTOMATION_TRIGGERS,
+  AUTOMATION_DELAYED_STEPS_FEATURE,
   automationExecutionNotes,
   automationTriggerNeedsThreshold,
   isAutomationStepExecution,
@@ -24,6 +26,7 @@ import {
 } from "@/lib/automation-workflow";
 import { automationRuleRunCounts, MAX_AUTOMATION_RULE_STEPS } from "@/lib/automation-delayed-steps";
 import { requireVendorManagerMember } from "@/lib/auth";
+import { isFeatureEnabled } from "@/lib/vendor-feature-toggles";
 import { getDb } from "@/lib/db";
 import { formatTwd } from "@/lib/format";
 
@@ -43,6 +46,7 @@ const ERROR_MESSAGES: Record<string, string> = {
   invalid_step: "步驟內容不完整或格式不正確，請檢查動作欄位。",
   invalid_product: "找不到這個商品，或商品已下架。",
   step_busy: "規則正在被其他人修改或執行，請稍後再試。",
+  toggle_busy: "規則正在被其他人修改或執行，請稍後再試。",
 };
 const UPDATED_MESSAGES: Record<string, string> = {
   step_created: "延遲步驟已新增。",
@@ -134,13 +138,9 @@ function ActionFields({ products, actions }: { products: Array<{ id: string; nam
   </div>;
 }
 
-/** Delay value and unit: hours or days only, at least 1 hour (§3「時間精度」). */
 function DelayFields({ delayMinutes }: { delayMinutes?: number }) {
   const parts = delayMinutes ? delayParts(delayMinutes) : { value: 1, unit: "days" as const };
-  return <div className="grid gap-4 md:grid-cols-2">
-    <Field label="事件發生後多久執行" name="delayValue" type="number" min={1} max={2160} step={1} required defaultValue={parts.value} />
-    <SelectField label="單位" name="delayUnit" defaultValue={parts.unit}><option value="hours">小時</option><option value="days">天</option></SelectField>
-  </div>;
+  return <AutomationStepDelayFields value={parts.value} unit={parts.unit} />;
 }
 
 type RuleStep = { id: string; delayMinutes: number; actions: unknown; isActive: boolean };
@@ -204,6 +204,8 @@ export default async function AutomationSettingsPage({ searchParams }: { searchP
   const params = await searchParams;
   const { vendor } = await requireVendorManagerMember(PATH);
   const db = getDb();
+  // F-4 delayed steps are a closed-beta module (review M3).
+  const delayedSteps = isFeatureEnabled(vendor, AUTOMATION_DELAYED_STEPS_FEATURE);
   const [products, rules, logs, runCounts] = await Promise.all([
     db.product.findMany({ where: { vendorId: vendor.id, isActive: true }, orderBy: { name: "asc" }, select: { id: true, name: true } }),
     db.automationRule.findMany({
@@ -215,7 +217,7 @@ export default async function AutomationSettingsPage({ searchParams }: { searchP
       },
     }),
     db.automationExecutionLog.findMany({ where: { vendorId: vendor.id }, orderBy: { createdAt: "desc" }, take: 50, include: { rule: { select: { name: true } } } }),
-    automationRuleRunCounts(vendor.id, db),
+    delayedSteps ? automationRuleRunCounts(vendor.id, db) : Promise.resolve(new Map<string, { active: number; completed: number; cancelled: number }>()),
   ]);
   // The threshold field only matters for amount/watch triggers; it returns
   // with them (payment_paid in the next F-4 PR).
@@ -228,7 +230,7 @@ export default async function AutomationSettingsPage({ searchParams }: { searchP
 
     <Card className="mb-6"><h2 className="text-lg font-semibold text-slate-950">熱門劇本一鍵套用</h2><p className="mb-4 text-sm text-slate-600">需要派券的劇本請先選商品。</p><div className="grid gap-4 lg:grid-cols-2">{AVAILABLE_AUTOMATION_RECIPES.map((recipe) => <form action={createAutomationRecipeAction} key={recipe.id} className="grid gap-3 rounded-xl border border-border p-4"><CsrfField /><input type="hidden" name="recipeId" value={recipe.id} /><div><h3 className="font-semibold text-slate-900">{recipe.name}</h3><p className="mt-1 text-sm text-slate-600">{recipe.description}</p></div><p className="text-xs font-medium text-slate-500">{triggerLabel(recipe.trigger)} → {actionLabels(recipe.actions).join(" + ")}</p>{recipe.actions.some((action) => action.type === "issue_repurchase_voucher") ? <SelectField label="套券商品" name="productId"><option value="">請選擇商品</option>{products.map((product) => <option key={product.id} value={product.id}>{product.name}</option>)}</SelectField> : null}<SubmitButton pendingChildren="套用中…">一鍵套用劇本</SubmitButton></form>)}</div></Card>
 
-    <Card className="mb-6"><h2 className="mb-4 text-lg font-semibold text-slate-950">自訂規則</h2><form action={createAutomationRuleAction} className="grid gap-4" aria-label="建立自訂規則"><CsrfField /><div className="grid gap-4 md:grid-cols-2"><Field label="規則名稱" name="name" required maxLength={120} /><SelectField label="觸發事件" name="trigger" defaultValue={AVAILABLE_AUTOMATION_TRIGGERS[0]}>{AVAILABLE_AUTOMATION_TRIGGERS.map((value) => <option key={value} value={value}>{triggerLabel(value)}</option>)}</SelectField></div>{showThreshold ? <Field label="條件門檻（付款金額元／觀看秒數；事件型觸發可留空）" name="conditionValue" type="number" min={1} step={1} /> : null}<p className="text-sm text-slate-600">以下是事件發生時「立即執行」的動作；建立後可在規則下方加上延遲步驟（例如 1 天後再寄一封）。</p><ActionFields products={products} /><SubmitButton pendingChildren="建立中…">建立規則</SubmitButton></form></Card>
+    <Card className="mb-6"><h2 className="mb-4 text-lg font-semibold text-slate-950">自訂規則</h2><form action={createAutomationRuleAction} className="grid gap-4" aria-label="建立自訂規則"><CsrfField /><div className="grid gap-4 md:grid-cols-2"><Field label="規則名稱" name="name" required maxLength={120} /><SelectField label="觸發事件" name="trigger" defaultValue={AVAILABLE_AUTOMATION_TRIGGERS[0]}>{AVAILABLE_AUTOMATION_TRIGGERS.map((value) => <option key={value} value={value}>{triggerLabel(value)}</option>)}</SelectField></div>{showThreshold ? <Field label="條件門檻（付款金額元／觀看秒數；事件型觸發可留空）" name="conditionValue" type="number" min={1} step={1} /> : null}<p className="text-sm text-slate-600">以下是事件發生時「立即執行」的動作{delayedSteps ? "；建立後可在規則下方加上延遲步驟（例如 1 天後再寄一封）" : ""}。</p><ActionFields products={products} /><SubmitButton pendingChildren="建立中…">建立規則</SubmitButton></form></Card>
 
     <Card className="mb-6"><h2 className="mb-4 text-lg font-semibold text-slate-950">規則</h2><div className="grid gap-4">{rules.length ? rules.map((rule) => {
       const available = isAvailableAutomationTrigger(rule.trigger);
@@ -237,13 +239,13 @@ export default async function AutomationSettingsPage({ searchParams }: { searchP
         <div className="flex flex-wrap items-center justify-between gap-3"><div><h3 className="font-semibold text-slate-900">{rule.name}</h3><p className="text-xs text-slate-500">{rule.createdAt.toLocaleString("zh-TW")}</p></div><div className="flex flex-wrap gap-2">{available ? null : <Badge tone="gray">目前不會執行</Badge>}<Badge tone={rule.isActive ? "green" : "gray"}>{rule.isActive ? "啟用中" : "已停用"}</Badge></div></div>
         <div className="flex flex-wrap items-center gap-2 text-sm"><span className="rounded-md bg-slate-100 px-3 py-2">觸發：{triggerLabel(rule.trigger)}</span><span>→</span><span className="rounded-md bg-amber-50 px-3 py-2">條件：{conditionLabel(rule.condition)}</span><span>→</span><span className="rounded-md bg-emerald-50 px-3 py-2">立即執行：{actionLabels(rule.actions).join(" + ")}</span></div>
         {available ? null : <p className="rounded-md border border-border bg-slate-50 px-3 py-2 text-sm text-slate-700">{UNAVAILABLE_TRIGGER_NOTE}</p>}
-        <RuleSteps rule={rule} available={available} products={products} counts={runCounts.get(rule.id)} />
+        {delayedSteps ? <RuleSteps rule={rule} available={available} products={products} counts={runCounts.get(rule.id)} /> : null}
         <div className="flex flex-wrap items-end gap-3">
           {rule.isActive || available ? <form action={toggleAutomationRuleAction}><CsrfField /><input type="hidden" name="ruleId" value={rule.id} /><SubmitButton pendingChildren="更新中…">{rule.isActive ? "停用" : "啟用"}</SubmitButton></form> : null}
           {available ? <form action={dryRunAutomationRuleAction} className="flex flex-wrap items-end gap-2"><CsrfField /><input type="hidden" name="ruleId" value={rule.id} /><Field label="模擬訂單（元）" name="orderAmount" type="number" min={0} defaultValue={30000} /><Field label="模擬觀看（秒）" name="watchSeconds" type="number" min={0} defaultValue={1800} /><label className="mb-2 flex items-center gap-2 text-xs"><input type="checkbox" name="hasPurchased" /> 已購買</label><SubmitButton pendingChildren="測試中…">Dry-run 測試</SubmitButton></form> : null}
           {!rule.isActive && !hasHistory ? <form action={deleteAutomationRuleAction}><CsrfField /><input type="hidden" name="ruleId" value={rule.id} /><ConfirmActionButton type="submit" message={`確定刪除規則「${rule.name}」？`} description="刪除後無法復原。" confirmLabel="刪除" destructive className="inline-flex min-h-11 cursor-pointer items-center rounded-md border border-red-200 bg-white px-4 text-sm font-semibold text-red-700 hover:bg-red-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500">刪除規則</ConfirmActionButton></form> : null}
         </div>
-        {rule.isActive ? <p className="text-xs text-slate-500">停用後才能刪除。停用時，進行中的延遲步驟會在下一步停止，重新啟用也不會恢復。</p> : hasHistory ? <p className="text-xs text-slate-500">已有執行紀錄，保留供查詢，只能停用、不能刪除。</p> : null}
+        {rule.isActive ? <p className="text-xs text-slate-500">停用後才能刪除。{delayedSteps ? "停用時，進行中的延遲步驟會立即停止，重新啟用也不會恢復。" : ""}</p> : hasHistory ? <p className="text-xs text-slate-500">已有執行紀錄，保留供查詢，只能停用、不能刪除。</p> : null}
       </article>;
     }) : <p className="text-sm text-slate-600">尚未建立規則。</p>}</div></Card>
 

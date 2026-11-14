@@ -14,7 +14,7 @@ const mocks = vi.hoisted(() => ({
     automationRule: { create: vi.fn(), findFirst: vi.fn(), findMany: vi.fn(), updateMany: vi.fn(), delete: vi.fn() },
     automationExecutionLog: { findMany: vi.fn(), count: vi.fn() },
     automationRuleStep: { count: vi.fn(), findFirst: vi.fn(), create: vi.fn(), updateMany: vi.fn(), deleteMany: vi.fn() },
-    delayedStepRun: { count: vi.fn(), groupBy: vi.fn() },
+    delayedStepRun: { count: vi.fn(), groupBy: vi.fn(), updateMany: vi.fn() },
     $queryRaw: vi.fn(),
     $executeRaw: vi.fn(),
     $transaction: vi.fn(),
@@ -43,7 +43,7 @@ import {
 } from "./automation-actions";
 
 function sessionFor(role: string) {
-  const vendor = { id: "vendor-1", name: "商家一", tracking: null, suspendedAt: null };
+  const vendor = { id: "vendor-1", name: "商家一", tracking: null, suspendedAt: null, betaFeatureGrants: ["automation_delayed_steps"] };
   return {
     id: "session-1",
     vendorId: vendor.id,

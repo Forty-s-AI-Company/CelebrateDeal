@@ -8,7 +8,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 // through the real worker (processDueDelayedStepRuns) and the merchant changes
 // through the real Server Actions; only the session, CSRF, Next.js, e-mail
 // provider and monitoring boundaries are synthetic.
-const runtime = vi.hoisted(() => ({ actor: null as null | { user: { id: string }; vendor: { id: string }; member: { role: string } } }));
+const runtime = vi.hoisted(() => ({
+  actor: null as null | { user: { id: string }; vendor: { id: string; betaFeatureGrants?: string[] }; member: { role: string } },
+  projectId: "",
+}));
 const monitoring = vi.hoisted(() => ({ captureOperationalError: vi.fn() }));
 const provider = vi.hoisted(() => ({ send: vi.fn() }));
 vi.mock("@/lib/monitoring", () => ({ captureOperationalError: monitoring.captureOperationalError }));
@@ -22,7 +25,13 @@ vi.mock("@/lib/auth", () => ({
     if (!runtime.actor) throw new Error("redirect:/login");
     return { auth: {}, ...runtime.actor };
   },
+  // The funnel editor's automation panel (funnel-automation-service.ts).
+  requireVendorManagerContext: async () => {
+    if (!runtime.actor) throw new Error("redirect:/login");
+    return { auth: { user: runtime.actor.user, member: { id: "member", role: runtime.actor.member.role } }, vendor: runtime.actor.vendor };
+  },
 }));
+vi.mock("@/lib/sales-project-scope", () => ({ requireEditableSalesProjectScope: async () => ({ projectId: runtime.projectId }) }));
 
 import {
   createAutomationRuleStepAction,
@@ -61,6 +70,7 @@ import {
 import { dispatchEmailDelivery, isCurrentEmailDeliverySnapshot, processDueSequenceEmailDeliveries } from "@/lib/email-delivery";
 import { createEmailRecipientHash, createEmailUnsubscribeToken, protectEmailDeliveryPayload, revealEmailDeliveryPayload } from "@/lib/email-delivery-pii";
 import { protectLineOfficialAccountCredentials } from "@/lib/line-credentials";
+import { setFunnelAutomationRuleEnabled } from "@/lib/funnel-automation-service";
 
 const db = getDb();
 const APP_URL = "https://automation-steps.example.test";
@@ -90,10 +100,17 @@ afterEach(async () => {
 const TAG_ACTION = { type: "add_customer_tag", tag: "第二天" };
 const EMAIL_ACTION = { type: "send_email_notification", template: "repurchase_followup" };
 
-async function tenant(options: { line?: boolean } = {}) {
+async function tenant(options: { line?: boolean; grant?: boolean } = {}) {
   const suffix = randomUUID().slice(0, 12);
   const vendor = await db.vendor.create({
-    data: { name: `延遲步驟商家 ${suffix}`, slug: `automation-steps-${suffix}`, email: `merchant-${suffix}@example.test`, passwordHash: "disposable-test-only" },
+    data: {
+      name: `延遲步驟商家 ${suffix}`,
+      slug: `automation-steps-${suffix}`,
+      email: `merchant-${suffix}@example.test`,
+      passwordHash: "disposable-test-only",
+      // Closed beta (review M3): every test vendor holds the grant unless a test says otherwise.
+      betaFeatureGrants: options.grant === false ? [] : ["automation_delayed_steps"],
+    },
   });
   createdVendorIds.push(vendor.id);
   const form = await db.registrationForm.create({
@@ -297,7 +314,7 @@ describe("觸發：事件發生時建立 run", () => {
     await expect(onlyRun(t)).resolves.toMatchObject({ automationRuleId: r.id, consultationBookingId: row.id, formSubmissionId: null });
 
     const other = await booking(t);
-    vi.spyOn(db.delayedStepRun, "createMany").mockRejectedValueOnce(new Error("synthetic run write failure"));
+    vi.spyOn(db, "$transaction").mockRejectedValueOnce(new Error("synthetic run write failure"));
     await expect(booked(t, other)).resolves.toEqual([{ ruleId: r.id, status: "completed" }]);
     expect(monitoring.captureOperationalError).toHaveBeenCalledWith(expect.any(Error), expect.objectContaining({ area: "automation_delayed_steps", operation: "start_run" }));
     await expect(db.delayedStepRun.count({ where: { vendorId: t.vendor.id, consultationBookingId: other.id } })).resolves.toBe(0);
@@ -424,14 +441,14 @@ describe("worker：到點執行", () => {
     await expect(work(t, after(run.anchorAt, 61 * MINUTE))).resolves.toEqual([{ runId: run.id, status: "executed" }]);
     await expect(stepMails(t)).resolves.toEqual([]);
     const firstLog = await db.automationExecutionLog.findFirstOrThrow({ where: { vendorId: t.vendor.id, eventId: { startsWith: "delayed-step:" } } });
-    expect(firstLog.actionResults).toEqual(expect.arrayContaining([expect.objectContaining({ type: "send_email_notification", status: "recipient_not_linked" })]));
+    expect(firstLog.actionResults).toMatchObject({ results: expect.arrayContaining([expect.objectContaining({ type: "send_email_notification", status: "skipped", reason: "recipient_unverified" })]) });
     // Verified now, but unsubscribed from this vendor: skipped and recorded, the run goes on.
     await db.formSubmission.update({ where: { id: lead.id }, data: { verificationStatus: "VERIFIED", verifiedAt: new Date() } });
     await db.emailSuppression.create({ data: { vendorId: t.vendor.id, recipientHash: createEmailRecipientHash(lead.email, t.vendor.id), recipientMaskedEmail: "l***@example.test", reason: "recipient_request", source: "unsubscribe_link" } });
     await expect(work(t, after(run.anchorAt, 121 * MINUTE))).resolves.toEqual([{ runId: run.id, status: "executed" }]);
     await expect(stepMails(t)).resolves.toEqual([]);
     const logs = await db.automationExecutionLog.findMany({ where: { vendorId: t.vendor.id, eventId: { startsWith: "delayed-step:" } }, orderBy: { createdAt: "asc" } });
-    expect(logs[1]!.actionResults).toEqual([expect.objectContaining({ status: "skipped", reason: "recipient_suppressed" })]);
+    expect(logs[1]!.actionResults).toMatchObject({ actions: [EMAIL_ACTION], results: [expect.objectContaining({ status: "skipped", reason: "recipient_suppressed" })] });
     await expect(db.delayedStepRun.findUniqueOrThrow({ where: { id: run.id } })).resolves.toMatchObject({ status: "completed" });
   });
 });
@@ -587,8 +604,8 @@ describe("與序列信共用額度", () => {
   });
 
   it("supersedes a step e-mail still unsent after six hours and suppresses a blacklisted recipient at send time", async () => {
-    expect(isCurrentAutomationStepEmailDelivery({ trigger: "automation", createdAt: new Date(0) }, new Date())).toBe(true);
-    expect(isCurrentAutomationStepEmailDelivery({ trigger: AUTOMATION_STEP_EMAIL_TRIGGER }, new Date())).toBe(false);
+    await expect(isCurrentAutomationStepEmailDelivery({ trigger: "automation", vendorId: "any", createdAt: new Date(0) }, new Date(), db)).resolves.toBe(true);
+    await expect(isCurrentAutomationStepEmailDelivery({ trigger: AUTOMATION_STEP_EMAIL_TRIGGER, vendorId: "any" }, new Date(), db)).resolves.toBe(false);
     const t = await tenant();
     const r = await rule(t);
     await step(t, r.id, 60, [EMAIL_ACTION]);
@@ -641,7 +658,7 @@ describe("後台：步驟的新增、修改與刪除", () => {
     return data;
   }
   function as(t: Tenant) {
-    runtime.actor = { user: { id: `user-${t.vendor.id}` }, vendor: { id: t.vendor.id }, member: { role: "admin" } };
+    runtime.actor = { user: { id: `user-${t.vendor.id}` }, vendor: { id: t.vendor.id, betaFeatureGrants: ["automation_delayed_steps"] }, member: { role: "admin" } };
   }
 
   it("adds, edits and deletes a step through the Server Actions, keeping the step id and writing audit logs", async () => {
@@ -687,7 +704,7 @@ describe("後台：步驟的新增、修改與刪除", () => {
     // Not even a direct write can hang A's step on B's rule (composite foreign key).
     await expect(db.automationRuleStep.create({ data: { vendorId: a.vendor.id, ruleId: rb.id, delayMinutes: 90, condition: {}, actions: [TAG_ACTION] as Prisma.InputJsonArray } })).rejects.toMatchObject({ code: "P2003" });
     // Through the action: B's ids from A's session are "not found".
-    runtime.actor = { user: { id: "user-a" }, vendor: { id: a.vendor.id }, member: { role: "owner" } };
+    runtime.actor = { user: { id: "user-a" }, vendor: { id: a.vendor.id, betaFeatureGrants: ["automation_delayed_steps"] }, member: { role: "owner" } };
     await expect(deleteAutomationRuleStepAction(form({ ruleId: rb.id, stepId: sb.id }))).rejects.toThrow("error=not_found");
     await expect(db.automationRuleStep.count({ where: { id: sb.id } })).resolves.toBe(1);
     // Limits and ranges.
@@ -739,7 +756,7 @@ describe("後台：步驟的新增、修改與刪除", () => {
     void s300;
   });
 
-  it("never deletes a rule with runs; switching it off stops them at their next step; deleting a rule without history removes its steps", async () => {
+  it("never deletes a rule with runs; switching it off stops them; deleting a rule without history removes its steps", async () => {
     const t = await tenant();
     const r = await rule(t);
     await step(t, r.id, 60);
@@ -749,7 +766,9 @@ describe("後台：步驟的新增、修改與刪除", () => {
     await expect(toggleAutomationRuleAction(form({ ruleId: r.id }))).rejects.toThrow("updated=toggled");
     await expect(deleteAutomationRuleAction(form({ ruleId: r.id }))).rejects.toThrow("error=delete_has_history");
     await expect(db.automationRule.count({ where: { id: r.id } })).resolves.toBe(1);
-    await expect(work(t, after(run.anchorAt, 61 * MINUTE))).resolves.toEqual([{ runId: run.id, status: "cancelled", cancelReason: "definition_paused" }]);
+    // Switching off stopped the run at once (review M1).
+    await expect(db.delayedStepRun.findUniqueOrThrow({ where: { id: run.id } })).resolves.toMatchObject({ status: "cancelled", cancelReason: "definition_paused" });
+    await expect(work(t, after(run.anchorAt, 61 * MINUTE))).resolves.toEqual([]);
     // A rule that never ran (and so has no run) is deleted with its steps.
     const unused = await rule(t, { isActive: false });
     const unusedStep = await step(t, unused.id, 60);
@@ -771,5 +790,209 @@ describe("後台：步驟的新增、修改與刪除", () => {
     await db.automationRule.delete({ where: { id: r1.id } });
     await expect(runsOf(t)).resolves.toHaveLength(1);
     await expect(work(t, due)).resolves.toEqual([{ runId: runs.find((row) => row.automationRuleId === r2.id)!.id, status: "executed" }]);
+  });
+});
+
+describe("審查修正（PR #601）", () => {
+  function form(entries: Record<string, string>) {
+    const data = new FormData();
+    for (const [key, value] of Object.entries(entries)) data.set(key, value);
+    return data;
+  }
+
+  it("M1: switching a rule off in /settings/automations stops its runs at once; switching it on before the step is due revives nothing", async () => {
+    const t = await tenant();
+    const r = await rule(t);
+    await step(t, r.id, 60);
+    await registered(t, await registration(t));
+    const run = await onlyRun(t);
+    runtime.actor = { user: { id: "user-m1" }, vendor: { id: t.vendor.id, betaFeatureGrants: ["automation_delayed_steps"] }, member: { role: "owner" } };
+    await expect(toggleAutomationRuleAction(form({ ruleId: r.id }))).rejects.toThrow("updated=toggled");
+    await expect(db.delayedStepRun.findUniqueOrThrow({ where: { id: run.id } })).resolves.toMatchObject({ status: "cancelled", cancelReason: "definition_paused", nextRunAt: null });
+    await expect(toggleAutomationRuleAction(form({ ruleId: r.id }))).rejects.toThrow("updated=toggled");
+    await expect(db.automationRule.findUniqueOrThrow({ where: { id: r.id } })).resolves.toMatchObject({ isActive: true });
+    await expect(work(t, after(run.anchorAt, 61 * MINUTE))).resolves.toEqual([]);
+    await expect(db.automationExecutionLog.count({ where: { vendorId: t.vendor.id, eventId: { startsWith: "delayed-step:" } } })).resolves.toBe(0);
+  });
+
+  it("M1: the funnel editor switch does the same", async () => {
+    const t = await tenant();
+    const project = await db.salesProject.create({ data: { vendorId: t.vendor.id, name: "合成專案", slug: `steps-project-${randomUUID()}`, mode: "live_course", primaryFlow: "live" } });
+    const page = await db.landingPage.create({ data: { vendorId: t.vendor.id, projectId: project.id, name: "單頁網站", slug: `steps-page-${randomUUID()}`, draftContent: {} } });
+    const r = await db.automationRule.create({
+      data: { vendorId: t.vendor.id, name: "漏斗標籤", trigger: "form_registered", funnelPageId: page.id, condition: { type: "always" }, actions: [{ type: "add_customer_tag", tag: "漏斗" }] },
+    });
+    await step(t, r.id, 60);
+    const lead = await registration(t);
+    await dispatchAutomationEvent(db, {
+      vendorId: t.vendor.id, eventId: `form-registered:${lead.id}`, trigger: "form_registered", subjectType: "buyer_registration",
+      subjectId: lead.id, subjectKeyHash: automationCustomerKeyHash(t.vendor.id, lead.email), recipientEmail: lead.email, funnelPageId: page.id,
+    });
+    const run = await onlyRun(t);
+    runtime.actor = { user: { id: "user-m1f" }, vendor: { id: t.vendor.id }, member: { role: "owner" } };
+    runtime.projectId = project.id;
+    await setFunnelAutomationRuleEnabled({ pageId: page.id, ruleId: r.id, version: 1, isActive: false });
+    await expect(db.delayedStepRun.findUniqueOrThrow({ where: { id: run.id } })).resolves.toMatchObject({ status: "cancelled", cancelReason: "definition_paused" });
+    await setFunnelAutomationRuleEnabled({ pageId: page.id, ruleId: r.id, version: 2, isActive: true });
+    await expect(work(t, after(run.anchorAt, 61 * MINUTE))).resolves.toEqual([]);
+    await expect(db.customerTagAssignment.count({ where: { vendorId: t.vendor.id, tag: "第二天" } })).resolves.toBe(0);
+  });
+
+  it("M2: a booking address gets the step e-mail only with a verified registration of the same address at this vendor", async () => {
+    const t = await tenant();
+    const other = await tenant();
+    const r = await rule(t, { trigger: "consultation_booked" });
+    await step(t, r.id, 60, [EMAIL_ACTION, TAG_ACTION]);
+    await step(t, r.id, 120, [EMAIL_ACTION]);
+    const email = `Client.${randomUUID().slice(0, 6)}@Example.test`;
+    // Another vendor's verified registration and this vendor's unverified one do not count.
+    await registration(other, { email: email.toLowerCase() });
+    await registration(t, { email, verified: false });
+    const row = await booking(t, email);
+    await booked(t, row);
+    const run = await onlyRun(t);
+    await expect(work(t, after(run.anchorAt, 61 * MINUTE))).resolves.toEqual([{ runId: run.id, status: "executed" }]);
+    await expect(stepMails(t)).resolves.toEqual([]);
+    const first = await db.automationExecutionLog.findFirstOrThrow({ where: { vendorId: t.vendor.id, eventId: { startsWith: "delayed-step:" } } });
+    expect(first.actionResults).toMatchObject({ results: expect.arrayContaining([expect.objectContaining({ status: "skipped", reason: "recipient_unverified" }), expect.objectContaining({ type: "add_customer_tag", status: "tagged" })]) });
+    // A verified registration with the same address (other case, spaces) at this vendor: the next step mails it.
+    await registration(t, { email: `  ${email.toUpperCase()} ` });
+    await expect(work(t, after(run.anchorAt, 121 * MINUTE))).resolves.toEqual([{ runId: run.id, status: "executed", emailsQueued: 1 }]);
+    const [mail] = await stepMails(t);
+    expect(revealEmailDeliveryPayload(mail!.payloadEncryptedEnvelope, { vendorId: t.vendor.id, deliveryId: mail!.id }).recipientEmail.toLowerCase()).toBe(email.toLowerCase());
+  });
+
+  it("M2: a consultation_booked run stops on a cancelled or no-show booking and goes on after a completed one", async () => {
+    for (const [status, expected] of [["no_show", "cancelled"], ["completed", "executed"]] as const) {
+      const t = await tenant();
+      const r = await rule(t, { trigger: "consultation_booked" });
+      await step(t, r.id, 60);
+      const row = await booking(t);
+      await booked(t, row);
+      const run = await onlyRun(t);
+      await db.consultationBooking.update({ where: { id: row.id }, data: { status } });
+      await expect(work(t, after(run.anchorAt, 61 * MINUTE))).resolves.toEqual([expected === "cancelled"
+        ? { runId: run.id, status: "cancelled", cancelReason: "subject_gone" }
+        : { runId: run.id, status: "executed" }]);
+    }
+  });
+
+  it("M3: without the automation_delayed_steps grant nothing starts, runs wait, the step actions refuse and queued step e-mails are not sent", async () => {
+    const closed = await tenant({ grant: false });
+    const r = await rule(closed);
+    await step(closed, r.id, 60);
+    await registered(closed, await registration(closed));
+    await expect(runsOf(closed)).resolves.toEqual([]);
+    runtime.actor = { user: { id: "user-m3" }, vendor: { id: closed.vendor.id, betaFeatureGrants: [] }, member: { role: "owner" } };
+    for (const run of [
+      () => createAutomationRuleStepAction(form({ ruleId: r.id, delayValue: "1", delayUnit: "days", actionTag: "on", customerTag: "x" })),
+      () => updateAutomationRuleStepAction(form({ ruleId: r.id, stepId: "s", delayValue: "1", delayUnit: "days", actionTag: "on", customerTag: "x" })),
+      () => deleteAutomationRuleStepAction(form({ ruleId: r.id, stepId: "s" })),
+    ]) {
+      await expect(run()).rejects.toMatchObject({ name: "FeatureDisabledError", feature: "automation_delayed_steps" });
+    }
+    await expect(db.automationRuleStep.count({ where: { ruleId: r.id } })).resolves.toBe(1);
+
+    // A grant closed after runs started: the runs stay, untouched, and a queued step e-mail is superseded.
+    const t = await tenant();
+    const rt = await rule(t);
+    await step(t, rt.id, 60, [EMAIL_ACTION]);
+    await step(t, rt.id, 120, [TAG_ACTION]);
+    await registered(t, await registration(t));
+    const run = await onlyRun(t);
+    await work(t, after(run.anchorAt, 61 * MINUTE));
+    const [mail] = await stepMails(t);
+    await db.emailDelivery.update({ where: { id: mail!.id }, data: { status: "queued", sentAt: null, nextAttemptAt: new Date(Date.now() - MINUTE) } });
+    await db.vendor.update({ where: { id: t.vendor.id }, data: { betaFeatureGrants: [] } });
+    await expect(dispatchEmailDelivery(mail!.id)).resolves.toEqual({ status: "superseded" });
+    await expect(processDueDelayedStepRuns({ now: after(run.anchorAt, 121 * MINUTE), vendorId: t.vendor.id })).resolves.toEqual([]);
+    await expect(db.delayedStepRun.findUniqueOrThrow({ where: { id: run.id } })).resolves.toMatchObject({ status: "active", cursorDelayMinutes: 60, attemptCount: 0 });
+    // Granted again: it goes on.
+    await db.vendor.update({ where: { id: t.vendor.id }, data: { betaFeatureGrants: ["automation_delayed_steps"] } });
+    await expect(work(t, after(run.anchorAt, 121 * MINUTE))).resolves.toEqual([{ runId: run.id, status: "executed" }]);
+    expect(provider.send).not.toHaveBeenCalled();
+  });
+
+  it("M3: a step without an e-mail runs while the e-mail queue is full and while no e-mail provider is configured; a step with one waits", async () => {
+    const t = await tenant();
+    const tagRule = await rule(t);
+    await step(t, tagRule.id, 60, [TAG_ACTION]);
+    const mailRule = await rule(t);
+    await step(t, mailRule.id, 60, [EMAIL_ACTION]);
+    await registered(t, await registration(t));
+    const runs = await runsOf(t);
+    const tagRun = runs.find((row) => row.automationRuleId === tagRule.id)!;
+    const mailRun = runs.find((row) => row.automationRuleId === mailRule.id)!;
+    const due = after(tagRun.anchorAt, 61 * MINUTE);
+    // A full sequence queue.
+    for (let index = 0; index < SEQUENCE_EMAIL_DISPATCH_LIMIT; index += 1) {
+      const id = `email_${randomUUID().replace(/-/gu, "")}`;
+      await db.emailDelivery.create({
+        data: {
+          id, vendorId: t.vendor.id, sourceTemplateId: "synthetic", trigger: "sequence_email",
+          ...protectEmailDeliveryPayload({ recipientEmail: `queued-${index}@example.test`, subject: "合成", body: "合成" }, { vendorId: t.vendor.id, deliveryId: id }),
+          idempotencyKey: `synthetic/${id}`, status: "queued", nextAttemptAt: new Date(Date.now() + DAY),
+        },
+      });
+    }
+    await expect(processDueDelayedStepRuns({ now: due, vendorId: t.vendor.id })).resolves.toEqual([{ runId: tagRun.id, status: "executed" }]);
+    await expect(db.delayedStepRun.findUniqueOrThrow({ where: { id: mailRun.id } })).resolves.toMatchObject({ status: "active", cursorDelayMinutes: -1, attemptCount: 0, claimedAt: null });
+    await expect(db.customerTagAssignment.count({ where: { vendorId: t.vendor.id, tag: "第二天" } })).resolves.toBe(1);
+
+    // No provider at all: the e-mail-free step of another run still runs.
+    await db.emailDelivery.deleteMany({ where: { vendorId: t.vendor.id, trigger: "sequence_email" } });
+    const lead = await registration(t);
+    await registered(t, lead);
+    const second = (await runsOf(t)).find((row) => row.formSubmissionId === lead.id && row.automationRuleId === tagRule.id)!;
+    vi.stubEnv("RESEND_API_KEY", "");
+    const reported: unknown[] = [];
+    const round = await processDueDelayedStepRuns({ now: after(second.anchorAt, 61 * MINUTE), vendorId: t.vendor.id, onConfigurationError: (error) => reported.push(error) });
+    expect(round).toEqual([{ runId: second.id, status: "executed" }]);
+    expect(reported).toHaveLength(1);
+    await expect(db.delayedStepRun.findUniqueOrThrow({ where: { id: mailRun.id } })).resolves.toMatchObject({ status: "active", cursorDelayMinutes: -1, attemptCount: 0 });
+    await expect(stepMails(t)).resolves.toEqual([]);
+  });
+
+  it("m1: a run started while the merchant moves the first step uses the saved delay, not the one read when the event began", async () => {
+    const t = await tenant();
+    const r = await rule(t);
+    const first = await step(t, r.id, 7 * 1_440);
+    const lead = await registration(t);
+    // The step moves to 1 hour between the event reading the rule and starting the run.
+    const original = db.automationExecutionLog.create.bind(db.automationExecutionLog);
+    const moveFirstStep = async (args: Parameters<typeof original>[0]) => {
+      await updateAutomationRuleStep({ vendorId: t.vendor.id, ruleId: r.id, stepId: first.id, step: { delayMinutes: 60, condition: { type: "always" }, actions: [TAG_ACTION], isActive: true } });
+      return original(args);
+    };
+    vi.spyOn(db.automationExecutionLog, "create").mockImplementationOnce(moveFirstStep as never);
+    await registered(t, lead);
+    const run = await onlyRun(t);
+    expect(run.nextRunAt).toEqual(after(run.anchorAt, 60 * MINUTE));
+    await expect(work(t, after(run.anchorAt, 61 * MINUTE))).resolves.toEqual([{ runId: run.id, status: "executed" }]);
+  });
+
+  it("m2: a step resumed after the merchant reordered its actions runs the actions it started with, so nothing is sent twice", async () => {
+    const t = await tenant({ line: true });
+    const r = await rule(t);
+    const line = { type: "line_push", message: "第二天的提醒" };
+    const s = await step(t, r.id, 60, [EMAIL_ACTION, line]);
+    const lead = await registration(t);
+    await db.lineUserIdentity.create({
+      data: { vendorId: t.vendor.id, subjectType: "buyer_registration", subjectId: lead.id, lineUserIdHash: createHash("sha256").update(randomUUID()).digest("hex"), lineUserIdEncrypted: "v1.synthetic" },
+    });
+    await registered(t, lead);
+    const run = await onlyRun(t);
+    const due = after(run.anchorAt, 61 * MINUTE);
+    // The e-mail is queued, then the LINE message fails: the step fails, the lease stays.
+    vi.spyOn(db.lineDelivery, "create").mockRejectedValueOnce(new Error("synthetic LINE failure"));
+    await expect(work(t, due)).resolves.toEqual([{ runId: run.id, status: "failed", emailsQueued: 1 }]);
+    // The merchant swaps the two actions before the retry.
+    await updateAutomationRuleStep({ vendorId: t.vendor.id, ruleId: r.id, stepId: s.id, step: { delayMinutes: 60, condition: { type: "always" }, actions: [line, EMAIL_ACTION], isActive: true } });
+    await db.delayedStepRun.update({ where: { id: run.id }, data: { claimedAt: new Date(due.getTime() - DELAYED_STEP_LEASE_MS - MINUTE) } });
+    await expect(work(t, due)).resolves.toEqual([{ runId: run.id, status: "executed" }]);
+    await expect(stepMails(t)).resolves.toHaveLength(1);
+    await expect(db.lineDelivery.count({ where: { vendorId: t.vendor.id } })).resolves.toBe(1);
+    const log = await db.automationExecutionLog.findUniqueOrThrow({ where: { id: automationStepExecutionLogId(t.vendor.id, run.id, s.id) } });
+    expect(log).toMatchObject({ status: "completed", actionResults: { actions: [EMAIL_ACTION, line] } });
   });
 });

@@ -1,5 +1,6 @@
 import { Prisma, type PrismaClient } from "@prisma/client";
 import {
+  AUTOMATION_DELAYED_STEPS_FEATURE,
   AVAILABLE_AUTOMATION_TRIGGERS,
   executeAutomationStep,
   isAvailableAutomationTrigger,
@@ -7,6 +8,7 @@ import {
   automationStepEventId,
   type AutomationEvent,
 } from "@/lib/automation-workflow";
+import { automationCustomerKeyHash } from "@/lib/customer-key-hash";
 import { getDb } from "@/lib/db";
 import { isLockTimeout } from "@/lib/serializable-retry";
 import {
@@ -52,22 +54,65 @@ class RuleGoneError extends Error {
 
 type AutomationSubject = {
   subjectId: string;
-  recipientEmail?: string;
+  recipientEmail: string;
+  /** Someone confirmed `recipientEmail` at this vendor (M2). */
+  recipientVerified: boolean;
   consultationUrl?: string;
 };
 
+/** Verified registrations of one address considered at most (case-insensitive matches of the same address). */
+const VERIFIED_REGISTRATION_SCAN = 20;
+
 /**
- * The run's subject, read again now and bound to the vendor. A registration
- * that is still unverified keeps its run but gets no e-mail from this step
- * (the e-mail action records `recipient_not_linked`): the delayed steps never
- * mail an address its owner has not confirmed. A booking the merchant
- * cancelled ends a `consultation_booked` run.
+ * M2: a booking's address is typed into the public booking form and nobody
+ * confirms it there. It counts as confirmed only when this vendor has a
+ * VERIFIED registration with the same address: same customer key
+ * (automationCustomerKeyHash, trim + lowercase), bound through the form.
+ */
+async function hasVerifiedRegistration(
+  db: Pick<Database, "formSubmission">,
+  vendorId: string,
+  email: string,
+  subjectKeyHash: string,
+) {
+  const candidates = await db.formSubmission.findMany({
+    where: {
+      form: { vendorId },
+      verificationStatus: "VERIFIED",
+      // Contains, then the exact customer key below: a stored address may keep stray spaces.
+      OR: [{ customerKeyHash: subjectKeyHash }, { email: { contains: email.trim(), mode: "insensitive" } }],
+    },
+    take: VERIFIED_REGISTRATION_SCAN,
+    select: { email: true, customerKeyHash: true },
+  });
+  return candidates.some((row) => {
+    if (row.customerKeyHash === subjectKeyHash) return true;
+    try {
+      return automationCustomerKeyHash(vendorId, row.email) === subjectKeyHash;
+    } catch {
+      return false;
+    }
+  });
+}
+
+/**
+ * The run's subject, read again now and bound to the vendor.
+ * - `form_registered`: the registration; its e-mail counts as confirmed once it
+ *   is VERIFIED.
+ * - consultation triggers: the booking; its address counts as confirmed only
+ *   with a verified registration of the same address (M2). A
+ *   `consultation_booked` run ends once the booking is cancelled or marked
+ *   no-show (a follow-up of a completed consultation goes on). A
+ *   `consultation_no_show` run starts from a no-show booking, whose status
+ *   no action changes any more, so only a deleted booking ends it.
+ * An unconfirmed address keeps the run: the step's e-mail action is skipped as
+ * `recipient_unverified` and its other actions run.
  */
 async function readSubject(
   db: Pick<Database, "formSubmission" | "consultationBooking">,
   vendorId: string,
   trigger: string,
-  run: { formSubmissionId: string | null; consultationBookingId: string | null },
+  run: { formSubmissionId: string | null; consultationBookingId: string | null; subjectKeyHash: string },
 ): Promise<AutomationSubject | null> {
   if (trigger === "form_registered") {
     if (!run.formSubmissionId) return null;
@@ -76,7 +121,7 @@ async function readSubject(
       select: { id: true, email: true, verificationStatus: true },
     });
     if (!submission) return null;
-    return { subjectId: submission.id, ...(submission.verificationStatus === "VERIFIED" ? { recipientEmail: submission.email } : {}) };
+    return { subjectId: submission.id, recipientEmail: submission.email, recipientVerified: submission.verificationStatus === "VERIFIED" };
   }
   if (trigger === "consultation_booked" || trigger === "consultation_no_show") {
     if (!run.consultationBookingId) return null;
@@ -85,8 +130,13 @@ async function readSubject(
       select: { id: true, clientEmail: true, meetingUrl: true, status: true },
     });
     if (!booking) return null;
-    if (trigger === "consultation_booked" && booking.status === "cancelled") return null;
-    return { subjectId: booking.id, recipientEmail: booking.clientEmail, ...(booking.meetingUrl ? { consultationUrl: booking.meetingUrl } : {}) };
+    if (trigger === "consultation_booked" && (booking.status === "cancelled" || booking.status === "no_show")) return null;
+    return {
+      subjectId: booking.id,
+      recipientEmail: booking.clientEmail,
+      recipientVerified: await hasVerifiedRegistration(db, vendorId, booking.clientEmail, run.subjectKeyHash),
+      ...(booking.meetingUrl ? { consultationUrl: booking.meetingUrl } : {}),
+    };
   }
   return null;
 }
@@ -176,7 +226,7 @@ export async function processClaimedAutomationRun(
   // (AVAILABLE_AUTOMATION_TRIGGERS), stops; switching it on again does not
   // revive the run (the same as a paused sequence).
   if (!rule.isActive || !isAvailableAutomationTrigger(rule.trigger)) return cancelLeasedRun(db, lease, "definition_paused");
-  const subject = await readSubject(db, lease.vendorId, rule.trigger, run);
+  const subject = await readSubject(db, lease.vendorId, rule.trigger, { ...run, subjectKeyHash: run.subjectKeyHash });
   if (!subject) return cancelLeasedRun(db, lease, "subject_gone");
 
   const settle = { anchorAt: run.anchorAt, ruleId: rule.id };
@@ -211,7 +261,8 @@ export async function processClaimedAutomationRun(
     subjectType: "buyer_registration",
     subjectId: subject.subjectId,
     subjectKeyHash: run.subjectKeyHash,
-    ...(subject.recipientEmail ? { recipientEmail: subject.recipientEmail } : {}),
+    recipientEmail: subject.recipientEmail,
+    recipientVerified: subject.recipientVerified,
     ...(subject.consultationUrl ? { consultationUrl: subject.consultationUrl } : {}),
   };
   const outcome = await executeAutomationStep(db, {
@@ -260,6 +311,7 @@ export async function skipStaleAutomationSteps(db: Database, now: Date, vendorId
           AND q."trigger" = ANY(${triggers}::text[])
           ${vendorId ? Prisma.sql`AND q."vendorId" = ${vendorId}` : Prisma.empty}
           AND v."suspendedAt" IS NULL
+          AND ${AUTOMATION_DELAYED_STEPS_FEATURE} = ANY(v."betaFeatureGrants")
           AND EXISTS (
             SELECT 1 FROM "DelayedStepRun" r
             WHERE r."vendorId" = q."vendorId" AND r."automationRuleId" = q."id"
@@ -285,6 +337,7 @@ export async function skipStaleAutomationSteps(db: Database, now: Date, vendorId
           AND r."nextRunAt" <= ${utcTimestamp(now)}
           AND (r."claimedAt" IS NULL OR r."claimedAt" <= ${utcTimestamp(leaseCutoff)})
           AND v."suspendedAt" IS NULL
+          AND ${AUTOMATION_DELAYED_STEPS_FEATURE} = ANY(v."betaFeatureGrants")
       )
       UPDATE "DelayedStepRun" AS r
       SET "cursorDelayMinutes" = due."nextDelay",
@@ -340,10 +393,53 @@ export async function rescheduleActiveRunsForAutomationRule(
   `;
 }
 
+/** E-mail-free due automation runs considered per round (M3), at most the round's remaining run budget. */
+const EMAIL_FREE_SCAN_LIMIT = 200;
+
+/**
+ * M3: due automation runs whose next active step has no e-mail action (or
+ * that have no step left and only need completing). They run even while the
+ * e-mail capacity is used up or no e-mail provider is configured. Same
+ * vendor conditions as the fair loop: not suspended, holding the grant.
+ */
+export async function dueAutomationRunsWithoutEmail(
+  db: Database,
+  input: { now: Date; vendorId: string | undefined; exclude: string[]; limit: number },
+) {
+  const leaseCutoff = new Date(input.now.getTime() - DELAYED_STEP_LEASE_MS);
+  const limit = Math.max(0, Math.min(input.limit, EMAIL_FREE_SCAN_LIMIT));
+  if (limit === 0) return [];
+  const rows = await db.$queryRaw<Array<{ id: string; vendorId: string; updatedAt: Date; cursorDelayMinutes: number; attemptCount: number; automationRuleId: string | null }>>`
+    SELECT r."id", r."vendorId", r."updatedAt", r."cursorDelayMinutes", r."attemptCount", r."automationRuleId"
+    FROM "DelayedStepRun" r
+    JOIN "Vendor" v ON v."id" = r."vendorId"
+    LEFT JOIN LATERAL (
+      SELECT s."actions" FROM "AutomationRuleStep" s
+      WHERE s."vendorId" = r."vendorId" AND s."ruleId" = r."automationRuleId"
+        AND s."isActive" AND s."delayMinutes" > r."cursorDelayMinutes"
+      ORDER BY s."delayMinutes" ASC
+      LIMIT 1
+    ) n ON TRUE
+    WHERE r."automationRuleId" IS NOT NULL
+      AND r."status" = 'active'
+      AND r."nextRunAt" <= ${utcTimestamp(input.now)}
+      AND (r."claimedAt" IS NULL OR r."claimedAt" <= ${utcTimestamp(leaseCutoff)})
+      AND v."suspendedAt" IS NULL
+      AND ${AUTOMATION_DELAYED_STEPS_FEATURE} = ANY(v."betaFeatureGrants")
+      ${input.vendorId ? Prisma.sql`AND r."vendorId" = ${input.vendorId}` : Prisma.empty}
+      AND NOT (r."id" = ANY(${input.exclude}::text[]))
+      AND (n."actions" IS NULL OR NOT (n."actions" @> '[{"type":"send_email_notification"}]'::jsonb))
+    ORDER BY r."nextRunAt" ASC, r."id" ASC
+    LIMIT ${limit}
+  `;
+  return rows;
+}
+
 /** The automation half of the shared worker. */
 export const AUTOMATION_RUN_PROCESSOR: AutomationRunProcessor = {
   processClaimed: processClaimedAutomationRun,
   skipStale: skipStaleAutomationSteps,
+  dueWithoutEmail: dueAutomationRunsWithoutEmail,
 };
 
 /**
@@ -359,6 +455,23 @@ export function runDelayedStepWorker(
   db: Database = getDb(),
 ) {
   return processDueDelayedStepRuns({ ...options, automation: AUTOMATION_RUN_PROCESSOR }, db);
+}
+
+/**
+ * Switching a rule off stops its people part-way through (review M1): every
+ * active run becomes cancelled / definition_paused, so switching the rule on
+ * again never revives them. The caller holds the rule row FOR UPDATE in the
+ * same transaction (the order every writer of runs uses: rule, then runs).
+ */
+export async function stopDelayedStepRunsOfRule(
+  tx: Pick<Prisma.TransactionClient, "delayedStepRun">,
+  input: { vendorId: string; ruleId: string },
+) {
+  const cancelled = await tx.delayedStepRun.updateMany({
+    where: { vendorId: input.vendorId, automationRuleId: input.ruleId, status: "active" },
+    data: { status: "cancelled", cancelReason: "definition_paused", nextRunAt: null, claimedAt: null },
+  });
+  return cancelled.count;
 }
 
 // ---------------------------------------------------------------------------

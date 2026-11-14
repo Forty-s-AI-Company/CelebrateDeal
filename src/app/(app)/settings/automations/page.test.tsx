@@ -57,7 +57,19 @@ describe("AutomationSettingsPage", () => {
     expect(html).toContain("諮詢預約成功（延遲步驟）");
   });
 
+  const granted = () => mocks.manager.mockResolvedValue({ vendor: { id: "v1", betaFeatureGrants: ["automation_delayed_steps"] }, user: { id: "u1" }, member: { role: "admin" } });
+
+  it("shows no delayed-step section without the automation_delayed_steps grant (closed beta)", async () => {
+    mocks.rules.mockResolvedValue([rule({ steps: [{ id: "s1", delayMinutes: 120, isActive: true, actions: [{ type: "add_customer_tag", tag: "x" }] }] })]);
+    const html = await render();
+    expect(html).not.toContain("延遲步驟（");
+    expect(html).not.toContain("新增延遲步驟");
+    expect(html).not.toContain("建立後可在規則下方加上延遲步驟");
+    expect(mocks.runCounts).not.toHaveBeenCalled();
+  });
+
   it("lists a rule's delayed steps with edit and delete forms, the add form and the run counts, all bound to the vendor", async () => {
+    granted();
     mocks.rules.mockResolvedValue([rule({ steps: [
       { id: "s1", delayMinutes: 120, isActive: true, actions: [{ type: "send_email_notification", template: "repurchase_followup" }, { type: "add_customer_tag", tag: "兩小時後" }] },
       { id: "s2", delayMinutes: 4_320, isActive: false, actions: [{ type: "issue_repurchase_voucher", productId: "p1", discountType: "fixed", discountValue: 15_000, expiresInDays: 7 }] },
@@ -81,6 +93,7 @@ describe("AutomationSettingsPage", () => {
   });
 
   it("only lets a rule on a hidden trigger delete its steps", async () => {
+    granted();
     mocks.rules.mockResolvedValue([rule({ trigger: "form_no_show", isActive: false, steps: [{ id: "s1", delayMinutes: 60, isActive: true, actions: [{ type: "add_customer_tag", tag: "x" }] }] })]);
     const html = await render();
     expect(html).toContain("刪除步驟");

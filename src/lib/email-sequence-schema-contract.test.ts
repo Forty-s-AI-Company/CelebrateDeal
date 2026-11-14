@@ -65,7 +65,8 @@ describe("F-3 email sequence schema contract", () => {
   it("keeps the database limits and values equal to the application constants", () => {
     expect(migration).toContain(`CHECK ("delayMinutes" BETWEEN ${SEQUENCE_STEP_MIN_DELAY_MINUTES} AND ${SEQUENCE_STEP_MAX_DELAY_MINUTES})`);
     for (const reason of DELAYED_STEP_CANCEL_REASONS) expect(migration).toContain(`'${reason}'`);
-    for (const feature of BETA_GATED_FEATURES) expect(grantMigration).toContain(`'${feature}'`);
+    // Every grant that existed at F-3; later grants rebuild the CHECK in their own migration (automation-step-schema-contract.test.ts).
+    for (const feature of BETA_GATED_FEATURES.filter((value) => value !== "automation_delayed_steps")) expect(grantMigration).toContain(`'${feature}'`);
     expect(MAX_ACTIVE_EMAIL_SEQUENCES_PER_VENDOR).toBe(5);
     expect(MAX_EMAIL_SEQUENCE_STEPS).toBe(10);
   });

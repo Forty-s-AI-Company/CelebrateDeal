@@ -851,9 +851,9 @@ export async function countPendingSequenceEmails(db: Pick<Database, "emailDelive
  * requires them), the public URL and the signing and encryption keys. Returns
  * the problem, or null. A problem belongs to the platform, not to any run.
  */
-export function sequenceRuntimeProblem(): SequenceConfigurationError | null {
+export function sequenceRuntimeProblem(options: { requireProvider?: boolean } = {}): SequenceConfigurationError | null {
   try {
-    if (!isTransactionalEmailConfigured()) throw new Error("E-mail provider settings are missing.");
+    if (options.requireProvider !== false && !isTransactionalEmailConfigured()) throw new Error("E-mail provider settings are missing.");
     const probeId = `email_${"0".repeat(32)}`;
     createEmailUnsubscribeUrl(probeId);
     createLiveViewerUrl("probe");
@@ -1026,24 +1026,41 @@ export async function processDueDelayedStepRuns(
   const reportConfiguration = options.onConfigurationError ?? reportConfigurationProblem;
   const pastDeadline = () => options.deadline !== undefined && Date.now() >= options.deadline;
   if (pastDeadline()) return [];
-  const problem = sequenceRuntimeProblem();
-  if (problem) {
-    // m1: no provider, URL or key: nothing is claimed and no run changes.
-    reportConfiguration(problem);
+  // A missing URL or key stops the whole round (nothing is claimed).
+  const keyProblem = sequenceRuntimeProblem({ requireProvider: false });
+  if (keyProblem) {
+    reportConfiguration(keyProblem);
     return [];
   }
-  await skipStaleSteps(db, now, options.vendorId, pastDeadline);
-  if (pastDeadline()) return [];
+  // m1: without an e-mail provider no sequence run is claimed or changed and
+  // no e-mail is created; automation steps without an e-mail still run (M3).
+  // (One probe of the keys per round; the provider is only its settings.)
+  const providerProblem = isTransactionalEmailConfigured() ? null : new SequenceConfigurationError(new Error("E-mail provider settings are missing."));
+  if (providerProblem) reportConfiguration(providerProblem);
+  if (!providerProblem) {
+    await skipStaleSteps(db, now, options.vendorId, pastDeadline);
+    if (pastDeadline()) return [];
+  }
   // F-4: the same bulk skip for automation runs (rules locked FOR SHARE).
   if (options.automation) {
     await options.automation.skipStale(db, now, options.vendorId, pastDeadline, MAX_STALE_SKIP_PASSES);
     if (pastDeadline()) return [];
   }
-  const pending = await countPendingSequenceEmails(db, options.vendorId);
-  const emailCapacity = Math.max(0, budget.emails - pending);
+  const pending = providerProblem ? 0 : await countPendingSequenceEmails(db, options.vendorId);
+  const emailCapacity = providerProblem ? 0 : Math.max(0, budget.emails - pending);
+  const dueWhere = dueRunWhere(now, options.vendorId, Boolean(options.automation));
+  const round: WorkerRound = { db, now, budget, pastDeadline, reportConfiguration, automation: options.automation, results: [] };
+  const stopped = await runFairPasses(round, dueWhere, emailCapacity, options.random ?? Math.random);
+  if (stopped || !options.automation) return round.results;
+  await runEmailFreeAutomationRuns(round, options.vendorId);
+  return round.results;
+}
+
+/** Due, unleased runs of active vendors holding the grant of their kind. */
+function dueRunWhere(now: Date, vendorId: string | undefined, withAutomation: boolean): Prisma.DelayedStepRunWhereInput {
   const leaseCutoff = new Date(now.getTime() - DELAYED_STEP_LEASE_MS);
-  const dueWhere: Prisma.DelayedStepRunWhereInput = {
-    ...(options.vendorId ? { vendorId: options.vendorId } : {}),
+  return {
+    ...(vendorId ? { vendorId } : {}),
     status: "active",
     nextRunAt: { lte: now },
     AND: [
@@ -1052,27 +1069,47 @@ export async function processDueDelayedStepRuns(
         OR: [
           // F-3 sequences: only vendors holding the email_sequences grant.
           { emailSequenceId: { not: null }, vendor: { is: { suspendedAt: null, betaFeatureGrants: { has: EMAIL_SEQUENCES_FEATURE } } } },
-          // F-4 automation rules are not a beta module: any non-suspended
-          // vendor, and only when the caller brings the automation processor.
-          ...(options.automation ? [{ automationRuleId: { not: null }, vendor: { is: { suspendedAt: null } } }] : []),
+          // F-4 automation rules: only vendors holding the
+          // automation_delayed_steps grant, and only when the caller brings the
+          // automation processor.
+          ...(withAutomation ? [{ automationRuleId: { not: null }, vendor: { is: { suspendedAt: null, betaFeatureGrants: { has: AUTOMATION_DELAYED_STEPS_GRANT } } } }] : []),
         ],
       },
     ],
   };
+}
+
+type WorkerRound = {
+  db: Database;
+  now: Date;
+  budget: DelayedStepBudget;
+  pastDeadline: () => boolean;
+  reportConfiguration: ConfigurationReporter;
+  automation: AutomationRunProcessor | undefined;
+  results: DelayedStepResult[];
+};
+
+/**
+ * The e-mail-bound part of a round: vendors in turn, each with its share of
+ * the e-mail capacity (M1, M2, MAJOR 3). Returns true when a deployment
+ * problem stopped the round.
+ */
+async function runFairPasses(round: WorkerRound, dueWhere: Prisma.DelayedStepRunWhereInput, emailCapacity: number, random: () => number) {
+  const { db, now, budget, results, pastDeadline } = round;
+  if (emailCapacity <= 0) return false;
   const vendorRows = await db.delayedStepRun.groupBy({
     by: ["vendorId"],
     where: dueWhere,
     orderBy: { vendorId: "asc" },
     take: DELAYED_STEP_VENDORS_PER_ROUND,
   });
-  let vendors = rotate(vendorRows.map((row) => row.vendorId), now, options.random ?? Math.random);
-  const results: DelayedStepResult[] = [];
+  let vendors = rotate(vendorRows.map((row) => row.vendorId), now, random);
   let emails = 0;
   for (let pass = 0; pass < DELAYED_STEP_VENDOR_PASSES && vendors.length > 0; pass += 1) {
     // Vendors that used their whole share may have more due runs for the next pass.
     const stillDue: string[] = [];
     for (const [index, vendorId] of vendors.entries()) {
-      if (results.length >= budget.runs || emails >= emailCapacity || pastDeadline()) return results;
+      if (results.length >= budget.runs || emails >= emailCapacity || pastDeadline()) return false;
       // M2: the share is recomputed before each vendor from what is left, so
       // capacity a vendor does not need flows to the vendors after it.
       const share = Math.max(1, Math.floor((emailCapacity - emails) / (vendors.length - index)));
@@ -1085,12 +1122,10 @@ export async function processDueDelayedStepRuns(
       let vendorEmails = 0;
       for (const candidate of candidates) {
         if (emails >= emailCapacity || vendorEmails >= share || pastDeadline()) break;
-        const result = await processCandidate(db, candidate, now, reportConfiguration, emailCapacity - emails, options.automation);
-        if (result === CONFIGURATION_FAILED) {
-          // A deployment problem showed up mid-round: the lease was given back
-          // without using an attempt and the problem was reported; stop.
-          return results;
-        }
+        const result = await processCandidate(db, candidate, now, round.reportConfiguration, emailCapacity - emails, round.automation);
+        // A deployment problem showed up mid-round: the lease was given back
+        // without using an attempt and the problem was reported; stop.
+        if (result === CONFIGURATION_FAILED) return true;
         results.push(result);
         const queued = emailsQueuedBy(result);
         emails += queued;
@@ -1100,8 +1135,30 @@ export async function processDueDelayedStepRuns(
     }
     vendors = stillDue;
   }
-  return results;
+  return false;
 }
+
+/**
+ * M3: automation steps without an e-mail never wait for e-mail capacity (or
+ * for an e-mail provider). Once the e-mail capacity is used up, or when there
+ * is none, they run in due order on the rest of the run budget. A run already
+ * handled this round is left alone (one step per run and round).
+ */
+async function runEmailFreeAutomationRuns(round: WorkerRound, vendorId: string | undefined) {
+  const { automation, results } = round;
+  const room = round.budget.runs - results.length;
+  if (!automation || room <= 0 || round.pastDeadline()) return;
+  const emailFree = await automation.dueWithoutEmail(round.db, { now: round.now, vendorId, exclude: results.map((result) => result.runId), limit: room });
+  for (const candidate of emailFree) {
+    if (round.pastDeadline()) break;
+    const result = await processCandidate(round.db, candidate, round.now, round.reportConfiguration, 0, automation);
+    if (result === CONFIGURATION_FAILED) return;
+    results.push(result);
+  }
+}
+
+/** Grant checked by the worker for automation runs (automation-workflow.ts AUTOMATION_DELAYED_STEPS_FEATURE). */
+const AUTOMATION_DELAYED_STEPS_GRANT = "automation_delayed_steps";
 
 const CONFIGURATION_FAILED = Symbol("configuration_failed");
 
@@ -1109,6 +1166,14 @@ const CONFIGURATION_FAILED = Symbol("configuration_failed");
 export type AutomationRunProcessor = {
   /** One leased automation run; `emailRoom` is what the round may still create. */
   processClaimed: (db: Database, lease: Lease, now: Date, emailRoom: number) => Promise<DelayedStepResult>;
+  /**
+   * Due automation runs whose next step queues no e-mail (or that only need
+   * completing), oldest first, without `exclude`; the same claim fields as
+   * the fair loop's candidates.
+   */
+  dueWithoutEmail: (db: Database, input: { now: Date; vendorId: string | undefined; exclude: string[]; limit: number }) => Promise<Array<{
+    id: string; vendorId: string; updatedAt: Date; cursorDelayMinutes: number; attemptCount: number; automationRuleId: string | null;
+  }>>;
   /** Bulk skip of steps more than 24 hours late, before any claim. */
   skipStale: (db: Database, now: Date, vendorId: string | undefined, pastDeadline: () => boolean, maxPasses: number) => Promise<number>;
 };
@@ -1227,13 +1292,21 @@ export async function rescheduleActiveRunsForSequence(
 /**
  * Send-time guard for `automation_step` (F-4): the e-mail is normally created
  * and sent in the same round; one still unsent SEQUENCE_EMAIL_SEND_STALE_MS
- * after it was created is superseded, like a sequence e-mail. Unsubscribe and
+ * after it was created is superseded, like a sequence e-mail, and so is any
+ * once the vendor's automation_delayed_steps grant is closed. Unsubscribe and
  * blacklist are checked at send like every automation e-mail
  * (dispatchEmailDelivery).
  */
-export function isCurrentAutomationStepEmailDelivery(delivery: { trigger: string; createdAt?: Date }, now: Date) {
+export async function isCurrentAutomationStepEmailDelivery(
+  delivery: { trigger: string; vendorId: string; createdAt?: Date },
+  now: Date,
+  database: Pick<Prisma.TransactionClient, "vendor">,
+) {
   if (delivery.trigger !== AUTOMATION_STEP_EMAIL_TRIGGER) return true;
-  return Boolean(delivery.createdAt && now.getTime() - delivery.createdAt.getTime() <= SEQUENCE_EMAIL_SEND_STALE_MS);
+  if (!delivery.createdAt || now.getTime() - delivery.createdAt.getTime() > SEQUENCE_EMAIL_SEND_STALE_MS) return false;
+  // M3: a vendor whose automation_delayed_steps grant was closed sends none of its queued step e-mails.
+  const vendor = await database.vendor.findUnique({ where: { id: delivery.vendorId }, select: { betaFeatureGrants: true, suspendedAt: true } });
+  return Boolean(vendor && !vendor.suspendedAt && isFeatureEnabled(vendor, AUTOMATION_DELAYED_STEPS_GRANT));
 }
 
 type SequenceSnapshotDatabase = Pick<Prisma.TransactionClient, "delayedStepRun" | "blacklist" | "vendor">;

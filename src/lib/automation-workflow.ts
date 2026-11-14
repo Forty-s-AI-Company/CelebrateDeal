@@ -3,6 +3,7 @@ import { Prisma, type PrismaClient } from "@prisma/client";
 import { z } from "zod";
 import { getCanonicalAppUrl } from "@/lib/app-url";
 import { getDb } from "@/lib/db";
+import { isFeatureEnabled } from "@/lib/vendor-feature-toggles";
 import { hashInteractionBearer } from "@/lib/live-interaction";
 import {
   DERIVED_KEY_ROTATIONS,
@@ -234,6 +235,7 @@ export function maskAutomationTarget(value: string | null | undefined) {
 const EMAIL_SKIP_NOTES: Record<AutomationEmailSkipReason, string> = {
   recipient_suppressed: "Email 未寄出：收件人已退訂或停止接收",
   recipient_blacklisted: "Email 未寄出：收件人在本商家黑名單中",
+  recipient_unverified: "Email 未寄出：收件人的 Email 尚未在本商家完成驗證",
 };
 
 /** Reason of a failed automation e-mail action whose unsubscribe link could not be built. */
@@ -241,14 +243,20 @@ export const AUTOMATION_UNSUBSCRIBE_URL_UNAVAILABLE = "unsubscribe_url_unavailab
 
 /** Merchant-readable notes for e-mail actions an execution skipped or could not queue (stored actionResults are untrusted JSON). */
 export function automationExecutionNotes(actionResults: unknown) {
-  if (!Array.isArray(actionResults)) return [];
-  const notes = actionResults.flatMap((result) => {
+  // A delayed step's log keeps { actions, results } (see stepActionResults).
+  const results = Array.isArray(actionResults)
+    ? actionResults
+    : actionResults && typeof actionResults === "object" && Array.isArray((actionResults as { results?: unknown }).results)
+      ? (actionResults as { results: unknown[] }).results
+      : null;
+  if (!results) return [];
+  const notes = results.flatMap((result) => {
     if (!result || typeof result !== "object") return [];
     const { type, status, reason } = result as Record<string, unknown>;
     if (type !== "send_email_notification") return [];
     if (status === "failed" && reason === AUTOMATION_UNSUBSCRIBE_URL_UNAVAILABLE) return ["Email 未寄出：系統暫時無法產生退訂連結"];
     if (status !== "skipped") return [];
-    return reason === "recipient_suppressed" || reason === "recipient_blacklisted" ? [EMAIL_SKIP_NOTES[reason]] : [];
+    return reason === "recipient_suppressed" || reason === "recipient_blacklisted" || reason === "recipient_unverified" ? [EMAIL_SKIP_NOTES[reason]] : [];
   });
   return [...new Set(notes)];
 }
@@ -273,14 +281,25 @@ export type AutomationEvent = {
   watchSecondsTotal?: number;
   hasPurchased?: boolean;
   recipientEmail?: string;
+  /**
+   * Delayed steps only (F-4): false when nobody has confirmed `recipientEmail`
+   * (an unverified registration, or a booking whose address has no verified
+   * registration at this vendor). The e-mail action is then skipped as
+   * `recipient_unverified`; the other actions still run. Immediate rules
+   * never set it and keep their behaviour.
+   */
+  recipientVerified?: boolean;
   consultationUrl?: string;
   webinarUrl?: string;
 };
 
 type AutomationDb = Pick<
   PrismaClient,
-  "automationRule" | "automationExecutionLog" | "automationVoucherGrant" | "customerTagAssignment" | "product" | "lineOfficialAccount" | "lineUserIdentity" | "lineDelivery" | "emailDelivery" | "emailSuppression" | "blacklist" | "delayedStepRun" | "formSubmission" | "consultationBooking"
+  "automationRule" | "automationExecutionLog" | "automationVoucherGrant" | "customerTagAssignment" | "product" | "lineOfficialAccount" | "lineUserIdentity" | "lineDelivery" | "emailDelivery" | "emailSuppression" | "blacklist" | "delayedStepRun" | "formSubmission" | "consultationBooking" | "vendor" | "$transaction"
 >;
+
+/** Closed-beta grant of delayed automation steps (F-4, M3). */
+export const AUTOMATION_DELAYED_STEPS_FEATURE = "automation_delayed_steps" as const;
 
 type ParsedRule = {
   id: string;
@@ -403,7 +422,7 @@ const EMAIL_COPY = {
   webinar_replay: { subject: "錯過直播也別擔心：精華回放與諮詢邀請", body: "精華回放：{{webinar_url}}\n預約 1 對 1 諮詢：{{consultation_url}}" },
 } as const;
 
-export type AutomationEmailSkipReason = "recipient_suppressed" | "recipient_blacklisted";
+export type AutomationEmailSkipReason = "recipient_suppressed" | "recipient_blacklisted" | "recipient_unverified";
 
 /**
  * Creation-time gate for an automation e-mail, bound to this vendor only:
@@ -508,6 +527,10 @@ async function executeAction(
 
   if (action.type === "send_email_notification") {
     if (!event.recipientEmail) return { type: action.type, status: "recipient_not_linked" } as const;
+    // Delayed steps never mail an address nobody has confirmed (F-4, M2).
+    if (event.recipientVerified === false) {
+      return { type: action.type, status: "skipped", reason: "recipient_unverified", template: action.template } as const;
+    }
     const id = deterministicActionId(executionLogId, actionIndex);
     const copy = EMAIL_COPY[action.template];
     // The recipient lists come first, so an unsubscribed or blacklisted
@@ -709,7 +732,7 @@ async function claimRuleExecution(
     // unique key), but a first attempt that could not create the run gets
     // it now.
     if (existing?.status === "completed" && existing.conditionMatched && firstStep) {
-      await startDelayedSteps(db, { ruleId: rule.id, event, logId: existing.id, anchorAt: existing.createdAt, firstDelayMinutes: firstStep.delayMinutes });
+      await startDelayedSteps(db, { ruleId: rule.id, event, logId: existing.id, anchorAt: existing.createdAt });
     }
     return { status: "duplicate" };
   }
@@ -816,7 +839,7 @@ async function runAutomationEvent(db: AutomationDb, event: AutomationEvent, queu
     // whatever they did (the steps re-check everything when they are due).
     // Never fails the event: see startDelayedSteps.
     if (status !== "rule_deleted" && firstStep) {
-      await startDelayedSteps(db, { ruleId: rule.id, event, logId: log.id, anchorAt: log.createdAt, firstDelayMinutes: firstStep.delayMinutes });
+      await startDelayedSteps(db, { ruleId: rule.id, event, logId: log.id, anchorAt: log.createdAt });
     }
     results.push({ ruleId: rule.id, status });
   }
@@ -839,11 +862,14 @@ async function runAutomationEvent(db: AutomationDb, event: AutomationEvent, queu
  */
 async function startDelayedSteps(
   db: AutomationDb,
-  input: { ruleId: string; event: AutomationEvent; logId: string; anchorAt: Date | undefined; firstDelayMinutes: number },
+  input: { ruleId: string; event: AutomationEvent; logId: string; anchorAt: Date | undefined },
 ) {
   const { event } = input;
   try {
     if (!isAvailableAutomationTrigger(event.trigger) || event.subjectType !== "buyer_registration" || !event.subjectKeyHash) return;
+    // Closed beta (M3): only a vendor holding the grant, and not suspended.
+    const vendor = await db.vendor.findUnique({ where: { id: event.vendorId }, select: { betaFeatureGrants: true, suspendedAt: true } });
+    if (!vendor || vendor.suspendedAt || !isFeatureEnabled(vendor, AUTOMATION_DELAYED_STEPS_FEATURE)) return;
     const subject = event.trigger === "form_registered"
       // FormSubmission has no vendorId: the registration is bound through its form.
       ? await db.formSubmission.findFirst({ where: { id: event.subjectId, form: { vendorId: event.vendorId } }, select: { id: true } })
@@ -852,19 +878,39 @@ async function startDelayedSteps(
         .then((row) => row ? { consultationBookingId: row.id } : null);
     if (!subject) return;
     const anchorAt = input.anchorAt ?? new Date();
-    await db.delayedStepRun.createMany({
-      data: [{
-        vendorId: event.vendorId,
-        automationRuleId: input.ruleId,
-        sourceExecutionLogId: input.logId,
-        ...subject,
-        subjectKeyHash: event.subjectKeyHash,
-        anchorAt,
-        cursorDelayMinutes: -1,
-        status: "active",
-        nextRunAt: new Date(anchorAt.getTime() + input.firstDelayMinutes * 60_000),
-      }],
-      skipDuplicates: true,
+    const subjectKeyHash = event.subjectKeyHash;
+    // m1: the first due time comes from the steps as they are now, read after
+    // the rule row FOR SHARE. A merchant saving steps holds that row FOR UPDATE
+    // (automation-delayed-steps.ts), and switching the rule off does too, so
+    // this run either waits for the save and uses its steps, or the save
+    // re-times this run after it. A rule switched off meanwhile gets no run.
+    await db.$transaction(async (tx) => {
+      const locked = await tx.$queryRaw<Array<{ id: string }>>`
+        SELECT "id" FROM "AutomationRule"
+        WHERE "id" = ${input.ruleId} AND "vendorId" = ${event.vendorId} AND "isActive"
+        FOR SHARE
+      `;
+      if (locked.length === 0) return;
+      const first = await tx.automationRuleStep.findFirst({
+        where: { vendorId: event.vendorId, ruleId: input.ruleId, isActive: true },
+        orderBy: { delayMinutes: "asc" },
+        select: { delayMinutes: true },
+      });
+      if (!first) return;
+      await tx.delayedStepRun.createMany({
+        data: [{
+          vendorId: event.vendorId,
+          automationRuleId: input.ruleId,
+          sourceExecutionLogId: input.logId,
+          ...subject,
+          subjectKeyHash,
+          anchorAt,
+          cursorDelayMinutes: -1,
+          status: "active",
+          nextRunAt: new Date(anchorAt.getTime() + first.delayMinutes * 60_000),
+        }],
+        skipDuplicates: true,
+      });
     });
   } catch (error) {
     // A rule deleted in between (its log cascades with it) is simply over.
@@ -912,7 +958,7 @@ export async function executeAutomationStep(
   input: { ruleId: string; runId: string; stepId: string; condition: unknown; actions: unknown; event: AutomationEvent },
 ): Promise<AutomationStepOutcome> {
   const { event } = input;
-  const rule = parseAutomationRule({ id: input.ruleId, condition: input.condition, actions: input.actions });
+  let rule = parseAutomationRule({ id: input.ruleId, condition: input.condition, actions: input.actions });
   if (!rule) return { status: "invalid_step", emailsQueued: 0 };
   const logId = automationStepExecutionLogId(event.vendorId, input.runId, input.stepId);
   const idempotencyKey = automationStepIdempotencyKey({ vendorId: event.vendorId, ruleId: input.ruleId, runId: input.runId, stepId: input.stepId });
@@ -928,6 +974,8 @@ export async function executeAutomationStep(
         subjectType: event.subjectType,
         subjectKeyHash: event.subjectKeyHash,
         status: "running",
+        // m2: the actions this execution runs, kept for a resume.
+        actionResults: stepActionResults(rule.actions, []),
       },
       select: { id: true },
     });
@@ -936,7 +984,7 @@ export async function executeAutomationStep(
     if (!isUniqueConflict(error)) throw error;
     const existing = await db.automationExecutionLog.findUnique({
       where: { vendorId_idempotencyKey: { vendorId: event.vendorId, idempotencyKey } },
-      select: { id: true, status: true },
+      select: { id: true, status: true, actionResults: true },
     });
     if (!existing || existing.id !== logId) throw new Error("Delayed step execution log does not match its deterministic id.");
     if (existing.status === "completed" || existing.status === "skipped") return { status: "already_done", emailsQueued: 0 };
@@ -945,7 +993,14 @@ export async function executeAutomationStep(
       data: { status: "running", startedAt: new Date(), completedAt: null, errorCode: null },
     });
     if (resumed.count !== 1) return { status: "already_done", emailsQueued: 0 };
+    // m2: a resumed execution runs the actions it started with, even if the
+    // merchant edited the step since. Every voucher id, LINE key and e-mail id
+    // is derived from (log id, action index), so the same list keeps them
+    // pointing at the same outputs.
+    const snapshot = parseAutomationRule({ id: input.ruleId, condition: rule.condition, actions: stepActionSnapshot(existing.actionResults) });
+    if (snapshot) rule = snapshot;
   }
+  const runningRule = rule;
 
   if (!automationConditionMatches(rule.condition, event)) {
     const recorded = await finishExecution(db, logId, { status: "skipped", conditionMatched: false, completedAt: new Date() });
@@ -955,12 +1010,12 @@ export async function executeAutomationStep(
   const actionResults: unknown[] = [];
   const queuedEmailIds: string[] = [];
   try {
-    await runRuleActions(db, rule, event, logId, queuedEmailIds, actionResults, { emailTrigger: AUTOMATION_STEP_EMAIL_TRIGGER });
+    await runRuleActions(db, runningRule, event, logId, queuedEmailIds, actionResults, { emailTrigger: AUTOMATION_STEP_EMAIL_TRIGGER });
   } catch {
     const recorded = await finishExecution(db, logId, {
       status: "failed",
       conditionMatched: true,
-      actionResults: actionResults as Prisma.InputJsonArray,
+      actionResults: stepActionResults(runningRule.actions, actionResults),
       errorCode: "action_failed",
       completedAt: new Date(),
     });
@@ -970,11 +1025,26 @@ export async function executeAutomationStep(
   const recorded = await finishExecution(db, logId, {
     status: reportedFailure ? "failed" : "completed",
     conditionMatched: true,
-    actionResults: actionResults as Prisma.InputJsonArray,
+    actionResults: stepActionResults(runningRule.actions, actionResults),
     ...(reportedFailure ? { errorCode: reportedFailure.reason } : {}),
     completedAt: new Date(),
   });
   return { status: !recorded ? "rule_deleted" : reportedFailure ? "failed" : "completed", emailsQueued: queuedEmailIds.length };
+}
+
+/**
+ * `actionResults` of a delayed step's execution log: the actions it runs
+ * (its snapshot, m2) and their results. Immediate executions keep the plain
+ * results array.
+ */
+function stepActionResults(actions: AutomationAction[], results: unknown[]): Prisma.InputJsonObject {
+  return { actions: actions as Prisma.InputJsonArray, results: results as Prisma.InputJsonArray };
+}
+
+function stepActionSnapshot(actionResults: unknown) {
+  return actionResults && typeof actionResults === "object" && !Array.isArray(actionResults)
+    ? (actionResults as { actions?: unknown }).actions
+    : undefined;
 }
 
 const AUTOMATION_STEP_EVENT_PREFIX = "delayed-step:";

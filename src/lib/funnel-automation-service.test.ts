@@ -8,6 +8,9 @@ const runtime = vi.hoisted(() => ({
   db: {
     landingPage: { findFirst: vi.fn() },
     automationRule: { findMany: vi.fn(), create: vi.fn(), updateMany: vi.fn(), findFirst: vi.fn() },
+    delayedStepRun: { updateMany: vi.fn() },
+    $queryRaw: vi.fn(),
+    $transaction: vi.fn(),
   },
 }));
 
@@ -92,12 +95,26 @@ describe("funnel automation service", () => {
 
   it("uses the same page-scoped CAS for enable and disable", async () => {
     runtime.db.automationRule.updateMany.mockResolvedValue({ count: 1 });
+    runtime.db.$transaction.mockImplementation(async (work: (tx: unknown) => unknown) => work(runtime.db));
+    runtime.db.$queryRaw.mockResolvedValue([{ id: "rule-1" }]);
+    runtime.db.delayedStepRun.updateMany.mockResolvedValue({ count: 2 });
 
     await expect(setFunnelAutomationRuleEnabled({ pageId: "page-1", ruleId: "rule-1", version: 2, isActive: false }, runtime.db as never)).resolves.toBeUndefined();
     expect(runtime.db.automationRule.updateMany).toHaveBeenCalledWith(expect.objectContaining({
       where: expect.objectContaining({ id: "rule-1", funnelPageId: "page-1", version: 2 }),
       data: { isActive: false, version: { increment: 1 } },
     }));
+    // Switching off locks the rule (bound to the vendor) and stops its delayed-step runs (F-4 M1).
+    const [lockSql, ...lockValues] = runtime.db.$queryRaw.mock.calls[0] as [TemplateStringsArray, ...unknown[]];
+    expect(lockSql.join("?")).toMatch(/FROM "AutomationRule" WHERE "id" = \? AND "vendorId" = \? FOR UPDATE/u);
+    expect(lockValues).toEqual(["rule-1", "vendor-1"]);
+    expect(runtime.db.delayedStepRun.updateMany).toHaveBeenCalledWith({
+      where: { vendorId: "vendor-1", automationRuleId: "rule-1", status: "active" },
+      data: { status: "cancelled", cancelReason: "definition_paused", nextRunAt: null, claimedAt: null },
+    });
+    runtime.db.delayedStepRun.updateMany.mockClear();
+    await expect(setFunnelAutomationRuleEnabled({ pageId: "page-1", ruleId: "rule-1", version: 3, isActive: true }, runtime.db as never)).resolves.toBeUndefined();
+    expect(runtime.db.delayedStepRun.updateMany).not.toHaveBeenCalled();
   });
 
   it("does not reveal or mutate a page outside the selected project", async () => {

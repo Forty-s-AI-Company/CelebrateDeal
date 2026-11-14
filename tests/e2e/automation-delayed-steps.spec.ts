@@ -39,6 +39,8 @@ async function createFixture() {
       slug: `f4-steps-${runId}`,
       email: `f4-steps-vendor-${runId}@example.test`,
       passwordHash: hashPassword(password),
+      // Closed beta (review M3): the platform opened delayed steps for this vendor.
+      betaFeatureGrants: ["automation_delayed_steps"],
     },
   });
   const ownerEmail = `f4-steps-owner-${runId}@example.test`;

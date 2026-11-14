@@ -7,12 +7,14 @@ import {
 } from "@/lib/automation-delayed-steps";
 import { AUTOMATION_STEP_EMAIL_TRIGGER } from "@/lib/automation-email-trigger";
 import { DELAYED_STEP_EMAIL_TRIGGERS, SEQUENCE_EMAIL_TRIGGER } from "@/lib/delayed-step-runs";
+import { BETA_GATED_FEATURES } from "@/lib/vendor-feature-toggles";
 import { MAX_EMAIL_SEQUENCE_STEPS, SEQUENCE_STEP_MAX_DELAY_MINUTES, SEQUENCE_STEP_MIN_DELAY_MINUTES } from "@/lib/email-sequence-rules";
 
 describe("F-4 PR 2 automation step schema contract", () => {
   const schema = fs.readFileSync("prisma/schema.prisma", "utf8");
   const migration = fs.readFileSync("prisma/migrations/20261114090000_automation_rule_steps/migration.sql", "utf8");
   const validate = fs.readFileSync("prisma/migrations/20261114090100_automation_rule_steps_validate/migration.sql", "utf8");
+  const grant = fs.readFileSync("prisma/migrations/20261114090200_automation_delayed_steps_grant/migration.sql", "utf8");
   /** The SQL without its comment lines. */
   const statementsOf = (sql: string) => sql.replace(/^\s*--.*$/gmu, "");
   const modelOf = (name: string) => new RegExp(`model ${name} \\{[\\s\\S]*?\\n\\}`, "u").exec(schema)?.[0] ?? "";
@@ -60,6 +62,15 @@ describe("F-4 PR 2 automation step schema contract", () => {
     // parseAutomationRule accepts 1 to 10 actions.
     expect(migration).toContain('jsonb_array_length("actions") BETWEEN 1 AND 10');
     expect(DELAYED_STEP_EMAIL_TRIGGERS).toEqual([SEQUENCE_EMAIL_TRIGGER, AUTOMATION_STEP_EMAIL_TRIGGER]);
+  });
+
+  it("allows the automation_delayed_steps grant in its own migration, as a superset of every earlier grant (review M3)", () => {
+    for (const feature of BETA_GATED_FEATURES) expect(grant).toContain(`'${feature}'`);
+    expect(BETA_GATED_FEATURES).toContain("automation_delayed_steps");
+    expect(statementsOf(grant).match(/^ALTER TABLE "Vendor"/gmu)).toHaveLength(2);
+    expect(statementsOf(grant).match(/\bDROP CONSTRAINT\b/gu)).toEqual(["DROP CONSTRAINT"]);
+    expect(statementsOf(grant)).not.toMatch(/\b(CREATE|INSERT|UPDATE|DELETE)\b/u);
+    expect(grant).toContain("pg_catalog.set_config('lock_timeout', '5s', true)");
   });
 
   it("stores no address, name or token on a step or a run", () => {
