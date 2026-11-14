@@ -26,7 +26,8 @@ import {
   LINE_PUSH_OWNER_ONLY,
   mayConfigureAutomationLinePush,
   mayWriteAutomationActions,
-  storedAutomationRuleIncludesLinePush,
+  storedAutomationRuleSendsLine,
+  withVoucherLineNotification,
 } from "@/lib/automation-line-push-policy";
 import { getDb } from "@/lib/db";
 import { requireFeature } from "@/lib/feature-gates";
@@ -35,9 +36,11 @@ import { isLockTimeout } from "@/lib/serializable-retry";
 // Owner and admin manage automations here, the same roles as the funnel
 // automation panel (requireVendorManagerContext) and message templates (F-4
 // gap 3). Every action resolves the vendor from the session and binds each
-// rule id to it in the final query. The custom LINE push action is owner-only
-// (owner decision 2026-11-14, src/lib/automation-line-push-policy.ts): judged
-// on the server-parsed actions and the stored rule, before anything is written.
+// rule id to it in the final query. The custom LINE push action and a
+// voucher's LINE notification are owner-only (owner decisions 2026-11-14 and
+// 2026-11-15, src/lib/automation-line-push-policy.ts): judged on the
+// server-parsed actions and the stored rule, before anything is written. An
+// admin's voucher actions are always saved with the LINE notification off.
 const PATH = "/settings/automations";
 const text = (form: FormData, name: string) => String(form.get(name) ?? "").trim();
 const number = (form: FormData, name: string) => Number(text(form, name));
@@ -57,6 +60,17 @@ function lineAction(form: FormData): Record<string, unknown> | null {
   return { type: "line_push", message, buttonLabel: buttonLabel || null, buttonUrl: buttonUrl || null };
 }
 
+/**
+ * The owner's "also tell the buyer by LINE" checkbox. The form marks that it
+ * showed the checkbox (`voucherLineNotificationShown`), so an unticked box is
+ * off; a form without the marker (rendered before the checkbox existed) keeps
+ * the previous behaviour, on. withVoucherLineNotification turns it off for
+ * anyone but the owner, whatever was sent.
+ */
+function voucherLineNotificationRequested(form: FormData) {
+  return form.get("voucherLineNotificationShown") !== "1" || form.get("voucherLineNotification") === "on";
+}
+
 function voucherAction(form: FormData): Record<string, unknown> | null {
   if (form.get("actionVoucher") !== "on") return null;
   const productId = text(form, "productId");
@@ -70,6 +84,7 @@ function voucherAction(form: FormData): Record<string, unknown> | null {
     discountType,
     discountValue: discountType === "fixed" ? discountValue * 100 : discountValue,
     expiresInDays,
+    lineNotification: voucherLineNotificationRequested(form),
   };
 }
 
@@ -99,15 +114,19 @@ function ruleCondition(trigger: string, conditionValue: number) {
   return { type: "always" };
 }
 
-/** The action checkboxes and fields shared by the rule form and every delayed-step form. */
-function parseActions(form: FormData) {
+/**
+ * The action checkboxes and fields shared by the rule form and every
+ * delayed-step form. `linePushAllowed`: the actor is the owner; otherwise every
+ * voucher is saved without its LINE notification.
+ */
+function parseActions(form: FormData, linePushAllowed: boolean) {
   const actions = [voucherAction(form), lineAction(form), emailAction(form), tagAction(form)]
     .filter((action): action is Record<string, unknown> => action !== null);
   if (!actions.length) throw new Error("no_action");
-  return actions;
+  return withVoucherLineNotification(actions, linePushAllowed);
 }
 
-function parseRule(form: FormData) {
+function parseRule(form: FormData, linePushAllowed: boolean) {
   const name = text(form, "name");
   const trigger = text(form, "trigger");
   const conditionValue = number(form, "conditionValue");
@@ -116,7 +135,7 @@ function parseRule(form: FormData) {
   // not only hidden in the form.
   if (!isAvailableAutomationTrigger(trigger)) throw new TriggerUnavailableError();
   const condition = ruleCondition(trigger, conditionValue);
-  const actions = parseActions(form);
+  const actions = parseActions(form, linePushAllowed);
   return { name, trigger, condition, actions };
 }
 
@@ -129,8 +148,10 @@ export async function createAutomationRecipeAction(formData: FormData) {
   const recipe = materializeAutomationRecipe(recipeId, productId);
   if (!recipe) fail(productId ? "invalid_recipe" : "recipe_requires_product");
   if (!isAvailableAutomationTrigger(recipe.trigger)) fail("trigger_unavailable");
-  if (!mayWriteAutomationActions(member.role, recipe.actions)) fail(LINE_PUSH_OWNER_ONLY);
-  if (recipe.actions.some((action) => action.type === "issue_repurchase_voucher")) {
+  // A recipe's voucher announces itself by LINE for the owner, never for an admin.
+  const actions = withVoucherLineNotification(recipe.actions, mayConfigureAutomationLinePush(member.role));
+  if (!mayWriteAutomationActions(member.role, actions)) fail(LINE_PUSH_OWNER_ONLY);
+  if (actions.some((action) => action.type === "issue_repurchase_voucher")) {
     const validProduct = await getDb().product.findFirst({ where: { id: productId, vendorId: vendor.id, isActive: true }, select: { id: true } });
     if (!validProduct) fail("invalid_product");
   }
@@ -140,7 +161,7 @@ export async function createAutomationRecipeAction(formData: FormData) {
     description: recipe.description,
     trigger: recipe.trigger,
     condition: recipe.condition as Prisma.InputJsonValue,
-    actions: recipe.actions as Prisma.InputJsonArray,
+    actions: actions as Prisma.InputJsonArray,
   } });
   await writeAuditLog({ vendorId: vendor.id, actorId: user.id, actorLabel: member.role, action: "create_automation_recipe", targetType: "AutomationRule", targetId: created.id, after: auditSnapshot(created) });
   revalidatePath(PATH);
@@ -176,7 +197,7 @@ export async function createAutomationRuleAction(formData: FormData) {
   await assertServerActionSecurity(formData);
   const { user, vendor, member } = await requireVendorManagerMember(PATH);
   let parsed: ReturnType<typeof parseRule>;
-  try { parsed = parseRule(formData); } catch (error) { fail(error instanceof Error && (error.message === "no_action" || error.message === "invalid_button_url" || error.message === "trigger_unavailable") ? error.message : "invalid_rule"); }
+  try { parsed = parseRule(formData, mayConfigureAutomationLinePush(member.role)); } catch (error) { fail(error instanceof Error && (error.message === "no_action" || error.message === "invalid_button_url" || error.message === "trigger_unavailable") ? error.message : "invalid_rule"); }
   if (!mayWriteAutomationActions(member.role, parsed.actions)) fail(LINE_PUSH_OWNER_ONLY);
   const productId = parsed.actions.find((a) => a.type === "issue_repurchase_voucher")?.productId;
   if (productId && !(await getDb().product.findFirst({ where: { id: String(productId), vendorId: vendor.id, isActive: true }, select: { id: true } }))) fail("invalid_product");
@@ -221,18 +242,19 @@ type ToggleOutcome = { code: "toggled"; cancelledRuns: number } | { code: "toggl
  * (`definition_paused`, F-4 review M1): switching it on again never revives
  * them, even before their next step was due.
  *
- * Switching on starts the rule's custom LINE pushes again, so without
- * `linePushAllowed` (not the owner) a rule that has one (immediate actions or
- * any step, read after the lock) stays off. Switching off is always allowed.
+ * Switching on starts the rule's LINE messages again (a custom LINE push or a
+ * voucher's LINE notification), so without `linePushAllowed` (not the owner) a
+ * rule that sends LINE (immediate actions or any step, read after the lock)
+ * stays off. Switching off is always allowed.
  */
 function toggleRule(vendorId: string, existing: { id: string; isActive: boolean }, linePushAllowed: boolean) {
   return getDb().$transaction(async (tx): Promise<ToggleOutcome> => {
     await tx.$executeRaw`SET LOCAL lock_timeout = '5s'`;
     await tx.$queryRaw`SELECT "id" FROM "AutomationRule" WHERE "id" = ${existing.id} AND "vendorId" = ${vendorId} FOR UPDATE`;
     if (!existing.isActive && !linePushAllowed) {
-      const hasLinePush = await storedAutomationRuleIncludesLinePush(tx, { vendorId, ruleId: existing.id });
-      if (hasLinePush === null) return { code: "not_found" };
-      if (hasLinePush) return { code: LINE_PUSH_OWNER_ONLY };
+      const sendsLine = await storedAutomationRuleSendsLine(tx, { vendorId, ruleId: existing.id });
+      if (sendsLine === null) return { code: "not_found" };
+      if (sendsLine) return { code: LINE_PUSH_OWNER_ONLY };
     }
     const updated = await tx.automationRule.updateMany({
       where: { id: existing.id, vendorId, isActive: existing.isActive },
@@ -356,7 +378,7 @@ function stepDelayMinutes(form: FormData) {
   return value * (unit === "days" ? 1_440 : 60);
 }
 
-function parseStep(form: FormData): AutomationStepInput {
+function parseStep(form: FormData, linePushAllowed: boolean): AutomationStepInput {
   let delayMinutes: number;
   try { delayMinutes = stepDelayMinutes(form); } catch { throw new Error("invalid_delay"); }
   return {
@@ -365,14 +387,14 @@ function parseStep(form: FormData): AutomationStepInput {
     // TRIGGERS) carry no amount or watch time, so the existing condition
     // schema only has "always" for them. payment_paid rules take no steps.
     condition: { type: "always" },
-    actions: parseActions(form),
+    actions: parseActions(form, linePushAllowed),
     isActive: form.get("stepActive") === "on",
   };
 }
 
-function parsedStepOrFail(form: FormData) {
+function parsedStepOrFail(form: FormData, linePushAllowed: boolean) {
   try {
-    return parseStep(form);
+    return parseStep(form, linePushAllowed);
   } catch (error) {
     stepFail(error instanceof Error ? error.message : "invalid_step");
   }
@@ -385,9 +407,9 @@ export async function createAutomationRuleStepAction(formData: FormData) {
   requireFeature(vendor, AUTOMATION_DELAYED_STEPS_FEATURE);
   const ruleId = text(formData, "ruleId");
   if (!ruleId) stepFail("not_found");
-  const step = parsedStepOrFail(formData);
   const linePushAllowed = mayConfigureAutomationLinePush(member.role);
-  // Refused before any query; the rule's own LINE push is checked under its lock.
+  const step = parsedStepOrFail(formData, linePushAllowed);
+  // Refused before any query; whether the rule itself sends LINE is checked under its lock.
   if (!mayWriteAutomationActions(member.role, step.actions)) stepFail(LINE_PUSH_OWNER_ONLY);
   const result = await createAutomationRuleStep({ vendorId: vendor.id, ruleId, step, linePushAllowed });
   if (!result.ok) stepFail(result.code);
@@ -403,8 +425,8 @@ export async function updateAutomationRuleStepAction(formData: FormData) {
   const ruleId = text(formData, "ruleId");
   const stepId = text(formData, "stepId");
   if (!ruleId || !stepId) stepFail("not_found");
-  const step = parsedStepOrFail(formData);
   const linePushAllowed = mayConfigureAutomationLinePush(member.role);
+  const step = parsedStepOrFail(formData, linePushAllowed);
   if (!mayWriteAutomationActions(member.role, step.actions)) stepFail(LINE_PUSH_OWNER_ONLY);
   const result = await updateAutomationRuleStep({ vendorId: vendor.id, ruleId, stepId, step, linePushAllowed });
   if (!result.ok) stepFail(result.code);

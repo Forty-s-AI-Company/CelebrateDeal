@@ -28,10 +28,14 @@ import {
 import { automationRuleRunCounts, MAX_AUTOMATION_RULE_STEPS } from "@/lib/automation-delayed-steps";
 import {
   automationActionsIncludeLinePush,
+  automationActionsSendLine,
   automationRuleIncludesLinePush,
+  automationRuleSendsLine,
   LINE_PUSH_OWNER_ONLY,
   LINE_PUSH_OWNER_ONLY_MESSAGE,
   mayConfigureAutomationLinePush,
+  VOUCHER_LINE_NOTIFICATION_FIELD,
+  VOUCHER_LINE_NOTIFICATION_OWNER_ONLY_MESSAGE,
 } from "@/lib/automation-line-push-policy";
 import { requireVendorManagerMember } from "@/lib/auth";
 import { isFeatureEnabled } from "@/lib/vendor-feature-toggles";
@@ -56,22 +60,36 @@ const ERROR_MESSAGES: Record<string, string> = {
   invalid_product: "找不到這個商品，或商品已下架。",
   step_busy: "規則正在被其他人修改或執行，請稍後再試。",
   toggle_busy: "規則正在被其他人修改或執行，請稍後再試。",
-  [LINE_PUSH_OWNER_ONLY]: `${LINE_PUSH_OWNER_ONLY_MESSAGE}含 LINE 推播的規則，管理員只能停用、刪除規則或刪除步驟。`,
+  [LINE_PUSH_OWNER_ONLY]: "LINE 推播與派券的 LINE 通知僅限擁有者設定。會發 LINE 訊息的規則，管理員只能停用、刪除規則或刪除步驟。",
 };
 /**
- * Shown to a non-owner on a rule that has a custom LINE push. `stepsShown`:
- * the delayed-step section is on the page (beta grant and a trigger that takes
- * steps, or a hidden one whose steps can still be deleted); `inStepsOnly`: the
- * LINE push is in a delayed step, not in the immediate actions.
+ * How a buyer still gets a voucher sent without a LINE notification, shown to
+ * a non-owner next to the voucher fields and on voucher recipes.
  */
-function linePushRuleNote({ stepsShown, inStepsOnly }: { stepsShown: boolean; inStepsOnly: boolean }) {
-  const where = inStepsOnly
-    ? stepsShown ? "這條規則的延遲步驟含 LINE 推播。" : "這條規則的延遲步驟含 LINE 推播（延遲步驟目前不在此頁顯示）。"
-    : "這條規則含 LINE 推播。";
+const VOUCHER_WITHOUT_LINE_NOTE = `${VOUCHER_LINE_NOTIFICATION_OWNER_ONLY_MESSAGE}你設定的派券不會用 LINE 通知買家：買家可在學員專區的「專屬優惠券」看到這張券（限可在本平台結帳的商品）；要主動通知，請同時勾選 Email 通知並選「追購通知」範本，信中會附領券連結。`;
+/**
+ * Shown to a non-owner on a rule that sends LINE: a custom LINE push, or
+ * (owner decision 2026-11-15) a voucher with its LINE notification on.
+ * `stepsShown`: the delayed-step section is on the page (beta grant and a
+ * trigger that takes steps, or a hidden one whose steps can still be
+ * deleted). A LINE push is named first; the note says whether what sends LINE
+ * is in a delayed step only; when both the immediate actions and a step send
+ * LINE, the note names both.
+ */
+function lineRuleNote({ stepsShown, rule }: { stepsShown: boolean; rule: { actions: unknown; steps: Array<{ actions: unknown }> } }) {
+  const push = automationRuleIncludesLinePush(rule);
+  const inStepsOnly = push ? !automationActionsIncludeLinePush(rule.actions) : !automationActionsSendLine(rule.actions);
+  const what = push ? "含 LINE 推播" : "派券時會用 LINE 通知買家";
+  const both = automationActionsSendLine(rule.actions) && rule.steps.some((step) => automationActionsSendLine(step.actions));
+  const where = both
+    ? `這條規則和它的延遲步驟都會發 LINE 訊息（LINE 推播或派券通知）${stepsShown ? "" : "，延遲步驟目前不在此頁顯示"}。`
+    : inStepsOnly
+    ? stepsShown ? `這條規則的延遲步驟${what}。` : `這條規則的延遲步驟${what}（延遲步驟目前不在此頁顯示）。`
+    : `這條規則${what}。`;
   const allowed = stepsShown
     ? "你可以停用、刪除規則或刪除步驟，但不能啟用、新增或修改步驟。"
     : "你可以停用或刪除規則，但不能啟用。";
-  return `${where}${LINE_PUSH_OWNER_ONLY_MESSAGE}${allowed}`;
+  return `${where}${push ? LINE_PUSH_OWNER_ONLY_MESSAGE : VOUCHER_LINE_NOTIFICATION_OWNER_ONLY_MESSAGE}${allowed}`;
 }
 const UPDATED_MESSAGES: Record<string, string> = {
   step_created: "延遲步驟已新增。",
@@ -90,7 +108,13 @@ const EMAIL_TEMPLATES: Array<[string, string]> = [
 function triggerLabel(trigger: string) {
   return (AUTOMATION_TRIGGER_LABELS as Record<string, string>)[trigger] ?? trigger;
 }
-function actionLabels(value: unknown) { return Array.isArray(value) ? value.map((item) => ACTIONS[String((item as { type?: unknown }).type)] ?? "未知動作") : ["規則資料異常"]; }
+function actionLabel(item: unknown) {
+  const type = String((item as { type?: unknown } | null)?.type);
+  // A voucher stored with its LINE notification off (an admin's, or the owner unticked it).
+  if (type === "issue_repurchase_voucher" && (item as Record<string, unknown>)[VOUCHER_LINE_NOTIFICATION_FIELD] === false) return "派發回購券（不發 LINE 通知）";
+  return ACTIONS[type] ?? "未知動作";
+}
+function actionLabels(value: unknown) { return Array.isArray(value) ? value.map(actionLabel) : ["規則資料異常"]; }
 function conditionLabel(value: unknown) {
   const condition = value && typeof value === "object" ? value as Record<string, unknown> : {};
   if (condition.type === "always") return "事件發生時";
@@ -131,8 +155,11 @@ function findAction(actions: unknown, type: string): StoredAction | null {
 /**
  * The action checkboxes and fields of a rule or a delayed step. Same field
  * names as the rule form, parsed by the same server code (parseActions).
- * Without `linePushAllowed` (not the owner) the LINE push fields are left out;
- * the Server Actions refuse a LINE push from a non-owner anyway.
+ * Without `linePushAllowed` (not the owner) the LINE push fields and the
+ * voucher's LINE notification checkbox are left out; the Server Actions refuse
+ * a LINE push from a non-owner and save a non-owner's voucher without the
+ * LINE notification anyway. The owner's checkbox starts ticked for a new
+ * voucher and shows the stored flag otherwise (missing = on).
  */
 function ActionFields({ products, actions, linePushAllowed }: { products: Array<{ id: string; name: string }>; actions?: unknown; linePushAllowed: boolean }) {
   const line = findAction(actions, "line_push");
@@ -163,6 +190,11 @@ function ActionFields({ products, actions, linePushAllowed }: { products: Array<
       <Field label="折扣值" name="discountValue" type="number" min={1} step={1} defaultValue={voucherValue} />
       <Field label="效期（天）" name="expiresInDays" type="number" min={1} max={365} defaultValue={typeof voucher?.expiresInDays === "number" ? voucher.expiresInDays : 30} />
     </div>
+    {linePushAllowed ? <div className="grid gap-1">
+      <input type="hidden" name="voucherLineNotificationShown" value="1" />
+      <label className="flex items-center gap-2 text-sm"><input type="checkbox" name="voucherLineNotification" defaultChecked={voucher ? voucher[VOUCHER_LINE_NOTIFICATION_FIELD] !== false : true} /> 同時用 LINE 通知買家領券</label>
+      <p className="text-xs text-slate-500">以平台固定文案（附「立即使用」按鈕）透過你的 LINE 官方帳號，通知已綁定 LINE 的買家。同一條規則或同一步已勾選 LINE 推播時，不會另外再發這則通知。</p>
+    </div> : <p className="text-xs text-slate-500">{VOUCHER_WITHOUT_LINE_NOTE}</p>}
     <label className="flex items-center gap-2 text-sm"><input type="checkbox" name="actionTag" defaultChecked={Boolean(tag)} /> 加上客戶標籤</label>
     <Field label="客戶標籤" name="customerTag" maxLength={50} defaultValue={typeof tag?.tag === "string" ? tag.tag : null} />
   </div>;
@@ -265,23 +297,24 @@ export default async function AutomationSettingsPage({ searchParams }: { searchP
     {params.dryRun ? <p role="status" className="mb-4 rounded-md bg-sky-50 px-3 py-2 text-sm text-sky-800">模擬結果：{dryRunMessage(params.dryRun)}</p> : null}
     {params.error ? <p role="alert" className="mb-4 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{errorMessage(params.error)}</p> : null}
 
-    <Card className="mb-6"><h2 className="text-lg font-semibold text-slate-950">熱門劇本一鍵套用</h2><p className="mb-4 text-sm text-slate-600">需要派券的劇本請先選商品。</p><div className="grid gap-4 lg:grid-cols-2">{AVAILABLE_AUTOMATION_RECIPES.map((recipe) => <form action={createAutomationRecipeAction} key={recipe.id} className="grid gap-3 rounded-xl border border-border p-4"><CsrfField /><input type="hidden" name="recipeId" value={recipe.id} /><div><h3 className="font-semibold text-slate-900">{recipe.name}</h3><p className="mt-1 text-sm text-slate-600">{recipe.description}</p></div><p className="text-xs font-medium text-slate-500">{triggerLabel(recipe.trigger)} → {actionLabels(recipe.actions).join(" + ")}</p>{!linePushAllowed && automationActionsIncludeLinePush(recipe.actions) ? <p className="text-xs text-slate-600">這個劇本含 LINE 推播。{LINE_PUSH_OWNER_ONLY_MESSAGE}</p> : <>{recipe.actions.some((action) => action.type === "issue_repurchase_voucher") ? <SelectField label="套券商品" name="productId"><option value="">請選擇商品</option>{products.map((product) => <option key={product.id} value={product.id}>{product.name}</option>)}</SelectField> : null}<SubmitButton pendingChildren="套用中…">一鍵套用劇本</SubmitButton></>}</form>)}</div></Card>
+    <Card className="mb-6"><h2 className="text-lg font-semibold text-slate-950">熱門劇本一鍵套用</h2><p className="mb-4 text-sm text-slate-600">需要派券的劇本請先選商品。</p><div className="grid gap-4 lg:grid-cols-2">{AVAILABLE_AUTOMATION_RECIPES.map((recipe) => <form action={createAutomationRecipeAction} key={recipe.id} className="grid gap-3 rounded-xl border border-border p-4"><CsrfField /><input type="hidden" name="recipeId" value={recipe.id} /><div><h3 className="font-semibold text-slate-900">{recipe.name}</h3><p className="mt-1 text-sm text-slate-600">{recipe.description}</p></div><p className="text-xs font-medium text-slate-500">{triggerLabel(recipe.trigger)} → {actionLabels(recipe.actions).join(" + ")}</p>{!linePushAllowed && automationActionsIncludeLinePush(recipe.actions) ? <p className="text-xs text-slate-600">這個劇本含 LINE 推播。{LINE_PUSH_OWNER_ONLY_MESSAGE}</p> : <>{!linePushAllowed && recipe.actions.some((action) => action.type === "issue_repurchase_voucher") ? <p className="text-xs text-slate-600">{VOUCHER_WITHOUT_LINE_NOTE}</p> : null}{recipe.actions.some((action) => action.type === "issue_repurchase_voucher") ? <SelectField label="套券商品" name="productId"><option value="">請選擇商品</option>{products.map((product) => <option key={product.id} value={product.id}>{product.name}</option>)}</SelectField> : null}<SubmitButton pendingChildren="套用中…">一鍵套用劇本</SubmitButton></>}</form>)}</div></Card>
 
     <Card className="mb-6"><h2 className="mb-4 text-lg font-semibold text-slate-950">自訂規則</h2><form action={createAutomationRuleAction} className="grid gap-4" aria-label="建立自訂規則"><CsrfField /><div className="grid gap-4 md:grid-cols-2"><Field label="規則名稱" name="name" required maxLength={120} /><SelectField label="觸發事件" name="trigger" defaultValue={AVAILABLE_AUTOMATION_TRIGGERS[0]}>{AVAILABLE_AUTOMATION_TRIGGERS.map((value) => <option key={value} value={value}>{triggerLabel(value)}</option>)}</SelectField></div>{showThreshold ? <Field label="付款金額門檻（元；只用於「訂單付款完成」，其他觸發條件留空）" name="conditionValue" type="number" min={1} step={1} /> : null}<p className="text-sm text-slate-600">以下是事件發生時「立即執行」的動作{delayedSteps ? "；建立後可在規則下方加上延遲步驟（例如 1 天後再寄一封，「訂單付款完成」除外）" : ""}。「訂單付款完成」在付款確認後執行一次，金額以訂單實際付款金額判斷，Email 寄給訂單的買家。</p><ActionFields products={products} linePushAllowed={linePushAllowed} /><SubmitButton pendingChildren="建立中…">建立規則</SubmitButton></form></Card>
 
     <Card className="mb-6"><h2 className="mb-4 text-lg font-semibold text-slate-950">規則</h2><div className="grid gap-4">{rules.length ? rules.map((rule) => {
       const available = isAvailableAutomationTrigger(rule.trigger);
       const hasHistory = rule._count.executionLogs > 0;
-      // A rule with a custom LINE push (immediate or any step) is read-only for
-      // a non-owner except switching off and deleting; the actions refuse the rest.
-      const linePushOwnerOnly = !linePushAllowed && automationRuleIncludesLinePush(rule);
+      // A rule that sends LINE (a custom LINE push or a voucher's LINE
+      // notification, immediate or any step) is read-only for a non-owner
+      // except switching off and deleting; the actions refuse the rest.
+      const linePushOwnerOnly = !linePushAllowed && automationRuleSendsLine(rule);
       // The delayed-step section shows for a trigger that takes steps, or a hidden one (its steps can still be deleted).
       const stepsShown = delayedSteps && (automationTriggerSupportsDelayedSteps(rule.trigger) || !available);
       return <article key={rule.id} aria-label={rule.name} className="grid gap-3 rounded-xl border border-border p-4">
         <div className="flex flex-wrap items-center justify-between gap-3"><div><h3 className="font-semibold text-slate-900">{rule.name}</h3><p className="text-xs text-slate-500">{rule.createdAt.toLocaleString("zh-TW")}</p></div><div className="flex flex-wrap gap-2">{available ? null : <Badge tone="gray">目前不會執行</Badge>}{linePushOwnerOnly ? <Badge tone="gray">僅限擁有者修改</Badge> : null}<Badge tone={rule.isActive ? "green" : "gray"}>{rule.isActive ? "啟用中" : "已停用"}</Badge></div></div>
         <div className="flex flex-wrap items-center gap-2 text-sm"><span className="rounded-md bg-slate-100 px-3 py-2">觸發：{triggerLabel(rule.trigger)}</span><span>→</span><span className="rounded-md bg-amber-50 px-3 py-2">條件：{conditionLabel(rule.condition)}</span><span>→</span><span className="rounded-md bg-emerald-50 px-3 py-2">立即執行：{actionLabels(rule.actions).join(" + ")}</span></div>
         {available ? null : <p className="rounded-md border border-border bg-slate-50 px-3 py-2 text-sm text-slate-700">{UNAVAILABLE_TRIGGER_NOTE}</p>}
-        {linePushOwnerOnly ? <p className="rounded-md border border-border bg-slate-50 px-3 py-2 text-sm text-slate-700">{linePushRuleNote({ stepsShown, inStepsOnly: !automationActionsIncludeLinePush(rule.actions) })}</p> : null}
+        {linePushOwnerOnly ? <p className="rounded-md border border-border bg-slate-50 px-3 py-2 text-sm text-slate-700">{lineRuleNote({ stepsShown, rule })}</p> : null}
         {delayedSteps ? (stepsShown
           ? <RuleSteps rule={rule} editable={available && !linePushOwnerOnly} linePushAllowed={linePushAllowed} products={products} counts={runCounts.get(rule.id)} />
           : <p className="rounded-md border border-border bg-slate-50 px-3 py-2 text-sm text-slate-700">{NO_DELAYED_STEPS_NOTE}</p>) : null}

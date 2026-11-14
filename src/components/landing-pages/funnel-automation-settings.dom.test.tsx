@@ -52,9 +52,9 @@ function article(name: string) {
 }
 const buttons = (node: Element) => [...node.querySelectorAll("button")].map((button) => button.textContent);
 
-// Owner decision 2026-11-14: a rule with a custom LINE push (a delayed step
-// added in /settings/automations) is read-only for a non-owner, except
-// switching it off. The service sets linePushOwnerOnly from the viewer's role.
+// Owner decisions 2026-11-14 and 2026-11-15: a rule that sends LINE (a custom
+// LINE push or a voucher's LINE notification, in a delayed step added in
+// /settings/automations) is read-only for a non-owner, except switching it off. The service sets linePushOwnerOnly from the viewer's role.
 describe("FunnelAutomationSettings owner-only LINE push", () => {
   it("shows a LINE push rule read-only to a non-owner, keeping only the switch-off button", async () => {
     await renderWith([
@@ -65,12 +65,12 @@ describe("FunnelAutomationSettings owner-only LINE push", () => {
     expect(actions.list).toHaveBeenCalledTimes(1);
 
     const on = article("推播啟用中");
-    expect(on.textContent).toContain("這條規則含 LINE 推播，LINE 推播僅限擁有者設定：你只能停用它。");
+    expect(on.textContent).toContain("這條規則會發 LINE 訊息（LINE 推播或派券通知），僅限擁有者設定：你只能停用它。");
     expect([...on.querySelectorAll<HTMLInputElement>('input[name="name"], input[name="tag"]')].every((input) => input.disabled)).toBe(true);
     expect(buttons(on)).toEqual(["停用規則"]);
 
     const off = article("推播已停用");
-    expect(off.textContent).toContain("LINE 推播僅限擁有者設定");
+    expect(off.textContent).toContain("僅限擁有者設定：你只能停用它。");
     expect(buttons(off)).toEqual([]);
 
     const plain = article("一般規則");

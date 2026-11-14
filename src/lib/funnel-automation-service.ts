@@ -3,10 +3,10 @@ import { requireVendorManagerContext } from "@/lib/auth";
 import { auditSnapshot, writeAuditLog } from "@/lib/audit";
 import { stopDelayedStepRunsOfRule } from "@/lib/automation-delayed-steps";
 import {
-  automationRuleIncludesLinePush,
+  automationRuleSendsLine,
   mayConfigureAutomationLinePush,
   mayWriteAutomationActions,
-  storedAutomationRuleIncludesLinePush,
+  storedAutomationRuleSendsLine,
 } from "@/lib/automation-line-push-policy";
 import { getDb } from "@/lib/db";
 import { requireEditableSalesProjectScope } from "@/lib/sales-project-scope";
@@ -24,9 +24,10 @@ export type FunnelAutomationRule = {
   version: number;
   updatedAt: string;
   /**
-   * The rule has a custom LINE push (a delayed step added in
-   * /settings/automations) and the viewer is not the owner: only switching it
-   * off stays available (owner decision 2026-11-14).
+   * The rule sends LINE (a custom LINE push or a voucher with its LINE
+   * notification on, in a delayed step added in /settings/automations) and
+   * the viewer is not the owner: only switching it off stays available (owner
+   * decisions 2026-11-14 and 2026-11-15).
    */
   linePushOwnerOnly: boolean;
 };
@@ -52,7 +53,7 @@ export class FunnelAutomationConflictError extends Error {
   constructor() { super("funnel_automation_conflict"); }
 }
 
-/** An admin tried to edit or switch on a rule with a custom LINE push (owner-only); nothing changed. */
+/** An admin tried to edit or switch on a rule that sends LINE (owner-only); nothing changed. */
 export class FunnelAutomationLinePushOwnerOnlyError extends Error {
   constructor() { super("line_push_owner_only"); }
 }
@@ -113,14 +114,14 @@ function asRule(row: RuleRow, page: ScopedPage): FunnelAutomationRule | null {
   const [action] = row.actions;
   if (!action || typeof action !== "object" || (action as Record<string, unknown>).type !== "add_customer_tag") return null;
   const tag = value((action as Record<string, unknown>).tag, MAX_TAG_LENGTH);
-  const linePushOwnerOnly = !page.linePushAllowed && automationRuleIncludesLinePush(row);
+  const linePushOwnerOnly = !page.linePushAllowed && automationRuleSendsLine(row);
   return tag ? { id: row.id, name: row.name, tag, isActive: row.isActive, version: row.version, updatedAt: row.updatedAt.toISOString(), linePushOwnerOnly } : null;
 }
 
 async function listForPage(database: FunnelAutomationDb, page: ScopedPage) {
   const rows = await database.automationRule.findMany({
     where: { vendorId: page.vendorId, funnelPageId: page.pageId, trigger: "form_registered" },
-    // Steps' actions only to tell an admin which rules have a LINE push.
+    // Steps' actions only to tell an admin which rules send LINE.
     select: { id: true, name: true, isActive: true, version: true, actions: true, updatedAt: true, steps: { where: { vendorId: page.vendorId }, select: { actions: true } } },
     orderBy: [{ createdAt: "asc" }, { id: "asc" }],
   });
@@ -130,17 +131,18 @@ async function listForPage(database: FunnelAutomationDb, page: ScopedPage) {
 }
 
 /**
- * Without the owner role, a rule with a custom LINE push (owner decision
- * 2026-11-14) is neither edited nor switched on here. Read inside the
- * transaction that holds the rule row FOR UPDATE, after the lock.
+ * Without the owner role, a rule that sends LINE (a custom LINE push or a
+ * voucher's LINE notification, owner decisions 2026-11-14 and 2026-11-15) is
+ * neither edited nor switched on here. Read inside the transaction that holds
+ * the rule row FOR UPDATE, after the lock.
  */
 async function assertFunnelRuleWritable(tx: Pick<Prisma.TransactionClient, "automationRule">, page: ScopedPage, id: string) {
   if (page.linePushAllowed) return;
   // Scoped like the CAS below (this page's form_registered rules), so a rule
   // of another page or of /settings/automations is "not found" here, never
   // "owner only". null falls through to the CAS, which reports not found.
-  const hasLinePush = await storedAutomationRuleIncludesLinePush(tx, { vendorId: page.vendorId, ruleId: id, funnelPageId: page.pageId, trigger: "form_registered" });
-  if (hasLinePush) throw new FunnelAutomationLinePushOwnerOnlyError();
+  const sendsLine = await storedAutomationRuleSendsLine(tx, { vendorId: page.vendorId, ruleId: id, funnelPageId: page.pageId, trigger: "form_registered" });
+  if (sendsLine) throw new FunnelAutomationLinePushOwnerOnlyError();
 }
 
 /** lock_timeout (55P03) on the rule row, or the transaction could not start or finish in time (P2028). */
@@ -166,7 +168,7 @@ export async function createFunnelAutomationRule(input: { pageId: unknown; name:
   const parsed = mutationInput(input);
   const actions = [{ type: "add_customer_tag", tag: parsed.tag }];
   // The funnel editor only writes a tag today; the shared owner-only check
-  // still runs so a LINE push added here later cannot skip it.
+  // still runs so a LINE push or voucher added here later cannot skip it.
   if (!mayWriteAutomationActions(page.actorLabel, actions)) throw new FunnelAutomationLinePushOwnerOnlyError();
   const created = await database.automationRule.create({
     data: {
@@ -234,8 +236,9 @@ export async function setFunnelAutomationRuleEnabled(input: { pageId: unknown; r
   // every writer of delayed-step runs uses (rule, then runs). Switching off
   // also stops the rule's active delayed-step runs in the same transaction
   // (F-4 review M1, same as /settings/automations): switching on again never
-  // revives them. Switching on starts a custom LINE push again, so it is
-  // owner-only for a rule that has one; switching off is always allowed.
+  // revives them. Switching on starts a rule that sends LINE again (a LINE
+  // push or a voucher's LINE notification), so it is owner-only for such a
+  // rule; switching off is always allowed.
   let updated: { count: number };
   try {
     updated = await database.$transaction(async (tx) => {
