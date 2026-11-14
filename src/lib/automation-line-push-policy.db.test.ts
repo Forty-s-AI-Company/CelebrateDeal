@@ -1,6 +1,35 @@
 import { randomUUID } from "node:crypto";
-import { Prisma } from "@prisma/client";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { Prisma, PrismaClient } from "@prisma/client";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+
+/**
+ * The database URL with an explicit pool size. Prisma's default pool is
+ * `physical CPUs × 2 + 1`, so it differs between a laptop and a CI runner (CI's
+ * DATABASE_URL sets none): the concurrency cases below need a known number of
+ * connections, never the environment's.
+ */
+function pooledUrl(connections: number) {
+  const url = new URL(process.env.DATABASE_URL ?? "");
+  url.searchParams.set("connection_limit", String(connections));
+  url.searchParams.set("pool_timeout", "20");
+  return url.toString();
+}
+
+// Every application call in this file (Server Actions, services, audit) runs
+// on this client: the four admin calls of a concurrency case each hold one
+// connection while they wait on the rule lock, plus spare ones for the
+// pre-lock reads. The owner transaction and the pg_stat_activity observer use
+// their own one-connection clients below, so no wait depends on the pool.
+const clients = vi.hoisted(() => ({ app: null as null | import("@prisma/client").PrismaClient, appConnections: 8 }));
+vi.mock("@/lib/db", async () => {
+  const { PrismaClient: Client } = await import("@prisma/client");
+  return {
+    getDb: () => {
+      clients.app ??= new Client({ datasourceUrl: pooledUrl(clients.appConnections) });
+      return clients.app;
+    },
+  };
+});
 
 // Owner decision 2026-11-14: the custom LINE push of an automation is
 // owner-only. Every writer of automation actions runs here for real against
@@ -59,6 +88,10 @@ beforeEach(() => {
 
 afterEach(async () => {
   await db.vendor.deleteMany({ where: { id: { in: createdVendorIds.splice(0) } } });
+});
+
+afterAll(async () => {
+  await clients.app?.$disconnect();
 });
 
 async function tenant() {
@@ -303,8 +336,26 @@ describe("funnel editor: a LINE push is the owner's", () => {
 // once every admin call is waiting on the lock; each call must then see the
 // step and refuse. A second case holds the row past lock_timeout (5 s) and
 // checks every writer gives up as busy, twice in a row on the same pool.
+//
+// Connections are explicit (CI failure on PR #604): the owner transaction and
+// the pg_stat_activity observer each have their own one-connection client,
+// and the admin calls run on the app client with APP connections (pooledUrl).
+// With the environment's default pool (3 to 5 on a CI runner) the owner, four
+// waiters and the observer did not fit, so the observer or a waiter queued in
+// Prisma's pool instead of on the rule lock.
 describe("concurrency with an owner holding the rule row", () => {
   type Held = { done: Promise<void>; release: () => void };
+  let owner: PrismaClient;
+  let observer: PrismaClient;
+
+  beforeAll(() => {
+    owner = new PrismaClient({ datasourceUrl: pooledUrl(1) });
+    observer = new PrismaClient({ datasourceUrl: pooledUrl(1) });
+  });
+
+  afterAll(async () => {
+    await Promise.all([owner.$disconnect(), observer.$disconnect()]);
+  });
 
   /** Locks the rule row in its own transaction (pinned connection), runs `work`, and commits only on release(). */
   async function holdRule(vendorId: string, ruleId: string, work: (tx: Prisma.TransactionClient) => Promise<unknown> = async () => undefined): Promise<Held> {
@@ -313,7 +364,7 @@ describe("concurrency with an owner holding the rule row", () => {
     let ready!: () => void;
     let failed!: (error: unknown) => void;
     const locked = new Promise<void>((resolve, reject) => { ready = resolve; failed = reject; });
-    const done = db.$transaction(async (tx) => {
+    const done = owner.$transaction(async (tx) => {
       await tx.$queryRaw`SELECT "id" FROM "AutomationRule" WHERE "id" = ${ruleId} AND "vendorId" = ${vendorId} FOR UPDATE`;
       await work(tx);
       ready();
@@ -325,20 +376,30 @@ describe("concurrency with an owner holding the rule row", () => {
 
   /** Backends of this database waiting for a lock on an AutomationRule FOR UPDATE (each admin call queues there). */
   async function waitersOnRule() {
-    const [row] = await db.$queryRaw<Array<{ n: number }>>`
+    const [row] = await observer.$queryRaw<Array<{ n: number }>>`
       SELECT count(*)::int AS n FROM pg_stat_activity
       WHERE datname = current_database() AND wait_event_type = 'Lock' AND query LIKE '%"AutomationRule"%FOR UPDATE%'
     `;
     return row?.n ?? 0;
   }
 
-  async function untilWaiting(count: number, withinMs: number) {
-    const deadline = Date.now() + withinMs;
-    while (Date.now() < deadline) {
-      if ((await waitersOnRule()) >= count) return;
-      await new Promise((resolve) => setTimeout(resolve, 25));
+  /**
+   * Resolves at the first moment `count` calls wait on the rule lock (seen by
+   * the observer, which only ever sees it late, never early). The deadline
+   * counts from the first waiter seen: it gives up after lock_timeout (5 s)
+   * from its own arrival, so the others must be there within 4 s of it,
+   * however slowly the runner got them to the lock.
+   */
+  async function untilWaiting(count: number) {
+    const firstDeadline = Date.now() + 15_000;
+    let first: number | null = null;
+    while (Date.now() < (first === null ? firstDeadline : first + 4_000)) {
+      const waiting = await waitersOnRule();
+      if (waiting > 0 && first === null) first = Date.now();
+      if (waiting >= count) return { first: first!, all: Date.now() };
+      await new Promise((resolve) => setTimeout(resolve, 10));
     }
-    throw new Error(`fewer than ${count} calls waited on the rule lock`);
+    throw new Error(`fewer than ${count} calls waited on the rule lock at the same time`);
   }
 
   const settle = (promise: Promise<unknown>) => promise.then(() => ({ ok: true as const }), (error: unknown) => ({ ok: false as const, error }));
@@ -371,8 +432,10 @@ describe("concurrency with an owner holding the rule row", () => {
     let calls: Array<Promise<{ ok: boolean; error?: unknown }>> = [];
     try {
       calls = adminCalls(vendor.id, page.id, r.id);
-      // Every call is queued on the row lock before the owner commits (well inside lock_timeout).
-      await untilWaiting(4, 3_000);
+      // Every call is queued on the row lock before the owner commits. The
+      // first waiter gives up after lock_timeout (5 s), so all four must be
+      // there well before that; each holds its own app connection.
+      await untilWaiting(4);
     } finally {
       held.release();
       await held.done;
@@ -388,38 +451,47 @@ describe("concurrency with an owner holding the rule row", () => {
     await expect(db.automationRule.findUniqueOrThrow({ where: { id: r.id } })).resolves.toMatchObject({ name: r.name, isActive: false, version: 1, actions: [{ type: "add_customer_tag", tag: "漏斗" }] });
     await expect(db.automationRuleStep.findMany({ where: { ruleId: r.id }, select: { delayMinutes: true, actions: true } })).resolves.toEqual([{ delayMinutes: 60, actions: LINE }]);
     await expect(db.auditLog.count({ where: { vendorId: vendor.id } })).resolves.toBe(0);
-  });
+  }, 20_000);
 
   it("gives up after lock_timeout as busy on every writer, also on a second consecutive round", async () => {
     const { vendor, page, r } = await funnelRule();
     as("admin", vendor);
     for (let round = 0; round < 2; round += 1) {
       const held = await holdRule(vendor.id, r.id);
-      let results: Array<{ ok: boolean; error?: unknown; ms: number }> = [];
+      let results: Array<{ ok: boolean; error?: unknown; ms: number; at: number }> = [];
+      let seen = { first: 0, all: 0 };
+      let started = 0;
       try {
-        const started = Date.now();
-        results = await Promise.all(adminCalls(vendor.id, page.id, r.id).map((call) => call.then((result) => ({ ...result, ms: Date.now() - started }))));
+        started = Date.now();
+        const calls = adminCalls(vendor.id, page.id, r.id).map((call) => call.then((result) => ({ ...result, ms: Date.now() - started, at: Date.now() })));
+        // All four wait on the rule lock at once (not in Prisma's pool or still before it).
+        seen = await untilWaiting(4);
+        results = await Promise.all(calls);
       } finally {
         held.release();
         await held.done;
       }
+      const summary = JSON.stringify({ round, waitingAfterMs: [seen.first - started, seen.all - started], results: results.map((result) => ({ ok: result.ok, ms: result.ms, error: result.error instanceof Error ? `${result.error.name}: ${result.error.message}` : String(result.error) })) });
       const [toggle, create, funnelEdit, funnelEnable] = results;
-      expect(String((toggle!.error as Error).message)).toBe("redirect:/settings/automations?error=toggle_busy");
-      expect(String((create!.error as Error).message)).toBe("redirect:/settings/automations?error=step_busy");
-      expect(funnelEdit!.error).toBeInstanceOf(FunnelAutomationBusyError);
-      expect(funnelEnable!.error).toBeInstanceOf(FunnelAutomationBusyError);
+      expect(String((toggle!.error as Error).message), summary).toBe("redirect:/settings/automations?error=toggle_busy");
+      expect(String((create!.error as Error).message), summary).toBe("redirect:/settings/automations?error=step_busy");
+      expect(funnelEdit!.error, summary).toBeInstanceOf(FunnelAutomationBusyError);
+      expect(funnelEnable!.error, summary).toBeInstanceOf(FunnelAutomationBusyError);
       // Nothing waited for the owner's commit (released only afterwards) or
       // for the 15 s transaction timeout. PostgreSQL applies lock_timeout to
       // each lock acquisition: the first queued FOR UPDATE waits on the
       // holder's transaction id, the others first on the row's tuple lock, and
       // the one that gets the tuple lock when the first gives up then waits
       // again on the transaction id. So a call gives up after 5 s or, queued
-      // behind another, after up to about 10 s (2 × lock_timeout).
+      // behind another, after up to about 10 s (2 × lock_timeout). The upper
+      // bounds count from moments the observer saw (all four waiting / the
+      // first waiting), which can only be late, so a slow runner that brings
+      // the calls to the lock late cannot fail them.
       for (const result of results) {
-        expect(result.ms).toBeGreaterThanOrEqual(4_500);
-        expect(result.ms).toBeLessThan(12_500);
+        expect(result.ms, summary).toBeGreaterThanOrEqual(4_500);
+        expect(result.at - seen.all, summary).toBeLessThan(12_500);
       }
-      expect(Math.min(...results.map((result) => result.ms))).toBeLessThan(7_000);
+      expect(Math.min(...results.map((result) => result.at)) - seen.first, summary).toBeLessThan(7_000);
     }
     await expect(db.automationRule.findUniqueOrThrow({ where: { id: r.id } })).resolves.toMatchObject({ isActive: false, version: 1 });
     await expect(db.automationRuleStep.count({ where: { ruleId: r.id } })).resolves.toBe(0);
