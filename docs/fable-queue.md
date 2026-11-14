@@ -83,7 +83,7 @@ CI 帶出 `color-contrast` 規則後，Opus 找到根因：停用按鈕恢復可
 - 自訂 LINE 推播動作限商家 owner 設定（[#604](https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/604)）。含 LINE 推播的規則對 admin 唯讀：不能啟用、不能新增或修改步驟，可以停用、刪除規則、刪除步驟。先前由 admin 建立的含 LINE 推播規則沒有被停用。
 - 既有 `payment_paid` 規則被停用後不公告，因為尚未公測。
 
-**待 owner 決定**：派折價券時系統以固定文案發的 LINE 通知不在 #604 的限制內，admin 建立的派券規則仍會發送，是否也限制為 owner。
+**owner 於 2026-11-15 的決定**：派折價券時系統以固定文案發的 LINE 通知也限商家 owner 設定。派券動作新增 `lineNotification` 旗標：owner 可開關（預設開）；admin 建立或修改的派券一律存成不發 LINE，券仍會發出，買家可從學員專區（限可在本平台結帳的商品）或「追購通知」信取得。既有派券規則沒有旗標，視為開並照常發送，對 admin 唯讀（可停用、刪除規則、刪除步驟）。這一版上線後新存的派券動作舊版程式無法解析，部署後只能往前修，不要回滾。
 
 **未驗證**：沒有在 staging 套用這幾個 migration；沒有在 PayUni Sandbox 或 Vercel 上驗證付款 route 的 `after()` 實際行為；沒有人工目視檢查新的後台介面與手機版。
 
