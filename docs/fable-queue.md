@@ -76,7 +76,14 @@ CI 帶出 `color-contrast` 規則後，Opus 找到根因：停用按鈕恢復可
 - 延遲步驟的細節：動作清單快照損壞時會重試 5 次才放棄；後面某一步失敗會連帶撤回前面還沒寄出的信；諮詢地址比對沒有索引；不含 Email 的補跑不在商家之間輪流。
 - 視覺化編輯器不在範圍內。
 
-**待 owner 決定**：admin 可以透過規則自訂 LINE 推播，是否要限制為 owner；既有 `payment_paid` 規則被停用後要不要通知商家。
+- 兩個不穩定的 e2e 測試（與 F-4 無關，2026-11-14 各在 CI 失敗一次、重試通過）：`tests/e2e/smoke.spec.ts` 的雙重驗證救援碼測試在頁面跳轉後立刻讀救援碼；`tests/e2e/learner-notifications.spec.ts` 的學員入口推播測試。要修測試的等待方式，不可加 retry 或 skip。
+
+**owner 於 2026-11-14 的決定**：
+
+- 自訂 LINE 推播動作限商家 owner 設定（[#604](https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/604)）。含 LINE 推播的規則對 admin 唯讀：不能啟用、不能新增或修改步驟，可以停用、刪除規則、刪除步驟。先前由 admin 建立的含 LINE 推播規則沒有被停用。
+- 既有 `payment_paid` 規則被停用後不公告，因為尚未公測。
+
+**待 owner 決定**：派折價券時系統以固定文案發的 LINE 通知不在 #604 的限制內，admin 建立的派券規則仍會發送，是否也限制為 owner。
 
 **未驗證**：沒有在 staging 套用這幾個 migration；沒有在 PayUni Sandbox 或 Vercel 上驗證付款 route 的 `after()` 實際行為；沒有人工目視檢查新的後台介面與手機版。
 
