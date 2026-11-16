@@ -18,6 +18,7 @@ import { checkRateLimit } from "@/lib/rate-limit";
 import { checkAccountRateLimit } from "@/lib/account-rate-limit";
 import { automationCustomerKeyHash } from "@/lib/automation-workflow";
 import { resolveBuyerSupportGrant } from "@/lib/buyer-support-access";
+import { isEmailBlacklistedForVendor } from "@/lib/email-blacklist";
 import { ACTIVE_VENDOR_WHERE } from "@/lib/vendor-suspension-state";
 import {
   clearStudentPortalSessionCookie,
@@ -73,12 +74,18 @@ export async function requestMagicLinkAction(
   // PostgreSQL whatever the source IP or RATE_LIMIT_PROVIDER.
   const recipientLimited = await checkAccountRateLimit("student_portal_magic_link", `${vendor.id}:${customerKeyHash}`);
   if (recipientLimited) return { status: "rate_limited", message: t("申請次數較多，請稍後再試。") };
-  const [orderCount, bookingCount, voucherCount] = await Promise.all([
+  // Owner policy 2026-11-10: an email on this vendor's blacklist gets no
+  // learner link. The blacklist lookup runs alongside the eligibility counts
+  // on every request, so blocked, unknown and eligible addresses do the same
+  // reads, and a blocked one gets the "unknown" answer: neither the reply nor
+  // its timing tells whether an address is listed or has any purchase.
+  const [orderCount, bookingCount, voucherCount, blacklisted] = await Promise.all([
     db.commerceOrder.count({ where: { vendorId: vendor.id, automationCustomerKeyHash: customerKeyHash, status: { in: ["paid", "partially_refunded", "refunded"] } } }),
     db.consultationBooking.count({ where: { vendorId: vendor.id, customerKeyHash } }),
     db.automationVoucherGrant.count({ where: { vendorId: vendor.id, customerKeyHash } }),
+    isEmailBlacklistedForVendor(db, vendor.id, email.data),
   ]);
-  if (orderCount + bookingCount + voucherCount === 0) return { status: "sent", message: t(genericSentMessage) };
+  if (blacklisted || orderCount + bookingCount + voucherCount === 0) return { status: "sent", message: t(genericSentMessage) };
 
   const token = await createStudentPortalAccessToken(db, { vendorId: vendor.id, email: email.data, purpose: "magic_link" });
   const accessUrl = new URL(`/portal/${encodeURIComponent(vendor.slug)}/access`, getCanonicalAppUrl());

@@ -32,6 +32,9 @@ const triggerLabel: Record<string, string> = {
   form_submission_verification: "Email 驗證通知",
   live_reminder: "開播提醒",
   post_live_followup: "課後通知",
+  sequence_email: "追銷序列信",
+  automation: "自動化通知",
+  automation_step: "自動化延遲信",
   fixed_session_cancelled: "場次取消通知",
   fixed_session_already_registered: "已報名場次通知",
 };
@@ -44,9 +47,13 @@ const errorGuidance: Record<string, string> = {
   internal: "系統處理失敗。請稍後重試，若持續發生請聯絡客服。",
   stale_delivery_lease: "先前的寄送工作中斷，系統已回收並準備重試。",
   recipient_suppressed: "收件者已退訂，此信不會寄送。",
+  recipient_blacklisted: "收件者在本商家黑名單中，此信（含學員登入信）不會寄送。",
   config_superseded: "直播或模板設定已更新，舊排程不會寄送。",
   verification_superseded: "驗證已完成、連結已過期或已有新版驗證信。",
   schedule_superseded: "直播排程已更新，舊提醒不會寄送。",
+  sequence_superseded: "這封追銷序列信不會寄送：可能排隊太久（建立超過 6 小時未寄出）、追銷序列功能已關閉、序列已暫停或刪除、這一封或它的模板已修改，或收件者已停止接收序列。",
+  automation_step_superseded: "這封自動化延遲信不會寄送：排隊太久（建立超過 6 小時未寄出），或自動化延遲步驟功能已關閉。",
+  lifecycle_superseded: "直播狀態已改變（例如已開播、已結束或已開啟常青場），舊排程不會寄送。",
 };
 
 function DeliveryBadge({ status }: { status: string }) {
@@ -194,6 +201,8 @@ export function EmailDeliveryOperationsWorkbench({
               <option value="form_submission_verification">Email 驗證</option>
               <option value="live_reminder">開播提醒</option>
               <option value="post_live_followup">課後通知</option>
+              <option value="sequence_email">追銷序列信</option>
+              <option value="automation_step">自動化延遲信</option>
             </select>
           </label>
           <div className="flex flex-wrap gap-2">

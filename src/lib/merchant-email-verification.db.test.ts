@@ -110,7 +110,7 @@ describe("confirming a merchant email verification link (PostgreSQL)", () => {
     const expired = createMerchantEmailVerificationToken({ userId: user.id, email: user.email, now: new Date(Date.now() - 25 * 60 * 60 * 1_000) }).token;
     await expect(confirmMerchantEmailVerification(expired)).resolves.toEqual({ status: "invalid" });
     const valid = createMerchantEmailVerificationToken({ userId: user.id, email: user.email }).token;
-    await expect(confirmMerchantEmailVerification(`${valid.slice(0, -2)}AA`)).resolves.toEqual({ status: "invalid" });
+    await expect(confirmMerchantEmailVerification(`${valid.slice(0, -2)}${valid.endsWith("AA") ? "BB" : "AA"}`)).resolves.toEqual({ status: "invalid" });
     const suspended = await createUser({ status: "suspended" });
     await expect(confirmMerchantEmailVerification(createMerchantEmailVerificationToken({ userId: suspended.id, email: suspended.email }).token)).resolves.toEqual({ status: "invalid" });
     for (const id of [user.id, suspended.id]) expect((await getDb().user.findUniqueOrThrow({ where: { id } })).emailVerifiedAt).toBeNull();

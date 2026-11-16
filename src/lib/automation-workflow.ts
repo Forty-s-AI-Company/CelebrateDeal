@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { Prisma, type PrismaClient } from "@prisma/client";
 import { z } from "zod";
 import { getCanonicalAppUrl } from "@/lib/app-url";
-import { getDb } from "@/lib/db";
+import { isFeatureEnabled } from "@/lib/vendor-feature-toggles";
 import { hashInteractionBearer } from "@/lib/live-interaction";
 import {
   DERIVED_KEY_ROTATIONS,
@@ -12,7 +12,17 @@ import {
   signWithRotation,
 } from "@/lib/derived-key-rotation";
 import { automationCustomerKeyHash } from "@/lib/customer-key-hash";
-import { protectEmailDeliveryPayload } from "@/lib/email-delivery-pii";
+import { createEmailRecipientHash, createEmailUnsubscribeUrl, protectEmailDeliveryPayload } from "@/lib/email-delivery-pii";
+import { ensureEmailUnsubscribeFooter } from "@/lib/email-delivery-format";
+import { isEmailBlacklistedForVendor } from "@/lib/email-blacklist";
+import {
+  AUTOMATION_EMAIL_TRIGGER,
+  AUTOMATION_STEP_EMAIL_TRIGGER,
+  automationStepEmailIdempotencyKey,
+  automationStepEventId,
+  parseAutomationStepEventId,
+} from "@/lib/automation-email-trigger";
+import { captureOperationalError } from "@/lib/monitoring";
 import { scheduleImmediateEmailDispatch } from "@/lib/email-delivery-immediate";
 import { isSafeExternalHttpsUrl } from "@/lib/safe-url";
 import {
@@ -20,7 +30,13 @@ import {
   enqueueLineNotification,
   stableLineIdempotencyKey,
 } from "@/lib/line-notification";
+import { voucherActionSendsLine } from "@/lib/automation-line-push-policy";
 
+/**
+ * Every trigger the engine understands. Stored rules may use any of them and
+ * keep parsing, so this list never shrinks; what a merchant may choose is
+ * AVAILABLE_AUTOMATION_TRIGGERS below.
+ */
 export const AUTOMATION_TRIGGERS = [
   "payment_paid",
   "viewer_watch_progress",
@@ -31,6 +47,69 @@ export const AUTOMATION_TRIGGERS = [
   "form_no_show",
 ] as const;
 export type AutomationTrigger = typeof AUTOMATION_TRIGGERS[number];
+
+/**
+ * The single list of triggers a merchant may put on a new rule, or switch a
+ * rule on with (F-4 gap 2). The UI and every Server Action read it.
+ *
+ * Only these four have a production caller today: the form submission route,
+ * the two consultation actions, and the first paid transition of a canonical
+ * order in the payment webhook (F-4 PR 3, src/lib/payment-paid-automation.ts).
+ * `form_no_show`, `viewer_watch_progress` and `webinar_attended_duration_gte`
+ * have none, so a rule using them would never run. Existing rules with a
+ * hidden trigger stay listed and can be switched off or deleted, but not
+ * created, switched on or edited into one.
+ */
+export const AVAILABLE_AUTOMATION_TRIGGERS = [
+  "form_registered",
+  "consultation_booked",
+  "consultation_no_show",
+  "payment_paid",
+] as const satisfies readonly AutomationTrigger[];
+export type AvailableAutomationTrigger = typeof AVAILABLE_AUTOMATION_TRIGGERS[number];
+
+export function isAvailableAutomationTrigger(value: unknown): value is AvailableAutomationTrigger {
+  return typeof value === "string" && (AVAILABLE_AUTOMATION_TRIGGERS as readonly string[]).includes(value);
+}
+
+/**
+ * Triggers whose rules may have delayed steps (F-4 PR 2): their subject is a
+ * registration or a consultation booking, which a DelayedStepRun can point at
+ * and the worker can read again later. `payment_paid` runs its immediate
+ * actions only: a run has no order reference yet (DelayedStepRun's CHECK), so
+ * its delayed steps wait for a later PR. Step changes on any other rule are
+ * refused (`steps_unsupported`), no run is started and the worker stops one.
+ */
+export const DELAYED_STEP_AUTOMATION_TRIGGERS = [
+  "form_registered",
+  "consultation_booked",
+  "consultation_no_show",
+] as const satisfies readonly AvailableAutomationTrigger[];
+
+export function automationTriggerSupportsDelayedSteps(value: unknown): value is typeof DELAYED_STEP_AUTOMATION_TRIGGERS[number] {
+  return typeof value === "string" && (DELAYED_STEP_AUTOMATION_TRIGGERS as readonly string[]).includes(value);
+}
+
+export function isAutomationTrigger(value: unknown): value is AutomationTrigger {
+  return typeof value === "string" && (AUTOMATION_TRIGGERS as readonly string[]).includes(value);
+}
+
+const THRESHOLD_TRIGGERS: ReadonlySet<string> = new Set(["payment_paid", "viewer_watch_progress", "webinar_attended_duration_gte"]);
+
+/** Whether a rule on this trigger takes an amount or watch-seconds threshold. */
+export function automationTriggerNeedsThreshold(trigger: string) {
+  return THRESHOLD_TRIGGERS.has(trigger);
+}
+
+export const AUTOMATION_TRIGGER_LABELS: Record<AutomationTrigger, string> = {
+  payment_paid: "訂單付款完成",
+  viewer_watch_progress: "觀看進度更新",
+  webinar_attended_duration_gte: "觀看累積秒數達標",
+  form_registered: "表單報名成功",
+  consultation_booked: "諮詢預約成功",
+  consultation_no_show: "諮詢未出席",
+  form_no_show: "報名但未出席直播",
+};
 
 // Re-exported so existing callers keep one import path; the implementation
 // lives in a dependency-free module the order PII boundary also imports.
@@ -82,6 +161,10 @@ const AutomationActionSchema = z.discriminatedUnion("type", [
     discountType: z.enum(["fixed", "percentage"]),
     discountValue: z.number().int().min(1).max(100_000_000),
     expiresInDays: z.number().int().min(1).max(365),
+    // Owner-only (src/lib/automation-line-push-policy.ts): whether the voucher
+    // is announced by LINE with the platform's fixed text. Absent on actions
+    // stored before 2026-11-15, which keep sending (voucherActionSendsLine).
+    lineNotification: z.boolean().optional(),
   }).strict(),
   z.object({ type: z.literal("add_customer_tag"), tag: z.string().trim().min(1).max(50) }).strict(),
   z.object({
@@ -151,6 +234,9 @@ export const AUTOMATION_RECIPES = [
 
 export type AutomationRecipeId = typeof AUTOMATION_RECIPES[number]["id"];
 
+/** Recipes offered to merchants: only those whose trigger can run today. */
+export const AVAILABLE_AUTOMATION_RECIPES = AUTOMATION_RECIPES.filter((recipe) => isAvailableAutomationTrigger(recipe.trigger));
+
 export function materializeAutomationRecipe(recipeId: string, productId?: string) {
   const recipe = AUTOMATION_RECIPES.find((candidate) => candidate.id === recipeId);
   if (!recipe) return null;
@@ -175,6 +261,35 @@ export function maskAutomationTarget(value: string | null | undefined) {
   return normalized.length <= 8 ? `${normalized.slice(0, 2)}***` : `${normalized.slice(0, 4)}…${normalized.slice(-4)}`;
 }
 
+const EMAIL_SKIP_NOTES: Record<AutomationEmailSkipReason, string> = {
+  recipient_suppressed: "Email 未寄出：收件人已退訂或停止接收",
+  recipient_blacklisted: "Email 未寄出：收件人在本商家黑名單中",
+  recipient_unverified: "Email 未寄出：收件人的 Email 尚未在本商家完成驗證",
+};
+
+/** Reason of a failed automation e-mail action whose unsubscribe link could not be built. */
+export const AUTOMATION_UNSUBSCRIBE_URL_UNAVAILABLE = "unsubscribe_url_unavailable";
+
+/** Merchant-readable notes for e-mail actions an execution skipped or could not queue (stored actionResults are untrusted JSON). */
+export function automationExecutionNotes(actionResults: unknown) {
+  // A delayed step's log keeps { actions, results } (see stepActionResults).
+  const results = Array.isArray(actionResults)
+    ? actionResults
+    : actionResults && typeof actionResults === "object" && Array.isArray((actionResults as { results?: unknown }).results)
+      ? (actionResults as { results: unknown[] }).results
+      : null;
+  if (!results) return [];
+  const notes = results.flatMap((result) => {
+    if (!result || typeof result !== "object") return [];
+    const { type, status, reason } = result as Record<string, unknown>;
+    if (type !== "send_email_notification") return [];
+    if (status === "failed" && reason === AUTOMATION_UNSUBSCRIBE_URL_UNAVAILABLE) return ["Email 未寄出：系統暫時無法產生退訂連結"];
+    if (status !== "skipped") return [];
+    return reason === "recipient_suppressed" || reason === "recipient_blacklisted" || reason === "recipient_unverified" ? [EMAIL_SKIP_NOTES[reason]] : [];
+  });
+  return [...new Set(notes)];
+}
+
 export type AutomationEvent = {
   vendorId: string;
   eventId: string;
@@ -195,14 +310,25 @@ export type AutomationEvent = {
   watchSecondsTotal?: number;
   hasPurchased?: boolean;
   recipientEmail?: string;
+  /**
+   * Delayed steps only (F-4): false when nobody has confirmed `recipientEmail`
+   * (an unverified registration, or a booking whose address has no verified
+   * registration at this vendor). The e-mail action is then skipped as
+   * `recipient_unverified`; the other actions still run. Immediate rules
+   * never set it and keep their behaviour.
+   */
+  recipientVerified?: boolean;
   consultationUrl?: string;
   webinarUrl?: string;
 };
 
 type AutomationDb = Pick<
   PrismaClient,
-  "automationRule" | "automationExecutionLog" | "automationVoucherGrant" | "customerTagAssignment" | "product" | "lineOfficialAccount" | "lineUserIdentity" | "lineDelivery" | "emailDelivery"
+  "automationRule" | "automationExecutionLog" | "automationVoucherGrant" | "customerTagAssignment" | "product" | "lineOfficialAccount" | "lineUserIdentity" | "lineDelivery" | "emailDelivery" | "emailSuppression" | "blacklist" | "delayedStepRun" | "formSubmission" | "consultationBooking" | "vendor" | "$transaction"
 >;
+
+/** Closed-beta grant of delayed automation steps (F-4, M3). */
+export const AUTOMATION_DELAYED_STEPS_FEATURE = "automation_delayed_steps" as const;
 
 type ParsedRule = {
   id: string;
@@ -287,6 +413,29 @@ function isUniqueConflict(error: unknown) {
   return error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002";
 }
 
+function isForeignKeyViolation(error: unknown) {
+  return error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2003";
+}
+
+function isRecordNotFound(error: unknown) {
+  return error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2025";
+}
+
+/**
+ * Records how an execution ended. Returns false when its log row is gone:
+ * the only way is a cascade from deleting the rule (or the vendor) while it
+ * ran, and that rule is then simply over for this event.
+ */
+async function finishExecution(db: AutomationDb, logId: string, data: Prisma.AutomationExecutionLogUpdateInput) {
+  try {
+    await db.automationExecutionLog.update({ where: { id: logId }, data });
+    return true;
+  } catch (error) {
+    if (isRecordNotFound(error)) return false;
+    throw error;
+  }
+}
+
 function replaceArtifacts(value: string | null | undefined, artifacts: { voucherUrl?: string; consultationUrl?: string; webinarUrl?: string }) {
   if (!value) return value ?? null;
   return value
@@ -302,6 +451,47 @@ const EMAIL_COPY = {
   webinar_replay: { subject: "錯過直播也別擔心：精華回放與諮詢邀請", body: "精華回放：{{webinar_url}}\n預約 1 對 1 諮詢：{{consultation_url}}" },
 } as const;
 
+export type AutomationEmailSkipReason = "recipient_suppressed" | "recipient_blacklisted" | "recipient_unverified";
+
+/**
+ * Creation-time gate for an automation e-mail, bound to this vendor only:
+ * an unsubscribe (or other EmailSuppression not yet resubscribed) or an
+ * active merchant Email blacklist entry stops it. Another vendor's lists
+ * never apply.
+ */
+async function automationEmailRecipientBlock(
+  db: Pick<AutomationDb, "emailSuppression" | "blacklist">,
+  vendorId: string,
+  recipientEmail: string,
+  recipientHash: string,
+): Promise<AutomationEmailSkipReason | null> {
+  const [suppression, blacklisted] = await Promise.all([
+    db.emailSuppression.findUnique({
+      where: { vendorId_recipientHash: { vendorId, recipientHash } },
+      select: { resubscribedAt: true },
+    }),
+    isEmailBlacklistedForVendor(db, vendorId, recipientEmail),
+  ]);
+  if (suppression && !suppression.resubscribedAt) return "recipient_suppressed";
+  if (blacklisted) return "recipient_blacklisted";
+  return null;
+}
+
+type ActionContext = {
+  /**
+   * `EmailDelivery.trigger` of the e-mails this execution queues: immediate
+   * rules use AUTOMATION_EMAIL_TRIGGER, delayed steps
+   * AUTOMATION_STEP_EMAIL_TRIGGER (dispatched on the sequence quota).
+   */
+  emailTrigger: string;
+  /**
+   * `EmailDelivery.idempotencyKey` of the e-mails it queues. Delayed steps name
+   * their execution log (automationStepEmailIdempotencyKey) so the send-time
+   * check can find the rule and the run; immediate rules keep the hashed key.
+   */
+  emailIdempotencyKey?: (executionLogId: string, actionIndex: number) => string;
+};
+
 async function executeAction(
   db: AutomationDb,
   rule: ParsedRule,
@@ -311,6 +501,7 @@ async function executeAction(
   actionIndex: number,
   artifacts: { voucherUrl?: string; consultationUrl?: string; webinarUrl?: string },
   queuedEmailIds: string[],
+  context: ActionContext,
 ) {
   if (action.type === "add_customer_tag") {
     const tag = action.tag.trim().toLocaleLowerCase("zh-TW");
@@ -371,21 +562,48 @@ async function executeAction(
 
   if (action.type === "send_email_notification") {
     if (!event.recipientEmail) return { type: action.type, status: "recipient_not_linked" } as const;
+    // Delayed steps never mail an address nobody has confirmed (F-4, M2).
+    if (event.recipientVerified === false) {
+      return { type: action.type, status: "skipped", reason: "recipient_unverified", template: action.template } as const;
+    }
     const id = deterministicActionId(executionLogId, actionIndex);
     const copy = EMAIL_COPY[action.template];
+    // The recipient lists come first, so an unsubscribed or blacklisted
+    // person is recorded as skipped even when the link below cannot be built.
+    const blocked = await automationEmailRecipientBlock(db, event.vendorId, event.recipientEmail, createEmailRecipientHash(event.recipientEmail, event.vendorId));
+    if (blocked) {
+      // Not an error: the execution completes and the log records why, so
+      // nothing retries it. dispatchEmailDelivery checks both again at send.
+      return { type: action.type, status: "skipped", reason: blocked, template: action.template } as const;
+    }
+    // Marketing mail (F-4 gap 1): the same signed /unsubscribe link and
+    // footer as sequence e-mails. The token names this delivery, so the
+    // unsubscribe lands on this vendor's EmailSuppression only.
+    let unsubscribeUrl: string;
+    try {
+      unsubscribeUrl = createEmailUnsubscribeUrl(id);
+    } catch (error) {
+      // Missing public URL or signing key: never queue the mail without its
+      // link. This action fails on its own; the rest of the rule still runs
+      // and the execution is recorded as failed (see runAutomationEvent).
+      captureOperationalError(error, { area: "automation_email", operation: "unsubscribe_url", vendorId: event.vendorId });
+      return { type: action.type, status: "failed", reason: AUTOMATION_UNSUBSCRIBE_URL_UNAVAILABLE, template: action.template } as const;
+    }
     const protectedPayload = protectEmailDeliveryPayload({
       recipientEmail: event.recipientEmail,
       subject: copy.subject,
-      body: replaceArtifacts(copy.body, artifacts) ?? copy.body,
+      body: ensureEmailUnsubscribeFooter(replaceArtifacts(copy.body, artifacts) ?? copy.body, unsubscribeUrl),
     }, { vendorId: event.vendorId, deliveryId: id });
     try {
       await db.emailDelivery.create({ data: {
         id,
         vendorId: event.vendorId,
         sourceTemplateId: `automation_${action.template}_v1`,
-        trigger: "automation",
+        trigger: context.emailTrigger,
         ...protectedPayload,
-        idempotencyKey: stableLineIdempotencyKey(["automation-email", executionLogId, actionIndex]),
+        idempotencyKey: context.emailIdempotencyKey
+          ? context.emailIdempotencyKey(executionLogId, actionIndex)
+          : stableLineIdempotencyKey(["automation-email", executionLogId, actionIndex]),
         status: "queued",
         nextAttemptAt: new Date(),
       } });
@@ -423,6 +641,13 @@ async function executeAction(
  *
  * Every email queued across all matched rules is handed to one post-response
  * hook, bounded by its shared per-call cap; the job sends anything beyond it.
+ *
+ * `db` must be the regular client, never an interactive transaction client.
+ * A rule deleted mid-event is recovered from a caught foreign-key error (P2003)
+ * or missing row (P2025) by issuing further queries; inside a PostgreSQL
+ * transaction the failed statement would abort it and those queries would
+ * fail too. Every caller today passes getDb() (payment_paid:
+ * src/lib/payment-paid-automation.ts, after the payment transaction committed).
  */
 export async function dispatchAutomationEvent(db: AutomationDb, event: AutomationEvent) {
   const queuedEmailIds: string[] = [];
@@ -434,11 +659,152 @@ export async function dispatchAutomationEvent(db: AutomationDb, event: Automatio
   }
 }
 
+type ActionArtifacts = { voucherUrl?: string; consultationUrl?: string; webinarUrl?: string };
+
+/**
+ * Runs a rule's (or a delayed step's) actions in their fixed order: vouchers
+ * first, so the other actions can link to them, then a LINE follow-up for a
+ * voucher when the actions have no LINE push of their own and that voucher's
+ * LINE notification is on (owner-only, voucherActionSendsLine: an explicit
+ * `false` turns it off, an action stored without the flag keeps sending). A
+ * delayed step that resumes runs its snapshot, so the flag it had when it
+ * first ran decides. Results are pushed
+ * into `actionResults` as they finish, so a thrown action leaves the earlier
+ * ones recorded. Every output has a deterministic id or idempotency key bound
+ * to `logId`, so running the same execution again repeats nothing.
+ */
+async function runRuleActions(
+  db: AutomationDb,
+  rule: ParsedRule,
+  event: AutomationEvent,
+  logId: string,
+  queuedEmailIds: string[],
+  actionResults: unknown[],
+  context: ActionContext,
+) {
+  const artifacts: ActionArtifacts = {
+    consultationUrl: event.consultationUrl,
+    webinarUrl: event.webinarUrl,
+  };
+  const orderedActions = rule.actions
+    .map((action, index) => ({ action, index }))
+    .sort((left, right) => Number(right.action.type === "issue_repurchase_voucher") - Number(left.action.type === "issue_repurchase_voucher"));
+  // The link of the last voucher issued by an action whose LINE notification is on.
+  let lineVoucherUrl: string | undefined;
+  for (const { action, index } of orderedActions) {
+    const result = await executeAction(db, rule, event, logId, action, index, artifacts, queuedEmailIds, context);
+    actionResults.push(result);
+    if (action.type === "issue_repurchase_voucher" && (result.status === "issued" || result.status === "already_issued") && voucherActionSendsLine(action)) {
+      lineVoucherUrl = artifacts.voucherUrl;
+    }
+  }
+  if (lineVoucherUrl && !rule.actions.some((action) => action.type === "line_push") && event.subjectType !== "viewer_session") {
+    const delivery = await enqueueLineNotification(db, {
+      vendorId: event.vendorId,
+      subjectType: event.subjectType,
+      subjectId: event.subjectId,
+      trigger: "automation",
+      idempotencyKey: stableLineIdempotencyKey(["automation-voucher", logId]),
+      messages: [buildAutomationLineMessage({
+        message: "感謝支持，您的專屬回購折價券已經準備好了。",
+        buttonLabel: "立即使用",
+        buttonUrl: lineVoucherUrl,
+      })],
+    });
+    actionResults.push({ type: "line_push", status: delivery.status, source: "voucher_delivery" });
+  }
+}
+
+/** The first action result that reports its own failure (today only an automation e-mail without an unsubscribe link). */
+function reportedActionFailure(actionResults: unknown[]) {
+  return actionResults.find((result): result is { status: "failed"; reason: string } => (
+    Boolean(result) && typeof result === "object" && (result as { status?: unknown }).status === "failed"
+  ));
+}
+
+type StoredRule = {
+  id: string;
+  version: number;
+  condition: unknown;
+  actions: unknown;
+  /** The rule's first active delayed step (absent on rows read without it). */
+  steps?: Array<{ delayMinutes: number }>;
+};
+
+/**
+ * Claims the rule/event pair: a new execution log, or a failed (or stale
+ * running) one reclaimed for the same event. Any other existing log makes the
+ * event a duplicate.
+ */
+async function claimRuleExecution(
+  db: AutomationDb,
+  rule: ParsedRule,
+  event: AutomationEvent,
+  firstStep: { delayMinutes: number } | undefined,
+): Promise<{ log: { id: string; createdAt?: Date } } | { status: "rule_deleted" | "duplicate" }> {
+  const idempotencyKey = executionIdempotencyKey(rule, event);
+  try {
+    const log = await db.automationExecutionLog.create({
+      data: {
+        vendorId: event.vendorId,
+        ruleId: rule.id,
+        idempotencyKey,
+        eventId: event.eventId,
+        liveId: event.liveId,
+        trigger: event.trigger,
+        subjectType: event.subjectType,
+        subjectKeyHash: event.subjectKeyHash,
+        status: "running",
+      },
+      select: { id: true, createdAt: true },
+    });
+    return { log };
+  } catch (error) {
+    if (isForeignKeyViolation(error)) {
+      // The rule was deleted after it was selected above (the delete holds
+      // the rule row FOR UPDATE, so this insert waited and then lost its
+      // parent). Confirm that, rather than assume it for every foreign key
+      // of the log, and move on to the event's other rules.
+      const stillThere = await db.automationRule.findFirst({ where: { id: rule.id, vendorId: event.vendorId }, select: { id: true } });
+      if (stillThere) throw error;
+      return { status: "rule_deleted" };
+    }
+    if (!isUniqueConflict(error)) throw error;
+  }
+  const existing = await db.automationExecutionLog.findUnique({
+    where: { vendorId_idempotencyKey: { vendorId: event.vendorId, idempotencyKey } },
+    select: { id: true, status: true, startedAt: true, createdAt: true, conditionMatched: true },
+  });
+  if (!existing || existing.status === "completed" || existing.status === "skipped") {
+    // A replayed event: the delayed steps start at most once (the run's
+    // unique key), but a first attempt that could not create the run gets
+    // it now.
+    if (existing?.status === "completed" && existing.conditionMatched && firstStep) {
+      await startDelayedSteps(db, { ruleId: rule.id, event, logId: existing.id, anchorAt: existing.createdAt });
+    }
+    return { status: "duplicate" };
+  }
+  const now = new Date();
+  const reclaimed = await db.automationExecutionLog.updateMany({
+    where: {
+      id: existing.id,
+      vendorId: event.vendorId,
+      OR: [
+        { status: "failed" },
+        { status: "running", startedAt: { lt: new Date(now.getTime() - 5 * 60_000) } },
+      ],
+    },
+    data: { status: "running", startedAt: now, completedAt: null, errorCode: null },
+  });
+  if (reclaimed.count !== 1) return { status: "duplicate" };
+  return { log: { id: existing.id, createdAt: existing.createdAt } };
+}
+
 async function runAutomationEvent(db: AutomationDb, event: AutomationEvent, queuedEmailIds: string[]) {
   if ((event.trigger === "viewer_watch_progress" || event.trigger === "webinar_attended_duration_gte") && !event.liveId) {
     return [{ ruleId: "__scope__", status: "missing_live_scope" }];
   }
-  const rules = await db.automationRule.findMany({
+  const rules: StoredRule[] = await db.automationRule.findMany({
     where: {
       vendorId: event.vendorId,
       trigger: event.trigger,
@@ -448,7 +814,14 @@ async function runAutomationEvent(db: AutomationDb, event: AutomationEvent, queu
       OR: [{ funnelPageId: null }, ...(event.funnelPageId ? [{ funnelPageId: event.funnelPageId }] : [])],
     },
     orderBy: [{ createdAt: "asc" }, { id: "asc" }],
-    select: { id: true, version: true, condition: true, actions: true },
+    select: {
+      id: true,
+      version: true,
+      condition: true,
+      actions: true,
+      // F-4: whether the rule has delayed steps, and when the first one is due.
+      steps: { where: { vendorId: event.vendorId, isActive: true }, orderBy: { delayMinutes: "asc" }, take: 1, select: { delayMinutes: true } },
+    },
   });
   const results: Array<{ ruleId: string; status: string }> = [];
 
@@ -458,119 +831,346 @@ async function runAutomationEvent(db: AutomationDb, event: AutomationEvent, queu
       results.push({ ruleId: storedRule.id, status: "invalid_rule" });
       continue;
     }
+    const firstStep = storedRule.steps?.[0];
     const matched = automationConditionMatches(rule.condition, event);
     if ((event.trigger === "viewer_watch_progress" || event.trigger === "webinar_attended_duration_gte") && !matched) {
       results.push({ ruleId: rule.id, status: "skipped" });
       continue;
     }
-    const idempotencyKey = executionIdempotencyKey(rule, event);
-    let log: { id: string };
-    try {
-      log = await db.automationExecutionLog.create({
-        data: {
-          vendorId: event.vendorId,
-          ruleId: rule.id,
-          idempotencyKey,
-          eventId: event.eventId,
-          liveId: event.liveId,
-          trigger: event.trigger,
-          subjectType: event.subjectType,
-          subjectKeyHash: event.subjectKeyHash,
-          status: "running",
-        },
-        select: { id: true },
-      });
-    } catch (error) {
-      if (!isUniqueConflict(error)) throw error;
-      const existing = await db.automationExecutionLog.findUnique({
-        where: { vendorId_idempotencyKey: { vendorId: event.vendorId, idempotencyKey } },
-        select: { id: true, status: true, startedAt: true },
-      });
-      if (!existing || existing.status === "completed" || existing.status === "skipped") {
-        results.push({ ruleId: rule.id, status: "duplicate" });
-        continue;
-      }
-      const now = new Date();
-      const reclaimed = await db.automationExecutionLog.updateMany({
-        where: {
-          id: existing.id,
-          vendorId: event.vendorId,
-          OR: [
-            { status: "failed" },
-            { status: "running", startedAt: { lt: new Date(now.getTime() - 5 * 60_000) } },
-          ],
-        },
-        data: { status: "running", startedAt: now, completedAt: null, errorCode: null },
-      });
-      if (reclaimed.count !== 1) {
-        results.push({ ruleId: rule.id, status: "duplicate" });
-        continue;
-      }
-      log = { id: existing.id };
+    const claim = await claimRuleExecution(db, rule, event, firstStep);
+    if ("status" in claim) {
+      results.push({ ruleId: rule.id, status: claim.status });
+      continue;
     }
+    const { log } = claim;
 
     if (!matched) {
-      await db.automationExecutionLog.update({
-        where: { id: log.id },
-        data: { status: "skipped", conditionMatched: false, completedAt: new Date() },
-      });
-      results.push({ ruleId: rule.id, status: "skipped" });
+      const recorded = await finishExecution(db, log.id, { status: "skipped", conditionMatched: false, completedAt: new Date() });
+      results.push({ ruleId: rule.id, status: recorded ? "skipped" : "rule_deleted" });
       continue;
     }
 
     const actionResults: unknown[] = [];
-    const artifacts: { voucherUrl?: string; consultationUrl?: string; webinarUrl?: string } = {
-      consultationUrl: event.consultationUrl,
-      webinarUrl: event.webinarUrl,
-    };
+    let status: "completed" | "failed" | "rule_deleted";
     try {
-      const orderedActions = rule.actions
-        .map((action, index) => ({ action, index }))
-        .sort((left, right) => Number(right.action.type === "issue_repurchase_voucher") - Number(left.action.type === "issue_repurchase_voucher"));
-      for (const { action, index } of orderedActions) {
-        actionResults.push(await executeAction(db, rule, event, log.id, action, index, artifacts, queuedEmailIds));
-      }
-      if (artifacts.voucherUrl && !rule.actions.some((action) => action.type === "line_push") && event.subjectType !== "viewer_session") {
-        const delivery = await enqueueLineNotification(db, {
-          vendorId: event.vendorId,
-          subjectType: event.subjectType,
-          subjectId: event.subjectId,
-          trigger: "automation",
-          idempotencyKey: stableLineIdempotencyKey(["automation-voucher", log.id]),
-          messages: [buildAutomationLineMessage({
-            message: "感謝支持，您的專屬回購折價券已經準備好了。",
-            buttonLabel: "立即使用",
-            buttonUrl: artifacts.voucherUrl,
-          })],
-        });
-        actionResults.push({ type: "line_push", status: delivery.status, source: "voucher_delivery" });
-      }
-      await db.automationExecutionLog.update({
-        where: { id: log.id },
-        data: {
-          status: "completed",
-          conditionMatched: true,
-          actionResults: actionResults as Prisma.InputJsonArray,
-          completedAt: new Date(),
-        },
+      await runRuleActions(db, rule, event, log.id, queuedEmailIds, actionResults, { emailTrigger: AUTOMATION_EMAIL_TRIGGER });
+      // An action that reports its own failure (today only an automation
+      // e-mail without an unsubscribe link) lets the other actions run, but
+      // the execution is recorded as failed, like a thrown action, so the
+      // same event can reclaim it. A reclaim repeats every action safely: the
+      // tag is an upsert, the voucher, LINE and e-mail rows have
+      // deterministic ids or idempotency keys.
+      const reportedFailure = reportedActionFailure(actionResults);
+      const recorded = await finishExecution(db, log.id, {
+        status: reportedFailure ? "failed" : "completed",
+        conditionMatched: true,
+        actionResults: actionResults as Prisma.InputJsonArray,
+        ...(reportedFailure ? { errorCode: reportedFailure.reason } : {}),
+        completedAt: new Date(),
       });
-      results.push({ ruleId: rule.id, status: "completed" });
+      status = !recorded ? "rule_deleted" : reportedFailure ? "failed" : "completed";
     } catch {
-      await db.automationExecutionLog.update({
-        where: { id: log.id },
-        data: {
-          status: "failed",
-          conditionMatched: true,
-          actionResults: actionResults as Prisma.InputJsonArray,
-          errorCode: "action_failed",
-          completedAt: new Date(),
-        },
+      // A thrown action ends this rule only (as before). When the rule was
+      // deleted meanwhile (e.g. a tag whose sourceExecutionLogId no longer
+      // exists), the failed-state write finds no log row either; that is the
+      // P2025 finishExecution absorbs, and the event's other rules still run.
+      const recorded = await finishExecution(db, log.id, {
+        status: "failed",
+        conditionMatched: true,
+        actionResults: actionResults as Prisma.InputJsonArray,
+        errorCode: "action_failed",
+        completedAt: new Date(),
       });
-      results.push({ ruleId: rule.id, status: "failed" });
+      status = recorded ? "failed" : "rule_deleted";
     }
+    // F-4: the rule's delayed steps start after its immediate actions,
+    // whatever they did (the steps re-check everything when they are due).
+    // Never fails the event: see startDelayedSteps.
+    if (status !== "rule_deleted" && firstStep) {
+      await startDelayedSteps(db, { ruleId: rule.id, event, logId: log.id, anchorAt: log.createdAt });
+    }
+    results.push({ ruleId: rule.id, status });
   }
   return results;
 }
+
+/**
+ * F-4 (docs/product/delayed-steps-design.md §8): one DelayedStepRun per rule
+ * and triggering event, anchored at the event's first execution, due when the
+ * rule's first active step is. Only for a trigger merchants may use today and
+ * whose subject the worker can read again later (DELAYED_STEP_AUTOMATION_
+ * TRIGGERS): the registration of
+ * `form_registered`, the booking of the two consultation triggers. The run
+ * stores references only (rule, execution log, subject, customer key), never
+ * the event's e-mail address.
+ *
+ * Best effort and idempotent: the unique (vendorId, automationRuleId,
+ * sourceExecutionLogId) makes a replay a no-op, and any error is reported and
+ * swallowed, so the immediate actions already done and the registration or
+ * booking request are never affected.
+ */
+async function startDelayedSteps(
+  db: AutomationDb,
+  input: { ruleId: string; event: AutomationEvent; logId: string; anchorAt: Date | undefined },
+) {
+  const { event } = input;
+  try {
+    // payment_paid (an order subject) never starts a run: see DELAYED_STEP_AUTOMATION_TRIGGERS.
+    if (!automationTriggerSupportsDelayedSteps(event.trigger) || event.subjectType !== "buyer_registration" || !event.subjectKeyHash) return;
+    // Closed beta (M3): only a vendor holding the grant, and not suspended.
+    const vendor = await db.vendor.findUnique({ where: { id: event.vendorId }, select: { betaFeatureGrants: true, suspendedAt: true } });
+    if (!vendor || vendor.suspendedAt || !isFeatureEnabled(vendor, AUTOMATION_DELAYED_STEPS_FEATURE)) return;
+    const subject = event.trigger === "form_registered"
+      // FormSubmission has no vendorId: the registration is bound through its form.
+      ? await db.formSubmission.findFirst({ where: { id: event.subjectId, form: { vendorId: event.vendorId } }, select: { id: true } })
+        .then((row) => row ? { formSubmissionId: row.id } : null)
+      : await db.consultationBooking.findFirst({ where: { id: event.subjectId, vendorId: event.vendorId }, select: { id: true } })
+        .then((row) => row ? { consultationBookingId: row.id } : null);
+    if (!subject) return;
+    const anchorAt = input.anchorAt ?? new Date();
+    const subjectKeyHash = event.subjectKeyHash;
+    // m1: the first due time comes from the steps as they are now, read after
+    // the rule row FOR SHARE. A merchant saving steps holds that row FOR UPDATE
+    // (automation-delayed-steps.ts), and switching the rule off does too, so
+    // this run either waits for the save and uses its steps, or the save
+    // re-times this run after it. A rule switched off meanwhile gets no run.
+    await db.$transaction(async (tx) => {
+      // The registration or booking request waits at most this long for a
+      // merchant save; a timeout is reported below and the event goes on.
+      await tx.$executeRaw`SET LOCAL lock_timeout = '2s'`;
+      const locked = await tx.$queryRaw<Array<{ id: string }>>`
+        SELECT "id" FROM "AutomationRule"
+        WHERE "id" = ${input.ruleId} AND "vendorId" = ${event.vendorId} AND "isActive"
+        FOR SHARE
+      `;
+      if (locked.length === 0) return;
+      const first = await tx.automationRuleStep.findFirst({
+        where: { vendorId: event.vendorId, ruleId: input.ruleId, isActive: true },
+        orderBy: { delayMinutes: "asc" },
+        select: { delayMinutes: true },
+      });
+      if (!first) return;
+      await tx.delayedStepRun.createMany({
+        data: [{
+          vendorId: event.vendorId,
+          automationRuleId: input.ruleId,
+          sourceExecutionLogId: input.logId,
+          ...subject,
+          subjectKeyHash,
+          anchorAt,
+          cursorDelayMinutes: -1,
+          status: "active",
+          nextRunAt: new Date(anchorAt.getTime() + first.delayMinutes * 60_000),
+        }],
+        skipDuplicates: true,
+      });
+    });
+  } catch (error) {
+    // A rule deleted in between (its log cascades with it) is simply over.
+    if (isForeignKeyViolation(error)) return;
+    try {
+      captureOperationalError(error, { area: "automation_delayed_steps", operation: "start_run", vendorId: event.vendorId });
+    } catch {
+      // Monitoring must never change the event's outcome.
+    }
+  }
+}
+
+export type AutomationStepOutcome = {
+  status: "completed" | "skipped" | "already_done" | "invalid_step" | "rule_deleted" | "rule_inactive" | "failed";
+  /** E-mails this execution queued (AUTOMATION_STEP_EMAIL_TRIGGER), for the worker's send quota. */
+  emailsQueued: number;
+};
+
+/** Deterministic id of one delayed step's execution log: a reclaimed step reuses it, so every action id derived from it repeats. */
+export function automationStepExecutionLogId(vendorId: string, runId: string, stepId: string) {
+  return `aes_${createHash("sha256").update(`automation-step:v1:${vendorId}:${runId}:${stepId}`).digest("hex").slice(0, 28)}`;
+}
+
+function automationStepIdempotencyKey(input: { vendorId: string; ruleId: string; runId: string; stepId: string }) {
+  return createHash("sha256").update(`automation-step:v1:${input.vendorId}:${input.ruleId}:${input.runId}:${input.stepId}`).digest("hex");
+}
+
+/**
+ * Executes one due delayed step for the worker (src/lib/automation-delayed-
+ * steps.ts), which holds the run's lease and rebuilt `event` from the run's
+ * stored references (recipient read again, never from the original event).
+ *
+ * One AutomationExecutionLog per run and step: its id and idempotency key are
+ * both derived from (vendor, run, step), so a lease that expired and was
+ * claimed again finds the same log. A completed or skipped log means the step
+ * is done (`already_done`, nothing runs again); a running or failed one is
+ * resumed, and every action id, LINE key and voucher bearer derived from the
+ * log id repeats, so nothing is sent or issued twice. The step's condition is
+ * evaluated against `event` now. E-mails are queued with
+ * AUTOMATION_STEP_EMAIL_TRIGGER and are not dispatched here: the job sends
+ * them on the sequence quota.
+ */
+export async function executeAutomationStep(
+  db: AutomationDb,
+  input: { ruleId: string; runId: string; stepId: string; condition: unknown; actions: unknown; event: AutomationEvent },
+): Promise<AutomationStepOutcome> {
+  const { event } = input;
+  // MINOR-3: the rule and the run are read again, FOR SHARE, right before
+  // anything runs. Switching the rule off holds its row FOR UPDATE while it
+  // stops the runs, so a switch-off that committed after the worker read the
+  // rule is seen here and nothing runs. (One committed later still can; the
+  // send-time check stops its e-mails.)
+  const current = await db.$transaction(async (tx) => {
+    const rule = await tx.$queryRaw<Array<{ id: string }>>`
+      SELECT "id" FROM "AutomationRule"
+      WHERE "id" = ${input.ruleId} AND "vendorId" = ${event.vendorId} AND "isActive"
+      FOR SHARE
+    `;
+    if (rule.length === 0) return false;
+    const run = await tx.delayedStepRun.findFirst({
+      where: { id: input.runId, vendorId: event.vendorId, automationRuleId: input.ruleId, status: "active" },
+      select: { id: true },
+    });
+    return Boolean(run);
+  });
+  if (!current) return { status: "rule_inactive", emailsQueued: 0 };
+
+  const logId = automationStepExecutionLogId(event.vendorId, input.runId, input.stepId);
+  const plan = await planStepExecution(db, { vendorId: event.vendorId, ruleId: input.ruleId, logId, condition: input.condition, actions: input.actions });
+  if (plan.kind === "done") return { status: "already_done", emailsQueued: 0 };
+  if (plan.kind === "invalid_step") return { status: "invalid_step", emailsQueued: 0 };
+  if (plan.kind === "invalid_snapshot") {
+    // Fail closed: never fall back to the current actions (their indexes
+    // could point at other outputs). The lease stays and the run is
+    // cancelled as failed after its attempts.
+    const recorded = await finishExecution(db, logId, { status: "failed", errorCode: "snapshot_invalid", completedAt: new Date() });
+    return { status: recorded ? "failed" : "rule_deleted", emailsQueued: 0 };
+  }
+  const rule = plan.rule;
+  if (plan.kind === "start") {
+    const idempotencyKey = automationStepIdempotencyKey({ vendorId: event.vendorId, ruleId: input.ruleId, runId: input.runId, stepId: input.stepId });
+    try {
+      await db.automationExecutionLog.create({
+        data: {
+          id: logId,
+          vendorId: event.vendorId,
+          ruleId: input.ruleId,
+          idempotencyKey,
+          eventId: automationStepEventId(input.runId, input.stepId),
+          trigger: event.trigger,
+          subjectType: event.subjectType,
+          subjectKeyHash: event.subjectKeyHash,
+          status: "running",
+          // m2: the actions this execution runs, kept for a resume.
+          actionResults: stepActionResults(rule.actions, []),
+        },
+        select: { id: true },
+      });
+    } catch (error) {
+      if (isForeignKeyViolation(error)) return { status: "rule_deleted", emailsQueued: 0 };
+      // The worker holds the run's lease, so no other execution of this step
+      // is expected; a conflict fails this attempt and the retry resumes.
+      throw error;
+    }
+  } else {
+    const resumed = await db.automationExecutionLog.updateMany({
+      where: { id: logId, vendorId: event.vendorId, status: { in: ["running", "failed"] } },
+      data: { status: "running", startedAt: new Date(), completedAt: null, errorCode: null },
+    });
+    if (resumed.count !== 1) return { status: "already_done", emailsQueued: 0 };
+  }
+
+  if (!automationConditionMatches(rule.condition, event)) {
+    const recorded = await finishExecution(db, logId, { status: "skipped", conditionMatched: false, completedAt: new Date() });
+    return { status: recorded ? "skipped" : "rule_deleted", emailsQueued: 0 };
+  }
+
+  const actionResults: unknown[] = [];
+  const queuedEmailIds: string[] = [];
+  const context: ActionContext = { emailTrigger: AUTOMATION_STEP_EMAIL_TRIGGER, emailIdempotencyKey: automationStepEmailIdempotencyKey };
+  try {
+    await runRuleActions(db, rule, event, logId, queuedEmailIds, actionResults, context);
+  } catch {
+    const recorded = await finishExecution(db, logId, {
+      status: "failed",
+      conditionMatched: true,
+      actionResults: stepActionResults(rule.actions, actionResults),
+      errorCode: "action_failed",
+      completedAt: new Date(),
+    });
+    return { status: recorded ? "failed" : "rule_deleted", emailsQueued: queuedEmailIds.length };
+  }
+  const reportedFailure = reportedActionFailure(actionResults);
+  const recorded = await finishExecution(db, logId, {
+    status: reportedFailure ? "failed" : "completed",
+    conditionMatched: true,
+    actionResults: stepActionResults(rule.actions, actionResults),
+    ...(reportedFailure ? { errorCode: reportedFailure.reason } : {}),
+    completedAt: new Date(),
+  });
+  return { status: !recorded ? "rule_deleted" : reportedFailure ? "failed" : "completed", emailsQueued: queuedEmailIds.length };
+}
+
+type StepPlan =
+  | { kind: "done" }
+  | { kind: "invalid_step" }
+  | { kind: "invalid_snapshot" }
+  | { kind: "start" | "resume"; rule: ParsedRule };
+
+/**
+ * What one step's execution runs: its current actions the first time; the
+ * actions its execution log recorded when it is resumed (m2), never the
+ * current ones; nothing once the log is completed or skipped.
+ */
+async function planStepExecution(
+  db: Pick<AutomationDb, "automationExecutionLog">,
+  input: { vendorId: string; ruleId: string; logId: string; condition: unknown; actions: unknown },
+): Promise<StepPlan> {
+  const existing = await db.automationExecutionLog.findFirst({
+    where: { id: input.logId, vendorId: input.vendorId },
+    select: { status: true, actionResults: true },
+  });
+  if (existing?.status === "completed" || existing?.status === "skipped") return { kind: "done" };
+  if (existing) {
+    const snapshot = parseAutomationRule({ id: input.ruleId, condition: input.condition, actions: stepActionSnapshot(existing.actionResults) });
+    return snapshot ? { kind: "resume", rule: snapshot } : { kind: "invalid_snapshot" };
+  }
+  const rule = parseAutomationRule({ id: input.ruleId, condition: input.condition, actions: input.actions });
+  return rule ? { kind: "start", rule } : { kind: "invalid_step" };
+}
+
+/**
+ * E-mails the step's execution would queue (review MINOR-2): the snapshot's
+ * when it resumes, 0 when it is done or cannot run. The worker compares this
+ * with the round's e-mail room before running the step.
+ */
+export async function plannedAutomationStepEmailCount(
+  db: Pick<AutomationDb, "automationExecutionLog">,
+  input: { vendorId: string; ruleId: string; runId: string; stepId: string; condition: unknown; actions: unknown },
+) {
+  const plan = await planStepExecution(db, { ...input, logId: automationStepExecutionLogId(input.vendorId, input.runId, input.stepId) });
+  return plan.kind === "start" || plan.kind === "resume"
+    ? plan.rule.actions.filter((action) => action.type === "send_email_notification").length
+    : 0;
+}
+
+/**
+ * `actionResults` of a delayed step's execution log: the actions it runs
+ * (its snapshot, m2) and their results. Immediate executions keep the plain
+ * results array.
+ */
+function stepActionResults(actions: AutomationAction[], results: unknown[]): Prisma.InputJsonObject {
+  return { actions: actions as Prisma.InputJsonArray, results: results as Prisma.InputJsonArray };
+}
+
+function stepActionSnapshot(actionResults: unknown) {
+  return actionResults && typeof actionResults === "object" && !Array.isArray(actionResults)
+    ? (actionResults as { actions?: unknown }).actions
+    : undefined;
+}
+
+/** Whether an execution log belongs to a delayed step (shown as such in the back office). */
+export function isAutomationStepExecution(log: { eventId: string }) {
+  return parseAutomationStepEventId(log.eventId) !== null;
+}
+
+export { automationStepEventId };
 
 /**
  * Runs once when a live transitions to ended. Attendance is proven by a
@@ -617,56 +1217,4 @@ export async function dispatchFormNoShowAutomationsForLive(
     cursor = submissions.length === 200 ? submissions.at(-1)?.id : undefined;
   } while (cursor);
   return { dispatched };
-}
-
-export async function dispatchPaymentPaidAutomation(input: {
-  vendorId: string;
-  webhookEventId: string;
-  transactionId: string;
-}) {
-  const db = getDb();
-  const order = await db.commerceOrder.findFirst({
-    where: { vendorId: input.vendorId, primaryPaymentTransactionId: input.transactionId, status: "paid" },
-    select: { id: true, totalAmountCents: true, currency: true, checkoutIdentityHash: true, automationCustomerKeyHash: true },
-  });
-  if (!order) return [];
-  const results = await dispatchAutomationEvent(db, {
-    vendorId: input.vendorId,
-    eventId: input.webhookEventId,
-    trigger: "payment_paid",
-    subjectType: "buyer_order",
-    subjectId: order.id,
-    subjectKeyHash: order.automationCustomerKeyHash ?? order.checkoutIdentityHash,
-    orderAmountCents: order.totalAmountCents,
-    currency: order.currency,
-  });
-  if (results.some((result) => result.status === "failed")) throw new Error("Payment automation action failed.");
-  return results;
-}
-
-/** Recovers a post-commit automation dispatch from a repeated provider callback. */
-export async function dispatchPaymentPaidAutomationByOrder(input: {
-  webhookEventId: string;
-  providerName: string;
-  orderNumber: string;
-  vendorId?: string;
-}) {
-  const db = getDb();
-  const transactions = await db.paymentTransaction.findMany({
-    where: {
-      providerName: input.providerName,
-      orderNumber: input.orderNumber,
-      status: "paid",
-      ...(input.vendorId ? { vendorId: input.vendorId } : {}),
-    },
-    orderBy: { createdAt: "desc" },
-    take: 2,
-    select: { id: true, vendorId: true },
-  });
-  if (transactions.length !== 1 || !transactions[0]) throw new Error("Automation payment source is ambiguous.");
-  return dispatchPaymentPaidAutomation({
-    vendorId: transactions[0].vendorId,
-    webhookEventId: input.webhookEventId,
-    transactionId: transactions[0].id,
-  });
 }

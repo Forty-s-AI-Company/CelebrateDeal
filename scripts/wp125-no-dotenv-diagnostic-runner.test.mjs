@@ -30,6 +30,7 @@ test("WP125 required inputs and artifact parser fail closed on incomplete fixtur
     await fsp.writeFile(path.join(root, "package.json"), "{}");
     await fsp.writeFile(path.join(root, "next.config.ts"), "export default {};");
     await fsp.writeFile(path.join(root, "tsconfig.json"), "{}");
+    await fsp.writeFile(path.join(root, "tsconfig.build.json"), "{}");
     await fsp.writeFile(path.join(root, "prisma", "schema.prisma"), "datasource db { provider = \"sqlite\" url = \"file:dev.db\" }");
     assert.deepEqual(requiredInputs(root), ["public"]);
     await fsp.mkdir(path.join(root, "public"), { recursive: true });

@@ -33,6 +33,7 @@ const ROOT_FILES = Object.freeze([
   "tailwind.config.js",
   "tailwind.config.ts",
   "tsconfig.json",
+  "tsconfig.build.json",
   "prisma.config.ts",
   "components.json",
   "vercel.json",

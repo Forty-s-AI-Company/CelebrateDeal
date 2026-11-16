@@ -4,7 +4,7 @@ import path from "node:path";
 
 // The mirror and its receipt use one config inventory so they cannot drift.
 export const TEAM_VIDEO_MIRROR_CONFIG_FILES = [
-  "package.json", "tsconfig.json", "next.config.ts", "postcss.config.mjs",
+  "package.json", "tsconfig.json", "tsconfig.build.json", "next.config.ts", "postcss.config.mjs",
   "sentry.server.config.ts", "sentry.edge.config.ts", "prisma.playwright.config.ts",
 ];
 

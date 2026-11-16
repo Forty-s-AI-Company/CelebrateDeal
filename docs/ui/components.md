@@ -1,0 +1,174 @@
+# 後台共用 UI 元件
+
+後台頁面先用這裡的元件，再考慮手寫。設計原則（中性後台、橘紅只給主要動作、狀態不能只靠顏色、尊重 reduced motion）見 [domain-workflows.md 的「設計與互動」](../domain-workflows.md#設計與互動)；色彩 token 在 [globals.css](../../src/app/globals.css)。
+
+| 元件 | 檔案 | 用途 |
+|---|---|---|
+| `PageHeader`、`Card`、`ButtonLink`、`SubmitButton`、`DangerButton`、`Badge`、`EmptyState` | [ui.tsx](../../src/components/ui.tsx) | 頁首、卡片、按鈕、徽章、空狀態 |
+| `Field`、`TextArea`、`SelectField`、`useFieldMessages`、`FormErrorSummary`、`focusFirstInvalidField` | [ui.tsx](../../src/components/ui.tsx) | 表單欄位與錯誤（見下方「欄位錯誤」） |
+| `Stepper` | [stepper.tsx](../../src/components/stepper.tsx) | 多步驟精靈的步驟導覽 |
+| `Tabs`、`TabPanel`、`tabId`、`tabPanelId` | [tabs.tsx](../../src/components/tabs.tsx) | 同一頁內切換幾組內容 |
+| `Toast`、`useToast` | [toast.tsx](../../src/components/toast.tsx) | 不打斷操作的短暫確認（「已儲存」「已複製」） |
+| `SideDrawer` | [side-drawer.tsx](../../src/components/side-drawer.tsx) | 就地建立或編輯，不離開目前頁面（例如漏斗編輯器的發布檢查抽屜 [funnel-publish-drawer.tsx](../../src/components/landing-pages/funnel-publish-drawer.tsx)） |
+| `useDialogBehavior` | [use-dialog-behavior.ts](../../src/lib/use-dialog-behavior.ts) | 自製 modal 的 Escape、焦點圈限與還原 |
+
+`ui.tsx` 不是 Client Component，Server Component 也能直接用；`stepper.tsx`、`tabs.tsx`、`toast.tsx` 有 `"use client"`，事件處理函式只能從 Client Component 傳入。
+
+## Stepper
+
+多步驟精靈（例如直播精靈）的步驟導覽：`<nav aria-label>` 內一個 `<ol>`，每一步是一個原生 `<button>`。
+
+```tsx
+import { Stepper } from "@/components/stepper";
+
+<Stepper
+  label="直播設定步驟"
+  activeKey={activeStep}
+  onSelect={moveToStep}
+  steps={[
+    { key: "content", label: "內容", description: "標題、影片與開播時間", icon: FileVideo, panelId: "live-step-panel-content",
+      status: { label: "尚有必填", shortLabel: "待補", icon: CircleAlert, className: "border-amber-300 bg-amber-50 text-amber-900" } },
+    // …
+  ]}
+/>
+```
+
+| Prop | 說明 |
+|---|---|
+| `label` | 導覽區的無障礙名稱。 |
+| `steps` | `{ key, label, description?, icon?, status?, panelId?, disabled? }[]`。`panelId` 會成為按鈕的 `aria-controls`。 |
+| `activeKey` | 目前步驟；由呼叫端持有。 |
+| `onSelect(key)` | 按下步驟時呼叫。能不能跳過去（例如前一步還有必填）由呼叫端決定。 |
+| `showPosition` | 預設 `true`：手機版顯示「第 n 步／共 N 步：…」，`md` 以上隱藏。 |
+
+- 無障礙：目前步驟 `aria-current="step"`；每一步都在 Tab 順序裡，Enter／Space 啟動；按下後焦點留在按鈕上，要不要把焦點移進面板由呼叫端決定。
+- 狀態徽章一定有文字（`label`；有 `shortLabel` 時手機顯示短字、`label` 留給輔助科技），圖示 `aria-hidden`。
+- 版面：1–6 步各自等寬一列；超過 6 步改成會換行的格狀。按鈕最小高度 56px。
+- 不持有狀態、不用 hook，所以也能在測試中直接當函式呼叫展開。
+
+## Tabs
+
+WAI-ARIA [tabs pattern](https://www.w3.org/WAI/ARIA/apg/patterns/tabs/)，自動啟用（焦點移到哪個分頁就選哪個）。
+
+```tsx
+import { TabPanel, Tabs } from "@/components/tabs";
+
+<Tabs idPrefix="template" label="範本來源" className="mb-5" value={tab} onChange={setTab} items={[
+  { key: "platform", label: <>平台範本 <span className="ml-1 text-xs font-normal text-slate-500">{count}</span></> },
+  { key: "mine", label: "我的範本" },
+]} />
+{tab === "platform" ? <TabPanel idPrefix="template" tabKey="platform">…</TabPanel> : <TabPanel idPrefix="template" tabKey="mine">…</TabPanel>}
+```
+
+| Prop | 說明 |
+|---|---|
+| `idPrefix` | 分頁 id 為 `${idPrefix}-tab-${key}`、面板 id 為 `${idPrefix}-panel-${key}`（`tabId()`／`tabPanelId()`）；同一頁要唯一。 |
+| `label` | tablist 的無障礙名稱。 |
+| `items` | `{ key, label, disabled? }[]`。 |
+| `value`／`onChange(key)` | 受控的選取值。 |
+| `orientation` | `"horizontal"`（預設）或 `"vertical"`（設 `aria-orientation`，改用 ↑／↓）。 |
+| `className` | 加在 tablist 上，例如外距。 |
+
+`TabPanel` 的 props：`idPrefix`、`tabKey`、`className`、`focusable`（面板裡沒有可聚焦內容時設 `true`，讓面板本身可用 Tab 進入）。
+
+- 鍵盤：←／→（垂直時 ↑／↓）移到上一個／下一個可用分頁並循環；Home／End 到第一個／最後一個可用分頁；停用的分頁會被略過。其他按鍵不攔截。
+- roving tabindex：只有選取中的分頁 `tabIndex=0`，Tab 會直接從分頁列進到面板；選取中的分頁若停用，改由第一個可用分頁接收焦點。
+- 面板可以只掛載選取中的那一個（範本庫的做法），也可以全部掛載再用 `hidden` 隱藏。
+- 目前只有底線樣式；需要膠囊（segmented）樣式時再加 `variant`，不要另外手寫一份 tablist。
+
+## Toast
+
+不打斷操作的短暫確認。一次只顯示一則，新的會取代舊的。
+
+```tsx
+import { Toast, useToast } from "@/components/toast";
+
+const { toast, showToast, dismissToast } = useToast();
+// 成功之後：
+showToast(`範本已改名為「${name}」。`);
+showToast("已複製連結。", { tone: "info", duration: 3_000 });
+showToast("設定已套用，重新整理後生效。", { duration: null }); // 不自動消失
+showToast(`已發布版本 v2。公開網址：${url}`, { link: { href: "/lp/spring", label: "開啟公開頁", external: true } });
+// 同一個元件內一定要渲染：
+<Toast toast={toast} onDismiss={dismissToast} />
+```
+
+| API | 說明 |
+|---|---|
+| `useToast()` | 回傳 `{ toast, showToast(text, { tone?, duration?, link? }), dismissToast }`。`tone` 為 `"success"`（預設）或 `"info"`；`duration` 預設 `DEFAULT_TOAST_DURATION_MS`（5000 ms），`null` 為不自動消失；`link`（`{ href, label, external? }`）在文字後加一個後續連結（例如剛發布的公開頁），文字本身仍要完整說明結果。 |
+| `<Toast toast onDismiss dismissLabel? />` | 顯示區域；`dismissLabel` 預設「關閉通知」。 |
+
+- 無障礙：`role="status"`、`aria-live="polite"`、`aria-atomic="true"` 的區域從第一次渲染就存在，訊息插入同一區域才會被可靠朗讀；同一句話再顯示一次也會重新朗讀。
+- 不搶焦點。滑鼠停在上面或焦點在裡面時暫停計時；關閉按鈕（44px）或 Escape 可關閉，從鍵盤關閉時焦點回到進入前的元素。
+- 連結：放在 `role="status"` 區域之外，不會被朗讀成訊息的一部分；可用 Tab 進入（進入時暫停計時）。`external` 會開新分頁。
+- 動態：只用 transform 進場（`.ui-toast-card`），`prefers-reduced-motion: reduce` 時不動。
+- 位置：桌面左下；手機置底並避開「最新消息」按鈕與底部主要導覽（見 `globals.css` 的 `.ui-toast-region`）。不使用 portal，所以祖先元素不能有 `transform`／`filter`，否則 `position: fixed` 會失準。
+- 不要用 Toast 顯示錯誤或需要使用者處理的事：錯誤留在頁內，用 `role="alert"` 或下方的欄位錯誤模式。
+
+## 欄位錯誤
+
+一個表單的錯誤分兩層：欄位旁的訊息，加上表單上方一個摘要。
+
+```tsx
+import { Field, FormErrorSummary, focusFirstInvalidField, useFieldMessages } from "@/components/ui";
+
+<form ref={formRef}>
+  <FormErrorSummary message={state.message} errors={state.fieldErrors} />
+  <Field label="商品名稱" name="name" error={state.fieldErrors.name} hint="最多 200 字" />
+</form>
+
+// 錯誤渲染、欄位恢復可編輯之後：
+useEffect(() => { if (errorVersion) focusFirstInvalidField(formRef.current); }, [errorVersion]);
+```
+
+| API | 說明 |
+|---|---|
+| `Field`／`TextArea`／`SelectField` 的 `error`、`hint` | 有 `error` 時控制項加 `aria-invalid="true"` 與紅框；`aria-describedby` 依序指向錯誤與提示。訊息放在 `<label>` 外，標籤本身仍是唯一的無障礙名稱；外層元素固定，切換錯誤不會重新掛載（清空）輸入框。 |
+| `useFieldMessages(error, hint)` | 給手寫控制項用：回傳 `controlProps`（展開到控制項上）、`controlClass`（邊框色）與 `messages`（放在 label 之後）。 |
+| `FormErrorSummary({ message, errors?, fieldHref?, onFieldSelect? })` | 沒有 `message` 時不渲染；有時是 `role="alert"`、`tabIndex={-1}`、`data-form-error-summary` 的摘要，`errors` 中非空的欄位訊息列成清單。給 `fieldHref(name)`（回傳頁內錨點，沒有 JavaScript 時的退路）時，每則訊息變成 `<a>`；再給 `onFieldSelect(name)` 就攔截點擊，由呼叫端把焦點移到欄位。商品表單用它跳到對應段落與欄位。 |
+| `focusFirstInvalidField(scope)` | 聚焦 `scope` 內第一個 `aria-invalid="true"` 的控制項；沒有的話聚焦摘要；都沒有就不動。回傳被聚焦的元素。 |
+
+- 伺服器回傳的欄位錯誤與瀏覽器原生驗證都用同一組 `error` prop 顯示。
+- 欄位停用（送出中）時不要聚焦；等 pending 結束再呼叫 `focusFirstInvalidField`。
+
+## 後續遷移清單
+
+本次只遷移示範點（直播精靈→`Stepper`、範本庫→`Tabs`／`Toast`、商品表單→`FormErrorSummary`）。可以接著改用新元件的地方：
+
+- `Tabs`：[funnel-editor-library.tsx](../../src/components/landing-pages/funnel-editor-library.tsx) 的「新增內容」分頁（目前沒有方向鍵與 roving tabindex；需要先加膠囊樣式 `variant`）。
+- `Toast`：用 `role="status"` 段落顯示短暫確認的 Client Component，例如 [referral-share-controls.tsx](../../src/components/referral-share-controls.tsx)、[team-template-list.tsx](../../src/components/team-template-list.tsx)、[recovery-codes-actions.tsx](../../src/components/recovery-codes-actions.tsx) 的「已複製」，以及 [line-rich-menu-studio.tsx](../../src/components/line-rich-menu-studio.tsx) 的「草稿已儲存」。由 query string 帶出、在 Server Component 渲染的「已儲存」提示（例如各 `settings/*` 頁）不適合直接改，需先改成 Client Component。
+- 欄位錯誤：[live-resource-drawers.tsx](../../src/components/live-resource-drawers.tsx) 的 `FieldError`／`RootError`／`useFocusFirstError`、[product-form-client.tsx](../../src/components/product-form-client.tsx) 的 `useFocusFirstInvalid` 可改用 `useFieldMessages` 與 `focusFirstInvalidField`；其餘手寫輸入框另案處理。
+- `Stepper`：[commerce-checkout-form.tsx](../../src/components/commerce-checkout-form.tsx) 的結帳進度是純文字 `aria-current="step"`，不是可點的步驟，不需要改；U5 表單分段可直接使用 `Stepper`。
+
+## 商品表單段落
+
+[product-form-sections.tsx](../../src/components/product-form-sections.tsx) 把長表單分成「基本資料、價格與庫存、交付、結帳與加購、進階與上架」五段（`ProductFormSection`：`<section aria-labelledby>` 加 `h2` 標題與一句說明）。
+
+- 導覽（`ProductFormSectionNav`）：桌機（`lg` 以上）在左側 sticky，手機收成頂部「跳到段落」`<details>`。兩者都是一般錨點連結；點擊後捲動並把焦點移到段落標題（`tabIndex=-1`），手機選單自動收合。目前段落由 `IntersectionObserver` 追蹤，用 `aria-current="location"` 標示（沒有 `IntersectionObserver` 時停在第一段）。這不是 `Stepper`：段落可以任意順序填寫，沒有「步驟」語意。
+- 錯誤跳轉：`sectionOfField(name)` 對應欄位所在段落，摘要連結先到欄位，沒有可聚焦的欄位（固定幣別、圖片）就改到段落標題。新增欄位時記得補進 `FIELD_SECTION`。
+- 百分比顯示：課程分潤欄位在畫面上用百分比（最多兩位小數），隱藏欄位仍以 `coursePromoterShareBps`（萬分比整數）送出，換算在 [product-share-percent.ts](../../src/lib/product-share-percent.ts)，全程用字串與整數運算、不四捨五入；超過兩位小數的輸入會以伺服器必拒的 `invalid:…` 送出並顯示錯誤。輸入框是 `type="text" inputMode="decimal"` 加 `pattern`（`SHARE_PERCENT_INPUT_PATTERN`，與換算器接受的格式一致），大多數情況下原生驗證會先擋下超過兩位小數、科學記號與負數；`.5`、`0020` 這類合法寫法會被換算並正規化。可見輸入框沒有 `name`，實際送出的是隱藏欄位，所以 hydrate 前輸入框是 `readOnly` 並提示「頁面載入完成後才能修改」，避免改了卻送出舊值。
+
+## 百分比與 bps 換算
+
+比例欄位一律在畫面上用百分比（最多兩位小數），伺服器欄位與整數 bps 不變。共用換算在 [percent-bps.ts](../../src/lib/percent-bps.ts)：`parsePercentText`（字串與整數運算，不經浮點、不四捨五入）、`bpsToPercentText`、`PERCENT_INPUT_PATTERN`（與換算器接受的格式一致），以及兩種送出值：`percentTextToPercentWire`（伺服器收百分比字串，例如聯盟政策的 `tierRate`）與 `percentTextToBpsWire`（伺服器收整數 bps，例如聯盟夥伴的 `commissionRateBps`；空白也送 `invalid:`，因為 `Number("")` 是合法的 0）。[product-share-percent.ts](../../src/lib/product-share-percent.ts) 保留商品表單原本的介面（先 trim），內部改用這個模組。
+
+做法一致：可見輸入框 `type="text" inputMode="decimal"` 加 `pattern`、沒有 `name`；隱藏欄位送換算後的值；hydrate 前輸入框 `readOnly`。
+
+## 聯盟佣金政策表單
+
+[merchant-affiliate-policy-form.tsx](../../src/components/merchant-affiliate-policy-form.tsx) 分成總上限、成交件數階梯、團隊上線佣金、商品直接佣金四段，旁邊是唯讀的[佣金試算](../../src/components/merchant-affiliate-commission-estimate.tsx)。
+
+- 欄位錯誤：[merchant-affiliate-policy-draft.ts](../../src/lib/merchant-affiliate-policy-draft.ts) 的 `validatePolicyDraft` 依伺服器規則逐欄定位（第幾階、第幾層、哪一列商品、總上限），測試以大量隨機草稿比對它與伺服器解析的結果一致。發布前有錯就不送出，`FormErrorSummary` 的連結直接聚焦那一列的欄位。
+- 試算：直接呼叫伺服器結算用的 `calculateMerchantAffiliatePlan`，捨入完全相同；試算放在 `<form>` 外，輸入都沒有 `name`。畫面標示「僅供估算，實際依結算為準」（實際依每筆付款、團隊關係與退款計算）。
+- 商品佣金篩選：只用 `hidden` 隱藏列，欄位仍一起送出；有錯誤或選單裡找不到商品的列一律顯示，避免看不到的必填欄位擋住送出。篩選框在 `<form>` 內，按 Enter 只篩選、不隱式送出。
+- hydrate 前：比例輸入框與件數欄位 `readOnly`、商品選單停用（商品由隱藏欄位送出），避免 hydrate 時 React 把先改的值還原而發布舊設定。
+- 「暫停」按鈕以 `onClick` 標記，暫停時不檢查政策內容；件數欄位的 `validity.badInput` 與已刪除的商品也會列在摘要。
+
+## 後台導覽與指令面板
+
+導覽資料只有一份：[app-navigation.ts](../../src/lib/app-navigation.ts) 的 `navigationForRole`（側欄）與 `settingsHubForRole`（設定樞紐）。側欄、手機抽屜、設定樞紐與指令面板都由它們推導，權限與模組過濾因此一致；新增頁面只改這裡。
+
+- **預設收合**：`NavGroup.flows` 標記群組主要服務哪種專案流程（`live`、`consultation`）。未設定表示一律展開；設定後只在符合的流程（或尚未選專案）預設展開；`[]` 表示次要群組，選了專案就預設收合。只改預設，入口仍在，也不影響權限。`isGroupExpandedByDefault` 判斷，`AppShell` 由目前專案的 `primaryFlow` 傳入 `AppShellNavGroup`。
+- **記住展開狀態**：[nav-group-state.ts](../../src/lib/nav-group-state.ts) 把使用者手動展開／收合存在 localStorage（`celebratedeal:nav-groups:v1`），所有存取都有 try/catch；無法使用時退回預設，本次頁面內仍可切換。目前頁面所在的群組一律展開，且不能被收合。
+- **圖示與名稱**：每個頁面的圖示不重複，群組名稱不與群組內項目同名（測試會檢查）。新增項目時挑沒用過的圖示。
+- **指令面板**：[command-palette.tsx](../../src/components/command-palette.tsx)，Ctrl+K／⌘K 開啟；符合 WAI-ARIA combobox + listbox（焦點留在輸入框，用 `aria-activedescendant` 指向目前選項），↑／↓ 移動並循環、Enter 前往、Esc 關閉並還原焦點。資料來自 `paletteEntriesFromNavigation(navigationForRole(...), settingsHubForRole(...))`，不另外維護清單；搜尋在 [command-palette.ts](../../src/lib/command-palette.ts)（不分大小寫與全半形的子字串比對，標題前綴優先）。目前只做頁面導覽；日後的動作或 AI 助理從這個元件擴充。小螢幕用 `variant="icon"` 的第二個實例，並設 `registerShortcut={false}`，避免快速鍵被處理兩次。

@@ -1,0 +1,45 @@
+# Dependabot version updates. Security updates are enabled separately in the
+# repository settings and open their own PRs as soon as an advisory is
+# published; the `ignore` rules and PR limit below apply to version updates only.
+# Policy and triage steps: SECURITY.md.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "09:00"
+      timezone: Asia/Taipei
+    # Every PR runs the full five-job CI, so keep the queue short.
+    open-pull-requests-limit: 3
+    commit-message:
+      prefix: "chore(deps)"
+    groups:
+      production:
+        dependency-type: production
+        update-types: [minor, patch]
+      development:
+        dependency-type: development
+        update-types: [minor, patch]
+    ignore:
+      # Major upgrades (Prisma 7, Sentry 11, Vitest 5, TypeScript 7, ESLint 10,
+      # web-push 4) are planned work, not routine version bumps.
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
+
+  - package-ecosystem: github-actions
+    # Covers .github/workflows and the composite actions under .github/actions.
+    directories:
+      - /
+      - /.github/actions/*
+    schedule:
+      interval: monthly
+      time: "09:00"
+      timezone: Asia/Taipei
+    open-pull-requests-limit: 2
+    commit-message:
+      prefix: "chore(ci)"
+    groups:
+      actions:
+        patterns: ["*"]

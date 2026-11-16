@@ -16,6 +16,7 @@ const requiredInputs = [
   "next.config.ts",
   "playwright.config.ts",
   "tsconfig.json",
+  "tsconfig.build.json",
   sourcePath,
 ];
 const historicalReceipts = Object.freeze({

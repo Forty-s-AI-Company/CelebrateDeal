@@ -23,6 +23,8 @@
 
 每個可排程端點的 GET 與 POST 共用同一個 handler，只差驗證哪一把密鑰。GET 不接受 `JOB_SECRET`，POST 不接受 `CRON_SECRET`（`scripts/scheduled-jobs-runner.test.mjs` 與各 `route.test.ts` 有斷言）。
 
+> 2026-11-13 依程式現況更新：常青場（evergreen）的場次**不經由**本文件的任何排程。場次在觀眾進入時由 `src/app/api/live-evergreen-session/route.ts` 依伺服器時間即時計算並寫入簽章 cookie（`src/lib/evergreen-viewer-session.ts`）。本節的背景工作與常青場的關係：生效中的常青場不會被排固定時間提醒，live 通知物化會略過它們（`src/lib/live-notification-delivery.ts`）；課後通知（`post_live_followup`）：商家設定共用開場時間時，所有已驗證報名者在共用場次結束後依規則時間收到（以目前的共用開場時間計算）；其他常青模式改為逐觀眾寄送：在同一個瀏覽器完成 Email 驗證並進入觀看頁的報名者，伺服器把他的場次記在 `EvergreenSessionAssignment`（`src/lib/evergreen-session-assignment.ts`），`email-deliveries` 排程在「該場次開始＋影片長度＋規則分鐘數」之後寄出，每輪依場次先後最多處理 `recipientLimit` 位尚未有這封信的報名者，逾期超過 72 小時的不補寄；驗證與觀看不在同一個瀏覽器、或同一瀏覽器後來又報名其他場（報名 cookie 只保留最後一筆）的報名者不會被記錄，常青期間不會收到；rejoin 會把尚未寄出的課後信延到新場次之後。關閉常青設定、常青場結束或改回草稿後，會依原開播時間補寄給還沒收過的已驗證報名者（`src/lib/email-delivery.ts`）。因此 production 排程（D-06）尚未決定，不會讓常青場的觀看與場次分配失效，只影響報名信、LINE、提醒與課後通知。
+
 ## 3. 主要路徑：GitHub Actions 排程（staging）
 
 - Workflow：`.github/workflows/scheduled-jobs.yml`
@@ -65,6 +67,10 @@ GitHub 的 `*/5 * * * *` 實測約每 2～5 小時才跑一次（中位數 184 �
 3. Run 的 Summary 有一張表，列出每個 job 的 `success`／`failure`／`skipped`。
 4. 交叉比對：Vercel → `celebrate-deal-staging` → Logs，篩選路徑（例如 `/api/jobs/webhook-retry`）與方法 POST，時間應該與 Actions run 對得上。
 5. `outcome` 對照：`unauthorized`＝staging 的 `JOB_SECRET` 與 GitHub environment 的值不一致；`route_missing`＝staging 部署還沒有本次的 POST／GET 入口；`job_reported_failure`＝handler 回 503（看 Sentry 的 `captureOperationalError`）；`redirected`＝alias 被部署保護或網域設定攔截；`timeout`／`network_error`＝staging 沒有回應；`needs_attention`＝HTTP 200，但 webhook-retry 回報 `exhausted` 或 `inventoryUnavailable` 大於 0（見 §3.1），該行會附上這兩個數字，run 會標紅。
+
+### 3.0.1 `email-deliveries` 的序列工作與 runner 逾時（F-3）
+
+`scripts/scheduled-jobs-runner.mjs` 對每個呼叫最多等 120 秒（`REQUEST_TIMEOUT_MS`），超過就記為 `timeout`。`email-deliveries` 的 route `maxDuration` 是 300 秒（平台上限），但 Email 追銷序列的工作排在每輪最後並有自己的期限：這一輪開始超過 60 秒才輪到序列時整段跳過（Sentry 會有 `email_sequences_skipped` 事件），序列工作在第 100 秒後不再接新項目，已開始的寄送最多再 10 秒（寄信 provider 的逾時），所以整輪約在 110 秒內回應，早於 runner 的 120 秒。兩個數字在 `src/lib/delayed-step-runs.ts` 的 `EMAIL_SEQUENCE_START_CUTOFF_MS`、`EMAIL_SEQUENCE_DEADLINE_MS`；調整 runner 逾時或這兩個數字時要一起看。持續看到 `email_sequences_skipped` 表示前面的工作常常超過 60 秒，序列信會一直延後。
 
 ### 3.1 webhook-retry 的人工處理訊號（B03-07）
 

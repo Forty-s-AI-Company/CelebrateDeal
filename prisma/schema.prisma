@@ -198,6 +198,7 @@ model Vendor {
   consultationEvents               ConsultationEvent[]
   consultationBookings             ConsultationBooking[]
   studentPortalAccessTokens         StudentPortalAccessToken[]
+  courseChapters CourseChapter[]
   courseLessons CourseLesson[]
   courseLessonProgress CourseLessonProgress[]
 
@@ -213,6 +214,8 @@ model Vendor {
   merchantAffiliateCounters MerchantAffiliateSalesCounter[]
   merchantAffiliateCalculations MerchantAffiliateCalculation[]
   merchantAffiliateProductRates MerchantAffiliateProductRate[]
+  delayedStepRuns DelayedStepRun[]
+  emailSequenceSteps EmailSequenceStep[]
 }
 
 model User {
@@ -674,6 +677,7 @@ model Product {
   @@index([vendorId, upsellProductId])
   @@index([vendorId, downsellProductId])
   @@index([imageAssetId])
+  courseChapters CourseChapter[]
   courseLessons CourseLesson[]
   communityPosts CourseCommunityPost[]
   courseLessonProgress CourseLessonProgress[]
@@ -785,6 +789,8 @@ model FormSubmission {
   liveInteractionResponses LiveInteractionResponse[]
   funnelSubmission         FunnelSubmission?
   liveSessionSwitchRedemptions LiveSessionSwitchRedemption[]
+  evergreenSessionAssignments  EvergreenSessionAssignment[]
+  delayedStepRuns              DelayedStepRun[]
 
   trackingDeliveries TrackingDelivery[]
 
@@ -792,6 +798,8 @@ model FormSubmission {
   @@unique([formId, id])
   @@index([formId, verificationStatus, createdAt])
   @@index([liveId, verificationStatus, createdAt])
+  /// F-3 補漏：某場直播最近驗證的報名。
+  @@index([liveId, verificationStatus, verifiedAt])
   @@index([affiliateClickId])
   @@index([formId, customerKeyHash, createdAt])
   @@index([liveId, liveSessionId])
@@ -885,7 +893,9 @@ model Live {
   notificationRules          LiveNotificationRule[]
   mediaSessions              LiveMediaSession[]
   sessions                   LiveSession[]
-  landingPages               LandingPage[]        @relation("LandingPageDraftLive")
+  evergreenSessionAssignments EvergreenSessionAssignment[]
+  emailSequences             EmailSequence[]
+  landingPages              LandingPage[]        @relation("LandingPageDraftLive")
   landingPageVersions        LandingPageVersion[] @relation("LandingPageVersionLive")
 
   @@unique([vendorId, id])
@@ -943,6 +953,30 @@ model LiveSessionSwitchRedemption {
 
   @@index([formSubmissionId])
   @@index([vendorId, liveSessionId])
+}
+
+/// 常青場: the evergreen session a VERIFIED registrant was assigned on the
+/// viewer page (src/lib/evergreen-session-assignment.ts). The browser keeps the
+/// session in a signed cookie; this row lets the post-live follow-up job send
+/// the registrant's email after their own session. sessionStartAt is always
+/// resolved on the server; no personal data or token is stored here.
+model EvergreenSessionAssignment {
+  id                  String   @id @default(cuid())
+  vendorId            String
+  liveId              String
+  formSubmissionId    String
+  sessionStartAt      DateTime
+  /// evergreenScheduleFingerprint of the schedule the session came from.
+  scheduleFingerprint String
+  assignedAt          DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  live           Live           @relation(fields: [vendorId, liveId], references: [vendorId, id], onDelete: Cascade)
+  /// The registration's own (liveId, id) key: it always belongs to this Live.
+  formSubmission FormSubmission @relation(fields: [liveId, formSubmissionId], references: [liveId, id], onDelete: Cascade)
+
+  @@unique([vendorId, formSubmissionId])
+  @@index([vendorId, liveId, sessionStartAt])
 }
 
 /// Private WHIP/WHEP resources. Never expose upstream session URLs to viewers.
@@ -1066,8 +1100,115 @@ model MessageTemplate {
   reminderLives     Live[]                 @relation("LiveReminderTemplate")
   notificationRules LiveNotificationRule[] @relation("LiveNotificationRuleTemplate")
   lineDeliveries    LineDelivery[]
+  emailSequenceSteps EmailSequenceStep[]
 
   @@unique([vendorId, id])
+}
+
+/// F-3 Email 追銷序列（docs/product/delayed-steps-design.md §4）。第一版一條序列綁
+/// 一場直播，對象是這場直播 Email 已驗證的報名者；只有 `verifiedAt >= activatedAt`
+/// 的報名會加入。只由 `/messages/sequences` 的 Server Action（owner／admin，beta
+/// 開關 `email_sequences`）寫入。
+model EmailSequence {
+  id             String    @id @default(cuid())
+  vendorId       String
+  liveId         String
+  name           String
+  /// draft | active | paused（CHECK `EmailSequence_status_check`）
+  status         String    @default("draft")
+  /// 最近一次啟用的時間；暫停後再啟用會更新，所以暫停期間驗證的人不會被補加入。
+  activatedAt    DateTime?
+  /// 「買了就停」；PR 2 才讀這欄。
+  stopOnPurchase Boolean   @default(true)
+  /// 樂觀鎖：每次儲存、啟用、暫停都 +1。
+  version        Int       @default(1)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  live  Live                @relation(fields: [vendorId, liveId], references: [vendorId, id], onDelete: Cascade)
+  steps EmailSequenceStep[]
+  runs  DelayedStepRun[]
+
+  @@unique([vendorId, id])
+  @@index([vendorId, liveId, status])
+}
+
+/// 序列的一步：從報名驗證時間（run 的 anchorAt）起算 `delayMinutes` 分鐘後寄一封
+/// `sequence_email` 模板。同一條序列的延遲值不重複，它就是步驟的定位。
+model EmailSequenceStep {
+  id                String   @id @default(cuid())
+  vendorId          String
+  emailSequenceId   String
+  /// 60–129600（1 小時到 90 天；CHECK `EmailSequenceStep_delayMinutes_check`）
+  delayMinutes      Int
+  messageTemplateId String
+  isActive          Boolean  @default(true)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  /// Direct cascade so deleting the vendor removes steps before the template RESTRICT is checked.
+  vendor          Vendor          @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  sequence        EmailSequence   @relation(fields: [vendorId, emailSequenceId], references: [vendorId, id], onDelete: Cascade)
+  messageTemplate MessageTemplate @relation(fields: [vendorId, messageTemplateId], references: [vendorId, id], onDelete: Restrict)
+
+  @@unique([vendorId, id])
+  @@unique([vendorId, emailSequenceId, delayMinutes])
+  @@index([vendorId, messageTemplateId])
+}
+
+/// 一個對象在一條延遲流程上的進度（docs/product/delayed-steps-design.md §3）。
+/// 不存 Email 明文、姓名或 token：收件人每一步都從報名重新讀取；`recipientHash`
+/// 與 `EmailDelivery.recipientHash` 同一個商家專屬雜湊，只用來在退訂時取消。
+model DelayedStepRun {
+  id                    String    @id @default(cuid())
+  vendorId              String
+  /// `emailSequenceId` 與 `automationRuleId` 恰好一個有值（CHECK `DelayedStepRun_definition_exactly_one_check`）。
+  emailSequenceId       String?
+  /// F-4：自動化規則的延遲步驟。有值時 `sourceExecutionLogId` 與 `subjectKeyHash` 也必有值。
+  automationRuleId      String?
+  /// F-4：觸發這條 run 的事件在該規則的執行紀錄（同一規則、同一事件只有一列）。
+  sourceExecutionLogId  String?
+  /// F-4：對象是諮詢預約時填（`consultation_booked`／`consultation_no_show`）。
+  consultationBookingId String?
+  formSubmissionId      String?
+  /// 對象的 `automationCustomerKeyHash`（PR 2「買了就停」用）；報名的 Email 無法使用時為 null。
+  subjectKeyHash     String?
+  /// `createEmailRecipientHash` 的值；退訂時以它取消同一收件人的 run。
+  recipientHash      String?
+  /// 時間線起點（報名驗證時間）。
+  anchorAt           DateTime
+  /// 已處理到的步驟延遲值，起始 -1。
+  cursorDelayMinutes Int       @default(-1)
+  /// 下一步到期時間；只有 active 時有值。
+  nextRunAt          DateTime?
+  /// active | completed | cancelled
+  status             String    @default("active")
+  /// unsubscribed | blacklisted | purchased | definition_paused | definition_deleted | subject_gone | failed | duplicate
+  cancelReason       String?
+  claimedAt          DateTime?
+  attemptCount       Int       @default(0)
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  vendor              Vendor                  @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  emailSequence       EmailSequence?          @relation(fields: [vendorId, emailSequenceId], references: [vendorId, id], onDelete: Cascade)
+  automationRule      AutomationRule?         @relation(fields: [vendorId, automationRuleId], references: [vendorId, id], onDelete: Cascade)
+  sourceExecutionLog  AutomationExecutionLog? @relation(fields: [vendorId, sourceExecutionLogId], references: [vendorId, id], onDelete: Cascade)
+  consultationBooking ConsultationBooking?    @relation(fields: [vendorId, consultationBookingId], references: [vendorId, id], onDelete: Cascade)
+  formSubmission      FormSubmission?         @relation(fields: [formSubmissionId], references: [id], onDelete: Cascade)
+
+  @@unique([vendorId, id])
+  @@unique([vendorId, emailSequenceId, formSubmissionId])
+  /// 同一收件人在同一序列只會有一列（不同表單報名同一場也一樣）；recipientHash 為 null 的列不受限。
+  @@unique([vendorId, emailSequenceId, recipientHash])
+  /// F-4：同一規則、同一觸發事件（執行紀錄）只建一列；序列的列兩欄都是 null，不受限。
+  @@unique([vendorId, automationRuleId, sourceExecutionLogId])
+  @@index([status, nextRunAt])
+  @@index([vendorId, status, nextRunAt])
+  @@index([formSubmissionId])
+  @@index([vendorId, recipientHash, status])
+  @@index([vendorId, sourceExecutionLogId])
+  @@index([vendorId, consultationBookingId])
 }
 
 /// A tenant-owned LINE channel connection. Every provider credential, including
@@ -3835,6 +3976,7 @@ model ConsultationBooking {
   event  ConsultationEvent @relation(fields: [vendorId, eventId], references: [vendorId, id], onDelete: Cascade)
 
   trackingDeliveries TrackingDelivery[]
+  delayedStepRuns    DelayedStepRun[]
 
   @@unique([vendorId, id])
   @@index([vendorId, eventId, startTime])
@@ -3855,12 +3997,36 @@ model AutomationRule {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  vendor        Vendor                   @relation(fields: [vendorId], references: [id], onDelete: Cascade)
-  executionLogs AutomationExecutionLog[]
+  vendor          Vendor                   @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  executionLogs   AutomationExecutionLog[]
+  steps           AutomationRuleStep[]
+  delayedStepRuns DelayedStepRun[]
 
   @@unique([vendorId, id])
   @@index([vendorId, trigger, isActive])
   @@index([vendorId, funnelPageId, trigger, isActive])
+}
+
+/// F-4 自動化規則的延遲步驟（docs/product/delayed-steps-design.md §8）：事件發生後
+/// `delayMinutes` 分鐘（從 run 的 anchorAt 起算）重新評估 `condition` 並執行
+/// `actions`。condition／actions 沿用 `AutomationRule` 的 schema 與數量上限；同一條
+/// 規則的延遲值不重複，它就是步驟的定位。每條規則最多 `MAX_AUTOMATION_RULE_STEPS` 步。
+model AutomationRuleStep {
+  id           String   @id @default(cuid())
+  vendorId     String
+  ruleId       String
+  /// 60–129600（1 小時到 90 天；CHECK `AutomationRuleStep_delayMinutes_check`）
+  delayMinutes Int
+  condition    Json
+  actions      Json
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  rule AutomationRule @relation(fields: [vendorId, ruleId], references: [vendorId, id], onDelete: Cascade)
+
+  @@unique([vendorId, id])
+  @@unique([vendorId, ruleId, delayMinutes])
 }
 
 model AutomationExecutionLog {
@@ -3886,6 +4052,7 @@ model AutomationExecutionLog {
   live                   Live?                    @relation(fields: [vendorId, liveId], references: [vendorId, id], onDelete: Restrict)
   customerTagAssignments CustomerTagAssignment[]
   voucherGrants          AutomationVoucherGrant[]
+  delayedStepRuns        DelayedStepRun[]
 
   @@unique([vendorId, id])
   @@unique([vendorId, idempotencyKey])
@@ -4272,11 +4439,39 @@ model StudentPortalAccessToken {
 }
 
 
+/// F-5: a chapter of one vendor-qualified course. The title is unique per
+/// course, so a chapter title and its id map one to one. `position` orders the
+/// manager curriculum page only; the learner player keeps ordering chapters by
+/// their first visible lesson (see `courseChapters` in src/lib/course-learning.ts).
+model CourseChapter {
+  id        String   @id @default(cuid())
+  vendorId  String
+  productId String
+  title     String
+  position  Int
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  vendor  Vendor         @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  product Product        @relation(fields: [vendorId, productId], references: [vendorId, id], onDelete: Cascade)
+  lessons CourseLesson[]
+
+  @@unique([vendorId, id])
+  @@unique([vendorId, productId, id])
+  @@unique([vendorId, productId, position])
+  @@unique([vendorId, productId, title])
+}
+
 /// Native curriculum belongs to exactly one vendor-qualified course product.
+/// `chapterTitle` is kept (forward-only migrations never drop columns) and is
+/// written with the chapter title. `chapterId` stays nullable until a later
+/// migration: a lesson written by code older than F-5 has none, and readers
+/// fall back to grouping it by `chapterTitle`.
 model CourseLesson {
   id              String   @id @default(cuid())
   vendorId        String
   productId       String
+  chapterId       String?
   chapterTitle    String
   title           String
   videoUrl        String?
@@ -4288,12 +4483,16 @@ model CourseLesson {
 
   vendor   Vendor                 @relation(fields: [vendorId], references: [id], onDelete: Cascade)
   product  Product                @relation(fields: [vendorId, productId], references: [vendorId, id], onDelete: Cascade)
+  /// The FK includes the tenant and the course, so a lesson can only join a
+  /// chapter of its own course. A chapter that still has lessons cannot be deleted.
+  chapter  CourseChapter?         @relation(fields: [vendorId, productId, chapterId], references: [vendorId, productId, id], onDelete: Restrict)
   progress CourseLessonProgress[]
 
   @@unique([vendorId, id])
   @@unique([vendorId, productId, id])
   @@unique([vendorId, productId, position])
   @@index([vendorId, productId, publishedAt])
+  @@index([vendorId, productId, chapterId])
 }
 
 /// The lesson FK includes its product, preventing cross-course progress even

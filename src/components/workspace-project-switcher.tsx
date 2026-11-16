@@ -2,9 +2,10 @@
 
 import { useState, useTransition } from "react";
 import Link from "next/link";
+import type { SalesProjectFlowKey } from "@/lib/app-navigation";
 import { Building2, Check, ChevronDown, FolderKanban, Plus } from "lucide-react";
 
-export type ProjectSwitcherItem = { id: string; name: string; status: string };
+export type ProjectSwitcherItem = { id: string; name: string; status: string; primaryFlow?: SalesProjectFlowKey };
 
 export function WorkspaceProjectSwitcher({
   workspaceName,

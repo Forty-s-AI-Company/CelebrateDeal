@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { emptyLiveStudioDraft } from "./live-studio-draft";
 import { LiveStudioDraftClientError, liveInvalidFieldName, liveStudioDraftFromFormData, saveLiveStudioDraft } from "./live-studio-draft-client";
+import { LIVE_STUDIO_LAST_STEP_INDEX } from "./live-studio-steps";
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -46,7 +47,7 @@ describe("serializeLiveStudioDraft", () => {
       ["cloudflareLiveInputUid", "forged-provider-uid"],
     ]);
 
-    const draft = liveStudioDraftFromFormData(form, 7);
+    const draft = liveStudioDraftFromFormData(form, LIVE_STUDIO_LAST_STEP_INDEX);
 
     expect(draft).toMatchObject({
       studioPreset: "COMMERCE",
@@ -58,8 +59,8 @@ describe("serializeLiveStudioDraft", () => {
       notificationRules: [expect.objectContaining({ id: "rule-1", trigger: "before_live", offsetMinutes: 60 })],
       replayEnabled: true,
       replayAvailableUntil: "2026-08-21T20:00",
-      flowVersion: 2,
-      activeStep: 7,
+      flowVersion: 3,
+      activeStep: 3,
     });
     expect(draft).not.toHaveProperty("cloudflareLiveInputUid");
   });
@@ -109,7 +110,7 @@ describe("serializeLiveStudioDraft", () => {
       ["splitOwnerBps", "3000"],
       ["splitPromoterBps", "7000"],
       ["replayAvailableUntil", "2026-08-21T20:00"],
-    ]), 4);
+    ]), 0);
 
     expect(draft.replayEnabled).toBe(false);
     expect(draft.replayAvailableUntil).toBe("");
@@ -137,8 +138,32 @@ describe("saveLiveStudioDraft", () => {
       draftId: "draft-1",
       liveId: "live-1",
       revision: 1,
-      payload: { flowVersion: 2, activeStep: 0, replayAvailableUntil: "2026-08-21T20:00" },
+      payload: { flowVersion: 3, activeStep: 0, replayAvailableUntil: "2026-08-21T20:00" },
     });
+  });
+
+  it("lets a page-hide flush outlive the page only when the body fits the keepalive budget", async () => {
+    const respond = (payload: unknown) => new Response(JSON.stringify({
+      id: "draft-1",
+      revision: 2,
+      payload,
+      updatedAt: "2026-08-08T01:00:00.000Z",
+    }), { status: 200, headers: { "content-type": "application/json" } });
+    const small = emptyLiveStudioDraft();
+    const large = { ...emptyLiveStudioDraft(), customAllocations: "x".repeat(20_000), memberQuotas: "y".repeat(20_000), pageQuotas: "z".repeat(20_000), description: "長".repeat(5_000) };
+    const fetchMock = vi.fn()
+      .mockImplementationOnce(async () => respond(small))
+      .mockImplementationOnce(async () => respond(large))
+      .mockImplementationOnce(async () => respond(small));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await saveLiveStudioDraft({ csrfToken: "csrf-test", draftId: "draft-1", liveId: "", revision: 1, payload: small, keepalive: true });
+    await saveLiveStudioDraft({ csrfToken: "csrf-test", draftId: "draft-1", liveId: "", revision: 1, payload: large, keepalive: true });
+    await saveLiveStudioDraft({ csrfToken: "csrf-test", draftId: "draft-1", liveId: "", revision: 1, payload: small });
+
+    expect(fetchMock.mock.calls[0]?.[1]).toMatchObject({ keepalive: true });
+    expect(fetchMock.mock.calls[1]?.[1]).not.toHaveProperty("keepalive");
+    expect(fetchMock.mock.calls[2]?.[1]).not.toHaveProperty("keepalive");
   });
 
   it("surfaces optimistic conflicts without leaking arbitrary response details", async () => {
@@ -171,7 +196,7 @@ describe("liveInvalidFieldName (F-117)", () => {
     const form = new FormData();
     form.set("title", "x".repeat(500));
     let caught: unknown;
-    try { liveStudioDraftFromFormData(form, 7); } catch (error) { caught = error; }
+    try { liveStudioDraftFromFormData(form, LIVE_STUDIO_LAST_STEP_INDEX); } catch (error) { caught = error; }
     expect(caught).toBeDefined();
     expect(liveInvalidFieldName(caught)).toMatch(/^[A-Za-z][A-Za-z0-9]*$/u);
   });

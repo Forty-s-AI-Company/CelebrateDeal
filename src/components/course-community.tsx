@@ -1,10 +1,17 @@
 "use client";
-import { useRef, useState, type FormEvent } from "react";
+import { useRef, useState, useSyncExternalStore, type FormEvent } from "react";
 import { portalText } from "@/lib/student-portal-translations";
 import type { StudentPortalLocale } from "@/lib/student-portal-locale";
 import type { CommunityMutationInput, getCourseCommunity, getCourseCommunityReplies } from "@/lib/course-community";
 type Feed = NonNullable<Awaited<ReturnType<typeof getCourseCommunity>>>;
 type Thread = NonNullable<Awaited<ReturnType<typeof getCourseCommunityReplies>>>;
+// Server HTML is interactive-looking before React attaches handlers. A click in
+// that window would run the browser default (a GET form submit that puts the
+// typed text in the URL, or a lost click), so controls stay disabled until hydrated.
+const subscribeNever = () => () => { };
+function useHydrated() {
+    return useSyncExternalStore(subscribeNever, () => true, () => false);
+}
 const field = "min-h-11 w-full rounded-xl border border-slate-500 bg-white px-3 py-2";
 const button = "min-h-11 rounded-xl bg-blue-700 px-4 py-2 font-bold text-white disabled:opacity-50";
 function DiscussionForm({ postId, submit, locale }: {
@@ -12,6 +19,7 @@ function DiscussionForm({ postId, submit, locale }: {
     submit: (input: CommunityMutationInput) => Promise<boolean>;
     locale: StudentPortalLocale;
 }) {
+    const hydrated = useHydrated();
     const [pending, setPending] = useState(false);
     const key = useRef<string | null>(null);
     const onSubmit = async (event: FormEvent<HTMLFormElement>) => {
@@ -34,7 +42,7 @@ function DiscussionForm({ postId, submit, locale }: {
             setPending(false);
         }
     };
-    return <form aria-label={postId ? portalText(locale, "回覆討論") : portalText(locale, "發布心得")} onSubmit={onSubmit} className="mt-4 grid gap-3"><label>{portalText(locale, "顯示名稱")}<input name="authorName" maxLength={60} required disabled={pending} className={field}/></label><label>{postId ? portalText(locale, "回覆內容") : portalText(locale, "分享學習心得")}<textarea name="body" maxLength={postId ? 2000 : 5000} required disabled={pending} className={`${field} min-h-24`}/></label><button disabled={pending} className={button}>{pending ? portalText(locale, "正在送出…") : postId ? portalText(locale, "送出回覆") : portalText(locale, "發布心得")}</button></form>;
+    return <form aria-label={postId ? portalText(locale, "回覆討論") : portalText(locale, "發布心得")} onSubmit={onSubmit} className="mt-4 grid gap-3"><label>{portalText(locale, "顯示名稱")}<input name="authorName" maxLength={60} required disabled={pending || !hydrated} className={field}/></label><label>{postId ? portalText(locale, "回覆內容") : portalText(locale, "分享學習心得")}<textarea name="body" maxLength={postId ? 2000 : 5000} required disabled={pending || !hydrated} className={`${field} min-h-24`}/></label><button disabled={pending || !hydrated} className={button}>{pending ? portalText(locale, "正在送出…") : postId ? portalText(locale, "送出回覆") : portalText(locale, "發布心得")}</button></form>;
 }
 /** Plain text remains escaped by React; request UUID is retained on failure so
  * retrying an uncertain response cannot duplicate a post or reply. */
@@ -47,6 +55,7 @@ export function CourseCommunity({ endpoint, initialFeed, csrfToken, initialThrea
 }) {
     const [feed, setFeed] = useState(initialFeed);
     const [thread, setThread] = useState<Thread | null>(initialThread ?? null);
+    const hydrated = useHydrated();
     const [message, setMessage] = useState("");
     const [busy, setBusy] = useState(false);
     const csrf = useRef(csrfToken);
@@ -138,5 +147,5 @@ export function CourseCommunity({ endpoint, initialFeed, csrfToken, initialThrea
             setBusy(false);
         }
     }
-    return <div className="mt-6 grid gap-5">{message ? <p role="status" className="rounded-xl bg-blue-50 p-3 text-blue-900">{message}</p> : null}<section className="rounded-2xl bg-white p-5"><h2 className="text-xl font-bold">{portalText(locale, "發布心得")}</h2><DiscussionForm locale={locale} submit={submit}/></section>{feed.posts.length === 0 ? <p>{portalText(locale, "還沒有討論，歡迎分享第一則學習心得。")}</p> : null}{feed.posts.map((post) => <article key={post.id} className="rounded-2xl bg-white p-5"><h2 className="font-bold">{post.authorName}{post.isAnnouncement ? portalText(locale, " · 公告") : ""}{post.isPinned ? portalText(locale, " · 置頂") : ""}</h2><p className="mt-3 whitespace-pre-wrap break-words">{post.body}</p><div className="mt-4 flex flex-wrap gap-3"><button disabled={busy} className="min-h-11 rounded-xl border px-3" onClick={() => void submit({ operation: "reaction", postId: post.id, liked: !post.liked })}>{post.liked ? portalText(locale, "取消讚") : portalText(locale, "讚")}（{post.likeCount}）</button><button disabled={busy} className="min-h-11 rounded-xl border px-3" onClick={() => void openThread(post.id)}>{portalText(locale, "查看討論（")}{post.replyCount}）</button></div>{post.replies.slice().reverse().map((reply) => <p key={reply.id} className="mt-3 border-l-2 pl-3"><strong>{reply.authorName}</strong>：{reply.body}</p>)}</article>)}{feed.nextCursor ? <button disabled={busy} className={button} onClick={() => void more()}>{portalText(locale, "載入更多心得")}</button> : null}{thread ? <section aria-label={portalText(locale, "完整討論")} className="rounded-2xl border border-blue-200 bg-white p-5"><h2 className="text-xl font-bold">{thread.post.authorName}{portalText(locale, "的討論")}</h2><p className="mt-3 whitespace-pre-wrap break-words">{thread.post.body}</p>{thread.replies.map((reply) => <article key={reply.id} className="mt-4 border-t pt-4"><h3 className="font-bold">{reply.authorName}</h3><p className="mt-2 whitespace-pre-wrap break-words">{reply.body}</p></article>)}{thread.nextCursor ? <button disabled={busy} className={`${button} mt-4`} onClick={() => void openThread(thread.post.id, thread.nextCursor ?? undefined)}>{portalText(locale, "載入更多回覆")}</button> : null}<DiscussionForm locale={locale} key={thread.post.id} postId={thread.post.id} submit={submit}/><button className="mt-4 min-h-11 underline" onClick={() => setThread(null)}>{portalText(locale, "關閉討論")}</button></section> : null}</div>;
+    return <div className="mt-6 grid gap-5">{message ? <p role="status" className="rounded-xl bg-blue-50 p-3 text-blue-900">{message}</p> : null}<section className="rounded-2xl bg-white p-5"><h2 className="text-xl font-bold">{portalText(locale, "發布心得")}</h2><DiscussionForm locale={locale} submit={submit}/></section>{feed.posts.length === 0 ? <p>{portalText(locale, "還沒有討論，歡迎分享第一則學習心得。")}</p> : null}{feed.posts.map((post) => <article key={post.id} className="rounded-2xl bg-white p-5"><h2 className="font-bold">{post.authorName}{post.isAnnouncement ? portalText(locale, " · 公告") : ""}{post.isPinned ? portalText(locale, " · 置頂") : ""}</h2><p className="mt-3 whitespace-pre-wrap break-words">{post.body}</p><div className="mt-4 flex flex-wrap gap-3"><button disabled={busy || !hydrated} className="min-h-11 rounded-xl border px-3" onClick={() => void submit({ operation: "reaction", postId: post.id, liked: !post.liked })}>{post.liked ? portalText(locale, "取消讚") : portalText(locale, "讚")}（{post.likeCount}）</button><button disabled={busy || !hydrated} className="min-h-11 rounded-xl border px-3" onClick={() => void openThread(post.id)}>{portalText(locale, "查看討論（")}{post.replyCount}）</button></div>{post.replies.slice().reverse().map((reply) => <p key={reply.id} className="mt-3 border-l-2 pl-3"><strong>{reply.authorName}</strong>：{reply.body}</p>)}</article>)}{feed.nextCursor ? <button disabled={busy || !hydrated} className={button} onClick={() => void more()}>{portalText(locale, "載入更多心得")}</button> : null}{thread ? <section aria-label={portalText(locale, "完整討論")} className="rounded-2xl border border-blue-200 bg-white p-5"><h2 className="text-xl font-bold">{thread.post.authorName}{portalText(locale, "的討論")}</h2><p className="mt-3 whitespace-pre-wrap break-words">{thread.post.body}</p>{thread.replies.map((reply) => <article key={reply.id} className="mt-4 border-t pt-4"><h3 className="font-bold">{reply.authorName}</h3><p className="mt-2 whitespace-pre-wrap break-words">{reply.body}</p></article>)}{thread.nextCursor ? <button disabled={busy || !hydrated} className={`${button} mt-4`} onClick={() => void openThread(thread.post.id, thread.nextCursor ?? undefined)}>{portalText(locale, "載入更多回覆")}</button> : null}<DiscussionForm locale={locale} key={thread.post.id} postId={thread.post.id} submit={submit}/><button className="mt-4 min-h-11 underline" onClick={() => setThread(null)}>{portalText(locale, "關閉討論")}</button></section> : null}</div>;
 }

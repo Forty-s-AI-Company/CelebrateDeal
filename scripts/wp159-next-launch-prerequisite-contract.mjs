@@ -48,6 +48,7 @@ const protectedPaths = [
   "package-lock.json",
   "next.config.ts",
   "tsconfig.json",
+  "tsconfig.build.json",
 ];
 
 function canonical(value) {
@@ -85,7 +86,7 @@ function digestSnapshot(base = root) {
 }
 
 function inputLineageDigest(base = root) {
-  const inputs = ["next.config.ts", "tsconfig.json", "package.json", "package-lock.json"];
+  const inputs = ["next.config.ts", "tsconfig.json", "tsconfig.build.json", "package.json", "package-lock.json"];
   return sha256(inputs.map((relativePath) => `${relativePath}|${sha256File(relativePath, base)}`).join("\n"));
 }
 

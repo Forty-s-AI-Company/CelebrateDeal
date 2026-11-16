@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { readFormDataBody, requireSameOriginRequest } from "@/lib/api-security";
 import { getDb } from "@/lib/db";
+import { cancelDelayedStepRunsForRecipient } from "@/lib/delayed-step-runs";
 import { verifyEmailUnsubscribeToken } from "@/lib/email-delivery-pii";
 
 function resultRedirect(request: Request, status: "done" | "invalid") {
@@ -67,6 +68,12 @@ export async function POST(request: Request) {
         nextAttemptAt: null,
         lastErrorCode: "recipient_suppressed",
       },
+    });
+    // F-3: the recipient's follow-up sequences at this vendor stop with the
+    // same commit, so no later step is queued for them.
+    await cancelDelayedStepRunsForRecipient(tx, {
+      vendorId: delivery.vendorId,
+      recipientHash: delivery.recipientHash,
     });
   });
   return resultRedirect(request, "done");

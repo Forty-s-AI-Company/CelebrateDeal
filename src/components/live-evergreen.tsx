@@ -29,6 +29,12 @@ export type LiveEvergreenData = {
   /** Next withheld offer second, or null when nothing else will be revealed. */
   nextRevealAtSec: number | null;
   canRejoin: boolean;
+  /**
+   * Set only for a visitor holding the signed registration cookie of a
+   * VERIFIED registration of this Live whose current session is not recorded
+   * yet; the page then re-claims once so the server records it.
+   */
+  recordRegistration?: true;
 };
 
 type EvergreenLive = {
@@ -117,6 +123,30 @@ export function useEvergreenSessionClaim(live: EvergreenLive, refresh: () => voi
   // session: the browser refused the cookie.
   if (claim.status === "done" && claim.live !== live) return "cookie_blocked";
   return "claiming";
+}
+
+/**
+ * A visitor who already holds a session cookie never claims again, so a
+ * verified registrant whose session the server has not recorded yet (claimed
+ * before verifying, or before this feature) is flagged by the page. One claim
+ * keeps the existing session and lets the server record it; the page does not
+ * need to re-render, and a failure is left for the next visit.
+ */
+export function useEvergreenRegistrationRecord(live: EvergreenLive) {
+  const evergreen = live.evergreen;
+  const identity = evergreen?.assigned && evergreen.recordRegistration
+    ? `${live.vendorId}:${live.id}:${evergreen.sessionStartAt}`
+    : "";
+  const sentRef = useRef<string | null>(null);
+  const liveRef = useRef(live);
+  useEffect(() => {
+    liveRef.current = live;
+  });
+  useEffect(() => {
+    if (!identity || sentRef.current === identity) return;
+    sentRef.current = identity;
+    void postEvergreenSession(liveRef.current, "claim").catch(() => undefined);
+  }, [identity]);
 }
 
 /**
@@ -218,6 +248,7 @@ export function useEvergreenPlayback({ live, runtimeState, refresh, onTick }: {
 }) {
   const locked = isEvergreenSessionLocked(live, runtimeState);
   const claimStatus = useEvergreenSessionClaim(live, refresh);
+  useEvergreenRegistrationRecord(live);
   const allowedSeconds = useEvergreenSessionClock(live, sessionDurationSeconds(live.evergreen));
   useEvergreenRevealRefresh(live, locked, refresh);
   useEffect(() => {

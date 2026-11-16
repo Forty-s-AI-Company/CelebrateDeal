@@ -12,7 +12,7 @@ const routePath = "src/app/api/cloudflare/stream-webhook/route.ts";
 const routeImportSuffix = "src/app/api/cloudflare/stream-webhook/route.js";
 const routeUrl = "/api/cloudflare/stream-webhook";
 const generatedTypesRoot = ".next/types";
-const requiredInputs = ["package.json", "package-lock.json", "next.config.ts", "tsconfig.json", routePath];
+const requiredInputs = ["package.json", "package-lock.json", "next.config.ts", "tsconfig.json", "tsconfig.build.json", routePath];
 const expectedRouteDigest = "7b9d506c01c9c19a7d76eaccf81b1d362e0ea8d1a0e78b1f0f869774a8bf04b2";
 const ownedPaths = [
   "scripts/wp135-temp-route-lineage-runner.mjs",

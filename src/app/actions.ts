@@ -35,6 +35,7 @@ import { isLiveSlugRace, liveSlugTakenPath, resolveLiveSlugConflict } from "@/li
 import { parseLiveQuotaPolicyForm, LiveQuotaPolicyValidationError, type LiveQuotaPolicy } from "@/lib/live-quota-policy";
 import { liveInvalidFieldName, liveStudioDraftFromFormData } from "@/lib/live-studio-draft-client";
 import type { LiveStudioDraftPayload } from "@/lib/live-studio-draft";
+import { LIVE_STUDIO_LAST_STEP_INDEX } from "@/lib/live-studio-steps";
 import {
   expectedTemplateTrigger,
   haveValidLiveNotificationRuleTemplates,
@@ -944,7 +945,8 @@ function parseSubmittedLiveDraft(
     : `/lives/new?error=invalid_draft${suffix}`;
   let payload: LiveStudioDraftPayload;
   try {
-    payload = liveStudioDraftFromFormData(formData, 7);
+    // The client saves the claimed draft from the final step; the payload claim compares it exactly.
+    payload = liveStudioDraftFromFormData(formData, LIVE_STUDIO_LAST_STEP_INDEX);
   } catch (error) {
     const field = liveInvalidFieldName(error);
     redirect(field ? `${invalidDraftPath}&field=${encodeURIComponent(field)}` : invalidDraftPath);
@@ -978,18 +980,20 @@ function requireValidReplayDeadline(input: {
   invalidDraftPath: string;
 }) {
   if (!input.replayAvailableUntil) return;
+  // Every rejection below is about the replay deadline, so the studio focuses that field.
+  const invalidReplayDeadlinePath = `${input.invalidDraftPath}&field=replayAvailableUntil`;
   let earliestDeadline = input.scheduledAt;
   if (input.streamMode === "vod") {
     const durationSec = input.video?.durationSec;
     if (typeof durationSec !== "number" || !Number.isSafeInteger(durationSec) || durationSec <= 0) {
-      redirect(input.invalidDraftPath);
+      redirect(invalidReplayDeadlinePath);
     }
     const naturalCompletionMs = input.scheduledAt.getTime() + durationSec * 1_000;
-    if (!Number.isSafeInteger(naturalCompletionMs)) redirect(input.invalidDraftPath);
+    if (!Number.isSafeInteger(naturalCompletionMs)) redirect(invalidReplayDeadlinePath);
     earliestDeadline = new Date(naturalCompletionMs);
   }
   if (input.replayAvailableUntil.getTime() <= earliestDeadline.getTime()) {
-    redirect(input.invalidDraftPath);
+    redirect(invalidReplayDeadlinePath);
   }
 }
 

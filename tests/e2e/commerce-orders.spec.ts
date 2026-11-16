@@ -18,6 +18,7 @@ import { PaymentWebhookPayload, processPaymentWebhook } from "../../src/lib/paym
 import { getRuntimeLivePublishReadiness } from "../../src/lib/live-runtime-readiness";
 import { publicLiveAvailabilityWhere } from "../../src/lib/sellable-live";
 import { navigateAndAssertDirectUrlGuard } from "./helpers/direct-url-guard";
+import { openLiveStudioAdvancedSettings } from "../fixtures/live-studio";
 import { formatSanitizedAxeBlockingError } from "../../scripts/playwright-ci-reporter";
 
 const db = new PrismaClient();
@@ -132,7 +133,7 @@ async function installOwnerSession(page: Page) {
 type LiveWizardControlName = "scheduledAt" | "messageTemplateId";
 
 async function openWizardPanelForControl(page: Page, controlName: LiveWizardControlName) {
-  const panels = page.locator("[data-step-index]").filter({
+  const panels = page.locator("[data-step-key]").filter({
     // controlName is restricted to fixed internal form names before it is used in a selector.
     has: page.locator(`[name="${controlName}"]`),
   });
@@ -2141,6 +2142,8 @@ test("desktop merchant can recover upload and validation errors, then publish an
     await page.locator('input[name="title"]').fill("G7-21 合成開播提醒直播");
     await expect(desktopLivePreview).toContainText("G7-21 合成開播提醒直播");
     await captureIfRequested(page, "live-studio-desktop.png");
+    // The address lives in the content step's collapsed 進階設定.
+    await openLiveStudioAdvancedSettings(page, "content");
     await page.locator('input[name="slug"]').fill(`g7-21-live-reminder-${runId}`);
     const schedulePanel = await openWizardPanelForControl(page, "scheduledAt");
     await schedulePanel.locator('input[name="scheduledAt"]').fill("2026-12-31T12:00");

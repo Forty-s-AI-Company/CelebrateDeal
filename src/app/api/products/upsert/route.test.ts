@@ -8,7 +8,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("@/lib/csrf", () => ({ assertServerActionSecurity: mocks.assertServerActionSecurity }));
 vi.mock("@/lib/auth", () => ({ getCurrentAuth: mocks.getCurrentAuth }));
-vi.mock("@/app/actions/product-actions", () => ({ mutateProduct: mocks.mutateProduct }));
+vi.mock("@/lib/product-save", () => ({ mutateProduct: mocks.mutateProduct }));
 
 import { POST } from "./route";
 

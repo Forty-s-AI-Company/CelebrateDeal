@@ -1,3 +1,5 @@
+import "server-only";
+
 import { MAX_PRODUCT_NAME_LENGTH } from "@/lib/product-name-contract";
 import { resolveSalesProjectBinding, SalesProjectBindingError } from "@/lib/sales-project-binding";
 import { randomUUID } from "node:crypto";
@@ -479,14 +481,14 @@ async function persistProductDelivery(
 }
 
 export type ProductMutationResult =
-  | { ok: true; destination: "/products?updated=created" | "/products?updated=saved" }
+  | {
+      ok: true;
+      destination: "/products?updated=created" | "/products?updated=saved";
+      /** The written product: its id and the validated (trimmed) name. */
+      product: { id: string; name: string };
+    }
   | { ok: false; state: ProductActionState };
 
-/**
- * Transport-neutral product mutation. HTTP and Server Action adapters own
- * request security/authentication, while this service owns validation and the
- * tenant-scoped transaction.
- */
 /**
  * Course products belong to the closed-beta courses module (F-001). While it is
  * closed a merchant may still edit and unlist an existing course product, but
@@ -501,6 +503,18 @@ async function courseModuleClosed(
   return !await isVendorFeatureEnabled(db, vendorId, "courses");
 }
 
+/**
+ * Transport-neutral product create／update for `vendorId`, which the caller
+ * must take from the authenticated session. HTTP and Server Action adapters
+ * (the product editor's route and action, the live studio's quick create) own
+ * request security and authentication; this service owns validation, the
+ * course feature gate and the tenant-scoped transaction (project binding,
+ * post-purchase policy, delivery config). The price is parsed here from the
+ * submitted major-unit `price` when present; the legacy cents field
+ * `priceCents` is read only when `price` is missing (the live studio's quick
+ * create never sends it). Either way the value is validated here and only
+ * written to this vendor's own product.
+ */
 export async function mutateProduct(
   vendorId: string,
   previousState: ProductActionState,
@@ -585,5 +599,9 @@ export async function mutateProduct(
     }
   }
   if (persistenceError) return { ok: false, state: productFailure(previousState, formData, persistenceError) };
-  return { ok: true, destination: request.id ? "/products?updated=saved" : "/products?updated=created" };
+  return {
+    ok: true,
+    destination: request.id ? "/products?updated=saved" : "/products?updated=created",
+    product: { id: productId, name: request.productInput.name },
+  };
 }

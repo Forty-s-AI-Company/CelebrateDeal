@@ -57,20 +57,66 @@ export function classifySyntheticCheckoutError(value: unknown) {
   return match ? `checkout_http_${match[1]} branch=${match[2]} transactions=${match[3]} orders=${match[4]} snapshots=${match[5]} grants=${match[6]}` : null;
 }
 
-/** Produce one bounded diagnostic without retaining axe nodes or selectors. */
-export function formatSanitizedAxeBlockingError(violations: ReadonlyArray<{ id: unknown }>) {
-  const rules = violations.map(({ id }) => typeof id === "string" && allowedAxeRuleIds.has(id) ? id : "unknown");
-  return `AXE_BLOCKING:RULES:${[...new Set(rules)].sort().join(",")}`;
+/**
+ * Optional, test-authored context for an axe failure. `at` is the spec's fixed
+ * ASCII scan-point id (never page text); each node is reduced to its tag, the
+ * plain utility class names on it and, for color-contrast, the measured
+ * colours. Selectors, attribute values, ids, HTML and text are never kept.
+ */
+export type AxeBlockingContext = {
+  at?: unknown;
+  nodes?: ReadonlyArray<{ tag?: unknown; classes?: unknown; fg?: unknown; bg?: unknown; ratio?: unknown }>;
+};
+
+const axeScanIdPattern = /^[a-z0-9]+(?:-[a-z0-9]+){0,11}$/u;
+const axeNodeTagPattern = /^[a-z][a-z0-9]{0,15}$/u;
+// Plain class tokens only: no variant colons, arbitrary-value brackets or slashes.
+const axeNodeClassPattern = /^[a-z][a-z0-9-]{0,39}$/u;
+const axeHexColorPattern = /^#[0-9a-f]{6}$/u;
+const maxAxeNodes = 5;
+const maxAxeNodeClasses = 8;
+
+function sanitizedAxeNode(node: { tag?: unknown; classes?: unknown; fg?: unknown; bg?: unknown; ratio?: unknown }) {
+  const tag = typeof node.tag === "string" && axeNodeTagPattern.test(node.tag) ? node.tag : "node";
+  const classes = Array.isArray(node.classes)
+    ? node.classes.filter((name): name is string => typeof name === "string" && axeNodeClassPattern.test(name)).slice(0, maxAxeNodeClasses)
+    : [];
+  const fg = typeof node.fg === "string" ? node.fg.toLowerCase() : "";
+  const bg = typeof node.bg === "string" ? node.bg.toLowerCase() : "";
+  const ratio = typeof node.ratio === "number" && Number.isFinite(node.ratio) && node.ratio >= 1 && node.ratio <= 21
+    ? node.ratio.toFixed(2)
+    : null;
+  const colours = axeHexColorPattern.test(fg) && axeHexColorPattern.test(bg) && ratio ? `(fg=${fg},bg=${bg},ratio=${ratio})` : "";
+  return `${[tag, ...classes].join(".")}${colours}`;
 }
 
-/** Accept only complete messages generated from the closed rule vocabulary. */
+/** Produce one bounded diagnostic without retaining axe selectors, HTML or text. */
+export function formatSanitizedAxeBlockingError(violations: ReadonlyArray<{ id: unknown }>, context: AxeBlockingContext = {}) {
+  const rules = violations.map(({ id }) => typeof id === "string" && allowedAxeRuleIds.has(id) ? id : "unknown");
+  let message = `AXE_BLOCKING:RULES:${[...new Set(rules)].sort().join(",")}`;
+  if (typeof context.at === "string" && axeScanIdPattern.test(context.at)) message += `:AT:${context.at}`;
+  const nodes = Array.isArray(context.nodes) ? context.nodes.slice(0, maxAxeNodes).map(sanitizedAxeNode) : [];
+  if (nodes.length > 0) message += `:NODES:${nodes.join(";")}`;
+  return message;
+}
+
+const axeNodeGrammar = "[a-z][a-z0-9]{0,15}(?:\\.[a-z][a-z0-9-]{0,39}){0,8}(?:\\(fg=#[0-9a-f]{6},bg=#[0-9a-f]{6},ratio=[0-9]{1,2}\\.[0-9]{2}\\))?";
+const axeMessagePattern = new RegExp(
+  `^(?:Error: )?AXE_BLOCKING:RULES:([a-z0-9-]+(?:,[a-z0-9-]+)*)(?::AT:([a-z0-9]+(?:-[a-z0-9]+){0,11}))?(?::NODES:(${axeNodeGrammar}(?:;${axeNodeGrammar}){0,${maxAxeNodes - 1}}))?$`,
+  "u",
+);
+
+/** Accept only complete messages generated from the closed rule vocabulary and node grammar. */
 export function classifySanitizedAxeError(value: unknown) {
   if (typeof value !== "string" || value.length > 4096) return null;
-  const match = /^(?:Error: )?AXE_BLOCKING:RULES:([a-z0-9-]+(?:,[a-z0-9-]+)*)$/u.exec(value);
+  const match = axeMessagePattern.exec(value);
   if (!match) return null;
   const rules = match[1].split(",");
   if (rules.length > allowedAxeRuleIds.size || !rules.every((rule) => allowedAxeRuleIds.has(rule))) return null;
-  return `axe_blocking rules=${[...new Set(rules)].sort().join(",")}`;
+  let classification = `axe_blocking rules=${[...new Set(rules)].sort().join(",")}`;
+  if (match[2]) classification += ` at=${match[2]}`;
+  if (match[3]) classification += ` nodes=${match[3]}`;
+  return classification;
 }
 
 export function formatSanitizedPlaywrightAnnotation(input: {

@@ -1139,11 +1139,18 @@ export async function upsertBlacklistAction(formData: FormData) {
       ? revokeStudentPortalSessions(tx, { vendorId: vendor.id, email: identifier })
       : 0;
   });
+  // Owner policy 2026-11-10: a magic link issued by a request that passed its
+  // blacklist check while this transaction was still open is invisible to the
+  // revocation above. Repeating the (idempotent) tenant-scoped revocation after
+  // commit removes it, so such a link can no longer mint a 7-day session.
+  const lateRevokedStudentPortalTokenCount = identifierType.data === "email"
+    ? await revokeStudentPortalSessions(getDb(), { vendorId: vendor.id, email: identifier })
+    : 0;
   await writeAuditLog({
     vendorId: vendor.id,
     action: "blacklist_created",
     targetType: "Blacklist",
-    after: auditSnapshot({ identifierType: identifierType.data, isActive: true, revokedStudentPortalTokenCount }),
+    after: auditSnapshot({ identifierType: identifierType.data, isActive: true, revokedStudentPortalTokenCount: revokedStudentPortalTokenCount + lateRevokedStudentPortalTokenCount }),
   });
   revalidatePath("/blacklists");
 }

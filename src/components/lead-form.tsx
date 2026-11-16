@@ -256,7 +256,7 @@ export function LeadForm({
         </label>
       ))}
 
-      <button type="submit" disabled={status === "loading"} aria-disabled={status === "loading"} aria-busy={status === "loading"} style={{ backgroundColor: themeColor }} className="h-11 rounded-md text-sm font-bold text-white transition hover:brightness-95 disabled:cursor-not-allowed disabled:opacity-60">
+      <button type="submit" disabled={status === "loading"} aria-disabled={status === "loading"} aria-busy={status === "loading"} style={{ backgroundColor: themeColor }} className="h-11 rounded-md text-sm font-bold text-white transition-[color,background-color,filter] hover:brightness-95 disabled:cursor-not-allowed disabled:opacity-60">
         {status === "loading" ? "送出中..." : submitLabel}
       </button>
       </> : null}

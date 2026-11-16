@@ -6,6 +6,10 @@ import { totpCodeForTimestamp } from "../../src/lib/mfa";
 import { hashPassword } from "../../src/lib/password";
 import { createMerchantRegistrationInvite } from "../../src/lib/merchant-registration-invite";
 import { createMerchantEmailVerificationToken } from "../../src/lib/merchant-email-verification-token";
+import { openLiveStudioAdvancedSettings } from "../fixtures/live-studio";
+import { createLandingPageFixture } from "../fixtures/landing-page";
+import { createGoalFunnelStepPages } from "../../src/lib/funnel-goal-step-pages";
+import { formatSanitizedAxeBlockingError } from "../../scripts/playwright-ci-reporter";
 
 const db = new PrismaClient();
 const password = "A11y-Test-Password-123!";
@@ -26,22 +30,50 @@ const fixture = {
   roleId: "",
   scriptId: "",
   templateId: "",
+  sequenceId: "",
   affiliateId: "",
   adminEmail: `a11y-admin-${runId}@celebratedeal.local`,
   adminUserId: "",
 };
 
-async function blockingAxeViolations(page: Page) {
+async function blockingAxeResult(page: Page) {
   const result = await new AxeBuilder({ page })
     .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"])
     .analyze();
-  return result.violations
-    .filter((violation) => violation.impact === "critical" || violation.impact === "serious")
-    .map((violation) => ({
-      id: violation.id,
-      impact: violation.impact,
-      targets: violation.nodes.map((node) => node.target),
-    }));
+  return result.violations.filter((violation) => violation.impact === "critical" || violation.impact === "serious");
+}
+
+async function blockingAxeViolations(page: Page) {
+  return (await blockingAxeResult(page)).map((violation) => ({
+    id: violation.id,
+    impact: violation.impact,
+    targets: violation.nodes.map((node) => node.target),
+  }));
+}
+
+/**
+ * Same gate as `expect(await blockingAxeViolations(page)).toEqual([])`: any
+ * critical/serious violation fails. The thrown message uses the sanitized
+ * AXE_BLOCKING grammar so the CI reporter can name the axe rules, this fixed
+ * scan point (`scanId`, ASCII) and each failing node as tag + plain class names
+ * + measured colours; it never forwards selectors, HTML or text. The full
+ * targets go to stdout for local runs.
+ */
+async function expectNoBlockingAxe(page: Page, scanId: string) {
+  const violations = await blockingAxeResult(page);
+  if (violations.length === 0) return;
+  console.log(`[axe] ${scanId}: ${JSON.stringify(violations.map((violation) => ({ id: violation.id, impact: violation.impact, nodes: violation.nodes.map((node) => ({ target: node.target, data: node.any[0]?.data })) })))}`);
+  const failing = violations.flatMap((violation) => violation.nodes).slice(0, 5);
+  const nodes = await Promise.all(failing.map(async (node) => {
+    const data = node.any[0]?.data as { fgColor?: unknown; bgColor?: unknown; contrastRatio?: unknown } | undefined;
+    const selector = node.target.length === 1 && typeof node.target[0] === "string" ? node.target[0] : null;
+    const element = selector ? await page.evaluate((query) => {
+      const found = document.querySelector(query);
+      return found ? { tag: found.tagName.toLowerCase(), classes: Array.from(found.classList) } : null;
+    }, selector).catch(() => null) : null;
+    return { tag: element?.tag, classes: element?.classes, fg: data?.fgColor, bg: data?.bgColor, ratio: data?.contrastRatio };
+  }));
+  throw new Error(formatSanitizedAxeBlockingError(violations, { at: scanId, nodes }));
 }
 
 async function waitForStableRoute(page: Page, expectedPath: string) {
@@ -103,7 +135,7 @@ async function enableOwnerMfa(page: Page) {
 test.beforeAll(async () => {
   const vendor = await db.vendor.create({
     data: {
-      betaFeatureGrants: ["courses", "billing", "funnel_binding", "consultation_booking", "browser_live", "danmaku"], enabledFeatureModules: ["funnel_builder", "live_webinar", "affiliate_program", "tax_remuneration", "analytics_advanced", "consultation_booking"],
+      betaFeatureGrants: ["courses", "billing", "funnel_binding", "consultation_booking", "browser_live", "danmaku", "email_sequences"], enabledFeatureModules: ["funnel_builder", "live_webinar", "affiliate_program", "tax_remuneration", "analytics_advanced", "consultation_booking"],
       name: "Accessibility Test Vendor",
       slug: fixture.slug,
       email: fixture.email,
@@ -263,6 +295,13 @@ test.beforeAll(async () => {
   fixture.scriptId = script.id;
   fixture.templateId = messageTemplate.id;
   fixture.affiliateId = affiliate.id;
+  // F-3: one draft sequence so the edit page is scanned too.
+  const sequenceTemplate = await db.messageTemplate.create({
+    data: { vendorId: vendor.id, name: "Accessibility sequence mail", trigger: "sequence_email", subject: "{{live_title}} 下一步", body: "{{name}} 你好 {{unsubscribe_url}}" },
+  });
+  const sequence = await db.emailSequence.create({ data: { vendorId: vendor.id, liveId: live.id, name: "Accessibility sequence" } });
+  await db.emailSequenceStep.create({ data: { vendorId: vendor.id, emailSequenceId: sequence.id, delayMinutes: 1_440, messageTemplateId: sequenceTemplate.id } });
+  fixture.sequenceId = sequence.id;
 });
 
 test.afterAll(async () => {
@@ -333,6 +372,8 @@ test("static authenticated owner routes have no blocking axe violations", async 
     "/forms/new",
     "/messages/templates",
     "/messages/templates/new",
+    "/messages/sequences",
+    "/messages/sequences/new",
     "/interaction-scripts",
     "/interaction-scripts/new",
     "/interaction-roles",
@@ -340,6 +381,7 @@ test("static authenticated owner routes have no blocking axe violations", async 
     "/blacklists",
     "/affiliates",
     "/affiliates/new",
+    "/affiliates/policy",
     "/team-templates",
     "/team-templates/new",
     "/team-performance",
@@ -391,6 +433,7 @@ test("dynamic owner and public commerce routes have no blocking axe violations",
     `/interaction-roles/${fixture.roleId}/edit`,
     `/interaction-scripts/${fixture.scriptId}/edit`,
     `/messages/templates/${fixture.templateId}/edit`,
+    `/messages/sequences/${fixture.sequenceId}/edit`,
     `/affiliates/${fixture.affiliateId}`,
     `/affiliates/${fixture.affiliateId}/edit`,
     `/live/${fixture.liveSlug}`,
@@ -458,47 +501,167 @@ test("onboarding and welcome routes have no blocking axe violations (F-126)", as
   expect(failures, "onboarding／welcome 不可出現 axe critical/serious").toEqual([]);
 });
 
-test("live stepper has no blocking axe violations on any of the eight steps or on the validation error state (F-126)", async ({ page }) => {
+test("live stepper has no blocking axe violations on any of the four steps, in 進階設定 or on the validation error state (F-126)", async ({ page }) => {
   test.setTimeout(120_000);
+  // A second listed product, so 成交 is scanned with the 置頂 label and a 設為置頂 button.
+  await db.product.create({
+    data: {
+      vendorId: fixture.vendorId,
+      name: "Accessibility Pin Product",
+      slug: `a11y-pin-product-${runId}`,
+      priceCents: 4_500,
+      currency: "TWD",
+      inventory: 5,
+      isActive: true,
+      fulfillmentTypeConfirmed: true,
+    },
+  });
   await loginOwner(page);
   await gotoStableRoute(page, "/lives/new");
 
   // 錯誤狀態：未填必填欄位就按「下一步」，驗證訊息與焦點狀態都要可被掃描。
   await page.getByRole("button", { name: "下一步" }).click();
   await expect(page.getByRole("status").filter({ hasText: "請先完成本步驟的必填欄位" })).toBeVisible();
-  expect(await blockingAxeViolations(page), "stepper 驗證錯誤狀態").toEqual([]);
+  await expectNoBlockingAxe(page, "live-validation-error");
 
   await page.getByLabel("直播標題", { exact: true }).fill("A11y 步驟掃描");
+  // 進階設定預設收合；以鍵盤展開，展開狀態也要可被掃描。
+  const contentAdvanced = page.locator('details[data-advanced-settings="content"]');
+  await expect(contentAdvanced).not.toHaveAttribute("open", "");
+  await contentAdvanced.locator(":scope > summary").focus();
+  await page.keyboard.press("Enter");
+  await expect(contentAdvanced).toHaveAttribute("open", "");
   await page.getByLabel("直播網址").fill(`a11y-stepper-${runId}`);
 
+  const stepKeys = ["content", "sales", "notifications", "publish"] as const;
   const scanned: number[] = [];
   const scanStep = async (step: number) => {
-    await expect(page.locator(`[data-step-index="${step}"]`)).toBeVisible();
-    const violations = await blockingAxeViolations(page);
-    expect(violations, `stepper 第 ${step + 1} 步`).toEqual([]);
+    await expect(page.locator(`[data-step-key="${stepKeys[step]}"]`)).toBeVisible();
+    await expect(page.locator(`button[aria-controls="live-step-panel-${stepKeys[step]}"]`)).toHaveAttribute("aria-current", "step");
+    await expectNoBlockingAxe(page, `live-step-${step + 1}`);
     scanned.push(step + 1);
   };
-  await scanStep(0);
-  await page.getByRole("button", { name: "下一步" }).click();
   await page.getByLabel("影片／即時直播").selectOption(fixture.videoId);
+  await page.getByLabel("報名頁").selectOption(fixture.formId);
+  await page.getByLabel(/開播時間/).fill("2026-12-20T20:00");
+  await scanStep(0);
+  // 滑入動畫進行到一半時掃描也不能有對比違規（CI 上掃描常落在動畫途中）。
+  const drawerSlide = (mode: "midway" | "finish") => page.evaluate((nextMode) => {
+    for (const animation of document.getAnimations()) {
+      if ((animation as CSSAnimation).animationName !== "side-drawer-in") continue;
+      if (nextMode === "midway") { animation.pause(); animation.currentTime = 90; } else animation.finish();
+    }
+  }, mode);
+  // 就地建立抽屜：開啟狀態（含欄位錯誤）也要可被掃描，Escape 關閉後焦點回到按鈕。
+  const openFormDrawer = page.getByRole("button", { name: "新增報名表", exact: true });
+  await openFormDrawer.click();
+  const formDrawer = page.getByRole("dialog", { name: "新增報名表" });
+  await expect(formDrawer).toBeVisible();
+  await drawerSlide("midway");
+  await expectNoBlockingAxe(page, "form-drawer-midway");
+  await drawerSlide("finish");
+  await expectNoBlockingAxe(page, "form-drawer");
+  await formDrawer.getByLabel("表單名稱").fill("");
+  await formDrawer.getByRole("button", { name: "建立並選取" }).click();
+  await expect(formDrawer.getByText("請填寫表單名稱。")).toBeVisible();
+  await expectNoBlockingAxe(page, "form-drawer-error");
+  await page.keyboard.press("Escape");
+  await expect(formDrawer).toBeHidden();
+  await expect(openFormDrawer).toBeFocused();
+  // 影片抽屜：上傳區與展開的外部網址區（含欄位錯誤）。不選檔、不上傳，不會呼叫任何影片服務。
+  const openVideoDrawer = page.getByRole("button", { name: "上傳影片或貼上影片網址", exact: true });
+  await openVideoDrawer.click();
+  const videoDrawer = page.getByRole("dialog", { name: "新增影片" });
+  await expect(videoDrawer).toBeVisible();
+  await expect(videoDrawer.getByLabel("影片名稱")).toBeFocused();
+  await drawerSlide("midway");
+  await expectNoBlockingAxe(page, "video-drawer-midway");
+  await drawerSlide("finish");
+  await expectNoBlockingAxe(page, "video-drawer");
+  await videoDrawer.getByText("改用外部影片網址", { exact: true }).click();
+  await videoDrawer.getByLabel("影片網址").fill("not-a-url");
+  await videoDrawer.getByRole("button", { name: "以網址建立並選取" }).click();
+  await expect(videoDrawer.getByText("影片網址必須是有效的 HTTP 或 HTTPS 完整網址。")).toBeVisible();
+  await expectNoBlockingAxe(page, "video-drawer-url-error");
+  await page.keyboard.press("Escape");
+  await expect(videoDrawer).toBeHidden();
+  await expect(openVideoDrawer).toBeFocused();
+  await page.getByRole("button", { name: "下一步" }).click();
+  await openLiveStudioAdvancedSettings(page, "sales");
   await scanStep(1);
+  // 互動腳本：「重新整理清單」後顯示的公告也要可被掃描；新增元素（新分頁連結、說明）已含在上一步掃描內。
+  await page.locator('[data-step-key="sales"]').getByRole("button", { name: "重新整理清單", exact: true }).click();
+  await expect(page.locator("[data-live-script-status]")).toContainText("已更新清單");
+  await expectNoBlockingAxe(page, "script-refresh-status");
+  // 新增商品抽屜：開啟（含滑入動畫中點）與欄位錯誤狀態；不送出，不建立商品。
+  const openProductDrawer = page.locator('[data-step-key="sales"]').getByRole("button", { name: "新增商品", exact: true });
+  await openProductDrawer.click();
+  const productDrawer = page.getByRole("dialog", { name: "新增商品" });
+  await expect(productDrawer).toBeVisible();
+  await expect(productDrawer.getByLabel("商品名稱")).toBeFocused();
+  await drawerSlide("midway");
+  await expectNoBlockingAxe(page, "product-drawer-midway");
+  await drawerSlide("finish");
+  await expectNoBlockingAxe(page, "product-drawer");
+  await productDrawer.getByLabel("售價（新台幣整數元）").fill("12.5");
+  await productDrawer.getByRole("button", { name: "建立並選取" }).click();
+  await expect(productDrawer.getByText("請填寫商品名稱。")).toBeVisible();
+  await expect(productDrawer.getByText("售價須為新台幣整數元，不含小數點、逗號或符號。")).toBeVisible();
+  await expectNoBlockingAxe(page, "product-drawer-error");
+  await page.keyboard.press("Escape");
+  await expect(productDrawer).toBeHidden();
+  await expect(openProductDrawer).toBeFocused();
+  // 兩件商品勾選後的置頂標示與「設為置頂」按鈕（勾選在抽屜之後，抽屜仍是「建立並選取」模式）。
+  const salesPanel = page.locator('[data-step-key="sales"]');
+  await salesPanel.getByRole("checkbox", { name: /Accessibility Test Product/u }).check();
+  await salesPanel.getByRole("checkbox", { name: /Accessibility Pin Product/u }).check();
+  await expect(salesPanel.locator('[data-live-product-row] [data-live-product-pinned]')).toHaveText("置頂");
+  await expect(salesPanel.getByRole("button", { name: "設為置頂：Accessibility Pin Product", exact: true })).toBeVisible();
+  await expectNoBlockingAxe(page, "成交步驟置頂標示與設為置頂");
   await page.getByRole("button", { name: "下一步" }).click();
   await scanStep(2);
+  const openTemplateDrawer = page.getByRole("button", { name: "建立報名成功 Email", exact: true });
+  await openTemplateDrawer.click();
+  await expect(page.getByRole("dialog", { name: "建立報名成功 Email" })).toBeVisible();
+  await drawerSlide("midway");
+  await expectNoBlockingAxe(page, "template-drawer-midway");
+  await drawerSlide("finish");
+  await expectNoBlockingAxe(page, "template-drawer");
+  await page.keyboard.press("Escape");
+  await expect(openTemplateDrawer).toBeFocused();
   await page.getByRole("button", { name: "下一步" }).click();
-  await page.getByLabel("報名頁").selectOption(fixture.formId);
   await scanStep(3);
-  await page.getByRole("button", { name: "下一步" }).click();
-  await page.getByLabel(/開播時間/).fill("2026-12-20T20:00");
-  await scanStep(4);
-  await page.getByRole("button", { name: "下一步" }).click();
-  await scanStep(5);
-  await page.getByRole("button", { name: "下一步" }).click();
-  await scanStep(6);
-  await page.getByRole("button", { name: "下一步" }).click();
-  await scanStep(7);
-  expect(scanned).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
+  expect(scanned).toEqual([1, 2, 3, 4]);
   // F-118：切換步驟後焦點在新步驟的標題。
-  await expect(page.locator(`[data-step-index="7"] h2, [data-step-index="7"] h3`).first()).toBeFocused();
+  await expect(page.locator(`[data-step-key="publish"] h2, [data-step-key="publish"] h3`).first()).toBeFocused();
+  // 發布步只有一份可切換的預覽。
+  await expect(page.getByRole("button", { name: "手機預覽" })).toHaveAttribute("aria-pressed", "true");
+  await page.getByRole("button", { name: "桌機預覽" }).click();
+  await expect(page.getByRole("button", { name: "桌機預覽" })).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByRole("complementary", { name: "即時手機預覽" })).toHaveCount(0);
+  await expectNoBlockingAxe(page, "publish-desktop-preview");
+  // 自動儲存完成時，送出按鈕會由 disabled（opacity-60）轉為可用；CI 上掃描曾落在這段轉場中，
+  // 看到已可用但仍半透明的「建立草稿並預覽」（白字配 #779df2，對比 2.61）。
+  // 重播同一變化：所有可用按鈕先完整停在 disabled 樣式一個畫格，再恢復可用；
+  // 若恢復時有轉場，停在第一個畫格（最接近 disabled 樣式）掃描。
+  // 可用的按鈕在任何轉場階段都必須符合對比，所以 opacity 不可參與 transition。
+  await expect(page.getByRole("button", { name: "建立草稿並預覽", exact: true })).toBeEnabled();
+  const replayed = await page.evaluate(async () => {
+    const buttons = Array.from(document.querySelectorAll<HTMLButtonElement>("main button:enabled"));
+    const replaying = (animation: Animation) => buttons.includes((animation.effect as KeyframeEffect | null)?.target as HTMLButtonElement);
+    for (const button of buttons) button.disabled = true;
+    for (const animation of document.getAnimations()) if (replaying(animation)) animation.finish();
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    for (const button of buttons) button.disabled = false;
+    const transitions = document.getAnimations().filter(replaying);
+    for (const animation of transitions) { animation.pause(); animation.currentTime = 0; }
+    return { buttons: buttons.length, transitions: transitions.length };
+  });
+  expect(replayed.buttons).toBeGreaterThan(0);
+  await expectNoBlockingAxe(page, "publish-actions-enabling");
+  await page.evaluate(() => {
+    for (const animation of document.getAnimations()) if (animation.playState === "paused" && (animation.effect as KeyframeEffect | null)?.target instanceof HTMLButtonElement) animation.finish();
+  });
 });
 
 test("platform-admin MFA and static operations routes have no blocking axe violations", async ({ page }) => {
@@ -622,5 +785,53 @@ test("mobile shell has no horizontal page overflow and primary targets are touch
   for (let index = 0; index < count; index += 1) {
     const box = await mobileTargets.nth(index).boundingBox();
     expect(box?.height ?? 0, `mobile target ${index + 1} height`).toBeGreaterThanOrEqual(44);
+  }
+});
+
+test("funnel editor publish drawer has no blocking axe violations while sliding in, when ready and after publishing", async ({ page }) => {
+  test.setTimeout(120_000);
+  // A separate project-scoped tenant: the shared a11y vendor has no sales project.
+  const funnel = await createLandingPageFixture(db, randomUUID());
+  const content = createGoalFunnelStepPages({ id: "flow_a11y_publish", name: "A11y 發布抽屜", goal: "sell", domain: `a11y-publish-${runId}` })!;
+  const landing = await db.landingPage.create({ data: { vendorId: funnel.vendor.id, projectId: funnel.project.id, name: "A11y 發布抽屜", slug: `a11y-publish-${runId}`, draftContent: JSON.parse(JSON.stringify(content)) } });
+  try {
+    await gotoStableRoute(page, "/login");
+    await page.getByLabel("Email").fill(funnel.owner.email);
+    await page.getByLabel("密碼").fill(funnel.password);
+    await page.getByRole("button", { name: "登入" }).click();
+    await expect(page).toHaveURL(/\/dashboard/);
+    await page.goto(`/landing-pages/${landing.id}/edit?step=order_form`, { waitUntil: "load" });
+    const toolbar = page.getByLabel("編輯器工具列", { exact: true });
+    await expect(toolbar.getByRole("button", { name: "已儲存", exact: true })).toBeDisabled();
+    const drawerSlide = (mode: "midway" | "finish") => page.evaluate((nextMode) => {
+      for (const animation of document.getAnimations()) {
+        if ((animation as CSSAnimation).animationName !== "side-drawer-in") continue;
+        if (nextMode === "midway") { animation.pause(); animation.currentTime = 90; } else animation.finish();
+      }
+    }, mode);
+    const publish = toolbar.getByRole("button", { name: "發布", exact: true });
+    await publish.click();
+    const drawer = page.getByRole("dialog", { name: "發布網站" });
+    await expect(drawer).toBeVisible();
+    await drawerSlide("midway");
+    await expectNoBlockingAxe(page, "funnel-publish-drawer-midway");
+    await drawerSlide("finish");
+    await expect(drawer.getByText("檢查通過，可以發布。", { exact: true })).toBeVisible();
+    await expectNoBlockingAxe(page, "funnel-publish-drawer-ready");
+    // Escape closes the drawer and returns focus to 發布.
+    await page.keyboard.press("Escape");
+    await expect(drawer).toBeHidden();
+    await expect(publish).toBeFocused();
+    await publish.click();
+    await expect(drawer.getByText("檢查通過，可以發布。", { exact: true })).toBeVisible();
+    await drawer.getByRole("button", { name: "確認發布", exact: true }).click();
+    await expect(drawer).toBeHidden();
+    await expect(page.locator("[data-ui-toast]")).toContainText("已發布版本 v1");
+    await expectNoBlockingAxe(page, "funnel-publish-toast");
+  } finally {
+    await db.landingPage.updateMany({ where: { vendorId: funnel.vendor.id }, data: { status: "draft", publishedVersionId: null } });
+    await db.landingPage.deleteMany({ where: { vendorId: funnel.vendor.id } });
+    await db.vendor.deleteMany({ where: { id: funnel.vendor.id } });
+    await db.user.deleteMany({ where: { id: funnel.owner.id } });
   }
 });

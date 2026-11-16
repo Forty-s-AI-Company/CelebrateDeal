@@ -65,7 +65,7 @@ export default async function StudentPortalPage({
           <a href={`/portal/${encodeURIComponent(vendorSlug)}/notifications`} className="min-h-11 shrink-0 rounded-full border border-slate-300 bg-white px-4 py-2.5 text-sm font-bold text-slate-800">{t("通知設定")}</a>
           <form action={logoutStudentPortalAction}>
             <CsrfField /><input type="hidden" name="vendorSlug" value={vendorSlug} />
-            <FormSubmitButton pendingChildren={t("\u767B\u51FA\u4E2D\u2026")} pendingMessage={t("\u6B63\u5728\u767B\u51FA\uFF0C\u8ACB\u52FF\u91CD\u8907\u9001\u51FA\u3002")} className="min-h-11 rounded-xl border border-slate-300 bg-white px-4 text-sm font-bold text-slate-800 transition hover:bg-slate-50">{t("\u5B89\u5168\u767B\u51FA")}</FormSubmitButton>
+            <FormSubmitButton pendingChildren={t("\u767B\u51FA\u4E2D\u2026")} pendingMessage={t("\u6B63\u5728\u767B\u51FA\uFF0C\u8ACB\u52FF\u91CD\u8907\u9001\u51FA\u3002")} className="min-h-11 rounded-xl border border-slate-300 bg-white px-4 text-sm font-bold text-slate-800 transition-colors hover:bg-slate-50">{t("\u5B89\u5168\u767B\u51FA")}</FormSubmitButton>
           </form>
         </div>
       </header>

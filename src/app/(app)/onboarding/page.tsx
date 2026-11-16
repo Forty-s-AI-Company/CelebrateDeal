@@ -1,75 +1,24 @@
-import { CheckCircle2, Circle } from "lucide-react";
+import { Check, CheckCircle2, Circle, MinusCircle } from "lucide-react";
 import Link from "next/link";
 
 import { SettingsBackLink } from "@/components/settings-back-link";
 import { Badge, ButtonLink, Card, PageHeader } from "@/components/ui";
-import { requireVendorManager } from "@/lib/auth";
-import { getDb } from "@/lib/db";
-import { merchantOnboardingProgress } from "@/lib/merchant-onboarding";
-import { verifiedVendorPaymentMethodWhere } from "@/lib/payment-method-reference";
+import { requireVendorManagerContext } from "@/lib/auth";
 import { isCardBindingRequired } from "@/lib/feature-gates";
-import { liveReadyVideoWhere } from "@/lib/live-video-readiness";
-import {
-  hasUsableMessageTemplateContent,
-  REGISTRATION_CONFIRMATION_EMAIL_TEMPLATE_WHERE,
-} from "@/lib/message-template";
-import { parseRegistrationFormFields } from "@/lib/registration-form-fields";
-import {
-  countSellableLiveReadinessCandidates,
-  sellableLiveReadinessQuery,
-} from "@/lib/sellable-live";
+import { getOnboardingChecklist, trackingConfiguredFor } from "@/lib/merchant-onboarding-data";
 
+/** The complete 上線任務 list; the sidebar panel and the dashboard show the same steps. */
 export default async function OnboardingPage() {
-  const vendor = await requireVendorManager();
-  const db = getDb();
-  const now = new Date();
-  const [
-    verifiedVendorPaymentMethodCount,
-    sellableProductCount,
-    activeFormCandidates,
-    activeInteractionRoleCount,
-    publishedInteractionScriptCount,
-    registrationEmailTemplateCandidates,
-    readyVideoCount,
-    sellableLiveCandidates,
-  ] = await Promise.all([
-    // While funnel_binding is closed no card can be bound, so the step counts as satisfied (F-002).
-    isCardBindingRequired(vendor) ? db.paymentMethodReference.count({ where: verifiedVendorPaymentMethodWhere(vendor.id, now) }) : Promise.resolve(1),
-    db.product.count({
-      where: { vendorId: vendor.id, isActive: true, fulfillmentTypeConfirmed: true },
-    }),
-    db.registrationForm.findMany({
-      where: { vendorId: vendor.id, isActive: true },
-      select: { fields: true },
-    }),
-    db.interactionRole.count({ where: { vendorId: vendor.id, isActive: true } }),
-    db.interactionScript.count({ where: { vendorId: vendor.id, status: "published" } }),
-    db.messageTemplate.findMany({
-      where: { vendorId: vendor.id, ...REGISTRATION_CONFIRMATION_EMAIL_TEMPLATE_WHERE },
-      select: { subject: true, body: true },
-    }),
-    db.video.count({ where: liveReadyVideoWhere(vendor.id) }),
-    db.live.findMany(sellableLiveReadinessQuery(vendor.id)),
-  ]);
-  const activeFormCount = activeFormCandidates.filter((form) => parseRegistrationFormFields(form.fields).success).length;
-  const registrationEmailTemplateCount = registrationEmailTemplateCandidates.filter(hasUsableMessageTemplateContent).length;
-  const sellableLiveCount = countSellableLiveReadinessCandidates(sellableLiveCandidates);
-  const progress = merchantOnboardingProgress({
-    supportEmailConfigured: Boolean(vendor.supportEmail?.trim()),
-    verifiedVendorPaymentMethodCount,
-    sellableProductCount,
-    activeFormCount,
-    activeInteractionRoleCount,
-    publishedInteractionScriptCount,
-    registrationEmailTemplateCount,
-    sellableLiveCount,
-    readyVideoCount,
-    trackingConfigured: Boolean(
-      vendor.tracking?.googleTagManagerId
-      || vendor.tracking?.facebookPixelId
-      || vendor.tracking?.tiktokPixelId,
-    ),
-  });
+  const { auth, vendor } = await requireVendorManagerContext();
+  // Same request-cached load as the sidebar panel in the app layout.
+  const progress = await getOnboardingChecklist(
+    vendor.id,
+    auth.user.id,
+    Boolean(vendor.supportEmail?.trim()),
+    trackingConfiguredFor(vendor.tracking),
+    // While funnel_binding is closed no card can be bound, so the payment step does not apply (F-002).
+    isCardBindingRequired(vendor),
+  );
 
   return (
     <>
@@ -111,14 +60,16 @@ export default async function OnboardingPage() {
             <Card className="grid gap-4 md:grid-cols-[auto_1fr_auto] md:items-start">
               {step.done ? (
                 <CheckCircle2 aria-hidden="true" className="mt-0.5 text-emerald-600" />
+              ) : step.notApplicable ? (
+                <MinusCircle aria-hidden="true" className="mt-0.5 text-slate-300" />
               ) : (
                 <Circle aria-hidden="true" className="mt-0.5 text-slate-300" />
               )}
               <div>
                 <div className="flex flex-wrap items-center gap-2">
                   <h2 className="font-semibold text-slate-950">Step {index + 1}. {step.title}</h2>
-                  <Badge tone={step.done ? "green" : step.deferred ? "orange" : "gray"}>
-                    {step.done ? "已完成" : step.deferred ? "外部驗證，可稍後" : "待完成"}
+                  <Badge tone={step.done ? "green" : step.notApplicable ? "gray" : step.deferred ? "orange" : "gray"}>
+                    {step.done ? "已完成" : step.notApplicable ?? (step.deferred ? "外部驗證，可稍後" : "待完成")}
                   </Badge>
                 </div>
                 <p className="mt-2 text-sm leading-6 text-slate-600">{step.description}</p>
@@ -126,7 +77,7 @@ export default async function OnboardingPage() {
                   {step.requirements.map((requirement) => (
                     <li key={requirement.label} className={`flex flex-wrap items-center justify-between gap-2 ${requirement.done ? "text-emerald-700" : "text-slate-700"}`}>
                       <span>
-                        <span aria-hidden="true">{requirement.done ? "✓" : "○"}</span> {requirement.label}
+                        {requirement.done ? <Check size={14} aria-hidden="true" className="mr-1 inline-block align-[-2px]" /> : <Circle size={14} aria-hidden="true" className="mr-1 inline-block align-[-2px]" />}{requirement.label}
                         <span className="sr-only">：{requirement.done ? "已完成" : "尚未完成"}</span>
                       </span>
                       {!requirement.done && requirement.href ? (
@@ -134,6 +85,7 @@ export default async function OnboardingPage() {
                           {requirement.actionLabel ?? "前往設定"}
                         </Link>
                       ) : null}
+                      {requirement.note ? <span className="w-full text-xs leading-5 text-amber-800">已略過：{requirement.note}</span> : null}
                     </li>
                   ))}
                 </ul>
@@ -144,7 +96,7 @@ export default async function OnboardingPage() {
                       {step.suggestions.map((suggestion) => (
                         <li key={suggestion.label} className="flex flex-wrap items-center justify-between gap-2 text-slate-600">
                           <span>
-                            <span aria-hidden="true">{suggestion.done ? "✓" : "○"}</span> {suggestion.label}
+                            {suggestion.done ? <Check size={14} aria-hidden="true" className="mr-1 inline-block align-[-2px]" /> : <Circle size={14} aria-hidden="true" className="mr-1 inline-block align-[-2px]" />}{suggestion.label}
                             <span className="sr-only">：{suggestion.done ? "已完成" : "尚未設定，可稍後再做"}</span>
                           </span>
                           {!suggestion.done && suggestion.href ? (
@@ -158,7 +110,7 @@ export default async function OnboardingPage() {
                   </div>
                 ) : null}
               </div>
-              {step.key === "launch" && !step.done ? null : (
+              {step.notApplicable || (step.key === "launch" && !step.done) ? null : (
                 <ButtonLink href={step.href} tone={step.done || step.deferred ? "secondary" : "cta"}>
                   {step.done ? "檢查設定" : step.actionLabel}
                 </ButtonLink>

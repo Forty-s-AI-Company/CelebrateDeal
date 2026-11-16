@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { mutateProduct } from "@/app/actions/product-actions";
+import { mutateProduct } from "@/lib/product-save";
 import { readFormDataBody } from "@/lib/api-security";
 import { getCurrentAuth } from "@/lib/auth";
 import { assertServerActionSecurity } from "@/lib/csrf";

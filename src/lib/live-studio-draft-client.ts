@@ -95,6 +95,9 @@ function errorCode(value: unknown) {
     : "draft_save_failed";
 }
 
+/** Browsers reject keepalive requests whose in-flight bodies exceed 64 KiB; stay well below it. */
+const KEEPALIVE_BODY_LIMIT_BYTES = 60 * 1024;
+
 export async function saveLiveStudioDraft({
   csrfToken,
   draftId,
@@ -102,6 +105,7 @@ export async function saveLiveStudioDraft({
   revision,
   payload,
   overwrite = false,
+  keepalive = false,
 }: {
   csrfToken: string;
   draftId: string;
@@ -109,7 +113,11 @@ export async function saveLiveStudioDraft({
   revision: number | null;
   payload: LiveStudioDraftPayload;
   overwrite?: boolean;
+  /** Let the request finish after the page is hidden or unloaded (small bodies only). */
+  keepalive?: boolean;
 }): Promise<LiveStudioDraftEnvelope & { slugTaken: boolean; slugCheckFailed: boolean }> {
+  const requestBody = JSON.stringify({ draftId, liveId, revision, payload, ...(overwrite ? { overwrite: true } : {}) });
+  const useKeepalive = keepalive && new TextEncoder().encode(requestBody).byteLength <= KEEPALIVE_BODY_LIMIT_BYTES;
   let response: Response;
   try {
     response = await fetch("/api/live-studio/drafts", {
@@ -120,7 +128,8 @@ export async function saveLiveStudioDraft({
         "x-celebratedeal-client": "web",
         "x-csrf-token": csrfToken,
       },
-      body: JSON.stringify({ draftId, liveId, revision, payload, ...(overwrite ? { overwrite: true } : {}) }),
+      body: requestBody,
+      ...(useKeepalive ? { keepalive: true } : {}),
     });
   } catch {
     throw new LiveStudioDraftClientError("network_error");

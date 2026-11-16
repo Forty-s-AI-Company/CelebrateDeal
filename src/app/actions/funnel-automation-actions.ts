@@ -3,8 +3,10 @@
 import { assertServerActionSecurity } from "@/lib/csrf";
 import {
   createFunnelAutomationRule,
+  FunnelAutomationBusyError,
   FunnelAutomationConflictError,
   FunnelAutomationInputError,
+  FunnelAutomationLinePushOwnerOnlyError,
   FunnelAutomationNotFoundError,
   FunnelAutomationScopeError,
   listFunnelAutomationRules,
@@ -29,6 +31,8 @@ function number(formData: FormData, name: string) {
 }
 
 function failure(error: unknown): FunnelAutomationActionState {
+  if (error instanceof FunnelAutomationLinePushOwnerOnlyError) return { status: "error", message: "這條規則會發 LINE 訊息（LINE 推播或派券通知），僅限擁有者設定；你可以停用它。" };
+  if (error instanceof FunnelAutomationBusyError) return { status: "error", message: "規則正在被其他人修改或執行，請稍後再試。" };
   if (error instanceof FunnelAutomationConflictError) return { status: "error", message: "這條規則已有較新的版本，系統沒有覆蓋它。請重新載入後再試。" };
   if (error instanceof FunnelAutomationScopeError) return { status: "error", message: "請先選擇一個銷售專案後再管理漏斗自動化。" };
   if (error instanceof FunnelAutomationNotFoundError) return { status: "error", message: "找不到這個漏斗或規則，或你沒有管理權限。" };

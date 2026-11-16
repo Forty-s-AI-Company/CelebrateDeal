@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const db = vi.hoisted(() => ({
   emailDelivery: { findUnique: vi.fn(), updateMany: vi.fn() },
   emailSuppression: { upsert: vi.fn() },
+  delayedStepRun: { updateMany: vi.fn() },
   $transaction: vi.fn(),
 }));
 
@@ -17,6 +18,7 @@ beforeEach(() => {
   db.$transaction.mockImplementation(async (callback: (tx: typeof db) => Promise<unknown>) => callback(db));
   db.emailDelivery.updateMany.mockResolvedValue({ count: 2 });
   db.emailSuppression.upsert.mockResolvedValue({ id: "suppression-1" });
+  db.delayedStepRun.updateMany.mockResolvedValue({ count: 1 });
 });
 
 afterEach(() => vi.unstubAllEnvs());
@@ -73,5 +75,28 @@ describe("POST /api/email/unsubscribe", () => {
         lastErrorCode: "recipient_suppressed",
       },
     });
+  });
+
+  it("stops the recipient's active follow-up sequences at this vendor in the same transaction (F-3)", async () => {
+    db.emailDelivery.findUnique.mockResolvedValue({
+      vendorId: "vendor-1",
+      recipientHash: "recipient-hash",
+      recipientMaskedEmail: "l***@example.test",
+    });
+    const response = await POST(request(createEmailUnsubscribeToken("delivery-1")));
+
+    expect(response.headers.get("location")).toBe("https://app.example.test/unsubscribe?status=done");
+    expect(db.$transaction).toHaveBeenCalledTimes(1);
+    expect(db.delayedStepRun.updateMany).toHaveBeenCalledWith({
+      where: { vendorId: "vendor-1", recipientHash: "recipient-hash", status: "active" },
+      data: { status: "cancelled", cancelReason: "unsubscribed", nextRunAt: null, claimedAt: null },
+    });
+  });
+
+  it("does not touch any run when the token's delivery is unknown", async () => {
+    db.emailDelivery.findUnique.mockResolvedValue(null);
+    const response = await POST(request(createEmailUnsubscribeToken("delivery-1")));
+    expect(response.headers.get("location")).toBe("https://app.example.test/unsubscribe?status=invalid");
+    expect(db.delayedStepRun.updateMany).not.toHaveBeenCalled();
   });
 });

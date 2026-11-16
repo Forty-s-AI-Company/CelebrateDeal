@@ -8,6 +8,7 @@ import { verifiedVendorPaymentMethodWhere } from "@/lib/payment-method-reference
 import { isCardBindingRequired } from "@/lib/feature-gates";
 import { canPublishSalesProject, parseSalesWorkspaceQuestionnaire, projectOnboardingTasks, recommendSalesWorkspaceMode, SalesProjectCreateSchema, WORKSPACE_ONBOARDING_TASKS, type SalesWorkspaceQuestionnaire } from "@/lib/sales-workspace";
 import { assertServerActionOrigin, assertServerActionSecurity } from "@/lib/csrf";
+import { ONBOARDING_HOME_PATH } from "@/lib/onboarding-entry";
 
 function nextQuestionnaireStep(answers: SalesWorkspaceQuestionnaire) {
   if (!answers.sellingApproach) return 0;
@@ -57,7 +58,8 @@ export async function completePersonalizedOnboardingAction() {
       await tx.onboardingTaskState.createMany({ data: projectOnboardingTasks(flow).map((task) => ({ vendorId: vendor.id, projectId: project.id, scopeKey: project.id, taskKey: task.key, status: "not_started" })), skipDuplicates: true });
     }
   });
-  redirect("/welcome/preparing");
+  // The questionnaire's next step is the unified 上線任務 list (no separate interstitial).
+  redirect(ONBOARDING_HOME_PATH);
 }
 
 export async function selectSalesProjectAction(projectId: string | null) {
@@ -94,7 +96,7 @@ export async function createSalesProjectAction(formData: FormData) {
   // The current App Router layout may survive the redirect; invalidate it so
   // the Sidebar immediately reflects the newly selected project.
   revalidatePath("/", "layout");
-  redirect(parsed.onboardingEnabled ? "/onboarding" : `/projects/${project.id}`);
+  redirect(parsed.onboardingEnabled ? ONBOARDING_HOME_PATH : `/projects/${project.id}`);
 }
 
 /**
@@ -165,17 +167,4 @@ export async function controlOnboardingGuideAction(control: "hide" | "remind" | 
         : { guideDismissedAt: null, taskPanelHiddenUntil: null, taskPanelCollapsed: false };
   await getDb().userOnboardingPreference.upsert({ where: { userId_vendorId: { userId: auth.user.id, vendorId: vendor.id } }, create: { userId: auth.user.id, vendorId: vendor.id, taskPanelCollapsed: true, ...data }, update: data });
   revalidatePath("/", "layout");
-}
-
-export async function setOnboardingTaskStatusAction(scopeKey: string, taskKey: string, status: "not_started" | "in_progress" | "skipped" | "needs_attention" | "archived") {
-  await assertServerActionOrigin();
-  const { vendor } = await requireVendorManagerContext();
-  const project = scopeKey === "workspace" ? null : await getDb().salesProject.findFirst({ where: { id: scopeKey, vendorId: vendor.id }, select: { id: true } });
-  if (scopeKey !== "workspace" && !project) throw new Error("project_not_found");
-  const definitions = scopeKey === "workspace" ? WORKSPACE_ONBOARDING_TASKS : projectOnboardingTasks((await getDb().salesProject.findFirst({ where: { id: scopeKey, vendorId: vendor.id }, select: { primaryFlow: true } }))!.primaryFlow);
-  const definition = definitions.find((task) => task.key === taskKey);
-  if (!definition) throw new Error("task_not_found");
-  await getDb().onboardingTaskState.upsert({ where: { vendorId_scopeKey_taskKey: { vendorId: vendor.id, scopeKey, taskKey } }, create: { vendorId: vendor.id, projectId: project?.id ?? null, scopeKey, taskKey, status, skipImpact: status === "skipped" ? definition.skipImpact : null, archivedAt: status === "archived" ? new Date() : null }, update: { status, skipImpact: status === "skipped" ? definition.skipImpact : null, archivedAt: status === "archived" ? new Date() : null } });
-  revalidatePath("/", "layout");
-  revalidatePath("/onboarding");
 }

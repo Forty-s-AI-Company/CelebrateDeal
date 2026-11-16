@@ -81,6 +81,7 @@ const mocks = vi.hoisted(() => ({
   messageTemplateFindMany: vi.fn(),
   messageTemplateCreate: vi.fn(),
   messageTemplateUpdate: vi.fn(),
+  emailSequenceStepFindFirst: vi.fn(),
   interactionScriptFindFirst: vi.fn(),
   markCurrentSessionMfaVerified: vi.fn(),
   paymentTransactionUpdate: vi.fn(),
@@ -135,6 +136,7 @@ const mocks = vi.hoisted(() => ({
   partnerFunnelPageFindFirst: vi.fn(),
   partnerFunnelPageUpdateMany: vi.fn(),
   blacklistCreate: vi.fn(),
+  studentPortalTokenLateDeleteMany: vi.fn(),
   registrationFormCreate: vi.fn(),
   registrationFormUpdate: vi.fn(),
   teamMembershipFindFirst: vi.fn(),
@@ -422,6 +424,7 @@ vi.mock("@/lib/db", () => ({
     },
     auditLog: { create: mocks.auditLogCreate },
     blacklist: { create: mocks.blacklistCreate },
+    studentPortalAccessToken: { deleteMany: mocks.studentPortalTokenLateDeleteMany },
     registrationForm: {
       create: mocks.registrationFormCreate,
       findFirst: mocks.registrationFormFindFirst,
@@ -976,6 +979,8 @@ beforeEach(() => {
     liveStudioDraft: { updateMany: mocks.liveStudioDraftUpdateMany, findFirst: mocks.liveStudioDraftFindFirst },
     live: { create: mocks.liveCreate, findFirst: mocks.liveFindFirst, findMany: mocks.liveFindMany, update: mocks.liveUpdate, updateMany: mocks.liveUpdateMany },
     messageTemplate: { create: mocks.messageTemplateCreate, update: mocks.messageTemplateUpdate },
+    // F-3: the template save refuses to switch off a template an active sequence step sends.
+    emailSequenceStep: { findFirst: mocks.emailSequenceStepFindFirst },
     liveProduct: { create: mocks.liveProductCreate, deleteMany: mocks.liveProductDeleteMany },
     liveNotificationRule: {
       findMany: mocks.liveNotificationRuleFindMany,
@@ -1360,6 +1365,7 @@ describe("upsertBlacklistAction", () => {
   const studentPortalTokenDeleteMany = vi.fn();
   beforeEach(() => {
     studentPortalTokenDeleteMany.mockReset().mockResolvedValue({ count: 2 });
+    mocks.studentPortalTokenLateDeleteMany.mockReset().mockResolvedValue({ count: 0 });
     mocks.transaction.mockImplementation(async (callback: (tx: unknown) => Promise<unknown>) => callback({
       blacklist: { create: mocks.blacklistCreate },
       studentPortalAccessToken: { deleteMany: studentPortalTokenDeleteMany },
@@ -1382,8 +1388,22 @@ describe("upsertBlacklistAction", () => {
     expect(studentPortalTokenDeleteMany).toHaveBeenCalledWith({
       where: { vendorId: "vendor-1", customerKeyHash: expect.stringMatching(/^[A-Za-z0-9_-]{43}$/u) },
     });
+    // Owner policy 2026-11-10: the same tenant-scoped revocation runs again after commit.
+    expect(mocks.studentPortalTokenLateDeleteMany).toHaveBeenCalledExactlyOnceWith(studentPortalTokenDeleteMany.mock.calls[0]?.[0]);
+    expect(mocks.studentPortalTokenLateDeleteMany.mock.invocationCallOrder[0]).toBeGreaterThan(studentPortalTokenDeleteMany.mock.invocationCallOrder[0]!);
     expect(mocks.writeAuditLog).toHaveBeenCalledWith(expect.objectContaining({
       after: { identifierType: "email", isActive: true, revokedStudentPortalTokenCount: 2 },
+    }));
+  });
+
+  it("counts a link revoked only by the post-commit pass in the audit", async () => {
+    mocks.requireVendor.mockResolvedValue({ id: "vendor-1" });
+    mocks.studentPortalTokenLateDeleteMany.mockResolvedValue({ count: 1 });
+
+    await upsertBlacklistAction(blacklistFormData("email", "raced@example.test"));
+
+    expect(mocks.writeAuditLog).toHaveBeenCalledWith(expect.objectContaining({
+      after: { identifierType: "email", isActive: true, revokedStudentPortalTokenCount: 3 },
     }));
   });
 
@@ -1408,6 +1428,7 @@ describe("upsertBlacklistAction", () => {
     });
     expect(JSON.stringify(mocks.writeAuditLog.mock.calls[0])).not.toContain("foo bar");
     expect(studentPortalTokenDeleteMany).not.toHaveBeenCalled();
+    expect(mocks.studentPortalTokenLateDeleteMany).not.toHaveBeenCalled();
   });
 
   it.each([
@@ -2028,8 +2049,9 @@ describe("upsertLiveAction", () => {
         payload: { equals: expect.objectContaining({
           title: "租戶限定直播",
           affiliateMode: "disabled",
-          flowVersion: 2,
-          activeStep: 7,
+          // The publish claim compares the v3 payload saved from the final (發布) step.
+          flowVersion: 3,
+          activeStep: 3,
         }) },
         consumedAt: null,
         expiresAt: { gt: expect.any(Date) },
@@ -2128,7 +2150,21 @@ describe("upsertLiveAction", () => {
     formData.set("replayAvailableUntil", "2026-08-08T20:10");
 
     await expect(upsertLiveAction(formData)).rejects.toThrow(
-      "redirect:/lives/new?error=invalid_draft&draft=draft-1",
+      "redirect:/lives/new?error=invalid_draft&draft=draft-1&field=replayAvailableUntil",
+    );
+
+    expect(mocks.liveStudioDraftUpdateMany).not.toHaveBeenCalled();
+    expect(mocks.liveCreate).not.toHaveBeenCalled();
+  });
+
+  it("points a VOD replay deadline at the field when the video has no known duration", async () => {
+    allowCurrentVendorLiveReferences();
+    mocks.videoFindFirst.mockResolvedValue({ id: "video-1", durationSec: null });
+    const formData = liveFormData();
+    formData.set("replayAvailableUntil", "2026-08-09T21:00");
+
+    await expect(upsertLiveAction(formData)).rejects.toThrow(
+      "redirect:/lives/new?error=invalid_draft&draft=draft-1&field=replayAvailableUntil",
     );
 
     expect(mocks.liveStudioDraftUpdateMany).not.toHaveBeenCalled();
@@ -2142,7 +2178,7 @@ describe("upsertLiveAction", () => {
     formData.set("replayAvailableUntil", "2026-08-08T20:00");
 
     await expect(upsertLiveAction(formData)).rejects.toThrow(
-      "redirect:/lives/new?error=invalid_draft&draft=draft-1",
+      "redirect:/lives/new?error=invalid_draft&draft=draft-1&field=replayAvailableUntil",
     );
 
     expect(mocks.liveStudioDraftUpdateMany).not.toHaveBeenCalled();
@@ -2640,8 +2676,9 @@ describe("upsertLiveAction", () => {
         revision: 3,
         payload: { equals: expect.objectContaining({
           title: "租戶限定直播",
-          flowVersion: 2,
-          activeStep: 7,
+          // The publish claim compares the v3 payload saved from the final (發布) step.
+          flowVersion: 3,
+          activeStep: 3,
         }) },
         consumedAt: null,
         expiresAt: { gt: expect.any(Date) },
@@ -4431,6 +4468,11 @@ describe("message template actions", () => {
     expect(mocks.messageTemplateUpdate).toHaveBeenCalledWith({
       where: { id: "template-1", vendorId: "vendor-1", updatedAt: new Date("2026-08-09T04:00:00.000Z") },
       data: expect.objectContaining({ trigger: "post_live_followup" }),
+    });
+    // A non-sequence trigger is checked against active sequence steps of this vendor only.
+    expect(mocks.emailSequenceStepFindFirst).toHaveBeenCalledWith({
+      where: { vendorId: "vendor-1", messageTemplateId: "template-1", isActive: true, sequence: { is: { vendorId: "vendor-1", status: "active" } } },
+      select: { id: true },
     });
     expect(mocks.queueLiveReminderReconciliation).not.toHaveBeenCalled();
     expect(mocks.createLiveReminderReconciliationSnapshot).not.toHaveBeenCalled();

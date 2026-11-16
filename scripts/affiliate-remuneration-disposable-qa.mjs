@@ -8,7 +8,7 @@ import { main as runMigration } from "./prisma-loopback-disposable-migration-run
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const receipt = { schemaVersion: "affiliate-remuneration-disposable/v1", status: "NOT_STARTED", tests: null, cleanup: null, startedAt: new Date().toISOString() };
 const includeBrowser = process.argv.includes("--browser");
-const allowedFiles = ["package.json", "tsconfig.json", "next.config.ts", "postcss.config.mjs", "sentry.server.config.ts", "sentry.edge.config.ts", "prisma.playwright.config.ts", "playwright.config.ts", "playwright.affiliate-remuneration.config.ts", "scripts/affiliate-remuneration-disposable-qa.mjs", "scripts/prisma-loopback-disposable-migration-runner.mjs", "scripts/local-database-safety.ts", "scripts/playwright-ci-reporter.ts", "vitest.affiliate-remuneration-db.config.ts"];
+const allowedFiles = ["package.json", "tsconfig.json", "tsconfig.build.json", "next.config.ts", "postcss.config.mjs", "sentry.server.config.ts", "sentry.edge.config.ts", "prisma.playwright.config.ts", "playwright.config.ts", "playwright.affiliate-remuneration.config.ts", "scripts/affiliate-remuneration-disposable-qa.mjs", "scripts/prisma-loopback-disposable-migration-runner.mjs", "scripts/local-database-safety.ts", "scripts/playwright-ci-reporter.ts", "vitest.affiliate-remuneration-db.config.ts"];
 function sourceSnapshot() {
   const files = [...allowedFiles];
   function walk(relative) {

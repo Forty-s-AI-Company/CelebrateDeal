@@ -37,6 +37,18 @@ describe("/admin/vendor-features route", () => {
     expect(html).not.toContain(SAVED);
   });
 
+  it("offers the email_sequences grant (F-3) per vendor and shows it checked only where granted", async () => {
+    mocks.findMany.mockResolvedValue([
+      { id: "vendor-1", name: "商家甲", slug: "a", betaFeatureGrants: [] },
+      { id: "vendor-2", name: "商家乙", slug: "b", betaFeatureGrants: ["email_sequences"] },
+    ]);
+    const html = await render({});
+    expect(html.split("Email 追銷序列").length - 1).toBe(2);
+    const checked = [...html.matchAll(/<input[^>]*value="email_sequences"[^>]*>/gu)].map((match) => match[0]);
+    expect(checked).toHaveLength(2);
+    expect(checked.filter((input) => input.includes("checked"))).toHaveLength(1);
+  });
+
   it("submits through FormSubmitButton with pending copy", () => {
     const source = readFileSync(new URL("./page.tsx", import.meta.url), "utf8");
     expect(source).toContain("<FormSubmitButton");

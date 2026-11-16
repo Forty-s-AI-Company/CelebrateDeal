@@ -59,7 +59,7 @@ describe("onboarding action guards", () => {
 
 describe("task panel preference initialization", () => {
   it("preserves an existing manual preference when completing the questionnaire", async () => {
-    await expect(completePersonalizedOnboardingAction()).rejects.toThrow("redirect:/welcome/preparing");
+    await expect(completePersonalizedOnboardingAction()).rejects.toThrow(/^redirect:\/onboarding$/u);
     for (const [call] of mocks.preferenceUpdate.mock.calls) {
       expect(call.data).not.toHaveProperty("taskPanelCollapsed");
     }

@@ -38,7 +38,7 @@ vi.mock("@/lib/db", () => ({ getDb: () => ({ ...database, $transaction: mocks.tr
 vi.mock("@/lib/funnel-commerce-service", () => ({ listFunnelCommerceProducts: mocks.listCommerce, publicFunnelCommerceViews: mocks.publicCommerce, validateFunnelCommerceBindings: mocks.validateCommerce }));
 
 import {
-  createLandingPage, deleteLandingPage, duplicateLandingPage, LandingPageConflictError, LandingPageInputError,
+  checkLandingPagePublishable, createLandingPage, deleteLandingPage, duplicateLandingPage, LandingPageConflictError, LandingPageInputError,
   LandingPageNotFoundError, getLandingPageForEditor, getLandingPagePublicationStatus, loadPublicLandingPage, publishLandingPage, rollbackLandingPage, saveLandingPageDraft, saveLandingPageStepMetadata,
 } from "./landing-page-service";
 import { publishSalesProjectAction } from "@/app/actions/sales-workspace-actions";
@@ -152,6 +152,29 @@ describe("landing page scoped mutations", () => {
     expect(mocks.versionCreate).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ content: document }) }));
     mocks.transaction.mockRejectedValueOnce({ code: "P2002" });
     await expect(publishLandingPage("page-1", 2)).rejects.toBeInstanceOf(LandingPageConflictError);
+  });
+
+  it("發布檢查執行與發布相同的交易後回滾，不回報新的 revision", async () => {
+    let rolledBack: unknown;
+    mocks.transaction.mockImplementationOnce(async (callback: (value: typeof database) => Promise<unknown>, options: unknown) => {
+      expect(options).toEqual({ isolationLevel: "ReadCommitted" });
+      // A real interactive transaction rolls back when the callback throws.
+      try { return await callback(database); } catch (error) { rolledBack = error; throw error; }
+    });
+    await expect(checkLandingPagePublishable("page-1", 2)).resolves.toEqual({ id: "page-1", revision: 2 });
+    expect(rolledBack).toBeInstanceOf(Error);
+    expect(mocks.versionCreate).toHaveBeenCalledOnce();
+    expect(mocks.updateMany).toHaveBeenCalledWith(expect.objectContaining({ where: { id: "page-1", vendorId: "vendor-1", projectId: "project-1", revision: 2 } }));
+  });
+
+  it("發布檢查與發布一樣拒絕：revision 衝突、商品綁定與跨租戶頁面", async () => {
+    await expect(checkLandingPagePublishable("page-1", 1)).rejects.toBeInstanceOf(LandingPageConflictError);
+    mocks.validateCommerce.mockRejectedValueOnce(new Error("funnel_commerce_product_unavailable"));
+    await expect(checkLandingPagePublishable("page-1", 2)).rejects.toThrow("landing_page_commerce_invalid");
+    mocks.findFirst.mockResolvedValueOnce(null);
+    await expect(checkLandingPagePublishable("foreign-page", 2)).rejects.toBeInstanceOf(LandingPageNotFoundError);
+    expect(mocks.findFirst).toHaveBeenLastCalledWith(expect.objectContaining({ where: { id: "foreign-page", vendorId: "vendor-1", projectId: "project-1", archivedAt: null } }));
+    expect(mocks.versionCreate).not.toHaveBeenCalled();
   });
 
   it("回復版本時仍限制在目前專案", async () => {

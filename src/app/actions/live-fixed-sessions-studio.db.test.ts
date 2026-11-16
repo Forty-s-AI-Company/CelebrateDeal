@@ -15,6 +15,7 @@ vi.mock("@/lib/email-delivery-immediate", () => ({ scheduleImmediateEmailDispatc
 import { upsertLiveAction } from "@/app/actions";
 import { createLiveReminderReconciliationSnapshot } from "@/lib/live-reminder-reconciliation";
 import { liveStudioDraftFromFormData } from "@/lib/live-studio-draft-client";
+import { LIVE_STUDIO_LAST_STEP_INDEX } from "@/lib/live-studio-steps";
 
 /**
  * The studio save of a fixed-session Live (指定場次) through the real
@@ -78,7 +79,7 @@ async function draft(input: {
   if (input.liveId) data.set("id", input.liveId);
   const saved = await prisma.liveStudioDraft.create({ data: {
     vendorId: runtime.vendorId, liveId: input.liveId ?? null, updatedByMemberId: "synthetic-member",
-    payload: liveStudioDraftFromFormData(data, 7), expiresAt: new Date(Date.now() + 60_000),
+    payload: liveStudioDraftFromFormData(data, LIVE_STUDIO_LAST_STEP_INDEX), expiresAt: new Date(Date.now() + 60_000),
   } });
   data.set("liveDraftId", saved.id);
   data.set("liveDraftRevision", String(saved.revision));

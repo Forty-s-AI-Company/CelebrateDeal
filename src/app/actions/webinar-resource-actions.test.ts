@@ -12,6 +12,7 @@ const mocks = vi.hoisted(() => {
     },
     messageTemplate: { update: vi.fn(), create: vi.fn() },
     live: { findMany: vi.fn() },
+    emailSequenceStep: { findFirst: vi.fn(async () => null) },
   };
   return {
     assertServerActionSecurity: vi.fn(),

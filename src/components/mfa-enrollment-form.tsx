@@ -36,7 +36,7 @@ export function MfaEnrollmentForm({ csrfField, nextPath }: { csrfField: ReactNod
         disabled={pending}
         aria-disabled={pending}
         aria-busy={pending}
-        className="inline-flex min-h-11 items-center justify-center rounded-md bg-primary px-4 text-sm font-semibold text-white transition hover:bg-primary-dark disabled:cursor-not-allowed disabled:opacity-60"
+        className="inline-flex min-h-11 items-center justify-center rounded-md bg-primary px-4 text-sm font-semibold text-white transition-colors hover:bg-primary-dark disabled:cursor-not-allowed disabled:opacity-60"
       >
         {pending ? "設定中…" : "完成設定"}
       </button>

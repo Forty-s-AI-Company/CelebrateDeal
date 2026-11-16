@@ -5,10 +5,10 @@ import { FUNNEL_FONT_OPTIONS, funnelContrastRatio, isCuratedFunnelFont, parseFun
 import { ArrowDown, ArrowUp, ChevronLeft, Copy, Monitor, Smartphone, Tablet, Trash2 } from "lucide-react";
 import { funnelDeviceVisibilityCommand, funnelNodeVisibility, type FunnelDevice } from "@/lib/funnel-node-visibility";
 import { FunnelElementInspector } from "./funnel-element-inspector";
-import { FunnelCommerceSettings } from "./funnel-commerce-settings";
+import { FunnelCommerceQuickBind, FunnelCommerceSettings } from "./funnel-commerce-settings";
 import { PageCustomCssField } from "./funnel-custom-code-field";
 import { funnelNodeLabel } from "./funnel-editor-library";
-import type { FunnelCommerceProduct } from "@/lib/funnel-commerce";
+import { isFunnelCommerceNodeType, type FunnelCommerceBinding, type FunnelCommerceProduct } from "@/lib/funnel-commerce";
 import type { FunnelNode, PageDocument } from "@/lib/funnel-page-document";
 import type { FunnelPageCommand } from "@/lib/funnel-page-history";
 import { createFunnelPopup, deleteFunnelPopup, updateFunnelPopup, validatePopupTrigger } from "@/lib/funnel-popup";
@@ -45,11 +45,21 @@ export function DeviceVisibilityToggles({ node, viewport, disabled, onCommand }:
   </fieldset>;
 }
 
+/** The page's product binding, offered in place on a checkout element (same data as 頁面設定 › 商品與結帳). */
+export type NodeCommerceBinding = {
+  enabled: boolean;
+  binding?: FunnelCommerceBinding;
+  products: FunnelCommerceProduct[];
+  onChange: (binding: FunnelCommerceBinding | undefined) => void;
+  onOpenSettings: () => void;
+};
+
 /** EDT-INT-001: the selected node's settings replace the library in the left panel. */
-export function NodeSettingsPanel({ node, path, disabled, viewport, popups, stepIds, stepNames, onCommand, onBack, onDuplicate, onDelete }: {
+export function NodeSettingsPanel({ node, path, disabled, viewport, popups, stepIds, stepNames, onCommand, onBack, onDuplicate, onDelete, commerce }: {
   node: FunnelNode; path: readonly FunnelNode[]; disabled: boolean; viewport: FunnelDevice; popups: PageDocument["popups"];
   stepIds?: readonly string[]; stepNames?: Readonly<Record<string, string>>;
   onCommand: (command: FunnelPageCommand) => void; onBack: () => void; onDuplicate: () => void; onDelete: () => void;
+  commerce?: NodeCommerceBinding;
 }) {
   const label = funnelNodeLabel(node.type);
   return <div data-funnel-node-settings={node.type}>
@@ -59,6 +69,7 @@ export function NodeSettingsPanel({ node, path, disabled, viewport, popups, step
       <button type="button" aria-label={`複製${label}`} title="複製" disabled={disabled} className={iconAction} onClick={onDuplicate}><Copy size={17} aria-hidden /></button>
       <button type="button" aria-label={`刪除${label}`} title="刪除（Delete）" disabled={disabled} className={`${iconAction} text-red-600 hover:bg-red-50 hover:text-red-700`} onClick={onDelete}><Trash2 size={17} aria-hidden /></button>
     </>} />
+    {commerce && isFunnelCommerceNodeType(node.type) ? <FunnelCommerceQuickBind {...commerce} disabled={disabled} /> : null}
     <DeviceVisibilityToggles node={node} viewport={viewport} disabled={disabled} onCommand={onCommand} />
     <FunnelElementInspector key={node.id} node={node} disabled={disabled} popupIds={popups.map((popup) => popup.id)} popupNames={Object.fromEntries(popups.map((popup) => [popup.id, popup.name]))} stepIds={stepIds} stepNames={stepNames} onCommand={onCommand} />
   </div>;

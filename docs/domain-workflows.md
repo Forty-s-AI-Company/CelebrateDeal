@@ -31,6 +31,87 @@
 - **換裝置觀看**：觀看頁以報名驗證後設定的簽章 cookie（30 天）辨識報名者。在沒有這個 cookie 的裝置（例如在電腦報名、用手機開信）上，觀看者跟隨公開時程：正在播的場次，否則下一場，最後一場之後則是最近一場的回放。這是 Phase 1 的已知限制。
 - **公開回放**：每場回放期限是「場次結束＋`sessionReplayWindowHours`」與直播 `replayAvailableUntil` 中較早者。沒有 cookie 的觀看者在最後一場之後看到的是最後一場的回放，所以任何人在回放開啟期間都能看到回放，不限於報名者；與單一開播時間的直播相同，回放不是報名者限定內容。
 
+### 常青場課後信（F-2）
+
+常青場（`isActiveEvergreenLive`）的觀眾場次只存在簽章 httpOnly cookie。課後信（`post_live_followup`）依常青模式分兩種：
+
+- **商家設定共用開場時間（`evergreenSessionStartAt`）**：這場等同單一固定時間的場次。排程對**所有已驗證報名者**以**目前的**共用開場時間計算（開場＋影片長度＋規則分鐘數），走一般單一時間的路徑，不讀也不寫 `EvergreenSessionAssignment`；設定共用開場前就驗證的人也會收到。商家改動開場時間時，舊時間尚未寄出的那封在寄送前被 supersede，新時間到期才寄；已寄過就不再寄。共用場次結束後才完成驗證的報名者，下一輪排程就會收到所有已到期的課後信（每條規則各一封），和一般單一時間直播相同。
+- **逐觀眾場次（即時入場、每日固定場次、隨選播放）**：權威資料是 `EvergreenSessionAssignment`（每筆報名一列），只有「在同一個瀏覽器完成 Email 驗證並進入觀看頁」的報名者會有列，常青期間只寄給他們。
+
+逐觀眾場次的規則：
+
+- **記錄時機**（皆需同一瀏覽器上有效的報名簽章 cookie `FORM_SUBMISSION_CHAT_SESSION_COOKIE`，且報名屬於這場、已驗證）：
+  - `POST /api/live-evergreen-session`（claim／rejoin）回應已指派場次時記錄。
+  - Email 驗證成功時，若請求帶的常青 cookie 解析出已指派場次（先進觀看頁、後驗證）也記錄。
+  - 瀏覽器已有常青 cookie（觀看頁 client 不會再 claim）時，觀看頁（Server Component，只讀）若發現這位報名者目前的場次尚未記錄（沒有相同 fingerprint、開始時間不早於目前場次的列），就給 client 一個 `recordRegistration` 旗標，client 送一次 claim（沿用既有場次）由 Route Handler 寫入。沒有報名 cookie 或沒有逐觀眾場次的訪客不會多任何查詢。
+  - GET 不寫入；寫入失敗只回報監控，不影響回應。
+- **綁定**：寫入是單一條件式 `INSERT ... SELECT ... ON CONFLICT`，只從「這場直播、`VERIFIED`、表單屬於這個商家」的報名取 id；`(vendorId, liveId)` 與 `(liveId, formSubmissionId)` 複合 FK 再綁一次。`sessionStartAt` 只來自伺服器解析的場次。
+- **更新規則**：排程 fingerprint 不同就取代；相同時只往較晚的場次移（兩個瀏覽器各有場次時以較晚者為準）。
+- **寄送**：排程取 `sessionStartAt` 在「現在 − 影片長度 − 規則分鐘數」之前、72 小時內的列（逾期超過 72 小時不補寄），排除這位報名者在這條規則底下已有非 `superseded` 課後信的列，依場次開始時間由舊到新、每輪最多 `recipientLimit` 位；Email 無法使用的報名者跳過且不佔名額。以場次開始時間當 `liveScheduledAt` 建立快照；`{{live_start_at}}` 是觀眾自己的場次（與指定場次相同，以 Asia/Taipei 顯示）。不看 fingerprint：排程改掉之前已指派的場次照記錄的時間寄。寄送前檢查重新讀這位報名者的 assignment，場次不同或沒有 assignment 就不寄。
+- **一位報名者、一條規則最多一封**：rejoin 把場次往後移時，舊場次尚未寄出的那封在寄送前被 supersede，新場次到期後的下一輪才建立新的那封；模板改版也一樣（舊版在寄送前被 supersede，下一輪建立新版）。已寄過就不再寄。
+- **常青關閉、結束或改回草稿**：沿用 #582，依原開播時間補寄給已驗證報名者；常青期間已收到同一規則課後信的人不會再收到（待 owner 決定是否改變補寄對象）。
+- **設定重存**：常青生效時儲存常青設定，會在 commit 後把這場直播所有排隊中的課後信標為 `superseded`（`supersedeFixedTimeNotificationsForActiveEvergreen`）；這些報名者會重新出現在排程查詢，若場次仍在 72 小時內，下一輪依同一個 id 重新啟用；超過 72 小時的就不再寄。
+- **涵蓋不到的情況**（不是錯誤，是目前設計的限制）：
+  - 在 A 裝置看、在 B 裝置驗證：A 沒有報名 cookie，不會記錄；B 只有在自己進入觀看頁後才記錄 B 的場次。
+  - 報名 cookie 是全域單一 cookie，以最後一筆報名為準：同一瀏覽器報名多場常青直播時，只有最後那場會記錄。
+  - 回訪或換裝置 rejoin 會把場次往後移，尚未寄出的課後信跟著延後。
+  - 從未在已驗證的瀏覽器進入觀看頁的報名者，常青期間不寄。
+  - 商家把共用開場時間移除、改回逐觀眾模式後，只在共用期間看過、之後沒再進觀看頁的報名者不會被記錄，逐觀眾期間收不到課後信（共用期間已寄出的仍算數，同一規則不會再寄）。
+
+### Email 追銷序列（F-3，封測）
+
+設計見 `docs/product/delayed-steps-design.md`。商家要有平台在 `/admin/vendor-features` 開通的 `email_sequences`，owner／admin 才能在 `/messages/sequences` 管理；開關關閉時頁面 404、Server Action 拒絕、不加入新的人、job 不執行該商家的進度（進度保留），已排隊還沒寄出的序列信在寄送前被略過。
+
+- **對象與起點**：一條序列綁一場直播。報名者完成 Email 驗證時加入該直播「寄送中」的序列，起點是驗證時間；只加入 `verifiedAt >= activatedAt` 的人（啟用或暫停後重新啟用都不回頭寄）。加入當下已退訂、在黑名單或 Email 無法使用的人記成「已停止」、不會收信，之後重新訂閱或解除封鎖也不會自動加回。同一個 Email 從不同表單報名同一場，同一條序列只收一份。驗證路由加入失敗只回報，job 每輪補過去 48 小時漏掉的人。
+- **步驟**：每一步是「驗證後幾分鐘」寄一封 `sequence_email` 模板（1 小時到 90 天，後台以小時／天輸入），同一條序列的時間不重複。job 每輪每人最多推進一步；某一步的時間已過 24 小時就跳過不寄。商家中途修改時：比目前進度早的新步驟不補寄、停用的步驟直接跳過、改延遲的步驟照新時間；同一封對同一個人最多寄一次，改了時間也不重寄，被移到某人目前進度之前的那一封他不會補收。精度等於 job 頻率。
+- **寄信**：每一步是一筆行銷信，一定附退訂連結，走既有寄送流程；寄送前再確認商家仍有授權、序列仍寄送中、步驟與模板未改、收件人不在黑名單、這封建立未超過 6 小時（排隊超過 6 小時被略過的信，那一步對那個人不會再寄）。沒有設定寄信服務時，job 不建任何序列信，進度原封不動。只改模板內容時，已排隊還沒寄出的那一封會被略過、不改寄新版本。寄送中的序列在用的模板不能停用或改觸發條件；仍遇到不可用的模板時，那一步約每 5 分鐘重試，逾期 24 小時才跳過。
+- **吞吐量**：序列工作排在每輪 job 的最後（補漏 → 推進 → 寄序列信）；這一輪已跑超過 60 秒就整段留給下一輪（記一筆監控事件），100 秒後不再接新項目，整輪在排程 runner 的 120 秒逾時前結束。有時效的信與序列信各用每輪 20 封的寄送額度；worker 每輪只建「20 封減去仍在佇列的序列信」，從隨機的商家開始、每家份額依剩下的額度與商家數重算，用不完的再分給仍有到期 run 的商家；同一人前一封還在佇列時下一步會等。全平台約「每輪 20 封 × job 頻率」（每 5 分鐘一輪＝每小時 240 封；每小時一輪＝每小時 20 封），大場次排在後面的人可能晚數小時，晚超過 24 小時的那一步會被跳過。開放給一般商家前由 owner 決定 job 頻率與額度（`docs/product/delayed-steps-design.md` 第 9 節）。
+- **停止**：退訂（同一交易停止該收件人在這個商家所有進行中的序列）、黑名單、序列暫停（進行中的人停止，重新啟用不復活）、序列刪除、報名刪除。「買了就停」是下一個 PR。
+- **上限**：每商家 5 條寄送中的序列、每條 10 封；目前沒有 Email 用量計量。
+
+### 自動化規則（F-4：既有缺口、延遲步驟、付款完成）
+
+設計見 `docs/product/delayed-steps-design.md` 第 8 節。規則在 `/settings/automations`（全商家）與漏斗編輯器（只限該漏斗頁的 `form_registered`＋貼標籤）管理；事件發生時，規則的「立即執行」動作在同一個 request 內同步執行（`src/lib/automation-workflow.ts`；`payment_paid` 例外，在付款 webhook 回應之後執行，見下方「付款完成」），延遲步驟由 job 之後執行（見下方「延遲步驟」）。
+
+- **權限**：兩處都是 owner 與 admin（`requireVendorManagerMember`／`requireVendorManagerContext`），accountant、support、其他舊角色與 partner 都被拒；頁面與每個 Server Action（建立、套用劇本、模擬、啟用／停用、刪除）各自檢查，每個規則 id 在最後的查詢綁目前商家。導覽與設定 hub 原本就只對 owner／admin 顯示。沒有管理規則的 API route（`/api/automation/vouchers/redeem` 是買家兌換折價券，不在此範圍），也沒有匯入或複製規則的流程。例外是自訂 LINE 推播動作與派券的 LINE 通知只限 owner，見下方「LINE 推播」。
+- **可用的觸發條件**：只有 `AVAILABLE_AUTOMATION_TRIGGERS` 裡的 `form_registered`（`/api/form-submissions`）、`consultation_booked`（公開預約）、`consultation_no_show`（商家標記未出席）、`payment_paid`（付款 webhook，F-4 PR 3）。`form_no_show`、`viewer_watch_progress`、`webinar_attended_duration_gte` 沒有正式呼叫端，後台不提供，伺服器端也拒絕用它們建立規則、套用劇本或重新啟用（`trigger_unavailable`）。用到它們的既有規則照常列出並標示「此觸發條件目前不會執行」，可以停用與刪除，模擬只回「目前不會執行」。劇本只顯示觸發條件可用的（「諮詢預約提醒與防爽約」、「高客單 VIP 自動尊榮升級」）。
+- **付款完成（`payment_paid`，F-4 PR 3）**：
+  - **觸發點**：canonical 訂單（`CommerceOrder`）第一次轉成已付款的那一次。所有讓訂單變成已付款的正式路徑都經過 `processPaymentWebhook` 的 `reconcileCommerceOrderPaymentTransition`：PayUni notify 與 return（同一個交易狀態收斂成同一個 `WebhookEvent`）、`/api/jobs/webhook-retry` 重跑失敗事件、平台管理員的 WP4／Q1 回呼重跑。只有交易內回 `changed: true, status: "paid"` 時觸發，所以重送、return 與 notify 都到、之後換了 event id 的已付款通知、退款、部分退款、付款失敗都不觸發；付款失敗後又付款成功的訂單在成功那一次觸發。訂單金額一律為正（沒有零元訂單），也沒有後台手動標記已付款的流程。不觸發的：庫存到期對帳 job（`inventory-expiry-reconcile`，只在交易已付款而訂單未轉時補轉，正常流程不會發生）、平台訂閱扣款（商家付給平台，沒有 `CommerceOrder`，不是商家的買家；目前也沒有買家端的訂閱續扣）、測試訂單（`isTestOrder`）、凍結中的商家（付款照常入帳但不開通，自動化也不跑；解除凍結後不補跑）。
+  - **失敗隔離**：付款的 Serializable 交易 commit 之後（電子發票與 audit 之後；它們丟錯也照樣觸發，因為付款已 commit、重送只會看到 `changed: false`）才呼叫 `runPaymentPaidAutomationAfterCommit`。在 request 內只註冊 `after()`，webhook 先回應，規則在回應後、route 的 `maxDuration`（60 秒，webhook-retry job 300 秒）內執行；request 外（腳本）就地執行，最多等 15 秒。這個呼叫永不丟錯：讀不到訂單、規則失敗（例如缺 `NEXT_PUBLIC_APP_URL` 的 `unsubscribe_url_unavailable`、動作丟錯）、資料庫錯誤、逾時都只送 `captureOperationalError`，context 只有監控白名單內的 `source: "payment_paid_automation"` 與 `operation`（`dispatch`：整段丟錯；`rule_failed`：至少一條規則記為失敗；`buyer_email`：買家 Email 無法解密；`inline_timeout`：request 外等超過 15 秒；`inline`：就地執行本身丟錯），不送商家、訂單、規則或買家資料（是哪一條規則、為什麼失敗記在執行紀錄）。付款結果、webhook 回應碼與回應內容不變。失敗的規則照既有規則記為 `failed`，**不會自動重試**：同一筆訂單之後的付款通知都不再觸發，商家在執行日誌看得到失敗。
+  - **冪等**：沿用執行紀錄的 unique 鍵（規則＋`order:{訂單 id}`＋規則版本），同一筆訂單同一條規則最多一筆執行紀錄；即使併發呼叫，標籤（upsert）、折價券（決定性 id）、LINE（冪等鍵）、Email（決定性 id）都只產生一次。
+  - **資料只來自伺服器紀錄**：回應後重新讀訂單，綁 webhook 由伺服器建立的結帳交易解析出的商家（`id + vendorId`），且必須仍是 `paid`、`refundedAmountCents = 0`（回應後到執行前退款就不跑；退款與規則動作之間沒有鎖，退款若剛好發生在讀訂單之後、動作進行中，那次的動作照樣完成）。商家沒有啟用中的 `payment_paid` 規則時，連訂單都不讀。條件「訂單滿 N 元」比的是訂單的 `paidAmountCents`；客戶標籤與折價券綁訂單的 `automationCustomerKeyHash`（與報名同一套正規化，所以同一個 Email 的標籤合在一起）；Email 寄給訂單加密資料裡的買家 Email（讀不到就略過 Email 動作並回報）；LINE 找綁定這筆訂單（`buyer_order`）的 LINE 身分（買家若在付款完成之後才綁定 LINE，規則執行時還找不到，LINE 動作記為 `not_linked`、不補送）。webhook payload 與 request 參數都不進自動化。只有本商家的規則會執行。
+  - **Email**：立即動作的規則不變（行銷信、附退訂連結、建立時與寄送前查退訂與黑名單）；與其他立即動作一樣不要求地址已驗證。
+  - **後台**：建立規則時填「付款金額門檻（元）」（必填、正整數，存成分）；模擬以輸入的金額判斷。`payment_paid` 規則不能加延遲步驟（見下方）。
+  - **部署時停用既有規則**（審查 MAJOR-1）：#599 隱藏這個 trigger 時沒有停用既有規則，畫面只標「此觸發條件目前不會執行」。為了不讓它們在部署後突然開始寄信、派券，migration `20261114120000_pause_payment_paid_rules` 把所有仍啟用的 `payment_paid` 規則改成停用（只改 `isActive` 與 `updatedAt`，不寫 AuditLog）。商家要用時到 `/settings/automations` 自行重新啟用，與一般停用中的規則相同；這些規則在部署前從未執行過。
+- **刪除**：只有已停用、且從未執行過的規則可以刪除（刪除時它的延遲步驟一起刪掉）。有延遲步驟進度（run）的規則一定已有執行紀錄，所以也不能刪；交易內另外數一次 run，有就同樣回 `delete_has_history`。執行紀錄會連帶刪除它發出的客戶標籤與折價券（schema 的 Cascade），所以有執行紀錄的規則只能停用。刪除在一個交易內進行：先以 `SELECT ... FOR UPDATE` 鎖住這條規則（綁目前商家），取得鎖之後才用新的查詢確認「已停用」且「沒有任何執行紀錄」，都成立才刪，交易最多等 5 秒取得連線、15 秒完成。正在寫入的執行紀錄會先鎖住規則（外鍵），刪除會等它 commit，之後看到這筆紀錄而回 `delete_has_history`；刪除先拿到鎖時，之後才開始的執行會等刪除 commit，寫執行紀錄時發現規則已不存在（外鍵錯誤 P2003，並再查一次確認規則真的不在），該規則對這個事件記為 `rule_deleted` 並略過，同一事件的其他規則照常執行。執行中途才失去執行紀錄（P2025）時同樣只結束該規則。寫 AuditLog `delete_automation_rule`。
+- **Email 動作**：`trigger: "automation"` 的 `EmailDelivery`，視為行銷信。
+  - 建立時先查名單：收件人在本商家有未恢復的 `EmailSuppression`（退訂、退信、投訴都算）或有效的 Email 黑名單，就不建立寄送；這不算失敗，規則記為完成（不會被重領），執行紀錄的 `actionResults` 記 `{ status: "skipped", reason: "recipient_suppressed" | "recipient_blacklisted" }`，後台執行日誌的「說明」欄顯示原因，同一規則的其他動作照常執行。
+  - 名單通過後才產生退訂連結：與序列信相同的 `createEmailUnsubscribeUrl`（簽章綁這封信的 id）與 `ensureEmailUnsubscribeFooter`，連結進 `/unsubscribe`，退訂記在寄信商家的 `EmailSuppression`。目前整個平台都沒有 `List-Unsubscribe` header，序列信也沒有。
+  - 連結產生失敗（例如缺 `NEXT_PUBLIC_APP_URL` 或簽章金鑰）時絕不寄出沒有退訂連結的信：這個動作回 `{ status: "failed", reason: "unsubscribe_url_unavailable" }` 並送一次 `captureOperationalError`，同一規則的其他動作照常執行，但整筆執行記為 `failed`（`errorCode: unsubscribe_url_unavailable`），與「某個動作丟出錯誤」相同可被同一事件重領。差別是丟出錯誤時後面的動作不會執行，這種情況其他動作會先執行完。重領時所有動作再跑一次也不會重複：貼標籤是 upsert，派券、LINE 與 Email 都有決定性的 id 或冪等鍵。只有同一個事件再次送進來才會重領（例如同一筆報名的重送），不會自動排程重試。
+  - 送出前：`dispatchEmailDelivery` 照既有規則查退訂（`automation` 不在任何豁免名單），另外查本商家 Email 黑名單，命中改 `suppressed`、`recipient_blacklisted`（與學員登入信相同）。
+  - 都只看寄信商家自己的名單，其他商家的退訂與黑名單不影響。
+  - 諮詢相關的觸發條件可能被商家拿來寄預約確認這類近似交易通知的信，但範本與觸發條件可以任意搭配、文案是行銷用途，所以全部比照行銷信處理，沒有豁免。
+- **LINE 推播（owner 限定，owner 2026-11-14 決定）**：自訂 LINE 推播（`line_push`：商家自己寫的文字與按鈕網址，透過商家已連結的 LINE 官方帳號推送）只有 owner 可以設定；admin 仍可管理不含 LINE 推播的規則。取代原本「admin 可透過規則自訂 LINE 推播」的做法。LINE 官方帳號的連結設定（`/settings/line`）與 rich menu 本來就只限 owner。按鈕網址的檢查（只收 HTTPS 且不含帳密，或核准的佔位符）不變。
+  - **判斷**：角色沿用 `member.role === "owner"`（與其他 owner 限定設定相同，在已通過 owner／admin 守門之後判斷）；平台沒有代操作（impersonation）機制，平台管理員沒有商家 membership，本來就進不了這兩處。是否含 LINE 推播一律看伺服器端解析後的動作與資料庫裡的規則，不看表單旗標：「規則含 LINE 推播」指立即動作或任何一個延遲步驟（啟用或停用的都算）含 `line_push`。共用判斷在 `src/lib/automation-line-push-policy.ts`，每個寫入入口都呼叫它。
+  - **admin 被拒的操作**（錯誤碼 `line_push_owner_only`，什麼都不寫、不寫 AuditLog）：建立含 LINE 推播的規則；套用含 LINE 推播的劇本（「諮詢預約提醒與防爽約」）；新增或修改含 LINE 推播的延遲步驟；把含 LINE 推播的規則重新啟用（啟用等於讓推播開始發送）；在含 LINE 推播的規則上新增或修改任何步驟（即使新步驟不含 LINE 推播，也包括把含 LINE 推播的那一步改成不含；整條規則對 admin 唯讀）；漏斗編輯器裡修改或啟用含 LINE 推播的規則（漏斗規則的立即動作只有貼標籤，LINE 推播只可能來自 `/settings/automations` 加的延遲步驟）。規則與步驟的檢查在鎖住規則列（`FOR UPDATE`，綁目前商家）之後才讀，與 owner 同時加 LINE 推播步驟的操作互相排隊。
+  - **admin 仍可的操作**（停止發送或移除，屬安全方向）：停用含 LINE 推播的規則、刪除規則（照原規則：已停用且沒有執行紀錄）、刪除步驟（包括含 LINE 推播的那一步；刪掉之後規則不再含 LINE 推播，admin 就能照常管理）、模擬。
+  - **介面**：admin 在 `/settings/automations` 的動作區看不到 LINE 推播欄位，改顯示「LINE 推播僅限擁有者設定。」；含 LINE 推播的劇本不顯示套用按鈕；含 LINE 推播的規則標示「僅限擁有者修改」，只顯示停用、刪除規則、刪除步驟與模擬，沒有啟用、編輯步驟與新增步驟。漏斗編輯器對 admin 把這類規則顯示為唯讀，只留停用。owner 的介面不變。
+  - **既有資料**：不做 migration、不改資料。這次變更前由 admin 建立的含 LINE 推播規則維持原狀、照常執行；之後只有 owner 能修改或在停用後重新啟用，admin 可以停用或刪除。
+  - **派券的 LINE 通知（owner 限定，owner 2026-11-15 決定）**：規則或延遲步驟派券、而同一組動作沒有自訂 LINE 推播時，系統用平台固定文案（「感謝支持，您的專屬回購折價券已經準備好了。」＋「立即使用」按鈕，冪等鍵 `automation-voucher/{執行紀錄 id}`）透過商家的 LINE 官方帳號通知買家（觀看者 `viewer_session` 不送）。這則通知改成派券動作上的明確設定 `lineNotification`（布林，存在動作 JSON 裡，不做 migration），只有 owner 能開：
+    - **既有資料**：變更前存的派券動作沒有這個欄位，一律視為開（照常送 LINE），與上面「既有資料」一致；新寫入的派券動作一律明確存 `true` 或 `false`。只有明確的 `false` 才不送。延遲步驟續跑時照第一次執行記下的動作快照（含這個欄位；舊快照沒有欄位同樣視為開）判斷，不看商家之後的修改。同一組動作有兩張券時，只有欄位為開的券會送，按鈕連到那一張。
+    - **寫入**：admin 的派券動作在伺服器端一律存成 `false`（不看表單；admin 送出勾選也存 `false`，不拒絕），所以 admin 仍可建立派券規則、套用「高客單 VIP 自動尊榮升級」劇本、新增或修改派券的延遲步驟，只是不送 LINE。owner 由勾選「同時用 LINE 通知買家領券」決定，預設勾選；表單另帶 `voucherLineNotificationShown`，沒有這個欄位（變更前開著的舊頁面）時視為勾選。owner 套用劇本時派券存 `true`。延遲步驟的函式庫（`createAutomationRuleStep`／`updateAutomationRuleStep`）也依 `linePushAllowed` 再設定一次。
+    - **「規則含 LINE 發送」**：上面的唯讀判斷改看「立即動作或任何一個延遲步驟有 `line_push`，或有欄位為開（`true` 或缺漏）的派券動作」。admin 對這種規則與含 LINE 推播的規則相同：不能重新啟用、不能新增或修改步驟，可以停用、刪除規則、刪除步驟；漏斗編輯器同樣唯讀、只留停用。因此 **admin 以前建立的派券規則（欄位缺漏＝開）變成 admin 唯讀**，這是預期行為：要讓 admin 繼續管理，由 owner 重新建立不送 LINE 的規則，或 admin 停用後另建一條（新規則會存 `false`）。錯誤碼沿用 `line_push_owner_only`。
+    - **買家沒有 LINE 通知時怎麼拿到券**：券照樣發出（`AutomationVoucherGrant`）。(1) 學員專區「專屬優惠券」列出這位客戶（客戶雜湊）未使用、未過期的券（限可在本平台結帳、有庫存且已設定交付的商品）；(2) 同一組動作勾選 Email 通知並選「追購通知」範本時，信中附領券連結（立即動作照一般行銷信規則寄出；延遲步驟只寄給已驗證的地址）。後台對 admin 在派券欄位旁說明這兩個管道。
+    - **介面**：owner 在派券欄位下方看到「同時用 LINE 通知買家領券」勾選與說明（同一條規則或同一步已勾 LINE 推播時不另外發）；admin 看不到勾選，改顯示「派券的 LINE 通知僅限擁有者設定。你設定的派券不會用 LINE 通知買家……」與上述管道，套用派券劇本時也顯示同一段。欄位為 `false` 的派券在規則摘要顯示「派發回購券（不發 LINE 通知）」。只因派券通知而唯讀的規則，說明寫「這條規則（的延遲步驟）派券時會用 LINE 通知買家」。漏斗編輯器沒有派券動作，只把唯讀說明改成「這條規則會發 LINE 訊息（LINE 推播或派券通知）」。
+- **貼標籤、派券**：與立即動作相同。
+- **延遲步驟（F-4 PR 2，封測）**：商家要有平台在 `/admin/vendor-features` 開通的 `automation_delayed_steps`（預設關閉）。沒有授權時：規則頁不顯示延遲步驟區塊、三個步驟 Server Action 回「此功能目前尚未開放」、事件不建立進度、job 不執行該商家的進度；授權收回後既有進度保留但不執行，已排隊還沒寄出的延遲步驟信在寄送前被略過。每條規則可加最多 10 個延遲步驟（`AutomationRuleStep`），每一步是「事件發生後 N 小時／天」（1 小時到 90 天，後台只提供小時與天）執行一組動作，動作與條件沿用規則的 schema 與上限（能加延遲步驟的三個 trigger 條件只有「事件發生時」）；同一條規則的延遲時間不重複。只有 `DELAYED_STEP_AUTOMATION_TRIGGERS`（`form_registered` 與兩個諮詢 trigger）能加延遲步驟：`payment_paid` 規則在後台顯示「目前只有立即執行的動作」，新增與修改步驟的 Server Action 回 `steps_unsupported`，事件不建立進度，worker 遇到這種規則的進度（只可能來自直接改資料庫）就停止（`definition_paused`）。
+  - **起點**：立即動作結束後（完成或失敗都算），規則有啟用中的步驟、trigger 是能加延遲步驟的三個之一、對象是本商家的報名（`form_registered`）或諮詢預約（`consultation_booked`、`consultation_no_show`）時，建一列 `DelayedStepRun`（起點＝這個事件第一次執行的時間）。第一步的到期時間在交易內先鎖住規則、依當下啟用中的步驟計算，所以事件進行中商家改了步驟也用改後的時間；規則已停用就不建。同一規則、同一事件只有一列；建立失敗只回報監控，不影響報名或預約的結果，同一事件重送時會補建。只存參照（規則、執行紀錄、報名或預約、客戶雜湊），不存 Email。
+  - **執行**：與 Email 追銷序列共用 worker（同一個租約、一輪一人最多一步、逾期 24 小時跳過、重試 5 次、商家停權不撈）。到點時重新讀取規則與對象：規則 trigger 被隱藏或規則已停用就停止（`definition_paused`）；報名被刪除時進度一起刪除；諮詢預約不存在，或 `consultation_booked` 的預約已被取消或標成未出席，就停止（`subject_gone`），已完成的諮詢繼續（諮詢後追蹤）；`consultation_no_show` 的進度從未出席的預約開始，之後沒有動作會再改這個狀態，只有預約被刪除才停止。條件依現在的資料重新判斷。每一步寫一筆執行紀錄（日誌「事件」欄標示「（延遲步驟）」），同一人同一步最多執行一次：中途失敗或租約過期重領時沿用同一筆紀錄，並照第一次執行時記下的動作清單重跑（商家中途改了動作也一樣），折價券、標籤、LINE 與 Email 都不會重複。
+  - **停用規則**：`/settings/automations` 與漏斗編輯器的停用都在同一個交易內先鎖住規則（`lock_timeout` 5 秒，逾時回「規則正在被其他人修改或執行」；PostgreSQL 以每次取鎖分別計時，排在另一個等待者後面時要先等列的 tuple 鎖、再等持有者的交易，所以最多約 10 秒，仍在交易的 15 秒上限內），再把這條規則所有進行中的進度標成停止（`definition_paused`），所以停用後在下一步到期前又啟用，也不會繼續執行。worker 執行每一步前會再確認規則仍啟用，停用剛好發生在執行途中時，已建立的信在寄送前被略過。
+  - **Email**：沿用立即動作的規則（行銷信、附退訂連結、建立時查退訂與黑名單、寄送前再查）。延遲步驟只寄給已確認的地址：報名要已完成 Email 驗證；諮詢預約的地址是公開表單填的，要本商家有同一個 Email（忽略大小寫與前後空白後完全相同）的已驗證報名才寄。沒有確認時這一步的 Email 記為略過（`recipient_unverified`，日誌說明欄顯示「收件人的 Email 尚未在本商家完成驗證」），其他動作照做；立即動作不受影響。這些信是 `automation_step`，與序列信共用每輪 20 封的寄送額度、佇列上限與商家間的公平分配（一步的 Email 放不進這一輪剩下的額度就整步等下一輪），所以不會繞過序列信的全平台上限；建立超過 6 小時仍未寄出，或寄送前規則已停用、那個人的進度已停止，就略過。續跑中的步驟依第一次執行時記下的動作判斷要不要佔寄送額度。沒有 Email 的步驟（只貼標籤、LINE、派券）不受寄送額度影響，佇列滿或沒有設定寄信服務時照常執行。退訂只會讓之後的 Email 被略過，不會停止整條進度。寄送紀錄頁的類型篩選可選「自動化延遲信」。
+  - **修改**：owner 與 admin 在規則下方新增、修改、刪除步驟（每個 Server Action 都綁目前商家，修改時先鎖住規則；含 LINE 推播或會發派券 LINE 通知的規則 admin 只能刪除步驟，見上方「LINE 推播」）。修改的步驟保留原本的 id；有人跑到一半時，比他目前進度早的新步驟不補做、停用或刪除的步驟直接跳過、改延遲的步驟照新時間，已執行過的那一步改了時間也不會再執行一次。觸發條件被隱藏的規則只能刪除步驟。
+  - **不做**：視覺化流程編輯器；`payment_paid` 的延遲步驟（需要 `DelayedStepRun` 加訂單欄位的 migration、到點時重讀訂單並在退款或取消時停止，留到之後的 PR）與「到現在還沒買」條件；修改規則的立即動作（照舊只能在建立時設定）。
+
 ## 歸因與佣金
 
 先固定 provider、event ID、order number、pending transaction、vendor、affiliate、product／live、visitor／session 與 attribution record。URL／cookie／session 僅是候選來源，接受的歸因與價格由 checkout 伺服器綁定並凍結。
@@ -97,14 +178,14 @@
 
 已接受的取捨：凍結期間排隊的行銷信在解除後才會寄出，依賴既有寄送前檢查（例如直播已結束的提醒會被 supersede）；解除凍結不補寫凍結期間略過的學員付款通知。解除時先以短交易解除凍結，再分批（每批 500 筆、各自交易）開通，每張被開通的訂單寫一筆 `fulfillment.released_after_suspension` 事件；中途失敗時其餘權限維持 pending，平台後台會顯示「開通暫停期間的付款」可重跑。
 
-待 owner 決定（m5）：買家客服頁（`/support`，依結帳時的 buyer grant cookie）目前維持可用，已付款買家仍能查看訂單、聯絡商家；凍結不收回凍結前已開通項目的交付內容，這條路徑也沒有加凍結檢查。是否在凍結期間隱藏 `/support` 的交付連結，由 owner 決定。
+買家客服頁（`/support`，依結帳時的 buyer grant cookie）在凍結期間**保留已付款買家的交付連結**（2026-11-10 owner 決定，原 m5）：買家已付款，要保障其取得內容，所以 `/support` 刻意不加凍結檢查，已付款買家仍能查看訂單、開啟凍結前已開通的交付內容、建立客服案件。這不會讓凍結商家新增銷售或發布：結帳、一頁式網站、報名與直播入口仍依上表關閉；凍結期間才入帳的**數位／課程**付款，entitlement 仍維持 pending，`/support` 顯示「付款確認並開通後」而不給連結，解除凍結後才開通；**服務類**商品沒有 entitlement，凍結期間才付款的買家在 `/support` 仍可看到下單時保存的服務交付說明，這是刻意保留（保障已付款買家，商家恢復後依說明履約）；全額退款照常撤銷該筆訂單的交付內容。回歸測試見 `src/lib/owner-learner-access-policy.db.test.ts`。
 
 ### 學員 portal session 撤銷（F-030）
 
 學員 session 只在當初兌換的 magic-link 列存在時有效，刪除該 vendor＋customer 的列即撤銷。以下流程會撤銷，且每處都綁目前 vendor：
 
-- 商家封鎖 Email（`upsertBlacklistAction`，類型 `email`）：與封鎖同一交易呼叫 `revokeStudentPortalSessions`，撤銷該 Email 在本商家的學員 session；其他商家不受影響。被封鎖的 Email 仍可重新申請登入連結（封鎖目前只擋聊天與報名，是否也擋學員中心待 owner 決定）。
-- 全額退款：**刻意不撤銷** session。退款撤銷的課程／數位權限由每次請求的權益檢查擋下（課程頁、證書、社群回 404），而退款後的學員仍須保持登入，才能取消該商品的通知同意（既有 e2e `tests/e2e/learner-notifications.spec.ts`、`native-course-learning.spec.ts` 鎖住此行為）。本 PR 一度在退款時撤銷，造成 Release browser gates 5 個 spec 失敗，已移除；若要改成退款即登出，需 owner 決定並同時調整上述產品契約。
+- 商家封鎖 Email（`upsertBlacklistAction`，類型 `email`）：與封鎖同一交易呼叫 `revokeStudentPortalSessions`，撤銷該 Email 在本商家的學員 session；交易 commit 後再冪等呼叫一次，刪掉封鎖交易尚未 commit 時通過檢查的請求所建立、交易內撤銷看不到的連結，避免它換出 7 天的 session；其他商家不受影響。被封鎖的 Email **不能再申請學員登入連結**（2026-11-10 owner 決定）：`requestMagicLinkAction` 對每個請求都與資格查詢並行查本商家的有效 Email 黑名單，封鎖中的 Email 不建立 token、不排信，回應與「沒有可存取內容」的 Email 完全相同（同樣的查詢、同樣的通用訊息），不洩漏是否被封鎖或是否存在；寄送前 `dispatchEmailDelivery` 再查一次，封鎖前一刻排入的登入信改為 `suppressed`（`recipient_blacklisted`，寄送紀錄頁顯示「收件者在本商家黑名單中」）。解除封鎖後即可重新申請；其他商家的黑名單不適用。比對使用正規化（小寫、去空白）後的 Email；#136 引入正規化之前寫入的黑名單列沒有正規化回填，含大寫或前後空白的舊列不會被比中，需要時由商家重新封鎖該 Email。
+- 全額退款：**刻意不撤銷** session。退款撤銷的課程／數位權限由每次請求的權益檢查擋下（課程頁、證書、社群回 404），而退款後的學員仍須保持登入，才能取消該商品的通知同意（既有 e2e `tests/e2e/learner-notifications.spec.ts`、`native-course-learning.spec.ts` 鎖住此行為）。本 PR 一度在退款時撤銷，造成 Release browser gates 5 個 spec 失敗，已移除。2026-11-10 owner 確認此政策：全額退款只撤銷**該筆訂單**所交付的內容（`convergeFullRefundFulfillment` 在退款交易內撤銷該訂單所有品項的 entitlement 與交付快照、取消未完成的服務與出貨），學員中心、課程、證書、社群與 `/support` 的交付連結都依此擋下；不登出學員，同一學員其他已付款訂單不受影響；部分退款不撤銷任何權限，累計退款達訂單全額時才撤銷；重複的退款回呼不會再改動權限。回歸測試見 `src/lib/owner-learner-access-policy.db.test.ts`。
 - 商家被凍結：`revokeAllStudentPortalSessionsForVendor` 在凍結交易內批次撤銷該 vendor 全部學員 session（見上）。
 - 客戶匿名化（`scripts/anonymize-customer.ts`，個資刪除請求）：原本就在同一交易刪除該 vendor＋customer 的列。
 - 客戶 Email 變更：目前沒有任何「變更客戶 Email」的流程（商家或學員都無法改買家 Email），所以沒有接線；日後新增時必須在同一交易對舊 Email 呼叫 `revokeStudentPortalSessions`。

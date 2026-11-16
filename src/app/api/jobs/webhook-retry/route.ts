@@ -9,7 +9,9 @@ import { processDueWebhookRetries } from "@/lib/webhook-retry";
 // = 60 s, so the cleanup cannot starve webhook recovery; leftovers wait for
 // the next run) and then retries up to 20 webhooks in
 // sequence, each a Serializable transaction (15 s timeout, up to 3 attempts)
-// that can also schedule its paid receipt email with `after()`. Under Fluid
+// that can also schedule its paid receipt email and, for an order's first
+// paid transition, its `payment_paid` automations with `after()`
+// (src/lib/payment-paid-automation.ts). Under Fluid
 // Compute the platform default is already 300 s, so a lower value would cut
 // the batch off mid-run, leave events `retrying` until the lease expires and
 // lose the summary and alerts. 300 s is the Hobby maximum under Fluid and is

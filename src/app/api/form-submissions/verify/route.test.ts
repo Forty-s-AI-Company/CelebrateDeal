@@ -3,7 +3,7 @@ import { Prisma } from "@prisma/client";
 import { NextRequest } from "next/server";
 
 const mocks = vi.hoisted(() => ({
-  db: { marker: "verification-db" },
+  db: { marker: "verification-db", $queryRaw: vi.fn() },
   checkRateLimit: vi.fn(),
   verifyFormSubmission: vi.fn(),
   ensureRegistrationConfirmationDelivery: vi.fn(),
@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
   captureOperationalError: vi.fn(),
   startTextFailure: vi.fn((): Error | null => null),
   scheduleImmediateEmailDispatch: vi.fn(),
+  enrollSubmissionInEmailSequences: vi.fn(),
 }));
 
 vi.mock("@/lib/db", () => ({ getDb: () => mocks.db }));
@@ -23,6 +24,7 @@ vi.mock("@/lib/email-delivery", () => ({
   ensureLiveReminderDelivery: mocks.ensureLiveReminderDelivery,
 }));
 vi.mock("@/lib/monitoring", () => ({ captureOperationalError: mocks.captureOperationalError }));
+vi.mock("@/lib/delayed-step-runs", () => ({ enrollSubmissionInEmailSequences: mocks.enrollSubmissionInEmailSequences }));
 vi.mock("@/lib/evergreen-viewer-session", async (importOriginal) => {
   const original = await importOriginal<typeof import("@/lib/evergreen-viewer-session")>();
   return {
@@ -83,6 +85,8 @@ beforeEach(() => {
   mocks.verifyFormSubmission.mockResolvedValue({ status: "invalid" });
   mocks.ensureRegistrationConfirmationDelivery.mockResolvedValue({ status: "not_configured" });
   mocks.ensureLiveReminderDelivery.mockResolvedValue({ status: "not_configured" });
+  mocks.db.$queryRaw.mockResolvedValue([{ id: "assignment-1" }]);
+  mocks.enrollSubmissionInEmailSequences.mockResolvedValue({ status: "no_sequence", created: 0 });
 });
 
 afterEach(() => vi.unstubAllEnvs());
@@ -221,7 +225,7 @@ describe("POST /api/form-submissions/verify", () => {
       vi.setSystemTime(new Date("2026-10-29T06:03:00.000Z"));
       const issuedFor = "live" in variant ? variant.live : evergreenLive;
       const session = resolveEvergreenViewerSession({ live: issuedFor, vendorTimezone: "Asia/Taipei", token: null, intent: "claim" })!;
-      const token = "tamper" in variant ? `${session.issuedToken!.slice(0, -2)}AA` : session.issuedToken!;
+      const token = "tamper" in variant ? `${session.issuedToken!.slice(0, -2)}${session.issuedToken!.endsWith("AA") ? "BB" : "AA"}` : session.issuedToken!;
       mocks.verifyFormSubmission.mockResolvedValue({ status: "verified", confirmation: evergreenConfirmation });
       const withCookie = request();
       // Always presented under live-1's cookie name, as a moved or forged cookie would be.
@@ -230,6 +234,79 @@ describe("POST /api/form-submissions/verify", () => {
       await POST(withCookie);
 
       expect(mocks.ensureRegistrationConfirmationDelivery).toHaveBeenCalledWith(expect.objectContaining({ liveStartAtText: "依你的觀看時段開始" }));
+      // A cookie that does not verify for this Live records nothing.
+      expect(mocks.db.$queryRaw).not.toHaveBeenCalled();
+    });
+
+    describe("records the session of a visitor who claimed before verifying (F-2)", () => {
+      function recordedValues() {
+        expect(mocks.db.$queryRaw).toHaveBeenCalledTimes(1);
+        return mocks.db.$queryRaw.mock.calls[0]!.slice(1) as unknown[];
+      }
+
+      it("records the claimed session for the verified submission", async () => {
+        vi.useFakeTimers({ toFake: ["Date"] });
+        vi.setSystemTime(new Date("2026-10-29T06:03:00.000Z"));
+        const session = resolveEvergreenViewerSession({ live: evergreenLive, vendorTimezone: "Asia/Taipei", token: null, intent: "claim" })!;
+        // The visitor watched for a while before clicking the verification link.
+        vi.setSystemTime(new Date("2026-10-29T06:30:00.000Z"));
+        mocks.verifyFormSubmission.mockResolvedValue({ status: "verified", confirmation: evergreenConfirmation, chatSession: { submissionId: "formsub_test" } });
+        const withCookie = request();
+        withCookie.headers.set("cookie", `${evergreenSessionCookieName("live-1")}=${session.issuedToken}`);
+
+        const response = await POST(withCookie);
+
+        expect(response.headers.get("location")).toBe("https://app.example.test/verify-registration?status=verified");
+        expect(recordedValues()).toEqual(expect.arrayContaining(["vendor-1", "live-1", "formsub_test", "2026-10-29T06:15:00.000Z"]));
+      });
+
+      it("records nothing without the visitor's session cookie", async () => {
+        mocks.verifyFormSubmission.mockResolvedValue({ status: "verified", confirmation: evergreenConfirmation });
+        await POST(request());
+        expect(mocks.db.$queryRaw).not.toHaveBeenCalled();
+      });
+
+      it("records nothing for a regular (non-evergreen) Live", async () => {
+        mocks.verifyFormSubmission.mockResolvedValue({ status: "verified", confirmation });
+        await POST(request());
+        expect(mocks.db.$queryRaw).not.toHaveBeenCalled();
+      });
+
+      it("records nothing for a merchant's shared start (the job follows the current anchor)", async () => {
+        vi.useFakeTimers({ toFake: ["Date"] });
+        vi.setSystemTime(new Date("2026-10-29T06:03:00.000Z"));
+        const sharedLive = { ...evergreenLive, evergreenSessionStartAt: new Date("2026-10-29T08:00:00.000Z") };
+        mocks.verifyFormSubmission.mockResolvedValue({
+          status: "verified",
+          confirmation: { ...confirmation, evergreen: { live: sharedLive, vendorTimezone: "Asia/Taipei" } },
+        });
+        const response = await POST(request());
+        expect(response.headers.get("location")).toBe("https://app.example.test/verify-registration?status=verified");
+        expect(mocks.db.$queryRaw).not.toHaveBeenCalled();
+      });
+
+      it("keeps the verified result, confirmation and cookie when recording fails", async () => {
+        vi.useFakeTimers({ toFake: ["Date"] });
+        vi.setSystemTime(new Date("2026-10-29T06:03:00.000Z"));
+        const session = resolveEvergreenViewerSession({ live: evergreenLive, vendorTimezone: "Asia/Taipei", token: null, intent: "claim" })!;
+        mocks.db.$queryRaw.mockRejectedValue(new Error("database unavailable"));
+        mocks.verifyFormSubmission.mockResolvedValue({ status: "verified", confirmation: evergreenConfirmation, chatSession: { submissionId: "formsub_test" } });
+        const withCookie = request();
+        withCookie.headers.set("cookie", `${evergreenSessionCookieName("live-1")}=${session.issuedToken}`);
+
+        const response = await POST(withCookie);
+
+        expect(response.status).toBe(303);
+        expect(response.headers.get("location")).toBe("https://app.example.test/verify-registration?status=verified");
+        expect(response.cookies.get(FORM_SUBMISSION_CHAT_SESSION_COOKIE)).toBeDefined();
+        expect(mocks.ensureRegistrationConfirmationDelivery).toHaveBeenCalledTimes(1);
+        expect(mocks.ensureLiveReminderDelivery).toHaveBeenCalledTimes(1);
+        expect(mocks.captureOperationalError).toHaveBeenCalledWith(expect.any(Error), {
+          source: "evergreen_session_assignment",
+          operation: "verification",
+          status: "failed",
+        });
+      });
     });
 
     it("keeps the verified result when the session time cannot be resolved", async () => {
@@ -289,6 +366,50 @@ describe("POST /api/form-submissions/verify", () => {
     const responseBody = await response.text();
     expect(responseBody).not.toContain(confirmation.formSubmissionId);
     expect(responseBody).not.toContain(token);
+  });
+
+  it("驗證成功後以伺服器紀錄的 vendor／直播／報名 id 加入 Email 追銷序列（F-3）", async () => {
+    mocks.verifyFormSubmission.mockResolvedValue({ status: "verified", confirmation });
+    mocks.enrollSubmissionInEmailSequences.mockResolvedValue({ status: "enrolled", created: 1 });
+
+    const response = await POST(request());
+
+    expect(response.headers.get("location")).toBe("https://app.example.test/verify-registration?status=verified");
+    expect(mocks.enrollSubmissionInEmailSequences).toHaveBeenCalledTimes(1);
+    expect(mocks.enrollSubmissionInEmailSequences).toHaveBeenCalledWith({
+      vendorId: "vendor-1",
+      liveId: "live-1",
+      formSubmissionId: "formsub_test",
+    });
+  });
+
+  it("加入序列失敗只記錄去識別監控，驗證結果、確認信與 cookie 不變（F-3）", async () => {
+    const error = new Error(`enroll failed for ${confirmation.recipientEmail} ${token}`);
+    mocks.verifyFormSubmission.mockResolvedValue({ status: "verified", confirmation, chatSession: { submissionId: "formsub_test" } });
+    mocks.ensureRegistrationConfirmationDelivery.mockResolvedValue({ status: "queued", deliveryId: "email_confirmation" });
+    mocks.enrollSubmissionInEmailSequences.mockRejectedValue(error);
+
+    const response = await POST(request());
+
+    expect(response.status).toBe(303);
+    expect(response.headers.get("location")).toBe("https://app.example.test/verify-registration?status=verified");
+    expect(response.headers.getSetCookie().some((value) => value.startsWith(`${FORM_SUBMISSION_CHAT_SESSION_COOKIE}=`))).toBe(true);
+    expect(mocks.scheduleImmediateEmailDispatch).toHaveBeenCalledWith(["email_confirmation"]);
+    expect(mocks.captureOperationalError).toHaveBeenCalledWith(error, {
+      source: "form_submission_verification",
+      operation: "email_sequence_enroll",
+      status: "failed",
+    });
+    expect(JSON.stringify(mocks.captureOperationalError.mock.calls)).not.toContain(confirmation.recipientEmail);
+    expect(JSON.stringify(mocks.captureOperationalError.mock.calls)).not.toContain(token);
+  });
+
+  it("無效連結與已驗證的重複請求都不加入序列（F-3）", async () => {
+    mocks.verifyFormSubmission.mockResolvedValue({ status: "invalid" });
+    await POST(request());
+    mocks.verifyFormSubmission.mockResolvedValue({ status: "already_verified" });
+    await POST(request());
+    expect(mocks.enrollSubmissionInEmailSequences).not.toHaveBeenCalled();
   });
 
   it("已驗證的重複請求不再寄送確認信", async () => {

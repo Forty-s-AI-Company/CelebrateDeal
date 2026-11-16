@@ -1,5 +1,7 @@
 # Cloudflare-first Live Commerce MVP Report
 
+> 2026-11-12 依程式現況更新：本報告為 MVP 當時的紀錄。文中「Live room stepper 擴充為 8 步」已被取代，直播精靈現為 4 步（內容、成交、通知、發布；`src/lib/live-studio-steps.ts`，#574），並可在精靈內以側邊抽屜就地建立報名表、Email 模板與影片（#575、#576）。
+
 ## 1. 修正版產品架構摘要
 
 CelebrateDeal 已從「基礎直播導購 MVP」修正為 Cloudflare-first 的直播導購自動化平台。

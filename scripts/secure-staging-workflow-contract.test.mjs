@@ -229,7 +229,7 @@ test("required PostgreSQL concurrency gate fails closed instead of hanging indef
   const source = fs.readFileSync(path.join(root, ".github", "workflows", "ci.yml"), "utf8");
   assert.match(
     source,
-    /timeout --preserve-status 10m npm run test:db:concurrency/u,
+    /timeout --preserve-status 20m npm run test:db:concurrency/u,
   );
   assert.doesNotMatch(source, /test:db:concurrency[^\n]*(?:--exclude|--skip|--passWithNoTests)/u);
 });

@@ -19,11 +19,21 @@ test("actual portal worker receives a synthetic device message and keeps authent
  // clients.claim() makes the page controlled while the version is still
  // "activating", so a controller or registration id alone is not proof of readiness.
  let activatedRegistrationId:string|undefined;
+ // The push is dispatched asynchronously (the CDP call returns before the event
+ // runs), so it is only sent once the activated worker is also running.
+ let runningRegistrationId:string|undefined;let lastWorkerState="none";
  session.on("ServiceWorker.workerRegistrationUpdated",({registrations})=>{
   for(const registration of registrations)if(registration.scopeURL===`${baseURL}/portal/`&&!registration.isDeleted)registrationId=registration.registrationId;
  });
  session.on("ServiceWorker.workerVersionUpdated",({versions})=>{
-  for(const version of versions)if(version.scriptURL===`${baseURL}/portal/sw.js`&&version.status==="activated")activatedRegistrationId=version.registrationId;
+  for(const version of versions){
+   if(version.scriptURL!==`${baseURL}/portal/sw.js`)continue;
+   // Keep only the latest closed-vocabulary state of this origin's worker.
+   if(version.status==="activated")activatedRegistrationId=version.registrationId;
+   lastWorkerState=`${version.status}/${version.runningStatus}`;
+   if(version.status==="activated"&&version.runningStatus==="running")runningRegistrationId=version.registrationId;
+   else if(runningRegistrationId===version.registrationId)runningRegistrationId=undefined;
+  }
  });
  await session.send("ServiceWorker.enable");
  // Observe the application's own registration call without initiating one or
@@ -49,6 +59,7 @@ test("actual portal worker receives a synthetic device message and keeps authent
   await expect.poll(()=>page.evaluate(()=>navigator.serviceWorker.controller?.scriptURL??null)).toBe(`${baseURL}/portal/sw.js`);
   await expect.poll(()=>registrationId).toBeTruthy();
   await expect.poll(()=>activatedRegistrationId).toBe(registrationId);
+  await expect.poll(()=>runningRegistrationId).toBe(registrationId);
   const manifest=await page.locator('link[rel="manifest"]').getAttribute("href");expect(manifest).toBe("/portal/manifest.webmanifest");
   const manifestData=await (await page.request.get(`${baseURL}${manifest}`)).json();
   expect(manifestData.scope).toBe("/portal/");expect(manifestData.start_url).toBe("/portal/start.html");
@@ -77,7 +88,7 @@ test("actual portal worker receives a synthetic device message and keeps authent
  }finally{
   const probe=await page.evaluate(()=>Reflect.get(window,"portalWorkerProbe")).catch(()=>null);
   if(probe&&typeof probe.attempted==="boolean"&&typeof probe.accepted==="boolean"&&["none","TypeError","SecurityError","InvalidStateError","AbortError","other"].includes(probe.error)){
-   console.log(`::notice::portal-worker attempted=${probe.attempted} accepted=${probe.accepted} error=${probe.error}`);
+   console.log(`::notice::portal-worker attempted=${probe.attempted} accepted=${probe.accepted} error=${probe.error} worker=${/^(?:new|installing|installed|activating|activated|redundant)\/(?:stopped|starting|running|stopping)$/u.test(lastWorkerState)?lastWorkerState:"none"}`);
   }
   await context.setOffline(false);
   await page.evaluate(async()=>{const registration=await navigator.serviceWorker.getRegistration("/portal/");if(registration)for(const notification of await registration.getNotifications())notification.close();}).catch(()=>undefined);
@@ -266,17 +277,17 @@ test("real manager starts course-linked live, reloads and ends it without republ
   await page.route("https://media.example.test/**",route=>route.abort());
   await page.goto("/login");await page.getByLabel("Email").fill(user.email);await page.getByLabel("密碼").fill(password);await page.getByRole("button",{name:"登入",exact:true}).click();await expect(page).toHaveURL(/\/dashboard$/u);
   const path=`/lives/${live.id}/edit`;
-  await page.goto(path);await page.getByRole("button",{name:/桌機／手機預覽發布/u}).click();
+  await page.goto(path);await page.locator('button[aria-controls="live-step-panel-publish"]').click();
   const start=page.getByRole("button",{name:"開始直播",exact:true});await expect(start).toBeEnabled();
   await start.click();await page.getByRole("alertdialog").getByRole("button",{name:"確認開始直播",exact:true}).click();
   await expect.poll(async()=>(await db.live.findUniqueOrThrow({where:{id:live.id}})).status).toBe("live");
   await expect.poll(()=>db.learnerNotificationSourceEvent.count({where:{vendorId:vendor.id,productId:product.id,event:"live_started"}})).toBe(1);
   const source=await db.learnerNotificationSourceEvent.findFirstOrThrow({where:{vendorId:vendor.id,productId:product.id,event:"live_started"}});expect(source.audienceCustomerKeyHash).toBeNull();expect(source.payloadEncryptedEnvelope).not.toContain(live.title);
   const beforeSave=(await db.live.findUniqueOrThrow({where:{id:live.id}})).updatedAt.toISOString();
-  await page.reload();await page.getByRole("button",{name:/桌機／手機預覽發布/u}).click();await expect(page.getByRole("button",{name:"儲存變更",exact:true})).toBeEnabled();await page.getByRole("button",{name:"儲存變更",exact:true}).click();
+  await page.reload();await page.locator('button[aria-controls="live-step-panel-publish"]').click();await expect(page.getByRole("button",{name:"儲存變更",exact:true})).toBeEnabled();await page.getByRole("button",{name:"儲存變更",exact:true}).click();
   await expect.poll(async()=>(await db.live.findUniqueOrThrow({where:{id:live.id}})).updatedAt.toISOString()).not.toBe(beforeSave);
   await expect.poll(()=>db.learnerNotificationSourceEvent.count({where:{vendorId:vendor.id,productId:product.id,event:"live_started"}})).toBe(1);
-  await page.reload();await page.getByRole("button",{name:/桌機／手機預覽發布/u}).click();const end=page.getByRole("button",{name:"結束直播",exact:true});await expect(end).toBeEnabled();await end.click();await page.getByRole("alertdialog").getByRole("button",{name:"確認結束直播",exact:true}).click();
+  await page.reload();await page.locator('button[aria-controls="live-step-panel-publish"]').click();const end=page.getByRole("button",{name:"結束直播",exact:true});await expect(end).toBeEnabled();await end.click();await page.getByRole("alertdialog").getByRole("button",{name:"確認結束直播",exact:true}).click();
   await expect.poll(async()=>(await db.live.findUniqueOrThrow({where:{id:live.id}})).status).toBe("ended");expect(await db.learnerNotificationSourceEvent.count({where:{vendorId:vendor.id,productId:product.id,event:"live_started"}})).toBe(1);
  }finally{await db.vendor.delete({where:{id:vendor.id}});if(userId)await db.user.delete({where:{id:userId}});await db.$disconnect();}
 });

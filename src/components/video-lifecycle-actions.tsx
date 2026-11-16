@@ -42,7 +42,7 @@ export function VideoLifecycleActions({
         pendingChildren={`${actionLabel}中…`}
         pendingMessage={`正在${actionLabel}影片，請勿重複送出。`}
         confirmMessage={confirmMessage}
-        className="inline-flex min-h-10 items-center gap-1.5 rounded-md border border-border bg-white px-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+        className="inline-flex min-h-10 items-center gap-1.5 rounded-md border border-border bg-white px-3 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-50"
       >
         {archived ? <RotateCcw size={15} aria-hidden="true" /> : <Archive size={15} aria-hidden="true" />}
         {actionLabel}

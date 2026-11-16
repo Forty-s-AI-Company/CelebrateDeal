@@ -5,6 +5,7 @@ import { hashPassword } from "../../src/lib/password";
 import { totpCodeForTimestamp, verifyRecoveryCode, verifyTotpCode } from "../../src/lib/mfa";
 import { createPasswordResetToken } from "../../src/lib/password-reset";
 import { protectProductDeliveryConfig, validateProductDeliveryDraft } from "../../src/lib/product-delivery";
+import { openLiveStudioAdvancedSettings } from "../fixtures/live-studio";
 import { createTeamFunnelFixture, TEAM_FUNNEL_TEST_ONLY } from "../fixtures/team-funnel";
 import { navigateAndAssertDirectUrlGuard } from "./helpers/direct-url-guard";
 
@@ -442,8 +443,12 @@ async function enrollMfa(page: Page, user: MfaTestUser) {
 }
 
 async function displayedRecoveryCode(page: Page) {
+  // The URL changes when the redirect commits, before the server-rendered codes
+  // are in the DOM; wait for the first code to be visible before reading it.
+  const firstCode = page.locator("div.font-mono").first();
+  await expect(firstCode).toBeVisible();
+  await expect(firstCode).toHaveText(/\S/u);
   const codes = await page.locator("div.font-mono").allTextContents();
-  expect(codes.length > 0).toBe(true);
   const code = codes[0]?.trim();
   if (!code) throw new Error("MFA setup did not provide a recovery code.");
   return code;
@@ -742,15 +747,23 @@ test("owner can edit LINE menu drafts, reject stale tabs, and recreate after del
   }
 });
 
-test("dashboard onboarding checklist provides concrete next-step links", async ({ page }) => {
+test("dashboard onboarding card shows the /onboarding steps with concrete next-step links", async ({ page }) => {
   await loginSeededOwner(page);
-  const checklist = page.getByRole("heading", { name: "Onboarding checklist" }).locator("..");
+  // U1: the card summarizes the single 上線任務 list instead of keeping its own steps.
+  const checklist = page.getByRole("heading", { name: "上線導引", exact: true }).locator("../..");
 
-  await expect(checklist.getByRole("link", { name: /建立商品/ })).toHaveAttribute("href", "/products/new");
-  await expect(checklist.getByRole("link", { name: /建立直播間/ })).toHaveAttribute("href", "/lives/new");
-  await expect(checklist.getByRole("link", { name: /建立互動角色/ })).toHaveAttribute("href", "/interaction-roles/new");
-  await expect(checklist.getByRole("link", { name: /建立互動腳本/ })).toHaveAttribute("href", "/interaction-scripts/new");
-  await expect(checklist.getByRole("link", { name: /設定追蹤/ })).toHaveAttribute("href", "/settings/tracking");
+  await expect(checklist.getByRole("link", { name: /商店與客服資料/ })).toHaveAttribute("href", "/settings/brand");
+  await expect(checklist.getByRole("link", { name: /建立可販售商品/ })).toHaveAttribute("href", "/products/new");
+  await expect(checklist.getByRole("link", { name: /完成報名流程/ })).toBeVisible();
+  await expect(checklist.getByRole("link", { name: /準備第一場可販售直播/ })).toBeVisible();
+  await expect(checklist.getByRole("link", { name: "查看完整清單", exact: true })).toHaveAttribute("href", "/onboarding");
+  // The payment step is listed only while card binding applies; /onboarding must agree either way.
+  const paymentLinks = await checklist.getByRole("link", { name: /平台服務付款驗證/ }).count();
+  if (paymentLinks > 0) await expect(checklist.getByRole("link", { name: /平台服務付款驗證/ })).toHaveAttribute("href", "/billing/payment-methods");
+  await page.goto("/onboarding");
+  const paymentStep = page.locator("li").filter({ has: page.getByRole("heading", { name: /平台服務付款驗證$/u }) });
+  if (paymentLinks > 0) await expect(paymentStep.getByText("目前不需要", { exact: true })).toHaveCount(0);
+  else await expect(paymentStep.getByText("目前不需要", { exact: true })).toBeVisible();
 });
 
 test("merchant can drag the last template message to the first timeline slot", async ({ page }) => {
@@ -1411,13 +1424,21 @@ test("live creation stepper blocks incomplete forward jumps and explains the nex
   await loginSeededOwner(page);
   await page.goto("/lives/new");
 
-  const reviewStep = page.getByRole("button", { name: "桌機／手機預覽發布 待完成", exact: true });
+  const reviewStep = page.locator('button[aria-controls="live-step-panel-publish"]');
+  const contentStep = page.locator('button[aria-controls="live-step-panel-content"]');
+  await expect(reviewStep).toContainText("尚有必填");
+  await expect(contentStep).toContainText("尚有必填");
   await reviewStep.click();
-  await expect(page.getByRole("button", { name: "用途與基本資料 待完成", exact: true })).toHaveAttribute("aria-current", "step");
+  await expect(contentStep).toHaveAttribute("aria-current", "step");
   await expect(page.getByRole("status").filter({ hasText: "請先完成本步驟的必填欄位" })).toBeVisible();
 
   await page.getByLabel("直播標題", { exact: true }).fill("E2E 建立流程驗收");
+  await openLiveStudioAdvancedSettings(page, "content");
   await page.getByLabel("直播網址").fill(`e2e-stepper-${stamp}`);
+  // 開播時間 is a required field of the same 內容 step; the jump is still refused without it.
+  await reviewStep.click();
+  await expect(contentStep).toHaveAttribute("aria-current", "step");
+  await page.getByLabel(/開播時間/).fill("2026-08-20T20:00");
   await reviewStep.click();
 
   await expect(reviewStep).toHaveAttribute("aria-current", "step");
@@ -1425,7 +1446,7 @@ test("live creation stepper blocks incomplete forward jumps and explains the nex
   await expect(page.getByRole("button", { name: "建立並排程", exact: true })).toBeDisabled();
 });
 
-test("merchant can create and schedule a prerecorded content webinar from the eight-step studio", async ({ page }) => {
+test("merchant can create and schedule a prerecorded content webinar from the four-step studio", async ({ page }) => {
   const title = `E2E 預錄研討會 ${e2eRunId}`;
   const slug = `e2e-scheduled-webinar-${stamp}`;
   const nonLoopbackRequests: string[] = [];
@@ -1440,26 +1461,24 @@ test("merchant can create and schedule a prerecorded content webinar from the ei
     await loginSeededOwner(page);
     await page.goto("/lives/new");
 
+    // 內容
     await page.getByRole("button", { name: /內容／課程直播/ }).click();
     await page.getByLabel("直播標題").fill(title);
+    await page.getByLabel("影片／即時直播").selectOption(seed.readyVideoId);
+    await page.getByLabel("報名頁").selectOption(seed.formId);
+    await page.getByLabel(/開播時間/).fill("2026-08-20T20:00");
+    await openLiveStudioAdvancedSettings(page, "content");
     await page.getByLabel("直播網址").fill(slug);
     await page.getByRole("button", { name: "下一步" }).click();
 
-    await page.getByLabel("影片／即時直播").selectOption(seed.readyVideoId);
-    await page.getByRole("button", { name: "下一步" }).click();
-    await page.getByRole("button", { name: "下一步" }).click();
-
-    await page.getByLabel("報名頁").selectOption(seed.formId);
+    // 成交：內容直播不選商品，顯示為選配而不是已完成。
+    await expect(page.locator('button[aria-controls="live-step-panel-sales"]')).toContainText("選配未設定");
     await page.getByRole("button", { name: "下一步" }).click();
 
-    await page.getByLabel(/開播時間/).fill("2026-08-20T20:00");
-    await page.getByRole("button", { name: "下一步" }).click();
-
+    // 通知
     await page.getByLabel("報名成功 Email").selectOption(seed.registrationTemplateId);
     await page.getByRole("button", { name: "套用建議設定", exact: true }).click();
     await expect(page.getByLabel("開播前第 1 則 Email 模板", { exact: true })).toHaveValue(seed.reminderTemplateId);
-    await page.getByRole("button", { name: "下一步" }).click();
-
     await page.getByRole("button", { name: "下一步" }).click();
 
     await expect(page.getByText("內容直播發布檢查")).toBeVisible();

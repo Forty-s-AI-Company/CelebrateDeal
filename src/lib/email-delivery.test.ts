@@ -591,7 +591,11 @@ describe("email delivery outbox", () => {
       .resolves.toEqual({ status: "not_configured" });
     await expect(ensurePostLiveFollowupDelivery(base, new Date("2026-08-08T05:20:00.000Z")))
       .resolves.toEqual({ status: "not_due" });
+    // An address the send-time guard cannot normalize is never queued.
+    await expect(ensurePostLiveFollowupDelivery({ ...base, recipientEmail: "not-an-email-address" }, new Date("2026-08-08T06:00:00.000Z")))
+      .resolves.toEqual({ status: "not_configured" });
     expect(mocks.db.emailDelivery.create).not.toHaveBeenCalled();
+    expect(mocks.db.$transaction).not.toHaveBeenCalled();
   });
 
   it("records an active vendor email blacklist as a suppressed follow-up", async () => {
@@ -653,7 +657,103 @@ describe("email delivery outbox", () => {
       status: "already_sent",
       deliveryId: "already-sent",
     });
+    // A revision being handed to the provider right now counts as sent.
+    expect(mocks.db.emailDelivery.findFirst).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({
+        idempotencyKey: { startsWith: "post-live-followup/rule-1/" },
+        status: { in: ["sent", "sending"] },
+      }),
+    }));
     expect(mocks.db.emailDelivery.create).not.toHaveBeenCalled();
+  });
+
+  describe("post-live follow-up revision that already exists", () => {
+    const followupInput = () => ({
+      ...input,
+      template: { ...input.template, trigger: "post_live_followup" },
+      rule: {
+        id: "rule-1",
+        vendorId: "vendor-1",
+        liveId: "live-1",
+        trigger: "post_live_followup",
+        offsetMinutes: 0,
+        isActive: true,
+      },
+      streamMode: "vod",
+      endedAt: null,
+      videoDurationSec: 3_600,
+      verificationStatus: "VERIFIED",
+    });
+    const at = new Date("2026-08-08T06:00:00.000Z");
+    const updatedAt = new Date("2026-08-08T05:59:00.000Z");
+    const isReactivation = (call: unknown[]) => (call[0] as { where?: { status?: unknown } }).where?.status === "superseded";
+
+    beforeEach(() => {
+      mocks.db.emailDelivery.create.mockRejectedValue(Object.assign(new Error("duplicate follow-up"), { code: "P2002" }));
+    });
+
+    it("returns already_sent from the reactivation path when another revision of the rule was sent", async () => {
+      mocks.db.emailDelivery.findFirst
+        .mockResolvedValueOnce(null) // create path: nothing sent yet
+        .mockResolvedValueOnce({ id: "email_existing", status: "superseded", nextAttemptAt: null, updatedAt })
+        .mockResolvedValueOnce({ id: "older-sent" }); // reactivation path: a sibling was sent meanwhile
+
+      await expect(ensurePostLiveFollowupDelivery(followupInput(), at)).resolves.toEqual({
+        status: "already_sent",
+        deliveryId: "older-sent",
+        nextAttemptAt: null,
+      });
+      expect(mocks.db.emailDelivery.findFirst).toHaveBeenNthCalledWith(3, expect.objectContaining({
+        where: expect.objectContaining({
+          vendorId: "vendor-1",
+          sourceLiveId: "live-1",
+          sourceFormSubmissionId: "submission-1",
+          trigger: "post_live_followup",
+          idempotencyKey: { startsWith: "post-live-followup/rule-1/" },
+          // A revision being handed to the provider right now counts as sent.
+          status: { in: ["sent", "sending"] },
+        }),
+      }));
+      expect(mocks.db.emailDelivery.updateMany.mock.calls.some(isReactivation)).toBe(false);
+    });
+
+    it("reactivates a superseded revision with a fresh payload when nothing under the rule was sent", async () => {
+      mocks.db.emailDelivery.findFirst
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce({ id: "email_existing", status: "superseded", nextAttemptAt: null, updatedAt })
+        .mockResolvedValueOnce(null);
+
+      await expect(ensurePostLiveFollowupDelivery(followupInput(), at)).resolves.toEqual({
+        status: "reactivated",
+        deliveryId: "email_existing",
+        nextAttemptAt: at,
+      });
+      const reactivation = mocks.db.emailDelivery.updateMany.mock.calls.find(isReactivation)?.[0];
+      expect(reactivation.where).toEqual({ id: "email_existing", vendorId: "vendor-1", status: "superseded", updatedAt });
+      expect(reactivation.data).toMatchObject({
+        status: "queued",
+        attemptCount: 0,
+        nextAttemptAt: at,
+        claimedAt: null,
+        failedAt: null,
+        lastErrorCode: null,
+        payloadEncryptedEnvelope: expect.any(String),
+      });
+    });
+
+    it("returns a plain duplicate for an existing revision that is not superseded", async () => {
+      mocks.db.emailDelivery.findFirst
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce({ id: "email_existing", status: "queued", nextAttemptAt: at, updatedAt });
+
+      await expect(ensurePostLiveFollowupDelivery(followupInput(), at)).resolves.toEqual({
+        status: "duplicate",
+        deliveryId: "email_existing",
+        deliveryStatus: "queued",
+        nextAttemptAt: at,
+      });
+      expect(mocks.db.emailDelivery.updateMany.mock.calls.some(isReactivation)).toBe(false);
+    });
   });
 
   it("scans only active rules and same-vendor verified registrations with bounded batches", async () => {
@@ -1099,10 +1199,43 @@ describe("email delivery outbox", () => {
       .mockResolvedValueOnce([]);
 
     await expect(processDueEmailDeliveries()).resolves.toEqual([{ deliveryId: "delivery-1", status: "recovered" }]);
+    // F-3 sequence and F-4 delayed automation e-mails, and their stale leases, are left to processDueSequenceEmailDeliveries.
+    expect(mocks.db.emailDelivery.findMany).toHaveBeenNthCalledWith(1, expect.objectContaining({ where: expect.objectContaining({ status: "sending", trigger: { notIn: ["sequence_email", "automation_step"] } }) }));
+    expect(mocks.db.emailDelivery.findMany).toHaveBeenNthCalledWith(2, expect.objectContaining({ where: expect.objectContaining({ trigger: { notIn: ["sequence_email", "automation_step"] } }) }));
+    expect(mocks.db.emailDelivery.findMany).toHaveBeenCalledTimes(2);
     expect(mocks.sendTransactionalEmail).not.toHaveBeenCalled();
   });
 });
 
+
+describe("automation e-mail send-time checks (F-4)", () => {
+  const automation = () => candidate({ trigger: "automation", idempotencyKey: "automation-email:log-1:0" });
+  it("suppresses a queued automation e-mail whose recipient this vendor has since blacklisted", async () => {
+    mocks.db.emailDelivery.findUnique.mockResolvedValue(automation());
+    mocks.db.blacklist.findFirst.mockResolvedValue({ id: "blacklist-1" });
+    await expect(dispatchEmailDelivery("delivery-1")).resolves.toEqual({ status: "suppressed" });
+    expect(mocks.sendTransactionalEmail).not.toHaveBeenCalled();
+    expect(mocks.db.blacklist.findFirst).toHaveBeenCalledWith({
+      where: { vendorId: "vendor-1", identifierType: "email", identifier: "lead@example.test", isActive: true, unblockedAt: null },
+      select: { id: true },
+    });
+    expect(mocks.db.emailDelivery.updateMany).toHaveBeenLastCalledWith(expect.objectContaining({ data: expect.objectContaining({ status: "suppressed", lastErrorCode: "recipient_blacklisted" }) }));
+  });
+  it("suppresses a queued automation e-mail to a recipient who unsubscribed, including by a merchant-list request", async () => {
+    mocks.db.emailDelivery.findUnique.mockResolvedValue(automation());
+    mocks.db.emailSuppression.findUnique.mockResolvedValue({ resubscribedAt: null, reason: "recipient_request" });
+    await expect(dispatchEmailDelivery("delivery-1")).resolves.toEqual({ status: "suppressed" });
+    expect(mocks.sendTransactionalEmail).not.toHaveBeenCalled();
+    expect(mocks.db.emailDelivery.updateMany).toHaveBeenLastCalledWith(expect.objectContaining({ data: expect.objectContaining({ status: "suppressed", lastErrorCode: "recipient_suppressed" }) }));
+  });
+  it("sends an automation e-mail to a recipient on neither list", async () => {
+    mocks.db.emailDelivery.findUnique.mockResolvedValue(automation());
+    mocks.sendTransactionalEmail.mockResolvedValue({ id: "synthetic-message" });
+    await expect(dispatchEmailDelivery("delivery-1")).resolves.toEqual({ status: "sent" });
+    expect(mocks.db.blacklist.findFirst).toHaveBeenCalledOnce();
+    expect(mocks.sendTransactionalEmail).toHaveBeenCalledOnce();
+  });
+});
 
 describe("student portal login delivery", () => {
   const idempotencyKey = `student-portal:${"ab".repeat(32)}`;
@@ -1123,6 +1256,26 @@ describe("student portal login delivery", () => {
     await expect(dispatchEmailDelivery("delivery-1")).resolves.toEqual({ status: "superseded" });
     expect(mocks.sendTransactionalEmail).not.toHaveBeenCalled();
     expect(mocks.db.emailDelivery.updateMany).toHaveBeenLastCalledWith(expect.objectContaining({ data: expect.objectContaining({ lastErrorCode: "verification_superseded" }) }));
+  });
+  it("suppresses a still-valid sign-in link whose recipient the vendor has since blacklisted", async () => {
+    mocks.db.emailDelivery.findUnique.mockResolvedValue(candidate({ trigger: "student_portal_magic_link", idempotencyKey }));
+    mocks.db.studentPortalAccessToken.findFirst.mockResolvedValue({ id: "portal-token-1" });
+    mocks.db.blacklist.findFirst.mockResolvedValue({ id: "blacklist-1" });
+    await expect(dispatchEmailDelivery("delivery-1")).resolves.toEqual({ status: "suppressed" });
+    expect(mocks.sendTransactionalEmail).not.toHaveBeenCalled();
+    expect(mocks.db.blacklist.findFirst).toHaveBeenCalledWith({
+      where: { vendorId: "vendor-1", identifierType: "email", identifier: "lead@example.test", isActive: true, unblockedAt: null },
+      select: { id: true },
+    });
+    expect(mocks.db.emailDelivery.updateMany).toHaveBeenLastCalledWith(expect.objectContaining({ data: expect.objectContaining({ status: "suppressed", lastErrorCode: "recipient_blacklisted" }) }));
+  });
+  it("still sends a requested sign-in link to an address that is not blacklisted", async () => {
+    mocks.db.emailDelivery.findUnique.mockResolvedValue(candidate({ trigger: "student_portal_magic_link", idempotencyKey }));
+    mocks.db.studentPortalAccessToken.findFirst.mockResolvedValue({ id: "portal-token-1" });
+    mocks.sendTransactionalEmail.mockResolvedValue({ id: "synthetic-message" });
+    await expect(dispatchEmailDelivery("delivery-1")).resolves.toEqual({ status: "sent" });
+    expect(mocks.db.blacklist.findFirst).toHaveBeenCalledOnce();
+    expect(mocks.sendTransactionalEmail).toHaveBeenCalledOnce();
   });
   it("rejects malformed portal identity before database lookup or provider send", async () => {
     mocks.db.emailDelivery.findUnique.mockResolvedValue(candidate({ trigger: "student_portal_magic_link", idempotencyKey: "student-portal:invalid" }));

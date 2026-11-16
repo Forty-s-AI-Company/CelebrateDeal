@@ -21,7 +21,7 @@ describe("StreamAllocationEditor", () => {
       <StreamAllocationEditor initialValues={initialValues()} members={members} pages={pages} />,
     );
 
-    expect(html).toContain("Stream 用量與額度分配");
+    expect(html).toContain("觀看用量與額度分配");
     expect(html).toContain("不需要手寫 ID 或 JSON");
     expect(html).toContain("推廣頁流量歸推廣者");
     expect(html).toContain("進階：個別成員與推廣頁額度");
@@ -53,7 +53,7 @@ describe("StreamAllocationEditor", () => {
     expect(html).toContain("北區團隊 · 李小華");
     expect(html).toContain("member-1");
     expect(html).toContain("member-2");
-    expect(html).toContain("Stream 用量設定完整");
+    expect(html).toContain("觀看用量設定完整");
   });
 
   it("fails visibly when a saved policy references a removed member", () => {

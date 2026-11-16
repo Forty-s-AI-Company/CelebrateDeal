@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { emptyLiveStudioDraft, type LiveStudioDraftEnvelope } from "@/lib/live-studio-draft";
 import { LiveStudioDraftClientError } from "@/lib/live-studio-draft-client";
 import {
@@ -81,7 +81,7 @@ const liveDraftClientMock = vi.hoisted(() => {
 
   return {
     LiveStudioDraftClientError: MockLiveStudioDraftClientError,
-    serializeLiveStudioDraft: vi.fn((_form: HTMLFormElement, activeStep: number) => ({ flowVersion: 2, activeStep })),
+    serializeLiveStudioDraft: vi.fn((_form: HTMLFormElement, activeStep: number) => ({ flowVersion: 3, activeStep })),
     saveLiveStudioDraft: vi.fn(async ({ draftId, revision, payload }: {
       draftId: string;
       revision: number | null;
@@ -287,6 +287,26 @@ describe("LiveStudioDraftSaveQueue", () => {
     expect(queue.matches(newestPayload)).toBe(true);
   });
 
+  it("never treats a draft whose stored row is in an older shape as saved", async () => {
+    const payload = { ...emptyLiveStudioDraft(), title: "八步草稿轉換" };
+    const save = vi.fn().mockResolvedValue(envelope("draft-1", 5, payload));
+    const current = new LiveStudioDraftSaveQueue({ liveId: "", initialDraft: envelope("draft-1", 4, payload), save, onTransition: vi.fn() });
+    const outdated = new LiveStudioDraftSaveQueue({
+      liveId: "",
+      initialDraft: { ...envelope("draft-1", 4, payload), storedPayloadOutdated: true },
+      save,
+      onTransition: vi.fn(),
+    });
+
+    expect(current.matches(payload)).toBe(true);
+    expect(outdated.matches(payload)).toBe(false);
+    expect(outdated.currentClaim()).toEqual({ draftId: "draft-1", revision: 4 });
+
+    await expect(outdated.flush(payload)).resolves.toBe(true);
+    expect(save).toHaveBeenCalledWith(expect.objectContaining({ draftId: "draft-1", revision: 4, payload }));
+    expect(outdated.matches(payload)).toBe(true);
+  });
+
   it("locks after an optimistic conflict instead of overwriting or retrying", async () => {
     const save = vi.fn().mockRejectedValue(new LiveStudioDraftClientError("draft_conflict"));
     const transitions: LiveStudioDraftSaveState[] = [];
@@ -344,13 +364,13 @@ describe("Live Studio draft beforeunload guard", () => {
 });
 
 describe("Live Studio draft hook beforeunload lifecycle", () => {
-  it("serializes autosave with the canonical v2 active step", () => {
+  it("serializes autosave with the canonical v3 active step", () => {
     createWindowListenerMock();
-    const hook = LiveStudioDraftHarness(undefined, 7);
+    const hook = LiveStudioDraftHarness(undefined, 3);
 
     hook.result.scheduleSave();
 
-    expect(liveDraftClientMock.serializeLiveStudioDraft).toHaveBeenCalledWith(expect.any(Object), 7);
+    expect(liveDraftClientMock.serializeLiveStudioDraft).toHaveBeenCalledWith(expect.any(Object), 3);
     hook.unmount();
   });
   it("registers the listener, blocks dirty dispatch, and removes it on unmount", () => {
@@ -395,6 +415,79 @@ describe("Live Studio draft hook beforeunload lifecycle", () => {
     expect(savedEvent.returnValue).toBe("initial");
 
     hook.unmount();
+  });
+});
+
+describe("Live Studio draft hook flush when leaving", () => {
+  beforeEach(() => {
+    liveDraftClientMock.saveLiveStudioDraft.mockClear();
+    liveDraftClientMock.serializeLiveStudioDraft.mockClear();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+    liveDraftClientMock.saveLiveStudioDraft.mockClear();
+    liveDraftClientMock.serializeLiveStudioDraft.mockClear();
+  });
+
+  it("saves the debounced edit once when the studio unmounts before the timer fires", async () => {
+    vi.useFakeTimers();
+    createWindowListenerMock();
+    const hook = LiveStudioDraftHarness(undefined, 2);
+
+    hook.result.scheduleSave();
+    expect(liveDraftClientMock.saveLiveStudioDraft).not.toHaveBeenCalled();
+    hook.unmount();
+
+    expect(liveDraftClientMock.saveLiveStudioDraft).toHaveBeenCalledOnce();
+    expect(liveDraftClientMock.saveLiveStudioDraft).toHaveBeenCalledWith(expect.objectContaining({
+      draftId: "",
+      revision: null,
+      payload: { flowVersion: 3, activeStep: 2 },
+    }));
+    expect(liveDraftClientMock.saveLiveStudioDraft.mock.calls[0]?.[0]).not.toHaveProperty("keepalive");
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(liveDraftClientMock.saveLiveStudioDraft).toHaveBeenCalledOnce();
+  });
+
+  it("does not save on unmount when no edit is waiting for the debounce", () => {
+    vi.useFakeTimers();
+    createWindowListenerMock();
+    const hook = LiveStudioDraftHarness();
+
+    hook.unmount();
+
+    expect(liveDraftClientMock.saveLiveStudioDraft).not.toHaveBeenCalled();
+  });
+
+  it("does not save the same edit twice when the debounce already started it", async () => {
+    vi.useFakeTimers();
+    createWindowListenerMock();
+    const hook = LiveStudioDraftHarness();
+
+    hook.result.scheduleSave();
+    await vi.advanceTimersByTimeAsync(700);
+    expect(liveDraftClientMock.saveLiveStudioDraft).toHaveBeenCalledOnce();
+    hook.unmount();
+
+    expect(liveDraftClientMock.saveLiveStudioDraft).toHaveBeenCalledOnce();
+  });
+
+  it("flushes the debounced edit with keepalive when the page is hidden", () => {
+    vi.useFakeTimers();
+    const browser = createWindowListenerMock();
+    const hook = LiveStudioDraftHarness(undefined, 1);
+
+    hook.result.scheduleSave();
+    browser.dispatchEvent({ type: "pagehide" } as Event);
+
+    expect(liveDraftClientMock.saveLiveStudioDraft).toHaveBeenCalledOnce();
+    expect(liveDraftClientMock.saveLiveStudioDraft).toHaveBeenCalledWith(expect.objectContaining({
+      keepalive: true,
+      payload: { flowVersion: 3, activeStep: 1 },
+    }));
+    hook.unmount();
+    expect(liveDraftClientMock.saveLiveStudioDraft).toHaveBeenCalledOnce();
+    expect(browser.removeEventListener).toHaveBeenCalledWith("pagehide", expect.any(Function));
   });
 });
 

@@ -86,6 +86,28 @@ describe("EmailDeliveryOperationsWorkbench", () => {
     expect(html).toContain("本次條件尚未套用");
   });
 
+  it("explains a delivery suppressed by the merchant blacklist", () => {
+    const item = {
+      id: "email_blacklisted_login",
+      recipientMaskedEmail: "b***@example.test",
+      status: "suppressed",
+      trigger: "student_portal_magic_link",
+      attemptCount: 1,
+      maxAttempts: 5,
+      manualRetryCount: 0,
+      createdAtLabel: "2026/11/10 06:00",
+      sentAtLabel: null,
+      nextAttemptAtLabel: null,
+      lastManualRetryAtLabel: null,
+      lastErrorCode: "recipient_blacklisted",
+      canRetry: false,
+    };
+    hookState.actionState = { status: "success", message: "找到 1 筆寄送紀錄。", result: { ...trusted.result!, items: [item], totalItems: 1 } };
+    const html = renderToStaticMarkup(<EmailDeliveryOperationsWorkbench initialState={trusted} csrfField={null} />);
+    expect(html).toContain("收件者在本商家黑名單中，此信（含學員登入信）不會寄送。");
+    expect(html).not.toContain("寄送未完成，請稍後再查看狀態。");
+  });
+
   it("announces pending state and renders independent suppression visibility", () => {
     hookState.pending = true;
     const html = renderToStaticMarkup(<EmailDeliveryOperationsWorkbench initialState={trusted} csrfField={null} />);

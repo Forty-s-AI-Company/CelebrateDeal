@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import type { Prisma } from "@prisma/client";
+import { Prisma } from "@prisma/client";
 import { writeAuditLog } from "@/lib/audit";
 import { getDb } from "@/lib/db";
 import { sendTransactionalEmail, TransactionalEmailError } from "@/lib/email";
@@ -13,9 +13,23 @@ import {
 import { hasOnlySupportedMessageTemplateVariables, renderMessageTemplate } from "@/lib/message-template";
 import { createLiveViewerUrl } from "@/lib/live-public-url";
 import { createLiveSessionSwitchToken, createLiveSessionSwitchUrl, LIVE_SESSION_SWITCH_TTL_SECONDS } from "@/lib/live-session-switch-token";
-import { EVERGREEN_ACTIVATION_SELECT, isActiveEvergreenLive } from "@/lib/evergreen-activation";
+import {
+  EVERGREEN_ACTIVATION_SELECT,
+  evergreenScheduleForLive,
+  evergreenVideoDurationSeconds,
+  isActiveEvergreenLive,
+  type EvergreenActivationRecord,
+} from "@/lib/evergreen-activation";
 import { isFixedSessionLive } from "@/lib/live-fixed-sessions";
 import { normalizeBlacklistIdentifier } from "@/lib/blacklist-identifiers";
+import { isEmailBlacklistedForVendor } from "@/lib/email-blacklist";
+// Values used at module load come from the dependency-free trigger module:
+// delayed-step-runs.ts reaches this module again through the automation
+// engine (delayed-step-runs -> automation-delayed-steps -> automation-workflow
+// -> email-delivery-immediate -> email-delivery), so this module may be
+// evaluated before delayed-step-runs.ts has finished; its functions are only
+// called later.
+import { AUTOMATION_EMAIL_TRIGGER, AUTOMATION_STEP_EMAIL_TRIGGER, DELAYED_STEP_EMAIL_TRIGGERS, SEQUENCE_EMAIL_TRIGGER } from "@/lib/automation-email-trigger";
 import { captureOperationalError } from "@/lib/monitoring";
 import {
   createFormSubmissionVerificationToken,
@@ -33,6 +47,12 @@ import {
   materializeLiveNotificationsForSubmission,
 } from "@/lib/live-notification-delivery";
 import { ACTIVE_VENDOR_RELATION, isVendorSuspendedById } from "@/lib/vendor-suspension-state";
+import { ensureEmailUnsubscribeFooter, formatLiveStartAt } from "@/lib/email-delivery-format";
+import {
+  isCurrentAutomationStepEmailDelivery,
+  isCurrentSequenceEmailDelivery,
+  SEQUENCE_EMAIL_DISPATCH_LIMIT,
+} from "@/lib/delayed-step-runs";
 
 const DELIVERY_LEASE_MS = 10 * 60 * 1_000;
 const MAX_ATTEMPTS = 5;
@@ -110,12 +130,6 @@ function stableDeliveryId(input: Pick<RegistrationConfirmationInput, "vendorId" 
   return `email_${digest}`;
 }
 
-function ensureEmailUnsubscribeFooter(body: string, unsubscribeUrl: string) {
-  const renderedBody = body.trim();
-  if (renderedBody.includes(unsubscribeUrl)) return renderedBody;
-  return [renderedBody, `退訂：${unsubscribeUrl}`].filter(Boolean).join("\n\n");
-}
-
 /**
  * A confirmed registration must be actionable even when a merchant's custom
  * template forgot to insert {{live_url}}. This is intentionally limited to
@@ -126,14 +140,6 @@ function ensureRegistrationLiveEntry(body: string, liveUrl: string) {
   const renderedBody = body.trim();
   if (renderedBody.includes(liveUrl)) return renderedBody;
   return [renderedBody, `直播入口：${liveUrl}`].filter(Boolean).join("\n\n");
-}
-
-function formatLiveStartAt(value: Date) {
-  return new Intl.DateTimeFormat("zh-TW", {
-    dateStyle: "medium",
-    timeStyle: "short",
-    timeZone: "Asia/Taipei",
-  }).format(value);
 }
 
 function isUniqueConflict(error: unknown) {
@@ -480,6 +486,11 @@ export async function ensurePostLiveFollowupDelivery(
     videoDurationSec: input.videoDurationSec,
   }, rule.offsetMinutes);
   if (!completionAt || !deliveryAt || deliveryAt > now) return { status: "not_due" as const };
+  // The send-time guard rejects an address it cannot normalize, so a row for
+  // it could never be sent; skip it here (as the guard does) instead of
+  // queuing it, or of failing the whole run while building its payload.
+  const normalizedEmail = normalizeBlacklistIdentifier("email", input.recipientEmail);
+  if (!normalizedEmail) return { status: "not_configured" as const };
 
   const deliveryId = stablePostLiveFollowupDeliveryId({
     vendorId: input.vendorId,
@@ -508,7 +519,6 @@ export async function ensurePostLiveFollowupDelivery(
     brand: input.emailBrand,
   }, { vendorId: input.vendorId, deliveryId });
   const db = getDb();
-  const normalizedEmail = normalizeBlacklistIdentifier("email", input.recipientEmail);
   const [suppression, blacklist] = await Promise.all([
     db.emailSuppression.findUnique({
       where: {
@@ -519,23 +529,32 @@ export async function ensurePostLiveFollowupDelivery(
       },
       select: { id: true, resubscribedAt: true },
     }),
-    normalizedEmail
-      ? db.blacklist.findFirst({
-          where: {
-            vendorId: input.vendorId,
-            identifierType: "email",
-            identifier: normalizedEmail,
-            isActive: true,
-            unblockedAt: null,
-          },
-          select: { id: true },
-        })
-      : Promise.resolve(null),
+    db.blacklist.findFirst({
+      where: {
+        vendorId: input.vendorId,
+        identifierType: "email",
+        identifier: normalizedEmail,
+        isActive: true,
+        unblockedAt: null,
+      },
+      select: { id: true },
+    }),
   ]);
   const isSuppressed = Boolean(suppression && !suppression.resubscribedAt);
   const isBlacklisted = Boolean(blacklist);
   const idempotencyPrefix = postLiveFollowupIdempotencyPrefix(rule.id);
   const idempotencyKey = `${idempotencyPrefix}${deliveryId}`;
+  // A revision of this rule that reached, or is being handed to, the provider.
+  // Either one means the recipient gets (or got) this follow-up, so no other
+  // revision may be created or reactivated next to it.
+  const sentOrSendingRevision: Prisma.EmailDeliveryWhereInput = {
+    vendorId: input.vendorId,
+    sourceLiveId: input.liveId,
+    sourceFormSubmissionId: input.formSubmissionId,
+    trigger: "post_live_followup",
+    idempotencyKey: { startsWith: idempotencyPrefix },
+    status: { in: ["sent", "sending"] },
+  };
   const supersedeOlder: Prisma.EmailDeliveryUpdateManyArgs = {
     where: {
       vendorId: input.vendorId,
@@ -556,17 +575,7 @@ export async function ensurePostLiveFollowupDelivery(
 
   try {
     const delivery = await db.$transaction(async (tx) => {
-      const alreadySent = await tx.emailDelivery.findFirst({
-        where: {
-          vendorId: input.vendorId,
-          sourceLiveId: input.liveId,
-          sourceFormSubmissionId: input.formSubmissionId,
-          trigger: "post_live_followup",
-          idempotencyKey: { startsWith: idempotencyPrefix },
-          status: "sent",
-        },
-        select: { id: true },
-      });
+      const alreadySent = await tx.emailDelivery.findFirst({ where: sentOrSendingRevision, select: { id: true } });
       if (alreadySent) return { id: alreadySent.id, status: "sent", nextAttemptAt: null };
       await tx.emailDelivery.updateMany(supersedeOlder);
       return tx.emailDelivery.create({
@@ -596,17 +605,54 @@ export async function ensurePostLiveFollowupDelivery(
     };
   } catch (error) {
     if (!isUniqueConflict(error)) throw error;
-    const existing = await db.emailDelivery.findUnique({
-      where: { vendorId_idempotencyKey: { vendorId: input.vendorId, idempotencyKey } },
-      select: { id: true, status: true, nextAttemptAt: true },
-    });
-    if (!existing) throw error;
-    return {
-      status: "duplicate" as const,
-      deliveryId: existing.id,
-      deliveryStatus: existing.status,
-      nextAttemptAt: existing.nextAttemptAt,
-    };
+    // The same revision already exists. If it was superseded (e.g. evergreen
+    // was switched on and then off again) and nothing under this rule reached
+    // the recipient, bring it back with a freshly encrypted payload, like
+    // before_live / during_live do; otherwise it is a plain duplicate.
+    return db.$transaction(async (tx) => {
+      const existing = await tx.emailDelivery.findFirst({
+        where: {
+          id: deliveryId,
+          vendorId: input.vendorId,
+          sourceLiveId: input.liveId,
+          sourceFormSubmissionId: input.formSubmissionId,
+          trigger: "post_live_followup",
+          idempotencyKey,
+        },
+        select: { id: true, status: true, nextAttemptAt: true, updatedAt: true },
+      });
+      if (!existing) throw error;
+      const duplicate = {
+        status: "duplicate" as const,
+        deliveryId: existing.id,
+        deliveryStatus: existing.status,
+        nextAttemptAt: existing.nextAttemptAt,
+      };
+      if (existing.status !== "superseded") return duplicate;
+      const alreadySent = await tx.emailDelivery.findFirst({ where: sentOrSendingRevision, select: { id: true } });
+      if (alreadySent) return { status: "already_sent" as const, deliveryId: alreadySent.id, nextAttemptAt: null };
+      const blocked = isSuppressed || isBlacklisted;
+      const reactivated = await tx.emailDelivery.updateMany({
+        where: { id: existing.id, vendorId: input.vendorId, status: "superseded", updatedAt: existing.updatedAt },
+        data: {
+          sourceTemplateId: template.id,
+          ...protectedPayload,
+          status: blocked ? "suppressed" : "queued",
+          attemptCount: 0,
+          nextAttemptAt: blocked ? null : now,
+          claimedAt: null,
+          failedAt: null,
+          lastErrorCode: isBlacklisted ? "recipient_blacklisted" : isSuppressed ? "recipient_suppressed" : null,
+        },
+      });
+      if (reactivated.count !== 1) return duplicate;
+      await tx.emailDelivery.updateMany(supersedeOlder);
+      return {
+        status: blocked ? "suppressed" as const : "reactivated" as const,
+        deliveryId: existing.id,
+        nextAttemptAt: blocked ? null : now,
+      };
+    }, { isolationLevel: "Serializable" });
   }
 }
 
@@ -640,14 +686,187 @@ function fixedSessionPlayedUntil(live: { status: string; endedAt: Date | null },
   return null;
 }
 
+/**
+ * How far back the job looks for evergreen sessions whose follow-up is due.
+ * An evergreen Live runs forever, so without a lower bound the rows scanned
+ * per rule would grow without limit. A follow-up more than 72 hours overdue
+ * (for example after a long job outage, or a session recorded long after it
+ * ended) is deliberately not sent late.
+ */
+export const EVERGREEN_FOLLOWUP_LOOKBACK_MS = 72 * 60 * 60 * 1_000;
+
+/**
+ * Latest evergreen session start whose follow-up is due now (start + video
+ * length + rule offset <= now), or null when the length or offset is unusable.
+ */
+function evergreenPostLiveCutoff(durationSec: number | null | undefined, offsetMinutes: number, now: Date) {
+  const duration = evergreenVideoDurationSeconds(durationSec);
+  if (!duration || !Number.isInteger(offsetMinutes) || offsetMinutes < 0 || offsetMinutes > 10_080) return null;
+  return new Date(now.getTime() - duration * 1_000 - offsetMinutes * 60_000);
+}
+
+type PostLiveFollowupRule = Prisma.LiveNotificationRuleGetPayload<{
+  include: { messageTemplate: true; live: { include: { vendor: true; video: true } } };
+}>;
+
+type DueEvergreenAssignment = {
+  id: string;
+  sessionStartAt: Date;
+  formSubmissionId: string;
+  name: string;
+  email: string;
+  verificationStatus: string;
+};
+
+const utcTimestamp = (value: Date) => Prisma.sql`(${value.toISOString()}::timestamptz AT TIME ZONE 'UTC')`;
+
+/**
+ * One keyset page of due assignments that still need a follow-up under this
+ * rule: the registration is VERIFIED and of this Live and vendor, the session
+ * start lies in (lowerBound, dueBefore], and the registrant has no
+ * EmailDelivery of this rule that is not `superseded` (queued, sending, sent,
+ * failed or suppressed). Rows already handled are therefore never revisited,
+ * and a row comes back only after its delivery was superseded (send-time
+ * guard, template edit, settings re-save), when a new revision may be due.
+ * The NOT EXISTS uses EmailDelivery(vendorId, sourceFormSubmissionId).
+ */
+function dueEvergreenAssignments(input: {
+  vendorId: string;
+  liveId: string;
+  ruleId: string;
+  lowerBound: Date;
+  dueBefore: Date;
+  after: { sessionStartAt: Date; id: string } | null;
+  take: number;
+}) {
+  const idempotencyPrefix = postLiveFollowupIdempotencyPrefix(input.ruleId);
+  const cursor = input.after
+    ? Prisma.sql`AND (assignment."sessionStartAt", assignment."id") > (${utcTimestamp(input.after.sessionStartAt)}, ${input.after.id})`
+    : Prisma.empty;
+  return getDb().$queryRaw<DueEvergreenAssignment[]>`
+    SELECT
+      assignment."id",
+      assignment."sessionStartAt",
+      submission."id" AS "formSubmissionId",
+      submission."name",
+      submission."email",
+      submission."verificationStatus"::text AS "verificationStatus"
+    FROM "EvergreenSessionAssignment" AS assignment
+    INNER JOIN "FormSubmission" AS submission
+      ON submission."id" = assignment."formSubmissionId" AND submission."liveId" = assignment."liveId"
+    INNER JOIN "RegistrationForm" AS form ON form."id" = submission."formId"
+    WHERE assignment."vendorId" = ${input.vendorId}
+      AND assignment."liveId" = ${input.liveId}
+      AND assignment."sessionStartAt" > ${utcTimestamp(input.lowerBound)}
+      AND assignment."sessionStartAt" <= ${utcTimestamp(input.dueBefore)}
+      AND submission."verificationStatus" = 'VERIFIED'
+      AND form."vendorId" = ${input.vendorId}
+      ${cursor}
+      AND NOT EXISTS (
+        SELECT 1 FROM "EmailDelivery" AS delivery
+        WHERE delivery."vendorId" = ${input.vendorId}
+          AND delivery."sourceFormSubmissionId" = assignment."formSubmissionId"
+          AND delivery."sourceLiveId" = ${input.liveId}
+          AND delivery."trigger" = 'post_live_followup'
+          AND starts_with(delivery."idempotencyKey", ${idempotencyPrefix})
+          AND delivery."status" <> 'superseded'
+      )
+    ORDER BY assignment."sessionStartAt" ASC, assignment."id" ASC
+    LIMIT ${input.take}`;
+}
+
+/**
+ * Queues the follow-ups of one rule on an active per-visitor evergreen Live:
+ * one per VERIFIED registrant whose recorded session (EvergreenSessionAssignment)
+ * ended at least the rule offset ago, within the look-back window, oldest
+ * session first. Up to `recipientLimit` registrants are handed to
+ * ensurePostLiveFollowupDelivery per run; an address that can never be sent
+ * to (ensure would answer not_configured and write nothing) is skipped without
+ * using the limit, so it cannot hold back the registrants after it.
+ */
+async function queueEvergreenPostLiveFollowups(rule: PostLiveFollowupRule, now: Date, recipientLimit: number) {
+  const live = rule.live;
+  const results: Array<{ status: string }> = [];
+  const dueBefore = evergreenPostLiveCutoff(live.video?.durationSec, rule.offsetMinutes, now);
+  if (!dueBefore) return [{ status: "not_scheduled" }];
+  // The schedule fingerprint is deliberately not checked: a session
+  // assigned before the merchant changed the schedule still happened (the
+  // visitor may have watched it), so its follow-up keeps its recorded time.
+  const lowerBound = new Date(dueBefore.getTime() - EVERGREEN_FOLLOWUP_LOOKBACK_MS);
+  let after: DueEvergreenAssignment | null = null;
+  let handed = 0;
+  while (handed < recipientLimit) {
+    const page: DueEvergreenAssignment[] = await dueEvergreenAssignments({
+      vendorId: rule.vendorId, liveId: live.id, ruleId: rule.id, lowerBound, dueBefore, after, take: recipientLimit,
+    });
+    for (const assignment of page) {
+      after = assignment;
+      if (handed >= recipientLimit) break;
+      if (!normalizeBlacklistIdentifier("email", assignment.email)) continue;
+      handed += 1;
+      const result = await ensurePostLiveFollowupDelivery({
+        vendorId: rule.vendorId,
+        vendorName: live.vendor.name,
+        liveId: live.id,
+        liveSlug: live.slug,
+        liveTitle: live.title,
+        formSubmissionId: assignment.formSubmissionId,
+        recipientName: assignment.name,
+        recipientEmail: assignment.email,
+        liveScheduledAt: assignment.sessionStartAt,
+        template: rule.messageTemplate,
+        rule,
+        streamMode: "vod",
+        endedAt: null,
+        videoDurationSec: live.video?.durationSec ?? null,
+        verificationStatus: assignment.verificationStatus,
+        emailBrand: {
+          senderName: live.vendor.senderName,
+          supportEmail: live.vendor.supportEmail,
+          contactUrl: live.vendor.contactUrl,
+        },
+      }, now);
+      results.push({ status: result.status });
+      // With a sendable address, not_configured means the rule or template
+      // itself is unusable: every other row would answer the same.
+      if (result.status === "not_configured") return results;
+    }
+    if (page.length < recipientLimit) break;
+  }
+  return results;
+}
+
+/**
+ * The single start every registrant of this Live shares, or null when each
+ * registrant has their own (an active evergreen Live without a merchant
+ * anchor). With a merchant anchor (evergreenSessionStartAt) an evergreen Live
+ * is one fixed session at the CURRENT anchor; otherwise the Live's own
+ * scheduledAt lifecycle applies.
+ */
+function sharedPostLiveSchedule(
+  live: EvergreenActivationRecord & { scheduledAt: Date; endedAt: Date | null; streamMode: string },
+  vendorTimezone: string | null | undefined,
+  now: Date,
+) {
+  const evergreen = evergreenScheduleForLive(live, vendorTimezone, now);
+  if (evergreen?.sharedStartAt) return { streamMode: "vod", scheduledAt: evergreen.sharedStartAt, endedAt: null };
+  if (evergreen) return null;
+  return { streamMode: live.streamMode, scheduledAt: live.scheduledAt, endedAt: live.endedAt };
+}
+
 export async function processDuePostLiveFollowups(
-  options: { now?: Date; ruleLimit?: number; recipientLimitPerRule?: number } = {},
+  /** `vendorId` scopes one run to a single tenant (tests, operations); the job runs unscoped. */
+  options: { now?: Date; ruleLimit?: number; recipientLimitPerRule?: number; vendorId?: string } = {},
 ) {
   const now = options.now ?? new Date();
   const ruleLimit = Math.min(Math.max(options.ruleLimit ?? 20, 1), 50);
   const recipientLimit = Math.min(Math.max(options.recipientLimitPerRule ?? 100, 1), 250);
   const db = getDb();
-  const ruleWhere = { trigger: "post_live_followup", isActive: true } as const;
+  const ruleWhere = {
+    ...(options.vendorId ? { vendorId: options.vendorId } : {}),
+    trigger: "post_live_followup",
+    isActive: true,
+  } as const;
   const ruleCount = await db.liveNotificationRule.count({ where: ruleWhere });
   const rules = await db.liveNotificationRule.findMany({
     where: ruleWhere,
@@ -663,13 +882,23 @@ export async function processDuePostLiveFollowups(
 
   for (const rule of rules) {
     const live = rule.live;
+    // An active evergreen Live gives every visitor their own session, so the
+    // shared scheduledAt says nothing about when a registrant's webinar ends.
+    // Each VERIFIED registrant whose session was recorded
+    // (EvergreenSessionAssignment) is followed up after that session, like a
+    // fixed session; registrants without a recorded session get nothing while
+    // evergreen stays active. With a merchant anchor every registrant shares
+    // one session, so the regular path below runs on the current anchor.
+    const shared = sharedPostLiveSchedule(live, live.vendor.timezone, now);
+    if (!shared) {
+      results.push(...await queueEvergreenPostLiveFollowups(rule, now, recipientLimit));
+      continue;
+    }
     const fixedSessionsDueBefore = isFixedSessionLive(live)
       ? fixedSessionPostLiveCutoff(live, rule.offsetMinutes, now)
       : null;
     const deliveryAt = isFixedSessionLive(live) ? null : resolvePostLiveDeliveryAt({
-      streamMode: live.streamMode,
-      scheduledAt: live.scheduledAt,
-      endedAt: live.endedAt,
+      ...shared,
       videoDurationSec: live.video?.durationSec ?? null,
     }, rule.offsetMinutes);
     if (isFixedSessionLive(live) ? !fixedSessionsDueBefore : !deliveryAt || deliveryAt > now) {
@@ -706,11 +935,11 @@ export async function processDuePostLiveFollowups(
         formSubmissionId: submission.id,
         recipientName: submission.name,
         recipientEmail: submission.email,
-        liveScheduledAt: sessionStartAt ?? live.scheduledAt,
+        liveScheduledAt: sessionStartAt ?? shared.scheduledAt,
         template: rule.messageTemplate,
         rule,
-        streamMode: sessionStartAt ? "vod" : live.streamMode,
-        endedAt: sessionStartAt ? null : live.endedAt,
+        streamMode: sessionStartAt ? "vod" : shared.streamMode,
+        endedAt: sessionStartAt ? null : shared.endedAt,
         videoDurationSec: live.video?.durationSec ?? null,
         verificationStatus: submission.verificationStatus,
         emailBrand: {
@@ -1139,6 +1368,7 @@ function deliveryError(error: unknown) {
 
 type ClaimedDelivery = {
   id: string;
+  createdAt: Date;
   vendorId: string;
   sourceLiveId: string | null;
   sourceFormSubmissionId: string | null;
@@ -1150,13 +1380,13 @@ type ClaimedDelivery = {
   maxAttempts: number;
 };
 
-type DeliverySnapshotDatabase = Pick<Prisma.TransactionClient, "live" | "liveNotificationRule" | "formSubmission" | "blacklist">
+type DeliverySnapshotDatabase = Pick<Prisma.TransactionClient, "live" | "liveNotificationRule" | "formSubmission" | "blacklist" | "evergreenSessionAssignment" | "delayedStepRun" | "vendor" | "automationExecutionLog" | "automationRule">
   & Partial<Pick<Prisma.TransactionClient, "studentPortalAccessToken">>;
 
 export type EmailDeliverySnapshotIdentity = Pick<
   ClaimedDelivery,
   "id" | "vendorId" | "sourceLiveId" | "sourceFormSubmissionId" | "trigger"
-> & { idempotencyKey?: string };
+> & { idempotencyKey?: string; createdAt?: Date };
 
 async function isCurrentLiveReminderDelivery(
   delivery: EmailDeliverySnapshotIdentity,
@@ -1246,15 +1476,14 @@ async function isCurrentPostLiveFollowupDelivery(
     database.live.findFirst({
       where: { id: delivery.sourceLiveId, vendorId: delivery.vendorId },
       select: {
+        // Includes status, streamMode and sessionMode.
+        ...EVERGREEN_ACTIVATION_SELECT,
         id: true,
         vendorId: true,
         slug: true,
         title: true,
         scheduledAt: true,
         endedAt: true,
-        status: true,
-        streamMode: true,
-        sessionMode: true,
         video: { select: { durationSec: true } },
         notificationRules: {
           where: { trigger: "post_live_followup", isActive: true },
@@ -1283,14 +1512,30 @@ async function isCurrentPostLiveFollowupDelivery(
     }),
   ]);
   if (!live || !submission) return false;
+  // While per-visitor evergreen is active a follow-up is anchored on the
+  // registrant's own recorded session; with a merchant anchor, on the current
+  // anchor (no assignment is read). One queued before evergreen was enabled
+  // (anchored on scheduledAt), for an earlier session the registrant has since
+  // replaced, or for an anchor the merchant has since moved no longer matches
+  // the current revision id below.
+  const shared = sharedPostLiveSchedule(live, null, now);
+  const evergreenSession = shared
+    ? undefined
+    : await database.evergreenSessionAssignment.findFirst({
+        where: { vendorId: delivery.vendorId, liveId: live.id, formSubmissionId: submission.id },
+        select: { sessionStartAt: true },
+      });
+  if (evergreenSession === null) return false;
   // A fixed-session registrant's follow-up is anchored on their own session.
   const session = submission.liveSession;
-  const fixed = live.sessionMode === "fixed_sessions";
+  const fixed = !evergreenSession && live.sessionMode === "fixed_sessions";
   if (fixed && (!session || session.vendorId !== delivery.vendorId || session.liveId !== live.id || session.status === "cancelled")) return false;
   if (fixed && session && session.startAt.getTime() > (fixedSessionPlayedUntil(live, live.video?.durationSec ?? 0) ?? Number.NEGATIVE_INFINITY)) return false;
-  const schedule = fixed && session
-    ? { streamMode: "vod", scheduledAt: session.startAt, endedAt: null }
-    : { streamMode: live.streamMode, scheduledAt: live.scheduledAt, endedAt: live.endedAt };
+  const schedule = evergreenSession
+    ? { streamMode: "vod", scheduledAt: evergreenSession.sessionStartAt, endedAt: null }
+    : fixed && session
+      ? { streamMode: "vod", scheduledAt: session.startAt, endedAt: null }
+      : shared ?? { streamMode: live.streamMode, scheduledAt: live.scheduledAt, endedAt: live.endedAt };
   const normalizedEmail = normalizeBlacklistIdentifier("email", submission.email);
   if (!normalizedEmail) return false;
   const blacklist = await database.blacklist.findFirst({
@@ -1416,7 +1661,9 @@ export async function isCurrentEmailDeliverySnapshot(
     && await isCurrentFormVerificationDelivery(delivery, now, database)
     && await isCurrentFixedSessionCancelledDelivery(delivery, database)
     && await isCurrentFixedSessionAlreadyRegisteredDelivery(delivery, database)
-    && await isCurrentStudentPortalDelivery(delivery, now, database);
+    && await isCurrentStudentPortalDelivery(delivery, now, database)
+    && await isCurrentSequenceEmailDelivery(delivery, now, database)
+    && await isCurrentAutomationStepEmailDelivery(delivery, now, database);
 }
 
 function reportDeliveryFailure(error: unknown, operation: string, status: string) {
@@ -1435,17 +1682,44 @@ async function writeDeliveryAuditSafely(input: Parameters<typeof writeAuditLog>[
   }
 }
 
-async function finalizeSuppressed(delivery: ClaimedDelivery) {
+async function finalizeSuppressed(delivery: ClaimedDelivery, errorCode = "recipient_suppressed") {
   const result = await getDb().emailDelivery.updateMany({
     where: { id: delivery.id, status: "sending", attemptCount: delivery.attemptCount },
     data: {
       status: "suppressed",
       nextAttemptAt: null,
       claimedAt: null,
-      lastErrorCode: "recipient_suppressed",
+      lastErrorCode: errorCode,
     },
   });
   return result.count === 1 ? { status: "suppressed" as const } : { status: "claimed_elsewhere" as const };
+}
+
+/**
+ * Triggers whose queued mail is suppressed (`recipient_blacklisted`) at send
+ * time when the recipient is on this vendor's Email blacklist: learner sign-in
+ * links (owner policy 2026-11-10) and automation e-mails, immediate and
+ * delayed (F-4, checked at creation too). Sequence e-mails have their own
+ * check in isCurrentSequenceEmailDelivery.
+ */
+const SEND_TIME_BLACKLIST_TRIGGERS: ReadonlySet<string> = new Set(["student_portal_magic_link", AUTOMATION_EMAIL_TRIGGER, AUTOMATION_STEP_EMAIL_TRIGGER]);
+
+/** Send-time blacklist guard; reads the recipient only from the encrypted payload. */
+async function isDeliveryRecipientBlacklisted(
+  db: Parameters<typeof isEmailBlacklistedForVendor>[0],
+  delivery: ClaimedDelivery,
+) {
+  let recipientEmail: string;
+  try {
+    recipientEmail = revealEmailDeliveryPayload(delivery.payloadEncryptedEnvelope, {
+      vendorId: delivery.vendorId,
+      deliveryId: delivery.id,
+    }).recipientEmail;
+  } catch {
+    // An unreadable payload fails, and is reported, in the provider step.
+    return false;
+  }
+  return isEmailBlacklistedForVendor(db, delivery.vendorId, recipientEmail);
 }
 
 async function finalizeSuperseded(delivery: ClaimedDelivery, errorCode = "config_superseded") {
@@ -1508,8 +1782,17 @@ export async function dispatchEmailDelivery(deliveryId: string, actorLabel = "jo
   if (!(await isCurrentEmailDeliverySnapshot(delivery, new Date()))) {
     return finalizeSuperseded(
       delivery,
-      ["form_submission_verification", "student_portal_magic_link"].includes(delivery.trigger) ? "verification_superseded" : "config_superseded",
+      ["form_submission_verification", "student_portal_magic_link"].includes(delivery.trigger)
+        ? "verification_superseded"
+        : supersededCodeForTrigger(delivery.trigger),
     );
+  }
+  // Owner policy 2026-11-10: a learner sign-in link never reaches an address
+  // this vendor has blacklisted, including one queued just before the block
+  // committed (the request-time check in requestMagicLinkAction is the first
+  // gate). Automation e-mails get the same send-time check (F-4).
+  if (SEND_TIME_BLACKLIST_TRIGGERS.has(delivery.trigger) && await isDeliveryRecipientBlacklisted(db, delivery)) {
+    return finalizeSuppressed(delivery, "recipient_blacklisted");
   }
 
   let sent: { id: string };
@@ -1576,17 +1859,40 @@ export async function dispatchEmailDelivery(deliveryId: string, actorLabel = "jo
   return { status: "sent" as const };
 }
 
-export async function processDueEmailDeliveries(limit = 20) {
-  const db = getDb();
-  const now = new Date();
+/**
+ * Wall-clock budget for the sequence-e-mail pass of one round. Each provider
+ * call can take up to 10 s, so the pass stops starting new sends after this
+ * (or earlier at the caller's deadline) and leaves the rest to the next round.
+ */
+export const SEQUENCE_EMAIL_DISPATCH_TIME_BUDGET_MS = 20_000;
+
+/**
+ * Sequence e-mails (F-3) and delayed automation step e-mails (F-4) are
+ * dispatched on their own quota; every other trigger here.
+ */
+const TIME_BOUND_TRIGGERS = { notIn: [...DELAYED_STEP_EMAIL_TRIGGERS] };
+const DELAYED_STEP_TRIGGERS = { in: [...DELAYED_STEP_EMAIL_TRIGGERS] };
+
+/** lastErrorCode of a delivery the send-time snapshot checks superseded (not a verification mail). */
+export function supersededCodeForTrigger(trigger: string) {
+  if (trigger === SEQUENCE_EMAIL_TRIGGER) return "sequence_superseded";
+  if (trigger === AUTOMATION_STEP_EMAIL_TRIGGER) return "automation_step_superseded";
+  return "config_superseded";
+}
+
+async function recoverStaleLeases(
+  db: ReturnType<typeof getDb>,
+  now: Date,
+  limit: number,
+  trigger: Prisma.EmailDeliveryWhereInput["trigger"],
+) {
   const staleCutoff = new Date(now.getTime() - DELIVERY_LEASE_MS);
   const stale = await db.emailDelivery.findMany({
-    where: { status: "sending", claimedAt: { lte: staleCutoff } },
+    where: { status: "sending", claimedAt: { lte: staleCutoff }, trigger },
     orderBy: { claimedAt: "asc" },
     take: limit,
   });
   const results: Array<{ deliveryId: string; status: string }> = [];
-
   for (const delivery of stale) {
     const exhausted = delivery.attemptCount >= delivery.maxAttempts;
     const recovered = await db.emailDelivery.updateMany({
@@ -1605,21 +1911,66 @@ export async function processDueEmailDeliveries(limit = 20) {
     });
     results.push({ deliveryId: delivery.id, status: recovered.count === 1 ? (exhausted ? "exhausted" : "recovered") : "claimed_elsewhere" });
   }
+  return results;
+}
 
+function dueDeliveryWhere(now: Date, trigger: Prisma.EmailDeliveryWhereInput["trigger"]): Prisma.EmailDeliveryWhereInput {
+  return {
+    status: { in: ["queued", "failed"] },
+    nextAttemptAt: { lte: now },
+    trigger,
+    // F-036: a suspended vendor's queue waits without starving other tenants.
+    ...ACTIVE_VENDOR_RELATION,
+  };
+}
+
+/**
+ * Time-bound mail (confirmations, reminders, follow-ups, notices): the round's
+ * first dispatch pass, unchanged except that F-3 sequence e-mails and F-4
+ * delayed automation step e-mails are left to processDueSequenceEmailDeliveries,
+ * so they never take this quota (S1).
+ */
+export async function processDueEmailDeliveries(limit = 20) {
+  const db = getDb();
+  const now = new Date();
+  const results = await recoverStaleLeases(db, now, limit, TIME_BOUND_TRIGGERS);
   const remaining = Math.max(0, limit - results.length);
   if (remaining === 0) return results;
   const due = await db.emailDelivery.findMany({
-    where: {
-      status: { in: ["queued", "failed"] },
-      nextAttemptAt: { lte: now },
-      // F-036: a suspended vendor's queue waits without starving other tenants.
-      ...ACTIVE_VENDOR_RELATION,
-    },
+    where: dueDeliveryWhere(now, TIME_BOUND_TRIGGERS),
     orderBy: { nextAttemptAt: "asc" },
     take: remaining,
     select: { id: true },
   });
   for (const delivery of due) {
+    const result = await dispatchEmailDelivery(delivery.id);
+    results.push({ deliveryId: delivery.id, status: result.status });
+  }
+  return results;
+}
+
+/**
+ * F-3 sequence e-mails and F-4 delayed automation step e-mails, on their own
+ * quota at the end of the job round. Stops
+ * starting sends after SEQUENCE_EMAIL_DISPATCH_TIME_BUDGET_MS or at
+ * `deadline` (epoch ms), whichever comes first; the rest waits.
+ */
+export async function processDueSequenceEmailDeliveries(options: { limit?: number; deadline?: number } = {}) {
+  const db = getDb();
+  const now = new Date();
+  const limit = Math.max(0, options.limit ?? SEQUENCE_EMAIL_DISPATCH_LIMIT);
+  const stopAt = Math.min(Date.now() + SEQUENCE_EMAIL_DISPATCH_TIME_BUDGET_MS, options.deadline ?? Number.POSITIVE_INFINITY);
+  const results = await recoverStaleLeases(db, now, limit, DELAYED_STEP_TRIGGERS);
+  const remaining = Math.max(0, limit - results.length);
+  if (remaining === 0) return results;
+  const due = await db.emailDelivery.findMany({
+    where: dueDeliveryWhere(now, DELAYED_STEP_TRIGGERS),
+    orderBy: { nextAttemptAt: "asc" },
+    take: remaining,
+    select: { id: true },
+  });
+  for (const delivery of due) {
+    if (Date.now() >= stopAt) break;
     const result = await dispatchEmailDelivery(delivery.id);
     results.push({ deliveryId: delivery.id, status: result.status });
   }

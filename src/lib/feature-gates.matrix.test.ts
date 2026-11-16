@@ -66,6 +66,7 @@ vi.mock("@/lib/auth", async (importOriginal) => ({
   requireVendorContext: async () => vendorContext(),
   requireVendorManagerContext: async () => vendorContext(),
   requireVendorManager: async () => state.vendor,
+  requireVendorManagerMember: async () => vendorContext(),
   requireVendorFinance: async () => vendorContext(),
   requireVendorOwnerFinance: async () => vendorContext(),
 }));
@@ -104,7 +105,7 @@ vi.mock("next/headers", () => ({
 }));
 vi.mock("next/cache", () => ({ revalidatePath: () => undefined, revalidateTag: () => undefined }));
 
-const ALL_GRANTS = ["courses", "billing", "funnel_binding", "consultation_booking", "browser_live", "danmaku"];
+const ALL_GRANTS = ["courses", "billing", "funnel_binding", "consultation_booking", "browser_live", "danmaku", "email_sequences", "automation_delayed_steps"];
 
 function closeModule(feature: string) {
   state.vendor.enabledFeatureModules = ["funnel_builder", "live_webinar", "affiliate_program", "tax_remuneration", "analytics_advanced", "consultation_booking"];
@@ -157,6 +158,7 @@ const ENTRIES: Entry[] = [
   { feature: "consultation_booking", kind: "page", name: "/consultations/mobile", run: async () => (await import("@/app/(app)/consultations/mobile/page")).default() },
   // courses
   { feature: "courses", kind: "action", name: "saveCourseLessonAction", run: async () => (await import("@/app/actions/course-curriculum-actions")).saveCourseLessonAction(form({ productId: "product-1", revision: "1", chapterTitle: "第一章", title: "第一單元", videoUrl: "https://media.example.test/course.mp4", durationSeconds: "100" })) },
+  { feature: "courses", kind: "action", name: "renameCourseChapterAction", run: async () => (await import("@/app/actions/course-curriculum-actions")).renameCourseChapterAction(form({ productId: "product-1", chapterId: "chapter-1", revision: "1", title: "新章節名稱" })) },
   { feature: "courses", kind: "route", name: "GET /portal/[vendorSlug]/learn/[courseId]/progress", run: async () => (await import("@/app/portal/[vendorSlug]/learn/[courseId]/progress/route")).GET(jsonRequest("https://app.example.test/portal/shop/learn/c1/progress"), { params: Promise.resolve({ vendorSlug: "shop", courseId: "c1" }) }) },
   { feature: "courses", kind: "page", name: "/products/[id]/lessons", run: async () => (await import("@/app/(app)/products/[id]/lessons/page")).default({ params: Promise.resolve({ id: "product-1" }), searchParams: Promise.resolve({}) }) },
   // billing
@@ -172,6 +174,17 @@ const ENTRIES: Entry[] = [
   { feature: "browser_live", kind: "page", name: "/lives/[id]/presenter", run: async () => (await import("@/app/(app)/lives/[id]/presenter/page")).default({ params: Promise.resolve({ id: "live-1" }) }) },
   // danmaku (no Server Action exists; the page-level gate is the studio prop, covered in live-interaction-studio.test.tsx)
   { feature: "danmaku", kind: "route", name: "GET /api/live-danmaku/scripted", run: async () => (await import("@/app/api/live-danmaku/scripted/route")).GET(jsonRequest("https://app.example.test/api/live-danmaku/scripted?liveId=live-1")) },
+  // email_sequences (F-3; no route handler: the job and the verify route check the grant per vendor in delayed-step-runs.ts)
+  { feature: "email_sequences", kind: "action", name: "saveEmailSequenceAction", run: async () => (await import("@/app/actions/email-sequence-actions")).saveEmailSequenceAction(
+    { status: "idle", message: null, fieldErrors: {}, draft: null, expectedVersion: null, errorVersion: 0 },
+    form({ name: "序列", liveId: "live-1", stepCount: "1", "steps.0.delayValue": "1", "steps.0.delayUnit": "days", "steps.0.messageTemplateId": "template-1", "steps.0.isActive": "on" }),
+  ) },
+  { feature: "email_sequences", kind: "action", name: "activateEmailSequenceAction", run: async () => (await import("@/app/actions/email-sequence-actions")).activateEmailSequenceAction(form({ sequenceId: "seq-1", expectedVersion: "1" })) },
+  { feature: "email_sequences", kind: "page", name: "/messages/sequences", run: async () => (await import("@/app/(app)/messages/sequences/page")).default({ searchParams: Promise.resolve({}) }) },
+  // automation_delayed_steps (F-4 PR 2; the page only hides its section, the event and the worker check the grant per vendor)
+  { feature: "automation_delayed_steps", kind: "action", name: "createAutomationRuleStepAction", run: async () => (await import("@/app/actions/automation-actions")).createAutomationRuleStepAction(form({ ruleId: "rule-1", delayValue: "1", delayUnit: "days", actionTag: "on", customerTag: "第二天", stepActive: "on" })) },
+  { feature: "automation_delayed_steps", kind: "action", name: "updateAutomationRuleStepAction", run: async () => (await import("@/app/actions/automation-actions")).updateAutomationRuleStepAction(form({ ruleId: "rule-1", stepId: "step-1", delayValue: "2", delayUnit: "hours", actionTag: "on", customerTag: "第二天" })) },
+  { feature: "automation_delayed_steps", kind: "action", name: "deleteAutomationRuleStepAction", run: async () => (await import("@/app/actions/automation-actions")).deleteAutomationRuleStepAction(form({ ruleId: "rule-1", stepId: "step-1" })) },
   { feature: "danmaku", kind: "route", name: "GET /api/live-danmaku (viewer)", run: async () => (await import("@/app/api/live-danmaku/route")).GET(jsonRequest("https://app.example.test/api/live-danmaku?vendorId=vendor-1&liveId=live-1", { headers: { cookie: "celebratedeal_live_viewer=" + "a".repeat(43) } })) },
 ];
 
@@ -187,6 +200,8 @@ describe("closed-beta module × entry matrix (F-001 / F-002)", () => {
     expect([...kinds("funnel_binding")].sort()).toEqual(["action", "page"]);
     expect([...kinds("browser_live")].sort()).toEqual(["page", "route"]);
     expect([...kinds("danmaku")]).toEqual(["route"]);
+    expect([...kinds("email_sequences")].sort()).toEqual(["action", "page"]);
+    expect([...kinds("automation_delayed_steps")]).toEqual(["action"]);
   });
 
   it.each(ENTRIES)("$feature $kind $name is blocked while the module is closed", async (entry) => {
@@ -252,9 +267,9 @@ const STATIC_MATRIX: Array<{ feature: string; file: string; gate: RegExp; count?
   // courses
   { feature: "courses", file: "src/app/(app)/products/[id]/lessons/page.tsx", gate: /requireFeatureOrNotFound\(vendor, "courses"\)/u },
   { feature: "courses", file: "src/app/(app)/products/[id]/community/page.tsx", gate: /requireFeatureOrNotFound\(vendor, "courses"\)/u },
-  { feature: "courses", file: "src/app/actions/course-curriculum-actions.ts", gate: /requireFeature\(vendor, "courses"\)/u },
+  { feature: "courses", file: "src/app/actions/course-curriculum-actions.ts", gate: /requireFeature\(vendor, "courses"\)/gu, count: 2 },
   { feature: "courses", file: "src/app/actions/course-community-actions.ts", gate: /requireFeature\(vendor, "courses"\)/u },
-  { feature: "courses", file: "src/app/actions/product-actions.ts", gate: /isVendorFeatureEnabled\(db, vendorId, "courses"\)/u },
+  { feature: "courses", file: "src/lib/product-save.ts", gate: /isVendorFeatureEnabled\(db, vendorId, "courses"\)/u },
   { feature: "courses", file: "src/app/portal/[vendorSlug]/learn/[courseId]/page.tsx", gate: /requireVendorFeatureOrNotFound\(getDb\(\), session\.vendorId, "courses"\)/u },
   { feature: "courses", file: "src/app/portal/[vendorSlug]/learn/[courseId]/community/page.tsx", gate: /requireVendorFeatureOrNotFound\(getDb\(\), session\.vendorId, "courses"\)/u },
   { feature: "courses", file: "src/app/portal/[vendorSlug]/learn/[courseId]/community/[postId]/page.tsx", gate: /requireVendorFeatureOrNotFound\(getDb\(\), session\.vendorId, "courses"\)/u },
@@ -279,6 +294,16 @@ const STATIC_MATRIX: Array<{ feature: string; file: string; gate: RegExp; count?
   { feature: "danmaku", file: "src/app/api/live-danmaku/route.ts", gate: /featureGateResponse\(auth\.vendor, "danmaku"\)|isVendorFeatureEnabled\(getDb\(\), vendorId, "danmaku"\)/gu, count: 2 },
   { feature: "danmaku", file: "src/app/api/live-danmaku/scripted/route.ts", gate: /featureGateResponse\(auth\.vendor, "danmaku"\)/u },
   { feature: "danmaku", file: "src/app/(app)/lives/[id]/edit/page.tsx", gate: /danmakuEnabled=\{isFeatureEnabled\(vendor, "danmaku"\)\}/u },
+  // email_sequences (F-3): pages, Server Actions, and the per-vendor check of enrollment, backfill and worker
+  ...["page.tsx", "new/page.tsx", "[id]/edit/page.tsx"].map((file) => ({ feature: "email_sequences", file: `src/app/(app)/messages/sequences/${file}`, gate: /requireFeatureOrNotFound\(vendor, "email_sequences"\)/u })),
+  { feature: "email_sequences", file: "src/app/actions/email-sequence-actions.ts", gate: /requireFeature\(vendor, "email_sequences"\)/u },
+  { feature: "email_sequences", file: "src/lib/delayed-step-runs.ts", gate: /isFeatureEnabled\(vendor, EMAIL_SEQUENCES_FEATURE\)|betaFeatureGrants: \{ has: EMAIL_SEQUENCES_FEATURE \}|\$\{EMAIL_SEQUENCES_FEATURE\} = ANY\(v\."betaFeatureGrants"\)/gu, count: 5 },
+  // automation_delayed_steps (F-4 PR 2): step Server Actions, the page section, run creation, the worker and the send-time check
+  { feature: "automation_delayed_steps", file: "src/app/actions/automation-actions.ts", gate: /requireFeature\(vendor, AUTOMATION_DELAYED_STEPS_FEATURE\)/gu, count: 3 },
+  { feature: "automation_delayed_steps", file: "src/app/(app)/settings/automations/page.tsx", gate: /isFeatureEnabled\(vendor, AUTOMATION_DELAYED_STEPS_FEATURE\)/u },
+  { feature: "automation_delayed_steps", file: "src/lib/automation-workflow.ts", gate: /isFeatureEnabled\(vendor, AUTOMATION_DELAYED_STEPS_FEATURE\)/u },
+  { feature: "automation_delayed_steps", file: "src/lib/delayed-step-runs.ts", gate: /betaFeatureGrants: \{ has: AUTOMATION_DELAYED_STEPS_GRANT \}|isFeatureEnabled\(vendor, AUTOMATION_DELAYED_STEPS_GRANT\)/gu, count: 2 },
+  { feature: "automation_delayed_steps", file: "src/lib/automation-delayed-steps.ts", gate: /\$\{AUTOMATION_DELAYED_STEPS_FEATURE\} = ANY\(v\."betaFeatureGrants"\)/gu, count: 3 },
 ];
 
 describe("static gate inventory (F-001 / F-002)", () => {

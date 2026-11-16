@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
-import { ArrowLeft, ArrowRight, Check, Sparkles } from "lucide-react";
+import { ArrowLeft, ArrowRight, Check } from "lucide-react";
 import type { SalesWorkspaceQuestionnaire } from "@/lib/sales-workspace";
 
 export type QuestionnaireAnswers = SalesWorkspaceQuestionnaire;
@@ -103,26 +103,26 @@ export function PersonalizedOnboardingQuestionnaire({
           <span>第 {step + 1} 題，共 {QUESTIONS.length} 題</span><span>{progress}%</span>
         </div>
         <div className="h-2 overflow-hidden rounded-full bg-slate-200" role="progressbar" aria-label="問卷進度" aria-valuemin={0} aria-valuemax={100} aria-valuenow={progress} aria-valuetext={`第 ${step + 1} 題，共 ${QUESTIONS.length} 題`}>
-          <div className="h-full rounded-full bg-gradient-to-r from-blue-600 to-indigo-500 transition-[width] motion-reduce:transition-none" style={{ width: `${progress}%` }} />
+          <div className="h-full rounded-full bg-primary transition-[width] motion-reduce:transition-none" style={{ width: `${progress}%` }} />
         </div>
       </div>
-      <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-[0_20px_60px_rgba(15,23,42,0.08)] sm:p-8">
-        <p className="mb-3 inline-flex items-center gap-2 text-sm font-semibold text-blue-700"><Sparkles size={16} aria-hidden="true" />個人化工作空間</p>
+      <div className="rounded-xl border border-border bg-card p-5 shadow-sm sm:p-8">
+        <p className="mb-3 text-sm font-semibold text-primary">個人化工作空間</p>
         <h1 id="question-title" className="text-2xl font-bold tracking-tight text-slate-950 sm:text-3xl">{question.title}</h1>
         {question.multiple ? <p className="mt-2 text-sm text-slate-500">可複選，選擇所有適用項目。</p> : null}
         <div className="mt-7 grid gap-3 sm:grid-cols-2" role={question.multiple ? "group" : "radiogroup"} aria-label={question.title}>
           {question.options.map((option) => {
             const active = Array.isArray(selected) ? selectedValues.includes(option.value) : selected === option.value;
-            return <button key={option.value} type="button" role={question.multiple ? "checkbox" : "radio"} aria-checked={active} disabled={isPending} onClick={() => choose(option.value)} className={`flex min-h-24 items-start gap-3 rounded-2xl border p-4 text-left transition focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-blue-200 ${active ? "border-blue-600 bg-blue-50 text-blue-950 shadow-sm" : "border-slate-200 bg-white text-slate-800 hover:border-slate-300 hover:bg-slate-50"}`}>
-              <span className={`mt-0.5 grid size-6 shrink-0 place-items-center rounded-full border ${active ? "border-blue-600 bg-blue-600 text-white" : "border-slate-300 bg-white"}`}>{active ? <Check size={15} aria-hidden="true" /> : null}</span>
+            return <button key={option.value} type="button" role={question.multiple ? "checkbox" : "radio"} aria-checked={active} disabled={isPending} onClick={() => choose(option.value)} className={`flex min-h-24 items-start gap-3 rounded-lg border p-4 text-left transition motion-reduce:transition-none focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-blue-200 ${active ? "border-primary bg-blue-50 text-slate-950" : "border-border bg-card text-slate-800 hover:border-border-control hover:bg-slate-50"}`}>
+              <span className={`mt-0.5 grid size-6 shrink-0 place-items-center rounded-full border ${active ? "border-primary bg-primary text-white" : "border-border-control bg-card"}`}>{active ? <Check size={15} aria-hidden="true" /> : null}</span>
               <span><span className="block font-semibold">{option.label}</span>{option.hint ? <span className="mt-1 block text-sm leading-5 text-slate-500">{option.hint}</span> : null}</span>
             </button>;
           })}
         </div>
         <p className="mt-4 min-h-5 text-sm text-slate-500" role={saveState === "error" ? "alert" : "status"} aria-live="polite">{liveMessage}</p>
         <div className="mt-3 flex flex-col-reverse gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <button type="button" disabled={step === 0 || isPending} onClick={() => setStep((value) => Math.max(0, value - 1))} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl px-4 text-sm font-semibold text-slate-600 hover:bg-slate-100 disabled:opacity-40"><ArrowLeft size={17} aria-hidden="true" />上一題</button>
-          <button type="button" disabled={!canContinue || isPending || saveState === "saving" || saveState === "error"} onClick={next} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-blue-600 px-5 text-sm font-semibold text-white shadow-sm hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50">{step === QUESTIONS.length - 1 ? "產生我的工作空間" : "下一題"}<ArrowRight size={17} aria-hidden="true" /></button>
+          <button type="button" disabled={step === 0 || isPending} onClick={() => setStep((value) => Math.max(0, value - 1))} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg px-4 text-sm font-semibold text-slate-600 hover:bg-slate-100 disabled:opacity-40"><ArrowLeft size={17} aria-hidden="true" />上一題</button>
+          <button type="button" disabled={!canContinue || isPending || saveState === "saving" || saveState === "error"} onClick={next} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg bg-primary px-5 text-sm font-semibold text-white hover:bg-primary-dark disabled:cursor-not-allowed disabled:opacity-50">{step === QUESTIONS.length - 1 ? "產生我的工作空間" : "下一題"}<ArrowRight size={17} aria-hidden="true" /></button>
         </div>
       </div>
     </section>

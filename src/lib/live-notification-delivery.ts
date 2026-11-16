@@ -783,7 +783,7 @@ export async function isCurrentLiveNotificationDeliverySnapshot(
 
 export async function supersedeLiveNotificationDeliveriesForLifecycle(
   tx: Pick<Prisma.TransactionClient, "emailDelivery">,
-  input: { vendorId: string; liveId: string; triggers: LiveNotificationDeliveryTrigger[] },
+  input: { vendorId: string; liveId: string; triggers: Array<LiveNotificationDeliveryTrigger | "post_live_followup"> },
 ) {
   return tx.emailDelivery.updateMany({
     where: {
@@ -811,6 +811,17 @@ export async function supersedeLiveNotificationDeliveriesForLifecycle(
  * The Live row lock and the re-check keep a concurrent "turn evergreen off
  * again" from having its fresh rows cancelled: if the Live is no longer an
  * active evergreen one, nothing is touched. Tenant-bound on every statement.
+ *
+ * post_live_followup is swept here too, but its writer
+ * (processDuePostLiveFollowups) does not lock the Live row, so a follow-up
+ * committed after this pass is not covered by the lock argument above. Such a
+ * row is stopped by the send-time guard (isCurrentPostLiveFollowupDelivery
+ * only accepts, on an active evergreen Live, the revision anchored on the
+ * registrant's own EvergreenSessionAssignment) and becomes `superseded` there.
+ * The sweep also cancels queued per-registrant evergreen follow-ups when the
+ * settings are saved again while evergreen is active; the job reactivates
+ * those (same revision id) on its next run while their session is still in
+ * the 72-hour look-back window.
  */
 export async function supersedeFixedTimeNotificationsForActiveEvergreen(
   input: { vendorId: string; liveId: string },
@@ -830,7 +841,8 @@ export async function supersedeFixedTimeNotificationsForActiveEvergreen(
     const superseded = await supersedeLiveNotificationDeliveriesForLifecycle(tx, {
       vendorId: input.vendorId,
       liveId: input.liveId,
-      triggers: [...LIVE_NOTIFICATION_DELIVERY_TRIGGERS],
+      // post_live_followup is anchored on the shared scheduledAt as well.
+      triggers: [...LIVE_NOTIFICATION_DELIVERY_TRIGGERS, "post_live_followup"],
     });
     return superseded.count;
   }, { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted });

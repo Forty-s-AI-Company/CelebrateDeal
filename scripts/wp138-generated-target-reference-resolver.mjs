@@ -15,7 +15,7 @@ const targetRouteKey = "/api/cloudflare/stream-webhook";
 const reportPath = path.join(root, ".ai-team", "reports", "wp138-generated-target-reference-receipt.json");
 const wp136ReceiptPath = path.join(root, ".ai-team", "reports", "wp136-next-temp-isolation-audit-receipt.json");
 const wp137ReceiptPath = path.join(root, ".ai-team", "reports", "wp137-temp-next-route-lineage-receipt.json");
-const protectedInputs = [targetRoute, "next.config.ts", "tsconfig.json", "package.json", "package-lock.json"];
+const protectedInputs = [targetRoute, "next.config.ts", "tsconfig.json", "tsconfig.build.json", "package.json", "package-lock.json"];
 const ownedPaths = new Set([
   "scripts/wp138-generated-target-reference-resolver.mjs",
   "scripts/wp138-generated-target-reference-resolver.test.mjs",

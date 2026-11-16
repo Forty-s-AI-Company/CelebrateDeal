@@ -3,6 +3,7 @@ import { MessageTemplateForm } from "@/components/message-template-form";
 import { PageHeader } from "@/components/ui";
 import { requireVendorManager } from "@/lib/auth";
 import { getDb } from "@/lib/db";
+import { isFeatureEnabled } from "@/lib/vendor-feature-toggles";
 
 export default async function EditMessageTemplatePage({
   params,
@@ -18,7 +19,11 @@ export default async function EditMessageTemplatePage({
   return (
     <>
       <PageHeader title="編輯訊息模板" description="更新通知渠道、觸發條件與文案。" />
-      <MessageTemplateForm template={template} error={error === "invalid_template" ? error : null} />
+      <MessageTemplateForm
+        template={template}
+        error={error === "invalid_template" ? error : null}
+        sequenceEmailAvailable={isFeatureEnabled(vendor, "email_sequences")}
+      />
     </>
   );
 }

@@ -25,7 +25,7 @@ export function StudentPortalLoginForm({
         Email
         <input name="email" type="email" inputMode="email" autoComplete="email" required maxLength={254} placeholder="you@example.com" className="h-12 rounded-xl border border-slate-500 bg-white px-4 text-base text-slate-950 outline-none transition placeholder:text-slate-500 focus:border-current focus:ring-4 focus:ring-blue-100" />
       </label>
-      <button type="submit" disabled={pending} className="inline-flex min-h-12 w-full items-center justify-center rounded-xl px-5 text-base font-bold text-white transition hover:brightness-95 active:translate-y-px disabled:cursor-not-allowed disabled:opacity-60" style={{
+      <button type="submit" disabled={pending} className="inline-flex min-h-12 w-full items-center justify-center rounded-xl px-5 text-base font-bold text-white transition-[color,background-color,filter,translate] hover:brightness-95 active:translate-y-px disabled:cursor-not-allowed disabled:opacity-60" style={{
       backgroundColor: accentColor
     }}>
         {pending ? t("\u6B63\u5728\u6E96\u5099\u5B89\u5168\u9023\u7D50\u2026") : t("\u5BC4\u9001\u767B\u5165\u9023\u7D50")}

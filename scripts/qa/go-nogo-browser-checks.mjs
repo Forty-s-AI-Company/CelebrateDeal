@@ -44,6 +44,12 @@ await login(page);
   await page.getByText("從空白開始").first().click();
   await page.fill('input[name="title"]', "GoNoGo 撞名測試");
   await page.waitForTimeout(1500);
+  // The address is in the 內容 step's collapsed 進階設定.
+  // Open it only if it is still closed: clicking an open <summary> would collapse it again.
+  const contentAdvanced = page.locator('details[data-advanced-settings="content"]');
+  if (!(await contentAdvanced.evaluate((element) => element.open))) {
+    await contentAdvanced.locator(":scope > summary").click();
+  }
   await page.fill("#live-slug", TAKEN_SLUG);
   await page.waitForTimeout(3500);
   const msg = await page.locator("#live-slug-message").innerText();

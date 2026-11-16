@@ -1,8 +1,16 @@
 import { describe, expect, it } from "vitest";
-import { emptyLiveStudioDraft, LiveStudioDraftPayloadSchema, SaveLiveStudioDraftRequestSchema } from "./live-studio-draft";
+import {
+  emptyLiveStudioDraft,
+  LIVE_STUDIO_V2_STEP_KEYS,
+  LiveStudioDraftPayloadSchema,
+  liveStudioDraftResponsePayload,
+  parseStoredLiveStudioDraft,
+  SaveLiveStudioDraftRequestSchema,
+} from "./live-studio-draft";
+import { LIVE_STUDIO_STEPS, liveStudioStepIndex } from "./live-studio-steps";
 
 describe("LiveStudioDraftPayloadSchema", () => {
-  it("builds a canonical bounded eight-step draft", () => {
+  it("builds a canonical bounded four-step draft", () => {
     expect(emptyLiveStudioDraft()).toMatchObject({
       studioPreset: "CUSTOM",
       title: "",
@@ -14,9 +22,10 @@ describe("LiveStudioDraftPayloadSchema", () => {
       liveReminderOffsetMinutes: "60",
       notificationRules: [],
       replayAvailableUntil: "",
-      flowVersion: 2,
+      flowVersion: 3,
       activeStep: 0,
     });
+    expect(LIVE_STUDIO_STEPS.map((step) => step.key)).toEqual(["content", "sales", "notifications", "publish"]);
   });
 
   it("persists a bounded Live Studio purpose without accepting invented presets", () => {
@@ -45,7 +54,7 @@ describe("LiveStudioDraftPayloadSchema", () => {
         isActive: true,
       }],
       replayAvailableUntil: "2026-08-21T20:00",
-      activeStep: 7,
+      activeStep: 3,
     }).success).toBe(true);
     expect(LiveStudioDraftPayloadSchema.safeParse({
       ...emptyLiveStudioDraft(),
@@ -53,20 +62,52 @@ describe("LiveStudioDraftPayloadSchema", () => {
     }).success).toBe(true);
   });
 
+  // v1 → v2 keeps the existing legacy table ([0, 2, 1, 6, 7]); v2 → v3 then
+  // folds it into the four steps.
   it.each([
-    [0, 0], [1, 2], [2, 1], [3, 6], [4, 7],
-  ])("maps legacy v1 step %s to canonical v2 step %s without changing values", (legacyStep, canonicalStep) => {
+    [0, "content"], [1, "sales"], [2, "content"], [3, "sales"], [4, "publish"],
+  ] as const)("maps legacy v1 step %s through v2 to the v3 %s step without changing values", (legacyStep, step) => {
     const { flowVersion, ...legacy } = emptyLiveStudioDraft();
-    expect(flowVersion).toBe(2);
+    expect(flowVersion).toBe(3);
     const parsed = LiveStudioDraftPayloadSchema.parse({ ...legacy, title: "保留內容", activeStep: legacyStep });
-    expect(parsed).toMatchObject({ flowVersion: 2, activeStep: canonicalStep, title: "保留內容" });
+    expect(parsed).toMatchObject({ flowVersion: 3, activeStep: liveStudioStepIndex(step), title: "保留內容" });
   });
 
-  it("does not remap an already canonical v2 step and enforces its boundaries", () => {
+  it.each([
+    [0, "content"], [1, "content"], [2, "sales"], [3, "content"],
+    [4, "content"], [5, "notifications"], [6, "sales"], [7, "publish"],
+  ] as const)("maps eight-step v2 step %s to the v3 %s step without changing values", (versionTwoStep, step) => {
+    const versionTwo = {
+      ...emptyLiveStudioDraft(),
+      flowVersion: 2,
+      title: "八步草稿",
+      productIds: ["product-1"],
+      messageTemplateId: "template-1",
+      activeStep: versionTwoStep,
+    };
+    const parsed = LiveStudioDraftPayloadSchema.parse(versionTwo);
+    expect(parsed).toEqual({ ...versionTwo, flowVersion: 3, activeStep: liveStudioStepIndex(step) });
+    expect(LIVE_STUDIO_V2_STEP_KEYS[versionTwoStep]).toBe(step);
+  });
+
+  it("does not remap an already canonical v3 step and enforces every version's boundaries", () => {
     expect(LiveStudioDraftPayloadSchema.parse({ ...emptyLiveStudioDraft(), activeStep: 2 }).activeStep).toBe(2);
-    expect(LiveStudioDraftPayloadSchema.safeParse({ ...emptyLiveStudioDraft(), activeStep: 7 }).success).toBe(true);
-    expect(LiveStudioDraftPayloadSchema.safeParse({ ...emptyLiveStudioDraft(), activeStep: 8 }).success).toBe(false);
+    expect(LiveStudioDraftPayloadSchema.safeParse({ ...emptyLiveStudioDraft(), activeStep: 3 }).success).toBe(true);
+    expect(LiveStudioDraftPayloadSchema.safeParse({ ...emptyLiveStudioDraft(), activeStep: 4 }).success).toBe(false);
     expect(LiveStudioDraftPayloadSchema.safeParse({ ...emptyLiveStudioDraft(), activeStep: -1 }).success).toBe(false);
+    expect(LiveStudioDraftPayloadSchema.safeParse({ ...emptyLiveStudioDraft(), flowVersion: 2, activeStep: 7 }).success).toBe(true);
+    expect(LiveStudioDraftPayloadSchema.safeParse({ ...emptyLiveStudioDraft(), flowVersion: 2, activeStep: 8 }).success).toBe(false);
+    expect(LiveStudioDraftPayloadSchema.safeParse({ ...emptyLiveStudioDraft(), flowVersion: 4 }).success).toBe(false);
+    const { flowVersion: _flowVersion, ...legacy } = emptyLiveStudioDraft();
+    void _flowVersion;
+    expect(LiveStudioDraftPayloadSchema.safeParse({ ...legacy, activeStep: 5 }).success).toBe(false);
+  });
+
+  it("keeps v2 and v1 drafts strict: unknown fields are still rejected", () => {
+    expect(LiveStudioDraftPayloadSchema.safeParse({ ...emptyLiveStudioDraft(), flowVersion: 2, cloudflareLiveInputUid: "forged" }).success).toBe(false);
+    const { flowVersion: _flowVersion, ...legacy } = emptyLiveStudioDraft();
+    void _flowVersion;
+    expect(LiveStudioDraftPayloadSchema.safeParse({ ...legacy, cloudflareLiveInputUid: "forged" }).success).toBe(false);
   });
 
   it("rejects unknown fields, unsafe URLs, oversized arrays, and unbounded JSON text", () => {
@@ -75,6 +116,55 @@ describe("LiveStudioDraftPayloadSchema", () => {
     expect(LiveStudioDraftPayloadSchema.safeParse({ ...emptyLiveStudioDraft(), productIds: Array.from({ length: 101 }, (_, index) => `product-${index}`) }).success).toBe(false);
     expect(LiveStudioDraftPayloadSchema.safeParse({ ...emptyLiveStudioDraft(), customAllocations: "x".repeat(20_001) }).success).toBe(false);
     expect(LiveStudioDraftPayloadSchema.safeParse({ ...emptyLiveStudioDraft(), liveReminderOffsetMinutes: "45" }).success).toBe(false);
+  });
+});
+
+describe("parseStoredLiveStudioDraft", () => {
+  it("reports a stored v3 row as current regardless of key order", () => {
+    const stored = { ...emptyLiveStudioDraft(), title: "目前版本", activeStep: 2 };
+    const reordered = Object.fromEntries(Object.entries(stored).reverse());
+    expect(parseStoredLiveStudioDraft(stored)).toEqual({ payload: stored, outdated: false });
+    expect(parseStoredLiveStudioDraft(reordered)).toEqual({ payload: stored, outdated: false });
+  });
+
+  it("converts a stored v2 row to v3 and marks it for a re-save before publishing", () => {
+    const stored = { ...emptyLiveStudioDraft(), flowVersion: 2, title: "八步草稿", activeStep: 5 };
+    const parsed = parseStoredLiveStudioDraft(stored);
+    expect(parsed).toEqual({ payload: { ...stored, flowVersion: 3, activeStep: liveStudioStepIndex("notifications") }, outdated: true });
+  });
+
+  it("marks a v3 row that is missing defaulted fields as outdated and rejects invalid rows", () => {
+    expect(parseStoredLiveStudioDraft({ flowVersion: 3, title: "缺欄位", activeStep: 0 })?.outdated).toBe(true);
+    expect(parseStoredLiveStudioDraft({ flowVersion: 3, activeStep: 9 })).toBeNull();
+    expect(parseStoredLiveStudioDraft("not-a-draft")).toBeNull();
+  });
+});
+
+describe("liveStudioDraftResponsePayload", () => {
+  it("echoes a v2 request's flow version and step over the canonical fields", () => {
+    const request = { ...emptyLiveStudioDraft(), title: "舊分頁", flowVersion: 2, activeStep: 6 };
+    const canonical = LiveStudioDraftPayloadSchema.parse(request);
+    expect(canonical).toMatchObject({ flowVersion: 3, activeStep: liveStudioStepIndex("sales") });
+
+    expect(liveStudioDraftResponsePayload(request, canonical)).toEqual(request);
+    // An omitted v2 step defaults to the first step, as the eight-step schema did.
+    const withoutStep: Record<string, unknown> = { ...request };
+    delete withoutStep.activeStep;
+    expect(liveStudioDraftResponsePayload(withoutStep, LiveStudioDraftPayloadSchema.parse(withoutStep)))
+      .toMatchObject({ flowVersion: 2, activeStep: 0 });
+  });
+
+  it("returns the canonical payload for v3, versionless and malformed requests", () => {
+    const v3 = LiveStudioDraftPayloadSchema.parse({ title: "新分頁", activeStep: 1 });
+    expect(liveStudioDraftResponsePayload({ ...v3 }, v3)).toBe(v3);
+
+    const versionless: Record<string, unknown> = { ...emptyLiveStudioDraft(), activeStep: 3 };
+    delete versionless.flowVersion;
+    const fromVersionless = LiveStudioDraftPayloadSchema.parse(versionless);
+    expect(liveStudioDraftResponsePayload(versionless, fromVersionless)).toBe(fromVersionless);
+
+    expect(liveStudioDraftResponsePayload(undefined, v3)).toBe(v3);
+    expect(liveStudioDraftResponsePayload({ flowVersion: 2, activeStep: 8 }, v3)).toBe(v3);
   });
 });
 

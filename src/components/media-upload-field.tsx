@@ -19,6 +19,7 @@ import {
 } from "@/lib/media-upload-client";
 
 type UploadPhase = "idle" | "ready" | "provisioning" | "uploading" | "finalizing" | "success" | "error";
+export type MediaUploadPhase = UploadPhase;
 type CropAspect = "16:9" | "1:1" | "4:5" | "original";
 type CropPan = { x: number; y: number };
 
@@ -164,6 +165,15 @@ type MediaUploadFieldProps = {
   invalid?: boolean;
   errorId?: string;
   hydrationKey?: number;
+  /** Called after each phase change with the provider resource id known at that point. */
+  onPhaseChange?: (phase: UploadPhase, resourceId: string) => void;
+  /**
+   * Video only: offer 「使用目前畫面作為縮圖」 and capture a default frame for a
+   * thumbnail field in the same form. Off where the form has no thumbnail.
+   */
+  allowFrameCapture?: boolean;
+  /** Replaces the default success line, for a form that needs no separate save. */
+  successMessage?: string;
 };
 
 export function mediaUploadPersistedValue(state: MediaUploadState): MediaUploadPersistedValue {
@@ -425,6 +435,7 @@ function VideoPreview({
   onSeek,
   onCapture,
   captureDisabled,
+  captureEnabled,
 }: {
   url: string;
   fileName: string;
@@ -436,8 +447,11 @@ function VideoPreview({
   onSeek: (value: number) => void;
   onCapture: () => void;
   captureDisabled: boolean;
+  captureEnabled: boolean;
 }) {
   if (!url) return null;
+  // Without frame capture the slider only scrubs the preview; it picks no thumbnail.
+  const timelineLabel = captureEnabled ? "選取影片縮圖畫面" : "預覽播放位置";
   return (
     <div className="grid gap-3 overflow-hidden rounded-lg border border-border bg-slate-950 p-2">
       <video
@@ -461,16 +475,16 @@ function VideoPreview({
             step="0.1"
             value={Math.min(duration, currentTime)}
             onChange={(event) => onSeek(Number(event.target.value))}
-            aria-label="選取影片縮圖畫面"
+            aria-label={timelineLabel}
           />
-          <button
+          {captureEnabled ? <button
             type="button"
             onClick={onCapture}
             disabled={captureDisabled}
             className="inline-flex min-h-10 items-center justify-center rounded-md bg-white px-3 text-sm font-semibold text-slate-900 disabled:cursor-not-allowed disabled:opacity-50"
           >
             使用目前畫面作為縮圖
-          </button>
+          </button> : null}
         </div>
       ) : (
         <p className="px-1 pb-1 text-xs text-slate-200" role="status" aria-live="polite">正在讀取影片時長與尺寸…</p>
@@ -618,6 +632,7 @@ function MediaUploadPreview({
         onSeek={onSeek}
         onCapture={onCapture}
         captureDisabled={isBusy || isCapturingFrame}
+        captureEnabled={props.allowFrameCapture !== false}
       />
     );
   }
@@ -689,7 +704,7 @@ function MediaUploadStatus({
           <p className="flex items-center gap-2 text-xs text-slate-600"><LoaderCircle size={14} className={isBusy ? "animate-spin" : ""} aria-hidden="true" />{isBusy ? `上傳中 ${state.progress}%` : `已上傳 ${state.progress}%`}</p>
         </div>
       ) : null}
-      {state.phase === "success" ? <p role="status" className="flex items-center gap-2 text-sm font-semibold text-emerald-700"><CheckCircle2 size={16} aria-hidden="true" />{props.kind === "video" ? "檔案已送達 Cloudflare Stream，正在處理，尚未可播放；儲存表單後會套用。" : "縮圖上傳完成，儲存表單後即會套用。"}</p> : null}
+      {state.phase === "success" ? <p role="status" className="flex items-center gap-2 text-sm font-semibold text-emerald-700"><CheckCircle2 size={16} aria-hidden="true" />{props.successMessage ?? (props.kind === "video" ? "檔案已送達 Cloudflare Stream，正在處理，尚未可播放；儲存表單後會套用。" : "縮圖上傳完成，儲存表單後即會套用。")}</p> : null}
       {state.errorCode ? <p role="alert" className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">{uploadErrorMessage(props.kind, state.errorCode, props.allowExternalUrlFallback === true)}</p> : null}
     </>
   );
@@ -868,6 +883,7 @@ function MediaUploadFieldView({
 export function MediaUploadField(props: MediaUploadFieldProps) {
   const onValueChange = props.onValueChange;
   const onBlockingChange = props.onBlockingChange;
+  const onPhaseChange = props.onPhaseChange;
   const [state, dispatch] = useReducer(mediaUploadReducer, props, initialState);
   const [videoMetadata, setVideoMetadata] = useState({ duration: 0, width: 0, height: 0 });
   const [videoCurrentTime, setVideoCurrentTime] = useState(0);
@@ -912,6 +928,14 @@ export function MediaUploadField(props: MediaUploadFieldProps) {
   useEffect(() => {
     onBlockingChange?.(blocksFormSubmit);
   }, [blocksFormSubmit, onBlockingChange]);
+
+  const reportedPhaseRef = useRef<{ phase: UploadPhase; resourceId: string }>({ phase: state.phase, resourceId: state.resourceId });
+  useEffect(() => {
+    const reported = reportedPhaseRef.current;
+    if (reported.phase === state.phase && reported.resourceId === state.resourceId) return;
+    reportedPhaseRef.current = { phase: state.phase, resourceId: state.resourceId };
+    onPhaseChange?.(state.phase, state.resourceId);
+  }, [onPhaseChange, state.phase, state.resourceId]);
 
   useEffect(() => {
     if (hydrationKeyRef.current === props.hydrationKey) return;
@@ -985,7 +1009,7 @@ export function MediaUploadField(props: MediaUploadFieldProps) {
     updateFormInput(props.estimatedMinutesInputName, String(estimatedMinutesForDuration(duration)));
     if (duration > 0) {
       const defaultFrameTime = Math.min(1, duration / 2);
-      if (!autoThumbnailCapturedRef.current) {
+      if (!autoThumbnailCapturedRef.current && props.allowFrameCapture !== false) {
         autoThumbnailCapturedRef.current = true;
         element.addEventListener("seeked", () => { void captureCurrentFrame(); }, { once: true });
       }

@@ -11,6 +11,12 @@ export type RegistrationFormBuilderField = {
 
 export const REGISTRATION_FORM_CORE_FIELD_KEYS = new Set(["name", "email"]);
 
+/** Copy a new registration form starts with, in the full builder and in quick create. */
+export const REGISTRATION_FORM_DEFAULT_COPY = {
+  submitLabel: "送出報名",
+  successMessage: "已收到你的資料，開播前會再提醒你。",
+} as const;
+
 export function defaultRegistrationFormBuilderFields(): RegistrationFormBuilderField[] {
   return [
     { key: "name", label: "姓名", type: "text", required: true },

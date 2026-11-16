@@ -30,7 +30,7 @@ const FULL_RULES = ["L-1", "L-2", "L-3", "L-4", "L-5", "L-6", "L-10", "L-11", "F
 const STRESS_RULES = ["L-1", "L-2", "L-3", "L-4", "L-5"];
 const HARNESS_PATH = "/browser-qa/funnel-design";
 const SCHEDULES = ["sample", "far", "live", "replay", "ended"];
-const allowedFiles = ["package.json", "tsconfig.json", "next.config.ts", "postcss.config.mjs", "sentry.server.config.ts", "sentry.edge.config.ts"];
+const allowedFiles = ["package.json", "tsconfig.json", "tsconfig.build.json", "next.config.ts", "postcss.config.mjs", "sentry.server.config.ts", "sentry.edge.config.ts"];
 
 function parseArgs(argv) {
   const args = { templates: [], widths: null, stress: false, all: false, out: null, baseUrl: null, schedules: [null], jpeg: false, skipRules: [] };

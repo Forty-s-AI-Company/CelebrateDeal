@@ -80,13 +80,13 @@ test("WP-88 verifies every guarded page belongs to a browser-proven direct-URL g
 
   // These counts are intentionally exact. A new protected page must update
   // this matrix, so it cannot silently evade direct-URL review.
-  expect(sourceFiles).toHaveLength(100);
+  expect(sourceFiles).toHaveLength(103);
   expect(familyCounts).toEqual({
     vendorContext: 8,
-    vendorManagerMember: 2,
+    vendorManagerMember: 3,
     vendorSupportMember: 2,
-    vendorOwner: 3,
-    vendorManager: 57,
+    vendorOwner: 2,
+    vendorManager: 60,
     vendorFinance: 12,
     authenticated: 1,
     platformFinance: 15,
@@ -98,6 +98,18 @@ test("WP-88 verifies every guarded page belongs to a browser-proven direct-URL g
   const landingPageTemplatesPage = path.join(workspaceRoot, "src", "app", "(app)", "landing-pages", "templates", "page.tsx");
   expect(sourceFiles).toContain(landingPageTemplatesPage);
   expect(guardFor(readFileSync(landingPageTemplatesPage, "utf8"))).toBe("vendorManager");
+  // F-3 Email 追銷序列（list、new、edit）：owner／admin 才能管理，與訊息模板相同；另受 email_sequences 開關。
+  for (const segments of [["page.tsx"], ["new", "page.tsx"], ["[id]", "edit", "page.tsx"]]) {
+    const sequencePage = path.join(workspaceRoot, "src", "app", "(app)", "messages", "sequences", ...segments);
+    expect(sourceFiles).toContain(sequencePage);
+    expect(guardFor(readFileSync(sequencePage, "utf8"))).toBe("vendorManager");
+    expect(readFileSync(sequencePage, "utf8")).toContain('requireFeatureOrNotFound(vendor, "email_sequences")');
+  }
+  // F-4: 自動化設定改為 owner／admin（與漏斗內的自動化、訊息模板一致），不再是 owner 限定。
+  // 其中自訂 LINE 推播動作只限 owner（2026-11-14），由頁面內與 Server Action 判斷，守門函式不變。
+  const automationsPage = path.join(workspaceRoot, "src", "app", "(app)", "settings", "automations", "page.tsx");
+  expect(sourceFiles).toContain(automationsPage);
+  expect(guardFor(readFileSync(automationsPage, "utf8"))).toBe("vendorManagerMember");
   // 設定 hub: any signed-in back-office member; the page itself filters links by role and feature.
   const settingsHubPage = path.join(workspaceRoot, "src", "app", "(app)", "settings", "page.tsx");
   expect(sourceFiles).toContain(settingsHubPage);
@@ -190,11 +202,21 @@ test("WP-88 verifies every guarded page belongs to a browser-proven direct-URL g
     await adminSession.page.goto("/settings");
     await expect(adminSession.page.getByRole("heading", { name: "設定", level: 1, exact: true })).toBeVisible();
     await expect(adminSession.page.locator('main a[href="/settings/brand"]')).toHaveCount(1);
+    await expect(adminSession.page.locator('main a[href="/settings/automations"]')).toHaveCount(1);
     await expect(adminSession.page.locator('main a[href="/settings/line"]')).toHaveCount(0);
     contexts.push(adminSession.context);
     await adminSession.page.goto("/products/new");
     await expect(adminSession.page).toHaveURL(/\/products\/new$/);
     await expect(adminSession.page.getByRole("heading", { name: "新增商品" })).toBeVisible();
+    await adminSession.page.goto("/settings/automations");
+    await expect(adminSession.page).toHaveURL(/\/settings\/automations$/);
+    await expect(adminSession.page.getByRole("heading", { name: "自動化", level: 1, exact: true })).toBeVisible();
+    // Owner decision 2026-11-14: an admin manages automations but cannot set up a custom LINE push.
+    await expect(adminSession.page.getByText("LINE 推播僅限擁有者設定。", { exact: true }).first()).toBeVisible();
+    await expect(adminSession.page.locator('input[name="actionLine"]')).toHaveCount(0);
+    await ownerSession.page.goto("/settings/automations");
+    await expect(ownerSession.page.getByRole("heading", { name: "自動化", level: 1, exact: true })).toBeVisible();
+    await expect(ownerSession.page.locator('input[name="actionLine"]')).toHaveCount(1);
 
     const accountantSession = await signedInPage(browser, accountant.email);
     contexts.push(accountantSession.context);
@@ -206,9 +228,12 @@ test("WP-88 verifies every guarded page belongs to a browser-proven direct-URL g
     await expect(accountantSession.page.getByRole("heading", { name: "設定", level: 1, exact: true })).toBeVisible();
     await expect(accountantSession.page.locator('main a[href="/billing/invoices"]')).toHaveCount(1);
     await expect(accountantSession.page.locator('main a[href="/settings/security"]')).toHaveCount(1);
-    for (const hidden of ["/settings/brand", "/settings/team", "/settings/line", "/onboarding"]) {
+    for (const hidden of ["/settings/brand", "/settings/team", "/settings/line", "/settings/automations", "/onboarding"]) {
       await expect(accountantSession.page.locator(`main a[href="${hidden}"]`)).toHaveCount(0);
     }
+    await accountantSession.page.goto("/settings/automations");
+    await expect(accountantSession.page).toHaveURL(/\/dashboard\?error=insufficient_role$/);
+    await expect(accountantSession.page.getByRole("heading", { name: "自動化", level: 1, exact: true })).toHaveCount(0);
 
     const memberSession = await signedInPage(browser, member.email);
     contexts.push(memberSession.context);

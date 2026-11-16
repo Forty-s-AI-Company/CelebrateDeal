@@ -12,6 +12,7 @@ import {
   resolveEvergreenViewerSession,
   type EvergreenSessionIntent,
 } from "@/lib/evergreen-viewer-session";
+import { recordEvergreenSessionForRegistrant } from "@/lib/evergreen-session-assignment";
 import { getRuntimeLivePublishReadiness } from "@/lib/live-runtime-readiness";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { publicLiveAvailabilityWhere } from "@/lib/sellable-live";
@@ -76,6 +77,18 @@ async function respond(request: Request, input: { liveId: string; vendorId?: str
     now,
   });
   if (!session) return unavailable();
+  if (intent !== "read") {
+    // A verified registrant's assigned session is recorded so the post-live
+    // follow-up goes out after their own session. Only a validly signed
+    // registration cookie leads to a write; it never changes this response.
+    await recordEvergreenSessionForRegistrant({
+      live,
+      session,
+      registration: { request },
+      now,
+      operation: "viewer_session",
+    });
+  }
   const response = NextResponse.json(publicEvergreenSession(session, now), { headers: privateHeaders });
   if (session.issuedToken) {
     response.cookies.set(

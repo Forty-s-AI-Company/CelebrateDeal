@@ -13,8 +13,11 @@ import { processPaymentWebhook } from "@/lib/payment-webhooks";
 import { redactedJsonSnapshot } from "@/lib/redaction";
 
 // A paid notification schedules the receipt email with `after()`
-// (processPaymentWebhook -> scheduleImmediateEmailDispatch), which runs
-// within this limit (see IMMEDIATE_EMAIL_DISPATCH_MAX_DURATION_SECONDS).
+// (processPaymentWebhook -> scheduleImmediateEmailDispatch) and, when it moves
+// an order to paid for the first time, its `payment_paid` automations
+// (processPaymentWebhook -> runPaymentPaidAutomationAfterCommit). Both run
+// after the response, within this limit (see
+// IMMEDIATE_EMAIL_DISPATCH_MAX_DURATION_SECONDS).
 // Segment config only: the webhook response is unchanged.
 export const maxDuration = 60;
 

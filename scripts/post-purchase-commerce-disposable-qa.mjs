@@ -20,7 +20,7 @@ const files = ["prisma/schema.prisma", "prisma.playwright.config.ts",
   "src/app/checkout/recover/[grantId]/page.tsx",
   "src/lib/payment-providers/types.ts", "src/lib/payment-providers/demo.ts", "src/lib/payment-providers/payuni.ts",
   "src/lib/post-purchase-product-policy.ts", "src/lib/post-purchase-product-policy.test.ts",
-  "src/app/actions/product-actions.ts", "src/components/product-form-client.tsx", "src/components/product-form.tsx",
+  "src/lib/product-save.ts", "src/components/product-form-client.tsx", "src/components/product-form.tsx",
   "src/app/api/payments/checkout/route.ts", "src/app/api/payments/checkout/admission/route.ts",
   "src/app/api/payments/checkout/recovery/route.ts",
   "src/app/api/checkout/upsell/route.ts", "src/lib/commerce-checkout.ts", "src/components/commerce-checkout-form.tsx",
@@ -67,7 +67,7 @@ const migration = await main({ afterMigrate: async ({ databaseUrl, environment, 
     fs.mkdirSync(mirror, { recursive: true });
     for (const directory of ["src", "public", "prisma"]) fs.cpSync(path.join(root, directory), path.join(mirror, directory),
       { recursive: true, filter: candidate => !path.basename(candidate).startsWith(".env") });
-    for (const file of ["package.json", "tsconfig.json", "next.config.ts", "postcss.config.mjs", "sentry.server.config.ts",
+    for (const file of ["package.json", "tsconfig.json", "tsconfig.build.json", "next.config.ts", "postcss.config.mjs", "sentry.server.config.ts",
       "sentry.edge.config.ts", "prisma.playwright.config.ts"]) fs.copyFileSync(path.join(root, file), path.join(mirror, file));
     fs.mkdirSync(path.join(mirror, "scripts"));
     fs.copyFileSync(path.join(root, "scripts/local-database-safety.ts"), path.join(mirror, "scripts/local-database-safety.ts"));

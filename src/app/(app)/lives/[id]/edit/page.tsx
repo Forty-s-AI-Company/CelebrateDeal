@@ -2,12 +2,13 @@ import { notFound } from "next/navigation";
 import { LiveStepperForm } from "@/components/live-stepper-form";
 import { LiveInteractionStudio } from "@/components/live-interaction-studio";
 import { EvergreenWebinarSettings, type EvergreenWebinarSettingsValue } from "@/components/evergreen-webinar-settings";
-import { PageHeader } from "@/components/ui";
+import { ButtonLink, PageHeader } from "@/components/ui";
 import { requireVendorManagerContext } from "@/lib/auth";
 import { isFeatureEnabled } from "@/lib/feature-gates";
 import { getCsrfToken } from "@/lib/csrf";
 import { getDb } from "@/lib/db";
-import { LiveStudioDraftPayloadSchema } from "@/lib/live-studio-draft";
+import { LiveStudioDraftPayloadSchema, parseStoredLiveStudioDraft, type LiveStudioDraftPayload } from "@/lib/live-studio-draft";
+import { LIVE_STUDIO_FIRST_STEP_INDEX, liveStudioStepSummary } from "@/lib/live-studio-steps";
 import { parseLiveQuotaPolicy } from "@/lib/live-quota-policy";
 import { liveReadyVideoWhere } from "@/lib/live-video-readiness";
 import { formatZonedDateTimeLocal } from "@/lib/zoned-date-time";
@@ -173,6 +174,25 @@ function LiveResourceWarnings({
   );
 }
 
+/**
+ * The saved edit draft in the current flow version. An older (e.g. eight-step)
+ * or unreadable row falls back to the Live's values where needed and is
+ * flagged so the studio saves it again before a publish claim compares it.
+ */
+function resumedEditDraft(
+  savedDraft: { id: string; revision: number; payload: unknown; updatedAt: Date },
+  basePayload: LiveStudioDraftPayload,
+) {
+  const savedPayload = parseStoredLiveStudioDraft(savedDraft.payload);
+  return {
+    id: savedDraft.id,
+    revision: savedDraft.revision,
+    payload: savedPayload ? savedPayload.payload : basePayload,
+    updatedAt: savedDraft.updatedAt.toISOString(),
+    ...(!savedPayload || savedPayload.outdated ? { storedPayloadOutdated: true } : {}),
+  };
+}
+
 export default async function EditLivePage({
   params,
   searchParams,
@@ -190,7 +210,9 @@ export default async function EditLivePage({
     db.live.findFirst({
       where: { id, vendorId: vendor.id, ...resourceScope.liveAndForm },
       include: {
-        products: true,
+        // The studio's selection order is the order viewers see (the public live
+        // page sorts by sortOrder, then id); saving pins the first one again.
+        products: { orderBy: [{ sortOrder: "asc" }, { id: "asc" }] },
         notificationRules: { orderBy: [{ trigger: "asc" }, { sortOrder: "asc" }, { id: "asc" }] },
         sessions: { orderBy: [{ startAt: "asc" }, { id: "asc" }], select: { startAt: true, capacity: true, registeredCount: true, status: true } },
       },
@@ -323,18 +345,10 @@ export default async function EditLivePage({
       ? formatZonedDateTimeLocal(live.replayAvailableUntil, vendor.timezone)
       : "",
     ...fixedSessionStudio.payloadFields,
-    activeStep: 0,
+    activeStep: LIVE_STUDIO_FIRST_STEP_INDEX,
   });
   const fixedSessionSummaries = fixedSessionStudio.summaries;
-  const savedPayload = savedDraft ? LiveStudioDraftPayloadSchema.safeParse(savedDraft.payload) : null;
-  const initialDraft = savedDraft
-    ? {
-        id: savedDraft.id,
-        revision: savedDraft.revision,
-        payload: savedPayload?.success ? savedPayload.data : basePayload,
-        updatedAt: savedDraft.updatedAt.toISOString(),
-      }
-    : undefined;
+  const initialDraft = savedDraft ? resumedEditDraft(savedDraft, basePayload) : undefined;
   const activeDrawRuns = live.status === "live"
     ? await db.liveInteractionRun.findMany({
         where: { vendorId: vendor.id, liveId: live.id, eventType: "lucky_draw", winnerResponseId: null },
@@ -382,7 +396,14 @@ export default async function EditLivePage({
 
   return (
     <>
-      <PageHeader title="編輯直播間" description="用同一套八步驟 Studio 調整內容；草稿與公開狀態分開儲存。" />
+      <PageHeader
+        title="編輯直播間"
+        description={`用同一套 ${liveStudioStepSummary()}調整內容；草稿與公開狀態分開儲存。`}
+        action={isFeatureEnabled(vendor, "email_sequences") ? (
+          // F-3: the sequences of this Live (closed beta, only with the grant).
+          <ButtonLink href={`/messages/sequences?liveId=${encodeURIComponent(live.id)}`} tone="secondary">報名後追銷序列</ButtonLink>
+        ) : undefined}
+      />
       {notice === "reminders_reconciling" ? (
         <p role="status" aria-live="polite" className="mb-4 rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-950">
           直播設定已儲存。系統正在分批更新已驗證報名者的開播提醒，寄送紀錄會保留最新排程與被取代版本。
@@ -441,6 +462,9 @@ export default async function EditLivePage({
         initialDraft={initialDraft}
         initialValues={basePayload}
         liveId={live.id}
+        // The editor lists only this project's forms; a form created in the
+        // studio's drawer is bound to it (re-checked on the server) so it stays listed.
+        projectId={scope.projectId}
         currentStatus={live.status}
         timeZone={vendor.timezone}
         fixedSessionSummaries={fixedSessionSummaries}
