@@ -10,7 +10,7 @@
 - **高**風險（金流、auth、租戶、migration、刪資料）＝派 `engineer-hard`，合併前一次獨立審查。**一般**＝派 `engineer`。
 - 每項完成後在本檔把狀態改成「已完成（PR 連結）」，並寫下未驗證的部分。
 - 遇到需要 owner 的決定、金鑰或 Production 操作就跳過該項，記到「C 等 owner」，繼續下一項；不要停下整個佇列。
-- staging 的部署、migration 與 PayUni Sandbox 測試是否可以不經詢問執行，以 owner 的明確授權為準；**截至 2026-11-17 尚未取得**，所以目前每項止於合併到 master。
+- **owner 於 2026-11-17 同意**：依本檔順序執行；staging 的部署（含切 staging alias）、staging migration（`staging-migrate.yml`，先 `status` 再 `deploy`）與 PayUni Sandbox 測試付款可以不經詢問執行，使用合成資料。需要 staging 驗證的項目，合併後在 staging 驗證完才算完成。
 - Production 部署、正式資料庫、正式付款與退款、正式寄信：一律需要 owner 另外授權，不在本佇列的自動範圍內。
 
 ## A. 可直接做（依序）
