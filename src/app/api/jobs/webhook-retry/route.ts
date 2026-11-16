@@ -2,16 +2,22 @@ import { NextResponse } from "next/server";
 import { requireCronSecret, requireJobSecret, unauthorizedJson } from "@/lib/api-security";
 import { releaseExpiredInventoryReservations } from "@/lib/inventory-reservations";
 import { captureOperationalError } from "@/lib/monitoring";
+import { runPaymentPaidAutomationCatchup, type PaymentPaidCatchupSummary } from "@/lib/payment-paid-automation-catchup";
 import { processDueWebhookRetries } from "@/lib/webhook-retry";
 
 // One run releases expired reservations (each row with the 5-attempt
 // EXPIRY_CLEANUP_RETRY budget, and no new row after EXPIRY_CLEANUP_DEADLINE_MS
 // = 60 s, so the cleanup cannot starve webhook recovery; leftovers wait for
-// the next run) and then retries up to 20 webhooks in
+// the next run), then retries up to 20 webhooks in
 // sequence, each a Serializable transaction (15 s timeout, up to 3 attempts)
 // that can also schedule its paid receipt email and, for an order's first
 // paid transition, its `payment_paid` automations with `after()`
-// (src/lib/payment-paid-automation.ts). Under Fluid
+// (src/lib/payment-paid-automation.ts), and last runs the `payment_paid`
+// catch-up (src/lib/payment-paid-automation-catchup.ts): orders paid 10 min
+// to 48 h ago whose `after()` hook never ran or died mid-run, at most 20 per
+// run, round-robin across vendors, no new order after 60 s. The live path is
+// still `after()`; the catch-up reuses its idempotency keys, so a rule runs
+// once either way. Under Fluid
 // Compute the platform default is already 300 s, so a lower value would cut
 // the batch off mid-run, leave events `retrying` until the lease expires and
 // lose the summary and alerts. 300 s is the Hobby maximum under Fluid and is
@@ -28,7 +34,9 @@ const SAFE_RETRY_STATUSES = new Set([
   "not_stale",
 ]);
 
-function reportMaintenanceFailure(error: unknown, operation: "inventory_cleanup" | "webhook_retry") {
+type MaintenanceStep = "inventory_cleanup" | "webhook_retry" | "payment_paid_catchup";
+
+function reportMaintenanceFailure(error: unknown, operation: MaintenanceStep) {
   // Observability must never turn a recoverable maintenance failure into a
   // second failure that prevents the other job from being attempted.
   try {
@@ -63,7 +71,8 @@ function safeRetryResults(results: Awaited<ReturnType<typeof processDueWebhookRe
 async function processWebhookRetryMaintenance() {
   let inventory: Awaited<ReturnType<typeof releaseExpiredInventoryReservations>> | null = null;
   let results: Awaited<ReturnType<typeof processDueWebhookRetries>> = [];
-  const failures: Array<"inventory_cleanup" | "webhook_retry"> = [];
+  let paymentPaidCatchup: PaymentPaidCatchupSummary | null = null;
+  const failures: MaintenanceStep[] = [];
 
   // Keep this ordering deliberately sequential: both jobs use the same local
   // database, but an inventory fault must not starve payment webhook recovery.
@@ -81,6 +90,14 @@ async function processWebhookRetryMaintenance() {
     reportMaintenanceFailure(error, "webhook_retry");
   }
 
+  // Last, so neither step above waits for it. The summary holds counts only.
+  try {
+    paymentPaidCatchup = await runPaymentPaidAutomationCatchup();
+  } catch (error) {
+    failures.push("payment_paid_catchup");
+    reportMaintenanceFailure(error, "payment_paid_catchup");
+  }
+
   if (failures.length > 0) {
     return NextResponse.json({
       ok: false,
@@ -88,6 +105,7 @@ async function processWebhookRetryMaintenance() {
       processed: results.length,
       ...attentionCounts(results),
       results: safeRetryResults(results),
+      paymentPaidCatchup,
       failures,
     }, { status: 503 });
   }
@@ -98,6 +116,7 @@ async function processWebhookRetryMaintenance() {
     processed: results.length,
     ...attentionCounts(results),
     results,
+    paymentPaidCatchup,
   });
 }
 

@@ -4,6 +4,7 @@ const mocks = vi.hoisted(() => ({
   captureOperationalError: vi.fn(),
   processDueWebhookRetries: vi.fn(),
   releaseExpiredInventoryReservations: vi.fn(),
+  runPaymentPaidAutomationCatchup: vi.fn(),
 }));
 
 vi.mock("@/lib/webhook-retry", () => ({
@@ -12,6 +13,9 @@ vi.mock("@/lib/webhook-retry", () => ({
 vi.mock("@/lib/inventory-reservations", () => ({
   releaseExpiredInventoryReservations: mocks.releaseExpiredInventoryReservations,
 }));
+vi.mock("@/lib/payment-paid-automation-catchup", () => ({
+  runPaymentPaidAutomationCatchup: mocks.runPaymentPaidAutomationCatchup,
+}));
 vi.mock("@/lib/monitoring", () => ({
   captureOperationalError: mocks.captureOperationalError,
 }));
@@ -19,6 +23,7 @@ vi.mock("@/lib/monitoring", () => ({
 import { GET, POST } from "./route";
 
 const jobSecret = "test-fixture-job-secret";
+const CATCHUP = { candidates: 0, examined: 0, completed: 0, skipped: 0, failed: 0, duplicate: 0, notApplicable: 0, errors: 0 };
 
 function request(authorization?: string) {
   return new Request("https://app.example.test/api/jobs/webhook-retry", {
@@ -32,6 +37,7 @@ beforeEach(() => {
   vi.stubEnv("JOB_SECRET", jobSecret);
   mocks.releaseExpiredInventoryReservations.mockResolvedValue({ examined: 0, released: 0, committed: 0 });
   mocks.processDueWebhookRetries.mockResolvedValue([]);
+  mocks.runPaymentPaidAutomationCatchup.mockResolvedValue(CATCHUP);
 });
 
 afterEach(() => {
@@ -49,6 +55,7 @@ describe("POST /api/jobs/webhook-retry", () => {
     await expect(response.json()).resolves.toEqual({ error: "Unauthorized" });
     expect(mocks.processDueWebhookRetries).not.toHaveBeenCalled();
     expect(mocks.releaseExpiredInventoryReservations).not.toHaveBeenCalled();
+    expect(mocks.runPaymentPaidAutomationCatchup).not.toHaveBeenCalled();
     expect(mocks.captureOperationalError).not.toHaveBeenCalled();
   });
 
@@ -71,7 +78,10 @@ describe("POST /api/jobs/webhook-retry", () => {
       exhausted: 1,
       inventoryUnavailable: 0,
       results,
+      paymentPaidCatchup: CATCHUP,
     });
+    expect(mocks.runPaymentPaidAutomationCatchup).toHaveBeenCalledOnce();
+    expect(mocks.processDueWebhookRetries).toHaveBeenCalledBefore(mocks.runPaymentPaidAutomationCatchup);
   });
 
   it("attempts webhook recovery and fails closed when inventory cleanup fails", async () => {
@@ -98,6 +108,7 @@ describe("POST /api/jobs/webhook-retry", () => {
       exhausted: 0,
       inventoryUnavailable: 0,
       results: [{ status: "processed" }],
+      paymentPaidCatchup: CATCHUP,
       failures: ["inventory_cleanup"],
     });
     expect(JSON.stringify(body)).not.toContain("test-fixture-secret");
@@ -128,8 +139,11 @@ describe("POST /api/jobs/webhook-retry", () => {
       exhausted: 0,
       inventoryUnavailable: 0,
       results: [],
+      paymentPaidCatchup: CATCHUP,
       failures: ["webhook_retry"],
     });
+    // The catch-up still runs when webhook recovery failed.
+    expect(mocks.runPaymentPaidAutomationCatchup).toHaveBeenCalledOnce();
     expect(JSON.stringify(body)).not.toContain("test-fixture-secret");
   });
 
@@ -161,8 +175,48 @@ describe("POST /api/jobs/webhook-retry", () => {
       exhausted: 0,
       inventoryUnavailable: 0,
       results: [],
+      paymentPaidCatchup: CATCHUP,
       failures: ["inventory_cleanup", "webhook_retry"],
     });
+  });
+
+  it("runs the payment_paid catch-up last and fails closed with a fixed identifier when it throws", async () => {
+    const rawError = new Error("catch-up test-fixture-secret order-private-id must not leak");
+    const results = [{ eventId: "event-1", status: "processed" }];
+    mocks.processDueWebhookRetries.mockResolvedValueOnce(results);
+    mocks.runPaymentPaidAutomationCatchup.mockRejectedValueOnce(rawError);
+
+    const response = await POST(request(`Bearer ${jobSecret}`));
+    const body = await response.json();
+
+    expect(mocks.releaseExpiredInventoryReservations).toHaveBeenCalledBefore(mocks.processDueWebhookRetries);
+    expect(mocks.processDueWebhookRetries).toHaveBeenCalledBefore(mocks.runPaymentPaidAutomationCatchup);
+    expect(mocks.captureOperationalError).toHaveBeenCalledWith(rawError, {
+      source: "webhook_retry_job",
+      operation: "payment_paid_catchup",
+      status: "failed",
+    });
+    expect(response.status).toBe(503);
+    expect(body).toEqual({
+      ok: false,
+      inventory: { examined: 0, released: 0, committed: 0 },
+      processed: 1,
+      exhausted: 0,
+      inventoryUnavailable: 0,
+      results: [{ status: "processed" }],
+      paymentPaidCatchup: null,
+      failures: ["payment_paid_catchup"],
+    });
+    expect(JSON.stringify(body)).not.toContain("test-fixture-secret");
+    expect(JSON.stringify(body)).not.toContain("order-private-id");
+  });
+
+  it("returns the catch-up counts (no ids) next to the webhook results", async () => {
+    const summary = { candidates: 3, examined: 2, completed: 2, skipped: 1, failed: 0, duplicate: 1, notApplicable: 0, errors: 0 };
+    mocks.runPaymentPaidAutomationCatchup.mockResolvedValueOnce(summary);
+    const response = await POST(request(`Bearer ${jobSecret}`));
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({ ok: true, paymentPaidCatchup: summary });
   });
 
   it("continues with webhook recovery when monitoring an inventory failure also fails", async () => {
@@ -183,6 +237,7 @@ describe("POST /api/jobs/webhook-retry", () => {
       exhausted: 0,
       inventoryUnavailable: 0,
       results: [{ status: "unknown" }],
+      paymentPaidCatchup: CATCHUP,
       failures: ["inventory_cleanup"],
     });
   });
@@ -205,6 +260,7 @@ describe("GET /api/jobs/webhook-retry (Vercel Cron entry)", () => {
     }
     expect((await POST(request(`Bearer ${cronSecret}`))).status).toBe(401);
     expect(mocks.processDueWebhookRetries).not.toHaveBeenCalled();
+    expect(mocks.runPaymentPaidAutomationCatchup).not.toHaveBeenCalled();
     expect(mocks.releaseExpiredInventoryReservations).not.toHaveBeenCalled();
   });
 

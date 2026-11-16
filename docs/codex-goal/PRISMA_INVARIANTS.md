@@ -806,3 +806,15 @@ Current source inventory: 145 models and 99 forward migrations. Previous checkpo
   - `createAutomationRuleStep`／`updateAutomationRuleStep` 對 `payment_paid` 規則回 `steps_unsupported`；`startDelayedSteps` 不為它建 run；worker 遇到這種規則的 run（只可能來自直接寫入）標 `definition_paused`。
 - `20261114120000_pause_payment_paid_rules`（審查 MAJOR-1）：forward-only 資料 migration，自己一個交易、`lock_timeout = 5s`。只有一句 `UPDATE "AutomationRule" SET "isActive" = false, "updatedAt" = CURRENT_TIMESTAMP WHERE "trigger" = 'payment_paid' AND "isActive" = true`：#599 隱藏 trigger 時沒有停用既有規則，本次接上付款流程後它們會開始執行，所以先維持「不執行」的現狀，商家自行重新啟用。只鎖到符合的列（row lock），不改 schema、不碰其他 trigger 或已停用的規則；`payment_paid` 規則不可能有 `DelayedStepRun`，不需要停止進度；不寫 AuditLog。重跑不會改到任何列。回滾程式不需要回滾這條 migration（舊程式本來就不執行 `payment_paid`）。
 - 測試：`src/lib/payment-paid-automation.db.test.ts`、`src/lib/payment-paid-automation.test.ts`、`src/lib/payment-paid-rule-pause-migration.db.test.ts`（在會 rollback 的交易內執行 migration 檔裡的 UPDATE：兩個商家的啟用中 `payment_paid` 規則被停用、`updatedAt` 更新、條件與動作不變；已停用的 `payment_paid` 規則、其他 trigger（含啟用中）的規則完全不變；重跑影響 0 列），以及 `src/lib/automation-delayed-steps.db.test.ts` 的 `steps_unsupported` 與「payment_paid 規則不建立、不推進 run」。
+
+## 2026-11-17 `payment_paid` 補跑（Q-10，無 migration）
+
+- 沒有 schema 變更、沒有 migration（仍是 164 models、147 forward migrations）。補跑的查詢只用既有索引：`CommerceOrder (vendorId, paidAt)`、`CommerceOrderEvent (vendorId, orderId, occurredAt)`、`AutomationExecutionLog (vendorId, eventId)`；規則一次讀全平台啟用中的 `payment_paid` 規則（上限 `PAYMENT_PAID_CATCHUP_RULE_SCAN_LIMIT` = 1000 條，超過回報 `catchup_rule_scan_truncated`）。
+- 不變式（應用層，`src/lib/payment-paid-automation-catchup.ts`，由 `/api/jobs/webhook-retry` 每輪最後呼叫）：
+  - 冪等依據不變：補跑呼叫與即時路徑同一個 `dispatchPaymentPaidAutomationForOrder`，`eventId` = `payment-paid:{orderId}`、執行紀錄 `(vendorId, idempotencyKey)` unique 鍵相同；兩條路徑（或兩個 job）同時跑，同一條規則同一筆訂單仍只有一個 claim 會執行動作，標籤、折價券、LINE、Email 的 id 或冪等鍵都綁那一筆紀錄。
+  - 只補「應該觸發但沒有執行紀錄」的訂單：沒有這條規則對這筆訂單的紀錄，或只有超過 `AUTOMATION_EXECUTION_RECLAIM_AFTER_MS`（5 分鐘）的 `running`（process 中途死掉，claim 本來就允許重領）。`completed`、`skipped`、`failed` 都不補（`failed` 與即時路徑相同不自動重試）。
+  - 訂單條件與即時觸發點一致（每個條件綁訂單自己的 `vendorId`）：`status = 'paid'`、`refundedAmountCents = 0`、`isTestOrder = false`、商家現在未凍結；`payment.paid` 事件不是庫存到期對帳 job 的補轉（`dedupKey` 不以 `payment.paid:inventory-expiry-reconcile:` 開頭）、`sanitizedData` 沒有 `fulfillmentHeld`（付款時商家凍結中，解除後也不補）。
+  - 時間窗：`paidAt` 與 `payment.paid` 事件的 `createdAt`（付款入帳時間）都在 `[now - 48h, now - 10min]` 內（`PAYMENT_PAID_CATCHUP_MAX_AGE_MS`、`PAYMENT_PAID_CATCHUP_MIN_AGE_MS`，兩端都含）。
+  - 規則：啟用中、全商家（`funnelPageId IS NULL`）、可解析，且 `updatedAt <= 付款入帳時間`（付款之後才建立、修改或重新啟用的規則不補跑這筆；dispatch 時以 `rulesUnchangedSince` 再過濾一次）。
+  - 每輪最多 20 筆（`PAYMENT_PAID_CATCHUP_ORDER_LIMIT`），以 `ROW_NUMBER() OVER (PARTITION BY vendorId ORDER BY paidAt, id)` 在商家之間輪流；60 秒（`PAYMENT_PAID_CATCHUP_DEADLINE_MS`）後不再開始新的訂單。
+- 測試：`src/lib/payment-paid-automation-catchup.db.test.ts`（漏掉的訂單補跑一次、已有紀錄與 `failed` 不重跑、死掉的 `running` 重領且不重複產出、即時路徑與兩個補跑在各自 `connection_limit` 的 client 上併發只執行一次、退款／測試訂單／庫存補轉／凍結中付款／停用規則／付款後才建立或重新啟用的規則不補、跨租戶、時間窗邊界、每輪上限與商家輪流）、`src/lib/payment-paid-automation-catchup.test.ts`、`src/app/api/jobs/webhook-retry/route.test.ts`。

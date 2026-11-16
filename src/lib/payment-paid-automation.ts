@@ -1,6 +1,6 @@
 import { after } from "next/server";
 import type { PrismaClient } from "@prisma/client";
-import { dispatchAutomationEvent } from "@/lib/automation-workflow";
+import { dispatchAutomationEvent, type AutomationDispatchOptions } from "@/lib/automation-workflow";
 import { revealCommerceOrderPii } from "@/lib/commerce-order-pii";
 import { getDb } from "@/lib/db";
 import { captureOperationalError } from "@/lib/monitoring";
@@ -58,14 +58,25 @@ function buyerEmail(order: { id: string; buyerEncryptedEnvelope: string; shippin
  * `paidAmountCents`. Idempotent: `dispatchAutomationEvent` claims one
  * execution log per rule and order (`order:{orderId}:version:{n}`), so a
  * second call for the same order repeats nothing a completed execution did.
+ *
+ * `options.rulesUnchangedSince` (the catch-up job only, see
+ * payment-paid-automation-catchup.ts) limits the run to rules not created,
+ * edited or switched on after that instant; the event id and every
+ * idempotency key stay the same as the live call's.
  */
 export async function dispatchPaymentPaidAutomationForOrder(
   input: { vendorId: string; orderId: string },
   db: PaymentPaidAutomationDb = getDb(),
+  options: AutomationDispatchOptions = {},
 ): Promise<PaymentPaidAutomationOutcome> {
   // Most vendors have no payment rule: they never read (or decrypt) the order.
   const rule = await db.automationRule.findFirst({
-    where: { vendorId: input.vendorId, trigger: "payment_paid", isActive: true },
+    where: {
+      vendorId: input.vendorId,
+      trigger: "payment_paid",
+      isActive: true,
+      ...(options.rulesUnchangedSince ? { updatedAt: { lte: options.rulesUnchangedSince } } : {}),
+    },
     select: { id: true },
   });
   if (!rule) return { status: "no_rules" };
@@ -101,7 +112,7 @@ export async function dispatchPaymentPaidAutomationForOrder(
     orderAmountCents: order.paidAmountCents,
     currency: order.currency,
     ...(recipientEmail ? { recipientEmail } : {}),
-  });
+  }, options);
   return { status: "dispatched", results };
 }
 
@@ -157,6 +168,11 @@ async function waitAtMost(work: Promise<void>, ms: number) {
  * within the route's `maxDuration`. Outside a request (`after` throws there)
  * it runs inline and waits at most PAYMENT_PAID_AUTOMATION_INLINE_TIMEOUT_MS.
  * Never throws in either case.
+ *
+ * When the hook never runs or is stopped mid-run (the platform ends the
+ * function after the response, a database outage), the webhook-retry job's
+ * catch-up (payment-paid-automation-catchup.ts) runs the order later with the
+ * same idempotency keys; a rule recorded as `failed` is not retried.
  */
 export async function runPaymentPaidAutomationAfterCommit(input: { vendorId: string; orderId: string }): Promise<"scheduled" | "ran_inline"> {
   try {

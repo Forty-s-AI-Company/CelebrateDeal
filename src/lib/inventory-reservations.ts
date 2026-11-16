@@ -28,6 +28,13 @@ export const CHECKOUT_RESERVATION_RETRY = { attempts: 12, baseDelayMs: 25, maxDe
 export const EXPIRY_CLEANUP_RETRY = { attempts: 5, baseDelayMs: 25, maxDelayMs: 400 } as const;
 export const EXPIRY_CLEANUP_DEADLINE_MS = 60_000;
 
+/**
+ * Event identity of the expiry job's own paid transition. Such an order's
+ * `payment.paid` event is `payment.paid:` + this prefix; the `payment_paid`
+ * automation never runs for it, live or catch-up (docs/domain-workflows.md).
+ */
+export const INVENTORY_EXPIRY_RECONCILE_EVENT_PREFIX = "inventory-expiry-reconcile:";
+
 type InventoryRetryPolicy = { attempts: number; baseDelayMs: number; maxDelayMs: number };
 
 export class InventoryUnavailableError extends Error {
@@ -594,7 +601,7 @@ export async function releaseExpiredInventoryReservations(
           await reconcileCommerceOrderPaymentTransition(tx, {
             vendorId: reservation.vendorId,
             paymentTransactionId: reservation.paymentTransactionId,
-            eventIdentity: `inventory-expiry-reconcile:${reservation.id}`,
+            eventIdentity: `${INVENTORY_EXPIRY_RECONCILE_EVENT_PREFIX}${reservation.id}`,
             transition: "paid",
             occurredAt: now,
           });

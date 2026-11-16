@@ -649,15 +649,33 @@ async function executeAction(
  * fail too. Every caller today passes getDb() (payment_paid:
  * src/lib/payment-paid-automation.ts, after the payment transaction committed).
  */
-export async function dispatchAutomationEvent(db: AutomationDb, event: AutomationEvent) {
+export async function dispatchAutomationEvent(db: AutomationDb, event: AutomationEvent, options: AutomationDispatchOptions = {}) {
   const queuedEmailIds: string[] = [];
   try {
-    return await runAutomationEvent(db, event, queuedEmailIds);
+    return await runAutomationEvent(db, event, queuedEmailIds, options);
   } finally {
     // Rows already written stay queued even if a later rule fails.
     scheduleImmediateEmailDispatch(queuedEmailIds);
   }
 }
+
+export type AutomationDispatchOptions = {
+  /**
+   * Only rules whose `updatedAt` is at or before this instant run. The
+   * `payment_paid` catch-up (src/lib/payment-paid-automation-catchup.ts)
+   * passes the time the payment was recorded, so a rule created, edited or
+   * switched back on after the payment never runs for it late. The live
+   * dispatch passes nothing and keeps running every active rule.
+   */
+  rulesUnchangedSince?: Date;
+};
+
+/**
+ * A `running` execution log older than this is presumed dead (its process was
+ * stopped mid-run) and the same event may reclaim it. Every caller runs well
+ * inside it: route `maxDuration` is at most 300 s.
+ */
+export const AUTOMATION_EXECUTION_RECLAIM_AFTER_MS = 5 * 60_000;
 
 type ActionArtifacts = { voucherUrl?: string; consultationUrl?: string; webinarUrl?: string };
 
@@ -791,7 +809,7 @@ async function claimRuleExecution(
       vendorId: event.vendorId,
       OR: [
         { status: "failed" },
-        { status: "running", startedAt: { lt: new Date(now.getTime() - 5 * 60_000) } },
+        { status: "running", startedAt: { lt: new Date(now.getTime() - AUTOMATION_EXECUTION_RECLAIM_AFTER_MS) } },
       ],
     },
     data: { status: "running", startedAt: now, completedAt: null, errorCode: null },
@@ -800,7 +818,7 @@ async function claimRuleExecution(
   return { log: { id: existing.id, createdAt: existing.createdAt } };
 }
 
-async function runAutomationEvent(db: AutomationDb, event: AutomationEvent, queuedEmailIds: string[]) {
+async function runAutomationEvent(db: AutomationDb, event: AutomationEvent, queuedEmailIds: string[], options: AutomationDispatchOptions) {
   if ((event.trigger === "viewer_watch_progress" || event.trigger === "webinar_attended_duration_gte") && !event.liveId) {
     return [{ ruleId: "__scope__", status: "missing_live_scope" }];
   }
@@ -809,6 +827,7 @@ async function runAutomationEvent(db: AutomationDb, event: AutomationEvent, queu
       vendorId: event.vendorId,
       trigger: event.trigger,
       isActive: true,
+      ...(options.rulesUnchangedSince ? { updatedAt: { lte: options.rulesUnchangedSince } } : {}),
       // An unscoped rule remains vendor-wide. A scoped rule can only run for
       // the exact trusted funnel page that emitted the event.
       OR: [{ funnelPageId: null }, ...(event.funnelPageId ? [{ funnelPageId: event.funnelPageId }] : [])],

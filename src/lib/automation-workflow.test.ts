@@ -112,6 +112,17 @@ describe("smart automation workflow engine", () => {
     }));
   });
 
+  it("limits the rules to those unchanged since an instant only when asked (the payment_paid catch-up)", async () => {
+    const db = { automationRule: { findMany: vi.fn().mockResolvedValue([]) } };
+    await dispatchAutomationEvent(db as never, event);
+    expect(db.automationRule.findMany.mock.lastCall?.[0].where).not.toHaveProperty("updatedAt");
+    const since = new Date("2026-11-17T00:00:00.000Z");
+    await dispatchAutomationEvent(db as never, event, { rulesUnchangedSince: since });
+    expect(db.automationRule.findMany).toHaveBeenLastCalledWith(expect.objectContaining({
+      where: expect.objectContaining({ vendorId: event.vendorId, trigger: "payment_paid", isActive: true, updatedAt: { lte: since } }),
+    }));
+  });
+
   it("runs tag, voucher and LINE actions once and keeps bearer values out of logs", async () => {
     const update = vi.fn().mockResolvedValue({});
     const db = {

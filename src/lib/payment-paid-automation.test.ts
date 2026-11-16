@@ -90,8 +90,18 @@ describe("dispatchPaymentPaidAutomationForOrder", () => {
       orderAmountCents: 12_000,
       currency: "TWD",
       recipientEmail: BUYER_EMAIL,
-    });
+    }, {});
     expect(mocks.sentryCapture).not.toHaveBeenCalled();
+  });
+
+  it("the catch-up's rulesUnchangedSince limits both the rule check and the dispatch; the event is the live one", async () => {
+    const db = database();
+    const since = new Date("2026-11-17T00:00:00.000Z");
+    await dispatchPaymentPaidAutomationForOrder({ vendorId: "vendor-1", orderId: "order-1" }, db as never, { rulesUnchangedSince: since });
+    expect(db.automationRule.findFirst).toHaveBeenCalledWith(expect.objectContaining({
+      where: { vendorId: "vendor-1", trigger: "payment_paid", isActive: true, updatedAt: { lte: since } },
+    }));
+    expect(mocks.dispatchAutomationEvent).toHaveBeenCalledWith(db, expect.objectContaining({ eventId: "payment-paid:order-1", subjectId: "order-1" }), { rulesUnchangedSince: since });
   });
 
   it("falls back to the checkout identity and runs without an e-mail when the buyer cannot be read", async () => {
