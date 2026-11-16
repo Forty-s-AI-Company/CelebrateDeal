@@ -46,13 +46,13 @@ jobs:
     environment: Preview – celebrate-deal-staging
     steps:
       - name: Checkout protected trusted runner
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
           persist-credentials: false
 
       - name: Checkout exact WP2 RC migration source before secret injection
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: refs/pull/277/head
           fetch-depth: 0
@@ -68,7 +68,7 @@ jobs:
           test "$(git rev-parse refs/remotes/origin/verified-wp2-source)" = '9193326824b8b6bf774bdfa28e4783a1a1b8f304'
 
       - name: Setup Node
-        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
           cache: npm
@@ -199,7 +199,7 @@ jobs:
 
       - name: Upload Q1 sanitized exact transaction evidence
         if: ${{ always() && (inputs.task == 'q1-exact-pending-refund' || inputs.task == 'q1-exact-state-diagnostic') }}
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: q1-exact-refund-${{ inputs.source_sha }}
           path: ${{ runner.temp }}/q1-exact-refund/completion.json
@@ -963,7 +963,7 @@ jobs:
 
       - name: Upload sanitized receipt only
         if: ${{ inputs.task == 'wp2-readonly-restore' }}
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: secure-staging-${{ inputs.task }}-${{ inputs.source_sha }}
           path: ${{ runner.temp }}/celebratedeal-secure-receipts/${{ inputs.task }}-receipt.json
@@ -972,7 +972,7 @@ jobs:
 
       - name: Upload sanitized WP4 reconciliation receipt only
         if: ${{ inputs.task == 'wp4-payuni-sandbox-reconciliation' || inputs.task == 'wp4-payuni-sandbox-payment-only' }}
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: secure-staging-${{ inputs.task }}-${{ inputs.source_sha }}
           path: ${{ runner.temp }}/celebratedeal-secure-receipts/${{ inputs.task }}-receipt.json
@@ -981,7 +981,7 @@ jobs:
 
       - name: Upload encrypted WP2 archive only
         if: ${{ inputs.task == 'wp2-readonly-restore' && steps.validate-retained-wp2.outcome == 'success' }}
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: secure-staging-encrypted-backup-${{ inputs.source_sha }}
           path: ${{ runner.temp }}/celebratedeal-secure-receipts/wp2-readonly-restore.dump.age
@@ -991,7 +991,7 @@ jobs:
 
       - name: Upload sanitized existing-refund recovery receipt only
         if: ${{ inputs.task == 'wp4-payuni-sandbox-refund-recovery' }}
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: secure-staging-${{ inputs.task }}-${{ inputs.source_sha }}
           path: ${{ runner.temp }}/celebratedeal-secure-receipts/wp4-payuni-sandbox-refund-recovery-receipt.json
@@ -1000,7 +1000,7 @@ jobs:
 
       - name: Upload sanitized buyer-payment check receipt only
         if: ${{ inputs.task == 'wp4-payuni-buyer-payment-check' }}
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: secure-staging-${{ inputs.task }}-${{ inputs.source_sha }}
           path: ${{ runner.temp }}/celebratedeal-secure-receipts/wp4-payuni-buyer-payment-check-receipt.json
@@ -1009,7 +1009,7 @@ jobs:
 
       - name: Upload sanitized buyer-callback retry receipt only
         if: ${{ inputs.task == 'wp4-payuni-buyer-callback-retry' }}
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: secure-staging-${{ inputs.task }}-${{ inputs.source_sha }}
           path: ${{ runner.temp }}/celebratedeal-secure-receipts/wp4-payuni-buyer-callback-retry-receipt.json
@@ -1018,7 +1018,7 @@ jobs:
 
       - name: Upload sanitized buyer-existing continuation receipt only
         if: ${{ inputs.task == 'wp4-payuni-buyer-existing-continuation' }}
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: secure-staging-${{ inputs.task }}-${{ inputs.source_sha }}
           path: ${{ runner.temp }}/celebratedeal-secure-receipts/wp4-payuni-buyer-existing-continuation-receipt.json
@@ -1027,7 +1027,7 @@ jobs:
 
       - name: Upload sanitized subscription receipt only
         if: ${{ inputs.task == 'wp4-payuni-sandbox-subscription' }}
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: secure-staging-${{ inputs.task }}-${{ inputs.source_sha }}
           path: ${{ runner.temp }}/celebratedeal-secure-receipts/wp4-payuni-sandbox-subscription-receipt.json

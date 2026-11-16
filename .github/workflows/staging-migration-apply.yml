@@ -25,13 +25,13 @@ jobs:
     environment: Preview – celebrate-deal-staging
     steps:
       - name: Checkout protected master
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
           persist-credentials: false
 
       - name: Checkout exact migration source as data
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: refs/pull/277/head
           path: fixed-source
@@ -39,7 +39,7 @@ jobs:
           persist-credentials: false
 
       - name: Setup Node
-        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
           cache: npm
@@ -61,7 +61,7 @@ jobs:
       # The replay artifact is accepted only from the protected master SHA
       # checked out above, with its producer workflow and receipt verified.
       - name: Download isolated SQL replay receipt
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: celebratedeal-staging-isolated-migration-replay
           run-id: ${{ inputs.replay_run_id }}
@@ -85,7 +85,7 @@ jobs:
 
       - name: Upload sanitized receipt
         if: ${{ always() && github.ref == 'refs/heads/master' && github.ref_protected }}
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: staging-migration-apply-receipt
           path: ${{ runner.temp }}/staging-migration-apply-receipt.json
