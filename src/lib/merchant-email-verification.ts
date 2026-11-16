@@ -73,13 +73,14 @@ export async function sendMerchantEmailVerification(input: {
     }
 
     const link = createMerchantEmailVerificationToken({ userId: user.id, email: user.email });
+    let providerMessageId: string;
     try {
-      await sendMerchantEmailVerificationEmail({
+      ({ id: providerMessageId } = await sendMerchantEmailVerificationEmail({
         to: user.email,
         verifyUrl: merchantEmailVerificationUrl(link.token),
         validHours: MERCHANT_EMAIL_VERIFICATION_TTL_HOURS,
         idempotencyKey: `merchant-email-verification:${link.jti}`,
-      });
+      }));
     } catch (error) {
       await writeAuditLog({
         vendorId: input.vendorId ?? null,
@@ -92,7 +93,7 @@ export async function sendMerchantEmailVerification(input: {
       }).catch(() => undefined);
       return { status: "failed" };
     }
-    // The audit row never holds the token or the link, only its id.
+    // The audit row never holds the token or the link, only its id and the provider's message id.
     await writeAuditLog({
       vendorId: input.vendorId ?? null,
       actorId: user.id,
@@ -100,7 +101,7 @@ export async function sendMerchantEmailVerification(input: {
       action: "merchant_email_verification_sent",
       targetType: "User",
       targetId: user.id,
-      after: auditSnapshot({ source: input.source, jti: link.jti, expiresAt: link.expiresAt.toISOString() }),
+      after: auditSnapshot({ source: input.source, jti: link.jti, expiresAt: link.expiresAt.toISOString(), providerMessageId }),
     }).catch(() => undefined);
     return { status: "sent", expiresAt: link.expiresAt };
   } catch {
