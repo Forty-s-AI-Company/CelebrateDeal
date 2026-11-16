@@ -255,6 +255,7 @@ const sectionFields: readonly FunnelInspectorField[] = [
   select("overlayFade", "遮罩漸層", { none: "全區均勻", right: "左深右淺", left: "右深左淺", bottom: "上深下淺", top: "下深上淺" }),
   ...designFields, ...advancedFields,
 ];
+const COMMERCE_NOTE = "商品、價格與幣別一律來自商品管理，不能在這裡修改；這個元件只能調整外觀與進階設定。";
 const restricted = (capabilityNote: string): FunnelElementInspectorDefinition => ({ fields: [...designFields, ...advancedFields], capabilityNote });
 
 export const FUNNEL_ELEMENT_INSPECTOR_SCHEMA: Readonly<Record<FunnelNodeType, FunnelElementInspectorDefinition>> = {
@@ -291,16 +292,16 @@ export const FUNNEL_ELEMENT_INSPECTOR_SCHEMA: Readonly<Record<FunnelNodeType, Fu
   raw_html: { fields: [...customCodeFields, ...designFields, ...advancedFields] },
   faq: { fields: [content("items", "問題與答案", "faq_items", "每行「問題 | 答案」。"), ...designFields, ...advancedFields] },
   recaptcha: restricted("reCAPTCHA 尚未有可驗證的安全整合，維持待驗證狀態。"),
-  payment_button: restricted("付款元件尚未連接商品與付款資料。"),
-  payment_method: restricted("付款元件尚未連接商品與付款資料。"),
-  customer_type: restricted("付款元件尚未連接商品與付款資料。"),
-  physical_product: restricted("付款元件尚未連接商品與付款資料。"),
-  offer_price: restricted("付款元件尚未連接商品與付款資料。"),
-  agreement: restricted("付款元件尚未連接商品與付款資料。"),
-  order_bump: restricted("付款元件尚未連接商品與付款資料。"),
-  coupon: restricted("付款元件尚未連接商品與付款資料。"),
-  two_step_order_form: restricted("付款元件尚未連接商品與付款資料。"),
-  shipping_fees: restricted("付款元件尚未連接商品與付款資料。"),
+  payment_button: restricted(COMMERCE_NOTE),
+  payment_method: restricted(COMMERCE_NOTE),
+  customer_type: restricted(COMMERCE_NOTE),
+  physical_product: restricted(COMMERCE_NOTE),
+  offer_price: restricted(COMMERCE_NOTE),
+  agreement: restricted(COMMERCE_NOTE),
+  order_bump: restricted(COMMERCE_NOTE),
+  coupon: restricted("目前不支援手動輸入優惠碼。結帳時只會套用訪客已領取的優惠券，由伺服器確認資格後折抵，這個元件沒有可設定的優惠碼或折扣金額。"),
+  two_step_order_form: restricted(COMMERCE_NOTE),
+  shipping_fees: restricted(COMMERCE_NOTE),
   paid_calendar: restricted("付費行事曆需先完成安全付款整合。"),
   nav_bar: { fields: [...showcaseFields.nav_bar, ...advancedFields] },
   logo_strip: { fields: [...showcaseFields.logo_strip, ...designFields, ...advancedFields] },

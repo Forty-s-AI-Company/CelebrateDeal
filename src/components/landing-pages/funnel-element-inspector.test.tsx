@@ -73,3 +73,41 @@ describe("FunnelElementInspector", () => {
     expect(inspectorUrlFieldError(field("text", "text"), "/\\not-a-url-field")).toBeNull();
   });
 });
+
+describe("FunnelElementInspector 付款元件", () => {
+  const checkout = (type: FunnelNode["type"]): FunnelNode => ({ ...button, id: `${type}_1`, type, props: {} });
+  const render = (type: FunnelNode["type"], commerce?: Parameters<typeof FunnelElementInspector>[0]["commerce"]) => renderToStaticMarkup(<FunnelElementInspector node={checkout(type)} commerce={commerce} onCommand={() => undefined} />);
+
+  it("已連結商品時顯示商品名稱與修改入口，不再說尚未連接", () => {
+    for (const type of ["order_bump", "two_step_order_form", "payment_button"] as const) {
+      const html = render(type, { state: "bound", productName: "年度課程" });
+      expect(html).toContain('data-funnel-inspector-commerce="bound"');
+      expect(html).toContain("目前連結商品：年度課程");
+      expect(html).toContain("結帳商品");
+      expect(html).not.toContain("尚未連接");
+    }
+  });
+
+  it("未連結或商品不可用時引導就地綁定", () => {
+    expect(render("order_bump", { state: "unbound" })).toContain("請使用上方「結帳商品」選擇商品");
+    expect(render("order_bump", { state: "unavailable" })).toContain("重新選擇商品");
+    expect(render("order_bump", { state: "disabled" })).toContain("訂單表單");
+    expect(render("order_bump", { state: "unbound" })).not.toContain("尚未連接");
+  });
+
+  it("所有付款元件都不提供價格或金額欄位", () => {
+    for (const type of ["order_bump", "two_step_order_form", "offer_price", "payment_button", "shipping_fees"] as const) {
+      const definition = getFunnelElementInspectorDefinition(type);
+      expect(definition.fields.some((field) => field.group === "content" || field.target === "props")).toBe(false);
+      expect(definition.capabilityNote).not.toContain("尚未連接");
+    }
+  });
+
+  it("優惠碼明確說明不支援手動輸入，也不暗示之後會接上", () => {
+    const html = render("coupon", { state: "bound", productName: "年度課程" });
+    expect(html).toContain("目前不支援手動輸入優惠碼");
+    expect(html).not.toContain("data-funnel-inspector-commerce");
+    expect(html).not.toContain("尚未");
+    expect(html).not.toContain("即將");
+  });
+});
