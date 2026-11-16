@@ -4,7 +4,7 @@ import { useState, type ReactNode } from "react";
 import { FUNNEL_FONT_OPTIONS, funnelContrastRatio, isCuratedFunnelFont, parseFunnelColor, resolveFunnelFontStack } from "@/lib/funnel-typography";
 import { ArrowDown, ArrowUp, ChevronLeft, Copy, Monitor, Smartphone, Tablet, Trash2 } from "lucide-react";
 import { funnelDeviceVisibilityCommand, funnelNodeVisibility, type FunnelDevice } from "@/lib/funnel-node-visibility";
-import { FunnelElementInspector } from "./funnel-element-inspector";
+import { FunnelElementInspector, type InspectorCommerceState } from "./funnel-element-inspector";
 import { FunnelCommerceQuickBind, FunnelCommerceSettings } from "./funnel-commerce-settings";
 import { PageCustomCssField } from "./funnel-custom-code-field";
 import { funnelNodeLabel } from "./funnel-editor-library";
@@ -62,6 +62,10 @@ export function NodeSettingsPanel({ node, path, disabled, viewport, popups, step
   commerce?: NodeCommerceBinding;
 }) {
   const label = funnelNodeLabel(node.type);
+  const boundProduct = commerce?.products.find((item) => item.id === commerce.binding?.productId);
+  const commerceState: InspectorCommerceState | undefined = commerce && isFunnelCommerceNodeType(node.type)
+    ? { state: !commerce.enabled ? "disabled" : !commerce.binding ? "unbound" : boundProduct ? "bound" : "unavailable", productName: boundProduct?.name }
+    : undefined;
   return <div data-funnel-node-settings={node.type}>
     <PanelHeader title={label} backLabel="返回（取消選取）" onBack={onBack} subtitle={path.length > 1 ? path.map((item) => funnelNodeLabel(item.type)).join(" › ") : undefined} actions={<>
       <button type="button" aria-label={`上移${label}`} title="上移" disabled={disabled} className={iconAction} onClick={() => onCommand({ type: "move_up", nodeId: node.id })}><ArrowUp size={17} aria-hidden /></button>
@@ -71,7 +75,7 @@ export function NodeSettingsPanel({ node, path, disabled, viewport, popups, step
     </>} />
     {commerce && isFunnelCommerceNodeType(node.type) ? <FunnelCommerceQuickBind {...commerce} disabled={disabled} /> : null}
     <DeviceVisibilityToggles node={node} viewport={viewport} disabled={disabled} onCommand={onCommand} />
-    <FunnelElementInspector key={node.id} node={node} disabled={disabled} popupIds={popups.map((popup) => popup.id)} popupNames={Object.fromEntries(popups.map((popup) => [popup.id, popup.name]))} stepIds={stepIds} stepNames={stepNames} onCommand={onCommand} />
+    <FunnelElementInspector key={node.id} node={node} disabled={disabled} popupIds={popups.map((popup) => popup.id)} popupNames={Object.fromEntries(popups.map((popup) => [popup.id, popup.name]))} stepIds={stepIds} stepNames={stepNames} commerce={commerceState} onCommand={onCommand} />
   </div>;
 }
 

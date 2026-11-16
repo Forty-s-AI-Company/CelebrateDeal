@@ -24,7 +24,8 @@ describe("Funnel element inspector schema", () => {
   it("為 registry 的每個 Element 提供 inspector 定義，且保留受限制能力說明", () => {
     expect(Object.keys(FUNNEL_ELEMENT_INSPECTOR_SCHEMA).sort()).toEqual([...FUNNEL_NODE_TYPES].sort());
     expect(FUNNEL_ELEMENT_INSPECTOR_SCHEMA.text.fields.some((item) => item.group === "content" && item.id === "text")).toBe(true);
-    expect(FUNNEL_ELEMENT_INSPECTOR_SCHEMA.payment_button.capabilityNote).toContain("付款");
+    expect(FUNNEL_ELEMENT_INSPECTOR_SCHEMA.payment_button.capabilityNote).toContain("商品管理");
+    expect(FUNNEL_ELEMENT_INSPECTOR_SCHEMA.coupon.capabilityNote).toContain("不支援手動輸入優惠碼");
     // 自訂程式碼：HTML／CSS／JS 三個等寬程式碼欄位，只編輯基礎值並有伺服器同樣強制的大小上限。
     const codeFields = FUNNEL_ELEMENT_INSPECTOR_SCHEMA.raw_html.fields.filter((item) => item.kind === "code");
     expect(codeFields.map((item) => [item.id, item.maxBytes, item.responsive])).toEqual([["html", 50_000, false], ["css", 20_000, false], ["js", 50_000, false]]);

@@ -55,8 +55,23 @@ type InspectorProps = {
   stepIds?: readonly string[];
   stepNames?: Readonly<Record<string, string>>;
   popupNames?: Readonly<Record<string, string>>;
+  /** Page-level product binding state for checkout elements (from 頁面設定 › 商品與結帳). */
+  commerce?: InspectorCommerceState;
   onCommand: (command: FunnelPageCommand) => void;
 };
+
+export type InspectorCommerceState = { state: "disabled" | "unbound" | "unavailable" | "bound"; productName?: string };
+
+/** Tells the user where the product comes from and where to change it; never offers price fields. */
+export function inspectorCommerceStatus(type: FunnelNode["type"], commerce: InspectorCommerceState | undefined): string | null {
+  if (!commerce || type === "coupon") return null;
+  switch (commerce.state) {
+    case "bound": return `目前連結商品：${commerce.productName ?? "未命名商品"}。要更換商品，請使用上方「結帳商品」；加購、結帳版面與同意條款在頁面設定。`;
+    case "unavailable": return "已連結的商品目前無法販售。請使用上方「結帳商品」重新選擇商品。";
+    case "unbound": return "這個頁面還沒有連結商品。請使用上方「結帳商品」選擇商品，訪客才能結帳。";
+    default: return "結帳元件只在「訂單表單」步驟連結商品。請把這個頁面設為訂單表單步驟，或改在訂單表單步驟加入結帳元件。";
+  }
+}
 
 const control = "min-h-10 w-full rounded-lg border border-slate-500 bg-white px-3 py-2 text-sm text-slate-800 outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100 disabled:cursor-not-allowed disabled:bg-slate-100";
 const actionTypes: Array<{ value: FunnelNodeAction["type"]; label: string }> = [
@@ -296,7 +311,8 @@ function InspectorSection({ id, label, defaultOpen, children }: { id: string; la
 }
 
 /** Shared inspector UI for every node in a structured Funnel document. */
-export function FunnelElementInspector({ node, disabled = false, popupIds = [], stepIds, stepNames, popupNames, onCommand }: InspectorProps) {
+export function FunnelElementInspector({ node, disabled = false, popupIds = [], stepIds, stepNames, popupNames, commerce, onCommand }: InspectorProps) {
+  const commerceStatus = inspectorCommerceStatus(node.type, commerce);
   const [scope, setScope] = useState<FunnelInspectorScope>("base");
   const definition = getFunnelElementInspectorDefinition(node.type);
   const sections = useMemo(() => {
@@ -309,6 +325,7 @@ export function FunnelElementInspector({ node, disabled = false, popupIds = [], 
   }, [definition.fields]);
   const responsive = definition.fields.some((field) => field.responsive);
   return <section data-funnel-element-inspector data-node-type={node.type} className="grid gap-3">
+    {commerceStatus ? <p role="status" data-funnel-inspector-commerce={commerce?.state} className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm leading-5 text-blue-900">{commerceStatus}</p> : null}
     {definition.capabilityNote ? <p role="status" className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm leading-5 text-amber-900">{definition.capabilityNote}</p> : null}
     {responsive ? <label className="grid gap-1 text-sm font-semibold text-slate-700">編輯範圍<select className={control} value={scope} onChange={(event) => setScope(event.currentTarget.value as FunnelInspectorScope)}><option value="base">基礎值</option><option value="desktop">僅桌機覆寫</option><option value="tablet">僅平板覆寫（640–1079px）</option><option value="mobile">僅手機覆寫</option></select><span className="text-xs font-normal leading-5 text-slate-600">覆寫會建立在同一份頁面資料上，未覆寫時會沿用基礎值。</span></label> : null}
     {sections.map(({ key, fields }) => <InspectorSection key={key} id={`funnel-inspector-${node.id}-${key}`} label={sectionLabels[key]} defaultOpen={key !== "actions" && key !== "advanced"}>
