@@ -86,7 +86,7 @@ export function routeCategory(value) {
   if (url.hostname !== ALIAS) return "EXTERNAL";
   const path = url.pathname;
   const fixed = {
-    "/register": "REGISTER", "/welcome": "WELCOME", "/welcome/preparing": "WELCOME_PREPARING", "/dashboard": "DASHBOARD",
+    "/register": "REGISTER", "/welcome": "WELCOME", "/welcome/preparing": "WELCOME_PREPARING", "/onboarding": "ONBOARDING", "/dashboard": "DASHBOARD",
     "/login": "LOGIN", "/products": "PRODUCTS", "/products/new": "PRODUCT_NEW", "/forms": "FORMS", "/forms/new": "FORM_NEW",
     "/videos": "VIDEOS", "/videos/new": "VIDEO_NEW", "/messages/templates": "TEMPLATES", "/messages/templates/new": "TEMPLATE_NEW",
     "/lives/new": "LIVE_NEW", "/projects": "PROJECTS", "/verify-email": "VERIFY_EMAIL", "/verify-registration": "VERIFY_REGISTRATION",
@@ -335,9 +335,11 @@ export async function runStagingFirstSuccess(env = process.env, dependencies = {
         for (let tries = 0; tries < 40 && !await next.isEnabled(); tries += 1) await wait(250);
         await next.click({ timeout: 10_000 });
       }
-      await page.waitForURL((url) => url.pathname === "/welcome/preparing", { timeout: 30_000 });
-      await page.getByRole("link", { name: "進入我的工作空間" }).click({ timeout: 30_000 });
-      await page.waitForURL((url) => url.pathname === "/dashboard", { timeout: 30_000 });
+      // The questionnaire now lands on the unified 上線導引 list (/welcome/preparing is retired).
+      await page.waitForURL((url) => url.pathname === "/onboarding", { timeout: 30_000 });
+      ensure(await visible(page.getByRole("heading", { name: "上線導引", exact: true })));
+      await page.goto(`${ORIGIN}/dashboard`, { waitUntil: "domcontentloaded", timeout: 30_000 });
+      ensure(new URL(page.url()).pathname === "/dashboard");
     });
 
     await step("MERCHANT_EMAIL_VERIFY", async () => {
@@ -404,24 +406,30 @@ export async function runStagingFirstSuccess(env = process.env, dependencies = {
       await page.goto(`${ORIGIN}/lives/new`, { waitUntil: "domcontentloaded", timeout: 30_000 });
       ensure(await visible(page.getByRole("heading", { name: "建立直播間" })));
       const next = () => page.getByRole("button", { name: "下一步", exact: true }).click({ timeout: 10_000 });
+      const onStep = async (key) => {
+        const button = page.locator(`button[aria-controls="live-step-panel-${key}"]`);
+        for (let tries = 0; tries < 40 && await button.getAttribute("aria-current") !== "step"; tries += 1) await wait(250);
+        ensure(await button.getAttribute("aria-current") === "step");
+      };
+      // Four steps: 內容 → 成交 → 通知 → 發布 (src/lib/live-studio-steps.ts).
+      await onStep("content");
       await page.locator('input[name="title"]').fill(`${marker} Live`);
-      // The slug is filled from the title (GO-NO-GO §3 step 4).
+      // The slug is filled from the title (GO-NO-GO §3 step 4); its field sits in the collapsed 進階設定.
       for (let tries = 0; tries < 20 && (await page.locator("input#live-slug").inputValue()) === ""; tries += 1) await wait(250);
       ensure((await page.locator("input#live-slug").inputValue()) !== "");
-      await next();
       await page.locator('select[name="streamMode"]').selectOption("vod");
       await selectOptionContaining(page.locator('select[name="videoId"]'), `${marker} 影片`);
-      await next();
-      await page.getByRole("checkbox", { name: new RegExp(`${marker} 商品`, "u") }).check();
-      await next();
       await selectOptionContaining(page.locator('select[name="formId"]'), `${marker} 報名表`);
-      await next();
       await page.locator('input[name="scheduledAt"][type="datetime-local"]').fill(taipeiDateTimeLocal(new Date(now() + 3 * 24 * 60 * 60 * 1_000)));
       await next();
+      await onStep("sales");
+      await page.getByRole("checkbox", { name: new RegExp(`${marker} 商品`, "u") }).check();
+      await next();
+      await onStep("notifications");
       await selectOptionContaining(page.locator('select[name="messageTemplateId"]'), `${marker} 報名成功信`);
       await next();
-      await next();
-      // Step 8: the interaction script is optional (F-113), so the check must already be complete.
+      await onStep("publish");
+      // The interaction script is optional (F-113), so the check must already be complete.
       result.evidence.livePublishReady = await visible(page.getByText("發布條件已完成"), 15_000);
       ensure(result.evidence.livePublishReady);
       await page.getByRole("button", { name: "建立並排程", exact: true }).click({ timeout: 10_000 });

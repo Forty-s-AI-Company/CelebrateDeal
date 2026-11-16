@@ -116,7 +116,8 @@ export async function registerAction(formData: FormData) {
     // Ownership, onboarding state and audit become visible together or roll back together.
     created = await getDb().$transaction(async (tx) => {
       // Narrows (does not close) the window between the first check and a revocation.
-      if (inviteOnly) await assertInviteNotRevoked(usedInvite, tx);
+      // A Turnstile exemption rests on the invite, so it is re-checked in open mode too.
+      if (inviteOnly || turnstileExempt) await assertInviteNotRevoked(usedInvite, tx);
       await assertLoginEmailAvailableForNewAccount(tx, input.email);
       const user = await tx.user.create({ data: { name: input.name, email: input.email, passwordHash } });
       const vendor = await tx.vendor.create({ data: { name: input.workspaceName, slug: `${slugBase}-${randomUUID()}`, email: input.email, passwordHash } });

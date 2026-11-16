@@ -39,6 +39,7 @@ test("owner and buyer contexts may write only the journey's own endpoints", () =
 
 test("route evidence keeps fixed categories, never ids, slugs or queries", () => {
   assert.equal(routeCategory(`${origin}/register?invite=secret`), "REGISTER");
+  assert.equal(routeCategory(`${origin}/onboarding`), "ONBOARDING");
   assert.equal(routeCategory(`${origin}/lives/abc123/preview`), "LIVE_PREVIEW");
   assert.equal(routeCategory(`${origin}/projects/abc123?published=1`), "PROJECT");
   assert.equal(routeCategory(`${origin}/form/cdfs-form-123`), "PUBLIC_FORM");

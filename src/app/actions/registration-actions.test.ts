@@ -261,4 +261,27 @@ describe("staging first-success Turnstile exemption (invite-only)", () => {
     expect(mocks.hash).toHaveBeenCalledTimes(2);
     expect(mocks.transaction).toHaveBeenCalledTimes(2);
   });
+
+  it("re-checks the invitation inside the transaction even when registration is open", async () => {
+    vi.stubEnv("REGISTRATION_MODE", "open");
+    bindStaging();
+    const invite = createMerchantRegistrationInvite({ email: runnerEmail });
+    // Unrevoked at the first lookup, revoked by the time the transaction starts.
+    mocks.revoked.mockResolvedValueOnce(null).mockResolvedValueOnce({ id: "audit-revoked" });
+    await expect(registerAction(form({ invite: invite.token, email: runnerEmail }))).rejects.toThrow(/^redirect:\/register\?error=invite_revoked$/u);
+    expect(mocks.turnstile).not.toHaveBeenCalled();
+    expect(mocks.revoked).toHaveBeenCalledTimes(2);
+    expect(mocks.user).not.toHaveBeenCalled();
+    expect(mocks.vendor).not.toHaveBeenCalled();
+    expect(mocks.session).not.toHaveBeenCalled();
+  });
+
+  it("keeps the exemption off in Production even with a valid runner invitation", async () => {
+    bindStaging();
+    vi.stubEnv("VERCEL_ENV", "production");
+    const invite = createMerchantRegistrationInvite({ email: runnerEmail });
+    await expect(registerAction(form({ invite: invite.token, email: runnerEmail }))).rejects.toThrow("redirect:/welcome");
+    expect(mocks.turnstile).toHaveBeenCalledOnce();
+    expect(JSON.stringify(mocks.audit.mock.calls)).not.toContain("first_success_exempt");
+  });
 });
