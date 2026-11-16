@@ -71,6 +71,10 @@ import {
 } from "@/lib/payment-paid-automation-catchup";
 import { PaymentWebhookPayload, processPaymentWebhook } from "@/lib/payment-webhooks";
 
+// Each case pays several orders through the real webhook path (a Serializable
+// transaction each); give slow shared runners room instead of the 5 s default.
+vi.setConfig({ testTimeout: 30_000 });
+
 const db = getDb();
 const vendorIds: string[] = [];
 const extraClients: PrismaClient[] = [];
