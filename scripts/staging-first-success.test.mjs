@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   ALIAS, STEPS, classifyRequest, createReceipt, finalVerdict, formatStepSummary, routeCategory, runStagingFirstSuccess,
   providerOutcome, providerSettled, sanitizeStatus, taipeiDateTimeLocal,
+  createEmailJobRunner, scheduledJobsPaused, undeliveredEmailOutcome,
 } from "./staging-first-success.mjs";
 
 const origin = `https://${ALIAS}`;
@@ -29,6 +30,8 @@ test("owner and buyer contexts may write only the journey's own endpoints", () =
   assert.equal(classifyRequest(request(`${origin}/api/admin/ops/first-success/invite`, "POST"), "owner"), "BLOCK");
   assert.equal(classifyRequest(request(`${origin}/settings/billing`, "POST"), "owner"), "BLOCK");
   assert.equal(classifyRequest(request(`${origin}/lives/abc/edit`, "POST"), "owner"), "BLOCK");
+  // The retired interstitial is no longer part of the journey.
+  assert.equal(classifyRequest(request(`${origin}/welcome/preparing`, "POST"), "owner"), "BLOCK");
   assert.equal(classifyRequest(request(`${origin}/monitoring`, "POST"), "owner"), "TELEMETRY");
   assert.equal(classifyRequest(request(`${origin}/api/affiliate-attribution/direct-entry`, "POST"), "buyer"), "ATTRIBUTION_RESET");
   assert.equal(classifyRequest(request(`${origin}/api/affiliate-attribution/direct-entry`, "POST", "{}"), "buyer"), "BLOCK");
@@ -40,6 +43,7 @@ test("owner and buyer contexts may write only the journey's own endpoints", () =
 test("route evidence keeps fixed categories, never ids, slugs or queries", () => {
   assert.equal(routeCategory(`${origin}/register?invite=secret`), "REGISTER");
   assert.equal(routeCategory(`${origin}/onboarding`), "ONBOARDING");
+  assert.equal(routeCategory(`${origin}/welcome/preparing`), "OTHER");
   assert.equal(routeCategory(`${origin}/lives/abc123/preview`), "LIVE_PREVIEW");
   assert.equal(routeCategory(`${origin}/projects/abc123?published=1`), "PROJECT");
   assert.equal(routeCategory(`${origin}/form/cdfs-form-123`), "PUBLIC_FORM");
@@ -106,6 +110,29 @@ test("provider events: only a final answer stops polling; bounces fail, unknowns
   for (const event of ["LOOKUP_UNAVAILABLE", "NOT_LOOKED_UP", "SENT", "QUEUED", "DELIVERY_DELAYED", "OTHER"]) { assert.equal(providerSettled(event), false); assert.equal(providerOutcome(event), "NOT_VERIFIABLE"); }
 });
 
+test("the email job fallback honours SCHEDULED_JOBS_PAUSED and a skipped job makes missing mail not verifiable", async () => {
+  assert.equal(scheduledJobsPaused({ SCHEDULED_JOBS_PAUSED: "true" }), true);
+  for (const value of [undefined, "", "false", "TRUE", "1"]) assert.equal(scheduledJobsPaused({ SCHEDULED_JOBS_PAUSED: value }), false, String(value));
+
+  const calls = [];
+  const post = async (url, options) => { calls.push({ url, options }); return { dispose: async () => {} }; };
+  const paused = createReceipt(sha);
+  assert.equal(await createEmailJobRunner({ JOB_SECRET: "j".repeat(32), SCHEDULED_JOBS_PAUSED: "true" }, paused, post)(), false);
+  assert.deepEqual(calls, []);
+  assert.equal(paused.emailJobSkips, 1);
+  assert.equal(paused.emailJobRuns, 0);
+  assert.equal(undeliveredEmailOutcome(paused), "NOT_VERIFIABLE");
+
+  const running = createReceipt(sha);
+  assert.equal(await createEmailJobRunner({ JOB_SECRET: "j".repeat(32) }, running, post)(), true);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].url, `${origin}/api/jobs/email-deliveries`);
+  assert.equal(calls[0].options.headers.Authorization, `Bearer ${"j".repeat(32)}`);
+  assert.equal(running.emailJobRuns, 1);
+  assert.equal(running.emailJobSkips, 0);
+  assert.equal(undeliveredEmailOutcome(running), "FAIL");
+});
+
 test("live schedule is entered in Taiwan time", () => {
   assert.equal(taipeiDateTimeLocal(new Date("2026-11-13T12:30:00Z")), "2026-11-13T20:30");
   assert.equal(taipeiDateTimeLocal(new Date("2026-11-13T20:00:00Z")), "2026-11-14T04:00");
@@ -131,6 +158,13 @@ test("workflow is manual, protected-master only, and never starts checkout or bu
   assert.doesNotMatch(workflow, /buyer_order|PAYUNI_|payment-only|wp4-buyer/u);
   // Secrets reach only the alias check and the runner step, after tests and lineage.
   assert.equal((workflow.match(/secrets\.JOB_SECRET/gu) ?? []).length, 1);
+  // The pause switch reaches the runner step (the only step that could call the email job).
+  assert.match(workflow, /SCHEDULED_JOBS_PAUSED: \$\{\{ vars\.SCHEDULED_JOBS_PAUSED \}\}\n\s+run: node scripts\/staging-first-success\.mjs/u);
+  // Same pinned v7 actions as staging-funnel-smoke.yml.
+  assert.match(workflow, /actions\/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7\.0\.1/u);
+  assert.match(workflow, /actions\/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7\.1\.0/u);
+  assert.match(workflow, /actions\/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7\.0\.2/u);
+  assert.doesNotMatch(workflow, /# v4\b/u);
   assert.ok(workflow.indexOf("node --test scripts/staging-first-success.test.mjs") < workflow.indexOf("secrets.VERCEL_TOKEN"));
   const runner = await readFile(new URL("./staging-first-success.mjs", import.meta.url), "utf8");
   assert.doesNotMatch(runner, /wp4-buyer|payment-attempt|\/checkout\//u);

@@ -81,6 +81,19 @@ describe("POST /api/admin/ops/first-success/status", () => {
     await expect(response.json()).resolves.toMatchObject({ ownerRegistered: false, merchantVerificationLinkPath: null, buyerVerificationLinkPath: null });
   });
 
+  it("rejects a wrong Bearer value and a Production runtime before any lookup", async () => {
+    for (const authorization of ["Bearer wrong-job-secret", `Bearer ${jobSecret}x`, `Basic ${jobSecret}`, jobSecret]) {
+      expect((await status(request("status", { authorization, run: runId }))).status, authorization).toBe(401);
+    }
+    vi.stubEnv("VERCEL_ENV", "production");
+    expect((await status(request("status", { run: runId }))).status).toBe(404);
+    vi.stubEnv("VERCEL_ENV", "preview");
+    vi.stubEnv("PAYUNI_ENV", "production");
+    expect((await status(request("status", { run: runId }))).status).toBe(404);
+    expect(mocks.findUser).not.toHaveBeenCalled();
+    expect(mocks.findDeliveries).not.toHaveBeenCalled();
+  });
+
   it("reports provider events and this deployment's verification link without other fields", async () => {
     vi.stubEnv("RESEND_API_KEY", "re_synthetic_key");
     const providerFetch = vi.fn(async (url: string) => {

@@ -63,7 +63,14 @@ afterEach(() => {
 describe("first-success helpers", () => {
   it("exempts only this runner's owner mailbox on the bound staging runtime from Turnstile", () => {
     expect(isFirstSuccessTurnstileExempt(firstSuccessOwnerEmail(runId))).toBe(true);
-    for (const email of [firstSuccessBuyerEmail(runId), "owner@example.test", "delivered@resend.dev", `${firstSuccessOwnerEmail(runId)}.evil.test`, `x${firstSuccessOwnerEmail(runId)}`]) {
+    const variants = [
+      firstSuccessBuyerEmail(runId), "owner@example.test", "delivered@resend.dev", `${firstSuccessOwnerEmail(runId)}.evil.test`, `x${firstSuccessOwnerEmail(runId)}`,
+      // Malformed run ids and mailbox shapes.
+      firstSuccessOwnerEmail(runId.toUpperCase()), firstSuccessOwnerEmail(runId.slice(1)), firstSuccessOwnerEmail(`${runId}0`),
+      `delivered+cdfs-owner-${runId}+x@resend.dev`, `cdfs-owner-${runId}@resend.dev`, `cdfs-owner-${runId}+x@resend.dev`,
+      `delivered+cdfs-owner-${runId}@RESEND.DEV`, `delivered+cdfs-owner-${runId}@resend.dev.evil.test`, ` ${firstSuccessOwnerEmail(runId)}`,
+    ];
+    for (const email of variants) {
       expect(isFirstSuccessTurnstileExempt(email)).toBe(false);
     }
     for (const [name, value] of [["VERCEL_ENV", "production"], ["PAYUNI_ENV", "production"], ["WP4_SANDBOX_EXECUTOR_ENABLED", "false"], ["VERCEL_PROJECT_ID", "prj_other"], ["NEXT_PUBLIC_APP_URL", "https://celebratedeal.carry-digital-nomad.in.net"]] as const) {

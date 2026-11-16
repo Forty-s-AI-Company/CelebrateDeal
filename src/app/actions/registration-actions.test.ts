@@ -276,6 +276,19 @@ describe("staging first-success Turnstile exemption (invite-only)", () => {
     expect(mocks.session).not.toHaveBeenCalled();
   });
 
+  it("does not exempt the runner's address without an invitation when registration is open", async () => {
+    vi.stubEnv("REGISTRATION_MODE", "open");
+    bindStaging();
+    await expect(registerAction(form({ email: runnerEmail }))).rejects.toThrow("redirect:/welcome");
+    expect(mocks.turnstile).toHaveBeenCalledOnce();
+    // An invitation for another address does not count either.
+    mocks.turnstile.mockClear();
+    const other = createMerchantRegistrationInvite({ email: "owner@example.test" });
+    await expect(registerAction(form({ invite: other.token, email: runnerEmail }))).rejects.toThrow("redirect:/welcome");
+    expect(mocks.turnstile).toHaveBeenCalledOnce();
+    expect(JSON.stringify(mocks.audit.mock.calls)).not.toContain("first_success_exempt");
+  });
+
   it("keeps the exemption off in Production even with a valid runner invitation", async () => {
     bindStaging();
     vi.stubEnv("VERCEL_ENV", "production");

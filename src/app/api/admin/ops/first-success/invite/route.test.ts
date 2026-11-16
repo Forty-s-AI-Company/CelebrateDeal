@@ -72,6 +72,9 @@ afterEach(() => {
 describe("POST /api/admin/ops/first-success/invite", () => {
   it("rejects missing secret, Production, other source SHAs and caller input before signing", async () => {
     expect((await invite(request("invite", { authorization: null }))).status).toBe(401);
+    for (const authorization of ["Bearer wrong-job-secret", `Bearer ${jobSecret}x`, `Basic ${jobSecret}`, jobSecret]) {
+      expect((await invite(request("invite", { authorization }))).status, authorization).toBe(401);
+    }
     expect((await invite(request("invite", { sha: "b".repeat(40) }))).status).toBe(404);
     expect((await invite(request("invite", { search: "?email=someone%40example.test" }))).status).toBe(404);
     vi.stubEnv("VERCEL_ENV", "production");

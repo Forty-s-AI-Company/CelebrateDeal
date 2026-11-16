@@ -74,7 +74,7 @@
 | ☐ | 寄件網域 DNS | 在 Resend 驗證該網域，並在 Cloudflare DNS 建立：**SPF**（TXT，包含 Resend 的 include）、**DKIM**（Resend 提供的 CNAME／TXT）、**DMARC**（`_dmarc` TXT，先 `p=none` 觀察，穩定後收緊）。記錄值由 Resend 後台產生，照抄 | owner | Resend 後台網域狀態 Verified；寄測試信，檢視原始標頭 `spf=pass`、`dkim=pass`、`dmarc=pass`（`staging-production-env-vars.md`：SPF／DKIM／DMARC pass） | 待 owner；`mail.`、`send.` 類子網域也要列入 [子網域盤點](subdomain-inventory.md) |
 | ☐ | `SMOKE_TEST_EMAIL` | 單一受控維運信箱（其他收件人呼叫 test-email 一律 403） | owner | `SMOKE_TEST_EMAIL: PASS`（缺少或格式錯誤為 `[WARN]`） | 待 owner；沒有 smoke 需求可不設 |
 
-驗證信（商家 Email 驗證、24 小時有效）依賴本節，信件送不出去時商家無法驗證。
+驗證信（商家 Email 驗證、24 小時有效）依賴本節，信件送不出去時商家無法驗證。寄出成功後，`merchant_email_verification_sent` 稽核紀錄會保存 Resend 回傳的 `providerMessageId`（不含 token 或連結）；staging 的首次成功 runner 以它向 Resend 回查投遞狀態。Production 也會存這個 id，用於對照 Resend 後台的投遞紀錄。
 
 ## E. 監控與分析
 
@@ -94,6 +94,14 @@
 | ☐ | `NEXT_PUBLIC_TURNSTILE_SITE_KEY`、`TURNSTILE_SECRET_KEY` | 在 Cloudflare Dashboard → Turnstile 建立 widget（Managed），Hostname 加入正式網域。**兩個必須同時設定**，只設一個會讓註冊與重寄驗證信全部失敗，preflight 也 `[FAIL]`。Cloudflare 公開的測試金鑰（`1x0000…`）在 Production 一律拒絕 | owner | `TURNSTILE_SECRET_KEY: PASS`（已設定站點金鑰與伺服器金鑰）；`/register` 看得到「確認你是真人」元件 | 待 owner（staging 已於 2026-10-25 完成，Production 尚未）；邀請制封測可稍後，但**開放公開註冊前必做** |
 | ☐ | `TURNSTILE_ALLOWED_HOSTNAMES` | 選填；要額外接受的網域 | owner | — | 不設 |
 | ☐ | `REGISTRATION_MODE` | **不設定**（未設定＝邀請制）。只有在 Turnstile 與寄信都就緒、owner 決定開放公開註冊時才設成 `open`；缺 Turnstile 或寄信設定就設 `open` 時 preflight `[FAIL]` | owner | `REGISTRATION_MODE: PASS`（訊息：商家註冊僅限平台邀請） | 不設 |
+
+**Staging 限定的 Turnstile 豁免（O-13 首次成功 runner）**：註冊只在以下條件**全部**成立時略過 Turnstile（`src/lib/staging-first-success.ts`）：
+
+- 表單帶有效、未撤銷、且與送出 Email 相符的平台簽章邀請，交易內會再查一次撤銷；
+- 邀請收件者完全符合 `delivered+cdfs-owner-<24 位小寫 hex>@resend.dev`；
+- runtime 通過 `isWp4BoundNonProductionRuntime()`：`VERCEL_ENV=preview`、`PAYUNI_ENV=sandbox`、`WP4_SANDBOX_EXECUTOR_ENABLED=true`，並符合 staging 專案 ID、staging app origin 與 staging 資料庫身分（或 loopback 的拋棄式測試 runtime）。
+
+這類邀請只能由 `JOB_SECRET` 保護的 `/api/admin/ops/first-success/invite` 或平台管理員簽發。每次豁免都寫入 `registration_completed` 稽核（`turnstile: "first_success_exempt"`）。Production 的 `VERCEL_ENV=production`，而且依上表不設 `WP4_SANDBOX_EXECUTOR_ENABLED`，所以不可能觸發；Production 也不需要為此設定任何變數。
 
 ## G. 媒體（Cloudflare Stream 與 R2）
 

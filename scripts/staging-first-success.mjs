@@ -71,7 +71,7 @@ export function createReceipt(sourceSha) {
       buyerVerification: { ...emptyEmail(), linkSource: "NONE" },
       registrationConfirmation: emptyEmail(),
     },
-    pageErrors: 0, blockedWrites: 0, blockedExternal: 0, emailJobRuns: 0,
+    pageErrors: 0, blockedWrites: 0, blockedExternal: 0, emailJobRuns: 0, emailJobSkips: 0, scheduledJobsPaused: false,
     sideEffects: {
       invitesIssued: 0, registrations: 0, productCreates: 0, formCreates: 0, videoCreates: 0, templateCreates: 0,
       liveCreates: 0, projectPublishes: 0, publicSubmissions: 0, paymentSubmissions: 0, refundSubmissions: 0,
@@ -86,7 +86,7 @@ export function routeCategory(value) {
   if (url.hostname !== ALIAS) return "EXTERNAL";
   const path = url.pathname;
   const fixed = {
-    "/register": "REGISTER", "/welcome": "WELCOME", "/welcome/preparing": "WELCOME_PREPARING", "/onboarding": "ONBOARDING", "/dashboard": "DASHBOARD",
+    "/register": "REGISTER", "/welcome": "WELCOME", "/onboarding": "ONBOARDING", "/dashboard": "DASHBOARD",
     "/login": "LOGIN", "/products": "PRODUCTS", "/products/new": "PRODUCT_NEW", "/forms": "FORMS", "/forms/new": "FORM_NEW",
     "/videos": "VIDEOS", "/videos/new": "VIDEO_NEW", "/messages/templates": "TEMPLATES", "/messages/templates/new": "TEMPLATE_NEW",
     "/lives/new": "LIVE_NEW", "/projects": "PROJECTS", "/verify-email": "VERIFY_EMAIL", "/verify-registration": "VERIFY_REGISTRATION",
@@ -102,7 +102,7 @@ export function routeCategory(value) {
 
 /** Owner-side writes the journey needs. Anything else (payments, checkout, refunds, admin) is aborted. */
 const OWNER_WRITE_PATHS = [
-  /^\/register$/u, /^\/welcome$/u, /^\/welcome\/preparing$/u, /^\/products\/new$/u, /^\/api\/products\/upsert$/u,
+  /^\/register$/u, /^\/welcome$/u, /^\/products\/new$/u, /^\/api\/products\/upsert$/u,
   /^\/forms\/new$/u, /^\/videos\/new$/u, /^\/messages\/templates\/new$/u, /^\/lives\/new$/u, /^\/api\/live-studio\/drafts$/u,
   /^\/projects\/[a-z0-9]+$/u, /^\/api\/auth\/email-verification\/confirm$/u,
 ];
@@ -151,6 +151,28 @@ export function finalVerdict(receipt) {
   if (receipt.sideEffects.paymentSubmissions > 0 || receipt.sideEffects.refundSubmissions > 0) return { result: "BLOCKED", reason: "PAYMENT_ATTEMPTED" };
   return { result: "PASS", reason: "NONE" };
 }
+
+/** The repository variable that pauses every scheduled job (scheduled-jobs.yml); the runner honours it too. */
+export function scheduledJobsPaused(env) { return env?.SCHEDULED_JOBS_PAUSED === "true"; }
+
+/**
+ * Fallback only: the shared job sends every tenant's due staging deliveries (synthetic data only).
+ * While scheduled jobs are paused it is never called; the skip is counted instead.
+ */
+export function createEmailJobRunner(env, result, post) {
+  return async () => {
+    if (scheduledJobsPaused(env)) { result.emailJobSkips += 1; return false; }
+    const response = await post(`${ORIGIN}/api/jobs/email-deliveries`, {
+      headers: { Authorization: `Bearer ${env.JOB_SECRET}` }, maxRedirects: 0, timeout: 60_000, failOnStatusCode: false,
+    });
+    result.emailJobRuns += 1;
+    await response.dispose();
+    return true;
+  };
+}
+
+/** A missing email is a failure, unless the recovery job was skipped because scheduled jobs are paused. */
+export function undeliveredEmailOutcome(result) { return result.emailJobSkips > 0 ? "NOT_VERIFIABLE" : "FAIL"; }
 
 /** Asia/Taipei `YYYY-MM-DDTHH:mm` for the live's datetime-local field (Taiwan has no DST). */
 export function taipeiDateTimeLocal(date) {
@@ -264,14 +286,8 @@ export async function runStagingFirstSuccess(env = process.env, dependencies = {
     }
     return last;
   };
-  // Fallback only: the shared job sends every tenant's due staging deliveries (synthetic data only).
-  const runEmailJob = async () => {
-    const response = await ownerContext.request.post(`${ORIGIN}/api/jobs/email-deliveries`, {
-      headers: { Authorization: `Bearer ${env.JOB_SECRET}` }, maxRedirects: 0, timeout: 60_000, failOnStatusCode: false,
-    });
-    result.emailJobRuns += 1;
-    await response.dispose();
-  };
+  result.scheduledJobsPaused = scheduledJobsPaused(env);
+  const runEmailJob = createEmailJobRunner(env, result, (url, options) => ownerContext.request.post(url, options));
 
   try {
     ownerContext = await browser.newContext({ locale: "zh-TW", timezoneId: "Asia/Taipei", viewport: { width: 1365, height: 900 }, serviceWorkers: "block" });
@@ -481,11 +497,13 @@ export async function runStagingFirstSuccess(env = process.env, dependencies = {
         && providerSettled(value.buyerVerificationEmail.providerEvent), {
         onAttempt: async (attempt) => { if (attempt === 6) await runEmailJob(); },
       });
-      if (!status) return "FAIL";
+      if (!status) return undeliveredEmailOutcome(result);
       result.evidence.buyerSubmissions = status.buyerSubmissions;
       result.emails.buyerVerification = status.buyerVerificationEmail;
       buyerLink = status.buyerVerificationLinkPath;
-      ensure(buyerLink !== null && status.buyerSubmissions === 1);
+      // Without the email job (scheduled jobs paused) a missed dispatch cannot be recovered here.
+      if (buyerLink === null) return undeliveredEmailOutcome(result);
+      ensure(status.buyerSubmissions === 1);
       return providerOutcome(status.buyerVerificationEmail.providerEvent);
     }).catch((error) => {
       // Only a missing provider proof lets the journey finish from the sent envelope; the step stays non-PASS.
@@ -510,7 +528,10 @@ export async function runStagingFirstSuccess(env = process.env, dependencies = {
       result.evidence.buyerVerifiedSubmissions = status.buyerVerifiedSubmissions;
       result.emails.registrationConfirmation = status.registrationConfirmationEmail;
       if (status.buyerVerifiedSubmissions !== 1) return "FAIL";
-      if (status.registrationConfirmationEmail.status !== "SENT") return "FAIL";
+      if (status.registrationConfirmationEmail.status !== "SENT") {
+        // Still queued (or not created) while the email job was skipped: unknown, not failed.
+        return ["NOT_FOUND", "QUEUED", "SENDING"].includes(status.registrationConfirmationEmail.status) ? undeliveredEmailOutcome(result) : "FAIL";
+      }
       return providerOutcome(status.registrationConfirmationEmail.providerEvent);
     });
 
@@ -521,6 +542,10 @@ export async function runStagingFirstSuccess(env = process.env, dependencies = {
     result.failureCategory = error instanceof ConditionNotMet || /CONDITION_NOT_MET/u.test(error?.message ?? "") ? "CONDITION_NOT_MET" : classifyBrowserExecutionFailure(error);
     try { result.failurePage = activePage ? routeCategory(activePage.url()) : "NOT_OBSERVED"; } catch { result.failurePage = "INVALID_URL"; }
     result.reason = `STEP_${result.failureStep}_FAILED`;
+    if (result.emailJobSkips > 0 && entry(result.failureStep)?.status === "NOT_VERIFIABLE") {
+      result.failureCategory = "SCHEDULED_JOBS_PAUSED";
+      result.reason = `STEP_${result.failureStep}_NOT_VERIFIABLE`;
+    }
   } finally {
     result.totalDurationMs = now() - started;
     await buyerContext?.close().catch(() => {});
