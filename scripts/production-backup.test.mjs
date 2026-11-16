@@ -284,7 +284,9 @@ test("workflow is the pinned backup path: manual, protected master, production e
   assert.equal(job.environment, "production");
   const steps = job.steps;
   assert.ok(steps.every((step) => !/\bnpm\b|\bnpx\b|node --test/u.test(step.run ?? "")), "no npm packages next to the secret");
-  assert.equal(steps.find((step) => step.uses?.startsWith("actions/setup-node@"))?.with?.cache, undefined);
+  const backupSetupNode = steps.find((step) => step.uses?.startsWith("actions/setup-node@"));
+  assert.equal(backupSetupNode?.with?.cache, undefined);
+  assert.equal(backupSetupNode?.with?.["package-manager-cache"], false, "setup-node must not auto-enable the package cache next to the secret");
   for (const step of [...contractJob.steps, ...steps]) {
     if (typeof step.run === "string") assert.doesNotMatch(step.run, /\$\{\{/u, `${step.name} must pass values through env`);
     assert.equal(step["continue-on-error"], undefined, step.name);
