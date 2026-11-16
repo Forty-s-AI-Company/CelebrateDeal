@@ -19,11 +19,21 @@ test("actual portal worker receives a synthetic device message and keeps authent
  // clients.claim() makes the page controlled while the version is still
  // "activating", so a controller or registration id alone is not proof of readiness.
  let activatedRegistrationId:string|undefined;
+ // The push is dispatched asynchronously (the CDP call returns before the event
+ // runs), so it is only sent once the activated worker is also running.
+ let runningRegistrationId:string|undefined;let lastWorkerState="none";
  session.on("ServiceWorker.workerRegistrationUpdated",({registrations})=>{
   for(const registration of registrations)if(registration.scopeURL===`${baseURL}/portal/`&&!registration.isDeleted)registrationId=registration.registrationId;
  });
  session.on("ServiceWorker.workerVersionUpdated",({versions})=>{
-  for(const version of versions)if(version.scriptURL===`${baseURL}/portal/sw.js`&&version.status==="activated")activatedRegistrationId=version.registrationId;
+  for(const version of versions){
+   if(version.scriptURL!==`${baseURL}/portal/sw.js`)continue;
+   // Keep only the latest closed-vocabulary state of this origin's worker.
+   if(version.status==="activated")activatedRegistrationId=version.registrationId;
+   lastWorkerState=`${version.status}/${version.runningStatus}`;
+   if(version.status==="activated"&&version.runningStatus==="running")runningRegistrationId=version.registrationId;
+   else if(runningRegistrationId===version.registrationId)runningRegistrationId=undefined;
+  }
  });
  await session.send("ServiceWorker.enable");
  // Observe the application's own registration call without initiating one or
@@ -49,6 +59,7 @@ test("actual portal worker receives a synthetic device message and keeps authent
   await expect.poll(()=>page.evaluate(()=>navigator.serviceWorker.controller?.scriptURL??null)).toBe(`${baseURL}/portal/sw.js`);
   await expect.poll(()=>registrationId).toBeTruthy();
   await expect.poll(()=>activatedRegistrationId).toBe(registrationId);
+  await expect.poll(()=>runningRegistrationId).toBe(registrationId);
   const manifest=await page.locator('link[rel="manifest"]').getAttribute("href");expect(manifest).toBe("/portal/manifest.webmanifest");
   const manifestData=await (await page.request.get(`${baseURL}${manifest}`)).json();
   expect(manifestData.scope).toBe("/portal/");expect(manifestData.start_url).toBe("/portal/start.html");
@@ -77,7 +88,7 @@ test("actual portal worker receives a synthetic device message and keeps authent
  }finally{
   const probe=await page.evaluate(()=>Reflect.get(window,"portalWorkerProbe")).catch(()=>null);
   if(probe&&typeof probe.attempted==="boolean"&&typeof probe.accepted==="boolean"&&["none","TypeError","SecurityError","InvalidStateError","AbortError","other"].includes(probe.error)){
-   console.log(`::notice::portal-worker attempted=${probe.attempted} accepted=${probe.accepted} error=${probe.error}`);
+   console.log(`::notice::portal-worker attempted=${probe.attempted} accepted=${probe.accepted} error=${probe.error} worker=${/^(?:new|installing|installed|activating|activated|redundant)\/(?:stopped|starting|running|stopping)$/u.test(lastWorkerState)?lastWorkerState:"none"}`);
   }
   await context.setOffline(false);
   await page.evaluate(async()=>{const registration=await navigator.serviceWorker.getRegistration("/portal/");if(registration)for(const notification of await registration.getNotifications())notification.close();}).catch(()=>undefined);

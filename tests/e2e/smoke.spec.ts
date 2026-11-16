@@ -443,8 +443,12 @@ async function enrollMfa(page: Page, user: MfaTestUser) {
 }
 
 async function displayedRecoveryCode(page: Page) {
+  // The URL changes when the redirect commits, before the server-rendered codes
+  // are in the DOM; wait for the first code to be visible before reading it.
+  const firstCode = page.locator("div.font-mono").first();
+  await expect(firstCode).toBeVisible();
+  await expect(firstCode).toHaveText(/\S/u);
   const codes = await page.locator("div.font-mono").allTextContents();
-  expect(codes.length > 0).toBe(true);
   const code = codes[0]?.trim();
   if (!code) throw new Error("MFA setup did not provide a recovery code.");
   return code;
