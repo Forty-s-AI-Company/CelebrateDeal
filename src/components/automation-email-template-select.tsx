@@ -7,7 +7,7 @@ import {
   AUTOMATION_TRIGGER_LABELS,
   usableAutomationEmailTemplates,
   type AutomationEmailTemplate,
-} from "@/lib/automation-workflow";
+} from "@/lib/automation-email-template-availability";
 
 const NO_LINK_SUFFIX = "（此觸發條件下沒有連結）";
 
