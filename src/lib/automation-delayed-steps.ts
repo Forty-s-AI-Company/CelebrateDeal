@@ -1,6 +1,7 @@
 import { Prisma, type PrismaClient } from "@prisma/client";
 import {
   AUTOMATION_DELAYED_STEPS_FEATURE,
+  AUTOMATION_FORM_NO_SHOW_FEATURE,
   DELAYED_STEP_AUTOMATION_TRIGGERS,
   automationTriggerSupportsDelayedSteps,
   executeAutomationStep,
@@ -10,7 +11,9 @@ import {
   AUTOMATION_REPLAY_VIDEO_SELECT,
   parseAutomationRule,
   automationStepEventId,
+  startDelayedSteps,
   type AutomationEvent,
+  type DelayedStepStartOutcome,
 } from "@/lib/automation-workflow";
 import {
   automationActionsSendLine,
@@ -20,6 +23,7 @@ import {
 } from "@/lib/automation-line-push-policy";
 import { reportCancelledRuleLockWait } from "@/lib/automation-rule-lock";
 import { getDb } from "@/lib/db";
+import { captureOperationalError } from "@/lib/monitoring";
 import { isRuleWriteBusy } from "@/lib/serializable-retry";
 import {
   cancelLeasedRun,
@@ -548,6 +552,157 @@ export function runDelayedStepWorker(
   db: Database = getDb(),
 ) {
   return processDueDelayedStepRuns({ ...options, automation: AUTOMATION_RUN_PROCESSOR }, db);
+}
+
+/**
+ * Q-13: a run owed by an event is left to the job only after this long, so
+ * the event's own attempt (right after its immediate actions, waiting at most
+ * 2 s for the rule row) has long finished. Racing it would still be safe (the
+ * run's unique key), just wasted work.
+ */
+export const PENDING_RUN_START_MIN_AGE_MS = 2 * 60_000;
+/**
+ * Owed runs are created for events completed within this window, the same
+ * 48 hours as the e-mail sequence back-fill. A log still owing a run after it
+ * (the job stopped that long, or the creation keeps failing) is left as it is:
+ * steps more than 24 hours late are skipped anyway.
+ */
+export const PENDING_RUN_START_WINDOW_MS = 48 * 60 * 60_000;
+/** Owed runs created per job round, taken round-robin between vendors. */
+export const PENDING_RUN_START_LIMIT = 50;
+/**
+ * Review MINOR-1: the job's attempts at one owed run that end in an error
+ * other than a lock wait given up. The attempt that reaches this count clears
+ * the mark and reports `start_run_abandoned` once, so a log that can never get
+ * its run stops taking every round's budget before its 48-hour window ends.
+ */
+export const PENDING_RUN_START_MAX_ATTEMPTS = 5;
+/** Review NIT-2: this part of the round stops after this long, whatever the round's own deadline. */
+export const PENDING_RUN_START_BUDGET_MS = 20_000;
+/**
+ * Review NIT-2: consecutive lock waits given up (each up to 2 s) after which
+ * the round stops taking owed runs: merchants are saving right now, and the
+ * logs keep their mark for the next round.
+ */
+export const PENDING_RUN_START_MAX_CONSECUTIVE_DEFERRED = 3;
+
+/**
+ * Q-13 (#601 review): creates the delayed-step runs events still owe — an
+ * event whose run could not be created right after its immediate actions,
+ * because a merchant save held the rule row past the 2 s lock timeout (or the
+ * process stopped). The event marked its execution log with the subject when
+ * it completed (`delayedStepsPendingSubjectId`), and only those logs are read
+ * here: a rule that got its first step after the event, or a vendor granted
+ * delayed steps later, never enrols past events.
+ *
+ * Each log goes through the same startDelayedSteps as the event: vendor grant
+ * and suspension, the subject bound to the vendor, the rule row FOR SHARE and
+ * still active, the first active step as saved now. The run is anchored at the
+ * log's createdAt (the event, not this round), so a step already due runs in
+ * this round's worker and one more than 24 hours late is skipped as usual.
+ * Idempotent on (vendorId, automationRuleId, sourceExecutionLogId). A lock wait
+ * given up again leaves the log for the next round.
+ *
+ * The job takes no id from outside: every id comes from the log row and
+ * startDelayedSteps binds them to the log's vendor. Logs of suspended vendors,
+ * of vendors without the grant, or of a trigger the vendor's grants do not
+ * open (`form_no_show` without `automation_form_no_show`,
+ * isAutomationTriggerAvailableForVendor) are not taken and keep their mark.
+ *
+ * Review MINOR-1 and NIT-2: within a vendor (and between equal turns), logs
+ * with fewer failed attempts come first, then the oldest. An attempt that
+ * fails for any reason but a lock wait counts; the one reaching
+ * PENDING_RUN_START_MAX_ATTEMPTS clears the mark and reports once. The pass
+ * stops at min(deadline, start + PENDING_RUN_START_BUDGET_MS), or after
+ * PENDING_RUN_START_MAX_CONSECUTIVE_DEFERRED lock waits given up in a row.
+ */
+export async function startPendingAutomationRuns(
+  options: { now?: Date; vendorId?: string; deadline?: number; limit?: number } = {},
+  db: Database = getDb(),
+): Promise<Array<{ status: DelayedStepStartOutcome }>> {
+  const now = options.now ?? new Date();
+  const deadline = Math.min(options.deadline ?? Number.POSITIVE_INFINITY, Date.now() + PENDING_RUN_START_BUDGET_MS);
+  const pastDeadline = () => Date.now() >= deadline;
+  const limit = Math.max(0, Math.min(options.limit ?? PENDING_RUN_START_LIMIT, PENDING_RUN_START_LIMIT));
+  if (limit === 0 || pastDeadline()) return [];
+  const triggers = [...DELAYED_STEP_AUTOMATION_TRIGGERS] as string[];
+  const rows = await db.$queryRaw<Array<{
+    id: string; vendorId: string; ruleId: string; trigger: string; subjectType: string;
+    subjectKeyHash: string | null; delayedStepsPendingSubjectId: string; createdAt: Date; betaFeatureGrants: string[];
+  }>>`
+    WITH "owed" AS (
+      SELECT l."id", l."vendorId", l."ruleId", l."trigger", l."subjectType", l."subjectKeyHash",
+             l."delayedStepsPendingSubjectId", l."delayedStepsPendingAttempts", l."createdAt", l."completedAt",
+             v."betaFeatureGrants",
+             ROW_NUMBER() OVER (
+               PARTITION BY l."vendorId"
+               ORDER BY l."delayedStepsPendingAttempts" ASC, l."completedAt" ASC, l."id" ASC
+             ) AS "vendorRank"
+      FROM "AutomationExecutionLog" l
+      JOIN "Vendor" v ON v."id" = l."vendorId"
+      WHERE l."delayedStepsPendingSubjectId" IS NOT NULL
+        AND l."completedAt" >= ${utcTimestamp(new Date(now.getTime() - PENDING_RUN_START_WINDOW_MS))}
+        AND l."completedAt" <= ${utcTimestamp(new Date(now.getTime() - PENDING_RUN_START_MIN_AGE_MS))}
+        AND l."status" IN ('completed', 'failed')
+        AND l."trigger" = ANY(${triggers}::text[])
+        AND v."suspendedAt" IS NULL
+        AND ${AUTOMATION_DELAYED_STEPS_FEATURE} = ANY(v."betaFeatureGrants")
+        -- isAutomationTriggerAvailableForVendor: form_no_show needs its own grant (Q-11 M-1).
+        AND (l."trigger" <> 'form_no_show' OR ${AUTOMATION_FORM_NO_SHOW_FEATURE} = ANY(v."betaFeatureGrants"))
+        ${options.vendorId ? Prisma.sql`AND l."vendorId" = ${options.vendorId}` : Prisma.empty}
+    )
+    SELECT "id", "vendorId", "ruleId", "trigger", "subjectType", "subjectKeyHash", "delayedStepsPendingSubjectId", "createdAt", "betaFeatureGrants"
+    FROM "owed"
+    WHERE "vendorRank" <= ${limit}
+    ORDER BY "vendorRank" ASC, "delayedStepsPendingAttempts" ASC, "completedAt" ASC, "id" ASC
+    LIMIT ${limit}
+  `;
+  const results: Array<{ status: DelayedStepStartOutcome }> = [];
+  let deferredInARow = 0;
+  for (const row of rows) {
+    if (pastDeadline() || deferredInARow >= PENDING_RUN_START_MAX_CONSECUTIVE_DEFERRED) break;
+    // The same rule as the query, in code (the query is the one that keeps such logs out of the limit).
+    if (!isAutomationTriggerAvailableForVendor(row.trigger, { betaFeatureGrants: row.betaFeatureGrants })) continue;
+    const status = await startDelayedSteps(db, {
+      vendorId: row.vendorId,
+      ruleId: row.ruleId,
+      logId: row.id,
+      anchorAt: row.createdAt,
+      trigger: row.trigger,
+      subjectType: row.subjectType,
+      subjectId: row.delayedStepsPendingSubjectId,
+      subjectKeyHash: row.subjectKeyHash,
+    });
+    deferredInARow = status === "deferred" ? deferredInARow + 1 : 0;
+    if (status === "failed") await countFailedPendingRunStart(db, row);
+    results.push({ status });
+  }
+  return results;
+}
+
+/**
+ * One failed attempt at an owed run (MINOR-1): counted on the log, bound to
+ * its vendor and only while it still owes the run; the attempt reaching
+ * PENDING_RUN_START_MAX_ATTEMPTS clears the mark in the same statement and is
+ * reported once, with safe keys only.
+ */
+async function countFailedPendingRunStart(db: Database, log: { id: string; vendorId: string }) {
+  const counted = await db.$queryRaw<Array<{ attempts: number; abandoned: boolean }>>`
+    UPDATE "AutomationExecutionLog"
+    SET "delayedStepsPendingAttempts" = "delayedStepsPendingAttempts" + 1,
+        "delayedStepsPendingSubjectId" = CASE
+          WHEN "delayedStepsPendingAttempts" + 1 >= ${PENDING_RUN_START_MAX_ATTEMPTS} THEN NULL
+          ELSE "delayedStepsPendingSubjectId"
+        END
+    WHERE "id" = ${log.id} AND "vendorId" = ${log.vendorId} AND "delayedStepsPendingSubjectId" IS NOT NULL
+    RETURNING "delayedStepsPendingAttempts" AS "attempts", ("delayedStepsPendingSubjectId" IS NULL) AS "abandoned"
+  `;
+  if (!counted[0]?.abandoned) return;
+  try {
+    captureOperationalError(new Error("Gave up creating an owed delayed-step run."), { source: "automation_delayed_steps", operation: "start_run_abandoned" });
+  } catch {
+    // Monitoring must never change the round's outcome.
+  }
 }
 
 /**

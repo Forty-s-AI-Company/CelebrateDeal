@@ -15,6 +15,7 @@ const mocks = vi.hoisted(() => ({
   queueFixedSessionCancellationNotices: vi.fn(),
   backfillEmailSequenceEnrollments: vi.fn(),
   processDueDelayedStepRuns: vi.fn(),
+  startPendingAutomationRuns: vi.fn(),
   processDueSequenceEmailDeliveries: vi.fn(),
   onConfigurationError: vi.fn(),
   runFormNoShowAutomation: vi.fn(),
@@ -28,7 +29,8 @@ vi.mock("@/lib/delayed-step-runs", () => ({
 }));
 // F-4: the route runs the worker with the automation processor; the same mock
 // stands for the worker round.
-vi.mock("@/lib/automation-delayed-steps", () => ({ runDelayedStepWorker: mocks.processDueDelayedStepRuns }));
+// Q-13: the owed delayed-step runs, created before the worker.
+vi.mock("@/lib/automation-delayed-steps", () => ({ runDelayedStepWorker: mocks.processDueDelayedStepRuns, startPendingAutomationRuns: mocks.startPendingAutomationRuns }));
 // Q-11: the no-show pass; its deadline helper stays real.
 vi.mock("@/lib/form-no-show-automation", async (original) => ({
   ...await original<typeof import("@/lib/form-no-show-automation")>(),
@@ -75,6 +77,7 @@ beforeEach(() => {
   mocks.queueFixedSessionCancellationNotices.mockResolvedValue(["private-notice-1"]);
   mocks.backfillEmailSequenceEnrollments.mockResolvedValue([]);
   mocks.processDueDelayedStepRuns.mockResolvedValue([]);
+  mocks.startPendingAutomationRuns.mockResolvedValue([]);
   mocks.processDueSequenceEmailDeliveries.mockResolvedValue([]);
   mocks.runFormNoShowAutomation.mockResolvedValue({ vendors: 1, candidates: 3, examined: 2, completed: 2, skipped: 0, failed: 1, duplicate: 0, errors: 0 });
 });
@@ -164,6 +167,7 @@ describe("POST /api/jobs/email-deliveries", () => {
       followupResults: [{ status: "queued" }, { status: "unknown" }],
       sequenceSkipped: false,
       sequenceEnrollments: 0,
+      automationPendingRunsStarted: 0,
       sequenceSteps: 0,
       sequenceStepResults: [],
       sequenceDispatched: 0,
@@ -334,6 +338,7 @@ describe("F-3 email sequence work in the job", () => {
       { runId: "private-run-2", status: "waiting_previous" },
       { runId: "private-run-3", status: "unexpected" },
     ]);
+    mocks.startPendingAutomationRuns.mockResolvedValue([{ status: "started" }, { status: "deferred" }, { status: "started" }, { status: "not_needed" }]);
     mocks.processDueSequenceEmailDeliveries.mockResolvedValue([{ deliveryId: "private-seq-1", status: "sent" }, { deliveryId: "private-seq-2", status: "weird" }]);
     const before = Date.now();
     const response = await POST(request("g7-07-job-secret"));
@@ -343,6 +348,7 @@ describe("F-3 email sequence work in the job", () => {
     expect(body).toMatchObject({
       sequenceSkipped: false,
       sequenceEnrollments: 2,
+      automationPendingRunsStarted: 2,
       sequenceSteps: 3,
       sequenceStepResults: [{ status: "queued" }, { status: "waiting_previous" }, { status: "unknown" }],
       sequenceDispatched: 2,
@@ -356,7 +362,9 @@ describe("F-3 email sequence work in the job", () => {
       mocks.sweepExpiredRegistrationRetryDrafts, mocks.processLiveReminderReconciliationJobs,
     ].map(order), mocks.processDueLiveNotifications.mock.invocationCallOrder[1]!);
     expect(order(mocks.backfillEmailSequenceEnrollments)).toBeGreaterThan(lastOther);
-    expect(order(mocks.processDueDelayedStepRuns)).toBeGreaterThan(order(mocks.backfillEmailSequenceEnrollments));
+    // Q-13: owed runs after the back-fill and before the worker, so a step already due runs this round.
+    expect(order(mocks.startPendingAutomationRuns)).toBeGreaterThan(order(mocks.backfillEmailSequenceEnrollments));
+    expect(order(mocks.processDueDelayedStepRuns)).toBeGreaterThan(order(mocks.startPendingAutomationRuns));
     expect(order(mocks.processDueSequenceEmailDeliveries)).toBeGreaterThan(order(mocks.processDueDelayedStepRuns));
     // One deadline, 100 s after the round started (inside the runner's 120 s), and one configuration reporter.
     const deadline = (mocks.processDueDelayedStepRuns.mock.calls[0]![0] as { deadline: number }).deadline;
@@ -365,6 +373,7 @@ describe("F-3 email sequence work in the job", () => {
     expect(mocks.processDueDelayedStepRuns).toHaveBeenCalledWith({ deadline, onConfigurationError: mocks.onConfigurationError });
     expect(mocks.backfillEmailSequenceEnrollments).toHaveBeenCalledWith({ deadline, onConfigurationError: mocks.onConfigurationError });
     expect(mocks.processDueSequenceEmailDeliveries).toHaveBeenCalledWith({ deadline });
+    expect(mocks.startPendingAutomationRuns).toHaveBeenCalledWith({ deadline });
   });
 
   it("skips the sequence work, and says so to monitoring, when the round already ran past 60 seconds", async () => {
@@ -379,6 +388,7 @@ describe("F-3 email sequence work in the job", () => {
     expect(body).toMatchObject({ ok: true, sequenceSkipped: true, sequenceSteps: 0, sequenceDispatched: 0 });
     expect(mocks.backfillEmailSequenceEnrollments).not.toHaveBeenCalled();
     expect(mocks.processDueDelayedStepRuns).not.toHaveBeenCalled();
+    expect(mocks.startPendingAutomationRuns).not.toHaveBeenCalled();
     expect(mocks.processDueSequenceEmailDeliveries).not.toHaveBeenCalled();
     expect(mocks.processDueEmailDeliveries).toHaveBeenCalledOnce();
     expect(mocks.captureOperationalError).toHaveBeenCalledWith(expect.any(Error), {
@@ -403,16 +413,17 @@ describe("F-3 email sequence work in the job", () => {
 
   it("keeps the response and the other passes when any sequence part fails", async () => {
     mocks.backfillEmailSequenceEnrollments.mockRejectedValueOnce(new Error("backfill-private-detail"));
+    mocks.startPendingAutomationRuns.mockRejectedValueOnce(new Error("pending-private-detail"));
     mocks.processDueDelayedStepRuns.mockRejectedValueOnce(new Error("sequence-private-detail"));
     mocks.processDueSequenceEmailDeliveries.mockRejectedValueOnce(new Error("dispatch-private-detail"));
     mocks.processDueEmailDeliveries.mockResolvedValue([{ deliveryId: "private-due", status: "sent" }]);
     const response = await POST(request("g7-07-job-secret"));
     expect(response.status).toBe(200);
     const body = await response.json();
-    expect(body).toMatchObject({ ok: true, sequenceEnrollments: 0, sequenceSteps: 0, sequenceDispatched: 0, processed: 1, results: [{ status: "sent" }] });
+    expect(body).toMatchObject({ ok: true, sequenceEnrollments: 0, automationPendingRunsStarted: 0, sequenceSteps: 0, sequenceDispatched: 0, processed: 1, results: [{ status: "sent" }] });
     expect(mocks.processDueLineDeliveries).toHaveBeenCalledOnce();
     expect(mocks.processDueLearnerNotifications).toHaveBeenCalledOnce();
-    for (const operation of ["email_sequence_backfill", "delayed_step_runs", "sequence_email_dispatch"]) {
+    for (const operation of ["email_sequence_backfill", "automation_pending_runs", "delayed_step_runs", "sequence_email_dispatch"]) {
       expect(mocks.captureOperationalError).toHaveBeenCalledWith(expect.any(Error), { source: "email_delivery_job", operation, status: "failed" });
     }
     expect(JSON.stringify(body)).not.toContain("private-detail");

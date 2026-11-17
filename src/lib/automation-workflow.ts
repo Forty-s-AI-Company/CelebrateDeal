@@ -23,6 +23,7 @@ import {
   parseAutomationStepEventId,
 } from "@/lib/automation-email-trigger";
 import { captureOperationalError } from "@/lib/monitoring";
+import { isLockWaitGivenUp } from "@/lib/serializable-retry";
 import { scheduleImmediateEmailDispatch } from "@/lib/email-delivery-immediate";
 import { isSafeExternalHttpsUrl } from "@/lib/safe-url";
 import {
@@ -980,7 +981,7 @@ async function claimRuleExecution(
     // unique key), but a first attempt that could not create the run gets
     // it now.
     if (existing?.status === "completed" && existing.conditionMatched && firstStep) {
-      await startDelayedSteps(db, { ruleId: rule.id, event, logId: existing.id, anchorAt: existing.createdAt });
+      await startDelayedSteps(db, delayedStepStartInput(rule.id, event, existing.id, existing.createdAt));
     }
     return { status: "duplicate" };
   }
@@ -1034,6 +1035,16 @@ async function runAutomationEvent(db: AutomationDb, event: AutomationEvent, queu
     },
   });
   const results: Array<{ ruleId: string; status: string }> = [];
+  // Q-13 review MINOR-2: whether this vendor takes delayed steps at all (the
+  // closed-beta grant, not suspended), read once per event and only when a
+  // rule has steps. A vendor that does not never gets a pending mark, so
+  // re-opening its grant later never back-fills these events. A failed read
+  // counts as "takes them": startDelayedSteps settles it from its own read.
+  let vendorTakesDelayedSteps: Promise<boolean> | undefined;
+  const vendorOpenForDelayedSteps = () => (vendorTakesDelayedSteps ??= db.vendor
+    .findUnique({ where: { id: event.vendorId }, select: { betaFeatureGrants: true, suspendedAt: true } })
+    .then((vendor) => Boolean(vendor && !vendor.suspendedAt && isFeatureEnabled(vendor, AUTOMATION_DELAYED_STEPS_FEATURE)))
+    .catch(() => true));
 
   for (const storedRule of rules) {
     const rule = parseAutomationRule(storedRule);
@@ -1062,6 +1073,16 @@ async function runAutomationEvent(db: AutomationDb, event: AutomationEvent, queu
 
     const actionResults: unknown[] = [];
     let status: "completed" | "failed" | "rule_deleted";
+    // Q-13: the run this event owes is recorded with the log's completion
+    // (same write), so a run that cannot be created right after (the rule row
+    // held by a merchant save past the lock timeout, or the process stopped)
+    // is created later by the job (startPendingAutomationRuns).
+    // The vendor gate is read before the log's completion write (MINOR-2);
+    // a reclaimed execution starts the job's attempt count again.
+    const owesRun = Boolean(firstStep) && eventCanStartDelayedSteps(event) && await vendorOpenForDelayedSteps();
+    const pendingRun: Prisma.AutomationExecutionLogUpdateInput = owesRun
+      ? { delayedStepsPendingSubjectId: event.subjectId, delayedStepsPendingAttempts: 0 }
+      : {};
     try {
       await runRuleActions(db, rule, event, log.id, queuedEmailIds, actionResults, { emailTrigger: AUTOMATION_EMAIL_TRIGGER });
       // An action that reports its own failure (today only an automation
@@ -1076,6 +1097,7 @@ async function runAutomationEvent(db: AutomationDb, event: AutomationEvent, queu
         conditionMatched: true,
         actionResults: actionResults as Prisma.InputJsonArray,
         ...(reportedFailure ? { errorCode: reportedFailure.reason } : {}),
+        ...pendingRun,
         completedAt: new Date(),
       });
       status = !recorded ? "rule_deleted" : reportedFailure ? "failed" : "completed";
@@ -1089,6 +1111,7 @@ async function runAutomationEvent(db: AutomationDb, event: AutomationEvent, queu
         conditionMatched: true,
         actionResults: actionResults as Prisma.InputJsonArray,
         errorCode: "action_failed",
+        ...pendingRun,
         completedAt: new Date(),
       });
       status = recorded ? "failed" : "rule_deleted";
@@ -1097,11 +1120,60 @@ async function runAutomationEvent(db: AutomationDb, event: AutomationEvent, queu
     // whatever they did (the steps re-check everything when they are due).
     // Never fails the event: see startDelayedSteps.
     if (status !== "rule_deleted" && firstStep) {
-      await startDelayedSteps(db, { ruleId: rule.id, event, logId: log.id, anchorAt: log.createdAt });
+      await startDelayedSteps(db, delayedStepStartInput(rule.id, event, log.id, log.createdAt));
     }
     results.push({ ruleId: rule.id, status });
   }
   return results;
+}
+
+/** What startDelayedSteps needs: the rule, the event's execution log and its subject (the event or the log's pending mark). */
+export type DelayedStepStartInput = {
+  vendorId: string;
+  ruleId: string;
+  logId: string;
+  /** The event's first execution (the log's createdAt); every step is due relative to it. */
+  anchorAt: Date | undefined;
+  trigger: string;
+  subjectType: string;
+  subjectId: string;
+  subjectKeyHash: string | null | undefined;
+};
+
+/**
+ * `started`: this call created the run. `already_started`: the run existed
+ * before (a replay or a concurrent start). `not_needed`: no run for this
+ * event, settled. `deferred`: the rule row stayed locked past the lock
+ * timeout; the log still owes the run. `failed`: another error, reported; the
+ * log still owes the run.
+ */
+export type DelayedStepStartOutcome = "started" | "already_started" | "not_needed" | "deferred" | "failed";
+
+/** The pure part of "this event can have a delayed-step run": trigger, subject kind and customer key. */
+function eventCanStartDelayedSteps(event: { trigger: string; subjectType: string; subjectKeyHash?: string | null }) {
+  // payment_paid (an order subject) never starts a run: see DELAYED_STEP_AUTOMATION_TRIGGERS.
+  return automationTriggerSupportsDelayedSteps(event.trigger) && event.subjectType === "buyer_registration" && Boolean(event.subjectKeyHash);
+}
+
+function delayedStepStartInput(ruleId: string, event: AutomationEvent, logId: string, anchorAt: Date | undefined): DelayedStepStartInput {
+  return {
+    vendorId: event.vendorId,
+    ruleId,
+    logId,
+    anchorAt,
+    trigger: event.trigger,
+    subjectType: event.subjectType,
+    subjectId: event.subjectId,
+    subjectKeyHash: event.subjectKeyHash,
+  };
+}
+
+/** Clears the run a log owes (only when it still owes one, so a settled log is not written again). */
+function clearPendingRun(db: Pick<AutomationDb, "automationExecutionLog">, input: Pick<DelayedStepStartInput, "vendorId" | "logId">) {
+  return db.automationExecutionLog.updateMany({
+    where: { id: input.logId, vendorId: input.vendorId, delayedStepsPendingSubjectId: { not: null } },
+    data: { delayedStepsPendingSubjectId: null },
+  });
 }
 
 /**
@@ -1119,71 +1191,102 @@ async function runAutomationEvent(db: AutomationDb, event: AutomationEvent, queu
  * sourceExecutionLogId) makes a replay a no-op, and any error is reported and
  * swallowed, so the immediate actions already done and the registration or
  * booking request are never affected.
+ *
+ * Q-13: the execution log carries the run it still owes
+ * (`delayedStepsPendingSubjectId`, written with the log's completion). Every
+ * settled outcome clears it: the run was created (or already existed), or
+ * none is needed (no grant, suspended vendor, subject gone, rule switched
+ * off, no active step). A lock wait given up or another error leaves it, and
+ * the e-mail job creates the run later with the same anchor
+ * (startPendingAutomationRuns in automation-delayed-steps.ts, which calls
+ * this function too).
  */
-async function startDelayedSteps(
-  db: AutomationDb,
-  input: { ruleId: string; event: AutomationEvent; logId: string; anchorAt: Date | undefined },
-) {
-  const { event } = input;
+export async function startDelayedSteps(db: AutomationDb, input: DelayedStepStartInput): Promise<DelayedStepStartOutcome> {
   try {
-    // payment_paid (an order subject) never starts a run: see DELAYED_STEP_AUTOMATION_TRIGGERS.
-    if (!automationTriggerSupportsDelayedSteps(event.trigger) || event.subjectType !== "buyer_registration" || !event.subjectKeyHash) return;
+    if (!eventCanStartDelayedSteps(input)) {
+      await clearPendingRun(db, input);
+      return "not_needed";
+    }
     // Closed beta (M3): only a vendor holding the grant, and not suspended.
-    const vendor = await db.vendor.findUnique({ where: { id: event.vendorId }, select: { betaFeatureGrants: true, suspendedAt: true } });
-    if (!vendor || vendor.suspendedAt || !isFeatureEnabled(vendor, AUTOMATION_DELAYED_STEPS_FEATURE)) return;
-    const subject = automationTriggerSubjectIsRegistration(event.trigger)
-      // FormSubmission has no vendorId: the registration is bound through its form.
-      ? await db.formSubmission.findFirst({ where: { id: event.subjectId, form: { vendorId: event.vendorId } }, select: { id: true } })
-        .then((row) => row ? { formSubmissionId: row.id } : null)
-      : await db.consultationBooking.findFirst({ where: { id: event.subjectId, vendorId: event.vendorId }, select: { id: true } })
-        .then((row) => row ? { consultationBookingId: row.id } : null);
-    if (!subject) return;
+    const vendor = await db.vendor.findUnique({ where: { id: input.vendorId }, select: { betaFeatureGrants: true, suspendedAt: true } });
+    const subject = !vendor || vendor.suspendedAt || !isFeatureEnabled(vendor, AUTOMATION_DELAYED_STEPS_FEATURE)
+      ? null
+      : automationTriggerSubjectIsRegistration(input.trigger)
+        // FormSubmission has no vendorId: the registration is bound through its form.
+        ? await db.formSubmission.findFirst({ where: { id: input.subjectId, form: { vendorId: input.vendorId } }, select: { id: true } })
+          .then((row) => row ? { formSubmissionId: row.id } : null)
+        : await db.consultationBooking.findFirst({ where: { id: input.subjectId, vendorId: input.vendorId }, select: { id: true } })
+          .then((row) => row ? { consultationBookingId: row.id } : null);
+    if (!subject) {
+      await clearPendingRun(db, input);
+      return "not_needed";
+    }
     const anchorAt = input.anchorAt ?? new Date();
-    const subjectKeyHash = event.subjectKeyHash;
+    const subjectKeyHash = input.subjectKeyHash as string;
     // m1: the first due time comes from the steps as they are now, read after
     // the rule row FOR SHARE. A merchant saving steps holds that row FOR UPDATE
     // (automation-delayed-steps.ts), and switching the rule off does too, so
     // this run either waits for the save and uses its steps, or the save
     // re-times this run after it. A rule switched off meanwhile gets no run.
-    await db.$transaction(async (tx) => {
+    // The log's pending mark is cleared in the same transaction, so it goes
+    // away exactly when the outcome is settled.
+    return await db.$transaction(async (tx) => {
       // The registration or booking request waits at most this long for a
-      // merchant save; a timeout is reported below and the event goes on.
+      // merchant save; a timeout is reported below as deferred and the event
+      // goes on.
       await tx.$executeRaw`SET LOCAL lock_timeout = '2s'`;
       const locked = await tx.$queryRaw<Array<{ id: string }>>`
         SELECT "id" FROM "AutomationRule"
-        WHERE "id" = ${input.ruleId} AND "vendorId" = ${event.vendorId} AND "isActive"
+        WHERE "id" = ${input.ruleId} AND "vendorId" = ${input.vendorId} AND "isActive"
         FOR SHARE
       `;
-      if (locked.length === 0) return;
-      const first = await tx.automationRuleStep.findFirst({
-        where: { vendorId: event.vendorId, ruleId: input.ruleId, isActive: true },
+      const first = locked.length === 0 ? null : await tx.automationRuleStep.findFirst({
+        where: { vendorId: input.vendorId, ruleId: input.ruleId, isActive: true },
         orderBy: { delayMinutes: "asc" },
         select: { delayMinutes: true },
       });
-      if (!first) return;
-      await tx.delayedStepRun.createMany({
-        data: [{
-          vendorId: event.vendorId,
-          automationRuleId: input.ruleId,
-          sourceExecutionLogId: input.logId,
-          ...subject,
-          subjectKeyHash,
-          anchorAt,
-          cursorDelayMinutes: -1,
-          status: "active",
-          nextRunAt: new Date(anchorAt.getTime() + first.delayMinutes * 60_000),
-        }],
-        skipDuplicates: true,
-      });
+      let created = 0;
+      if (first) {
+        ({ count: created } = await tx.delayedStepRun.createMany({
+          data: [{
+            vendorId: input.vendorId,
+            automationRuleId: input.ruleId,
+            sourceExecutionLogId: input.logId,
+            ...subject,
+            subjectKeyHash,
+            anchorAt,
+            cursorDelayMinutes: -1,
+            status: "active",
+            nextRunAt: new Date(anchorAt.getTime() + first.delayMinutes * 60_000),
+          }],
+          skipDuplicates: true,
+        }));
+      }
+      await clearPendingRun(tx, input);
+      return !first ? "not_needed" : created > 0 ? "started" : "already_started";
     });
   } catch (error) {
-    // A rule deleted in between (its log cascades with it) is simply over.
-    if (isForeignKeyViolation(error)) return;
+    // A rule deleted in between (its log cascades with it), or the subject
+    // deleted after it was read, is simply over. The transaction rolled back,
+    // so the log's mark (if the log is still there) is cleared on its own;
+    // that write failing only leaves the mark for the job to settle.
+    if (isForeignKeyViolation(error)) {
+      await clearPendingRun(db, input).catch(() => undefined);
+      return "not_needed";
+    }
+    // Q-13: a merchant save held the rule row past the lock timeout. The log
+    // still owes the run and the job creates it; a warning keeps it visible.
+    const deferred = isLockWaitGivenUp(error);
     try {
-      captureOperationalError(error, { area: "automation_delayed_steps", operation: "start_run", vendorId: event.vendorId });
+      captureOperationalError(
+        error,
+        { source: "automation_delayed_steps", operation: deferred ? "start_run_deferred" : "start_run" },
+        deferred ? { level: "warning" } : undefined,
+      );
     } catch {
       // Monitoring must never change the event's outcome.
     }
+    return deferred ? "deferred" : "failed";
   }
 }
 

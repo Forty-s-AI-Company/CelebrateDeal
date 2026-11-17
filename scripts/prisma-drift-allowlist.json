@@ -27,6 +27,7 @@
       "UserEmailChangeRequest_one_open_per_user"
     ],
     "partialIndexes": [
+      "AutomationExecutionLog_delayed_steps_pending_idx",
       "FormSubmission_verified_email_normalized_idx"
     ]
   },

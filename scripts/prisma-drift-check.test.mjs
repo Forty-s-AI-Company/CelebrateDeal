@@ -97,7 +97,9 @@ test("the committed allowlist is well formed and covers the B04-04 hazards", () 
     "UserEmailChangeRequest_one_open_per_user",
   ]);
   // Q-12: a partial expression index (consultation step verified-address lookup).
+  // Q-13: execution logs that still owe a delayed-step run.
   assert.deepEqual(allowlist.notComparedByPrismaDiff.partialIndexes, [
+    "AutomationExecutionLog_delayed_steps_pending_idx",
     "FormSubmission_verified_email_normalized_idx",
   ]);
 });
