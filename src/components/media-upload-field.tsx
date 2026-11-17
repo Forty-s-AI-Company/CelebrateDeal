@@ -804,7 +804,7 @@ function MediaUploadFieldView({
         role="button"
         tabIndex={isBusy ? -1 : 0}
         aria-disabled={isBusy}
-        aria-labelledby={`${inputId}-label`}
+        aria-labelledby={`${inputId}-label ${inputId}-dropzone`}
         aria-describedby={[`${inputId}-description`, props.errorId].filter(Boolean).join(" ")}
         onClick={() => !isBusy && inputRef.current?.click()}
         onKeyDown={(event) => {
@@ -820,7 +820,7 @@ function MediaUploadFieldView({
         }}
         className="grid min-h-36 cursor-pointer place-items-center rounded-xl border-2 border-dashed border-blue-200 bg-white px-4 py-6 text-center outline-none transition hover:border-primary focus:ring-2 focus:ring-primary"
       >
-        <span className="grid gap-2 place-items-center">
+        <span id={`${inputId}-dropzone`} className="grid gap-2 place-items-center">
           <FileUp className="text-primary" aria-hidden="true" />
           <span className="text-sm font-semibold text-slate-800">拖拉檔案到這裡，或點擊選檔</span>
           <span className="text-xs text-slate-500">{props.kind === "image" ? "JPEG / PNG / WebP / GIF / AVIF，最多 15 MB" : "MP4 / MOV / WebM 等影片，最多 30 GB；大型檔案會自動分段續傳"}</span>
