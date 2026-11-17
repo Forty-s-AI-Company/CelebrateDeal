@@ -495,6 +495,7 @@ describe("automation actions", () => { it("requires CSRF and writes tenant-scope
       ["consultation_booked", "repurchase_followup"],
       ["payment_paid", "consultation_confirmation"],
       ["form_no_show", "consultation_confirmation"],
+      ["form_no_show", "class_reminder"],
     ])("refuses %s with %s and writes nothing", async (trigger, template) => {
       await expect(createAutomationRuleAction(emailForm(trigger, template, trigger === "payment_paid" ? { conditionValue: "100" } : {}))).rejects.toThrow("redirect:/settings/automations?error=email_template_unavailable");
       expect(runtime.db.automationRule.create).not.toHaveBeenCalled();
@@ -503,7 +504,6 @@ describe("automation actions", () => { it("requires CSRF and writes tenant-scope
     it.each([
       ["consultation_booked", "consultation_confirmation"],
       ["consultation_no_show", "consultation_confirmation"],
-      ["form_no_show", "class_reminder"],
       ["form_no_show", "webinar_replay"],
     ])("creates %s with %s", async (trigger, template) => {
       await expect(createAutomationRuleAction(emailForm(trigger, template))).rejects.toThrow("redirect:/settings/automations?updated=created");

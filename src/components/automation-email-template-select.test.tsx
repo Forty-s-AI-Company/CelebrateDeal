@@ -42,7 +42,7 @@ describe("AutomationEmailTemplateSelect (Q-18)", () => {
     expect(options()).toEqual(["consultation_confirmation"]);
     expect(select().value).toBe("consultation_confirmation");
     await change(trigger, () => { trigger.value = "form_no_show"; });
-    expect(options()).toEqual(["class_reminder", "webinar_replay"]);
+    expect(options()).toEqual(["webinar_replay"]);
     await change(trigger, () => { trigger.value = "form_registered"; });
     expect(options()).toEqual([""]);
   });

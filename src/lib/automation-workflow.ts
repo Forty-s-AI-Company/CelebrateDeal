@@ -244,7 +244,8 @@ export const AUTOMATION_EMAIL_TEMPLATE_LABELS: Record<AutomationEmailTemplate, s
  */
 const EMAIL_TEMPLATE_LINK_TRIGGERS: Record<Exclude<AutomationEmailTemplate, "repurchase_followup">, readonly AutomationTrigger[]> = {
   consultation_confirmation: ["consultation_booked", "consultation_no_show"],
-  class_reminder: ["form_no_show"],
+  // 「課程即將開始」對已結束的場次語意錯誤，所以未出席直播也不開放；只有 webinarUrl 並不夠。
+  class_reminder: [],
   webinar_replay: ["form_no_show"],
 };
 

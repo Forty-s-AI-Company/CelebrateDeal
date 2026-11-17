@@ -15,7 +15,7 @@ import {
 // voucher link exists only next to an issue_repurchase_voucher action.
 const WITHOUT_VOUCHER: Record<string, string[]> = {
   form_registered: [],
-  form_no_show: ["class_reminder", "webinar_replay"],
+  form_no_show: ["webinar_replay"],
   consultation_booked: ["consultation_confirmation"],
   consultation_no_show: ["consultation_confirmation"],
   payment_paid: [],
@@ -75,7 +75,7 @@ describe("e-mail templates by trigger (Q-18)", () => {
     expect(JSON.stringify(stored)).toBe(before);
 
     // Names the templates that do fit the trigger.
-    expect(automationEmailTemplateAdvice("form_no_show", [{ type: "send_email_notification", template: "consultation_confirmation" }])[0]).toContain("建議改用「課前提醒」或「缺席回放與諮詢邀請」");
+    expect(automationEmailTemplateAdvice("form_no_show", [{ type: "send_email_notification", template: "consultation_confirmation" }])[0]).toContain("建議改用「缺席回放與諮詢邀請」");
     // 追購通知 without a voucher in the same actions.
     expect(automationEmailTemplateAdvice("consultation_booked", [{ type: "send_email_notification", template: "repurchase_followup" }])[0]).toContain("「追購通知」要有同一份動作裡的「派發回購券」才有領券連結");
     // Fine, or not an e-mail action, or unreadable data: no advice.

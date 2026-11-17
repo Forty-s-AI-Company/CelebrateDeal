@@ -411,7 +411,7 @@ describe("AutomationSettingsPage", () => {
     it.each([
       ["consultation_booked", ["consultation_confirmation|諮詢預約確認"]],
       ["consultation_no_show", ["consultation_confirmation|諮詢預約確認"]],
-      ["form_no_show", ["class_reminder|課前提醒", "webinar_replay|缺席回放與諮詢邀請"]],
+      ["form_no_show", ["webinar_replay|缺席回放與諮詢邀請"]],
       ["form_registered", ["|沒有適用的範本"]],
     ])("offers a %s step only the templates with a link", async (trigger, expected) => {
       mocks.manager.mockResolvedValue({ vendor: { id: "v1", betaFeatureGrants: ["automation_delayed_steps", "automation_form_no_show"] }, user: { id: "u1" }, member: { role: "owner" } });

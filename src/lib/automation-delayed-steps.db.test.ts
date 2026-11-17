@@ -1369,6 +1369,7 @@ describe("Q-18: e-mail templates by trigger", () => {
     ["consultation_booked", "webinar_replay"],
     ["consultation_no_show", "class_reminder"],
     ["form_no_show", "consultation_confirmation"],
+    ["form_no_show", "class_reminder"],
   ])("refuses to add a %s step with %s and stores nothing", async (trigger, template) => {
     const t = await tenant();
     await db.vendor.update({ where: { id: t.vendor.id }, data: { betaFeatureGrants: ["automation_delayed_steps", "automation_form_no_show"] } });
@@ -1380,7 +1381,6 @@ describe("Q-18: e-mail templates by trigger", () => {
   it.each([
     ["consultation_booked", "consultation_confirmation"],
     ["consultation_no_show", "consultation_confirmation"],
-    ["form_no_show", "class_reminder"],
     ["form_no_show", "webinar_replay"],
   ])("adds a %s step with %s", async (trigger, template) => {
     const t = await tenant();
