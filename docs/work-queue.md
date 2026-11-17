@@ -32,8 +32,8 @@
 | 13 | Q-03 | 範本庫 `TemplateCard` 對比不足 | 一般 | S | 先在 master 重現；axe 無新增違規 | 已完成 [#615](https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/615)：master 上 27 處，原因是縮圖預覽的背景被 axe 當成卡片底色；縮圖外框加 `contain-paint isolate`，未改顏色；新增範本庫 axe e2e |
 | 14 | Q-12 | 延遲步驟細節（快照損壞重試、連帶撤回、補跑輪流；地址索引另列高） | 一般 | S–M | 各自有測試 | 已完成 [#628](https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/628)（獨立審查）：快照損壞第二次才停止、`failed` run 已排隊的信照寄、無 Email 補跑商家輪流、`FormSubmission` 驗證地址索引（staging run 44056948778 已套用）。已知限制：輪流查詢在積壓大時線性成長 |
 | 15 | Q-13 | 規則被鎖超過 2 秒時漏建延遲步驟 | 一般 | M | 先重現；補建不重複 | 已完成 [#631](https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/631)：規則忙碌時改留待補建紀錄，由排程補建，不重複建立。已知限制：商家儲存規則持有鎖時，請求路徑最多可等 15 秒 |
-| 16 | Q-11 | 三個隱藏 trigger 接上呼叫端（`form_no_show`、`viewer_watch_progress`、`webinar_attended_duration_gte`） | 一般 | M×3 | 每個 trigger 一個 PR；接上後才在後台顯示 | `form_no_show` 已完成 [#623](https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/623)（兩輪獨立審查）：新增觀看紀錄表、放在封測授權 `automation_form_no_show` 後（預設不開）、staging run 44045862771 套用 3 條 migration。已知限制：換裝置或手機內建瀏覽器驗證會被誤判未出席（後台已說明，根本解法見 Q-17）。`viewer_watch_progress`、`webinar_attended_duration_gte` 未開始 |
-| 17 | Q-09 | `payment_paid` 的延遲步驟 | 高（金流、migration） | L | `DelayedStepRun` 加訂單欄位；到點重讀訂單；退款後不寄 | 進行中（`ai/payment-paid-delayed-steps`） |
+| 16 | Q-11 | 三個隱藏 trigger 接上呼叫端（`form_no_show`、`viewer_watch_progress`、`webinar_attended_duration_gte`） | 一般 | M×3 | 每個 trigger 一個 PR；接上後才在後台顯示 | `form_no_show` 已完成 [#623](https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/623)（兩輪獨立審查）：新增觀看紀錄表、放在封測授權 `automation_form_no_show` 後（預設不開）、staging run 44045862771 套用 3 條 migration。已知限制：換裝置或手機內建瀏覽器驗證會被誤判未出席（後台已說明，根本解法見 Q-17）。`viewer_watch_progress` 進行中（`ai/trigger-watch-progress`）；`webinar_attended_duration_gte` 未開始 |
+| 17 | Q-09 | `payment_paid` 的延遲步驟 | 高（金流、migration） | L | `DelayedStepRun` 加訂單欄位；到點重讀訂單；退款後不寄 | 已完成 [#640](https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/640)（三輪獨立審查）：`DelayedStepRun.commerceOrderId`；到點重讀訂單，全額退款／取消／測試單停止，部分退款照跑；收件 Email 只限本商家已驗證報名或已使用的學員登入連結；付款後才改的步驟不回頭套用；金鑰 ID 不在 keyring 時重試而不略過。staging migrate run 44175685097 套用 2 條，alias 切到 `d7f4e800`（回滾點 `dpl_6U6asKTYybuYxLvitSK7gbY4wU7G`），browser smoke run 44176042509、首次成功路徑 run 44176052166 PASS。未驗證：staging 上實際付款後到點寄出延遲步驟（需開授權並等待到期）；keyring 超過約 50 分鐘未修復時整條 run 停止（設計文件已記） |
 | 18 | U-04 | 通用元件採用（28 個手寫輸入框、Toast、Tabs 分批遷移） | 一般 | M，分批 | 每批視覺與 a11y 不退步 | 第一批完成 [#625](https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/625)（課程單元、互動角色表單 7 個欄位）。剩餘清單分「一般／漏斗編輯器／高風險」三組，見 #625 說明；多數一般表單需先讓 `Field` 支援受控欄位 |
 | 19 | Q-05 | 發布檢查改成純讀 preflight | 一般 | M | 檢查不取得發布鎖、不寫入 | 已完成 [#619](https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/619)。檢查與正式發布共用 `assertDraftPublishable`；同一份測試對舊實作只有「不取鎖」兩項不同。純讀看不到的寫入期競爭（自動表單 slug、版本號唯一鍵）仍只在正式發布時回報 |
 | 20 | R-02 | `.gitattributes`（LF） | 一般 | S | 不造成全 repo 換行 diff | 已完成 [#626](https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/626)：104 個誤存 CRLF 的文字檔轉 LF（內容無變更），已套用的 CRLF migration 以 `-text` 保留；順帶修正 CodeQL 標出的反斜線跳脫 |
@@ -55,7 +55,10 @@
 - 其餘 35 個租戶 action 補兩租戶 DB 測試（#638 延伸）。
 - fan-out 的 `consentedAt <= occurredAt` 改用共用時鐘偏差（#635 延伸）。
 - 商家儲存規則持有鎖時，請求路徑最多阻塞 15 秒（#631 延伸）。
-- `tests/e2e/affiliate-portal.spec.ts:76` 在 browser gate 偶發逾時（#630 CI run 44057815873）。
+- ~~`tests/e2e/affiliate-portal.spec.ts:76` 在 browser gate 偶發逾時~~：已修 [#644](https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/644)（測試在撤銷寫入前就重新載入；改為等 DB 授權更新）。其他 spec 若靠 `?saved=1` 橫幅判斷完成，可能有同類風險，未盤點。
+- PayUni 若以 `partially_refunded` 退完剩餘金額，付款端會拒收、訂單停在部分退款（#640 審查 NIT-B）；需確認 PayUni 實際行為。
+- `automation-delayed-step-start-lock.db.test.ts` 依賴外部 `CSRF_SECRET`，本機沒設會失敗（CI 有設）。
+- npm audit 對 picomatch（GHSA-fc5q-39xc-vjpf）的例外於 2027-01-01 到期；上游出修補版後移除（#642）。
 
 ## B. 需要 owner 先做產品決定
 
