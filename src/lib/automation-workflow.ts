@@ -34,6 +34,7 @@ import {
 import { voucherActionSendsLine } from "@/lib/automation-line-push-policy";
 import { fixedSessionReplayAvailableUntil } from "@/lib/live-fixed-sessions";
 import { isExistingLiveVideoReady, type LiveVideoReadiness } from "@/lib/live-video-readiness";
+import { PAYMENT_PAID_RUN_ORDER_SELECT, paymentPaidRunOrderCounts, paymentPaidRunOrderWhere } from "@/lib/payment-paid-run-order";
 
 /**
  * Every trigger the engine understands. Stored rules may use any of them and
@@ -113,20 +114,31 @@ export const FORM_NO_SHOW_DETECTION_NOTE = "只能辨識在報名驗證的瀏覽
 
 /**
  * Triggers whose rules may have delayed steps (F-4 PR 2): their subject is a
- * registration or a consultation booking, which a DelayedStepRun can point at
- * and the worker can read again later. `form_no_show` (Q-11) has the same
- * subject as `form_registered`: the registrant's VERIFIED FormSubmission.
- * `payment_paid` runs its immediate actions only: a run has no order
- * reference yet (DelayedStepRun's CHECK), so its delayed steps wait for a
- * later PR. Step changes on any other rule are refused (`steps_unsupported`),
- * no run is started and the worker stops one.
+ * registration, a consultation booking or (Q-09) a canonical order, which a
+ * DelayedStepRun can point at and the worker can read again later.
+ * `form_no_show` (Q-11) has the same subject as `form_registered`: the
+ * registrant's VERIFIED FormSubmission. `payment_paid` (Q-09) points at the
+ * paid CommerceOrder (`commerceOrderId`); the worker stops its run once the
+ * order is fully refunded, cancelled or a test order (paymentPaidRunOrderCounts).
+ * Step changes on any other rule are refused (`steps_unsupported`), no run is
+ * started and the worker stops one.
  */
 export const DELAYED_STEP_AUTOMATION_TRIGGERS = [
   "form_registered",
   "form_no_show",
   "consultation_booked",
   "consultation_no_show",
+  "payment_paid",
 ] as const satisfies readonly AvailableAutomationTrigger[];
+
+/**
+ * The event subject a delayed-step run of this trigger is created for: the
+ * order for `payment_paid` (`buyer_order`), the registration or booking for
+ * the others (`buyer_registration`, as their events have always said).
+ */
+export function delayedStepSubjectType(trigger: string): AutomationEvent["subjectType"] {
+  return trigger === "payment_paid" ? "buyer_order" : "buyer_registration";
+}
 
 /**
  * The public viewer page of a Live, for `{{webinar_url}}` (its replay once the
@@ -438,7 +450,7 @@ export type AutomationEvent = {
 
 type AutomationDb = Pick<
   PrismaClient,
-  "automationRule" | "automationExecutionLog" | "automationVoucherGrant" | "customerTagAssignment" | "product" | "lineOfficialAccount" | "lineUserIdentity" | "lineDelivery" | "emailDelivery" | "emailSuppression" | "blacklist" | "delayedStepRun" | "formSubmission" | "consultationBooking" | "vendor" | "$transaction"
+  "automationRule" | "automationExecutionLog" | "automationVoucherGrant" | "customerTagAssignment" | "product" | "lineOfficialAccount" | "lineUserIdentity" | "lineDelivery" | "emailDelivery" | "emailSuppression" | "blacklist" | "delayedStepRun" | "formSubmission" | "consultationBooking" | "commerceOrder" | "vendor" | "$transaction"
 >;
 
 /** Closed-beta grant of delayed automation steps (F-4, M3). */
@@ -1155,8 +1167,37 @@ export type DelayedStepStartOutcome = "started" | "already_started" | "not_neede
 
 /** The pure part of "this event can have a delayed-step run": trigger, subject kind and customer key. */
 function eventCanStartDelayedSteps(event: { trigger: string; subjectType: string; subjectKeyHash?: string | null }) {
-  // payment_paid (an order subject) never starts a run: see DELAYED_STEP_AUTOMATION_TRIGGERS.
-  return automationTriggerSupportsDelayedSteps(event.trigger) && event.subjectType === "buyer_registration" && Boolean(event.subjectKeyHash);
+  // Q-09: payment_paid's subject is the order (buyer_order); every other trigger's is a registration or booking.
+  return automationTriggerSupportsDelayedSteps(event.trigger)
+    && event.subjectType === delayedStepSubjectType(event.trigger)
+    && Boolean(event.subjectKeyHash);
+}
+
+/**
+ * The run's subject reference, read now and bound to the vendor, or null when
+ * the event has none (any more):
+ * - a registration (`form_registered`, `form_no_show`) through its form;
+ * - a booking (the consultation triggers) by vendorId;
+ * - an order (`payment_paid`, Q-09) by vendorId, and only while it still counts
+ *   as a purchase (not a test order, not fully refunded or cancelled), so the
+ *   job's back-fill of an owed run (startPendingAutomationRuns) never starts
+ *   one for an order refunded meanwhile.
+ */
+async function delayedStepSubject(db: AutomationDb, input: Pick<DelayedStepStartInput, "vendorId" | "trigger" | "subjectId">) {
+  if (automationTriggerSubjectIsRegistration(input.trigger)) {
+    // FormSubmission has no vendorId: the registration is bound through its form.
+    const row = await db.formSubmission.findFirst({ where: { id: input.subjectId, form: { vendorId: input.vendorId } }, select: { id: true } });
+    return row ? { formSubmissionId: row.id } : null;
+  }
+  if (input.trigger === "payment_paid") {
+    const order = await db.commerceOrder.findFirst({
+      where: paymentPaidRunOrderWhere({ vendorId: input.vendorId, orderId: input.subjectId }),
+      select: PAYMENT_PAID_RUN_ORDER_SELECT,
+    });
+    return order && paymentPaidRunOrderCounts(order) ? { commerceOrderId: order.id } : null;
+  }
+  const row = await db.consultationBooking.findFirst({ where: { id: input.subjectId, vendorId: input.vendorId }, select: { id: true } });
+  return row ? { consultationBookingId: row.id } : null;
 }
 
 function delayedStepStartInput(ruleId: string, event: AutomationEvent, logId: string, anchorAt: Date | undefined): DelayedStepStartInput {
@@ -1187,7 +1228,9 @@ function clearPendingRun(db: Pick<AutomationDb, "automationExecutionLog">, input
  * whose subject the worker can read again later (DELAYED_STEP_AUTOMATION_
  * TRIGGERS): the registration of
  * `form_registered` and `form_no_show`, the booking of the two consultation
- * triggers. The run
+ * triggers, the paid order of `payment_paid` (Q-09; the live webhook path and
+ * the webhook-retry catch-up both reach this through
+ * dispatchPaymentPaidAutomationForOrder → dispatchAutomationEvent). The run
  * stores references only (rule, execution log, subject, customer key), never
  * the event's e-mail address.
  *
@@ -1215,12 +1258,7 @@ export async function startDelayedSteps(db: AutomationDb, input: DelayedStepStar
     const vendor = await db.vendor.findUnique({ where: { id: input.vendorId }, select: { betaFeatureGrants: true, suspendedAt: true } });
     const subject = !vendor || vendor.suspendedAt || !isFeatureEnabled(vendor, AUTOMATION_DELAYED_STEPS_FEATURE)
       ? null
-      : automationTriggerSubjectIsRegistration(input.trigger)
-        // FormSubmission has no vendorId: the registration is bound through its form.
-        ? await db.formSubmission.findFirst({ where: { id: input.subjectId, form: { vendorId: input.vendorId } }, select: { id: true } })
-          .then((row) => row ? { formSubmissionId: row.id } : null)
-        : await db.consultationBooking.findFirst({ where: { id: input.subjectId, vendorId: input.vendorId }, select: { id: true } })
-          .then((row) => row ? { consultationBookingId: row.id } : null);
+      : await delayedStepSubject(db, input);
     if (!subject) {
       await clearPendingRun(db, input);
       return "not_needed";

@@ -106,7 +106,10 @@ describe("F-4 PR 2 DelayedStepRun constraints", () => {
   it("keeps every new constraint validated with its exact definition and the F-3 CHECK dropped", async () => {
     const rows = await constraints([...NEW_CONSTRAINTS, "DelayedStepRun_definition_check"]);
     expect(rows).toEqual([
-      { name: "DelayedStepRun_automation_reference_check", validated: true, definition: `CHECK (((("automationRuleId" IS NULL) = ("sourceExecutionLogId" IS NULL)) AND (("automationRuleId" IS NULL) OR (("subjectKeyHash" IS NOT NULL) AND (num_nonnulls("formSubmissionId", "consultationBookingId") = 1))) AND (("consultationBookingId" IS NULL) OR ("automationRuleId" IS NOT NULL))))` },
+      // Q-09 (20261117170000/20261117170100) replaced this CHECK under the same
+      // name with one that also takes an order subject; its own test is
+      // delayed-step-run-commerce-order-migration.db.test.ts.
+      { name: "DelayedStepRun_automation_reference_check", validated: true, definition: `CHECK (((("automationRuleId" IS NULL) = ("sourceExecutionLogId" IS NULL)) AND (("automationRuleId" IS NULL) OR (("subjectKeyHash" IS NOT NULL) AND (num_nonnulls("formSubmissionId", "consultationBookingId", "commerceOrderId") = 1))) AND (("automationRuleId" IS NOT NULL) OR (num_nonnulls("consultationBookingId", "commerceOrderId") = 0))))` },
       { name: "DelayedStepRun_definition_exactly_one_check", validated: true, definition: `CHECK ((num_nonnulls("emailSequenceId", "automationRuleId") = 1))` },
       { name: "DelayedStepRun_vendorId_automationRuleId_fkey", validated: true, definition: `FOREIGN KEY ("vendorId", "automationRuleId") REFERENCES "AutomationRule"("vendorId", id) ON UPDATE CASCADE ON DELETE CASCADE` },
       { name: "DelayedStepRun_vendorId_consultationBookingId_fkey", validated: true, definition: `FOREIGN KEY ("vendorId", "consultationBookingId") REFERENCES "ConsultationBooking"("vendorId", id) ON UPDATE CASCADE ON DELETE CASCADE` },

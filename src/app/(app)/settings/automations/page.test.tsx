@@ -146,17 +146,30 @@ describe("AutomationSettingsPage", () => {
     expect(html).toContain("只能辨識在報名驗證的瀏覽器，或從提醒信、開播通知的個人連結進場的裝置");
   });
 
-  it("lists a payment_paid rule as running, with its dry-run, and offers no delayed steps for it", async () => {
+  it("lists a payment_paid rule as running, with its dry-run, its delayed steps and what they do differently (Q-09)", async () => {
     granted();
-    mocks.rules.mockResolvedValue([rule({ id: "paid-on", name: "付款回購", trigger: "payment_paid", condition: { type: "order_amount_gte", amountCents: 10_000 }, isActive: true })]);
+    mocks.rules.mockResolvedValue([rule({ id: "paid-on", name: "付款回購", trigger: "payment_paid", condition: { type: "order_amount_gte", amountCents: 10_000 }, isActive: true, steps: [{ id: "s1", delayMinutes: 4_320, isActive: true, actions: [{ type: "send_email_notification", template: "repurchase_followup" }] }] })]);
     const html = await render();
     expect(html).toContain("觸發：訂單付款完成");
     expect(html).toContain("條件：訂單滿");
     expect(html).not.toContain("此觸發條件目前不會執行");
     expect(html).toContain("Dry-run 測試");
-    expect(html).toContain("「訂單付款完成」的規則目前只有立即執行的動作，還不能加延遲步驟。");
-    expect(html).not.toContain("新增延遲步驟");
-    expect(html).not.toContain("延遲步驟（0／10）");
+    expect(html).not.toContain("不能加延遲步驟");
+    expect(html).toContain("延遲步驟（1／10）");
+    expect(html).toContain("編輯步驟：事件後第 3 天");
+    expect(html).toContain("新增「付款回購」的延遲步驟");
+    // Full refund stops the steps (a partial one does not), and the e-mail limit.
+    expect(html).toContain("訂單全額退款或取消後不再執行（部分退款仍會繼續）");
+    expect(html).toContain("延遲步驟的 Email 只寄給在你這裡用同一個 Email 完成報名驗證，或登入過學員專區的買家");
+    expect(html).not.toContain("「訂單付款完成」除外");
+  });
+
+  it("shows the payment_paid note only on payment_paid rules", async () => {
+    granted();
+    mocks.rules.mockResolvedValue([rule({ id: "reg-on", name: "報名追蹤", trigger: "form_registered", isActive: true })]);
+    const html = await render();
+    expect(html).toContain("延遲步驟（0／10）");
+    expect(html).not.toContain("訂單全額退款或取消後不再執行");
   });
 
   it("shows a payment_paid rule paused by the deploy migration like any switched-off rule, with its switch-on button", async () => {
@@ -169,7 +182,7 @@ describe("AutomationSettingsPage", () => {
   });
 
   it.each([
-    ["error", "steps_unsupported", "「訂單付款完成」的規則目前只能設定立即執行的動作，不能加延遲步驟。"],
+    ["error", "steps_unsupported", "這個觸發條件的規則只能設定立即執行的動作，不能加延遲步驟。"],
     ["updated", "step_created", "延遲步驟已新增。"],
     ["error", "duplicate_delay", "同一條規則已經有這個延遲時間的步驟"],
     ["error", "step_limit", "每條規則最多 10 個延遲步驟"],
@@ -272,11 +285,11 @@ describe("AutomationSettingsPage", () => {
       mocks.rules.mockResolvedValue([rule({ name: "步驟推播", actions: TAG, isActive: false, steps: [{ id: "s1", delayMinutes: 60, isActive: true, actions: [{ type: "line_push", message: "x" }] }] })]);
       expect(note(ruleArticle(await render(), "步驟推播"))).toBe("這條規則的延遲步驟含 LINE 推播。LINE 推播僅限擁有者設定。你可以停用、刪除規則或刪除步驟，但不能啟用、新增或修改步驟。");
 
-      // payment_paid takes no steps: nothing about steps.
+      // Q-09: payment_paid takes steps like every available trigger, so the note names the step controls too.
       mocks.rules.mockResolvedValue([rule({ name: "付款推播", trigger: "payment_paid", condition: { type: "order_amount_gte", amountCents: 10_000 }, actions: [{ type: "line_push", message: "x" }], isActive: false })]);
       const paid = ruleArticle(await render(), "付款推播");
-      expect(note(paid)).toBe("這條規則含 LINE 推播。LINE 推播僅限擁有者設定。你可以停用或刪除規則，但不能啟用。");
-      expect(paid).not.toContain("刪除步驟");
+      expect(note(paid)).toBe("這條規則含 LINE 推播。LINE 推播僅限擁有者設定。你可以停用、刪除規則或刪除步驟，但不能啟用、新增或修改步驟。");
+      expect(paid).not.toContain("新增延遲步驟");
 
       // Beta off: the step section is hidden, so say the LINE push sits in a delayed step that is not shown.
       admin();

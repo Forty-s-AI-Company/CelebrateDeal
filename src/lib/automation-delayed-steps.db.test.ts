@@ -795,22 +795,25 @@ describe("後台：步驟的新增、修改與刪除", () => {
     await expect(createAutomationRuleStep({ linePushAllowed: true, vendorId: a.vendor.id, ruleId: hidden.id, step: input })).resolves.toEqual({ ok: false, code: "trigger_unavailable" });
     await expect(updateAutomationRuleStep({ linePushAllowed: true, vendorId: a.vendor.id, ruleId: hidden.id, stepId: hiddenStep.id, step: input })).resolves.toEqual({ ok: false, code: "trigger_unavailable" });
     await expect(deleteAutomationRuleStep({ vendorId: a.vendor.id, ruleId: hidden.id, stepId: hiddenStep.id })).resolves.toMatchObject({ ok: true });
-    // F-4 PR 3: payment_paid is available but runs immediate actions only.
+    // Q-09: payment_paid rules take delayed steps like the other available triggers.
     const paid = await rule(a, { trigger: "payment_paid" });
-    await expect(createAutomationRuleStep({ linePushAllowed: true, vendorId: a.vendor.id, ruleId: paid.id, step: input })).resolves.toEqual({ ok: false, code: "steps_unsupported" });
-    const paidStep = await step(a, paid.id, 60);
-    await expect(updateAutomationRuleStep({ linePushAllowed: true, vendorId: a.vendor.id, ruleId: paid.id, stepId: paidStep.id, step: input })).resolves.toEqual({ ok: false, code: "steps_unsupported" });
-    await expect(deleteAutomationRuleStep({ vendorId: a.vendor.id, ruleId: paid.id, stepId: paidStep.id })).resolves.toMatchObject({ ok: true });
+    const paidCreated = await createAutomationRuleStep({ linePushAllowed: true, vendorId: a.vendor.id, ruleId: paid.id, step: input });
+    expect(paidCreated).toMatchObject({ ok: true });
+    const paidStepId = (paidCreated as { id: string }).id;
+    await expect(updateAutomationRuleStep({ linePushAllowed: true, vendorId: a.vendor.id, ruleId: paid.id, stepId: paidStepId, step: { ...input, delayMinutes: 180 } })).resolves.toMatchObject({ ok: true, id: paidStepId });
+    // B's session still cannot touch A's payment_paid rule.
+    await expect(createAutomationRuleStep({ linePushAllowed: true, vendorId: b.vendor.id, ruleId: paid.id, step: input })).resolves.toEqual({ ok: false, code: "not_found" });
+    await expect(deleteAutomationRuleStep({ vendorId: a.vendor.id, ruleId: paid.id, stepId: paidStepId })).resolves.toMatchObject({ ok: true });
     runtime.actor = { user: { id: "user-a" }, vendor: { id: a.vendor.id, betaFeatureGrants: ["automation_delayed_steps"] }, member: { role: "owner" } };
     await expect(createAutomationRuleStepAction(form({ ruleId: paid.id, delayValue: "1", delayUnit: "days", actionTag: "on", customerTag: "x", stepActive: "on" })))
-      .rejects.toThrow("error=steps_unsupported");
-    await expect(db.automationRuleStep.count({ where: { ruleId: paid.id } })).resolves.toBe(0);
+      .rejects.toThrow("updated=step_created");
+    await expect(db.automationRuleStep.findMany({ where: { ruleId: paid.id }, select: { vendorId: true, delayMinutes: true, condition: true } }))
+      .resolves.toEqual([{ vendorId: a.vendor.id, delayMinutes: 1_440, condition: { type: "always" } }]);
   });
 
-  it("never starts or advances a delayed-step run for a payment_paid rule (F-4 PR 3)", async () => {
+  it("stops a payment_paid run that points at no order (only a direct write can make one; Q-09)", async () => {
     const t = await tenant();
     const paid = await rule(t, { trigger: "payment_paid" });
-    // Only a direct write can give such a rule a step and a run (the actions refuse it).
     await step(t, paid.id, 60);
     const submission = await registration(t);
     const log = await db.automationExecutionLog.create({
@@ -821,7 +824,7 @@ describe("後台：步驟的新增、修改與刪除", () => {
       data: { vendorId: t.vendor.id, automationRuleId: paid.id, sourceExecutionLogId: log.id, formSubmissionId: submission.id, subjectKeyHash: "synthetic-key", anchorAt, cursorDelayMinutes: -1, status: "active", nextRunAt: after(anchorAt, HOUR) },
     });
     await work(t, new Date());
-    await expect(db.delayedStepRun.findUniqueOrThrow({ where: { id: run.id } })).resolves.toMatchObject({ status: "cancelled", cancelReason: "definition_paused" });
+    await expect(db.delayedStepRun.findUniqueOrThrow({ where: { id: run.id } })).resolves.toMatchObject({ status: "cancelled", cancelReason: "subject_gone" });
     await expect(db.customerTagAssignment.count({ where: { vendorId: t.vendor.id } })).resolves.toBe(0);
   });
 

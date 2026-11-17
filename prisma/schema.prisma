@@ -1197,6 +1197,8 @@ model DelayedStepRun {
   sourceExecutionLogId  String?
   /// F-4：對象是諮詢預約時填（`consultation_booked`／`consultation_no_show`）。
   consultationBookingId String?
+  /// Q-09：對象是訂單時填（`payment_paid`）。自動化 run 的 `formSubmissionId`、`consultationBookingId`、`commerceOrderId` 恰好一個有值（CHECK `DelayedStepRun_automation_reference_check`）。
+  commerceOrderId       String?
   formSubmissionId      String?
   /// 對象的 `automationCustomerKeyHash`（PR 2「買了就停」用）；報名的 Email 無法使用時為 null。
   subjectKeyHash     String?
@@ -1222,6 +1224,7 @@ model DelayedStepRun {
   automationRule      AutomationRule?         @relation(fields: [vendorId, automationRuleId], references: [vendorId, id], onDelete: Cascade)
   sourceExecutionLog  AutomationExecutionLog? @relation(fields: [vendorId, sourceExecutionLogId], references: [vendorId, id], onDelete: Cascade)
   consultationBooking ConsultationBooking?    @relation(fields: [vendorId, consultationBookingId], references: [vendorId, id], onDelete: Cascade)
+  commerceOrder       CommerceOrder?          @relation(fields: [vendorId, commerceOrderId], references: [vendorId, id], onDelete: Cascade)
   formSubmission      FormSubmission?         @relation(fields: [formSubmissionId], references: [id], onDelete: Cascade)
 
   @@unique([vendorId, id])
@@ -1236,6 +1239,7 @@ model DelayedStepRun {
   @@index([vendorId, recipientHash, status])
   @@index([vendorId, sourceExecutionLogId])
   @@index([vendorId, consultationBookingId])
+  @@index([vendorId, commerceOrderId])
 }
 
 /// A tenant-owned LINE channel connection. Every provider credential, including
@@ -2293,6 +2297,7 @@ model CommerceOrder {
   postPurchaseCreditsIssued PostPurchaseCredit[] @relation("PostPurchaseCreditSource")
   postPurchaseCreditReceived PostPurchaseCredit? @relation("PostPurchaseCreditTarget")
   trackingDeliveries        TrackingDelivery[]
+  delayedStepRuns           DelayedStepRun[]
 
   merchantAffiliateSnapshot MerchantAffiliateCheckoutSnapshot?
   @@unique([vendorId, id])

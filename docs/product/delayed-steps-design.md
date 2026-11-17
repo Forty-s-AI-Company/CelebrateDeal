@@ -1,6 +1,6 @@
 # 延遲步驟：Email 追銷序列與自動化多步驟的共用設計
 
-狀態：F-3（Email 追銷序列）定案，依本文拆 PR 實作；PR 1 與 PR 2（「買了就停」）已完成。F-4（自動化多步驟與延遲）範圍 owner 已確認；第一個 PR（第 8 節「一併要修的既有缺口」）、第二個 PR（延遲步驟，第 8 節「做法」）與第三個 PR（接上 `payment_paid`，只有立即動作，第 8 節「F-4 PR 3」）已完成；`payment_paid` 的延遲步驟與「到現在還沒買」條件留到之後的 PR。
+狀態：F-3（Email 追銷序列）定案，依本文拆 PR 實作；PR 1 與 PR 2（「買了就停」）已完成。F-4（自動化多步驟與延遲）範圍 owner 已確認；第一個 PR（第 8 節「一併要修的既有缺口」）、第二個 PR（延遲步驟，第 8 節「做法」）與第三個 PR（接上 `payment_paid`，只有立即動作，第 8 節「F-4 PR 3」）已完成；`payment_paid` 的延遲步驟已在 Q-09 完成（第 8 節「Q-09」）；「到現在還沒買」條件留到之後的 PR。
 日期：2026-11-13。對應 `docs/fable-queue.md` 的 F-3、F-4。
 
 ## 1. 要解決的問題
@@ -215,7 +215,7 @@
 
 接上 `payment_paid`。現行規則見 `docs/domain-workflows.md`「自動化規則」的「付款完成」，應用層不變式見 `docs/codex-goal/PRISMA_INVARIANTS.md` 2026-11-14 F-4 PR 3 一節。實作時的決定：
 
-1. **只做立即動作，延遲步驟延後**：`DelayedStepRun` 的 CHECK 要求自動化 run 的對象是報名或預約恰好一個，`payment_paid` 的對象是訂單。要支援就得加 `commerceOrderId`（含 vendorId 的複合外鍵、CHECK 改成三選一、`NOT VALID` 加 `VALIDATE` 分檔），到點時重讀訂單（全額退款或取消就停止）、解密買家 Email 並決定它算不算已確認。這些和付款流程的接線放在同一個 PR 會讓需要獨立審查的範圍加倍，所以拆開：本 PR 新增 `DELAYED_STEP_AUTOMATION_TRIGGERS`（報名與兩個諮詢 trigger），`payment_paid` 規則在後台不顯示延遲步驟區塊、步驟 Server Action 回 `steps_unsupported`、不建 run、worker 遇到就停止。之後做的時候，買家 Email 建議比照諮詢預約：本商家有同一個地址的已驗證報名才算已確認（付款不證明地址屬於本人，付款收據寄到哪裡也沒有回饋）。
+1. **只做立即動作，延遲步驟延後**：`DelayedStepRun` 的 CHECK 要求自動化 run 的對象是報名或預約恰好一個，`payment_paid` 的對象是訂單。要支援就得加 `commerceOrderId`（含 vendorId 的複合外鍵、CHECK 改成三選一、`NOT VALID` 加 `VALIDATE` 分檔），到點時重讀訂單（全額退款或取消就停止）、解密買家 Email 並決定它算不算已確認。這些和付款流程的接線放在同一個 PR 會讓需要獨立審查的範圍加倍，所以拆開：本 PR 新增 `DELAYED_STEP_AUTOMATION_TRIGGERS`（報名與兩個諮詢 trigger），`payment_paid` 規則在後台不顯示延遲步驟區塊、步驟 Server Action 回 `steps_unsupported`、不建 run、worker 遇到就停止。之後做的時候，買家 Email 建議比照諮詢預約：本商家有同一個地址的已驗證報名才算已確認（付款不證明地址屬於本人，付款收據寄到哪裡也沒有回饋）。→ **已做（Q-09，分支 `ai/payment-paid-delayed-steps`）**，見下方「實作狀態與決定（Q-09）」。
 2. **觸發點**：所有讓 canonical 訂單變成已付款的正式路徑都經過 `processPaymentWebhookOnce` 交易內的 `reconcileCommerceOrderPaymentTransition`，只有它回 `changed: true, status: "paid"`（第一次轉成已付款）時觸發。PayUni 的 return 與 notify 在同一個交易狀態收斂成同一個 `WebhookEvent`，webhook-retry job 與平台管理員的重跑也走同一個函式。庫存到期對帳 job 的補轉、平台訂閱扣款（沒有 `CommerceOrder`）、測試訂單、凍結中的商家都不觸發。沒有買家端的訂閱續扣，也沒有零元訂單或後台手動標記已付款的流程。
 3. **失敗隔離**：交易 commit 之後才呼叫，放在電子發票與 audit 之後的 `finally`（它們丟錯時付款仍已 commit，重送只會看到 `changed: false`，所以這裡不觸發就永遠不會觸發）。request 內只註冊 `after()`（Next.js 允許巢狀 `after`，規則自己的 Email 立即寄送也是 `after()`），webhook 先回應；request 外就地執行並最多等 15 秒。呼叫永不丟錯，錯誤只回報監控（context 只有監控白名單內的 `source: "payment_paid_automation"` 與 `operation`，審查 MINOR-1）。原本 `dispatchPaymentPaidAutomation` 在規則失敗時 throw、`dispatchPaymentPaidAutomationByOrder` 在來源不明時 throw，兩個都沒有呼叫端，已刪除，改成 `src/lib/payment-paid-automation.ts`。
 4. **重試**：不自動重試。依原設計「同一事件再次送進來才重領」，但付款只在第一次轉成已付款時觸發，之後的通知不會重跑失敗的規則（若改成每次已付款通知都重跑，商家在付款後才建立的規則會被重複通知觸發，違反「重複的已付款通知不觸發」）。after hook 沒跑完（平台在回應後終止 function）時那筆訂單的自動化也會遺漏。若要補跑，建議之後在 job 加一段：掃最近 N 小時第一次付款、規則建立早於付款時間、沒有成功執行紀錄的訂單，用同一個冪等鍵重跑。→ **已做（Q-10，分支 `ai/payment-paid-catchup`）**：`/api/jobs/webhook-retry` 每輪最後呼叫 `src/lib/payment-paid-automation-catchup.ts`，現行規則見 `docs/domain-workflows.md`「付款完成」的「補跑」。決定：(a) N 是 10 分鐘到 48 小時（付款時間與入帳時間都要在內）；下界＝webhook-retry 的 `maxDuration` 300 秒加上執行紀錄 5 分鐘的重領門檻。(b) 「規則建立早於付款時間」改成更嚴的「`updatedAt` 不晚於入帳時間」，因為付款時停用、之後才重新啟用的規則（例如 `20261114120000` 停用後商家重新啟用）也不該回頭跑。(c) 「沒有成功執行紀錄」限縮成：沒有紀錄、超過 5 分鐘的 `running`，或第一次執行就 `failed / action_failed` 且從沒被重領（`startedAt = createdAt`）、結束超過 10 分鐘。重領會更新 `startedAt`，所以不加次數欄位也只重試一次（獨立審查 MAJOR-1 採方案 a）；其他 errorCode（例如 `unsubscribe_url_unavailable`）是設定問題，不重試。補跑只 dispatch 掃描挑中的規則（`onlyRuleIds`），不順便重領其他規則的失敗紀錄。(d) 每輪 20 筆、商家間輪流；截止 `min(60 秒, 100 秒 − route 已用時間)`，route 已用 60 秒就跳過（排程端 120 秒逾時）；補跑失敗不讓 job 回 503；不加 migration，只用既有索引。
@@ -224,6 +224,20 @@
 7. **後台**：觸發條件下拉多了「訂單付款完成」，門檻欄位改成「付款金額門檻（元）」；劇本「高客單 VIP 自動尊榮升級」恢復。
 8. **部署時停用既有規則**（審查 MAJOR-1）：#599 隱藏 trigger 時沒有停用既有的 `payment_paid` 規則，畫面只標「目前不會執行」。我們查不到正式資料庫裡有沒有這種規則，所以用資料 migration `20261114120000_pause_payment_paid_rules` 保守處理：部署時把所有仍啟用的 `payment_paid` 規則改成停用，商家要用時在 `/settings/automations` 自行重新啟用（照一般停用規則顯示與啟用）。這些規則在部署前從未執行過，所以這只是維持現狀。
 9. **其他已知限制**（審查 NIT，不改）：退款與規則動作之間沒有鎖（讀訂單之後才退款，那次動作照樣完成）；直接寫進資料庫的 `payment_paid` 步驟會留在資料庫但不會執行；庫存到期對帳 job 的補轉不觸發（第 2 點）。
+
+### 實作狀態與決定（Q-09，分支 `ai/payment-paid-delayed-steps`）
+
+`payment_paid` 規則也能有延遲步驟。現行規則見 `docs/domain-workflows.md`「付款完成」的「延遲步驟」，資料庫約束見 `docs/codex-goal/PRISMA_INVARIANTS.md` 2026-11-17 Q-09 一節。實作時的決定：
+
+1. **資料模型**：`DelayedStepRun.commerceOrderId`（複合外鍵 `(vendorId, commerceOrderId) → CommerceOrder(vendorId, id)`，`ON DELETE CASCADE`）與 `(vendorId, commerceOrderId)` 索引。自動化 run 的對象改成「報名、預約、訂單恰好一個」，只有自動化 run 能填預約或訂單。比照 F-4 PR 2 分兩個 migration：`20261117170000` 新增欄位、索引，新 CHECK 與外鍵都 `NOT VALID`（外鍵放最後一句，`CommerceOrder` 的 SHARE ROW EXCLUSIVE 只在 commit 前一刻取得）；`20261117170100` `VALIDATE` 兩者、刪掉 F-4 的對象 CHECK，再把新 CHECK 改名回 `DelayedStepRun_automation_reference_check`（名稱維持指同一條規則，既有測試與文件的引用不變）。
+2. **建立時機**：不另開入口。`payment_paid` 加進 `DELAYED_STEP_AUTOMATION_TRIGGERS`，`eventCanStartDelayedSteps` 依 trigger 決定事件對象的種類（`payment_paid` 是 `buyer_order`，其他是 `buyer_registration`），`startDelayedSteps` 以 `id + vendorId` 讀訂單、只有仍算購買（`paymentPaidRunOrderCounts`）才建 run。即時路徑與 #613 補跑本來就經過同一個 `dispatchPaymentPaidAutomationForOrder` → `dispatchAutomationEvent`，所以兩者建 run 的時機、起點（執行紀錄的 `createdAt`）與冪等（unique `(vendorId, automationRuleId, sourceExecutionLogId)`）完全相同；#631 的補建標記存訂單 id，`startPendingAutomationRuns` 不用改（它讀 `DELAYED_STEP_AUTOMATION_TRIGGERS`）。補跑時起點是補跑執行的時間，不是付款時間：與「事件第一次執行的時間」的既有定義一致，補跑通常在付款後 10–15 分鐘內，差距小於 job 精度。
+3. **到點時重讀訂單**：`readSubject` 的 `payment_paid` 分支以 `id + vendorId` 讀訂單。全額退款（狀態 `refunded`，或退款總額已達付款金額）、取消、測試單 → `subject_gone`；**部分退款繼續**（保守：購買仍成立）。共用判斷放在不依賴其他模組的 `src/lib/payment-paid-run-order.ts`，建立 run、worker 與寄送前檢查三處共用（寄送端 `delayed-step-runs.ts` 不能 import 自動化程式，見第 12 點）。商家停權：worker 本來就不撈；停權剛好落在領租約之後時交還租約（不扣次數、不執行、不停止 run），與「停權保留 run」一致。規則停用照舊 `definition_paused`。
+4. **寄送前**：`isCurrentAutomationStepEmailDelivery` 讀 run 時一併讀 `commerceOrderId`，有值就重讀訂單，不再算購買就 `superseded`。這擋住「這一步已排信、下一步到點前就全額退款」的那一封；與其他停止原因一致（不是 `failed`）。
+5. **收件者 Email**（保守）：每一步重新解密訂單的買家 Email，run 不存地址。付款只證明買家完成結帳，不證明 Email 屬於本人，所以只有兩種情況算已確認：本商家有 `lower(btrim(email))` 完全相同的 `VERIFIED` 報名（沿用 `hasVerifiedRegistration`，走 Q-12 的 partial index），或這個地址登入過本商家學員專區（`StudentPortalAccessToken` 有 `purpose = magic_link`、`consumedAt` 有值、`customerKeyHash = automationCustomerKeyHash(vendorId, email)` 的列：登入連結寄到這個信箱並被打開；`checkout_redirect` 是結帳成功頁直接給的，不證明信箱，不算）。學員登出、被撤銷或商家停權時這些列會被刪除，之後就不再算（保守方向）。都不成立時 Email 動作記 `skipped / recipient_unverified`（沿用 #601 諮詢的作法），其他動作照做。解密失敗記 `recipient_not_linked` 並回報 `buyer_email`（只有 `source`／`operation`）。
+6. **事件內容**：worker 重建的事件 `subjectType` 依對象而定（訂單是 `buyer_order`），所以 LINE 找綁定這筆訂單的 LINE 身分，與立即動作相同；`orderAmountCents`／`currency` 取訂單的 `paidAmountCents`／`currency`，只用於步驟條件（後台新增的步驟條件一律「事件發生時」，直接寫入的金額條件才會讀到）。派券金額照規則設定。
+7. **後台**：`payment_paid` 規則顯示延遲步驟區塊，區塊內另有一段說明：起點、「全額退款或取消後不再執行（部分退款仍會繼續）」、Email 只寄給已驗證報名或登入過學員專區的買家。建立規則的說明拿掉「「訂單付款完成」除外」。`steps_unsupported` 保留作防禦（目前所有可用 trigger 都能加步驟），訊息改成不指名 trigger。
+8. **未做與已知限制**：退款與正在執行的那一步之間沒有鎖（讀訂單之後才退款，那一步的動作照樣完成；已排隊的信在寄送前會被擋）。補跑的起點是補跑時間（第 2 點）。學員專區登入只看「現在還有沒有已使用的登入連結列」，登出就不算。沒有「到現在還沒買」或「買了別的就停」的條件。
+9. **部署與回滾**：兩條 migration 先於程式。舊程式不讀新欄位；它寫入的 run（報名、預約）符合新 CHECK。回滾到本 PR 之前的程式時，舊 worker 遇到 `payment_paid` 的 run 會因 trigger 不在舊清單而標成 `cancelled / definition_paused`（不執行任何動作，但不會恢復），舊事件端也不再建這種 run；舊的寄送前檢查不讀訂單，已排隊的這種信照舊規則寄送。
 
 ### 一併要修的既有缺口
 
