@@ -12,8 +12,12 @@ import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vites
 // called.
 const hooks = vi.hoisted(() => ({
   after: (() => { throw new Error("`after` was called outside a request scope"); }) as (callback: () => unknown) => void,
-  /** While set, decrypting an order's buyer envelope fails (a key or envelope problem). */
+  /** While set, decrypting an order's buyer envelope fails (one order's envelope problem). */
   revealFails: false,
+  /** Calls of revealCommerceOrderPii, so a case can show the envelope was really tried. */
+  revealCalls: 0,
+  /** Runs right before the real decryption (a case can take the deployment's key away mid-round). */
+  beforeReveal: null as null | (() => void),
 }));
 const monitoring = vi.hoisted(() => ({ captureOperationalError: vi.fn() }));
 const provider = vi.hoisted(() => ({ send: vi.fn() }));
@@ -36,6 +40,8 @@ vi.mock("@/lib/commerce-order-pii", async (original) => {
   return {
     ...actual,
     revealCommerceOrderPii: (...args: Parameters<typeof actual.revealCommerceOrderPii>) => {
+      hooks.revealCalls += 1;
+      hooks.beforeReveal?.();
       if (hooks.revealFails) throw new Error("synthetic envelope failure");
       return actual.revealCommerceOrderPii(...args);
     },
@@ -88,6 +94,8 @@ beforeEach(() => {
   vi.stubEnv("EMAIL_FROM", "CelebrateDeal <no-reply@example.test>");
   hooks.after = () => { throw new Error("`after` was called outside a request scope"); };
   hooks.revealFails = false;
+  hooks.revealCalls = 0;
+  hooks.beforeReveal = null;
   provider.send.mockReset();
   provider.send.mockResolvedValue({ id: "synthetic-provider-message" });
   monitoring.captureOperationalError.mockClear();
@@ -362,6 +370,29 @@ describe("到點時重讀訂單", () => {
     expect(await stepMails(partial)).toHaveLength(1);
   });
 
+  it("review NIT-2: two refunds that add up to the full amount stop the step that falls due after them", async () => {
+    const t = await tenant("two-partials");
+    const { steps } = await paymentRule(t);
+    const c = await checkout(t);
+    await verifiedRegistration(t, c.buyerEmail);
+    await pay(t, c);
+    const run = await onlyRun(t);
+    await processPaymentWebhook(refundCallback(t, c, "partially_refunded", 1_200));
+    await expect(db.commerceOrder.findUniqueOrThrow({ where: { id: c.orderId } })).resolves.toMatchObject({ status: "partially_refunded", refundedAmountCents: 1_200 });
+    // A second `partially_refunded` event for the whole remainder is refused by
+    // the payment invariants (a partial refund may not use up what is left)
+    // and changes nothing; the remainder arrives as the provider's `refunded`.
+    await expect(processPaymentWebhook(refundCallback(t, c, "partially_refunded", PRICE_CENTS - 1_200))).rejects.toThrow();
+    await expect(db.commerceOrder.findUniqueOrThrow({ where: { id: c.orderId } })).resolves.toMatchObject({ status: "partially_refunded", refundedAmountCents: 1_200 });
+    await processPaymentWebhook(refundCallback(t, c, "refunded", PRICE_CENTS - 1_200));
+    await expect(db.commerceOrder.findUniqueOrThrow({ where: { id: c.orderId } })).resolves.toMatchObject({ refundedAmountCents: PRICE_CENTS });
+    await work(t, due(run, 60));
+    await expect(db.delayedStepRun.findUniqueOrThrow({ where: { id: run.id } })).resolves.toMatchObject({ status: "cancelled", cancelReason: "subject_gone" });
+    await expect(stepLog(t, run.id, steps[0]!.id)).resolves.toBeNull();
+    await expect(db.customerTagAssignment.count({ where: { vendorId: t.vendor.id, tag: TAG_STEP.tag } })).resolves.toBe(0);
+    expect(await stepMails(t)).toEqual([]);
+  });
+
   it("stops on a cancelled order, a test order and an order whose refunds reached the paid amount while still marked paid", async () => {
     for (const change of [
       { status: "cancelled" as const },
@@ -550,10 +581,11 @@ describe("即時路徑與 #613 補跑", () => {
     return c;
   }
 
-  /** Rules older than the payment, the payment inside the catch-up window. */
+  /** Rules and their steps older than the payment, the payment inside the catch-up window. */
   async function backdate(t: Tenant, c: Checkout, paidAt: Date) {
     const ruleTime = new Date(paidAt.getTime() - MINUTE);
     await db.$executeRaw`UPDATE "AutomationRule" SET "createdAt" = ${ruleTime}, "updatedAt" = ${ruleTime} WHERE "vendorId" = ${t.vendor.id}`;
+    await db.$executeRaw`UPDATE "AutomationRuleStep" SET "createdAt" = ${ruleTime}, "updatedAt" = ${ruleTime} WHERE "vendorId" = ${t.vendor.id}`;
     await db.commerceOrder.update({ where: { id: c.orderId }, data: { paidAt } });
     await db.commerceOrderEvent.updateMany({ where: { orderId: c.orderId, eventType: "payment.paid" }, data: { createdAt: paidAt } });
   }
@@ -568,6 +600,68 @@ describe("即時路徑與 #613 補跑", () => {
     await expect(runPaymentPaidAutomationCatchup({ db, now })).resolves.toMatchObject({ candidates: 1, completed: 1 });
     const log = await db.automationExecutionLog.findFirstOrThrow({ where: { vendorId: t.vendor.id, ruleId: rule.id } });
     await expect(onlyRun(t)).resolves.toMatchObject({ commerceOrderId: c.orderId, sourceExecutionLogId: log.id, anchorAt: log.createdAt, status: "active" });
+  });
+
+  it("review MINOR-1: a catch-up starts no run when an active step was added or edited after the payment, and leaves no owed-run mark", async () => {
+    const now = new Date();
+    const paidAt = new Date(now.getTime() - PAYMENT_PAID_CATCHUP_MIN_AGE_MS - 5 * MINUTE);
+
+    // A step added after the payment.
+    const added = await tenant("step-added");
+    const addedRule = await paymentRule(added);
+    const addedOrder = await missedPayment(added);
+    await backdate(added, addedOrder, paidAt);
+    await db.automationRuleStep.create({
+      data: { vendorId: added.vendor.id, ruleId: addedRule.rule.id, delayMinutes: 120, condition: { type: "always" } as Prisma.InputJsonValue, actions: [TAG_STEP] as Prisma.InputJsonArray },
+    });
+
+    // A step edited (its delay moved) after the payment.
+    const edited = await tenant("step-edited");
+    const editedRule = await paymentRule(edited);
+    const editedOrder = await missedPayment(edited);
+    await backdate(edited, editedOrder, paidAt);
+    await db.automationRuleStep.update({ where: { id: editedRule.steps[0]!.id }, data: { delayMinutes: 90 } });
+
+    // An inactive step added after the payment does not count; the old active one starts the run.
+    const inactive = await tenant("step-inactive");
+    const inactiveRule = await paymentRule(inactive);
+    const inactiveOrder = await missedPayment(inactive);
+    await backdate(inactive, inactiveOrder, paidAt);
+    await db.automationRuleStep.create({
+      data: { vendorId: inactive.vendor.id, ruleId: inactiveRule.rule.id, delayMinutes: 180, condition: { type: "always" } as Prisma.InputJsonValue, actions: [TAG_STEP] as Prisma.InputJsonArray, isActive: false },
+    });
+
+    await expect(runPaymentPaidAutomationCatchup({ db, now })).resolves.toMatchObject({ candidates: 3, completed: 3 });
+    for (const [t, rule] of [[added, addedRule.rule], [edited, editedRule.rule]] as const) {
+      // The immediate actions ran; no delayed steps for this payment, and nothing owed to the job.
+      await expect(db.automationExecutionLog.findFirstOrThrow({ where: { vendorId: t.vendor.id, ruleId: rule.id } }))
+        .resolves.toMatchObject({ status: "completed", delayedStepsPendingSubjectId: null });
+      expect(await runsOf(t)).toEqual([]);
+      await expect(startPendingAutomationRuns({ now: new Date(now.getTime() + PENDING_RUN_START_MIN_AGE_MS + MINUTE), vendorId: t.vendor.id })).resolves.toEqual([]);
+      expect(await runsOf(t)).toEqual([]);
+    }
+    await expect(onlyRun(inactive)).resolves.toMatchObject({ commerceOrderId: inactiveOrder.orderId, status: "active" });
+  });
+
+  it("review MINOR-1: a step added after the payment also stops a catch-up whose execution was claimed by the live path first (the replay path)", async () => {
+    const t = await tenant("step-added-replay");
+    const { rule } = await paymentRule(t);
+    const c = await missedPayment(t);
+    const now = new Date();
+    await backdate(t, c, new Date(now.getTime() - PAYMENT_PAID_CATCHUP_MIN_AGE_MS - 5 * MINUTE));
+    // A completed execution without a run (as a deferred live start leaves it), then a new step.
+    await dispatchPaymentPaidAutomationForOrder({ vendorId: t.vendor.id, orderId: c.orderId }, db);
+    await db.delayedStepRun.deleteMany({ where: { vendorId: t.vendor.id } });
+    await db.automationRuleStep.create({
+      data: { vendorId: t.vendor.id, ruleId: rule.id, delayMinutes: 240, condition: { type: "always" } as Prisma.InputJsonValue, actions: [TAG_STEP] as Prisma.InputJsonArray },
+    });
+    // The catch-up's own dispatch meets the completed execution (duplicate) and must not start the run either.
+    await expect(dispatchPaymentPaidAutomationForOrder({ vendorId: t.vendor.id, orderId: c.orderId }, db, { rulesUnchangedSince: new Date(now.getTime() - PAYMENT_PAID_CATCHUP_MIN_AGE_MS - 5 * MINUTE), stepsUnchangedSince: new Date(now.getTime() - PAYMENT_PAID_CATCHUP_MIN_AGE_MS - 5 * MINUTE) }))
+      .resolves.toMatchObject({ status: "dispatched", results: [{ ruleId: rule.id, status: "duplicate" }] });
+    expect(await runsOf(t)).toEqual([]);
+    // Without the catch-up's bound (a live replay), the steps as they are now apply as before.
+    await dispatchPaymentPaidAutomationForOrder({ vendorId: t.vendor.id, orderId: c.orderId }, db);
+    await expect(onlyRun(t)).resolves.toMatchObject({ commerceOrderId: c.orderId });
   });
 
   it("the live dispatch and two catch-up passes racing on separate connections create exactly one run per order", async () => {
@@ -674,6 +768,42 @@ describe("資料與刪除", () => {
     await db.vendor.delete({ where: { id: t.vendor.id } });
     vendorIds.splice(vendorIds.indexOf(t.vendor.id), 1);
     await expect(db.delayedStepRun.count({ where: { id: run.id } })).resolves.toBe(0);
+  });
+
+  it("review MINOR-2: a deployment that cannot decrypt at all gives the lease back without using an attempt and runs nothing", async () => {
+    const t = await tenant("no-key");
+    const { steps } = await paymentRule(t, { steps: [{ delayMinutes: 60, actions: [TAG_STEP] }] });
+    const c = await checkout(t);
+    await pay(t, c);
+    const run = await onlyRun(t);
+    monitoring.captureOperationalError.mockClear();
+    const untouched = { status: "active", claimedAt: null, attemptCount: 0, cursorDelayMinutes: -1 };
+    // The payment's immediate dispatch read the envelope already; count from here.
+    hooks.revealCalls = 0;
+    // Key missing when the round starts: the worker's own deployment probe claims nothing.
+    vi.stubEnv("CSRF_SECRET", "");
+    await work(t, due(run, 60));
+    expect(hooks.revealCalls).toBe(0);
+    await expect(db.delayedStepRun.findUniqueOrThrow({ where: { id: run.id } })).resolves.toMatchObject(untouched);
+    // Key gone after the round's probe, right before this order's envelope is read.
+    vi.stubEnv("CSRF_SECRET", "payment-paid-delayed-steps-secret-longer-than-32-bytes");
+    hooks.beforeReveal = () => {
+      hooks.beforeReveal = null;
+      vi.stubEnv("CSRF_SECRET", "");
+    };
+    await work(t, due(run, 60));
+    // The order's envelope was really tried; the run was claimed and given back without using an attempt.
+    expect(hooks.revealCalls).toBe(1);
+    await expect(db.delayedStepRun.findUniqueOrThrow({ where: { id: run.id } })).resolves.toMatchObject(untouched);
+    await expect(stepLog(t, run.id, steps[0]!.id)).resolves.toBeNull();
+    await expect(db.customerTagAssignment.count({ where: { vendorId: t.vendor.id, tag: TAG_STEP.tag } })).resolves.toBe(0);
+    // Not recorded as this buyer's unreadable e-mail.
+    expect(monitoring.captureOperationalError).not.toHaveBeenCalledWith(expect.anything(), { source: "automation_delayed_steps", operation: "buyer_email" });
+    // Key back: the step runs.
+    vi.stubEnv("CSRF_SECRET", "payment-paid-delayed-steps-secret-longer-than-32-bytes");
+    await work(t, due(run, 60));
+    await expect(stepLog(t, run.id, steps[0]!.id)).resolves.toMatchObject({ status: "completed" });
+    await expect(db.customerTagAssignment.count({ where: { vendorId: t.vendor.id, tag: TAG_STEP.tag } })).resolves.toBe(1);
   });
 
   it("runs the other actions when the buyer e-mail cannot be read, and reports it with safe keys only", async () => {

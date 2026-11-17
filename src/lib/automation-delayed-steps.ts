@@ -27,6 +27,7 @@ import { automationCustomerKeyHash } from "@/lib/customer-key-hash";
 import { getDb } from "@/lib/db";
 import { captureOperationalError } from "@/lib/monitoring";
 import { PAYMENT_PAID_RUN_ORDER_SELECT, paymentPaidRunOrderCounts } from "@/lib/payment-paid-run-order";
+import { decryptSensitiveValue, encryptSensitiveValue } from "@/lib/sensitive-data";
 import { isRuleWriteBusy } from "@/lib/serializable-retry";
 import {
   cancelLeasedRun,
@@ -36,6 +37,7 @@ import {
   leaseWhere,
   processDueDelayedStepRuns,
   reportDelayedStepFailure,
+  SequenceConfigurationError,
   utcTimestamp,
   type AutomationRunProcessor,
   type DelayedStepResult,
@@ -99,7 +101,8 @@ const VENDOR_SUSPENDED = "vendor_suspended" as const;
  * registration with exactly the same address (hasVerifiedRegistration, the
  * same rule as a consultation booking), or a learner who signed in to the
  * vendor's student portal with it (a consumed `magic_link` token: the link was
- * e-mailed to that address and opened). Paying proves neither: checkout takes
+ * e-mailed to that address and fetched; it is consumed on GET, so a mail
+ * scanner prefetching it counts too). Paying proves neither: checkout takes
  * whatever address is typed and nothing confirms it. The portal check uses
  * the customer key (automationCustomerKeyHash, trim + lowercase), bound to the
  * vendor, through the (vendorId, customerKeyHash, expiresAt) index; a
@@ -118,7 +121,32 @@ async function buyerEmailConfirmed(
   return Boolean(signedIn);
 }
 
-/** The buyer e-mail from the order's encrypted envelope, or undefined (reported, no id) when it cannot be read. */
+const ENCRYPTION_PROBE_PURPOSE = "automation-delayed-steps-encryption-probe";
+
+/** Whether the deployment can encrypt and decrypt at all right now (the key is set and usable). */
+function sensitiveDataUsable() {
+  try {
+    return decryptSensitiveValue(encryptSensitiveValue("probe", ENCRYPTION_PROBE_PURPOSE), ENCRYPTION_PROBE_PURPOSE) === "probe";
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * The buyer e-mail from the order's encrypted envelope, or undefined (reported,
+ * no id) when this order's envelope cannot be read.
+ *
+ * Q-09 review MINOR-2: when the deployment itself cannot decrypt (the
+ * encryption key is not set or not usable: a round trip of a probe value
+ * fails), the failure is the platform's, not this run's. It is thrown as a
+ * SequenceConfigurationError, so processDueDelayedStepRuns re-probes the
+ * deployment, gives the lease back without using an attempt and stops the
+ * round, as for every other configuration problem; nothing of the step runs.
+ * Only a single order's envelope that does not decrypt (corrupted, or written
+ * under a key the keyring no longer has) is recorded as the e-mail's
+ * `recipient_not_linked` while the other actions run, so one such order never
+ * stalls the worker.
+ */
 function orderBuyerEmail(order: { id: string; buyerEncryptedEnvelope: string; shippingEncryptedEnvelope: string | null }, vendorId: string) {
   try {
     const email = revealCommerceOrderPii({
@@ -127,6 +155,7 @@ function orderBuyerEmail(order: { id: string; buyerEncryptedEnvelope: string; sh
     }, { vendorId, orderId: order.id }).buyer.email;
     return email || undefined;
   } catch (error) {
+    if (!sensitiveDataUsable()) throw new SequenceConfigurationError(error);
     try {
       captureOperationalError(error, { source: "automation_delayed_steps", operation: "buyer_email" });
     } catch {

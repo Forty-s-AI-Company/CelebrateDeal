@@ -282,6 +282,8 @@ export async function runPaymentPaidAutomationCatchup(options: {
         db,
         {
           rulesUnchangedSince: candidate.recordedAt,
+          // Q-09 review MINOR-1: steps added or edited after the payment never apply to it.
+          stepsUnchangedSince: candidate.recordedAt,
           onlyRuleIds: candidate.ruleIds,
           // The scan's retry condition, re-checked in the reclaim's own write.
           failedReclaim: { errorCodes: PAYMENT_PAID_CATCHUP_RETRYABLE_ERROR_CODES },

@@ -162,14 +162,21 @@ describe("AutomationSettingsPage", () => {
     expect(html).toContain("訂單全額退款或取消後不再執行（部分退款仍會繼續）");
     expect(html).toContain("延遲步驟的 Email 只寄給在你這裡用同一個 Email 完成報名驗證，或登入過學員專區的買家");
     expect(html).not.toContain("「訂單付款完成」除外");
+    // Review NIT-4: the general step note does not contradict the payment_paid one.
+    expect(html).not.toContain("Email 只寄給已驗證的報名者");
   });
 
-  it("shows the payment_paid note only on payment_paid rules", async () => {
+  it("shows the payment_paid note only on payment_paid rules, and words the e-mail limit per trigger (review NIT-4)", async () => {
     granted();
-    mocks.rules.mockResolvedValue([rule({ id: "reg-on", name: "報名追蹤", trigger: "form_registered", isActive: true })]);
+    mocks.rules.mockResolvedValue([
+      rule({ id: "reg-on", name: "報名追蹤", trigger: "form_registered", isActive: true }),
+      rule({ id: "booked-on", name: "預約追蹤", trigger: "consultation_booked", isActive: true }),
+    ]);
     const html = await render();
     expect(html).toContain("延遲步驟（0／10）");
     expect(html).not.toContain("訂單全額退款或取消後不再執行");
+    expect(html).toContain("Email 只寄給已驗證的報名者。");
+    expect(html).toContain("Email 只寄給在你這裡用同一個 Email 完成報名驗證的預約者。");
   });
 
   it("shows a payment_paid rule paused by the deploy migration like any switched-off rule, with its switch-on button", async () => {

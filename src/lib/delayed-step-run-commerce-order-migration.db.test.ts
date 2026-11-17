@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { Prisma } from "@prisma/client";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createCommerceOrderForCheckout } from "@/lib/commerce-orders";
 import { getDb } from "@/lib/db";
 import { createReservedPaymentTransaction } from "@/lib/inventory-reservations";
@@ -37,8 +37,15 @@ const SUBJECT_CHECK_DEFINITION = `CHECK (((("automationRuleId" IS NULL) = ("sour
 const db = getDb();
 const vendorIds: string[] = [];
 
+// Review NIT-1: the checkout fixture encrypts the buyer envelope; its key is
+// stubbed here instead of read from the process environment.
+beforeEach(() => {
+  vi.stubEnv("CSRF_SECRET", "q09-migration-test-secret-longer-than-32-bytes");
+});
+
 afterEach(async () => {
   await db.vendor.deleteMany({ where: { id: { in: vendorIds.splice(0) } } });
+  vi.unstubAllEnvs();
 });
 
 async function currentSchema(client: Pick<Prisma.TransactionClient, "$queryRaw"> = db) {

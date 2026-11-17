@@ -107,7 +107,17 @@ const NO_DELAYED_STEPS_NOTE = "這個觸發條件的規則只有立即執行的�
  * and the buyer's e-mail address counts as confirmed only with a verified
  * registration or a student-portal sign-in at this vendor.
  */
-const PAYMENT_PAID_STEPS_NOTE = "「訂單付款完成」的延遲步驟從付款完成後規則第一次執行的時間起算。訂單全額退款或取消後不再執行（部分退款仍會繼續）。付款不代表買家確認過 Email，所以延遲步驟的 Email 只寄給在你這裡用同一個 Email 完成報名驗證，或登入過學員專區的買家；其他買家的 Email 會略過，貼標籤、派券與 LINE 照常執行。";
+/**
+ * Q-09 review NIT-4: who a rule's delayed-step e-mail reaches, by trigger.
+ * payment_paid says nothing here: PAYMENT_PAID_STEPS_NOTE, right below,
+ * states its rule.
+ */
+function stepsEmailNote(trigger: string) {
+  if (trigger === "payment_paid") return "";
+  if (trigger === "consultation_booked" || trigger === "consultation_no_show") return "Email 只寄給在你這裡用同一個 Email 完成報名驗證的預約者。";
+  return "Email 只寄給已驗證的報名者。";
+}
+const PAYMENT_PAID_STEPS_NOTE ="「訂單付款完成」的延遲步驟從付款完成後規則第一次執行的時間起算。訂單全額退款或取消後不再執行（部分退款仍會繼續）。付款不代表買家確認過 Email，所以延遲步驟的 Email 只寄給在你這裡用同一個 Email 完成報名驗證，或登入過學員專區的買家；其他買家的 Email 會略過，貼標籤、派券與 LINE 照常執行。";
 const EMAIL_TEMPLATES: Array<[string, string]> = [
   ["consultation_confirmation", "諮詢預約確認"],
   ["class_reminder", "課前提醒"],
@@ -234,7 +244,7 @@ function RuleSteps({ rule, editable, linePushAllowed, products, counts }: {
       <h4 className="text-sm font-semibold text-slate-900">延遲步驟（{rule.steps.length}／{MAX_AUTOMATION_RULE_STEPS}）</h4>
       {counts ? <p className="text-xs text-slate-600">進行中 {counts.active} 人・完成 {counts.completed} 人・停止 {counts.cancelled} 人</p> : null}
     </div>
-    <p className="text-xs text-slate-600">從事件發生的時間起算，到點時重新讀取對象再執行。job 停擺超過 24 小時的步驟會跳過；同一個人同一步最多執行一次，改延遲時間也不會重複執行。Email 只寄給已驗證的報名者。</p>
+    <p className="text-xs text-slate-600">從事件發生的時間起算，到點時重新讀取對象再執行。job 停擺超過 24 小時的步驟會跳過；同一個人同一步最多執行一次，改延遲時間也不會重複執行。{stepsEmailNote(rule.trigger)}</p>
     {rule.trigger === "payment_paid" ? <p className="rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-900">{PAYMENT_PAID_STEPS_NOTE}</p> : null}
     {rule.steps.length ? <ol className="grid gap-2">
       {rule.steps.map((step) => <li key={step.id} className="rounded-md border border-border bg-white p-3">
