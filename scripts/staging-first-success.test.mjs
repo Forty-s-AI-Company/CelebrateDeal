@@ -156,8 +156,12 @@ test("workflow is manual, protected-master only, and never starts checkout or bu
   assert.match(workflow, /if: \$\{\{ github\.ref == 'refs\/heads\/master' && github\.ref_protected \}\}/u);
   assert.match(workflow, /environment: Preview – celebrate-deal-staging/u);
   assert.doesNotMatch(workflow, /buyer_order|PAYUNI_|payment-only|wp4-buyer/u);
-  // Secrets reach only the alias check and the runner step, after tests and lineage.
-  assert.equal((workflow.match(/secrets\.JOB_SECRET/gu) ?? []).length, 1);
+  // Secrets reach only the alias check, the runner step and the R-10 deactivate step after it, all after tests and lineage.
+  assert.equal((workflow.match(/secrets\.JOB_SECRET/gu) ?? []).length, 2);
+  const journey = workflow.indexOf("run: node scripts/staging-first-success.mjs");
+  const deactivate = workflow.indexOf("run: node scripts/staging-first-success-cleanup.mjs --mode=deactivate");
+  const secrets = [...workflow.matchAll(/secrets\.JOB_SECRET/gu)].map((match) => match.index);
+  assert.ok(journey > 0 && secrets[0] < journey && journey < secrets[1] && secrets[1] < deactivate, "JOB_SECRET only in the journey and deactivate steps");
   // The pause switch reaches the runner step (the only step that could call the email job).
   assert.match(workflow, /SCHEDULED_JOBS_PAUSED: \$\{\{ vars\.SCHEDULED_JOBS_PAUSED \}\}\n\s+run: node scripts\/staging-first-success\.mjs/u);
   // Same pinned v7 actions as staging-funnel-smoke.yml.

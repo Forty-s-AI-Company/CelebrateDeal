@@ -1,0 +1,92 @@
+name: Staging first-success cleanup
+
+# R-10: manual cleanup of the synthetic merchants the first-success runner leaves on fixed staging.
+# `deactivate` (the default input) suspends runner merchants so the email and LINE jobs stop sending for them;
+# `delete` removes merchants this cleanup deactivated at least 7 days earlier, one transaction each;
+# per the #543 policy its first run needs the owner's consent (OWNER-ACTIONS.md).
+# The staging route selects only the runner's own mailboxes and workspace slugs; it skips any merchant
+# with an order, payment or other finance record. Same concurrency group as the runner, so a cleanup
+# never overlaps a journey in progress.
+on:
+  workflow_dispatch:
+    inputs:
+      source_sha:
+        description: Exact source commit of the immutable Preview deployment
+        required: true
+        type: string
+      deployment_host:
+        description: Immutable Preview host recorded by the protected GitHub deployment
+        required: true
+        type: string
+      mode:
+        description: deactivate (suspend only) or delete (only merchants deactivated at least 7 days ago)
+        required: true
+        type: choice
+        default: deactivate
+        options:
+          - deactivate
+          - delete
+
+permissions:
+  contents: read
+  deployments: read
+
+concurrency:
+  group: staging-first-success
+  cancel-in-progress: false
+
+jobs:
+  cleanup:
+    if: ${{ github.ref == 'refs/heads/master' && github.ref_protected }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: Preview – celebrate-deal-staging
+    env:
+      CELEBRATEDEAL_SOURCE_SHA: ${{ inputs.source_sha }}
+      CELEBRATEDEAL_DEPLOYMENT_HOST: ${{ inputs.deployment_host }}
+      CELEBRATEDEAL_CLEANUP_MODE: ${{ inputs.mode }}
+    steps:
+      - name: Checkout protected first-success cleanup
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install locked dependencies before secret injection
+        run: npm ci --ignore-scripts
+
+      - name: Test fixed cleanup contract before secret injection
+        run: node --test scripts/staging-first-success-cleanup.test.mjs
+
+      - name: Verify exact Preview lineage before secret injection
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node scripts/mvp-payuni-sandbox-e2e.mjs --verify-lineage
+
+      - name: Verify fixed staging alias before owner secret injection
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: node scripts/staging-browser-smoke.mjs --verify-alias
+
+      - name: Clean up synthetic first-success merchants on fixed staging
+        timeout-minutes: 5
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          JOB_SECRET: ${{ secrets.JOB_SECRET }}
+        run: node scripts/staging-first-success-cleanup.mjs
+
+      - name: Upload de-identified cleanup receipt
+        if: ${{ always() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: celebratedeal-staging-first-success-cleanup-${{ inputs.mode }}
+          path: ${{ runner.temp }}/celebratedeal-staging-first-success-cleanup-${{ inputs.mode }}.json
+          if-no-files-found: ignore
+          retention-days: 30

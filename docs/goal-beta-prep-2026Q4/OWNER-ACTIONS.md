@@ -18,6 +18,10 @@
 - **GitHub Dependency graph**：Settings → Code security 開啟 Dependency graph，Dependency review 檢查（`.github/workflows/dependency-review.yml`）才會生效；同一頁開啟 **Private vulnerability reporting**，讓外部回報安全問題有私下管道（`SECURITY.md`）。
 - **手動觸發一次 `security-audit.yml`**：Actions → Security audit (weekly) → Run workflow，確認 workflow 能成功跑完；有 high／critical advisory 時會開一個 `security-audit` issue，沒有時不開 issue（這是正常結果）。
 
+## 待 owner 決定
+
+- **R-10 刪除模式（首次成功 runner 的合成商家）**：首次成功路徑 runner 每次執行會留下一個 `cdfs-` 合成商家。runner workflow 結束後會自動「停用」它（凍結，不刪資料；email job 不再寄提醒信），這部分照常自動執行。停用滿 7 天的商家可由 `staging-first-success-cleanup.yml` 以 `mode=delete` 刪除；依 #543「staging 合成資料封測期間不刪除、要刪先備份並經 owner 同意」的政策，**第一次執行刪除模式前需要 owner 同意，並決定是否先備份**。刪除只認 runner 自己的 Email 與 slug，有訂單、帳務紀錄或多了成員的商家一律跳過；上方 #543 盤點的 4 個商家不受影響。做法與範圍見 `docs/launch/staging-first-success-runner.md`。回報：同意與否、是否先備份。
+
 ## 2026-11-06 待 owner 處理（彙整）
 
 GitHub environment `Preview – celebrate-deal-staging`：
