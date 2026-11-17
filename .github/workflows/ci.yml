@@ -77,7 +77,7 @@ jobs:
         uses: ./.github/actions/ci-setup
 
       - name: Production dependency audit
-        run: npm audit --omit=dev --audit-level=high
+        run: node scripts/prod-audit-gate.mjs
 
       - name: Repository secret and archive scan
         run: npm run secret:scan
