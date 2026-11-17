@@ -16,9 +16,10 @@ function pooledUrl(connections: number) {
 }
 
 // Every application call in this file (Server Actions, services, audit) runs
-// on this client: the four admin calls of a concurrency case each hold one
-// connection while they wait on the rule lock, plus spare ones for the
-// pre-lock reads. The owner transaction and the pg_stat_activity observer use
+// on this client: the four (or, in the 57014 case, five) admin calls of a
+// concurrency case each hold one connection while they wait on the rule lock,
+// plus spare ones for the pre-lock reads. The owner transaction and the
+// pg_stat_activity observer use
 // their own one-connection clients below, so no wait depends on the pool.
 const clients = vi.hoisted(() => ({ app: null as null | import("@prisma/client").PrismaClient, appConnections: 8 }));
 vi.mock("@/lib/db", async () => {
@@ -383,23 +384,40 @@ describe("concurrency with an owner holding the rule row", () => {
     return row?.n ?? 0;
   }
 
+  /** Each backend running a rule FOR UPDATE (not the observer): when its statement and its current lock wait started. */
+  async function ruleLockBackends() {
+    return observer.$queryRaw<Array<{ pid: number; waitEventType: string | null; queryStartMs: number | null; waitStartMs: number | null }>>`
+      SELECT a.pid, a.wait_event_type AS "waitEventType",
+             (extract(epoch FROM a.query_start) * 1000)::float8 AS "queryStartMs",
+             (extract(epoch FROM l.waitstart) * 1000)::float8 AS "waitStartMs"
+      FROM pg_stat_activity a
+      LEFT JOIN LATERAL (SELECT min(waitstart) AS waitstart FROM pg_locks WHERE pid = a.pid AND NOT granted) l ON true
+      WHERE a.datname = current_database() AND a.pid <> pg_backend_pid() AND a.query LIKE '%"AutomationRule"%FOR UPDATE%'
+      ORDER BY a.query_start
+    `;
+  }
+
   /**
    * Resolves at the first moment `count` calls wait on the rule lock (seen by
    * the observer, which only ever sees it late, never early). The deadline
    * counts from the first waiter seen: it gives up after lock_timeout (5 s)
-   * from its own arrival, so the others must be there within 4 s of it,
-   * however slowly the runner got them to the lock.
+   * from its own arrival, so by default the others must be there within 4 s
+   * of it, however slowly the runner got them to the lock. A case that acts on
+   * the waiters itself passes a smaller `arrivalWindowMs`, so it always acts
+   * well before the first waiter's lock_timeout. On failure the message lists
+   * when each backend's statement and lock wait started.
    */
-  async function untilWaiting(count: number) {
+  async function untilWaiting(count: number, arrivalWindowMs = 4_000) {
     const firstDeadline = Date.now() + 15_000;
     let first: number | null = null;
-    while (Date.now() < (first === null ? firstDeadline : first + 4_000)) {
+    while (Date.now() < (first === null ? firstDeadline : first + arrivalWindowMs)) {
       const waiting = await waitersOnRule();
       if (waiting > 0 && first === null) first = Date.now();
       if (waiting >= count) return { first: first!, all: Date.now() };
       await new Promise((resolve) => setTimeout(resolve, 10));
     }
-    throw new Error(`fewer than ${count} calls waited on the rule lock at the same time`);
+    const backends = await ruleLockBackends();
+    throw new Error(`fewer than ${count} calls waited on the rule lock at the same time (within ${arrivalWindowMs} ms of the first seen at ${first ?? "never"}): ${JSON.stringify(backends)}`);
   }
 
   const settle = (promise: Promise<unknown>) => promise.then(() => ({ ok: true as const }), (error: unknown) => ({ ok: false as const, error }));
@@ -513,12 +531,18 @@ describe("concurrency with an owner holding the rule row", () => {
     let results: Array<{ ok: boolean; error?: unknown }> = [];
     try {
       const calls = [...adminCalls(vendor.id, page.id, r.id), settle(deleteAutomationRuleAction(form({ ruleId: r.id })))];
-      await untilWaiting(5);
-      const [cancelled] = await observer.$queryRaw<Array<{ n: number }>>`
-        SELECT count(*) FILTER (WHERE pg_cancel_backend(pid))::int AS n FROM pg_stat_activity
-        WHERE datname = current_database() AND wait_event_type = 'Lock' AND query LIKE '%"AutomationRule"%FOR UPDATE%'
+      // All five must be waiting within 1.5 s of the first, so the cancel below
+      // lands long before the first waiter's own lock_timeout (5 s).
+      await untilWaiting(5, 1_500);
+      const cancelled = await observer.$queryRaw<Array<{ pid: number; cancelled: boolean; queryStartMs: number | null; waitStartMs: number | null }>>`
+        SELECT a.pid, pg_cancel_backend(a.pid) AS cancelled,
+               (extract(epoch FROM a.query_start) * 1000)::float8 AS "queryStartMs",
+               (extract(epoch FROM l.waitstart) * 1000)::float8 AS "waitStartMs"
+        FROM pg_stat_activity a
+        LEFT JOIN LATERAL (SELECT min(waitstart) AS waitstart FROM pg_locks WHERE pid = a.pid AND NOT granted) l ON true
+        WHERE a.datname = current_database() AND a.wait_event_type = 'Lock' AND a.query LIKE '%"AutomationRule"%FOR UPDATE%'
       `;
-      expect(cancelled?.n).toBe(5);
+      expect(cancelled.filter((row) => row.cancelled).length, JSON.stringify({ cancelledAt: Date.now(), waiters: cancelled })).toBe(5);
       results = await Promise.all(calls);
     } finally {
       held.release();

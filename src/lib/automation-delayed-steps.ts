@@ -16,8 +16,9 @@ import {
   storedAutomationRuleSendsLine,
   withVoucherLineNotification,
 } from "@/lib/automation-line-push-policy";
+import { reportCancelledRuleLockWait } from "@/lib/automation-rule-lock";
 import { getDb } from "@/lib/db";
-import { isLockWaitGivenUp } from "@/lib/serializable-retry";
+import { isRuleWriteBusy } from "@/lib/serializable-retry";
 import {
   cancelLeasedRun,
   DELAYED_STEP_LEASE_MS,
@@ -530,18 +531,10 @@ async function withLockedRule(
     }, STEP_TRANSACTION_OPTIONS);
   } catch (error) {
     if (error instanceof StepChangeRejected) return { ok: false, code: error.code };
-    if (isBusy(error)) return { ok: false, code: "step_busy" };
-    throw error;
+    if (!isRuleWriteBusy(error)) throw error;
+    reportCancelledRuleLockWait(error);
+    return { ok: false, code: "step_busy" };
   }
-}
-
-/**
- * The wait on the rule row was given up (lock_timeout 55P03, or 57014, which
- * PostgreSQL can report for a lock_timeout too: see isLockWaitGivenUp), or the
- * transaction could not start or finish in time (P2028). Nothing was written.
- */
-function isBusy(error: unknown) {
-  return isLockWaitGivenUp(error) || (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2028");
 }
 
 async function validateStep(tx: Prisma.TransactionClient, vendorId: string, ruleId: string, input: AutomationStepInput) {

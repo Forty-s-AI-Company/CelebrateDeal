@@ -1,7 +1,7 @@
 import { Prisma } from "@prisma/client";
 import { describe, expect, it, vi } from "vitest";
 
-import { isLockTimeout, isLockWaitGivenUp, isTransientTransactionConflict, runSerializable, serializableRetryDelayMs, withSerializableRetry } from "@/lib/serializable-retry";
+import { isLockTimeout, isLockWaitGivenUp, isRuleWriteBusy, isTransientTransactionConflict, runSerializable, serializableRetryDelayMs, withSerializableRetry } from "@/lib/serializable-retry";
 
 function conflict(code = "P2034") {
   return new Prisma.PrismaClientKnownRequestError("conflict", { code, clientVersion: "test" });
@@ -113,6 +113,21 @@ describe("F-055 shared Serializable retry", () => {
     expect(isLockWaitGivenUp(null)).toBe(false);
     // The retry predicate stays strict: a cancelled statement is never retried.
     expect(isLockTimeout(known("P2010", { code: "57014" }, "ERROR: canceling statement due to user request"))).toBe(false);
+  });
+
+  it("treats a given-up lock wait or a transaction timeout (P2028) as a busy rule write, and nothing else", () => {
+    const known = (code: string, meta?: Record<string, unknown>, message = "raw") =>
+      new Prisma.PrismaClientKnownRequestError(message, { code, clientVersion: "test", ...(meta ? { meta } : {}) });
+
+    expect(isRuleWriteBusy(known("P2010", { code: "55P03" }))).toBe(true);
+    expect(isRuleWriteBusy(known("P2010", { code: "57014" }, "ERROR: canceling statement due to user request"))).toBe(true);
+    expect(isRuleWriteBusy(known("P2028", undefined, "Transaction API error"))).toBe(true);
+
+    expect(isRuleWriteBusy(conflict())).toBe(false);
+    expect(isRuleWriteBusy(known("P2002"))).toBe(false);
+    expect(isRuleWriteBusy(Object.assign(new Error("raw"), { code: "P2028" }))).toBe(false);
+    expect(isRuleWriteBusy(new Error("connection lost"))).toBe(false);
+    expect(isRuleWriteBusy(null)).toBe(false);
   });
 
   it("opens each attempt as its own Serializable transaction with the caller's pool limits", async () => {
