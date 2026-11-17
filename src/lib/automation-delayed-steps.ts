@@ -29,13 +29,7 @@ import { automationCustomerKeyHash } from "@/lib/customer-key-hash";
 import { getDb } from "@/lib/db";
 import { captureOperationalError } from "@/lib/monitoring";
 import { PAYMENT_PAID_RUN_ORDER_SELECT, paymentPaidRunOrderCounts } from "@/lib/payment-paid-run-order";
-import {
-  dataEncryptionKeyringSummary,
-  decryptSensitiveValue,
-  encryptSensitiveValue,
-  LEGACY_DATA_KEY_ID,
-  sensitiveEnvelopeKeyId,
-} from "@/lib/sensitive-data";
+import { dataEncryptionKeyringSummary, LEGACY_DATA_KEY_ID, sensitiveEnvelopeKeyId } from "@/lib/sensitive-data";
 import { isRuleWriteBusy } from "@/lib/serializable-retry";
 import {
   cancelLeasedRun,
@@ -45,7 +39,7 @@ import {
   leaseWhere,
   processDueDelayedStepRuns,
   reportDelayedStepFailure,
-  SequenceConfigurationError,
+  sequenceRuntimeProblem,
   utcTimestamp,
   type AutomationRunProcessor,
   type DelayedStepResult,
@@ -129,17 +123,6 @@ async function buyerEmailConfirmed(
   return Boolean(signedIn);
 }
 
-const ENCRYPTION_PROBE_PURPOSE = "automation-delayed-steps-encryption-probe";
-
-/** Whether the deployment can encrypt and decrypt at all right now (the key is set and usable). */
-function sensitiveDataUsable() {
-  try {
-    return decryptSensitiveValue(encryptSensitiveValue("probe", ENCRYPTION_PROBE_PURPOSE), ENCRYPTION_PROBE_PURPOSE) === "probe";
-  } catch {
-    return false;
-  }
-}
-
 /**
  * Q-09 re-review MINOR-B: an envelope written under a key id the running
  * keyring does not list (`legacy` while the keyring no longer accepts it, or
@@ -167,12 +150,14 @@ function envelopeKeyMissing(envelope: string | null) {
  * no id) when this order's envelope cannot be read.
  *
  * Three kinds of failure:
- * - Q-09 review MINOR-2: the deployment itself cannot decrypt (the encryption
- *   key is not set or not usable: a round trip of a probe value fails). It is
- *   the platform's, not this run's: thrown as a SequenceConfigurationError, so
- *   processDueDelayedStepRuns re-probes the deployment, gives the lease back
- *   without using an attempt and stops the round, as for every other
- *   configuration problem; nothing of the step runs.
+ * - Q-09 review MINOR-2: the deployment itself cannot encrypt (the key is not
+ *   set or not usable). Checked with the worker's own deployment probe,
+ *   sequenceRuntimeProblem (the one processDueDelayedStepRuns runs before a
+ *   round; it encrypts a probe e-mail payload under the registered e-mail
+ *   delivery purposes, so no purpose of its own is added), without the e-mail
+ *   provider check. Its SequenceConfigurationError is thrown: the worker
+ *   re-probes, gives the lease back without using an attempt and stops the
+ *   round, as for every other configuration problem; nothing of the step runs.
  * - Q-09 re-review MINOR-B: one of the order's envelopes names a key id the
  *   running keyring does not list (a key removed too early, or a deployment
  *   on an older keyring). The probe cannot see it (it encrypts with the active
@@ -192,7 +177,8 @@ function orderBuyerEmail(order: { id: string; buyerEncryptedEnvelope: string; sh
     }, { vendorId, orderId: order.id }).buyer.email;
     return email || undefined;
   } catch (error) {
-    if (!sensitiveDataUsable()) throw new SequenceConfigurationError(error);
+    const platformProblem = sequenceRuntimeProblem({ requireProvider: false });
+    if (platformProblem) throw platformProblem;
     if (envelopeKeyMissing(order.buyerEncryptedEnvelope) || envelopeKeyMissing(order.shippingEncryptedEnvelope)) {
       throw new EnvelopeKeyNotInKeyringError();
     }
