@@ -44,7 +44,7 @@ const AFTER_SCHEDULING_IMPORTS: Record<string, string> = {
   runPaymentPaidAutomationAfterCommit: "registers after() itself (payment_paid automations)",
   dispatchPaymentPaidAutomationForOrder: "dispatchAutomationEvent",
   runPaymentPaidAutomationCatchup: "dispatchPaymentPaidAutomationForOrder (webhook-retry job catch-up)",
-  dispatchFormNoShowAutomationsForLive: "dispatchAutomationEvent",
+  runFormNoShowAutomation: "dispatchAutomationEvent (email job no-show pass, Q-11)",
   schedulePasswordResetLink: "password reset link",
   requestPasswordResetAction: "Server Action -> schedulePasswordResetLink",
   scheduleMerchantEmailVerification: "merchant email verification link",
@@ -86,6 +86,7 @@ const EXPECTED_ENTRIES = [
   "src/app/api/auth/password-reset/request/route.ts",
   "src/app/api/form-submissions/route.ts",
   "src/app/api/form-submissions/verify/route.ts",
+  "src/app/api/jobs/email-deliveries/route.ts",
   "src/app/api/jobs/webhook-retry/route.ts",
   "src/app/api/webhooks/payments/route.ts",
   "src/app/lp/[slug]/[stepPath]/page.tsx",
@@ -101,8 +102,9 @@ const FLUID_HOBBY_MAX_DURATION_SECONDS = 300;
 /** Entries whose exact limit is pinned: batches that need more than the email dispatch limit, and bounded retry queues. */
 const BATCH_ENTRY_MAX_DURATIONS: Record<string, number> = {
   "src/app/api/jobs/webhook-retry/route.ts": 300,
-  // F-3: not an after() entry; the email job round runs up to the platform's
-  // 300 s, with the sequence work last and bounded by its own deadlines.
+  // F-3: the email job round runs up to the platform's 300 s, with the
+  // sequence work last and bounded by its own deadlines. Q-11: its no-show
+  // pass queues automation e-mails, so it is an after() entry too.
   "src/app/api/jobs/email-deliveries/route.ts": 300,
   // B-2: not an after() entry; its limit bounds the inventory reservation's
   // Serializable retry queue (12 attempts, about 6.6 s of backoff) plus the

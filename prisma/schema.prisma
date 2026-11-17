@@ -790,6 +790,7 @@ model FormSubmission {
   funnelSubmission         FunnelSubmission?
   liveSessionSwitchRedemptions LiveSessionSwitchRedemption[]
   evergreenSessionAssignments  EvergreenSessionAssignment[]
+  registrationAttendances      LiveRegistrationAttendance[]
   delayedStepRuns              DelayedStepRun[]
 
   trackingDeliveries TrackingDelivery[]
@@ -894,6 +895,7 @@ model Live {
   mediaSessions              LiveMediaSession[]
   sessions                   LiveSession[]
   evergreenSessionAssignments EvergreenSessionAssignment[]
+  registrationAttendances     LiveRegistrationAttendance[]
   emailSequences             EmailSequence[]
   landingPages              LandingPage[]        @relation("LandingPageDraftLive")
   landingPageVersions        LandingPageVersion[] @relation("LandingPageVersionLive")
@@ -977,6 +979,28 @@ model EvergreenSessionAssignment {
 
   @@unique([vendorId, formSubmissionId])
   @@index([vendorId, liveId, sessionStartAt])
+}
+
+/// Q-11 `form_no_show`: when a VERIFIED registrant was last admitted to play
+/// this Live (src/lib/live-registration-attendance.ts). Written by
+/// /api/live-admission only for a request carrying the signed registration
+/// cookie; the no-show job reads it to tell who watched their session. One row
+/// per registration; no personal data or token is stored here.
+model LiveRegistrationAttendance {
+  id               String   @id @default(cuid())
+  vendorId         String
+  liveId           String
+  formSubmissionId String
+  firstAdmittedAt  DateTime
+  /// Moves forward at most every LIVE_REGISTRATION_ATTENDANCE_REFRESH_MS.
+  lastAdmittedAt   DateTime
+
+  live           Live           @relation(fields: [vendorId, liveId], references: [vendorId, id], onDelete: Cascade)
+  /// The registration's own (liveId, id) key: it always belongs to this Live.
+  formSubmission FormSubmission @relation(fields: [liveId, formSubmissionId], references: [liveId, id], onDelete: Cascade)
+
+  @@unique([vendorId, formSubmissionId])
+  @@index([liveId, formSubmissionId])
 }
 
 /// Private WHIP/WHEP resources. Never expose upstream session URLs to viewers.

@@ -25,7 +25,7 @@ import { DERIVED_KEY_ROTATIONS, legacyDerivedKeyUseCount, resetLegacyDerivedKeyU
 import { hashInteractionBearer } from "@/lib/live-interaction";
 import { deriveSensitiveDataKey } from "@/lib/sensitive-data";
 import { revealEmailDeliveryPayload, verifyEmailUnsubscribeToken } from "@/lib/email-delivery-pii";
-import { AUTOMATION_BUTTON_URL_ERROR_MESSAGE, AUTOMATION_RECIPES, AUTOMATION_TRIGGERS, AVAILABLE_AUTOMATION_RECIPES, AVAILABLE_AUTOMATION_TRIGGERS, automationExecutionNotes, isAvailableAutomationTrigger, automationConditionMatches, isSafeNewAutomationButtonUrl, automationCustomerKeyHash, dispatchAutomationEvent, DELAYED_STEP_AUTOMATION_TRIGGERS, automationTriggerSupportsDelayedSteps, dispatchFormNoShowAutomationsForLive, dryRunAutomationRule, maskAutomationTarget, materializeAutomationRecipe, parseAutomationRule } from "@/lib/automation-workflow";
+import { AUTOMATION_BUTTON_URL_ERROR_MESSAGE, AUTOMATION_RECIPES, AUTOMATION_TRIGGERS, AVAILABLE_AUTOMATION_RECIPES, AVAILABLE_AUTOMATION_TRIGGERS, automationExecutionNotes, isAvailableAutomationTrigger, automationConditionMatches, isSafeNewAutomationButtonUrl, automationCustomerKeyHash, dispatchAutomationEvent, DELAYED_STEP_AUTOMATION_TRIGGERS, automationTriggerSupportsDelayedSteps, dryRunAutomationRule, renderAutomationEmailBody, availableAutomationTriggersForVendor, automationReplayOpen, formNoShowWebinarUrl, isAutomationTriggerAvailableForVendor, maskAutomationTarget, materializeAutomationRecipe, parseAutomationRule } from "@/lib/automation-workflow";
 
 const event = {
   vendorId: "vendor-1",
@@ -390,17 +390,18 @@ describe("smart automation workflow engine", () => {
   });
 
   it("offers only triggers with a production caller, and only their recipes", () => {
-    // F-4 PR 3: payment_paid has its caller (the payment webhook) again.
-    expect([...AVAILABLE_AUTOMATION_TRIGGERS]).toEqual(["form_registered", "consultation_booked", "consultation_no_show", "payment_paid"]);
-    for (const hidden of ["form_no_show", "viewer_watch_progress", "webinar_attended_duration_gte"]) {
+    // F-4 PR 3: payment_paid has its caller (the payment webhook) again;
+    // Q-11: form_no_show has the e-mail job's no-show pass.
+    expect([...AVAILABLE_AUTOMATION_TRIGGERS]).toEqual(["form_registered", "form_no_show", "consultation_booked", "consultation_no_show", "payment_paid"]);
+    for (const hidden of ["viewer_watch_progress", "webinar_attended_duration_gte"]) {
       expect(AUTOMATION_TRIGGERS).toContain(hidden);
       expect(isAvailableAutomationTrigger(hidden)).toBe(false);
       expect(automationTriggerSupportsDelayedSteps(hidden)).toBe(false);
     }
     expect(isAvailableAutomationTrigger("unknown")).toBe(false);
-    expect(AVAILABLE_AUTOMATION_RECIPES.map((recipe) => recipe.id)).toEqual(["consultation_confirmer", "vip_auto_tiering"]);
+    expect(AVAILABLE_AUTOMATION_RECIPES.map((recipe) => recipe.id)).toEqual(["consultation_confirmer", "vip_auto_tiering", "no_show_reactivation"]);
     // payment_paid runs immediate actions only; delayed steps stay with registrations and bookings.
-    expect([...DELAYED_STEP_AUTOMATION_TRIGGERS]).toEqual(["form_registered", "consultation_booked", "consultation_no_show"]);
+    expect([...DELAYED_STEP_AUTOMATION_TRIGGERS]).toEqual(["form_registered", "form_no_show", "consultation_booked", "consultation_no_show"]);
     expect(automationTriggerSupportsDelayedSteps("payment_paid")).toBe(false);
     expect(automationExecutionNotes(null)).toEqual([]);
     expect(automationExecutionNotes([{ type: "send_email_notification", status: "skipped", reason: "other" }, "junk", { type: "line_push", status: "skipped", reason: "recipient_blacklisted" }])).toEqual([]);
@@ -435,19 +436,93 @@ describe("smart automation workflow engine", () => {
     expect(mocks.scheduleImmediateEmailDispatch).toHaveBeenCalledExactlyOnceWith(queuedIds);
   });
 
-  it("dispatches no-show only for verified registrants without attendance evidence", async () => {
-    const db = {
-      live: { findFirst: vi.fn().mockResolvedValue({ id: "live-1", slug: "launch" }) },
-      formSubmission: { findMany: vi.fn().mockResolvedValueOnce([{ id: "registration-1", email: "absent@example.test" }, { id: "registration-2", email: "attended@example.test" }]) },
-      automationExecutionLog: { findFirst: vi.fn().mockResolvedValueOnce(null).mockResolvedValueOnce({ id: "watch-log" }) },
-      automationRule: { findMany: vi.fn().mockResolvedValue([]) },
-      commerceOrder: {}, emailDelivery: {}, customerTagAssignment: {}, automationVoucherGrant: {}, product: {}, lineOfficialAccount: {}, lineUserIdentity: {}, lineDelivery: {},
+  it("leaves out an e-mail line whose link the event does not have", () => {
+    const body = "精華回放：{{webinar_url}}\n預約 1 對 1 諮詢：{{consultation_url}}";
+    // Q-11: a no-show has no booking, so the consultation line is dropped instead of ending empty.
+    expect(renderAutomationEmailBody(body, { webinarUrl: "https://app.example.test/live/launch" })).toBe("精華回放：https://app.example.test/live/launch");
+    expect(renderAutomationEmailBody(body, { webinarUrl: "https://w.example.test", consultationUrl: "https://c.example.test" })).toBe("精華回放：https://w.example.test\n預約 1 對 1 諮詢：https://c.example.test");
+    expect(renderAutomationEmailBody(body, {})).toBe("");
+    expect(renderAutomationEmailBody("沒有連結的一行\n{{voucher_url}}", { voucherUrl: "" })).toBe("沒有連結的一行");
+  });
+
+  function emailDb() {
+    return {
+      automationRule: { findMany: vi.fn() },
+      automationExecutionLog: { create: vi.fn().mockResolvedValue({ id: "log-1", createdAt: new Date() }), update: vi.fn().mockResolvedValue({}) },
+      emailDelivery: { create: vi.fn().mockResolvedValue({}) },
+      emailSuppression: { findUnique: vi.fn().mockResolvedValue(null) },
+      blacklist: { findFirst: vi.fn().mockResolvedValue(null) },
+      customerTagAssignment: { upsert: vi.fn().mockResolvedValue({}) },
+      automationVoucherGrant: {}, product: {}, lineOfficialAccount: {}, lineUserIdentity: {}, lineDelivery: {},
     };
-    await expect(dispatchFormNoShowAutomationsForLive(db as never, { vendorId: "vendor-1", liveId: "live-1" })).resolves.toEqual({ dispatched: 1 });
-    expect(db.automationExecutionLog.findFirst).toHaveBeenNthCalledWith(1, expect.objectContaining({
-      where: expect.objectContaining({ liveId: "live-1", subjectKeyHash: expect.any(String) }),
-    }));
-    expect(db.automationRule.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ vendorId: "vendor-1", trigger: "form_no_show" }) }));
+  }
+  const recorded = (db: ReturnType<typeof emailDb>) => (db.automationExecutionLog.update.mock.calls[0]?.[0] as { data: { status: string; actionResults: unknown } }).data;
+
+  it("never queues an e-mail whose every line needed a missing link: skipped as no_content, for any trigger (review m-6)", async () => {
+    const db = emailDb();
+    db.automationRule.findMany.mockResolvedValue([{ id: "rule-1", condition: { type: "always" }, actions: [{ type: "send_email_notification", template: "webinar_replay" }, { type: "add_customer_tag", tag: "x" }] }]);
+    await expect(dispatchAutomationEvent(db as never, { ...event, trigger: "form_registered", subjectType: "buyer_registration", subjectId: "reg-1", recipientEmail: "lead@example.test" }))
+      .resolves.toEqual([{ ruleId: "rule-1", status: "completed" }]);
+    expect(db.emailDelivery.create).not.toHaveBeenCalled();
+    expect(recorded(db)).toMatchObject({ status: "completed", actionResults: expect.arrayContaining([{ type: "send_email_notification", status: "skipped", reason: "no_content", template: "webinar_replay" }]) });
+    expect(automationExecutionNotes([{ type: "send_email_notification", status: "skipped", reason: "no_content" }])).toEqual(["Email 未寄出：這封信沒有可寄送的內容（缺少需要的連結）"]);
+  });
+
+  it("skips a no-show replay e-mail without an open replay, before reading the recipient lists (review m-5)", async () => {
+    const db = emailDb();
+    db.automationRule.findMany.mockResolvedValue([{ id: "rule-1", condition: { type: "always" }, actions: [{ type: "send_email_notification", template: "webinar_replay" }] }]);
+    await dispatchAutomationEvent(db as never, { ...event, trigger: "form_no_show", eventId: "form-no-show:reg-1:live-1", subjectType: "buyer_registration", subjectId: "reg-1", recipientEmail: "lead@example.test" });
+    expect(recorded(db)).toMatchObject({ status: "completed", actionResults: [{ type: "send_email_notification", status: "skipped", reason: "replay_unavailable", template: "webinar_replay" }] });
+    expect(db.emailSuppression.findUnique).not.toHaveBeenCalled();
+    expect(db.emailDelivery.create).not.toHaveBeenCalled();
+    expect(automationExecutionNotes([{ type: "send_email_notification", status: "skipped", reason: "replay_unavailable" }])).toEqual(["Email 未寄出：這場直播目前沒有開放回放"]);
+  });
+
+  it("opens form_no_show only to a vendor holding the closed-beta grant (review M-1)", () => {
+    expect(isAutomationTriggerAvailableForVendor("form_no_show", { betaFeatureGrants: [] })).toBe(false);
+    expect(isAutomationTriggerAvailableForVendor("form_no_show", null)).toBe(false);
+    expect(isAutomationTriggerAvailableForVendor("form_no_show", { betaFeatureGrants: ["automation_form_no_show"] })).toBe(true);
+    expect(isAutomationTriggerAvailableForVendor("form_registered", null)).toBe(true);
+    expect(isAutomationTriggerAvailableForVendor("viewer_watch_progress", { betaFeatureGrants: ["automation_form_no_show"] })).toBe(false);
+    expect(availableAutomationTriggersForVendor({ betaFeatureGrants: [] })).toEqual(["form_registered", "consultation_booked", "consultation_no_show", "payment_paid"]);
+    expect(availableAutomationTriggersForVendor({ betaFeatureGrants: ["automation_form_no_show"] })).toContain("form_no_show");
+  });
+
+  it("links a no-show to the viewer page only while its replay is open", () => {
+    const now = new Date("2026-11-17T12:00:00.000Z");
+    const live = { vendorId: "vendor-1", slug: "launch", replayEnabled: true, replayAvailableUntil: null, sessionReplayWindowHours: 2, video: { vendorId: "vendor-1", durationSec: 600, sourceType: "url", status: "ready", cloudflareReadyToStream: false, cloudflareLiveInputUid: null, liveInputStatus: null } };
+    expect(formNoShowWebinarUrl(live, null, now)).toBe("https://app.example.test/live/launch");
+    expect(formNoShowWebinarUrl({ ...live, replayEnabled: false }, null, now)).toBeUndefined();
+    expect(automationReplayOpen({ ...live, replayAvailableUntil: now }, null, now)).toBe(false);
+    // A fixed session: its own window after the session ended (start + 10 min + 2 h).
+    expect(automationReplayOpen(live, { startAt: new Date(now.getTime() - 2 * 3_600_000) }, now)).toBe(true);
+    expect(automationReplayOpen(live, { startAt: new Date(now.getTime() - 3 * 3_600_000) }, now)).toBe(false);
+    // NIT-1: no video, another vendor's video, or one not ready to play: no replay.
+    expect(automationReplayOpen({ ...live, video: null }, null, now)).toBe(false);
+    expect(automationReplayOpen({ ...live, video: { ...live.video, vendorId: "vendor-2" } }, null, now)).toBe(false);
+    expect(automationReplayOpen({ ...live, video: { ...live.video, status: "processing" } }, null, now)).toBe(false);
+  });
+
+  it("keys a no-show execution by its session, so another session of the same registration runs again", async () => {
+    const create = vi.fn().mockResolvedValue({ id: "log-1", createdAt: new Date() });
+    const db = {
+      automationRule: { findMany: vi.fn().mockResolvedValue([{ id: "rule-1", condition: { type: "always" }, actions: [{ type: "add_customer_tag", tag: "缺席" }] }]) },
+      automationExecutionLog: { create, update: vi.fn().mockResolvedValue({}) },
+      customerTagAssignment: { upsert: vi.fn().mockResolvedValue({}) },
+      emailDelivery: {}, automationVoucherGrant: {}, product: {}, lineOfficialAccount: {}, lineUserIdentity: {}, lineDelivery: {},
+    };
+    const noShow = { ...event, trigger: "form_no_show" as const, subjectId: "registration-1" };
+    await dispatchAutomationEvent(db as never, { ...noShow, eventId: "form-no-show:registration-1:live-1000" });
+    await dispatchAutomationEvent(db as never, { ...noShow, eventId: "form-no-show:registration-1:live-2000" });
+    await dispatchAutomationEvent(db as never, { ...noShow, eventId: "form-no-show:registration-1:live-1000" });
+    const keys = create.mock.calls.map(([args]) => (args as { data: { idempotencyKey: string } }).data.idempotencyKey);
+    expect(keys[0]).not.toBe(keys[1]);
+    expect(keys[2]).toBe(keys[0]);
+    // Other triggers keep their subject-bound key: the event id does not matter there.
+    await dispatchAutomationEvent(db as never, { ...event, trigger: "form_registered", subjectId: "registration-1", eventId: "a" });
+    await dispatchAutomationEvent(db as never, { ...event, trigger: "form_registered", subjectId: "registration-1", eventId: "b" });
+    const registeredKeys = create.mock.calls.slice(3).map(([args]) => (args as { data: { idempotencyKey: string } }).data.idempotencyKey);
+    expect(registeredKeys[0]).toBe(registeredKeys[1]);
   });
 
   it("uses the execution log unique key as a strict replay guard", async () => {

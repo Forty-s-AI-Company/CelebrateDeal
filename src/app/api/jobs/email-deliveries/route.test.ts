@@ -17,6 +17,7 @@ const mocks = vi.hoisted(() => ({
   processDueDelayedStepRuns: vi.fn(),
   processDueSequenceEmailDeliveries: vi.fn(),
   onConfigurationError: vi.fn(),
+  runFormNoShowAutomation: vi.fn(),
 }));
 vi.mock("@/lib/delayed-step-runs", () => ({
   backfillEmailSequenceEnrollments: mocks.backfillEmailSequenceEnrollments,
@@ -28,6 +29,11 @@ vi.mock("@/lib/delayed-step-runs", () => ({
 // F-4: the route runs the worker with the automation processor; the same mock
 // stands for the worker round.
 vi.mock("@/lib/automation-delayed-steps", () => ({ runDelayedStepWorker: mocks.processDueDelayedStepRuns }));
+// Q-11: the no-show pass; its deadline helper stays real.
+vi.mock("@/lib/form-no-show-automation", async (original) => ({
+  ...await original<typeof import("@/lib/form-no-show-automation")>(),
+  runFormNoShowAutomation: mocks.runFormNoShowAutomation,
+}));
 vi.mock("@/lib/live-fixed-sessions-store", () => ({ releaseExpiredFixedSessionSeats: mocks.releaseExpiredFixedSessionSeats }));
 vi.mock("@/lib/live-fixed-session-notices", () => ({ queueFixedSessionCancellationNotices: mocks.queueFixedSessionCancellationNotices }));
 vi.mock("@/lib/db", () => ({ getDb: () => ({}) }));
@@ -70,6 +76,7 @@ beforeEach(() => {
   mocks.backfillEmailSequenceEnrollments.mockResolvedValue([]);
   mocks.processDueDelayedStepRuns.mockResolvedValue([]);
   mocks.processDueSequenceEmailDeliveries.mockResolvedValue([]);
+  mocks.runFormNoShowAutomation.mockResolvedValue({ vendors: 1, candidates: 3, examined: 2, completed: 2, skipped: 0, failed: 1, duplicate: 0, errors: 0 });
 });
 
 afterEach(() => vi.unstubAllEnvs());
@@ -174,6 +181,7 @@ describe("POST /api/jobs/email-deliveries", () => {
       registrationRetryDraftsPurged: 3,
       fixedSessionSeatsReleased: 2,
       fixedSessionCancellationNotices: 1,
+      formNoShow: { candidates: 3, examined: 2, completed: 2, failed: 1, errors: 0 },
     });
     expect(JSON.stringify(body)).not.toContain("private-notice");
     // Seats and notices are handled before this round's dispatch sends anything.
@@ -189,6 +197,13 @@ describe("POST /api/jobs/email-deliveries", () => {
       .toBeLessThan(mocks.processDueLiveNotifications.mock.invocationCallOrder[0]);
     expect(mocks.processDueLiveNotifications.mock.invocationCallOrder[0])
       .toBeLessThan(mocks.processDuePostLiveFollowups.mock.invocationCallOrder[0]);
+    expect(mocks.processDuePostLiveFollowups.mock.invocationCallOrder[0])
+      .toBeLessThan(mocks.runFormNoShowAutomation.mock.invocationCallOrder[0]!);
+    // Q-11: the no-show e-mails it queues go out with this round's dispatch.
+    expect(mocks.runFormNoShowAutomation.mock.invocationCallOrder[0])
+      .toBeLessThan(mocks.processDueEmailDeliveries.mock.invocationCallOrder[0]!);
+    expect(mocks.runFormNoShowAutomation).toHaveBeenCalledWith({ deadlineMs: expect.any(Number) });
+    expect(mocks.runFormNoShowAutomation.mock.calls[0]![0].deadlineMs).toBeLessThanOrEqual(30_000);
     expect(mocks.processDuePostLiveFollowups.mock.invocationCallOrder[0])
       .toBeLessThan(mocks.processLiveReminderReconciliationJobs.mock.invocationCallOrder[0]);
     expect(mocks.processLiveReminderReconciliationJobs.mock.invocationCallOrder[0])
@@ -275,6 +290,37 @@ describe("POST /api/jobs/email-deliveries", () => {
       status: "failed",
     });
     expect(JSON.stringify(body)).not.toContain("followup-private-detail");
+  });
+
+  it("does not let a failing no-show pass abort the rest of the round (Q-11)", async () => {
+    mocks.runFormNoShowAutomation.mockRejectedValueOnce(new Error("no-show-private-detail"));
+    mocks.processDueEmailDeliveries.mockResolvedValue([{ deliveryId: "private-due", status: "sent" }]);
+    const response = await POST(request("g7-07-job-secret"));
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body).toMatchObject({ ok: true, formNoShow: null, processed: 1, results: [{ status: "sent" }] });
+    expect(mocks.processDueLineDeliveries).toHaveBeenCalledOnce();
+    expect(mocks.captureOperationalError).toHaveBeenCalledWith(expect.any(Error), {
+      source: "email_delivery_job",
+      operation: "form_no_show",
+      status: "failed",
+    });
+    expect(JSON.stringify(body)).not.toContain("no-show-private-detail");
+  });
+
+  it("skips the no-show pass once the round has run past its start cutoff (Q-11)", async () => {
+    const realNow = Date.now();
+    let calls = 0;
+    // The round starts at realNow; every later read is 61 s on.
+    vi.spyOn(Date, "now").mockImplementation(() => (calls++ === 0 ? realNow : realNow + 61_000));
+    try {
+      const response = await POST(request("g7-07-job-secret"));
+      expect(response.status).toBe(200);
+      expect((await response.json()).formNoShow).toBeNull();
+      expect(mocks.runFormNoShowAutomation).not.toHaveBeenCalled();
+    } finally {
+      vi.mocked(Date.now).mockRestore();
+    }
   });
 });
 

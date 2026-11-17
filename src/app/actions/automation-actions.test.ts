@@ -10,8 +10,11 @@ import { createAutomationRecipeAction, createAutomationRuleAction, deleteAutomat
 function form(trigger = "form_registered") { const f = new FormData(); f.set("name", "報名追蹤"); f.set("trigger", trigger); f.set("actionTag", "on"); f.set("customerTag", "已報名"); return f; }
 function lineForm(trigger = "form_registered") { const f = form(trigger); f.delete("actionTag"); f.set("actionLine", "on"); f.set("lineMessage", "謝謝報名"); return f; }
 const asOwner = () => runtime.manager.mockResolvedValue({ ...runtime.auth, member: { role: "owner" } });
+/** Q-11 review M-1: form_no_show is a closed beta opened per vendor. */
+const withNoShowGrant = (role = "admin") => runtime.manager.mockResolvedValue({ ...runtime.auth, vendor: { id: "v1", betaFeatureGrants: ["automation_form_no_show"] }, member: { role } });
 function ruleForm(id = "r1") { const f = new FormData(); f.set("ruleId", id); return f; }
-const HIDDEN_TRIGGERS = ["form_no_show", "viewer_watch_progress", "webinar_attended_duration_gte"] as const;
+// Q-11: form_no_show has a caller (the e-mail job's no-show pass) and is no longer hidden.
+const HIDDEN_TRIGGERS = ["viewer_watch_progress", "webinar_attended_duration_gte"] as const;
 beforeEach(() => { vi.clearAllMocks(); runtime.manager.mockResolvedValue(runtime.auth); runtime.db.automationRule.create.mockResolvedValue({ id: "r1", vendorId: "v1" }); runtime.db.automationRule.findFirst.mockResolvedValue({ id: "r1", isActive: true, trigger: "form_registered" }); runtime.db.automationRule.updateMany.mockResolvedValue({ count: 1 }); runtime.db.automationRule.delete.mockResolvedValue({ id: "r1" }); runtime.db.automationExecutionLog.count.mockResolvedValue(0); runtime.db.delayedStepRun.count.mockResolvedValue(0); runtime.db.delayedStepRun.updateMany.mockResolvedValue({ count: 0 }); runtime.db.$queryRaw.mockResolvedValue([{ id: "r1" }]); runtime.db.$transaction.mockImplementation(async (work: (tx: unknown) => unknown) => work(runtime.db)); });
 describe("automation actions", () => { it("requires CSRF and writes tenant-scoped rules", async () => { await expect(createAutomationRuleAction(form())).rejects.toThrow("redirect:/settings/automations?updated=created"); expect(runtime.security).toHaveBeenCalled(); expect(runtime.manager).toHaveBeenCalledWith("/settings/automations"); expect(runtime.db.automationRule.create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ vendorId: "v1", trigger: "form_registered", condition: { type: "always" } }) })); expect(runtime.audit).toHaveBeenCalledWith(expect.objectContaining({ vendorId: "v1", actorId: "u1", actorLabel: "admin" })); }); it("toggles only a rule in the current vendor", async () => { await expect(toggleAutomationRuleAction(ruleForm())).rejects.toThrow("redirect:/settings/automations?updated=toggled"); expect(runtime.db.automationRule.findFirst).toHaveBeenCalledWith({ where: { id: "r1", vendorId: "v1" }, select: { id: true, isActive: true, trigger: true } }); expect(runtime.db.automationRule.updateMany).toHaveBeenCalledWith({ where: { id: "r1", vendorId: "v1", isActive: true }, data: { isActive: false } });
     // F-4 review M1: the rule row is locked FOR UPDATE (bound to the vendor) and its active delayed-step runs stop in the same transaction.
@@ -182,14 +185,57 @@ describe("automation actions", () => { it("requires CSRF and writes tenant-scope
       data: expect.objectContaining({ vendorId: "v1", trigger: "payment_paid", condition: { type: "order_amount_gte", amountCents: 3_000_000 } }),
     }));
 
+    // Q-11: 「開播缺席喚醒再行銷」 runs on form_no_show, a closed beta: refused without the grant.
     runtime.db.automationRule.create.mockClear();
-    for (const recipeId of ["high_intent_chaser", "no_show_reactivation"]) {
-      const hidden = new FormData();
-      hidden.set("recipeId", recipeId);
-      hidden.set("productId", "p1");
-      await expect(createAutomationRecipeAction(hidden)).rejects.toThrow("redirect:/settings/automations?error=trigger_unavailable");
-    }
+    const noShow = new FormData();
+    noShow.set("recipeId", "no_show_reactivation");
+    await expect(createAutomationRecipeAction(noShow)).rejects.toThrow("redirect:/settings/automations?error=trigger_unavailable");
     expect(runtime.db.automationRule.create).not.toHaveBeenCalled();
+    withNoShowGrant();
+    await expect(createAutomationRecipeAction(noShow)).rejects.toThrow("redirect:/settings/automations?updated=recipe_created");
+    expect(runtime.db.automationRule.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ vendorId: "v1", trigger: "form_no_show", condition: { type: "always" }, actions: [{ type: "send_email_notification", template: "webinar_replay" }] }),
+    }));
+
+    runtime.db.automationRule.create.mockClear();
+    const hidden = new FormData();
+    hidden.set("recipeId", "high_intent_chaser");
+    hidden.set("productId", "p1");
+    await expect(createAutomationRecipeAction(hidden)).rejects.toThrow("redirect:/settings/automations?error=trigger_unavailable");
+    expect(runtime.db.automationRule.create).not.toHaveBeenCalled();
+  });
+
+  it("refuses to create, switch on or simulate a form_no_show rule without the closed-beta grant (review M-1)", async () => {
+    await expect(createAutomationRuleAction(form("form_no_show"))).rejects.toThrow("redirect:/settings/automations?error=trigger_unavailable");
+    expect(runtime.db.automationRule.create).not.toHaveBeenCalled();
+    runtime.db.automationRule.findFirst.mockResolvedValueOnce({ id: "r1", isActive: false, trigger: "form_no_show" });
+    await expect(toggleAutomationRuleAction(ruleForm())).rejects.toThrow("redirect:/settings/automations?error=trigger_unavailable");
+    expect(runtime.db.automationRule.updateMany).not.toHaveBeenCalled();
+    // Switching off still works.
+    runtime.db.automationRule.findFirst.mockResolvedValueOnce({ id: "r1", isActive: true, trigger: "form_no_show" });
+    await expect(toggleAutomationRuleAction(ruleForm())).rejects.toThrow("redirect:/settings/automations?updated=toggled");
+    runtime.db.automationRule.findFirst.mockResolvedValue({ id: "r1", trigger: "form_no_show", condition: { type: "always" }, actions: [{ type: "add_customer_tag", tag: "VIP" }] });
+    await expect(dryRunAutomationRuleAction(ruleForm())).rejects.toThrow("redirect:/settings/automations?dryRun=trigger_unavailable");
+  });
+
+  it("keeps a form_no_show LINE push owner-only, like every other trigger", async () => {
+    withNoShowGrant("admin");
+    await expect(createAutomationRuleAction(lineForm("form_no_show"))).rejects.toThrow("redirect:/settings/automations?error=line_push_owner_only");
+    expect(runtime.db.automationRule.create).not.toHaveBeenCalled();
+    withNoShowGrant("owner");
+    await expect(createAutomationRuleAction(lineForm("form_no_show"))).rejects.toThrow("redirect:/settings/automations?updated=created");
+    expect(runtime.db.automationRule.create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ trigger: "form_no_show", actions: [expect.objectContaining({ type: "line_push" })] }) }));
+  });
+
+  it("creates and switches on a form_no_show rule like any available trigger once granted", async () => {
+    withNoShowGrant();
+    await expect(createAutomationRuleAction(form("form_no_show"))).rejects.toThrow("redirect:/settings/automations?updated=created");
+    expect(runtime.db.automationRule.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ vendorId: "v1", trigger: "form_no_show", condition: { type: "always" } }),
+    }));
+    runtime.db.automationRule.findFirst.mockResolvedValueOnce({ id: "r1", isActive: false, trigger: "form_no_show" });
+    await expect(toggleAutomationRuleAction(ruleForm())).rejects.toThrow("redirect:/settings/automations?updated=toggled");
+    expect(runtime.db.automationRule.updateMany).toHaveBeenCalledWith({ where: { id: "r1", vendorId: "v1", isActive: false }, data: { isActive: true } });
   });
 
   it("dry-runs only an owned rule and reports a hidden trigger as not running", async () => {
@@ -205,7 +251,11 @@ describe("automation actions", () => { it("requires CSRF and writes tenant-scope
     paid.set("orderAmount", "299");
     await expect(dryRunAutomationRuleAction(paid)).rejects.toThrow("redirect:/settings/automations?dryRun=would_skip");
 
+    withNoShowGrant();
     runtime.db.automationRule.findFirst.mockResolvedValue({ id: "r1", trigger: "form_no_show", condition: { type: "always" }, actions: [{ type: "add_customer_tag", tag: "VIP" }] });
+    await expect(dryRunAutomationRuleAction(ruleForm())).rejects.toThrow("redirect:/settings/automations?dryRun=would_dispatch");
+
+    runtime.db.automationRule.findFirst.mockResolvedValue({ id: "r1", trigger: "viewer_watch_progress", condition: { type: "watch_seconds_gte", seconds: 60 }, actions: [{ type: "add_customer_tag", tag: "VIP" }] });
     await expect(dryRunAutomationRuleAction(ruleForm())).rejects.toThrow("redirect:/settings/automations?dryRun=trigger_unavailable");
 
     runtime.db.automationRule.findFirst.mockResolvedValue(null);

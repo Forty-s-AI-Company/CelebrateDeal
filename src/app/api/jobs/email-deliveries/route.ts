@@ -21,6 +21,7 @@ import {
   onceConfigurationReporter,
 } from "@/lib/delayed-step-runs";
 import { runDelayedStepWorker } from "@/lib/automation-delayed-steps";
+import { formNoShowDeadline, runFormNoShowAutomation, type FormNoShowSummary } from "@/lib/form-no-show-automation";
 
 const SAFE_STATUSES = new Set([
   "sent",
@@ -182,6 +183,27 @@ async function processEmailSequences(startedAt: number) {
   };
 }
 
+/**
+ * Q-11 `form_no_show`: right after the post-live follow-ups (both run on
+ * "a registrant's session ended"), before this round's dispatch sends the
+ * automation e-mails it queues. Bounded by its own deadline, skipped once the
+ * round ran too long, and never changes the rest of the round.
+ */
+async function processFormNoShows(startedAt: number): Promise<FormNoShowSummary | null> {
+  const deadlineMs = formNoShowDeadline(Date.now() - startedAt);
+  if (deadlineMs === null) return null;
+  try {
+    return await runFormNoShowAutomation({ deadlineMs });
+  } catch (error) {
+    try {
+      captureOperationalError(error, { source: "email_delivery_job", operation: "form_no_show", status: "failed" });
+    } catch {
+      // Monitoring must never change the job outcome.
+    }
+    return null;
+  }
+}
+
 async function processEmailDeliveries() {
   const startedAt = Date.now();
   try {
@@ -215,6 +237,7 @@ async function processEmailDeliveries() {
         // Monitoring must never change the job outcome.
       }
     }
+    const formNoShow = await processFormNoShows(startedAt);
     const reconciliations = await processLiveReminderReconciliationJobs();
     const results = await processDueEmailDeliveries();
     const lineMaterialized = await materializeLineNotifications();
@@ -297,6 +320,14 @@ async function processEmailDeliveries() {
       registrationRetryDraftsPurged: safeCount(registrationRetryDraftsPurged),
       fixedSessionSeatsReleased: safeCount(fixedSessions.seatsReleased),
       fixedSessionCancellationNotices: safeCount(fixedSessions.cancellationNotices),
+      // Counts only: no vendor, registration or rule data.
+      formNoShow: formNoShow ? {
+        candidates: safeCount(formNoShow.candidates),
+        examined: safeCount(formNoShow.examined),
+        completed: safeCount(formNoShow.completed),
+        failed: safeCount(formNoShow.failed),
+        errors: safeCount(formNoShow.errors),
+      } : null,
     });
   } catch (error) {
     try {

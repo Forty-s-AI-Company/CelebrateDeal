@@ -26,6 +26,8 @@ export const BETA_GATED_FEATURES = [
   "email_sequences",
   // F-4: delayed steps of automation rules (docs/product/delayed-steps-design.md §8).
   "automation_delayed_steps",
+  // Q-11 (review M-1): the 「報名後未出席直播」 automation trigger (form_no_show).
+  "automation_form_no_show",
 ] as const;
 
 export type BetaGatedFeature = (typeof BETA_GATED_FEATURES)[number];
@@ -42,6 +44,7 @@ export const BETA_FEATURE_LABELS: Record<BetaGatedFeature, string> = {
   danmaku: "彈幕與暖場控制台",
   email_sequences: "Email 追銷序列",
   automation_delayed_steps: "自動化延遲步驟",
+  automation_form_no_show: "自動化：報名後未出席直播",
 };
 
 export const FEATURE_PRESETS = {
