@@ -490,13 +490,17 @@ describe("smart automation workflow engine", () => {
 
   it("links a no-show to the viewer page only while its replay is open", () => {
     const now = new Date("2026-11-17T12:00:00.000Z");
-    const live = { slug: "launch", replayEnabled: true, replayAvailableUntil: null, sessionReplayWindowHours: 2, video: { durationSec: 600 } };
+    const live = { vendorId: "vendor-1", slug: "launch", replayEnabled: true, replayAvailableUntil: null, sessionReplayWindowHours: 2, video: { vendorId: "vendor-1", durationSec: 600, sourceType: "url", status: "ready", cloudflareReadyToStream: false, cloudflareLiveInputUid: null, liveInputStatus: null } };
     expect(formNoShowWebinarUrl(live, null, now)).toBe("https://app.example.test/live/launch");
     expect(formNoShowWebinarUrl({ ...live, replayEnabled: false }, null, now)).toBeUndefined();
     expect(automationReplayOpen({ ...live, replayAvailableUntil: now }, null, now)).toBe(false);
     // A fixed session: its own window after the session ended (start + 10 min + 2 h).
     expect(automationReplayOpen(live, { startAt: new Date(now.getTime() - 2 * 3_600_000) }, now)).toBe(true);
     expect(automationReplayOpen(live, { startAt: new Date(now.getTime() - 3 * 3_600_000) }, now)).toBe(false);
+    // NIT-1: no video, another vendor's video, or one not ready to play: no replay.
+    expect(automationReplayOpen({ ...live, video: null }, null, now)).toBe(false);
+    expect(automationReplayOpen({ ...live, video: { ...live.video, vendorId: "vendor-2" } }, null, now)).toBe(false);
+    expect(automationReplayOpen({ ...live, video: { ...live.video, status: "processing" } }, null, now)).toBe(false);
   });
 
   it("keys a no-show execution by its session, so another session of the same registration runs again", async () => {

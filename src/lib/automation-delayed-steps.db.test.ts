@@ -300,7 +300,8 @@ describe("觸發：事件發生時建立 run", () => {
     const t = await tenant();
     // Closed beta (review M-1): the worker stops form_no_show runs without this grant.
     await db.vendor.update({ where: { id: t.vendor.id }, data: { betaFeatureGrants: ["automation_delayed_steps", "automation_form_no_show"] } });
-    const live = await db.live.create({ data: { vendorId: t.vendor.id, title: "缺席直播", slug: `steps-no-show-${randomUUID().slice(0, 12)}`, scheduledAt: new Date(Date.now() - DAY), status: "ended", formId: t.form.id, replayEnabled: options.replayEnabled ?? true } });
+    const video = await db.video.create({ data: { vendorId: t.vendor.id, title: "預錄影片", videoUrl: "https://media.example.test/steps-no-show.mp4", durationSec: 600, status: "ready", sourceType: "url" } });
+    const live = await db.live.create({ data: { vendorId: t.vendor.id, title: "缺席直播", slug: `steps-no-show-${randomUUID().slice(0, 12)}`, scheduledAt: new Date(Date.now() - DAY), status: "ended", formId: t.form.id, videoId: video.id, replayEnabled: options.replayEnabled ?? true } });
     const r = await rule(t, { trigger: "form_no_show" });
     await step(t, r.id, 60, [{ type: "add_customer_tag", tag: "缺席隔天" }, { type: "send_email_notification", template: "webinar_replay" }]);
     const lead = await registration(t);
@@ -349,6 +350,22 @@ describe("觸發：事件發生時建立 run", () => {
     await recordLiveRegistrationAttendance({ vendorId: watchedAfter.t.vendor.id, liveId: watchedAfter.live.id, formSubmissionId: watchedAfter.lead.id, now: new Date(watchedAfter.run.anchorAt.getTime() + MINUTE) });
     await expect(work(watchedAfter.t, watchedAfter.due)).resolves.toEqual([{ runId: watchedAfter.run.id, status: "cancelled", cancelReason: "subject_gone" }]);
     await expect(db.emailDelivery.count({ where: { vendorId: watchedAfter.t.vendor.id } })).resolves.toBe(0);
+  });
+
+  it("refuses to add or change a form_no_show rule's steps without its closed-beta grant, but still deletes one (re-review MINOR-3)", async () => {
+    const t = await tenant();
+    // automation_delayed_steps only: no automation_form_no_show.
+    const r = await rule(t, { trigger: "form_no_show" });
+    const existing = await step(t, r.id, 60);
+    const input = { delayMinutes: 120, condition: { type: "always" }, actions: [TAG_ACTION], isActive: true };
+    await expect(createAutomationRuleStep({ linePushAllowed: true, vendorId: t.vendor.id, ruleId: r.id, step: input })).resolves.toEqual({ ok: false, code: "trigger_unavailable" });
+    await expect(updateAutomationRuleStep({ linePushAllowed: true, vendorId: t.vendor.id, ruleId: r.id, stepId: existing.id, step: input })).resolves.toEqual({ ok: false, code: "trigger_unavailable" });
+    await expect(db.automationRuleStep.findMany({ where: { ruleId: r.id }, select: { id: true, delayMinutes: true } })).resolves.toEqual([{ id: existing.id, delayMinutes: 60 }]);
+    await expect(deleteAutomationRuleStep({ vendorId: t.vendor.id, ruleId: r.id, stepId: existing.id })).resolves.toMatchObject({ ok: true });
+    await expect(db.automationRuleStep.count({ where: { ruleId: r.id } })).resolves.toBe(0);
+    // With the grant the same changes go through.
+    await db.vendor.update({ where: { id: t.vendor.id }, data: { betaFeatureGrants: ["automation_delayed_steps", "automation_form_no_show"] } });
+    await expect(createAutomationRuleStep({ linePushAllowed: true, vendorId: t.vendor.id, ruleId: r.id, step: input })).resolves.toMatchObject({ ok: true });
   });
 
   it("stops a form_no_show run once the vendor's closed-beta grant is closed (review M-1)", async () => {

@@ -300,4 +300,4 @@
 2026-11-17 Q-11 `form_no_show` 補記：
 
 - `POST /api/live-admission`：放行入場後，若請求帶著已驗章、未過期的報名 cookie（`FORM_SUBMISSION_CHAT_SESSION_COOKIE`），且那筆報名屬於這場直播、`VERIFIED`、表單屬於同一商家，伺服器寫入或更新 `LiveRegistrationAttendance`（最多每 5 分鐘把 `lastAdmittedAt` 往後移一次）。submission id 只來自 cookie，`vendorId`／`liveId` 是剛放行的入場，不接受 body 的報名欄位。寫入失敗只回報監控，回應狀態、body 與 cookie 不變；沒有報名 cookie 時不查詢。
-- `GET`／`POST /api/jobs/email-deliveries`：每輪在課後信之後、寄送之前執行「報名後未出席直播」自動化（`runFormNoShowAutomation`：只掃有 `automation_form_no_show` 封測授權的商家；每輪最多 50 個事件、商家間輪流；截止 `min(30 秒, 60 秒序列啟動截止 − 已用時間 − 5 秒)`，不到 5 秒就跳過）。回應新增 `formNoShow`：`{ candidates, examined, completed, failed, errors }`（非負計數），跳過或整段失敗時為 `null`；整段失敗只送監控、不影響其他步驟與 200。未新增 route 或排程。
+- `GET`／`POST /api/jobs/email-deliveries`：每輪在課後信之後、寄送之前執行「報名後未出席直播」自動化（`runFormNoShowAutomation`：只掃有 `automation_form_no_show` 封測授權的商家；每輪最多 50 個事件、商家間輪流；截止 `min(30 秒, 35 秒 − 已用時間)`，不到 5 秒就跳過）。回應新增 `formNoShow`：`{ candidates, examined, completed, failed, errors }`（非負計數），跳過或整段失敗時為 `null`；整段失敗只送監控、不影響其他步驟與 200。未新增 route 或排程。

@@ -3,6 +3,7 @@ import { Prisma } from "@prisma/client";
 import {
   AUTOMATION_EXECUTION_RECLAIM_AFTER_MS,
   AUTOMATION_FORM_NO_SHOW_FEATURE,
+  AUTOMATION_REPLAY_VIDEO_SELECT,
   automationCustomerKeyHash,
   automationReplayOpen,
   automationWebinarUrl,
@@ -10,7 +11,7 @@ import {
   parseAutomationRule,
 } from "@/lib/automation-workflow";
 import { getDb } from "@/lib/db";
-import { EMAIL_SEQUENCE_START_CUTOFF_MS, utcTimestamp } from "@/lib/delayed-step-runs";
+import { utcTimestamp } from "@/lib/delayed-step-runs";
 import {
   EVERGREEN_ACTIVATION_SELECT,
   EVERGREEN_MAX_DURATION_SECONDS,
@@ -104,8 +105,13 @@ export const FORM_NO_SHOW_VENDOR_LIMIT = 50;
 const LIVE_SCAN_LIMIT = 200;
 /** The pass never runs longer than this. */
 export const FORM_NO_SHOW_DEADLINE_MS = 30_000;
-/** Time kept free for the e-mail job's sequence work, before its start cutoff. */
-export const FORM_NO_SHOW_SEQUENCE_RESERVE_MS = 5_000;
+/**
+ * The pass ends at most this far into the e-mail job round (re-review
+ * MINOR-1), so the steps after it (this round's e-mail dispatch, LINE,
+ * learner notifications, then the sequence work and its 60 s start cutoff)
+ * keep most of the round.
+ */
+export const FORM_NO_SHOW_ROUTE_BUDGET_MS = 35_000;
 /** A deadline shorter than this is not worth starting the pass for. */
 export const FORM_NO_SHOW_MIN_DEADLINE_MS = 5_000;
 /** The scan may use this share of the deadline; the rest is left for dispatching. */
@@ -122,13 +128,14 @@ const EVENT_PREFIX = "form-no-show:";
 
 /**
  * The pass's own deadline for an e-mail job round that has already used
- * `routeElapsedMs` (review m-2): min(30 s, the sequence work's start cutoff −
- * elapsed − 5 s), or null to skip the pass this round when less than 5 s are
- * left. The sequence work that runs after it therefore still starts in time.
+ * `routeElapsedMs` (review m-2, re-review MINOR-1): min(30 s, 35 s −
+ * elapsed), or null to skip the pass this round when less than 5 s are left.
+ * The pass thus ends by 35 s into the round; it does not by itself guarantee
+ * that the later steps finish before the sequence work's start cutoff.
  */
 export function formNoShowDeadline(routeElapsedMs: number): number | null {
   if (!Number.isFinite(routeElapsedMs)) return null;
-  const left = EMAIL_SEQUENCE_START_CUTOFF_MS - Math.max(0, routeElapsedMs) - FORM_NO_SHOW_SEQUENCE_RESERVE_MS;
+  const left = FORM_NO_SHOW_ROUTE_BUDGET_MS - Math.max(0, routeElapsedMs);
   const deadline = Math.min(FORM_NO_SHOW_DEADLINE_MS, left);
   return deadline >= FORM_NO_SHOW_MIN_DEADLINE_MS ? deadline : null;
 }
@@ -225,6 +232,7 @@ function videoSeconds(value: number | null | undefined) {
 
 const LIVE_SELECT = {
   id: true,
+  vendorId: true,
   slug: true,
   scheduledAt: true,
   startedAt: true,
@@ -233,7 +241,7 @@ const LIVE_SELECT = {
   replayAvailableUntil: true,
   sessionReplayWindowHours: true,
   ...EVERGREEN_ACTIVATION_SELECT,
-  video: { select: { durationSec: true } },
+  video: { select: AUTOMATION_REPLAY_VIDEO_SELECT },
 } as const;
 
 type ScannedLive = Prisma.LiveGetPayload<{ select: typeof LIVE_SELECT }> & { sessions: Array<{ id: string; startAt: Date }> };
@@ -465,7 +473,10 @@ async function scanVendor(db: Db, vendorId: string, ruleIds: string[], now: Date
 function roundRobin(perVendor: Candidate[][], limit: number) {
   const merged: Candidate[] = [];
   for (let index = 0; merged.length < limit; index += 1) {
-    const round = perVendor.flatMap((candidates) => candidates[index] ? [candidates[index]] : []);
+    const round = perVendor.flatMap((candidates) => {
+      const candidate = candidates[index];
+      return candidate ? [candidate] : [];
+    });
     if (round.length === 0) break;
     merged.push(...round.slice(0, limit - merged.length));
   }

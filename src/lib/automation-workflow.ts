@@ -32,6 +32,7 @@ import {
 } from "@/lib/line-notification";
 import { voucherActionSendsLine } from "@/lib/automation-line-push-policy";
 import { fixedSessionReplayAvailableUntil } from "@/lib/live-fixed-sessions";
+import { isExistingLiveVideoReady, type LiveVideoReadiness } from "@/lib/live-video-readiness";
 
 /**
  * Every trigger the engine understands. Stored rules may use any of them and
@@ -137,20 +138,35 @@ export function automationWebinarUrl(liveSlug: string | null | undefined) {
 }
 
 export type AutomationReplayLive = {
+  vendorId: string;
   slug: string;
   replayEnabled: boolean;
   replayAvailableUntil: Date | null;
   sessionReplayWindowHours?: number | null;
-  video?: { durationSec: number | null } | null;
+  video: (LiveVideoReadiness & { vendorId: string; durationSec: number | null }) | null;
 };
+
+/** Prisma select of the Live's video for automationReplayOpen. */
+export const AUTOMATION_REPLAY_VIDEO_SELECT = {
+  vendorId: true,
+  durationSec: true,
+  sourceType: true,
+  status: true,
+  cloudflareReadyToStream: true,
+  cloudflareLiveInputUid: true,
+  liveInputStatus: true,
+} as const;
 
 /**
  * Whether the Live's replay is open now, by the viewer page's own rules:
  * replay on and before `replayAvailableUntil`; for a fixed session
- * (指定場次) also inside its per-session window.
+ * (指定場次) also inside its per-session window; and the Live's own video
+ * (same vendor) ready to play by the playback source's rule
+ * (isExistingLiveVideoReady, re-review NIT-1).
  */
 export function automationReplayOpen(live: AutomationReplayLive, fixedSession: { startAt: Date } | null, now: Date) {
   if (live.replayEnabled !== true) return false;
+  if (!live.video || live.video.vendorId !== live.vendorId || !isExistingLiveVideoReady(live.video)) return false;
   if (live.replayAvailableUntil && now.getTime() >= live.replayAvailableUntil.getTime()) return false;
   if (fixedSession) {
     const until = fixedSessionReplayAvailableUntil(fixedSession, {

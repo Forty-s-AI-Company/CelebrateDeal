@@ -73,7 +73,8 @@ async function tenant(options: { grant?: boolean; noShow?: boolean } = {}) {
     data: { vendorId: vendor.id, name: "報名表", slug: `no-show-form-${key}`, headline: "報名", fields: [{ key: "email", label: "Email", type: "email", required: true }] },
   });
   const video = await db.video.create({
-    data: { vendorId: vendor.id, title: "預錄影片", videoUrl: "https://media.example.test/no-show.mp4", durationSec: VIDEO_SECONDS, status: "ready" },
+    // A plain URL video is ready to play: the replay link needs a playable video (re-review NIT-1).
+    data: { vendorId: vendor.id, title: "預錄影片", videoUrl: "https://media.example.test/no-show.mp4", durationSec: VIDEO_SECONDS, status: "ready", sourceType: "url" },
   });
   return { vendor, form, video };
 }

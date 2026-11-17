@@ -7,6 +7,7 @@ import {
   plannedAutomationStepEmailCount,
   isAutomationTriggerAvailableForVendor,
   formNoShowWebinarUrl,
+  AUTOMATION_REPLAY_VIDEO_SELECT,
   parseAutomationRule,
   automationStepEventId,
   type AutomationEvent,
@@ -134,7 +135,7 @@ async function readSubject(
         id: true,
         email: true,
         verificationStatus: true,
-        live: { select: { vendorId: true, slug: true, replayEnabled: true, replayAvailableUntil: true, sessionReplayWindowHours: true, video: { select: { durationSec: true } } } },
+        live: { select: { vendorId: true, slug: true, replayEnabled: true, replayAvailableUntil: true, sessionReplayWindowHours: true, video: { select: AUTOMATION_REPLAY_VIDEO_SELECT } } },
         liveSession: { select: { vendorId: true, startAt: true } },
       },
     });

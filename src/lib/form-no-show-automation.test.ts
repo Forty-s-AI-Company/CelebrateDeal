@@ -8,6 +8,7 @@ import {
   FORM_NO_SHOW_DEADLINE_MS,
   FORM_NO_SHOW_GRACE_MS,
   FORM_NO_SHOW_LOOKBACK_MS,
+  FORM_NO_SHOW_ROUTE_BUDGET_MS,
   FORM_NO_SHOW_SHARED_SESSION_REGISTRATION_WINDOW_MS,
   formNoShowDeadline,
   formNoShowEventId,
@@ -15,7 +16,6 @@ import {
   formNoShowSessionsForLive,
   runFormNoShowAutomation,
 } from "@/lib/form-no-show-automation";
-import { EMAIL_SEQUENCE_START_CUTOFF_MS } from "@/lib/delayed-step-runs";
 
 const MINUTE = 60_000;
 const HOUR = 60 * MINUTE;
@@ -23,10 +23,12 @@ const NOW = new Date("2026-11-17T12:00:00.000Z");
 const at = (offsetMs: number) => new Date(NOW.getTime() + offsetMs);
 
 type LiveInput = Parameters<typeof formNoShowSessionsForLive>[0];
+const READY_VIDEO = { vendorId: "vendor-1", durationSec: 600, sourceType: "url", status: "ready", cloudflareReadyToStream: false, cloudflareLiveInputUid: null, liveInputStatus: null };
 
 function live(overrides: Partial<LiveInput> = {}): LiveInput {
   return {
     id: "live-1",
+    vendorId: "vendor-1",
     slug: "launch",
     scheduledAt: at(-3 * HOUR),
     startedAt: null,
@@ -39,7 +41,7 @@ function live(overrides: Partial<LiveInput> = {}): LiveInput {
     evergreenDailyTimes: [],
     evergreenSessionStartAt: null,
     sessionMode: "single",
-    video: { durationSec: 600 },
+    video: READY_VIDEO,
     replayEnabled: true,
     replayAvailableUntil: null,
     sessionReplayWindowHours: null,
@@ -74,7 +76,7 @@ describe("formNoShowSessionsForLive", () => {
     expect(formNoShowSessionsForLive(live({ status: "ended", endedAt: at(-4 * HOUR) }), null, NOW)).toEqual([]);
     expect(formNoShowSessionsForLive(live({ status: "ended", endedAt: null }), null, NOW)).toEqual([]);
     expect(formNoShowSessionsForLive(live({ status: "draft" }), null, NOW)).toEqual([]);
-    expect(formNoShowSessionsForLive(live({ video: { durationSec: 0 } }), null, NOW)).toEqual([]);
+    expect(formNoShowSessionsForLive(live({ video: { ...READY_VIDEO, durationSec: 0 } }), null, NOW)).toEqual([]);
     expect(formNoShowSessionsForLive(live({ video: null }), null, NOW)).toEqual([]);
   });
 
@@ -128,6 +130,10 @@ describe("formNoShowSessionsForLive", () => {
     expect(formNoShowSessionsForLive(live({ replayEnabled: false }), null, NOW)).toEqual([expect.objectContaining({ replayOpen: false })]);
     expect(formNoShowSessionsForLive(live({ replayAvailableUntil: NOW }), null, NOW)).toEqual([expect.objectContaining({ replayOpen: false })]);
     expect(formNoShowSessionsForLive(live({ replayAvailableUntil: at(1) }), null, NOW)).toEqual([expect.objectContaining({ replayOpen: true })]);
+    // Re-review NIT-1: the Live's own video must be ready to play (the playback source's rule) and of this vendor.
+    expect(formNoShowSessionsForLive(live({ video: { ...READY_VIDEO, sourceType: "cloudflare_stream", status: "ready", cloudflareReadyToStream: false } }), null, NOW)).toEqual([expect.objectContaining({ replayOpen: false })]);
+    expect(formNoShowSessionsForLive(live({ video: { ...READY_VIDEO, sourceType: "cloudflare_stream", status: "archived", cloudflareReadyToStream: true } }), null, NOW)).toEqual([expect.objectContaining({ replayOpen: true })]);
+    expect(formNoShowSessionsForLive(live({ video: { ...READY_VIDEO, vendorId: "vendor-2" } }), null, NOW)).toEqual([expect.objectContaining({ replayOpen: false })]);
   });
 
   it("names events by registration and session", () => {
@@ -137,15 +143,17 @@ describe("formNoShowSessionsForLive", () => {
 });
 
 describe("formNoShowDeadline", () => {
-  it("gives the pass min(30 s, sequence start cutoff − elapsed − 5 s) and skips it below 5 s (review m-2)", () => {
-    expect(EMAIL_SEQUENCE_START_CUTOFF_MS).toBe(60_000);
+  it("gives the pass min(30 s, 35 s − elapsed) and skips it below 5 s (review m-2, re-review MINOR-1)", () => {
+    expect(FORM_NO_SHOW_ROUTE_BUDGET_MS).toBe(35_000);
     expect(formNoShowDeadline(0)).toBe(FORM_NO_SHOW_DEADLINE_MS);
     expect(formNoShowDeadline(-5)).toBe(FORM_NO_SHOW_DEADLINE_MS);
-    expect(formNoShowDeadline(25_000)).toBe(30_000);
-    expect(formNoShowDeadline(40_000)).toBe(15_000);
-    // The pass then ends by 55 s, before the sequence work's 60 s start cutoff.
-    expect(formNoShowDeadline(50_000)).toBe(5_000);
-    expect(formNoShowDeadline(50_001)).toBeNull();
+    expect(formNoShowDeadline(5_000)).toBe(30_000);
+    expect(formNoShowDeadline(20_000)).toBe(15_000);
+    // The pass ends by 35 s into the round at the latest.
+    expect(formNoShowDeadline(30_000)).toBe(5_000);
+    expect(formNoShowDeadline(30_001)).toBeNull();
+    expect(formNoShowDeadline(34_999)).toBeNull();
+    expect(formNoShowDeadline(35_000)).toBeNull();
     expect(formNoShowDeadline(Number.NaN)).toBeNull();
   });
 });
