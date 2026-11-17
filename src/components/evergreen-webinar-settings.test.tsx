@@ -18,6 +18,8 @@ describe("EvergreenWebinarSettings", () => {
         }}
       />,
     );
+    expect(html).toMatch(/<label[^>]*>場次 1<input[^>]*type="time"[^>]*name="evergreenDailyTimes"/);
+    expect(html.match(/name="evergreenDailyTimes"/g)).toHaveLength(4);
     expect(html).not.toContain("尚未啟用");
     expect(html).not.toContain("公開觀看頁還不會依這些設定");
     expect(html).toContain("專屬場次");

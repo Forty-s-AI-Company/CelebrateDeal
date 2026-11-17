@@ -4,9 +4,9 @@ import { useActionState, useState, type ChangeEvent, type ReactNode } from "reac
 import Image from "next/image";
 import { saveBrandSettingsActionState, type BrandSettingsActionState, type BrandSettingsFormValues } from "@/app/actions";
 import { FormSubmitButton } from "@/components/form-submit-button";
+import { Field } from "@/components/ui";
 import { MediaUploadField, type MediaUploadPersistedValue } from "@/components/media-upload-field";
 
-const inputClassName = "h-11 rounded-md border border-border-control bg-white px-3 text-sm outline-none transition focus:border-primary focus:ring-2 focus:ring-blue-100";
 const SAFE_PRIMARY_COLOR = "#2563eb";
 const SAFE_CTA_COLOR = "#f97316";
 
@@ -236,14 +236,8 @@ export function BrandSettingsForm({
       ) : null}
 
       <div className="grid gap-4 md:grid-cols-2">
-        <label className="grid gap-1.5 text-sm font-medium text-slate-700">
-          品牌名稱
-          <input name="name" required value={values.name} onChange={updateValue("name")} className={inputClassName} />
-        </label>
-        <label className="grid gap-1.5 text-sm font-medium text-slate-700">
-          品牌網址
-          <input name="slug" required value={values.slug} onChange={updateValue("slug")} className={inputClassName} />
-        </label>
+        <Field label="品牌名稱" name="name" required value={values.name} onChange={updateValue("name")} />
+        <Field label="品牌網址" name="slug" required value={values.slug} onChange={updateValue("slug")} />
         <label className="grid gap-1.5 text-sm font-medium text-slate-700">
           主要色
           <input name="primaryColor" type="color" value={values.primaryColor} onChange={updateValue("primaryColor")} className="h-11 w-full rounded-md border border-border-control bg-white p-1" />
@@ -252,25 +246,10 @@ export function BrandSettingsForm({
           CTA 色
           <input name="ctaColor" type="color" value={values.ctaColor} onChange={updateValue("ctaColor")} className="h-11 w-full rounded-md border border-border-control bg-white p-1" />
         </label>
-        <label className="grid gap-1.5 text-sm font-medium text-slate-700">
-          時區
-          <input name="timezone" required value={values.timezone} onChange={updateValue("timezone")} className={inputClassName} />
-          <span className="text-xs font-normal text-slate-500">請使用 IANA 時區，例如 Asia/Taipei。</span>
-        </label>
-        <label className="grid gap-1.5 text-sm font-medium text-slate-700">
-          客服 Email
-          <input name="supportEmail" type="email" value={values.supportEmail} onChange={updateValue("supportEmail")} className={inputClassName} />
-        </label>
-        <label className="grid gap-1.5 text-sm font-medium text-slate-700">
-          寄件人名稱
-          <input name="senderName" maxLength={80} placeholder="留白時使用品牌名稱" value={values.senderName} onChange={updateValue("senderName")} className={inputClassName} />
-          <span className="text-xs font-normal text-slate-500">顯示在品牌寄件資訊；最多 80 字元，不含控制字元。</span>
-        </label>
-        <label className="grid gap-1.5 text-sm font-medium text-slate-700">
-          聯絡網址
-          <input name="contactUrl" type="url" maxLength={2048} placeholder="https://example.com/contact" value={values.contactUrl} onChange={updateValue("contactUrl")} className={inputClassName} />
-          <span className="text-xs font-normal text-slate-500">僅接受 HTTPS 絕對網址；不接受帳密、本機或內部 IP。</span>
-        </label>
+        <Field label="時區" name="timezone" required value={values.timezone} onChange={updateValue("timezone")} hint="請使用 IANA 時區，例如 Asia/Taipei。" />
+        <Field label="客服 Email" name="supportEmail" type="email" value={values.supportEmail} onChange={updateValue("supportEmail")} />
+        <Field label="寄件人名稱" name="senderName" maxLength={80} placeholder="留白時使用品牌名稱" value={values.senderName} onChange={updateValue("senderName")} hint="顯示在品牌寄件資訊；最多 80 字元，不含控制字元。" />
+        <Field label="聯絡網址" name="contactUrl" type="url" maxLength={2048} placeholder="https://example.com/contact" value={values.contactUrl} onChange={updateValue("contactUrl")} hint="僅接受 HTTPS 絕對網址；不接受帳密、本機或內部 IP。" />
       </div>
 
       <MediaUploadField

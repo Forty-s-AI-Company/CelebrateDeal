@@ -37,4 +37,17 @@ describe("shared form controls expose error and hint slots (F-117)", () => {
     const html = renderToStaticMarkup(<Field label="商品名稱" name="name" error="請填寫商品名稱。" />);
     expect(/<label[^>]*>(.*?)<\/label>/u.exec(html)?.[1]).not.toContain("請填寫商品名稱。");
   });
+
+  it("renders Field in controlled mode with value, onChange and disabled, ignoring defaultValue", () => {
+    const html = renderToStaticMarkup(<Field label="名稱" name="name" value="受控" defaultValue="忽略" onChange={() => undefined} disabled />);
+    expect(html).toMatch(/name="name"[^>]*value="受控"/u);
+    expect(html).not.toContain("忽略");
+    expect(html).toContain('disabled=""');
+  });
+
+  it("keeps uncontrolled Field output unchanged when the new props are omitted", () => {
+    const html = renderToStaticMarkup(<Field label="名稱" name="name" defaultValue="預設" />);
+    expect(html).toMatch(/name="name"[^>]*value="預設"/u);
+    expect(html).not.toContain("disabled");
+  });
 });

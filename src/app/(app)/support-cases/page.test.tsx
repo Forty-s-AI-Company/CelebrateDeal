@@ -42,6 +42,18 @@ describe("/support-cases route", () => {
     expect(html).toContain("沒有符合條件的客服案件");
   });
 
+  it("keeps the GET filter field names, values and label association", async () => {
+    const html = renderToStaticMarkup(await SupportCasesPage({
+      searchParams: Promise.resolve({ status: "open", priority: "p1", q: "CD-100" }),
+    }));
+    expect(html).toMatch(/<form[^>]* method="get"/);
+    expect(html).toMatch(/<label[^>]*>案件／訂單編號<input[^>]*maxLength="160"[^>]*name="q"[^>]*value="CD-100"/);
+    expect(html).toMatch(/<label[^>]*>案件狀態<select[^>]*name="status"/);
+    expect(html).toMatch(/<label[^>]*>優先等級<select[^>]*name="priority"/);
+    expect(html).toMatch(/<option value="open" selected/);
+    expect(html).toMatch(/<option value="p1" selected/);
+  });
+
   it("does not pass forged status or priority values to Prisma", async () => {
     await SupportCasesPage({
       searchParams: Promise.resolve({ status: "deleted", priority: "urgent" }),
