@@ -40,6 +40,14 @@ test.describe("Funnel advanced element browser boundaries", () => {
   });
 
   test("advanced surface has no serious accessibility findings or mobile overflow", async ({ page }) => {
+    // The harness embeds a script-less `sandbox=""` iframe. In that frame
+    // `axe.runPartial` takes about 30 s to return (measured with both
+    // @axe-core/playwright 4.12.1 and 4.14.0; the page itself has ~55 nodes and
+    // legacy mode finishes in about 1 s). That leaves almost no margin under the
+    // 60 s default, so a slower CI runner times out inside `analyze()` and the
+    // closing context surfaces as `Target.createTarget` / `browserContextId`.
+    // Keep the full frame-aware scan and the assertions; only allow the time.
+    test.setTimeout(180_000);
     await page.setViewportSize({ width: 375, height: 812 });
     await page.goto("/browser-qa/funnel-elements");
     const results = await new AxeBuilder({ page }).analyze();
