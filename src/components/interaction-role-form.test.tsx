@@ -41,7 +41,7 @@ describe("InteractionRoleForm", () => {
     const html = renderToStaticMarkup(<InteractionRoleForm role={role()} csrfToken="csrf-edit-token" />);
 
     expect(html).toContain('name="id" value="role-1"');
-    expect(html).toMatch(/name="name" value="客服小幫手"/);
+    expect(html).toMatch(/name="name"[^>]*value="客服小幫手"/);
     expect(html).toMatch(/name="label" value="客服助手"/);
     expect(html).toContain('name="avatarUrl" value="https://cdn.example.test/avatar.svg"');
     expect(html).not.toContain('name="isActive" type="checkbox" checked=""');
