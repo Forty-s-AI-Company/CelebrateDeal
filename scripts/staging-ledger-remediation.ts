@@ -426,7 +426,8 @@ export type PrismaRunner = (args: string[], env: Record<string, string>) => { st
 // ---------------------------------------------------------------------------
 // Rendering
 
-const cell = (value: unknown) => String(value ?? "—").replace(/\|/gu, "\\|");
+// Escape backslashes first so a value ending in "\" cannot un-escape the pipe that follows.
+const cell = (value: unknown) => String(value ?? "—").replace(/\\/gu, "\\\\").replace(/\|/gu, "\\|");
 
 export function renderInspectMarkdown(report: InspectReport): string {
   const lines = [
