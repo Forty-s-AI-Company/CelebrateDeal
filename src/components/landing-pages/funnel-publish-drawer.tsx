@@ -6,7 +6,7 @@ import type { LandingPagePublicationStatus } from "@/lib/landing-page-service";
 
 /**
  * One run of 發布 in the editor: save the draft, run the server's publish
- * check (the publish transaction rolled back), then publish on request.
+ * check (a read-only preflight of the publish rules), then publish on request.
  * `blocked` covers a refused check and a refused publish alike.
  */
 export type PublishFlowState =

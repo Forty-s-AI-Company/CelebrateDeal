@@ -5,7 +5,7 @@ import { getDb } from "@/lib/db";
 
 /**
  * In-editor publishing and in-place product binding (PostgreSQL). The editor's
- * 發布檢查 is the publish transaction rolled back, and an in-place product
+ * 發布檢查 is a read-only preflight (see landing-page-publish-preflight.db.test.ts), and an in-place product
  * binding is stored by the ordinary revision-checked draft save; both must
  * bind the page, the step's product and the result to the current vendor and
  * project. All data is synthetic.
@@ -134,7 +134,7 @@ afterEach(async () => {
 });
 
 describe("editor publish check (PostgreSQL)", () => {
-  it("runs the whole publish transaction and commits nothing: no version, no revision, no auto-created lead form", async () => {
+  it("runs the publish rules read-only and commits nothing: no version, no revision, no auto-created lead form", async () => {
     const tenant = await createTenant("check", { projectPublished: false });
     actAs(tenant);
     const page = await createPage(tenant, audienceFunnel());
@@ -152,7 +152,7 @@ describe("editor publish check (PostgreSQL)", () => {
     expect(await autoForms()).toBe(1);
   });
 
-  it("rolls back the custom-code publish audit, which the real publish then writes", async () => {
+  it("writes no custom-code publish audit, which the real publish then writes", async () => {
     const tenant = await createTenant("audit", { projectPublished: true });
     actAs(tenant);
     // Written directly: the editor's save would add its own save audit entry.
@@ -167,7 +167,7 @@ describe("editor publish check (PostgreSQL)", () => {
     expect(await getDb().auditLog.findFirst({ where: { vendorId: tenant.vendorId, targetId: page.id } })).toMatchObject({ action: "funnel_custom_code_published", actorId: tenant.userId });
   });
 
-  it("rolls back the owner-fallback audit of an independent publication, which the real publish then writes", async () => {
+  it("writes no owner-fallback audit of an independent publication, which the real publish then writes", async () => {
     const db = getDb();
     const suffix = randomUUID();
     // No founding account (no user with the vendor's email): an active verified owner decides, and that pass is audited.
