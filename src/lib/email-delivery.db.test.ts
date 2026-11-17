@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { getDb } from "@/lib/db";
-import { createEmailRecipientHash } from "@/lib/email-delivery-pii";
+import { createEmailRecipientHash, revealEmailDeliveryPayload } from "@/lib/email-delivery-pii";
+import { PERSONAL_WATCH_LINK_LABEL, verifyLiveWatchLinkToken } from "@/lib/live-watch-link-token";
 import {
   ensureLiveReminderDelivery,
   ensureRegistrationConfirmationDelivery,
@@ -129,6 +130,47 @@ describe("email delivery disposable database invariants", () => {
       { status: "superseded", nextAttemptAt: null, lastErrorCode: "schedule_superseded" },
       { status: "queued", nextAttemptAt: new Date("2026-08-10T04:00:00.000Z"), lastErrorCode: null },
     ]));
+  });
+
+  it("gives every reminder recipient their own personal watch link and keeps {{live_url}} public (Q-17)", async () => {
+    const vendor = await createVendor();
+    const now = new Date("2026-08-10T00:00:00.000Z");
+    const scheduledAt = new Date("2026-08-10T04:00:00.000Z");
+    const reminder = (submissionId: string, recipientEmail: string) => ensureLiveReminderDelivery({
+      ...deliveryInput(vendor, submissionId),
+      recipientEmail,
+      reminderOffsetMinutes: 60,
+      template: {
+        ...deliveryInput(vendor, submissionId).template,
+        id: "disposable-reminder-template-personal",
+        trigger: "live_reminder",
+        body: "Hello {{name}}, share {{live_url}} with friends",
+      },
+    }, now);
+
+    const links: URL[] = [];
+    for (const [submissionId, email] of [["submission-personal-a", "lead-a@example.test"], ["submission-personal-b", "lead-b@example.test"]] as const) {
+      const result = await reminder(submissionId, email);
+      expect(result.status).toBe("scheduled");
+      const row = await getDb().emailDelivery.findUniqueOrThrow({ where: { id: (result as { deliveryId: string }).deliveryId } });
+      const { body } = revealEmailDeliveryPayload(row.payloadEncryptedEnvelope, { vendorId: vendor.id, deliveryId: row.id });
+      expect(body).toContain("share https://g7-07.example.test/live/disposable-live-one with friends");
+      const line = body.split("\n").find((text) => text.startsWith(PERSONAL_WATCH_LINK_LABEL));
+      expect(line, body).toBeDefined();
+      // Before the unsubscribe footer, and the e-mail address never appears in the link.
+      expect(body.indexOf(line!)).toBeLessThan(body.lastIndexOf("/unsubscribe"));
+      const url = new URL(line!.slice(PERSONAL_WATCH_LINK_LABEL.length + 1));
+      expect(url.toString()).not.toContain(encodeURIComponent(email));
+      expect(url.toString()).not.toContain(email);
+      expect(verifyLiveWatchLinkToken(url.searchParams.get("token"), now)?.claim).toEqual({
+        vendorId: vendor.id,
+        liveId: "disposable-live-1",
+        submissionId,
+        expiresAt: new Date(scheduledAt.getTime() + 30 * 86_400_000),
+      });
+      links.push(url);
+    }
+    expect(links[0]!.toString()).not.toBe(links[1]!.toString());
   });
 
   it("searches exact recipient hashes and filters within the authenticated tenant", async () => {

@@ -85,6 +85,30 @@ describe("student portal PostgreSQL boundaries", () => {
     await expect(consumeStudentPortalAccessToken(db, { token, expectedPurpose: "magic_link", now })).resolves.toBeNull();
   });
 
+  it("signs in through a server whose clock is two seconds behind, still exactly once and tenant-bound", async () => {
+    // Measured in a Docker Linux browser runner: the wall clock is stepped
+    // back about two seconds every half minute, so the redirect target can
+    // read a cookie (or a link) stamped a second or two "in the future".
+    const [owner, other] = [await vendor(), await vendor()];
+    const issuedAt = new Date(now.getTime() + 2_000);
+    const token = await createStudentPortalAccessToken(db, { vendorId: owner.id, email: "learner@example.test", purpose: "magic_link", now: issuedAt });
+    const results = await Promise.all(Array.from({ length: 6 }, () => consumeStudentPortalAccessToken(db, { token, expectedPurpose: "magic_link", now })));
+    const claims = results.filter((claim) => claim !== null);
+    expect(claims).toHaveLength(1);
+    const claim = claims[0]!;
+    const session = readStudentPortalSessionToken(createStudentPortalSessionToken({ ...claim, now: issuedAt }), now);
+    expect(session).toMatchObject({ vendorId: owner.id, customerKeyHash: automationCustomerKeyHash(owner.id, "learner@example.test"), grant: claim.grant });
+    expect(await isStudentPortalSessionActive(db, session!)).toBe(true);
+    // The grant stays bound to its own tenant and is still one-time.
+    expect(await isStudentPortalSessionActive(db, { ...session!, vendorId: other.id })).toBe(false);
+    await expect(consumeStudentPortalAccessToken(db, { token, expectedPurpose: "magic_link", now: issuedAt })).resolves.toBeNull();
+    expect((await db.studentPortalAccessToken.findFirstOrThrow({ where: { vendorId: owner.id } })).consumedAt).toEqual(now);
+    // A stamp beyond the documented skew is still refused without burning a fresh link.
+    const farFuture = await createStudentPortalAccessToken(db, { vendorId: owner.id, email: "learner@example.test", purpose: "magic_link", now: new Date(now.getTime() + 61_000) });
+    await expect(consumeStudentPortalAccessToken(db, { token: farFuture, expectedPurpose: "magic_link", now })).resolves.toBeNull();
+    expect(await db.studentPortalAccessToken.count({ where: { vendorId: owner.id, consumedAt: null } })).toBe(1);
+  });
+
   it("does not consume a record rebound to another tenant or student", async () => {
     const a = await vendor(); const b = await vendor();
     const token = await createStudentPortalAccessToken(db, { vendorId: a.id, email: "learner@example.test", purpose: "magic_link", now });

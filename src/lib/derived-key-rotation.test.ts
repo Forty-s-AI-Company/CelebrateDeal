@@ -104,6 +104,7 @@ describe("rotation registry", () => {
       "csrfMac", "merchantRegistrationInvite", "merchantInviteEmailHash", "livePrivateChatConversationBinding", "checkoutAdmission", "formSubmissionLineBinding", "studentPortalAccessToken", "liveViewerPass",
       "liveChatCursor", "livePrivateChatCursor", "postPurchaseCheckout", "registrationSubmissionResult", "merchantEmailVerification",
       "accountEmailChange", "accountEmailRevert", "evergreenViewerSession", "liveSessionResult", "liveSessionSwitch",
+      "liveWatchLink", "liveAttendance",
     ] as const) {
       expect(DERIVED_KEY_ROTATIONS[name].legacy, name).toBeNull();
     }

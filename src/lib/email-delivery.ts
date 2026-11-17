@@ -13,6 +13,7 @@ import {
 import { hasOnlySupportedMessageTemplateVariables, renderMessageTemplate } from "@/lib/message-template";
 import { createLiveViewerUrl } from "@/lib/live-public-url";
 import { createLiveSessionSwitchToken, createLiveSessionSwitchUrl, LIVE_SESSION_SWITCH_TTL_SECONDS } from "@/lib/live-session-switch-token";
+import { appendPersonalWatchLink, createLiveWatchLinkUrl } from "@/lib/live-watch-link-token";
 import {
   EVERGREEN_ACTIVATION_SELECT,
   evergreenScheduleForLive,
@@ -23,6 +24,7 @@ import {
 import { isFixedSessionLive } from "@/lib/live-fixed-sessions";
 import { normalizeBlacklistIdentifier } from "@/lib/blacklist-identifiers";
 import { isEmailBlacklistedForVendor } from "@/lib/email-blacklist";
+import { STUDENT_PORTAL_CLOCK_SKEW_SECONDS } from "@/lib/student-portal-clock-skew";
 // Values used at module load come from the dependency-free trigger module:
 // delayed-step-runs.ts reaches this module again through the automation
 // engine (delayed-step-runs -> automation-delayed-steps -> automation-workflow
@@ -340,10 +342,21 @@ export async function ensureLiveReminderDelivery(
     vendor_name: input.vendorName,
     unsubscribe_url: unsubscribeUrl,
   };
+  // Q-17: each registrant's own watch link, so watching on another device
+  // than the one that confirmed the e-mail still counts as attendance.
+  const personalWatchUrl = createLiveWatchLinkUrl({
+    vendorId: input.vendorId,
+    liveId: input.liveId,
+    submissionId: input.formSubmissionId,
+    sessionStartAt: input.liveScheduledAt,
+  }, now);
   const protectedPayload = protectEmailDeliveryPayload({
     recipientEmail: input.recipientEmail,
     subject: renderMessageTemplate(template.subject, variables).replace(/\s+/gu, " ").trim(),
-    body: ensureEmailUnsubscribeFooter(renderMessageTemplate(template.body, variables), unsubscribeUrl),
+    body: ensureEmailUnsubscribeFooter(
+      appendPersonalWatchLink(renderMessageTemplate(template.body, variables), personalWatchUrl),
+      unsubscribeUrl,
+    ),
     brand: input.emailBrand,
   }, {
     vendorId: input.vendorId,
@@ -1675,7 +1688,10 @@ async function isCurrentStudentPortalDelivery(
       tokenHash: Buffer.from(digest, "hex").toString("base64url"),
       purpose: "magic_link",
       consumedAt: null,
-      issuedAt: { lte: now },
+      // The send runs right after the link is created, possibly on a server
+      // whose clock is slightly behind; a too-strict bound here would mark a
+      // valid sign-in e-mail superseded and the learner would never get it.
+      issuedAt: { lte: new Date(now.getTime() + STUDENT_PORTAL_CLOCK_SKEW_SECONDS * 1_000) },
       expiresAt: { gt: now },
     },
     select: { id: true },

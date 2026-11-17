@@ -70,7 +70,7 @@ describe("isolated development build configuration", () => {
     const { default: config } = await import("./next.config");
     const rules = await config.headers!();
     const siteWide = rules.findIndex((rule) => rule.source === "/:path*");
-    for (const source of ["/verify-email", "/api/auth/email-verification/confirm", "/verify-email-change", "/api/auth/email-change/confirm", "/revert-email-change", "/api/auth/email-change/revert", "/api/live-session-switch"]) {
+    for (const source of ["/verify-email", "/api/auth/email-verification/confirm", "/verify-email-change", "/api/auth/email-change/confirm", "/revert-email-change", "/api/auth/email-change/revert", "/api/live-session-switch", "/api/live-watch-link"]) {
       const index = rules.findIndex((rule) => rule.source === source);
       // Next applies matching rules in order; the later one wins for the same key.
       expect(index).toBeGreaterThan(siteWide);
