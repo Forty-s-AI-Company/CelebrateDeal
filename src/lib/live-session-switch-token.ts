@@ -1,5 +1,6 @@
 import { createHash, randomBytes } from "node:crypto";
 import { DERIVED_KEY_ROTATIONS, signWithRotation, verifyWithRotation } from "@/lib/derived-key-rotation";
+import { SERVER_CLOCK_SKEW_SECONDS } from "@/lib/server-clock-skew";
 
 /**
  * The 「更換場次」 link in the already-registered notice (指定場次): lets the
@@ -72,7 +73,9 @@ export function verifyLiveSessionSwitchToken(token: string | null | undefined, n
     || typeof claims.e !== "number" || !Number.isSafeInteger(claims.e)
   ) return null;
   const nowSeconds = Math.floor(now.getTime() / 1_000);
-  if (claims.e <= nowSeconds || claims.e > nowSeconds + LIVE_SESSION_SWITCH_TTL_SECONDS) return null;
+  // e - TTL is the issue time: tolerate SERVER_CLOCK_SKEW_SECONDS of "issued in
+  // the future" between the writing and the reading instance, never a later expiry.
+  if (claims.e <= nowSeconds || claims.e > nowSeconds + LIVE_SESSION_SWITCH_TTL_SECONDS + SERVER_CLOCK_SKEW_SECONDS) return null;
   return { vendorId: claims.v, submissionId: claims.s, sessionId: claims.l, nonce: claims.n, expiresAt: new Date(claims.e * 1_000) };
 }
 

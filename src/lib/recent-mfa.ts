@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { withMfaReturnPath } from "@/lib/mfa-return-path";
+import { SERVER_CLOCK_SKEW_MS } from "@/lib/server-clock-skew";
 
 /**
  * Step-up window for high-risk merchant operations (F-027 / B02-04, owner
@@ -12,7 +13,7 @@ export const STEP_UP_MFA_MAX_AGE_MINUTES = 15;
 
 // Sessions are stamped by the application clock; tolerate a small skew between
 // instances but never treat a far-future stamp as fresh.
-const FUTURE_CLOCK_SKEW_MS = 60_000;
+const FUTURE_CLOCK_SKEW_MS = SERVER_CLOCK_SKEW_MS;
 
 export type RecentMfaActor = {
   user: { mfaFactor?: unknown };

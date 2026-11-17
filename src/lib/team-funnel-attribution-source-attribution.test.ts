@@ -118,7 +118,7 @@ describe("team funnel attribution source attribution", () => {
     expect(attributionCookieFromRequest(valid, now)).toEqual(value);
     expect(attributionCookieFromRequest(new Request("https://app.example.test", { headers: { cookie: `${ATTRIBUTION_COOKIE}=not-json` } }), now)).toBeNull();
     expect(attributionCookieFromRequest(new Request("https://app.example.test", { headers: { cookie: `${ATTRIBUTION_COOKIE}=%E0%A4%A` } }), now)).toBeNull();
-    expect(attributionCookieFromRequest(new Request("https://app.example.test", { headers: { cookie: `${ATTRIBUTION_COOKIE}=${encodeAttributionCookie({ ...value, issuedAt: now + 1 })}` } }), now)).toBeNull();
+    expect(attributionCookieFromRequest(new Request("https://app.example.test", { headers: { cookie: `${ATTRIBUTION_COOKIE}=${encodeAttributionCookie({ ...value, issuedAt: now + 60_001 })}` } }), now)).toBeNull();
     expect(attributionCookieFromRequest(new Request("https://app.example.test", { headers: { cookie: `${ATTRIBUTION_COOKIE}=${encodeAttributionCookie({ ...value, issuedAt: now - (ATTRIBUTION_TTL_SECONDS * 1000 + 1) })}` } }), now)).toBeNull();
   });
 

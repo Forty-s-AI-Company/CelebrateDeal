@@ -57,12 +57,25 @@ describe("form submission chat session", () => {
     expect(overlongToken.length).toBeGreaterThan(320);
     expect(verifyFormSubmissionChatSessionToken(overlongToken, now)).toBeNull();
 
-    const futureSeconds = Math.floor(now.getTime() / 1_000) + FORM_SUBMISSION_CHAT_SESSION_TTL_SECONDS + 1;
+    // Beyond the 60-second clock-skew bound, a longer lifetime is refused.
+    const futureSeconds = Math.floor(now.getTime() / 1_000) + FORM_SUBMISSION_CHAT_SESSION_TTL_SECONDS + 61;
     const futureValue = `fss1.formsub_abc123.${futureSeconds}`;
     const futureSignature = createHmac("sha256", deriveSensitiveDataKey("form-submission-chat-session"))
       .update(futureValue)
       .digest("base64url");
     expect(verifyFormSubmissionChatSessionToken(`${futureValue}.${futureSignature}`, now)).toBeNull();
+  });
+
+  it("tolerates a reading clock up to 60 seconds behind the issuer, never a later expiry", () => {
+    vi.stubEnv("CSRF_SECRET", "form-chat-session-test-secret-longer-than-thirty-two-bytes");
+    const token = createFormSubmissionChatSessionToken({ submissionId: "formsub_abc123", now });
+    const expiresAt = new Date(now.getTime() + FORM_SUBMISSION_CHAT_SESSION_TTL_SECONDS * 1_000);
+    for (const behindMs of [1_000, 2_000, 60_000]) {
+      expect(verifyFormSubmissionChatSessionToken(token, new Date(now.getTime() - behindMs))).toEqual({ submissionId: "formsub_abc123", expiresAt });
+    }
+    expect(verifyFormSubmissionChatSessionToken(token, new Date(now.getTime() - 61_000))).toBeNull();
+    expect(verifyFormSubmissionChatSessionToken(token, new Date(expiresAt.getTime() - 1_000))).not.toBeNull();
+    expect(verifyFormSubmissionChatSessionToken(token, expiresAt)).toBeNull();
   });
 
   it("returns the required secure cookie attributes", () => {

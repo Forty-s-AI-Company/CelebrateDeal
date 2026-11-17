@@ -257,8 +257,30 @@ Session 與機器憑證（F-016、F-030、F-036）：
 
 - 後台 session cookie 是 `__Host-celebrate_session`（`Secure`、`Path=/`、無 `Domain`，`secure` 不再看 `NODE_ENV`），寫入與刪除一律經 `src/lib/session-cookie.ts`。本機 http 開發只靠瀏覽器對 `localhost`／`127.0.0.1` 的安全來源例外（Chromium、Firefox 可用；Safari 不行）。舊名 `celebrate_session` 只在 2026-12-15（`LEGACY_AUTH_COOKIE_SUNSET`）前作為讀取備援，且只接受 `UserSession.createdAt` 早於 2026-11-04（`LEGACY_AUTH_COOKIE_ISSUED_BEFORE`，本 PR 部署日）的 session；上線後新建的 session 只認 `__Host-` 名稱。登入時會清掉舊名。過渡期間子網域仍可能以舊名塞入部署前的 token，**sunset 之後才完全防止子網域塞 cookie**；sunset 後移除讀取備援。Playwright 手動放 cookie 時用 `domain`＋`path: "/"`＋`secure: true`，不要用 `url`。
 - 平台管理員（`platformRole=platform_admin`）的 session 自建立起 24 小時失效（讀取時以 `UserSession.createdAt` 判斷，涵蓋舊 session）；商家後台 session 維持 14 天。敏感操作另有 `requireRecentMfa` step-up。
-- 學員 portal session 最長 7 天，且只在當初兌換的 magic-link 列（`StudentPortalAccessToken`，同 vendor、同 customerKeyHash、已 consumed）仍存在時有效；登出、同一瀏覽器重新登入（先撤銷被覆蓋 cookie 的那一列）、`revokeStudentPortalSessions` 或客戶匿名化刪除該列即撤銷。`revokeStudentPortalSessions` 已接到商家封鎖 Email 與商家凍結（批次版 `revokeAllStudentPortalSessionsForVendor`）；全額退款刻意不撤銷，見「商家凍結」後的「學員 portal session 撤銷」；目前沒有變更客戶 Email 的流程。後台「撤銷學員登入」操作仍列為後續工作（F-030 M2）。任何清理該表的排程都必須保留已 consumed 的列至少 7 天。登入連結與 session cookie 的 `issuedAt` 容許比讀取端時鐘快至多 60 秒（`STUDENT_PORTAL_CLOCK_SKEW_SECONDS`，與 CSRF、recent MFA 相同），因為 `/access` 寫 cookie 後瀏覽器馬上帶著它打 303 目標，常落在另一台時鐘稍慢或剛被校時往回調的伺服器；到期時間不放寬，連結仍只能兌換一次。
+- 學員 portal session 最長 7 天，且只在當初兌換的 magic-link 列（`StudentPortalAccessToken`，同 vendor、同 customerKeyHash、已 consumed）仍存在時有效；登出、同一瀏覽器重新登入（先撤銷被覆蓋 cookie 的那一列）、`revokeStudentPortalSessions` 或客戶匿名化刪除該列即撤銷。`revokeStudentPortalSessions` 已接到商家封鎖 Email 與商家凍結（批次版 `revokeAllStudentPortalSessionsForVendor`）；全額退款刻意不撤銷，見「商家凍結」後的「學員 portal session 撤銷」；目前沒有變更客戶 Email 的流程。後台「撤銷學員登入」操作仍列為後續工作（F-030 M2）。任何清理該表的排程都必須保留已 consumed 的列至少 7 天。登入連結與 session cookie 的 `issuedAt` 容許比讀取端時鐘快至多 60 秒，規則見下方「伺服器時鐘偏差」；到期時間不放寬，連結仍只能兌換一次。
 - Provider smoke 端點（test-email／analytics／monitoring、Cloudflare upload／live input）只認 `OPS_SMOKE_SECRET`，vendor 一律是部署設定的 `SMOKE_VENDOR_ID`；排程 `/api/jobs/*` 與 preflight 仍用 `JOB_SECRET`。
+
+### 伺服器時鐘偏差（2026-11）
+
+Web instance、排程 job 與資料庫各用自己的時鐘；一台寫入、另一台幾乎立刻讀取的時間戳，不能對「比我現在晚」零容忍。規則：
+
+- 只放寬「簽發／記錄時間落在讀取端未來」這一側，上限 60 秒，唯一來源是 `src/lib/server-clock-skew.ts` 的 `SERVER_CLOCK_SKEW_SECONDS`／`SERVER_CLOCK_SKEW_MS`；`STUDENT_PORTAL_CLOCK_SKEW_SECONDS`、CSRF、recent MFA、evergreen viewer session 都引用它（`server-clock-skew.test.ts` 鎖住相等）。超過 60 秒不算時鐘差，照舊拒絕。Cloudflare Stream 簽名 token 的 `nbf` 往前 30 秒（`STREAM_TOKEN_CLOCK_SKEW_SECONDS`）是給 provider 驗證用的另一個值，不併入。
+- 到期時間與 TTL 一律不延長：`expiresAt <= now` 照舊失效；以 `e > now + TTL` 判斷「未來簽發」的 token 改為 `e > now + TTL + 60`。舊金鑰的 rotation 判斷（`expiryFitsPreRotationIssue`、`issuedBeforeRotation`）不加容許值。
+- 只用在伺服器寫入、且位於 HMAC／AEAD 保護值或伺服器資料列內的時間戳；client 無法選擇這些值，容許值不會讓偽造或過期的 token、cookie 通過。
+- 業務先後順序（例如「同意早於確認」）不加容許值，改在寫入端依因果順序記錄：確認諮詢提醒的交易讀到所有符合條件管道的同意（各管道一列），若因時鐘差落在未來 60 秒內，確認時間記為 `max(現在, 最晚的 consentedAt)`，來源事件的 `occurredAt` 用同一個值。fan-out（`consentedAt <= occurredAt`）與派送（`consentedAt <= confirmedAt`）的嚴格比較因此在每個管道都成立，不會靜默漏發；超過時鐘偏差窗口的同意（包括確認後才重新同意）仍照舊壓掉。
+
+| 位置 | 比較的時間戳 | 零容忍時的後果 |
+| --- | --- | --- |
+| `student-portal-auth.ts`、`email-delivery.ts`（學員 portal，#633） | 登入連結與 session cookie 的 `issuedAt` vs 讀取端時鐘 | 開了有效連結仍被送回登入頁、登入信不寄 |
+| `learner-notification-dispatch.ts` 諮詢提醒派送 | payload `confirmedAt` vs 派送 job 時鐘；`startTime <= clock_timestamp() + 1 hour (+60 秒)` 是 DB 時鐘 vs 以 app 時鐘到期的來源 | 提醒永久 `suppressed`（`CONSULTATION_BOOKING_UNAVAILABLE`），不重試；放寬後提醒最多提早 60 秒寄出 |
+| `learner-consultation-reminders.ts` 確認提醒 | `LearnerNotificationPreference.consentedAt` vs 確認端時鐘 | 409 `verification_required`，學員重試可恢復 |
+| `team-funnel-attribution.ts` 歸因 cookie | 簽章內 `issuedAt` vs 結帳／表單端時鐘 | 歸因靜默丟失（影響佣金）；30 天 TTL 與 `AffiliateClick.createdAt` 視窗不變 |
+| `form-submission-chat-session.ts` 報名後聊天 session | 簽章內到期秒數（簽發時間＋30 天） | 報名者的聊天 session 失效 |
+| `registration-submission-receipt.ts` 報名成功回條 | 加密回條內 `expiresAt`（簽發時間＋60 秒） | 報名後感謝頁不顯示成功 |
+| `live-viewer-pass.ts` 直播觀看 pass | 簽章內 `e`（最多簽發時間＋120 秒） | 觀看 pass 失效 |
+| `live-session-result.ts`、`live-session-switch-token.ts`、`form-submission-line-binding-session.ts` | 簽章內 `e`（簽發時間＋TTL） | 感謝頁場次、更換場次連結、LINE 綁定失效 |
+
+新增時間戳檢查時沿用這個常數，不要把容許值加到到期判斷上。
 
 ## 瀏覽器 QA
 

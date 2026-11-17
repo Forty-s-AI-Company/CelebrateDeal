@@ -1,6 +1,7 @@
 import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 import { DERIVED_KEY_ROTATIONS } from "@/lib/derived-key-rotation";
 import { deriveSensitiveDataKey } from "@/lib/sensitive-data";
+import { SERVER_CLOCK_SKEW_SECONDS } from "@/lib/server-clock-skew";
 
 /**
  * Short-lived signed viewer pass (F-091 / B06-05).
@@ -139,7 +140,9 @@ export function verifyLiveViewerPass(
   const claims = parseClaims(payload);
   if (!claims) return null;
   const currentSeconds = nowSeconds(input.now ?? new Date());
-  if (claims.e <= currentSeconds || claims.e > currentSeconds + LIVE_VIEWER_PASS_TTL_SECONDS) return null;
+  // e - TTL is the issue time: tolerate SERVER_CLOCK_SKEW_SECONDS of "issued in
+  // the future" between instances, never a later expiry.
+  if (claims.e <= currentSeconds || claims.e > currentSeconds + LIVE_VIEWER_PASS_TTL_SECONDS + SERVER_CLOCK_SKEW_SECONDS) return null;
   if (claims.v !== input.vendorId || claims.l !== input.liveId) return null;
   const binding = Buffer.from(liveViewerAdmissionBinding(input.admissionToken), "utf8");
   const claimedBinding = Buffer.from(claims.a, "utf8");

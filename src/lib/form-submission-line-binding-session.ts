@@ -1,6 +1,7 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { DERIVED_KEY_ROTATIONS } from "@/lib/derived-key-rotation";
 import { deriveSensitiveDataKey } from "@/lib/sensitive-data";
+import { SERVER_CLOCK_SKEW_SECONDS } from "@/lib/server-clock-skew";
 
 export const FORM_SUBMISSION_LINE_BINDING_COOKIE = "celebratedeal_form_submission_line_binding";
 export const FORM_SUBMISSION_LINE_BINDING_TTL_SECONDS = 30 * 60;
@@ -37,8 +38,11 @@ export function verifyFormSubmissionLineBindingToken(token: string, now = new Da
     || !SIGNATURE.test(suppliedSignature) || extra !== undefined) return null;
   const expiresAtSeconds = Number(expiresAtRaw);
   const nowSeconds = Math.floor(now.getTime() / 1_000);
+  // expiresAt - TTL is the issue time. The LINE binding step reads this right
+  // after the form submit, often on another instance: tolerate
+  // SERVER_CLOCK_SKEW_SECONDS of "issued in the future" only, never a later expiry.
   if (!Number.isSafeInteger(expiresAtSeconds) || expiresAtSeconds <= nowSeconds
-    || expiresAtSeconds > nowSeconds + FORM_SUBMISSION_LINE_BINDING_TTL_SECONDS) return null;
+    || expiresAtSeconds > nowSeconds + FORM_SUBMISSION_LINE_BINDING_TTL_SECONDS + SERVER_CLOCK_SKEW_SECONDS) return null;
   const expected = Buffer.from(signature(signedValue(submissionId, expiresAtSeconds)), "utf8");
   const supplied = Buffer.from(suppliedSignature, "utf8");
   if (expected.length !== supplied.length || !timingSafeEqual(expected, supplied)) return null;

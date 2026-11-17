@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({ finish: vi.fn() }));
 vi.mock("./learner-notification-outbox", async original => ({ ...await original<typeof import("./learner-notification-outbox")>(), finishLearnerNotification: mocks.finish }));
 import { dispatchClaimedLearnerNotification } from "./learner-notification-dispatch";
@@ -12,10 +12,10 @@ const hash = (value: string) => createHash("sha256").update(value).digest("hex")
 const message = { paymentOrder: { id: "order_a" }, title: "付款已完成", body: "合成課程", path: "/portal/notify.link/vendor_a/notifications" };
 const options = { appOrigin: "https://app.example.test", configuration: {} };
 
-function fixture(overrides: { event?: string; orderCurrent?: boolean; enabled?: boolean } = {}) {
+function fixture(overrides: { event?: string; orderCurrent?: boolean; enabled?: boolean; message?: object; consentedAt?: Date } = {}) {
   const row = { id, vendorId, productId: scope.productId, preferenceId: "pref_a", event: overrides.event ?? "payment_success", consentRevision: 2, deduplicationKey: dedup, dispatchedAt: null,
-    payloadEncryptedEnvelope: encryptSensitiveValue(JSON.stringify(message), `learner-notification-payload-v1:${JSON.stringify([vendorId, dedup])}`) };
-  const preference = { id: "pref_a", ...scope, channel: "email", enabled: overrides.enabled ?? true, revision: 2, consentedAt: new Date(), destinationVerifiedAt: new Date(),
+    payloadEncryptedEnvelope: encryptSensitiveValue(JSON.stringify(overrides.message ?? message), `learner-notification-payload-v1:${JSON.stringify([vendorId, dedup])}`) };
+  const preference = { id: "pref_a", ...scope, channel: "email", enabled: overrides.enabled ?? true, revision: 2, consentedAt: overrides.consentedAt ?? new Date(), destinationVerifiedAt: new Date(),
     destinationKeyHash: "f".repeat(64), destinationEncryptedEnvelope: protectLearnerNotificationDestination(scope, "email", { email: "learner@invalid.example" }).encryptedEnvelope };
   const sql: string[] = [];
   let inTransaction = false;
@@ -26,6 +26,7 @@ function fixture(overrides: { event?: string; orderCurrent?: boolean; enabled?: 
       if (text.includes('"LearnerNotificationDelivery"')) return [{ id }];
       if (text.includes('FROM "CommerceOrder" o') && text.includes("EXISTS")) return overrides.orderCurrent === false ? [] : [{ id: "order_a" }];
       if (text.includes('"CommerceEntitlement"')) return [{ id: "entitlement_a" }];
+      if (text.includes('FROM "ConsultationBooking" b')) return [{ id: "booking_a" }];
       return [];
     }),
     learnerNotificationDelivery: { findFirstOrThrow: vi.fn().mockResolvedValue(row), updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
@@ -35,7 +36,52 @@ function fixture(overrides: { event?: string; orderCurrent?: boolean; enabled?: 
   return { tx, db, sql, row, inside: () => inTransaction };
 }
 beforeEach(() => { vi.stubEnv("CSRF_SECRET", "synthetic-dispatch-encryption-key-32-bytes"); mocks.finish.mockReset().mockResolvedValue(true); });
-afterEach(() => vi.unstubAllEnvs());
+afterEach(() => { vi.useRealTimers(); vi.unstubAllEnvs(); });
+
+describe("consultation reminder vs. the dispatcher's clock", () => {
+  // The confirming web instance stamped confirmedAt with its own clock.
+  const confirmedAt = new Date("2026-11-17T02:00:00.000Z");
+  const reminder = (at: Date) => ({ title: "預約即將開始", body: "合成預約", path: "/portal/notify.link/vendor_a/notifications",
+    consultationBooking: { id: "booking_a", startTime: "2026-11-17T02:30:00.000Z", customerKeyHash: scope.customerKeyHash, confirmedAt: at.toISOString() } });
+  const dispatchAt = async (clock: Date, overrides: { consentedAt?: Date; confirmedAt?: Date } = {}) => {
+    vi.useFakeTimers({ toFake: ["Date"] }); vi.setSystemTime(clock);
+    const f = fixture({ event: "consultation_reminder", message: reminder(overrides.confirmedAt ?? confirmedAt), consentedAt: overrides.consentedAt ?? new Date(confirmedAt.getTime() - 600_000) });
+    const sender = vi.fn(async () => ({ outcome: "sent" as const }));
+    const result = await dispatchClaimedLearnerNotification(f.db as never, { vendorId, id, claimToken }, { ...options, sender });
+    return { f, sender, result };
+  };
+
+  it("a dispatcher clock 2 seconds slow sends the reminder instead of suppressing it for good", async () => {
+    const { f, sender, result } = await dispatchAt(new Date(confirmedAt.getTime() - 2_000));
+    expect(result).toEqual({ status: "sent", providerAttempted: true }); expect(sender).toHaveBeenCalledTimes(1);
+    expect(f.tx.learnerNotificationDelivery.updateMany).not.toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ status: "suppressed" }) }));
+  });
+
+  it("the database-clock 'at most an hour early' bound carries the same 60-second allowance", async () => {
+    const { f } = await dispatchAt(confirmedAt);
+    const call = f.tx.$queryRaw.mock.calls.find(([query]) => ("strings" in query ? query.strings : query).join("?").includes('FROM "ConsultationBooking" b'));
+    const text = ("strings" in call![0] ? call![0].strings : call![0]).join("?");
+    expect(text).toContain(`b."startTime">clock_timestamp() AND b."startTime"<=clock_timestamp()+INTERVAL '1 hour'+make_interval(secs=>?::double precision)`);
+    // Values: vendorId, bookingId, customerKeyHash, startTime, skew seconds, productId.
+    expect((call as unknown[]).slice(1)).toEqual([vendorId, "booking_a", scope.customerKeyHash, new Date("2026-11-17T02:30:00.000Z"), 60, scope.productId]);
+  });
+
+  it.each([1_000, 60_000])("accepts confirmedAt %i ms ahead of the dispatcher", async aheadMs => {
+    expect((await dispatchAt(new Date(confirmedAt.getTime() - aheadMs))).result).toEqual({ status: "sent", providerAttempted: true });
+  });
+
+  it.each([60_001, 61_000])("still suppresses confirmedAt %i ms ahead (not a clock skew)", async aheadMs => {
+    const { f, sender, result } = await dispatchAt(new Date(confirmedAt.getTime() - aheadMs));
+    expect(result).toEqual({ status: "suppressed" }); expect(sender).not.toHaveBeenCalled();
+    expect(f.tx.learnerNotificationDelivery.updateMany).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ status: "suppressed", lastErrorCode: "CONSULTATION_BOOKING_UNAVAILABLE" }) }));
+  });
+
+  it("keeps consent-before-confirmation exact: a consent newer than the confirmation suppresses", async () => {
+    expect((await dispatchAt(confirmedAt, { consentedAt: confirmedAt })).result).toEqual({ status: "sent", providerAttempted: true });
+    const { sender, result } = await dispatchAt(confirmedAt, { consentedAt: new Date(confirmedAt.getTime() + 1) });
+    expect(result).toEqual({ status: "suppressed" }); expect(sender).not.toHaveBeenCalled();
+  });
+});
 
 it("calls the provider outside any transaction and never locks commerce, live or consultation rows", async () => {
   const f = fixture(); let sentInside: boolean | null = null;

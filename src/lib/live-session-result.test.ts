@@ -24,6 +24,17 @@ describe("signed fixed-session result cookie", () => {
     expect(confirmedLiveSessionFromCookies({ get: () => undefined }, "live-1", NOW)).toBeNull();
   });
 
+  it("tolerates a reading clock up to 60 seconds behind the issuer, never a later expiry", () => {
+    const token = createLiveSessionResultToken(result, NOW);
+    for (const behindMs of [1_000, 2_000, 60_000]) {
+      expect(verifyLiveSessionResultToken(token, "live-1", new Date(NOW.getTime() - behindMs))).toEqual(result);
+    }
+    expect(verifyLiveSessionResultToken(token, "live-1", new Date(NOW.getTime() - 61_000))).toBeNull();
+    const expiresAt = NOW.getTime() + LIVE_SESSION_RESULT_TTL_SECONDS * 1_000;
+    expect(verifyLiveSessionResultToken(token, "live-1", new Date(expiresAt - 1_000))).toEqual(result);
+    expect(verifyLiveSessionResultToken(token, "live-1", new Date(expiresAt))).toBeNull();
+  });
+
   it("rejects forged, tampered or plain JSON values", () => {
     const token = createLiveSessionResultToken(result, NOW);
     const [version, payload, signature] = token.split(".");

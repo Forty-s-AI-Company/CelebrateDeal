@@ -22,6 +22,14 @@ describe("registration result proof", () => {
     expect(response.cookies.get(name)).toMatchObject({ httpOnly: true, secure: true, sameSite: "strict", path: "/", maxAge: 60 });
     expect(response.headers.get("cache-control")).toBe("no-store");
   });
+  it("tolerates a reading clock up to 60 seconds behind the issuer, never a later expiry", () => {
+    const value = result().cookies.get(name)?.value;
+    for (const behindMs of [1_000, 2_000, 60_000]) expect(verifyRegistrationResult(value, "synthetic-form", "/form/synthetic", now - behindMs)).toBe(true);
+    expect(verifyRegistrationResult(value, "synthetic-form", "/form/synthetic", now - 60_001)).toBe(false);
+    expect(verifyRegistrationResult(value, "synthetic-form", "/form/synthetic", now - 61_000)).toBe(false);
+    expect(verifyRegistrationResult(value, "synthetic-form", "/form/synthetic", now + REGISTRATION_RESULT_TTL_MS - 1)).toBe(true);
+    expect(verifyRegistrationResult(value, "synthetic-form", "/form/synthetic", now + REGISTRATION_RESULT_TTL_MS)).toBe(false);
+  });
   it("rejects missing, malformed, oversized and tampered proof", () => {
     const value = result().cookies.get(name)!.value;
     const parts = value.split("."); const bytes = Buffer.from(parts[3], "base64url"); bytes[0] ^= 1; parts[3] = bytes.toString("base64url");

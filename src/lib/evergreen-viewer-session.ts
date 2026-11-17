@@ -17,6 +17,7 @@ import {
   type LiveRuntimeState,
 } from "@/lib/live-runtime-state";
 import { deriveSensitiveDataKey } from "@/lib/sensitive-data";
+import { SERVER_CLOCK_SKEW_MS } from "@/lib/server-clock-skew";
 import {
   isFixedSessionLive,
   resolveFixedSessionRuntime,
@@ -56,7 +57,7 @@ const SIGNATURE_PATTERN = /^[A-Za-z0-9_-]{43}$/u;
 const FINGERPRINT_PATTERN = /^[0-9a-f]{32}$/u;
 /** A legitimately issued start is never further than two days from its issue time. */
 const MAX_START_DISTANCE_MS = 2 * 24 * 60 * 60 * 1_000;
-const CLOCK_SKEW_MS = 60_000;
+const CLOCK_SKEW_MS = SERVER_CLOCK_SKEW_MS;
 
 export type EvergreenLiveRecord = {
   id: string;

@@ -84,6 +84,37 @@ describe("team funnel attribution", () => {
     expect(attributionCookieFromRequest(expired, now.getTime())).toBeNull();
   });
 
+  it("tolerates 60 seconds of issuer clock skew without extending the 30-day TTL", () => {
+    const now = Date.parse("2026-07-17T00:00:00Z");
+    const visitorId = "visitor-12345678901234567890";
+    const read = (issuedAt: number, at = now) => attributionCookieFromRequest(new Request("https://app.example.test/checkout", {
+      headers: { cookie: `celebratedeal_attribution=${encodeAttributionCookie({ clickId: "click-1", visitorId, issuedAt })}` },
+    }), at);
+
+    // The click endpoint's clock ran ahead of the checkout instance: still attributed.
+    expect(read(now + 1_000)).toEqual({ clickId: "click-1", visitorId, issuedAt: now + 1_000 });
+    expect(read(now + 2_000)).not.toBeNull();
+    expect(read(now + 60_000)).not.toBeNull();
+    // Beyond the bound it is not a skew and stays refused.
+    expect(read(now + 60_001)).toBeNull();
+    expect(read(now + 61_000)).toBeNull();
+
+    // Expiry is measured from the signed issuedAt exactly as before.
+    expect(read(now - ATTRIBUTION_TTL_SECONDS * 1000)).not.toBeNull();
+    expect(read(now - ATTRIBUTION_TTL_SECONDS * 1000 - 1)).toBeNull();
+    const skewed = now + 60_000;
+    expect(read(skewed, skewed + ATTRIBUTION_TTL_SECONDS * 1000)).not.toBeNull();
+    expect(read(skewed, skewed + ATTRIBUTION_TTL_SECONDS * 1000 + 1)).toBeNull();
+
+    // A forged future issuedAt cannot be produced without the key.
+    const genuine = encodeAttributionCookie({ clickId: "click-1", visitorId, issuedAt: now });
+    const [version, , signature] = genuine.split(".");
+    const forgedPayload = Buffer.from(JSON.stringify({ clickId: "click-1", visitorId, issuedAt: now + 30_000 })).toString("base64url");
+    expect(attributionCookieFromRequest(new Request("https://app.example.test/checkout", {
+      headers: { cookie: `celebratedeal_attribution=${version}.${forgedPayload}.${signature}` },
+    }), now)).toBeNull();
+  });
+
   it("attributes B's promotion to B while retaining A's content and webinar ownership", async () => {
     db.partnerFunnelPage.findFirst.mockResolvedValue({
       id: "page-b", teamId: "team-1", templateVersionId: "version-a", promoterMembershipId: "member-b", contentOwnerMembershipId: "member-a",

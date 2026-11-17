@@ -79,8 +79,23 @@ describe("signed live viewer pass", () => {
     expect(verifyLiveViewerPass(pass, scope)).toBeNull();
     vi.stubEnv("CSRF_SECRET", "live-viewer-pass-test-secret-longer-than-32-bytes");
 
-    // Issued "in the future" beyond the TTL window (clock skew or forgery).
-    expect(verifyLiveViewerPass(issue({ now: new Date(now.getTime() + 60_000) }), scope)).toBeNull();
+    // Issued "in the future" beyond the TTL window plus the 60-second clock-skew bound.
+    expect(verifyLiveViewerPass(issue({ now: new Date(now.getTime() + 61_000), sessionExpiresAt: new Date(now.getTime() + 60 * 60_000) }), scope)).toBeNull();
+  });
+
+  it("tolerates a reading clock up to 60 seconds behind the issuer, never a later expiry", () => {
+    const longSession = new Date(now.getTime() + 60 * 60_000);
+    for (const aheadMs of [1_000, 2_000, 60_000]) {
+      const issuedAt = new Date(now.getTime() + aheadMs);
+      const pass = issue({ now: issuedAt, sessionExpiresAt: longSession });
+      expect(verifyLiveViewerPass(pass, scope)?.expiresAt).toEqual(new Date(issuedAt.getTime() + LIVE_VIEWER_PASS_TTL_SECONDS * 1_000));
+    }
+    expect(verifyLiveViewerPass(issue({ now: new Date(now.getTime() + 61_000), sessionExpiresAt: longSession }), scope)).toBeNull();
+    // Expiry stays the signed one.
+    const pass = issue({ now: new Date(now.getTime() + 60_000), sessionExpiresAt: longSession });
+    const expiresAt = now.getTime() + 60_000 + LIVE_VIEWER_PASS_TTL_SECONDS * 1_000;
+    expect(verifyLiveViewerPass(pass, { ...scope, now: new Date(expiresAt - 1_000) })).not.toBeNull();
+    expect(verifyLiveViewerPass(pass, { ...scope, now: new Date(expiresAt) })).toBeNull();
   });
 
   it("refuses to issue a pass without a complete binding", () => {

@@ -6,6 +6,7 @@ import { LearnerNotificationChannel, LearnerNotificationScope, learnerNotificati
 import { LearnerNotificationMessage, finishLearnerNotification } from "./learner-notification-outbox";
 import { decryptSensitiveValue } from "./sensitive-data";
 import { sendLearnerNotificationProvider, type NotificationProviderConfiguration, type NotificationProviderResult } from "./learner-notification-providers";
+import { SERVER_CLOCK_SKEW_MS, SERVER_CLOCK_SKEW_SECONDS } from "./server-clock-skew";
 
 type Database = Pick<PrismaClient,"$transaction" | "commerceOrderItem" | "commerceOrder" | "learnerNotificationPreference" | "learnerNotificationDelivery">;
 type Sender = typeof sendLearnerNotificationProvider;
@@ -25,16 +26,26 @@ async function paymentSourceIsCurrent(tx: Pick<Prisma.TransactionClient, "$query
 }
 
 /** Current booking and project/course binding; encrypted confirmation
- * identifies the original authenticated buyer. Plain read, no row locks. */
+ * identifies the original authenticated buyer. Plain read, no row locks.
+ * `confirmedAt` was written by the confirming web instance; a dispatcher whose
+ * clock is up to SERVER_CLOCK_SKEW_MS behind must not suppress the reminder for
+ * good. The consent-before-confirmation order stays exact: confirmation already
+ * records confirmedAt no earlier than the consent it read.
+ * The "not more than an hour early" bound uses the database clock while the
+ * source became due an hour before start on an application clock; it gets the
+ * same skew allowance, so a database clock slightly behind cannot suppress the
+ * reminder for good. A reminder can go out at most 60 seconds earlier. */
 async function consultationReminderIsCurrent(tx:Pick<Prisma.TransactionClient,"$queryRaw">,scope:Scope,booking:Message["consultationBooking"],consentedAt:Date|null) {
- if(!booking || booking.customerKeyHash!==scope.customerKeyHash || !consentedAt || new Date(booking.confirmedAt)>new Date() || consentedAt>new Date(booking.confirmedAt))return false;
+ if(!booking || booking.customerKeyHash!==scope.customerKeyHash || !consentedAt)return false;
+ const confirmedAt=new Date(booking.confirmedAt);
+ if(confirmedAt.getTime()>Date.now()+SERVER_CLOCK_SKEW_MS || consentedAt>confirmedAt)return false;
  const active=await tx.$queryRaw<Array<{id:string}>>`SELECT b."id" FROM "ConsultationBooking" b
   JOIN "ConsultationEvent" e ON e."vendorId"=b."vendorId" AND e."id"=b."eventId"
   JOIN "SalesProject" s ON s."vendorId"=e."vendorId" AND s."id"=e."projectId"
   JOIN "SalesProjectProduct" p ON p."vendorId"=s."vendorId" AND p."projectId"=s."id"
   WHERE b."vendorId"=${scope.vendorId} AND b."id"=${booking.id} AND b."customerKeyHash"=${scope.customerKeyHash}
   AND b."status"='scheduled' AND b."startTime"=${new Date(booking.startTime)}
-  AND b."startTime">clock_timestamp() AND b."startTime"<=clock_timestamp()+INTERVAL '1 hour'
+  AND b."startTime">clock_timestamp() AND b."startTime"<=clock_timestamp()+INTERVAL '1 hour'+make_interval(secs=>${SERVER_CLOCK_SKEW_SECONDS}::double precision)
   AND e."isActive"=true AND s."status"='published' AND s."publishedAt" IS NOT NULL
   AND p."productId"=${scope.productId} LIMIT 1`;
  return active.length===1;

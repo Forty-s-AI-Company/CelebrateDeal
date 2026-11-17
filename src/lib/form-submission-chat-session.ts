@@ -1,4 +1,5 @@
 import { DERIVED_KEY_ROTATIONS, expiryFitsPreRotationIssue, signWithRotation, verifyWithRotation } from "@/lib/derived-key-rotation";
+import { SERVER_CLOCK_SKEW_SECONDS } from "@/lib/server-clock-skew";
 
 export const FORM_SUBMISSION_CHAT_SESSION_COOKIE = "celebratedeal_form_submission_chat_session";
 export const FORM_SUBMISSION_CHAT_SESSION_TTL_SECONDS = 30 * 24 * 60 * 60;
@@ -70,10 +71,12 @@ export function verifyFormSubmissionChatSessionToken(
 
   const expiresAtSeconds = Number(expiresAtRaw);
   const currentSeconds = nowSeconds(now);
+  // expiresAt - TTL is the issue time: tolerate SERVER_CLOCK_SKEW_SECONDS of
+  // "issued in the future" between instances, never a later expiry.
   if (
     !Number.isSafeInteger(expiresAtSeconds)
     || expiresAtSeconds <= currentSeconds
-    || expiresAtSeconds > currentSeconds + FORM_SUBMISSION_CHAT_SESSION_TTL_SECONDS
+    || expiresAtSeconds > currentSeconds + FORM_SUBMISSION_CHAT_SESSION_TTL_SECONDS + SERVER_CLOCK_SKEW_SECONDS
   ) return null;
 
   const value = signedValue(submissionId, expiresAtSeconds);

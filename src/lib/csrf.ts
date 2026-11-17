@@ -3,6 +3,7 @@ import { cookies, headers } from "next/headers";
 import { readSessionCookieToken } from "@/lib/session-cookie";
 import { CSRF_FIELD_NAME } from "@/lib/csrf-constants";
 import { deriveCsrfMacKey } from "@/lib/sensitive-data";
+import { SERVER_CLOCK_SKEW_MS } from "@/lib/server-clock-skew";
 
 export { CSRF_FIELD_NAME };
 
@@ -105,7 +106,7 @@ export async function verifyCsrfToken(token: string | null | undefined) {
   const [issuedAtValue, nonce, fingerprint, signature] = parts;
   if (!issuedAtValue || !nonce || !fingerprint || !signature) return false;
   const issuedAt = Number.parseInt(issuedAtValue, 10);
-  if (!Number.isFinite(issuedAt) || Date.now() - issuedAt > TOKEN_TTL_MS || issuedAt - Date.now() > 60_000) {
+  if (!Number.isFinite(issuedAt) || Date.now() - issuedAt > TOKEN_TTL_MS || issuedAt - Date.now() > SERVER_CLOCK_SKEW_MS) {
     return false;
   }
 
