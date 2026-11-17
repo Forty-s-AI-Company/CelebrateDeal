@@ -893,3 +893,16 @@ Current source inventory: 145 models and 99 forward migrations. Previous checkpo
 - 同一個 PR 的其他三項（快照損壞只重試一次就停止、`failed` 不撤回已排隊的信、無 Email 補跑在商家間輪流）沒有 schema 變更，只改應用層，見 `docs/product/delayed-steps-design.md` 第 8 節。
 - 不變式（應用層，獨立審查 MINOR-1）：延遲步驟的執行紀錄把動作清單快照存在 `AutomationExecutionLog.actionResults.actions`（JSON，不是欄位），續跑時以目前程式的動作 schema 解析。**動作 schema 的擴充需要兩段式部署**：先部署能接受新欄位的程式，再部署開始寫入新欄位的程式，兩者之間不回滾到更舊的版本；否則舊程式讀不懂新快照，那一步在重試一次後被停止（`cancelled / failed`）。
 - 目前 165 models、154 forward migrations；既有 SQL／checksum 不變。已在 loopback 拋棄式 PostgreSQL 16（`celebratedeal_test`）forward-apply。
+
+## 2026-11-17 延遲步驟 run 的補建標記（Q-13）
+
+- `20261117150000_automation_log_pending_delayed_step_run`：forward-only、純新增，排在 `20261117130000_form_submission_verified_email_index` 之後；交易層級 `lock_timeout = 5s`。
+  - `AutomationExecutionLog` 新增可為 null 的 `delayedStepsPendingSubjectId TEXT`（無 default，只改 metadata、不重寫表；既有列維持 null、不回填，所以 migration 之前的執行紀錄永遠不會被補建）。值是觸發事件的對象 id（`FormSubmission` 或 `ConsultationBooking` 的 id，不是 Email 或其他個資），沒有外鍵：補建時以 vendorId 綁定重讀對象，讀不到就清掉標記、不建 run。
+  - partial b-tree 索引 `AutomationExecutionLog_delayed_steps_pending_idx`：`ON "AutomationExecutionLog" ("completedAt") WHERE "delayedStepsPendingSubjectId" IS NOT NULL`，只收仍欠 run 的少數列。Prisma 6 不比對 partial index：schema 只留註解，`scripts/prisma-drift-allowlist.json` 的 `notComparedByPrismaDiff.partialIndexes` 登記名稱（`scripts/prisma-drift-check.test.mjs` 同步），`src/lib/prisma-unmanaged-indexes.db.test.ts` 鎖住完整定義。
+  - 鎖：ADD COLUMN 對 `AutomationExecutionLog` 取 ACCESS EXCLUSIVE（metadata，瞬間）；建索引不能用 `CONCURRENTLY`（Prisma 每個 migration 是一個交易），建立期間持 SHARE 鎖（讀取照常，新的執行紀錄要等建完，也就是自動化事件會等），時間是掃一次這張表；`lock_timeout = 5s` 讓它在等不到鎖時中止，不排在長交易後面。
+- 不變式（應用層，`src/lib/automation-workflow.ts`、`src/lib/automation-delayed-steps.ts`）：
+  - 寫入：`runAutomationEvent` 在規則有啟用中的延遲步驟、且事件本身能有 run（trigger 在 `DELAYED_STEP_AUTOMATION_TRIGGERS`、`subjectType = buyer_registration`、有 `subjectKeyHash`）時，把 `event.subjectId` 和執行紀錄的完成狀態（`completed` 或 `failed`）同一次 UPDATE 寫入。
+  - 清除：`startDelayedSteps` 每個確定的結果都以 `id + vendorId + 欄位非 null` 清掉標記：建立 run（`createMany skipDuplicates`）或確定不需要（規則停用、沒有啟用中的步驟）時在同一個交易內清；沒有授權、商家停權、對象不屬於這個商家或不存在時在交易外清。鎖等待放棄（`isLockWaitGivenUp`）或其他錯誤時交易 rollback，標記保留。規則被刪時執行紀錄 cascade，標記一起消失。
+  - 補建：`startPendingAutomationRuns`（Email job 每輪，序列補漏之後、worker 之前）只撈有標記、`status IN ('completed','failed')`、`completedAt` 在 2 分鐘到 48 小時前、trigger 可建 run、商家未停權且持有 `automation_delayed_steps` 的紀錄，每輪最多 50 筆、依商家輪流（`ROW_NUMBER() OVER (PARTITION BY vendorId)`）。每筆以紀錄本身的 `vendorId`、`ruleId`、`id`、`createdAt`（起點）、`trigger`、`subjectType`、`subjectKeyHash` 與標記的對象 id 呼叫同一個 `startDelayedSteps`，所以對象一樣以 `form: { vendorId }` 或 `vendorId` 綁定、規則一樣 `FOR SHARE` 且須啟用、第一步依當下步驟計算。job 不接受外部 id。冪等仍靠 unique `(vendorId, automationRuleId, sourceExecutionLogId)`。
+- 測試：`src/lib/automation-delayed-step-start-lock.db.test.ts`（另一個 `connection_limit` 1 的連線持有規則列 `FOR UPDATE`：事件前就持有時整個事件等待、run 正常建立；事件寫完執行紀錄後才持有且超過 2 秒時，事件約 2 秒後完成、沒有 run、紀錄留下標記與 warning 監控；補建只建一列、起點是事件時間、第一步依存檔後的延遲、worker 在事件後 180 分鐘執行；補建時仍被鎖住則保留標記、下一輪補上；兩個 job 與事件重送在不同連線同時跑仍只有一列；規則已停用或標記指向別的商家的報名時清掉標記、不建 run；規則事後才加步驟不回頭加入；無授權商家不處理；超過 48 小時不處理；商家間輪流）。
+- 目前 165 models、155 forward migrations；既有 SQL／checksum 不變。已在 loopback 拋棄式 PostgreSQL 16（`celebratedeal_test`，port 54382）forward-apply。

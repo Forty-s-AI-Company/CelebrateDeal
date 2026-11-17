@@ -10,7 +10,8 @@ import { getDb } from "@/lib/db";
  * active upline, one pending settlement adjustment, one open login email
  * change per user, one refund row per provider event of a payment, one payout
  * item per settlement) or keep buyer search and the consultation step's
- * verified-address lookup (Q-12) off full-table scans, so assert the
+ * verified-address lookup (Q-12) and the owed delayed-step runs (Q-13) off
+ * full-table scans, so assert the
  * complete definition (columns, method, operator class and predicate).
  */
 // pg_get_indexdef always schema-qualifies the table; the suite runs in public
@@ -18,6 +19,9 @@ import { getDb } from "@/lib/db";
 // by the same migrations.
 function expectedIndexDefinitions(schema: string): Record<string, string> {
   return {
+    // Q-13: execution logs that still owe a delayed-step run (startPendingAutomationRuns).
+    AutomationExecutionLog_delayed_steps_pending_idx:
+      `CREATE INDEX "AutomationExecutionLog_delayed_steps_pending_idx" ON ${schema}."AutomationExecutionLog" USING btree ("completedAt") WHERE ("delayedStepsPendingSubjectId" IS NOT NULL)`,
     ConsultationBooking_active_slot_key:
       `CREATE UNIQUE INDEX "ConsultationBooking_active_slot_key" ON ${schema}."ConsultationBooking" USING btree ("vendorId", "eventId", "startTime") WHERE (status = 'scheduled'::"ConsultationBookingStatus")`,
     FormSubmission_email_trgm_idx:

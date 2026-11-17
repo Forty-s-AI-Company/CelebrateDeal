@@ -10,7 +10,9 @@ import {
   AUTOMATION_REPLAY_VIDEO_SELECT,
   parseAutomationRule,
   automationStepEventId,
+  startDelayedSteps,
   type AutomationEvent,
+  type DelayedStepStartOutcome,
 } from "@/lib/automation-workflow";
 import {
   automationActionsSendLine,
@@ -548,6 +550,96 @@ export function runDelayedStepWorker(
   db: Database = getDb(),
 ) {
   return processDueDelayedStepRuns({ ...options, automation: AUTOMATION_RUN_PROCESSOR }, db);
+}
+
+/**
+ * Q-13: a run owed by an event is left to the job only after this long, so
+ * the event's own attempt (right after its immediate actions, waiting at most
+ * 2 s for the rule row) has long finished. Racing it would still be safe (the
+ * run's unique key), just wasted work.
+ */
+export const PENDING_RUN_START_MIN_AGE_MS = 2 * 60_000;
+/**
+ * Owed runs are created for events completed within this window, the same
+ * 48 hours as the e-mail sequence back-fill. A log still owing a run after it
+ * (the job stopped that long, or the creation keeps failing) is left as it is:
+ * steps more than 24 hours late are skipped anyway.
+ */
+export const PENDING_RUN_START_WINDOW_MS = 48 * 60 * 60_000;
+/** Owed runs created per job round, taken round-robin between vendors. */
+export const PENDING_RUN_START_LIMIT = 50;
+
+/**
+ * Q-13 (#601 review): creates the delayed-step runs events still owe — an
+ * event whose run could not be created right after its immediate actions,
+ * because a merchant save held the rule row past the 2 s lock timeout (or the
+ * process stopped). The event marked its execution log with the subject when
+ * it completed (`delayedStepsPendingSubjectId`), and only those logs are read
+ * here: a rule that got its first step after the event, or a vendor granted
+ * delayed steps later, never enrols past events.
+ *
+ * Each log goes through the same startDelayedSteps as the event: vendor grant
+ * and suspension, the subject bound to the vendor, the rule row FOR SHARE and
+ * still active, the first active step as saved now. The run is anchored at the
+ * log's createdAt (the event, not this round), so a step already due runs in
+ * this round's worker and one more than 24 hours late is skipped as usual.
+ * Idempotent on (vendorId, automationRuleId, sourceExecutionLogId). A lock wait
+ * given up again leaves the log for the next round.
+ *
+ * The job takes no id from outside: every id comes from the log row and
+ * startDelayedSteps binds them to the log's vendor. Logs of suspended vendors
+ * or vendors without the grant are not taken (and keep their mark).
+ */
+export async function startPendingAutomationRuns(
+  options: { now?: Date; vendorId?: string; deadline?: number; limit?: number } = {},
+  db: Database = getDb(),
+): Promise<Array<{ status: DelayedStepStartOutcome }>> {
+  const now = options.now ?? new Date();
+  const pastDeadline = () => options.deadline !== undefined && Date.now() >= options.deadline;
+  const limit = Math.max(0, Math.min(options.limit ?? PENDING_RUN_START_LIMIT, PENDING_RUN_START_LIMIT));
+  if (limit === 0 || pastDeadline()) return [];
+  const triggers = [...DELAYED_STEP_AUTOMATION_TRIGGERS] as string[];
+  const rows = await db.$queryRaw<Array<{
+    id: string; vendorId: string; ruleId: string; trigger: string; subjectType: string;
+    subjectKeyHash: string | null; delayedStepsPendingSubjectId: string; createdAt: Date;
+  }>>`
+    WITH "owed" AS (
+      SELECT l."id", l."vendorId", l."ruleId", l."trigger", l."subjectType", l."subjectKeyHash",
+             l."delayedStepsPendingSubjectId", l."createdAt", l."completedAt",
+             ROW_NUMBER() OVER (PARTITION BY l."vendorId" ORDER BY l."completedAt" ASC, l."id" ASC) AS "vendorRank"
+      FROM "AutomationExecutionLog" l
+      JOIN "Vendor" v ON v."id" = l."vendorId"
+      WHERE l."delayedStepsPendingSubjectId" IS NOT NULL
+        AND l."completedAt" >= ${utcTimestamp(new Date(now.getTime() - PENDING_RUN_START_WINDOW_MS))}
+        AND l."completedAt" <= ${utcTimestamp(new Date(now.getTime() - PENDING_RUN_START_MIN_AGE_MS))}
+        AND l."status" IN ('completed', 'failed')
+        AND l."trigger" = ANY(${triggers}::text[])
+        AND v."suspendedAt" IS NULL
+        AND ${AUTOMATION_DELAYED_STEPS_FEATURE} = ANY(v."betaFeatureGrants")
+        ${options.vendorId ? Prisma.sql`AND l."vendorId" = ${options.vendorId}` : Prisma.empty}
+    )
+    SELECT "id", "vendorId", "ruleId", "trigger", "subjectType", "subjectKeyHash", "delayedStepsPendingSubjectId", "createdAt"
+    FROM "owed"
+    WHERE "vendorRank" <= ${limit}
+    ORDER BY "vendorRank" ASC, "completedAt" ASC, "id" ASC
+    LIMIT ${limit}
+  `;
+  const results: Array<{ status: DelayedStepStartOutcome }> = [];
+  for (const row of rows) {
+    if (pastDeadline()) break;
+    const status = await startDelayedSteps(db, {
+      vendorId: row.vendorId,
+      ruleId: row.ruleId,
+      logId: row.id,
+      anchorAt: row.createdAt,
+      trigger: row.trigger,
+      subjectType: row.subjectType,
+      subjectId: row.delayedStepsPendingSubjectId,
+      subjectKeyHash: row.subjectKeyHash,
+    });
+    results.push({ status });
+  }
+  return results;
 }
 
 /**

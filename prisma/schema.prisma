@@ -4073,6 +4073,9 @@ model AutomationExecutionLog {
   startedAt        DateTime  @default(now())
   completedAt      DateTime?
   createdAt        DateTime  @default(now())
+  /// Q-13：這個事件的延遲步驟 run 還沒建立時，記下對象（報名或預約）的 id；建立或確定不需要後清成 null。
+  /// job 以它補建被商家存檔鎖住而沒建成的 run（startPendingAutomationRuns）。
+  delayedStepsPendingSubjectId String?
 
   vendor                 Vendor                   @relation(fields: [vendorId], references: [id], onDelete: Cascade)
   rule                   AutomationRule           @relation(fields: [vendorId, ruleId], references: [vendorId, id], onDelete: Cascade)
@@ -4087,6 +4090,9 @@ model AutomationExecutionLog {
   @@index([vendorId, eventId])
   @@index([vendorId, status, startedAt])
   @@index([vendorId, liveId, subjectType, trigger])
+  // Q-13: partial index "AutomationExecutionLog_delayed_steps_pending_idx"
+  // ON ("completedAt") WHERE "delayedStepsPendingSubjectId" IS NOT NULL lives in
+  // the migration only (Prisma 6 cannot express it; prisma-unmanaged-indexes.db.test.ts).
 }
 
 model CustomerTagAssignment {

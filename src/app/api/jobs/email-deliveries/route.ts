@@ -20,7 +20,7 @@ import {
   EMAIL_SEQUENCE_START_CUTOFF_MS,
   onceConfigurationReporter,
 } from "@/lib/delayed-step-runs";
-import { runDelayedStepWorker } from "@/lib/automation-delayed-steps";
+import { runDelayedStepWorker, startPendingAutomationRuns } from "@/lib/automation-delayed-steps";
 import { formNoShowDeadline, runFormNoShowAutomation, type FormNoShowSummary } from "@/lib/form-no-show-automation";
 
 const SAFE_STATUSES = new Set([
@@ -151,18 +151,26 @@ async function processEmailSequences(startedAt: number) {
     } catch {
       // Monitoring must never change the job outcome.
     }
-    return { skipped: true, enrolled: 0, steps: [] as Array<{ status: string }>, dispatched: [] as Array<{ status: string }> };
+    return { skipped: true, enrolled: 0, automationRunsStarted: 0, steps: [] as Array<{ status: string }>, dispatched: [] as Array<{ status: string }> };
   }
   const deadline = startedAt + EMAIL_SEQUENCE_DEADLINE_MS;
   // One configuration report per round, whichever part meets the problem first.
   const onConfigurationError = onceConfigurationReporter();
   let enrollments: Array<{ status: string }> = [];
+  let pendingRuns: Array<{ status: string }> = [];
   let steps: Array<{ status: string }> = [];
   let dispatched: Array<{ status: string }> = [];
   try {
     enrollments = await backfillEmailSequenceEnrollments({ deadline, onConfigurationError });
   } catch (error) {
     await reportSequenceFailure(error, "email_sequence_backfill");
+  }
+  try {
+    // Q-13: delayed-step runs events still owe (the rule row was held by a
+    // merchant save), before the worker so a step already due runs this round.
+    pendingRuns = await startPendingAutomationRuns({ deadline });
+  } catch (error) {
+    await reportSequenceFailure(error, "automation_pending_runs");
   }
   try {
     // Sequence and automation runs (F-4) in one worker round.
@@ -178,6 +186,7 @@ async function processEmailSequences(startedAt: number) {
   return {
     skipped: false,
     enrolled: enrollments.filter((result) => result.status === "enrolled").length,
+    automationRunsStarted: pendingRuns.filter((result) => result.status === "started").length,
     steps,
     dispatched,
   };
@@ -289,6 +298,7 @@ async function processEmailDeliveries() {
       })),
       sequenceSkipped: sequences.skipped,
       sequenceEnrollments: safeCount(sequences.enrolled),
+      automationPendingRunsStarted: safeCount(sequences.automationRunsStarted),
       sequenceSteps: sequences.steps.length,
       sequenceStepResults: sequences.steps.slice(0, 20).map((result) => ({
         status: SAFE_SEQUENCE_STEP_STATUSES.has(result.status) ? result.status : "unknown",

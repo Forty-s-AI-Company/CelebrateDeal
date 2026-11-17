@@ -387,7 +387,7 @@ describe("觸發：事件發生時建立 run", () => {
     const other = await booking(t);
     vi.spyOn(db, "$transaction").mockRejectedValueOnce(new Error("synthetic run write failure"));
     await expect(booked(t, other)).resolves.toEqual([{ ruleId: r.id, status: "completed" }]);
-    expect(monitoring.captureOperationalError).toHaveBeenCalledWith(expect.any(Error), expect.objectContaining({ area: "automation_delayed_steps", operation: "start_run" }));
+    expect(monitoring.captureOperationalError).toHaveBeenCalledWith(expect.any(Error), { source: "automation_delayed_steps", operation: "start_run" }, undefined);
     await expect(db.delayedStepRun.count({ where: { vendorId: t.vendor.id, consultationBookingId: other.id } })).resolves.toBe(0);
   });
 
