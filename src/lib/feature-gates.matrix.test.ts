@@ -317,6 +317,12 @@ const STATIC_MATRIX: Array<{ feature: string; file: string; gate: RegExp; count?
   // automation_form_no_show (Q-11 M-1) in the Q-13 catch-up (review NIT-3): a form_no_show log is only taken while the
   // vendor also holds this grant (the same rule as isAutomationTriggerAvailableForVendor, which re-checks each row).
   { feature: "automation_form_no_show", file: "src/lib/automation-delayed-steps.ts", gate: /l\."trigger" <> 'form_no_show' OR \$\{AUTOMATION_FORM_NO_SHOW_FEATURE\} = ANY\(v\."betaFeatureGrants"\)/u },
+  // automation_watch_progress (Q-11 viewer_watch_progress): the per-trigger grant map behind
+  // isAutomationTriggerAvailableForVendor (page, Server Actions, worker), the job's vendor scan, and the Q-13
+  // catch-up of owed runs. Driven in watch-progress-automation.db.test.ts and automation-workflow.test.ts.
+  { feature: "automation_watch_progress", file: "src/lib/automation-workflow.ts", gate: /viewer_watch_progress: AUTOMATION_WATCH_PROGRESS_FEATURE,/u },
+  { feature: "automation_watch_progress", file: "src/lib/watch-progress-automation.ts", gate: /betaFeatureGrants: \{ has: AUTOMATION_WATCH_PROGRESS_FEATURE \}/u },
+  { feature: "automation_watch_progress", file: "src/lib/automation-delayed-steps.ts", gate: /l\."trigger" <> 'viewer_watch_progress' OR \$\{AUTOMATION_WATCH_PROGRESS_FEATURE\} = ANY\(v\."betaFeatureGrants"\)/u },
 ];
 
 describe("static gate inventory (F-001 / F-002)", () => {

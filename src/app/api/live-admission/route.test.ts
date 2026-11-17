@@ -236,14 +236,43 @@ describe("POST /api/live-admission", () => {
   describe("registration attendance (Q-11 form_no_show)", () => {
     const registrationCookie = () => `${FORM_SUBMISSION_CHAT_SESSION_COOKIE}=${createFormSubmissionChatSessionToken({ submissionId: "submission-1" })}`;
 
+    const statements = () => (db.$queryRaw.mock.calls as unknown as Array<[TemplateStringsArray, ...unknown[]]>)
+      .map(([sql, ...values]) => ({ sql: sql.join("?"), values }));
+
     it("records the signed registration of an admitted viewer, bound to the admitted Live and vendor", async () => {
       const response = await POST(request("POST", undefined, registrationCookie()));
       expect(response.status).toBe(200);
-      expect(db.$queryRaw).toHaveBeenCalledOnce();
-      const [sql, ...values] = db.$queryRaw.mock.calls[0] as unknown as [TemplateStringsArray, ...unknown[]];
-      expect(sql.join("?")).toContain('INSERT INTO "LiveRegistrationAttendance"');
-      expect(sql.join("?")).toContain(`submission."verificationStatus" = 'VERIFIED'`);
-      expect(values).toEqual(expect.arrayContaining(["vendor-1", "live-1", "submission-1"]));
+      const attendance = statements().filter((statement) => statement.sql.includes('INSERT INTO "LiveRegistrationAttendance"'));
+      expect(attendance).toHaveLength(1);
+      expect(attendance[0]!.sql).toContain(`submission."verificationStatus" = 'VERIFIED'`);
+      expect(attendance[0]!.values).toEqual(expect.arrayContaining(["vendor-1", "live-1", "submission-1"]));
+    });
+
+    it("credits watch time of the same registration only while the viewer's own session plays (Q-11 viewer_watch_progress)", async () => {
+      // The fixture Live is a real live stream that is live: the session plays.
+      expect((await POST(request("POST", undefined, registrationCookie()))).status).toBe(200);
+      const credited = statements().filter((statement) => statement.sql.includes('INSERT INTO "LiveWatchProgress"'));
+      expect(credited).toHaveLength(1);
+      expect(credited[0]!.sql).toContain(`submission."verificationStatus" = 'VERIFIED'`);
+      expect(credited[0]!.sql).toContain(`form."vendorId" = `);
+      // Only server values: the admitted vendor and Live, and the signed cookie's registration. No body field is read.
+      expect(credited[0]!.values).toEqual(expect.arrayContaining(["vendor-1", "live-1", "submission-1"]));
+
+      // The same Live after it ended, admitted to its replay: attendance only, no watch time.
+      db.$queryRaw.mockClear();
+      const ended = { ...runtimeReadyContent, status: "ended", endedAt: new Date(Date.now() - 60_000) };
+      db.live.findFirst.mockResolvedValue({ id: "live-1", vendorId: "vendor-1", ...ended });
+      tx.live.findFirst.mockResolvedValue({ id: "live-1", vendorId: "vendor-1", quotaPolicy: { version: 1, affiliateMode: "enabled", maxConcurrentViewers: 2, stopWhenCreditsBelow: 100 }, ...ended });
+      expect((await POST(request("POST", undefined, registrationCookie()))).status).toBe(200);
+      expect(statements().some((statement) => statement.sql.includes('INSERT INTO "LiveRegistrationAttendance"'))).toBe(true);
+      expect(statements().some((statement) => statement.sql.includes("LiveWatchProgress"))).toBe(false);
+    });
+
+    it("does not let a body field choose the registration or add seconds", async () => {
+      const response = await POST(request("POST", { vendorId: "vendor-1", liveId: "live-1", watchedSeconds: 99_999, formSubmissionId: "submission-2" } as never, registrationCookie()));
+      // The strict payload refuses unknown fields before anything is written.
+      expect(response.status).toBe(400);
+      expect(db.$queryRaw).not.toHaveBeenCalled();
     });
 
     it("records nothing without a validly signed registration cookie or when admission is refused", async () => {
@@ -255,7 +284,7 @@ describe("POST /api/live-admission", () => {
     });
 
     it("answers the admission unchanged when recording fails", async () => {
-      db.$queryRaw.mockRejectedValueOnce(new Error("attendance-private-detail"));
+      db.$queryRaw.mockRejectedValue(new Error("attendance-private-detail"));
       const response = await POST(request("POST", undefined, registrationCookie()));
       expect(response.status).toBe(200);
       await expect(response.json()).resolves.toEqual({ ok: true });

@@ -52,9 +52,16 @@ export async function POST(request: Request) {
       evergreenToken: evergreenSessionTokenFromRequest(request, payload.liveId),
       registrationToken: registrationSessionTokenFromRequest(request),
     });
-    // Q-11: a granted admission is the proof a registrant watched (form_no_show).
-    // Never throws and never changes this response.
-    await recordAttendanceForAdmission({ request, vendorId: payload.vendorId, liveId: payload.liveId });
+    // Q-11: a granted admission is the proof a registrant watched (form_no_show),
+    // and while the viewer's own session plays (not the replay) each renewal
+    // credits the registration's server-counted watch time
+    // (viewer_watch_progress). Never throws and never changes this response.
+    await recordAttendanceForAdmission({
+      request,
+      vendorId: payload.vendorId,
+      liveId: payload.liveId,
+      creditWatchTime: result.runtimeState === "playing",
+    });
     const response = NextResponse.json({ ok: true });
     response.cookies.set("celebratedeal_live_viewer", result.token, liveViewerCookieOptions(request));
     // Renewed with every admission: read polls verify this signature instead

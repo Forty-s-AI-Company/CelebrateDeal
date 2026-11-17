@@ -3,6 +3,7 @@ import type { Prisma } from "@prisma/client";
 import { getDb } from "@/lib/db";
 import { registrationSubmissionIdFromRequest } from "@/lib/evergreen-session-assignment";
 import { liveAttendanceSubmissionIdFromRequest } from "@/lib/live-attendance-cookie";
+import { creditLiveWatchProgress } from "@/lib/live-watch-progress";
 import { captureOperationalError } from "@/lib/monitoring";
 
 /**
@@ -119,38 +120,56 @@ export async function recordLiveRegistrationAttendance(
   return rows.length === 1 ? "recorded" : "unchanged";
 }
 
+function reportFailure(error: unknown, operation: "record" | "watch_progress") {
+  try {
+    captureOperationalError(error, { source: "live_registration_attendance", operation, status: "failed" });
+  } catch {
+    // Monitoring cannot change the response.
+  }
+}
+
 /**
  * Best-effort recording for /api/live-admission after it granted an
  * admission. It never throws: a failure is reported and the admission answers
  * exactly as it would without this table (that registrant may then count as
  * not having watched, which only affects the no-show automation).
+ *
+ * `creditWatchTime` (Q-11 viewer_watch_progress): the admission was granted
+ * while the viewer's own session is playing (not its replay). The same
+ * registration then also gets its watch time credited
+ * (creditLiveWatchProgress), chosen from the same verified cookies; that write
+ * is independent of the attendance write and just as best-effort.
  */
 export async function recordAttendanceForAdmission(input: {
   request: Request;
   vendorId: string;
   liveId: string;
+  creditWatchTime?: boolean;
   now?: Date;
 }): Promise<LiveRegistrationAttendanceResult> {
+  let ids: { formSubmissionId: string; fallbackFormSubmissionId: string | null } | null;
+  const now = input.now ?? new Date();
   try {
-    const now = input.now ?? new Date();
     const registrationId = registrationSubmissionIdFromRequest(input.request, now);
     const attendanceId = liveAttendanceSubmissionIdFromRequest(input.request, { vendorId: input.vendorId, liveId: input.liveId, now });
     const preferred = registrationId ?? attendanceId;
-    // Neither cookie: an anonymous viewer never touches this table.
-    if (!preferred) return "skipped";
-    return await recordLiveRegistrationAttendance({
-      vendorId: input.vendorId,
-      liveId: input.liveId,
-      formSubmissionId: preferred,
-      fallbackFormSubmissionId: registrationId ? attendanceId : null,
-      now,
-    });
+    ids = preferred ? { formSubmissionId: preferred, fallbackFormSubmissionId: registrationId ? attendanceId : null } : null;
   } catch (error) {
-    try {
-      captureOperationalError(error, { source: "live_registration_attendance", operation: "record", status: "failed" });
-    } catch {
-      // Monitoring cannot change the response.
-    }
+    reportFailure(error, "record");
     return "skipped";
   }
+  // Neither cookie: an anonymous viewer never touches these tables.
+  if (!ids) return "skipped";
+  const target = { vendorId: input.vendorId, liveId: input.liveId, ...ids, now };
+  // One after the other: the admission never holds two pool connections at once.
+  const attendance = await recordLiveRegistrationAttendance(target).catch((error: unknown) => {
+    reportFailure(error, "record");
+    return "skipped" as const;
+  });
+  if (input.creditWatchTime) {
+    await creditLiveWatchProgress(target).catch((error: unknown) => {
+      reportFailure(error, "watch_progress");
+    });
+  }
+  return attendance;
 }

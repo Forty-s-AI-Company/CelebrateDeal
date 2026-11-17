@@ -20,7 +20,7 @@ export type AutomationTrigger = typeof AUTOMATION_TRIGGERS[number];
 
 export const AUTOMATION_TRIGGER_LABELS: Record<AutomationTrigger, string> = {
   payment_paid: "訂單付款完成",
-  viewer_watch_progress: "觀看進度更新",
+  viewer_watch_progress: "觀看直播達到指定進度",
   webinar_attended_duration_gte: "觀看累積秒數達標",
   form_registered: "表單報名成功",
   consultation_booked: "諮詢預約成功",
@@ -43,7 +43,8 @@ export const AUTOMATION_EMAIL_TEMPLATE_LABELS: Record<AutomationEmailTemplate, s
  * Taken from what each trigger's event really supplies:
  * - `consultationUrl`: the two consultation triggers (the booking's meeting URL);
  * - `webinarUrl`: only `form_no_show`, and only while the replay is open;
- * - form_registered and payment_paid events carry no link at all;
+ * - form_registered, payment_paid and viewer_watch_progress (Q-11: the viewer
+ *   is, or just was, on the viewer page) events carry no link at all;
  * - `{{voucher_url}}` exists only when an `issue_repurchase_voucher` action runs
  *   in the same rule or the same delayed step (runRuleActions), so
  *   `repurchase_followup` is usable on any trigger, but only next to a voucher.

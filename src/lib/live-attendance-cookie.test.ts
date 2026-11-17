@@ -133,6 +133,8 @@ describe("attendance-only cookie (Q-17)", () => {
       "app/api/live-watch-link/route.db.test.ts",
       "app/api/live-watch-link/route.test.ts",
       "app/api/live-chat/private/route.test.ts",
+      // Q-11 viewer_watch_progress: a personal link's device shares the registrant's watch clock.
+      "lib/watch-progress-automation.db.test.ts",
       // The key registry and its tests name the purpose; they read no cookie.
       "lib/derived-key-purposes.ts",
       "lib/derived-key-rotation.test.ts",

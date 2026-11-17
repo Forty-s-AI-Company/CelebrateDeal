@@ -22,6 +22,7 @@ import {
 } from "@/lib/delayed-step-runs";
 import { runDelayedStepWorker, startPendingAutomationRuns } from "@/lib/automation-delayed-steps";
 import { formNoShowDeadline, runFormNoShowAutomation, type FormNoShowSummary } from "@/lib/form-no-show-automation";
+import { runWatchProgressAutomation, watchProgressDeadline, type WatchProgressSummary } from "@/lib/watch-progress-automation";
 
 const SAFE_STATUSES = new Set([
   "sent",
@@ -213,6 +214,27 @@ async function processFormNoShows(startedAt: number): Promise<FormNoShowSummary 
   }
 }
 
+/**
+ * Q-11 `viewer_watch_progress`: right after the no-show pass, before this
+ * round's dispatch sends the automation e-mails it queues. Bounded by its own
+ * deadline (ends by 45 s into the round), skipped once the round ran too
+ * long, and never changes the rest of the round.
+ */
+async function processWatchProgress(startedAt: number): Promise<WatchProgressSummary | null> {
+  const deadlineMs = watchProgressDeadline(Date.now() - startedAt);
+  if (deadlineMs === null) return null;
+  try {
+    return await runWatchProgressAutomation({ deadlineMs });
+  } catch (error) {
+    try {
+      captureOperationalError(error, { source: "email_delivery_job", operation: "watch_progress", status: "failed" });
+    } catch {
+      // Monitoring must never change the job outcome.
+    }
+    return null;
+  }
+}
+
 async function processEmailDeliveries() {
   const startedAt = Date.now();
   try {
@@ -247,6 +269,7 @@ async function processEmailDeliveries() {
       }
     }
     const formNoShow = await processFormNoShows(startedAt);
+    const watchProgress = await processWatchProgress(startedAt);
     const reconciliations = await processLiveReminderReconciliationJobs();
     const results = await processDueEmailDeliveries();
     const lineMaterialized = await materializeLineNotifications();
@@ -337,6 +360,13 @@ async function processEmailDeliveries() {
         completed: safeCount(formNoShow.completed),
         failed: safeCount(formNoShow.failed),
         errors: safeCount(formNoShow.errors),
+      } : null,
+      watchProgress: watchProgress ? {
+        candidates: safeCount(watchProgress.candidates),
+        examined: safeCount(watchProgress.examined),
+        completed: safeCount(watchProgress.completed),
+        failed: safeCount(watchProgress.failed),
+        errors: safeCount(watchProgress.errors),
       } : null,
     });
   } catch (error) {

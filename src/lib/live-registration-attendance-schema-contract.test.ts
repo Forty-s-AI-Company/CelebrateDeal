@@ -37,7 +37,8 @@ describe("live registration attendance schema contract (Q-11)", () => {
   it("allows the automation_form_no_show grant in its own migration, as a superset of every earlier grant (review M-1)", () => {
     const grant = fs.readFileSync("prisma/migrations/20261117110200_automation_form_no_show_grant/migration.sql", "utf8");
     expect(BETA_GATED_FEATURES).toContain("automation_form_no_show");
-    for (const feature of BETA_GATED_FEATURES) expect(grant).toContain(`'${feature}'`);
+    // Every grant that existed at Q-11 form_no_show; later grants rebuild the CHECK in their own migration (live-watch-progress-schema-contract.test.ts).
+    for (const feature of BETA_GATED_FEATURES.filter((value) => value !== "automation_watch_progress")) expect(grant).toContain(`'${feature}'`);
     expect(grant.match(/\bDROP CONSTRAINT\b/gu)).toEqual(["DROP CONSTRAINT"]);
     expect(grant).not.toMatch(/^\s*(UPDATE|DELETE|INSERT|CREATE)\b/mu);
     expect(grant).toMatch(/set_config\('lock_timeout', '5s', true\)/u);

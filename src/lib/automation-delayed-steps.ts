@@ -2,6 +2,8 @@ import { Prisma, type PrismaClient } from "@prisma/client";
 import {
   AUTOMATION_DELAYED_STEPS_FEATURE,
   AUTOMATION_FORM_NO_SHOW_FEATURE,
+  AUTOMATION_WATCH_PROGRESS_FEATURE,
+  automationTriggerBetaFeature,
   DELAYED_STEP_AUTOMATION_TRIGGERS,
   automationActionsEmailTemplates,
   automationActionsEmailTemplatesUsable,
@@ -248,7 +250,9 @@ async function readSubject(
   run: { formSubmissionId: string | null; consultationBookingId: string | null; commerceOrderId: string | null; subjectKeyHash: string; anchorAt: Date },
   now: Date,
 ): Promise<AutomationSubject | typeof VENDOR_SUSPENDED | null> {
-  if (trigger === "form_registered") {
+  // Q-11 viewer_watch_progress: the registration that reached the threshold,
+  // read the same way (the threshold is never re-judged; it was reached once).
+  if (trigger === "form_registered" || trigger === "viewer_watch_progress") {
     if (!run.formSubmissionId) return null;
     const submission = await db.formSubmission.findFirst({
       where: { id: run.formSubmissionId, form: { vendorId } },
@@ -443,8 +447,9 @@ export async function processClaimedAutomationRun(
   // (AVAILABLE_AUTOMATION_TRIGGERS) or takes no delayed steps
   // (DELAYED_STEP_AUTOMATION_TRIGGERS), stops; switching it
   // on again does not revive the run (the same as a paused sequence).
-  // form_no_show also stops once the vendor's closed-beta grant is closed (Q-11 M-1).
-  const vendor = rule.trigger === "form_no_show"
+  // form_no_show and viewer_watch_progress also stop once the vendor's own
+  // closed-beta grant is closed (Q-11 M-1).
+  const vendor = automationTriggerBetaFeature(rule.trigger)
     ? await db.vendor.findUnique({ where: { id: lease.vendorId }, select: { betaFeatureGrants: true } })
     : null;
   if (!rule.isActive || !isAutomationTriggerAvailableForVendor(rule.trigger, vendor) || !automationTriggerSupportsDelayedSteps(rule.trigger)) {
@@ -806,6 +811,8 @@ export async function startPendingAutomationRuns(
         AND ${AUTOMATION_DELAYED_STEPS_FEATURE} = ANY(v."betaFeatureGrants")
         -- isAutomationTriggerAvailableForVendor: form_no_show needs its own grant (Q-11 M-1).
         AND (l."trigger" <> 'form_no_show' OR ${AUTOMATION_FORM_NO_SHOW_FEATURE} = ANY(v."betaFeatureGrants"))
+        -- ... and so does viewer_watch_progress (Q-11).
+        AND (l."trigger" <> 'viewer_watch_progress' OR ${AUTOMATION_WATCH_PROGRESS_FEATURE} = ANY(v."betaFeatureGrants"))
         ${options.vendorId ? Prisma.sql`AND l."vendorId" = ${options.vendorId}` : Prisma.empty}
     )
     SELECT "id", "vendorId", "ruleId", "trigger", "subjectType", "subjectKeyHash", "delayedStepsPendingSubjectId", "createdAt", "betaFeatureGrants"
@@ -924,8 +931,8 @@ async function withLockedRule(
       const rule = locked[0];
       if (!rule) throw new StepChangeRejected("not_found");
       if (input.requireAvailableTrigger) {
-        // form_no_show also needs the vendor's closed-beta grant (Q-11 M-1).
-        const vendor = rule.trigger === "form_no_show"
+        // form_no_show and viewer_watch_progress also need the vendor's own closed-beta grant (Q-11 M-1).
+        const vendor = automationTriggerBetaFeature(rule.trigger)
           ? await tx.vendor.findUnique({ where: { id: input.vendorId }, select: { betaFeatureGrants: true } })
           : null;
         if (!isAutomationTriggerAvailableForVendor(rule.trigger, vendor)) throw new StepChangeRejected("trigger_unavailable");

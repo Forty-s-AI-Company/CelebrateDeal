@@ -41,9 +41,11 @@ describe("AutomationSettingsPage", () => {
     ]);
     const html = await render();
     expect(html).toContain("觀看追單");
-    expect(html).toContain("觸發：觀看進度更新");
+    expect(html).toContain("觸發：觀看直播達到指定進度");
     expect(html).toContain("觸發：觀看累積秒數達標");
-    expect(html.match(/此觸發條件目前不會執行/gu)).toHaveLength(2);
+    // Q-11: viewer_watch_progress has a caller now, but this vendor has no grant for it.
+    expect(html).toContain("「觀看直播達到指定進度」目前是封測功能，尚未對你的商家開放，這條規則不會執行。");
+    expect(html.match(/此觸發條件目前不會執行/gu)).toHaveLength(1);
     expect(html.match(/目前不會執行<\/span>/gu)).toHaveLength(2);
     expect(html).toContain(">停用<");
     expect(html).not.toContain(">啟用<");
@@ -123,6 +125,43 @@ describe("AutomationSettingsPage", () => {
     // Review m-1: the fixed-session replay limit of the personal link.
     expect(recipe).toContain("指定場次直播在其他場次結束前，從個人連結觀看自己場次的回放不會記為出席。");
     expect(html).toContain("單一開播時間的直播只算開播前 14 天內完成驗證的報名者");
+  });
+
+  const watchGranted = (grants = ["automation_watch_progress"]) => mocks.manager.mockResolvedValue({ vendor: { id: "v1", betaFeatureGrants: grants }, user: { id: "u1" }, member: { role: "owner" } });
+
+  it("offers viewer_watch_progress with its percent thresholds and how progress is counted, only with its grant (Q-11)", async () => {
+    let html = await render();
+    expect(html).not.toContain('name="watchPercent"');
+    watchGranted();
+    html = await render();
+    const triggerSelect = html.match(/<select[^>]*name="trigger"[^>]*>([\s\S]*?)<\/select>/u)?.[1] ?? "";
+    expect([...triggerSelect.matchAll(/value="([^"]+)"/gu)].map((match) => match[1])).toEqual(["form_registered", "viewer_watch_progress", "consultation_booked", "consultation_no_show", "payment_paid"]);
+    expect(triggerSelect).toContain(">觀看直播達到指定進度<");
+    const percentSelect = html.match(/<select[^>]*name="watchPercent"[^>]*>([\s\S]*?)<\/select>/u)?.[1] ?? "";
+    expect([...percentSelect.matchAll(/value="([^"]+)"/gu)].map((match) => match[1])).toEqual(["25", "50", "75", "90"]);
+    expect(html).toContain("觀看進度＝已完成 Email 驗證的報名者，在自己的場次播放期間（不含回放）停留在觀看頁的時間，除以影片長度");
+    expect(html).toContain("每位報名者、每條規則一次");
+  });
+
+  it("lists a percentage rule as running with a percent dry-run, and a legacy seconds rule as not running (Q-11)", async () => {
+    watchGranted(["automation_watch_progress", "automation_delayed_steps"]);
+    mocks.rules.mockResolvedValue([
+      rule({ id: "watch-50", name: "看一半", trigger: "viewer_watch_progress", condition: { type: "watch_percent_gte", percent: 50 }, isActive: true, actions: [{ type: "add_customer_tag", tag: "看一半" }] }),
+      rule({ id: "watch-legacy", name: "舊觀看規則", trigger: "viewer_watch_progress", condition: { type: "watch_seconds_gte", seconds: 600 }, isActive: false, actions: [{ type: "add_customer_tag", tag: "舊" }] }),
+    ]);
+    const html = await render();
+    const running = html.match(/<article[^>]*aria-label="看一半"[\s\S]*?<\/article>/u)?.[0] ?? "";
+    const legacy = html.match(/<article[^>]*aria-label="舊觀看規則"[\s\S]*?<\/article>/u)?.[0] ?? "";
+    expect(running).toContain("條件：觀看進度達 50%");
+    expect(running).toContain("Dry-run 測試");
+    expect(running).toContain('name="watchPercent"');
+    expect(running).not.toContain("目前不會執行");
+    expect(running).toContain("新增延遲步驟");
+    expect(legacy).toContain("目前不會執行");
+    expect(legacy).toContain("這條規則用的是舊的「觀看秒數」條件，不會執行，也不能重新啟用。");
+    expect(legacy).not.toContain(">啟用<");
+    expect(legacy).not.toContain("Dry-run 測試");
+    expect(legacy).toContain("刪除規則");
   });
 
   it("explains a form_no_show rule of a vendor without the grant and only offers switching off and deleting", async () => {

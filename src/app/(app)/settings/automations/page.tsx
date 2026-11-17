@@ -20,10 +20,13 @@ import {
   AUTOMATION_DELAYED_STEPS_FEATURE,
   availableAutomationTriggersForVendor,
   FORM_NO_SHOW_DETECTION_NOTE,
+  WATCH_PROGRESS_DETECTION_NOTE,
+  WATCH_PROGRESS_PERCENT_OPTIONS,
   automationEmailTemplateAdvice,
   automationExecutionNotes,
   automationTriggerNeedsThreshold,
   automationTriggerSupportsDelayedSteps,
+  isAutomationRuleRunnableForVendor,
   isAutomationStepExecution,
   isAutomationTriggerAvailableForVendor,
   maskAutomationTarget,
@@ -48,6 +51,16 @@ import { formatTwd } from "@/lib/format";
 const PATH = "/settings/automations";
 /** A form_no_show rule of a vendor without the closed-beta grant (Q-11 review M-1). */
 const FORM_NO_SHOW_NOT_GRANTED_NOTE = "「報名後未出席直播」目前是封測功能，尚未對你的商家開放，這條規則不會執行。你可以停用或刪除它。";
+/** A viewer_watch_progress rule of a vendor without the closed-beta grant (Q-11). */
+const WATCH_PROGRESS_NOT_GRANTED_NOTE = "「觀看直播達到指定進度」目前是封測功能，尚未對你的商家開放，這條規則不會執行。你可以停用或刪除它。";
+/** A viewer_watch_progress rule saved with the old watch-seconds condition, before the trigger was connected (Q-11). */
+const WATCH_PROGRESS_LEGACY_CONDITION_NOTE = "這條規則用的是舊的「觀看秒數」條件，不會執行，也不能重新啟用。請刪除它，改用觀看進度百分比建立新規則。";
+/** What the create form says about viewer_watch_progress (Q-11). */
+const WATCH_PROGRESS_FORM_NOTE = "「觀看直播達到指定進度」在報名者的觀看進度達到門檻後約 5 分鐘內執行，每位報名者、每條規則一次（重新整理、換裝置都不會重複）；只對規則建立或啟用之後仍在觀看的人執行。";
+function notRunnableNote(rule: { trigger: string }, available: boolean) {
+  if (!available) return rule.trigger === "form_no_show" ? FORM_NO_SHOW_NOT_GRANTED_NOTE : rule.trigger === "viewer_watch_progress" ? WATCH_PROGRESS_NOT_GRANTED_NOTE : UNAVAILABLE_TRIGGER_NOTE;
+  return WATCH_PROGRESS_LEGACY_CONDITION_NOTE;
+}
 const ACTIONS: Record<string, string> = { line_push: "LINE 推播", send_email_notification: "Email 通知", add_customer_tag: "客戶打標", issue_repurchase_voucher: "派發回購券" };
 const ERROR_MESSAGES: Record<string, string> = {
   trigger_unavailable: "這個觸發條件目前不會執行，不能用來建立或啟用規則。",
@@ -66,6 +79,7 @@ const ERROR_MESSAGES: Record<string, string> = {
   invalid_product: "找不到這個商品，或商品已下架。",
   step_busy: "規則正在被其他人修改或執行，請稍後再試。",
   toggle_busy: "規則正在被其他人修改或執行，請稍後再試。",
+  condition_unsupported: "這條規則的條件是舊格式，不會執行，不能重新啟用。請刪除後重新建立。",
   [LINE_PUSH_OWNER_ONLY]: "LINE 推播與派券的 LINE 通知僅限擁有者設定。會發 LINE 訊息的規則，管理員只能停用、刪除規則或刪除步驟。",
 };
 /**
@@ -136,6 +150,7 @@ function conditionLabel(value: unknown) {
   const condition = value && typeof value === "object" ? value as Record<string, unknown> : {};
   if (condition.type === "always") return "事件發生時";
   if (condition.type === "order_amount_gte") return `訂單滿 ${formatTwd(Number(condition.amountCents ?? 0))}`;
+  if (condition.type === "watch_percent_gte") return `觀看進度達 ${condition.percent ?? "?"}%`;
   if (condition.type === "watch_seconds_gte_and_not_purchased") return `觀看滿 ${condition.seconds} 秒且尚未購買`;
   return `觀看滿 ${condition.seconds ?? "?"} 秒`;
 }
@@ -320,9 +335,11 @@ export default async function AutomationSettingsPage({ searchParams }: { searchP
   const triggers = availableAutomationTriggersForVendor(vendor);
   const recipes = AVAILABLE_AUTOMATION_RECIPES.filter((recipe) => isAutomationTriggerAvailableForVendor(recipe.trigger, vendor));
   const formNoShow = triggers.includes("form_no_show");
-  // The threshold field only matters for amount/watch triggers (today only
-  // payment_paid, F-4 PR 3).
-  const showThreshold = triggers.some((trigger) => automationTriggerNeedsThreshold(trigger));
+  // viewer_watch_progress is a closed beta too (Q-11): offered only with its grant.
+  const watchProgress = triggers.includes("viewer_watch_progress");
+  // The amount field only matters for payment_paid (F-4 PR 3); the watch
+  // percent has its own field below.
+  const showThreshold = triggers.some((trigger) => trigger !== "viewer_watch_progress" && automationTriggerNeedsThreshold(trigger));
   return <>
     <PageHeader title="自動化" description={linePushAllowed ? "把報名、直播、諮詢與訂單串成跨管道行銷流程。商家 owner 與管理員可以管理。" : `把報名、直播、諮詢與訂單串成跨管道行銷流程。商家 owner 與管理員可以管理；${LINE_PUSH_OWNER_ONLY_MESSAGE}`} />
     {params.updated ? <p role="status" className="mb-4 rounded-md bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{UPDATED_MESSAGES[params.updated] ?? "自動化規則已更新。"}</p> : null}
@@ -331,10 +348,12 @@ export default async function AutomationSettingsPage({ searchParams }: { searchP
 
     <Card className="mb-6"><h2 className="text-lg font-semibold text-slate-950">熱門劇本一鍵套用</h2><p className="mb-4 text-sm text-slate-600">需要派券的劇本請先選商品。</p><div className="grid gap-4 lg:grid-cols-2">{recipes.map((recipe) => <form action={createAutomationRecipeAction} key={recipe.id} className="grid gap-3 rounded-xl border border-border p-4"><CsrfField /><input type="hidden" name="recipeId" value={recipe.id} /><div><h3 className="font-semibold text-slate-900">{recipe.name}</h3><p className="mt-1 text-sm text-slate-600">{recipe.description}</p></div>{recipe.trigger === "form_no_show" ? <p className="rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-900">{FORM_NO_SHOW_DETECTION_NOTE}</p> : null}<p className="text-xs font-medium text-slate-500">{triggerLabel(recipe.trigger)} → {actionLabels(recipe.actions).join(" + ")}</p>{!linePushAllowed && automationActionsIncludeLinePush(recipe.actions) ? <p className="text-xs text-slate-600">這個劇本含 LINE 推播。{LINE_PUSH_OWNER_ONLY_MESSAGE}</p> : <>{!linePushAllowed && recipe.actions.some((action) => action.type === "issue_repurchase_voucher") ? <p className="text-xs text-slate-600">{VOUCHER_WITHOUT_LINE_NOTE}</p> : null}{recipe.actions.some((action) => action.type === "issue_repurchase_voucher") ? <SelectField label="套券商品" name="productId"><option value="">請選擇商品</option>{products.map((product) => <option key={product.id} value={product.id}>{product.name}</option>)}</SelectField> : null}<SubmitButton pendingChildren="套用中…">一鍵套用劇本</SubmitButton></>}</form>)}</div></Card>
 
-    <Card className="mb-6"><h2 className="mb-4 text-lg font-semibold text-slate-950">自訂規則</h2><form action={createAutomationRuleAction} className="grid gap-4" aria-label="建立自訂規則"><CsrfField /><div className="grid gap-4 md:grid-cols-2"><Field label="規則名稱" name="name" required maxLength={120} /><SelectField label="觸發事件" name="trigger" defaultValue={triggers[0]}>{triggers.map((value) => <option key={value} value={value}>{triggerLabel(value)}</option>)}</SelectField></div>{showThreshold ? <Field label="付款金額門檻（元；只用於「訂單付款完成」，其他觸發條件留空）" name="conditionValue" type="number" min={1} step={1} /> : null}<p className="text-sm text-slate-600">以下是事件發生時「立即執行」的動作{delayedSteps ? "；建立後可在規則下方加上延遲步驟（例如 1 天後再寄一封）" : ""}。「訂單付款完成」在付款確認後執行一次，金額以訂單實際付款金額判斷，Email 寄給訂單的買家。{formNoShow ? `「報名後未出席直播」在場次結束約 30 分鐘後，對已完成 Email 驗證、卻沒有用完成驗證的瀏覽器或個人觀看連結進入觀看（含回放）的報名者執行，每人每個場次一次，只對規則建立或啟用之後才結束的場次執行；單一開播時間的直播只算開播前 14 天內完成驗證的報名者。${FORM_NO_SHOW_DETECTION_NOTE}` : ""}</p><ActionFields products={products} linePushAllowed={linePushAllowed} trigger={triggers[0] ?? "form_registered"} triggerFieldName="trigger" /><SubmitButton pendingChildren="建立中…">建立規則</SubmitButton></form></Card>
+    <Card className="mb-6"><h2 className="mb-4 text-lg font-semibold text-slate-950">自訂規則</h2><form action={createAutomationRuleAction} className="grid gap-4" aria-label="建立自訂規則"><CsrfField /><div className="grid gap-4 md:grid-cols-2"><Field label="規則名稱" name="name" required maxLength={120} /><SelectField label="觸發事件" name="trigger" defaultValue={triggers[0]}>{triggers.map((value) => <option key={value} value={value}>{triggerLabel(value)}</option>)}</SelectField></div>{showThreshold ? <Field label="付款金額門檻（元；只用於「訂單付款完成」，其他觸發條件留空）" name="conditionValue" type="number" min={1} step={1} /> : null}{watchProgress ? <SelectField label="觀看進度門檻（只用於「觀看直播達到指定進度」）" name="watchPercent" defaultValue="50">{WATCH_PROGRESS_PERCENT_OPTIONS.map((percent) => <option key={percent} value={percent}>{percent}%</option>)}</SelectField> : null}<p className="text-sm text-slate-600">以下是事件發生時「立即執行」的動作{delayedSteps ? "；建立後可在規則下方加上延遲步驟（例如 1 天後再寄一封）" : ""}。「訂單付款完成」在付款確認後執行一次，金額以訂單實際付款金額判斷，Email 寄給訂單的買家。{formNoShow ? `「報名後未出席直播」在場次結束約 30 分鐘後，對已完成 Email 驗證、卻沒有用完成驗證的瀏覽器或個人觀看連結進入觀看（含回放）的報名者執行，每人每個場次一次，只對規則建立或啟用之後才結束的場次執行；單一開播時間的直播只算開播前 14 天內完成驗證的報名者。${FORM_NO_SHOW_DETECTION_NOTE}` : ""}{watchProgress ? `${WATCH_PROGRESS_FORM_NOTE}${WATCH_PROGRESS_DETECTION_NOTE}` : ""}</p><ActionFields products={products} linePushAllowed={linePushAllowed} trigger={triggers[0] ?? "form_registered"} triggerFieldName="trigger" /><SubmitButton pendingChildren="建立中…">建立規則</SubmitButton></form></Card>
 
     <Card className="mb-6"><h2 className="mb-4 text-lg font-semibold text-slate-950">規則</h2><div className="grid gap-4">{rules.length ? rules.map((rule) => {
       const available = isAutomationTriggerAvailableForVendor(rule.trigger, vendor);
+      // Q-11: an available viewer_watch_progress rule with the old watch-seconds condition still never runs.
+      const runnable = available && isAutomationRuleRunnableForVendor(rule, vendor);
       const hasHistory = rule._count.executionLogs > 0;
       // A rule that sends LINE (a custom LINE push or a voucher's LINE
       // notification, immediate or any step) is read-only for a non-owner
@@ -343,18 +362,19 @@ export default async function AutomationSettingsPage({ searchParams }: { searchP
       // The delayed-step section shows for a trigger that takes steps, or a hidden one (its steps can still be deleted).
       const stepsShown = delayedSteps && (automationTriggerSupportsDelayedSteps(rule.trigger) || !available);
       return <article key={rule.id} aria-label={rule.name} className="grid gap-3 rounded-xl border border-border p-4">
-        <div className="flex flex-wrap items-center justify-between gap-3"><div><h3 className="font-semibold text-slate-900">{rule.name}</h3><p className="text-xs text-slate-500">{rule.createdAt.toLocaleString("zh-TW")}</p></div><div className="flex flex-wrap gap-2">{available ? null : <Badge tone="gray">目前不會執行</Badge>}{linePushOwnerOnly ? <Badge tone="gray">僅限擁有者修改</Badge> : null}<Badge tone={rule.isActive ? "green" : "gray"}>{rule.isActive ? "啟用中" : "已停用"}</Badge></div></div>
+        <div className="flex flex-wrap items-center justify-between gap-3"><div><h3 className="font-semibold text-slate-900">{rule.name}</h3><p className="text-xs text-slate-500">{rule.createdAt.toLocaleString("zh-TW")}</p></div><div className="flex flex-wrap gap-2">{runnable ? null : <Badge tone="gray">目前不會執行</Badge>}{linePushOwnerOnly ? <Badge tone="gray">僅限擁有者修改</Badge> : null}<Badge tone={rule.isActive ? "green" : "gray"}>{rule.isActive ? "啟用中" : "已停用"}</Badge></div></div>
         <div className="flex flex-wrap items-center gap-2 text-sm"><span className="rounded-md bg-slate-100 px-3 py-2">觸發：{triggerLabel(rule.trigger)}</span><span>→</span><span className="rounded-md bg-amber-50 px-3 py-2">條件：{conditionLabel(rule.condition)}</span><span>→</span><span className="rounded-md bg-emerald-50 px-3 py-2">立即執行：{actionLabels(rule.actions).join(" + ")}</span></div>
-        {available ? null : <p className="rounded-md border border-border bg-slate-50 px-3 py-2 text-sm text-slate-700">{rule.trigger === "form_no_show" ? FORM_NO_SHOW_NOT_GRANTED_NOTE : UNAVAILABLE_TRIGGER_NOTE}</p>}
-        {available ? emailTemplateNotes(rule).map((note) => <p key={note} className="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-900">{note}</p>) : null}
+        {runnable ? null : <p className="rounded-md border border-border bg-slate-50 px-3 py-2 text-sm text-slate-700">{notRunnableNote(rule, available)}</p>}
+        {runnable ? emailTemplateNotes(rule).map((note) => <p key={note} className="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-900">{note}</p>) : null}
         {rule.trigger === "form_no_show" ? <p className="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-900">{FORM_NO_SHOW_DETECTION_NOTE}</p> : null}
+        {rule.trigger === "viewer_watch_progress" && runnable ? <p className="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-900">{WATCH_PROGRESS_DETECTION_NOTE}</p> : null}
         {linePushOwnerOnly ? <p className="rounded-md border border-border bg-slate-50 px-3 py-2 text-sm text-slate-700">{lineRuleNote({ stepsShown, rule })}</p> : null}
         {delayedSteps ? (stepsShown
-          ? <RuleSteps rule={rule} editable={available && !linePushOwnerOnly} linePushAllowed={linePushAllowed} products={products} counts={runCounts.get(rule.id)} />
+          ? <RuleSteps rule={rule} editable={runnable && !linePushOwnerOnly} linePushAllowed={linePushAllowed} products={products} counts={runCounts.get(rule.id)} />
           : <p className="rounded-md border border-border bg-slate-50 px-3 py-2 text-sm text-slate-700">{NO_DELAYED_STEPS_NOTE}</p>) : null}
         <div className="flex flex-wrap items-end gap-3">
-          {rule.isActive || (available && !linePushOwnerOnly) ? <form action={toggleAutomationRuleAction}><CsrfField /><input type="hidden" name="ruleId" value={rule.id} /><SubmitButton pendingChildren="更新中…">{rule.isActive ? "停用" : "啟用"}</SubmitButton></form> : null}
-          {available ? <form action={dryRunAutomationRuleAction} className="flex flex-wrap items-end gap-2"><CsrfField /><input type="hidden" name="ruleId" value={rule.id} /><Field label="模擬訂單（元）" name="orderAmount" type="number" min={0} defaultValue={30000} /><Field label="模擬觀看（秒）" name="watchSeconds" type="number" min={0} defaultValue={1800} /><label className="mb-2 flex items-center gap-2 text-xs"><input type="checkbox" name="hasPurchased" /> 已購買</label><SubmitButton pendingChildren="測試中…">Dry-run 測試</SubmitButton></form> : null}
+          {rule.isActive || (runnable && !linePushOwnerOnly) ? <form action={toggleAutomationRuleAction}><CsrfField /><input type="hidden" name="ruleId" value={rule.id} /><SubmitButton pendingChildren="更新中…">{rule.isActive ? "停用" : "啟用"}</SubmitButton></form> : null}
+          {runnable ? <form action={dryRunAutomationRuleAction} className="flex flex-wrap items-end gap-2"><CsrfField /><input type="hidden" name="ruleId" value={rule.id} /><Field label="模擬訂單（元）" name="orderAmount" type="number" min={0} defaultValue={30000} />{rule.trigger === "viewer_watch_progress" ? <Field label="模擬觀看進度（%）" name="watchPercent" type="number" min={0} max={100} defaultValue={50} /> : <Field label="模擬觀看（秒）" name="watchSeconds" type="number" min={0} defaultValue={1800} />}<label className="mb-2 flex items-center gap-2 text-xs"><input type="checkbox" name="hasPurchased" /> 已購買</label><SubmitButton pendingChildren="測試中…">Dry-run 測試</SubmitButton></form> : null}
           {!rule.isActive && !hasHistory ? <form action={deleteAutomationRuleAction}><CsrfField /><input type="hidden" name="ruleId" value={rule.id} /><ConfirmActionButton type="submit" message={`確定刪除規則「${rule.name}」？`} description="刪除後無法復原。" confirmLabel="刪除" destructive className="inline-flex min-h-11 cursor-pointer items-center rounded-md border border-red-200 bg-white px-4 text-sm font-semibold text-red-700 hover:bg-red-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500">刪除規則</ConfirmActionButton></form> : null}
         </div>
         {rule.isActive ? <p className="text-xs text-slate-500">停用後才能刪除。{delayedSteps ? "停用時，進行中的延遲步驟會立即停止，重新啟用也不會恢復。" : ""}</p> : hasHistory ? <p className="text-xs text-slate-500">已有執行紀錄，保留供查詢，只能停用、不能刪除。</p> : null}
