@@ -20,7 +20,7 @@ export default async function NewEmailSequencePage({
         title="新增追銷序列"
         description="選一場直播，排好報名者驗證 Email 之後每一封信的寄送時間。建立後是草稿，按「啟用」才會開始寄。"
       />
-      <EmailSequenceForm vendorId={vendor.id} initialDraft={{ name: "", liveId: preselected, steps: [] }} />
+      <EmailSequenceForm vendorId={vendor.id} initialDraft={{ name: "", liveId: preselected, stopOnPurchase: true, steps: [] }} />
     </>
   );
 }

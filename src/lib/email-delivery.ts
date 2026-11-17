@@ -51,7 +51,9 @@ import { ensureEmailUnsubscribeFooter, formatLiveStartAt } from "@/lib/email-del
 import {
   isCurrentAutomationStepEmailDelivery,
   isCurrentSequenceEmailDelivery,
+  isSequenceEmailStoppedByPurchase,
   SEQUENCE_EMAIL_DISPATCH_LIMIT,
+  SEQUENCE_PURCHASED_SUPERSEDED_CODE,
 } from "@/lib/delayed-step-runs";
 
 const DELIVERY_LEASE_MS = 10 * 60 * 1_000;
@@ -1380,7 +1382,7 @@ type ClaimedDelivery = {
   maxAttempts: number;
 };
 
-type DeliverySnapshotDatabase = Pick<Prisma.TransactionClient, "live" | "liveNotificationRule" | "formSubmission" | "blacklist" | "evergreenSessionAssignment" | "delayedStepRun" | "vendor" | "automationExecutionLog" | "automationRule">
+type DeliverySnapshotDatabase = Pick<Prisma.TransactionClient, "live" | "liveNotificationRule" | "formSubmission" | "blacklist" | "evergreenSessionAssignment" | "delayedStepRun" | "vendor" | "automationExecutionLog" | "automationRule" | "commerceOrder">
   & Partial<Pick<Prisma.TransactionClient, "studentPortalAccessToken">>;
 
 export type EmailDeliverySnapshotIdentity = Pick<
@@ -1779,6 +1781,9 @@ export async function dispatchEmailDelivery(deliveryId: string, actorLabel = "jo
   // cancellation notice is a service message: only a merchant-list
   // unsubscribe skips it, a bounce or complaint suppression still applies.
   if (suppression && !suppression.resubscribedAt && !isSuppressionExempt(delivery.trigger, suppression.reason)) return finalizeSuppressed(delivery);
+  // F-3 PR 2「買了就停」: asked before the general snapshot check (which applies
+  // the same rule) so the delivery log can say the recipient bought.
+  if (await isSequenceEmailStoppedByPurchase(delivery, db)) return finalizeSuperseded(delivery, SEQUENCE_PURCHASED_SUPERSEDED_CODE);
   if (!(await isCurrentEmailDeliverySnapshot(delivery, new Date()))) {
     return finalizeSuperseded(
       delivery,

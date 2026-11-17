@@ -111,7 +111,53 @@ export const DELAYED_STEP_CANCEL_REASONS = [
 ] as const;
 export type DelayedStepCancelReason = (typeof DELAYED_STEP_CANCEL_REASONS)[number];
 
+/**
+ * 「買了就停」(F-3 PR 2, docs/domain-workflows.md「Email 追銷序列」): order
+ * states that mean the order was paid. A refunded order still counts: the
+ * purchase happened, and a stopped run never resumes, so a refund that comes
+ * before the next check must not decide differently from one that comes after.
+ */
+export const SEQUENCE_PURCHASE_ORDER_STATUSES = ["paid", "partially_refunded", "refunded"] as const;
+
+/** `lastErrorCode` of a queued sequence e-mail superseded because its recipient bought (dispatchEmailDelivery). */
+export const SEQUENCE_PURCHASED_SUPERSEDED_CODE = "sequence_recipient_purchased";
+
 type Database = PrismaClient;
+
+type PurchaseCheckDatabase = Pick<Prisma.TransactionClient, "commerceOrder">;
+
+/**
+ * Whether this subject bought from this vendor after registering: a non-test
+ * CommerceOrder of the same vendor whose customer key (`automationCustomerKeyHash`,
+ * the same trim + lowercase key the run stores as `subjectKeyHash`) matches
+ * and that was paid at or after `since` (the registration's creation). Only
+ * this yes/no is read; no amount, product or buyer field is.
+ */
+export async function hasSubjectPurchasedSince(
+  db: PurchaseCheckDatabase,
+  input: { vendorId: string; subjectKeyHash: string; since: Date },
+) {
+  const order = await db.commerceOrder.findFirst({
+    where: {
+      vendorId: input.vendorId,
+      automationCustomerKeyHash: input.subjectKeyHash,
+      status: { in: [...SEQUENCE_PURCHASE_ORDER_STATUSES] },
+      isTestOrder: false,
+      paidAt: { not: null, gte: input.since },
+    },
+    select: { id: true },
+  });
+  return Boolean(order);
+}
+
+/**
+ * The run's customer key; a run written without one (none should be active)
+ * falls back to the registration's address. Throws when the key cannot be
+ * derived (a deployment problem).
+ */
+function purchaseSubjectKey(run: { vendorId: string; subjectKeyHash: string | null }, email: string) {
+  return run.subjectKeyHash ?? automationCustomerKeyHash(run.vendorId, email);
+}
 
 export const utcTimestamp = (value: Date) => Prisma.sql`(${value.toISOString()}::timestamptz AT TIME ZONE 'UTC')`;
 
@@ -604,6 +650,7 @@ async function processClaimedRun(db: Database, lease: Lease, now: Date): Promise
       id: true,
       vendorId: true,
       formSubmissionId: true,
+      subjectKeyHash: true,
       anchorAt: true,
       emailSequence: {
         select: {
@@ -613,6 +660,7 @@ async function processClaimedRun(db: Database, lease: Lease, now: Date): Promise
           status: true,
           version: true,
           activatedAt: true,
+          stopOnPurchase: true,
           steps: {
             where: { isActive: true, delayMinutes: { gt: lease.cursorDelayMinutes } },
             orderBy: { delayMinutes: "asc" },
@@ -653,6 +701,7 @@ async function processClaimedRun(db: Database, lease: Lease, now: Date): Promise
         id: true,
         name: true,
         email: true,
+        createdAt: true,
         liveSession: { select: { vendorId: true, liveId: true, startAt: true, status: true } },
       },
     }),
@@ -663,6 +712,26 @@ async function processClaimedRun(db: Database, lease: Lease, now: Date): Promise
   if (recipient.blocked) return cancelLeasedRun(db, lease, recipient.blocked);
 
   const [step, following] = sequence.steps;
+  // 「買了就停」(PR 2): checked whenever a step is left, before anything is
+  // queued. The stop commits under the same sequence version check as every
+  // other write, so switching the setting off at the same moment wins: the
+  // run is handed back and the next round reads the new setting.
+  if (step && sequence.stopOnPurchase && await hasSubjectPurchasedSince(db, {
+    vendorId: lease.vendorId,
+    subjectKeyHash: configured(() => purchaseSubjectKey(run, recipient.normalized)),
+    since: submission.createdAt,
+  })) {
+    const committed = await commitWithDefinition(db, lease, sequence, async (tx) => {
+      const stopped = await tx.delayedStepRun.updateMany({
+        where: leaseWhere(lease),
+        data: { status: "cancelled", cancelReason: "purchased", nextRunAt: null, claimedAt: null },
+      });
+      if (stopped.count !== 1) throw new LeaseLostError();
+    });
+    return committed === "committed"
+      ? { runId: lease.id, status: "cancelled", cancelReason: "purchased" }
+      : outcomeOf(lease, committed, "cancelled");
+  }
   if (!step) {
     return outcomeOf(lease, await commitWithDefinition(db, lease, sequence, async (tx) => {
       const completed = await tx.delayedStepRun.updateMany({
@@ -1332,15 +1401,79 @@ export async function isCurrentAutomationStepEmailDelivery(
   return Boolean(rule && run && run.status !== "cancelled");
 }
 
-type SequenceSnapshotDatabase = Pick<Prisma.TransactionClient, "delayedStepRun" | "blacklist" | "vendor">;
+type SequenceSnapshotDatabase = Pick<Prisma.TransactionClient, "delayedStepRun" | "blacklist" | "vendor" | "commerceOrder">;
+
+/**
+ * 「買了就停」at send time: the run is stopped for a purchase, or its sequence
+ * stops on purchase and the registrant has bought since registering. When the
+ * run has no stored key and none can be derived from the registration's
+ * address, there is nothing to compare: not counted as bought, and the other
+ * send-time checks decide (review NIT-1). Every active run stores its key, and
+ * the worker treats a key it cannot derive as a deployment problem.
+ */
+async function sequenceRunStoppedByPurchase(
+  database: PurchaseCheckDatabase,
+  vendorId: string,
+  run: {
+    vendorId: string;
+    subjectKeyHash: string | null;
+    cancelReason: string | null;
+    emailSequence: { stopOnPurchase: boolean } | null;
+    formSubmission: { email: string; createdAt: Date } | null;
+  },
+) {
+  if (run.cancelReason === "purchased") return true;
+  if (!run.emailSequence?.stopOnPurchase || !run.formSubmission) return false;
+  let subjectKeyHash: string;
+  try {
+    subjectKeyHash = purchaseSubjectKey(run, run.formSubmission.email);
+  } catch {
+    return false;
+  }
+  return hasSubjectPurchasedSince(database, { vendorId, subjectKeyHash, since: run.formSubmission.createdAt });
+}
+
+/**
+ * Whether a queued sequence e-mail is not sent because its recipient bought
+ * (「買了就停」). dispatchEmailDelivery asks this first so the delivery log can
+ * say why (SEQUENCE_PURCHASED_SUPERSEDED_CODE); isCurrentSequenceEmailDelivery
+ * applies the same rule on every path (the merchant retry included). Every
+ * read is bound to the delivery's vendor and registration.
+ */
+export async function isSequenceEmailStoppedByPurchase(
+  delivery: { vendorId: string; sourceFormSubmissionId: string | null; trigger: string; idempotencyKey?: string },
+  database: Pick<Prisma.TransactionClient, "delayedStepRun" | "commerceOrder">,
+) {
+  if (delivery.trigger !== SEQUENCE_EMAIL_TRIGGER || !delivery.sourceFormSubmissionId) return false;
+  const key = parseSequenceEmailIdempotencyKey(delivery.idempotencyKey);
+  if (!key) return false;
+  const run = await database.delayedStepRun.findFirst({
+    where: {
+      id: key.runId,
+      vendorId: delivery.vendorId,
+      formSubmissionId: delivery.sourceFormSubmissionId,
+      emailSequenceId: { not: null },
+    },
+    select: {
+      vendorId: true,
+      subjectKeyHash: true,
+      cancelReason: true,
+      emailSequence: { select: { stopOnPurchase: true } },
+      formSubmission: { select: { email: true, createdAt: true } },
+    },
+  });
+  return run ? sequenceRunStoppedByPurchase(database, delivery.vendorId, run) : false;
+}
 
 /**
  * Send-time guard for `sequence_email` (§4「寄信」): the run is still active or
  * completed, its sequence is active, the step is still active, the template is
  * still usable and its id and content still produce this delivery's id, the
  * recipient is not on the vendor's blacklist, the vendor still holds the
- * email_sequences grant (M2), and the e-mail was created less than 24 hours
- * ago (the worker's lateness rule, S1). Otherwise the delivery is superseded.
+ * email_sequences grant (M2), the e-mail was created less than 24 hours
+ * ago (the worker's lateness rule, S1), and, when the sequence stops on
+ * purchase, the registrant has not bought from this vendor since registering
+ * (PR 2). Otherwise the delivery is superseded.
  */
 export async function isCurrentSequenceEmailDelivery(
   delivery: {
@@ -1375,8 +1508,12 @@ export async function isCurrentSequenceEmailDelivery(
     },
     select: {
       id: true,
+      vendorId: true,
+      subjectKeyHash: true,
+      cancelReason: true,
       emailSequence: {
         select: {
+          stopOnPurchase: true,
           steps: {
             where: { vendorId: delivery.vendorId, isActive: true, ...(key ? { id: key.stepId } : {}) },
             select: {
@@ -1388,7 +1525,7 @@ export async function isCurrentSequenceEmailDelivery(
           },
         },
       },
-      formSubmission: { select: { email: true } },
+      formSubmission: { select: { email: true, createdAt: true } },
     },
   });
   const match = runs.find((run) => run.emailSequence?.steps.some((step) => (
@@ -1407,5 +1544,8 @@ export async function isCurrentSequenceEmailDelivery(
     where: { vendorId: delivery.vendorId, identifierType: "email", identifier: normalized, isActive: true, unblockedAt: null },
     select: { id: true },
   });
-  return !blacklisted;
+  if (blacklisted) return false;
+  // 「買了就停」: an e-mail queued before the purchase (also the last step's,
+  // whose run is already completed) is not sent after it.
+  return !await sequenceRunStoppedByPurchase(database, delivery.vendorId, match);
 }

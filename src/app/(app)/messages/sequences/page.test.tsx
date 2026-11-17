@@ -42,9 +42,9 @@ beforeEach(() => {
   mocks.sequenceCount.mockResolvedValue(1);
   mocks.liveFindFirst.mockResolvedValue(null);
   mocks.groupBy.mockResolvedValue([
-    { emailSequenceId: "seq-1", status: "active", _count: { _all: 4 } },
-    { emailSequenceId: "seq-1", status: "completed", _count: { _all: 2 } },
-    { emailSequenceId: "seq-1", status: "cancelled", _count: { _all: 1 } },
+    { emailSequenceId: "seq-1", status: "active", cancelReason: null, _count: { _all: 4 } },
+    { emailSequenceId: "seq-1", status: "completed", cancelReason: null, _count: { _all: 2 } },
+    { emailSequenceId: "seq-1", status: "cancelled", cancelReason: "unsubscribed", _count: { _all: 1 } },
   ]);
   mocks.sequenceFindMany.mockResolvedValue([
     {
@@ -52,10 +52,11 @@ beforeEach(() => {
       name: "報名後三天追銷",
       status: "active",
       version: 3,
+      stopOnPurchase: true,
       live: { id: "live-1", title: "春季直播" },
       steps: [{ delayMinutes: 60, isActive: true }, { delayMinutes: 1_440, isActive: true }, { delayMinutes: 4_320, isActive: false }],
     },
-    { id: "seq-2", name: "草稿序列", status: "draft", version: 1, live: { id: "live-1", title: "春季直播" }, steps: [] },
+    { id: "seq-2", name: "草稿序列", status: "draft", version: 1, stopOnPurchase: false, live: { id: "live-1", title: "春季直播" }, steps: [] },
   ]);
 });
 
@@ -84,6 +85,22 @@ describe("/messages/sequences", () => {
     expect(html).toContain("啟用");
     expect(html).toContain('name="expectedVersion" value="3"');
     expect(html).not.toMatch(/[\u{1F300}-\u{1FAFF}]/u);
+    // 「買了就停」per sequence; nobody stopped for a purchase yet, so no breakdown.
+    expect(html).toContain("買了就停：開啟");
+    expect(html).toContain("買了就停：關閉");
+    expect(html).not.toContain("因購買停止");
+  });
+
+  it("counts people stopped because they bought, as part of the stopped people", async () => {
+    mocks.groupBy.mockResolvedValueOnce([
+      { emailSequenceId: "seq-1", status: "active", cancelReason: null, _count: { _all: 4 } },
+      { emailSequenceId: "seq-1", status: "cancelled", cancelReason: "unsubscribed", _count: { _all: 1 } },
+      { emailSequenceId: "seq-1", status: "cancelled", cancelReason: "purchased", _count: { _all: 3 } },
+    ]);
+    const html = await render();
+    expect(mocks.groupBy).toHaveBeenCalledWith(expect.objectContaining({ by: ["emailSequenceId", "status", "cancelReason"] }));
+    expect(html).toContain("已停止</dt><dd class=\"font-semibold text-slate-950\">4 人");
+    expect(html).toContain("其中因購買停止 3 人");
   });
 
   it("filters by a Live of this vendor only and keeps the new-sequence link on it", async () => {

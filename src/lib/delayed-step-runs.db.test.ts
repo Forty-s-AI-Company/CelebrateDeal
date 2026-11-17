@@ -250,7 +250,7 @@ describe("加入序列", () => {
       [unusable.id, "cancelled", "subject_gone", null],
     ]));
     expect(runs.find((row) => row.formSubmissionId === unusable.id)).toMatchObject({ recipientHash: null, subjectKeyHash: null });
-    expect(await emailSequenceRunCounts(t.vendor.id)).toEqual(new Map([[seq.id, { active: 0, completed: 0, cancelled: 3 }]]));
+    expect(await emailSequenceRunCounts(t.vendor.id)).toEqual(new Map([[seq.id, { active: 0, completed: 0, cancelled: 3, purchased: 0 }]]));
 
     // Resubscribing or unblocking later does not bring them into the sequence.
     await db.emailSuppression.updateMany({ where: { vendorId: t.vendor.id }, data: { resubscribedAt: new Date() } });
@@ -293,7 +293,7 @@ describe("加入序列", () => {
     ]);
     // Neither is scanned again, and the duplicate is not counted as a person.
     await expect(backfillEmailSequenceEnrollments({ now: at(1_000), vendorId: t.vendor.id })).resolves.toEqual([]);
-    expect(await emailSequenceRunCounts(t.vendor.id)).toEqual(new Map([[seq.id, { active: 1, completed: 0, cancelled: 0 }]]));
+    expect(await emailSequenceRunCounts(t.vendor.id)).toEqual(new Map([[seq.id, { active: 1, completed: 0, cancelled: 0, purchased: 0 }]]));
     // The database itself refuses a second active place for the same recipient.
     const third = await submission(t);
     await expect(db.delayedStepRun.create({

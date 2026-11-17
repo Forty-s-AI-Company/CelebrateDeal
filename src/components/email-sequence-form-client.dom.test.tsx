@@ -35,7 +35,7 @@ function form(props: Partial<Parameters<typeof EmailSequenceFormClient>[0]> = {}
       csrfField={<input type="hidden" name="_csrf" value="synthetic" />}
       lives={lives}
       templates={templates}
-      initialDraft={{ name: "", liveId: "live-1", steps: [] }}
+      initialDraft={{ name: "", liveId: "live-1", stopOnPurchase: true, steps: [] }}
       {...props}
     />
   );
@@ -81,9 +81,13 @@ describe("EmailSequenceFormClient", () => {
     await act(async () => {
       root.render(form({
         sequence: { id: "seq-1", version: 7, status: "active", locked: true },
-        initialDraft: { name: "序列", liveId: "live-1", steps: [{ id: "step-1", delayValue: "1", delayUnit: "days", messageTemplateId: "template-1", isActive: true }] },
+        initialDraft: { name: "序列", liveId: "live-1", stopOnPurchase: false, steps: [{ id: "step-1", delayValue: "1", delayUnit: "days", messageTemplateId: "template-1", isActive: true }] },
       }));
     });
+    // 「買了就停」shows the saved setting and always sends the marker that it was shown.
+    expect(container.querySelector<HTMLInputElement>('input[name="stopOnPurchase"]')?.checked).toBe(false);
+    expect(container.querySelector<HTMLInputElement>('input[name="stopOnPurchaseShown"]')?.value).toBe("1");
+    expect(container.querySelector("#stop-on-purchase-hint")?.textContent).toBe("報名者報名後在你這裡買了任何商品（測試訂單不算），還沒寄出的信就不再寄，已排隊的那一封也會取消；之後退款也不會恢復寄送。");
     expect(container.querySelector<HTMLInputElement>('input[type="hidden"][name="liveId"]')?.value).toBe("live-1");
     expect(container.querySelector('select[name="liveId"]')).toBeNull();
     expect(container.querySelector<HTMLInputElement>('input[name="sequenceId"]')?.value).toBe("seq-1");

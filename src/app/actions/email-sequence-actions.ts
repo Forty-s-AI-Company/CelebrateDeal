@@ -95,6 +95,7 @@ export async function saveEmailSequenceAction(
     after: {
       version: result.version,
       liveId: parsed.data.liveId,
+      stopOnPurchase: parsed.data.stopOnPurchase,
       steps: parsed.data.steps.map((step) => ({ delayMinutes: step.delayMinutes, messageTemplateId: step.messageTemplateId, isActive: step.isActive })),
     },
   });

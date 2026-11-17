@@ -1118,7 +1118,7 @@ model EmailSequence {
   status         String    @default("draft")
   /// 最近一次啟用的時間；暫停後再啟用會更新，所以暫停期間驗證的人不會被補加入。
   activatedAt    DateTime?
-  /// 「買了就停」；PR 2 才讀這欄。
+  /// 「買了就停」（PR 2）：報名者在報名後於本商家付款（非測試單），之後的步驟不再寄；退款不恢復。
   stopOnPurchase Boolean   @default(true)
   /// 樂觀鎖：每次儲存、啟用、暫停都 +1。
   version        Int       @default(1)

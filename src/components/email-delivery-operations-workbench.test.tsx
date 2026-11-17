@@ -108,6 +108,28 @@ describe("EmailDeliveryOperationsWorkbench", () => {
     expect(html).not.toContain("寄送未完成，請稍後再查看狀態。");
   });
 
+  it("explains a sequence e-mail held back because the recipient bought (「買了就停」)", () => {
+    const item = {
+      id: "email_sequence_purchased",
+      recipientMaskedEmail: "p***@example.test",
+      status: "superseded",
+      trigger: "sequence_email",
+      attemptCount: 1,
+      maxAttempts: 5,
+      manualRetryCount: 0,
+      createdAtLabel: "2026/11/17 06:00",
+      sentAtLabel: null,
+      nextAttemptAtLabel: null,
+      lastManualRetryAtLabel: null,
+      lastErrorCode: "sequence_recipient_purchased",
+      canRetry: false,
+    };
+    hookState.actionState = { status: "success", message: "找到 1 筆寄送紀錄。", result: { ...trusted.result!, items: [item], totalItems: 1 } };
+    const html = renderToStaticMarkup(<EmailDeliveryOperationsWorkbench initialState={trusted} csrfField={null} />);
+    expect(html).toContain("追銷序列信");
+    expect(html).toContain("收件者報名後已在你這裡買了商品，這條序列開啟了「買了就停」，所以這封和剩下的追銷序列信都不會寄送。");
+  });
+
   it("announces pending state and renders independent suppression visibility", () => {
     hookState.pending = true;
     const html = renderToStaticMarkup(<EmailDeliveryOperationsWorkbench initialState={trusted} csrfField={null} />);

@@ -141,14 +141,21 @@ export async function saveEmailSequence(
     if (existing) {
       const updated = await tx.emailSequence.updateMany({
         where: { id: existing.id, vendorId: input.vendorId, version: existing.version },
-        data: { name: data.name, liveId: data.liveId, version: { increment: 1 } },
+        // The version bump also makes a worker that read the old 「買了就停」
+        // setting drop its result (commitWithDefinition) and re-read it.
+        data: {
+          name: data.name,
+          liveId: data.liveId,
+          ...(data.stopOnPurchase === undefined ? {} : { stopOnPurchase: data.stopOnPurchase }),
+          version: { increment: 1 },
+        },
       });
       if (updated.count !== 1) throw new ServiceFailure({ ok: false, code: "conflict" });
       sequenceId = existing.id;
       version = existing.version + 1;
     } else {
       const created = await tx.emailSequence.create({
-        data: { vendorId: input.vendorId, liveId: data.liveId, name: data.name, status: "draft" },
+        data: { vendorId: input.vendorId, liveId: data.liveId, name: data.name, stopOnPurchase: data.stopOnPurchase ?? true, status: "draft" },
         select: { id: true, version: true },
       });
       sequenceId = created.id;
@@ -283,12 +290,20 @@ export async function deleteEmailSequence(
   return deleted.count === 1 ? { ok: true } : { ok: false, code: "conflict" };
 }
 
-export type EmailSequenceRunCounts = { active: number; completed: number; cancelled: number };
+export type EmailSequenceRunCounts = {
+  active: number;
+  completed: number;
+  cancelled: number;
+  /** Part of `cancelled`: stopped because the registrant bought (「買了就停」). */
+  purchased: number;
+};
 
-/** 進行中／完成／停止 per sequence, for this vendor only; 停止 includes people who could not join (unsubscribed, blacklisted, unusable address). */
+export const EMPTY_EMAIL_SEQUENCE_RUN_COUNTS: EmailSequenceRunCounts = { active: 0, completed: 0, cancelled: 0, purchased: 0 };
+
+/** 進行中／完成／停止 per sequence, for this vendor only; 停止 includes people who could not join (unsubscribed, blacklisted, unusable address) and, counted apart too, people who bought. */
 export async function emailSequenceRunCounts(vendorId: string, db: PrismaClient = getDb()) {
   const rows = await db.delayedStepRun.groupBy({
-    by: ["emailSequenceId", "status"],
+    by: ["emailSequenceId", "status", "cancelReason"],
     // A duplicate registration of someone already in the sequence is not a person of its own.
     where: { vendorId, emailSequenceId: { not: null }, OR: [{ cancelReason: null }, { cancelReason: { not: "duplicate" } }] },
     _count: { _all: true },
@@ -296,8 +311,9 @@ export async function emailSequenceRunCounts(vendorId: string, db: PrismaClient 
   const counts = new Map<string, EmailSequenceRunCounts>();
   for (const row of rows) {
     if (!row.emailSequenceId) continue;
-    const entry = counts.get(row.emailSequenceId) ?? { active: 0, completed: 0, cancelled: 0 };
+    const entry = counts.get(row.emailSequenceId) ?? { ...EMPTY_EMAIL_SEQUENCE_RUN_COUNTS };
     if (row.status === "active" || row.status === "completed" || row.status === "cancelled") entry[row.status] += row._count._all;
+    if (row.status === "cancelled" && row.cancelReason === "purchased") entry.purchased += row._count._all;
     counts.set(row.emailSequenceId, entry);
   }
   return counts;
