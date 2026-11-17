@@ -77,6 +77,8 @@ const nextConfig: NextConfig = {
       // page loads nothing from other sites, so the token still never leaves.
       { source: "/live-session-switch", headers: [{ key: "Referrer-Policy", value: "same-origin" }] },
       { source: "/api/live-session-switch", headers: [{ key: "Referrer-Policy", value: "no-referrer" }] },
+      // Personal watch link (Q-17): its redirect's policy also governs the request it leads to.
+      { source: "/api/live-watch-link", headers: [{ key: "Referrer-Policy", value: "no-referrer" }] },
       {
         // Only the authenticated studio document may request capture permissions.
         source: "/lives/:id/presenter",

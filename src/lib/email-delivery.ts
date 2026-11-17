@@ -13,6 +13,7 @@ import {
 import { hasOnlySupportedMessageTemplateVariables, renderMessageTemplate } from "@/lib/message-template";
 import { createLiveViewerUrl } from "@/lib/live-public-url";
 import { createLiveSessionSwitchToken, createLiveSessionSwitchUrl, LIVE_SESSION_SWITCH_TTL_SECONDS } from "@/lib/live-session-switch-token";
+import { appendPersonalWatchLink, createLiveWatchLinkUrl } from "@/lib/live-watch-link-token";
 import {
   EVERGREEN_ACTIVATION_SELECT,
   evergreenScheduleForLive,
@@ -341,10 +342,21 @@ export async function ensureLiveReminderDelivery(
     vendor_name: input.vendorName,
     unsubscribe_url: unsubscribeUrl,
   };
+  // Q-17: each registrant's own watch link, so watching on another device
+  // than the one that confirmed the e-mail still counts as attendance.
+  const personalWatchUrl = createLiveWatchLinkUrl({
+    vendorId: input.vendorId,
+    liveId: input.liveId,
+    submissionId: input.formSubmissionId,
+    sessionStartAt: input.liveScheduledAt,
+  }, now);
   const protectedPayload = protectEmailDeliveryPayload({
     recipientEmail: input.recipientEmail,
     subject: renderMessageTemplate(template.subject, variables).replace(/\s+/gu, " ").trim(),
-    body: ensureEmailUnsubscribeFooter(renderMessageTemplate(template.body, variables), unsubscribeUrl),
+    body: ensureEmailUnsubscribeFooter(
+      appendPersonalWatchLink(renderMessageTemplate(template.body, variables), personalWatchUrl),
+      unsubscribeUrl,
+    ),
     brand: input.emailBrand,
   }, {
     vendorId: input.vendorId,

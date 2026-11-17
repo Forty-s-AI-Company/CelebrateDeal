@@ -14,6 +14,8 @@ vi.mock("@/lib/auth", () => {
 
 import { upsertTemplateAction } from "@/app/actions/webinar-resource-actions";
 import { getDb } from "@/lib/db";
+import { revealEmailDeliveryPayload } from "@/lib/email-delivery-pii";
+import { PERSONAL_WATCH_LINK_LABEL, verifyLiveWatchLinkToken } from "@/lib/live-watch-link-token";
 import {
   ensureLiveNotificationDelivery,
   processLegacyReminderCutovers,
@@ -148,6 +150,33 @@ describe("live notification materialization (disposable PostgreSQL, B-3)", () =>
     await expect(materialize(a.input)).resolves.toMatchObject({ status: "queued" });
     expect(await rowsOf(a.vendor.id)).toHaveLength(1);
     expect(await rowsOf(b.vendor.id)).toEqual([]);
+  });
+
+  it("puts each recipient's own watch link in the before_live reminder (Q-17)", async () => {
+    const db = getDb();
+    const f = await fixture("personal-link");
+    const second = await db.formSubmission.create({
+      data: { formId: f.live.formId!, liveId: f.live.id, name: "Lead 2", email: `lead-2-${randomUUID()}@example.test`, verificationStatus: "VERIFIED", verifiedAt: new Date() },
+    });
+    const urls: URL[] = [];
+    for (const submissionId of [f.submission.id, second.id]) {
+      const result = await materialize({ ...f.input, submissionId });
+      expect(result).toMatchObject({ status: "queued" });
+      const row = await db.emailDelivery.findUniqueOrThrow({ where: { id: (result as { deliveryId: string }).deliveryId } });
+      const { body } = revealEmailDeliveryPayload(row.payloadEncryptedEnvelope, { vendorId: f.vendor.id, deliveryId: row.id });
+      const line = body.split("\n").find((text) => text.startsWith(PERSONAL_WATCH_LINK_LABEL));
+      expect(line, body).toBeDefined();
+      const url = new URL(line!.slice(PERSONAL_WATCH_LINK_LABEL.length + 1));
+      expect(url.origin).toBe("https://live-notification-delivery.example.test");
+      expect(verifyLiveWatchLinkToken(url.searchParams.get("token"))?.claim).toEqual({
+        vendorId: f.vendor.id,
+        liveId: f.live.id,
+        submissionId,
+        expiresAt: new Date(Math.floor(f.live.scheduledAt.getTime() / 1_000) * 1_000 + 30 * 86_400_000),
+      });
+      urls.push(url);
+    }
+    expect(urls[0]!.toString()).not.toBe(urls[1]!.toString());
   });
 
   it("keeps one active row per recipient and rule across config changes, reactivates a returning snapshot and never re-sends", async () => {

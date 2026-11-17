@@ -17,11 +17,13 @@ import {
   dispatchLiveStartedLineNotifications,
   dispatchLiveStartedLineNotificationsSafely,
 } from "@/lib/line-live-started";
+import { verifyLiveWatchLinkToken } from "@/lib/live-watch-link-token";
 
 describe("live-started LINE dispatch", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://celebratedeal.example");
+    vi.stubEnv("CSRF_SECRET", "line-live-started-test-secret-longer-than-32-bytes");
     mocks.enqueue
       .mockResolvedValueOnce({ status: "queued", deliveryId: "delivery-1" })
       .mockResolvedValueOnce({ status: "duplicate", deliveryId: "delivery-2" });
@@ -82,6 +84,17 @@ describe("live-started LINE dispatch", () => {
       vendorId: "vendor-1",
       deliveryIds: ["delivery-1", "delivery-2"],
     });
+    // Q-17: each registrant's 「立即進場」 button is their own watch link.
+    const buttons = mocks.enqueue.mock.calls.map((call) => new URL(
+      (call[1] as { messages: Array<{ contents: { footer: { contents: Array<{ action: { uri: string } }> } } }> })
+        .messages[0]!.contents.footer.contents[0]!.action.uri,
+    ));
+    expect(buttons.map((url) => url.pathname)).toEqual(["/api/live-watch-link", "/api/live-watch-link"]);
+    expect(buttons[0]!.toString()).not.toBe(buttons[1]!.toString());
+    expect(buttons.map((url) => verifyLiveWatchLinkToken(url.searchParams.get("token"), startedAt)?.claim)).toEqual([
+      { vendorId: "vendor-1", liveId: "live-1", submissionId: "submission-1", expiresAt: new Date(startedAt.getTime() + 30 * 86_400_000) },
+      { vendorId: "vendor-1", liveId: "live-1", submissionId: "submission-2", expiresAt: new Date(startedAt.getTime() + 30 * 86_400_000) },
+    ]);
   });
 
   it("keeps the committed live transition successful when eager LINE delivery fails", async () => {

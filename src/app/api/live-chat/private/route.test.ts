@@ -7,6 +7,8 @@ vi.mock("@/lib/request-client-ip", () => ({ getRequestClientIp: mocks.ip }));
 vi.mock("@/lib/rate-limit", () => ({ checkRateLimit: mocks.rate }));
 import { GET, POST } from "./route";
 import { LiveChatError } from "@/lib/live-chat";
+import { createFormSubmissionChatSessionToken, FORM_SUBMISSION_CHAT_SESSION_COOKIE } from "@/lib/form-submission-chat-session";
+import { createLiveAttendanceToken, liveAttendanceCookieName } from "@/lib/live-attendance-cookie";
 const message = { id: "a".repeat(64), source: "viewer", body: "合成問題", createdAt: "2026-10-07T00:00:00.000Z" };
 function request(method = "GET", body?: object, query = "vendorId=tenant-a&liveId=live-a") {
   return new Request(`https://app.example.test/api/live-chat/private?${query}`, { method,
@@ -25,6 +27,26 @@ it("mints a CSRF token only after private conversation authorization", async () 
   const allowed = await GET(request()); expect(allowed.status).toBe(200);
   expect(await allowed.json()).toEqual({ messages: [], nextCursor: null, conversationBinding: "b".repeat(43), csrfToken: "synthetic-token" });
   expect(allowed.headers.get("cache-control")).toBe("private, no-store");
+});
+it("never treats the attendance-only cookie of a personal watch link as the registrant (Q-17)", async () => {
+  vi.stubEnv("CSRF_SECRET", "private-chat-route-test-secret-longer-than-32-bytes");
+  try {
+    const attendance = createLiveAttendanceToken({ vendorId: "tenant-a", liveId: "live-a", submissionId: "submission-a", expiresAt: new Date(Date.now() + 86_400_000) });
+    const withCookie = (method: string, cookie: string, payload?: object) => {
+      const value = request(method, payload); value.headers.set("cookie", cookie); return value;
+    };
+    const onlyAttendance = `${liveAttendanceCookieName("live-a")}=${attendance}`;
+    await GET(withCookie("GET", onlyAttendance));
+    await POST(withCookie("POST", onlyAttendance, body));
+    expect(mocks.list).toHaveBeenCalledWith({}, expect.objectContaining({ chatSessionToken: null }));
+    expect(mocks.create).toHaveBeenCalledWith({}, expect.objectContaining({ chatSessionToken: null }));
+    // Positive control: the registration cookie is what carries the identity.
+    const registration = createFormSubmissionChatSessionToken({ submissionId: "submission-a" });
+    await GET(withCookie("GET", `${onlyAttendance}; ${FORM_SUBMISSION_CHAT_SESSION_COOKIE}=${registration}`));
+    expect(mocks.list).toHaveBeenLastCalledWith({}, expect.objectContaining({ chatSessionToken: registration }));
+  } finally {
+    vi.unstubAllEnvs();
+  }
 });
 it("rejects missing or forged CSRF before any private write", async () => {
   mocks.csrf.mockResolvedValue(false);

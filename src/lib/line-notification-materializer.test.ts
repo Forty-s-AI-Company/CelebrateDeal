@@ -17,11 +17,14 @@ vi.mock("@/lib/line-notification", async (importOriginal) => {
 });
 
 import { materializeLineNotifications } from "@/lib/line-notification-materializer";
+import { verifyLiveWatchLinkToken } from "@/lib/live-watch-link-token";
 
 describe("LINE automatic notification materializer", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://celebratedeal.example");
+    // Personal watch links are signed (Q-17); runs without any env set too.
+    vi.stubEnv("CSRF_SECRET", "line-materializer-test-secret-longer-than-32-bytes");
     runtime.enqueue.mockResolvedValue({ status: "queued", deliveryId: "delivery-1" });
     runtime.db.lineUserIdentity.findMany.mockResolvedValue([
       { id: "identity-registration", vendorId: "vendor-1", subjectType: "buyer_registration", subjectId: "submission-1" },
@@ -97,6 +100,40 @@ describe("LINE automatic notification materializer", () => {
     runtime.db.formSubmission.findFirst.mockResolvedValue({ id: "submission-1", live: { ...evergreen, isEvergreen: false } });
     await materializeLineNotifications(new Date("2026-09-05T11:30:00Z"));
     expect(runtime.enqueue.mock.calls.map(([, input]) => input.trigger)).toEqual(["live_reminder"]);
+  });
+
+  it("links each registrant's reminder and start notice to their own watch link (Q-17)", async () => {
+    runtime.db.lineUserIdentity.findMany.mockResolvedValue([
+      { id: "identity-a", vendorId: "vendor-1", subjectType: "buyer_registration", subjectId: "submission-a" },
+      { id: "identity-b", vendorId: "vendor-1", subjectType: "buyer_registration", subjectId: "submission-b" },
+    ]);
+    const scheduledAt = new Date("2026-09-05T12:00:00Z");
+    const scheduled = { id: "live-1", vendorId: "vendor-1", slug: "ai-live", title: "AI 實戰", status: "scheduled", scheduledAt, startedAt: null, endedAt: null };
+    const answer = (live: object) => (args: { where: { id: string } }) => Promise.resolve({ id: args.where.id, live, liveSession: null });
+    const buttonsOf = () => runtime.enqueue.mock.calls.map(([, input]) => new URL(
+      (input as { messages: Array<{ contents: { footer: { contents: Array<{ action: { uri: string } }> } } }> })
+        .messages[0]!.contents.footer.contents[0]!.action.uri,
+    ));
+    const claimsOf = (urls: URL[], now: Date) => urls.map((url) => verifyLiveWatchLinkToken(url.searchParams.get("token"), now)?.claim);
+
+    runtime.db.formSubmission.findFirst.mockImplementation(answer(scheduled));
+    const reminderAt = new Date("2026-09-05T11:30:00Z");
+    await materializeLineNotifications(reminderAt);
+    expect(runtime.enqueue.mock.calls.map(([, input]) => input.trigger)).toEqual(["live_reminder", "live_reminder"]);
+    const reminders = buttonsOf();
+    expect(reminders.map((url) => url.pathname)).toEqual(["/api/live-watch-link", "/api/live-watch-link"]);
+    expect(reminders[0]!.toString()).not.toBe(reminders[1]!.toString());
+    expect(claimsOf(reminders, reminderAt)).toEqual([
+      { vendorId: "vendor-1", liveId: "live-1", submissionId: "submission-a", expiresAt: new Date(scheduledAt.getTime() + 30 * 86_400_000) },
+      { vendorId: "vendor-1", liveId: "live-1", submissionId: "submission-b", expiresAt: new Date(scheduledAt.getTime() + 30 * 86_400_000) },
+    ]);
+
+    runtime.enqueue.mockClear();
+    const startedAt = new Date("2026-09-05T12:02:00Z");
+    runtime.db.formSubmission.findFirst.mockImplementation(answer({ ...scheduled, status: "live", startedAt }));
+    await materializeLineNotifications(new Date("2026-09-05T12:03:00Z"));
+    expect(runtime.enqueue.mock.calls.map(([, input]) => input.trigger)).toEqual(["live_started", "live_started"]);
+    expect(claimsOf(buttonsOf(), startedAt).map((claim) => claim?.submissionId)).toEqual(["submission-a", "submission-b"]);
   });
 
   it("accepts an injected database handle for one cron invocation", async () => {

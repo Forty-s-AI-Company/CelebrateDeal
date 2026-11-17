@@ -103,9 +103,13 @@ export function availableAutomationTriggersForVendor(vendor: FeatureGateVendor |
 
 /**
  * Shown on the recipe and on every `form_no_show` rule (review M-1 (a)):
- * attendance is recognised only in the browser that verified the registration.
+ * attendance is recognised only in the browser that verified the registration,
+ * or on a device that entered through the personal watch link of a reminder
+ * or live-start notice (Q-17). Review m-1: such a device follows the public
+ * schedule of a fixed-session Live, so before the other sessions end it is
+ * not admitted to the replay of its own session.
  */
-export const FORM_NO_SHOW_DETECTION_NOTE = "只能辨識在完成報名驗證的同一個瀏覽器觀看的人；用其他裝置或其他瀏覽器觀看（例如在電腦報名、用手機或 App 內建瀏覽器打開驗證信）的人，會被算成未出席。";
+export const FORM_NO_SHOW_DETECTION_NOTE = "只能辨識在報名驗證的瀏覽器，或從提醒信、開播通知的個人連結進場的裝置；在其他裝置或瀏覽器直接打開直播頁觀看（例如用手機的 App 內建瀏覽器驗證、之後在電腦直接開直播頁）的人，會被算成未出席。指定場次直播在其他場次結束前，從個人連結觀看自己場次的回放不會記為出席。";
 
 /**
  * Triggers whose rules may have delayed steps (F-4 PR 2): their subject is a
