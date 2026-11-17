@@ -1,3 +1,4 @@
+import { Prisma } from "@prisma/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
@@ -811,6 +812,82 @@ describe("email delivery outbox", () => {
       skip: expect.any(Number),
       take: 10,
     }));
+  });
+
+  describe("a transient transaction conflict on one recipient", () => {
+    function conflictError(kind: "P2034" | "40001" | "40P01") {
+      return kind === "P2034"
+        ? new Prisma.PrismaClientKnownRequestError("write conflict", { code: "P2034", clientVersion: "test" })
+        : new Prisma.PrismaClientKnownRequestError("raw query failed", { code: "P2010", clientVersion: "test", meta: { code: kind } });
+    }
+
+    function arrangeTwoRecipients() {
+      const template = { ...input.template, id: "followup-template-1", trigger: "post_live_followup" };
+      mocks.db.liveNotificationRule.findMany.mockResolvedValue([{
+        id: "rule-1",
+        vendorId: "vendor-1",
+        liveId: "live-1",
+        trigger: "post_live_followup",
+        offsetMinutes: 0,
+        isActive: true,
+        updatedAt: new Date(0),
+        messageTemplate: template,
+        live: {
+          id: "live-1",
+          slug: "new-product-live",
+          title: "新品直播",
+          scheduledAt: new Date("2026-08-08T04:00:00.000Z"),
+          endedAt: null,
+          streamMode: "vod",
+          video: { durationSec: 3_600 },
+          vendor: { name: "測試商家" },
+        },
+      }]);
+      mocks.db.liveNotificationRule.count.mockResolvedValue(1);
+      mocks.db.formSubmission.count.mockResolvedValue(2);
+      mocks.db.formSubmission.findMany.mockResolvedValue([
+        { id: "submission-1", name: "王小明", email: "lead1@example.test", verificationStatus: "VERIFIED" },
+        { id: "submission-2", name: "李小華", email: "lead2@example.test", verificationStatus: "VERIFIED" },
+      ]);
+      mocks.db.emailDelivery.create.mockImplementation(async ({ data }: { data: Record<string, unknown> }) => ({
+        id: data.id,
+        status: data.status,
+        nextAttemptAt: data.nextAttemptAt,
+      }));
+    }
+    const runOptions = { now: new Date("2026-08-08T06:00:00.000Z"), ruleLimit: 5, recipientLimitPerRule: 10 };
+
+    it.each(["P2034", "40001", "40P01"] as const)("retries %s and queues the follow-up once", async (kind) => {
+      arrangeTwoRecipients();
+      mocks.db.$transaction.mockRejectedValueOnce(conflictError(kind));
+      await expect(processDuePostLiveFollowups(runOptions)).resolves.toEqual([{ status: "queued" }, { status: "queued" }]);
+      // 3 transactions: the failed attempt, its retry, and the second recipient.
+      expect(mocks.db.$transaction).toHaveBeenCalledTimes(3);
+      expect(mocks.db.emailDelivery.create).toHaveBeenCalledTimes(2);
+      const ids = mocks.db.emailDelivery.create.mock.calls.map(([args]) => (args as { data: { id: string } }).data.id);
+      expect(new Set(ids).size).toBe(2);
+      expect(mocks.captureOperationalError).not.toHaveBeenCalled();
+    });
+
+    it.each(["P2034", "40001", "40P01"] as const)("records %s as a conflict after the retries and goes on to the next recipient", async (kind) => {
+      arrangeTwoRecipients();
+      for (let attempt = 0; attempt < 3; attempt += 1) mocks.db.$transaction.mockRejectedValueOnce(conflictError(kind));
+      await expect(processDuePostLiveFollowups(runOptions)).resolves.toEqual([{ status: "conflict" }, { status: "queued" }]);
+      expect(mocks.db.emailDelivery.create).toHaveBeenCalledTimes(1);
+      expect(mocks.captureOperationalError).toHaveBeenCalledTimes(1);
+      expect(mocks.captureOperationalError).toHaveBeenCalledWith(expect.any(Error), {
+        source: "post_live_followup",
+        operation: "ensure_delivery",
+        status: "conflict",
+      });
+    });
+
+    it("does not swallow an error that is not a transient conflict", async () => {
+      arrangeTwoRecipients();
+      mocks.db.$transaction.mockRejectedValueOnce(new Error("real bug"));
+      await expect(processDuePostLiveFollowups(runOptions)).rejects.toThrow("real bug");
+      expect(mocks.db.$transaction).toHaveBeenCalledTimes(1);
+    });
   });
 
   it("records an already-suppressed recipient without scheduling provider work", async () => {

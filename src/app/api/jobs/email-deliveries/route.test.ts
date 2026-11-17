@@ -153,6 +153,7 @@ describe("POST /api/jobs/email-deliveries", () => {
       liveNotifications: 3,
       liveNotificationResults: [{ status: "queued" }, { status: "unknown" }, { status: "duplicate" }],
       followups: 2,
+      followupConflicts: 0,
       followupResults: [{ status: "queued" }, { status: "unknown" }],
       sequenceSkipped: false,
       sequenceEnrollments: 0,
@@ -243,6 +244,19 @@ describe("POST /api/jobs/email-deliveries", () => {
       status: "failed",
     });
     expect(JSON.stringify(await response.json())).not.toContain("serialization-private-detail");
+  });
+
+  it("reports isolated post-live follow-up conflicts as a count without failing the job", async () => {
+    mocks.processDuePostLiveFollowups.mockResolvedValue([{ status: "queued" }, { status: "conflict" }, { status: "queued" }]);
+    const response = await POST(request("g7-07-job-secret"));
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      ok: true,
+      followups: 3,
+      followupConflicts: 1,
+      followupResults: [{ status: "queued" }, { status: "conflict" }, { status: "queued" }],
+    });
+    expect(mocks.processDueEmailDeliveries).toHaveBeenCalledOnce();
   });
 
   it("does not let a failing post-live follow-up pass abort the rest of the round", async () => {
