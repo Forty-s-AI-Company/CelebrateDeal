@@ -116,6 +116,7 @@ describe("deriveSensitiveDataKey compatibility", () => {
     ["live-session-result:r2:e2e6952d7d8950cb", "62d95a76fdbe8d2e6ee3ace12156f8304163f03fd3ff69f1590a784914fc4151"],
     ["live-session-switch:r2:fb3e6e707aa6bd7b", "f162be6f2339227610d7ccc70fa20d1a6849f691dd16e668873e0109ed71a3b8"],
     ["live-watch-link:r2:847e45b6e28a9b99", "b9c10ab80899f48ff7d70269d9c86d14e55a98602641d6bb7f8744235ccc28c3"],
+    ["live-attendance:r2:8250395cbf4b0704", "028beb6e4dcc8a71871a70c2f3ae23756a79fb177028b5e14dcab99639702f64"],
   ];
 
   it.each(GOLDEN_KEYS)("keeps the %s key byte-identical", (purpose, expectedHex) => {

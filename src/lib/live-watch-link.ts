@@ -1,20 +1,22 @@
 import type { PrismaClient } from "@prisma/client";
 import { getDb } from "@/lib/db";
-import { createFormSubmissionChatSessionToken, verifyFormSubmissionChatSessionToken } from "@/lib/form-submission-chat-session";
+import { createLiveAttendanceToken, liveAttendanceCookieName } from "@/lib/live-attendance-cookie";
 import { verifyLiveWatchLinkToken } from "@/lib/live-watch-link-token";
 import { ACTIVE_VENDOR_RELATION } from "@/lib/vendor-suspension-state";
 
 type Database = Pick<PrismaClient, "formSubmission" | "live">;
 
 export type LiveWatchLinkResolution =
-  /** Give this browser the registration cookie (registrationCookie), then show the Live. */
-  | { kind: "admit"; submissionId: string; liveSlug: string; registrationCookie: string }
   /**
-   * This browser already holds the cookie of another VERIFIED registration of
-   * the same Live: keep it (a forwarded link does not take over the browser
-   * of someone who registered themselves) and show the Live.
+   * Give this browser the attendance-only cookie (live-attendance-cookie.ts)
+   * for this Live, then show the Live. Never the registration cookie.
    */
-  | { kind: "keep_existing"; liveSlug: string }
+  | {
+    kind: "admit";
+    submissionId: string;
+    liveSlug: string;
+    attendanceCookie: { name: string; value: string; expiresAt: Date };
+  }
   /**
    * Nothing is set. liveSlug: the Live the genuine (possibly expired) link
    * names, or null for a forged or malformed link (the caller shows the home
@@ -30,10 +32,11 @@ export type LiveWatchLinkResolution =
  *
  * The final query binds every id of the signed claim again: the registration
  * must be this Live's, VERIFIED, from a form of this vendor, and the Live must
- * belong to this vendor, which must not be suspended (F-036).
+ * belong to this vendor, which must not be suspended (F-036). The browser's
+ * registration cookie is neither read nor replaced.
  */
 export async function resolveLiveWatchLink(
-  input: { token: string | null; existingRegistrationToken: string | null; now?: Date },
+  input: { token: string | null; now?: Date },
   db: Database = getDb(),
 ): Promise<LiveWatchLinkResolution> {
   const now = input.now ?? new Date();
@@ -49,6 +52,8 @@ export async function resolveLiveWatchLink(
     return { kind: "fallback", liveSlug: live?.slug ?? null };
   };
   if (verified.status !== "valid") return fallback();
+  const cookieName = liveAttendanceCookieName(claim.liveId);
+  if (!cookieName) return fallback();
 
   const submission = await db.formSubmission.findFirst({
     where: {
@@ -63,26 +68,15 @@ export async function resolveLiveWatchLink(
   const live = submission?.live;
   if (!submission || !live || live.id !== claim.liveId || live.vendorId !== claim.vendorId) return fallback();
 
-  const existingSubmissionId = input.existingRegistrationToken
-    ? verifyFormSubmissionChatSessionToken(input.existingRegistrationToken, now)?.submissionId ?? null
-    : null;
-  if (existingSubmissionId && existingSubmissionId !== submission.id) {
-    const existing = await db.formSubmission.findFirst({
-      where: {
-        id: existingSubmissionId,
-        liveId: claim.liveId,
-        verificationStatus: "VERIFIED",
-        form: { vendorId: claim.vendorId },
-      },
-      select: { id: true },
-    });
-    if (existing) return { kind: "keep_existing", liveSlug: live.slug };
-  }
-
   return {
     kind: "admit",
     submissionId: submission.id,
     liveSlug: live.slug,
-    registrationCookie: createFormSubmissionChatSessionToken({ submissionId: submission.id, now }),
+    attendanceCookie: {
+      name: cookieName,
+      // Expires with the link that set it.
+      value: createLiveAttendanceToken({ vendorId: claim.vendorId, liveId: live.id, submissionId: submission.id, expiresAt: claim.expiresAt }),
+      expiresAt: claim.expiresAt,
+    },
   };
 }

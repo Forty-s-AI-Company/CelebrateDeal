@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import { getBrowserReturnAppUrl } from "@/lib/app-url";
-import { FORM_SUBMISSION_CHAT_SESSION_COOKIE, formSubmissionChatSessionCookieOptions } from "@/lib/form-submission-chat-session";
-import { registrationSessionTokenFromRequest } from "@/lib/live-fixed-sessions-store";
+import { liveAttendanceCookieOptions } from "@/lib/live-attendance-cookie";
 import { resolveLiveWatchLink } from "@/lib/live-watch-link";
 import { LIVE_WATCH_LINK_MAX_TOKEN_LENGTH } from "@/lib/live-watch-link-token";
 import { captureOperationalError } from "@/lib/monitoring";
@@ -30,14 +29,16 @@ function viewerPath(slug: string | null) {
  *
  * GET on purpose: the link must work from any mail app or LINE. It only reads
  * (src/lib/live-watch-link.ts), so a mail scanner or link preview fetching it
- * records nothing; the most it does is give that client the registration
- * cookie. A genuine link of a VERIFIED registration of an unsuspended vendor
- * sets the same signed registration cookie as confirming the e-mail and
- * redirects to the plain viewer page, so the token stays out of the address
- * bar. Every refusal (forged, altered, expired, another Live or vendor, not
- * verified, suspended vendor) redirects without a cookie to the viewer page
- * the genuine link names, or to the home page when there is none, and never
- * says why.
+ * records nothing. A genuine link of a VERIFIED registration of an
+ * unsuspended vendor sets only the attendance-only cookie of that Live
+ * (src/lib/live-attendance-cookie.ts, Path=/api/live-admission): it lets the
+ * admission record this browser's viewing under that registration and grants
+ * no chat, private chat, LINE or checkout identity. The registration cookie is
+ * neither read nor replaced. It then redirects to the plain viewer page, so the
+ * token stays out of the address bar. Every refusal (forged, altered, expired,
+ * another Live or vendor, not verified, suspended vendor) redirects without a
+ * cookie to the viewer page the genuine link names, or to the home page when
+ * there is none, and never says why.
  */
 export async function GET(request: Request) {
   const limited = await checkRateLimit(request, "live-watch-link", 60, 60_000);
@@ -48,13 +49,11 @@ export async function GET(request: Request) {
 
   const raw = new URL(request.url).searchParams.get("token");
   const token = raw && raw.length <= LIVE_WATCH_LINK_MAX_TOKEN_LENGTH ? raw : null;
+  const now = new Date();
 
   let resolution;
   try {
-    resolution = await resolveLiveWatchLink({
-      token,
-      existingRegistrationToken: registrationSessionTokenFromRequest(request),
-    });
+    resolution = await resolveLiveWatchLink({ token, now });
   } catch (error) {
     try {
       captureOperationalError(error, { source: "live_watch_link", operation: "resolve", status: "failed" });
@@ -66,10 +65,11 @@ export async function GET(request: Request) {
 
   const response = redirectTo(request, viewerPath(resolution.liveSlug));
   if (resolution.kind === "admit") {
+    const cookie = resolution.attendanceCookie;
     response.cookies.set(
-      FORM_SUBMISSION_CHAT_SESSION_COOKIE,
-      resolution.registrationCookie,
-      formSubmissionChatSessionCookieOptions(new URL(request.url).protocol === "https:"),
+      cookie.name,
+      cookie.value,
+      liveAttendanceCookieOptions(new URL(request.url).protocol === "https:", cookie.expiresAt, now),
     );
   }
   return response;

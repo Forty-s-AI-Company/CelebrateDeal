@@ -4,10 +4,11 @@ import { DERIVED_KEY_ROTATIONS, signWithRotation, verifyWithRotation } from "@/l
 /**
  * Personal watch link (Q-17) in live reminders and live-start notices sent to
  * a verified registrant. Opening it (GET /api/live-watch-link) gives that
- * browser the registration's signed cookie, the one confirming the e-mail
- * sets, and redirects to the plain viewer page, so watching on another device
- * than the one that confirmed the e-mail is still attributed to the
- * registration (LiveRegistrationAttendance, form_no_show).
+ * browser an attendance-only cookie for this Live (live-attendance-cookie.ts,
+ * not the registration cookie) and redirects to the plain viewer page, so
+ * watching on another device than the one that confirmed the e-mail is still
+ * attributed to the registration (LiveRegistrationAttendance, form_no_show).
+ * The link grants no chat, private chat, LINE or checkout identity.
  *
  * HMAC-signed with its own derived key (`live-watch-link`) behind its own
  * version tag, so no other token of the app verifies here and this one
@@ -112,7 +113,7 @@ export function verifyLiveWatchLinkToken(token: string | null | undefined, now =
 }
 
 /** The line every reminder and live-start e-mail ends with, before the unsubscribe footer. */
-export const PERSONAL_WATCH_LINK_LABEL = "你的專屬觀看連結（只限本人使用，請勿轉寄或分享）";
+export const PERSONAL_WATCH_LINK_LABEL = "你的個人觀看連結（從這裡進場會記錄你已出席；轉寄給別人時，對方的觀看也會記在你名下）";
 
 /**
  * Appends the personal link to a merchant-authored body. `{{live_url}}` keeps

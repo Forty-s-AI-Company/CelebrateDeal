@@ -119,7 +119,7 @@ describe("AutomationSettingsPage", () => {
     const recipe = [...html.matchAll(/<form[^>]*>(?:(?!<\/form>)[\s\S])*?name="recipeId" value="no_show_reactivation"[\s\S]*?<\/form>/gu)][0]?.[0] ?? "";
     expect(recipe).toContain("開播缺席喚醒再行銷");
     expect(recipe).toContain("報名後未出席直播 → Email 通知");
-    expect(recipe).toContain("只能辨識在完成報名驗證的同一個瀏覽器觀看的人");
+    expect(recipe).toContain("只能辨識在報名驗證的瀏覽器，或從提醒信、開播通知的個人連結進場的裝置");
     expect(html).toContain("單一開播時間的直播只算開播前 14 天內完成驗證的報名者");
   });
 
@@ -127,7 +127,7 @@ describe("AutomationSettingsPage", () => {
     mocks.rules.mockResolvedValue([rule({ id: "noshow-on", name: "缺席喚醒", trigger: "form_no_show", isActive: true, actions: [{ type: "add_customer_tag", tag: "缺席" }] })]);
     const html = await render();
     expect(html).toContain("「報名後未出席直播」目前是封測功能，尚未對你的商家開放，這條規則不會執行。");
-    expect(html).toContain("只能辨識在完成報名驗證的同一個瀏覽器觀看的人");
+    expect(html).toContain("只能辨識在報名驗證的瀏覽器，或從提醒信、開播通知的個人連結進場的裝置");
     expect(html).toContain(">停用<");
     expect(html).not.toContain("Dry-run 測試");
   });
@@ -141,7 +141,7 @@ describe("AutomationSettingsPage", () => {
     expect(html).toContain("Dry-run 測試");
     expect(html).toContain("編輯步驟：事件後第 1 天");
     expect(html).toContain("新增「缺席喚醒」的延遲步驟");
-    expect(html).toContain("只能辨識在完成報名驗證的同一個瀏覽器觀看的人");
+    expect(html).toContain("只能辨識在報名驗證的瀏覽器，或從提醒信、開播通知的個人連結進場的裝置");
   });
 
   it("lists a payment_paid rule as running, with its dry-run, and offers no delayed steps for it", async () => {

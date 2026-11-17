@@ -119,9 +119,15 @@ export const DERIVED_KEY_ROTATIONS = Object.freeze({
   /**
    * Personal watch links in live reminders and live-start notices (Q-17):
    * reusable until 30 days after the registrant's session start; opening one
-   * gives the browser the registration cookie. New purpose, so no legacy key.
+   * gives the browser the attendance-only cookie below. New purpose, so no legacy key.
    */
   liveWatchLink: rotation("live-watch-link", "live-watch-link:r2:847e45b6e28a9b99"),
+  /**
+   * Attendance-only cookie set by a personal watch link (Q-17). Read only by
+   * the attendance recorder of /api/live-admission; it grants no chat, private
+   * chat, LINE binding or checkout identity. New purpose, so no legacy key.
+   */
+  liveAttendance: rotation("live-attendance", "live-attendance:r2:8250395cbf4b0704"),
 
   // Tier 3: long-lived links and cookies. New key signs; legacy still verifies.
   emailUnsubscribe: rotation(
