@@ -168,12 +168,12 @@ describe("watch time credited by admission renewals (Q-11 viewer_watch_progress)
 
     await expect(credit(0)).resolves.toBe("recorded");
     expect(await storedProgress(t, lead.id)).toMatchObject({ watchedSeconds: 0 });
-    // Inside the credit interval (the 30 s renewal period) nothing changes: a refresh or a second tab neither.
-    expect(LIVE_WATCH_PROGRESS_CREDIT_INTERVAL_MS).toBe(30 * SECOND);
+    // Inside the credit interval (a little under the 30 s renewal period) nothing changes: a refresh or a second tab neither.
+    expect(LIVE_WATCH_PROGRESS_CREDIT_INTERVAL_MS).toBe(25 * SECOND);
     await expect(credit(10 * SECOND)).resolves.toBe("unchanged");
     await expect(credit(LIVE_WATCH_PROGRESS_CREDIT_INTERVAL_MS - 1)).resolves.toBe("unchanged");
     await expect(credit(30 * SECOND)).resolves.toBe("recorded");
-    await expect(credit(45 * SECOND)).resolves.toBe("unchanged");
+    await expect(credit(50 * SECOND)).resolves.toBe("unchanged");
     // A missed renewal: the whole minute still counts.
     await expect(credit(90 * SECOND)).resolves.toBe("recorded");
     await expect(credit(150 * SECOND)).resolves.toBe("recorded");
@@ -446,6 +446,23 @@ describe("觀看直播達到指定進度 (Q-11 viewer_watch_progress)", () => {
     expect((await logsOf(t)).map((log) => log.eventId)).toEqual([watchProgressEventId(lead.id, 90)]);
   });
 
+  it("reaches 90 % for a full 10-minute watch even when every renewal comes early, 29.9 s apart (review MINOR-B)", async () => {
+    const t = await tenant();
+    await watchRule(t, 90);
+    const start = ago(12 * MINUTE);
+    const session = await live(t, { scheduledAt: start });
+    const lead = await registrant(t, session.id);
+    const outcomes: string[] = [];
+    for (let ms = 0; ms < VIDEO_SECONDS * SECOND; ms += 29_900) {
+      outcomes.push(await creditLiveWatchProgress({ vendorId: t.vendor.id, liveId: session.id, formSubmissionId: lead.id, now: new Date(start.getTime() + ms) }));
+    }
+    // No renewal is skipped.
+    expect(outcomes.every((outcome) => outcome === "recorded")).toBe(true);
+    const stored = await storedProgress(t, lead.id);
+    expect(stored!.watchedSeconds * 100).toBeGreaterThanOrEqual(90 * VIDEO_SECONDS);
+    await expect(run([t])).resolves.toMatchObject({ completed: 1 });
+  });
+
   it("measures a real live stream started 10 minutes late from its actual start: watching all of it reaches 90 % (review MAJOR-1)", async () => {
     const t = await tenant();
     await watchRule(t, 90);
@@ -475,6 +492,20 @@ describe("觀看直播達到指定進度 (Q-11 viewer_watch_progress)", () => {
     await expect(run([t])).resolves.toMatchObject({ completed: 1 });
     // A rerun does not repeat it.
     await expect(run([t])).resolves.toMatchObject({ candidates: 0 });
+  });
+
+  it("never reads an evergreen or VOD Live's old rows again, even when a real live stream of the vendor just ended (review MINOR-A)", async () => {
+    const t = await tenant();
+    await watchRule(t, 50, { updatedAt: ago(40 * HOUR) });
+    const evergreen = await live(t, { isEvergreen: true, scheduledAt: ago(40 * HOUR) });
+    const old = await registrant(t, evergreen.id);
+    await progress(t, evergreen.id, old.id, VIDEO_SECONDS, ago(30 * HOUR));
+    const startedAt = ago(3 * HOUR);
+    const stream = await live(t, { streamMode: "live", status: "ended", scheduledAt: startedAt, startedAt, endedAt: ago(HOUR), videoId: null });
+    const viewer = await registrant(t, stream.id);
+    await progress(t, stream.id, viewer.id, 2 * 3_600, ago(30 * HOUR));
+    await expect(run([t])).resolves.toMatchObject({ completed: 1 });
+    expect((await logsOf(t)).map((log) => log.eventId)).toEqual([watchProgressEventId(viewer.id, 50)]);
   });
 
   it("runs each event once when two jobs scan and dispatch the same events at the same time", async () => {

@@ -499,3 +499,48 @@ describe("evergreen live admission", () => {
     expect(tx.liveViewerSession.create).not.toHaveBeenCalled();
   });
 });
+
+describe("the admitted fixed session (Q-11 viewer_watch_progress, review MINOR-C)", () => {
+  const fixedLive = {
+    id: "live-1",
+    vendorId: "vendor-1",
+    ...runtimeReadyContent,
+    streamMode: "vod",
+    status: "scheduled",
+    scheduledAt: new Date("2026-08-01T00:00:00.000Z"),
+    startedAt: null,
+    sessionMode: "fixed_sessions",
+    sessionRegistrationCutoffMinutes: 0,
+    sessionReplayWindowHours: null,
+    vendor: { timezone: "Asia/Taipei" },
+    video: { ...runtimeReadyContent.video, durationSec: 1_800 },
+  };
+  const fixedTx = tx as typeof tx & { formSubmission?: { findFirst: ReturnType<typeof vi.fn> }; liveSession?: { findMany: ReturnType<typeof vi.fn> } };
+
+  beforeEach(() => {
+    fixedTx.formSubmission = { findFirst: vi.fn().mockResolvedValue(null) };
+    // The public schedule: one session that started 5 minutes ago (playing, 30-minute video).
+    fixedTx.liveSession = { findMany: vi.fn().mockResolvedValue([{ id: "fixed-session-1", startAt: new Date(now.getTime() - 5 * 60_000), capacity: null, registeredCount: 1, status: "open" }]) };
+    (db.live.findFirst as ReturnType<typeof vi.fn>).mockResolvedValue(fixedLive);
+    tx.live.findFirst.mockResolvedValue({ ...fixedLive, quotaPolicy: { version: 1, affiliateMode: "enabled", maxConcurrentViewers: 2, stopWhenCreditsBelow: 100 } });
+  });
+
+  afterEach(() => {
+    delete fixedTx.formSubmission;
+    delete fixedTx.liveSession;
+  });
+
+  it("returns the id of the fixed session the viewer was admitted to, playing", async () => {
+    const result = await admitLiveViewer(db, { vendorId: "vendor-1", liveId: "live-1", now });
+    expect(result).toMatchObject({ runtimeState: "playing", fixedSessionId: "fixed-session-1" });
+    expect(fixedTx.liveSession!.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ vendorId: "vendor-1", liveId: "live-1" }) }));
+  });
+
+  it("returns null for every other kind of Live", async () => {
+    // The default fixture: a real live stream that is live.
+    (db.live.findFirst as ReturnType<typeof vi.fn>).mockResolvedValue({ id: "live-1", vendorId: "vendor-1", ...runtimeReadyContent });
+    tx.live.findFirst.mockResolvedValue({ id: "live-1", vendorId: "vendor-1", quotaPolicy: { version: 1, affiliateMode: "enabled", maxConcurrentViewers: 2, stopWhenCreditsBelow: 100 }, ...runtimeReadyContent });
+    await expect(admitLiveViewer(db, { vendorId: "vendor-1", liveId: "live-1", now })).resolves.toMatchObject({ runtimeState: "playing", fixedSessionId: null });
+    expect(fixedTx.liveSession!.findMany).not.toHaveBeenCalled();
+  });
+});

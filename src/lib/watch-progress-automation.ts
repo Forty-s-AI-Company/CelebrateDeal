@@ -186,7 +186,8 @@ async function scanVendor(db: Db, vendorId: string, rules: RunnableRule[], now: 
     take: LIVE_SCAN_LIMIT,
     select: { id: true },
   });
-  const liveIds = [...new Set([...liveRows.map((row) => row.liveId), ...endedStreams.map((live) => live.id)])];
+  const endedStreamIds = endedStreams.map((live) => live.id);
+  const liveIds = [...new Set([...liveRows.map((row) => row.liveId), ...endedStreamIds])];
   if (liveIds.length === 0) return [];
   const lives = await db.live.findMany({
     where: { vendorId, id: { in: liveIds } },
@@ -228,7 +229,15 @@ async function scanVendor(db: Db, vendorId: string, rules: RunnableRule[], now: 
     WHERE p."vendorId" = ${vendorId}
       AND f."vendorId" = ${vendorId}
       AND s."verificationStatus" = 'VERIFIED'
-      AND GREATEST(p."lastCreditedAt", len."endedAt") > ${utcTimestamp(lookbackFrom)}
+      -- Review MINOR-A: the first branch is the (vendorId, lastCreditedAt)
+      -- index range; only the real live streams that ended in the window take
+      -- the second, by (liveId, formSubmissionId). An evergreen or VOD Live's
+      -- old rows are never read again. Same rows as GREATEST(lastCreditedAt,
+      -- endedAt) > look-back, since those streams' endedAt is in the window.
+      AND (
+        p."lastCreditedAt" > ${utcTimestamp(lookbackFrom)}
+        OR p."liveId" = ANY(${endedStreamIds}::text[])
+      )
       AND NOT EXISTS (
         SELECT 1 FROM "AutomationExecutionLog" l
         WHERE l."vendorId" = ${vendorId}

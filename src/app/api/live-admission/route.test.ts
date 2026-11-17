@@ -34,6 +34,14 @@ const runtimeReadyContent = {
 
 vi.mock("@/lib/db", () => ({ getDb: () => db }));
 vi.mock("@/lib/rate-limit", () => ({ checkRateLimit: vi.fn(async () => null) }));
+// The real admission runs (against the mocked transaction) unless a test
+// replaces one result (review MINOR-C: the fixed session it admitted to).
+const admission = vi.hoisted(() => ({ admitLiveViewer: vi.fn() }));
+vi.mock("@/lib/live-quota-admission", async (original) => {
+  const actual = await original<typeof import("@/lib/live-quota-admission")>();
+  admission.admitLiveViewer.mockImplementation(actual.admitLiveViewer);
+  return { ...actual, admitLiveViewer: admission.admitLiveViewer };
+});
 
 import { DELETE, POST } from "@/app/api/live-admission/route";
 import { LIVE_VIEWER_PASS_COOKIE, verifyLiveViewerPass } from "@/lib/live-viewer-pass";
@@ -266,6 +274,25 @@ describe("POST /api/live-admission", () => {
       expect((await POST(request("POST", undefined, registrationCookie()))).status).toBe(200);
       expect(statements().some((statement) => statement.sql.includes('INSERT INTO "LiveRegistrationAttendance"'))).toBe(true);
       expect(statements().some((statement) => statement.sql.includes("LiveWatchProgress"))).toBe(false);
+    });
+
+    it("binds the credit to the fixed session the admission returned (review MINOR-C)", async () => {
+      admission.admitLiveViewer.mockResolvedValueOnce({
+        token: "A".repeat(43), expiresAt: new Date(Date.now() + 60_000), reused: false, sessionId: "viewer-session-1",
+        runtimeState: "playing", fixedSessionId: "fixed-session-9",
+      });
+      expect((await POST(request("POST", undefined, registrationCookie()))).status).toBe(200);
+      const credited = statements().filter((statement) => statement.sql.includes('INSERT INTO "LiveWatchProgress"'));
+      expect(credited).toHaveLength(1);
+      expect(credited[0]!.sql).toContain(`submission."liveSessionId" = `);
+      expect(credited[0]!.values).toContain("fixed-session-9");
+      // Any other Live: the admission returns no fixed session and no session id is bound.
+      db.$queryRaw.mockClear();
+      expect((await POST(request("POST", undefined, registrationCookie()))).status).toBe(200);
+      const unbound = statements().filter((statement) => statement.sql.includes('INSERT INTO "LiveWatchProgress"'));
+      expect(unbound).toHaveLength(1);
+      expect(unbound[0]!.values).not.toContain("fixed-session-9");
+      expect(unbound[0]!.values).toContain(null);
     });
 
     it("does not let a body field choose the registration or add seconds", async () => {

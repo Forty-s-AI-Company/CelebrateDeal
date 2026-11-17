@@ -15,10 +15,11 @@ import { getDb } from "@/lib/db";
  * recordAttendanceForAdmission), the server adds the time since the
  * registration's previous credit, read from the database clock:
  *
- * - at most once per LIVE_WATCH_PROGRESS_CREDIT_INTERVAL_MS, the renewal
- *   period, so every renewal of a steady viewer is credited and at most the
- *   tail since the last renewal is lost (renewals inside it only read, like
- *   the attendance throttle);
+ * - at most once per LIVE_WATCH_PROGRESS_CREDIT_INTERVAL_MS, a little under
+ *   the 30 s renewal period, so every renewal of a steady viewer is credited
+ *   even when it arrives a little early (review MINOR-B) and at most the tail
+ *   since the last renewal is lost (renewals inside it only read, like the
+ *   attendance throttle);
  * - nothing across a gap longer than LIVE_WATCH_PROGRESS_MAX_GAP_MS (the
  *   viewer left, the tab slept, the renewals stopped): the count restarts
  *   from that renewal, so time away is never credited;
@@ -37,8 +38,12 @@ import { getDb } from "@/lib/db";
  * (src/lib/watch-progress-automation.ts) divides this by the session length.
  */
 
-/** A registration gets credit at most this often: the renewal period, so each renewal of a steady viewer counts. */
-export const LIVE_WATCH_PROGRESS_CREDIT_INTERVAL_MS = 30_000;
+/**
+ * A registration gets credit at most this often. Renewals come every 30 s;
+ * 5 s of slack keeps a renewal that arrives early (timer or network jitter,
+ * e.g. after 29.9 s) from being skipped (review MINOR-B).
+ */
+export const LIVE_WATCH_PROGRESS_CREDIT_INTERVAL_MS = 25_000;
 /**
  * A gap since the previous credit longer than this credits nothing (the count
  * restarts at this renewal). Three missed 30 s renewals still count; time
