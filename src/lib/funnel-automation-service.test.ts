@@ -20,6 +20,8 @@ vi.mock("@/lib/auth", () => ({ requireVendorManagerContext: runtime.manager }));
 vi.mock("@/lib/sales-project-scope", () => ({ requireEditableSalesProjectScope: runtime.scope }));
 vi.mock("@/lib/audit", () => ({ writeAuditLog: runtime.audit, auditSnapshot: runtime.snapshot }));
 vi.mock("@/lib/db", () => ({ getDb: () => runtime.db }));
+const monitoring = vi.hoisted(() => ({ capture: vi.fn() }));
+vi.mock("@/lib/monitoring", () => ({ captureOperationalError: monitoring.capture }));
 
 import {
   createFunnelAutomationRule,
@@ -243,6 +245,27 @@ describe("funnel automation service", () => {
     runtime.db.$transaction.mockRejectedValueOnce(new Error("connection lost"));
     await expect(updateFunnelAutomationRule({ pageId: "page-1", ruleId: "rule-1", version: 2, name: "新版", tag: "新標籤" }, runtime.db as never)).rejects.toThrow("connection lost");
     expect(runtime.db.automationRule.updateMany).not.toHaveBeenCalled();
+    expect(runtime.audit).not.toHaveBeenCalled();
+  });
+
+  it("answers busy for a cancelled lock wait (57014) on edit and switch, and reports it once each; a lock_timeout is not reported", async () => {
+    const cancelled = () => new Prisma.PrismaClientKnownRequestError("Raw query failed. Code: `57014`. Message: `ERROR: canceling statement due to user request`", { code: "P2010", clientVersion: Prisma.prismaVersion.client, meta: { code: "57014" } });
+    const lockTimeout = () => new Prisma.PrismaClientKnownRequestError("canceling statement due to lock timeout", { code: "P2010", clientVersion: Prisma.prismaVersion.client, meta: { code: "55P03" } });
+    const edit = () => updateFunnelAutomationRule({ pageId: "page-1", ruleId: "rule-1", version: 2, name: "新版", tag: "新標籤" }, runtime.db as never);
+    const enable = () => setFunnelAutomationRuleEnabled({ pageId: "page-1", ruleId: "rule-1", version: 2, isActive: true }, runtime.db as never);
+    const report = [expect.anything(), { source: "automation_rule_write", operation: "lock_wait_cancelled" }, { level: "warning" }];
+
+    for (const write of [edit, enable]) {
+      monitoring.capture.mockClear();
+      runtime.db.$transaction.mockRejectedValueOnce(cancelled());
+      await expect(write()).rejects.toBeInstanceOf(FunnelAutomationBusyError);
+      expect(monitoring.capture.mock.calls).toEqual([report]);
+
+      monitoring.capture.mockClear();
+      runtime.db.$transaction.mockRejectedValueOnce(lockTimeout());
+      await expect(write()).rejects.toBeInstanceOf(FunnelAutomationBusyError);
+      expect(monitoring.capture).not.toHaveBeenCalled();
+    }
     expect(runtime.audit).not.toHaveBeenCalled();
   });
 

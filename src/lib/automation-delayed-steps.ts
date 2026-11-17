@@ -16,8 +16,9 @@ import {
   storedAutomationRuleSendsLine,
   withVoucherLineNotification,
 } from "@/lib/automation-line-push-policy";
+import { reportCancelledRuleLockWait } from "@/lib/automation-rule-lock";
 import { getDb } from "@/lib/db";
-import { isLockTimeout } from "@/lib/serializable-retry";
+import { isRuleWriteBusy } from "@/lib/serializable-retry";
 import {
   cancelLeasedRun,
   DELAYED_STEP_LEASE_MS,
@@ -530,14 +531,10 @@ async function withLockedRule(
     }, STEP_TRANSACTION_OPTIONS);
   } catch (error) {
     if (error instanceof StepChangeRejected) return { ok: false, code: error.code };
-    if (isBusy(error)) return { ok: false, code: "step_busy" };
-    throw error;
+    if (!isRuleWriteBusy(error)) throw error;
+    reportCancelledRuleLockWait(error);
+    return { ok: false, code: "step_busy" };
   }
-}
-
-/** lock_timeout (55P03) on the rule row, or the transaction could not start or finish in time (P2028). */
-function isBusy(error: unknown) {
-  return isLockTimeout(error) || (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2028");
 }
 
 async function validateStep(tx: Prisma.TransactionClient, vendorId: string, ruleId: string, input: AutomationStepInput) {

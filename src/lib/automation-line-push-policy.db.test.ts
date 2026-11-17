@@ -16,9 +16,10 @@ function pooledUrl(connections: number) {
 }
 
 // Every application call in this file (Server Actions, services, audit) runs
-// on this client: the four admin calls of a concurrency case each hold one
-// connection while they wait on the rule lock, plus spare ones for the
-// pre-lock reads. The owner transaction and the pg_stat_activity observer use
+// on this client: the four (or, in the 57014 case, five) admin calls of a
+// concurrency case each hold one connection while they wait on the rule lock,
+// plus spare ones for the pre-lock reads. The owner transaction and the
+// pg_stat_activity observer use
 // their own one-connection clients below, so no wait depends on the pool.
 const clients = vi.hoisted(() => ({ app: null as null | import("@prisma/client").PrismaClient, appConnections: 8 }));
 vi.mock("@/lib/db", async () => {
@@ -383,23 +384,40 @@ describe("concurrency with an owner holding the rule row", () => {
     return row?.n ?? 0;
   }
 
+  /** Each backend running a rule FOR UPDATE (not the observer): when its statement and its current lock wait started. */
+  async function ruleLockBackends() {
+    return observer.$queryRaw<Array<{ pid: number; waitEventType: string | null; queryStartMs: number | null; waitStartMs: number | null }>>`
+      SELECT a.pid, a.wait_event_type AS "waitEventType",
+             (extract(epoch FROM a.query_start) * 1000)::float8 AS "queryStartMs",
+             (extract(epoch FROM l.waitstart) * 1000)::float8 AS "waitStartMs"
+      FROM pg_stat_activity a
+      LEFT JOIN LATERAL (SELECT min(waitstart) AS waitstart FROM pg_locks WHERE pid = a.pid AND NOT granted) l ON true
+      WHERE a.datname = current_database() AND a.pid <> pg_backend_pid() AND a.query LIKE '%"AutomationRule"%FOR UPDATE%'
+      ORDER BY a.query_start
+    `;
+  }
+
   /**
    * Resolves at the first moment `count` calls wait on the rule lock (seen by
    * the observer, which only ever sees it late, never early). The deadline
    * counts from the first waiter seen: it gives up after lock_timeout (5 s)
-   * from its own arrival, so the others must be there within 4 s of it,
-   * however slowly the runner got them to the lock.
+   * from its own arrival, so by default the others must be there within 4 s
+   * of it, however slowly the runner got them to the lock. A case that acts on
+   * the waiters itself passes a smaller `arrivalWindowMs`, so it always acts
+   * well before the first waiter's lock_timeout. On failure the message lists
+   * when each backend's statement and lock wait started.
    */
-  async function untilWaiting(count: number) {
+  async function untilWaiting(count: number, arrivalWindowMs = 4_000) {
     const firstDeadline = Date.now() + 15_000;
     let first: number | null = null;
-    while (Date.now() < (first === null ? firstDeadline : first + 4_000)) {
+    while (Date.now() < (first === null ? firstDeadline : first + arrivalWindowMs)) {
       const waiting = await waitersOnRule();
       if (waiting > 0 && first === null) first = Date.now();
       if (waiting >= count) return { first: first!, all: Date.now() };
       await new Promise((resolve) => setTimeout(resolve, 10));
     }
-    throw new Error(`fewer than ${count} calls waited on the rule lock at the same time`);
+    const backends = await ruleLockBackends();
+    throw new Error(`fewer than ${count} calls waited on the rule lock at the same time (within ${arrivalWindowMs} ms of the first seen at ${first ?? "never"}): ${JSON.stringify(backends)}`);
   }
 
   const settle = (promise: Promise<unknown>) => promise.then(() => ({ ok: true as const }), (error: unknown) => ({ ok: false as const, error }));
@@ -497,4 +515,48 @@ describe("concurrency with an owner holding the rule row", () => {
     await expect(db.automationRuleStep.count({ where: { ruleId: r.id } })).resolves.toBe(0);
     await expect(db.auditLog.count({ where: { vendorId: vendor.id } })).resolves.toBe(0);
   }, 40_000);
+
+  // CI run 44014709990 (PR #621): with several waiters giving up at the same
+  // moment, PostgreSQL reported one waiter's lock_timeout as 57014 "canceling
+  // statement due to user request" (the timeout fired as the tuple lock was
+  // granted; the wait on the holder's transaction id that followed re-armed
+  // lock_timeout and cleared its indicator), and toggle answered with a 500.
+  // That race is timing-dependent, so the same error is produced here on
+  // purpose: every waiting FOR UPDATE is cancelled the way PostgreSQL then
+  // reports it, and every writer must answer busy and write nothing.
+  it("answers busy, not an error, when the given-up lock wait is reported as a cancelled statement (57014)", async () => {
+    const { vendor, page, r } = await funnelRule();
+    as("admin", vendor);
+    const held = await holdRule(vendor.id, r.id);
+    let results: Array<{ ok: boolean; error?: unknown }> = [];
+    try {
+      const calls = [...adminCalls(vendor.id, page.id, r.id), settle(deleteAutomationRuleAction(form({ ruleId: r.id })))];
+      // All five must be waiting within 1.5 s of the first, so the cancel below
+      // lands long before the first waiter's own lock_timeout (5 s).
+      await untilWaiting(5, 1_500);
+      const cancelled = await observer.$queryRaw<Array<{ pid: number; cancelled: boolean; queryStartMs: number | null; waitStartMs: number | null }>>`
+        SELECT a.pid, pg_cancel_backend(a.pid) AS cancelled,
+               (extract(epoch FROM a.query_start) * 1000)::float8 AS "queryStartMs",
+               (extract(epoch FROM l.waitstart) * 1000)::float8 AS "waitStartMs"
+        FROM pg_stat_activity a
+        LEFT JOIN LATERAL (SELECT min(waitstart) AS waitstart FROM pg_locks WHERE pid = a.pid AND NOT granted) l ON true
+        WHERE a.datname = current_database() AND a.wait_event_type = 'Lock' AND a.query LIKE '%"AutomationRule"%FOR UPDATE%'
+      `;
+      expect(cancelled.filter((row) => row.cancelled).length, JSON.stringify({ cancelledAt: Date.now(), waiters: cancelled })).toBe(5);
+      results = await Promise.all(calls);
+    } finally {
+      held.release();
+      await held.done;
+    }
+    const summary = JSON.stringify(results.map((result) => (result.error instanceof Error ? `${result.error.name}: ${result.error.message}` : String(result.error))));
+    const [toggle, create, funnelEdit, funnelEnable, remove] = results;
+    expect(String((toggle!.error as Error).message), summary).toBe("redirect:/settings/automations?error=toggle_busy");
+    expect(String((create!.error as Error).message), summary).toBe("redirect:/settings/automations?error=step_busy");
+    expect(funnelEdit!.error, summary).toBeInstanceOf(FunnelAutomationBusyError);
+    expect(funnelEnable!.error, summary).toBeInstanceOf(FunnelAutomationBusyError);
+    expect(String((remove!.error as Error).message), summary).toBe("redirect:/settings/automations?error=delete_busy");
+    await expect(db.automationRule.findUniqueOrThrow({ where: { id: r.id } })).resolves.toMatchObject({ name: r.name, isActive: false, version: 1 });
+    await expect(db.automationRuleStep.count({ where: { ruleId: r.id } })).resolves.toBe(0);
+    await expect(db.auditLog.count({ where: { vendorId: vendor.id } })).resolves.toBe(0);
+  }, 20_000);
 });

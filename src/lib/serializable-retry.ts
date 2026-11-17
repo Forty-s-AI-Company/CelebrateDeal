@@ -68,6 +68,49 @@ export function isLockTimeout(error: unknown) {
   return error instanceof Prisma.PrismaClientUnknownRequestError && LOCK_TIMEOUT_MESSAGE.test(error.message);
 }
 
+const QUERY_CANCELED_SQLSTATE = "57014";
+const QUERY_CANCELED_MESSAGE = /canceling statement due to (?:user request|statement timeout)/iu;
+
+/**
+ * A bounded lock wait that ended without the lock: lock_timeout (55P03) or a
+ * cancelled statement (57014, query_canceled). Both roll the transaction back
+ * and leave nothing written, so a writer can report "busy, try again".
+ *
+ * 57014 belongs here because PostgreSQL can report a lock_timeout as a "user
+ * request" cancel: when a waiter's lock_timeout fires just as its lock is
+ * granted (e.g. the tuple lock of a FOR UPDATE, handed over by a waiter that
+ * gave up at the same moment), ProcSleep keeps the timeout's indicator and the
+ * pending cancel, but the next lock wait of the same statement (the holder's
+ * transaction id) re-arms LOCK_TIMEOUT, which clears the indicator. The
+ * pending cancel is then reported as "canceling statement due to user
+ * request" (at least PostgreSQL 16, checked against REL_16_STABLE: proc.c
+ * ProcSleep / timeout.c enable_timeout / postgres.c ProcessInterrupts). A
+ * statement_timeout or pg_cancel_backend ends the wait the same way.
+ *
+ * For mapping to a "busy" result only: never retry on it automatically (a
+ * deliberate cancel must stay cancelled); use isLockTimeout for retries.
+ */
+export function isLockWaitGivenUp(error: unknown) {
+  if (isLockTimeout(error)) return true;
+  if (error instanceof Prisma.PrismaClientKnownRequestError) {
+    const meta = error.meta as { code?: unknown } | undefined;
+    return error.code === QUERY_CANCELED_SQLSTATE || meta?.code === QUERY_CANCELED_SQLSTATE || QUERY_CANCELED_MESSAGE.test(error.message);
+  }
+  return error instanceof Prisma.PrismaClientUnknownRequestError && QUERY_CANCELED_MESSAGE.test(error.message);
+}
+
+/**
+ * A rule write (automation rule, its steps, the funnel editor) that waited on
+ * the rule row FOR UPDATE and gave up: the wait was given up
+ * (isLockWaitGivenUp: 55P03, or 57014 which PostgreSQL also reports for a
+ * lock_timeout), or the transaction could not start or finish in time
+ * (P2028). The transaction rolled back and nothing was written, so the writer
+ * answers "busy, try again".
+ */
+export function isRuleWriteBusy(error: unknown) {
+  return isLockWaitGivenUp(error) || (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2028");
+}
+
 const DEFAULT_BASE_DELAY_MS = 20;
 const DEFAULT_MAX_DELAY_MS = 400;
 
