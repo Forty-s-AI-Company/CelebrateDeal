@@ -8,11 +8,12 @@ const scope = { vendorId: "vendor-1", customerKeyHash: "a".repeat(43) };
 const now = new Date("2026-10-08T06:00:00.000Z");
 const booking = { id: "booking-1", startTime: new Date("2026-10-08T08:00:00.000Z"), event: { title: "Synthetic appointment" } };
 const input = { bookingId: booking.id, expectedStartTime: booking.startTime.toISOString() };
-function fixture(consentedAt = new Date(now.getTime() - 600_000)) {
-  // Applies the consent-time bound of the real query to the stored consentedAt.
-  const findPreference = vi.fn(async (args: { where: { consentedAt: { lte: Date } } }) => consentedAt <= args.where.consentedAt.lte ? { id: "pref-1", consentedAt } : null);
+function fixture(...consents: Date[]) {
+  // One eligible preference per channel; applies the consent-time bound of the real query.
+  const stored = consents.length ? consents : [new Date(now.getTime() - 600_000)];
+  const findPreferences = vi.fn(async (args: { where: { consentedAt: { lte: Date } } }) => stored.filter(consentedAt => consentedAt <= args.where.consentedAt.lte).map(consentedAt => ({ consentedAt })));
   const tx = { consultationBooking: { findFirst: vi.fn(async () => booking), findMany: vi.fn(async () => [booking]) },
-    learnerNotificationPreference: { findFirst: findPreference }, vendor: { findUniqueOrThrow: vi.fn(async () => ({ slug: "academy" })) },
+    learnerNotificationPreference: { findMany: findPreferences }, vendor: { findUniqueOrThrow: vi.fn(async () => ({ slug: "academy" })) },
     learnerNotificationSourceEvent: { upsert: vi.fn(async () => ({ id: "source-1" })), findFirstOrThrow: vi.fn(async () => ({ availableAt: new Date("2026-10-08T07:00:00.000Z") })), findMany: vi.fn(async () => [] as Array<{ eventIdentity: string }>) } };
   const db = { ...tx, $transaction: vi.fn(async (run: (store: typeof tx) => unknown) => run(tx)) };
   return { tx, db };
@@ -32,7 +33,7 @@ it("missing or stale own booking refuses source creation", async () => {
   const f = fixture(); f.tx.consultationBooking.findFirst.mockResolvedValueOnce(null as never); expect((await confirmLearnerConsultationReminder(f.db as never, scope, "course-1", input)).status).toBe("not_found"); expect(f.tx.learnerNotificationSourceEvent.upsert).not.toHaveBeenCalled();
 });
 it("unverified or disabled consent refuses confirmation without implicit opt-in", async () => {
-  const f = fixture(); f.tx.learnerNotificationPreference.findFirst.mockResolvedValueOnce(null as never); expect((await confirmLearnerConsultationReminder(f.db as never, scope, "course-1", input)).status).toBe("verification_required"); expect(f.tx.learnerNotificationSourceEvent.upsert).not.toHaveBeenCalled();
+  const f = fixture(); f.tx.learnerNotificationPreference.findMany.mockResolvedValueOnce([]); expect((await confirmLearnerConsultationReminder(f.db as never, scope, "course-1", input)).status).toBe("verification_required"); expect(f.tx.learnerNotificationSourceEvent.upsert).not.toHaveBeenCalled();
 });
 it("binds exact recipient, active project/course and expected future start within one transaction", async () => {
   const f = fixture(); expect(await confirmLearnerConsultationReminder(f.db as never, scope, "course-1", input)).toEqual({ status: "scheduled", availableAt: "2026-10-08T07:00:00.000Z" });
@@ -50,7 +51,7 @@ it.each([1_000, 2_000, 60_000])("consent stamped %i ms ahead by a faster instanc
   const consentedAt = new Date(now.getTime() + aheadMs);
   const f = fixture(consentedAt); const startTime = new Date(now.getTime() + 20 * 60000); f.tx.consultationBooking.findFirst.mockResolvedValueOnce({ ...booking, startTime });
   expect((await confirmLearnerConsultationReminder(f.db as never, scope, "course-1", { ...input, expectedStartTime: startTime.toISOString() })).status).toBe("scheduled");
-  expect(f.tx.learnerNotificationPreference.findFirst).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ consentedAt: { lte: new Date(now.getTime() + 60_000) } }) }));
+  expect(f.tx.learnerNotificationPreference.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ consentedAt: { lte: new Date(now.getTime() + 60_000) } }) }));
   // Fan-out (consentedAt <= occurredAt) and dispatch (consentedAt <= confirmedAt) keep the exact order.
   const args = f.tx.learnerNotificationSourceEvent.upsert.mock.calls[0] as unknown as [{ create: Record<string, unknown> }]; const data = args[0].create;
   expect(data).toEqual(expect.objectContaining({ occurredAt: consentedAt, availableAt: consentedAt }));
@@ -60,6 +61,19 @@ it.each([1_000, 2_000, 60_000])("consent stamped %i ms ahead by a faster instanc
 it("consent stamped more than 60 s ahead is not a clock skew and still needs verification", async () => {
   const f = fixture(new Date(now.getTime() + 61_000)); expect((await confirmLearnerConsultationReminder(f.db as never, scope, "course-1", input)).status).toBe("verification_required"); expect(f.tx.learnerNotificationSourceEvent.upsert).not.toHaveBeenCalled();
   const g = fixture(new Date(now.getTime() + 60_001)); expect((await confirmLearnerConsultationReminder(g.db as never, scope, "course-1", input)).status).toBe("verification_required");
+});
+it("several channels: confirmation is recorded no earlier than the latest eligible consent, in any row order", async () => {
+  const latest = new Date(now.getTime() + 45_000);
+  for (const order of [[new Date(now.getTime() + 5_000), latest, new Date(now.getTime() - 600_000)], [latest, new Date(now.getTime() + 5_000)]]) {
+    const f = fixture(...order); expect((await confirmLearnerConsultationReminder(f.db as never, scope, "course-1", input)).status).toBe("scheduled");
+    const data = (f.tx.learnerNotificationSourceEvent.upsert.mock.calls[0] as unknown as [{ create: Record<string, unknown> }])[0].create;
+    expect(data.occurredAt).toEqual(latest);
+    const purpose = `learner-notification-source-v1:${JSON.stringify([scope.vendorId,"course-1","consultation_reminder",data.eventIdentity])}`;
+    expect(JSON.parse(decryptSensitiveValue(String(data.payloadEncryptedEnvelope), purpose)).consultationBooking.confirmedAt).toBe(latest.toISOString());
+  }
+  // A channel consented beyond the skew window is neither awaited nor counted.
+  const g = fixture(new Date(now.getTime() - 600_000), new Date(now.getTime() + 61_000)); await confirmLearnerConsultationReminder(g.db as never, scope, "course-1", input);
+  expect((g.tx.learnerNotificationSourceEvent.upsert.mock.calls[0] as unknown as [{ create: Record<string, unknown> }])[0].create.occurredAt).toEqual(now);
 });
 it("a booking more than an hour away keeps its reminder an hour before start despite a skewed consent", async () => {
   const f = fixture(new Date(now.getTime() + 30_000)); await confirmLearnerConsultationReminder(f.db as never, scope, "course-1", input);

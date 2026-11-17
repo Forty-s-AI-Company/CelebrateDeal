@@ -3,6 +3,7 @@ import { trustedRequestOrigin } from "@/lib/api-security";
 import { DERIVED_KEY_ROTATIONS } from "@/lib/derived-key-rotation";
 import { decryptSensitiveValue, encryptSensitiveValue } from "@/lib/sensitive-data";
 import { registrationRetrySourcePath, registrationRetrySecureCookies } from "@/lib/registration-form-retry";
+import { SERVER_CLOCK_SKEW_MS } from "@/lib/server-clock-skew";
 
 // Rotated after #485 (tier 2): the receipt cookie lives one minute.
 const PURPOSE = DERIVED_KEY_ROTATIONS.registrationSubmissionResult.current;
@@ -44,6 +45,9 @@ export function verifyRegistrationResult(value: string | undefined, formId: stri
     const result: unknown = JSON.parse(decryptSensitiveValue(value, PURPOSE));
     if (!result || typeof result !== "object") return false;
     const entry = result as Record<string, unknown>;
-    return entry.formId === formId && entry.path === canonicalPath && typeof entry.expiresAt === "number" && entry.expiresAt > now && entry.expiresAt <= now + REGISTRATION_RESULT_TTL_MS;
+    // expiresAt - TTL is the issue time; the thank-you page reading it may run
+    // on another instance: tolerate SERVER_CLOCK_SKEW_MS of "issued in the
+    // future" only, never a later expiry.
+    return entry.formId === formId && entry.path === canonicalPath && typeof entry.expiresAt === "number" && entry.expiresAt > now && entry.expiresAt <= now + REGISTRATION_RESULT_TTL_MS + SERVER_CLOCK_SKEW_MS;
   } catch { return false; }
 }

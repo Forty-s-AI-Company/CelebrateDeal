@@ -57,6 +57,15 @@ describe("consultation reminder vs. the dispatcher's clock", () => {
     expect(f.tx.learnerNotificationDelivery.updateMany).not.toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ status: "suppressed" }) }));
   });
 
+  it("the database-clock 'at most an hour early' bound carries the same 60-second allowance", async () => {
+    const { f } = await dispatchAt(confirmedAt);
+    const call = f.tx.$queryRaw.mock.calls.find(([query]) => ("strings" in query ? query.strings : query).join("?").includes('FROM "ConsultationBooking" b'));
+    const text = ("strings" in call![0] ? call![0].strings : call![0]).join("?");
+    expect(text).toContain(`b."startTime">clock_timestamp() AND b."startTime"<=clock_timestamp()+INTERVAL '1 hour'+make_interval(secs=>?::double precision)`);
+    // Values: vendorId, bookingId, customerKeyHash, startTime, skew seconds, productId.
+    expect((call as unknown[]).slice(1)).toEqual([vendorId, "booking_a", scope.customerKeyHash, new Date("2026-11-17T02:30:00.000Z"), 60, scope.productId]);
+  });
+
   it.each([1_000, 60_000])("accepts confirmedAt %i ms ahead of the dispatcher", async aheadMs => {
     expect((await dispatchAt(new Date(confirmedAt.getTime() - aheadMs))).result).toEqual({ status: "sent", providerAttempted: true });
   });
