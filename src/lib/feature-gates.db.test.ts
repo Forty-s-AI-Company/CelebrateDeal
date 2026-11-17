@@ -85,6 +85,15 @@ describe("Vendor.betaFeatureGrants", () => {
     await expect(isVendorFeatureEnabled(db, created.id, "automation_form_no_show")).resolves.toBe(true);
     await expect(db.vendor.update({ where: { id: created.id }, data: { betaFeatureGrants: ["automation_form_noshow"] } })).rejects.toThrow();
   });
+
+  it("accepts the automation_watch_progress grant (Q-11, 20261118090200_automation_watch_progress_grant), off by default, and still rejects unknown values", async () => {
+    const created = await vendor();
+    await expect(isVendorFeatureEnabled(db, created.id, "automation_watch_progress")).resolves.toBe(false);
+    const grants = ["automation_delayed_steps", "automation_form_no_show", "automation_watch_progress"];
+    await expect(db.vendor.update({ where: { id: created.id }, data: { betaFeatureGrants: grants } })).resolves.toMatchObject({ betaFeatureGrants: grants });
+    await expect(isVendorFeatureEnabled(db, created.id, "automation_watch_progress")).resolves.toBe(true);
+    await expect(db.vendor.update({ where: { id: created.id }, data: { betaFeatureGrants: ["automation_watch_progres"] } })).rejects.toThrow();
+  });
 });
 
 describe("course products while the courses module is closed (F-001, review M-1)", () => {

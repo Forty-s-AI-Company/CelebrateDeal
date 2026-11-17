@@ -61,18 +61,19 @@ export {
  * The single list of triggers a merchant may put on a new rule, or switch a
  * rule on with (F-4 gap 2). The UI and every Server Action read it.
  *
- * Only these five have a production caller today: the form submission route,
+ * Only these six have a production caller today: the form submission route,
  * the two consultation actions, the first paid transition of a canonical
  * order in the payment webhook (F-4 PR 3, src/lib/payment-paid-automation.ts)
- * and the e-mail job's no-show pass (Q-11, src/lib/form-no-show-automation.ts).
- * `viewer_watch_progress` and `webinar_attended_duration_gte` have none, so a
- * rule using them would never run. Existing rules with a hidden trigger stay
- * listed and can be switched off or deleted, but not created, switched on or
- * edited into one.
+ * and the e-mail job's no-show and watch-progress passes (Q-11,
+ * src/lib/form-no-show-automation.ts, src/lib/watch-progress-automation.ts).
+ * `webinar_attended_duration_gte` has none, so a rule using it would never
+ * run. Existing rules with a hidden trigger stay listed and can be switched
+ * off or deleted, but not created, switched on or edited into one.
  */
 export const AVAILABLE_AUTOMATION_TRIGGERS = [
   "form_registered",
   "form_no_show",
+  "viewer_watch_progress",
   "consultation_booked",
   "consultation_no_show",
   "payment_paid",
@@ -92,15 +93,68 @@ export function isAvailableAutomationTrigger(value: unknown): value is Available
 export const AUTOMATION_FORM_NO_SHOW_FEATURE = "automation_form_no_show" as const;
 
 /**
- * `isAvailableAutomationTrigger` for one vendor: `form_no_show` also needs the
- * vendor's closed-beta grant. Every merchant-facing path (the page, creating,
- * switching on, recipes, dry runs, delayed-step changes) and every runner (the
- * no-show job, the delayed-step worker) asks this.
+ * Closed beta of `viewer_watch_progress` (Q-11): the progress is the time a
+ * registration was admitted while its session played, known only on devices
+ * that carry the registration's signed cookie (as for form_no_show), and the
+ * percentage is a new product rule. The platform opens it per vendor in
+ * /admin/vendor-features.
+ */
+export const AUTOMATION_WATCH_PROGRESS_FEATURE = "automation_watch_progress" as const;
+
+/** The closed-beta grant a trigger needs on top of being available, if any. */
+const AUTOMATION_TRIGGER_BETA_FEATURES: Partial<Record<AvailableAutomationTrigger, typeof AUTOMATION_FORM_NO_SHOW_FEATURE | typeof AUTOMATION_WATCH_PROGRESS_FEATURE>> = {
+  form_no_show: AUTOMATION_FORM_NO_SHOW_FEATURE,
+  viewer_watch_progress: AUTOMATION_WATCH_PROGRESS_FEATURE,
+};
+
+/** The closed-beta grant `trigger` needs (form_no_show, viewer_watch_progress), or null. */
+export function automationTriggerBetaFeature(trigger: string) {
+  return isAvailableAutomationTrigger(trigger) ? AUTOMATION_TRIGGER_BETA_FEATURES[trigger] ?? null : null;
+}
+
+/**
+ * `isAvailableAutomationTrigger` for one vendor: `form_no_show` and
+ * `viewer_watch_progress` also need the vendor's own closed-beta grant. Every
+ * merchant-facing path (the page, creating, switching on, recipes, dry runs,
+ * delayed-step changes) and every runner (the no-show and watch-progress
+ * passes, the delayed-step worker) asks this.
  */
 export function isAutomationTriggerAvailableForVendor(trigger: unknown, vendor: FeatureGateVendor | null | undefined): trigger is AvailableAutomationTrigger {
   if (!isAvailableAutomationTrigger(trigger)) return false;
-  return trigger !== "form_no_show" || isFeatureEnabled(vendor, AUTOMATION_FORM_NO_SHOW_FEATURE);
+  const feature = AUTOMATION_TRIGGER_BETA_FEATURES[trigger];
+  return !feature || isFeatureEnabled(vendor, feature);
 }
+
+/**
+ * Whether a stored rule can run for this vendor: its trigger is available
+ * and, for `viewer_watch_progress`, its condition is the watch percentage.
+ * Rules saved while that trigger was hidden carry a watch-seconds condition
+ * the watch-progress pass never runs (20261118090100 switched them off), so
+ * they cannot be switched on or simulated either.
+ */
+export function isAutomationRuleRunnableForVendor(rule: { trigger: unknown; condition: unknown }, vendor: FeatureGateVendor | null | undefined) {
+  if (!isAutomationTriggerAvailableForVendor(rule.trigger, vendor)) return false;
+  return rule.trigger !== "viewer_watch_progress" || watchProgressRulePercent(rule.condition) !== null;
+}
+
+/** The threshold of a `viewer_watch_progress` rule's condition, or null for any other (legacy) condition. */
+export function watchProgressRulePercent(condition: unknown) {
+  const parsed = AutomationConditionSchema.safeParse(condition);
+  return parsed.success && parsed.data.type === "watch_percent_gte" ? parsed.data.percent : null;
+}
+
+/** Thresholds offered in /settings/automations; the server accepts any whole percent from 1 to 100. */
+export const WATCH_PROGRESS_PERCENT_OPTIONS = [25, 50, 75, 90] as const;
+
+export function isWatchProgressPercent(value: unknown): value is number {
+  return typeof value === "number" && Number.isInteger(value) && value >= 1 && value <= 100;
+}
+
+/**
+ * Shown on every `viewer_watch_progress` rule and the rule form: what the
+ * progress counts, so a merchant does not read it as video position.
+ */
+export const WATCH_PROGRESS_DETECTION_NOTE = "觀看進度＝已完成 Email 驗證的報名者，在自己的場次播放期間（不含回放）停留在觀看頁的時間，除以影片長度；真人直播在結束後以實際播放長度計算。真人直播在結束後約 5 分鐘內一次判斷所有門檻，請在直播結束時按「結束」。同一筆報名在不同場次的觀看時間會累加。只能辨識在報名驗證的瀏覽器，或從提醒信、開播通知的個人連結進場的裝置；在其他裝置直接打開直播頁觀看的時間不會計入。同一個人多台裝置同時觀看只算一次時間。";
 
 /** The triggers a vendor may choose (AVAILABLE_AUTOMATION_TRIGGERS less the ones its grants do not open). */
 export function availableAutomationTriggersForVendor(vendor: FeatureGateVendor | null | undefined) {
@@ -125,12 +179,15 @@ export const FORM_NO_SHOW_DETECTION_NOTE = "只能辨識在報名驗證的瀏覽
  * registrant's VERIFIED FormSubmission. `payment_paid` (Q-09) points at the
  * paid CommerceOrder (`commerceOrderId`); the worker stops its run once the
  * order is fully refunded, cancelled or a test order (paymentPaidRunOrderCounts).
+ * `viewer_watch_progress` (Q-11) also points at the registration that reached
+ * the threshold.
  * Step changes on any other rule are refused (`steps_unsupported`), no run is
  * started and the worker stops one.
  */
 export const DELAYED_STEP_AUTOMATION_TRIGGERS = [
   "form_registered",
   "form_no_show",
+  "viewer_watch_progress",
   "consultation_booked",
   "consultation_no_show",
   "payment_paid",
@@ -212,7 +269,7 @@ export function formNoShowWebinarUrl(live: AutomationReplayLive, fixedSession: {
 
 /** Triggers whose subject is a registration (FormSubmission), not a consultation booking. */
 export function automationTriggerSubjectIsRegistration(trigger: string) {
-  return trigger === "form_registered" || trigger === "form_no_show";
+  return trigger === "form_registered" || trigger === "form_no_show" || trigger === "viewer_watch_progress";
 }
 
 export function automationTriggerSupportsDelayedSteps(value: unknown): value is typeof DELAYED_STEP_AUTOMATION_TRIGGERS[number] {
@@ -240,6 +297,9 @@ const AutomationConditionSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("order_amount_gte"), amountCents: z.number().int().min(1) }).strict(),
   z.object({ type: z.literal("watch_seconds_gte"), seconds: z.number().int().min(1).max(86_400) }).strict(),
   z.object({ type: z.literal("watch_seconds_gte_and_not_purchased"), seconds: z.number().int().min(1).max(86_400) }).strict(),
+  // Q-11 viewer_watch_progress: the server-counted watch time reached this
+  // whole percent of the session length (src/lib/watch-progress-automation.ts).
+  z.object({ type: z.literal("watch_percent_gte"), percent: z.number().int().min(1).max(100) }).strict(),
 ]);
 
 const AUTOMATION_URL_PLACEHOLDERS = new Set(["{{voucher_url}}", "{{consultation_url}}", "{{webinar_url}}"]);
@@ -430,6 +490,8 @@ export type AutomationEvent = {
   orderAmountCents?: number;
   currency?: string;
   watchSecondsTotal?: number;
+  /** Q-11 viewer_watch_progress: whole percent of the session watched, computed by the server (0 to 100). */
+  watchPercent?: number;
   hasPurchased?: boolean;
   recipientEmail?: string;
   /**
@@ -472,6 +534,9 @@ export function automationConditionMatches(condition: AutomationCondition, event
   if (condition.type === "order_amount_gte") {
     return event.trigger === "payment_paid" && (event.orderAmountCents ?? -1) >= condition.amountCents;
   }
+  if (condition.type === "watch_percent_gte") {
+    return event.trigger === "viewer_watch_progress" && (event.watchPercent ?? -1) >= condition.percent;
+  }
   const isWatchTrigger = event.trigger === "viewer_watch_progress" || event.trigger === "webinar_attended_duration_gte";
   if (condition.type === "watch_seconds_gte_and_not_purchased") {
     return isWatchTrigger && event.hasPurchased === false && (event.watchSecondsTotal ?? -1) >= condition.seconds;
@@ -497,11 +562,17 @@ function executionIdempotencyKey(rule: ParsedRule, event: AutomationEvent) {
   // A no-show (Q-11) is one registration missing one session: its event id
   // (`form-no-show:{submissionId}:{sessionKey}`) is built only by the job from
   // server records, so each session of a registration runs a rule once.
-  const eventIdentity = event.trigger === "viewer_watch_progress" || event.trigger === "webinar_attended_duration_gte"
-    ? `viewer:${event.liveId}:${event.subjectKeyHash}:version:${rule.version}`
-    : event.trigger === "form_no_show"
-      ? `no-show:${event.eventId}:version:${rule.version}`
-      : `order:${event.subjectId}:version:${rule.version}`;
+  // A watch-progress event (Q-11) is one registration reaching one threshold:
+  // its event id (`watch-progress:{submissionId}:{percent}`) is also built only
+  // by its job, so a registration runs a rule once per threshold, whatever
+  // device, refresh or retry produced the credited time.
+  const eventIdentity = event.trigger === "viewer_watch_progress"
+    ? `watch-progress:${event.eventId}:version:${rule.version}`
+    : event.trigger === "webinar_attended_duration_gte"
+      ? `viewer:${event.liveId}:${event.subjectKeyHash}:version:${rule.version}`
+      : event.trigger === "form_no_show"
+        ? `no-show:${event.eventId}:version:${rule.version}`
+        : `order:${event.subjectId}:version:${rule.version}`;
   return createHash("sha256").update(`automation:v1:${event.vendorId}:${rule.id}:${event.trigger}:${eventIdentity}`).digest("hex");
 }
 
@@ -964,7 +1035,10 @@ async function claimRuleExecution(
         ruleId: rule.id,
         idempotencyKey,
         eventId: event.eventId,
-        liveId: event.liveId,
+        // AutomationExecutionLog.liveId → Live is ON DELETE RESTRICT: a
+        // watch-progress log (Q-11) never names the Live, like a no-show's, so
+        // it never stops the merchant from deleting that Live.
+        liveId: event.trigger === "viewer_watch_progress" ? undefined : event.liveId,
         trigger: event.trigger,
         subjectType: event.subjectType,
         subjectKeyHash: event.subjectKeyHash,

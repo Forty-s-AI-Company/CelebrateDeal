@@ -66,7 +66,7 @@ describe("F-4 PR 2 automation step schema contract", () => {
 
   it("allows the automation_delayed_steps grant in its own migration, as a superset of every earlier grant (review M3)", () => {
     // Every grant that existed at F-4 PR 2; later grants rebuild the CHECK in their own migration (live-registration-attendance-schema-contract.test.ts).
-    for (const feature of BETA_GATED_FEATURES.filter((value) => value !== "automation_form_no_show")) expect(grant).toContain(`'${feature}'`);
+    for (const feature of BETA_GATED_FEATURES.filter((value) => value !== "automation_form_no_show" && value !== "automation_watch_progress")) expect(grant).toContain(`'${feature}'`);
     expect(BETA_GATED_FEATURES).toContain("automation_delayed_steps");
     expect(statementsOf(grant).match(/^ALTER TABLE "Vendor"/gmu)).toHaveLength(2);
     expect(statementsOf(grant).match(/\bDROP CONSTRAINT\b/gu)).toEqual(["DROP CONSTRAINT"]);

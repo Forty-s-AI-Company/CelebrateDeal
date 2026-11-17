@@ -791,6 +791,7 @@ model FormSubmission {
   liveSessionSwitchRedemptions LiveSessionSwitchRedemption[]
   evergreenSessionAssignments  EvergreenSessionAssignment[]
   registrationAttendances      LiveRegistrationAttendance[]
+  watchProgress                LiveWatchProgress[]
   delayedStepRuns              DelayedStepRun[]
 
   trackingDeliveries TrackingDelivery[]
@@ -899,6 +900,7 @@ model Live {
   sessions                   LiveSession[]
   evergreenSessionAssignments EvergreenSessionAssignment[]
   registrationAttendances     LiveRegistrationAttendance[]
+  watchProgress               LiveWatchProgress[]
   emailSequences             EmailSequence[]
   landingPages              LandingPage[]        @relation("LandingPageDraftLive")
   landingPageVersions        LandingPageVersion[] @relation("LandingPageVersionLive")
@@ -1004,6 +1006,30 @@ model LiveRegistrationAttendance {
 
   @@unique([vendorId, formSubmissionId])
   @@index([liveId, formSubmissionId])
+}
+
+/// Q-11 `viewer_watch_progress`: how long one VERIFIED registration was
+/// admitted while its own session of the Live was playing (src/lib/live-watch-progress.ts).
+/// Every value is server-counted from granted admission renewals; the browser
+/// never sends a number. Stores no name, e-mail, IP, cookie or token.
+model LiveWatchProgress {
+  id               String   @id @default(cuid())
+  vendorId         String
+  liveId           String
+  formSubmissionId String
+  /// Wall-clock seconds credited between admission renewals (CHECK 0..LIVE_WATCH_PROGRESS_MAX_SECONDS).
+  watchedSeconds   Int      @default(0)
+  firstCreditedAt  DateTime
+  /// The last renewal that credited time (or restarted the count after a gap).
+  lastCreditedAt   DateTime
+
+  live           Live           @relation(fields: [vendorId, liveId], references: [vendorId, id], onDelete: Cascade)
+  /// The registration's own (liveId, id) key: it always belongs to this Live.
+  formSubmission FormSubmission @relation(fields: [liveId, formSubmissionId], references: [liveId, id], onDelete: Cascade)
+
+  @@unique([vendorId, formSubmissionId])
+  @@index([liveId, formSubmissionId])
+  @@index([vendorId, lastCreditedAt])
 }
 
 /// Private WHIP/WHEP resources. Never expose upstream session URLs to viewers.

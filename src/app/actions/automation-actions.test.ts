@@ -11,12 +11,15 @@ function form(trigger = "form_registered") { const f = new FormData(); f.set("na
 function lineForm(trigger = "form_registered") { const f = form(trigger); f.delete("actionTag"); f.set("actionLine", "on"); f.set("lineMessage", "謝謝報名"); return f; }
 const asOwner = () => runtime.manager.mockResolvedValue({ ...runtime.auth, member: { role: "owner" } });
 /** Q-11 review M-1: form_no_show is a closed beta opened per vendor. */
+const withWatchGrant = (role = "admin") => runtime.manager.mockResolvedValue({ ...runtime.auth, vendor: { id: "v1", betaFeatureGrants: ["automation_watch_progress"] }, member: { role } });
 const withNoShowGrant = (role = "admin") => runtime.manager.mockResolvedValue({ ...runtime.auth, vendor: { id: "v1", betaFeatureGrants: ["automation_form_no_show"] }, member: { role } });
 function ruleForm(id = "r1") { const f = new FormData(); f.set("ruleId", id); return f; }
 // Q-11: form_no_show has a caller (the e-mail job's no-show pass) and is no longer hidden.
+// viewer_watch_progress has one too (the watch-progress pass) but stays closed without its own
+// closed-beta grant, which the default actor does not hold; with the grant see "watch progress (Q-11)".
 const HIDDEN_TRIGGERS = ["viewer_watch_progress", "webinar_attended_duration_gte"] as const;
 beforeEach(() => { vi.clearAllMocks(); runtime.manager.mockResolvedValue(runtime.auth); runtime.db.automationRule.create.mockResolvedValue({ id: "r1", vendorId: "v1" }); runtime.db.automationRule.findFirst.mockResolvedValue({ id: "r1", isActive: true, trigger: "form_registered" }); runtime.db.automationRule.updateMany.mockResolvedValue({ count: 1 }); runtime.db.automationRule.delete.mockResolvedValue({ id: "r1" }); runtime.db.automationExecutionLog.count.mockResolvedValue(0); runtime.db.delayedStepRun.count.mockResolvedValue(0); runtime.db.delayedStepRun.updateMany.mockResolvedValue({ count: 0 }); runtime.db.$queryRaw.mockResolvedValue([{ id: "r1" }]); runtime.db.$transaction.mockImplementation(async (work: (tx: unknown) => unknown) => work(runtime.db)); });
-describe("automation actions", () => { it("requires CSRF and writes tenant-scoped rules", async () => { await expect(createAutomationRuleAction(form())).rejects.toThrow("redirect:/settings/automations?updated=created"); expect(runtime.security).toHaveBeenCalled(); expect(runtime.manager).toHaveBeenCalledWith("/settings/automations"); expect(runtime.db.automationRule.create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ vendorId: "v1", trigger: "form_registered", condition: { type: "always" } }) })); expect(runtime.audit).toHaveBeenCalledWith(expect.objectContaining({ vendorId: "v1", actorId: "u1", actorLabel: "admin" })); }); it("toggles only a rule in the current vendor", async () => { await expect(toggleAutomationRuleAction(ruleForm())).rejects.toThrow("redirect:/settings/automations?updated=toggled"); expect(runtime.db.automationRule.findFirst).toHaveBeenCalledWith({ where: { id: "r1", vendorId: "v1" }, select: { id: true, isActive: true, trigger: true } }); expect(runtime.db.automationRule.updateMany).toHaveBeenCalledWith({ where: { id: "r1", vendorId: "v1", isActive: true }, data: { isActive: false } });
+describe("automation actions", () => { it("requires CSRF and writes tenant-scoped rules", async () => { await expect(createAutomationRuleAction(form())).rejects.toThrow("redirect:/settings/automations?updated=created"); expect(runtime.security).toHaveBeenCalled(); expect(runtime.manager).toHaveBeenCalledWith("/settings/automations"); expect(runtime.db.automationRule.create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ vendorId: "v1", trigger: "form_registered", condition: { type: "always" } }) })); expect(runtime.audit).toHaveBeenCalledWith(expect.objectContaining({ vendorId: "v1", actorId: "u1", actorLabel: "admin" })); }); it("toggles only a rule in the current vendor", async () => { await expect(toggleAutomationRuleAction(ruleForm())).rejects.toThrow("redirect:/settings/automations?updated=toggled"); expect(runtime.db.automationRule.findFirst).toHaveBeenCalledWith({ where: { id: "r1", vendorId: "v1" }, select: { id: true, isActive: true, trigger: true, condition: true } }); expect(runtime.db.automationRule.updateMany).toHaveBeenCalledWith({ where: { id: "r1", vendorId: "v1", isActive: true }, data: { isActive: false } });
     // F-4 review M1: the rule row is locked FOR UPDATE (bound to the vendor) and its active delayed-step runs stop in the same transaction.
     const [lockSql, ...lockValues] = runtime.db.$queryRaw.mock.calls[0] as [TemplateStringsArray, ...unknown[]];
     expect(lockSql.join("?")).toMatch(/FROM "AutomationRule" WHERE "id" = \? AND "vendorId" = \? FOR UPDATE/u);
@@ -518,5 +521,65 @@ describe("automation actions", () => { it("requires CSRF and writes tenant-scope
     it("still refuses an unknown template as an invalid rule", async () => {
       await expect(createAutomationRuleAction(emailForm("consultation_booked", "made_up"))).rejects.toThrow("redirect:/settings/automations?error=invalid_rule");
     });
+  });
+});
+
+describe("watch progress (Q-11 viewer_watch_progress)", () => {
+  function watchForm(percent?: string) { const f = form("viewer_watch_progress"); if (percent !== undefined) f.set("watchPercent", percent); return f; }
+
+  it("creates a rule with a whole watch percent, read from its own field and never from the amount field", async () => {
+    withWatchGrant();
+    const f = watchForm("75");
+    f.set("conditionValue", "300");
+    await expect(createAutomationRuleAction(f)).rejects.toThrow("redirect:/settings/automations?updated=created");
+    expect(runtime.db.automationRule.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ vendorId: "v1", trigger: "viewer_watch_progress", condition: { type: "watch_percent_gte", percent: 75 } }),
+    }));
+  });
+
+  it.each([undefined, "", "0", "101", "50.5", "-25", "abc"])("refuses a watch percent that is not a whole number from 1 to 100 (%j)", async (value) => {
+    withWatchGrant();
+    await expect(createAutomationRuleAction(watchForm(value))).rejects.toThrow("redirect:/settings/automations?error=invalid_rule");
+    expect(runtime.db.automationRule.create).not.toHaveBeenCalled();
+  });
+
+  it("refuses the trigger without the closed-beta grant, even with form_no_show's grant", async () => {
+    withNoShowGrant();
+    await expect(createAutomationRuleAction(watchForm("50"))).rejects.toThrow("redirect:/settings/automations?error=trigger_unavailable");
+    expect(runtime.db.automationRule.create).not.toHaveBeenCalled();
+  });
+
+  it("offers no e-mail template without a voucher (its event carries no link, Q-18)", async () => {
+    withWatchGrant();
+    const f = watchForm("50");
+    f.delete("actionTag");
+    f.set("actionEmail", "on");
+    f.set("emailTemplate", "webinar_replay");
+    await expect(createAutomationRuleAction(f)).rejects.toThrow("redirect:/settings/automations?error=email_template_unavailable");
+  });
+
+  it("switches a percentage rule on, but never one saved with the old watch-seconds condition", async () => {
+    withWatchGrant();
+    runtime.db.automationRule.findFirst.mockResolvedValueOnce({ id: "r1", isActive: false, trigger: "viewer_watch_progress", condition: { type: "watch_percent_gte", percent: 50 } });
+    await expect(toggleAutomationRuleAction(ruleForm())).rejects.toThrow("redirect:/settings/automations?updated=toggled");
+    runtime.db.automationRule.updateMany.mockClear();
+    runtime.db.automationRule.findFirst.mockResolvedValueOnce({ id: "r1", isActive: false, trigger: "viewer_watch_progress", condition: { type: "watch_seconds_gte", seconds: 60 } });
+    await expect(toggleAutomationRuleAction(ruleForm())).rejects.toThrow("redirect:/settings/automations?error=condition_unsupported");
+    expect(runtime.db.automationRule.updateMany).not.toHaveBeenCalled();
+    // Switching such a rule off still works.
+    runtime.db.automationRule.findFirst.mockResolvedValueOnce({ id: "r1", isActive: true, trigger: "viewer_watch_progress", condition: { type: "watch_seconds_gte", seconds: 60 } });
+    await expect(toggleAutomationRuleAction(ruleForm())).rejects.toThrow("redirect:/settings/automations?updated=toggled");
+  });
+
+  it("simulates a percentage rule with the simulated percent, and refuses to simulate a legacy one", async () => {
+    withWatchGrant();
+    runtime.db.automationRule.findFirst.mockResolvedValue({ id: "r1", trigger: "viewer_watch_progress", condition: { type: "watch_percent_gte", percent: 50 }, actions: [{ type: "add_customer_tag", tag: "看一半" }] });
+    const dry = ruleForm();
+    dry.set("watchPercent", "50");
+    await expect(dryRunAutomationRuleAction(dry)).rejects.toThrow("redirect:/settings/automations?dryRun=would_dispatch");
+    dry.set("watchPercent", "49");
+    await expect(dryRunAutomationRuleAction(dry)).rejects.toThrow("redirect:/settings/automations?dryRun=would_skip");
+    runtime.db.automationRule.findFirst.mockResolvedValue({ id: "r1", trigger: "viewer_watch_progress", condition: { type: "watch_seconds_gte", seconds: 60 }, actions: [{ type: "add_customer_tag", tag: "VIP" }] });
+    await expect(dryRunAutomationRuleAction(ruleForm())).rejects.toThrow("redirect:/settings/automations?dryRun=trigger_unavailable");
   });
 });

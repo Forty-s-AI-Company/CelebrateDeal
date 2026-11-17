@@ -28,6 +28,8 @@ export const BETA_GATED_FEATURES = [
   "automation_delayed_steps",
   // Q-11 (review M-1): the 「報名後未出席直播」 automation trigger (form_no_show).
   "automation_form_no_show",
+  // Q-11: the 「觀看直播達到指定進度」 automation trigger (viewer_watch_progress).
+  "automation_watch_progress",
 ] as const;
 
 export type BetaGatedFeature = (typeof BETA_GATED_FEATURES)[number];
@@ -45,6 +47,7 @@ export const BETA_FEATURE_LABELS: Record<BetaGatedFeature, string> = {
   email_sequences: "Email 追銷序列",
   automation_delayed_steps: "自動化延遲步驟",
   automation_form_no_show: "自動化：報名後未出席直播",
+  automation_watch_progress: "自動化：觀看直播達到指定進度",
 };
 
 export const FEATURE_PRESETS = {
