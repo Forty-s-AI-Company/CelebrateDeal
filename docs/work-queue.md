@@ -1,16 +1,33 @@
-已完成 [#610](https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/610)。未驗證：沒有在瀏覽器實際操作編輯器 ||||| 順序 | ID | 項目 | 風險 | 規模 | 完成標準 | 狀態 |
+# 工作佇列
+
+這份清單是自動執行（`/loop 依 docs/work-queue.md 逐項處理`）的唯一來源。它取代 `docs/fable-queue.md` 的「仍未做」段落；該檔保留為 F-1 到 F-5 的歷史紀錄。
+
+盤點基準：master `7f026911`（#606），2026-11-17。現況以程式與已合併 PR 為準，不以文件敘述為準。
+
+## 執行規則
+
+- 由上往下處理「A 可直接做」；每項一個 `ai/*` 分支、一個 PR，依 `AGENTS.md` 與 `CLAUDE.md` 的分工、測試、審查、merge queue 流程合併。
+- **高**風險（金流、auth、租戶、migration、刪資料）＝派 `engineer-hard`，合併前一次獨立審查。**一般**＝派 `engineer`。
+- 每項完成後在本檔把狀態改成「已完成（PR 連結）」，並寫下未驗證的部分。
+- 遇到需要 owner 的決定、金鑰或 Production 操作就跳過該項，記到「C 等 owner」，繼續下一項；不要停下整個佇列。
+- **owner 於 2026-11-17 同意**：依本檔順序執行；staging 的部署（含切 staging alias）、staging migration（`staging-migrate.yml`，先 `status` 再 `deploy`）與 PayUni Sandbox 測試付款可以不經詢問執行，使用合成資料。需要 staging 驗證的項目，合併後在 staging 驗證完才算完成。
+- Production 部署、正式資料庫、正式付款與退款、正式寄信：一律需要 owner 另外授權，不在本佇列的自動範圍內。
+
+## A. 可直接做（依序）
+
+| 順序 | ID | 項目 | 風險 | 規模 | 完成標準 | 狀態 |
 |---|---|---|---|---|---|---|
-| 1 | Q-01 | 兩個不穩定 e2e（救援碼、學員推播） | 一般 | S | merge queue 連續 10 次不因這兩個測試失敗；不加 retry／skip | 進行中：[#607](https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/607)。推播測試根因未確認，PR 加了診斷；下次失敗依 `worker=` 狀態續查 |
+| 1 | Q-01 | 兩個不穩定 e2e（救援碼、學員推播） | 一般 | S | merge queue 連續 10 次不因這兩個測試失敗；不加 retry／skip | 已合併 [#607](https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/607)，觀察中：推播測試根因未確認，PR 加了 `worker=` 診斷；merge queue 再因這兩個測試失敗時依診斷續查 |
 | 2 | P-573 | Dependabot 正式相依（React 19.3.1 等 6 個，#573） | 一般 | S | 重新產生 lockfile（`magicast` 缺鎖檔）；完整 CI 與 e2e 通過 | 未開始 |
 | 3 | P-572 | Dependabot 開發相依（Playwright 1.65 等，#572） | 一般 | S | 同上；確認 `.github/actions/playwright-chromium` 快取 | 未開始 |
-| 4 | P-569 | GitHub Actions 版本升級（#569） | 高（動到 production workflow） | S | 更新 TAP 契約測試第 624 項認可的 blob；逐一確認 action 主版本變更；審查 | 未開始 |
-| 5 | P-561 | staging 首次成功路徑 runner（#561） | 高（註冊、Turnstile 略過條件） | S | 同步 master、CI 通過、對目前 head 補一次審查；workflow 實跑待 staging 授權 | 未開始 |
+| 4 | P-569 | GitHub Actions 版本升級（#569） | 高（動到 production workflow） | S | 更新 TAP 契約測試第 624 項認可的 blob；逐一確認 action 主版本變更；審查 | 已完成 [#609](https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/609)（取代 #569，獨立審查通過）。後續 [#611](https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/611)：帶 secret 的 job 明確關閉 setup-node 快取、全面 SHA 釘選。未驗證：v7 upload／v8 download 尚未在 staging-backup-recovery 實跑 |
+| 5 | P-561 | staging 首次成功路徑 runner（#561） | 高（註冊、Turnstile 略過條件） | S | 同步 master、CI 通過、對目前 head 補一次審查；workflow 實跑待 staging 授權 | 已完成 [#561](https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/561)（合併 `4c367772`，head 經獨立審查）。2026-11-17 staging 套用 9 個 migration（run 43983333501），alias 切到 `dpl_J6oqRLraJuthMj2f1BvzaXYgDdSB`（回滾點 `dpl_2wM7J2796QCBaUdAgoxpfgU3TH8K`），首次成功路徑 run 43983659367 PASS（15 步）。後續見 R-10 |
 | 6 | Q-10 | `payment_paid` 自動化補跑 job | 高 | M | 回應後工作被中止時，下一輪 job 補跑且不重複（設計文件 §8）；PG 測試 | 未開始 |
 | 7 | Q-06 | Email 序列「買了就停」（`stopOnPurchase`） | 高 | M | 已付款訂單的買家不再收到後續步驟；退款不恢復；租戶隔離測試 | 未開始 |
 | 8 | Q-04 | 課後信 job 遇 serialization failure 中止整輪 | 一般 | S–M | 單筆失敗不影響同輪其他寄送；有重試上限 | 未開始 |
 | 9 | Q-14 | `CourseLesson.chapterId` 收緊 NOT NULL | 高（migration） | S | 修復腳本兩個查詢皆 0 後才加；登記 `PRISMA_INVARIANTS.md`。staging 驗證待授權 | 未開始 |
 | 10 | Q-15 | 課程章節排序、刪除、搬移單元 | 一般 | M | 學員進度與證書不受影響；e2e | 未開始 |
-| 11 | U-03 | 編輯器 inspector 對付款元件的說明與 restricted 狀態同步 | 一般 | S | 已綁商品時不再顯示「尚未連接」；`coupon` 維持說明文字 | 未開始 |
+| 11 | U-03 | 編輯器 inspector 對付款元件的說明與 restricted 狀態同步 | 一般 | S | 已綁商品時不再顯示「尚未連接」；`coupon` 維持說明文字 | 已完成 [#610](https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/610)。未驗證：沒有在瀏覽器實際操作編輯器 |
 | 12 | Q-02 | 其他 e2e hydration 競態（accessibility、announcement-center、commerce-orders、course-player） | 一般 | S–M | 先重現或取得 CI 樣本再改 | 未開始 |
 | 13 | Q-03 | 範本庫 `TemplateCard` 對比不足 | 一般 | S | 先在 master 重現；axe 無新增違規 | 未開始 |
 | 14 | Q-12 | 延遲步驟細節（快照損壞重試、連帶撤回、補跑輪流；地址索引另列高） | 一般 | S–M | 各自有測試 | 未開始 |
