@@ -838,17 +838,6 @@ export type AutomationDispatchOptions = {
    */
   rulesUnchangedSince?: Date;
   /**
-   * Q-09 review MINOR-1, the payment_paid catch-up only (it passes the time
-   * the payment was recorded): no delayed-step run starts when an active step
-   * of the rule was added or edited after this instant (adding or editing a
-   * step does not move the rule's updatedAt, which rulesUnchangedSince
-   * checks), and the execution leaves no owed-run mark for the job (whose
-   * back-fill would read the steps as they are then) and clears an earlier
-   * one. The form_no_show job passes rulesUnchangedSince only, so its delayed
-   * steps keep their behaviour.
-   */
-  stepsUnchangedSince?: Date;
-  /**
    * Only these rules (still bound to the event's vendor, trigger and the
    * active flag) run. The catch-up passes the rules its scan chose, so the
    * dispatch never reclaims another rule's `failed` execution on the way.
@@ -952,8 +941,6 @@ type StoredRule = {
   actions: unknown;
   /** The rule's first active delayed step (absent on rows read without it). */
   steps?: Array<{ delayMinutes: number }>;
-  /** Active steps added or edited after stepsUnchangedSince (read only with it). */
-  _count?: { steps: number };
 };
 
 /**
@@ -966,7 +953,7 @@ async function claimRuleExecution(
   rule: ParsedRule,
   event: AutomationEvent,
   firstStep: { delayMinutes: number } | undefined,
-  options: Pick<AutomationDispatchOptions, "failedReclaim" | "stepsUnchangedSince">,
+  options: Pick<AutomationDispatchOptions, "failedReclaim">,
 ): Promise<{ log: { id: string; createdAt?: Date } } | { status: "rule_deleted" | "duplicate" }> {
   const { failedReclaim } = options;
   const idempotencyKey = executionIdempotencyKey(rule, event);
@@ -1007,7 +994,7 @@ async function claimRuleExecution(
     // unique key), but a first attempt that could not create the run gets
     // it now.
     if (existing?.status === "completed" && existing.conditionMatched && firstStep) {
-      await startDelayedSteps(db, delayedStepStartInput(rule.id, event, existing.id, existing.createdAt, options.stepsUnchangedSince));
+      await startDelayedSteps(db, delayedStepStartInput(rule.id, event, existing.id, existing.createdAt));
     }
     return { status: "duplicate" };
   }
@@ -1037,32 +1024,17 @@ async function claimRuleExecution(
 }
 
 /**
- * The rule's first active delayed step for this event. Q-09 review MINOR-1: a
- * catch-up never starts delayed steps when an active step was added or edited
- * after the event (adding or editing a step does not move the rule's
- * updatedAt, which rulesUnchangedSince checks), so a step created after the
- * payment never applies to it (stepsUnchangedSince).
- */
-function eventFirstStep(storedRule: StoredRule, options: AutomationDispatchOptions) {
-  const stepsChangedSinceEvent = Boolean(options.stepsUnchangedSince) && (storedRule._count?.steps ?? 0) > 0;
-  return stepsChangedSinceEvent ? undefined : storedRule.steps?.[0];
-}
-
-/**
  * What the execution log's completion write records about the run the event
- * owes (Q-13). Q-09 review MINOR-1: a payment_paid catch-up (stepsUnchangedSince) never
- * leaves the job an owed run and clears a mark an earlier attempt left: the
- * job's back-fill would read the steps as they are then, not as they were at
- * the event. Its run is only created right after the actions, checked against
- * the steps (startDelayedSteps' stepsUnchangedSince).
+ * owes (Q-13): the subject, when the rule has an active step, the event can
+ * have a run and the vendor takes delayed steps. Every path marks it the same
+ * way (the payment_paid live path, its catch-up, every other trigger);
+ * startDelayedSteps settles it.
  */
 async function pendingRunMark(
   event: AutomationEvent,
   firstStep: { delayMinutes: number } | undefined,
-  options: AutomationDispatchOptions,
   vendorOpenForDelayedSteps: () => Promise<boolean>,
 ): Promise<Prisma.AutomationExecutionLogUpdateInput> {
-  if (options.stepsUnchangedSince) return { delayedStepsPendingSubjectId: null };
   const owesRun = Boolean(firstStep) && eventCanStartDelayedSteps(event) && await vendorOpenForDelayedSteps();
   return owesRun ? { delayedStepsPendingSubjectId: event.subjectId, delayedStepsPendingAttempts: 0 } : {};
 }
@@ -1089,11 +1061,6 @@ async function runAutomationEvent(db: AutomationDb, event: AutomationEvent, queu
       actions: true,
       // F-4: whether the rule has delayed steps, and when the first one is due.
       steps: { where: { vendorId: event.vendorId, isActive: true }, orderBy: { delayMinutes: "asc" }, take: 1, select: { delayMinutes: true } },
-      // Q-09 review MINOR-1: with stepsUnchangedSince (the payment_paid
-      // catch-up), the active steps added or edited after it.
-      ...(options.stepsUnchangedSince
-        ? { _count: { select: { steps: { where: stepsChangedSinceWhere(event.vendorId, options.stepsUnchangedSince) } } } }
-        : {}),
     },
   });
   const results: Array<{ ruleId: string; status: string }> = [];
@@ -1114,7 +1081,7 @@ async function runAutomationEvent(db: AutomationDb, event: AutomationEvent, queu
       results.push({ ruleId: storedRule.id, status: "invalid_rule" });
       continue;
     }
-    const firstStep = eventFirstStep(storedRule, options);
+    const firstStep = storedRule.steps?.[0];
     const matched = automationConditionMatches(rule.condition, event);
     if ((event.trigger === "viewer_watch_progress" || event.trigger === "webinar_attended_duration_gte") && !matched) {
       results.push({ ruleId: rule.id, status: "skipped" });
@@ -1141,7 +1108,7 @@ async function runAutomationEvent(db: AutomationDb, event: AutomationEvent, queu
     // is created later by the job (startPendingAutomationRuns).
     // The vendor gate is read before the log's completion write (MINOR-2);
     // a reclaimed execution starts the job's attempt count again.
-    const pendingRun = await pendingRunMark(event, firstStep, options, vendorOpenForDelayedSteps);
+    const pendingRun = await pendingRunMark(event, firstStep, vendorOpenForDelayedSteps);
     try {
       await runRuleActions(db, rule, event, log.id, queuedEmailIds, actionResults, { emailTrigger: AUTOMATION_EMAIL_TRIGGER });
       // An action that reports its own failure (today only an automation
@@ -1179,7 +1146,7 @@ async function runAutomationEvent(db: AutomationDb, event: AutomationEvent, queu
     // whatever they did (the steps re-check everything when they are due).
     // Never fails the event: see startDelayedSteps.
     if (status !== "rule_deleted" && firstStep) {
-      await startDelayedSteps(db, delayedStepStartInput(rule.id, event, log.id, log.createdAt, options.stepsUnchangedSince));
+      await startDelayedSteps(db, delayedStepStartInput(rule.id, event, log.id, log.createdAt));
     }
     results.push({ ruleId: rule.id, status });
   }
@@ -1197,14 +1164,6 @@ export type DelayedStepStartInput = {
   subjectType: string;
   subjectId: string;
   subjectKeyHash: string | null | undefined;
-  /**
-   * Q-09 review MINOR-1: the payment_paid catch-up's stepsUnchangedSince (the
-   * time the payment was recorded). When set, no run is created if any active
-   * step of the rule was added or edited after it (checked after the rule row
-   * FOR SHARE, so a merchant save is either seen or waited for); the outcome
-   * is `not_needed` and any owed-run mark is cleared.
-   */
-  stepsUnchangedSince?: Date;
 };
 
 /**
@@ -1233,27 +1192,49 @@ function eventCanStartDelayedSteps(event: { trigger: string; subjectType: string
  *   as a purchase (not a test order, not fully refunded or cancelled), so the
  *   job's back-fill of an owed run (startPendingAutomationRuns) never starts
  *   one for an order refunded meanwhile.
+ *
+ * `stepsUnchangedSince` (payment_paid only, Q-09 re-review MINOR-A): when the
+ * payment was recorded (the order's first `payment.paid` event; `paidAt` if
+ * none). The caller creates no run when any active step of the rule was added
+ * or edited after it, so a step added after the payment never applies to it.
+ * Read here, from the order, so the live path, the #613 catch-up and the
+ * e-mail job's back-fill of an owed run all apply the same cut-off.
  */
-async function delayedStepSubject(db: AutomationDb, input: Pick<DelayedStepStartInput, "vendorId" | "trigger" | "subjectId">) {
+async function delayedStepSubject(
+  db: AutomationDb,
+  input: Pick<DelayedStepStartInput, "vendorId" | "trigger" | "subjectId">,
+): Promise<{ reference: { formSubmissionId: string } | { consultationBookingId: string } | { commerceOrderId: string }; stepsUnchangedSince?: Date } | null> {
   if (automationTriggerSubjectIsRegistration(input.trigger)) {
     // FormSubmission has no vendorId: the registration is bound through its form.
     const row = await db.formSubmission.findFirst({ where: { id: input.subjectId, form: { vendorId: input.vendorId } }, select: { id: true } });
-    return row ? { formSubmissionId: row.id } : null;
+    return row ? { reference: { formSubmissionId: row.id } } : null;
   }
   if (input.trigger === "payment_paid") {
     const order = await db.commerceOrder.findFirst({
       where: paymentPaidRunOrderWhere({ vendorId: input.vendorId, orderId: input.subjectId }),
-      select: PAYMENT_PAID_RUN_ORDER_SELECT,
+      select: {
+        ...PAYMENT_PAID_RUN_ORDER_SELECT,
+        paidAt: true,
+        events: {
+          where: { vendorId: input.vendorId, eventType: "payment.paid" },
+          orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+          take: 1,
+          select: { createdAt: true },
+        },
+      },
     });
-    return order && paymentPaidRunOrderCounts(order) ? { commerceOrderId: order.id } : null;
+    if (!order || !paymentPaidRunOrderCounts(order)) return null;
+    const recordedAt = order.events[0]?.createdAt ?? order.paidAt;
+    // A paid order always has its payment time; without one there is no cut-off to apply safely.
+    if (!recordedAt) return null;
+    return { reference: { commerceOrderId: order.id }, stepsUnchangedSince: recordedAt };
   }
   const row = await db.consultationBooking.findFirst({ where: { id: input.subjectId, vendorId: input.vendorId }, select: { id: true } });
-  return row ? { consultationBookingId: row.id } : null;
+  return row ? { reference: { consultationBookingId: row.id } } : null;
 }
 
-function delayedStepStartInput(ruleId: string, event: AutomationEvent, logId: string, anchorAt: Date | undefined, stepsUnchangedSince?: Date): DelayedStepStartInput {
+function delayedStepStartInput(ruleId: string, event: AutomationEvent, logId: string, anchorAt: Date | undefined): DelayedStepStartInput {
   return {
-    ...(stepsUnchangedSince ? { stepsUnchangedSince } : {}),
     vendorId: event.vendorId,
     ruleId,
     logId,
@@ -1265,7 +1246,7 @@ function delayedStepStartInput(ruleId: string, event: AutomationEvent, logId: st
   };
 }
 
-/** Active steps added or edited after `since` (Q-09 review MINOR-1; a step's updatedAt is set on create too). */
+/** Active steps added or edited after `since` (Q-09 MINOR-A; a step's updatedAt is set on create too). */
 function stepsChangedSinceWhere(vendorId: string, since: Date): Prisma.AutomationRuleStepWhereInput {
   return { vendorId, isActive: true, OR: [{ createdAt: { gt: since } }, { updatedAt: { gt: since } }] };
 }
@@ -1339,8 +1320,11 @@ export async function startDelayedSteps(db: AutomationDb, input: DelayedStepStar
         WHERE "id" = ${input.ruleId} AND "vendorId" = ${input.vendorId} AND "isActive"
         FOR SHARE
       `;
-      const stepsChanged = locked.length > 0 && input.stepsUnchangedSince
-        ? await tx.automationRuleStep.findFirst({ where: { ruleId: input.ruleId, ...stepsChangedSinceWhere(input.vendorId, input.stepsUnchangedSince) }, select: { id: true } })
+      // Q-09 MINOR-A: a payment_paid run never applies a step added or
+      // edited after the payment (subject.stepsUnchangedSince). Read after
+      // the rule row FOR SHARE, so a merchant save is either seen or waited for.
+      const stepsChanged = locked.length > 0 && subject.stepsUnchangedSince
+        ? await tx.automationRuleStep.findFirst({ where: { ruleId: input.ruleId, ...stepsChangedSinceWhere(input.vendorId, subject.stepsUnchangedSince) }, select: { id: true } })
         : null;
       const first = locked.length === 0 || stepsChanged ? null : await tx.automationRuleStep.findFirst({
         where: { vendorId: input.vendorId, ruleId: input.ruleId, isActive: true },
@@ -1354,7 +1338,7 @@ export async function startDelayedSteps(db: AutomationDb, input: DelayedStepStar
             vendorId: input.vendorId,
             automationRuleId: input.ruleId,
             sourceExecutionLogId: input.logId,
-            ...subject,
+            ...subject.reference,
             subjectKeyHash,
             anchorAt,
             cursorDelayMinutes: -1,

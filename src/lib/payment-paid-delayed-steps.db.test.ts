@@ -49,6 +49,7 @@ vi.mock("@/lib/commerce-order-pii", async (original) => {
 });
 
 import { runDelayedStepWorker, startPendingAutomationRuns, PENDING_RUN_START_MIN_AGE_MS } from "@/lib/automation-delayed-steps";
+import { DELAYED_STEP_LEASE_MS } from "@/lib/delayed-step-runs";
 import { AUTOMATION_STEP_EMAIL_TRIGGER } from "@/lib/automation-email-trigger";
 import { automationStepExecutionLogId } from "@/lib/automation-workflow";
 import { createCommerceOrderForCheckout } from "@/lib/commerce-orders";
@@ -602,7 +603,7 @@ describe("即時路徑與 #613 補跑", () => {
     await expect(onlyRun(t)).resolves.toMatchObject({ commerceOrderId: c.orderId, sourceExecutionLogId: log.id, anchorAt: log.createdAt, status: "active" });
   });
 
-  it("review MINOR-1: a catch-up starts no run when an active step was added or edited after the payment, and leaves no owed-run mark", async () => {
+  it("review MINOR-1 / MINOR-A: a catch-up starts no run when an active step was added or edited after the payment, and leaves nothing owed", async () => {
     const now = new Date();
     const paidAt = new Date(now.getTime() - PAYMENT_PAID_CATCHUP_MIN_AGE_MS - 5 * MINUTE);
 
@@ -643,25 +644,83 @@ describe("即時路徑與 #613 補跑", () => {
     await expect(onlyRun(inactive)).resolves.toMatchObject({ commerceOrderId: inactiveOrder.orderId, status: "active" });
   });
 
-  it("review MINOR-1: a step added after the payment also stops a catch-up whose execution was claimed by the live path first (the replay path)", async () => {
-    const t = await tenant("step-added-replay");
+  it("re-review MINOR-A: a step added after the payment starts no run on the live path, on a replay or in the job's back-fill either", async () => {
+    const now = new Date();
+    const paidAt = new Date(now.getTime() - 20 * MINUTE);
+
+    // Live path: the after() hook runs only after a step was added (payment recorded before it).
+    const live = await tenant("after-step-live");
+    const liveRule = await paymentRule(live);
+    const liveOrder = await missedPayment(live);
+    await backdate(live, liveOrder, paidAt);
+    await db.automationRuleStep.create({
+      data: { vendorId: live.vendor.id, ruleId: liveRule.rule.id, delayMinutes: 240, condition: { type: "always" } as Prisma.InputJsonValue, actions: [TAG_STEP] as Prisma.InputJsonArray },
+    });
+    await expect(dispatchPaymentPaidAutomationForOrder({ vendorId: live.vendor.id, orderId: liveOrder.orderId }, db))
+      .resolves.toMatchObject({ status: "dispatched", results: [{ ruleId: liveRule.rule.id, status: "completed" }] });
+    expect(await runsOf(live)).toEqual([]);
+    await expect(db.automationExecutionLog.findFirstOrThrow({ where: { vendorId: live.vendor.id, ruleId: liveRule.rule.id } }))
+      .resolves.toMatchObject({ status: "completed", delayedStepsPendingSubjectId: null });
+    // A replay of the same payment meets the completed execution and starts nothing either.
+    await expect(dispatchPaymentPaidAutomationForOrder({ vendorId: live.vendor.id, orderId: liveOrder.orderId }, db))
+      .resolves.toMatchObject({ status: "dispatched", results: [{ ruleId: liveRule.rule.id, status: "duplicate" }] });
+    expect(await runsOf(live)).toEqual([]);
+
+    // The job's back-fill of an owed run: the payment ran (and owed its run) before a step was edited.
+    const owed = await tenant("after-step-owed");
+    const owedRule = await paymentRule(owed);
+    const owedOrder = await checkout(owed);
+    // This payment runs its rules inline again (missedPayment above dropped the hook).
+    hooks.after = () => { throw new Error("`after` was called outside a request scope"); };
+    await pay(owed, owedOrder);
+    const log = await db.automationExecutionLog.findFirstOrThrow({ where: { vendorId: owed.vendor.id, ruleId: owedRule.rule.id } });
+    await db.delayedStepRun.deleteMany({ where: { vendorId: owed.vendor.id } });
+    await db.automationExecutionLog.update({ where: { id: log.id }, data: { delayedStepsPendingSubjectId: owedOrder.orderId, completedAt: new Date(now.getTime() - 10 * MINUTE) } });
+    await db.automationRuleStep.update({ where: { id: owedRule.steps[0]!.id }, data: { delayMinutes: 90 } });
+    await expect(startPendingAutomationRuns({ vendorId: owed.vendor.id })).resolves.toEqual([{ status: "not_needed" }]);
+    expect(await runsOf(owed)).toEqual([]);
+    await expect(db.automationExecutionLog.findUniqueOrThrow({ where: { id: log.id } })).resolves.toMatchObject({ delayedStepsPendingSubjectId: null });
+  });
+
+  it("re-review MINOR-A: a catch-up whose run waits past 2 s on a merchant save keeps the owed-run mark, and the job's back-fill creates the run", async () => {
+    const t = await tenant("catchup-deferred");
     const { rule } = await paymentRule(t);
     const c = await missedPayment(t);
     const now = new Date();
     await backdate(t, c, new Date(now.getTime() - PAYMENT_PAID_CATCHUP_MIN_AGE_MS - 5 * MINUTE));
-    // A completed execution without a run (as a deferred live start leaves it), then a new step.
-    await dispatchPaymentPaidAutomationForOrder({ vendorId: t.vendor.id, orderId: c.orderId }, db);
-    await db.delayedStepRun.deleteMany({ where: { vendorId: t.vendor.id } });
-    await db.automationRuleStep.create({
-      data: { vendorId: t.vendor.id, ruleId: rule.id, delayMinutes: 240, condition: { type: "always" } as Prisma.InputJsonValue, actions: [TAG_STEP] as Prisma.InputJsonArray },
-    });
-    // The catch-up's own dispatch meets the completed execution (duplicate) and must not start the run either.
-    await expect(dispatchPaymentPaidAutomationForOrder({ vendorId: t.vendor.id, orderId: c.orderId }, db, { rulesUnchangedSince: new Date(now.getTime() - PAYMENT_PAID_CATCHUP_MIN_AGE_MS - 5 * MINUTE), stepsUnchangedSince: new Date(now.getTime() - PAYMENT_PAID_CATCHUP_MIN_AGE_MS - 5 * MINUTE) }))
-      .resolves.toMatchObject({ status: "dispatched", results: [{ ruleId: rule.id, status: "duplicate" }] });
+    // A save takes the rule row right after the catch-up's execution log is
+    // written and holds it past the 2 s lock timeout of the run's creation
+    // (it changes nothing, like a save of an unrelated field).
+    const holder = boundedClient(1);
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    let held: Promise<unknown> = Promise.resolve();
+    const original = db.automationExecutionLog.update.bind(db.automationExecutionLog);
+    vi.spyOn(db.automationExecutionLog, "update").mockImplementationOnce((async (args: Parameters<typeof original>[0]) => {
+      let locked!: () => void;
+      const isLocked = new Promise<void>((resolve) => { locked = resolve; });
+      held = holder.$transaction(async (tx) => {
+        await tx.$queryRaw`SELECT "id" FROM "AutomationRule" WHERE "id" = ${rule.id} AND "vendorId" = ${t.vendor.id} FOR UPDATE`;
+        locked();
+        await gate;
+      }, { maxWait: 5_000, timeout: 15_000 }).catch(() => undefined);
+      await isLocked;
+      return original(args);
+    }) as never);
+    try {
+      await expect(runPaymentPaidAutomationCatchup({ db, now })).resolves.toMatchObject({ candidates: 1, completed: 1 });
+    } finally {
+      release();
+      await held;
+    }
+    const log = await db.automationExecutionLog.findFirstOrThrow({ where: { vendorId: t.vendor.id, ruleId: rule.id } });
+    expect(log).toMatchObject({ status: "completed", delayedStepsPendingSubjectId: c.orderId });
     expect(await runsOf(t)).toEqual([]);
-    // Without the catch-up's bound (a live replay), the steps as they are now apply as before.
-    await dispatchPaymentPaidAutomationForOrder({ vendorId: t.vendor.id, orderId: c.orderId }, db);
-    await expect(onlyRun(t)).resolves.toMatchObject({ commerceOrderId: c.orderId });
+    expect(monitoring.captureOperationalError).toHaveBeenCalledWith(expect.anything(), { source: "automation_delayed_steps", operation: "start_run_deferred" }, { level: "warning" });
+
+    const jobNow = new Date(log.completedAt!.getTime() + PENDING_RUN_START_MIN_AGE_MS + MINUTE);
+    await expect(startPendingAutomationRuns({ now: jobNow, vendorId: t.vendor.id })).resolves.toEqual([{ status: "started" }]);
+    await expect(onlyRun(t)).resolves.toMatchObject({ commerceOrderId: c.orderId, sourceExecutionLogId: log.id, anchorAt: log.createdAt, status: "active" });
   });
 
   it("the live dispatch and two catch-up passes racing on separate connections create exactly one run per order", async () => {
@@ -804,6 +863,34 @@ describe("資料與刪除", () => {
     await work(t, due(run, 60));
     await expect(stepLog(t, run.id, steps[0]!.id)).resolves.toMatchObject({ status: "completed" });
     await expect(db.customerTagAssignment.count({ where: { vendorId: t.vendor.id, tag: TAG_STEP.tag } })).resolves.toBe(1);
+  });
+
+  it("re-review MINOR-B: an envelope under a key id the keyring does not list is retried, never recorded as recipient_not_linked", async () => {
+    const t = await tenant("unknown-kid");
+    const { steps } = await paymentRule(t);
+    const c = await checkout(t);
+    await verifiedRegistration(t, c.buyerEmail);
+    await pay(t, c);
+    const run = await onlyRun(t);
+    // A well-formed v2 envelope whose key id ("retired-key") is not in the running keyring.
+    await db.commerceOrder.update({
+      where: { id: c.orderId },
+      data: { buyerEncryptedEnvelope: `v2.retired-key.${"A".repeat(16)}.${"B".repeat(22)}.${"C".repeat(40)}` },
+    });
+    monitoring.captureOperationalError.mockClear();
+    const firstRound = due(run, 60);
+    await work(t, firstRound);
+    // Not settled: the lease stays and counts one attempt; nothing ran and nothing was recorded for the buyer.
+    const afterFirst = await db.delayedStepRun.findUniqueOrThrow({ where: { id: run.id } });
+    expect(afterFirst).toMatchObject({ status: "active", attemptCount: 1, cursorDelayMinutes: -1 });
+    expect(afterFirst.claimedAt).not.toBeNull();
+    await expect(stepLog(t, run.id, steps[0]!.id)).resolves.toBeNull();
+    await expect(db.customerTagAssignment.count({ where: { vendorId: t.vendor.id, tag: TAG_STEP.tag } })).resolves.toBe(0);
+    expect(monitoring.captureOperationalError).not.toHaveBeenCalledWith(expect.anything(), { source: "automation_delayed_steps", operation: "buyer_email" });
+    // Claimed again once the lease expired: another attempt, still nothing recorded.
+    await work(t, new Date(firstRound.getTime() + DELAYED_STEP_LEASE_MS + MINUTE));
+    await expect(db.delayedStepRun.findUniqueOrThrow({ where: { id: run.id } })).resolves.toMatchObject({ status: "active", attemptCount: 2, cursorDelayMinutes: -1 });
+    await expect(stepLog(t, run.id, steps[0]!.id)).resolves.toBeNull();
   });
 
   it("runs the other actions when the buyer e-mail cannot be read, and reports it with safe keys only", async () => {

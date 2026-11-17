@@ -29,7 +29,13 @@ import { automationCustomerKeyHash } from "@/lib/customer-key-hash";
 import { getDb } from "@/lib/db";
 import { captureOperationalError } from "@/lib/monitoring";
 import { PAYMENT_PAID_RUN_ORDER_SELECT, paymentPaidRunOrderCounts } from "@/lib/payment-paid-run-order";
-import { decryptSensitiveValue, encryptSensitiveValue } from "@/lib/sensitive-data";
+import {
+  dataEncryptionKeyringSummary,
+  decryptSensitiveValue,
+  encryptSensitiveValue,
+  LEGACY_DATA_KEY_ID,
+  sensitiveEnvelopeKeyId,
+} from "@/lib/sensitive-data";
 import { isRuleWriteBusy } from "@/lib/serializable-retry";
 import {
   cancelLeasedRun,
@@ -135,19 +141,48 @@ function sensitiveDataUsable() {
 }
 
 /**
+ * Q-09 re-review MINOR-B: an envelope written under a key id the running
+ * keyring does not list (`legacy` while the keyring no longer accepts it, or
+ * a v2 kid missing from it). That is a deployment's keyring, not a broken
+ * order: a fixed keyring decrypts it again. Malformed envelopes (no kid) are
+ * not counted here.
+ */
+class EnvelopeKeyNotInKeyringError extends Error {
+  constructor() {
+    super("Order envelope key id is not in the keyring.");
+    this.name = "EnvelopeKeyNotInKeyringError";
+  }
+}
+
+function envelopeKeyMissing(envelope: string | null) {
+  if (!envelope) return false;
+  const kid = sensitiveEnvelopeKeyId(envelope);
+  if (kid === null) return false;
+  const keyring = dataEncryptionKeyringSummary();
+  return kid === LEGACY_DATA_KEY_ID ? !keyring.acceptsLegacy : !keyring.keyIds.includes(kid);
+}
+
+/**
  * The buyer e-mail from the order's encrypted envelope, or undefined (reported,
  * no id) when this order's envelope cannot be read.
  *
- * Q-09 review MINOR-2: when the deployment itself cannot decrypt (the
- * encryption key is not set or not usable: a round trip of a probe value
- * fails), the failure is the platform's, not this run's. It is thrown as a
- * SequenceConfigurationError, so processDueDelayedStepRuns re-probes the
- * deployment, gives the lease back without using an attempt and stops the
- * round, as for every other configuration problem; nothing of the step runs.
- * Only a single order's envelope that does not decrypt (corrupted, or written
- * under a key the keyring no longer has) is recorded as the e-mail's
- * `recipient_not_linked` while the other actions run, so one such order never
- * stalls the worker.
+ * Three kinds of failure:
+ * - Q-09 review MINOR-2: the deployment itself cannot decrypt (the encryption
+ *   key is not set or not usable: a round trip of a probe value fails). It is
+ *   the platform's, not this run's: thrown as a SequenceConfigurationError, so
+ *   processDueDelayedStepRuns re-probes the deployment, gives the lease back
+ *   without using an attempt and stops the round, as for every other
+ *   configuration problem; nothing of the step runs.
+ * - Q-09 re-review MINOR-B: one of the order's envelopes names a key id the
+ *   running keyring does not list (a key removed too early, or a deployment
+ *   on an older keyring). The probe cannot see it (it encrypts with the active
+ *   key). A plain error is thrown: nothing of the step runs and the step is
+ *   not settled; the lease stays and the run is retried after
+ *   DELAYED_STEP_LEASE_MS, up to DELAYED_STEP_MAX_ATTEMPTS claims (then
+ *   cancelled / failed), so a keyring fixed meanwhile sends the e-mail. Not a
+ *   SequenceConfigurationError: one such order must not stop every round.
+ * - Otherwise the order's own envelope is broken (corrupted, malformed): the
+ *   e-mail action records `recipient_not_linked` and the other actions run.
  */
 function orderBuyerEmail(order: { id: string; buyerEncryptedEnvelope: string; shippingEncryptedEnvelope: string | null }, vendorId: string) {
   try {
@@ -158,6 +193,9 @@ function orderBuyerEmail(order: { id: string; buyerEncryptedEnvelope: string; sh
     return email || undefined;
   } catch (error) {
     if (!sensitiveDataUsable()) throw new SequenceConfigurationError(error);
+    if (envelopeKeyMissing(order.buyerEncryptedEnvelope) || envelopeKeyMissing(order.shippingEncryptedEnvelope)) {
+      throw new EnvelopeKeyNotInKeyringError();
+    }
     try {
       captureOperationalError(error, { source: "automation_delayed_steps", operation: "buyer_email" });
     } catch {
