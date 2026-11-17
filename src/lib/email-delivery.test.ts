@@ -1328,13 +1328,17 @@ describe("student portal login delivery", () => {
     });
   });
   it("still sends a link issued up to the clock skew ahead of the dispatching server, never one past expiry", async () => {
+    const now = new Date("2026-11-17T08:00:00.000Z");
+    vi.useFakeTimers();
+    vi.setSystemTime(now);
     mocks.db.emailDelivery.findUnique.mockResolvedValue(candidate({ trigger: "student_portal_magic_link", idempotencyKey }));
     mocks.db.studentPortalAccessToken.findFirst.mockResolvedValue({ id: "portal-token-1" });
     mocks.sendTransactionalEmail.mockResolvedValue({ id: "synthetic-message" });
     await expect(dispatchEmailDelivery("delivery-1")).resolves.toEqual({ status: "sent" });
     const where = mocks.db.studentPortalAccessToken.findFirst.mock.calls[0]?.[0]?.where as { issuedAt: { lte: Date }; expiresAt: { gt: Date } };
-    // Both bounds come from the same send-time clock: only the issue time gets the 60 s skew.
-    expect(where.issuedAt.lte.getTime() - where.expiresAt.gt.getTime()).toBe(60_000);
+    // Expiry is checked against the send-time clock exactly; only the issue time gets the 60 s skew.
+    expect(where.expiresAt.gt).toEqual(now);
+    expect(where.issuedAt.lte).toEqual(new Date(now.getTime() + 60_000));
   });
   it("does not send an expired, consumed, foreign or missing portal capability", async () => {
     mocks.db.emailDelivery.findUnique.mockResolvedValue(candidate({ trigger: "student_portal_magic_link", idempotencyKey }));

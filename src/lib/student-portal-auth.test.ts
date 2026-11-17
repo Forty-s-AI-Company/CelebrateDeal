@@ -327,6 +327,15 @@ describe("student portal temporal boundaries", () => {
       data: { consumedAt: now },
     });
   });
+  it("refuses a session minted at the full clock skew once its own TTL has elapsed", () => {
+    const issuedAt = new Date(now.getTime() + STUDENT_PORTAL_CLOCK_SKEW_SECONDS * 1_000);
+    const token = createStudentPortalSessionToken({ vendorId: "vendor_1", customerKeyHash, grant, now: issuedAt });
+    const expiresAt = new Date(issuedAt.getTime() + STUDENT_PORTAL_SESSION_TTL_SECONDS * 1_000);
+    // Accepted one second before its own expiry, refused exactly at it and after.
+    expect(readStudentPortalSessionToken(token, new Date(expiresAt.getTime() - 1_000))?.expiresAt).toEqual(expiresAt);
+    expect(readStudentPortalSessionToken(token, expiresAt)).toBeNull();
+    expect(readStudentPortalSessionToken(token, new Date(expiresAt.getTime() + 1_000))).toBeNull();
+  });
   it("never extends expiry: skew applies only to the issue time", async () => {
     const store = tokenStore();
     const token = await createStudentPortalAccessToken({ studentPortalAccessToken: store }, { vendorId: "vendor_1", email: "student@example.test", purpose: "magic_link", now });

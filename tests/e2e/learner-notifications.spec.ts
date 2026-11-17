@@ -167,12 +167,9 @@ test("purchasing learner withdraws real notification consent and reloads; foreig
   const protectedContact=protectLearnerNotificationDestination({vendorId:vendor.id,productId:product.id,customerKeyHash},"email",{email});
   // Explicit synthetic, already-verified fixture: this browser test proves real
   // preference HTTP/DB persistence, never external contact/device delivery.
-  // The fixture stands for consent given before this visit. It is written by
-  // the test process, not the server, and the reminder confirmation requires
-  // consentedAt <= the server's now. Time synchronisation can step a wall
-  // clock back (about two seconds every half minute was measured in a Docker
-  // Linux runner), so a fixture stamped "now" could read as future consent
-  // and the confirmation would get 409.
+  // Semantically this fixture is consent the learner gave before this visit,
+  // so it is stamped in the past rather than at the moment the test writes it.
+  // The reminder confirmation below requires consentedAt <= the server's now.
   const priorConsentAt=new Date(Date.now()-5*60_000);
   const preference=await db.learnerNotificationPreference.create({data:{vendorId:vendor.id,productId:product.id,customerKeyHash,channel:"email",enabled:true,consentedAt:priorConsentAt,destinationVerifiedAt:priorConsentAt,destinationEncryptedEnvelope:protectedContact.encryptedEnvelope,destinationKeyHash:protectedContact.destinationKeyHash}});
   const token=await createStudentPortalAccessToken(db,{vendorId:vendor.id,email,purpose:"magic_link"});
