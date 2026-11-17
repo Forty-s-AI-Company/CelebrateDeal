@@ -7,6 +7,7 @@ import { learnerNotificationLink, safeLearnerNotificationLink } from "./learner-
 import { boundLearnerNotificationText, recordLearnerNotificationSourceEvent } from "./learner-notification-source-events";
 import { hasLearnerNotificationPurchase } from "./learner-notification-access";
 import type { StudentPortalScope } from "./student-portal";
+import { SERVER_CLOCK_SKEW_MS } from "./server-clock-skew";
 
 type Database = NotificationPreferenceDatabase & Pick<PrismaClient, "consultationBooking" | "learnerNotificationSourceEvent">;
 const identifier = z.string().regex(/^[A-Za-z0-9_-]{1,128}$/u);
@@ -44,13 +45,22 @@ export async function confirmLearnerConsultationReminder(db: Database, session: 
       select: { id: true, startTime: true, event: { select: { title: true } } },
     });
     if (!booking) return { status: "not_found" } as const;
-    const preference = await tx.learnerNotificationPreference.findFirst({ where: { ...scope, enabled: true, destinationVerifiedAt: { not: null }, destinationEncryptedEnvelope: { not: null }, destinationKeyHash: { not: null }, consentedAt: { lte: now } }, select: { id: true } });
-    if (!preference) return { status: "verification_required" } as const;
+    // consentedAt was stamped by whichever instance saved the consent; one whose
+    // clock runs up to SERVER_CLOCK_SKEW_MS ahead of this one must not turn a
+    // committed consent into "verification required".
+    const preference = await tx.learnerNotificationPreference.findFirst({ where: { ...scope, enabled: true, destinationVerifiedAt: { not: null }, destinationEncryptedEnvelope: { not: null }, destinationKeyHash: { not: null }, consentedAt: { lte: new Date(now.getTime() + SERVER_CLOCK_SKEW_MS) } }, select: { id: true, consentedAt: true } });
+    if (!preference?.consentedAt) return { status: "verification_required" } as const;
+    // This transaction read the committed consent, so the confirmation is
+    // causally after it. Recording it no earlier than consentedAt keeps the
+    // exact "consent before confirmation" order that source fan-out
+    // (consentedAt <= occurredAt) and dispatch (consentedAt <= confirmedAt)
+    // enforce, instead of letting a skewed clock silently drop the reminder.
+    const confirmedAt = new Date(Math.max(now.getTime(), preference.consentedAt.getTime()));
     const source = await recordLearnerNotificationSourceEvent(tx, {
       vendorId: scope.vendorId, productId, event: "consultation_reminder", eventIdentity: identity(booking.id, productId, booking.startTime), audienceCustomerKeyHash: scope.customerKeyHash,
-      occurredAt: now, availableAt: new Date(Math.max(now.getTime(), booking.startTime.getTime() - 60 * 60 * 1000)),
+      occurredAt: confirmedAt, availableAt: new Date(Math.max(confirmedAt.getTime(), booking.startTime.getTime() - 60 * 60 * 1000)),
       message: { title: "預約即將開始", body: boundLearnerNotificationText(booking.event.title, 2000, "預約即將開始"), path: safeLearnerNotificationLink(() => learnerNotificationLink.notifications(scope.vendorId)),
-        consultationBooking: { id: booking.id, startTime: booking.startTime.toISOString(), customerKeyHash: scope.customerKeyHash, confirmedAt: now.toISOString() } },
+        consultationBooking: { id: booking.id, startTime: booking.startTime.toISOString(), customerKeyHash: scope.customerKeyHash, confirmedAt: confirmedAt.toISOString() } },
     });
     if (!source) throw new Error("Consultation reminder source unavailable.");
     const persisted = await tx.learnerNotificationSourceEvent.findFirstOrThrow({ where: { vendorId: scope.vendorId, id: source.id }, select: { availableAt: true } });

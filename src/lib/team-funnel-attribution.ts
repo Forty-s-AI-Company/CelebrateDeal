@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { getDb } from "@/lib/db";
 import { DERIVED_KEY_ROTATIONS, issuedBeforeRotation, signWithRotation, verifyWithRotation } from "@/lib/derived-key-rotation";
 import { resolveTeamFunnelLiveShare } from "@/lib/team-funnel-live-sharing";
+import { SERVER_CLOCK_SKEW_MS } from "@/lib/server-clock-skew";
 
 export const ATTRIBUTION_COOKIE = "celebratedeal_attribution";
 export const VISITOR_COOKIE = "celebratedeal_visitor";
@@ -150,7 +151,11 @@ export function attributionCookieFromRequest(request: Request, now = Date.now())
 
     const parsed = JSON.parse(Buffer.from(payload, "base64url").toString("utf8")) as unknown;
     if (!isAttributionCookie(parsed)) return null;
-    if (parsed.issuedAt > now || now - parsed.issuedAt > ATTRIBUTION_TTL_SECONDS * 1000) return null;
+    // issuedAt is inside the HMAC, stamped by the click endpoint; checkout or the
+    // form may run on an instance whose clock is slightly behind. Only that
+    // "future" side gets SERVER_CLOCK_SKEW_MS; the 30-day TTL is unchanged, and
+    // the server-side AffiliateClick.createdAt window is checked separately.
+    if (parsed.issuedAt > now + SERVER_CLOCK_SKEW_MS || now - parsed.issuedAt > ATTRIBUTION_TTL_SECONDS * 1000) return null;
     return { clickId: parsed.clickId, visitorId: parsed.visitorId, issuedAt: parsed.issuedAt };
   } catch {
     // Missing signing configuration, malformed encoding and invalid JSON all

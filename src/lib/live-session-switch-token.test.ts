@@ -30,8 +30,21 @@ describe("live session switch token", () => {
     const token = createLiveSessionSwitchToken(BINDING, NOW);
     expect(verifyLiveSessionSwitchToken(token, new Date(NOW.getTime() + 24 * 3_600_000 - 1_000))).not.toBeNull();
     expect(verifyLiveSessionSwitchToken(token, new Date(NOW.getTime() + 24 * 3_600_000))).toBeNull();
-    // Signed "in the future" (a longer lifetime than allowed) is refused too.
-    expect(verifyLiveSessionSwitchToken(token, new Date(NOW.getTime() - 60_000))).toBeNull();
+    // Signed "in the future" (a longer lifetime than allowed) beyond the 60-second
+    // clock-skew bound is refused too.
+    expect(verifyLiveSessionSwitchToken(token, new Date(NOW.getTime() - 61_000))).toBeNull();
+  });
+
+  it("tolerates a reading clock up to 60 seconds behind the issuer, never a later expiry", () => {
+    const token = createLiveSessionSwitchToken(BINDING, NOW);
+    const expiresAt = new Date(NOW.getTime() + 24 * 3_600_000);
+    for (const behindMs of [1_000, 2_000, 60_000]) {
+      expect(verifyLiveSessionSwitchToken(token, new Date(NOW.getTime() - behindMs))).toMatchObject({ ...BINDING, expiresAt });
+    }
+    expect(verifyLiveSessionSwitchToken(token, new Date(NOW.getTime() - 61_000))).toBeNull();
+    // Expiry is the signed one: the skew bound adds nothing at the far end.
+    expect(verifyLiveSessionSwitchToken(token, new Date(expiresAt.getTime() - 1_000))).not.toBeNull();
+    expect(verifyLiveSessionSwitchToken(token, expiresAt)).toBeNull();
   });
 
   it("refuses tampered claims, other keys, other versions and malformed tokens", () => {

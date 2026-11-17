@@ -1,5 +1,6 @@
 import { DERIVED_KEY_ROTATIONS, signWithRotation, verifyWithRotation } from "@/lib/derived-key-rotation";
 import { LIVE_SESSION_RESULT_COOKIE } from "@/lib/live-fixed-sessions";
+import { SERVER_CLOCK_SKEW_SECONDS } from "@/lib/server-clock-skew";
 
 /**
  * The fixed session (指定場次) the server confirmed for this browser's last
@@ -49,7 +50,10 @@ export function verifyLiveSessionResultToken(token: string | null | undefined, l
   const value = claims as Partial<Claims>;
   if (typeof value.l !== "string" || typeof value.i !== "string" || typeof value.s !== "string" || typeof value.b !== "string" || typeof value.e !== "number") return null;
   const nowSeconds = Math.floor(now.getTime() / 1_000);
-  if (value.e <= nowSeconds || value.e > nowSeconds + LIVE_SESSION_RESULT_TTL_SECONDS) return null;
+  // e - TTL is the issue time. The thank-you page reads this right after
+  // registration, often on another instance: tolerate SERVER_CLOCK_SKEW_SECONDS
+  // of "issued in the future" only, never a later expiry.
+  if (value.e <= nowSeconds || value.e > nowSeconds + LIVE_SESSION_RESULT_TTL_SECONDS + SERVER_CLOCK_SKEW_SECONDS) return null;
   if (value.l !== liveId) return null;
   return { liveId: value.l, id: value.i, startAt: value.s, label: value.b };
 }
