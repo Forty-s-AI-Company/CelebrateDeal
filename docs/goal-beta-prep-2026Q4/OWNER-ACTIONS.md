@@ -12,6 +12,7 @@
 - **B-1 外部排程**：選方案 B（Cloudflare Worker cron），密鑰留在 owner 的 Cloudflare 帳號、之後可延伸到 Production；heartbeat 保留作備援。可部署的 Worker 已在 `ops/cloudflare/scheduled-jobs-worker/`；owner 在該資料夾依其 `README.md`（或 `docs/launch/scheduled-jobs-external-trigger.md` §5）執行 `npx wrangler login`、`npx wrangler secret put JOB_SECRET`、`npx wrangler deploy` 即可。
 - **O-21 個資保存期限**：先採預設（WebhookEvent payload 180 天、AnalyticsEvent 365 天、AuditLog IP 365 天），律師意見回來後再調整；開啟排程另開工作。
 - **staging 合成資料（#543）**：封測期間不刪除。盤點的 4 個商家（含封測用的 Wuhe Select、Merchant2 測試商店）與 9 支 Stream 影片保留在各自租戶內；封測客戶一律新建商家帳號（BETA-OPS (b)(c)）。正式上線前再依盤點決定刪除範圍，屆時先備份、經 owner 同意、用腳本執行並留收據。
+  - 例外（R-10，不需 owner 動作）：首次成功路徑 runner 每次留下的 `cdfs-` 合成商家另有自己的清理。runner workflow 結束後自動「停用」（凍結，email job 不再寄提醒信），停用滿 7 天後可由 `staging-first-success-cleanup.yml`（`mode=delete`）手動刪除；只認 runner 自己的 Email 與 slug，有訂單或多了成員的商家一律跳過。上面 4 個盤點商家不受影響。用法見 `docs/launch/staging-first-success-runner.md`。
 
 ## 2026-11-17 新增 owner 動作
 

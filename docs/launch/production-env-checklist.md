@@ -101,7 +101,7 @@
 - 邀請收件者完全符合 `delivered+cdfs-owner-<24 位小寫 hex>@resend.dev`；
 - runtime 通過 `isWp4BoundNonProductionRuntime()`：`VERCEL_ENV=preview`、`PAYUNI_ENV=sandbox`、`WP4_SANDBOX_EXECUTOR_ENABLED=true`，並符合 staging 專案 ID、staging app origin 與 staging 資料庫身分（或 loopback 的拋棄式測試 runtime）。
 
-這類邀請只能由 `JOB_SECRET` 保護的 `/api/admin/ops/first-success/invite` 或平台管理員簽發。每次豁免都寫入 `registration_completed` 稽核（`turnstile: "first_success_exempt"`）。Production 的 `VERCEL_ENV=production`，而且依上表不設 `WP4_SANDBOX_EXECUTOR_ENABLED`，所以不可能觸發；Production 也不需要為此設定任何變數。
+這類邀請只能由 `JOB_SECRET` 保護的 `/api/admin/ops/first-success/invite` 或平台管理員簽發。每次豁免都寫入 `registration_completed` 稽核（`turnstile: "first_success_exempt"`）。Production 的 `VERCEL_ENV=production`，而且依上表不設 `WP4_SANDBOX_EXECUTOR_ENABLED`，所以不可能觸發；Production 也不需要為此設定任何變數。同一個 runtime 條件也擋住 runner 合成商家的清理（R-10，`/api/admin/ops/first-success/cleanup`，見 `docs/launch/staging-first-success-runner.md`）：Production 一律 404，函式本身也拒絕執行。
 
 ## G. 媒體（Cloudflare Stream 與 R2）
 

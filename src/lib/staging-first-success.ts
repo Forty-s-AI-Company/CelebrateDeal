@@ -44,7 +44,9 @@ export function firstSuccessBuyerEmail(runId: string) {
   return `delivered+cdfs-buyer-${runId}@resend.dev`;
 }
 
-const OWNER_EMAIL = /^delivered\+cdfs-owner-[a-f0-9]{24}@resend\.dev$/u;
+/** Anchored: only a mailbox `firstSuccessOwnerEmail` can produce. Also used by the cleanup (R-10). */
+export const FIRST_SUCCESS_OWNER_EMAIL = /^delivered\+cdfs-owner-([a-f0-9]{24})@resend\.dev$/u;
+const OWNER_EMAIL = FIRST_SUCCESS_OWNER_EMAIL;
 
 /**
  * Registration skips Turnstile only for this runner's own Resend test mailbox
