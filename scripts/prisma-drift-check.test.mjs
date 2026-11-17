@@ -96,6 +96,10 @@ test("the committed allowlist is well formed and covers the B04-04 hazards", () 
     "TeamMembershipRelationship_one_active_upline",
     "UserEmailChangeRequest_one_open_per_user",
   ]);
+  // Q-12: a partial expression index (consultation step verified-address lookup).
+  assert.deepEqual(allowlist.notComparedByPrismaDiff.partialIndexes, [
+    "FormSubmission_verified_email_normalized_idx",
+  ]);
 });
 
 test("invokes prisma migrate diff with every URL pinned to the shadow database", () => {

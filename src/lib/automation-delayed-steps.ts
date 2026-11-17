@@ -53,6 +53,13 @@ export const AUTOMATION_STEP_MAX_DELAY_MINUTES = 129_600;
 /** Delayed steps per rule, the same as e-mail sequence steps per sequence. */
 export const MAX_AUTOMATION_RULE_STEPS = 10;
 
+/**
+ * Claims a step whose recorded snapshot does not parse gets before its run is
+ * stopped (Q-12, review MINOR-1): one retry after the lease expires, in case
+ * the first claim ran on a build that cannot read a newer snapshot.
+ */
+export const AUTOMATION_SNAPSHOT_INVALID_ATTEMPTS = 2;
+
 type Database = PrismaClient;
 
 class RuleGoneError extends Error {
@@ -77,6 +84,9 @@ type AutomationSubject = {
  * VERIFIED registration with exactly the same address after the customer-key
  * normalization (trim + lowercase, automationCustomerKeyHash), bound through
  * the registration's form (review MINOR-1: an exact match, no fuzzy candidates).
+ * The expression and the VERIFIED predicate must stay exactly as written: they
+ * match the partial index FormSubmission_verified_email_normalized_idx (Q-12),
+ * without which this lookup scans the whole FormSubmission table.
  */
 async function hasVerifiedRegistration(db: Pick<Database, "$queryRaw">, vendorId: string, email: string) {
   const normalized = email.trim().toLowerCase();
@@ -321,6 +331,24 @@ export async function processClaimedAutomationRun(
   if (outcome.status === "rule_deleted") return cancelLeasedRun(db, lease, "definition_deleted");
   // Switched off (or the run stopped) after the rule was read: nothing ran.
   if (outcome.status === "rule_inactive") return cancelLeasedRun(db, lease, "definition_paused");
+  if (outcome.status === "snapshot_invalid") {
+    // Q-12: the recorded action list of this step does not parse. Retrying
+    // the same code cannot fix that, but a deployment hand-over or a rollback
+    // can: an older build running for a moment may not read a snapshot a
+    // newer one wrote (review MINOR-1; action schema changes ship in two
+    // steps, see docs/domain-workflows.md). So the first time the lease is
+    // kept (the run is claimed again once it expires, on whatever build runs
+    // then), and the second claim stops the run with the same outcome the
+    // retry limit would reach (cancelled / failed), reports once and leaves
+    // the remaining attempts' budget to other runs. Its execution log says
+    // why (failed / snapshot_invalid). Monitoring gets no id, only safe keys.
+    if (lease.attemptCount < AUTOMATION_SNAPSHOT_INVALID_ATTEMPTS) return { runId: lease.id, status: "failed" };
+    const cancelled = await cancelLeasedRun(db, lease, "failed");
+    if (cancelled.status === "cancelled") {
+      reportDelayedStepFailure(new Error("Recorded automation step snapshot does not parse."), "automation_step_snapshot_invalid", "cancelled");
+    }
+    return cancelled;
+  }
   if (outcome.status === "failed") {
     // The lease stays: the run is claimable again after DELAYED_STEP_LEASE_MS
     // and the same step resumes on the same execution log (nothing repeats).
@@ -440,14 +468,26 @@ export async function rescheduleActiveRunsForAutomationRule(
   `;
 }
 
-/** E-mail-free due automation runs considered per round (M3), at most the round's remaining run budget. */
-const EMAIL_FREE_SCAN_LIMIT = 200;
+/**
+ * Ceiling on e-mail-free due automation runs taken per round (M3); the round's
+ * remaining run budget (DELAYED_STEP_BATCH_LIMIT minus what the fair loop
+ * used) can make it lower.
+ */
+export const EMAIL_FREE_SCAN_LIMIT = 200;
 
 /**
  * M3: due automation runs whose next active step has no e-mail action (or
  * that have no step left and only need completing). They run even while the
  * e-mail capacity is used up or no e-mail provider is configured. Same
  * vendor conditions as the fair loop: not suspended, holding the grant.
+ *
+ * Q-12: taken round-robin between vendors, like the payment_paid catch-up
+ * (#613) and the form_no_show scan (#623): every vendor's oldest due run comes
+ * before any vendor's second, then every vendor's second, and so on (within a
+ * turn, the oldest due first). So one vendor with a large backlog of
+ * e-mail-free steps cannot hold back another vendor's: it only gets the room
+ * the others leave. At most `limit` (≤ EMAIL_FREE_SCAN_LIMIT) runs per round;
+ * a vendor never gets more than `limit` either.
  */
 export async function dueAutomationRunsWithoutEmail(
   db: Database,
@@ -457,26 +497,32 @@ export async function dueAutomationRunsWithoutEmail(
   const limit = Math.max(0, Math.min(input.limit, EMAIL_FREE_SCAN_LIMIT));
   if (limit === 0) return [];
   const rows = await db.$queryRaw<Array<{ id: string; vendorId: string; updatedAt: Date; cursorDelayMinutes: number; attemptCount: number; automationRuleId: string | null }>>`
-    SELECT r."id", r."vendorId", r."updatedAt", r."cursorDelayMinutes", r."attemptCount", r."automationRuleId"
-    FROM "DelayedStepRun" r
-    JOIN "Vendor" v ON v."id" = r."vendorId"
-    LEFT JOIN LATERAL (
-      SELECT s."actions" FROM "AutomationRuleStep" s
-      WHERE s."vendorId" = r."vendorId" AND s."ruleId" = r."automationRuleId"
-        AND s."isActive" AND s."delayMinutes" > r."cursorDelayMinutes"
-      ORDER BY s."delayMinutes" ASC
-      LIMIT 1
-    ) n ON TRUE
-    WHERE r."automationRuleId" IS NOT NULL
-      AND r."status" = 'active'
-      AND r."nextRunAt" <= ${utcTimestamp(input.now)}
-      AND (r."claimedAt" IS NULL OR r."claimedAt" <= ${utcTimestamp(leaseCutoff)})
-      AND v."suspendedAt" IS NULL
-      AND ${AUTOMATION_DELAYED_STEPS_FEATURE} = ANY(v."betaFeatureGrants")
-      ${input.vendorId ? Prisma.sql`AND r."vendorId" = ${input.vendorId}` : Prisma.empty}
-      AND NOT (r."id" = ANY(${input.exclude}::text[]))
-      AND (n."actions" IS NULL OR NOT (n."actions" @> '[{"type":"send_email_notification"}]'::jsonb))
-    ORDER BY r."nextRunAt" ASC, r."id" ASC
+    WITH "due" AS (
+      SELECT r."id", r."vendorId", r."updatedAt", r."cursorDelayMinutes", r."attemptCount", r."automationRuleId", r."nextRunAt",
+             ROW_NUMBER() OVER (PARTITION BY r."vendorId" ORDER BY r."nextRunAt" ASC, r."id" ASC) AS "vendorRank"
+      FROM "DelayedStepRun" r
+      JOIN "Vendor" v ON v."id" = r."vendorId"
+      LEFT JOIN LATERAL (
+        SELECT s."actions" FROM "AutomationRuleStep" s
+        WHERE s."vendorId" = r."vendorId" AND s."ruleId" = r."automationRuleId"
+          AND s."isActive" AND s."delayMinutes" > r."cursorDelayMinutes"
+        ORDER BY s."delayMinutes" ASC
+        LIMIT 1
+      ) n ON TRUE
+      WHERE r."automationRuleId" IS NOT NULL
+        AND r."status" = 'active'
+        AND r."nextRunAt" <= ${utcTimestamp(input.now)}
+        AND (r."claimedAt" IS NULL OR r."claimedAt" <= ${utcTimestamp(leaseCutoff)})
+        AND v."suspendedAt" IS NULL
+        AND ${AUTOMATION_DELAYED_STEPS_FEATURE} = ANY(v."betaFeatureGrants")
+        ${input.vendorId ? Prisma.sql`AND r."vendorId" = ${input.vendorId}` : Prisma.empty}
+        AND NOT (r."id" = ANY(${input.exclude}::text[]))
+        AND (n."actions" IS NULL OR NOT (n."actions" @> '[{"type":"send_email_notification"}]'::jsonb))
+    )
+    SELECT "id", "vendorId", "updatedAt", "cursorDelayMinutes", "attemptCount", "automationRuleId"
+    FROM "due"
+    WHERE "vendorRank" <= ${limit}
+    ORDER BY "vendorRank" ASC, "nextRunAt" ASC, "id" ASC
     LIMIT ${limit}
   `;
   return rows;

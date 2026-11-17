@@ -9,7 +9,8 @@ import { getDb } from "@/lib/db";
  * per slot, one spotlight per live, one active credit per source order, one
  * active upline, one pending settlement adjustment, one open login email
  * change per user, one refund row per provider event of a payment, one payout
- * item per settlement) or keep buyer search off full-table scans, so assert the
+ * item per settlement) or keep buyer search and the consultation step's
+ * verified-address lookup (Q-12) off full-table scans, so assert the
  * complete definition (columns, method, operator class and predicate).
  */
 // pg_get_indexdef always schema-qualifies the table; the suite runs in public
@@ -25,6 +26,10 @@ function expectedIndexDefinitions(schema: string): Record<string, string> {
       `CREATE INDEX "FormSubmission_name_trgm_idx" ON ${schema}."FormSubmission" USING gin (name gin_trgm_ops)`,
     FormSubmission_phone_trgm_idx:
       `CREATE INDEX "FormSubmission_phone_trgm_idx" ON ${schema}."FormSubmission" USING gin (phone gin_trgm_ops)`,
+    // Q-12: the consultation delayed step's verified-address lookup
+    // (hasVerifiedRegistration); expression and predicate must match the query.
+    FormSubmission_verified_email_normalized_idx:
+      `CREATE INDEX "FormSubmission_verified_email_normalized_idx" ON ${schema}."FormSubmission" USING btree (lower(btrim(email))) WHERE ("verificationStatus" = 'VERIFIED'::"FormSubmissionVerificationStatus")`,
     LiveQuestion_one_spotlight_per_live_key:
       `CREATE UNIQUE INDEX "LiveQuestion_one_spotlight_per_live_key" ON ${schema}."LiveQuestion" USING btree ("liveId") WHERE (status = 'spotlight'::"LiveQuestionStatus")`,
     RefundRecord_paymentTransactionId_providerEventId_key:
@@ -43,7 +48,7 @@ function expectedIndexDefinitions(schema: string): Record<string, string> {
 }
 
 describe("indexes Prisma cannot express", () => {
-  it("keeps every partial unique and trigram index with its exact definition", async () => {
+  it("keeps every partial (unique or expression) and trigram index with its exact definition", async () => {
     const [current] = await getDb().$queryRaw<Array<{ schema: string | null }>>`SELECT pg_catalog.current_schema() AS schema`;
     const targetSchema = current?.schema ?? "";
     expect(targetSchema).toMatch(/^[a-z_][a-z0-9_]*$/);
