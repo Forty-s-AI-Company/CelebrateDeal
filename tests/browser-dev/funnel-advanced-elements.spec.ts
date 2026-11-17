@@ -42,7 +42,18 @@ test.describe("Funnel advanced element browser boundaries", () => {
   test("advanced surface has no serious accessibility findings or mobile overflow", async ({ page }) => {
     await page.setViewportSize({ width: 375, height: 812 });
     await page.goto("/browser-qa/funnel-elements");
-    const results = await new AxeBuilder({ page }).analyze();
+    // The raw-HTML harness is a script-less `sandbox=""` iframe. axe-core runs
+    // in a frame through scripts and timers, which a sandbox without
+    // `allow-scripts` never fires, so `axe.runPartial` inside that frame never
+    // returns (measured: ~30 s on Chromium 148/149, no result within 70 s on
+    // Chromium 159 = Playwright 1.65; the CI symptom is the context closing at
+    // the test timeout, shown as `Target.createTarget ... browserContextId`).
+    // The page itself, every other element and every other frame are still
+    // scanned; the frame's own accessible name is asserted explicitly instead.
+    // The untrusted HTML inside it is inert, and its isolation is covered by
+    // the first test.
+    await expect(page.locator('iframe[sandbox=""]')).toHaveAttribute("title", "Raw HTML harness");
+    const results = await new AxeBuilder({ page }).exclude('iframe[sandbox=""]').analyze();
     expect(results.violations.filter((item) => item.impact === "critical" || item.impact === "serious")).toEqual([]);
     expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
     const navigation = await page.evaluate(() => {

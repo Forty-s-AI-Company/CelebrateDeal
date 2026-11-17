@@ -159,6 +159,9 @@ const ENTRIES: Entry[] = [
   // courses
   { feature: "courses", kind: "action", name: "saveCourseLessonAction", run: async () => (await import("@/app/actions/course-curriculum-actions")).saveCourseLessonAction(form({ productId: "product-1", revision: "1", chapterTitle: "第一章", title: "第一單元", videoUrl: "https://media.example.test/course.mp4", durationSeconds: "100" })) },
   { feature: "courses", kind: "action", name: "renameCourseChapterAction", run: async () => (await import("@/app/actions/course-curriculum-actions")).renameCourseChapterAction(form({ productId: "product-1", chapterId: "chapter-1", revision: "1", title: "新章節名稱" })) },
+  { feature: "courses", kind: "action", name: "moveCourseChapterAction", run: async () => (await import("@/app/actions/course-curriculum-actions")).moveCourseChapterAction(form({ productId: "product-1", chapterId: "chapter-1", revision: "1", direction: "down" })) },
+  { feature: "courses", kind: "action", name: "deleteCourseChapterAction", run: async () => (await import("@/app/actions/course-curriculum-actions")).deleteCourseChapterAction(form({ productId: "product-1", chapterId: "chapter-1", revision: "1" })) },
+  { feature: "courses", kind: "action", name: "moveCourseLessonAction", run: async () => (await import("@/app/actions/course-curriculum-actions")).moveCourseLessonAction(form({ productId: "product-1", lessonId: "lesson-1", targetChapterId: "chapter-2", revision: "1" })) },
   { feature: "courses", kind: "route", name: "GET /portal/[vendorSlug]/learn/[courseId]/progress", run: async () => (await import("@/app/portal/[vendorSlug]/learn/[courseId]/progress/route")).GET(jsonRequest("https://app.example.test/portal/shop/learn/c1/progress"), { params: Promise.resolve({ vendorSlug: "shop", courseId: "c1" }) }) },
   { feature: "courses", kind: "page", name: "/products/[id]/lessons", run: async () => (await import("@/app/(app)/products/[id]/lessons/page")).default({ params: Promise.resolve({ id: "product-1" }), searchParams: Promise.resolve({}) }) },
   // billing
@@ -267,7 +270,7 @@ const STATIC_MATRIX: Array<{ feature: string; file: string; gate: RegExp; count?
   // courses
   { feature: "courses", file: "src/app/(app)/products/[id]/lessons/page.tsx", gate: /requireFeatureOrNotFound\(vendor, "courses"\)/u },
   { feature: "courses", file: "src/app/(app)/products/[id]/community/page.tsx", gate: /requireFeatureOrNotFound\(vendor, "courses"\)/u },
-  { feature: "courses", file: "src/app/actions/course-curriculum-actions.ts", gate: /requireFeature\(vendor, "courses"\)/gu, count: 2 },
+  { feature: "courses", file: "src/app/actions/course-curriculum-actions.ts", gate: /requireFeature\(vendor, "courses"\)/gu, count: 3 /* save, rename, and the shared manageChapters guard of the order/delete/move actions */ },
   { feature: "courses", file: "src/app/actions/course-community-actions.ts", gate: /requireFeature\(vendor, "courses"\)/u },
   { feature: "courses", file: "src/lib/product-save.ts", gate: /isVendorFeatureEnabled\(db, vendorId, "courses"\)/u },
   { feature: "courses", file: "src/app/portal/[vendorSlug]/learn/[courseId]/page.tsx", gate: /requireVendorFeatureOrNotFound\(getDb\(\), session\.vendorId, "courses"\)/u },

@@ -187,7 +187,7 @@ export function LandingPageTemplateLibrary({ csrfName, csrfToken, platformTempla
           badges={<>{entry.purposes.map((item) => <Tag key={item} tone="blue">{FUNNEL_TEMPLATE_PURPOSE_LABELS[item]}</Tag>)}{entry.styles.map((item) => <Tag key={item}>{FUNNEL_TEMPLATE_STYLE_LABELS[item]}</Tag>)}{entry.status === "limited" ? <Tag tone="amber">需綁定商品</Tag> : null}</>}
           description={entry.description}>
           <button type="button" aria-label={`預覽 ${entry.name}`} disabled={loadingPreviewId !== null} onClick={() => void openPlatformPreview(entry)} className={secondaryButton}><Eye size={16} aria-hidden />{loadingPreviewId === entry.id ? "讀取中…" : "預覽"}</button>
-          <button type="button" aria-label={`使用 ${entry.name}`} onClick={() => openUse(platformSelection(entry))} className={primaryButton}>使用這個範本</button>
+          <button type="button" aria-label={`使用這個範本：${entry.name}`} onClick={() => openUse(platformSelection(entry))} className={primaryButton}>使用這個範本</button>
         </TemplateCard>)}
       </ul> : <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-8 text-center"><p className="font-semibold text-slate-900">沒有符合條件的範本</p><p className="mt-1 text-sm text-slate-600">換一個用途或風格，或清除篩選看全部範本。</p><button type="button" onClick={() => { setPurpose(null); setStyle(null); }} className={`${secondaryButton} mt-4`}>清除篩選</button></div>}
     </TabPanel> : <TabPanel idPrefix="template" tabKey="mine">

@@ -282,7 +282,7 @@ describe("apply to an existing site", () => {
 
   it("only offers the steps a platform template fits", async () => {
     await render(library());
-    await openApply("使用 AI 工具極簡報名頁");
+    await openApply("使用這個範本：AI 工具極簡報名頁");
     const radios = [...dialog()!.querySelectorAll<HTMLInputElement>("input[name=template-target-step]")];
     expect(radios.every((radio) => radio.disabled)).toBe(true);
     expect(dialog()!.textContent).toContain("這個範本不適用此步驟類型");
@@ -292,7 +292,7 @@ describe("apply to an existing site", () => {
 
   it("shows the project guidance on both paths when no project is selected, and switches in place", async () => {
     await render(library({ sites: null, projects: [{ id: "project_1", name: "秋季課程" }] }));
-    await click(buttonNamed("使用 AI 工具極簡報名頁"));
+    await click(buttonNamed("使用這個範本：AI 工具極簡報名頁"));
     const guidance = () => dialog()!.querySelector("[data-sales-project-required]");
     expect(guidance()?.textContent).toContain("一頁式網站屬於銷售專案，請先選擇專案");
     expect([...dialog()!.querySelectorAll("a")].some((link) => link.textContent?.includes("前往建立"))).toBe(false);
@@ -307,7 +307,7 @@ describe("apply to an existing site", () => {
 
   it("offers to create a sales project from the template dialog when there is none", async () => {
     await render(library({ sites: null, projects: [] }));
-    await click(buttonNamed("使用 AI 工具極簡報名頁"));
+    await click(buttonNamed("使用這個範本：AI 工具極簡報名頁"));
     expect(dialog()!.querySelector('a[href="/projects/new"]')?.textContent).toBe("建立銷售專案");
     expect(mocks.apply).not.toHaveBeenCalled();
   });

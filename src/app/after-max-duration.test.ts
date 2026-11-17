@@ -43,6 +43,7 @@ const AFTER_SCHEDULING_IMPORTS: Record<string, string> = {
   dispatchAutomationEvent: "automation emails",
   runPaymentPaidAutomationAfterCommit: "registers after() itself (payment_paid automations)",
   dispatchPaymentPaidAutomationForOrder: "dispatchAutomationEvent",
+  runPaymentPaidAutomationCatchup: "dispatchPaymentPaidAutomationForOrder (webhook-retry job catch-up)",
   dispatchFormNoShowAutomationsForLive: "dispatchAutomationEvent",
   schedulePasswordResetLink: "password reset link",
   requestPasswordResetAction: "Server Action -> schedulePasswordResetLink",

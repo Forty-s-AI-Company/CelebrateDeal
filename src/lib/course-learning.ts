@@ -117,8 +117,9 @@ const byPosition = <Lesson extends Pick<CourseLesson, "id" | "position">>(a: Les
  * only published lessons, so this is the first *visible* lesson. It does NOT use
  * `CourseChapter.position`: the F-5 backfill numbered chapters by their first
  * lesson including unpublished ones, so adopting it would reorder what learners
- * already see. `CourseChapter.position` orders the manager page and a later
- * chapter-reordering feature; that feature decides when learners follow it.
+ * already see. `CourseChapter.position` orders the manager page. Learners follow
+ * a chapter reorder through the lesson positions instead: moving a chapter or a
+ * lesson (course-chapter-manage.ts) rewrites the lesson positions in chapter order.
  */
 export function courseChapters<Lesson extends CourseLesson>(lessons: readonly Lesson[]): CourseChapterGroup<Lesson>[] {
   const ordered = [...lessons].sort(byPosition);

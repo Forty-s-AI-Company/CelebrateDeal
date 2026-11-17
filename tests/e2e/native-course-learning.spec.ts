@@ -104,6 +104,30 @@ test("manager publishes a lesson; a purchasing learner saves, resumes, completes
     await expect(page.getByLabel("章節名稱", { exact: true }).and(page.locator('[aria-invalid="true"]'))).toHaveValue("附錄");
     expect(await db.courseChapter.count({ where: { vendorId: vendor.id } })).toBe(2);
 
+    // Q-15: reorder chapters, move a lesson between chapters and delete the
+    // emptied chapter. Lessons and the learner's progress are never touched.
+    const chapterOrder = async () => (await db.courseChapter.findMany({ where: { vendorId: vendor.id }, orderBy: { position: "asc" } })).map((chapter) => chapter.title);
+    expect(await chapterOrder()).toEqual(["第一章：開場", "附錄"]);
+    await expect(page.getByRole("button", { name: "下移章節「附錄」" })).toBeDisabled();
+    await expect(page.getByRole("button", { name: "上移章節「第一章：開場」" })).toBeDisabled();
+    await page.getByRole("button", { name: "上移章節「附錄」" }).click();
+    await expect(page.getByText("章節順序已更新，學員端會依新順序顯示。")).toBeVisible();
+    expect(await chapterOrder()).toEqual(["附錄", "第一章：開場"]);
+    await expect(page.getByRole("heading", { level: 2 }).filter({ hasText: /^(附錄|第一章：開場)$/ })).toHaveText(["附錄", "第一章：開場"]);
+    // A chapter that still holds a lesson offers no delete button.
+    await expect(page.getByRole("button", { name: "刪除空章節" })).toHaveCount(0);
+    const moveForm = page.locator("form").filter({ has: page.getByLabel("把「補充教材」搬到章節") });
+    await moveForm.getByLabel("把「補充教材」搬到章節").selectOption({ label: "第一章：開場" });
+    await moveForm.getByRole("button", { name: "搬移單元" }).click();
+    await expect(page.getByText("單元已搬到新章節，學習進度不變。")).toBeVisible();
+    expect((await db.courseLesson.findFirstOrThrow({ where: { vendorId: vendor.id, title: "補充教材" } })).chapterTitle).toBe("第一章：開場");
+    await page.getByRole("button", { name: "刪除空章節" }).click();
+    await page.getByRole("alertdialog").getByRole("button", { name: "確認", exact: true }).click();
+    await expect(page.getByText("空章節已刪除。")).toBeVisible();
+    expect(await chapterOrder()).toEqual(["第一章：開場"]);
+    expect(await db.courseLesson.count({ where: { vendorId: vendor.id } })).toBe(2);
+    expect(await db.courseLessonProgress.findFirstOrThrow({ where: { vendorId: vendor.id } })).toEqual(progressBeforeRename);
+
     await learner.reload();
     await expect(learner.getByRole("heading", { name: "第一章：開場" })).toBeVisible();
     await expect(learner.getByRole("heading", { name: "第一章", exact: true })).toHaveCount(0);

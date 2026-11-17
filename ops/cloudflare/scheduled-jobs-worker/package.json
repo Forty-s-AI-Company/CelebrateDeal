@@ -1,0 +1,6 @@
+{
+  "name": "celebratedeal-scheduled-jobs-worker",
+  "private": true,
+  "type": "module",
+  "description": "Cloudflare Worker cron 觸發 CelebrateDeal 背景工作；不屬於 Next.js build，也沒有相依套件。"
+}
