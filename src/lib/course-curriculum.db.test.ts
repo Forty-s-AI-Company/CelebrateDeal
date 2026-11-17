@@ -6,7 +6,7 @@ import { automationCustomerKeyHash } from "@/lib/automation-workflow";
 import { protectCommerceOrderPii } from "@/lib/commerce-order-pii";
 import { grantCommerceEntitlement } from "@/lib/commerce-order-fulfillment";
 import { ChapterTitleTaken, CurriculumConflict, renameCourseChapter, saveCourseLesson } from "@/lib/course-curriculum";
-import { courseChapters, managerChapterGroups } from "@/lib/course-learning";
+import { courseChapters, legacyChapterTitle, managerChapterGroups } from "@/lib/course-learning";
 import { getDb } from "@/lib/db";
 import { getStudentCourse, saveStudentLessonProgress, studentCertificateDetails } from "@/lib/student-course-learning";
 
@@ -212,14 +212,33 @@ describe("renameCourseChapter (F-5)", () => {
 });
 
 /** F-5 rollout: pre-F-5 code may still write lessons while the new code runs. It
- * only knows chapterTitle, so it leaves chapterId empty (new lesson) or stale
- * (chapterTitle changed, chapterId kept). These writes are simulated directly. */
+ * only knows chapterTitle, so it leaves chapterId stale (chapterTitle changed,
+ * chapterId kept). Before Q-14 it could also leave chapterId empty on a new
+ * lesson; since Q-14 the column is NOT NULL (that insert fails, see "rejects a
+ * lesson without a chapter" below), so these tests use the stale link, which
+ * every reader treats the same way. These writes are simulated directly. */
 describe("chapter membership during a rollout (F-5 review M-1)", () => {
   const lessonRows = (vendorId: string) => db.courseLesson.findMany({ where: { vendorId }, orderBy: { position: "asc" }, select: { id: true, chapterTitle: true, chapterId: true } });
+  /** A lesson whose chapterId points to a chapter its title does not name: the
+   * course's first such chapter, or a new "舊章節" when every chapter has that title. */
   const legacyInsert = async (f: Awaited<ReturnType<typeof course>>, chapterTitle: string, title: string, published = true) => {
-    const last = await db.courseLesson.aggregate({ where: { vendorId: f.vendor.id, productId: f.product.id }, _max: { position: true } });
-    return (await db.courseLesson.create({ data: { vendorId: f.vendor.id, productId: f.product.id, chapterTitle, title, position: (last._max.position ?? -1) + 1, videoUrl: "https://media.example.test/course.mp4", durationSeconds: 100, publishedAt: published ? new Date() : null } })).id;
+    const scope = { vendorId: f.vendor.id, productId: f.product.id };
+    const last = await db.courseLesson.aggregate({ where: scope, _max: { position: true } });
+    const other = await db.courseChapter.findFirst({ where: { ...scope, title: { not: legacyChapterTitle(chapterTitle) } }, orderBy: { position: "asc" } });
+    const lastChapter = await db.courseChapter.aggregate({ where: scope, _max: { position: true } });
+    const chapterId = other?.id ?? (await db.courseChapter.create({ data: { ...scope, title: "舊章節", position: (lastChapter._max.position ?? -1) + 1 } })).id;
+    return (await db.courseLesson.create({ data: { ...scope, chapterId, chapterTitle, title, position: (last._max.position ?? -1) + 1, videoUrl: "https://media.example.test/course.mp4", durationSeconds: 100, publishedAt: published ? new Date() : null } })).id;
   };
+
+  it("rejects a lesson without a chapter (Q-14: chapterId is NOT NULL)", async () => {
+    const f = await course();
+    await expect(db.$executeRaw`INSERT INTO "CourseLesson" ("id", "vendorId", "productId", "chapterTitle", "title", "position", "updatedAt") VALUES (${`lsn_${randomUUID()}`}, ${f.vendor.id}, ${f.product.id}, '第一章', '開場', 0, CURRENT_TIMESTAMP)`).rejects.toThrow(/chapterId|23502|null value/u);
+    const [column] = await db.$queryRaw<Array<{ notNull: boolean }>>`SELECT attnotnull AS "notNull" FROM pg_attribute WHERE attrelid = '"CourseLesson"'::regclass AND attname = 'chapterId'`;
+    expect(column?.notNull).toBe(true);
+    const checks = await db.$queryRaw<Array<{ conname: string }>>`SELECT conname FROM pg_constraint WHERE conrelid = '"CourseLesson"'::regclass AND conname = 'CourseLesson_chapterId_not_null_check'`;
+    expect(checks).toEqual([]);
+    expect(await db.courseLesson.count({ where: { vendorId: f.vendor.id } })).toBe(0);
+  });
 
   it("A: renaming a chapter leaves a lesson that old code moved to another chapter where it is, and saving it fixes its link", async () => {
     const f = await course();
