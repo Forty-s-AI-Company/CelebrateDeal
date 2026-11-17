@@ -664,6 +664,24 @@ test("live stepper has no blocking axe violations on any of the four steps, in �
   });
 });
 
+test("landing page template library has no blocking axe violations, including the preview dialog", async ({ page }) => {
+  test.setTimeout(120_000);
+  await loginOwner(page);
+  await gotoStableRoute(page, "/landing-pages/templates");
+  const cards = page.getByRole("list", { name: "平台範本" }).getByRole("listitem");
+  await expect(cards.first()).toBeVisible();
+  expect(await cards.count()).toBeGreaterThan(0);
+  await expectNoBlockingAxe(page, "template-library-platform");
+  await page.getByRole("tab", { name: /我的範本/ }).click();
+  await expect(page.getByText("還沒有自己的範本")).toBeVisible();
+  await expectNoBlockingAxe(page, "template-library-mine-empty");
+  await page.getByRole("tab", { name: /平台範本/ }).click();
+  await cards.first().getByRole("button", { name: /^預覽 / }).click();
+  const preview = page.getByRole("dialog");
+  await expect(preview).toBeVisible();
+  await expectNoBlockingAxe(page, "template-library-preview");
+});
+
 test("platform-admin MFA and static operations routes have no blocking axe violations", async ({ page }) => {
   test.setTimeout(120_000);
   await gotoStableRoute(page, "/login");
