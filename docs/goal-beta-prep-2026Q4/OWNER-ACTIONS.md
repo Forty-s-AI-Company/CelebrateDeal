@@ -7,11 +7,16 @@
   - 全額退款：撤銷該訂單所交付商品的存取權，但不登出整個學員帳號、不影響其他已付款商品；部分退款不撤銷。
   - 商家凍結期間：`/support` 保留已付款買家的交付連結。
   - 黑名單 Email：不能申請學員登入連結，回應不透露是否在黑名單。
-  - 程式實作另開 PR（`ai/owner-policy-refund-suspend-blacklist`），合併前需獨立審查。
+  - ✅ 已完成：#560（`36a1299e`，2026-11-10 合併）實作並補回歸測試 `src/lib/owner-learner-access-policy.db.test.ts`（全額退款只撤銷該筆訂單的存取、凍結期間 `/support` 保留已付款買家交付連結、黑名單 Email 不能申請登入連結）；規則寫在 `docs/domain-workflows.md`「商家凍結」與「學員 portal session 撤銷」。連結：https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/560
 - **O-15 跨區**：選 A，正式上線前（還原演練通過後）把 Supabase 正式專案遷到東京。
 - **B-1 外部排程**：選方案 B（Cloudflare Worker cron），密鑰留在 owner 的 Cloudflare 帳號、之後可延伸到 Production；heartbeat 保留作備援。可部署的 Worker 已在 `ops/cloudflare/scheduled-jobs-worker/`；owner 在該資料夾依其 `README.md`（或 `docs/launch/scheduled-jobs-external-trigger.md` §5）執行 `npx wrangler login`、`npx wrangler secret put JOB_SECRET`、`npx wrangler deploy` 即可。
 - **O-21 個資保存期限**：先採預設（WebhookEvent payload 180 天、AnalyticsEvent 365 天、AuditLog IP 365 天），律師意見回來後再調整；開啟排程另開工作。
 - **staging 合成資料（#543）**：封測期間不刪除。盤點的 4 個商家（含封測用的 Wuhe Select、Merchant2 測試商店）與 9 支 Stream 影片保留在各自租戶內；封測客戶一律新建商家帳號（BETA-OPS (b)(c)）。正式上線前再依盤點決定刪除範圍，屆時先備份、經 owner 同意、用腳本執行並留收據。
+
+## 2026-11-17 新增 owner 動作
+
+- **GitHub Dependency graph**：Settings → Code security 開啟 Dependency graph，Dependency review 檢查（`.github/workflows/dependency-review.yml`）才會生效；同一頁開啟 **Private vulnerability reporting**，讓外部回報安全問題有私下管道（`SECURITY.md`）。
+- **手動觸發一次 `security-audit.yml`**：Actions → Security audit (weekly) → Run workflow，確認 workflow 能成功跑完；有 high／critical advisory 時會開一個 `security-audit` issue，沒有時不開 issue（這是正常結果）。
 
 ## 2026-11-06 待 owner 處理（彙整）
 

@@ -129,6 +129,14 @@
   - **修改**：owner 與 admin 在規則下方新增、修改、刪除步驟（每個 Server Action 都綁目前商家，修改時先鎖住規則；含 LINE 推播或會發派券 LINE 通知的規則 admin 只能刪除步驟，見上方「LINE 推播」）。修改的步驟保留原本的 id；有人跑到一半時，比他目前進度早的新步驟不補做、停用或刪除的步驟直接跳過、改延遲的步驟照新時間，已執行過的那一步改了時間也不會再執行一次。觸發條件被隱藏的規則只能刪除步驟。
   - **不做**：視覺化流程編輯器；`payment_paid` 的延遲步驟（需要 `DelayedStepRun` 加訂單欄位的 migration、到點時重讀訂單並在退款或取消時停止，留到之後的 PR）與「到現在還沒買」條件；修改規則的立即動作（照舊只能在建立時設定）。
 
+## 商家上線任務（onboarding）
+
+權威實作是 `src/lib/merchant-onboarding.ts`；側欄、`/onboarding`、儀表板卡片與公開指南都渲染同一份 `buildOnboardingChecklist`，狀態只來自已保存的商家資料，沒有手動勾選。
+
+- **互動角色與「發布互動腳本」不計入完成度**：這兩項放在 `journey` 步驟的 `suggestions`（`interactionSuggestions`），只作建議顯示；`summarizeSteps` 計算完成度只看各步驟的必要 `requirements`，所以沒有腳本也能拿到 100%。`journey` 步驟的必要條件只有「啟用報名表單」與「啟用報名確認 Email」。
+- `launch` 步驟也不含互動腳本：`getLivePublishReadiness`（`src/lib/live-publish-readiness.ts`）把 `interaction_script` 放在 `recommendations`（只有銷售直播才出現），不在 `requirements`，不擋發布、也不進 `launchRequirements`。
+- 平台服務付款步驟標為 `deferred`（依賴外部服務）：仍計入完成度，但「下一步」會先指向其他未完成的步驟；平台未要求綁定時該步驟為「不適用」且不計入。諮詢專案的 `launch` 步驟同樣為不適用。
+
 ## 歸因與佣金
 
 先固定 provider、event ID、order number、pending transaction、vendor、affiliate、product／live、visitor／session 與 attribution record。URL／cookie／session 僅是候選來源，接受的歸因與價格由 checkout 伺服器綁定並凍結。
