@@ -268,6 +268,10 @@ describe("GET /api/live-watch-link (Q-17)", () => {
   });
 
   it("answers 429 past 60 links a minute from one address, uncached and without any cookie (review n-3)", async () => {
+    // The application-layer limiter runs under the memory and Upstash
+    // providers. Under cloudflare_waf (CI's setting) checkRateLimit defers to
+    // the WAF in front of the app by design; the next test covers that.
+    vi.stubEnv("RATE_LIMIT_PROVIDER", "memory");
     const t = await tenant();
     const session = await live(t);
     const lead = await registrant(t, session.id);
@@ -284,6 +288,23 @@ describe("GET /api/live-watch-link (Q-17)", () => {
     expect(limited.headers.getSetCookie()).toEqual([]);
     // Another address is unaffected.
     expect(attendanceCookie(await open(linkFor(t, session.id, lead.id)), session.id)).not.toBeNull();
+  });
+
+  it("leaves per-address limiting to the WAF under cloudflare_waf, like every checkRateLimit route", async () => {
+    vi.stubEnv("RATE_LIMIT_PROVIDER", "cloudflare_waf");
+    const t = await tenant();
+    const session = await live(t);
+    const lead = await registrant(t, session.id);
+    const fromOneAddress = (token: string) => GET(new Request(new URL(`/api/live-watch-link?token=${encodeURIComponent(token)}`, APP_URL), {
+      headers: { "x-forwarded-for": "198.51.100.78" },
+    }));
+    for (let index = 0; index < 60; index += 1) {
+      expect((await fromOneAddress("not-a-token")).status).toBe(303);
+    }
+    // The 61st is not refused here: Cloudflare counts per source IP before the request reaches Next.js.
+    const deferred = await fromOneAddress(linkFor(t, session.id, lead.id));
+    expect(deferred.status).toBe(303);
+    expect(attendanceCookie(deferred, session.id)).not.toBeNull();
   });
 
   it("neither reads nor replaces the browser's registration cookie", async () => {

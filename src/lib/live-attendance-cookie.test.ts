@@ -1,5 +1,5 @@
 import { createHmac } from "node:crypto";
-import { readdirSync, readFileSync, statSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { registrationSubmissionIdFromRequest } from "@/lib/evergreen-session-assignment";
@@ -131,19 +131,29 @@ describe("attendance-only cookie (Q-17)", () => {
       "lib/live-watch-link.ts",
       "app/api/live-watch-link/route.ts",
       "app/api/live-watch-link/route.db.test.ts",
+      "app/api/live-watch-link/route.test.ts",
       "app/api/live-chat/private/route.test.ts",
       // The key registry and its tests name the purpose; they read no cookie.
       "lib/derived-key-purposes.ts",
       "lib/derived-key-rotation.test.ts",
     ]);
     const offenders: string[] = [];
+    // Directory entries carry their type, and each file is read directly
+    // (no separate stat before the read), so there is no check-then-use race.
     const walk = (dir: string) => {
-      for (const entry of readdirSync(dir)) {
-        const full = path.join(dir, entry);
-        if (statSync(full).isDirectory()) walk(full);
-        else if (/\.(?:ts|tsx)$/u.test(entry)) {
+      for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        const full = path.join(dir, entry.name);
+        if (entry.isDirectory()) walk(full);
+        else if (entry.isFile() && /\.(?:ts|tsx)$/u.test(entry.name)) {
           const relative = path.relative(root, full).split(path.sep).join("/");
-          const source = readFileSync(full, "utf8");
+          let source: string;
+          try {
+            source = readFileSync(full, "utf8");
+          } catch (error) {
+            // A file removed while scanning cannot reference the cookie.
+            if ((error as NodeJS.ErrnoException).code === "ENOENT") continue;
+            throw error;
+          }
           const readsIt = /from\s+["'][^"']*live-attendance-cookie["']|import\(\s*["'][^"']*live-attendance-cookie["']/u.test(source)
             || source.includes("celebratedeal_la_")
             || source.includes("liveAttendance");
