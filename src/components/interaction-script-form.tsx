@@ -7,6 +7,7 @@ import type { InteractionEvent, InteractionRole, InteractionScript, Live, Produc
 import { BadgeCheck, ChevronDown, ChevronUp, GripVertical, Link2Off, MessageCircle, Megaphone, ShoppingBag, Trash2, VideoIcon } from "lucide-react";
 import { unbindInteractionScriptFromLiveAction } from "@/app/actions";
 import { FormSubmitButton } from "@/components/form-submit-button";
+import { Field } from "@/components/ui";
 import { CSRF_FIELD_NAME } from "@/lib/csrf-constants";
 import {
   INTERACTION_EVENT_TYPES,
@@ -590,14 +591,8 @@ export function InteractionScriptForm({
       <section className="sticky top-0 z-20 rounded-xl border border-border bg-white/95 p-4 backdrop-blur">
         <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_auto] xl:items-end">
           <div className="grid gap-3 md:grid-cols-2">
-            <label className="grid gap-1.5 text-sm font-semibold text-slate-700">
-              互動腳本名稱
-              <input name="name" required maxLength={160} defaultValue={script?.name ?? "保養導購互動腳本"} className="h-11 rounded-md border border-border px-3 text-base font-semibold text-slate-950 outline-none focus:border-primary focus:ring-2 focus:ring-blue-100" />
-            </label>
-            <label className="grid gap-1.5 text-sm font-semibold text-slate-700">
-              用途說明
-              <input name="description" maxLength={1000} defaultValue={script?.description ?? "依影片進度顯示官方訊息、商品與 CTA"} className="h-11 rounded-md border border-border px-3 text-sm text-slate-950 outline-none focus:border-primary focus:ring-2 focus:ring-blue-100" />
-            </label>
+            <Field label="互動腳本名稱" name="name" required maxLength={160} defaultValue={script?.name ?? "保養導購互動腳本"} />
+            <Field label="用途說明" name="description" maxLength={1000} defaultValue={script?.description ?? "依影片進度顯示官方訊息、商品與 CTA"} />
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <span className={`rounded-full px-3 py-1 text-xs font-bold ${script?.status === "published" ? "bg-emerald-100 text-emerald-800" : "bg-slate-100 text-slate-700"}`}>

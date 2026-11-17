@@ -101,8 +101,9 @@ export function DangerButton({ children }: { children: React.ReactNode }) {
  * Exported for hand-written controls: spread `controlProps` on the control, add `controlClass` to its border classes and
  * render `messages` after (never inside) its <label>, so the label alone stays the accessible name.
  */
-export function useFieldMessages(error?: string | null, hint?: string | null) {
-  const id = useId();
+export function useFieldMessages(error?: string | null, hint?: string | null, idOverride?: string) {
+  const generatedId = useId();
+  const id = idOverride ?? generatedId;
   const errorId = error ? `${id}-error` : undefined;
   const hintId = hint ? `${id}-hint` : undefined;
   const describedBy = [errorId, hintId].filter(Boolean).join(" ") || undefined;
@@ -141,6 +142,9 @@ export function Field({
   disabled,
   value,
   onChange,
+  onFocus,
+  pattern,
+  id,
   error,
   hint,
 }: {
@@ -148,8 +152,11 @@ export function Field({
   error?: string | null;
   hint?: string | null;
   name: string;
+  /** Optional stable element id; the error/hint ids become `${id}-error` / `${id}-hint` and aria-describedby follows. */
+  id?: string;
   defaultValue?: string | number | null;
   type?: string;
+  pattern?: string;
   required?: boolean;
   placeholder?: string;
   autoComplete?: string;
@@ -163,14 +170,17 @@ export function Field({
   /** Controlled mode: when set, `defaultValue` is ignored and `onChange` should update the value. */
   value?: string | number;
   onChange?: React.ChangeEventHandler<HTMLInputElement>;
+  onFocus?: React.FocusEventHandler<HTMLInputElement>;
 }) {
-  const field = useFieldMessages(error, hint);
+  const field = useFieldMessages(error, hint, id);
   return (
     <FieldShell field={field}>
-    <label className="grid gap-1.5 text-sm font-medium text-slate-700">
+    <label className="grid gap-1.5 text-sm font-medium text-slate-700" htmlFor={id}>
       {label}
       <input
         {...field.controlProps}
+        id={id}
+        pattern={pattern}
         className={`h-11 rounded-md border bg-white px-3 text-sm transition ${field.controlClass}`}
         name={name}
         type={type}
@@ -185,6 +195,7 @@ export function Field({
         readOnly={readOnly}
         disabled={disabled}
         onChange={onChange}
+        onFocus={onFocus}
         {...(value === undefined ? { defaultValue: defaultValue ?? "" } : { value })}
       />
     </label>

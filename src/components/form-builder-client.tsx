@@ -9,6 +9,7 @@ import {
 import { FormFieldEditor, registrationFormFieldTypeLabel } from "@/components/form-field-editor";
 import { MediaUploadField, type MediaUploadPersistedValue } from "@/components/media-upload-field";
 import { FormPreview } from "@/components/form-preview";
+import { Field } from "@/components/ui";
 import { RichTextEditor } from "@/components/rich-text-editor";
 import { useRegistrationFormDraft } from "@/components/use-registration-form-draft";
 import {
@@ -478,11 +479,7 @@ export function FormBuilderClient({
             <h2 id="form-basics-title" className="text-lg font-semibold text-slate-950">1. 基本資料</h2>
             <p className="mt-1 text-sm text-slate-600">先設定內部名稱與填寫者會看到的標題。</p>
             <div className="mt-4 grid gap-4 md:grid-cols-2">
-              <label className="grid gap-1.5 text-sm font-medium text-slate-700">
-                表單名稱
-                <input name="name" required maxLength={120} value={values.name} onChange={(event) => updateValue("name", event.target.value)} aria-invalid={Boolean(errors.name)} aria-describedby={errors.name ? "form-name-error" : undefined} className={inputClass} />
-                <InlineError id="form-name-error" message={errors.name} />
-              </label>
+              <Field id="form-name" label="表單名稱" name="name" required maxLength={120} value={values.name} onChange={(event) => updateValue("name", event.target.value)} error={errors.name} />
               <label className="grid gap-1.5 text-sm font-medium text-slate-700">
                 公開網址
                 <div className="flex min-w-0 items-center rounded-md border border-slate-200 bg-white focus-within:border-primary focus-within:ring-2 focus-within:ring-blue-100">
@@ -494,11 +491,7 @@ export function FormBuilderClient({
               </label>
             </div>
             <div className="mt-4 grid gap-4">
-              <label className="grid gap-1.5 text-sm font-medium text-slate-700">
-                公開標題
-                <input name="headline" required maxLength={200} value={values.headline} onChange={(event) => updateValue("headline", event.target.value)} aria-invalid={Boolean(errors.headline)} aria-describedby={errors.headline ? "form-headline-error" : undefined} className={inputClass} />
-                <InlineError id="form-headline-error" message={errors.headline} />
-              </label>
+              <Field id="form-headline" label="公開標題" name="headline" required maxLength={200} value={values.headline} onChange={(event) => updateValue("headline", event.target.value)} error={errors.headline} />
               <label className="grid gap-1.5 text-sm font-medium text-slate-700">
                 說明文字
                 <textarea name="description" rows={4} maxLength={5_000} value={values.description} onChange={(event) => updateValue("description", event.target.value)} aria-invalid={Boolean(errors.description)} aria-describedby={errors.description ? "form-description-error" : undefined} className={textareaClass} />
@@ -558,11 +551,7 @@ export function FormBuilderClient({
             <h2 id="form-feedback-title" className="text-lg font-semibold text-slate-950">3. 送出回饋</h2>
             <p className="mt-1 text-sm text-slate-600">讓填寫者知道按鈕用途，以及資料確實送出成功。</p>
             <div className="mt-4 grid gap-4">
-              <label className="grid gap-1.5 text-sm font-medium text-slate-700">
-                送出按鈕文字
-                <input name="submitLabel" required maxLength={80} value={values.submitLabel} onChange={(event) => updateValue("submitLabel", event.target.value)} aria-invalid={Boolean(errors.submitLabel)} aria-describedby={errors.submitLabel ? "form-submit-label-error" : undefined} className={inputClass} />
-                <InlineError id="form-submit-label-error" message={errors.submitLabel} />
-              </label>
+              <Field id="form-submit-label" label="送出按鈕文字" name="submitLabel" required maxLength={80} value={values.submitLabel} onChange={(event) => updateValue("submitLabel", event.target.value)} error={errors.submitLabel} />
               <label className="grid gap-1.5 text-sm font-medium text-slate-700">
                 成功訊息
                 <textarea name="successMessage" required rows={3} maxLength={500} value={values.successMessage} onChange={(event) => updateValue("successMessage", event.target.value)} aria-invalid={Boolean(errors.successMessage)} aria-describedby={errors.successMessage ? "form-success-message-error" : undefined} className={textareaClass} />
