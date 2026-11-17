@@ -87,6 +87,7 @@ vi.mock("@/components/form-submit-button", () => ({
   ),
 }));
 
+import { Field } from "@/components/ui";
 import { accessibleForeground, BrandSettingsForm } from "./brand-settings-form";
 
 const initialValues: BrandSettingsFormValues = {
@@ -165,7 +166,7 @@ describe("BrandSettingsForm", () => {
     expect(html).toMatch(/name="supportEmail"[^>]*value="support@example.test"/u);
     expect(html).toMatch(/name="senderName"[^>]*value="寄件品牌小組"/u);
     expect(html).toMatch(/name="contactUrl"[^>]*value="https:\/\/original\.example\.test\/contact\?from=brand#help"/u);
-    const contactInput = findElements(tree, (element) => element.type === "input" && element.props.name === "contactUrl")[0];
+    const contactInput = findElements(tree, (element) => (element.type === "input" || element.type === Field) && element.props.name === "contactUrl")[0];
     expect(contactInput?.props).toMatchObject({ maxLength: 2048 });
     expect(html).toMatch(/name="logoUrl"[^>]*value="https:\/\/cdn\.example\.test\/logo\.png"/u);
     expect(html).toMatch(/name="logoAssetId"[^>]*value="logo-asset-1"/u);
@@ -233,9 +234,22 @@ describe("BrandSettingsForm", () => {
     expect(html).toMatch(/<button[^>]*disabled=""[^>]*aria-disabled="true"/u);
   });
 
+  it("associates labels and hints with the shared Field controls without changing names", () => {
+    const html = renderToStaticMarkup(form());
+    for (const [label, name] of [["品牌名稱", "name"], ["品牌網址", "slug"], ["時區", "timezone"], ["客服 Email", "supportEmail"], ["寄件人名稱", "senderName"], ["聯絡網址", "contactUrl"]]) {
+      expect(html).toMatch(new RegExp(`<label[^>]*>${label}<input[^>]*name="${name}"`, "u"));
+    }
+    const id = /<input[^>]*aria-describedby="([^"]+)"[^>]*name="timezone"/u.exec(html)?.[1];
+    expect(id).toBeTruthy();
+    expect(html).toContain(`id="${id}"`);
+    expect(html).toContain("請使用 IANA 時區，例如 Asia/Taipei。");
+    expect(html).toMatch(/<input[^>]*required=""[^>]*name="name"/u);
+    expect(html).toMatch(/<input[^>]*type="email"[^>]*name="supportEmail"/u);
+  });
+
   it("keeps input values controlled when a merchant edits a field", () => {
     const tree = form();
-    const nameInput = findElements(tree, (element) => element.type === "input" && element.props.name === "name")[0];
+    const nameInput = findElements(tree, (element) => (element.type === "input" || element.type === Field) && element.props.name === "name")[0];
     const onChange = nameInput?.props.onChange as ((event: { target: { value: string } }) => void) | undefined;
     expect(onChange).toBeTypeOf("function");
 
@@ -297,7 +311,7 @@ describe("BrandSettingsForm", () => {
       ["senderName", "即時寄件人"],
       ["contactUrl", "https://live.example.test/contact"],
     ] as const) {
-      const input = findElements(tree, (element) => element.type === "input" && element.props.name === name)[0];
+      const input = findElements(tree, (element) => (element.type === "input" || element.type === Field) && element.props.name === name)[0];
       const onChange = input?.props.onChange as ((event: { target: { value: string } }) => void) | undefined;
       expect(onChange, name).toBeTypeOf("function");
       onChange?.({ target: { value } });

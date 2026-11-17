@@ -72,9 +72,7 @@ export function EvergreenWebinarSettings({
           <p className="text-xs text-slate-500">只在「每日固定場次」使用；最多可設定 4 個時段。</p>
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             {[0, 1, 2, 3].map((index) => (
-              <label key={index} className="grid gap-1 text-sm text-slate-700">場次 {index + 1}
-                <input className="h-11 rounded-md border border-border-control bg-white px-3 text-sm" name="evergreenDailyTimes" type="time" defaultValue={value.evergreenDailyTimes[index] ?? ""} />
-              </label>
+              <Field key={index} label={`場次 ${index + 1}`} name="evergreenDailyTimes" type="time" defaultValue={value.evergreenDailyTimes[index] ?? ""} />
             ))}
           </div>
         </fieldset>

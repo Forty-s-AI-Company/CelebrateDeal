@@ -1,7 +1,7 @@
 import Link from "next/link";
 import type { SupportCasePriority, SupportCaseStatus } from "@prisma/client";
 
-import { Badge, Card, EmptyState, PageHeader } from "@/components/ui";
+import { Badge, Card, EmptyState, Field, PageHeader, SelectField } from "@/components/ui";
 import { requireVendorSupportMember } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import {
@@ -62,21 +62,15 @@ export default async function SupportCasesPage({ searchParams }: {
       <PageHeader title="客服案件" description="集中處理訂單問題、指派 owner、保存加密紀錄，並把退款需求安全交接到平台財務。" />
       <Card className="mb-5">
         <form method="get" className="grid gap-3 lg:grid-cols-[1fr_200px_200px_auto] lg:items-end">
-          <label className="grid gap-1 text-sm font-medium text-slate-700">案件／訂單編號
-            <input name="q" defaultValue={search} maxLength={160} className="min-h-11 rounded-md border border-slate-500 px-3" placeholder="SC-… 或訂單編號" />
-          </label>
-          <label className="grid gap-1 text-sm font-medium text-slate-700">案件狀態
-            <select name="status" defaultValue={status ?? ""} className="min-h-11 rounded-md border border-slate-500 bg-white px-3">
-              <option value="">全部狀態</option>
-              {SUPPORT_CASE_STATUSES.map((value) => <option key={value} value={value}>{statusLabels[value]}</option>)}
-            </select>
-          </label>
-          <label className="grid gap-1 text-sm font-medium text-slate-700">優先等級
-            <select name="priority" defaultValue={priority ?? ""} className="min-h-11 rounded-md border border-slate-500 bg-white px-3">
-              <option value="">全部等級</option>
-              {SUPPORT_CASE_PRIORITIES.map((value) => <option key={value} value={value}>{value.toUpperCase()}</option>)}
-            </select>
-          </label>
+          <Field label="案件／訂單編號" name="q" defaultValue={search} maxLength={160} placeholder="SC-… 或訂單編號" />
+          <SelectField label="案件狀態" name="status" defaultValue={status ?? ""}>
+            <option value="">全部狀態</option>
+            {SUPPORT_CASE_STATUSES.map((value) => <option key={value} value={value}>{statusLabels[value]}</option>)}
+          </SelectField>
+          <SelectField label="優先等級" name="priority" defaultValue={priority ?? ""}>
+            <option value="">全部等級</option>
+            {SUPPORT_CASE_PRIORITIES.map((value) => <option key={value} value={value}>{value.toUpperCase()}</option>)}
+          </SelectField>
           <button className="min-h-11 rounded-md bg-primary px-4 text-sm font-semibold text-white">篩選</button>
         </form>
       </Card>

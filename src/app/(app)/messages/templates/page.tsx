@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { Plus } from "lucide-react";
 import { MESSAGE_TEMPLATE_TRIGGERS } from "@/lib/message-template";
-import { Badge, ButtonLink, Card, EmptyState, PageHeader } from "@/components/ui";
+import { Badge, ButtonLink, Card, EmptyState, Field, PageHeader, SelectField } from "@/components/ui";
 import { requireVendorManager } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 
@@ -110,39 +110,16 @@ export default async function MessageTemplatesPage({
       ) : null}
       <Card className="mb-5">
         <form method="get" className="grid gap-3 md:grid-cols-[minmax(0,1fr)_220px_220px_auto_auto] md:items-end">
-          <label className="grid gap-1.5 text-sm font-medium text-slate-700">
-            搜尋模板
-            <input
-              name="q"
-              defaultValue={search}
-              maxLength={120}
-              placeholder="搜尋名稱、主旨或內容"
-              className="h-11 rounded-md border border-border bg-white px-3 text-sm outline-none transition focus:border-primary focus:ring-2 focus:ring-blue-100"
-            />
-          </label>
-          <label className="grid gap-1.5 text-sm font-medium text-slate-700">
-            觸發條件
-            <select
-              name="trigger"
-              defaultValue={trigger ?? ""}
-              className="h-11 rounded-md border border-border bg-white px-3 text-sm outline-none transition focus:border-primary focus:ring-2 focus:ring-blue-100"
-            >
-              <option value="">全部觸發條件</option>
-              {MESSAGE_TEMPLATE_TRIGGERS.map((value) => <option key={value} value={value}>{triggerLabels[value]}</option>)}
-            </select>
-          </label>
-          <label className="grid gap-1.5 text-sm font-medium text-slate-700">
-            啟用狀態
-            <select
-              name="status"
-              defaultValue={status ?? ""}
-              className="h-11 rounded-md border border-border bg-white px-3 text-sm outline-none transition focus:border-primary focus:ring-2 focus:ring-blue-100"
-            >
-              <option value="">全部狀態</option>
-              <option value="active">啟用</option>
-              <option value="inactive">停用</option>
-            </select>
-          </label>
+          <Field label="搜尋模板" name="q" defaultValue={search} maxLength={120} placeholder="搜尋名稱、主旨或內容" />
+          <SelectField label="觸發條件" name="trigger" defaultValue={trigger ?? ""}>
+            <option value="">全部觸發條件</option>
+            {MESSAGE_TEMPLATE_TRIGGERS.map((value) => <option key={value} value={value}>{triggerLabels[value]}</option>)}
+          </SelectField>
+          <SelectField label="啟用狀態" name="status" defaultValue={status ?? ""}>
+            <option value="">全部狀態</option>
+            <option value="active">啟用</option>
+            <option value="inactive">停用</option>
+          </SelectField>
           <button type="submit" className="inline-flex min-h-11 items-center justify-center rounded-md bg-primary px-4 text-sm font-semibold text-white transition hover:bg-primary-dark">搜尋</button>
           {hasFilters ? <Link href="/messages/templates" className="inline-flex min-h-11 items-center justify-center rounded-md border border-border bg-white px-4 text-sm font-semibold text-slate-700 transition hover:bg-slate-50">清除篩選</Link> : null}
         </form>
