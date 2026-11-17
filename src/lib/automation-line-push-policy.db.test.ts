@@ -497,4 +497,42 @@ describe("concurrency with an owner holding the rule row", () => {
     await expect(db.automationRuleStep.count({ where: { ruleId: r.id } })).resolves.toBe(0);
     await expect(db.auditLog.count({ where: { vendorId: vendor.id } })).resolves.toBe(0);
   }, 40_000);
+
+  // CI run 44014709990 (PR #621): with several waiters giving up at the same
+  // moment, PostgreSQL reported one waiter's lock_timeout as 57014 "canceling
+  // statement due to user request" (the timeout fired as the tuple lock was
+  // granted; the wait on the holder's transaction id that followed re-armed
+  // lock_timeout and cleared its indicator), and toggle answered with a 500.
+  // That race is timing-dependent, so the same error is produced here on
+  // purpose: every waiting FOR UPDATE is cancelled the way PostgreSQL then
+  // reports it, and every writer must answer busy and write nothing.
+  it("answers busy, not an error, when the given-up lock wait is reported as a cancelled statement (57014)", async () => {
+    const { vendor, page, r } = await funnelRule();
+    as("admin", vendor);
+    const held = await holdRule(vendor.id, r.id);
+    let results: Array<{ ok: boolean; error?: unknown }> = [];
+    try {
+      const calls = [...adminCalls(vendor.id, page.id, r.id), settle(deleteAutomationRuleAction(form({ ruleId: r.id })))];
+      await untilWaiting(5);
+      const [cancelled] = await observer.$queryRaw<Array<{ n: number }>>`
+        SELECT count(*) FILTER (WHERE pg_cancel_backend(pid))::int AS n FROM pg_stat_activity
+        WHERE datname = current_database() AND wait_event_type = 'Lock' AND query LIKE '%"AutomationRule"%FOR UPDATE%'
+      `;
+      expect(cancelled?.n).toBe(5);
+      results = await Promise.all(calls);
+    } finally {
+      held.release();
+      await held.done;
+    }
+    const summary = JSON.stringify(results.map((result) => (result.error instanceof Error ? `${result.error.name}: ${result.error.message}` : String(result.error))));
+    const [toggle, create, funnelEdit, funnelEnable, remove] = results;
+    expect(String((toggle!.error as Error).message), summary).toBe("redirect:/settings/automations?error=toggle_busy");
+    expect(String((create!.error as Error).message), summary).toBe("redirect:/settings/automations?error=step_busy");
+    expect(funnelEdit!.error, summary).toBeInstanceOf(FunnelAutomationBusyError);
+    expect(funnelEnable!.error, summary).toBeInstanceOf(FunnelAutomationBusyError);
+    expect(String((remove!.error as Error).message), summary).toBe("redirect:/settings/automations?error=delete_busy");
+    await expect(db.automationRule.findUniqueOrThrow({ where: { id: r.id } })).resolves.toMatchObject({ name: r.name, isActive: false, version: 1 });
+    await expect(db.automationRuleStep.count({ where: { ruleId: r.id } })).resolves.toBe(0);
+    await expect(db.auditLog.count({ where: { vendorId: vendor.id } })).resolves.toBe(0);
+  }, 20_000);
 });

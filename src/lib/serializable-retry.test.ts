@@ -1,7 +1,7 @@
 import { Prisma } from "@prisma/client";
 import { describe, expect, it, vi } from "vitest";
 
-import { isLockTimeout, isTransientTransactionConflict, runSerializable, serializableRetryDelayMs, withSerializableRetry } from "@/lib/serializable-retry";
+import { isLockTimeout, isLockWaitGivenUp, isTransientTransactionConflict, runSerializable, serializableRetryDelayMs, withSerializableRetry } from "@/lib/serializable-retry";
 
 function conflict(code = "P2034") {
   return new Prisma.PrismaClientKnownRequestError("conflict", { code, clientVersion: "test" });
@@ -89,6 +89,30 @@ describe("F-055 shared Serializable retry", () => {
     expect(isLockTimeout(new Error("canceling statement due to lock timeout"))).toBe(false);
     expect(isLockTimeout(Object.assign(new Error("raw"), { code: "P2010", meta: { code: "55P03" } }))).toBe(false);
     expect(isLockTimeout(null)).toBe(false);
+  });
+
+  it("treats a lock_timeout or a cancelled statement (57014) as a lock wait given up, and nothing else", () => {
+    const known = (code: string, meta?: Record<string, unknown>, message = "raw") =>
+      new Prisma.PrismaClientKnownRequestError(message, { code, clientVersion: "test", ...(meta ? { meta } : {}) });
+    const unknown = (message: string) => new Prisma.PrismaClientUnknownRequestError(message, { clientVersion: "test" });
+
+    expect(isLockWaitGivenUp(known("P2010", { code: "55P03" }))).toBe(true);
+    expect(isLockWaitGivenUp(unknown("ERROR: canceling statement due to lock timeout"))).toBe(true);
+    // The shape seen in CI (PR #621): a raw query whose lock wait PostgreSQL reported as a user cancel.
+    expect(isLockWaitGivenUp(known("P2010", { code: "57014", message: "ERROR: canceling statement due to user request" }, "Raw query failed. Code: `57014`. Message: `ERROR: canceling statement due to user request`"))).toBe(true);
+    expect(isLockWaitGivenUp(known("57014"))).toBe(true);
+    expect(isLockWaitGivenUp(known("P2010", undefined, "ERROR: canceling statement due to statement timeout"))).toBe(true);
+    expect(isLockWaitGivenUp(unknown("ERROR: canceling statement due to user request"))).toBe(true);
+
+    expect(isLockWaitGivenUp(conflict())).toBe(false);
+    expect(isLockWaitGivenUp(known("P2028", undefined, "Transaction API error"))).toBe(false);
+    expect(isLockWaitGivenUp(known("P2010", { code: "23505" }))).toBe(false);
+    expect(isLockWaitGivenUp(unknown("connection refused"))).toBe(false);
+    expect(isLockWaitGivenUp(new Error("canceling statement due to user request"))).toBe(false);
+    expect(isLockWaitGivenUp(Object.assign(new Error("raw"), { code: "P2010", meta: { code: "57014" } }))).toBe(false);
+    expect(isLockWaitGivenUp(null)).toBe(false);
+    // The retry predicate stays strict: a cancelled statement is never retried.
+    expect(isLockTimeout(known("P2010", { code: "57014" }, "ERROR: canceling statement due to user request"))).toBe(false);
   });
 
   it("opens each attempt as its own Serializable transaction with the caller's pool limits", async () => {

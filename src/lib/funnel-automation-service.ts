@@ -10,7 +10,7 @@ import {
 } from "@/lib/automation-line-push-policy";
 import { getDb } from "@/lib/db";
 import { requireEditableSalesProjectScope } from "@/lib/sales-project-scope";
-import { isLockTimeout } from "@/lib/serializable-retry";
+import { isLockWaitGivenUp } from "@/lib/serializable-retry";
 
 const MAX_NAME_LENGTH = 120;
 const MAX_TAG_LENGTH = 50;
@@ -145,9 +145,13 @@ async function assertFunnelRuleWritable(tx: Pick<Prisma.TransactionClient, "auto
   if (sendsLine) throw new FunnelAutomationLinePushOwnerOnlyError();
 }
 
-/** lock_timeout (55P03) on the rule row, or the transaction could not start or finish in time (P2028). */
+/**
+ * The wait on the rule row was given up (lock_timeout 55P03, or 57014, which
+ * PostgreSQL can report for a lock_timeout too: see isLockWaitGivenUp), or the
+ * transaction could not start or finish in time (P2028). Nothing was written.
+ */
 function isBusy(error: unknown) {
-  return isLockTimeout(error) || (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2028");
+  return isLockWaitGivenUp(error) || (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2028");
 }
 
 const RULE_TRANSACTION_OPTIONS = { maxWait: 5_000, timeout: 15_000 } as const;

@@ -31,7 +31,7 @@ import {
 } from "@/lib/automation-line-push-policy";
 import { getDb } from "@/lib/db";
 import { requireFeature } from "@/lib/feature-gates";
-import { isLockTimeout } from "@/lib/serializable-retry";
+import { isLockWaitGivenUp } from "@/lib/serializable-retry";
 
 // Owner and admin manage automations here, the same roles as the funnel
 // automation panel (requireVendorManagerContext) and message templates (F-4
@@ -311,9 +311,13 @@ export async function deleteAutomationRuleAction(formData: FormData) {
   redirect(`${PATH}?updated=deleted`);
 }
 
-/** lock_timeout (55P03) on the rule row, or the transaction could not start or finish in time (P2028). */
+/**
+ * The wait on the rule row was given up (lock_timeout 55P03, or 57014, which
+ * PostgreSQL can report for a lock_timeout too: see isLockWaitGivenUp), or the
+ * transaction could not start or finish in time (P2028). Nothing was written.
+ */
 function isDeleteBusy(error: unknown) {
-  return isLockTimeout(error) || (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2028");
+  return isLockWaitGivenUp(error) || (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2028");
 }
 
 function deleteRuleIfUnused(vendorId: string, id: string) {
