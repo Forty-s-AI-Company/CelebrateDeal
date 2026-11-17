@@ -53,6 +53,13 @@ export const AUTOMATION_STEP_MAX_DELAY_MINUTES = 129_600;
 /** Delayed steps per rule, the same as e-mail sequence steps per sequence. */
 export const MAX_AUTOMATION_RULE_STEPS = 10;
 
+/**
+ * Claims a step whose recorded snapshot does not parse gets before its run is
+ * stopped (Q-12, review MINOR-1): one retry after the lease expires, in case
+ * the first claim ran on a build that cannot read a newer snapshot.
+ */
+export const AUTOMATION_SNAPSHOT_INVALID_ATTEMPTS = 2;
+
 type Database = PrismaClient;
 
 class RuleGoneError extends Error {
@@ -325,11 +332,17 @@ export async function processClaimedAutomationRun(
   // Switched off (or the run stopped) after the rule was read: nothing ran.
   if (outcome.status === "rule_inactive") return cancelLeasedRun(db, lease, "definition_paused");
   if (outcome.status === "snapshot_invalid") {
-    // Q-12: the recorded action list of this step does not parse. That is
-    // deterministic, so retrying cannot help: stop the run now with the same
-    // outcome the retry limit would reach (cancelled / failed), report once,
-    // and leave the round's budget to other runs. Its execution log says why
-    // (failed / snapshot_invalid). Monitoring gets no id, only safe keys.
+    // Q-12: the recorded action list of this step does not parse. Retrying
+    // the same code cannot fix that, but a deployment hand-over or a rollback
+    // can: an older build running for a moment may not read a snapshot a
+    // newer one wrote (review MINOR-1; action schema changes ship in two
+    // steps, see docs/domain-workflows.md). So the first time the lease is
+    // kept (the run is claimed again once it expires, on whatever build runs
+    // then), and the second claim stops the run with the same outcome the
+    // retry limit would reach (cancelled / failed), reports once and leaves
+    // the remaining attempts' budget to other runs. Its execution log says
+    // why (failed / snapshot_invalid). Monitoring gets no id, only safe keys.
+    if (lease.attemptCount < AUTOMATION_SNAPSHOT_INVALID_ATTEMPTS) return { runId: lease.id, status: "failed" };
     const cancelled = await cancelLeasedRun(db, lease, "failed");
     if (cancelled.status === "cancelled") {
       reportDelayedStepFailure(new Error("Recorded automation step snapshot does not parse."), "automation_step_snapshot_invalid", "cancelled");

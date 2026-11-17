@@ -48,7 +48,7 @@ function expectedIndexDefinitions(schema: string): Record<string, string> {
 }
 
 describe("indexes Prisma cannot express", () => {
-  it("keeps every partial unique and trigram index with its exact definition", async () => {
+  it("keeps every partial (unique or expression) and trigram index with its exact definition", async () => {
     const [current] = await getDb().$queryRaw<Array<{ schema: string | null }>>`SELECT pg_catalog.current_schema() AS schema`;
     const targetSchema = current?.schema ?? "";
     expect(targetSchema).toMatch(/^[a-z_][a-z0-9_]*$/);

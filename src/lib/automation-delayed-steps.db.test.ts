@@ -1152,7 +1152,7 @@ describe("第二輪審查修正（PR #601）", () => {
     await expect(db.lineDelivery.count({ where: { vendorId: t.vendor.id } })).resolves.toBe(1);
   });
 
-  it("MINOR-2 (fail closed) and Q-12: a resumed step whose recorded snapshot does not parse stops the run at once, without running the current actions or retrying", async () => {
+  it("MINOR-2 (fail closed) and Q-12: a resumed step whose recorded snapshot does not parse is retried once, then stops the run, never running the current actions", async () => {
     const t = await tenant();
     const r = await rule(t);
     const s = await step(t, r.id, 60, [TAG_ACTION]);
@@ -1164,19 +1164,29 @@ describe("第二輪審查修正（PR #601）", () => {
       data: { id: logId, vendorId: t.vendor.id, ruleId: r.id, idempotencyKey: `synthetic-${randomUUID()}`, eventId: `delayed-step:${run.id}:${s.id}`, trigger: "form_registered", subjectType: "buyer_registration", status: "failed", actionResults: { actions: "junk", results: [] } },
     });
     const due = after(run.anchorAt, 61 * MINUTE);
-    // Q-12: the first attempt decides it (the retry limit would end the same way after DELAYED_STEP_MAX_ATTEMPTS rounds).
-    await expect(work(t, due)).resolves.toEqual([{ runId: run.id, status: "cancelled", cancelReason: "failed" }]);
+    const snapshotReports = () => monitoring.captureOperationalError.mock.calls.filter(([, context]) => (context as { operation?: string }).operation === "automation_step_snapshot_invalid");
+    // First claim (review MINOR-1): the lease is kept, nothing is reported yet, the run stays active.
+    await expect(work(t, due)).resolves.toEqual([{ runId: run.id, status: "failed" }]);
     await expect(db.delayedStepRun.findUniqueOrThrow({ where: { id: run.id } })).resolves.toMatchObject({
-      status: "cancelled", cancelReason: "failed", nextRunAt: null, claimedAt: null, attemptCount: 1, cursorDelayMinutes: -1,
+      status: "active", claimedAt: due, attemptCount: 1, cursorDelayMinutes: -1,
+    });
+    expect(snapshotReports()).toEqual([]);
+    // Still leased: not claimable before the lease expires.
+    await expect(work(t, after(due, DELAYED_STEP_LEASE_MS - MINUTE))).resolves.toEqual([]);
+    // Second claim, after the lease expired: the run stops (the retry limit would end the same way after DELAYED_STEP_MAX_ATTEMPTS rounds).
+    const retry = after(due, DELAYED_STEP_LEASE_MS + MINUTE);
+    await expect(work(t, retry)).resolves.toEqual([{ runId: run.id, status: "cancelled", cancelReason: "failed" }]);
+    await expect(db.delayedStepRun.findUniqueOrThrow({ where: { id: run.id } })).resolves.toMatchObject({
+      status: "cancelled", cancelReason: "failed", nextRunAt: null, claimedAt: null, attemptCount: 2, cursorDelayMinutes: -1,
     });
     await expect(db.automationExecutionLog.findUniqueOrThrow({ where: { id: logId } })).resolves.toMatchObject({ status: "failed", errorCode: "snapshot_invalid" });
     await expect(db.customerTagAssignment.count({ where: { vendorId: t.vendor.id, tag: "第二天" } })).resolves.toBe(0);
     // Reported once, with safe keys only (no vendor, run, rule or step id).
-    const reports = monitoring.captureOperationalError.mock.calls.filter(([, context]) => (context as { operation?: string }).operation === "automation_step_snapshot_invalid");
-    expect(reports).toEqual([[expect.any(Error), { source: "delayed_step_run", operation: "automation_step_snapshot_invalid", status: "cancelled" }]]);
-    // Nothing left to retry: later rounds (lease expired, the next step due) take nothing.
-    await expect(work(t, after(due, DELAYED_STEP_LEASE_MS + MINUTE))).resolves.toEqual([]);
+    expect(snapshotReports()).toEqual([[expect.any(Error), { source: "delayed_step_run", operation: "automation_step_snapshot_invalid", status: "cancelled" }]]);
+    // Nothing left to retry: later rounds (lease expired again, the next step due) take nothing.
+    await expect(work(t, after(retry, DELAYED_STEP_LEASE_MS + MINUTE))).resolves.toEqual([]);
     await expect(work(t, after(run.anchorAt, 121 * MINUTE))).resolves.toEqual([]);
+    expect(snapshotReports()).toHaveLength(1);
     await expect(db.automationExecutionLog.count({ where: { vendorId: t.vendor.id, eventId: { startsWith: "delayed-step:" } } })).resolves.toBe(1);
   });
 

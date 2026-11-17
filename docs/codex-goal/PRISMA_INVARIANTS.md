@@ -890,5 +890,6 @@ Current source inventory: 145 models and 99 forward migrations. Previous checkpo
   - 查詢的運算式與 `'VERIFIED'` 條件必須與索引一字不差，否則用不到（程式註解已標明）。只收已驗證列，未驗證報名的寫入不維護這個索引。
   - 鎖：Prisma 每個 migration 在交易內執行，不能用 `CONCURRENTLY`；與其他建索引的 migration 相同直接建立，建立期間對 `FormSubmission` 持 SHARE 鎖（讀取照常，新報名與 Email 驗證要等建完）。合成資料 2 萬筆約 80 ms，封測期資料量下為秒級以內；`lock_timeout = 5s` 讓它在等不到鎖時中止，不排在長交易後面擋住報名。
   - Prisma 6 不比對 partial index：schema 只留註解，`scripts/prisma-drift-allowlist.json` 的 `notComparedByPrismaDiff.partialIndexes` 登記名稱，`src/lib/prisma-unmanaged-indexes.db.test.ts` 鎖住完整定義；`prisma-drift-check` 在本機 shadow DB 執行 `ok: true`，沒有新的 diff 句子。
-- 同一個 PR 的其他三項（快照損壞不重試、`failed` 不撤回已排隊的信、無 Email 補跑在商家間輪流）沒有 schema 變更，只改應用層，見 `docs/product/delayed-steps-design.md` 第 8 節。
+- 同一個 PR 的其他三項（快照損壞只重試一次就停止、`failed` 不撤回已排隊的信、無 Email 補跑在商家間輪流）沒有 schema 變更，只改應用層，見 `docs/product/delayed-steps-design.md` 第 8 節。
+- 不變式（應用層，獨立審查 MINOR-1）：延遲步驟的執行紀錄把動作清單快照存在 `AutomationExecutionLog.actionResults.actions`（JSON，不是欄位），續跑時以目前程式的動作 schema 解析。**動作 schema 的擴充需要兩段式部署**：先部署能接受新欄位的程式，再部署開始寫入新欄位的程式，兩者之間不回滾到更舊的版本；否則舊程式讀不懂新快照，那一步在重試一次後被停止（`cancelled / failed`）。
 - 目前 165 models、154 forward migrations；既有 SQL／checksum 不變。已在 loopback 拋棄式 PostgreSQL 16（`celebratedeal_test`）forward-apply。
