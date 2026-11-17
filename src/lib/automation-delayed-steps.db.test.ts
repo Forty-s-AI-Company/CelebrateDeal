@@ -283,26 +283,42 @@ describe("觸發：事件發生時建立 run", () => {
     await expect(onlyRun(t)).resolves.toMatchObject({ sourceExecutionLogId: log.id, anchorAt: log.createdAt });
   });
 
-  it("creates no run for a rule without active steps or with a hidden trigger", async () => {
+  it("creates no run for a rule without active steps", async () => {
     const t = await tenant();
     const noSteps = await rule(t);
     const inactiveOnly = await rule(t);
     await step(t, inactiveOnly.id, 60, [TAG_ACTION], false);
-    const hidden = await rule(t, { trigger: "form_no_show" });
-    await step(t, hidden.id, 60);
     const lead = await registration(t);
     await registered(t, lead);
-    await dispatchAutomationEvent(db, {
+    await expect(db.automationExecutionLog.count({ where: { vendorId: t.vendor.id, ruleId: { in: [noSteps.id, inactiveOnly.id] } } })).resolves.toBe(2);
+    await expect(runsOf(t)).resolves.toEqual([]);
+  });
+
+  it("starts a form_no_show rule's run on the registration and runs its step with the Live's page as the webinar link (Q-11)", async () => {
+    const t = await tenant();
+    const live = await db.live.create({ data: { vendorId: t.vendor.id, title: "缺席直播", slug: `steps-no-show-${randomUUID().slice(0, 12)}`, scheduledAt: new Date(Date.now() - DAY), status: "ended", formId: t.form.id } });
+    const r = await rule(t, { trigger: "form_no_show" });
+    await step(t, r.id, 60, [{ type: "send_email_notification", template: "webinar_replay" }]);
+    const lead = await registration(t);
+    await db.formSubmission.update({ where: { id: lead.id }, data: { liveId: live.id } });
+    const event = {
       vendorId: t.vendor.id,
-      eventId: `form-no-show:${lead.id}`,
-      trigger: "form_no_show",
-      subjectType: "buyer_registration",
+      eventId: `form-no-show:${lead.id}:live-${live.scheduledAt.getTime()}`,
+      trigger: "form_no_show" as const,
+      subjectType: "buyer_registration" as const,
       subjectId: lead.id,
       subjectKeyHash: automationCustomerKeyHash(t.vendor.id, lead.email),
       recipientEmail: lead.email,
-    });
-    await expect(db.automationExecutionLog.count({ where: { vendorId: t.vendor.id, ruleId: { in: [noSteps.id, inactiveOnly.id, hidden.id] } } })).resolves.toBe(3);
-    await expect(runsOf(t)).resolves.toEqual([]);
+    };
+    await dispatchAutomationEvent(db, event);
+    const run = await onlyRun(t);
+    expect(run).toMatchObject({ automationRuleId: r.id, formSubmissionId: lead.id, consultationBookingId: null });
+    await expect(work(t, after(run.anchorAt, 61 * MINUTE))).resolves.toEqual([{ runId: run.id, status: "executed", emailsQueued: 1 }]);
+    const delivery = await db.emailDelivery.findFirstOrThrow({ where: { vendorId: t.vendor.id, trigger: AUTOMATION_STEP_EMAIL_TRIGGER } });
+    const { body } = revealEmailDeliveryPayload(delivery.payloadEncryptedEnvelope, { vendorId: t.vendor.id, deliveryId: delivery.id });
+    expect(body).toContain(`${APP_URL}/live/${live.slug}`);
+    // No booking: the consultation line is left out, not sent empty.
+    expect(body).not.toContain("預約 1 對 1 諮詢");
   });
 
   it("starts a booking's run and keeps the request outcome when writing the run fails", async () => {
@@ -478,7 +494,7 @@ describe("worker：停止條件", () => {
 
   it("stops when the rule's trigger is no longer offered to merchants", async () => {
     const { t, r, run, due } = await dueRun();
-    await db.automationRule.update({ where: { id: r.id }, data: { trigger: "form_no_show" } });
+    await db.automationRule.update({ where: { id: r.id }, data: { trigger: "viewer_watch_progress" } });
     await expect(work(t, due)).resolves.toEqual([{ runId: run.id, status: "cancelled", cancelReason: "definition_paused" }]);
   });
 
@@ -718,7 +734,7 @@ describe("後台：步驟的新增、修改與刪除", () => {
     await expect(db.automationRuleStep.create({ data: { vendorId: a.vendor.id, ruleId: ra.id, delayMinutes: 59, condition: {}, actions: [TAG_ACTION] as Prisma.InputJsonArray } })).rejects.toThrow(/AutomationRuleStep_delayMinutes_check/u);
     await expect(db.automationRuleStep.create({ data: { vendorId: a.vendor.id, ruleId: ra.id, delayMinutes: 5_000, condition: {}, actions: [] as Prisma.InputJsonArray } })).rejects.toThrow(/AutomationRuleStep_actions_check/u);
     // A hidden trigger: no new or edited step, but deleting one still works.
-    const hidden = await rule(a, { trigger: "form_no_show" });
+    const hidden = await rule(a, { trigger: "viewer_watch_progress" });
     const hiddenStep = await step(a, hidden.id, 60);
     await expect(createAutomationRuleStep({ linePushAllowed: true, vendorId: a.vendor.id, ruleId: hidden.id, step: input })).resolves.toEqual({ ok: false, code: "trigger_unavailable" });
     await expect(updateAutomationRuleStep({ linePushAllowed: true, vendorId: a.vendor.id, ruleId: hidden.id, stepId: hiddenStep.id, step: input })).resolves.toEqual({ ok: false, code: "trigger_unavailable" });

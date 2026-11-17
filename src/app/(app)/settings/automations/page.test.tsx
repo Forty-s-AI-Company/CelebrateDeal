@@ -24,10 +24,14 @@ describe("AutomationSettingsPage", () => {
   it("offers only the triggers and recipes that can run", async () => {
     const html = await render();
     const triggerSelect = html.match(/<select[^>]*name="trigger"[^>]*>([\s\S]*?)<\/select>/u)?.[1] ?? "";
-    expect([...triggerSelect.matchAll(/value="([^"]+)"/gu)].map((match) => match[1])).toEqual(["form_registered", "consultation_booked", "consultation_no_show", "payment_paid"]);
-    // F-4 PR 3: payment_paid and its recipe are back; the watch and no-show ones stay hidden.
+    expect([...triggerSelect.matchAll(/value="([^"]+)"/gu)].map((match) => match[1])).toEqual(["form_registered", "form_no_show", "consultation_booked", "consultation_no_show", "payment_paid"]);
+    expect(triggerSelect).toContain(">報名後未出席直播<");
+    // F-4 PR 3: payment_paid and its recipe are back; Q-11: so are form_no_show
+    // and its recipe. The watch one stays hidden.
     expect(html).toContain("高客單 VIP 自動尊榮升級");
-    for (const hiddenRecipe of ["高意向追單漏斗", "開播缺席喚醒再行銷"]) expect(html).not.toContain(hiddenRecipe);
+    expect(html).toContain("開播缺席喚醒再行銷");
+    expect(html).toContain("報名後未出席直播 → Email 通知");
+    expect(html).not.toContain("高意向追單漏斗");
     // payment_paid takes a paid-amount threshold.
     expect(html).toContain('name="conditionValue"');
     expect(html).toContain("付款金額門檻（元；只用於「訂單付款完成」，其他觸發條件留空）");
@@ -36,12 +40,12 @@ describe("AutomationSettingsPage", () => {
   it("keeps listing a rule on a hidden trigger, explains it, and only offers switching off and deleting", async () => {
     mocks.rules.mockResolvedValue([
       rule({ id: "watch-on", name: "觀看追單", trigger: "viewer_watch_progress", condition: { type: "watch_seconds_gte", seconds: 600 }, isActive: true }),
-      rule({ id: "noshow-off", name: "缺席喚醒", trigger: "form_no_show", isActive: false }),
+      rule({ id: "duration-off", name: "觀看達標", trigger: "webinar_attended_duration_gte", condition: { type: "watch_seconds_gte", seconds: 600 }, isActive: false }),
     ]);
     const html = await render();
     expect(html).toContain("觀看追單");
     expect(html).toContain("觸發：觀看進度更新");
-    expect(html).toContain("觸發：報名但未出席直播");
+    expect(html).toContain("觸發：觀看累積秒數達標");
     expect(html.match(/此觸發條件目前不會執行/gu)).toHaveLength(2);
     expect(html.match(/目前不會執行<\/span>/gu)).toHaveLength(2);
     expect(html).toContain(">停用<");
@@ -99,11 +103,22 @@ describe("AutomationSettingsPage", () => {
 
   it("only lets a rule on a hidden trigger delete its steps", async () => {
     granted();
-    mocks.rules.mockResolvedValue([rule({ trigger: "form_no_show", isActive: false, steps: [{ id: "s1", delayMinutes: 60, isActive: true, actions: [{ type: "add_customer_tag", tag: "x" }] }] })]);
+    mocks.rules.mockResolvedValue([rule({ trigger: "viewer_watch_progress", condition: { type: "watch_seconds_gte", seconds: 60 }, isActive: false, steps: [{ id: "s1", delayMinutes: 60, isActive: true, actions: [{ type: "add_customer_tag", tag: "x" }] }] })]);
     const html = await render();
     expect(html).toContain("刪除步驟");
     expect(html).not.toContain("編輯步驟：");
     expect(html).not.toContain("新增延遲步驟");
+  });
+
+  it("lists a form_no_show rule as running, with its dry-run and its delayed steps (Q-11)", async () => {
+    granted();
+    mocks.rules.mockResolvedValue([rule({ id: "noshow-on", name: "缺席喚醒", trigger: "form_no_show", isActive: true, steps: [{ id: "s1", delayMinutes: 1_440, isActive: true, actions: [{ type: "add_customer_tag", tag: "缺席" }] }] })]);
+    const html = await render();
+    expect(html).toContain("觸發：報名後未出席直播");
+    expect(html).not.toContain("此觸發條件目前不會執行");
+    expect(html).toContain("Dry-run 測試");
+    expect(html).toContain("編輯步驟：事件後第 1 天");
+    expect(html).toContain("新增「缺席喚醒」的延遲步驟");
   });
 
   it("lists a payment_paid rule as running, with its dry-run, and offers no delayed steps for it", async () => {
@@ -174,7 +189,7 @@ describe("AutomationSettingsPage", () => {
       expect(html).toContain('name="actionLine"');
       expect(html).not.toContain("這個劇本含 LINE 推播");
       expect(html).not.toContain("LINE 推播僅限擁有者設定");
-      expect(html.match(/一鍵套用劇本/gu)).toHaveLength(2);
+      expect(html.match(/一鍵套用劇本/gu)).toHaveLength(3);
     });
 
     it("lets an admin switch off and delete a rule with a LINE push, but not switch it on or touch its steps", async () => {

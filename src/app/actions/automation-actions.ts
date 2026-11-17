@@ -383,7 +383,7 @@ function parseStep(form: FormData, linePushAllowed: boolean): AutomationStepInpu
   try { delayMinutes = stepDelayMinutes(form); } catch { throw new Error("invalid_delay"); }
   return {
     delayMinutes,
-    // The three triggers that take delayed steps (DELAYED_STEP_AUTOMATION_
+    // The four triggers that take delayed steps (DELAYED_STEP_AUTOMATION_
     // TRIGGERS) carry no amount or watch time, so the existing condition
     // schema only has "always" for them. payment_paid rules take no steps.
     condition: { type: "always" },

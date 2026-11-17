@@ -8,6 +8,7 @@ import {
   isAvailableAutomationTrigger,
   parseAutomationRule,
   automationStepEventId,
+  automationWebinarUrl,
   type AutomationEvent,
 } from "@/lib/automation-workflow";
 import {
@@ -65,6 +66,7 @@ type AutomationSubject = {
   /** Someone confirmed `recipientEmail` at this vendor (M2). */
   recipientVerified: boolean;
   consultationUrl?: string;
+  webinarUrl?: string;
 };
 
 /**
@@ -92,6 +94,9 @@ async function hasVerifiedRegistration(db: Pick<Database, "$queryRaw">, vendorId
  * The run's subject, read again now and bound to the vendor.
  * - `form_registered`: the registration; its e-mail counts as confirmed once it
  *   is VERIFIED.
+ * - `form_no_show` (Q-11): the same registration (always VERIFIED when its run
+ *   started), with its Live's viewer page as `{{webinar_url}}`. Watching the
+ *   replay later does not stop the run.
  * - consultation triggers: the booking; its address counts as confirmed only
  *   with a verified registration of the same address (M2). A
  *   `consultation_booked` run ends once the booking is cancelled or marked
@@ -115,6 +120,21 @@ async function readSubject(
     });
     if (!submission) return null;
     return { subjectId: submission.id, recipientEmail: submission.email, recipientVerified: submission.verificationStatus === "VERIFIED" };
+  }
+  if (trigger === "form_no_show") {
+    if (!run.formSubmissionId) return null;
+    const submission = await db.formSubmission.findFirst({
+      where: { id: run.formSubmissionId, form: { vendorId } },
+      select: { id: true, email: true, verificationStatus: true, live: { select: { vendorId: true, slug: true } } },
+    });
+    if (!submission) return null;
+    const webinarUrl = submission.live?.vendorId === vendorId ? automationWebinarUrl(submission.live.slug) : undefined;
+    return {
+      subjectId: submission.id,
+      recipientEmail: submission.email,
+      recipientVerified: submission.verificationStatus === "VERIFIED",
+      ...(webinarUrl ? { webinarUrl } : {}),
+    };
   }
   if (trigger === "consultation_booked" || trigger === "consultation_no_show") {
     if (!run.consultationBookingId) return null;
@@ -265,6 +285,7 @@ export async function processClaimedAutomationRun(
     recipientEmail: subject.recipientEmail,
     recipientVerified: subject.recipientVerified,
     ...(subject.consultationUrl ? { consultationUrl: subject.consultationUrl } : {}),
+    ...(subject.webinarUrl ? { webinarUrl: subject.webinarUrl } : {}),
   };
   const outcome = await executeAutomationStep(db, {
     ruleId: rule.id,
