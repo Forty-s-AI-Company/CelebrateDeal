@@ -8,6 +8,8 @@ import { requireVendorManagerMember } from "@/lib/auth";
 import { assertServerActionSecurity } from "@/lib/csrf";
 import {
   AUTOMATION_DELAYED_STEPS_FEATURE,
+  AUTOMATION_EMAIL_TEMPLATES,
+  automationActionsEmailTemplatesUsable,
   automationTriggerNeedsThreshold,
   dryRunAutomationRule,
   isAutomationTrigger,
@@ -100,7 +102,7 @@ function tagAction(form: FormData): Record<string, unknown> | null {
 function emailAction(form: FormData): Record<string, unknown> | null {
   if (form.get("actionEmail") !== "on") return null;
   const template = text(form, "emailTemplate");
-  if (!["consultation_confirmation", "class_reminder", "repurchase_followup", "webinar_replay"].includes(template)) throw new Error("invalid");
+  if (!(AUTOMATION_EMAIL_TEMPLATES as readonly string[]).includes(template)) throw new Error("invalid");
   return { type: "send_email_notification", template };
 }
 
@@ -139,6 +141,9 @@ function parseRule(form: FormData, linePushAllowed: boolean, vendor: FeatureGate
   if (!isAutomationTriggerAvailableForVendor(trigger, vendor)) throw new TriggerUnavailableError();
   const condition = ruleCondition(trigger, conditionValue);
   const actions = parseActions(form, linePushAllowed);
+  // Q-18: a template needs the link its trigger's event carries (or a voucher
+  // in the same rule). Only new rules are held to it; stored ones are untouched.
+  if (!automationActionsEmailTemplatesUsable(trigger, actions as Array<{ type: string; template?: string }>)) throw new Error("email_template_unavailable");
   return { name, trigger, condition, actions };
 }
 
@@ -151,6 +156,7 @@ export async function createAutomationRecipeAction(formData: FormData) {
   const recipe = materializeAutomationRecipe(recipeId, productId);
   if (!recipe) fail(productId ? "invalid_recipe" : "recipe_requires_product");
   if (!isAutomationTriggerAvailableForVendor(recipe.trigger, vendor)) fail("trigger_unavailable");
+  if (!automationActionsEmailTemplatesUsable(recipe.trigger, recipe.actions)) fail("email_template_unavailable");
   // A recipe's voucher announces itself by LINE for the owner, never for an admin.
   const actions = withVoucherLineNotification(recipe.actions, mayConfigureAutomationLinePush(member.role));
   if (!mayWriteAutomationActions(member.role, actions)) fail(LINE_PUSH_OWNER_ONLY);
@@ -200,7 +206,7 @@ export async function createAutomationRuleAction(formData: FormData) {
   await assertServerActionSecurity(formData);
   const { user, vendor, member } = await requireVendorManagerMember(PATH);
   let parsed: ReturnType<typeof parseRule>;
-  try { parsed = parseRule(formData, mayConfigureAutomationLinePush(member.role), vendor); } catch (error) { fail(error instanceof Error && (error.message === "no_action" || error.message === "invalid_button_url" || error.message === "trigger_unavailable") ? error.message : "invalid_rule"); }
+  try { parsed = parseRule(formData, mayConfigureAutomationLinePush(member.role), vendor); } catch (error) { fail(error instanceof Error && (error.message === "no_action" || error.message === "invalid_button_url" || error.message === "trigger_unavailable" || error.message === "email_template_unavailable") ? error.message : "invalid_rule"); }
   if (!mayWriteAutomationActions(member.role, parsed.actions)) fail(LINE_PUSH_OWNER_ONLY);
   const productId = parsed.actions.find((a) => a.type === "issue_repurchase_voucher")?.productId;
   if (productId && !(await getDb().product.findFirst({ where: { id: String(productId), vendorId: vendor.id, isActive: true }, select: { id: true } }))) fail("invalid_product");
@@ -363,6 +369,7 @@ const STEP_ERROR_CODES = new Set([
   "step_busy",
   "no_action",
   "invalid_button_url",
+  "email_template_unavailable",
   LINE_PUSH_OWNER_ONLY,
 ]);
 

@@ -36,21 +36,26 @@ import { fixedSessionReplayAvailableUntil } from "@/lib/live-fixed-sessions";
 import { isExistingLiveVideoReady, type LiveVideoReadiness } from "@/lib/live-video-readiness";
 import { PAYMENT_PAID_RUN_ORDER_SELECT, paymentPaidRunOrderCounts, paymentPaidRunOrderWhere } from "@/lib/payment-paid-run-order";
 
-/**
- * Every trigger the engine understands. Stored rules may use any of them and
- * keep parsing, so this list never shrinks; what a merchant may choose is
- * AVAILABLE_AUTOMATION_TRIGGERS below.
- */
-export const AUTOMATION_TRIGGERS = [
-  "payment_paid",
-  "viewer_watch_progress",
-  "webinar_attended_duration_gte",
-  "form_registered",
-  "consultation_booked",
-  "consultation_no_show",
-  "form_no_show",
-] as const;
-export type AutomationTrigger = typeof AUTOMATION_TRIGGERS[number];
+import {
+  AUTOMATION_TRIGGERS,
+  type AutomationTrigger,
+} from "@/lib/automation-email-template-availability";
+
+export {
+  AUTOMATION_EMAIL_TEMPLATES,
+  AUTOMATION_EMAIL_TEMPLATE_LABELS,
+  AUTOMATION_TRIGGERS,
+  AUTOMATION_TRIGGER_LABELS,
+  automationActionsEmailTemplates,
+  automationActionsEmailTemplatesUsable,
+  automationActionsIssueVoucher,
+  automationEmailTemplateAdvice,
+  automationEmailTemplateUsable,
+  usableAutomationEmailTemplates,
+  type AutomationEmailTemplate,
+  type AutomationTrigger,
+} from "@/lib/automation-email-template-availability";
+
 
 /**
  * The single list of triggers a merchant may put on a new rule, or switch a
@@ -225,15 +230,6 @@ export function automationTriggerNeedsThreshold(trigger: string) {
   return THRESHOLD_TRIGGERS.has(trigger);
 }
 
-export const AUTOMATION_TRIGGER_LABELS: Record<AutomationTrigger, string> = {
-  payment_paid: "訂單付款完成",
-  viewer_watch_progress: "觀看進度更新",
-  webinar_attended_duration_gte: "觀看累積秒數達標",
-  form_registered: "表單報名成功",
-  consultation_booked: "諮詢預約成功",
-  consultation_no_show: "諮詢未出席",
-  form_no_show: "報名後未出席直播",
-};
 
 // Re-exported so existing callers keep one import path; the implementation
 // lives in a dependency-free module the order PII boundary also imports.
