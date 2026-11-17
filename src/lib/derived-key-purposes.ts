@@ -116,6 +116,12 @@ export const DERIVED_KEY_ROTATIONS = Object.freeze({
    * single use (LiveSessionSwitchRedemption). New purpose, so no legacy key.
    */
   liveSessionSwitch: rotation("live-session-switch", "live-session-switch:r2:fb3e6e707aa6bd7b"),
+  /**
+   * Personal watch links in live reminders and live-start notices (Q-17):
+   * reusable until 30 days after the registrant's session start; opening one
+   * gives the browser the registration cookie. New purpose, so no legacy key.
+   */
+  liveWatchLink: rotation("live-watch-link", "live-watch-link:r2:847e45b6e28a9b99"),
 
   // Tier 3: long-lived links and cookies. New key signs; legacy still verifies.
   emailUnsubscribe: rotation(

@@ -1,7 +1,7 @@
 import { getCanonicalAppUrl } from "@/lib/app-url";
 import type { PrismaClient } from "@prisma/client";
 import { getDb } from "@/lib/db";
-import { createLiveViewerUrl } from "@/lib/live-public-url";
+import { createLiveWatchLinkUrl } from "@/lib/live-watch-link-token";
 import { EVERGREEN_ACTIVATION_SELECT, isActiveEvergreenLive } from "@/lib/evergreen-activation";
 import {
   buildCommissionLineMessage,
@@ -95,10 +95,17 @@ export async function materializeLineNotifications(
         await db.lineUserIdentity.update({ where: { id: identity.id }, data: { lastMaterializedAt: now } });
         continue;
       }
-      const viewerUrl = createLiveViewerUrl(live.slug);
       // A fixed-session registrant (指定場次) is reminded before their own
       // session; a cancelled session (or none) gets no reminder.
       const startAt = registrantStartAt(live, submission.liveSession);
+      // Q-17: the registrant's own watch link, so watching on another device
+      // than the one that confirmed the e-mail still counts as attendance.
+      const viewerUrl = (sessionStartAt: Date) => createLiveWatchLinkUrl({
+        vendorId: identity.vendorId,
+        liveId: live.id,
+        submissionId: submission.id,
+        sessionStartAt,
+      }, now);
       if (startAt && live.status === "scheduled" && !live.startedAt && now.getTime() >= startAt.getTime() - 60 * 60_000 && now < startAt) {
         results.push(await enqueueLineNotification(db, {
           vendorId: identity.vendorId,
@@ -106,7 +113,7 @@ export async function materializeLineNotifications(
           subjectId: identity.subjectId,
           trigger: "live_reminder",
           idempotencyKey: stableLineIdempotencyKey(["live_reminder", live.id, identity.subjectId, startAt]),
-          messages: [buildLiveLineMessage({ kind: "reminder", liveTitle: live.title, startsAtText: formatStart(startAt), viewerUrl })],
+          messages: [buildLiveLineMessage({ kind: "reminder", liveTitle: live.title, startsAtText: formatStart(startAt), viewerUrl: viewerUrl(startAt) })],
         }));
       }
       if (live.status === "live" && live.startedAt && !live.endedAt && live.sessionMode !== "fixed_sessions") {
@@ -116,7 +123,7 @@ export async function materializeLineNotifications(
           subjectId: identity.subjectId,
           trigger: "live_started",
           idempotencyKey: stableLineIdempotencyKey(["live_started", live.id, identity.subjectId, live.startedAt]),
-          messages: [buildLiveLineMessage({ kind: "started", liveTitle: live.title, startsAtText: formatStart(live.startedAt), viewerUrl })],
+          messages: [buildLiveLineMessage({ kind: "started", liveTitle: live.title, startsAtText: formatStart(live.startedAt), viewerUrl: viewerUrl(live.startedAt) })],
         }));
       }
       await db.lineUserIdentity.update({ where: { id: identity.id }, data: { lastMaterializedAt: now } });

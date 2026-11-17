@@ -115,6 +115,7 @@ describe("deriveSensitiveDataKey compatibility", () => {
     ["evergreen-viewer-session:r2:755cb80211ac7475", "5b95497914adb4bce99a9d40f20fe7e5114e196f22b77fbf519166e5bc809ce8"],
     ["live-session-result:r2:e2e6952d7d8950cb", "62d95a76fdbe8d2e6ee3ace12156f8304163f03fd3ff69f1590a784914fc4151"],
     ["live-session-switch:r2:fb3e6e707aa6bd7b", "f162be6f2339227610d7ccc70fa20d1a6849f691dd16e668873e0109ed71a3b8"],
+    ["live-watch-link:r2:847e45b6e28a9b99", "b9c10ab80899f48ff7d70269d9c86d14e55a98602641d6bb7f8744235ccc28c3"],
   ];
 
   it.each(GOLDEN_KEYS)("keeps the %s key byte-identical", (purpose, expectedHex) => {

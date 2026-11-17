@@ -1,5 +1,5 @@
 import type { PrismaClient } from "@prisma/client";
-import { createLiveViewerUrl } from "@/lib/live-public-url";
+import { createLiveWatchLinkUrl } from "@/lib/live-watch-link-token";
 import { EVERGREEN_ACTIVATION_SELECT, isActiveEvergreenLive } from "@/lib/evergreen-activation";
 import {
   buildLiveLineMessage,
@@ -46,9 +46,16 @@ export async function dispatchLiveStartedLineNotifications(
     select: { id: true },
     orderBy: { id: "asc" },
   });
-  const viewerUrl = createLiveViewerUrl(live.slug);
   const deliveryIds: string[] = [];
   for (const submission of submissions) {
+    // Q-17: each registrant's own watch link, so watching on another device
+    // than the one that confirmed the e-mail still counts as attendance.
+    const viewerUrl = createLiveWatchLinkUrl({
+      vendorId: input.vendorId,
+      liveId: live.id,
+      submissionId: submission.id,
+      sessionStartAt: live.startedAt,
+    }, input.startedAt);
     const queued = await enqueueLineNotification(db, {
       vendorId: input.vendorId,
       subjectType: "buyer_registration",

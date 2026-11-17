@@ -9,6 +9,7 @@ import {
 } from "@/lib/email-delivery-pii";
 import { hasOnlySupportedMessageTemplateVariables, renderMessageTemplate } from "@/lib/message-template";
 import { createLiveViewerUrl } from "@/lib/live-public-url";
+import { appendPersonalWatchLink, createLiveWatchLinkUrl } from "@/lib/live-watch-link-token";
 import { EVERGREEN_ACTIVATION_SELECT, isActiveEvergreenLive, type EvergreenActivationRecord } from "@/lib/evergreen-activation";
 import { isFixedSessionLive } from "@/lib/live-fixed-sessions";
 import { captureOperationalError } from "@/lib/monitoring";
@@ -271,10 +272,20 @@ async function buildDeliveryData(
     vendor_name: input.live.vendor.name,
     unsubscribe_url: unsubscribeUrl,
   };
+  // Q-17: the registrant's own watch link (their session start anchors its expiry).
+  const personalWatchUrl = createLiveWatchLinkUrl({
+    vendorId: input.live.vendorId,
+    liveId: input.live.id,
+    submissionId: input.submission.id,
+    sessionStartAt: snapshot.startAt,
+  }, input.now);
   const protectedPayload = protectEmailDeliveryPayload({
     recipientEmail: input.submission.email,
     subject: renderMessageTemplate(snapshot.template.subject!, variables).replace(/\s+/gu, " ").trim(),
-    body: ensureUnsubscribeFooter(renderMessageTemplate(snapshot.template.body, variables), unsubscribeUrl),
+    body: ensureUnsubscribeFooter(
+      appendPersonalWatchLink(renderMessageTemplate(snapshot.template.body, variables), personalWatchUrl),
+      unsubscribeUrl,
+    ),
     brand: {
       senderName: input.live.vendor.senderName,
       supportEmail: input.live.vendor.supportEmail,
