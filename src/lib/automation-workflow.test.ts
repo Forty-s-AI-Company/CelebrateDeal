@@ -25,7 +25,7 @@ import { DERIVED_KEY_ROTATIONS, legacyDerivedKeyUseCount, resetLegacyDerivedKeyU
 import { hashInteractionBearer } from "@/lib/live-interaction";
 import { deriveSensitiveDataKey } from "@/lib/sensitive-data";
 import { revealEmailDeliveryPayload, verifyEmailUnsubscribeToken } from "@/lib/email-delivery-pii";
-import { AUTOMATION_BUTTON_URL_ERROR_MESSAGE, AUTOMATION_RECIPES, AUTOMATION_TRIGGERS, AVAILABLE_AUTOMATION_RECIPES, AVAILABLE_AUTOMATION_TRIGGERS, automationExecutionNotes, isAvailableAutomationTrigger, automationConditionMatches, isSafeNewAutomationButtonUrl, automationCustomerKeyHash, dispatchAutomationEvent, DELAYED_STEP_AUTOMATION_TRIGGERS, automationTriggerSupportsDelayedSteps, dryRunAutomationRule, renderAutomationEmailBody, availableAutomationTriggersForVendor, automationReplayOpen, formNoShowWebinarUrl, isAutomationTriggerAvailableForVendor, maskAutomationTarget, materializeAutomationRecipe, parseAutomationRule } from "@/lib/automation-workflow";
+import { AUTOMATION_BUTTON_URL_ERROR_MESSAGE, AUTOMATION_RECIPES, AUTOMATION_TRIGGERS, AVAILABLE_AUTOMATION_RECIPES, AVAILABLE_AUTOMATION_TRIGGERS, automationExecutionNotes, isAvailableAutomationTrigger, automationConditionMatches, isSafeNewAutomationButtonUrl, automationCustomerKeyHash, dispatchAutomationEvent, DELAYED_STEP_AUTOMATION_TRIGGERS, automationTriggerSupportsDelayedSteps, delayedStepSubjectType, dryRunAutomationRule, renderAutomationEmailBody, availableAutomationTriggersForVendor, automationReplayOpen, formNoShowWebinarUrl, isAutomationTriggerAvailableForVendor, maskAutomationTarget, materializeAutomationRecipe, parseAutomationRule } from "@/lib/automation-workflow";
 
 const event = {
   vendorId: "vendor-1",
@@ -400,9 +400,13 @@ describe("smart automation workflow engine", () => {
     }
     expect(isAvailableAutomationTrigger("unknown")).toBe(false);
     expect(AVAILABLE_AUTOMATION_RECIPES.map((recipe) => recipe.id)).toEqual(["consultation_confirmer", "vip_auto_tiering", "no_show_reactivation"]);
-    // payment_paid runs immediate actions only; delayed steps stay with registrations and bookings.
-    expect([...DELAYED_STEP_AUTOMATION_TRIGGERS]).toEqual(["form_registered", "form_no_show", "consultation_booked", "consultation_no_show"]);
-    expect(automationTriggerSupportsDelayedSteps("payment_paid")).toBe(false);
+    // Q-09: every available trigger takes delayed steps; payment_paid's run points at the order.
+    expect([...DELAYED_STEP_AUTOMATION_TRIGGERS]).toEqual(["form_registered", "form_no_show", "consultation_booked", "consultation_no_show", "payment_paid"]);
+    expect(automationTriggerSupportsDelayedSteps("payment_paid")).toBe(true);
+    expect(delayedStepSubjectType("payment_paid")).toBe("buyer_order");
+    for (const trigger of ["form_registered", "form_no_show", "consultation_booked", "consultation_no_show"]) {
+      expect(delayedStepSubjectType(trigger)).toBe("buyer_registration");
+    }
     expect(automationExecutionNotes(null)).toEqual([]);
     expect(automationExecutionNotes([{ type: "send_email_notification", status: "skipped", reason: "other" }, "junk", { type: "line_push", status: "skipped", reason: "recipient_blacklisted" }])).toEqual([]);
     // A delayed step's log keeps { actions, results } (F-4 review m2) and may skip an unconfirmed address (M2).

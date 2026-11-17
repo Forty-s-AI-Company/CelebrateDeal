@@ -390,9 +390,11 @@ function parseStep(form: FormData, linePushAllowed: boolean): AutomationStepInpu
   try { delayMinutes = stepDelayMinutes(form); } catch { throw new Error("invalid_delay"); }
   return {
     delayMinutes,
-    // The four triggers that take delayed steps (DELAYED_STEP_AUTOMATION_
-    // TRIGGERS) carry no amount or watch time, so the existing condition
-    // schema only has "always" for them. payment_paid rules take no steps.
+    // A delayed step runs for everyone its rule's event reached (the rule's
+    // own condition, e.g. payment_paid's amount threshold, already decided
+    // that), so steps saved here are "always". The worker still evaluates a
+    // step's condition against the subject read again (Q-09: an order's paid
+    // amount from the server's record).
     condition: { type: "always" },
     actions: parseActions(form, linePushAllowed),
     isActive: form.get("stepActive") === "on",

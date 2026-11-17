@@ -224,17 +224,24 @@ describe("付款成功觸發 payment_paid", () => {
     await expect(dispatchPaymentPaidAutomationForOrder({ vendorId: t.vendor.id, orderId: c.orderId })).resolves.toEqual({ status: "no_rules" });
   });
 
-  it("starts no delayed-step run for a payment_paid rule, even with the beta grant and a step written directly", async () => {
+  it("starts a delayed-step run on the order only for a vendor holding the beta grant (Q-09; the rest is payment-paid-delayed-steps.db.test.ts)", async () => {
     const t = await tenant("steps");
-    await db.vendor.update({ where: { id: t.vendor.id }, data: { betaFeatureGrants: ["automation_delayed_steps"] } });
     const rule = await paymentRule(t);
     await db.automationRuleStep.create({
       data: { vendorId: t.vendor.id, ruleId: rule.id, delayMinutes: 60, condition: { type: "always" }, actions: [{ type: "add_customer_tag", tag: "一小時後" }] as Prisma.InputJsonArray },
     });
-    const c = await checkout(t);
-    await processPaymentWebhook(callback(t, c, "paid"));
+    // Without the grant: the immediate actions only.
+    const closed = await checkout(t);
+    await processPaymentWebhook(callback(t, closed, "paid"));
     expect((await logsOf(t)).map((log) => log.status)).toEqual(["completed"]);
     expect(await db.delayedStepRun.count({ where: { vendorId: t.vendor.id } })).toBe(0);
+    // With the grant: one run, pointing at the paid order.
+    await db.vendor.update({ where: { id: t.vendor.id }, data: { betaFeatureGrants: ["automation_delayed_steps"] } });
+    const c = await checkout(t);
+    await processPaymentWebhook(callback(t, c, "paid"));
+    expect(await paymentState(c)).toEqual(PAID_STATE);
+    const runs = await db.delayedStepRun.findMany({ where: { vendorId: t.vendor.id } });
+    expect(runs).toEqual([expect.objectContaining({ automationRuleId: rule.id, commerceOrderId: c.orderId, formSubmissionId: null, consultationBookingId: null, status: "active" })]);
   });
 });
 

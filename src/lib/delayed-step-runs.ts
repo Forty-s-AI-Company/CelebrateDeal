@@ -16,6 +16,7 @@ import { isFixedSessionLive } from "@/lib/live-fixed-sessions";
 import { hasOnlySupportedMessageTemplateVariables, renderMessageTemplate } from "@/lib/message-template";
 import { isTransactionalEmailConfigured } from "@/lib/email";
 import { captureOperationalError } from "@/lib/monitoring";
+import { PAYMENT_PAID_RUN_ORDER_SELECT, paymentPaidRunOrderCounts } from "@/lib/payment-paid-run-order";
 import { isFeatureEnabled } from "@/lib/vendor-feature-toggles";
 import {
   AUTOMATION_STEP_EMAIL_TRIGGER,
@@ -1378,7 +1379,7 @@ export async function rescheduleActiveRunsForSequence(
 export async function isCurrentAutomationStepEmailDelivery(
   delivery: { trigger: string; vendorId: string; createdAt?: Date; idempotencyKey?: string },
   now: Date,
-  database: Pick<Prisma.TransactionClient, "vendor" | "automationExecutionLog" | "automationRule" | "delayedStepRun">,
+  database: Pick<Prisma.TransactionClient, "vendor" | "automationExecutionLog" | "automationRule" | "delayedStepRun" | "commerceOrder">,
 ) {
   if (delivery.trigger !== AUTOMATION_STEP_EMAIL_TRIGGER) return true;
   if (!delivery.createdAt || now.getTime() - delivery.createdAt.getTime() > SEQUENCE_EMAIL_SEND_STALE_MS) return false;
@@ -1400,9 +1401,20 @@ export async function isCurrentAutomationStepEmailDelivery(
   if (!log || !step) return false;
   const [rule, run] = await Promise.all([
     database.automationRule.findFirst({ where: { id: log.ruleId, vendorId: delivery.vendorId, isActive: true }, select: { id: true } }),
-    database.delayedStepRun.findFirst({ where: { id: step.runId, vendorId: delivery.vendorId, automationRuleId: log.ruleId }, select: { status: true, cancelReason: true } }),
+    database.delayedStepRun.findFirst({ where: { id: step.runId, vendorId: delivery.vendorId, automationRuleId: log.ruleId }, select: { status: true, cancelReason: true, commerceOrderId: true } }),
   ]);
-  return Boolean(rule && run && automationStepRunStillSends(run));
+  if (!rule || !run || !automationStepRunStillSends(run)) return false;
+  // Q-09: a payment_paid step's e-mail queued before the order was fully
+  // refunded or cancelled (the worker stops the run at its next step) is not
+  // sent either. Bound to the delivery's vendor.
+  if (run.commerceOrderId) {
+    const order = await database.commerceOrder.findFirst({
+      where: { id: run.commerceOrderId, vendorId: delivery.vendorId },
+      select: PAYMENT_PAID_RUN_ORDER_SELECT,
+    });
+    if (!paymentPaidRunOrderCounts(order)) return false;
+  }
+  return true;
 }
 
 /**

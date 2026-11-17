@@ -24,8 +24,12 @@ import {
   withVoucherLineNotification,
 } from "@/lib/automation-line-push-policy";
 import { reportCancelledRuleLockWait } from "@/lib/automation-rule-lock";
+import { revealCommerceOrderPii } from "@/lib/commerce-order-pii";
+import { automationCustomerKeyHash } from "@/lib/customer-key-hash";
 import { getDb } from "@/lib/db";
 import { captureOperationalError } from "@/lib/monitoring";
+import { PAYMENT_PAID_RUN_ORDER_SELECT, paymentPaidRunOrderCounts } from "@/lib/payment-paid-run-order";
+import { dataEncryptionKeyringSummary, LEGACY_DATA_KEY_ID, sensitiveEnvelopeKeyId } from "@/lib/sensitive-data";
 import { isRuleWriteBusy } from "@/lib/serializable-retry";
 import {
   cancelLeasedRun,
@@ -35,6 +39,7 @@ import {
   leaseWhere,
   processDueDelayedStepRuns,
   reportDelayedStepFailure,
+  sequenceRuntimeProblem,
   utcTimestamp,
   type AutomationRunProcessor,
   type DelayedStepResult,
@@ -76,13 +81,115 @@ class RuleGoneError extends Error {
 }
 
 type AutomationSubject = {
+  subjectType: AutomationEvent["subjectType"];
   subjectId: string;
-  recipientEmail: string;
+  /** Absent when an order's buyer e-mail cannot be read: the e-mail action then records `recipient_not_linked`. */
+  recipientEmail?: string;
   /** Someone confirmed `recipientEmail` at this vendor (M2). */
   recipientVerified: boolean;
   consultationUrl?: string;
   webinarUrl?: string;
+  /** payment_paid (Q-09): the server's paid amount, for a step condition only. */
+  orderAmountCents?: number;
+  currency?: string;
 };
+
+/** The order's vendor was suspended after the worker claimed the run: nothing runs and the run is kept. */
+const VENDOR_SUSPENDED = "vendor_suspended" as const;
+
+/**
+ * Q-09: the buyer e-mail of an order counts as confirmed only when the
+ * vendor's own records show that someone controls that mailbox: a VERIFIED
+ * registration with exactly the same address (hasVerifiedRegistration, the
+ * same rule as a consultation booking), or a learner who signed in to the
+ * vendor's student portal with it (a consumed `magic_link` token: the link was
+ * e-mailed to that address and fetched; it is consumed on GET, so a mail
+ * scanner prefetching it counts too). Paying proves neither: checkout takes
+ * whatever address is typed and nothing confirms it. The portal check uses
+ * the customer key (automationCustomerKeyHash, trim + lowercase), bound to the
+ * vendor, through the (vendorId, customerKeyHash, expiresAt) index; a
+ * signed-out learner (row deleted) no longer counts.
+ */
+async function buyerEmailConfirmed(
+  db: Pick<Database, "$queryRaw" | "studentPortalAccessToken">,
+  vendorId: string,
+  email: string,
+) {
+  if (await hasVerifiedRegistration(db, vendorId, email)) return true;
+  const signedIn = await db.studentPortalAccessToken.findFirst({
+    where: { vendorId, customerKeyHash: automationCustomerKeyHash(vendorId, email), purpose: "magic_link", consumedAt: { not: null } },
+    select: { id: true },
+  });
+  return Boolean(signedIn);
+}
+
+/**
+ * Q-09 re-review MINOR-B: an envelope written under a key id the running
+ * keyring does not list (`legacy` while the keyring no longer accepts it, or
+ * a v2 kid missing from it). That is a deployment's keyring, not a broken
+ * order: a fixed keyring decrypts it again. Malformed envelopes (no kid) are
+ * not counted here.
+ */
+class EnvelopeKeyNotInKeyringError extends Error {
+  constructor() {
+    super("Order envelope key id is not in the keyring.");
+    this.name = "EnvelopeKeyNotInKeyringError";
+  }
+}
+
+function envelopeKeyMissing(envelope: string | null) {
+  if (!envelope) return false;
+  const kid = sensitiveEnvelopeKeyId(envelope);
+  if (kid === null) return false;
+  const keyring = dataEncryptionKeyringSummary();
+  return kid === LEGACY_DATA_KEY_ID ? !keyring.acceptsLegacy : !keyring.keyIds.includes(kid);
+}
+
+/**
+ * The buyer e-mail from the order's encrypted envelope, or undefined (reported,
+ * no id) when this order's envelope cannot be read.
+ *
+ * Three kinds of failure:
+ * - Q-09 review MINOR-2: the deployment itself cannot encrypt (the key is not
+ *   set or not usable). Checked with the worker's own deployment probe,
+ *   sequenceRuntimeProblem (the one processDueDelayedStepRuns runs before a
+ *   round; it encrypts a probe e-mail payload under the registered e-mail
+ *   delivery purposes, so no purpose of its own is added), without the e-mail
+ *   provider check. Its SequenceConfigurationError is thrown: the worker
+ *   re-probes, gives the lease back without using an attempt and stops the
+ *   round, as for every other configuration problem; nothing of the step runs.
+ * - Q-09 re-review MINOR-B: one of the order's envelopes names a key id the
+ *   running keyring does not list (a key removed too early, or a deployment
+ *   on an older keyring). The probe cannot see it (it encrypts with the active
+ *   key). A plain error is thrown: nothing of the step runs and the step is
+ *   not settled; the lease stays and the run is retried after
+ *   DELAYED_STEP_LEASE_MS, up to DELAYED_STEP_MAX_ATTEMPTS claims (then
+ *   cancelled / failed), so a keyring fixed meanwhile sends the e-mail. Not a
+ *   SequenceConfigurationError: one such order must not stop every round.
+ * - Otherwise the order's own envelope is broken (corrupted, malformed): the
+ *   e-mail action records `recipient_not_linked` and the other actions run.
+ */
+function orderBuyerEmail(order: { id: string; buyerEncryptedEnvelope: string; shippingEncryptedEnvelope: string | null }, vendorId: string) {
+  try {
+    const email = revealCommerceOrderPii({
+      buyerEncrypted: order.buyerEncryptedEnvelope,
+      shippingEncrypted: order.shippingEncryptedEnvelope,
+    }, { vendorId, orderId: order.id }).buyer.email;
+    return email || undefined;
+  } catch (error) {
+    const platformProblem = sequenceRuntimeProblem({ requireProvider: false });
+    if (platformProblem) throw platformProblem;
+    if (envelopeKeyMissing(order.buyerEncryptedEnvelope) || envelopeKeyMissing(order.shippingEncryptedEnvelope)) {
+      throw new EnvelopeKeyNotInKeyringError();
+    }
+    try {
+      captureOperationalError(error, { source: "automation_delayed_steps", operation: "buyer_email" });
+    } catch {
+      // Monitoring must never change the step's outcome.
+    }
+    return undefined;
+  }
+}
 
 /**
  * M2: a booking's address is typed into the public booking form and nobody
@@ -124,16 +231,23 @@ async function hasVerifiedRegistration(db: Pick<Database, "$queryRaw">, vendorId
  *   no-show (a follow-up of a completed consultation goes on). A
  *   `consultation_no_show` run starts from a no-show booking, whose status
  *   no action changes any more, so only a deleted booking ends it.
+ * - `payment_paid` (Q-09): the order, bound to the vendor. The run ends
+ *   (`subject_gone`) once the order no longer counts as a purchase: fully
+ *   refunded, cancelled or a test order (paymentPaidRunOrderCounts; a partial
+ *   refund goes on). The buyer e-mail is decrypted now (never stored on the
+ *   run) and counts as confirmed only per buyerEmailConfirmed. A vendor
+ *   suspended after the run was claimed gets VENDOR_SUSPENDED: nothing runs
+ *   and the run is kept, like every run of a suspended vendor.
  * An unconfirmed address keeps the run: the step's e-mail action is skipped as
  * `recipient_unverified` and its other actions run.
  */
 async function readSubject(
-  db: Pick<Database, "formSubmission" | "consultationBooking" | "liveRegistrationAttendance" | "$queryRaw">,
+  db: Pick<Database, "formSubmission" | "consultationBooking" | "liveRegistrationAttendance" | "commerceOrder" | "studentPortalAccessToken" | "$queryRaw">,
   vendorId: string,
   trigger: string,
-  run: { formSubmissionId: string | null; consultationBookingId: string | null; subjectKeyHash: string; anchorAt: Date },
+  run: { formSubmissionId: string | null; consultationBookingId: string | null; commerceOrderId: string | null; subjectKeyHash: string; anchorAt: Date },
   now: Date,
-): Promise<AutomationSubject | null> {
+): Promise<AutomationSubject | typeof VENDOR_SUSPENDED | null> {
   if (trigger === "form_registered") {
     if (!run.formSubmissionId) return null;
     const submission = await db.formSubmission.findFirst({
@@ -141,7 +255,31 @@ async function readSubject(
       select: { id: true, email: true, verificationStatus: true },
     });
     if (!submission) return null;
-    return { subjectId: submission.id, recipientEmail: submission.email, recipientVerified: submission.verificationStatus === "VERIFIED" };
+    return { subjectType: "buyer_registration", subjectId: submission.id, recipientEmail: submission.email, recipientVerified: submission.verificationStatus === "VERIFIED" };
+  }
+  if (trigger === "payment_paid") {
+    if (!run.commerceOrderId) return null;
+    const order = await db.commerceOrder.findFirst({
+      where: { id: run.commerceOrderId, vendorId },
+      select: {
+        ...PAYMENT_PAID_RUN_ORDER_SELECT,
+        currency: true,
+        buyerEncryptedEnvelope: true,
+        shippingEncryptedEnvelope: true,
+        vendor: { select: { suspendedAt: true } },
+      },
+    });
+    if (!order || !paymentPaidRunOrderCounts(order)) return null;
+    if (order.vendor.suspendedAt) return VENDOR_SUSPENDED;
+    const recipientEmail = orderBuyerEmail(order, vendorId);
+    return {
+      subjectType: "buyer_order",
+      subjectId: order.id,
+      ...(recipientEmail ? { recipientEmail } : {}),
+      recipientVerified: recipientEmail ? await buyerEmailConfirmed(db, vendorId, recipientEmail) : false,
+      orderAmountCents: order.paidAmountCents,
+      currency: order.currency,
+    };
   }
   if (trigger === "form_no_show") {
     if (!run.formSubmissionId) return null;
@@ -165,6 +303,7 @@ async function readSubject(
     const session = submission.liveSession?.vendorId === vendorId ? submission.liveSession : null;
     const webinarUrl = live ? formNoShowWebinarUrl(live, session, now) : undefined;
     return {
+      subjectType: "buyer_registration",
       subjectId: submission.id,
       recipientEmail: submission.email,
       recipientVerified: submission.verificationStatus === "VERIFIED",
@@ -180,6 +319,7 @@ async function readSubject(
     if (!booking) return null;
     if (trigger === "consultation_booked" && (booking.status === "cancelled" || booking.status === "no_show")) return null;
     return {
+      subjectType: "buyer_registration",
       subjectId: booking.id,
       recipientEmail: booking.clientEmail,
       recipientVerified: await hasVerifiedRegistration(db, vendorId, booking.clientEmail),
@@ -236,6 +376,35 @@ async function settleRun(
   }
 }
 
+/** Gives the lease back without using an attempt; the run stays due for a later round. */
+async function releaseLease(db: Database, lease: Lease, status: "rescheduled" | "waiting_capacity"): Promise<DelayedStepResult> {
+  const released = await db.delayedStepRun.updateMany({
+    where: leaseWhere(lease),
+    data: { claimedAt: null, attemptCount: Math.max(0, lease.attemptCount - 1) },
+  });
+  return { runId: lease.id, status: released.count === 1 ? status : "claimed_elsewhere" };
+}
+
+/** The event a delayed step runs with: rebuilt from the run's references and the subject read now, never the original event. */
+function stepEvent(vendorId: string, trigger: string, eventId: string, subjectKeyHash: string, subject: AutomationSubject): AutomationEvent {
+  return {
+    vendorId,
+    eventId,
+    trigger: trigger as AutomationEvent["trigger"],
+    // The order for payment_paid (its LINE identity is bound to the order), else the registration or booking.
+    subjectType: subject.subjectType,
+    subjectId: subject.subjectId,
+    subjectKeyHash,
+    ...(subject.recipientEmail ? { recipientEmail: subject.recipientEmail } : {}),
+    recipientVerified: subject.recipientVerified,
+    ...(subject.consultationUrl ? { consultationUrl: subject.consultationUrl } : {}),
+    ...(subject.webinarUrl ? { webinarUrl: subject.webinarUrl } : {}),
+    // payment_paid: the server's paid amount (and currency), read now, for a step condition only.
+    ...(subject.orderAmountCents !== undefined ? { orderAmountCents: subject.orderAmountCents } : {}),
+    ...(subject.currency ? { currency: subject.currency } : {}),
+  };
+}
+
 /**
  * One due automation run, already leased by processDueDelayedStepRuns (which
  * passes `emailRoom`, the e-mails the round may still create). The worker
@@ -250,7 +419,7 @@ export async function processClaimedAutomationRun(
 ): Promise<DelayedStepResult> {
   const run = await db.delayedStepRun.findFirst({
     where: { id: lease.id, vendorId: lease.vendorId, status: "active", automationRuleId: { not: null } },
-    select: { id: true, anchorAt: true, automationRuleId: true, formSubmissionId: true, consultationBookingId: true, subjectKeyHash: true },
+    select: { id: true, anchorAt: true, automationRuleId: true, formSubmissionId: true, consultationBookingId: true, commerceOrderId: true, subjectKeyHash: true },
   });
   if (!run?.automationRuleId) return { runId: lease.id, status: "claimed_elsewhere" };
   // The CHECK guarantees the customer key; without it no tag could be written.
@@ -272,7 +441,7 @@ export async function processClaimedAutomationRun(
   if (!rule) return cancelLeasedRun(db, lease, "definition_deleted");
   // A switched-off rule, or one whose trigger was hidden from merchants
   // (AVAILABLE_AUTOMATION_TRIGGERS) or takes no delayed steps
-  // (DELAYED_STEP_AUTOMATION_TRIGGERS, e.g. payment_paid), stops; switching it
+  // (DELAYED_STEP_AUTOMATION_TRIGGERS), stops; switching it
   // on again does not revive the run (the same as a paused sequence).
   // form_no_show also stops once the vendor's closed-beta grant is closed (Q-11 M-1).
   const vendor = rule.trigger === "form_no_show"
@@ -282,6 +451,9 @@ export async function processClaimedAutomationRun(
     return cancelLeasedRun(db, lease, "definition_paused");
   }
   const subject = await readSubject(db, lease.vendorId, rule.trigger, { ...run, subjectKeyHash: run.subjectKeyHash }, now);
+  // Suspended between the claim and this read (the claim skips suspended
+  // vendors): the run waits, unclaimed, until the vendor is resumed.
+  if (subject === VENDOR_SUSPENDED) return releaseLease(db, lease, "rescheduled");
   if (!subject) return cancelLeasedRun(db, lease, "subject_gone");
 
   const settle = { anchorAt: run.anchorAt, ruleId: rule.id };
@@ -306,26 +478,9 @@ export async function processClaimedAutomationRun(
   const plannedEmails = await plannedAutomationStepEmailCount(db, {
     vendorId: lease.vendorId, ruleId: rule.id, runId: run.id, stepId: step.id, condition: step.condition, actions: step.actions,
   });
-  if (plannedEmails > emailRoom) {
-    const released = await db.delayedStepRun.updateMany({
-      where: leaseWhere(lease),
-      data: { claimedAt: null, attemptCount: Math.max(0, lease.attemptCount - 1) },
-    });
-    return { runId: lease.id, status: released.count === 1 ? "waiting_capacity" : "claimed_elsewhere" };
-  }
+  if (plannedEmails > emailRoom) return releaseLease(db, lease, "waiting_capacity");
 
-  const event: AutomationEvent = {
-    vendorId: lease.vendorId,
-    eventId: automationStepEventId(run.id, step.id),
-    trigger: rule.trigger as AutomationEvent["trigger"],
-    subjectType: "buyer_registration",
-    subjectId: subject.subjectId,
-    subjectKeyHash: run.subjectKeyHash,
-    recipientEmail: subject.recipientEmail,
-    recipientVerified: subject.recipientVerified,
-    ...(subject.consultationUrl ? { consultationUrl: subject.consultationUrl } : {}),
-    ...(subject.webinarUrl ? { webinarUrl: subject.webinarUrl } : {}),
-  };
+  const event = stepEvent(lease.vendorId, rule.trigger, automationStepEventId(run.id, step.id), run.subjectKeyHash, subject);
   const outcome = await executeAutomationStep(db, {
     ruleId: rule.id,
     runId: run.id,
@@ -775,7 +930,7 @@ async function withLockedRule(
           : null;
         if (!isAutomationTriggerAvailableForVendor(rule.trigger, vendor)) throw new StepChangeRejected("trigger_unavailable");
       }
-      // F-4 PR 3: payment_paid runs immediate actions only (no order reference on a run yet).
+      // Every available trigger takes delayed steps since Q-09 (payment_paid); kept as a guard for a trigger that does not.
       if (input.requireAvailableTrigger && !automationTriggerSupportsDelayedSteps(rule.trigger)) throw new StepChangeRejected("steps_unsupported");
       const result = await change(tx, rule);
       await rescheduleActiveRunsForAutomationRule(tx, { vendorId: input.vendorId, ruleId: rule.id, now: input.now });

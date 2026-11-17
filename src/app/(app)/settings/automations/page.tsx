@@ -51,7 +51,7 @@ const FORM_NO_SHOW_NOT_GRANTED_NOTE = "「報名後未出席直播」目前是�
 const ACTIONS: Record<string, string> = { line_push: "LINE 推播", send_email_notification: "Email 通知", add_customer_tag: "客戶打標", issue_repurchase_voucher: "派發回購券" };
 const ERROR_MESSAGES: Record<string, string> = {
   trigger_unavailable: "這個觸發條件目前不會執行，不能用來建立或啟用規則。",
-  steps_unsupported: "「訂單付款完成」的規則目前只能設定立即執行的動作，不能加延遲步驟。",
+  steps_unsupported: "這個觸發條件的規則只能設定立即執行的動作，不能加延遲步驟。",
   delete_requires_inactive: "請先停用規則，再刪除。",
   delete_has_history: "這條規則已有執行紀錄，為保留紀錄與已發出的標籤、折價券，只能停用、不能刪除。",
   not_found: "找不到這條規則或步驟，或你沒有管理權限。",
@@ -103,7 +103,24 @@ const UPDATED_MESSAGES: Record<string, string> = {
   step_deleted: "延遲步驟已刪除。",
 };
 const UNAVAILABLE_TRIGGER_NOTE = "此觸發條件目前不會執行：系統尚未接上這個事件，規則不會被觸發。可以停用或刪除，但不能重新啟用。";
-const NO_DELAYED_STEPS_NOTE = "「訂單付款完成」的規則目前只有立即執行的動作，還不能加延遲步驟。";
+const NO_DELAYED_STEPS_NOTE = "這個觸發條件的規則只有立即執行的動作，不能加延遲步驟。";
+/**
+ * Q-09 review NIT-4: who a rule's delayed-step e-mail reaches, by trigger.
+ * payment_paid says nothing here: PAYMENT_PAID_STEPS_NOTE, right below,
+ * states its rule.
+ */
+function stepsEmailNote(trigger: string) {
+  if (trigger === "payment_paid") return "";
+  if (trigger === "consultation_booked" || trigger === "consultation_no_show") return "Email 只寄給在你這裡用同一個 Email 完成報名驗證的預約者。";
+  return "Email 只寄給已驗證的報名者。";
+}
+/**
+ * Q-09: what a payment_paid rule's delayed steps do differently: they stop
+ * once the order is fully refunded or cancelled (a partial refund goes on),
+ * and the buyer's e-mail address counts as confirmed only with a verified
+ * registration or a student-portal sign-in at this vendor.
+ */
+const PAYMENT_PAID_STEPS_NOTE = "「訂單付款完成」的延遲步驟從付款完成後規則第一次執行的時間起算。訂單全額退款或取消後不再執行（部分退款仍會繼續）。付款不代表買家確認過 Email，所以延遲步驟的 Email 只寄給在你這裡用同一個 Email 完成報名驗證，或登入過學員專區的買家；其他買家的 Email 會略過，貼標籤、派券與 LINE 照常執行。";
 
 function triggerLabel(trigger: string) {
   return (AUTOMATION_TRIGGER_LABELS as Record<string, string>)[trigger] ?? trigger;
@@ -233,7 +250,8 @@ function RuleSteps({ rule, editable, linePushAllowed, products, counts }: {
       <h4 className="text-sm font-semibold text-slate-900">延遲步驟（{rule.steps.length}／{MAX_AUTOMATION_RULE_STEPS}）</h4>
       {counts ? <p className="text-xs text-slate-600">進行中 {counts.active} 人・完成 {counts.completed} 人・停止 {counts.cancelled} 人</p> : null}
     </div>
-    <p className="text-xs text-slate-600">從事件發生的時間起算，到點時重新讀取對象再執行。job 停擺超過 24 小時的步驟會跳過；同一個人同一步最多執行一次，改延遲時間也不會重複執行。Email 只寄給已驗證的報名者。</p>
+    <p className="text-xs text-slate-600">從事件發生的時間起算，到點時重新讀取對象再執行。job 停擺超過 24 小時的步驟會跳過；同一個人同一步最多執行一次，改延遲時間也不會重複執行。{stepsEmailNote(rule.trigger)}</p>
+    {rule.trigger === "payment_paid" ? <p className="rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-900">{PAYMENT_PAID_STEPS_NOTE}</p> : null}
     {rule.steps.length ? <ol className="grid gap-2">
       {rule.steps.map((step) => <li key={step.id} className="rounded-md border border-border bg-white p-3">
         <details>
@@ -313,7 +331,7 @@ export default async function AutomationSettingsPage({ searchParams }: { searchP
 
     <Card className="mb-6"><h2 className="text-lg font-semibold text-slate-950">熱門劇本一鍵套用</h2><p className="mb-4 text-sm text-slate-600">需要派券的劇本請先選商品。</p><div className="grid gap-4 lg:grid-cols-2">{recipes.map((recipe) => <form action={createAutomationRecipeAction} key={recipe.id} className="grid gap-3 rounded-xl border border-border p-4"><CsrfField /><input type="hidden" name="recipeId" value={recipe.id} /><div><h3 className="font-semibold text-slate-900">{recipe.name}</h3><p className="mt-1 text-sm text-slate-600">{recipe.description}</p></div>{recipe.trigger === "form_no_show" ? <p className="rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-900">{FORM_NO_SHOW_DETECTION_NOTE}</p> : null}<p className="text-xs font-medium text-slate-500">{triggerLabel(recipe.trigger)} → {actionLabels(recipe.actions).join(" + ")}</p>{!linePushAllowed && automationActionsIncludeLinePush(recipe.actions) ? <p className="text-xs text-slate-600">這個劇本含 LINE 推播。{LINE_PUSH_OWNER_ONLY_MESSAGE}</p> : <>{!linePushAllowed && recipe.actions.some((action) => action.type === "issue_repurchase_voucher") ? <p className="text-xs text-slate-600">{VOUCHER_WITHOUT_LINE_NOTE}</p> : null}{recipe.actions.some((action) => action.type === "issue_repurchase_voucher") ? <SelectField label="套券商品" name="productId"><option value="">請選擇商品</option>{products.map((product) => <option key={product.id} value={product.id}>{product.name}</option>)}</SelectField> : null}<SubmitButton pendingChildren="套用中…">一鍵套用劇本</SubmitButton></>}</form>)}</div></Card>
 
-    <Card className="mb-6"><h2 className="mb-4 text-lg font-semibold text-slate-950">自訂規則</h2><form action={createAutomationRuleAction} className="grid gap-4" aria-label="建立自訂規則"><CsrfField /><div className="grid gap-4 md:grid-cols-2"><Field label="規則名稱" name="name" required maxLength={120} /><SelectField label="觸發事件" name="trigger" defaultValue={triggers[0]}>{triggers.map((value) => <option key={value} value={value}>{triggerLabel(value)}</option>)}</SelectField></div>{showThreshold ? <Field label="付款金額門檻（元；只用於「訂單付款完成」，其他觸發條件留空）" name="conditionValue" type="number" min={1} step={1} /> : null}<p className="text-sm text-slate-600">以下是事件發生時「立即執行」的動作{delayedSteps ? "；建立後可在規則下方加上延遲步驟（例如 1 天後再寄一封，「訂單付款完成」除外）" : ""}。「訂單付款完成」在付款確認後執行一次，金額以訂單實際付款金額判斷，Email 寄給訂單的買家。{formNoShow ? `「報名後未出席直播」在場次結束約 30 分鐘後，對已完成 Email 驗證、卻沒有用完成驗證的瀏覽器或個人觀看連結進入觀看（含回放）的報名者執行，每人每個場次一次，只對規則建立或啟用之後才結束的場次執行；單一開播時間的直播只算開播前 14 天內完成驗證的報名者。${FORM_NO_SHOW_DETECTION_NOTE}` : ""}</p><ActionFields products={products} linePushAllowed={linePushAllowed} trigger={triggers[0] ?? "form_registered"} triggerFieldName="trigger" /><SubmitButton pendingChildren="建立中…">建立規則</SubmitButton></form></Card>
+    <Card className="mb-6"><h2 className="mb-4 text-lg font-semibold text-slate-950">自訂規則</h2><form action={createAutomationRuleAction} className="grid gap-4" aria-label="建立自訂規則"><CsrfField /><div className="grid gap-4 md:grid-cols-2"><Field label="規則名稱" name="name" required maxLength={120} /><SelectField label="觸發事件" name="trigger" defaultValue={triggers[0]}>{triggers.map((value) => <option key={value} value={value}>{triggerLabel(value)}</option>)}</SelectField></div>{showThreshold ? <Field label="付款金額門檻（元；只用於「訂單付款完成」，其他觸發條件留空）" name="conditionValue" type="number" min={1} step={1} /> : null}<p className="text-sm text-slate-600">以下是事件發生時「立即執行」的動作{delayedSteps ? "；建立後可在規則下方加上延遲步驟（例如 1 天後再寄一封）" : ""}。「訂單付款完成」在付款確認後執行一次，金額以訂單實際付款金額判斷，Email 寄給訂單的買家。{formNoShow ? `「報名後未出席直播」在場次結束約 30 分鐘後，對已完成 Email 驗證、卻沒有用完成驗證的瀏覽器或個人觀看連結進入觀看（含回放）的報名者執行，每人每個場次一次，只對規則建立或啟用之後才結束的場次執行；單一開播時間的直播只算開播前 14 天內完成驗證的報名者。${FORM_NO_SHOW_DETECTION_NOTE}` : ""}</p><ActionFields products={products} linePushAllowed={linePushAllowed} trigger={triggers[0] ?? "form_registered"} triggerFieldName="trigger" /><SubmitButton pendingChildren="建立中…">建立規則</SubmitButton></form></Card>
 
     <Card className="mb-6"><h2 className="mb-4 text-lg font-semibold text-slate-950">規則</h2><div className="grid gap-4">{rules.length ? rules.map((rule) => {
       const available = isAutomationTriggerAvailableForVendor(rule.trigger, vendor);
