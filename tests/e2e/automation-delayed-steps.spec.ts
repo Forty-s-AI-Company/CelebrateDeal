@@ -65,7 +65,12 @@ async function createFixture() {
       ],
     },
   });
-  return { runId, vendor, user, ownerEmail, form };
+  // Q-18: a registration rule's e-mail has no link of its own, so the step that mails
+  // the 追購通知 template issues a voucher (its `{{voucher_url}}`) in the same step.
+  const product = await db.product.create({
+    data: { vendorId: vendor.id, name: `自動化商品 ${runId.slice(0, 8)}`, slug: `f4-steps-product-${runId}`, description: "延遲步驟派券用商品", priceCents: 100_000, currency: "TWD", inventory: 10, isActive: true },
+  });
+  return { runId, vendor, user, ownerEmail, form, product };
 }
 
 type Fixture = Awaited<ReturnType<typeof createFixture>>;
@@ -113,6 +118,11 @@ test("a registration gets the rule's 2-hour step from the worker, after the owne
       await add.getByLabel("事件發生後多久執行").fill(value);
       await add.getByLabel("單位").selectOption({ label: unit });
       if (options.email) {
+        // 追購通知 is only offered next to a voucher in the same step (Q-18).
+        await expect(add.getByLabel("Email 範本")).toHaveValue("");
+        await add.getByLabel("發送回購券", { exact: true }).check();
+        await add.getByLabel("商品", { exact: true }).selectOption(fixture!.product.id);
+        await add.getByLabel("折扣值").fill("100");
         await add.getByLabel("Email 通知", { exact: true }).check();
         await add.getByLabel("Email 範本").selectOption("repurchase_followup");
       }
@@ -130,6 +140,7 @@ test("a registration gets the rule's 2-hour step from the worker, after the owne
     const steps = await db.automationRuleStep.findMany({ where: { vendorId: fixture.vendor.id, ruleId: rule.id }, orderBy: { delayMinutes: "asc" } });
     expect(steps.map((step) => [step.delayMinutes, step.isActive])).toEqual([[120, true], [1_440, true]]);
     expect(steps[0]!.actions).toEqual([
+      { type: "issue_repurchase_voucher", productId: fixture.product.id, discountType: "fixed", discountValue: 10_000, expiresInDays: 30, lineNotification: true },
       { type: "send_email_notification", template: "repurchase_followup" },
       { type: "add_customer_tag", tag: "兩小時後" },
     ]);
@@ -200,6 +211,7 @@ test("a registration gets the rule's 2-hour step from the worker, after the owne
     const [mail] = await db.emailDelivery.findMany({ where: { vendorId: fixture.vendor.id, trigger: "automation_step" } });
     const payload = revealEmailDeliveryPayload(mail!.payloadEncryptedEnvelope, { vendorId: fixture.vendor.id, deliveryId: mail!.id });
     expect(payload.recipientEmail).toBe(leadEmail);
+    expect(payload.body).toContain("/api/automation/vouchers/redeem?token=");
     expect(payload.body).toMatch(/退訂：http:\/\/127\.0\.0\.1:\d+\/unsubscribe\?token=/u);
     // The scheduled job sends it on the sequence quota; without a provider the attempt fails and waits for a retry.
     const response = await page.request.post("/api/jobs/email-deliveries", { headers: { authorization: `Bearer ${jobSecret}` } });
