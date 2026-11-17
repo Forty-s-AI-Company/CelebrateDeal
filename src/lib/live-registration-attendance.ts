@@ -49,7 +49,9 @@ export type LiveRegistrationAttendanceResult = "recorded" | "unchanged" | "skipp
  * writes nothing. The composite FKs repeat the binding. INSERT ... ON CONFLICT
  * is atomic on (vendorId, formSubmissionId); a conflicting call only moves
  * `lastAdmittedAt` forward, and only once the stored value is at least
- * LIVE_REGISTRATION_ATTENDANCE_REFRESH_MS old.
+ * LIVE_REGISTRATION_ATTENDANCE_REFRESH_MS old. Inside that interval the
+ * SELECT already finds the fresh row and inserts nothing, so the 30-second
+ * renewals neither lock nor rewrite the row (review m-1).
  */
 export async function recordLiveRegistrationAttendance(
   input: { vendorId: string; liveId: string; formSubmissionId: string; now?: Date },
@@ -78,6 +80,14 @@ export async function recordLiveRegistrationAttendance(
       AND submission."liveId" = ${input.liveId}
       AND submission."verificationStatus" = 'VERIFIED'
       AND form."vendorId" = ${input.vendorId}
+      -- Review m-1: inside the refresh interval nothing is inserted, so the
+      -- statement only reads (no conflict path, no row lock, no new version).
+      AND NOT EXISTS (
+        SELECT 1 FROM "LiveRegistrationAttendance" AS fresh
+        WHERE fresh."vendorId" = ${input.vendorId}
+          AND fresh."formSubmissionId" = submission."id"
+          AND fresh."lastAdmittedAt" > (${refreshBefore}::timestamptz AT TIME ZONE 'UTC')
+      )
     ON CONFLICT ("vendorId", "formSubmissionId") DO UPDATE SET
       "lastAdmittedAt" = EXCLUDED."lastAdmittedAt"
     WHERE attendance."liveId" = EXCLUDED."liveId"

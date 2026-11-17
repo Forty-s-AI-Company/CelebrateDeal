@@ -24,14 +24,11 @@ describe("AutomationSettingsPage", () => {
   it("offers only the triggers and recipes that can run", async () => {
     const html = await render();
     const triggerSelect = html.match(/<select[^>]*name="trigger"[^>]*>([\s\S]*?)<\/select>/u)?.[1] ?? "";
-    expect([...triggerSelect.matchAll(/value="([^"]+)"/gu)].map((match) => match[1])).toEqual(["form_registered", "form_no_show", "consultation_booked", "consultation_no_show", "payment_paid"]);
-    expect(triggerSelect).toContain(">報名後未出席直播<");
-    // F-4 PR 3: payment_paid and its recipe are back; Q-11: so are form_no_show
-    // and its recipe. The watch one stays hidden.
+    // Q-11 review M-1: form_no_show and its recipe only with the closed-beta grant.
+    expect([...triggerSelect.matchAll(/value="([^"]+)"/gu)].map((match) => match[1])).toEqual(["form_registered", "consultation_booked", "consultation_no_show", "payment_paid"]);
+    // F-4 PR 3: payment_paid and its recipe are back. The watch one stays hidden.
     expect(html).toContain("高客單 VIP 自動尊榮升級");
-    expect(html).toContain("開播缺席喚醒再行銷");
-    expect(html).toContain("報名後未出席直播 → Email 通知");
-    expect(html).not.toContain("高意向追單漏斗");
+    for (const hidden of ["高意向追單漏斗", "開播缺席喚醒再行銷", "報名後未出席直播"]) expect(html).not.toContain(hidden);
     // payment_paid takes a paid-amount threshold.
     expect(html).toContain('name="conditionValue"');
     expect(html).toContain("付款金額門檻（元；只用於「訂單付款完成」，其他觸發條件留空）");
@@ -110,8 +107,33 @@ describe("AutomationSettingsPage", () => {
     expect(html).not.toContain("新增延遲步驟");
   });
 
-  it("lists a form_no_show rule as running, with its dry-run and its delayed steps (Q-11)", async () => {
-    granted();
+  const noShowGranted = (grants = ["automation_form_no_show"]) => mocks.manager.mockResolvedValue({ vendor: { id: "v1", betaFeatureGrants: grants }, user: { id: "u1" }, member: { role: "owner" } });
+
+  it("offers form_no_show and its recipe with the closed-beta grant, each with the misdetection note (review M-1)", async () => {
+    noShowGranted();
+    mocks.rules.mockResolvedValue([]);
+    const html = await render();
+    const triggerSelect = html.match(/<select[^>]*name="trigger"[^>]*>([\s\S]*?)<\/select>/u)?.[1] ?? "";
+    expect([...triggerSelect.matchAll(/value="([^"]+)"/gu)].map((match) => match[1])).toEqual(["form_registered", "form_no_show", "consultation_booked", "consultation_no_show", "payment_paid"]);
+    expect(triggerSelect).toContain(">報名後未出席直播<");
+    const recipe = [...html.matchAll(/<form[^>]*>(?:(?!<\/form>)[\s\S])*?name="recipeId" value="no_show_reactivation"[\s\S]*?<\/form>/gu)][0]?.[0] ?? "";
+    expect(recipe).toContain("開播缺席喚醒再行銷");
+    expect(recipe).toContain("報名後未出席直播 → Email 通知");
+    expect(recipe).toContain("只能辨識在完成報名驗證的同一個瀏覽器觀看的人");
+    expect(html).toContain("單一開播時間的直播只算開播前 14 天內完成驗證的報名者");
+  });
+
+  it("explains a form_no_show rule of a vendor without the grant and only offers switching off and deleting", async () => {
+    mocks.rules.mockResolvedValue([rule({ id: "noshow-on", name: "缺席喚醒", trigger: "form_no_show", isActive: true, actions: [{ type: "add_customer_tag", tag: "缺席" }] })]);
+    const html = await render();
+    expect(html).toContain("「報名後未出席直播」目前是封測功能，尚未對你的商家開放，這條規則不會執行。");
+    expect(html).toContain("只能辨識在完成報名驗證的同一個瀏覽器觀看的人");
+    expect(html).toContain(">停用<");
+    expect(html).not.toContain("Dry-run 測試");
+  });
+
+  it("lists a form_no_show rule as running, with its dry-run, its delayed steps and the misdetection note (Q-11)", async () => {
+    noShowGranted(["automation_delayed_steps", "automation_form_no_show"]);
     mocks.rules.mockResolvedValue([rule({ id: "noshow-on", name: "缺席喚醒", trigger: "form_no_show", isActive: true, steps: [{ id: "s1", delayMinutes: 1_440, isActive: true, actions: [{ type: "add_customer_tag", tag: "缺席" }] }] })]);
     const html = await render();
     expect(html).toContain("觸發：報名後未出席直播");
@@ -119,6 +141,7 @@ describe("AutomationSettingsPage", () => {
     expect(html).toContain("Dry-run 測試");
     expect(html).toContain("編輯步驟：事件後第 1 天");
     expect(html).toContain("新增「缺席喚醒」的延遲步驟");
+    expect(html).toContain("只能辨識在完成報名驗證的同一個瀏覽器觀看的人");
   });
 
   it("lists a payment_paid rule as running, with its dry-run, and offers no delayed steps for it", async () => {
@@ -189,7 +212,7 @@ describe("AutomationSettingsPage", () => {
       expect(html).toContain('name="actionLine"');
       expect(html).not.toContain("這個劇本含 LINE 推播");
       expect(html).not.toContain("LINE 推播僅限擁有者設定");
-      expect(html.match(/一鍵套用劇本/gu)).toHaveLength(3);
+      expect(html.match(/一鍵套用劇本/gu)).toHaveLength(2);
     });
 
     it("lets an admin switch off and delete a rule with a LINE push, but not switch it on or touch its steps", async () => {

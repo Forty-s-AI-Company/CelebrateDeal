@@ -5,10 +5,10 @@ import {
   automationTriggerSupportsDelayedSteps,
   executeAutomationStep,
   plannedAutomationStepEmailCount,
-  isAvailableAutomationTrigger,
+  isAutomationTriggerAvailableForVendor,
+  formNoShowWebinarUrl,
   parseAutomationRule,
   automationStepEventId,
-  automationWebinarUrl,
   type AutomationEvent,
 } from "@/lib/automation-workflow";
 import {
@@ -95,8 +95,11 @@ async function hasVerifiedRegistration(db: Pick<Database, "$queryRaw">, vendorId
  * - `form_registered`: the registration; its e-mail counts as confirmed once it
  *   is VERIFIED.
  * - `form_no_show` (Q-11): the same registration (always VERIFIED when its run
- *   started), with its Live's viewer page as `{{webinar_url}}`. Watching the
- *   replay later does not stop the run.
+ *   started), with its Live's viewer page as `{{webinar_url}}` while the
+ *   replay is open (otherwise the replay e-mail is skipped as
+ *   `replay_unavailable`). Once the registrant has been admitted to play the
+ *   Live after the run started (LiveRegistrationAttendance.lastAdmittedAt >
+ *   anchorAt), they are no longer a no-show and the run ends (review m-7).
  * - consultation triggers: the booking; its address counts as confirmed only
  *   with a verified registration of the same address (M2). A
  *   `consultation_booked` run ends once the booking is cancelled or marked
@@ -107,10 +110,11 @@ async function hasVerifiedRegistration(db: Pick<Database, "$queryRaw">, vendorId
  * `recipient_unverified` and its other actions run.
  */
 async function readSubject(
-  db: Pick<Database, "formSubmission" | "consultationBooking" | "$queryRaw">,
+  db: Pick<Database, "formSubmission" | "consultationBooking" | "liveRegistrationAttendance" | "$queryRaw">,
   vendorId: string,
   trigger: string,
-  run: { formSubmissionId: string | null; consultationBookingId: string | null; subjectKeyHash: string },
+  run: { formSubmissionId: string | null; consultationBookingId: string | null; subjectKeyHash: string; anchorAt: Date },
+  now: Date,
 ): Promise<AutomationSubject | null> {
   if (trigger === "form_registered") {
     if (!run.formSubmissionId) return null;
@@ -125,10 +129,23 @@ async function readSubject(
     if (!run.formSubmissionId) return null;
     const submission = await db.formSubmission.findFirst({
       where: { id: run.formSubmissionId, form: { vendorId } },
-      select: { id: true, email: true, verificationStatus: true, live: { select: { vendorId: true, slug: true } } },
+      select: {
+        id: true,
+        email: true,
+        verificationStatus: true,
+        live: { select: { vendorId: true, slug: true, replayEnabled: true, replayAvailableUntil: true, sessionReplayWindowHours: true, video: { select: { durationSec: true } } } },
+        liveSession: { select: { vendorId: true, startAt: true } },
+      },
     });
     if (!submission) return null;
-    const webinarUrl = submission.live?.vendorId === vendorId ? automationWebinarUrl(submission.live.slug) : undefined;
+    const watched = await db.liveRegistrationAttendance.findFirst({
+      where: { vendorId, formSubmissionId: submission.id, lastAdmittedAt: { gt: run.anchorAt } },
+      select: { id: true },
+    });
+    if (watched) return null;
+    const live = submission.live?.vendorId === vendorId ? submission.live : null;
+    const session = submission.liveSession?.vendorId === vendorId ? submission.liveSession : null;
+    const webinarUrl = live ? formNoShowWebinarUrl(live, session, now) : undefined;
     return {
       subjectId: submission.id,
       recipientEmail: submission.email,
@@ -239,10 +256,14 @@ export async function processClaimedAutomationRun(
   // (AVAILABLE_AUTOMATION_TRIGGERS) or takes no delayed steps
   // (DELAYED_STEP_AUTOMATION_TRIGGERS, e.g. payment_paid), stops; switching it
   // on again does not revive the run (the same as a paused sequence).
-  if (!rule.isActive || !isAvailableAutomationTrigger(rule.trigger) || !automationTriggerSupportsDelayedSteps(rule.trigger)) {
+  // form_no_show also stops once the vendor's closed-beta grant is closed (Q-11 M-1).
+  const vendor = rule.trigger === "form_no_show"
+    ? await db.vendor.findUnique({ where: { id: lease.vendorId }, select: { betaFeatureGrants: true } })
+    : null;
+  if (!rule.isActive || !isAutomationTriggerAvailableForVendor(rule.trigger, vendor) || !automationTriggerSupportsDelayedSteps(rule.trigger)) {
     return cancelLeasedRun(db, lease, "definition_paused");
   }
-  const subject = await readSubject(db, lease.vendorId, rule.trigger, { ...run, subjectKeyHash: run.subjectKeyHash });
+  const subject = await readSubject(db, lease.vendorId, rule.trigger, { ...run, subjectKeyHash: run.subjectKeyHash }, now);
   if (!subject) return cancelLeasedRun(db, lease, "subject_gone");
 
   const settle = { anchorAt: run.anchorAt, ruleId: rule.id };
@@ -542,7 +563,13 @@ async function withLockedRule(
       `;
       const rule = locked[0];
       if (!rule) throw new StepChangeRejected("not_found");
-      if (input.requireAvailableTrigger && !isAvailableAutomationTrigger(rule.trigger)) throw new StepChangeRejected("trigger_unavailable");
+      if (input.requireAvailableTrigger) {
+        // form_no_show also needs the vendor's closed-beta grant (Q-11 M-1).
+        const vendor = rule.trigger === "form_no_show"
+          ? await tx.vendor.findUnique({ where: { id: input.vendorId }, select: { betaFeatureGrants: true } })
+          : null;
+        if (!isAutomationTriggerAvailableForVendor(rule.trigger, vendor)) throw new StepChangeRejected("trigger_unavailable");
+      }
       // F-4 PR 3: payment_paid runs immediate actions only (no order reference on a run yet).
       if (input.requireAvailableTrigger && !automationTriggerSupportsDelayedSteps(rule.trigger)) throw new StepChangeRejected("steps_unsupported");
       const result = await change(tx, rule);

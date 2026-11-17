@@ -2,13 +2,15 @@ import { createHash } from "node:crypto";
 import { Prisma } from "@prisma/client";
 import {
   AUTOMATION_EXECUTION_RECLAIM_AFTER_MS,
+  AUTOMATION_FORM_NO_SHOW_FEATURE,
   automationCustomerKeyHash,
+  automationReplayOpen,
   automationWebinarUrl,
   dispatchAutomationEvent,
   parseAutomationRule,
 } from "@/lib/automation-workflow";
 import { getDb } from "@/lib/db";
-import { utcTimestamp } from "@/lib/delayed-step-runs";
+import { EMAIL_SEQUENCE_START_CUTOFF_MS, utcTimestamp } from "@/lib/delayed-step-runs";
 import {
   EVERGREEN_ACTIVATION_SELECT,
   EVERGREEN_MAX_DURATION_SECONDS,
@@ -25,6 +27,11 @@ import { captureOperationalError } from "@/lib/monitoring";
  * `runFormNoShowAutomation` right after the post-live follow-ups: both are
  * driven by "a registrant's session ended", and the automation e-mails it
  * queues are sent by the same round's dispatch.
+ *
+ * Closed beta (review M-1): only vendors holding the platform grant
+ * `automation_form_no_show` are scanned. Attendance is known only for the
+ * browser that verified the registration (LiveRegistrationAttendance), so a
+ * registrant who watched on another device counts as a no-show.
  *
  * A registration is a no-show for one session when all of these hold (every
  * condition bound to the vendor of the rule):
@@ -47,48 +54,64 @@ import { captureOperationalError } from "@/lib/monitoring";
  * - it has no LiveRegistrationAttendance whose `lastAdmittedAt` is at or after
  *   the session's start (it was never admitted to play this session or its
  *   replay before the job looked);
- * - the vendor (not suspended) has an active, vendor-wide, parseable
- *   `form_no_show` rule that has not changed since the session ended
- *   (`updatedAt` at or before the end: a rule created, edited or switched on
- *   later never runs for an earlier session) and whose execution log for this
- *   event is missing, a `running` one older than the reclaim threshold, or a
- *   first attempt that ended `failed / action_failed` at least
- *   FORM_NO_SHOW_FAILED_RETRY_AFTER_MS ago (retried once, as the
+ * - for a session every registrant shares (single start, evergreen anchor:
+ *   the Live keeps only its current time, so earlier runs leave no record),
+ *   review m-4: it was verified (or, without a verification time, created) at
+ *   most FORM_NO_SHOW_SHARED_SESSION_REGISTRATION_WINDOW_MS before the session
+ *   started, and it has no attendance at all (a registrant who watched an
+ *   earlier run of this Live belongs to that run). Fixed and per-visitor
+ *   sessions name the registrant's own session and need neither;
+ * - the vendor (not suspended, holding the grant) has an active, vendor-wide,
+ *   parseable `form_no_show` rule that has not changed since the session
+ *   ended (`updatedAt` at or before the end: a rule created, edited or
+ *   switched on later never runs for an earlier session) and whose execution
+ *   log for this event is missing, a `running` one older than the reclaim
+ *   threshold, or a first attempt that ended `failed / action_failed` at
+ *   least FORM_NO_SHOW_FAILED_RETRY_AFTER_MS ago (retried once, as the
  *   `payment_paid` catch-up does).
  *
  * The event id is `form-no-show:{submissionId}:{sessionKey}`; the session key
  * names the session by its start (and the fixed session's id), so one
  * registration runs a rule at most once per session (the execution log's
- * idempotency key is built from this id). A session moved to another time is
- * another session: if the old time had already ended and fired, the new one
- * fires again only if the registrant misses it too; a move before the old
- * time ended leaves nothing for the old time.
+ * idempotency key is built from this id). `{{webinar_url}}` is the Live's
+ * viewer page only while its replay is open; otherwise the replay e-mail is
+ * skipped as `replay_unavailable` (review m-5).
  *
  * Each run dispatches at most FORM_NO_SHOW_EVENT_LIMIT events, round-robin
  * across vendors (each vendor's earliest-ended no-show first), scans at most
  * FORM_NO_SHOW_VENDOR_LIMIT vendors (starting at a different one every
- * minute) and stops starting events at its deadline; the rest wait for the
- * next run.
+ * minute). The scan stops at two thirds of the deadline so the rest is left
+ * for dispatching; no event starts after the deadline. Events still due near
+ * the end of the look-back window are reported once per run (review m-3).
  */
 
 /** A session ended at least this long ago before its registrants can count as no-shows. */
 export const FORM_NO_SHOW_GRACE_MS = 30 * 60_000;
 /** Sessions that ended (plus the grace) longer ago than this are not run any more. */
 export const FORM_NO_SHOW_LOOKBACK_MS = 24 * 60 * 60_000;
+/**
+ * Review m-4: a session every registrant shares (single start, evergreen
+ * anchor) counts registrations verified at most this long before it started.
+ * Registration for a webinar typically opens one to two weeks ahead; a Live
+ * run again more than 14 days later never mails the earlier run's registrants.
+ */
+export const FORM_NO_SHOW_SHARED_SESSION_REGISTRATION_WINDOW_MS = 14 * 24 * 60 * 60_000;
 /** Events dispatched per run, shared fairly across vendors. */
 export const FORM_NO_SHOW_EVENT_LIMIT = 50;
 /** Vendors scanned per run; the starting vendor rotates every minute. */
 export const FORM_NO_SHOW_VENDOR_LIMIT = 50;
 /** Lives looked at per vendor and run (only those that can have a session ending in the window are read). */
 const LIVE_SCAN_LIMIT = 200;
-/** No new event starts after this long; the rest wait for the next run. */
+/** The pass never runs longer than this. */
 export const FORM_NO_SHOW_DEADLINE_MS = 30_000;
-/**
- * The e-mail job skips the pass once the round has run this long, so the pass
- * stops starting events by 90 s into the round (the scheduler waits 120 s and
- * the sequence work after it has its own start cutoff).
- */
-export const FORM_NO_SHOW_ROUTE_SKIP_AFTER_MS = 60_000;
+/** Time kept free for the e-mail job's sequence work, before its start cutoff. */
+export const FORM_NO_SHOW_SEQUENCE_RESERVE_MS = 5_000;
+/** A deadline shorter than this is not worth starting the pass for. */
+export const FORM_NO_SHOW_MIN_DEADLINE_MS = 5_000;
+/** The scan may use this share of the deadline; the rest is left for dispatching. */
+const SCAN_SHARE_OF_DEADLINE = 2 / 3;
+/** Due events whose session ended within this of the look-back limit are reported when a run leaves them. */
+export const FORM_NO_SHOW_BACKLOG_ALERT_MS = 2 * 60 * 60_000;
 /** A first-attempt `failed` execution is retried once, this long after it ended. */
 export const FORM_NO_SHOW_FAILED_RETRY_AFTER_MS = 10 * 60_000;
 /** Failure codes worth one retry: an action threw (transient database or outbox errors). */
@@ -99,11 +122,15 @@ const EVENT_PREFIX = "form-no-show:";
 
 /**
  * The pass's own deadline for an e-mail job round that has already used
- * `routeElapsedMs`, or null to skip it this round.
+ * `routeElapsedMs` (review m-2): min(30 s, the sequence work's start cutoff −
+ * elapsed − 5 s), or null to skip the pass this round when less than 5 s are
+ * left. The sequence work that runs after it therefore still starts in time.
  */
 export function formNoShowDeadline(routeElapsedMs: number): number | null {
-  if (!Number.isFinite(routeElapsedMs) || routeElapsedMs >= FORM_NO_SHOW_ROUTE_SKIP_AFTER_MS) return null;
-  return FORM_NO_SHOW_DEADLINE_MS;
+  if (!Number.isFinite(routeElapsedMs)) return null;
+  const left = EMAIL_SEQUENCE_START_CUTOFF_MS - Math.max(0, routeElapsedMs) - FORM_NO_SHOW_SEQUENCE_RESERVE_MS;
+  const deadline = Math.min(FORM_NO_SHOW_DEADLINE_MS, left);
+  return deadline >= FORM_NO_SHOW_MIN_DEADLINE_MS ? deadline : null;
 }
 
 /** The event id of one registration missing one session (also built in SQL for per-visitor evergreen sessions). */
@@ -122,7 +149,7 @@ export const formNoShowSessionKey = {
 export type FormNoShowSummary = {
   /** Vendors with an active rule that this run scanned. */
   vendors: number;
-  /** No-show events the scan found (at most FORM_NO_SHOW_EVENT_LIMIT). */
+  /** No-show events the run will dispatch (at most FORM_NO_SHOW_EVENT_LIMIT). */
   candidates: number;
   /** Events dispatched this run (the rest hit the deadline). */
   examined: number;
@@ -133,6 +160,10 @@ export type FormNoShowSummary = {
   duplicate: number;
   /** Vendor scans or dispatches that threw (reported; the next run tries again). */
   errors: number;
+  /** The scan stopped at its share of the deadline before every vendor or Live was read. */
+  scanCutShort: boolean;
+  /** Due events left for a later run although their session is close to leaving the look-back window. */
+  backlogNearLookback: boolean;
 };
 
 type Db = ReturnType<typeof getDb>;
@@ -147,6 +178,9 @@ type SharedSessionSpec = {
   attendFrom: Date;
   endAt: Date;
   liveSessionId?: string;
+  /** Review m-4: only registrations verified from here on, and any attendance excludes (shared sessions only). */
+  registeredFrom?: Date;
+  replayOpen: boolean;
 };
 
 /** Per-visitor evergreen sessions whose end lies in the window. */
@@ -157,18 +191,20 @@ type EvergreenSessionSpec = {
   durationSec: number;
   startAfter: Date;
   startUntil: Date;
+  replayOpen: boolean;
 };
 
 type SessionSpec = SharedSessionSpec | EvergreenSessionSpec;
 
 type Candidate = {
   vendorId: string;
-  liveSlug: string;
   submissionId: string;
   email: string;
   endAt: Date;
   eventId: string;
   ruleIds: string[];
+  /** The replay link, only while the replay is open. */
+  webinarUrl?: string;
 };
 
 type Window = { dueBefore: Date; dueAfter: Date };
@@ -193,24 +229,38 @@ const LIVE_SELECT = {
   scheduledAt: true,
   startedAt: true,
   endedAt: true,
+  replayEnabled: true,
+  replayAvailableUntil: true,
+  sessionReplayWindowHours: true,
   ...EVERGREEN_ACTIVATION_SELECT,
   video: { select: { durationSec: true } },
 } as const;
 
 type ScannedLive = Prisma.LiveGetPayload<{ select: typeof LIVE_SELECT }> & { sessions: Array<{ id: string; startAt: Date }> };
 
+function registeredFrom(startAt: Date) {
+  return new Date(startAt.getTime() - FORM_NO_SHOW_SHARED_SESSION_REGISTRATION_WINDOW_MS);
+}
+
 /** The sessions of one Live whose no-show is due now (see the module comment). */
 export function formNoShowSessionsForLive(live: ScannedLive, vendorTimezone: string | null | undefined, now: Date): SessionSpec[] {
   if (!ACTIVE_LIVE_STATUSES.includes(live.status)) return [];
   const window = windowFor(now);
   const base = { liveId: live.id, liveSlug: live.slug };
+  const liveReplayOpen = automationReplayOpen(live, null, now);
   const evergreen = evergreenScheduleForLive(live, vendorTimezone, now);
   if (evergreen) {
     const durationSec = evergreen.durationSeconds;
     if (evergreen.sharedStartAt) {
       const endAt = new Date(evergreen.sharedStartAt.getTime() + durationSec * 1_000);
       return inWindow(endAt, window)
-        ? [{ kind: "shared", ...base, sessionKey: formNoShowSessionKey.shared(evergreen.sharedStartAt), attendFrom: evergreen.sharedStartAt, endAt }]
+        ? [{
+          kind: "shared", ...base,
+          sessionKey: formNoShowSessionKey.shared(evergreen.sharedStartAt),
+          attendFrom: evergreen.sharedStartAt, endAt,
+          registeredFrom: registeredFrom(evergreen.sharedStartAt),
+          replayOpen: liveReplayOpen,
+        }]
         : [];
     }
     return [{
@@ -219,6 +269,7 @@ export function formNoShowSessionsForLive(live: ScannedLive, vendorTimezone: str
       durationSec,
       startAfter: new Date(window.dueAfter.getTime() - durationSec * 1_000),
       startUntil: new Date(window.dueBefore.getTime() - durationSec * 1_000),
+      replayOpen: liveReplayOpen,
     }];
   }
   if (isFixedSessionLive(live)) {
@@ -240,10 +291,16 @@ export function formNoShowSessionsForLive(live: ScannedLive, vendorTimezone: str
         attendFrom: session.startAt,
         endAt,
         liveSessionId: session.id,
+        replayOpen: automationReplayOpen(live, session, now),
       }];
     });
   }
-  const sessionKey = formNoShowSessionKey.single(live.scheduledAt);
+  const single = {
+    kind: "shared" as const,
+    ...base,
+    sessionKey: formNoShowSessionKey.single(live.scheduledAt),
+    replayOpen: liveReplayOpen,
+  };
   if (live.streamMode === "vod") {
     const durationSec = videoSeconds(live.video?.durationSec);
     if (!durationSec) return [];
@@ -255,13 +312,16 @@ export function formNoShowSessionsForLive(live: ScannedLive, vendorTimezone: str
       end = Math.min(end, live.endedAt.getTime());
     }
     const endAt = new Date(end);
-    return inWindow(endAt, window) ? [{ kind: "shared", ...base, sessionKey, attendFrom: live.scheduledAt, endAt }] : [];
+    return inWindow(endAt, window)
+      ? [{ ...single, attendFrom: live.scheduledAt, endAt, registeredFrom: registeredFrom(live.scheduledAt) }]
+      : [];
   }
   if (live.streamMode === "live") {
     if (live.status !== "ended" || !live.endedAt) return [];
     const startMs = Math.min(live.startedAt?.getTime() ?? live.scheduledAt.getTime(), live.scheduledAt.getTime());
     if (live.endedAt.getTime() <= startMs || !inWindow(live.endedAt, window)) return [];
-    return [{ kind: "shared", ...base, sessionKey, attendFrom: new Date(startMs), endAt: live.endedAt }];
+    const attendFrom = new Date(startMs);
+    return [{ ...single, attendFrom, endAt: live.endedAt, registeredFrom: registeredFrom(attendFrom) }];
   }
   return [];
 }
@@ -281,6 +341,7 @@ function registrantsSql(vendorId: string, spec: SessionSpec) {
         AND s."verificationStatus" = 'VERIFIED'
         AND s."createdAt" < ${utcTimestamp(spec.endAt)}
         ${spec.liveSessionId ? Prisma.sql`AND s."liveSessionId" = ${spec.liveSessionId}` : Prisma.empty}
+        ${spec.registeredFrom ? Prisma.sql`AND COALESCE(s."verifiedAt", s."createdAt") >= ${utcTimestamp(spec.registeredFrom)}` : Prisma.empty}
     `;
   }
   // The key is formNoShowSessionKey.evergreen(sessionStartAt), in SQL.
@@ -311,7 +372,9 @@ function scanSession(db: Db, vendorId: string, spec: SessionSpec, ruleIds: strin
   const staleRunningBefore = new Date(now.getTime() - AUTOMATION_EXECUTION_RECLAIM_AFTER_MS);
   const failedRetryBefore = new Date(now.getTime() - FORM_NO_SHOW_FAILED_RETRY_AFTER_MS);
   const retryableCodes = [...FORM_NO_SHOW_RETRYABLE_ERROR_CODES];
-  return db.$queryRaw<Array<Omit<Candidate, "vendorId" | "liveSlug">>>(Prisma.sql`
+  // m-4: in a shared session any attendance (also of an earlier run) excludes.
+  const watchedSince = spec.kind === "shared" && spec.registeredFrom ? Prisma.empty : Prisma.sql`AND att."lastAdmittedAt" >= reg."attendFrom"`;
+  return db.$queryRaw<Array<Omit<Candidate, "vendorId" | "webinarUrl">>>(Prisma.sql`
     WITH "registrant" AS (${registrantsSql(vendorId, spec)})
     SELECT reg."submissionId", reg."email", reg."endAt", reg."eventId", rr."ruleIds"
     FROM "registrant" reg
@@ -342,15 +405,15 @@ function scanSession(db: Db, vendorId: string, spec: SessionSpec, ruleIds: strin
       SELECT 1 FROM "LiveRegistrationAttendance" att
       WHERE att."vendorId" = ${vendorId}
         AND att."formSubmissionId" = reg."submissionId"
-        AND att."lastAdmittedAt" >= reg."attendFrom"
+        ${watchedSince}
     )
     ORDER BY reg."endAt" ASC, reg."submissionId" ASC
     LIMIT ${limit}
   `);
 }
 
-/** One vendor's due no-shows, earliest-ended first, at most `limit`. */
-async function scanVendor(db: Db, vendorId: string, ruleIds: string[], now: Date, limit: number): Promise<Candidate[]> {
+/** One vendor's due no-shows, earliest-ended first, at most `limit` + 1; `stop()` cuts the scan short between sessions. */
+async function scanVendor(db: Db, vendorId: string, ruleIds: string[], now: Date, limit: number, stop: () => boolean) {
   const window = windowFor(now);
   // A session can last at most a day (the evergreen and fixed-session video
   // ceiling), so one that ends in the window started after this.
@@ -377,15 +440,25 @@ async function scanVendor(db: Db, vendorId: string, ruleIds: string[], now: Date
     select: { ...LIVE_SELECT, sessions: { where: sessionWhere, orderBy: { startAt: "asc" }, select: { id: true, startAt: true } } },
   });
   const found: Candidate[] = [];
-  for (const live of lives) {
+  let cutShort = false;
+  scan: for (const live of lives) {
     for (const spec of formNoShowSessionsForLive(live, vendor?.timezone, now)) {
-      const rows = await scanSession(db, vendorId, spec, ruleIds, now, limit);
-      found.push(...rows.map((row) => ({ ...row, vendorId, liveSlug: spec.liveSlug })));
+      if (stop()) {
+        cutShort = true;
+        break scan;
+      }
+      const webinarUrl = spec.replayOpen ? automationWebinarUrl(spec.liveSlug) : undefined;
+      // One row more than the run can take, so a left-over event is seen (m-3).
+      const rows = await scanSession(db, vendorId, spec, ruleIds, now, limit + 1);
+      found.push(...rows.map((row) => ({ ...row, vendorId, ...(webinarUrl ? { webinarUrl } : {}) })));
     }
   }
-  return found
-    .sort((left, right) => left.endAt.getTime() - right.endAt.getTime() || left.submissionId.localeCompare(right.submissionId))
-    .slice(0, limit);
+  return {
+    candidates: found
+      .sort((left, right) => left.endAt.getTime() - right.endAt.getTime() || left.submissionId.localeCompare(right.submissionId))
+      .slice(0, limit + 1),
+    cutShort,
+  };
 }
 
 /** Each vendor's first candidate, then each vendor's second, ... */
@@ -399,14 +472,15 @@ function roundRobin(perVendor: Candidate[][], limit: number) {
   return merged;
 }
 
-/** Vendors with a runnable rule and those rules' ids, in a rotating order. */
+/** Vendors holding the grant with a runnable rule, and those rules' ids, in a rotating order. */
 async function vendorsWithRules(db: Db, now: Date, onlyVendorIds: string[] | undefined) {
   const rules = await db.automationRule.findMany({
     where: {
       trigger: "form_no_show",
       isActive: true,
       funnelPageId: null,
-      vendor: { suspendedAt: null },
+      // Closed beta (review M-1): a vendor without the grant is never scanned.
+      vendor: { suspendedAt: null, betaFeatureGrants: { has: AUTOMATION_FORM_NO_SHOW_FEATURE } },
       ...(onlyVendorIds ? { vendorId: { in: onlyVendorIds } } : {}),
     },
     orderBy: [{ vendorId: "asc" }, { createdAt: "asc" }, { id: "asc" }],
@@ -426,7 +500,7 @@ async function vendorsWithRules(db: Db, now: Date, onlyVendorIds: string[] | und
     .map((vendorId) => ({ vendorId, ruleIds: byVendor.get(vendorId) ?? [] }));
 }
 
-export type FormNoShowReport = "vendor_scan" | "dispatch" | "rule_failed";
+export type FormNoShowReport = "vendor_scan" | "dispatch" | "rule_failed" | "backlog_near_lookback";
 
 function report(error: unknown, operation: FormNoShowReport, fingerprint?: string[]) {
   try {
@@ -463,16 +537,26 @@ export async function runFormNoShowAutomation(options: {
   const now = options.now ?? new Date(startedAt);
   const limit = Math.max(0, Math.min(options.limit ?? FORM_NO_SHOW_EVENT_LIMIT, FORM_NO_SHOW_EVENT_LIMIT));
   const deadlineMs = Math.min(options.deadlineMs ?? FORM_NO_SHOW_DEADLINE_MS, FORM_NO_SHOW_DEADLINE_MS);
-  const summary: FormNoShowSummary = { vendors: 0, candidates: 0, examined: 0, completed: 0, skipped: 0, failed: 0, duplicate: 0, errors: 0 };
+  const summary: FormNoShowSummary = {
+    vendors: 0, candidates: 0, examined: 0, completed: 0, skipped: 0, failed: 0, duplicate: 0, errors: 0,
+    scanCutShort: false, backlogNearLookback: false,
+  };
   if (limit === 0 || deadlineMs <= 0) return summary;
+  // Review m-2: the scan leaves a third of the deadline for dispatching.
+  const scanStop = () => clock() - startedAt >= deadlineMs * SCAN_SHARE_OF_DEADLINE;
 
   const vendors = await vendorsWithRules(db, now, options.vendorIds);
   const perVendor: Candidate[][] = [];
   for (const { vendorId, ruleIds } of vendors) {
-    if (clock() - startedAt >= deadlineMs) break;
+    if (scanStop()) {
+      summary.scanCutShort = true;
+      break;
+    }
     summary.vendors += 1;
     try {
-      perVendor.push(await scanVendor(db, vendorId, ruleIds, now, limit));
+      const scanned = await scanVendor(db, vendorId, ruleIds, now, limit, scanStop);
+      perVendor.push(scanned.candidates);
+      if (scanned.cutShort) summary.scanCutShort = true;
     } catch (error) {
       summary.errors += 1;
       report(error, "vendor_scan");
@@ -481,11 +565,12 @@ export async function runFormNoShowAutomation(options: {
   const candidates = roundRobin(perVendor, limit);
   summary.candidates = candidates.length;
 
+  const dispatched = new Set<Candidate>();
   for (const candidate of candidates) {
     if (clock() - startedAt >= deadlineMs) break;
     summary.examined += 1;
+    dispatched.add(candidate);
     try {
-      const webinarUrl = automationWebinarUrl(candidate.liveSlug);
       const results = await dispatchAutomationEvent(db, {
         vendorId: candidate.vendorId,
         eventId: candidate.eventId,
@@ -494,7 +579,7 @@ export async function runFormNoShowAutomation(options: {
         subjectId: candidate.submissionId,
         subjectKeyHash: automationCustomerKeyHash(candidate.vendorId, candidate.email),
         recipientEmail: candidate.email,
-        ...(webinarUrl ? { webinarUrl } : {}),
+        ...(candidate.webinarUrl ? { webinarUrl: candidate.webinarUrl } : {}),
       }, {
         // The scan's rule choice, re-checked by the dispatch's own rule read.
         rulesUnchangedSince: candidate.endAt,
@@ -515,6 +600,14 @@ export async function runFormNoShowAutomation(options: {
       summary.errors += 1;
       report(error, "dispatch", dispatchFingerprint(candidate, error));
     }
+  }
+
+  // Review m-3: events this run found but left (cap or deadline) whose
+  // session will soon leave the look-back window would be lost for good.
+  const alertBefore = windowFor(now).dueAfter.getTime() + FORM_NO_SHOW_BACKLOG_ALERT_MS;
+  summary.backlogNearLookback = perVendor.some((rows) => rows.some((row) => !dispatched.has(row) && row.endAt.getTime() <= alertBefore));
+  if (summary.backlogNearLookback) {
+    report(new Error("Form no-show events near the end of the look-back window were left for a later run."), "backlog_near_lookback", ["form-no-show-backlog-near-lookback"]);
   }
   return summary;
 }

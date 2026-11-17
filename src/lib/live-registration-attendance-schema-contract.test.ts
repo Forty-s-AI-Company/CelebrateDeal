@@ -1,10 +1,11 @@
 import fs from "node:fs";
 import { describe, expect, it } from "vitest";
+import { BETA_GATED_FEATURES } from "@/lib/vendor-feature-toggles";
 
 describe("live registration attendance schema contract (Q-11)", () => {
   const schema = fs.readFileSync("prisma/schema.prisma", "utf8");
   const migration = fs.readFileSync(
-    "prisma/migrations/20261117090000_live_registration_attendance/migration.sql",
+    "prisma/migrations/20261117110000_live_registration_attendance/migration.sql",
     "utf8",
   );
   const model = /model LiveRegistrationAttendance \{[\s\S]*?\n\}/u.exec(schema)?.[0] ?? "";
@@ -31,6 +32,15 @@ describe("live registration attendance schema contract (Q-11)", () => {
     );
     expect(migration).toContain('ALTER TABLE "LiveRegistrationAttendance" ENABLE ROW LEVEL SECURITY;');
     expect(migration).not.toMatch(/\bGRANT\b/iu);
+  });
+
+  it("allows the automation_form_no_show grant in its own migration, as a superset of every earlier grant (review M-1)", () => {
+    const grant = fs.readFileSync("prisma/migrations/20261117110200_automation_form_no_show_grant/migration.sql", "utf8");
+    expect(BETA_GATED_FEATURES).toContain("automation_form_no_show");
+    for (const feature of BETA_GATED_FEATURES) expect(grant).toContain(`'${feature}'`);
+    expect(grant.match(/\bDROP CONSTRAINT\b/gu)).toEqual(["DROP CONSTRAINT"]);
+    expect(grant).not.toMatch(/^\s*(UPDATE|DELETE|INSERT|CREATE)\b/mu);
+    expect(grant).toMatch(/set_config\('lock_timeout', '5s', true\)/u);
   });
 
   it("stores no personal data or token", () => {

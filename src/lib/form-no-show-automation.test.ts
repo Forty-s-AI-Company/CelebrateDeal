@@ -8,12 +8,14 @@ import {
   FORM_NO_SHOW_DEADLINE_MS,
   FORM_NO_SHOW_GRACE_MS,
   FORM_NO_SHOW_LOOKBACK_MS,
+  FORM_NO_SHOW_SHARED_SESSION_REGISTRATION_WINDOW_MS,
   formNoShowDeadline,
   formNoShowEventId,
   formNoShowSessionKey,
   formNoShowSessionsForLive,
   runFormNoShowAutomation,
 } from "@/lib/form-no-show-automation";
+import { EMAIL_SEQUENCE_START_CUTOFF_MS } from "@/lib/delayed-step-runs";
 
 const MINUTE = 60_000;
 const HOUR = 60 * MINUTE;
@@ -38,6 +40,9 @@ function live(overrides: Partial<LiveInput> = {}): LiveInput {
     evergreenSessionStartAt: null,
     sessionMode: "single",
     video: { durationSec: 600 },
+    replayEnabled: true,
+    replayAvailableUntil: null,
+    sessionReplayWindowHours: null,
     sessions: [],
     ...overrides,
   };
@@ -49,6 +54,9 @@ describe("formNoShowSessionsForLive", () => {
       kind: "shared", liveId: "live-1", liveSlug: "launch",
       sessionKey: formNoShowSessionKey.single(at(-3 * HOUR)),
       attendFrom: at(-3 * HOUR), endAt: at(-3 * HOUR + 10 * MINUTE),
+      // Review m-4: only registrations verified within 14 days before the start.
+      registeredFrom: at(-3 * HOUR - FORM_NO_SHOW_SHARED_SESSION_REGISTRATION_WINDOW_MS),
+      replayOpen: true,
     }]);
     // Ends exactly at the grace boundary: due. One millisecond later: not yet.
     const boundary = at(-FORM_NO_SHOW_GRACE_MS - 10 * MINUTE);
@@ -89,7 +97,13 @@ describe("formNoShowSessionsForLive", () => {
       kind: "shared", liveId: "live-1", liveSlug: "launch",
       sessionKey: formNoShowSessionKey.fixed("s-past", at(-3 * HOUR)),
       attendFrom: at(-3 * HOUR), endAt: at(-3 * HOUR + 10 * MINUTE), liveSessionId: "s-past",
+      replayOpen: true,
     }]);
+    // The per-session replay window (sessionReplayWindowHours) decides for a fixed session.
+    expect(formNoShowSessionsForLive(live({ sessionMode: "fixed_sessions", sessions, sessionReplayWindowHours: 1 }), null, NOW))
+      .toEqual([expect.objectContaining({ liveSessionId: "s-past", replayOpen: false })]);
+    expect(formNoShowSessionsForLive(live({ sessionMode: "fixed_sessions", sessions, sessionReplayWindowHours: 4 }), null, NOW))
+      .toEqual([expect.objectContaining({ liveSessionId: "s-past", replayOpen: true })]);
     expect(formNoShowSessionsForLive(live({ sessionMode: "fixed_sessions", sessions, status: "ended", endedAt: at(-3 * HOUR + 5 * MINUTE) }), null, NOW)).toEqual([]);
     expect(formNoShowSessionsForLive(live({ sessionMode: "fixed_sessions", sessions, status: "ended", endedAt: null }), null, NOW)).toEqual([]);
     expect(formNoShowSessionsForLive(live({ sessionMode: "fixed_sessions", sessions, video: null }), null, NOW)).toEqual([]);
@@ -99,13 +113,21 @@ describe("formNoShowSessionsForLive", () => {
     const evergreen = { isEvergreen: true, scheduledAt: at(-30 * 24 * HOUR) } as const;
     expect(formNoShowSessionsForLive(live({ ...evergreen, evergreenSessionStartAt: at(-2 * HOUR) }), null, NOW)).toEqual([expect.objectContaining({
       kind: "shared", sessionKey: formNoShowSessionKey.shared(at(-2 * HOUR)), endAt: at(-2 * HOUR + 10 * MINUTE),
+      registeredFrom: at(-2 * HOUR - FORM_NO_SHOW_SHARED_SESSION_REGISTRATION_WINDOW_MS),
     })]);
     expect(formNoShowSessionsForLive(live({ ...evergreen, evergreenSessionStartAt: at(-10 * MINUTE) }), null, NOW)).toEqual([]);
     expect(formNoShowSessionsForLive(live(evergreen), null, NOW)).toEqual([{
       kind: "evergreen", liveId: "live-1", liveSlug: "launch", durationSec: 600,
       startAfter: at(-FORM_NO_SHOW_GRACE_MS - FORM_NO_SHOW_LOOKBACK_MS - 10 * MINUTE),
       startUntil: at(-FORM_NO_SHOW_GRACE_MS - 10 * MINUTE),
+      replayOpen: true,
     }]);
+  });
+
+  it("marks the replay closed when it is off or expired (review m-5)", () => {
+    expect(formNoShowSessionsForLive(live({ replayEnabled: false }), null, NOW)).toEqual([expect.objectContaining({ replayOpen: false })]);
+    expect(formNoShowSessionsForLive(live({ replayAvailableUntil: NOW }), null, NOW)).toEqual([expect.objectContaining({ replayOpen: false })]);
+    expect(formNoShowSessionsForLive(live({ replayAvailableUntil: at(1) }), null, NOW)).toEqual([expect.objectContaining({ replayOpen: true })]);
   });
 
   it("names events by registration and session", () => {
@@ -115,12 +137,15 @@ describe("formNoShowSessionsForLive", () => {
 });
 
 describe("formNoShowDeadline", () => {
-  it("gives the pass 30 s and skips it once the round ran 60 s", () => {
+  it("gives the pass min(30 s, sequence start cutoff − elapsed − 5 s) and skips it below 5 s (review m-2)", () => {
+    expect(EMAIL_SEQUENCE_START_CUTOFF_MS).toBe(60_000);
     expect(formNoShowDeadline(0)).toBe(FORM_NO_SHOW_DEADLINE_MS);
     expect(formNoShowDeadline(-5)).toBe(FORM_NO_SHOW_DEADLINE_MS);
-    // The pass ends by 90 s into the round at the latest.
-    expect(formNoShowDeadline(59_999)).toBe(30_000);
-    expect(formNoShowDeadline(60_000)).toBeNull();
+    expect(formNoShowDeadline(25_000)).toBe(30_000);
+    expect(formNoShowDeadline(40_000)).toBe(15_000);
+    // The pass then ends by 55 s, before the sequence work's 60 s start cutoff.
+    expect(formNoShowDeadline(50_000)).toBe(5_000);
+    expect(formNoShowDeadline(50_001)).toBeNull();
     expect(formNoShowDeadline(Number.NaN)).toBeNull();
   });
 });

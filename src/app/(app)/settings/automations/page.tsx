@@ -16,13 +16,14 @@ import {
   AUTOMATION_BUTTON_URL_ERROR_MESSAGE,
   AUTOMATION_TRIGGER_LABELS,
   AVAILABLE_AUTOMATION_RECIPES,
-  AVAILABLE_AUTOMATION_TRIGGERS,
   AUTOMATION_DELAYED_STEPS_FEATURE,
+  availableAutomationTriggersForVendor,
+  FORM_NO_SHOW_DETECTION_NOTE,
   automationExecutionNotes,
   automationTriggerNeedsThreshold,
   automationTriggerSupportsDelayedSteps,
   isAutomationStepExecution,
-  isAvailableAutomationTrigger,
+  isAutomationTriggerAvailableForVendor,
   maskAutomationTarget,
 } from "@/lib/automation-workflow";
 import { automationRuleRunCounts, MAX_AUTOMATION_RULE_STEPS } from "@/lib/automation-delayed-steps";
@@ -43,6 +44,8 @@ import { getDb } from "@/lib/db";
 import { formatTwd } from "@/lib/format";
 
 const PATH = "/settings/automations";
+/** A form_no_show rule of a vendor without the closed-beta grant (Q-11 review M-1). */
+const FORM_NO_SHOW_NOT_GRANTED_NOTE = "「報名後未出席直播」目前是封測功能，尚未對你的商家開放，這條規則不會執行。你可以停用或刪除它。";
 const ACTIONS: Record<string, string> = { line_push: "LINE 推播", send_email_notification: "Email 通知", add_customer_tag: "客戶打標", issue_repurchase_voucher: "派發回購券" };
 const ERROR_MESSAGES: Record<string, string> = {
   trigger_unavailable: "這個觸發條件目前不會執行，不能用來建立或啟用規則。",
@@ -288,21 +291,26 @@ export default async function AutomationSettingsPage({ searchParams }: { searchP
     db.automationExecutionLog.findMany({ where: { vendorId: vendor.id }, orderBy: { createdAt: "desc" }, take: 50, include: { rule: { select: { name: true } } } }),
     delayedSteps ? automationRuleRunCounts(vendor.id, db) : Promise.resolve(new Map<string, { active: number; completed: number; cancelled: number }>()),
   ]);
+  // form_no_show is a closed beta (Q-11 review M-1): without the grant it is
+  // neither offered nor run.
+  const triggers = availableAutomationTriggersForVendor(vendor);
+  const recipes = AVAILABLE_AUTOMATION_RECIPES.filter((recipe) => isAutomationTriggerAvailableForVendor(recipe.trigger, vendor));
+  const formNoShow = triggers.includes("form_no_show");
   // The threshold field only matters for amount/watch triggers (today only
   // payment_paid, F-4 PR 3).
-  const showThreshold = AVAILABLE_AUTOMATION_TRIGGERS.some((trigger) => automationTriggerNeedsThreshold(trigger));
+  const showThreshold = triggers.some((trigger) => automationTriggerNeedsThreshold(trigger));
   return <>
     <PageHeader title="自動化" description={linePushAllowed ? "把報名、直播、諮詢與訂單串成跨管道行銷流程。商家 owner 與管理員可以管理。" : `把報名、直播、諮詢與訂單串成跨管道行銷流程。商家 owner 與管理員可以管理；${LINE_PUSH_OWNER_ONLY_MESSAGE}`} />
     {params.updated ? <p role="status" className="mb-4 rounded-md bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{UPDATED_MESSAGES[params.updated] ?? "自動化規則已更新。"}</p> : null}
     {params.dryRun ? <p role="status" className="mb-4 rounded-md bg-sky-50 px-3 py-2 text-sm text-sky-800">模擬結果：{dryRunMessage(params.dryRun)}</p> : null}
     {params.error ? <p role="alert" className="mb-4 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{errorMessage(params.error)}</p> : null}
 
-    <Card className="mb-6"><h2 className="text-lg font-semibold text-slate-950">熱門劇本一鍵套用</h2><p className="mb-4 text-sm text-slate-600">需要派券的劇本請先選商品。</p><div className="grid gap-4 lg:grid-cols-2">{AVAILABLE_AUTOMATION_RECIPES.map((recipe) => <form action={createAutomationRecipeAction} key={recipe.id} className="grid gap-3 rounded-xl border border-border p-4"><CsrfField /><input type="hidden" name="recipeId" value={recipe.id} /><div><h3 className="font-semibold text-slate-900">{recipe.name}</h3><p className="mt-1 text-sm text-slate-600">{recipe.description}</p></div><p className="text-xs font-medium text-slate-500">{triggerLabel(recipe.trigger)} → {actionLabels(recipe.actions).join(" + ")}</p>{!linePushAllowed && automationActionsIncludeLinePush(recipe.actions) ? <p className="text-xs text-slate-600">這個劇本含 LINE 推播。{LINE_PUSH_OWNER_ONLY_MESSAGE}</p> : <>{!linePushAllowed && recipe.actions.some((action) => action.type === "issue_repurchase_voucher") ? <p className="text-xs text-slate-600">{VOUCHER_WITHOUT_LINE_NOTE}</p> : null}{recipe.actions.some((action) => action.type === "issue_repurchase_voucher") ? <SelectField label="套券商品" name="productId"><option value="">請選擇商品</option>{products.map((product) => <option key={product.id} value={product.id}>{product.name}</option>)}</SelectField> : null}<SubmitButton pendingChildren="套用中…">一鍵套用劇本</SubmitButton></>}</form>)}</div></Card>
+    <Card className="mb-6"><h2 className="text-lg font-semibold text-slate-950">熱門劇本一鍵套用</h2><p className="mb-4 text-sm text-slate-600">需要派券的劇本請先選商品。</p><div className="grid gap-4 lg:grid-cols-2">{recipes.map((recipe) => <form action={createAutomationRecipeAction} key={recipe.id} className="grid gap-3 rounded-xl border border-border p-4"><CsrfField /><input type="hidden" name="recipeId" value={recipe.id} /><div><h3 className="font-semibold text-slate-900">{recipe.name}</h3><p className="mt-1 text-sm text-slate-600">{recipe.description}</p></div>{recipe.trigger === "form_no_show" ? <p className="rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-900">{FORM_NO_SHOW_DETECTION_NOTE}</p> : null}<p className="text-xs font-medium text-slate-500">{triggerLabel(recipe.trigger)} → {actionLabels(recipe.actions).join(" + ")}</p>{!linePushAllowed && automationActionsIncludeLinePush(recipe.actions) ? <p className="text-xs text-slate-600">這個劇本含 LINE 推播。{LINE_PUSH_OWNER_ONLY_MESSAGE}</p> : <>{!linePushAllowed && recipe.actions.some((action) => action.type === "issue_repurchase_voucher") ? <p className="text-xs text-slate-600">{VOUCHER_WITHOUT_LINE_NOTE}</p> : null}{recipe.actions.some((action) => action.type === "issue_repurchase_voucher") ? <SelectField label="套券商品" name="productId"><option value="">請選擇商品</option>{products.map((product) => <option key={product.id} value={product.id}>{product.name}</option>)}</SelectField> : null}<SubmitButton pendingChildren="套用中…">一鍵套用劇本</SubmitButton></>}</form>)}</div></Card>
 
-    <Card className="mb-6"><h2 className="mb-4 text-lg font-semibold text-slate-950">自訂規則</h2><form action={createAutomationRuleAction} className="grid gap-4" aria-label="建立自訂規則"><CsrfField /><div className="grid gap-4 md:grid-cols-2"><Field label="規則名稱" name="name" required maxLength={120} /><SelectField label="觸發事件" name="trigger" defaultValue={AVAILABLE_AUTOMATION_TRIGGERS[0]}>{AVAILABLE_AUTOMATION_TRIGGERS.map((value) => <option key={value} value={value}>{triggerLabel(value)}</option>)}</SelectField></div>{showThreshold ? <Field label="付款金額門檻（元；只用於「訂單付款完成」，其他觸發條件留空）" name="conditionValue" type="number" min={1} step={1} /> : null}<p className="text-sm text-slate-600">以下是事件發生時「立即執行」的動作{delayedSteps ? "；建立後可在規則下方加上延遲步驟（例如 1 天後再寄一封，「訂單付款完成」除外）" : ""}。「訂單付款完成」在付款確認後執行一次，金額以訂單實際付款金額判斷，Email 寄給訂單的買家。「報名後未出席直播」在場次結束約 30 分鐘後，對已完成 Email 驗證、卻沒有用完成驗證的瀏覽器進入觀看（含回放）的報名者執行，每人每個場次一次；換裝置觀看的人會被算成未出席。只對規則建立或啟用之後才結束的場次執行。</p><ActionFields products={products} linePushAllowed={linePushAllowed} /><SubmitButton pendingChildren="建立中…">建立規則</SubmitButton></form></Card>
+    <Card className="mb-6"><h2 className="mb-4 text-lg font-semibold text-slate-950">自訂規則</h2><form action={createAutomationRuleAction} className="grid gap-4" aria-label="建立自訂規則"><CsrfField /><div className="grid gap-4 md:grid-cols-2"><Field label="規則名稱" name="name" required maxLength={120} /><SelectField label="觸發事件" name="trigger" defaultValue={triggers[0]}>{triggers.map((value) => <option key={value} value={value}>{triggerLabel(value)}</option>)}</SelectField></div>{showThreshold ? <Field label="付款金額門檻（元；只用於「訂單付款完成」，其他觸發條件留空）" name="conditionValue" type="number" min={1} step={1} /> : null}<p className="text-sm text-slate-600">以下是事件發生時「立即執行」的動作{delayedSteps ? "；建立後可在規則下方加上延遲步驟（例如 1 天後再寄一封，「訂單付款完成」除外）" : ""}。「訂單付款完成」在付款確認後執行一次，金額以訂單實際付款金額判斷，Email 寄給訂單的買家。{formNoShow ? `「報名後未出席直播」在場次結束約 30 分鐘後，對已完成 Email 驗證、卻沒有用完成驗證的瀏覽器進入觀看（含回放）的報名者執行，每人每個場次一次，只對規則建立或啟用之後才結束的場次執行；單一開播時間的直播只算開播前 14 天內完成驗證的報名者。${FORM_NO_SHOW_DETECTION_NOTE}` : ""}</p><ActionFields products={products} linePushAllowed={linePushAllowed} /><SubmitButton pendingChildren="建立中…">建立規則</SubmitButton></form></Card>
 
     <Card className="mb-6"><h2 className="mb-4 text-lg font-semibold text-slate-950">規則</h2><div className="grid gap-4">{rules.length ? rules.map((rule) => {
-      const available = isAvailableAutomationTrigger(rule.trigger);
+      const available = isAutomationTriggerAvailableForVendor(rule.trigger, vendor);
       const hasHistory = rule._count.executionLogs > 0;
       // A rule that sends LINE (a custom LINE push or a voucher's LINE
       // notification, immediate or any step) is read-only for a non-owner
@@ -313,7 +321,8 @@ export default async function AutomationSettingsPage({ searchParams }: { searchP
       return <article key={rule.id} aria-label={rule.name} className="grid gap-3 rounded-xl border border-border p-4">
         <div className="flex flex-wrap items-center justify-between gap-3"><div><h3 className="font-semibold text-slate-900">{rule.name}</h3><p className="text-xs text-slate-500">{rule.createdAt.toLocaleString("zh-TW")}</p></div><div className="flex flex-wrap gap-2">{available ? null : <Badge tone="gray">目前不會執行</Badge>}{linePushOwnerOnly ? <Badge tone="gray">僅限擁有者修改</Badge> : null}<Badge tone={rule.isActive ? "green" : "gray"}>{rule.isActive ? "啟用中" : "已停用"}</Badge></div></div>
         <div className="flex flex-wrap items-center gap-2 text-sm"><span className="rounded-md bg-slate-100 px-3 py-2">觸發：{triggerLabel(rule.trigger)}</span><span>→</span><span className="rounded-md bg-amber-50 px-3 py-2">條件：{conditionLabel(rule.condition)}</span><span>→</span><span className="rounded-md bg-emerald-50 px-3 py-2">立即執行：{actionLabels(rule.actions).join(" + ")}</span></div>
-        {available ? null : <p className="rounded-md border border-border bg-slate-50 px-3 py-2 text-sm text-slate-700">{UNAVAILABLE_TRIGGER_NOTE}</p>}
+        {available ? null : <p className="rounded-md border border-border bg-slate-50 px-3 py-2 text-sm text-slate-700">{rule.trigger === "form_no_show" ? FORM_NO_SHOW_NOT_GRANTED_NOTE : UNAVAILABLE_TRIGGER_NOTE}</p>}
+        {rule.trigger === "form_no_show" ? <p className="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-900">{FORM_NO_SHOW_DETECTION_NOTE}</p> : null}
         {linePushOwnerOnly ? <p className="rounded-md border border-border bg-slate-50 px-3 py-2 text-sm text-slate-700">{lineRuleNote({ stepsShown, rule })}</p> : null}
         {delayedSteps ? (stepsShown
           ? <RuleSteps rule={rule} editable={available && !linePushOwnerOnly} linePushAllowed={linePushAllowed} products={products} counts={runCounts.get(rule.id)} />

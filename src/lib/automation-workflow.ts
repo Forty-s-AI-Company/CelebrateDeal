@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { Prisma, type PrismaClient } from "@prisma/client";
 import { z } from "zod";
 import { getCanonicalAppUrl } from "@/lib/app-url";
-import { isFeatureEnabled } from "@/lib/vendor-feature-toggles";
+import { isFeatureEnabled, type FeatureGateVendor } from "@/lib/vendor-feature-toggles";
 import { hashInteractionBearer } from "@/lib/live-interaction";
 import {
   DERIVED_KEY_ROTATIONS,
@@ -31,6 +31,7 @@ import {
   stableLineIdempotencyKey,
 } from "@/lib/line-notification";
 import { voucherActionSendsLine } from "@/lib/automation-line-push-policy";
+import { fixedSessionReplayAvailableUntil } from "@/lib/live-fixed-sessions";
 
 /**
  * Every trigger the engine understands. Stored rules may use any of them and
@@ -75,6 +76,36 @@ export function isAvailableAutomationTrigger(value: unknown): value is Available
 }
 
 /**
+ * Closed beta of `form_no_show` (Q-11, review M-1): attendance is only known
+ * for the browser that verified the registration, so a registrant who watched
+ * on another device counts as a no-show. The platform opens it per vendor in
+ * /admin/vendor-features.
+ */
+export const AUTOMATION_FORM_NO_SHOW_FEATURE = "automation_form_no_show" as const;
+
+/**
+ * `isAvailableAutomationTrigger` for one vendor: `form_no_show` also needs the
+ * vendor's closed-beta grant. Every merchant-facing path (the page, creating,
+ * switching on, recipes, dry runs, delayed-step changes) and every runner (the
+ * no-show job, the delayed-step worker) asks this.
+ */
+export function isAutomationTriggerAvailableForVendor(trigger: unknown, vendor: FeatureGateVendor | null | undefined): trigger is AvailableAutomationTrigger {
+  if (!isAvailableAutomationTrigger(trigger)) return false;
+  return trigger !== "form_no_show" || isFeatureEnabled(vendor, AUTOMATION_FORM_NO_SHOW_FEATURE);
+}
+
+/** The triggers a vendor may choose (AVAILABLE_AUTOMATION_TRIGGERS less the ones its grants do not open). */
+export function availableAutomationTriggersForVendor(vendor: FeatureGateVendor | null | undefined) {
+  return AVAILABLE_AUTOMATION_TRIGGERS.filter((trigger) => isAutomationTriggerAvailableForVendor(trigger, vendor));
+}
+
+/**
+ * Shown on the recipe and on every `form_no_show` rule (review M-1 (a)):
+ * attendance is recognised only in the browser that verified the registration.
+ */
+export const FORM_NO_SHOW_DETECTION_NOTE = "只能辨識在完成報名驗證的同一個瀏覽器觀看的人；用其他裝置或其他瀏覽器觀看（例如在電腦報名、用手機或 App 內建瀏覽器打開驗證信）的人，會被算成未出席。";
+
+/**
  * Triggers whose rules may have delayed steps (F-4 PR 2): their subject is a
  * registration or a consultation booking, which a DelayedStepRun can point at
  * and the worker can read again later. `form_no_show` (Q-11) has the same
@@ -103,6 +134,42 @@ export function automationWebinarUrl(liveSlug: string | null | undefined) {
   } catch {
     return undefined;
   }
+}
+
+export type AutomationReplayLive = {
+  slug: string;
+  replayEnabled: boolean;
+  replayAvailableUntil: Date | null;
+  sessionReplayWindowHours?: number | null;
+  video?: { durationSec: number | null } | null;
+};
+
+/**
+ * Whether the Live's replay is open now, by the viewer page's own rules:
+ * replay on and before `replayAvailableUntil`; for a fixed session
+ * (指定場次) also inside its per-session window.
+ */
+export function automationReplayOpen(live: AutomationReplayLive, fixedSession: { startAt: Date } | null, now: Date) {
+  if (live.replayEnabled !== true) return false;
+  if (live.replayAvailableUntil && now.getTime() >= live.replayAvailableUntil.getTime()) return false;
+  if (fixedSession) {
+    const until = fixedSessionReplayAvailableUntil(fixedSession, {
+      replayEnabled: true,
+      replayAvailableUntil: live.replayAvailableUntil,
+      sessionReplayWindowHours: live.sessionReplayWindowHours ?? null,
+    }, live.video?.durationSec ?? 0);
+    if (until && now.getTime() >= until.getTime()) return false;
+  }
+  return true;
+}
+
+/**
+ * `{{webinar_url}}` of a no-show (Q-11, review m-5): the viewer page only
+ * while its replay is open, so the replay e-mail is skipped
+ * (`replay_unavailable`) instead of linking a page that shows nothing.
+ */
+export function formNoShowWebinarUrl(live: AutomationReplayLive, fixedSession: { startAt: Date } | null, now: Date) {
+  return automationReplayOpen(live, fixedSession, now) ? automationWebinarUrl(live.slug) : undefined;
 }
 
 /** Triggers whose subject is a registration (FormSubmission), not a consultation booking. */
@@ -242,7 +309,7 @@ export const AUTOMATION_RECIPES = [
   {
     id: "no_show_reactivation",
     name: "開播缺席喚醒再行銷",
-    description: "報名後沒來看直播的人，在場次結束後自動寄送直播回放連結。",
+    description: "報名後沒來看直播的人，在場次結束後自動寄送直播回放連結（直播沒開回放時不寄）。",
     trigger: "form_no_show",
     condition: { type: "always" },
     actions: [{ type: "send_email_notification", template: "webinar_replay" }],
@@ -289,6 +356,8 @@ const EMAIL_SKIP_NOTES: Record<AutomationEmailSkipReason, string> = {
   recipient_suppressed: "Email 未寄出：收件人已退訂或停止接收",
   recipient_blacklisted: "Email 未寄出：收件人在本商家黑名單中",
   recipient_unverified: "Email 未寄出：收件人的 Email 尚未在本商家完成驗證",
+  replay_unavailable: "Email 未寄出：這場直播目前沒有開放回放",
+  no_content: "Email 未寄出：這封信沒有可寄送的內容（缺少需要的連結）",
 };
 
 /** Reason of a failed automation e-mail action whose unsubscribe link could not be built. */
@@ -309,7 +378,7 @@ export function automationExecutionNotes(actionResults: unknown) {
     if (type !== "send_email_notification") return [];
     if (status === "failed" && reason === AUTOMATION_UNSUBSCRIBE_URL_UNAVAILABLE) return ["Email 未寄出：系統暫時無法產生退訂連結"];
     if (status !== "skipped") return [];
-    return reason === "recipient_suppressed" || reason === "recipient_blacklisted" || reason === "recipient_unverified" ? [EMAIL_SKIP_NOTES[reason]] : [];
+    return typeof reason === "string" && Object.prototype.hasOwnProperty.call(EMAIL_SKIP_NOTES, reason) ? [EMAIL_SKIP_NOTES[reason as AutomationEmailSkipReason]] : [];
   });
   return [...new Set(notes)];
 }
@@ -496,7 +565,21 @@ const EMAIL_COPY = {
   webinar_replay: { subject: "錯過直播也別擔心：精華回放與諮詢邀請", body: "精華回放：{{webinar_url}}\n預約 1 對 1 諮詢：{{consultation_url}}" },
 } as const;
 
-export type AutomationEmailSkipReason = "recipient_suppressed" | "recipient_blacklisted" | "recipient_unverified";
+export type AutomationEmailSkipReason = "recipient_suppressed" | "recipient_blacklisted" | "recipient_unverified" | "replay_unavailable" | "no_content";
+
+/**
+ * Q-11 (review m-5): a no-show gets its own wording, without the consultation
+ * invitation of the generic replay template, and every no-show e-mail tells a
+ * registrant who did watch (on another device) to ignore it (M-1 (a)).
+ */
+const FORM_NO_SHOW_EMAIL_COPY: Partial<Record<keyof typeof EMAIL_COPY, { subject: string; body: string }>> = {
+  webinar_replay: { subject: "錯過直播了嗎？回放在這裡", body: "這場直播已經結束，我們還沒看到你進場。\n直播回放：{{webinar_url}}" },
+};
+const FORM_NO_SHOW_IGNORE_LINE = "如果你已經看過這場直播，請忽略這封信。";
+
+function automationEmailCopy(trigger: AutomationTrigger, template: keyof typeof EMAIL_COPY) {
+  return (trigger === "form_no_show" ? FORM_NO_SHOW_EMAIL_COPY[template] : undefined) ?? EMAIL_COPY[template];
+}
 
 /**
  * Creation-time gate for an automation e-mail, bound to this vendor only:
@@ -612,7 +695,19 @@ async function executeAction(
       return { type: action.type, status: "skipped", reason: "recipient_unverified", template: action.template } as const;
     }
     const id = deterministicActionId(executionLogId, actionIndex);
-    const copy = EMAIL_COPY[action.template];
+    const copy = automationEmailCopy(event.trigger, action.template);
+    // Q-11 (m-5): a no-show replay e-mail without an open replay (replay off
+    // or expired: the event then carries no webinar link) is not sent.
+    if (event.trigger === "form_no_show" && copy.body.includes("{{webinar_url}}") && !event.webinarUrl) {
+      return { type: action.type, status: "skipped", reason: "replay_unavailable", template: action.template } as const;
+    }
+    // m-6: every line needed a link this event does not have. Never send an
+    // empty e-mail (any trigger); recorded as skipped, nothing retries it.
+    const rendered = renderAutomationEmailBody(copy.body, artifacts);
+    if (!rendered.trim()) {
+      return { type: action.type, status: "skipped", reason: "no_content", template: action.template } as const;
+    }
+    const body = event.trigger === "form_no_show" ? `${rendered}\n\n${FORM_NO_SHOW_IGNORE_LINE}` : rendered;
     // The recipient lists come first, so an unsubscribed or blacklisted
     // person is recorded as skipped even when the link below cannot be built.
     const blocked = await automationEmailRecipientBlock(db, event.vendorId, event.recipientEmail, createEmailRecipientHash(event.recipientEmail, event.vendorId));
@@ -637,7 +732,7 @@ async function executeAction(
     const protectedPayload = protectEmailDeliveryPayload({
       recipientEmail: event.recipientEmail,
       subject: copy.subject,
-      body: ensureEmailUnsubscribeFooter(renderAutomationEmailBody(copy.body, artifacts), unsubscribeUrl),
+      body: ensureEmailUnsubscribeFooter(body, unsubscribeUrl),
     }, { vendorId: event.vendorId, deliveryId: id });
     try {
       await db.emailDelivery.create({ data: {

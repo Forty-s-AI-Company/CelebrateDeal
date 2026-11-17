@@ -6,14 +6,14 @@ import { afterEach, describe, expect, it } from "vitest";
 import { getDb } from "@/lib/db";
 
 /**
- * Q-11: 20261117090100_pause_form_no_show_rules switches off every
+ * Q-11: 20261117110100_pause_form_no_show_rules switches off every
  * `form_no_show` rule still marked active, because the trigger starts running
  * in this release (as 20261114120000 did for `payment_paid`). The database is
  * already migrated, so the file's own statements are replayed over rules
  * written afterwards, inside a transaction that is rolled back.
  */
 const MIGRATION = readFileSync(
-  path.resolve(__dirname, "../../prisma/migrations/20261117090100_pause_form_no_show_rules/migration.sql"),
+  path.resolve(__dirname, "../../prisma/migrations/20261117110100_pause_form_no_show_rules/migration.sql"),
   "utf8",
 );
 const UPDATE_STATEMENTS = MIGRATION.match(/^UPDATE "AutomationRule"[\s\S]*?;$/gmu) ?? [];
@@ -49,7 +49,7 @@ function rule(client: Prisma.TransactionClient, vendorId: string, trigger: strin
   });
 }
 
-describe("20261117090100_pause_form_no_show_rules", () => {
+describe("20261117110100_pause_form_no_show_rules", () => {
   it("is one forward-only UPDATE bound to form_no_show rules that are active, with a lock timeout", () => {
     expect(UPDATE_STATEMENTS).toHaveLength(1);
     expect(UPDATE_STATEMENTS[0]).toMatch(/SET "isActive" = false,\s+"updatedAt" = CURRENT_TIMESTAMP\s+WHERE "trigger" = 'form_no_show'\s+AND "isActive" = true;/u);
