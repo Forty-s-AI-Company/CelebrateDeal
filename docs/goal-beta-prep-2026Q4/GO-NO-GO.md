@@ -121,7 +121,7 @@
 | ☑ | F-041 | 非台幣商品可被建立 | 只用台幣；主對話不指導其他幣別 | 已處理：#454（`8d72080b`）起結帳只收 TWD，商品 action 對非 TWD 幣別直接拒絕、不轉換（`product-actions.ts`、`product-form-client.tsx` 的 `unsupported_currency` 提示）。2026-10-30 依 git 紀錄與程式查證，未另做 staging 實測 |
 | ☑ | F-112 | LINE 綁定頁錯誤不會變紅 | 創辦人陪同綁定 | 已處理：#453（`23a6a22d`，F-112）LINE 綁定頁加三步驟教學、欄位級錯誤與成功回饋。依 commit 紀錄查證，未另做 staging 實測 |
 | ☑ | F-078 | 錯誤頁「重試」不會重新抓資料 | 失敗時由工程端重新整理頁面 | 已處理：#453（`23a6a22d`，F-077、F-078）error boundary 改用 Next 16 的 `retry` 並補掃描測試。依 commit 紀錄查證，未另做 staging 實測 |
-| ☑ | F-019 | 常青場設定可能不生效 | 常青場設定由創辦人走查；必要時隱藏 | 已處理：#505（`0aa58e5d`）公開觀看頁依常青排程為每位觀眾安排場次；#507（`89d2088e`）統一常青生效規則（`evergreen-activation.ts`），非 VOD 或影片長度未知時拒絕啟用；#520（`cf6b0610`）儲存設定後立即重建提醒。依 commit 紀錄查證，建議創辦人仍走查一次 |
+| ☑ | F-019 | 常青場設定可能不生效 | 常青場設定由創辦人走查；必要時隱藏 | 已處理：#505（`0aa58e5d`）公開觀看頁依常青排程為每位觀眾安排場次；#507（`89d2088e`）統一常青生效規則（`evergreen-activation.ts`），非 VOD 或影片長度未知時拒絕啟用；#520（`cf6b0610`）儲存設定後立即重建提醒；後續補強：#580（`50d09e16`）`recurring_daily` 常青場瀏覽器端到端測試、#582（`8a01921d`）常青場生效時不依共用開播時間寄課後信並可關閉後重新啟用、#596（`1c31a014`，F-2）課後信依每位觀眾自己的場次寄送。依 commit 紀錄查證，建議創辦人仍走查一次 |
 | ☑ | F-077 | 錯誤頁無重新載入按鈕 | 同上 | 已處理：同 F-078，#453（`23a6a22d`） |
 | ☑ | F-001、F-002 | 隱藏只在前端，伺服器仍可呼叫（課程、billing、Funnel 綁卡、諮詢） | 不開權限、不主動介紹 | 已處理：#465（`1330e107`）新增 `Vendor.betaFeatureGrants` 與 `src/lib/feature-gates.ts`，courses、billing、funnel_binding、consultation_booking、browser_live、danmaku 的 action、route 與 page 都在伺服器端檢查，並有 `feature-gates.matrix.test.ts` 與 DB 測試。依 commit 紀錄查證 |
 | ☐ | F-052 | 平台沒有「禁止標記已出款」開關 | 封測期間不鎖月結、不撥款 | |
@@ -173,3 +173,11 @@
 - 買家回呼重試：PASS（run 41604153122）。
 - 含退款的對帳（reconciliation）：尚未執行，需 QA 財務帳號 TOTP secret（O-14）；同一 sha 只能跑 payment-only 或 reconciliation 其中一個。
 - LINE E2E：缺 secret，見 OWNER-ACTIONS 彙整。
+
+## 8. 2026-11-17 狀態（新增，上方歷史段落不改）
+
+- master 已含 #551 起至目前最新的合併（含 #617 Cloudflare Worker 排程觸發器、#624 課程章節 `chapterId` 必填，以及 #625）。§7 記錄的 `a00c4aa4` 只是 11-06 當時的 staging 部署，已不是目前狀態。
+- staging alias 於 2026-11-17 多次切換到較新的 master 部署；本節只記錄有 workflow 收據的驗證結果，不記錄未查證的部署 SHA。
+- 首次成功路徑（Staging first-success journey）：PASS，run 43983659367（2026-11-16 23:57 UTC，head `4c367772`）。
+- 瀏覽器 smoke（Staging browser smoke）：PASS，run 44007306822（2026-11-17 03:02 UTC，head `ed50567d`，即 #617 合併點）。
+- 仍待 owner：含退款的對帳（O-14）、LINE E2E secret，內容同 §7 與 OWNER-ACTIONS 彙整。
