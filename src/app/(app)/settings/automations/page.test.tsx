@@ -410,6 +410,16 @@ describe("AutomationSettingsPage", () => {
       expect(html).toContain("或同時勾選「發送回購券」使用「追購通知」");
     });
 
+    it("lists the vendor's active products in a step's voucher select, which the step form needs for 追購通知", async () => {
+      mocks.manager.mockResolvedValue({ vendor: { id: "v1", betaFeatureGrants: ["automation_delayed_steps"] }, user: { id: "u1" }, member: { role: "owner" } });
+      mocks.rules.mockResolvedValue([rule({ trigger: "form_registered", actions: [{ type: "add_customer_tag", tag: "x" }] })]);
+      expect(mocks.products).not.toHaveBeenCalled();
+      const html = await render();
+      expect(mocks.products).toHaveBeenCalledWith(expect.objectContaining({ where: { vendorId: "v1", isActive: true } }));
+      const addForm = html.match(/<form[^>]*aria-label="新增「報名回購」的延遲步驟"[\s\S]*?<\/form>/u)?.[0] ?? "";
+      expect(addForm.match(/<select[^>]*name="productId"[^>]*>([\s\S]*?)<\/select>/u)?.[1]).toContain('<option value="p1">課程</option>');
+    });
+
     it.each([
       ["consultation_booked", ["consultation_confirmation|諮詢預約確認"]],
       ["consultation_no_show", ["consultation_confirmation|諮詢預約確認"]],

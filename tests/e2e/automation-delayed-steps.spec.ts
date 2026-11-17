@@ -121,7 +121,8 @@ test("a registration gets the rule's 2-hour step from the worker, after the owne
         // 追購通知 is only offered next to a voucher in the same step (Q-18).
         await expect(add.getByLabel("Email 範本")).toHaveValue("");
         await add.getByLabel("發送回購券", { exact: true }).check();
-        await add.getByLabel("商品", { exact: true }).selectOption(fixture!.product.id);
+        // By name, not by label: a select's accessible name includes its option text, so an exact "商品" never matches.
+        await add.locator('select[name="productId"]').selectOption(fixture!.product.id);
         await add.getByLabel("折扣值").fill("100");
         await add.getByLabel("Email 通知", { exact: true }).check();
         await add.getByLabel("Email 範本").selectOption("repurchase_followup");
