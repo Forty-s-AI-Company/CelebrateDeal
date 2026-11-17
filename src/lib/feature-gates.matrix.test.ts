@@ -304,9 +304,19 @@ const STATIC_MATRIX: Array<{ feature: string; file: string; gate: RegExp; count?
   // automation_delayed_steps (F-4 PR 2): step Server Actions, the page section, run creation, the worker and the send-time check
   { feature: "automation_delayed_steps", file: "src/app/actions/automation-actions.ts", gate: /requireFeature\(vendor, AUTOMATION_DELAYED_STEPS_FEATURE\)/gu, count: 3 },
   { feature: "automation_delayed_steps", file: "src/app/(app)/settings/automations/page.tsx", gate: /isFeatureEnabled\(vendor, AUTOMATION_DELAYED_STEPS_FEATURE\)/u },
-  { feature: "automation_delayed_steps", file: "src/lib/automation-workflow.ts", gate: /isFeatureEnabled\(vendor, AUTOMATION_DELAYED_STEPS_FEATURE\)/u },
+  // automation-workflow.ts: (1) startDelayedSteps creates no run without the grant (also on a replay and in the
+  // Q-13 catch-up); (2) Q-13 review MINOR-2: runAutomationEvent writes no pending-run mark without it, so opening
+  // the grant later back-fills nothing. Driven in automation-delayed-steps.db.test.ts (M3) and
+  // automation-delayed-step-start-lock.db.test.ts (MINOR-2 and NIT-4).
+  { feature: "automation_delayed_steps", file: "src/lib/automation-workflow.ts", gate: /isFeatureEnabled\(vendor, AUTOMATION_DELAYED_STEPS_FEATURE\)/gu, count: 2 },
   { feature: "automation_delayed_steps", file: "src/lib/delayed-step-runs.ts", gate: /betaFeatureGrants: \{ has: AUTOMATION_DELAYED_STEPS_GRANT \}|isFeatureEnabled\(vendor, AUTOMATION_DELAYED_STEPS_GRANT\)/gu, count: 2 },
-  { feature: "automation_delayed_steps", file: "src/lib/automation-delayed-steps.ts", gate: /\$\{AUTOMATION_DELAYED_STEPS_FEATURE\} = ANY\(v\."betaFeatureGrants"\)/gu, count: 3 },
+  // automation-delayed-steps.ts: the stale-step skip (rule lock and update), the e-mail-free scan, and the Q-13
+  // catch-up of owed runs (startPendingAutomationRuns: a vendor without the grant keeps its marks and is not taken;
+  // driven in automation-delayed-step-start-lock.db.test.ts).
+  { feature: "automation_delayed_steps", file: "src/lib/automation-delayed-steps.ts", gate: /\$\{AUTOMATION_DELAYED_STEPS_FEATURE\} = ANY\(v\."betaFeatureGrants"\)/gu, count: 4 },
+  // automation_form_no_show (Q-11 M-1) in the Q-13 catch-up (review NIT-3): a form_no_show log is only taken while the
+  // vendor also holds this grant (the same rule as isAutomationTriggerAvailableForVendor, which re-checks each row).
+  { feature: "automation_form_no_show", file: "src/lib/automation-delayed-steps.ts", gate: /l\."trigger" <> 'form_no_show' OR \$\{AUTOMATION_FORM_NO_SHOW_FEATURE\} = ANY\(v\."betaFeatureGrants"\)/u },
 ];
 
 describe("static gate inventory (F-001 / F-002)", () => {
