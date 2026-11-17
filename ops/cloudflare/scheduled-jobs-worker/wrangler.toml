@@ -1,0 +1,15 @@
+# CelebrateDeal 背景工作觸發器（Cloudflare Worker cron，GO-NO-GO §5 B-1 方案 B）。
+# 這個檔案不放任何 secret；JOB_SECRET 只用 `npx wrangler secret put JOB_SECRET` 設定。
+name = "celebratedeal-scheduler-staging"
+main = "src/index.js"
+compatibility_date = "2026-11-01"
+
+[vars]
+TARGET_ORIGIN = "https://celebrate-deal-staging.carry-digital-nomad.in.net"
+# 設為 "true" 後重新部署，Worker 會略過所有呼叫（見 README 的暫停方式）。
+SCHEDULED_JOBS_PAUSED = "false"
+
+# Cloudflare cron 以 UTC 計算。"22 17 * * *" 是台灣時間每日 01:22。
+# 這兩條必須與 scripts/scheduled-jobs-runner.mjs 的 SCHEDULE_FREQUENT / SCHEDULE_DAILY 相同。
+[triggers]
+crons = ["*/5 * * * *", "22 17 * * *"]

@@ -9,7 +9,7 @@
   - 黑名單 Email：不能申請學員登入連結，回應不透露是否在黑名單。
   - 程式實作另開 PR（`ai/owner-policy-refund-suspend-blacklist`），合併前需獨立審查。
 - **O-15 跨區**：選 A，正式上線前（還原演練通過後）把 Supabase 正式專案遷到東京。
-- **B-1 外部排程**：選方案 B（Cloudflare Worker cron），密鑰留在 owner 的 Cloudflare 帳號、之後可延伸到 Production；heartbeat 保留作備援。owner 仍需依 `docs/launch/scheduled-jobs-external-trigger.md` §5 執行 `wrangler login`、`wrangler secret put JOB_SECRET`、`wrangler deploy`。
+- **B-1 外部排程**：選方案 B（Cloudflare Worker cron），密鑰留在 owner 的 Cloudflare 帳號、之後可延伸到 Production；heartbeat 保留作備援。可部署的 Worker 已在 `ops/cloudflare/scheduled-jobs-worker/`；owner 在該資料夾依其 `README.md`（或 `docs/launch/scheduled-jobs-external-trigger.md` §5）執行 `npx wrangler login`、`npx wrangler secret put JOB_SECRET`、`npx wrangler deploy` 即可。
 - **O-21 個資保存期限**：先採預設（WebhookEvent payload 180 天、AnalyticsEvent 365 天、AuditLog IP 365 天），律師意見回來後再調整；開啟排程另開工作。
 - **staging 合成資料（#543）**：封測期間不刪除。盤點的 4 個商家（含封測用的 Wuhe Select、Merchant2 測試商店）與 9 支 Stream 影片保留在各自租戶內；封測客戶一律新建商家帳號（BETA-OPS (b)(c)）。正式上線前再依盤點決定刪除範圍，屆時先備份、經 owner 同意、用腳本執行並留收據。
 

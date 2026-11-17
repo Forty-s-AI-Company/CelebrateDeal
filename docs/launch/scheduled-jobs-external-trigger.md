@@ -104,7 +104,7 @@ GitHub Actions 的 `*/5 * * * *` 排程實測約每 2～5 小時才跑一次（1
 
 ### 5.1 設定檔與程式模板
 
-下面是模板（**不含任何密鑰**；`JOB_SECRET` 以 Worker secret 注入）。請放在一個**獨立的資料夾**（例如本機 `celebratedeal-scheduler/`），不要放進本 repo 的 `src/`。若 owner 要納入版本控制，另開 PR。
+**可直接部署的 Worker 已放在 `ops/cloudflare/scheduled-jobs-worker/`**（`wrangler.toml`、`src/index.js`、`README.md`；不含任何密鑰，`JOB_SECRET` 以 Worker secret 注入；多了逾時、耗時日誌與 `SCHEDULED_JOBS_PAUSED` 暫停變數）。部署時在該資料夾執行 §5.2 的指令；契約測試 `scripts/scheduled-jobs-worker.test.mjs` 會檢查它與 runner 一致。下面的模板保留作原理說明，實際以資料夾內的檔案為準。
 
 `wrangler.toml`：
 
@@ -172,11 +172,12 @@ export default {
 
 ### 5.2 部署步驟
 
+0. `cd ops/cloudflare/scheduled-jobs-worker`（以下指令都在此資料夾執行）。
 1. `npx wrangler login`（瀏覽器授權 owner 的 Cloudflare 帳號）。
 2. `npx wrangler secret put JOB_SECRET`，在提示後貼上 staging 的 `JOB_SECRET`（不會顯示、不會寫入檔案）。
 3. `npx wrangler deploy`。
 4. 在 Cloudflare Dashboard → Workers → 該 Worker → Triggers 確認有兩條 cron；Settings → Variables 確認 `JOB_SECRET` 顯示為加密的 secret。
-5. 用 `npx wrangler tail`（即時日誌）等下一個 5 分鐘整點，看到三行 `scheduled-job path=… http=200`。
+5. 用 `npx wrangler tail`（即時日誌）等下一個 5 分鐘整點，看到三行 `scheduled-job name=… http=200 outcome=ok`。
 
 ## 6. 降低密鑰外洩範圍的選項：改用 GET＋`CRON_SECRET`
 
