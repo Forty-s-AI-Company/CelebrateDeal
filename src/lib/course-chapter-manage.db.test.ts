@@ -6,7 +6,9 @@ import { grantCommerceEntitlement } from "@/lib/commerce-order-fulfillment";
 import { ChapterNotEmpty, deleteCourseChapter, moveCourseChapter, moveCourseLesson } from "@/lib/course-chapter-manage";
 import { CurriculumConflict, saveCourseLesson } from "@/lib/course-curriculum";
 import { courseChapters } from "@/lib/course-learning";
+import { PrismaClient } from "@prisma/client";
 import { getDb } from "@/lib/db";
+import { isTransientTransactionConflict } from "@/lib/serializable-retry";
 import { getStudentCourse, saveStudentLessonProgress } from "@/lib/student-course-learning";
 
 const db = getDb();
@@ -38,8 +40,8 @@ type Course = Awaited<ReturnType<typeof course>>;
 
 const revision = async (productId: string) => (await db.product.findUniqueOrThrow({ where: { id: productId } })).revision;
 
-async function addLesson(f: Course, chapterTitle: string, title: string) {
-  return saveCourseLesson(db, f.vendor.id, { productId: f.product.id, revision: await revision(f.product.id), chapterTitle, title, videoUrl: "https://media.example.test/course.mp4", durationSeconds: 100, published: true });
+async function addLesson(f: Course, chapterTitle: string, title: string, published = true) {
+  return saveCourseLesson(db, f.vendor.id, { productId: f.product.id, revision: await revision(f.product.id), chapterTitle, title, videoUrl: "https://media.example.test/course.mp4", durationSeconds: 100, published });
 }
 
 const chapterRows = (f: Course) => db.courseChapter.findMany({ where: { vendorId: f.vendor.id, productId: f.product.id }, orderBy: { position: "asc" }, select: { id: true, title: true, position: true } });
@@ -163,4 +165,91 @@ describe("course chapter management (Q-15)", () => {
     await expect(moveCourseChapter(db, f.vendor.id, { ...await manage(f), chapterId: A.id, direction: "sideways" })).rejects.toThrow();
     expect((await chapterRows(f)).map((row) => row.title)).toEqual(["B", "A", "C"]);
   });
+});
+
+describe("course chapter management review follow-ups (Q-15)", () => {
+  it("relinks stale links to their title's chapter before deleting, and rolls back when the chapter is still not empty", async () => {
+    const { f, b1, B } = await fixture();
+    const scope = { vendorId: f.vendor.id, productId: f.product.id };
+    const X = await db.courseChapter.create({ data: { ...scope, title: "X", position: 9 } });
+    const stale = await db.courseLesson.create({ data: { ...scope, chapterId: X.id, chapterTitle: "B", title: "stale-b", position: 20, publishedAt: new Date() } });
+    const fresh = await db.courseLesson.create({ data: { ...scope, chapterId: X.id, chapterTitle: "Fresh", title: "stale-fresh", position: 21, publishedAt: new Date() } });
+    // X still owns a lesson by title: refused, and nothing (not even the relink) is kept.
+    const own = await db.courseLesson.create({ data: { ...scope, chapterId: X.id, chapterTitle: "X", title: "own", position: 22 } });
+    const before = await revision(f.product.id);
+    await expect(deleteCourseChapter(db, f.vendor.id, { ...await manage(f), chapterId: X.id })).rejects.toBeInstanceOf(ChapterNotEmpty);
+    expect(await revision(f.product.id)).toBe(before);
+    expect((await db.courseLesson.findMany({ where: { id: { in: [stale.id, fresh.id] } }, orderBy: { position: "asc" }, select: { chapterId: true } })).map((row) => row.chapterId)).toEqual([X.id, X.id]);
+    expect(await db.courseChapter.count({ where: { ...scope, title: "Fresh" } })).toBe(0);
+    // Once the legitimate member is gone only stale links remain: they are relinked and X is deleted.
+    await db.courseLesson.delete({ where: { id: own.id } });
+    expect(await deleteCourseChapter(db, f.vendor.id, { ...await manage(f), chapterId: X.id })).toBe(X.id);
+    expect(await db.courseChapter.count({ where: { id: X.id } })).toBe(0);
+    const freshChapter = await db.courseChapter.findFirstOrThrow({ where: { ...scope, title: "Fresh" } });
+    expect((await db.courseLesson.findMany({ where: { id: { in: [stale.id, fresh.id] } }, orderBy: { position: "asc" }, select: { id: true, chapterId: true, chapterTitle: true } }))).toEqual([
+      { id: stale.id, chapterId: B.id, chapterTitle: "B" },
+      { id: fresh.id, chapterId: freshChapter.id, chapterTitle: "Fresh" },
+    ]);
+    expect(b1).toBeTruthy();
+  });
+
+  it("makes the learner follow the back-office order after the first management operation, unpublished lessons included", async () => {
+    const f = await course();
+    const a1 = await addLesson(f, "A", "a1", false);
+    const b1 = await addLesson(f, "B", "b1");
+    const a2 = await addLesson(f, "A", "a2");
+    const c1 = await addLesson(f, "C", "c1");
+    const [A, B, C] = await chapterRows(f);
+    expect(A!.title).toBe("A");
+    // Before: the learner orders chapters by the first visible lesson (B before A); the manager page shows A, B, C.
+    expect(await learnerTree(f)).toEqual([["B", [b1]], ["A", [a2]], ["C", [c1]]]);
+    // An unrelated lesson move: the learner order now matches the back-office order.
+    await moveCourseLesson(db, f.vendor.id, { ...await manage(f), lessonId: c1, targetChapterId: B!.id });
+    expect(await learnerTree(f)).toEqual([["A", [a2]], ["B", [b1, c1]]]);
+    expect((await lessonRows(f)).map((row) => [row.id, row.position])).toEqual([[a1, 0], [a2, 1], [b1, 2], [c1, 3]]);
+    expect(C!.title).toBe("C");
+  });
+
+  it("puts lessons that name no chapter row last and keeps unpublished lessons in their chapter", async () => {
+    const { f, a1, a2, b1, c1, B } = await fixture();
+    const scope = { vendorId: f.vendor.id, productId: f.product.id };
+    const hidden = await addLesson(f, "B", "hidden-b", false);
+    const orphan = await db.courseLesson.create({ data: { ...scope, chapterId: null, chapterTitle: "Orphan", title: "orphan", position: 100, publishedAt: new Date() } });
+    expect(await moveCourseChapter(db, f.vendor.id, { ...await manage(f), chapterId: B.id, direction: "up" })).toBe(true);
+    expect((await lessonRows(f)).map((row) => row.id)).toEqual([b1, hidden, a1, a2, c1, orphan.id]);
+    expect((await lessonRows(f)).map((row) => row.position)).toEqual([0, 1, 2, 3, 4, 5]);
+  });
+
+  it("reports false without consuming the revision when nothing changes, and only repairs a link in the same chapter", async () => {
+    const { f, a1, A, C } = await fixture();
+    const start = await revision(f.product.id);
+    expect(await moveCourseChapter(db, f.vendor.id, { ...await manage(f), chapterId: A.id, direction: "up" })).toBe(false);
+    expect(await moveCourseChapter(db, f.vendor.id, { ...await manage(f), chapterId: C.id, direction: "down" })).toBe(false);
+    expect(await moveCourseLesson(db, f.vendor.id, { ...await manage(f), lessonId: a1, targetChapterId: A.id })).toBe(false);
+    expect(await revision(f.product.id)).toBe(start);
+    // A lesson that names the chapter but lost its link: the link is repaired, nothing moves.
+    await db.courseLesson.update({ where: { id: a1 }, data: { chapterId: null } });
+    const positions = (await lessonRows(f)).map((row) => [row.id, row.position]);
+    expect(await moveCourseLesson(db, f.vendor.id, { ...await manage(f), lessonId: a1, targetChapterId: A.id })).toBe(false);
+    expect((await db.courseLesson.findUniqueOrThrow({ where: { id: a1 } })).chapterId).toBe(A.id);
+    expect((await lessonRows(f)).map((row) => [row.id, row.position])).toEqual(positions);
+  });
+
+  it("gives two managers working at once one success and one conflict", async () => {
+    const { f, A } = await fixture();
+    const url = new URL(process.env.DATABASE_URL ?? "");
+    url.searchParams.set("connection_limit", "2");
+    url.searchParams.set("pool_timeout", "20");
+    const clients = [new PrismaClient({ datasourceUrl: url.toString() }), new PrismaClient({ datasourceUrl: url.toString() })];
+    try {
+      const input = { ...await manage(f), chapterId: A.id, direction: "down" };
+      const results = await Promise.allSettled(clients.map((client) => moveCourseChapter(client, f.vendor.id, input)));
+      expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(1);
+      const rejected = results.find((result) => result.status === "rejected") as PromiseRejectedResult;
+      expect(rejected.reason instanceof CurriculumConflict || isTransientTransactionConflict(rejected.reason)).toBe(true);
+      expect((await chapterRows(f)).map((row) => row.title)).toEqual(["B", "A", "C"]);
+    } finally {
+      await Promise.all(clients.map((client) => client.$disconnect()));
+    }
+  }, 60_000);
 });

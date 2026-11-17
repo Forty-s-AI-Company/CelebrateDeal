@@ -2,7 +2,7 @@ import { notFound } from "next/navigation";
 import { FormSubmitButton } from "@/components/form-submit-button";
 import { deleteCourseChapterAction, moveCourseChapterAction, moveCourseLessonAction, renameCourseChapterAction, saveCourseLessonAction } from "@/app/actions/course-curriculum-actions";
 import { CsrfField } from "@/components/csrf-field";
-import { ButtonLink, DangerButton, Field, FormErrorSummary, PageHeader, SelectField, SubmitButton } from "@/components/ui";
+import { ButtonLink, Field, FormErrorSummary, PageHeader, SelectField, SubmitButton } from "@/components/ui";
 import { requireVendorManager } from "@/lib/auth";
 import { lessonChapterTitle, managerChapterGroups } from "@/lib/course-learning";
 import { getDb } from "@/lib/db";
@@ -15,7 +15,7 @@ const CHAPTER_ERRORS: Record<string, string> = {
 };
 
 export default async function CourseLessonsPage({ params, searchParams }: {
-  params: Promise<{ id: string }>; searchParams: Promise<{ error?: string; saved?: string; chapterError?: string; chapter?: string; chapterSaved?: string; chapterMoved?: string; chapterDeleted?: string; lessonMoved?: string }>;
+  params: Promise<{ id: string }>; searchParams: Promise<{ error?: string; saved?: string; chapterError?: string; chapter?: string; chapterSaved?: string; chapterMoved?: string; chapterDeleted?: string; noChange?: string; lessonMoved?: string }>;
 }) {
   const vendor = await requireVendorManager();
   requireFeatureOrNotFound(vendor, "courses");
@@ -36,7 +36,9 @@ export default async function CourseLessonsPage({ params, searchParams }: {
   // under the chapter its chapterTitle names, whatever its chapterId says. Lessons
   // whose title names no chapter row yet (pre-F-5 writes) are listed after.
   const { chapters, unlinked } = managerChapterGroups(product.courseChapters, product.courseLessons);
-  const chapterError = query.chapterError ? CHAPTER_ERRORS[query.chapterError] ?? CHAPTER_ERRORS.invalid : null;
+  // The delete refusal belongs to the delete form, never to the rename field.
+  const deleteRefused = query.chapterError === "notEmpty";
+  const chapterError = query.chapterError && !deleteRefused ? CHAPTER_ERRORS[query.chapterError] ?? CHAPTER_ERRORS.invalid : null;
 
   const lessonForm = (lesson: Lesson | null) => <form key={lesson?.id ?? "new"} action={saveCourseLessonAction} aria-labelledby={lesson ? undefined : "new-lesson-heading"} className="space-y-4 rounded-xl border bg-white p-5">
     {lesson ? <h3 className="text-lg font-bold">{`單元 ${lesson.position + 1}`}</h3> : null}
@@ -70,11 +72,13 @@ export default async function CourseLessonsPage({ params, searchParams }: {
     {query.chapterSaved ? <p role="status" className="mb-4 text-green-700">章節名稱已更新，學員端會看到新名稱。</p> : null}
     {query.chapterMoved ? <p role="status" className="mb-4 text-green-700">章節順序已更新，學員端會依新順序顯示。</p> : null}
     {query.chapterDeleted ? <p role="status" className="mb-4 text-green-700">空章節已刪除。</p> : null}
+    {query.noChange ? <p role="status" className="mb-4 text-slate-700">沒有變更。</p> : null}
     {query.lessonMoved ? <p role="status" className="mb-4 text-green-700">單元已搬到新章節，學習進度不變。</p> : null}
     <div className="mb-5"><ButtonLink href={`/products/${encodeURIComponent(id)}/community`} tone="secondary">學員討論管理</ButtonLink></div>
     <div className="space-y-8">
       {chapters.map((chapter, index) => {
         const error = query.chapter === chapter.id ? chapterError : null;
+        const refused = query.chapter === chapter.id && deleteRefused;
         return <section key={chapter.id} id={`chapter-${chapter.id}`} aria-labelledby={`chapter-heading-${chapter.id}`} className="space-y-4">
           <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 border-b border-border pb-2">
             <h2 id={`chapter-heading-${chapter.id}`} className="text-xl font-semibold text-slate-950 [overflow-wrap:anywhere]">{chapter.title}</h2>
@@ -95,9 +99,10 @@ export default async function CourseLessonsPage({ params, searchParams }: {
               <div><SubmitButton>儲存章節名稱</SubmitButton></div>
             </form>
           </details>
+          {refused ? <p role="alert" className="text-sm text-red-700">{CHAPTER_ERRORS.notEmpty}</p> : null}
           {chapter.lessons.length ? null : <form action={deleteCourseChapterAction} className="flex flex-wrap items-center gap-3">
             <CsrfField /><input type="hidden" name="productId" value={id} /><input type="hidden" name="chapterId" value={chapter.id} /><input type="hidden" name="revision" value={product.revision} />
-            <DangerButton>刪除空章節</DangerButton>
+            <FormSubmitButton aria-label={`刪除空章節「${chapter.title}」`} confirmMessage={`確定要刪除空章節「${chapter.title}」嗎？章節內沒有單元，不影響學習進度。`} confirmDestructive pendingChildren="處理中…" pendingMessage="正在處理，請勿重複送出。" className="inline-flex min-h-11 items-center justify-center rounded-md bg-red-600 px-4 text-sm font-semibold text-white transition-colors hover:bg-red-700">刪除空章節</FormSubmitButton>
             <span className="text-sm text-slate-600">只能刪除沒有單元的章節；刪除不影響任何單元或學習進度。</span>
           </form>}
           {chapter.lessons.length ? chapter.lessons.map(lessonBlock) : <p className="rounded-md border border-dashed border-border px-4 py-3 text-sm text-slate-600">這個章節目前沒有單元，學員端不會顯示。</p>}

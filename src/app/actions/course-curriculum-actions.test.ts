@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { Prisma } from "@prisma/client";
 import { ZodError } from "zod";
@@ -154,6 +155,46 @@ describe("chapter order, delete and lesson move actions (Q-15)", () => {
     expect(await redirectOfAction(moveCourseLessonAction, manageForm({ lessonId: "", targetChapterId: "" }))).toBe(`redirect:${lessons}?error=invalid`);
     mocks.moveChapter.mockRejectedValueOnce(new Error("database down"));
     expect(await redirectOfAction(moveCourseChapterAction, manageForm({ chapterId: "chapter-1", direction: "up" }))).toBe("database down");
+  });
+
+  it("maps raw-SQL transaction conflicts and unique violations (P2010) to the page conflict", async () => {
+    const raw = (sqlstate: string) => new Prisma.PrismaClientKnownRequestError("raw query failed", { code: "P2010", clientVersion: "test", meta: { code: sqlstate } });
+    for (const sqlstate of ["40001", "40P01", "23505"]) {
+      mocks.moveChapter.mockRejectedValueOnce(raw(sqlstate));
+      expect(await redirectOfAction(moveCourseChapterAction, manageForm({ chapterId: "chapter-1", direction: "up" }))).toBe(`redirect:${lessons}?error=conflict`);
+    }
+    mocks.moveLesson.mockRejectedValueOnce(raw("40001"));
+    expect(await redirectOfAction(moveCourseLessonAction, manageForm({ lessonId: "lesson-1", targetChapterId: "chapter-2" }))).toBe(`redirect:${lessons}?error=conflict`);
+    mocks.deleteChapter.mockRejectedValueOnce(new Prisma.PrismaClientKnownRequestError("serialization", { code: "P2034", clientVersion: "test" }));
+    expect(await redirectOfAction(deleteCourseChapterAction, manageForm({ chapterId: "chapter-1" }))).toBe(`redirect:${lessons}?error=conflict`);
+    mocks.deleteChapter.mockRejectedValueOnce(raw("22000"));
+    expect(await redirectOfAction(deleteCourseChapterAction, manageForm({ chapterId: "chapter-1" }))).toBe("raw query failed");
+  });
+
+  it("treats a foreign-key violation as a stale form for the lesson move, not as a non-empty chapter", async () => {
+    mocks.moveLesson.mockRejectedValueOnce(new Prisma.PrismaClientKnownRequestError("fk", { code: "P2003", clientVersion: "test" }));
+    expect(await redirectOfAction(moveCourseLessonAction, manageForm({ lessonId: "lesson-1", targetChapterId: "chapter-2" }))).toBe(`redirect:${lessons}?error=conflict`);
+  });
+
+  it("answers a request that changed nothing with the no-change notice and no revalidation", async () => {
+    mocks.moveChapter.mockResolvedValueOnce(false);
+    expect(await redirectOfAction(moveCourseChapterAction, manageForm({ chapterId: "chapter-1", direction: "up" }))).toBe(`redirect:${lessons}?noChange=1#chapter-chapter-1`);
+    mocks.moveLesson.mockResolvedValueOnce(false);
+    expect(await redirectOfAction(moveCourseLessonAction, manageForm({ lessonId: "lesson-1", targetChapterId: "chapter-2" }))).toBe(`redirect:${lessons}?noChange=1#chapter-chapter-2`);
+    expect(mocks.revalidatePath).not.toHaveBeenCalled();
+  });
+
+  it("sends every manage action through manageChapters (guard, vendor and revision handling)", () => {
+    const source = readFileSync(new URL("./course-curriculum-actions.ts", import.meta.url), "utf8");
+    for (const name of ["moveCourseChapterAction", "deleteCourseChapterAction", "moveCourseLessonAction"]) {
+      const start = source.indexOf(`export async function ${name}`);
+      expect(start, name).toBeGreaterThan(-1);
+      const body = source.slice(start, source.indexOf("\n}\n", start));
+      expect(body, name).toMatch(/await manageChapters\(form, /u);
+      expect(body, name).not.toMatch(/getDb\(\)\.|requireVendorManager|vendor\.id/u);
+    }
+    const guard = source.slice(source.indexOf("async function manageChapters"), source.indexOf("function chapterAnchor"));
+    expect(guard).toMatch(/assertServerActionSecurity[\s\S]*requireVendorManager[\s\S]*requireFeature\(vendor, "courses"\)/u);
   });
 
   it("treats a missing or malformed revision as a stale form before touching the database", async () => {

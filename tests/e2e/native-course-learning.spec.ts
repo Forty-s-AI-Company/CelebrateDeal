@@ -122,6 +122,7 @@ test("manager publishes a lesson; a purchasing learner saves, resumes, completes
     await expect(page.getByText("單元已搬到新章節，學習進度不變。")).toBeVisible();
     expect((await db.courseLesson.findFirstOrThrow({ where: { vendorId: vendor.id, title: "補充教材" } })).chapterTitle).toBe("第一章：開場");
     await page.getByRole("button", { name: "刪除空章節" }).click();
+    await page.getByRole("alertdialog").getByRole("button", { name: "確認", exact: true }).click();
     await expect(page.getByText("空章節已刪除。")).toBeVisible();
     expect(await chapterOrder()).toEqual(["第一章：開場"]);
     expect(await db.courseLesson.count({ where: { vendorId: vendor.id } })).toBe(2);
