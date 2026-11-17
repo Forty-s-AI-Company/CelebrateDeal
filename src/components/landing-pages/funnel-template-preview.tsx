@@ -18,7 +18,8 @@ export function FunnelTemplateThumbnail({ document, className = "m-2 mb-0 h-28" 
   const full = templateDisplayDocument(document, { keepPageCss: false });
   // The card only shows the top ~450px of the page at 25%, so render just the first sections (header, hero) instead of the whole long page.
   const display = { ...full, root: full.root.slice(0, THUMBNAIL_SECTIONS) };
-  return <div aria-hidden="true" inert className={`pointer-events-none overflow-hidden rounded-lg border border-slate-200 bg-slate-50 ${className}`}>
+  // contain-paint + isolate: axe sizes the background behind card text from every element whose box overlaps it, and ignores the clip of a scaled thumbnail, so the page's own background colour (dark templates especially) was read as the card's background.
+  return <div aria-hidden="true" inert className={`pointer-events-none isolate overflow-hidden contain-paint rounded-lg border border-slate-200 bg-slate-50 ${className}`}>
     <div className="origin-top-left w-[400%] scale-25"><FunnelPageDocumentRenderer document={display} mode="preview" className="min-h-[28rem] bg-white" /></div>
   </div>;
 }
