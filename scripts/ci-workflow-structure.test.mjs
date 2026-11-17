@@ -56,7 +56,7 @@ const expectedRunSteps = {
     shell: "bash",
   },
   "Production dependency audit": {
-    run: "npm audit --omit=dev --audit-level=high",
+    run: "node scripts/prod-audit-gate.mjs",
     env: null,
     shell: null,
   },

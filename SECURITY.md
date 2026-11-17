@@ -39,6 +39,22 @@
 4. 在 `ai/*` 分支修改，跑 `npm audit`、`npm run typecheck`、`npm run lint` 與相關測試，經 PR 與 `quality` CI 合併。
 5. 需要升 major 或暫時無解時，在追蹤 issue 記錄例外與到期日。
 
+## 正式環境相依的已知例外
+
+CI `Production dependency audit` 執行 `node scripts/prod-audit-gate.mjs`：與 `npm audit --omit=dev --audit-level=high` 相同，任何 high／critical 都失敗，唯一例外是下表。例外寫在腳本內，到期日一到自動失敗；測試在 `scripts/prod-audit-gate.test.mjs`。
+
+| Advisory | 套件 | 到期日 | 理由 |
+|---|---|---|---|
+| GHSA-fc5q-39xc-vjpf（picomatch ReDoS，影響 `<= 4.0.7`） | `picomatch` 經 `@rollup/plugin-commonjs`、`@rollup/pluginutils`、`fdir`，由 `@sentry/nextjs` 帶入 | 2026-12-31（腳本於 2027-01-01 起失敗） | 建置期專用，不進 runtime bundle |
+
+評估（2026-11-18）：
+
+- picomatch 最新版即 4.0.7，npm 上沒有修補版，無法用 `overrides` 鎖定。
+- `@sentry/nextjs@11.13.0`（audit 建議的 major 升級）實測仍依賴 `@rollup/plugin-commonjs@28.0.1` 與 picomatch 4.0.7，audit 仍是 high，還多帶入 `vite`；升級無助於消除漏洞，因此未升級。
+- 證據：`@sentry/nextjs` 內只有 `build/*/config/loaders/wrappingLoader.js` 載入 `@rollup/plugin-commonjs`；該檔是 webpack loader，只在 `next build` 經 `withSentryConfig`（`next.config.ts` 引用 `@sentry/nextjs/config`）執行。執行期入口（`index.server`、`sentry.*.config.ts`、`instrumentation*.ts`）不引用 picomatch、fdir 或 rollup 外掛。picomatch 只對由程式端提供的 glob 樣式有 ReDoS 風險，這條路徑的樣式是 Sentry 內部固定值。
+- 建置驗證：以 CI 的合成環境變數跑 `npm run build` 通過後，`.next/server` 與 `.next/static` 搜尋不到 `picomatch`、`plugin-commonjs` 或該 advisory 的字樣，即該依賴沒有進入 runtime bundle。
+- 移除條件：picomatch 出現修補版時以 `overrides` 鎖定，或 `@sentry/nextjs` 釋出不再依賴該鏈的版本時升級；之後刪除腳本中的例外並恢復 `npm audit --omit=dev --audit-level=high`。到期前未解決須重新評估並在追蹤 issue 記錄。
+
 ## 範圍外
 
 不讀取、輸出或傳送 `.env*`、密碼、token、cookie、私鑰、正式 secret、正式客戶資料與付款資料；這條規則同樣適用於所有自動化代理（見 `AGENTS.md`）。
