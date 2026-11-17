@@ -149,10 +149,12 @@ describe("TeamTemplateClaim", () => {
     hookState.pending = false;
     const tree = renderClaim();
     const inputs = findElements(tree, (element) => element.type === "input");
-    const slug = inputs.find((element) => element.props.name === "slug");
     const confirmed = inputs.find((element) => element.props.name === "confirmed");
-    expect(slug?.props.required).toBe(true);
-    expect(slug?.props.pattern).toBe("[a-z0-9]+(-[a-z0-9]+)*");
+    const slugHtml = /<label[^>]*>你的公開網址<input[^>]*>/u.exec(pendingHtml)?.[0] ?? "";
+    expect(slugHtml).toMatch(/name="slug"/u);
+    expect(slugHtml).toMatch(/required=""/u);
+    expect(slugHtml).toContain('pattern="[a-z0-9]+(-[a-z0-9]+)*"');
+    expect(slugHtml).toContain('placeholder="my-webinar-page"');
     expect(confirmed?.props.required).toBe(true);
     expect(confirmed?.props.value).toBe("yes");
     expect(textContent(tree)).toContain("確認並建立夥伴頁");

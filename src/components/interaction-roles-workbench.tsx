@@ -15,6 +15,7 @@ import {
 } from "@/lib/interaction-role-action-state";
 import { CSRF_FIELD_NAME } from "@/lib/csrf-constants";
 import { FormSubmitButton } from "@/components/form-submit-button";
+import { Field } from "@/components/ui";
 import { MediaUploadField, type MediaUploadPersistedValue } from "@/components/media-upload-field";
 import {
   INTERACTION_AVATAR_SEEDS,
@@ -664,10 +665,7 @@ export function InteractionRolesWorkbench({
             </div>
 
             <div className="grid gap-4">
-              <label className="grid gap-1.5 text-sm font-semibold text-slate-700">
-                暱稱
-                <input name="name" required maxLength={160} value={displayedName} onChange={(event) => { setActionStateEdited(true); setName(event.target.value); }} placeholder="例如：直播小編" className="h-11 rounded-md border border-border px-3 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-blue-100" />
-              </label>
+              <Field label="暱稱" name="name" required maxLength={160} value={displayedName} onChange={(event) => { setActionStateEdited(true); setName(event.target.value); }} placeholder="例如：直播小編" />
               <div className="grid gap-4 md:grid-cols-2">
                 <label className="grid gap-1.5 text-sm font-semibold text-slate-700">
                   角色類型
@@ -676,10 +674,7 @@ export function InteractionRolesWorkbench({
                     <option value="audience">觀眾型角色</option>
                   </select>
                 </label>
-                <label className="grid gap-1.5 text-sm font-semibold text-slate-700">
-                  顯示標籤（選填）
-                  <input name="label" maxLength={80} value={displayedLabel} placeholder="留白就不顯示標籤" onChange={(event) => { setActionStateEdited(true); setLabel(event.target.value); }} className="h-11 rounded-md border border-border px-3 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-blue-100" />
-                </label>
+                <Field label="顯示標籤（選填）" name="label" maxLength={80} value={displayedLabel} placeholder="留白就不顯示標籤" onChange={(event) => { setActionStateEdited(true); setLabel(event.target.value); }} />
               </div>
               <label className="grid gap-1.5 text-sm font-semibold text-slate-700">
                 語氣設定

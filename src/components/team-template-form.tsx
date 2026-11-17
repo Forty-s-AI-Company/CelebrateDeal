@@ -2,7 +2,7 @@
 
 import { useActionState, useState } from "react";
 import { CheckCircle2, LockKeyhole, Sparkles } from "lucide-react";
-import { Card } from "@/components/ui";
+import { Card, Field } from "@/components/ui";
 import { selectNativeTransport, useNativeActionState } from "@/components/use-native-action-state";
 
 const locks = [
@@ -117,12 +117,8 @@ export function TeamTemplateForm({
               {teams.map((team) => <option key={team.id} value={team.id}>{team.name}</option>)}
             </select>
           </label>
-          {!isPublishing ? <label className="grid gap-1.5 text-sm font-medium text-slate-700">模板名稱
-            <input name="name" required defaultValue={template?.name} className="h-10 rounded-md border border-border px-3 text-sm" placeholder="例如：夏季 webinar 導流頁" />
-          </label> : <div className="rounded-md border border-blue-100 bg-blue-50 p-3 text-sm text-blue-800"><CheckCircle2 size={16} className="mr-1 inline" />發布會建立下一個不可變版本。</div>}
-          <label className="grid gap-1.5 text-sm font-medium text-slate-700">原始頁網址
-            <input name="slug" required defaultValue={template?.slug} className="h-10 rounded-md border border-border px-3 text-sm" placeholder="summer-webinar" />
-          </label>
+          {!isPublishing ? <Field label="模板名稱" name="name" required defaultValue={template?.name} placeholder="例如：夏季 webinar 導流頁" /> : <div className="rounded-md border border-blue-100 bg-blue-50 p-3 text-sm text-blue-800"><CheckCircle2 size={16} className="mr-1 inline" />發布會建立下一個不可變版本。</div>}
+          <Field label="原始頁網址" name="slug" required defaultValue={template?.slug} placeholder="summer-webinar" />
           <label className="grid gap-1.5 text-sm font-medium text-slate-700">綁定 webinar
             <select name="webinarId" defaultValue={template?.webinarId ?? ""} className="h-10 rounded-md border border-border-control bg-white px-3 text-sm">
               <option value="">暫不綁定</option>
@@ -133,12 +129,8 @@ export function TeamTemplateForm({
         </div>
 
         <div className="grid gap-4">
-          <label className="grid gap-1.5 text-sm font-medium text-slate-700">主標題
-            <input id="team-template-headline" name="headline" required defaultValue={template?.headline} onFocus={() => setActiveField("headline")} className="h-10 rounded-md border border-border px-3 text-sm" />
-          </label>
-          <label className="grid gap-1.5 text-sm font-medium text-slate-700">副標題
-            <input id="team-template-subheadline" name="subheadline" defaultValue={template?.subheadline ?? ""} onFocus={() => setActiveField("subheadline")} className="h-10 rounded-md border border-border px-3 text-sm" />
-          </label>
+          <Field id="team-template-headline" label="主標題" name="headline" required defaultValue={template?.headline} onFocus={() => setActiveField("headline")} />
+          <Field id="team-template-subheadline" label="副標題" name="subheadline" defaultValue={template?.subheadline ?? ""} onFocus={() => setActiveField("subheadline")} />
           <label className="grid gap-1.5 text-sm font-medium text-slate-700">內容說明
             <textarea id="team-template-body" name="body" rows={7} defaultValue={template?.body ?? ""} onFocus={() => setActiveField("body")} className="rounded-md border border-border px-3 py-2 text-sm" />
           </label>
@@ -150,12 +142,8 @@ export function TeamTemplateForm({
             </div>
           </div>
           <div className="grid gap-4 md:grid-cols-2">
-            <label className="grid gap-1.5 text-sm font-medium text-slate-700">CTA 按鈕文字
-              <input id="team-template-ctaLabel" name="ctaLabel" required defaultValue={template?.ctaLabel} onFocus={() => setActiveField("ctaLabel")} className="h-10 rounded-md border border-border px-3 text-sm" />
-            </label>
-            <label className="grid gap-1.5 text-sm font-medium text-slate-700">CTA 連結
-              <input id="team-template-ctaUrl" name="ctaUrl" type="url" defaultValue={template?.ctaUrl ?? ""} onFocus={() => setActiveField("ctaUrl")} className="h-10 rounded-md border border-border px-3 text-sm" placeholder="https://..." />
-            </label>
+            <Field id="team-template-ctaLabel" label="CTA 按鈕文字" name="ctaLabel" required defaultValue={template?.ctaLabel} onFocus={() => setActiveField("ctaLabel")} />
+            <Field id="team-template-ctaUrl" label="CTA 連結" name="ctaUrl" type="url" defaultValue={template?.ctaUrl ?? ""} onFocus={() => setActiveField("ctaUrl")} placeholder="https://..." />
           </div>
         </div>
 

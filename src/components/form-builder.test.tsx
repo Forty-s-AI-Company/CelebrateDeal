@@ -16,7 +16,10 @@ vi.mock("react", async (importOriginal) => {
 });
 vi.mock("@/app/actions/form-actions", () => ({ upsertFormBuilderAction: vi.fn() }));
 vi.mock("@/components/csrf-field", () => ({ CsrfField: () => <input type="hidden" name="_csrf" value="synthetic" /> }));
-vi.mock("@/components/ui", () => ({ Card: ({ children }: { children: ReactNode }) => <section>{children}</section> }));
+vi.mock("@/components/ui", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/components/ui")>()),
+  Card: ({ children }: { children: ReactNode }) => <section>{children}</section>,
+}));
 
 import { FormBuilder } from "./form-builder";
 
@@ -168,5 +171,29 @@ describe("FormBuilder", () => {
     expect(html).toContain("背景圖片網址格式錯誤。");
     expect(html).toContain("宣傳影片目前不可用。");
     expect(html).toContain('name="promoVideoId" aria-invalid="true" aria-describedby="form-promo-video-error"');
+  });
+
+  it("labels the basic text fields and links their errors through aria-describedby", () => {
+    hookState.actionState = {
+      status: "error",
+      message: "請修正欄位。",
+      fieldErrors: { name: "請填寫表單名稱。", headline: "請填寫公開標題。", submitLabel: "請填寫按鈕文字。" },
+    };
+
+    const html = renderToStaticMarkup(<FormBuilder draftScope="vendor-1" />);
+
+    for (const [id, name, label, message] of [
+      ["form-name", "name", "表單名稱", "請填寫表單名稱。"],
+      ["form-headline", "headline", "公開標題", "請填寫公開標題。"],
+      ["form-submit-label", "submitLabel", "送出按鈕文字", "請填寫按鈕文字。"],
+    ] as const) {
+      expect(html).toContain(`for="${id}">${label}`);
+      const input = new RegExp(`<input[^>]*id="${id}"[^>]*>`, "u").exec(html)?.[0] ?? "";
+      expect(input).toContain(`name="${name}"`);
+      expect(input).toContain("required");
+      expect(input).toContain('aria-invalid="true"');
+      expect(input).toContain(`aria-describedby="${id}-error"`);
+      expect(html).toMatch(new RegExp(`id="${id}-error"[^>]*>${message}`, "u"));
+    }
   });
 });

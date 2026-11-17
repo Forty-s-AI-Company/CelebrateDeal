@@ -125,6 +125,23 @@ describe("TeamTemplateForm", () => {
     expect(html).toContain("建立原始頁");
   });
 
+  it("keeps ids, names and required flags of the focus-tracked fields and labels them", () => {
+    hookState.cursor = 0;
+    const html = renderToStaticMarkup(<TeamTemplateForm teams={[{ id: "team-1", name: "北區團隊" }]} products={[]} webinars={[]} csrfToken="csrf-test-token" action={action} />);
+    for (const [id, name, label, required] of [
+      ["team-template-headline", "headline", "主標題", true],
+      ["team-template-subheadline", "subheadline", "副標題", false],
+      ["team-template-ctaLabel", "ctaLabel", "CTA 按鈕文字", true],
+      ["team-template-ctaUrl", "ctaUrl", "CTA 連結", false],
+    ] as const) {
+      expect(html).toContain(`<label class="grid gap-1.5 text-sm font-medium text-slate-700" for="${id}">${label}`);
+      const input = new RegExp(`<input[^>]*id="${id}"[^>]*>`, "u").exec(html)?.[0] ?? "";
+      expect(input).toContain(`name="${name}"`);
+      expect(input.includes("required")).toBe(required);
+    }
+    expect(html).toMatch(/<input[^>]*id="team-template-ctaUrl"[^>]*type="url"|<input[^>]*type="url"[^>]*id="team-template-ctaUrl"/u);
+  });
+
   it("renders create mode with an explicit operation and disables submit for an empty team list", () => {
     const tree = renderForm({ teams: [], products: [], webinars: [] });
     const form = formElement(tree);
