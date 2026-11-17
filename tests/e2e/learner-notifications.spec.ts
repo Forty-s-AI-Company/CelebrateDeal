@@ -167,7 +167,14 @@ test("purchasing learner withdraws real notification consent and reloads; foreig
   const protectedContact=protectLearnerNotificationDestination({vendorId:vendor.id,productId:product.id,customerKeyHash},"email",{email});
   // Explicit synthetic, already-verified fixture: this browser test proves real
   // preference HTTP/DB persistence, never external contact/device delivery.
-  const preference=await db.learnerNotificationPreference.create({data:{vendorId:vendor.id,productId:product.id,customerKeyHash,channel:"email",enabled:true,consentedAt:new Date(),destinationVerifiedAt:new Date(),destinationEncryptedEnvelope:protectedContact.encryptedEnvelope,destinationKeyHash:protectedContact.destinationKeyHash}});
+  // The fixture stands for consent given before this visit. It is written by
+  // the test process, not the server, and the reminder confirmation requires
+  // consentedAt <= the server's now. Time synchronisation can step a wall
+  // clock back (about two seconds every half minute was measured in a Docker
+  // Linux runner), so a fixture stamped "now" could read as future consent
+  // and the confirmation would get 409.
+  const priorConsentAt=new Date(Date.now()-5*60_000);
+  const preference=await db.learnerNotificationPreference.create({data:{vendorId:vendor.id,productId:product.id,customerKeyHash,channel:"email",enabled:true,consentedAt:priorConsentAt,destinationVerifiedAt:priorConsentAt,destinationEncryptedEnvelope:protectedContact.encryptedEnvelope,destinationKeyHash:protectedContact.destinationKeyHash}});
   const token=await createStudentPortalAccessToken(db,{vendorId:vendor.id,email,purpose:"magic_link"});
   await page.goto(`${baseURL}/portal/${vendor.slug}/access?token=${encodeURIComponent(token)}`);await expect(page).toHaveURL(new RegExp(`/portal/${vendor.slug}$`));
   await page.goto(`/portal/${vendor.slug}/learn/${product.id}`);

@@ -23,6 +23,7 @@ vi.mock("@/lib/db", () => ({
 
 import {
   STUDENT_PORTAL_ACCESS_TOKEN_TTL_SECONDS,
+  STUDENT_PORTAL_CLOCK_SKEW_SECONDS,
   STUDENT_PORTAL_SESSION_COOKIE,
   clearStudentPortalSessionCookie,
   consumeStudentPortalAccessToken,
@@ -284,18 +285,54 @@ afterEach(() => { vi.useRealTimers(); vi.unstubAllEnvs(); });
 import { encryptSensitiveValue } from "@/lib/sensitive-data";
 import { DERIVED_KEY_ROTATIONS, encryptWithRotation } from "@/lib/derived-key-rotation";
 describe("student portal temporal boundaries", () => {
-  it("rejects future-issued access before touching consume state", async () => {
+  it("allows exactly the documented clock skew and no more", () => {
+    expect(STUDENT_PORTAL_CLOCK_SKEW_SECONDS).toBe(60);
+  });
+  it("rejects access issued beyond the clock skew before touching consume state", async () => {
     const store = tokenStore();
     const token = await createStudentPortalAccessToken({ studentPortalAccessToken: store }, {
-      vendorId: "vendor_1", email: "student@example.test", purpose: "magic_link", now: new Date(now.getTime() + 60_000),
+      vendorId: "vendor_1", email: "student@example.test", purpose: "magic_link", now: new Date(now.getTime() + (STUDENT_PORTAL_CLOCK_SKEW_SECONDS + 1) * 1_000),
     });
     expect(verifyStudentPortalAccessToken({ token, now })).toBeNull();
     await expect(consumeStudentPortalAccessToken({ studentPortalAccessToken: store }, { token, expectedPurpose: "magic_link", now })).resolves.toBeNull();
     expect(store.updateMany).not.toHaveBeenCalled();
   });
-  it("rejects future-issued encrypted sessions", () => {
-    const token = createStudentPortalSessionToken({ vendorId: "vendor_1", customerKeyHash, now: new Date(now.getTime() + 60_000) });
+  it("rejects encrypted sessions issued beyond the clock skew", () => {
+    const token = createStudentPortalSessionToken({ vendorId: "vendor_1", customerKeyHash, grant, now: new Date(now.getTime() + (STUDENT_PORTAL_CLOCK_SKEW_SECONDS + 1) * 1_000) });
     expect(readStudentPortalSessionToken(token, now)).toBeNull();
+  });
+  // Regression: a server whose wall clock was stepped back about two seconds
+  // (measured in a Docker Linux browser runner) refused the cookie the access
+  // route had just written, sending the learner back to the sign-in page.
+  it.each([1, 2, STUDENT_PORTAL_CLOCK_SKEW_SECONDS])("keeps a session minted %s s ahead of the reading server's clock", (aheadSeconds) => {
+    const issuedAt = new Date(now.getTime() + aheadSeconds * 1_000);
+    const token = createStudentPortalSessionToken({ vendorId: "vendor_1", customerKeyHash, grant, now: issuedAt });
+    expect(readStudentPortalSessionToken(token, now)).toEqual({
+      vendorId: "vendor_1", customerKeyHash, grant, issuedAt,
+      expiresAt: new Date(issuedAt.getTime() + STUDENT_PORTAL_SESSION_TTL_SECONDS * 1_000),
+    });
+  });
+  it.each([1, 2, STUDENT_PORTAL_CLOCK_SKEW_SECONDS])("consumes a magic link issued %s s ahead of the consuming server's clock exactly once", async (aheadSeconds) => {
+    const store = tokenStore();
+    const issuedAt = new Date(now.getTime() + aheadSeconds * 1_000);
+    const token = await createStudentPortalAccessToken({ studentPortalAccessToken: store }, { vendorId: "vendor_1", email: "student@example.test", purpose: "magic_link", now: issuedAt });
+    const consumed = await consumeStudentPortalAccessToken({ studentPortalAccessToken: store }, { token, expectedPurpose: "magic_link", now });
+    expect(consumed).toMatchObject({ vendorId: "vendor_1", purpose: "magic_link", issuedAt });
+    // The one-time predicate still binds tenant, digest, issue time, live expiry and unconsumed state.
+    expect(store.updateMany).toHaveBeenCalledWith({
+      where: {
+        vendorId: "vendor_1", tokenHash: consumed?.grant, customerKeyHash: consumed?.customerKeyHash, purpose: "magic_link",
+        issuedAt, expiresAt: { gt: now }, consumedAt: null,
+      },
+      data: { consumedAt: now },
+    });
+  });
+  it("never extends expiry: skew applies only to the issue time", async () => {
+    const store = tokenStore();
+    const token = await createStudentPortalAccessToken({ studentPortalAccessToken: store }, { vendorId: "vendor_1", email: "student@example.test", purpose: "magic_link", now });
+    expect(verifyStudentPortalAccessToken({ token, now: new Date(now.getTime() + STUDENT_PORTAL_ACCESS_TOKEN_TTL_SECONDS * 1_000) })).toBeNull();
+    const session = createStudentPortalSessionToken({ vendorId: "vendor_1", customerKeyHash, grant, now });
+    expect(readStudentPortalSessionToken(session, new Date(now.getTime() + STUDENT_PORTAL_SESSION_TTL_SECONDS * 1_000))).toBeNull();
   });
   it.each([0, -60])("rejects nonpositive session lifetime %s", (duration) => {
     const issuedAt = Math.floor(now.getTime() / 1000) + 120;

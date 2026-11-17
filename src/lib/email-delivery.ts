@@ -23,6 +23,7 @@ import {
 import { isFixedSessionLive } from "@/lib/live-fixed-sessions";
 import { normalizeBlacklistIdentifier } from "@/lib/blacklist-identifiers";
 import { isEmailBlacklistedForVendor } from "@/lib/email-blacklist";
+import { STUDENT_PORTAL_CLOCK_SKEW_SECONDS } from "@/lib/student-portal-clock-skew";
 // Values used at module load come from the dependency-free trigger module:
 // delayed-step-runs.ts reaches this module again through the automation
 // engine (delayed-step-runs -> automation-delayed-steps -> automation-workflow
@@ -1675,7 +1676,10 @@ async function isCurrentStudentPortalDelivery(
       tokenHash: Buffer.from(digest, "hex").toString("base64url"),
       purpose: "magic_link",
       consumedAt: null,
-      issuedAt: { lte: now },
+      // The send runs right after the link is created, possibly on a server
+      // whose clock is slightly behind; a too-strict bound here would mark a
+      // valid sign-in e-mail superseded and the learner would never get it.
+      issuedAt: { lte: new Date(now.getTime() + STUDENT_PORTAL_CLOCK_SKEW_SECONDS * 1_000) },
       expiresAt: { gt: now },
     },
     select: { id: true },
