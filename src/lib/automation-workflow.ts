@@ -649,15 +649,58 @@ async function executeAction(
  * fail too. Every caller today passes getDb() (payment_paid:
  * src/lib/payment-paid-automation.ts, after the payment transaction committed).
  */
-export async function dispatchAutomationEvent(db: AutomationDb, event: AutomationEvent) {
+export async function dispatchAutomationEvent(db: AutomationDb, event: AutomationEvent, options: AutomationDispatchOptions = {}) {
   const queuedEmailIds: string[] = [];
   try {
-    return await runAutomationEvent(db, event, queuedEmailIds);
+    return await runAutomationEvent(db, event, queuedEmailIds, options);
   } finally {
     // Rows already written stay queued even if a later rule fails.
     scheduleImmediateEmailDispatch(queuedEmailIds);
   }
 }
+
+export type AutomationDispatchOptions = {
+  /**
+   * Only rules whose `updatedAt` is at or before this instant run. The
+   * `payment_paid` catch-up (src/lib/payment-paid-automation-catchup.ts)
+   * passes the time the payment was recorded, so a rule created, edited or
+   * switched back on after the payment never runs for it late. The live
+   * dispatch passes nothing and keeps running every active rule.
+   */
+  rulesUnchangedSince?: Date;
+  /**
+   * Only these rules (still bound to the event's vendor, trigger and the
+   * active flag) run. The catch-up passes the rules its scan chose, so the
+   * dispatch never reclaims another rule's `failed` execution on the way.
+   */
+  onlyRuleIds?: string[];
+  /**
+   * Narrows which `failed` executions this dispatch may reclaim: only those
+   * whose `errorCode` is listed and that were never reclaimed before
+   * (`startedAt` still equals `createdAt`), checked in the reclaim's own
+   * conditional write. The catch-up passes its retryable codes, so two
+   * concurrent passes (or a pass that read the log before another one retried
+   * it) retry a failure at most once and never reclaim one recorded as
+   * non-transient meanwhile. Without it (the live dispatch) any `failed`
+   * execution is reclaimable, as before.
+   */
+  failedReclaim?: { errorCodes: readonly string[] };
+};
+
+/** The rule filter both dispatch paths add to their rule reads. */
+export function automationDispatchRuleFilter(options: AutomationDispatchOptions): Prisma.AutomationRuleWhereInput {
+  return {
+    ...(options.rulesUnchangedSince ? { updatedAt: { lte: options.rulesUnchangedSince } } : {}),
+    ...(options.onlyRuleIds ? { id: { in: options.onlyRuleIds } } : {}),
+  };
+}
+
+/**
+ * A `running` execution log older than this is presumed dead (its process was
+ * stopped mid-run) and the same event may reclaim it. Every caller runs well
+ * inside it: route `maxDuration` is at most 300 s.
+ */
+export const AUTOMATION_EXECUTION_RECLAIM_AFTER_MS = 5 * 60_000;
 
 type ActionArtifacts = { voucherUrl?: string; consultationUrl?: string; webinarUrl?: string };
 
@@ -741,6 +784,7 @@ async function claimRuleExecution(
   rule: ParsedRule,
   event: AutomationEvent,
   firstStep: { delayMinutes: number } | undefined,
+  failedReclaim: AutomationDispatchOptions["failedReclaim"],
 ): Promise<{ log: { id: string; createdAt?: Date } } | { status: "rule_deleted" | "duplicate" }> {
   const idempotencyKey = executionIdempotencyKey(rule, event);
   try {
@@ -785,13 +829,22 @@ async function claimRuleExecution(
     return { status: "duplicate" };
   }
   const now = new Date();
+  // Compare and write in one statement: a concurrent reclaim moves `startedAt`
+  // (or rewrites `errorCode`), and this update then matches nothing.
+  const failedReclaimable: Prisma.AutomationExecutionLogWhereInput = failedReclaim
+    ? {
+      status: "failed",
+      errorCode: { in: [...failedReclaim.errorCodes] },
+      startedAt: { equals: db.automationExecutionLog.fields.createdAt },
+    }
+    : { status: "failed" };
   const reclaimed = await db.automationExecutionLog.updateMany({
     where: {
       id: existing.id,
       vendorId: event.vendorId,
       OR: [
-        { status: "failed" },
-        { status: "running", startedAt: { lt: new Date(now.getTime() - 5 * 60_000) } },
+        failedReclaimable,
+        { status: "running", startedAt: { lt: new Date(now.getTime() - AUTOMATION_EXECUTION_RECLAIM_AFTER_MS) } },
       ],
     },
     data: { status: "running", startedAt: now, completedAt: null, errorCode: null },
@@ -800,7 +853,7 @@ async function claimRuleExecution(
   return { log: { id: existing.id, createdAt: existing.createdAt } };
 }
 
-async function runAutomationEvent(db: AutomationDb, event: AutomationEvent, queuedEmailIds: string[]) {
+async function runAutomationEvent(db: AutomationDb, event: AutomationEvent, queuedEmailIds: string[], options: AutomationDispatchOptions) {
   if ((event.trigger === "viewer_watch_progress" || event.trigger === "webinar_attended_duration_gte") && !event.liveId) {
     return [{ ruleId: "__scope__", status: "missing_live_scope" }];
   }
@@ -809,6 +862,7 @@ async function runAutomationEvent(db: AutomationDb, event: AutomationEvent, queu
       vendorId: event.vendorId,
       trigger: event.trigger,
       isActive: true,
+      ...automationDispatchRuleFilter(options),
       // An unscoped rule remains vendor-wide. A scoped rule can only run for
       // the exact trusted funnel page that emitted the event.
       OR: [{ funnelPageId: null }, ...(event.funnelPageId ? [{ funnelPageId: event.funnelPageId }] : [])],
@@ -837,7 +891,7 @@ async function runAutomationEvent(db: AutomationDb, event: AutomationEvent, queu
       results.push({ ruleId: rule.id, status: "skipped" });
       continue;
     }
-    const claim = await claimRuleExecution(db, rule, event, firstStep);
+    const claim = await claimRuleExecution(db, rule, event, firstStep, options.failedReclaim);
     if ("status" in claim) {
       results.push({ ruleId: rule.id, status: claim.status });
       continue;

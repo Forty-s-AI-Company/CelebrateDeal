@@ -12,7 +12,7 @@
 |---|---|---|---|---|
 | `/api/jobs/email-deliveries` | 是 | 每 5 分鐘 | POST＋`JOB_SECRET`／GET＋`CRON_SECRET` | 交易信、開播提醒、直播後追蹤、學員通知、LINE 物化與派送、報名重試草稿清理 |
 | `/api/cron/line-notifications` | 是 | 每 5 分鐘 | POST＋`JOB_SECRET`（新增）／GET＋`CRON_SECRET` | 與上一列重疊，但能在 email 流程中途失敗時獨立推進 LINE outbox；有 claim lease，不會重送 |
-| `/api/jobs/webhook-retry` | 是 | 每 5 分鐘 | POST＋`JOB_SECRET`／GET＋`CRON_SECRET`（新增） | 先釋放過期庫存保留，再重試失敗的付款 webhook（金流路徑） |
+| `/api/jobs/webhook-retry` | 是 | 每 5 分鐘 | POST＋`JOB_SECRET`／GET＋`CRON_SECRET`（新增） | 先釋放過期庫存保留，再重試失敗的付款 webhook（金流路徑），最後補跑 `after()` 沒跑完的 `payment_paid` 自動化（Q-10，每輪最多 20 筆；見 `docs/domain-workflows.md`「付款完成」） |
 | `/api/cron/live-media` | 需開啟 | 每 5 分鐘 | POST＋`JOB_SECRET`（新增）／GET＋`CRON_SECRET` | 只在 `vars.SCHEDULED_JOBS_ENABLE_LIVE_MEDIA=true` 時排程。瀏覽器直播封測隱藏（D-09），未設定 `CELEBRATEDEAL_MEDIA_ORIGIN` 時固定回 503，預設排程會讓每次執行都標紅 |
 | `/api/jobs/billing-cycle` | **需開啟** | 每日 01:22（台灣） | POST＋`JOB_SECRET`／GET＋`CRON_SECRET`（新增） | 只在 `vars.SCHEDULED_JOBS_ENABLE_BILLING_CYCLE=true` 時排程，`all` 也一樣；單選 `billing-cycle` 的手動 dispatch 才會直接執行。這個 job 會重算未鎖定月份的 draft 結算，並替每個 active 訂閱 upsert `issued` 月費帳單；因為帳單在 `dueAt <= now` 才產生，同一次執行結尾就會被標成 `overdue`（既有問題，另案處理）。封測期間 billing 隱藏（D-02、D-16），所以預設關閉。不會扣款（`automaticCharges: 0`） |
 | `/api/jobs/electronic-invoices` | 是 | 每日 01:22（台灣） | POST＋`JOB_SECRET`／GET＋`CRON_SECRET`（新增） | fiscal adapter 未接時回 202，視為成功 |
@@ -80,6 +80,15 @@ GitHub 的 `*/5 * * * *` 實測約每 2～5 小時才跑一次（中位數 184 �
 - `/api/jobs/webhook-retry` 的回應多了 `exhausted`、`inventoryUnavailable` 兩個計數；任一大於 0，scheduler 的該 step 會以 `needs_attention` 標紅。
 - owner 需在 staging 的 Sentry 專案為 `webhook_retry_requires_attention` 建立告警規則（通知到值班信箱或 Slack）。
 - 處理方式：用 `eventId`／`orderNumber` 在後台找到交易，向 PayUni 查實際付款狀態；已付款就人工補庫存或走退款，並在付款事件 SOP 記錄。
+
+### 3.2 webhook-retry 回應裡的 `paymentPaidCatchup`（Q-10）
+
+job 最後一段補跑 `payment_paid` 自動化，結果放在回應的 `paymentPaidCatchup`，不影響 HTTP 狀態碼：
+
+- 一般是計數：`candidates`（這輪撈到幾筆訂單）、`examined`（實際處理幾筆，比 `candidates` 少代表時間到了，剩下下一輪）、`completed`／`skipped`／`failed`／`duplicate`（規則結果；`duplicate` 代表即時路徑或另一個 job 已經在跑，屬正常）、`notApplicable`（撈到後訂單已退款或規則已停用）、`errors`（單筆丟錯，Sentry 有 `operation: "catchup_dispatch"`）。
+- `{ "skipped": true }`：route 前兩段已用掉 60 秒，這輪不補，下一輪再補；連續出現代表 webhook 重試或庫存釋放太慢，先看那兩段。
+- `{ "failed": true }`：整段補跑丟錯（例如資料庫查詢失敗），HTTP 仍是 200，Sentry 有 `source: "webhook_retry_job"`、`operation: "payment_paid_catchup"`。單次可忽略（下一輪重掃，48 小時內的訂單都會再試）；連續數輪出現就要查資料庫或部署。
+- `failed` 計數大於 0 時，Sentry 有 `catchup_rule_failed`；哪條規則、為什麼記在商家後台的執行日誌。
 
 **Production 上線前硬性 gate：B03-07 必修。** 付款事實一律先記帳、不得因庫存 rollback；庫存不足時把訂單標記為超賣並建立退款或人工工單；UPP 的 `TradeLExpireSec` 必須 ≤ 保留 TTL。上述完成前，Production 不得啟用 webhook-retry 排程。
 
