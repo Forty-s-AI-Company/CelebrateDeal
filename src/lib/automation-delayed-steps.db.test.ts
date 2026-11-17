@@ -735,13 +735,13 @@ describe("後台：步驟的新增、修改與刪除", () => {
 
   it("adds, edits and deletes a step through the Server Actions, keeping the step id and writing audit logs", async () => {
     const t = await tenant();
-    const r = await rule(t);
+    const r = await rule(t, { trigger: "consultation_booked" });
     as(t);
     await expect(createAutomationRuleStepAction(form({ ruleId: r.id, delayValue: "2", delayUnit: "days", actionTag: "on", customerTag: "第二天", stepActive: "on" }))).rejects.toThrow("redirect:/settings/automations?updated=step_created");
     const created = await db.automationRuleStep.findFirstOrThrow({ where: { vendorId: t.vendor.id, ruleId: r.id } });
     expect(created).toMatchObject({ delayMinutes: 2_880, isActive: true, condition: { type: "always" }, actions: [{ type: "add_customer_tag", tag: "第二天" }] });
-    await expect(updateAutomationRuleStepAction(form({ ruleId: r.id, stepId: created.id, delayValue: "5", delayUnit: "hours", actionEmail: "on", emailTemplate: "class_reminder" }))).rejects.toThrow("redirect:/settings/automations?updated=step_updated");
-    await expect(db.automationRuleStep.findUniqueOrThrow({ where: { id: created.id } })).resolves.toMatchObject({ delayMinutes: 300, isActive: false, actions: [{ type: "send_email_notification", template: "class_reminder" }] });
+    await expect(updateAutomationRuleStepAction(form({ ruleId: r.id, stepId: created.id, delayValue: "5", delayUnit: "hours", actionEmail: "on", emailTemplate: "consultation_confirmation" }))).rejects.toThrow("redirect:/settings/automations?updated=step_updated");
+    await expect(db.automationRuleStep.findUniqueOrThrow({ where: { id: created.id } })).resolves.toMatchObject({ delayMinutes: 300, isActive: false, actions: [{ type: "send_email_notification", template: "consultation_confirmation" }] });
     // Validation: delay range, no action, duplicate delay, unsafe button URL.
     await expect(createAutomationRuleStepAction(form({ ruleId: r.id, delayValue: "0", delayUnit: "hours", actionTag: "on", customerTag: "x" }))).rejects.toThrow("error=invalid_delay");
     await expect(createAutomationRuleStepAction(form({ ruleId: r.id, delayValue: "91", delayUnit: "days", actionTag: "on", customerTag: "x" }))).rejects.toThrow("error=invalid_delay");
@@ -1352,5 +1352,79 @@ describe("Q-12：延遲步驟的細節", () => {
       await expect(db.customerTagAssignment.count({ where: { vendorId: c.t.vendor.id, tag: "第二天" } })).resolves.toBe(1);
       await expect(db.customerTagAssignment.count({ where: { vendorId: b.t.vendor.id, tag: "第二天" } })).resolves.toBe(2);
     });
+  });
+});
+
+// Q-18: a new or edited step may only use an e-mail template that has its link on
+// the rule's trigger (or next to a voucher in the same step); a step stored
+// before that keeps running exactly as it was.
+describe("Q-18: e-mail templates by trigger", () => {
+  const email = (template: string) => ({ type: "send_email_notification", template });
+  const input = (actions: unknown[], delayMinutes = 60) => ({ delayMinutes, condition: { type: "always" }, actions, isActive: true });
+  const stored = (t: Tenant, ruleId: string) => db.automationRuleStep.findMany({ where: { vendorId: t.vendor.id, ruleId }, orderBy: { delayMinutes: "asc" } });
+
+  it.each([
+    ["form_registered", "class_reminder"],
+    ["form_registered", "repurchase_followup"],
+    ["consultation_booked", "webinar_replay"],
+    ["consultation_no_show", "class_reminder"],
+    ["form_no_show", "consultation_confirmation"],
+    ["form_no_show", "class_reminder"],
+  ])("refuses to add a %s step with %s and stores nothing", async (trigger, template) => {
+    const t = await tenant();
+    await db.vendor.update({ where: { id: t.vendor.id }, data: { betaFeatureGrants: ["automation_delayed_steps", "automation_form_no_show"] } });
+    const r = await rule(t, { trigger });
+    await expect(createAutomationRuleStep({ vendorId: t.vendor.id, ruleId: r.id, linePushAllowed: true, step: input([email(template)]) })).resolves.toEqual({ ok: false, code: "email_template_unavailable" });
+    await expect(stored(t, r.id)).resolves.toEqual([]);
+  });
+
+  it.each([
+    ["consultation_booked", "consultation_confirmation"],
+    ["consultation_no_show", "consultation_confirmation"],
+    ["form_no_show", "webinar_replay"],
+  ])("adds a %s step with %s", async (trigger, template) => {
+    const t = await tenant();
+    await db.vendor.update({ where: { id: t.vendor.id }, data: { betaFeatureGrants: ["automation_delayed_steps", "automation_form_no_show"] } });
+    const r = await rule(t, { trigger });
+    await expect(createAutomationRuleStep({ vendorId: t.vendor.id, ruleId: r.id, linePushAllowed: true, step: input([email(template)]) })).resolves.toMatchObject({ ok: true });
+    await expect(stored(t, r.id)).resolves.toHaveLength(1);
+  });
+
+  it("adds a 追購通知 step on any trigger only next to the step's own voucher", async () => {
+    const t = await tenant();
+    const r = await rule(t);
+    const voucher = { type: "issue_repurchase_voucher", productId: t.product.id, discountType: "fixed", discountValue: 10_000, expiresInDays: 7 };
+    await expect(createAutomationRuleStep({ vendorId: t.vendor.id, ruleId: r.id, linePushAllowed: true, step: input([email("repurchase_followup")]) })).resolves.toEqual({ ok: false, code: "email_template_unavailable" });
+    // A voucher on the rule's immediate actions does not count: the step has its own link.
+    const withImmediate = await rule(t, { actions: [voucher] });
+    await expect(createAutomationRuleStep({ vendorId: t.vendor.id, ruleId: withImmediate.id, linePushAllowed: true, step: input([email("repurchase_followup")]) })).resolves.toEqual({ ok: false, code: "email_template_unavailable" });
+    await expect(createAutomationRuleStep({ vendorId: t.vendor.id, ruleId: r.id, linePushAllowed: true, step: input([voucher, email("repurchase_followup")]) })).resolves.toMatchObject({ ok: true });
+  });
+
+  it("refuses to edit a step into a template without a link, but lets an edit keep the one a stored step already has", async () => {
+    const t = await tenant();
+    const r = await rule(t);
+    const legacy = await step(t, r.id, 60, [EMAIL_ACTION]);
+    // Only the delay changes: the stored template stays.
+    await expect(updateAutomationRuleStep({ vendorId: t.vendor.id, ruleId: r.id, stepId: legacy.id, linePushAllowed: true, step: input([EMAIL_ACTION], 120) })).resolves.toMatchObject({ ok: true });
+    // Another template with no link is still refused, and the step is left as it was.
+    await expect(updateAutomationRuleStep({ vendorId: t.vendor.id, ruleId: r.id, stepId: legacy.id, linePushAllowed: true, step: input([email("class_reminder")], 120) })).resolves.toEqual({ ok: false, code: "email_template_unavailable" });
+    await expect(stored(t, r.id)).resolves.toMatchObject([{ id: legacy.id, delayMinutes: 120, actions: [EMAIL_ACTION] }]);
+    // Dropping the e-mail is fine.
+    await expect(updateAutomationRuleStep({ vendorId: t.vendor.id, ruleId: r.id, stepId: legacy.id, linePushAllowed: true, step: input([TAG_ACTION], 120) })).resolves.toMatchObject({ ok: true });
+  });
+
+  it("still runs a step stored with a template that has no link, as it did before", async () => {
+    const t = await tenant();
+    const r = await rule(t);
+    // Stored directly (as before this check): 追購通知 with no voucher on a registration rule.
+    await step(t, r.id, 60, [TAG_ACTION, EMAIL_ACTION]);
+    const lead = await registration(t);
+    await registered(t, lead);
+    const run = await onlyRun(t);
+    await expect(work(t, after(run.anchorAt, 61 * MINUTE))).resolves.toEqual([{ runId: run.id, status: "executed", emailsQueued: 1 }]);
+    // Nothing about it changes: the mail is still queued (its other lines remain), the step completes.
+    const log = await db.automationExecutionLog.findFirstOrThrow({ where: { vendorId: t.vendor.id, ruleId: r.id, status: "completed" }, orderBy: { createdAt: "desc" } });
+    expect(log.actionResults).toMatchObject({ results: [{ status: "tagged" }, { type: "send_email_notification", status: "queued", template: "repurchase_followup" }] });
   });
 });

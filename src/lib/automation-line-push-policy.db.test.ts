@@ -234,7 +234,7 @@ describe("/settings/automations: a LINE push is the owner's", () => {
     as("admin", vendor);
     await expect(createAutomationRuleAction(form({ name: "標籤", trigger: "form_registered", ...tagFields }))).rejects.toThrow("updated=created");
     const r = await db.automationRule.findFirstOrThrow({ where: { vendorId: vendor.id, name: "標籤" } });
-    await expect(createAutomationRuleStepAction(stepFields(r.id, { actionEmail: "on", emailTemplate: "class_reminder" }))).rejects.toThrow("updated=step_created");
+    await expect(createAutomationRuleStepAction(stepFields(r.id, tagFields))).rejects.toThrow("updated=step_created");
     const s = await db.automationRuleStep.findFirstOrThrow({ where: { vendorId: vendor.id, ruleId: r.id } });
     await expect(updateAutomationRuleStepAction(stepFields(r.id, { stepId: s.id, ...tagFields }))).rejects.toThrow("updated=step_updated");
     await expect(toggleAutomationRuleAction(form({ ruleId: r.id }))).rejects.toThrow("updated=toggled");

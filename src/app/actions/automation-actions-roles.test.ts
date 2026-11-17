@@ -269,10 +269,10 @@ describe("/settings/automations owner-only LINE push", () => {
 
   it("an admin keeps managing a rule without a LINE push (switch on, add and edit steps)", async () => {
     mocks.findSession.mockResolvedValue(sessionFor("admin"));
-    storedRule({ actions: TAG, steps: [{ actions: [{ type: "send_email_notification", template: "class_reminder" }] }] });
+    storedRule({ actions: TAG, steps: [{ actions: [{ type: "send_email_notification", template: "consultation_confirmation" }] }] });
     await expect(toggleAutomationRuleAction(data({ ruleId: "rule-1" }))).rejects.toThrow("updated=toggled");
     await expect(createAutomationRuleStepAction(stepForm({ actionTag: "on", customerTag: "第三天" }))).rejects.toThrow("updated=step_created");
-    await expect(updateAutomationRuleStepAction(stepForm({ stepId: "step-1", actionEmail: "on", emailTemplate: "class_reminder" }))).rejects.toThrow("updated=step_updated");
+    await expect(updateAutomationRuleStepAction(stepForm({ stepId: "step-1", actionEmail: "on", emailTemplate: "consultation_confirmation" }))).rejects.toThrow("updated=step_updated");
     expect(mocks.audit).toHaveBeenCalledTimes(3);
   });
 
@@ -282,5 +282,40 @@ describe("/settings/automations owner-only LINE push", () => {
     await expect(createAutomationRuleStepAction(stepForm({ actionTag: "on", customerTag: "x" }))).rejects.toThrow("redirect:/settings/automations?error=not_found");
     expect(mocks.db.automationRule.findFirst).not.toHaveBeenCalled();
     expectNoWrite();
+  });
+});
+
+// Q-18: a delayed step may only pick an e-mail template whose link the rule's
+// trigger (consultation_booked here) carries, or next to a voucher in the same
+// step. An edit may leave a template the stored step already had.
+describe("/settings/automations delayed-step e-mail templates by trigger", () => {
+  const stepWith = (entries: Record<string, string>) => data({ ruleId: "rule-1", delayValue: "1", delayUnit: "days", stepActive: "on", ...entries });
+  const email = (template: string, extra: Record<string, string> = {}) => ({ actionEmail: "on", emailTemplate: template, ...extra });
+  const voucher = { actionVoucher: "on", productId: "product-1", discountType: "fixed", discountValue: "100", expiresInDays: "30" };
+  beforeEach(() => { mocks.findSession.mockResolvedValue(sessionFor("owner")); });
+
+  it.each(["class_reminder", "webinar_replay", "repurchase_followup"])("refuses to add a %s step to a consultation rule", async (template) => {
+    await expect(createAutomationRuleStepAction(stepWith(email(template)))).rejects.toThrow("redirect:/settings/automations?error=email_template_unavailable");
+    expect(mocks.db.automationRuleStep.create).not.toHaveBeenCalled();
+    expect(mocks.audit).not.toHaveBeenCalled();
+  });
+
+  it("adds a consultation_confirmation step, and a 追購通知 step next to its own voucher", async () => {
+    await expect(createAutomationRuleStepAction(stepWith(email("consultation_confirmation")))).rejects.toThrow("updated=step_created");
+    await expect(createAutomationRuleStepAction(stepWith({ ...email("repurchase_followup"), ...voucher, delayValue: "2" }))).rejects.toThrow("updated=step_created");
+    expect(mocks.db.automationRuleStep.create).toHaveBeenCalledTimes(2);
+  });
+
+  it("refuses to edit a step into a template without a link", async () => {
+    await expect(updateAutomationRuleStepAction(stepWith({ stepId: "step-1", ...email("webinar_replay") }))).rejects.toThrow("redirect:/settings/automations?error=email_template_unavailable");
+    expect(mocks.db.automationRuleStep.updateMany).not.toHaveBeenCalled();
+  });
+
+  it("lets an edit leave the template a stored step already had, but not change to another bad one", async () => {
+    mocks.db.automationRuleStep.findFirst.mockImplementation(async (query: { where: { id?: unknown } }) => (typeof query.where.id === "string" ? { id: "step-1", delayMinutes: 1_440, isActive: true, actions: [{ type: "send_email_notification", template: "class_reminder" }] } : null));
+    await expect(updateAutomationRuleStepAction(stepWith({ stepId: "step-1", delayValue: "3", ...email("class_reminder") }))).rejects.toThrow("updated=step_updated");
+    expect(mocks.db.automationRuleStep.updateMany).toHaveBeenCalledTimes(1);
+    await expect(updateAutomationRuleStepAction(stepWith({ stepId: "step-1", ...email("webinar_replay") }))).rejects.toThrow("error=email_template_unavailable");
+    expect(mocks.db.automationRuleStep.updateMany).toHaveBeenCalledTimes(1);
   });
 });
