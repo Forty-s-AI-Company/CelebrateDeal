@@ -1405,8 +1405,11 @@ type SequenceSnapshotDatabase = Pick<Prisma.TransactionClient, "delayedStepRun" 
 
 /**
  * 「買了就停」at send time: the run is stopped for a purchase, or its sequence
- * stops on purchase and the registrant has bought since registering. A key
- * that cannot be derived counts as bought (a marketing e-mail fails closed).
+ * stops on purchase and the registrant has bought since registering. When the
+ * run has no stored key and none can be derived from the registration's
+ * address, there is nothing to compare: not counted as bought, and the other
+ * send-time checks decide (review NIT-1). Every active run stores its key, and
+ * the worker treats a key it cannot derive as a deployment problem.
  */
 async function sequenceRunStoppedByPurchase(
   database: PurchaseCheckDatabase,
@@ -1425,7 +1428,7 @@ async function sequenceRunStoppedByPurchase(
   try {
     subjectKeyHash = purchaseSubjectKey(run, run.formSubmission.email);
   } catch {
-    return true;
+    return false;
   }
   return hasSubjectPurchasedSince(database, { vendorId, subjectKeyHash, since: run.formSubmission.createdAt });
 }

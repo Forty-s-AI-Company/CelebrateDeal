@@ -72,7 +72,7 @@ function StopOnPurchaseCheckbox({ defaultChecked, disabled }: { defaultChecked: 
         買了就停
       </label>
       <p id="stop-on-purchase-hint" className="text-sm text-slate-600">
-        報名者在報名之後於本商家完成付款（任何商品，測試訂單不算），之後還沒寄出的信就不再寄，已經排隊的那一封也會在寄出前取消。之後就算退款也不會恢復。
+        報名者報名後在你這裡買了任何商品（測試訂單不算），還沒寄出的信就不再寄，已排隊的那一封也會取消；之後退款也不會恢復寄送。
       </p>
     </div>
   );

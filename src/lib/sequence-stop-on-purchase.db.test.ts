@@ -331,6 +331,56 @@ describe("買了就停：步驟到點時", { timeout: DB_TEST_TIMEOUT_MS }, () =
     await expect(runOf(t, lead.id)).resolves.toMatchObject({ status: "active" });
   });
 
+  it("stops for a purchase paid after registering but before the e-mail was verified (review MINOR-1)", async () => {
+    const times = timeline();
+    const t = await tenant("before-verify");
+    await sequence(t);
+    const lead = await registrant(t, `before-verify-${randomUUID().slice(0, 8)}@example.test`, times);
+    // Paid between the registration (createdAt) and the verification (the run's anchorAt).
+    const paidAt = new Date(times.registeredAt.getTime() + 2 * MINUTE);
+    expect(paidAt < times.verifiedAt).toBe(true);
+    const c = await buy(t, lead.email, paidAt);
+    await expect(db.commerceOrder.findUniqueOrThrow({ where: { id: c.orderId } })).resolves.toMatchObject({ paidAt });
+
+    await expect(work(t, times.now)).resolves.toEqual([expect.objectContaining({ status: "cancelled", cancelReason: "purchased" })]);
+    expect(await sequenceMails(t)).toHaveLength(0);
+  });
+
+  it("counts an order paid at exactly the registration's creation time, not one a millisecond earlier (review MINOR-1)", async () => {
+    const times = timeline();
+    const atBoundary = await tenant("boundary");
+    await sequence(atBoundary);
+    const email = `boundary-${randomUUID().slice(0, 8)}@example.test`;
+    const lead = await registrant(atBoundary, email, times);
+    const c = await buy(atBoundary, email, times.registeredAt);
+    await expect(db.commerceOrder.findUniqueOrThrow({ where: { id: c.orderId } })).resolves.toMatchObject({ paidAt: times.registeredAt });
+    await expect(work(atBoundary, times.now)).resolves.toEqual([expect.objectContaining({ status: "cancelled", cancelReason: "purchased" })]);
+    await expect(runOf(atBoundary, lead.id)).resolves.toMatchObject({ cancelReason: "purchased" });
+
+    const justBefore = await tenant("just-before");
+    await sequence(justBefore);
+    const earlier = await registrant(justBefore, email, times);
+    await buy(justBefore, email, new Date(times.registeredAt.getTime() - 1));
+    await expect(work(justBefore, times.now)).resolves.toEqual([expect.objectContaining({ status: "queued" })]);
+    await expect(runOf(justBefore, earlier.id)).resolves.toMatchObject({ status: "active" });
+  });
+
+  it("counts a partially refunded order as a purchase (review MINOR-1)", async () => {
+    const times = timeline();
+    const t = await tenant("partial");
+    await sequence(t);
+    const lead = await registrant(t, `partial-${randomUUID().slice(0, 8)}@example.test`, times);
+    const c = await buy(t, lead.email);
+    await processPaymentWebhook(PaymentWebhookPayload.parse({
+      provider: "payuni", eventId: `stop-partial-${randomUUID()}`, eventType: "partially_refunded", vendorId: t.vendor.id, orderNumber: c.orderNumber,
+      refundAmountCents: 500, currency: "TWD",
+    }));
+    await expect(db.commerceOrder.findUniqueOrThrow({ where: { id: c.orderId } })).resolves.toMatchObject({ status: "partially_refunded", refundedAmountCents: 500 });
+
+    await expect(work(t, times.now)).resolves.toEqual([expect.objectContaining({ status: "cancelled", cancelReason: "purchased" })]);
+    expect(await sequenceMails(t)).toHaveLength(0);
+  });
+
   it("follows the merchant's saved setting: switched off, a buyer keeps receiving; a save without it keeps it", async () => {
     const times = timeline();
     const t = await tenant("toggle");
@@ -424,6 +474,23 @@ describe("買了就停：已排入待寄的信", { timeout: DB_TEST_TIMEOUT_MS }
     await expect(isSequenceEmailStoppedByPurchase(mail!, db)).resolves.toBe(false);
     await expect(dispatchEmailDelivery(mail!.id)).resolves.toEqual({ status: "sent" });
     expect(sentSequenceMails()).toEqual([expect.objectContaining({ to: lead.email })]);
+  });
+
+  it("does not count as bought when there is no customer key to compare (review NIT-1)", async () => {
+    const times = timeline();
+    const t = await tenant("no-key-send");
+    await sequence(t);
+    const lead = await registrant(t, `no-key-send-${randomUUID().slice(0, 8)}@example.test`, times);
+    await expect(work(t, times.now)).resolves.toEqual([expect.objectContaining({ status: "queued" })]);
+    const [mail] = await sequenceMails(t);
+    await buy(t, lead.email);
+    await expect(isSequenceEmailStoppedByPurchase(mail!, db)).resolves.toBe(true);
+
+    // No stored key, and the registration's address yields none: nothing to
+    // compare, so the purchase rule does not apply (an error is not a purchase).
+    await db.delayedStepRun.updateMany({ where: { vendorId: t.vendor.id, formSubmissionId: lead.id }, data: { subjectKeyHash: null } });
+    await db.formSubmission.update({ where: { id: lead.id }, data: { email: "not-an-address" } });
+    await expect(isSequenceEmailStoppedByPurchase(mail!, db)).resolves.toBe(false);
   });
 
   it("never reads another vendor's run from a forged delivery", async () => {

@@ -87,6 +87,7 @@ describe("EmailSequenceFormClient", () => {
     // 「買了就停」shows the saved setting and always sends the marker that it was shown.
     expect(container.querySelector<HTMLInputElement>('input[name="stopOnPurchase"]')?.checked).toBe(false);
     expect(container.querySelector<HTMLInputElement>('input[name="stopOnPurchaseShown"]')?.value).toBe("1");
+    expect(container.querySelector("#stop-on-purchase-hint")?.textContent).toBe("報名者報名後在你這裡買了任何商品（測試訂單不算），還沒寄出的信就不再寄，已排隊的那一封也會取消；之後退款也不會恢復寄送。");
     expect(container.querySelector<HTMLInputElement>('input[type="hidden"][name="liveId"]')?.value).toBe("live-1");
     expect(container.querySelector('select[name="liveId"]')).toBeNull();
     expect(container.querySelector<HTMLInputElement>('input[name="sequenceId"]')?.value).toBe("seq-1");
