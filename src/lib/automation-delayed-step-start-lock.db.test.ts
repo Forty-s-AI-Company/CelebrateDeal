@@ -16,6 +16,7 @@ vi.mock("@/lib/monitoring", () => ({ captureOperationalError: monitoring.capture
 vi.mock("@/lib/email-delivery-immediate", () => ({ scheduleImmediateEmailDispatch: vi.fn() }));
 
 import {
+  PENDING_RUN_START_MAX_ATTEMPTS,
   PENDING_RUN_START_MIN_AGE_MS,
   PENDING_RUN_START_WINDOW_MS,
   runDelayedStepWorker,
@@ -64,7 +65,9 @@ afterEach(async () => {
   vi.unstubAllEnvs();
 });
 
-async function fixture(options: { grant?: boolean } = {}) {
+const DELAYED_STEPS_GRANT = "automation_delayed_steps";
+
+async function fixture(options: { grants?: string[]; trigger?: "form_registered" | "form_no_show" | "consultation_booked" } = {}) {
   const suffix = randomUUID().slice(0, 12);
   const vendor = await db.vendor.create({
     data: {
@@ -72,7 +75,7 @@ async function fixture(options: { grant?: boolean } = {}) {
       slug: `automation-lock-gap-${suffix}`,
       email: `merchant-${suffix}@example.test`,
       passwordHash: "disposable-test-only",
-      betaFeatureGrants: options.grant === false ? [] : ["automation_delayed_steps"],
+      betaFeatureGrants: options.grants ?? [DELAYED_STEPS_GRANT],
     },
   });
   createdVendorIds.push(vendor.id);
@@ -83,7 +86,7 @@ async function fixture(options: { grant?: boolean } = {}) {
     data: {
       vendorId: vendor.id,
       name: "報名後追蹤",
-      trigger: "form_registered",
+      trigger: options.trigger ?? "form_registered",
       condition: { type: "always" } as Prisma.InputJsonValue,
       actions: [{ type: "add_customer_tag", tag: "報名" }] as Prisma.InputJsonArray,
     },
@@ -97,7 +100,10 @@ async function fixture(options: { grant?: boolean } = {}) {
       actions: [{ type: "add_customer_tag", tag: "兩小時後" }] as Prisma.InputJsonArray,
     },
   });
-  return { vendor, form, rule, step };
+  const consultation = await db.consultationEvent.create({
+    data: { vendorId: vendor.id, title: "1 對 1 諮詢", weeklySchedule: {}, intakeFormFields: [] },
+  });
+  return { vendor, form, rule, step, consultation };
 }
 
 type Fixture = Awaited<ReturnType<typeof fixture>>;
@@ -108,16 +114,57 @@ async function registration(f: Fixture) {
   });
 }
 
-function registered(f: Fixture, submission: { id: string; email: string }, client: PrismaClient = db) {
+async function booking(f: Fixture) {
+  const start = new Date(Date.now() + 3 * 24 * 60 * MINUTE);
+  const row = await db.consultationBooking.create({
+    data: {
+      vendorId: f.vendor.id,
+      eventId: f.consultation.id,
+      startTime: start,
+      endTime: new Date(start.getTime() + 30 * MINUTE),
+      clientName: "林小姐",
+      clientEmail: `client-${randomUUID().slice(0, 8)}@example.test`,
+      clientPhone: "0912000000",
+      meetingUrl: "https://meet.example.test/room",
+    },
+  });
+  return { id: row.id, email: row.clientEmail };
+}
+
+/** The rule's own event for this subject (a registration, or a booking for the consultation trigger). */
+function registered(f: Fixture, subject: { id: string; email: string }, client: PrismaClient = db) {
+  const trigger = f.rule.trigger as "form_registered" | "form_no_show" | "consultation_booked";
+  const eventId = trigger === "form_registered"
+    ? `form-registered:${subject.id}`
+    : trigger === "form_no_show" ? `form-no-show:${subject.id}:session-1` : `consultation-booked:${subject.id}`;
   return dispatchAutomationEvent(client, {
     vendorId: f.vendor.id,
-    eventId: `form-registered:${submission.id}`,
-    trigger: "form_registered",
+    eventId,
+    trigger,
     subjectType: "buyer_registration",
-    subjectId: submission.id,
-    subjectKeyHash: automationCustomerKeyHash(f.vendor.id, submission.email),
-    recipientEmail: submission.email,
+    subjectId: subject.id,
+    subjectKeyHash: automationCustomerKeyHash(f.vendor.id, subject.email),
+    recipientEmail: subject.email,
+    ...(trigger === "consultation_booked" ? { consultationUrl: "https://meet.example.test/room" } : {}),
   });
+}
+
+/**
+ * An event whose log still owes its run (the state a deferred start leaves):
+ * dispatched normally, its run removed, the mark written and the completion
+ * moved `completedAgoMs` into the past.
+ */
+async function owedLog(f: Fixture, options: { completedAgoMs?: number; attempts?: number } = {}) {
+  const lead = await registration(f);
+  await registered(f, lead);
+  const log = await db.automationExecutionLog.findFirstOrThrow({ where: { vendorId: f.vendor.id, eventId: { contains: lead.id } } });
+  await db.delayedStepRun.deleteMany({ where: { vendorId: f.vendor.id, sourceExecutionLogId: log.id } });
+  const completedAt = new Date(Date.now() - (options.completedAgoMs ?? 10 * MINUTE));
+  await db.automationExecutionLog.update({
+    where: { id: log.id },
+    data: { delayedStepsPendingSubjectId: lead.id, delayedStepsPendingAttempts: options.attempts ?? 0, completedAt },
+  });
+  return { lead, log: { ...log, completedAt } };
 }
 
 /**
@@ -320,7 +367,7 @@ describe("Q-13 修正：job 補建事件欠下的 run", () => {
     expect((await logOf(f)).delayedStepsPendingSubjectId).toBeNull();
   }, 30_000);
 
-  it("settles without a run when the rule was switched off or the registration deleted meanwhile, and never back-fills events that owed nothing", async () => {
+  it("settles without a run when the rule was switched off before the job came round, and never back-fills events that owed nothing", async () => {
     // Switched off before the job came round: no run (as for the event itself).
     const off = await fixture();
     const offLead = await registration(off);
@@ -381,17 +428,8 @@ describe("Q-13 修正：job 補建事件欠下的 run", () => {
     const a = await fixture();
     const b = await fixture();
     // Three owed events at A, one at B, marked directly (the same state a deferred start leaves).
-    const completedAt = new Date(Date.now() - 10 * MINUTE);
-    async function owed(f: Fixture) {
-      const lead = await registration(f);
-      await registered(f, lead);
-      await db.delayedStepRun.deleteMany({ where: { vendorId: f.vendor.id, formSubmissionId: lead.id } });
-      const log = await db.automationExecutionLog.findFirstOrThrow({ where: { vendorId: f.vendor.id, eventId: `form-registered:${lead.id}` } });
-      await db.automationExecutionLog.update({ where: { id: log.id }, data: { delayedStepsPendingSubjectId: lead.id, completedAt } });
-      return log;
-    }
-    for (let index = 0; index < 3; index += 1) await owed(a);
-    const bLog = await owed(b);
+    for (let index = 0; index < 3; index += 1) await owedLog(a);
+    const { log: bLog } = await owedLog(b);
     const ids = [a.vendor.id, b.vendor.id];
     const round = await startPendingAutomationRuns({ now: new Date(), limit: 2 });
     expect(round.filter((result) => result.status === "started").length).toBeGreaterThanOrEqual(2);
@@ -402,5 +440,163 @@ describe("Q-13 修正：job 補建事件欠下的 run", () => {
     }
     expect(await db.delayedStepRun.count({ where: { vendorId: { in: ids } } })).toBe(4);
     expect(await db.automationExecutionLog.count({ where: { vendorId: { in: ids }, delayedStepsPendingSubjectId: { not: null } } })).toBe(0);
+  }, 40_000);
+
+  it("creates the owed run of an execution recorded as action_failed, and of a consultation booking", async () => {
+    // An immediate action that throws: the log is failed / action_failed and still owes the run.
+    const failed = await fixture();
+    const lead = await registration(failed);
+    vi.spyOn(db.customerTagAssignment, "upsert").mockRejectedValueOnce(new Error("synthetic tag failure"));
+    const { outcome } = await registeredDuringSave(failed, lead);
+    expect(outcome).toEqual([{ ruleId: failed.rule.id, status: "failed" }]);
+    const failedLog = await logOf(failed);
+    expect(failedLog).toMatchObject({ status: "failed", errorCode: "action_failed", delayedStepsPendingSubjectId: lead.id });
+    await expect(startPendingAutomationRuns({ now: jobTimeFor(failedLog), vendorId: failed.vendor.id })).resolves.toEqual([{ status: "started" }]);
+    await expect(runsOf(failed)).resolves.toEqual([expect.objectContaining({ sourceExecutionLogId: failedLog.id, formSubmissionId: lead.id, anchorAt: failedLog.createdAt })]);
+
+    // consultation_booked: the run points at the booking.
+    const consult = await fixture({ trigger: "consultation_booked" });
+    const row = await booking(consult);
+    await registeredDuringSave(consult, row);
+    const consultLog = await logOf(consult);
+    expect(consultLog.delayedStepsPendingSubjectId).toBe(row.id);
+    await expect(startPendingAutomationRuns({ now: jobTimeFor(consultLog), vendorId: consult.vendor.id })).resolves.toEqual([{ status: "started" }]);
+    await expect(runsOf(consult)).resolves.toEqual([expect.objectContaining({
+      sourceExecutionLogId: consultLog.id,
+      consultationBookingId: row.id,
+      formSubmissionId: null,
+      anchorAt: consultLog.createdAt,
+      nextRunAt: new Date(consultLog.createdAt.getTime() + 180 * MINUTE),
+    })]);
+  }, 30_000);
+
+  it("takes form_no_show logs only from vendors holding the form_no_show grant too (NIT-3)", async () => {
+    const f = await fixture({ trigger: "form_no_show", grants: [DELAYED_STEPS_GRANT] });
+    const { log } = await owedLog(f);
+    await expect(startPendingAutomationRuns({ now: new Date(), vendorId: f.vendor.id })).resolves.toEqual([]);
+    expect((await logOf(f)).delayedStepsPendingSubjectId).not.toBeNull();
+    await db.vendor.update({ where: { id: f.vendor.id }, data: { betaFeatureGrants: [DELAYED_STEPS_GRANT, "automation_form_no_show"] } });
+    await expect(startPendingAutomationRuns({ now: new Date(), vendorId: f.vendor.id })).resolves.toEqual([{ status: "started" }]);
+    await expect(runsOf(f)).resolves.toEqual([expect.objectContaining({ sourceExecutionLogId: log.id })]);
+  });
+
+  it("clears the mark without a run when the registration is deleted just before the run is written (NIT-1)", async () => {
+    const f = await fixture();
+    const { lead, log } = await owedLog(f);
+    const original = db.formSubmission.findFirst.bind(db.formSubmission);
+    vi.spyOn(db.formSubmission, "findFirst").mockImplementationOnce((async (args: Parameters<typeof original>[0]) => {
+      const row = await original(args);
+      await db.formSubmission.delete({ where: { id: lead.id } });
+      return row;
+    }) as never);
+    await expect(startPendingAutomationRuns({ now: new Date(), vendorId: f.vendor.id })).resolves.toEqual([{ status: "not_needed" }]);
+    expect(await runsOf(f)).toEqual([]);
+    expect((await db.automationExecutionLog.findUniqueOrThrow({ where: { id: log.id } })).delayedStepsPendingSubjectId).toBeNull();
+  });
+});
+
+describe("Q-13 審查修正：嘗試次數、本輪上限與事件端標記", () => {
+  it("MINOR-1: counts failed attempts (not lock waits), gives up at the limit with one report, and tries fewer-attempt logs first", async () => {
+    const f = await fixture();
+    const { log } = await owedLog(f);
+    // Fails for a reason other than a lock wait: counted.
+    for (let attempt = 1; attempt < PENDING_RUN_START_MAX_ATTEMPTS; attempt += 1) {
+      vi.spyOn(db, "$transaction").mockRejectedValueOnce(new Error("synthetic run write failure"));
+      await expect(startPendingAutomationRuns({ now: new Date(), vendorId: f.vendor.id })).resolves.toEqual([{ status: "failed" }]);
+      expect(await db.automationExecutionLog.findUniqueOrThrow({ where: { id: log.id } })).toMatchObject({ delayedStepsPendingAttempts: attempt, delayedStepsPendingSubjectId: expect.any(String) });
+    }
+    const abandoned = () => monitoring.captureOperationalError.mock.calls.filter(([, context]) => (context as { operation?: string }).operation === "start_run_abandoned");
+    expect(abandoned()).toHaveLength(0);
+    vi.spyOn(db, "$transaction").mockRejectedValueOnce(new Error("synthetic run write failure"));
+    await expect(startPendingAutomationRuns({ now: new Date(), vendorId: f.vendor.id })).resolves.toEqual([{ status: "failed" }]);
+    expect(await db.automationExecutionLog.findUniqueOrThrow({ where: { id: log.id } })).toMatchObject({ delayedStepsPendingAttempts: PENDING_RUN_START_MAX_ATTEMPTS, delayedStepsPendingSubjectId: null });
+    expect(abandoned()).toEqual([[expect.any(Error), { source: "automation_delayed_steps", operation: "start_run_abandoned" }]]);
+    // Given up: never taken again, no run.
+    await expect(startPendingAutomationRuns({ now: new Date(), vendorId: f.vendor.id })).resolves.toEqual([]);
+    expect(await runsOf(f)).toEqual([]);
+
+    // A lock wait given up is not an attempt.
+    const held = await fixture();
+    const { log: heldLog } = await owedLog(held);
+    const holder = holdRule(held, 180);
+    try {
+      await holder.isLocked;
+      await expect(startPendingAutomationRuns({ now: new Date(), vendorId: held.vendor.id })).resolves.toEqual([{ status: "deferred" }]);
+    } finally {
+      holder.release();
+      await holder.done;
+    }
+    expect(await db.automationExecutionLog.findUniqueOrThrow({ where: { id: heldLog.id } })).toMatchObject({ delayedStepsPendingAttempts: 0, delayedStepsPendingSubjectId: expect.any(String) });
+
+    // Fewer attempts first, then the oldest: the newer log with no failure goes before an older one that failed.
+    const order = await fixture();
+    const { log: tried } = await owedLog(order, { completedAgoMs: 30 * MINUTE, attempts: 3 });
+    const { log: fresh } = await owedLog(order, { completedAgoMs: 10 * MINUTE });
+    await expect(startPendingAutomationRuns({ now: new Date(), vendorId: order.vendor.id, limit: 1 })).resolves.toEqual([{ status: "started" }]);
+    expect((await runsOf(order)).map((run) => run.sourceExecutionLogId)).toEqual([fresh.id]);
+    expect(tried.id).not.toBe(fresh.id);
+  }, 40_000);
+
+  it("NIT-2: stops the round after three lock waits in a row, and at its deadline", async () => {
+    const f = await fixture();
+    for (let index = 0; index < 4; index += 1) await owedLog(f);
+    await expect(startPendingAutomationRuns({ now: new Date(), vendorId: f.vendor.id, deadline: Date.now() - 1 })).resolves.toEqual([]);
+    const holder = holdRule(f, 180);
+    let round: unknown;
+    try {
+      await holder.isLocked;
+      round = await startPendingAutomationRuns({ now: new Date(), vendorId: f.vendor.id });
+    } finally {
+      holder.release();
+      await holder.done;
+    }
+    expect(round).toEqual([{ status: "deferred" }, { status: "deferred" }, { status: "deferred" }]);
+    // Every mark stays for the next round, which creates all four.
+    const next = await startPendingAutomationRuns({ now: new Date(), vendorId: f.vendor.id });
+    expect(next).toEqual(Array.from({ length: 4 }, () => ({ status: "started" })));
+  }, 40_000);
+
+  it("MINOR-2 and NIT-4: the event writes no mark when its outcome is settled (no grant, suspended, subject gone, rule off, no active step)", async () => {
+    // The completion writes of the event, to see the mark is never written (not written and cleared).
+    const completionWrites = vi.spyOn(db.automationExecutionLog, "update");
+    const markWritten = () => completionWrites.mock.calls.some(([args]) => "delayedStepsPendingSubjectId" in (args.data as object));
+
+    // No grant: no mark, and opening the grant later back-fills nothing.
+    const closed = await fixture({ grants: [] });
+    await registered(closed, await registration(closed));
+    expect(markWritten()).toBe(false);
+    const closedLog = await logOf(closed);
+    expect(closedLog.delayedStepsPendingSubjectId).toBeNull();
+    await db.vendor.update({ where: { id: closed.vendor.id }, data: { betaFeatureGrants: [DELAYED_STEPS_GRANT] } });
+    await expect(startPendingAutomationRuns({ now: jobTimeFor(closedLog), vendorId: closed.vendor.id })).resolves.toEqual([]);
+    expect(await runsOf(closed)).toEqual([]);
+
+    // Suspended.
+    const suspended = await fixture();
+    await db.vendor.update({ where: { id: suspended.vendor.id }, data: { suspendedAt: new Date(), suspendedReason: "合成" } });
+    await registered(suspended, await registration(suspended));
+    expect(markWritten()).toBe(false);
+    expect((await logOf(suspended)).delayedStepsPendingSubjectId).toBeNull();
+    completionWrites.mockRestore();
+
+    // The subject is not this vendor's registration (or does not exist).
+    const gone = await fixture();
+    await registered(gone, { id: `missing-${randomUUID()}`, email: "gone@example.test" });
+    expect((await logOf(gone)).delayedStepsPendingSubjectId).toBeNull();
+    expect(await runsOf(gone)).toEqual([]);
+
+    // The rule switched off, or its only step switched off, while the immediate actions ran.
+    for (const change of ["rule_off", "step_off"] as const) {
+      const f = await fixture();
+      const original = db.automationExecutionLog.update.bind(db.automationExecutionLog);
+      vi.spyOn(db.automationExecutionLog, "update").mockImplementationOnce((async (args: Parameters<typeof original>[0]) => {
+        if (change === "rule_off") await db.automationRule.update({ where: { id: f.rule.id }, data: { isActive: false } });
+        else await db.automationRuleStep.update({ where: { id: f.step.id }, data: { isActive: false } });
+        return original(args);
+      }) as never);
+      await registered(f, await registration(f));
+      expect((await logOf(f)).delayedStepsPendingSubjectId).toBeNull();
+      expect(await runsOf(f)).toEqual([]);
+    }
   }, 40_000);
 });

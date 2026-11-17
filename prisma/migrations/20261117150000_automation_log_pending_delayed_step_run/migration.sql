@@ -12,7 +12,8 @@
 -- (vendorId, automationRuleId, sourceExecutionLogId).
 --
 -- Forward-only and additive: one nullable column (no default, so a metadata
--- change, no table rewrite) and one partial b-tree index over the few rows
+-- change, no table rewrite), one attempt counter with a constant default
+-- (also metadata only) and one partial b-tree index over the few rows
 -- that owe a run. Existing rows stay NULL; nothing is backfilled, so logs
 -- written before this migration are never picked up.
 -- Built without CONCURRENTLY like every other migration (Prisma runs each
@@ -27,6 +28,12 @@ END
 $$;
 
 ALTER TABLE "AutomationExecutionLog" ADD COLUMN "delayedStepsPendingSubjectId" TEXT;
+-- Review MINOR-1: the job's failed attempts at the owed run (a lock wait
+-- given up does not count). After PENDING_RUN_START_MAX_ATTEMPTS the job
+-- clears the mark and reports start_run_abandoned once. A constant default
+-- is stored in the catalog (PostgreSQL 11+), so this does not rewrite the
+-- table either.
+ALTER TABLE "AutomationExecutionLog" ADD COLUMN "delayedStepsPendingAttempts" INTEGER NOT NULL DEFAULT 0;
 
 CREATE INDEX "AutomationExecutionLog_delayed_steps_pending_idx"
   ON "AutomationExecutionLog" ("completedAt")

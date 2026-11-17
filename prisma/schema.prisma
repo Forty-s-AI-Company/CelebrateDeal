@@ -4076,6 +4076,8 @@ model AutomationExecutionLog {
   /// Q-13：這個事件的延遲步驟 run 還沒建立時，記下對象（報名或預約）的 id；建立或確定不需要後清成 null。
   /// job 以它補建被商家存檔鎖住而沒建成的 run（startPendingAutomationRuns）。
   delayedStepsPendingSubjectId String?
+  /// Q-13 審查 MINOR-1：job 補建失敗的次數（等鎖逾時不算）；達上限就清掉標記並回報 `start_run_abandoned`。
+  delayedStepsPendingAttempts  Int     @default(0)
 
   vendor                 Vendor                   @relation(fields: [vendorId], references: [id], onDelete: Cascade)
   rule                   AutomationRule           @relation(fields: [vendorId, ruleId], references: [vendorId, id], onDelete: Cascade)
