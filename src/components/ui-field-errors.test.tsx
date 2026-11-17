@@ -50,4 +50,21 @@ describe("shared form controls expose error and hint slots (F-117)", () => {
     expect(html).toMatch(/name="name"[^>]*value="預設"/u);
     expect(html).not.toContain("disabled");
   });
+
+  it("renders no id, pattern or focus wiring when the new props are omitted", () => {
+    const html = renderToStaticMarkup(<Field label="名稱" name="name" />);
+    expect(html).not.toContain(" id=");
+    expect(html).not.toContain("pattern=");
+    expect(html).not.toContain("for=");
+  });
+
+  it("passes pattern and a stable id, and ties label, error and hint to that id", () => {
+    const html = renderToStaticMarkup(<Field label="網址" name="slug" id="team-slug" pattern="[a-z0-9]+" error="格式不正確" hint="只能小寫" onFocus={() => undefined} />);
+    expect(html).toContain('for="team-slug"');
+    expect(html).toMatch(/<input[^>]*id="team-slug"/u);
+    expect(html).toContain('pattern="[a-z0-9]+"');
+    expect(html).toContain('aria-describedby="team-slug-error team-slug-hint"');
+    expect(html).toContain('id="team-slug-error"');
+    expect(html).toContain('id="team-slug-hint"');
+  });
 });
