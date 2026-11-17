@@ -372,6 +372,94 @@ describe("補跑漏掉的 payment_paid", () => {
     expect((await logsOf(t, flaky.orderId))[0]).toMatchObject({ status: "failed", startedAt: again!.startedAt });
   });
 
+  describe("a pass that scanned before another pass retried the same failure (review MINOR-A)", () => {
+    const ACTIONS = [
+      { type: "add_customer_tag", tag: "已付款" },
+      { type: "line_push", message: "感謝購買" },
+      { type: "send_email_notification", template: "repurchase_followup" },
+    ];
+
+    /** One order whose live run ended `failed / action_failed` (LINE threw) long enough ago to be retried. Counts LINE attempts. */
+    async function retryableFailure(label: string) {
+      const t = await tenant(label);
+      await paymentRule(t, { actions: ACTIONS });
+      hooks.after = () => { throw new Error("outside a request"); };
+      const attempts = { line: 0 };
+      hooks.line = async () => {
+        attempts.line += 1;
+        throw new Error("synthetic transient LINE outbox failure");
+      };
+      const c = await checkout(t);
+      await processPaymentWebhook(paidCallback(t, c));
+      const now = new Date();
+      await backdate(t, [c], new Date(now.getTime() - PAYMENT_PAID_CATCHUP_MIN_AGE_MS - 5 * MINUTE));
+      await db.automationExecutionLog.updateMany({ where: { vendorId: t.vendor.id }, data: { completedAt: new Date(now.getTime() - PAYMENT_PAID_CATCHUP_MIN_AGE_MS - 1_000) } });
+      const [log] = await logsOf(t);
+      expect(log).toMatchObject({ status: "failed", errorCode: "action_failed" });
+      expect(log!.startedAt.getTime()).toBe(log!.createdAt.getTime());
+      return { t, c, now, attempts, log: log! };
+    }
+
+    it("A retries, fails again and finishes before B dispatches: B gets `duplicate`, the failure is retried once", async () => {
+      const { t, now, attempts } = await retryableFailure("retry-race-again");
+      let first: Awaited<ReturnType<typeof runPaymentPaidAutomationCatchup>> | undefined;
+      let afterFirst: Awaited<ReturnType<typeof logsOf>> = [];
+      const second = await within(runPaymentPaidAutomationCatchup({
+        now,
+        db: holdAfterScan(client(3), async () => {
+          first = await runPaymentPaidAutomationCatchup({ now, db: client(3) });
+          afterFirst = await logsOf(t);
+        }),
+      }), 60_000, "two catch-up passes");
+      expect(first).toMatchObject({ candidates: 1, examined: 1, failed: 1, duplicate: 0 });
+      expect(afterFirst[0]).toMatchObject({ status: "failed", errorCode: "action_failed" });
+      expect(afterFirst[0]!.startedAt.getTime()).not.toBe(afterFirst[0]!.createdAt.getTime());
+      // B had chosen the order, but its reclaim matches nothing any more.
+      expect(second).toMatchObject({ candidates: 1, examined: 1, failed: 0, completed: 0, duplicate: 1 });
+      expect(await logsOf(t)).toEqual(afterFirst);
+      // The live attempt and one retry, never a third.
+      expect(attempts.line).toBe(2);
+      expect(await outputs(t)).toEqual({ tags: 1, vouchers: 0, lines: 0, mails: 0 });
+    });
+
+    it("A's retry ends with a non-transient failure: B does not reclaim it", async () => {
+      const { t, now } = await retryableFailure("retry-race-config");
+      hooks.line = null;
+      let afterFirst: Awaited<ReturnType<typeof logsOf>> = [];
+      const second = await within(runPaymentPaidAutomationCatchup({
+        now,
+        db: holdAfterScan(client(3), async () => {
+          // A's retry: LINE now works, but the e-mail cannot get its unsubscribe link.
+          vi.stubEnv("NEXT_PUBLIC_APP_URL", "");
+          await runPaymentPaidAutomationCatchup({ now, db: client(3) });
+          vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://paid-catchup.example.test");
+          afterFirst = await logsOf(t);
+        }),
+      }), 60_000, "two catch-up passes");
+      expect(afterFirst[0]).toMatchObject({ status: "failed", errorCode: "unsubscribe_url_unavailable" });
+      expect(second).toMatchObject({ examined: 1, completed: 0, duplicate: 1 });
+      expect(await logsOf(t)).toEqual(afterFirst);
+      // With the setting back, B would have sent the e-mail had it reclaimed the log.
+      expect(await outputs(t)).toEqual({ tags: 1, vouchers: 0, lines: 1, mails: 0 });
+    });
+
+    it("the error code alone stops the reclaim: a log re-recorded as non-transient after B's scan, never reclaimed, stays as it is", async () => {
+      const { t, now, log } = await retryableFailure("retry-race-code");
+      hooks.line = null;
+      const second = await within(runPaymentPaidAutomationCatchup({
+        now,
+        db: holdAfterScan(client(3), async () => {
+          // startedAt still equals createdAt; only the code changed.
+          await db.automationExecutionLog.updateMany({ where: { id: log.id }, data: { errorCode: "unsubscribe_url_unavailable" } });
+        }),
+      }), 60_000, "catch-up pass");
+      expect(second).toMatchObject({ examined: 1, completed: 0, duplicate: 1 });
+      const [after] = await logsOf(t);
+      expect(after).toMatchObject({ status: "failed", errorCode: "unsubscribe_url_unavailable", startedAt: log.startedAt });
+      expect(await outputs(t)).toEqual({ tags: 1, vouchers: 0, lines: 0, mails: 0 });
+    });
+  });
+
   it("runs only the rules the scan chose: another rule's failed log is not reclaimed on the way", async () => {
     const t = await tenant("only-chosen");
     const failing = await paymentRule(t, { actions: [{ type: "add_customer_tag", tag: "甲" }, { type: "send_email_notification", template: "repurchase_followup" }] });
@@ -482,7 +570,6 @@ describe("即時路徑與補跑併發", () => {
     });
     const summary = await within(pass, 60_000, "catch-up pass");
     expect(summary).toMatchObject({ candidates: 2, examined: 2, completed: 0 });
-    expect(summary.duplicate).toBeGreaterThanOrEqual(1);
     expect(summary.duplicate).toBe(2);
     releaseLive();
     hooks.lineGate = null;

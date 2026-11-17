@@ -590,6 +590,33 @@ describe("smart automation workflow engine", () => {
     expect(update.mock.calls.at(-1)?.[0].data.status).toBe("completed");
   });
 
+  it("reclaims any failed execution on the live path, but only a listed, never-reclaimed failure when the catch-up narrows it (compare-and-write)", async () => {
+    const conflict = new Prisma.PrismaClientKnownRequestError("duplicate", { code: "P2002", clientVersion: Prisma.prismaVersion.client });
+    const createdAtRef = { modelName: "AutomationExecutionLog", name: "createdAt" };
+    const db = {
+      automationRule: { findMany: vi.fn().mockResolvedValue([{ id: "rule-1", version: 1, condition: { type: "always" }, actions: [{ type: "add_customer_tag", tag: "已付款" }] }]) },
+      automationExecutionLog: {
+        fields: { createdAt: createdAtRef },
+        create: vi.fn().mockRejectedValue(conflict),
+        findUnique: vi.fn().mockResolvedValue({ id: "log-1", status: "failed", startedAt: new Date(), createdAt: new Date() }),
+        // Another pass already reclaimed it: the conditional write matches nothing.
+        updateMany: vi.fn().mockResolvedValue({ count: 0 }),
+        update: vi.fn(),
+      },
+      customerTagAssignment: { upsert: vi.fn() },
+    };
+    await expect(dispatchAutomationEvent(db as never, event)).resolves.toEqual([{ ruleId: "rule-1", status: "duplicate" }]);
+    expect(db.automationExecutionLog.updateMany.mock.lastCall?.[0].where.OR[0]).toEqual({ status: "failed" });
+
+    await expect(dispatchAutomationEvent(db as never, event, { failedReclaim: { errorCodes: ["action_failed"] } }))
+      .resolves.toEqual([{ ruleId: "rule-1", status: "duplicate" }]);
+    const where = db.automationExecutionLog.updateMany.mock.lastCall?.[0].where;
+    expect(where).toMatchObject({ id: "log-1", vendorId: event.vendorId });
+    expect(where.OR[0]).toEqual({ status: "failed", errorCode: { in: ["action_failed"] }, startedAt: { equals: createdAtRef } });
+    expect(where.OR[1]).toMatchObject({ status: "running" });
+    expect(db.customerTagAssignment.upsert).not.toHaveBeenCalled();
+  });
+
   it.each([
     { label: "on", flag: { lineNotification: true }, sent: 1 },
     { label: "missing", flag: {}, sent: 1 },

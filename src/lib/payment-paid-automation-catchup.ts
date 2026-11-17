@@ -45,7 +45,10 @@ import { dispatchPaymentPaidAutomationForOrder } from "@/lib/payment-paid-automa
  *
  * The failed retry happens at most once without a new column: a log the
  * catch-up has never reclaimed still has `startedAt = createdAt`, and the
- * reclaim moves `startedAt`, so the same log never qualifies again. Other
+ * reclaim moves `startedAt`, so the same log never qualifies again. The
+ * dispatch repeats that condition in the reclaim's conditional write
+ * (`failedReclaim`), so a pass that scanned before another pass retried (or
+ * re-recorded) the log gets `duplicate` instead of a second retry. Other
  * failures (`unsubscribe_url_unavailable`, a deployment setting) are not
  * transient and are never retried. Only the rules the scan chose run
  * (`onlyRuleIds`), so another rule's failed log is never reclaimed on the way.
@@ -277,7 +280,12 @@ export async function runPaymentPaidAutomationCatchup(options: {
       const outcome = await dispatchPaymentPaidAutomationForOrder(
         { vendorId: candidate.vendorId, orderId: candidate.orderId },
         db,
-        { rulesUnchangedSince: candidate.recordedAt, onlyRuleIds: candidate.ruleIds },
+        {
+          rulesUnchangedSince: candidate.recordedAt,
+          onlyRuleIds: candidate.ruleIds,
+          // The scan's retry condition, re-checked in the reclaim's own write.
+          failedReclaim: { errorCodes: PAYMENT_PAID_CATCHUP_RETRYABLE_ERROR_CODES },
+        },
       );
       if (outcome.status !== "dispatched") {
         summary.notApplicable += 1;

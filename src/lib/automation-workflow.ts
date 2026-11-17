@@ -674,6 +674,17 @@ export type AutomationDispatchOptions = {
    * dispatch never reclaims another rule's `failed` execution on the way.
    */
   onlyRuleIds?: string[];
+  /**
+   * Narrows which `failed` executions this dispatch may reclaim: only those
+   * whose `errorCode` is listed and that were never reclaimed before
+   * (`startedAt` still equals `createdAt`), checked in the reclaim's own
+   * conditional write. The catch-up passes its retryable codes, so two
+   * concurrent passes (or a pass that read the log before another one retried
+   * it) retry a failure at most once and never reclaim one recorded as
+   * non-transient meanwhile. Without it (the live dispatch) any `failed`
+   * execution is reclaimable, as before.
+   */
+  failedReclaim?: { errorCodes: readonly string[] };
 };
 
 /** The rule filter both dispatch paths add to their rule reads. */
@@ -773,6 +784,7 @@ async function claimRuleExecution(
   rule: ParsedRule,
   event: AutomationEvent,
   firstStep: { delayMinutes: number } | undefined,
+  failedReclaim: AutomationDispatchOptions["failedReclaim"],
 ): Promise<{ log: { id: string; createdAt?: Date } } | { status: "rule_deleted" | "duplicate" }> {
   const idempotencyKey = executionIdempotencyKey(rule, event);
   try {
@@ -817,12 +829,21 @@ async function claimRuleExecution(
     return { status: "duplicate" };
   }
   const now = new Date();
+  // Compare and write in one statement: a concurrent reclaim moves `startedAt`
+  // (or rewrites `errorCode`), and this update then matches nothing.
+  const failedReclaimable: Prisma.AutomationExecutionLogWhereInput = failedReclaim
+    ? {
+      status: "failed",
+      errorCode: { in: [...failedReclaim.errorCodes] },
+      startedAt: { equals: db.automationExecutionLog.fields.createdAt },
+    }
+    : { status: "failed" };
   const reclaimed = await db.automationExecutionLog.updateMany({
     where: {
       id: existing.id,
       vendorId: event.vendorId,
       OR: [
-        { status: "failed" },
+        failedReclaimable,
         { status: "running", startedAt: { lt: new Date(now.getTime() - AUTOMATION_EXECUTION_RECLAIM_AFTER_MS) } },
       ],
     },
@@ -870,7 +891,7 @@ async function runAutomationEvent(db: AutomationDb, event: AutomationEvent, queu
       results.push({ ruleId: rule.id, status: "skipped" });
       continue;
     }
-    const claim = await claimRuleExecution(db, rule, event, firstStep);
+    const claim = await claimRuleExecution(db, rule, event, firstStep, options.failedReclaim);
     if ("status" in claim) {
       results.push({ ruleId: rule.id, status: claim.status });
       continue;

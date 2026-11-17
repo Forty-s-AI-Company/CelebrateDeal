@@ -134,7 +134,9 @@ function report(error: unknown, operation: PaymentPaidAutomationReport) {
 /**
  * Never rejects. A failed rule (an action that threw, or an automation e-mail
  * without its unsubscribe link) is recorded as `failed` on its execution log
- * and reported here; it is not retried automatically.
+ * and reported here. This path never retries it; the webhook-retry job's
+ * catch-up retries an `action_failed` execution once (other failures, such as
+ * a missing unsubscribe link, stay final).
  */
 async function runContained(input: { vendorId: string; orderId: string }) {
   try {

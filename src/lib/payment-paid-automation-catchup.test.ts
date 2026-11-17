@@ -75,8 +75,9 @@ describe("runPaymentPaidAutomationCatchup", () => {
     expect(db.automationRule.findMany).toHaveBeenCalledWith(expect.objectContaining({
       where: { id: { in: ["rule-1", "rule-2"] }, vendorId: { in: ["vendor-1", "vendor-2"] }, trigger: "payment_paid" },
     }));
-    expect(mocks.dispatch).toHaveBeenNthCalledWith(1, { vendorId: "vendor-1", orderId: "order-1" }, db, { rulesUnchangedSince: RECORDED_AT, onlyRuleIds: ["rule-1"] });
-    expect(mocks.dispatch).toHaveBeenNthCalledWith(2, { vendorId: "vendor-2", orderId: "order-2" }, db, { rulesUnchangedSince: RECORDED_AT, onlyRuleIds: ["rule-2"] });
+    const failedReclaim = { errorCodes: ["action_failed"] };
+    expect(mocks.dispatch).toHaveBeenNthCalledWith(1, { vendorId: "vendor-1", orderId: "order-1" }, db, { rulesUnchangedSince: RECORDED_AT, onlyRuleIds: ["rule-1"], failedReclaim });
+    expect(mocks.dispatch).toHaveBeenNthCalledWith(2, { vendorId: "vendor-2", orderId: "order-2" }, db, { rulesUnchangedSince: RECORDED_AT, onlyRuleIds: ["rule-2"], failedReclaim });
     expect(mocks.captureOperationalError).not.toHaveBeenCalled();
   });
 
