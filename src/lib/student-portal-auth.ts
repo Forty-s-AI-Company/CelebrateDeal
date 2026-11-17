@@ -6,6 +6,7 @@ import { automationCustomerKeyHash } from "@/lib/automation-workflow";
 import { getDb } from "@/lib/db";
 import { DERIVED_KEY_ROTATIONS, decryptWithRotation, encryptWithRotation, issuedBeforeRotation } from "@/lib/derived-key-rotation";
 import { deriveSensitiveDataKey } from "@/lib/sensitive-data";
+import { STUDENT_PORTAL_CLOCK_SKEW_SECONDS } from "@/lib/student-portal-clock-skew";
 
 const TOKEN_VERSION = "sp1";
 // Rotated after #485. Access tokens (tier 2) live 15 minutes and are one-time
@@ -21,6 +22,7 @@ const NONCE = /^[A-Za-z0-9_-]{43}$/u;
 // F-030: shortened from 30 days. Revocation is server-side (see `grant` below).
 const SESSION_MAX_TTL_SECONDS = 7 * 24 * 60 * 60;
 const GRANT = /^[A-Za-z0-9_-]{43}$/u;
+export { STUDENT_PORTAL_CLOCK_SKEW_SECONDS };
 
 export const STUDENT_PORTAL_ACCESS_TOKEN_TTL_SECONDS = 15 * 60;
 export const STUDENT_PORTAL_SESSION_TTL_SECONDS = SESSION_MAX_TTL_SECONDS;
@@ -194,7 +196,7 @@ export function verifyStudentPortalAccessToken(input: {
 
   const nowSeconds = epochSeconds(input.now ?? new Date());
   if (
-    parsed.data.issuedAt > nowSeconds
+    parsed.data.issuedAt > nowSeconds + STUDENT_PORTAL_CLOCK_SKEW_SECONDS
     || parsed.data.expiresAt <= nowSeconds
     || parsed.data.expiresAt - parsed.data.issuedAt !== STUDENT_PORTAL_ACCESS_TOKEN_TTL_SECONDS
   ) return null;
@@ -347,7 +349,7 @@ export function readStudentPortalSessionToken(token: string | null | undefined, 
     if (!parsed.success) return null;
     const nowSeconds = epochSeconds(now);
     if (
-      parsed.data.issuedAt > nowSeconds
+      parsed.data.issuedAt > nowSeconds + STUDENT_PORTAL_CLOCK_SKEW_SECONDS
       || parsed.data.expiresAt <= parsed.data.issuedAt
       || parsed.data.expiresAt <= nowSeconds
       || parsed.data.expiresAt - parsed.data.issuedAt > SESSION_MAX_TTL_SECONDS
