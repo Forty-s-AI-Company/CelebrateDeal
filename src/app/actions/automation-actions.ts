@@ -29,10 +29,11 @@ import {
   storedAutomationRuleSendsLine,
   withVoucherLineNotification,
 } from "@/lib/automation-line-push-policy";
+import { reportCancelledRuleLockWait } from "@/lib/automation-rule-lock";
 import { getDb } from "@/lib/db";
 import { requireFeature } from "@/lib/feature-gates";
+import { isRuleWriteBusy } from "@/lib/serializable-retry";
 import type { FeatureGateVendor } from "@/lib/vendor-feature-toggles";
-import { isLockTimeout } from "@/lib/serializable-retry";
 
 // Owner and admin manage automations here, the same roles as the funnel
 // automation panel (requireVendorManagerContext) and message templates (F-4
@@ -222,7 +223,8 @@ export async function toggleAutomationRuleAction(formData: FormData) {
   try {
     outcome = await toggleRule(vendor.id, existing, mayConfigureAutomationLinePush(member.role));
   } catch (error) {
-    if (!isDeleteBusy(error)) throw error;
+    if (!isRuleWriteBusy(error)) throw error;
+    reportCancelledRuleLockWait(error);
     fail("toggle_busy");
   }
   if (outcome.code !== "toggled") fail(outcome.code);
@@ -302,20 +304,16 @@ export async function deleteAutomationRuleAction(formData: FormData) {
   try {
     outcome = await deleteRuleIfUnused(vendor.id, id);
   } catch (error) {
-    if (!isDeleteBusy(error)) throw error;
+    if (!isRuleWriteBusy(error)) throw error;
     // The rule stayed locked by a running execution (or no connection was
     // free) for too long: nothing changed, the merchant can simply retry.
+    reportCancelledRuleLockWait(error);
     fail("delete_busy");
   }
   if (outcome.code !== "deleted") fail(outcome.code);
   await writeAuditLog({ vendorId: vendor.id, actorId: user.id, actorLabel: member.role, action: "delete_automation_rule", targetType: "AutomationRule", targetId: outcome.before.id, before: auditSnapshot(outcome.before) });
   revalidatePath(PATH);
   redirect(`${PATH}?updated=deleted`);
-}
-
-/** lock_timeout (55P03) on the rule row, or the transaction could not start or finish in time (P2028). */
-function isDeleteBusy(error: unknown) {
-  return isLockTimeout(error) || (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2028");
 }
 
 function deleteRuleIfUnused(vendorId: string, id: string) {

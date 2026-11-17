@@ -14,14 +14,17 @@ const db = getDb();
 const vendorIds: string[] = [];
 const confirmed = { REPAIR_CONFIRM: APPLY_CONFIRMATION };
 
-/** A vendor with one course holding a lesson as pre-F-5 code writes it (no chapterId). */
+/** A vendor with one course holding a stale-linked lesson: code older than F-5
+ * changed its chapterTitle and kept its chapterId. (Since Q-14 chapterId is NOT
+ * NULL, so a stale link is the only kind left to repair.) */
 async function legacyCourse() {
   const suffix = randomUUID();
   const vendor = await db.vendor.create({ data: { name: "Synthetic repair script vendor", slug: `repair-cli-${suffix}`, email: `${suffix}@example.test`, passwordHash: "synthetic-only" } });
   vendorIds.push(vendor.id);
   const product = await db.product.create({ data: { vendorId: vendor.id, name: "Synthetic course", slug: `course-${suffix}`, priceCents: 10000, commerceDomain: "course", fulfillmentType: "course" } });
-  const lesson = await db.courseLesson.create({ data: { vendorId: vendor.id, productId: product.id, chapterTitle: " 第一章", title: "開場", position: 0 } });
-  return { vendorId: vendor.id, lessonId: lesson.id };
+  const previous = await db.courseChapter.create({ data: { vendorId: vendor.id, productId: product.id, title: "舊章節", position: 0 } });
+  const lesson = await db.courseLesson.create({ data: { vendorId: vendor.id, productId: product.id, chapterId: previous.id, chapterTitle: " 第一章", title: "開場", position: 0 } });
+  return { vendorId: vendor.id, lessonId: lesson.id, staleChapterId: previous.id };
 }
 
 const linkOf = async (lessonId: string) => (await db.courseLesson.findUniqueOrThrow({ where: { id: lessonId }, select: { chapterId: true } })).chapterId;
@@ -34,9 +37,9 @@ describe("scripts/repair-course-chapter-links (PostgreSQL)", () => {
   it("dry-runs by default: prints the two check counts and writes nothing", async () => {
     const f = await legacyCourse();
     const outcome = await runCourseChapterRepair(db, { apply: false, target: null, vendorId: f.vendorId }, confirmed);
-    expect(outcome).toEqual({ mode: "plan", before: { unlinked: 1, staleLinks: 0 } });
-    expect(await linkOf(f.lessonId)).toBeNull();
-    expect(await db.courseChapter.count({ where: { vendorId: f.vendorId } })).toBe(0);
+    expect(outcome).toEqual({ mode: "plan", before: { unlinked: 0, staleLinks: 1 } });
+    expect(await linkOf(f.lessonId)).toBe(f.staleChapterId);
+    expect(await db.courseChapter.count({ where: { vendorId: f.vendorId } })).toBe(1);
   });
 
   it("writes only with --apply and the confirmation value, limited to --vendor-id", async () => {
@@ -44,12 +47,13 @@ describe("scripts/repair-course-chapter-links (PostgreSQL)", () => {
     const other = await legacyCourse();
     const options = { apply: true, target: null, vendorId: target.vendorId } as const;
     await expect(runCourseChapterRepair(db, options, {})).rejects.toMatchObject({ category: "confirmation-missing" });
-    expect(await linkOf(target.lessonId)).toBeNull();
+    expect(await linkOf(target.lessonId)).toBe(target.staleChapterId);
 
     const outcome = await runCourseChapterRepair(db, options, confirmed);
-    expect(outcome).toMatchObject({ mode: "apply", before: { unlinked: 1, staleLinks: 0 }, coursesRepaired: 1, lessonsRelinked: 1, chaptersCreated: 1, failedCourses: [], after: { unlinked: 0, staleLinks: 0 } });
-    expect(await linkOf(target.lessonId)).not.toBeNull();
-    expect(await linkOf(other.lessonId)).toBeNull();
+    expect(outcome).toMatchObject({ mode: "apply", before: { unlinked: 0, staleLinks: 1 }, coursesRepaired: 1, lessonsRelinked: 1, chaptersCreated: 1, failedCourses: [], after: { unlinked: 0, staleLinks: 0 } });
+    const relinked = await db.courseLesson.findUniqueOrThrow({ where: { id: target.lessonId }, select: { chapter: { select: { title: true } } } });
+    expect(relinked.chapter.title).toBe("第一章");
+    expect(await linkOf(other.lessonId)).toBe(other.staleChapterId);
     // A rerun is a no-op.
     expect(await runCourseChapterRepair(db, options, confirmed)).toMatchObject({ coursesRepaired: 0, lessonsRelinked: 0, after: { unlinked: 0, staleLinks: 0 } });
   });

@@ -8,9 +8,10 @@ import {
   mayWriteAutomationActions,
   storedAutomationRuleSendsLine,
 } from "@/lib/automation-line-push-policy";
+import { reportCancelledRuleLockWait } from "@/lib/automation-rule-lock";
 import { getDb } from "@/lib/db";
 import { requireEditableSalesProjectScope } from "@/lib/sales-project-scope";
-import { isLockTimeout } from "@/lib/serializable-retry";
+import { isRuleWriteBusy } from "@/lib/serializable-retry";
 
 const MAX_NAME_LENGTH = 120;
 const MAX_TAG_LENGTH = 50;
@@ -145,9 +146,11 @@ async function assertFunnelRuleWritable(tx: Pick<Prisma.TransactionClient, "auto
   if (sendsLine) throw new FunnelAutomationLinePushOwnerOnlyError();
 }
 
-/** lock_timeout (55P03) on the rule row, or the transaction could not start or finish in time (P2028). */
-function isBusy(error: unknown) {
-  return isLockTimeout(error) || (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2028");
+/** A rule write that gave up on the rule row (isRuleWriteBusy) answers busy; a cancelled wait is also reported. */
+function busyOrRethrow(error: unknown): never {
+  if (!isRuleWriteBusy(error)) throw error;
+  reportCancelledRuleLockWait(error);
+  throw new FunnelAutomationBusyError();
 }
 
 const RULE_TRANSACTION_OPTIONS = { maxWait: 5_000, timeout: 15_000 } as const;
@@ -219,8 +222,7 @@ export async function updateFunnelAutomationRule(input: { pageId: unknown; ruleI
       });
     }, RULE_TRANSACTION_OPTIONS);
   } catch (error) {
-    if (isBusy(error)) throw new FunnelAutomationBusyError();
-    throw error;
+    busyOrRethrow(error);
   }
   if (updated.count === 0) await noUpdate(database, page, id);
   await writeAuditLog({ vendorId: page.vendorId, actorId: page.actorId, actorLabel: page.actorLabel, action: "update_funnel_automation_rule", targetType: "AutomationRule", targetId: id, after: { version: version + 1 } });
@@ -254,8 +256,7 @@ export async function setFunnelAutomationRuleEnabled(input: { pageId: unknown; r
       return result;
     }, RULE_TRANSACTION_OPTIONS);
   } catch (error) {
-    if (isBusy(error)) throw new FunnelAutomationBusyError();
-    throw error;
+    busyOrRethrow(error);
   }
   if (updated.count === 0) await noUpdate(database, page, id);
   await writeAuditLog({ vendorId: page.vendorId, actorId: page.actorId, actorLabel: page.actorLabel, action: input.isActive ? "enable_funnel_automation_rule" : "disable_funnel_automation_rule", targetType: "AutomationRule", targetId: id, after: { isActive: input.isActive, version: version + 1 } });

@@ -416,6 +416,11 @@ function materializeLockTimeout(requested: number | undefined) {
 }
 const MATERIALIZE_RETRY = {
   attempts: 3,
+  // Deliberately isLockTimeout, not isLockWaitGivenUp: a cancelled statement
+  // (57014) is not re-run here, even when PostgreSQL reports a lock_timeout
+  // that way (see isLockWaitGivenUp), because it may also be a deliberate
+  // cancel. The caller contains the error and the scheduled job picks the
+  // recipient up, so at worst the delivery row is materialized a run later.
   retryOn: (error: unknown) => isTransientTransactionConflict(error) || isLockTimeout(error) || isUniqueConflict(error),
 } as const;
 

@@ -2,6 +2,8 @@ import { Prisma } from "@prisma/client";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 const runtime = vi.hoisted(() => ({ db: { product: { findFirst: vi.fn() }, automationRule: { create: vi.fn(), findFirst: vi.fn(), updateMany: vi.fn(), delete: vi.fn() }, automationExecutionLog: { count: vi.fn() }, delayedStepRun: { count: vi.fn(), updateMany: vi.fn() }, $queryRaw: vi.fn(), $executeRaw: vi.fn(), $transaction: vi.fn() }, auth: { vendor: { id: "v1" }, user: { id: "u1" }, member: { role: "admin" } }, security: vi.fn(), manager: vi.fn(), audit: vi.fn(), revalidate: vi.fn(), redirect: vi.fn((path: string): never => { throw new Error(`redirect:${path}`); }) }));
 vi.mock("next/cache", () => ({ revalidatePath: runtime.revalidate })); vi.mock("next/navigation", () => ({ redirect: runtime.redirect })); vi.mock("@/lib/csrf", () => ({ assertServerActionSecurity: runtime.security })); vi.mock("@/lib/auth", () => ({ requireVendorManagerMember: runtime.manager })); vi.mock("@/lib/db", () => ({ getDb: () => runtime.db })); vi.mock("@/lib/audit", () => ({ auditSnapshot: (v: unknown) => v, writeAuditLog: runtime.audit }));
+const monitoring = vi.hoisted(() => ({ capture: vi.fn() }));
+vi.mock("@/lib/monitoring", () => ({ captureOperationalError: monitoring.capture }));
 import { createAutomationRecipeAction, createAutomationRuleAction, deleteAutomationRuleAction, dryRunAutomationRuleAction, toggleAutomationRuleAction } from "./automation-actions";
 // The default actor is an admin, so the default rule tags the customer; a
 // LINE push is owner-only (owner decision 2026-11-14) and uses lineForm + owner.
@@ -324,13 +326,26 @@ describe("automation actions", () => { it("requires CSRF and writes tenant-scope
     expect(runtime.audit).not.toHaveBeenCalled();
   });
 
-  it.each([
-    ["a lock timeout (55P03)", () => new Prisma.PrismaClientKnownRequestError("canceling statement due to lock timeout", { code: "P2010", clientVersion: Prisma.prismaVersion.client, meta: { code: "55P03" } })],
-    ["a transaction timeout (P2028)", () => new Prisma.PrismaClientKnownRequestError("Transaction API error", { code: "P2028", clientVersion: Prisma.prismaVersion.client })],
-  ])("answers delete_busy after %s and changes nothing", async (_label, error) => {
+  const BUSY_ERRORS = [
+    ["a lock timeout (55P03)", () => new Prisma.PrismaClientKnownRequestError("canceling statement due to lock timeout", { code: "P2010", clientVersion: Prisma.prismaVersion.client, meta: { code: "55P03" } }), false],
+    ["a transaction timeout (P2028)", () => new Prisma.PrismaClientKnownRequestError("Transaction API error", { code: "P2028", clientVersion: Prisma.prismaVersion.client }), false],
+    // PostgreSQL also reports a lock_timeout as 57014 (CI run 44014709990); still busy, but reported once.
+    ["a cancelled lock wait (57014)", () => new Prisma.PrismaClientKnownRequestError("Raw query failed. Code: `57014`. Message: `ERROR: canceling statement due to user request`", { code: "P2010", clientVersion: Prisma.prismaVersion.client, meta: { code: "57014" } }), true],
+  ] as const;
+  const CANCELLED_REPORT = [expect.anything(), { source: "automation_rule_write", operation: "lock_wait_cancelled" }, { level: "warning" }];
+
+  it.each(BUSY_ERRORS)("answers delete_busy after %s and changes nothing", async (_label, error, reported) => {
     runtime.db.$transaction.mockRejectedValueOnce(error());
     await expect(deleteAutomationRuleAction(ruleForm())).rejects.toThrow("redirect:/settings/automations?error=delete_busy");
     expect(runtime.audit).not.toHaveBeenCalled();
+    expect(monitoring.capture.mock.calls).toEqual(reported ? [CANCELLED_REPORT] : []);
+  });
+
+  it.each(BUSY_ERRORS)("answers toggle_busy after %s and changes nothing", async (_label, error, reported) => {
+    runtime.db.$transaction.mockRejectedValueOnce(error());
+    await expect(toggleAutomationRuleAction(ruleForm())).rejects.toThrow("redirect:/settings/automations?error=toggle_busy");
+    expect(runtime.audit).not.toHaveBeenCalled();
+    expect(monitoring.capture.mock.calls).toEqual(reported ? [CANCELLED_REPORT] : []);
   });
 
   it("keeps a rule with delayed-step runs (F-4), counted for the current vendor after the lock", async () => {

@@ -4488,14 +4488,15 @@ model CourseChapter {
 
 /// Native curriculum belongs to exactly one vendor-qualified course product.
 /// `chapterTitle` is kept (forward-only migrations never drop columns) and is
-/// written with the chapter title. `chapterId` stays nullable until a later
-/// migration: a lesson written by code older than F-5 has none, and readers
-/// fall back to grouping it by `chapterTitle`.
+/// written with the chapter title. `chapterId` is required since Q-14
+/// (20261117090000..090200 repaired every link, then set NOT NULL). It caches
+/// the chapter `lessonChapterTitle` names; readers still trust it only when the
+/// linked chapter carries that title (src/lib/course-learning.ts).
 model CourseLesson {
   id              String   @id @default(cuid())
   vendorId        String
   productId       String
-  chapterId       String?
+  chapterId       String
   chapterTitle    String
   title           String
   videoUrl        String?
@@ -4509,7 +4510,7 @@ model CourseLesson {
   product  Product                @relation(fields: [vendorId, productId], references: [vendorId, id], onDelete: Cascade)
   /// The FK includes the tenant and the course, so a lesson can only join a
   /// chapter of its own course. A chapter that still has lessons cannot be deleted.
-  chapter  CourseChapter?         @relation(fields: [vendorId, productId, chapterId], references: [vendorId, productId, id], onDelete: Restrict)
+  chapter  CourseChapter          @relation(fields: [vendorId, productId, chapterId], references: [vendorId, productId, id], onDelete: Restrict)
   progress CourseLessonProgress[]
 
   @@unique([vendorId, id])

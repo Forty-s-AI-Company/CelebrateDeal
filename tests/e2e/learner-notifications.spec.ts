@@ -155,7 +155,8 @@ test("purchasing learner withdraws real notification consent and reloads; foreig
  const foreign=await db.vendor.create({data:{ betaFeatureGrants: ["courses", "billing", "funnel_binding", "consultation_booking", "browser_live", "danmaku"], enabledFeatureModules: ["funnel_builder", "live_webinar", "affiliate_program", "tax_remuneration", "analytics_advanced", "consultation_booking"],name:"Synthetic foreign academy",slug:`notification-foreign-${suffix}`,email:`foreign-${suffix}@invalid.example`,passwordHash:"synthetic-login-disabled"}});
  try{
   const product=await db.product.create({data:{vendorId:vendor.id,name:"通知設定瀏覽器課程",slug:randomUUID(),priceCents:1000,commerceDomain:"course",fulfillmentType:"course"}});
-  const lesson=await db.courseLesson.create({data:{vendorId:vendor.id,productId:product.id,title:"保留講師原文",chapterTitle:"原文章節",position:1,durationSeconds:100,publishedAt:new Date()}});
+  const chapter=await db.courseChapter.create({data:{vendorId:vendor.id,productId:product.id,title:"原文章節",position:0}});
+  const lesson=await db.courseLesson.create({data:{vendorId:vendor.id,productId:product.id,chapterId:chapter.id,title:"保留講師原文",chapterTitle:"原文章節",position:1,durationSeconds:100,publishedAt:new Date()}});
   const foreignProduct=await db.product.create({data:{vendorId:foreign.id,name:"Foreign course",slug:randomUUID(),priceCents:1000,commerceDomain:"course",fulfillmentType:"course"}});
   const orderId=randomUUID(),email=`learner-${suffix}@invalid.example`,customerKeyHash=automationCustomerKeyHash(vendor.id,email);
   const pii=protectCommerceOrderPii({buyer:{name:"Synthetic learner",email},shipping:null},{vendorId:vendor.id,orderId});
