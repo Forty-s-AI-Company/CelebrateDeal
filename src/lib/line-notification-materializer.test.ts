@@ -23,6 +23,8 @@ describe("LINE automatic notification materializer", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://celebratedeal.example");
+    // Personal watch links are signed (Q-17); runs without any env set too.
+    vi.stubEnv("CSRF_SECRET", "line-materializer-test-secret-longer-than-32-bytes");
     runtime.enqueue.mockResolvedValue({ status: "queued", deliveryId: "delivery-1" });
     runtime.db.lineUserIdentity.findMany.mockResolvedValue([
       { id: "identity-registration", vendorId: "vendor-1", subjectType: "buyer_registration", subjectId: "submission-1" },
@@ -101,7 +103,6 @@ describe("LINE automatic notification materializer", () => {
   });
 
   it("links each registrant's reminder and start notice to their own watch link (Q-17)", async () => {
-    vi.stubEnv("CSRF_SECRET", "line-materializer-test-secret-longer-than-32-bytes");
     runtime.db.lineUserIdentity.findMany.mockResolvedValue([
       { id: "identity-a", vendorId: "vendor-1", subjectType: "buyer_registration", subjectId: "submission-a" },
       { id: "identity-b", vendorId: "vendor-1", subjectType: "buyer_registration", subjectId: "submission-b" },

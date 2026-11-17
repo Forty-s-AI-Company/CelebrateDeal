@@ -7,6 +7,7 @@ import { FORM_SUBMISSION_CHAT_SESSION_COOKIE, createFormSubmissionChatSessionTok
 import { FORM_SUBMISSION_LINE_BINDING_COOKIE, verifyFormSubmissionLineBindingToken } from "@/lib/form-submission-line-binding-session";
 import {
   createLiveAttendanceToken,
+  LIVE_ATTENDANCE_COOKIE_HEADER_MAX_LENGTH,
   LIVE_ATTENDANCE_COOKIE_PATH,
   liveAttendanceCookieName,
   liveAttendanceCookieOptions,
@@ -85,6 +86,26 @@ describe("attendance-only cookie (Q-17)", () => {
     const misplaced = `${liveAttendanceCookieName("live_b")}=${createLiveAttendanceToken(CLAIM)}`;
     expect(liveAttendanceSubmissionIdFromRequest(requestWith(misplaced), { vendorId: "vendor_a", liveId: "live_b", now: NOW })).toBeNull();
     expect(liveAttendanceSubmissionIdFromRequest(requestWith(`${cookie}; ${cookie}`), { vendorId: "vendor_a", liveId: "live_a", now: NOW })).toBeNull();
+  });
+
+  it("reads a cookie header as long as the registration cookie reader does, up to 16 KiB (review n-1)", () => {
+    const name = liveAttendanceCookieName("live_a")!;
+    const cookie = `${name}=${createLiveAttendanceToken(CLAIM)}`;
+    const input = { vendorId: "vendor_a", liveId: "live_a", now: NOW };
+    const padded = (length: number) => {
+      const base = `${cookie}; other=`;
+      return `${base}${"x".repeat(length - base.length)}`;
+    };
+    expect(LIVE_ATTENDANCE_COOKIE_HEADER_MAX_LENGTH).toBe(16_384);
+    // A browser with many cookies (well past the old 8 KiB) still counts.
+    expect(padded(12_000)).toHaveLength(12_000);
+    expect(liveAttendanceSubmissionIdFromRequest(requestWith(padded(12_000)), input)).toBe("submission_a");
+    expect(liveAttendanceSubmissionIdFromRequest(requestWith(padded(16_384)), input)).toBe("submission_a");
+    expect(liveAttendanceSubmissionIdFromRequest(requestWith(padded(16_385)), input)).toBeNull();
+    // The registration cookie reader accepts the same 12 KiB header.
+    const registration = createFormSubmissionChatSessionToken({ submissionId: "submission_a", now: NOW });
+    const withRegistration = `${FORM_SUBMISSION_CHAT_SESSION_COOKIE}=${registration}; other=${"x".repeat(12_000)}`;
+    expect(registrationSessionTokenFromRequest(requestWith(withRegistration))).toBe(registration);
   });
 
   it("is never read as a registration identity: chat, private chat, fixed sessions, evergreen, LINE binding", () => {

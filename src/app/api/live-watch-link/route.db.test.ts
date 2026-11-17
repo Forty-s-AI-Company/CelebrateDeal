@@ -22,7 +22,7 @@ import { createFormSubmissionChatSessionToken, FORM_SUBMISSION_CHAT_SESSION_COOK
 import { formNoShowEventId, formNoShowSessionKey, runFormNoShowAutomation } from "@/lib/form-no-show-automation";
 import { createLiveAttendanceToken, liveAttendanceCookieName, verifyLiveAttendanceToken } from "@/lib/live-attendance-cookie";
 import { createLiveSessionSwitchToken } from "@/lib/live-session-switch-token";
-import { recordAttendanceForAdmission } from "@/lib/live-registration-attendance";
+import { LIVE_REGISTRATION_ATTENDANCE_REFRESH_MS, recordAttendanceForAdmission } from "@/lib/live-registration-attendance";
 import { createLiveWatchLinkToken, createLiveWatchLinkUrl, verifyLiveWatchLinkToken } from "@/lib/live-watch-link-token";
 import { resetInMemoryRateLimitForTests } from "@/lib/rate-limit";
 
@@ -130,9 +130,9 @@ function linkFor(t: Tenant, liveId: string, submissionId: string, sessionStartAt
 }
 
 /** What /api/live-admission does after granting playback to a browser carrying these cookies. */
-function admit(t: Tenant, liveId: string, cookies: string[]) {
+function admit(t: Tenant, liveId: string, cookies: string[], now?: Date) {
   const request = new Request(`${APP_URL}/api/live-admission`, { method: "POST", headers: { cookie: cookies.join("; ") } });
-  return recordAttendanceForAdmission({ request, vendorId: t.vendor.id, liveId });
+  return recordAttendanceForAdmission({ request, vendorId: t.vendor.id, liveId, ...(now ? { now } : {}) });
 }
 
 function attendanceOf(t: Tenant) {
@@ -267,6 +267,25 @@ describe("GET /api/live-watch-link (Q-17)", () => {
     await expect(db.liveRegistrationAttendance.count({ where: { vendorId: { in: [t.vendor.id, other.vendor.id] } } })).resolves.toBe(0);
   });
 
+  it("answers 429 past 60 links a minute from one address, uncached and without any cookie (review n-3)", async () => {
+    const t = await tenant();
+    const session = await live(t);
+    const lead = await registrant(t, session.id);
+    const fromOneAddress = (token: string) => GET(new Request(new URL(`/api/live-watch-link?token=${encodeURIComponent(token)}`, APP_URL), {
+      headers: { "x-forwarded-for": "198.51.100.77" },
+    }));
+    for (let index = 0; index < 60; index += 1) {
+      expect((await fromOneAddress("not-a-token")).status).toBe(303);
+    }
+    const limited = await fromOneAddress(linkFor(t, session.id, lead.id));
+    expect(limited.status).toBe(429);
+    expect(limited.headers.get("cache-control")).toBe("private, no-store");
+    expect(limited.headers.get("referrer-policy")).toBe("no-referrer");
+    expect(limited.headers.getSetCookie()).toEqual([]);
+    // Another address is unaffected.
+    expect(attendanceCookie(await open(linkFor(t, session.id, lead.id)), session.id)).not.toBeNull();
+  });
+
   it("neither reads nor replaces the browser's registration cookie", async () => {
     const t = await tenant();
     const session = await live(t);
@@ -317,5 +336,51 @@ describe("attendance from /api/live-admission with both cookies (Q-17)", () => {
       await admit(t, session.id, [cookie]);
     }
     await expect(attendanceOf(t)).resolves.toEqual([]);
+  });
+
+  it("falls back to the attendance cookie when the registration cookie names this Live but is unverified or another vendor's (review n-3)", async () => {
+    const t = await tenant();
+    const other = await tenant();
+    const session = await live(t);
+    const forwarded = await registrant(t, session.id);
+    const unverified = await registrant(t, session.id, { verified: false });
+    // A registration row of this Live whose form belongs to another vendor.
+    const foreignForm = await db.formSubmission.create({
+      data: { formId: other.form.id, liveId: session.id, name: "他店", email: `foreign-${randomUUID().slice(0, 8)}@example.test`, verificationStatus: "VERIFIED", verifiedAt: ago(5 * HOUR), createdAt: ago(6 * HOUR) },
+    });
+    const attendance = `${liveAttendanceCookieName(session.id)}=${createLiveAttendanceToken({ vendorId: t.vendor.id, liveId: session.id, submissionId: forwarded.id, expiresAt: new Date(Date.now() + DAY) })}`;
+    for (const registration of [unverified.id, foreignForm.id]) {
+      await db.liveRegistrationAttendance.deleteMany({ where: { vendorId: { in: [t.vendor.id, other.vendor.id] } } });
+      const cookie = `${FORM_SUBMISSION_CHAT_SESSION_COOKIE}=${createFormSubmissionChatSessionToken({ submissionId: registration })}`;
+      await expect(admit(t, session.id, [cookie, attendance])).resolves.toBe("recorded");
+      await expect(attendanceOf(t)).resolves.toEqual([{ formSubmissionId: forwarded.id }]);
+      await expect(attendanceOf(other)).resolves.toEqual([]);
+    }
+  });
+
+  it("throttles the attendance cookie's registration to one write per refresh interval (review n-3)", async () => {
+    const t = await tenant();
+    const session = await live(t);
+    const sibling = await live(t);
+    const forwarded = await registrant(t, session.id);
+    const siblingLead = await registrant(t, sibling.id);
+    const cookies = [
+      // The registration cookie names another Live, so the attendance cookie's registration is chosen.
+      `${FORM_SUBMISSION_CHAT_SESSION_COOKIE}=${createFormSubmissionChatSessionToken({ submissionId: siblingLead.id })}`,
+      `${liveAttendanceCookieName(session.id)}=${createLiveAttendanceToken({ vendorId: t.vendor.id, liveId: session.id, submissionId: forwarded.id, expiresAt: new Date(Date.now() + DAY) })}`,
+    ];
+    const first = new Date();
+    const lastAdmitted = async () => (await db.liveRegistrationAttendance.findFirstOrThrow({ where: { vendorId: t.vendor.id, formSubmissionId: forwarded.id }, select: { lastAdmittedAt: true } })).lastAdmittedAt;
+
+    await expect(admit(t, session.id, cookies, first)).resolves.toBe("recorded");
+    expect(await lastAdmitted()).toEqual(first);
+    // 30-second renewals inside the interval only read.
+    await expect(admit(t, session.id, cookies, new Date(first.getTime() + 30_000))).resolves.toBe("unchanged");
+    await expect(admit(t, session.id, cookies, new Date(first.getTime() + LIVE_REGISTRATION_ATTENDANCE_REFRESH_MS - 1_000))).resolves.toBe("unchanged");
+    expect(await lastAdmitted()).toEqual(first);
+    const later = new Date(first.getTime() + LIVE_REGISTRATION_ATTENDANCE_REFRESH_MS + 1_000);
+    await expect(admit(t, session.id, cookies, later)).resolves.toBe("recorded");
+    expect(await lastAdmitted()).toEqual(later);
+    await expect(db.liveRegistrationAttendance.count({ where: { vendorId: t.vendor.id } })).resolves.toBe(1);
   });
 });

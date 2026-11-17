@@ -120,6 +120,8 @@ describe("AutomationSettingsPage", () => {
     expect(recipe).toContain("開播缺席喚醒再行銷");
     expect(recipe).toContain("報名後未出席直播 → Email 通知");
     expect(recipe).toContain("只能辨識在報名驗證的瀏覽器，或從提醒信、開播通知的個人連結進場的裝置");
+    // Review m-1: the fixed-session replay limit of the personal link.
+    expect(recipe).toContain("指定場次直播在其他場次結束前，從個人連結觀看自己場次的回放不會記為出席。");
     expect(html).toContain("單一開播時間的直播只算開播前 14 天內完成驗證的報名者");
   });
 

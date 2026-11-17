@@ -105,8 +105,16 @@ export function liveAttendanceCookieOptions(secure: boolean, expiresAt: Date, no
   };
 }
 
+/**
+ * Review n-1: the registration cookie reader has no header cap, so a browser
+ * with many cookies must not lose attendance here only. 16 KiB is Node's
+ * default limit for all request headers together, so any header that reaches
+ * this code fits.
+ */
+export const LIVE_ATTENDANCE_COOKIE_HEADER_MAX_LENGTH = 16 * 1_024;
+
 function readCookie(header: string | null, name: string) {
-  if (!header || header.length > 8_192) return null;
+  if (!header || header.length > LIVE_ATTENDANCE_COOKIE_HEADER_MAX_LENGTH) return null;
   let found: string | null = null;
   for (const segment of header.split(";")) {
     const separator = segment.indexOf("=");
