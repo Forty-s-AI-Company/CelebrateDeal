@@ -31,20 +31,31 @@
 | 12 | Q-02 | 其他 e2e hydration 競態（accessibility、announcement-center、commerce-orders、course-player） | 一般 | S–M | 先重現或取得 CI 樣本再改 | 已完成，無需修改：2026-11-05～11-17 的 30 筆 CI 失敗中，這些 spec 沒有 hydration 競態紀錄（相關的兩個已由 #590、#593 修好）。另：`learner-notifications.spec.ts` 在 #607 後仍失敗一次（#608 佇列），併入第 1 項觀察 |
 | 13 | Q-03 | 範本庫 `TemplateCard` 對比不足 | 一般 | S | 先在 master 重現；axe 無新增違規 | 已完成 [#615](https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/615)：master 上 27 處，原因是縮圖預覽的背景被 axe 當成卡片底色；縮圖外框加 `contain-paint isolate`，未改顏色；新增範本庫 axe e2e |
 | 14 | Q-12 | 延遲步驟細節（快照損壞重試、連帶撤回、補跑輪流；地址索引另列高） | 一般 | S–M | 各自有測試 | 已完成 [#628](https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/628)（獨立審查）：快照損壞第二次才停止、`failed` run 已排隊的信照寄、無 Email 補跑商家輪流、`FormSubmission` 驗證地址索引（staging run 44056948778 已套用）。已知限制：輪流查詢在積壓大時線性成長 |
-| 15 | Q-13 | 規則被鎖超過 2 秒時漏建延遲步驟 | 一般 | M | 先重現；補建不重複 | 進行中 |
+| 15 | Q-13 | 規則被鎖超過 2 秒時漏建延遲步驟 | 一般 | M | 先重現；補建不重複 | 已完成 [#631](https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/631)：規則忙碌時改留待補建紀錄，由排程補建，不重複建立。已知限制：商家儲存規則持有鎖時，請求路徑最多可等 15 秒 |
 | 16 | Q-11 | 三個隱藏 trigger 接上呼叫端（`form_no_show`、`viewer_watch_progress`、`webinar_attended_duration_gte`） | 一般 | M×3 | 每個 trigger 一個 PR；接上後才在後台顯示 | `form_no_show` 已完成 [#623](https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/623)（兩輪獨立審查）：新增觀看紀錄表、放在封測授權 `automation_form_no_show` 後（預設不開）、staging run 44045862771 套用 3 條 migration。已知限制：換裝置或手機內建瀏覽器驗證會被誤判未出席（後台已說明，根本解法見 Q-17）。`viewer_watch_progress`、`webinar_attended_duration_gte` 未開始 |
-| 17 | Q-09 | `payment_paid` 的延遲步驟 | 高（金流、migration） | L | `DelayedStepRun` 加訂單欄位；到點重讀訂單；退款後不寄 | 未開始 |
+| 17 | Q-09 | `payment_paid` 的延遲步驟 | 高（金流、migration） | L | `DelayedStepRun` 加訂單欄位；到點重讀訂單；退款後不寄 | 進行中（`ai/payment-paid-delayed-steps`） |
 | 18 | U-04 | 通用元件採用（28 個手寫輸入框、Toast、Tabs 分批遷移） | 一般 | M，分批 | 每批視覺與 a11y 不退步 | 第一批完成 [#625](https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/625)（課程單元、互動角色表單 7 個欄位）。剩餘清單分「一般／漏斗編輯器／高風險」三組，見 #625 說明；多數一般表單需先讓 `Field` 支援受控欄位 |
 | 19 | Q-05 | 發布檢查改成純讀 preflight | 一般 | M | 檢查不取得發布鎖、不寫入 | 已完成 [#619](https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/619)。檢查與正式發布共用 `assertDraftPublishable`；同一份測試對舊實作只有「不取鎖」兩項不同。純讀看不到的寫入期競爭（自動表單 slug、版本號唯一鍵）仍只在正式發布時回報 |
 | 20 | R-02 | `.gitattributes`（LF） | 一般 | S | 不造成全 repo 換行 diff | 已完成 [#626](https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/626)：104 個誤存 CRLF 的文字檔轉 LF（內容無變更），已套用的 CRLF migration 以 `-text` 保留；順帶修正 CodeQL 標出的反斜線跳脫 |
 | 21 | R-07 | 外部排程 Cloudflare Worker 檔進 repo | 一般 | S | `wrangler.toml` 與 worker 可直接部署；部署由 owner 做 | 已完成 [#617](https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/617)：`ops/cloudflare/scheduled-jobs-worker/`。部署（`wrangler login`、`secret put JOB_SECRET`、`deploy`）仍待 owner（B-1） |
 | 22 | D-01 | 文件與程式不一致（ROADMAP 課程列、GO-NO-GO §0／§7／F-019、OWNER-ACTIONS 補 Dependency graph 與 S4） | 一般 | S | 逐項對照程式後修正 | 已完成 [#627](https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/627) |
-| 23 | R-05 | 兩租戶 action 矩陣其餘部分（F-134） | 高（租戶） | M–L | 先盤點未涵蓋的 action，再補回歸測試 | 未開始（範圍待盤點） |
+| 23 | R-05 | 兩租戶 action 矩陣其餘部分（F-134） | 高（租戶） | M–L | 先盤點未涵蓋的 action，再補回歸測試 | 已完成 [#638](https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/638)：盤點表 `docs/codex-goal/TENANT_ACTION_MATRIX.md`，補上高風險 action 的兩租戶 DB 測試，未發現跨租戶漏洞。其餘 35 個 action 只有靜態檢查、沒有 DB 測試（見下方後續項目） |
 | 24 | R-04 | L3 重構（`actions.ts` 拆分、結帳抽服務、付款 reconciler、adapter 契約） | 高 | L | 每步行為不變、測試不弱化；一次一個模組 | 未開始 |
-| 25 | R-10 | 首次成功路徑 runner 每次執行留下的合成商家、直播與報名的清理或停用（只認 `cdfs-` 前綴） | 高（刪資料） | M | 只動 runner 建立的資料；先停用再刪；留收據 | 未開始 |
-| 26 | Q-16 | 學員 magic link 登入後偶發被送回登入頁（`learner-notifications.spec.ts` 三個測試在 Linux 重複時 flaky） | 高（auth） | M | 在未修改的 master 重現；查清是產品競態或測試；token 一次性與綁定不變 | 調查中 |
-| 27 | Q-17 | 個人觀看連結：提醒信與開播通知帶簽章連結，開啟時設定報名 cookie，降低 `form_no_show` 誤判 | 高（auth、租戶） | M | 連結一次性或有期限、綁定報名與商家；不洩漏他人報名 | 未開始 |
-| 28 | Q-18 | 自動化 Email 範本依觸發條件限制可選項（避免缺連結的信） | 一般 | S–M | 既有規則不中斷；後台只列出可用範本；伺服器端驗證 | 未開始 |
+| 25 | R-10 | 首次成功路徑 runner 每次執行留下的合成商家、直播與報名的清理或停用（只認 `cdfs-` 前綴） | 高（刪資料） | M | 只動 runner 建立的資料；先停用再刪；留收據 | 停用部分已完成 [#632](https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/632)：runner 結束時停用自己建立的 `cdfs-` 商家並留收據（staging run 44082301730 停用 2 個）。刪除模式依 #543 需要備份與 owner 同意，列在 C 段 |
+| 26 | Q-16 | 學員 magic link 登入後偶發被送回登入頁（`learner-notifications.spec.ts` 三個測試在 Linux 重複時 flaky） | 高（auth） | M | 在未修改的 master 重現；查清是產品競態或測試；token 一次性與綁定不變 | 已完成 [#633](https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/633)：根因是學員 session 對時鐘偏差零容忍，改為容許 60 秒；token 一次性與綁定不變 |
+| 27 | Q-17 | 個人觀看連結：提醒信與開播通知帶簽章連結，開啟時設定報名 cookie，降低 `form_no_show` 誤判 | 高（auth、租戶） | M | 連結一次性或有期限、綁定報名與商家；不洩漏他人報名 | 已完成 [#634](https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/634)（獨立審查）：連結有期限、綁定報名與商家，開啟時只設定「僅出席」cookie，不授予完整報名權限。未做：固定場次以 cookie 當場次提示（後續項目） |
+| 28 | Q-18 | 自動化 Email 範本依觸發條件限制可選項（避免缺連結的信） | 一般 | S–M | 既有規則不中斷；後台只列出可用範本；伺服器端驗證 | 已完成 [#636](https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/636)：依觸發條件限制範本，伺服器端驗證；新規則不能再選 `class_reminder` 等缺連結的範本，既有規則照常寄送。未做：`form_registered`、無折價券的 `payment_paid` 缺一個通用無連結範本（後續項目） |
+| 29 | Q-19 | 其餘時鐘偏差零容忍的檢查統一 | 高（auth） | S–M | 共用常數；不放寬一次性與期限 | 已完成 [#635](https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/635)：`SERVER_CLOCK_SKEW_SECONDS = 60` 集中在 `src/lib/server-clock-skew.ts`，csrf、recent MFA、常青場等共用。未改：fan-out 的 `consentedAt <= occurredAt` 排序檢查 |
+
+後續項目（尚未排入 A 段，處理完上方項目後再排序）：
+
+- `form_registered` 與無折價券 `payment_paid` 的通用無連結 Email 範本（#636 延伸）。
+- http 環境下 LINE 動作失敗會讓整個延遲步驟失敗（既有行為）。
+- 固定場次以「僅出席」cookie 當場次提示（#634 選項 b）。
+- 其餘 35 個租戶 action 補兩租戶 DB 測試（#638 延伸）。
+- fan-out 的 `consentedAt <= occurredAt` 改用共用時鐘偏差（#635 延伸）。
+- 商家儲存規則持有鎖時，請求路徑最多阻塞 15 秒（#631 延伸）。
+- `tests/e2e/affiliate-portal.spec.ts:76` 在 browser gate 偶發逾時（#630 CI run 44057815873）。
 
 ## B. 需要 owner 先做產品決定
 
@@ -77,6 +88,7 @@
 | 政策頁內容、F-103「部分互動」字樣 | O-9～O-11 法定資料與律師意見 |
 | 資料保存排程啟用（R-09） | 確認 `scheduled-jobs.yml` 的觸發方式後由 owner 同意開啟 |
 | staging 合成資料清理（R-08） | 備份與 owner 同意 |
+| 首次成功路徑 runner 的刪除模式（R-10） | 備份與 owner 同意（#543：封測期間合成資料不刪） |
 | Production 部署與 migration | O-19、O-20、O-26、正式金流授權 |
 
 ## 尚未判斷
