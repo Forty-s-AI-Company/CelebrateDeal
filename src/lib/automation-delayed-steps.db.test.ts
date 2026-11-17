@@ -46,6 +46,8 @@ import {
   AUTOMATION_STEP_MIN_DELAY_MINUTES,
   createAutomationRuleStep,
   deleteAutomationRuleStep,
+  dueAutomationRunsWithoutEmail,
+  EMAIL_FREE_SCAN_LIMIT,
   MAX_AUTOMATION_RULE_STEPS,
   runDelayedStepWorker as processDueDelayedStepRuns,
   updateAutomationRuleStep,
@@ -1150,19 +1152,32 @@ describe("第二輪審查修正（PR #601）", () => {
     await expect(db.lineDelivery.count({ where: { vendorId: t.vendor.id } })).resolves.toBe(1);
   });
 
-  it("MINOR-2 (fail closed): a resumed step whose recorded snapshot does not parse fails without running the current actions", async () => {
+  it("MINOR-2 (fail closed) and Q-12: a resumed step whose recorded snapshot does not parse stops the run at once, without running the current actions or retrying", async () => {
     const t = await tenant();
     const r = await rule(t);
     const s = await step(t, r.id, 60, [TAG_ACTION]);
+    await step(t, r.id, 120, [TAG_ACTION]);
     await registered(t, await registration(t));
     const run = await onlyRun(t);
     const logId = automationStepExecutionLogId(t.vendor.id, run.id, s.id);
     await db.automationExecutionLog.create({
       data: { id: logId, vendorId: t.vendor.id, ruleId: r.id, idempotencyKey: `synthetic-${randomUUID()}`, eventId: `delayed-step:${run.id}:${s.id}`, trigger: "form_registered", subjectType: "buyer_registration", status: "failed", actionResults: { actions: "junk", results: [] } },
     });
-    await expect(work(t, after(run.anchorAt, 61 * MINUTE))).resolves.toEqual([{ runId: run.id, status: "failed" }]);
+    const due = after(run.anchorAt, 61 * MINUTE);
+    // Q-12: the first attempt decides it (the retry limit would end the same way after DELAYED_STEP_MAX_ATTEMPTS rounds).
+    await expect(work(t, due)).resolves.toEqual([{ runId: run.id, status: "cancelled", cancelReason: "failed" }]);
+    await expect(db.delayedStepRun.findUniqueOrThrow({ where: { id: run.id } })).resolves.toMatchObject({
+      status: "cancelled", cancelReason: "failed", nextRunAt: null, claimedAt: null, attemptCount: 1, cursorDelayMinutes: -1,
+    });
     await expect(db.automationExecutionLog.findUniqueOrThrow({ where: { id: logId } })).resolves.toMatchObject({ status: "failed", errorCode: "snapshot_invalid" });
     await expect(db.customerTagAssignment.count({ where: { vendorId: t.vendor.id, tag: "第二天" } })).resolves.toBe(0);
+    // Reported once, with safe keys only (no vendor, run, rule or step id).
+    const reports = monitoring.captureOperationalError.mock.calls.filter(([, context]) => (context as { operation?: string }).operation === "automation_step_snapshot_invalid");
+    expect(reports).toEqual([[expect.any(Error), { source: "delayed_step_run", operation: "automation_step_snapshot_invalid", status: "cancelled" }]]);
+    // Nothing left to retry: later rounds (lease expired, the next step due) take nothing.
+    await expect(work(t, after(due, DELAYED_STEP_LEASE_MS + MINUTE))).resolves.toEqual([]);
+    await expect(work(t, after(run.anchorAt, 121 * MINUTE))).resolves.toEqual([]);
+    await expect(db.automationExecutionLog.count({ where: { vendorId: t.vendor.id, eventId: { startsWith: "delayed-step:" } } })).resolves.toBe(1);
   });
 
   it("MINOR-3: a rule switched off after the worker read it runs nothing, and a queued step e-mail of a stopped rule or run is not sent", async () => {
@@ -1207,5 +1222,125 @@ describe("第二輪審查修正（PR #601）", () => {
     await db.automationRule.update({ where: { id: r2.id }, data: { isActive: false } });
     await expect(dispatchEmailDelivery(mails[1]!.id)).resolves.toEqual({ status: "superseded" });
     expect(provider.send).not.toHaveBeenCalled();
+  });
+});
+
+describe("Q-12：延遲步驟的細節", () => {
+  it("a later step that fails until the run is cancelled as failed does not withdraw the e-mails earlier steps (or its own first attempt) already queued", async () => {
+    const t = await tenant({ line: true });
+    const r = await rule(t);
+    const line = { type: "line_push", message: "第三天的提醒" };
+    await step(t, r.id, 60, [EMAIL_ACTION]);
+    await step(t, r.id, 120, [EMAIL_ACTION, line]);
+    const lead = await registration(t);
+    await db.lineUserIdentity.create({
+      data: { vendorId: t.vendor.id, subjectType: "buyer_registration", subjectId: lead.id, lineUserIdHash: createHash("sha256").update(randomUUID()).digest("hex"), lineUserIdEncrypted: "v1.synthetic" },
+    });
+    await registered(t, lead);
+    const run = await onlyRun(t);
+    // Step 1 queues its e-mail; the queue is busy, so it is still waiting to be sent.
+    await expect(processDueDelayedStepRuns({ now: after(run.anchorAt, 61 * MINUTE), vendorId: t.vendor.id })).resolves.toEqual([{ runId: run.id, status: "executed", emailsQueued: 1 }]);
+    // Step 2 queues its e-mail, then its LINE message fails on every attempt.
+    vi.spyOn(db.lineDelivery, "create").mockRejectedValue(new Error("synthetic LINE failure"));
+    const due2 = after(run.anchorAt, 121 * MINUTE);
+    await expect(processDueDelayedStepRuns({ now: due2, vendorId: t.vendor.id })).resolves.toEqual([{ runId: run.id, status: "failed", emailsQueued: 1 }]);
+    let now = due2;
+    for (let attempt = 2; attempt <= DELAYED_STEP_MAX_ATTEMPTS; attempt += 1) {
+      now = after(now, DELAYED_STEP_LEASE_MS + MINUTE);
+      await expect(processDueDelayedStepRuns({ now, vendorId: t.vendor.id })).resolves.toEqual([{ runId: run.id, status: "failed" }]);
+    }
+    now = after(now, DELAYED_STEP_LEASE_MS + MINUTE);
+    await expect(processDueDelayedStepRuns({ now, vendorId: t.vendor.id })).resolves.toEqual([{ runId: run.id, status: "cancelled", cancelReason: "failed" }]);
+    const mails = await stepMails(t);
+    expect(mails).toHaveLength(2);
+    expect(mails.every((mail) => mail.status === "queued")).toBe(true);
+    // Both still go out: the failure stops the run, not what it already queued.
+    for (const mail of mails) await expect(dispatchEmailDelivery(mail.id)).resolves.toEqual({ status: "sent" });
+    expect(provider.send).toHaveBeenCalledTimes(2);
+    await expect(db.automationExecutionLog.count({ where: { vendorId: t.vendor.id, eventId: { startsWith: "delayed-step:" }, status: "failed" } })).resolves.toBe(1);
+  });
+
+  it("only `failed` is exempt: a run stopped for its rule or its subject still withdraws its queued step e-mails", async () => {
+    const t = await tenant();
+    const r = await rule(t, { trigger: "consultation_booked" });
+    await step(t, r.id, 60, [EMAIL_ACTION]);
+    const address = `client-${randomUUID().slice(0, 8)}@example.test`;
+    await registration(t, { email: address });
+    const row = await booking(t, address);
+    await booked(t, row);
+    const run = await onlyRun(t);
+    await expect(processDueDelayedStepRuns({ now: after(run.anchorAt, 61 * MINUTE), vendorId: t.vendor.id })).resolves.toEqual([{ runId: run.id, status: "executed", emailsQueued: 1 }]);
+    const [mail] = await stepMails(t);
+    // Completed run: sendable.
+    await expect(isCurrentEmailDeliverySnapshot(mail!, new Date())).resolves.toBe(true);
+    for (const cancelReason of ["subject_gone", "definition_paused", "definition_deleted"] as const) {
+      await db.delayedStepRun.update({ where: { id: run.id }, data: { status: "cancelled", cancelReason, nextRunAt: null } });
+      await expect(isCurrentEmailDeliverySnapshot(mail!, new Date())).resolves.toBe(false);
+    }
+    await db.delayedStepRun.update({ where: { id: run.id }, data: { status: "cancelled", cancelReason: "failed", nextRunAt: null } });
+    await expect(isCurrentEmailDeliverySnapshot(mail!, new Date())).resolves.toBe(true);
+  });
+
+  describe("不含 Email 的補跑在商家之間輪流", () => {
+    // Runs placed in 2001 so this unscoped round sees no other test's runs.
+    const ANCHOR = new Date("2001-03-04T00:00:00.000Z");
+    const NOW = after(ANCHOR, 2 * HOUR);
+
+    async function vendorWithDueRuns(count: number, firstDueOffsetMs: number) {
+      const t = await tenant();
+      const r = await rule(t);
+      await step(t, r.id, 60, [TAG_ACTION]);
+      for (let index = 0; index < count; index += 1) await registered(t, await registration(t));
+      const runs = await runsOf(t);
+      expect(runs).toHaveLength(count);
+      const ordered = [];
+      for (const [index, row] of runs.entries()) {
+        const nextRunAt = after(ANCHOR, firstDueOffsetMs + index * MINUTE);
+        ordered.push(await db.delayedStepRun.update({ where: { id: row.id }, data: { anchorAt: after(nextRunAt, -60 * MINUTE), nextRunAt } }));
+      }
+      return { t, runIds: ordered.map((row) => row.id) };
+    }
+
+    async function threeVendors() {
+      // A's runs are all due before B's and C's: by due time alone A would take every slot.
+      const a = await vendorWithDueRuns(5, 60 * MINUTE);
+      const b = await vendorWithDueRuns(2, 70 * MINUTE);
+      const c = await vendorWithDueRuns(1, 80 * MINUTE);
+      return { a, b, c };
+    }
+
+    it("takes every vendor's oldest due run before any vendor's second, within the per-round limit", async () => {
+      const { a, b, c } = await threeVendors();
+      const order = (await dueAutomationRunsWithoutEmail(db, { now: NOW, vendorId: undefined, exclude: [], limit: 200 })).map((row) => row.id);
+      expect(order).toEqual([a.runIds[0], b.runIds[0], c.runIds[0], a.runIds[1], b.runIds[1], a.runIds[2], a.runIds[3], a.runIds[4]]);
+      // The limit caps the round, after the round-robin.
+      const capped = (await dueAutomationRunsWithoutEmail(db, { now: NOW, vendorId: undefined, exclude: [], limit: 4 })).map((row) => row.id);
+      expect(capped).toEqual([a.runIds[0], b.runIds[0], c.runIds[0], a.runIds[1]]);
+      // Never more than EMAIL_FREE_SCAN_LIMIT, whatever the caller asks for.
+      expect(EMAIL_FREE_SCAN_LIMIT).toBe(200);
+      const huge = await dueAutomationRunsWithoutEmail(db, { now: NOW, vendorId: a.t.vendor.id, exclude: [a.runIds[0]!], limit: 10_000 });
+      expect(huge.map((row) => row.id)).toEqual(a.runIds.slice(1));
+      await expect(dueAutomationRunsWithoutEmail(db, { now: NOW, vendorId: undefined, exclude: [], limit: 0 })).resolves.toEqual([]);
+    });
+
+    it("a worker round without e-mail capacity shares its run budget between the vendors instead of draining the oldest vendor first", async () => {
+      const { a, b, c } = await threeVendors();
+      // No e-mail provider: no e-mail capacity, so only the e-mail-free catch-up runs.
+      vi.stubEnv("RESEND_API_KEY", "");
+      const first = await processDueDelayedStepRuns({ now: NOW, budget: { runs: 3 }, onConfigurationError: () => undefined });
+      expect(first).toEqual([
+        { runId: a.runIds[0], status: "executed" },
+        { runId: b.runIds[0], status: "executed" },
+        { runId: c.runIds[0], status: "executed" },
+      ]);
+      const second = await processDueDelayedStepRuns({ now: NOW, budget: { runs: 3 }, onConfigurationError: () => undefined });
+      expect(second).toEqual([
+        { runId: a.runIds[1], status: "executed" },
+        { runId: b.runIds[1], status: "executed" },
+        { runId: a.runIds[2], status: "executed" },
+      ]);
+      await expect(db.customerTagAssignment.count({ where: { vendorId: c.t.vendor.id, tag: "第二天" } })).resolves.toBe(1);
+      await expect(db.customerTagAssignment.count({ where: { vendorId: b.t.vendor.id, tag: "第二天" } })).resolves.toBe(2);
+    });
   });
 });

@@ -1188,7 +1188,11 @@ async function startDelayedSteps(
 }
 
 export type AutomationStepOutcome = {
-  status: "completed" | "skipped" | "already_done" | "invalid_step" | "rule_deleted" | "rule_inactive" | "failed";
+  /**
+   * `snapshot_invalid`: a resumed step's recorded action list does not parse;
+   * nothing ran and a retry cannot fix it (Q-12).
+   */
+  status: "completed" | "skipped" | "already_done" | "invalid_step" | "rule_deleted" | "rule_inactive" | "failed" | "snapshot_invalid";
   /** E-mails this execution queued (AUTOMATION_STEP_EMAIL_TRIGGER), for the worker's send quota. */
   emailsQueued: number;
 };
@@ -1248,10 +1252,11 @@ export async function executeAutomationStep(
   if (plan.kind === "invalid_step") return { status: "invalid_step", emailsQueued: 0 };
   if (plan.kind === "invalid_snapshot") {
     // Fail closed: never fall back to the current actions (their indexes
-    // could point at other outputs). The lease stays and the run is
-    // cancelled as failed after its attempts.
+    // could point at other outputs). A stored snapshot that does not parse
+    // never parses on a retry either (Q-12), so the worker stops the run at
+    // once instead of spending its remaining attempts on it.
     const recorded = await finishExecution(db, logId, { status: "failed", errorCode: "snapshot_invalid", completedAt: new Date() });
-    return { status: recorded ? "failed" : "rule_deleted", emailsQueued: 0 };
+    return { status: recorded ? "snapshot_invalid" : "rule_deleted", emailsQueued: 0 };
   }
   const rule = plan.rule;
   if (plan.kind === "start") {

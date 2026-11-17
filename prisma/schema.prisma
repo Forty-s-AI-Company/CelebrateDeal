@@ -805,6 +805,9 @@ model FormSubmission {
   @@index([formId, customerKeyHash, createdAt])
   @@index([liveId, liveSessionId])
   @@index([verificationStatus, liveSessionSeatReleasedAt, liveSessionId, verificationExpiresAt])
+  // Q-12: partial expression index "FormSubmission_verified_email_normalized_idx"
+  // ON (lower(btrim(email))) WHERE verificationStatus = 'VERIFIED' lives in the
+  // migration only (Prisma 6 cannot express it; prisma-unmanaged-indexes.db.test.ts).
 }
 
 enum FormSubmissionVerificationStatus {

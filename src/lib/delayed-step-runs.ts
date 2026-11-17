@@ -1216,8 +1216,10 @@ async function runFairPasses(round: WorkerRound, dueWhere: Prisma.DelayedStepRun
 /**
  * M3: automation steps without an e-mail never wait for e-mail capacity (or
  * for an e-mail provider). Once the e-mail capacity is used up, or when there
- * is none, they run in due order on the rest of the run budget. A run already
- * handled this round is left alone (one step per run and round).
+ * is none, they run on the rest of the run budget, in the order dueWithoutEmail
+ * returns them (round-robin between vendors, oldest due first in each turn;
+ * Q-12). A run already handled this round is left alone (one step per run and
+ * round).
  */
 async function runEmailFreeAutomationRuns(round: WorkerRound, vendorId: string | undefined) {
   const { automation, results } = round;
@@ -1243,8 +1245,9 @@ export type AutomationRunProcessor = {
   processClaimed: (db: Database, lease: Lease, now: Date, emailRoom: number) => Promise<DelayedStepResult>;
   /**
    * Due automation runs whose next step queues no e-mail (or that only need
-   * completing), oldest first, without `exclude`; the same claim fields as
-   * the fair loop's candidates.
+   * completing), without `exclude`, round-robin between vendors (oldest due
+   * first in each turn), at most `limit`; the same claim fields as the fair
+   * loop's candidates.
    */
   dueWithoutEmail: (db: Database, input: { now: Date; vendorId: string | undefined; exclude: string[]; limit: number }) => Promise<Array<{
     id: string; vendorId: string; updatedAt: Date; cursorDelayMinutes: number; attemptCount: number; automationRuleId: string | null;
@@ -1384,7 +1387,8 @@ export async function isCurrentAutomationStepEmailDelivery(
   if (!vendor || vendor.suspendedAt || !isFeatureEnabled(vendor, AUTOMATION_DELAYED_STEPS_GRANT)) return false;
   // Review MINOR-3: the e-mail's key names its step execution; the rule must
   // still be switched on and the run not stopped (a switch-off or another
-  // stop that came after the step ran supersedes the e-mail). All reads are
+  // stop that came after the step ran supersedes the e-mail; a run cancelled
+  // as `failed` does not, see automationStepRunStillSends). All reads are
   // bound to the delivery's vendor.
   const key = parseAutomationStepEmailIdempotencyKey(delivery.idempotencyKey);
   if (!key) return false;
@@ -1396,9 +1400,27 @@ export async function isCurrentAutomationStepEmailDelivery(
   if (!log || !step) return false;
   const [rule, run] = await Promise.all([
     database.automationRule.findFirst({ where: { id: log.ruleId, vendorId: delivery.vendorId, isActive: true }, select: { id: true } }),
-    database.delayedStepRun.findFirst({ where: { id: step.runId, vendorId: delivery.vendorId, automationRuleId: log.ruleId }, select: { status: true } }),
+    database.delayedStepRun.findFirst({ where: { id: step.runId, vendorId: delivery.vendorId, automationRuleId: log.ruleId }, select: { status: true, cancelReason: true } }),
   ]);
-  return Boolean(rule && run && run.status !== "cancelled");
+  return Boolean(rule && run && automationStepRunStillSends(run));
+}
+
+/**
+ * Q-12: which stopped runs still send the step e-mails they already queued.
+ * A stop that is about the rule or the person (switched off, trigger hidden,
+ * rule gone, booking cancelled, registrant watched the Live) supersedes them:
+ * that is the point of MINOR-3. A run cancelled as `failed` (retry limit, or a
+ * recorded snapshot that does not parse) only means a later step could not
+ * run: it says nothing against an e-mail an earlier step, or the failed
+ * step's own earlier actions, already queued. Those still go out, like an
+ * immediate rule's e-mails queued before a later action threw
+ * (dispatchAutomationEvent), and like them they normally leave in the round
+ * that created them anyway; superseding the few still waiting would only
+ * make the outcome depend on queue timing. The failed step and every later
+ * step queue nothing more, since the run never advances again.
+ */
+function automationStepRunStillSends(run: { status: string; cancelReason: string | null }) {
+  return run.status !== "cancelled" || run.cancelReason === "failed";
 }
 
 type SequenceSnapshotDatabase = Pick<Prisma.TransactionClient, "delayedStepRun" | "blacklist" | "vendor" | "commerceOrder">;
