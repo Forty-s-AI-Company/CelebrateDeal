@@ -25,7 +25,7 @@ import { isWp4BoundNonProductionRuntime } from "@/lib/wp4-runtime-boundary";
  * Names, titles and other free text are never used to find anything.
  *
  * Two modes, never combined in one call:
- * - `deactivate` (the default, run after every runner job): suspends the vendor
+ * - `deactivate` (run automatically after every runner job): suspends the vendor
  *   through the existing F-036 switch (`Vendor.suspendedAt`). The email and LINE
  *   jobs then skip it (rows stay queued), its public live, form and project
  *   pages answer 404 and its learner portal tokens are revoked, exactly like a
@@ -48,19 +48,26 @@ export const FIRST_SUCCESS_CLEANUP_MODE_HEADER = "x-celebratedeal-first-success-
 export const FIRST_SUCCESS_CLEANUP_REASON = "staging_first_success_cleanup";
 export const FIRST_SUCCESS_CLEANUP_RETENTION_DAYS = 7;
 export const FIRST_SUCCESS_CLEANUP_RETENTION_MS = FIRST_SUCCESS_CLEANUP_RETENTION_DAYS * 24 * 60 * 60 * 1_000;
-/** Vendors handled per call; the rest wait for the next call (`truncated`). */
+/** Vendors deactivated or deleted per call; the rest wait for the next call (`truncated`). */
 export const FIRST_SUCCESS_CLEANUP_BATCH_LIMIT = 25;
+/**
+ * Candidates inspected per call. Skipped and failed vendors do not use the
+ * BATCH_LIMIT budget, so they cannot hold back eligible ones behind them;
+ * this bound keeps one call's work finite.
+ */
+export const FIRST_SUCCESS_CLEANUP_EXAMINE_LIMIT = 100;
 export const FIRST_SUCCESS_CLEANUP_ACTOR = "job:staging-first-success-cleanup";
 export const FIRST_SUCCESS_CLEANUP_AUDIT_ACTION = "staging_first_success_cleanup";
 export const FIRST_SUCCESS_CLEANUP_DELETED_AUDIT_ACTION = "staging_first_success_vendor_deleted";
 const OWNER_EMAIL_PREFIX = "delivered+cdfs-owner-";
 const OWNER_EMAIL_SUFFIX = "@resend.dev";
+const WORKSPACE_SLUG_PREFIX = "synthetic-workspace-";
+const CANDIDATE_PAGE_SIZE = 25;
 const TRANSACTION_TIMEOUT_MS = 30_000;
 
-/** Missing header = the safe default; anything other than the two modes is rejected. */
+/** The caller must name the mode; a missing header or any other value is rejected. */
 export function readFirstSuccessCleanupMode(request: Request): FirstSuccessCleanupMode | null {
   const value = request.headers.get(FIRST_SUCCESS_CLEANUP_MODE_HEADER);
-  if (value === null) return "deactivate";
   return value === "deactivate" || value === "delete" ? value : null;
 }
 
@@ -98,7 +105,7 @@ export type FirstSuccessCleanupReceipt = {
   retained: number;
   skipped: Record<SkipReason, number>;
   failed: number;
-  /** More candidates than FIRST_SUCCESS_CLEANUP_BATCH_LIMIT; the next call continues. */
+  /** Candidates were left for the next call (batch or examine limit reached); the result is then PARTIAL. */
   truncated: boolean;
   /** Rows hidden (deactivate) or removed (delete) with the processed vendors. */
   affected: { lives: number; registrations: number; projects: number; queuedEmailDeliveries: number; ownerUsers: number };
@@ -156,7 +163,20 @@ const VENDOR_FINANCE_COUNTS = {
   merchantAffiliateCalculations: true,
   supportRefundHandoffs: true,
   webhookEvents: true,
+  merchantAffiliatePolicies: true,
+  merchantAffiliateCheckoutRecipients: true,
+  merchantAffiliateCounters: true,
+  usageRecords: true,
+  streamUsageLedgerEntries: true,
 } satisfies Prisma.VendorCountOutputTypeSelect;
+
+/** One-to-one finance or billing rows (several RESTRICT the vendor delete): present = skip. */
+const VENDOR_FINANCE_SINGLETONS = {
+  payUniLiveProbe: { select: { id: true } },
+  affiliatePayoutPolicy: { select: { vendorId: true } },
+  usageLimit: { select: { id: true } },
+  merchantAffiliatePolicyState: { select: { vendorId: true } },
+} satisfies Prisma.VendorSelect;
 
 const USER_FINANCE_COUNTS = {
   platformReferralCodes: true,
@@ -185,23 +205,22 @@ async function inspectLockedVendor(tx: Tx, vendorId: string, mode: FirstSuccessC
   const runId = firstSuccessRunIdFromOwnerEmail(vendor.email);
   if (!runId || !isFirstSuccessWorkspaceSlug(vendor.slug, runId)) return { ok: false, reason: "notRunnerVendor", runId };
 
-  const members = await tx.vendorMember.findMany({
-    where: { vendorId: vendor.id },
-    select: {
-      userId: true,
-      role: true,
-      status: true,
-      user: { select: { email: true, _count: { select: { memberships: true, ...USER_FINANCE_COUNTS } } } },
-    },
-  });
+  const members = await tx.vendorMember.findMany({ where: { vendorId: vendor.id }, select: { userId: true, role: true, status: true } });
   const owner = members[0];
-  if (members.length !== 1 || !owner || owner.role !== "owner" || owner.status !== "active"
-    || owner.user.email !== vendor.email || owner.user._count.memberships !== 1) {
-    return { ok: false, reason: "unexpectedMembership", runId };
-  }
-  const userFinance = sumCounts(owner.user._count) - owner.user._count.memberships;
-  const counts = await tx.vendor.findUniqueOrThrow({ where: { id: vendor.id }, select: { _count: { select: VENDOR_FINANCE_COUNTS } } });
-  if (sumCounts(counts._count) + userFinance > 0) return { ok: false, reason: "financialRecords", runId };
+  if (members.length !== 1 || !owner || owner.role !== "owner" || owner.status !== "active") return { ok: false, reason: "unexpectedMembership", runId };
+  // The owner row is locked too, so its Email and memberships cannot change before the delete.
+  const users = await tx.$queryRaw<Array<{ id: string; email: string }>>`SELECT "id", "email" FROM "User" WHERE "id" = ${owner.userId} FOR UPDATE`;
+  if (users[0]?.email !== vendor.email) return { ok: false, reason: "unexpectedMembership", runId };
+  const user = await tx.user.findUniqueOrThrow({ where: { id: owner.userId }, select: { _count: { select: { memberships: true, ...USER_FINANCE_COUNTS } } } });
+  if (user._count.memberships !== 1) return { ok: false, reason: "unexpectedMembership", runId };
+  const userFinance = sumCounts(user._count) - user._count.memberships;
+  const finance = await tx.vendor.findUniqueOrThrow({
+    where: { id: vendor.id },
+    select: { _count: { select: VENDOR_FINANCE_COUNTS }, ...VENDOR_FINANCE_SINGLETONS },
+  });
+  const singletons = (Object.keys(VENDOR_FINANCE_SINGLETONS) as Array<keyof typeof VENDOR_FINANCE_SINGLETONS>)
+    .filter((key) => finance[key] !== null).length;
+  if (sumCounts(finance._count) + userFinance + singletons > 0) return { ok: false, reason: "financialRecords", runId };
 
   if (mode === "deactivate") {
     if (vendor.suspendedAt === null) return { ok: true, vendor, ownerUserId: owner.userId, runId };
@@ -290,7 +309,11 @@ export async function runFirstSuccessCleanup(input: {
   now?: Date;
   db?: CleanupDb;
   env?: Readonly<Record<string, string | undefined>>;
+  /** Tests only: smaller bounds. Never lifted above the module limits. */
+  limits?: { batch?: number; examine?: number };
 }): Promise<FirstSuccessCleanupReceipt> {
+  const batchLimit = Math.min(input.limits?.batch ?? FIRST_SUCCESS_CLEANUP_BATCH_LIMIT, FIRST_SUCCESS_CLEANUP_BATCH_LIMIT);
+  const examineLimit = Math.min(input.limits?.examine ?? FIRST_SUCCESS_CLEANUP_EXAMINE_LIMIT, FIRST_SUCCESS_CLEANUP_EXAMINE_LIMIT);
   const receipt = emptyFirstSuccessCleanupReceipt(input.mode);
   // Defense in depth: never query anything outside the bound staging Preview runtime.
   if (!isWp4BoundNonProductionRuntime(input.env ?? process.env)) return receipt;
@@ -299,51 +322,67 @@ export async function runFirstSuccessCleanup(input: {
   const cutoff = new Date(now.getTime() - FIRST_SUCCESS_CLEANUP_RETENTION_MS);
   const runnerEmail = { startsWith: OWNER_EMAIL_PREFIX, endsWith: OWNER_EMAIL_SUFFIX };
 
-  const candidates = await db.vendor.findMany({
-    where: input.mode === "deactivate"
-      ? { email: runnerEmail, suspendedAt: null }
-      : { email: runnerEmail, suspendedReason: FIRST_SUCCESS_CLEANUP_REASON, suspendedAt: { lte: cutoff } },
-    orderBy: [{ createdAt: "asc" }, { id: "asc" }],
-    take: FIRST_SUCCESS_CLEANUP_BATCH_LIMIT + 1,
-    select: { id: true, email: true },
-  });
-  receipt.truncated = candidates.length > FIRST_SUCCESS_CLEANUP_BATCH_LIMIT;
+  const runnerVendor = { email: runnerEmail, slug: { startsWith: WORKSPACE_SLUG_PREFIX } };
+  const where: Prisma.VendorWhereInput = input.mode === "deactivate"
+    ? { ...runnerVendor, suspendedAt: null }
+    : { ...runnerVendor, suspendedReason: FIRST_SUCCESS_CLEANUP_REASON, suspendedAt: { lte: cutoff } };
 
-  for (const candidate of candidates.slice(0, FIRST_SUCCESS_CLEANUP_BATCH_LIMIT)) {
-    receipt.examined += 1;
-    const candidateRunId = firstSuccessRunIdFromOwnerEmail(candidate.email);
-    if (!candidateRunId) { receipt.skipped.notRunnerVendor += 1; continue; }
-    let outcome: VendorOutcome;
-    try {
-      outcome = await db.$transaction(
-        (tx) => (input.mode === "deactivate" ? deactivateOne(tx, candidate.id, now) : deleteOne(tx, candidate.id, now)),
-        { timeout: TRANSACTION_TIMEOUT_MS },
-      );
-    } catch {
-      receipt.failed += 1;
-      receipt.runIdPrefixes.failed.push(firstSuccessRunIdPrefix(candidateRunId));
-      continue;
+  // Keyset scan, oldest first. Only vendors actually changed use the batch budget, so skipped or
+  // failed ones never pin the batch; at most EXAMINE_LIMIT candidates are inspected per call.
+  let cursor: { createdAt: Date; id: string } | null = null;
+  let changed = 0;
+  scan: for (;;) {
+    const page: Array<{ id: string; email: string; createdAt: Date }> = await db.vendor.findMany({
+      where: cursor
+        ? { AND: [where, { OR: [{ createdAt: { gt: cursor.createdAt } }, { createdAt: cursor.createdAt, id: { gt: cursor.id } }] }] }
+        : where,
+      orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+      take: CANDIDATE_PAGE_SIZE,
+      select: { id: true, email: true, createdAt: true },
+    });
+    for (const candidate of page) {
+      if (changed >= batchLimit || receipt.examined >= examineLimit) {
+        receipt.truncated = true;
+        break scan;
+      }
+      cursor = { createdAt: candidate.createdAt, id: candidate.id };
+      receipt.examined += 1;
+      const candidateRunId = firstSuccessRunIdFromOwnerEmail(candidate.email);
+      if (!candidateRunId) { receipt.skipped.notRunnerVendor += 1; continue; }
+      let outcome: VendorOutcome;
+      try {
+        outcome = await db.$transaction(
+          (tx) => (input.mode === "deactivate" ? deactivateOne(tx, candidate.id, now) : deleteOne(tx, candidate.id, now)),
+          { timeout: TRANSACTION_TIMEOUT_MS },
+        );
+      } catch {
+        receipt.failed += 1;
+        receipt.runIdPrefixes.failed.push(firstSuccessRunIdPrefix(candidateRunId));
+        continue;
+      }
+      const prefix = firstSuccessRunIdPrefix(outcome.runId ?? candidateRunId);
+      if (outcome.status === "processed") {
+        changed += 1;
+        if (input.mode === "deactivate") receipt.deactivated += 1; else receipt.deleted += 1;
+        for (const key of Object.keys(receipt.affected) as Array<keyof Affected>) receipt.affected[key] += outcome.affected[key];
+        receipt.runIdPrefixes.processed.push(prefix);
+      } else {
+        // alreadyDeactivated / retained here means the row changed after the candidate query;
+        // the context counts below report those states, so the vendor counts as not eligible.
+        const reason = outcome.reason === "alreadyDeactivated" || outcome.reason === "retained" ? "notEligible" : outcome.reason;
+        receipt.skipped[reason] += 1;
+        receipt.runIdPrefixes.skipped.push(prefix);
+      }
     }
-    const prefix = firstSuccessRunIdPrefix(outcome.runId ?? candidateRunId);
-    if (outcome.status === "processed") {
-      if (input.mode === "deactivate") receipt.deactivated += 1; else receipt.deleted += 1;
-      for (const key of Object.keys(receipt.affected) as Array<keyof Affected>) receipt.affected[key] += outcome.affected[key];
-      receipt.runIdPrefixes.processed.push(prefix);
-    } else {
-      // alreadyDeactivated / retained here means the row changed after the candidate query;
-      // the context counts below report those states, so the vendor counts as not eligible.
-      const reason = outcome.reason === "alreadyDeactivated" || outcome.reason === "retained" ? "notEligible" : outcome.reason;
-      receipt.skipped[reason] += 1;
-      receipt.runIdPrefixes.skipped.push(prefix);
-    }
+    if (page.length < CANDIDATE_PAGE_SIZE) break;
   }
 
   // Context counts, read after the batch: what this cleanup already holds and what waits for retention.
-  const ours = { email: runnerEmail, suspendedReason: FIRST_SUCCESS_CLEANUP_REASON };
+  const ours = { ...runnerVendor, suspendedReason: FIRST_SUCCESS_CLEANUP_REASON };
   if (input.mode === "deactivate") receipt.alreadyDeactivated = await db.vendor.count({ where: { ...ours, suspendedAt: { lt: now } } });
   else receipt.retained = await db.vendor.count({ where: { ...ours, suspendedAt: { gt: cutoff } } });
 
-  receipt.result = receipt.failed > 0 ? "PARTIAL" : "COMPLETED";
+  receipt.result = receipt.failed > 0 || receipt.truncated ? "PARTIAL" : "COMPLETED";
   await db.auditLog.create({
     data: {
       vendorId: null,

@@ -28,21 +28,21 @@ gh workflow run staging-first-success.yml --ref master -f source_sha=<sha> -f de
 
 1. 商家登入 Email 完全等於 `delivered+cdfs-owner-<run id>@resend.dev`（沿用 `FIRST_SUCCESS_OWNER_EMAIL` 的錨定 regex，大小寫、長度、前後綴都不能差）。
 2. 商家 slug 是同一個 run id 推導出的 `synthetic-workspace-<run id 前 10 碼>-<uuid>`。
-3. 只有一位成員：狀態 active 的 owner，其 User 的 Email 與商家相同，而且這個 User 沒有其他商家的成員身分。
-4. 沒有任何財務紀錄：訂單、退款、付款交易、庫存保留、收款帳號、付款方式、訂閱、發票／電子發票／折讓、月結與調整、出款、佣金（聯盟、課程、平台推薦）、聯盟結帳快照、付款 webhook、客服退款交接。runner 從不結帳；有這些紀錄的商家**跳過並在收據回報**，不改動。
+3. 只有一位成員：狀態 active 的 owner，其 User 的 Email 與商家相同，而且這個 User 沒有其他商家的成員身分（owner 的 User 列同樣 `FOR UPDATE` 鎖住後才檢查）。
+4. 沒有任何財務或帳務紀錄：訂單、退款、付款交易、庫存保留、收款帳號、付款方式、訂閱、發票／電子發票／折讓、月結與調整、出款、佣金（聯盟、課程、平台推薦）、聯盟政策／結帳快照／收款人／銷售計數、付款 webhook、客服退款交接、用量紀錄與串流用量帳；一對一的 PayUni live probe、聯盟出款政策、用量上限、聯盟政策指標也個別檢查。runner 從不結帳；有這些紀錄的商家**跳過並在收據回報**，不改動。
 
 不以名稱、標題或其他文字比對。名稱相似、Email 不同、slug 不同、多了成員或有訂單的商家都不會被動到（PostgreSQL 測試逐一驗證）。
 
 ### 3.2 先停用，再刪除
 
-- **停用（`deactivate`，預設）**：用既有的 F-036 商家凍結（`Vendor.suspendedAt`），`suspendedReason` 固定為 `staging_first_success_cleanup`，同一交易撤銷該商家的學員 portal token，並寫一筆 `vendor_suspended` 稽核（actor `job:staging-first-success-cleanup`）。效果與平台凍結相同：email 與 LINE job 不寄、不 claim（列維持 queued）、直播／報名表／專案公開頁 404。資料不刪。
-- **刪除（`delete`，只能手動）**：只處理「由這個清理停用、而且停用滿 7 天」的商家（`FIRST_SUCCESS_CLEANUP_RETENTION_DAYS`）。每個商家一個交易：鎖住商家列、重新檢查 3.1 全部條件、刪除商家（直播、報名、專案、寄送紀錄等依 FK cascade 一起刪除），再刪除那位 owner User；任何一步失敗（例如某個 FK 拒絕）整個商家回滾、計為 `failed`，繼續下一個。商家的稽核紀錄保留（`vendorId` 變成 NULL），另寫一筆 `staging_first_success_vendor_deleted`。
+- **停用（`deactivate`，runner 結束後自動執行）**：用既有的 F-036 商家凍結（`Vendor.suspendedAt`），`suspendedReason` 固定為 `staging_first_success_cleanup`，同一交易撤銷該商家的學員 portal token，並寫一筆 `vendor_suspended` 稽核（actor `job:staging-first-success-cleanup`）。效果與平台凍結相同：email 與 LINE job 不寄、不 claim（列維持 queued）、直播／報名表／專案公開頁 404。資料不刪。
+- **刪除（`delete`，只能手動，第一次執行前須 owner 同意）**：只處理「由這個清理停用、而且停用滿 7 天」的商家（`FIRST_SUCCESS_CLEANUP_RETENTION_DAYS`）。每個商家一個交易：鎖住商家列、重新檢查 3.1 全部條件、刪除商家（直播、報名、專案、寄送紀錄等依 FK cascade 一起刪除），再刪除那位 owner User；任何一步失敗（例如某個 FK 拒絕）整個商家回滾、計為 `failed`，繼續下一個。商家的稽核紀錄保留（`vendorId` 變成 NULL），另寫一筆 `staging_first_success_vendor_deleted`。
 - 平台管理員自己凍結的商家（原因不是上面的固定值）永遠不會被刪除；停用模式也不會改它的原因。
-- 每次呼叫最多處理 25 個商家，多的留到下一次（收據 `truncated: true`）。重複執行是冪等的：已停用的不再停用，已刪除的不會再出現。
+- 候選商家先在 SQL 以 owner Email 形狀與 `synthetic-workspace-` slug 前綴篩選，再由舊到新以 keyset 掃描。每次呼叫最多停用或刪除 25 個商家、最多檢查 100 個；被跳過或失敗的商家不佔 25 的名額，不會卡住後面的商家。還有剩下時收據 `truncated: true`、結果為 `PARTIAL`，下一次繼續。重複執行是冪等的：已停用的不再停用，已刪除的不會再出現。
 
 ### 3.3 執行邊界
 
-- route 走 `authorizeWp4Ops`：timing-safe `JOB_SECRET`、`isWp4BoundNonProductionRuntime()`（`VERCEL_ENV=preview`、`PAYUNI_ENV=sandbox`、`WP4_SANDBOX_EXECUTOR_ENABLED=true`、staging 專案 ID、staging origin、staging 資料庫身分）、exact source SHA、不接受 query 與 body。唯一輸入是 `x-celebratedeal-first-success-cleanup-mode` header（`deactivate`／`delete`；沒有時視為 `deactivate`）。
+- route 走 `authorizeWp4Ops`：timing-safe `JOB_SECRET`、`isWp4BoundNonProductionRuntime()`（`VERCEL_ENV=preview`、`PAYUNI_ENV=sandbox`、`WP4_SANDBOX_EXECUTOR_ENABLED=true`、staging 專案 ID、staging origin、staging 資料庫身分）、exact source SHA、不接受 query 與 body。唯一輸入是 `x-celebratedeal-first-success-cleanup-mode` header，必須明確是 `deactivate` 或 `delete`，沒帶或其他值一律 404；腳本也沒有預設模式（`--mode=` 或 `CELEBRATEDEAL_CLEANUP_MODE`）。
 - `runFirstSuccessCleanup` 在任何查詢前再檢查一次 runtime，Production 一律回 REFUSED、不讀不寫（單元與 PostgreSQL 測試都驗證）。
 - 腳本先驗 Preview lineage 與 alias（與 runner 相同），通過後才帶 `JOB_SECRET` 打 alias。
 
@@ -52,7 +52,7 @@ route 回傳、腳本寫入 `$RUNNER_TEMP/celebratedeal-staging-first-success-cl
 
 ## 4. 怎麼用
 
-- **自動停用**：`staging-first-success.yml` 在 journey 步驟之後（不論 journey 成敗，取消時不跑）執行 `node scripts/staging-first-success-cleanup.mjs --mode=deactivate`，所以這一輪與之前留下的合成商家都會被停用，不會再寄提醒信。這一步不刪資料。
+- **自動停用**：`staging-first-success.yml` 在 journey 步驟之後（不論 journey 成敗，取消時不跑）執行 `node scripts/staging-first-success-cleanup.mjs --mode=deactivate`，所以這一輪與之前留下的合成商家都會被停用，不會再寄提醒信。這一步不刪資料。journey 步驟有自己的 15 分鐘逾時、停用步驟 5 分鐘、整個 job 25 分鐘，所以 journey 卡住逾時後仍會執行停用。
 - **手動停用或刪除**：
 
   ```
@@ -60,7 +60,7 @@ route 回傳、腳本寫入 `$RUNNER_TEMP/celebratedeal-staging-first-success-cl
   gh workflow run staging-first-success-cleanup.yml --ref master -f source_sha=<sha> -f deployment_host=<host> -f mode=delete
   ```
 
-  兩個 workflow 共用 concurrency group `staging-first-success`，清理不會和正在跑的 journey 重疊。刪除前不需要另外備份：只會刪掉停用滿 7 天、沒有任何財務紀錄的合成商家。
+  兩個 workflow 共用 concurrency group `staging-first-success`，清理不會和正在跑的 journey 重疊。**刪除模式執行前須取得 owner 同意**（#543 政策：staging 合成資料封測期間不刪除，要刪先備份並經 owner 同意），見 `docs/goal-beta-prep-2026Q4/OWNER-ACTIONS.md`「待 owner 決定」。停用模式不刪資料，照常自動執行。
 - **看結果**：workflow log 的 `staging_first_success_cleanup mode=… result=…` 一行，或 artifact 的 JSON。`failed` 大於 0 時 workflow 以 exit 2 結束；`skipped.financialRecords` 或 `unexpectedMembership` 大於 0 表示有 runner 商家被人用過，請到 `/admin/vendor-features` 人工確認，清理不會碰它。
 
 ## 5. 不在範圍內

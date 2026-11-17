@@ -8,7 +8,7 @@ import { ALIAS } from "./staging-first-success.mjs";
  * R-10: cleanup of the synthetic merchants the O-13 first-success runner leaves on fixed staging.
  *
  * Same bindings as the runner (exact Preview lineage, then the alias proof) before JOB_SECRET is
- * sent, then one POST to the staging-only ops route. `deactivate` (default) suspends runner vendors
+ * sent, then one POST to the staging-only ops route. The mode is always explicit: `deactivate` suspends runner vendors
  * so the email and LINE jobs stop sending for them; `delete` removes vendors this cleanup
  * deactivated at least 7 days earlier. The route picks the vendors itself (runner owner mailbox +
  * workspace slug of the same run id); this script sends no id, Email or name.
@@ -23,10 +23,10 @@ const AFFECTED_KEYS = ["lives", "registrations", "projects", "queuedEmailDeliver
 const PREFIX = /^[a-f0-9]{8}$/u;
 const MAX_PREFIXES = 25;
 
-/** `--mode=delete` or CELEBRATEDEAL_CLEANUP_MODE=delete; anything else that is set is invalid (null). */
+/** `--mode=<mode>` or CELEBRATEDEAL_CLEANUP_MODE=<mode>; there is no default, so a missing or unknown mode is null. */
 export function parseMode(argv = [], env = {}) {
   const flag = argv.find((value) => value.startsWith("--mode="));
-  const value = flag ? flag.slice("--mode=".length) : (env.CELEBRATEDEAL_CLEANUP_MODE || "deactivate");
+  const value = flag ? flag.slice("--mode=".length) : env.CELEBRATEDEAL_CLEANUP_MODE;
   return MODES.includes(value) ? value : null;
 }
 
@@ -71,7 +71,7 @@ export function sanitizeCleanupResponse(body, mode) {
 }
 
 export async function runStagingFirstSuccessCleanup(env = process.env, dependencies = {}) {
-  // An explicitly passed (possibly invalid = null) mode never falls back to the default.
+  // An explicitly passed (possibly invalid = null) mode is used as is; it is never re-read from env.
   const mode = Object.hasOwn(dependencies, "mode") ? dependencies.mode : parseMode([], env);
   const result = createCleanupReceipt(env.CELEBRATEDEAL_SOURCE_SHA, mode);
   if (!mode) { result.reason = "INVALID_MODE"; return result; }

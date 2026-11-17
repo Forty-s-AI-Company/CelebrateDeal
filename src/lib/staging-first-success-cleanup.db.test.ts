@@ -211,7 +211,8 @@ describe("first-success cleanup on PostgreSQL", () => {
     const receipt = await runFirstSuccessCleanup({ mode: "deactivate", env: STAGING_LIKE_ENV });
     expect(receipt).toMatchObject({
       mode: "deactivate", result: "COMPLETED", deactivated: 1, deleted: 0, failed: 0, alreadyDeactivated: 0,
-      skipped: { financialRecords: 1, unexpectedMembership: 1, notRunnerVendor: 3, notEligible: 0 },
+      // `otherSlug` is not even a candidate: the SQL filter needs the synthetic-workspace- slug prefix.
+      skipped: { financialRecords: 1, unexpectedMembership: 1, notRunnerVendor: 2, notEligible: 0 },
       affected: { lives: 1, registrations: 1, projects: 1, queuedEmailDeliveries: 1, ownerUsers: 0 },
     });
     expect(receipt.runIdPrefixes.processed).toEqual([runner.runId.slice(0, 8)]);
@@ -310,10 +311,16 @@ describe("first-success cleanup on PostgreSQL", () => {
       $transaction: ((callback: (tx: Prisma.TransactionClient) => Promise<unknown>, options?: { timeout?: number }) => db.$transaction((tx) => callback(new Proxy(tx, {
         get(target, property, receiver) {
           if (property !== "user") return Reflect.get(target, property, receiver);
-          return { deleteMany: async (args: Prisma.UserDeleteManyArgs) => {
-            if (args.where?.id === broken.ownerId) throw new Error("synthetic owner delete failure");
-            return target.user.deleteMany(args);
-          } };
+          // Every other User call (lock, counts) still reaches the real delegate.
+          return new Proxy(target.user, {
+            get(users, method, usersReceiver) {
+              if (method !== "deleteMany") return Reflect.get(users, method, usersReceiver);
+              return async (args: Prisma.UserDeleteManyArgs) => {
+                if (args.where?.id === broken.ownerId) throw new Error("synthetic owner delete failure");
+                return users.deleteMany(args);
+              };
+            },
+          });
         },
       })), options)) as typeof db.$transaction,
     };
@@ -329,20 +336,53 @@ describe("first-success cleanup on PostgreSQL", () => {
     expect(await db.vendor.count({ where: { id: healthy.vendorId } })).toBe(0);
   });
 
-  it("never deletes a deactivated vendor that later gained an order or a member", async () => {
+  it("never deletes a deactivated vendor that later gained an order, billing rows or a member", async () => {
     const paying = await createRunnerTenant({ queueEmail: false });
     const joined = await createRunnerTenant({ queueEmail: false });
+    const limited = await createRunnerTenant({ queueEmail: false });
+    const metered = await createRunnerTenant({ queueEmail: false });
     const t0 = new Date();
-    await expect(runFirstSuccessCleanup({ mode: "deactivate", env: STAGING_LIKE_ENV, now: t0 })).resolves.toMatchObject({ deactivated: 2 });
+    await expect(runFirstSuccessCleanup({ mode: "deactivate", env: STAGING_LIKE_ENV, now: t0 })).resolves.toMatchObject({ deactivated: 4 });
     await createPendingOrder(paying.vendorId);
+    // One-to-one (VendorUsageLimit) and list (UsageRecord) billing rows are finance records too.
+    await db.vendorUsageLimit.create({ data: { vendorId: limited.vendorId, resetAt: new Date(t0.getTime() + 30 * DAY) } });
+    await db.usageRecord.create({ data: { vendorId: metered.vendorId, recordType: "monthly_usage_snapshot", quantity: 0, unit: "minute" } });
     const staff = await db.user.create({ data: { name: "Real staff", email: `staff-${randomUUID()}@example.test`, passwordHash: "synthetic-only" } });
     userIds.push(staff.id);
     await db.vendorMember.create({ data: { vendorId: joined.vendorId, userId: staff.id, role: "admin", status: "active" } });
 
     const receipt = await runFirstSuccessCleanup({ mode: "delete", env: STAGING_LIKE_ENV, now: new Date(t0.getTime() + 30 * DAY) });
-    expect(receipt).toMatchObject({ result: "COMPLETED", deleted: 0, skipped: { financialRecords: 1, unexpectedMembership: 1 } });
-    expect(await db.vendor.count({ where: { id: { in: [paying.vendorId, joined.vendorId] } } })).toBe(2);
+    expect(receipt).toMatchObject({ result: "COMPLETED", deleted: 0, failed: 0, skipped: { financialRecords: 3, unexpectedMembership: 1 } });
+    expect(await db.vendor.count({ where: { id: { in: [paying.vendorId, joined.vendorId, limited.vendorId, metered.vendorId] } } })).toBe(4);
+    expect(await db.vendorUsageLimit.count({ where: { vendorId: limited.vendorId } })).toBe(1);
+    expect(await db.usageRecord.count({ where: { vendorId: metered.vendorId } })).toBe(1);
     expect(await db.commerceOrder.count({ where: { vendorId: paying.vendorId } })).toBe(1);
     expect(await db.user.count({ where: { id: staff.id } })).toBe(1);
+  });
+
+  it("skipped vendors never pin the batch, and a cut-off batch reports PARTIAL", async () => {
+    // Three older runner vendors that are always skipped, then two eligible ones.
+    const skipped: Tenant[] = [];
+    for (let index = 0; index < 3; index += 1) {
+      const tenant = await createRunnerTenant({ queueEmail: false });
+      await createPendingOrder(tenant.vendorId);
+      skipped.push(tenant);
+    }
+    const first = await createRunnerTenant({ queueEmail: false });
+    const second = await createRunnerTenant({ queueEmail: false });
+
+    const one = await runFirstSuccessCleanup({ mode: "deactivate", env: STAGING_LIKE_ENV, limits: { batch: 1, examine: 10 } });
+    expect(one).toMatchObject({ result: "PARTIAL", truncated: true, examined: 4, deactivated: 1, failed: 0, skipped: { financialRecords: 3 } });
+    expect(one.runIdPrefixes.processed).toEqual([first.runId.slice(0, 8)]);
+    const two = await runFirstSuccessCleanup({ mode: "deactivate", env: STAGING_LIKE_ENV, limits: { batch: 1, examine: 10 } });
+    expect(two).toMatchObject({ result: "COMPLETED", truncated: false, examined: 4, deactivated: 1, alreadyDeactivated: 1 });
+    expect(two.runIdPrefixes.processed).toEqual([second.runId.slice(0, 8)]);
+
+    // The examine bound also cuts the scan off (and says so) instead of running unbounded.
+    const third = await createRunnerTenant({ queueEmail: false });
+    const capped = await runFirstSuccessCleanup({ mode: "deactivate", env: STAGING_LIKE_ENV, limits: { batch: 5, examine: 2 } });
+    expect(capped).toMatchObject({ result: "PARTIAL", truncated: true, examined: 2, deactivated: 0 });
+    await expect(vendorState(third.vendorId)).resolves.toEqual({ suspendedAt: null, suspendedReason: null });
+    for (const tenant of skipped) await expect(vendorState(tenant.vendorId)).resolves.toEqual({ suspendedAt: null, suspendedReason: null });
   });
 });

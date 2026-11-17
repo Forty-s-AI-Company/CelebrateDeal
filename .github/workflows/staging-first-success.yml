@@ -30,7 +30,7 @@ jobs:
   first-success:
     if: ${{ github.ref == 'refs/heads/master' && github.ref_protected }}
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
     environment: Preview – celebrate-deal-staging
     env:
       CELEBRATEDEAL_SOURCE_SHA: ${{ inputs.source_sha }}
@@ -69,6 +69,8 @@ jobs:
 
       - name: Walk the first-success journey through fixed staging
         id: journey
+        # Below the job timeout, so a hung journey still leaves time for the deactivate step.
+        timeout-minutes: 15
         env:
           GITHUB_TOKEN: ${{ github.token }}
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
@@ -82,6 +84,7 @@ jobs:
       # manual staging-first-success-cleanup.yml. Runs whenever the journey step ran, even if it failed.
       - name: Deactivate synthetic first-success merchants
         if: ${{ !cancelled() && steps.journey.outcome != 'skipped' }}
+        timeout-minutes: 5
         env:
           GITHUB_TOKEN: ${{ github.token }}
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}

@@ -200,7 +200,7 @@
 
 平台管理員在 `/admin/vendor-features` 凍結或解除凍結整個商家（需要 15 分鐘內 MFA step-up；填寫內部原因；寫 AuditLog `vendor_suspended`／`vendor_suspension_lifted`）。權威資料是 `Vendor.suspendedAt`，判斷只走 `src/lib/vendor-suspension-state.ts`，各頁不自行判斷。
 
-唯一的另一個寫入者是 staging 限定的首次成功 runner 清理（R-10，`src/lib/staging-first-success-cleanup.ts`）：只在 `isWp4BoundNonProductionRuntime()` 下、由 `JOB_SECRET` 保護的 ops route 執行，只凍結 runner 自己的合成商家（`suspendedReason` 固定為 `staging_first_success_cleanup`，actor `job:staging-first-success-cleanup`），凍結效果與上表完全相同；停用滿 7 天後才可手動刪除。Production 不可能執行。用法見 `docs/launch/staging-first-success-runner.md`。
+唯一的另一個寫入者是 staging 限定的首次成功 runner 清理（R-10，`src/lib/staging-first-success-cleanup.ts`）：只在 `isWp4BoundNonProductionRuntime()` 下、由 `JOB_SECRET` 保護的 ops route 執行，只凍結 runner 自己的合成商家（`suspendedReason` 固定為 `staging_first_success_cleanup`，actor `job:staging-first-success-cleanup`），凍結效果與上表完全相同；停用滿 7 天後才可手動刪除（第一次刪除前須 owner 同意，見 OWNER-ACTIONS）。Production 不可能執行。用法見 `docs/launch/staging-first-success-runner.md`。
 
 | 入口 | 凍結中的行為 |
 | --- | --- |

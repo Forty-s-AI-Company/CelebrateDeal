@@ -1,8 +1,9 @@
 name: Staging first-success cleanup
 
 # R-10: manual cleanup of the synthetic merchants the first-success runner leaves on fixed staging.
-# `deactivate` (default) suspends runner merchants so the email and LINE jobs stop sending for them;
-# `delete` removes merchants this cleanup deactivated at least 7 days earlier, one transaction each.
+# `deactivate` (the default input) suspends runner merchants so the email and LINE jobs stop sending for them;
+# `delete` removes merchants this cleanup deactivated at least 7 days earlier, one transaction each;
+# per the #543 policy its first run needs the owner's consent (OWNER-ACTIONS.md).
 # The staging route selects only the runner's own mailboxes and workspace slugs; it skips any merchant
 # with an order, payment or other finance record. Same concurrency group as the runner, so a cleanup
 # never overlaps a journey in progress.
@@ -74,6 +75,7 @@ jobs:
         run: node scripts/staging-browser-smoke.mjs --verify-alias
 
       - name: Clean up synthetic first-success merchants on fixed staging
+        timeout-minutes: 5
         env:
           GITHUB_TOKEN: ${{ github.token }}
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}

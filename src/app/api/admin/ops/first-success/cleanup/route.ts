@@ -5,8 +5,8 @@ import { authorizeWp4Ops, wp4Unavailable } from "@/lib/wp4-runtime-boundary";
 /**
  * Staging-only (R-10): deactivate, or after the retention window delete, the
  * synthetic merchants the O-13 first-success runner created. The only input is
- * the `x-celebratedeal-first-success-cleanup-mode` header (`deactivate`, the
- * default, or `delete`); vendors are found by the runner's own owner mailbox
+ * the `x-celebratedeal-first-success-cleanup-mode` header, which must be
+ * `deactivate` or `delete` (missing = 404); vendors are found by the runner's own owner mailbox
  * and workspace slug, never by caller-supplied ids. The answer is a receipt of
  * counts, status and 8-hex run id prefixes.
  */

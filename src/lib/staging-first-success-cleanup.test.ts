@@ -66,8 +66,8 @@ describe("first-success cleanup matching rules", () => {
     expect(registration).toContain("slug: `${slugBase}-${randomUUID()}`");
   });
 
-  it("defaults to deactivate and accepts nothing but the two modes", () => {
-    expect(readFirstSuccessCleanupMode(withMode())).toBe("deactivate");
+  it("requires an explicit mode and accepts nothing but the two modes", () => {
+    expect(readFirstSuccessCleanupMode(withMode())).toBeNull();
     expect(readFirstSuccessCleanupMode(withMode("deactivate"))).toBe("deactivate");
     expect(readFirstSuccessCleanupMode(withMode("delete"))).toBe("delete");
     // (Fetch trims surrounding whitespace from header values, so "delete " arrives as "delete".)

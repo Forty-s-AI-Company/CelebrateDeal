@@ -23,13 +23,13 @@ const origin = "https://celebrate-deal-staging.carry-digital-nomad.in.net";
 const jobSecret = "test-fixture-job-secret";
 const sourceSha = "a".repeat(40);
 
-function request({ authorization = `Bearer ${jobSecret}`, sha = sourceSha, mode, search = "", body }: { authorization?: string | null; sha?: string; mode?: string; search?: string; body?: string } = {}) {
+function request({ authorization = `Bearer ${jobSecret}`, sha = sourceSha, mode = "deactivate", search = "", body }: { authorization?: string | null; sha?: string; mode?: string | null; search?: string; body?: string } = {}) {
   return new Request(`${origin}/api/admin/ops/first-success/cleanup${search}`, {
     method: "POST",
     headers: {
       ...(authorization ? { authorization } : {}),
       "x-celebratedeal-source-sha": sha,
-      ...(mode !== undefined ? { [FIRST_SUCCESS_CLEANUP_MODE_HEADER]: mode } : {}),
+      ...(mode !== null ? { [FIRST_SUCCESS_CLEANUP_MODE_HEADER]: mode } : {}),
     },
     ...(body ? { body } : {}),
   });
@@ -77,9 +77,9 @@ describe("POST /api/admin/ops/first-success/cleanup", () => {
     expect(mocks.createAudit).not.toHaveBeenCalled();
   });
 
-  it("accepts only the two fixed modes and no query, body or other deployment", async () => {
-    for (const mode of ["", "DELETE", "purge", "delete,deactivate", "all"]) {
-      expect((await cleanup(request({ mode }))).status, mode).toBe(404);
+  it("accepts only an explicit fixed mode and no query, body or other deployment", async () => {
+    for (const mode of [null, "", "DELETE", "purge", "delete,deactivate", "all"]) {
+      expect((await cleanup(request({ mode }))).status, String(mode)).toBe(404);
     }
     expect((await cleanup(request({ search: "?mode=delete" }))).status).toBe(404);
     expect((await cleanup(request({ body: '{"vendorId":"v1"}' }))).status).toBe(404);
@@ -87,14 +87,14 @@ describe("POST /api/admin/ops/first-success/cleanup", () => {
     expect(mocks.findVendors).not.toHaveBeenCalled();
   });
 
-  it("defaults to deactivate and finds only the runner's own mailboxes", async () => {
-    const response = await cleanup(request());
+  it("deactivate looks only at the runner's own mailboxes and workspace slugs", async () => {
+    const response = await cleanup(request({ mode: "deactivate" }));
     expect(response.status).toBe(200);
     expect(response.headers.get("cache-control")).toBe("no-store");
     const body = await response.json();
     expect(body).toMatchObject({ mode: "deactivate", result: "COMPLETED", examined: 0, deactivated: 0, deleted: 0, retentionDays: 7 });
     expect(mocks.findVendors).toHaveBeenCalledWith(expect.objectContaining({
-      where: { email: { startsWith: "delivered+cdfs-owner-", endsWith: "@resend.dev" }, suspendedAt: null },
+      where: { email: { startsWith: "delivered+cdfs-owner-", endsWith: "@resend.dev" }, slug: { startsWith: "synthetic-workspace-" }, suspendedAt: null },
     }));
     expect(mocks.createAudit).toHaveBeenCalledWith({ data: expect.objectContaining({ vendorId: null, action: "staging_first_success_cleanup", targetId: "deactivate" }) });
   });
