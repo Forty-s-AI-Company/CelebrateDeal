@@ -1,13 +1,14 @@
 /**
- * Repairs CourseLesson.chapterId links (F-5) before the migration that makes the
- * column NOT NULL. See docs/codex-goal/PRISMA_INVARIANTS.md, "課程章節獨立 model".
+ * Repairs CourseLesson.chapterId links (F-5). See
+ * docs/codex-goal/PRISMA_INVARIANTS.md, "課程章節獨立 model".
  *
- * While code older than F-5 can still write lessons, a lesson can be left without
- * a chapter link or with a stale one (its chapterTitle changed, chapterId kept).
- * Readers already place such lessons by title; this run rewrites the links with
- * repairCourseChapterLinks (src/lib/course-chapter-repair.ts) so that both
+ * While code older than F-5 could still write lessons, a lesson could be left
+ * without a chapter link or with a stale one (its chapterTitle changed, chapterId
+ * kept). Readers already place such lessons by title; this run rewrites the links
+ * with repairCourseChapterLinks (src/lib/course-chapter-repair.ts) so that both
  * read-only checks return 0. It never changes chapterTitle, lesson order or what
- * learners see.
+ * learners see. Since Q-14 the migrations 20261117090000..090200 do the same
+ * repair and make the column NOT NULL, so only a stale link is left to repair.
  *
  * Running it against staging or production needs the owner's separate, explicit
  * authorization for that run, the dry run included. The flags below are a guard

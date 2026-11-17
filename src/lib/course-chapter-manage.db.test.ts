@@ -113,10 +113,12 @@ describe("course chapter management (Q-15)", () => {
   });
 
   it("treats a lesson that names the chapter by title as still inside it", async () => {
-    const { f, a1, A } = await fixture();
-    // A pre-F-5 style unlinked lesson: no chapterId, the title still names the chapter.
-    await db.courseLesson.update({ where: { id: a1 }, data: { chapterId: null } });
-    await db.courseLesson.updateMany({ where: { vendorId: f.vendor.id, productId: f.product.id, chapterId: A.id }, data: { chapterId: null, chapterTitle: "C" } });
+    const { f, a1, A, B, C } = await fixture();
+    // A pre-F-5 style stale link: chapterId points to B, the title still names A.
+    // (Since Q-14 chapterId is NOT NULL, so a lesson cannot lose its link altogether.)
+    await db.courseLesson.update({ where: { id: a1 }, data: { chapterId: B.id } });
+    await db.courseLesson.updateMany({ where: { vendorId: f.vendor.id, productId: f.product.id, chapterId: A.id }, data: { chapterId: C.id, chapterTitle: "C" } });
+    expect(await db.courseLesson.count({ where: { chapterId: A.id } })).toBe(0);
     await expect(deleteCourseChapter(db, f.vendor.id, { ...await manage(f), chapterId: A.id })).rejects.toBeInstanceOf(ChapterNotEmpty);
     expect(await db.courseChapter.count({ where: { id: A.id } })).toBe(1);
   });
@@ -211,24 +213,26 @@ describe("course chapter management review follow-ups (Q-15)", () => {
   });
 
   it("puts lessons that name no chapter row last and keeps unpublished lessons in their chapter", async () => {
-    const { f, a1, a2, b1, c1, B } = await fixture();
+    const { f, a1, a2, b1, c1, B, C } = await fixture();
     const scope = { vendorId: f.vendor.id, productId: f.product.id };
     const hidden = await addLesson(f, "B", "hidden-b", false);
-    const orphan = await db.courseLesson.create({ data: { ...scope, chapterId: null, chapterTitle: "Orphan", title: "orphan", position: 100, publishedAt: new Date() } });
+    // Stale link (chapterId NOT NULL since Q-14): linked to C, its title names no chapter row.
+    const orphan = await db.courseLesson.create({ data: { ...scope, chapterId: C.id, chapterTitle: "Orphan", title: "orphan", position: 100, publishedAt: new Date() } });
     expect(await moveCourseChapter(db, f.vendor.id, { ...await manage(f), chapterId: B.id, direction: "up" })).toBe(true);
     expect((await lessonRows(f)).map((row) => row.id)).toEqual([b1, hidden, a1, a2, c1, orphan.id]);
     expect((await lessonRows(f)).map((row) => row.position)).toEqual([0, 1, 2, 3, 4, 5]);
   });
 
   it("reports false without consuming the revision when nothing changes, and only repairs a link in the same chapter", async () => {
-    const { f, a1, A, C } = await fixture();
+    const { f, a1, A, B, C } = await fixture();
     const start = await revision(f.product.id);
     expect(await moveCourseChapter(db, f.vendor.id, { ...await manage(f), chapterId: A.id, direction: "up" })).toBe(false);
     expect(await moveCourseChapter(db, f.vendor.id, { ...await manage(f), chapterId: C.id, direction: "down" })).toBe(false);
     expect(await moveCourseLesson(db, f.vendor.id, { ...await manage(f), lessonId: a1, targetChapterId: A.id })).toBe(false);
     expect(await revision(f.product.id)).toBe(start);
-    // A lesson that names the chapter but lost its link: the link is repaired, nothing moves.
-    await db.courseLesson.update({ where: { id: a1 }, data: { chapterId: null } });
+    // A lesson that names the chapter but whose link is stale (old code; chapterId is
+    // NOT NULL since Q-14): the link is repaired, nothing moves.
+    await db.courseLesson.update({ where: { id: a1 }, data: { chapterId: B.id } });
     const positions = (await lessonRows(f)).map((row) => [row.id, row.position]);
     expect(await moveCourseLesson(db, f.vendor.id, { ...await manage(f), lessonId: a1, targetChapterId: A.id })).toBe(false);
     expect((await db.courseLesson.findUniqueOrThrow({ where: { id: a1 } })).chapterId).toBe(A.id);

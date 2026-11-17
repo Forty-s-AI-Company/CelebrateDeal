@@ -4,11 +4,13 @@ import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { courseChapters, legacyChapterTitle, type CourseLesson } from "@/lib/course-learning";
 import { getDb } from "@/lib/db";
+import { allowUnlinkedCourseLessons, insertRawCourseLesson } from "@/test/unlinked-course-lessons";
 
 /**
  * F-5 backfill. The migration's backfill block is read from the migration file
  * itself and executed here, so the test and the deployed SQL are one text.
- * Lessons are inserted the way pre-F-5 code wrote them (no chapterId).
+ * Lessons are inserted the way pre-F-5 code wrote them (no chapterId), which
+ * needs the column nullable again for this file: Q-14 made it NOT NULL.
  */
 const MIGRATIONS = path.resolve(__dirname, "../../prisma/migrations");
 const TABLE_MIGRATION = readFileSync(path.join(MIGRATIONS, "20261113120000_course_chapter/migration.sql"), "utf8");
@@ -28,6 +30,7 @@ const TRIM_PATTERN = /regexp_replace\(lesson\."chapterTitle", '([^']+)', '', 'g'
 
 const db = getDb();
 const vendors: string[] = [];
+allowUnlinkedCourseLessons(db);
 
 async function vendorWithCourses(courseCount: number) {
   const suffix = randomUUID();
@@ -42,7 +45,7 @@ async function vendorWithCourses(courseCount: number) {
 
 /** A lesson as written before F-5: free-text chapterTitle, no chapterId. */
 async function legacyLesson(vendorId: string, productId: string, position: number, chapterTitle: string, published = true) {
-  return db.courseLesson.create({ data: { vendorId, productId, position, chapterTitle, title: `Lesson ${position}`, durationSeconds: 60, publishedAt: published ? new Date() : null } });
+  return { id: await insertRawCourseLesson(db, { vendorId, productId, position, chapterTitle, title: `Lesson ${position}`, durationSeconds: 60, publishedAt: published ? new Date() : null }) };
 }
 
 /**
@@ -180,7 +183,7 @@ describe("F-5 course chapter backfill (migration SQL)", () => {
     expect(await chaptersOf(vendor.id, course!.id)).toEqual(first);
 
     // Clear the links and the rows, then rerun: identical ids and positions.
-    await db.courseLesson.updateMany({ where: { vendorId: vendor.id }, data: { chapterId: null } });
+    await db.$executeRaw`UPDATE "CourseLesson" SET "chapterId" = NULL WHERE "vendorId" = ${vendor.id}`;
     await db.courseChapter.deleteMany({ where: { vendorId: vendor.id } });
     await runBackfill();
     expect(await chaptersOf(vendor.id, course!.id)).toEqual(first);
@@ -221,6 +224,6 @@ describe("F-5 course chapter backfill (migration SQL)", () => {
     // without a chapter is enough to make it fail.
     const orphan = await legacyLesson(vendor.id, course!.id, 1, "第二章");
     await expect(db.$executeRawUnsafe(BACKFILL_CHECK)).rejects.toThrow(/without a chapter/u);
-    await db.courseLesson.delete({ where: { id: orphan.id } });
+    await db.courseLesson.deleteMany({ where: { id: orphan.id } });
   });
 });
