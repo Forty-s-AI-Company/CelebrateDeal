@@ -213,11 +213,13 @@ describe("course chapter management review follow-ups (Q-15)", () => {
   });
 
   it("puts lessons that name no chapter row last and keeps unpublished lessons in their chapter", async () => {
-    const { f, a1, a2, b1, c1, B, C } = await fixture();
+    const { f, a1, a2, b1, c1, A, B } = await fixture();
     const scope = { vendorId: f.vendor.id, productId: f.product.id };
     const hidden = await addLesson(f, "B", "hidden-b", false);
-    // Stale link (chapterId NOT NULL since Q-14): linked to C, its title names no chapter row.
-    const orphan = await db.courseLesson.create({ data: { ...scope, chapterId: C.id, chapterTitle: "Orphan", title: "orphan", position: 100, publishedAt: new Date() } });
+    // Stale link (chapterId NOT NULL since Q-14): linked to A, which is not the last
+    // chapter, while its title names no chapter row. Grouping by the stale link
+    // would place it inside A (before c1); grouping by title puts it last.
+    const orphan = await db.courseLesson.create({ data: { ...scope, chapterId: A.id, chapterTitle: "Orphan", title: "orphan", position: 100, publishedAt: new Date() } });
     expect(await moveCourseChapter(db, f.vendor.id, { ...await manage(f), chapterId: B.id, direction: "up" })).toBe(true);
     expect((await lessonRows(f)).map((row) => row.id)).toEqual([b1, hidden, a1, a2, c1, orphan.id]);
     expect((await lessonRows(f)).map((row) => row.position)).toEqual([0, 1, 2, 3, 4, 5]);
