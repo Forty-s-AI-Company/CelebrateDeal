@@ -242,6 +242,23 @@ describe("SanitizedPlaywrightCiReporter", () => {
     expect(output).toContain("status=passed failed=0");
   });
 
+  it("forwards only a closed portal push diagnostic from a failed attempt", () => {
+    let output = "";
+    const reporter = new SanitizedPlaywrightCiReporter((value: string) => { output += value; });
+    const current = testCase({ id: "portal-push", outcome: "flaky", statuses: ["failed", "passed"] });
+    Object.assign(current.results[0]!, { annotations: [
+      { type: "portal-push-diagnostic", description: "PORTAL_PUSH:delivered:R11-none:Wactivated/running:P1:Sok:N0:T29512" },
+      { type: "portal-push-diagnostic", description: "PORTAL_PUSH:delivered secret-token-must-not-appear" },
+      { type: "other", description: "PORTAL_PUSH:done:R11-none:Wactivated/running:P1:Sok:N1:T5" },
+    ] });
+    Object.assign(current.results[1]!, { retry: 1, annotations: [{ type: "portal-push-diagnostic", description: "PORTAL_PUSH:done:R11-none:Wactivated/running:P1:Sok:N1:T120" }] });
+    reporter.onTestEnd(current as never);
+    reporter.onEnd({ status: "failed" } as never);
+    expect(output).toContain("::error file=tests/e2e/smoke.spec.ts,line=42::playwright status=failed retry=0 class=portal_push stage=delivered registration=11-none worker=activated/running push_events=1 show=ok notifications=0 waited_ms=29512");
+    expect(output.match(/class=portal_push/gu)).toHaveLength(1);
+    expect(output).not.toContain("secret-token-must-not-appear");
+  });
+
   it("counts an unsafe-path failure and emits a fixed global error without raw details", () => {
     let output = "";
     const reporter = new SanitizedPlaywrightCiReporter((value: string) => { output += value; });

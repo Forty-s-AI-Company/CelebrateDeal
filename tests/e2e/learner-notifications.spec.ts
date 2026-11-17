@@ -1,6 +1,6 @@
 import { hashPassword } from "../../src/lib/password";
 import { randomUUID } from "node:crypto";
-import { expect,test } from "@playwright/test";
+import { expect,test,type Worker } from "@playwright/test";
 import { PrismaClient } from "@prisma/client";
 import { automationCustomerKeyHash } from "../../src/lib/automation-workflow";
 import { protectCommerceOrderPii } from "../../src/lib/commerce-order-pii";
@@ -9,6 +9,7 @@ import { grantCommerceEntitlement } from "../../src/lib/commerce-order-fulfillme
 import { createStudentPortalAccessToken } from "../../src/lib/student-portal-auth";
 import { saveLearnerNotificationConsent } from "../../src/lib/learner-notification-preferences";
 import { protectLearnerNotificationDestination } from "../../src/lib/learner-notification-contract";
+import { formatPortalPushDiagnostic, PORTAL_PUSH_ANNOTATION_TYPE } from "../../scripts/portal-push-diagnostic";
 
 test("actual portal worker receives a synthetic device message and keeps authenticated traffic out of cache",async({page,context,baseURL})=>{
  test.setTimeout(120000);
@@ -50,6 +51,16 @@ test("actual portal worker receives a synthetic device message and keeps authent
    });
   };
  });
+ // Closed-vocabulary diagnostic state, attached to the result in `finally`.
+ // The CI reporter never forwards test stdout, so a console line is not enough.
+ let stage:"setup"|"ready"|"delivered"|"displayed"|"done"="setup";
+ let worker:Worker|undefined;let pushSentAt:number|undefined;let maxNotificationCount:number|null=null;
+ const workerObserverKey="__portalPushObserver";
+ const readWorkerObserver=async()=>{
+  if(!worker)return null;
+  const state=await worker.evaluate(key=>Reflect.get(globalThis,key) as {pushEvents:number;show:string}|undefined,workerObserverKey).catch(()=>undefined);
+  return state&&typeof state.pushEvents==="number"&&typeof state.show==="string"?state:null;
+ };
  try{
   await page.goto(`${baseURL}/portal/start.html`);await expect(page.getByRole("heading",{name:"你的學習中心",exact:true})).toBeVisible();
   await expect(page).toHaveURL(`${baseURL}/portal/start.html`);
@@ -63,14 +74,44 @@ test("actual portal worker receives a synthetic device message and keeps authent
   const manifest=await page.locator('link[rel="manifest"]').getAttribute("href");expect(manifest).toBe("/portal/manifest.webmanifest");
   const manifestData=await (await page.request.get(`${baseURL}${manifest}`)).json();
   expect(manifestData.scope).toBe("/portal/");expect(manifestData.start_url).toBe("/portal/start.html");
+  stage="ready";
+  // Chromium's getNotifications() is not a passive read: a stored notification
+  // that the platform has not yet reported as displayed, and that was created
+  // before the call, is deleted from the notification database as obsolete.
+  // Polling it while the worker's showNotification() is still in flight can
+  // therefore erase the very notification being awaited, after which every
+  // poll returns [] (reproduced on Linux: the worker logged push + resolved
+  // showNotification, yet both page and worker getNotifications() stayed 0).
+  // Observe the actual worker's own showNotification() outcome first, and only
+  // read the displayed notifications once the worker reports it settled.
+  await expect.poll(()=>context.serviceWorkers().some(candidate=>candidate.url()===`${baseURL}/portal/sw.js`)).toBe(true);
+  worker=context.serviceWorkers().find(candidate=>candidate.url()===`${baseURL}/portal/sw.js`);
+  await worker!.evaluate(key=>{
+   // Pass-through observer: records only fixed outcomes, never payload text.
+   const state={pushEvents:0,show:"none"};Object.defineProperty(globalThis,key,{value:state});
+   globalThis.addEventListener("push",()=>{state.pushEvents+=1;});
+   const registration=Reflect.get(globalThis,"registration") as ServiceWorkerRegistration;
+   const original=registration.showNotification.bind(registration);
+   registration.showNotification=(...args)=>{
+    state.show="pending";
+    return original(...args).then(result=>{state.show="ok";return result;},error=>{
+     state.show=["TypeError","NotAllowedError","AbortError"].includes(error?.name)?error.name:"other";
+     throw error;
+    });
+   };
+  },workerObserverKey);
   // This is browser-local CDP delivery of a synthetic payload, never a receipt
   // from Google/Apple/Mozilla or any configured external push provider.
   await session.send("ServiceWorker.deliverPushMessage",{origin:baseURL,registrationId:registrationId!,data:JSON.stringify({title:"合成裝置通知",body:"只驗證本機 worker 接收",path:"/portal/academy/learn/course_a/community/post_a"})});
+  pushSentAt=Date.now();stage="delivered";
+  await expect.poll(async()=>(await readWorkerObserver())?.show).toBe("ok");
+  stage="displayed";
   await expect.poll(()=>page.evaluate(async()=>{
    const registration=await navigator.serviceWorker.ready;
    const messages=await registration.getNotifications();
    return messages.map(message=>({title:message.title,body:message.body,data:message.data}));
-  })).toEqual([{title:"合成裝置通知",body:"只驗證本機 worker 接收",data:{path:"/portal/academy/learn/course_a/community/post_a"}}]);
+  }).then(messages=>{maxNotificationCount=Math.max(maxNotificationCount??0,messages.length);return messages;})).toEqual([{title:"合成裝置通知",body:"只驗證本機 worker 接收",data:{path:"/portal/academy/learn/course_a/community/post_a"}}]);
+  stage="done";
   const cachePaths=await page.evaluate(async()=>{
    const names=(await caches.keys()).filter(name=>name.startsWith("celebratedeal-portal-public-"));
    return (await Promise.all(names.map(async name=>(await (await caches.open(name)).keys()).map(request=>new URL(request.url).pathname)))).flat().sort();
@@ -87,9 +128,17 @@ test("actual portal worker receives a synthetic device message and keeps authent
   expect(await page.evaluate(async()=>(await (await caches.open("celebratedeal-portal-public-v1")).keys()).map(request=>new URL(request.url).pathname).sort())).toEqual(cachePaths);
  }finally{
   const probe=await page.evaluate(()=>Reflect.get(window,"portalWorkerProbe")).catch(()=>null);
-  if(probe&&typeof probe.attempted==="boolean"&&typeof probe.accepted==="boolean"&&["none","TypeError","SecurityError","InvalidStateError","AbortError","other"].includes(probe.error)){
-   console.log(`::notice::portal-worker attempted=${probe.attempted} accepted=${probe.accepted} error=${probe.error} worker=${/^(?:new|installing|installed|activating|activated|redundant)\/(?:stopped|starting|running|stopping)$/u.test(lastWorkerState)?lastWorkerState:"none"}`);
-  }
+  const observer=await readWorkerObserver();
+  // Every field is reduced to a fixed vocabulary or bounded counter; the
+  // sanitized CI reporter prints it only for a failed attempt. N is the most
+  // notifications any assertion read returned (0 = never observed); it is not
+  // re-read here because the platform also drops a shown notification ~20s later.
+  test.info().annotations.push({type:PORTAL_PUSH_ANNOTATION_TYPE,description:formatPortalPushDiagnostic({
+   stage,registration:probe,workerState:lastWorkerState,
+   pushEvents:observer?.pushEvents??null,
+   show:observer?.show??null,
+   notifications:maxNotificationCount,waitedMs:pushSentAt===undefined?null:Date.now()-pushSentAt,
+  })});
   await context.setOffline(false);
   await page.evaluate(async()=>{const registration=await navigator.serviceWorker.getRegistration("/portal/");if(registration)for(const notification of await registration.getNotifications())notification.close();}).catch(()=>undefined);
   await session.detach();
