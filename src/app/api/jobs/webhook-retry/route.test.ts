@@ -13,7 +13,9 @@ vi.mock("@/lib/webhook-retry", () => ({
 vi.mock("@/lib/inventory-reservations", () => ({
   releaseExpiredInventoryReservations: mocks.releaseExpiredInventoryReservations,
 }));
-vi.mock("@/lib/payment-paid-automation-catchup", () => ({
+vi.mock("@/lib/payment-paid-automation-catchup", async (original) => ({
+  // The time-budget arithmetic is the real one.
+  paymentPaidCatchupDeadline: (await original<typeof import("@/lib/payment-paid-automation-catchup")>()).paymentPaidCatchupDeadline,
   runPaymentPaidAutomationCatchup: mocks.runPaymentPaidAutomationCatchup,
 }));
 vi.mock("@/lib/monitoring", () => ({
@@ -180,7 +182,7 @@ describe("POST /api/jobs/webhook-retry", () => {
     });
   });
 
-  it("runs the payment_paid catch-up last and fails closed with a fixed identifier when it throws", async () => {
+  it("runs the payment_paid catch-up last; when it throws, monitoring gets it and the job still answers 200 with { failed: true }", async () => {
     const rawError = new Error("catch-up test-fixture-secret order-private-id must not leak");
     const results = [{ eventId: "event-1", status: "processed" }];
     mocks.processDueWebhookRetries.mockResolvedValueOnce(results);
@@ -196,19 +198,60 @@ describe("POST /api/jobs/webhook-retry", () => {
       operation: "payment_paid_catchup",
       status: "failed",
     });
-    expect(response.status).toBe(503);
+    expect(response.status).toBe(200);
     expect(body).toEqual({
-      ok: false,
+      ok: true,
       inventory: { examined: 0, released: 0, committed: 0 },
       processed: 1,
       exhausted: 0,
       inventoryUnavailable: 0,
-      results: [{ status: "processed" }],
-      paymentPaidCatchup: null,
-      failures: ["payment_paid_catchup"],
+      results,
+      paymentPaidCatchup: { failed: true },
     });
     expect(JSON.stringify(body)).not.toContain("test-fixture-secret");
     expect(JSON.stringify(body)).not.toContain("order-private-id");
+  });
+
+  it("a catch-up failure next to a webhook failure: still 503 for the webhook step only", async () => {
+    mocks.processDueWebhookRetries.mockRejectedValueOnce(new Error("webhook outage"));
+    mocks.runPaymentPaidAutomationCatchup.mockRejectedValueOnce(new Error("catch-up outage"));
+    const response = await POST(request(`Bearer ${jobSecret}`));
+    expect(response.status).toBe(503);
+    await expect(response.json()).resolves.toMatchObject({ ok: false, failures: ["webhook_retry"], paymentPaidCatchup: { failed: true } });
+  });
+
+  describe("time budget (scheduler waits 120 s)", () => {
+    afterEach(() => vi.restoreAllMocks());
+
+    /** The route reads Date.now() at its start and before the catch-up; the steps above "take" `elapsedMs`. */
+    function elapse(elapsedMs: number) {
+      let now = 1_000_000;
+      vi.spyOn(Date, "now").mockImplementation(() => now);
+      mocks.processDueWebhookRetries.mockImplementationOnce(async () => {
+        now += elapsedMs;
+        return [];
+      });
+    }
+
+    it("gives the catch-up its full 60 s when the route is quick", async () => {
+      elapse(5_000);
+      await POST(request(`Bearer ${jobSecret}`));
+      expect(mocks.runPaymentPaidAutomationCatchup).toHaveBeenCalledWith({ deadlineMs: 60_000 });
+    });
+
+    it("only what is left of 100 s once the route has run more than 40 s", async () => {
+      elapse(55_000);
+      await POST(request(`Bearer ${jobSecret}`));
+      expect(mocks.runPaymentPaidAutomationCatchup).toHaveBeenCalledWith({ deadlineMs: 45_000 });
+    });
+
+    it("skips the catch-up once the route has run 60 s", async () => {
+      elapse(60_000);
+      const response = await POST(request(`Bearer ${jobSecret}`));
+      expect(mocks.runPaymentPaidAutomationCatchup).not.toHaveBeenCalled();
+      expect(response.status).toBe(200);
+      await expect(response.json()).resolves.toMatchObject({ ok: true, paymentPaidCatchup: { skipped: true } });
+    });
   });
 
   it("returns the catch-up counts (no ids) next to the webhook results", async () => {

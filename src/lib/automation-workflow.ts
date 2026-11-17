@@ -668,7 +668,21 @@ export type AutomationDispatchOptions = {
    * dispatch passes nothing and keeps running every active rule.
    */
   rulesUnchangedSince?: Date;
+  /**
+   * Only these rules (still bound to the event's vendor, trigger and the
+   * active flag) run. The catch-up passes the rules its scan chose, so the
+   * dispatch never reclaims another rule's `failed` execution on the way.
+   */
+  onlyRuleIds?: string[];
 };
+
+/** The rule filter both dispatch paths add to their rule reads. */
+export function automationDispatchRuleFilter(options: AutomationDispatchOptions): Prisma.AutomationRuleWhereInput {
+  return {
+    ...(options.rulesUnchangedSince ? { updatedAt: { lte: options.rulesUnchangedSince } } : {}),
+    ...(options.onlyRuleIds ? { id: { in: options.onlyRuleIds } } : {}),
+  };
+}
 
 /**
  * A `running` execution log older than this is presumed dead (its process was
@@ -827,7 +841,7 @@ async function runAutomationEvent(db: AutomationDb, event: AutomationEvent, queu
       vendorId: event.vendorId,
       trigger: event.trigger,
       isActive: true,
-      ...(options.rulesUnchangedSince ? { updatedAt: { lte: options.rulesUnchangedSince } } : {}),
+      ...automationDispatchRuleFilter(options),
       // An unscoped rule remains vendor-wide. A scoped rule can only run for
       // the exact trusted funnel page that emitted the event.
       OR: [{ funnelPageId: null }, ...(event.funnelPageId ? [{ funnelPageId: event.funnelPageId }] : [])],

@@ -35,6 +35,8 @@ vi.mock("@/lib/db", async () => {
 const hooks = vi.hoisted(() => ({
   after: (() => { throw new Error("`after` was called outside a request scope"); }) as (callback: () => unknown) => void,
   line: null as null | ((...args: unknown[]) => Promise<unknown>),
+  /** While set, every LINE outbox write waits for it (a live run held after its claim). */
+  lineGate: null as null | Promise<void>,
 }));
 const monitoring = vi.hoisted(() => ({ captureOperationalError: vi.fn() }));
 
@@ -54,8 +56,10 @@ vi.mock("@/lib/line-notification", async (original) => {
   const actual = await original<typeof import("@/lib/line-notification")>();
   return {
     ...actual,
-    enqueueLineNotification: (...args: Parameters<typeof actual.enqueueLineNotification>) =>
-      hooks.line ? hooks.line(...args) : actual.enqueueLineNotification(...args),
+    enqueueLineNotification: async (...args: Parameters<typeof actual.enqueueLineNotification>) => {
+      if (hooks.lineGate) await hooks.lineGate;
+      return hooks.line ? hooks.line(...args) : actual.enqueueLineNotification(...args);
+    },
   };
 });
 
@@ -89,6 +93,7 @@ beforeEach(() => {
   // Default for these cases: the live hook is registered but never runs.
   hooks.after = () => undefined;
   hooks.line = null;
+  hooks.lineGate = null;
   monitoring.captureOperationalError.mockClear();
 });
 
@@ -188,6 +193,7 @@ async function paymentRule(t: Tenant, options: { actions?: unknown[]; isActive?:
       condition: { type: "order_amount_gte", amountCents: 1_000 } as Prisma.InputJsonValue,
       actions: (options.actions ?? ALL_ACTIONS(t)) as Prisma.InputJsonArray,
       isActive: options.isActive ?? true,
+      funnelPageId: options.funnelPageId ?? null,
     },
   });
 }
@@ -216,8 +222,62 @@ async function pinPayment(c: Checkout, at: Date, recordedAt: Date = at) {
   await db.commerceOrderEvent.updateMany({ where: { orderId: c.orderId, eventType: "payment.paid" }, data: { createdAt: recordedAt } });
 }
 
+/**
+ * Moves the vendor's rules and the given payments into the past, so a case
+ * can run the catch-up at the real clock (the claim compares `startedAt` with
+ * it). The rules stay older than the payments.
+ */
+async function backdate(t: Tenant, payments: Checkout[], paidAt: Date) {
+  const ruleTime = new Date(paidAt.getTime() - MINUTE);
+  await db.$executeRaw`UPDATE "AutomationRule" SET "createdAt" = ${ruleTime}, "updatedAt" = ${ruleTime} WHERE "vendorId" = ${t.vendor.id}`;
+  for (const c of payments) await pinPayment(c, paidAt);
+}
+
 function catchup(now: Date, options: { limit?: number; db?: PrismaClient } = {}) {
   return runPaymentPaidAutomationCatchup({ db: options.db ?? db, now, ...(options.limit ? { limit: options.limit } : {}) });
+}
+
+/** Rejects if `work` does not settle within `ms` (every race below has an explicit bound). */
+async function within<T>(work: Promise<T>, ms: number, label: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error(`${label} did not settle in ${ms} ms`)), ms); });
+  try {
+    return await Promise.race([work, timeout]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function waitFor(check: () => Promise<boolean>, label: string, ms = 15_000) {
+  const until = Date.now() + ms;
+  while (!(await check())) {
+    if (Date.now() > until) throw new Error(`timed out waiting for ${label}`);
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+}
+
+/**
+ * The client a catch-up pass uses, holding the pass right after its scan
+ * (before any dispatch) until `afterScan` resolves.
+ */
+function holdAfterScan(target: PrismaClient, afterScan: () => Promise<void>): PrismaClient {
+  let held = false;
+  return new Proxy(target, {
+    get(client, property) {
+      if (property === "$queryRaw") {
+        return async (...args: unknown[]) => {
+          const rows = await (client.$queryRaw as unknown as (...input: unknown[]) => Promise<unknown>)(...args);
+          if (!held) {
+            held = true;
+            await afterScan();
+          }
+          return rows;
+        };
+      }
+      const value = Reflect.get(client, property, client) as unknown;
+      return typeof value === "function" ? (value as (...input: unknown[]) => unknown).bind(client) : value;
+    },
+  });
 }
 
 describe("補跑漏掉的 payment_paid", () => {
@@ -244,28 +304,92 @@ describe("補跑漏掉的 payment_paid", () => {
     expect(monitoring.captureOperationalError).not.toHaveBeenCalled();
   });
 
-  it("leaves orders the live hook ran alone, and never retries a failed execution", async () => {
+  it("leaves orders the live hook ran alone, and never retries a non-transient failure (no unsubscribe link)", async () => {
     const t = await tenant("ran");
-    await paymentRule(t);
+    await paymentRule(t, { actions: [{ type: "add_customer_tag", tag: "已付款" }, { type: "send_email_notification", template: "repurchase_followup" }] });
     // Outside a request scope the live call runs inline: the hook "ran".
     hooks.after = () => { throw new Error("outside a request"); };
     const ran = await checkout(t);
     await processPaymentWebhook(paidCallback(t, ran));
-    // The LINE outbox fails during the live run: the execution is `failed`.
-    hooks.line = async () => { throw new Error("synthetic LINE outbox failure"); };
+    // A deployment setting is missing during the live run: `failed / unsubscribe_url_unavailable`.
+    vi.stubEnv("NEXT_PUBLIC_APP_URL", "");
     const failed = await checkout(t);
     await processPaymentWebhook(paidCallback(t, failed));
-    hooks.line = null;
+    vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://paid-catchup.example.test");
     const before = await logsOf(t);
-    expect(before.map((log) => [log.eventId, log.status])).toEqual([
-      [`payment-paid:${ran.orderId}`, "completed"],
-      [`payment-paid:${failed.orderId}`, "failed"],
+    expect(before.map((log) => [log.eventId, log.status, log.errorCode])).toEqual([
+      [`payment-paid:${ran.orderId}`, "completed", null],
+      [`payment-paid:${failed.orderId}`, "failed", "unsubscribe_url_unavailable"],
     ]);
     const outputsBefore = await outputs(t);
 
-    await catchup(later());
+    expect(await catchup(later())).toMatchObject({ candidates: 0 });
     expect(await logsOf(t)).toEqual(before);
     expect(await outputs(t)).toEqual(outputsBefore);
+  });
+
+  it("retries a first `action_failed` once (10 min after it ended) without duplicating outputs; a second failure is final", async () => {
+    const t = await tenant("transient");
+    await paymentRule(t);
+    hooks.after = () => { throw new Error("outside a request"); };
+    // A transient outbox error: the tag and voucher are done, LINE throws, e-mail never ran.
+    hooks.line = async () => { throw new Error("synthetic transient LINE outbox failure"); };
+    const flaky = await checkout(t);
+    await processPaymentWebhook(paidCallback(t, flaky));
+    const recovers = await checkout(t);
+    await processPaymentWebhook(paidCallback(t, recovers));
+    const firstAttempts = await logsOf(t);
+    expect(firstAttempts.map((log) => [log.status, log.errorCode])).toEqual([["failed", "action_failed"], ["failed", "action_failed"]]);
+    // A log nobody has reclaimed keeps startedAt = createdAt: the retry marker.
+    for (const log of firstAttempts) expect(log.startedAt.getTime()).toBe(log.createdAt.getTime());
+    // Payments (and the rule) in the past, so `now` stays the real clock the claim uses.
+    const now = new Date();
+    await backdate(t, [flaky, recovers], new Date(now.getTime() - PAYMENT_PAID_CATCHUP_MIN_AGE_MS - 5 * MINUTE));
+    expect(await outputs(t)).toEqual({ tags: 2, vouchers: 2, lines: 0, mails: 0 });
+
+    // Ended less than 10 minutes ago: not yet.
+    expect(await catchup(now)).toMatchObject({ candidates: 0 });
+    // 10 minutes after it ended. Order `flaky` fails again, `recovers` completes.
+    await db.automationExecutionLog.updateMany({ where: { vendorId: t.vendor.id }, data: { completedAt: new Date(now.getTime() - PAYMENT_PAID_CATCHUP_MIN_AGE_MS - 1_000) } });
+    hooks.line = async (...args: unknown[]) => {
+      const input = args[1] as { subjectId: string };
+      if (input.subjectId === flaky.orderId) throw new Error("synthetic LINE outbox failure again");
+      const { enqueueLineNotification } = await vi.importActual<typeof import("@/lib/line-notification")>("@/lib/line-notification");
+      return enqueueLineNotification(...(args as Parameters<typeof enqueueLineNotification>));
+    };
+    expect(await catchup(now)).toMatchObject({ candidates: 2, examined: 2, completed: 1, failed: 1 });
+    expect((await logsOf(t, recovers.orderId))[0]).toMatchObject({ status: "completed" });
+    const [again] = await logsOf(t, flaky.orderId);
+    expect(again).toMatchObject({ status: "failed", errorCode: "action_failed" });
+    expect(again!.startedAt.getTime()).not.toBe(again!.createdAt.getTime());
+    // No second tag or voucher; `recovers` now has its LINE row and e-mail.
+    expect(await outputs(t)).toEqual({ tags: 2, vouchers: 2, lines: 1, mails: 1 });
+
+    // The reclaimed log no longer qualifies, however long ago it ended.
+    hooks.line = null;
+    await db.automationExecutionLog.updateMany({ where: { id: again!.id }, data: { completedAt: new Date(now.getTime() - 60 * MINUTE) } });
+    expect(await catchup(now)).toMatchObject({ candidates: 0 });
+    expect((await logsOf(t, flaky.orderId))[0]).toMatchObject({ status: "failed", startedAt: again!.startedAt });
+  });
+
+  it("runs only the rules the scan chose: another rule's failed log is not reclaimed on the way", async () => {
+    const t = await tenant("only-chosen");
+    const failing = await paymentRule(t, { actions: [{ type: "add_customer_tag", tag: "甲" }, { type: "send_email_notification", template: "repurchase_followup" }] });
+    const missing = await paymentRule(t, { actions: [{ type: "add_customer_tag", tag: "乙" }] });
+    const c = await missedPayment(t);
+    // The live run got as far as rule A, which failed for a non-transient reason; B never ran.
+    vi.stubEnv("NEXT_PUBLIC_APP_URL", "");
+    await dispatchPaymentPaidAutomationForOrder({ vendorId: t.vendor.id, orderId: c.orderId }, db, { onlyRuleIds: [failing.id] });
+    vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://paid-catchup.example.test");
+    const [failedLog] = await logsOf(t);
+    expect(failedLog).toMatchObject({ ruleId: failing.id, status: "failed", errorCode: "unsubscribe_url_unavailable" });
+
+    // With the setting back, a dispatch of every rule would reclaim A and send its e-mail.
+    expect(await catchup(later())).toMatchObject({ examined: 1, completed: 1, duplicate: 0, failed: 0 });
+    const logs = await logsOf(t);
+    expect(logs.find((log) => log.ruleId === failing.id)).toEqual(failedLog);
+    expect(logs.find((log) => log.ruleId === missing.id)).toMatchObject({ status: "completed" });
+    expect(await db.emailDelivery.count({ where: { vendorId: t.vendor.id, trigger: "automation" } })).toBe(0);
   });
 
   it("reclaims an execution whose process died (running past the reclaim threshold) and finishes it without duplicating outputs; a fresh running one is left alone", async () => {
@@ -337,6 +461,71 @@ describe("即時路徑與補跑併發", () => {
     // Four buyers (four customer keys): one of each output per order.
     expect(await outputs(t)).toEqual({ tags: 4, vouchers: 4, lines: 4, mails: 4 });
   }, 90_000);
+
+  it("a live run that claims after the scan chose its order, and is still running, makes the catch-up's claim a duplicate", async () => {
+    const t = await tenant("held-live");
+    const rule = await paymentRule(t);
+    const orders = [await missedPayment(t), await missedPayment(t)];
+    const live = client(3);
+    const job = client(3);
+    let releaseLive!: () => void;
+    hooks.lineGate = new Promise<void>((resolve) => { releaseLive = resolve; });
+    let liveRuns: Promise<unknown> = Promise.resolve();
+    // The catch-up has chosen both orders; now the live hooks start, claim
+    // their logs and stop at the LINE step (held), before the catch-up dispatches.
+    const pass = runPaymentPaidAutomationCatchup({
+      now: later(),
+      db: holdAfterScan(job, async () => {
+        liveRuns = Promise.all(orders.map((c) => dispatchPaymentPaidAutomationForOrder({ vendorId: t.vendor.id, orderId: c.orderId }, live)));
+        await waitFor(async () => (await db.automationExecutionLog.count({ where: { vendorId: t.vendor.id, status: "running" } })) === orders.length, "live claims");
+      }),
+    });
+    const summary = await within(pass, 60_000, "catch-up pass");
+    expect(summary).toMatchObject({ candidates: 2, examined: 2, completed: 0 });
+    expect(summary.duplicate).toBeGreaterThanOrEqual(1);
+    expect(summary.duplicate).toBe(2);
+    releaseLive();
+    hooks.lineGate = null;
+    await within(liveRuns, 60_000, "held live runs");
+    for (const c of orders) {
+      expect((await logsOf(t, c.orderId)).map((log) => [log.ruleId, log.status])).toEqual([[rule.id, "completed"]]);
+    }
+    expect(await outputs(t)).toEqual({ tags: 2, vouchers: 2, lines: 2, mails: 2 });
+  }, 90_000);
+
+  it("two catch-up passes that both chose the same dead running execution reclaim it once", async () => {
+    const t = await tenant("double-reclaim");
+    await paymentRule(t);
+    hooks.after = () => { throw new Error("outside a request"); };
+    hooks.line = async () => { throw new Error("synthetic process stop"); };
+    const c = await checkout(t);
+    await processPaymentWebhook(paidCallback(t, c));
+    hooks.line = null;
+    const now = new Date();
+    await backdate(t, [c], new Date(now.getTime() - PAYMENT_PAID_CATCHUP_MIN_AGE_MS - 5 * MINUTE));
+    await db.automationExecutionLog.updateMany({
+      where: { vendorId: t.vendor.id },
+      data: { status: "running", completedAt: null, errorCode: null, startedAt: new Date(now.getTime() - 6 * MINUTE) },
+    });
+    // Neither pass dispatches before both have scanned.
+    let arrived = 0;
+    let openBarrier!: () => void;
+    const barrier = new Promise<void>((resolve) => { openBarrier = resolve; });
+    const meet = async () => {
+      arrived += 1;
+      if (arrived === 2) openBarrier();
+      await barrier;
+    };
+    const [first, second] = await within(Promise.all([
+      runPaymentPaidAutomationCatchup({ now, db: holdAfterScan(client(3), meet) }),
+      runPaymentPaidAutomationCatchup({ now, db: holdAfterScan(client(3), meet) }),
+    ]), 60_000, "two catch-up passes");
+    expect(first.candidates + second.candidates).toBe(2);
+    expect(first.completed + second.completed).toBe(1);
+    expect(first.duplicate + second.duplicate).toBe(1);
+    expect((await logsOf(t)).map((log) => log.status)).toEqual(["completed"]);
+    expect(await outputs(t)).toEqual({ tags: 1, vouchers: 1, lines: 1, mails: 1 });
+  }, 90_000);
 });
 
 describe("不補跑的訂單", () => {
@@ -366,6 +555,25 @@ describe("不補跑的訂單", () => {
     const ordinary = await missedPayment(t);
     await catchup(later());
     expect((await logsOf(t)).map((log) => log.eventId)).toEqual([`payment-paid:${ordinary.orderId}`]);
+  });
+
+  it("skips an order still `paid` that has any amount refunded", async () => {
+    const t = await tenant("paid-with-refund");
+    await paymentRule(t, { actions: [{ type: "add_customer_tag", tag: "已付款" }] });
+    const c = await missedPayment(t);
+    await db.commerceOrder.update({ where: { id: c.orderId }, data: { refundedAmountCents: 1 } });
+    expect(await db.commerceOrder.findUniqueOrThrow({ where: { id: c.orderId } })).toMatchObject({ status: "paid", refundedAmountCents: 1 });
+    expect(await catchup(later())).toMatchObject({ candidates: 0 });
+    expect(await logsOf(t)).toEqual([]);
+  });
+
+  it("never runs a funnel-scoped payment_paid rule (the live event has no funnel page)", async () => {
+    const t = await tenant("funnel-scoped");
+    const scoped = await paymentRule(t, { actions: [{ type: "add_customer_tag", tag: "漏斗" }], funnelPageId: `page-${randomUUID()}` });
+    expect(scoped.funnelPageId).not.toBeNull();
+    await missedPayment(t);
+    expect(await catchup(later())).toMatchObject({ candidates: 0 });
+    expect(await logsOf(t)).toEqual([]);
   });
 
   it("a suspended vendor's orders wait while it is suspended", async () => {

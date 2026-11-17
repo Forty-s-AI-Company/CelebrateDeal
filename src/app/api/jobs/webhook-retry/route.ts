@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { requireCronSecret, requireJobSecret, unauthorizedJson } from "@/lib/api-security";
 import { releaseExpiredInventoryReservations } from "@/lib/inventory-reservations";
 import { captureOperationalError } from "@/lib/monitoring";
-import { runPaymentPaidAutomationCatchup, type PaymentPaidCatchupSummary } from "@/lib/payment-paid-automation-catchup";
+import { paymentPaidCatchupDeadline, runPaymentPaidAutomationCatchup, type PaymentPaidCatchupSummary } from "@/lib/payment-paid-automation-catchup";
 import { processDueWebhookRetries } from "@/lib/webhook-retry";
 
 // One run releases expired reservations (each row with the 5-attempt
@@ -15,9 +15,11 @@ import { processDueWebhookRetries } from "@/lib/webhook-retry";
 // (src/lib/payment-paid-automation.ts), and last runs the `payment_paid`
 // catch-up (src/lib/payment-paid-automation-catchup.ts): orders paid 10 min
 // to 48 h ago whose `after()` hook never ran or died mid-run, at most 20 per
-// run, round-robin across vendors, no new order after 60 s. The live path is
-// still `after()`; the catch-up reuses its idempotency keys, so a rule runs
-// once either way. Under Fluid
+// run, round-robin across vendors. It only uses what is left of the time the
+// scheduler waits (scripts/scheduled-jobs-runner.mjs, 120 s): skipped once
+// the route has run 60 s, otherwise no new order after min(60 s, 100 s −
+// elapsed). The live path is still `after()`; the catch-up reuses its
+// idempotency keys, so a rule runs once either way. Under Fluid
 // Compute the platform default is already 300 s, so a lower value would cut
 // the batch off mid-run, leave events `retrying` until the lease expires and
 // lose the summary and alerts. 300 s is the Hobby maximum under Fluid and is
@@ -34,9 +36,17 @@ const SAFE_RETRY_STATUSES = new Set([
   "not_stale",
 ]);
 
-type MaintenanceStep = "inventory_cleanup" | "webhook_retry" | "payment_paid_catchup";
+type MaintenanceStep = "inventory_cleanup" | "webhook_retry";
 
-function reportMaintenanceFailure(error: unknown, operation: MaintenanceStep) {
+/**
+ * The catch-up's part of the response: its counts, `{ skipped: true }` when
+ * the route had no time left for it, or `{ failed: true }` when it threw
+ * (reported to monitoring; the job still answers 200 for it, the next run
+ * tries again).
+ */
+type CatchupOutcome = PaymentPaidCatchupSummary | { skipped: true } | { failed: true };
+
+function reportMaintenanceFailure(error: unknown, operation: MaintenanceStep | "payment_paid_catchup") {
   // Observability must never turn a recoverable maintenance failure into a
   // second failure that prevents the other job from being attempted.
   try {
@@ -68,10 +78,23 @@ function safeRetryResults(results: Awaited<ReturnType<typeof processDueWebhookRe
   }));
 }
 
+async function runCatchupWithinBudget(routeStartedAt: number): Promise<CatchupOutcome> {
+  const deadlineMs = paymentPaidCatchupDeadline(Date.now() - routeStartedAt);
+  if (deadlineMs === null) return { skipped: true };
+  try {
+    return await runPaymentPaidAutomationCatchup({ deadlineMs });
+  } catch (error) {
+    // Not a webhook-retry failure: payments are untouched and the next run
+    // scans again, so the job keeps its 200 and monitoring gets the error.
+    reportMaintenanceFailure(error, "payment_paid_catchup");
+    return { failed: true };
+  }
+}
+
 async function processWebhookRetryMaintenance() {
+  const routeStartedAt = Date.now();
   let inventory: Awaited<ReturnType<typeof releaseExpiredInventoryReservations>> | null = null;
   let results: Awaited<ReturnType<typeof processDueWebhookRetries>> = [];
-  let paymentPaidCatchup: PaymentPaidCatchupSummary | null = null;
   const failures: MaintenanceStep[] = [];
 
   // Keep this ordering deliberately sequential: both jobs use the same local
@@ -91,12 +114,7 @@ async function processWebhookRetryMaintenance() {
   }
 
   // Last, so neither step above waits for it. The summary holds counts only.
-  try {
-    paymentPaidCatchup = await runPaymentPaidAutomationCatchup();
-  } catch (error) {
-    failures.push("payment_paid_catchup");
-    reportMaintenanceFailure(error, "payment_paid_catchup");
-  }
+  const paymentPaidCatchup = await runCatchupWithinBudget(routeStartedAt);
 
   if (failures.length > 0) {
     return NextResponse.json({

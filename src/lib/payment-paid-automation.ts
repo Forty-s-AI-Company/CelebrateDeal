@@ -1,6 +1,6 @@
 import { after } from "next/server";
 import type { PrismaClient } from "@prisma/client";
-import { dispatchAutomationEvent, type AutomationDispatchOptions } from "@/lib/automation-workflow";
+import { automationDispatchRuleFilter, dispatchAutomationEvent, type AutomationDispatchOptions } from "@/lib/automation-workflow";
 import { revealCommerceOrderPii } from "@/lib/commerce-order-pii";
 import { getDb } from "@/lib/db";
 import { captureOperationalError } from "@/lib/monitoring";
@@ -59,10 +59,10 @@ function buyerEmail(order: { id: string; buyerEncryptedEnvelope: string; shippin
  * execution log per rule and order (`order:{orderId}:version:{n}`), so a
  * second call for the same order repeats nothing a completed execution did.
  *
- * `options.rulesUnchangedSince` (the catch-up job only, see
- * payment-paid-automation-catchup.ts) limits the run to rules not created,
- * edited or switched on after that instant; the event id and every
- * idempotency key stay the same as the live call's.
+ * `options` (the catch-up job only, see payment-paid-automation-catchup.ts)
+ * limits the run to the rules it chose (`onlyRuleIds`) and to rules not
+ * created, edited or switched on after the payment (`rulesUnchangedSince`);
+ * the event id and every idempotency key stay the same as the live call's.
  */
 export async function dispatchPaymentPaidAutomationForOrder(
   input: { vendorId: string; orderId: string },
@@ -75,7 +75,7 @@ export async function dispatchPaymentPaidAutomationForOrder(
       vendorId: input.vendorId,
       trigger: "payment_paid",
       isActive: true,
-      ...(options.rulesUnchangedSince ? { updatedAt: { lte: options.rulesUnchangedSince } } : {}),
+      ...automationDispatchRuleFilter(options),
     },
     select: { id: true },
   });
@@ -172,7 +172,8 @@ async function waitAtMost(work: Promise<void>, ms: number) {
  * When the hook never runs or is stopped mid-run (the platform ends the
  * function after the response, a database outage), the webhook-retry job's
  * catch-up (payment-paid-automation-catchup.ts) runs the order later with the
- * same idempotency keys; a rule recorded as `failed` is not retried.
+ * same idempotency keys. A first attempt that failed because an action threw
+ * (`action_failed`) is retried once there; other failures are final.
  */
 export async function runPaymentPaidAutomationAfterCommit(input: { vendorId: string; orderId: string }): Promise<"scheduled" | "ran_inline"> {
   try {

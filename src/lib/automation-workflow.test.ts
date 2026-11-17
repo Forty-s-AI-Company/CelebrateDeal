@@ -121,6 +121,11 @@ describe("smart automation workflow engine", () => {
     expect(db.automationRule.findMany).toHaveBeenLastCalledWith(expect.objectContaining({
       where: expect.objectContaining({ vendorId: event.vendorId, trigger: "payment_paid", isActive: true, updatedAt: { lte: since } }),
     }));
+    expect(db.automationRule.findMany.mock.lastCall?.[0].where).not.toHaveProperty("id");
+    await dispatchAutomationEvent(db as never, event, { onlyRuleIds: ["rule-2"] });
+    expect(db.automationRule.findMany).toHaveBeenLastCalledWith(expect.objectContaining({
+      where: expect.objectContaining({ vendorId: event.vendorId, isActive: true, id: { in: ["rule-2"] } }),
+    }));
   });
 
   it("runs tag, voucher and LINE actions once and keeps bearer values out of logs", async () => {

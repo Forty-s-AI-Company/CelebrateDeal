@@ -81,6 +81,15 @@ GitHub 的 `*/5 * * * *` 實測約每 2～5 小時才跑一次（中位數 184 �
 - owner 需在 staging 的 Sentry 專案為 `webhook_retry_requires_attention` 建立告警規則（通知到值班信箱或 Slack）。
 - 處理方式：用 `eventId`／`orderNumber` 在後台找到交易，向 PayUni 查實際付款狀態；已付款就人工補庫存或走退款，並在付款事件 SOP 記錄。
 
+### 3.2 webhook-retry 回應裡的 `paymentPaidCatchup`（Q-10）
+
+job 最後一段補跑 `payment_paid` 自動化，結果放在回應的 `paymentPaidCatchup`，不影響 HTTP 狀態碼：
+
+- 一般是計數：`candidates`（這輪撈到幾筆訂單）、`examined`（實際處理幾筆，比 `candidates` 少代表時間到了，剩下下一輪）、`completed`／`skipped`／`failed`／`duplicate`（規則結果；`duplicate` 代表即時路徑或另一個 job 已經在跑，屬正常）、`notApplicable`（撈到後訂單已退款或規則已停用）、`errors`（單筆丟錯，Sentry 有 `operation: "catchup_dispatch"`）。
+- `{ "skipped": true }`：route 前兩段已用掉 60 秒，這輪不補，下一輪再補；連續出現代表 webhook 重試或庫存釋放太慢，先看那兩段。
+- `{ "failed": true }`：整段補跑丟錯（例如資料庫查詢失敗），HTTP 仍是 200，Sentry 有 `source: "webhook_retry_job"`、`operation: "payment_paid_catchup"`。單次可忽略（下一輪重掃，48 小時內的訂單都會再試）；連續數輪出現就要查資料庫或部署。
+- `failed` 計數大於 0 時，Sentry 有 `catchup_rule_failed`；哪條規則、為什麼記在商家後台的執行日誌。
+
 **Production 上線前硬性 gate：B03-07 必修。** 付款事實一律先記帳、不得因庫存 rollback；庫存不足時把訂單標記為超賣並建立退款或人工工單；UPP 的 `TradeLExpireSec` 必須 ≤ 保留 TTL。上述完成前，Production 不得啟用 webhook-retry 排程。
 
 ### 暫停與恢復
