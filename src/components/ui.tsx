@@ -138,6 +138,9 @@ export function Field({
   max,
   step,
   readOnly,
+  disabled,
+  value,
+  onChange,
   error,
   hint,
 }: {
@@ -156,6 +159,10 @@ export function Field({
   max?: number;
   step?: number;
   readOnly?: boolean;
+  disabled?: boolean;
+  /** Controlled mode: when set, `defaultValue` is ignored and `onChange` should update the value. */
+  value?: string | number;
+  onChange?: React.ChangeEventHandler<HTMLInputElement>;
 }) {
   const field = useFieldMessages(error, hint);
   return (
@@ -176,7 +183,9 @@ export function Field({
         max={max}
         step={step}
         readOnly={readOnly}
-        defaultValue={defaultValue ?? ""}
+        disabled={disabled}
+        onChange={onChange}
+        {...(value === undefined ? { defaultValue: defaultValue ?? "" } : { value })}
       />
     </label>
     </FieldShell>

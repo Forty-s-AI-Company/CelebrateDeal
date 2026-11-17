@@ -15,7 +15,8 @@ vi.mock("@/lib/auth", () => ({ requireVendorManager: mocks.requireVendorManager 
 vi.mock("@/lib/db", () => ({
   getDb: () => ({ messageTemplate: { findMany: mocks.templateFindMany } }),
 }));
-vi.mock("@/components/ui", () => ({
+vi.mock("@/components/ui", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/components/ui")>()),
   Badge: ({ children }: { children: ReactNode }) => <span>{children}</span>,
   ButtonLink: ({ href, children }: { href: string; children: ReactNode }) => <a href={href}>{children}</a>,
   Card: ({ children }: { children: ReactNode }) => <section>{children}</section>,
@@ -167,5 +168,18 @@ describe("/messages/templates route", () => {
     expect(html).not.toMatch(/<a href="\/messages\/templates\/template%2Fone\/edit"[^>]*>[^<]*報名成功信/);
     expect(html).toContain("編輯");
     expect(html).toContain("預覽內容");
+  });
+
+  it("keeps the filter GET form field names, values and label association", async () => {
+    const html = renderToStaticMarkup(await MessageTemplatesPage({
+      searchParams: Promise.resolve({ q: "webinar", trigger: "live_reminder", status: "inactive" }),
+    }));
+    expect(html).toMatch(/<form[^>]* method="get"/);
+    expect(html).toMatch(/<label[^>]*>搜尋模板<input[^>]*maxLength="120"[^>]*name="q"/);
+    expect(html).toMatch(/<input[^>]*name="q"[^>]*value="webinar"/);
+    expect(html).toMatch(/觸發條件<select[^>]*name="trigger"/);
+    expect(html).toMatch(/啟用狀態<select[^>]*name="status"/);
+    expect(html).toMatch(/<option value="live_reminder" selected/);
+    expect(html).toMatch(/<option value="inactive" selected/);
   });
 });
