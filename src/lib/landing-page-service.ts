@@ -629,21 +629,33 @@ function autoLeadFormFields(documents: ReturnType<typeof leadCapturePages>) {
  * which must use its own form) is never replaced, and a deactivated
  * auto-created form is not recreated.
  */
+async function planAudienceLeadForm(
+  database: Pick<LandingPageDb, "registrationForm">,
+  scope: { vendorId: string; projectId: string },
+  page: { id: string; draftFormId: string | null; draftLiveId: string | null },
+  content: LandingPageStoredContent,
+): Promise<{ formId: string | null; documents: ReturnType<typeof leadCapturePages>; create: boolean }> {
+  if (page.draftFormId || page.draftLiveId || !isIndependentlyPublishedFunnel(content)) return { formId: page.draftFormId, documents: [], create: false };
+  const documents = leadCapturePages(content as FunnelStepPages);
+  if (!documents.some((document) => pageDocumentRendersRegistrationForm(document))) return { formId: null, documents, create: false };
+  const existing = await database.registrationForm.findMany({
+    where: autoLeadFormWhere(scope, page.id),
+    select: { id: true, isActive: true },
+    orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+  });
+  if (existing.length) return { formId: existing.find((form) => form.isActive)?.id ?? null, documents, create: false };
+  return { formId: null, documents, create: true };
+}
+
 async function ensureAudienceLeadForm(
   transaction: Prisma.TransactionClient,
   scope: { vendorId: string; projectId: string },
   page: { id: string; name: string; draftFormId: string | null; draftLiveId: string | null },
   content: LandingPageStoredContent,
 ) {
-  if (page.draftFormId || page.draftLiveId || !isIndependentlyPublishedFunnel(content)) return page.draftFormId;
-  const documents = leadCapturePages(content as FunnelStepPages);
-  if (!documents.some((document) => pageDocumentRendersRegistrationForm(document))) return null;
-  const existing = await transaction.registrationForm.findMany({
-    where: autoLeadFormWhere(scope, page.id),
-    select: { id: true, isActive: true },
-    orderBy: [{ createdAt: "asc" }, { id: "asc" }],
-  });
-  if (existing.length) return existing.find((form) => form.isActive)?.id ?? null;
+  const plan = await planAudienceLeadForm(transaction, scope, page, content);
+  if (!plan.create) return plan.formId;
+  const documents = plan.documents;
   // Slugs are global: a slug held by another tenant only changes ours, never reuses theirs.
   const base = autoLeadFormSlug(page.id);
   const taken = await transaction.registrationForm.findFirst({ where: { slug: base }, select: { id: true } });
@@ -685,6 +697,7 @@ async function assertIndependentPublishAllowed(
   scope: { vendorId: string; projectId: string },
   page: { id: string; draftLiveId: string | null },
   content: LandingPageStoredContent,
+  options: { audit: boolean },
 ) {
   if (page.draftLiveId || !isIndependentlyPublishedFunnel(content)) return;
   const project = await transaction.salesProject.findFirst({ where: { id: scope.projectId, vendorId: scope.vendorId }, select: { status: true, publishedAt: true } });
@@ -694,7 +707,7 @@ async function assertIndependentPublishAllowed(
     // A new independent publish allowed only by the owner fallback is worth
     // knowing about (founder suspended, left, or never existed). Ids and a
     // fixed reason code only; written in the publish transaction.
-    if (allowance.ownerFallback && !allowance.alreadyCounted) {
+    if (options.audit && allowance.ownerFallback && !allowance.alreadyCounted) {
       await transaction.auditLog.create({ data: {
         vendorId: scope.vendorId, actorLabel: "system", action: "independent_publish_email_gate_owner_fallback",
         targetType: "LandingPage", targetId: page.id, after: { reason: allowance.ownerFallback },
@@ -737,30 +750,39 @@ async function assertAudienceLiveProjectPublished(
 
 type PublishResult = { id: string; revision: number; version: number; formId: string | null };
 
-/** Thrown at the end of a publish check so every statement of the publish transaction rolls back. */
-class PublishCheckRollback extends Error {
-  constructor(readonly result: PublishResult) {
-    super("landing_page_publish_check_rollback");
-    this.name = "PublishCheckRollback";
-  }
-}
-
-export async function publishLandingPage(pageId: string, expectedRevision: number) {
-  return runPublishTransaction(pageId, expectedRevision, "publish");
-}
-
 /**
- * The editor's 發布檢查: runs exactly the publish transaction below (same
- * scope, lock, revision, custom-code, independent-publish, lead-form and
- * binding checks) and then rolls it back, so nothing it writes is committed.
- * It never relaxes a rule: the real publish re-runs all of them.
+ * Every rule a publish enforces on the stored draft, in the publish order:
+ * scope, revision, operations, custom-code role, audience live, independent
+ * publish limit, lead form and bindings. `write: true` is the publish
+ * transaction (creates the auto lead form, audits an owner-fallback pass);
+ * `write: false` is the editor's 發布檢查 and only reads: it takes no lock
+ * and writes nothing. A form the publish would create is not read back; the
+ * check passes no form id for it, which `validateBindings` treats the same
+ * way (a freshly created form is always active and in this vendor and
+ * project, and an audience Funnel without a live never reaches the webinar
+ * form requirement either way).
  */
-export async function checkLandingPagePublishable(pageId: string, expectedRevision: number): Promise<{ id: string; revision: number }> {
-  const result = await runPublishTransaction(pageId, expectedRevision, "check");
-  return { id: result.id, revision: expectedRevision };
+async function assertDraftPublishable(
+  client: Prisma.TransactionClient,
+  context: { scope: { vendorId: string; projectId: string }; actor: FunnelCustomCodeActor; id: string; revision: number },
+  options: { write: boolean },
+) {
+  const { scope, actor, id, revision } = context;
+  const page = await requireScopedPage(client, scope, id);
+  if (page.revision !== revision) throw new LandingPageConflictError();
+  const content = inputContent(page.draftContent);
+  validateOperationalReferences(page.operations, content);
+  const publishesCustomCode = customCodeGate(() => assertFunnelCustomCodePublish(actor, content));
+  await assertAudienceLiveProjectPublished(client, scope, page, content);
+  await assertIndependentPublishAllowed(client, scope, page, content, { audit: options.write });
+  const formId = options.write
+    ? await ensureAudienceLeadForm(client, scope, page, content)
+    : (await planAudienceLeadForm(client, scope, page, content)).formId;
+  await validateBindings(client, { ...scope, content, formId, liveId: page.draftLiveId, publishing: true });
+  return { page, content, formId, publishesCustomCode };
 }
 
-async function runPublishTransaction(pageId: string, expectedRevision: number, mode: "publish" | "check"): Promise<PublishResult> {
+export async function publishLandingPage(pageId: string, expectedRevision: number): Promise<PublishResult> {
   const { scope, actor } = await editorContext();
   const id = identifier(pageId);
   const revision = positiveRevision(expectedRevision);
@@ -772,15 +794,7 @@ async function runPublishTransaction(pageId: string, expectedRevision: number, m
       // committed while this one waited. This relies on READ COMMITTED (set
       // explicitly below): a REPEATABLE READ snapshot could predate the lock.
       await lockIndependentPublishSlots(transaction, scope.vendorId);
-      const page = await requireScopedPage(transaction, scope, id);
-      if (page.revision !== revision) throw new LandingPageConflictError();
-      const content = inputContent(page.draftContent);
-      validateOperationalReferences(page.operations, content);
-      const publishesCustomCode = customCodeGate(() => assertFunnelCustomCodePublish(actor, content));
-      await assertAudienceLiveProjectPublished(transaction, scope, page, content);
-      await assertIndependentPublishAllowed(transaction, scope, page, content);
-      const formId = await ensureAudienceLeadForm(transaction, scope, page, content);
-      await validateBindings(transaction, { ...scope, content, formId, liveId: page.draftLiveId, publishing: true });
+      const { page, content, formId, publishesCustomCode } = await assertDraftPublishable(transaction, { scope, actor, id, revision }, { write: true });
       const nextVersion = await transaction.landingPageVersion.count({ where: { vendorId: scope.vendorId, pageId: id } }) + 1;
       const version = await transaction.landingPageVersion.create({
         data: { vendorId: scope.vendorId, pageId: id, version: nextVersion, content: content as Prisma.InputJsonValue, formId, liveId: page.draftLiveId },
@@ -792,17 +806,34 @@ async function runPublishTransaction(pageId: string, expectedRevision: number, m
       });
       if (updated.count !== 1) throw new LandingPageConflictError();
       if (publishesCustomCode) await recordFunnelCustomCodePublish(transaction, { vendorId: scope.vendorId, actorId: actor.userId, pageId: id, version: version.version, content });
-      const result = { id, revision: revision + 1, version: version.version, formId };
-      if (mode === "check") throw new PublishCheckRollback(result);
-      return result;
+      return { id, revision: revision + 1, version: version.version, formId };
     }, { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted });
   } catch (error) {
-    if (error instanceof PublishCheckRollback) return error.result;
     // Concurrent publishers can both read the next version number. The unique
     // version key is the final compare-and-swap guard, so expose no DB detail.
     if (databaseErrorCode(error) === "P2002") throw new LandingPageConflictError();
     throw error;
   }
+}
+
+/**
+ * The editor's 發布檢查: a read-only preflight. It runs the same rule
+ * sequence as `publishLandingPage` (`assertDraftPublishable`) but outside any
+ * transaction: no advisory lock, no insert or update, no audit entry. The
+ * result only drives the editor's display. It is a snapshot, not a
+ * reservation: `publishLandingPage` takes the vendor lock and re-validates
+ * every rule inside its transaction, so a draft that changed, a slot that was
+ * taken or a binding that was removed after the check is still refused there.
+ * What a read cannot see are write-time races only (a lead-form slug taken
+ * concurrently, a version number collision).
+ */
+export async function checkLandingPagePublishable(pageId: string, expectedRevision: number): Promise<{ id: string; revision: number }> {
+  const { scope, actor } = await editorContext();
+  const id = identifier(pageId);
+  const revision = positiveRevision(expectedRevision);
+  if (!id || !revision) throw new LandingPageInputError();
+  await assertDraftPublishable(db(), { scope, actor, id, revision }, { write: false });
+  return { id, revision };
 }
 
 export async function unpublishLandingPage(pageId: string, expectedRevision: number) {

@@ -154,17 +154,18 @@ describe("landing page scoped mutations", () => {
     await expect(publishLandingPage("page-1", 2)).rejects.toBeInstanceOf(LandingPageConflictError);
   });
 
-  it("發布檢查執行與發布相同的交易後回滾，不回報新的 revision", async () => {
-    let rolledBack: unknown;
-    mocks.transaction.mockImplementationOnce(async (callback: (value: typeof database) => Promise<unknown>, options: unknown) => {
-      expect(options).toEqual({ isolationLevel: "ReadCommitted" });
-      // A real interactive transaction rolls back when the callback throws.
-      try { return await callback(database); } catch (error) { rolledBack = error; throw error; }
-    });
+  it("發布檢查是純讀：不開交易、不取鎖、不建立版本、不更新頁面，也不回報新的 revision", async () => {
     await expect(checkLandingPagePublishable("page-1", 2)).resolves.toEqual({ id: "page-1", revision: 2 });
-    expect(rolledBack).toBeInstanceOf(Error);
-    expect(mocks.versionCreate).toHaveBeenCalledOnce();
-    expect(mocks.updateMany).toHaveBeenCalledWith(expect.objectContaining({ where: { id: "page-1", vendorId: "vendor-1", projectId: "project-1", revision: 2 } }));
+    expect(mocks.transaction).not.toHaveBeenCalled();
+    expect(database.$executeRaw).not.toHaveBeenCalled();
+    expect(mocks.versionCreate).not.toHaveBeenCalled();
+    expect(mocks.versionCount).not.toHaveBeenCalled();
+    expect(mocks.updateMany).not.toHaveBeenCalled();
+    expect(mocks.findFirst).toHaveBeenCalledWith(expect.objectContaining({ where: { id: "page-1", vendorId: "vendor-1", projectId: "project-1", archivedAt: null } }));
+    // The real publish still takes the vendor lock inside its transaction and re-validates.
+    await expect(publishLandingPage("page-1", 2)).resolves.toMatchObject({ revision: 3, version: 1 });
+    expect(mocks.transaction).toHaveBeenCalledOnce();
+    expect(database.$executeRaw).toHaveBeenCalledOnce();
   });
 
   it("發布檢查與發布一樣拒絕：revision 衝突、商品綁定與跨租戶頁面", async () => {
