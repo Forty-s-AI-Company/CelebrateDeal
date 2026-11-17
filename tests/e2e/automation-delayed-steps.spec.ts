@@ -124,6 +124,10 @@ test("a registration gets the rule's 2-hour step from the worker, after the owne
         // By name, not by label: a select's accessible name includes its option text, so an exact "商品" never matches.
         await add.locator('select[name="productId"]').selectOption(fixture!.product.id);
         await add.getByLabel("折扣值").fill("100");
+        // This e2e origin is http://127.0.0.1 and a LINE button link must be https, so the voucher's
+        // owner-only LINE notification would fail the step here (production origins are https).
+        // The step under test mails the voucher link, so the LINE notification stays off.
+        await add.locator('input[name="voucherLineNotification"]').uncheck();
         await add.getByLabel("Email 通知", { exact: true }).check();
         await add.getByLabel("Email 範本").selectOption("repurchase_followup");
       }
@@ -141,7 +145,7 @@ test("a registration gets the rule's 2-hour step from the worker, after the owne
     const steps = await db.automationRuleStep.findMany({ where: { vendorId: fixture.vendor.id, ruleId: rule.id }, orderBy: { delayMinutes: "asc" } });
     expect(steps.map((step) => [step.delayMinutes, step.isActive])).toEqual([[120, true], [1_440, true]]);
     expect(steps[0]!.actions).toEqual([
-      { type: "issue_repurchase_voucher", productId: fixture.product.id, discountType: "fixed", discountValue: 10_000, expiresInDays: 30, lineNotification: true },
+      { type: "issue_repurchase_voucher", productId: fixture.product.id, discountType: "fixed", discountValue: 10_000, expiresInDays: 30, lineNotification: false },
       { type: "send_email_notification", template: "repurchase_followup" },
       { type: "add_customer_tag", tag: "兩小時後" },
     ]);
