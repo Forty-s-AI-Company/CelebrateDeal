@@ -214,10 +214,22 @@ async function registeredDuringSave(f: Fixture, lead: { id: string; email: strin
     await holder.isLocked;
     return original(args);
   }) as never);
-  const started = Date.now();
   try {
-    const outcome = await registered(f, lead);
-    return { outcome, elapsed: Date.now() - started };
+    const dispatched = registered(f, lead);
+    // PostgreSQL's own evidence, not a stopwatch: the start-run statement
+    // (rule row FOR SHARE) is seen waiting on a lock while the save holds it.
+    // A failure that came back at once would never show up here.
+    await Promise.race([
+      waitForLockWait("FOR SHARE"),
+      dispatched.then(() => { throw new Error("The event returned without ever waiting on the save's lock"); }),
+    ]);
+    const outcome = await dispatched;
+    // The event returned while the save STILL holds the rule row (nothing
+    // released it), so the wait ended because lock_timeout fired. NOWAIT on a
+    // third connection answers 55P03 exactly while the row is held.
+    const stillHeld = await db.$queryRaw`SELECT "id" FROM "AutomationRule" WHERE "id" = ${f.rule.id} AND "vendorId" = ${f.vendor.id} FOR UPDATE NOWAIT`
+      .then(() => false, (error: unknown) => /55P03|could not obtain lock/.test(String(error)));
+    return { outcome, stillHeld };
   } finally {
     holder?.release();
     await holder?.done;
@@ -267,11 +279,15 @@ describe("Q-13 重現：商家存檔鎖住規則列時進來的事件", () => {
   it("a save that takes the rule after the event's execution log and holds it over 2 s: the event goes on after 2 s without a run, and its log owes one", async () => {
     const f = await fixture();
     const lead = await registration(f);
-    const { outcome, elapsed } = await registeredDuringSave(f, lead);
+    const { outcome, stillHeld } = await registeredDuringSave(f, lead);
     expect(outcome).toEqual([{ ruleId: f.rule.id, status: "completed" }]);
-    // lock_timeout 2 s, then the registration request goes on.
-    expect(elapsed).toBeGreaterThanOrEqual(1_900);
-    expect(elapsed).toBeLessThan(6_000);
+    // lock_timeout 2 s, then the registration request goes on: it waited on
+    // the lock (seen in pg_stat_activity) and came back while the save still
+    // held the row. The wait's length is deliberately not asserted on the wall
+    // clock: PostgreSQL and Node count it on different clocks and the measured
+    // value sat a little below 2 s under load. The 2 s itself is the SET LOCAL
+    // value in startDelayedSteps.
+    expect(stillHeld).toBe(true);
     expect(await db.customerTagAssignment.count({ where: { vendorId: f.vendor.id, tag: "報名" } })).toBe(1);
     expect(await runsOf(f)).toEqual([]);
     const log = await logOf(f);
