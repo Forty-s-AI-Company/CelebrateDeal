@@ -42,6 +42,9 @@ const SAFE_MATERIALIZATION_STATUSES = new Set([
   "reactivated",
   "not_scheduled",
   "not_configured",
+  // A post-live follow-up that kept hitting a transient transaction conflict;
+  // nothing was written and the next round tries again.
+  "conflict",
 ]);
 
 const SAFE_LEARNER_NOTIFICATION_STATUSES = new Set(["sent","failed","suppressed","indeterminate","queued","not_claimed","persistence_failed","configuration_missing","not_delivered","claimed_elsewhere","completed","page_materialized","not_pending","not_due","retry_scheduled","dead_lettered"]);
@@ -255,6 +258,7 @@ async function processEmailDeliveries() {
           : "unknown",
       })),
       followups: followups.length,
+      followupConflicts: followups.filter((result) => result.status === "conflict").length,
       followupResults: followups.slice(0, 20).map((result) => ({
         status: SAFE_STATUSES.has(result.status) || SAFE_MATERIALIZATION_STATUSES.has(result.status)
           ? result.status

@@ -31,6 +31,7 @@ import { isEmailBlacklistedForVendor } from "@/lib/email-blacklist";
 // called later.
 import { AUTOMATION_EMAIL_TRIGGER, AUTOMATION_STEP_EMAIL_TRIGGER, DELAYED_STEP_EMAIL_TRIGGERS, SEQUENCE_EMAIL_TRIGGER } from "@/lib/automation-email-trigger";
 import { captureOperationalError } from "@/lib/monitoring";
+import { isTransientTransactionConflict, withSerializableRetry } from "@/lib/serializable-retry";
 import {
   createFormSubmissionVerificationToken,
   createFormSubmissionVerificationUrl,
@@ -778,6 +779,35 @@ function dueEvergreenAssignments(input: {
 }
 
 /**
+ * One recipient's follow-up must not stop the others. Its Serializable
+ * transactions can abort with a PostgreSQL serialization failure or deadlock
+ * (P2034, or P2010 carrying 40001 / 40P01) when another worker touches the same
+ * rows. Re-running the whole call is safe: the delivery id and idempotency key
+ * are deterministic and the transaction rechecks sent/sending revisions, so a
+ * retry never queues a second e-mail. After the last attempt the recipient is
+ * reported as `conflict` (nothing was written; the next run tries again) and
+ * the run goes on. Any other error is a real bug and still propagates.
+ */
+const POST_LIVE_FOLLOWUP_RETRY = { attempts: 3, retryOn: isTransientTransactionConflict } as const;
+
+async function ensurePostLiveFollowupDeliveryIsolated(
+  input: PostLiveFollowupDeliveryInput,
+  now: Date,
+): Promise<{ status: string }> {
+  try {
+    return await withSerializableRetry(() => ensurePostLiveFollowupDelivery(input, now), POST_LIVE_FOLLOWUP_RETRY);
+  } catch (error) {
+    if (!isTransientTransactionConflict(error)) throw error;
+    try {
+      captureOperationalError(error, { source: "post_live_followup", operation: "ensure_delivery", status: "conflict" });
+    } catch {
+      // Monitoring must never change the job outcome.
+    }
+    return { status: "conflict" };
+  }
+}
+
+/**
  * Queues the follow-ups of one rule on an active per-visitor evergreen Live:
  * one per VERIFIED registrant whose recorded session (EvergreenSessionAssignment)
  * ended at least the rule offset ago, within the look-back window, oldest
@@ -806,7 +836,7 @@ async function queueEvergreenPostLiveFollowups(rule: PostLiveFollowupRule, now: 
       if (handed >= recipientLimit) break;
       if (!normalizeBlacklistIdentifier("email", assignment.email)) continue;
       handed += 1;
-      const result = await ensurePostLiveFollowupDelivery({
+      const result = await ensurePostLiveFollowupDeliveryIsolated({
         vendorId: rule.vendorId,
         vendorName: live.vendor.name,
         liveId: live.id,
@@ -928,7 +958,7 @@ export async function processDuePostLiveFollowups(
     for (const submission of submissions) {
       const sessionStartAt = fixedSessionsDueBefore ? submission.liveSession?.startAt ?? null : null;
       if (fixedSessionsDueBefore && !sessionStartAt) continue;
-      const result = await ensurePostLiveFollowupDelivery({
+      const result = await ensurePostLiveFollowupDeliveryIsolated({
         vendorId: rule.vendorId,
         vendorName: live.vendor.name,
         liveId: live.id,

@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { Prisma } from "@prisma/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { getDb } from "@/lib/db";
 import {
@@ -817,5 +818,77 @@ describe("evergreen post_live_followup with a shared start", () => {
     await setAnchor(vendor.id, live.id, before(HOUR));
     await expect(processDuePostLiveFollowups({ now, vendorId: vendor.id })).resolves.toEqual([{ status: "already_sent" }]);
     await expect(followupDeliveries(vendor.id, live.id)).resolves.toEqual([expect.objectContaining({ id: sent!.id, status: "sent" })]);
+  });
+});
+
+describe("post_live_followup isolates a transient transaction conflict per recipient (Q-04)", () => {
+  function conflict(kind: "P2034" | "40001" | "40P01") {
+    return kind === "P2034"
+      ? new Prisma.PrismaClientKnownRequestError("write conflict", { code: "P2034", clientVersion: "test" })
+      : new Prisma.PrismaClientKnownRequestError("raw query failed", { code: "P2010", clientVersion: "test", meta: { code: kind } });
+  }
+
+  async function twoRecipients() {
+    const fixture = await createFixture({ isEvergreen: false });
+    const second = await getDb().formSubmission.create({
+      data: {
+        formId: fixture.submission.formId,
+        liveId: fixture.live.id,
+        name: "Second Lead",
+        email: `second-${fixture.vendor.id}@example.test`,
+        verificationStatus: "VERIFIED",
+        createdAt: new Date(fixture.submission.createdAt.getTime() + 1_000),
+      },
+    });
+    return { ...fixture, second };
+  }
+
+  /** Makes the given 1-based $transaction calls abort with `error`; every other call is real. */
+  function failTransactionCalls(calls: number[], error: Error) {
+    const db = getDb();
+    const original = db.$transaction.bind(db) as (...args: unknown[]) => Promise<unknown>;
+    let call = 0;
+    return vi.spyOn(db, "$transaction").mockImplementation(((...args: unknown[]) => {
+      call += 1;
+      if (calls.includes(call)) return Promise.reject(error);
+      return original(...args);
+    }) as never);
+  }
+
+  it.each(["P2034", "40001", "40P01"] as const)("retries a %s conflict and queues one delivery per recipient", async (kind) => {
+    const { vendor, live, submission, second } = await twoRecipients();
+    const spy = failTransactionCalls([1], conflict(kind));
+    try {
+      await expect(processDuePostLiveFollowups({ now, vendorId: vendor.id }))
+        .resolves.toEqual([{ status: "queued" }, { status: "queued" }]);
+    } finally {
+      spy.mockRestore();
+    }
+    const deliveries = await followupDeliveries(vendor.id, live.id);
+    expect(deliveries.map((delivery) => delivery.sourceFormSubmissionId).sort()).toEqual([submission.id, second.id].sort());
+    // A second run finds both already queued: the retry did not duplicate anything.
+    await expect(processDuePostLiveFollowups({ now, vendorId: vendor.id }))
+      .resolves.toEqual([{ status: "duplicate" }, { status: "duplicate" }]);
+    await expect(followupDeliveries(vendor.id, live.id)).resolves.toHaveLength(2);
+  });
+
+  it.each(["P2034", "40001", "40P01"] as const)("records %s as a conflict after the retries, keeps going, and the next run catches up", async (kind) => {
+    const { vendor, live, submission, second } = await twoRecipients();
+    const spy = failTransactionCalls([1, 2, 3], conflict(kind));
+    try {
+      await expect(processDuePostLiveFollowups({ now, vendorId: vendor.id }))
+        .resolves.toEqual([{ status: "conflict" }, { status: "queued" }]);
+    } finally {
+      spy.mockRestore();
+    }
+    // Only the recipient after the conflicting one was queued; nothing was half-written.
+    await expect(followupDeliveries(vendor.id, live.id)).resolves.toEqual([
+      expect.objectContaining({ sourceFormSubmissionId: second.id, status: "queued" }),
+    ]);
+
+    await expect(processDuePostLiveFollowups({ now, vendorId: vendor.id }))
+      .resolves.toEqual([{ status: "queued" }, { status: "duplicate" }]);
+    const deliveries = await followupDeliveries(vendor.id, live.id);
+    expect(deliveries.map((delivery) => delivery.sourceFormSubmissionId).sort()).toEqual([submission.id, second.id].sort());
   });
 });
