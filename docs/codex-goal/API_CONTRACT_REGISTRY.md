@@ -296,3 +296,8 @@
 
 - `GET /api/admin/ops/cloudflare/direct-upload`（F-093）：影片 ready 且已設定 Stream 簽章金鑰時，`video` 多一個 10 分鐘效期的簽章 `playbackUrl`（`sub` 為該列自己的 uid）；未簽章時不回傳網址，原有 UID 不外露的契約不變。
 - `GET /api/live-playback-source`（F-093）：入場、vendor／live 綁定與 runtime 檢查都通過後，若已設定 Stream 簽章金鑰，Cloudflare 類型影片（`cloudflare_stream`／`cloudflare_live`，`url` 類型一律不簽）的 uid 會換成自簽 RS256 token（`sub` 必須是同一列的 uid 欄位）（直播 10 分鐘、回放 30 分鐘、上限 24 小時；回放不超過 `replayAvailableUntil` 或指定場次回放期限），回應多一個 `expiresInSeconds`；播放器在到期前重新呼叫本端點續期（同樣要通過入場）。未設定金鑰或非 Stream 網址時回應不變。token 不寫入 DB 或 log。
+
+2026-11-17 Q-11 `form_no_show` 補記：
+
+- `POST /api/live-admission`：放行入場後，若請求帶著已驗章、未過期的報名 cookie（`FORM_SUBMISSION_CHAT_SESSION_COOKIE`），且那筆報名屬於這場直播、`VERIFIED`、表單屬於同一商家，伺服器寫入或更新 `LiveRegistrationAttendance`（最多每 5 分鐘把 `lastAdmittedAt` 往後移一次）。submission id 只來自 cookie，`vendorId`／`liveId` 是剛放行的入場，不接受 body 的報名欄位。寫入失敗只回報監控，回應狀態、body 與 cookie 不變；沒有報名 cookie 時不查詢。
+- `GET`／`POST /api/jobs/email-deliveries`：每輪在課後信之後、寄送之前執行「報名後未出席直播」自動化（`runFormNoShowAutomation`：只掃有 `automation_form_no_show` 封測授權的商家；每輪最多 50 個事件、商家間輪流；截止 `min(30 秒, 35 秒 − 已用時間)`，不到 5 秒就跳過）。回應新增 `formNoShow`：`{ candidates, examined, completed, failed, errors }`（非負計數），跳過或整段失敗時為 `null`；整段失敗只送監控、不影響其他步驟與 200。未新增 route 或排程。

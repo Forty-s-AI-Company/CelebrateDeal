@@ -44,10 +44,10 @@ export default async function CourseLessonsPage({ params, searchParams }: {
     {lesson ? <h3 className="text-lg font-bold">{`單元 ${lesson.position + 1}`}</h3> : null}
     <CsrfField /><input type="hidden" name="productId" value={id} /><input type="hidden" name="revision" value={product.revision} />
     {lesson ? <input type="hidden" name="lessonId" value={lesson.id} /> : null}
-    <label className="block">章節<input className="mt-1 block w-full rounded border p-2" name="chapterTitle" required maxLength={120} defaultValue={lesson?.chapterTitle ?? ""} /></label>
-    <label className="block">單元名稱<input className="mt-1 block w-full rounded border p-2" name="title" required maxLength={180} defaultValue={lesson?.title ?? ""} /></label>
-    <label className="block">影片網址<input className="mt-1 block w-full rounded border p-2" name="videoUrl" type="url" maxLength={2048} placeholder="https://" defaultValue={lesson?.videoUrl ?? ""} /></label>
-    <label className="block">影片秒數<input className="mt-1 block w-full rounded border p-2" name="durationSeconds" type="number" required min={0} max={86400} step={1} defaultValue={lesson?.durationSeconds ?? 0} /></label>
+    <Field label="章節" name="chapterTitle" required maxLength={120} defaultValue={lesson?.chapterTitle ?? ""} />
+    <Field label="單元名稱" name="title" required maxLength={180} defaultValue={lesson?.title ?? ""} />
+    <Field label="影片網址" name="videoUrl" type="url" maxLength={2048} placeholder="https://" defaultValue={lesson?.videoUrl ?? ""} />
+    <Field label="影片秒數" name="durationSeconds" type="number" required min={0} max={86400} step={1} defaultValue={lesson?.durationSeconds ?? 0} />
     <label className="flex gap-2"><input name="published" type="checkbox" defaultChecked={Boolean(lesson?.publishedAt)} />發布，讓有權益的學員可以學習</label>
     <FormSubmitButton pendingChildren="儲存中…" pendingMessage="正在儲存，請勿重複送出。" className="min-h-11 rounded bg-blue-700 px-4 py-2 font-semibold text-white">{lesson ? "儲存單元" : "新增單元"}</FormSubmitButton>
   </form>;

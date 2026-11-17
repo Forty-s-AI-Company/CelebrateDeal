@@ -11,6 +11,8 @@ const db = {
   live: { findFirst: vi.fn(), updateMany: vi.fn() },
   $transaction: vi.fn(async (callback: (transaction: typeof tx) => unknown) => callback(tx)),
   liveViewerSession: { deleteMany: vi.fn() },
+  // Q-11: the registration attendance upsert (src/lib/live-registration-attendance.ts).
+  $queryRaw: vi.fn(),
 };
 const runtimeReadyContent = {
   streamMode: "live",
@@ -35,6 +37,7 @@ vi.mock("@/lib/rate-limit", () => ({ checkRateLimit: vi.fn(async () => null) }))
 
 import { DELETE, POST } from "@/app/api/live-admission/route";
 import { LIVE_VIEWER_PASS_COOKIE, verifyLiveViewerPass } from "@/lib/live-viewer-pass";
+import { createFormSubmissionChatSessionToken, FORM_SUBMISSION_CHAT_SESSION_COOKIE } from "@/lib/form-submission-chat-session";
 
 function setCookieValue(response: Response, name: string) {
   const header = response.headers.getSetCookie().find((cookie) => cookie.startsWith(`${name}=`));
@@ -78,6 +81,7 @@ beforeEach(() => {
   tx.liveViewerSession.create.mockResolvedValue({ id: "session-1" });
   tx.liveViewerSession.update.mockResolvedValue({ id: "session-1" });
   db.liveViewerSession.deleteMany.mockResolvedValue({ count: 1 });
+  db.$queryRaw.mockResolvedValue([{ id: "attendance-1" }]);
 });
 
 afterEach(() => vi.unstubAllEnvs());
@@ -227,6 +231,36 @@ describe("POST /api/live-admission", () => {
     expect(response.status).toBe(503);
     await expect(response.json()).resolves.toEqual({ error: "Playback temporarily unavailable" });
     expect(db.$transaction).toHaveBeenCalledTimes(3);
+  });
+
+  describe("registration attendance (Q-11 form_no_show)", () => {
+    const registrationCookie = () => `${FORM_SUBMISSION_CHAT_SESSION_COOKIE}=${createFormSubmissionChatSessionToken({ submissionId: "submission-1" })}`;
+
+    it("records the signed registration of an admitted viewer, bound to the admitted Live and vendor", async () => {
+      const response = await POST(request("POST", undefined, registrationCookie()));
+      expect(response.status).toBe(200);
+      expect(db.$queryRaw).toHaveBeenCalledOnce();
+      const [sql, ...values] = db.$queryRaw.mock.calls[0] as unknown as [TemplateStringsArray, ...unknown[]];
+      expect(sql.join("?")).toContain('INSERT INTO "LiveRegistrationAttendance"');
+      expect(sql.join("?")).toContain(`submission."verificationStatus" = 'VERIFIED'`);
+      expect(values).toEqual(expect.arrayContaining(["vendor-1", "live-1", "submission-1"]));
+    });
+
+    it("records nothing without a validly signed registration cookie or when admission is refused", async () => {
+      await POST(request());
+      await POST(request("POST", undefined, `${FORM_SUBMISSION_CHAT_SESSION_COOKIE}=v1.submission-1.9999999999.forged`));
+      tx.liveViewerSession.count.mockResolvedValue(2);
+      expect((await POST(request("POST", undefined, registrationCookie()))).status).toBe(429);
+      expect(db.$queryRaw).not.toHaveBeenCalled();
+    });
+
+    it("answers the admission unchanged when recording fails", async () => {
+      db.$queryRaw.mockRejectedValueOnce(new Error("attendance-private-detail"));
+      const response = await POST(request("POST", undefined, registrationCookie()));
+      expect(response.status).toBe(200);
+      await expect(response.json()).resolves.toEqual({ ok: true });
+      expect(setCookieValue(response, LIVE_VIEWER_PASS_COOKIE)).toBeTruthy();
+    });
   });
 });
 

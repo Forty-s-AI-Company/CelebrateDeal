@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { Prisma, type PrismaClient } from "@prisma/client";
 import { z } from "zod";
 import { getCanonicalAppUrl } from "@/lib/app-url";
-import { isFeatureEnabled } from "@/lib/vendor-feature-toggles";
+import { isFeatureEnabled, type FeatureGateVendor } from "@/lib/vendor-feature-toggles";
 import { hashInteractionBearer } from "@/lib/live-interaction";
 import {
   DERIVED_KEY_ROTATIONS,
@@ -31,6 +31,8 @@ import {
   stableLineIdempotencyKey,
 } from "@/lib/line-notification";
 import { voucherActionSendsLine } from "@/lib/automation-line-push-policy";
+import { fixedSessionReplayAvailableUntil } from "@/lib/live-fixed-sessions";
+import { isExistingLiveVideoReady, type LiveVideoReadiness } from "@/lib/live-video-readiness";
 
 /**
  * Every trigger the engine understands. Stored rules may use any of them and
@@ -52,16 +54,18 @@ export type AutomationTrigger = typeof AUTOMATION_TRIGGERS[number];
  * The single list of triggers a merchant may put on a new rule, or switch a
  * rule on with (F-4 gap 2). The UI and every Server Action read it.
  *
- * Only these four have a production caller today: the form submission route,
- * the two consultation actions, and the first paid transition of a canonical
- * order in the payment webhook (F-4 PR 3, src/lib/payment-paid-automation.ts).
- * `form_no_show`, `viewer_watch_progress` and `webinar_attended_duration_gte`
- * have none, so a rule using them would never run. Existing rules with a
- * hidden trigger stay listed and can be switched off or deleted, but not
- * created, switched on or edited into one.
+ * Only these five have a production caller today: the form submission route,
+ * the two consultation actions, the first paid transition of a canonical
+ * order in the payment webhook (F-4 PR 3, src/lib/payment-paid-automation.ts)
+ * and the e-mail job's no-show pass (Q-11, src/lib/form-no-show-automation.ts).
+ * `viewer_watch_progress` and `webinar_attended_duration_gte` have none, so a
+ * rule using them would never run. Existing rules with a hidden trigger stay
+ * listed and can be switched off or deleted, but not created, switched on or
+ * edited into one.
  */
 export const AVAILABLE_AUTOMATION_TRIGGERS = [
   "form_registered",
+  "form_no_show",
   "consultation_booked",
   "consultation_no_show",
   "payment_paid",
@@ -73,18 +77,121 @@ export function isAvailableAutomationTrigger(value: unknown): value is Available
 }
 
 /**
+ * Closed beta of `form_no_show` (Q-11, review M-1): attendance is only known
+ * for the browser that verified the registration, so a registrant who watched
+ * on another device counts as a no-show. The platform opens it per vendor in
+ * /admin/vendor-features.
+ */
+export const AUTOMATION_FORM_NO_SHOW_FEATURE = "automation_form_no_show" as const;
+
+/**
+ * `isAvailableAutomationTrigger` for one vendor: `form_no_show` also needs the
+ * vendor's closed-beta grant. Every merchant-facing path (the page, creating,
+ * switching on, recipes, dry runs, delayed-step changes) and every runner (the
+ * no-show job, the delayed-step worker) asks this.
+ */
+export function isAutomationTriggerAvailableForVendor(trigger: unknown, vendor: FeatureGateVendor | null | undefined): trigger is AvailableAutomationTrigger {
+  if (!isAvailableAutomationTrigger(trigger)) return false;
+  return trigger !== "form_no_show" || isFeatureEnabled(vendor, AUTOMATION_FORM_NO_SHOW_FEATURE);
+}
+
+/** The triggers a vendor may choose (AVAILABLE_AUTOMATION_TRIGGERS less the ones its grants do not open). */
+export function availableAutomationTriggersForVendor(vendor: FeatureGateVendor | null | undefined) {
+  return AVAILABLE_AUTOMATION_TRIGGERS.filter((trigger) => isAutomationTriggerAvailableForVendor(trigger, vendor));
+}
+
+/**
+ * Shown on the recipe and on every `form_no_show` rule (review M-1 (a)):
+ * attendance is recognised only in the browser that verified the registration.
+ */
+export const FORM_NO_SHOW_DETECTION_NOTE = "只能辨識在完成報名驗證的同一個瀏覽器觀看的人；用其他裝置或其他瀏覽器觀看（例如在電腦報名、用手機或 App 內建瀏覽器打開驗證信）的人，會被算成未出席。";
+
+/**
  * Triggers whose rules may have delayed steps (F-4 PR 2): their subject is a
  * registration or a consultation booking, which a DelayedStepRun can point at
- * and the worker can read again later. `payment_paid` runs its immediate
- * actions only: a run has no order reference yet (DelayedStepRun's CHECK), so
- * its delayed steps wait for a later PR. Step changes on any other rule are
- * refused (`steps_unsupported`), no run is started and the worker stops one.
+ * and the worker can read again later. `form_no_show` (Q-11) has the same
+ * subject as `form_registered`: the registrant's VERIFIED FormSubmission.
+ * `payment_paid` runs its immediate actions only: a run has no order
+ * reference yet (DelayedStepRun's CHECK), so its delayed steps wait for a
+ * later PR. Step changes on any other rule are refused (`steps_unsupported`),
+ * no run is started and the worker stops one.
  */
 export const DELAYED_STEP_AUTOMATION_TRIGGERS = [
   "form_registered",
+  "form_no_show",
   "consultation_booked",
   "consultation_no_show",
 ] as const satisfies readonly AvailableAutomationTrigger[];
+
+/**
+ * The public viewer page of a Live, for `{{webinar_url}}` (its replay once the
+ * session ended). Undefined when the app URL is not configured: the e-mail
+ * then leaves that line out (renderAutomationEmailBody).
+ */
+export function automationWebinarUrl(liveSlug: string | null | undefined) {
+  if (!liveSlug) return undefined;
+  try {
+    return new URL(`/live/${encodeURIComponent(liveSlug)}`, getCanonicalAppUrl()).toString();
+  } catch {
+    return undefined;
+  }
+}
+
+export type AutomationReplayLive = {
+  vendorId: string;
+  slug: string;
+  replayEnabled: boolean;
+  replayAvailableUntil: Date | null;
+  sessionReplayWindowHours?: number | null;
+  video: (LiveVideoReadiness & { vendorId: string; durationSec: number | null }) | null;
+};
+
+/** Prisma select of the Live's video for automationReplayOpen. */
+export const AUTOMATION_REPLAY_VIDEO_SELECT = {
+  vendorId: true,
+  durationSec: true,
+  sourceType: true,
+  status: true,
+  cloudflareReadyToStream: true,
+  cloudflareLiveInputUid: true,
+  liveInputStatus: true,
+} as const;
+
+/**
+ * Whether the Live's replay is open now, by the viewer page's own rules:
+ * replay on and before `replayAvailableUntil`; for a fixed session
+ * (指定場次) also inside its per-session window; and the Live's own video
+ * (same vendor) ready to play by the playback source's rule
+ * (isExistingLiveVideoReady, re-review NIT-1).
+ */
+export function automationReplayOpen(live: AutomationReplayLive, fixedSession: { startAt: Date } | null, now: Date) {
+  if (live.replayEnabled !== true) return false;
+  if (!live.video || live.video.vendorId !== live.vendorId || !isExistingLiveVideoReady(live.video)) return false;
+  if (live.replayAvailableUntil && now.getTime() >= live.replayAvailableUntil.getTime()) return false;
+  if (fixedSession) {
+    const until = fixedSessionReplayAvailableUntil(fixedSession, {
+      replayEnabled: true,
+      replayAvailableUntil: live.replayAvailableUntil,
+      sessionReplayWindowHours: live.sessionReplayWindowHours ?? null,
+    }, live.video?.durationSec ?? 0);
+    if (until && now.getTime() >= until.getTime()) return false;
+  }
+  return true;
+}
+
+/**
+ * `{{webinar_url}}` of a no-show (Q-11, review m-5): the viewer page only
+ * while its replay is open, so the replay e-mail is skipped
+ * (`replay_unavailable`) instead of linking a page that shows nothing.
+ */
+export function formNoShowWebinarUrl(live: AutomationReplayLive, fixedSession: { startAt: Date } | null, now: Date) {
+  return automationReplayOpen(live, fixedSession, now) ? automationWebinarUrl(live.slug) : undefined;
+}
+
+/** Triggers whose subject is a registration (FormSubmission), not a consultation booking. */
+export function automationTriggerSubjectIsRegistration(trigger: string) {
+  return trigger === "form_registered" || trigger === "form_no_show";
+}
 
 export function automationTriggerSupportsDelayedSteps(value: unknown): value is typeof DELAYED_STEP_AUTOMATION_TRIGGERS[number] {
   return typeof value === "string" && (DELAYED_STEP_AUTOMATION_TRIGGERS as readonly string[]).includes(value);
@@ -108,7 +215,7 @@ export const AUTOMATION_TRIGGER_LABELS: Record<AutomationTrigger, string> = {
   form_registered: "表單報名成功",
   consultation_booked: "諮詢預約成功",
   consultation_no_show: "諮詢未出席",
-  form_no_show: "報名但未出席直播",
+  form_no_show: "報名後未出席直播",
 };
 
 // Re-exported so existing callers keep one import path; the implementation
@@ -218,7 +325,7 @@ export const AUTOMATION_RECIPES = [
   {
     id: "no_show_reactivation",
     name: "開播缺席喚醒再行銷",
-    description: "報名卻未出席時，自動寄送回放與 1 對 1 諮詢邀請。",
+    description: "報名後沒來看直播的人，在場次結束後自動寄送直播回放連結（直播沒開回放時不寄）。",
     trigger: "form_no_show",
     condition: { type: "always" },
     actions: [{ type: "send_email_notification", template: "webinar_replay" }],
@@ -265,6 +372,8 @@ const EMAIL_SKIP_NOTES: Record<AutomationEmailSkipReason, string> = {
   recipient_suppressed: "Email 未寄出：收件人已退訂或停止接收",
   recipient_blacklisted: "Email 未寄出：收件人在本商家黑名單中",
   recipient_unverified: "Email 未寄出：收件人的 Email 尚未在本商家完成驗證",
+  replay_unavailable: "Email 未寄出：這場直播目前沒有開放回放",
+  no_content: "Email 未寄出：這封信沒有可寄送的內容（缺少需要的連結）",
 };
 
 /** Reason of a failed automation e-mail action whose unsubscribe link could not be built. */
@@ -285,7 +394,7 @@ export function automationExecutionNotes(actionResults: unknown) {
     if (type !== "send_email_notification") return [];
     if (status === "failed" && reason === AUTOMATION_UNSUBSCRIBE_URL_UNAVAILABLE) return ["Email 未寄出：系統暫時無法產生退訂連結"];
     if (status !== "skipped") return [];
-    return reason === "recipient_suppressed" || reason === "recipient_blacklisted" || reason === "recipient_unverified" ? [EMAIL_SKIP_NOTES[reason]] : [];
+    return typeof reason === "string" && Object.prototype.hasOwnProperty.call(EMAIL_SKIP_NOTES, reason) ? [EMAIL_SKIP_NOTES[reason as AutomationEmailSkipReason]] : [];
   });
   return [...new Set(notes)];
 }
@@ -372,9 +481,14 @@ function executionIdempotencyKey(rule: ParsedRule, event: AutomationEvent) {
   // Provider retries do not always reuse the same webhook event id. Bind both
   // supported triggers to their durable business subject so one paid order (or
   // one viewer crossing a threshold) cannot execute the same rule twice.
+  // A no-show (Q-11) is one registration missing one session: its event id
+  // (`form-no-show:{submissionId}:{sessionKey}`) is built only by the job from
+  // server records, so each session of a registration runs a rule once.
   const eventIdentity = event.trigger === "viewer_watch_progress" || event.trigger === "webinar_attended_duration_gte"
     ? `viewer:${event.liveId}:${event.subjectKeyHash}:version:${rule.version}`
-    : `order:${event.subjectId}:version:${rule.version}`;
+    : event.trigger === "form_no_show"
+      ? `no-show:${event.eventId}:version:${rule.version}`
+      : `order:${event.subjectId}:version:${rule.version}`;
   return createHash("sha256").update(`automation:v1:${event.vendorId}:${rule.id}:${event.trigger}:${eventIdentity}`).digest("hex");
 }
 
@@ -444,6 +558,22 @@ function replaceArtifacts(value: string | null | undefined, artifacts: { voucher
     .replaceAll("{{webinar_url}}", artifacts.webinarUrl ?? "");
 }
 
+const ARTIFACT_PLACEHOLDERS = [
+  ["{{voucher_url}}", "voucherUrl"],
+  ["{{consultation_url}}", "consultationUrl"],
+  ["{{webinar_url}}", "webinarUrl"],
+] as const;
+
+/**
+ * An automation e-mail body with its links filled in. A line whose link the
+ * event does not have (for example the consultation link of a no-show, which
+ * has no booking) is left out instead of ending in an empty label.
+ */
+export function renderAutomationEmailBody(body: string, artifacts: { voucherUrl?: string; consultationUrl?: string; webinarUrl?: string }) {
+  const lines = body.split("\n").filter((line) => ARTIFACT_PLACEHOLDERS.every(([placeholder, key]) => !line.includes(placeholder) || Boolean(artifacts[key])));
+  return replaceArtifacts(lines.join("\n"), artifacts) ?? "";
+}
+
 const EMAIL_COPY = {
   consultation_confirmation: { subject: "1 對 1 諮詢預約確認", body: "您的諮詢已預約成功。請將時間加入行事曆，並由下方連結進入：\n{{consultation_url}}" },
   class_reminder: { subject: "課程即將開始", body: "課程即將開始，請由下方連結進入：\n{{webinar_url}}" },
@@ -451,7 +581,21 @@ const EMAIL_COPY = {
   webinar_replay: { subject: "錯過直播也別擔心：精華回放與諮詢邀請", body: "精華回放：{{webinar_url}}\n預約 1 對 1 諮詢：{{consultation_url}}" },
 } as const;
 
-export type AutomationEmailSkipReason = "recipient_suppressed" | "recipient_blacklisted" | "recipient_unverified";
+export type AutomationEmailSkipReason = "recipient_suppressed" | "recipient_blacklisted" | "recipient_unverified" | "replay_unavailable" | "no_content";
+
+/**
+ * Q-11 (review m-5): a no-show gets its own wording, without the consultation
+ * invitation of the generic replay template, and every no-show e-mail tells a
+ * registrant who did watch (on another device) to ignore it (M-1 (a)).
+ */
+const FORM_NO_SHOW_EMAIL_COPY: Partial<Record<keyof typeof EMAIL_COPY, { subject: string; body: string }>> = {
+  webinar_replay: { subject: "錯過直播了嗎？回放在這裡", body: "這場直播已經結束，我們還沒看到你進場。\n直播回放：{{webinar_url}}" },
+};
+const FORM_NO_SHOW_IGNORE_LINE = "如果你已經看過這場直播，請忽略這封信。";
+
+function automationEmailCopy(trigger: AutomationTrigger, template: keyof typeof EMAIL_COPY) {
+  return (trigger === "form_no_show" ? FORM_NO_SHOW_EMAIL_COPY[template] : undefined) ?? EMAIL_COPY[template];
+}
 
 /**
  * Creation-time gate for an automation e-mail, bound to this vendor only:
@@ -567,7 +711,19 @@ async function executeAction(
       return { type: action.type, status: "skipped", reason: "recipient_unverified", template: action.template } as const;
     }
     const id = deterministicActionId(executionLogId, actionIndex);
-    const copy = EMAIL_COPY[action.template];
+    const copy = automationEmailCopy(event.trigger, action.template);
+    // Q-11 (m-5): a no-show replay e-mail without an open replay (replay off
+    // or expired: the event then carries no webinar link) is not sent.
+    if (event.trigger === "form_no_show" && copy.body.includes("{{webinar_url}}") && !event.webinarUrl) {
+      return { type: action.type, status: "skipped", reason: "replay_unavailable", template: action.template } as const;
+    }
+    // m-6: every line needed a link this event does not have. Never send an
+    // empty e-mail (any trigger); recorded as skipped, nothing retries it.
+    const rendered = renderAutomationEmailBody(copy.body, artifacts);
+    if (!rendered.trim()) {
+      return { type: action.type, status: "skipped", reason: "no_content", template: action.template } as const;
+    }
+    const body = event.trigger === "form_no_show" ? `${rendered}\n\n${FORM_NO_SHOW_IGNORE_LINE}` : rendered;
     // The recipient lists come first, so an unsubscribed or blacklisted
     // person is recorded as skipped even when the link below cannot be built.
     const blocked = await automationEmailRecipientBlock(db, event.vendorId, event.recipientEmail, createEmailRecipientHash(event.recipientEmail, event.vendorId));
@@ -592,7 +748,7 @@ async function executeAction(
     const protectedPayload = protectEmailDeliveryPayload({
       recipientEmail: event.recipientEmail,
       subject: copy.subject,
-      body: ensureEmailUnsubscribeFooter(replaceArtifacts(copy.body, artifacts) ?? copy.body, unsubscribeUrl),
+      body: ensureEmailUnsubscribeFooter(body, unsubscribeUrl),
     }, { vendorId: event.vendorId, deliveryId: id });
     try {
       await db.emailDelivery.create({ data: {
@@ -954,7 +1110,8 @@ async function runAutomationEvent(db: AutomationDb, event: AutomationEvent, queu
  * rule's first active step is. Only for a trigger merchants may use today and
  * whose subject the worker can read again later (DELAYED_STEP_AUTOMATION_
  * TRIGGERS): the registration of
- * `form_registered`, the booking of the two consultation triggers. The run
+ * `form_registered` and `form_no_show`, the booking of the two consultation
+ * triggers. The run
  * stores references only (rule, execution log, subject, customer key), never
  * the event's e-mail address.
  *
@@ -974,7 +1131,7 @@ async function startDelayedSteps(
     // Closed beta (M3): only a vendor holding the grant, and not suspended.
     const vendor = await db.vendor.findUnique({ where: { id: event.vendorId }, select: { betaFeatureGrants: true, suspendedAt: true } });
     if (!vendor || vendor.suspendedAt || !isFeatureEnabled(vendor, AUTOMATION_DELAYED_STEPS_FEATURE)) return;
-    const subject = event.trigger === "form_registered"
+    const subject = automationTriggerSubjectIsRegistration(event.trigger)
       // FormSubmission has no vendorId: the registration is bound through its form.
       ? await db.formSubmission.findFirst({ where: { id: event.subjectId, form: { vendorId: event.vendorId } }, select: { id: true } })
         .then((row) => row ? { formSubmissionId: row.id } : null)
@@ -1225,50 +1382,3 @@ export function isAutomationStepExecution(log: { eventId: string }) {
 }
 
 export { automationStepEventId };
-
-/**
- * Runs once when a live transitions to ended. Attendance is proven by a
- * completed watch automation log; registrations without that proof receive
- * the tenant-scoped no-show event. Pagination prevents an unbounded query.
- */
-export async function dispatchFormNoShowAutomationsForLive(
-  db: Pick<PrismaClient, "live" | "formSubmission" | "commerceOrder"> & AutomationDb,
-  input: { vendorId: string; liveId: string },
-) {
-  const live = await db.live.findFirst({ where: { id: input.liveId, vendorId: input.vendorId, status: "ended" }, select: { id: true, slug: true } });
-  if (!live) return { dispatched: 0 };
-  let cursor: string | undefined;
-  let dispatched = 0;
-  do {
-    const submissions = await db.formSubmission.findMany({
-      where: { liveId: live.id, verificationStatus: "VERIFIED", form: { vendorId: input.vendorId } },
-      orderBy: { id: "asc" },
-      take: 200,
-      ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
-      select: { id: true, email: true },
-    });
-    for (const submission of submissions) {
-      const subjectKeyHash = automationCustomerKeyHash(input.vendorId, submission.email);
-      const attended = await db.automationExecutionLog.findFirst({
-        where: { vendorId: input.vendorId, liveId: live.id, trigger: { in: ["viewer_watch_progress", "webinar_attended_duration_gte"] }, subjectKeyHash, conditionMatched: true, status: "completed" },
-        select: { id: true },
-      });
-      if (!attended) {
-        await dispatchAutomationEvent(db, {
-          vendorId: input.vendorId,
-          eventId: `form-no-show:${live.id}:${submission.id}`,
-          trigger: "form_no_show",
-          subjectType: "buyer_registration",
-          subjectId: submission.id,
-          subjectKeyHash,
-          liveId: live.id,
-          recipientEmail: submission.email,
-          webinarUrl: new URL(`/live/${encodeURIComponent(live.slug)}`, getCanonicalAppUrl()).toString(),
-        });
-        dispatched += 1;
-      }
-    }
-    cursor = submissions.length === 200 ? submissions.at(-1)?.id : undefined;
-  } while (cursor);
-  return { dispatched };
-}

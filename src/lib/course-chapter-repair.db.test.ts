@@ -31,10 +31,21 @@ async function save(f: Awaited<ReturnType<typeof course>>, chapterTitle: string,
   return saveCourseLesson(db, f.vendor.id, { productId: f.product.id, revision, chapterTitle, title, videoUrl: "", durationSeconds: 0, published: false });
 }
 
-/** A lesson as pre-F-5 code writes it: no chapterId. `id` lets a test fix the scan order. */
-async function legacyInsert(f: Awaited<ReturnType<typeof course>>, chapterTitle: string, title: string, id?: string) {
+/** The chapter a stale link points to when a test does not name one: the title
+ * old code moved the lesson away from. */
+const PREVIOUS_CHAPTER = "舊章節";
+
+/** A lesson as code older than F-5 leaves it: its chapterTitle names one chapter
+ * while chapterId still points to another (`linkTo`, by default the course's
+ * PREVIOUS_CHAPTER, created once per course). Since Q-14 chapterId is NOT NULL,
+ * so a stale link is the only kind left to repair. `id` lets a test fix the scan
+ * order. */
+async function legacyInsert(f: Awaited<ReturnType<typeof course>>, chapterTitle: string, title: string, id?: string, linkTo?: string) {
+  const scope = { vendorId: f.vendor.id, productId: f.product.id };
   const last = await db.courseLesson.aggregate({ where: { productId: f.product.id }, _max: { position: true } });
-  return (await db.courseLesson.create({ data: { ...(id ? { id } : {}), vendorId: f.vendor.id, productId: f.product.id, chapterTitle, title, position: (last._max.position ?? -1) + 1 } })).id;
+  const chapterId = linkTo ?? (await db.courseChapter.findFirst({ where: { ...scope, title: PREVIOUS_CHAPTER } }))?.id
+    ?? (await db.courseChapter.create({ data: { ...scope, title: PREVIOUS_CHAPTER, position: ((await db.courseChapter.aggregate({ where: scope, _max: { position: true } }))._max.position ?? -1) + 1 } })).id;
+  return (await db.courseLesson.create({ data: { ...(id ? { id } : {}), ...scope, chapterId, chapterTitle, title, position: (last._max.position ?? -1) + 1 } })).id;
 }
 
 const snapshot = (vendorId: string) => db.courseLesson.findMany({ where: { vendorId }, orderBy: { position: "asc" }, select: { id: true, chapterTitle: true, position: true, chapter: { select: { title: true } } } });
@@ -48,12 +59,13 @@ describe("repairCourseChapterLinks (F-5)", () => {
     const f = await course();
     await save(f, "第一章", "a");
     const stale = await save(f, "第二章", "b");
-    const unlinked = await legacyInsert(f, ` 第一章${IDEOGRAPHIC_SPACE}`, "c");
-    const orphanTitle = await legacyInsert(f, "附錄", "d");
-    const blank = await legacyInsert(f, IDEOGRAPHIC_SPACE, "e");
+    const [first, second] = await db.courseChapter.findMany({ where: { vendorId: f.vendor.id }, orderBy: { position: "asc" } });
+    const unlinked = await legacyInsert(f, ` 第一章${IDEOGRAPHIC_SPACE}`, "c", undefined, second!.id);
+    const orphanTitle = await legacyInsert(f, "附錄", "d", undefined, first!.id);
+    const blank = await legacyInsert(f, IDEOGRAPHIC_SPACE, "e", undefined, first!.id);
     await db.courseLesson.update({ where: { id: stale }, data: { chapterTitle: "番外" } });
     const before = await snapshot(f.vendor.id);
-    expect(await courseChapterLinkCounts(db, { vendorId: f.vendor.id })).toEqual({ unlinked: 3, staleLinks: 1 });
+    expect(await courseChapterLinkCounts(db, { vendorId: f.vendor.id })).toEqual({ unlinked: 0, staleLinks: 4 });
 
     const result = await repairCourseChapterLinks(db, { vendorId: f.vendor.id });
     expect(result).toEqual({ coursesRepaired: 1, lessonsRelinked: 4, chaptersCreated: 3, failedCourses: [] });
@@ -61,12 +73,12 @@ describe("repairCourseChapterLinks (F-5)", () => {
     // New chapters follow the existing ones, in first-lesson order.
     expect(chapters).toEqual([{ title: "第一章", position: 0 }, { title: "第二章", position: 1 }, { title: "番外", position: 2 }, { title: "附錄", position: 3 }, { title: "未分類章節", position: 4 }]);
     const after = await snapshot(f.vendor.id);
-    for (const lesson of after) expect(lesson.chapter?.title).toBe(lessonChapterTitle(lesson));
+    for (const lesson of after) expect(lesson.chapter.title).toBe(lessonChapterTitle(lesson));
     // Only the links change: titles, order and what learners see stay as they were.
     expect(after.map(({ id, chapterTitle, position }) => ({ id, chapterTitle, position }))).toEqual(before.map(({ id, chapterTitle, position }) => ({ id, chapterTitle, position })));
-    expect(after.find((lesson) => lesson.id === unlinked)?.chapter?.title).toBe("第一章");
-    expect(after.find((lesson) => lesson.id === orphanTitle)?.chapter?.title).toBe("附錄");
-    expect(after.find((lesson) => lesson.id === blank)?.chapter?.title).toBe("未分類章節");
+    expect(after.find((lesson) => lesson.id === unlinked)?.chapter.title).toBe("第一章");
+    expect(after.find((lesson) => lesson.id === orphanTitle)?.chapter.title).toBe("附錄");
+    expect(after.find((lesson) => lesson.id === blank)?.chapter.title).toBe("未分類章節");
     expect(await courseChapterLinkCounts(db, { vendorId: f.vendor.id })).toEqual({ unlinked: 0, staleLinks: 0 });
 
     // Idempotent.
@@ -78,11 +90,12 @@ describe("repairCourseChapterLinks (F-5)", () => {
     const b = await course();
     await legacyInsert(a, "第一章", "a");
     const other = await legacyInsert(b, "第一章", "b");
+    const otherLink = (await db.courseLesson.findUniqueOrThrow({ where: { id: other } })).chapterId;
     await repairCourseChapterLinks(db, { vendorId: a.vendor.id, productId: a.product.id });
-    expect((await db.courseLesson.findUniqueOrThrow({ where: { id: other } })).chapterId).toBeNull();
-    expect(await courseChapterLinkCounts(db, { vendorId: b.vendor.id })).toEqual({ unlinked: 1, staleLinks: 0 });
+    expect((await db.courseLesson.findUniqueOrThrow({ where: { id: other } })).chapterId).toBe(otherLink);
+    expect(await courseChapterLinkCounts(db, { vendorId: b.vendor.id })).toEqual({ unlinked: 0, staleLinks: 1 });
     await repairCourseChapterLinks(db, { vendorId: b.vendor.id });
-    const chapters = await db.courseChapter.findMany({ where: { vendorId: { in: [a.vendor.id, b.vendor.id] } }, select: { vendorId: true, productId: true, title: true } });
+    const chapters = await db.courseChapter.findMany({ where: { vendorId: { in: [a.vendor.id, b.vendor.id] }, title: { not: PREVIOUS_CHAPTER } }, select: { vendorId: true, productId: true, title: true } });
     expect(chapters).toHaveLength(2);
     for (const lesson of await db.courseLesson.findMany({ where: { vendorId: { in: [a.vendor.id, b.vendor.id] } }, select: { vendorId: true, productId: true, chapter: { select: { vendorId: true, productId: true } } } })) {
       expect(lesson.chapter).toEqual({ vendorId: lesson.vendorId, productId: lesson.productId });
@@ -106,7 +119,7 @@ describe("repairCourseChapterLinks (F-5)", () => {
     });
     expect(result.failedCourses).toEqual([]);
     const linked = await db.courseLesson.findMany({ where: { id: { in: [b1, b2] } }, orderBy: { id: "asc" }, select: { chapter: { select: { title: true } } } });
-    expect(linked.map((lesson) => lesson.chapter?.title)).toEqual(["第一章", "第二章"]);
+    expect(linked.map((lesson) => lesson.chapter.title)).toEqual(["第一章", "第二章"]);
     expect(await courseChapterLinkCounts(db, { vendorId: owner.id })).toEqual({ unlinked: 0, staleLinks: 0 });
   });
 
@@ -121,7 +134,7 @@ describe("repairCourseChapterLinks (F-5)", () => {
     expect(expired.coursesRepaired).toBe(0);
     expect(expired.failedCourses.map(({ productId, reason }) => [productId, reason]).sort()).toEqual([[first.product.id, "P2028"], [second.product.id, "P2028"]].sort());
     // Nothing was half-written; a normal rerun repairs both.
-    expect(await courseChapterLinkCounts(db, { vendorId: owner.id })).toEqual({ unlinked: 31, staleLinks: 0 });
+    expect(await courseChapterLinkCounts(db, { vendorId: owner.id })).toEqual({ unlinked: 0, staleLinks: 31 });
     const rerun = await repairCourseChapterLinks(db, { vendorId: owner.id });
     expect(rerun).toMatchObject({ coursesRepaired: 2, lessonsRelinked: 31, chaptersCreated: 31, failedCourses: [] });
   });

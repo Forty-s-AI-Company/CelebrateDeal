@@ -6,7 +6,7 @@ import type { InteractionRole } from "@prisma/client";
 import { Bot, CheckCircle2, Sparkles } from "lucide-react";
 import { upsertInteractionRoleAction } from "@/app/actions";
 import { CSRF_FIELD_NAME } from "@/lib/csrf-constants";
-import { SubmitButton } from "@/components/ui";
+import { Field, SelectField, SubmitButton, TextArea } from "@/components/ui";
 
 const avatarSeeds = [
   "host-blue",
@@ -94,31 +94,22 @@ export function InteractionRoleForm({ role, csrfToken }: { role?: InteractionRol
             </div>
 
             <div className="grid gap-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-              <label className="grid gap-1.5 text-sm font-semibold text-slate-700">
-                暱稱
-                <input name="name" required defaultValue={role?.name ?? ""} placeholder="例如：官方商品顧問" className="h-11 rounded-md border border-border px-3 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-blue-100" />
-              </label>
+              <Field label="暱稱" name="name" required defaultValue={role?.name ?? ""} placeholder="例如：官方商品顧問" />
 
               <div className="grid gap-4 md:grid-cols-2">
-                <label className="grid gap-1.5 text-sm font-semibold text-slate-700">
-                  角色類型
-                  <select name="roleType" value={roleType} onChange={(event) => handleRoleTypeChange(event.target.value)} className="h-11 rounded-md border border-border px-3 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-blue-100">
-                    <option value="official">官方角色</option>
-                    <option value="ai_host">AI 主持人</option>
-                    <option value="system_assistant">系統助手</option>
-                    <option value="support">客服助手</option>
-                  </select>
-                </label>
+                <SelectField label="角色類型" name="roleType" value={roleType} onChange={(event) => handleRoleTypeChange(event.target.value)}>
+                  <option value="official">官方角色</option>
+                  <option value="ai_host">AI 主持人</option>
+                  <option value="system_assistant">系統助手</option>
+                  <option value="support">客服助手</option>
+                </SelectField>
                 <label className="grid gap-1.5 text-sm font-semibold text-slate-700">
                   顯示標籤（選填）
                   <input name="label" maxLength={80} placeholder="留白就不顯示標籤" value={label} onChange={(event) => setLabel(event.target.value)} className="h-11 rounded-md border border-border px-3 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-blue-100" />
                 </label>
               </div>
 
-              <label className="grid gap-1.5 text-sm font-semibold text-slate-700">
-                語氣設定
-                <textarea name="tone" defaultValue={role?.tone ?? "溫和、清楚、像品牌官方小幫手，提醒優惠但不過度催促。"} rows={3} className="rounded-md border border-border px-3 py-2 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-blue-100" />
-              </label>
+              <TextArea label="語氣設定" name="tone" defaultValue={role?.tone ?? "溫和、清楚、像品牌官方小幫手，提醒優惠但不過度催促。"} rows={3} />
 
               <label className="flex items-center gap-2 text-sm font-medium text-slate-700">
                 <input name="isActive" type="checkbox" defaultChecked={role?.isActive ?? true} className="h-4 w-4 accent-blue-600" />

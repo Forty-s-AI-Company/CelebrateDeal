@@ -11,7 +11,7 @@ import {
   automationTriggerNeedsThreshold,
   dryRunAutomationRule,
   isAutomationTrigger,
-  isAvailableAutomationTrigger,
+  isAutomationTriggerAvailableForVendor,
   isSafeNewAutomationButtonUrl,
   materializeAutomationRecipe,
 } from "@/lib/automation-workflow";
@@ -33,6 +33,7 @@ import { reportCancelledRuleLockWait } from "@/lib/automation-rule-lock";
 import { getDb } from "@/lib/db";
 import { requireFeature } from "@/lib/feature-gates";
 import { isRuleWriteBusy } from "@/lib/serializable-retry";
+import type { FeatureGateVendor } from "@/lib/vendor-feature-toggles";
 
 // Owner and admin manage automations here, the same roles as the funnel
 // automation panel (requireVendorManagerContext) and message templates (F-4
@@ -127,14 +128,15 @@ function parseActions(form: FormData, linePushAllowed: boolean) {
   return withVoucherLineNotification(actions, linePushAllowed);
 }
 
-function parseRule(form: FormData, linePushAllowed: boolean) {
+function parseRule(form: FormData, linePushAllowed: boolean, vendor: FeatureGateVendor) {
   const name = text(form, "name");
   const trigger = text(form, "trigger");
   const conditionValue = number(form, "conditionValue");
   if (!name || name.length > 120 || !isAutomationTrigger(trigger)) throw new Error("invalid");
-  // A known trigger without a production caller (F-4 gap 2) is refused here,
-  // not only hidden in the form.
-  if (!isAvailableAutomationTrigger(trigger)) throw new TriggerUnavailableError();
+  // A known trigger without a production caller (F-4 gap 2), or one this
+  // vendor's closed-beta grants do not open (form_no_show, Q-11 M-1), is
+  // refused here, not only hidden in the form.
+  if (!isAutomationTriggerAvailableForVendor(trigger, vendor)) throw new TriggerUnavailableError();
   const condition = ruleCondition(trigger, conditionValue);
   const actions = parseActions(form, linePushAllowed);
   return { name, trigger, condition, actions };
@@ -148,7 +150,7 @@ export async function createAutomationRecipeAction(formData: FormData) {
   const productId = text(formData, "productId") || undefined;
   const recipe = materializeAutomationRecipe(recipeId, productId);
   if (!recipe) fail(productId ? "invalid_recipe" : "recipe_requires_product");
-  if (!isAvailableAutomationTrigger(recipe.trigger)) fail("trigger_unavailable");
+  if (!isAutomationTriggerAvailableForVendor(recipe.trigger, vendor)) fail("trigger_unavailable");
   // A recipe's voucher announces itself by LINE for the owner, never for an admin.
   const actions = withVoucherLineNotification(recipe.actions, mayConfigureAutomationLinePush(member.role));
   if (!mayWriteAutomationActions(member.role, actions)) fail(LINE_PUSH_OWNER_ONLY);
@@ -177,7 +179,7 @@ export async function dryRunAutomationRuleAction(formData: FormData) {
   if (!existing || !isAutomationTrigger(existing.trigger)) fail("not_found");
   // A rule whose trigger never fires would always "dispatch" in a simulation;
   // say that it does not run instead of a misleading result.
-  if (!isAvailableAutomationTrigger(existing.trigger)) {
+  if (!isAutomationTriggerAvailableForVendor(existing.trigger, vendor)) {
     redirect(`${PATH}?dryRun=trigger_unavailable`);
   }
   const result = dryRunAutomationRule({ condition: existing.condition, actions: existing.actions }, {
@@ -198,7 +200,7 @@ export async function createAutomationRuleAction(formData: FormData) {
   await assertServerActionSecurity(formData);
   const { user, vendor, member } = await requireVendorManagerMember(PATH);
   let parsed: ReturnType<typeof parseRule>;
-  try { parsed = parseRule(formData, mayConfigureAutomationLinePush(member.role)); } catch (error) { fail(error instanceof Error && (error.message === "no_action" || error.message === "invalid_button_url" || error.message === "trigger_unavailable") ? error.message : "invalid_rule"); }
+  try { parsed = parseRule(formData, mayConfigureAutomationLinePush(member.role), vendor); } catch (error) { fail(error instanceof Error && (error.message === "no_action" || error.message === "invalid_button_url" || error.message === "trigger_unavailable") ? error.message : "invalid_rule"); }
   if (!mayWriteAutomationActions(member.role, parsed.actions)) fail(LINE_PUSH_OWNER_ONLY);
   const productId = parsed.actions.find((a) => a.type === "issue_repurchase_voucher")?.productId;
   if (productId && !(await getDb().product.findFirst({ where: { id: String(productId), vendorId: vendor.id, isActive: true }, select: { id: true } }))) fail("invalid_product");
@@ -216,7 +218,7 @@ export async function toggleAutomationRuleAction(formData: FormData) {
   const existing = await getDb().automationRule.findFirst({ where: { id, vendorId: vendor.id }, select: { id: true, isActive: true, trigger: true } });
   if (!existing) fail("not_found");
   // Switching off always works; switching on needs a trigger that can run.
-  if (!existing.isActive && !isAvailableAutomationTrigger(existing.trigger)) fail("trigger_unavailable");
+  if (!existing.isActive && !isAutomationTriggerAvailableForVendor(existing.trigger, vendor)) fail("trigger_unavailable");
   let outcome: ToggleOutcome;
   try {
     outcome = await toggleRule(vendor.id, existing, mayConfigureAutomationLinePush(member.role));
@@ -381,7 +383,7 @@ function parseStep(form: FormData, linePushAllowed: boolean): AutomationStepInpu
   try { delayMinutes = stepDelayMinutes(form); } catch { throw new Error("invalid_delay"); }
   return {
     delayMinutes,
-    // The three triggers that take delayed steps (DELAYED_STEP_AUTOMATION_
+    // The four triggers that take delayed steps (DELAYED_STEP_AUTOMATION_
     // TRIGGERS) carry no amount or watch time, so the existing condition
     // schema only has "always" for them. payment_paid rules take no steps.
     condition: { type: "always" },

@@ -8,14 +8,20 @@ import { lessonChapterTitle, trustedChapterLink } from "./course-learning";
  * F-5 chapter link repair.
  *
  * `CourseLesson.chapterId` is a cache of the chapter `lessonChapterTitle` names
- * (src/lib/course-learning.ts). While pre-F-5 code can still write lessons it can
- * leave the cache empty (new lesson) or stale (chapterTitle changed, chapterId
- * kept). This re-links every such lesson to the chapter its title names, creating
- * the chapter at the end of the course's chapter order when none exists. It never
- * changes `chapterTitle`, positions or anything a learner sees, and is safe to run
- * repeatedly. Run it (scripts/repair-course-chapter-links.ts) and see both
- * checks below return 0 before the migration that makes `chapterId` NOT NULL
- * (docs/codex-goal/PRISMA_INVARIANTS.md).
+ * (src/lib/course-learning.ts). While pre-F-5 code could still write lessons it
+ * could leave the cache empty (new lesson) or stale (chapterTitle changed,
+ * chapterId kept). This re-links every such lesson to the chapter its title names,
+ * creating the chapter at the end of the course's chapter order when none exists.
+ * It never changes `chapterTitle`, positions or anything a learner sees, and is
+ * safe to run repeatedly.
+ *
+ * Q-14: migration 20261117090000_course_lesson_chapter_repair does the same in
+ * SQL (src/lib/course-lesson-chapter-not-null-migration.db.test.ts compares the
+ * two), then 20261117090200 makes `chapterId` NOT NULL, so an empty link can no
+ * longer exist and the unlinked check below always returns 0. A stale link still
+ * can (in theory: only code older than F-5 changes chapterTitle without
+ * chapterId), and this function and scripts/repair-course-chapter-links.ts stay
+ * the tool to repair one (docs/codex-goal/PRISMA_INVARIANTS.md).
  */
 
 /** JavaScript String.prototype.trim as a PostgreSQL regular expression (the same
@@ -103,7 +109,7 @@ async function repairCourse(db: PrismaClient, vendorId: string, productId: strin
       orderBy: [{ position: "asc" }, { id: "asc" }],
       select: { id: true, chapterTitle: true, chapterId: true, chapter: { select: { id: true, title: true } } },
     });
-    const byTitle = new Map<string, Array<{ id: string; chapterTitle: string; chapterId: string | null }>>();
+    const byTitle = new Map<string, Array<{ id: string; chapterTitle: string; chapterId: string }>>();
     for (const lesson of lessons) {
       if (!needsRepair(lesson)) continue;
       const title = lessonChapterTitle(lesson);
