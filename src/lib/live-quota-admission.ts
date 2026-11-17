@@ -136,6 +136,11 @@ function assertCreditsAvailable(
   }
 }
 
+/** The admitted fixed session (指定場次), kept out of admitWithinTransaction's branch count. */
+function fixedSessionIdOf(session: { id: string } | null) {
+  return session ? session.id : null;
+}
+
 async function admitWithinTransaction(tx: Prisma.TransactionClient, input: AdmissionInput) {
   const now = input.now ?? new Date();
   const live = await tx.live.findFirst({
@@ -249,7 +254,7 @@ async function admitWithinTransaction(tx: Prisma.TransactionClient, input: Admis
     // `runtimeState`: whether this viewer's own session is playing or in its
     // replay (Q-11 viewer_watch_progress only credits time while it plays);
     // `fixedSessionId`: the fixed session (指定場次) this viewer was admitted to.
-    return { token: requestedToken, expiresAt, reused: true, sessionId: existing.id, runtimeState, fixedSessionId: fixedSession?.id ?? null };
+    return { token: requestedToken, expiresAt, reused: true, sessionId: existing.id, runtimeState, fixedSessionId: fixedSessionIdOf(fixedSession) };
   }
 
   const activeSessions = await tx.liveViewerSession.count({
@@ -271,7 +276,7 @@ async function admitWithinTransaction(tx: Prisma.TransactionClient, input: Admis
     },
     select: { id: true },
   });
-  return { token, expiresAt, reused: false, sessionId: created.id, runtimeState, fixedSessionId: fixedSession?.id ?? null };
+  return { token, expiresAt, reused: false, sessionId: created.id, runtimeState, fixedSessionId: fixedSessionIdOf(fixedSession) };
 }
 
 function isPrismaCode(error: unknown, code: string) {
