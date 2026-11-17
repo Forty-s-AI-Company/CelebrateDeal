@@ -1,21 +1,4 @@
-# 工作佇列
-
-這份清單是自動執行（`/loop 依 docs/work-queue.md 逐項處理`）的唯一來源。它取代 `docs/fable-queue.md` 的「仍未做」段落；該檔保留為 F-1 到 F-5 的歷史紀錄。
-
-盤點基準：master `7f026911`（#606），2026-11-17。現況以程式與已合併 PR 為準，不以文件敘述為準。
-
-## 執行規則
-
-- 由上往下處理「A 可直接做」；每項一個 `ai/*` 分支、一個 PR，依 `AGENTS.md` 與 `CLAUDE.md` 的分工、測試、審查、merge queue 流程合併。
-- **高**風險（金流、auth、租戶、migration、刪資料）＝派 `engineer-hard`，合併前一次獨立審查。**一般**＝派 `engineer`。
-- 每項完成後在本檔把狀態改成「已完成（PR 連結）」，並寫下未驗證的部分。
-- 遇到需要 owner 的決定、金鑰或 Production 操作就跳過該項，記到「C 等 owner」，繼續下一項；不要停下整個佇列。
-- **owner 於 2026-11-17 同意**：依本檔順序執行；staging 的部署（含切 staging alias）、staging migration（`staging-migrate.yml`，先 `status` 再 `deploy`）與 PayUni Sandbox 測試付款可以不經詢問執行，使用合成資料。需要 staging 驗證的項目，合併後在 staging 驗證完才算完成。
-- Production 部署、正式資料庫、正式付款與退款、正式寄信：一律需要 owner 另外授權，不在本佇列的自動範圍內。
-
-## A. 可直接做（依序）
-
-| 順序 | ID | 項目 | 風險 | 規模 | 完成標準 | 狀態 |
+已完成 [#610](https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/610)。未驗證：沒有在瀏覽器實際操作編輯器 ||||| 順序 | ID | 項目 | 風險 | 規模 | 完成標準 | 狀態 |
 |---|---|---|---|---|---|---|
 | 1 | Q-01 | 兩個不穩定 e2e（救援碼、學員推播） | 一般 | S | merge queue 連續 10 次不因這兩個測試失敗；不加 retry／skip | 進行中：[#607](https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/607)。推播測試根因未確認，PR 加了診斷；下次失敗依 `worker=` 狀態續查 |
 | 2 | P-573 | Dependabot 正式相依（React 19.3.1 等 6 個，#573） | 一般 | S | 重新產生 lockfile（`magicast` 缺鎖檔）；完整 CI 與 e2e 通過 | 未開始 |
@@ -41,6 +24,7 @@
 | 22 | D-01 | 文件與程式不一致（ROADMAP 課程列、GO-NO-GO §0／§7／F-019、OWNER-ACTIONS 補 Dependency graph 與 S4） | 一般 | S | 逐項對照程式後修正 | 未開始 |
 | 23 | R-05 | 兩租戶 action 矩陣其餘部分（F-134） | 高（租戶） | M–L | 先盤點未涵蓋的 action，再補回歸測試 | 未開始（範圍待盤點） |
 | 24 | R-04 | L3 重構（`actions.ts` 拆分、結帳抽服務、付款 reconciler、adapter 契約） | 高 | L | 每步行為不變、測試不弱化；一次一個模組 | 未開始 |
+| 25 | R-10 | 首次成功路徑 runner 每次執行留下的合成商家、直播與報名的清理或停用（只認 `cdfs-` 前綴） | 高（刪資料） | M | 只動 runner 建立的資料；先停用再刪；留收據 | 未開始 |
 
 ## B. 需要 owner 先做產品決定
 
