@@ -392,3 +392,65 @@ describe("AutomationSettingsPage", () => {
     });
   });
 });
+
+  // Q-18: only the templates that have their link on the rule's trigger are
+  // offered; a stored rule that does not fit gets a hint and keeps running.
+  describe("e-mail templates by trigger", () => {
+    const optionsOf = (markup: string) => [...(markup.match(/<select[^>]*name="emailTemplate"[^>]*>([\s\S]*?)<\/select>/u)?.[1] ?? "").matchAll(/<option value="([^"]*)"[^>]*>([^<]*)<\/option>/gu)].map((match) => `${match[1]}|${match[2]}`);
+    const stepsOf = (markup: string) => markup.slice(markup.indexOf("新增延遲步驟"));
+    const email = (template: string) => ({ type: "send_email_notification", template });
+
+    it("lists no template on the rule form for the first trigger, whose event carries no link, and explains why", async () => {
+      const html = await render();
+      expect(optionsOf(html)).toEqual(["|沒有適用的範本"]);
+      for (const label of ["諮詢預約確認", "課前提醒", "追購通知", "缺席回放與諮詢邀請"]) expect(html).not.toContain(`>${label}<`);
+      expect(html).toContain("「表單報名成功」的事件沒有可放進信裡的連結");
+      expect(html).toContain("或同時勾選「發送回購券」使用「追購通知」");
+    });
+
+    it.each([
+      ["consultation_booked", ["consultation_confirmation|諮詢預約確認"]],
+      ["consultation_no_show", ["consultation_confirmation|諮詢預約確認"]],
+      ["form_no_show", ["class_reminder|課前提醒", "webinar_replay|缺席回放與諮詢邀請"]],
+      ["form_registered", ["|沒有適用的範本"]],
+    ])("offers a %s step only the templates with a link", async (trigger, expected) => {
+      mocks.manager.mockResolvedValue({ vendor: { id: "v1", betaFeatureGrants: ["automation_delayed_steps", "automation_form_no_show"] }, user: { id: "u1" }, member: { role: "owner" } });
+      mocks.rules.mockResolvedValue([rule({ trigger, actions: [{ type: "add_customer_tag", tag: "x" }] })]);
+      expect(optionsOf(stepsOf(await render()))).toEqual(expected);
+    });
+
+    it("keeps a stored step's own template in its edit form, marked as without a link, and says so on the rule", async () => {
+      mocks.manager.mockResolvedValue({ vendor: { id: "v1", betaFeatureGrants: ["automation_delayed_steps"] }, user: { id: "u1" }, member: { role: "owner" } });
+      mocks.rules.mockResolvedValue([rule({ trigger: "form_registered", actions: [{ type: "add_customer_tag", tag: "x" }], steps: [{ id: "s1", delayMinutes: 1_440, isActive: true, actions: [email("class_reminder")] }] })]);
+      const html = await render();
+      const editForm = html.match(/<form[^>]*aria-label="編輯步驟[^"]*"[\s\S]*?<\/form>/u)?.[0] ?? "";
+      expect(optionsOf(editForm)).toEqual(["class_reminder|課前提醒（此觸發條件下沒有連結）"]);
+      expect(html).toContain("延遲步驟：「課前提醒」在「表單報名成功」下沒有可用的連結，信件可能因為沒有內容而不會寄出。");
+      // Advice only: the rule is still listed as running, and its stored step is shown as before.
+      expect(html).toContain("啟用中");
+      expect(html).toContain("事件後第 1 天");
+    });
+
+    it("shows a hint with the templates that fit on a stored rule whose immediate e-mail has no link", async () => {
+      mocks.rules.mockResolvedValue([
+        rule({ id: "bad", name: "不搭的規則", trigger: "consultation_booked", actions: [email("class_reminder")] }),
+        rule({ id: "ok", name: "搭的規則", trigger: "consultation_booked", actions: [email("consultation_confirmation")] }),
+      ]);
+      const html = await render();
+      const section = (name: string) => html.match(new RegExp(`<article[^>]*aria-label="${name}"[\\s\\S]*?</article>`, "u"))?.[0] ?? "";
+      expect(section("不搭的規則")).toContain("立即動作：「課前提醒」在「諮詢預約成功」下沒有可用的連結");
+      expect(section("不搭的規則")).toContain("建議改用「諮詢預約確認」");
+      expect(section("搭的規則")).not.toContain("沒有可用的連結");
+    });
+
+    it("accepts 追購通知 on a stored rule that issues its own voucher, and hints when it does not", async () => {
+      mocks.rules.mockResolvedValue([
+        rule({ id: "with", name: "有派券", trigger: "form_registered", actions: [{ type: "issue_repurchase_voucher", productId: "p1" }, email("repurchase_followup")] }),
+        rule({ id: "without", name: "沒派券", trigger: "form_registered", actions: [email("repurchase_followup")] }),
+      ]);
+      const html = await render();
+      const section = (name: string) => html.match(new RegExp(`<article[^>]*aria-label="${name}"[\\s\\S]*?</article>`, "u"))?.[0] ?? "";
+      expect(section("有派券")).not.toContain("沒有");
+      expect(section("沒派券")).toContain("「追購通知」要有同一份動作裡的「派發回購券」才有領券連結");
+    });
+  });

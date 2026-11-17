@@ -8,6 +8,7 @@ import {
   toggleAutomationRuleAction,
   updateAutomationRuleStepAction,
 } from "@/app/actions/automation-actions";
+import { AutomationEmailTemplateSelect } from "@/components/automation-email-template-select";
 import { AutomationStepDelayFields } from "@/components/automation-step-delay-fields";
 import { ConfirmActionButton } from "@/components/confirm-action-button";
 import { CsrfField } from "@/components/csrf-field";
@@ -19,6 +20,7 @@ import {
   AUTOMATION_DELAYED_STEPS_FEATURE,
   availableAutomationTriggersForVendor,
   FORM_NO_SHOW_DETECTION_NOTE,
+  automationEmailTemplateAdvice,
   automationExecutionNotes,
   automationTriggerNeedsThreshold,
   automationTriggerSupportsDelayedSteps,
@@ -59,6 +61,7 @@ const ERROR_MESSAGES: Record<string, string> = {
   invalid_delay: `延遲時間請填 1 小時到 90 天之間的整數。`,
   duplicate_delay: "同一條規則已經有這個延遲時間的步驟，請換一個時間。",
   step_limit: `每條規則最多 ${MAX_AUTOMATION_RULE_STEPS} 個延遲步驟。`,
+  email_template_unavailable: "這個 Email 範本在所選的觸發條件下沒有可用的連結，不能使用。請改選清單中的範本；「追購通知」需要同時勾選「發送回購券」。",
   invalid_step: "步驟內容不完整或格式不正確，請檢查動作欄位。",
   invalid_product: "找不到這個商品，或商品已下架。",
   step_busy: "規則正在被其他人修改或執行，請稍後再試。",
@@ -101,12 +104,6 @@ const UPDATED_MESSAGES: Record<string, string> = {
 };
 const UNAVAILABLE_TRIGGER_NOTE = "此觸發條件目前不會執行：系統尚未接上這個事件，規則不會被觸發。可以停用或刪除，但不能重新啟用。";
 const NO_DELAYED_STEPS_NOTE = "「訂單付款完成」的規則目前只有立即執行的動作，還不能加延遲步驟。";
-const EMAIL_TEMPLATES: Array<[string, string]> = [
-  ["consultation_confirmation", "諮詢預約確認"],
-  ["class_reminder", "課前提醒"],
-  ["repurchase_followup", "追購通知"],
-  ["webinar_replay", "缺席回放與諮詢邀請"],
-];
 
 function triggerLabel(trigger: string) {
   return (AUTOMATION_TRIGGER_LABELS as Record<string, string>)[trigger] ?? trigger;
@@ -147,6 +144,17 @@ function delayLabel(delayMinutes: number) {
   return unit === "days" ? `事件後第 ${value} 天` : `事件後 ${value} 小時`;
 }
 
+/**
+ * Q-18: advice on a stored rule (or one of its steps) whose e-mail template has
+ * no link on its trigger. Only a hint; the rule keeps running as it was.
+ */
+function emailTemplateNotes(rule: { trigger: string; actions: unknown; steps: Array<{ actions: unknown }> }) {
+  return [...new Set([
+    ...automationEmailTemplateAdvice(rule.trigger, rule.actions).map((note) => `立即動作：${note}`),
+    ...rule.steps.flatMap((step) => automationEmailTemplateAdvice(rule.trigger, step.actions).map((note) => `延遲步驟：${note}`)),
+  ])];
+}
+
 type StoredAction = Record<string, unknown>;
 
 function findAction(actions: unknown, type: string): StoredAction | null {
@@ -164,7 +172,7 @@ function findAction(actions: unknown, type: string): StoredAction | null {
  * LINE notification anyway. The owner's checkbox starts ticked for a new
  * voucher and shows the stored flag otherwise (missing = on).
  */
-function ActionFields({ products, actions, linePushAllowed }: { products: Array<{ id: string; name: string }>; actions?: unknown; linePushAllowed: boolean }) {
+function ActionFields({ products, actions, linePushAllowed, trigger, triggerFieldName }: { products: Array<{ id: string; name: string }>; actions?: unknown; linePushAllowed: boolean; trigger: string; triggerFieldName?: string }) {
   const line = findAction(actions, "line_push");
   const email = findAction(actions, "send_email_notification");
   const voucher = findAction(actions, "issue_repurchase_voucher");
@@ -182,9 +190,7 @@ function ActionFields({ products, actions, linePushAllowed }: { products: Array<
       </div>
     </> : <p className="text-xs text-slate-500">{LINE_PUSH_OWNER_ONLY_MESSAGE}</p>}
     <label className="flex items-center gap-2 text-sm"><input type="checkbox" name="actionEmail" defaultChecked={Boolean(email)} /> Email 通知</label>
-    <SelectField label="Email 範本" name="emailTemplate" defaultValue={typeof email?.template === "string" ? email.template : "consultation_confirmation"}>
-      {EMAIL_TEMPLATES.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
-    </SelectField>
+    <AutomationEmailTemplateSelect trigger={trigger} triggerFieldName={triggerFieldName} hasVoucher={Boolean(voucher)} defaultTemplate={typeof email?.template === "string" ? email.template : null} keepTemplate={typeof email?.template === "string" ? email.template : null} />
     <p className="text-xs text-slate-500">自動化寄出的 Email 都附退訂連結；已退訂或在本商家黑名單中的收件人不會收到。</p>
     <label className="flex items-center gap-2 text-sm"><input type="checkbox" name="actionVoucher" defaultChecked={Boolean(voucher)} /> 發送回購券</label>
     <div className="grid gap-4 md:grid-cols-4">
@@ -215,7 +221,7 @@ type RuleStep = { id: string; delayMinutes: number; actions: unknown; isActive: 
  * push (owner decision 2026-11-14). Deleting a step stays available either way.
  */
 function RuleSteps({ rule, editable, linePushAllowed, products, counts }: {
-  rule: { id: string; name: string; steps: RuleStep[] };
+  rule: { id: string; name: string; trigger: string; steps: RuleStep[] };
   editable: boolean;
   linePushAllowed: boolean;
   products: Array<{ id: string; name: string }>;
@@ -242,7 +248,7 @@ function RuleSteps({ rule, editable, linePushAllowed, products, counts }: {
               <input type="hidden" name="ruleId" value={rule.id} />
               <input type="hidden" name="stepId" value={step.id} />
               <DelayFields delayMinutes={step.delayMinutes} />
-              <ActionFields products={products} actions={step.actions} linePushAllowed={linePushAllowed} />
+              <ActionFields products={products} actions={step.actions} linePushAllowed={linePushAllowed} trigger={rule.trigger} />
               <label className="flex items-center gap-2 text-sm"><input type="checkbox" name="stepActive" defaultChecked={step.isActive} /> 執行這一步</label>
               <SubmitButton pendingChildren="儲存中…">儲存步驟</SubmitButton>
             </form> : null}
@@ -262,7 +268,7 @@ function RuleSteps({ rule, editable, linePushAllowed, products, counts }: {
         <CsrfField />
         <input type="hidden" name="ruleId" value={rule.id} />
         <DelayFields />
-        <ActionFields products={products} linePushAllowed={linePushAllowed} />
+        <ActionFields products={products} linePushAllowed={linePushAllowed} trigger={rule.trigger} />
         <label className="flex items-center gap-2 text-sm"><input type="checkbox" name="stepActive" defaultChecked /> 執行這一步</label>
         <SubmitButton pendingChildren="新增中…">新增步驟</SubmitButton>
       </form>
@@ -307,7 +313,7 @@ export default async function AutomationSettingsPage({ searchParams }: { searchP
 
     <Card className="mb-6"><h2 className="text-lg font-semibold text-slate-950">熱門劇本一鍵套用</h2><p className="mb-4 text-sm text-slate-600">需要派券的劇本請先選商品。</p><div className="grid gap-4 lg:grid-cols-2">{recipes.map((recipe) => <form action={createAutomationRecipeAction} key={recipe.id} className="grid gap-3 rounded-xl border border-border p-4"><CsrfField /><input type="hidden" name="recipeId" value={recipe.id} /><div><h3 className="font-semibold text-slate-900">{recipe.name}</h3><p className="mt-1 text-sm text-slate-600">{recipe.description}</p></div>{recipe.trigger === "form_no_show" ? <p className="rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-900">{FORM_NO_SHOW_DETECTION_NOTE}</p> : null}<p className="text-xs font-medium text-slate-500">{triggerLabel(recipe.trigger)} → {actionLabels(recipe.actions).join(" + ")}</p>{!linePushAllowed && automationActionsIncludeLinePush(recipe.actions) ? <p className="text-xs text-slate-600">這個劇本含 LINE 推播。{LINE_PUSH_OWNER_ONLY_MESSAGE}</p> : <>{!linePushAllowed && recipe.actions.some((action) => action.type === "issue_repurchase_voucher") ? <p className="text-xs text-slate-600">{VOUCHER_WITHOUT_LINE_NOTE}</p> : null}{recipe.actions.some((action) => action.type === "issue_repurchase_voucher") ? <SelectField label="套券商品" name="productId"><option value="">請選擇商品</option>{products.map((product) => <option key={product.id} value={product.id}>{product.name}</option>)}</SelectField> : null}<SubmitButton pendingChildren="套用中…">一鍵套用劇本</SubmitButton></>}</form>)}</div></Card>
 
-    <Card className="mb-6"><h2 className="mb-4 text-lg font-semibold text-slate-950">自訂規則</h2><form action={createAutomationRuleAction} className="grid gap-4" aria-label="建立自訂規則"><CsrfField /><div className="grid gap-4 md:grid-cols-2"><Field label="規則名稱" name="name" required maxLength={120} /><SelectField label="觸發事件" name="trigger" defaultValue={triggers[0]}>{triggers.map((value) => <option key={value} value={value}>{triggerLabel(value)}</option>)}</SelectField></div>{showThreshold ? <Field label="付款金額門檻（元；只用於「訂單付款完成」，其他觸發條件留空）" name="conditionValue" type="number" min={1} step={1} /> : null}<p className="text-sm text-slate-600">以下是事件發生時「立即執行」的動作{delayedSteps ? "；建立後可在規則下方加上延遲步驟（例如 1 天後再寄一封，「訂單付款完成」除外）" : ""}。「訂單付款完成」在付款確認後執行一次，金額以訂單實際付款金額判斷，Email 寄給訂單的買家。{formNoShow ? `「報名後未出席直播」在場次結束約 30 分鐘後，對已完成 Email 驗證、卻沒有用完成驗證的瀏覽器進入觀看（含回放）的報名者執行，每人每個場次一次，只對規則建立或啟用之後才結束的場次執行；單一開播時間的直播只算開播前 14 天內完成驗證的報名者。${FORM_NO_SHOW_DETECTION_NOTE}` : ""}</p><ActionFields products={products} linePushAllowed={linePushAllowed} /><SubmitButton pendingChildren="建立中…">建立規則</SubmitButton></form></Card>
+    <Card className="mb-6"><h2 className="mb-4 text-lg font-semibold text-slate-950">自訂規則</h2><form action={createAutomationRuleAction} className="grid gap-4" aria-label="建立自訂規則"><CsrfField /><div className="grid gap-4 md:grid-cols-2"><Field label="規則名稱" name="name" required maxLength={120} /><SelectField label="觸發事件" name="trigger" defaultValue={triggers[0]}>{triggers.map((value) => <option key={value} value={value}>{triggerLabel(value)}</option>)}</SelectField></div>{showThreshold ? <Field label="付款金額門檻（元；只用於「訂單付款完成」，其他觸發條件留空）" name="conditionValue" type="number" min={1} step={1} /> : null}<p className="text-sm text-slate-600">以下是事件發生時「立即執行」的動作{delayedSteps ? "；建立後可在規則下方加上延遲步驟（例如 1 天後再寄一封，「訂單付款完成」除外）" : ""}。「訂單付款完成」在付款確認後執行一次，金額以訂單實際付款金額判斷，Email 寄給訂單的買家。{formNoShow ? `「報名後未出席直播」在場次結束約 30 分鐘後，對已完成 Email 驗證、卻沒有用完成驗證的瀏覽器進入觀看（含回放）的報名者執行，每人每個場次一次，只對規則建立或啟用之後才結束的場次執行；單一開播時間的直播只算開播前 14 天內完成驗證的報名者。${FORM_NO_SHOW_DETECTION_NOTE}` : ""}</p><ActionFields products={products} linePushAllowed={linePushAllowed} trigger={triggers[0] ?? "form_registered"} triggerFieldName="trigger" /><SubmitButton pendingChildren="建立中…">建立規則</SubmitButton></form></Card>
 
     <Card className="mb-6"><h2 className="mb-4 text-lg font-semibold text-slate-950">規則</h2><div className="grid gap-4">{rules.length ? rules.map((rule) => {
       const available = isAutomationTriggerAvailableForVendor(rule.trigger, vendor);
@@ -322,6 +328,7 @@ export default async function AutomationSettingsPage({ searchParams }: { searchP
         <div className="flex flex-wrap items-center justify-between gap-3"><div><h3 className="font-semibold text-slate-900">{rule.name}</h3><p className="text-xs text-slate-500">{rule.createdAt.toLocaleString("zh-TW")}</p></div><div className="flex flex-wrap gap-2">{available ? null : <Badge tone="gray">目前不會執行</Badge>}{linePushOwnerOnly ? <Badge tone="gray">僅限擁有者修改</Badge> : null}<Badge tone={rule.isActive ? "green" : "gray"}>{rule.isActive ? "啟用中" : "已停用"}</Badge></div></div>
         <div className="flex flex-wrap items-center gap-2 text-sm"><span className="rounded-md bg-slate-100 px-3 py-2">觸發：{triggerLabel(rule.trigger)}</span><span>→</span><span className="rounded-md bg-amber-50 px-3 py-2">條件：{conditionLabel(rule.condition)}</span><span>→</span><span className="rounded-md bg-emerald-50 px-3 py-2">立即執行：{actionLabels(rule.actions).join(" + ")}</span></div>
         {available ? null : <p className="rounded-md border border-border bg-slate-50 px-3 py-2 text-sm text-slate-700">{rule.trigger === "form_no_show" ? FORM_NO_SHOW_NOT_GRANTED_NOTE : UNAVAILABLE_TRIGGER_NOTE}</p>}
+        {available ? emailTemplateNotes(rule).map((note) => <p key={note} className="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-900">{note}</p>) : null}
         {rule.trigger === "form_no_show" ? <p className="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-900">{FORM_NO_SHOW_DETECTION_NOTE}</p> : null}
         {linePushOwnerOnly ? <p className="rounded-md border border-border bg-slate-50 px-3 py-2 text-sm text-slate-700">{lineRuleNote({ stepsShown, rule })}</p> : null}
         {delayedSteps ? (stepsShown

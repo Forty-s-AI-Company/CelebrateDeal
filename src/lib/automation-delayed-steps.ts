@@ -3,6 +3,8 @@ import {
   AUTOMATION_DELAYED_STEPS_FEATURE,
   AUTOMATION_FORM_NO_SHOW_FEATURE,
   DELAYED_STEP_AUTOMATION_TRIGGERS,
+  automationActionsEmailTemplates,
+  automationActionsEmailTemplatesUsable,
   automationTriggerSupportsDelayedSteps,
   executeAutomationStep,
   plannedAutomationStepEmailCount,
@@ -735,7 +737,7 @@ export type AutomationStepInput = {
 
 export type AutomationStepChangeResult =
   | { ok: true; id: string; before?: { delayMinutes: number; isActive: boolean; actions: unknown }; after?: { delayMinutes: number; isActive: boolean; actions: unknown } }
-  | { ok: false; code: "not_found" | "trigger_unavailable" | "steps_unsupported" | "invalid_step" | "invalid_delay" | "duplicate_delay" | "step_limit" | "invalid_product" | "step_busy" | typeof LINE_PUSH_OWNER_ONLY };
+  | { ok: false; code: "not_found" | "trigger_unavailable" | "steps_unsupported" | "invalid_step" | "invalid_delay" | "duplicate_delay" | "step_limit" | "invalid_product" | "step_busy" | "email_template_unavailable" | typeof LINE_PUSH_OWNER_ONLY };
 
 class StepChangeRejected extends Error {
   constructor(readonly code: Extract<AutomationStepChangeResult, { ok: false }>["code"]) {
@@ -787,12 +789,16 @@ async function withLockedRule(
   }
 }
 
-async function validateStep(tx: Prisma.TransactionClient, vendorId: string, ruleId: string, input: AutomationStepInput) {
+async function validateStep(tx: Prisma.TransactionClient, vendorId: string, rule: { id: string; trigger: string }, input: AutomationStepInput, keepTemplates: readonly string[] = []) {
+  const ruleId = rule.id;
   if (!Number.isInteger(input.delayMinutes) || input.delayMinutes < AUTOMATION_STEP_MIN_DELAY_MINUTES || input.delayMinutes > AUTOMATION_STEP_MAX_DELAY_MINUTES) {
     throw new StepChangeRejected("invalid_delay");
   }
   const parsed = parseAutomationRule({ id: ruleId, condition: input.condition, actions: input.actions });
   if (!parsed) throw new StepChangeRejected("invalid_step");
+  // Q-18: an e-mail template needs the link this trigger's event carries, or a
+  // voucher in the same step. An edit may keep a template the step already had.
+  if (!automationActionsEmailTemplatesUsable(rule.trigger, parsed.actions, keepTemplates)) throw new StepChangeRejected("email_template_unavailable");
   // A voucher can only name an active product of this vendor.
   for (const action of parsed.actions) {
     if (action.type !== "issue_repurchase_voucher") continue;
@@ -847,7 +853,7 @@ export async function createAutomationRuleStep(
     await assertLinePushPolicy(tx, input, rule.id);
     const count = await tx.automationRuleStep.count({ where: { vendorId: input.vendorId, ruleId: rule.id } });
     if (count >= MAX_AUTOMATION_RULE_STEPS) throw new StepChangeRejected("step_limit");
-    const parsed = await validateStep(tx, input.vendorId, rule.id, input.step);
+    const parsed = await validateStep(tx, input.vendorId, rule, input.step);
     await assertDelayFree(tx, input.vendorId, rule.id, input.step.delayMinutes);
     const created = await tx.automationRuleStep.create({
       data: {
@@ -884,7 +890,7 @@ export async function updateAutomationRuleStep(
       select: { id: true, delayMinutes: true, isActive: true, actions: true },
     });
     if (!existing) throw new StepChangeRejected("not_found");
-    const parsed = await validateStep(tx, input.vendorId, rule.id, input.step);
+    const parsed = await validateStep(tx, input.vendorId, rule, input.step, automationActionsEmailTemplates(existing.actions));
     await assertDelayFree(tx, input.vendorId, rule.id, input.step.delayMinutes, existing.id);
     const updated = await tx.automationRuleStep.updateMany({
       where: { id: existing.id, vendorId: input.vendorId, ruleId: rule.id },

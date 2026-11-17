@@ -472,4 +472,51 @@ describe("automation actions", () => { it("requires CSRF and writes tenant-scope
     for (const method of [...Object.values(runtime.db.automationRule), runtime.db.$transaction, runtime.db.$queryRaw, runtime.db.$executeRaw]) expect(method).not.toHaveBeenCalled();
     expect(runtime.db.product.findFirst).not.toHaveBeenCalled();
   });
+  // Q-18: a new rule may only pick an e-mail template whose link its trigger's
+  // event carries (or next to a voucher in the same rule). Stored rules are untouched.
+  describe("e-mail template by trigger", () => {
+    const emailForm = (trigger: string, template: string, extra: Record<string, string> = {}) => {
+      const f = form(trigger);
+      f.delete("actionTag");
+      f.set("actionEmail", "on");
+      f.set("emailTemplate", template);
+      for (const [key, value] of Object.entries(extra)) f.set(key, value);
+      return f;
+    };
+    beforeEach(() => { withNoShowGrant(); runtime.db.product.findFirst.mockResolvedValue({ id: "p1" }); });
+
+    it.each([
+      ["form_registered", "consultation_confirmation"],
+      ["form_registered", "class_reminder"],
+      ["form_registered", "webinar_replay"],
+      ["form_registered", "repurchase_followup"],
+      ["consultation_booked", "class_reminder"],
+      ["consultation_no_show", "webinar_replay"],
+      ["consultation_booked", "repurchase_followup"],
+      ["payment_paid", "consultation_confirmation"],
+      ["form_no_show", "consultation_confirmation"],
+    ])("refuses %s with %s and writes nothing", async (trigger, template) => {
+      await expect(createAutomationRuleAction(emailForm(trigger, template, trigger === "payment_paid" ? { conditionValue: "100" } : {}))).rejects.toThrow("redirect:/settings/automations?error=email_template_unavailable");
+      expect(runtime.db.automationRule.create).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ["consultation_booked", "consultation_confirmation"],
+      ["consultation_no_show", "consultation_confirmation"],
+      ["form_no_show", "class_reminder"],
+      ["form_no_show", "webinar_replay"],
+    ])("creates %s with %s", async (trigger, template) => {
+      await expect(createAutomationRuleAction(emailForm(trigger, template))).rejects.toThrow("redirect:/settings/automations?updated=created");
+      expect(runtime.db.automationRule.create).toHaveBeenCalledTimes(1);
+    });
+
+    it.each(["form_registered", "payment_paid", "consultation_booked", "form_no_show"])("allows 追購通知 on %s when the same rule issues a voucher", async (trigger) => {
+      const voucher = { actionVoucher: "on", productId: "p1", discountType: "fixed", discountValue: "100", expiresInDays: "30", ...(trigger === "payment_paid" ? { conditionValue: "100" } : {}) };
+      await expect(createAutomationRuleAction(emailForm(trigger, "repurchase_followup", voucher))).rejects.toThrow("redirect:/settings/automations?updated=created");
+    });
+
+    it("still refuses an unknown template as an invalid rule", async () => {
+      await expect(createAutomationRuleAction(emailForm("consultation_booked", "made_up"))).rejects.toThrow("redirect:/settings/automations?error=invalid_rule");
+    });
+  });
 });
