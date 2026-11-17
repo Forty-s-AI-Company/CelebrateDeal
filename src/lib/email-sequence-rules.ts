@@ -39,6 +39,8 @@ export type EmailSequenceStepDraft = {
 export type EmailSequenceFormDraft = {
   name: string;
   liveId: string;
+  /** 「買了就停」: stop the remaining e-mails once the registrant buys (default on). */
+  stopOnPurchase: boolean;
   steps: EmailSequenceStepDraft[];
 };
 
@@ -52,8 +54,13 @@ export type EmailSequenceStepInput = {
 export type EmailSequenceInput = {
   name: string;
   liveId: string;
+  /** 「買了就停」; left out, a new sequence gets the default (on) and a saved one keeps its setting. */
+  stopOnPurchase?: boolean;
   steps: EmailSequenceStepInput[];
 };
+
+/** Hidden marker sent with the 「買了就停」checkbox; without it (a page from before the setting existed) the setting stays on. */
+export const STOP_ON_PURCHASE_SHOWN_FIELD = "stopOnPurchaseShown";
 
 export type EmailSequenceFieldErrors = Record<string, string>;
 
@@ -117,6 +124,8 @@ export function readEmailSequenceDraft(formData: FormData): EmailSequenceFormDra
   return {
     name: readText(formData, "name").replace(/\s+/gu, " ").trim(),
     liveId: readText(formData, "liveId").trim(),
+    // An unchecked box sends nothing, so only a form that showed the box can switch it off.
+    stopOnPurchase: formData.get(STOP_ON_PURCHASE_SHOWN_FIELD) === "1" ? formData.get("stopOnPurchase") === "on" : true,
     steps,
   };
 }
@@ -169,5 +178,5 @@ export function parseEmailSequenceDraft(draft: EmailSequenceFormDraft, rawStepCo
 
   if (Object.keys(fieldErrors).length > 0) return { ok: false, message: "有幾個欄位需要修正，內容已保留。", fieldErrors };
   // Kept in form order so server-side field errors point at the same rows.
-  return { ok: true, data: { name: draft.name, liveId: draft.liveId, steps } };
+  return { ok: true, data: { name: draft.name, liveId: draft.liveId, stopOnPurchase: draft.stopOnPurchase, steps } };
 }

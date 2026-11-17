@@ -25,6 +25,7 @@ export default async function EditEmailSequencePage({ params }: { params: Promis
       status: true,
       version: true,
       activatedAt: true,
+      stopOnPurchase: true,
       steps: { orderBy: { delayMinutes: "asc" }, select: { id: true, delayMinutes: true, messageTemplateId: true, isActive: true } },
     },
   });
@@ -50,6 +51,7 @@ export default async function EditEmailSequencePage({ params }: { params: Promis
         initialDraft={{
           name: sequence.name,
           liveId: sequence.liveId,
+          stopOnPurchase: sequence.stopOnPurchase,
           steps: sequence.steps.map((step) => ({
             id: step.id,
             ...delayMinutesToDraft(step.delayMinutes),

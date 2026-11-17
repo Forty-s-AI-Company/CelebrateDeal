@@ -7,6 +7,7 @@ import { Field, FormErrorSummary, SelectField, SubmitButton, focusFirstInvalidFi
 import {
   initialEmailSequenceActionState,
   MAX_EMAIL_SEQUENCE_STEPS,
+  STOP_ON_PURCHASE_SHOWN_FIELD,
   stepFieldName,
   type EmailSequenceFormDraft,
   type EmailSequenceStepDraft,
@@ -51,6 +52,29 @@ function StepActiveCheckbox({ name, defaultChecked, disabled }: { name: string; 
       <input name={name} type="checkbox" defaultChecked={defaultChecked} disabled={disabled} className="h-4 w-4 accent-blue-600" />
       寄送這一封
     </label>
+  );
+}
+
+/** 「買了就停」: on by default; the hidden marker lets the server tell an unchecked box from an older page. */
+function StopOnPurchaseCheckbox({ defaultChecked, disabled }: { defaultChecked: boolean; disabled: boolean }) {
+  return (
+    <div className="grid gap-1 rounded-lg border border-border p-4">
+      <input type="hidden" name={STOP_ON_PURCHASE_SHOWN_FIELD} value="1" />
+      <label className="flex min-h-11 items-center gap-2 text-sm font-semibold text-slate-900">
+        <input
+          name="stopOnPurchase"
+          type="checkbox"
+          defaultChecked={defaultChecked}
+          disabled={disabled}
+          aria-describedby="stop-on-purchase-hint"
+          className="h-4 w-4 accent-blue-600"
+        />
+        買了就停
+      </label>
+      <p id="stop-on-purchase-hint" className="text-sm text-slate-600">
+        報名者在報名之後於本商家完成付款（任何商品，測試訂單不算），之後還沒寄出的信就不再寄，已經排隊的那一封也會在寄出前取消。之後就算退款也不會恢復。
+      </p>
+    </div>
   );
 }
 
@@ -173,6 +197,7 @@ function SequenceFields({
           <fieldset disabled className="contents">{liveField}</fieldset>
         </>
       ) : liveField}
+      <StopOnPurchaseCheckbox defaultChecked={draft.stopOnPurchase} disabled={disabled} />
       <input type="hidden" name="stepCount" value={rows.length} />
       <div className="grid gap-3">
         <div className="flex flex-wrap items-end justify-between gap-2">

@@ -103,6 +103,8 @@ describe("saveEmailSequenceAction", () => {
       data: {
         name: "報名後追銷",
         liveId: "live-1",
+        // A form without the 「買了就停」marker (a page from before the setting) keeps it on.
+        stopOnPurchase: true,
         steps: [
           { id: null, delayMinutes: 60, messageTemplateId: "template-1", isActive: true },
           { id: null, delayMinutes: 4_320, messageTemplateId: "template-2", isActive: false },
@@ -111,6 +113,22 @@ describe("saveEmailSequenceAction", () => {
     });
     expect(runtime.writeAuditLog).toHaveBeenCalledWith(expect.objectContaining({ vendorId: "vendor-1", action: "email_sequence_created", targetId: "seq-1", actorId: "user-1" }));
     expect(runtime.revalidatePath).toHaveBeenCalledWith("/messages/sequences");
+  });
+
+  it.each<{ label: string; fields: Record<string, string>; expected: boolean }>([
+    { label: "checked", fields: { stopOnPurchaseShown: "1", stopOnPurchase: "on" }, expected: true },
+    { label: "unchecked (the box sends nothing)", fields: { stopOnPurchaseShown: "1" }, expected: false },
+    { label: "a forged value other than on", fields: { stopOnPurchaseShown: "1", stopOnPurchase: "true" }, expected: false },
+  ])("saves 「買了就停」from the form when the box was shown: $label", async ({ fields, expected }) => {
+    await outcome(saveEmailSequenceAction(initialEmailSequenceActionState, form({ ...validFields, ...fields })));
+    expect(runtime.saveEmailSequence).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ stopOnPurchase: expected }) }));
+    expect(runtime.writeAuditLog).toHaveBeenCalledWith(expect.objectContaining({ after: expect.objectContaining({ stopOnPurchase: expected }) }));
+  });
+
+  it("keeps an unchecked 「買了就停」in the draft returned with field errors", async () => {
+    const state = await saveEmailSequenceAction(initialEmailSequenceActionState, form({ ...validFields, name: "", stopOnPurchaseShown: "1" }));
+    expect(state.draft).toMatchObject({ stopOnPurchase: false });
+    expect(runtime.saveEmailSequence).not.toHaveBeenCalled();
   });
 
   it("returns field errors and keeps the draft for invalid input", async () => {

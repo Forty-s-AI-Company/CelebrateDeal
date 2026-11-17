@@ -17,7 +17,7 @@ import {
   MAX_ACTIVE_EMAIL_SEQUENCES_PER_VENDOR,
   type EmailSequenceStatus,
 } from "@/lib/email-sequence-rules";
-import { emailSequenceRunCounts } from "@/lib/email-sequences";
+import { EMPTY_EMAIL_SEQUENCE_RUN_COUNTS, emailSequenceRunCounts } from "@/lib/email-sequences";
 import { requireFeatureOrNotFound } from "@/lib/feature-gates";
 
 const NOTICES: Record<string, string> = {
@@ -91,6 +91,7 @@ export default async function EmailSequencesPage({
         name: true,
         status: true,
         version: true,
+        stopOnPurchase: true,
         live: { select: { id: true, title: true } },
         steps: { orderBy: { delayMinutes: "asc" }, select: { delayMinutes: true, isActive: true } },
       },
@@ -132,7 +133,7 @@ export default async function EmailSequencesPage({
           <ul className="grid gap-3">
             {sequences.map((sequence) => {
               const status = (sequence.status in EMAIL_SEQUENCE_STATUS_LABELS ? sequence.status : "draft") as EmailSequenceStatus;
-              const runCounts = counts.get(sequence.id) ?? { active: 0, completed: 0, cancelled: 0 };
+              const runCounts = counts.get(sequence.id) ?? EMPTY_EMAIL_SEQUENCE_RUN_COUNTS;
               const activeSteps = sequence.steps.filter((step) => step.isActive);
               return (
                 <li key={sequence.id} className="grid gap-3 rounded-lg border border-border p-4">
@@ -145,13 +146,16 @@ export default async function EmailSequencesPage({
                           ? `${activeSteps.length} 封：${activeSteps.map((step) => describeDelay(step.delayMinutes)).join("、")}`
                           : "還沒有要寄的信"}
                       </p>
+                      <p className="mt-1 text-sm text-slate-600">
+                        {sequence.stopOnPurchase ? "買了就停：開啟（報名後購買就不再寄）" : "買了就停：關閉（購買後仍照常寄送）"}
+                      </p>
                     </div>
                     <Badge tone={STATUS_TONES[status]}>{EMAIL_SEQUENCE_STATUS_LABELS[status]}</Badge>
                   </div>
                   <dl className="grid grid-cols-3 gap-2 text-sm">
                     <div className="rounded-md bg-slate-50 px-3 py-2"><dt className="text-slate-600">進行中</dt><dd className="font-semibold text-slate-950">{runCounts.active} 人</dd></div>
                     <div className="rounded-md bg-slate-50 px-3 py-2"><dt className="text-slate-600">已完成</dt><dd className="font-semibold text-slate-950">{runCounts.completed} 人</dd></div>
-                    <div className="rounded-md bg-slate-50 px-3 py-2"><dt className="text-slate-600">已停止</dt><dd className="font-semibold text-slate-950">{runCounts.cancelled} 人</dd></div>
+                    <div className="rounded-md bg-slate-50 px-3 py-2"><dt className="text-slate-600">已停止</dt><dd className="font-semibold text-slate-950">{runCounts.cancelled} 人</dd>{runCounts.purchased > 0 ? <dd className="mt-0.5 text-xs text-slate-600">其中因購買停止 {runCounts.purchased} 人</dd> : null}</div>
                   </dl>
                   <div className="flex flex-wrap gap-2">
                     <Link href={`/messages/sequences/${encodeURIComponent(sequence.id)}/edit`} className="inline-flex min-h-11 items-center justify-center rounded-md bg-primary px-3 text-sm font-semibold text-white transition-colors hover:bg-primary-dark">

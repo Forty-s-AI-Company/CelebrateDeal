@@ -51,7 +51,8 @@ const errorGuidance: Record<string, string> = {
   config_superseded: "直播或模板設定已更新，舊排程不會寄送。",
   verification_superseded: "驗證已完成、連結已過期或已有新版驗證信。",
   schedule_superseded: "直播排程已更新，舊提醒不會寄送。",
-  sequence_superseded: "這封追銷序列信不會寄送：可能排隊太久（建立超過 6 小時未寄出）、追銷序列功能已關閉、序列已暫停或刪除、這一封或它的模板已修改，或收件者已停止接收序列。",
+  sequence_superseded: "這封追銷序列信不會寄送：可能排隊太久（建立超過 6 小時未寄出）、追銷序列功能已關閉、序列已暫停或刪除、這一封或它的模板已修改、收件者已停止接收序列，或收件者報名後已購買（序列開啟「買了就停」）。",
+  sequence_recipient_purchased: "收件者報名後已在本商家完成購買，序列開啟了「買了就停」，這封與之後的追銷序列信都不會寄送。",
   automation_step_superseded: "這封自動化延遲信不會寄送：排隊太久（建立超過 6 小時未寄出），或自動化延遲步驟功能已關閉。",
   lifecycle_superseded: "直播狀態已改變（例如已開播、已結束或已開啟常青場），舊排程不會寄送。",
 };

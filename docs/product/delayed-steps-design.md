@@ -1,6 +1,6 @@
 # 延遲步驟：Email 追銷序列與自動化多步驟的共用設計
 
-狀態：F-3（Email 追銷序列）定案，依本文拆 PR 實作。F-4（自動化多步驟與延遲）範圍 owner 已確認；第一個 PR（第 8 節「一併要修的既有缺口」）、第二個 PR（延遲步驟，第 8 節「做法」）與第三個 PR（接上 `payment_paid`，只有立即動作，第 8 節「F-4 PR 3」）已完成；`payment_paid` 的延遲步驟與「到現在還沒買」條件留到之後的 PR。
+狀態：F-3（Email 追銷序列）定案，依本文拆 PR 實作；PR 1 與 PR 2（「買了就停」）已完成。F-4（自動化多步驟與延遲）範圍 owner 已確認；第一個 PR（第 8 節「一併要修的既有缺口」）、第二個 PR（延遲步驟，第 8 節「做法」）與第三個 PR（接上 `payment_paid`，只有立即動作，第 8 節「F-4 PR 3」）已完成；`payment_paid` 的延遲步驟與「到現在還沒買」條件留到之後的 PR。
 日期：2026-11-13。對應 `docs/fable-queue.md` 的 F-3、F-4。
 
 ## 1. 要解決的問題
@@ -89,7 +89,7 @@
 ### 資料模型
 
 `EmailSequence`
-- `vendorId`、`name`、`liveId`（複合外鍵到 `Live`，Cascade）、`status`（`draft`、`active`、`paused`）、`activatedAt?`、`stopOnPurchase`（預設 true，第二個 PR 才生效）、`version`（樂觀鎖）。
+- `vendorId`、`name`、`liveId`（複合外鍵到 `Live`，Cascade）、`status`（`draft`、`active`、`paused`）、`activatedAt?`、`stopOnPurchase`（預設 true，第二個 PR 起生效，見下方「實作狀態與決定（F-3 PR 2）」）、`version`（樂觀鎖）。
 - 第一版一條序列綁一場直播；對象是這場直播已驗證 Email 的報名者。
 
 `EmailSequenceStep`
@@ -139,8 +139,21 @@
 ### PR 拆分
 
 1. **PR 1**：三張表與 migration、worker、加入與補漏、寄信與送出前檢查、退訂連動、後台 CRUD、beta 開關。完成標準：報名驗證後第 N 個延遲點寄出第 N 封，含 db test 與 e2e。需獨立審查（migration 加寄信）。
-2. **PR 2**：`stopOnPurchase`。到點時查同一個 `subjectKeyHash` 在這個商家有沒有已付款訂單，有就停止。只讀付款資料，仍需獨立審查。
+2. **PR 2**（已完成，分支 `ai/sequence-stop-on-purchase`）：`stopOnPurchase`。到點時查同一個 `subjectKeyHash` 在這個商家有沒有已付款訂單，有就停止。只讀付款資料，仍需獨立審查。
 3. **之後**：不綁直播的序列（漏斗的名單表單）、其他起點（付款後、沒到場）、LINE 步驟。
+
+### 實作狀態與決定（F-3 PR 2「買了就停」）
+
+現行規則見 `docs/domain-workflows.md`「Email 追銷序列」的「買了就停」，資料層說明見 `docs/codex-goal/PRISMA_INVARIANTS.md` 2026-11-17 一節。上面「到點時查有沒有已付款訂單」沒有說時間範圍與哪些訂單算數，實作時的決定：
+
+1. **購買的範圍**：同一商家、同一個 `subjectKeyHash`（＝訂單的 `automationCustomerKeyHash`，報名與訂單同一套正規化）的任何商品，不限序列綁的直播或專案（訂單與直播之間沒有可靠的關聯，而且「買了」對收件人來說是對這個商家）。
+2. **時間**：只算這筆報名建立（`FormSubmission.createdAt`）之後付款的訂單。報名前的舊訂單不算，否則老客戶報名新直播時會無聲地收不到任何追銷；用建立時間而不是驗證時間（`anchorAt`），是為了讓報名後、驗證前就付款的人也停止。`paidAt` 是金流回報的付款時間。
+3. **訂單狀態**：`paid`、`partially_refunded`、`refunded` 都算（付款發生過），測試訂單不算。退款不恢復：已停止的 run 不會改回 active，而且退款發生在下一步之前也照樣停止，所以結果不取決於退款與 job 的先後。
+4. **判斷點**：worker 到點時（只要還有下一步，建信之前）與寄送前（`dispatchEmailDelivery` 與 `isCurrentSequenceEmailDelivery`）。原本第 5 節表格的「送出前：—」改成「查」：不查的話，job 在付款 commit 前一刻建好的那一封、以及最後一步（run 已 completed）的那一封都會寄出。
+5. **不在付款當下主動停止**：付款流程（webhook 交易、after hook）完全不動，避免這個 PR 碰到付款路徑；worker 與寄送前檢查已足以保證不寄。代價是後台的「因購買停止」要等下一步到點才出現。
+6. **停止的寫入**與其他依步驟計算的寫入一樣走 `commitWithDefinition`（序列列 `FOR SHARE`＋`version`），商家同時關掉開關時以存檔為準。
+7. **後台**：序列表單加「買了就停」勾選（預設勾選，附說明）；表單另帶 `stopOnPurchaseShown`，沒有這個欄位（部署前開著的舊頁面）時視為開啟。列表顯示每條序列的設定與「其中因購買停止 N 人」。寄送紀錄新增 `sequence_recipient_purchased` 的說明。
+8. **沒有 migration**：欄位與 `purchased` 停止原因在 PR 1 已建立；查詢用既有的 `CommerceOrder (vendorId, automationCustomerKeyHash, status)` 索引。
 
 ## 5. 停止條件的檢查位置
 
@@ -149,7 +162,7 @@
 | 退訂 | 查 | 查 | 既有流程會查 |
 | 黑名單 | 查 | 查 | 新增檢查 |
 | 流程暫停或刪除 | — | 查 | 新增檢查 |
-| 已購買（PR 2） | — | 查 | — |
+| 已購買（PR 2） | — | 查 | 查（序列信；PR 2 實作時加上） |
 | 商家停權 | — | 不撈，run 保留 | 既有流程不送 |
 
 ## 6. 冪等與併發

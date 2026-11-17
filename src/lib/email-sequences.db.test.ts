@@ -212,7 +212,7 @@ describe("activate / pause / delete", () => {
     await expect(activateEmailSequence({ vendorId: t.vendor.id, sequenceId: created.id, expectedVersion: 3, now: later })).resolves.toEqual({ ok: true, status: "activated" });
     await expect(db.emailSequence.findUniqueOrThrow({ where: { id: created.id } })).resolves.toMatchObject({ status: "active", activatedAt: later, version: 4 });
     expect(await db.delayedStepRun.findMany({ where: { emailSequenceId: created.id } })).toEqual([expect.objectContaining({ status: "cancelled" })]);
-    expect(await emailSequenceRunCounts(t.vendor.id)).toEqual(new Map([[created.id, { active: 0, completed: 0, cancelled: 1 }]]));
+    expect(await emailSequenceRunCounts(t.vendor.id)).toEqual(new Map([[created.id, { active: 0, completed: 0, cancelled: 1, purchased: 0 }]]));
   });
 
   it("deletes with the version, together with steps and runs", async () => {
