@@ -1,0 +1,35 @@
+# 文字檔一律以 LF 存入 repo，開發者在 Windows checkout 也是 LF（eol=lf 優先於 core.autocrlf）。
+* text=auto eol=lf
+
+# 二進位檔不做任何轉換
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.avif binary
+*.ico binary
+*.pdf binary
+*.woff binary
+*.woff2 binary
+*.ttf binary
+*.otf binary
+*.eot binary
+*.mp4 binary
+*.webm binary
+*.mov binary
+*.mp3 binary
+*.wav binary
+*.zip binary
+*.gz binary
+*.wasm binary
+*.tflite binary
+
+# 已套用的 Prisma migration 必須逐位元組不變（checksum），不做換行正規化
+prisma/migrations/**/migration.sql -text
+
+# 明確保持 LF 的腳本
+*.sh text eol=lf
+*.mjs text eol=lf
+*.ps1 text eol=lf
+*.psm1 text eol=lf
