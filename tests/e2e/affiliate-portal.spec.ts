@@ -71,7 +71,12 @@ test("manager grants portal access; partner reads ledger refund net and loses ac
   await outsiderPage.goto(`/affiliates/${affiliate.id}/access`);await expect(outsiderPage.getByRole("button",{name:"儲存入口授權",exact:true})).toHaveCount(0);
   await db.vendorMember.update({where:{id:partner.memberships[0]!.id},data:{status:"inactive"}});
   await page.reload();await expect(page.getByLabel("授權成員",{exact:true})).toHaveValue(partner.memberships[0]!.id);
-  await page.getByLabel("啟用夥伴入口",{exact:true}).uncheck();await page.getByRole("button",{name:"儲存入口授權",exact:true}).click();await expect(page.locator('[role="status"]:not(.sr-only)')).toHaveText("夥伴入口授權已儲存。");
+  await page.getByLabel("啟用夥伴入口",{exact:true}).uncheck();await page.getByRole("button",{name:"儲存入口授權",exact:true}).click();
+  // The page URL still carries the first save's ?saved=1 after reload, so the "已儲存" banner is
+  // already visible before this second save runs. Wait on the stored revoke itself (revision 2,
+  // inactive) before touching the member again, otherwise the partner reload can race the action.
+  await expect.poll(async()=>db.affiliatePortalAccess.findUniqueOrThrow({where:{vendorId_affiliateId:{vendorId:vendor.id,affiliateId:affiliate.id}},select:{active:true,revision:true}})).toEqual({active:false,revision:2});
+  await expect(page.locator('[role="status"]:not(.sr-only)')).toHaveText("夥伴入口授權已儲存。");
   await db.vendorMember.update({where:{id:partner.memberships[0]!.id},data:{status:"active"}});
   await partnerPage.reload();await expect(partnerPage.getByRole("heading",{name:"合成推廣合作：佣金帳本",exact:true})).toHaveCount(0);
   expect((await db.affiliatePortalAccess.findUniqueOrThrow({where:{vendorId_affiliateId:{vendorId:vendor.id,affiliateId:affiliate.id}}})).revision).toBe(2);
