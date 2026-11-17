@@ -1,6 +1,7 @@
 import path from "node:path";
 import { classifyPublicLiveBrowserDiagnostic } from "./public-live-browser-diagnostic";
 import { classifyPrivateInboxDiagnostic } from "./private-inbox-diagnostic";
+import { classifyPortalPushDiagnostic, PORTAL_PUSH_ANNOTATION_TYPE } from "./portal-push-diagnostic";
 import type { FullResult, Reporter, TestCase, TestResult, TestStep } from "@playwright/test/reporter";
 
 const allowedTestPath = /^tests\/e2e\/[A-Za-z0-9_.()[\]/-]+\.spec\.(?:[cm]?[jt]sx?)$/u;
@@ -194,6 +195,21 @@ export default class SanitizedPlaywrightCiReporter implements Reporter {
       for (const attempt of test.results) {
         const stepAnnotation = this.failedSteps.get(attempt);
         if (stepAnnotation) this.write(stepAnnotation);
+        // Test stdout is never forwarded. A test may attach one closed-grammar
+        // diagnostic per attempt; anything outside that grammar is dropped.
+        if (attempt.status !== "passed") {
+          for (const annotation of attempt.annotations ?? []) {
+            if (annotation.type !== PORTAL_PUSH_ANNOTATION_TYPE) continue;
+            const classification = classifyPortalPushDiagnostic(annotation.description);
+            const diagnostic = classification && formatSanitizedPlaywrightAnnotation({
+              file: test.location.file,
+              line: test.location.line,
+              status: "failed",
+              retry: attempt.retry,
+            });
+            if (diagnostic) this.write(`${diagnostic} class=${classification}\n`);
+          }
+        }
         // Direct database/explicit throws may not produce a failed Playwright step.
         for (const error of attempt.errors ?? []) {
           // Playwright appends worker teardown diagnostics to message. Only the
