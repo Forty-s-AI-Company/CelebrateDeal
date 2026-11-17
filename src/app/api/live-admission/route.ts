@@ -61,6 +61,8 @@ export async function POST(request: Request) {
       vendorId: payload.vendorId,
       liveId: payload.liveId,
       creditWatchTime: result.runtimeState === "playing",
+      // A fixed-session Live credits only the registration whose own session is the one admitted.
+      playingFixedSessionId: result.fixedSessionId,
     });
     const response = NextResponse.json({ ok: true });
     response.cookies.set("celebratedeal_live_viewer", result.token, liveViewerCookieOptions(request));

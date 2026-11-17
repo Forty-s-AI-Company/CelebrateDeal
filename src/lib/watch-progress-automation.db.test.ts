@@ -168,11 +168,14 @@ describe("watch time credited by admission renewals (Q-11 viewer_watch_progress)
 
     await expect(credit(0)).resolves.toBe("recorded");
     expect(await storedProgress(t, lead.id)).toMatchObject({ watchedSeconds: 0 });
-    // Renewals every 30 s: inside the credit interval nothing changes (a refresh or a second tab neither).
-    await expect(credit(30 * SECOND)).resolves.toBe("unchanged");
+    // Inside the credit interval (the 30 s renewal period) nothing changes: a refresh or a second tab neither.
+    expect(LIVE_WATCH_PROGRESS_CREDIT_INTERVAL_MS).toBe(30 * SECOND);
+    await expect(credit(10 * SECOND)).resolves.toBe("unchanged");
     await expect(credit(LIVE_WATCH_PROGRESS_CREDIT_INTERVAL_MS - 1)).resolves.toBe("unchanged");
-    await expect(credit(60 * SECOND)).resolves.toBe("recorded");
-    await expect(credit(90 * SECOND)).resolves.toBe("unchanged");
+    await expect(credit(30 * SECOND)).resolves.toBe("recorded");
+    await expect(credit(45 * SECOND)).resolves.toBe("unchanged");
+    // A missed renewal: the whole minute still counts.
+    await expect(credit(90 * SECOND)).resolves.toBe("recorded");
     await expect(credit(150 * SECOND)).resolves.toBe("recorded");
     expect(await storedProgress(t, lead.id)).toMatchObject({ watchedSeconds: 150 });
     // The viewer left for ten minutes: that time is not credited; the count restarts.
@@ -251,6 +254,41 @@ describe("watch time credited by admission renewals (Q-11 viewer_watch_progress)
       await Promise.all(clients.map((client) => client.$disconnect()));
     }
     expect(await storedProgress(t, lead.id)).toMatchObject({ watchedSeconds: 90 });
+  });
+
+  it("reads the database clock, not the app server's (review MINOR-5)", async () => {
+    const t = await tenant();
+    const session = await live(t);
+    const lead = await registrant(t, session.id);
+    await expect(creditLiveWatchProgress({ vendorId: t.vendor.id, liveId: session.id, formSubmissionId: lead.id })).resolves.toBe("recorded");
+    const [{ dbNow }] = await db.$queryRaw<Array<{ dbNow: Date }>>`SELECT (statement_timestamp() AT TIME ZONE 'UTC')::timestamp(3) AS "dbNow"`;
+    const stored = await storedProgress(t, lead.id);
+    expect(Math.abs(stored!.lastCreditedAt.getTime() - dbNow.getTime())).toBeLessThan(5 * SECOND);
+    // A second call right away is inside the interval on the same clock.
+    await expect(creditLiveWatchProgress({ vendorId: t.vendor.id, liveId: session.id, formSubmissionId: lead.id })).resolves.toBe("unchanged");
+  });
+
+  it("on a fixed-session Live credits only the registration whose own session is the one admitted (review MINOR-1)", async () => {
+    const t = await tenant();
+    const fixed = await live(t, { sessionMode: "fixed_sessions" });
+    const publicSession = await db.liveSession.create({ data: { vendorId: t.vendor.id, liveId: fixed.id, startAt: ago(5 * MINUTE) } });
+    const ownSession = await db.liveSession.create({ data: { vendorId: t.vendor.id, liveId: fixed.id, startAt: new Date(Date.now() + 2 * HOUR) } });
+    const lead = await registrant(t, fixed.id);
+    await db.formSubmission.update({ where: { id: lead.id }, data: { liveSessionId: ownSession.id } });
+    const attendance = `${liveAttendanceCookieName(fixed.id)}=${createLiveAttendanceToken({ vendorId: t.vendor.id, liveId: fixed.id, submissionId: lead.id, expiresAt: new Date(Date.now() + 7 * 24 * HOUR) })}`;
+    const start = new Date();
+    const request = (now: Date, playingFixedSessionId: string) => recordAttendanceForAdmission({
+      request: new Request(`${APP_URL}/api/live-admission`, { method: "POST", headers: { cookie: attendance } }),
+      vendorId: t.vendor.id, liveId: fixed.id, creditWatchTime: true, playingFixedSessionId, now,
+    });
+    // The attendance-only device follows the public schedule into another session: no time for the registrant.
+    await request(start, publicSession.id);
+    await request(new Date(start.getTime() + MINUTE), publicSession.id);
+    expect(await storedProgress(t, lead.id)).toBeNull();
+    // Admitted to the registrant's own session: counted.
+    await request(new Date(start.getTime() + 2 * MINUTE), ownSession.id);
+    await request(new Date(start.getTime() + 3 * MINUTE), ownSession.id);
+    expect(await storedProgress(t, lead.id)).toMatchObject({ watchedSeconds: 60 });
   });
 
   it("is deleted with its registration and its Live, and a fired rule never blocks deleting the Live", async () => {
@@ -390,6 +428,53 @@ describe("觀看直播達到指定進度 (Q-11 viewer_watch_progress)", () => {
     // Ended after 60 minutes: 40 of 60 minutes is past 50 %.
     await db.live.update({ where: { id: stream.id }, data: { status: "ended", endedAt: new Date(startedAt.getTime() + HOUR) } });
     await expect(run([t])).resolves.toMatchObject({ completed: 1 });
+  });
+
+  it("reaches 90 % for a viewer who watched all of a 10-minute video, renewing every 30 s (review MINOR-4)", async () => {
+    const t = await tenant();
+    await watchRule(t, 90);
+    const start = ago(12 * MINUTE);
+    const session = await live(t, { scheduledAt: start });
+    const lead = await registrant(t, session.id);
+    // The viewer page renews from the start until the video's end.
+    for (let second = 0; second < VIDEO_SECONDS; second += 30) {
+      await creditLiveWatchProgress({ vendorId: t.vendor.id, liveId: session.id, formSubmissionId: lead.id, now: new Date(start.getTime() + second * SECOND) });
+    }
+    const stored = await storedProgress(t, lead.id);
+    expect(stored!.watchedSeconds * 100).toBeGreaterThanOrEqual(90 * VIDEO_SECONDS);
+    await expect(run([t])).resolves.toMatchObject({ completed: 1 });
+    expect((await logsOf(t)).map((log) => log.eventId)).toEqual([watchProgressEventId(lead.id, 90)]);
+  });
+
+  it("measures a real live stream started 10 minutes late from its actual start: watching all of it reaches 90 % (review MAJOR-1)", async () => {
+    const t = await tenant();
+    await watchRule(t, 90);
+    const scheduledAt = ago(2 * HOUR);
+    const startedAt = new Date(scheduledAt.getTime() + 10 * MINUTE);
+    const endedAt = new Date(startedAt.getTime() + HOUR);
+    const stream = await live(t, { streamMode: "live", status: "live", scheduledAt, startedAt, videoId: null });
+    const lead = await registrant(t, stream.id);
+    for (let second = 0; second < 3_600; second += 30) {
+      await creditLiveWatchProgress({ vendorId: t.vendor.id, liveId: stream.id, formSubmissionId: lead.id, now: new Date(startedAt.getTime() + second * SECOND) });
+    }
+    await db.live.update({ where: { id: stream.id }, data: { status: "ended", endedAt } });
+    await expect(run([t])).resolves.toMatchObject({ completed: 1 });
+  });
+
+  it("still judges a real live stream the merchant ended a day after its viewers left (review MINOR-3)", async () => {
+    const t = await tenant();
+    await watchRule(t, 50, { updatedAt: ago(40 * HOUR) });
+    const startedAt = ago(32 * HOUR);
+    const stream = await live(t, { streamMode: "live", status: "live", scheduledAt: startedAt, startedAt, videoId: null });
+    const lead = await registrant(t, stream.id);
+    // Watched 17 hours of what turns into a 31-hour broadcast; last credit 30 hours ago.
+    await progress(t, stream.id, lead.id, 17 * 3_600, ago(30 * HOUR));
+    await expect(run([t])).resolves.toMatchObject({ candidates: 0 });
+    // Ended only now (an hour ago): judged although the last credit is past the 24-hour look-back.
+    await db.live.update({ where: { id: stream.id }, data: { status: "ended", endedAt: ago(HOUR) } });
+    await expect(run([t])).resolves.toMatchObject({ completed: 1 });
+    // A rerun does not repeat it.
+    await expect(run([t])).resolves.toMatchObject({ candidates: 0 });
   });
 
   it("runs each event once when two jobs scan and dispatch the same events at the same time", async () => {

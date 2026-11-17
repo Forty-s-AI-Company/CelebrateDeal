@@ -247,8 +247,9 @@ async function admitWithinTransaction(tx: Prisma.TransactionClient, input: Admis
       data: { lastSeenAt: now, expiresAt },
     });
     // `runtimeState`: whether this viewer's own session is playing or in its
-    // replay (Q-11 viewer_watch_progress only credits time while it plays).
-    return { token: requestedToken, expiresAt, reused: true, sessionId: existing.id, runtimeState };
+    // replay (Q-11 viewer_watch_progress only credits time while it plays);
+    // `fixedSessionId`: the fixed session (指定場次) this viewer was admitted to.
+    return { token: requestedToken, expiresAt, reused: true, sessionId: existing.id, runtimeState, fixedSessionId: fixedSession?.id ?? null };
   }
 
   const activeSessions = await tx.liveViewerSession.count({
@@ -270,7 +271,7 @@ async function admitWithinTransaction(tx: Prisma.TransactionClient, input: Admis
     },
     select: { id: true },
   });
-  return { token, expiresAt, reused: false, sessionId: created.id, runtimeState };
+  return { token, expiresAt, reused: false, sessionId: created.id, runtimeState, fixedSessionId: fixedSession?.id ?? null };
 }
 
 function isPrismaCode(error: unknown, code: string) {

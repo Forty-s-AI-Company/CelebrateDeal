@@ -21,13 +21,26 @@ describe("watch progress length and percent (Q-11 viewer_watch_progress)", () =>
     expect(watchProgressLengthSeconds({ ...base, streamMode: "vod", video: null })).toBeNull();
   });
 
-  it("knows a real live stream's length only once it ended", () => {
+  it("knows a real live stream's length only once it ended: the time it actually played (review MAJOR-1)", () => {
     const startedAt = new Date("2026-11-18T10:05:00.000Z");
     const live = { ...base, streamMode: "live", status: "live", startedAt, video: null };
     expect(watchProgressLengthSeconds(live)).toBeNull();
-    expect(watchProgressLengthSeconds({ ...live, status: "ended", endedAt: new Date("2026-11-18T11:00:00.000Z") })).toBe(3_600);
-    expect(watchProgressLengthSeconds({ ...live, status: "ended", endedAt: base.scheduledAt })).toBeNull();
+    // Started 5 minutes late: measured from startedAt, not from scheduledAt.
+    expect(watchProgressLengthSeconds({ ...live, status: "ended", endedAt: new Date("2026-11-18T11:00:00.000Z") })).toBe(3_300);
+    // No recorded start: from scheduledAt.
+    expect(watchProgressLengthSeconds({ ...live, startedAt: null, status: "ended", endedAt: new Date("2026-11-18T11:00:00.000Z") })).toBe(3_600);
+    expect(watchProgressLengthSeconds({ ...live, status: "ended", endedAt: startedAt })).toBeNull();
     expect(watchProgressLengthSeconds({ ...live, streamMode: "browser", status: "ended", endedAt: new Date("2026-11-18T11:00:00.000Z") })).toBeNull();
+  });
+
+  it("gives a viewer who watched all of a stream started 10 minutes late at least 90 % (review MAJOR-1)", () => {
+    const scheduledAt = new Date("2026-11-18T10:00:00.000Z");
+    const startedAt = new Date("2026-11-18T10:10:00.000Z");
+    const endedAt = new Date("2026-11-18T11:10:00.000Z");
+    const length = watchProgressLengthSeconds({ ...base, scheduledAt, streamMode: "live", status: "ended", startedAt, endedAt, video: null })!;
+    expect(length).toBe(3_600);
+    // Renewals every 30 s from the start; the tail after the last renewal is lost.
+    expect(watchProgressPercent(3_600 - 30, length)).toBeGreaterThanOrEqual(90);
   });
 
   it("floors the percent and caps it at 100", () => {

@@ -141,6 +141,9 @@ describe("AutomationSettingsPage", () => {
     expect([...percentSelect.matchAll(/value="([^"]+)"/gu)].map((match) => match[1])).toEqual(["25", "50", "75", "90"]);
     expect(html).toContain("觀看進度＝已完成 Email 驗證的報名者，在自己的場次播放期間（不含回放）停留在觀看頁的時間，除以影片長度");
     expect(html).toContain("每位報名者、每條規則一次");
+    // Review MINOR-2 / MINOR-3.
+    expect(html).toContain("真人直播在結束後約 5 分鐘內一次判斷所有門檻，請在直播結束時按「結束」。");
+    expect(html).toContain("同一筆報名在不同場次的觀看時間會累加。");
   });
 
   it("lists a percentage rule as running with a percent dry-run, and a legacy seconds rule as not running (Q-11)", async () => {

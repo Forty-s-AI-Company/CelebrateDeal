@@ -139,12 +139,18 @@ function reportFailure(error: unknown, operation: "record" | "watch_progress") {
  * registration then also gets its watch time credited
  * (creditLiveWatchProgress), chosen from the same verified cookies; that write
  * is independent of the attendance write and just as best-effort.
+ * `playingFixedSessionId`: on a fixed-session Live, the session the viewer was
+ * admitted to; only a registration that chose it gets time (review MINOR-1).
+ *
+ * `now` is for tests: the cookies are checked against it and the watch-time
+ * credit uses it instead of the database clock. Production callers omit it.
  */
 export async function recordAttendanceForAdmission(input: {
   request: Request;
   vendorId: string;
   liveId: string;
   creditWatchTime?: boolean;
+  playingFixedSessionId?: string | null;
   now?: Date;
 }): Promise<LiveRegistrationAttendanceResult> {
   let ids: { formSubmissionId: string; fallbackFormSubmissionId: string | null } | null;
@@ -167,7 +173,14 @@ export async function recordAttendanceForAdmission(input: {
     return "skipped" as const;
   });
   if (input.creditWatchTime) {
-    await creditLiveWatchProgress(target).catch((error: unknown) => {
+    await creditLiveWatchProgress({
+      vendorId: input.vendorId,
+      liveId: input.liveId,
+      ...ids,
+      liveSessionId: input.playingFixedSessionId ?? null,
+      // Only an explicit test clock overrides the database's (review MINOR-5).
+      ...(input.now ? { now: input.now } : {}),
+    }).catch((error: unknown) => {
       reportFailure(error, "watch_progress");
     });
   }

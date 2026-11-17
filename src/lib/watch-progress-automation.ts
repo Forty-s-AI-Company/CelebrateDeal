@@ -31,9 +31,11 @@ import { captureOperationalError } from "@/lib/monitoring";
  * video's length for a VOD-based Live, the broadcast's length once a real live
  * stream ended). A registration reaches a rule's threshold when all of these
  * hold, every condition bound to the vendor of the rule:
- * - its LiveWatchProgress row is of this vendor, was credited within the last
- *   WATCH_PROGRESS_LOOKBACK_MS, and its registration is VERIFIED, of the same
- *   Live and through a form of this vendor;
+ * - its LiveWatchProgress row is of this vendor and due within the last
+ *   WATCH_PROGRESS_LOOKBACK_MS (its last credit, or for a real live stream the
+ *   later of that and the stream's `endedAt`, review MINOR-3: a stream ended
+ *   a day after its viewers left is still judged), and its registration is
+ *   VERIFIED, of the same Live and through a form of this vendor;
  * - the Live is this vendor's and its length is known;
  * - `watchedSeconds × 100 ≥ percent × length`;
  * - the rule is active, vendor-wide, parseable, has a percentage condition, and
@@ -55,7 +57,7 @@ import { captureOperationalError } from "@/lib/monitoring";
  * its video length.
  *
  * Each run dispatches at most WATCH_PROGRESS_EVENT_LIMIT events,
- * round-robin across vendors (each vendor's earliest-credited first), scans
+ * round-robin across vendors (each vendor's earliest-due first), scans
  * at most WATCH_PROGRESS_VENDOR_LIMIT vendors (starting at a different one
  * every minute). The scan stops at two thirds of the deadline; no event starts
  * after the deadline.
@@ -131,6 +133,8 @@ type Candidate = {
   watchedSeconds: number;
   lengthSec: number;
   lastCreditedAt: Date;
+  /** When the row became judgeable: its last credit, or a real live stream's end if later. */
+  dueAt: Date;
   percent: number;
   ruleIds: string[];
 };
@@ -174,14 +178,25 @@ async function scanVendor(db: Db, vendorId: string, rules: RunnableRule[], now: 
       AND p."lastCreditedAt" > ${utcTimestamp(lookbackFrom)}
     LIMIT ${LIVE_SCAN_LIMIT}
   `;
-  if (liveRows.length === 0) return [];
+  // Review MINOR-3: a real live stream is judged once it ended, so one that
+  // ended in the window counts even when its viewers' last credit is older.
+  const endedStreams = await db.live.findMany({
+    where: { vendorId, streamMode: "live", status: "ended", endedAt: { gt: lookbackFrom }, watchProgress: { some: { vendorId } } },
+    orderBy: [{ endedAt: "asc" }, { id: "asc" }],
+    take: LIVE_SCAN_LIMIT,
+    select: { id: true },
+  });
+  const liveIds = [...new Set([...liveRows.map((row) => row.liveId), ...endedStreams.map((live) => live.id)])];
+  if (liveIds.length === 0) return [];
   const lives = await db.live.findMany({
-    where: { vendorId, id: { in: liveRows.map((row) => row.liveId) } },
+    where: { vendorId, id: { in: liveIds } },
     select: WATCH_PROGRESS_LIVE_SELECT,
   });
   const lengths = lives.flatMap((live) => {
     const seconds = watchProgressLengthSeconds(live);
-    return seconds ? [{ liveId: live.id, seconds }] : [];
+    // A real live stream's rows are due from its end at the earliest.
+    const endedAt = live.streamMode === "live" && live.endedAt ? live.endedAt.toISOString() : null;
+    return seconds ? [{ liveId: live.id, seconds, endedAt }] : [];
   });
   if (lengths.length === 0) return [];
   const staleRunningBefore = new Date(now.getTime() - AUTOMATION_EXECUTION_RECLAIM_AFTER_MS);
@@ -189,13 +204,15 @@ async function scanVendor(db: Db, vendorId: string, rules: RunnableRule[], now: 
   const retryableCodes = [...WATCH_PROGRESS_RETRYABLE_ERROR_CODES];
   const rows = await db.$queryRaw<Array<Omit<Candidate, "vendorId">>>(Prisma.sql`
     WITH "length" AS (
-      SELECT * FROM unnest(${lengths.map((entry) => entry.liveId)}::text[], ${lengths.map((entry) => entry.seconds)}::int[]) AS t("liveId", "seconds")
+      SELECT t."liveId", t."seconds", (t."endedAt"::timestamptz AT TIME ZONE 'UTC') AS "endedAt"
+      FROM unnest(${lengths.map((entry) => entry.liveId)}::text[], ${lengths.map((entry) => entry.seconds)}::int[], ${lengths.map((entry) => entry.endedAt)}::text[]) AS t("liveId", "seconds", "endedAt")
     ),
     "threshold" AS (
       SELECT * FROM unnest(${rules.map((rule) => rule.id)}::text[], ${rules.map((rule) => rule.percent)}::int[]) AS t("ruleId", "percent")
     )
     SELECT p."formSubmissionId" AS "submissionId", s."email", p."liveId", p."watchedSeconds",
-           len."seconds" AS "lengthSec", p."lastCreditedAt", th."percent",
+           len."seconds" AS "lengthSec", p."lastCreditedAt",
+           GREATEST(p."lastCreditedAt", len."endedAt") AS "dueAt", th."percent",
            array_agg(r."id" ORDER BY r."createdAt" ASC, r."id" ASC) AS "ruleIds"
     FROM "LiveWatchProgress" p
     JOIN "length" len ON len."liveId" = p."liveId"
@@ -211,7 +228,7 @@ async function scanVendor(db: Db, vendorId: string, rules: RunnableRule[], now: 
     WHERE p."vendorId" = ${vendorId}
       AND f."vendorId" = ${vendorId}
       AND s."verificationStatus" = 'VERIFIED'
-      AND p."lastCreditedAt" > ${utcTimestamp(lookbackFrom)}
+      AND GREATEST(p."lastCreditedAt", len."endedAt") > ${utcTimestamp(lookbackFrom)}
       AND NOT EXISTS (
         SELECT 1 FROM "AutomationExecutionLog" l
         WHERE l."vendorId" = ${vendorId}
@@ -225,8 +242,8 @@ async function scanVendor(db: Db, vendorId: string, rules: RunnableRule[], now: 
             AND l."completedAt" < ${utcTimestamp(failedRetryBefore)}
           )
       )
-    GROUP BY p."formSubmissionId", s."email", p."liveId", p."watchedSeconds", len."seconds", p."lastCreditedAt", th."percent"
-    ORDER BY p."lastCreditedAt" ASC, p."formSubmissionId" ASC, th."percent" ASC
+    GROUP BY p."formSubmissionId", s."email", p."liveId", p."watchedSeconds", len."seconds", p."lastCreditedAt", len."endedAt", th."percent"
+    ORDER BY "dueAt" ASC, p."formSubmissionId" ASC, th."percent" ASC
     LIMIT ${limit}
   `);
   return rows.map((row) => ({ ...row, vendorId }));
@@ -347,10 +364,10 @@ export async function runWatchProgressAutomation(options: {
     }
   }
 
-  // Events this run found but left (cap or deadline) whose last credit will
-  // soon leave the look-back window would be lost for good.
+  // Events this run found but left (cap or deadline) that will soon leave the
+  // look-back window would be lost for good.
   const alertBefore = now.getTime() - WATCH_PROGRESS_LOOKBACK_MS + WATCH_PROGRESS_BACKLOG_ALERT_MS;
-  summary.backlogNearLookback = perVendor.some((rows) => rows.some((row) => !dispatched.has(row) && row.lastCreditedAt.getTime() <= alertBefore));
+  summary.backlogNearLookback = perVendor.some((rows) => rows.some((row) => !dispatched.has(row) && row.dueAt.getTime() <= alertBefore));
   if (summary.backlogNearLookback) {
     report(new Error("Watch progress events near the end of the look-back window were left for a later run."), "backlog_near_lookback", ["watch-progress-backlog-near-lookback"]);
   }

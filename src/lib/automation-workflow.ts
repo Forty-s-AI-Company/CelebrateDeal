@@ -154,7 +154,7 @@ export function isWatchProgressPercent(value: unknown): value is number {
  * Shown on every `viewer_watch_progress` rule and the rule form: what the
  * progress counts, so a merchant does not read it as video position.
  */
-export const WATCH_PROGRESS_DETECTION_NOTE = "觀看進度＝已完成 Email 驗證的報名者，在自己的場次播放期間（不含回放）停留在觀看頁的時間，除以影片長度；真人直播在結束後以實際直播長度計算。只能辨識在報名驗證的瀏覽器，或從提醒信、開播通知的個人連結進場的裝置；在其他裝置直接打開直播頁觀看的時間不會計入。同一個人多台裝置同時觀看只算一次時間。";
+export const WATCH_PROGRESS_DETECTION_NOTE = "觀看進度＝已完成 Email 驗證的報名者，在自己的場次播放期間（不含回放）停留在觀看頁的時間，除以影片長度；真人直播在結束後以實際播放長度計算。真人直播在結束後約 5 分鐘內一次判斷所有門檻，請在直播結束時按「結束」。同一筆報名在不同場次的觀看時間會累加。只能辨識在報名驗證的瀏覽器，或從提醒信、開播通知的個人連結進場的裝置；在其他裝置直接打開直播頁觀看的時間不會計入。同一個人多台裝置同時觀看只算一次時間。";
 
 /** The triggers a vendor may choose (AVAILABLE_AUTOMATION_TRIGGERS less the ones its grants do not open). */
 export function availableAutomationTriggersForVendor(vendor: FeatureGateVendor | null | undefined) {
