@@ -18,26 +18,26 @@
 | 順序 | ID | 項目 | 風險 | 規模 | 完成標準 | 狀態 |
 |---|---|---|---|---|---|---|
 | 1 | Q-01 | 兩個不穩定 e2e（救援碼、學員推播） | 一般 | S | merge queue 連續 10 次不因這兩個測試失敗；不加 retry／skip | 已合併 [#607](https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/607)，觀察中：推播測試根因未確認，PR 加了 `worker=` 診斷；merge queue 再因這兩個測試失敗時依診斷續查 |
-| 2 | P-573 | Dependabot 正式相依（React 19.3.1 等 6 個，#573） | 一般 | S | 重新產生 lockfile（`magicast` 缺鎖檔）；完整 CI 與 e2e 通過 | 未開始 |
-| 3 | P-572 | Dependabot 開發相依（Playwright 1.65 等，#572） | 一般 | S | 同上；確認 `.github/actions/playwright-chromium` 快取 | 未開始 |
+| 2 | P-573 | Dependabot 正式相依（React 19.3.1 等 6 個，#573） | 一般 | S | 重新產生 lockfile（`magicast` 缺鎖檔）；完整 CI 與 e2e 通過 | 已完成 [#614](https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/614)（與 #572 合併處理，兩個 Dependabot PR 已關閉）。axe 4.14 新規則連帶修正帳號選單、上傳區、範本庫按鈕的可存取名稱；browser-dev 的 axe 掃描排除無腳本權限的 `iframe[sandbox=""]`（Chromium 159 下 axe 無法在其中執行），改以 title 斷言。staging browser smoke run 44007306822 PASS |
+| 3 | P-572 | Dependabot 開發相依（Playwright 1.65 等，#572） | 一般 | S | 同上；確認 `.github/actions/playwright-chromium` 快取 | 已完成，併入 [#614](https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/614) |
 | 4 | P-569 | GitHub Actions 版本升級（#569） | 高（動到 production workflow） | S | 更新 TAP 契約測試第 624 項認可的 blob；逐一確認 action 主版本變更；審查 | 已完成 [#609](https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/609)（取代 #569，獨立審查通過）。後續 [#611](https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/611)：帶 secret 的 job 明確關閉 setup-node 快取、全面 SHA 釘選。未驗證：v7 upload／v8 download 尚未在 staging-backup-recovery 實跑 |
 | 5 | P-561 | staging 首次成功路徑 runner（#561） | 高（註冊、Turnstile 略過條件） | S | 同步 master、CI 通過、對目前 head 補一次審查；workflow 實跑待 staging 授權 | 已完成 [#561](https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/561)（合併 `4c367772`，head 經獨立審查）。2026-11-17 staging 套用 9 個 migration（run 43983333501），alias 切到 `dpl_J6oqRLraJuthMj2f1BvzaXYgDdSB`（回滾點 `dpl_2wM7J2796QCBaUdAgoxpfgU3TH8K`），首次成功路徑 run 43983659367 PASS（15 步）。後續見 R-10 |
-| 6 | Q-10 | `payment_paid` 自動化補跑 job | 高 | M | 回應後工作被中止時，下一輪 job 補跑且不重複（設計文件 §8）；PG 測試 | 未開始 |
-| 7 | Q-06 | Email 序列「買了就停」（`stopOnPurchase`） | 高 | M | 已付款訂單的買家不再收到後續步驟；退款不恢復；租戶隔離測試 | 未開始 |
+| 6 | Q-10 | `payment_paid` 自動化補跑 job | 高 | M | 回應後工作被中止時，下一輪 job 補跑且不重複（設計文件 §8）；PG 測試 | 已完成 [#613](https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/613)（兩輪獨立審查；`action_failed` 以比對再寫入重試一次）。staging：alias 切到 `ca1c82d6` 後手動 webhook-retry run 44000422870 http=200。未驗證：平台實際中止 `after()` 的情境、大量訂單的查詢計畫 |
+| 7 | Q-06 | Email 序列「買了就停」（`stopOnPurchase`） | 高 | M | 已付款訂單的買家不再收到後續步驟；退款不恢復；租戶隔離測試 | 已完成 [#618](https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/618)（獨立審查通過）。owner 2026-11-17 決定：同商家任何商品都算購買、退款不恢復。未驗證：瀏覽器實際操作後台；已知限制見 `docs/domain-workflows.md`（0 元訂單也算購買、寄送前檢查與寄出之間的毫秒級視窗） |
 | 8 | Q-04 | 課後信 job 遇 serialization failure 中止整輪 | 一般 | S–M | 單筆失敗不影響同輪其他寄送；有重試上限 | 未開始 |
 | 9 | Q-14 | `CourseLesson.chapterId` 收緊 NOT NULL | 高（migration） | S | 修復腳本兩個查詢皆 0 後才加；登記 `PRISMA_INVARIANTS.md`。staging 驗證待授權 | 未開始 |
-| 10 | Q-15 | 課程章節排序、刪除、搬移單元 | 一般 | M | 學員進度與證書不受影響；e2e | 未開始 |
+| 10 | Q-15 | 課程章節排序、刪除、搬移單元 | 一般 | M | 學員進度與證書不受影響；e2e | 已完成 [#616](https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/616)（獨立審查通過）。第一次章節管理操作會讓學員端改採後台順序（已記於 `PRISMA_INVARIANTS.md`）。未驗證：手機版面 |
 | 11 | U-03 | 編輯器 inspector 對付款元件的說明與 restricted 狀態同步 | 一般 | S | 已綁商品時不再顯示「尚未連接」；`coupon` 維持說明文字 | 已完成 [#610](https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/610)。未驗證：沒有在瀏覽器實際操作編輯器 |
-| 12 | Q-02 | 其他 e2e hydration 競態（accessibility、announcement-center、commerce-orders、course-player） | 一般 | S–M | 先重現或取得 CI 樣本再改 | 未開始 |
-| 13 | Q-03 | 範本庫 `TemplateCard` 對比不足 | 一般 | S | 先在 master 重現；axe 無新增違規 | 未開始 |
+| 12 | Q-02 | 其他 e2e hydration 競態（accessibility、announcement-center、commerce-orders、course-player） | 一般 | S–M | 先重現或取得 CI 樣本再改 | 已完成，無需修改：2026-11-05～11-17 的 30 筆 CI 失敗中，這些 spec 沒有 hydration 競態紀錄（相關的兩個已由 #590、#593 修好）。另：`learner-notifications.spec.ts` 在 #607 後仍失敗一次（#608 佇列），併入第 1 項觀察 |
+| 13 | Q-03 | 範本庫 `TemplateCard` 對比不足 | 一般 | S | 先在 master 重現；axe 無新增違規 | 已完成 [#615](https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/615)：master 上 27 處，原因是縮圖預覽的背景被 axe 當成卡片底色；縮圖外框加 `contain-paint isolate`，未改顏色；新增範本庫 axe e2e |
 | 14 | Q-12 | 延遲步驟細節（快照損壞重試、連帶撤回、補跑輪流；地址索引另列高） | 一般 | S–M | 各自有測試 | 未開始 |
 | 15 | Q-13 | 規則被鎖超過 2 秒時漏建延遲步驟 | 一般 | M | 先重現；補建不重複 | 未開始 |
 | 16 | Q-11 | 三個隱藏 trigger 接上呼叫端（`form_no_show`、`viewer_watch_progress`、`webinar_attended_duration_gte`） | 一般 | M×3 | 每個 trigger 一個 PR；接上後才在後台顯示 | 未開始 |
 | 17 | Q-09 | `payment_paid` 的延遲步驟 | 高（金流、migration） | L | `DelayedStepRun` 加訂單欄位；到點重讀訂單；退款後不寄 | 未開始 |
 | 18 | U-04 | 通用元件採用（28 個手寫輸入框、Toast、Tabs 分批遷移） | 一般 | M，分批 | 每批視覺與 a11y 不退步 | 未開始 |
-| 19 | Q-05 | 發布檢查改成純讀 preflight | 一般 | M | 檢查不取得發布鎖、不寫入 | 未開始 |
+| 19 | Q-05 | 發布檢查改成純讀 preflight | 一般 | M | 檢查不取得發布鎖、不寫入 | 已完成 [#619](https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/619)。檢查與正式發布共用 `assertDraftPublishable`；同一份測試對舊實作只有「不取鎖」兩項不同。純讀看不到的寫入期競爭（自動表單 slug、版本號唯一鍵）仍只在正式發布時回報 |
 | 20 | R-02 | `.gitattributes`（LF） | 一般 | S | 不造成全 repo 換行 diff | 未開始 |
-| 21 | R-07 | 外部排程 Cloudflare Worker 檔進 repo | 一般 | S | `wrangler.toml` 與 worker 可直接部署；部署由 owner 做 | 未開始 |
+| 21 | R-07 | 外部排程 Cloudflare Worker 檔進 repo | 一般 | S | `wrangler.toml` 與 worker 可直接部署；部署由 owner 做 | 已完成 [#617](https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/617)：`ops/cloudflare/scheduled-jobs-worker/`。部署（`wrangler login`、`secret put JOB_SECRET`、`deploy`）仍待 owner（B-1） |
 | 22 | D-01 | 文件與程式不一致（ROADMAP 課程列、GO-NO-GO §0／§7／F-019、OWNER-ACTIONS 補 Dependency graph 與 S4） | 一般 | S | 逐項對照程式後修正 | 未開始 |
 | 23 | R-05 | 兩租戶 action 矩陣其餘部分（F-134） | 高（租戶） | M–L | 先盤點未涵蓋的 action，再補回歸測試 | 未開始（範圍待盤點） |
 | 24 | R-04 | L3 重構（`actions.ts` 拆分、結帳抽服務、付款 reconciler、adapter 契約） | 高 | L | 每步行為不變、測試不弱化；一次一個模組 | 未開始 |
