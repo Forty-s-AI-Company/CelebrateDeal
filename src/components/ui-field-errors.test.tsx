@@ -67,4 +67,21 @@ describe("shared form controls expose error and hint slots (F-117)", () => {
     expect(html).toContain('id="team-slug-error"');
     expect(html).toContain('id="team-slug-hint"');
   });
+
+  it("keeps the same markup when inputMode and labelHidden are omitted", () => {
+    const html = renderToStaticMarkup(<Field label="名稱" name="name" />);
+    expect(html).not.toContain("inputmode");
+    expect(html).not.toContain("sr-only");
+    expect(/<label[^>]*>名稱<input/u.exec(html)).not.toBeNull();
+  });
+
+  it("passes inputMode through to the input", () => {
+    const html = renderToStaticMarkup(<Field label="名額" name="capacity" type="number" inputMode="numeric" />);
+    expect(html).toMatch(/<input[^>]*inputMode="numeric"/u);
+  });
+
+  it("hides the label visually with sr-only but keeps it inside the label as the accessible name", () => {
+    const html = renderToStaticMarkup(<Field label="搜尋學員" labelHidden name="query" />);
+    expect(html).toMatch(/<label[^>]*><span class="sr-only">搜尋學員<\/span><input[^>]*name="query"/u);
+  });
 });
