@@ -345,7 +345,17 @@ test("a rendered journey remains blocked when an unexpected browser POST occurs"
             }
             if (scenario === "started_after_navigation") onRequest(previousChunk);
             // The next navigation cancels a chunk already reported as pending: no second count.
-            if (hungChunk) { failRequest(hungChunk, "net::ERR_ABORTED"); hungChunk = null; }
+            // However it ends (abort, another network error, or an HTTP error), it is not
+            // counted again.
+            if (hungChunk) {
+              if (chunkTiming === "hung_reset") failRequest(hungChunk, "net::ERR_CONNECTION_RESET");
+              else if (chunkTiming === "hung_404") {
+                const stale = hungChunk;
+                onResponse({ url: stale.url, status: () => 404, request: () => stale });
+                onRequestFinished(stale);
+              } else failRequest(hungChunk, "net::ERR_ABORTED");
+              hungChunk = null;
+            }
             if (scenario === "network_error_during_navigation") failRequest(previousChunk, "net::ERR_CONNECTION_RESET");
             else if (scenario && scenario !== "same_document") failRequest(previousChunk, "net::ERR_ABORTED");
             if (scenario === "navigation_failed" || scenario === "ordering") onRequestFailed(navigationRequest(url));
@@ -371,9 +381,13 @@ test("a rendered journey remains blocked when an unexpected browser POST occurs"
             if (scenario === "same_document") {
               // No document navigation is pending: the live document lost its own chunk.
               failRequest(ownChunk, "net::ERR_ABORTED");
-            } else if (url.endsWith("/dashboard") && chunkTiming === "hung") {
+            } else if (url.endsWith("/dashboard") && ["hung", "hung_reset", "hung_404"].includes(chunkTiming)) {
               // Never finishes: the runner must not leave it behind silently.
               hungChunk = ownChunk;
+            } else if (url.endsWith("/dashboard") && chunkTiming === "late_hung") {
+              // The page's own chunk is done, but a lazy chunk is requested 100ms after load.
+              onRequestFinished(ownChunk);
+              setTimeout(() => { const lazy = scriptRequest("lazy"); hungChunk = lazy; onRequest(lazy); }, 100);
             } else if (url.endsWith("/dashboard") && chunkTiming === "slow") {
               setTimeout(() => onRequestFinished(ownChunk), 60);
             } else {
@@ -405,7 +419,9 @@ test("a rendered journey remains blocked when an unexpected browser POST occurs"
           getByLabel: () => ({ selectOption: async () => {} }),
           getByText: () => locator,
           locator: (selector) => ({ ...locator, click: async () => { interactions.push(`click:${selector}`); await locator.click(); } }),
-          waitForURL: async () => {},
+          // After the app-shell click lands on /products, that route may request a chunk
+          // that hangs (review MINOR-2).
+          waitForURL: async () => { if (chunkTiming === "hung_after_app_navigation") onRequest(scriptRequest("landed")); },
           waitForFunction: async (fn, arg) => { interactions.push(`hydrated:${arg}`); return true; },
           url: () => currentUrl,
         }; },
@@ -480,14 +496,15 @@ test("a rendered journey remains blocked when an unexpected browser POST occurs"
   // 2026-11-18 runs 44256624407/44257523657 and review M-1 (#658): the runner now waits for a
   // page's chunks before leaving it. A slow chunk that finishes in time passes; one still
   // running at the bound blocks as pending instead of being cancelled out of sight.
-  const runScenario = async ({ scenario = null, timing = null } = {}) => {
+  const runScenario = async ({ scenario = null, timing = null, settleMs = 200, quietMs = 20 } = {}) => {
     abortScenario = scenario;
     chunkTiming = timing;
     try {
       return await runBrowserSmoke(INPUT, {
         verifyLineage: async () => true, verifyAlias: async () => true,
         playwright: { chromium: { launch: async () => browser } },
-        resourceSettleTimeoutMs: 200,
+        resourceSettleTimeoutMs: settleMs,
+        resourceQuietWindowMs: quietMs,
       });
     } finally { abortScenario = null; chunkTiming = null; }
   };
@@ -509,6 +526,31 @@ test("a rendered journey remains blocked when an unexpected browser POST occurs"
   assert.deepEqual(hung.browser.firstCriticalResourceFailure,
     { category: "pendingScript", phase: "RESOURCE_SETTLE", viewport: "desktop", route: "dashboard" });
   assert.deepEqual(hung.browser.supersededDocumentAborts, { script: 0, stylesheet: 0 });
+  // A pending request that later ends with another network error or a 404 is not recounted.
+  for (const timing of ["hung_reset", "hung_404"]) {
+    const ended = await runScenario({ timing });
+    assert.equal(ended.result, "BLOCKED", timing);
+    assert.equal(ended.browser.criticalResourceFailures, 2, timing);
+    assert.equal(ended.browser.criticalResourceFailureCategories.pendingScript, 2, timing);
+    assert.equal(ended.browser.criticalResourceFailureCategories.networkScript, 0, timing);
+    assert.equal(ended.browser.criticalResourceFailureCategories.http4xxScript, 0, timing);
+  }
+  // MINOR-1: a lazy chunk requested 100ms after load and then hanging is waited for (the
+  // runner needs a 500ms quiet window after load) and blocks as pending.
+  const lateHung = await runScenario({ timing: "late_hung", settleMs: 1_000, quietMs: 500 });
+  assert.equal(lateHung.result, "BLOCKED");
+  assert.equal(lateHung.browser.criticalResourceFailureCategories.pendingScript, 2);
+  assert.deepEqual(lateHung.browser.firstCriticalResourceFailure,
+    { category: "pendingScript", phase: "RESOURCE_SETTLE", viewport: "desktop", route: "dashboard" });
+  // MINOR-2: a chunk of the /products route reached through the app shell hangs: the wait
+  // after APP_NAVIGATION reports it before the context closes.
+  const landedHung = await runScenario({ timing: "hung_after_app_navigation" });
+  assert.equal(landedHung.result, "BLOCKED");
+  assert.equal(landedHung.browser.criticalResourceFailures, 2);
+  assert.equal(landedHung.browser.criticalResourceFailureCategories.pendingScript, 2);
+  assert.equal(landedHung.browser.navigationInteractionsPassed, 2);
+  assert.deepEqual(landedHung.browser.firstCriticalResourceFailure,
+    { category: "pendingScript", phase: "RESOURCE_SETTLE", viewport: "desktop", route: "billing_plans" });
 
   // Narrow remainder: a request already in flight when the navigation request was sent,
   // cancelled by that navigation's commit, is forgiven and reported as a diagnostic.
@@ -767,6 +809,15 @@ test("document abort tracker only forgives loads in flight when a committed navi
   twoNavigations.onRequestFailed(secondNavigation);
   assert.deepEqual(outcomes(twoNavigations.settle()), ["abortedScript:CRITICAL"]);
 
+  // A #fragment on either side does not change which document committed.
+  const fragment = createDocumentAbortTracker(page);
+  const fragmentChunk = chunk();
+  fragment.onRequest(fragmentChunk);
+  fragment.onRequest(navigation("https://staging.example.test/products#list"));
+  assert.equal(fragment.classifyAbort(fragmentChunk, entry("abortedScript")), "DEFERRED");
+  commit(fragment, "https://staging.example.test/products#top");
+  assert.deepEqual(outcomes(fragment.settle()), ["abortedScript:SUPERSEDED"]);
+
   // Same-document history change only: no commit, so critical at settle.
   const history = createDocumentAbortTracker(page);
   const historyChunk = chunk();
@@ -826,6 +877,15 @@ test("critical resource wait lets a slow chunk finish and returns a hung one", a
   const started = Date.now();
   assert.deepEqual(await waitForCriticalResources(page, tracker, 150), [hung]);
   assert.ok(Date.now() - started < 1_000);
+  // MINOR-1: a chunk requested 100ms after load, then hanging, is still caught.
+  const lateTracker = createDocumentAbortTracker({}, (item) => isCriticalResourceRequest(item, "staging.example.test"));
+  const lazy = request("script");
+  setTimeout(() => lateTracker.onRequest(lazy), 100);
+  assert.deepEqual(await waitForCriticalResources(page, lateTracker, 1_000, 500), [lazy]);
+  // A quiet window with nothing requested returns once it has elapsed, well before the bound.
+  const quietStarted = Date.now();
+  assert.deepEqual(await waitForCriticalResources(page, createDocumentAbortTracker({}), 5_000, 100), []);
+  assert.ok(Date.now() - quietStarted < 2_000);
   assert.equal(classifyPendingCriticalResource(hung), "pendingStylesheet");
   assert.equal(classifyPendingCriticalResource(slow), "pendingScript");
 });

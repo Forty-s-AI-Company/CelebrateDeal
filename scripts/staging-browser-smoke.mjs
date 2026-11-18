@@ -341,6 +341,11 @@ export function classifyPendingCriticalResource(request) {
  *    final settle (the tracker is then closed).
  * Non-abort failures and 4xx/5xx responses never come here; they are critical at once.
  */
+function withoutFragment(url) {
+  const index = url.indexOf("#");
+  return index === -1 ? url : url.slice(0, index);
+}
+
 export function createDocumentAbortTracker(page, isTracked = () => true) {
   const mainFrame = () => (typeof page.mainFrame === "function" ? page.mainFrame() : null);
   const isMainDocumentNavigation = (request) => {
@@ -378,7 +383,8 @@ export function createDocumentAbortTracker(page, isTracked = () => true) {
     onFrameNavigated(frame) {
       let url = null;
       try { url = frame.url(); } catch { /* fail closed: no commit */ }
-      if (!pending || frame !== mainFrame() || url === null || url !== pendingUrl) return;
+      if (!pending || frame !== mainFrame() || url === null || pendingUrl === null
+        || withoutFragment(url) !== withoutFragment(pendingUrl)) return;
       committed = started;
       pending = false;
     },
@@ -386,6 +392,8 @@ export function createDocumentAbortTracker(page, isTracked = () => true) {
     inflight() { return [...inflight]; },
     /** A request already reported as pending is not reported again when it is cancelled. */
     markReported(request) { reported.add(request); inflight.delete(request); },
+    /** True for a request already counted as pending: however it ends, it is not counted again. */
+    isReported(request) { return reported.has(request); },
     /** "REPORTED", "CRITICAL" now, or "DEFERRED" until the pending navigation is decided. */
     classifyAbort(request, entry) {
       if (reported.has(request)) return "REPORTED";
@@ -408,18 +416,30 @@ export function createDocumentAbortTracker(page, isTracked = () => true) {
   };
 }
 
+// After load, the page must stay this long with no critical request in flight, so a lazy
+// chunk requested shortly after load is waited for too (#658 review MINOR-1).
+export const CRITICAL_RESOURCE_QUIET_WINDOW_MS = 500;
+
 /**
- * Wait (bounded) for the page's load event and for every in-flight critical request to
- * finish or fail. Returns the requests still running at the bound; the caller reports
- * them as critical. A slow chunk that finishes in time passes; a hung one blocks.
+ * Wait (bounded) for the page's load event, then until no critical request has been in
+ * flight for `quietWindowMs` in a row. Returns the requests still running at the bound;
+ * the caller reports them as critical. A slow chunk that finishes in time passes; a hung
+ * one (including one requested after load) blocks.
  */
-export async function waitForCriticalResources(page, tracker, timeoutMs = CRITICAL_RESOURCE_SETTLE_TIMEOUT_MS) {
+export async function waitForCriticalResources(page, tracker, timeoutMs = CRITICAL_RESOURCE_SETTLE_TIMEOUT_MS,
+  quietWindowMs = CRITICAL_RESOURCE_QUIET_WINDOW_MS) {
   const deadline = Date.now() + timeoutMs;
   if (typeof page.waitForLoadState === "function") {
     await page.waitForLoadState("load", { timeout: timeoutMs }).catch(() => {});
   }
-  while (tracker.inflight().length > 0 && Date.now() < deadline) {
-    await new Promise((resolve) => { setTimeout(resolve, 50); });
+  let quietSince = null;
+  while (Date.now() < deadline) {
+    if (tracker.inflight().length > 0) quietSince = null;
+    else {
+      quietSince ??= Date.now();
+      if (Date.now() - quietSince >= quietWindowMs) break;
+    }
+    await new Promise((resolve) => { setTimeout(resolve, 25); });
   }
   return tracker.inflight();
 }
@@ -607,6 +627,7 @@ export async function runBrowserSmoke(env = process.env, dependencies = {}) {
   let failureSequence = 0;
   let firstCriticalSequence = null;
   const resourceSettleTimeoutMs = dependencies.resourceSettleTimeoutMs ?? CRITICAL_RESOURCE_SETTLE_TIMEOUT_MS;
+  const resourceQuietWindowMs = dependencies.resourceQuietWindowMs ?? CRITICAL_RESOURCE_QUIET_WINDOW_MS;
   try {
     for (const viewport of [{ id: "desktop", width: 1365, height: 768 }, { id: "mobile", width: 390, height: 844 }]) {
       report.browser.activeViewport = viewport.id;
@@ -722,7 +743,7 @@ export async function runBrowserSmoke(env = process.env, dependencies = {}) {
         const waitForPageResources = async () => {
           const previousPhase = report.browser.executionPhase;
           report.browser.executionPhase = "RESOURCE_SETTLE";
-          const stillPending = await waitForCriticalResources(page, documentAborts, resourceSettleTimeoutMs);
+          const stillPending = await waitForCriticalResources(page, documentAborts, resourceSettleTimeoutMs, resourceQuietWindowMs);
           for (const request of stillPending) {
             documentAborts.markReported(request);
             recordCriticalResourceFailure(classifyPendingCriticalResource(request), currentFailureContext(), "PENDING");
@@ -746,7 +767,8 @@ export async function runBrowserSmoke(env = process.env, dependencies = {}) {
             navigationProgress.documentResponseClass = status >= 500 ? "5XX"
               : status >= 400 ? "4XX" : status >= 300 ? "3XX" : status >= 200 ? "2XX" : "OTHER";
           }
-          recordCriticalResourceFailure(classifyCriticalResourceResponse(response, targetHost));
+          // A request already counted as pending is not counted again however it ends.
+          if (!documentAborts.isReported(response.request())) recordCriticalResourceFailure(classifyCriticalResourceResponse(response, targetHost));
         });
         page.on("requestfailed", (request) => {
           if (isDashboardDetailsGet(request, targetHost)) dashboardDetailsNetwork.failures += 1;
@@ -758,7 +780,8 @@ export async function runBrowserSmoke(env = process.env, dependencies = {}) {
             ? documentAborts.classifyAbort(request, { category, kind, sequence, failureContext: currentFailureContext() })
             : null;
           documentAborts.onRequestFailed(request);
-          if (!category || abortOutcome === "DEFERRED" || abortOutcome === "REPORTED") return;
+          // Already counted as pending: however it ends (abort or another error), not again.
+          if (!category || abortOutcome === "DEFERRED" || documentAborts.isReported(request)) return;
           recordCriticalResourceFailure(category, currentFailureContext(), kind, sequence);
         });
         page.on("requestfinished", (request) => {
