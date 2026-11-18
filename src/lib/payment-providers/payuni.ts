@@ -1,7 +1,7 @@
 import { createCipheriv, createDecipheriv, createHash, timingSafeEqual } from "node:crypto";
 import { isSupportedCheckoutCurrency, UnsupportedCurrencyError } from "@/lib/checkout-currency";
 import { recordUnsupportedCurrencyRefusal } from "@/lib/checkout-currency-audit";
-import { PaymentWebhookPayload } from "@/lib/payment-webhooks";
+import { PaymentWebhookPayload } from "@/lib/payment-providers/contract";
 import { getDb } from "@/lib/db";
 import { activePayUniCredentials } from "@/lib/payuni-credentials";
 import { payUniStagingPlanSessionAllowed } from "@/lib/payuni-staging-plan-test";

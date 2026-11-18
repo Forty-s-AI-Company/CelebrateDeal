@@ -1,4 +1,4 @@
-import { PaymentWebhookPayload } from "@/lib/payment-webhooks";
+import { PaymentWebhookPayload } from "@/lib/payment-providers/contract";
 import type { PaymentProviderAdapter } from "@/lib/payment-providers/types";
 
 export const demoPaymentProvider: PaymentProviderAdapter = {
