@@ -44,6 +44,9 @@ export function AutomationEmailTemplateSelect({ trigger, triggerFieldName, hasVo
   const wrapper = useRef<HTMLDivElement>(null);
   const [currentTrigger, setCurrentTrigger] = useState(trigger);
   const [voucher, setVoucher] = useState(hasVoucher);
+  // The subject and body are only mandatory while this form's "Email 通知" box is ticked; an unticked
+  // action must not stop the rest of the rule or step from being saved (the server checks them too).
+  const [emailOn, setEmailOn] = useState(Boolean(defaultTemplate));
   const [selected, setSelected] = useState(defaultTemplate ?? "");
 
   useEffect(() => {
@@ -54,6 +57,8 @@ export function AutomationEmailTemplateSelect({ trigger, triggerFieldName, hasVo
       if (triggerField instanceof HTMLSelectElement) setCurrentTrigger(triggerField.value);
       const voucherField = form.elements.namedItem("actionVoucher");
       if (voucherField instanceof HTMLInputElement) setVoucher(voucherField.checked);
+      const emailField = form.elements.namedItem("actionEmail");
+      if (emailField instanceof HTMLInputElement) setEmailOn(emailField.checked);
     };
     read();
     form.addEventListener("change", read);
@@ -82,8 +87,8 @@ export function AutomationEmailTemplateSelect({ trigger, triggerFieldName, hasVo
         : <option value="">沒有適用的範本</option>}
     </SelectField>
     {value === "generic_message" ? <div className="grid gap-4">
-      <Field label="Email 主旨" name="emailSubject" required maxLength={GENERIC_EMAIL_SUBJECT_MAX} defaultValue={defaultSubject} hint={`單行，最多 ${GENERIC_EMAIL_SUBJECT_MAX} 字，不能放連結或網址。`} />
-      <TextArea label="Email 內文" name="emailBody" required rows={6} maxLength={GENERIC_EMAIL_BODY_MAX} defaultValue={defaultBody} hint={`最多 ${GENERIC_EMAIL_BODY_MAX} 字，換行會照樣保留，支援基本格式（粗體、標題、清單），但不能放連結、網址或網域，這些會被拒絕。${variableHint}收件人姓名只有在報名 Email 已驗證時才會帶入，否則顯示「你」（表單報名成功的立即動作通常顯示「你」，因為報名當下尚未驗證）；表單沒有綁定直播時，直播名稱顯示「本活動」。信末會自動附上退訂連結與商家聯絡資訊。`} />
+      <Field label="Email 主旨" name="emailSubject" required={emailOn} maxLength={GENERIC_EMAIL_SUBJECT_MAX} defaultValue={defaultSubject} hint={`單行，最多 ${GENERIC_EMAIL_SUBJECT_MAX} 字，不能放連結或網址。`} />
+      <TextArea label="Email 內文" name="emailBody" required={emailOn} rows={6} maxLength={GENERIC_EMAIL_BODY_MAX} defaultValue={defaultBody} hint={`最多 ${GENERIC_EMAIL_BODY_MAX} 字，換行會照樣保留，支援基本格式（粗體、標題、清單），但不能放連結、網址或網域，這些會被拒絕。${variableHint}收件人姓名只有在報名 Email 已驗證時才會帶入，否則顯示「你」（表單報名成功的立即動作通常顯示「你」，因為報名當下尚未驗證）；表單沒有綁定直播時，直播名稱顯示「本活動」。信末會自動附上退訂連結與商家聯絡資訊。`} />
     </div> : null}
   </div>;
 }

@@ -118,8 +118,12 @@ test("a registration gets the rule's 2-hour step from the worker, after the owne
       await add.getByLabel("事件發生後多久執行").fill(value);
       await add.getByLabel("單位").selectOption({ label: unit });
       if (options.email) {
-        // 追購通知 is only offered next to a voucher in the same step (Q-18).
-        await expect(add.getByLabel("Email 範本")).toHaveValue("");
+        // 追購通知 is only offered next to a voucher in the same step (Q-18). Without one, the only template
+        // on this trigger is the link-free 自訂訊息 (A2-04), which brings its own subject and body fields.
+        await expect(add.getByLabel("Email 範本")).toHaveValue("generic_message");
+        await expect(add.locator('select[name="emailTemplate"] option')).toHaveCount(1);
+        await expect(add.locator('select[name="emailTemplate"] option[value="repurchase_followup"]')).toHaveCount(0);
+        await expect(add.locator('input[name="emailSubject"]')).toBeVisible();
         await add.getByLabel("發送回購券", { exact: true }).check();
         // By name, not by label: a select's accessible name includes its option text, so an exact "商品" never matches.
         await add.locator('select[name="productId"]').selectOption(fixture!.product.id);
@@ -129,7 +133,10 @@ test("a registration gets the rule's 2-hour step from the worker, after the owne
         // The step under test mails the voucher link, so the LINE notification stays off.
         await add.locator('input[name="voucherLineNotification"]').uncheck();
         await add.getByLabel("Email 通知", { exact: true }).check();
+        await expect(add.locator('select[name="emailTemplate"] option[value="repurchase_followup"]')).toHaveCount(1);
         await add.getByLabel("Email 範本").selectOption("repurchase_followup");
+        // The voucher follow-up has its own fixed copy: no subject or body fields.
+        await expect(add.locator('input[name="emailSubject"]')).toHaveCount(0);
       }
       await add.getByLabel("加上客戶標籤", { exact: true }).check();
       await add.getByLabel("客戶標籤", { exact: true }).fill(options.tag);

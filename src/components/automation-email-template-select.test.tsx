@@ -30,6 +30,7 @@ function RuleForm() {
     </select>
     <AutomationEmailTemplateSelect trigger="form_registered" triggerFieldName="trigger" hasVoucher={false} />
     <input type="checkbox" name="actionVoucher" />
+    <input type="checkbox" name="actionEmail" />
   </form>;
 }
 
@@ -95,6 +96,26 @@ describe("AutomationEmailTemplateSelect (Q-18)", () => {
     await change(select(), () => { select().value = "generic_message"; });
     expect(field("emailSubject")).not.toBeNull();
     expect(container.textContent).not.toContain("{{live_title}}");
+  });
+
+  // #665 CI: the fields exist (and show) while the action is off, so they must not block a rule that only tags.
+  it("makes the subject and body mandatory only while the form's Email 通知 box is ticked", async () => {
+    await act(async () => root.render(<RuleForm />));
+    const subject = () => container.querySelector<HTMLInputElement>('input[name="emailSubject"]')!;
+    const body = () => container.querySelector<HTMLTextAreaElement>('textarea[name="emailBody"]')!;
+    expect(subject().required).toBe(false);
+    expect(body().required).toBe(false);
+    const email = container.querySelector<HTMLInputElement>('input[name="actionEmail"]')!;
+    await change(email, () => { email.checked = true; });
+    expect(subject().required).toBe(true);
+    expect(body().required).toBe(true);
+    await change(email, () => { email.checked = false; });
+    expect(subject().required).toBe(false);
+  });
+
+  it("starts mandatory when a stored action already sends the e-mail", async () => {
+    await act(async () => root.render(<form><input type="checkbox" name="actionEmail" defaultChecked /><AutomationEmailTemplateSelect trigger="payment_paid" hasVoucher={false} defaultTemplate="generic_message" defaultSubject="a" defaultBody="b" /></form>));
+    expect(container.querySelector<HTMLInputElement>('input[name="emailSubject"]')!.required).toBe(true);
   });
 
   it("fills a stored generic action back into its fields", async () => {
