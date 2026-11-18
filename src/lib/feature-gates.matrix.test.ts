@@ -323,6 +323,12 @@ const STATIC_MATRIX: Array<{ feature: string; file: string; gate: RegExp; count?
   { feature: "automation_watch_progress", file: "src/lib/automation-workflow.ts", gate: /viewer_watch_progress: AUTOMATION_WATCH_PROGRESS_FEATURE,/u },
   { feature: "automation_watch_progress", file: "src/lib/watch-progress-automation.ts", gate: /betaFeatureGrants: \{ has: AUTOMATION_WATCH_PROGRESS_FEATURE \}/u },
   { feature: "automation_watch_progress", file: "src/lib/automation-delayed-steps.ts", gate: /l\."trigger" <> 'viewer_watch_progress' OR \$\{AUTOMATION_WATCH_PROGRESS_FEATURE\} = ANY\(v\."betaFeatureGrants"\)/u },
+  // automation_watch_duration (Q-11 webinar_attended_duration_gte): the same three places as its sibling: the
+  // per-trigger grant map, the shared watch pass's vendor scan, and the Q-13 catch-up of owed runs. Driven in
+  // watch-duration-automation.db.test.ts and automation-workflow.test.ts.
+  { feature: "automation_watch_duration", file: "src/lib/automation-workflow.ts", gate: /webinar_attended_duration_gte: AUTOMATION_WATCH_DURATION_FEATURE,/u },
+  { feature: "automation_watch_duration", file: "src/lib/watch-progress-automation.ts", gate: /betaFeatureGrants: \{ has: AUTOMATION_WATCH_DURATION_FEATURE \}/u },
+  { feature: "automation_watch_duration", file: "src/lib/automation-delayed-steps.ts", gate: /l\."trigger" <> 'webinar_attended_duration_gte' OR \$\{AUTOMATION_WATCH_DURATION_FEATURE\} = ANY\(v\."betaFeatureGrants"\)/u },
 ];
 
 describe("static gate inventory (F-001 / F-002)", () => {

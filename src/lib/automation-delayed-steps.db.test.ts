@@ -144,13 +144,13 @@ async function tenant(options: { line?: boolean; grant?: boolean } = {}) {
 
 type Tenant = Awaited<ReturnType<typeof tenant>>;
 
-async function rule(t: Tenant, options: { trigger?: string; actions?: unknown[]; isActive?: boolean } = {}) {
+async function rule(t: Tenant, options: { trigger?: string; actions?: unknown[]; isActive?: boolean; condition?: unknown } = {}) {
   return db.automationRule.create({
     data: {
       vendorId: t.vendor.id,
       name: `規則 ${randomUUID().slice(0, 6)}`,
       trigger: options.trigger ?? "form_registered",
-      condition: { type: "always" } as Prisma.InputJsonValue,
+      condition: (options.condition ?? { type: "always" }) as Prisma.InputJsonValue,
       actions: (options.actions ?? [{ type: "add_customer_tag", tag: "報名" }]) as Prisma.InputJsonArray,
       isActive: options.isActive ?? true,
     },
@@ -352,6 +352,26 @@ describe("觸發：事件發生時建立 run", () => {
     await recordLiveRegistrationAttendance({ vendorId: watchedAfter.t.vendor.id, liveId: watchedAfter.live.id, formSubmissionId: watchedAfter.lead.id, now: new Date(watchedAfter.run.anchorAt.getTime() + MINUTE) });
     await expect(work(watchedAfter.t, watchedAfter.due)).resolves.toEqual([{ runId: watchedAfter.run.id, status: "cancelled", cancelReason: "subject_gone" }]);
     await expect(db.emailDelivery.count({ where: { vendorId: watchedAfter.t.vendor.id } })).resolves.toBe(0);
+  });
+
+  it("refuses to add or change the steps of a watch rule with an old watch-seconds condition, even with every grant, but still deletes one (#651 review MINOR-5)", async () => {
+    const t = await tenant();
+    await db.vendor.update({ where: { id: t.vendor.id }, data: { betaFeatureGrants: ["automation_delayed_steps", "automation_watch_progress", "automation_watch_duration"] } });
+    const input = { delayMinutes: 120, condition: { type: "always" }, actions: [TAG_ACTION], isActive: true };
+    for (const [trigger, legacy, current] of [
+      ["viewer_watch_progress", { type: "watch_seconds_gte", seconds: 600 }, { type: "watch_percent_gte", percent: 50 }],
+      ["webinar_attended_duration_gte", { type: "watch_seconds_gte_and_not_purchased", seconds: 1_800 }, { type: "watch_minutes_gte", minutes: 15 }],
+    ] as const) {
+      const old = await rule(t, { trigger, condition: legacy, isActive: false });
+      const existing = await step(t, old.id, 60);
+      await expect(createAutomationRuleStep({ linePushAllowed: true, vendorId: t.vendor.id, ruleId: old.id, step: input })).resolves.toEqual({ ok: false, code: "trigger_unavailable" });
+      await expect(updateAutomationRuleStep({ linePushAllowed: true, vendorId: t.vendor.id, ruleId: old.id, stepId: existing.id, step: input })).resolves.toEqual({ ok: false, code: "trigger_unavailable" });
+      await expect(db.automationRuleStep.findMany({ where: { ruleId: old.id }, select: { id: true, delayMinutes: true } })).resolves.toEqual([{ id: existing.id, delayMinutes: 60 }]);
+      await expect(deleteAutomationRuleStep({ vendorId: t.vendor.id, ruleId: old.id, stepId: existing.id })).resolves.toMatchObject({ ok: true });
+      // The same trigger with the condition it runs takes steps.
+      const runnable = await rule(t, { trigger, condition: current });
+      await expect(createAutomationRuleStep({ linePushAllowed: true, vendorId: t.vendor.id, ruleId: runnable.id, step: input })).resolves.toMatchObject({ ok: true });
+    }
   });
 
   it("refuses to add or change a form_no_show rule's steps without its closed-beta grant, but still deletes one (re-review MINOR-3)", async () => {

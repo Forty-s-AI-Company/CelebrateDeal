@@ -25,7 +25,7 @@ import { DERIVED_KEY_ROTATIONS, legacyDerivedKeyUseCount, resetLegacyDerivedKeyU
 import { hashInteractionBearer } from "@/lib/live-interaction";
 import { deriveSensitiveDataKey } from "@/lib/sensitive-data";
 import { revealEmailDeliveryPayload, verifyEmailUnsubscribeToken } from "@/lib/email-delivery-pii";
-import { AUTOMATION_BUTTON_URL_ERROR_MESSAGE, AUTOMATION_RECIPES, AUTOMATION_TRIGGERS, AVAILABLE_AUTOMATION_RECIPES, AVAILABLE_AUTOMATION_TRIGGERS, automationExecutionNotes, isAvailableAutomationTrigger, automationConditionMatches, isSafeNewAutomationButtonUrl, automationCustomerKeyHash, dispatchAutomationEvent, DELAYED_STEP_AUTOMATION_TRIGGERS, automationTriggerSupportsDelayedSteps, delayedStepSubjectType, dryRunAutomationRule, renderAutomationEmailBody, availableAutomationTriggersForVendor, automationReplayOpen, formNoShowWebinarUrl, isAutomationTriggerAvailableForVendor, isAutomationRuleRunnableForVendor, automationTriggerBetaFeature, watchProgressRulePercent, maskAutomationTarget, materializeAutomationRecipe, parseAutomationRule } from "@/lib/automation-workflow";
+import { AUTOMATION_BUTTON_URL_ERROR_MESSAGE, AUTOMATION_RECIPES, AUTOMATION_TRIGGERS, AVAILABLE_AUTOMATION_RECIPES, AVAILABLE_AUTOMATION_TRIGGERS, automationExecutionNotes, isAvailableAutomationTrigger, automationConditionMatches, isSafeNewAutomationButtonUrl, automationCustomerKeyHash, dispatchAutomationEvent, DELAYED_STEP_AUTOMATION_TRIGGERS, automationTriggerSupportsDelayedSteps, delayedStepSubjectType, dryRunAutomationRule, renderAutomationEmailBody, availableAutomationTriggersForVendor, automationReplayOpen, formNoShowWebinarUrl, isAutomationTriggerAvailableForVendor, isAutomationRuleRunnableForVendor, automationTriggerBetaFeature, watchProgressRulePercent, watchDurationRuleMinutes, isWatchDurationMinutes, WATCH_DURATION_MINUTE_OPTIONS, WATCH_DURATION_DETECTION_NOTE, maskAutomationTarget, materializeAutomationRecipe, parseAutomationRule } from "@/lib/automation-workflow";
 
 const event = {
   vendorId: "vendor-1",
@@ -391,20 +391,17 @@ describe("smart automation workflow engine", () => {
 
   it("offers only triggers with a production caller, and only their recipes", () => {
     // F-4 PR 3: payment_paid has its caller (the payment webhook) again;
-    // Q-11: form_no_show and viewer_watch_progress have the e-mail job's passes.
-    expect([...AVAILABLE_AUTOMATION_TRIGGERS]).toEqual(["form_registered", "form_no_show", "viewer_watch_progress", "consultation_booked", "consultation_no_show", "payment_paid"]);
-    for (const hidden of ["webinar_attended_duration_gte"]) {
-      expect(AUTOMATION_TRIGGERS).toContain(hidden);
-      expect(isAvailableAutomationTrigger(hidden)).toBe(false);
-      expect(automationTriggerSupportsDelayedSteps(hidden)).toBe(false);
-    }
+    // Q-11: form_no_show, viewer_watch_progress and webinar_attended_duration_gte have the e-mail job's passes.
+    expect([...AVAILABLE_AUTOMATION_TRIGGERS]).toEqual(["form_registered", "form_no_show", "viewer_watch_progress", "webinar_attended_duration_gte", "consultation_booked", "consultation_no_show", "payment_paid"]);
+    expect([...AUTOMATION_TRIGGERS].sort()).toEqual([...AVAILABLE_AUTOMATION_TRIGGERS].sort());
     expect(isAvailableAutomationTrigger("unknown")).toBe(false);
+    // 「高意向追單漏斗」 stays out: its trigger runs now, but not its old watch-seconds and "not purchased" condition.
     expect(AVAILABLE_AUTOMATION_RECIPES.map((recipe) => recipe.id)).toEqual(["consultation_confirmer", "vip_auto_tiering", "no_show_reactivation"]);
     // Q-09: every available trigger takes delayed steps; payment_paid's run points at the order.
-    expect([...DELAYED_STEP_AUTOMATION_TRIGGERS]).toEqual(["form_registered", "form_no_show", "viewer_watch_progress", "consultation_booked", "consultation_no_show", "payment_paid"]);
+    expect([...DELAYED_STEP_AUTOMATION_TRIGGERS]).toEqual(["form_registered", "form_no_show", "viewer_watch_progress", "webinar_attended_duration_gte", "consultation_booked", "consultation_no_show", "payment_paid"]);
     expect(automationTriggerSupportsDelayedSteps("payment_paid")).toBe(true);
     expect(delayedStepSubjectType("payment_paid")).toBe("buyer_order");
-    for (const trigger of ["form_registered", "form_no_show", "viewer_watch_progress", "consultation_booked", "consultation_no_show"]) {
+    for (const trigger of ["form_registered", "form_no_show", "viewer_watch_progress", "webinar_attended_duration_gte", "consultation_booked", "consultation_no_show"]) {
       expect(delayedStepSubjectType(trigger)).toBe("buyer_registration");
     }
     expect(automationExecutionNotes(null)).toEqual([]);
@@ -501,7 +498,7 @@ describe("smart automation workflow engine", () => {
     expect(automationTriggerBetaFeature("viewer_watch_progress")).toBe("automation_watch_progress");
     expect(automationTriggerBetaFeature("form_no_show")).toBe("automation_form_no_show");
     expect(automationTriggerBetaFeature("payment_paid")).toBeNull();
-    expect(automationTriggerBetaFeature("webinar_attended_duration_gte")).toBeNull();
+    expect(automationTriggerBetaFeature("webinar_attended_duration_gte")).toBe("automation_watch_duration");
     const vendor = { betaFeatureGrants: ["automation_watch_progress"] };
     expect(isAutomationRuleRunnableForVendor({ trigger: "viewer_watch_progress", condition: { type: "watch_percent_gte", percent: 50 } }, vendor)).toBe(true);
     // Saved while the trigger was hidden: the old watch-seconds condition never runs.
@@ -644,14 +641,14 @@ describe("smart automation workflow engine", () => {
     expect(db.automationExecutionLog.create).not.toHaveBeenCalled();
   });
 
-  it("runs a watch-threshold rule only once for the same viewer across heartbeat event IDs", async () => {
+  it("runs a watch-duration rule only once per registration and threshold, whatever the watch time read (Q-11)", async () => {
     const conflict = new Prisma.PrismaClientKnownRequestError("duplicate", {
       code: "P2002",
       clientVersion: Prisma.prismaVersion.client,
     });
     const db = {
       automationRule: { findMany: vi.fn().mockResolvedValue([{
-        id: "rule-watch", version: 3, createdAt: new Date(), condition: { type: "watch_seconds_gte", seconds: 60 },
+        id: "rule-watch", version: 3, createdAt: new Date(), condition: { type: "watch_minutes_gte", minutes: 1 },
         actions: [{ type: "add_customer_tag", tag: "看播滿一分鐘" }],
       }]) },
       automationExecutionLog: {
@@ -665,9 +662,9 @@ describe("smart automation workflow engine", () => {
     };
     const watchEvent = {
       ...event,
-      eventId: "heartbeat-1",
+      // Built only by the watch pass from server records: `watch-duration:{registration}:{minutes}`.
+      eventId: "watch-duration:registration-1:1",
       liveId: "live-a",
-      // The legacy viewer-level key (the hidden webinar_attended_duration_gte); viewer_watch_progress keys on its job-built event id.
       trigger: "webinar_attended_duration_gte" as const,
       subjectType: "buyer_registration" as const,
       subjectId: "registration-1",
@@ -675,9 +672,66 @@ describe("smart automation workflow engine", () => {
     };
 
     await expect(dispatchAutomationEvent(db as never, watchEvent)).resolves.toEqual([{ ruleId: "rule-watch", status: "completed" }]);
-    await expect(dispatchAutomationEvent(db as never, { ...watchEvent, eventId: "heartbeat-2", watchSecondsTotal: 90 }))
+    // The same registration and threshold again (more watch time, another device, a rerun): same key, a duplicate.
+    await expect(dispatchAutomationEvent(db as never, { ...watchEvent, watchSecondsTotal: 90 }))
       .resolves.toEqual([{ ruleId: "rule-watch", status: "duplicate" }]);
     expect(db.customerTagAssignment.upsert).toHaveBeenCalledTimes(1);
+    const keys = db.automationExecutionLog.create.mock.calls.map((call) => (call[0] as { data: { idempotencyKey: string; liveId?: string } }).data);
+    expect(keys[0]!.idempotencyKey).toBe(keys[1]!.idempotencyKey);
+    // AutomationExecutionLog.liveId is ON DELETE RESTRICT: never set, so the Live stays deletable.
+    for (const data of keys) expect(data.liveId).toBeUndefined();
+  });
+
+  it("keys a watch-duration execution on its event id, not on the viewer (no legacy viewer-level key, Q-11)", async () => {
+    const create = vi.fn().mockResolvedValueOnce({ id: "log-1" }).mockResolvedValueOnce({ id: "log-2" }).mockResolvedValueOnce({ id: "log-3" });
+    const db = {
+      automationRule: { findMany: vi.fn().mockResolvedValue([{ id: "rule-watch", version: 1, createdAt: new Date(), condition: { type: "watch_minutes_gte", minutes: 15 }, actions: [{ type: "add_customer_tag", tag: "看滿15分" }] }]) },
+      automationExecutionLog: { create, findUnique: vi.fn(), update: vi.fn().mockResolvedValue({}), updateMany: vi.fn() },
+      customerTagAssignment: { upsert: vi.fn().mockResolvedValue({}) },
+      automationVoucherGrant: {}, product: {}, lineOfficialAccount: {}, lineUserIdentity: {}, lineDelivery: {},
+    };
+    const watch = { ...event, trigger: "webinar_attended_duration_gte" as const, liveId: "live-a", subjectType: "buyer_registration" as const, subjectKeyHash: "same-person", watchSecondsTotal: 15 * 60 };
+    // Two registrations of the same person (same subjectKeyHash, same Live) are two events.
+    await dispatchAutomationEvent(db as never, { ...watch, eventId: "watch-duration:registration-1:15", subjectId: "registration-1" });
+    await dispatchAutomationEvent(db as never, { ...watch, eventId: "watch-duration:registration-2:15", subjectId: "registration-2" });
+    // A watch-progress event of the same registration never shares a key with it.
+    db.automationRule.findMany.mockResolvedValueOnce([{ id: "rule-watch", version: 1, createdAt: new Date(), condition: { type: "watch_percent_gte", percent: 15 }, actions: [{ type: "add_customer_tag", tag: "看滿15%" }] }]);
+    await dispatchAutomationEvent(db as never, { ...watch, trigger: "viewer_watch_progress", eventId: "watch-progress:registration-1:15", subjectId: "registration-1", watchPercent: 20 });
+    const keys = create.mock.calls.map((call) => (call[0] as { data: { idempotencyKey: string } }).data.idempotencyKey);
+    expect(new Set(keys).size).toBe(3);
+  });
+
+  it("opens webinar_attended_duration_gte only to a vendor holding its own closed-beta grant, and only with a minutes condition (Q-11)", () => {
+    expect(isAutomationTriggerAvailableForVendor("webinar_attended_duration_gte", null)).toBe(false);
+    expect(isAutomationTriggerAvailableForVendor("webinar_attended_duration_gte", { betaFeatureGrants: ["automation_watch_progress", "automation_delayed_steps"] })).toBe(false);
+    expect(isAutomationTriggerAvailableForVendor("webinar_attended_duration_gte", { betaFeatureGrants: ["automation_watch_duration"] })).toBe(true);
+    expect(isAutomationTriggerAvailableForVendor("viewer_watch_progress", { betaFeatureGrants: ["automation_watch_duration"] })).toBe(false);
+    expect(availableAutomationTriggersForVendor({ betaFeatureGrants: ["automation_watch_duration"] })).toEqual(["form_registered", "webinar_attended_duration_gte", "consultation_booked", "consultation_no_show", "payment_paid"]);
+    const vendor = { betaFeatureGrants: ["automation_watch_duration"] };
+    expect(isAutomationRuleRunnableForVendor({ trigger: "webinar_attended_duration_gte", condition: { type: "watch_minutes_gte", minutes: 15 } }, vendor)).toBe(true);
+    // Saved while the trigger was hidden: the old watch-seconds conditions never run.
+    expect(isAutomationRuleRunnableForVendor({ trigger: "webinar_attended_duration_gte", condition: { type: "watch_seconds_gte", seconds: 900 } }, vendor)).toBe(false);
+    expect(isAutomationRuleRunnableForVendor({ trigger: "webinar_attended_duration_gte", condition: { type: "watch_seconds_gte_and_not_purchased", seconds: 1_800 } }, vendor)).toBe(false);
+    // A percentage on this trigger, or minutes on the percentage trigger, never run either.
+    expect(isAutomationRuleRunnableForVendor({ trigger: "webinar_attended_duration_gte", condition: { type: "watch_percent_gte", percent: 50 } }, vendor)).toBe(false);
+    expect(isAutomationRuleRunnableForVendor({ trigger: "viewer_watch_progress", condition: { type: "watch_minutes_gte", minutes: 15 } }, { betaFeatureGrants: ["automation_watch_progress"] })).toBe(false);
+    expect(isAutomationRuleRunnableForVendor({ trigger: "webinar_attended_duration_gte", condition: { type: "watch_minutes_gte", minutes: 15 } }, null)).toBe(false);
+    for (const minutes of [0, 1_441, 15.5, -1]) expect(watchDurationRuleMinutes({ type: "watch_minutes_gte", minutes })).toBeNull();
+    expect(watchDurationRuleMinutes({ type: "watch_minutes_gte", minutes: 1_440 })).toBe(1_440);
+    expect(watchDurationRuleMinutes({ type: "watch_seconds_gte", seconds: 900 })).toBeNull();
+    expect(WATCH_DURATION_MINUTE_OPTIONS.every((minutes) => isWatchDurationMinutes(minutes))).toBe(true);
+    expect(WATCH_DURATION_DETECTION_NOTE).toContain("同一筆報名在不同場次的觀看時間會累加");
+  });
+
+  it("matches a watch-minutes condition only on webinar_attended_duration_gte with the server-counted seconds", () => {
+    const condition = { type: "watch_minutes_gte", minutes: 15 } as const;
+    const watch = { ...event, trigger: "webinar_attended_duration_gte" as const, liveId: "live-1" };
+    expect(automationConditionMatches(condition, { ...watch, watchSecondsTotal: 900 })).toBe(true);
+    expect(automationConditionMatches(condition, { ...watch, watchSecondsTotal: 899 })).toBe(false);
+    expect(automationConditionMatches(condition, { ...watch })).toBe(false);
+    // A percentage alone never satisfies minutes, and the other watch trigger never matches.
+    expect(automationConditionMatches(condition, { ...watch, watchPercent: 100 })).toBe(false);
+    expect(automationConditionMatches(condition, { ...watch, trigger: "viewer_watch_progress", watchSecondsTotal: 86_400 })).toBe(false);
   });
 
   it("reclaims a failed execution and safely resumes after a voucher was already issued", async () => {
@@ -918,7 +972,7 @@ describe("smart automation workflow engine", () => {
     expect(legacyDerivedKeyUseCount("automation-voucher-bearer")).toBe(0);
   });
 
-  it("reuses the LINE outbox key when a watch execution is reclaimed by a later heartbeat", async () => {
+  it("reuses the LINE outbox key when a watch execution is reclaimed by a later watch pass", async () => {
     const conflict = new Prisma.PrismaClientKnownRequestError("duplicate", {
       code: "P2002",
       clientVersion: Prisma.prismaVersion.client,
@@ -931,7 +985,7 @@ describe("smart automation workflow engine", () => {
     });
     const db = {
       automationRule: { findMany: vi.fn().mockResolvedValue([{
-        id: "rule-watch", version: 1, createdAt: new Date(), condition: { type: "watch_seconds_gte", seconds: 60 },
+        id: "rule-watch", version: 1, createdAt: new Date(), condition: { type: "watch_minutes_gte", minutes: 1 },
         actions: [{ type: "line_push", message: "感謝觀看" }],
       }]) },
       automationExecutionLog: {
@@ -948,9 +1002,8 @@ describe("smart automation workflow engine", () => {
     };
     const firstHeartbeat = {
       ...event,
-      eventId: "heartbeat-1",
+      eventId: "watch-duration:registration-1:1",
       liveId: "live-a",
-      // The legacy viewer-level key (the hidden webinar_attended_duration_gte); viewer_watch_progress keys on its job-built event id.
       trigger: "webinar_attended_duration_gte" as const,
       subjectType: "buyer_registration" as const,
       subjectId: "registration-1",
@@ -958,7 +1011,8 @@ describe("smart automation workflow engine", () => {
     };
 
     await expect(dispatchAutomationEvent(db as never, firstHeartbeat)).resolves.toEqual([{ ruleId: "rule-watch", status: "failed" }]);
-    await expect(dispatchAutomationEvent(db as never, { ...firstHeartbeat, eventId: "heartbeat-2" }))
+    // The next watch pass finds the same event (same registration and threshold) and reclaims it.
+    await expect(dispatchAutomationEvent(db as never, { ...firstHeartbeat, watchSecondsTotal: 90 }))
       .resolves.toEqual([{ ruleId: "rule-watch", status: "completed" }]);
     expect(mocks.enqueueLineNotification).toHaveBeenCalledTimes(2);
     expect(deliveryKeys).toHaveLength(1);

@@ -16,6 +16,7 @@ import {
   isAutomationTrigger,
   isAutomationTriggerAvailableForVendor,
   isSafeNewAutomationButtonUrl,
+  isWatchDurationMinutes,
   isWatchProgressPercent,
   materializeAutomationRecipe,
 } from "@/lib/automation-workflow";
@@ -113,8 +114,9 @@ function emailAction(form: FormData): Record<string, unknown> | null {
  * compared with the order's server-recorded paidAmountCents).
  * viewer_watch_progress (Q-11) needs a whole watch percent from 1 to 100 (its
  * own `watchPercent` field; the page offers 25/50/75/90), compared with the
- * server-counted progress. The hidden webinar_attended_duration_gte keeps its
- * seconds for when it is made available again.
+ * server-counted progress. webinar_attended_duration_gte (Q-11) needs a whole
+ * number of minutes from 1 to 1440 (its own `watchMinutes` field; the page
+ * offers 5/15/30/60), compared with the same server-counted watch time.
  */
 function ruleCondition(trigger: string, form: FormData) {
   if (trigger === "viewer_watch_progress") {
@@ -122,10 +124,14 @@ function ruleCondition(trigger: string, form: FormData) {
     if (!isWatchProgressPercent(percent)) throw new Error("invalid");
     return { type: "watch_percent_gte", percent };
   }
+  if (trigger === "webinar_attended_duration_gte") {
+    const minutes = number(form, "watchMinutes");
+    if (!isWatchDurationMinutes(minutes)) throw new Error("invalid");
+    return { type: "watch_minutes_gte", minutes };
+  }
   const conditionValue = number(form, "conditionValue");
   if (automationTriggerNeedsThreshold(trigger) && (!Number.isInteger(conditionValue) || conditionValue < 1)) throw new Error("invalid");
   if (trigger === "payment_paid") return { type: "order_amount_gte", amountCents: Math.round(conditionValue * 100) };
-  if (trigger === "webinar_attended_duration_gte") return { type: "watch_seconds_gte", seconds: Math.round(conditionValue) };
   return { type: "always" };
 }
 
@@ -147,7 +153,8 @@ function parseRule(form: FormData, linePushAllowed: boolean, vendor: FeatureGate
   if (!name || name.length > 120 || !isAutomationTrigger(trigger)) throw new Error("invalid");
   // A known trigger without a production caller (F-4 gap 2), or one this
   // vendor's closed-beta grants do not open (form_no_show, Q-11 M-1;
-  // viewer_watch_progress, Q-11), is refused here, not only hidden in the form.
+  // viewer_watch_progress and webinar_attended_duration_gte, Q-11), is refused
+  // here, not only hidden in the form.
   if (!isAutomationTriggerAvailableForVendor(trigger, vendor)) throw new TriggerUnavailableError();
   const condition = ruleCondition(trigger, form);
   const actions = parseActions(form, linePushAllowed);
@@ -165,7 +172,9 @@ export async function createAutomationRecipeAction(formData: FormData) {
   const productId = text(formData, "productId") || undefined;
   const recipe = materializeAutomationRecipe(recipeId, productId);
   if (!recipe) fail(productId ? "invalid_recipe" : "recipe_requires_product");
-  if (!isAutomationTriggerAvailableForVendor(recipe.trigger, vendor)) fail("trigger_unavailable");
+  // A recipe whose condition its trigger does not run (「高意向追單漏斗」: the
+  // old watch seconds and "not purchased yet", Q-11) is refused like a hidden one.
+  if (!isAutomationRuleRunnableForVendor(recipe, vendor)) fail("trigger_unavailable");
   if (!automationActionsEmailTemplatesUsable(recipe.trigger, recipe.actions)) fail("email_template_unavailable");
   // A recipe's voucher announces itself by LINE for the owner, never for an admin.
   const actions = withVoucherLineNotification(recipe.actions, mayConfigureAutomationLinePush(member.role));
@@ -195,7 +204,8 @@ export async function dryRunAutomationRuleAction(formData: FormData) {
   if (!existing || !isAutomationTrigger(existing.trigger)) fail("not_found");
   // A rule whose trigger never fires would always "dispatch" in a simulation;
   // say that it does not run instead of a misleading result. The same holds
-  // for a watch-progress rule with the old watch-seconds condition.
+  // for a watch-progress or watch-duration rule with the old watch-seconds
+  // condition.
   if (!isAutomationRuleRunnableForVendor(existing, vendor)) {
     redirect(`${PATH}?dryRun=trigger_unavailable`);
   }
@@ -207,7 +217,10 @@ export async function dryRunAutomationRuleAction(formData: FormData) {
     subjectId: "dry-run",
     subjectKeyHash: "dry-run",
     orderAmountCents: Math.round(number(formData, "orderAmount") * 100),
-    watchSecondsTotal: Math.round(number(formData, "watchSeconds")),
+    // webinar_attended_duration_gte (Q-11) is simulated in minutes, like its threshold.
+    watchSecondsTotal: existing.trigger === "webinar_attended_duration_gte"
+      ? Math.round(number(formData, "watchMinutes") * 60)
+      : Math.round(number(formData, "watchSeconds")),
     watchPercent: Math.round(number(formData, "watchPercent")),
     hasPurchased: formData.get("hasPurchased") === "on",
   });
@@ -237,8 +250,9 @@ export async function toggleAutomationRuleAction(formData: FormData) {
   if (!existing) fail("not_found");
   // Switching off always works; switching on needs a trigger that can run.
   if (!existing.isActive && !isAutomationTriggerAvailableForVendor(existing.trigger, vendor)) fail("trigger_unavailable");
-  // ... and, for viewer_watch_progress, the watch-percent condition (Q-11):
-  // a rule saved with the old watch-seconds condition would never run.
+  // ... and, for viewer_watch_progress and webinar_attended_duration_gte, the
+  // watch-percent or watch-minutes condition (Q-11): a rule saved with the old
+  // watch-seconds condition would never run.
   if (!existing.isActive && !isAutomationRuleRunnableForVendor(existing, vendor)) fail("condition_unsupported");
   let outcome: ToggleOutcome;
   try {

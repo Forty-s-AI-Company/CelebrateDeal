@@ -66,7 +66,7 @@ describe("F-3 email sequence schema contract", () => {
     expect(migration).toContain(`CHECK ("delayMinutes" BETWEEN ${SEQUENCE_STEP_MIN_DELAY_MINUTES} AND ${SEQUENCE_STEP_MAX_DELAY_MINUTES})`);
     for (const reason of DELAYED_STEP_CANCEL_REASONS) expect(migration).toContain(`'${reason}'`);
     // Every grant that existed at F-3; later grants rebuild the CHECK in their own migration (automation-step-schema-contract.test.ts).
-    for (const feature of BETA_GATED_FEATURES.filter((value) => value !== "automation_delayed_steps" && value !== "automation_form_no_show" && value !== "automation_watch_progress")) expect(grantMigration).toContain(`'${feature}'`);
+    for (const feature of BETA_GATED_FEATURES.filter((value) => value !== "automation_delayed_steps" && value !== "automation_form_no_show" && value !== "automation_watch_progress" && value !== "automation_watch_duration")) expect(grantMigration).toContain(`'${feature}'`);
     expect(MAX_ACTIVE_EMAIL_SEQUENCES_PER_VENDOR).toBe(5);
     expect(MAX_EMAIL_SEQUENCE_STEPS).toBe(10);
   });

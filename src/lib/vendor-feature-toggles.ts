@@ -30,6 +30,8 @@ export const BETA_GATED_FEATURES = [
   "automation_form_no_show",
   // Q-11: the 「觀看直播達到指定進度」 automation trigger (viewer_watch_progress).
   "automation_watch_progress",
+  // Q-11: the 「觀看直播累計達指定時間」 automation trigger (webinar_attended_duration_gte).
+  "automation_watch_duration",
 ] as const;
 
 export type BetaGatedFeature = (typeof BETA_GATED_FEATURES)[number];
@@ -48,6 +50,7 @@ export const BETA_FEATURE_LABELS: Record<BetaGatedFeature, string> = {
   automation_delayed_steps: "自動化延遲步驟",
   automation_form_no_show: "自動化：報名後未出席直播",
   automation_watch_progress: "自動化：觀看直播達到指定進度",
+  automation_watch_duration: "自動化：觀看直播累計達指定時間",
 };
 
 export const FEATURE_PRESETS = {

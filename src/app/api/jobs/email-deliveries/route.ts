@@ -215,7 +215,8 @@ async function processFormNoShows(startedAt: number): Promise<FormNoShowSummary 
 }
 
 /**
- * Q-11 `viewer_watch_progress`: right after the no-show pass, before this
+ * Q-11 `viewer_watch_progress` and `webinar_attended_duration_gte` (one pass
+ * over the same watch time): right after the no-show pass, before this
  * round's dispatch sends the automation e-mails it queues. Bounded by its own
  * deadline (ends by 45 s into the round), skipped once the round ran too
  * long, and never changes the rest of the round.

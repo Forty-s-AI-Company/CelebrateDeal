@@ -34,7 +34,7 @@ describe("AutomationSettingsPage", () => {
     expect(html).toContain("付款金額門檻（元；只用於「訂單付款完成」，其他觸發條件留空）");
   });
 
-  it("keeps listing a rule on a hidden trigger, explains it, and only offers switching off and deleting", async () => {
+  it("keeps listing a rule on a trigger the vendor has no grant for, explains it, and only offers switching off and deleting", async () => {
     mocks.rules.mockResolvedValue([
       rule({ id: "watch-on", name: "觀看追單", trigger: "viewer_watch_progress", condition: { type: "watch_seconds_gte", seconds: 600 }, isActive: true }),
       rule({ id: "duration-off", name: "觀看達標", trigger: "webinar_attended_duration_gte", condition: { type: "watch_seconds_gte", seconds: 600 }, isActive: false }),
@@ -42,10 +42,11 @@ describe("AutomationSettingsPage", () => {
     const html = await render();
     expect(html).toContain("觀看追單");
     expect(html).toContain("觸發：觀看直播達到指定進度");
-    expect(html).toContain("觸發：觀看累積秒數達標");
-    // Q-11: viewer_watch_progress has a caller now, but this vendor has no grant for it.
+    expect(html).toContain("觸發：觀看直播累計達指定時間");
+    // Q-11: viewer_watch_progress and webinar_attended_duration_gte have a caller now, but this vendor has no grant for them.
     expect(html).toContain("「觀看直播達到指定進度」目前是封測功能，尚未對你的商家開放，這條規則不會執行。");
-    expect(html.match(/此觸發條件目前不會執行/gu)).toHaveLength(1);
+    expect(html).toContain("「觀看直播累計達指定時間」目前是封測功能，尚未對你的商家開放，這條規則不會執行。");
+    expect(html).not.toContain("此觸發條件目前不會執行");
     expect(html.match(/目前不會執行<\/span>/gu)).toHaveLength(2);
     expect(html).toContain(">停用<");
     expect(html).not.toContain(">啟用<");
@@ -162,6 +163,71 @@ describe("AutomationSettingsPage", () => {
     expect(running).toContain("新增延遲步驟");
     expect(legacy).toContain("目前不會執行");
     expect(legacy).toContain("這條規則用的是舊的「觀看秒數」條件，不會執行，也不能重新啟用。");
+    expect(legacy).not.toContain(">啟用<");
+    expect(legacy).not.toContain("Dry-run 測試");
+    expect(legacy).toContain("刪除規則");
+  });
+
+  const durationGranted = (grants = ["automation_watch_duration"]) => mocks.manager.mockResolvedValue({ vendor: { id: "v1", betaFeatureGrants: grants }, user: { id: "u1" }, member: { role: "owner" } });
+
+  it("offers webinar_attended_duration_gte with its minute thresholds and how watch time is counted, only with its own grant (Q-11)", async () => {
+    watchGranted();
+    let html = await render();
+    expect(html).not.toContain('name="watchMinutes"');
+    durationGranted();
+    html = await render();
+    const triggerSelect = html.match(/<select[^>]*name="trigger"[^>]*>([\s\S]*?)<\/select>/u)?.[1] ?? "";
+    expect([...triggerSelect.matchAll(/value="([^"]+)"/gu)].map((match) => match[1])).toEqual(["form_registered", "webinar_attended_duration_gte", "consultation_booked", "consultation_no_show", "payment_paid"]);
+    expect(triggerSelect).toContain(">觀看直播累計達指定時間<");
+    expect(html).not.toContain('name="watchPercent"');
+    // Its threshold is minutes in its own field; the amount field still says what it is for.
+    const minutesSelect = html.match(/<select[^>]*name="watchMinutes"[^>]*>([\s\S]*?)<\/select>/u)?.[1] ?? "";
+    expect([...minutesSelect.matchAll(/value="([^"]+)"/gu)].map((match) => match[1])).toEqual(["5", "15", "30", "60"]);
+    expect(minutesSelect).toContain(">15 分鐘<");
+    expect(html).toContain("累計觀看時間＝已完成 Email 驗證的報名者，在自己的場次播放期間（不含回放）停留在觀看頁的時間。");
+    expect(html).toContain("真人直播在播出中達到門檻後約 5 分鐘內就會執行");
+    // Review MINOR-2 of #647, for this trigger.
+    expect(html).toContain("同一筆報名在不同場次的觀看時間會累加");
+    // 「高意向追單漏斗」 stays out: its trigger runs now, its condition does not.
+    expect(html).not.toContain("高意向追單漏斗");
+    // #651 review MINOR-2 / MINOR-3: a busy round may delay it; one person through two forms runs once.
+    expect(html).toContain("同時達到門檻的人多時可能延後幾輪才執行");
+    expect(html).toContain("同一個 Email 用不同表單報名同一場直播也只執行一次");
+  });
+
+  it("gives each watch trigger's note on the create form its own paragraph under its name (#651 review NIT-2)", async () => {
+    durationGranted(["automation_watch_duration", "automation_watch_progress"]);
+    mocks.rules.mockResolvedValue([]);
+    const html = await render();
+    const note = (trigger: string) => html.match(new RegExp(`<p[^>]*data-trigger-note="${trigger}"[^>]*>([\\s\\S]*?)</p>`, "u"))?.[1] ?? "";
+    const progressNote = note("viewer_watch_progress");
+    const durationNote = note("webinar_attended_duration_gte");
+    expect(progressNote).toMatch(/^<span[^>]*>觀看直播達到指定進度：<\/span>/u);
+    expect(progressNote).toContain("觀看進度＝");
+    expect(progressNote).not.toContain("累計觀看時間＝");
+    expect(durationNote).toMatch(/^<span[^>]*>觀看直播累計達指定時間：<\/span>/u);
+    expect(durationNote).toContain("累計觀看時間＝");
+    expect(durationNote).not.toContain("觀看進度＝");
+  });
+
+  it("lists a minutes rule as running with a minutes dry-run, and a legacy seconds rule as not running (Q-11)", async () => {
+    durationGranted(["automation_watch_duration", "automation_delayed_steps"]);
+    mocks.rules.mockResolvedValue([
+      rule({ id: "duration-15", name: "看滿15分", trigger: "webinar_attended_duration_gte", condition: { type: "watch_minutes_gte", minutes: 15 }, isActive: true, actions: [{ type: "add_customer_tag", tag: "看滿15分" }] }),
+      rule({ id: "duration-legacy", name: "舊時長規則", trigger: "webinar_attended_duration_gte", condition: { type: "watch_seconds_gte_and_not_purchased", seconds: 1_800 }, isActive: false, actions: [{ type: "add_customer_tag", tag: "舊" }] }),
+    ]);
+    const html = await render();
+    const running = html.match(/<article[^>]*aria-label="看滿15分"[\s\S]*?<\/article>/u)?.[0] ?? "";
+    const legacy = html.match(/<article[^>]*aria-label="舊時長規則"[\s\S]*?<\/article>/u)?.[0] ?? "";
+    expect(running).toContain("條件：累計觀看滿 15 分鐘");
+    expect(running).toContain("Dry-run 測試");
+    expect(running).toContain('name="watchMinutes"');
+    expect(running).not.toContain('name="watchSeconds"');
+    expect(running).not.toContain("目前不會執行");
+    expect(running).toContain("同一筆報名在不同場次的觀看時間會累加");
+    expect(running).toContain("新增延遲步驟");
+    expect(legacy).toContain("目前不會執行");
+    expect(legacy).toContain("這條規則用的是舊的「觀看秒數」條件，不會執行，也不能重新啟用。請刪除它，改用觀看分鐘數建立新規則。");
     expect(legacy).not.toContain(">啟用<");
     expect(legacy).not.toContain("Dry-run 測試");
     expect(legacy).toContain("刪除規則");
