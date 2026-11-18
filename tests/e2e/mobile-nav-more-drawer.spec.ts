@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { devices, expect, test } from "@playwright/test";
+import { devices, expect, test, type Page } from "@playwright/test";
 import { PrismaClient } from "@prisma/client";
 import {
   elementHydratedInPage,
@@ -67,7 +67,7 @@ test.afterAll(async () => {
   await db.$disconnect();
 });
 
-test("mobile 更多 drawer reaches products from billing plans when client JS loads slowly", async ({ page, baseURL }) => {
+async function signInWithSlowChunks(page: Page, baseURL: string | undefined, delayMs = CHUNK_DELAY_MS) {
   // F-036: __Host- session cookie; Chromium accepts Secure on the http loopback origin.
   await page.context().addCookies([{
     name: "__Host-celebrate_session",
@@ -79,9 +79,13 @@ test("mobile 更多 drawer reaches products from billing plans when client JS lo
     sameSite: "Lax",
   }]);
   await page.route("**/_next/static/chunks/**/*.js", async (route) => {
-    await new Promise((resolve) => setTimeout(resolve, CHUNK_DELAY_MS));
+    await new Promise((resolve) => setTimeout(resolve, delayMs));
     await route.continue();
   });
+}
+
+test("mobile 更多 drawer reaches products from billing plans when client JS loads slowly", async ({ page, baseURL }) => {
+  await signInWithSlowChunks(page, baseURL);
 
   // Same entry as the staging runner: DOMContentLoaded only, then the shell assertions.
   await page.goto("/billing/plans", { waitUntil: "domcontentloaded" });
@@ -97,4 +101,58 @@ test("mobile 更多 drawer reaches products from billing plans when client JS lo
   await page.locator(MOBILE_NAV_PRODUCTS_LINK).click({ timeout: 8_000 });
   await page.waitForURL(/\/products$/u, { timeout: 8_000 });
   await expect(page.getByRole("heading", { name: "商品", exact: true })).toBeVisible();
+});
+
+test("A2-11: 更多 opens before hydration without waiting for React and reaches products", async ({ page, baseURL }) => {
+  await signInWithSlowChunks(page, baseURL);
+  await page.goto("/billing/plans", { waitUntil: "domcontentloaded" });
+  const moreButton = page.locator(MOBILE_NAV_MORE_BUTTON);
+  await expect(moreButton).toBeVisible();
+  expect(await page.evaluate(elementHydratedInPage, MOBILE_NAV_MORE_BUTTON)).toBe(false);
+  // Screen reader name and relationship are present in server HTML.
+  await expect(moreButton).toHaveAccessibleName("更多");
+  await expect(moreButton).toHaveAttribute("aria-haspopup", "dialog");
+
+  // No hydration wait: this click is handled by the browser (native popover), not React.
+  await moreButton.click({ timeout: 8_000 });
+  const dialog = page.getByRole("dialog", { name: "更多功能" });
+  await expect(dialog).toBeVisible();
+  expect(await page.evaluate(elementHydratedInPage, MOBILE_NAV_MORE_BUTTON)).toBe(false);
+  await page.locator(MOBILE_NAV_PRODUCTS_LINK).click({ timeout: 8_000 });
+  await page.waitForURL(/\/products$/u, { timeout: 15_000 });
+  await expect(page.getByRole("heading", { name: "商品", exact: true })).toBeVisible();
+});
+
+test("A2-11: pre-hydration popover closes with Escape and the close button, then hydration keeps an open menu open", async ({ page, baseURL }) => {
+  await signInWithSlowChunks(page, baseURL, 8_000);
+  await page.goto("/billing/plans", { waitUntil: "domcontentloaded" });
+  const moreButton = page.locator(MOBILE_NAV_MORE_BUTTON);
+  const dialog = page.getByRole("dialog", { name: "更多功能" });
+  await expect(moreButton).toBeVisible();
+
+  await moreButton.click({ timeout: 8_000 });
+  await expect(dialog).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(dialog).toBeHidden();
+  await expect(moreButton).toBeFocused();
+
+  await moreButton.click({ timeout: 8_000 });
+  await expect(dialog).toBeVisible();
+  await dialog.getByRole("button", { name: "關閉更多功能" }).click();
+  await expect(dialog).toBeHidden();
+
+  // Open again and let hydration finish underneath: the menu must not vanish.
+  expect(await page.evaluate(elementHydratedInPage, MOBILE_NAV_MORE_BUTTON)).toBe(false);
+  await moreButton.click({ timeout: 8_000 });
+  await expect(dialog).toBeVisible();
+  await waitForMobileNavHydration(page);
+  await expect(dialog).toBeVisible();
+  await expect(moreButton).toHaveAttribute("aria-expanded", "true");
+  await expect(dialog.getByRole("button", { name: "關閉更多功能" })).toBeFocused();
+
+  // After hydration the React drawer behaves as before: Esc closes and focus returns to 更多.
+  await page.keyboard.press("Escape");
+  await expect(dialog).toBeHidden();
+  await expect(moreButton).toHaveAttribute("aria-expanded", "false");
+  await expect(moreButton).toBeFocused();
 });
