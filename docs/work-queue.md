@@ -40,7 +40,7 @@
 | 21 | R-07 | 外部排程 Cloudflare Worker 檔進 repo | 一般 | S | `wrangler.toml` 與 worker 可直接部署；部署由 owner 做 | 已完成 [#617](https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/617)：`ops/cloudflare/scheduled-jobs-worker/`。部署（`wrangler login`、`secret put JOB_SECRET`、`deploy`）仍待 owner（B-1） |
 | 22 | D-01 | 文件與程式不一致（ROADMAP 課程列、GO-NO-GO §0／§7／F-019、OWNER-ACTIONS 補 Dependency graph 與 S4） | 一般 | S | 逐項對照程式後修正 | 已完成 [#627](https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/627) |
 | 23 | R-05 | 兩租戶 action 矩陣其餘部分（F-134） | 高（租戶） | M–L | 先盤點未涵蓋的 action，再補回歸測試 | 已完成 [#638](https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/638)：盤點表 `docs/codex-goal/TENANT_ACTION_MATRIX.md`，補上高風險 action 的兩租戶 DB 測試，未發現跨租戶漏洞。其餘 35 個 action 只有靜態檢查、沒有 DB 測試（見下方後續項目） |
-| 24 | R-04 | L3 重構（`actions.ts` 拆分、結帳抽服務、付款 reconciler、adapter 契約） | 高 | L | 每步行為不變、測試不弱化；一次一個模組 | 未開始 |
+| 24 | R-04 | L3 重構（`actions.ts` 拆分、結帳抽服務、付款 reconciler、adapter 契約） | 高 | L | 每步行為不變、測試不弱化；一次一個模組 | 進行中。2026-11-18 盤點後拆成 7 步（出處 F-005／F-008／F-009／F-010，`docs/review-2026Q4/10-findings-register.md`、`11-architecture.md`）。**封測前做**：① adapter 契約（F-008，`payment-providers/contract.ts` 與共用契約測試，進行中 `ai/payment-adapter-contract`）② `actions.ts` 刪除 38 個轉呼叫 wrapper（檔案只剩 27 行就碰到 2,500 行上限）③ 品牌設定、聯盟新增、webhook 重送搬出（先補 `retryWebhookEventAction` 行為測試與品牌 SSRF 拒絕案例）。**可選**：④ 直播 action 搬出。**延到封測後**（主對話決定，理由：動到金流主流程，現有 route 測試全是 mock、需先補真 DB 黃金案例）：⑤ 結算／出款／退款搬出（第一次正式月結之後）⑥ 結帳抽服務 ⑦ 對帳註冊表（`processPaymentWebhookOnce`）。封測後項目移到「後續項目」 |
 | 25 | R-10 | 首次成功路徑 runner 每次執行留下的合成商家、直播與報名的清理或停用（只認 `cdfs-` 前綴） | 高（刪資料） | M | 只動 runner 建立的資料；先停用再刪；留收據 | 停用部分已完成 [#632](https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/632)：runner 結束時停用自己建立的 `cdfs-` 商家並留收據（staging run 44082301730 停用 2 個）。刪除模式依 #543 需要備份與 owner 同意，列在 C 段 |
 | 26 | Q-16 | 學員 magic link 登入後偶發被送回登入頁（`learner-notifications.spec.ts` 三個測試在 Linux 重複時 flaky） | 高（auth） | M | 在未修改的 master 重現；查清是產品競態或測試；token 一次性與綁定不變 | 已完成 [#633](https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/633)：根因是學員 session 對時鐘偏差零容忍，改為容許 60 秒；token 一次性與綁定不變 |
 | 27 | Q-17 | 個人觀看連結：提醒信與開播通知帶簽章連結，開啟時設定報名 cookie，降低 `form_no_show` 誤判 | 高（auth、租戶） | M | 連結一次性或有期限、綁定報名與商家；不洩漏他人報名 | 已完成 [#634](https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/634)（獨立審查）：連結有期限、綁定報名與商家，開啟時只設定「僅出席」cookie，不授予完整報名權限。未做：固定場次以 cookie 當場次提示（後續項目） |
@@ -58,6 +58,8 @@
 - ~~`tests/e2e/affiliate-portal.spec.ts:76` 在 browser gate 偶發逾時~~：已修 [#644](https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/644)（測試在撤銷寫入前就重新載入；改為等 DB 授權更新）。其他 spec 若靠 `?saved=1` 橫幅判斷完成，可能有同類風險，未盤點。
 - PayUni 若以 `partially_refunded` 退完剩餘金額，付款端會拒收、訂單停在部分退款（#640 審查 NIT-B）；需確認 PayUni 實際行為。
 - `automation-delayed-step-start-lock.db.test.ts` 依賴外部 `CSRF_SECRET`，本機沒設會失敗（CI 有設）。
+- PayUni 回呼整筆遺失時沒有主動查詢補單的排程（`queryPayment` 只用在 Sandbox 與 ops 路徑），目前只能人工對帳。屬新功能，不放進 R-04（2026-11-18 盤點）。
+- R-04 封測後步驟：結算／出款／退款搬出、結帳抽服務、對帳註冊表、拆分 `actions.test.ts` 並移除假 Prisma。
 - npm audit 對 picomatch（GHSA-fc5q-39xc-vjpf）的例外於 2027-01-01 到期；上游出修補版後移除（#642）。
 
 ## B. 需要 owner 先做產品決定
