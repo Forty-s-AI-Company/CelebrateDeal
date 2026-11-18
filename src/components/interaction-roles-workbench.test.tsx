@@ -44,11 +44,7 @@ vi.mock("react", async (importOriginal) => {
   };
 });
 
-vi.mock("@/app/actions", () => ({
-  deleteInteractionRoleAction: vi.fn(),
-  upsertInteractionRoleAction: vi.fn(),
-  upsertInteractionRoleActionState: vi.fn(),
-}));
+vi.mock("@/app/actions/interaction-actions", () => ({ deleteInteractionRoleAction: vi.fn(), upsertInteractionRoleAction: vi.fn(), upsertInteractionRoleActionState: vi.fn() }));
 
 vi.mock("@/components/media-upload-field", () => ({
   MediaUploadField: (props: {

@@ -1,8 +1,9 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 
-vi.mock("@/app/actions", () => ({ drawLiveInteractionWinnerAction: vi.fn(), startLiveInteractionAction: vi.fn() }));
 vi.mock("@/app/actions/interaction-actions", () => ({
+  drawLiveInteractionWinnerAction: vi.fn(),
+  startLiveInteractionAction: vi.fn(),
   endLiveInteractionAction: vi.fn(),
   getLivePollStudioSnapshotAction: vi.fn(),
   moderateLiveQuestionAction: vi.fn(),

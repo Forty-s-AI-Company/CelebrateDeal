@@ -4,7 +4,7 @@ import {requireAuth} from "@/lib/auth";
 import {getDb} from "@/lib/db";
 import {listAffiliatePortalAccess} from "@/lib/affiliate-portal";
 import {FormSubmitButton} from "@/components/form-submit-button";
-import {logoutAction} from "@/app/actions";
+import { logoutAction } from "@/app/actions/auth-security-actions";
 import {CSRF_FIELD_NAME,getCsrfToken} from "@/lib/csrf";
 export default async function AffiliatePortalIndex({searchParams}:{searchParams:Promise<{cursor?:string}>}){
  const auth=await requireAuth({nextPath:"/affiliate-portal"});const query=await searchParams;

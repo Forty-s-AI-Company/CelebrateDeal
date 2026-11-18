@@ -5,19 +5,8 @@ import { PASSWORD_MAX_LENGTH, PASSWORD_POLICY_MESSAGES, passwordHint, passwordMi
 import { cookies } from "next/headers";
 import Image from "next/image";
 import QRCode from "qrcode";
-import {
-  changeVendorMemberRoleAction,
-  createVendorMemberAction,
-  deactivateVendorMemberAction,
-  logoutAction,
-  regenerateRecoveryCodesAction,
-  revokeAllSessionsAction,
-  revokeOtherSessionsAction,
-  resendVendorMemberInvitationAction,
-  revokeVendorMemberInvitationAction,
-  sendPasswordResetSmokeAction,
-  updatePasswordAction,
-} from "@/app/actions";
+import { changeVendorMemberRoleAction, createVendorMemberAction, deactivateVendorMemberAction, resendVendorMemberInvitationAction, revokeVendorMemberInvitationAction } from "@/app/actions/vendor-member-actions";
+import { logoutAction, regenerateRecoveryCodesAction, revokeAllSessionsAction, revokeOtherSessionsAction, sendPasswordResetSmokeAction, updatePasswordAction } from "@/app/actions/auth-security-actions";
 import { AccountEmailChangeCard } from "@/components/account-email-change-card";
 import { CsrfField } from "@/components/csrf-field";
 import { FormSubmitButton } from "@/components/form-submit-button";

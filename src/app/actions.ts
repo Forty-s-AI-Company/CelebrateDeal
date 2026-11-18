@@ -70,12 +70,10 @@ import { replaceLiveProductBindings } from "@/lib/live-product-bindings";
 import { dispatchLiveStartedLineNotificationsSafely } from "@/lib/line-live-started";
 import { assertPaymentMethodReferenceForQuota, PaymentMethodReferenceRequiredError } from "@/lib/payment-method-reference";
 import { isCardBindingRequiredForVendor } from "@/lib/feature-gates";
-import type { InteractionRoleActionState } from "@/lib/interaction-role-action-state";
 import {
   hasUsableMessageTemplateContent,
   LIVE_REMINDER_EMAIL_TEMPLATE_WHERE,
   REGISTRATION_CONFIRMATION_EMAIL_TEMPLATE_WHERE,
-  type MessageTemplateActionState,
 } from "@/lib/message-template";
 import { parseSafeExternalHttpUrl } from "@/lib/external-url";
 import { parseRegistrationFormFields } from "@/lib/registration-form-fields";
@@ -89,14 +87,6 @@ import { assertIanaTimeZone, parseZonedDateTimeLocal } from "@/lib/zoned-date-ti
 import { canMarkPayoutBatchExported, canTransitionPayoutItem, derivePayoutBatchStatus, PayoutItemTargetStatus } from "@/lib/payout-state";
 import { selectPayoutAccount } from "@/lib/payout-account";
 import { CoursePayoutMutationConflict, syncCoursePayoutsForSettlement } from "@/lib/course-payout-accounting";
-import {
-  createVendorMemberAction as createVendorMemberActionImpl,
-  deactivateVendorMemberAction as deactivateVendorMemberActionImpl,
-  resendVendorMemberInvitationAction as resendVendorMemberInvitationActionImpl,
-  revokeVendorMemberInvitationAction as revokeVendorMemberInvitationActionImpl,
-  changeVendorMemberRoleAction as changeVendorMemberRoleActionImpl,
-} from "./actions/vendor-member-actions";
-import { voidAffiliateCommissionAction as voidAffiliateCommissionActionImpl } from "./actions/affiliate-actions";
 import { parseWholeYuanToCents, parseYuanWithCentsToCents } from "@/lib/money-input";
 import { applyPostRefundAfterCommit, applyPostRefundInTransaction, postRefundEventType } from "@/lib/payment-post-refund";
 import {
@@ -109,47 +99,6 @@ import {
 } from "@/lib/settlement-adjustment";
 import { assertSettlementInputsUnchanged, refundSettlementMonthKey, SettlementInputsChangedError } from "@/lib/settlement-period";
 import { paymentProviderAllowedInRuntime } from "@/lib/payment-providers/runtime-policy";
-import {
-  deleteInteractionRoleAction as deleteInteractionRoleActionImpl,
-  deleteInteractionScriptAction as deleteInteractionScriptActionImpl,
-  duplicateInteractionScriptAction as duplicateInteractionScriptActionImpl,
-  importSystemRolesAction as importSystemRolesActionImpl,
-  unblockBlacklistAction as unblockBlacklistActionImpl,
-  unbindInteractionScriptFromLiveAction as unbindInteractionScriptFromLiveActionImpl,
-  upsertBlacklistAction as upsertBlacklistActionImpl,
-  upsertInteractionRoleAction as upsertInteractionRoleActionImpl,
-  upsertInteractionRoleActionState as upsertInteractionRoleActionStateImpl,
-  upsertInteractionScriptAction as upsertInteractionScriptActionImpl,
-  startLiveInteractionAction as startLiveInteractionActionImpl,
-  endLiveInteractionAction as endLiveInteractionActionImpl,
-  getLivePollStudioSnapshotAction as getLivePollStudioSnapshotActionImpl,
-  moderateLiveQuestionAction as moderateLiveQuestionActionImpl,
-  drawLiveInteractionWinnerAction as drawLiveInteractionWinnerActionImpl,
-  verifyLuckyDrawWinnerClaimAction as verifyLuckyDrawWinnerClaimActionImpl,
-  type LiveInteractionStudioState,
-} from "./actions/interaction-actions";
-import {
-  archiveVideoAction as archiveVideoActionImpl,
-  restoreVideoAction as restoreVideoActionImpl,
-  upsertFormAction as upsertFormActionImpl,
-  upsertTemplateAction as upsertTemplateActionImpl,
-  upsertVideoAction as upsertVideoActionImpl,
-} from "./actions/webinar-resource-actions";
-import {
-  confirmMfaEnrollmentAction as confirmMfaEnrollmentActionImpl,
-  confirmPasswordResetAction as confirmPasswordResetActionImpl,
-  dismissRecoveryCodesAction as dismissRecoveryCodesActionImpl,
-  loginAction as loginActionImpl,
-  logoutAction as logoutActionImpl,
-  regenerateRecoveryCodesAction as regenerateRecoveryCodesActionImpl,
-  requestPasswordResetAction as requestPasswordResetActionImpl,
-  revokeAllSessionsAction as revokeAllSessionsActionImpl,
-  revokeOtherSessionsAction as revokeOtherSessionsActionImpl,
-  sendPasswordResetSmokeAction as sendPasswordResetSmokeActionImpl,
-  startMfaEnrollmentAction as startMfaEnrollmentActionImpl,
-  updatePasswordAction as updatePasswordActionImpl,
-  verifyMfaAction as verifyMfaActionImpl,
-} from "./actions/auth-security-actions";
 
 function text(formData: FormData, key: string, fallback = "") {
   const value = formData.get(key);
@@ -217,16 +166,6 @@ async function finishRefundAction(input: {
   revalidatePath("/admin/billing/dashboard");
   revalidatePath("/admin/billing/settlements");
   redirect("/admin/billing/dashboard");
-}
-
-// Keep the legacy public action surface stable while the auth/security domain
-// owns its implementation in a dedicated file-level `use server` module.
-export async function loginAction(formData: FormData) {
-  return loginActionImpl(formData);
-}
-
-export async function logoutAction(formData: FormData) {
-  return logoutActionImpl(formData);
 }
 
 export type BrandSettingsFormValues = {
@@ -532,102 +471,6 @@ export async function saveBrandSettingsActionState(
   await updateBrandSettings(vendor.id, formData, validated);
   revalidatePath("/settings/brand");
   redirect("/settings/brand");
-}
-
-export async function updatePasswordAction(formData: FormData) {
-  return updatePasswordActionImpl(formData);
-}
-
-export async function requestPasswordResetAction(formData: FormData) {
-  return requestPasswordResetActionImpl(formData);
-}
-
-export async function confirmPasswordResetAction(formData: FormData) {
-  return confirmPasswordResetActionImpl(formData);
-}
-
-export async function startMfaEnrollmentAction(formData: FormData) {
-  return startMfaEnrollmentActionImpl(formData);
-}
-
-export async function confirmMfaEnrollmentAction(formData: FormData) {
-  return confirmMfaEnrollmentActionImpl(formData);
-}
-
-export async function verifyMfaAction(formData: FormData) {
-  return verifyMfaActionImpl(formData);
-}
-
-export async function dismissRecoveryCodesAction(formData: FormData) {
-  return dismissRecoveryCodesActionImpl(formData);
-}
-
-export async function regenerateRecoveryCodesAction(formData: FormData) {
-  return regenerateRecoveryCodesActionImpl(formData);
-}
-
-export async function sendPasswordResetSmokeAction(formData: FormData) {
-  return sendPasswordResetSmokeActionImpl(formData);
-}
-
-// A file-level `use server` module must expose direct async function exports.
-// Wrapping the isolated vendor-member actions keeps their public import path
-// stable while allowing Next.js to register each root action at build time.
-export async function createVendorMemberAction(formData: FormData) {
-  return createVendorMemberActionImpl(formData);
-}
-
-export async function deactivateVendorMemberAction(formData: FormData) {
-  return deactivateVendorMemberActionImpl(formData);
-}
-
-export async function resendVendorMemberInvitationAction(formData: FormData) {
-  return resendVendorMemberInvitationActionImpl(formData);
-}
-
-export async function revokeVendorMemberInvitationAction(formData: FormData) {
-  return revokeVendorMemberInvitationActionImpl(formData);
-}
-
-export async function changeVendorMemberRoleAction(formData: FormData) {
-  return changeVendorMemberRoleActionImpl(formData);
-}
-
-export async function voidAffiliateCommissionAction(formData: FormData) {
-  return voidAffiliateCommissionActionImpl(formData);
-}
-
-export async function revokeOtherSessionsAction(formData: FormData) {
-  return revokeOtherSessionsActionImpl(formData);
-}
-
-export async function revokeAllSessionsAction(formData: FormData) {
-  return revokeAllSessionsActionImpl(formData);
-}
-
-// Keep the legacy public action surface stable while webinar resources live in
-// a dedicated file-level `use server` module.
-export async function upsertVideoAction(formData: FormData) {
-  return upsertVideoActionImpl(formData);
-}
-
-export async function archiveVideoAction(formData: FormData) {
-  return archiveVideoActionImpl(formData);
-}
-
-export async function restoreVideoAction(formData: FormData) {
-  return restoreVideoActionImpl(formData);
-}
-
-export async function upsertFormAction(formData: FormData) {
-  return upsertFormActionImpl(formData);
-}
-
-export async function upsertTemplateAction(
-  previousState: MessageTemplateActionState,
-  formData: FormData,
-): Promise<MessageTemplateActionState> {
-  return upsertTemplateActionImpl(previousState, formData);
 }
 
 async function requireLiveQuotaPaymentMethod(
@@ -1529,58 +1372,6 @@ export async function upsertLiveAction(formData: FormData) {
   if (committed.created) redirect(`/lives/${committed.id}/preview`);
   const reconciliationNotice = liveReminderReconciliationNotice(committed.reminderReconciliationStatus);
   redirect(`/lives/${committed.id}/edit${reconciliationNotice ? `?notice=${reconciliationNotice}` : ""}`);
-}
-
-// Keep existing imports stable while interaction and blacklist mutations live
-// in their own server-action domain.
-export async function upsertInteractionRoleAction(formData: FormData) {
-  return upsertInteractionRoleActionImpl(formData);
-}
-
-export async function upsertInteractionRoleActionState(
-  previousState: InteractionRoleActionState,
-  formData: FormData,
-): Promise<InteractionRoleActionState> {
-  return upsertInteractionRoleActionStateImpl(previousState, formData);
-}
-
-export async function deleteInteractionRoleAction(formData: FormData) {
-  return deleteInteractionRoleActionImpl(formData);
-}
-
-export async function importSystemRolesAction(formData: FormData) {
-  return importSystemRolesActionImpl(formData);
-}
-
-export async function upsertInteractionScriptAction(formData: FormData) {
-  return upsertInteractionScriptActionImpl(formData);
-}
-
-export async function startLiveInteractionAction(previousState: LiveInteractionStudioState, formData: FormData) { return startLiveInteractionActionImpl(previousState, formData); }
-export async function endLiveInteractionAction(previousState: LiveInteractionStudioState, formData: FormData) { return endLiveInteractionActionImpl(previousState, formData); }
-export async function getLivePollStudioSnapshotAction(liveId: string) { return getLivePollStudioSnapshotActionImpl(liveId); }
-export async function moderateLiveQuestionAction(previousState: LiveInteractionStudioState, formData: FormData) { return moderateLiveQuestionActionImpl(previousState, formData); }
-export async function drawLiveInteractionWinnerAction(previousState: LiveInteractionStudioState, formData: FormData) { return drawLiveInteractionWinnerActionImpl(previousState, formData); }
-export async function verifyLuckyDrawWinnerClaimAction(previousState: LiveInteractionStudioState, formData: FormData) { return verifyLuckyDrawWinnerClaimActionImpl(previousState, formData); }
-
-export async function unbindInteractionScriptFromLiveAction(formData: FormData) {
-  return unbindInteractionScriptFromLiveActionImpl(formData);
-}
-
-export async function duplicateInteractionScriptAction(formData: FormData) {
-  return duplicateInteractionScriptActionImpl(formData);
-}
-
-export async function deleteInteractionScriptAction(formData: FormData) {
-  return deleteInteractionScriptActionImpl(formData);
-}
-
-export async function upsertBlacklistAction(formData: FormData) {
-  return upsertBlacklistActionImpl(formData);
-}
-
-export async function unblockBlacklistAction(formData: FormData) {
-  return unblockBlacklistActionImpl(formData);
 }
 
 export async function upsertAffiliateAction(formData: FormData) {

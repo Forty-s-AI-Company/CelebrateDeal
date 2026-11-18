@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { AlertTriangle, Banknote, ReceiptText, RotateCcw, ShieldCheck, WalletCards } from "lucide-react";
-import { refundPaymentTransactionAction, retryWebhookEventAction, voidAffiliateCommissionAction } from "@/app/actions";
+import { refundPaymentTransactionAction, retryWebhookEventAction } from "@/app/actions";
+import { voidAffiliateCommissionAction } from "@/app/actions/affiliate-actions";
 import { RefundResultNotice } from "@/components/billing/refund-result-notice";
 import { CsrfField } from "@/components/csrf-field";
 import { FormSubmitButton } from "@/components/form-submit-button";

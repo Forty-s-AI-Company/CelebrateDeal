@@ -5,10 +5,7 @@ import Link from "next/link";
 import { useActionState, useMemo, useState } from "react";
 import type { InteractionRole } from "@prisma/client";
 import { AlertTriangle, ChevronLeft, ChevronRight, MessageCircle, Plus, Radio, Save, Trash2 } from "lucide-react";
-import {
-  deleteInteractionRoleAction,
-  upsertInteractionRoleActionState,
-} from "@/app/actions";
+import { deleteInteractionRoleAction, upsertInteractionRoleActionState } from "@/app/actions/interaction-actions";
 import {
   initialInteractionRoleActionState,
   type InteractionRoleActionState,

@@ -1,7 +1,7 @@
 "use client";
 
 import { useActionState, type ReactNode } from "react";
-import { upsertTemplateAction } from "@/app/actions";
+import { upsertTemplateAction } from "@/app/actions/webinar-resource-actions";
 import { RichTextEditor } from "@/components/rich-text-editor";
 import { Field, SelectField, SubmitButton } from "@/components/ui";
 import {

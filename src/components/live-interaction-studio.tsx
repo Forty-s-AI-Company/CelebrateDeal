@@ -4,9 +4,12 @@ import { BarChart3, Flame, Gift, PartyPopper, Trophy } from "lucide-react";
 import { useActionState, useEffect, useState } from "react";
 import {
   drawLiveInteractionWinnerAction,
+  endLiveInteractionAction,
+  getLivePollStudioSnapshotAction,
+  moderateLiveQuestionAction,
   startLiveInteractionAction,
-} from "@/app/actions";
-import { endLiveInteractionAction, getLivePollStudioSnapshotAction, moderateLiveQuestionAction, verifyLuckyDrawWinnerClaimAction } from "@/app/actions/interaction-actions";
+  verifyLuckyDrawWinnerClaimAction,
+} from "@/app/actions/interaction-actions";
 import { CSRF_FIELD_NAME } from "@/lib/csrf-constants";
 import { InstructorInteractionCards } from "@/components/instructor-interaction-cards";
 import { InstructorDanmakuSwitch } from "@/components/live-danmaku";

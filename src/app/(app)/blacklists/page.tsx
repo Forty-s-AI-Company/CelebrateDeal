@@ -1,4 +1,4 @@
-import { upsertBlacklistAction } from "@/app/actions";
+import { upsertBlacklistAction } from "@/app/actions/interaction-actions";
 import { BlacklistSearchList } from "@/components/blacklist-search-list";
 import { CsrfField } from "@/components/csrf-field";
 import { Card, Field, PageHeader, SubmitButton, TextArea } from "@/components/ui";

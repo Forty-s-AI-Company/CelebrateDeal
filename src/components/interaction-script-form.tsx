@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useMemo, useState, type DragEvent, type FormEvent } from "react";
 import type { InteractionEvent, InteractionRole, InteractionScript, Live, Product, Video } from "@prisma/client";
 import { BadgeCheck, ChevronDown, ChevronUp, GripVertical, Link2Off, MessageCircle, Megaphone, ShoppingBag, Trash2, VideoIcon } from "lucide-react";
-import { unbindInteractionScriptFromLiveAction } from "@/app/actions";
+import { unbindInteractionScriptFromLiveAction } from "@/app/actions/interaction-actions";
 import { FormSubmitButton } from "@/components/form-submit-button";
 import { Field } from "@/components/ui";
 import { CSRF_FIELD_NAME } from "@/lib/csrf-constants";

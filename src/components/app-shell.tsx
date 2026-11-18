@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { Headphones, Lock, LogOut, ScrollText, Settings2, Shield, Tags } from "lucide-react";
 import { PublicResourceLinks } from "@/components/public-policy";
-import { logoutAction } from "@/app/actions";
+import { logoutAction } from "@/app/actions/auth-security-actions";
 import { AppShellMobileNav } from "@/components/app-shell-mobile-nav";
 import { AppShellNavLink } from "@/components/app-shell-nav-link";
 import { AppShellNavGroup } from "@/components/app-shell-nav-group";

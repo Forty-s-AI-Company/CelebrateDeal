@@ -13,7 +13,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock("next/image", () => ({ default: ({ src, alt }: { src: string; alt: string }) => <span data-image-src={src} aria-label={alt} /> }));
 vi.mock("next/link", () => ({ default: ({ href, children, ...props }: { href: string; children: ReactNode }) => <a href={href} {...props}>{children}</a> }));
 vi.mock("lucide-react", () => ({ Copy: () => <span>copy</span>, Pencil: () => <span>pencil</span>, Plus: () => <span>plus</span>, Trash2: () => <span>trash</span> }));
-vi.mock("@/app/actions", () => ({ deleteInteractionScriptAction: mocks.deleteAction, duplicateInteractionScriptAction: mocks.duplicateAction }));
+vi.mock("@/app/actions/interaction-actions", () => ({ deleteInteractionScriptAction: mocks.deleteAction, duplicateInteractionScriptAction: mocks.duplicateAction }));
 vi.mock("@/components/csrf-field", () => ({ CsrfField: () => <input type="hidden" name="csrfToken" value="synthetic-csrf" /> }));
 vi.mock("@/lib/auth", () => ({ requireVendorManager: mocks.requireVendorManager }));
 vi.mock("@/lib/db", () => ({ getDb: () => ({ interactionScript: { count: mocks.count, findMany: mocks.findMany } }) }));

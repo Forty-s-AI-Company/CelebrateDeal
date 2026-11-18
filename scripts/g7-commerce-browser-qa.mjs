@@ -158,6 +158,7 @@ const attestedSourcePaths = [
   "prisma/migrations/20260809030000_g7_21_live_reminder_email/migration.sql",
   "src/lib/message-template.ts",
   "src/app/actions.ts",
+  "src/app/actions/webinar-resource-actions.ts",
   "src/lib/email-delivery.ts",
   "src/lib/rich-text.ts",
   "src/app/api/jobs/email-deliveries/route.ts",

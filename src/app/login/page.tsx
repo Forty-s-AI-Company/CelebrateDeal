@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { loginAction } from "@/app/actions";
+import { loginAction } from "@/app/actions/auth-security-actions";
 import { CsrfField } from "@/components/csrf-field";
 import { FormSubmitButton } from "@/components/form-submit-button";
 import { PublicResourceLinks } from "@/components/public-policy";

@@ -85,7 +85,7 @@ vi.mock("@/lib/db", () => ({
   }),
 }));
 
-import { verifyMfaAction } from "./actions";
+import { verifyMfaAction } from "@/app/actions/auth-security-actions";
 
 const createdUserIds: string[] = [];
 

@@ -8,7 +8,7 @@ const formStatuses = vi.hoisted(() => ({
   values: [] as Array<{ pending: boolean; data: FormData | null; action: null; method: null }>,
 }));
 
-vi.mock("@/app/actions", () => ({ unblockBlacklistAction: mocks.unblock }));
+vi.mock("@/app/actions/interaction-actions", () => ({ unblockBlacklistAction: mocks.unblock }));
 vi.mock("react-dom", async (importOriginal) => {
   const reactDom = await importOriginal<typeof import("react-dom")>();
   return {

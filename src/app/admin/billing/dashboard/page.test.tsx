@@ -8,11 +8,8 @@ const mocks = vi.hoisted(() => ({
   queryRaw: vi.fn(),
 }));
 
-vi.mock("@/app/actions", () => ({
-  refundPaymentTransactionAction: vi.fn(),
-  retryWebhookEventAction: vi.fn(),
-  voidAffiliateCommissionAction: vi.fn(),
-}));
+vi.mock("@/app/actions", () => ({ refundPaymentTransactionAction: vi.fn(), retryWebhookEventAction: vi.fn() }));
+vi.mock("@/app/actions/affiliate-actions", () => ({ voidAffiliateCommissionAction: vi.fn() }));
 vi.mock("@/lib/auth", () => ({ requireFinanceAdmin: mocks.requireFinanceAdmin }));
 vi.mock("@/components/csrf-field", () => ({ CsrfField: () => <input type="hidden" name="_csrf" value="csrf-admin" /> }));
 vi.mock("@/components/form-submit-button", () => ({

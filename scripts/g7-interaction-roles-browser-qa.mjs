@@ -19,6 +19,7 @@ const migrationPattern = /^\d{12,14}_[a-z0-9_]+$/u;
 export const sourceDigestPaths = [
   "prisma/schema.prisma",
   "src/app/actions.ts",
+  "src/app/actions/interaction-actions.ts",
   "src/lib/auth.ts",
   "src/lib/csrf.ts",
   "src/lib/csrf-constants.ts",
