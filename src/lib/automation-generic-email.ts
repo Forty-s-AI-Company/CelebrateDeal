@@ -59,9 +59,22 @@ const SUBJECT_FORBIDDEN = new RegExp(`[${CONTROL_SOURCE}]`, "u");
 const BODY_FORBIDDEN = new RegExp("[\\u0000-\\u0008\\u000b\\u000c\\u000e-\\u001f\\u007f-\\u009f\\u2028\\u2029]", "u");
 const CONTROL_RUNS = new RegExp(`[${CONTROL_SOURCE}]+`, "gu");
 // The template is link-free: no scheme, markdown link, www host or text that reads as a web address.
-const LINK_LIKE = /:\/\/|\]\(|\bwww\.|\b(?:mailto|javascript|data):|[a-z0-9-]+(?:\.[a-z0-9-]+)*\.[a-z]{2,}(?:\/|\b)/iu;
+// - a scheme counts only when something follows it right away (`javascript:alert`, not "JavaScript: 從零開始");
+// - a host counts when it ends in a common top-level domain (also the reserved test ones), or when a
+//   path or port follows it (`shop.example/a`, `example.xyz:8080`); Node.js, Next.js, ASP.NET, Mr.Lin and
+//   report.pdf are not addresses.
+const COMMON_TLD = "com|net|org|edu|gov|tw|io|co|me|app|dev|info|biz|xyz|shop|store|online|site|tech|cc|tv|ly|link|top|club|vip|cn|hk|jp|kr|sg|uk|us|de|fr|au|test|example|invalid|local";
+const TECH_NAMES = /\b(?:node|next|nuxt|vue|react|express|three|chart|d3|moment|socket|asp|vb|ado)\.(?:js|net)\b/giu;
+const LINK_SCHEME = /:\/\/|\]\(|\b(?:mailto|javascript|data|vbscript|file|ftp|tel):\S/iu;
+const LINK_WWW = /\bwww\./iu;
+const LINK_HOST_COMMON_TLD = new RegExp(`(?:^|[^a-z0-9-])[a-z0-9-]+(?:\\.[a-z0-9-]+)*\\.(?:${COMMON_TLD})(?![a-z0-9-])`, "iu");
+const LINK_HOST_WITH_PATH = /(?:^|[^a-z0-9-])[a-z0-9-]+(?:\.[a-z0-9-]+)*\.[a-z]{2,}(?:\/|:\d)/iu;
+const LINK_LIKE = { test: (text: string) => {
+  const plain = text.replace(TECH_NAMES, " ");
+  return LINK_SCHEME.test(plain) || LINK_WWW.test(plain) || LINK_HOST_COMMON_TLD.test(plain) || LINK_HOST_WITH_PATH.test(plain);
+} };
 // Anything with a dot between word characters, for a value an outsider typed (a registrant's name).
-const ADDRESS_LIKE = /:\/\/|\bwww\.|[a-z0-9-]+(?:\.[a-z0-9-]+)+/iu;
+const ADDRESS_LIKE = /:\/\/|\bwww\.|[\p{L}\p{N}-]+(?:[.。][\p{L}\p{N}-]+)+/iu;
 
 function fold(text: string) {
   return text.normalize("NFKC").replace(INVISIBLE_GLOBAL, "");
@@ -113,6 +126,16 @@ export function genericEmailVariablesUsed(content: GenericEmailContent) {
 
 function clip(text: string, maxLength: number) {
   return Array.from(text).slice(0, maxLength).join("");
+}
+
+/** At most `maxUnits` UTF-16 units, adding whole code points only (never half of a surrogate pair). */
+function clipUnits(text: string, maxUnits: number) {
+  let result = "";
+  for (const char of text) {
+    if (result.length + char.length > maxUnits) break;
+    result += char;
+  }
+  return result;
 }
 
 // A "#", "1." or bullet (also stacked, "# # x") at the start would make a heading, list or quote.
@@ -170,7 +193,7 @@ export function renderGenericEmail(content: GenericEmailContent, values: Partial
     return genericEmailVariableValue(values[variable], { outsider: variable === "name" }) || FALLBACKS[variable];
   });
   return {
-    subject: clip(fill(content.subject).replace(CONTROL_RUNS, " ").trim(), 200).trim(),
+    subject: clipUnits(fill(content.subject).replace(CONTROL_RUNS, " ").trim(), 200).trim(),
     body: fill(content.body).trim(),
   };
 }

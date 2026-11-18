@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   genericEmailTextLooksLikeLink,
   GENERIC_EMAIL_BODY_MAX,
@@ -10,6 +10,7 @@ import {
   renderGenericEmail,
 } from "@/lib/automation-generic-email";
 import { parseAutomationRule } from "@/lib/automation-workflow";
+import { protectEmailDeliveryPayload } from "@/lib/email-delivery-pii";
 import { richTextToEmailHtml } from "@/lib/rich-text";
 import { ensureEmailUnsubscribeFooter } from "@/lib/email-delivery-format";
 
@@ -223,6 +224,71 @@ describe("generic e-mail review fixes (A2-04, #665)", () => {
       expect(genericEmailTextLooksLikeLink(text), text).toBe(false);
       expect(normalizeGenericEmailContent({ subject: "ok", body: text }), text).not.toBeNull();
     }
+  });
+});
+
+describe("generic e-mail second review fixes (A2-04, #665)", () => {
+  it.each([
+    "用 Node.js 和 Next.js 寫",
+    "ASP.NET 與 Express.js",
+    "Mr.Lin 你好",
+    "附上 report.pdf 和 index.html",
+    "JavaScript: 從零開始",
+    "Data: 三個重點",
+    "Mailto: 是什麼",
+    "版本 v1.2.3，價格 1,200.50",
+  ])("lets an ordinary text through (%j)", (text) => {
+    expect(genericEmailTextLooksLikeLink(text), text).toBe(false);
+    expect(normalizeGenericEmailContent({ subject: "ok", body: text }), text).not.toBeNull();
+  });
+
+  it.each([
+    "https://evil.test/login",
+    "http://evil.test",
+    "HTTPS://EVIL.TEST",
+    "www.evil.test",
+    "evil.com",
+    "bank.example.com/login",
+    "evil.xyz",
+    "evil.tw",
+    "evil.io 立即登入",
+    "evil.unknown/login",
+    "evil.unknown:8080",
+    "javascript:alert(1)",
+    "mailto:a@evil.test",
+    "data:text/html;base64,AAAA",
+    "[click](evil.com)",
+    "ｅｖｉｌ．ｃｏｍ",
+    "evil\u200b.com",
+  ])("still blocks a real address (%j)", (text) => {
+    expect(genericEmailTextLooksLikeLink(text), text).toBe(true);
+    expect(normalizeGenericEmailContent({ subject: "ok", body: `請看 ${text}` })).toBeNull();
+  });
+
+  afterEach(() => vi.unstubAllEnvs());
+
+  it("cuts a subject at 200 UTF-16 units without splitting a surrogate pair, and the delivery accepts it", () => {
+    vi.stubEnv("CSRF_SECRET", "generic-email-test-secret-that-is-longer-than-thirty-two-bytes");
+    vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://app.example.test");
+    const emoji = "😀";
+    const rendered = renderGenericEmail({ subject: `{{live_title}}${emoji.repeat(90)}`, body: "內文" }, { live_title: emoji.repeat(80) });
+    expect(rendered.subject.length).toBeLessThanOrEqual(200);
+    expect(rendered.subject.length % 2).toBe(0);
+    expect(rendered.subject).not.toMatch(/[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/u);
+    expect(Array.from(rendered.subject).every((char) => char === emoji)).toBe(true);
+    expect(() => protectEmailDeliveryPayload({ recipientEmail: "a@example.test", subject: rendered.subject, body: rendered.body }, { vendorId: "v1", deliveryId: "d1" })).not.toThrow();
+    // An odd leftover unit is dropped, not split: a 199-unit budget cannot end in half a pair.
+    expect(renderGenericEmail({ subject: `a${emoji.repeat(100)}`, body: "x" }, {}).subject.length).toBeLessThanOrEqual(200);
+  });
+
+  it.each([
+    "王。evil。com",
+    "evil。com",
+    "例子.中國",
+    "пример.рф",
+    "ｅｖｉｌ。ｃｏｍ",
+  ])("drops a name that is a non-ASCII or ideographic-dot address (%j)", (name) => {
+    expect(renderGenericEmail({ subject: "{{name}}", body: "{{name}}" }, { name })).toEqual({ subject: "你", body: "你" });
   });
 });
 

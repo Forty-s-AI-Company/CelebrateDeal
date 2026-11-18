@@ -230,6 +230,32 @@ describe("generic_message review fixes (#665)", () => {
     expect(subjects).toEqual(["你 預約成功", "林小姐 預約成功"]);
   });
 
+  it.each([
+    ["_ in the address is not a wildcard", "a_b@example.test", "axb@example.test"],
+    ["% in the address is not a wildcard", "a%b@example.test", "axb@example.test"],
+    ["a trailing % is not a wildcard", "a%@example.test", "ab@example.test"],
+    ["a plain prefix is not a match", "a@example.test", "ab@example.test"],
+  ])("matches the booking's address exactly: %s", async (_name, bookingEmail, registeredEmail) => {
+    const t = await tenant();
+    await registrant(t, "別人先生", { email: registeredEmail });
+    await rule(t, "consultation_booked", { type: "always" }, [{ type: "send_email_notification", template: "generic_message", subject: "{{name}} 預約成功", body: "{{name}} 你好" }]);
+    await dispatchAutomationEvent(db, event(t, "consultation_booked", { recipientEmail: bookingEmail, subjectId: randomUUID() }));
+    const [{ payload }] = await sentMail(t);
+    expect(payload.subject).toBe("你 預約成功");
+    expect(payload.body).not.toContain("別人先生");
+  });
+
+  it("still finds the verified registration by exact address, ignoring case and spaces, in this vendor only", async () => {
+    const t = await tenant();
+    const other = await tenant();
+    await registrant(other, "別家客人", { email: "same@example.test" });
+    await registrant(t, "本家客人", { email: "Same@Example.test" });
+    await rule(t, "consultation_booked", { type: "always" }, [{ type: "send_email_notification", template: "generic_message", subject: "{{name}} 預約成功", body: "{{name}} 你好" }]);
+    await dispatchAutomationEvent(db, event(t, "consultation_booked", { recipientEmail: " SAME@example.test ", subjectId: randomUUID() }));
+    const [{ payload }] = await sentMail(t);
+    expect(payload.subject).toBe("本家客人 預約成功");
+  });
+
   it("records an invalid stored text as invalid_content, not as no_content, and sends nothing", async () => {
     const t = await tenant();
     const submission = await registrant(t);

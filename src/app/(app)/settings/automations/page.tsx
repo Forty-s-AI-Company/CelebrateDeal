@@ -102,7 +102,7 @@ const ERROR_MESSAGES: Record<string, string> = {
   invalid_delay: `延遲時間請填 1 小時到 90 天之間的整數。`,
   duplicate_delay: "同一條規則已經有這個延遲時間的步驟，請換一個時間。",
   step_limit: `每條規則最多 ${MAX_AUTOMATION_RULE_STEPS} 個延遲步驟。`,
-  invalid_email_content: "自訂 Email 的主旨或內文不符規則：主旨必填、限 100 字、不能換行；內文必填、限 2000 字；主旨與內文都不能放連結、網址或網域；只能使用這個觸發條件提供的變數。",
+  invalid_email_content: "自訂 Email 的主旨或內文不符規則：主旨必填、限 100 字、不能換行；內文必填、限 2000 字；主旨與內文都不能放連結、網址或網域（例如 https://…、www.…、example.com、example.xyz/path，Node.js、report.pdf 這類名稱可以）；只能使用這個觸發條件提供的變數。",
   email_template_unavailable: "這個 Email 範本在所選的觸發條件下沒有可用的連結，不能使用。請改選清單中的範本；「追購通知」需要同時勾選「發送回購券」。",
   invalid_step: "步驟內容不完整或格式不正確，請檢查動作欄位。",
   invalid_product: "找不到這個商品，或商品已下架。",

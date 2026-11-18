@@ -593,7 +593,7 @@ export type AutomationEvent = {
 
 type AutomationDb = Pick<
   PrismaClient,
-  "automationRule" | "automationExecutionLog" | "automationVoucherGrant" | "customerTagAssignment" | "product" | "lineOfficialAccount" | "lineUserIdentity" | "lineDelivery" | "emailDelivery" | "emailSuppression" | "blacklist" | "delayedStepRun" | "formSubmission" | "consultationBooking" | "commerceOrder" | "vendor" | "$transaction"
+  "automationRule" | "automationExecutionLog" | "automationVoucherGrant" | "customerTagAssignment" | "product" | "lineOfficialAccount" | "lineUserIdentity" | "lineDelivery" | "emailDelivery" | "emailSuppression" | "blacklist" | "delayedStepRun" | "formSubmission" | "consultationBooking" | "commerceOrder" | "vendor" | "$queryRaw" | "$transaction"
 >;
 
 /** Closed-beta grant of delayed automation steps (F-4, M3). */
@@ -832,14 +832,22 @@ async function renderGenericAutomationEmail(
   const values: Partial<Record<GenericEmailVariable, string>> = { vendor_name: vendorName };
   if (used.has("name") || used.has("live_title")) {
     if (event.trigger === "consultation_booked" || event.trigger === "consultation_no_show") {
-      const registration = event.recipientEmail
-        ? await db.formSubmission.findFirst({
-          where: { verificationStatus: "VERIFIED", email: { equals: event.recipientEmail.trim(), mode: "insensitive" }, form: { vendorId: event.vendorId } },
-          orderBy: { createdAt: "desc" },
-          select: { name: true },
-        })
-        : null;
-      values.name = registration?.name;
+      // Exact match on the normalized address, parameter-bound (an ILIKE would
+      // treat `_` and `%` in the address as wildcards and could return another
+      // person's name). Uses FormSubmission_verified_email_normalized_idx.
+      const normalized = event.recipientEmail?.trim().toLowerCase() ?? "";
+      const rows = normalized
+        ? await db.$queryRaw<Array<{ name: string }>>`
+          SELECT f."name" FROM "FormSubmission" f
+          JOIN "RegistrationForm" rf ON rf."id" = f."formId"
+          WHERE rf."vendorId" = ${event.vendorId}
+            AND f."verificationStatus" = 'VERIFIED'
+            AND lower(btrim(f."email")) = lower(btrim(${normalized}))
+          ORDER BY f."createdAt" DESC
+          LIMIT 1
+        `
+        : [];
+      values.name = rows[0]?.name;
     } else if (event.trigger !== "payment_paid") {
       const submission = await db.formSubmission.findFirst({
         where: { id: event.subjectId, form: { vendorId: event.vendorId } },
