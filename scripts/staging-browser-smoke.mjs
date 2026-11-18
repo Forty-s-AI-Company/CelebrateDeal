@@ -118,9 +118,12 @@ function emptyReport(reason = "NOT_RUN", sourceSha = null) {
     journeys: [],
     browser: {
       pageErrors: 0, sameHost5xx: 0, criticalResourceFailures: 0, navigationInteractionsPassed: 0,
-      criticalResourceFailureCategories: { http4xxScript: 0, http4xxStylesheet: 0, http5xxScript: 0, http5xxStylesheet: 0, abortedScript: 0, abortedStylesheet: 0, networkScript: 0, networkStylesheet: 0 },
+      criticalResourceFailureCategories: { http4xxScript: 0, http4xxStylesheet: 0, http5xxScript: 0, http5xxStylesheet: 0, abortedScript: 0, abortedStylesheet: 0, networkScript: 0, networkStylesheet: 0, pendingScript: 0, pendingStylesheet: 0 },
       firstCriticalResourceFailure: null,
       firstCriticalResourceFailureKind: null,
+      // Diagnostic only: requests of a document that a committed navigation replaced.
+      supersededDocumentAborts: { script: 0, stylesheet: 0 },
+      firstSupersededDocumentAbort: null,
       navigationFailure: null,
       hydrationInteractionsPassed: 0,
       externalRequestsBlocked: 0, unsafeRequestsBlocked: 0,
@@ -299,6 +302,146 @@ export function classifyCriticalResourceFailureKind(request) {
   if (errorText.includes("net::ERR_CONNECTION_RESET")) return "CONNECTION_RESET";
   if (errorText.includes("net::ERR_NAME_NOT_RESOLVED")) return "DNS";
   return "OTHER_NETWORK";
+}
+
+// Upper bound for one document's same-host scripts and stylesheets to finish before the
+// runner leaves it. Staging chunks normally finish well under a second.
+export const CRITICAL_RESOURCE_SETTLE_TIMEOUT_MS = 10_000;
+
+/** Same-host JavaScript or stylesheet: the resources whose loss breaks a page. */
+export function isCriticalResourceRequest(request, targetHost = STAGING_ALIAS) {
+  try {
+    return ["script", "stylesheet"].includes(request.resourceType()) && new URL(request.url()).hostname === targetHost;
+  } catch { return false; }
+}
+
+/** Fixed category for a critical request that never finished within the settle bound. */
+export function classifyPendingCriticalResource(request) {
+  try { return request.resourceType() === "stylesheet" ? "pendingStylesheet" : "pendingScript"; } catch { return "pendingScript"; }
+}
+
+/**
+ * 2026-11-18 runs 44256624407 and 44257523657: the only failure was one `abortedScript` in
+ * PAGE_NAVIGATION. The runner left each page after DOMContentLoaded and the SSR assertions
+ * while that page's own async chunks were still downloading; `page.goto` replaced the
+ * document and Chromium cancelled them with net::ERR_ABORTED. The next page does not
+ * request the previous page's route chunks again, so forgiving such an abort would also
+ * hide a chunk that hung. The runner therefore waits (bounded) for every in-flight
+ * critical request of a page before it leaves it; one still running at the bound is a
+ * critical `pending*` failure (see waitForCriticalResources).
+ *
+ * This tracker is the narrow remainder. It records the critical requests in flight and
+ * main-frame document navigations, and decides an ERR_ABORTED:
+ *  - SUPERSEDED (diagnostic only) only when the request was already in flight when the
+ *    navigation request was sent AND that navigation then committed (main frame navigated
+ *    to the navigation's final URL, so pushState/replaceState/hash changes never count).
+ *    Chromium reports these aborts before `framenavigated`, so they wait for `settle`.
+ *  - CRITICAL in every other case: no navigation pending, a request started after the
+ *    navigation began, a navigation that failed or never committed, or any abort after the
+ *    final settle (the tracker is then closed).
+ * Non-abort failures and 4xx/5xx responses never come here; they are critical at once.
+ */
+function withoutFragment(url) {
+  const index = url.indexOf("#");
+  return index === -1 ? url : url.slice(0, index);
+}
+
+export function createDocumentAbortTracker(page, isTracked = () => true) {
+  const mainFrame = () => (typeof page.mainFrame === "function" ? page.mainFrame() : null);
+  const isMainDocumentNavigation = (request) => {
+    try {
+      return typeof request.isNavigationRequest === "function" && request.isNavigationRequest() === true
+        && typeof request.frame === "function" && request.frame() === mainFrame() && mainFrame() !== null;
+    } catch { return false; }
+  };
+  const inflight = new Set();
+  const reported = new WeakSet();
+  let started = 0;
+  let committed = 0;
+  let pending = false;
+  let pendingUrl = null;
+  let inflightAtNavigation = new Set();
+  let deferred = [];
+  let closed = false;
+  return {
+    onRequest(request) {
+      if (isMainDocumentNavigation(request)) {
+        // A redirect hop keeps the first hop's snapshot; only its final URL can commit.
+        if (!pending) inflightAtNavigation = new Set(inflight);
+        started += 1;
+        pending = true;
+        try { pendingUrl = request.url(); } catch { pendingUrl = null; }
+        return;
+      }
+      if (isTracked(request)) inflight.add(request);
+    },
+    onRequestFinished(request) { inflight.delete(request); },
+    onRequestFailed(request) {
+      inflight.delete(request);
+      if (isMainDocumentNavigation(request)) pending = false;
+    },
+    onFrameNavigated(frame) {
+      let url = null;
+      try { url = frame.url(); } catch { /* fail closed: no commit */ }
+      if (!pending || frame !== mainFrame() || url === null || pendingUrl === null
+        || withoutFragment(url) !== withoutFragment(pendingUrl)) return;
+      committed = started;
+      pending = false;
+    },
+    /** Critical requests still running, in request order. */
+    inflight() { return [...inflight]; },
+    /** A request already reported as pending is not reported again when it is cancelled. */
+    markReported(request) { reported.add(request); inflight.delete(request); },
+    /** True for a request already counted as pending: however it ends, it is not counted again. */
+    isReported(request) { return reported.has(request); },
+    /** "REPORTED", "CRITICAL" now, or "DEFERRED" until the pending navigation is decided. */
+    classifyAbort(request, entry) {
+      if (reported.has(request)) return "REPORTED";
+      if (closed || !pending || !inflightAtNavigation.has(request)) return "CRITICAL";
+      deferred.push({ ...entry, navigation: started });
+      return "DEFERRED";
+    },
+    /**
+     * Call only once the navigation has resolved (after `goto`/`waitForURL`, or at the end).
+     * An entry whose navigation did not commit is CRITICAL; `final` closes the tracker.
+     */
+    settle({ final = false } = {}) {
+      const decided = deferred.map((entry) => ({ entry, outcome: committed >= entry.navigation ? "SUPERSEDED" : "CRITICAL" }));
+      deferred = [];
+      pending = false;
+      inflightAtNavigation = new Set();
+      if (final) closed = true;
+      return decided;
+    },
+  };
+}
+
+// After load, the page must stay this long with no critical request in flight, so a lazy
+// chunk requested shortly after load is waited for too (#658 review MINOR-1).
+export const CRITICAL_RESOURCE_QUIET_WINDOW_MS = 500;
+
+/**
+ * Wait (bounded) for the page's load event, then until no critical request has been in
+ * flight for `quietWindowMs` in a row. Returns the requests still running at the bound;
+ * the caller reports them as critical. A slow chunk that finishes in time passes; a hung
+ * one (including one requested after load) blocks.
+ */
+export async function waitForCriticalResources(page, tracker, timeoutMs = CRITICAL_RESOURCE_SETTLE_TIMEOUT_MS,
+  quietWindowMs = CRITICAL_RESOURCE_QUIET_WINDOW_MS) {
+  const deadline = Date.now() + timeoutMs;
+  if (typeof page.waitForLoadState === "function") {
+    await page.waitForLoadState("load", { timeout: timeoutMs }).catch(() => {});
+  }
+  let quietSince = null;
+  while (Date.now() < deadline) {
+    if (tracker.inflight().length > 0) quietSince = null;
+    else {
+      quietSince ??= Date.now();
+      if (Date.now() - quietSince >= quietWindowMs) break;
+    }
+    await new Promise((resolve) => { setTimeout(resolve, 25); });
+  }
+  return tracker.inflight();
 }
 
 /** A failed same-host JavaScript or stylesheet request invalidates SSR-only success. */
@@ -481,6 +624,10 @@ export async function runBrowserSmoke(env = process.env, dependencies = {}) {
   let cleanupFailed = false;
   let activeStep = "NONE";
   let activePage = null;
+  let failureSequence = 0;
+  let firstCriticalSequence = null;
+  const resourceSettleTimeoutMs = dependencies.resourceSettleTimeoutMs ?? CRITICAL_RESOURCE_SETTLE_TIMEOUT_MS;
+  const resourceQuietWindowMs = dependencies.resourceQuietWindowMs ?? CRITICAL_RESOURCE_QUIET_WINDOW_MS;
   try {
     for (const viewport of [{ id: "desktop", width: 1365, height: 768 }, { id: "mobile", width: 390, height: 844 }]) {
       report.browser.activeViewport = viewport.id;
@@ -491,6 +638,7 @@ export async function runBrowserSmoke(env = process.env, dependencies = {}) {
         serviceWorkers: "block",
       });
       let sessionIssued = false;
+      let settlePageDocumentAborts = null;
       try {
         // Block third-party traffic while the synthetic owner is signed in.
         await context.route("**/*", (route) => {
@@ -565,15 +713,46 @@ export async function runBrowserSmoke(env = process.env, dependencies = {}) {
         page.on("domcontentloaded", () => {
           if (navigationProgress) navigationProgress.domContentLoadedSeen = true;
         });
-        const recordCriticalResourceFailure = (category) => {
+        const currentFailureContext = () => ({
+          phase: report.browser.executionPhase,
+          viewport: report.browser.activeViewport, route: report.browser.activeRoute,
+        });
+        // Every failure takes its sequence number when it happens, so a deferred abort that is
+        // decided later still ranks by when it occurred for firstCriticalResourceFailure.
+        const nextFailureSequence = () => { failureSequence += 1; return failureSequence; };
+        const recordCriticalResourceFailure = (category, failureContext = currentFailureContext(), kind = null, sequence = nextFailureSequence()) => {
           if (!category) return;
           report.browser.criticalResourceFailures += 1;
           report.browser.criticalResourceFailureCategories[category] += 1;
-          report.browser.firstCriticalResourceFailure ??= {
-            category, phase: report.browser.executionPhase,
-            viewport: report.browser.activeViewport, route: report.browser.activeRoute,
-          };
+          if (firstCriticalSequence === null || sequence < firstCriticalSequence) {
+            firstCriticalSequence = sequence;
+            report.browser.firstCriticalResourceFailure = { category, ...failureContext };
+            report.browser.firstCriticalResourceFailureKind = kind;
+          }
         };
+        const documentAborts = createDocumentAbortTracker(page, (request) => isCriticalResourceRequest(request, targetHost));
+        const settleDocumentAborts = (options) => {
+          for (const { entry, outcome } of documentAborts.settle(options)) {
+            if (outcome === "SUPERSEDED") {
+              report.browser.supersededDocumentAborts[entry.category === "abortedScript" ? "script" : "stylesheet"] += 1;
+              report.browser.firstSupersededDocumentAbort ??= { category: entry.category, ...entry.failureContext };
+            } else recordCriticalResourceFailure(entry.category, entry.failureContext, entry.kind, entry.sequence);
+          }
+        };
+        // Leave a document only after its scripts and stylesheets finished (bounded wait).
+        const waitForPageResources = async () => {
+          const previousPhase = report.browser.executionPhase;
+          report.browser.executionPhase = "RESOURCE_SETTLE";
+          const stillPending = await waitForCriticalResources(page, documentAborts, resourceSettleTimeoutMs, resourceQuietWindowMs);
+          for (const request of stillPending) {
+            documentAborts.markReported(request);
+            recordCriticalResourceFailure(classifyPendingCriticalResource(request), currentFailureContext(), "PENDING");
+          }
+          report.browser.executionPhase = previousPhase;
+        };
+        settlePageDocumentAborts = settleDocumentAborts;
+        page.on("request", (request) => documentAborts.onRequest(request));
+        page.on("framenavigated", (frame) => documentAborts.onFrameNavigated(frame));
         page.on("response", (response) => {
           if (isDashboardDetailsGet(response.request(), targetHost)) {
             dashboardDetailsNetwork.responses += 1;
@@ -588,18 +767,26 @@ export async function runBrowserSmoke(env = process.env, dependencies = {}) {
             navigationProgress.documentResponseClass = status >= 500 ? "5XX"
               : status >= 400 ? "4XX" : status >= 300 ? "3XX" : status >= 200 ? "2XX" : "OTHER";
           }
-          recordCriticalResourceFailure(classifyCriticalResourceResponse(response, targetHost));
+          // A request already counted as pending is not counted again however it ends.
+          if (!documentAborts.isReported(response.request())) recordCriticalResourceFailure(classifyCriticalResourceResponse(response, targetHost));
         });
         page.on("requestfailed", (request) => {
           if (isDashboardDetailsGet(request, targetHost)) dashboardDetailsNetwork.failures += 1;
           const category = classifyCriticalResourceRequestFailure(request, targetHost);
-          if (category && report.browser.firstCriticalResourceFailure === null) {
-            report.browser.firstCriticalResourceFailureKind = classifyCriticalResourceFailureKind(request);
-          }
-          recordCriticalResourceFailure(category);
+          const kind = category ? classifyCriticalResourceFailureKind(request) : null;
+          const sequence = category ? nextFailureSequence() : null;
+          // Only ERR_ABORTED may be deferred; every other network failure is critical at once.
+          const abortOutcome = kind === "ABORTED"
+            ? documentAborts.classifyAbort(request, { category, kind, sequence, failureContext: currentFailureContext() })
+            : null;
+          documentAborts.onRequestFailed(request);
+          // Already counted as pending: however it ends (abort or another error), not again.
+          if (!category || abortOutcome === "DEFERRED" || documentAborts.isReported(request)) return;
+          recordCriticalResourceFailure(category, currentFailureContext(), kind, sequence);
         });
         page.on("requestfinished", (request) => {
           if (isDashboardDetailsGet(request, targetHost)) dashboardDetailsNetwork.finished += 1;
+          documentAborts.onRequestFinished(request);
         });
         for (const route of ROUTES) {
           report.browser.activeRoute = route.id;
@@ -618,6 +805,8 @@ export async function runBrowserSmoke(env = process.env, dependencies = {}) {
           } finally {
             navigationProgress = null;
           }
+          // The navigation has committed: aborts of the replaced document are now decidable.
+          settleDocumentAborts();
           report.browser.executionPhase = "PAGE_ASSERTIONS";
           const status = response?.status() ?? 0;
           const headingVisible = await visible(page.getByRole("heading", { name: route.heading, exact: true }));
@@ -674,6 +863,8 @@ export async function runBrowserSmoke(env = process.env, dependencies = {}) {
             activeStep = "NONE";
             report.browser.hydrationInteractionsPassed += 1;
           }
+          // Before the next goto or the app-shell click replaces or reroutes this document.
+          await waitForPageResources();
         }
         // This read-only navigation must work through the rendered app shell.
         report.browser.executionPhase = "APP_NAVIGATION";
@@ -692,10 +883,13 @@ export async function runBrowserSmoke(env = process.env, dependencies = {}) {
         }
         activeStep = "NAV_PRODUCTS_URL";
         await page.waitForURL(`${origin}/products`, { timeout: 8_000 });
+        settleDocumentAborts();
         activeStep = "NONE";
         const navigationPassed = classifyFinalPath(page.url(), "/products", targetHost) === "EXPECTED"
           && await visible(page.getByRole("heading", { name: PRODUCTS_HEADING, exact: true }));
         if (navigationPassed) report.browser.navigationInteractionsPassed += 1;
+        // The landed /products route must finish its chunks too, before the context closes.
+        await waitForPageResources();
       } catch (error) {
         // Capture while the page is still open; the context closes in finally.
         report.browser.failureStep = browserFailureStep(activeStep);
@@ -705,6 +899,8 @@ export async function runBrowserSmoke(env = process.env, dependencies = {}) {
         }
         throw error;
       } finally {
+        // An abort whose navigation never committed stays critical (fail closed).
+        settlePageDocumentAborts?.({ final: true });
         if (sessionIssued) {
           try {
             if (!await verifyAlias(env)) throw new Error("alias drift before session cleanup");
