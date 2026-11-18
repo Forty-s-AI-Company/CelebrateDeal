@@ -327,7 +327,9 @@ describe("hidden automation triggers on stored rules (F-4 gap 2)", () => {
     runtime.actor = { user: { id: "synthetic-user" }, vendor: { id: a.vendor.id }, member: { role: "admin" } };
 
     // payment_paid is available again since F-4 PR 3 (payment-paid-automation.db.test.ts),
-    // form_no_show since Q-11 (form-no-show-automation.db.test.ts).
+    // form_no_show since Q-11 (form-no-show-automation.db.test.ts). viewer_watch_progress and
+    // webinar_attended_duration_gte run too (Q-11), but only with their own closed-beta grants,
+    // which this vendor does not hold (watch-progress / watch-duration-automation.db.test.ts).
     for (const trigger of ["viewer_watch_progress", "webinar_attended_duration_gte"]) {
       await expect(createAutomationRuleAction(form({ name: "新規則", trigger, conditionValue: "100", actionTag: "on", customerTag: "x" })))
         .rejects.toThrow("redirect:/settings/automations?error=trigger_unavailable");

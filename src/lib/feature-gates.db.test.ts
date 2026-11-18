@@ -94,6 +94,18 @@ describe("Vendor.betaFeatureGrants", () => {
     await expect(isVendorFeatureEnabled(db, created.id, "automation_watch_progress")).resolves.toBe(true);
     await expect(db.vendor.update({ where: { id: created.id }, data: { betaFeatureGrants: ["automation_watch_progres"] } })).rejects.toThrow();
   });
+
+  it("accepts the automation_watch_duration grant (Q-11, 20261118100100_automation_watch_duration_grant), off by default, and still rejects unknown values", async () => {
+    const created = await vendor();
+    await expect(isVendorFeatureEnabled(db, created.id, "automation_watch_duration")).resolves.toBe(false);
+    const grants = ["automation_delayed_steps", "automation_form_no_show", "automation_watch_progress", "automation_watch_duration"];
+    await expect(db.vendor.update({ where: { id: created.id }, data: { betaFeatureGrants: grants } })).resolves.toMatchObject({ betaFeatureGrants: grants });
+    await expect(isVendorFeatureEnabled(db, created.id, "automation_watch_duration")).resolves.toBe(true);
+    // Its own grant: the percentage trigger's does not open it.
+    await db.vendor.update({ where: { id: created.id }, data: { betaFeatureGrants: ["automation_watch_progress"] } });
+    await expect(isVendorFeatureEnabled(db, created.id, "automation_watch_duration")).resolves.toBe(false);
+    await expect(db.vendor.update({ where: { id: created.id }, data: { betaFeatureGrants: ["automation_watch_durations"] } })).rejects.toThrow();
+  });
 });
 
 describe("course products while the courses module is closed (F-001, review M-1)", () => {

@@ -12,11 +12,13 @@ function lineForm(trigger = "form_registered") { const f = form(trigger); f.dele
 const asOwner = () => runtime.manager.mockResolvedValue({ ...runtime.auth, member: { role: "owner" } });
 /** Q-11 review M-1: form_no_show is a closed beta opened per vendor. */
 const withWatchGrant = (role = "admin") => runtime.manager.mockResolvedValue({ ...runtime.auth, vendor: { id: "v1", betaFeatureGrants: ["automation_watch_progress"] }, member: { role } });
+const withDurationGrant = (role = "admin") => runtime.manager.mockResolvedValue({ ...runtime.auth, vendor: { id: "v1", betaFeatureGrants: ["automation_watch_duration"] }, member: { role } });
 const withNoShowGrant = (role = "admin") => runtime.manager.mockResolvedValue({ ...runtime.auth, vendor: { id: "v1", betaFeatureGrants: ["automation_form_no_show"] }, member: { role } });
 function ruleForm(id = "r1") { const f = new FormData(); f.set("ruleId", id); return f; }
 // Q-11: form_no_show has a caller (the e-mail job's no-show pass) and is no longer hidden.
-// viewer_watch_progress has one too (the watch-progress pass) but stays closed without its own
-// closed-beta grant, which the default actor does not hold; with the grant see "watch progress (Q-11)".
+// viewer_watch_progress and webinar_attended_duration_gte have one too (the shared watch pass) but stay
+// closed without their own closed-beta grants, which the default actor does not hold; with the grants see
+// "watch progress (Q-11)" and "watch duration (Q-11)".
 const HIDDEN_TRIGGERS = ["viewer_watch_progress", "webinar_attended_duration_gte"] as const;
 beforeEach(() => { vi.clearAllMocks(); runtime.manager.mockResolvedValue(runtime.auth); runtime.db.automationRule.create.mockResolvedValue({ id: "r1", vendorId: "v1" }); runtime.db.automationRule.findFirst.mockResolvedValue({ id: "r1", isActive: true, trigger: "form_registered" }); runtime.db.automationRule.updateMany.mockResolvedValue({ count: 1 }); runtime.db.automationRule.delete.mockResolvedValue({ id: "r1" }); runtime.db.automationExecutionLog.count.mockResolvedValue(0); runtime.db.delayedStepRun.count.mockResolvedValue(0); runtime.db.delayedStepRun.updateMany.mockResolvedValue({ count: 0 }); runtime.db.$queryRaw.mockResolvedValue([{ id: "r1" }]); runtime.db.$transaction.mockImplementation(async (work: (tx: unknown) => unknown) => work(runtime.db)); });
 describe("automation actions", () => { it("requires CSRF and writes tenant-scoped rules", async () => { await expect(createAutomationRuleAction(form())).rejects.toThrow("redirect:/settings/automations?updated=created"); expect(runtime.security).toHaveBeenCalled(); expect(runtime.manager).toHaveBeenCalledWith("/settings/automations"); expect(runtime.db.automationRule.create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ vendorId: "v1", trigger: "form_registered", condition: { type: "always" } }) })); expect(runtime.audit).toHaveBeenCalledWith(expect.objectContaining({ vendorId: "v1", actorId: "u1", actorLabel: "admin" })); }); it("toggles only a rule in the current vendor", async () => { await expect(toggleAutomationRuleAction(ruleForm())).rejects.toThrow("redirect:/settings/automations?updated=toggled"); expect(runtime.db.automationRule.findFirst).toHaveBeenCalledWith({ where: { id: "r1", vendorId: "v1" }, select: { id: true, isActive: true, trigger: true, condition: true } }); expect(runtime.db.automationRule.updateMany).toHaveBeenCalledWith({ where: { id: "r1", vendorId: "v1", isActive: true }, data: { isActive: false } });
@@ -204,6 +206,12 @@ describe("automation actions", () => { it("requires CSRF and writes tenant-scope
     const hidden = new FormData();
     hidden.set("recipeId", "high_intent_chaser");
     hidden.set("productId", "p1");
+    await expect(createAutomationRecipeAction(hidden)).rejects.toThrow("redirect:/settings/automations?error=trigger_unavailable");
+    expect(runtime.db.automationRule.create).not.toHaveBeenCalled();
+    // Q-11: its trigger now runs for a vendor with the grant, but not its old watch-seconds and
+    // "not purchased yet" condition, so the recipe stays refused (and off the page).
+    asOwner();
+    withDurationGrant("owner");
     await expect(createAutomationRecipeAction(hidden)).rejects.toThrow("redirect:/settings/automations?error=trigger_unavailable");
     expect(runtime.db.automationRule.create).not.toHaveBeenCalled();
   });
@@ -580,6 +588,85 @@ describe("watch progress (Q-11 viewer_watch_progress)", () => {
     dry.set("watchPercent", "49");
     await expect(dryRunAutomationRuleAction(dry)).rejects.toThrow("redirect:/settings/automations?dryRun=would_skip");
     runtime.db.automationRule.findFirst.mockResolvedValue({ id: "r1", trigger: "viewer_watch_progress", condition: { type: "watch_seconds_gte", seconds: 60 }, actions: [{ type: "add_customer_tag", tag: "VIP" }] });
+    await expect(dryRunAutomationRuleAction(ruleForm())).rejects.toThrow("redirect:/settings/automations?dryRun=trigger_unavailable");
+  });
+});
+
+describe("watch duration (Q-11 webinar_attended_duration_gte)", () => {
+  function durationForm(minutes?: string) { const f = form("webinar_attended_duration_gte"); if (minutes !== undefined) f.set("watchMinutes", minutes); return f; }
+
+  it("creates a rule with whole watch minutes, read from its own field and never from the amount or percent fields", async () => {
+    withDurationGrant();
+    const f = durationForm("30");
+    f.set("conditionValue", "300");
+    f.set("watchPercent", "50");
+    await expect(createAutomationRuleAction(f)).rejects.toThrow("redirect:/settings/automations?updated=created");
+    expect(runtime.db.automationRule.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ vendorId: "v1", trigger: "webinar_attended_duration_gte", condition: { type: "watch_minutes_gte", minutes: 30 } }),
+    }));
+  });
+
+  it.each([undefined, "", "0", "1441", "15.5", "-5", "abc"])("refuses watch minutes that are not a whole number from 1 to 1440 (%j)", async (value) => {
+    withDurationGrant();
+    await expect(createAutomationRuleAction(durationForm(value))).rejects.toThrow("redirect:/settings/automations?error=invalid_rule");
+    expect(runtime.db.automationRule.create).not.toHaveBeenCalled();
+  });
+
+  it("refuses the trigger without its own closed-beta grant, even with the watch-progress grant", async () => {
+    withWatchGrant();
+    await expect(createAutomationRuleAction(durationForm("15"))).rejects.toThrow("redirect:/settings/automations?error=trigger_unavailable");
+    expect(runtime.db.automationRule.create).not.toHaveBeenCalled();
+    // ... and the other way round.
+    withDurationGrant();
+    const progress = form("viewer_watch_progress");
+    progress.set("watchPercent", "50");
+    await expect(createAutomationRuleAction(progress)).rejects.toThrow("redirect:/settings/automations?error=trigger_unavailable");
+  });
+
+  it("offers no e-mail template without a voucher, and the voucher follow-up next to one (Q-18)", async () => {
+    withDurationGrant();
+    const f = durationForm("15");
+    f.delete("actionTag");
+    f.set("actionEmail", "on");
+    f.set("emailTemplate", "webinar_replay");
+    await expect(createAutomationRuleAction(f)).rejects.toThrow("redirect:/settings/automations?error=email_template_unavailable");
+    f.set("emailTemplate", "repurchase_followup");
+    await expect(createAutomationRuleAction(f)).rejects.toThrow("redirect:/settings/automations?error=email_template_unavailable");
+    runtime.db.product.findFirst.mockResolvedValue({ id: "p1" });
+    f.set("actionVoucher", "on");
+    f.set("productId", "p1");
+    f.set("discountType", "fixed");
+    f.set("discountValue", "100");
+    f.set("expiresInDays", "3");
+    await expect(createAutomationRuleAction(f)).rejects.toThrow("redirect:/settings/automations?updated=created");
+  });
+
+  it("switches a minutes rule on, but never one saved with an old watch-seconds condition", async () => {
+    withDurationGrant();
+    runtime.db.automationRule.findFirst.mockResolvedValueOnce({ id: "r1", isActive: false, trigger: "webinar_attended_duration_gte", condition: { type: "watch_minutes_gte", minutes: 15 } });
+    await expect(toggleAutomationRuleAction(ruleForm())).rejects.toThrow("redirect:/settings/automations?updated=toggled");
+    for (const condition of [{ type: "watch_seconds_gte", seconds: 600 }, { type: "watch_seconds_gte_and_not_purchased", seconds: 1_800 }]) {
+      runtime.db.automationRule.updateMany.mockClear();
+      runtime.db.automationRule.findFirst.mockResolvedValueOnce({ id: "r1", isActive: false, trigger: "webinar_attended_duration_gte", condition });
+      await expect(toggleAutomationRuleAction(ruleForm())).rejects.toThrow("redirect:/settings/automations?error=condition_unsupported");
+      expect(runtime.db.automationRule.updateMany).not.toHaveBeenCalled();
+    }
+    // Switching such a rule off still works.
+    runtime.db.automationRule.findFirst.mockResolvedValueOnce({ id: "r1", isActive: true, trigger: "webinar_attended_duration_gte", condition: { type: "watch_seconds_gte", seconds: 600 } });
+    await expect(toggleAutomationRuleAction(ruleForm())).rejects.toThrow("redirect:/settings/automations?updated=toggled");
+  });
+
+  it("simulates a minutes rule with the simulated minutes, and refuses to simulate a legacy one", async () => {
+    withDurationGrant();
+    runtime.db.automationRule.findFirst.mockResolvedValue({ id: "r1", trigger: "webinar_attended_duration_gte", condition: { type: "watch_minutes_gte", minutes: 15 }, actions: [{ type: "add_customer_tag", tag: "看滿15分" }] });
+    const dry = ruleForm();
+    dry.set("watchMinutes", "15");
+    await expect(dryRunAutomationRuleAction(dry)).rejects.toThrow("redirect:/settings/automations?dryRun=would_dispatch");
+    dry.set("watchMinutes", "14");
+    // The seconds field is ignored for this trigger.
+    dry.set("watchSeconds", "99999");
+    await expect(dryRunAutomationRuleAction(dry)).rejects.toThrow("redirect:/settings/automations?dryRun=would_skip");
+    runtime.db.automationRule.findFirst.mockResolvedValue({ id: "r1", trigger: "webinar_attended_duration_gte", condition: { type: "watch_seconds_gte", seconds: 60 }, actions: [{ type: "add_customer_tag", tag: "VIP" }] });
     await expect(dryRunAutomationRuleAction(ruleForm())).rejects.toThrow("redirect:/settings/automations?dryRun=trigger_unavailable");
   });
 });

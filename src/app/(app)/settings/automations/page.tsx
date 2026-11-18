@@ -20,6 +20,8 @@ import {
   AUTOMATION_DELAYED_STEPS_FEATURE,
   availableAutomationTriggersForVendor,
   FORM_NO_SHOW_DETECTION_NOTE,
+  WATCH_DURATION_DETECTION_NOTE,
+  WATCH_DURATION_MINUTE_OPTIONS,
   WATCH_PROGRESS_DETECTION_NOTE,
   WATCH_PROGRESS_PERCENT_OPTIONS,
   automationEmailTemplateAdvice,
@@ -57,9 +59,31 @@ const WATCH_PROGRESS_NOT_GRANTED_NOTE = "「觀看直播達到指定進度」目
 const WATCH_PROGRESS_LEGACY_CONDITION_NOTE = "這條規則用的是舊的「觀看秒數」條件，不會執行，也不能重新啟用。請刪除它，改用觀看進度百分比建立新規則。";
 /** What the create form says about viewer_watch_progress (Q-11). */
 const WATCH_PROGRESS_FORM_NOTE = "「觀看直播達到指定進度」在報名者的觀看進度達到門檻後約 5 分鐘內執行，每位報名者、每條規則一次（重新整理、換裝置都不會重複）；只對規則建立或啟用之後仍在觀看的人執行。";
+/** A webinar_attended_duration_gte rule of a vendor without the closed-beta grant (Q-11). */
+const WATCH_DURATION_NOT_GRANTED_NOTE = "「觀看直播累計達指定時間」目前是封測功能，尚未對你的商家開放，這條規則不會執行。你可以停用或刪除它。";
+/** A webinar_attended_duration_gte rule saved with the old watch-seconds condition, before the trigger was connected (Q-11). */
+const WATCH_DURATION_LEGACY_CONDITION_NOTE = "這條規則用的是舊的「觀看秒數」條件，不會執行，也不能重新啟用。請刪除它，改用觀看分鐘數建立新規則。";
+/** What the create form says about webinar_attended_duration_gte (Q-11). */
+const WATCH_DURATION_FORM_NOTE = "「觀看直播累計達指定時間」在報名者的累計觀看時間達到門檻後約 5 分鐘內執行，每位報名者、每條規則一次（重新整理、換裝置都不會重複）；只對規則建立或啟用之後仍在觀看的人執行。";
+const NOT_GRANTED_NOTES: Record<string, string> = {
+  form_no_show: FORM_NO_SHOW_NOT_GRANTED_NOTE,
+  viewer_watch_progress: WATCH_PROGRESS_NOT_GRANTED_NOTE,
+  webinar_attended_duration_gte: WATCH_DURATION_NOT_GRANTED_NOTE,
+};
+/** How the watch time is counted, shown on every runnable rule of a watch trigger (Q-11). */
+const WATCH_DETECTION_NOTES: Record<string, string | undefined> = {
+  viewer_watch_progress: WATCH_PROGRESS_DETECTION_NOTE,
+  webinar_attended_duration_gte: WATCH_DURATION_DETECTION_NOTE,
+};
+/** The dry-run's simulated watch value, in the unit of the rule's threshold. */
+function DryRunWatchField({ trigger }: { trigger: string }) {
+  if (trigger === "viewer_watch_progress") return <Field label="模擬觀看進度（%）" name="watchPercent" type="number" min={0} max={100} defaultValue={50} />;
+  if (trigger === "webinar_attended_duration_gte") return <Field label="模擬累計觀看（分鐘）" name="watchMinutes" type="number" min={0} defaultValue={30} />;
+  return <Field label="模擬觀看（秒）" name="watchSeconds" type="number" min={0} defaultValue={1800} />;
+}
 function notRunnableNote(rule: { trigger: string }, available: boolean) {
-  if (!available) return rule.trigger === "form_no_show" ? FORM_NO_SHOW_NOT_GRANTED_NOTE : rule.trigger === "viewer_watch_progress" ? WATCH_PROGRESS_NOT_GRANTED_NOTE : UNAVAILABLE_TRIGGER_NOTE;
-  return WATCH_PROGRESS_LEGACY_CONDITION_NOTE;
+  if (!available) return NOT_GRANTED_NOTES[rule.trigger] ?? UNAVAILABLE_TRIGGER_NOTE;
+  return rule.trigger === "webinar_attended_duration_gte" ? WATCH_DURATION_LEGACY_CONDITION_NOTE : WATCH_PROGRESS_LEGACY_CONDITION_NOTE;
 }
 const ACTIONS: Record<string, string> = { line_push: "LINE 推播", send_email_notification: "Email 通知", add_customer_tag: "客戶打標", issue_repurchase_voucher: "派發回購券" };
 const ERROR_MESSAGES: Record<string, string> = {
@@ -151,6 +175,7 @@ function conditionLabel(value: unknown) {
   if (condition.type === "always") return "事件發生時";
   if (condition.type === "order_amount_gte") return `訂單滿 ${formatTwd(Number(condition.amountCents ?? 0))}`;
   if (condition.type === "watch_percent_gte") return `觀看進度達 ${condition.percent ?? "?"}%`;
+  if (condition.type === "watch_minutes_gte") return `累計觀看滿 ${condition.minutes ?? "?"} 分鐘`;
   if (condition.type === "watch_seconds_gte_and_not_purchased") return `觀看滿 ${condition.seconds} 秒且尚未購買`;
   return `觀看滿 ${condition.seconds ?? "?"} 秒`;
 }
@@ -337,9 +362,11 @@ export default async function AutomationSettingsPage({ searchParams }: { searchP
   const formNoShow = triggers.includes("form_no_show");
   // viewer_watch_progress is a closed beta too (Q-11): offered only with its grant.
   const watchProgress = triggers.includes("viewer_watch_progress");
+  // ... and so is webinar_attended_duration_gte (Q-11), with its own grant.
+  const watchDuration = triggers.includes("webinar_attended_duration_gte");
   // The amount field only matters for payment_paid (F-4 PR 3); the watch
-  // percent has its own field below.
-  const showThreshold = triggers.some((trigger) => trigger !== "viewer_watch_progress" && automationTriggerNeedsThreshold(trigger));
+  // percent and the watch minutes have their own fields below.
+  const showThreshold = triggers.some((trigger) => trigger !== "viewer_watch_progress" && trigger !== "webinar_attended_duration_gte" && automationTriggerNeedsThreshold(trigger));
   return <>
     <PageHeader title="自動化" description={linePushAllowed ? "把報名、直播、諮詢與訂單串成跨管道行銷流程。商家 owner 與管理員可以管理。" : `把報名、直播、諮詢與訂單串成跨管道行銷流程。商家 owner 與管理員可以管理；${LINE_PUSH_OWNER_ONLY_MESSAGE}`} />
     {params.updated ? <p role="status" className="mb-4 rounded-md bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{UPDATED_MESSAGES[params.updated] ?? "自動化規則已更新。"}</p> : null}
@@ -348,11 +375,11 @@ export default async function AutomationSettingsPage({ searchParams }: { searchP
 
     <Card className="mb-6"><h2 className="text-lg font-semibold text-slate-950">熱門劇本一鍵套用</h2><p className="mb-4 text-sm text-slate-600">需要派券的劇本請先選商品。</p><div className="grid gap-4 lg:grid-cols-2">{recipes.map((recipe) => <form action={createAutomationRecipeAction} key={recipe.id} className="grid gap-3 rounded-xl border border-border p-4"><CsrfField /><input type="hidden" name="recipeId" value={recipe.id} /><div><h3 className="font-semibold text-slate-900">{recipe.name}</h3><p className="mt-1 text-sm text-slate-600">{recipe.description}</p></div>{recipe.trigger === "form_no_show" ? <p className="rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-900">{FORM_NO_SHOW_DETECTION_NOTE}</p> : null}<p className="text-xs font-medium text-slate-500">{triggerLabel(recipe.trigger)} → {actionLabels(recipe.actions).join(" + ")}</p>{!linePushAllowed && automationActionsIncludeLinePush(recipe.actions) ? <p className="text-xs text-slate-600">這個劇本含 LINE 推播。{LINE_PUSH_OWNER_ONLY_MESSAGE}</p> : <>{!linePushAllowed && recipe.actions.some((action) => action.type === "issue_repurchase_voucher") ? <p className="text-xs text-slate-600">{VOUCHER_WITHOUT_LINE_NOTE}</p> : null}{recipe.actions.some((action) => action.type === "issue_repurchase_voucher") ? <SelectField label="套券商品" name="productId"><option value="">請選擇商品</option>{products.map((product) => <option key={product.id} value={product.id}>{product.name}</option>)}</SelectField> : null}<SubmitButton pendingChildren="套用中…">一鍵套用劇本</SubmitButton></>}</form>)}</div></Card>
 
-    <Card className="mb-6"><h2 className="mb-4 text-lg font-semibold text-slate-950">自訂規則</h2><form action={createAutomationRuleAction} className="grid gap-4" aria-label="建立自訂規則"><CsrfField /><div className="grid gap-4 md:grid-cols-2"><Field label="規則名稱" name="name" required maxLength={120} /><SelectField label="觸發事件" name="trigger" defaultValue={triggers[0]}>{triggers.map((value) => <option key={value} value={value}>{triggerLabel(value)}</option>)}</SelectField></div>{showThreshold ? <Field label="付款金額門檻（元；只用於「訂單付款完成」，其他觸發條件留空）" name="conditionValue" type="number" min={1} step={1} /> : null}{watchProgress ? <SelectField label="觀看進度門檻（只用於「觀看直播達到指定進度」）" name="watchPercent" defaultValue="50">{WATCH_PROGRESS_PERCENT_OPTIONS.map((percent) => <option key={percent} value={percent}>{percent}%</option>)}</SelectField> : null}<p className="text-sm text-slate-600">以下是事件發生時「立即執行」的動作{delayedSteps ? "；建立後可在規則下方加上延遲步驟（例如 1 天後再寄一封）" : ""}。「訂單付款完成」在付款確認後執行一次，金額以訂單實際付款金額判斷，Email 寄給訂單的買家。{formNoShow ? `「報名後未出席直播」在場次結束約 30 分鐘後，對已完成 Email 驗證、卻沒有用完成驗證的瀏覽器或個人觀看連結進入觀看（含回放）的報名者執行，每人每個場次一次，只對規則建立或啟用之後才結束的場次執行；單一開播時間的直播只算開播前 14 天內完成驗證的報名者。${FORM_NO_SHOW_DETECTION_NOTE}` : ""}{watchProgress ? `${WATCH_PROGRESS_FORM_NOTE}${WATCH_PROGRESS_DETECTION_NOTE}` : ""}</p><ActionFields products={products} linePushAllowed={linePushAllowed} trigger={triggers[0] ?? "form_registered"} triggerFieldName="trigger" /><SubmitButton pendingChildren="建立中…">建立規則</SubmitButton></form></Card>
+    <Card className="mb-6"><h2 className="mb-4 text-lg font-semibold text-slate-950">自訂規則</h2><form action={createAutomationRuleAction} className="grid gap-4" aria-label="建立自訂規則"><CsrfField /><div className="grid gap-4 md:grid-cols-2"><Field label="規則名稱" name="name" required maxLength={120} /><SelectField label="觸發事件" name="trigger" defaultValue={triggers[0]}>{triggers.map((value) => <option key={value} value={value}>{triggerLabel(value)}</option>)}</SelectField></div>{showThreshold ? <Field label="付款金額門檻（元；只用於「訂單付款完成」，其他觸發條件留空）" name="conditionValue" type="number" min={1} step={1} /> : null}{watchProgress ? <SelectField label="觀看進度門檻（只用於「觀看直播達到指定進度」）" name="watchPercent" defaultValue="50">{WATCH_PROGRESS_PERCENT_OPTIONS.map((percent) => <option key={percent} value={percent}>{percent}%</option>)}</SelectField> : null}{watchDuration ? <SelectField label="累計觀看時間門檻（只用於「觀看直播累計達指定時間」）" name="watchMinutes" defaultValue="15">{WATCH_DURATION_MINUTE_OPTIONS.map((minutes) => <option key={minutes} value={minutes}>{minutes} 分鐘</option>)}</SelectField> : null}<p className="text-sm text-slate-600">以下是事件發生時「立即執行」的動作{delayedSteps ? "；建立後可在規則下方加上延遲步驟（例如 1 天後再寄一封）" : ""}。「訂單付款完成」在付款確認後執行一次，金額以訂單實際付款金額判斷，Email 寄給訂單的買家。{formNoShow ? `「報名後未出席直播」在場次結束約 30 分鐘後，對已完成 Email 驗證、卻沒有用完成驗證的瀏覽器或個人觀看連結進入觀看（含回放）的報名者執行，每人每個場次一次，只對規則建立或啟用之後才結束的場次執行；單一開播時間的直播只算開播前 14 天內完成驗證的報名者。${FORM_NO_SHOW_DETECTION_NOTE}` : ""}{watchProgress ? `${WATCH_PROGRESS_FORM_NOTE}${WATCH_PROGRESS_DETECTION_NOTE}` : ""}{watchDuration ? `${WATCH_DURATION_FORM_NOTE}${WATCH_DURATION_DETECTION_NOTE}` : ""}</p><ActionFields products={products} linePushAllowed={linePushAllowed} trigger={triggers[0] ?? "form_registered"} triggerFieldName="trigger" /><SubmitButton pendingChildren="建立中…">建立規則</SubmitButton></form></Card>
 
     <Card className="mb-6"><h2 className="mb-4 text-lg font-semibold text-slate-950">規則</h2><div className="grid gap-4">{rules.length ? rules.map((rule) => {
       const available = isAutomationTriggerAvailableForVendor(rule.trigger, vendor);
-      // Q-11: an available viewer_watch_progress rule with the old watch-seconds condition still never runs.
+      // Q-11: an available viewer_watch_progress or webinar_attended_duration_gte rule with the old watch-seconds condition still never runs.
       const runnable = available && isAutomationRuleRunnableForVendor(rule, vendor);
       const hasHistory = rule._count.executionLogs > 0;
       // A rule that sends LINE (a custom LINE push or a voucher's LINE
@@ -367,14 +394,14 @@ export default async function AutomationSettingsPage({ searchParams }: { searchP
         {runnable ? null : <p className="rounded-md border border-border bg-slate-50 px-3 py-2 text-sm text-slate-700">{notRunnableNote(rule, available)}</p>}
         {runnable ? emailTemplateNotes(rule).map((note) => <p key={note} className="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-900">{note}</p>) : null}
         {rule.trigger === "form_no_show" ? <p className="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-900">{FORM_NO_SHOW_DETECTION_NOTE}</p> : null}
-        {rule.trigger === "viewer_watch_progress" && runnable ? <p className="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-900">{WATCH_PROGRESS_DETECTION_NOTE}</p> : null}
+        {runnable && WATCH_DETECTION_NOTES[rule.trigger] ? <p className="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-900">{WATCH_DETECTION_NOTES[rule.trigger]}</p> : null}
         {linePushOwnerOnly ? <p className="rounded-md border border-border bg-slate-50 px-3 py-2 text-sm text-slate-700">{lineRuleNote({ stepsShown, rule })}</p> : null}
         {delayedSteps ? (stepsShown
           ? <RuleSteps rule={rule} editable={runnable && !linePushOwnerOnly} linePushAllowed={linePushAllowed} products={products} counts={runCounts.get(rule.id)} />
           : <p className="rounded-md border border-border bg-slate-50 px-3 py-2 text-sm text-slate-700">{NO_DELAYED_STEPS_NOTE}</p>) : null}
         <div className="flex flex-wrap items-end gap-3">
           {rule.isActive || (runnable && !linePushOwnerOnly) ? <form action={toggleAutomationRuleAction}><CsrfField /><input type="hidden" name="ruleId" value={rule.id} /><SubmitButton pendingChildren="更新中…">{rule.isActive ? "停用" : "啟用"}</SubmitButton></form> : null}
-          {runnable ? <form action={dryRunAutomationRuleAction} className="flex flex-wrap items-end gap-2"><CsrfField /><input type="hidden" name="ruleId" value={rule.id} /><Field label="模擬訂單（元）" name="orderAmount" type="number" min={0} defaultValue={30000} />{rule.trigger === "viewer_watch_progress" ? <Field label="模擬觀看進度（%）" name="watchPercent" type="number" min={0} max={100} defaultValue={50} /> : <Field label="模擬觀看（秒）" name="watchSeconds" type="number" min={0} defaultValue={1800} />}<label className="mb-2 flex items-center gap-2 text-xs"><input type="checkbox" name="hasPurchased" /> 已購買</label><SubmitButton pendingChildren="測試中…">Dry-run 測試</SubmitButton></form> : null}
+          {runnable ? <form action={dryRunAutomationRuleAction} className="flex flex-wrap items-end gap-2"><CsrfField /><input type="hidden" name="ruleId" value={rule.id} /><Field label="模擬訂單（元）" name="orderAmount" type="number" min={0} defaultValue={30000} /><DryRunWatchField trigger={rule.trigger} /><label className="mb-2 flex items-center gap-2 text-xs"><input type="checkbox" name="hasPurchased" /> 已購買</label><SubmitButton pendingChildren="測試中…">Dry-run 測試</SubmitButton></form> : null}
           {!rule.isActive && !hasHistory ? <form action={deleteAutomationRuleAction}><CsrfField /><input type="hidden" name="ruleId" value={rule.id} /><ConfirmActionButton type="submit" message={`確定刪除規則「${rule.name}」？`} description="刪除後無法復原。" confirmLabel="刪除" destructive className="inline-flex min-h-11 cursor-pointer items-center rounded-md border border-red-200 bg-white px-4 text-sm font-semibold text-red-700 hover:bg-red-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500">刪除規則</ConfirmActionButton></form> : null}
         </div>
         {rule.isActive ? <p className="text-xs text-slate-500">停用後才能刪除。{delayedSteps ? "停用時，進行中的延遲步驟會立即停止，重新啟用也不會恢復。" : ""}</p> : hasHistory ? <p className="text-xs text-slate-500">已有執行紀錄，保留供查詢，只能停用、不能刪除。</p> : null}

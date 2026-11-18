@@ -2,10 +2,12 @@ import { createHash } from "node:crypto";
 import { Prisma } from "@prisma/client";
 import {
   AUTOMATION_EXECUTION_RECLAIM_AFTER_MS,
+  AUTOMATION_WATCH_DURATION_FEATURE,
   AUTOMATION_WATCH_PROGRESS_FEATURE,
   automationCustomerKeyHash,
   dispatchAutomationEvent,
   parseAutomationRule,
+  watchDurationRuleMinutes,
   watchProgressRulePercent,
 } from "@/lib/automation-workflow";
 import { getDb } from "@/lib/db";
@@ -56,6 +58,20 @@ import { captureOperationalError } from "@/lib/monitoring";
  * still fires once), and an evergreen or fixed-session Live is judged against
  * its video length.
  *
+ * The same pass runs `webinar_attended_duration_gte` (Q-11, 「觀看直播累計達指定
+ * 時間」, closed beta `automation_watch_duration`) over the same rows. Its
+ * condition is `watch_minutes_gte` and a registration reaches it when
+ * `watchedSeconds ≥ minutes × 60`: no session length is involved, so a real
+ * live stream is judged while it is still on air, and a row is due at its last
+ * credit (no `endedAt` branch: the review MINOR-3 back-fill only exists
+ * because a stream's percentage waits for its end). Its look-back is therefore
+ * the plain `(vendorId, lastCreditedAt)` index range (the first branch of
+ * review MINOR-A). Every other condition above holds for it too (vendor-bound
+ * row, VERIFIED registration of the same Live through a form of the vendor,
+ * active vendor-wide rule unchanged since the last credit, the same
+ * execution-log filter). Its event id is `watch-duration:{submissionId}:{minutes}`.
+ * Both triggers share the run's event limit, vendor rotation and deadline.
+ *
  * Each run dispatches at most WATCH_PROGRESS_EVENT_LIMIT events,
  * round-robin across vendors (each vendor's earliest-due first), scans
  * at most WATCH_PROGRESS_VENDOR_LIMIT vendors (starting at a different one
@@ -90,6 +106,7 @@ export const WATCH_PROGRESS_FAILED_RETRY_AFTER_MS = 10 * 60_000;
 export const WATCH_PROGRESS_RETRYABLE_ERROR_CODES = ["action_failed"] as const;
 
 const EVENT_PREFIX = "watch-progress:";
+const DURATION_EVENT_PREFIX = "watch-duration:";
 
 /** min(15 s, 45 s − elapsed), or null to skip the pass this round when less than 3 s are left. */
 export function watchProgressDeadline(routeElapsedMs: number): number | null {
@@ -102,6 +119,11 @@ export function watchProgressDeadline(routeElapsedMs: number): number | null {
 /** The event id of one registration reaching one threshold. */
 export function watchProgressEventId(submissionId: string, percent: number) {
   return `${EVENT_PREFIX}${submissionId}:${percent}`;
+}
+
+/** The event id of one registration reaching one watch-time threshold (webinar_attended_duration_gte). */
+export function watchDurationEventId(submissionId: string, minutes: number) {
+  return `${DURATION_EVENT_PREFIX}${submissionId}:${minutes}`;
 }
 
 export type WatchProgressSummary = {
@@ -123,53 +145,97 @@ export type WatchProgressSummary = {
 
 type Db = ReturnType<typeof getDb>;
 
-type RunnableRule = { id: string; percent: number };
+type WatchTrigger = "viewer_watch_progress" | "webinar_attended_duration_gte";
+
+type PercentRule = { id: string; percent: number };
+type MinutesRule = { id: string; minutes: number };
+type RunnableRules = { percent: PercentRule[]; minutes: MinutesRule[] };
 
 type Candidate = {
   vendorId: string;
+  trigger: WatchTrigger;
   submissionId: string;
   email: string;
   liveId: string;
   watchedSeconds: number;
-  lengthSec: number;
+  /** viewer_watch_progress only: the session length the percentage is of. */
+  lengthSec: number | null;
   lastCreditedAt: Date;
-  /** When the row became judgeable: its last credit, or a real live stream's end if later. */
+  /** When the row became judgeable: its last credit, or (percentage only) a real live stream's end if later. */
   dueAt: Date;
-  percent: number;
+  /** The percent (viewer_watch_progress) or the minutes (webinar_attended_duration_gte) of the event. */
+  threshold: number;
   ruleIds: string[];
 };
 
-/** Vendors holding the grant with a runnable rule, and those rules, in a rotating order. */
+/** The event id the candidate is dispatched with. */
+function candidateEventId(candidate: Pick<Candidate, "trigger" | "submissionId" | "threshold">) {
+  return candidate.trigger === "viewer_watch_progress"
+    ? watchProgressEventId(candidate.submissionId, candidate.threshold)
+    : watchDurationEventId(candidate.submissionId, candidate.threshold);
+}
+
+/**
+ * Vendors with a runnable rule and those rules, in a rotating order. Each
+ * trigger counts only for a vendor holding its own closed-beta grant.
+ */
 async function vendorsWithRules(db: Db, now: Date, onlyVendorIds: string[] | undefined) {
   const rules = await db.automationRule.findMany({
     where: {
-      trigger: "viewer_watch_progress",
       isActive: true,
       funnelPageId: null,
-      // Closed beta: a vendor without the grant is never scanned.
-      vendor: { suspendedAt: null, betaFeatureGrants: { has: AUTOMATION_WATCH_PROGRESS_FEATURE } },
+      vendor: { suspendedAt: null },
+      // Closed beta: a vendor without the trigger's grant is never scanned for it.
+      OR: [
+        { trigger: "viewer_watch_progress", vendor: { betaFeatureGrants: { has: AUTOMATION_WATCH_PROGRESS_FEATURE } } },
+        { trigger: "webinar_attended_duration_gte", vendor: { betaFeatureGrants: { has: AUTOMATION_WATCH_DURATION_FEATURE } } },
+      ],
       ...(onlyVendorIds ? { vendorId: { in: onlyVendorIds } } : {}),
     },
     orderBy: [{ vendorId: "asc" }, { createdAt: "asc" }, { id: "asc" }],
-    select: { id: true, vendorId: true, version: true, condition: true, actions: true },
+    select: { id: true, vendorId: true, version: true, trigger: true, condition: true, actions: true },
   });
-  const byVendor = new Map<string, RunnableRule[]>();
+  const byVendor = new Map<string, RunnableRules>();
   for (const rule of rules) {
     // An unparseable rule, or one with the old watch-seconds condition, never
     // writes a log, so it would be chosen again every run: leave it out.
-    const percent = watchProgressRulePercent(rule.condition);
-    if (percent === null || !parseAutomationRule(rule)) continue;
-    byVendor.set(rule.vendorId, [...byVendor.get(rule.vendorId) ?? [], { id: rule.id, percent }]);
+    if (!parseAutomationRule(rule)) continue;
+    const entry = byVendor.get(rule.vendorId) ?? { percent: [], minutes: [] };
+    if (rule.trigger === "viewer_watch_progress") {
+      const percent = watchProgressRulePercent(rule.condition);
+      if (percent === null) continue;
+      entry.percent.push({ id: rule.id, percent });
+    } else {
+      const minutes = watchDurationRuleMinutes(rule.condition);
+      if (minutes === null) continue;
+      entry.minutes.push({ id: rule.id, minutes });
+    }
+    byVendor.set(rule.vendorId, entry);
   }
   const vendors = [...byVendor.keys()];
   const offset = vendors.length ? Math.floor(now.getTime() / 60_000) % vendors.length : 0;
   return [...vendors.slice(offset), ...vendors.slice(0, offset)]
     .slice(0, WATCH_PROGRESS_VENDOR_LIMIT)
-    .map((vendorId) => ({ vendorId, rules: byVendor.get(vendorId) ?? [] }));
+    .map((vendorId) => ({ vendorId, rules: byVendor.get(vendorId) ?? { percent: [], minutes: [] } }));
 }
 
-/** One vendor's registrations past a rule's threshold that still owe it, earliest-credited first, at most `limit` rows. */
-async function scanVendor(db: Db, vendorId: string, rules: RunnableRule[], now: Date, limit: number): Promise<Candidate[]> {
+/** Earliest-due first; then registration, trigger and threshold, so the order is stable. */
+function compareCandidates(a: Candidate, b: Candidate) {
+  return a.dueAt.getTime() - b.dueAt.getTime()
+    || (a.submissionId < b.submissionId ? -1 : a.submissionId > b.submissionId ? 1 : 0)
+    || (a.trigger === b.trigger ? 0 : a.trigger === "viewer_watch_progress" ? -1 : 1)
+    || a.threshold - b.threshold;
+}
+
+/** One vendor's events of both triggers, earliest-due first, at most `limit`. */
+async function scanVendor(db: Db, vendorId: string, rules: RunnableRules, now: Date, limit: number): Promise<Candidate[]> {
+  const percent = rules.percent.length ? await scanProgress(db, vendorId, rules.percent, now, limit) : [];
+  const minutes = rules.minutes.length ? await scanDuration(db, vendorId, rules.minutes, now, limit) : [];
+  return [...percent, ...minutes].sort(compareCandidates).slice(0, limit);
+}
+
+/** One vendor's registrations past a percentage rule's threshold that still owe it, earliest-due first, at most `limit` rows. */
+async function scanProgress(db: Db, vendorId: string, rules: PercentRule[], now: Date, limit: number): Promise<Candidate[]> {
   const lookbackFrom = new Date(now.getTime() - WATCH_PROGRESS_LOOKBACK_MS);
   const liveRows = await db.$queryRaw<Array<{ liveId: string }>>`
     SELECT DISTINCT p."liveId"
@@ -203,7 +269,7 @@ async function scanVendor(db: Db, vendorId: string, rules: RunnableRule[], now: 
   const staleRunningBefore = new Date(now.getTime() - AUTOMATION_EXECUTION_RECLAIM_AFTER_MS);
   const failedRetryBefore = new Date(now.getTime() - WATCH_PROGRESS_FAILED_RETRY_AFTER_MS);
   const retryableCodes = [...WATCH_PROGRESS_RETRYABLE_ERROR_CODES];
-  const rows = await db.$queryRaw<Array<Omit<Candidate, "vendorId">>>(Prisma.sql`
+  const rows = await db.$queryRaw<Array<Omit<Candidate, "vendorId" | "trigger">>>(Prisma.sql`
     WITH "length" AS (
       SELECT t."liveId", t."seconds", (t."endedAt"::timestamptz AT TIME ZONE 'UTC') AS "endedAt"
       FROM unnest(${lengths.map((entry) => entry.liveId)}::text[], ${lengths.map((entry) => entry.seconds)}::int[], ${lengths.map((entry) => entry.endedAt)}::text[]) AS t("liveId", "seconds", "endedAt")
@@ -213,7 +279,7 @@ async function scanVendor(db: Db, vendorId: string, rules: RunnableRule[], now: 
     )
     SELECT p."formSubmissionId" AS "submissionId", s."email", p."liveId", p."watchedSeconds",
            len."seconds" AS "lengthSec", p."lastCreditedAt",
-           GREATEST(p."lastCreditedAt", len."endedAt") AS "dueAt", th."percent",
+           GREATEST(p."lastCreditedAt", len."endedAt") AS "dueAt", th."percent" AS "threshold",
            array_agg(r."id" ORDER BY r."createdAt" ASC, r."id" ASC) AS "ruleIds"
     FROM "LiveWatchProgress" p
     JOIN "length" len ON len."liveId" = p."liveId"
@@ -255,7 +321,65 @@ async function scanVendor(db: Db, vendorId: string, rules: RunnableRule[], now: 
     ORDER BY "dueAt" ASC, p."formSubmissionId" ASC, th."percent" ASC
     LIMIT ${limit}
   `);
-  return rows.map((row) => ({ ...row, vendorId }));
+  return rows.map((row) => ({ ...row, vendorId, trigger: "viewer_watch_progress" as const }));
+}
+
+/**
+ * One vendor's registrations past a watch-minutes rule's threshold that still
+ * owe it, earliest-credited first, at most `limit` rows. The same bindings as
+ * scanProgress; no session length, so no Live length and no `endedAt` branch.
+ */
+async function scanDuration(db: Db, vendorId: string, rules: MinutesRule[], now: Date, limit: number): Promise<Candidate[]> {
+  const lookbackFrom = new Date(now.getTime() - WATCH_PROGRESS_LOOKBACK_MS);
+  const staleRunningBefore = new Date(now.getTime() - AUTOMATION_EXECUTION_RECLAIM_AFTER_MS);
+  const failedRetryBefore = new Date(now.getTime() - WATCH_PROGRESS_FAILED_RETRY_AFTER_MS);
+  const retryableCodes = [...WATCH_PROGRESS_RETRYABLE_ERROR_CODES];
+  const rows = await db.$queryRaw<Array<Omit<Candidate, "vendorId" | "trigger" | "lengthSec">>>(Prisma.sql`
+    WITH "threshold" AS (
+      SELECT * FROM unnest(${rules.map((rule) => rule.id)}::text[], ${rules.map((rule) => rule.minutes)}::int[]) AS t("ruleId", "minutes")
+    )
+    SELECT p."formSubmissionId" AS "submissionId", s."email", p."liveId", p."watchedSeconds",
+           p."lastCreditedAt", p."lastCreditedAt" AS "dueAt", th."minutes" AS "threshold",
+           array_agg(r."id" ORDER BY r."createdAt" ASC, r."id" ASC) AS "ruleIds"
+    -- No join on "Live": the row's composite FK (vendorId, liveId) → Live
+    -- (vendorId, id) already binds its Live to this vendor, and joining it
+    -- would lead the planner from the vendor's Lives through every old row
+    -- of each (review MINOR-A).
+    FROM "LiveWatchProgress" p
+    JOIN "FormSubmission" s ON s."id" = p."formSubmissionId" AND s."liveId" = p."liveId"
+    JOIN "RegistrationForm" f ON f."id" = s."formId"
+    JOIN "threshold" th ON p."watchedSeconds"::bigint >= th."minutes"::bigint * 60
+    JOIN "AutomationRule" r ON r."id" = th."ruleId"
+      AND r."vendorId" = ${vendorId}
+      AND r."trigger" = 'webinar_attended_duration_gte'
+      AND r."isActive" = true
+      AND r."funnelPageId" IS NULL
+      AND r."updatedAt" <= p."lastCreditedAt"
+    WHERE p."vendorId" = ${vendorId}
+      AND f."vendorId" = ${vendorId}
+      AND s."verificationStatus" = 'VERIFIED'
+      -- The (vendorId, lastCreditedAt) index range (review MINOR-A's first
+      -- branch): a watch-time row is due at its last credit, so there is no
+      -- ended-stream branch.
+      AND p."lastCreditedAt" > ${utcTimestamp(lookbackFrom)}
+      AND NOT EXISTS (
+        SELECT 1 FROM "AutomationExecutionLog" l
+        WHERE l."vendorId" = ${vendorId}
+          AND l."eventId" = ${DURATION_EVENT_PREFIX} || p."formSubmissionId" || ':' || th."minutes"::text
+          AND l."ruleId" = r."id"
+          AND NOT (l."status" = 'running' AND l."startedAt" < ${utcTimestamp(staleRunningBefore)})
+          AND NOT (
+            l."status" = 'failed'
+            AND l."errorCode" = ANY(${retryableCodes}::text[])
+            AND l."startedAt" = l."createdAt"
+            AND l."completedAt" < ${utcTimestamp(failedRetryBefore)}
+          )
+      )
+    GROUP BY p."formSubmissionId", s."email", p."liveId", p."watchedSeconds", p."lastCreditedAt", th."minutes"
+    ORDER BY "dueAt" ASC, p."formSubmissionId" ASC, th."minutes" ASC
+    LIMIT ${limit}
+  `);
+  return rows.map((row) => ({ ...row, vendorId, trigger: "webinar_attended_duration_gte" as const, lengthSec: null }));
 }
 
 /** Each vendor's first candidate, then each vendor's second, ... */
@@ -284,7 +408,7 @@ function report(error: unknown, operation: WatchProgressReport, fingerprint?: st
 
 /** Groups repeated reports of one failing event: an opaque digest (no ids reach Sentry) plus the error kind. */
 function dispatchFingerprint(candidate: Candidate, error: unknown) {
-  const digest = createHash("sha256").update(`${candidate.vendorId}:${watchProgressEventId(candidate.submissionId, candidate.percent)}`).digest("hex").slice(0, 16);
+  const digest = createHash("sha256").update(`${candidate.vendorId}:${candidateEventId(candidate)}`).digest("hex").slice(0, 16);
   const code = error && typeof error === "object" && "code" in error ? String((error as { code: unknown }).code) : "";
   const kind = /^P\d{4}$/.test(code) ? code : error instanceof Error && /^[A-Za-z]{1,60}$/.test(error.name) ? error.name : "unknown";
   return ["watch-progress-dispatch", digest, kind];
@@ -343,15 +467,18 @@ export async function runWatchProgressAutomation(options: {
     try {
       const results = await dispatchAutomationEvent(db, {
         vendorId: candidate.vendorId,
-        eventId: watchProgressEventId(candidate.submissionId, candidate.percent),
-        trigger: "viewer_watch_progress",
+        eventId: candidateEventId(candidate),
+        trigger: candidate.trigger,
         liveId: candidate.liveId,
         subjectType: "buyer_registration",
         subjectId: candidate.submissionId,
         subjectKeyHash: automationCustomerKeyHash(candidate.vendorId, candidate.email),
         recipientEmail: candidate.email,
+        // Server-counted seconds: watch_minutes_gte compares them with minutes × 60.
         watchSecondsTotal: candidate.watchedSeconds,
-        watchPercent: watchProgressPercent(candidate.watchedSeconds, candidate.lengthSec),
+        ...(candidate.trigger === "viewer_watch_progress" && candidate.lengthSec
+          ? { watchPercent: watchProgressPercent(candidate.watchedSeconds, candidate.lengthSec) }
+          : {}),
       }, {
         // The scan's rule choice, re-checked by the dispatch's own rule read.
         rulesUnchangedSince: candidate.lastCreditedAt,
