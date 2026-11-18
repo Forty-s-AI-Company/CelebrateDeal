@@ -1,5 +1,5 @@
 import type { Video } from "@prisma/client";
-import { upsertVideoAction } from "@/app/actions";
+import { upsertVideoAction } from "@/app/actions/webinar-resource-actions";
 import { CsrfField } from "@/components/csrf-field";
 import { MediaUploadField } from "@/components/media-upload-field";
 import { VideoProviderStatus } from "@/components/video-provider-status";

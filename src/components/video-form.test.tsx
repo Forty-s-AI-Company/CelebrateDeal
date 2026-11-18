@@ -2,7 +2,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import type { Video } from "@prisma/client";
 import { describe, expect, it, vi } from "vitest";
 
-vi.mock("@/app/actions", () => ({ upsertVideoAction: vi.fn() }));
+vi.mock("@/app/actions/webinar-resource-actions", () => ({ upsertVideoAction: vi.fn() }));
 vi.mock("@/components/csrf-field", () => ({ CsrfField: () => null }));
 
 import { VideoForm } from "./video-form";

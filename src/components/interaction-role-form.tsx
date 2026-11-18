@@ -4,7 +4,7 @@ import Image from "next/image";
 import { useState } from "react";
 import type { InteractionRole } from "@prisma/client";
 import { Bot, CheckCircle2, Sparkles } from "lucide-react";
-import { upsertInteractionRoleAction } from "@/app/actions";
+import { upsertInteractionRoleAction } from "@/app/actions/interaction-actions";
 import { CSRF_FIELD_NAME } from "@/lib/csrf-constants";
 import { Field, SelectField, SubmitButton, TextArea } from "@/components/ui";
 

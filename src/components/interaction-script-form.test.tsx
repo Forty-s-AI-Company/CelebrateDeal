@@ -33,7 +33,7 @@ vi.mock("react", async (importOriginal) => {
   };
 });
 
-vi.mock("@/app/actions", () => actionMocks);
+vi.mock("@/app/actions/interaction-actions", () => actionMocks);
 
 import { renderToStaticMarkup } from "react-dom/server";
 import { InteractionScriptForm, NoScheduledRolesHint } from "./interaction-script-form";

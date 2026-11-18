@@ -1,7 +1,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { Copy, Pencil, Plus, Trash2 } from "lucide-react";
-import { deleteInteractionScriptAction, duplicateInteractionScriptAction } from "@/app/actions";
+import { deleteInteractionScriptAction, duplicateInteractionScriptAction } from "@/app/actions/interaction-actions";
 import { CsrfField } from "@/components/csrf-field";
 import { FormSubmitButton } from "@/components/form-submit-button";
 import { Badge, ButtonLink, Card, EmptyState, PageHeader } from "@/components/ui";

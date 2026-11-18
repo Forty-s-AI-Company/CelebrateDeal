@@ -1,5 +1,5 @@
 import { safeInternalPathOr } from "@/lib/safe-internal-path";
-import { verifyMfaAction } from "@/app/actions";
+import { verifyMfaAction } from "@/app/actions/auth-security-actions";
 import { CsrfField } from "@/components/csrf-field";
 import { FormSubmitButton } from "@/components/form-submit-button";
 import { requireAuth } from "@/lib/auth";

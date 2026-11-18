@@ -39,6 +39,7 @@ test("G7-06 source digest inventory includes all interaction and public-live bou
   for (const required of [
     "prisma/schema.prisma",
     "src/app/actions.ts",
+    "src/app/actions/interaction-actions.ts",
     "src/lib/auth.ts",
     "src/lib/csrf.ts",
     "src/lib/interaction-role.ts",

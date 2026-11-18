@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { Plus } from "lucide-react";
-import { archiveVideoAction, restoreVideoAction } from "@/app/actions";
+import { archiveVideoAction, restoreVideoAction } from "@/app/actions/webinar-resource-actions";
 import { CsrfField } from "@/components/csrf-field";
 import { Badge, ButtonLink, Card, EmptyState, PageHeader } from "@/components/ui";
 import { VideoLifecycleActions } from "@/components/video-lifecycle-actions";

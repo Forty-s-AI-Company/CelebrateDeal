@@ -10,7 +10,7 @@ vi.mock("@/lib/mfa", async (importOriginal) => ({
   parseRecoveryCodes: () => mocks.codes,
 }));
 vi.mock("@/lib/auth", () => ({ requireAuth: mocks.requireAuth }));
-vi.mock("@/app/actions", () => ({ sendPasswordResetSmokeAction: vi.fn() }));
+vi.mock("@/app/actions/auth-security-actions", () => ({ sendPasswordResetSmokeAction: vi.fn() }));
 vi.mock("@/lib/password-reset-smoke-policy", () => ({ isPasswordResetSmokeEnabled: () => false }));
 vi.mock("@/lib/e2e-loading-diagnostic", () => ({ applyE2eLoadingDelay: vi.fn() }));
 

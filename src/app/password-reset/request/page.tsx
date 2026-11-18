@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { requestPasswordResetAction } from "@/app/actions";
+import { requestPasswordResetAction } from "@/app/actions/auth-security-actions";
 import { CsrfField } from "@/components/csrf-field";
 import { FormSubmitButton } from "@/components/form-submit-button";
 import { applyE2eLoadingDelay } from "@/lib/e2e-loading-diagnostic";

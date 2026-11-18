@@ -1,4 +1,4 @@
-import { confirmPasswordResetAction } from "@/app/actions";
+import { confirmPasswordResetAction } from "@/app/actions/auth-security-actions";
 import { CsrfField } from "@/components/csrf-field";
 import { FormSubmitButton } from "@/components/form-submit-button";
 import { PASSWORD_HINT, PASSWORD_MAX_LENGTH, PASSWORD_MIN_LENGTH, PASSWORD_POLICY_MESSAGES } from "@/lib/password-policy";

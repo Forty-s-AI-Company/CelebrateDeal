@@ -439,46 +439,11 @@ vi.mock("@/lib/commerce-orders", () => ({
   reconcileCommerceOrderRefundForPayment: mocks.reconcileCommerceOrderRefundForPayment,
 }));
 
-import {
-  createVendorMemberAction,
-  createPayoutBatchAction,
-  deactivateVendorMemberAction,
-  deleteInteractionRoleAction,
-  deleteInteractionScriptAction,
-  duplicateInteractionScriptAction,
-  generateSettlementAction,
-  importSystemRolesAction,
-  loginAction,
-  lockSettlementAction,
-  markPayoutBatchExportedAction,
-  refundPaymentTransactionAction,
-  resendVendorMemberInvitationAction,
-  revokeVendorMemberInvitationAction,
-  requestPasswordResetAction,
-  confirmPasswordResetAction,
-  regenerateRecoveryCodesAction,
-  sendPasswordResetSmokeAction,
-  updatePasswordAction,
-  updateSettlementAdjustmentAction,
-  approveSettlementAdjustmentAction,
-  rejectSettlementAdjustmentAction,
-  recordAffiliatePayoutOutcomeAction,
-  updatePayoutItemStatusAction,
-  unbindInteractionScriptFromLiveAction,
-  upsertBlacklistAction,
-  upsertAffiliateAction,
-  upsertFormAction,
-  upsertLiveAction,
-  upsertTemplateAction,
-  upsertVideoAction,
-  upsertInteractionRoleAction,
-  upsertInteractionRoleActionState,
-  upsertInteractionScriptAction,
-  verifyMfaAction,
-  saveBrandSettingsAction,
-  saveBrandSettingsActionState,
-  type BrandSettingsActionState,
-} from "./actions";
+import { createPayoutBatchAction, generateSettlementAction, lockSettlementAction, markPayoutBatchExportedAction, refundPaymentTransactionAction, updateSettlementAdjustmentAction, approveSettlementAdjustmentAction, rejectSettlementAdjustmentAction, recordAffiliatePayoutOutcomeAction, updatePayoutItemStatusAction, upsertAffiliateAction, upsertLiveAction, saveBrandSettingsAction, saveBrandSettingsActionState, type BrandSettingsActionState } from "./actions";
+import { createVendorMemberAction, deactivateVendorMemberAction, resendVendorMemberInvitationAction, revokeVendorMemberInvitationAction } from "@/app/actions/vendor-member-actions";
+import { deleteInteractionRoleAction, deleteInteractionScriptAction, duplicateInteractionScriptAction, importSystemRolesAction, unbindInteractionScriptFromLiveAction, upsertBlacklistAction, upsertInteractionRoleAction, upsertInteractionRoleActionState, upsertInteractionScriptAction } from "@/app/actions/interaction-actions";
+import { loginAction, requestPasswordResetAction, confirmPasswordResetAction, regenerateRecoveryCodesAction, sendPasswordResetSmokeAction, updatePasswordAction, verifyMfaAction } from "@/app/actions/auth-security-actions";
+import { upsertFormAction, upsertTemplateAction, upsertVideoAction } from "@/app/actions/webinar-resource-actions";
 import { savePartnerPageAction } from "./actions/team-funnel-partner-actions";
 import { RefundProviderError } from "@/lib/payment-providers/types";
 import SecuritySettingsPage from "./(app)/settings/security/page";

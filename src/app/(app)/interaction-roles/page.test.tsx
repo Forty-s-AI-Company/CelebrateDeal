@@ -6,7 +6,7 @@ const mocks = vi.hoisted(() => ({ requireVendorManager: vi.fn(), roleFindMany: v
 vi.mock("@/lib/auth", () => ({ requireVendorManager: mocks.requireVendorManager }));
 vi.mock("@/lib/csrf", () => ({ getCsrfToken: mocks.getCsrfToken }));
 vi.mock("@/lib/db", () => ({ getDb: () => ({ interactionRole: { findMany: mocks.roleFindMany } }) }));
-vi.mock("@/app/actions", () => ({ importSystemRolesAction: mocks.importAction }));
+vi.mock("@/app/actions/interaction-actions", () => ({ importSystemRolesAction: mocks.importAction }));
 vi.mock("@/components/csrf-field", () => ({ CsrfField: () => <input type="hidden" name="csrfToken" value="synthetic" /> }));
 vi.mock("@/components/interaction-roles-workbench", () => ({ InteractionRolesWorkbench: ({ roles, csrfToken, error }: { roles: unknown; csrfToken: string; error?: string | null }) => <div data-testid="roles-workbench">{JSON.stringify({ roles, csrfToken, error })}</div> }));
 vi.mock("@/components/ui", () => ({ PageHeader: ({ title, description, action }: { title: string; description: string; action?: ReactNode }) => <header><h1>{title}</h1><p>{description}</p>{action}</header> }));

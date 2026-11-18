@@ -28,7 +28,7 @@ vi.mock("react", async (importOriginal) => {
   };
 });
 
-vi.mock("@/app/actions", () => ({ upsertTemplateAction: vi.fn() }));
+vi.mock("@/app/actions/webinar-resource-actions", () => ({ upsertTemplateAction: vi.fn() }));
 vi.mock("@/components/csrf-field", () => ({
   CsrfField: () => <input type="hidden" name="_csrf" value="csrf-token" />,
 }));

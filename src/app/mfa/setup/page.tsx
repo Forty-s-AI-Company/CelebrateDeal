@@ -5,9 +5,7 @@ import Image from "next/image";
 import Link from "next/link";
 import QRCode from "qrcode";
 import { CheckCircle2, ChevronRight, KeyRound, LockKeyhole, ShieldCheck, Smartphone } from "lucide-react";
-import {
-  sendPasswordResetSmokeAction,
-} from "@/app/actions";
+import { sendPasswordResetSmokeAction } from "@/app/actions/auth-security-actions";
 import { CsrfField } from "@/components/csrf-field";
 import { FormSubmitButton } from "@/components/form-submit-button";
 import { RecoveryCodesActions } from "@/components/recovery-codes-actions";

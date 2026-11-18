@@ -4,7 +4,7 @@ import { createRoot, type Root } from "react-dom/client";
 import type { InteractionRole } from "@prisma/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("@/app/actions", () => ({ upsertInteractionRoleAction: vi.fn() }));
+vi.mock("@/app/actions/interaction-actions", () => ({ upsertInteractionRoleAction: vi.fn() }));
 
 import { InteractionRoleForm } from "./interaction-role-form";
 

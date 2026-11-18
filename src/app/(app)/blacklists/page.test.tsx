@@ -7,7 +7,7 @@ const mocks = vi.hoisted(() => ({
   getCsrfToken: vi.fn(),
 }));
 
-vi.mock("@/app/actions", () => ({ upsertBlacklistAction: vi.fn() }));
+vi.mock("@/app/actions/interaction-actions", () => ({ upsertBlacklistAction: vi.fn() }));
 vi.mock("@/lib/auth", () => ({ requireVendorManager: mocks.requireVendorManager }));
 vi.mock("@/lib/csrf", () => ({ getCsrfToken: mocks.getCsrfToken }));
 vi.mock("@/lib/db", () => ({ getDb: () => ({ blacklist: { findMany: mocks.findMany } }) }));

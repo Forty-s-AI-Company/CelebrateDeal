@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({ requireAuth: vi.fn() }));
 vi.mock("@/lib/auth", () => ({ requireAuth: mocks.requireAuth }));
-vi.mock("@/app/actions", () => ({ verifyMfaAction: vi.fn() }));
+vi.mock("@/app/actions/auth-security-actions", () => ({ verifyMfaAction: vi.fn() }));
 vi.mock("@/components/csrf-field", () => ({ CsrfField: () => null }));
 
 import MfaVerifyPage from "./page";

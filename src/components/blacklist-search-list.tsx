@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { Search } from "lucide-react";
-import { unblockBlacklistAction } from "@/app/actions";
+import { unblockBlacklistAction } from "@/app/actions/interaction-actions";
 import { FormSubmitButton } from "@/components/form-submit-button";
 import { Badge } from "@/components/ui";
 import { filterBlacklistEntries } from "@/lib/blacklist-search";

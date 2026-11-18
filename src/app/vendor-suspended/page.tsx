@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { logoutAction } from "@/app/actions";
+import { logoutAction } from "@/app/actions/auth-security-actions";
 import { switchFromSuspendedVendorAction } from "@/app/actions/vendor-suspension-actions";
 import { CsrfField } from "@/components/csrf-field";
 import { FormSubmitButton } from "@/components/form-submit-button";

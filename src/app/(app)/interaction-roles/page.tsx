@@ -1,4 +1,4 @@
-import { importSystemRolesAction } from "@/app/actions";
+import { importSystemRolesAction } from "@/app/actions/interaction-actions";
 import { CsrfField } from "@/components/csrf-field";
 import { FormSubmitButton } from "@/components/form-submit-button";
 import { InteractionRolesWorkbench } from "@/components/interaction-roles-workbench";

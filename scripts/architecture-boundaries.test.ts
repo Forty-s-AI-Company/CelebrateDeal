@@ -348,7 +348,8 @@ describe("architecture boundaries", () => {
     // domains belong in src/app/actions/* until the legacy surface is split.
     // The current one-stop webinar action surface adds lifecycle and
     // reconciliation guards to this legacy module. Keep the ratchet explicit
-    // so future extractions still have a fixed ceiling.
-    expect(lineCount).toBeLessThanOrEqual(2_500);
+    // so future extractions still have a fixed ceiling. R-04 step 2 removed the
+    // 40 pure forwarding wrappers (2,473 -> 2,265 lines) and lowered the ceiling.
+    expect(lineCount).toBeLessThanOrEqual(2_300);
   });
 });

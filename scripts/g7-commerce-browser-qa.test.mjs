@@ -333,6 +333,7 @@ test("G7-58 focused mode attests message-template validation and missing-record 
   assert.match(source, /"g7-58-message-template-draft-browser-qa"/u);
   for (const path of [
     "src/app/actions.ts",
+    "src/app/actions/webinar-resource-actions.ts",
     "src/lib/message-template.ts",
     "src/components/message-template-form.tsx",
     "src/components/message-template-form-client.tsx",
