@@ -134,6 +134,12 @@ export function detectContactHostKindInBrowser(host: string): ContactHostKind {
   return "name";
 }
 
+/** Browser counterpart of `isUnsafeContactHostname` in `contact-url-safety-node.ts`. */
+export function isUnsafeContactHostnameInBrowser(hostname: string) {
+  const host = normalizeContactHost(hostname);
+  return isUnsafeContactHost(host, detectContactHostKindInBrowser(host));
+}
+
 /** Client-side check for the brand settings preview; the server re-checks on save. */
 export function parseSafeContactUrlInBrowser(value: string | null | undefined) {
   return parseSafeContactUrl(value, detectContactHostKindInBrowser);
