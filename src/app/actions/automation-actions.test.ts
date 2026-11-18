@@ -526,6 +526,52 @@ describe("automation actions", () => { it("requires CSRF and writes tenant-scope
       await expect(createAutomationRuleAction(emailForm(trigger, "repurchase_followup", voucher))).rejects.toThrow("redirect:/settings/automations?updated=created");
     });
 
+    // A2-04: the link-free template carries the merchant's own subject and body.
+    describe("generic_message", () => {
+      const generic = (trigger: string, subject: string, body: string, extra: Record<string, string> = {}) => emailForm(trigger, "generic_message", { emailSubject: subject, emailBody: body, ...extra });
+      const created = () => (runtime.db.automationRule.create.mock.calls[0]?.[0] as { data: { actions: unknown[] } } | undefined)?.data.actions;
+
+      it.each(["form_registered", "consultation_booked", "consultation_no_show", "form_no_show", "viewer_watch_progress", "webinar_attended_duration_gte"])("creates a %s rule and stores the trimmed subject and body", async (trigger) => {
+        runtime.manager.mockResolvedValue({ ...runtime.auth, vendor: { id: "v1", betaFeatureGrants: ["automation_form_no_show", "automation_watch_progress", "automation_watch_duration"] }, member: { role: "owner" } });
+        const f = generic(trigger, "  謝謝你  ", "你好\r\n謝謝參與  ");
+        if (trigger === "viewer_watch_progress") f.set("watchPercent", "50");
+        if (trigger === "webinar_attended_duration_gte") f.set("watchMinutes", "15");
+        await expect(createAutomationRuleAction(f)).rejects.toThrow("redirect:/settings/automations?updated=created");
+        expect(created()).toEqual([{ type: "send_email_notification", template: "generic_message", subject: "謝謝你", body: "你好\n謝謝參與" }]);
+      });
+
+      it("creates a payment_paid rule", async () => {
+        await expect(createAutomationRuleAction(generic("payment_paid", "謝謝購買", "{{vendor_name}} 謝謝你", { conditionValue: "100" }))).rejects.toThrow("redirect:/settings/automations?updated=created");
+        expect(created()).toEqual([{ type: "send_email_notification", template: "generic_message", subject: "謝謝購買", body: "{{vendor_name}} 謝謝你" }]);
+      });
+
+      it.each([
+        ["a subject with a line break (header injection)", "謝謝\r\nBcc: x@evil.test", "內文"],
+        ["a subject with a bare LF", "謝謝\nBcc: x@evil.test", "內文"],
+        ["a missing subject", "", "內文"],
+        ["a missing body", "謝謝", "  "],
+        ["a subject over 100 characters", "字".repeat(101), "內文"],
+        ["a body over 2000 characters", "謝謝", "字".repeat(2_001)],
+        ["a variable the trigger cannot supply", "謝謝", "{{voucher_url}}"],
+        ["an unknown variable", "謝謝", "{{password}}"],
+        ["an unclosed variable", "謝謝", "你好 {{name"],
+      ])("refuses %s and writes nothing", async (_name, subject, body) => {
+        await expect(createAutomationRuleAction(generic("form_registered", subject, body))).rejects.toThrow("redirect:/settings/automations?error=invalid_email_content");
+        expect(runtime.db.automationRule.create).not.toHaveBeenCalled();
+      });
+
+      it("refuses a variable that this trigger's event cannot supply", async () => {
+        await expect(createAutomationRuleAction(generic("payment_paid", "謝謝", "{{name}} 你好", { conditionValue: "100" }))).rejects.toThrow("redirect:/settings/automations?error=invalid_email_content");
+        await expect(createAutomationRuleAction(generic("consultation_booked", "謝謝", "{{live_title}}"))).rejects.toThrow("redirect:/settings/automations?error=invalid_email_content");
+        expect(runtime.db.automationRule.create).not.toHaveBeenCalled();
+      });
+
+      it("ignores subject and body sent with another template", async () => {
+        await expect(createAutomationRuleAction(emailForm("consultation_booked", "consultation_confirmation", { emailSubject: "x", emailBody: "y" }))).rejects.toThrow("redirect:/settings/automations?updated=created");
+        expect(created()).toEqual([{ type: "send_email_notification", template: "consultation_confirmation" }]);
+      });
+    });
+
     it("still refuses an unknown template as an invalid rule", async () => {
       await expect(createAutomationRuleAction(emailForm("consultation_booked", "made_up"))).rejects.toThrow("redirect:/settings/automations?error=invalid_rule");
     });

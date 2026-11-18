@@ -1,4 +1,5 @@
 import { Prisma, type PrismaClient } from "@prisma/client";
+import { genericEmailContentUsable } from "@/lib/automation-generic-email";
 import {
   AUTOMATION_DELAYED_STEPS_FEATURE,
   AUTOMATION_FORM_NO_SHOW_FEATURE,
@@ -904,7 +905,7 @@ export type AutomationStepInput = {
 
 export type AutomationStepChangeResult =
   | { ok: true; id: string; before?: { delayMinutes: number; isActive: boolean; actions: unknown }; after?: { delayMinutes: number; isActive: boolean; actions: unknown } }
-  | { ok: false; code: "not_found" | "trigger_unavailable" | "condition_unsupported" | "steps_unsupported" | "invalid_step" | "invalid_delay" | "duplicate_delay" | "step_limit" | "invalid_product" | "step_busy" | "email_template_unavailable" | typeof LINE_PUSH_OWNER_ONLY };
+  | { ok: false; code: "not_found" | "trigger_unavailable" | "condition_unsupported" | "steps_unsupported" | "invalid_step" | "invalid_delay" | "duplicate_delay" | "step_limit" | "invalid_product" | "step_busy" | "email_template_unavailable" | "invalid_email_content" | typeof LINE_PUSH_OWNER_ONLY };
 
 class StepChangeRejected extends Error {
   constructor(readonly code: Extract<AutomationStepChangeResult, { ok: false }>["code"]) {
@@ -969,6 +970,8 @@ async function validateStep(tx: Prisma.TransactionClient, vendorId: string, rule
   if (!parsed) throw new StepChangeRejected("invalid_step");
   // Q-18: an e-mail template needs the link this trigger's event carries, or a
   // voucher in the same step. An edit may keep a template the step already had.
+  // A2-04: a generic e-mail may only use the variables this trigger can supply.
+  if (parsed.actions.some((action) => action.type === "send_email_notification" && action.template === "generic_message" && !genericEmailContentUsable(rule.trigger, action))) throw new StepChangeRejected("invalid_email_content");
   if (!automationActionsEmailTemplatesUsable(rule.trigger, parsed.actions, keepTemplates)) throw new StepChangeRejected("email_template_unavailable");
   // A voucher can only name an active product of this vendor.
   for (const action of parsed.actions) {

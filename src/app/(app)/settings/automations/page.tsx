@@ -102,6 +102,7 @@ const ERROR_MESSAGES: Record<string, string> = {
   invalid_delay: `延遲時間請填 1 小時到 90 天之間的整數。`,
   duplicate_delay: "同一條規則已經有這個延遲時間的步驟，請換一個時間。",
   step_limit: `每條規則最多 ${MAX_AUTOMATION_RULE_STEPS} 個延遲步驟。`,
+  invalid_email_content: "自訂 Email 的主旨或內文不符規則：主旨必填、限 100 字、不能換行；內文必填、限 2000 字；只能使用這個觸發條件提供的變數。",
   email_template_unavailable: "這個 Email 範本在所選的觸發條件下沒有可用的連結，不能使用。請改選清單中的範本；「追購通知」需要同時勾選「發送回購券」。",
   invalid_step: "步驟內容不完整或格式不正確，請檢查動作欄位。",
   invalid_product: "找不到這個商品，或商品已下架。",
@@ -251,7 +252,7 @@ function ActionFields({ products, actions, linePushAllowed, trigger, triggerFiel
       </div>
     </> : <p className="text-xs text-slate-500">{LINE_PUSH_OWNER_ONLY_MESSAGE}</p>}
     <label className="flex items-center gap-2 text-sm"><input type="checkbox" name="actionEmail" defaultChecked={Boolean(email)} /> Email 通知</label>
-    <AutomationEmailTemplateSelect trigger={trigger} triggerFieldName={triggerFieldName} hasVoucher={Boolean(voucher)} defaultTemplate={typeof email?.template === "string" ? email.template : null} keepTemplate={typeof email?.template === "string" ? email.template : null} />
+    <AutomationEmailTemplateSelect trigger={trigger} triggerFieldName={triggerFieldName} hasVoucher={Boolean(voucher)} defaultTemplate={typeof email?.template === "string" ? email.template : null} defaultSubject={typeof email?.subject === "string" ? email.subject : null} defaultBody={typeof email?.body === "string" ? email.body : null} keepTemplate={typeof email?.template === "string" ? email.template : null} />
     <p className="text-xs text-slate-500">自動化寄出的 Email 都附退訂連結；已退訂或在本商家黑名單中的收件人不會收到。</p>
     <label className="flex items-center gap-2 text-sm"><input type="checkbox" name="actionVoucher" defaultChecked={Boolean(voucher)} /> 發送回購券</label>
     <div className="grid gap-4 md:grid-cols-4">

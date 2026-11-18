@@ -37,9 +37,17 @@ import { isExistingLiveVideoReady, type LiveVideoReadiness } from "@/lib/live-vi
 import { PAYMENT_PAID_RUN_ORDER_SELECT, paymentPaidRunOrderCounts, paymentPaidRunOrderWhere } from "@/lib/payment-paid-run-order";
 
 import {
+  AUTOMATION_EMAIL_TEMPLATES,
   AUTOMATION_TRIGGERS,
   type AutomationTrigger,
 } from "@/lib/automation-email-template-availability";
+import {
+  genericEmailContentUsable,
+  genericEmailVariablesUsed,
+  normalizeGenericEmailContent,
+  renderGenericEmail,
+  type GenericEmailVariable,
+} from "@/lib/automation-generic-email";
 
 export {
   AUTOMATION_EMAIL_TEMPLATES,
@@ -409,10 +417,20 @@ const AutomationActionSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("add_customer_tag"), tag: z.string().trim().min(1).max(50) }).strict(),
   z.object({
     type: z.literal("send_email_notification"),
-    template: z.enum(["consultation_confirmation", "class_reminder", "repurchase_followup", "webinar_replay"]),
+    template: z.enum(AUTOMATION_EMAIL_TEMPLATES),
+    // Only `generic_message` (A2-04) carries its own text; the refine below keeps both sides honest.
+    subject: z.string().max(100).optional(),
+    body: z.string().max(2_000).optional(),
   }).strict(),
 ]).refine((action) => action.type !== "issue_repurchase_voucher" || action.discountType !== "percentage" || action.discountValue <= 99, {
   message: "Percentage vouchers must remain below 100%.",
+}).refine((action) => {
+  if (action.type !== "send_email_notification") return true;
+  if (action.template !== "generic_message") return action.subject === undefined && action.body === undefined;
+  const content = normalizeGenericEmailContent(action);
+  return content !== null && content.subject === action.subject && content.body === action.body;
+}, {
+  message: "Only the generic e-mail template carries a one-line subject and a plain-text body, stored trimmed.",
 }).refine((action) => action.type !== "line_push" || isSafeAutomationButtonUrl(action.buttonUrl), {
   message: "LINE button URL must be HTTPS or use an approved placeholder.",
 });
@@ -794,6 +812,65 @@ type ActionContext = {
   emailIdempotencyKey?: (executionLogId: string, actionIndex: number) => string;
 };
 
+/**
+ * The subject and body of a `generic_message` action for this event, with its
+ * variables filled from the server's own records of this vendor (never from
+ * the event payload). Null when the stored text is not valid for the trigger.
+ */
+async function renderGenericAutomationEmail(
+  db: AutomationDb,
+  event: AutomationEvent,
+  action: { subject?: string; body?: string },
+) {
+  const content = normalizeGenericEmailContent(action);
+  if (!content || !genericEmailContentUsable(event.trigger, content)) return null;
+  const used = genericEmailVariablesUsed(content);
+  const values: Partial<Record<GenericEmailVariable, string>> = {};
+  if (used.has("vendor_name")) {
+    const vendor = await db.vendor.findUnique({ where: { id: event.vendorId }, select: { name: true } });
+    values.vendor_name = vendor?.name;
+  }
+  if (used.has("name") || used.has("live_title")) {
+    if (event.trigger === "consultation_booked" || event.trigger === "consultation_no_show") {
+      const booking = await db.consultationBooking.findFirst({ where: { id: event.subjectId, vendorId: event.vendorId }, select: { clientName: true } });
+      values.name = booking?.clientName;
+    } else if (event.trigger !== "payment_paid") {
+      const submission = await db.formSubmission.findFirst({
+        where: { id: event.subjectId, form: { vendorId: event.vendorId } },
+        select: { name: true, live: { select: { vendorId: true, title: true } } },
+      });
+      values.name = submission?.name;
+      if (submission?.live?.vendorId === event.vendorId) values.live_title = submission.live.title;
+    }
+  }
+  return renderGenericEmail(content, values);
+}
+
+/**
+ * The subject and body one e-mail action sends for this event, or why it sends
+ * nothing. The generic template (A2-04) brings its own text and has no link to
+ * wait for; the others are the fixed copy with the event's links filled in.
+ */
+async function resolveAutomationEmailContent(
+  db: AutomationDb,
+  event: AutomationEvent,
+  action: Extract<AutomationAction, { type: "send_email_notification" }>,
+  artifacts: { voucherUrl?: string; consultationUrl?: string; webinarUrl?: string },
+): Promise<{ subject: string; body: string } | { skip: AutomationEmailSkipReason }> {
+  if (action.template === "generic_message") {
+    const generic = await renderGenericAutomationEmail(db, event, action);
+    return generic && generic.body.trim() ? generic : { skip: "no_content" };
+  }
+  const copy = automationEmailCopy(event.trigger, action.template);
+  // Q-11 (m-5): a no-show replay e-mail without an open replay (replay off
+  // or expired: the event then carries no webinar link) is not sent.
+  if (event.trigger === "form_no_show" && copy.body.includes("{{webinar_url}}") && !event.webinarUrl) return { skip: "replay_unavailable" };
+  // m-6: every line needed a link this event does not have. Never send an
+  // empty e-mail (any trigger); recorded as skipped, nothing retries it.
+  const body = renderAutomationEmailBody(copy.body, artifacts);
+  return body.trim() ? { subject: copy.subject, body } : { skip: "no_content" };
+}
+
 async function executeAction(
   db: AutomationDb,
   rule: ParsedRule,
@@ -869,18 +946,9 @@ async function executeAction(
       return { type: action.type, status: "skipped", reason: "recipient_unverified", template: action.template } as const;
     }
     const id = deterministicActionId(executionLogId, actionIndex);
-    const copy = automationEmailCopy(event.trigger, action.template);
-    // Q-11 (m-5): a no-show replay e-mail without an open replay (replay off
-    // or expired: the event then carries no webinar link) is not sent.
-    if (event.trigger === "form_no_show" && copy.body.includes("{{webinar_url}}") && !event.webinarUrl) {
-      return { type: action.type, status: "skipped", reason: "replay_unavailable", template: action.template } as const;
-    }
-    // m-6: every line needed a link this event does not have. Never send an
-    // empty e-mail (any trigger); recorded as skipped, nothing retries it.
-    const rendered = renderAutomationEmailBody(copy.body, artifacts);
-    if (!rendered.trim()) {
-      return { type: action.type, status: "skipped", reason: "no_content", template: action.template } as const;
-    }
+    const content = await resolveAutomationEmailContent(db, event, action, artifacts);
+    if ("skip" in content) return { type: action.type, status: "skipped", reason: content.skip, template: action.template } as const;
+    const rendered = content.body;
     const body = event.trigger === "form_no_show" ? `${rendered}\n\n${FORM_NO_SHOW_IGNORE_LINE}` : rendered;
     // The recipient lists come first, so an unsubscribed or blacklisted
     // person is recorded as skipped even when the link below cannot be built.
@@ -905,7 +973,7 @@ async function executeAction(
     }
     const protectedPayload = protectEmailDeliveryPayload({
       recipientEmail: event.recipientEmail,
-      subject: copy.subject,
+      subject: content.subject,
       body: ensureEmailUnsubscribeFooter(body, unsubscribeUrl),
     }, { vendorId: event.vendorId, deliveryId: id });
     try {

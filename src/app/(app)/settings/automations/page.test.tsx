@@ -530,12 +530,13 @@ describe("AutomationSettingsPage", () => {
     const stepsOf = (markup: string) => markup.slice(markup.indexOf("新增延遲步驟"));
     const email = (template: string) => ({ type: "send_email_notification", template });
 
-    it("lists no template on the rule form for the first trigger, whose event carries no link, and explains why", async () => {
+    it("offers only the link-free template on the rule form for the first trigger, whose event carries no link, with its subject and body fields", async () => {
       const html = await render();
-      expect(optionsOf(html)).toEqual(["|沒有適用的範本"]);
+      expect(optionsOf(html)).toEqual(["generic_message|自訂訊息（不含連結）"]);
       for (const label of ["諮詢預約確認", "課前提醒", "追購通知", "缺席回放與諮詢邀請"]) expect(html).not.toContain(`>${label}<`);
-      expect(html).toContain("「表單報名成功」的事件沒有可放進信裡的連結");
-      expect(html).toContain("或同時勾選「發送回購券」使用「追購通知」");
+      expect(html).toContain('name="emailSubject"');
+      expect(html).toContain('name="emailBody"');
+      expect(html).toContain("「追購通知」的領券連結來自同一份動作裡的回購券");
     });
 
     it("lists the vendor's active products in a step's voucher select, which the step form needs for 追購通知", async () => {
@@ -549,11 +550,11 @@ describe("AutomationSettingsPage", () => {
     });
 
     it.each([
-      ["consultation_booked", ["consultation_confirmation|諮詢預約確認"]],
-      ["consultation_no_show", ["consultation_confirmation|諮詢預約確認"]],
-      ["form_no_show", ["webinar_replay|缺席回放與諮詢邀請"]],
-      ["form_registered", ["|沒有適用的範本"]],
-    ])("offers a %s step only the templates with a link", async (trigger, expected) => {
+      ["consultation_booked", ["consultation_confirmation|諮詢預約確認", "generic_message|自訂訊息（不含連結）"]],
+      ["consultation_no_show", ["consultation_confirmation|諮詢預約確認", "generic_message|自訂訊息（不含連結）"]],
+      ["form_no_show", ["webinar_replay|缺席回放與諮詢邀請", "generic_message|自訂訊息（不含連結）"]],
+      ["form_registered", ["generic_message|自訂訊息（不含連結）"]],
+    ])("offers a %s step the templates with a link, and the link-free one", async (trigger, expected) => {
       mocks.manager.mockResolvedValue({ vendor: { id: "v1", betaFeatureGrants: ["automation_delayed_steps", "automation_form_no_show"] }, user: { id: "u1" }, member: { role: "owner" } });
       mocks.rules.mockResolvedValue([rule({ trigger, actions: [{ type: "add_customer_tag", tag: "x" }] })]);
       expect(optionsOf(stepsOf(await render()))).toEqual(expected);
@@ -564,7 +565,7 @@ describe("AutomationSettingsPage", () => {
       mocks.rules.mockResolvedValue([rule({ trigger: "form_registered", actions: [{ type: "add_customer_tag", tag: "x" }], steps: [{ id: "s1", delayMinutes: 1_440, isActive: true, actions: [email("class_reminder")] }] })]);
       const html = await render();
       const editForm = html.match(/<form[^>]*aria-label="編輯步驟[^"]*"[\s\S]*?<\/form>/u)?.[0] ?? "";
-      expect(optionsOf(editForm)).toEqual(["class_reminder|課前提醒（此觸發條件下沒有連結）"]);
+      expect(optionsOf(editForm)).toEqual(["generic_message|自訂訊息（不含連結）", "class_reminder|課前提醒（此觸發條件下沒有連結）"]);
       expect(html).toContain("延遲步驟：「課前提醒」在「表單報名成功」下沒有可用的連結，信件可能因為沒有內容而不會寄出。");
       // Advice only: the rule is still listed as running, and its stored step is shown as before.
       expect(html).toContain("啟用中");
