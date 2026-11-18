@@ -2,6 +2,15 @@ import { writeFile } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
 import { verifyMvpPayUniLineage } from "./mvp-payuni-sandbox-e2e.mjs";
 import { STAGING_ALIAS_HOST, verifyAliasAttestation, verifyShaOnProtectedMaster } from "./secure-staging-runner.mjs";
+import {
+  elementHydratedInPage,
+  HYDRATION_TIMEOUT_MS,
+  MOBILE_NAV_MORE_BUTTON,
+  MOBILE_NAV_PRODUCTS_LINK,
+  waitForMobileNavHydration,
+} from "./staging-browser-hydration.mjs";
+
+export { elementHydratedInPage, MOBILE_NAV_MORE_BUTTON, MOBILE_NAV_PRODUCTS_LINK, waitForMobileNavHydration };
 
 const SOURCE_SHA = /^[a-f0-9]{40}$/u;
 const PREVIEW_HOST = /^(?=.{1,253}$)[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.vercel\.app$/u;
@@ -26,20 +35,10 @@ export const DELIVERY_GROUP_NAME = "付款後交付設定";
 const GLOBAL_ERROR_HEADING = "系統暫時無法顯示這個頁面";
 const BROWSER_FAILURE_STEPS = new Set([
   "NONE", "FULFILLMENT_HYDRATED", "FULFILLMENT_SELECT_DIGITAL", "DELIVERY_GROUP_VISIBLE", "FULFILLMENT_SELECT_PHYSICAL", "DELIVERY_GROUP_HIDDEN",
-  "NAV_MORE_OPEN", "NAV_MORE_PRODUCTS_LINK", "NAV_PRODUCTS_LINK", "NAV_PRODUCTS_URL",
+  "NAV_MORE_HYDRATED", "NAV_MORE_OPEN", "NAV_MORE_PRODUCTS_LINK", "NAV_PRODUCTS_LINK", "NAV_PRODUCTS_URL",
 ]);
 const FULFILLMENT_VALUES = new Set(["physical", "digital", "service", "course"]);
 const READY_STATES = new Set(["loading", "interactive", "complete"]);
-const HYDRATION_TIMEOUT_MS = 20_000;
-
-/**
- * True once React has attached its props to the element (React DOM stores them under a
- * `__reactProps$<random>` key during hydration). Runs in the page; returns only a boolean.
- */
-export function elementHydratedInPage(selector) {
-  const element = document.querySelector(selector);
-  return Boolean(element) && Object.keys(element).some((key) => key.startsWith("__reactProps$"));
-}
 
 /**
  * 2026-11-05 run 42064913257: the select already showed "digital" but the delivery fieldset
@@ -680,10 +679,13 @@ export async function runBrowserSmoke(env = process.env, dependencies = {}) {
         report.browser.executionPhase = "APP_NAVIGATION";
         if (viewport.id === "mobile") {
           // F-122: 手機底部導覽只列 4 個常用入口，商品在「更多」抽屜內。
+          // 「更多」只是 React state 開關，hydration 前點擊不會開抽屜。
+          activeStep = "NAV_MORE_HYDRATED";
+          await waitForMobileNavHydration(page);
           activeStep = "NAV_MORE_OPEN";
           await page.locator(`${appNavigationSelectorForViewport("mobile")} button[aria-haspopup="dialog"]`).click({ timeout: 8_000 });
           activeStep = "NAV_MORE_PRODUCTS_LINK";
-          await page.locator('[role="dialog"][aria-label="更多功能"] a[href="/products"]').click({ timeout: 8_000 });
+          await page.locator(MOBILE_NAV_PRODUCTS_LINK).click({ timeout: 8_000 });
         } else {
           activeStep = "NAV_PRODUCTS_LINK";
           await page.locator(`${appNavigationSelectorForViewport(viewport.id)} a[href="/products"]`).click({ timeout: 8_000 });

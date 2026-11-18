@@ -5,7 +5,7 @@ import { diagnoseStagingAliasBindingWithFallback, diagnoseStagingPreviewBinding 
 
 import { appNavigationSelectorForViewport, classifyBrowserExecutionFailure, classifyBrowserRequest, classifyCriticalResourceFailureKind, classifyCriticalResourceRequestFailure, classifyCriticalResourceResponse, classifyFinalPath, classifySessionStatus, classifyUnsafeRequestDetail, classifyUnsafeRequestPath, diagnoseStagingAliasBinding, hasActionableDashboardAlert, isCriticalResourceFailure, isDashboardDetailsGet, isFailedCriticalResourceRequest, runBrowserSmoke, validateBrowserSmokeBinding, verifyStagingAliasBinding } from "./staging-browser-smoke.mjs";
 
-import { browserFailureStep, captureFailureDom, classifyFailurePath, elementHydratedInPage, waitForFulfillmentHydration } from "./staging-browser-smoke.mjs";
+import { browserFailureStep, captureFailureDom, classifyFailurePath, elementHydratedInPage, MOBILE_NAV_MORE_BUTTON, MOBILE_NAV_PRODUCTS_LINK, waitForFulfillmentHydration, waitForMobileNavHydration } from "./staging-browser-smoke.mjs";
 
 test("failure diagnostics stay inside fixed step and route vocabularies", () => {
   const alias = "celebrate-deal-staging.carry-digital-nomad.in.net";
@@ -63,6 +63,18 @@ test("product-edit interaction waits for React to hydrate the fulfillment select
     globalThis.document = { querySelector: () => null };
     assert.equal(elementHydratedInPage('select[name="fulfillmentType"]'), false);
   } finally { globalThis.document = original; }
+});
+
+test("mobile 更多 interaction waits for React to hydrate the drawer button", async () => {
+  const calls = [];
+  await waitForMobileNavHydration({ waitForFunction: async (fn, arg, options) => { calls.push({ fn, arg, options }); } });
+  assert.deepEqual(calls, [{ fn: elementHydratedInPage, arg: MOBILE_NAV_MORE_BUTTON, options: { timeout: 20_000 } }]);
+  assert.equal(browserFailureStep("NAV_MORE_HYDRATED"), "NAV_MORE_HYDRATED");
+  // querySelector runs in the page: Playwright-only pseudo classes such as :visible would throw there.
+  assert.doesNotMatch(MOBILE_NAV_MORE_BUTTON, /:visible/u);
+  const mobileNav = readFileSync(new URL("../src/components/app-shell-mobile-nav.tsx", import.meta.url), "utf8");
+  assert.match(mobileNav, /<nav aria-label="行動版主要導覽"/u);
+  assert.match(mobileNav, /<button type="button" aria-haspopup="dialog"/u);
 });
 
 const INPUT = {
@@ -241,6 +253,7 @@ test("a rendered journey remains blocked when an unexpected browser POST occurs"
   let triggerNavigationAbort = false;
   let timeoutStage = null;
   const sessionRequests = [];
+  const interactions = [];
   const browser = {
     newContext: async () => {
       let handler;
@@ -311,9 +324,9 @@ test("a rendered journey remains blocked when an unexpected browser POST occurs"
           getByRole: () => locator,
           getByLabel: () => ({ selectOption: async () => {} }),
           getByText: () => locator,
-          locator: () => locator,
+          locator: (selector) => ({ ...locator, click: async () => { interactions.push(`click:${selector}`); await locator.click(); } }),
           waitForURL: async () => {},
-          waitForFunction: async () => true,
+          waitForFunction: async (fn, arg) => { interactions.push(`hydrated:${arg}`); return true; },
           url: () => currentUrl,
         }; },
         close: async () => {},
@@ -327,6 +340,13 @@ test("a rendered journey remains blocked when an unexpected browser POST occurs"
     playwright: { chromium: { launch: async () => browser } },
   });
   assert.equal(report.journeys.length, 10);
+  // 2026-11-18 runs 44231762166/44232725695: the mobile 「更多」 click must wait for React to
+  // own the button; a click on server HTML never opens the drawer.
+  const moreClick = interactions.indexOf(`click:${appNavigationSelectorForViewport("mobile")} button[aria-haspopup="dialog"]`);
+  const moreHydrated = interactions.lastIndexOf(`hydrated:${MOBILE_NAV_MORE_BUTTON}`, moreClick);
+  assert.ok(moreHydrated >= 0 && moreHydrated < moreClick);
+  assert.equal(interactions[moreClick + 1], `click:${MOBILE_NAV_PRODUCTS_LINK}`);
+  assert.equal(interactions.filter((item) => item === `hydrated:${MOBILE_NAV_MORE_BUTTON}`).length, 1);
   assert.equal(report.result, "BLOCKED");
   assert.equal(report.browser.unsafeRequestsBlocked, 2);
   assert.equal(report.browser.unsafeRequestDetails.otherApi, 2);
@@ -560,7 +580,8 @@ test("desktop and mobile journeys target the visible app shell navigation", () =
   assert.match(mobileNav, /aria-haspopup="dialog"/u);
   assert.match(mobileNav, /aria-label="更多功能"/u);
   const runner = readFileSync(new URL("./staging-browser-smoke.mjs", import.meta.url), "utf8");
-  assert.match(runner, /\[role="dialog"\]\[aria-label="更多功能"\] a\[href="\/products"\]/u);
+  assert.equal(MOBILE_NAV_PRODUCTS_LINK, '[role="dialog"][aria-label="更多功能"] a[href="/products"]');
+  assert.match(runner, /page\.locator\(MOBILE_NAV_PRODUCTS_LINK\)\.click/u);
 });
 
 test("final URLs and blocked requests are reduced to fixed, non-sensitive categories", () => {
