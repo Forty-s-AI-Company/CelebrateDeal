@@ -168,7 +168,7 @@ Prisma 把整份 `migration.sql` 以單一多語句查詢送出，PostgreSQL 會
    ```
 
    常見原因：migration 內的 preflight `RAISE EXCEPTION`（資料不符合前提，例如重複訂單號、明文撥款帳號）、`lock_timeout`（55P03，熱表有長交易）、`statement_timeout`（57014，大表掃描）。
-3. **確認資料庫狀態**：由於整個 migration 在交易內，失敗時物件應不存在。用唯讀查詢確認該 migration 建立的欄位／索引／constraint 確實不存在（例如 `SELECT conname FROM pg_constraint WHERE conname = '<名稱>'`）。若 migration 內有 `CREATE INDEX CONCURRENTLY` 等不能在交易內執行的語句（目前沒有），要逐一確認並清除殘留的 INVALID 索引。
+3. **確認資料庫狀態**：由於整個 migration 在交易內，失敗時物件應不存在。用唯讀查詢確認該 migration 建立的欄位／索引／constraint 確實不存在（例如 `SELECT conname FROM pg_constraint WHERE conname = '<名稱>'`）。若 migration 內有 `CREATE INDEX CONCURRENTLY` 等不能在交易內執行的語句（目前只有 `20261119090000_form_submission_live_email_index`），失敗時不會回滾，要逐一確認並清除殘留的 INVALID 索引：`SELECT indexrelid::regclass, indisvalid FROM pg_index WHERE NOT indisvalid;`，再以 `DROP INDEX CONCURRENTLY IF EXISTS "<索引名稱>";` 清掉（`IF NOT EXISTS` 的重跑會跳過同名的 INVALID 索引，不清就不會重建）。
 4. **修正原因**：處理資料（依該 migration 的 runbook 段落，需 owner 授權）、或在低流量時段重試以避開鎖。
 5. **標記為已回滾**（owner 在受控環境執行，指向 Production 的 `DIRECT_URL`）：
 
@@ -185,7 +185,7 @@ Prisma 把整份 `migration.sql` 以單一多語句查詢送出，PostgreSQL 會
 - 新增 CHECK／FK 一律先 `NOT VALID`，`VALIDATE CONSTRAINT` 放在**時間戳較晚的另一個 migration**。Prisma 把每個 migration 檔當成一個隱含交易，`ADD CONSTRAINT`、`DROP CONSTRAINT`、`ADD COLUMN` 取得的 ACCESS EXCLUSIVE 會持有到該檔 commit；同一個檔案裡的 VALIDATE 仍會在 ACCESS EXCLUSIVE 下掃整張表。獨立 migration 的 VALIDATE 只取 SHARE UPDATE EXCLUSIVE，不擋讀寫。
 - 依資料內容可能失敗的 migration（例如 preflight `RAISE`）不要排在新程式必須用到的欄位之前；能在 migration 內安全修正資料的，改為修正並留下稽核紀錄，不要卡住整批部署。
 - 先 `migrate deploy` 成功，才 promote 依賴新欄位的 app。
-- 熱表（`CommerceOrder`、`FormSubmission`、`PaymentTransaction` 等）的索引改用 `CREATE INDEX CONCURRENTLY`，並放在**只含這一句**的獨立 migration（多語句的 migration 是隱含交易，`CONCURRENTLY` 不能在交易內執行；需先在 staging 演練）。
+- 熱表（`CommerceOrder`、`FormSubmission`、`PaymentTransaction` 等）的索引改用 `CREATE INDEX CONCURRENTLY`，並放在**只含這一句**的獨立 migration（多語句的 migration 是隱含交易，`CONCURRENTLY` 不能在交易內執行；需先在 staging 演練）。這種檔案不能放下一條的交易層級 `lock_timeout`（`DO` 區塊或 `set_config` 會變成第二句），由部署 session 決定；`CONCURRENTLY` 只持 SHARE UPDATE EXCLUSIVE，等待期間不擋讀寫。Prisma `migrate deploy` 可套用單句 `CONCURRENTLY`（2026-11-19 loopback PG16 實測，第一個例子是 `20261119090000_form_submission_live_email_index`）。
 - migration 內設定交易層級 `lock_timeout`（`SELECT pg_catalog.set_config('lock_timeout', '5s', true)`），並附唯讀 preflight 查詢與失敗時的 `migrate resolve` 指引。
 
 Production 禁止：
