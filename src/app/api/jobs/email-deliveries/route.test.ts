@@ -86,7 +86,7 @@ beforeEach(() => {
   mocks.startPendingAutomationRuns.mockResolvedValue([]);
   mocks.processDueSequenceEmailDeliveries.mockResolvedValue([]);
   mocks.runFormNoShowAutomation.mockResolvedValue({ vendors: 1, candidates: 3, examined: 2, completed: 2, skipped: 0, failed: 1, duplicate: 0, errors: 0 });
-  mocks.runWatchProgressAutomation.mockResolvedValue({ vendors: 1, candidates: 4, examined: 4, completed: 3, skipped: 0, failed: 0, duplicate: 1, errors: 0, scanCutShort: false, backlogNearLookback: false });
+  mocks.runWatchProgressAutomation.mockResolvedValue({ vendors: 1, candidates: 4, examined: 4, completed: 3, skipped: 0, failed: 0, duplicate: 1, duplicatePerson: 2, errors: 0, scanCutShort: false, backlogNearLookback: false });
 });
 
 afterEach(() => vi.unstubAllEnvs());
@@ -193,7 +193,7 @@ describe("POST /api/jobs/email-deliveries", () => {
       fixedSessionSeatsReleased: 2,
       fixedSessionCancellationNotices: 1,
       formNoShow: { candidates: 3, examined: 2, completed: 2, failed: 1, errors: 0 },
-      watchProgress: { candidates: 4, examined: 4, completed: 3, failed: 0, errors: 0 },
+      watchProgress: { candidates: 4, examined: 4, completed: 3, duplicatePerson: 2, failed: 0, errors: 0 },
     });
     expect(JSON.stringify(body)).not.toContain("private-notice");
     // Seats and notices are handled before this round's dispatch sends anything.

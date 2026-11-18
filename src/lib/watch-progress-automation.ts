@@ -139,9 +139,12 @@ export type WatchProgressSummary = {
   /** Events dispatched this run (the rest hit the deadline). */
   examined: number;
   completed: number;
+  /** Rules whose condition did not match (not counting duplicatePerson). */
   skipped: number;
   failed: number;
   duplicate: number;
+  /** Rules recorded `skipped / duplicate_person`: the same person already ran them through another registration of the Live (#663 review NIT-1). */
+  duplicatePerson: number;
   /** Vendor scans or dispatches that threw (reported; the next run tries again). */
   errors: number;
   scanCutShort: boolean;
@@ -304,7 +307,9 @@ export const WATCH_DUPLICATE_PERSON_ERROR_CODE = "duplicate_person";
  * registrations are found by the Live and the stored e-mail, normalized as
  * the key normalizes it, and their logs by the event id
  * (`{prefix}{submissionId}:{threshold}`); any status of that log counts (its
- * own registration retries it). Every input is bound to the vendor: the
+ * own registration retries a failed or stale running one) except a
+ * `skipped / duplicate_person` one, which this check wrote and which never
+ * ran the rule (#663 review MAJOR-1). Every input is bound to the vendor: the
  * other registration's form, the log, and the rules (the scan read them for
  * this vendor).
  *
@@ -331,6 +336,12 @@ async function rulesSamePersonRan(db: Db, candidate: Candidate): Promise<string[
       AND lower(btrim(s2."email")) = lower(btrim(${candidate.email}))
       AND s2."id" <> ${candidate.submissionId}
       AND other."ruleId" = ANY(${candidate.ruleIds}::text[])
+      -- #663 review MAJOR-1: a registration this check held back has not run
+      -- the rule. Counting its log would let two registrations hold each
+      -- other back (one failed and waiting for its retry, the other then
+      -- recorded duplicate_person, the retry then held back too) and the
+      -- person would never get the voucher.
+      AND NOT (other."status" = 'skipped' AND other."errorCode" = ${WATCH_DUPLICATE_PERSON_ERROR_CODE})
   `;
   return rows.map((row) => row.ruleId);
 }
@@ -541,7 +552,7 @@ export async function runWatchProgressAutomation(options: {
   const limit = Math.max(0, Math.min(options.limit ?? WATCH_PROGRESS_EVENT_LIMIT, WATCH_PROGRESS_EVENT_LIMIT));
   const deadlineMs = Math.min(options.deadlineMs ?? WATCH_PROGRESS_DEADLINE_MS, WATCH_PROGRESS_DEADLINE_MS);
   const summary: WatchProgressSummary = {
-    vendors: 0, candidates: 0, examined: 0, completed: 0, skipped: 0, failed: 0, duplicate: 0, errors: 0,
+    vendors: 0, candidates: 0, examined: 0, completed: 0, skipped: 0, failed: 0, duplicate: 0, duplicatePerson: 0, errors: 0,
     scanCutShort: false, backlogNearLookback: false,
   };
   if (limit === 0 || deadlineMs <= 0) return summary;
@@ -602,6 +613,7 @@ export async function runWatchProgressAutomation(options: {
       });
       for (const result of results) {
         if (result.status === "completed") summary.completed += 1;
+        else if (result.status === "skipped" && samePersonRan.includes(result.ruleId)) summary.duplicatePerson += 1;
         else if (result.status === "skipped") summary.skipped += 1;
         else if (result.status === "failed") summary.failed += 1;
         else if (result.status === "duplicate") summary.duplicate += 1;

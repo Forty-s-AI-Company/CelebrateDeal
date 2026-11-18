@@ -473,7 +473,7 @@ describe("觀看直播累計達指定時間 (Q-11 webinar_attended_duration_gte)
     expect((await logsOf(t, "viewer_watch_progress")).map((log) => log.eventId).sort()).toEqual([watchProgressEventId(viaFirst.id, 10), watchProgressEventId(someoneElse.id, 10)].sort());
     // The next run dispatches the person's second registration once and records
     // it skipped / duplicate_person (#651 re-review MINOR-A); no action runs.
-    await expect(run([t])).resolves.toMatchObject({ candidates: 2, completed: 0, skipped: 2 });
+    await expect(run([t])).resolves.toMatchObject({ candidates: 2, completed: 0, duplicatePerson: 2, skipped: 0 });
     const held = await db.automationExecutionLog.findMany({
       where: { vendorId: t.vendor.id, eventId: { in: [watchDurationEventId(viaSecond.id, 15), watchProgressEventId(viaSecond.id, 10)] } },
       select: { status: true, errorCode: true, conditionMatched: true, subjectKeyHash: true, liveId: true, delayedStepsPendingSubjectId: true },
@@ -516,13 +516,57 @@ describe("觀看直播累計達指定時間 (Q-11 webinar_attended_duration_gte)
     await progress(t, session.id, viaSecond.id, 30 * 60, ago(20 * MINUTE));
     const someoneElse = await registrant(t, session.id);
     await progress(t, session.id, someoneElse.id, 30 * 60, ago(10 * MINUTE));
-    await expect(run([t], { limit: 1 })).resolves.toMatchObject({ candidates: 1, completed: 0, skipped: 1 });
+    await expect(run([t], { limit: 1 })).resolves.toMatchObject({ candidates: 1, completed: 0, duplicatePerson: 1, skipped: 0 });
     await expect(db.automationExecutionLog.findFirst({ where: { vendorId: t.vendor.id, eventId: watchDurationEventId(viaSecond.id, 15) }, select: { ruleId: true, status: true, errorCode: true } }))
       .resolves.toEqual({ ruleId: voucherRule.id, status: "skipped", errorCode: "duplicate_person" });
     await expect(run([t], { limit: 1 })).resolves.toMatchObject({ candidates: 1, completed: 1 });
     expect((await logsOf(t)).map((log) => log.eventId)).toContain(watchDurationEventId(someoneElse.id, 15));
     await expect(run([t])).resolves.toMatchObject({ candidates: 0 });
     await expect(db.automationVoucherGrant.count({ where: { vendorId: t.vendor.id } })).resolves.toBe(2);
+  });
+
+  it.each([
+    ["failed / action_failed, retried 10 minutes later", "failed"],
+    ["stuck running, reclaimed after 5 minutes", "running"],
+  ] as const)("still runs the first registration's retry when it was %s after the second was held back (#663 review MAJOR-1)", async (_label, interrupted) => {
+    const t = await tenant();
+    const rule = await durationRule(t, 15);
+    const secondForm = await db.registrationForm.create({
+      data: { vendorId: t.vendor.id, name: "第二張報名表", slug: `duration-form-2-${randomUUID().slice(0, 8)}`, headline: "報名", fields: [{ key: "email", label: "Email", type: "email", required: true }] },
+    });
+    const session = await live(t);
+    const email = `retry-${randomUUID().slice(0, 8)}@example.test`;
+    // B crosses the threshold first and runs; its execution then ends failed
+    // (waiting for its one retry) or stays running (its process stopped).
+    const b = await registrant(t, session.id, { email, formId: secondForm.id });
+    await progress(t, session.id, b.id, 30 * 60, ago(30 * MINUTE));
+    await expect(run([t])).resolves.toMatchObject({ completed: 1 });
+    const bEvent = { vendorId: t.vendor.id, eventId: watchDurationEventId(b.id, 15) };
+    const interrupt = (at: Date) => db.automationExecutionLog.updateMany({
+      where: bEvent,
+      data: interrupted === "failed"
+        ? { status: "failed", errorCode: "action_failed", createdAt: at, startedAt: at, completedAt: at }
+        : { status: "running", errorCode: null, startedAt: at, completedAt: null },
+    });
+    await interrupt(ago(MINUTE));
+
+    // Meanwhile A, the same person through the first form, is held back.
+    const a = await registrant(t, session.id, { email });
+    await progress(t, session.id, a.id, 30 * 60, ago(10 * MINUTE));
+    await expect(run([t])).resolves.toMatchObject({ candidates: 1, completed: 0, duplicatePerson: 1, skipped: 0 });
+    const aEvent = { vendorId: t.vendor.id, eventId: watchDurationEventId(a.id, 15) };
+    await expect(db.automationExecutionLog.findFirst({ where: aEvent, select: { status: true, errorCode: true } }))
+      .resolves.toEqual({ status: "skipped", errorCode: "duplicate_person" });
+
+    // B's retry (or reclaim) is due: A's duplicate_person never ran the rule,
+    // so it does not hold B back in turn, and the person gets the rule once.
+    await interrupt(ago(20 * MINUTE));
+    await expect(run([t])).resolves.toMatchObject({ candidates: 1, completed: 1, duplicatePerson: 0 });
+    await expect(db.automationExecutionLog.findFirst({ where: bEvent, select: { ruleId: true, status: true, errorCode: true } }))
+      .resolves.toEqual({ ruleId: rule.id, status: "completed", errorCode: null });
+    await expect(db.automationExecutionLog.findFirst({ where: aEvent, select: { status: true, errorCode: true } }))
+      .resolves.toEqual({ status: "skipped", errorCode: "duplicate_person" });
+    await expect(run([t])).resolves.toMatchObject({ candidates: 0 });
   });
 
   it("does not hold back a registration for another vendor's form or a rule the person has not run (#651 re-review NIT)", async () => {
@@ -539,14 +583,14 @@ describe("觀看直播累計達指定時間 (Q-11 webinar_attended_duration_gte)
     });
     const viaFirst = await registrant(t, session.id, { email });
     await progress(t, session.id, viaFirst.id, 30 * 60, ago(30 * MINUTE));
-    await expect(run([t])).resolves.toMatchObject({ completed: 1, skipped: 0 });
+    await expect(run([t])).resolves.toMatchObject({ completed: 1, duplicatePerson: 0 });
 
     // A rule the person's first registration never ran (it changed after that
     // registration's last credit) still runs for the second one.
     const later = await durationRule(t, 15, { updatedAt: ago(25 * MINUTE) });
     const viaSecond = await registrant(t, session.id, { email });
     await progress(t, session.id, viaSecond.id, 30 * 60, ago(20 * MINUTE));
-    await expect(run([t])).resolves.toMatchObject({ candidates: 1, completed: 1, skipped: 1 });
+    await expect(run([t])).resolves.toMatchObject({ candidates: 1, completed: 1, duplicatePerson: 1, skipped: 0 });
     const logs = await db.automationExecutionLog.findMany({ where: { vendorId: t.vendor.id, eventId: watchDurationEventId(viaSecond.id, 15) }, select: { ruleId: true, status: true, errorCode: true } });
     expect(logs.sort((a, b) => (a.ruleId === first.id ? -1 : b.ruleId === first.id ? 1 : 0))).toEqual([
       { ruleId: first.id, status: "skipped", errorCode: "duplicate_person" },
