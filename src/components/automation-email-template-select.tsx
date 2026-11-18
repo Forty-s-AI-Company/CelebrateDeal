@@ -82,8 +82,8 @@ export function AutomationEmailTemplateSelect({ trigger, triggerFieldName, hasVo
         : <option value="">沒有適用的範本</option>}
     </SelectField>
     {value === "generic_message" ? <div className="grid gap-4">
-      <Field label="Email 主旨" name="emailSubject" required maxLength={GENERIC_EMAIL_SUBJECT_MAX} defaultValue={defaultSubject} hint={`純文字、單行，最多 ${GENERIC_EMAIL_SUBJECT_MAX} 字。`} />
-      <TextArea label="Email 內文" name="emailBody" required rows={6} maxLength={GENERIC_EMAIL_BODY_MAX} defaultValue={defaultBody} hint={`純文字，最多 ${GENERIC_EMAIL_BODY_MAX} 字，換行會照樣保留。${variableHint}信末會自動附上退訂連結與商家聯絡資訊，不需要自己放連結。`} />
+      <Field label="Email 主旨" name="emailSubject" required maxLength={GENERIC_EMAIL_SUBJECT_MAX} defaultValue={defaultSubject} hint={`單行，最多 ${GENERIC_EMAIL_SUBJECT_MAX} 字，不能放連結或網址。`} />
+      <TextArea label="Email 內文" name="emailBody" required rows={6} maxLength={GENERIC_EMAIL_BODY_MAX} defaultValue={defaultBody} hint={`最多 ${GENERIC_EMAIL_BODY_MAX} 字，換行會照樣保留，支援基本格式（粗體、標題、清單），但不能放連結、網址或網域，這些會被拒絕。${variableHint}收件人姓名只有在報名 Email 已驗證時才會帶入，否則顯示「你」；表單沒有綁定直播時，直播名稱顯示「本活動」。信末會自動附上退訂連結與商家聯絡資訊。`} />
     </div> : null}
   </div>;
 }

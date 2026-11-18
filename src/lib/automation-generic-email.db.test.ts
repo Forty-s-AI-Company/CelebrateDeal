@@ -58,9 +58,17 @@ async function tenant(vendorName = "示範商家") {
 }
 type Tenant = Awaited<ReturnType<typeof tenant>>;
 
-async function registrant(t: Tenant, name = "王小明") {
+async function registrant(t: Tenant, name = "王小明", options: { verified?: boolean; liveId?: string | null; email?: string } = {}) {
+  const verified = options.verified ?? true;
   return db.formSubmission.create({
-    data: { formId: t.form.id, liveId: t.live.id, name, email: `lead-${randomUUID().slice(0, 8)}@example.test`, verificationStatus: "VERIFIED", verifiedAt: new Date() },
+    data: {
+      formId: t.form.id,
+      liveId: options.liveId === undefined ? t.live.id : options.liveId,
+      name,
+      email: options.email ?? `lead-${randomUUID().slice(0, 8)}@example.test`,
+      verificationStatus: verified ? "VERIFIED" : "UNVERIFIED",
+      verifiedAt: verified ? new Date() : null,
+    },
   });
 }
 
@@ -147,6 +155,94 @@ describe("generic_message e-mail on each trigger without a link", () => {
   });
 });
 
+describe("generic_message review fixes (#665)", () => {
+  it("puts the vendor's sender name, reply-to and contact footer on the mail", async () => {
+    const t = await tenant();
+    await db.vendor.update({ where: { id: t.vendor.id }, data: { senderName: "示範老師", supportEmail: "help@example.test", contactUrl: "https://contact.example.test/us" } });
+    const submission = await registrant(t);
+    await rule(t, "form_registered", { type: "always" });
+    await dispatchAutomationEvent(db, event(t, "form_registered", { subjectId: submission.id, recipientEmail: submission.email }));
+    const [{ payload }] = await sentMail(t);
+    expect(payload.brand).toMatchObject({ senderName: "示範老師", replyTo: "help@example.test", contactUrl: "https://contact.example.test/us" });
+  });
+
+  it("puts the same brand on a template with fixed copy", async () => {
+    const t = await tenant();
+    await db.vendor.update({ where: { id: t.vendor.id }, data: { senderName: "示範老師", supportEmail: "help@example.test", contactUrl: "https://contact.example.test/us" } });
+    const submission = await registrant(t);
+    await rule(t, "form_no_show", { type: "always" }, [{ type: "send_email_notification", template: "webinar_replay" }]);
+    await dispatchAutomationEvent(db, event(t, "form_no_show", { subjectId: submission.id, recipientEmail: submission.email, webinarUrl: "https://generic-email.example.test/live/x" }));
+    const [{ payload }] = await sentMail(t);
+    expect(payload.brand).toMatchObject({ senderName: "示範老師", replyTo: "help@example.test", contactUrl: "https://contact.example.test/us" });
+  });
+
+  it("sends no brand when the vendor has none", async () => {
+    const t = await tenant();
+    const submission = await registrant(t);
+    await rule(t, "form_registered", { type: "always" });
+    await dispatchAutomationEvent(db, event(t, "form_registered", { subjectId: submission.id, recipientEmail: submission.email }));
+    const [{ payload }] = await sentMail(t);
+    expect(payload.brand ?? {}).not.toHaveProperty("senderName");
+  });
+
+  it("uses the neutral 你 for a registration nobody confirmed, even with a harmless name", async () => {
+    const t = await tenant();
+    const submission = await registrant(t, "王小明", { verified: false });
+    await rule(t, "form_registered", { type: "always" });
+    await dispatchAutomationEvent(db, event(t, "form_registered", { subjectId: submission.id, recipientEmail: submission.email }));
+    const [{ payload }] = await sentMail(t);
+    expect(payload.subject).toBe("你，謝謝你來看 新品發表會");
+    expect(payload.body.startsWith("你 你好")).toBe(true);
+  });
+
+  it.each(["hthttps://tps://evil.test/login", "hthttp://tp://e.test", "www.evil-bank.test", "evil.test"])("never puts a web address typed as a name into the mail (%s)", async (name) => {
+    const t = await tenant();
+    const submission = await registrant(t, name);
+    await rule(t, "form_registered", { type: "always" });
+    await dispatchAutomationEvent(db, event(t, "form_registered", { subjectId: submission.id, recipientEmail: submission.email }));
+    const [{ payload }] = await sentMail(t);
+    expect(payload.subject).toBe("你，謝謝你來看 新品發表會");
+    const written = payload.body.split("\n\n退訂：")[0];
+    expect(written).not.toContain("evil");
+    expect(written).not.toContain("e.test");
+    expect(richTextToEmailHtml(payload.body).match(/<a /gu)).toHaveLength(1);
+  });
+
+  it("says 本活動 when the form is not tied to a Live", async () => {
+    const t = await tenant();
+    const submission = await registrant(t, "王小明", { liveId: null });
+    await rule(t, "form_registered", { type: "always" });
+    await dispatchAutomationEvent(db, event(t, "form_registered", { subjectId: submission.id, recipientEmail: submission.email }));
+    const [{ payload }] = await sentMail(t);
+    expect(payload.subject).toBe("王小明，謝謝你來看 本活動");
+  });
+
+  it("takes a booking's name from the verified registration of the same address, never from the booking", async () => {
+    const t = await tenant();
+    const email = `client-${randomUUID().slice(0, 8)}@example.test`;
+    await rule(t, "consultation_booked", { type: "always" }, [{ type: "send_email_notification", template: "generic_message", subject: "{{name}} 預約成功", body: "{{name}} 你好\n{{vendor_name}}" }]);
+    // Booking alone: its typed name is a stranger's text; no verified registration at this vendor.
+    await dispatchAutomationEvent(db, event(t, "consultation_booked", { recipientEmail: email, subjectId: randomUUID() }));
+    // The address owner later registered and confirmed: their own name is used.
+    await registrant(t, "林小姐", { email });
+    await dispatchAutomationEvent(db, event(t, "consultation_booked", { recipientEmail: email.toUpperCase(), subjectId: randomUUID() }));
+    const subjects = (await sentMail(t)).map(({ payload }) => payload.subject).sort();
+    expect(subjects).toEqual(["你 預約成功", "林小姐 預約成功"]);
+  });
+
+  it("records an invalid stored text as invalid_content, not as no_content, and sends nothing", async () => {
+    const t = await tenant();
+    const submission = await registrant(t);
+    // Parses (valid shape) but links are not allowed for this trigger's text; written straight to the row.
+    const stored = await rule(t, "form_registered", { type: "always" }, [{ type: "send_email_notification", template: "generic_message", subject: "謝謝", body: "{{voucher_url}}" }]);
+    await dispatchAutomationEvent(db, event(t, "form_registered", { subjectId: submission.id, recipientEmail: submission.email }));
+    await expect(db.emailDelivery.count({ where: { vendorId: t.vendor.id } })).resolves.toBe(0);
+    const logs = await db.automationExecutionLog.findMany({ where: { vendorId: t.vendor.id, ruleId: stored.id } });
+    expect(JSON.stringify(logs.map((log) => log.actionResults))).toContain("invalid_content");
+    expect(JSON.stringify(logs.map((log) => log.actionResults))).not.toContain("no_content");
+  });
+});
+
 describe("generic_message safety on the real pipeline", () => {
   it("never turns a hostile registrant name into a link, markup or a second header", async () => {
     const t = await tenant();
@@ -184,7 +280,7 @@ describe("generic_message safety on the real pipeline", () => {
     await dispatchAutomationEvent(db, event(mine, "form_registered", { subjectId: foreign.id, recipientEmail: foreign.email }));
     const [{ payload }] = await sentMail(mine);
     expect(payload.subject).not.toContain("別家客人");
-    expect(payload.subject).toBe("你，謝謝你來看 這場直播");
+    expect(payload.subject).toBe("你，謝謝你來看 本活動");
     expect(payload.body).toContain("我的商家");
     await expect(db.emailDelivery.count({ where: { vendorId: other.vendor.id } })).resolves.toBe(0);
   });

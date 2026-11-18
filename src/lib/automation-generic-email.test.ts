@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  genericEmailTextLooksLikeLink,
   GENERIC_EMAIL_BODY_MAX,
   GENERIC_EMAIL_SUBJECT_MAX,
   genericEmailContentUsable,
@@ -75,7 +76,7 @@ describe("generic e-mail rendering (A2-04)", () => {
 
   it("falls back to neutral words when a value is missing", () => {
     const rendered = renderGenericEmail(content, { name: null, live_title: undefined, vendor_name: "  " });
-    expect(rendered.subject).toBe("你，感謝你看了 這場直播");
+    expect(rendered.subject).toBe("你，感謝你看了 本活動");
     expect(rendered.body).toBe("你 你好\n\n感謝你的參與。\n我們");
   });
 
@@ -129,6 +130,99 @@ describe("generic e-mail rendering (A2-04)", () => {
     expect(html).not.toContain("<b>");
     expect(html).toContain("&lt;b&gt;粗&lt;/b&gt; &amp; &quot;引號&quot;<br>第二行");
     expect(body.endsWith("退訂：https://app.example.test/unsubscribe?token=t")).toBe(true);
+  });
+});
+
+describe("generic e-mail review fixes (A2-04, #665)", () => {
+  const nameOf = (name: string) => renderGenericEmail({ subject: "{{name}}", body: "{{name}}" }, { name });
+
+  it.each([
+    "hthttps://tps://evil.test/login",
+    "hthttp://tp://e.test",
+    "https://evil.test",
+    "www.evil-bank.test",
+    "evil.test",
+    "Evil.Test/login",
+    "ｅｖｉｌ．ｔｅｓｔ",
+    "ｗｗｗ．ｅｖｉｌ．ｔｅｓｔ",
+    "evil​.test",
+    "ev­il.test",
+    "[x](evil.test)",
+    "Mr.Wang",
+  ])("drops the whole name when it looks like a web address (%j)", (name) => {
+    const rendered = nameOf(name);
+    expect(rendered).toEqual({ subject: "你", body: "你" });
+  });
+
+  it("keeps an ordinary name, in any script", () => {
+    expect(nameOf("王小明")).toEqual({ subject: "王小明", body: "王小明" });
+    expect(nameOf("Mary O'Neil Jr.")).toEqual({ subject: "Mary O'Neil Jr.", body: "Mary O'Neil Jr." });
+  });
+
+  it("cleans until nothing changes, so removing one piece never rebuilds another", () => {
+    // Without an address look (vendor-typed values), the cleaning itself must not leave a scheme behind.
+    for (const raw of ["hthttps://tps://x", "hthttp://tp://x", "hhttps://ttps://x"]) {
+      expect(genericEmailVariableValue(raw)).not.toMatch(/:\/\//u);
+      expect(genericEmailVariableValue(raw)).toBe("x");
+    }
+    expect(genericEmailVariableValue("[[x]]((y))")).toBe("xy");
+  });
+
+  it.each([
+    ["# # x", "x"],
+    ["1.1. x", "x"],
+    ["- - x", "x"],
+    ["> # - x", "x"],
+    ["+ * x", "x"],
+    ["  ## 1) x", "x"],
+  ])("removes stacked leading format symbols (%j)", (raw, expected) => {
+    expect(genericEmailVariableValue(raw)).toBe(expected);
+    expect(richTextToEmailHtml(renderGenericEmail({ subject: "s", body: "{{vendor_name}}" }, { vendor_name: raw }).body)).toBe(`<p>${expected}</p>`);
+  });
+
+  it("removes direction marks and zero-width characters from a value, and refuses them in the merchant's text", () => {
+    expect(genericEmailVariableValue("a‎b‏c؜d​e⁠f﻿g")).toBe("abcdefg");
+    for (const mark of ["‎", "‏", "؜", "​", "⁠", "﻿"]) {
+      expect(normalizeGenericEmailContent({ subject: `a${mark}b`, body: "ok" })).toBeNull();
+      expect(normalizeGenericEmailContent({ subject: "ok", body: `a${mark}b` })).toBeNull();
+    }
+  });
+
+  it("counts and cuts by code point, never in the middle of a surrogate pair", () => {
+    const emoji = "😀";
+    expect(normalizeGenericEmailContent({ subject: emoji.repeat(GENERIC_EMAIL_SUBJECT_MAX), body: "ok" })).not.toBeNull();
+    expect(normalizeGenericEmailContent({ subject: emoji.repeat(GENERIC_EMAIL_SUBJECT_MAX + 1), body: "ok" })).toBeNull();
+    const cut = genericEmailVariableValue(emoji.repeat(100));
+    expect(Array.from(cut)).toHaveLength(80);
+    expect(cut).not.toMatch(/[\ud800-\udbff](?![\udc00-\udfff])/u);
+  });
+
+  it("falls back to 本活動 when the form has no Live", () => {
+    expect(renderGenericEmail({ subject: "{{live_title}}", body: "{{live_title}}" }, {})).toEqual({ subject: "本活動", body: "本活動" });
+  });
+
+  it.each([
+    "https://example.test",
+    "http://example.test/a",
+    "[點我](example.test)",
+    "看 www.example.test",
+    "看 example.test",
+    "看 shop.example.com/path",
+    "ｅｘａｍｐｌｅ．ｔｅｓｔ",
+    "mailto:a@example.test",
+    "javascript:alert(1)",
+  ])("refuses a link or web address in the merchant's text (%j)", (text) => {
+    expect(genericEmailTextLooksLikeLink(text)).toBe(true);
+    expect(normalizeGenericEmailContent({ subject: "ok", body: text })).toBeNull();
+    expect(normalizeGenericEmailContent({ subject: text, body: "ok" })).toBeNull();
+    expect(genericEmailContentUsable("form_registered", { subject: "ok", body: text })).toBe(false);
+  });
+
+  it("still allows basic formatting and ordinary numbers and abbreviations", () => {
+    for (const text of ["# 標題\n- 項目\n1. 項目\n**粗體**", "約 3.5 小時，即 e.g. 這樣", "價格 NT$1,200.50", "你好 {{name}}。"]) {
+      expect(genericEmailTextLooksLikeLink(text), text).toBe(false);
+      expect(normalizeGenericEmailContent({ subject: "ok", body: text }), text).not.toBeNull();
+    }
   });
 });
 

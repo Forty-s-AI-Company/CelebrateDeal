@@ -531,6 +531,7 @@ const EMAIL_SKIP_NOTES: Record<AutomationEmailSkipReason, string> = {
   recipient_unverified: "Email 未寄出：收件人的 Email 尚未在本商家完成驗證",
   replay_unavailable: "Email 未寄出：這場直播目前沒有開放回放",
   no_content: "Email 未寄出：這封信沒有可寄送的內容（缺少需要的連結）",
+  invalid_content: "Email 未寄出：自訂訊息的主旨或內文不符規則（含連結、換行、超過長度或不能用的變數）",
 };
 
 /** Reason of a failed automation e-mail action whose unsubscribe link could not be built. */
@@ -757,7 +758,7 @@ const EMAIL_COPY = {
   webinar_replay: { subject: "錯過直播也別擔心：精華回放與諮詢邀請", body: "精華回放：{{webinar_url}}\n預約 1 對 1 諮詢：{{consultation_url}}" },
 } as const;
 
-export type AutomationEmailSkipReason = "recipient_suppressed" | "recipient_blacklisted" | "recipient_unverified" | "replay_unavailable" | "no_content";
+export type AutomationEmailSkipReason = "recipient_suppressed" | "recipient_blacklisted" | "recipient_unverified" | "replay_unavailable" | "no_content" | "invalid_content";
 
 /**
  * Q-11 (review m-5): a no-show gets its own wording, without the consultation
@@ -815,51 +816,70 @@ type ActionContext = {
 /**
  * The subject and body of a `generic_message` action for this event, with its
  * variables filled from the server's own records of this vendor (never from
- * the event payload). Null when the stored text is not valid for the trigger.
+ * the event payload). The registrant's name is only used once that person
+ * confirmed the address (a public form lets anybody type any address, so an
+ * unconfirmed name is a stranger's text in this vendor's mail); a booking
+ * carries no confirmation of its own, so its name comes from the verified
+ * registration of the same address at this vendor, if any.
  */
 async function renderGenericAutomationEmail(
   db: AutomationDb,
   event: AutomationEvent,
-  action: { subject?: string; body?: string },
+  content: { subject: string; body: string },
+  vendorName: string | undefined,
 ) {
-  const content = normalizeGenericEmailContent(action);
-  if (!content || !genericEmailContentUsable(event.trigger, content)) return null;
   const used = genericEmailVariablesUsed(content);
-  const values: Partial<Record<GenericEmailVariable, string>> = {};
-  if (used.has("vendor_name")) {
-    const vendor = await db.vendor.findUnique({ where: { id: event.vendorId }, select: { name: true } });
-    values.vendor_name = vendor?.name;
-  }
+  const values: Partial<Record<GenericEmailVariable, string>> = { vendor_name: vendorName };
   if (used.has("name") || used.has("live_title")) {
     if (event.trigger === "consultation_booked" || event.trigger === "consultation_no_show") {
-      const booking = await db.consultationBooking.findFirst({ where: { id: event.subjectId, vendorId: event.vendorId }, select: { clientName: true } });
-      values.name = booking?.clientName;
+      const registration = event.recipientEmail
+        ? await db.formSubmission.findFirst({
+          where: { verificationStatus: "VERIFIED", email: { equals: event.recipientEmail.trim(), mode: "insensitive" }, form: { vendorId: event.vendorId } },
+          orderBy: { createdAt: "desc" },
+          select: { name: true },
+        })
+        : null;
+      values.name = registration?.name;
     } else if (event.trigger !== "payment_paid") {
       const submission = await db.formSubmission.findFirst({
         where: { id: event.subjectId, form: { vendorId: event.vendorId } },
-        select: { name: true, live: { select: { vendorId: true, title: true } } },
+        select: { name: true, verificationStatus: true, live: { select: { vendorId: true, title: true } } },
       });
-      values.name = submission?.name;
+      if (submission?.verificationStatus === "VERIFIED") values.name = submission.name;
       if (submission?.live?.vendorId === event.vendorId) values.live_title = submission.live.title;
     }
   }
   return renderGenericEmail(content, values);
 }
 
+type AutomationEmailContent = {
+  subject: string;
+  body: string;
+  /** The vendor's own sender name and contact details (the sender adds the footer). */
+  brand: { senderName: string | null; supportEmail: string | null; contactUrl: string | null } | undefined;
+};
+
 /**
  * The subject and body one e-mail action sends for this event, or why it sends
  * nothing. The generic template (A2-04) brings its own text and has no link to
  * wait for; the others are the fixed copy with the event's links filled in.
+ * Every template carries the vendor's brand (sender name, reply-to, contact
+ * footer), read here by the event's own vendor.
  */
 async function resolveAutomationEmailContent(
   db: AutomationDb,
   event: AutomationEvent,
   action: Extract<AutomationAction, { type: "send_email_notification" }>,
   artifacts: { voucherUrl?: string; consultationUrl?: string; webinarUrl?: string },
-): Promise<{ subject: string; body: string } | { skip: AutomationEmailSkipReason }> {
+): Promise<AutomationEmailContent | { skip: AutomationEmailSkipReason }> {
+  const vendor = await db.vendor.findUnique({ where: { id: event.vendorId }, select: { name: true, senderName: true, supportEmail: true, contactUrl: true } });
+  const brand = vendor ? { senderName: vendor.senderName, supportEmail: vendor.supportEmail, contactUrl: vendor.contactUrl } : undefined;
   if (action.template === "generic_message") {
-    const generic = await renderGenericAutomationEmail(db, event, action);
-    return generic && generic.body.trim() ? generic : { skip: "no_content" };
+    // A stored text that is not valid for this trigger is recorded as such, not as "no content".
+    const stored = normalizeGenericEmailContent(action);
+    if (!stored || !genericEmailContentUsable(event.trigger, stored)) return { skip: "invalid_content" };
+    const generic = await renderGenericAutomationEmail(db, event, stored, vendor?.name);
+    return generic.body.trim() ? { ...generic, brand } : { skip: "no_content" };
   }
   const copy = automationEmailCopy(event.trigger, action.template);
   // Q-11 (m-5): a no-show replay e-mail without an open replay (replay off
@@ -868,7 +888,7 @@ async function resolveAutomationEmailContent(
   // m-6: every line needed a link this event does not have. Never send an
   // empty e-mail (any trigger); recorded as skipped, nothing retries it.
   const body = renderAutomationEmailBody(copy.body, artifacts);
-  return body.trim() ? { subject: copy.subject, body } : { skip: "no_content" };
+  return body.trim() ? { subject: copy.subject, body, brand } : { skip: "no_content" };
 }
 
 async function executeAction(
@@ -975,6 +995,7 @@ async function executeAction(
       recipientEmail: event.recipientEmail,
       subject: content.subject,
       body: ensureEmailUnsubscribeFooter(body, unsubscribeUrl),
+      ...(content.brand ? { brand: content.brand } : {}),
     }, { vendorId: event.vendorId, deliveryId: id });
     try {
       await db.emailDelivery.create({ data: {

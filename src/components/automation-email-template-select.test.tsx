@@ -82,7 +82,11 @@ describe("AutomationEmailTemplateSelect (Q-18)", () => {
     expect(field("emailBody")?.getAttribute("maxlength")).toBe("2000");
     expect(container.textContent).toContain("{{name}}（收件人姓名）");
     expect(container.textContent).toContain("{{live_title}}（直播名稱）");
-    expect(container.textContent).toContain("不需要自己放連結");
+    expect(container.textContent).toContain("不能放連結、網址或網域");
+    expect(container.textContent).toContain("支援基本格式");
+    expect(container.textContent).toContain("已驗證");
+    expect(container.textContent).toContain("本活動");
+    expect(container.textContent).not.toContain("純文字");
     const trigger = container.querySelector<HTMLSelectElement>('select[name="trigger"]')!;
     await change(trigger, () => { trigger.value = "consultation_booked"; });
     expect(select().value).toBe("consultation_confirmation");

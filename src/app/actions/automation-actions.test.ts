@@ -555,6 +555,11 @@ describe("automation actions", () => { it("requires CSRF and writes tenant-scope
         ["a variable the trigger cannot supply", "謝謝", "{{voucher_url}}"],
         ["an unknown variable", "謝謝", "{{password}}"],
         ["an unclosed variable", "謝謝", "你好 {{name"],
+        ["a link in the body", "謝謝", "請看 https://example.test/a"],
+        ["a markdown link in the body", "謝謝", "[點我](example.test)"],
+        ["a web address in the body", "謝謝", "官網 www.example.test 或 example.com"],
+        ["a web address in the subject", "看 example.test", "內文"],
+        ["a zero-width character in the subject", "謝\u200b謝", "內文"],
       ])("refuses %s and writes nothing", async (_name, subject, body) => {
         await expect(createAutomationRuleAction(generic("form_registered", subject, body))).rejects.toThrow("redirect:/settings/automations?error=invalid_email_content");
         expect(runtime.db.automationRule.create).not.toHaveBeenCalled();
