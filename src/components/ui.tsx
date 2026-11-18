@@ -144,6 +144,8 @@ export function Field({
   onChange,
   onFocus,
   pattern,
+  inputMode,
+  labelHidden,
   id,
   error,
   hint,
@@ -157,6 +159,9 @@ export function Field({
   defaultValue?: string | number | null;
   type?: string;
   pattern?: string;
+  inputMode?: React.HTMLAttributes<HTMLInputElement>["inputMode"];
+  /** Visually hide the label (sr-only) while keeping it inside the <label> as the control's accessible name. */
+  labelHidden?: boolean;
   required?: boolean;
   placeholder?: string;
   autoComplete?: string;
@@ -176,11 +181,12 @@ export function Field({
   return (
     <FieldShell field={field}>
     <label className="grid gap-1.5 text-sm font-medium text-slate-700" htmlFor={id}>
-      {label}
+      {labelHidden ? <span className="sr-only">{label}</span> : label}
       <input
         {...field.controlProps}
         id={id}
         pattern={pattern}
+        inputMode={inputMode}
         className={`h-11 rounded-md border bg-white px-3 text-sm transition ${field.controlClass}`}
         name={name}
         type={type}

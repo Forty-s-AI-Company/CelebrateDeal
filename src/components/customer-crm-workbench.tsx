@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useActionState, type ReactNode } from "react";
 import { searchCustomersAction, type CustomerSearchActionState } from "@/app/actions/customer-crm-actions";
-import { Badge, Card, EmptyState } from "@/components/ui";
+import { Badge, Card, EmptyState, Field } from "@/components/ui";
 import { formatTwd } from "@/lib/format";
 
 function formatActivityDate(dateInput: string | Date) {
@@ -18,8 +18,8 @@ export function CustomerCrmWorkbench({ initialState, csrfField }: { initialState
   return <Card>
     <form action={action} className="mb-5 grid gap-3 sm:grid-cols-[1fr_240px_auto]" aria-busy={pending}>
       {csrfField}
-      <input aria-label="搜尋學員" name="query" maxLength={320} autoComplete="off" placeholder="搜尋姓名、Email 或電話" className="h-11 rounded-md border border-border px-3" />
-      <input aria-label="標籤篩選" name="tag" maxLength={50} autoComplete="off" placeholder="標籤，例如：高意向" className="h-11 rounded-md border border-border px-3" />
+      <Field label="搜尋學員" labelHidden name="query" maxLength={320} autoComplete="off" placeholder="搜尋姓名、Email 或電話" />
+      <Field label="標籤篩選" labelHidden name="tag" maxLength={50} autoComplete="off" placeholder="標籤，例如：高意向" />
       <button disabled={pending} className="h-11 rounded-md bg-primary px-5 font-semibold text-white disabled:opacity-60">{pending ? "搜尋中…" : "搜尋"}</button>
     </form>
     <p className="mb-4 text-xs text-slate-500">搜尋內容以安全表單送出，不會寫入網址或瀏覽器歷程。</p>

@@ -1,5 +1,5 @@
 import type { Affiliate } from "@prisma/client";
-import { upsertAffiliateAction } from "@/app/actions";
+import { upsertAffiliateAction } from "@/app/actions/affiliate-actions";
 import { CsrfField } from "@/components/csrf-field";
 import { Card, Field, SubmitButton } from "@/components/ui";
 import { AffiliateCommissionRateField } from "@/components/affiliate-commission-rate-field";

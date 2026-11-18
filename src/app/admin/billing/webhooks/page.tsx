@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { RotateCcw, Webhook } from "lucide-react";
-import { retryWebhookEventAction } from "@/app/actions";
+import { retryWebhookEventAction } from "@/app/actions/admin-billing-actions";
 import { CsrfField } from "@/components/csrf-field";
 import { FormSubmitButton } from "@/components/form-submit-button";
 import { Badge, Card, PageHeader } from "@/components/ui";
