@@ -24,9 +24,11 @@ export const demoPaymentProvider: PaymentProviderAdapter = {
   },
   async normalizePayload(rawBody) {
     const rawPayload = JSON.parse(rawBody);
+    // `provider` goes after the spread so a body field cannot claim another
+    // provider (#652 review MINOR-4): the payload always names this adapter.
     const payload = PaymentWebhookPayload.parse({
-      provider: "demo",
       ...rawPayload,
+      provider: "demo",
     });
     return { payload, rawPayload };
   },

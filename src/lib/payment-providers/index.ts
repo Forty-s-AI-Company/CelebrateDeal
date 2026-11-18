@@ -13,7 +13,9 @@ const providers: Record<string, PaymentProviderAdapter> = {
 
 /** F-003: a production deployment resolves only PayUni (runtime-policy.ts). */
 export function getPaymentProvider(providerId: string | null, env: Readonly<Record<string, string | undefined>> = process.env) {
-  const provider = providerId && providerId.trim() ? providers[providerId] : undefined;
+  // Own keys only: `providers["constructor"]` or `providers["__proto__"]` would
+  // otherwise resolve to Object.prototype members (#652 review NIT).
+  const provider = providerId && providerId.trim() && Object.hasOwn(providers, providerId) ? providers[providerId] : undefined;
   if (!provider) {
     throw new Error("Unsupported payment provider");
   }
