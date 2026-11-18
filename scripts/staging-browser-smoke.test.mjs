@@ -5,7 +5,7 @@ import { diagnoseStagingAliasBindingWithFallback, diagnoseStagingPreviewBinding 
 
 import { appNavigationSelectorForViewport, classifyBrowserExecutionFailure, classifyBrowserRequest, classifyCriticalResourceFailureKind, classifyCriticalResourceRequestFailure, classifyCriticalResourceResponse, classifyFinalPath, classifySessionStatus, classifyUnsafeRequestDetail, classifyUnsafeRequestPath, diagnoseStagingAliasBinding, hasActionableDashboardAlert, isCriticalResourceFailure, isDashboardDetailsGet, isFailedCriticalResourceRequest, runBrowserSmoke, validateBrowserSmokeBinding, verifyStagingAliasBinding } from "./staging-browser-smoke.mjs";
 
-import { browserFailureStep, captureFailureDom, classifyFailurePath, createDocumentAbortTracker, elementHydratedInPage, MOBILE_NAV_MORE_BUTTON, MOBILE_NAV_PRODUCTS_LINK, waitForFulfillmentHydration, waitForMobileNavHydration } from "./staging-browser-smoke.mjs";
+import { browserFailureStep, captureFailureDom, classifyFailurePath, classifyPendingCriticalResource, createDocumentAbortTracker, isCriticalResourceRequest, waitForCriticalResources, elementHydratedInPage, MOBILE_NAV_MORE_BUTTON, MOBILE_NAV_PRODUCTS_LINK, waitForFulfillmentHydration, waitForMobileNavHydration } from "./staging-browser-smoke.mjs";
 
 test("failure diagnostics stay inside fixed step and route vocabularies", () => {
   const alias = "celebrate-deal-staging.carry-digital-nomad.in.net";
@@ -252,6 +252,7 @@ test("a rendered journey remains blocked when an unexpected browser POST occurs"
   let triggerChunkNetworkFailure = false;
   let triggerNavigationAbort = false;
   let abortScenario = null;
+  let chunkTiming = null;
   let timeoutStage = null;
   const sessionRequests = [];
   const interactions = [];
@@ -275,20 +276,31 @@ test("a rendered journey remains blocked when an unexpected browser POST occurs"
           const onRequestFailed = emit("requestfailed");
           const onRequest = emit("request");
           const onFrameNavigated = emit("framenavigated");
-          const mainFrame = { id: "main" };
-          const subFrame = { id: "iframe" };
-          // A main-frame document navigation as Chromium reports it: request, then the old
-          // document's cancelled loads, then the commit.
+          const onRequestFinished = emit("requestfinished");
+          let frameUrl = "about:blank";
+          const mainFrame = { id: "main", url: () => frameUrl };
+          const subFrame = { id: "iframe", url: () => `${origin}/iframe` };
+          // Requests as Playwright reports them; `failure` is read only after requestfailed.
           const navigationRequest = (url, frame = mainFrame) => ({
             url: () => url, resourceType: () => "document", isNavigationRequest: () => true, frame: () => frame,
           });
-          const failedScript = (errorText) => ({
-            url: () => `${origin}/_next/static/chunks/app.js`, resourceType: () => "script",
-            isNavigationRequest: () => false, frame: () => mainFrame,
-            failure: () => (errorText ? { errorText } : null),
-          });
+          const scriptRequest = (name = "app") => {
+            let errorText = null;
+            return {
+              url: () => `${origin}/_next/static/chunks/${name}.js`, resourceType: () => "script",
+              isNavigationRequest: () => false, frame: () => mainFrame,
+              failure: () => (errorText ? { errorText } : null),
+              setFailure: (text) => { errorText = text; },
+            };
+          };
+          const failRequest = (request, errorText) => { request.setFailure(errorText); onRequestFailed(request); };
+          // The main frame commits the navigation's final URL (Chromium order: request,
+          // cancelled loads of the old document, then framenavigated).
+          const commit = (url) => { frameUrl = url; onFrameNavigated(mainFrame); };
+          let hungChunk = null;
           return {
           mainFrame: () => mainFrame,
+          waitForLoadState: async () => {},
           on: (event, callback) => {
             listeners.set(event, [...(listeners.get(event) ?? []), callback]);
           },
@@ -314,21 +326,58 @@ test("a rendered journey remains blocked when an unexpected browser POST occurs"
             if (url.endsWith("/dashboard") && triggerChunkNetworkFailure) onRequestFailed({
               url: () => `${origin}/_next/static/chunks/app.js`, resourceType: () => "script",
             });
-            if (url.endsWith("/products") && abortScenario) {
-              if (abortScenario === "same_document") {
-                // No document navigation is pending: the live document lost its chunk.
-                onRequestFailed(failedScript("net::ERR_ABORTED"));
-              } else {
-                onRequest(navigationRequest(url, abortScenario === "iframe_navigation" ? subFrame : mainFrame));
-                onRequestFailed(failedScript("net::ERR_ABORTED"));
-                if (abortScenario === "navigation_failed") onRequestFailed(navigationRequest(url));
-                if (["superseded", "superseded_reload_404"].includes(abortScenario)) onFrameNavigated(mainFrame);
-                if (abortScenario === "iframe_navigation") onFrameNavigated(subFrame);
-                if (abortScenario === "superseded_reload_404") onResponse({
-                  url: () => `${origin}/_next/static/chunks/app.js`, status: () => 404,
-                  request: () => ({ resourceType: () => "script" }),
-                });
-              }
+            // Every route is a real main-frame document navigation that commits, and the new
+            // document loads (and finishes) its own chunk. Scenarios replace parts of it.
+            const toProducts = url.endsWith("/products");
+            const scenario = toProducts ? abortScenario : null;
+            const previousUrl = frameUrl;
+            // A chunk the previous document started before this navigation request.
+            const previousChunk = scriptRequest("previous");
+            if (["superseded", "superseded_reload_404", "navigation_failed", "pending_at_end", "same_document_history",
+              "iframe_navigation", "network_error_during_navigation", "redirect", "ordering"].includes(scenario)) onRequest(previousChunk);
+            if (scenario === "redirect") {
+              const firstHop = navigationRequest(`${origin}/products-legacy`);
+              onRequest(firstHop);
+              onRequestFinished(firstHop);
+              onRequest(navigationRequest(url));
+            } else {
+              onRequest(navigationRequest(url, scenario === "iframe_navigation" ? subFrame : mainFrame));
+            }
+            if (scenario === "started_after_navigation") onRequest(previousChunk);
+            // The next navigation cancels a chunk already reported as pending: no second count.
+            if (hungChunk) { failRequest(hungChunk, "net::ERR_ABORTED"); hungChunk = null; }
+            if (scenario === "network_error_during_navigation") failRequest(previousChunk, "net::ERR_CONNECTION_RESET");
+            else if (scenario && scenario !== "same_document") failRequest(previousChunk, "net::ERR_ABORTED");
+            if (scenario === "navigation_failed" || scenario === "ordering") onRequestFailed(navigationRequest(url));
+            if (scenario === "ordering") onResponse({
+              url: () => `${origin}/_next/static/chunks/later.js`, status: () => 404,
+              request: () => ({ resourceType: () => "script" }),
+            });
+            if (scenario === "same_document_history") {
+              // pushState/replaceState on the old document: main frame "navigates" in place.
+              frameUrl = `${previousUrl}?tab=details`;
+              onFrameNavigated(mainFrame);
+            } else if (scenario === "iframe_navigation") {
+              onFrameNavigated(subFrame);
+            } else if (!["navigation_failed", "pending_at_end", "ordering"].includes(scenario)) {
+              commit(url);
+            }
+            if (scenario === "superseded_reload_404") onResponse({
+              url: () => `${origin}/_next/static/chunks/app.js`, status: () => 404,
+              request: () => ({ resourceType: () => "script" }),
+            });
+            const ownChunk = scriptRequest("own");
+            onRequest(ownChunk);
+            if (scenario === "same_document") {
+              // No document navigation is pending: the live document lost its own chunk.
+              failRequest(ownChunk, "net::ERR_ABORTED");
+            } else if (url.endsWith("/dashboard") && chunkTiming === "hung") {
+              // Never finishes: the runner must not leave it behind silently.
+              hungChunk = ownChunk;
+            } else if (url.endsWith("/dashboard") && chunkTiming === "slow") {
+              setTimeout(() => onRequestFinished(ownChunk), 60);
+            } else {
+              onRequestFinished(ownChunk);
             }
             if (url.endsWith("/billing/plans")) {
               await handler({
@@ -428,49 +477,82 @@ test("a rendered journey remains blocked when an unexpected browser POST occurs"
   assert.equal(networkFailure.browser.firstCriticalResourceFailureKind, "UNKNOWN");
   assert.equal(networkFailure.result, "BLOCKED");
   triggerChunkNetworkFailure = false;
-  // 2026-11-18 runs 44256624407/44257523657: page.goto to /products replaced the dashboard
-  // document while one of its chunks was still downloading. That cancelled load belongs to
-  // the replaced document and must not block an otherwise passing run.
-  const runAbortScenario = async (scenario) => {
+  // 2026-11-18 runs 44256624407/44257523657 and review M-1 (#658): the runner now waits for a
+  // page's chunks before leaving it. A slow chunk that finishes in time passes; one still
+  // running at the bound blocks as pending instead of being cancelled out of sight.
+  const runScenario = async ({ scenario = null, timing = null } = {}) => {
     abortScenario = scenario;
+    chunkTiming = timing;
     try {
       return await runBrowserSmoke(INPUT, {
         verifyLineage: async () => true, verifyAlias: async () => true,
         playwright: { chromium: { launch: async () => browser } },
+        resourceSettleTimeoutMs: 200,
       });
-    } finally { abortScenario = null; }
+    } finally { abortScenario = null; chunkTiming = null; }
   };
-  const superseded = await runAbortScenario("superseded");
-  assert.equal(superseded.result, "PASS");
-  assert.equal(superseded.browser.criticalResourceFailures, 0);
-  assert.equal(superseded.browser.criticalResourceFailureCategories.abortedScript, 0);
-  assert.deepEqual(superseded.browser.supersededDocumentAborts, { script: 2, stylesheet: 0 });
-  assert.equal(superseded.browser.firstCriticalResourceFailure, null);
-  // The replacement document's own chunk still has to load: a 404 after the cancel blocks.
-  const reloadFailed = await runAbortScenario("superseded_reload_404");
+  const baseline = await runScenario();
+  assert.equal(baseline.result, "PASS");
+  assert.equal(baseline.browser.criticalResourceFailures, 0);
+  assert.deepEqual(baseline.browser.supersededDocumentAborts, { script: 0, stylesheet: 0 });
+  const slow = await runScenario({ timing: "slow" });
+  assert.equal(slow.result, "PASS");
+  assert.equal(slow.browser.criticalResourceFailures, 0);
+  const hung = await runScenario({ timing: "hung" });
+  assert.equal(hung.result, "BLOCKED");
+  assert.equal(hung.reason, "BROWSER_JOURNEY_FAILED");
+  // One per viewport; the later cancel of the same request is not counted again.
+  assert.equal(hung.browser.criticalResourceFailures, 2);
+  assert.equal(hung.browser.criticalResourceFailureCategories.pendingScript, 2);
+  assert.equal(hung.browser.criticalResourceFailureCategories.abortedScript, 0);
+  assert.equal(hung.browser.firstCriticalResourceFailureKind, "PENDING");
+  assert.deepEqual(hung.browser.firstCriticalResourceFailure,
+    { category: "pendingScript", phase: "RESOURCE_SETTLE", viewport: "desktop", route: "dashboard" });
+  assert.deepEqual(hung.browser.supersededDocumentAborts, { script: 0, stylesheet: 0 });
+
+  // Narrow remainder: a request already in flight when the navigation request was sent,
+  // cancelled by that navigation's commit, is forgiven and reported as a diagnostic.
+  for (const scenario of ["superseded", "redirect"]) {
+    const superseded = await runScenario({ scenario });
+    assert.equal(superseded.result, "PASS", scenario);
+    assert.equal(superseded.browser.criticalResourceFailures, 0, scenario);
+    assert.deepEqual(superseded.browser.supersededDocumentAborts, { script: 2, stylesheet: 0 }, scenario);
+    assert.deepEqual(superseded.browser.firstSupersededDocumentAbort,
+      { category: "abortedScript", phase: "PAGE_NAVIGATION", viewport: "desktop", route: "products" }, scenario);
+    assert.equal(JSON.stringify(superseded.browser.firstSupersededDocumentAbort).includes("http"), false);
+  }
+  // The new document's own chunk still has to load.
+  const reloadFailed = await runScenario({ scenario: "superseded_reload_404" });
   assert.equal(reloadFailed.result, "BLOCKED");
   assert.equal(reloadFailed.browser.criticalResourceFailureCategories.http4xxScript, 2);
   assert.equal(reloadFailed.browser.criticalResourceFailureCategories.abortedScript, 0);
-  assert.deepEqual(reloadFailed.browser.supersededDocumentAborts, { script: 2, stylesheet: 0 });
-  // Aborted with no document navigation pending: the live document lost a chunk.
-  const sameDocument = await runAbortScenario("same_document");
-  assert.equal(sameDocument.result, "BLOCKED");
-  assert.equal(sameDocument.browser.criticalResourceFailureCategories.abortedScript, 2);
-  assert.equal(sameDocument.browser.firstCriticalResourceFailureKind, "ABORTED");
-  assert.deepEqual(sameDocument.browser.firstCriticalResourceFailure,
-    { category: "abortedScript", phase: "PAGE_NAVIGATION", viewport: "desktop", route: "products" });
-  assert.deepEqual(sameDocument.browser.supersededDocumentAborts, { script: 0, stylesheet: 0 });
-  // The navigation never committed (failed, still pending at the end, or only an iframe
-  // navigated): the old document stays, so its cancelled chunk is critical.
-  for (const scenario of ["navigation_failed", "pending_at_end", "iframe_navigation"]) {
-    const uncommitted = await runAbortScenario(scenario);
-    assert.equal(uncommitted.result, "BLOCKED", scenario);
-    assert.equal(uncommitted.browser.criticalResourceFailureCategories.abortedScript, 2, scenario);
-    assert.equal(uncommitted.browser.firstCriticalResourceFailureKind, "ABORTED", scenario);
-    assert.deepEqual(uncommitted.browser.firstCriticalResourceFailure,
+  // Every other abort is critical: no navigation pending, a request started after the
+  // navigation began, navigation 1 committed but navigation 2 failed, a navigation still
+  // uncommitted when settled, a same-document history change, or an iframe navigation.
+  for (const scenario of ["same_document", "started_after_navigation", "navigation_failed", "pending_at_end",
+    "same_document_history", "iframe_navigation"]) {
+    const aborted = await runScenario({ scenario });
+    assert.equal(aborted.result, "BLOCKED", scenario);
+    assert.equal(aborted.browser.criticalResourceFailureCategories.abortedScript, 2, scenario);
+    assert.equal(aborted.browser.firstCriticalResourceFailureKind, "ABORTED", scenario);
+    assert.deepEqual(aborted.browser.firstCriticalResourceFailure,
       { category: "abortedScript", phase: "PAGE_NAVIGATION", viewport: "desktop", route: "products" }, scenario);
-    assert.deepEqual(uncommitted.browser.supersededDocumentAborts, { script: 0, stylesheet: 0 }, scenario);
+    assert.deepEqual(aborted.browser.supersededDocumentAborts, { script: 0, stylesheet: 0 }, scenario);
+    assert.equal(aborted.browser.firstSupersededDocumentAbort, null, scenario);
   }
+  // A non-abort failure during a pending navigation is critical at once, never deferred.
+  const reset = await runScenario({ scenario: "network_error_during_navigation" });
+  assert.equal(reset.result, "BLOCKED");
+  assert.equal(reset.browser.criticalResourceFailureCategories.networkScript, 2);
+  assert.equal(reset.browser.firstCriticalResourceFailureKind, "CONNECTION_RESET");
+  assert.deepEqual(reset.browser.supersededDocumentAborts, { script: 0, stylesheet: 0 });
+  // A deferred abort decided after a later failure still ranks first by occurrence.
+  const ordering = await runScenario({ scenario: "ordering" });
+  assert.equal(ordering.result, "BLOCKED");
+  assert.equal(ordering.browser.criticalResourceFailureCategories.abortedScript, 2);
+  assert.equal(ordering.browser.criticalResourceFailureCategories.http4xxScript, 2);
+  assert.equal(ordering.browser.firstCriticalResourceFailure.category, "abortedScript");
+  assert.equal(ordering.browser.firstCriticalResourceFailureKind, "ABORTED");
   let aliasChecks = 0;
   const aliasDriftAfterSession = await runBrowserSmoke(INPUT, {
     verifyLineage: async () => true,
@@ -635,57 +717,117 @@ test("a failed JavaScript chunk invalidates an otherwise rendered journey", () =
   assert.equal(classifyCriticalResourceFailureKind(playwrightReset), "CONNECTION_RESET");
 });
 
-test("document abort tracker only forgives loads of a document that a navigation replaced", () => {
-  const mainFrame = {};
+test("document abort tracker only forgives loads in flight when a committed navigation began", () => {
+  let frameUrl = "https://staging.example.test/dashboard";
+  const mainFrame = { url: () => frameUrl };
   const page = { mainFrame: () => mainFrame };
-  const navigation = { isNavigationRequest: () => true, frame: () => mainFrame };
-  const entry = (category) => ({ category, kind: "ABORTED", failureContext: { phase: "PAGE_NAVIGATION" } });
+  const navigation = (url) => ({ url: () => url, isNavigationRequest: () => true, frame: () => mainFrame });
+  const chunk = () => ({ isNavigationRequest: () => false, frame: () => mainFrame });
+  const entry = (category, sequence = 1) => ({ category, kind: "ABORTED", sequence, failureContext: { phase: "PAGE_NAVIGATION" } });
   const outcomes = (decided) => decided.map(({ entry: item, outcome }) => `${item.category}:${outcome}`);
+  const commit = (tracker, url) => { frameUrl = url; tracker.onFrameNavigated(mainFrame); };
 
   const tracker = createDocumentAbortTracker(page);
-  assert.equal(tracker.classifyAbort(entry("abortedScript")), "CRITICAL");
-  tracker.onRequest(navigation);
-  // A redirect hop is another navigation request of the same pending navigation.
-  tracker.onRequest(navigation);
-  assert.equal(tracker.classifyAbort(entry("abortedScript")), "DEFERRED");
-  assert.equal(tracker.classifyAbort(entry("abortedStylesheet")), "DEFERRED");
-  // Chromium reports the cancelled loads before the commit; nothing is decided yet.
-  assert.deepEqual(tracker.settle(), []);
-  tracker.onFrameNavigated({});
-  assert.deepEqual(tracker.settle(), []);
-  tracker.onFrameNavigated(mainFrame);
+  const script = chunk();
+  const stylesheet = chunk();
+  tracker.onRequest(script);
+  tracker.onRequest(stylesheet);
+  assert.equal(tracker.inflight().length, 2);
+  // No navigation pending: an abort means the live document lost it.
+  assert.equal(tracker.classifyAbort(script, entry("abortedScript")), "CRITICAL");
+  // Real redirect order: hop 1 request, hop 1 requestfinished, hop 2 request.
+  const firstHop = navigation("https://staging.example.test/products-legacy");
+  tracker.onRequest(firstHop);
+  tracker.onRequestFinished(firstHop);
+  tracker.onRequest(navigation("https://staging.example.test/products"));
+  const lateChunk = chunk();
+  tracker.onRequest(lateChunk);
+  assert.equal(tracker.classifyAbort(script, entry("abortedScript")), "DEFERRED");
+  assert.equal(tracker.classifyAbort(stylesheet, entry("abortedStylesheet")), "DEFERRED");
+  // Started after the navigation request: never forgiven.
+  assert.equal(tracker.classifyAbort(lateChunk, entry("abortedScript")), "CRITICAL");
+  // Neither the first hop's URL nor a same-document history change is a commit.
+  commit(tracker, "https://staging.example.test/products-legacy");
+  commit(tracker, "https://staging.example.test/dashboard?tab=details");
+  tracker.onFrameNavigated({ url: () => "https://staging.example.test/products" });
+  commit(tracker, "https://staging.example.test/products");
   assert.deepEqual(outcomes(tracker.settle()), ["abortedScript:SUPERSEDED", "abortedStylesheet:SUPERSEDED"]);
-  // After the commit the new document is live again: its own aborts are critical.
-  assert.equal(tracker.classifyAbort(entry("abortedScript")), "CRITICAL");
+  assert.equal(tracker.classifyAbort(script, entry("abortedScript")), "CRITICAL");
 
-  const failed = createDocumentAbortTracker(page);
-  failed.onRequest(navigation);
-  assert.equal(failed.classifyAbort(entry("abortedScript")), "DEFERRED");
-  failed.onRequestFailed(navigation);
-  assert.deepEqual(outcomes(failed.settle()), ["abortedScript:CRITICAL"]);
+  // Navigation 1 committed, navigation 2 failed: its deferred abort is critical.
+  const twoNavigations = createDocumentAbortTracker(page);
+  twoNavigations.onRequest(navigation("https://staging.example.test/dashboard"));
+  commit(twoNavigations, "https://staging.example.test/dashboard");
+  twoNavigations.settle();
+  const second = chunk();
+  twoNavigations.onRequest(second);
+  const secondNavigation = navigation("https://staging.example.test/products");
+  twoNavigations.onRequest(secondNavigation);
+  assert.equal(twoNavigations.classifyAbort(second, entry("abortedScript")), "DEFERRED");
+  twoNavigations.onRequestFailed(secondNavigation);
+  assert.deepEqual(outcomes(twoNavigations.settle()), ["abortedScript:CRITICAL"]);
 
-  // A 204 navigation response finishes without a commit: the old document is live again.
-  const noCommit = createDocumentAbortTracker(page);
-  noCommit.onRequest(navigation);
-  noCommit.onRequestFinished({ isNavigationRequest: () => false, frame: () => mainFrame });
-  assert.equal(noCommit.classifyAbort(entry("abortedScript")), "DEFERRED");
-  noCommit.onRequestFinished(navigation);
-  assert.deepEqual(outcomes(noCommit.settle()), ["abortedScript:CRITICAL"]);
-  assert.equal(noCommit.classifyAbort(entry("abortedScript")), "CRITICAL");
+  // Same-document history change only: no commit, so critical at settle.
+  const history = createDocumentAbortTracker(page);
+  const historyChunk = chunk();
+  history.onRequest(historyChunk);
+  history.onRequest(navigation("https://staging.example.test/products"));
+  assert.equal(history.classifyAbort(historyChunk, entry("abortedScript")), "DEFERRED");
+  commit(history, "https://staging.example.test/dashboard#details");
+  assert.deepEqual(outcomes(history.settle()), ["abortedScript:CRITICAL"]);
 
-  const pending = createDocumentAbortTracker(page);
-  pending.onRequest(navigation);
-  assert.equal(pending.classifyAbort(entry("abortedScript")), "DEFERRED");
-  assert.deepEqual(pending.settle(), []);
-  assert.deepEqual(outcomes(pending.settle({ final: true })), ["abortedScript:CRITICAL"]);
+  // After the final settle the tracker is closed: later aborts are critical even mid-navigation.
+  const closed = createDocumentAbortTracker(page);
+  const closing = chunk();
+  closed.onRequest(closing);
+  closed.onRequest(navigation("https://staging.example.test/products"));
+  assert.deepEqual(closed.settle({ final: true }), []);
+  closed.onRequest(navigation("https://staging.example.test/billing/plans"));
+  assert.equal(closed.classifyAbort(closing, entry("abortedScript")), "CRITICAL");
 
-  // Subframe navigations and fakes without frame data never defer an abort.
+  // A request reported as pending is not counted again when the next navigation cancels it.
+  const reported = createDocumentAbortTracker(page);
+  const hung = chunk();
+  reported.onRequest(hung);
+  reported.markReported(hung);
+  assert.equal(reported.inflight().length, 0);
+  assert.equal(reported.classifyAbort(hung, entry("abortedScript")), "REPORTED");
+
+  // Subframe navigations, a throwing frame() and fakes without frame data never defer.
   const iframe = createDocumentAbortTracker(page);
-  iframe.onRequest({ isNavigationRequest: () => true, frame: () => ({}) });
-  assert.equal(iframe.classifyAbort(entry("abortedScript")), "CRITICAL");
+  const iframeChunk = chunk();
+  iframe.onRequest(iframeChunk);
+  iframe.onRequest({ url: () => "https://staging.example.test/x", isNavigationRequest: () => true, frame: () => ({}) });
+  assert.equal(iframe.classifyAbort(iframeChunk, entry("abortedScript")), "CRITICAL");
+  const throwing = createDocumentAbortTracker(page);
+  const throwingChunk = chunk();
+  throwing.onRequest(throwingChunk);
+  throwing.onRequest({ url: () => "https://staging.example.test/x", isNavigationRequest: () => true, frame: () => { throw new Error("detached"); } });
+  assert.equal(throwing.classifyAbort(throwingChunk, entry("abortedScript")), "CRITICAL");
   const bare = createDocumentAbortTracker({});
-  bare.onRequest({ url: () => "https://example.test/" });
-  assert.equal(bare.classifyAbort(entry("abortedScript")), "CRITICAL");
+  const bareChunk = chunk();
+  bare.onRequest(bareChunk);
+  bare.onRequest({ url: () => "https://example.test/", isNavigationRequest: () => true, frame: () => null });
+  assert.equal(bare.classifyAbort(bareChunk, entry("abortedScript")), "CRITICAL");
+});
+
+test("critical resource wait lets a slow chunk finish and returns a hung one", async () => {
+  const page = { waitForLoadState: async () => {} };
+  const tracker = createDocumentAbortTracker({}, (request) => isCriticalResourceRequest(request, "staging.example.test"));
+  const request = (type, host = "staging.example.test") => ({ url: () => `https://${host}/_next/static/chunks/a.js`, resourceType: () => type });
+  const slow = request("script");
+  const hung = request("stylesheet");
+  tracker.onRequest(request("image"));
+  tracker.onRequest(request("script", "other.example.test"));
+  tracker.onRequest(slow);
+  setTimeout(() => tracker.onRequestFinished(slow), 40);
+  assert.deepEqual(await waitForCriticalResources(page, tracker, 1_000), []);
+  tracker.onRequest(hung);
+  const started = Date.now();
+  assert.deepEqual(await waitForCriticalResources(page, tracker, 150), [hung]);
+  assert.ok(Date.now() - started < 1_000);
+  assert.equal(classifyPendingCriticalResource(hung), "pendingStylesheet");
+  assert.equal(classifyPendingCriticalResource(slow), "pendingScript");
 });
 
 test("session status categories remain bounded", () => {

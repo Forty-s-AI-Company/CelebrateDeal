@@ -118,11 +118,12 @@ function emptyReport(reason = "NOT_RUN", sourceSha = null) {
     journeys: [],
     browser: {
       pageErrors: 0, sameHost5xx: 0, criticalResourceFailures: 0, navigationInteractionsPassed: 0,
-      criticalResourceFailureCategories: { http4xxScript: 0, http4xxStylesheet: 0, http5xxScript: 0, http5xxStylesheet: 0, abortedScript: 0, abortedStylesheet: 0, networkScript: 0, networkStylesheet: 0 },
+      criticalResourceFailureCategories: { http4xxScript: 0, http4xxStylesheet: 0, http5xxScript: 0, http5xxStylesheet: 0, abortedScript: 0, abortedStylesheet: 0, networkScript: 0, networkStylesheet: 0, pendingScript: 0, pendingStylesheet: 0 },
       firstCriticalResourceFailure: null,
       firstCriticalResourceFailureKind: null,
       // Diagnostic only: requests of a document that a committed navigation replaced.
       supersededDocumentAborts: { script: 0, stylesheet: 0 },
+      firstSupersededDocumentAbort: null,
       navigationFailure: null,
       hydrationInteractionsPassed: 0,
       externalRequestsBlocked: 0, unsafeRequestsBlocked: 0,
@@ -303,69 +304,124 @@ export function classifyCriticalResourceFailureKind(request) {
   return "OTHER_NETWORK";
 }
 
+// Upper bound for one document's same-host scripts and stylesheets to finish before the
+// runner leaves it. Staging chunks normally finish well under a second.
+export const CRITICAL_RESOURCE_SETTLE_TIMEOUT_MS = 10_000;
+
+/** Same-host JavaScript or stylesheet: the resources whose loss breaks a page. */
+export function isCriticalResourceRequest(request, targetHost = STAGING_ALIAS) {
+  try {
+    return ["script", "stylesheet"].includes(request.resourceType()) && new URL(request.url()).hostname === targetHost;
+  } catch { return false; }
+}
+
+/** Fixed category for a critical request that never finished within the settle bound. */
+export function classifyPendingCriticalResource(request) {
+  try { return request.resourceType() === "stylesheet" ? "pendingStylesheet" : "pendingScript"; } catch { return "pendingScript"; }
+}
+
 /**
  * 2026-11-18 runs 44256624407 and 44257523657: the only failure was one `abortedScript` in
- * PAGE_NAVIGATION. The runner moves on after DOMContentLoaded and the SSR assertions, while
- * the previous page's async chunks (and its link prefetches) may still be downloading.
- * `page.goto` then replaces that document and Chromium cancels its in-flight requests with
- * net::ERR_ABORTED. Those requests belong to a document nobody asserts on any more; the new
- * document requests its own chunks, and any failure of those still counts.
+ * PAGE_NAVIGATION. The runner left each page after DOMContentLoaded and the SSR assertions
+ * while that page's own async chunks were still downloading; `page.goto` replaced the
+ * document and Chromium cancelled them with net::ERR_ABORTED. The next page does not
+ * request the previous page's route chunks again, so forgiving such an abort would also
+ * hide a chunk that hung. The runner therefore waits (bounded) for every in-flight
+ * critical request of a page before it leaves it; one still running at the bound is a
+ * critical `pending*` failure (see waitForCriticalResources).
  *
- * Tracks main-frame document navigations so an aborted request can be attributed:
- *  - aborted while no document navigation was pending: the live document lost a resource,
- *    so it is critical at once;
- *  - aborted while a navigation was pending: decided later. Chromium reports the aborts
- *    before `framenavigated`, so the tracker keeps them until the navigation either commits
- *    (the request belonged to the replaced document: SUPERSEDED, diagnostic only) or ends
- *    without committing (the old document stays, so the abort is CRITICAL).
- * Non-abort failures and 4xx/5xx responses never go through this tracker.
+ * This tracker is the narrow remainder. It records the critical requests in flight and
+ * main-frame document navigations, and decides an ERR_ABORTED:
+ *  - SUPERSEDED (diagnostic only) only when the request was already in flight when the
+ *    navigation request was sent AND that navigation then committed (main frame navigated
+ *    to the navigation's final URL, so pushState/replaceState/hash changes never count).
+ *    Chromium reports these aborts before `framenavigated`, so they wait for `settle`.
+ *  - CRITICAL in every other case: no navigation pending, a request started after the
+ *    navigation began, a navigation that failed or never committed, or any abort after the
+ *    final settle (the tracker is then closed).
+ * Non-abort failures and 4xx/5xx responses never come here; they are critical at once.
  */
-export function createDocumentAbortTracker(page) {
+export function createDocumentAbortTracker(page, isTracked = () => true) {
   const mainFrame = () => (typeof page.mainFrame === "function" ? page.mainFrame() : null);
-  const isMainDocumentNavigation = (request) => typeof request.isNavigationRequest === "function"
-    && request.isNavigationRequest() && typeof request.frame === "function" && request.frame() === mainFrame();
+  const isMainDocumentNavigation = (request) => {
+    try {
+      return typeof request.isNavigationRequest === "function" && request.isNavigationRequest() === true
+        && typeof request.frame === "function" && request.frame() === mainFrame() && mainFrame() !== null;
+    } catch { return false; }
+  };
+  const inflight = new Set();
+  const reported = new WeakSet();
   let started = 0;
   let committed = 0;
   let pending = false;
+  let pendingUrl = null;
+  let inflightAtNavigation = new Set();
   let deferred = [];
+  let closed = false;
   return {
     onRequest(request) {
-      if (!isMainDocumentNavigation(request)) return;
-      started += 1;
-      pending = true;
+      if (isMainDocumentNavigation(request)) {
+        // A redirect hop keeps the first hop's snapshot; only its final URL can commit.
+        if (!pending) inflightAtNavigation = new Set(inflight);
+        started += 1;
+        pending = true;
+        try { pendingUrl = request.url(); } catch { pendingUrl = null; }
+        return;
+      }
+      if (isTracked(request)) inflight.add(request);
+    },
+    onRequestFinished(request) { inflight.delete(request); },
+    onRequestFailed(request) {
+      inflight.delete(request);
+      if (isMainDocumentNavigation(request)) pending = false;
     },
     onFrameNavigated(frame) {
-      if (!pending || frame !== mainFrame()) return;
+      let url = null;
+      try { url = frame.url(); } catch { /* fail closed: no commit */ }
+      if (!pending || frame !== mainFrame() || url === null || url !== pendingUrl) return;
       committed = started;
       pending = false;
     },
-    // A navigation response that finished or failed without a commit (204, download, network
-    // error) leaves the old document live; its later aborts must not wait for a commit.
-    onRequestFailed(request) {
-      if (isMainDocumentNavigation(request)) pending = false;
-    },
-    onRequestFinished(request) {
-      if (isMainDocumentNavigation(request)) pending = false;
-    },
-    /** Returns "CRITICAL" now, or "DEFERRED" when a pending navigation decides it. */
-    classifyAbort(entry) {
-      if (!pending) return "CRITICAL";
+    /** Critical requests still running, in request order. */
+    inflight() { return [...inflight]; },
+    /** A request already reported as pending is not reported again when it is cancelled. */
+    markReported(request) { reported.add(request); inflight.delete(request); },
+    /** "REPORTED", "CRITICAL" now, or "DEFERRED" until the pending navigation is decided. */
+    classifyAbort(request, entry) {
+      if (reported.has(request)) return "REPORTED";
+      if (closed || !pending || !inflightAtNavigation.has(request)) return "CRITICAL";
       deferred.push({ ...entry, navigation: started });
       return "DEFERRED";
     },
-    /** `final` also resolves entries whose navigation is still pending (fail closed). */
+    /**
+     * Call only once the navigation has resolved (after `goto`/`waitForURL`, or at the end).
+     * An entry whose navigation did not commit is CRITICAL; `final` closes the tracker.
+     */
     settle({ final = false } = {}) {
-      const decided = [];
-      const kept = [];
-      for (const entry of deferred) {
-        if (committed >= entry.navigation) decided.push({ entry, outcome: "SUPERSEDED" });
-        else if (final || !pending) decided.push({ entry, outcome: "CRITICAL" });
-        else kept.push(entry);
-      }
-      deferred = kept;
+      const decided = deferred.map((entry) => ({ entry, outcome: committed >= entry.navigation ? "SUPERSEDED" : "CRITICAL" }));
+      deferred = [];
+      pending = false;
+      inflightAtNavigation = new Set();
+      if (final) closed = true;
       return decided;
     },
   };
+}
+
+/**
+ * Wait (bounded) for the page's load event and for every in-flight critical request to
+ * finish or fail. Returns the requests still running at the bound; the caller reports
+ * them as critical. A slow chunk that finishes in time passes; a hung one blocks.
+ */
+export async function waitForCriticalResources(page, tracker, timeoutMs = CRITICAL_RESOURCE_SETTLE_TIMEOUT_MS) {
+  const deadline = Date.now() + timeoutMs;
+  if (typeof page.waitForLoadState === "function") {
+    await page.waitForLoadState("load", { timeout: timeoutMs }).catch(() => {});
+  }
+  while (tracker.inflight().length > 0 && Date.now() < deadline) {
+    await new Promise((resolve) => { setTimeout(resolve, 50); });
+  }
+  return tracker.inflight();
 }
 
 /** A failed same-host JavaScript or stylesheet request invalidates SSR-only success. */
@@ -548,6 +604,9 @@ export async function runBrowserSmoke(env = process.env, dependencies = {}) {
   let cleanupFailed = false;
   let activeStep = "NONE";
   let activePage = null;
+  let failureSequence = 0;
+  let firstCriticalSequence = null;
+  const resourceSettleTimeoutMs = dependencies.resourceSettleTimeoutMs ?? CRITICAL_RESOURCE_SETTLE_TIMEOUT_MS;
   try {
     for (const viewport of [{ id: "desktop", width: 1365, height: 768 }, { id: "mobile", width: 390, height: 844 }]) {
       report.browser.activeViewport = viewport.id;
@@ -637,19 +696,38 @@ export async function runBrowserSmoke(env = process.env, dependencies = {}) {
           phase: report.browser.executionPhase,
           viewport: report.browser.activeViewport, route: report.browser.activeRoute,
         });
-        const recordCriticalResourceFailure = (category, failureContext = currentFailureContext(), kind = null) => {
+        // Every failure takes its sequence number when it happens, so a deferred abort that is
+        // decided later still ranks by when it occurred for firstCriticalResourceFailure.
+        const nextFailureSequence = () => { failureSequence += 1; return failureSequence; };
+        const recordCriticalResourceFailure = (category, failureContext = currentFailureContext(), kind = null, sequence = nextFailureSequence()) => {
           if (!category) return;
           report.browser.criticalResourceFailures += 1;
           report.browser.criticalResourceFailureCategories[category] += 1;
-          if (report.browser.firstCriticalResourceFailure === null && kind) report.browser.firstCriticalResourceFailureKind = kind;
-          report.browser.firstCriticalResourceFailure ??= { category, ...failureContext };
+          if (firstCriticalSequence === null || sequence < firstCriticalSequence) {
+            firstCriticalSequence = sequence;
+            report.browser.firstCriticalResourceFailure = { category, ...failureContext };
+            report.browser.firstCriticalResourceFailureKind = kind;
+          }
         };
-        const documentAborts = createDocumentAbortTracker(page);
+        const documentAborts = createDocumentAbortTracker(page, (request) => isCriticalResourceRequest(request, targetHost));
         const settleDocumentAborts = (options) => {
           for (const { entry, outcome } of documentAborts.settle(options)) {
-            if (outcome === "SUPERSEDED") report.browser.supersededDocumentAborts[entry.category === "abortedScript" ? "script" : "stylesheet"] += 1;
-            else recordCriticalResourceFailure(entry.category, entry.failureContext, entry.kind);
+            if (outcome === "SUPERSEDED") {
+              report.browser.supersededDocumentAborts[entry.category === "abortedScript" ? "script" : "stylesheet"] += 1;
+              report.browser.firstSupersededDocumentAbort ??= { category: entry.category, ...entry.failureContext };
+            } else recordCriticalResourceFailure(entry.category, entry.failureContext, entry.kind, entry.sequence);
           }
+        };
+        // Leave a document only after its scripts and stylesheets finished (bounded wait).
+        const waitForPageResources = async () => {
+          const previousPhase = report.browser.executionPhase;
+          report.browser.executionPhase = "RESOURCE_SETTLE";
+          const stillPending = await waitForCriticalResources(page, documentAborts, resourceSettleTimeoutMs);
+          for (const request of stillPending) {
+            documentAborts.markReported(request);
+            recordCriticalResourceFailure(classifyPendingCriticalResource(request), currentFailureContext(), "PENDING");
+          }
+          report.browser.executionPhase = previousPhase;
         };
         settlePageDocumentAborts = settleDocumentAborts;
         page.on("request", (request) => documentAborts.onRequest(request));
@@ -672,13 +750,16 @@ export async function runBrowserSmoke(env = process.env, dependencies = {}) {
         });
         page.on("requestfailed", (request) => {
           if (isDashboardDetailsGet(request, targetHost)) dashboardDetailsNetwork.failures += 1;
-          documentAborts.onRequestFailed(request);
           const category = classifyCriticalResourceRequestFailure(request, targetHost);
-          if (!category) return;
-          const kind = classifyCriticalResourceFailureKind(request);
-          if (kind === "ABORTED"
-            && documentAborts.classifyAbort({ category, kind, failureContext: currentFailureContext() }) === "DEFERRED") return;
-          recordCriticalResourceFailure(category, currentFailureContext(), kind);
+          const kind = category ? classifyCriticalResourceFailureKind(request) : null;
+          const sequence = category ? nextFailureSequence() : null;
+          // Only ERR_ABORTED may be deferred; every other network failure is critical at once.
+          const abortOutcome = kind === "ABORTED"
+            ? documentAborts.classifyAbort(request, { category, kind, sequence, failureContext: currentFailureContext() })
+            : null;
+          documentAborts.onRequestFailed(request);
+          if (!category || abortOutcome === "DEFERRED" || abortOutcome === "REPORTED") return;
+          recordCriticalResourceFailure(category, currentFailureContext(), kind, sequence);
         });
         page.on("requestfinished", (request) => {
           if (isDashboardDetailsGet(request, targetHost)) dashboardDetailsNetwork.finished += 1;
@@ -759,6 +840,8 @@ export async function runBrowserSmoke(env = process.env, dependencies = {}) {
             activeStep = "NONE";
             report.browser.hydrationInteractionsPassed += 1;
           }
+          // Before the next goto or the app-shell click replaces or reroutes this document.
+          await waitForPageResources();
         }
         // This read-only navigation must work through the rendered app shell.
         report.browser.executionPhase = "APP_NAVIGATION";
@@ -782,6 +865,8 @@ export async function runBrowserSmoke(env = process.env, dependencies = {}) {
         const navigationPassed = classifyFinalPath(page.url(), "/products", targetHost) === "EXPECTED"
           && await visible(page.getByRole("heading", { name: PRODUCTS_HEADING, exact: true }));
         if (navigationPassed) report.browser.navigationInteractionsPassed += 1;
+        // The landed /products route must finish its chunks too, before the context closes.
+        await waitForPageResources();
       } catch (error) {
         // Capture while the page is still open; the context closes in finally.
         report.browser.failureStep = browserFailureStep(activeStep);
