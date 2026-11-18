@@ -5,7 +5,7 @@ import { diagnoseStagingAliasBindingWithFallback, diagnoseStagingPreviewBinding 
 
 import { appNavigationSelectorForViewport, classifyBrowserExecutionFailure, classifyBrowserRequest, classifyCriticalResourceFailureKind, classifyCriticalResourceRequestFailure, classifyCriticalResourceResponse, classifyFinalPath, classifySessionStatus, classifyUnsafeRequestDetail, classifyUnsafeRequestPath, diagnoseStagingAliasBinding, hasActionableDashboardAlert, isCriticalResourceFailure, isDashboardDetailsGet, isFailedCriticalResourceRequest, runBrowserSmoke, validateBrowserSmokeBinding, verifyStagingAliasBinding } from "./staging-browser-smoke.mjs";
 
-import { browserFailureStep, captureFailureDom, classifyFailurePath, elementHydratedInPage, MOBILE_NAV_MORE_BUTTON, MOBILE_NAV_PRODUCTS_LINK, waitForFulfillmentHydration, waitForMobileNavHydration } from "./staging-browser-smoke.mjs";
+import { browserFailureStep, captureFailureDom, classifyFailurePath, createDocumentAbortTracker, elementHydratedInPage, MOBILE_NAV_MORE_BUTTON, MOBILE_NAV_PRODUCTS_LINK, waitForFulfillmentHydration, waitForMobileNavHydration } from "./staging-browser-smoke.mjs";
 
 test("failure diagnostics stay inside fixed step and route vocabularies", () => {
   const alias = "celebrate-deal-staging.carry-digital-nomad.in.net";
@@ -251,6 +251,7 @@ test("a rendered journey remains blocked when an unexpected browser POST occurs"
   let triggerChunk404 = false;
   let triggerChunkNetworkFailure = false;
   let triggerNavigationAbort = false;
+  let abortScenario = null;
   let timeoutStage = null;
   const sessionRequests = [];
   const interactions = [];
@@ -268,14 +269,28 @@ test("a rendered journey remains blocked when an unexpected browser POST occurs"
           delete: async (url, options) => { sessionRequests.push({ method: "DELETE", url, options }); return { status: () => cleanupStatus, dispose: async () => {} }; },
         },
         newPage: async () => {
-          let onResponse = () => {};
-          let onRequestFailed = () => {};
-          let onRequest = () => {};
+          const listeners = new Map();
+          const emit = (event) => (payload) => { for (const callback of listeners.get(event) ?? []) callback(payload); };
+          const onResponse = emit("response");
+          const onRequestFailed = emit("requestfailed");
+          const onRequest = emit("request");
+          const onFrameNavigated = emit("framenavigated");
+          const mainFrame = { id: "main" };
+          const subFrame = { id: "iframe" };
+          // A main-frame document navigation as Chromium reports it: request, then the old
+          // document's cancelled loads, then the commit.
+          const navigationRequest = (url, frame = mainFrame) => ({
+            url: () => url, resourceType: () => "document", isNavigationRequest: () => true, frame: () => frame,
+          });
+          const failedScript = (errorText) => ({
+            url: () => `${origin}/_next/static/chunks/app.js`, resourceType: () => "script",
+            isNavigationRequest: () => false, frame: () => mainFrame,
+            failure: () => (errorText ? { errorText } : null),
+          });
           return {
+          mainFrame: () => mainFrame,
           on: (event, callback) => {
-            if (event === "response") onResponse = callback;
-            if (event === "requestfailed") onRequestFailed = callback;
-            if (event === "request") onRequest = callback;
+            listeners.set(event, [...(listeners.get(event) ?? []), callback]);
           },
           evaluate: async () => timeoutStage === "response" ? {
             readyState: "loading", bodyPresent: true, dashboardShellPresent: true,
@@ -299,6 +314,22 @@ test("a rendered journey remains blocked when an unexpected browser POST occurs"
             if (url.endsWith("/dashboard") && triggerChunkNetworkFailure) onRequestFailed({
               url: () => `${origin}/_next/static/chunks/app.js`, resourceType: () => "script",
             });
+            if (url.endsWith("/products") && abortScenario) {
+              if (abortScenario === "same_document") {
+                // No document navigation is pending: the live document lost its chunk.
+                onRequestFailed(failedScript("net::ERR_ABORTED"));
+              } else {
+                onRequest(navigationRequest(url, abortScenario === "iframe_navigation" ? subFrame : mainFrame));
+                onRequestFailed(failedScript("net::ERR_ABORTED"));
+                if (abortScenario === "navigation_failed") onRequestFailed(navigationRequest(url));
+                if (["superseded", "superseded_reload_404"].includes(abortScenario)) onFrameNavigated(mainFrame);
+                if (abortScenario === "iframe_navigation") onFrameNavigated(subFrame);
+                if (abortScenario === "superseded_reload_404") onResponse({
+                  url: () => `${origin}/_next/static/chunks/app.js`, status: () => 404,
+                  request: () => ({ resourceType: () => "script" }),
+                });
+              }
+            }
             if (url.endsWith("/billing/plans")) {
               await handler({
                 request: () => ({ url: () => `${origin}/api/affiliate-attribution/direct-entry`, method: () => "POST", headers: () => ({ "x-celebratedeal-client": "web", "content-type": "application/json" }), postData: () => null }),
@@ -397,6 +428,49 @@ test("a rendered journey remains blocked when an unexpected browser POST occurs"
   assert.equal(networkFailure.browser.firstCriticalResourceFailureKind, "UNKNOWN");
   assert.equal(networkFailure.result, "BLOCKED");
   triggerChunkNetworkFailure = false;
+  // 2026-11-18 runs 44256624407/44257523657: page.goto to /products replaced the dashboard
+  // document while one of its chunks was still downloading. That cancelled load belongs to
+  // the replaced document and must not block an otherwise passing run.
+  const runAbortScenario = async (scenario) => {
+    abortScenario = scenario;
+    try {
+      return await runBrowserSmoke(INPUT, {
+        verifyLineage: async () => true, verifyAlias: async () => true,
+        playwright: { chromium: { launch: async () => browser } },
+      });
+    } finally { abortScenario = null; }
+  };
+  const superseded = await runAbortScenario("superseded");
+  assert.equal(superseded.result, "PASS");
+  assert.equal(superseded.browser.criticalResourceFailures, 0);
+  assert.equal(superseded.browser.criticalResourceFailureCategories.abortedScript, 0);
+  assert.deepEqual(superseded.browser.supersededDocumentAborts, { script: 2, stylesheet: 0 });
+  assert.equal(superseded.browser.firstCriticalResourceFailure, null);
+  // The replacement document's own chunk still has to load: a 404 after the cancel blocks.
+  const reloadFailed = await runAbortScenario("superseded_reload_404");
+  assert.equal(reloadFailed.result, "BLOCKED");
+  assert.equal(reloadFailed.browser.criticalResourceFailureCategories.http4xxScript, 2);
+  assert.equal(reloadFailed.browser.criticalResourceFailureCategories.abortedScript, 0);
+  assert.deepEqual(reloadFailed.browser.supersededDocumentAborts, { script: 2, stylesheet: 0 });
+  // Aborted with no document navigation pending: the live document lost a chunk.
+  const sameDocument = await runAbortScenario("same_document");
+  assert.equal(sameDocument.result, "BLOCKED");
+  assert.equal(sameDocument.browser.criticalResourceFailureCategories.abortedScript, 2);
+  assert.equal(sameDocument.browser.firstCriticalResourceFailureKind, "ABORTED");
+  assert.deepEqual(sameDocument.browser.firstCriticalResourceFailure,
+    { category: "abortedScript", phase: "PAGE_NAVIGATION", viewport: "desktop", route: "products" });
+  assert.deepEqual(sameDocument.browser.supersededDocumentAborts, { script: 0, stylesheet: 0 });
+  // The navigation never committed (failed, still pending at the end, or only an iframe
+  // navigated): the old document stays, so its cancelled chunk is critical.
+  for (const scenario of ["navigation_failed", "pending_at_end", "iframe_navigation"]) {
+    const uncommitted = await runAbortScenario(scenario);
+    assert.equal(uncommitted.result, "BLOCKED", scenario);
+    assert.equal(uncommitted.browser.criticalResourceFailureCategories.abortedScript, 2, scenario);
+    assert.equal(uncommitted.browser.firstCriticalResourceFailureKind, "ABORTED", scenario);
+    assert.deepEqual(uncommitted.browser.firstCriticalResourceFailure,
+      { category: "abortedScript", phase: "PAGE_NAVIGATION", viewport: "desktop", route: "products" }, scenario);
+    assert.deepEqual(uncommitted.browser.supersededDocumentAborts, { script: 0, stylesheet: 0 }, scenario);
+  }
   let aliasChecks = 0;
   const aliasDriftAfterSession = await runBrowserSmoke(INPUT, {
     verifyLineage: async () => true,
@@ -559,6 +633,59 @@ test("a failed JavaScript chunk invalidates an otherwise rendered journey", () =
   const playwrightReset = { ...playwrightAbort, failure: () => ({ errorText: "net::ERR_CONNECTION_RESET" }) };
   assert.equal(classifyCriticalResourceRequestFailure(playwrightReset), "networkScript");
   assert.equal(classifyCriticalResourceFailureKind(playwrightReset), "CONNECTION_RESET");
+});
+
+test("document abort tracker only forgives loads of a document that a navigation replaced", () => {
+  const mainFrame = {};
+  const page = { mainFrame: () => mainFrame };
+  const navigation = { isNavigationRequest: () => true, frame: () => mainFrame };
+  const entry = (category) => ({ category, kind: "ABORTED", failureContext: { phase: "PAGE_NAVIGATION" } });
+  const outcomes = (decided) => decided.map(({ entry: item, outcome }) => `${item.category}:${outcome}`);
+
+  const tracker = createDocumentAbortTracker(page);
+  assert.equal(tracker.classifyAbort(entry("abortedScript")), "CRITICAL");
+  tracker.onRequest(navigation);
+  // A redirect hop is another navigation request of the same pending navigation.
+  tracker.onRequest(navigation);
+  assert.equal(tracker.classifyAbort(entry("abortedScript")), "DEFERRED");
+  assert.equal(tracker.classifyAbort(entry("abortedStylesheet")), "DEFERRED");
+  // Chromium reports the cancelled loads before the commit; nothing is decided yet.
+  assert.deepEqual(tracker.settle(), []);
+  tracker.onFrameNavigated({});
+  assert.deepEqual(tracker.settle(), []);
+  tracker.onFrameNavigated(mainFrame);
+  assert.deepEqual(outcomes(tracker.settle()), ["abortedScript:SUPERSEDED", "abortedStylesheet:SUPERSEDED"]);
+  // After the commit the new document is live again: its own aborts are critical.
+  assert.equal(tracker.classifyAbort(entry("abortedScript")), "CRITICAL");
+
+  const failed = createDocumentAbortTracker(page);
+  failed.onRequest(navigation);
+  assert.equal(failed.classifyAbort(entry("abortedScript")), "DEFERRED");
+  failed.onRequestFailed(navigation);
+  assert.deepEqual(outcomes(failed.settle()), ["abortedScript:CRITICAL"]);
+
+  // A 204 navigation response finishes without a commit: the old document is live again.
+  const noCommit = createDocumentAbortTracker(page);
+  noCommit.onRequest(navigation);
+  noCommit.onRequestFinished({ isNavigationRequest: () => false, frame: () => mainFrame });
+  assert.equal(noCommit.classifyAbort(entry("abortedScript")), "DEFERRED");
+  noCommit.onRequestFinished(navigation);
+  assert.deepEqual(outcomes(noCommit.settle()), ["abortedScript:CRITICAL"]);
+  assert.equal(noCommit.classifyAbort(entry("abortedScript")), "CRITICAL");
+
+  const pending = createDocumentAbortTracker(page);
+  pending.onRequest(navigation);
+  assert.equal(pending.classifyAbort(entry("abortedScript")), "DEFERRED");
+  assert.deepEqual(pending.settle(), []);
+  assert.deepEqual(outcomes(pending.settle({ final: true })), ["abortedScript:CRITICAL"]);
+
+  // Subframe navigations and fakes without frame data never defer an abort.
+  const iframe = createDocumentAbortTracker(page);
+  iframe.onRequest({ isNavigationRequest: () => true, frame: () => ({}) });
+  assert.equal(iframe.classifyAbort(entry("abortedScript")), "CRITICAL");
+  const bare = createDocumentAbortTracker({});
+  bare.onRequest({ url: () => "https://example.test/" });
+  assert.equal(bare.classifyAbort(entry("abortedScript")), "CRITICAL");
 });
 
 test("session status categories remain bounded", () => {
