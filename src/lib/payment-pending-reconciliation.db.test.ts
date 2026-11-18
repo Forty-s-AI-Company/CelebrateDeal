@@ -580,16 +580,53 @@ describe("PayUni pending-payment reconciler (A-2 05)", () => {
     expect(provider.calls).toHaveLength(1);
   });
 
-  it("lets only one of two overlapping runs query a payment", async () => {
+  it("lets only one of two overlapping runs query a payment, on the first claim and on a later one", async () => {
     const t = await tenant("overlap");
     const c = await checkout(t);
 
-    const [first, second] = await Promise.all([reconcile(), reconcile()]);
+    // Both runs must see the payment as due before either claims it: each run's
+    // scan waits at a two-party barrier, so the overlap is certain on any
+    // scheduler (CI ran the second scan only after the first run had finished).
+    const overlapping = () => {
+      let arrived = 0;
+      let release!: () => void;
+      const bothScanned = new Promise<void>((resolve) => { release = resolve; });
+      const client = new Proxy(db, {
+        get(object, property) {
+          const value = Reflect.get(object, property);
+          if (property === "$queryRaw") {
+            return async (...args: Parameters<typeof db.$queryRaw>) => {
+              const rows = await db.$queryRaw(...args);
+              arrived += 1;
+              if (arrived === 2) release();
+              await bothScanned;
+              return rows;
+            };
+          }
+          return typeof value === "function" ? value.bind(object) : value;
+        },
+      });
+      return client as typeof db;
+    };
 
+    // First claim: both runs try to create the reconciliation row.
+    const firstRound = overlapping();
+    const [first, second] = await Promise.all([reconcile({ db: firstRound }), reconcile({ db: firstRound })]);
+    expect([first.candidates, second.candidates]).toEqual([1, 1]);
     expect(first.notFound + second.notFound).toBe(1);
     expect(first.claimedElsewhere + second.claimedElsewhere).toBe(1);
     expect(provider.calls).toEqual([c.orderNumber]);
     await expect(reconciliationRow(c)).resolves.toMatchObject({ attempts: 1 });
+
+    // A later claim: both runs try the conditional update of the same due row.
+    const later = new Date(Date.now() + paymentReconcileDelayMs(1) + MINUTE);
+    const secondRound = overlapping();
+    const [third, fourth] = await Promise.all([reconcile({ db: secondRound, now: later }), reconcile({ db: secondRound, now: later })]);
+    expect([third.candidates, fourth.candidates]).toEqual([1, 1]);
+    expect(third.notFound + fourth.notFound).toBe(1);
+    expect(third.claimedElsewhere + fourth.claimedElsewhere).toBe(1);
+    expect(provider.calls).toEqual([c.orderNumber, c.orderNumber]);
+    await expect(reconciliationRow(c)).resolves.toMatchObject({ attempts: 2 });
   });
 
   it("does nothing when PayUni is not configured on the deployment", async () => {
