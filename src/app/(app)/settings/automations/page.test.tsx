@@ -190,6 +190,24 @@ describe("AutomationSettingsPage", () => {
     expect(html).toContain("同一筆報名在不同場次的觀看時間會累加");
     // 「高意向追單漏斗」 stays out: its trigger runs now, its condition does not.
     expect(html).not.toContain("高意向追單漏斗");
+    // #651 review MINOR-2 / MINOR-3: a busy round may delay it; one person through two forms runs once.
+    expect(html).toContain("同時達到門檻的人多時可能延後幾輪才執行");
+    expect(html).toContain("同一個 Email 用不同表單報名同一場直播也只執行一次");
+  });
+
+  it("gives each watch trigger's note on the create form its own paragraph under its name (#651 review NIT-2)", async () => {
+    durationGranted(["automation_watch_duration", "automation_watch_progress"]);
+    mocks.rules.mockResolvedValue([]);
+    const html = await render();
+    const note = (trigger: string) => html.match(new RegExp(`<p[^>]*data-trigger-note="${trigger}"[^>]*>([\\s\\S]*?)</p>`, "u"))?.[1] ?? "";
+    const progressNote = note("viewer_watch_progress");
+    const durationNote = note("webinar_attended_duration_gte");
+    expect(progressNote).toMatch(/^<span[^>]*>觀看直播達到指定進度：<\/span>/u);
+    expect(progressNote).toContain("觀看進度＝");
+    expect(progressNote).not.toContain("累計觀看時間＝");
+    expect(durationNote).toMatch(/^<span[^>]*>觀看直播累計達指定時間：<\/span>/u);
+    expect(durationNote).toContain("累計觀看時間＝");
+    expect(durationNote).not.toContain("觀看進度＝");
   });
 
   it("lists a minutes rule as running with a minutes dry-run, and a legacy seconds rule as not running (Q-11)", async () => {

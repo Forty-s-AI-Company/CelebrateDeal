@@ -12,6 +12,7 @@ import {
   automationTriggerSupportsDelayedSteps,
   executeAutomationStep,
   plannedAutomationStepEmailCount,
+  isAutomationRuleRunnableForVendor,
   isAutomationTriggerAvailableForVendor,
   formNoShowWebinarUrl,
   AUTOMATION_REPLAY_VIDEO_SELECT,
@@ -929,8 +930,8 @@ async function withLockedRule(
   try {
     return await db.$transaction(async (tx) => {
       await tx.$executeRaw`SET LOCAL lock_timeout = '5s'`;
-      const locked = await tx.$queryRaw<Array<{ id: string; trigger: string }>>`
-        SELECT "id", "trigger" FROM "AutomationRule" WHERE "id" = ${input.ruleId} AND "vendorId" = ${input.vendorId} FOR UPDATE
+      const locked = await tx.$queryRaw<Array<{ id: string; trigger: string; condition: unknown }>>`
+        SELECT "id", "trigger", "condition" FROM "AutomationRule" WHERE "id" = ${input.ruleId} AND "vendorId" = ${input.vendorId} FOR UPDATE
       `;
       const rule = locked[0];
       if (!rule) throw new StepChangeRejected("not_found");
@@ -939,7 +940,9 @@ async function withLockedRule(
         const vendor = automationTriggerBetaFeature(rule.trigger)
           ? await tx.vendor.findUnique({ where: { id: input.vendorId }, select: { betaFeatureGrants: true } })
           : null;
-        if (!isAutomationTriggerAvailableForVendor(rule.trigger, vendor)) throw new StepChangeRejected("trigger_unavailable");
+        // ... and a condition its trigger runs (#651 review MINOR-5): a watch rule saved with the old
+        // watch-seconds condition never runs, so its steps are not added or edited either (deleting stays allowed).
+        if (!isAutomationRuleRunnableForVendor(rule, vendor)) throw new StepChangeRejected("trigger_unavailable");
       }
       // Every available trigger takes delayed steps since Q-09 (payment_paid); kept as a guard for a trigger that does not.
       if (input.requireAvailableTrigger && !automationTriggerSupportsDelayedSteps(rule.trigger)) throw new StepChangeRejected("steps_unsupported");

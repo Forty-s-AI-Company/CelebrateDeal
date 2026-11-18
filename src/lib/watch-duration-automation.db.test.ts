@@ -79,11 +79,11 @@ function live(t: Tenant, data: Partial<Prisma.LiveUncheckedCreateInput> = {}) {
   });
 }
 
-function registrant(t: Tenant, liveId: string, options: { verified?: boolean; email?: string } = {}) {
+function registrant(t: Tenant, liveId: string, options: { verified?: boolean; email?: string; formId?: string } = {}) {
   const verified = options.verified ?? true;
   return db.formSubmission.create({
     data: {
-      formId: t.form.id,
+      formId: options.formId ?? t.form.id,
       liveId,
       name: "王小明",
       email: options.email ?? `lead-${randomUUID().slice(0, 8)}@example.test`,
@@ -408,5 +408,81 @@ describe("觀看直播累計達指定時間 (Q-11 webinar_attended_duration_gte)
     expect((await logsOf(b)).length).toBe(2);
     expect((await logsOf(a)).length + (await logsOf(a, "viewer_watch_progress")).length).toBe(2);
     await expect(run([a, b])).resolves.toMatchObject({ completed: 2 });
+  });
+
+  it("still fires the minutes events when the vendor's percentage scan throws (#651 review MINOR-1)", async () => {
+    const t = await tenant(["automation_watch_duration", "automation_watch_progress"]);
+    await durationRule(t, 15);
+    await progressRule(t, 10);
+    const session = await live(t);
+    const lead = await registrant(t, session.id);
+    await progress(t, session.id, lead.id, 30 * 60);
+    // Only the percentage scan reads Lives (their length); make that read fail.
+    const failingLives = new Proxy(db, {
+      get(target, property) {
+        if (property === "live") return { findMany: () => Promise.reject(new Error("synthetic live read failure")) };
+        const value = Reflect.get(target, property) as unknown;
+        return typeof value === "function" ? (value as (...args: unknown[]) => unknown).bind(target) : value;
+      },
+    });
+    await expect(runWatchProgressAutomation({ db: failingLives as never, vendorIds: [t.vendor.id] })).resolves.toMatchObject({ vendors: 1, errors: 1, completed: 1 });
+    expect((await logsOf(t)).map((log) => log.eventId)).toEqual([watchDurationEventId(lead.id, 15)]);
+    expect(await logsOf(t, "viewer_watch_progress")).toEqual([]);
+    expect(monitoring.captureOperationalError).toHaveBeenCalledWith(expect.any(Error), { source: "watch_progress_automation", operation: "vendor_scan" }, undefined);
+    // The next healthy run picks the percentage event up.
+    await expect(run([t])).resolves.toMatchObject({ errors: 0, completed: 1 });
+    expect(await logsOf(t, "viewer_watch_progress")).toHaveLength(1);
+  });
+
+  it("orders minutes events by when the threshold was crossed, so a viewer still watching is not pushed back (#651 review MINOR-2)", async () => {
+    const t = await tenant();
+    await durationRule(t, 15);
+    const session = await live(t);
+    // Crossed 15 minutes about 45 minutes ago and is still watching (credited a minute ago).
+    const longWatcher = await registrant(t, session.id);
+    await progress(t, session.id, longWatcher.id, 60 * 60, ago(MINUTE));
+    // Crossed it about 10 minutes ago, then left.
+    const leftEarly = await registrant(t, session.id);
+    await progress(t, session.id, leftEarly.id, 15 * 60, ago(10 * MINUTE));
+    await expect(run([t], { limit: 1 })).resolves.toMatchObject({ candidates: 1, completed: 1 });
+    expect((await logsOf(t)).map((log) => log.eventId)).toEqual([watchDurationEventId(longWatcher.id, 15)]);
+    await expect(run([t], { limit: 1 })).resolves.toMatchObject({ completed: 1 });
+    expect((await logsOf(t)).map((log) => log.eventId)).toEqual([watchDurationEventId(longWatcher.id, 15), watchDurationEventId(leftEarly.id, 15)]);
+  });
+
+  it("runs a rule once for one person registered through two forms for the same Live, in one run or across runs, for both watch triggers (#651 review MINOR-3)", async () => {
+    const t = await tenant(["automation_watch_duration", "automation_watch_progress"]);
+    const product = await db.product.create({ data: { vendorId: t.vendor.id, name: "進階課", slug: `duration-product-${randomUUID()}`, priceCents: 100_000, isActive: true } });
+    const voucher = { type: "issue_repurchase_voucher", productId: product.id, discountType: "percentage", discountValue: 10, expiresInDays: 3, lineNotification: false };
+    await durationRule(t, 15, { actions: [voucher] });
+    await db.automationRule.create({ data: { vendorId: t.vendor.id, name: "看一半派券", trigger: "viewer_watch_progress", condition: { type: "watch_percent_gte", percent: 10 }, actions: [voucher], updatedAt: ago(5 * HOUR) } });
+    const secondForm = await db.registrationForm.create({
+      data: { vendorId: t.vendor.id, name: "第二張報名表", slug: `duration-form-2-${randomUUID().slice(0, 8)}`, headline: "報名", fields: [{ key: "email", label: "Email", type: "email", required: true }] },
+    });
+    const session = await live(t);
+    const email = `same-${randomUUID().slice(0, 8)}@example.test`;
+    const viaFirst = await registrant(t, session.id, { email });
+    const viaSecond = await registrant(t, session.id, { email, formId: secondForm.id });
+    const someoneElse = await registrant(t, session.id, { formId: secondForm.id });
+    // Both registrations of the person cross the thresholds before the same run.
+    await progress(t, session.id, viaFirst.id, 30 * 60, ago(10 * MINUTE));
+    await progress(t, session.id, viaSecond.id, 30 * 60, ago(9 * MINUTE));
+    await progress(t, session.id, someoneElse.id, 30 * 60, ago(8 * MINUTE));
+    await expect(run([t])).resolves.toMatchObject({ completed: 4 });
+    expect((await logsOf(t)).map((log) => log.eventId).sort()).toEqual([watchDurationEventId(viaFirst.id, 15), watchDurationEventId(someoneElse.id, 15)].sort());
+    expect((await logsOf(t, "viewer_watch_progress")).map((log) => log.eventId).sort()).toEqual([watchProgressEventId(viaFirst.id, 10), watchProgressEventId(someoneElse.id, 10)].sort());
+    // Later runs never pick the person's second registration up (the scan's own filter).
+    await expect(run([t])).resolves.toMatchObject({ candidates: 0 });
+    await db.liveWatchProgress.update({ where: { vendorId_formSubmissionId: { vendorId: t.vendor.id, formSubmissionId: viaSecond.id } }, data: { watchedSeconds: 50 * 60, lastCreditedAt: ago(MINUTE) } });
+    await expect(run([t])).resolves.toMatchObject({ candidates: 0 });
+    // One voucher per person and rule: two rules × two people.
+    await expect(db.automationVoucherGrant.count({ where: { vendorId: t.vendor.id } })).resolves.toBe(4);
+
+    // The same person on another Live is another event.
+    const other = await live(t);
+    const onOtherLive = await registrant(t, other.id, { email });
+    await progress(t, other.id, onOtherLive.id, 30 * 60, ago(MINUTE));
+    await expect(run([t])).resolves.toMatchObject({ completed: 2 });
+    expect((await logsOf(t)).map((log) => log.eventId)).toContain(watchDurationEventId(onOtherLive.id, 15));
   });
 });
