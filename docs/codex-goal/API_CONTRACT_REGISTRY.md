@@ -306,3 +306,12 @@
 - `POST /api/live-admission`（Q-11 `viewer_watch_progress`）：放行入場且 `admitLiveViewer` 回傳觀眾自己的場次正在播放（`runtimeState === "playing"`，回放不算）時，同一筆以 cookie 選出的 `VERIFIED` 報名另在 `LiveWatchProgress` 累計觀看秒數（`creditLiveWatchProgress`：資料庫時鐘，距上次滿 25 秒才寫，間隔不超過 120 秒才加上這段時間，每筆報名一個時鐘；指定場次只累計選了這次放行場次的報名）。body 仍是 strict `{ vendorId, liveId }`，不接受秒數或報名 id；同源、120/min 限流不變。寫入失敗只回報監控（`operation: "watch_progress"`），回應不變。未新增 route。
 - `GET`／`POST /api/jobs/email-deliveries`：每輪在未出席自動化之後、寄送之前執行「觀看直播達到指定進度」自動化（`runWatchProgressAutomation`：只掃有 `automation_watch_progress` 封測授權的商家；每輪最多 50 個事件、商家間輪流；截止 `min(15 秒, 45 秒 − 已用時間)`，不到 3 秒就跳過）。回應新增 `watchProgress`：`{ candidates, examined, completed, failed, errors }`（非負計數），跳過或整段失敗時為 `null`；整段失敗只送監控、不影響其他步驟與 200。未新增 route 或排程。
 - `GET`／`POST /api/jobs/email-deliveries`（Q-11 `webinar_attended_duration_gte`）：同一段 `runWatchProgressAutomation` 也執行「觀看直播累計達指定時間」（只掃有 `automation_watch_duration` 封測授權的商家的分鐘規則；與觀看進度共用每輪 50 個事件、商家輪流與截止時間）。`watchProgress` 的計數包含兩種 trigger，格式不變。未新增 route、排程或回應欄位；`/api/live-admission` 不變（沿用同一份 `LiveWatchProgress`）。
+
+## 2026-11-19 A-2 05 PayUni 付款通知遺失時的主動查詢
+
+| API | 授權 | 輸入與範圍 | 行為與安全契約 | 回應 | 驗證 |
+| --- | --- | --- | --- | --- | --- |
+| `GET /api/jobs/payment-reconcile` | timing-safe `CRON_SECRET`（Vercel Cron 入口；目前沒有註冊 Vercel Cron）；與 `POST` 共用一個 handler | 同 `POST` | 同 `POST` | 同 `POST` | 同 `POST` |
+| `POST /api/jobs/payment-reconcile` | timing-safe `JOB_SECRET`（Cloudflare Worker／GitHub Actions 排程）；`maxDuration` 300 秒 | 無 body、不接受任何 caller 輸入；PayUni 未設定時整輪略過 | 掃建立 15 分鐘到 3 天、仍 `pending`／`expired` 的 PayUni platform 交易（未被人工對帳保留、到期才查），每輪最多 20 筆、商家輪流、40 秒後不再開始新的查詢、單次查詢 10 秒；查詢前以條件更新認領。查到已付款／失敗時組成與 UPP Notify 相同的 payload（event id `TradeNo:TradeStatus`），與回呼共用 `WebhookEvent` claim，再以伺服器 vendor／交易／訂單編號為 expected scope 交給 `processPaymentWebhook`；金額只取自伺服器紀錄，PayUni 金額不符時轉人工；需要人工時寫 `needs_manual_reconciliation` 事件、Sentry 與 AuditLog | 401；200 `{ ok: true, candidates, examined, paid, failed, alreadySettled, inProgress, handedToRetry, inventoryUnavailable, pending, notFound, expired, queryErrors, manualReview, closed, claimedElsewhere, errors, skipped? }`（只有計數）；scan 失敗 503 `{ ok:false, error:"payment_reconcile_failed" }`；全部 `no-store` | `src/app/api/jobs/payment-reconcile/route.test.ts`、`src/lib/payment-providers/payuni-pending-query.test.ts`、`src/lib/payment-pending-reconciliation.db.test.ts`；staging PayUni Sandbox 實測待主對話 |
+
+- `POST /api/webhooks/payments`：事件建立與 claim 移到 `src/lib/payment-webhook-event-claim.ts`（與補單 job 共用），行為不變。

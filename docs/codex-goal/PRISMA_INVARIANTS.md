@@ -960,3 +960,18 @@ Current source inventory: 145 models and 99 forward migrations. Previous checkpo
 - 部署順序：migration 先於程式。舊程式不執行 `webinar_attended_duration_gte`（不在舊的可用清單），所以停用規則的資料 migration 不需要回滾；舊程式不認得 `automation_watch_duration`（`normalizeBetaFeatureGrants` 會忽略）。
 - 回滾：回滾到本 PR 之前的程式時，舊的 job 不再跑分鐘規則（不會誤觸發），但舊 worker 不認得這個 trigger 可以有延遲步驟，會把 `webinar_attended_duration_gte` 規則進行中的延遲步驟**永久**標成 `cancelled / definition_paused`（與 Q-09、#647 回滾相同，重新部署也不會恢復）。要保住進度，回滾前先暫時收回有這種規則的商家的 `automation_delayed_steps` 授權（舊 worker 只撈持有它的商家），重新部署後再開通；只收回 `automation_watch_duration` 擋不住舊 worker（舊 worker 不看這個授權），但能讓新程式在回滾前就停止建立新的進度。兩條 migration 不需要回滾。
 - 目前 166 models、162 forward migrations（含本次兩條）；既有 SQL／checksum 不變。
+
+## 2026-11-19 PayUni 付款通知遺失時的主動查詢（A-2 05）
+
+- `20261119090000_payment_pending_reconciliation`：forward-only、純新增，排在 `20261118100100_automation_watch_duration_grant` 之後；交易層級 `lock_timeout = 5s`。只新增一張表，不改既有欄位、資料或 RLS 政策。
+  - `PaymentPendingReconciliation`：每筆 PayUni 交易最多一列（`@@unique([vendorId, paymentTransactionId])`），記錄補單查詢的狀態：`status`（CHECK `active`／`settled`／`closed`／`needs_manual_review`）、`attempts`（CHECK 0..100；程式上限 `PAYMENT_RECONCILE_MAX_ATTEMPTS = 10`）、`lastQueriedAt`、`nextQueryAt`（也是 claim：查詢前以「目前次數＋已到期」條件往後推）、`lastOutcome`（CHECK `^[a-z_]{1,64}$`，只放固定代碼、不放 PayUni 文字）、`resolvedAt`（CHECK：只有 `active` 為 null）。
+  - 外鍵 `(vendorId, paymentTransactionId) → PaymentTransaction(vendorId, id) ON DELETE CASCADE`：一列只能指向同一商家的交易；交易或商家刪除時一起刪除。索引 `(status, nextQueryAt)`；唯一索引兼作外鍵索引。
+  - `ENABLE ROW LEVEL SECURITY`、沒有 GRANT，與其他 public 表相同（20261020090000）。
+  - 鎖：新表，只對 `PaymentTransaction` 加外鍵時取 SHARE ROW EXCLUSIVE（不掃既有列，新表是空的），瞬間完成；`lock_timeout = 5s` 讓它在等不到鎖時中止，不排在長交易後面擋住結帳。
+- 不變式（應用層，`src/lib/payment-pending-reconciliation.ts`）：
+  - 這張表不保存金額或付款狀態。查到的付款決定只經 `processPaymentWebhook`（同一個 `WebhookEvent` 與 claim、expected scope 綁定伺服器的 vendor／交易／訂單編號）入帳；金額只取自 `PaymentTransaction.grossAmountCents`，PayUni 回傳的金額只拿來比對，不一致時不入帳、轉人工。
+  - 每次寫入都以 `vendorId`＋`paymentTransactionId`（或列 id＋vendorId）綁定，並以 `status = active`＋`attempts` 條件更新，兩個重疊的 run 不會對同一筆重複查詢或覆寫結果。
+  - 人工處理時另寫 `WebhookEvent`（`provider = payuni`、`eventId = manual:reconcile:<訂單編號>:<原因>`、`status = needs_manual_reconciliation`、vendorId 綁定），可能已收款的五種原因另在 pending 交易的 metadata 加 `paymentManualReconciliation`（與回呼的人工對帳保留相同 key），讓庫存逾期不釋放。
+- 測試：`src/lib/payment-pending-reconciliation.db.test.ts`（補單入帳與晚到的回呼重複、與回呼路徑的佣金／庫存／訂單／自動化結果快照相同、回呼與補單同時到達只入帳一次（含查詢中途到達）、跨租戶與複合外鍵、凍結商家、金額不符、失敗與逾期、庫存逾期後的 paid、掃描範圍、退避與上限、簽章錯誤、每輪上限與商家輪流與期限、兩個 run 重疊、未設定 PayUni）、`src/lib/payment-pending-reconciliation-schema-contract.test.ts`（migration 形狀與退避／上限在掃描期間內）。已在 loopback 拋棄式 PostgreSQL 16（`celebratedeal_test`，port 54423）forward-apply 全部 migration；`prisma-drift-check` `ok: true`。
+- 部署順序：migration 先於程式（舊程式不讀這張表）。回滾到本 PR 之前的程式只會停止補單查詢；表與資料可以留著，不需要回滾 migration。
+- 目前 167 models、163 forward migrations（含本次一條）；既有 SQL／checksum 不變。

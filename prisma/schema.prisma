@@ -2264,6 +2264,7 @@ model PaymentTransaction {
   supportRefundHandoffs       SupportRefundHandoff[]
 
   merchantAffiliateSnapshot MerchantAffiliateCheckoutSnapshot?
+  pendingReconciliation     PaymentPendingReconciliation?
   @@unique([vendorId, id])
   @@unique([vendorId, checkoutIdempotencyKey])
   /// F-050: PayUni callbacks resolve the tenant by provider order number.
@@ -2271,6 +2272,34 @@ model PaymentTransaction {
   @@index([vendorId, occurredAt])
   @@index([vendorId, orderNumber])
   @@index([status, occurredAt])
+}
+
+/// A-2 05: provider query state for a PayUni checkout whose callback never
+/// arrived (src/lib/payment-pending-reconciliation.ts). One row per payment,
+/// bound to the payment's own (vendorId, id). It never holds money or payment
+/// state: a reconciled decision is applied through the payment webhook pipeline.
+model PaymentPendingReconciliation {
+  id                   String    @id @default(cuid())
+  vendorId             String
+  paymentTransactionId String
+  providerName         String
+  /// active | settled | closed | needs_manual_review (CHECK).
+  status               String    @default("active")
+  /// Provider queries claimed so far (CHECK 0..100); the job stops at PAYMENT_RECONCILE_MAX_ATTEMPTS.
+  attempts             Int       @default(0)
+  lastQueriedAt        DateTime?
+  /// The claim: a run may query only when this is due, and moves it forward before the query.
+  nextQueryAt          DateTime
+  /// Bounded outcome code (CHECK ^[a-z_]{1,64}$); never provider text.
+  lastOutcome          String?
+  resolvedAt           DateTime?
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+
+  paymentTransaction PaymentTransaction @relation(fields: [vendorId, paymentTransactionId], references: [vendorId, id], onDelete: Cascade)
+
+  @@unique([vendorId, paymentTransactionId])
+  @@index([status, nextQueryAt])
 }
 
 /// Canonical, tenant-owned sales order. Buyer and shipping plaintext never

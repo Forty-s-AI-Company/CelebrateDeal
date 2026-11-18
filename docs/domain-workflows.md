@@ -221,6 +221,20 @@
 
 未知訂單或未驗證 webhook 不可產生權威付款與佣金；client price／vendor／affiliate／rate 不可覆寫 server records。結算鎖定後只追加 adjustment，不改舊 ledger 掩蓋修正。Chargeback／拒付也須核對原交易、佣金與結算調整，不能未經 provider 證據就當成普通退款或重複扣除。回歸涵蓋重複、部分退款、亂序、重複／亂序拒付、過期連結、無效 affiliate、self-referral 政策、provider retry、併發與跨租戶；click-through 不能宣稱收入。
 
+### 付款通知遺失時的主動查詢（A-2 05）
+
+PayUni 的 Notify 整個遺失時，`/api/jobs/payment-reconcile`（`JOB_SECRET`，每 5 分鐘，與 webhook-retry 同頻率）主動向 PayUni 交易查詢並補單。權威實作是 `src/lib/payment-pending-reconciliation.ts`；查詢只在 adapter 的 `queryPendingPayment`（`src/lib/payment-providers/payuni.ts`，唯讀、只帶 `MerTradeNo`、回應必須通過 HashInfo 與解密）。
+
+- **掃描**：PayUni、`paymentMode = platform`、狀態 `pending` 或 `expired`（`expired` 是本地庫存保留 30 分鐘逾時，不是 PayUni 的決定；既有規則允許逾時後 paid）、建立 15 分鐘到 3 天、沒有 `paymentManualReconciliation` 保留、且還沒到期前不重查。每輪最多 20 筆，依商家輪流（每家最早到期的一筆排在任何一家的第二筆之前），40 秒後不再開始新的查詢，每次查詢最多 10 秒。PayUni 未設定（`checkoutReadiness` 不是 `ready`，含 Preview＋正式商店）時整輪略過、不查詢也不寫入。
+- **狀態**：每筆交易一列 `PaymentPendingReconciliation`（`vendorId`＋交易 id 複合外鍵）。認領＝在查詢前以「目前次數與到期時間」條件更新次數與下次查詢時間，所以兩個重疊的 run 只有一個會查。等待 15 分鐘、30 分鐘、1 小時……最長 12 小時；最多查 10 次（約在結帳後 52 小時）。
+- **入帳只走回呼路徑**：查到 `TradeStatus 1`＋`PaymentType 1`＋`DataSource A` 時組成與 UPP Notify 相同的 payload（同一個 event id `TradeNo:1`、同樣不帶手續費、幣別、商家與推廣碼），與回呼共用同一列 `WebhookEvent` 與 claim（`src/lib/payment-webhook-event-claim.ts`），再以伺服器紀錄的 vendor／交易／訂單編號作為 expected scope 交給 `processPaymentWebhook`。佣金、庫存、訂單、權限、收據、追蹤與 `payment_paid` 自動化都在同一條管線，結果與回呼一致（`payment-pending-reconciliation.db.test.ts` 以快照比對兩條路徑）。`2`／`3` 同樣以失敗回呼的 event id 入帳為 failed。
+- **只入帳一次**：回呼與補單同時到達時，誰先 claim 到 `WebhookEvent` 誰處理；另一方得到 processed（重複）或 503（PayUni 會重送）／下輪再看。管線本身仍是 Serializable 交易，事件結案時再比對 claim。
+- **金額**：只取自伺服器的交易紀錄。PayUni 回傳的 `TradeAmt` 與交易金額不同時不入帳，轉人工並告警（管線內的不變式也會再拒絕一次）。
+- **不改狀態的結果**：`4`（逾期，未收款）停止查詢、不改狀態（保留期限照常釋放）；`0`／`8`／`9` 或 `DataSource B` 下輪再查；`QUERY03001`（已驗章的查無）下輪再查，查滿 10 次仍查無就停止（`closed`，PayUni 沒有這筆交易＝沒有收款，不需要人工）。
+- **人工處理的界線**（`needs_manual_review`，同時在平台後台 webhook 頁新增一筆 `needs_manual_reconciliation` 事件 `manual:reconcile:<訂單編號>:<原因>`、Sentry `payment-reconcile-manual-review`、AuditLog `payment_reconcile_manual_review`）：金額不符（`amount_mismatch`）、非信用卡收款（`payment_type_not_allowed`）、表外的 TradeStatus（`trade_status_unknown`）、PayUni 已退款但本地從未入帳（`refunded_at_provider`）、同一訂單編號有多筆交易（`multiple_trades`）——這五種可能已收款，pending 交易會加上 `paymentManualReconciliation` 保留，庫存不被逾期釋放；查詢錯誤（網路、簽章、解密、格式）查滿 10 次（`query_attempts_exhausted`，error）、PayUni 一直停在待付款（`provider_pending_exhausted`，warning）、事件已用盡重試或已在人工佇列（`event_needs_attention`）則不保留交易。簽章或解密失敗每次都以 error 告警。
+- **入帳失敗**：管線丟錯時事件標 `failed`、15 分鐘後由 webhook-retry 接手（有重試上限與用盡告警）；售完（`InventoryUnavailableError`）另發 `webhook_retry_requires_attention`。補單列記為 `settled / *_handed_to_retry`，不再查詢。
+- **凍結商家**：與 PayUni 回呼完全相同——照常查詢與入帳（交易、訂單、佣金、月結資料），數位／課程權限留在 pending、`payment.paid` 事件標 `fulfillmentHeld`、不跑 `payment_paid` 自動化；解除凍結時由既有流程開通。理由：錢已經被收，凍結只擋交付，不能讓已付款的買家停在「未付款」。
+
 ## 租戶與權限
 
 從已驗證使用者、active membership、current vendor、platform role 與 capability 追到最後一個 DB 操作。每個輸入 ID 及 relation connect 必須以 compound ownership predicate 或 server-side ownership check 綁定；不先做 global query 再於記憶體過濾。
@@ -265,7 +279,7 @@
 | 結帳頁、`/api/payments/checkout` | 結帳頁 404；API 在讀取冪等重放前就回 404「Product not available」；直播間不列商品 |
 | 結帳恢復（`/api/payments/checkout/recovery`）、加購／降購（`/api/checkout/upsell`） | 404（與未知結帳／無可用方案相同），不寫入、不簽發 token |
 | 學員 portal | 凍結時同一交易刪除該 vendor 全部 `StudentPortalAccessToken`（F-030 的 grant 檢查上線後所有學員 session 即失效）；另外每次請求都擋：`requireStudentPortalSession` 的 vendor 查詢排除凍結商家、`loadFeatureGateVendor` 把凍結商家視為所有模組關閉（課程、通知、社群、預約等 route 404）；登入頁 404、不寄登入連結、連結無法兌換 |
-| PayUni 付款回呼 | 照常驗章、入帳（交易、訂單、佣金、月結資料），但數位／課程權限留在 pending、不建立學員付款通知；`payment.paid` 事件標 `fulfillmentHeld`。解除凍結時同一交易開通已付款訂單的 pending 權限 |
+| PayUni 付款回呼（含通知遺失時的補單查詢，A-2 05） | 照常驗章、入帳（交易、訂單、佣金、月結資料），但數位／課程權限留在 pending、不建立學員付款通知；`payment.paid` 事件標 `fulfillmentHeld`。解除凍結時同一交易開通已付款訂單的 pending 權限 |
 | Email 與 LINE 排程、付款收據 | 不寄、不推播、不 claim，列維持 queued；解除後照常寄送（仍套用寄送前檢查）。學員通知 job 跳過該 vendor |
 | 電子發票、月結、webhook 重試、追蹤事件 | 不變（金流與法定義務照常） |
 

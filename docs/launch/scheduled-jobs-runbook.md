@@ -13,6 +13,7 @@
 | `/api/jobs/email-deliveries` | 是 | 每 5 分鐘 | POST＋`JOB_SECRET`／GET＋`CRON_SECRET` | 交易信、開播提醒、直播後追蹤、學員通知、LINE 物化與派送、報名重試草稿清理 |
 | `/api/cron/line-notifications` | 是 | 每 5 分鐘 | POST＋`JOB_SECRET`（新增）／GET＋`CRON_SECRET` | 與上一列重疊，但能在 email 流程中途失敗時獨立推進 LINE outbox；有 claim lease，不會重送 |
 | `/api/jobs/webhook-retry` | 是 | 每 5 分鐘 | POST＋`JOB_SECRET`／GET＋`CRON_SECRET`（新增） | 先釋放過期庫存保留，再重試失敗的付款 webhook（金流路徑），最後補跑 `after()` 沒跑完的 `payment_paid` 自動化（Q-10，每輪最多 20 筆；見 `docs/domain-workflows.md`「付款完成」） |
+| `/api/jobs/payment-reconcile` | 是 | 每 5 分鐘 | POST＋`JOB_SECRET`／GET＋`CRON_SECRET` | A-2 05：PayUni 付款通知遺失時主動查詢並補單。掃建立 15 分鐘到 3 天、仍 `pending`／`expired` 的 PayUni 交易，每輪最多 20 筆、商家輪流、40 秒後不再開始新的查詢；查到已付款或失敗就走與回呼相同的入帳路徑。需要人工時看 Sentry `payment-reconcile-manual-review` 與平台後台 webhook 頁的 `needs_manual_reconciliation`（見 `docs/domain-workflows.md`「付款通知遺失時的主動查詢」）。Production 排程需 owner 同意 |
 | `/api/cron/live-media` | 需開啟 | 每 5 分鐘 | POST＋`JOB_SECRET`（新增）／GET＋`CRON_SECRET` | 只在 `vars.SCHEDULED_JOBS_ENABLE_LIVE_MEDIA=true` 時排程。瀏覽器直播封測隱藏（D-09），未設定 `CELEBRATEDEAL_MEDIA_ORIGIN` 時固定回 503，預設排程會讓每次執行都標紅 |
 | `/api/jobs/billing-cycle` | **需開啟** | 每日 01:22（台灣） | POST＋`JOB_SECRET`／GET＋`CRON_SECRET`（新增） | 只在 `vars.SCHEDULED_JOBS_ENABLE_BILLING_CYCLE=true` 時排程，`all` 也一樣；單選 `billing-cycle` 的手動 dispatch 才會直接執行。這個 job 會重算未鎖定月份的 draft 結算，並替每個 active 訂閱 upsert `issued` 月費帳單；因為帳單在 `dueAt <= now` 才產生，同一次執行結尾就會被標成 `overdue`（既有問題，另案處理）。封測期間 billing 隱藏（D-02、D-16），所以預設關閉。不會扣款（`automaticCharges: 0`） |
 | `/api/jobs/electronic-invoices` | 是 | 每日 01:22（台灣） | POST＋`JOB_SECRET`／GET＋`CRON_SECRET`（新增） | fiscal adapter 未接時回 202，視為成功 |
@@ -46,7 +47,7 @@
 
 GitHub 的 `*/5 * * * *` 實測約每 2～5 小時才跑一次（中位數 184 分鐘），所以每 5 分鐘的工作改由 `.github/workflows/scheduled-jobs-heartbeat.yml` 驅動。不花錢、不需要外部帳號：公開 repo 的標準 runner 分鐘數不限。
 
-- 運作：一個 job 跑約 5 小時 40 分鐘（`HEARTBEAT_DURATION_SECONDS=20400`，job `timeout-minutes: 350`，低於 6 小時上限）的迴圈，每 300 秒呼叫一次 `email-deliveries`、`line-notifications`、`webhook-retry`（`vars.SCHEDULED_JOBS_ENABLE_LIVE_MEDIA=true` 時加上 `live-media`；變數只在每輪開頭讀取，改動最多 5 小時 40 分鐘後生效）。每日工作（電子發票、billing-cycle、data-retention）仍只走 `scheduled-jobs.yml` 的每日排程。
+- 運作：一個 job 跑約 5 小時 40 分鐘（`HEARTBEAT_DURATION_SECONDS=20400`，job `timeout-minutes: 350`，低於 6 小時上限）的迴圈，每 300 秒呼叫一次 `email-deliveries`、`line-notifications`、`webhook-retry`、`payment-reconcile`（`vars.SCHEDULED_JOBS_ENABLE_LIVE_MEDIA=true` 時加上 `live-media`；變數只在每輪開頭讀取，改動最多 5 小時 40 分鐘後生效）。每日工作（電子發票、billing-cycle、data-retention）仍只走 `scheduled-jobs.yml` 的每日排程。
 - 共用同一個 runner：迴圈呼叫 `scripts/scheduled-jobs-runner.mjs`，與 `scheduled-jobs.yml` 相同的 `JOB_SECRET`、同一行輸出格式與結果判定，兩邊不會各改各的。
 - 單次失敗不中斷迴圈：該行輸出 `::error::`，迴圈繼續，整輪結束時只要有失敗就讓 run 標紅。`JOB_SECRET` 或 token 沒設、或讀不到 heartbeat workflow，啟動時立刻失敗，且不會自己重新啟動。
 - 接力：迴圈在最後一個 tick 前用 `gh workflow run scheduled-jobs-heartbeat.yml --ref master` 啟動下一輪（`GITHUB_TOKEN`，job 層級 `actions: write`）。`concurrency: scheduled-jobs-heartbeat`（`cancel-in-progress: false`）讓下一輪排隊等上一輪結束，最多只有一輪在跑、一輪在排隊，多出來的啟動會被丟棄，不會堆積。啟動前會先用 `gh run list` 確認沒有 queued／in progress 的 heartbeat，已有就不再啟動（`scripts/scheduled-jobs-ensure-heartbeat.sh`）。

@@ -135,6 +135,65 @@ export type PaymentQueryResult = {
   status: "paid" | "partially_refunded" | "refunded";
 };
 
+export type PendingPaymentQueryInput = {
+  /** Server-owned checkout row; only these fields cross the adapter boundary. */
+  transaction: Pick<PaymentTransaction, "providerName" | "orderNumber" | "paymentMode" | "grossAmountCents" | "currency">;
+  /** Network timeout for the read-only query; defaults to the provider transport's own limit. */
+  timeoutMs?: number;
+};
+
+/** Reasons a provider query reports something the reconciler must not apply automatically. */
+export type PendingPaymentManualReason =
+  /** TradeStatus 1 collected by a payment method outside the allowlist (R448-01). */
+  | "payment_type_not_allowed"
+  /** A well-formed TradeStatus outside the documented tables. */
+  | "trade_status_unknown"
+  /** The provider reports a refund on an order this system never recorded as paid. */
+  | "refunded_at_provider"
+  /** More than one provider trade for the same merchant order number. */
+  | "multiple_trades";
+
+/**
+ * A-2 05: authenticated query result for a still-pending checkout. Only bounded
+ * identifiers and an allowlisted snapshot cross this boundary. `paid` and
+ * `failed` carry the same normalized payload (provider, eventId, eventType) a
+ * callback for that trade state would produce, so the webhook engine treats
+ * both paths as one provider event. Errors are thrown as PaymentQueryProviderError.
+ */
+export type PendingPaymentQueryResult =
+  | {
+    outcome: "paid";
+    orderNumber: string;
+    providerTradeNo: string;
+    /** Signed TradeAmt; the caller must still compare it with the server record. */
+    grossAmountCents: number;
+    payload: PaymentWebhookPayloadInput;
+    rawSnapshot: Record<string, string | number | boolean>;
+  }
+  | {
+    outcome: "failed";
+    orderNumber: string;
+    providerTradeNo?: string;
+    tradeStatus: string;
+    payload: PaymentWebhookPayloadInput;
+    rawSnapshot: Record<string, string | number | boolean>;
+  }
+  /** Signed TradeStatus 4 (query table "expired"): no money was received; nothing to apply. */
+  | { outcome: "expired"; orderNumber: string; providerTradeNo?: string; tradeStatus: string }
+  /** Issued, awaiting confirmation, unpaid, or incomplete data (DataSource B): ask again later. */
+  | { outcome: "pending"; orderNumber: string; providerTradeNo?: string; tradeStatus?: string }
+  /** Authenticated QUERY03001: the provider has no trade for this order number. */
+  | { outcome: "not_found"; orderNumber: string }
+  | {
+    outcome: "manual_reconciliation";
+    reason: PendingPaymentManualReason;
+    orderNumber: string;
+    providerTradeNo?: string;
+    tradeStatus?: string;
+    paymentType?: string;
+    rawSnapshot: Record<string, string | number | boolean>;
+  };
+
 /** Safe-to-log categories only. Never attach provider payloads, URLs or secrets. */
 export type RefundFailureCategory = "authentication" | "request_contract" | "provider_response" | "network" | "unknown";
 
@@ -291,6 +350,8 @@ export type PaymentProviderAdapter = {
   revokePaymentMethodReference?(input: PaymentMethodReferenceRevocationInput): Promise<PaymentMethodReferenceRevocationResult>;
   refundPayment?(input: RefundPaymentInput): Promise<RefundPaymentResult>;
   queryPayment?(input: QueryPaymentInput): Promise<PaymentQueryResult>;
+  /** A-2 05: read-only status of a checkout whose callback never arrived (by merchant order number only). */
+  queryPendingPayment?(input: PendingPaymentQueryInput): Promise<PendingPaymentQueryResult>;
   /** Preview Sandbox observation only. Null is authenticated not-found, not a terminal payment state. */
   queryUnreferencedSandboxPayment?(input: QueryPaymentInput): Promise<PaymentQueryResult | null>;
 };
