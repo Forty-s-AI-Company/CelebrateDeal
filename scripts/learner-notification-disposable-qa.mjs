@@ -12,6 +12,7 @@ import { protectCommerceOrderPii } from "../src/lib/commerce-order-pii.ts";
 import { reconcileCommerceOrderRefund, reconcileCommerceOrderPaymentTransition } from "../src/lib/commerce-orders.ts";
 import { dispatchClaimedLearnerNotification } from "../src/lib/learner-notification-dispatch.ts";
 import { claimLearnerVerificationDelivery, dispatchLearnerVerificationDelivery } from "../src/lib/learner-verification-delivery.ts";
+import { SERVER_CLOCK_SKEW_MS } from "../src/lib/server-clock-skew.ts";
 import { saveCourseLesson } from "../src/lib/course-curriculum.ts";
 import { saveStudentLessonProgress } from "../src/lib/student-course-learning.ts";
 import { confirmLearnerConsultationReminder,listLearnerConsultationReminders } from "../src/lib/learner-consultation-reminders.ts";
@@ -392,7 +393,7 @@ const migration = await migrate({ afterMigrate: async ({ databaseUrl }) => {
     await check("source materialization excludes consent granted after the domain event",async()=>{
       const existing=await db.learnerNotificationPreference.findUniqueOrThrow({where:{id:preference.id}}),occurredAt=new Date();
       const source=await db.$transaction(tx=>recordLearnerNotificationSourceEvent(tx,{vendorId:vendor.id,productId:product.id,event:"lesson_published",eventIdentity:"synthetic_no_retroactive_consent",audienceCustomerKeyHash:null,occurredAt,message:{title:"Synthetic prior event",body:"Synthetic only",path:`/portal/${vendor.slug}/learn/${product.id}`}}));
-      await db.learnerNotificationPreference.update({where:{id:preference.id},data:{consentedAt:new Date(occurredAt.getTime()+1000)}});
+      await db.learnerNotificationPreference.update({where:{id:preference.id},data:{consentedAt:new Date(occurredAt.getTime()+2*SERVER_CLOCK_SKEW_MS)}});
       try{assert.equal((await materializeLearnerNotificationSourceEvent(db,vendor.id,source.id)).status,"completed");const queued=await db.learnerNotificationDelivery.findMany({where:{vendorId:vendor.id,eventIdentity:"synthetic_no_retroactive_consent"},select:{preferenceId:true}});assert.equal(queued.length,1);assert.equal(queued.some(row=>row.preferenceId===preference.id),false);}
       finally{await db.learnerNotificationPreference.update({where:{id:preference.id},data:{consentedAt:existing.consentedAt}});}
     });
