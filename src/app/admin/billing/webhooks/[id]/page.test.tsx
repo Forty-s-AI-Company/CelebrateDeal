@@ -20,7 +20,7 @@ vi.mock("@/lib/db", () => ({
 }));
 vi.mock("@/lib/reconciliation", () => ({ reconcileWebhookEvent: mocks.reconcileWebhookEvent }));
 vi.mock("@/lib/redaction", () => ({ redactSensitivePayload: mocks.redactSensitivePayload }));
-vi.mock("@/app/actions", () => ({ retryWebhookEventAction: mocks.retryWebhookEventAction }));
+vi.mock("@/app/actions/admin-billing-actions", () => ({ retryWebhookEventAction: mocks.retryWebhookEventAction }));
 vi.mock("@/components/csrf-field", () => ({ CsrfField: () => null }));
 vi.mock("next/navigation", () => ({ notFound: mocks.notFound }));
 

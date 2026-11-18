@@ -12,7 +12,7 @@ vi.mock("@/lib/auth", () => ({ requireFinanceAdmin: mocks.requireFinanceAdmin })
 vi.mock("@/lib/db", () => ({
   getDb: () => ({ webhookEvent: { findMany: mocks.findMany, count: mocks.count } }),
 }));
-vi.mock("@/app/actions", () => ({ retryWebhookEventAction: mocks.retryWebhookEventAction }));
+vi.mock("@/app/actions/admin-billing-actions", () => ({ retryWebhookEventAction: mocks.retryWebhookEventAction }));
 vi.mock("@/components/csrf-field", () => ({ CsrfField: () => null }));
 
 import AdminBillingWebhooksPage from "./page";

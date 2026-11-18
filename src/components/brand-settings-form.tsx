@@ -2,7 +2,7 @@
 
 import { useActionState, useState, type ChangeEvent, type ReactNode } from "react";
 import Image from "next/image";
-import { saveBrandSettingsActionState, type BrandSettingsActionState, type BrandSettingsFormValues } from "@/app/actions";
+import { saveBrandSettingsActionState, type BrandSettingsActionState, type BrandSettingsFormValues } from "@/app/actions/brand-settings-actions";
 import { FormSubmitButton } from "@/components/form-submit-button";
 import { Field } from "@/components/ui";
 import { MediaUploadField, type MediaUploadPersistedValue } from "@/components/media-upload-field";
