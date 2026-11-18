@@ -809,6 +809,9 @@ model FormSubmission {
   // Q-12: partial expression index "FormSubmission_verified_email_normalized_idx"
   // ON (lower(btrim(email))) WHERE verificationStatus = 'VERIFIED' lives in the
   // migration only (Prisma 6 cannot express it; prisma-unmanaged-indexes.db.test.ts).
+  // A2-01: partial expression index "FormSubmission_live_email_normalized_idx"
+  // ON ("liveId", lower(btrim(email))) WHERE "liveId" IS NOT NULL (the watch
+  // pass's same-person check) lives in the migration only, likewise.
 }
 
 enum FormSubmissionVerificationStatus {

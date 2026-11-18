@@ -10,8 +10,8 @@ import { getDb } from "@/lib/db";
  * active upline, one pending settlement adjustment, one open login email
  * change per user, one refund row per provider event of a payment, one payout
  * item per settlement) or keep buyer search and the consultation step's
- * verified-address lookup (Q-12) and the owed delayed-step runs (Q-13) off
- * full-table scans, so assert the
+ * verified-address lookup (Q-12), the owed delayed-step runs (Q-13) and the
+ * watch pass's same-person check (A2-01) off full-table scans, so assert the
  * complete definition (columns, method, operator class and predicate).
  */
 // pg_get_indexdef always schema-qualifies the table; the suite runs in public
@@ -26,6 +26,10 @@ function expectedIndexDefinitions(schema: string): Record<string, string> {
       `CREATE UNIQUE INDEX "ConsultationBooking_active_slot_key" ON ${schema}."ConsultationBooking" USING btree ("vendorId", "eventId", "startTime") WHERE (status = 'scheduled'::"ConsultationBookingStatus")`,
     FormSubmission_email_trgm_idx:
       `CREATE INDEX "FormSubmission_email_trgm_idx" ON ${schema}."FormSubmission" USING gin (email gin_trgm_ops)`,
+    // A2-01: the watch pass's "same person already ran" check (rulesSamePersonRan);
+    // expression and predicate must match the query.
+    FormSubmission_live_email_normalized_idx:
+      `CREATE INDEX "FormSubmission_live_email_normalized_idx" ON ${schema}."FormSubmission" USING btree ("liveId", lower(btrim(email))) WHERE ("liveId" IS NOT NULL)`,
     FormSubmission_name_trgm_idx:
       `CREATE INDEX "FormSubmission_name_trgm_idx" ON ${schema}."FormSubmission" USING gin (name gin_trgm_ops)`,
     FormSubmission_phone_trgm_idx:

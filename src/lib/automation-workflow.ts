@@ -999,6 +999,15 @@ export type AutomationDispatchOptions = {
    * execution is reclaimable, as before.
    */
   failedReclaim?: { errorCodes: readonly string[] };
+  /**
+   * These rules (of those the dispatch runs) claim their execution as usual
+   * but record it `skipped` with this `errorCode` instead of running any
+   * action or delayed step. The watch pass passes the rules the same person
+   * already ran through another registration (`duplicate_person`, #651
+   * re-review MINOR-A), so the event has a log and its scan never picks it
+   * up again.
+   */
+  skipRules?: { ruleIds: readonly string[]; errorCode: string };
 };
 
 /** The rule filter both dispatch paths add to their rule reads. */
@@ -1244,6 +1253,14 @@ async function runAutomationEvent(db: AutomationDb, event: AutomationEvent, queu
 
     if (!matched) {
       const recorded = await finishExecution(db, log.id, { status: "skipped", conditionMatched: false, completedAt: new Date() });
+      results.push({ ruleId: rule.id, status: recorded ? "skipped" : "rule_deleted" });
+      continue;
+    }
+
+    if (options.skipRules?.ruleIds.includes(rule.id)) {
+      // Matched, but the caller holds this rule back (watch triggers: the
+      // same person already ran it). No action, no delayed-step run.
+      const recorded = await finishExecution(db, log.id, { status: "skipped", conditionMatched: true, errorCode: options.skipRules.errorCode, completedAt: new Date() });
       results.push({ ruleId: rule.id, status: recorded ? "skipped" : "rule_deleted" });
       continue;
     }

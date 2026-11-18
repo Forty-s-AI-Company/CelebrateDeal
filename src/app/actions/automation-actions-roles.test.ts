@@ -306,6 +306,17 @@ describe("/settings/automations delayed-step e-mail templates by trigger", () =>
     expect(mocks.db.automationRuleStep.create).toHaveBeenCalledTimes(2);
   });
 
+  it("refuses a step on a watch rule with an old watch-seconds condition as condition_unsupported, the code switching it on gives (#651 re-review NIT)", async () => {
+    mocks.db.$queryRaw.mockResolvedValue([{ id: "rule-1", trigger: "viewer_watch_progress", condition: { type: "watch_seconds_gte", seconds: 600 } }]);
+    const tx = { ...mocks.db, vendor: { findUnique: vi.fn(async () => ({ betaFeatureGrants: ["automation_delayed_steps", "automation_watch_progress"] })) } };
+    mocks.db.$transaction.mockImplementation(async (work: (client: unknown) => unknown) => work(tx));
+    await expect(createAutomationRuleStepAction(stepWith({ actionTag: "on", customerTag: "看一半" }))).rejects.toThrow("redirect:/settings/automations?error=condition_unsupported");
+    await expect(updateAutomationRuleStepAction(stepWith({ stepId: "step-1", actionTag: "on", customerTag: "看一半" }))).rejects.toThrow("redirect:/settings/automations?error=condition_unsupported");
+    expect(mocks.db.automationRuleStep.create).not.toHaveBeenCalled();
+    expect(mocks.db.automationRuleStep.updateMany).not.toHaveBeenCalled();
+    expect(mocks.audit).not.toHaveBeenCalled();
+  });
+
   it("refuses to edit a step into a template without a link", async () => {
     await expect(updateAutomationRuleStepAction(stepWith({ stepId: "step-1", ...email("webinar_replay") }))).rejects.toThrow("redirect:/settings/automations?error=email_template_unavailable");
     expect(mocks.db.automationRuleStep.updateMany).not.toHaveBeenCalled();

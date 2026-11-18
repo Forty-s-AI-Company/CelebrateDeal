@@ -49,6 +49,10 @@ import { captureOperationalError } from "@/lib/monitoring";
  *   the reclaim threshold, or a first attempt that ended `failed /
  *   action_failed` at least WATCH_PROGRESS_FAILED_RETRY_AFTER_MS ago (retried
  *   once, as the no-show pass does).
+ * Right before the dispatch, a rule the same person already ran through
+ * another registration of the same Live is recorded `skipped /
+ * duplicate_person` instead (rulesSamePersonRan, #651 review MINOR-3,
+ * re-review MINOR-A).
  *
  * The event id is `watch-progress:{submissionId}:{percent}` and the execution
  * log's idempotency key is built from it and the rule, so one registration
@@ -251,8 +255,8 @@ function personEventKey(candidate: Candidate) {
  * scan stands alone (#651 review MINOR-1): one that throws is reported through
  * `onScanError` and the other's events still go ahead. Of two registrations of
  * one person reaching the same threshold on the same Live in this run, only
- * the first is kept (MINOR-3); the scan's own filter drops the other once the
- * first has an execution log.
+ * the first is kept (MINOR-3); a later round dispatches the other, which
+ * rulesSamePersonRan then records `skipped / duplicate_person`.
  */
 async function scanVendor(
   db: Db,
@@ -284,29 +288,51 @@ async function scanVendor(
 }
 
 /**
- * #651 review MINOR-3: no event when the same person (the same
- * `subjectKeyHash`: this vendor and the same normalized e-mail, the key
- * automationCustomerKeyHash builds) already has an execution log of this rule
- * and threshold through another registration of the same Live, so one person
- * registered through two forms runs a rule once (one voucher). The key is an
- * HMAC the database cannot compute, so the other registration is reached
- * through the log's event id (`{prefix}{submissionId}:{threshold}`) and its
- * stored e-mail, which the form route keeps trimmed and lower-cased; any
- * status of that log counts (its own registration retries it).
+ * The `errorCode` of a watch event's execution log recorded `skipped` because
+ * the same person already ran that rule and threshold through another
+ * registration of the same Live (#651 re-review MINOR-A).
  */
-function samePersonAlreadyRan(vendorId: string, prefix: string, threshold: Prisma.Sql) {
-  return Prisma.sql`
-      AND NOT EXISTS (
-        SELECT 1
-        FROM "AutomationExecutionLog" other
-        JOIN "FormSubmission" s2 ON s2."id" = split_part(other."eventId", ':', 2)
-        WHERE other."vendorId" = ${vendorId}
-          AND other."ruleId" = r."id"
-          AND other."eventId" = ${prefix} || s2."id" || ':' || ${threshold}::text
-          AND s2."id" <> p."formSubmissionId"
-          AND s2."liveId" = p."liveId"
-          AND lower(btrim(s2."email")) = lower(btrim(s."email"))
-      )`;
+export const WATCH_DUPLICATE_PERSON_ERROR_CODE = "duplicate_person";
+
+/**
+ * #651 review MINOR-3: of the candidate's rules, those the same person (the
+ * same `subjectKeyHash`: this vendor and the same normalized e-mail, the key
+ * automationCustomerKeyHash builds) already has an execution log of, for this
+ * trigger and threshold, through another registration of the same Live, so
+ * one person registered through two forms runs a rule once (one voucher). The
+ * key is an HMAC the database cannot compute, so the person's other
+ * registrations are found by the Live and the stored e-mail, normalized as
+ * the key normalizes it, and their logs by the event id
+ * (`{prefix}{submissionId}:{threshold}`); any status of that log counts (its
+ * own registration retries it). Every input is bound to the vendor: the
+ * other registration's form, the log, and the rules (the scan read them for
+ * this vendor).
+ *
+ * Re-review MINOR-A: this used to be a NOT EXISTS inside both scans, which
+ * the planner could only run over every registration of the platform (a
+ * Seq Scan of FormSubmission) or of each Live. It now runs once per event
+ * the pass dispatches (at most WATCH_PROGRESS_EVENT_LIMIT a round), by the
+ * partial index FormSubmission_live_email_normalized_idx ("liveId",
+ * lower(btrim(email))) and the log's (vendorId, eventId) index. The dispatch
+ * records those rules `skipped / duplicate_person`, so the scan's own
+ * execution-log filter drops the event from the next round on: the person's
+ * second registration takes one slot of one round, never every round's.
+ */
+async function rulesSamePersonRan(db: Db, candidate: Candidate): Promise<string[]> {
+  const prefix = candidate.trigger === "viewer_watch_progress" ? EVENT_PREFIX : DURATION_EVENT_PREFIX;
+  const rows = await db.$queryRaw<Array<{ ruleId: string }>>`
+    SELECT DISTINCT other."ruleId"
+    FROM "FormSubmission" s2
+    JOIN "RegistrationForm" f2 ON f2."id" = s2."formId" AND f2."vendorId" = ${candidate.vendorId}
+    JOIN "AutomationExecutionLog" other
+      ON other."vendorId" = ${candidate.vendorId}
+     AND other."eventId" = ${prefix} || s2."id" || ':' || ${candidate.threshold}::int::text
+    WHERE s2."liveId" = ${candidate.liveId}
+      AND lower(btrim(s2."email")) = lower(btrim(${candidate.email}))
+      AND s2."id" <> ${candidate.submissionId}
+      AND other."ruleId" = ANY(${candidate.ruleIds}::text[])
+  `;
+  return rows.map((row) => row.ruleId);
 }
 
 /** One vendor's registrations past a percentage rule's threshold that still owe it, earliest-due first, at most `limit` rows. */
@@ -393,7 +419,6 @@ async function scanProgress(db: Db, vendorId: string, rules: PercentRule[], now:
             AND l."completedAt" < ${utcTimestamp(failedRetryBefore)}
           )
       )
-      ${samePersonAlreadyRan(vendorId, EVENT_PREFIX, Prisma.sql`th."percent"`)}
     GROUP BY p."formSubmissionId", s."email", p."liveId", p."watchedSeconds", len."seconds", p."lastCreditedAt", len."endedAt", th."percent"
     ORDER BY "dueAt" ASC, p."formSubmissionId" ASC, th."percent" ASC
     LIMIT ${limit}
@@ -457,7 +482,6 @@ async function scanDuration(db: Db, vendorId: string, rules: MinutesRule[], now:
             AND l."completedAt" < ${utcTimestamp(failedRetryBefore)}
           )
       )
-      ${samePersonAlreadyRan(vendorId, DURATION_EVENT_PREFIX, Prisma.sql`th."minutes"`)}
     GROUP BY p."formSubmissionId", s."email", p."liveId", p."watchedSeconds", p."firstCreditedAt", p."lastCreditedAt", th."minutes"
     ORDER BY "orderAt" ASC, p."formSubmissionId" ASC, th."minutes" ASC
     LIMIT ${limit}
@@ -551,6 +575,8 @@ export async function runWatchProgressAutomation(options: {
     summary.examined += 1;
     dispatched.add(candidate);
     try {
+      // Read right before the dispatch, after every earlier event of this round ran.
+      const samePersonRan = await rulesSamePersonRan(db, candidate);
       const results = await dispatchAutomationEvent(db, {
         vendorId: candidate.vendorId,
         eventId: candidateEventId(candidate),
@@ -570,6 +596,9 @@ export async function runWatchProgressAutomation(options: {
         rulesUnchangedSince: candidate.lastCreditedAt,
         onlyRuleIds: candidate.ruleIds,
         failedReclaim: { errorCodes: WATCH_PROGRESS_RETRYABLE_ERROR_CODES },
+        ...(samePersonRan.length
+          ? { skipRules: { ruleIds: samePersonRan, errorCode: WATCH_DUPLICATE_PERSON_ERROR_CODE } }
+          : {}),
       });
       for (const result of results) {
         if (result.status === "completed") summary.completed += 1;

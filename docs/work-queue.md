@@ -61,7 +61,7 @@
 - PayUni 回呼整筆遺失時沒有主動查詢補單的排程（`queryPayment` 只用在 Sandbox 與 ops 路徑），目前只能人工對帳。屬新功能，不放進 R-04（2026-11-18 盤點）。
 - R-04 封測後步驟：④ 直播 action 搬出（可選）、⑤ 結算／出款／退款搬出（第一次正式月結之後）、⑥ 結帳抽服務、⑦ 對帳註冊表、拆分 `actions.test.ts` 並移除假 Prisma。
 - U-04 封測後：金額相關表單（`stream-allocation-editor`、`product-form-client`）、大型檔案（`media-upload-field`、`live-stepper-form`、`live-interaction-studio`、`consultation-booking-calendar`）、漏斗編輯器組。
-- 觀看觸發的「同一人已執行」排除在全平台報名數變大後會掃整張 `FormSubmission`（#651 複審 MINOR-A）；擴大 `automation_watch_progress`／`automation_watch_duration` 授權前改成 dispatch 寫 `duplicate_person` 紀錄或以索引縮小，並用正式規模資料 EXPLAIN。
+- ~~觀看觸發的「同一人已執行」排除在全平台報名數變大後會掃整張 `FormSubmission`（#651 複審 MINOR-A）~~：A2-01（`ai/watch-same-person-perf`）選 (a)：派送前一刻以新索引 `FormSubmission_live_email_normalized_idx` 查同一人，已執行的規則記成 `skipped / duplicate_person`，掃描移除 `NOT EXISTS`；一併修 `s2` 綁商家、延遲步驟回 `condition_unsupported` 兩項 NIT。52 萬筆合成資料大商家掃描 34 秒／113 秒 → 0.3 秒／0.4 秒（`PRISMA_INVARIANTS.md` 2026-11-19 節）。未驗證：正式資料規模的 EXPLAIN。
 - 觀看觸發：沒有發券時沒有可用 Email 範本（Q-18 限制），「看到 50% 寄一封信」目前做不到；併入通用無連結範本。
 - 手機底部「更多」在 hydration 前點擊沒有反應（慢速手機的體驗問題，#654 調查發現）；評估不靠 JS 的後備。
 - `tests/e2e/funnel-operations.spec.ts:83` 偶發失敗（#655 CI run 44242232428，retry 後通過）。
