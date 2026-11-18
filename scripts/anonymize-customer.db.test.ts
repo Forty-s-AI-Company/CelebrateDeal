@@ -1,6 +1,6 @@
 import { spawnSync } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, beforeEach, vi } from "vitest";
 import { automationCustomerKeyHash } from "../src/lib/automation-workflow";
 import { protectCommerceOrderPii, revealCommerceOrderPii } from "../src/lib/commerce-order-pii";
 import { getDb } from "../src/lib/db";
@@ -12,6 +12,11 @@ import {
   AnonymizeTargetRefusedError,
   resolveAnonymizeTarget,
 } from "./anonymize-customer";
+
+// Synthetic secret: this file must not depend on a CSRF_SECRET from the developer's environment.
+const SYNTHETIC_CSRF_SECRET = "synthetic-db-test-secret-longer-than-32-bytes";
+vi.stubEnv("CSRF_SECRET", SYNTHETIC_CSRF_SECRET);
+beforeEach(() => { vi.stubEnv("CSRF_SECRET", SYNTHETIC_CSRF_SECRET); });
 
 const vendorIds: string[] = [];
 

@@ -1,10 +1,15 @@
 import { randomBytes, randomUUID } from "node:crypto";
 import { PrismaClient } from "@prisma/client";
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it, beforeEach, vi } from "vitest";
 import { assertLocalTestDatabase } from "../../scripts/local-database-safety";
 import { createCommerceOrderForCheckout, reconcileCommerceOrderPaymentTransition, reconcileCommerceOrderRefund } from "./commerce-orders";
 import { hashLiveViewerToken } from "./live-quota-admission";
 import { listLivePurchaseBroadcasts, LivePurchaseBroadcastAccessDenied } from "./live-purchase-broadcasts";
+
+// Synthetic secret: this file must not depend on a CSRF_SECRET from the developer's environment.
+const SYNTHETIC_CSRF_SECRET = "synthetic-db-test-secret-longer-than-32-bytes";
+vi.stubEnv("CSRF_SECRET", SYNTHETIC_CSRF_SECRET);
+beforeEach(() => { vi.stubEnv("CSRF_SECRET", SYNTHETIC_CSRF_SECRET); });
 
 let db: PrismaClient;
 const vendorIds: string[] = [];

@@ -25,6 +25,8 @@ export const SCHEDULED_JOBS = Object.freeze([
   Object.freeze({ name: "email-deliveries", path: "/api/jobs/email-deliveries", cadence: "frequent" }),
   Object.freeze({ name: "line-notifications", path: "/api/cron/line-notifications", cadence: "frequent" }),
   Object.freeze({ name: "webhook-retry", path: "/api/jobs/webhook-retry", cadence: "frequent" }),
+  // A-2 05: asks PayUni about payments whose callback never arrived (same cadence as webhook-retry).
+  Object.freeze({ name: "payment-reconcile", path: "/api/jobs/payment-reconcile", cadence: "frequent" }),
   Object.freeze({ name: "live-media", path: "/api/cron/live-media", cadence: "frequent", optInVariable: "SCHEDULED_JOBS_ENABLE_LIVE_MEDIA" }),
   // Issues monthly invoices (and marks due ones overdue); billing is hidden during the beta,
   // so it never runs on a schedule unless the owner opts in (PR #447 review M1).

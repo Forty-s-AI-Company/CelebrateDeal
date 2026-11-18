@@ -62,7 +62,7 @@ jobs:
           GH_REPO: ${{ github.repository }}
           HEARTBEAT_DURATION_SECONDS: "20400"
           HEARTBEAT_INTERVAL_SECONDS: "300"
-          HEARTBEAT_JOBS: ${{ vars.SCHEDULED_JOBS_ENABLE_LIVE_MEDIA == 'true' && 'email-deliveries line-notifications webhook-retry live-media' || 'email-deliveries line-notifications webhook-retry' }}
+          HEARTBEAT_JOBS: ${{ vars.SCHEDULED_JOBS_ENABLE_LIVE_MEDIA == 'true' && 'email-deliveries line-notifications webhook-retry payment-reconcile live-media' || 'email-deliveries line-notifications webhook-retry payment-reconcile' }}
         run: bash scripts/scheduled-jobs-heartbeat.sh
 
       # Safety net when the loop died early (crash): make sure a successor exists. A

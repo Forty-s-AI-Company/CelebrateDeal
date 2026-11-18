@@ -3,6 +3,7 @@ import { z } from "zod";
 import { LearnerNotificationEvent,LearnerNotificationScope } from "./learner-notification-contract";
 import { LearnerNotificationMessage,enqueueLearnerNotificationInTransaction } from "./learner-notification-outbox";
 import { captureOperationalError } from "./monitoring";
+import { SERVER_CLOCK_SKEW_MS } from "./server-clock-skew";
 import { encryptSensitiveValue,decryptSensitiveValue } from "./sensitive-data";
 
 const Input=z.object({vendorId:z.string().regex(/^[A-Za-z0-9_-]{1,128}$/u),productId:z.string().regex(/^[A-Za-z0-9_-]{1,128}$/u),event:LearnerNotificationEvent,eventIdentity:z.string().regex(/^[A-Za-z0-9_-]{1,160}$/u),audienceCustomerKeyHash:z.string().regex(/^[A-Za-z0-9_-]{43}$/u).nullable(),occurredAt:z.date(),availableAt:z.date().optional(),message:LearnerNotificationMessage}).strict();
@@ -73,7 +74,7 @@ export async function materializeLearnerNotificationSourceEvent(db:Pick<PrismaCl
    if(source.availableAt>now || (source.nextAttemptAt && source.nextAttemptAt>now))return {status:"not_due",queued:0} as const;
    const reserved=await tx.learnerNotificationSourceEvent.updateMany({where:{vendorId,id,revision:source.revision,completedAt:null},data:{revision:{increment:1}}});if(reserved.count!==1)return {status:"claimed_elsewhere",queued:0} as const;
    const message=LearnerNotificationMessage.parse(JSON.parse(decryptSensitiveValue(source.payloadEncryptedEnvelope,purpose({...source,event:LearnerNotificationEvent.parse(source.event)}))));
-   const preferences=await tx.learnerNotificationPreference.findMany({where:{vendorId,productId:source.productId,enabled:true,destinationVerifiedAt:{not:null},consentedAt:{lte:source.occurredAt},...(source.audienceCustomerKeyHash?{customerKeyHash:source.audienceCustomerKeyHash}:{}),...(source.preferenceCursor?{id:{gt:source.preferenceCursor}}:{})},orderBy:{id:"asc"},take:21,select:{id:true,customerKeyHash:true,channel:true}});
+   const preferences=await tx.learnerNotificationPreference.findMany({where:{vendorId,productId:source.productId,enabled:true,destinationVerifiedAt:{not:null},consentedAt:{lte:new Date(source.occurredAt.getTime()+SERVER_CLOCK_SKEW_MS)},...(source.audienceCustomerKeyHash?{customerKeyHash:source.audienceCustomerKeyHash}:{}),...(source.preferenceCursor?{id:{gt:source.preferenceCursor}}:{})},orderBy:{id:"asc"},take:21,select:{id:true,customerKeyHash:true,channel:true}});
    let queued=0;const visible=preferences.slice(0,20);
    for(const preference of visible){
     const scope=LearnerNotificationScope.parse({vendorId,productId:source.productId,customerKeyHash:preference.customerKeyHash});

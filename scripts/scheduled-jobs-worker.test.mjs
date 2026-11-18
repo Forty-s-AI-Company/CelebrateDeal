@@ -49,7 +49,7 @@ test("以 POST 呼叫並帶 Bearer、不跟隨轉址；日誌不含密鑰", asyn
   };
   const deps = { fetch: fetchImpl, log: (l) => lines.push(l), logError: (l) => lines.push(l) };
   const results = await runScheduled(CRON_FREQUENT, env, deps);
-  assert.equal(results.length, 3);
+  assert.equal(results.length, 4);
   assert.equal(calls[0].init.method, "POST");
   assert.equal(calls[0].init.redirect, "manual");
   assert.equal(calls[0].init.headers.Authorization, `Bearer ${SECRET}`);

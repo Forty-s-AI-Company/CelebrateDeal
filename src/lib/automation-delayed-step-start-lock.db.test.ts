@@ -52,6 +52,8 @@ afterAll(async () => {
 });
 
 beforeEach(() => {
+  // Synthetic secret, so the file does not depend on the developer's environment.
+  vi.stubEnv("CSRF_SECRET", "automation-lock-gap-secret-longer-than-32-bytes");
   vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://automation-lock-gap.example.test");
   // Synthetic provider settings: the worker only checks that they exist.
   vi.stubEnv("RESEND_API_KEY", "re_synthetic_automation_lock_gap");
