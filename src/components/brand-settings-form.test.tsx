@@ -52,7 +52,7 @@ vi.mock("react", async (importOriginal) => {
   };
 });
 
-vi.mock("@/app/actions", () => ({ saveBrandSettingsActionState: vi.fn() }));
+vi.mock("@/app/actions/brand-settings-actions", () => ({ saveBrandSettingsActionState: vi.fn() }));
 vi.mock("@/components/media-upload-field", () => ({
   MediaUploadField: (props: {
     kind: string;

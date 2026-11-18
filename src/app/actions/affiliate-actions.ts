@@ -3,10 +3,10 @@
 import { Prisma } from "@prisma/client";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { requireFinanceAdmin } from "@/lib/auth";
+import { requireFinanceAdmin, requireVendorManager } from "@/lib/auth";
 import { auditSnapshot, writeAuditLog } from "@/lib/audit";
 import { appendCommissionLedgerEntry, commissionLedgerBalance } from "@/lib/affiliate-commission-accounting";
-import { assertAffiliateCommissionTransition } from "@/lib/affiliate-commission";
+import { AffiliateCommissionRateBps, assertAffiliateCommissionTransition } from "@/lib/affiliate-commission";
 import { assertServerActionSecurity } from "@/lib/csrf";
 import { getDb } from "@/lib/db";
 
@@ -15,7 +15,40 @@ function text(formData: FormData, key: string, fallback = "") {
   return typeof value === "string" ? value.trim() : fallback;
 }
 
+function optionalText(formData: FormData, key: string) {
+  const value = text(formData, key);
+  return value.length > 0 ? value : null;
+}
+
 class PayoutBatchClaimConflict extends Error {}
+
+export async function upsertAffiliateAction(formData: FormData) {
+  await assertServerActionSecurity(formData);
+  const vendor = await requireVendorManager();
+  const id = optionalText(formData, "id");
+  const commissionRate = AffiliateCommissionRateBps.safeParse(
+    Number(text(formData, "commissionRateBps")),
+  );
+  if (!commissionRate.success) {
+    redirect("/affiliates?error=invalid_commission_rate");
+  }
+  const data = {
+    name: text(formData, "name"),
+    code: text(formData, "code").toUpperCase(),
+    source: optionalText(formData, "source"),
+    contactEmail: optionalText(formData, "contactEmail"),
+    commissionRateBps: commissionRate.data,
+    isActive: formData.get("isActive") === "on",
+  };
+
+  if (id) {
+    await getDb().affiliate.update({ where: { id, vendorId: vendor.id }, data });
+  } else {
+    await getDb().affiliate.create({ data: { ...data, vendorId: vendor.id } });
+  }
+
+  redirect("/affiliates");
+}
 
 export async function voidAffiliateCommissionAction(formData: FormData) {
   await assertServerActionSecurity(formData);

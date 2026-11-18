@@ -3,7 +3,6 @@
 import { requestedLiveStatus } from "@/lib/live-status-transition";
 import { sumLedgerCents } from "@/lib/ledger-cents";
 import { resolveSalesProjectBinding, SalesProjectBindingError } from "@/lib/sales-project-binding";
-import { isIP } from "node:net";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { Prisma, type PaymentTransaction, type PrismaClient } from "@prisma/client";
@@ -13,7 +12,6 @@ import {
   requireVendorManager,
 } from "@/lib/auth";
 import { auditSnapshot, requestAuditMeta, writeAuditLog } from "@/lib/audit";
-import { AffiliateCommissionRateBps } from "@/lib/affiliate-commission";
 import { AffiliatePayoutMutationConflict, isAffiliatePayoutMutationConflict, payoutCommissionAmount } from "@/lib/affiliate-payout-accounting";
 import { affiliatePaidRemunerationFields, affiliateRemunerationPaymentProof, assertAffiliatePayoutFinanceActor } from "@/lib/affiliate-remuneration-quotes";
 import { affiliatePayoutsDisabled, AffiliatePayoutsDisabledError } from "@/lib/affiliate-payout-switch";
@@ -23,7 +21,6 @@ import { encryptBankAccount, maskBankAccount, resolveStoredBankAccount } from "@
 import { monthRange, payoutBatchNumber } from "@/lib/billing";
 import { BillingCycleError, generateSettlementForVendor } from "@/lib/billing-cycle";
 import { assertServerActionSecurity } from "@/lib/csrf";
-import { retryWebhookEvent } from "@/lib/webhook-retry";
 import { getDb } from "@/lib/db";
 import {
   applyPaymentRefundAccounting,
@@ -81,9 +78,9 @@ import {
   getLivePublishReadiness,
   requiresLivePublishReadiness,
 } from "@/lib/live-publish-readiness";
-import { ImageAssetReferenceError, resolveReadyImageAsset } from "@/lib/image-assets";
+import { resolveReadyImageAsset } from "@/lib/image-assets";
 import { liveReadyVideoWhere } from "@/lib/live-video-readiness";
-import { assertIanaTimeZone, parseZonedDateTimeLocal } from "@/lib/zoned-date-time";
+import { parseZonedDateTimeLocal } from "@/lib/zoned-date-time";
 import { canMarkPayoutBatchExported, canTransitionPayoutItem, derivePayoutBatchStatus, PayoutItemTargetStatus } from "@/lib/payout-state";
 import { selectPayoutAccount } from "@/lib/payout-account";
 import { CoursePayoutMutationConflict, syncCoursePayoutsForSettlement } from "@/lib/course-payout-accounting";
@@ -166,311 +163,6 @@ async function finishRefundAction(input: {
   revalidatePath("/admin/billing/dashboard");
   revalidatePath("/admin/billing/settlements");
   redirect("/admin/billing/dashboard");
-}
-
-export type BrandSettingsFormValues = {
-  name: string;
-  slug: string;
-  primaryColor: string;
-  ctaColor: string;
-  timezone: string;
-  supportEmail: string;
-  senderName: string;
-  contactUrl: string;
-  logoUrl: string;
-  /** 只在表單與 action state 中傳遞 opaque asset id；page 可省略此欄位。 */
-  logoAssetId?: string;
-};
-
-export type BrandSettingsActionState = {
-  status: "idle" | "error";
-  message: string;
-  values: BrandSettingsFormValues;
-};
-
-const INVALID_BRAND_TIMEZONE_MESSAGE = "時區格式無效，請輸入有效的 IANA 時區，例如 Asia/Taipei。";
-const INVALID_BRAND_LOGO_MESSAGE = "品牌 Logo 來源無效，請完成上傳、移除未完成的檔案，或改用有效的 HTTP/HTTPS 圖片網址。";
-const INVALID_BRAND_LOGO_ASSET_MESSAGE = "品牌 Logo 圖片資產無效，請重新上傳。";
-const INVALID_BRAND_LOGO_PHASE_MESSAGE = "品牌 Logo 上傳尚未完成，請完成上傳或移除未完成的檔案。";
-const INVALID_BRAND_SENDER_NAME_MESSAGE = "寄件人名稱無效，請輸入 80 字元以內且不含控制字元的文字。";
-const INVALID_BRAND_CONTACT_URL_MESSAGE = "聯絡網址無效，請輸入不含帳密、非本機或內部 IP 的 HTTPS 絕對網址。";
-const BRAND_LOGO_URL_MAX_LENGTH = 2048;
-const BRAND_CONTACT_URL_MAX_LENGTH = 2048;
-const BRAND_SENDER_NAME_MAX_LENGTH = 80;
-
-type BrandSettingsValidationCode = "invalid_timezone" | "invalid_logo" | "invalid_sender_name" | "invalid_contact_url";
-
-class BrandSettingsValidationError extends Error {
-  constructor(
-    readonly code: BrandSettingsValidationCode,
-    message: string,
-  ) {
-    super(message);
-    this.name = "BrandSettingsValidationError";
-  }
-}
-
-function submittedBrandSettingsValues(formData: FormData): BrandSettingsFormValues {
-  const boundedValue = (key: string, maxLength: number) => {
-    const submitted = formData.get(key);
-    return typeof submitted === "string" ? submitted.slice(0, maxLength) : "";
-  };
-
-  return {
-    name: boundedValue("name", 160),
-    slug: boundedValue("slug", 160),
-    primaryColor: boundedValue("primaryColor", 32),
-    ctaColor: boundedValue("ctaColor", 32),
-    timezone: boundedValue("timezone", 128),
-    supportEmail: boundedValue("supportEmail", 320),
-    senderName: rawSubmittedValue(formData, "senderName"),
-    contactUrl: rawSubmittedValue(formData, "contactUrl"),
-    logoUrl: boundedValue("logoUrl", BRAND_LOGO_URL_MAX_LENGTH),
-    logoAssetId: boundedValue("logoAssetId", 128),
-  };
-}
-
-function rawSubmittedValue(formData: FormData, key: string) {
-  const submitted = formData.get(key);
-  return submitted === null ? "" : typeof submitted === "string" ? submitted : "__invalid__";
-}
-
-function isPrivateOrSpecialIpv4(value: string) {
-  const octets = value.split(".").map(Number);
-  if (octets.length !== 4 || octets.some((octet) => !Number.isInteger(octet) || octet < 0 || octet > 255)) return false;
-  const [first = Number.NaN, second = Number.NaN] = octets;
-  return first === 0
-    || first === 10
-    || first === 127
-    || (first === 169 && second === 254)
-    || (first === 172 && second >= 16 && second <= 31)
-    || (first === 192 && second === 168);
-}
-
-function parseIpv6Segments(value: string) {
-  const halves = value.split("::");
-  if (halves.length > 2) return null;
-  const parseHalf = (half: string) => half ? half.split(":") : [];
-  const left = parseHalf(halves[0] ?? "");
-  const right = parseHalf(halves[1] ?? "");
-  const rawSegments = [...left, ...right];
-  if (rawSegments.some((segment) => segment === "")) return null;
-
-  const segments = rawSegments.flatMap((segment, index) => {
-    if (!segment.includes(".")) return [/^[0-9a-f]{1,4}$/iu.test(segment) ? Number.parseInt(segment, 16) : Number.NaN];
-    if (index !== rawSegments.length - 1 || isPrivateOrSpecialIpv4(segment)) return [Number.NaN, Number.NaN];
-    const octets = segment.split(".").map(Number);
-    const [
-      firstOctet = Number.NaN,
-      secondOctet = Number.NaN,
-      thirdOctet = Number.NaN,
-      fourthOctet = Number.NaN,
-    ] = octets;
-    return octets.length === 4 && octets.every((octet) => Number.isInteger(octet) && octet >= 0 && octet <= 255)
-      ? [(firstOctet << 8) | secondOctet, (thirdOctet << 8) | fourthOctet]
-      : [Number.NaN, Number.NaN];
-  });
-  const zeroCount = halves.length === 2 ? 8 - segments.length : 0;
-  if (zeroCount < (halves.length === 2 ? 1 : 0) || segments.length + zeroCount !== 8) return null;
-  const expanded = halves.length === 2
-    ? [...segments.slice(0, left.length), ...Array.from({ length: zeroCount }, () => 0), ...segments.slice(left.length)]
-    : segments;
-  return expanded.every((segment) => Number.isInteger(segment) && segment >= 0 && segment <= 0xffff) ? expanded : null;
-}
-
-function isUnsafeContactHostname(hostname: string) {
-  const host = hostname.toLowerCase().replace(/^\[|\]$/gu, "").replace(/\.+$/u, "");
-  if (host === "localhost" || host.endsWith(".localhost")) return true;
-
-  const ipVersion = isIP(host);
-  if (ipVersion === 4) return isPrivateOrSpecialIpv4(host);
-  if (ipVersion !== 6) return false;
-
-  const segments = parseIpv6Segments(host);
-  if (!segments) return true;
-  const [
-    firstSegment = Number.NaN,
-    secondSegment = Number.NaN,
-    thirdSegment = Number.NaN,
-    fourthSegment = Number.NaN,
-    fifthSegment = Number.NaN,
-    sixthSegment = Number.NaN,
-    seventhSegment = Number.NaN,
-    eighthSegment = Number.NaN,
-  ] = segments;
-  const isAllZero = segments.every((segment) => segment === 0);
-  const isLoopback = isAllZero === false && [firstSegment, secondSegment, thirdSegment, fourthSegment, fifthSegment, sixthSegment, seventhSegment].every((segment) => segment === 0) && eighthSegment === 1;
-  const isUniqueLocal = (firstSegment & 0xfe00) === 0xfc00;
-  const isLinkLocal = (firstSegment & 0xffc0) === 0xfe80;
-  const isIpv4Mapped = [firstSegment, secondSegment, thirdSegment, fourthSegment, fifthSegment].every((segment) => segment === 0) && sixthSegment === 0xffff;
-  if (!isIpv4Mapped) return isAllZero || isLoopback || isUniqueLocal || isLinkLocal;
-
-  const mappedIpv4 = [seventhSegment >> 8, seventhSegment & 0xff, eighthSegment >> 8, eighthSegment & 0xff].join(".");
-  return isPrivateOrSpecialIpv4(mappedIpv4);
-}
-
-function parseSafeBrandContactUrl(value: string | null) {
-  const candidate = value?.trim();
-  if (!candidate) return null;
-  try {
-    const url = new URL(candidate);
-    if (url.protocol !== "https:" || url.username || url.password || isUnsafeContactHostname(url.hostname)) return null;
-    return url.toString();
-  } catch {
-    return null;
-  }
-}
-
-function validateBrandSenderName(formData: FormData) {
-  const input = rawSubmittedValue(formData, "senderName");
-  if (input === "") return null;
-  if (input === "__invalid__") throw new BrandSettingsValidationError("invalid_sender_name", INVALID_BRAND_SENDER_NAME_MESSAGE);
-  const normalized = input.trim().normalize("NFC");
-  if (!normalized) return null;
-  if (Array.from(normalized).length > BRAND_SENDER_NAME_MAX_LENGTH || /\p{Cc}/u.test(normalized)) {
-    throw new BrandSettingsValidationError("invalid_sender_name", INVALID_BRAND_SENDER_NAME_MESSAGE);
-  }
-  return normalized;
-}
-
-type ValidatedBrandSettings = {
-  timezone: string;
-  senderName: string | null;
-  contactUrl: string | null;
-  logoUrl: string | null;
-  logoAssetId: string | null;
-};
-
-async function validateBrandSettings(vendorId: string, formData: FormData): Promise<ValidatedBrandSettings> {
-  const senderName = validateBrandSenderName(formData);
-  const contactUrlInput = rawSubmittedValue(formData, "contactUrl");
-  if (contactUrlInput === "__invalid__") {
-    throw new BrandSettingsValidationError("invalid_contact_url", INVALID_BRAND_CONTACT_URL_MESSAGE);
-  }
-  if (contactUrlInput.length > BRAND_CONTACT_URL_MAX_LENGTH || /\p{Cc}/u.test(contactUrlInput)) {
-    throw new BrandSettingsValidationError("invalid_contact_url", INVALID_BRAND_CONTACT_URL_MESSAGE);
-  }
-  const contactUrl = contactUrlInput.trim() === "" ? null : parseSafeBrandContactUrl(contactUrlInput);
-  if (contactUrlInput.trim() !== "" && !contactUrl) {
-    throw new BrandSettingsValidationError("invalid_contact_url", INVALID_BRAND_CONTACT_URL_MESSAGE);
-  }
-
-  const timezone = text(formData, "timezone", "Asia/Taipei");
-  try {
-    assertIanaTimeZone(timezone);
-  } catch {
-    throw new BrandSettingsValidationError("invalid_timezone", INVALID_BRAND_TIMEZONE_MESSAGE);
-  }
-
-  const submittedPhase = formData.get("logoUploadPhase");
-  const logoUploadPhase = submittedPhase === null
-    ? ""
-    : typeof submittedPhase === "string"
-      ? submittedPhase.trim()
-      : "__invalid__";
-  if (!["", "idle", "success"].includes(logoUploadPhase)) {
-    throw new BrandSettingsValidationError("invalid_logo", INVALID_BRAND_LOGO_PHASE_MESSAGE);
-  }
-
-  const submittedAssetId = formData.get("logoAssetId");
-  const logoAssetId = submittedAssetId === null
-    ? null
-    : typeof submittedAssetId === "string"
-      ? submittedAssetId.trim() || null
-      : "__invalid__";
-  if (logoAssetId === "__invalid__") {
-    throw new BrandSettingsValidationError("invalid_logo", INVALID_BRAND_LOGO_ASSET_MESSAGE);
-  }
-
-  if (logoAssetId) {
-    try {
-      const logoAsset = await resolveReadyImageAsset(getDb(), { vendorId, assetId: logoAssetId });
-      if (!logoAsset) throw new BrandSettingsValidationError("invalid_logo", INVALID_BRAND_LOGO_ASSET_MESSAGE);
-      return { timezone, senderName, contactUrl, logoUrl: logoAsset.publicUrl, logoAssetId: logoAsset.id };
-    } catch (error) {
-      if (error instanceof ImageAssetReferenceError) {
-        throw new BrandSettingsValidationError("invalid_logo", INVALID_BRAND_LOGO_ASSET_MESSAGE);
-      }
-      throw error;
-    }
-  }
-
-  const submittedLogoUrl = formData.get("logoUrl");
-  const logoUrlInput = submittedLogoUrl === null
-    ? ""
-    : typeof submittedLogoUrl === "string"
-      ? submittedLogoUrl.trim()
-      : "__invalid__";
-  if (logoUrlInput.length > BRAND_LOGO_URL_MAX_LENGTH) {
-    throw new BrandSettingsValidationError("invalid_logo", INVALID_BRAND_LOGO_MESSAGE);
-  }
-  const logoUrl = logoUrlInput === ""
-    ? null
-    : parseSafeExternalHttpUrl(logoUrlInput === "__invalid__" ? null : logoUrlInput);
-  if (logoUrlInput !== "" && !logoUrl) {
-    throw new BrandSettingsValidationError("invalid_logo", INVALID_BRAND_LOGO_MESSAGE);
-  }
-
-  return { timezone, senderName, contactUrl, logoUrl, logoAssetId: null };
-}
-
-async function updateBrandSettings(vendorId: string, formData: FormData, validated: ValidatedBrandSettings) {
-  await getDb().vendor.update({
-    where: { id: vendorId },
-    data: {
-      name: text(formData, "name"),
-      slug: toSlug(text(formData, "slug")),
-      logoUrl: validated.logoUrl,
-      primaryColor: text(formData, "primaryColor", "#2563eb"),
-      ctaColor: text(formData, "ctaColor", "#f97316"),
-      timezone: validated.timezone,
-      supportEmail: optionalText(formData, "supportEmail"),
-      senderName: validated.senderName,
-      contactUrl: validated.contactUrl,
-    },
-  });
-}
-
-/**
- * 保留既有直接呼叫的 Server Action 介面；新品牌頁使用下方 state action，
- * 讓可修正的驗證錯誤不需要把表單內容塞進 URL。
- */
-export async function saveBrandSettingsAction(formData: FormData) {
-  await assertServerActionSecurity(formData);
-  const vendor = await requireVendorManager();
-  let validated: ValidatedBrandSettings;
-  try {
-    validated = await validateBrandSettings(vendor.id, formData);
-  } catch (error) {
-    if (error instanceof BrandSettingsValidationError) {
-      redirect(`/settings/brand?error=${error.code}`);
-    }
-    throw error;
-  }
-  await updateBrandSettings(vendor.id, formData, validated);
-  revalidatePath("/settings/brand");
-}
-
-export async function saveBrandSettingsActionState(
-  _previousState: BrandSettingsActionState,
-  formData: FormData,
-): Promise<BrandSettingsActionState> {
-  await assertServerActionSecurity(formData);
-  const vendor = await requireVendorManager();
-  const values = submittedBrandSettingsValues(formData);
-  let validated: ValidatedBrandSettings;
-  try {
-    validated = await validateBrandSettings(vendor.id, formData);
-  } catch (error) {
-    if (error instanceof BrandSettingsValidationError) {
-      return { status: "error", message: error.message, values };
-    }
-    throw error;
-  }
-
-  await updateBrandSettings(vendor.id, formData, validated);
-  revalidatePath("/settings/brand");
-  redirect("/settings/brand");
 }
 
 async function requireLiveQuotaPaymentMethod(
@@ -1374,34 +1066,6 @@ export async function upsertLiveAction(formData: FormData) {
   redirect(`/lives/${committed.id}/edit${reconciliationNotice ? `?notice=${reconciliationNotice}` : ""}`);
 }
 
-export async function upsertAffiliateAction(formData: FormData) {
-  await assertServerActionSecurity(formData);
-  const vendor = await requireVendorManager();
-  const id = optionalText(formData, "id");
-  const commissionRate = AffiliateCommissionRateBps.safeParse(
-    Number(text(formData, "commissionRateBps")),
-  );
-  if (!commissionRate.success) {
-    redirect("/affiliates?error=invalid_commission_rate");
-  }
-  const data = {
-    name: text(formData, "name"),
-    code: text(formData, "code").toUpperCase(),
-    source: optionalText(formData, "source"),
-    contactEmail: optionalText(formData, "contactEmail"),
-    commissionRateBps: commissionRate.data,
-    isActive: formData.get("isActive") === "on",
-  };
-
-  if (id) {
-    await getDb().affiliate.update({ where: { id, vendorId: vendor.id }, data });
-  } else {
-    await getDb().affiliate.create({ data: { ...data, vendorId: vendor.id } });
-  }
-
-  redirect("/affiliates");
-}
-
 export async function generateSettlementAction(formData: FormData) {
   await assertServerActionSecurity(formData);
   const { member } = await requireFinanceAdmin();
@@ -2242,23 +1906,4 @@ export async function refundPaymentTransactionAction(formData: FormData) {
   // After commit: invoice void/allowance never undoes the committed refund.
   await applyPostRefundAfterCommit(db, postRefund);
   await finishRefundAction({ transaction, updated, actor: { id: member.id, label: member.role } });
-}
-
-export async function retryWebhookEventAction(formData: FormData) {
-  await assertServerActionSecurity(formData);
-  const { member } = await requireFinanceAdmin();
-  const id = text(formData, "id");
-  const event = await getDb().webhookEvent.findUnique({ where: { id } });
-  if (!event) {
-    redirect("/admin/billing/dashboard?error=webhook");
-  }
-  if (event.retryCount >= event.maxRetries) {
-    redirect("/admin/billing/dashboard?error=max_retries");
-  }
-  await retryWebhookEvent(id, member.role);
-
-  revalidatePath("/admin/billing/dashboard");
-  revalidatePath("/admin/billing/webhooks");
-  revalidatePath(`/admin/billing/webhooks/${id}`);
-  redirect("/admin/billing/dashboard");
 }

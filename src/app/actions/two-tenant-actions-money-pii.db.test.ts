@@ -82,7 +82,7 @@ vi.mock("@/lib/auth", async (importOriginal) => {
   };
 });
 
-import { upsertAffiliateAction } from "@/app/actions";
+import { upsertAffiliateAction } from "@/app/actions/affiliate-actions";
 import { unblockBlacklistAction } from "@/app/actions/interaction-actions";
 import { GET as funnelReportsRoute } from "@/app/api/funnel/operations/reports/route";
 import { POST as shippingRoute } from "@/app/api/orders/shipping/route";
