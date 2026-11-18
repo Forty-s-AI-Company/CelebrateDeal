@@ -1,6 +1,7 @@
 import type { PrismaClient } from "@prisma/client";
 import { getDb } from "@/lib/db";
-import { createLiveAttendanceToken, liveAttendanceCookieName } from "@/lib/live-attendance-cookie";
+import { createLiveAttendanceToken, createLiveSessionHintToken, liveAttendanceCookieName, liveSessionHintCookieName } from "@/lib/live-attendance-cookie";
+import { isFixedSessionLive } from "@/lib/live-fixed-sessions";
 import { verifyLiveWatchLinkToken } from "@/lib/live-watch-link-token";
 import { ACTIVE_VENDOR_RELATION } from "@/lib/vendor-suspension-state";
 
@@ -16,6 +17,13 @@ export type LiveWatchLinkResolution =
     submissionId: string;
     liveSlug: string;
     attendanceCookie: { name: string; value: string; expiresAt: Date };
+    /**
+     * A2-10: only for a fixed-session Live (指定場次), the session-hint cookie
+     * that makes this browser's watch page, playback and admission follow the
+     * registration's own session instead of the public schedule; null
+     * otherwise, so every other Live behaves exactly as before.
+     */
+    sessionHintCookie: { name: string; value: string; expiresAt: Date } | null;
   }
   /**
    * Nothing is set. liveSlug: the Live the genuine (possibly expired) link
@@ -63,11 +71,13 @@ export async function resolveLiveWatchLink(
       form: { vendorId: claim.vendorId },
       live: { is: { id: claim.liveId, vendorId: claim.vendorId, ...ACTIVE_VENDOR_RELATION } },
     },
-    select: { id: true, live: { select: { id: true, vendorId: true, slug: true } } },
+    select: { id: true, live: { select: { id: true, vendorId: true, slug: true, sessionMode: true } } },
   });
   const live = submission?.live;
   if (!submission || !live || live.id !== claim.liveId || live.vendorId !== claim.vendorId) return fallback();
 
+  const binding = { vendorId: claim.vendorId, liveId: live.id, submissionId: submission.id, expiresAt: claim.expiresAt };
+  const hintName = isFixedSessionLive(live) ? liveSessionHintCookieName(live.id) : null;
   return {
     kind: "admit",
     submissionId: submission.id,
@@ -75,8 +85,13 @@ export async function resolveLiveWatchLink(
     attendanceCookie: {
       name: cookieName,
       // Expires with the link that set it.
-      value: createLiveAttendanceToken({ vendorId: claim.vendorId, liveId: live.id, submissionId: submission.id, expiresAt: claim.expiresAt }),
+      value: createLiveAttendanceToken(binding),
       expiresAt: claim.expiresAt,
     },
+    // Names only the registration; the session itself is read from the
+    // database on every request, so a later switch or cancellation applies.
+    sessionHintCookie: hintName
+      ? { name: hintName, value: createLiveSessionHintToken(binding), expiresAt: claim.expiresAt }
+      : null,
   };
 }

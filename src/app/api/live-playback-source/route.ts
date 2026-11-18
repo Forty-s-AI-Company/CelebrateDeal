@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { requireSameOriginRequest } from "@/lib/api-security";
 import { getDb } from "@/lib/db";
 import { evergreenSessionTokenFromRequest } from "@/lib/evergreen-viewer-session";
-import { registrationSessionTokenFromRequest } from "@/lib/live-fixed-sessions-store";
+import { registrationSessionTokenFromRequest, sessionHintTokenFromRequest } from "@/lib/live-fixed-sessions-store";
 import { liveViewerTokenFromRequest } from "@/lib/live-quota-admission";
 import { resolveLivePlaybackSource } from "@/lib/live-playback-source";
 import { checkRateLimit } from "@/lib/rate-limit";
@@ -42,6 +42,8 @@ export async function GET(request: Request) {
     token,
     evergreenToken: evergreenSessionTokenFromRequest(request, parsed.data.liveId),
     registrationToken: registrationSessionTokenFromRequest(request),
+    // A2-10: the same session the admission and the watch page follow.
+    sessionHintToken: sessionHintTokenFromRequest(request, parsed.data.liveId),
   });
   if (!source) return unavailableResponse();
 
