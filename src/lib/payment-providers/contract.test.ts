@@ -170,6 +170,12 @@ type ProviderErrorCase = {
 type AdapterContractFixture = {
   /** Valid provider callbacks; each normalized payload must satisfy the shared schema. */
   webhooks: WebhookCase[];
+  /**
+   * Callbacks whose body also carries a `provider` field naming another
+   * provider (#652 review MINOR-4). Normalization must ignore it: the payload
+   * always names the adapter that parsed it. Required for every adapter.
+   */
+  providerOverrideWebhooks: WebhookCase[];
   /** Expected checkout readiness under each configuration scenario. */
   readiness: Record<ReadinessScenario, CheckoutProviderReadiness>;
   signature:
@@ -205,6 +211,24 @@ const demoFixture: AdapterContractFixture = {
       name: "refunded",
       env: {},
       rawBody: JSON.stringify({ eventId: "demo-contract-refund", eventType: "refunded", orderNumber: "CD-DEMO-CONTRACT", refundAmountCents: 99000 }),
+      expectedEventType: "refunded",
+      expectedOrderNumber: "CD-DEMO-CONTRACT",
+      expectedAmounts: { grossAmountCents: 0, refundAmountCents: 99000 },
+    },
+  ],
+  providerOverrideWebhooks: [
+    {
+      name: "body claims PayUni after the known fields",
+      env: {},
+      rawBody: JSON.stringify({ eventId: "demo-contract-spoof-1", eventType: "paid", orderNumber: "CD-DEMO-CONTRACT", grossAmountCents: 99000, provider: "payuni" }),
+      expectedEventType: "paid",
+      expectedOrderNumber: "CD-DEMO-CONTRACT",
+      expectedAmounts: { grossAmountCents: 99000, refundAmountCents: 0 },
+    },
+    {
+      name: "body claims PayUni before the known fields",
+      env: {},
+      rawBody: JSON.stringify({ provider: "payuni", eventId: "demo-contract-spoof-2", eventType: "refunded", orderNumber: "CD-DEMO-CONTRACT", refundAmountCents: 99000 }),
       expectedEventType: "refunded",
       expectedOrderNumber: "CD-DEMO-CONTRACT",
       expectedAmounts: { grossAmountCents: 0, refundAmountCents: 99000 },
@@ -261,6 +285,16 @@ const ecpayLikeFixture: AdapterContractFixture = {
       expectedEventType: "partially_refunded",
       expectedOrderNumber: "CD-ECPAY-CONTRACT",
       expectedAmounts: { grossAmountCents: 199_000, refundAmountCents: 50_000 },
+    },
+  ],
+  providerOverrideWebhooks: [
+    {
+      name: "body claims PayUni",
+      env: ecpayEnv,
+      rawBody: JSON.stringify({ ...JSON.parse(ecpayPaidBody), provider: "payuni", Provider: "payuni" }),
+      expectedEventType: "paid",
+      expectedOrderNumber: "CD-ECPAY-CONTRACT",
+      expectedAmounts: { grossAmountCents: 199_000, refundAmountCents: 0, gatewayFeeCents: 3_500 },
     },
   ],
   readiness: constantReadiness("unavailable"),
@@ -363,6 +397,32 @@ const payUniFixture: AdapterContractFixture = {
       expectedEventType: "refunded",
       expectedOrderNumber: "CD-SANDBOX-PAID-001",
       expectedAmounts: { grossAmountCents: 199_000, refundAmountCents: 199_000, gatewayFeeRefundCents: 3_500 },
+    },
+  ],
+  providerOverrideWebhooks: [
+    {
+      // The outer form fields are unsigned, so they are the only place a caller
+      // can add a field without the merchant key.
+      name: "unsigned outer field claims demo",
+      env: payUniSandboxEnv,
+      rawBody: withField(payUniPaidBody, "provider", () => "demo"),
+      expectedEventType: "paid",
+      expectedOrderNumber: "CD-SANDBOX-PAID-001",
+      expectedAmounts: { grossAmountCents: 199_000, refundAmountCents: 0, gatewayFeeCents: 0 },
+    },
+    {
+      name: "signed inner field claims demo",
+      env: payUniSandboxEnv,
+      rawBody: buildPayUniSandboxWebhookFixture({
+        fixture: "paid",
+        merchantId: PAYUNI_MERCHANT_ID,
+        hashKey: PAYUNI_HASH_KEY,
+        hashIv: PAYUNI_HASH_IV,
+        overrides: { provider: "demo" },
+      }),
+      expectedEventType: "paid",
+      expectedOrderNumber: "CD-SANDBOX-PAID-001",
+      expectedAmounts: { grossAmountCents: 199_000, refundAmountCents: 0, gatewayFeeCents: 0 },
     },
   ],
   readiness: {
@@ -597,6 +657,40 @@ describe("payment adapter registry", () => {
     }
   });
 
+  it("treats Object.prototype keys exactly like an unknown provider", () => {
+    const unsupported = (providerId: string | null, env: Env) => {
+      try {
+        getPaymentProvider(providerId, env);
+        return { threw: false as const };
+      } catch (error) {
+        return { threw: true as const, type: (error as Error).constructor, message: (error as Error).message };
+      }
+    };
+    const prototypeKeys = [
+      "constructor",
+      "__proto__",
+      "toString",
+      "valueOf",
+      "hasOwnProperty",
+      "isPrototypeOf",
+      "propertyIsEnumerable",
+      "toLocaleString",
+      "__defineGetter__",
+      "__lookupGetter__",
+    ];
+    // Every one of these is reachable through plain bracket access on an object literal.
+    for (const key of prototypeKeys) expect(key in {}, key).toBe(true);
+
+    for (const env of [{}, { VERCEL_ENV: "production" }] satisfies Env[]) {
+      const unknown = unsupported("not-a-registered-provider", env);
+      expect(unknown).toEqual({ threw: true, type: Error, message: "Unsupported payment provider" });
+      for (const key of prototypeKeys) {
+        expect(registeredIds, key).not.toContain(key);
+        expect(unsupported(key, env), key).toEqual(unknown);
+      }
+    }
+  });
+
   it("has a contract fixture for every registered adapter", () => {
     const adapterIds = new Set(registeredIds.map((id) => getPaymentProvider(id, {}).id));
     expect([...adapterIds].filter((adapterId) => !CONTRACT_FIXTURES[adapterId])).toEqual([]);
@@ -616,6 +710,19 @@ describe.each(registeredIds)("payment adapter contract: %s", (registeredId) => {
       expect(parsed.success, `${webhook.name}: ${parsed.error?.message ?? ""}`).toBe(true);
       // Normalization already applied the schema; parsing again changes nothing.
       expect(parsed.data, webhook.name).toEqual(payload);
+      expect(payload.provider, webhook.name).toBe(adapter.id);
+      expect(payload.eventType, webhook.name).toBe(webhook.expectedEventType);
+      expect(payload.orderNumber, webhook.name).toBe(webhook.expectedOrderNumber);
+      expect(payload, webhook.name).toMatchObject(webhook.expectedAmounts);
+    }
+  });
+
+  it("ignores a provider field in the callback body and names this adapter", async () => {
+    expect(fixture.providerOverrideWebhooks.length).toBeGreaterThan(0);
+    for (const webhook of fixture.providerOverrideWebhooks) {
+      applyEnv(webhook.env);
+      const { payload } = await adapter.normalizePayload(webhook.rawBody);
+      expect(PaymentWebhookPayload.safeParse(payload).success, webhook.name).toBe(true);
       expect(payload.provider, webhook.name).toBe(adapter.id);
       expect(payload.eventType, webhook.name).toBe(webhook.expectedEventType);
       expect(payload.orderNumber, webhook.name).toBe(webhook.expectedOrderNumber);

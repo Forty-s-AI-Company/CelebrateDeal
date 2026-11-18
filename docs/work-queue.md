@@ -47,7 +47,28 @@
 | 28 | Q-18 | 自動化 Email 範本依觸發條件限制可選項（避免缺連結的信） | 一般 | S–M | 既有規則不中斷；後台只列出可用範本；伺服器端驗證 | 已完成 [#636](https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/636)：依觸發條件限制範本，伺服器端驗證；新規則不能再選 `class_reminder` 等缺連結的範本，既有規則照常寄送。未做：`form_registered`、無折價券的 `payment_paid` 缺一個通用無連結範本（後續項目） |
 | 29 | Q-19 | 其餘時鐘偏差零容忍的檢查統一 | 高（auth） | S–M | 共用常數；不放寬一次性與期限 | 已完成 [#635](https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/635)：`SERVER_CLOCK_SKEW_SECONDS = 60` 集中在 `src/lib/server-clock-skew.ts`，csrf、recent MFA、常青場等共用。未改：fan-out 的 `consentedAt <= occurredAt` 排序檢查 |
 
-後續項目（尚未排入 A 段，處理完上方項目後再排序）：
+## A2. 第二批（2026-11-19 由主對話排序，owner 指示「順序由你決定」）
+
+排序原則：先做擴大開通前必須修的、安全加固與阻擋 CI 的，再做商家直接有感的，最後是小幅改善。每項規則同 A 段（分支、測試、審查、merge queue、需要時 staging 驗證）。
+
+| 順序 | ID | 項目 | 風險 | 狀態 |
+|---|---|---|---|---|
+| 1 | A2-01 | 觀看觸發「同一人已執行」排除改為不掃整張 `FormSubmission`（#651 MINOR-A） | 高（租戶、效能） | 進行中 |
+| 2 | A2-02 | demo adapter 加固（`Object.hasOwn`、`provider` 不可被 body 覆寫）；聯絡網址 SSRF 判斷三份統一並補 IPv4 變形測試 | 高（金流、安全） | 進行中 |
+| 3 | A2-03 | `funnel-operations.spec.ts:83` 偶發失敗；盤點其他靠 `?saved=1` 判斷完成的 spec | 一般 | 進行中 |
+| 4 | A2-04 | 通用無連結 Email 範本：`form_registered`、無折價券 `payment_paid`、兩個觀看觸發 | 一般 | 未開始 |
+| 5 | A2-05 | PayUni 回呼遺失時主動查詢補單排程；順便在 Sandbox 確認「以部分退款退完剩餘金額」的實際行為 | 高（金流） | 未開始 |
+| 6 | A2-06 | 其餘 35 個租戶 action 補兩租戶 DB 測試 | 高（租戶） | 未開始 |
+| 7 | A2-07 | fan-out 的 `consentedAt <= occurredAt` 改用共用時鐘偏差 | 一般 | 未開始 |
+| 8 | A2-08 | 商家儲存規則持鎖時，請求路徑最多阻塞 15 秒 | 一般 | 未開始 |
+| 9 | A2-09 | http 環境下 LINE 動作失敗不拖垮整個延遲步驟 | 一般 | 未開始 |
+| 10 | A2-10 | 固定場次以「僅出席」cookie 當場次提示 | 高（auth） | 未開始 |
+| 11 | A2-11 | 手機底部「更多」不靠 JS 的後備 | 一般 | 未開始 |
+| 12 | A2-12 | `automation-delayed-step-start-lock.db.test.ts` 改用 `vi.stubEnv` 設 `CSRF_SECRET` | 一般 | 未開始 |
+
+封測後才做（不排入 A2）：R-04 ④～⑦、U-04 金額相關與大型表單、picomatch 例外到期處理。
+
+後續項目（原始清單，已排入 A2 的以 A2 編號為準）：
 
 - `form_registered` 與無折價券 `payment_paid` 的通用無連結 Email 範本（#636 延伸）。
 - http 環境下 LINE 動作失敗會讓整個延遲步驟失敗（既有行為）。

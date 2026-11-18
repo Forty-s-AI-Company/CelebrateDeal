@@ -6,6 +6,8 @@ import { saveBrandSettingsActionState, type BrandSettingsActionState, type Brand
 import { FormSubmitButton } from "@/components/form-submit-button";
 import { Field } from "@/components/ui";
 import { MediaUploadField, type MediaUploadPersistedValue } from "@/components/media-upload-field";
+// Same rules as the server check in contact-url-safety.ts (#655 review).
+import { parseSafeContactUrlInBrowser } from "@/lib/contact-url-rules";
 
 const SAFE_PRIMARY_COLOR = "#2563eb";
 const SAFE_CTA_COLOR = "#f97316";
@@ -36,86 +38,6 @@ function safeLogoUrl(value: string) {
   try {
     const url = new URL(value);
     return url.protocol === "https:" ? url.href : null;
-  } catch {
-    return null;
-  }
-}
-
-function isPrivateOrSpecialIpv4(value: string) {
-  const octets = value.split(".").map(Number);
-  if (octets.length !== 4 || octets.some((octet) => !Number.isInteger(octet) || octet < 0 || octet > 255)) return false;
-  const [first = Number.NaN, second = Number.NaN] = octets;
-  return first === 0
-    || first === 10
-    || first === 127
-    || (first === 169 && second === 254)
-    || (first === 172 && second >= 16 && second <= 31)
-    || (first === 192 && second === 168);
-}
-
-function parseIpv6Segments(value: string) {
-  const halves = value.split("::");
-  if (halves.length > 2) return null;
-  const left = halves[0] ? halves[0].split(":") : [];
-  const right = halves[1] ? halves[1].split(":") : [];
-  const rawSegments = [...left, ...right];
-  if (rawSegments.some((segment) => segment === "")) return null;
-  const segments = rawSegments.flatMap((segment, index) => {
-    if (!segment.includes(".")) return [/^[0-9a-f]{1,4}$/iu.test(segment) ? Number.parseInt(segment, 16) : Number.NaN];
-    if (index !== rawSegments.length - 1) return [Number.NaN, Number.NaN];
-    const octets = segment.split(".").map(Number);
-    const [
-      firstOctet = Number.NaN,
-      secondOctet = Number.NaN,
-      thirdOctet = Number.NaN,
-      fourthOctet = Number.NaN,
-    ] = octets;
-    return octets.length === 4 && octets.every((octet) => Number.isInteger(octet) && octet >= 0 && octet <= 255)
-      ? [(firstOctet << 8) | secondOctet, (thirdOctet << 8) | fourthOctet]
-      : [Number.NaN, Number.NaN];
-  });
-  const zeroCount = halves.length === 2 ? 8 - segments.length : 0;
-  if (zeroCount < (halves.length === 2 ? 1 : 0) || segments.length + zeroCount !== 8) return null;
-  const expanded = halves.length === 2
-    ? [...segments.slice(0, left.length), ...Array.from({ length: zeroCount }, () => 0), ...segments.slice(left.length)]
-    : segments;
-  return expanded.every((segment) => Number.isInteger(segment) && segment >= 0 && segment <= 0xffff) ? expanded : null;
-}
-
-function isUnsafeContactHostname(hostname: string) {
-  const host = hostname.toLowerCase().replace(/^\[|\]$/gu, "").replace(/\.+$/u, "");
-  if (host === "localhost" || host.endsWith(".localhost")) return true;
-  if (/^(?:\d{1,3}\.){3}\d{1,3}$/u.test(host)) return isPrivateOrSpecialIpv4(host);
-
-  const segments = parseIpv6Segments(host);
-  if (!segments) return false;
-  const [
-    firstSegment = Number.NaN,
-    secondSegment = Number.NaN,
-    thirdSegment = Number.NaN,
-    fourthSegment = Number.NaN,
-    fifthSegment = Number.NaN,
-    sixthSegment = Number.NaN,
-    seventhSegment = Number.NaN,
-    eighthSegment = Number.NaN,
-  ] = segments;
-  const isAllZero = segments.every((segment) => segment === 0);
-  const isLoopback = !isAllZero && [firstSegment, secondSegment, thirdSegment, fourthSegment, fifthSegment, sixthSegment, seventhSegment].every((segment) => segment === 0) && eighthSegment === 1;
-  const isUniqueLocal = (firstSegment & 0xfe00) === 0xfc00;
-  const isLinkLocal = (firstSegment & 0xffc0) === 0xfe80;
-  const isIpv4Mapped = [firstSegment, secondSegment, thirdSegment, fourthSegment, fifthSegment].every((segment) => segment === 0) && sixthSegment === 0xffff;
-  if (!isIpv4Mapped) return isAllZero || isLoopback || isUniqueLocal || isLinkLocal;
-
-  const mappedIpv4 = [seventhSegment >> 8, seventhSegment & 0xff, eighthSegment >> 8, eighthSegment & 0xff].join(".");
-  return isPrivateOrSpecialIpv4(mappedIpv4);
-}
-
-function safeContactUrl(value: string) {
-  if (!value.trim()) return null;
-  try {
-    const url = new URL(value.trim());
-    if (url.protocol !== "https:" || url.username || url.password || isUnsafeContactHostname(url.hostname)) return null;
-    return url.toString();
   } catch {
     return null;
   }
@@ -169,7 +91,7 @@ function BrandPublicPreview({ values }: { values: BrandSettingsFormValues }) {
   const primaryColor = safeBrandColor(values.primaryColor, SAFE_PRIMARY_COLOR);
   const ctaColor = safeBrandColor(values.ctaColor, SAFE_CTA_COLOR);
   const logoUrl = safeLogoUrl(values.logoUrl);
-  const safeContact = safeContactUrl(values.contactUrl);
+  const safeContact = parseSafeContactUrlInBrowser(values.contactUrl);
 
   return (
     <section data-testid="brand-public-preview" aria-label="品牌公開效果預覽" className="grid gap-4 rounded-xl border border-dashed border-slate-300 bg-slate-50 p-4">
