@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import { Prisma } from "@prisma/client";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi, beforeEach } from "vitest";
 import { getDb } from "@/lib/db";
 import { BUYER_SUPPORT_COOKIE_PREFIX, issueBuyerSupportGrant } from "@/lib/buyer-support-access";
 import { createCommerceOrderForCheckout, reconcileCommerceOrderPaymentTransition, reconcileCommerceOrderRefund } from "@/lib/commerce-orders";
@@ -15,6 +15,11 @@ import { assertPostPurchaseCreditReplay, consumePostPurchaseCredit, PostPurchase
 import { releasePostPurchaseCreditForTerminalPayment } from "./post-purchase-credit-release";
 import { postPurchaseRecoveryAvailable, resumePostPurchaseCheckout } from "./post-purchase-checkout-recovery";
 import { resolvePostPurchaseRecoveryEntry } from "./post-purchase-recovery-entry";
+
+// Synthetic secret: this file must not depend on a CSRF_SECRET from the developer's environment.
+const SYNTHETIC_CSRF_SECRET = "synthetic-db-test-secret-longer-than-32-bytes";
+vi.stubEnv("CSRF_SECRET", SYNTHETIC_CSRF_SECRET);
+beforeEach(() => { vi.stubEnv("CSRF_SECRET", SYNTHETIC_CSRF_SECRET); });
 
 // The post-response hook is observed, not run: these tests cover which receipt
 // the committed webhook hands to it. Sending is covered by email-delivery-immediate.

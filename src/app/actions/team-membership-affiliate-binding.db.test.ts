@@ -14,6 +14,11 @@ import { createReservedPaymentTransaction } from "@/lib/inventory-reservations";
 import { createCommerceOrderForCheckout, reconcileCommerceOrderPaymentTransition } from "@/lib/commerce-orders";
 import { accrueMerchantAffiliatePlan, freezeMerchantAffiliateCheckout, MerchantAffiliatePolicyConflict, publishMerchantAffiliatePolicy } from "@/lib/merchant-affiliate-policy-service";
 
+// Synthetic secret: this file must not depend on a CSRF_SECRET from the developer's environment.
+const SYNTHETIC_CSRF_SECRET = "synthetic-db-test-secret-longer-than-32-bytes";
+vi.stubEnv("CSRF_SECRET", SYNTHETIC_CSRF_SECRET);
+beforeEach(() => { vi.stubEnv("CSRF_SECRET", SYNTHETIC_CSRF_SECRET); });
+
 // Actual PostgreSQL writes; only the request/session boundary is synthetic.
 // Commission ledgers are append-only, so rows stay until the disposable
 // database is destroyed (same contract as merchant-affiliate-policy.db.test).

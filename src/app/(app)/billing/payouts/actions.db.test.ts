@@ -28,6 +28,11 @@ vi.mock("@/lib/email", () => ({ sendTransactionalEmail: mocks.sendTransactionalE
 
 import { saveVendorPayoutAccountAction } from "./actions";
 
+// Synthetic secret: this file must not depend on a CSRF_SECRET from the developer's environment.
+const SYNTHETIC_CSRF_SECRET = "synthetic-db-test-secret-longer-than-32-bytes";
+vi.stubEnv("CSRF_SECRET", SYNTHETIC_CSRF_SECRET);
+beforeEach(() => { vi.stubEnv("CSRF_SECRET", SYNTHETIC_CSRF_SECRET); });
+
 type Tenant = { vendorId: string; userId: string; email: string; totpSecret: string };
 const tenants: Tenant[] = [];
 
