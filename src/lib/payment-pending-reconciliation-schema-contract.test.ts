@@ -9,7 +9,7 @@ describe("payment pending reconciliation schema contract (A-2 05)", () => {
 
   it("keeps the Prisma model and the additive migration aligned", () => {
     expect(model).not.toBe("");
-    for (const field of ["vendorId", "paymentTransactionId", "providerName", "status", "attempts", "lastQueriedAt", "nextQueryAt", "lastOutcome", "resolvedAt"]) {
+    for (const field of ["vendorId", "paymentTransactionId", "providerName", "status", "attempts", "lastQueriedAt", "nextQueryAt", "lastOutcome", "providerTradeSeen", "resolvedAt"]) {
       expect(model).toContain(field);
       expect(migration).toContain(`"${field}"`);
     }
@@ -28,6 +28,17 @@ describe("payment pending reconciliation schema contract (A-2 05)", () => {
     expect(migration).toContain('FOREIGN KEY ("vendorId", "paymentTransactionId") REFERENCES "PaymentTransaction"("vendorId", "id") ON DELETE CASCADE');
     expect(migration).toContain('ALTER TABLE "PaymentPendingReconciliation" ENABLE ROW LEVEL SECURITY;');
     expect(migration).not.toMatch(/\bGRANT\b/iu);
+  });
+
+  it("builds the scan's partial index concurrently, as the only statement of its own migration", () => {
+    const index = fs.readFileSync("prisma/migrations/20261119110100_payment_transaction_payuni_reconcile_idx/migration.sql", "utf8");
+    const statements = index.replace(/--.*$/gmu, "").split(";").map((statement) => statement.trim()).filter(Boolean);
+    expect(statements).toEqual([
+      `CREATE INDEX CONCURRENTLY IF NOT EXISTS "PaymentTransaction_payuni_reconcilable_createdAt_idx"\n  ON "PaymentTransaction" ("createdAt")\n  WHERE "providerName" = 'payuni' AND "status" IN ('pending', 'expired')`,
+    ]);
+    // The scan repeats the predicate with literals, so a generic plan can still use the index.
+    const scan = fs.readFileSync("src/lib/payment-pending-reconciliation.ts", "utf8");
+    expect(scan).toContain(`WHERE t."providerName" = 'payuni' AND t."status" IN ('pending', 'expired')`);
   });
 
   it("fits every allowed query inside the scan window, under the attempts CHECK", () => {

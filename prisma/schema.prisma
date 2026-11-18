@@ -2275,6 +2275,10 @@ model PaymentTransaction {
   @@index([vendorId, occurredAt])
   @@index([vendorId, orderNumber])
   @@index([status, occurredAt])
+  // A-2 05: partial index "PaymentTransaction_payuni_reconcilable_createdAt_idx"
+  // ON ("createdAt") WHERE providerName = 'payuni' AND status IN ('pending',
+  // 'expired') (the pending-payment reconciler's scan) lives in the migration
+  // only (Prisma 6 cannot express it; prisma-unmanaged-indexes.db.test.ts).
 }
 
 /// A-2 05: provider query state for a PayUni checkout whose callback never
@@ -2295,6 +2299,8 @@ model PaymentPendingReconciliation {
   nextQueryAt          DateTime
   /// Bounded outcome code (CHECK ^[a-z_]{1,64}$); never provider text.
   lastOutcome          String?
+  /// Set once PayUni reported any trade for the order; a later "not found" then goes to a human (review m-2).
+  providerTradeSeen    Boolean   @default(false)
   resolvedAt           DateTime?
   createdAt            DateTime  @default(now())
   updatedAt            DateTime  @updatedAt

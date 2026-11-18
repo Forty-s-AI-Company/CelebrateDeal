@@ -39,7 +39,8 @@ function decryptRequest(encryptInfo: string) {
   return Object.fromEntries(new URLSearchParams(Buffer.concat([decipher.update(Buffer.from(encrypted!, "base64")), decipher.final()]).toString("utf8")));
 }
 
-const paidRow = { MerTradeNo: ORDER, TradeNo: TRADE, TradeAmt: "20", TradeStatus: "1", PaymentType: "1", DataSource: "A", RemainAmt: "20" };
+// A captured card trade (CloseStatus 2 請款成功) with nothing refunded.
+const paidRow = { MerTradeNo: ORDER, TradeNo: TRADE, TradeAmt: "20", TradeStatus: "1", PaymentType: "1", DataSource: "A", CloseStatus: "2", RemainAmt: "20" };
 
 function respond(body: string, status = 200) {
   const fetchMock = vi.fn().mockResolvedValue(new Response(body, { status }));
@@ -129,16 +130,38 @@ describe("PayUni pending-payment query (A-2 05)", () => {
   it.each([
     [{ PaymentType: "2" }, "payment_type_not_allowed"],
     [{ TradeStatus: "6" }, "trade_status_unknown"],
+    // Refund evidence is RefundStatus / RefundType / RefundAmt (#664 m-1).
     [{ RefundStatus: "2", RefundAmt: "5", RemainAmt: "15" }, "refunded_at_provider"],
+    [{ RefundStatus: "1", RefundAmt: "" }, "refunded_at_provider"],
+    [{ RefundType: "3" }, "refunded_at_provider"],
+    [{ RefundAmt: "5" }, "refunded_at_provider"],
+    // RemainAmt is compared only after capture (CloseStatus 2).
     [{ RemainAmt: "0" }, "refunded_at_provider"],
+    [{ CloseStatus: "3" }, "capture_cancelled"],
+    [{ CloseStatus: "5" }, "close_status_unknown"],
   ])("routes %j to manual reconciliation (%s)", async (patch, reason) => {
     respond(envelope({ Status: "SUCCESS", Result: { ...paidRow, ...patch } }));
-    await expect(query()).resolves.toMatchObject({ outcome: "manual_reconciliation", reason, orderNumber: ORDER });
+    await expect(query()).resolves.toMatchObject({ outcome: "manual_reconciliation", reason, orderNumber: ORDER, collectionReported: true });
   });
 
-  it("never reduces two trades on one order number to one decision", async () => {
+  it.each([
+    { CloseStatus: "9", RemainAmt: "0" },
+    { CloseStatus: "1", RemainAmt: "" },
+    { CloseStatus: "7", RemainAmt: undefined },
+    { CloseStatus: undefined, RemainAmt: "0" },
+    { CloseStatus: "2", RemainAmt: undefined },
+  ])("settles a paid card trade before or without capture data (%j) without reading RemainAmt as a refund", async (patch) => {
+    const row: Record<string, unknown> = { ...paidRow, ...patch };
+    for (const key of Object.keys(row)) if (row[key] === undefined) delete row[key];
+    respond(envelope({ Status: "SUCCESS", Result: row }));
+    await expect(query()).resolves.toMatchObject({ outcome: "paid", grossAmountCents: 2_000, payload: { eventId: `${TRADE}:1` } });
+  });
+
+  it("holds two trades on one order number only when one of them reports a collection", async () => {
     respond(envelope({ Status: "SUCCESS", Result: [{ ...paidRow, TradeStatus: "2", TradeNo: "PAYUNI-FIRST" }, paidRow] }));
-    await expect(query()).resolves.toMatchObject({ outcome: "manual_reconciliation", reason: "multiple_trades" });
+    await expect(query()).resolves.toMatchObject({ outcome: "manual_reconciliation", reason: "multiple_trades", collectionReported: true });
+    respond(envelope({ Status: "SUCCESS", Result: [{ ...paidRow, TradeStatus: "2", TradeNo: "PAYUNI-FIRST" }, { ...paidRow, TradeStatus: "3" }] }));
+    await expect(query()).resolves.toMatchObject({ outcome: "manual_reconciliation", reason: "multiple_trades", collectionReported: false });
   });
 
   it("rejects a response whose HashInfo does not match", async () => {
@@ -160,6 +183,8 @@ describe("PayUni pending-payment query (A-2 05)", () => {
     ["a paid row without TradeNo", envelope({ Status: "SUCCESS", Result: { ...paidRow, TradeNo: "" } })],
     ["a paid row with a malformed amount", envelope({ Status: "SUCCESS", Result: { ...paidRow, TradeAmt: "20junk" } })],
     ["a TradeNo outside the identifier format", envelope({ Status: "SUCCESS", Result: { ...paidRow, TradeNo: "a b" } })],
+    ["a malformed RefundAmt", envelope({ Status: "SUCCESS", Result: { ...paidRow, RefundAmt: "5junk" } })],
+    ["a malformed RemainAmt after capture", envelope({ Status: "SUCCESS", Result: { ...paidRow, RemainAmt: "20junk" } })],
     ["an empty result", envelope({ Status: "SUCCESS" })],
   ])("fails closed on %s", async (_label, body) => {
     respond(body);

@@ -99,10 +99,12 @@ test("the committed allowlist is well formed and covers the B04-04 hazards", () 
   // Q-12: a partial expression index (consultation step verified-address lookup).
   // Q-13: execution logs that still owe a delayed-step run.
   // A2-01: the watch pass's same-person check (registrations of one Live by e-mail).
+  // A-2 05: the pending-payment reconciler's scan (undecided PayUni payments by createdAt).
   assert.deepEqual(allowlist.notComparedByPrismaDiff.partialIndexes, [
     "AutomationExecutionLog_delayed_steps_pending_idx",
     "FormSubmission_live_email_normalized_idx",
     "FormSubmission_verified_email_normalized_idx",
+    "PaymentTransaction_payuni_reconcilable_createdAt_idx",
   ]);
 });
 

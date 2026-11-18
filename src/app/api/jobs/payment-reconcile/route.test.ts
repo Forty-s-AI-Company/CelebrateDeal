@@ -18,7 +18,8 @@ const jobSecret = "test-fixture-job-secret";
 const cronSecret = "test-fixture-cron-secret";
 const SUMMARY = {
   candidates: 2, examined: 2, paid: 1, failed: 0, alreadySettled: 0, inProgress: 0, handedToRetry: 0, inventoryUnavailable: 0,
-  pending: 0, notFound: 1, expired: 0, queryErrors: 0, manualReview: 0, closed: 0, claimedElsewhere: 0, errors: 0,
+  pending: 0, notFound: 1, expired: 0, queryErrors: 0, manualReview: 0, windowExpired: 0, closed: 0, notFoundClosed: 0,
+  claimedElsewhere: 0, errors: 0,
 };
 
 function request(method: "GET" | "POST", authorization?: string) {
@@ -72,13 +73,13 @@ describe("/api/jobs/payment-reconcile", () => {
     expect(mocks.runPendingPaymentReconciliation).toHaveBeenCalledWith();
   });
 
-  it("reports a skipped pass when PayUni is not configured", async () => {
-    mocks.runPendingPaymentReconciliation.mockResolvedValue({ ...SUMMARY, candidates: 0, examined: 0, paid: 0, notFound: 0, skipped: "provider_unavailable" });
+  it.each(["disabled", "provider_unavailable"])("reports a skipped pass (%s) as a success", async (skipped) => {
+    mocks.runPendingPaymentReconciliation.mockResolvedValue({ ...SUMMARY, candidates: 0, examined: 0, paid: 0, notFound: 0, skipped });
 
     const response = await POST(request("POST", `Bearer ${jobSecret}`));
 
     expect(response.status).toBe(200);
-    await expect(response.json()).resolves.toMatchObject({ ok: true, skipped: "provider_unavailable", candidates: 0 });
+    await expect(response.json()).resolves.toMatchObject({ ok: true, skipped, candidates: 0 });
   });
 
   it("fails closed with a fixed code and no error text when the pass throws", async () => {

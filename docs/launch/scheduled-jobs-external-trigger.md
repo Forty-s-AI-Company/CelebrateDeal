@@ -19,7 +19,7 @@ GitHub Actions 的 `*/5 * * * *` 排程實測約每 2～5 小時才跑一次（1
 | email-deliveries | `POST /api/jobs/email-deliveries` | 交易信、開播提醒、直播後追蹤、學員通知、LINE 物化與派送、報名重試草稿清理 | 啟用 |
 | line-notifications | `POST /api/cron/line-notifications` | 推進 LINE outbox（有 claim lease，不會重送） | 啟用 |
 | webhook-retry | `POST /api/jobs/webhook-retry` | 先釋放過期庫存保留，再重試失敗的付款 webhook（金流路徑，單次最長約 300 秒） | 啟用（Production 受 B03-07 gate 限制，見 §8） |
-| payment-reconcile | `POST /api/jobs/payment-reconcile` | PayUni 付款通知遺失時主動查詢並補單（A-2 05；每輪最多 20 筆、40 秒後不再開始新的查詢） | 啟用（staging；Production 需 owner 同意） |
+| payment-reconcile | `POST /api/jobs/payment-reconcile` | PayUni 付款通知遺失時主動查詢並補單（A-2 05；每輪最多 20 筆、40 秒後不再開始新的查詢） | 啟用（staging；實際查詢另需 Vercel 環境變數 `PAYMENT_RECONCILE_ENABLED=true`，沒設時回 200 `skipped`；Production 需 owner 同意） |
 | live-media | `POST /api/cron/live-media` | 瀏覽器直播媒體清理；封測隱藏瀏覽器直播（D-09），**不要建立**，否則每次回 503 | 不啟用 |
 
 ### 2.2 每日 01:22（台灣時間）＝ 17:22 UTC

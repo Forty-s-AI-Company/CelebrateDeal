@@ -669,7 +669,11 @@ async function queryPendingPayUniPayment({ transaction, timeoutMs }: PendingPaym
     rawSnapshot: payUniWebhookAuditSnapshot(row),
   };
   // Two trades on one merchant order number cannot be reduced to one decision.
-  if (rows.length > 1) return pendingQueryManual(input, "multiple_trades");
+  // Money may be captured only when one of them reports TradeStatus 1 (#664 m-4).
+  if (rows.length > 1) {
+    const collected = rows.some((candidate) => optionalPayloadText((candidate as Record<string, unknown>).TradeStatus) === PAYUNI_PAID_TRADE_STATUS);
+    return pendingQueryManual(input, "multiple_trades", collected);
+  }
   return classifyPendingQueryRow(input);
 }
 
@@ -694,9 +698,10 @@ type PendingQueryRow = {
   rawSnapshot: Record<string, string | number | boolean>;
 };
 
-function pendingQueryManual(input: PendingQueryRow, reason: PendingPaymentManualReason): PendingPaymentQueryResult {
+/** `collectionReported` defaults to true: every single-row manual reason is a TradeStatus 1 or an unmapped code that may be one. */
+function pendingQueryManual(input: PendingQueryRow, reason: PendingPaymentManualReason, collectionReported = true): PendingPaymentQueryResult {
   return {
-    outcome: "manual_reconciliation", reason, orderNumber: input.orderNumber, providerTradeNo: input.providerTradeNo,
+    outcome: "manual_reconciliation", reason, collectionReported, orderNumber: input.orderNumber, providerTradeNo: input.providerTradeNo,
     tradeStatus: PAYUNI_TRADE_STATUS_CODE.test(input.tradeStatus) ? input.tradeStatus : undefined,
     paymentType: input.paymentType && /^[0-9]{1,2}$/.test(input.paymentType) ? input.paymentType : undefined,
     rawSnapshot: input.rawSnapshot,
@@ -724,6 +729,46 @@ function classifyPendingQueryRow(input: PendingQueryRow): PendingPaymentQueryRes
   throw new PaymentQueryProviderError("provider_response");
 }
 
+// PAYUNi trade query Ver 2.0, credit card block (docs.payuni.com.tw/web/#/7/164,
+// read 2026-11-19): CloseStatus 請款狀態 1 請款申請中, 2 請款成功, 3 請款取消,
+// 7 請款處理中, 9 未申請; RefundType 2 退款, 3 預計退款; RefundStatus 1 申請中,
+// 2 成功, 3 取消, 8 處理中 (only the last refund is reported); RemainAmt 剩餘可退款金額.
+// 待 Sandbox 驗證: what RemainAmt/CloseAmt hold before capture (CloseStatus 1/7/9),
+// whether an authorization cancel shows as CloseStatus 3 or only in another
+// field, and which CloseStatus an auto-capture store reports minutes after paying.
+const PAYUNI_CLOSE_CAPTURED = "2";
+const PAYUNI_CLOSE_CANCELLED = "3";
+const PAYUNI_CLOSE_NOT_YET_CAPTURED = new Set(["1", "7", "9"]);
+
+/**
+ * #664 m-1: refund evidence is RefundStatus/RefundType/RefundAmt; RemainAmt is
+ * compared only after capture (CloseStatus 2), because its value before capture
+ * is undocumented. A cancelled capture or an unmapped CloseStatus is never paid.
+ * Returns the manual reason, or null for a clean paid card trade.
+ */
+function classifyCardSettlement(row: Record<string, unknown>, grossAmountCents: number): PendingPaymentManualReason | null {
+  const refundAmount = row.RefundAmt;
+  const latestRefundCents = queryAmountCents(refundAmount);
+  if (refundAmount !== undefined && refundAmount !== null && refundAmount !== "" && latestRefundCents === undefined) {
+    throw new PaymentQueryProviderError("provider_response");
+  }
+  if (optionalPayloadText(row.RefundStatus) !== undefined || optionalPayloadText(row.RefundType) !== undefined
+    || (latestRefundCents !== undefined && latestRefundCents > 0)) {
+    return "refunded_at_provider";
+  }
+  const closeStatus = optionalPayloadText(row.CloseStatus);
+  if (closeStatus === PAYUNI_CLOSE_CANCELLED) return "capture_cancelled";
+  if (closeStatus === PAYUNI_CLOSE_CAPTURED) {
+    const remaining = row.RemainAmt;
+    if (remaining === undefined || remaining === null || remaining === "") return null;
+    const remainingAmountCents = queryAmountCents(remaining);
+    if (remainingAmountCents === undefined) throw new PaymentQueryProviderError("provider_response");
+    return remainingAmountCents === grossAmountCents ? null : "refunded_at_provider";
+  }
+  if (closeStatus === undefined || PAYUNI_CLOSE_NOT_YET_CAPTURED.has(closeStatus)) return null;
+  return "close_status_unknown";
+}
+
 /** TradeStatus 1: a collection. Only complete (DataSource A), unrefunded card data is a paid decision. */
 function classifyPendingPaidRow(input: PendingQueryRow): PendingPaymentQueryResult {
   const { row, orderNumber, providerTradeNo, tradeStatus } = input;
@@ -735,13 +780,8 @@ function classifyPendingPaidRow(input: PendingQueryRow): PendingPaymentQueryResu
   if (dataSource !== "A" || !providerTradeNo || grossAmountCents === undefined || grossAmountCents <= 0) {
     throw new PaymentQueryProviderError("provider_response");
   }
-  const remainingAmountCents = queryAmountCents(row.RemainAmt);
-  const latestRefundCents = queryAmountCents(row.RefundAmt);
-  if (optionalPayloadText(row.RefundStatus) !== undefined
-    || (remainingAmountCents !== undefined && remainingAmountCents !== grossAmountCents)
-    || (latestRefundCents !== undefined && latestRefundCents > 0)) {
-    return pendingQueryManual(input, "refunded_at_provider");
-  }
+  const settlement = classifyCardSettlement(row, grossAmountCents);
+  if (settlement) return pendingQueryManual(input, settlement);
   return {
     outcome: "paid", orderNumber, providerTradeNo, grossAmountCents, rawSnapshot: input.rawSnapshot,
     // Same identity and fields as a verified paid UPP callback (normalizePayload):

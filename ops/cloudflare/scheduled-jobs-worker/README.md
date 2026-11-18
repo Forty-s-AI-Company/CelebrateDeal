@@ -11,6 +11,8 @@
 | `*/5 * * * *` | 每 5 分鐘 | `/api/jobs/email-deliveries`、`/api/cron/line-notifications`、`/api/jobs/webhook-retry`、`/api/jobs/payment-reconcile` |
 | `22 17 * * *` | 每日 01:22 | `/api/jobs/electronic-invoices` |
 
+`/api/jobs/payment-reconcile` 只有在 staging 的 Vercel 環境變數 `PAYMENT_RECONCILE_ENABLED=true` 時才會真的向 PayUni 查詢；沒設時一樣回 200（`skipped: "disabled"`），所以 Worker 照常呼叫即可，開關在 Vercel，不在這裡。
+
 目標網址在 `wrangler.toml` 的 `TARGET_ORIGIN`（staging 固定網址）。`live-media`、`billing-cycle`、`data-retention` 封測期間不啟用，所以不在清單內。每個請求逾時 120 秒、不跟隨轉址；日誌只有 job 名稱、HTTP 狀態與耗時。
 
 ## 部署（你要做的三步）
@@ -34,7 +36,7 @@
 
 - 暫停（保留 Worker）：把 `wrangler.toml` 的 `SCHEDULED_JOBS_PAUSED` 改成 `"true"`，再 `npx wrangler deploy`。日誌會出現 `outcome=paused`。注意：repo variable `SCHEDULED_JOBS_PAUSED` 擋不住 Worker，要在這裡設定。
 - 立刻停止：Dashboard → Workers → 該 Worker → Triggers 刪除 cron，或 `npx wrangler delete`。
-- 之後要延伸到 Production：另建一個 Worker（複製此資料夾、改 `name` 與 `TARGET_ORIGIN`），使用 Production 自己的 `JOB_SECRET`；`webhook-retry` 在 B03-07 gate 完成前不要放進 Production 清單；`payment-reconcile` 會以 Production PayUni 商店查詢並入帳，放進 Production 清單前需要 owner 同意。
+- 之後要延伸到 Production：另建一個 Worker（複製此資料夾、改 `name` 與 `TARGET_ORIGIN`），使用 Production 自己的 `JOB_SECRET`；`webhook-retry` 在 B03-07 gate 完成前不要放進 Production 清單；`payment-reconcile` 會以 Production PayUni 商店查詢並入帳，Production 預設關閉（沒有 `PAYMENT_RECONCILE_ENABLED=true`）；放進 Production 清單或設這個值前需要 owner 同意。
 
 ## 測試
 

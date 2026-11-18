@@ -150,6 +150,10 @@ export type PendingPaymentManualReason =
   | "trade_status_unknown"
   /** The provider reports a refund on an order this system never recorded as paid. */
   | "refunded_at_provider"
+  /** A paid card trade whose capture was cancelled (CloseStatus 3 請款取消). */
+  | "capture_cancelled"
+  /** A paid card trade with a CloseStatus outside the documented query table. */
+  | "close_status_unknown"
   /** More than one provider trade for the same merchant order number. */
   | "multiple_trades";
 
@@ -187,6 +191,11 @@ export type PendingPaymentQueryResult =
   | {
     outcome: "manual_reconciliation";
     reason: PendingPaymentManualReason;
+    /**
+     * The provider reported a collection (some trade has TradeStatus 1), so money
+     * may be captured and the pending payment must be held from expiry.
+     */
+    collectionReported: boolean;
     orderNumber: string;
     providerTradeNo?: string;
     tradeStatus?: string;

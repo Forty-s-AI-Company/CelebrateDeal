@@ -25,6 +25,8 @@ CREATE TABLE "PaymentPendingReconciliation" (
     "lastQueriedAt" TIMESTAMP(3),
     "nextQueryAt" TIMESTAMP(3) NOT NULL,
     "lastOutcome" TEXT,
+    -- Set once PayUni reported any trade for the order: a later "not found" then goes to a human.
+    "providerTradeSeen" BOOLEAN NOT NULL DEFAULT false,
     "resolvedAt" TIMESTAMP(3),
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,

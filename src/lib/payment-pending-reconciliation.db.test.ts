@@ -30,6 +30,38 @@ import {
 } from "@/lib/payment-pending-reconciliation";
 import { protectProductDeliveryConfig, validateProductDeliveryDraft } from "@/lib/product-delivery";
 
+/**
+ * The real client, except that one delegate method throws while `when` holds:
+ * a database failure in the middle of the reconciler's own writes (#664 M-1).
+ */
+function dbFailingOn(model: "webhookEvent" | "paymentPendingReconciliation", method: string, when: (args: unknown) => boolean = () => true) {
+  const calls = { failed: 0 };
+  const target = db[model] as unknown as Record<string | symbol, unknown>;
+  const delegate = new Proxy(target, {
+    get(object, property) {
+      const value = Reflect.get(object, property);
+      if (property === method && typeof value === "function") {
+        return async (args: unknown) => {
+          if (when(args)) {
+            calls.failed += 1;
+            throw new Error("synthetic database failure");
+          }
+          return (value as (input: unknown) => Promise<unknown>).call(object, args);
+        };
+      }
+      return typeof value === "function" ? value.bind(object) : value;
+    },
+  });
+  const client = new Proxy(db, {
+    get(object, property) {
+      if (property === model) return delegate;
+      const value = Reflect.get(object, property);
+      return typeof value === "function" ? value.bind(object) : value;
+    },
+  });
+  return { client: client as typeof db, calls };
+}
+
 const db = getDb();
 const vendorIds: string[] = [];
 const HASH_KEY = "12345678901234567890123456789012";
@@ -41,6 +73,7 @@ const MINUTE = 60_000;
 type ProviderAnswer =
   | { kind: "paid"; tradeNo: string; amount?: number }
   | { kind: "status"; tradeNo: string; tradeStatus: string; paymentType?: string }
+  | { kind: "rows"; rows: Array<{ tradeNo: string; tradeStatus: string }> }
   | { kind: "not_found" }
   | { kind: "network" }
   | { kind: "bad_signature" };
@@ -88,6 +121,10 @@ async function payUniQueryStub(url: string | URL | Request, init?: RequestInit) 
     const encryptInfo = encrypt({ Status: "SUCCESS" });
     return new Response(new URLSearchParams({ MerID: MERCHANT, EncryptInfo: encryptInfo, HashInfo: "0".repeat(64) }).toString());
   }
+  if (answer.kind === "rows") {
+    const rows = answer.rows.map((entry) => ({ MerTradeNo: orderNumber, TradeNo: entry.tradeNo, TradeAmt: String(PRICE_CENTS / 100), TradeStatus: entry.tradeStatus, PaymentType: "1", DataSource: "A" }));
+    return new Response(signedBody({ Status: "SUCCESS", Result: rows }));
+  }
   const row = answer.kind === "paid"
     ? { MerTradeNo: orderNumber, TradeNo: answer.tradeNo, TradeAmt: String((answer.amount ?? PRICE_CENTS) / 100), RemainAmt: String((answer.amount ?? PRICE_CENTS) / 100), TradeStatus: "1", PaymentType: "1", DataSource: "A" }
     : { MerTradeNo: orderNumber, TradeNo: answer.tradeNo, TradeAmt: String(PRICE_CENTS / 100), TradeStatus: answer.tradeStatus, PaymentType: answer.paymentType ?? "1", DataSource: "A" };
@@ -111,6 +148,7 @@ beforeEach(() => {
   vi.stubEnv("PAYUNI_SANDBOX_HASH_KEY", HASH_KEY);
   vi.stubEnv("PAYUNI_SANDBOX_HASH_IV", HASH_IV);
   vi.stubEnv("PAYMENT_PROVIDER", "payuni");
+  vi.stubEnv("PAYMENT_RECONCILE_ENABLED", "true");
   vi.stubEnv("VERCEL_ENV", "");
   vi.stubEnv("CSRF_SECRET", "payment-reconcile-secret-longer-than-32-bytes");
   vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://payment-reconcile.example.test");
@@ -397,7 +435,11 @@ describe("PayUni pending-payment reconciler (A-2 05)", () => {
 
     const transaction = await db.paymentTransaction.findUniqueOrThrow({ where: { id: c.transactionId } });
     expect(transaction).toMatchObject({ status: "pending", grossAmountCents: PRICE_CENTS });
-    expect(transaction.metadata).toMatchObject({ paymentManualReconciliation: { reason: "reconcile_amount_mismatch" } });
+    // The hold is merged into the checkout snapshot; no other key is rewritten.
+    expect(transaction.metadata).toEqual({
+      productId: t.product.id, referralCode: t.affiliate.code,
+      paymentManualReconciliation: { reason: "reconcile_amount_mismatch", webhookEventId: expect.any(String) },
+    });
     expect(await db.affiliateCommission.count({ where: { vendorId: t.vendor.id } })).toBe(0);
     await expect(reconciliationRow(c)).resolves.toMatchObject({ status: "needs_manual_review", lastOutcome: "amount_mismatch" });
     const manual = await db.webhookEvent.findFirstOrThrow({ where: { vendorId: t.vendor.id } });
@@ -557,5 +599,156 @@ describe("PayUni pending-payment reconciler (A-2 05)", () => {
 
     expect(await reconcile()).toMatchObject({ skipped: "provider_unavailable", candidates: 0 });
     expect(provider.calls).toEqual([]);
+  });
+
+  it.each(["", "false", "1", "yes"])("stays off unless PAYMENT_RECONCILE_ENABLED is true (%j)", async (value) => {
+    const t = await tenant("disabled");
+    const c = await checkout(t);
+    vi.stubEnv("PAYMENT_RECONCILE_ENABLED", value);
+
+    expect(await reconcile()).toMatchObject({ skipped: "disabled", candidates: 0 });
+    expect(provider.calls).toEqual([]);
+    await expect(reconciliationRow(c)).resolves.toBeNull();
+  });
+
+  it("keeps the row active and unheld when recording the manual review fails, and completes it next run", async () => {
+    const t = await tenant("record-failure");
+    const c = await checkout(t);
+    provider.answers.set(c.orderNumber, { kind: "paid", tradeNo: c.tradeNo, amount: PRICE_CENTS + 100 });
+    const failing = dbFailingOn("webhookEvent", "create");
+
+    expect(await reconcile({ db: failing.client })).toMatchObject({ errors: 1, manualReview: 0 });
+
+    expect(failing.calls.failed).toBe(1);
+    await expect(reconciliationRow(c)).resolves.toMatchObject({ status: "active", attempts: 1 });
+    expect((await db.paymentTransaction.findUniqueOrThrow({ where: { id: c.transactionId } })).metadata).not.toHaveProperty("paymentManualReconciliation");
+    expect(await db.webhookEvent.count({ where: { vendorId: t.vendor.id } })).toBe(0);
+
+    // Next due run, database healthy: the whole manual review completes.
+    expect(await reconcile({ now: new Date(Date.now() + paymentReconcileDelayMs(1) + MINUTE) })).toMatchObject({ manualReview: 1, errors: 0 });
+    await expect(reconciliationRow(c)).resolves.toMatchObject({ status: "needs_manual_review", attempts: 2, lastOutcome: "amount_mismatch" });
+    expect((await db.paymentTransaction.findUniqueOrThrow({ where: { id: c.transactionId } })).metadata).toMatchObject({ paymentManualReconciliation: { reason: "reconcile_amount_mismatch" } });
+    expect(await db.webhookEvent.count({ where: { vendorId: t.vendor.id, status: "needs_manual_reconciliation" } })).toBe(1);
+  });
+
+  it("finishes its own manual review when only the final status write failed", async () => {
+    const t = await tenant("finish-failure");
+    const c = await checkout(t);
+    provider.answers.set(c.orderNumber, { kind: "paid", tradeNo: c.tradeNo, amount: PRICE_CENTS + 100 });
+    const failing = dbFailingOn("paymentPendingReconciliation", "updateMany",
+      (args) => (args as { data?: { status?: string } }).data?.status === "needs_manual_review");
+
+    expect(await reconcile({ db: failing.client })).toMatchObject({ errors: 1 });
+    // Event and hold are already recorded: the payment is in the human queue.
+    await expect(reconciliationRow(c)).resolves.toMatchObject({ status: "active" });
+    expect(await db.webhookEvent.count({ where: { vendorId: t.vendor.id, status: "needs_manual_reconciliation" } })).toBe(1);
+
+    expect(await reconcile({ now: new Date(Date.now() + paymentReconcileDelayMs(1) + MINUTE) })).toMatchObject({ manualReview: 1 });
+    await expect(reconciliationRow(c)).resolves.toMatchObject({ status: "needs_manual_review", lastOutcome: "amount_mismatch" });
+    // No second query and no second event.
+    expect(provider.calls).toEqual([c.orderNumber]);
+    expect(await db.webhookEvent.count({ where: { vendorId: t.vendor.id } })).toBe(1);
+  });
+
+  it("sends a human an order PayUni reported before and no longer finds, and warns once per run about not-found orders", async () => {
+    const t = await tenant("vanished");
+    const seen = await checkout(t);
+    const never = await checkout(t);
+    provider.answers.set(seen.orderNumber, { kind: "status", tradeNo: seen.tradeNo, tradeStatus: "0" });
+
+    expect(await reconcile()).toMatchObject({ pending: 1, notFound: 1 });
+    await expect(reconciliationRow(seen)).resolves.toMatchObject({ providerTradeSeen: true, lastOutcome: "provider_pending" });
+    expect(monitoring.captureOperationalError).toHaveBeenCalledWith(expect.any(Error), expect.objectContaining({
+      source: "payment_reconcile", operation: "not_found_summary", status: 1,
+    }), expect.objectContaining({ level: "warning" }));
+
+    provider.answers.set(seen.orderNumber, { kind: "not_found" });
+    await db.paymentPendingReconciliation.updateMany({
+      where: { paymentTransactionId: { in: [seen.transactionId, never.transactionId] } },
+      data: { attempts: PAYMENT_RECONCILE_MAX_ATTEMPTS - 1, nextQueryAt: new Date(Date.now() - MINUTE) },
+    });
+    monitoring.captureOperationalError.mockClear();
+
+    expect(await reconcile()).toMatchObject({ closed: 1, notFoundClosed: 1, manualReview: 1 });
+    await expect(reconciliationRow(never)).resolves.toMatchObject({ status: "closed", lastOutcome: "not_found" });
+    await expect(reconciliationRow(seen)).resolves.toMatchObject({ status: "needs_manual_review", lastOutcome: "not_found_after_trade_seen" });
+    await expect(db.webhookEvent.findFirstOrThrow({ where: { vendorId: t.vendor.id } })).resolves.toMatchObject({
+      eventId: `manual:reconcile:${seen.orderNumber}:not_found_after_trade_seen`, status: "needs_manual_reconciliation",
+    });
+    expect(monitoring.captureOperationalError).toHaveBeenCalledWith(expect.any(Error), expect.objectContaining({
+      operation: "not_found_summary", status: 1,
+    }), expect.anything());
+  });
+
+  it("sends a human a payment whose provider event stays claimed by someone else through the last query", async () => {
+    const t = await tenant("stuck-event");
+    const c = await checkout(t);
+    provider.answers.set(c.orderNumber, { kind: "paid", tradeNo: c.tradeNo });
+    await db.webhookEvent.create({
+      data: { provider: "payuni", eventId: `${c.tradeNo}:1`, eventType: "paid", status: "retrying", payload: {} },
+    });
+
+    expect(await reconcile()).toMatchObject({ inProgress: 1 });
+    await expect(reconciliationRow(c)).resolves.toMatchObject({ status: "active", lastOutcome: "event_in_progress" });
+
+    await db.paymentPendingReconciliation.updateMany({
+      where: { paymentTransactionId: c.transactionId },
+      data: { attempts: PAYMENT_RECONCILE_MAX_ATTEMPTS - 1, nextQueryAt: new Date(Date.now() - MINUTE) },
+    });
+    expect(await reconcile()).toMatchObject({ manualReview: 1, inProgress: 0 });
+    await expect(reconciliationRow(c)).resolves.toMatchObject({ status: "needs_manual_review", lastOutcome: "event_in_progress_exhausted" });
+    expect((await db.paymentTransaction.findUniqueOrThrow({ where: { id: c.transactionId } })).status).toBe("pending");
+  });
+
+  it("sends a human a row still active after its payment left the scan window", async () => {
+    const t = await tenant("window-expired");
+    const c = await checkout(t);
+    expect(await reconcile()).toMatchObject({ notFound: 1 });
+    // The job stopped running; three days pass.
+    await db.paymentTransaction.update({ where: { id: c.transactionId }, data: { createdAt: new Date(Date.now() - 4 * 24 * 60 * MINUTE) } });
+
+    expect(await reconcile()).toMatchObject({ windowExpired: 1, manualReview: 1, candidates: 0 });
+
+    await expect(reconciliationRow(c)).resolves.toMatchObject({ status: "needs_manual_review", lastOutcome: "window_expired" });
+    await expect(db.webhookEvent.findFirstOrThrow({ where: { vendorId: t.vendor.id } })).resolves.toMatchObject({
+      eventId: `manual:reconcile:${c.orderNumber}:window_expired`, status: "needs_manual_reconciliation",
+    });
+    expect(provider.calls).toHaveLength(1);
+    expect(await reconcile()).toMatchObject({ windowExpired: 0 });
+  });
+
+  it("holds two trades on one order number only when one of them collected", async () => {
+    const t = await tenant("multiple");
+    const uncollected = await checkout(t);
+    const collected = await checkout(t);
+    provider.answers.set(uncollected.orderNumber, { kind: "rows", rows: [{ tradeNo: `${uncollected.tradeNo}-A`, tradeStatus: "2" }, { tradeNo: `${uncollected.tradeNo}-B`, tradeStatus: "3" }] });
+    provider.answers.set(collected.orderNumber, { kind: "rows", rows: [{ tradeNo: `${collected.tradeNo}-A`, tradeStatus: "2" }, { tradeNo: `${collected.tradeNo}-B`, tradeStatus: "1" }] });
+
+    expect(await reconcile()).toMatchObject({ manualReview: 2 });
+
+    for (const c of [uncollected, collected]) await expect(reconciliationRow(c)).resolves.toMatchObject({ status: "needs_manual_review", lastOutcome: "multiple_trades" });
+    expect((await db.paymentTransaction.findUniqueOrThrow({ where: { id: uncollected.transactionId } })).metadata).not.toHaveProperty("paymentManualReconciliation");
+    expect((await db.paymentTransaction.findUniqueOrThrow({ where: { id: collected.transactionId } })).metadata).toMatchObject({ paymentManualReconciliation: { reason: "reconcile_multiple_trades" } });
+  });
+
+  it("closes its manual reconciliation event when the payment is later settled by a verified paid callback", async () => {
+    const t = await tenant("resolved");
+    const c = await checkout(t);
+    provider.answers.set(c.orderNumber, { kind: "network" });
+    await reconcile();
+    await db.paymentPendingReconciliation.updateMany({
+      where: { paymentTransactionId: c.transactionId },
+      data: { attempts: PAYMENT_RECONCILE_MAX_ATTEMPTS - 1, nextQueryAt: new Date(Date.now() - MINUTE) },
+    });
+    expect(await reconcile()).toMatchObject({ manualReview: 1 });
+    const manualEventId = `manual:reconcile:${c.orderNumber}:query_attempts_exhausted`;
+    await expect(db.webhookEvent.findFirstOrThrow({ where: { eventId: manualEventId } })).resolves.toMatchObject({ status: "needs_manual_reconciliation" });
+
+    expect((await paidNotify(c.orderNumber, c.tradeNo)).status).toBe(200);
+
+    expect((await db.paymentTransaction.findUniqueOrThrow({ where: { id: c.transactionId } })).status).toBe("paid");
+    await expect(db.webhookEvent.findFirstOrThrow({ where: { eventId: manualEventId } })).resolves.toMatchObject({
+      status: "manual_reconciliation_resolved", processedAt: expect.any(Date),
+    });
   });
 });
