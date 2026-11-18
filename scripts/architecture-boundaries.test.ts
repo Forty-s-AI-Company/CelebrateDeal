@@ -93,6 +93,60 @@ function runtimeImports(filePath: string) {
   return imports;
 }
 
+/**
+ * Every module specifier a file depends on, type-only ones included: import and
+ * export declarations, `import("...")` types and calls, and `require("...")`.
+ */
+function allModuleSpecifiers(filePath: string, sourceText = fs.readFileSync(filePath, "utf8")) {
+  const sourceFile = ts.createSourceFile(
+    filePath,
+    sourceText,
+    ts.ScriptTarget.Latest,
+    true,
+    filePath.endsWith(".tsx") ? ts.ScriptKind.TSX : ts.ScriptKind.TS,
+  );
+  const specifiers: string[] = [];
+
+  function visit(node: ts.Node) {
+    if (
+      (ts.isImportDeclaration(node) || ts.isExportDeclaration(node))
+      && node.moduleSpecifier
+      && ts.isStringLiteral(node.moduleSpecifier)
+    ) {
+      specifiers.push(node.moduleSpecifier.text);
+    } else if (
+      ts.isImportTypeNode(node)
+      && ts.isLiteralTypeNode(node.argument)
+      && ts.isStringLiteral(node.argument.literal)
+    ) {
+      specifiers.push(node.argument.literal.text);
+    } else if (
+      ts.isCallExpression(node)
+      && (node.expression.kind === ts.SyntaxKind.ImportKeyword
+        || (ts.isIdentifier(node.expression) && node.expression.text === "require"))
+      && node.arguments[0]
+      && ts.isStringLiteral(node.arguments[0])
+    ) {
+      specifiers.push(node.arguments[0].text);
+    }
+    ts.forEachChild(node, visit);
+  }
+
+  visit(sourceFile);
+  return specifiers;
+}
+
+const paymentProvidersRoot = path.join(sourceRoot, "lib", "payment-providers");
+const paymentWebhookEngine = path.resolve(sourceRoot, "lib", "payment-webhooks.ts");
+
+function paymentProviderImportsOfWebhookEngine(filePath: string, sourceText?: string) {
+  return allModuleSpecifiers(filePath, sourceText)
+    .filter((specifier) => {
+      const resolved = resolveSourceImport(filePath, specifier);
+      return resolved !== null && path.resolve(resolved) === paymentWebhookEngine;
+    });
+}
+
 function buildRuntimeGraph() {
   return new Map(
     sourceFiles.map((filePath) => [
@@ -173,6 +227,42 @@ describe("architecture boundaries", () => {
     });
 
     expect(violations).toEqual([]);
+  });
+
+  // F-008: adapters and the webhook engine share `payment-providers/contract.ts`;
+  // the provider layer never depends on the engine, not even for types.
+  it("keeps payment provider adapters independent from the payment webhook engine", () => {
+    const providerFiles = sourceFiles.filter((filePath) => (
+      path.resolve(filePath).startsWith(`${paymentProvidersRoot}${path.sep}`)
+    ));
+    expect(providerFiles.length).toBeGreaterThan(0);
+
+    const violations = providerFiles.flatMap((filePath) => {
+      const relativePath = normalize(path.relative(repositoryRoot, filePath));
+      return paymentProviderImportsOfWebhookEngine(filePath)
+        .map((specifier) => `${relativePath} -> ${specifier}`);
+    });
+
+    expect(violations).toEqual([]);
+  });
+
+  it("detects every way a payment provider can import the webhook engine", () => {
+    const probe = path.join(paymentProvidersRoot, "boundary-probe.ts");
+    const forbidden = [
+      "import { PaymentWebhookPayload } from \"@/lib/payment-webhooks\";",
+      "import type { PaymentWebhookPayloadInput } from \"@/lib/payment-webhooks\";",
+      "import { processPaymentWebhook } from \"../payment-webhooks\";",
+      "export { PaymentWebhookPayload } from \"@/lib/payment-webhooks\";",
+      "type Payload = import(\"@/lib/payment-webhooks\").PaymentWebhookPayloadInput;",
+      "const engine = await import(\"@/lib/payment-webhooks\");",
+    ];
+    for (const sourceText of forbidden) {
+      expect(paymentProviderImportsOfWebhookEngine(probe, sourceText), sourceText).toHaveLength(1);
+    }
+    expect(paymentProviderImportsOfWebhookEngine(
+      probe,
+      "import { PaymentWebhookPayload } from \"@/lib/payment-providers/contract\";",
+    )).toEqual([]);
   });
 
   // The graph is intentionally repository-wide; keep the assertion intact

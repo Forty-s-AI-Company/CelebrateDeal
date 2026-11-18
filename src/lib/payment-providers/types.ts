@@ -1,5 +1,5 @@
 import type { BillingPlan, PaymentTransaction, Product, Vendor } from "@prisma/client";
-import type { PaymentWebhookPayloadInput } from "@/lib/payment-webhooks";
+import type { PaymentWebhookPayloadInput } from "@/lib/payment-providers/contract";
 import type { PaymentMethodSetupVerificationInput } from "@/lib/payment-method-reference";
 
 export type ProviderNormalizeResult = {
