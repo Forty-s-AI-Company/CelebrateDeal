@@ -74,17 +74,29 @@ test("Funnel secondary tabs persist settings and enforce the public deadline", a
   await expect(page).toHaveURL(new RegExp(`/landing-pages/${pageId}/edit\\?step=`, "u"));
   const toolbar = page.getByLabel("編輯器工具列", { exact: true });
   await page.getByRole("button", { name: "頁面設定", exact: true }).click();
+  // The editor autosaves 3 seconds after the last settings change, so a slow runner can
+  // persist the draft before the manual click. Take the baseline while nothing is dirty and
+  // accept either path, but require exactly one save for the two changes.
+  await expect(toolbar.getByRole("button", { name: "已儲存", exact: true })).toBeDisabled();
+  const draftBefore = await db.landingPage.findUniqueOrThrow({ where: { id: pageId }, select: { revision: true } });
   await page.getByRole("combobox", { name: "預設報名表", exact: true }).selectOption(fixture.form.id);
   await page.getByRole("combobox", { name: "活動場次", exact: true }).selectOption(fixture.live.id);
-  const draftBefore = await db.landingPage.findUniqueOrThrow({ where: { id: pageId }, select: { revision: true } });
-  await toolbar.getByRole("button", { name: "儲存", exact: true }).click();
-  // Confirm this actual save was acknowledged in both the database and UI
-  // before testing navigation. No sleep or relaxed URL assertion is used.
+  try {
+    await toolbar.getByRole("button", { name: "儲存", exact: true }).click({ timeout: 3_000 });
+  } catch (error) {
+    // Only acceptable when autosave already took over the save button.
+    await expect(toolbar.getByRole("button", { name: /^(儲存中…|已儲存)$/u })).toBeVisible();
+    void error;
+  }
+  // Confirm the save was acknowledged in both the database and UI before testing
+  // navigation. No sleep or relaxed URL assertion is used.
   await expect.poll(async () => {
     const saved = await db.landingPage.findUniqueOrThrow({ where: { id: pageId }, select: { revision: true, draftFormId: true, draftLiveId: true } });
     return { revision: saved.revision, formId: saved.draftFormId, liveId: saved.draftLiveId };
   }).toEqual({ revision: draftBefore.revision + 1, formId: fixture.form.id, liveId: fixture.live.id });
   await expect(toolbar.getByRole("button", { name: "已儲存", exact: true })).toBeDisabled();
+  // Neither the click nor the autosave may have saved a second time.
+  expect((await db.landingPage.findUniqueOrThrow({ where: { id: pageId }, select: { revision: true } })).revision).toBe(draftBefore.revision + 1);
   await toolbar.getByRole("button", { name: "返回管理頁", exact: true }).click();
   await expect(page).toHaveURL(new RegExp(`${operationsPath.replaceAll("/", "\\/")}\\?step=`, "u"));
   await page.getByRole("button", { name: "網站設定", exact: true }).click();
@@ -203,7 +215,13 @@ test("Funnel secondary tabs persist settings and enforce the public deadline", a
   await expect(rule.getByLabel("客戶標籤", { exact: true })).toHaveValue("test-only-registered");
   await rule.getByLabel("客戶標籤", { exact: true }).fill("test-only-updated");
   stage = "automation-update";
+  const ruleBefore = await db.automationRule.findFirstOrThrow({ where: { vendorId: fixture.vendor.id }, select: { id: true, version: true } });
   await rule.getByRole("button", { name: "儲存變更", exact: true }).click();
+  // A re-enabled button alone does not prove the update landed (it is also enabled before the request starts).
+  await expect.poll(async () => {
+    const saved = await db.automationRule.findUniqueOrThrow({ where: { id: ruleBefore.id }, select: { version: true, actions: true } });
+    return { version: saved.version, tagged: JSON.stringify(saved.actions).includes("test-only-updated") };
+  }).toEqual({ version: ruleBefore.version + 1, tagged: true });
   await expect(rule.getByRole("button", { name: "儲存變更", exact: true })).toBeEnabled();
   await rule.getByRole("button", { name: "停用規則", exact: true }).click();
   await expect(rule.getByText("已停用", { exact: true })).toBeVisible();

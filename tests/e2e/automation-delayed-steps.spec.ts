@@ -133,7 +133,11 @@ test("a registration gets the rule's 2-hour step from the worker, after the owne
       }
       await add.getByLabel("加上客戶標籤", { exact: true }).check();
       await add.getByLabel("客戶標籤", { exact: true }).fill(options.tag);
+      const stepsBefore = await db.automationRuleStep.count({ where: { vendorId: fixture!.vendor.id, ruleId: rule.id } });
       await add.getByRole("button", { name: "新增步驟" }).click();
+      // The second call starts on the first call's ?updated=step_created URL and banner, so those cannot
+      // prove this step was created; wait for the stored step first.
+      await expect.poll(() => db.automationRuleStep.count({ where: { vendorId: fixture!.vendor.id, ruleId: rule.id } })).toBe(stepsBefore + 1);
       await expect(page).toHaveURL(/\/settings\/automations\?updated=step_created$/u);
       await expect(page.getByRole("status").filter({ hasText: "延遲步驟已新增。" })).toBeVisible();
     }
