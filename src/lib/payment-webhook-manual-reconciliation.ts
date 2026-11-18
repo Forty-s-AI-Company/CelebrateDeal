@@ -31,12 +31,28 @@ const PENDING_RECONCILE_EVENT_PREFIX = `${MANUAL_RECONCILIATION_EVENT_PREFIX}rec
 /**
  * A-2 05: a reconciliation event recorded by the pending-payment reconciler
  * (src/lib/payment-pending-reconciliation.ts), keyed by the server's order
- * number. Same namespace rule as above; a later verified paid event for the
- * order closes it (resolveManualReconciliationForPaidTrade).
+ * number. Same namespace rule as above.
  */
 export function pendingReconcileManualEventId(orderNumber: string, reason: string) {
   return `${PENDING_RECONCILE_EVENT_PREFIX}${orderNumber}:${reason}`;
 }
+
+/**
+ * #664 M-2: the reconciler's manual reasons that only meant "no decision yet".
+ * A later verified paid event for the order is that decision, so it closes
+ * them (resolveManualReconciliationForPaidTrade). Every other reason
+ * (refunded_at_provider, capture_cancelled, close_status_unknown,
+ * amount_mismatch, multiple_trades, trade_status_unknown,
+ * payment_type_not_allowed) reports something a paid event does not explain
+ * and stays open for a human.
+ */
+export const PENDING_RECONCILE_AUTO_RESOLVED_REASONS = [
+  "query_attempts_exhausted",
+  "provider_pending_exhausted",
+  "event_in_progress_exhausted",
+  "not_found_after_trade_seen",
+  "window_expired",
+] as const;
 
 /** Metadata key on a pending PaymentTransaction that holds it from automatic expiry. */
 export const PAYMENT_MANUAL_RECONCILIATION_METADATA_KEY = "paymentManualReconciliation";
@@ -153,8 +169,8 @@ export async function resolveManualReconciliationForPaidTrade(
       status: MANUAL_RECONCILIATION_STATUS,
       OR: [
         ...refs.map((ref) => ({ eventId: { startsWith: `${MANUAL_RECONCILIATION_EVENT_PREFIX}${ref}:1:` } })),
-        // A-2 05 (#664 m-5): the reconciler's events for this order (every reason).
-        { eventId: { startsWith: `${PENDING_RECONCILE_EVENT_PREFIX}${input.orderNumber}:` } },
+        // A-2 05 (#664 m-5, M-2): the reconciler's "no decision yet" events for this order only.
+        { eventId: { in: PENDING_RECONCILE_AUTO_RESOLVED_REASONS.map((reason) => pendingReconcileManualEventId(input.orderNumber, reason)) } },
       ],
     },
     data: {

@@ -237,7 +237,8 @@ PayUni 的 Notify 整個遺失時，`/api/jobs/payment-reconcile`（`JOB_SECRET`
   - 可能已收款、會在 pending 交易加上 `paymentManualReconciliation` 保留（jsonb 合併，不覆寫其他 metadata），庫存不被逾期釋放：金額不符（`amount_mismatch`）、非信用卡收款（`payment_type_not_allowed`）、表外的 TradeStatus（`trade_status_unknown`）、PayUni 已退款但本地從未入帳（`refunded_at_provider`）、請款取消（`capture_cancelled`）、表外的請款狀態（`close_status_unknown`）、同一訂單編號有多筆交易且其中一筆 `TradeStatus 1`（`multiple_trades`）。
   - 不保留交易：多筆交易但都沒收款（`multiple_trades`）、查詢錯誤（網路、簽章、解密、格式）查滿 10 次（`query_attempts_exhausted`，error）、PayUni 一直停在待付款（`provider_pending_exhausted`，warning）、曾查到又查無（`not_found_after_trade_seen`）、事件被持有到上限（`event_in_progress_exhausted`）、交易超過 3 天視窗但補單列仍 active（`window_expired`，每輪先掃）、事件已用盡重試或已在人工佇列（`event_needs_attention`，不另建事件）。簽章或解密失敗每次都以 error 告警。
   - 寫入順序：先建立人工事件、寫保留、送告警與 AuditLog，**最後**才把補單列標成 `needs_manual_review`。任何一步失敗時列維持 `active`，下次到期時整段重做（每一步都可重複執行）；若只有最後一步失敗，下輪看到自己寫的保留就直接補標終態，不再查 PayUni。
-  - 之後若收到這筆訂單的已驗證付款（回呼或補單），`manual:reconcile:<訂單編號>:` 開頭的人工事件會在同一個入帳交易內自動結案（`manual_reconciliation_resolved`），保留也一併移除。
+  - 之後若收到這筆訂單的已驗證付款（回呼或補單），只有代表「還沒有結果」的五種人工事件會在同一個入帳交易內自動結案（`manual_reconciliation_resolved`）：`query_attempts_exhausted`、`provider_pending_exhausted`、`event_in_progress_exhausted`、`not_found_after_trade_seen`、`window_expired`。其餘原因（`refunded_at_provider`、`capture_cancelled`、`close_status_unknown`、`amount_mismatch`、`multiple_trades`、`trade_status_unknown`、`payment_type_not_allowed`）是付款事件解釋不了的狀況，維持開啟等人工處理。
+  - 例外：已經超過 3 天視窗、從沒查到過交易、而且最後一次是查無的補單列，每輪開頭直接關閉（`closed / not_found`，計入 `notFoundClosed`），不轉人工。
 - **入帳失敗**：管線丟錯時事件標 `failed`、15 分鐘後由 webhook-retry 接手（有重試上限與用盡告警）；售完（`InventoryUnavailableError`）另發 `webhook_retry_requires_attention`。補單列記為 `settled / *_handed_to_retry`，不再查詢。
 - **凍結商家**：與 PayUni 回呼完全相同——照常查詢與入帳（交易、訂單、佣金、月結資料），數位／課程權限留在 pending、`payment.paid` 事件標 `fulfillmentHeld`、不跑 `payment_paid` 自動化；解除凍結時由既有流程開通。理由：錢已經被收，凍結只擋交付，不能讓已付款的買家停在「未付款」。
 

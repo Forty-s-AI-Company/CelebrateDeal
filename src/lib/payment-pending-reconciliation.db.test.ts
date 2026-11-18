@@ -71,7 +71,7 @@ const PRICE_CENTS = 2_000;
 const MINUTE = 60_000;
 
 type ProviderAnswer =
-  | { kind: "paid"; tradeNo: string; amount?: number }
+  | { kind: "paid"; tradeNo: string; amount?: number; extra?: Record<string, string> }
   | { kind: "status"; tradeNo: string; tradeStatus: string; paymentType?: string }
   | { kind: "rows"; rows: Array<{ tradeNo: string; tradeStatus: string }> }
   | { kind: "not_found" }
@@ -126,7 +126,7 @@ async function payUniQueryStub(url: string | URL | Request, init?: RequestInit) 
     return new Response(signedBody({ Status: "SUCCESS", Result: rows }));
   }
   const row = answer.kind === "paid"
-    ? { MerTradeNo: orderNumber, TradeNo: answer.tradeNo, TradeAmt: String((answer.amount ?? PRICE_CENTS) / 100), RemainAmt: String((answer.amount ?? PRICE_CENTS) / 100), TradeStatus: "1", PaymentType: "1", DataSource: "A" }
+    ? { MerTradeNo: orderNumber, TradeNo: answer.tradeNo, TradeAmt: String((answer.amount ?? PRICE_CENTS) / 100), RemainAmt: String((answer.amount ?? PRICE_CENTS) / 100), TradeStatus: "1", PaymentType: "1", DataSource: "A", ...answer.extra }
     : { MerTradeNo: orderNumber, TradeNo: answer.tradeNo, TradeAmt: String(PRICE_CENTS / 100), TradeStatus: answer.tradeStatus, PaymentType: answer.paymentType ?? "1", DataSource: "A" };
   return new Response(signedBody({ Status: "SUCCESS", Result: row }));
 }
@@ -700,21 +700,52 @@ describe("PayUni pending-payment reconciler (A-2 05)", () => {
     expect((await db.paymentTransaction.findUniqueOrThrow({ where: { id: c.transactionId } })).status).toBe("pending");
   });
 
-  it("sends a human a row still active after its payment left the scan window", async () => {
+  it("sends a human a row still active after its payment left the scan window, unless PayUni never had the order", async () => {
     const t = await tenant("window-expired");
-    const c = await checkout(t);
-    expect(await reconcile()).toMatchObject({ notFound: 1 });
+    const neverFound = await checkout(t);
+    const broken = await checkout(t);
+    const seenThenLost = await checkout(t);
+    provider.answers.set(broken.orderNumber, { kind: "network" });
+    expect(await reconcile()).toMatchObject({ notFound: 2, queryErrors: 1 });
+    await db.paymentPendingReconciliation.updateMany({ where: { paymentTransactionId: seenThenLost.transactionId }, data: { providerTradeSeen: true } });
     // The job stopped running; three days pass.
-    await db.paymentTransaction.update({ where: { id: c.transactionId }, data: { createdAt: new Date(Date.now() - 4 * 24 * 60 * MINUTE) } });
-
-    expect(await reconcile()).toMatchObject({ windowExpired: 1, manualReview: 1, candidates: 0 });
-
-    await expect(reconciliationRow(c)).resolves.toMatchObject({ status: "needs_manual_review", lastOutcome: "window_expired" });
-    await expect(db.webhookEvent.findFirstOrThrow({ where: { vendorId: t.vendor.id } })).resolves.toMatchObject({
-      eventId: `manual:reconcile:${c.orderNumber}:window_expired`, status: "needs_manual_reconciliation",
+    await db.paymentTransaction.updateMany({
+      where: { id: { in: [neverFound.transactionId, broken.transactionId, seenThenLost.transactionId] } },
+      data: { createdAt: new Date(Date.now() - 4 * 24 * 60 * MINUTE) },
     });
-    expect(provider.calls).toHaveLength(1);
-    expect(await reconcile()).toMatchObject({ windowExpired: 0 });
+
+    expect(await reconcile()).toMatchObject({ windowExpired: 2, manualReview: 2, closed: 1, notFoundClosed: 1, candidates: 0 });
+
+    // #664 m-7: never seen at PayUni and last answered "not found": no money, closed without a human.
+    await expect(reconciliationRow(neverFound)).resolves.toMatchObject({ status: "closed", lastOutcome: "not_found" });
+    for (const c of [broken, seenThenLost]) {
+      await expect(reconciliationRow(c)).resolves.toMatchObject({ status: "needs_manual_review", lastOutcome: "window_expired" });
+    }
+    expect((await db.webhookEvent.findMany({ where: { vendorId: t.vendor.id }, orderBy: { eventId: "asc" } })).map((event) => [event.eventId, event.status])).toEqual(
+      [broken, seenThenLost].map((c) => [`manual:reconcile:${c.orderNumber}:window_expired`, "needs_manual_reconciliation"])
+        .sort(([left], [right]) => left!.localeCompare(right!)),
+    );
+    expect(provider.calls).toHaveLength(3);
+    expect(await reconcile()).toMatchObject({ windowExpired: 0, closed: 0 });
+  });
+
+  it.each([
+    { reason: "refunded_at_provider", answer: (c: Checkout): ProviderAnswer => ({ kind: "paid", tradeNo: c.tradeNo, extra: { RefundStatus: "2", RefundAmt: "5" } }) },
+    { reason: "multiple_trades", answer: (c: Checkout): ProviderAnswer => ({ kind: "rows", rows: [{ tradeNo: `${c.tradeNo}-A`, tradeStatus: "2" }, { tradeNo: c.tradeNo, tradeStatus: "1" }] }) },
+  ])("keeps a $reason reconciliation event open after a later paid Notify", async ({ reason, answer }) => {
+    const t = await tenant(`kept-${reason}`);
+    const c = await checkout(t);
+    provider.answers.set(c.orderNumber, answer(c));
+    expect(await reconcile()).toMatchObject({ manualReview: 1 });
+    const manualEventId = `manual:reconcile:${c.orderNumber}:${reason}`;
+    await expect(db.webhookEvent.findFirstOrThrow({ where: { eventId: manualEventId } })).resolves.toMatchObject({ status: "needs_manual_reconciliation" });
+
+    expect((await paidNotify(c.orderNumber, c.tradeNo)).status).toBe(200);
+
+    // #664 M-2: a paid event does not explain a refund or a second trade; a human still has to look.
+    await expect(db.webhookEvent.findFirstOrThrow({ where: { eventId: manualEventId } })).resolves.toMatchObject({
+      status: "needs_manual_reconciliation", processedAt: null,
+    });
   });
 
   it("holds two trades on one order number only when one of them collected", async () => {

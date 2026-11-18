@@ -627,7 +627,9 @@ async function reconcileCandidate(
 /**
  * #664 m-3: a row still `active` whose payment is past the scan window (the
  * job was off or behind, or the row stopped short of its last query) would
- * otherwise leave every queue silently. Still-undecided payments go to a human.
+ * otherwise leave every queue silently. Still-undecided payments go to a human,
+ * except an order PayUni never had at any query that ended "not found"
+ * (#664 m-7): no money was taken, so it is closed like the not-found limit.
  */
 async function sweepWindowExpired(db: ReconcileDb, now: Date, limit: number, summary: PaymentReconcileSummary) {
   const oldest = new Date(now.getTime() - PAYMENT_RECONCILE_MAX_AGE_MS);
@@ -639,14 +641,24 @@ async function sweepWindowExpired(db: ReconcileDb, now: Date, limit: number, sum
     },
     orderBy: { nextQueryAt: "asc" },
     take: limit,
-    select: { vendorId: true, paymentTransactionId: true, attempts: true, lastOutcome: true, paymentTransaction: { select: TRANSACTION_SELECT } },
+    select: {
+      vendorId: true, paymentTransactionId: true, attempts: true, lastOutcome: true, providerTradeSeen: true,
+      paymentTransaction: { select: TRANSACTION_SELECT },
+    },
   });
   for (const row of rows) {
     // The relation is the row's own (vendorId, paymentTransactionId) key.
     const transaction = row.paymentTransaction;
     if (transaction.vendorId !== row.vendorId) continue;
+    const context = { db, vendorId: row.vendorId, transactionId: row.paymentTransactionId, attempts: row.attempts };
     try {
-      await flagManualReview({ db, vendorId: row.vendorId, transactionId: row.paymentTransactionId, attempts: row.attempts }, transaction, {
+      if (!row.providerTradeSeen && row.lastOutcome === "not_found") {
+        await finish(context, "closed", "not_found");
+        summary.closed += 1;
+        summary.notFoundClosed += 1;
+        continue;
+      }
+      await flagManualReview(context, transaction, {
         reason: "window_expired", level: "error", hold: false, recordEvent: true,
       });
       summary.windowExpired += 1;
