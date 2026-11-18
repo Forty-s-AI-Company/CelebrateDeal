@@ -44,6 +44,7 @@ const AFTER_SCHEDULING_IMPORTS: Record<string, string> = {
   runPaymentPaidAutomationAfterCommit: "registers after() itself (payment_paid automations)",
   dispatchPaymentPaidAutomationForOrder: "dispatchAutomationEvent",
   runPaymentPaidAutomationCatchup: "dispatchPaymentPaidAutomationForOrder (webhook-retry job catch-up)",
+  runPendingPaymentReconciliation: "processPaymentWebhook (payment-reconcile job, A-2 05)",
   runFormNoShowAutomation: "dispatchAutomationEvent (email job no-show pass, Q-11)",
   schedulePasswordResetLink: "password reset link",
   requestPasswordResetAction: "Server Action -> schedulePasswordResetLink",
@@ -87,6 +88,7 @@ const EXPECTED_ENTRIES = [
   "src/app/api/form-submissions/route.ts",
   "src/app/api/form-submissions/verify/route.ts",
   "src/app/api/jobs/email-deliveries/route.ts",
+  "src/app/api/jobs/payment-reconcile/route.ts",
   "src/app/api/jobs/webhook-retry/route.ts",
   "src/app/api/webhooks/payments/route.ts",
   "src/app/lp/[slug]/[stepPath]/page.tsx",
@@ -102,6 +104,9 @@ const FLUID_HOBBY_MAX_DURATION_SECONDS = 300;
 /** Entries whose exact limit is pinned: batches that need more than the email dispatch limit, and bounded retry queues. */
 const BATCH_ENTRY_MAX_DURATIONS: Record<string, number> = {
   "src/app/api/jobs/webhook-retry/route.ts": 300,
+  // A-2 05: a reconciled paid decision registers the same after() hooks as a
+  // callback; keep the platform default like webhook-retry.
+  "src/app/api/jobs/payment-reconcile/route.ts": 300,
   // F-3: the email job round runs up to the platform's 300 s, with the
   // sequence work last and bounded by its own deadlines. Q-11: its no-show
   // pass queues automation e-mails, so it is an after() entry too.

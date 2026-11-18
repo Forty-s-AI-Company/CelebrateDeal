@@ -19,6 +19,9 @@ import {
   type PaymentMethodSetupProviderOutcome,
   RefundProviderError,
   type PaymentProviderAdapter,
+  type PendingPaymentManualReason,
+  type PendingPaymentQueryInput,
+  type PendingPaymentQueryResult,
   type RefundPaymentInput,
   type QueryPaymentInput,
 } from "@/lib/payment-providers/types";
@@ -390,24 +393,29 @@ function hashInfo(encryptStr: string) {
   return createHash("sha256").update(`${key}${encryptStr}${iv}`).digest("hex").toUpperCase();
 }
 
-function payUniResultRow(value: Record<string, unknown>) {
+/**
+ * Every Result row of a decrypted query response, in provider order. Callers
+ * that only trust one row use `payUniResultRow`; the pending reconciler needs
+ * the count so two trades on one order number are never silently reduced to one.
+ */
+function payUniResultRows(value: Record<string, unknown>): unknown[] {
   const result = value.Result;
-  if (Array.isArray(result)) return result[0] as Record<string, unknown> | undefined;
+  if (Array.isArray(result)) return result;
   if (typeof result === "string") {
     try {
       const parsed = JSON.parse(result) as unknown;
-      return Array.isArray(parsed) ? parsed[0] as Record<string, unknown> | undefined : parsed as Record<string, unknown>;
+      return Array.isArray(parsed) ? parsed : [parsed];
     } catch {
       const parsed = Object.fromEntries(new URLSearchParams(result).entries());
-      return Object.keys(parsed).length > 0 ? parsed : undefined;
+      return Object.keys(parsed).length > 0 ? [parsed] : [];
     }
   }
-  if (result && typeof result === "object") return result as Record<string, unknown>;
+  if (result && typeof result === "object") return [result];
 
   // PayUni may encode Result as PHP-style bracket fields in the encrypted
   // query string (for example Result[TradeNo] or Result[0][TradeNo]).
-  // URLSearchParams intentionally keeps those keys flat, so normalize only
-  // the first documented Result row before validating any provider identity.
+  // URLSearchParams intentionally keeps those keys flat, so normalize the
+  // documented Result rows before validating any provider identity.
   const rows = new Map<number, Record<string, unknown>>();
   for (const [key, fieldValue] of Object.entries(value)) {
     const match = /^Result(?:\[(\d+)\])?\[([^\]]+)\]$/.exec(key);
@@ -418,8 +426,11 @@ function payUniResultRow(value: Record<string, unknown>) {
     row[match[2]!] = fieldValue;
     rows.set(index, row);
   }
-  if (rows.size === 0) return undefined;
-  return rows.get(Math.min(...rows.keys()));
+  return [...rows.keys()].sort((left, right) => left - right).map((index) => rows.get(index)!);
+}
+
+function payUniResultRow(value: Record<string, unknown>) {
+  return payUniResultRows(value)[0] as Record<string, unknown> | undefined;
 }
 
 function queryAmountCents(value: unknown) {
@@ -532,7 +543,7 @@ async function queryPayUniTransaction({ transaction }: QueryPaymentInput) {
 }
 
 /** Shared read-only transport; callers retain their own identity and environment guards. */
-async function fetchPayUniQueryPayload(environment: "sandbox" | "production", merchantId: string, orderNumber: string) {
+async function fetchPayUniQueryPayload(environment: "sandbox" | "production", merchantId: string, orderNumber: string, timeoutMs = 30_000) {
   let encrypted: string;
   try {
     encrypted = encryptInfo({
@@ -562,7 +573,7 @@ async function fetchPayUniQueryPayload(environment: "sandbox" | "production", me
         HashInfo: hashInfo(encrypted),
       }),
       redirect: "error",
-      signal: AbortSignal.timeout(30_000),
+      signal: AbortSignal.timeout(timeoutMs),
     });
   } catch {
     throw new PaymentQueryProviderError("network");
@@ -610,6 +621,176 @@ async function queryUnreferencedPayUniSandboxPayment({ transaction }: QueryPayme
   const snapshot = payUniQueryRow(payload, orderNumber);
   if (snapshot.grossAmountCents !== transaction.grossAmountCents) throw new PaymentQueryProviderError("provider_response");
   return snapshot;
+}
+
+// Provider trade numbers become event ids and stored references; anything else is not a PayUni trade number.
+const PAYUNI_TRADE_NO = /^[A-Za-z0-9_.:-]{1,64}$/;
+
+/**
+ * A-2 05: authenticated status of a pending checkout whose callback never
+ * arrived, asked by merchant order number only (the provider TradeNo is
+ * unknown until a callback or this query). Read-only: it never writes, and
+ * every decision mirrors the UPP callback contract (payUniUppEventType):
+ * TradeStatus 1 + PaymentType 1 + complete data (DataSource A) is paid, 2/3
+ * failed, 4 expired, 0/8/9 or DataSource B pending, any other well-formed code
+ * or a non-card collection manual. The paid/failed payload uses the callback's
+ * own event identity (`TradeNo:TradeStatus`), so a reconciled payment and a
+ * late Notify for the same trade state converge on one WebhookEvent. The
+ * returned TradeAmt is not trusted: the caller compares it with the server record.
+ */
+async function queryPendingPayUniPayment({ transaction, timeoutMs }: PendingPaymentQueryInput): Promise<PendingPaymentQueryResult> {
+  const environment = process.env.PAYUNI_ENV?.trim();
+  if (environment !== "sandbox" && environment !== "production") throw new PaymentQueryProviderError("request_contract");
+  // Preview + live merchant is reserved for the consented probe (checkoutReadiness, refunds).
+  if (process.env.VERCEL_ENV === "preview" && environment === "production") throw new PaymentQueryProviderError("request_contract");
+  const orderNumber = pendingQueryOrderNumber(transaction);
+  let merchantId: string;
+  try { merchantId = activePayUniCredentials().merchantId; }
+  catch { throw new PaymentQueryProviderError("authentication"); }
+
+  const payload = await fetchPayUniQueryPayload(environment, merchantId, orderNumber, timeoutMs);
+  // Only the authenticated encrypted status can establish absence.
+  const status = optionalPayloadText(payload.Status);
+  if (status === "QUERY03001") return { outcome: "not_found", orderNumber };
+  if (status !== "SUCCESS") throw new PaymentQueryProviderError("provider_response");
+
+  const rows = payUniResultRows(payload);
+  if (rows.length === 0 || rows.some((row) => !row || typeof row !== "object" || Array.isArray(row)
+    || optionalPayloadText((row as Record<string, unknown>).MerTradeNo) !== orderNumber)) {
+    throw new PaymentQueryProviderError("provider_response");
+  }
+  const row = rows[0] as Record<string, unknown>;
+  const providerTradeNo = optionalPayloadText(row.TradeNo);
+  if (providerTradeNo !== undefined && !PAYUNI_TRADE_NO.test(providerTradeNo)) throw new PaymentQueryProviderError("provider_response");
+  const input: PendingQueryRow = {
+    row, orderNumber, providerTradeNo,
+    tradeStatus: optionalPayloadText(row.TradeStatus) ?? "",
+    paymentType: optionalPayloadText(row.PaymentType),
+    rawSnapshot: payUniWebhookAuditSnapshot(row),
+  };
+  // Two trades on one merchant order number cannot be reduced to one decision.
+  // Money may be captured only when one of them reports TradeStatus 1 (#664 m-4).
+  if (rows.length > 1) {
+    const collected = rows.some((candidate) => optionalPayloadText((candidate as Record<string, unknown>).TradeStatus) === PAYUNI_PAID_TRADE_STATUS);
+    return pendingQueryManual(input, "multiple_trades", collected);
+  }
+  return classifyPendingQueryRow(input);
+}
+
+/** Request guard: only a server-owned PayUni platform checkout in TWD may be queried. */
+function pendingQueryOrderNumber(transaction: PendingPaymentQueryInput["transaction"]) {
+  const orderNumber = transaction.orderNumber ?? "";
+  if (transaction.providerName !== "payuni" || transaction.paymentMode !== "platform"
+    || !PAYUNI_ORDER_NUMBER.test(orderNumber)
+    || !Number.isSafeInteger(transaction.grossAmountCents) || transaction.grossAmountCents <= 0
+    || !isSupportedCheckoutCurrency(transaction.currency)) {
+    throw new PaymentQueryProviderError("request_contract");
+  }
+  return orderNumber;
+}
+
+type PendingQueryRow = {
+  row: Record<string, unknown>;
+  orderNumber: string;
+  providerTradeNo: string | undefined;
+  tradeStatus: string;
+  paymentType: string | undefined;
+  rawSnapshot: Record<string, string | number | boolean>;
+};
+
+/** `collectionReported` defaults to true: every single-row manual reason is a TradeStatus 1 or an unmapped code that may be one. */
+function pendingQueryManual(input: PendingQueryRow, reason: PendingPaymentManualReason, collectionReported = true): PendingPaymentQueryResult {
+  return {
+    outcome: "manual_reconciliation", reason, collectionReported, orderNumber: input.orderNumber, providerTradeNo: input.providerTradeNo,
+    tradeStatus: PAYUNI_TRADE_STATUS_CODE.test(input.tradeStatus) ? input.tradeStatus : undefined,
+    paymentType: input.paymentType && /^[0-9]{1,2}$/.test(input.paymentType) ? input.paymentType : undefined,
+    rawSnapshot: input.rawSnapshot,
+  };
+}
+
+/** Maps the single authenticated query row with the UPP callback's TradeStatus table. */
+function classifyPendingQueryRow(input: PendingQueryRow): PendingPaymentQueryResult {
+  const { orderNumber, providerTradeNo, tradeStatus } = input;
+  if (PAYUNI_PENDING_TRADE_STATUSES.has(tradeStatus)) return { outcome: "pending", orderNumber, providerTradeNo, tradeStatus };
+  if (PAYUNI_FAILED_TRADE_STATUSES.has(tradeStatus)) {
+    return {
+      outcome: "failed", orderNumber, providerTradeNo, tradeStatus, rawSnapshot: input.rawSnapshot,
+      // Same identity as a failed UPP callback for this trade state (normalizePayload).
+      payload: PaymentWebhookPayload.parse({
+        provider: "payuni", eventId: `${providerTradeNo ?? orderNumber}:${tradeStatus}`, eventType: "failed",
+        orderNumber, providerTradeNo, paymentMode: "platform", grossAmountCents: 0,
+        metadata: { providerResult: { tradeStatus, source: "query" } },
+      }),
+    };
+  }
+  if (tradeStatus === PAYUNI_EXPIRED_TRADE_STATUS) return { outcome: "expired", orderNumber, providerTradeNo, tradeStatus };
+  if (tradeStatus === PAYUNI_PAID_TRADE_STATUS) return classifyPendingPaidRow(input);
+  if (PAYUNI_TRADE_STATUS_CODE.test(tradeStatus)) return pendingQueryManual(input, "trade_status_unknown");
+  throw new PaymentQueryProviderError("provider_response");
+}
+
+// PAYUNi trade query Ver 2.0, credit card block (docs.payuni.com.tw/web/#/7/164,
+// read 2026-11-19): CloseStatus 請款狀態 1 請款申請中, 2 請款成功, 3 請款取消,
+// 7 請款處理中, 9 未申請; RefundType 2 退款, 3 預計退款; RefundStatus 1 申請中,
+// 2 成功, 3 取消, 8 處理中 (only the last refund is reported); RemainAmt 剩餘可退款金額.
+// 待 Sandbox 驗證: what RemainAmt/CloseAmt hold before capture (CloseStatus 1/7/9),
+// whether an authorization cancel shows as CloseStatus 3 or only in another
+// field, and which CloseStatus an auto-capture store reports minutes after paying.
+const PAYUNI_CLOSE_CAPTURED = "2";
+const PAYUNI_CLOSE_CANCELLED = "3";
+const PAYUNI_CLOSE_NOT_YET_CAPTURED = new Set(["1", "7", "9"]);
+
+/**
+ * #664 m-1: refund evidence is RefundStatus/RefundType/RefundAmt; RemainAmt is
+ * compared only after capture (CloseStatus 2), because its value before capture
+ * is undocumented. A cancelled capture or an unmapped CloseStatus is never paid.
+ * Returns the manual reason, or null for a clean paid card trade.
+ */
+function classifyCardSettlement(row: Record<string, unknown>, grossAmountCents: number): PendingPaymentManualReason | null {
+  const refundAmount = row.RefundAmt;
+  const latestRefundCents = queryAmountCents(refundAmount);
+  if (refundAmount !== undefined && refundAmount !== null && refundAmount !== "" && latestRefundCents === undefined) {
+    throw new PaymentQueryProviderError("provider_response");
+  }
+  if (optionalPayloadText(row.RefundStatus) !== undefined || optionalPayloadText(row.RefundType) !== undefined
+    || (latestRefundCents !== undefined && latestRefundCents > 0)) {
+    return "refunded_at_provider";
+  }
+  const closeStatus = optionalPayloadText(row.CloseStatus);
+  if (closeStatus === PAYUNI_CLOSE_CANCELLED) return "capture_cancelled";
+  if (closeStatus === PAYUNI_CLOSE_CAPTURED) {
+    const remaining = row.RemainAmt;
+    if (remaining === undefined || remaining === null || remaining === "") return null;
+    const remainingAmountCents = queryAmountCents(remaining);
+    if (remainingAmountCents === undefined) throw new PaymentQueryProviderError("provider_response");
+    return remainingAmountCents === grossAmountCents ? null : "refunded_at_provider";
+  }
+  if (closeStatus === undefined || PAYUNI_CLOSE_NOT_YET_CAPTURED.has(closeStatus)) return null;
+  return "close_status_unknown";
+}
+
+/** TradeStatus 1: a collection. Only complete (DataSource A), unrefunded card data is a paid decision. */
+function classifyPendingPaidRow(input: PendingQueryRow): PendingPaymentQueryResult {
+  const { row, orderNumber, providerTradeNo, tradeStatus } = input;
+  if (!PAYUNI_PAYABLE_PAYMENT_TYPES.has(input.paymentType ?? "")) return pendingQueryManual(input, "payment_type_not_allowed");
+  const dataSource = optionalPayloadText(row.DataSource);
+  // B: processing, data not complete yet (official advice: query again in 10 minutes).
+  if (dataSource === "B") return { outcome: "pending", orderNumber, providerTradeNo, tradeStatus };
+  const grossAmountCents = queryAmountCents(row.TradeAmt);
+  if (dataSource !== "A" || !providerTradeNo || grossAmountCents === undefined || grossAmountCents <= 0) {
+    throw new PaymentQueryProviderError("provider_response");
+  }
+  const settlement = classifyCardSettlement(row, grossAmountCents);
+  if (settlement) return pendingQueryManual(input, settlement);
+  return {
+    outcome: "paid", orderNumber, providerTradeNo, grossAmountCents, rawSnapshot: input.rawSnapshot,
+    // Same identity and fields as a verified paid UPP callback (normalizePayload):
+    // no fees (F-040 derives them), no currency, no tenant, no referral (F-048).
+    payload: PaymentWebhookPayload.parse({
+      provider: "payuni", eventId: `${providerTradeNo}:${PAYUNI_PAID_TRADE_STATUS}`, eventType: "paid",
+      orderNumber, providerTradeNo, paymentMode: "platform", grossAmountCents,
+    }),
+  };
 }
 
 /**
@@ -1237,5 +1418,8 @@ export const payUniPaymentProvider: PaymentProviderAdapter = {
   },
   async queryUnreferencedSandboxPayment(input) {
     return queryUnreferencedPayUniSandboxPayment(input);
+  },
+  async queryPendingPayment(input) {
+    return queryPendingPayUniPayment(input);
   },
 };

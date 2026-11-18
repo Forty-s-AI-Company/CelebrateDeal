@@ -29,7 +29,8 @@
     "partialIndexes": [
       "AutomationExecutionLog_delayed_steps_pending_idx",
       "FormSubmission_live_email_normalized_idx",
-      "FormSubmission_verified_email_normalized_idx"
+      "FormSubmission_verified_email_normalized_idx",
+      "PaymentTransaction_payuni_reconcilable_createdAt_idx"
     ]
   },
   "entries": [

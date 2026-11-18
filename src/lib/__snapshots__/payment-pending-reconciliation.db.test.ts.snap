@@ -1,0 +1,86 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`PayUni pending-payment reconciler (A-2 05) > produces the same commission, stock, order and automation outcome as the callback path 1`] = `
+{
+  "automation": [
+    {
+      "conditionMatched": true,
+      "eventId": "payment-paid:<order-id>",
+      "status": "completed",
+    },
+  ],
+  "commissions": [
+    {
+      "commissionAmountCents": 200,
+      "commissionRateBps": 1000,
+      "netReferenceAmountCents": 1900,
+      "orderAmountCents": 2000,
+      "orderNumber": "<order>",
+      "sourceType": "webhook",
+      "status": "pending",
+    },
+  ],
+  "emails": [
+    {
+      "status": "queued",
+      "trigger": "order_paid",
+    },
+  ],
+  "inventory": {
+    "productInventory": 9,
+    "reservation": "committed",
+  },
+  "ledger": [
+    {
+      "amountCents": 200,
+      "entryType": "accrual",
+      "eventIdentity": "<trade>:1",
+      "providerName": "payuni",
+    },
+  ],
+  "order": {
+    "paid": true,
+    "paidAmountCents": 2000,
+    "refundedAmountCents": 0,
+    "status": "paid",
+  },
+  "orderEvents": [
+    {
+      "actorType": "system",
+      "dedupKey": "order.created:<uuid>",
+      "eventType": "order.created",
+    },
+    {
+      "actorType": "system",
+      "dedupKey": "payment.paid:<trade>:1",
+      "eventType": "payment.paid",
+    },
+  ],
+  "tags": [
+    "已付款",
+  ],
+  "transaction": {
+    "currency": "TWD",
+    "gatewayFeeCents": 100,
+    "grossAmountCents": 2000,
+    "metadataKeys": [
+      "feeSource",
+      "gatewayFeePolicy",
+      "productId",
+      "referralCode",
+    ],
+    "netAmountCents": 1900,
+    "platformFeeCents": 0,
+    "providerTradeNo": "<trade>",
+    "status": "paid",
+  },
+  "webhookEvents": [
+    {
+      "eventId": "<trade>:1",
+      "eventType": "paid",
+      "provider": "payuni",
+      "status": "processed",
+    },
+  ],
+}
+`;
