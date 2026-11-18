@@ -4,7 +4,7 @@ import { PAYMENT_RECONCILE_MAX_ATTEMPTS, paymentReconcileDelayMs, PAYMENT_RECONC
 
 describe("payment pending reconciliation schema contract (A-2 05)", () => {
   const schema = fs.readFileSync("prisma/schema.prisma", "utf8");
-  const migration = fs.readFileSync("prisma/migrations/20261119090000_payment_pending_reconciliation/migration.sql", "utf8");
+  const migration = fs.readFileSync("prisma/migrations/20261119110000_payment_pending_reconciliation/migration.sql", "utf8");
   const model = /model PaymentPendingReconciliation \{[\s\S]*?\n\}/u.exec(schema)?.[0] ?? "";
 
   it("keeps the Prisma model and the additive migration aligned", () => {

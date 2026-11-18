@@ -963,7 +963,7 @@ Current source inventory: 145 models and 99 forward migrations. Previous checkpo
 
 ## 2026-11-19 PayUni 付款通知遺失時的主動查詢（A-2 05）
 
-- `20261119090000_payment_pending_reconciliation`：forward-only、純新增，排在 `20261118100100_automation_watch_duration_grant` 之後；交易層級 `lock_timeout = 5s`。只新增一張表，不改既有欄位、資料或 RLS 政策。
+- `20261119110000_payment_pending_reconciliation`：forward-only、純新增，排在 #663 的 `20261119090000_form_submission_live_email_index` 之後（兩者互不依賴；時間戳刻意避開同號）；交易層級 `lock_timeout = 5s`。只新增一張表，不改既有欄位、資料或 RLS 政策。
   - `PaymentPendingReconciliation`：每筆 PayUni 交易最多一列（`@@unique([vendorId, paymentTransactionId])`），記錄補單查詢的狀態：`status`（CHECK `active`／`settled`／`closed`／`needs_manual_review`）、`attempts`（CHECK 0..100；程式上限 `PAYMENT_RECONCILE_MAX_ATTEMPTS = 10`）、`lastQueriedAt`、`nextQueryAt`（也是 claim：查詢前以「目前次數＋已到期」條件往後推）、`lastOutcome`（CHECK `^[a-z_]{1,64}$`，只放固定代碼、不放 PayUni 文字）、`resolvedAt`（CHECK：只有 `active` 為 null）。
   - 外鍵 `(vendorId, paymentTransactionId) → PaymentTransaction(vendorId, id) ON DELETE CASCADE`：一列只能指向同一商家的交易；交易或商家刪除時一起刪除。索引 `(status, nextQueryAt)`；唯一索引兼作外鍵索引。
   - `ENABLE ROW LEVEL SECURITY`、沒有 GRANT，與其他 public 表相同（20261020090000）。
@@ -974,4 +974,4 @@ Current source inventory: 145 models and 99 forward migrations. Previous checkpo
   - 人工處理時另寫 `WebhookEvent`（`provider = payuni`、`eventId = manual:reconcile:<訂單編號>:<原因>`、`status = needs_manual_reconciliation`、vendorId 綁定），可能已收款的五種原因另在 pending 交易的 metadata 加 `paymentManualReconciliation`（與回呼的人工對帳保留相同 key），讓庫存逾期不釋放。
 - 測試：`src/lib/payment-pending-reconciliation.db.test.ts`（補單入帳與晚到的回呼重複、與回呼路徑的佣金／庫存／訂單／自動化結果快照相同、回呼與補單同時到達只入帳一次（含查詢中途到達）、跨租戶與複合外鍵、凍結商家、金額不符、失敗與逾期、庫存逾期後的 paid、掃描範圍、退避與上限、簽章錯誤、每輪上限與商家輪流與期限、兩個 run 重疊、未設定 PayUni）、`src/lib/payment-pending-reconciliation-schema-contract.test.ts`（migration 形狀與退避／上限在掃描期間內）。已在 loopback 拋棄式 PostgreSQL 16（`celebratedeal_test`，port 54423）forward-apply 全部 migration；`prisma-drift-check` `ok: true`。
 - 部署順序：migration 先於程式（舊程式不讀這張表）。回滾到本 PR 之前的程式只會停止補單查詢；表與資料可以留著，不需要回滾 migration。
-- 目前 167 models、163 forward migrations（含本次一條）；既有 SQL／checksum 不變。
+- 與 #663 合併後為 167 models、164 forward migrations（含本次一條）；既有 SQL／checksum 不變。
