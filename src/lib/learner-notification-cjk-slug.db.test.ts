@@ -1,6 +1,6 @@
 import { createHash, randomBytes, randomInt, randomUUID } from "node:crypto";
 import { Prisma } from "@prisma/client";
-import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi, beforeEach } from "vitest";
 const monitoring = vi.hoisted(() => ({ capture: vi.fn() }));
 vi.mock("./monitoring", async original => ({ ...await original<typeof import("./monitoring")>(), captureOperationalError: monitoring.capture }));
 import { getDb } from "./db";
@@ -11,6 +11,11 @@ import { saveCourseLesson } from "./course-curriculum";
 import { mutateCourseCommunity } from "./course-community";
 import { recordLearnerLiveStartedSources } from "./learner-live-notifications";
 import { decryptSensitiveValue, encryptSensitiveValue } from "./sensitive-data";
+
+// Synthetic secret: this file must not depend on a CSRF_SECRET from the developer's environment.
+const SYNTHETIC_CSRF_SECRET = "synthetic-db-test-secret-longer-than-32-bytes";
+vi.stubEnv("CSRF_SECRET", SYNTHETIC_CSRF_SECRET);
+beforeEach(() => { vi.stubEnv("CSRF_SECRET", SYNTHETIC_CSRF_SECRET); });
 
 // Regression for an 80-character CJK vendor slug: percent-encoding made each
 // character 9 bytes, pushed the stored path past 512 and rolled back the real

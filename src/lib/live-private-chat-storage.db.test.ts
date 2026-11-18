@@ -1,12 +1,17 @@
 import { randomBytes, randomUUID } from "node:crypto";
 import { PrismaClient } from "@prisma/client";
-import { afterAll, afterEach, beforeAll, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, expect, it, beforeEach, vi } from "vitest";
 import { assertLocalTestDatabase } from "../../scripts/local-database-safety";
 import { decryptPrivateChatBody, encryptPrivateChatBody, privateChatMessageId } from "./live-private-chat-storage";
 import { createPrivateViewerChat, listPrivateViewerChat, createPrivateInstructorChat, listPrivateInstructorChat, listPrivateInstructorConversations } from "./live-private-chat";
 import { createFormSubmissionChatSessionToken } from "./form-submission-chat-session";
 import { hashLiveViewerToken } from "./live-quota-admission";
 import { encryptMfaSecret } from "./mfa";
+
+// Synthetic secret: this file must not depend on a CSRF_SECRET from the developer's environment.
+const SYNTHETIC_CSRF_SECRET = "synthetic-db-test-secret-longer-than-32-bytes";
+vi.stubEnv("CSRF_SECRET", SYNTHETIC_CSRF_SECRET);
+beforeEach(() => { vi.stubEnv("CSRF_SECRET", SYNTHETIC_CSRF_SECRET); });
 
 let db: PrismaClient;
 const vendors: string[] = [], users: string[] = [];

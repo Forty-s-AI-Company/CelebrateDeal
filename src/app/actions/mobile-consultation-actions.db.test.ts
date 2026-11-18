@@ -27,6 +27,11 @@ vi.mock("@/lib/sales-project-scope", () => ({
 import { automationCustomerKeyHash } from "@/lib/automation-workflow";
 import { saveMobileConsultationAction } from "./mobile-consultation-actions";
 
+// Synthetic secret: this file must not depend on a CSRF_SECRET from the developer's environment.
+const SYNTHETIC_CSRF_SECRET = "synthetic-db-test-secret-longer-than-32-bytes";
+vi.stubEnv("CSRF_SECRET", SYNTHETIC_CSRF_SECRET);
+beforeEach(() => { vi.stubEnv("CSRF_SECRET", SYNTHETIC_CSRF_SECRET); });
+
 const db = new PrismaClient();
 const vendors: string[] = [];
 

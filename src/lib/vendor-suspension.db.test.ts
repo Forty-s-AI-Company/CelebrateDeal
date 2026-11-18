@@ -78,7 +78,7 @@ const userIds: string[] = [];
 type Tenant = { vendorId: string; slug: string; ownerId: string; formSlug: string; liveId: string };
 
 beforeAll(() => {
-  process.env.CSRF_SECRET ??= "ci-csrf-fixture-32-bytes-safe-key";
+  vi.stubEnv("CSRF_SECRET", "ci-csrf-fixture-32-bytes-safe-key");
 });
 
 afterEach(async () => {
