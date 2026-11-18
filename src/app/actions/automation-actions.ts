@@ -389,6 +389,7 @@ function deleteRuleIfUnused(vendorId: string, id: string) {
 const STEP_ERROR_CODES = new Set([
   "not_found",
   "trigger_unavailable",
+  "condition_unsupported",
   "steps_unsupported",
   "invalid_step",
   "invalid_delay",

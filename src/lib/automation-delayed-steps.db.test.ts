@@ -354,7 +354,7 @@ describe("觸發：事件發生時建立 run", () => {
     await expect(db.emailDelivery.count({ where: { vendorId: watchedAfter.t.vendor.id } })).resolves.toBe(0);
   });
 
-  it("refuses to add or change the steps of a watch rule with an old watch-seconds condition, even with every grant, but still deletes one (#651 review MINOR-5)", async () => {
+  it("refuses to add or change the steps of a watch rule with an old watch-seconds condition (condition_unsupported), even with every grant, but still deletes one (#651 review MINOR-5, re-review NIT)", async () => {
     const t = await tenant();
     await db.vendor.update({ where: { id: t.vendor.id }, data: { betaFeatureGrants: ["automation_delayed_steps", "automation_watch_progress", "automation_watch_duration"] } });
     const input = { delayMinutes: 120, condition: { type: "always" }, actions: [TAG_ACTION], isActive: true };
@@ -364,8 +364,8 @@ describe("觸發：事件發生時建立 run", () => {
     ] as const) {
       const old = await rule(t, { trigger, condition: legacy, isActive: false });
       const existing = await step(t, old.id, 60);
-      await expect(createAutomationRuleStep({ linePushAllowed: true, vendorId: t.vendor.id, ruleId: old.id, step: input })).resolves.toEqual({ ok: false, code: "trigger_unavailable" });
-      await expect(updateAutomationRuleStep({ linePushAllowed: true, vendorId: t.vendor.id, ruleId: old.id, stepId: existing.id, step: input })).resolves.toEqual({ ok: false, code: "trigger_unavailable" });
+      await expect(createAutomationRuleStep({ linePushAllowed: true, vendorId: t.vendor.id, ruleId: old.id, step: input })).resolves.toEqual({ ok: false, code: "condition_unsupported" });
+      await expect(updateAutomationRuleStep({ linePushAllowed: true, vendorId: t.vendor.id, ruleId: old.id, stepId: existing.id, step: input })).resolves.toEqual({ ok: false, code: "condition_unsupported" });
       await expect(db.automationRuleStep.findMany({ where: { ruleId: old.id }, select: { id: true, delayMinutes: true } })).resolves.toEqual([{ id: existing.id, delayMinutes: 60 }]);
       await expect(deleteAutomationRuleStep({ vendorId: t.vendor.id, ruleId: old.id, stepId: existing.id })).resolves.toMatchObject({ ok: true });
       // The same trigger with the condition it runs takes steps.

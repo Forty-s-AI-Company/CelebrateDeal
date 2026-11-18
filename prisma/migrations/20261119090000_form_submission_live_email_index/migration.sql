@@ -1,0 +1,34 @@
+-- A2-01 (#651 re-review MINOR-A): the watch pass's "same person already ran"
+-- check (rulesSamePersonRan in src/lib/watch-progress-automation.ts), run
+-- once per dispatched event (at most 50 a round):
+--   FormSubmission s2 JOIN RegistrationForm f2 ON f2.id = s2.formId AND f2.vendorId = $1
+--   JOIN AutomationExecutionLog other ON other.vendorId = $1 AND other.eventId = $prefix || s2.id || ':' || $threshold
+--   WHERE s2.liveId = $2 AND lower(btrim(s2.email)) = lower(btrim($3)) AND s2.id <> $4
+--     AND other.ruleId = ANY($5) AND NOT (other.status = 'skipped' AND other.errorCode = 'duplicate_person')
+-- It replaces a NOT EXISTS inside both watch scans that read every
+-- registration of the platform or of each Live (Seq Scan, or one Live's
+-- registrations per candidate row). No index covered (liveId,
+-- lower(btrim(email))): the Q-12 index is VERIFIED-only and platform-wide by
+-- e-mail, and the liveId indexes read every registrant of the Live.
+--
+-- Forward-only and additive: one partial expression b-tree index, no column,
+-- constraint or data change. Not VERIFIED-only, so the check counts any
+-- registration of the person as the old NOT EXISTS did; rows without a Live
+-- are left out (the check always names one).
+--
+-- FormSubmission is a hot table (docs/production-database-runbook.md §5.3),
+-- so the index is built CONCURRENTLY: registrations and verifications keep
+-- writing while it builds (about 5.4 s per 520,000 rows on the synthetic
+-- set). CONCURRENTLY cannot run inside a transaction, and Prisma sends a
+-- migration file as one batch, which PostgreSQL runs as one implicit
+-- transaction when it holds more than one statement; so this file holds this
+-- single statement and nothing else (no DO block, no set_config). lock_timeout
+-- therefore comes from the deploy session, not from this file.
+-- IF NOT EXISTS makes a retry after a failure a no-op only once the index is
+-- valid: if the build fails or is cancelled it leaves an INVALID index of this
+-- name, which must be dropped first (runbook §5.2, step 3:
+-- DROP INDEX CONCURRENTLY IF EXISTS "FormSubmission_live_email_normalized_idx";)
+-- before `migrate resolve --rolled-back` and the retry.
+CREATE INDEX CONCURRENTLY IF NOT EXISTS "FormSubmission_live_email_normalized_idx"
+  ON "FormSubmission" ("liveId", lower(btrim("email")))
+  WHERE "liveId" IS NOT NULL;

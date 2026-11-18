@@ -366,6 +366,8 @@ async function processEmailDeliveries() {
         candidates: safeCount(watchProgress.candidates),
         examined: safeCount(watchProgress.examined),
         completed: safeCount(watchProgress.completed),
+        // #663 review NIT-1: rules held back because the same person already ran them.
+        duplicatePerson: safeCount(watchProgress.duplicatePerson),
         failed: safeCount(watchProgress.failed),
         errors: safeCount(watchProgress.errors),
       } : null,

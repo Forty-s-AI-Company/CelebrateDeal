@@ -12,7 +12,7 @@ import {
   automationTriggerSupportsDelayedSteps,
   executeAutomationStep,
   plannedAutomationStepEmailCount,
-  isAutomationRuleRunnableForVendor,
+  isAutomationConditionRunnableForTrigger,
   isAutomationTriggerAvailableForVendor,
   formNoShowWebinarUrl,
   AUTOMATION_REPLAY_VIDEO_SELECT,
@@ -904,7 +904,7 @@ export type AutomationStepInput = {
 
 export type AutomationStepChangeResult =
   | { ok: true; id: string; before?: { delayMinutes: number; isActive: boolean; actions: unknown }; after?: { delayMinutes: number; isActive: boolean; actions: unknown } }
-  | { ok: false; code: "not_found" | "trigger_unavailable" | "steps_unsupported" | "invalid_step" | "invalid_delay" | "duplicate_delay" | "step_limit" | "invalid_product" | "step_busy" | "email_template_unavailable" | typeof LINE_PUSH_OWNER_ONLY };
+  | { ok: false; code: "not_found" | "trigger_unavailable" | "condition_unsupported" | "steps_unsupported" | "invalid_step" | "invalid_delay" | "duplicate_delay" | "step_limit" | "invalid_product" | "step_busy" | "email_template_unavailable" | typeof LINE_PUSH_OWNER_ONLY };
 
 class StepChangeRejected extends Error {
   constructor(readonly code: Extract<AutomationStepChangeResult, { ok: false }>["code"]) {
@@ -940,9 +940,11 @@ async function withLockedRule(
         const vendor = automationTriggerBetaFeature(rule.trigger)
           ? await tx.vendor.findUnique({ where: { id: input.vendorId }, select: { betaFeatureGrants: true } })
           : null;
+        if (!isAutomationTriggerAvailableForVendor(rule.trigger, vendor)) throw new StepChangeRejected("trigger_unavailable");
         // ... and a condition its trigger runs (#651 review MINOR-5): a watch rule saved with the old
         // watch-seconds condition never runs, so its steps are not added or edited either (deleting stays allowed).
-        if (!isAutomationRuleRunnableForVendor(rule, vendor)) throw new StepChangeRejected("trigger_unavailable");
+        // The same code as switching such a rule on (re-review NIT).
+        if (!isAutomationConditionRunnableForTrigger(rule.trigger, rule.condition)) throw new StepChangeRejected("condition_unsupported");
       }
       // Every available trigger takes delayed steps since Q-09 (payment_paid); kept as a guard for a trigger that does not.
       if (input.requireAvailableTrigger && !automationTriggerSupportsDelayedSteps(rule.trigger)) throw new StepChangeRejected("steps_unsupported");
