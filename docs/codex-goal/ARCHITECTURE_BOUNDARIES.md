@@ -33,6 +33,7 @@ scripts/tests ──────────────────────
 4. Components 可 import Server Actions；這是現行 Next App Router 表單邊界，不視為反向 domain dependency。
 5. Tests 可跨層 import route handlers，因其目的是 contract/integration 驗證。
 6. `src/lib/payment-providers/**`（非測試檔）不得 import `@/lib/payment-webhooks`，型別匯入也不行（F-008，2026-11）。adapter 與 webhook 引擎共用 `src/lib/payment-providers/contract.ts` 的 `PaymentWebhookPayload`；`payment-webhooks.ts` 轉出口同一個 schema 物件，既有呼叫端不用改。
+7. `src/lib/payment-providers/demo.ts`、`ecpay-like.ts` 只能由 `src/lib/payment-providers/index.ts` 與測試檔匯入（F-003／F-008）；其他程式一律經 `getPaymentProvider`，才會套用 production 只允許 PayUni 的 runtime policy。
 
 ## 可執行防回歸
 
@@ -42,11 +43,12 @@ scripts/tests ──────────────────────
 - API/UI boundary；
 - runtime cycle；
 - payment provider adapters 不依賴 webhook 引擎（含型別匯入、動態 import）；
+- `payment-providers/demo`、`ecpay-like` 只能由 `payment-providers/index.ts`（與測試檔）匯入；
 - legacy root action module debt ceiling。
 
 `src/lib/payment-providers/contract.test.ts` 對 `getPaymentProvider` 註冊的每個 adapter 跑同一組契約：normalize 輸出通過共用 schema、竄改簽章被拒、readiness 只回列舉值、`refundPayment`／`queryPayment` 錯誤時丟出宣告的錯誤類別（fetch 全部 mock）。新增 adapter 沒有 fixture 時測試失敗。
 
-目前 4/4 通過，且包含 complexity/function-size ratchets 的全倉 ESLint／typecheck 通過。
+目前 8/8 通過（2026-11-18），且包含 complexity/function-size ratchets 的全倉 ESLint／typecheck 通過。
 
 ## 已確認的架構債
 

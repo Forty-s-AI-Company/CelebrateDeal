@@ -15,7 +15,7 @@ import {
   type CheckoutProviderReadiness,
   type PaymentProviderAdapter,
 } from "@/lib/payment-providers/types";
-import { PaymentWebhookPayload } from "@/lib/payment-webhooks";
+import { PaymentWebhookPayload, type PaymentWebhookPayloadInput } from "@/lib/payment-webhooks";
 
 /**
  * F-008 adapter contract: every adapter registered with `getPaymentProvider`
@@ -63,7 +63,7 @@ const payUniProductionEnv: Env = {
 };
 
 /** Configuration states the readiness rule is checked under, including broken ones. */
-const READINESS_SCENARIOS: Record<string, Env> = {
+const READINESS_SCENARIOS = {
   "nothing configured": {},
   "PayUni Sandbox configured": { ...payUniSandboxEnv, ECPAY_WEBHOOK_SECRET: ECPAY_SECRET },
   "PayUni production configured": { ...payUniProductionEnv, ECPAY_WEBHOOK_SECRET: ECPAY_SECRET },
@@ -75,7 +75,16 @@ const READINESS_SCENARIOS: Record<string, Env> = {
     PAYUNI_SANDBOX_HASH_KEY: "short-contract-key",
     PAYUNI_SANDBOX_HASH_IV: "short-iv",
   },
-};
+} satisfies Record<string, Env>;
+
+type ReadinessScenario = keyof typeof READINESS_SCENARIOS;
+
+/** The same readiness in every scenario, for adapters that ignore configuration. */
+function constantReadiness(readiness: CheckoutProviderReadiness) {
+  return Object.fromEntries(
+    Object.keys(READINESS_SCENARIOS).map((scenario) => [scenario, readiness]),
+  ) as Record<ReadinessScenario, CheckoutProviderReadiness>;
+}
 
 function applyEnv(env: Env) {
   for (const key of CONTRACT_ENV_KEYS) vi.stubEnv(key, undefined);
@@ -94,27 +103,58 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-/** Reads the registry keys from the source so a new registration cannot bypass this suite. */
-function registeredProviderIds() {
-  const indexPath = path.join(process.cwd(), "src", "lib", "payment-providers", "index.ts");
-  const source = ts.createSourceFile(indexPath, fs.readFileSync(indexPath, "utf8"), ts.ScriptTarget.Latest, true);
+const registryPath = path.join(process.cwd(), "src", "lib", "payment-providers", "index.ts");
+
+/**
+ * Reads the registry keys from the source so a new registration cannot bypass
+ * this suite. Any entry whose key cannot be read statically (computed key,
+ * spread, method, accessor, numeric key) is reported as unsupported, and a
+ * missing `providers` object literal is reported too: both fail the suite.
+ */
+function parseRegistryIds(sourceText: string) {
+  const source = ts.createSourceFile(registryPath, sourceText, ts.ScriptTarget.Latest, true);
   const ids: string[] = [];
+  const unsupported: string[] = [];
+  let registryFound = false;
   for (const statement of source.statements) {
     if (!ts.isVariableStatement(statement)) continue;
     for (const declaration of statement.declarationList.declarations) {
       if (!ts.isIdentifier(declaration.name) || declaration.name.text !== "providers") continue;
-      if (!declaration.initializer || !ts.isObjectLiteralExpression(declaration.initializer)) continue;
+      if (!declaration.initializer || !ts.isObjectLiteralExpression(declaration.initializer)) {
+        unsupported.push("providers is not an object literal");
+        continue;
+      }
+      registryFound = true;
       for (const property of declaration.initializer.properties) {
-        if (property.name && (ts.isIdentifier(property.name) || ts.isStringLiteral(property.name))) {
+        if (ts.isShorthandPropertyAssignment(property)) {
           ids.push(property.name.text);
+        } else if (
+          ts.isPropertyAssignment(property)
+          && (ts.isIdentifier(property.name) || ts.isStringLiteral(property.name))
+        ) {
+          ids.push(property.name.text);
+        } else {
+          unsupported.push(property.getText(source));
         }
       }
     }
   }
-  return ids;
+  if (!registryFound) unsupported.push("providers object literal not found");
+  return { ids, unsupported };
 }
 
-type WebhookCase = { name: string; env: Env; rawBody: string };
+const registry = parseRegistryIds(fs.readFileSync(registryPath, "utf8"));
+
+type WebhookCase = {
+  name: string;
+  env: Env;
+  rawBody: string;
+  /** What the callback means once normalized, independent of the provider's wire format. */
+  expectedEventType: PaymentWebhookPayloadInput["eventType"];
+  expectedOrderNumber: string;
+  expectedAmounts: Pick<PaymentWebhookPayloadInput, "grossAmountCents" | "refundAmountCents">
+    & Partial<Pick<PaymentWebhookPayloadInput, "gatewayFeeCents" | "gatewayFeeRefundCents" | "netAmountCents">>;
+};
 type SignatureCase = { name: string; env: Env; request: Request; rawBody: string };
 type ProviderErrorCase = {
   name: string;
@@ -130,6 +170,8 @@ type ProviderErrorCase = {
 type AdapterContractFixture = {
   /** Valid provider callbacks; each normalized payload must satisfy the shared schema. */
   webhooks: WebhookCase[];
+  /** Expected checkout readiness under each configuration scenario. */
+  readiness: Record<ReadinessScenario, CheckoutProviderReadiness>;
   signature:
     | { kind: "signed"; valid: SignatureCase; tampered: SignatureCase[] }
     /** Accepts every callback; allowed only for a local-only adapter that production refuses. */
@@ -155,13 +197,20 @@ const demoFixture: AdapterContractFixture = {
       name: "paid",
       env: {},
       rawBody: JSON.stringify({ eventId: "demo-contract-paid", eventType: "paid", orderNumber: "CD-DEMO-CONTRACT", grossAmountCents: 99000 }),
+      expectedEventType: "paid",
+      expectedOrderNumber: "CD-DEMO-CONTRACT",
+      expectedAmounts: { grossAmountCents: 99000, refundAmountCents: 0, gatewayFeeCents: 0 },
     },
     {
       name: "refunded",
       env: {},
       rawBody: JSON.stringify({ eventId: "demo-contract-refund", eventType: "refunded", orderNumber: "CD-DEMO-CONTRACT", refundAmountCents: 99000 }),
+      expectedEventType: "refunded",
+      expectedOrderNumber: "CD-DEMO-CONTRACT",
+      expectedAmounts: { grossAmountCents: 0, refundAmountCents: 99000 },
     },
   ],
+  readiness: constantReadiness("local_only"),
   signature: { kind: "unsigned_local_only" },
 };
 
@@ -189,7 +238,15 @@ const ecpayEnv: Env = { ECPAY_WEBHOOK_SECRET: ECPAY_SECRET };
 
 const ecpayLikeFixture: AdapterContractFixture = {
   webhooks: [
-    { name: "paid", env: ecpayEnv, rawBody: ecpayPaidBody },
+    {
+      name: "paid",
+      env: ecpayEnv,
+      rawBody: ecpayPaidBody,
+      expectedEventType: "paid",
+      expectedOrderNumber: "CD-ECPAY-CONTRACT",
+      // Decimal TWD on the wire, integer cents after normalization.
+      expectedAmounts: { grossAmountCents: 199_000, refundAmountCents: 0, gatewayFeeCents: 3_500 },
+    },
     {
       name: "partial refund",
       env: ecpayEnv,
@@ -201,8 +258,12 @@ const ecpayLikeFixture: AdapterContractFixture = {
         TradeAmt: "1990",
         RefundAmount: "500",
       }),
+      expectedEventType: "partially_refunded",
+      expectedOrderNumber: "CD-ECPAY-CONTRACT",
+      expectedAmounts: { grossAmountCents: 199_000, refundAmountCents: 50_000 },
     },
   ],
+  readiness: constantReadiness("unavailable"),
   signature: {
     kind: "signed",
     valid: {
@@ -286,9 +347,33 @@ const forgedHashProviderResponse = () => Promise.resolve(new Response(new URLSea
 const payUniFixture: AdapterContractFixture = {
   providerEndpoint: /^https:\/\/(?:sandbox-)?api\.payuni\.com\.tw\/api\//,
   webhooks: [
-    { name: "UPP paid", env: payUniSandboxEnv, rawBody: payUniPaidBody },
-    { name: "refund notice", env: payUniSandboxEnv, rawBody: payUniBody("refunded") },
+    {
+      name: "UPP paid",
+      env: payUniSandboxEnv,
+      rawBody: payUniPaidBody,
+      expectedEventType: "paid",
+      expectedOrderNumber: "CD-SANDBOX-PAID-001",
+      // Whole TWD on the wire (TradeAmt 1990); UPP carries no fee fields, so none is invented.
+      expectedAmounts: { grossAmountCents: 199_000, refundAmountCents: 0, gatewayFeeCents: 0 },
+    },
+    {
+      name: "refund notice",
+      env: payUniSandboxEnv,
+      rawBody: payUniBody("refunded"),
+      expectedEventType: "refunded",
+      expectedOrderNumber: "CD-SANDBOX-PAID-001",
+      expectedAmounts: { grossAmountCents: 199_000, refundAmountCents: 199_000, gatewayFeeRefundCents: 3_500 },
+    },
   ],
+  readiness: {
+    "nothing configured": "unavailable",
+    "PayUni Sandbox configured": "ready",
+    "PayUni production configured": "ready",
+    // Preview with the live merchant is reserved for the consented probe.
+    "live merchant on a Preview deployment": "unavailable",
+    "unknown PAYUNI_ENV": "unavailable",
+    "credentials with invalid lengths": "unavailable",
+  },
   signature: {
     kind: "signed",
     valid: { name: "valid HashInfo", env: payUniSandboxEnv, request: callbackRequest(), rawBody: payUniPaidBody },
@@ -473,9 +558,38 @@ const OPTIONAL_PROVIDER_CALLS = [
   },
 ] as const;
 
-const registeredIds = registeredProviderIds();
+const registeredIds = registry.ids;
 
 describe("payment adapter registry", () => {
+  it("declares every registry entry with a statically readable key", () => {
+    expect(registry.unsupported).toEqual([]);
+  });
+
+  it("rejects registry entries whose key cannot be read statically", () => {
+    const parsed = parseRegistryIds(`
+      const extra = {};
+      const key = "computed";
+      const providers = {
+        demo: demoPaymentProvider,
+        "ecpay-like": ecpayLikePaymentProvider,
+        payUniPaymentProvider,
+        [key]: demoPaymentProvider,
+        ...extra,
+        get lazy() { return demoPaymentProvider; },
+        7: demoPaymentProvider,
+      };
+    `);
+    expect(parsed.ids).toEqual(["demo", "ecpay-like", "payUniPaymentProvider"]);
+    expect(parsed.unsupported).toEqual([
+      "[key]: demoPaymentProvider",
+      "...extra",
+      "get lazy() { return demoPaymentProvider; }",
+      "7: demoPaymentProvider",
+    ]);
+    expect(parseRegistryIds("const providers = buildProviders();").unsupported).toEqual(["providers is not an object literal", "providers object literal not found"]);
+    expect(parseRegistryIds("export const other = {};").unsupported).toEqual(["providers object literal not found"]);
+  });
+
   it("registers PayUni and resolves every registered ID outside production", () => {
     expect(registeredIds).toContain("payuni");
     for (const id of registeredIds) {
@@ -503,6 +617,9 @@ describe.each(registeredIds)("payment adapter contract: %s", (registeredId) => {
       // Normalization already applied the schema; parsing again changes nothing.
       expect(parsed.data, webhook.name).toEqual(payload);
       expect(payload.provider, webhook.name).toBe(adapter.id);
+      expect(payload.eventType, webhook.name).toBe(webhook.expectedEventType);
+      expect(payload.orderNumber, webhook.name).toBe(webhook.expectedOrderNumber);
+      expect(payload, webhook.name).toMatchObject(webhook.expectedAmounts);
     }
   });
 
@@ -531,13 +648,14 @@ describe.each(registeredIds)("payment adapter contract: %s", (registeredId) => {
     }
   });
 
-  it.each(Object.entries(READINESS_SCENARIOS))(
-    "returns only a readiness enum value without configuration values (%s)",
-    (_scenario, env) => {
+  it.each(Object.entries(READINESS_SCENARIOS) as Array<[ReadinessScenario, Env]>)(
+    "returns only the expected readiness enum value without configuration values (%s)",
+    (scenario, env) => {
       applyEnv(env);
       const readiness: unknown = adapter.checkoutReadiness();
       expect(typeof readiness).toBe("string");
       expect(CHECKOUT_READINESS_VALUES).toContain(readiness);
+      expect(readiness).toBe(fixture.readiness[scenario]);
       const serialized = JSON.stringify(readiness);
       for (const value of Object.values(env)) {
         if (value) expect(serialized).not.toContain(value);

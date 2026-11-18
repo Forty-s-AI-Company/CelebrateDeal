@@ -46,12 +46,17 @@ function resolveSourceImport(importer: string, specifier: string) {
     return null;
   }
 
+  // ESM-style specifiers name the emitted file (`./x.js`); the source is `./x.ts`.
+  const emittedExtension = /\.(?:m|c)?jsx?$/.exec(basePath);
+  const sourceBasePath = emittedExtension ? basePath.slice(0, -emittedExtension[0].length) : null;
+
   const candidates = [
     basePath,
     `${basePath}.ts`,
     `${basePath}.tsx`,
     path.join(basePath, "index.ts"),
     path.join(basePath, "index.tsx"),
+    ...(sourceBasePath ? [`${sourceBasePath}.ts`, `${sourceBasePath}.tsx`] : []),
   ];
 
   return candidates.find((candidate) => sourceFileSet.has(path.resolve(candidate))) ?? null;
@@ -117,7 +122,7 @@ function allModuleSpecifiers(filePath: string, sourceText = fs.readFileSync(file
     } else if (
       ts.isImportTypeNode(node)
       && ts.isLiteralTypeNode(node.argument)
-      && ts.isStringLiteral(node.argument.literal)
+      && ts.isStringLiteralLike(node.argument.literal)
     ) {
       specifiers.push(node.argument.literal.text);
     } else if (
@@ -125,7 +130,8 @@ function allModuleSpecifiers(filePath: string, sourceText = fs.readFileSync(file
       && (node.expression.kind === ts.SyntaxKind.ImportKeyword
         || (ts.isIdentifier(node.expression) && node.expression.text === "require"))
       && node.arguments[0]
-      && ts.isStringLiteral(node.arguments[0])
+      // String literals and template literals without substitutions (`...`).
+      && ts.isStringLiteralLike(node.arguments[0])
     ) {
       specifiers.push(node.arguments[0].text);
     }
@@ -144,6 +150,20 @@ function paymentProviderImportsOfWebhookEngine(filePath: string, sourceText?: st
     .filter((specifier) => {
       const resolved = resolveSourceImport(filePath, specifier);
       return resolved !== null && path.resolve(resolved) === paymentWebhookEngine;
+    });
+}
+
+/** Adapters that never move real money; only the registry may load them (F-003). */
+const localOnlyPaymentAdapters = new Set(
+  ["demo.ts", "ecpay-like.ts"].map((fileName) => path.resolve(paymentProvidersRoot, fileName)),
+);
+const paymentProviderRegistry = path.resolve(paymentProvidersRoot, "index.ts");
+
+function importsOfLocalOnlyPaymentAdapters(filePath: string, sourceText?: string) {
+  return allModuleSpecifiers(filePath, sourceText)
+    .filter((specifier) => {
+      const resolved = resolveSourceImport(filePath, specifier);
+      return resolved !== null && localOnlyPaymentAdapters.has(path.resolve(resolved));
     });
 }
 
@@ -255,6 +275,10 @@ describe("architecture boundaries", () => {
       "export { PaymentWebhookPayload } from \"@/lib/payment-webhooks\";",
       "type Payload = import(\"@/lib/payment-webhooks\").PaymentWebhookPayloadInput;",
       "const engine = await import(\"@/lib/payment-webhooks\");",
+      "const engine = await import(`@/lib/payment-webhooks`);",
+      "const engine = require(`../payment-webhooks`);",
+      "import { PaymentWebhookPayload } from \"@/lib/payment-webhooks.js\";",
+      "import { processPaymentWebhook } from \"../payment-webhooks.js\";",
     ];
     for (const sourceText of forbidden) {
       expect(paymentProviderImportsOfWebhookEngine(probe, sourceText), sourceText).toHaveLength(1);
@@ -262,6 +286,51 @@ describe("architecture boundaries", () => {
     expect(paymentProviderImportsOfWebhookEngine(
       probe,
       "import { PaymentWebhookPayload } from \"@/lib/payment-providers/contract\";",
+    )).toEqual([]);
+  });
+
+  // Demo and the ECPay-like adapter never move real money; production refuses
+  // them through the registry's runtime policy, so nothing may bypass it.
+  it("loads local-only payment adapters only through the provider registry", () => {
+    const scriptFiles = listSourceFiles(path.join(repositoryRoot, "scripts"));
+    const checkedFiles = [...sourceFiles, ...scriptFiles].filter((filePath) => {
+      const resolved = path.resolve(filePath);
+      return resolved !== paymentProviderRegistry && !localOnlyPaymentAdapters.has(resolved);
+    });
+    expect(checkedFiles.length).toBeGreaterThan(0);
+
+    const violations = checkedFiles.flatMap((filePath) => {
+      const sourceText = fs.readFileSync(filePath, "utf8");
+      // Any specifier that resolves to these files names them, so a file
+      // without either word cannot import them; skip its AST parse.
+      if (!sourceText.includes("demo") && !sourceText.includes("ecpay-like")) return [];
+      const relativePath = normalize(path.relative(repositoryRoot, filePath));
+      return importsOfLocalOnlyPaymentAdapters(filePath, sourceText)
+        .map((specifier) => `${relativePath} -> ${specifier}`);
+    });
+
+    expect(violations).toEqual([]);
+    // The registry itself must still be the one place that loads them.
+    expect(importsOfLocalOnlyPaymentAdapters(paymentProviderRegistry)).toHaveLength(localOnlyPaymentAdapters.size);
+  }, 15_000);
+
+  it("detects every way a module can import a local-only payment adapter", () => {
+    const probe = path.join(sourceRoot, "lib", "checkout-probe.ts");
+    const providerProbe = path.join(paymentProvidersRoot, "boundary-probe.ts");
+    const forbidden: Array<[string, string]> = [
+      [probe, "import { demoPaymentProvider } from \"@/lib/payment-providers/demo\";"],
+      [probe, "import type { ecpayLikePaymentProvider } from \"@/lib/payment-providers/ecpay-like\";"],
+      [probe, "export { demoPaymentProvider } from \"./payment-providers/demo\";"],
+      [probe, "const adapter = await import(`@/lib/payment-providers/ecpay-like`);"],
+      [probe, "const adapter = require(\"./payment-providers/demo.js\");"],
+      [providerProbe, "import { ecpayLikePaymentProvider } from \"./ecpay-like.js\";"],
+    ];
+    for (const [filePath, sourceText] of forbidden) {
+      expect(importsOfLocalOnlyPaymentAdapters(filePath, sourceText), sourceText).toHaveLength(1);
+    }
+    expect(importsOfLocalOnlyPaymentAdapters(
+      probe,
+      "import { getPaymentProvider } from \"@/lib/payment-providers\";",
     )).toEqual([]);
   });
 
