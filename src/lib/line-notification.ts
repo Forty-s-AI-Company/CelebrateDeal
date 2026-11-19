@@ -6,6 +6,7 @@ import { unprotectLineOfficialAccountCredentials, unprotectLineProfileValue } fr
 import { decryptSensitiveValue, encryptSensitiveValue } from "@/lib/sensitive-data";
 import { formatTwd } from "@/lib/format";
 import { ACTIVE_VENDOR_RELATION } from "@/lib/vendor-suspension-state";
+import { isLineActionUrl } from "@/lib/line-action-url";
 
 export const LINE_NOTIFICATION_TRIGGERS = [
   "live_reminder",
@@ -33,8 +34,8 @@ function textComponent(text: string, weight: "regular" | "bold" = "regular") {
   return { type: "text", text, wrap: true, weight, color: "#1f2937" };
 }
 function actionButton(label: string, uri: string) {
+  if (!isLineActionUrl(uri)) throw new Error("Invalid LINE action URL.");
   const url = new URL(uri);
-  if (url.protocol !== "https:") throw new Error("Invalid LINE action URL.");
   return { type: "button", style: "primary", color: "#16a34a", action: { type: "uri", label: label.slice(0, 40), uri: url.toString() } };
 }
 
@@ -143,7 +144,9 @@ export async function enqueueLineNotification(
       select: { id: true, revokedAt: true },
     }),
   ]);
-  if (!account || account.status !== "active" || !identity || identity.revokedAt) return { status: "not_linked" as const };
+  // `reason` says which side is missing (A2-09: the automation log records it as a fixed code).
+  if (!account || account.status !== "active") return { status: "not_linked" as const, reason: "account_unavailable" as const };
+  if (!identity || identity.revokedAt) return { status: "not_linked" as const, reason: "recipient_not_linked" as const };
   const id = randomUUID();
   const payloadEncrypted = encryptSensitiveValue(JSON.stringify(input.messages), deliveryPurpose(input.vendorId, id));
   try {

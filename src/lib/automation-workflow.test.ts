@@ -10,7 +10,8 @@ const mocks = vi.hoisted(() => ({
   captureOperationalError: vi.fn(),
 }));
 
-vi.mock("@/lib/app-url", () => ({ getCanonicalAppUrl: () => "https://app.example.test" }));
+// The real isExplicitLocalE2eRuntime (#673 MINOR-1 reads it); only the canonical URL is fixed.
+vi.mock("@/lib/app-url", async (original) => ({ ...(await original<typeof import("@/lib/app-url")>()), getCanonicalAppUrl: () => "https://app.example.test" }));
 vi.mock("@/lib/db", () => ({ getDb: mocks.getDb }));
 vi.mock("@/lib/email-delivery-immediate", () => ({ scheduleImmediateEmailDispatch: mocks.scheduleImmediateEmailDispatch }));
 vi.mock("@/lib/monitoring", () => ({ captureOperationalError: mocks.captureOperationalError }));
@@ -170,6 +171,98 @@ describe("smart automation workflow engine", () => {
     const completion = update.mock.calls.at(-1)?.[0].data;
     expect(completion.status).toBe("completed");
     expect(JSON.stringify(completion)).not.toContain("token=");
+  });
+
+  // A2-09: a LINE message that can never be sent is skipped with a fixed
+  // reason, never thrown, so the rule completes and the actions after it run.
+  describe("LINE actions that can never be sent", () => {
+    function lineRule(actions: unknown[]) {
+      const update = vi.fn().mockResolvedValue({});
+      const db = {
+        automationRule: { findMany: vi.fn().mockResolvedValue([{ id: "rule-line", condition: { type: "always" }, actions }]) },
+        automationExecutionLog: { create: vi.fn().mockResolvedValue({ id: "log-line" }), update },
+        customerTagAssignment: { upsert: vi.fn().mockResolvedValue({}) },
+        automationVoucherGrant: { create: vi.fn().mockResolvedValue({}) },
+        product: { findFirst: vi.fn().mockResolvedValue(null) },
+        lineOfficialAccount: {}, lineUserIdentity: {}, lineDelivery: {},
+      };
+      return { db, results: () => update.mock.calls.at(-1)?.[0].data.actionResults as unknown[], completion: () => update.mock.calls.at(-1)?.[0].data };
+    }
+    const TAG_AFTER = { type: "add_customer_tag", tag: "之後" };
+
+    it.each([
+      ["an http booking link as the button", { consultationUrl: "http://meet.example.test/room" }, { message: "加入諮詢", buttonLabel: "進入", buttonUrl: "{{consultation_url}}" }, "line_button_url_not_https"],
+      ["a message that is only a link the event lacks", {}, { message: "{{voucher_url}}" }, "line_message_empty"],
+    ] as const)("skips a LINE push with %s and runs the next action", async (_label, extra, push, reason) => {
+      const { db, results, completion } = lineRule([{ type: "line_push", ...push }, TAG_AFTER]);
+      await expect(dispatchAutomationEvent(db as never, { ...event, ...extra })).resolves.toEqual([{ ruleId: "rule-line", status: "completed" }]);
+      expect(mocks.enqueueLineNotification).not.toHaveBeenCalled();
+      expect(db.customerTagAssignment.upsert).toHaveBeenCalledTimes(1);
+      expect(results()).toEqual([{ type: "line_push", status: "skipped", reason }, { type: "add_customer_tag", status: "tagged", tag: "之後" }]);
+      expect(completion()).not.toHaveProperty("errorCode");
+      expect(JSON.stringify(results())).not.toContain("meet.example.test");
+    });
+
+    it.each([
+      ["account_unavailable", "line_account_unavailable"],
+      ["recipient_not_linked", "line_recipient_not_linked"],
+    ] as const)("records the outbox's not_linked (%s) as skipped / %s", async (outboxReason, reason) => {
+      mocks.enqueueLineNotification.mockResolvedValue({ status: "not_linked", reason: outboxReason });
+      const { db, results } = lineRule([{ type: "line_push", message: "你好" }, TAG_AFTER]);
+      await expect(dispatchAutomationEvent(db as never, event)).resolves.toEqual([{ ruleId: "rule-line", status: "completed" }]);
+      expect(results()).toEqual([{ type: "line_push", status: "skipped", reason }, { type: "add_customer_tag", status: "tagged", tag: "之後" }]);
+    });
+
+    // #673 review MINOR-1: only production warns, once per skip, about a non-HTTPS button.
+    const httpButton = [{ type: "line_push", message: "加入諮詢", buttonLabel: "進入", buttonUrl: "{{consultation_url}}" }, TAG_AFTER];
+    const httpBooking = { consultationUrl: "http://meet.example.test/room" };
+
+    it("warns once in production about a non-HTTPS LINE button, with the reason code only", async () => {
+      vi.stubEnv("NODE_ENV", "production");
+      const { db } = lineRule(httpButton);
+      await expect(dispatchAutomationEvent(db as never, { ...event, ...httpBooking })).resolves.toEqual([{ ruleId: "rule-line", status: "completed" }]);
+      expect(mocks.captureOperationalError).toHaveBeenCalledTimes(1);
+      expect(mocks.captureOperationalError).toHaveBeenCalledWith(
+        expect.any(Error),
+        { source: "automation_line", operation: "line_button_url_not_https" },
+        { level: "warning", fingerprint: ["line_button_url_not_https"] },
+      );
+      expect(JSON.stringify(mocks.captureOperationalError.mock.calls)).not.toMatch(/meet\.example|vendor-1|order-1|rule-line|log-line/u);
+    });
+
+    it.each([
+      ["outside production (test)", {}],
+      ["outside production (development)", { NODE_ENV: "development" }],
+      ["in the explicit local e2e production runtime", { NODE_ENV: "production", E2E_TEST_MODE: "true", E2E_BASE_URL: "http://127.0.0.1:3100", NEXT_PUBLIC_APP_URL: "http://127.0.0.1:3100" }],
+    ] as const)("does not warn about a non-HTTPS LINE button %s", async (_label, env) => {
+      for (const [key, value] of Object.entries(env)) vi.stubEnv(key, value);
+      const { db, results } = lineRule(httpButton);
+      await expect(dispatchAutomationEvent(db as never, { ...event, ...httpBooking })).resolves.toEqual([{ ruleId: "rule-line", status: "completed" }]);
+      expect(results()).toContainEqual({ type: "line_push", status: "skipped", reason: "line_button_url_not_https" });
+      expect(mocks.captureOperationalError).not.toHaveBeenCalled();
+    });
+
+    it("does not warn in production about the other LINE skip reasons", async () => {
+      vi.stubEnv("NODE_ENV", "production");
+      for (const reason of ["account_unavailable", "recipient_not_linked"] as const) {
+        mocks.enqueueLineNotification.mockResolvedValueOnce({ status: "not_linked", reason });
+        const { db } = lineRule([{ type: "line_push", message: "你好" }]);
+        await dispatchAutomationEvent(db as never, event);
+      }
+      const { db, results } = lineRule([{ type: "line_push", message: "{{voucher_url}}" }]);
+      await dispatchAutomationEvent(db as never, event);
+      expect(results()).toEqual([{ type: "line_push", status: "skipped", reason: "line_message_empty" }]);
+      expect(mocks.captureOperationalError).not.toHaveBeenCalled();
+    });
+
+    it("keeps a transient LINE outbox failure a failed execution that the same event reclaims", async () => {
+      mocks.enqueueLineNotification.mockRejectedValue(new Error("synthetic dropped connection"));
+      const { db, results, completion } = lineRule([{ type: "line_push", message: "你好" }, TAG_AFTER]);
+      await expect(dispatchAutomationEvent(db as never, event)).resolves.toEqual([{ ruleId: "rule-line", status: "failed" }]);
+      expect(completion()).toMatchObject({ status: "failed", errorCode: "action_failed" });
+      expect(results()).toEqual([]);
+      expect(db.customerTagAssignment.upsert).not.toHaveBeenCalled();
+    });
   });
 
   // Owner decision 2026-11-15: a voucher's fixed-text LINE notification follows
@@ -426,6 +519,21 @@ describe("smart automation workflow engine", () => {
     // A delayed step's log keeps { actions, results } (F-4 review m2) and may skip an unconfirmed address (M2).
     expect(automationExecutionNotes({ actions: [], results: [{ type: "send_email_notification", status: "skipped", reason: "recipient_unverified" }] })).toEqual(["Email 未寄出：收件人的 Email 尚未在本商家完成驗證"]);
     expect(automationExecutionNotes({ actions: [], results: "junk" })).toEqual([]);
+    // A2-09: a skipped LINE action says why (fixed codes only); other LINE results add nothing.
+    expect(automationExecutionNotes({ actions: [], results: [
+      { type: "line_push", status: "skipped", reason: "line_button_url_not_https", source: "voucher_delivery" },
+      { type: "line_push", status: "skipped", reason: "line_message_empty" },
+      { type: "line_push", status: "skipped", reason: "line_account_unavailable" },
+      { type: "line_push", status: "skipped", reason: "line_recipient_not_linked" },
+      { type: "line_push", status: "skipped", reason: "line_recipient_not_linked" },
+      { type: "line_push", status: "queued" },
+      { type: "line_push", status: "skipped", reason: "constructor" },
+    ] })).toEqual([
+      "LINE 未發送：按鈕連結不是 HTTPS 網址（例如預約的會議連結）",
+      "LINE 未發送：訊息填入連結後沒有內容",
+      "LINE 未發送：商家尚未連結 LINE 官方帳號",
+      "LINE 未發送：收件人尚未綁定 LINE",
+    ]);
   });
 
   it("hands every email queued by one event to a single post-response hook, even when a later rule fails", async () => {
