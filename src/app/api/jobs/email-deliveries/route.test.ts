@@ -20,6 +20,7 @@ const mocks = vi.hoisted(() => ({
   onConfigurationError: vi.fn(),
   runFormNoShowAutomation: vi.fn(),
   runWatchProgressAutomation: vi.fn(),
+  runDeferredAutomationDispatches: vi.fn(),
 }));
 vi.mock("@/lib/delayed-step-runs", () => ({
   backfillEmailSequenceEnrollments: mocks.backfillEmailSequenceEnrollments,
@@ -41,6 +42,11 @@ vi.mock("@/lib/form-no-show-automation", async (original) => ({
 vi.mock("@/lib/watch-progress-automation", async (original) => ({
   ...await original<typeof import("@/lib/watch-progress-automation")>(),
   runWatchProgressAutomation: mocks.runWatchProgressAutomation,
+}));
+// A2-08: the deferred automation dispatch pass; its deadline helper stays real.
+vi.mock("@/lib/automation-deferred-dispatch", async (original) => ({
+  ...await original<typeof import("@/lib/automation-deferred-dispatch")>(),
+  runDeferredAutomationDispatches: mocks.runDeferredAutomationDispatches,
 }));
 vi.mock("@/lib/live-fixed-sessions-store", () => ({ releaseExpiredFixedSessionSeats: mocks.releaseExpiredFixedSessionSeats }));
 vi.mock("@/lib/live-fixed-session-notices", () => ({ queueFixedSessionCancellationNotices: mocks.queueFixedSessionCancellationNotices }));
@@ -86,6 +92,7 @@ beforeEach(() => {
   mocks.startPendingAutomationRuns.mockResolvedValue([]);
   mocks.processDueSequenceEmailDeliveries.mockResolvedValue([]);
   mocks.runFormNoShowAutomation.mockResolvedValue({ vendors: 1, candidates: 3, examined: 2, completed: 2, skipped: 0, failed: 1, duplicate: 0, errors: 0 });
+  mocks.runDeferredAutomationDispatches.mockResolvedValue({ expired: 1, results: [{ status: "dispatched" }, { status: "settled" }, { status: "deferred" }, { status: "dispatched" }, { status: "failed" }, { status: "running_elsewhere" }] });
   mocks.runWatchProgressAutomation.mockResolvedValue({ vendors: 1, candidates: 4, examined: 4, completed: 3, skipped: 0, failed: 0, duplicate: 1, duplicatePerson: 2, errors: 0, scanCutShort: false, backlogNearLookback: false });
 });
 
@@ -194,6 +201,7 @@ describe("POST /api/jobs/email-deliveries", () => {
       fixedSessionCancellationNotices: 1,
       formNoShow: { candidates: 3, examined: 2, completed: 2, failed: 1, errors: 0 },
       watchProgress: { candidates: 4, examined: 4, completed: 3, duplicatePerson: 2, failed: 0, errors: 0 },
+      automationDeferred: { expired: 1, dispatched: 2, settled: 1, deferred: 1, failed: 1, runningElsewhere: 1 },
     });
     expect(JSON.stringify(body)).not.toContain("private-notice");
     // Seats and notices are handled before this round's dispatch sends anything.
@@ -343,6 +351,27 @@ describe("POST /api/jobs/email-deliveries", () => {
     expect(JSON.stringify(body)).not.toContain("watch-private-detail");
   });
 
+  it("does not let a failing deferred-dispatch pass abort the rest of the round, and runs it before this round's dispatch (A2-08)", async () => {
+    mocks.runDeferredAutomationDispatches.mockRejectedValueOnce(new Error("deferred-private-detail"));
+    mocks.processDueEmailDeliveries.mockResolvedValue([{ deliveryId: "private-due", status: "sent" }]);
+    const response = await POST(request("g7-07-job-secret"));
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body).toMatchObject({ ok: true, automationDeferred: null, processed: 1, results: [{ status: "sent" }] });
+    expect(mocks.captureOperationalError).toHaveBeenCalledWith(expect.any(Error), {
+      source: "email_delivery_job",
+      operation: "automation_deferred_dispatch",
+      status: "failed",
+    });
+    expect(JSON.stringify(body)).not.toContain("deferred-private-detail");
+    // After the watch pass, before the dispatch that sends the e-mails it queued.
+    expect(mocks.runWatchProgressAutomation.mock.invocationCallOrder[0]).toBeLessThan(mocks.runDeferredAutomationDispatches.mock.invocationCallOrder[0]!);
+    expect(mocks.runDeferredAutomationDispatches.mock.invocationCallOrder[0]).toBeLessThan(mocks.processDueEmailDeliveries.mock.invocationCallOrder[0]!);
+    const options = mocks.runDeferredAutomationDispatches.mock.calls[0]?.[0] as { deadlineMs: number };
+    expect(options.deadlineMs).toBeGreaterThan(0);
+    expect(options.deadlineMs).toBeLessThanOrEqual(10_000);
+  });
+
   it("skips the no-show pass once the round has run past its start cutoff (Q-11)", async () => {
     const realNow = Date.now();
     let calls = 0;
@@ -356,6 +385,8 @@ describe("POST /api/jobs/email-deliveries", () => {
       expect(mocks.runFormNoShowAutomation).not.toHaveBeenCalled();
       expect(late.watchProgress).toBeNull();
       expect(mocks.runWatchProgressAutomation).not.toHaveBeenCalled();
+      expect(late.automationDeferred).toBeNull();
+      expect(mocks.runDeferredAutomationDispatches).not.toHaveBeenCalled();
     } finally {
       vi.mocked(Date.now).mockRestore();
     }

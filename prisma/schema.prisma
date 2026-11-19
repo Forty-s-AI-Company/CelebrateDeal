@@ -98,6 +98,7 @@ model Vendor {
   products                         Product[]
   automationRules                  AutomationRule[]
   automationExecutionLogs          AutomationExecutionLog[]
+  automationDeferredDispatches     AutomationDeferredDispatch[]
   customerTagAssignments           CustomerTagAssignment[]
   automationVoucherGrants          AutomationVoucherGrant[]
   customerCrmRecords               CustomerCrmRecord[]
@@ -4164,6 +4165,36 @@ model AutomationExecutionLog {
   // Q-13: partial index "AutomationExecutionLog_delayed_steps_pending_idx"
   // ON ("completedAt") WHERE "delayedStepsPendingSubjectId" IS NOT NULL lives in
   // the migration only (Prisma 6 cannot express it; prisma-unmanaged-indexes.db.test.ts).
+}
+
+/// A2-08: one automation rule a request-path event (registration, consultation
+/// booking or no-show, first paid transition of an order) could not claim
+/// because a merchant save held the rule row past the 2 s lock timeout. The
+/// e-mail job dispatches it later through the same dispatchAutomationEvent
+/// (runDeferredAutomationDispatches, src/lib/automation-deferred-dispatch.ts);
+/// the execution log's unique idempotency key keeps it to one execution.
+/// References only (rule, trigger, the subject's id), never an address. No
+/// foreign key to AutomationRule: writing this row must not wait on the rule
+/// row it is about; the job reads the rule bound to the vendor.
+model AutomationDeferredDispatch {
+  id            String   @id @default(cuid())
+  vendorId      String
+  ruleId        String
+  /// form_registered | consultation_booked | consultation_no_show | payment_paid (CHECK).
+  trigger       String
+  /// FormSubmission, ConsultationBooking or CommerceOrder id, read again bound to the vendor.
+  subjectId     String
+  /// Failed job attempts (a lock wait given up does not count); CHECK 0..1000.
+  attempts      Int      @default(0)
+  /// When the job may take the row next; pushed back after a failed attempt (1, 2, 5, 10, then 30 minutes).
+  nextAttemptAt DateTime @default(now())
+  createdAt     DateTime @default(now())
+
+  vendor Vendor @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+
+  @@unique([vendorId, ruleId, trigger, subjectId])
+  @@index([createdAt])
+  @@index([nextAttemptAt])
 }
 
 model CustomerTagAssignment {

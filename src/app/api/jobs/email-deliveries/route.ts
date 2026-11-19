@@ -23,6 +23,7 @@ import {
 import { runDelayedStepWorker, startPendingAutomationRuns } from "@/lib/automation-delayed-steps";
 import { formNoShowDeadline, runFormNoShowAutomation, type FormNoShowSummary } from "@/lib/form-no-show-automation";
 import { runWatchProgressAutomation, watchProgressDeadline, type WatchProgressSummary } from "@/lib/watch-progress-automation";
+import { deferredDispatchDeadline, runDeferredAutomationDispatches, type DeferredDispatchSummary } from "@/lib/automation-deferred-dispatch";
 
 const SAFE_STATUSES = new Set([
   "sent",
@@ -236,6 +237,28 @@ async function processWatchProgress(startedAt: number): Promise<WatchProgressSum
   }
 }
 
+/**
+ * A2-08: automation rules a registration, consultation or payment event could
+ * not claim because a merchant save held the rule row past 2 s. Right after the
+ * watch pass and before this round's dispatch, so the e-mails they queue go
+ * out this round. Bounded by its own deadline (ends by 55 s into the round),
+ * skipped once the round ran too long, and never changes the rest of the round.
+ */
+async function processDeferredAutomationDispatches(startedAt: number): Promise<DeferredDispatchSummary | null> {
+  const deadlineMs = deferredDispatchDeadline(Date.now() - startedAt);
+  if (deadlineMs === null) return null;
+  try {
+    return await runDeferredAutomationDispatches({ deadlineMs });
+  } catch (error) {
+    try {
+      captureOperationalError(error, { source: "email_delivery_job", operation: "automation_deferred_dispatch", status: "failed" });
+    } catch {
+      // Monitoring must never change the job outcome.
+    }
+    return null;
+  }
+}
+
 async function processEmailDeliveries() {
   const startedAt = Date.now();
   try {
@@ -271,6 +294,7 @@ async function processEmailDeliveries() {
     }
     const formNoShow = await processFormNoShows(startedAt);
     const watchProgress = await processWatchProgress(startedAt);
+    const deferredDispatches = await processDeferredAutomationDispatches(startedAt);
     const reconciliations = await processLiveReminderReconciliationJobs();
     const results = await processDueEmailDeliveries();
     const lineMaterialized = await materializeLineNotifications();
@@ -370,6 +394,15 @@ async function processEmailDeliveries() {
         duplicatePerson: safeCount(watchProgress.duplicatePerson),
         failed: safeCount(watchProgress.failed),
         errors: safeCount(watchProgress.errors),
+      } : null,
+      // A2-08: counts only.
+      automationDeferred: deferredDispatches ? {
+        expired: safeCount(deferredDispatches.expired),
+        dispatched: deferredDispatches.results.filter((result) => result.status === "dispatched").length,
+        settled: deferredDispatches.results.filter((result) => result.status === "settled").length,
+        deferred: deferredDispatches.results.filter((result) => result.status === "deferred").length,
+        failed: deferredDispatches.results.filter((result) => result.status === "failed").length,
+        runningElsewhere: deferredDispatches.results.filter((result) => result.status === "running_elsewhere").length,
       } : null,
     });
   } catch (error) {

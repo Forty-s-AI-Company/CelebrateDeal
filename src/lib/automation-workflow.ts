@@ -337,6 +337,40 @@ export function isWatchAutomationTrigger(trigger: string): trigger is "viewer_wa
   return trigger === "viewer_watch_progress" || trigger === "webinar_attended_duration_gte";
 }
 
+/**
+ * A2-08: the triggers an incoming request fires (the form submission route,
+ * the two consultation actions, the payment webhook's `after()` hook and its
+ * catch-up) and whose event the e-mail job can rebuild from server records
+ * (src/lib/automation-deferred-dispatch.ts). Their execution claim waits at
+ * most 2 s for the rule row (claimRuleExecution); past that, the rule is
+ * recorded in AutomationDeferredDispatch for the job instead of holding the
+ * request for as long as a merchant save keeps the row. The job-run triggers
+ * (no-show and watch passes) keep waiting: no request is held there, and their
+ * own scans have no rebuild for a deferred rule.
+ */
+export const DEFERRABLE_AUTOMATION_TRIGGERS = [
+  "form_registered",
+  "consultation_booked",
+  "consultation_no_show",
+  "payment_paid",
+] as const satisfies readonly AvailableAutomationTrigger[];
+export type DeferrableAutomationTrigger = typeof DEFERRABLE_AUTOMATION_TRIGGERS[number];
+
+export function isDeferrableAutomationTrigger(value: unknown): value is DeferrableAutomationTrigger {
+  return typeof value === "string" && (DEFERRABLE_AUTOMATION_TRIGGERS as readonly string[]).includes(value);
+}
+
+/** The event id every caller of a deferrable trigger uses for its subject (and the job rebuilds). */
+export function deferrableAutomationEventId(trigger: DeferrableAutomationTrigger, subjectId: string) {
+  const prefix = {
+    form_registered: "form-registered",
+    consultation_booked: "consultation-booked",
+    consultation_no_show: "consultation-no-show",
+    payment_paid: "payment-paid",
+  }[trigger];
+  return `${prefix}:${subjectId}`;
+}
+
 export function automationTriggerSupportsDelayedSteps(value: unknown): value is typeof DELAYED_STEP_AUTOMATION_TRIGGERS[number] {
   return typeof value === "string" && (DELAYED_STEP_AUTOMATION_TRIGGERS as readonly string[]).includes(value);
 }
@@ -593,7 +627,7 @@ export type AutomationEvent = {
 
 type AutomationDb = Pick<
   PrismaClient,
-  "automationRule" | "automationExecutionLog" | "automationVoucherGrant" | "customerTagAssignment" | "product" | "lineOfficialAccount" | "lineUserIdentity" | "lineDelivery" | "emailDelivery" | "emailSuppression" | "blacklist" | "delayedStepRun" | "formSubmission" | "consultationBooking" | "commerceOrder" | "vendor" | "$queryRaw" | "$transaction"
+  "automationRule" | "automationExecutionLog" | "automationDeferredDispatch" | "automationVoucherGrant" | "customerTagAssignment" | "product" | "lineOfficialAccount" | "lineUserIdentity" | "lineDelivery" | "emailDelivery" | "emailSuppression" | "blacklist" | "delayedStepRun" | "formSubmission" | "consultationBooking" | "commerceOrder" | "vendor" | "$queryRaw" | "$transaction"
 >;
 
 /** Closed-beta grant of delayed automation steps (F-4, M3). */
@@ -1059,6 +1093,11 @@ async function executeAction(
  * transaction the failed statement would abort it and those queries would
  * fail too. Every caller today passes getDb() (payment_paid:
  * src/lib/payment-paid-automation.ts, after the payment transaction committed).
+ *
+ * A2-08: for a deferrable trigger (DEFERRABLE_AUTOMATION_TRIGGERS, the ones a
+ * request fires) a rule whose row a merchant save holds is not waited for
+ * longer than about 2 s: its result is `deferred` and the e-mail job runs it
+ * later. Every other trigger's claim waits for the save as before.
  */
 export async function dispatchAutomationEvent(db: AutomationDb, event: AutomationEvent, options: AutomationDispatchOptions = {}) {
   const queuedEmailIds: string[] = [];
@@ -1195,9 +1234,52 @@ type StoredRule = {
 };
 
 /**
+ * A2-08: the claim's own short transaction for a deferrable trigger. The log's
+ * foreign key to the rule takes a key-share lock on the rule row, which waits
+ * while a merchant save holds that row FOR UPDATE (every rule writer does, in
+ * a transaction with a 15 s timeout). `lock_timeout` bounds each lock wait at
+ * 2 s (Q-13's value); `statement_timeout` bounds the statement at 3 s, so a
+ * second waiter queued behind the first (tuple lock, then the holder's
+ * transaction) cannot wait 2 s twice. Either one rolls the insert back and is
+ * reported as a lock wait given up (isLockWaitGivenUp: 55P03, or 57014).
+ */
+const DEFERRABLE_CLAIM_TRANSACTION_OPTIONS = { maxWait: 5_000, timeout: 10_000 } as const;
+
+function insertExecutionLog(db: AutomationDb, data: Prisma.AutomationExecutionLogUncheckedCreateInput, boundedWait: boolean) {
+  const select = { id: true, createdAt: true } as const;
+  if (!boundedWait) return db.automationExecutionLog.create({ data, select });
+  return db.$transaction(async (tx) => {
+    await tx.$queryRaw`SELECT pg_catalog.set_config('lock_timeout', '2s', true), pg_catalog.set_config('statement_timeout', '3s', true)`;
+    return tx.automationExecutionLog.create({ data, select });
+  }, DEFERRABLE_CLAIM_TRANSACTION_OPTIONS);
+}
+
+/**
+ * #671 review MINOR-1: the claim's transaction could not start or get a
+ * connection in time (P2028 transaction API error, P2024 pool timeout). Nothing
+ * was written, so for a deferrable trigger it is deferred like a lock wait
+ * given up instead of losing the rule.
+ */
+function isClaimTransactionUnavailable(error: unknown) {
+  return error instanceof Prisma.PrismaClientKnownRequestError && (error.code === "P2028" || error.code === "P2024");
+}
+
+/**
+ * The execution's idempotency key of a deferrable trigger (#671 review
+ * MINOR-2): bound to the vendor, the rule and its version, and the event's
+ * subject, never to the event id (executionIdempotencyKey builds the same
+ * string). The deferred-dispatch job uses it to read the log another process
+ * claimed.
+ */
+export function deferrableExecutionIdempotencyKey(input: { vendorId: string; ruleId: string; ruleVersion: number; trigger: DeferrableAutomationTrigger; subjectId: string }) {
+  return createHash("sha256").update(`automation:v1:${input.vendorId}:${input.ruleId}:${input.trigger}:order:${input.subjectId}:version:${input.ruleVersion}`).digest("hex");
+}
+
+/**
  * Claims the rule/event pair: a new execution log, or a failed (or stale
  * running) one reclaimed for the same event. Any other existing log makes the
- * event a duplicate.
+ * event a duplicate. `deferred` (A2-08, deferrable triggers only): the rule
+ * row stayed held past the bounded wait; nothing was written.
  */
 async function claimRuleExecution(
   db: AutomationDb,
@@ -1205,29 +1287,32 @@ async function claimRuleExecution(
   event: AutomationEvent,
   firstStep: { delayMinutes: number } | undefined,
   options: Pick<AutomationDispatchOptions, "failedReclaim">,
-): Promise<{ log: { id: string; createdAt?: Date } } | { status: "rule_deleted" | "duplicate" }> {
+): Promise<{ log: { id: string; createdAt?: Date } } | { status: "rule_deleted" | "duplicate" | "deferred" }> {
   const { failedReclaim } = options;
   const idempotencyKey = executionIdempotencyKey(rule, event);
+  const boundedWait = isDeferrableAutomationTrigger(event.trigger);
   try {
-    const log = await db.automationExecutionLog.create({
-      data: {
-        vendorId: event.vendorId,
-        ruleId: rule.id,
-        idempotencyKey,
-        eventId: event.eventId,
-        // AutomationExecutionLog.liveId → Live is ON DELETE RESTRICT: a
-        // watch-progress or watch-duration log (Q-11) never names the Live,
-        // like a no-show's, so it never stops the merchant from deleting that Live.
-        liveId: isWatchAutomationTrigger(event.trigger) ? undefined : event.liveId,
-        trigger: event.trigger,
-        subjectType: event.subjectType,
-        subjectKeyHash: event.subjectKeyHash,
-        status: "running",
-      },
-      select: { id: true, createdAt: true },
-    });
+    const log = await insertExecutionLog(db, {
+      vendorId: event.vendorId,
+      ruleId: rule.id,
+      idempotencyKey,
+      eventId: event.eventId,
+      // AutomationExecutionLog.liveId → Live is ON DELETE RESTRICT: a
+      // watch-progress or watch-duration log (Q-11) never names the Live,
+      // like a no-show's, so it never stops the merchant from deleting that Live.
+      liveId: isWatchAutomationTrigger(event.trigger) ? undefined : event.liveId,
+      trigger: event.trigger,
+      subjectType: event.subjectType,
+      subjectKeyHash: event.subjectKeyHash,
+      status: "running",
+    }, boundedWait);
     return { log };
   } catch (error) {
+    // A2-08: a merchant save held the rule row past the bounded wait (or the
+    // claim's transaction never started, #671 MINOR-1). The transaction rolled
+    // back (no log), and the caller records the rule for the job instead of
+    // holding the request; the event's other rules go on.
+    if (boundedWait && (isLockWaitGivenUp(error) || isClaimTransactionUnavailable(error))) return { status: "deferred" };
     if (isForeignKeyViolation(error)) {
       // The rule was deleted after it was selected above (the delete holds
       // the rule row FOR UPDATE, so this insert waited and then lost its
@@ -1293,6 +1378,51 @@ async function pendingRunMark(
   return owesRun ? { delayedStepsPendingSubjectId: event.subjectId, delayedStepsPendingAttempts: 0 } : {};
 }
 
+/** Monitoring of a deferred claim: safe keys only (no ids); it never changes the event's outcome. */
+function reportDeferredDispatch(error: unknown, operation: "claim_deferred" | "claim_defer_failed") {
+  try {
+    captureOperationalError(error, { source: "automation_dispatch", operation }, operation === "claim_deferred" ? { level: "warning" } : undefined);
+  } catch {
+    // Monitoring must never change the event's outcome.
+  }
+}
+
+/**
+ * A2-08: the rule's execution could not be claimed within the bounded wait (a
+ * merchant save holds the rule row). The rule and the event's subject are
+ * recorded for the e-mail job (runDeferredAutomationDispatches), which runs
+ * the same dispatch later; the execution log's unique key keeps it to one
+ * execution whoever claims first (the job, a webhook replay, the payment
+ * catch-up). The table has no foreign key to the rule, so this insert never
+ * waits on the held row; a second deferral of the same event is a no-op.
+ * `deferred` when recorded; `deferred_unrecorded` (reported) when even that
+ * write failed: nothing ran and nothing is left for the job (for payment_paid
+ * the webhook-retry catch-up still finds the order without a log).
+ */
+async function recordDeferredDispatch(db: AutomationDb, ruleId: string, event: AutomationEvent): Promise<"deferred" | "deferred_unrecorded"> {
+  const trigger = event.trigger;
+  if (!isDeferrableAutomationTrigger(trigger)) return "deferred_unrecorded";
+  let created = 0;
+  try {
+    // #671 review NIT: the row waits on nothing but the vendor row's key
+    // share; a short lock_timeout keeps even that from holding the request.
+    ({ count: created } = await db.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT pg_catalog.set_config('lock_timeout', '2s', true)`;
+      return tx.automationDeferredDispatch.createMany({
+        data: [{ vendorId: event.vendorId, ruleId, trigger, subjectId: event.subjectId }],
+        skipDuplicates: true,
+      });
+    }, DEFERRABLE_CLAIM_TRANSACTION_OPTIONS));
+  } catch (error) {
+    reportDeferredDispatch(error, "claim_defer_failed");
+    return "deferred_unrecorded";
+  }
+  // #671 review NIT: only a new row is reported; the job deferring a row it
+  // already has (the rule still held) is not reported again.
+  if (created > 0) reportDeferredDispatch(new Error("Automation rule held by a merchant save; deferred to the job."), "claim_deferred");
+  return "deferred";
+}
+
 async function runAutomationEvent(db: AutomationDb, event: AutomationEvent, queuedEmailIds: string[], options: AutomationDispatchOptions) {
   if (isWatchAutomationTrigger(event.trigger) && !event.liveId) {
     return [{ ruleId: "__scope__", status: "missing_live_scope" }];
@@ -1343,7 +1473,7 @@ async function runAutomationEvent(db: AutomationDb, event: AutomationEvent, queu
     }
     const claim = await claimRuleExecution(db, rule, event, firstStep, options);
     if ("status" in claim) {
-      results.push({ ruleId: rule.id, status: claim.status });
+      results.push({ ruleId: rule.id, status: claim.status === "deferred" ? await recordDeferredDispatch(db, rule.id, event) : claim.status });
       continue;
     }
     const { log } = claim;
