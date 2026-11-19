@@ -13,7 +13,9 @@
  *
  * How a row is judged (everything bound to the row's own vendor):
  * - Scope: trigger `live_reminder` / `before_live` / `during_live`, status
- *   `queued` or `failed` (still waiting to be sent or retried).
+ *   `queued` or `failed` (still waiting to be sent or retried), or `exhausted`
+ *   with an error code a merchant may still retry by hand
+ *   (canManuallyRequeueEmailDelivery). A rewrite never changes the status.
  * - The source is read again: the Live (and its vendor name), the row's own
  *   template (`sourceTemplateId`), the VERIFIED registration (name, chosen
  *   session) and, for a notification, its rule (from the idempotency key).
@@ -31,8 +33,26 @@
  *   from the server that queued it). So a write only ever replaces content
  *   this run reproduced exactly, and the replacement differs only in how the
  *   name is rendered.
+ * - A row that needs a rewrite is still left alone when:
+ *   - `ambiguousAttempt`: an earlier send attempt may have reached the
+ *     provider. A retry reuses the row's Idempotency-Key, and Resend answers a
+ *     reused key with a different body with 409, which ends in `exhausted`.
+ *     Only a row that provably never reached it is rewritten: no manual retry
+ *     (`manualRetryCount = 0`, since a retry clears the error code and may
+ *     reset the attempts) and either no attempt, or exactly one attempt that
+ *     failed with `configuration` (thrown before the HTTP request). The stored
+ *     error code is the last attempt's only and `provider_rejected` keeps no
+ *     HTTP status (a 5xx looks like a 429), so `network`, `invalid_response`,
+ *     `provider_rejected`, `internal`, `stale_delivery_lease` and any second
+ *     attempt are all treated as possibly delivered.
+ *   - `keyMismatch`: the stored envelope's key id is not this run's active
+ *     DATA_ENCRYPTION_KEYRING key id. The run's keyring is then not the
+ *     server's (or the server rotated since), and a write could produce an
+ *     envelope the server cannot read.
+ *   - `unrenderable`: the new content fails the payload limits.
  * - Each write is one compare-and-set UPDATE on: id, vendorId, trigger, the
- *   status read, the exact encrypted envelope read and the `updatedAt` read.
+ *   status, attempt count, manual retry count and error code read, the exact
+ *   encrypted envelope read and the `updatedAt` read.
  *   It sets only `payloadEncryptedEnvelope` and moves `updatedAt` forward, so
  *   a dispatcher that read the row before the write loses its own
  *   `updatedAt` claim and re-reads the new content on its next round. A row
@@ -49,14 +69,16 @@
  *   RERENDER_PRODUCTION_APPROVAL=OWNER_APPROVED_PRODUCTION_REMINDER_RERENDER,
  *   which the operator sets only with the owner's explicit approval (dry runs
  *   included, since they decrypt recipient e-mails and names).
- * - NEXT_PUBLIC_APP_URL and the root secret must be the target environment's
- *   own values (injected by the operator; this tool reads no .env file).
+ * - NEXT_PUBLIC_APP_URL, CSRF_SECRET (no JOB_SECRET fallback) and
+ *   DATA_ENCRYPTION_KEYRING must be exactly the target servers' values
+ *   (injected by the operator; this tool reads no .env file).
+ * - One row's unexpected error is counted as `rowError` and the run goes on.
  * - Prints vendor IDs and counts only: never names, e-mails or content.
  *
  * Usage:
- *   DATABASE_URL=<staging> NEXT_PUBLIC_APP_URL=<staging app url> \
+ *   DATABASE_URL=<staging> NEXT_PUBLIC_APP_URL=<staging app url> CSRF_SECRET=<staging> DATA_ENCRYPTION_KEYRING=<staging> \
  *     node --import tsx scripts/rerender-queued-reminder-content.ts --target=staging
- *   RERENDER_CONFIRM=RERENDER_QUEUED_REMINDER_CONTENT DATABASE_URL=<staging> NEXT_PUBLIC_APP_URL=<staging app url> \
+ *   RERENDER_CONFIRM=RERENDER_QUEUED_REMINDER_CONTENT <same variables> \
  *     node --import tsx scripts/rerender-queued-reminder-content.ts --target=staging --apply
  * Options: --batch-size <1-500> (default 100), --vendor-id <id> (one tenant).
  */
@@ -71,12 +93,23 @@ import { createLiveViewerUrl } from "../src/lib/live-public-url";
 import { stableLiveNotificationDeliveryId, stableLiveReminderDeliveryId } from "../src/lib/live-reminder-delivery-identity";
 import { appendPersonalWatchLink, PERSONAL_WATCH_LINK_LABEL } from "../src/lib/live-watch-link-token";
 import { renderMessageTemplate, type MessageTemplateVariables } from "../src/lib/message-template";
+import { activeDataEncryptionKeyId, sensitiveEnvelopeKeyId } from "../src/lib/sensitive-data";
 import { classifyLocalTestDatabase } from "./local-database-safety";
 
 export const APPLY_CONFIRMATION = "RERENDER_QUEUED_REMINDER_CONTENT";
 export const PRODUCTION_APPROVAL = "OWNER_APPROVED_PRODUCTION_REMINDER_RERENDER";
 export const RERENDER_TRIGGERS = ["live_reminder", "before_live", "during_live"] as const;
-export const RERENDER_STATUSES = ["queued", "failed"] as const;
+/** Waiting to be sent or retried by the job. */
+export const RERENDER_PENDING_STATUSES = ["queued", "failed"] as const;
+/**
+ * Error codes of an `exhausted` row that canManuallyRequeueEmailDelivery
+ * (email-delivery-operations.ts) refuses to retry; every other exhausted row
+ * can still be retried by hand and is in scope. A DB test keeps the two lists
+ * in step.
+ */
+export const NON_REQUEUEABLE_EXHAUSTED_CODES = ["provider_rejected", "recipient_suppressed", "config_superseded", "verification_superseded"] as const;
+/** The only error code thrown before the provider request (missing or invalid Resend configuration). */
+const PRE_REQUEST_ERROR_CODE = "configuration";
 const DEFAULT_BATCH_SIZE = 100;
 
 type Environment = Readonly<Record<string, string | undefined>>;
@@ -160,6 +193,9 @@ const ROW_SELECT = {
   sourceTemplateId: true,
   idempotencyKey: true,
   payloadEncryptedEnvelope: true,
+  attemptCount: true,
+  manualRetryCount: true,
+  lastErrorCode: true,
   updatedAt: true,
 } as const;
 
@@ -173,8 +209,22 @@ type QueuedRow = {
   sourceTemplateId: string;
   idempotencyKey: string;
   payloadEncryptedEnvelope: string;
+  attemptCount: number;
+  manualRetryCount: number;
+  lastErrorCode: string | null;
   updatedAt: Date;
 };
+
+/**
+ * True only when no send attempt of this row can have reached the provider,
+ * so a retry with new content cannot collide with an accepted request under
+ * the same Idempotency-Key. See the file comment for why the error-code table
+ * cannot prove more than this.
+ */
+export function provablyNeverSent(row: Pick<QueuedRow, "attemptCount" | "manualRetryCount" | "lastErrorCode">) {
+  if (row.manualRetryCount !== 0) return false;
+  return row.attemptCount === 0 || (row.attemptCount === 1 && row.lastErrorCode === PRE_REQUEST_ERROR_CODE);
+}
 
 type RenderSource = {
   subjectTemplate: string;
@@ -192,17 +242,20 @@ function renderLegacy(value: string, variables: MessageTemplateVariables) {
 }
 
 /**
- * The personal watch link (Q-17) the row was queued with. Its token embeds the
- * queue time, so it cannot be produced again; the stored one is kept. Null
- * when the body has none (queued before Q-17). A wrong guess only makes the
- * renderings differ from the stored body, i.e. `unrecognized`.
+ * The personal watch link (Q-17) the row may have been queued with. Its token
+ * embeds the queue time, so it cannot be produced again; the stored one is
+ * kept. Both "with the last such line's link" and "without a link" (queued
+ * before Q-17) are tried: a registrant's name can contain a look-alike line,
+ * and a wrong guess only makes a rendering differ from the stored body. A
+ * rewrite therefore needs the stored body to equal one exact pre-#670
+ * composition, and the link it keeps is the one that composition appended.
  */
-function storedPersonalWatchUrl(body: string) {
+function personalWatchUrlCandidates(body: string): Array<string | null> {
   const marker = `${PERSONAL_WATCH_LINK_LABEL}：`;
   const index = body.lastIndexOf(marker);
-  if (index < 0 || (index > 0 && body.slice(index - 2, index) !== "\n\n")) return null;
+  if (index < 0 || (index > 0 && body.slice(index - 2, index) !== "\n\n")) return [null];
   const url = body.slice(index + marker.length).split("\n", 1)[0];
-  return url ? url : null;
+  return url ? [url, null] : [null];
 }
 
 /** The composition ensureLiveReminderDelivery and the notification materializer use. */
@@ -290,11 +343,11 @@ async function renderSources(db: Db, row: QueuedRow): Promise<RenderSource[]> {
 
 type Stored = ReturnType<typeof revealEmailDeliveryPayload>;
 type Classified =
-  | { kind: "needsRewrite"; stored: Stored; next: Content }
-  | { kind: "alreadySafe" | "unrecognized" | "stale" | "unreadable" };
+  | { kind: "needsRewrite"; envelope: string }
+  | { kind: "alreadySafe" | "unrecognized" | "stale" | "unreadable" | "ambiguousAttempt" | "keyMismatch" | "unrenderable" };
 
 /** Decrypts in memory only; nothing read here leaves this module except a category. */
-async function classify(db: Db, row: QueuedRow): Promise<Classified> {
+async function classify(db: Db, row: QueuedRow, activeKeyId: string): Promise<Classified> {
   let stored: Stored;
   try {
     stored = revealEmailDeliveryPayload(row.payloadEncryptedEnvelope, { vendorId: row.vendorId, deliveryId: row.id });
@@ -303,14 +356,33 @@ async function classify(db: Db, row: QueuedRow): Promise<Classified> {
   }
   const sources = await renderSources(db, row);
   if (sources.length === 0) return { kind: "stale" };
-  const watchUrl = storedPersonalWatchUrl(stored.body);
   const equals = (content: Content) => content.subject === stored.subject && content.body === stored.body;
-  for (const source of sources) {
-    const current = compose(source, renderMessageTemplate, watchUrl);
-    if (equals(current)) return { kind: "alreadySafe" };
-    if (equals(compose(source, renderLegacy, watchUrl))) return { kind: "needsRewrite", stored, next: current };
+  let next: Content | null = null;
+  search: for (const source of sources) {
+    for (const watchUrl of personalWatchUrlCandidates(stored.body)) {
+      const current = compose(source, renderMessageTemplate, watchUrl);
+      if (equals(current)) return { kind: "alreadySafe" };
+      if (equals(compose(source, renderLegacy, watchUrl))) {
+        next = current;
+        break search;
+      }
+    }
   }
-  return { kind: "unrecognized" };
+  if (!next) return { kind: "unrecognized" };
+  if (!provablyNeverSent(row)) return { kind: "ambiguousAttempt" };
+  if (sensitiveEnvelopeKeyId(row.payloadEncryptedEnvelope) !== activeKeyId) return { kind: "keyMismatch" };
+  try {
+    // Same recipient and sender brand as stored; only subject and body change.
+    const envelope = protectEmailDeliveryPayload({
+      recipientEmail: stored.recipientEmail,
+      subject: next.subject,
+      body: next.body,
+      ...(stored.brand ? { brand: stored.brand } : {}),
+    }, { vendorId: row.vendorId, deliveryId: row.id }).payloadEncryptedEnvelope;
+    return { kind: "needsRewrite", envelope };
+  } catch {
+    return { kind: "unrenderable" };
+  }
 }
 
 export type VendorCounts = {
@@ -323,16 +395,32 @@ export type VendorCounts = {
   unrecognized: number;
   stale: number;
   unreadable: number;
+  ambiguousAttempt: number;
+  keyMismatch: number;
   unrenderable: number;
+  rowError: number;
 };
 type Counter = Exclude<keyof VendorCounts, "vendorId">;
-const COUNTERS: readonly Counter[] = ["scanned", "needsRewrite", "rewritten", "raced", "alreadySafe", "unrecognized", "stale", "unreadable", "unrenderable"];
+const COUNTERS: readonly Counter[] = [
+  "scanned", "needsRewrite", "rewritten", "raced", "alreadySafe", "unrecognized", "stale", "unreadable", "ambiguousAttempt", "keyMismatch", "unrenderable", "rowError",
+];
 
 function emptyCounts(vendorId: string): VendorCounts {
-  return { vendorId, scanned: 0, needsRewrite: 0, rewritten: 0, raced: 0, alreadySafe: 0, unrecognized: 0, stale: 0, unreadable: 0, unrenderable: 0 };
+  return Object.fromEntries([["vendorId", vendorId], ...COUNTERS.map((key) => [key, 0])]) as VendorCounts;
 }
 
-const pendingWhere = { trigger: { in: [...RERENDER_TRIGGERS] }, status: { in: [...RERENDER_STATUSES] } };
+/**
+ * In scope: waiting to be sent or retried, or exhausted but still retryable by
+ * hand (canManuallyRequeueEmailDelivery: a null error code counts as retryable,
+ * and SQL NOT IN drops NULLs, hence the explicit null branch).
+ */
+const scopeWhere: Prisma.EmailDeliveryWhereInput = {
+  trigger: { in: [...RERENDER_TRIGGERS] },
+  OR: [
+    { status: { in: [...RERENDER_PENDING_STATUSES] } },
+    { status: "exhausted", OR: [{ lastErrorCode: null }, { lastErrorCode: { notIn: [...NON_REQUEUEABLE_EXHAUSTED_CODES] } }] },
+  ],
+};
 
 /** The next vendor (by id) that still has rows in scope; one vendor is processed at a time. */
 async function nextVendorId(db: Db, after: string | null, scope: ReminderRerenderScope) {
@@ -340,60 +428,56 @@ async function nextVendorId(db: Db, after: string | null, scope: ReminderRerende
   if (after !== null) vendorFilter.gt = after;
   if (scope.vendorIds) vendorFilter.in = [...scope.vendorIds];
   const row = await db.emailDelivery.findFirst({
-    where: { ...pendingWhere, vendorId: vendorFilter },
+    where: { AND: [scopeWhere, { vendorId: vendorFilter }] },
     orderBy: { vendorId: "asc" },
     select: { vendorId: true },
   });
   return row?.vendorId ?? null;
 }
 
-async function processVendor(db: Db, vendorId: string, options: ReminderRerenderOptions, hooks: ReminderRerenderHooks) {
+async function processRow(db: Db, row: QueuedRow, counts: VendorCounts, options: ReminderRerenderOptions, hooks: ReminderRerenderHooks, activeKeyId: string) {
+  const outcome = await classify(db, row, activeKeyId);
+  counts[outcome.kind] += 1;
+  if (outcome.kind !== "needsRewrite" || !options.apply) return;
+  await hooks.beforeCompareAndSet?.({ id: row.id, vendorId: row.vendorId });
+  const written = await db.emailDelivery.updateMany({
+    where: {
+      id: row.id,
+      vendorId: row.vendorId,
+      trigger: row.trigger,
+      status: row.status,
+      attemptCount: row.attemptCount,
+      manualRetryCount: row.manualRetryCount,
+      lastErrorCode: row.lastErrorCode,
+      payloadEncryptedEnvelope: row.payloadEncryptedEnvelope,
+      updatedAt: row.updatedAt,
+    },
+    // Strictly later than the value read, so a dispatcher's updatedAt claim taken before this write fails.
+    data: { payloadEncryptedEnvelope: outcome.envelope, updatedAt: new Date(Math.max(Date.now(), row.updatedAt.getTime() + 1)) },
+  });
+  if (written.count === 1) counts.rewritten += 1;
+  else counts.raced += 1;
+}
+
+async function processVendor(db: Db, vendorId: string, options: ReminderRerenderOptions, hooks: ReminderRerenderHooks, activeKeyId: string) {
   const counts = emptyCounts(vendorId);
   let cursor: string | undefined;
   while (true) {
     const rows: QueuedRow[] = await db.emailDelivery.findMany({
-      where: { ...pendingWhere, vendorId, ...(cursor ? { id: { gt: cursor } } : {}) },
+      where: { AND: [scopeWhere, { vendorId }, ...(cursor ? [{ id: { gt: cursor } }] : [])] },
       orderBy: { id: "asc" },
       take: options.batchSize,
       select: ROW_SELECT,
     });
     for (const row of rows) {
       counts.scanned += 1;
-      const outcome = await classify(db, row);
-      if (outcome.kind !== "needsRewrite") {
-        counts[outcome.kind] += 1;
-        continue;
-      }
-      counts.needsRewrite += 1;
-      if (!options.apply) continue;
-      let envelope: string;
       try {
-        // Same recipient and sender brand as stored; only subject and body change.
-        envelope = protectEmailDeliveryPayload({
-          recipientEmail: outcome.stored.recipientEmail,
-          subject: outcome.next.subject,
-          body: outcome.next.body,
-          ...(outcome.stored.brand ? { brand: outcome.stored.brand } : {}),
-        }, { vendorId: row.vendorId, deliveryId: row.id }).payloadEncryptedEnvelope;
+        await processRow(db, row, counts, options, hooks, activeKeyId);
       } catch {
-        counts.unrenderable += 1;
-        continue;
+        // One row's unexpected failure (a dropped connection, a malformed
+        // source) must not stop the other rows; it is counted, never printed.
+        counts.rowError += 1;
       }
-      await hooks.beforeCompareAndSet?.({ id: row.id, vendorId: row.vendorId });
-      const written = await db.emailDelivery.updateMany({
-        where: {
-          id: row.id,
-          vendorId: row.vendorId,
-          trigger: row.trigger,
-          status: row.status,
-          payloadEncryptedEnvelope: row.payloadEncryptedEnvelope,
-          updatedAt: row.updatedAt,
-        },
-        // Strictly later than the value read, so a dispatcher's updatedAt claim taken before this write fails.
-        data: { payloadEncryptedEnvelope: envelope, updatedAt: new Date(Math.max(Date.now(), row.updatedAt.getTime() + 1)) },
-      });
-      if (written.count === 1) counts.rewritten += 1;
-      else counts.raced += 1;
     }
     cursor = rows.at(-1)?.id;
     if (rows.length < options.batchSize) return counts;
@@ -410,13 +494,20 @@ export async function runReminderRerender(
   if (options.apply && env.RERENDER_CONFIRM !== APPLY_CONFIRMATION) throw new ReminderRerenderRefusedError("confirmation-missing");
   // Links in the content are built from it; a missing value cannot reproduce anything.
   if (!env.NEXT_PUBLIC_APP_URL?.trim()) throw new ReminderRerenderRefusedError("app-url-missing");
+  // New envelopes are written with this key id; a row stored under another one is `keyMismatch`.
+  let activeKeyId: string;
+  try {
+    activeKeyId = activeDataEncryptionKeyId();
+  } catch {
+    throw new ReminderRerenderRefusedError("keyring-invalid");
+  }
   const effectiveScope = options.vendorId ? { vendorIds: [options.vendorId] } : scope;
   const vendors: VendorCounts[] = [];
   let after: string | null = null;
   while (true) {
     const vendorId = await nextVendorId(db, after, effectiveScope);
     if (vendorId === null) break;
-    vendors.push(await processVendor(db, vendorId, options, hooks));
+    vendors.push(await processVendor(db, vendorId, options, hooks, activeKeyId));
     after = vendorId;
   }
   const total = Object.fromEntries(COUNTERS.map((key) => [key, vendors.reduce((sum, row) => sum + row[key], 0)])) as Record<Counter, number>;

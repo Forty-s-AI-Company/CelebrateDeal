@@ -1,16 +1,43 @@
-import { randomUUID } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+// The real dispatcher runs against a mocked provider, and the suspension check
+// (between its read and its claim) is the seam for a rewrite in between.
+const seams = vi.hoisted(() => ({ beforeClaim: null as null | (() => Promise<void>) }));
+vi.mock("@/lib/email", async (importOriginal) => ({
+  ...await importOriginal<typeof import("@/lib/email")>(),
+  sendTransactionalEmail: vi.fn(async () => ({ id: "provider-synthetic" })),
+}));
+vi.mock("@/lib/vendor-suspension-state", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/vendor-suspension-state")>();
+  return {
+    ...actual,
+    isVendorSuspendedById: async (...args: Parameters<typeof actual.isVendorSuspendedById>) => {
+      const seam = seams.beforeClaim;
+      seams.beforeClaim = null;
+      if (seam) await seam();
+      return actual.isVendorSuspendedById(...args);
+    },
+  };
+});
+
 import { getDb } from "../src/lib/db";
-import { ensureLiveReminderDelivery } from "../src/lib/email-delivery";
+import { sendTransactionalEmail } from "../src/lib/email";
+import { dispatchEmailDelivery, ensureLiveReminderDelivery } from "../src/lib/email-delivery";
+import { formatLiveStartAt } from "../src/lib/email-delivery-format";
+import { canManuallyRequeueEmailDelivery } from "../src/lib/email-delivery-operations";
 import { protectEmailDeliveryPayload, revealEmailDeliveryPayload } from "../src/lib/email-delivery-pii";
 import { ensureLiveNotificationDelivery } from "../src/lib/live-notification-delivery";
 import { PERSONAL_WATCH_LINK_LABEL } from "../src/lib/live-watch-link-token";
 import { MESSAGE_TEMPLATE_NAME_FALLBACK } from "../src/lib/message-template";
+import { safeRecipientNameOr } from "../src/lib/safe-recipient-name";
 import {
   APPLY_CONFIRMATION,
+  NON_REQUEUEABLE_EXHAUSTED_CODES,
   PRODUCTION_APPROVAL,
   ReminderRerenderRefusedError,
   parseReminderRerenderArguments,
+  provablyNeverSent,
   resolveReminderRerenderTarget,
   runReminderRerender,
 } from "./rerender-queued-reminder-content";
@@ -33,10 +60,14 @@ const applyOptions = { ...planOptions, apply: true } as const;
 
 const PHISHING = ["evil.test", "[點我](https://evil.test/login)"] as const;
 const NORMAL = "王小明";
+const DAY = 24 * 60 * 60_000;
 
 beforeEach(() => {
   vi.stubEnv("CSRF_SECRET", "rerender-queued-reminder-db-secret-longer-than-thirty-two-bytes");
   vi.stubEnv("NEXT_PUBLIC_APP_URL", APP_URL);
+  vi.stubEnv("DATA_ENCRYPTION_KEYRING", "");
+  vi.mocked(sendTransactionalEmail).mockClear();
+  seams.beforeClaim = null;
 });
 
 afterEach(async () => {
@@ -44,27 +75,50 @@ afterEach(async () => {
   vi.unstubAllEnvs();
 });
 
-type QueuedRow = { id: string; name: string; phishing: boolean; safe: { subject: string; body: string } };
+type Content = { subject: string; body: string };
+type QueuedRow = { id: string; trigger: string; name: string; phishing: boolean; submissionId: string; safe: Content };
 
-/** Replaces the safe rendering of the name by the raw name, as the pre-#670 renderer wrote it. */
-async function makeLegacy(vendorId: string, deliveryId: string, name: string) {
-  const row = await db.emailDelivery.findUniqueOrThrow({ where: { id: deliveryId } });
-  const safe = revealEmailDeliveryPayload(row.payloadEncryptedEnvelope, { vendorId, deliveryId });
-  const legacySubject = safe.subject.replace(`[${MESSAGE_TEMPLATE_NAME_FALLBACK}]`, `[${name}]`);
-  const legacyBody = safe.body.replace(`Hi ${MESSAGE_TEMPLATE_NAME_FALLBACK}!`, `Hi ${name}!`);
-  expect(legacySubject).not.toBe(safe.subject);
-  expect(legacyBody).not.toBe(safe.body);
-  const legacy = protectEmailDeliveryPayload({ ...safe, subject: legacySubject, body: legacyBody }, { vendorId, deliveryId });
-  await db.emailDelivery.update({ where: { id: deliveryId }, data: { payloadEncryptedEnvelope: legacy.payloadEncryptedEnvelope } });
-  return { subject: safe.subject, body: safe.body };
+function reveal(vendorId: string, row: { id: string; payloadEncryptedEnvelope: string }) {
+  return revealEmailDeliveryPayload(row.payloadEncryptedEnvelope, { vendorId, deliveryId: row.id });
+}
+
+async function content(vendorId: string, deliveryId: string) {
+  return reveal(vendorId, await db.emailDelivery.findUniqueOrThrow({ where: { id: deliveryId } }));
+}
+
+/** Stores new subject and body for a row (same recipient and brand), as an older server would have queued them. */
+async function storeContent(vendorId: string, deliveryId: string, next: Content) {
+  const current = await content(vendorId, deliveryId);
+  const sealed = protectEmailDeliveryPayload({ ...current, ...next }, { vendorId, deliveryId });
+  await db.emailDelivery.update({ where: { id: deliveryId }, data: { payloadEncryptedEnvelope: sealed.payloadEncryptedEnvelope } });
+}
+
+/** The pre-#670 content of a row: the raw name where the current renderer put the safe one. */
+function legacyOf(safe: Content, name: string): Content {
+  const shown = safeRecipientNameOr(name, MESSAGE_TEMPLATE_NAME_FALLBACK);
+  const subject = safe.subject.replace(`[${shown}]`, `[${name}]`).replace(/\s+/gu, " ").trim();
+  const body = safe.body.replace(`Hi ${shown}!`, `Hi ${name}!`);
+  expect(subject).not.toBe(safe.subject);
+  expect(body).not.toBe(safe.body);
+  return { subject, body };
+}
+
+/** Removes the appended (last) personal watch link paragraph, as in a row queued before Q-17. */
+function withoutWatchLink(body: string) {
+  const start = body.lastIndexOf(`\n\n${PERSONAL_WATCH_LINK_LABEL}：`);
+  expect(start).toBeGreaterThan(0);
+  const end = body.indexOf("\n", start + 2);
+  return end < 0 ? body.slice(0, start) : body.slice(0, start) + body.slice(end);
 }
 
 /**
  * One vendor with a legacy `live_reminder` and a `before_live` rule on a
- * scheduled Live and a `during_live` rule on a Live that is on air; three
- * registrants each (two phishing names, one ordinary name): nine queued rows.
+ * scheduled Live and a `during_live` rule on a Live that is on air; per name
+ * one registration on each: three queued rows per name. Rows of a name that
+ * the current renderer changes get the pre-#670 content.
  */
-async function fixture(label: string) {
+async function fixture(label: string, options: { names?: readonly string[]; scheduledTitle?: string } = {}) {
+  const names = options.names ?? [...PHISHING, NORMAL];
   const suffix = `${label}-${randomUUID()}`;
   const vendor = await db.vendor.create({
     data: { name: `Rerender ${label}`, slug: `rerender-${suffix}`, email: `rerender-${suffix}@example.test`, passwordHash: "synthetic-only" },
@@ -81,8 +135,8 @@ async function fixture(label: string) {
   const now = new Date();
   const scheduled = await db.live.create({
     data: {
-      vendorId: vendor.id, formId: form.id, title: "Scheduled live", slug: `rerender-scheduled-${suffix}`, status: "scheduled",
-      scheduledAt: new Date(now.getTime() + 7 * 24 * 60 * 60_000), liveReminderTemplateId: template.id, liveReminderOffsetMinutes: 60,
+      vendorId: vendor.id, formId: form.id, title: options.scheduledTitle ?? "Scheduled live", slug: `rerender-scheduled-${suffix}`, status: "scheduled",
+      scheduledAt: new Date(now.getTime() + 7 * DAY), liveReminderTemplateId: template.id, liveReminderOffsetMinutes: 60,
     },
   });
   const onAir = await db.live.create({
@@ -99,8 +153,8 @@ async function fixture(label: string) {
   });
 
   const rows: QueuedRow[] = [];
-  for (const name of [...PHISHING, NORMAL]) {
-    const phishing = name !== NORMAL;
+  for (const name of names) {
+    const phishing = safeRecipientNameOr(name, MESSAGE_TEMPLATE_NAME_FALLBACK) !== name;
     const email = `lead-${randomUUID()}@example.test`;
     const first = await db.formSubmission.create({
       data: { formId: form.id, liveId: scheduled.id, name, email, verificationStatus: "VERIFIED", verifiedAt: now },
@@ -115,34 +169,41 @@ async function fixture(label: string) {
     }, now);
     const before = await ensureLiveNotificationDelivery({ vendorId: vendor.id, liveId: scheduled.id, ruleId: beforeRule.id, submissionId: first.id }, now, { scheduleFuture: true });
     const during = await ensureLiveNotificationDelivery({ vendorId: vendor.id, liveId: onAir.id, ruleId: duringRule.id, submissionId: second.id }, now, { scheduleFuture: true });
-    for (const result of [reminder, before, during]) {
+    for (const [result, submissionId] of [[reminder, first.id], [before, first.id], [during, second.id]] as const) {
       const deliveryId = (result as { deliveryId?: string }).deliveryId;
       expect(deliveryId, JSON.stringify(result)).toBeTruthy();
       const row = await db.emailDelivery.findUniqueOrThrow({ where: { id: deliveryId! } });
-      const safe = phishing ? await makeLegacy(vendor.id, row.id, name) : revealEmailDeliveryPayload(row.payloadEncryptedEnvelope, { vendorId: vendor.id, deliveryId: row.id });
-      rows.push({ id: row.id, name, phishing, safe: { subject: safe.subject, body: safe.body } });
+      const safe = reveal(vendor.id, row);
+      if (phishing) await storeContent(vendor.id, row.id, legacyOf(safe, name));
+      rows.push({ id: row.id, trigger: row.trigger, name, phishing, submissionId, safe: { subject: safe.subject, body: safe.body } });
     }
   }
-  const triggers = (await db.emailDelivery.findMany({ where: { vendorId: vendor.id }, select: { trigger: true, status: true } }))
-    .map((row) => `${row.trigger}:${row.status}`).sort();
-  expect(triggers).toEqual([...Array(3).fill("before_live:queued"), ...Array(3).fill("during_live:queued"), ...Array(3).fill("live_reminder:queued")]);
-  return { vendor, template, scheduled, onAir, rows, scope: { vendorIds: [vendor.id] } };
+  expect(rows.map((row) => row.trigger).sort()).toEqual(
+    [...Array(names.length).fill("before_live"), ...Array(names.length).fill("during_live"), ...Array(names.length).fill("live_reminder")],
+  );
+  const phishingRows = rows.filter((row) => row.phishing);
+  return { vendor, template, scheduled, onAir, form, rows, phishingRows, scope: { vendorIds: [vendor.id] } };
 }
 
 async function snapshot(vendorId: string) {
   return db.emailDelivery.findMany({
     where: { vendorId },
     orderBy: { id: "asc" },
-    select: { id: true, status: true, payloadEncryptedEnvelope: true, recipientHash: true, idempotencyKey: true, nextAttemptAt: true, attemptCount: true, updatedAt: true, lastErrorCode: true },
+    select: {
+      id: true, status: true, payloadEncryptedEnvelope: true, recipientHash: true, idempotencyKey: true, nextAttemptAt: true,
+      attemptCount: true, manualRetryCount: true, updatedAt: true, lastErrorCode: true, sourceTemplateId: true,
+    },
   });
 }
 
-async function content(vendorId: string, deliveryId: string) {
-  const row = await db.emailDelivery.findUniqueOrThrow({ where: { id: deliveryId } });
-  return revealEmailDeliveryPayload(row.payloadEncryptedEnvelope, { vendorId, deliveryId });
+async function envelopeOf(id: string) {
+  return (await db.emailDelivery.findUniqueOrThrow({ where: { id } })).payloadEncryptedEnvelope;
 }
 
-const zero = { needsRewrite: 0, rewritten: 0, raced: 0, alreadySafe: 0, unrecognized: 0, stale: 0, unreadable: 0, unrenderable: 0 };
+const zero = {
+  needsRewrite: 0, rewritten: 0, raced: 0, alreadySafe: 0, unrecognized: 0, stale: 0, unreadable: 0,
+  ambiguousAttempt: 0, keyMismatch: 0, unrenderable: 0, rowError: 0,
+};
 
 describe("scripts/rerender-queued-reminder-content (PostgreSQL, A3-03)", () => {
   it("dry run classifies every row and writes nothing", async () => {
@@ -164,10 +225,8 @@ describe("scripts/rerender-queued-reminder-content (PostgreSQL, A3-03)", () => {
     const other = await fixture("other-tenant");
     const otherBefore = await snapshot(other.vendor.id);
     // A sent row with the old content stays as it was sent.
-    const sentId = f.rows.find((row) => row.phishing)!.id;
+    const sentId = f.phishingRows[0]!.id;
     await db.emailDelivery.update({ where: { id: sentId }, data: { status: "sent", sentAt: new Date(), nextAttemptAt: null } });
-    // A dispatcher that read a row before the rewrite.
-    const dispatcherRead = await db.emailDelivery.findUniqueOrThrow({ where: { id: f.rows.filter((row) => row.phishing)[1]!.id } });
     const before = new Map((await snapshot(f.vendor.id)).map((row) => [row.id, row]));
 
     const result = await runReminderRerender(db, applyOptions, confirmed, f.scope);
@@ -180,7 +239,7 @@ describe("scripts/rerender-queued-reminder-content (PostgreSQL, A3-03)", () => {
       expect({ ...after, payloadEncryptedEnvelope: undefined, updatedAt: undefined }).toMatchObject({
         ...prior, payloadEncryptedEnvelope: undefined, updatedAt: undefined,
       });
-      const mail = await content(f.vendor.id, row.id);
+      const mail = reveal(f.vendor.id, after);
       if (row.id === sentId || !row.phishing) {
         expect(after.payloadEncryptedEnvelope).toBe(prior.payloadEncryptedEnvelope);
         expect(after.updatedAt).toEqual(prior.updatedAt);
@@ -196,25 +255,210 @@ describe("scripts/rerender-queued-reminder-content (PostgreSQL, A3-03)", () => {
       expect(mail.body).toContain(`${PERSONAL_WATCH_LINK_LABEL}：${APP_URL}/api/live-watch-link?token=`);
       expect(mail.recipientEmail).toMatch(/^lead-.+@example\.test$/u);
       // The sender brand stored with a legacy reminder is kept too.
-      if (after.idempotencyKey.startsWith("live-reminder/")) {
+      if (row.trigger === "live_reminder") {
         expect(mail.brand).toEqual({ version: 1, senderName: "Synthetic Sender", replyTo: "support@example.test" });
       }
     }
     expect((await content(f.vendor.id, sentId)).subject).toContain("[evil.test]");
-
-    // The dispatcher's claim on what it read before the rewrite fails, so it never sends the old content.
-    const claim = await db.emailDelivery.updateMany({
-      where: { id: dispatcherRead.id, status: dispatcherRead.status, attemptCount: dispatcherRead.attemptCount, updatedAt: dispatcherRead.updatedAt },
-      data: { status: "sending", attemptCount: { increment: 1 } },
-    });
-    expect(claim.count).toBe(0);
-
     expect(await snapshot(other.vendor.id)).toEqual(otherBefore);
   });
 
-  it("skips a row that the sender claims or sends between the read and the write", async () => {
+  it("a dispatcher that read the row before the rewrite loses its claim and sends the new content next round", async () => {
+    const f = await fixture("dispatch", { names: [PHISHING[0]] });
+    const reminder = f.rows.find((row) => row.trigger === "live_reminder")!;
+    await db.emailDelivery.update({ where: { id: reminder.id }, data: { nextAttemptAt: new Date(Date.now() - 60_000) } });
+    let rewrite: Awaited<ReturnType<typeof runReminderRerender>> | null = null;
+    // Runs after dispatchEmailDelivery read the row (old content) and before its claim.
+    seams.beforeClaim = async () => {
+      rewrite = await runReminderRerender(db, applyOptions, confirmed, f.scope);
+    };
+
+    await expect(dispatchEmailDelivery(reminder.id)).resolves.toEqual({ status: "claimed_elsewhere" });
+    expect(rewrite).toMatchObject({ rewritten: 3 });
+    expect(sendTransactionalEmail).not.toHaveBeenCalled();
+    expect(await db.emailDelivery.findUniqueOrThrow({ where: { id: reminder.id } })).toMatchObject({ status: "queued", attemptCount: 0 });
+
+    await expect(dispatchEmailDelivery(reminder.id)).resolves.toEqual({ status: "sent" });
+    expect(sendTransactionalEmail).toHaveBeenCalledTimes(1);
+    const sent = vi.mocked(sendTransactionalEmail).mock.calls[0]![0];
+    expect(sent.subject).toBe(reminder.safe.subject);
+    expect(`${sent.subject}\n${sent.text}\n${sent.html}`).not.toMatch(/evil/u);
+    expect(sent.idempotencyKey).toBe(`live-reminder/${reminder.id}`);
+  });
+
+  it("re-renders fixed-session rows anchored on the registrant's own session", async () => {
+    const suffix = randomUUID();
+    const vendor = await db.vendor.create({
+      data: { name: "Rerender fixed", slug: `rerender-fixed-${suffix}`, email: `rerender-fixed-${suffix}@example.test`, passwordHash: "synthetic-only" },
+    });
+    vendorIds.push(vendor.id);
+    const form = await db.registrationForm.create({ data: { vendorId: vendor.id, name: "Form", slug: `rerender-fixed-form-${suffix}`, headline: "Synthetic", fields: [] } });
+    const template = await db.messageTemplate.create({
+      data: {
+        vendorId: vendor.id, name: "Reminder", channel: "email", trigger: "live_reminder", isActive: true,
+        subject: "[{{name}}] {{live_title}}", body: "Hi {{name}}! {{live_title}} at {{live_start_at}} by {{vendor_name}}\n{{live_url}}",
+      },
+    });
+    const now = new Date();
+    const live = await db.live.create({
+      data: {
+        vendorId: vendor.id, formId: form.id, title: "Fixed live", slug: `rerender-fixed-live-${suffix}`, status: "scheduled", sessionMode: "fixed_sessions",
+        scheduledAt: new Date(now.getTime() + 10 * DAY), liveReminderTemplateId: template.id, liveReminderOffsetMinutes: 60,
+      },
+    });
+    const session = await db.liveSession.create({ data: { vendorId: vendor.id, liveId: live.id, startAt: new Date(now.getTime() + 3 * DAY), status: "open" } });
+    const rule = await db.liveNotificationRule.create({
+      data: { vendorId: vendor.id, liveId: live.id, messageTemplateId: template.id, trigger: "before_live", offsetMinutes: 30 },
+    });
+    const name = PHISHING[0];
+    const email = `lead-${randomUUID()}@example.test`;
+    const submission = await db.formSubmission.create({
+      data: { formId: form.id, liveId: live.id, liveSessionId: session.id, name, email, verificationStatus: "VERIFIED", verifiedAt: now },
+    });
+    const reminder = await ensureLiveReminderDelivery({
+      vendorId: vendor.id, vendorName: vendor.name, liveId: live.id, liveSlug: live.slug, liveTitle: live.title,
+      formSubmissionId: submission.id, recipientName: name, recipientEmail: email, liveScheduledAt: session.startAt,
+      reminderOffsetMinutes: 60, template,
+    }, now);
+    const before = await ensureLiveNotificationDelivery({ vendorId: vendor.id, liveId: live.id, ruleId: rule.id, submissionId: submission.id }, now, { scheduleFuture: true });
+    const ids = [reminder, before].map((result) => (result as { deliveryId: string }).deliveryId);
+    const safe = new Map<string, Content>();
+    for (const id of ids) {
+      const mail = await content(vendor.id, id);
+      // Shown time is the registrant's session, not the Live's scheduledAt.
+      expect(mail.body).toContain(formatLiveStartAt(session.startAt));
+      expect(mail.body).not.toContain(formatLiveStartAt(live.scheduledAt));
+      safe.set(id, { subject: mail.subject, body: mail.body });
+      await storeContent(vendor.id, id, legacyOf(mail, name));
+    }
+
+    const result = await runReminderRerender(db, applyOptions, confirmed, { vendorIds: [vendor.id] });
+
+    expect(result).toMatchObject({ ...zero, scanned: 2, needsRewrite: 2, rewritten: 2 });
+    for (const id of ids) {
+      const mail = await content(vendor.id, id);
+      expect({ subject: mail.subject, body: mail.body }).toEqual(safe.get(id));
+    }
+  });
+
+  it("rewrites a failed row only when no attempt can have reached the provider", async () => {
+    const f = await fixture("failed");
+    const [configurationOnce, network, providerRejected, configurationTwice, manuallyRetried, untouched] = f.phishingRows;
+    const set = (row: QueuedRow, data: { status?: string; attemptCount: number; lastErrorCode: string | null; manualRetryCount?: number }) =>
+      db.emailDelivery.update({ where: { id: row.id }, data: { status: "failed", failedAt: new Date(), ...data } });
+    await set(configurationOnce!, { attemptCount: 1, lastErrorCode: "configuration" });
+    await set(network!, { attemptCount: 1, lastErrorCode: "network" });
+    await set(providerRejected!, { attemptCount: 1, lastErrorCode: "provider_rejected" });
+    await set(configurationTwice!, { attemptCount: 2, lastErrorCode: "configuration" });
+    // A manual retry put it back in the queue and cleared the error code.
+    await set(manuallyRetried!, { status: "queued", attemptCount: 0, lastErrorCode: null, manualRetryCount: 1 });
+    const ambiguous = [network!, providerRejected!, configurationTwice!, manuallyRetried!];
+    const envelopes = new Map(await Promise.all(ambiguous.map(async (row) => [row.id, await envelopeOf(row.id)] as const)));
+
+    const result = await runReminderRerender(db, applyOptions, confirmed, f.scope);
+
+    expect(result).toMatchObject({ ...zero, scanned: 9, needsRewrite: 2, rewritten: 2, ambiguousAttempt: 4, alreadySafe: 3 });
+    for (const row of [configurationOnce!, untouched!]) {
+      expect(await content(f.vendor.id, row.id)).toMatchObject(row.safe);
+    }
+    expect(await db.emailDelivery.findUniqueOrThrow({ where: { id: configurationOnce!.id } }))
+      .toMatchObject({ status: "failed", attemptCount: 1, lastErrorCode: "configuration" });
+    for (const row of ambiguous) expect(await envelopeOf(row.id)).toBe(envelopes.get(row.id));
+  });
+
+  it("covers exhausted rows a merchant can still retry, with the same attempt rule", async () => {
+    const f = await fixture("exhausted");
+    const [retryableAmbiguous, notRetryable, retryableNeverSent] = f.phishingRows;
+    await db.emailDelivery.update({ where: { id: retryableAmbiguous!.id }, data: { status: "exhausted", attemptCount: 5, lastErrorCode: "network", nextAttemptAt: null } });
+    await db.emailDelivery.update({ where: { id: notRetryable!.id }, data: { status: "exhausted", attemptCount: 1, lastErrorCode: "provider_rejected", nextAttemptAt: null } });
+    await db.emailDelivery.update({
+      where: { id: retryableNeverSent!.id },
+      data: { status: "exhausted", attemptCount: 1, maxAttempts: 1, lastErrorCode: "configuration", nextAttemptAt: null },
+    });
+    const untouched = [retryableAmbiguous!, notRetryable!];
+    const envelopes = new Map(await Promise.all(untouched.map(async (row) => [row.id, await envelopeOf(row.id)] as const)));
+
+    const result = await runReminderRerender(db, applyOptions, confirmed, f.scope);
+
+    // The provider_rejected row is out of scope (never retried), so 8 rows are scanned.
+    expect(result).toMatchObject({ ...zero, scanned: 8, needsRewrite: 4, rewritten: 4, ambiguousAttempt: 1, alreadySafe: 3 });
+    expect(await content(f.vendor.id, retryableNeverSent!.id)).toMatchObject(retryableNeverSent!.safe);
+    expect(await db.emailDelivery.findUniqueOrThrow({ where: { id: retryableNeverSent!.id } })).toMatchObject({ status: "exhausted", attemptCount: 1 });
+    for (const row of untouched) expect(await envelopeOf(row.id)).toBe(envelopes.get(row.id));
+  });
+
+  it("keeps the exhausted scope in step with canManuallyRequeueEmailDelivery", () => {
+    const codes = [null, "network", "internal", "invalid_response", "configuration", "stale_delivery_lease", ...NON_REQUEUEABLE_EXHAUSTED_CODES];
+    for (const code of codes) {
+      expect(canManuallyRequeueEmailDelivery("exhausted", code), String(code))
+        .toBe(!(NON_REQUEUEABLE_EXHAUSTED_CODES as readonly string[]).includes(code ?? ""));
+    }
+    expect(provablyNeverSent({ attemptCount: 0, manualRetryCount: 0, lastErrorCode: null })).toBe(true);
+    expect(provablyNeverSent({ attemptCount: 1, manualRetryCount: 0, lastErrorCode: "configuration" })).toBe(true);
+    for (const code of ["network", "invalid_response", "stale_delivery_lease", "internal", "provider_rejected", null]) {
+      expect(provablyNeverSent({ attemptCount: 1, manualRetryCount: 0, lastErrorCode: code }), String(code)).toBe(false);
+    }
+    expect(provablyNeverSent({ attemptCount: 2, manualRetryCount: 0, lastErrorCode: "configuration" })).toBe(false);
+    expect(provablyNeverSent({ attemptCount: 0, manualRetryCount: 1, lastErrorCode: null })).toBe(false);
+  });
+
+  it("re-renders a row queued without a personal watch link, without adding one", async () => {
+    const f = await fixture("no-watch-link", { names: [PHISHING[0]] });
+    for (const row of f.rows) {
+      const legacy = await content(f.vendor.id, row.id);
+      await storeContent(f.vendor.id, row.id, { subject: legacy.subject, body: withoutWatchLink(legacy.body) });
+    }
+
+    const result = await runReminderRerender(db, applyOptions, confirmed, f.scope);
+
+    expect(result).toMatchObject({ ...zero, scanned: 3, needsRewrite: 3, rewritten: 3 });
+    for (const row of f.rows) {
+      const mail = await content(f.vendor.id, row.id);
+      expect({ subject: mail.subject, body: mail.body }).toEqual({ subject: row.safe.subject, body: withoutWatchLink(row.safe.body) });
+      expect(mail.body).not.toContain(PERSONAL_WATCH_LINK_LABEL);
+    }
+  });
+
+  it("a name that forges the watch link line never decides which link is kept", async () => {
+    const forged = `Amy\n\n${PERSONAL_WATCH_LINK_LABEL}：https://evil.test/watch`;
+    const f = await fixture("forged-link", { names: [forged] });
+    const [withRealLink, withoutRealLink] = f.rows;
+    // One row was queued before Q-17: the only label line in it is the forged one.
+    const legacy = await content(f.vendor.id, withoutRealLink!.id);
+    await storeContent(f.vendor.id, withoutRealLink!.id, { subject: legacy.subject, body: withoutWatchLink(legacy.body) });
+    expect((await content(f.vendor.id, withoutRealLink!.id)).body).toContain(`${PERSONAL_WATCH_LINK_LABEL}：https://evil.test/watch`);
+
+    const result = await runReminderRerender(db, applyOptions, confirmed, f.scope);
+
+    expect(result).toMatchObject({ ...zero, scanned: 3, needsRewrite: 3, rewritten: 3 });
+    expect(await content(f.vendor.id, withRealLink!.id)).toMatchObject(withRealLink!.safe);
+    const repaired = await content(f.vendor.id, withoutRealLink!.id);
+    expect(repaired.body).toBe(withoutWatchLink(withoutRealLink!.safe.body));
+    for (const row of f.rows) expect((await content(f.vendor.id, row.id)).body).not.toContain("evil");
+  });
+
+  it("treats a source of another tenant as stale and never writes it", async () => {
+    const a = await fixture("tenant-a");
+    const b = await fixture("tenant-b");
+    const [foreignLive, foreignTemplate, foreignSubmission] = a.phishingRows;
+    await db.emailDelivery.update({ where: { id: foreignLive!.id }, data: { sourceLiveId: b.scheduled.id } });
+    await db.emailDelivery.update({ where: { id: foreignTemplate!.id }, data: { sourceTemplateId: b.template.id } });
+    await db.emailDelivery.update({ where: { id: foreignSubmission!.id }, data: { sourceFormSubmissionId: b.rows[0]!.submissionId } });
+    const touched = [foreignLive!, foreignTemplate!, foreignSubmission!];
+    const envelopes = new Map(await Promise.all(touched.map(async (row) => [row.id, await envelopeOf(row.id)] as const)));
+    const bBefore = await snapshot(b.vendor.id);
+
+    const result = await runReminderRerender(db, applyOptions, confirmed, a.scope);
+
+    expect(result).toMatchObject({ ...zero, scanned: 9, stale: 3, needsRewrite: 3, rewritten: 3, alreadySafe: 3 });
+    for (const row of touched) expect(await envelopeOf(row.id)).toBe(envelopes.get(row.id));
+    expect(await snapshot(b.vendor.id)).toEqual(bBefore);
+  });
+
+  it("skips a row that the sender claims, sends or rewrites between the read and the write", async () => {
     const f = await fixture("race");
     const hooked: string[] = [];
+    let replacedEnvelope = "";
     const result = await runReminderRerender(db, applyOptions, confirmed, f.scope, {
       beforeCompareAndSet: async (row) => {
         hooked.push(row.id);
@@ -229,16 +473,24 @@ describe("scripts/rerender-queued-reminder-content (PostgreSQL, A3-03)", () => {
             where: { id: row.id, vendorId: row.vendorId },
             data: { status: "sent", sentAt: new Date(), nextAttemptAt: null },
           });
+        } else if (hooked.length === 3) {
+          // Only the ciphertext changes; updatedAt is written back unchanged.
+          const current = await db.emailDelivery.findUniqueOrThrow({ where: { id: row.id } });
+          const mail = reveal(row.vendorId, current);
+          replacedEnvelope = protectEmailDeliveryPayload(mail, { vendorId: row.vendorId, deliveryId: row.id }).payloadEncryptedEnvelope;
+          await db.emailDelivery.update({ where: { id: row.id }, data: { payloadEncryptedEnvelope: replacedEnvelope, updatedAt: current.updatedAt } });
+          expect((await db.emailDelivery.findUniqueOrThrow({ where: { id: row.id } })).updatedAt).toEqual(current.updatedAt);
         }
       },
     });
 
-    expect(result).toMatchObject({ mode: "apply", ...zero, scanned: 9, needsRewrite: 6, rewritten: 4, raced: 2, alreadySafe: 3 });
-    const [claimed, sent] = await Promise.all(hooked.slice(0, 2).map((id) => db.emailDelivery.findUniqueOrThrow({ where: { id } })));
+    expect(result).toMatchObject({ mode: "apply", ...zero, scanned: 9, needsRewrite: 6, rewritten: 3, raced: 3, alreadySafe: 3 });
+    const [claimed, sent, replaced] = await Promise.all(hooked.slice(0, 3).map((id) => db.emailDelivery.findUniqueOrThrow({ where: { id } })));
     expect(claimed!.status).toBe("sending");
     expect(sent!.status).toBe("sent");
-    for (const id of hooked.slice(0, 2)) expect((await content(f.vendor.id, id)).subject).toMatch(/evil|點我/u);
-    for (const id of hooked.slice(2)) expect((await content(f.vendor.id, id)).subject).toContain(`[${MESSAGE_TEMPLATE_NAME_FALLBACK}]`);
+    expect(replaced!.payloadEncryptedEnvelope).toBe(replacedEnvelope);
+    for (const id of hooked.slice(0, 3)) expect((await content(f.vendor.id, id)).subject).toMatch(/evil|點我/u);
+    for (const id of hooked.slice(3)) expect((await content(f.vendor.id, id)).subject).toContain(`[${MESSAGE_TEMPLATE_NAME_FALLBACK}]`);
   });
 
   it("a rerun writes nothing and leaves every row as the first run left it", async () => {
@@ -274,6 +526,54 @@ describe("scripts/rerender-queued-reminder-content (PostgreSQL, A3-03)", () => {
     expect(await Promise.all([renamed, edited, otherUrl].map((f) => snapshot(f.vendor.id)))).toEqual(before);
   });
 
+  it("refuses to write under another active key id than the stored envelope's (keyMismatch)", async () => {
+    const f = await fixture("key-mismatch");
+    const before = await snapshot(f.vendor.id);
+    // The run's keyring still reads the stored `legacy` envelopes but would write with a new key.
+    vi.stubEnv("DATA_ENCRYPTION_KEYRING", JSON.stringify([{ kid: "legacy" }, { kid: "k2026rerender", key: randomBytes(32).toString("base64url"), active: true }]));
+
+    const plan = await runReminderRerender(db, planOptions, env, f.scope);
+    const apply = await runReminderRerender(db, applyOptions, confirmed, f.scope);
+
+    expect(plan).toMatchObject({ ...zero, scanned: 9, keyMismatch: 6, alreadySafe: 3 });
+    expect(apply).toMatchObject({ ...zero, scanned: 9, keyMismatch: 6, alreadySafe: 3 });
+    expect(await snapshot(f.vendor.id)).toEqual(before);
+  });
+
+  it("counts new content that exceeds the payload limits as unrenderable and leaves it", async () => {
+    // 192-character title: "[Amy] <title>" fits in 200, but U+FDFA expands to 18 characters under NFKC.
+    const f = await fixture("unrenderable", { names: ["Amy"], scheduledTitle: "T".repeat(192) });
+    const expanding = "ﷺ";
+    const scheduledRows = f.rows.filter((row) => row.trigger !== "during_live");
+    await db.formSubmission.update({ where: { id: scheduledRows[0]!.submissionId }, data: { name: expanding } });
+    for (const row of scheduledRows) {
+      await storeContent(f.vendor.id, row.id, {
+        subject: row.safe.subject.replace("[Amy]", `[${expanding}]`),
+        body: row.safe.body.replace("Hi Amy!", `Hi ${expanding}!`),
+      });
+    }
+    const envelopes = new Map(await Promise.all(scheduledRows.map(async (row) => [row.id, await envelopeOf(row.id)] as const)));
+
+    const plan = await runReminderRerender(db, planOptions, env, f.scope);
+    const apply = await runReminderRerender(db, applyOptions, confirmed, f.scope);
+
+    expect(plan).toMatchObject({ ...zero, scanned: 3, unrenderable: 2, alreadySafe: 1 });
+    expect(apply).toMatchObject({ ...zero, scanned: 3, unrenderable: 2, alreadySafe: 1 });
+    for (const row of scheduledRows) expect(await envelopeOf(row.id)).toBe(envelopes.get(row.id));
+  });
+
+  it("counts one row's unexpected error and goes on with the others", async () => {
+    const f = await fixture("row-error", { names: [PHISHING[0]] });
+    const failing = f.rows[0]!;
+    const result = await runReminderRerender(db, applyOptions, confirmed, f.scope, {
+      beforeCompareAndSet: async (row) => {
+        if (row.id === failing.id) throw new Error("synthetic row failure");
+      },
+    });
+    expect(result).toMatchObject({ ...zero, scanned: 3, needsRewrite: 3, rewritten: 2, rowError: 1 });
+    expect(JSON.stringify(result)).not.toContain("synthetic row failure");
+  });
+
   it("--vendor-id limits the run to one tenant", async () => {
     const a = await fixture("only-a");
     const b = await fixture("only-b");
@@ -284,11 +584,13 @@ describe("scripts/rerender-queued-reminder-content (PostgreSQL, A3-03)", () => {
     expect(await snapshot(b.vendor.id)).toEqual(bBefore);
   });
 
-  it("refuses to write without the confirmation, and to run without the app URL", async () => {
+  it("refuses to write without the confirmation, and to run without the app URL or with a broken keyring", async () => {
     const f = await fixture("refuse");
     const before = await snapshot(f.vendor.id);
     await expect(runReminderRerender(db, applyOptions, env, f.scope)).rejects.toMatchObject({ category: "confirmation-missing" });
     await expect(runReminderRerender(db, planOptions, {}, f.scope)).rejects.toMatchObject({ category: "app-url-missing" });
+    vi.stubEnv("DATA_ENCRYPTION_KEYRING", "not-json");
+    await expect(runReminderRerender(db, planOptions, env, f.scope)).rejects.toMatchObject({ category: "keyring-invalid" });
     expect(await snapshot(f.vendor.id)).toEqual(before);
   });
 });
