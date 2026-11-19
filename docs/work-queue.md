@@ -73,9 +73,13 @@
 |---|---|---|---|---|
 | 1 | A3-01 | SSRF 規則補 100.64/10、192.0.0/24、198.18/15、224/4 以上、`fec0::/10`，以及 IPv4-compatible／NAT64／6to4 內嵌位址（#661 審查） | 高（安全） | 已完成 [#676](https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/676)：共用案例表 69 → 105 |
 | 2 | A3-02 | `savePartnerPageAction` 全有全無；`duplicateInteractionScriptAction` 錯誤提示；`LiveStudioDraft` 複合外鍵（#666） | 高（租戶、migration） | 已完成 [#677](https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/677)（審查）：migration `20261119150000`／`150100`（先查 PG15+、跨商家草稿計數 > 0 即中止）。staging（PG 17.6）migrate run 44494314941 套用；alias 切到 `cdc54354`，browser smoke 44494584348 PASS，首次成功 44494622752 第 1 次 FORM 逾時、重跑 PASS（同一偶發，見 A3-05）。**Production migrate 前須確認 PostgreSQL ≥ 15**（runbook `prisma-migration-guards-runbook.md` §8）。未做：DROP 拆檔（審查 MINOR-3）、交易內再確認商品狀態（MINOR-5，既有） |
-| 3 | A3-03 | 部署前已排入提醒的原地重算腳本（compare-and-set，#670 複審） | 高（寄信） | 進行中 |
-| 4 | A3-04 | 場次提示：開連結後商家關回放或移場次的邊界（#669 複審 MINOR-A） | 高（auth） | 進行中 |
-| 5 | A3-05 | 首次成功路徑 runner 記錄卡住的動作；`accountant-foreign-message-template-edit-direct-url.spec.ts` 偶發；互動腳本列表 `?error=conflict` 提示 | 一般 | 進行中 |
+| 3 | A3-03 | 部署前已排入提醒的原地重算腳本（compare-and-set，#670 複審） | 高（寄信） | 已完成 [#683](https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/683)（兩輪審查）：`scripts/rerender-queued-reminder-content.ts`，預設 dry-run；只改寫內容與 #670 前版本完全相等、且可證明從未送達 Resend 的列，其餘計 `ambiguousAttempt`／`unrecognized`／`stale`；CAS 推進 `updatedAt` 讓寄送端搶單失敗後寄新內容；Production 需 owner 授權值。runbook `production-database-runbook.md` §9.4。**未執行**：staging 與 Production 都還沒跑（staging 需注入 staging 的 DB 與金鑰，Production 需 owner 授權）。殘留：`ambiguousAttempt` 的 exhausted 列手動重送仍寄舊內容 |
+| 4 | A3-04 | 場次提示：開連結後商家關回放或移場次的邊界（#669 複審 MINOR-A） | 高（auth） | 已完成 [#680](https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/680)（審查）：提示場次已結束且無回放（關回放、過回放窗或截止、改到已結束場次）時退回公開時程；cookie 格式與驗證不變。未處理 3 個 NIT。未驗證：瀏覽器實測 |
+| 5 | A3-05 | 首次成功路徑 runner 記錄卡住的動作；`accountant-foreign-message-template-edit-direct-url.spec.ts` 偶發；互動腳本列表 `?error=conflict` 提示 | 一般 | 已完成 [#679](https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/679)：失敗時輸出動作 trace（artifact 與 `staging_first_success_failed_action=`）；e2e 外部請求斷言改為任何跨來源都算違規並列出請求；列表顯示衝突提示。FORM 偶發逾時根因未證實（推測儲存後 `waitForURL`），待 trace 再發時確認 |
+
+順帶修的 CI 偶發：[#681](https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/681)（預約 fixture 同毫秒撞唯一鍵）、[#682](https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/682)（釣魚標記被隨機 token 誤中）、[#684](https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/684)（小商家公平性測試改用確定性起點）。
+
+A3 全部合併後 staging：alias 切到 `ca83e82c`（無新 migration，status run 44529242731），browser smoke 44529502603、首次成功 44529510578 PASS（15 步全過）。
 
 不排入 A3：PayUni Sandbox 實測（另排）、邀請信主旨的商家名稱（開放自由註冊時才需要）、R-04 ④～⑦、U-04 封測後部分、picomatch 例外到期。
 
