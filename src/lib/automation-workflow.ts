@@ -31,6 +31,7 @@ import {
   enqueueLineNotification,
   stableLineIdempotencyKey,
 } from "@/lib/line-notification";
+import { isLineActionUrl } from "@/lib/line-action-url";
 import { voucherActionSendsLine } from "@/lib/automation-line-push-policy";
 import { fixedSessionReplayAvailableUntil } from "@/lib/live-fixed-sessions";
 import { isExistingLiveVideoReady, type LiveVideoReadiness } from "@/lib/live-video-readiness";
@@ -568,10 +569,36 @@ const EMAIL_SKIP_NOTES: Record<AutomationEmailSkipReason, string> = {
   invalid_content: "Email 未寄出：自訂訊息的主旨或內文不符規則（含連結、換行、超過長度或不能用的變數）",
 };
 
+/**
+ * A2-09: why a LINE action (a LINE push, or a voucher's LINE notification)
+ * was recorded `skipped`. Each is a setting that a retry of the same
+ * execution cannot change, so it never fails the rule or the delayed step:
+ * the other actions run and the execution completes. Fixed codes only; the
+ * log never holds the link, the address or a LINE id.
+ */
+export const AUTOMATION_LINE_SKIP_REASONS = [
+  // The button link is not an absolute HTTPS URL (an http deployment's voucher, replay or booking link).
+  "line_button_url_not_https",
+  // The message is empty once its links are filled in (it held only a link this event does not have).
+  "line_message_empty",
+  // The vendor has no active LINE Official Account.
+  "line_account_unavailable",
+  // The event's subject has no linked (or only a revoked) LINE identity at this vendor.
+  "line_recipient_not_linked",
+] as const;
+export type AutomationLineSkipReason = typeof AUTOMATION_LINE_SKIP_REASONS[number];
+
+const LINE_SKIP_NOTES: Record<AutomationLineSkipReason, string> = {
+  line_button_url_not_https: "LINE 未發送：按鈕連結不是 HTTPS 網址（例如測試環境用 http）",
+  line_message_empty: "LINE 未發送：訊息填入連結後沒有內容",
+  line_account_unavailable: "LINE 未發送：商家尚未連結 LINE 官方帳號",
+  line_recipient_not_linked: "LINE 未發送：收件人尚未綁定 LINE",
+};
+
 /** Reason of a failed automation e-mail action whose unsubscribe link could not be built. */
 export const AUTOMATION_UNSUBSCRIBE_URL_UNAVAILABLE = "unsubscribe_url_unavailable";
 
-/** Merchant-readable notes for e-mail actions an execution skipped or could not queue (stored actionResults are untrusted JSON). */
+/** Merchant-readable notes for e-mail and LINE actions an execution skipped or could not queue (stored actionResults are untrusted JSON). */
 export function automationExecutionNotes(actionResults: unknown) {
   // A delayed step's log keeps { actions, results } (see stepActionResults).
   const results = Array.isArray(actionResults)
@@ -583,6 +610,11 @@ export function automationExecutionNotes(actionResults: unknown) {
   const notes = results.flatMap((result) => {
     if (!result || typeof result !== "object") return [];
     const { type, status, reason } = result as Record<string, unknown>;
+    if (type === "line_push") {
+      return status === "skipped" && typeof reason === "string" && Object.prototype.hasOwnProperty.call(LINE_SKIP_NOTES, reason)
+        ? [LINE_SKIP_NOTES[reason as AutomationLineSkipReason]]
+        : [];
+    }
     if (type !== "send_email_notification") return [];
     if (status === "failed" && reason === AUTOMATION_UNSUBSCRIBE_URL_UNAVAILABLE) return ["Email 未寄出：系統暫時無法產生退訂連結"];
     if (status !== "skipped") return [];
@@ -1061,23 +1093,53 @@ async function executeAction(
   }
 
   if (event.subjectType === "viewer_session") return { type: action.type, status: "recipient_not_linked" } as const;
-  const buttonUrl = replaceArtifacts(action.buttonUrl, artifacts);
+  return {
+    type: action.type,
+    ...await queueAutomationLine(db, { ...event, subjectType: event.subjectType }, {
+      // Bind delivery deduplication to the durable execution claim. Watch
+      // heartbeats have changing event ids, but a reclaimed execution must reuse
+      // the same LINE outbox key.
+      idempotencyKey: stableLineIdempotencyKey(["automation", executionLogId, actionIndex]),
+      message: replaceArtifacts(action.message, artifacts) ?? action.message,
+      buttonLabel: action.buttonLabel,
+      buttonUrl: replaceArtifacts(action.buttonUrl, artifacts),
+    }),
+  } as const;
+}
+
+/**
+ * Queues one automation LINE message in the LINE outbox (LineDelivery; the
+ * LINE API is called later by processDueLineDeliveries, which retries a 5xx,
+ * a 408/429 or a network error on the same row and X-Line-Retry-Key, apart
+ * from the rule). A2-09: a message that can never be sent is `skipped` with a
+ * fixed reason instead of throwing, so it never fails the rule or the delayed
+ * step and never makes the worker retry a step whose other actions already
+ * ran: the button link is not HTTPS (an http deployment builds http voucher,
+ * replay and booking links; LINE accepts only HTTPS), the message is empty
+ * once its links are filled in, the vendor has no active LINE Official
+ * Account, or the subject has no linked LINE identity. Anything else (the
+ * outbox write or the payload encryption failing) still throws: the
+ * execution is recorded `failed` and retried as before, and every action
+ * repeats safely (deterministic ids and keys).
+ */
+async function queueAutomationLine(
+  db: AutomationDb,
+  event: AutomationEvent & { subjectType: "buyer_order" | "buyer_registration" },
+  input: { idempotencyKey: string; message: string; buttonLabel?: string | null; buttonUrl: string | null },
+): Promise<{ status: "queued" | "duplicate" } | { status: "skipped"; reason: AutomationLineSkipReason }> {
+  if (!input.message.trim()) return { status: "skipped", reason: "line_message_empty" };
+  // buildAutomationLineMessage adds a button only with both a label and a link.
+  if (input.buttonLabel && input.buttonUrl && !isLineActionUrl(input.buttonUrl)) return { status: "skipped", reason: "line_button_url_not_https" };
   const result = await enqueueLineNotification(db, {
     vendorId: event.vendorId,
     subjectType: event.subjectType,
     subjectId: event.subjectId,
     trigger: "automation",
-    // Bind delivery deduplication to the durable execution claim. Watch
-    // heartbeats have changing event ids, but a reclaimed execution must reuse
-    // the same LINE outbox key.
-    idempotencyKey: stableLineIdempotencyKey(["automation", executionLogId, actionIndex]),
-    messages: [buildAutomationLineMessage({
-      message: replaceArtifacts(action.message, artifacts) ?? action.message,
-      buttonLabel: action.buttonLabel,
-      buttonUrl,
-    })],
+    idempotencyKey: input.idempotencyKey,
+    messages: [buildAutomationLineMessage({ message: input.message, buttonLabel: input.buttonLabel, buttonUrl: input.buttonUrl })],
   });
-  return { type: action.type, status: result.status } as const;
+  if (result.status !== "not_linked") return { status: result.status };
+  return { status: "skipped", reason: result.reason === "account_unavailable" ? "line_account_unavailable" : "line_recipient_not_linked" };
 }
 
 /**
@@ -1201,19 +1263,13 @@ async function runRuleActions(
     }
   }
   if (lineVoucherUrl && !rule.actions.some((action) => action.type === "line_push") && event.subjectType !== "viewer_session") {
-    const delivery = await enqueueLineNotification(db, {
-      vendorId: event.vendorId,
-      subjectType: event.subjectType,
-      subjectId: event.subjectId,
-      trigger: "automation",
+    const delivery = await queueAutomationLine(db, { ...event, subjectType: event.subjectType }, {
       idempotencyKey: stableLineIdempotencyKey(["automation-voucher", logId]),
-      messages: [buildAutomationLineMessage({
-        message: "感謝支持，您的專屬回購折價券已經準備好了。",
-        buttonLabel: "立即使用",
-        buttonUrl: lineVoucherUrl,
-      })],
+      message: "感謝支持，您的專屬回購折價券已經準備好了。",
+      buttonLabel: "立即使用",
+      buttonUrl: lineVoucherUrl,
     });
-    actionResults.push({ type: "line_push", status: delivery.status, source: "voucher_delivery" });
+    actionResults.push({ type: "line_push", ...delivery, source: "voucher_delivery" });
   }
 }
 
