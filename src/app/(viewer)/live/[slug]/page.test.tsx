@@ -44,6 +44,7 @@ vi.mock("@/components/live-playback", () => ({
 }));
 
 import PublicLivePage, { generateMetadata } from "./page";
+import { createLiveSessionHintToken, liveSessionHintCookieName } from "@/lib/live-attendance-cookie";
 
 const validFields = [
   { key: "name", label: "姓名", type: "text", required: true },
@@ -897,6 +898,7 @@ describe("PublicLivePage fixed sessions (指定場次)", () => {
 
   afterEach(() => {
     vi.unstubAllEnvs();
+    mocks.formSubmissionFindFirst.mockReset();
   });
 
   it("times the page from the session the visitor follows instead of the shared scheduledAt", async () => {
@@ -921,6 +923,47 @@ describe("PublicLivePage fixed sessions (指定場次)", () => {
       expect(mocks.formSubmissionFindFirst).not.toHaveBeenCalled();
     } finally {
       vi.useRealTimers();
+    }
+  });
+
+  it("times the page from the registrant's own session when the browser holds a personal link's session hint (A2-10)", async () => {
+    const ownSession = { id: "session-own", startAt: new Date("2026-11-02T06:00:00.000Z"), capacity: null, registeredCount: 1, status: "open" };
+    mocks.findFirst.mockResolvedValue(fixedLive());
+    mocks.formSubmissionFindFirst.mockResolvedValue({ liveSession: ownSession });
+    mocks.resolveLiveRuntime.mockReturnValue({ state: "waiting", playbackStartSeconds: null });
+    const hint = createLiveSessionHintToken({ vendorId: "vendor-1", liveId: "live-1", submissionId: "submission-own", expiresAt: new Date(Date.now() + 86_400_000) });
+    mocks.headers.mockResolvedValue(new Headers({ cookie: `analytics=1; ${liveSessionHintCookieName("live-1")}=${hint}` }));
+
+    const element = await PublicLivePage({ params: Promise.resolve({ slug: "public-live" }) });
+
+    expect(element.props.live).toMatchObject({ runtimeState: "waiting", scheduledAt: ownSession.startAt.toISOString() });
+    // The registration and its session are bound to this Live and vendor; the public schedule is not read.
+    expect(mocks.formSubmissionFindFirst).toHaveBeenCalledTimes(1);
+    expect(mocks.formSubmissionFindFirst).toHaveBeenCalledWith(expect.objectContaining({
+      where: {
+        id: "submission-own",
+        liveId: "live-1",
+        verificationStatus: "VERIFIED",
+        form: { vendorId: "vendor-1" },
+        liveSession: { is: { vendorId: "vendor-1", liveId: "live-1" } },
+      },
+    }));
+    expect(mocks.liveSessionFindMany).not.toHaveBeenCalled();
+    expect(mocks.resolveLiveRuntime).toHaveBeenLastCalledWith(expect.objectContaining({ scheduledAt: ownSession.startAt }), expect.any(Date));
+  });
+
+  it("ignores a session hint bound to another Live or vendor and follows the public schedule", async () => {
+    mocks.findFirst.mockResolvedValue(fixedLive());
+    mocks.liveSessionFindMany.mockResolvedValue([{ id: "session-a", startAt: sessionStart, capacity: null, registeredCount: 0, status: "open" }]);
+    mocks.resolveLiveRuntime.mockReturnValue({ state: "replay", playbackStartSeconds: null });
+    const expiresAt = new Date(Date.now() + 86_400_000);
+    for (const binding of [{ vendorId: "vendor-2", liveId: "live-1" }, { vendorId: "vendor-1", liveId: "live-2" }]) {
+      mocks.formSubmissionFindFirst.mockClear();
+      const hint = createLiveSessionHintToken({ ...binding, submissionId: "submission-own", expiresAt });
+      mocks.headers.mockResolvedValue(new Headers({ cookie: `${liveSessionHintCookieName("live-1")}=${hint}` }));
+      const element = await PublicLivePage({ params: Promise.resolve({ slug: "public-live" }) });
+      expect(element.props.live).toMatchObject({ scheduledAt: sessionStart.toISOString() });
+      expect(mocks.formSubmissionFindFirst).not.toHaveBeenCalled();
     }
   });
 

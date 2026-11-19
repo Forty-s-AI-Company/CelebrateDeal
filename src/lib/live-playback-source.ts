@@ -20,6 +20,8 @@ type PlaybackSourceInput = {
   evergreenToken?: string | null;
   /** Signed registration cookie; only read when the Live has fixed sessions. */
   registrationToken?: string | null;
+  /** This Live's session-hint cookie (A2-10); only read when the Live has fixed sessions. */
+  sessionHintToken?: string | null;
   now?: Date;
 };
 
@@ -75,7 +77,11 @@ export async function resolveLivePlaybackSource(db: PrismaClient, input: Playbac
   // An evergreen Live serves media only inside the visitor's own signed
   // session, from that session's server-computed offset.
   // A fixed-session Live serves media from the viewer's own session offset.
-  const fixedSession = await resolveViewerFixedSessionForLive(db, live, { registrationToken: input.registrationToken, now });
+  const fixedSession = await resolveViewerFixedSessionForLive(db, live, {
+    registrationToken: input.registrationToken,
+    sessionHintToken: input.sessionHintToken,
+    now,
+  });
   const runtime = resolveViewerLiveRuntime(live, {
     vendorTimezone: live.vendor?.timezone,
     evergreenToken: input.evergreenToken,

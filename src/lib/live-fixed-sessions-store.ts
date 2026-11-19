@@ -7,6 +7,8 @@ import {
   FORM_SUBMISSION_CHAT_SESSION_COOKIE,
   verifyFormSubmissionChatSessionToken,
 } from "@/lib/form-submission-chat-session";
+// A2-10: only the session-hint reader; the attendance cookie stays the recorder's alone.
+import { liveSessionHintSubmissionId, liveSessionHintTokenFromCookieHeader } from "@/lib/live-attendance-cookie";
 import {
   DEFAULT_SESSION_TIMEZONE,
   fixedSessionLabel,
@@ -273,17 +275,87 @@ export function registrationSessionTokenFromRequest(request: Request) {
   return registrationSessionTokenFromCookieHeader(request.headers.get("cookie"));
 }
 
-export type ViewerFixedSession = FixedSessionRecord & {
-  /** True when the session comes from the visitor's own verified registration. */
-  registered: boolean;
-};
+/**
+ * The raw session-hint cookie of one Live (A2-10), set next to the
+ * attendance-only cookie by a personal watch link of a fixed-session Live.
+ * Unverified here; resolveViewerFixedSession verifies it.
+ */
+export function sessionHintTokenFromCookieHeader(header: string | null | undefined, liveId: string) {
+  return liveSessionHintTokenFromCookieHeader(header, liveId);
+}
+
+export function sessionHintTokenFromRequest(request: Request, liveId: string) {
+  return sessionHintTokenFromCookieHeader(request.headers.get("cookie"), liveId);
+}
 
 /**
- * The session a viewer of a fixed-session Live follows. A visitor holding the
- * signed registration cookie of a VERIFIED registration for this exact Live
- * and vendor follows the session they chose (even a cancelled one, which then
- * never plays). Anyone else follows the public schedule: the session playing
- * now, else the next one, else the latest (for its replay).
+ * Where the session a viewer follows came from (A2-10 review MINOR-2): only
+ * the signed registration cookie yields "registration"; the personal watch
+ * link's session hint is "session_hint" and is never treated as the
+ * registrant's identity; everyone else follows the "public" schedule.
+ */
+export type ViewerFixedSessionSource = "registration" | "session_hint" | "public";
+
+export type ViewerFixedSession = FixedSessionRecord & { source: ViewerFixedSessionSource };
+
+type SubmissionDb = Pick<Prisma.TransactionClient, "formSubmission">;
+
+/**
+ * The session one registration holds right now, read from the database: only
+ * a VERIFIED registration of this Live, through a form of this vendor, whose
+ * session belongs to this Live and vendor. The session comes from the row,
+ * never from a cookie, so a moved registration follows its new session.
+ */
+async function registrationFixedSession(
+  db: SubmissionDb,
+  input: { vendorId: string; liveId: string },
+  submissionId: string | null,
+): Promise<FixedSessionRecord | null> {
+  if (!submissionId) return null;
+  const submission = await db.formSubmission.findFirst({
+    where: {
+      id: submissionId,
+      liveId: input.liveId,
+      verificationStatus: "VERIFIED",
+      form: { vendorId: input.vendorId },
+      liveSession: { is: { vendorId: input.vendorId, liveId: input.liveId } },
+    },
+    select: { liveSession: { select: FIXED_SESSION_SELECT } },
+  });
+  return submission?.liveSession ?? null;
+}
+
+/** The same "playing now" window pickPublicFixedSession uses. */
+function isPlayingAt(session: Pick<FixedSessionRecord, "startAt" | "status">, durationSeconds: number, now: Date) {
+  const startMs = session.startAt.getTime();
+  return session.status !== "cancelled" && startMs <= now.getTime() && now.getTime() < startMs + durationSeconds * 1_000;
+}
+
+/**
+ * The session a viewer of a fixed-session Live follows:
+ *
+ * 1. a visitor holding the signed registration cookie of a VERIFIED
+ *    registration for this exact Live and vendor follows the session they
+ *    chose (even a cancelled one, which then never plays);
+ * 2. otherwise a visitor holding this Live's session-hint cookie (A2-10, set
+ *    by the personal watch link of a reminder or live-start notice) follows
+ *    the session of the registration it names, with two lenient fallbacks to
+ *    the public schedule (review MINOR-1: the link is a GET, so a hint can be
+ *    planted or forwarded, and it must never lock a browser out of what
+ *    everyone else can watch):
+ *    - the hinted session is cancelled: the hint is ignored;
+ *    - the hinted session has not started yet while a public session is
+ *      playing now: the playing session is followed (the admission then
+ *      reports that session, so the registrant's watch time is not credited).
+ *    The hint only picks the schedule; chat, private chat, LINE binding,
+ *    checkout and attendance never read it;
+ * 3. anyone else follows the public schedule: the session playing now, else
+ *    the next one, else the latest (for its replay).
+ *
+ * The watch page, the playback source and the admission all call this with
+ * the same cookies, so they agree on one session; whether that session is
+ * playing, waiting or in replay is decided afterwards by the same lifecycle
+ * rules for every source (resolveFixedSessionRuntime).
  */
 export async function resolveViewerFixedSession(
   db: Pick<Prisma.TransactionClient, "formSubmission" | "liveSession">,
@@ -291,31 +363,35 @@ export async function resolveViewerFixedSession(
     vendorId: string;
     liveId: string;
     registrationToken: string | null | undefined;
+    /** This Live's raw session-hint cookie (sessionHintTokenFromRequest). */
+    sessionHintToken?: string | null | undefined;
     durationSeconds: number;
     now: Date;
   },
 ): Promise<ViewerFixedSession | null> {
   const claim = input.registrationToken ? verifyFormSubmissionChatSessionToken(input.registrationToken, input.now) : null;
-  if (claim) {
-    const submission = await db.formSubmission.findFirst({
-      where: {
-        id: claim.submissionId,
-        liveId: input.liveId,
-        verificationStatus: "VERIFIED",
-        form: { vendorId: input.vendorId },
-        liveSession: { is: { vendorId: input.vendorId, liveId: input.liveId } },
-      },
-      select: { liveSession: { select: FIXED_SESSION_SELECT } },
-    });
-    if (submission?.liveSession) return { ...submission.liveSession, registered: true };
-  }
+  const registered = await registrationFixedSession(db, input, claim?.submissionId ?? null);
+  if (registered) return { ...registered, source: "registration" };
+  const hintSubmissionId = input.sessionHintToken
+    ? liveSessionHintSubmissionId(input.sessionHintToken, { vendorId: input.vendorId, liveId: input.liveId, now: input.now })
+    : null;
+  // The same registration already failed above; do not ask twice.
+  const found = hintSubmissionId && hintSubmissionId !== claim?.submissionId
+    ? await registrationFixedSession(db, input, hintSubmissionId)
+    : null;
+  // A cancelled hinted session never plays: the hint is ignored.
+  const hinted = found && found.status !== "cancelled" ? found : null;
+  // Started (playing, replay or over): the hint decides without a schedule read.
+  if (hinted && hinted.startAt.getTime() <= input.now.getTime()) return { ...hinted, source: "session_hint" };
   const sessions = await db.liveSession.findMany({
     where: { vendorId: input.vendorId, liveId: input.liveId, status: { not: "cancelled" } },
     orderBy: [{ startAt: "asc" }, { id: "asc" }],
     select: FIXED_SESSION_SELECT,
   });
   const picked = pickPublicFixedSession(sessions, input.durationSeconds, input.now);
-  return picked ? { ...picked, registered: false } : null;
+  // Still waiting: the hinted session wins unless another session is playing right now.
+  if (hinted && !(picked && isPlayingAt(picked, input.durationSeconds, input.now))) return { ...hinted, source: "session_hint" };
+  return picked ? { ...picked, source: "public" } : null;
 }
 
 /**
@@ -325,13 +401,14 @@ export async function resolveViewerFixedSession(
 export async function resolveViewerFixedSessionForLive(
   db: Pick<Prisma.TransactionClient, "formSubmission" | "liveSession">,
   live: { id: string; vendorId: string; sessionMode?: string | null; video?: { durationSec: number | null } | null },
-  input: { registrationToken: string | null | undefined; now: Date },
+  input: { registrationToken: string | null | undefined; sessionHintToken?: string | null | undefined; now: Date },
 ) {
   if (!isFixedSessionLive(live)) return null;
   return resolveViewerFixedSession(db, {
     vendorId: live.vendorId,
     liveId: live.id,
     registrationToken: input.registrationToken,
+    sessionHintToken: input.sessionHintToken,
     durationSeconds: live.video?.durationSec ?? 0,
     now: input.now,
   });

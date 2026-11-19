@@ -43,6 +43,8 @@ type AdmissionInput = {
   evergreenToken?: string | null;
   /** Signed registration cookie; only read when the Live has fixed sessions. */
   registrationToken?: string | null;
+  /** This Live's session-hint cookie (A2-10); only read when the Live has fixed sessions. */
+  sessionHintToken?: string | null;
   now?: Date;
 };
 
@@ -181,7 +183,11 @@ async function admitWithinTransaction(tx: Prisma.TransactionClient, input: Admis
   // Evergreen Lives admit only a visitor whose own signed session is playing
   // or in replay; the waiting room never consumes viewer capacity. A
   // fixed-session Live does the same with the session the viewer follows.
-  const fixedSession = await resolveViewerFixedSessionForLive(tx, live, { registrationToken: input.registrationToken, now });
+  const fixedSession = await resolveViewerFixedSessionForLive(tx, live, {
+    registrationToken: input.registrationToken,
+    sessionHintToken: input.sessionHintToken,
+    now,
+  });
   const { state: runtimeState } = resolveViewerLiveRuntime(live, {
     vendorTimezone: live.vendor?.timezone,
     evergreenToken: input.evergreenToken,

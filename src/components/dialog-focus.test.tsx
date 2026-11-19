@@ -88,4 +88,35 @@ describe("F-122 mobile navigation", () => {
     expect(document.activeElement).toBe(more);
     await cleanup();
   });
+
+  it("server HTML lets 更多 open a native popover with every nav link before hydration", async () => {
+    const { renderToString } = await import("react-dom/server");
+    const { AppShellMobileNav } = await import("./app-shell-mobile-nav");
+    const groups = [{ label: "成交管理", items: [{ href: "/products", label: "商品" }, { href: "/orders", label: "訂單與履約" }] }];
+    const html = renderToString(<AppShellMobileNav groups={groups} supportLinks={[{ href: "/support", label: "客服與付款協助" }]} />);
+    const host = document.createElement("div");
+    host.innerHTML = html;
+    const more = host.querySelector<HTMLButtonElement>("nav button[aria-haspopup='dialog']")!;
+    const popover = host.querySelector<HTMLElement>("[popover][role='dialog'][aria-label='更多功能']")!;
+    expect(more.getAttribute("popovertarget")).toBe(popover.id);
+    expect(more.getAttribute("aria-controls")).toBe(popover.id);
+    // Native invoker state is exposed by the browser; a static aria-expanded would go stale without JS.
+    expect(more.hasAttribute("aria-expanded")).toBe(false);
+    expect(popover.querySelector("a[href='/products']")?.textContent).toBe("商品");
+    expect(popover.querySelector("a[href='/support']")).not.toBeNull();
+    const close = popover.querySelector("button[aria-label='關閉更多功能']")!;
+    expect(close.getAttribute("popovertarget")).toBe(popover.id);
+    expect(close.getAttribute("popovertargetaction")).toBe("hide");
+  });
+
+  it("hands the server popover over to the React dialog on hydration", async () => {
+    const { AppShellMobileNav } = await import("./app-shell-mobile-nav");
+    const groups = [{ label: "成交管理", items: [{ href: "/products", label: "商品" }] }];
+    const { container, cleanup } = await mount(<AppShellMobileNav groups={groups} supportLinks={[]} />);
+    const more = container.querySelector<HTMLButtonElement>("nav button[aria-haspopup='dialog']")!;
+    expect(container.querySelector("[popover]")).toBeNull();
+    expect(more.hasAttribute("popovertarget")).toBe(false);
+    expect(more.getAttribute("aria-expanded")).toBe("false");
+    await cleanup();
+  });
 });
