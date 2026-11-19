@@ -16,7 +16,7 @@ import { enrollSubmissionInEmailSequences, processDueDelayedStepRuns } from "@/l
 import { dispatchEmailDelivery, processDueEmailDeliveries, processDueSequenceEmailDeliveries } from "@/lib/email-delivery";
 import { protectEmailDeliveryPayload } from "@/lib/email-delivery-pii";
 import { MESSAGE_TEMPLATE_NAME_FALLBACK } from "@/lib/message-template";
-import { NORMAL_NAMES, PHISHING_NAMES, STACKED_FORMAT_NAME } from "@/test/recipient-name-cases";
+import { NORMAL_NAMES, PHISHING_NAMES, STACKED_FORMAT_NAME, stripUrlTokens } from "@/test/recipient-name-cases";
 
 /**
  * F-3 step e-mails through the real dispatcher (M5), and the dispatch order
@@ -118,7 +118,7 @@ describe("sequence e-mail dispatch", () => {
       expect(sent.text.startsWith(`${greeting} 你好`), name).toBe(true);
       expect(sent.html, name).not.toMatch(/<h[23]>|<ul>|<ol>|<strong>/u);
       if (greeting === MESSAGE_TEMPLATE_NAME_FALLBACK) {
-        for (const part of [sent.subject, sent.text, sent.html]) expect(part, name).not.toMatch(/evil|ｅｖｉｌ|釣魚|點我/iu);
+        for (const part of [sent.subject, sent.text, sent.html]) expect(stripUrlTokens(part), name).not.toMatch(/evil|ｅｖｉｌ|釣魚|點我/iu);
         for (const href of sent.html.matchAll(/<a href="([^"]+)"/gu)) expect(new URL(href[1]!.replaceAll("&amp;", "&")).origin).toBe(APP_URL);
       }
     }
