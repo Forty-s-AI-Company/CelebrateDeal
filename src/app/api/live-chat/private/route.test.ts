@@ -8,7 +8,7 @@ vi.mock("@/lib/rate-limit", () => ({ checkRateLimit: mocks.rate }));
 import { GET, POST } from "./route";
 import { LiveChatError } from "@/lib/live-chat";
 import { createFormSubmissionChatSessionToken, FORM_SUBMISSION_CHAT_SESSION_COOKIE } from "@/lib/form-submission-chat-session";
-import { createLiveAttendanceToken, liveAttendanceCookieName } from "@/lib/live-attendance-cookie";
+import { createLiveAttendanceToken, createLiveSessionHintToken, liveAttendanceCookieName, liveSessionHintCookieName } from "@/lib/live-attendance-cookie";
 const message = { id: "a".repeat(64), source: "viewer", body: "合成問題", createdAt: "2026-10-07T00:00:00.000Z" };
 function request(method = "GET", body?: object, query = "vendorId=tenant-a&liveId=live-a") {
   return new Request(`https://app.example.test/api/live-chat/private?${query}`, { method,
@@ -35,7 +35,9 @@ it("never treats the attendance-only cookie of a personal watch link as the regi
     const withCookie = (method: string, cookie: string, payload?: object) => {
       const value = request(method, payload); value.headers.set("cookie", cookie); return value;
     };
-    const onlyAttendance = `${liveAttendanceCookieName("live-a")}=${attendance}`;
+    // A2-10: a fixed-session Live's link also sets the session hint; it is no identity either.
+    const hint = createLiveSessionHintToken({ vendorId: "tenant-a", liveId: "live-a", submissionId: "submission-a", expiresAt: new Date(Date.now() + 86_400_000) });
+    const onlyAttendance = `${liveAttendanceCookieName("live-a")}=${attendance}; ${liveSessionHintCookieName("live-a")}=${hint}`;
     await GET(withCookie("GET", onlyAttendance));
     await POST(withCookie("POST", onlyAttendance, body));
     expect(mocks.list).toHaveBeenCalledWith({}, expect.objectContaining({ chatSessionToken: null }));

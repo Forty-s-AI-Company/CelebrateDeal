@@ -22,7 +22,7 @@ import { parseRegistrationFormFields } from "@/lib/registration-form-fields";
 import { publicLiveAvailabilityWhere } from "@/lib/sellable-live";
 import { resolveLiveRuntime, type LiveRuntimeState } from "@/lib/live-runtime-state";
 import { isFixedSessionLive, resolveFixedSessionRuntime } from "@/lib/live-fixed-sessions";
-import { registrationSessionTokenFromCookieHeader, resolveViewerFixedSessionForLive } from "@/lib/live-fixed-sessions-store";
+import { registrationSessionTokenFromCookieHeader, resolveViewerFixedSessionForLive, sessionHintTokenFromCookieHeader } from "@/lib/live-fixed-sessions-store";
 import { evergreenRegistrationRecordNeeded } from "@/lib/evergreen-session-assignment";
 import { buildShareMetadata, shareDescription, unavailableShareMetadata } from "@/lib/public-share-metadata";
 import { publicInteractionMetadata } from "@/lib/public-interaction-metadata";
@@ -91,8 +91,9 @@ async function readEvergreenSession(
 
 /**
  * The session this visitor follows on a fixed-session Live (指定場次): their
- * own verified registration's session (signed registration cookie), else the
- * public schedule. Admission and playback resolve it the same way.
+ * own verified registration's session (signed registration cookie, else the
+ * session-hint cookie of a personal watch link, A2-10), else the public
+ * schedule. Admission and playback resolve it the same way.
  */
 async function readFixedSession(
   live: {
@@ -109,8 +110,10 @@ async function readFixedSession(
   serverNow: Date,
 ) {
   if (!isFixedSessionLive(live)) return null;
+  const cookieHeader = (await headers()).get("cookie");
   const session = await resolveViewerFixedSessionForLive(getDb(), live, {
-    registrationToken: registrationSessionTokenFromCookieHeader((await headers()).get("cookie")),
+    registrationToken: registrationSessionTokenFromCookieHeader(cookieHeader),
+    sessionHintToken: sessionHintTokenFromCookieHeader(cookieHeader, live.id),
     now: serverNow,
   });
   const runtime = session

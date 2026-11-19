@@ -50,6 +50,26 @@ describe("GET /api/live-watch-link route layer (Q-17)", () => {
     expect(cookies.some((value) => value.startsWith(`${FORM_SUBMISSION_CHAT_SESSION_COOKIE}=`))).toBe(false);
   });
 
+  it("on a fixed-session Live also sets the session hint site-wide, with the same lifetime (A2-10)", async () => {
+    const expiresAt = new Date(Date.now() + 10 * 86_400_000);
+    const HINT = "celebratedeal_lsh_0123456789abcdef01234567";
+    mocks.resolve.mockResolvedValue({
+      kind: "admit", submissionId: "s1", liveSlug: "spring-live",
+      attendanceCookie: { name: NAME, value: "lat1.payload.sig", expiresAt },
+      sessionHintCookie: { name: HINT, value: "lsh1.payload.sig", expiresAt },
+    });
+    const cookies = (await open("?token=lwl1.payload.sig")).headers.getSetCookie();
+    expect(cookies).toHaveLength(2);
+    expect(cookies[0]).toMatch(/; Path=\/api\/live-admission(?:;|$)/u);
+    const hint = cookies.find((value) => value.startsWith(`${HINT}=lsh1.payload.sig;`))!;
+    expect(hint).toMatch(/; Path=\/(?:;|$)/u);
+    expect(hint).toMatch(/HttpOnly/u);
+    expect(hint).toMatch(/SameSite=lax/iu);
+    expect(hint).toMatch(/Secure/u);
+    expect(Math.abs(Number(hint.match(/Max-Age=(\d+)/u)?.[1]) - 10 * 86_400)).toBeLessThan(5);
+    expect(cookies.some((value) => value.startsWith(`${FORM_SUBMISSION_CHAT_SESSION_COOKIE}=`))).toBe(false);
+  });
+
   it("encodes the slug into a same-site path and leaves Secure off over plain http", async () => {
     vi.stubEnv("NEXT_PUBLIC_APP_URL", "http://localhost:31023");
     mocks.resolve.mockResolvedValue({ kind: "admit", submissionId: "s1", liveSlug: "春季-直播", attendanceCookie: { name: NAME, value: "v", expiresAt: new Date(Date.now() + 86_400_000) } });

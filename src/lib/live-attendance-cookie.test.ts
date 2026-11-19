@@ -7,12 +7,19 @@ import { FORM_SUBMISSION_CHAT_SESSION_COOKIE, createFormSubmissionChatSessionTok
 import { FORM_SUBMISSION_LINE_BINDING_COOKIE, verifyFormSubmissionLineBindingToken } from "@/lib/form-submission-line-binding-session";
 import {
   createLiveAttendanceToken,
+  createLiveSessionHintToken,
   LIVE_ATTENDANCE_COOKIE_HEADER_MAX_LENGTH,
   LIVE_ATTENDANCE_COOKIE_PATH,
+  LIVE_SESSION_HINT_COOKIE_PATH,
   liveAttendanceCookieName,
   liveAttendanceCookieOptions,
   liveAttendanceSubmissionIdFromRequest,
+  liveSessionHintCookieName,
+  liveSessionHintCookieOptions,
+  liveSessionHintSubmissionId,
+  liveSessionHintTokenFromCookieHeader,
   verifyLiveAttendanceToken,
+  verifyLiveSessionHintToken,
 } from "@/lib/live-attendance-cookie";
 import { chatSessionTokenFromRequest } from "@/lib/live-chat";
 import { registrationSessionTokenFromRequest } from "@/lib/live-fixed-sessions-store";
@@ -122,8 +129,8 @@ describe("attendance-only cookie (Q-17)", () => {
     expect(verifyFormSubmissionChatSessionToken(chatSessionTokenFromRequest(disguised) ?? "", NOW)).toBeNull();
   });
 
-  it("is imported only by the watch link and the attendance recorder", () => {
-    const root = path.resolve(__dirname, "..");
+  // Walks src/ once (cached for the next test); slower disks need more than the default 5 s.
+  it("is imported only by the watch link, the attendance recorder and (for the session hint only) the fixed-session resolver", { timeout: 30_000 }, () => {
     const allowed = new Set([
       "lib/live-attendance-cookie.ts",
       "lib/live-attendance-cookie.test.ts",
@@ -135,35 +142,158 @@ describe("attendance-only cookie (Q-17)", () => {
       "app/api/live-chat/private/route.test.ts",
       // Q-11 viewer_watch_progress: a personal link's device shares the registrant's watch clock.
       "lib/watch-progress-automation.db.test.ts",
+      // A2-10: the fixed-session resolver reads the session-hint cookie only (checked below).
+      "lib/live-fixed-sessions-store.ts",
+      "lib/live-fixed-session-attendance-hint.db.test.ts",
+      "app/(viewer)/live/[slug]/page.test.tsx",
       // The key registry and its tests name the purpose; they read no cookie.
       "lib/derived-key-purposes.ts",
       "lib/derived-key-rotation.test.ts",
     ]);
-    const offenders: string[] = [];
-    // Directory entries carry their type, and each file is read directly
-    // (no separate stat before the read), so there is no check-then-use race.
-    const walk = (dir: string) => {
-      for (const entry of readdirSync(dir, { withFileTypes: true })) {
-        const full = path.join(dir, entry.name);
-        if (entry.isDirectory()) walk(full);
-        else if (entry.isFile() && /\.(?:ts|tsx)$/u.test(entry.name)) {
-          const relative = path.relative(root, full).split(path.sep).join("/");
-          let source: string;
-          try {
-            source = readFileSync(full, "utf8");
-          } catch (error) {
-            // A file removed while scanning cannot reference the cookie.
-            if ((error as NodeJS.ErrnoException).code === "ENOENT") continue;
-            throw error;
-          }
-          const readsIt = /from\s+["'][^"']*live-attendance-cookie["']|import\(\s*["'][^"']*live-attendance-cookie["']/u.test(source)
-            || source.includes("celebratedeal_la_")
-            || source.includes("liveAttendance");
-          if (readsIt && !allowed.has(relative)) offenders.push(relative);
-        }
-      }
-    };
-    walk(root);
+    const offenders = scanSources((source) => /from\s+["'][^"']*live-attendance-cookie["']|import\(\s*["'][^"']*live-attendance-cookie["']/u.test(source)
+      || source.includes("celebratedeal_la_")
+      || source.includes("liveAttendance"))
+      .filter((relative) => !allowed.has(relative));
     expect(offenders).toEqual([]);
+    // The attendance reader stays the recorder's alone; the resolver takes only the hint.
+    expect(scanSources((source) => source.includes("liveAttendanceSubmissionIdFromRequest")).filter((file) => !file.endsWith(".test.ts")))
+      .toEqual(["lib/live-attendance-cookie.ts", "lib/live-registration-attendance.ts"]);
+  });
+
+  it("lets only the fixed-session resolver read the session hint (A2-10)", { timeout: 30_000 }, () => {
+    const readers = scanSources((source) => /liveSessionHint(?:SubmissionId|TokenFromCookieHeader)\b/u.test(source) || source.includes("celebratedeal_lsh_"))
+      .filter((file) => !/\.test\.tsx?$/u.test(file));
+    expect(readers).toEqual(["lib/live-attendance-cookie.ts", "lib/live-fixed-sessions-store.ts"]);
+    // And the store's own wrappers reach only the three viewer paths that pick a fixed session.
+    const callers = scanSources((source) => /sessionHintTokenFrom(?:Request|CookieHeader)\b/u.test(source))
+      .filter((file) => !/\.test\.tsx?$/u.test(file));
+    expect(callers).toEqual([
+      "app/(viewer)/live/[slug]/page.tsx",
+      "app/api/live-admission/route.ts",
+      "app/api/live-playback-source/route.ts",
+      "lib/live-fixed-sessions-store.ts",
+    ]);
   });
 });
+
+describe("session-hint cookie (A2-10, #634 option b)", () => {
+  beforeEach(() => vi.stubEnv("CSRF_SECRET", "live-attendance-cookie-test-secret-longer-than-32-bytes"));
+  afterEach(() => vi.unstubAllEnvs());
+
+  const INPUT = { vendorId: "vendor_a", liveId: "live_a", now: NOW };
+
+  it("round-trips the registration and expiry under its own version, name and site-wide path", () => {
+    const hint = createLiveSessionHintToken(CLAIM);
+    expect(hint.startsWith("lsh1.")).toBe(true);
+    expect(verifyLiveSessionHintToken(hint, INPUT)).toEqual({ submissionId: CLAIM.submissionId, expiresAt: CLAIM.expiresAt });
+    expect(verifyLiveSessionHintToken(hint, { ...INPUT, now: CLAIM.expiresAt })).toBeNull();
+    expect(verifyLiveSessionHintToken(createLiveSessionHintToken({ ...CLAIM, expiresAt: new Date(NOW.getTime() + 401 * DAY) }), INPUT)).toBeNull();
+    const name = liveSessionHintCookieName("live_a");
+    expect(name).toMatch(/^celebratedeal_lsh_[0-9a-f]{24}$/u);
+    expect(name).not.toBe(liveAttendanceCookieName("live_a"));
+    expect(liveSessionHintCookieName("live_b")).not.toBe(name);
+    expect(liveSessionHintCookieName("a/b")).toBeNull();
+    expect(LIVE_SESSION_HINT_COOKIE_PATH).toBe("/");
+    expect(liveSessionHintCookieOptions(true, CLAIM.expiresAt, NOW)).toEqual({
+      httpOnly: true, sameSite: "lax", secure: true, path: "/", maxAge: 30 * 86_400,
+    });
+  });
+
+  it("is not interchangeable with the attendance cookie, the watch link or the registration cookie", () => {
+    const hint = createLiveSessionHintToken(CLAIM);
+    const attendance = createLiveAttendanceToken(CLAIM);
+    expect(verifyLiveAttendanceToken(hint, NOW)).toBeNull();
+    expect(verifyLiveSessionHintToken(attendance, INPUT)).toBeNull();
+    expect(verifyLiveSessionHintToken(createLiveWatchLinkToken({ ...CLAIM, sessionStartAt: NOW }, NOW), INPUT)).toBeNull();
+    expect(verifyLiveSessionHintToken(createFormSubmissionChatSessionToken({ submissionId: "submission_a", now: NOW }), INPUT)).toBeNull();
+    expect(verifyFormSubmissionChatSessionToken(hint, NOW)).toBeNull();
+    // The attendance signature re-used in the hint format: refused.
+    const [, , signature] = attendance.split(".");
+    expect(verifyLiveSessionHintToken(`lsh1.submission_a.${Math.floor(CLAIM.expiresAt.getTime() / 1_000)}.${signature}`, INPUT)).toBeNull();
+    // Under the attendance cookie's name a hint records nothing (and the reverse picks no session).
+    const request = requestWith(`${liveAttendanceCookieName("live_a")}=${hint}`);
+    expect(liveAttendanceSubmissionIdFromRequest(request, INPUT)).toBeNull();
+    expect(liveSessionHintSubmissionId(liveSessionHintTokenFromCookieHeader(`${liveSessionHintCookieName("live_a")}=${attendance}`, "live_a"), INPUT)).toBeNull();
+  });
+
+  it("refuses tampered claims, another Live or vendor, and duplicate cookies", () => {
+    const name = liveSessionHintCookieName("live_a")!;
+    const hint = createLiveSessionHintToken(CLAIM);
+    expect(liveSessionHintSubmissionId(liveSessionHintTokenFromCookieHeader(`${name}=${hint}`, "live_a"), INPUT)).toBe("submission_a");
+    expect(liveSessionHintSubmissionId(hint, { ...INPUT, vendorId: "vendor_b" })).toBeNull();
+    expect(liveSessionHintSubmissionId(hint, { ...INPUT, liveId: "live_b" })).toBeNull();
+    // A hint of Live A placed under Live B's name is read but bound to Live A.
+    expect(liveSessionHintSubmissionId(liveSessionHintTokenFromCookieHeader(`${liveSessionHintCookieName("live_b")}=${hint}`, "live_b"), { ...INPUT, liveId: "live_b" })).toBeNull();
+    expect(liveSessionHintTokenFromCookieHeader(`${name}=${hint}; ${name}=${hint}`, "live_a")).toBeNull();
+    expect(liveSessionHintTokenFromCookieHeader(`${name}=${"x".repeat(201)}`, "live_a")).toBeNull();
+    expect(liveSessionHintTokenFromCookieHeader(null, "live_a")).toBeNull();
+    const [version, submission, expiry, signature] = hint.split(".");
+    for (const altered of [
+      `${version}.submission_b.${expiry}.${signature}`,
+      `${version}.${submission}.${Number(expiry) + 60}.${signature}`,
+      `${version}.${submission}.${expiry}.${signature!.slice(0, -2)}${signature!.endsWith("AA") ? "BB" : "AA"}`,
+      `lsh2.${submission}.${expiry}.${signature}`,
+      `${hint}.extra`,
+      `${version}.${submission}.0${expiry}.${signature}`,
+    ]) {
+      expect(liveSessionHintSubmissionId(altered, INPUT), altered.slice(0, 40)).toBeNull();
+    }
+  });
+
+  it("keeps vendor and Live out of the token but inside the signature (review MINOR-3)", () => {
+    const hint = createLiveSessionHintToken(CLAIM);
+    expect(hint.split(".")).toHaveLength(4);
+    expect(hint).not.toContain("vendor_a");
+    expect(hint).not.toContain("live_a");
+    // A realistic cuid registration id: the whole cookie stays small.
+    const realistic = createLiveSessionHintToken({ ...CLAIM, vendorId: "c".repeat(25), liveId: "d".repeat(25), submissionId: "e".repeat(25) });
+    const cookie = `${liveSessionHintCookieName("d".repeat(25))}=${realistic}`;
+    expect(realistic.length).toBeLessThanOrEqual(90);
+    expect(cookie.length).toBeLessThanOrEqual(135);
+    const attendanceCookie = `${liveAttendanceCookieName("d".repeat(25))}=${createLiveAttendanceToken({ ...CLAIM, vendorId: "c".repeat(25), liveId: "d".repeat(25), submissionId: "e".repeat(25) })}`;
+    // What one fixed-session Live adds to an admission request's Cookie header (both cookies and the "; " separators).
+    expect(cookie.length + attendanceCookie.length + 4).toBeLessThanOrEqual(400);
+  });
+
+  it("is never read as a registration identity: chat, private chat, evergreen, LINE binding, attendance", () => {
+    const onlyHint = requestWith(`${liveSessionHintCookieName("live_a")}=${createLiveSessionHintToken(CLAIM)}`);
+    expect(chatSessionTokenFromRequest(onlyHint)).toBeNull();
+    expect(registrationSessionTokenFromRequest(onlyHint)).toBeNull();
+    expect(registrationSubmissionIdFromRequest(onlyHint, NOW)).toBeNull();
+    expect(liveAttendanceSubmissionIdFromRequest(onlyHint, INPUT)).toBeNull();
+  });
+});
+
+let sources: Array<{ file: string; source: string }> | null = null;
+
+/** Every .ts/.tsx file under src/, read once per test file. */
+function sourceFiles() {
+  if (sources) return sources;
+  const root = path.resolve(__dirname, "..");
+  const found: Array<{ file: string; source: string }> = [];
+  // Directory entries carry their type, and each file is read directly
+  // (no separate stat before the read), so there is no check-then-use race.
+  const walk = (dir: string) => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) walk(full);
+      else if (entry.isFile() && /\.(?:ts|tsx)$/u.test(entry.name)) {
+        try {
+          found.push({ file: path.relative(root, full).split(path.sep).join("/"), source: readFileSync(full, "utf8") });
+        } catch (error) {
+          // A file removed while scanning cannot reference the cookie.
+          if ((error as NodeJS.ErrnoException).code === "ENOENT") continue;
+          throw error;
+        }
+      }
+    }
+  };
+  walk(root);
+  sources = found;
+  return found;
+}
+
+/** Source files under src/ (relative, sorted) whose text matches. */
+function scanSources(matches: (source: string) => boolean) {
+  return sourceFiles().filter(({ source }) => matches(source)).map(({ file }) => file).sort();
+}
