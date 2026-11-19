@@ -53,7 +53,7 @@ jobs:
           npx playwright install --with-deps chromium
 
       - name: Test fixed first-success contract before secret injection
-        run: node --test scripts/staging-first-success.test.mjs scripts/staging-first-success-cleanup.test.mjs
+        run: node --test scripts/staging-first-success.test.mjs scripts/staging-first-success-trace.test.mjs scripts/staging-first-success-cleanup.test.mjs
 
       # Same lineage and alias proofs as staging-funnel-smoke.yml; every request targets the alias.
       - name: Verify exact Preview lineage before secret injection
@@ -98,6 +98,7 @@ jobs:
           name: celebratedeal-staging-first-success
           path: |
             ${{ runner.temp }}/celebratedeal-staging-first-success.json
+            ${{ runner.temp }}/celebratedeal-staging-first-success-trace.json
             ${{ runner.temp }}/celebratedeal-staging-first-success-cleanup-deactivate.json
           if-no-files-found: ignore
           retention-days: 14
