@@ -69,16 +69,28 @@ const COMMON_TLD = "com|net|org|edu|gov|tw|io|co|me|app|dev|info|biz|xyz|shop|st
 const TECH_NAMES = /\b(?:node|next|nuxt|vue|react|express|three|chart|d3|moment|socket|asp|vb|ado)\.(?:js|net)\b/giu;
 const LINK_SCHEME = /:\/\/|\]\(|\b(?:mailto|javascript|data|vbscript|file|ftp|tel):\S/iu;
 const LINK_WWW = /\bwww\./iu;
-const LINK_HOST_COMMON_TLD = new RegExp(`(?:^|[^a-z0-9-])[a-z0-9-]+(?:\\.[a-z0-9-]+)*\\.(?:${COMMON_TLD})(?![a-z0-9-])`, "iu");
-const LINK_HOST_WITH_PATH = /(?:^|[^a-z0-9-])[a-z0-9-]+(?:\.[a-z0-9-]+)*\.[a-z]{2,}(?:\/|:\d)/iu;
+// A host label may be in any script (an internationalized name such as `例子.com` or `eviĺ.com` is
+// linked by mail clients too); only the top-level domain is matched against the ASCII list.
+const HOST_LABEL = "[\\p{L}\\p{M}\\p{N}-]";
+const NOT_HOST_LABEL = "[^\\p{L}\\p{M}\\p{N}-]";
+const LINK_HOST_COMMON_TLD = new RegExp(`(?:^|${NOT_HOST_LABEL})${HOST_LABEL}+(?:\\.${HOST_LABEL}+)*\\.(?:${COMMON_TLD})(?![a-z0-9-])`, "iu");
+const LINK_HOST_WITH_PATH = new RegExp(`(?:^|${NOT_HOST_LABEL})${HOST_LABEL}+(?:\\.${HOST_LABEL}+)*\\.[a-z]{2,}(?:\\/|:\\d)`, "iu");
 const LINK_LIKE = { test: (text: string) => {
   const plain = text.replace(TECH_NAMES, " ");
   return LINK_SCHEME.test(plain) || LINK_WWW.test(plain) || LINK_HOST_COMMON_TLD.test(plain) || LINK_HOST_WITH_PATH.test(plain);
 } };
 
-/** Whether the text would read as a link or web address (checked on its NFKC form, so full-width letters count). */
+// A combining mark right before or after a dot (`evil.́com`) shows as a dot with an accent; judge it as the dot.
+const MARKS_AT_DOT = /\p{M}+(?=[.。])|(?<=[.。])\p{M}+/gu;
+
+/**
+ * Whether the text would read as a link or web address, checked on its NFKC
+ * form without default-ignorable or format characters (the same fold as the
+ * recipient-name check, A2-13), so full-width letters and hidden characters
+ * around a dot count.
+ */
 export function genericEmailTextLooksLikeLink(text: string) {
-  return LINK_LIKE.test(foldInvisibleAndWidth(text));
+  return LINK_LIKE.test(foldInvisibleAndWidth(text).replace(MARKS_AT_DOT, ""));
 }
 
 export type GenericEmailContent = { subject: string; body: string };

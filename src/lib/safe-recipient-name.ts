@@ -13,9 +13,11 @@
  * the vendor's mail: a phishing link with the vendor's sender name on it.
  *
  * So a name is put in only after `safeRecipientName`:
- * - anything that reads as a web address (a scheme `://`, `www.`, or letters or
- *   digits of any script joined by `.` or `。`), judged on the NFKC form without
- *   invisible characters, before and after cleaning, drops the whole name;
+ * - anything that reads as a web address (a scheme `://`, `www.`, or letters,
+ *   combining marks or digits of any script joined by `.` or `。`), judged on
+ *   the NFKC form without default-ignorable or format characters, before and
+ *   after cleaning, drops the whole name (so `麥可．喬丹` gets the greeting:
+ *   NFKC turns `．` into `.`);
  * - otherwise it is cleaned (one line; no `[]()*<>{}` or backtick; no
  *   `http(s)://`; no `#`, `1.`, `1)`, `-`, `+`, `*`, `>` at the start, stacked
  *   ones too) again and again until nothing changes, so removing one piece can
@@ -30,16 +32,27 @@ export const INVISIBLE_CHARACTER_SOURCE = "[\\u00ad\\u061c\\u180e\\u200b-\\u200f
 export const CONTROL_CHARACTER_CLASS = "\\u0000-\\u001f\\u007f-\\u009f\\u2028\\u2029";
 
 const INVISIBLE_GLOBAL = new RegExp(INVISIBLE_CHARACTER_SOURCE, "gu");
+// For judging only: every character Unicode says a renderer may show as nothing
+// (Default_Ignorable_Code_Point: CGJ, variation selectors, Mongolian free
+// variation selectors, Khmer inherent vowels, tags, ...) and every format
+// character (Cf: interlinear annotation, shorthand format controls, musical
+// beam controls, ...). A short list of known ones can always be gone around
+// (#670 review MAJOR-1), so the whole Unicode classes are removed.
+const IGNORABLE_GLOBAL = /[\p{Default_Ignorable_Code_Point}\p{Cf}]/gu;
 const CONTROL_RUNS = new RegExp(`[${CONTROL_CHARACTER_CLASS}]+`, "gu");
-// Anything with a dot between word characters (any script), a scheme or `www.`.
-const ADDRESS_LIKE = /:\/\/|\bwww\.|[\p{L}\p{N}-]+(?:[.。][\p{L}\p{N}-]+)+/iu;
+// Anything with a dot between word characters (any script, combining marks
+// included, also right after the dot: `evil.́test`), a scheme or `www.`.
+const ADDRESS_LIKE = /:\/\/|\bwww\.|[\p{L}\p{M}\p{N}-]+(?:[.。]\p{M}*[\p{L}\p{M}\p{N}-]+)+/iu;
 const SCHEME_OR_WWW = /:\/\/|\bwww\./iu;
 // A "#", "1." or bullet (also stacked, "# # x") at the start would make a heading, list or quote.
 const LEADING_FORMAT = /^(?:\s*(?:#+|\d+[.)]|[-+*>])\s*)+/u;
 
-/** The NFKC form without invisible characters (full-width letters and dots fold to ASCII). */
+/**
+ * The NFKC form without any default-ignorable or format character (full-width
+ * letters and dots fold to ASCII). Used to judge a text, never to show it.
+ */
 export function foldInvisibleAndWidth(text: string) {
-  return text.normalize("NFKC").replace(INVISIBLE_GLOBAL, "");
+  return text.normalize("NFKC").replace(IGNORABLE_GLOBAL, "");
 }
 
 /** Whether a mail client or the e-mail pipeline could read `text` as a web address. */

@@ -408,6 +408,10 @@ describe("email delivery outbox", () => {
         updatedAt,
       },
       data: {
+        // A2-13: the reactivated row carries the content rendered now, not the stored snapshot.
+        payloadEncryptedEnvelope: expect.stringMatching(/^v1\./u),
+        recipientHash: expect.any(String),
+        recipientMaskedEmail: "l***@example.test",
         status: "queued",
         nextAttemptAt: new Date("2026-08-08T03:00:00.000Z"),
         claimedAt: null,

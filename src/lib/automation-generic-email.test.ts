@@ -311,6 +311,35 @@ describe("generic e-mail {{name}} through the shared recipient-name cleaning (A2
   it.each(NORMAL_NAMES)("keeps an ordinary name: %s", (name) => {
     expect(renderGenericEmail(content, { name, vendor_name: "商家" })).toEqual({ subject: `${name}，感謝你`, body: `${name} 你好\n商家` });
   });
+
+  it.each([
+    ["CGJ U+034F", "evil͏.com"],
+    ["variation selector U+FE00", "evil︀.com"],
+    ["variation selector U+FE0F after the dot", "evil.️com"],
+    ["tag space U+E0020", "evil\u{e0020}.com"],
+    ["Mongolian FVS U+180B", "evil᠋.com"],
+    ["Khmer U+17B4", "evil឴.com"],
+    ["interlinear anchor U+FFF9", "evil￹.com"],
+    ["shorthand overlap U+1BCA0", "evil\u{1bca0}.com"],
+    ["musical beam U+1D173", "evil\u{1d173}.com"],
+    ["combining acute U+0301 after the dot", "evil.́com"],
+    ["combining acute U+0301 before the dot", "eviĺ.com"],
+    ["hidden character inside www", "w͏ww.evil.test"],
+  ])("refuses a merchant text that hides an address with %s (#670 MAJOR-1)", (_label, address) => {
+    expect(genericEmailTextLooksLikeLink(`請看 ${address}`)).toBe(true);
+    expect(normalizeGenericEmailContent({ subject: "ok", body: `請看 ${address}` })).toBeNull();
+    expect(normalizeGenericEmailContent({ subject: `請看 ${address}`, body: "ok" })).toBeNull();
+  });
+
+  it.each(["例子.com", "eviĺ.com", "пример.org/login", "請看 evil.com立即登入"])("refuses an internationalized or run-on host (%j)", (address) => {
+    expect(genericEmailTextLooksLikeLink(address)).toBe(true);
+  });
+
+  it("still lets ordinary merchant text with accents, Indic marks and emoji through", () => {
+    for (const text of ["Café 與 José Müller 的分享", "राहुल का सत्र", "❤️ 感謝參加", "版本 v1.2.3", "Next.js 入門"]) {
+      expect(genericEmailTextLooksLikeLink(text), text).toBe(false);
+    }
+  });
 });
 
 describe("generic e-mail action schema (A2-04)", () => {

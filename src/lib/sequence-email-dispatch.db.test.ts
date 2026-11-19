@@ -99,16 +99,21 @@ describe("sequence e-mail dispatch", () => {
       await expect(enrollSubmissionInEmailSequences({ vendorId: f.vendor.id, liveId: f.live.id, formSubmissionId: lead.id })).resolves.toMatchObject({ status: "enrolled" });
       leads.push({ ...entry, lead });
     }
-    // The worker's per-round quota is shared with whatever else the run left queued: repeat until every step is queued.
-    for (let round = 0; round < 5; round += 1) {
+    // The worker queues at most its per-round quota minus what is still queued,
+    // so send each round's e-mails before the next round (more cases than one quota).
+    const sentBySubmission = new Map<string, { subject: string; text: string; html: string }>();
+    for (let round = 0; round < 6 && sentBySubmission.size < leads.length; round += 1) {
       await processDueDelayedStepRuns({ vendorId: f.vendor.id });
-      if (await db.emailDelivery.count({ where: { vendorId: f.vendor.id, trigger: "sequence_email" } }) === leads.length) break;
+      const queued = await db.emailDelivery.findMany({ where: { vendorId: f.vendor.id, trigger: "sequence_email", status: "queued" }, select: { id: true, sourceFormSubmissionId: true } });
+      for (const delivery of queued) {
+        mocks.sendTransactionalEmail.mockClear();
+        await expect(dispatchEmailDelivery(delivery.id)).resolves.toEqual({ status: "sent" });
+        sentBySubmission.set(delivery.sourceFormSubmissionId!, mocks.sendTransactionalEmail.mock.calls[0]![0] as { subject: string; text: string; html: string });
+      }
     }
+    expect(sentBySubmission.size).toBe(leads.length);
     for (const { name, greeting, lead } of leads) {
-      const delivery = await db.emailDelivery.findFirstOrThrow({ where: { vendorId: f.vendor.id, trigger: "sequence_email", sourceFormSubmissionId: lead.id } });
-      mocks.sendTransactionalEmail.mockClear();
-      await expect(dispatchEmailDelivery(delivery.id)).resolves.toEqual({ status: "sent" });
-      const sent = mocks.sendTransactionalEmail.mock.calls[0]![0] as { subject: string; text: string; html: string };
+      const sent = sentBySubmission.get(lead.id)!;
       expect(sent.subject, name).toBe(`${greeting}：寄送直播 下一步`);
       expect(sent.text.startsWith(`${greeting} 你好`), name).toBe(true);
       expect(sent.html, name).not.toMatch(/<h[23]>|<ul>|<ol>|<strong>/u);

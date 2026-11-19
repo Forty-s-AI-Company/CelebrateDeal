@@ -113,22 +113,29 @@
 
 報名者、預約者、買家的姓名是他們在公開表單或結帳頁自己填的。公開表單任何人都能填別人的 Email，所以姓名可能是陌生人寫的文字，被當成以商家名義寄出的釣魚連結（例如姓名填 `[點我](https://…)` 或 `evil.test`，再填受害者的 Email）。信件內文經 `rich-text.ts` 渲染（markdown 連結、`http(s)://`、`**粗體**`、行首 `#`／`-`／`1.`），收件端的郵件軟體也會把裸網域變成連結，所以姓名在進信件之前一律經過共用的 `src/lib/safe-recipient-name.ts`（`safeRecipientName`，A2-04 自動化範本原本的清理抽出來共用，行為不變）：
 
-- **像網址就整個換成預設稱呼**：先做 NFKC 並移除零寬、bidi 等不可見字元，只要含 `://`、`www.`，或任何語言的字母或數字以 `.` 或 `。` 相接（含全形，例如 `ｅｖｉｌ．ｔｅｓｔ`、`evil。test`、`釣魚網站。測試`），清理前後各判斷一次，命中就整個姓名不用，不是只清掉網址片段。
+- **像網址就整個換成預設稱呼**：判斷前先做 NFKC，並移除 Unicode 所有 Default_Ignorable_Code_Point 與格式字元（`\p{Cf}`：零寬、bidi、CGJ U+034F、variation selector、tag 字元、蒙古文 FVS、高棉文 U+17B4、U+FFF9、U+1BCA0、U+1D173 等，整個類別都移除，不是列舉清單；#670 審查 MAJOR-1）。只要含 `://`、`www.`，或任何語言的字母、組合字元或數字以 `.` 或 `。` 相接（點後面接組合字元也算，例如 `evil.́test`；含全形，例如 `ｅｖｉｌ．ｔｅｓｔ`、`evil。test`、`釣魚網站。測試`），清理前後各判斷一次，命中就整個姓名不用，不是只清掉網址片段。同一個判斷也用在自動化「自訂訊息」檢查商家文字是否含網址（`genericEmailTextLooksLikeLink`），另外商家文字的主機名稱也接受任何語言的字母（例如 `例子.com`、`eviĺ.com`）。
 - **其餘反覆清理到結果不再變化**：換行與控制字元變空白；移除 `[]()*<>{}` 與反引號、`http(s)://`、行首的 `#`、`1.`、`1)`、`-`、`+`、`*`、`>`（含連續堆疊，例如 `# # x` 變成 `x`）；最多 80 個字（以 code point 計）。`hthttps://tps://evil.test` 這種拿掉一段又拼出一段的寫法，在第一步就被整個擋下。
-- **代價**：含點的真名（例如 `Mr.Lin`、`J.K.`）也會換成預設稱呼；一般中英文姓名（`王小明`、`Mary Jane`、`O'Brien`）照原樣。
+- **代價**：
+  - 含點的真名（例如 `Mr.Lin`、`J.K.`）會換成預設稱呼；用全形 `．` 隔開的姓名（例如 `麥可．喬丹`）也一樣，因為 NFKC 會把 `．` 變成 `.`。用間隔號 `・`、`·` 的（`麥可・喬丹`）不受影響。
+  - 顯示的是 NFKC 正規化後的姓名，可能和報名者輸入的不同：全形英數字變半形（`ＭＡＲＹ` 變 `MARY`）、半形片假名變全形（`ｶﾀｶﾅ` 變 `カタカナ`）、拆開的重音合併（`Jose` 加 U+0301 變 `José`）。
+  - 一般姓名照原樣：`王小明`、`Mary Jane`、`O'Brien`、`José Müller`、`राहुल`。
 
 各路徑的處理：
 
 | 信件 | 收件地址 | 處理 | 預設稱呼 |
 | --- | --- | --- | --- |
-| 報名 Email 驗證信（`ensureFormSubmissionVerificationDelivery`） | 未驗證 | 這封信一定要寄，所以不要求 `VERIFIED`；姓名經 `safeRecipientName`，取代原本只合併空白的 `safeDisplayText` | 「您好」 |
-| 指定場次「你已報名」通知（`ensureFixedSessionAlreadyRegisteredDelivery`） | 可能未驗證（任何人輸入同一 Email 都會觸發） | 報名 `VERIFIED` 才帶姓名（呼叫端傳 `recipientVerified`，沒傳視為未驗證），並經 `safeRecipientName` | 「您好」 |
+| 報名 Email 驗證信（`ensureFormSubmissionVerificationDelivery`） | 未驗證 | 一律「您好：」開頭，**不帶姓名**（#670 審查 MINOR-1：寄到未驗證的地址，也不需要姓名）；原本是只合併空白的 `safeDisplayText` | 「您好」 |
+| 指定場次「你已報名」通知（`ensureFixedSessionAlreadyRegisteredDelivery`） | 可能未驗證（任何人輸入同一 Email 都會觸發） | 報名 `VERIFIED` 才帶姓名（呼叫端傳 `recipientVerified`，沒傳視為未驗證），並經 `safeRecipientName`；帶的是那筆報名自己存的姓名，不是這次請求填的姓名 | 「您好」 |
 | 指定場次取消通知（`ensureFixedSessionCancelledDelivery`） | 已驗證 | `safeRecipientName` | 「您好」 |
 | 付款成功收據（`ensureCommerceOrderPaidDelivery`） | 未驗證（結帳時填的 Email） | `safeRecipientName`；不能用時整句改成「您好：」 | 不帶姓名 |
 | 商家訊息範本的 `{{name}}`（報名確認、開播前提醒、`before_live`／`during_live` 通知、課後信、Email 追銷序列、範本預覽） | 已驗證（這些路徑都只寄給 `VERIFIED` 報名，序列信寄送前也重讀 `VERIFIED`） | `renderMessageTemplate` 內一律經 `safeRecipientName`，主旨與內文都是；其他變數（直播名稱、商家名稱、連結）是商家自己的資料，不變 | 「你」（`MESSAGE_TEMPLATE_NAME_FALLBACK`） |
 | 自動化「自訂訊息」範本的 `{{name}}`（A2-04） | 立即動作不限；延遲步驟只寄已確認的地址 | 不變：報名 `VERIFIED` 才帶姓名、諮詢預約改取同 Email 已驗證報名的姓名，並經同一個清理 | 「你」 |
 
-報名的姓名建立後不會被改寫（同一 Email 重新報名只沿用原本那筆，不更新姓名），所以已驗證報名的姓名就是驗證當時的值。不寄信的地方（LINE 推播、學員通知、自動化固定範本）不帶報名者姓名，不在此範圍；後台與公開頁面顯示姓名走 React 轉義，也不在此範圍。回歸測試：`src/lib/safe-recipient-name.test.ts`、`src/lib/email-delivery-recipient-name.test.ts`、`src/lib/commerce-order-email.test.ts`、`src/lib/automation-generic-email.test.ts`，以及 DB 測試 `src/lib/sequence-email-dispatch.db.test.ts`（經真正的寄送流程檢查 HTML 與純文字）、`src/lib/live-notification-delivery.db.test.ts`；共用案例在 `src/test/recipient-name-cases.ts`。
+報名的姓名建立後不會被改寫（同一 Email 重新報名只沿用原本那筆，不更新姓名），所以已驗證報名的姓名就是驗證當時的值。不寄信的地方（LINE 推播、學員通知、自動化固定範本）不帶報名者姓名，不在此範圍；後台與公開頁面顯示姓名走 React 轉義，也不在此範圍。
+
+**部署前已排入的信保留原本的內容**（#670 審查 MINOR-2）：信件在排入佇列時就把主旨與內文加密存起來（`EmailDelivery.payloadEncryptedEnvelope`），寄送時不重新產生。所以部署前已排入、尚未寄出的開播提醒（`live_reminder`）、直播通知（`before_live`／`during_live`）、課後信與序列信，仍是當時的內容，可能含未清理的姓名；部署之後才排入的信才會清理。驗證信、已報名通知、場次取消通知、收據在事件發生時排入、隨即（或下一輪 Email job）寄出，實際上不受影響。重新排入時，`live_reminder` 與直播通知會以同一個 id 回來，並改寫成當下產生的內容（`ensureLiveReminderDelivery` 重新啟用時也改寫內容，A2-13 起；直播通知原本就會）。要讓已排入的提醒改用新內容，有一支**提案中、尚未執行**的一次性腳本 `scripts/rerender-queued-live-reminders.ts`：預設只做 dry-run（只印數量）；必須指定 `--vendor-id`（一次一個商家）與 `--queued-before`（部署時間）；只處理狀態 `queued`／`failed`、距離寄送至少 30 分鐘（`--min-lead-minutes`）的列，標成 `superseded`，`live_reminder` 在同一交易排入該直播的提醒 reconcile，直播通知由 Email job 的補建流程重建（加 `--rematerialize` 則在腳本內立即重建，並回報沒有回來的列數 `notRestored`，大於 0 時以狀態 1 結束）。仍使用直播自己的舊版提醒範本（`liveReminderTemplateId`）的直播，補建流程不會重建它的 `before_live` 通知，所以這些列不處理，只計數（`notRegenerableByTrigger`）。寫入需要 `--apply` 與 `RERENDER_CONFIRM=RERENDER_QUEUED_LIVE_REMINDERS`；staging 或 production 另需 `--target` 與 `RERENDER_REMOTE_APPROVAL=OWNER_APPROVED_LIVE_REMINDER_RERENDER`，而且要 owner 對那一次執行另外明確授權（dry-run 也是）。課後信與序列信不在腳本範圍，維持原狀：序列信的同一步對同一個人最多寄一次、被略過就不再寄，標成 `superseded` 等於取消那一步；課後信重新排入的行為未驗證。DB 測試：`scripts/rerender-queued-live-reminders.db.test.ts`。
+
+回歸測試：`src/lib/safe-recipient-name.test.ts`、`src/lib/email-delivery-recipient-name.test.ts`、`src/lib/commerce-order-email.test.ts`、`src/lib/automation-generic-email.test.ts`，以及 DB 測試 `src/lib/sequence-email-dispatch.db.test.ts`（經真正的寄送流程檢查 HTML 與純文字）、`src/lib/live-notification-delivery.db.test.ts`、`src/lib/live-session-switch.db.test.ts`（經報名 API：已驗證報名的「你已報名」通知帶它自己存的姓名，不帶這次請求填的姓名）；共用案例在 `src/test/recipient-name-cases.ts`。
 
 ### 自動化規則（F-4：既有缺口、延遲步驟、付款完成）
 

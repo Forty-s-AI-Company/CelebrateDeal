@@ -15,6 +15,17 @@ export const PHISHING_NAMES = [
   { label: "full-width domain", name: "ｅｖｉｌ．ｔｅｓｔ" },
   { label: "Chinese full stop", name: "evil。test" },
   { label: "CJK host with Chinese full stop", name: "釣魚網站。測試" },
+  // #670 review MAJOR-1: an invisible or format character next to the dot, or a combining mark after it.
+  { label: "combining grapheme joiner U+034F", name: "evil͏.test" },
+  { label: "variation selector U+FE00", name: "evil︀.test" },
+  { label: "variation selector U+FE0F", name: "evil.️test" },
+  { label: "tag space U+E0020", name: "evil\u{e0020}.test" },
+  { label: "Mongolian free variation selector U+180B", name: "evil᠋.test" },
+  { label: "Khmer inherent vowel U+17B4", name: "evil឴.test" },
+  { label: "interlinear annotation anchor U+FFF9", name: "evil￹.test" },
+  { label: "shorthand format letter overlap U+1BCA0", name: "evil\u{1bca0}.test" },
+  { label: "musical symbol begin beam U+1D173", name: "evil\u{1d173}.test" },
+  { label: "combining acute U+0301 after the dot", name: "evil.́test" },
 ] as const;
 
 /** Markers of the phishing names above; none may reach a subject, body, HTML or plain text. */
@@ -22,7 +33,7 @@ const PHISHING_MARKERS = [/evil/iu, /ｅｖｉｌ/u, /釣魚/u, /點我/u, /htht
 
 export const STACKED_FORMAT_NAME = { name: "# # x", cleaned: "x" } as const;
 
-export const NORMAL_NAMES = ["王小明", "Mary Jane", "O'Brien"] as const;
+export const NORMAL_NAMES = ["王小明", "Mary Jane", "O'Brien", "José Müller", "राहुल"] as const;
 
 /** Every rendering of one e-mail: as stored, as the HTML part and as the plain-text part. */
 export function renderedForms(mail: { subject: string; body: string }) {

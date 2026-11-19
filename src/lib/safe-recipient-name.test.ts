@@ -10,6 +10,8 @@ import {
   STACKED_FORMAT_NAME,
 } from "@/test/recipient-name-cases";
 
+const escape = (text: string) => Array.from(text, (char) => `U+${char.codePointAt(0)!.toString(16).toUpperCase()}`).join(" ");
+
 describe("safeRecipientName (A2-13)", () => {
   it.each(PHISHING_NAMES)("drops a name that reads as a web address whole: $label", ({ name }) => {
     expect(safeRecipientName(name)).toBe("");
@@ -32,6 +34,35 @@ describe("safeRecipientName (A2-13)", () => {
     expect(safeRecipientName("evil​.​test")).toBe("");
     expect(safeRecipientName("evil[.]test")).toBe("");
     expect(safeRecipientName("王‮小明")).toBe("王小明");
+  });
+
+  it("removes every default-ignorable and format character before judging, not only a known list (#670 MAJOR-1)", () => {
+    // Characters the first version let through between "evil" and ".test".
+    for (const hidden of ["͏", "︀", "️", "\u{e0020}", "\u{e007f}", "᠋", "឴", "឵", "￹", "￻", "\u{1bca0}", "\u{1bca3}", "\u{1d173}", "\u{1d17a}", "⁥", "ㅤ", "ᅟ"]) {
+      expect(looksLikeWebAddress(`evil${hidden}.test`), escape(hidden)).toBe(true);
+      expect(looksLikeWebAddress(`evil.${hidden}test`), escape(hidden)).toBe(true);
+      expect(safeRecipientName(`evil${hidden}.test`), escape(hidden)).toBe("");
+    }
+    // A combining mark on either side of the dot still reads as an address.
+    for (const mark of ["́", "̈́", "⃝"]) {
+      expect(safeRecipientName(`evil.${mark}test`)).toBe("");
+      expect(safeRecipientName(`evil${mark}.test`)).toBe("");
+    }
+  });
+
+  it("drops a name joined by a full-width dot, which NFKC turns into `.` (documented trade-off)", () => {
+    expect(safeRecipientName("麥可．喬丹")).toBe("");
+    expect(safeRecipientNameOr("麥可．喬丹", "你")).toBe("你");
+    // The middle dot used in transliterated names is not a dot and is kept.
+    expect(safeRecipientName("麥可・喬丹")).toBe("麥可・喬丹");
+    expect(safeRecipientName("麥可·喬丹")).toBe("麥可·喬丹");
+  });
+
+  it("shows the NFKC form of the name (documented: what is shown can differ from what was typed)", () => {
+    expect(safeRecipientName("ＭＡＲＹ　ＪＡＮＥ")).toBe("MARY JANE");
+    expect(safeRecipientName("ｶﾀｶﾅ")).toBe("カタカナ");
+    expect(safeRecipientName("José")).toBe("José");
+    expect(safeRecipientName("José")).toBe("José");
   });
 
   it("clips to the limit in code points and falls back when nothing is left", () => {

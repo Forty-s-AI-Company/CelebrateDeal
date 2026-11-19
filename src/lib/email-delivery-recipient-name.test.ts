@@ -104,17 +104,28 @@ type Path = {
   queue: (recipientName: string) => Promise<unknown>;
 };
 
+const queueVerification = (recipientName: string) => ensureFormSubmissionVerificationDelivery({
+  vendorId: "vendor-1", vendorName: "測試商家", liveId: "live-1", formSubmissionId: "formsub_0123456789abcdef0123456789abcdef",
+  recipientName, recipientEmail: "lead@example.test", verificationVersion: 1, verificationExpiresAt: new Date("2026-08-11T00:00:00.000Z"), emailBrand: brand,
+});
+
+describe("form submission verification: an unconfirmed address never gets the typed name (A2-13, #670 MINOR-1)", () => {
+  it.each([
+    ...PHISHING_NAMES.map((entry) => entry.name),
+    STACKED_FORMAT_NAME.name,
+    ...NORMAL_NAMES,
+  ])("opens with 您好： whatever the name (%j)", async (name) => {
+    await queueVerification(name);
+    const mail = lastQueuedMail();
+    expect(mail.body.startsWith("您好：\n\n請開啟以下連結")).toBe(true);
+    expectNoPhishingTrace(mail);
+    expectNoFormatting(mail);
+    const cleanedNormal = NORMAL_NAMES.find((normal) => normal === name);
+    if (cleanedNormal) for (const form of Object.values(renderedForms(mail))) expect(form).not.toContain(cleanedNormal);
+  });
+});
+
 const PATHS: Path[] = [
-  {
-    // Sent to an address nobody has confirmed: it must go out, so the name is cleaned, never required.
-    label: "form submission verification (unconfirmed address)",
-    greeting: "您好",
-    inSubject: false,
-    queue: (recipientName) => ensureFormSubmissionVerificationDelivery({
-      vendorId: "vendor-1", vendorName: "測試商家", liveId: "live-1", formSubmissionId: "formsub_0123456789abcdef0123456789abcdef",
-      recipientName, recipientEmail: "lead@example.test", verificationVersion: 1, verificationExpiresAt: new Date("2026-08-11T00:00:00.000Z"), emailBrand: brand,
-    }),
-  },
   {
     label: "fixed session already registered (verified registration)",
     greeting: "您好",
@@ -182,6 +193,27 @@ describe.each(PATHS)("$label (A2-13)", (path) => {
     const { text, html } = renderedForms(mail);
     expect(text).toContain(name);
     expect(html).toContain(name.replaceAll("'", "&#39;"));
+  });
+});
+
+describe("live reminder reactivation re-renders the stored content (A2-13, #670 MINOR-2)", () => {
+  it("rewrites the payload of a superseded reminder that comes back, instead of reviving the old snapshot", async () => {
+    const conflict = Object.assign(new Error("unique"), { code: "P2002" });
+    mocks.db.emailDelivery.create.mockRejectedValueOnce(conflict);
+    mocks.db.emailDelivery.findUnique.mockResolvedValueOnce({ id: "email_existing", status: "superseded", nextAttemptAt: null, updatedAt: new Date("2026-08-01T00:00:00.000Z") });
+    mocks.db.emailDelivery.updateMany.mockResolvedValue({ count: 1 });
+    await expect(ensureLiveReminderDelivery({
+      ...base, recipientName: "[點我](https://evil.test/login)", reminderOffsetMinutes: 60, template: template("live_reminder"),
+    }, new Date("2026-08-07T00:00:00.000Z"))).resolves.toMatchObject({ status: "reactivated" });
+
+    const reactivation = mocks.db.emailDelivery.updateMany.mock.calls
+      .map((call) => call[0] as { where: { id?: string; status?: string }; data: { payloadEncryptedEnvelope?: string; status?: string } })
+      .find((call) => call.where.status === "superseded" && call.data.status === "queued");
+    expect(reactivation?.data.payloadEncryptedEnvelope).toEqual(expect.any(String));
+    const deliveryId = mocks.db.emailDelivery.create.mock.calls[0]![0].data.id as string;
+    const payload = revealEmailDeliveryPayload(reactivation!.data.payloadEncryptedEnvelope!, { vendorId: "vendor-1", deliveryId });
+    expectNoPhishingTrace(payload);
+    expect(payload.body.startsWith(`${MESSAGE_TEMPLATE_NAME_FALLBACK} 你好\n`)).toBe(true);
   });
 });
 

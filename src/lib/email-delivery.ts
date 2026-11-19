@@ -121,6 +121,7 @@ export type FormSubmissionVerificationDeliveryInput = {
   vendorName: string;
   liveId: string | null;
   formSubmissionId: string;
+  /** Never put in the e-mail (A2-13): the address is not confirmed yet. */
   recipientName: string;
   recipientEmail: string;
   verificationVersion: number;
@@ -440,6 +441,11 @@ export async function ensureLiveReminderDelivery(
             updatedAt: existing.updatedAt,
           },
           data: {
+            // The content rendered now, not the one stored when the row was
+            // first queued (A2-13: a snapshot queued before a rendering fix
+            // comes back with the fixed content). Same id, recipient and
+            // unsubscribe link, so nothing else about the delivery changes.
+            ...protectedPayload,
             status: isSuppressed ? "suppressed" : "queued",
             nextAttemptAt: isSuppressed ? null : nextAttemptAt,
             claimedAt: null,
@@ -1041,15 +1047,15 @@ export async function ensureFormSubmissionVerificationDelivery(
     version: input.verificationVersion,
   });
   const verificationUrl = createFormSubmissionVerificationUrl(token);
-  // A2-13: this goes to an address nobody has confirmed yet and must still be
-  // sent, so the name typed with it is cleaned (no link, markdown or line
-  // break) and dropped whole when it reads as a web address.
-  const recipientName = safeRecipientNameOr(input.recipientName, SYSTEM_NOTICE_GREETING);
+  // A2-13 (#670 review MINOR-1): this goes to an address nobody has confirmed
+  // yet, typed by whoever filled in the form, so the name typed with it is
+  // never put in: every verification e-mail opens with the same greeting.
+  // `input.recipientName` is deliberately unused.
   const vendorName = safeDisplayText(input.vendorName, "活動主辦單位");
   const protectedPayload = protectEmailDeliveryPayload({
     recipientEmail: input.recipientEmail,
     subject: `請確認 ${vendorName} 的報名 Email`,
-    body: `${recipientName}：\n\n請開啟以下連結，並在頁面上按下確認，完成 Email 驗證：\n${verificationUrl}\n\n連結將於 48 小時後失效。如果不是你本人送出，可以忽略這封信。`,
+    body: `${SYSTEM_NOTICE_GREETING}：\n\n請開啟以下連結，並在頁面上按下確認，完成 Email 驗證：\n${verificationUrl}\n\n連結將於 48 小時後失效。如果不是你本人送出，可以忽略這封信。`,
     brand: input.emailBrand,
   }, {
     vendorId: input.vendorId,

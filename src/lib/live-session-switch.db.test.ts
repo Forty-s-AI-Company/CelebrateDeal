@@ -78,11 +78,11 @@ async function verifiedRegistrant(fx: Fixture, sessionId: string, label: string)
   });
 }
 
-async function register(fx: Fixture, email: string, liveSessionId: string, cookie?: string) {
+async function register(fx: Fixture, email: string, liveSessionId: string, cookie?: string, name = "Synthetic Lead") {
   const response = await REGISTER(new Request(`${APP}/api/form-submissions`, {
     method: "POST",
     headers: { "content-type": "application/json", origin: APP, "x-celebratedeal-client": "web", ...(cookie ? { cookie } : {}) },
-    body: JSON.stringify({ formId: fx.form.id, liveId: fx.live.id, liveSessionId, payload: { name: "Synthetic Lead", email } }),
+    body: JSON.stringify({ formId: fx.form.id, liveId: fx.live.id, liveSessionId, payload: { name, email } }),
   }));
   return { status: response.status, body: await response.json() as Record<string, unknown> };
 }
@@ -120,6 +120,23 @@ async function noticeToken(fx: Fixture, submissionId: string) {
   expect(`${url.origin}${url.pathname}`).toBe(`${APP}/live-session-switch`);
   return { token: url.searchParams.get("token")!, body, sourceTemplateId: row!.sourceTemplateId };
 }
+
+describe("the already-registered notice greets by the registration's own name (A2-13, #670 NIT)", () => {
+  it("uses the VERIFIED registration's stored name, never the name typed with the repeated request", async () => {
+    const fx = await fixture("name");
+    const [held, target] = fx.sessions;
+    const registrant = await verifiedRegistrant(fx, held!.id, "name");
+    await getDb().formSubmission.update({ where: { id: registrant.id }, data: { name: "王小明" } });
+
+    // A third party, without the registration cookie, types the same address and a phishing name.
+    expect(await register(fx, registrant.email, target!.id, undefined, "[點我](https://evil.test/login)")).toEqual({ status: 200, body: { ok: true, verificationRequired: true } });
+    const { body } = await noticeToken(fx, registrant.id);
+    expect(body.startsWith("王小明：\n\n")).toBe(true);
+    expect(body).not.toMatch(/evil|點我/u);
+    // The repeated request converged on the registration; its name is unchanged.
+    await expect(getDb().formSubmission.findUniqueOrThrow({ where: { id: registrant.id }, select: { name: true } })).resolves.toEqual({ name: "王小明" });
+  });
+});
 
 describe("「更換場次」 link in the already-registered notice", () => {
   it("switches from a new device: the page GET consumes nothing, one POST gives the cookie, the link then dies", async () => {
