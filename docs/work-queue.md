@@ -89,6 +89,7 @@
 - demo adapter：body 可覆寫 `provider`（`{ provider: "demo", ...rawPayload }`）、registry 以 `providers[id]` 查表會命中原型 key；正式環境有三層防線擋住，改用 `Object.hasOwn` 並把 `provider` 移到 spread 之後（#652 審查 MINOR-4、NIT）。
 - 聯絡網址 SSRF 判斷有三份（`lib/contact-url-safety.ts`、`email-delivery-pii.ts`、`brand-settings-form.tsx`）且規則已不一致；補 IPv4 變形寫法（`2130706433`、`0x7f.0.0.1`、`127.1`）測試並共用案例表（#655 審查）。
 - npm audit 對 picomatch（GHSA-fc5q-39xc-vjpf）的例外於 2027-01-01 到期；上游出修補版後移除（#642）。
+- 部署前已排入提醒的重新產生：改用原地重算內容的 compare-and-set 腳本（不改狀態），#670 複審建議。背景：A2-13 部署前已排入、尚未寄出的 `live_reminder` 與直播通知保留原本的內容（可能含未清理的姓名）；#670 第一版提案腳本是先標成 `superseded` 再靠 reconcile 重建，但 reconcile 每批只處理 100 筆且沿用之前的進度，依 `incomplete` 重跑時已救回的提醒會再被標掉而永遠不寄，已移除。
 
 ## B. 需要 owner 先做產品決定
 

@@ -331,9 +331,20 @@ describe("generic e-mail {{name}} through the shared recipient-name cleaning (A2
     expect(normalizeGenericEmailContent({ subject: `請看 ${address}`, body: "ok" })).toBeNull();
   });
 
-  it.each(["例子.com", "eviĺ.com", "пример.org/login", "請看 evil.com立即登入"])("refuses an internationalized or run-on host (%j)", (address) => {
+  it.each(["例子.com", "eviĺ.com", "пример.org/login", "請看 evil.com立即登入", "EVIL.COM", "Shop.Example.com/x", "主題.app/login"])("refuses an internationalized, run-on or upper-case ASCII host (%j)", (address) => {
     expect(genericEmailTextLooksLikeLink(address)).toBe(true);
+    expect(normalizeGenericEmailContent({ subject: "ok", body: address })).toBeNull();
   });
+
+  it.each(["本週主題.App 開發入門", "王老師.Tech 講座", "直播.TV 版本", "第二堂.Dev 實作", "課程.Shop 開幕"])(
+    "lets Chinese running into a capitalised English word after a dot through (%j, #670 second review MINOR-1)",
+    (text) => {
+      expect(genericEmailTextLooksLikeLink(text)).toBe(false);
+      // A stored rule with such a text keeps sending: it is still valid when it runs.
+      expect(normalizeGenericEmailContent({ subject: text, body: text })).toEqual({ subject: text, body: text });
+      expect(genericEmailContentUsable("form_registered", { subject: text, body: text })).toBe(true);
+    },
+  );
 
   it("still lets ordinary merchant text with accents, Indic marks and emoji through", () => {
     for (const text of ["Café 與 José Müller 的分享", "राहुल का सत्र", "❤️ 感謝參加", "版本 v1.2.3", "Next.js 入門"]) {

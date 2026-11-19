@@ -50,6 +50,14 @@ describe("safeRecipientName (A2-13)", () => {
     }
   });
 
+  it("removes the same default-ignorable and format characters from the name that is shown (#670 second review NIT)", () => {
+    for (const hidden of ["͏", "︀", "\u{e0020}", "᠋", "឴", "￹", "\u{1bca0}", "\u{1d173}", "‍", "⁥"]) {
+      expect(safeRecipientName(`王${hidden}小明`), escape(hidden)).toBe("王小明");
+    }
+    // An emoji keeps its base character; its presentation selector is dropped.
+    expect(safeRecipientName("Ann❤️")).toBe("Ann❤");
+  });
+
   it("drops a name joined by a full-width dot, which NFKC turns into `.` (documented trade-off)", () => {
     expect(safeRecipientName("麥可．喬丹")).toBe("");
     expect(safeRecipientNameOr("麥可．喬丹", "你")).toBe("你");

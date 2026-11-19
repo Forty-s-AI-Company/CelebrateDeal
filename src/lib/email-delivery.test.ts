@@ -404,6 +404,8 @@ describe("email delivery outbox", () => {
     expect(mocks.db.emailDelivery.updateMany).toHaveBeenCalledWith({
       where: {
         id: expect.stringMatching(/^email_[a-f0-9]{32}$/u),
+        // #670 second review NIT: the compare-and-set is bound to the vendor too.
+        vendorId: "vendor-1",
         status: "superseded",
         updatedAt,
       },

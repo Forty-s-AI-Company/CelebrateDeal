@@ -69,15 +69,23 @@ const COMMON_TLD = "com|net|org|edu|gov|tw|io|co|me|app|dev|info|biz|xyz|shop|st
 const TECH_NAMES = /\b(?:node|next|nuxt|vue|react|express|three|chart|d3|moment|socket|asp|vb|ado)\.(?:js|net)\b/giu;
 const LINK_SCHEME = /:\/\/|\]\(|\b(?:mailto|javascript|data|vbscript|file|ftp|tel):\S/iu;
 const LINK_WWW = /\bwww\./iu;
-// A host label may be in any script (an internationalized name such as `例子.com` or `eviĺ.com` is
-// linked by mail clients too); only the top-level domain is matched against the ASCII list.
-const HOST_LABEL = "[\\p{L}\\p{M}\\p{N}-]";
-const NOT_HOST_LABEL = "[^\\p{L}\\p{M}\\p{N}-]";
-const LINK_HOST_COMMON_TLD = new RegExp(`(?:^|${NOT_HOST_LABEL})${HOST_LABEL}+(?:\\.${HOST_LABEL}+)*\\.(?:${COMMON_TLD})(?![a-z0-9-])`, "iu");
-const LINK_HOST_WITH_PATH = new RegExp(`(?:^|${NOT_HOST_LABEL})${HOST_LABEL}+(?:\\.${HOST_LABEL}+)*\\.[a-z]{2,}(?:\\/|:\\d)`, "iu");
+// An ASCII host: the top-level domain in any case (`EVIL.COM`, `Shop.Example.com/x`).
+const LINK_HOST_COMMON_TLD = new RegExp(`(?:^|[^a-z0-9-])[a-z0-9-]+(?:\\.[a-z0-9-]+)*\\.(?:${COMMON_TLD})(?![a-z0-9-])`, "iu");
+const LINK_HOST_WITH_PATH = /(?:^|[^a-z0-9-])[a-z0-9-]+(?:\.[a-z0-9-]+)*\.[a-z]{2,}(?:\/|:\d)/iu;
+// A host with a label in another script (`例子.com`, `eviĺ.com`, `пример.org/login`) is linked by mail
+// clients too, but Chinese text often runs into an English word after a dot (`本週主題.App 開發入門`,
+// `王老師.Tech 講座`, `直播.TV 版本`). So for such a host only a lowercase top-level domain counts
+// (no `i` flag below); an ASCII host is judged by the two patterns above exactly as before.
+const UNICODE_LABEL = "[\\p{L}\\p{M}\\p{N}-]";
+const NOT_UNICODE_LABEL = "[^\\p{L}\\p{M}\\p{N}-]";
+const UNICODE_HOST = `${UNICODE_LABEL}+(?:\\.${UNICODE_LABEL}+)*`;
+const LINK_UNICODE_HOST_COMMON_TLD = new RegExp(`(?:^|${NOT_UNICODE_LABEL})${UNICODE_HOST}\\.(?:${COMMON_TLD})(?![a-zA-Z0-9-])`, "u");
+const LINK_UNICODE_HOST_WITH_PATH = new RegExp(`(?:^|${NOT_UNICODE_LABEL})${UNICODE_HOST}\\.[a-z]{2,}(?:\\/|:\\d)`, "u");
 const LINK_LIKE = { test: (text: string) => {
   const plain = text.replace(TECH_NAMES, " ");
-  return LINK_SCHEME.test(plain) || LINK_WWW.test(plain) || LINK_HOST_COMMON_TLD.test(plain) || LINK_HOST_WITH_PATH.test(plain);
+  return LINK_SCHEME.test(plain) || LINK_WWW.test(plain)
+    || LINK_HOST_COMMON_TLD.test(plain) || LINK_HOST_WITH_PATH.test(plain)
+    || LINK_UNICODE_HOST_COMMON_TLD.test(plain) || LINK_UNICODE_HOST_WITH_PATH.test(plain);
 } };
 
 // A combining mark right before or after a dot (`evil.́com`) shows as a dot with an accent; judge it as the dot.

@@ -437,6 +437,7 @@ export async function ensureLiveReminderDelivery(
         const claimed = await tx.emailDelivery.updateMany({
           where: {
             id: deliveryId,
+            vendorId: input.vendorId,
             status: "superseded",
             updatedAt: existing.updatedAt,
           },

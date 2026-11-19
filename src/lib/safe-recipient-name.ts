@@ -31,13 +31,15 @@ export const INVISIBLE_CHARACTER_SOURCE = "[\\u00ad\\u061c\\u180e\\u200b-\\u200f
 // C0/C1 controls, DEL, line and paragraph separators (the body of a character class).
 export const CONTROL_CHARACTER_CLASS = "\\u0000-\\u001f\\u007f-\\u009f\\u2028\\u2029";
 
-const INVISIBLE_GLOBAL = new RegExp(INVISIBLE_CHARACTER_SOURCE, "gu");
-// For judging only: every character Unicode says a renderer may show as nothing
+// Every character Unicode says a renderer may show as nothing
 // (Default_Ignorable_Code_Point: CGJ, variation selectors, Mongolian free
 // variation selectors, Khmer inherent vowels, tags, ...) and every format
 // character (Cf: interlinear annotation, shorthand format controls, musical
-// beam controls, ...). A short list of known ones can always be gone around
-// (#670 review MAJOR-1), so the whole Unicode classes are removed.
+// beam controls, zero-width joiners, bidi controls, ...). A short list of known
+// ones can always be gone around (#670 review MAJOR-1), so the whole Unicode
+// classes are removed, both to judge a value and from the value that is shown
+// (#670 second review NIT). INVISIBLE_CHARACTER_SOURCE above is only the list
+// the automation template refuses in the merchant's own text.
 const IGNORABLE_GLOBAL = /[\p{Default_Ignorable_Code_Point}\p{Cf}]/gu;
 const CONTROL_RUNS = new RegExp(`[${CONTROL_CHARACTER_CLASS}]+`, "gu");
 // Anything with a dot between word characters (any script, combining marks
@@ -49,7 +51,7 @@ const LEADING_FORMAT = /^(?:\s*(?:#+|\d+[.)]|[-+*>])\s*)+/u;
 
 /**
  * The NFKC form without any default-ignorable or format character (full-width
- * letters and dots fold to ASCII). Used to judge a text, never to show it.
+ * letters and dots fold to ASCII): the form every check judges.
  */
 export function foldInvisibleAndWidth(text: string) {
   return text.normalize("NFKC").replace(IGNORABLE_GLOBAL, "");
@@ -67,7 +69,7 @@ function clip(text: string, maxLength: number) {
 function cleanOnce(value: string) {
   return value
     .normalize("NFKC")
-    .replace(INVISIBLE_GLOBAL, "")
+    .replace(IGNORABLE_GLOBAL, "")
     .replace(CONTROL_RUNS, " ")
     .trim()
     // Before the brackets go, so "1)" is still seen as a list marker.
