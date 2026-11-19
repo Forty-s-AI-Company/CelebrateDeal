@@ -15,6 +15,8 @@ import { getDb } from "@/lib/db";
 import { enrollSubmissionInEmailSequences, processDueDelayedStepRuns } from "@/lib/delayed-step-runs";
 import { dispatchEmailDelivery, processDueEmailDeliveries, processDueSequenceEmailDeliveries } from "@/lib/email-delivery";
 import { protectEmailDeliveryPayload } from "@/lib/email-delivery-pii";
+import { MESSAGE_TEMPLATE_NAME_FALLBACK } from "@/lib/message-template";
+import { NORMAL_NAMES, PHISHING_NAMES, STACKED_FORMAT_NAME } from "@/test/recipient-name-cases";
 
 /**
  * F-3 step e-mails through the real dispatcher (M5), and the dispatch order
@@ -79,6 +81,42 @@ describe("sequence e-mail dispatch", () => {
     // A second dispatch of the same row never reaches the provider again.
     await expect(dispatchEmailDelivery(delivery.id)).resolves.toEqual({ status: "not_due" });
     expect(mocks.sendTransactionalEmail).toHaveBeenCalledTimes(1);
+  });
+
+  it("never sends a registrant's phishing name, in the HTML or the plain-text part (A2-13)", async () => {
+    const f = await fixture();
+    await db.messageTemplate.update({ where: { id: f.template.id }, data: { subject: "{{name}}：{{live_title}} 下一步", body: "{{name}} 你好\n{{unsubscribe_url}}" } });
+    const cases = [
+      ...PHISHING_NAMES.map(({ name }) => ({ name, greeting: MESSAGE_TEMPLATE_NAME_FALLBACK })),
+      { name: STACKED_FORMAT_NAME.name, greeting: STACKED_FORMAT_NAME.cleaned },
+      ...NORMAL_NAMES.map((name) => ({ name, greeting: name })),
+    ];
+    const leads = [];
+    for (const entry of cases) {
+      const lead = await db.formSubmission.create({
+        data: { formId: f.form.id, liveId: f.live.id, name: entry.name, email: `lead-${randomUUID().slice(0, 8)}@example.test`, verificationStatus: "VERIFIED", verifiedAt: new Date(Date.now() - 2 * 3_600_000) },
+      });
+      await expect(enrollSubmissionInEmailSequences({ vendorId: f.vendor.id, liveId: f.live.id, formSubmissionId: lead.id })).resolves.toMatchObject({ status: "enrolled" });
+      leads.push({ ...entry, lead });
+    }
+    // The worker's per-round quota is shared with whatever else the run left queued: repeat until every step is queued.
+    for (let round = 0; round < 5; round += 1) {
+      await processDueDelayedStepRuns({ vendorId: f.vendor.id });
+      if (await db.emailDelivery.count({ where: { vendorId: f.vendor.id, trigger: "sequence_email" } }) === leads.length) break;
+    }
+    for (const { name, greeting, lead } of leads) {
+      const delivery = await db.emailDelivery.findFirstOrThrow({ where: { vendorId: f.vendor.id, trigger: "sequence_email", sourceFormSubmissionId: lead.id } });
+      mocks.sendTransactionalEmail.mockClear();
+      await expect(dispatchEmailDelivery(delivery.id)).resolves.toEqual({ status: "sent" });
+      const sent = mocks.sendTransactionalEmail.mock.calls[0]![0] as { subject: string; text: string; html: string };
+      expect(sent.subject, name).toBe(`${greeting}：寄送直播 下一步`);
+      expect(sent.text.startsWith(`${greeting} 你好`), name).toBe(true);
+      expect(sent.html, name).not.toMatch(/<h[23]>|<ul>|<ol>|<strong>/u);
+      if (greeting === MESSAGE_TEMPLATE_NAME_FALLBACK) {
+        for (const part of [sent.subject, sent.text, sent.html]) expect(part, name).not.toMatch(/evil|ｅｖｉｌ|釣魚|點我/iu);
+        for (const href of sent.html.matchAll(/<a href="([^"]+)"/gu)) expect(new URL(href[1]!.replaceAll("&amp;", "&")).origin).toBe(APP_URL);
+      }
+    }
   });
 
   it("keeps sequence e-mails out of the time-bound pass and sends them on their own quota (S1, MAJOR 1)", async () => {

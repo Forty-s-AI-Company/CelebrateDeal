@@ -13,6 +13,7 @@ import { parseAutomationRule } from "@/lib/automation-workflow";
 import { protectEmailDeliveryPayload } from "@/lib/email-delivery-pii";
 import { richTextToEmailHtml } from "@/lib/rich-text";
 import { ensureEmailUnsubscribeFooter } from "@/lib/email-delivery-format";
+import { expectNoFormatting, expectNoPhishingTrace, NORMAL_NAMES, PHISHING_NAMES, STACKED_FORMAT_NAME } from "@/test/recipient-name-cases";
 
 describe("generic e-mail content (A2-04)", () => {
   it("trims, normalizes line breaks and keeps plain text as typed", () => {
@@ -289,6 +290,26 @@ describe("generic e-mail second review fixes (A2-04, #665)", () => {
     "ｅｖｉｌ。ｃｏｍ",
   ])("drops a name that is a non-ASCII or ideographic-dot address (%j)", (name) => {
     expect(renderGenericEmail({ subject: "{{name}}", body: "{{name}}" }, { name })).toEqual({ subject: "你", body: "你" });
+  });
+});
+
+describe("generic e-mail {{name}} through the shared recipient-name cleaning (A2-13)", () => {
+  const content = { subject: "{{name}}，感謝你", body: "{{name}} 你好\n{{vendor_name}}" };
+
+  it.each(PHISHING_NAMES)("greets with 你 instead of a phishing name: $label", ({ name }) => {
+    const rendered = renderGenericEmail(content, { name, vendor_name: "商家" });
+    expectNoPhishingTrace(rendered);
+    expect(rendered).toEqual({ subject: "你，感謝你", body: "你 你好\n商家" });
+  });
+
+  it("removes a stacked line-start format prefix", () => {
+    const rendered = renderGenericEmail(content, { name: STACKED_FORMAT_NAME.name, vendor_name: "商家" });
+    expectNoFormatting(rendered);
+    expect(rendered.body).toBe(`${STACKED_FORMAT_NAME.cleaned} 你好\n商家`);
+  });
+
+  it.each(NORMAL_NAMES)("keeps an ordinary name: %s", (name) => {
+    expect(renderGenericEmail(content, { name, vendor_name: "商家" })).toEqual({ subject: `${name}，感謝你`, body: `${name} 你好\n商家` });
   });
 });
 

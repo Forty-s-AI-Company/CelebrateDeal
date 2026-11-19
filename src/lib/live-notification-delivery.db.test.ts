@@ -22,6 +22,8 @@ import {
   supersedeLiveNotificationDeliveriesForLifecycle,
 } from "@/lib/live-notification-delivery";
 import { isLockTimeout } from "@/lib/serializable-retry";
+import { MESSAGE_TEMPLATE_NAME_FALLBACK } from "@/lib/message-template";
+import { expectNoFormatting, expectNoPhishingTrace, NORMAL_NAMES, PHISHING_NAMES, STACKED_FORMAT_NAME } from "@/test/recipient-name-cases";
 
 /**
  * B-3: live notification materialization at READ COMMITTED under row locks,
@@ -177,6 +179,30 @@ describe("live notification materialization (disposable PostgreSQL, B-3)", () =>
       urls.push(url);
     }
     expect(urls[0]!.toString()).not.toBe(urls[1]!.toString());
+  });
+
+  it("never puts a registrant's phishing name in a live notification (A2-13)", async () => {
+    const db = getDb();
+    const f = await fixture("recipient-name");
+    await db.messageTemplate.update({ where: { id: f.template.id }, data: { subject: "{{name}}：{{live_title}}", body: "{{name}} 你好\n{{unsubscribe_url}}" } });
+    const cases = [
+      ...PHISHING_NAMES.map(({ name }) => ({ name, greeting: MESSAGE_TEMPLATE_NAME_FALLBACK })),
+      { name: STACKED_FORMAT_NAME.name, greeting: STACKED_FORMAT_NAME.cleaned },
+      ...NORMAL_NAMES.map((name) => ({ name, greeting: name })),
+    ];
+    for (const { name, greeting } of cases) {
+      const lead = await db.formSubmission.create({
+        data: { formId: f.live.formId!, liveId: f.live.id, name, email: `lead-${randomUUID()}@example.test`, verificationStatus: "VERIFIED", verifiedAt: new Date() },
+      });
+      const result = await materialize({ ...f.input, submissionId: lead.id });
+      expect(result, name).toMatchObject({ status: "queued" });
+      const row = await db.emailDelivery.findUniqueOrThrow({ where: { id: (result as { deliveryId: string }).deliveryId } });
+      const mail = revealEmailDeliveryPayload(row.payloadEncryptedEnvelope, { vendorId: f.vendor.id, deliveryId: row.id });
+      expect(mail.subject, name).toBe(`${greeting}：Synthetic live`);
+      expect(mail.body.startsWith(`${greeting} 你好\n`), name).toBe(true);
+      expectNoFormatting(mail);
+      if (greeting === MESSAGE_TEMPLATE_NAME_FALLBACK) expectNoPhishingTrace(mail);
+    }
   });
 
   it("keeps one active row per recipient and rule across config changes, reactivates a returning snapshot and never re-sends", async () => {

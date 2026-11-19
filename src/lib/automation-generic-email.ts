@@ -1,5 +1,11 @@
 // Pure constants and functions only: the rule form (a client component) and the
 // action schema import this file, so it must never import a server module.
+import {
+  cleanInlineEmailValue,
+  CONTROL_CHARACTER_CLASS,
+  foldInvisibleAndWidth,
+  INVISIBLE_CHARACTER_SOURCE,
+} from "@/lib/safe-recipient-name";
 
 /**
  * The link-free e-mail template (`generic_message`, A2-04): the merchant writes
@@ -49,15 +55,11 @@ export function genericEmailVariablesForTrigger(trigger: string): readonly Gener
 }
 
 const VARIABLE_PATTERN = /\{\{\s*([a-z_]+)\s*\}\}/gu;
-// Invisible or direction-changing characters: soft hyphen, ALM, Mongolian vowel separator, zero-width, LRM/RLM, bidi controls, word joiner, BOM.
-const INVISIBLE_SOURCE = "[\\u00ad\\u061c\\u180e\\u200b-\\u200f\\u202a-\\u202e\\u2060-\\u2064\\u2066-\\u2069\\ufeff]";
-const INVISIBLE = new RegExp(INVISIBLE_SOURCE, "u");
-const INVISIBLE_GLOBAL = new RegExp(INVISIBLE_SOURCE, "gu");
-// C0/C1 controls, DEL, line and paragraph separators.
-const CONTROL_SOURCE = "\\u0000-\\u001f\\u007f-\\u009f\\u2028\\u2029";
-const SUBJECT_FORBIDDEN = new RegExp(`[${CONTROL_SOURCE}]`, "u");
+// Invisible, direction-changing and control characters: the same sets the recipient-name cleaning uses.
+const INVISIBLE = new RegExp(INVISIBLE_CHARACTER_SOURCE, "u");
+const SUBJECT_FORBIDDEN = new RegExp(`[${CONTROL_CHARACTER_CLASS}]`, "u");
 const BODY_FORBIDDEN = new RegExp("[\\u0000-\\u0008\\u000b\\u000c\\u000e-\\u001f\\u007f-\\u009f\\u2028\\u2029]", "u");
-const CONTROL_RUNS = new RegExp(`[${CONTROL_SOURCE}]+`, "gu");
+const CONTROL_RUNS = new RegExp(`[${CONTROL_CHARACTER_CLASS}]+`, "gu");
 // The template is link-free: no scheme, markdown link, www host or text that reads as a web address.
 // - a scheme counts only when something follows it right away (`javascript:alert`, not "JavaScript: 從零開始");
 // - a host counts when it ends in a common top-level domain (also the reserved test ones), or when a
@@ -73,16 +75,10 @@ const LINK_LIKE = { test: (text: string) => {
   const plain = text.replace(TECH_NAMES, " ");
   return LINK_SCHEME.test(plain) || LINK_WWW.test(plain) || LINK_HOST_COMMON_TLD.test(plain) || LINK_HOST_WITH_PATH.test(plain);
 } };
-// Anything with a dot between word characters, for a value an outsider typed (a registrant's name).
-const ADDRESS_LIKE = /:\/\/|\bwww\.|[\p{L}\p{N}-]+(?:[.。][\p{L}\p{N}-]+)+/iu;
-
-function fold(text: string) {
-  return text.normalize("NFKC").replace(INVISIBLE_GLOBAL, "");
-}
 
 /** Whether the text would read as a link or web address (checked on its NFKC form, so full-width letters count). */
 export function genericEmailTextLooksLikeLink(text: string) {
-  return LINK_LIKE.test(fold(text));
+  return LINK_LIKE.test(foldInvisibleAndWidth(text));
 }
 
 export type GenericEmailContent = { subject: string; body: string };
@@ -124,10 +120,6 @@ export function genericEmailVariablesUsed(content: GenericEmailContent) {
   return used;
 }
 
-function clip(text: string, maxLength: number) {
-  return Array.from(text).slice(0, maxLength).join("");
-}
-
 /** At most `maxUnits` UTF-16 units, adding whole code points only (never half of a surrogate pair). */
 function clipUnits(text: string, maxUnits: number) {
   let result = "";
@@ -138,46 +130,15 @@ function clipUnits(text: string, maxUnits: number) {
   return result;
 }
 
-// A "#", "1." or bullet (also stacked, "# # x") at the start would make a heading, list or quote.
-const LEADING_FORMAT = /^(?:\s*(?:#+|\d+[.)]|[-+*>])\s*)+/u;
-
-function cleanOnce(value: string) {
-  return value
-    .normalize("NFKC")
-    .replace(INVISIBLE_GLOBAL, "")
-    .replace(CONTROL_RUNS, " ")
-    .trim()
-    // Before the brackets go, so "1)" is still seen as a list marker.
-    .replace(LEADING_FORMAT, "")
-    .replace(/[[\]()*<>{}`]/gu, "")
-    .replace(/https?:\/\//giu, "")
-    .replace(/\s+/gu, " ")
-    .trim()
-    .replace(LEADING_FORMAT, "");
-}
-
 /**
  * One variable value made safe for plain text that the mail pipeline reads as a
- * small markdown dialect: one line, no markers that make a link, bold, heading
- * or list, no `{{ }}`. Cleaning repeats until nothing changes, so removing one
- * piece can never re-assemble another (`hthttps://tps://` and the like).
- * `outsider`: a value somebody outside the business typed (a registrant's
- * name); anything that looks like a web address, before or after cleaning, is
- * dropped whole. Empty means "use the fallback".
+ * small markdown dialect (shared with every other e-mail that carries a
+ * recipient's name: src/lib/safe-recipient-name.ts). `outsider`: a value
+ * somebody outside the business typed (a registrant's name); anything that
+ * looks like a web address is dropped whole. Empty means "use the fallback".
  */
 export function genericEmailVariableValue(value: string | null | undefined, options: { maxLength?: number; outsider?: boolean } = {}) {
-  const maxLength = options.maxLength ?? 80;
-  const original = value ?? "";
-  if (options.outsider && ADDRESS_LIKE.test(fold(original))) return "";
-  let current = original;
-  for (let round = 0; round < 20; round += 1) {
-    const next = cleanOnce(current);
-    if (next === current) break;
-    current = next;
-  }
-  if (options.outsider && ADDRESS_LIKE.test(fold(current))) return "";
-  if (/:\/\/|\bwww\./iu.test(fold(current))) return "";
-  return clip(current, maxLength).trim();
+  return cleanInlineEmailValue(value, options);
 }
 
 const FALLBACKS: Record<GenericEmailVariable, string> = { name: "你", vendor_name: "我們", live_title: "本活動" };
