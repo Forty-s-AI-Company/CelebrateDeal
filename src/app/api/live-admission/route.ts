@@ -4,7 +4,7 @@ import { readJsonBody, requireSameOriginRequest } from "@/lib/api-security";
 import { admitLiveViewer, LIVE_VIEWER_SESSION_TTL_MS, LiveQuotaAdmissionError, liveViewerCookieOptions, liveViewerTokenFromRequest, releaseLiveViewer } from "@/lib/live-quota-admission";
 import { getDb } from "@/lib/db";
 import { evergreenSessionTokenFromRequest } from "@/lib/evergreen-viewer-session";
-import { registrationSessionTokenFromRequest } from "@/lib/live-fixed-sessions-store";
+import { registrationSessionTokenFromRequest, sessionHintTokenFromRequest } from "@/lib/live-fixed-sessions-store";
 import { recordAttendanceForAdmission } from "@/lib/live-registration-attendance";
 import { createLiveViewerPass, LIVE_VIEWER_PASS_COOKIE, liveViewerPassCookieOptions } from "@/lib/live-viewer-pass";
 import { checkRateLimit } from "@/lib/rate-limit";
@@ -51,6 +51,8 @@ export async function POST(request: Request) {
       token: liveViewerTokenFromRequest(request),
       evergreenToken: evergreenSessionTokenFromRequest(request, payload.liveId),
       registrationToken: registrationSessionTokenFromRequest(request),
+      // A2-10: a personal watch link's device follows its registration's own fixed session.
+      sessionHintToken: sessionHintTokenFromRequest(request, payload.liveId),
     });
     // Q-11: a granted admission is the proof a registrant watched (form_no_show),
     // and while the viewer's own session plays (not the replay) each renewal
