@@ -100,4 +100,21 @@ describe("/interaction-scripts route", () => {
     expect(html).toContain("已不存在或不屬於目前商店");
     expect(html).toContain("請重新選擇");
   });
+
+  it("tells the user to refresh and retry after a serialization conflict while copying", async () => {
+    const html = renderToStaticMarkup(await InteractionScriptsPage({
+      searchParams: Promise.resolve({ error: "conflict" }),
+    }));
+
+    expect(html).toContain('role="alert"');
+    expect(html).toContain("同時有其他變更，請重新整理後再試一次");
+  });
+
+  it("shows no conflict notice without the conflict error", async () => {
+    const html = renderToStaticMarkup(await InteractionScriptsPage({
+      searchParams: Promise.resolve({}),
+    }));
+
+    expect(html).not.toContain("同時有其他變更");
+  });
 });

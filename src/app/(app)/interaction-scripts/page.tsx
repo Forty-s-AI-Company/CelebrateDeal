@@ -53,6 +53,11 @@ export default async function InteractionScriptsPage({
           這份互動腳本已不存在或不屬於目前商店，清單已重新整理，請重新選擇。
         </p>
       ) : null}
+      {params.error === "conflict" ? (
+        <p role="alert" className="mb-4 rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-800">
+          同時有其他變更，請重新整理後再試一次。
+        </p>
+      ) : null}
       {scripts.length === 0 ? (
         <EmptyState title="還沒有互動腳本" description="建立互動腳本後，可綁定到直播間並依影片秒數自動觸發。" action={<ButtonLink href="/interaction-scripts/new">新增互動腳本</ButtonLink>} />
       ) : (
