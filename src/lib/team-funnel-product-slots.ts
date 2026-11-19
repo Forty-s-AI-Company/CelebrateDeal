@@ -1,3 +1,4 @@
+import type { Prisma } from "@prisma/client";
 import { getDb } from "@/lib/db";
 import {
   TeamFunnelAccessDeniedError,
@@ -335,16 +336,40 @@ export async function createTeamFunnelTemplateProductSlot(input: {
   });
 }
 
-/** Persists only B's scoped product selection/link after slot-lock authorization. */
-export async function upsertTeamFunnelPartnerProductSlotOverride(input: {
+/** A partner slot override that passed every check and only needs to be written. */
+export type TeamFunnelPartnerProductSlotOverrideWrite = {
+  vendorId: string;
+  pageId: string;
+  productSlotId: string;
+  productId: string | null;
+  overrideUrl: string | null;
+};
+
+type TeamFunnelPartnerProductSlotOverrideInput = {
   teamId: string;
   pageId: string;
   slotKey: TeamFunnelProductSlotKey;
   productId?: string | null;
   overrideUrl?: string | null;
-}) {
+};
+
+/** Persists only B's scoped product selection/link after slot-lock authorization. */
+export async function upsertTeamFunnelPartnerProductSlotOverride(input: TeamFunnelPartnerProductSlotOverrideInput) {
+  return writeTeamFunnelPartnerProductSlotOverride(getDb(), await prepareTeamFunnelPartnerProductSlotOverride(input));
+}
+
+/**
+ * Runs every check of `upsertTeamFunnelPartnerProductSlotOverride` without
+ * writing: approved slot, safe URL, page and slot-lock access, and that the
+ * product is an active, confirmed product of the actor's vendor. A caller that
+ * saves several things at once validates all of them first and then writes the
+ * results in one transaction (A3-02).
+ */
+export async function prepareTeamFunnelPartnerProductSlotOverride(
+  input: TeamFunnelPartnerProductSlotOverrideInput,
+): Promise<TeamFunnelPartnerProductSlotOverrideWrite> {
   assertApprovedTeamFunnelProductSlot(input.slotKey);
-  if (input.overrideUrl != null) input.overrideUrl = assertSafeTeamFunnelProductUrl(input.overrideUrl);
+  const overrideUrl = input.overrideUrl != null ? assertSafeTeamFunnelProductUrl(input.overrideUrl) : null;
 
   const actor = await requireTeamFunnelActor(input.teamId);
   const page = await loadPage(actor, input.pageId);
@@ -367,16 +392,29 @@ export async function upsertTeamFunnelPartnerProductSlotOverride(input: {
     productId = product.id;
   }
 
-  return getDb().partnerProductSlotOverride.upsert({
-    where: { pageId_productSlotId: { pageId: page.id, productSlotId: slot.id } },
+  return { vendorId: actor.vendorId, pageId: page.id, productSlotId: slot.id, productId, overrideUrl };
+}
+
+/**
+ * Writes a prepared override. `client` is the transaction that groups it with
+ * the caller's other writes. The composite foreign keys of
+ * PartnerProductSlotOverride bind the page, the slot and the product to
+ * `vendorId` in this final statement.
+ */
+export function writeTeamFunnelPartnerProductSlotOverride(
+  client: Prisma.TransactionClient,
+  write: TeamFunnelPartnerProductSlotOverrideWrite,
+) {
+  return client.partnerProductSlotOverride.upsert({
+    where: { pageId_productSlotId: { pageId: write.pageId, productSlotId: write.productSlotId } },
     create: {
-      vendorId: actor.vendorId,
-      pageId: page.id,
-      productSlotId: slot.id,
-      productId,
-      overrideUrl: input.overrideUrl ?? null,
+      vendorId: write.vendorId,
+      pageId: write.pageId,
+      productSlotId: write.productSlotId,
+      productId: write.productId,
+      overrideUrl: write.overrideUrl,
     },
-    update: { productId, overrideUrl: input.overrideUrl ?? null },
+    update: { productId: write.productId, overrideUrl: write.overrideUrl },
   });
 }
 

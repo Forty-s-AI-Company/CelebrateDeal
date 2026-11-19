@@ -325,3 +325,57 @@ staging 沒有直接 SQL 存取權，步驟 1、3、4 在 staging 一律透過 `
 | staging | 2026-11-03 | `Staging migrate deploy`（run 41580688491）：`090000`、`090100` 已套用，`090200` 以 P3018／SQLSTATE 23514 失敗並標為 failed | 主對話 | 以上方 remediation workflow 診斷與修復，修復後補記 inspect 結果 |
 | staging | 2026-11-03 | `Staging ledger remediation` inspect（run 41608382196）：3 筆違規（`Settlement` `reviewing`、`PayoutBatch` `reviewing`、`PayoutItem` `pending_review`，皆為 2026-07 seed 舊狀態）；已登記 fix `legacy-seed-status-20261103`（改為 #540 seed 的 `ready_for_payout`／`draft`／`pending`），尚未執行 | 主對話 | apply-fix 執行並確認違規為 0 後再補記 |
 | production | 待執行 | — | owner | 部署前由 owner 查詢並補記 |
+
+## 8. 部署前檢查：Live Studio 草稿的直播綁 vendor（`20261119150000`／`20261119150100`，A3-02）
+
+兩個 migration 依序套用：
+
+| Migration | 內容 | 鎖 |
+|---|---|---|
+| `20261119150000_live_studio_draft_live_vendor_fk` | DO block 先檢查 `server_version_num >= 150000`，不符合就 `RAISE EXCEPTION 'A3-02 needs PostgreSQL 15+ …; this server is <版本>'`；符合才 `EXECUTE` 加上 `LiveStudioDraft_vendorId_liveId_fkey`（`(vendorId, liveId) → Live(vendorId, id)`，`ON DELETE SET NULL ("liveId")`，`NOT VALID`，不掃表）。 | `LiveStudioDraft` 與 `Live` 各 SHARE ROW EXCLUSIVE，持有到本檔 commit（毫秒級；直播的寫入等待、讀取不受影響）；`lock_timeout = 5s` |
+| `20261119150100_live_studio_draft_live_vendor_fk_validate` | 依序：跨商家草稿計數（大於 0 就 `RAISE EXCEPTION 'A3-02: N LiveStudioDraft row(s) name a live of another vendor …'`，只有筆數）→ `VALIDATE CONSTRAINT` → `DROP CONSTRAINT "LiveStudioDraft_liveId_fkey"`（舊的單欄外鍵）。 | VALIDATE：`LiveStudioDraft` SHARE UPDATE EXCLUSIVE、`Live` ROW SHARE，讀寫照常。DROP：`LiveStudioDraft` **與 `Live`** 都是 ACCESS EXCLUSIVE（PG16 實測），從 DROP 持有到緊接著的 commit，這一瞬間直播頁的讀取也會排隊；`lock_timeout = 5s` |
+
+**步驟**
+
+1. 用唯讀連線（或 `BEGIN READ ONLY; … ROLLBACK;`）在目標資料庫執行下面兩個查詢。只回傳版本與筆數，不輸出 id 或租戶。
+
+   ```sql
+   SHOW server_version_num;
+   ```
+
+   ```sql
+   SELECT count(*) AS foreign_drafts
+     FROM "LiveStudioDraft" AS d
+    WHERE d."liveId" IS NOT NULL
+      AND NOT EXISTS (
+        SELECT 1 FROM "Live" AS l WHERE l."id" = d."liveId" AND l."vendorId" = d."vendorId"
+      );
+   ```
+
+2. `server_version_num` 小於 `150000`（PostgreSQL 14 以下）：不要部署。`ON DELETE SET NULL (欄位)` 是 15 起的語法，第一個 migration 會以上述訊息中止（P3018／P3009）。先升級資料庫，或另開 PR 改用「保留單欄 SET NULL 外鍵＋另加 NO ACTION 複合外鍵」的寫法（`20260808020000_live_resource_tenant_binding` 的做法）。不要修改已合併的 migration。
+3. `foreign_drafts = 0`：把日期與結果記在下方表格，再部署。寫入路徑（`POST /api/live-studio/drafts`、`upsertLiveAction`）都以 vendorId 查直播，預期是 0。
+4. `foreign_drafts > 0`：不要部署第二個 migration。由 owner 授權後逐筆判斷（在受控環境內 `SELECT d."id", d."vendorId", d."liveId" …`，不貼到外部）：草稿只是暫存，通常以單筆 `UPDATE "LiveStudioDraft" SET "liveId" = NULL WHERE "id" = '…' AND "vendorId" = '…'` 解除綁定，或刪除該草稿。處理完再查一次，0 才部署。
+5. 部署時仍失敗：
+   - `20261119150000` 出現 `A3-02 needs PostgreSQL 15+`（P3018／P3009）：整個檔案已 rollback、沒有任何變更。依步驟 2 處理後執行 `npx prisma migrate resolve --rolled-back 20261119150000_live_studio_draft_live_vendor_fk`，再部署。
+   - `20261119150100` 出現 `A3-02: N LiveStudioDraft row(s) name a live of another vendor`（P3018／P3009）：整個檔案 rollback；新外鍵維持 NOT VALID，新寫入已受保護，舊外鍵仍在。依步驟 4 處理資料，執行 `npx prisma migrate resolve --rolled-back 20261119150100_live_studio_draft_live_vendor_fk_validate`，再 `npx prisma migrate deploy`。
+   - `lock_timeout`（`canceling statement due to lock timeout`，SQLSTATE 55P03）：有長交易持有 `Live` 或 `LiveStudioDraft` 的鎖。檔案已 rollback、沒有變更。用 `pg_stat_activity` 找出並等它結束（不要強制終止別人的連線），執行 `npx prisma migrate resolve --rolled-back <失敗的 migration 名稱>` 後重試。第二個檔案最後的 DROP 會短暫擋住直播頁的讀取，**建議在離峰（沒有進行中直播）時部署**。
+   - 執行 `prisma migrate resolve`／`migrate deploy` 時，`DATABASE_URL` 與 `DIRECT_URL` 都要注入並指向同一個目標庫（理由同 §7 步驟 4）。
+6. 部署後確認只剩一條、已驗證的外鍵：
+
+   ```sql
+   SELECT conname, convalidated, pg_get_constraintdef(oid)
+     FROM pg_constraint
+    WHERE conrelid = '"LiveStudioDraft"'::regclass AND confrelid = '"Live"'::regclass AND contype = 'f';
+   ```
+
+   預期一列：`LiveStudioDraft_vendorId_liveId_fkey`、`true`、`FOREIGN KEY ("vendorId", "liveId") REFERENCES "Live"("vendorId", id) ON UPDATE CASCADE ON DELETE SET NULL ("liveId")`。
+
+部署順序：程式不依賴這兩個 migration，先後皆可；回滾程式不需要回滾 migration。
+
+**查詢紀錄**
+
+| 環境 | 日期 | `server_version_num` | `foreign_drafts` | 執行者 | 備註 |
+|---|---|---|---|---|---|
+| loopback disposable（PG16，合成資料） | 2026-11-19 | 160014 | 合成 1 筆時第二個檔案如預期失敗；刪除後通過 | engineer-hard | 只證明查詢與 migration 行為，不代表 staging／production |
+| staging | 待執行 | 17.6（2026-10-19 查證的版本） | — | 主對話（唯讀） | 部署前補記 |
+| production | 待執行 | 未查證 | — | owner | 部署前由 owner 查詢並補記；須 15 以上 |

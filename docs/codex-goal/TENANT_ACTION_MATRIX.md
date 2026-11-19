@@ -28,7 +28,7 @@
 
 | action | 檔案 | DB 測試 | 外商家 ID 的結果 |
 | --- | --- | --- | --- |
-| `upsertLiveAction` | `src/app/actions.ts` | C `live:`（B 的直播、影片、報名表、Email 範本、互動腳本、主視覺圖） | `?error=invalid_reference`；A 的草稿即使綁到 B 的直播 ID 也一樣 |
+| `upsertLiveAction` | `src/app/actions.ts` | C `live:`（B 的直播、影片、報名表、Email 範本、互動腳本、主視覺圖） | `?error=invalid_reference`；表單帶 B 的直播 ID 也一樣。A3-02 起資料庫已不接受 A 的草稿綁到 B 的直播（複合外鍵），測試改以 A 自己的草稿配 B 的直播 ID |
 | `endLiveInteractionAction` | `src/app/actions/interaction-actions.ts` | C `live poll:` | 「投票不存在或已經結束。」 |
 | `getLivePollStudioSnapshotAction` | 同上 | C `live poll:`（讀取） | 空陣列，不含 B 的投票 |
 | `upsertInteractionRoleAction` | 同上 | C `interaction role:`（B 的角色、B 的頭像圖） | `missing_role`／`invalid_role` |
@@ -37,7 +37,7 @@
 | `upsertInteractionScriptAction` | 同上 | C `interaction script:`（覆寫 B 的腳本、排程 B 的角色、聚焦 B 的商品） | `missing_script`／`invalid_reference` |
 | `saveInteractionScript` | 同上 | C `interaction script (native form transport):` | `missing_script` |
 | `unbindInteractionScriptFromLiveAction` | 同上 | C `interaction script:`（B 的直播、A 的直播配 B 的腳本） | 「直播不存在或未綁定此互動腳本。」 |
-| `duplicateInteractionScriptAction` | 同上 | C `interaction script:` | 回列表，與來源不存在相同，不建立副本 |
+| `duplicateInteractionScriptAction` | 同上 | C `interaction script:` | `missing_script`（A3-02 起；與來源不存在相同），不建立副本 |
 | `deleteInteractionScriptAction` | 同上 | C `interaction script:` | `missing_script` |
 | `upsertVideoAction` | `src/app/actions/webinar-resource-actions.ts` | C `video:`（B 的影片、B 的縮圖資產） | `/videos?error=not_found`／`invalid_image_asset` |
 | `archiveVideoAction`、`restoreVideoAction` | 同上 | C `video:` | `/videos?error=not_found` |
@@ -55,7 +55,7 @@
 | `selectBillingPlanAction`（n.a.：方案是平台共用目錄） | `src/app/(app)/billing/plans/actions.ts` | C `billing plan selection` | 選免費方案只改 A 的訂閱與用量上限；B 的有效與待付款訂閱不變；偽造的 `vendorId` 欄位被忽略 |
 | `manageTeamFunnelTemplateAction`（create、publish、create-share、disable-share） | `src/app/actions/team-funnel-template-actions.ts` | T `team template:`（B 的團隊、商品、webinar、模板、原始頁） | 「你沒有管理這個團隊模板的權限…」 |
 | `claimTeamTemplateAction` | `src/app/actions/team-funnel-partner-actions.ts` | T `partner page: claim`（B 真正的分享碼） | 「此分享連結已過期、已停用，或不屬於你的團隊。」 |
-| `savePartnerPageAction`、`setPartnerPagePublishAction` | 同上 | T `partner page:`（B 的夥伴頁、B 的團隊 ID、A 的頁配 B 的商品） | 「你沒有存取這個夥伴頁的權限…」 |
+| `savePartnerPageAction`、`setPartnerPagePublishAction` | 同上 | T `partner page:`（B 的夥伴頁、B 的團隊 ID、A 的頁配 B 的商品） | 「你沒有存取這個夥伴頁的權限…」；A 的頁配 B 的商品時 A 的文字也不寫入（A3-02） |
 | `createTeamLiveShareAction`、`disableTeamLiveShareAction` | `src/app/actions/team-funnel-live-share-actions.ts` | T `Live share:`（B 的頁、B 的成員、B 的團隊） | 無權限、不能分享或分享不存在 |
 
 ## 第二批新增（#638，全部真實 PostgreSQL）
@@ -132,7 +132,7 @@ Server Action 已全部有 DB 層回歸。下列 route 都已綁定 vendor（見
 - `affiliate-clicks` 接受任意 client `vendorId` 建立點擊紀錄（有每分鐘 60 次限制），推廣者與直播仍在該 vendor 內解析，不洩漏資料，但可灌別家的點擊表。
 - 兩租戶夾具的清理一定因 `AffiliateCommissionLedgerEntry` 的 RESTRICT 失敗而提早結束（#464 審查 MINOR 已記錄），第二、三批多建立的列同樣留在可拋棄的測試資料庫。第三批另建立的 `BillingPlan` 是平台共用列，同樣留在測試資料庫。
 - 第三批（A2-06）觀察，都不是跨租戶問題：
-  - `savePartnerPageAction` 先寫入夥伴頁文字，再由商品欄位服務檢查商品；A 的頁帶 B 的商品時，B 的商品不會被存入，但 A 自己頁面的文字已更新而回應是錯誤。只影響同一商家內的一致性（測試已鎖住這個現況）。
-  - `duplicateInteractionScriptAction` 遇到不存在或別家的來源時，和成功一樣直接回到腳本列表，沒有錯誤提示；不建立副本、不洩漏存在與否。
+  - ~~`savePartnerPageAction` 先寫入夥伴頁文字，再由商品欄位服務檢查商品；A 的頁帶 B 的商品時，B 的商品不會被存入，但 A 自己頁面的文字已更新而回應是錯誤。~~ A3-02 已修：先驗證文字與每個商品欄位（`prepareTeamFunnelPartnerProductSlotOverride`），再在同一個交易寫入文字與所有欄位；任何一項被拒絕時什麼都不寫。T 的對應測試改成斷言 A 的快照完全不變。
+  - ~~`duplicateInteractionScriptAction` 遇到不存在或別家的來源時，和成功一樣直接回到腳本列表，沒有錯誤提示。~~ A3-02 已修：不存在、別家或格式不對的來源一律 `?error=missing_script`（與刪除相同，列表頁顯示「已不存在或不屬於目前商店」），兩者回應相同、不洩漏存在與否。
   - `landingPageAction` 的 unpublish 是單一條件更新，別家、不存在或版本過舊都回「已有較新的版本」，與其他操作的「找不到」訊息不同，但別家與不存在結果相同。
-  - `LiveStudioDraft.liveId` 的外鍵只參照 `Live.id`，沒有綁 vendor。正常寫入點（`POST /api/live-studio/drafts`）會先以 vendorId 檢查直播，`upsertLiveAction` 也以 vendorId 重新查直播，所以無法利用；若要縱深防禦，可改成 `(vendorId, liveId)` 複合外鍵（需要 migration）。
+  - ~~`LiveStudioDraft.liveId` 的外鍵只參照 `Live.id`，沒有綁 vendor。~~ A3-02 已改成 `(vendorId, liveId) → Live(vendorId, id)` 複合外鍵（migration `20261119150000`／`20261119150100`，見 `PRISMA_INVARIANTS.md`）；測試 `src/lib/live-studio-draft-live-vendor-fk-migration.db.test.ts`。

@@ -10,7 +10,9 @@ const mocks = vi.hoisted(() => ({
   partnerFunnelPageFindFirst: vi.fn(),
   partnerFunnelPageUpdateMany: vi.fn(),
   partnerFunnelPageShareSettingUpsert: vi.fn(),
-  upsertTeamFunnelPartnerProductSlotOverride: vi.fn(),
+  prepareTeamFunnelPartnerProductSlotOverride: vi.fn(),
+  writeTeamFunnelPartnerProductSlotOverride: vi.fn(),
+  transaction: vi.fn(),
   redirect: vi.fn(),
   revalidatePath: vi.fn(),
 }));
@@ -20,6 +22,7 @@ vi.mock("next/navigation", () => ({ redirect: mocks.redirect }));
 vi.mock("@/lib/csrf", () => ({ assertServerActionSecurity: mocks.assertServerActionSecurity }));
 vi.mock("@/lib/db", () => ({
   getDb: () => ({
+    $transaction: mocks.transaction,
     teamMembership: { findMany: mocks.teamMembershipFindMany },
     teamMembershipRelationship: { findMany: mocks.teamMembershipRelationshipFindMany },
     partnerFunnelPage: {
@@ -34,8 +37,10 @@ vi.mock("@/lib/team-funnel-access", () => ({
   requireTeamFunnelActor: mocks.requireTeamFunnelActor,
   TeamFunnelAccessDeniedError: class TeamFunnelAccessDeniedError extends Error {},
 }));
-vi.mock("@/lib/team-funnel-product-slots", () => ({
-  upsertTeamFunnelPartnerProductSlotOverride: mocks.upsertTeamFunnelPartnerProductSlotOverride,
+vi.mock("@/lib/team-funnel-product-slots", async (importOriginal) => ({
+  TeamFunnelInvalidProductUrlError: (await importOriginal<typeof import("@/lib/team-funnel-product-slots")>()).TeamFunnelInvalidProductUrlError,
+  prepareTeamFunnelPartnerProductSlotOverride: mocks.prepareTeamFunnelPartnerProductSlotOverride,
+  writeTeamFunnelPartnerProductSlotOverride: mocks.writeTeamFunnelPartnerProductSlotOverride,
 }));
 vi.mock("@/lib/team-funnel-sharing", async (importOriginal) => ({
   ...await importOriginal<typeof import("@/lib/team-funnel-sharing")>(),
@@ -122,7 +127,14 @@ beforeEach(() => {
   mocks.partnerFunnelPageFindFirst.mockResolvedValue(partnerPage);
   mocks.partnerFunnelPageUpdateMany.mockResolvedValue({ count: 1 });
   mocks.partnerFunnelPageShareSettingUpsert.mockResolvedValue({ id: "share-setting-1" });
-  mocks.upsertTeamFunnelPartnerProductSlotOverride.mockResolvedValue({ id: "slot-override-1" });
+  // The transaction client is the same mocked model API; the callback runs once.
+  mocks.transaction.mockImplementation(async (callback: (tx: unknown) => Promise<unknown>) => callback({
+    partnerFunnelPage: { updateMany: mocks.partnerFunnelPageUpdateMany },
+  }));
+  mocks.prepareTeamFunnelPartnerProductSlotOverride.mockImplementation(async (input: { pageId: string; slotKey: string; productId: string | null; overrideUrl: string | null }) => ({
+    vendorId: "vendor-1", pageId: input.pageId, productSlotId: `slot-${input.slotKey}`, productId: input.productId, overrideUrl: input.overrideUrl,
+  }));
+  mocks.writeTeamFunnelPartnerProductSlotOverride.mockResolvedValue({ id: "slot-override-1" });
   mocks.redirect.mockImplementation((path: string) => {
     throw new Error(`redirect:${path}`);
   });
@@ -171,11 +183,21 @@ describe("savePartnerPageAction", () => {
         ctaUrl: "https://app.example.test/products/product-1",
       },
     });
-    expect(mocks.upsertTeamFunnelPartnerProductSlotOverride).toHaveBeenCalledTimes(4);
-    expect(mocks.upsertTeamFunnelPartnerProductSlotOverride).toHaveBeenCalledWith({
+    expect(mocks.prepareTeamFunnelPartnerProductSlotOverride).toHaveBeenCalledTimes(4);
+    expect(mocks.prepareTeamFunnelPartnerProductSlotOverride).toHaveBeenCalledWith({
       teamId: "team-1",
       pageId: "page-1",
       slotKey: "main_product",
+      productId: "product-1",
+      overrideUrl: "https://app.example.test/products/product-1",
+    });
+    // Copy and all four slots are written in one transaction.
+    expect(mocks.transaction).toHaveBeenCalledTimes(1);
+    expect(mocks.writeTeamFunnelPartnerProductSlotOverride).toHaveBeenCalledTimes(4);
+    expect(mocks.writeTeamFunnelPartnerProductSlotOverride).toHaveBeenCalledWith(expect.anything(), {
+      vendorId: "vendor-1",
+      pageId: "page-1",
+      productSlotId: "slot-main_product",
       productId: "product-1",
       overrideUrl: "https://app.example.test/products/product-1",
     });
@@ -190,7 +212,45 @@ describe("savePartnerPageAction", () => {
 
     expect(result).toEqual({ status: "error", message: "CTA 連結必須是有效的完整網址。" });
     expect(mocks.partnerFunnelPageUpdateMany).not.toHaveBeenCalled();
-    expect(mocks.upsertTeamFunnelPartnerProductSlotOverride).not.toHaveBeenCalled();
+    expect(mocks.prepareTeamFunnelPartnerProductSlotOverride).not.toHaveBeenCalled();
+    expect(mocks.transaction).not.toHaveBeenCalled();
+  });
+
+  it("writes nothing when a later product slot is refused (A3-02)", async () => {
+    const { TeamFunnelAccessDeniedError } = await import("@/lib/team-funnel-access");
+    mocks.prepareTeamFunnelPartnerProductSlotOverride
+      .mockResolvedValueOnce({ vendorId: "vendor-1", pageId: "page-1", productSlotId: "slot-main_product", productId: "product-1", overrideUrl: null })
+      .mockRejectedValueOnce(new TeamFunnelAccessDeniedError("missing_resource"));
+
+    await expect(savePartnerPageAction({ status: "idle", message: "" }, pageFormData())).resolves.toEqual({
+      status: "error",
+      message: "你沒有存取這個夥伴頁的權限，或它已不再可用。",
+    });
+    expect(mocks.transaction).not.toHaveBeenCalled();
+    expect(mocks.partnerFunnelPageUpdateMany).not.toHaveBeenCalled();
+    expect(mocks.writeTeamFunnelPartnerProductSlotOverride).not.toHaveBeenCalled();
+  });
+
+  it("explains an unsafe product link and writes nothing", async () => {
+    const { TeamFunnelInvalidProductUrlError } = await import("@/lib/team-funnel-product-slots");
+    mocks.prepareTeamFunnelPartnerProductSlotOverride.mockRejectedValueOnce(new TeamFunnelInvalidProductUrlError());
+
+    await expect(savePartnerPageAction({ status: "idle", message: "" }, pageFormData())).resolves.toEqual({
+      status: "error",
+      message: "商品連結必須是有效的 http 或 https 完整網址。",
+    });
+    expect(mocks.transaction).not.toHaveBeenCalled();
+  });
+
+  it("refuses the save when the page disappears before the transactional copy update", async () => {
+    mocks.partnerFunnelPageUpdateMany.mockResolvedValueOnce({ count: 0 });
+
+    await expect(savePartnerPageAction({ status: "idle", message: "" }, pageFormData())).resolves.toEqual({
+      status: "error",
+      message: "你沒有存取這個夥伴頁的權限，或它已不再可用。",
+    });
+    expect(mocks.writeTeamFunnelPartnerProductSlotOverride).not.toHaveBeenCalled();
+    expect(mocks.revalidatePath).not.toHaveBeenCalled();
   });
 
   it("fails closed when the page is not owned by the current promoter", async () => {

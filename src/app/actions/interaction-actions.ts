@@ -952,7 +952,10 @@ export async function duplicateInteractionScriptAction(formData: FormData) {
   const { auth, vendor } = await requireVendorManagerContext();
   const auditActor = managerAuditIdentity(auth);
   const id = text(formData, "id");
-  if (!id || id.length > 128) redirect("/interaction-scripts");
+  // A3-02: a missing, malformed or other vendor's source gets one explicit
+  // answer, the same one deleteInteractionScriptAction gives, so the response
+  // never tells whether the id exists in another vendor.
+  if (!id || id.length > 128) redirect("/interaction-scripts?error=missing_script");
   const db = getDb();
   let duplicateResult: {
     duplicateId: string;
@@ -1056,7 +1059,7 @@ export async function duplicateInteractionScriptAction(formData: FormData) {
       redirect("/interaction-scripts?error=invalid_event");
     }
     if (error instanceof InteractionScriptDuplicateSourceMissingError) {
-      redirect("/interaction-scripts");
+      redirect("/interaction-scripts?error=missing_script");
     }
     if (isRecordNotFoundError(error)) {
       redirect("/interaction-scripts?error=missing_script");

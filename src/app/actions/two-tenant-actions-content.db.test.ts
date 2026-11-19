@@ -292,8 +292,15 @@ const PAGE_INPUT_INVALID = "state:error:請確認頁面內容與已選的報名�
 const foreignRows: Row[] = [
   // Live Studio (upsertLiveAction, src/app/actions.ts).
   {
-    name: "live: save a draft that edits tenant B's Live (A's draft bound to B's live id)",
-    arrange: (f) => liveDraft(f, { videoId: f.a.c.videoId }, f.b.liveId),
+    // A3-02: the database no longer accepts A's draft bound to B's live
+    // (composite foreign key, src/lib/live-studio-draft-live-vendor-fk-migration.db.test.ts),
+    // so A's own draft carries B's live id in the form instead.
+    name: "live: save a draft that edits tenant B's Live (A's draft, B's live id in the form)",
+    arrange: async (f) => {
+      const form = await liveDraft(f, { videoId: f.a.c.videoId });
+      form.set("id", f.b.liveId);
+      return form;
+    },
     run: (_f, form) => upsertLiveAction(form),
     expected: "error=invalid_reference",
   },
@@ -398,8 +405,8 @@ const foreignRows: Row[] = [
   {
     name: "interaction script: duplicate tenant B's script into tenant A",
     run: (f) => duplicateInteractionScriptAction(formData({ id: f.b.c.scriptId })),
-    // The list page is the "missing source" answer too; the snapshots prove no copy was made.
-    expected: "redirect:/interaction-scripts",
+    // A3-02: an explicit error, the same as for a missing source; the snapshots prove no copy was made.
+    expected: "redirect:/interaction-scripts?error=missing_script",
   },
   {
     name: "interaction script: delete tenant B's script",
@@ -816,6 +823,8 @@ describe("second-tenant matrix (content and settings): foreign identifiers are r
     await same(() => deleteInteractionRoleAction(formData({ id: f.b.c.roleId })), () => deleteInteractionRoleAction(formData({ id: missing })));
     await same(() => deleteInteractionScriptAction(formData({ id: f.b.c.scriptId })), () => deleteInteractionScriptAction(formData({ id: missing })));
     await same(() => duplicateInteractionScriptAction(formData({ id: f.b.c.scriptId })), () => duplicateInteractionScriptAction(formData({ id: missing })));
+    // A3-02: both are an explicit error, not the success redirect to the list.
+    expect(await outcome(() => duplicateInteractionScriptAction(formData({ id: missing })))).toBe("redirect:/interaction-scripts?error=missing_script");
     await same(() => endLiveInteractionAction(idle, formData({ runId: f.b.c.pollRunId })), () => endLiveInteractionAction(idle, formData({ runId: missing })));
     await same(() => landingPageAction(pageIdle, pageOperation("publish", f.b.c.funnelPageId)), () => landingPageAction(pageIdle, pageOperation("publish", missing)));
     await db.landingPage.update({ where: { id: f.b.c.funnelPageId }, data: { status: "published", publishedAt: new Date() } });

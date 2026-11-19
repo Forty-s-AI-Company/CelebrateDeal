@@ -1095,7 +1095,9 @@ model LiveStudioDraft {
   updatedAt         DateTime  @updatedAt
 
   vendor Vendor @relation(fields: [vendorId], references: [id], onDelete: Cascade)
-  live   Live?  @relation(fields: [liveId], references: [id], onDelete: SetNull)
+  /// A3-02：複合外鍵把草稿的直播綁在同一個 vendor。刪除直播時只清掉 `liveId`
+  /// （migration 用 `ON DELETE SET NULL ("liveId")`，PostgreSQL 15+），`vendorId` 保留。
+  live   Live?  @relation(fields: [vendorId, liveId], references: [vendorId, id], onDelete: SetNull)
 
   @@unique([vendorId, id])
   @@unique([vendorId, liveId])
