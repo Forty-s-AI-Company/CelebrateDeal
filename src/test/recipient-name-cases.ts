@@ -45,14 +45,44 @@ export function renderedForms(mail: { subject: string; body: string }) {
   };
 }
 
+const URL_PATTERN = /https?:\/\/[^\s<>"'　)\]]+/giu;
+/** The platform's signed tokens (`lsw1.…`, `eu1.…`): random base64url that may spell a marker by chance. */
+const SIGNED_TOKEN_VALUE = /^[a-z]{1,6}\d+\.[\w-]{8,}(?:\.[\w-]+)*$/iu;
+
+function decodeEntities(value: string) {
+  return value.replaceAll("&amp;", "&");
+}
+
+/** Every http(s) URL in a form, plain text and href alike. */
+export function findUrls(value: string): string[] {
+  return [...decodeEntities(value).matchAll(URL_PATTERN)].map((match) => match[0]);
+}
+
+/**
+ * What a platform URL may legitimately contain, minus its random tokens: the
+ * path and the query with only the value of a token parameter blanked. A name
+ * smuggled in as another query value (`?name=evil`) stays visible to the markers.
+ */
+function urlWithoutToken(url: string) {
+  const parsed = new URL(url);
+  const query = [...parsed.searchParams].map(([key, val]) => (key === "token" || SIGNED_TOKEN_VALUE.test(val) ? `${key}=` : `${key}=${val}`));
+  return `${decodeURIComponent(parsed.pathname)} ${query.join("&")}`;
+}
+
+/** Text with every URL swapped for its token-free path and query; hostnames are asserted separately. */
+export function stripUrlTokens(value: string) {
+  return decodeEntities(value).replace(URL_PATTERN, (url) => ` ${urlWithoutToken(url)} `);
+}
+
 export function expectNoPhishingTrace(mail: { subject: string; body: string }) {
   const forms = renderedForms(mail);
   for (const [form, value] of Object.entries(forms)) {
-    for (const marker of PHISHING_MARKERS) expect(value, `${form}: ${value}`).not.toMatch(marker);
-  }
-  // Only the platform's own links remain (verification, unsubscribe, live, watch link).
-  for (const href of forms.html.matchAll(/<a href="([^"]+)"/gu)) {
-    expect(new URL(href[1]!.replaceAll("&amp;", "&")).hostname).toMatch(/(?:^|\.)example\.test$/u);
+    // Only the platform's own links remain (verification, unsubscribe, live, watch link).
+    for (const url of findUrls(value)) {
+      expect(new URL(url).hostname, `${form}: ${url}`).toMatch(/(?:^|\.)example\.test$/u);
+    }
+    const remaining = stripUrlTokens(value);
+    for (const marker of PHISHING_MARKERS) expect(remaining, `${form}: ${remaining}`).not.toMatch(marker);
   }
 }
 

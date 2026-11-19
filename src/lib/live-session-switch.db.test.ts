@@ -14,6 +14,7 @@ import { FORM_SUBMISSION_CHAT_SESSION_COOKIE } from "@/lib/form-submission-chat-
 import { syncLiveSessions } from "@/lib/live-fixed-sessions-store";
 import { redeemLiveSessionSwitchToken } from "@/lib/live-session-switch";
 import { createLiveSessionSwitchToken, liveSessionSwitchRedemptionId, verifyLiveSessionSwitchToken } from "@/lib/live-session-switch-token";
+import { stripUrlTokens } from "@/test/recipient-name-cases";
 
 /**
  * 「更換場次」 links in the already-registered notice (指定場次), against the
@@ -132,7 +133,7 @@ describe("the already-registered notice greets by the registration's own name (A
     expect(await register(fx, registrant.email, target!.id, undefined, "[點我](https://evil.test/login)")).toEqual({ status: 200, body: { ok: true, verificationRequired: true } });
     const { body } = await noticeToken(fx, registrant.id);
     expect(body.startsWith("王小明：\n\n")).toBe(true);
-    expect(body).not.toMatch(/evil|點我/u);
+    expect(stripUrlTokens(body)).not.toMatch(/evil|點我/u);
     // The repeated request converged on the registration; its name is unchanged.
     await expect(getDb().formSubmission.findUniqueOrThrow({ where: { id: registrant.id }, select: { name: true } })).resolves.toEqual({ name: "王小明" });
   });
