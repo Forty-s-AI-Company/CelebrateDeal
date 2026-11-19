@@ -1413,6 +1413,28 @@ describe("Q-18: e-mail templates by trigger", () => {
     await expect(stored(t, r.id)).resolves.toHaveLength(1);
   });
 
+  // A2-04: the link-free template works as a delayed step on every trigger.
+  describe("generic_message", () => {
+    const generic = (subject: string, body: string) => ({ type: "send_email_notification", template: "generic_message", subject, body });
+
+    it.each(["form_registered", "payment_paid", "viewer_watch_progress", "webinar_attended_duration_gte", "consultation_booked", "form_no_show"])("adds a %s step with its own subject and body", async (trigger) => {
+      const t = await tenant();
+      await db.vendor.update({ where: { id: t.vendor.id }, data: { betaFeatureGrants: ["automation_delayed_steps", "automation_form_no_show", "automation_watch_progress", "automation_watch_duration"] } });
+      const r = await rule(t, { trigger, ...(trigger === "viewer_watch_progress" ? { condition: { type: "watch_percent_gte", percent: 50 } } : {}), ...(trigger === "webinar_attended_duration_gte" ? { condition: { type: "watch_minutes_gte", minutes: 15 } } : {}) });
+      await expect(createAutomationRuleStep({ vendorId: t.vendor.id, ruleId: r.id, linePushAllowed: true, step: input([generic("謝謝你", "{{vendor_name}} 感謝")]) })).resolves.toMatchObject({ ok: true });
+      await expect(stored(t, r.id)).resolves.toMatchObject([{ actions: [generic("謝謝你", "{{vendor_name}} 感謝")] }]);
+    });
+
+    it("refuses a bad subject or a variable the trigger cannot supply, and stores nothing", async () => {
+      const t = await tenant();
+      const r = await rule(t);
+      await expect(createAutomationRuleStep({ vendorId: t.vendor.id, ruleId: r.id, linePushAllowed: true, step: input([generic("a\r\nBcc: x@evil.test", "內文")]) })).resolves.toEqual({ ok: false, code: "invalid_step" });
+      await expect(createAutomationRuleStep({ vendorId: t.vendor.id, ruleId: r.id, linePushAllowed: true, step: input([generic("謝謝", "{{voucher_url}}")]) })).resolves.toEqual({ ok: false, code: "invalid_email_content" });
+      await expect(createAutomationRuleStep({ vendorId: t.vendor.id, ruleId: r.id, linePushAllowed: true, step: input([{ type: "send_email_notification", template: "generic_message" }]) })).resolves.toEqual({ ok: false, code: "invalid_step" });
+      await expect(stored(t, r.id)).resolves.toEqual([]);
+    });
+  });
+
   it("adds a 追購通知 step on any trigger only next to the step's own voucher", async () => {
     const t = await tenant();
     const r = await rule(t);

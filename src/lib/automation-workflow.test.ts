@@ -228,6 +228,7 @@ describe("smart automation workflow engine", () => {
     const db = {
       automationRule: { findMany: vi.fn().mockResolvedValue([{ id: "rule-email", condition: { type: "always" }, actions: [{ type: "send_email_notification", template: "webinar_replay" }] }]) },
       automationExecutionLog: { create: vi.fn().mockResolvedValue({ id: "log-email" }), update },
+      vendor: { findUnique: vi.fn().mockResolvedValue(null) },
       emailDelivery: { create: vi.fn().mockResolvedValue({ id: "email-1" }) },
       emailSuppression: { findUnique: vi.fn().mockResolvedValue(null) },
       blacklist: { findFirst: vi.fn().mockResolvedValue(null) },
@@ -247,6 +248,7 @@ describe("smart automation workflow engine", () => {
     return {
       automationRule: { findMany: vi.fn().mockResolvedValue([{ id: "rule-email", condition: { type: "always" }, actions: input.actions ?? [{ type: "send_email_notification", template: "consultation_confirmation" }] }]) },
       automationExecutionLog: { create: vi.fn().mockResolvedValue({ id: "log-email" }), update: vi.fn().mockResolvedValue({}) },
+      vendor: { findUnique: vi.fn().mockResolvedValue(null) },
       emailDelivery: { create: vi.fn().mockResolvedValue({}) },
       emailSuppression: { findUnique: vi.fn().mockResolvedValue(input.suppression ?? null) },
       blacklist: { findFirst: vi.fn().mockResolvedValue(input.blacklisted ? { id: "blacklist-1" } : null) },
@@ -420,6 +422,7 @@ describe("smart automation workflow engine", () => {
         { id: "rule-email-3", condition: { type: "always" }, actions: [{ type: "send_email_notification", template: "consultation_confirmation" }] },
       ]) },
       automationExecutionLog: { create: vi.fn().mockResolvedValueOnce({ id: "log-1" }).mockResolvedValueOnce({ id: "log-2" }).mockResolvedValueOnce({ id: "log-3" }), update },
+      vendor: { findUnique: vi.fn().mockResolvedValue(null) },
       emailDelivery: { create: vi.fn().mockResolvedValueOnce({}).mockResolvedValueOnce({}).mockResolvedValueOnce({}).mockRejectedValueOnce(new Error("synthetic write failure")) },
       emailSuppression: { findUnique: vi.fn().mockResolvedValue(null) },
       blacklist: { findFirst: vi.fn().mockResolvedValue(null) },
@@ -450,6 +453,7 @@ describe("smart automation workflow engine", () => {
     return {
       automationRule: { findMany: vi.fn() },
       automationExecutionLog: { create: vi.fn().mockResolvedValue({ id: "log-1", createdAt: new Date() }), update: vi.fn().mockResolvedValue({}) },
+      vendor: { findUnique: vi.fn().mockResolvedValue(null) },
       emailDelivery: { create: vi.fn().mockResolvedValue({}) },
       emailSuppression: { findUnique: vi.fn().mockResolvedValue(null) },
       blacklist: { findFirst: vi.fn().mockResolvedValue(null) },

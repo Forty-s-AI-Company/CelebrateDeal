@@ -2,6 +2,8 @@
 // this file, so it must never import a server module (db, next/headers, after).
 // automation-workflow.ts re-exports everything here for its existing callers.
 
+import { genericEmailContentUsable } from "@/lib/automation-generic-email";
+
 /**
  * Every trigger the engine understands. Stored rules may use any of them and
  * keep parsing, so this list never shrinks; what a merchant may choose is
@@ -28,7 +30,7 @@ export const AUTOMATION_TRIGGER_LABELS: Record<AutomationTrigger, string> = {
   form_no_show: "報名後未出席直播",
 };
 
-export const AUTOMATION_EMAIL_TEMPLATES = ["consultation_confirmation", "class_reminder", "repurchase_followup", "webinar_replay"] as const;
+export const AUTOMATION_EMAIL_TEMPLATES = ["consultation_confirmation", "class_reminder", "repurchase_followup", "webinar_replay", "generic_message"] as const;
 export type AutomationEmailTemplate = typeof AUTOMATION_EMAIL_TEMPLATES[number];
 
 export const AUTOMATION_EMAIL_TEMPLATE_LABELS: Record<AutomationEmailTemplate, string> = {
@@ -36,6 +38,7 @@ export const AUTOMATION_EMAIL_TEMPLATE_LABELS: Record<AutomationEmailTemplate, s
   class_reminder: "課前提醒",
   repurchase_followup: "追購通知",
   webinar_replay: "缺席回放與諮詢邀請",
+  generic_message: "自訂訊息（不含連結）",
 };
 
 /**
@@ -49,11 +52,13 @@ export const AUTOMATION_EMAIL_TEMPLATE_LABELS: Record<AutomationEmailTemplate, s
  * - `{{voucher_url}}` exists only when an `issue_repurchase_voucher` action runs
  *   in the same rule or the same delayed step (runRuleActions), so
  *   `repurchase_followup` is usable on any trigger, but only next to a voucher.
+ * `generic_message` (A2-04) needs no link: the merchant writes the whole text,
+ * so every trigger offers it.
  * A template used elsewhere would say "請由下方連結進入" with no link. The same
  * check guards new rules, recipes and step changes; rules and steps stored
  * before it keep sending untouched (see automationEmailTemplateAdvice).
  */
-const EMAIL_TEMPLATE_LINK_TRIGGERS: Record<Exclude<AutomationEmailTemplate, "repurchase_followup">, readonly AutomationTrigger[]> = {
+const EMAIL_TEMPLATE_LINK_TRIGGERS: Record<Exclude<AutomationEmailTemplate, "repurchase_followup" | "generic_message">, readonly AutomationTrigger[]> = {
   consultation_confirmation: ["consultation_booked", "consultation_no_show"],
   // 「課程即將開始」對已結束的場次語意錯誤，所以未出席直播也不開放；只有 webinarUrl 並不夠。
   class_reminder: [],
@@ -68,6 +73,7 @@ export function automationActionsIssueVoucher(actions: unknown) {
 /** Whether `template` has the link it needs on `trigger`; `hasVoucher`: the same rule or step also issues a voucher. */
 export function automationEmailTemplateUsable(template: string, trigger: string, options: { hasVoucher: boolean }) {
   if (template === "repurchase_followup") return options.hasVoucher;
+  if (template === "generic_message") return (AUTOMATION_TRIGGERS as readonly string[]).includes(trigger);
   const triggers = (EMAIL_TEMPLATE_LINK_TRIGGERS as Record<string, readonly string[] | undefined>)[template];
   return Boolean(triggers?.includes(trigger));
 }
@@ -82,13 +88,13 @@ export function usableAutomationEmailTemplates(trigger: string, options: { hasVo
  * templates the stored step already had, which an edit may leave as they are
  * (so changing only a step's delay never forces a legacy step to change).
  */
-export function automationActionsEmailTemplatesUsable(trigger: string, actions: ReadonlyArray<{ type: string; template?: string }>, keep: readonly string[] = []) {
+export function automationActionsEmailTemplatesUsable(trigger: string, actions: ReadonlyArray<{ type: string; template?: string; subject?: unknown; body?: unknown }>, keep: readonly string[] = []) {
   const hasVoucher = actions.some((action) => action.type === "issue_repurchase_voucher");
   return actions.every((action) => (
     action.type !== "send_email_notification"
     || !action.template
-    || keep.includes(action.template)
-    || automationEmailTemplateUsable(action.template, trigger, { hasVoucher })
+    || (action.template !== "generic_message" && (keep.includes(action.template) || automationEmailTemplateUsable(action.template, trigger, { hasVoucher })))
+    || (action.template === "generic_message" && automationEmailTemplateUsable(action.template, trigger, { hasVoucher }) && genericEmailContentUsable(trigger, action))
   ));
 }
 

@@ -6,6 +6,7 @@ import { redirect } from "next/navigation";
 import { auditSnapshot, writeAuditLog } from "@/lib/audit";
 import { requireVendorManagerMember } from "@/lib/auth";
 import { assertServerActionSecurity } from "@/lib/csrf";
+import { genericEmailContentUsable, normalizeGenericEmailContent } from "@/lib/automation-generic-email";
 import {
   AUTOMATION_DELAYED_STEPS_FEATURE,
   AUTOMATION_EMAIL_TEMPLATES,
@@ -106,7 +107,11 @@ function emailAction(form: FormData): Record<string, unknown> | null {
   if (form.get("actionEmail") !== "on") return null;
   const template = text(form, "emailTemplate");
   if (!(AUTOMATION_EMAIL_TEMPLATES as readonly string[]).includes(template)) throw new Error("invalid");
-  return { type: "send_email_notification", template };
+  if (template !== "generic_message") return { type: "send_email_notification", template };
+  // A2-04: the merchant's own subject (one line) and plain-text body.
+  const content = normalizeGenericEmailContent({ subject: String(form.get("emailSubject") ?? ""), body: String(form.get("emailBody") ?? "") });
+  if (!content) throw new Error("invalid_email_content");
+  return { type: "send_email_notification", template, subject: content.subject, body: content.body };
 }
 
 /**
@@ -160,7 +165,10 @@ function parseRule(form: FormData, linePushAllowed: boolean, vendor: FeatureGate
   const actions = parseActions(form, linePushAllowed);
   // Q-18: a template needs the link its trigger's event carries (or a voucher
   // in the same rule). Only new rules are held to it; stored ones are untouched.
-  if (!automationActionsEmailTemplatesUsable(trigger, actions as Array<{ type: string; template?: string }>)) throw new Error("email_template_unavailable");
+  const emailActions = actions as Array<{ type: string; template?: string; subject?: unknown; body?: unknown }>;
+  // A2-04: only the variables this trigger can supply may appear in the text.
+  if (emailActions.some((action) => action.template === "generic_message" && !genericEmailContentUsable(trigger, action))) throw new Error("invalid_email_content");
+  if (!automationActionsEmailTemplatesUsable(trigger, emailActions)) throw new Error("email_template_unavailable");
   return { name, trigger, condition, actions };
 }
 
@@ -231,7 +239,7 @@ export async function createAutomationRuleAction(formData: FormData) {
   await assertServerActionSecurity(formData);
   const { user, vendor, member } = await requireVendorManagerMember(PATH);
   let parsed: ReturnType<typeof parseRule>;
-  try { parsed = parseRule(formData, mayConfigureAutomationLinePush(member.role), vendor); } catch (error) { fail(error instanceof Error && (error.message === "no_action" || error.message === "invalid_button_url" || error.message === "trigger_unavailable" || error.message === "email_template_unavailable") ? error.message : "invalid_rule"); }
+  try { parsed = parseRule(formData, mayConfigureAutomationLinePush(member.role), vendor); } catch (error) { fail(error instanceof Error && (error.message === "no_action" || error.message === "invalid_button_url" || error.message === "trigger_unavailable" || error.message === "email_template_unavailable" || error.message === "invalid_email_content") ? error.message : "invalid_rule"); }
   if (!mayWriteAutomationActions(member.role, parsed.actions)) fail(LINE_PUSH_OWNER_ONLY);
   const productId = parsed.actions.find((a) => a.type === "issue_repurchase_voucher")?.productId;
   if (productId && !(await getDb().product.findFirst({ where: { id: String(productId), vendorId: vendor.id, isActive: true }, select: { id: true } }))) fail("invalid_product");
@@ -400,6 +408,7 @@ const STEP_ERROR_CODES = new Set([
   "no_action",
   "invalid_button_url",
   "email_template_unavailable",
+  "invalid_email_content",
   LINE_PUSH_OWNER_ONLY,
 ]);
 

@@ -13,14 +13,15 @@ import {
 // event carries: consultation triggers the booking's meeting URL, form_no_show
 // the replay's viewer page, form_registered and payment_paid nothing, and a
 // voucher link exists only next to an issue_repurchase_voucher action.
+// generic_message (A2-04) needs no link, so every trigger offers it.
 const WITHOUT_VOUCHER: Record<string, string[]> = {
-  form_registered: [],
-  form_no_show: ["webinar_replay"],
-  consultation_booked: ["consultation_confirmation"],
-  consultation_no_show: ["consultation_confirmation"],
-  payment_paid: [],
-  viewer_watch_progress: [],
-  webinar_attended_duration_gte: [],
+  form_registered: ["generic_message"],
+  form_no_show: ["webinar_replay", "generic_message"],
+  consultation_booked: ["consultation_confirmation", "generic_message"],
+  consultation_no_show: ["consultation_confirmation", "generic_message"],
+  payment_paid: ["generic_message"],
+  viewer_watch_progress: ["generic_message"],
+  webinar_attended_duration_gte: ["generic_message"],
 };
 
 describe("e-mail templates by trigger (Q-18)", () => {
@@ -37,6 +38,33 @@ describe("e-mail templates by trigger (Q-18)", () => {
 
   it.each(Object.entries(WITHOUT_VOUCHER))("%s also offers 追購通知 next to a voucher, and nothing else changes", (trigger, expected) => {
     expect(usableAutomationEmailTemplates(trigger, { hasVoucher: true })).toEqual(AUTOMATION_EMAIL_TEMPLATES.filter((template) => template === "repurchase_followup" || expected.includes(template)));
+  });
+
+  it("offers the link-free template on every trigger the engine knows, with or without a voucher", () => {
+    for (const trigger of AUTOMATION_TRIGGERS) {
+      expect(automationEmailTemplateUsable("generic_message", trigger, { hasVoucher: false })).toBe(true);
+      expect(automationEmailTemplateUsable("generic_message", trigger, { hasVoucher: true })).toBe(true);
+    }
+    expect(automationEmailTemplateUsable("generic_message", "made_up", { hasVoucher: false })).toBe(false);
+  });
+
+  it("checks the text of a generic action against its trigger's variables", () => {
+    const generic = (body: string, subject = "主旨") => ({ type: "send_email_notification", template: "generic_message", subject, body });
+    for (const trigger of ["form_registered", "payment_paid", "viewer_watch_progress", "webinar_attended_duration_gte"]) {
+      expect(automationActionsEmailTemplatesUsable(trigger, [generic("{{vendor_name}} 謝謝你")]), trigger).toBe(true);
+    }
+    expect(automationActionsEmailTemplatesUsable("form_registered", [generic("{{name}} 你好 {{live_title}}")])).toBe(true);
+    expect(automationActionsEmailTemplatesUsable("payment_paid", [generic("{{name}} 你好")])).toBe(false);
+    expect(automationActionsEmailTemplatesUsable("consultation_booked", [generic("{{live_title}}")])).toBe(false);
+    expect(automationActionsEmailTemplatesUsable("form_registered", [generic("{{voucher_url}}")])).toBe(false);
+    // No text, a subject with a line break, or a keep entry never lets a bad generic action through.
+    expect(automationActionsEmailTemplatesUsable("form_registered", [{ type: "send_email_notification", template: "generic_message" }])).toBe(false);
+    expect(automationActionsEmailTemplatesUsable("form_registered", [generic("內文", "a\nBcc: x")])).toBe(false);
+    expect(automationActionsEmailTemplatesUsable("form_registered", [generic("{{voucher_url}}")], ["generic_message"])).toBe(false);
+  });
+
+  it("never advises against a generic action", () => {
+    expect(automationEmailTemplateAdvice("form_registered", [{ type: "send_email_notification", template: "generic_message", subject: "s", body: "b" }])).toEqual([]);
   });
 
   it("treats an unknown template or trigger as unusable", () => {
