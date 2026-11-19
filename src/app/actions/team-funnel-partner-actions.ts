@@ -5,7 +5,13 @@ import { redirect } from "next/navigation";
 import { assertServerActionSecurity } from "@/lib/csrf";
 import { getDb } from "@/lib/db";
 import { assertTeamFunnelAccess, requireTeamFunnelActor, TeamFunnelAccessDeniedError, type TeamFunnelField, type TeamFunnelMembership } from "@/lib/team-funnel-access";
-import { upsertTeamFunnelPartnerProductSlotOverride, type TeamFunnelProductSlotKey } from "@/lib/team-funnel-product-slots";
+import {
+  prepareTeamFunnelPartnerProductSlotOverride,
+  TeamFunnelInvalidProductUrlError,
+  writeTeamFunnelPartnerProductSlotOverride,
+  type TeamFunnelPartnerProductSlotOverrideWrite,
+  type TeamFunnelProductSlotKey,
+} from "@/lib/team-funnel-product-slots";
 import { claimTeamFunnelShare, TeamFunnelShareConflictError, TeamFunnelShareUnavailableError, type TeamFunnelCopyMode } from "@/lib/team-funnel-sharing";
 
 export type PartnerPageActionState = {
@@ -33,6 +39,7 @@ function actionError(error: unknown): PartnerPageActionState {
   if (error instanceof TeamFunnelShareUnavailableError) return { status: "error", message: "此分享連結已過期、已停用，或不屬於你的團隊。" };
   if (error instanceof TeamFunnelShareConflictError) return { status: "error", message: "此模板目前不能以選擇的方式取得。" };
   if (error instanceof TeamFunnelAccessDeniedError) return { status: "error", message: "你沒有存取這個夥伴頁的權限，或它已不再可用。" };
+  if (error instanceof TeamFunnelInvalidProductUrlError) return { status: "error", message: "商品連結必須是有效的 http 或 https 完整網址。" };
   if (error instanceof Error && error.message === "Invalid CSRF token.") return { status: "error", message: "安全驗證已失效，請重新整理頁面後再送出。" };
   return { status: "error", message: "操作未完成，請檢查資料後再試一次。" };
 }
@@ -113,7 +120,12 @@ function assertPageField(
   });
 }
 
-/** Saves only fields allowed by A's immutable field-lock contract, then delegates slot writes to the existing slot service. */
+/**
+ * Saves only fields allowed by A's immutable field-lock contract. Every field
+ * and product slot is validated first (slots through the scoped slot service);
+ * then copy and slots are written in one transaction, so a refused field
+ * writes nothing.
+ */
 export async function savePartnerPageAction(
   _previousState: PartnerPageActionState,
   formData: FormData,
@@ -142,10 +154,10 @@ export async function savePartnerPageAction(
       try { new URL(data.ctaUrl); } catch { return { status: "error", message: "CTA 連結必須是有效的完整網址。" }; }
     }
 
-    if (Object.keys(data).length) {
-      await getDb().partnerFunnelPage.updateMany({ where: { id: page.id, vendorId: actor.vendorId, teamId: actor.teamId, promoterMembershipId: actor.id }, data });
-    }
-
+    // A3-02: validate every product slot before anything is written. A slot
+    // that fails (foreign or inactive product, unsafe URL) must not leave the
+    // copy above half-saved behind an error response.
+    const slotWrites: TeamFunnelPartnerProductSlotOverrideWrite[] = [];
     if (!locked.has("PRODUCT_SLOTS")) {
       assertPageField(actor, page, facts, "PRODUCT_SLOTS");
       const exposed = new Set(page.templateVersion.productSlots.map((slot) => slot.slotKey));
@@ -153,10 +165,21 @@ export async function savePartnerPageAction(
         if (!exposed.has(slotKey)) continue;
         const productId = nullableValue(formData, `product_${slotKey}`);
         const overrideUrl = nullableValue(formData, `url_${slotKey}`);
-        // Call the scoped slot service even when both values are empty so an
-        // editor can intentionally clear a prior partner override.
-        await upsertTeamFunnelPartnerProductSlotOverride({ teamId, pageId: page.id, slotKey: slotKey as TeamFunnelProductSlotKey, productId, overrideUrl });
+        // Prepare (and later write) every exposed slot even when both values
+        // are empty so an editor can intentionally clear a prior override.
+        slotWrites.push(await prepareTeamFunnelPartnerProductSlotOverride({ teamId, pageId: page.id, slotKey: slotKey as TeamFunnelProductSlotKey, productId, overrideUrl }));
       }
+    }
+
+    if (Object.keys(data).length || slotWrites.length) {
+      // Copy and slots are saved together or not at all.
+      await getDb().$transaction(async (tx) => {
+        if (Object.keys(data).length) {
+          const updated = await tx.partnerFunnelPage.updateMany({ where: { id: page.id, vendorId: actor.vendorId, teamId: actor.teamId, promoterMembershipId: actor.id }, data });
+          if (updated.count !== 1) throw new TeamFunnelAccessDeniedError("missing_resource");
+        }
+        for (const write of slotWrites) await writeTeamFunnelPartnerProductSlotOverride(tx, write);
+      });
     }
     revalidatePath("/partner-pages");
     revalidatePath(`/partner-pages/${page.id}/edit`);

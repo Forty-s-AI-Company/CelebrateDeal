@@ -302,20 +302,50 @@ describe("second-tenant matrix (team funnel): a foreign product on an own page",
   beforeEach(buildFixture);
   afterEach(async () => fixture?.cleanup());
 
-  it("an own page saved with tenant B's product never stores the foreign product", async () => {
+  it("an own page saved with tenant B's product never stores the foreign product and writes nothing else", async () => {
     const f = view();
     runtime.actor = withAllFeatures(owner(f));
-    const beforeB = await snapshot(f.b.vendor.id);
+    const [beforeA, beforeB] = [await snapshot(f.a.vendor.id), await snapshot(f.b.vendor.id)];
+    const headlineBefore = (await db.partnerFunnelPage.findUniqueOrThrow({ where: { id: f.a.c.team.sourcePageId } })).headline;
+    expect(headlineBefore).not.toBe("夥伴標題");
 
     expect(await outcome(() => savePartnerPageAction(idle, pageForm(f.a.teamId, f.a.c.team.sourcePageId, { product_main_product: f.b.productId }))))
       .toBe(PAGE_DENIED);
 
     expect(await snapshot(f.b.vendor.id)).toBe(beforeB);
     expect(await db.partnerProductSlotOverride.count({ where: { OR: [{ pageId: f.a.c.team.sourcePageId }, { productId: f.b.productId }] } })).toBe(0);
-    // Same-tenant observation (not a tenant leak): the text fields are written
-    // before the slot service refuses the product, so tenant A's own headline
-    // changes even though the action reports an error.
+    // A3-02 (was locked as a partial write by #666): every field and slot is
+    // validated before anything is written, so tenant A's own copy is not
+    // saved behind the error either.
+    expect((await db.partnerFunnelPage.findUniqueOrThrow({ where: { id: f.a.c.team.sourcePageId } })).headline).toBe(headlineBefore);
+    expect(await snapshot(f.a.vendor.id)).toBe(beforeA);
+  });
+
+  it("an own page with valid copy and an unsafe product link writes nothing", async () => {
+    const f = view();
+    runtime.actor = withAllFeatures(owner(f));
+    const beforeA = await snapshot(f.a.vendor.id);
+
+    expect(await outcome(() => savePartnerPageAction(idle, pageForm(f.a.teamId, f.a.c.team.sourcePageId, {
+      product_main_product: f.a.productId,
+      url_main_product: "javascript:alert(1)",
+    })))).toBe("state:error:商品連結必須是有效的 http 或 https 完整網址。");
+
+    expect(await snapshot(f.a.vendor.id)).toBe(beforeA);
+  });
+
+  it("an own page saved after a refusal writes copy and product slot together", async () => {
+    const f = view();
+    runtime.actor = withAllFeatures(owner(f));
+    expect(await outcome(() => savePartnerPageAction(idle, pageForm(f.a.teamId, f.a.c.team.sourcePageId, { product_main_product: f.b.productId }))))
+      .toBe(PAGE_DENIED);
+
+    expect(await outcome(() => savePartnerPageAction(idle, pageForm(f.a.teamId, f.a.c.team.sourcePageId, { product_main_product: f.a.productId }))))
+      .toBe("state:success:夥伴頁已儲存。");
+
     expect((await db.partnerFunnelPage.findUniqueOrThrow({ where: { id: f.a.c.team.sourcePageId } })).headline).toBe("夥伴標題");
+    expect(await db.partnerProductSlotOverride.findMany({ where: { pageId: f.a.c.team.sourcePageId }, select: { vendorId: true, productId: true } }))
+      .toEqual([{ vendorId: f.a.vendor.id, productId: f.a.productId }]);
   });
 });
 

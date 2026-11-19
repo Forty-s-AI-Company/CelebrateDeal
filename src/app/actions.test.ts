@@ -1256,6 +1256,10 @@ describe("savePartnerPageAction", () => {
       templateVersion: { fieldLocks: [], productSlots: [] },
     });
     mocks.partnerFunnelPageUpdateMany.mockResolvedValue({ count: 1 });
+    // A3-02: the copy is written inside the save's transaction.
+    mocks.transaction.mockImplementationOnce(async (callback: (tx: unknown) => Promise<unknown>) => callback({
+      partnerFunnelPage: { updateMany: mocks.partnerFunnelPageUpdateMany },
+    }));
     const formData = new FormData();
     formData.set("_csrf", "test-fixture-csrf-token");
     formData.set("teamId", "team-1");
@@ -5099,7 +5103,7 @@ describe("interaction script lifecycle actions", () => {
     mocks.interactionScriptFindFirst.mockResolvedValue(sourceScript);
     mocks.interactionScriptCreate.mockResolvedValueOnce({ id: "script-copy" });
 
-    await expect(duplicateInteractionScriptAction(scriptIdFormData())).rejects.toThrow("redirect:/interaction-scripts");
+    await expect(duplicateInteractionScriptAction(scriptIdFormData())).rejects.toThrow(/^redirect:\/interaction-scripts$/);
 
     expect(mocks.interactionScriptFindFirst).toHaveBeenCalledWith({
       where: { id: "script-1", vendorId: "vendor-1" },
@@ -5146,6 +5150,24 @@ describe("interaction script lifecycle actions", () => {
     expect(mocks.transaction).toHaveBeenCalledWith(expect.any(Function), { isolationLevel: "Serializable" });
     expect(mocks.interactionScriptCreate).not.toHaveBeenCalled();
     expect(mocks.writeAuditLog).not.toHaveBeenCalled();
+  });
+
+  it("answers a missing or other vendor's source with an explicit missing_script error (A3-02)", async () => {
+    mocks.requireVendor.mockResolvedValue({ id: "vendor-1" });
+    mocks.interactionScriptFindFirst.mockResolvedValue(null);
+
+    await expect(duplicateInteractionScriptAction(scriptIdFormData())).rejects.toThrow(
+      /^redirect:\/interaction-scripts\?error=missing_script$/,
+    );
+    expect(mocks.interactionScriptCreate).not.toHaveBeenCalled();
+    expect(mocks.writeAuditLog).not.toHaveBeenCalled();
+    expect(mocks.revalidatePath).not.toHaveBeenCalled();
+
+    const malformed = new FormData();
+    malformed.set("id", "x".repeat(129));
+    await expect(duplicateInteractionScriptAction(malformed)).rejects.toThrow(
+      /^redirect:\/interaction-scripts\?error=missing_script$/,
+    );
   });
 
   it("fails safely on a Prisma serialization conflict without auditing or exposing the raw error", async () => {
