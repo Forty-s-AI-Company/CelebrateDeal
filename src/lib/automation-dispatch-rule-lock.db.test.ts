@@ -43,7 +43,7 @@ import { PaymentWebhookPayload, processPaymentWebhook } from "@/lib/payment-webh
 
 const db = getDb();
 const MINUTE = 60_000;
-/** How long the synthetic save holds the rule row (the brief's 5 s). */
+/** The brief's hold of the rule row (5 s): the request path must give up well before it. */
 const HOLD_MS = 5_000;
 const createdVendorIds: string[] = [];
 
@@ -198,18 +198,37 @@ function holdRule(f: Fixture, options: {
   return { isLocked, release, done: done.catch(() => {}) };
 }
 
-/** Waits until another connection is blocked on a lock in a statement matching `pattern`; returns its start (PostgreSQL clock). */
+/** Waits until another connection is blocked on a lock in a statement matching `pattern`; returns that backend and its statement's start (PostgreSQL clock). */
 async function waitForLockWait(pattern: string) {
   for (let attempt = 0; attempt < 100; attempt += 1) {
-    const [row] = await db.$queryRaw<Array<{ queryStart: Date }>>`
-      SELECT query_start AS "queryStart" FROM pg_stat_activity
+    const [row] = await db.$queryRaw<Array<{ pid: number; queryStart: Date }>>`
+      SELECT pid, query_start AS "queryStart" FROM pg_stat_activity
       WHERE datname = current_database() AND wait_event_type = 'Lock' AND query LIKE ${pattern}
       ORDER BY query_start ASC LIMIT 1
     `;
-    if (row) return row.queryStart;
+    if (row) return { ...row, pattern };
     await new Promise((resolve) => setTimeout(resolve, 50));
   }
   throw new Error(`No statement waited on a lock for ${pattern}`);
+}
+
+/**
+ * PostgreSQL's clock at the first moment the waiting statement (backend `pid`,
+ * the same statement) is no longer waiting on a lock: the end of the wait as
+ * the server saw it, whatever the request does afterwards.
+ */
+async function lockWaitEnded(waiter: { pid: number; pattern: string }) {
+  for (let attempt = 0; attempt < 600; attempt += 1) {
+    const [row] = await db.$queryRaw<Array<{ now: Date; waiting: boolean }>>`
+      SELECT clock_timestamp() AS "now", EXISTS (
+        SELECT 1 FROM pg_stat_activity
+        WHERE pid = ${waiter.pid} AND wait_event_type = 'Lock' AND query LIKE ${waiter.pattern}
+      ) AS "waiting"
+    `;
+    if (row && !row.waiting) return row.now;
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+  throw new Error("The statement kept waiting on the lock");
 }
 
 /** Answers whether the rule row is still held by someone else right now (NOWAIT gets 55P03 exactly then). */
@@ -218,29 +237,33 @@ function ruleStillHeld(f: Fixture) {
     .then(() => false, (error: unknown) => /55P03|could not obtain lock/.test(String(error)));
 }
 
-const pgNow = async () => (await db.$queryRaw<Array<{ now: Date }>>`SELECT clock_timestamp() AS "now"`)[0]!.now;
-
 /**
- * Runs `request` while the save holds the rule row for HOLD_MS and returns its
- * outcome with PostgreSQL's own evidence: the claim's INSERT was seen waiting
- * on a lock (pg_stat_activity), the request came back while the row was STILL
- * held (so the wait ended by its own timeout, not by the save letting go), and
- * the time from that INSERT's start to the return, on the server's clock.
+ * Runs `request` while a save holds the rule row and returns its outcome with
+ * PostgreSQL's own evidence: the claim's INSERT was seen waiting on a lock
+ * (pg_stat_activity), the request came back while the row was STILL held (so
+ * the wait ended by its own timeout, not by the save letting go), and how long
+ * that INSERT waited, from its start to the end of its lock wait, both on the
+ * server's clock (pgWaitMs). The save holds the row until these are taken (at
+ * most 12 s): a fixed hold counted from the save's own start could end while
+ * a slow request (the paid callback's other post-commit steps under a full
+ * suite's load) was still waiting, and its claim would then simply succeed.
+ * Every assertion on pgWaitMs is made against HOLD_MS, the brief's 5 s.
  */
 async function duringSave<T>(f: Fixture, request: () => Promise<T>, save: Pick<Parameters<typeof holdRule>[1] & object, "inside" | "beforeCommit"> = {}) {
-  const holder = holdRule(f, { holdMs: HOLD_MS, ...save });
+  const holder = holdRule(f, save);
   try {
     await holder.isLocked;
     const startedWall = Date.now();
     const pending = request();
-    const waitStarted = await Promise.race([
+    const waiter = await Promise.race([
       waitForLockWait("%INSERT%AutomationExecutionLog%"),
       pending.then(() => { throw new Error("The request returned without ever waiting on the save's lock"); }),
     ]);
+    const waitEnded = lockWaitEnded(waiter);
     const outcome = await pending;
-    const stillHeld = await ruleStillHeld(f);
-    const pgWaitMs = (await pgNow()).getTime() - waitStarted.getTime();
     const wallMs = Date.now() - startedWall;
+    const stillHeld = await ruleStillHeld(f);
+    const pgWaitMs = (await waitEnded).getTime() - waiter.queryStart.getTime();
     return { outcome, stillHeld, pgWaitMs, wallMs };
   } finally {
     holder.release();
@@ -280,6 +303,8 @@ describe("A2-08 請求路徑：商家存檔持有規則列 5 秒", () => {
     expect(stillHeld).toBe(true);
     // On the server's clock, from the waiting INSERT's start to the return:
     // well under the 5 s hold (and far from the 15 s it used to reach).
+    // The lock_timeout ran out (2 s, the server's clock) ...
+    expect(pgWaitMs).toBeGreaterThanOrEqual(1_900);
     expect(pgWaitMs).toBeLessThan(HOLD_MS - 500);
     // Nothing ran and nothing half-written: no log, no tag, no run.
     expect(await logsOf(f)).toEqual([]);
@@ -304,7 +329,9 @@ describe("A2-08 請求路徑：商家存檔持有規則列 5 秒", () => {
       measured.push({ case: trigger, pgWaitMs, wallMs });
       expect(outcome).toEqual([{ ruleId: f.rule.id, status: "deferred" }]);
       expect(stillHeld).toBe(true);
-      expect(pgWaitMs).toBeLessThan(HOLD_MS - 500);
+      // The lock_timeout ran out (2 s, the server's clock) ...
+    expect(pgWaitMs).toBeGreaterThanOrEqual(1_900);
+    expect(pgWaitMs).toBeLessThan(HOLD_MS - 500);
       expect(await deferredRows(f.vendor.id)).toEqual([expect.objectContaining({ ruleId: f.rule.id, trigger, subjectId: subject.id })]);
     }
   }, 45_000);
@@ -389,8 +416,11 @@ describe("A2-08 job：鎖釋放後補跑，只執行一次", () => {
     // At least one round took the row (the other may have found it already gone).
     expect(jobResults.length, JSON.stringify(jobResults)).toBeGreaterThanOrEqual(1);
     expect(jobResults.length, JSON.stringify(jobResults)).toBeLessThanOrEqual(2);
-    // A round that met another one's claim still running keeps the row (R-1); the next round settles it.
-    expect(jobResults.every((result) => result.status === "dispatched" || result.status === "running_elsewhere"), JSON.stringify(jobResults)).toBe(true);
+    // Each round either ran it (`dispatched`), found it already finished by the
+    // other round or the replay (`settled`, R-1's check before dispatching), or
+    // met that claim still running (`running_elsewhere`, row kept; the next
+    // round settles it). Never a failure or a deferral, and one execution below.
+    expect(jobResults.every((result) => ["dispatched", "settled", "running_elsewhere"].includes(result.status)), JSON.stringify(jobResults)).toBe(true);
     const next = await runDeferredAutomationDispatches({ vendorId: f.vendor.id });
     expect(next.results.every((result) => result.status === "settled"), JSON.stringify(next)).toBe(true);
     expect(await logsOf(f)).toHaveLength(1);
@@ -732,6 +762,8 @@ describe("A2-08 payment_paid（付款 webhook 之後的自動化）", () => {
     const { stillHeld, pgWaitMs, wallMs } = await duringSave(f, () => c.paid());
     measured.push({ case: "payment_paid", pgWaitMs, wallMs });
     expect(stillHeld).toBe(true);
+    // The lock_timeout ran out (2 s, the server's clock) ...
+    expect(pgWaitMs).toBeGreaterThanOrEqual(1_900);
     expect(pgWaitMs).toBeLessThan(HOLD_MS - 500);
     expect(await db.commerceOrder.findUniqueOrThrow({ where: { id: c.orderId }, select: { status: true, paidAmountCents: true } }))
       .toEqual({ status: "paid", paidAmountCents: PRICE_CENTS });
