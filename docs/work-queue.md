@@ -67,9 +67,21 @@
 | 12 | A2-12 | DB 測試不依賴外部 `CSRF_SECRET` | 一般 | 已完成 [#667](https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/667)：21 個 DB 測試檔改用 `vi.stubEnv` |
 | 13 | A2-13 | 既有信件（驗證信、序列信、範本、收據）姓名可被用來釣魚 | 高（安全） | 已完成 [#670](https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/670)（三輪審查）：共用 `safe-recipient-name.ts`，驗證信不帶姓名、像網址（含不可見字元繞過）改預設稱呼。部署前已排入的提醒保留原內容（重新產生腳本改為後續項目） |
 
+## A3. 第三批（2026-11-19，從後續項目挑出、不需 owner 的部分）
+
+| 順序 | ID | 項目 | 風險 | 狀態 |
+|---|---|---|---|---|
+| 1 | A3-01 | SSRF 規則補 100.64/10、192.0.0/24、198.18/15、224/4 以上、`fec0::/10`，以及 IPv4-compatible／NAT64／6to4 內嵌位址（#661 審查） | 高（安全） | 已完成 [#676](https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/676)：共用案例表 69 → 105 |
+| 2 | A3-02 | `savePartnerPageAction` 全有全無；`duplicateInteractionScriptAction` 錯誤提示；`LiveStudioDraft` 複合外鍵（#666） | 高（租戶、migration） | 已完成 [#677](https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/677)（審查）：migration `20261119150000`／`150100`（先查 PG15+、跨商家草稿計數 > 0 即中止）。staging（PG 17.6）migrate run 44494314941 套用；alias 切到 `cdc54354`，browser smoke 44494584348 PASS，首次成功 44494622752 第 1 次 FORM 逾時、重跑 PASS（同一偶發，見 A3-05）。**Production migrate 前須確認 PostgreSQL ≥ 15**（runbook `prisma-migration-guards-runbook.md` §8）。未做：DROP 拆檔（審查 MINOR-3）、交易內再確認商品狀態（MINOR-5，既有） |
+| 3 | A3-03 | 部署前已排入提醒的原地重算腳本（compare-and-set，#670 複審） | 高（寄信） | 進行中 |
+| 4 | A3-04 | 場次提示：開連結後商家關回放或移場次的邊界（#669 複審 MINOR-A） | 高（auth） | 進行中 |
+| 5 | A3-05 | 首次成功路徑 runner 記錄卡住的動作；`accountant-foreign-message-template-edit-direct-url.spec.ts` 偶發；互動腳本列表 `?error=conflict` 提示 | 一般 | 進行中 |
+
+不排入 A3：PayUni Sandbox 實測（另排）、邀請信主旨的商家名稱（開放自由註冊時才需要）、R-04 ④～⑦、U-04 封測後部分、picomatch 例外到期。
+
 封測後才做（不排入 A2）：R-04 ④～⑦、U-04 金額相關與大型表單、picomatch 例外到期處理。
 
-後續項目（原始清單，已排入 A2 的以 A2 編號為準）：
+後續項目（原始清單，已排入 A2／A3 的以該編號為準）：
 
 - `form_registered` 與無折價券 `payment_paid` 的通用無連結 Email 範本（#636 延伸）。
 - http 環境下 LINE 動作失敗會讓整個延遲步驟失敗（既有行為）。
