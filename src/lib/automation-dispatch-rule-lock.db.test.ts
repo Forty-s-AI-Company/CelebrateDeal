@@ -389,7 +389,10 @@ describe("A2-08 job：鎖釋放後補跑，只執行一次", () => {
     // At least one round took the row (the other may have found it already gone).
     expect(jobResults.length, JSON.stringify(jobResults)).toBeGreaterThanOrEqual(1);
     expect(jobResults.length, JSON.stringify(jobResults)).toBeLessThanOrEqual(2);
-    expect(jobResults.every((result) => result.status === "dispatched"), JSON.stringify(jobResults)).toBe(true);
+    // A round that met another one's claim still running keeps the row (R-1); the next round settles it.
+    expect(jobResults.every((result) => result.status === "dispatched" || result.status === "running_elsewhere"), JSON.stringify(jobResults)).toBe(true);
+    const next = await runDeferredAutomationDispatches({ vendorId: f.vendor.id });
+    expect(next.results.every((result) => result.status === "settled"), JSON.stringify(next)).toBe(true);
     expect(await logsOf(f)).toHaveLength(1);
     expect(await tagsOf(f)).toBe(1);
     expect(await db.delayedStepRun.count({ where: { vendorId: f.vendor.id } })).toBe(1);
@@ -515,6 +518,63 @@ describe("A2-08 job：鎖釋放後補跑，只執行一次", () => {
     expect(await db.delayedStepRun.count({ where: { vendorId: f.vendor.id } })).toBe(1);
     expect(await deferredRows(f.vendor.id)).toEqual([]);
     await expect(liveEvent(f, lead)).resolves.toEqual([{ ruleId: f.rule.id, status: "duplicate" }]);
+    expect(await logsOf(f)).toHaveLength(1);
+  }, 30_000);
+
+  /**
+   * R-1: a claim made under version v (another process, or an earlier round)
+   * and still `running`, then a save bumps the rule to v + 1 within the grace
+   * window. The new version's key is free, so a dispatch would claim the rule
+   * a second time (second voucher, e-mail, LINE).
+   */
+  async function claimThenBumpVersion(f: Fixture, lead: { id: string; email: string }, startedAt: Date) {
+    const before = await db.automationRule.findUniqueOrThrow({ where: { id: f.rule.id }, select: { version: true } });
+    const claimed = await db.automationExecutionLog.create({
+      data: {
+        vendorId: f.vendor.id,
+        ruleId: f.rule.id,
+        idempotencyKey: deferrableExecutionIdempotencyKey({ vendorId: f.vendor.id, ruleId: f.rule.id, ruleVersion: before.version, trigger: "form_registered", subjectId: lead.id }),
+        eventId: `form-registered:${lead.id}`,
+        trigger: "form_registered",
+        subjectType: "buyer_registration",
+        subjectKeyHash: automationCustomerKeyHash(f.vendor.id, lead.email),
+        status: "running",
+        startedAt,
+      },
+    });
+    await db.automationRule.update({ where: { id: f.rule.id }, data: { version: { increment: 1 } } });
+    return claimed;
+  }
+
+  it("a claim still running under the old version after a save bumped it: the row is kept, no second log (#671 re-review R-1)", async () => {
+    const f = await fixture();
+    const lead = await registration(f);
+    await duringSave(f, () => liveEvent(f, lead));
+    const claimed = await claimThenBumpVersion(f, lead, new Date());
+
+    await expect(runDeferredAutomationDispatches({ vendorId: f.vendor.id })).resolves.toEqual({ expired: 0, results: [{ status: "running_elsewhere" }] });
+    expect(await logsOf(f)).toEqual([expect.objectContaining({ id: claimed.id, status: "running" })]);
+    expect(await tagsOf(f)).toBe(0);
+    expect(await deferredRows(f.vendor.id)).toEqual([expect.objectContaining({ attempts: 0 })]);
+  }, 30_000);
+
+  it("a stale claim under the old version after a save bumped it: the row is settled and reported, never run again (#671 re-review R-1)", async () => {
+    const f = await fixture();
+    const lead = await registration(f);
+    await duringSave(f, () => liveEvent(f, lead));
+    const claimed = await claimThenBumpVersion(f, lead, new Date(Date.now() - AUTOMATION_EXECUTION_RECLAIM_AFTER_MS - MINUTE));
+
+    await expect(runDeferredAutomationDispatches({ vendorId: f.vendor.id })).resolves.toEqual({ expired: 0, results: [{ status: "settled" }] });
+    expect(await logsOf(f)).toEqual([expect.objectContaining({ id: claimed.id, status: "running" })]);
+    expect(await tagsOf(f)).toBe(0);
+    expect(await deferredRows(f.vendor.id)).toEqual([]);
+    expect(monitoring.captureOperationalError).toHaveBeenCalledWith(
+      expect.any(Error),
+      { source: "automation_deferred_dispatch", operation: "dispatch_stale_claim_settled" },
+      { level: "warning" },
+    );
+    // Nothing later runs it under the new version either.
+    await expect(runDeferredAutomationDispatches({ vendorId: f.vendor.id })).resolves.toEqual({ expired: 0, results: [] });
     expect(await logsOf(f)).toHaveLength(1);
   }, 30_000);
 

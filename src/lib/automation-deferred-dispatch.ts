@@ -1,5 +1,6 @@
 import { Prisma, type PrismaClient } from "@prisma/client";
 import {
+  AUTOMATION_EXECUTION_RECLAIM_AFTER_MS,
   automationCustomerKeyHash,
   deferrableAutomationEventId,
   deferrableExecutionIdempotencyKey,
@@ -46,11 +47,14 @@ import { dispatchPaymentPaidAutomationForOrder } from "@/lib/payment-paid-automa
  *   deferral (it commits within its 15 s transaction timeout) still applies;
  *   a rule edited, or switched off and on again, after that never runs late
  *   for this event: the row settles without running.
- * - #671 review MINOR-2: `duplicate` on a log that is still `running` (another
- *   process, or an earlier round of this job, claimed it and may have
- *   stopped) keeps the row without counting an attempt. Once the log is older
- *   than AUTOMATION_EXECUTION_RECLAIM_AFTER_MS the same dispatch reclaims it
- *   and finishes it, once.
+ * - #671 review MINOR-2 and re-review R-1: before dispatching, the event's
+ *   logs for the rule are read by event id, whatever the rule's version
+ *   (existingExecution). A finished one settles the row; a `running` one
+ *   (another process, or an earlier round of this job, claimed it and may
+ *   have stopped) keeps the row without counting an attempt; once it is older
+ *   than AUTOMATION_EXECUTION_RECLAIM_AFTER_MS the dispatch reclaims and
+ *   finishes it, but only under the same version's key: a stale claim under
+ *   another version settles the row and is reported, never run again.
  * - Still held (`deferred` again): the row stays for the next round and the
  *   attempt is not counted; after DEFERRED_DISPATCH_MAX_CONSECUTIVE_DEFERRED
  *   in a row the pass stops (merchants are saving right now).
@@ -125,7 +129,7 @@ export type DeferredDispatchSummary = {
   results: Array<{ status: DeferredDispatchOutcome }>;
 };
 
-function report(error: unknown, operation: "dispatch_failed" | "dispatch_expired") {
+function report(error: unknown, operation: "dispatch_failed" | "dispatch_expired" | "dispatch_stale_claim_settled") {
   try {
     captureOperationalError(error, { source: "automation_deferred_dispatch", operation }, operation === "dispatch_failed" ? undefined : { level: "warning" });
   } catch {
@@ -178,24 +182,49 @@ async function rebuildEvent(db: Database, row: DeferredRow & { trigger: Exclude<
 }
 
 /**
- * `duplicate` (MINOR-2): whether the claim that beat this dispatch is still
- * `running`. Read by the execution's idempotency key, built from the rule's
- * current version (read bound to the vendor) and the row's subject.
+ * #671 re-review R-1: what this event already has for the rule, whatever the
+ * rule's version. The execution's idempotency key contains the version, so a
+ * save that bumps it between rounds would otherwise hide a claim already made
+ * (and the dispatch would claim, and run, the rule a second time). Read by
+ * (vendorId, ruleId, eventId) on the `(vendorId, eventId)` index; the event id
+ * is the one every caller of the trigger uses.
+ * - `none`: no log; dispatch.
+ * - `finished`: a `completed`, `skipped` or `failed` log; settle.
+ * - `running`: a log claimed within AUTOMATION_EXECUTION_RECLAIM_AFTER_MS; keep.
+ * - `stale_current`: only stale `running` logs, one of them under the current
+ *   version's key; dispatch, which reclaims and finishes it.
+ * - `stale_other`: only stale `running` logs under another version's key;
+ *   settle and report (running it under the new key would repeat it).
  */
-async function claimStillRunning(db: Database, row: DeferredRow & { trigger: DeferrableAutomationTrigger }) {
-  const rule = await db.automationRule.findFirst({ where: { id: row.ruleId, vendorId: row.vendorId }, select: { version: true } });
-  if (!rule) return false;
-  const idempotencyKey = deferrableExecutionIdempotencyKey({ vendorId: row.vendorId, ruleId: row.ruleId, ruleVersion: rule.version, trigger: row.trigger, subjectId: row.subjectId });
-  const log = await db.automationExecutionLog.findUnique({
-    where: { vendorId_idempotencyKey: { vendorId: row.vendorId, idempotencyKey } },
-    select: { status: true },
+type ExistingExecution = "none" | "finished" | "running" | "stale_current" | "stale_other";
+
+async function existingExecution(db: Database, row: DeferredRow & { trigger: DeferrableAutomationTrigger }, now: Date): Promise<ExistingExecution> {
+  const logs = await db.automationExecutionLog.findMany({
+    where: { vendorId: row.vendorId, ruleId: row.ruleId, eventId: deferrableAutomationEventId(row.trigger, row.subjectId) },
+    select: { status: true, startedAt: true, idempotencyKey: true },
   });
-  return log?.status === "running";
+  if (logs.length === 0) return "none";
+  if (logs.some((log) => log.status !== "running")) return "finished";
+  const staleBefore = now.getTime() - AUTOMATION_EXECUTION_RECLAIM_AFTER_MS;
+  if (logs.some((log) => log.startedAt.getTime() >= staleBefore)) return "running";
+  const rule = await db.automationRule.findFirst({ where: { id: row.ruleId, vendorId: row.vendorId }, select: { version: true } });
+  if (!rule) return "finished";
+  const currentKey = deferrableExecutionIdempotencyKey({ vendorId: row.vendorId, ruleId: row.ruleId, ruleVersion: rule.version, trigger: row.trigger, subjectId: row.subjectId });
+  return logs.some((log) => log.idempotencyKey === currentKey) ? "stale_current" : "stale_other";
 }
 
 /** Runs one row's rule. */
-async function dispatchRow(db: Database, row: DeferredRow): Promise<Exclude<DeferredDispatchOutcome, "failed">> {
+async function dispatchRow(db: Database, row: DeferredRow, now: Date): Promise<Exclude<DeferredDispatchOutcome, "failed">> {
   if (!isDeferrableAutomationTrigger(row.trigger) || !isAutomationTriggerAvailableForVendor(row.trigger, { betaFeatureGrants: row.betaFeatureGrants })) {
+    return "settled";
+  }
+  const deferrable = { ...row, trigger: row.trigger };
+  // R-1: never dispatch over a claim this event already has under another version.
+  const existing = await existingExecution(db, deferrable, now);
+  if (existing === "finished") return "settled";
+  if (existing === "running") return "running_elsewhere";
+  if (existing === "stale_other") {
+    report(new Error("A stale claim of a deferred automation rule was made under an older rule version; not run again."), "dispatch_stale_claim_settled");
     return "settled";
   }
   // MINOR-3: the save that caused the deferral still counts; a later change does not.
@@ -213,7 +242,8 @@ async function dispatchRow(db: Database, row: DeferredRow): Promise<Exclude<Defe
   const result = results.find((entry) => entry.ruleId === row.ruleId);
   // Still held: the row stays (a failed re-record of an existing row leaves it too).
   if (result?.status === "deferred" || result?.status === "deferred_unrecorded") return "deferred";
-  if (result?.status === "duplicate" && await claimStillRunning(db, { ...row, trigger: row.trigger })) return "running_elsewhere";
+  // Another process claimed it between the check above and this dispatch: keep the row while that claim runs.
+  if (result?.status === "duplicate" && await existingExecution(db, deferrable, now) === "running") return "running_elsewhere";
   // Ran now (completed, skipped, failed: its log records it and the usual
   // retries apply), ran elsewhere (duplicate of a finished log), or no longer
   // runs (rule gone, switched off, changed since, invalid).
@@ -281,7 +311,7 @@ export async function runDeferredAutomationDispatches(
     if (pastDeadline() || deferredInARow >= DEFERRED_DISPATCH_MAX_CONSECUTIVE_DEFERRED) break;
     let status: DeferredDispatchOutcome;
     try {
-      status = await dispatchRow(db, row);
+      status = await dispatchRow(db, row, now);
       if (status === "dispatched" || status === "settled") await db.automationDeferredDispatch.deleteMany({ where: { id: row.id, vendorId: row.vendorId } });
     } catch (error) {
       report(error, "dispatch_failed");
