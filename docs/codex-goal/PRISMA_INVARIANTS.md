@@ -31,7 +31,7 @@
 | Buyer support／refund handoff | 5 | `SupportCase`、`SupportCaseEvent`、`BuyerSupportOrderGrant`、`SupportRefundHandoff`、`SupportRefundHandoffRefund` |
 | LINE identity／delivery／draft | 5 | `LineOfficialAccount`、`LineUserIdentity`、`LineLoginState`、`LineDelivery`、`LineRichMenuDraft` |
 | Consultation scheduling | 2 | `ConsultationEvent`、`ConsultationBooking` |
-| Automation／CRM／Sales workspace | 12 | `AutomationRule`、`AutomationRuleStep`、`AutomationExecutionLog`、`CustomerTagAssignment`、`AutomationVoucherGrant`、`CustomerCrmRecord`、`ConsultantNote`、`SalesProject`、`SalesProjectProduct`、`SalesProjectCustomer`、`UserOnboardingPreference`、`OnboardingTaskState` |
+| Automation／CRM／Sales workspace | 13 | `AutomationRule`、`AutomationRuleStep`、`AutomationExecutionLog`、`AutomationDeferredDispatch`、`CustomerTagAssignment`、`AutomationVoucherGrant`、`CustomerCrmRecord`、`ConsultantNote`、`SalesProject`、`SalesProjectProduct`、`SalesProjectCustomer`、`UserOnboardingPreference`、`OnboardingTaskState` |
 | Funnel 公開頁與來源紀錄 | 5 | `LandingPage`、`LandingPageVersion`、`LandingPageTemplate`、`FunnelVisit`、`FunnelSubmission` |
 | Electronic invoicing | 2 | `ElectronicInvoice`、`ElectronicInvoiceAllowance` |
 
@@ -1001,3 +1001,19 @@ Current source inventory: 145 models and 99 forward migrations. Previous checkpo
 - 測試：`src/lib/payment-pending-reconciliation.db.test.ts`（補單入帳與晚到的回呼重複、與回呼路徑的佣金／庫存／訂單／自動化結果快照相同、回呼與補單同時到達只入帳一次（含查詢中途到達）、跨租戶與複合外鍵、凍結商家、金額不符與 jsonb 合併保留、失敗與逾期、庫存逾期後的 paid、掃描範圍、退避與上限、簽章錯誤、每輪上限與商家輪流與期限、兩個 run 重疊、未設定 PayUni、開關、事件建立失敗時列維持 active 且不保留並於下輪完成、只有終態寫入失敗時下輪補標、曾查到後查無轉人工與查無計數告警、事件被持有到上限轉人工、超過視窗仍 active 轉人工、多筆交易只在有收款時保留、人工事件於之後付款自動結案）、`src/lib/payment-pending-reconciliation-schema-contract.test.ts`（兩條 migration 的形狀、掃描字面值、退避／上限在掃描期間內）、`src/lib/prisma-unmanaged-indexes.db.test.ts`。已在 loopback 拋棄式 PostgreSQL 16（`celebratedeal_test`，port 54423）forward-apply 全部 migration；`prisma-drift-check` `ok: true`。
 - 部署順序：migration 先於程式（舊程式不讀這張表，也不用這個索引）。回滾到本 PR 之前的程式只會停止補單查詢；表、索引與資料可以留著，不需要回滾 migration。
 - 與 #663 合併後為 167 models、165 forward migrations（含本次兩條）；既有 SQL／checksum 不變。
+
+## 2026-11-19 請求路徑不再被商家存檔鎖住 15 秒（A2-08）
+
+- `20261119130000_automation_deferred_dispatch`：forward-only、純新增，排在 `20261119110100_payment_transaction_payuni_reconcile_idx` 之後；交易層級 `lock_timeout = 5s`。只新增一張表，不改既有欄位、資料或 RLS 政策。
+  - `AutomationDeferredDispatch`：請求路徑的事件在 2 秒內拿不到規則列鎖、改交給 Email job 的規則。欄位只有參照：`vendorId`、`ruleId`、`trigger`（CHECK 只能是 `form_registered`、`consultation_booked`、`consultation_no_show`、`payment_paid`）、`subjectId`（`FormSubmission`、`ConsultationBooking` 或 `CommerceOrder` 的 id，不存 Email 或其他個資）、`attempts`（CHECK 0..100；程式上限 `DEFERRED_DISPATCH_MAX_ATTEMPTS = 5`）、`createdAt`。
+  - 唯一索引 `AutomationDeferredDispatch_vendorId_ruleId_trigger_subjectI_key`（Prisma 依 63 字元截斷的名稱）`(vendorId, ruleId, trigger, subjectId)`：同一事件同一規則再次放棄等待時是 no-op（`createMany skipDuplicates`），也兼作 vendor 外鍵的索引。索引 `(createdAt)` 給 job 的 48 小時視窗與過期刪除。
+  - 外鍵只有 `vendorId → Vendor(id) ON DELETE CASCADE`。**刻意沒有指向 `AutomationRule` 的外鍵**：寫這一列時規則列正被商家存檔 `FOR UPDATE` 持有，外鍵檢查（FOR KEY SHARE）會等同一個鎖；job 讀規則時一律以 `vendorId` 綁定，規則已刪除、停用或屬於別的商家時直接刪除該列、不執行。
+  - `ENABLE ROW LEVEL SECURITY`、沒有 GRANT，與其他 public 表相同（20261020090000）。
+  - 鎖：新表；加外鍵時對 `Vendor` 取 SHARE ROW EXCLUSIVE（新表是空的，不掃），瞬間完成；`lock_timeout = 5s` 讓它在等不到鎖時中止。
+- 不變式（應用層，`src/lib/automation-workflow.ts`、`src/lib/automation-deferred-dispatch.ts`）：
+  - 15 秒的來源：所有規則寫入者（`withLockedRule` 的步驟存檔、`/settings/automations` 的啟用／停用與刪除、漏斗編輯器）都在 Prisma 互動式交易內 `SELECT ... FOR UPDATE` 規則列，交易 `timeout: 15_000`；它們自己的 `lock_timeout 5s` 只限制「取得」鎖。事件寫 `AutomationExecutionLog` 時外鍵檢查要取規則列的 FOR KEY SHARE，原本沒有任何 timeout，所以等到存檔交易結束，最多 15 秒（PG16 實測：持鎖 5 秒等 5043 ms；持鎖 20 秒被交易 timeout 在 15040 ms 結束）。
+  - `DEFERRABLE_AUTOMATION_TRIGGERS` 的執行紀錄 INSERT 在自己的短交易內 `SET LOCAL lock_timeout = '2s'`、`SET LOCAL statement_timeout = '3s'`（後者限制排在另一個等待者後面時「tuple 鎖＋持有者交易」兩段各 2 秒的情況）。放棄（`isLockWaitGivenUp`：55P03 或 57014）時交易 rollback，沒有執行紀錄、沒有任何動作，寫一列 `AutomationDeferredDispatch` 並回 `deferred`；這一列也寫不進去時回 `deferred_unrecorded` 並回報 `claim_defer_failed`（`payment_paid` 仍有 webhook-retry 的補跑）。其他 trigger（job 觸發）照舊等待。
+  - job（`runDeferredAutomationDispatches`）不接受外部 id；所有讀寫都以列的 `vendorId` 綁定；對象重讀並綁商家；只以 `onlyRuleIds: [ruleId]` 走同一個 `dispatchAutomationEvent`／`dispatchPaymentPaidAutomationForOrder`；事件 id 與執行紀錄冪等鍵與即時路徑相同，執行紀錄的 unique `(vendorId, idempotencyKey)` 保證只執行一次。仍被鎖時保留列、不計次；其他確定結果刪除列；等鎖以外的錯誤以 `id + vendorId` 條件 UPDATE 計次，第 5 次刪除並回報。停權商家的列不處理；超過 48 小時的列刪除並回報。
+- 測試：`src/lib/automation-dispatch-rule-lock.db.test.ts`（持鎖 5 秒時報名、兩種諮詢、付款 webhook 的自動化都在約 2 秒放棄：pg_stat_activity 看到 INSERT 在等鎖、回來時 `FOR UPDATE NOWAIT` 仍得到 55P03、PostgreSQL 時鐘上從 INSERT 開始到回來 < 4.5 秒；沒有執行紀錄／標籤／run，只留一列參照；job 觸發的 `form_no_show` 仍等待；鎖釋放後 job 執行一次並建延遲步驟 run，再跑一輪或事件重送都是 duplicate；仍被鎖時保留不計次；兩輪 job 加事件重送在不同連線同時跑只有一筆執行紀錄；規則停用或刪除、預約取消、未出席被改回、訂單退款都只刪列不執行；過期與失敗 5 次；跨租戶：別的商家不受影響、偽造的跨商家列只刪除不執行；停權商家不處理；資料庫拒絕不存在的商家與 CHECK 外的 trigger）、`src/lib/automation-delayed-step-start-lock.db.test.ts`（「整個事件等待」改用 job 觸發的 `form_no_show`）、`src/lib/automation-workflow.test.ts`、`src/app/api/jobs/email-deliveries/route.test.ts`。已在 loopback 拋棄式 PostgreSQL 16（`celebratedeal_test`，port 54434）forward-apply 全部 migration，`prisma migrate diff` 對這張表沒有差異。
+- 部署順序：migration 先於程式（舊程式不讀這張表）。回滾到之前的程式時，請求路徑恢復等待存檔（最多 15 秒），表裡留下的列不再被處理（`payment_paid` 仍由 webhook-retry 補跑；報名與諮詢的那幾條規則不會補跑）；表可以留著，不需要回滾 migration。
+- 目前 168 models、166 forward migrations（含本次一條）；既有 SQL／checksum 不變。

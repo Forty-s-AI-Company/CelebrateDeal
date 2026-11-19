@@ -25,7 +25,22 @@ import { DERIVED_KEY_ROTATIONS, legacyDerivedKeyUseCount, resetLegacyDerivedKeyU
 import { hashInteractionBearer } from "@/lib/live-interaction";
 import { deriveSensitiveDataKey } from "@/lib/sensitive-data";
 import { revealEmailDeliveryPayload, verifyEmailUnsubscribeToken } from "@/lib/email-delivery-pii";
-import { AUTOMATION_BUTTON_URL_ERROR_MESSAGE, AUTOMATION_RECIPES, AUTOMATION_TRIGGERS, AVAILABLE_AUTOMATION_RECIPES, AVAILABLE_AUTOMATION_TRIGGERS, automationExecutionNotes, isAvailableAutomationTrigger, automationConditionMatches, isSafeNewAutomationButtonUrl, automationCustomerKeyHash, dispatchAutomationEvent, DELAYED_STEP_AUTOMATION_TRIGGERS, automationTriggerSupportsDelayedSteps, delayedStepSubjectType, dryRunAutomationRule, renderAutomationEmailBody, availableAutomationTriggersForVendor, automationReplayOpen, formNoShowWebinarUrl, isAutomationTriggerAvailableForVendor, isAutomationRuleRunnableForVendor, automationTriggerBetaFeature, watchProgressRulePercent, watchDurationRuleMinutes, isWatchDurationMinutes, WATCH_DURATION_MINUTE_OPTIONS, WATCH_DURATION_DETECTION_NOTE, maskAutomationTarget, materializeAutomationRecipe, parseAutomationRule } from "@/lib/automation-workflow";
+import { AUTOMATION_BUTTON_URL_ERROR_MESSAGE, AUTOMATION_RECIPES, AUTOMATION_TRIGGERS, AVAILABLE_AUTOMATION_RECIPES, AVAILABLE_AUTOMATION_TRIGGERS, automationExecutionNotes, isAvailableAutomationTrigger, automationConditionMatches, isSafeNewAutomationButtonUrl, automationCustomerKeyHash, dispatchAutomationEvent as dispatchAutomationEventOnDb, DEFERRABLE_AUTOMATION_TRIGGERS, deferrableAutomationEventId, isDeferrableAutomationTrigger, DELAYED_STEP_AUTOMATION_TRIGGERS, automationTriggerSupportsDelayedSteps, delayedStepSubjectType, dryRunAutomationRule, renderAutomationEmailBody, availableAutomationTriggersForVendor, automationReplayOpen, formNoShowWebinarUrl, isAutomationTriggerAvailableForVendor, isAutomationRuleRunnableForVendor, automationTriggerBetaFeature, watchProgressRulePercent, watchDurationRuleMinutes, isWatchDurationMinutes, WATCH_DURATION_MINUTE_OPTIONS, WATCH_DURATION_DETECTION_NOTE, maskAutomationTarget, materializeAutomationRecipe, parseAutomationRule } from "@/lib/automation-workflow";
+
+/**
+ * A2-08: the execution claim of a request-path trigger runs in its own short
+ * transaction (lock_timeout). These mocks have no transaction: it runs the
+ * callback on the mock itself, so every write still lands on the same spies.
+ */
+function withClaimTransaction<T>(db: T): T {
+  const target = db as Record<string, unknown>;
+  if (!target || typeof target !== "object" || "$transaction" in target) return db;
+  const tx = new Proxy(target, { get: (object, key) => (key === "$executeRaw" ? vi.fn().mockResolvedValue(0) : object[key as string]) });
+  Object.assign(target, { $transaction: vi.fn(async (fn: (client: unknown) => unknown) => fn(tx)) });
+  return db;
+}
+
+const dispatchAutomationEvent: typeof dispatchAutomationEventOnDb = (db, ...rest) => dispatchAutomationEventOnDb(withClaimTransaction(db), ...rest);
 
 const event = {
   vendorId: "vendor-1",
@@ -1022,5 +1037,87 @@ describe("smart automation workflow engine", () => {
     expect(deliveryKeys).toHaveLength(1);
     expect(mocks.enqueueLineNotification.mock.calls[0]?.[1].idempotencyKey)
       .toBe(mocks.enqueueLineNotification.mock.calls[1]?.[1].idempotencyKey);
+  });
+});
+
+describe("A2-08 request-path claim under a merchant save", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.stubEnv("CSRF_SECRET", "automation-workflow-test-secret-longer-than-32-bytes");
+  });
+  afterEach(() => vi.unstubAllEnvs());
+
+  const lockWaitGivenUp = () => new Prisma.PrismaClientKnownRequestError("canceling statement due to lock timeout", {
+    code: "P2010", clientVersion: Prisma.prismaVersion.client, meta: { code: "55P03" },
+  });
+
+  /** A rule whose claim transaction gives up on the rule row; every statement inside is recorded. */
+  function heldRuleDb(options: { recordFails?: boolean } = {}) {
+    const statements: string[] = [];
+    const tx = {
+      $executeRaw: vi.fn(async (strings: TemplateStringsArray) => { statements.push(strings.join("?")); return 0; }),
+      automationExecutionLog: { create: vi.fn().mockRejectedValue(lockWaitGivenUp()) },
+    };
+    return {
+      statements,
+      tx,
+      automationRule: { findMany: vi.fn().mockResolvedValue([{ id: "rule-1", condition: { type: "always" }, actions: [{ type: "add_customer_tag", tag: "VIP" }] }]) },
+      automationExecutionLog: { create: vi.fn(), update: vi.fn(), findUnique: vi.fn(), updateMany: vi.fn() },
+      automationDeferredDispatch: { createMany: options.recordFails ? vi.fn().mockRejectedValue(new Error("synthetic outage")) : vi.fn().mockResolvedValue({ count: 1 }) },
+      customerTagAssignment: { upsert: vi.fn() },
+      $transaction: vi.fn(async (fn: (client: typeof tx) => unknown, transactionOptions: unknown) => {
+        expect(transactionOptions).toEqual({ maxWait: 5_000, timeout: 10_000 });
+        return fn(tx);
+      }),
+    };
+  }
+
+  const registration = {
+    vendorId: "vendor-1",
+    eventId: "form-registered:submission-1",
+    trigger: "form_registered" as const,
+    subjectType: "buyer_registration" as const,
+    subjectId: "submission-1",
+    subjectKeyHash: "customer-hash",
+    recipientEmail: "lead@example.test",
+  };
+
+  it("lists exactly the triggers a request fires; the job-run triggers keep waiting", () => {
+    expect([...DEFERRABLE_AUTOMATION_TRIGGERS].sort()).toEqual(["consultation_booked", "consultation_no_show", "form_registered", "payment_paid"]);
+    expect(AVAILABLE_AUTOMATION_TRIGGERS.filter((trigger) => !isDeferrableAutomationTrigger(trigger)).sort())
+      .toEqual(["form_no_show", "viewer_watch_progress", "webinar_attended_duration_gte"]);
+    expect(DEFERRABLE_AUTOMATION_TRIGGERS.map((trigger) => deferrableAutomationEventId(trigger, "s-1"))).toEqual([
+      "form-registered:s-1", "consultation-booked:s-1", "consultation-no-show:s-1", "payment-paid:s-1",
+    ]);
+  });
+
+  it("bounds the claim's lock wait, runs nothing and records the rule for the job when the wait is given up", async () => {
+    const db = heldRuleDb();
+    await expect(dispatchAutomationEventOnDb(db as never, registration)).resolves.toEqual([{ ruleId: "rule-1", status: "deferred" }]);
+    expect(db.statements).toEqual(["SET LOCAL lock_timeout = '2s'", "SET LOCAL statement_timeout = '3s'"]);
+    expect(db.automationExecutionLog.create).not.toHaveBeenCalled();
+    expect(db.customerTagAssignment.upsert).not.toHaveBeenCalled();
+    expect(db.automationDeferredDispatch.createMany).toHaveBeenCalledWith({
+      data: [{ vendorId: "vendor-1", ruleId: "rule-1", trigger: "form_registered", subjectId: "submission-1" }],
+      skipDuplicates: true,
+    });
+    expect(mocks.captureOperationalError).toHaveBeenCalledWith(expect.any(Error), { source: "automation_dispatch", operation: "claim_deferred" }, { level: "warning" });
+  });
+
+  it("reports a deferral it could not record, without failing the event", async () => {
+    const db = heldRuleDb({ recordFails: true });
+    await expect(dispatchAutomationEventOnDb(db as never, registration)).resolves.toEqual([{ ruleId: "rule-1", status: "deferred_unrecorded" }]);
+    expect(mocks.captureOperationalError).toHaveBeenCalledWith(expect.any(Error), { source: "automation_dispatch", operation: "claim_defer_failed" }, undefined);
+  });
+
+  it("keeps a job-run trigger's claim outside any bounded transaction (it waits for the save as before)", async () => {
+    const db = heldRuleDb();
+    db.automationExecutionLog.create.mockResolvedValue({ id: "log-1", createdAt: new Date() });
+    db.automationExecutionLog.update.mockResolvedValue({});
+    db.customerTagAssignment.upsert.mockResolvedValue({});
+    const noShow = { ...registration, trigger: "form_no_show" as const, eventId: "form-no-show:submission-1:1" };
+    await expect(dispatchAutomationEventOnDb(db as never, noShow)).resolves.toEqual([{ ruleId: "rule-1", status: "completed" }]);
+    expect(db.$transaction).not.toHaveBeenCalled();
+    expect(db.automationDeferredDispatch.createMany).not.toHaveBeenCalled();
   });
 });

@@ -405,7 +405,11 @@ describe("觸發：事件發生時建立 run", () => {
     await expect(onlyRun(t)).resolves.toMatchObject({ automationRuleId: r.id, consultationBookingId: row.id, formSubmissionId: null });
 
     const other = await booking(t);
-    vi.spyOn(db, "$transaction").mockRejectedValueOnce(new Error("synthetic run write failure"));
+    const realTransaction = db.$transaction.bind(db);
+    vi.spyOn(db, "$transaction")
+      // A2-08: a request-path trigger claims its execution in its own short transaction first.
+      .mockImplementationOnce(realTransaction as never)
+      .mockRejectedValueOnce(new Error("synthetic run write failure"));
     await expect(booked(t, other)).resolves.toEqual([{ ruleId: r.id, status: "completed" }]);
     expect(monitoring.captureOperationalError).toHaveBeenCalledWith(expect.any(Error), { source: "automation_delayed_steps", operation: "start_run" }, undefined);
     await expect(db.delayedStepRun.count({ where: { vendorId: t.vendor.id, consultationBookingId: other.id } })).resolves.toBe(0);
@@ -1081,13 +1085,15 @@ describe("審查修正（PR #601）", () => {
     const r = await rule(t);
     const first = await step(t, r.id, 7 * 1_440);
     const lead = await registration(t);
-    // The step moves to 1 hour between the event reading the rule and starting the run.
-    const original = db.automationExecutionLog.create.bind(db.automationExecutionLog);
+    // The step moves to 1 hour between the event reading the rule and starting the run
+    // (here: as the event records its execution's completion; A2-08 moved the log's
+    // insert into the claim's own short transaction).
+    const original = db.automationExecutionLog.update.bind(db.automationExecutionLog);
     const moveFirstStep = async (args: Parameters<typeof original>[0]) => {
       await updateAutomationRuleStep({ linePushAllowed: true, vendorId: t.vendor.id, ruleId: r.id, stepId: first.id, step: { delayMinutes: 60, condition: { type: "always" }, actions: [TAG_ACTION], isActive: true } });
       return original(args);
     };
-    vi.spyOn(db.automationExecutionLog, "create").mockImplementationOnce(moveFirstStep as never);
+    vi.spyOn(db.automationExecutionLog, "update").mockImplementationOnce(moveFirstStep as never);
     await registered(t, lead);
     const run = await onlyRun(t);
     expect(run.nextRunAt).toEqual(after(run.anchorAt, 60 * MINUTE));

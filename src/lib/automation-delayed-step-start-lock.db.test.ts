@@ -250,8 +250,12 @@ function runsOf(f: Fixture) {
 const jobTimeFor = (log: { completedAt: Date | null }) => new Date(log.completedAt!.getTime() + PENDING_RUN_START_MIN_AGE_MS + MINUTE);
 
 describe("Q-13 重現：商家存檔鎖住規則列時進來的事件", () => {
-  it("a save that already holds the rule when the event arrives makes the whole event wait (the log insert's foreign key), then the run is created", async () => {
-    const f = await fixture();
+  // A2-08: a request-path trigger (form_registered, the consultation triggers,
+  // payment_paid) no longer waits for the whole save: its claim gives up after
+  // about 2 s and the job runs the rule later
+  // (automation-dispatch-rule-lock.db.test.ts). A job-run trigger keeps this behaviour.
+  it("a save that already holds the rule when a job-run event (form_no_show) arrives makes the whole event wait (the log insert's foreign key), then the run is created", async () => {
+    const f = await fixture({ trigger: "form_no_show", grants: [DELAYED_STEPS_GRANT, "automation_form_no_show"] });
     const lead = await registration(f);
     const holder = holdRule(f, 180);
     let dispatched: ReturnType<typeof registered> | undefined;
