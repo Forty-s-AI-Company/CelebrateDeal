@@ -25,6 +25,7 @@ import { isFixedSessionLive } from "@/lib/live-fixed-sessions";
 import { normalizeBlacklistIdentifier } from "@/lib/blacklist-identifiers";
 import { isEmailBlacklistedForVendor } from "@/lib/email-blacklist";
 import { STUDENT_PORTAL_CLOCK_SKEW_SECONDS } from "@/lib/student-portal-clock-skew";
+import { safeRecipientNameOr } from "@/lib/safe-recipient-name";
 // Values used at module load come from the dependency-free trigger module:
 // delayed-step-runs.ts reaches this module again through the automation
 // engine (delayed-step-runs -> automation-delayed-steps -> automation-workflow
@@ -120,6 +121,7 @@ export type FormSubmissionVerificationDeliveryInput = {
   vendorName: string;
   liveId: string | null;
   formSubmissionId: string;
+  /** Never put in the e-mail (A2-13): the address is not confirmed yet. */
   recipientName: string;
   recipientEmail: string;
   verificationVersion: number;
@@ -435,10 +437,16 @@ export async function ensureLiveReminderDelivery(
         const claimed = await tx.emailDelivery.updateMany({
           where: {
             id: deliveryId,
+            vendorId: input.vendorId,
             status: "superseded",
             updatedAt: existing.updatedAt,
           },
           data: {
+            // The content rendered now, not the one stored when the row was
+            // first queued (A2-13: a snapshot queued before a rendering fix
+            // comes back with the fixed content). Same id, recipient and
+            // unsubscribe link, so nothing else about the delivery changes.
+            ...protectedPayload,
             status: isSuppressed ? "suppressed" : "queued",
             nextAttemptAt: isSuppressed ? null : nextAttemptAt,
             claimedAt: null,
@@ -1015,10 +1023,14 @@ function stableVerificationDeliveryId(input: Pick<
   return `email_${digest}`;
 }
 
+/** One line of the vendor's own text (Live title, vendor name); never used for a recipient's name. */
 function safeDisplayText(value: string, fallback: string) {
   const normalized = value.replace(/\s+/gu, " ").trim();
   return normalized ? normalized.slice(0, 160) : fallback;
 }
+
+/** The greeting of a platform-written notice when the recipient's own name cannot be used. */
+const SYSTEM_NOTICE_GREETING = "您好";
 
 /**
  * Queues one platform-owned ownership verification email. The raw token only
@@ -1036,12 +1048,15 @@ export async function ensureFormSubmissionVerificationDelivery(
     version: input.verificationVersion,
   });
   const verificationUrl = createFormSubmissionVerificationUrl(token);
-  const recipientName = safeDisplayText(input.recipientName, "您好");
+  // A2-13 (#670 review MINOR-1): this goes to an address nobody has confirmed
+  // yet, typed by whoever filled in the form, so the name typed with it is
+  // never put in: every verification e-mail opens with the same greeting.
+  // `input.recipientName` is deliberately unused.
   const vendorName = safeDisplayText(input.vendorName, "活動主辦單位");
   const protectedPayload = protectEmailDeliveryPayload({
     recipientEmail: input.recipientEmail,
     subject: `請確認 ${vendorName} 的報名 Email`,
-    body: `${recipientName}：\n\n請開啟以下連結，並在頁面上按下確認，完成 Email 驗證：\n${verificationUrl}\n\n連結將於 48 小時後失效。如果不是你本人送出，可以忽略這封信。`,
+    body: `${SYSTEM_NOTICE_GREETING}：\n\n請開啟以下連結，並在頁面上按下確認，完成 Email 驗證：\n${verificationUrl}\n\n連結將於 48 小時後失效。如果不是你本人送出，可以忽略這封信。`,
     brand: input.emailBrand,
   }, {
     vendorId: input.vendorId,
@@ -1141,6 +1156,8 @@ export type FixedSessionAlreadyRegisteredDeliveryInput = {
   targetSessionId: string;
   formSubmissionId: string;
   recipientName: string;
+  /** The registration is VERIFIED; otherwise its name is never put in the notice. */
+  recipientVerified?: boolean;
   recipientEmail: string;
   emailBrand?: VendorEmailBrandSource;
 };
@@ -1187,7 +1204,11 @@ export async function ensureFixedSessionAlreadyRegisteredDelivery(input: FixedSe
   const db = getDb();
   const window = Math.floor(now.getTime() / ALREADY_REGISTERED_WINDOW_MS);
   const deliveryId = stableAlreadyRegisteredDeliveryId(input, window);
-  const recipientName = safeDisplayText(input.recipientName, "您好");
+  // A2-13: whoever types the address triggers this notice, and the registration
+  // it names may be unconfirmed: its name is used only once it is VERIFIED.
+  const recipientName = input.recipientVerified === true
+    ? safeRecipientNameOr(input.recipientName, SYSTEM_NOTICE_GREETING)
+    : SYSTEM_NOTICE_GREETING;
   const liveTitle = safeDisplayText(input.liveTitle, "直播");
   const vendorName = safeDisplayText(input.vendorName, "活動主辦單位");
   // Single use and bound to the session held now: a switch, or 24 hours, ends it.
@@ -1308,7 +1329,7 @@ function fixedSessionCancelledIdempotencyKey(sessionId: string, cancelledAtMs: n
 export async function ensureFixedSessionCancelledDelivery(input: FixedSessionCancelledDeliveryInput) {
   const db = getDb();
   const deliveryId = stableFixedSessionCancelledDeliveryId(input);
-  const recipientName = safeDisplayText(input.recipientName, "您好");
+  const recipientName = safeRecipientNameOr(input.recipientName, SYSTEM_NOTICE_GREETING);
   const liveTitle = safeDisplayText(input.liveTitle, "直播");
   const vendorName = safeDisplayText(input.vendorName, "活動主辦單位");
   const protectedPayload = protectEmailDeliveryPayload({

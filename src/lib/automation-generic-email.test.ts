@@ -13,6 +13,7 @@ import { parseAutomationRule } from "@/lib/automation-workflow";
 import { protectEmailDeliveryPayload } from "@/lib/email-delivery-pii";
 import { richTextToEmailHtml } from "@/lib/rich-text";
 import { ensureEmailUnsubscribeFooter } from "@/lib/email-delivery-format";
+import { expectNoFormatting, expectNoPhishingTrace, NORMAL_NAMES, PHISHING_NAMES, STACKED_FORMAT_NAME } from "@/test/recipient-name-cases";
 
 describe("generic e-mail content (A2-04)", () => {
   it("trims, normalizes line breaks and keeps plain text as typed", () => {
@@ -289,6 +290,66 @@ describe("generic e-mail second review fixes (A2-04, #665)", () => {
     "ｅｖｉｌ。ｃｏｍ",
   ])("drops a name that is a non-ASCII or ideographic-dot address (%j)", (name) => {
     expect(renderGenericEmail({ subject: "{{name}}", body: "{{name}}" }, { name })).toEqual({ subject: "你", body: "你" });
+  });
+});
+
+describe("generic e-mail {{name}} through the shared recipient-name cleaning (A2-13)", () => {
+  const content = { subject: "{{name}}，感謝你", body: "{{name}} 你好\n{{vendor_name}}" };
+
+  it.each(PHISHING_NAMES)("greets with 你 instead of a phishing name: $label", ({ name }) => {
+    const rendered = renderGenericEmail(content, { name, vendor_name: "商家" });
+    expectNoPhishingTrace(rendered);
+    expect(rendered).toEqual({ subject: "你，感謝你", body: "你 你好\n商家" });
+  });
+
+  it("removes a stacked line-start format prefix", () => {
+    const rendered = renderGenericEmail(content, { name: STACKED_FORMAT_NAME.name, vendor_name: "商家" });
+    expectNoFormatting(rendered);
+    expect(rendered.body).toBe(`${STACKED_FORMAT_NAME.cleaned} 你好\n商家`);
+  });
+
+  it.each(NORMAL_NAMES)("keeps an ordinary name: %s", (name) => {
+    expect(renderGenericEmail(content, { name, vendor_name: "商家" })).toEqual({ subject: `${name}，感謝你`, body: `${name} 你好\n商家` });
+  });
+
+  it.each([
+    ["CGJ U+034F", "evil͏.com"],
+    ["variation selector U+FE00", "evil︀.com"],
+    ["variation selector U+FE0F after the dot", "evil.️com"],
+    ["tag space U+E0020", "evil\u{e0020}.com"],
+    ["Mongolian FVS U+180B", "evil᠋.com"],
+    ["Khmer U+17B4", "evil឴.com"],
+    ["interlinear anchor U+FFF9", "evil￹.com"],
+    ["shorthand overlap U+1BCA0", "evil\u{1bca0}.com"],
+    ["musical beam U+1D173", "evil\u{1d173}.com"],
+    ["combining acute U+0301 after the dot", "evil.́com"],
+    ["combining acute U+0301 before the dot", "eviĺ.com"],
+    ["hidden character inside www", "w͏ww.evil.test"],
+  ])("refuses a merchant text that hides an address with %s (#670 MAJOR-1)", (_label, address) => {
+    expect(genericEmailTextLooksLikeLink(`請看 ${address}`)).toBe(true);
+    expect(normalizeGenericEmailContent({ subject: "ok", body: `請看 ${address}` })).toBeNull();
+    expect(normalizeGenericEmailContent({ subject: `請看 ${address}`, body: "ok" })).toBeNull();
+  });
+
+  it.each(["例子.com", "eviĺ.com", "пример.org/login", "請看 evil.com立即登入", "EVIL.COM", "Shop.Example.com/x", "主題.app/login"])("refuses an internationalized, run-on or upper-case ASCII host (%j)", (address) => {
+    expect(genericEmailTextLooksLikeLink(address)).toBe(true);
+    expect(normalizeGenericEmailContent({ subject: "ok", body: address })).toBeNull();
+  });
+
+  it.each(["本週主題.App 開發入門", "王老師.Tech 講座", "直播.TV 版本", "第二堂.Dev 實作", "課程.Shop 開幕"])(
+    "lets Chinese running into a capitalised English word after a dot through (%j, #670 second review MINOR-1)",
+    (text) => {
+      expect(genericEmailTextLooksLikeLink(text)).toBe(false);
+      // A stored rule with such a text keeps sending: it is still valid when it runs.
+      expect(normalizeGenericEmailContent({ subject: text, body: text })).toEqual({ subject: text, body: text });
+      expect(genericEmailContentUsable("form_registered", { subject: text, body: text })).toBe(true);
+    },
+  );
+
+  it("still lets ordinary merchant text with accents, Indic marks and emoji through", () => {
+    for (const text of ["Café 與 José Müller 的分享", "राहुल का सत्र", "❤️ 感謝參加", "版本 v1.2.3", "Next.js 入門"]) {
+      expect(genericEmailTextLooksLikeLink(text), text).toBe(false);
+    }
   });
 });
 

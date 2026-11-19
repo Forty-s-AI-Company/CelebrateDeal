@@ -404,10 +404,16 @@ describe("email delivery outbox", () => {
     expect(mocks.db.emailDelivery.updateMany).toHaveBeenCalledWith({
       where: {
         id: expect.stringMatching(/^email_[a-f0-9]{32}$/u),
+        // #670 second review NIT: the compare-and-set is bound to the vendor too.
+        vendorId: "vendor-1",
         status: "superseded",
         updatedAt,
       },
       data: {
+        // A2-13: the reactivated row carries the content rendered now, not the stored snapshot.
+        payloadEncryptedEnvelope: expect.stringMatching(/^v1\./u),
+        recipientHash: expect.any(String),
+        recipientMaskedEmail: "l***@example.test",
         status: "queued",
         nextAttemptAt: new Date("2026-08-08T03:00:00.000Z"),
         claimedAt: null,
