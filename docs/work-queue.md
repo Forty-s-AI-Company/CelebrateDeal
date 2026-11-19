@@ -60,8 +60,8 @@
 | 5 | A2-05 | PayUni 回呼遺失時主動查詢補單排程 | 高（金流） | 已完成 [#664](https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/664)（三輪審查）：`/api/jobs/payment-reconcile`，與回呼共用入帳路徑與 `WebhookEvent` claim；金額只取伺服器紀錄；退款／請款取消／金額不符轉人工；需 `PAYMENT_RECONCILE_ENABLED=true`（staging Preview 已設，Production 未設、需 owner 同意）。staging migrate run 44408557820 套用 2 條；手動觸發 job http=200。未驗證：Sandbox 實測遺失回呼補單、請款前 `RemainAmt`／`CloseStatus` 的實際值、「以部分退款退完剩餘金額」的 PayUni 行為（後續項目） |
 | 6 | A2-06 | 其餘 35 個租戶 action 補兩租戶 DB 測試 | 高（租戶） | 已完成 [#666](https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/666)：36 個入口全部覆蓋，未發現跨租戶漏洞；`TENANT_ACTION_MATRIX.md` 更新。觀察：`savePartnerPageAction` 部分寫入、`duplicateInteractionScriptAction` 錯誤無提示、`LiveStudioDraft.liveId` FK 未綁 vendor（後續項目） |
 | 7 | A2-07 | fan-out 的 `consentedAt <= occurredAt` 改用共用時鐘偏差 | 一般 | 已完成 [#667](https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/667)，並修正 QA runner 中「事件後 1 秒同意」的舊案例 |
-| 8 | A2-08 | 商家儲存規則持鎖時，請求路徑最多阻塞 15 秒 | 一般 | 進行中 [#671](https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/671)（兩輪審查通過，CI 的序列信測試失敗調查中）：四個請求路徑入口最多等約 2 秒，逾時寫入 `AutomationDeferredDispatch` 由 job 補派，依 eventId 去重、時間退避 48 小時 |
-| 9 | A2-09 | http 環境下 LINE 動作失敗不拖垮整個延遲步驟 | 一般 | 未開始 |
+| 8 | A2-08 | 商家儲存規則持鎖時，請求路徑最多阻塞 15 秒 | 一般 | 已完成 [#671](https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/671)（三輪審查）：四個請求路徑入口最多等約 2 秒，逾時寫入 `AutomationDeferredDispatch` 由 job 補派；依 eventId 去重（不看版本）、時間退避 48 小時、P2028／P2024 也延後。staging migrate run 44463060855 套用；alias 切到 `71f6c954`，browser smoke 44463257138、首次成功 44463263419 PASS |
+| 9 | A2-09 | http 環境下 LINE 動作失敗不拖垮整個延遲步驟 | 一般 | 已完成 [#673](https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/673)（審查）：四種確定性設定錯誤只略過該 LINE 動作並記原因碼，其他動作照做、步驟 completed；正式環境的非 HTTPS 按鈕送 warning。alias 切到 `65be5c14`，browser smoke 44474092809、首次成功 44474098204 PASS。不在範圍：直播提醒／開播通知的 LINE |
 | 10 | A2-10 | 固定場次以個人觀看連結當場次提示 | 高（auth） | 已完成 [#669](https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/669)（兩輪審查）：場次提示 cookie（`lsh1`，只帶報名 id，HMAC 涵蓋 vendor／live／到期），三處共用 `resolveViewerFixedSession`；提示場次取消或未開始而他場在播時退回公開時程。未做：開連結後商家關回放或移場次的邊界（後續項目） |
 | 11 | A2-11 | 手機底部「更多」不靠 JS 的後備 | 一般 | 已完成 [#668](https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/668)：原生 popover，hydration 後轉交 React 抽屜。未實測：實機 iOS Safari、舊 Android |
 | 12 | A2-12 | DB 測試不依賴外部 `CSRF_SECRET` | 一般 | 已完成 [#667](https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/667)：21 個 DB 測試檔改用 `vi.stubEnv` |
@@ -95,7 +95,7 @@
 - 商家名稱出現在邀請信與學員登入信主旨；若開放商家自由註冊需另行處理（#670 審查）。
 - 場次提示：開連結後商家關回放或移場次時，提示可能擋住正在播的公開場次（#669 複審 MINOR-A）。
 - `savePartnerPageAction` 先寫文字後驗商品造成部分寫入；`duplicateInteractionScriptAction` 錯誤無提示；`LiveStudioDraft.liveId` FK 未綁 vendor（#666）。
-- `automation-line-push-policy.db.test.ts` 的 lock_timeout 計時斷言在本機偶發超過 7000 ms（master 亦然）。
+- ~~`automation-line-push-policy.db.test.ts` 計時斷言偶發失敗~~：[#674](https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/674) 改用 PG 端證據。
 - 首次成功路徑 runner 失敗時記錄是哪個動作逾時（2026-11-19 staging FORM 步驟兩次偶發逾時，重跑通過）。
 - `accountant-foreign-message-template-edit-direct-url.spec.ts:12` 偶發失敗（#664 CI）。
 - npm audit 對 picomatch（GHSA-fc5q-39xc-vjpf）的例外於 2027-01-01 到期；上游出修補版後移除（#642）。
