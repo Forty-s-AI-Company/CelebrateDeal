@@ -15,9 +15,11 @@ import {
   fixedSessionRegistrationState,
   groupOpenFixedSessionsByDate,
   isFixedSessionLive,
+  fixedSessionReplayAvailableUntil,
   pickPublicFixedSession,
   type FixedSessionRecord,
   type FixedSessionRegistrationState,
+  type FixedSessionReplayRules,
   type ParsedFixedSession,
   type PublicFixedSessionDay,
 } from "@/lib/live-fixed-sessions";
@@ -331,6 +333,24 @@ function isPlayingAt(session: Pick<FixedSessionRecord, "startAt" | "status">, du
   return session.status !== "cancelled" && startMs <= now.getTime() && now.getTime() < startMs + durationSeconds * 1_000;
 }
 
+/** The Live fields the viewer's session choice reads: its replay rules and video length. */
+export type ViewerFixedSessionLive = FixedSessionReplayRules & { video: { durationSec: number | null } | null };
+
+/**
+ * A3-04 (#669 review MINOR-A): a session that is over and can no longer be
+ * replayed under the Live's replay rules as they are NOW (not as they were
+ * when the link was opened): replays are off, or the session's replay window
+ * or the Live's replay deadline has passed. Same rules as the runtime
+ * (resolveFixedSessionRuntime): the deadline itself is already closed.
+ */
+function isSessionOverWithoutReplay(live: ViewerFixedSessionLive, session: Pick<FixedSessionRecord, "startAt">, now: Date) {
+  const durationSeconds = live.video?.durationSec ?? 0;
+  if (now.getTime() < session.startAt.getTime() + durationSeconds * 1_000) return false;
+  if (!live.replayEnabled) return true;
+  const replayUntil = fixedSessionReplayAvailableUntil(session, live, durationSeconds);
+  return replayUntil !== null && now.getTime() >= replayUntil.getTime();
+}
+
 /**
  * The session a viewer of a fixed-session Live follows:
  *
@@ -339,11 +359,20 @@ function isPlayingAt(session: Pick<FixedSessionRecord, "startAt" | "status">, du
  *    chose (even a cancelled one, which then never plays);
  * 2. otherwise a visitor holding this Live's session-hint cookie (A2-10, set
  *    by the personal watch link of a reminder or live-start notice) follows
- *    the session of the registration it names, with two lenient fallbacks to
- *    the public schedule (review MINOR-1: the link is a GET, so a hint can be
- *    planted or forwarded, and it must never lock a browser out of what
- *    everyone else can watch):
+ *    the session the registration it names holds right now. The cookie names
+ *    only the registration, never a session: the session is read from the
+ *    database on every request (A3-04: together with the Live's current
+ *    replay rules), so after the registration is moved, the session it held
+ *    when the link was opened is never used as the hint again. Three lenient
+ *    fallbacks to the public schedule (review MINOR-1: the link is a GET, so
+ *    a hint can be planted or forwarded, and it must never lock a browser
+ *    out of what everyone else can watch):
  *    - the hinted session is cancelled: the hint is ignored;
+ *    - the hinted session is over and cannot be replayed any more (A3-04:
+ *      replays turned off after the link was opened, the replay window has
+ *      closed, or the registration was moved to a session that is already
+ *      over): the hint is ignored, so it never pins the browser to an ended
+ *      session while another one is playing;
  *    - the hinted session has not started yet while a public session is
  *      playing now: the playing session is followed (the admission then
  *      reports that session, so the registrant's watch time is not credited).
@@ -353,9 +382,10 @@ function isPlayingAt(session: Pick<FixedSessionRecord, "startAt" | "status">, du
  *    the next one, else the latest (for its replay).
  *
  * The watch page, the playback source and the admission all call this with
- * the same cookies, so they agree on one session; whether that session is
- * playing, waiting or in replay is decided afterwards by the same lifecycle
- * rules for every source (resolveFixedSessionRuntime).
+ * the same cookies and the same Live row they then pass to
+ * resolveFixedSessionRuntime, so they agree on one session; whether that
+ * session is playing, waiting or in replay is decided afterwards by the same
+ * lifecycle rules for every source.
  */
 export async function resolveViewerFixedSession(
   db: Pick<Prisma.TransactionClient, "formSubmission" | "liveSession">,
@@ -365,10 +395,12 @@ export async function resolveViewerFixedSession(
     registrationToken: string | null | undefined;
     /** This Live's raw session-hint cookie (sessionHintTokenFromRequest). */
     sessionHintToken?: string | null | undefined;
-    durationSeconds: number;
+    /** The Live's replay rules and video, as the caller read the Live row for this request. */
+    live: ViewerFixedSessionLive;
     now: Date;
   },
 ): Promise<ViewerFixedSession | null> {
+  const durationSeconds = input.live.video?.durationSec ?? 0;
   const claim = input.registrationToken ? verifyFormSubmissionChatSessionToken(input.registrationToken, input.now) : null;
   const registered = await registrationFixedSession(db, input, claim?.submissionId ?? null);
   if (registered) return { ...registered, source: "registration" };
@@ -379,28 +411,30 @@ export async function resolveViewerFixedSession(
   const found = hintSubmissionId && hintSubmissionId !== claim?.submissionId
     ? await registrationFixedSession(db, input, hintSubmissionId)
     : null;
-  // A cancelled hinted session never plays: the hint is ignored.
-  const hinted = found && found.status !== "cancelled" ? found : null;
-  // Started (playing, replay or over): the hint decides without a schedule read.
+  // A cancelled hinted session never plays, and one that is over without a
+  // replay never will again: either way the hint is ignored.
+  const hinted = found && found.status !== "cancelled" && !isSessionOverWithoutReplay(input.live, found, input.now) ? found : null;
+  // Started (playing, or over with its replay open): the hint decides without a schedule read.
   if (hinted && hinted.startAt.getTime() <= input.now.getTime()) return { ...hinted, source: "session_hint" };
   const sessions = await db.liveSession.findMany({
     where: { vendorId: input.vendorId, liveId: input.liveId, status: { not: "cancelled" } },
     orderBy: [{ startAt: "asc" }, { id: "asc" }],
     select: FIXED_SESSION_SELECT,
   });
-  const picked = pickPublicFixedSession(sessions, input.durationSeconds, input.now);
+  const picked = pickPublicFixedSession(sessions, durationSeconds, input.now);
   // Still waiting: the hinted session wins unless another session is playing right now.
-  if (hinted && !(picked && isPlayingAt(picked, input.durationSeconds, input.now))) return { ...hinted, source: "session_hint" };
+  if (hinted && !(picked && isPlayingAt(picked, durationSeconds, input.now))) return { ...hinted, source: "session_hint" };
   return picked ? { ...picked, source: "public" } : null;
 }
 
 /**
  * resolveViewerFixedSession for any Live: null unless the Live is in
- * fixed-session mode, so viewer paths can call it unconditionally.
+ * fixed-session mode, so viewer paths can call it unconditionally. `live` is
+ * the same row the caller then hands to resolveFixedSessionRuntime.
  */
 export async function resolveViewerFixedSessionForLive(
   db: Pick<Prisma.TransactionClient, "formSubmission" | "liveSession">,
-  live: { id: string; vendorId: string; sessionMode?: string | null; video?: { durationSec: number | null } | null },
+  live: ViewerFixedSessionLive & { id: string; vendorId: string; sessionMode?: string | null },
   input: { registrationToken: string | null | undefined; sessionHintToken?: string | null | undefined; now: Date },
 ) {
   if (!isFixedSessionLive(live)) return null;
@@ -409,7 +443,7 @@ export async function resolveViewerFixedSessionForLive(
     liveId: live.id,
     registrationToken: input.registrationToken,
     sessionHintToken: input.sessionHintToken,
-    durationSeconds: live.video?.durationSec ?? 0,
+    live,
     now: input.now,
   });
 }

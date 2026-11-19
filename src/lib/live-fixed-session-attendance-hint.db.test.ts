@@ -163,13 +163,15 @@ async function playbackOffset(fx: Fixture, cookies: string[]) {
   return { status: 200, offset: body.playbackStartSeconds ?? null };
 }
 
-function resolve(fx: Fixture, input: { registrationToken?: string | null; sessionHintToken?: string | null }) {
+async function resolve(fx: Fixture, input: { registrationToken?: string | null; sessionHintToken?: string | null }) {
+  // The Live row as it is now, as every viewer path reads it per request.
+  const live = await db.live.findUniqueOrThrow({ where: { id: fx.live.id }, include: { video: true } });
   return resolveViewerFixedSession(db, {
     vendorId: fx.vendor.id,
     liveId: fx.live.id,
     registrationToken: input.registrationToken ?? null,
     sessionHintToken: input.sessionHintToken ?? null,
-    durationSeconds: VIDEO_SECONDS,
+    live,
     now: new Date(),
   });
 }
@@ -419,6 +421,103 @@ describe("personal watch link of a fixed-session Live (A2-10)", () => {
     expect(offset.offset).toBeLessThan(10 * 60 + 30);
     expect(await progressOf(fx, lead.id)).toBeNull();
     await expect(db.liveWatchProgress.count({ where: { vendorId: { in: [other.vendor.id, sibling.vendor.id] } } })).resolves.toBe(0);
+  });
+
+  it("A3-04: replays turned off after the link was opened → an ended hinted session gives way to the session playing now", async () => {
+    const fx = await fixture();
+    // The registrant's session started 2 hours ago and ended an hour ago; `latest` is playing.
+    const ended = await fx.sessionAt(fromNow(-2 * HOUR));
+    const lead = await registrant(fx, ended.id);
+    // Replays on (the default) when the link is opened: the hint is issued and shows the replay.
+    const { cookies } = await openLink(fx, lead.id);
+    const hint = hintOf(fx, cookies);
+    expect(await resolve(fx, { sessionHintToken: hint })).toMatchObject({ id: ended.id, source: "session_hint" });
+    // The vendor then turns replays off: the hint no longer blocks the public session.
+    await db.live.update({ where: { id: fx.live.id }, data: { replayEnabled: false } });
+    expect(await resolve(fx, { sessionHintToken: hint })).toMatchObject({ id: fx.latest.id, source: "public" });
+    const admitted = await admit(fx, cookies);
+    expect(admitted.status).toBe(200);
+    const offset = await playbackOffset(fx, [...cookies, admitted.viewerCookie!]);
+    expect(offset.status).toBe(200);
+    expect(offset.offset).toBeLessThan(10 * 60 + 30);
+    // Not the registrant's session: no watch time is credited (#647 MINOR-1).
+    expect(await progressOf(fx, lead.id)).toBeNull();
+    // Turned back on: the replay of the registrant's own session again.
+    await db.live.update({ where: { id: fx.live.id }, data: { replayEnabled: true } });
+    expect(await resolve(fx, { sessionHintToken: hint })).toMatchObject({ id: ended.id, source: "session_hint" });
+  });
+
+  it("A3-04: a closed replay window or a passed replay deadline drops the hint, re-read on every request", async () => {
+    const fx = await fixture();
+    // Ended 90 minutes ago; a 2-hour window keeps its replay open for 30 more minutes.
+    const ended = await fx.sessionAt(fromNow(-150 * MINUTE));
+    const lead = await registrant(fx, ended.id);
+    await db.live.update({ where: { id: fx.live.id }, data: { sessionReplayWindowHours: 2 } });
+    const hint = hintValue(hintCookie(fx, lead.id));
+    expect(await resolve(fx, { sessionHintToken: hint })).toMatchObject({ id: ended.id, source: "session_hint" });
+    // The window shortened to 1 hour: closed 30 minutes ago.
+    await db.live.update({ where: { id: fx.live.id }, data: { sessionReplayWindowHours: 1 } });
+    expect(await resolve(fx, { sessionHintToken: hint })).toMatchObject({ id: fx.latest.id, source: "public" });
+    // An open-ended window but a Live-wide replay deadline already passed.
+    await db.live.update({ where: { id: fx.live.id }, data: { sessionReplayWindowHours: null, replayAvailableUntil: fromNow(-MINUTE) } });
+    expect(await resolve(fx, { sessionHintToken: hint })).toMatchObject({ id: fx.latest.id, source: "public" });
+    // A playing hinted session is never affected by the replay rules.
+    await db.live.update({ where: { id: fx.live.id }, data: { replayEnabled: false } });
+    await db.formSubmission.update({ where: { id: lead.id }, data: { liveSessionId: fx.own.id } });
+    expect(await resolve(fx, { sessionHintToken: hint })).toMatchObject({ id: fx.own.id, source: "session_hint" });
+  });
+
+  it("A3-04: moved to a session that is already over with no replay → the public schedule, never the old or the ended session", async () => {
+    const fx = await fixture();
+    const lead = await registrant(fx, fx.own.id);
+    const { cookies } = await openLink(fx, lead.id);
+    const hint = hintOf(fx, cookies);
+    expect(await resolve(fx, { sessionHintToken: hint })).toMatchObject({ id: fx.own.id, source: "session_hint" });
+    // The vendor moves the registration to a session that ended two hours ago, with replays off.
+    const past = await fx.sessionAt(fromNow(-3 * HOUR));
+    await db.formSubmission.update({ where: { id: lead.id }, data: { liveSessionId: past.id } });
+    await db.live.update({ where: { id: fx.live.id }, data: { replayEnabled: false } });
+    expect(await resolve(fx, { sessionHintToken: hint })).toMatchObject({ id: fx.latest.id, source: "public" });
+    const admitted = await admit(fx, cookies);
+    expect(admitted.status).toBe(200);
+    expect((await playbackOffset(fx, [...cookies, admitted.viewerCookie!])).offset).toBeLessThan(10 * 60 + 30);
+    expect(await progressOf(fx, lead.id)).toBeNull();
+    // With replays on, the registration's current session (its replay) is followed, still not the old one.
+    await db.live.update({ where: { id: fx.live.id }, data: { replayEnabled: true } });
+    expect(await resolve(fx, { sessionHintToken: hint })).toMatchObject({ id: past.id, source: "session_hint" });
+  });
+
+  it("A3-04: moved away while the old session is the only one playing → that session publicly, credited to nobody", async () => {
+    const fx = await fixture();
+    // Only the registrant's original session plays now.
+    await db.liveSession.update({ where: { id: fx.latest.id }, data: { startAt: fromNow(3 * HOUR) } });
+    const lead = await registrant(fx, fx.own.id);
+    const { cookies } = await openLink(fx, lead.id);
+    const hint = hintOf(fx, cookies);
+    const upcoming = await fx.sessionAt(fromNow(DAY));
+    await db.formSubmission.update({ where: { id: lead.id }, data: { liveSessionId: upcoming.id } });
+    // The old session is what everyone can watch now, but it is no longer the hint's session.
+    expect(await resolve(fx, { sessionHintToken: hint })).toMatchObject({ id: fx.own.id, source: "public" });
+    const admitted = await admit(fx, cookies);
+    expect(admitted.status).toBe(200);
+    expect(await progressOf(fx, lead.id)).toBeNull();
+    // Once nothing plays, the device waits for the registration's new session.
+    await db.liveSession.update({ where: { id: fx.own.id }, data: { startAt: fromNow(2 * HOUR) } });
+    expect(await resolve(fx, { sessionHintToken: hint })).toMatchObject({ id: upcoming.id, source: "session_hint" });
+  });
+
+  it("A3-04: an ended hinted session without replay and nothing playing → the next public session", async () => {
+    const fx = await fixture();
+    await db.liveSession.update({ where: { id: fx.own.id }, data: { startAt: fromNow(-3 * HOUR) } });
+    await db.liveSession.update({ where: { id: fx.latest.id }, data: { startAt: fromNow(2 * HOUR) } });
+    await db.live.update({ where: { id: fx.live.id }, data: { replayEnabled: false } });
+    const lead = await registrant(fx, fx.own.id);
+    const hint = hintValue(hintCookie(fx, lead.id));
+    expect(await resolve(fx, { sessionHintToken: hint })).toMatchObject({ id: fx.latest.id, source: "public" });
+    expect((await admit(fx, [`${liveSessionHintCookieName(fx.live.id)}=${hint}`])).status).toBe(404);
+    // The registration cookie stays strict: its own ended session, not swapped for the public one.
+    const registration = createFormSubmissionChatSessionToken({ submissionId: lead.id });
+    expect(await resolve(fx, { registrationToken: registration, sessionHintToken: hint })).toMatchObject({ id: fx.own.id, source: "registration" });
   });
 
   it("lets a valid registration cookie win over the hint, as before", async () => {

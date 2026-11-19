@@ -399,7 +399,7 @@ describe("downstream timing follows the chosen session", () => {
     const live = await getDb().live.findUniqueOrThrow({ where: { id: fx.live.id }, include: { video: true } });
     const token = createFormSubmissionChatSessionToken({ submissionId: registrant.id, now });
 
-    const own = await resolveViewerFixedSession(getDb(), { vendorId: fx.vendor.id, liveId: fx.live.id, registrationToken: token, durationSeconds: 3_600, now });
+    const own = await resolveViewerFixedSession(getDb(), { vendorId: fx.vendor.id, liveId: fx.live.id, registrationToken: token, live, now });
     expect(own).toMatchObject({ id: upcomingSession!.id, source: "registration" });
     expect(resolveViewerLiveRuntime(live, { vendorTimezone: "Asia/Taipei", evergreenToken: null, now, fixedSession: own }))
       .toMatchObject({ state: "waiting", playbackStartSeconds: null });
@@ -410,7 +410,7 @@ describe("downstream timing follows the chosen session", () => {
     const foreign = await verifiedRegistrant(other, otherSession!.id, "foreign");
     const foreignToken = createFormSubmissionChatSessionToken({ submissionId: foreign.id, now });
     for (const registrationToken of [null, foreignToken, "fss1.tampered.1.x"]) {
-      const publicSession = await resolveViewerFixedSession(getDb(), { vendorId: fx.vendor.id, liveId: fx.live.id, registrationToken, durationSeconds: 3_600, now });
+      const publicSession = await resolveViewerFixedSession(getDb(), { vendorId: fx.vendor.id, liveId: fx.live.id, registrationToken, live, now });
       expect(publicSession).toMatchObject({ id: runningSession!.id, source: "public" });
       const runtime = resolveViewerLiveRuntime(live, { vendorTimezone: "Asia/Taipei", evergreenToken: null, now, fixedSession: publicSession });
       expect(runtime.state).toBe("playing");

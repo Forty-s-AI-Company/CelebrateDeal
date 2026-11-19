@@ -49,12 +49,13 @@
   - **期限**（MINOR-3）：取「開連結當下報名所屬場次的觀看窗結束」與連結期限較早者，token 裡的到期時間與 Max-Age 相同。觀看窗結束是：回放關閉時為場次結束（場次開始＋影片長度）；回放開啟時為場次回放截止（`sessionReplayWindowHours` 與直播 `replayAvailableUntil` 較早者，不早於場次結束）；回放沒有任何截止時為連結期限。開連結時觀看窗已經結束就不設提示。之後換到更晚場次的報名者，提示在舊場次觀看窗結束時失效，改用新場次提醒信裡的連結即可。
   - **唯一用途**：`resolveViewerFixedSession`（`src/lib/live-fixed-sessions-store.ts`）決定這台裝置跟隨哪個場次。觀看頁、`/api/live-playback-source`、`/api/live-admission` 三處用同一組 cookie 呼叫它，所以頁面倒數、影片起點與入場放行一定是同一個場次。`Path=/` 是因為觀看頁（`/live/{slug}`）與兩個 API 都要看得到它，三者才會一致；聊天、私訊、互動、LINE 綁定、結帳、觀看紀錄寫入與常青場次都不讀它（`src/lib/live-attendance-cookie.test.ts` 掃描原始碼確認只有 resolver 讀它，resolver 的包裝只被這三處呼叫）。
   - **優先順序**：本直播、`VERIFIED`、表單屬於該商家、場次屬於該商家與直播的報名 cookie 優先；報名 cookie 沒有、屬於別場直播或不合格時，才用場次提示；兩者都沒有合格報名時跟隨公開時程。`resolveViewerFixedSession` 回傳的 `source` 分別是 `"registration"`、`"session_hint"`、`"public"`，只有報名 cookie 會得到 `"registration"`（MINOR-2），提示不被當成報名者身分。
-  - **綁定**：驗章時以這次的 vendorId／liveId 重算 HMAC；最後一次查詢再綁報名屬於這場直播、`VERIFIED`、表單屬於該商家、場次屬於該商家與直播（與報名 cookie 完全相同的條件）。cookie 只帶報名 id，**場次每次都從資料庫讀**：報名換到別的場次就跟著新場次（新場次的時間窗照下一點處理）；報名不再是 `VERIFIED` 或被刪除時退回公開時程。
+  - **綁定**：驗章時以這次的 vendorId／liveId 重算 HMAC；最後一次查詢再綁報名屬於這場直播、`VERIFIED`、表單屬於該商家、場次屬於該商家與直播（與報名 cookie 完全相同的條件）。cookie 只帶報名 id，**場次每次都從資料庫讀**：報名換到別的場次就跟著新場次（新場次的時間窗照下一點處理），開連結當時的舊場次不會再被當成提示場次（舊場次若正在播，裝置是以公開時程身分看它，觀看進度不累計）；報名不再是 `VERIFIED` 或被刪除時退回公開時程。
   - **時間窗**（MINOR-1：連結是 GET，提示可能被站外頁面植入或被轉寄，所以提示只能讓裝置「多看到自己的場次」，不能把它鎖在別人看得到的場次之外）：
     - 提示指向的場次**已取消**：當作沒有提示，跟隨公開時程。
     - 提示指向的場次**還沒開始**，而公開時程上有場次**正在播**：跟隨正在播的那場。這時入場回報的 `fixedSessionId` 不是報名的場次，觀看進度不累計。
     - 提示指向的場次還沒開始、而且沒有場次正在播：跟隨自己的場次（等待中，不會提早放行；公開時程此時也沒有可放行的場次）。
-    - 提示指向的場次已開始（播放中、回放中或已結束）：跟隨自己的場次，是否放行由與報名 cookie 相同的 `resolveFixedSessionRuntime` 決定。
+    - 提示指向的場次已開始而且**還能看**（播放中或回放中）：跟隨自己的場次，是否放行由與報名 cookie 相同的 `resolveFixedSessionRuntime` 決定。
+    - 提示指向的場次**已結束而且沒有回放**（A3-04，#669 複審 MINOR-A：開連結後商家關了回放、`sessionReplayWindowHours` 或直播 `replayAvailableUntil` 已過，或報名被改到一個已結束的場次）：當作沒有提示，跟隨公開時程（正在播的場次，否則下一場，否則最近一場）。回放規則用三個呼叫點這次請求讀到的同一筆直播資料判斷（`replayEnabled` 與 `fixedSessionReplayAvailableUntil`，截止時刻當下即算結束，與 `resolveFixedSessionRuntime` 相同），所以每次請求都依當下設定重新判斷；播放中或還沒開始的提示場次不受回放設定影響。
     - **報名 cookie 維持原規則**：自己的場次已取消時停在已取消的場次（不播放，不改跟公開時程），還沒開始時即使其他場次正在播也不放行。
     - 三個呼叫點用同一個 resolver，所以觀看頁、播放來源與入場一定一致。
   - **觀看紀錄與進度**：出席 cookie 與觀看紀錄寫入不變。**提示會決定入場放行的場次，因此間接影響出席與觀看進度的累計時機**（#669 NIT-2）：入場放行的是報名自己的場次時，`/api/live-admission` 回傳的 `fixedSessionId` 等於報名的 `liveSessionId`，`LiveWatchProgress` 照 #647 MINOR-1 的條件累計；自己場次的回放入場也會記為出席（解除原本的審查 m-1 限制）；依上面的退路改跟公開場次時，出席照 Q-17 記錄，觀看進度不累計。
