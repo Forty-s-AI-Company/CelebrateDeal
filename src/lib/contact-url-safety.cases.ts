@@ -71,6 +71,38 @@ export const CONTACT_URL_REFUSED_CASES: readonly ContactUrlCase[] = [
   { name: "IPv4-mapped 10/8", input: "https://[::ffff:10.0.0.1]/contact", expected: null },
   { name: "IPv4-mapped 192.168/16", input: "https://[::ffff:192.168.0.1]/", expected: null },
   { name: "IPv4-mapped metadata address", input: "https://[::ffff:169.254.169.254]/", expected: null },
+
+  // Special IPv4 ranges (A3-01)
+  { name: "CGNAT 100.64/10 lower end", input: "https://100.64.0.0/", expected: null },
+  { name: "CGNAT 100.64/10 middle", input: "https://100.100.100.100/", expected: null },
+  { name: "CGNAT 100.64/10 upper end", input: "https://100.127.255.255/", expected: null },
+  { name: "192.0.0/24 lower end", input: "https://192.0.0.0/", expected: null },
+  { name: "192.0.0/24 upper end", input: "https://192.0.0.255/", expected: null },
+  { name: "198.18/15 lower end", input: "https://198.18.0.0/", expected: null },
+  { name: "198.18/15 upper end", input: "https://198.19.255.255/", expected: null },
+  { name: "multicast 224/4 lower end", input: "https://224.0.0.1/", expected: null },
+  { name: "multicast 224/4 upper end", input: "https://239.255.255.255/", expected: null },
+  { name: "reserved 240/4 lower end", input: "https://240.0.0.1/", expected: null },
+  { name: "reserved 240/4 upper end", input: "https://255.255.255.254/", expected: null },
+  { name: "broadcast 255.255.255.255", input: "https://255.255.255.255/", expected: null },
+  { name: "CGNAT as one decimal number", input: "https://1681915905/", expected: null },
+
+  // IPv6 forms that embed or reserve IPv4 / site-local (A3-01)
+  { name: "IPv4-compatible loopback, hex", input: "https://[::7f00:1]/", expected: null },
+  { name: "IPv4-compatible loopback, dotted", input: "https://[::127.0.0.1]/", expected: null },
+  { name: "IPv4-compatible 10/8", input: "https://[::a00:1]/", expected: null },
+  { name: "IPv4-compatible metadata address", input: "https://[::a9fe:a9fe]/", expected: null },
+  { name: "IPv4-compatible CGNAT", input: "https://[::6440:1]/", expected: null },
+  { name: "NAT64 loopback", input: "https://[64:ff9b::7f00:1]/", expected: null },
+  { name: "NAT64 10/8, dotted", input: "https://[64:ff9b::10.0.0.1]/", expected: null },
+  { name: "NAT64 metadata address", input: "https://[64:ff9b::a9fe:a9fe]/", expected: null },
+  { name: "NAT64 192.168/16", input: "https://[64:ff9b::c0a8:101]/", expected: null },
+  { name: "6to4 loopback", input: "https://[2002:7f00:1::]/", expected: null },
+  { name: "6to4 10/8", input: "https://[2002:a00:1::1]/", expected: null },
+  { name: "6to4 metadata address", input: "https://[2002:a9fe:a9fe::1]/", expected: null },
+  { name: "6to4 192.168/16", input: "https://[2002:c0a8:101::1]/", expected: null },
+  { name: "site-local fec0::/10 lower end", input: "https://[fec0::1]/", expected: null },
+  { name: "site-local fec0::/10 upper end", input: "https://[feff::1]/", expected: null },
 ];
 
 export const CONTACT_URL_ACCEPTED_CASES: readonly ContactUrlCase[] = [
@@ -90,6 +122,18 @@ export const CONTACT_URL_ACCEPTED_CASES: readonly ContactUrlCase[] = [
   { name: "public IPv4 with omitted octets", input: "https://8.8/", expected: "https://8.0.0.8/" },
   { name: "public IPv6", input: "https://[2001:db8::1]/", expected: "https://[2001:db8::1]/" },
   { name: "IPv4-mapped public address", input: "https://[::ffff:8.8.8.8]/", expected: "https://[::ffff:808:808]/" },
+  { name: "just below CGNAT 100.64/10", input: "https://100.63.255.255/", expected: "https://100.63.255.255/" },
+  { name: "just above CGNAT 100.64/10", input: "https://100.128.0.0/", expected: "https://100.128.0.0/" },
+  { name: "just below 192.0.0/24", input: "https://191.255.255.255/", expected: "https://191.255.255.255/" },
+  { name: "just above 192.0.0/24", input: "https://192.0.1.0/", expected: "https://192.0.1.0/" },
+  { name: "just below 198.18/15", input: "https://198.17.255.255/", expected: "https://198.17.255.255/" },
+  { name: "just above 198.18/15", input: "https://198.20.0.0/", expected: "https://198.20.0.0/" },
+  { name: "just below multicast 224/4", input: "https://223.255.255.255/", expected: "https://223.255.255.255/" },
+  { name: "IPv4-compatible public address", input: "https://[::808:808]/", expected: "https://[::808:808]/" },
+  { name: "NAT64 public address", input: "https://[64:ff9b::808:808]/", expected: "https://[64:ff9b::808:808]/" },
+  { name: "next to NAT64 prefix", input: "https://[64:ff9b:1::7f00:1]/", expected: "https://[64:ff9b:1::7f00:1]/" },
+  { name: "6to4 public address", input: "https://[2002:808:808::1]/", expected: "https://[2002:808:808::1]/" },
+  { name: "next to 6to4 prefix", input: "https://[2003:7f00:1::1]/", expected: "https://[2003:7f00:1::1]/" },
   { name: "internationalized name", input: "https://bücher.example/", expected: "https://xn--bcher-kva.example/" },
 ];
 

@@ -9,9 +9,11 @@
  *
  * A contact URL is accepted only when it is https, carries no credentials and
  * its host is not localhost, a private or special IPv4 address (0/8, 10/8,
- * 127/8, 169.254/16, 172.16/12, 192.168/16), or an IPv6 unspecified, loopback,
- * unique-local (fc00::/7), link-local (fe80::/10) or IPv4-mapped private
- * address. The host is always read from `new URL(...).hostname`, which already
+ * 100.64/10, 127/8, 169.254/16, 172.16/12, 192.0.0/24, 192.168/16, 198.18/15,
+ * and 224/4 upward), or an IPv6 unspecified, loopback, unique-local
+ * (fc00::/7), link-local (fe80::/10), site-local (fec0::/10) or an address
+ * that embeds a private IPv4 (IPv4-mapped, IPv4-compatible, NAT64 64:ff9b::/96,
+ * 6to4 2002::/16). The host is always read from `new URL(...).hostname`, which already
  * rewrites IPv4 shorthand (`127.1`, `2130706433`, `0x7f.0.0.1`) to dotted
  * decimal and IPv6 to its compressed hex form.
  */
@@ -32,7 +34,16 @@ function isPrivateOrSpecialIpv4(value: string) {
     || first === 127
     || (first === 169 && second === 254)
     || (first === 172 && second >= 16 && second <= 31)
-    || (first === 192 && second === 168);
+    || (first === 192 && second === 168)
+    || (first === 100 && second >= 64 && second <= 127)
+    || (first === 192 && second === 0 && octets[2] === 0)
+    || (first === 198 && (second === 18 || second === 19))
+    || first >= 224;
+}
+
+/** Dotted IPv4 from two 16-bit IPv6 segments. */
+function ipv4FromSegments(high: number, low: number) {
+  return [high >> 8, high & 0xff, low >> 8, low & 0xff].join(".");
 }
 
 /** Eight 16-bit segments, or null when the text is not a usable IPv6 address. */
@@ -87,10 +98,22 @@ function isUnsafeIpv6(host: string) {
   const isUniqueLocal = (firstSegment & 0xfe00) === 0xfc00;
   const isLinkLocal = (firstSegment & 0xffc0) === 0xfe80;
   const isIpv4Mapped = [firstSegment, secondSegment, thirdSegment, fourthSegment, fifthSegment].every((segment) => segment === 0) && sixthSegment === 0xffff;
-  if (!isIpv4Mapped) return isAllZero || isLoopback || isUniqueLocal || isLinkLocal;
+  const isSiteLocal = (firstSegment & 0xffc0) === 0xfec0;
+  if (isAllZero || isLoopback || isUniqueLocal || isLinkLocal || isSiteLocal) return true;
 
-  const mappedIpv4 = [seventhSegment >> 8, seventhSegment & 0xff, eighthSegment >> 8, eighthSegment & 0xff].join(".");
-  return isPrivateOrSpecialIpv4(mappedIpv4);
+  // Forms that carry an IPv4 address: decode it and judge it with the IPv4 rules.
+  if (isIpv4Mapped) return isPrivateOrSpecialIpv4(ipv4FromSegments(seventhSegment, eighthSegment));
+  // Deprecated IPv4-compatible ::a.b.c.d
+  if ([firstSegment, secondSegment, thirdSegment, fourthSegment, fifthSegment, sixthSegment].every((segment) => segment === 0)) {
+    return isPrivateOrSpecialIpv4(ipv4FromSegments(seventhSegment, eighthSegment));
+  }
+  // NAT64 64:ff9b::/96
+  if (firstSegment === 0x64 && secondSegment === 0xff9b && [thirdSegment, fourthSegment, fifthSegment, sixthSegment].every((segment) => segment === 0)) {
+    return isPrivateOrSpecialIpv4(ipv4FromSegments(seventhSegment, eighthSegment));
+  }
+  // 6to4 2002::/16
+  if (firstSegment === 0x2002) return isPrivateOrSpecialIpv4(ipv4FromSegments(secondSegment, thirdSegment));
+  return false;
 }
 
 /** `host` must already be normalized with `normalizeContactHost`. */
