@@ -410,6 +410,61 @@ BACKFILL_CONFIRM=BACKFILL_ORDER_CUSTOMER_KEY_HASH DATABASE_URL=<production> \
 回填只新增查詢鍵，不改金額、狀態或 PII；若需撤回，只把 `--write-ids` 清單中的訂單 id 的該欄設回 `NULL`
 （不要整表清空，修正後新結帳寫入的鍵不在清單內），即回到修正前的行為。
 
+### 9.4 部署前已排入提醒的內容重算（A3-03，A2-13 部署後執行）
+
+A2-13（#670）起，信件裡的收件人姓名一律經 `safeRecipientName`，像網址的姓名改用預設稱呼「你」。但信件在排入佇列時
+就把主旨與內文加密存起來，寄送時不重新產生，所以 #670 部署前已排入、尚未寄出的開播提醒（`live_reminder`）與直播通知
+（`before_live`／`during_live`）仍是舊內容，可能帶報名者自填的連結。`scripts/rerender-queued-reminder-content.ts`
+把這些列的主旨與內文**原地**改成目前的寫法。腳本不是 migration，不改 schema。
+
+- **範圍**：上述三種 trigger、狀態 `queued` 或 `failed`（還在等寄或等重試）。已寄出、寄送中、`superseded`、`suppressed`、
+  `exhausted` 不處理。依商家逐一處理（vendorId 排序，每頁 `--batch-size` 筆）。
+- **怎麼判斷要不要改**：重新讀這一列的原始資料（同商家的直播與商家名稱、這列自己的範本 `sourceTemplateId`、已驗證報名的
+  姓名與指定場次、直播通知的規則），先確認這些資料算出的固定 id 仍等於這列的 id（範本、直播標題與網址代稱、時間、提前分鐘
+  都沒變），否則計為 `stale`。再用同一份資料、沿用這列原本的收件地址、寄件品牌與個人觀看連結，算出兩種內容：#670 前的寫法
+  （姓名原樣）與目前的寫法：
+  - 等於目前的寫法 → `alreadySafe`，不寫（一般姓名兩種寫法相同，也落在這裡）。
+  - 只等於 #670 前的寫法 → `needsRewrite`，`--apply` 時改成目前的寫法。
+  - 兩種都不等於 → `unrecognized`，**不寫**。例如排入後商家改了名稱，或執行環境的 `NEXT_PUBLIC_APP_URL`、根密鑰、Node 的
+    ICU 與排入時的伺服器不同。所以腳本只會替換它能完整重現的內容，而且新舊只差姓名那一段。
+- **寫入方式（compare-and-set）**：每筆一個 `UPDATE`，條件是 id、`vendorId`、trigger、讀到的狀態、讀到的加密內容
+  （`payloadEncryptedEnvelope`）與讀到的 `updatedAt` 都沒變；只改 `payloadEncryptedEnvelope`，並把 `updatedAt` 往後移
+  （寄送端以 `updatedAt` 搶單，所以寫入前就讀到舊內容的寄送會搶單失敗，下一輪讀到新內容）。不改狀態、排程、嘗試次數、
+  收件 hash 或 id。讀取後被寄出、被搶走、被取代或內容已變的列不寫，計為 `raced`。
+- **可以重跑**：改過的列下一次會是 `alreadySafe`，重跑不寫任何東西；中斷後直接重跑即可。
+- 預設是唯讀 dry run（在記憶體解密分類）；寫入需要 `--apply` 且 `RERENDER_CONFIRM=RERENDER_QUEUED_REMINDER_CONTENT`。
+- 需要目標環境自己的 `NEXT_PUBLIC_APP_URL` 與根密鑰（`CSRF_SECRET`，沒有時為 `JOB_SECRET`），由操作者注入；不讀 `.env*`。
+  沒有 `NEXT_PUBLIC_APP_URL` 時拒絕執行。
+- 輸出只有商家 id 與計數（`scanned`、`needsRewrite`、`rewritten`、`raced`、`alreadySafe`、`unrecognized`、`stale`、
+  `unreadable`、`unrenderable`），不輸出姓名、Email 或信件內容。
+- **Production（含 dry run）需要 owner 明確授權**：dry run 也會解密收件 Email 與姓名。授權後才設定
+  `RERENDER_PRODUCTION_APPROVAL=OWNER_APPROVED_PRODUCTION_REMINDER_RERENDER`。
+
+步驟（先 staging、後 production）：
+
+```bash
+# 1. staging dry run：unreadable 應為 0；needsRewrite 是要改的筆數。unrecognized 若接近 scanned，先查
+#    NEXT_PUBLIC_APP_URL、根密鑰或 Node 版本是否與 staging 伺服器一致，不要寫入
+DATABASE_URL=<staging> NEXT_PUBLIC_APP_URL=<staging 網址> \
+  node --import tsx scripts/rerender-queued-reminder-content.ts --target=staging
+# 2. staging 寫入；needsRewrite = rewritten + raced + unrenderable（unrenderable 是新內容超過長度上限，應為 0）
+RERENDER_CONFIRM=RERENDER_QUEUED_REMINDER_CONTENT DATABASE_URL=<staging> NEXT_PUBLIC_APP_URL=<staging 網址> \
+  node --import tsx scripts/rerender-queued-reminder-content.ts --target=staging --apply
+# 3. 再跑一次 dry run：needsRewrite 應為 0（raced 的列若仍在排程中，這次會再出現，重跑 --apply 即可）
+# 4. production：dry run 也需要 owner 明確授權後才設定核准值
+RERENDER_PRODUCTION_APPROVAL=OWNER_APPROVED_PRODUCTION_REMINDER_RERENDER DATABASE_URL=<production> NEXT_PUBLIC_APP_URL=<正式網址> \
+  node --import tsx scripts/rerender-queued-reminder-content.ts --target=production
+RERENDER_PRODUCTION_APPROVAL=OWNER_APPROVED_PRODUCTION_REMINDER_RERENDER \
+RERENDER_CONFIRM=RERENDER_QUEUED_REMINDER_CONTENT DATABASE_URL=<production> NEXT_PUBLIC_APP_URL=<正式網址> \
+  node --import tsx scripts/rerender-queued-reminder-content.ts --target=production --apply
+```
+
+可用 `--vendor-id <id>` 先只處理一個商家，`--batch-size <1-500>` 調整每頁筆數（預設 100）。
+
+**已知限制：** `unrecognized` 的列不會被改，仍帶舊內容寄出（例如排入後商家改了名稱）；數量非零時人工判斷是否在後台改設定
+讓它們重新排入（重新排入會以同一個 id 回來並改寫成當下產生的內容）。寫入後無法還原成舊內容（舊內容就是要移除的）；
+腳本不改狀態與排程，所以不會讓任何提醒消失或多寄。課後信與序列信不在範圍內。
+
 ## 10. 參考資料
 
 - Supabase Prisma guide: https://supabase.com/docs/guides/database/prisma

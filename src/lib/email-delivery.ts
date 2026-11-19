@@ -26,6 +26,7 @@ import { normalizeBlacklistIdentifier } from "@/lib/blacklist-identifiers";
 import { isEmailBlacklistedForVendor } from "@/lib/email-blacklist";
 import { STUDENT_PORTAL_CLOCK_SKEW_SECONDS } from "@/lib/student-portal-clock-skew";
 import { safeRecipientNameOr } from "@/lib/safe-recipient-name";
+import { stableLiveReminderDeliveryId } from "@/lib/live-reminder-delivery-identity";
 // Values used at module load come from the dependency-free trigger module:
 // delayed-step-runs.ts reaches this module again through the automation
 // engine (delayed-step-runs -> automation-delayed-steps -> automation-workflow
@@ -268,30 +269,6 @@ export async function ensureRegistrationConfirmationDelivery(input: Registration
     if (!existing) throw error;
     return { status: "duplicate" as const, deliveryId: existing.id, deliveryStatus: existing.status };
   }
-}
-
-function stableLiveReminderDeliveryId(
-  input: Pick<LiveReminderDeliveryInput, "vendorId" | "liveId" | "liveSlug" | "liveTitle" | "formSubmissionId" | "liveScheduledAt" | "reminderOffsetMinutes"> & {
-    template: { id: string; subject: string; body: string };
-  },
-) {
-  const digest = createHash("sha256")
-    .update(JSON.stringify([
-      input.vendorId,
-      input.liveId,
-      input.liveSlug,
-      input.liveTitle,
-      input.formSubmissionId,
-      input.template.id,
-      input.template.subject,
-      input.template.body,
-      input.liveScheduledAt.toISOString(),
-      input.reminderOffsetMinutes,
-      "live_reminder",
-    ]))
-    .digest("hex")
-    .slice(0, 32);
-  return `email_${digest}`;
 }
 
 /**

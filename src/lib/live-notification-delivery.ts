@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 import { Prisma } from "@prisma/client";
 import { normalizeBlacklistIdentifier } from "@/lib/blacklist-identifiers";
 import { getDb } from "@/lib/db";
@@ -20,6 +19,10 @@ import {
   liveNotificationIdentityFromKey,
   type LiveNotificationDeliveryTrigger,
 } from "@/lib/live-notification-identity";
+import { stableLiveNotificationDeliveryId } from "@/lib/live-reminder-delivery-identity";
+
+// Moved to the dependency-free identity module (A3-03); re-exported for existing callers.
+export { stableLiveNotificationDeliveryId };
 
 const MAX_ATTEMPTS = 5;
 const CUTOVER_RECIPIENT_LIMIT = 250;
@@ -142,36 +145,6 @@ function isFixedSessionEligible(
   if (trigger === "before_live") return now < session.startAt;
   const durationMs = (live.video?.durationSec ?? 0) * 1_000;
   return now.getTime() < session.startAt.getTime() + durationMs;
-}
-
-export function stableLiveNotificationDeliveryId(input: {
-  vendorId: string;
-  liveId: string;
-  liveSlug: string;
-  liveTitle: string;
-  formSubmissionId: string;
-  ruleId: string;
-  trigger: LiveNotificationDeliveryTrigger;
-  offsetMinutes: number;
-  anchor: Date;
-  template: { id: string; subject: string; body: string };
-}) {
-  const digest = createHash("sha256").update(JSON.stringify([
-    input.vendorId,
-    input.liveId,
-    input.liveSlug,
-    input.liveTitle,
-    input.formSubmissionId,
-    input.ruleId,
-    input.trigger,
-    input.offsetMinutes,
-    input.template.id,
-    input.template.subject,
-    input.template.body,
-    input.anchor.toISOString(),
-    "live_notification/v1",
-  ])).digest("hex").slice(0, 32);
-  return `email_${digest}`;
 }
 
 function formatLiveStartAt(value: Date) {
