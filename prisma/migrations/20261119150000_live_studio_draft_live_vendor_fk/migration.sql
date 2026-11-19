@@ -35,4 +35,19 @@ $$;
 -- AddForeignKey
 -- The unique index "LiveStudioDraft_vendorId_liveId_key" serves the lookups of
 -- this key; "Live_vendorId_id_key" is the referenced unique key.
-ALTER TABLE "LiveStudioDraft" ADD CONSTRAINT "LiveStudioDraft_vendorId_liveId_fkey" FOREIGN KEY ("vendorId", "liveId") REFERENCES "Live"("vendorId", "id") ON DELETE SET NULL ("liveId") ON UPDATE CASCADE NOT VALID;
+--
+-- The column list of SET NULL is PostgreSQL 15+ syntax. On an older server a
+-- plain statement would fail while parsing with a bare syntax error, so the
+-- statement runs through EXECUTE behind an explicit version check: an older
+-- server stops here with a readable message and nothing changes (the file is
+-- one transaction). See docs/operations/prisma-migration-guards-runbook.md §8.
+DO $$
+DECLARE
+  server_version integer := current_setting('server_version_num')::integer;
+BEGIN
+  IF server_version < 150000 THEN
+    RAISE EXCEPTION 'A3-02 needs PostgreSQL 15+ for ON DELETE SET NULL ("liveId"); this server is %', current_setting('server_version');
+  END IF;
+  EXECUTE 'ALTER TABLE "LiveStudioDraft" ADD CONSTRAINT "LiveStudioDraft_vendorId_liveId_fkey" FOREIGN KEY ("vendorId", "liveId") REFERENCES "Live"("vendorId", "id") ON DELETE SET NULL ("liveId") ON UPDATE CASCADE NOT VALID';
+END
+$$;

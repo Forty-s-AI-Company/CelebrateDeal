@@ -92,9 +92,14 @@ describe("A3-02 LiveStudioDraft (vendorId, liveId) -> Live(vendorId, id)", () =>
     expect(ORIGINAL_LIVE_FK).toContain(`"${OLD_FK}"`);
     expect(ADD_STATEMENTS).toHaveLength(2);
     expect(ADD_STATEMENTS[0]).toContain("pg_catalog.set_config('lock_timeout', '5s', true)");
-    expect(ADD_STATEMENTS[1]).toBe(
-      `ALTER TABLE "LiveStudioDraft" ADD CONSTRAINT "${FK}" FOREIGN KEY ("vendorId", "liveId") REFERENCES "Live"("vendorId", "id") ON DELETE SET NULL ("liveId") ON UPDATE CASCADE NOT VALID;`,
+    // Review MAJOR-1: the PostgreSQL 15+ syntax runs through EXECUTE behind a version check.
+    expect(ADD_STATEMENTS[1]).toContain("current_setting('server_version_num')::integer");
+    expect(ADD_STATEMENTS[1]).toMatch(/IF server_version < 150000 THEN\s+RAISE EXCEPTION 'A3-02 needs PostgreSQL 15\+/u);
+    expect(ADD_STATEMENTS[1]).toContain(
+      `EXECUTE 'ALTER TABLE "LiveStudioDraft" ADD CONSTRAINT "${FK}" FOREIGN KEY ("vendorId", "liveId") REFERENCES "Live"("vendorId", "id") ON DELETE SET NULL ("liveId") ON UPDATE CASCADE NOT VALID';`,
     );
+    // The guard comes before the ALTER, so an old server changes nothing.
+    expect(ADD_STATEMENTS[1]!.indexOf("RAISE EXCEPTION")).toBeLessThan(ADD_STATEMENTS[1]!.indexOf("EXECUTE"));
     expect(VALIDATE_STATEMENTS).toHaveLength(4);
     expect(VALIDATE_STATEMENTS[0]).toContain("pg_catalog.set_config('lock_timeout', '5s', true)");
     expect(VALIDATE_STATEMENTS[1]).toContain("RAISE EXCEPTION");
@@ -105,6 +110,20 @@ describe("A3-02 LiveStudioDraft (vendorId, liveId) -> Live(vendorId, id)", () =>
     // No row is rewritten by either file.
     const code = (sql: string) => sql.replace(/^\s*--.*$/gmu, "");
     for (const sql of [ADD, VALIDATE]) expect(code(sql)).not.toMatch(/^\s*(UPDATE|DELETE|INSERT)\b/mu);
+  });
+
+  it("stops the first file with a readable message on a server below the required version, adding nothing", async () => {
+    // This server is 15+; raising the threshold in the guard plays an older server.
+    const tooNew = ADD_STATEMENTS[1]!.replace("server_version < 150000", "server_version < 99990000");
+    expect(tooNew).not.toBe(ADD_STATEMENTS[1]);
+    await rolledBack(async (tx) => {
+      await beforeA302(tx);
+      await tx.$executeRawUnsafe(ADD_STATEMENTS[0]!);
+      await tx.$executeRawUnsafe("SAVEPOINT version_guard");
+      await expect(tx.$executeRawUnsafe(tooNew)).rejects.toThrow(/A3-02 needs PostgreSQL 15\+ for ON DELETE SET NULL \("liveId"\); this server is \d+/u);
+      await tx.$executeRawUnsafe("ROLLBACK TO SAVEPOINT version_guard");
+      await expect(liveForeignKeys(tx)).resolves.toEqual([expect.objectContaining({ name: OLD_FK, validated: true })]);
+    });
   });
 
   it("leaves exactly one validated key from LiveStudioDraft to Live, the composite one", async () => {
