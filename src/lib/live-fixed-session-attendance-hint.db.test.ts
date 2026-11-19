@@ -175,6 +175,9 @@ function resolve(fx: Fixture, input: { registrationToken?: string | null; sessio
 }
 
 const hintValue = (cookie: string) => cookie.slice(cookie.indexOf("=") + 1);
+/** The session-hint value among the cookies a watch link set. */
+const hintOf = (fx: Fixture, cookies: string[]) =>
+  decodeURIComponent(hintValue(cookies.find((cookie) => cookie.startsWith(`${liveSessionHintCookieName(fx.live.id)}=`))!));
 
 function progressOf(fx: Fixture, formSubmissionId: string) {
   return db.liveWatchProgress.findUnique({
@@ -197,10 +200,43 @@ describe("personal watch link of a fixed-session Live (A2-10)", () => {
     expect(hint).toMatch(/HttpOnly/iu);
     expect(hint).toMatch(/SameSite=lax/iu);
     expect(hint).toMatch(/Secure/iu);
-    expect(verifyLiveSessionHintToken(decodeURIComponent(hintValue(cookies.find((cookie) => cookie.startsWith(`${hintName}=`))!))))
-      .toMatchObject({ vendorId: fx.vendor.id, liveId: fx.live.id, submissionId: lead.id });
+    const value = decodeURIComponent(hintValue(cookies.find((cookie) => cookie.startsWith(`${hintName}=`))!));
+    expect(verifyLiveSessionHintToken(value, { vendorId: fx.vendor.id, liveId: fx.live.id })).toMatchObject({ submissionId: lead.id });
+    // Review MINOR-3: vendor and Live are bound by the signature, not carried in the token.
+    expect(value).not.toContain(fx.vendor.id);
+    expect(value).not.toContain(fx.live.id);
+    expect(verifyLiveSessionHintToken(value, { vendorId: fx.vendor.id, liveId: randomUUID() })).toBeNull();
     // The attendance cookie keeps its own narrow path.
     expect(headers.find((header) => header.startsWith(`${liveAttendanceCookieName(fx.live.id)}=`))).toMatch(/; Path=\/api\/live-admission(?:;|$)/u);
+  });
+
+  it("keeps the hint only until the registrant's session can no longer be watched (review MINOR-3)", async () => {
+    const fx = await fixture();
+    const lead = await registrant(fx, fx.own.id);
+    const hintName = liveSessionHintCookieName(fx.live.id)!;
+    const maxAgeOf = async () => {
+      const header = (await openLink(fx, lead.id)).response.headers.getSetCookie().find((value) => value.startsWith(`${hintName}=`));
+      return header ? Number(header.match(/Max-Age=(\d+)/u)?.[1]) : null;
+    };
+    const attendanceMaxAge = async () => Number((await openLink(fx, lead.id)).response.headers.getSetCookie()
+      .find((value) => value.startsWith(`${liveAttendanceCookieName(fx.live.id)}=`))!.match(/Max-Age=(\d+)/u)?.[1]);
+    const sessionEndsIn = (fx.own.startAt.getTime() + VIDEO_SECONDS * 1_000 - Date.now()) / 1_000;
+
+    // Replays off: the session's end (about 20 minutes from now), while the attendance cookie keeps the link's 30 days.
+    await db.live.update({ where: { id: fx.live.id }, data: { replayEnabled: false } });
+    expect(Math.abs(await maxAgeOf() as number - sessionEndsIn)).toBeLessThan(5);
+    expect(await attendanceMaxAge()).toBeGreaterThan(29 * 24 * 3_600);
+    // A replay window of 2 hours per session: the end of that replay.
+    await db.live.update({ where: { id: fx.live.id }, data: { replayEnabled: true, sessionReplayWindowHours: 2 } });
+    expect(Math.abs(await maxAgeOf() as number - (sessionEndsIn + 2 * 3_600))).toBeLessThan(5);
+    // Open-ended replay: the link's own expiry.
+    await db.live.update({ where: { id: fx.live.id }, data: { sessionReplayWindowHours: null } });
+    expect(await maxAgeOf()).toBeGreaterThan(29 * 24 * 3_600);
+    // The window is already over: no hint at all, only the attendance cookie.
+    await db.live.update({ where: { id: fx.live.id }, data: { replayEnabled: false } });
+    await db.formSubmission.update({ where: { id: lead.id }, data: { liveSessionId: (await fx.sessionAt(fromNow(-3 * HOUR))).id } });
+    expect(await maxAgeOf()).toBeNull();
+    expect((await openLink(fx, lead.id)).response.headers.getSetCookie()).toHaveLength(1);
   });
 
   it("leaves a Live without fixed sessions exactly as before: the attendance cookie only", async () => {
@@ -250,17 +286,46 @@ describe("personal watch link of a fixed-session Live (A2-10)", () => {
     expect(await progressOf(fx, lead.id)).toBeNull();
   });
 
-  it("opens nothing early: the registrant's own session still waiting means no admission, even while another session plays", async () => {
+  it("never locks a hinted device out (review MINOR-1): own session still waiting while another plays → that session, credited to nobody", async () => {
     const fx = await fixture();
     const upcoming = await fx.sessionAt(fromNow(2 * HOUR));
     const lead = await registrant(fx, upcoming.id);
     const { cookies } = await openLink(fx, lead.id);
-    expect(await resolve(fx, { sessionHintToken: decodeURIComponent(hintValue(cookies.find((cookie) => cookie.startsWith(liveSessionHintCookieName(fx.live.id)!))!)) }))
-      .toMatchObject({ id: upcoming.id, registered: true });
-    expect((await admit(fx, cookies)).status).toBe(404);
-    // The public schedule (no cookies) is unaffected.
-    expect((await admit(fx, [])).status).toBe(200);
+    const hint = hintOf(fx, cookies);
+    expect(await resolve(fx, { sessionHintToken: hint })).toMatchObject({ id: fx.latest.id, source: "public" });
+    // The device watches what everyone else can watch now, at the public session's offset…
+    const admitted = await admit(fx, cookies);
+    expect(admitted.status).toBe(200);
+    const offset = await playbackOffset(fx, [...cookies, admitted.viewerCookie!]);
+    expect(offset.offset).toBeLessThan(10 * 60 + 30);
+    // …and since that is not the registrant's session, no watch time is credited (#647 MINOR-1).
     expect(await progressOf(fx, lead.id)).toBeNull();
+  });
+
+  it("opens nothing early: with nothing playing, a hinted device waits for its own session", async () => {
+    const fx = await fixture();
+    // Move both public sessions into the future: nothing plays now.
+    await db.liveSession.update({ where: { id: fx.own.id }, data: { startAt: fromNow(HOUR) } });
+    await db.liveSession.update({ where: { id: fx.latest.id }, data: { startAt: fromNow(3 * HOUR) } });
+    const upcoming = await fx.sessionAt(fromNow(2 * HOUR));
+    const lead = await registrant(fx, upcoming.id);
+    const { cookies } = await openLink(fx, lead.id);
+    expect(await resolve(fx, { sessionHintToken: hintOf(fx, cookies) })).toMatchObject({ id: upcoming.id, source: "session_hint" });
+    expect((await admit(fx, cookies)).status).toBe(404);
+    expect((await admit(fx, [])).status).toBe(404);
+    expect(await progressOf(fx, lead.id)).toBeNull();
+  });
+
+  it("keeps the registration cookie strict: its own waiting or cancelled session is not swapped for the public one", async () => {
+    const fx = await fixture();
+    const upcoming = await fx.sessionAt(fromNow(2 * HOUR));
+    const lead = await registrant(fx, upcoming.id);
+    const token = createFormSubmissionChatSessionToken({ submissionId: lead.id });
+    expect(await resolve(fx, { registrationToken: token })).toMatchObject({ id: upcoming.id, source: "registration" });
+    expect((await admit(fx, [registrationCookie(lead.id)])).status).toBe(404);
+    await db.liveSession.update({ where: { id: upcoming.id }, data: { status: "cancelled", cancelledAt: new Date() } });
+    expect(await resolve(fx, { registrationToken: token })).toMatchObject({ id: upcoming.id, status: "cancelled", source: "registration" });
+    expect((await admit(fx, [registrationCookie(lead.id)])).status).toBe(404);
   });
 
   it("follows the registration's current session after a switch, never the one it held when the link was opened", async () => {
@@ -268,27 +333,41 @@ describe("personal watch link of a fixed-session Live (A2-10)", () => {
     const lead = await registrant(fx, fx.own.id);
     const { cookies } = await openLink(fx, lead.id);
     expect((await admit(fx, cookies)).status).toBe(200);
-    // The registrant switches to a later session: the old (still playing) one no longer admits this device.
+    // The registrant switches to a later session: the old (still playing) one is no longer offered;
+    // with the new one still waiting the device follows the public session playing now.
     const later = await fx.sessionAt(fromNow(DAY));
     await db.formSubmission.update({ where: { id: lead.id }, data: { liveSessionId: later.id } });
-    expect((await admit(fx, cookies)).status).toBe(404);
-    // Switching to the session playing latest admits again, at that session's offset.
+    expect(await resolve(fx, { sessionHintToken: hintOf(fx, cookies) })).toMatchObject({ id: fx.latest.id, source: "public" });
+    const moved = await admit(fx, cookies);
+    expect(moved.status).toBe(200);
+    expect((await playbackOffset(fx, [...cookies, moved.viewerCookie!])).offset).toBeLessThan(10 * 60 + 30);
+    // Switching to the session playing latest makes it the hinted session.
     await db.formSubmission.update({ where: { id: lead.id }, data: { liveSessionId: fx.latest.id } });
-    const admitted = await admit(fx, cookies);
-    expect(admitted.status).toBe(200);
-    const offset = await playbackOffset(fx, [...cookies, admitted.viewerCookie!]);
-    expect(offset.offset).toBeLessThan(10 * 60 + 30);
+    expect(await resolve(fx, { sessionHintToken: hintOf(fx, cookies) })).toMatchObject({ id: fx.latest.id, source: "session_hint" });
   });
 
-  it("a cancelled own session never plays, and is not swapped for the public schedule", async () => {
+  it("ignores the hint when its session is cancelled (review MINOR-1) and follows the public schedule, crediting nobody", async () => {
     const fx = await fixture();
     const lead = await registrant(fx, fx.own.id);
     const { cookies } = await openLink(fx, lead.id);
     await db.liveSession.update({ where: { id: fx.own.id }, data: { status: "cancelled", cancelledAt: new Date() } });
-    const hint = decodeURIComponent(hintValue(cookies.find((cookie) => cookie.startsWith(liveSessionHintCookieName(fx.live.id)!))!));
-    expect(await resolve(fx, { sessionHintToken: hint })).toMatchObject({ id: fx.own.id, status: "cancelled", registered: true });
-    expect((await admit(fx, cookies)).status).toBe(404);
+    expect(await resolve(fx, { sessionHintToken: hintOf(fx, cookies) })).toMatchObject({ id: fx.latest.id, source: "public" });
+    const admitted = await admit(fx, cookies);
+    expect(admitted.status).toBe(200);
+    expect((await playbackOffset(fx, [...cookies, admitted.viewerCookie!])).offset).toBeLessThan(10 * 60 + 30);
     expect(await progressOf(fx, lead.id)).toBeNull();
+  });
+
+  it("marks only the registration cookie as \"registration\" (review MINOR-2)", async () => {
+    const fx = await fixture();
+    const lead = await registrant(fx, fx.own.id);
+    const hint = hintValue(hintCookie(fx, lead.id));
+    const registration = createFormSubmissionChatSessionToken({ submissionId: lead.id });
+    // Same registration, same session: the source tells the two cookies apart.
+    expect(await resolve(fx, { registrationToken: registration })).toMatchObject({ id: fx.own.id, source: "registration" });
+    expect(await resolve(fx, { sessionHintToken: hint })).toMatchObject({ id: fx.own.id, source: "session_hint" });
+    expect(await resolve(fx, { registrationToken: registration, sessionHintToken: hint })).toMatchObject({ id: fx.own.id, source: "registration" });
+    expect(await resolve(fx, {})).toMatchObject({ id: fx.latest.id, source: "public" });
   });
 
   it("falls back to the public schedule for a registration that is no longer VERIFIED or was deleted (existing rules)", async () => {
@@ -296,9 +375,9 @@ describe("personal watch link of a fixed-session Live (A2-10)", () => {
     const lead = await registrant(fx, fx.own.id);
     const hint = hintValue(hintCookie(fx, lead.id));
     await db.formSubmission.update({ where: { id: lead.id }, data: { verificationStatus: "UNVERIFIED" } });
-    expect(await resolve(fx, { sessionHintToken: hint })).toMatchObject({ id: fx.latest.id, registered: false });
+    expect(await resolve(fx, { sessionHintToken: hint })).toMatchObject({ id: fx.latest.id, source: "public" });
     await db.formSubmission.delete({ where: { id: lead.id } });
-    expect(await resolve(fx, { sessionHintToken: hint })).toMatchObject({ id: fx.latest.id, registered: false });
+    expect(await resolve(fx, { sessionHintToken: hint })).toMatchObject({ id: fx.latest.id, source: "public" });
   });
 
   it("binds every id to this vendor and Live: another vendor's or Live's hint, a tampered or attendance-only value pick no session", async () => {
@@ -313,7 +392,7 @@ describe("personal watch link of a fixed-session Live (A2-10)", () => {
       data: { formId: other.form.id, liveId: fx.live.id, liveSessionId: fx.own.id, name: "他店", email: `foreign-${randomUUID().slice(0, 8)}@example.test`, verificationStatus: "VERIFIED", verifiedAt: fromNow(-DAY) },
     });
     const genuine = hintValue(hintCookie(fx, lead.id));
-    const [version, payload, signature] = genuine.split(".");
+    const [version, submission, expiry, signature] = genuine.split(".");
     const cases: Array<[string, string]> = [
       // Another vendor's hint (its own Live and registration) presented for this Live.
       ["foreign vendor", hintValue(hintCookie(other, foreignLead.id))],
@@ -324,12 +403,13 @@ describe("personal watch link of a fixed-session Live (A2-10)", () => {
       ["registration of another Live", hintValue(hintCookie(fx, siblingLead.id))],
       ["registration through another vendor's form", hintValue(hintCookie(fx, foreignForm.id))],
       // Altered signature or claims, and the attendance cookie's value.
-      ["tampered signature", `${version}.${payload}.${signature!.slice(0, -2)}${signature!.endsWith("AA") ? "BB" : "AA"}`],
-      ["tampered claims", `${version}.${Buffer.from(JSON.stringify({ ...JSON.parse(Buffer.from(payload!, "base64url").toString("utf8")) as object, s: siblingLead.id })).toString("base64url")}.${signature}`],
+      ["tampered signature", `${version}.${submission}.${expiry}.${signature!.slice(0, -2)}${signature!.endsWith("AA") ? "BB" : "AA"}`],
+      ["tampered registration", `${version}.${foreignForm.id}.${expiry}.${signature}`],
+      ["tampered expiry", `${version}.${submission}.${Number(expiry) + 3_600}.${signature}`],
       ["attendance token", hintValue(attendanceCookie(fx, lead.id))],
     ];
     for (const [name, token] of cases) {
-      expect(await resolve(fx, { sessionHintToken: token }), name).toMatchObject({ id: fx.latest.id, registered: false });
+      expect(await resolve(fx, { sessionHintToken: token }), name).toMatchObject({ id: fx.latest.id, source: "public" });
     }
     // Through the routes: a forged hint sends the device to the public session and credits nobody.
     const forged = `${liveSessionHintCookieName(fx.live.id)}=${cases[5]![1]}`;
@@ -347,7 +427,7 @@ describe("personal watch link of a fixed-session Live (A2-10)", () => {
     const forwarded = await registrant(fx, fx.own.id);
     const cookies = [registrationCookie(owner.id), attendanceCookie(fx, forwarded.id), hintCookie(fx, forwarded.id)];
     expect(await resolve(fx, { registrationToken: createFormSubmissionChatSessionToken({ submissionId: owner.id }), sessionHintToken: hintValue(cookies[2]!) }))
-      .toMatchObject({ id: fx.latest.id, registered: true });
+      .toMatchObject({ id: fx.latest.id, source: "registration" });
     const admitted = await admit(fx, cookies);
     expect(admitted.status).toBe(200);
     // The registration cookie's registration is credited; the forwarded one is not.
@@ -357,6 +437,6 @@ describe("personal watch link of a fixed-session Live (A2-10)", () => {
     const sibling = await fixture();
     const siblingLead = await registrant(sibling, sibling.own.id);
     expect(await resolve(fx, { registrationToken: createFormSubmissionChatSessionToken({ submissionId: siblingLead.id }), sessionHintToken: hintValue(cookies[2]!) }))
-      .toMatchObject({ id: fx.own.id, registered: true });
+      .toMatchObject({ id: fx.own.id, source: "session_hint" });
   });
 });

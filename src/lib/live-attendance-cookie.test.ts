@@ -182,11 +182,12 @@ describe("session-hint cookie (A2-10, #634 option b)", () => {
 
   const INPUT = { vendorId: "vendor_a", liveId: "live_a", now: NOW };
 
-  it("round-trips the same claim under its own version, name and site-wide path", () => {
+  it("round-trips the registration and expiry under its own version, name and site-wide path", () => {
     const hint = createLiveSessionHintToken(CLAIM);
     expect(hint.startsWith("lsh1.")).toBe(true);
-    expect(verifyLiveSessionHintToken(hint, NOW)).toEqual(CLAIM);
-    expect(verifyLiveSessionHintToken(hint, CLAIM.expiresAt)).toBeNull();
+    expect(verifyLiveSessionHintToken(hint, INPUT)).toEqual({ submissionId: CLAIM.submissionId, expiresAt: CLAIM.expiresAt });
+    expect(verifyLiveSessionHintToken(hint, { ...INPUT, now: CLAIM.expiresAt })).toBeNull();
+    expect(verifyLiveSessionHintToken(createLiveSessionHintToken({ ...CLAIM, expiresAt: new Date(NOW.getTime() + 401 * DAY) }), INPUT)).toBeNull();
     const name = liveSessionHintCookieName("live_a");
     expect(name).toMatch(/^celebratedeal_lsh_[0-9a-f]{24}$/u);
     expect(name).not.toBe(liveAttendanceCookieName("live_a"));
@@ -202,13 +203,13 @@ describe("session-hint cookie (A2-10, #634 option b)", () => {
     const hint = createLiveSessionHintToken(CLAIM);
     const attendance = createLiveAttendanceToken(CLAIM);
     expect(verifyLiveAttendanceToken(hint, NOW)).toBeNull();
-    expect(verifyLiveSessionHintToken(attendance, NOW)).toBeNull();
-    expect(verifyLiveSessionHintToken(createLiveWatchLinkToken({ ...CLAIM, sessionStartAt: NOW }, NOW), NOW)).toBeNull();
-    expect(verifyLiveSessionHintToken(createFormSubmissionChatSessionToken({ submissionId: "submission_a", now: NOW }), NOW)).toBeNull();
+    expect(verifyLiveSessionHintToken(attendance, INPUT)).toBeNull();
+    expect(verifyLiveSessionHintToken(createLiveWatchLinkToken({ ...CLAIM, sessionStartAt: NOW }, NOW), INPUT)).toBeNull();
+    expect(verifyLiveSessionHintToken(createFormSubmissionChatSessionToken({ submissionId: "submission_a", now: NOW }), INPUT)).toBeNull();
     expect(verifyFormSubmissionChatSessionToken(hint, NOW)).toBeNull();
-    // The attendance payload re-labelled as a hint keeps the attendance signature: refused.
-    const [, payload, signature] = attendance.split(".");
-    expect(verifyLiveSessionHintToken(`lsh1.${payload}.${signature}`, NOW)).toBeNull();
+    // The attendance signature re-used in the hint format: refused.
+    const [, , signature] = attendance.split(".");
+    expect(verifyLiveSessionHintToken(`lsh1.submission_a.${Math.floor(CLAIM.expiresAt.getTime() / 1_000)}.${signature}`, INPUT)).toBeNull();
     // Under the attendance cookie's name a hint records nothing (and the reverse picks no session).
     const request = requestWith(`${liveAttendanceCookieName("live_a")}=${hint}`);
     expect(liveAttendanceSubmissionIdFromRequest(request, INPUT)).toBeNull();
@@ -224,14 +225,34 @@ describe("session-hint cookie (A2-10, #634 option b)", () => {
     // A hint of Live A placed under Live B's name is read but bound to Live A.
     expect(liveSessionHintSubmissionId(liveSessionHintTokenFromCookieHeader(`${liveSessionHintCookieName("live_b")}=${hint}`, "live_b"), { ...INPUT, liveId: "live_b" })).toBeNull();
     expect(liveSessionHintTokenFromCookieHeader(`${name}=${hint}; ${name}=${hint}`, "live_a")).toBeNull();
-    expect(liveSessionHintTokenFromCookieHeader(`${name}=${"x".repeat(601)}`, "live_a")).toBeNull();
+    expect(liveSessionHintTokenFromCookieHeader(`${name}=${"x".repeat(201)}`, "live_a")).toBeNull();
     expect(liveSessionHintTokenFromCookieHeader(null, "live_a")).toBeNull();
-    const [version, payload, signature] = hint.split(".");
-    const claims = JSON.parse(Buffer.from(payload!, "base64url").toString("utf8")) as Record<string, unknown>;
-    for (const change of [{ s: "submission_b" }, { l: "live_b" }, { v: "vendor_b" }, { e: claims.e as number + 60 }]) {
-      expect(liveSessionHintSubmissionId(`${version}.${Buffer.from(JSON.stringify({ ...claims, ...change })).toString("base64url")}.${signature}`, INPUT)).toBeNull();
+    const [version, submission, expiry, signature] = hint.split(".");
+    for (const altered of [
+      `${version}.submission_b.${expiry}.${signature}`,
+      `${version}.${submission}.${Number(expiry) + 60}.${signature}`,
+      `${version}.${submission}.${expiry}.${signature!.slice(0, -2)}${signature!.endsWith("AA") ? "BB" : "AA"}`,
+      `lsh2.${submission}.${expiry}.${signature}`,
+      `${hint}.extra`,
+      `${version}.${submission}.0${expiry}.${signature}`,
+    ]) {
+      expect(liveSessionHintSubmissionId(altered, INPUT), altered.slice(0, 40)).toBeNull();
     }
-    expect(liveSessionHintSubmissionId(`${version}.${payload}.${signature!.slice(0, -2)}${signature!.endsWith("AA") ? "BB" : "AA"}`, INPUT)).toBeNull();
+  });
+
+  it("keeps vendor and Live out of the token but inside the signature (review MINOR-3)", () => {
+    const hint = createLiveSessionHintToken(CLAIM);
+    expect(hint.split(".")).toHaveLength(4);
+    expect(hint).not.toContain("vendor_a");
+    expect(hint).not.toContain("live_a");
+    // A realistic cuid registration id: the whole cookie stays small.
+    const realistic = createLiveSessionHintToken({ ...CLAIM, vendorId: "c".repeat(25), liveId: "d".repeat(25), submissionId: "e".repeat(25) });
+    const cookie = `${liveSessionHintCookieName("d".repeat(25))}=${realistic}`;
+    expect(realistic.length).toBeLessThanOrEqual(90);
+    expect(cookie.length).toBeLessThanOrEqual(135);
+    const attendanceCookie = `${liveAttendanceCookieName("d".repeat(25))}=${createLiveAttendanceToken({ ...CLAIM, vendorId: "c".repeat(25), liveId: "d".repeat(25), submissionId: "e".repeat(25) })}`;
+    // What one fixed-session Live adds to an admission request's Cookie header (both cookies and the "; " separators).
+    expect(cookie.length + attendanceCookie.length + 4).toBeLessThanOrEqual(400);
   });
 
   it("is never read as a registration identity: chat, private chat, evergreen, LINE binding, attendance", () => {

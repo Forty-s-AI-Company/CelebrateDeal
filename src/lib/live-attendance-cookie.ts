@@ -20,14 +20,15 @@ import { DERIVED_KEY_ROTATIONS, signWithRotation, verifyWithRotation } from "@/l
  * with no other request. It expires together with the link that set it.
  *
  * A2-10 (#634 option b): on a fixed-session Live (指定場次) the same link also
- * sets a companion session-hint cookie (`lsh1`, below). It carries the same
- * claim, but its only reader is resolveViewerFixedSession
+ * sets a companion session-hint cookie (`lsh1`, below) naming the same
+ * registration. Its only reader is resolveViewerFixedSession
  * (live-fixed-sessions-store.ts): it picks which fixed session the watch page,
  * the playback source and the admission follow (the registration's own
  * session, read from the database at request time). It is not an attendance
  * proof and grants no identity either. Path is "/" because the watch page
  * (/live/{slug}) and both viewer APIs must all see it to agree on one session.
- * The two tokens are signed over different version prefixes, so neither
+ * It lives only until that session's viewing window closes (review MINOR-3).
+ * The two tokens have different formats and signed messages, so neither
  * verifies as the other.
  */
 
@@ -66,7 +67,16 @@ export type LiveSessionHintCookieOptions = Omit<LiveAttendanceCookieOptions, "pa
   path: typeof LIVE_SESSION_HINT_COOKIE_PATH;
 };
 
-type TokenVersion = typeof VERSION | typeof HINT_VERSION;
+/**
+ * A2-10 review MINOR-3: the hint rides on every request of the site (Path=/)
+ * and next to the attendance cookie on each admission renewal, so it is kept
+ * small: `lsh1.<registration id>.<expiry seconds>.<HMAC>`. The vendor and
+ * Live are not in the token; the HMAC covers them (with the version), so a
+ * hint verifies only for the Live and vendor the reader names, and the
+ * resolver binds both again in its final query.
+ */
+const HINT_EXPIRY = /^[1-9][0-9]{0,11}$/u;
+export const LIVE_SESSION_HINT_MAX_TOKEN_LENGTH = 200;
 
 function seconds(value: Date) {
   const result = Math.floor(value.getTime() / 1_000);
@@ -89,39 +99,61 @@ export function liveSessionHintCookieName(liveId: string) {
   return cookieName(HINT_COOKIE_PREFIX, "live-session-hint-cookie", liveId);
 }
 
-function createToken(version: TokenVersion, claim: LiveAttendanceClaim) {
+function assertBinding(claim: LiveAttendanceClaim) {
   if (!ID.test(claim.vendorId) || !ID.test(claim.liveId) || !ID.test(claim.submissionId)) {
     throw new Error("Invalid attendance cookie binding.");
   }
-  const claims: Claims = { v: claim.vendorId, l: claim.liveId, s: claim.submissionId, e: seconds(claim.expiresAt) };
-  const value = `${version}.${Buffer.from(JSON.stringify(claims), "utf8").toString("base64url")}`;
-  return `${value}.${signWithRotation(KEY, value)}`;
 }
 
 export function createLiveAttendanceToken(claim: LiveAttendanceClaim) {
-  return createToken(VERSION, claim);
+  assertBinding(claim);
+  const claims: Claims = { v: claim.vendorId, l: claim.liveId, s: claim.submissionId, e: seconds(claim.expiresAt) };
+  const value = `${VERSION}.${Buffer.from(JSON.stringify(claims), "utf8").toString("base64url")}`;
+  return `${value}.${signWithRotation(KEY, value)}`;
 }
 
-/** The session-hint token (A2-10) for the same claim; only a fixed-session Live's watch link sets it. */
+/** What a hint's HMAC covers: version, vendor, Live, registration and expiry ("." never occurs in an id). */
+function hintMessage(binding: { vendorId: string; liveId: string }, submissionId: string, expirySeconds: number) {
+  return `${HINT_VERSION}.${binding.vendorId}.${binding.liveId}.${submissionId}.${expirySeconds}`;
+}
+
+/** The session-hint token (A2-10); only a fixed-session Live's watch link sets it. */
 export function createLiveSessionHintToken(claim: LiveAttendanceClaim) {
-  return createToken(HINT_VERSION, claim);
+  assertBinding(claim);
+  const expiry = seconds(claim.expiresAt);
+  return `${HINT_VERSION}.${claim.submissionId}.${expiry}.${signWithRotation(KEY, hintMessage(claim, claim.submissionId, expiry))}`;
+}
+
+/**
+ * The registration and expiry of a genuine, unexpired session hint for
+ * exactly this vendor and Live, or null. The binding is not in the token: a
+ * hint issued for another Live or vendor fails the HMAC here.
+ */
+export function verifyLiveSessionHintToken(
+  token: string | null | undefined,
+  binding: { vendorId: string; liveId: string; now?: Date },
+): { submissionId: string; expiresAt: Date } | null {
+  if (typeof token !== "string" || token.length === 0 || token.length > LIVE_SESSION_HINT_MAX_TOKEN_LENGTH) return null;
+  if (!ID.test(binding.vendorId) || !ID.test(binding.liveId)) return null;
+  const [version, submissionId, expiry, signature, extra] = token.split(".");
+  if (
+    version !== HINT_VERSION || !submissionId || !ID.test(submissionId) || !expiry || !HINT_EXPIRY.test(expiry)
+    || !signature || !SIGNATURE.test(signature) || extra !== undefined
+  ) return null;
+  const now = binding.now ?? new Date();
+  const expirySeconds = Number(expiry);
+  const nowSeconds = seconds(now);
+  if (expirySeconds <= nowSeconds || expirySeconds > nowSeconds + LIVE_ATTENDANCE_MAX_LIFETIME_SECONDS) return null;
+  if (!verifyWithRotation(KEY, hintMessage(binding, submissionId, expirySeconds), signature, now)) return null;
+  return { submissionId, expiresAt: new Date(expirySeconds * 1_000) };
 }
 
 /** The claim of a genuine, unexpired attendance cookie, or null. */
 export function verifyLiveAttendanceToken(token: string | null | undefined, now = new Date()): LiveAttendanceClaim | null {
-  return verifyToken(VERSION, token, now);
-}
-
-/** The claim of a genuine, unexpired session-hint cookie, or null. */
-export function verifyLiveSessionHintToken(token: string | null | undefined, now = new Date()): LiveAttendanceClaim | null {
-  return verifyToken(HINT_VERSION, token, now);
-}
-
-function verifyToken(expectedVersion: TokenVersion, token: string | null | undefined, now: Date): LiveAttendanceClaim | null {
   if (typeof token !== "string" || token.length === 0 || token.length > MAX_TOKEN_LENGTH) return null;
   const [version, payload, signature, extra] = token.split(".");
-  if (version !== expectedVersion || !payload || !PAYLOAD.test(payload) || !signature || !SIGNATURE.test(signature) || extra !== undefined) return null;
-  if (!verifyWithRotation(KEY, `${expectedVersion}.${payload}`, signature, now)) return null;
+  if (version !== VERSION || !payload || !PAYLOAD.test(payload) || !signature || !SIGNATURE.test(signature) || extra !== undefined) return null;
+  if (!verifyWithRotation(KEY, `${VERSION}.${payload}`, signature, now)) return null;
   let parsed: unknown;
   try {
     parsed = JSON.parse(Buffer.from(payload, "base64url").toString("utf8"));
@@ -206,7 +238,7 @@ export function liveSessionHintTokenFromCookieHeader(header: string | null | und
   const name = liveSessionHintCookieName(liveId);
   if (!name) return null;
   const value = readCookie(header ?? null, name);
-  return value && value.length <= MAX_TOKEN_LENGTH ? value : null;
+  return value && value.length <= LIVE_SESSION_HINT_MAX_TOKEN_LENGTH ? value : null;
 }
 
 /**
@@ -217,7 +249,5 @@ export function liveSessionHintSubmissionId(
   token: string | null | undefined,
   input: { vendorId: string; liveId: string; now: Date },
 ) {
-  const claim = verifyLiveSessionHintToken(token, input.now);
-  if (!claim || claim.vendorId !== input.vendorId || claim.liveId !== input.liveId) return null;
-  return claim.submissionId;
+  return verifyLiveSessionHintToken(token, input)?.submissionId ?? null;
 }

@@ -288,10 +288,15 @@ export function sessionHintTokenFromRequest(request: Request, liveId: string) {
   return sessionHintTokenFromCookieHeader(request.headers.get("cookie"), liveId);
 }
 
-export type ViewerFixedSession = FixedSessionRecord & {
-  /** True when the session comes from the visitor's own verified registration. */
-  registered: boolean;
-};
+/**
+ * Where the session a viewer follows came from (A2-10 review MINOR-2): only
+ * the signed registration cookie yields "registration"; the personal watch
+ * link's session hint is "session_hint" and is never treated as the
+ * registrant's identity; everyone else follows the "public" schedule.
+ */
+export type ViewerFixedSessionSource = "registration" | "session_hint" | "public";
+
+export type ViewerFixedSession = FixedSessionRecord & { source: ViewerFixedSessionSource };
 
 type SubmissionDb = Pick<Prisma.TransactionClient, "formSubmission">;
 
@@ -299,14 +304,13 @@ type SubmissionDb = Pick<Prisma.TransactionClient, "formSubmission">;
  * The session one registration holds right now, read from the database: only
  * a VERIFIED registration of this Live, through a form of this vendor, whose
  * session belongs to this Live and vendor. The session comes from the row,
- * never from a cookie, so a moved registration follows its new session and a
- * cancelled session stays cancelled (it never plays).
+ * never from a cookie, so a moved registration follows its new session.
  */
-async function registeredFixedSession(
+async function registrationFixedSession(
   db: SubmissionDb,
   input: { vendorId: string; liveId: string },
   submissionId: string | null,
-): Promise<ViewerFixedSession | null> {
+): Promise<FixedSessionRecord | null> {
   if (!submissionId) return null;
   const submission = await db.formSubmission.findFirst({
     where: {
@@ -318,7 +322,13 @@ async function registeredFixedSession(
     },
     select: { liveSession: { select: FIXED_SESSION_SELECT } },
   });
-  return submission?.liveSession ? { ...submission.liveSession, registered: true } : null;
+  return submission?.liveSession ?? null;
+}
+
+/** The same "playing now" window pickPublicFixedSession uses. */
+function isPlayingAt(session: Pick<FixedSessionRecord, "startAt" | "status">, durationSeconds: number, now: Date) {
+  const startMs = session.startAt.getTime();
+  return session.status !== "cancelled" && startMs <= now.getTime() && now.getTime() < startMs + durationSeconds * 1_000;
 }
 
 /**
@@ -329,8 +339,15 @@ async function registeredFixedSession(
  *    chose (even a cancelled one, which then never plays);
  * 2. otherwise a visitor holding this Live's session-hint cookie (A2-10, set
  *    by the personal watch link of a reminder or live-start notice) follows
- *    the session of the registration it names, under the same rules. The
- *    hint only picks the schedule; chat, private chat, LINE binding,
+ *    the session of the registration it names, with two lenient fallbacks to
+ *    the public schedule (review MINOR-1: the link is a GET, so a hint can be
+ *    planted or forwarded, and it must never lock a browser out of what
+ *    everyone else can watch):
+ *    - the hinted session is cancelled: the hint is ignored;
+ *    - the hinted session has not started yet while a public session is
+ *      playing now: the playing session is followed (the admission then
+ *      reports that session, so the registrant's watch time is not credited).
+ *    The hint only picks the schedule; chat, private chat, LINE binding,
  *    checkout and attendance never read it;
  * 3. anyone else follows the public schedule: the session playing now, else
  *    the next one, else the latest (for its replay).
@@ -353,23 +370,28 @@ export async function resolveViewerFixedSession(
   },
 ): Promise<ViewerFixedSession | null> {
   const claim = input.registrationToken ? verifyFormSubmissionChatSessionToken(input.registrationToken, input.now) : null;
-  const registered = await registeredFixedSession(db, input, claim?.submissionId ?? null);
-  if (registered) return registered;
+  const registered = await registrationFixedSession(db, input, claim?.submissionId ?? null);
+  if (registered) return { ...registered, source: "registration" };
   const hintSubmissionId = input.sessionHintToken
     ? liveSessionHintSubmissionId(input.sessionHintToken, { vendorId: input.vendorId, liveId: input.liveId, now: input.now })
     : null;
   // The same registration already failed above; do not ask twice.
-  const hinted = hintSubmissionId && hintSubmissionId !== claim?.submissionId
-    ? await registeredFixedSession(db, input, hintSubmissionId)
+  const found = hintSubmissionId && hintSubmissionId !== claim?.submissionId
+    ? await registrationFixedSession(db, input, hintSubmissionId)
     : null;
-  if (hinted) return hinted;
+  // A cancelled hinted session never plays: the hint is ignored.
+  const hinted = found && found.status !== "cancelled" ? found : null;
+  // Started (playing, replay or over): the hint decides without a schedule read.
+  if (hinted && hinted.startAt.getTime() <= input.now.getTime()) return { ...hinted, source: "session_hint" };
   const sessions = await db.liveSession.findMany({
     where: { vendorId: input.vendorId, liveId: input.liveId, status: { not: "cancelled" } },
     orderBy: [{ startAt: "asc" }, { id: "asc" }],
     select: FIXED_SESSION_SELECT,
   });
   const picked = pickPublicFixedSession(sessions, input.durationSeconds, input.now);
-  return picked ? { ...picked, registered: false } : null;
+  // Still waiting: the hinted session wins unless another session is playing right now.
+  if (hinted && !(picked && isPlayingAt(picked, input.durationSeconds, input.now))) return { ...hinted, source: "session_hint" };
+  return picked ? { ...picked, source: "public" } : null;
 }
 
 /**
