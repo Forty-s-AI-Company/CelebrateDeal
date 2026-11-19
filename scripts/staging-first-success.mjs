@@ -2,6 +2,7 @@ import { writeFile } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
 import { classifyBrowserExecutionFailure, validateBrowserSmokeBinding, verifyStagingAliasBinding } from "./staging-browser-smoke.mjs";
 import { verifyMvpPayUniLineage } from "./mvp-payuni-sandbox-e2e.mjs";
+import { createActionTrace, formatTraceLine } from "./staging-first-success-trace.mjs";
 
 /**
  * O-13 first-success journey on the fixed staging alias (GO-NO-GO.md §3 steps 1–6), synthetic only:
@@ -213,6 +214,7 @@ export async function runStagingFirstSuccess(env = process.env, dependencies = {
   const verifyAlias = dependencies.verifyAlias ?? verifyStagingAliasBinding;
   const now = dependencies.now ?? (() => Date.now());
   const wait = dependencies.pause ?? pause;
+  const trace = dependencies.trace ?? null;
   try {
     if (!await verifyLineage(env)) { result.reason = "LINEAGE_NOT_VERIFIED"; return result; }
     result.lineage = "VERIFIED";
@@ -236,6 +238,7 @@ export async function runStagingFirstSuccess(env = process.env, dependencies = {
   /** Run one fixed step, recording its status and duration. Throws to stop the journey on FAIL. */
   const step = async (name, body) => {
     currentStep = name;
+    trace?.setStep(name);
     const record = entry(name);
     const t0 = now();
     try {
@@ -294,7 +297,7 @@ export async function runStagingFirstSuccess(env = process.env, dependencies = {
     await guard(ownerContext, "owner");
     await ownerContext.routeWebSocket("**/*", (socket) => socket.close());
     if (!await verifyAlias(env)) { result.reason = "ALIAS_DRIFT"; return result; }
-    const page = await ownerContext.newPage();
+    const page = trace ? trace.instrumentPage(await ownerContext.newPage()) : await ownerContext.newPage();
     activePage = page;
     page.on("pageerror", () => { result.pageErrors += 1; });
     page.on("dialog", (dialog) => { void dialog.dismiss().catch(() => {}); });
@@ -473,7 +476,7 @@ export async function runStagingFirstSuccess(env = process.env, dependencies = {
     buyerContext = await browser.newContext({ locale: "zh-TW", timezoneId: "Asia/Taipei", viewport: { width: 390, height: 844 }, serviceWorkers: "block" });
     await guard(buyerContext, "buyer");
     await buyerContext.routeWebSocket("**/*", (socket) => socket.close());
-    const buyer = await buyerContext.newPage();
+    const buyer = trace ? trace.instrumentPage(await buyerContext.newPage()) : await buyerContext.newPage();
     activePage = buyer;
     buyer.on("pageerror", () => { result.pageErrors += 1; });
 
@@ -561,9 +564,15 @@ export function formatStepSummary(receipt) {
 }
 
 async function main() {
-  const result = await runStagingFirstSuccess();
-  if (process.env.RUNNER_TEMP) await writeFile(`${process.env.RUNNER_TEMP}/celebratedeal-staging-first-success.json`, `${JSON.stringify(result)}\n`, { mode: 0o600 });
+  const trace = createActionTrace();
+  const result = await runStagingFirstSuccess(process.env, { trace });
+  const diagnostics = trace.summary(result);
+  if (process.env.RUNNER_TEMP) {
+    await writeFile(`${process.env.RUNNER_TEMP}/celebratedeal-staging-first-success.json`, `${JSON.stringify(result)}\n`, { mode: 0o600 });
+    await writeFile(`${process.env.RUNNER_TEMP}/celebratedeal-staging-first-success-trace.json`, `${JSON.stringify(diagnostics)}\n`, { mode: 0o600 });
+  }
   process.stdout.write(`staging_first_success_steps=${formatStepSummary(result)}\n`);
+  if (result.result !== "PASS") process.stdout.write(`${formatTraceLine(diagnostics)}\n`);
   process.stdout.write(`${JSON.stringify(result)}\n`);
   process.exitCode = result.result === "PASS" ? 0 : 2;
 }

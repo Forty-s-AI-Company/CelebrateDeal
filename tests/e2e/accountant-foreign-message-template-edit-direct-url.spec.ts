@@ -68,7 +68,18 @@ test("active accountant is denied a foreign message-template editor before tenan
     for (const value of [foreignTemplate.name, foreignTemplate.subject ?? "", foreignTemplate.body]) {
       await expect(page.getByText(value, { exact: true })).toHaveCount(0);
     }
-    expect(requests.some((url) => /^https:\/\/(?!127\.0\.0\.1|localhost)/i.test(url) || /resend|sms|cloudflare|sentry|posthog|payuni/i.test(url))).toBe(false);
+    // 不拿整條 URL 比對子字串：隨機的模板 ID、_next 靜態檔名與 query 都可能剛好含有 "sms" 等字樣而誤判。
+    // 只看離開本機的請求，以及同源且去掉路由 ID 後的 API／頁面路徑；失敗時列出實際請求方便診斷。
+    const appOrigin = new URL(page.url()).origin;
+    const egress = requests.flatMap((raw) => {
+      const url = new URL(raw);
+      if (url.protocol === "data:" || url.protocol === "blob:") return [];
+      if (url.origin !== appOrigin) return [`${url.origin}${url.pathname}`];
+      if (url.pathname.startsWith("/_next/")) return [];
+      const route = url.pathname.split(foreignTemplate.id).join(":id");
+      return /resend|sms|cloudflare|sentry|posthog|payuni/i.test(route) ? [route] : [];
+    });
+    expect(egress, `unexpected external or provider-bound requests: ${egress.join(", ")}`).toEqual([]);
     await expect.poll(snapshot).toEqual(before);
   } finally {
     await db.vendor.deleteMany({ where: { id: { in: [ownerVendor.id, foreignVendor.id] } } });
