@@ -434,6 +434,7 @@ async function notifyAlreadyRegistered(input: {
       targetSessionId: input.seat.sessionId,
       formSubmissionId: input.duplicate.id,
       recipientName: input.duplicate.name,
+      recipientVerified: input.duplicate.verificationStatus === "VERIFIED",
       recipientEmail: input.duplicate.email,
       emailBrand: { senderName: input.form.vendor.senderName, supportEmail: input.form.vendor.supportEmail, contactUrl: input.form.vendor.contactUrl },
     });

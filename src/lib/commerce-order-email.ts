@@ -1,6 +1,7 @@
 import type { Prisma } from "@prisma/client";
 import { revealCommerceOrderPii } from "@/lib/commerce-order-pii";
 import { protectEmailDeliveryPayload } from "@/lib/email-delivery-pii";
+import { safeRecipientName } from "@/lib/safe-recipient-name";
 import { tagPaymentWebhookStage, type PaymentWebhookStage } from "./payment-webhook-errors";
 
 const SYSTEM_ORDER_PAID_TEMPLATE_ID = "system_order_paid_v1";
@@ -46,11 +47,15 @@ export async function ensureCommerceOrderPaidDelivery(
     const deliveryId = `order_paid_${order.id}`;
     const idempotencyKey = `order-paid:v1:${order.id}`;
     const productSummary = order.items.map((item) => item.productName).join("、").slice(0, 500);
+    // A2-13: the checkout address was never confirmed, so the buyer's typed
+    // name is cleaned (no link, markdown or line break) and left out whole when
+    // it reads as a web address.
+    const buyerName = safeRecipientName(pii.buyer.name);
     stage = "PAID_DELIVERY_PROTECT";
     const protectedPayload = protectEmailDeliveryPayload({
       recipientEmail: pii.buyer.email,
       subject: `付款成功｜訂單 ${order.orderNumber}`,
-      body: `${pii.buyer.name} 您好：\n\n${order.vendor.name} 已確認收到訂單 ${order.orderNumber} 的付款。\n商品：${productSummary}\n\n請使用原結帳瀏覽器開啟 CelebrateDeal 的「我的訂單」查看交付內容；如需協助，請聯絡商家客服。`,
+      body: `${buyerName ? `${buyerName} ` : ""}您好：\n\n${order.vendor.name} 已確認收到訂單 ${order.orderNumber} 的付款。\n商品：${productSummary}\n\n請使用原結帳瀏覽器開啟 CelebrateDeal 的「我的訂單」查看交付內容；如需協助，請聯絡商家客服。`,
       brand: order.vendor,
     }, { vendorId: input.vendorId, deliveryId });
 
