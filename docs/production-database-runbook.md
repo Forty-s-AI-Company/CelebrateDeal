@@ -410,6 +410,104 @@ BACKFILL_CONFIRM=BACKFILL_ORDER_CUSTOMER_KEY_HASH DATABASE_URL=<production> \
 回填只新增查詢鍵，不改金額、狀態或 PII；若需撤回，只把 `--write-ids` 清單中的訂單 id 的該欄設回 `NULL`
 （不要整表清空，修正後新結帳寫入的鍵不在清單內），即回到修正前的行為。
 
+### 9.4 部署前已排入提醒的內容重算（A3-03，A2-13 部署後執行）
+
+A2-13（#670）起，信件裡的收件人姓名一律經 `safeRecipientName`，像網址的姓名改用預設稱呼「你」。但信件在排入佇列時
+就把主旨與內文加密存起來，寄送時不重新產生，所以 #670 部署前已排入、尚未寄出的開播提醒（`live_reminder`）與直播通知
+（`before_live`／`during_live`）仍是舊內容，可能帶報名者自填的連結。`scripts/rerender-queued-reminder-content.ts`
+把這些列的主旨與內文**原地**改成目前的寫法。腳本不是 migration，不改 schema。
+
+- **範圍**：上述三種 trigger，狀態為：
+  - `queued` 或 `failed`（還在等寄或等重試）；
+  - `exhausted` 但商家還能在後台手動重送的列（`canManuallyRequeueEmailDelivery` 允許的錯誤代碼，也就是不是
+    `provider_rejected`、`recipient_suppressed`、`config_superseded`、`verification_superseded`），以免之後手動重送時寄出舊內容。
+
+  已寄出、寄送中、`superseded`、`suppressed` 與不能手動重送的 `exhausted` 不處理。不論哪種狀態，都只改內容、不改狀態。
+  依商家逐一處理（vendorId 排序，每頁 `--batch-size` 筆）。
+- **怎麼判斷要不要改**：重新讀這一列的原始資料（同商家的直播與商家名稱、這列自己的範本 `sourceTemplateId`、已驗證報名的
+  姓名與指定場次、直播通知的規則），先確認這些資料算出的固定 id 仍等於這列的 id（範本、直播標題與網址代稱、時間、提前分鐘
+  都沒變），否則計為 `stale`（來源屬於別的商家也一樣）。再用同一份資料、沿用這列原本的收件地址、寄件品牌與個人觀看連結
+  （也試「沒有觀看連結」，對應 Q-17 前排入的列），算出兩種內容：#670 前的寫法（姓名原樣）與目前的寫法：
+  - 等於目前的寫法 → `alreadySafe`，不寫（一般姓名兩種寫法相同，也落在這裡）。
+  - 只等於 #670 前的寫法 → 要改，但下面三種情況仍不寫，各自計數：
+    - `ambiguousAttempt`：之前的寄送可能已經送達 Resend（見下一段）。
+    - `keyMismatch`：這列加密內容的 key id 與本次執行 `DATA_ENCRYPTION_KEYRING` 的啟用 key id 不同。代表執行環境的
+      keyring 和伺服器不一致（或伺服器已輪替金鑰），寫入的內容伺服器可能解不開。
+    - `unrenderable`：新內容超過主旨 200 字或內文 25,000 字的上限（例如姓名經 NFKC 展開後變長）。
+
+    其餘計為 `needsRewrite`，`--apply` 時改成目前的寫法。
+  - 兩種都不等於 → `unrecognized`，**不寫**。例如排入後商家改了名稱，或執行環境的 `NEXT_PUBLIC_APP_URL`、根密鑰、Node 的
+    ICU 與排入時的伺服器不同。所以腳本只會替換它能完整重現的內容，而且新舊只差姓名那一段。
+- **只改寫確定沒送達 Resend 的列**：重試沿用同一個 Idempotency-Key，Resend 對「同一個 key、不同內容」回 409，最後會變成
+  `exhausted`。所以只有下列情況才改寫：沒有手動重送過（`manualRetryCount = 0`），而且還沒嘗試過寄送（`attemptCount = 0`），
+  或只嘗試過一次、錯誤代碼是 `configuration`（Resend 設定缺漏，在送出 HTTP 請求前就失敗）。其他情況一律計為
+  `ambiguousAttempt`。選這條規則的原因（依 `src/lib/email.ts` 與 `email-delivery.ts` 的錯誤代碼）：
+  - `network`、`invalid_response`、`internal`、`stale_delivery_lease`：請求可能已經送達，甚至 Resend 已收下。
+  - `provider_rejected`：資料列不保存 HTTP 狀態碼，5xx（可能已收下）與 429 無法分辨。
+  - 資料列只保存最後一次的錯誤代碼，所以嘗試兩次以上時，無法證明較早的嘗試沒送達。
+  - 手動重送會清掉錯誤代碼，也可能把次數歸零。
+
+  實務上，可手動重送的 `exhausted` 列幾乎都嘗試過 5 次，所以會落在 `ambiguousAttempt`，只計數、不改寫。數量非零時，
+  商家手動重送前要知道這些信仍是舊內容。
+- **寫入方式（compare-and-set）**：每筆一個 `UPDATE`。條件是下列欄位都和讀到的值相同：id、`vendorId`、trigger、狀態、
+  `attemptCount`、`manualRetryCount`、`lastErrorCode`、加密內容（`payloadEncryptedEnvelope`）與 `updatedAt`。只改
+  `payloadEncryptedEnvelope`，並把 `updatedAt` 往後移（寄送端以 `updatedAt` 搶單，所以寫入前就讀到舊內容的寄送會搶單失敗，
+  回 `claimed_elsewhere`，下一輪讀到新內容）。不改狀態、排程、嘗試次數、收件 hash 或 id。讀取後被寄出、被搶走、被取代或
+  內容已變的列不寫，計為 `raced`（只有加密內容被換掉、`updatedAt` 沒變的也一樣）。
+- **可以重跑**：改過的列下一次會是 `alreadySafe`，重跑不寫任何東西；中斷後直接重跑即可。單筆發生非預期錯誤時計為
+  `rowError`，其他列照常處理，但整次執行的輸出 `status` 會是 `incomplete`、結束碼為 1，不會被當成成功。`rowError`
+  非零時先查原因（例如連線中斷），修正後重跑。
+- `NEXT_PUBLIC_APP_URL` 在讀任何資料前先用 `getCanonicalAppUrl` 驗證一次（不是絕對網址、不是 http/https、含帳密、
+  Production 未用 https 都算），不通過就拒絕執行（`app-url-invalid`），不會變成每一列都是 `rowError`。
+- 預設是唯讀 dry run（在記憶體解密分類）；寫入需要 `--apply` 且 `RERENDER_CONFIRM=RERENDER_QUEUED_REMINDER_CONTENT`。
+- **密鑰與網址必須和目標環境的伺服器完全相同**，由操作者注入；不讀 `.env*`：
+  - `NEXT_PUBLIC_APP_URL`：沒有時拒絕執行。
+  - `CSRF_SECRET`：根密鑰，**沒有 `JOB_SECRET` 退路**（F-031）。
+  - `DATA_ENCRYPTION_KEYRING`：與伺服器完全相同的 keyring（伺服器沒設就不要設）。格式錯誤時拒絕執行。
+- **滾動部署期間不要跑**：舊版實例可能還在用 #670 前的寫法排入新的列。等舊版實例全部退場後再跑；如果已經跑過，退場後
+  再跑一次即可（已改過的列不會重寫）。
+- 輸出只有商家 id 與計數（`scanned`、`needsRewrite`、`rewritten`、`raced`、`alreadySafe`、`unrecognized`、`stale`、
+  `unreadable`、`ambiguousAttempt`、`keyMismatch`、`unrenderable`、`rowError`），不輸出姓名、Email 或信件內容。
+- **Production（含 dry run）需要 owner 明確授權**：dry run 也會解密收件 Email 與姓名。授權後才設定
+  `RERENDER_PRODUCTION_APPROVAL=OWNER_APPROVED_PRODUCTION_REMINDER_RERENDER`。
+
+步驟（先 staging、後 production）：
+
+```bash
+# 0. 先確認目標環境的部署已全部切到 #670 之後的版本（滾動部署的舊實例已退場）
+# 1. staging dry run：status 應為 ok，rowError、unreadable、keyMismatch 應為 0；needsRewrite 是要改的筆數。unrecognized 若接近 scanned，
+#    先查 NEXT_PUBLIC_APP_URL、CSRF_SECRET、DATA_ENCRYPTION_KEYRING 或 Node 版本是否與 staging 伺服器一致，不要寫入
+DATABASE_URL=<staging> NEXT_PUBLIC_APP_URL=<staging 網址> \
+CSRF_SECRET=<staging 的 CSRF_SECRET> DATA_ENCRYPTION_KEYRING=<staging 的 DATA_ENCRYPTION_KEYRING，未設定就省略> \
+  node --import tsx scripts/rerender-queued-reminder-content.ts --target=staging
+# 2. staging 寫入；needsRewrite = rewritten + raced（+ 寫入時發生的 rowError）
+RERENDER_CONFIRM=RERENDER_QUEUED_REMINDER_CONTENT DATABASE_URL=<staging> NEXT_PUBLIC_APP_URL=<staging 網址> \
+CSRF_SECRET=<staging 的 CSRF_SECRET> DATA_ENCRYPTION_KEYRING=<staging 的 DATA_ENCRYPTION_KEYRING，未設定就省略> \
+  node --import tsx scripts/rerender-queued-reminder-content.ts --target=staging --apply
+# 3. 再跑一次 dry run：needsRewrite 應為 0（raced 的列若仍在排程中，這次會再出現，重跑 --apply 即可）
+# 4. production：dry run 也需要 owner 明確授權後才設定核准值
+RERENDER_PRODUCTION_APPROVAL=OWNER_APPROVED_PRODUCTION_REMINDER_RERENDER DATABASE_URL=<production> NEXT_PUBLIC_APP_URL=<正式網址> \
+CSRF_SECRET=<production 的 CSRF_SECRET> DATA_ENCRYPTION_KEYRING=<production 的 DATA_ENCRYPTION_KEYRING，未設定就省略> \
+  node --import tsx scripts/rerender-queued-reminder-content.ts --target=production
+RERENDER_PRODUCTION_APPROVAL=OWNER_APPROVED_PRODUCTION_REMINDER_RERENDER \
+RERENDER_CONFIRM=RERENDER_QUEUED_REMINDER_CONTENT DATABASE_URL=<production> NEXT_PUBLIC_APP_URL=<正式網址> \
+CSRF_SECRET=<production 的 CSRF_SECRET> DATA_ENCRYPTION_KEYRING=<production 的 DATA_ENCRYPTION_KEYRING，未設定就省略> \
+  node --import tsx scripts/rerender-queued-reminder-content.ts --target=production --apply
+```
+
+可用 `--vendor-id <id>` 先只處理一個商家，`--batch-size <1-500>` 調整每頁筆數（預設 100）。
+
+**已知限制：**
+
+- `unrecognized`、`ambiguousAttempt`、`keyMismatch`、`unrenderable` 的列不會被改，仍帶舊內容寄出（例如排入後商家改了名稱）。
+  數量非零時人工判斷是否在後台改設定，讓它們重新排入。**注意：**改設定重新排入時，會產生新的 id 與新的 Idempotency-Key
+  （舊列標成 `superseded`），Resend 不會把它當成同一封信；如果舊列先前那次其實已經送達（例如 `ambiguousAttempt` 的列），
+  收件人會收到第二封。
+- 寫入後無法還原成舊內容（舊內容就是要移除的）。
+- 腳本不改狀態與排程，所以不會讓任何提醒消失或多寄。
+- 課後信與序列信不在範圍內。
+
+
 ## 10. 參考資料
 
 - Supabase Prisma guide: https://supabase.com/docs/guides/database/prisma
