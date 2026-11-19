@@ -617,7 +617,7 @@ describe("scripts/rerender-queued-reminder-content arguments and target", () => 
 
   it("allows a loopback test database, needs --target for staging and owner approval for production", () => {
     const loopback = "postgresql://postgres:postgres@127.0.0.1:54443/celebratedeal_test?schema=public";
-    const remote = "postgresql://user:secret@db.example.test:5432/postgres";
+    const remote = "postgresql://user:secret@db.example.test:5432/postgres"; // secret-scan: allow-test-fixture
     expect(resolveReminderRerenderTarget({ DATABASE_URL: loopback }, null)).toMatchObject({ target: "loopback" });
     expect(() => resolveReminderRerenderTarget({ DATABASE_URL: loopback }, "production")).toThrow(expect.objectContaining({ category: "target-mismatch" }));
     expect(() => resolveReminderRerenderTarget({}, null)).toThrow(expect.objectContaining({ category: "missing" }));
