@@ -420,6 +420,46 @@ describe("concurrency with an owner holding the rule row", () => {
     throw new Error(`fewer than ${count} calls waited on the rule lock at the same time (within ${arrivalWindowMs} ms of the first seen at ${first ?? "never"}): ${JSON.stringify(backends)}`);
   }
 
+  /**
+   * PostgreSQL's own clock for the lock waits (no Node stopwatch): polls until
+   * no call waits on the rule lock any more and returns, in server time, how
+   * long the first waiter waited (waitstart to the first poll that sees one
+   * gone) and how long until the last one was gone. Both are server-to-server,
+   * so they do not include how long the Node side took to hear back under
+   * load. A waiter counts while it has a not-granted lock in pg_locks, not by
+   * wait_event_type: at deadlock_timeout (1 s) the backend wakes to run the
+   * deadlock check and briefly shows no wait event while it still waits (seen
+   * as a 1 s "give-up" in a first run).
+   */
+  async function lockWaitsFromPostgres(count: number) {
+    let waitStartMs: number | null = null;
+    let firstGoneMs: number | null = null;
+    let emptyPolls = 0;
+    const deadline = Date.now() + 30_000;
+    while (Date.now() < deadline) {
+      const [row] = await observer.$queryRaw<Array<{ n: number; nowMs: number; waitStartMs: number | null }>>`
+        SELECT count(*) FILTER (WHERE l.waitstart IS NOT NULL)::int AS n,
+               (extract(epoch FROM clock_timestamp()) * 1000)::float8 AS "nowMs",
+               (extract(epoch FROM min(l.waitstart)) * 1000)::float8 AS "waitStartMs"
+        FROM pg_stat_activity a
+        LEFT JOIN LATERAL (SELECT min(waitstart) AS waitstart FROM pg_locks WHERE pid = a.pid AND NOT granted) l ON true
+        WHERE a.datname = current_database() AND a.pid <> pg_backend_pid() AND a.query LIKE '%"AutomationRule"%FOR UPDATE%'
+      `;
+      if (row!.waitStartMs !== null && (waitStartMs === null || row!.waitStartMs < waitStartMs)) waitStartMs = row!.waitStartMs;
+      if (waitStartMs !== null && row!.n < count && firstGoneMs === null) firstGoneMs = row!.nowMs;
+      emptyPolls = row!.n === 0 ? emptyPolls + 1 : 0;
+      if (waitStartMs !== null && firstGoneMs !== null && emptyPolls >= 2) return { firstWaitedMs: firstGoneMs - waitStartMs, allWaitedMs: row!.nowMs - waitStartMs };
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    throw new Error(`the waiters did not all give up within 30 s (earliest server waitstart ${waitStartMs}, first gone ${firstGoneMs})`);
+  }
+
+  /** True while another connection still cannot take the rule row: FOR UPDATE NOWAIT answers 55P03 only while it is held. */
+  async function ruleStillHeld(ruleId: string, vendorId: string) {
+    return observer.$queryRaw`SELECT "id" FROM "AutomationRule" WHERE "id" = ${ruleId} AND "vendorId" = ${vendorId} FOR UPDATE NOWAIT`
+      .then(() => false, (error: unknown) => /55P03|could not obtain lock/.test(String(error)));
+  }
+
   const settle = (promise: Promise<unknown>) => promise.then(() => ({ ok: true as const }), (error: unknown) => ({ ok: false as const, error }));
 
   async function funnelRule() {
@@ -479,17 +519,26 @@ describe("concurrency with an owner holding the rule row", () => {
       let results: Array<{ ok: boolean; error?: unknown; ms: number; at: number }> = [];
       let seen = { first: 0, all: 0 };
       let started = 0;
+      let firstWaitedMs = 0;
+      let allWaitedMs = 0;
+      let stillHeld = false;
       try {
         started = Date.now();
         const calls = adminCalls(vendor.id, page.id, r.id).map((call) => call.then((result) => ({ ...result, ms: Date.now() - started, at: Date.now() })));
         // All four wait on the rule lock at once (not in Prisma's pool or still before it).
         seen = await untilWaiting(4);
+        // PostgreSQL's clock: from the first waiter's pg_locks waitstart to the
+        // first waiter gone and to the last one gone.
+        ({ firstWaitedMs, allWaitedMs } = await lockWaitsFromPostgres(4));
         results = await Promise.all(calls);
+        // Every call is back while the owner has still not committed (released
+        // only below): they gave up on lock_timeout, nothing let them in.
+        stillHeld = await ruleStillHeld(r.id, vendor.id);
       } finally {
         held.release();
         await held.done;
       }
-      const summary = JSON.stringify({ round, waitingAfterMs: [seen.first - started, seen.all - started], results: results.map((result) => ({ ok: result.ok, ms: result.ms, error: result.error instanceof Error ? `${result.error.name}: ${result.error.message}` : String(result.error) })) });
+      const summary = JSON.stringify({ round, firstWaitedMs, allWaitedMs, stillHeld, waitingAfterMs: [seen.first - started, seen.all - started], results: results.map((result) => ({ ok: result.ok, ms: result.ms, error: result.error instanceof Error ? `${result.error.name}: ${result.error.message}` : String(result.error) })) });
       const [toggle, create, funnelEdit, funnelEnable] = results;
       expect(String((toggle!.error as Error).message), summary).toBe("redirect:/settings/automations?error=toggle_busy");
       expect(String((create!.error as Error).message), summary).toBe("redirect:/settings/automations?error=step_busy");
@@ -501,15 +550,17 @@ describe("concurrency with an owner holding the rule row", () => {
       // holder's transaction id, the others first on the row's tuple lock, and
       // the one that gets the tuple lock when the first gives up then waits
       // again on the transaction id. So a call gives up after 5 s or, queued
-      // behind another, after up to about 10 s (2 × lock_timeout). The upper
-      // bounds count from moments the observer saw (all four waiting / the
-      // first waiting), which can only be late, so a slow runner that brings
-      // the calls to the lock late cannot fail them.
-      for (const result of results) {
-        expect(result.ms, summary).toBeGreaterThanOrEqual(4_500);
-        expect(result.at - seen.all, summary).toBeLessThan(12_500);
-      }
-      expect(Math.min(...results.map((result) => result.at)) - seen.first, summary).toBeLessThan(7_000);
+      // behind another, after up to about 10 s (2 × lock_timeout).
+      // The evidence is PostgreSQL's, not a Node stopwatch (as PR #637): the
+      // owner still held the row when every call was back (55P03 on NOWAIT),
+      // so each gave up on lock_timeout rather than being let in; the first
+      // waiter's wait, server waitstart to server clock, is about the 5 s
+      // lock_timeout and far from the 15 s transaction timeout; the last
+      // waiter is gone within 2 × lock_timeout plus margin, also server time.
+      expect(stillHeld, summary).toBe(true);
+      expect(firstWaitedMs, summary).toBeGreaterThanOrEqual(4_500);
+      expect(firstWaitedMs, summary).toBeLessThan(7_000);
+      expect(allWaitedMs, summary).toBeLessThan(12_500);
     }
     await expect(db.automationRule.findUniqueOrThrow({ where: { id: r.id } })).resolves.toMatchObject({ isActive: false, version: 1 });
     await expect(db.automationRuleStep.count({ where: { ruleId: r.id } })).resolves.toBe(0);
