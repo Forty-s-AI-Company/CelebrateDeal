@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { Prisma, type PrismaClient } from "@prisma/client";
 import { z } from "zod";
-import { getCanonicalAppUrl } from "@/lib/app-url";
+import { getCanonicalAppUrl, isExplicitLocalE2eRuntime } from "@/lib/app-url";
 import { isFeatureEnabled, type FeatureGateVendor } from "@/lib/vendor-feature-toggles";
 import { hashInteractionBearer } from "@/lib/live-interaction";
 import {
@@ -589,7 +589,7 @@ export const AUTOMATION_LINE_SKIP_REASONS = [
 export type AutomationLineSkipReason = typeof AUTOMATION_LINE_SKIP_REASONS[number];
 
 const LINE_SKIP_NOTES: Record<AutomationLineSkipReason, string> = {
-  line_button_url_not_https: "LINE 未發送：按鈕連結不是 HTTPS 網址（例如測試環境用 http）",
+  line_button_url_not_https: "LINE 未發送：按鈕連結不是 HTTPS 網址（例如預約的會議連結）",
   line_message_empty: "LINE 未發送：訊息填入連結後沒有內容",
   line_account_unavailable: "LINE 未發送：商家尚未連結 LINE 官方帳號",
   line_recipient_not_linked: "LINE 未發送：收件人尚未綁定 LINE",
@@ -1122,6 +1122,28 @@ async function executeAction(
  * execution is recorded `failed` and retried as before, and every action
  * repeats safely (deterministic ids and keys).
  */
+/**
+ * #673 review MINOR-1: in production the app's own links are HTTPS
+ * (getCanonicalAppUrl refuses anything else, Vercel previews included), so a
+ * non-HTTPS LINE button there comes from outside the app (an http booking
+ * meeting URL) and is worth a warning. Local, test and the explicit local e2e
+ * runtime build http links by design and are not reported; nor are the other
+ * skip reasons (ordinary missing setup). The fingerprint is the reason code
+ * only, so every occurrence groups into one issue; no id is sent.
+ */
+function reportLineButtonNotHttps() {
+  if (process.env.NODE_ENV !== "production" || isExplicitLocalE2eRuntime()) return;
+  try {
+    captureOperationalError(
+      new Error("Automation LINE button link is not HTTPS."),
+      { source: "automation_line", operation: "line_button_url_not_https" },
+      { level: "warning", fingerprint: ["line_button_url_not_https"] },
+    );
+  } catch {
+    // Monitoring never changes the rule's outcome.
+  }
+}
+
 async function queueAutomationLine(
   db: AutomationDb,
   event: AutomationEvent & { subjectType: "buyer_order" | "buyer_registration" },
@@ -1129,7 +1151,10 @@ async function queueAutomationLine(
 ): Promise<{ status: "queued" | "duplicate" } | { status: "skipped"; reason: AutomationLineSkipReason }> {
   if (!input.message.trim()) return { status: "skipped", reason: "line_message_empty" };
   // buildAutomationLineMessage adds a button only with both a label and a link.
-  if (input.buttonLabel && input.buttonUrl && !isLineActionUrl(input.buttonUrl)) return { status: "skipped", reason: "line_button_url_not_https" };
+  if (input.buttonLabel && input.buttonUrl && !isLineActionUrl(input.buttonUrl)) {
+    reportLineButtonNotHttps();
+    return { status: "skipped", reason: "line_button_url_not_https" };
+  }
   const result = await enqueueLineNotification(db, {
     vendorId: event.vendorId,
     subjectType: event.subjectType,

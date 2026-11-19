@@ -228,7 +228,7 @@ describe("an http deployment: the LINE button cannot be HTTPS", () => {
     expect(log).toMatchObject({ status: "completed", errorCode: null });
     // A fixed code only: no URL, address or LINE id in the record.
     expect(lineResults(resultsOf(log.actionResults))).toEqual([{ type: "line_push", status: "skipped", reason: "line_button_url_not_https", ...source }]);
-    expect(automationExecutionNotes(log.actionResults)).toEqual(["LINE 未發送：按鈕連結不是 HTTPS 網址（例如測試環境用 http）"]);
+    expect(automationExecutionNotes(log.actionResults)).toEqual(["LINE 未發送：按鈕連結不是 HTTPS 網址（例如預約的會議連結）"]);
     const produced = await outputs(t);
     expect(produced).toMatchObject({ vouchers: [expect.anything()], emails: [{ trigger: AUTOMATION_STEP_EMAIL_TRIGGER, status: "queued" }], tags: ["line-isolation", "報名"], lines: [] });
     // The run is not held for a retry: it moved on to the next step, which runs when due.
