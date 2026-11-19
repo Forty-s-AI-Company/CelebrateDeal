@@ -72,7 +72,10 @@
  * - NEXT_PUBLIC_APP_URL, CSRF_SECRET (no JOB_SECRET fallback) and
  *   DATA_ENCRYPTION_KEYRING must be exactly the target servers' values
  *   (injected by the operator; this tool reads no .env file).
- * - One row's unexpected error is counted as `rowError` and the run goes on.
+ * - One row's unexpected error is counted as `rowError` and the run goes on,
+ *   but the run then ends with status `incomplete` and exit code 1, so a
+ *   failing batch is never reported as a success. NEXT_PUBLIC_APP_URL is
+ *   validated once (getCanonicalAppUrl) before any row is read.
  * - Prints vendor IDs and counts only: never names, e-mails or content.
  *
  * Usage:
@@ -89,6 +92,7 @@ import { isStagingDatabaseUrl } from "../src/lib/database-identity";
 import { createEmailUnsubscribeUrl, protectEmailDeliveryPayload, revealEmailDeliveryPayload } from "../src/lib/email-delivery-pii";
 import { ensureEmailUnsubscribeFooter, formatLiveStartAt } from "../src/lib/email-delivery-format";
 import { liveNotificationIdentityFromKey } from "../src/lib/live-notification-identity";
+import { getCanonicalAppUrl } from "../src/lib/app-url";
 import { createLiveViewerUrl } from "../src/lib/live-public-url";
 import { stableLiveNotificationDeliveryId, stableLiveReminderDeliveryId } from "../src/lib/live-reminder-delivery-identity";
 import { appendPersonalWatchLink, PERSONAL_WATCH_LINK_LABEL } from "../src/lib/live-watch-link-token";
@@ -494,6 +498,12 @@ export async function runReminderRerender(
   if (options.apply && env.RERENDER_CONFIRM !== APPLY_CONFIRMATION) throw new ReminderRerenderRefusedError("confirmation-missing");
   // Links in the content are built from it; a missing value cannot reproduce anything.
   if (!env.NEXT_PUBLIC_APP_URL?.trim()) throw new ReminderRerenderRefusedError("app-url-missing");
+  // The same check every link builder runs; failing here keeps a bad value from turning every row into a rowError.
+  try {
+    getCanonicalAppUrl(env as NodeJS.ProcessEnv);
+  } catch {
+    throw new ReminderRerenderRefusedError("app-url-invalid");
+  }
   // New envelopes are written with this key id; a row stored under another one is `keyMismatch`.
   let activeKeyId: string;
   try {
@@ -514,6 +524,16 @@ export async function runReminderRerender(
   return { mode: options.apply ? "apply" as const : "plan" as const, ...total, vendors };
 }
 
+/**
+ * How a finished run is reported: any `rowError` makes it `incomplete` with
+ * exit code 1, so an operator or a wrapper never reads a failing batch as done.
+ */
+export function reminderRerenderRunStatus(outcome: { rowError: number }) {
+  return outcome.rowError > 0
+    ? { status: "incomplete" as const, exitCode: 1 }
+    : { status: "ok" as const, exitCode: 0 };
+}
+
 async function main() {
   let category = "unexpected";
   try {
@@ -523,7 +543,9 @@ async function main() {
     try {
       category = "run";
       const outcome = await runReminderRerender(db, options, process.env);
-      console.log(JSON.stringify({ status: "ok", target, batchSize: options.batchSize, ...outcome, secretDetailsEmitted: false }));
+      const { status, exitCode } = reminderRerenderRunStatus(outcome);
+      console.log(JSON.stringify({ status, target, batchSize: options.batchSize, ...outcome, secretDetailsEmitted: false }));
+      process.exitCode = exitCode;
     } finally {
       await db.$disconnect();
     }

@@ -455,7 +455,10 @@ A2-13（#670）起，信件裡的收件人姓名一律經 `safeRecipientName`，
   回 `claimed_elsewhere`，下一輪讀到新內容）。不改狀態、排程、嘗試次數、收件 hash 或 id。讀取後被寄出、被搶走、被取代或
   內容已變的列不寫，計為 `raced`（只有加密內容被換掉、`updatedAt` 沒變的也一樣）。
 - **可以重跑**：改過的列下一次會是 `alreadySafe`，重跑不寫任何東西；中斷後直接重跑即可。單筆發生非預期錯誤時計為
-  `rowError`，其他列照常處理。
+  `rowError`，其他列照常處理，但整次執行的輸出 `status` 會是 `incomplete`、結束碼為 1，不會被當成成功。`rowError`
+  非零時先查原因（例如連線中斷），修正後重跑。
+- `NEXT_PUBLIC_APP_URL` 在讀任何資料前先用 `getCanonicalAppUrl` 驗證一次（不是絕對網址、不是 http/https、含帳密、
+  Production 未用 https 都算），不通過就拒絕執行（`app-url-invalid`），不會變成每一列都是 `rowError`。
 - 預設是唯讀 dry run（在記憶體解密分類）；寫入需要 `--apply` 且 `RERENDER_CONFIRM=RERENDER_QUEUED_REMINDER_CONTENT`。
 - **密鑰與網址必須和目標環境的伺服器完全相同**，由操作者注入；不讀 `.env*`：
   - `NEXT_PUBLIC_APP_URL`：沒有時拒絕執行。
@@ -472,7 +475,7 @@ A2-13（#670）起，信件裡的收件人姓名一律經 `safeRecipientName`，
 
 ```bash
 # 0. 先確認目標環境的部署已全部切到 #670 之後的版本（滾動部署的舊實例已退場）
-# 1. staging dry run：unreadable、keyMismatch 應為 0；needsRewrite 是要改的筆數。unrecognized 若接近 scanned，
+# 1. staging dry run：status 應為 ok，rowError、unreadable、keyMismatch 應為 0；needsRewrite 是要改的筆數。unrecognized 若接近 scanned，
 #    先查 NEXT_PUBLIC_APP_URL、CSRF_SECRET、DATA_ENCRYPTION_KEYRING 或 Node 版本是否與 staging 伺服器一致，不要寫入
 DATABASE_URL=<staging> NEXT_PUBLIC_APP_URL=<staging 網址> \
 CSRF_SECRET=<staging 的 CSRF_SECRET> DATA_ENCRYPTION_KEYRING=<staging 的 DATA_ENCRYPTION_KEYRING，未設定就省略> \
@@ -497,7 +500,9 @@ CSRF_SECRET=<production 的 CSRF_SECRET> DATA_ENCRYPTION_KEYRING=<production 的
 **已知限制：**
 
 - `unrecognized`、`ambiguousAttempt`、`keyMismatch`、`unrenderable` 的列不會被改，仍帶舊內容寄出（例如排入後商家改了名稱）。
-  數量非零時人工判斷是否在後台改設定，讓它們重新排入（重新排入會以同一個 id 回來，並改寫成當下產生的內容）。
+  數量非零時人工判斷是否在後台改設定，讓它們重新排入。**注意：**改設定重新排入時，會產生新的 id 與新的 Idempotency-Key
+  （舊列標成 `superseded`），Resend 不會把它當成同一封信；如果舊列先前那次其實已經送達（例如 `ambiguousAttempt` 的列），
+  收件人會收到第二封。
 - 寫入後無法還原成舊內容（舊內容就是要移除的）。
 - 腳本不改狀態與排程，所以不會讓任何提醒消失或多寄。
 - 課後信與序列信不在範圍內。

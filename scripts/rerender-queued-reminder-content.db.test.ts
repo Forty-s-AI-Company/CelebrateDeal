@@ -38,6 +38,7 @@ import {
   ReminderRerenderRefusedError,
   parseReminderRerenderArguments,
   provablyNeverSent,
+  reminderRerenderRunStatus,
   resolveReminderRerenderTarget,
   runReminderRerender,
 } from "./rerender-queued-reminder-content";
@@ -572,6 +573,9 @@ describe("scripts/rerender-queued-reminder-content (PostgreSQL, A3-03)", () => {
     });
     expect(result).toMatchObject({ ...zero, scanned: 3, needsRewrite: 3, rewritten: 2, rowError: 1 });
     expect(JSON.stringify(result)).not.toContain("synthetic row failure");
+    // The CLI reports such a run as incomplete with exit code 1, never as ok.
+    expect(reminderRerenderRunStatus(result)).toEqual({ status: "incomplete", exitCode: 1 });
+    expect(reminderRerenderRunStatus({ ...result, rowError: 0 })).toEqual({ status: "ok", exitCode: 0 });
   });
 
   it("--vendor-id limits the run to one tenant", async () => {
@@ -584,11 +588,17 @@ describe("scripts/rerender-queued-reminder-content (PostgreSQL, A3-03)", () => {
     expect(await snapshot(b.vendor.id)).toEqual(bBefore);
   });
 
-  it("refuses to write without the confirmation, and to run without the app URL or with a broken keyring", async () => {
+  it("refuses to write without the confirmation, and to run with a missing or invalid app URL or a broken keyring", async () => {
     const f = await fixture("refuse");
     const before = await snapshot(f.vendor.id);
     await expect(runReminderRerender(db, applyOptions, env, f.scope)).rejects.toMatchObject({ category: "confirmation-missing" });
     await expect(runReminderRerender(db, planOptions, {}, f.scope)).rejects.toMatchObject({ category: "app-url-missing" });
+    // A value every link builder would reject fails the run before any row is read, not row by row.
+    for (const invalid of ["not a url", "ftp://rerender.example.test", "https://user:secret@rerender.example.test"]) {
+      await expect(runReminderRerender(db, planOptions, { NEXT_PUBLIC_APP_URL: invalid }, f.scope), invalid).rejects.toMatchObject({ category: "app-url-invalid" });
+    }
+    await expect(runReminderRerender(db, planOptions, { NEXT_PUBLIC_APP_URL: "http://rerender.example.test", NODE_ENV: "production" }, f.scope))
+      .rejects.toMatchObject({ category: "app-url-invalid" });
     vi.stubEnv("DATA_ENCRYPTION_KEYRING", "not-json");
     await expect(runReminderRerender(db, planOptions, env, f.scope)).rejects.toMatchObject({ category: "keyring-invalid" });
     expect(await snapshot(f.vendor.id)).toEqual(before);
