@@ -183,8 +183,10 @@ async function registration(t: Tenant, options: { verified?: boolean; email?: st
   });
 }
 
+/** Each booking gets its own start: (vendorId, eventId, startTime) is unique and Date.now() can repeat within a millisecond. */
+let bookingSeq = 0;
 async function booking(t: Tenant, email = `client-${randomUUID().slice(0, 8)}@example.test`) {
-  const start = new Date(Date.now() + 3 * DAY);
+  const start = new Date(Date.now() + 3 * DAY + bookingSeq++ * MINUTE);
   return db.consultationBooking.create({
     data: {
       vendorId: t.vendor.id,
