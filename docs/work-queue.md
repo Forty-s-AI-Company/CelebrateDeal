@@ -53,18 +53,19 @@
 
 | 順序 | ID | 項目 | 風險 | 狀態 |
 |---|---|---|---|---|
-| 1 | A2-01 | 觀看觸發「同一人已執行」排除改為不掃整張 `FormSubmission`（#651 MINOR-A） | 高（租戶、效能） | 進行中 |
-| 2 | A2-02 | demo adapter 加固（`Object.hasOwn`、`provider` 不可被 body 覆寫）；聯絡網址 SSRF 判斷三份統一並補 IPv4 變形測試 | 高（金流、安全） | 進行中 |
-| 3 | A2-03 | `funnel-operations.spec.ts:83` 偶發失敗；盤點其他靠 `?saved=1` 判斷完成的 spec | 一般 | 進行中 |
-| 4 | A2-04 | 通用無連結 Email 範本：`form_registered`、無折價券 `payment_paid`、兩個觀看觸發 | 一般 | 未開始 |
-| 5 | A2-05 | PayUni 回呼遺失時主動查詢補單排程；順便在 Sandbox 確認「以部分退款退完剩餘金額」的實際行為 | 高（金流） | 未開始 |
-| 6 | A2-06 | 其餘 35 個租戶 action 補兩租戶 DB 測試 | 高（租戶） | 未開始 |
-| 7 | A2-07 | fan-out 的 `consentedAt <= occurredAt` 改用共用時鐘偏差 | 一般 | 未開始 |
-| 8 | A2-08 | 商家儲存規則持鎖時，請求路徑最多阻塞 15 秒 | 一般 | 未開始 |
+| 1 | A2-01 | 觀看觸發「同一人已執行」排除改為不掃整張 `FormSubmission`（#651 MINOR-A） | 高（租戶、效能） | 已完成 [#663](https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/663)（兩輪審查）：派送前小查詢＋`duplicate_person` 紀錄，新索引以單句 `CONCURRENTLY` 建立（repo 第一個）。52 萬筆合成資料下大商家掃描 113 秒 → 0.4 秒。staging migrate run 44382582196 套用；browser smoke 44382917457、首次成功 44382926058 PASS |
+| 2 | A2-02 | demo adapter 加固；聯絡網址 SSRF 判斷三份統一並補 IPv4 變形測試 | 高（金流、安全） | 已完成 [#661](https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/661)（審查）：`provider` 不可被 body 覆寫、registry 只認自有 key；三份 SSRF 判斷統一成 `contact-url-rules.ts`＋`contact-url-safety-node.ts`，共用案例表三實作一致。未做：100.64/10、NAT64、6to4 等網段（後續項目） |
+| 3 | A2-03 | `funnel-operations.spec.ts:83` 偶發失敗；盤點其他靠 `?saved=1` 判斷完成的 spec | 一般 | 已完成 [#662](https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/662)：根因是編輯器 3 秒自動儲存與測試點擊競態；另修 `automation-delayed-steps` 同類問題，其餘 spec 盤點無需修改 |
+| 4 | A2-04 | 通用無連結 Email 範本 | 一般 | 已完成 [#665](https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/665)（三輪審查）：`generic_message`「自訂訊息（不含連結）」，7 種 trigger 皆可用；姓名只在已驗證時帶入、像網址改用預設稱呼；預約姓名改精確比對（修掉 ILIKE `_` 萬用字元）；所有自動化信帶商家頁尾；內文禁止連結但不誤擋 `Node.js`。staging 已上（`b8038c00`） |
+| 5 | A2-05 | PayUni 回呼遺失時主動查詢補單排程 | 高（金流） | 已完成 [#664](https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/664)（三輪審查）：`/api/jobs/payment-reconcile`，與回呼共用入帳路徑與 `WebhookEvent` claim；金額只取伺服器紀錄；退款／請款取消／金額不符轉人工；需 `PAYMENT_RECONCILE_ENABLED=true`（staging Preview 已設，Production 未設、需 owner 同意）。staging migrate run 44408557820 套用 2 條；手動觸發 job http=200。未驗證：Sandbox 實測遺失回呼補單、請款前 `RemainAmt`／`CloseStatus` 的實際值、「以部分退款退完剩餘金額」的 PayUni 行為（後續項目） |
+| 6 | A2-06 | 其餘 35 個租戶 action 補兩租戶 DB 測試 | 高（租戶） | 已完成 [#666](https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/666)：36 個入口全部覆蓋，未發現跨租戶漏洞；`TENANT_ACTION_MATRIX.md` 更新。觀察：`savePartnerPageAction` 部分寫入、`duplicateInteractionScriptAction` 錯誤無提示、`LiveStudioDraft.liveId` FK 未綁 vendor（後續項目） |
+| 7 | A2-07 | fan-out 的 `consentedAt <= occurredAt` 改用共用時鐘偏差 | 一般 | 已完成 [#667](https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/667)，並修正 QA runner 中「事件後 1 秒同意」的舊案例 |
+| 8 | A2-08 | 商家儲存規則持鎖時，請求路徑最多阻塞 15 秒 | 一般 | 進行中 [#671](https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/671)（兩輪審查通過，CI 的序列信測試失敗調查中）：四個請求路徑入口最多等約 2 秒，逾時寫入 `AutomationDeferredDispatch` 由 job 補派，依 eventId 去重、時間退避 48 小時 |
 | 9 | A2-09 | http 環境下 LINE 動作失敗不拖垮整個延遲步驟 | 一般 | 未開始 |
-| 10 | A2-10 | 固定場次以「僅出席」cookie 當場次提示 | 高（auth） | 未開始 |
-| 11 | A2-11 | 手機底部「更多」不靠 JS 的後備 | 一般 | 未開始 |
-| 12 | A2-12 | `automation-delayed-step-start-lock.db.test.ts` 改用 `vi.stubEnv` 設 `CSRF_SECRET` | 一般 | 未開始 |
+| 10 | A2-10 | 固定場次以個人觀看連結當場次提示 | 高（auth） | 已完成 [#669](https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/669)（兩輪審查）：場次提示 cookie（`lsh1`，只帶報名 id，HMAC 涵蓋 vendor／live／到期），三處共用 `resolveViewerFixedSession`；提示場次取消或未開始而他場在播時退回公開時程。未做：開連結後商家關回放或移場次的邊界（後續項目） |
+| 11 | A2-11 | 手機底部「更多」不靠 JS 的後備 | 一般 | 已完成 [#668](https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/668)：原生 popover，hydration 後轉交 React 抽屜。未實測：實機 iOS Safari、舊 Android |
+| 12 | A2-12 | DB 測試不依賴外部 `CSRF_SECRET` | 一般 | 已完成 [#667](https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/667)：21 個 DB 測試檔改用 `vi.stubEnv` |
+| 13 | A2-13 | 既有信件（驗證信、序列信、範本、收據）姓名可被用來釣魚 | 高（安全） | 已完成 [#670](https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/670)（三輪審查）：共用 `safe-recipient-name.ts`，驗證信不帶姓名、像網址（含不可見字元繞過）改預設稱呼。部署前已排入的提醒保留原內容（重新產生腳本改為後續項目） |
 
 封測後才做（不排入 A2）：R-04 ④～⑦、U-04 金額相關與大型表單、picomatch 例外到期處理。
 
@@ -88,6 +89,15 @@
 - `tests/e2e/funnel-operations.spec.ts:83` 偶發失敗（#655 CI run 44242232428，retry 後通過）。
 - demo adapter：body 可覆寫 `provider`（`{ provider: "demo", ...rawPayload }`）、registry 以 `providers[id]` 查表會命中原型 key；正式環境有三層防線擋住，改用 `Object.hasOwn` 並把 `provider` 移到 spread 之後（#652 審查 MINOR-4、NIT）。
 - 聯絡網址 SSRF 判斷有三份（`lib/contact-url-safety.ts`、`email-delivery-pii.ts`、`brand-settings-form.tsx`）且規則已不一致；補 IPv4 變形寫法（`2130706433`、`0x7f.0.0.1`、`127.1`）測試並共用案例表（#655 審查）。
+- PayUni Sandbox 實測：遺失回呼時補單入帳、請款前 `RemainAmt`／`CloseStatus` 實際值、以部分退款退完剩餘金額的行為（A2-05）。
+- SSRF 規則補 100.64/10、198.18/15、多播、NAT64、6to4、IPv4-compatible 位址（#661 審查）。
+- 部署前已排入提醒的重新產生：改用原地重算內容的 compare-and-set 腳本（不改狀態）（#670 複審）。
+- 商家名稱出現在邀請信與學員登入信主旨；若開放商家自由註冊需另行處理（#670 審查）。
+- 場次提示：開連結後商家關回放或移場次時，提示可能擋住正在播的公開場次（#669 複審 MINOR-A）。
+- `savePartnerPageAction` 先寫文字後驗商品造成部分寫入；`duplicateInteractionScriptAction` 錯誤無提示；`LiveStudioDraft.liveId` FK 未綁 vendor（#666）。
+- `automation-line-push-policy.db.test.ts` 的 lock_timeout 計時斷言在本機偶發超過 7000 ms（master 亦然）。
+- 首次成功路徑 runner 失敗時記錄是哪個動作逾時（2026-11-19 staging FORM 步驟兩次偶發逾時，重跑通過）。
+- `accountant-foreign-message-template-edit-direct-url.spec.ts:12` 偶發失敗（#664 CI）。
 - npm audit 對 picomatch（GHSA-fc5q-39xc-vjpf）的例外於 2027-01-01 到期；上游出修補版後移除（#642）。
 - 部署前已排入提醒的重新產生：改用原地重算內容的 compare-and-set 腳本（不改狀態），#670 複審建議。背景：A2-13 部署前已排入、尚未寄出的 `live_reminder` 與直播通知保留原本的內容（可能含未清理的姓名）；#670 第一版提案腳本是先標成 `superseded` 再靠 reconcile 重建，但 reconcile 每批只處理 100 筆且沿用之前的進度，依 `incomplete` 重跑時已救回的提醒會再被標掉而永遠不寄，已移除。
 
