@@ -753,8 +753,18 @@ describe("worker", () => {
     expect(waiting).toHaveLength(people - SEQUENCE_EMAIL_DISPATCH_LIMIT);
     expect(waiting.every((row) => row.status === "active" && row.attemptCount === 0)).toBe(true);
     // A person whose first e-mail is still queued waits with the next step.
-    const firstPerson = [...perPerson.keys()][0]!;
-    const firstRun = (await runsOf(t.vendor.id)).find((row) => row.formSubmissionId === firstPerson)!;
+    // The person is the one whose next step the round reaches first among those
+    // with a step e-mail queued: the worker takes runs by (nextRunAt, id) and
+    // stops once its e-mail capacity is used, so a person picked from an
+    // unordered query (heap order, which concurrent files' deletes and inserts
+    // reshuffle) could sit past that point and never be looked at this round.
+    const firstRun = (await db.delayedStepRun.findMany({
+      where: { vendorId: t.vendor.id, cursorDelayMinutes: 60 },
+      orderBy: [{ nextRunAt: "asc" }, { id: "asc" }],
+      take: 1,
+    }))[0]!;
+    const firstPerson = firstRun.formSubmissionId!;
+    expect(perPerson.get(firstPerson)).toBe(1);
     await db.emailDelivery.updateMany({ where: { vendorId: t.vendor.id, NOT: { sourceFormSubmissionId: firstPerson } }, data: { status: "sent" } });
     const results = await processDueDelayedStepRuns({ now: at(4 * HOUR + 10 * 60_000), vendorId: t.vendor.id });
     expect(results).toContainEqual({ runId: firstRun.id, status: "waiting_previous" });
