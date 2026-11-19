@@ -134,8 +134,10 @@ async function registration(f: Fixture) {
   return { id: row.id, email: row.email };
 }
 
+/** Each booking gets its own start: (vendorId, eventId, startTime) is unique and Date.now() can repeat within a millisecond. */
+let bookingSeq = 0;
 async function booking(f: Fixture, status: "scheduled" | "no_show" | "cancelled" = "scheduled") {
-  const start = new Date(Date.now() + 3 * 24 * 60 * MINUTE);
+  const start = new Date(Date.now() + 3 * 24 * 60 * MINUTE + bookingSeq++ * MINUTE);
   const row = await db.consultationBooking.create({
     data: {
       vendorId: f.vendor.id,
