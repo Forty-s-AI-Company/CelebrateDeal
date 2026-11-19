@@ -778,27 +778,65 @@ describe("worker", () => {
     await expect(isCurrentSequenceEmailDelivery(delivery!, new Date(delivery!.createdAt.getTime() + SEQUENCE_EMAIL_SEND_STALE_MS + 1), db)).resolves.toBe(false);
   });
 
-  it("serves a small vendor within a few rounds while four large vendors have many due runs (MAJOR 3)", async () => {
-    const large: Tenant[] = [];
-    for (let index = 0; index < 4; index += 1) {
+  /**
+   * The worker starts each round at rotate()'s vendor (a random term plus the
+   * golden-ratio spread of the round's minute) over the due vendors in id
+   * order, and gives one e-mail to each vendor in turn until the round's
+   * capacity is used. With the random term fixed the start moves by the golden
+   * ratio every minute, so every window of `capacity` vendors is visited again
+   * within about 1.6 * ceil(n / capacity) rounds (checked for n = 5..100); the
+   * cap below is 2 * n / capacity + 1. A random start made the old fixed cap of
+   * six rounds fail by chance (0.4 % with these five vendors, more with every
+   * extra vendor). The job runs unscoped, so n counts every vendor with a due
+   * run in the database, not only this test's, and the capacity is what other
+   * files' queued mail leaves.
+   */
+  async function serveSmallVendor(extraVendors: number) {
+    const created: Tenant[] = [];
+    for (let index = 0; index < 4 + extraVendors; index += 1) {
       const t = await tenant();
       await sequence(t, [{ delayMinutes: 60 }]);
-      for (let person = 0; person < 12; person += 1) await enroll(t, (await submission(t)).id);
-      large.push(t);
+      const people = index < 4 ? 12 : 1;
+      for (let person = 0; person < people; person += 1) await enroll(t, (await submission(t)).id);
+      created.push(t);
     }
     const small = await tenant();
     await sequence(small, [{ delayMinutes: 60 }]);
     await enroll(small, (await submission(small)).id);
-    const all = [...large, small];
+    const mine = [...created, small].map((t) => t.vendor.id);
+    const emails = 3;
+    const roundNow = (round: number) => new Date(at(2 * HOUR).getTime() + round * 60_000);
+    const dueVendors = (await db.delayedStepRun.groupBy({
+      by: ["vendorId"],
+      where: { status: "active", nextRunAt: { lte: roundNow(0) }, vendor: { is: { suspendedAt: null } } },
+    })).length;
+    const foreignPending = await db.emailDelivery.count({
+      where: { vendorId: { notIn: mine }, trigger: "sequence_email", status: { in: ["queued", "failed", "sending"] }, vendor: { is: { suspendedAt: null } } },
+    });
+    const capacity = Math.max(0, emails - foreignPending);
+    expect(capacity).toBeGreaterThan(0);
+    const maxRounds = Math.ceil((2 * dueVendors) / capacity) + 1;
     let served = false;
-    for (let round = 0; round < 6 && !served; round += 1) {
+    let rounds = 0;
+    while (!served && rounds < maxRounds) {
       // Each round dispatches what the previous one created, then the worker runs unscoped.
-      await db.emailDelivery.updateMany({ where: { vendorId: { in: all.map((t) => t.vendor.id) }, status: "queued" }, data: { status: "sent" } });
-      await processDueDelayedStepRuns({ now: new Date(at(2 * HOUR).getTime() + round * 60_000), budget: { emails: 3 } });
+      await db.emailDelivery.updateMany({ where: { vendorId: { in: mine }, status: "queued" }, data: { status: "sent" } });
+      await processDueDelayedStepRuns({ now: roundNow(rounds), budget: { emails }, random: () => 0 });
+      rounds += 1;
       served = (await deliveriesOf(small.vendor.id)).length === 1;
     }
-    expect(served).toBe(true);
-  });
+    return { served, maxRounds };
+  }
+
+  it("serves a small vendor within a few rounds while four large vendors have many due runs (MAJOR 3)", async () => {
+    const { served, maxRounds } = await serveSmallVendor(0);
+    expect(served, `not served within ${maxRounds} rounds`).toBe(true);
+  }, 30_000);
+
+  it("serves a small vendor within the derived round bound when many more vendors have due runs (MAJOR 3)", async () => {
+    const { served, maxRounds } = await serveSmallVendor(14);
+    expect(served, `not served within ${maxRounds} rounds`).toBe(true);
+  }, 60_000);
 
   it("still serves a small vendor when the large ones only have a big overdue backlog (MAJOR 3)", async () => {
     const large: Tenant[] = [];
