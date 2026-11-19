@@ -92,7 +92,7 @@ beforeEach(() => {
   mocks.startPendingAutomationRuns.mockResolvedValue([]);
   mocks.processDueSequenceEmailDeliveries.mockResolvedValue([]);
   mocks.runFormNoShowAutomation.mockResolvedValue({ vendors: 1, candidates: 3, examined: 2, completed: 2, skipped: 0, failed: 1, duplicate: 0, errors: 0 });
-  mocks.runDeferredAutomationDispatches.mockResolvedValue({ expired: 1, results: [{ status: "dispatched" }, { status: "settled" }, { status: "deferred" }, { status: "dispatched" }, { status: "abandoned" }] });
+  mocks.runDeferredAutomationDispatches.mockResolvedValue({ expired: 1, results: [{ status: "dispatched" }, { status: "settled" }, { status: "deferred" }, { status: "dispatched" }, { status: "failed" }, { status: "running_elsewhere" }] });
   mocks.runWatchProgressAutomation.mockResolvedValue({ vendors: 1, candidates: 4, examined: 4, completed: 3, skipped: 0, failed: 0, duplicate: 1, duplicatePerson: 2, errors: 0, scanCutShort: false, backlogNearLookback: false });
 });
 
@@ -201,7 +201,7 @@ describe("POST /api/jobs/email-deliveries", () => {
       fixedSessionCancellationNotices: 1,
       formNoShow: { candidates: 3, examined: 2, completed: 2, failed: 1, errors: 0 },
       watchProgress: { candidates: 4, examined: 4, completed: 3, duplicatePerson: 2, failed: 0, errors: 0 },
-      automationDeferred: { expired: 1, dispatched: 2, settled: 1, deferred: 1, failed: 1 },
+      automationDeferred: { expired: 1, dispatched: 2, settled: 1, deferred: 1, failed: 1, runningElsewhere: 1 },
     });
     expect(JSON.stringify(body)).not.toContain("private-notice");
     // Seats and notices are handled before this round's dispatch sends anything.

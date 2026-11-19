@@ -4177,21 +4177,24 @@ model AutomationExecutionLog {
 /// foreign key to AutomationRule: writing this row must not wait on the rule
 /// row it is about; the job reads the rule bound to the vendor.
 model AutomationDeferredDispatch {
-  id        String   @id @default(cuid())
-  vendorId  String
-  ruleId    String
+  id            String   @id @default(cuid())
+  vendorId      String
+  ruleId        String
   /// form_registered | consultation_booked | consultation_no_show | payment_paid (CHECK).
-  trigger   String
+  trigger       String
   /// FormSubmission, ConsultationBooking or CommerceOrder id, read again bound to the vendor.
-  subjectId String
-  /// Failed job attempts (a lock wait given up does not count); CHECK 0..100.
-  attempts  Int      @default(0)
-  createdAt DateTime @default(now())
+  subjectId     String
+  /// Failed job attempts (a lock wait given up does not count); CHECK 0..1000.
+  attempts      Int      @default(0)
+  /// When the job may take the row next; pushed back after a failed attempt (1, 2, 5, 10, then 30 minutes).
+  nextAttemptAt DateTime @default(now())
+  createdAt     DateTime @default(now())
 
   vendor Vendor @relation(fields: [vendorId], references: [id], onDelete: Cascade)
 
   @@unique([vendorId, ruleId, trigger, subjectId])
   @@index([createdAt])
+  @@index([nextAttemptAt])
 }
 
 model CustomerTagAssignment {

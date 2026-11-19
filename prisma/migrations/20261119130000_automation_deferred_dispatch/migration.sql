@@ -31,13 +31,17 @@ CREATE TABLE "AutomationDeferredDispatch" (
     "trigger" TEXT NOT NULL,
     "subjectId" TEXT NOT NULL,
     "attempts" INTEGER NOT NULL DEFAULT 0,
+    -- When the job may take the row next: now on insert, pushed back after a
+    -- failed attempt (1, 2, 5, 10, then every 30 minutes; #671 review MINOR-5).
+    "nextAttemptAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
     CONSTRAINT "AutomationDeferredDispatch_pkey" PRIMARY KEY ("id"),
     -- The request-path triggers whose event the job can rebuild from server records.
     CONSTRAINT "AutomationDeferredDispatch_trigger_check" CHECK ("trigger" IN ('form_registered', 'consultation_booked', 'consultation_no_show', 'payment_paid')),
-    -- DEFERRED_DISPATCH_MAX_ATTEMPTS is far below this; the CHECK only bounds a runaway writer.
-    CONSTRAINT "AutomationDeferredDispatch_attempts_check" CHECK ("attempts" BETWEEN 0 AND 100)
+    -- The 48-hour window with that back-off allows about 100 failed attempts;
+    -- the CHECK only bounds a runaway writer.
+    CONSTRAINT "AutomationDeferredDispatch_attempts_check" CHECK ("attempts" BETWEEN 0 AND 1000)
 );
 
 -- CreateIndex
@@ -46,8 +50,12 @@ CREATE TABLE "AutomationDeferredDispatch" (
 CREATE UNIQUE INDEX "AutomationDeferredDispatch_vendorId_ruleId_trigger_subjectI_key" ON "AutomationDeferredDispatch"("vendorId", "ruleId", "trigger", "subjectId");
 
 -- CreateIndex
--- The job's window scan and the expiry sweep.
+-- The expiry sweep (48-hour window).
 CREATE INDEX "AutomationDeferredDispatch_createdAt_idx" ON "AutomationDeferredDispatch"("createdAt");
+
+-- CreateIndex
+-- The job's scan of rows due now.
+CREATE INDEX "AutomationDeferredDispatch_nextAttemptAt_idx" ON "AutomationDeferredDispatch"("nextAttemptAt");
 
 -- AddForeignKey
 ALTER TABLE "AutomationDeferredDispatch" ADD CONSTRAINT "AutomationDeferredDispatch_vendorId_fkey" FOREIGN KEY ("vendorId") REFERENCES "Vendor"("id") ON DELETE CASCADE ON UPDATE CASCADE;

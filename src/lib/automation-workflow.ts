@@ -1249,10 +1249,30 @@ function insertExecutionLog(db: AutomationDb, data: Prisma.AutomationExecutionLo
   const select = { id: true, createdAt: true } as const;
   if (!boundedWait) return db.automationExecutionLog.create({ data, select });
   return db.$transaction(async (tx) => {
-    await tx.$executeRaw`SET LOCAL lock_timeout = '2s'`;
-    await tx.$executeRaw`SET LOCAL statement_timeout = '3s'`;
+    await tx.$queryRaw`SELECT pg_catalog.set_config('lock_timeout', '2s', true), pg_catalog.set_config('statement_timeout', '3s', true)`;
     return tx.automationExecutionLog.create({ data, select });
   }, DEFERRABLE_CLAIM_TRANSACTION_OPTIONS);
+}
+
+/**
+ * #671 review MINOR-1: the claim's transaction could not start or get a
+ * connection in time (P2028 transaction API error, P2024 pool timeout). Nothing
+ * was written, so for a deferrable trigger it is deferred like a lock wait
+ * given up instead of losing the rule.
+ */
+function isClaimTransactionUnavailable(error: unknown) {
+  return error instanceof Prisma.PrismaClientKnownRequestError && (error.code === "P2028" || error.code === "P2024");
+}
+
+/**
+ * The execution's idempotency key of a deferrable trigger (#671 review
+ * MINOR-2): bound to the vendor, the rule and its version, and the event's
+ * subject, never to the event id (executionIdempotencyKey builds the same
+ * string). The deferred-dispatch job uses it to read the log another process
+ * claimed.
+ */
+export function deferrableExecutionIdempotencyKey(input: { vendorId: string; ruleId: string; ruleVersion: number; trigger: DeferrableAutomationTrigger; subjectId: string }) {
+  return createHash("sha256").update(`automation:v1:${input.vendorId}:${input.ruleId}:${input.trigger}:order:${input.subjectId}:version:${input.ruleVersion}`).digest("hex");
 }
 
 /**
@@ -1288,10 +1308,11 @@ async function claimRuleExecution(
     }, boundedWait);
     return { log };
   } catch (error) {
-    // A2-08: a merchant save held the rule row past the bounded wait. The
-    // transaction rolled back (no log), and the caller records the rule for
-    // the job instead of holding the request.
-    if (boundedWait && isLockWaitGivenUp(error)) return { status: "deferred" };
+    // A2-08: a merchant save held the rule row past the bounded wait (or the
+    // claim's transaction never started, #671 MINOR-1). The transaction rolled
+    // back (no log), and the caller records the rule for the job instead of
+    // holding the request; the event's other rules go on.
+    if (boundedWait && (isLockWaitGivenUp(error) || isClaimTransactionUnavailable(error))) return { status: "deferred" };
     if (isForeignKeyViolation(error)) {
       // The rule was deleted after it was selected above (the delete holds
       // the rule row FOR UPDATE, so this insert waited and then lost its
@@ -1379,17 +1400,26 @@ function reportDeferredDispatch(error: unknown, operation: "claim_deferred" | "c
  * the webhook-retry catch-up still finds the order without a log).
  */
 async function recordDeferredDispatch(db: AutomationDb, ruleId: string, event: AutomationEvent): Promise<"deferred" | "deferred_unrecorded"> {
-  if (!isDeferrableAutomationTrigger(event.trigger)) return "deferred_unrecorded";
+  const trigger = event.trigger;
+  if (!isDeferrableAutomationTrigger(trigger)) return "deferred_unrecorded";
+  let created = 0;
   try {
-    await db.automationDeferredDispatch.createMany({
-      data: [{ vendorId: event.vendorId, ruleId, trigger: event.trigger, subjectId: event.subjectId }],
-      skipDuplicates: true,
-    });
+    // #671 review NIT: the row waits on nothing but the vendor row's key
+    // share; a short lock_timeout keeps even that from holding the request.
+    ({ count: created } = await db.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT pg_catalog.set_config('lock_timeout', '2s', true)`;
+      return tx.automationDeferredDispatch.createMany({
+        data: [{ vendorId: event.vendorId, ruleId, trigger, subjectId: event.subjectId }],
+        skipDuplicates: true,
+      });
+    }, DEFERRABLE_CLAIM_TRANSACTION_OPTIONS));
   } catch (error) {
     reportDeferredDispatch(error, "claim_defer_failed");
     return "deferred_unrecorded";
   }
-  reportDeferredDispatch(new Error("Automation rule held by a merchant save; deferred to the job."), "claim_deferred");
+  // #671 review NIT: only a new row is reported; the job deferring a row it
+  // already has (the rule still held) is not reported again.
+  if (created > 0) reportDeferredDispatch(new Error("Automation rule held by a merchant save; deferred to the job."), "claim_deferred");
   return "deferred";
 }
 

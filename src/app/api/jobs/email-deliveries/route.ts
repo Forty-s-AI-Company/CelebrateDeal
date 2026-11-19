@@ -401,7 +401,8 @@ async function processEmailDeliveries() {
         dispatched: deferredDispatches.results.filter((result) => result.status === "dispatched").length,
         settled: deferredDispatches.results.filter((result) => result.status === "settled").length,
         deferred: deferredDispatches.results.filter((result) => result.status === "deferred").length,
-        failed: deferredDispatches.results.filter((result) => result.status === "failed" || result.status === "abandoned").length,
+        failed: deferredDispatches.results.filter((result) => result.status === "failed").length,
+        runningElsewhere: deferredDispatches.results.filter((result) => result.status === "running_elsewhere").length,
       } : null,
     });
   } catch (error) {

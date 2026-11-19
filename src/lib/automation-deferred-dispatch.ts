@@ -2,6 +2,7 @@ import { Prisma, type PrismaClient } from "@prisma/client";
 import {
   automationCustomerKeyHash,
   deferrableAutomationEventId,
+  deferrableExecutionIdempotencyKey,
   dispatchAutomationEvent,
   isAutomationTriggerAvailableForVendor,
   isDeferrableAutomationTrigger,
@@ -40,15 +41,26 @@ import { dispatchPaymentPaidAutomationForOrder } from "@/lib/payment-paid-automa
  *   the execution log's idempotency key are the live path's, so the rule runs
  *   once whoever claims it first (this pass, a webhook replay, the payment
  *   catch-up, two overlapping job rounds): the others get `duplicate`.
+ * - #671 review MINOR-3: both paths pass `rulesUnchangedSince` = the row's
+ *   createdAt + DEFERRED_DISPATCH_SAVE_GRACE_MS. The save that caused the
+ *   deferral (it commits within its 15 s transaction timeout) still applies;
+ *   a rule edited, or switched off and on again, after that never runs late
+ *   for this event: the row settles without running.
+ * - #671 review MINOR-2: `duplicate` on a log that is still `running` (another
+ *   process, or an earlier round of this job, claimed it and may have
+ *   stopped) keeps the row without counting an attempt. Once the log is older
+ *   than AUTOMATION_EXECUTION_RECLAIM_AFTER_MS the same dispatch reclaims it
+ *   and finishes it, once.
  * - Still held (`deferred` again): the row stays for the next round and the
  *   attempt is not counted; after DEFERRED_DISPATCH_MAX_CONSECUTIVE_DEFERRED
  *   in a row the pass stops (merchants are saving right now).
  * - Any other outcome settles the row (deleted). A thrown error counts an
- *   attempt; the attempt reaching DEFERRED_DISPATCH_MAX_ATTEMPTS deletes the
- *   row and reports `dispatch_abandoned` once.
- * - Rows older than DEFERRED_DISPATCH_WINDOW_MS are deleted and reported
- *   (`dispatch_expired`): a welcome e-mail two days late helps nobody.
- *   Rows of a suspended vendor are not taken (they wait, inside the window).
+ *   attempt and moves `nextAttemptAt` back (#671 review MINOR-5:
+ *   DEFERRED_DISPATCH_RETRY_DELAYS_MS, 1, 2, 5, 10, then every 30 minutes).
+ * - The limit is time, not a count: rows older than
+ *   DEFERRED_DISPATCH_WINDOW_MS are deleted and reported (`dispatch_expired`);
+ *   a welcome e-mail two days late helps nobody. Rows of a suspended vendor
+ *   are not taken (they wait, inside the window).
  *
  * The job takes no id from outside: every id comes from the row, and every
  * read and write is bound to the row's vendor.
@@ -58,8 +70,20 @@ import { dispatchPaymentPaidAutomationForOrder } from "@/lib/payment-paid-automa
 export const DEFERRED_DISPATCH_WINDOW_MS = 48 * 60 * 60_000;
 /** Rows dispatched per job round, taken round-robin between vendors. */
 export const DEFERRED_DISPATCH_LIMIT = 50;
-/** Failed attempts (a lock wait given up does not count) after which a row is dropped and reported. */
-export const DEFERRED_DISPATCH_MAX_ATTEMPTS = 5;
+/**
+ * #671 review MINOR-5: the wait before the next attempt after the 1st, 2nd,
+ * ... failed one (a lock wait given up or a claim still running elsewhere does
+ * not count); the last value repeats until the window ends.
+ */
+export const DEFERRED_DISPATCH_RETRY_DELAYS_MS = [1, 2, 5, 10, 30].map((minutes) => minutes * 60_000);
+/**
+ * #671 review MINOR-3: how long after the row was written a rule change still
+ * counts as the save that caused the deferral: that save commits within its
+ * 15 s transaction timeout; 60 s more cover the gap between the database's
+ * clock (the row's createdAt) and the application's (the rule's updatedAt),
+ * the platform's usual clock-skew allowance (Q-19).
+ */
+export const DEFERRED_DISPATCH_SAVE_GRACE_MS = 15_000 + 60_000;
 /** Lock waits given up in a row after which the round stops taking rows. */
 export const DEFERRED_DISPATCH_MAX_CONSECUTIVE_DEFERRED = 3;
 /** The pass's own budget, and the latest point of the e-mail round it may run to. */
@@ -84,18 +108,24 @@ type DeferredRow = {
   trigger: string;
   subjectId: string;
   attempts: number;
+  createdAt: Date;
   betaFeatureGrants: string[];
 };
 
-/** `dispatched`: the rule ran (or another path already had). `settled`: nothing to run any more. */
-export type DeferredDispatchOutcome = "dispatched" | "settled" | "deferred" | "failed" | "abandoned";
+/**
+ * `dispatched`: the rule ran (or another path already had). `settled`: nothing
+ * to run any more. `deferred`: the rule row is still held. `running_elsewhere`:
+ * a claim of this event is still running (MINOR-2). Only `dispatched` and
+ * `settled` delete the row; only `failed` counts an attempt.
+ */
+export type DeferredDispatchOutcome = "dispatched" | "settled" | "deferred" | "running_elsewhere" | "failed";
 
 export type DeferredDispatchSummary = {
   expired: number;
   results: Array<{ status: DeferredDispatchOutcome }>;
 };
 
-function report(error: unknown, operation: "dispatch_failed" | "dispatch_abandoned" | "dispatch_expired") {
+function report(error: unknown, operation: "dispatch_failed" | "dispatch_expired") {
   try {
     captureOperationalError(error, { source: "automation_deferred_dispatch", operation }, operation === "dispatch_failed" ? undefined : { level: "warning" });
   } catch {
@@ -147,42 +177,56 @@ async function rebuildEvent(db: Database, row: DeferredRow & { trigger: Exclude<
   };
 }
 
-/** Runs one row's rule; `deferred` when the rule row is still held, `dispatched` or `settled` otherwise. */
-async function dispatchRow(db: Database, row: DeferredRow): Promise<"dispatched" | "settled" | "deferred"> {
+/**
+ * `duplicate` (MINOR-2): whether the claim that beat this dispatch is still
+ * `running`. Read by the execution's idempotency key, built from the rule's
+ * current version (read bound to the vendor) and the row's subject.
+ */
+async function claimStillRunning(db: Database, row: DeferredRow & { trigger: DeferrableAutomationTrigger }) {
+  const rule = await db.automationRule.findFirst({ where: { id: row.ruleId, vendorId: row.vendorId }, select: { version: true } });
+  if (!rule) return false;
+  const idempotencyKey = deferrableExecutionIdempotencyKey({ vendorId: row.vendorId, ruleId: row.ruleId, ruleVersion: rule.version, trigger: row.trigger, subjectId: row.subjectId });
+  const log = await db.automationExecutionLog.findUnique({
+    where: { vendorId_idempotencyKey: { vendorId: row.vendorId, idempotencyKey } },
+    select: { status: true },
+  });
+  return log?.status === "running";
+}
+
+/** Runs one row's rule. */
+async function dispatchRow(db: Database, row: DeferredRow): Promise<Exclude<DeferredDispatchOutcome, "failed">> {
   if (!isDeferrableAutomationTrigger(row.trigger) || !isAutomationTriggerAvailableForVendor(row.trigger, { betaFeatureGrants: row.betaFeatureGrants })) {
     return "settled";
   }
+  // MINOR-3: the save that caused the deferral still counts; a later change does not.
+  const options = { onlyRuleIds: [row.ruleId], rulesUnchangedSince: new Date(row.createdAt.getTime() + DEFERRED_DISPATCH_SAVE_GRACE_MS) };
   let results: Array<{ ruleId: string; status: string }>;
   if (row.trigger === "payment_paid") {
-    const outcome = await dispatchPaymentPaidAutomationForOrder({ vendorId: row.vendorId, orderId: row.subjectId }, db, { onlyRuleIds: [row.ruleId] });
+    const outcome = await dispatchPaymentPaidAutomationForOrder({ vendorId: row.vendorId, orderId: row.subjectId }, db, options);
     if (outcome.status !== "dispatched") return "settled";
     results = outcome.results;
   } else {
     const event = await rebuildEvent(db, { ...row, trigger: row.trigger });
     if (!event) return "settled";
-    results = await dispatchAutomationEvent(db, event, { onlyRuleIds: [row.ruleId] });
+    results = await dispatchAutomationEvent(db, event, options);
   }
   const result = results.find((entry) => entry.ruleId === row.ruleId);
   // Still held: the row stays (a failed re-record of an existing row leaves it too).
   if (result?.status === "deferred" || result?.status === "deferred_unrecorded") return "deferred";
+  if (result?.status === "duplicate" && await claimStillRunning(db, { ...row, trigger: row.trigger })) return "running_elsewhere";
   // Ran now (completed, skipped, failed: its log records it and the usual
-  // retries apply), ran elsewhere (duplicate), or no longer runs (rule gone,
-  // switched off, invalid).
+  // retries apply), ran elsewhere (duplicate of a finished log), or no longer
+  // runs (rule gone, switched off, changed since, invalid).
   return result && result.status !== "rule_deleted" && result.status !== "invalid_rule" ? "dispatched" : "settled";
 }
 
-/** One failed attempt, bound to the row's vendor; the attempt reaching the limit deletes the row and reports once. */
-async function countFailedAttempt(db: Database, row: DeferredRow): Promise<"failed" | "abandoned"> {
-  const counted = await db.$queryRaw<Array<{ attempts: number }>>`
-    UPDATE "AutomationDeferredDispatch"
-    SET "attempts" = "attempts" + 1
-    WHERE "id" = ${row.id} AND "vendorId" = ${row.vendorId}
-    RETURNING "attempts"
-  `;
-  if ((counted[0]?.attempts ?? 0) < DEFERRED_DISPATCH_MAX_ATTEMPTS) return "failed";
-  await db.automationDeferredDispatch.deleteMany({ where: { id: row.id, vendorId: row.vendorId } });
-  report(new Error("Gave up dispatching a deferred automation rule."), "dispatch_abandoned");
-  return "abandoned";
+/** MINOR-5: one failed attempt, bound to the row's vendor: counted, and the row is not taken again before its back-off. */
+async function countFailedAttempt(db: Database, row: DeferredRow, now: Date) {
+  const delay = DEFERRED_DISPATCH_RETRY_DELAYS_MS[Math.min(row.attempts, DEFERRED_DISPATCH_RETRY_DELAYS_MS.length - 1)]!;
+  await db.automationDeferredDispatch.updateMany({
+    where: { id: row.id, vendorId: row.vendorId },
+    data: { attempts: { increment: 1 }, nextAttemptAt: new Date(now.getTime() + delay) },
+  });
 }
 
 export async function runDeferredAutomationDispatches(
@@ -218,10 +262,14 @@ export async function runDeferredAutomationDispatches(
       FROM "AutomationDeferredDispatch" d
       JOIN "Vendor" v ON v."id" = d."vendorId"
       WHERE d."createdAt" >= ${utcTimestamp(windowStart)}
+        -- A row that never failed is always due: its nextAttemptAt is the
+        -- database's clock at insert, which may run ahead of this round's.
+        -- The back-off (written from this clock) applies after a failure.
+        AND (d."attempts" = 0 OR d."nextAttemptAt" <= ${utcTimestamp(now)})
         AND v."suspendedAt" IS NULL
         ${vendorFilter}
     )
-    SELECT "id", "vendorId", "ruleId", "trigger", "subjectId", "attempts", "betaFeatureGrants"
+    SELECT "id", "vendorId", "ruleId", "trigger", "subjectId", "attempts", "createdAt", "betaFeatureGrants"
     FROM "due"
     WHERE "vendorRank" <= ${limit}
     ORDER BY "vendorRank" ASC, "attempts" ASC, "createdAt" ASC, "id" ASC
@@ -234,11 +282,12 @@ export async function runDeferredAutomationDispatches(
     let status: DeferredDispatchOutcome;
     try {
       status = await dispatchRow(db, row);
-      if (status !== "deferred") await db.automationDeferredDispatch.deleteMany({ where: { id: row.id, vendorId: row.vendorId } });
+      if (status === "dispatched" || status === "settled") await db.automationDeferredDispatch.deleteMany({ where: { id: row.id, vendorId: row.vendorId } });
     } catch (error) {
       report(error, "dispatch_failed");
-      // A failure to count it leaves the row as it was for the next round.
-      status = await countFailedAttempt(db, row).catch(() => "failed" as const);
+      status = "failed";
+      // A failure to count it leaves the row due for the next round.
+      await countFailedAttempt(db, row, now).catch(() => undefined);
     }
     deferredInARow = status === "deferred" ? deferredInARow + 1 : 0;
     summary.results.push({ status });

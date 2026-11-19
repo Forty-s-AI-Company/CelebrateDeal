@@ -25,7 +25,7 @@ import { DERIVED_KEY_ROTATIONS, legacyDerivedKeyUseCount, resetLegacyDerivedKeyU
 import { hashInteractionBearer } from "@/lib/live-interaction";
 import { deriveSensitiveDataKey } from "@/lib/sensitive-data";
 import { revealEmailDeliveryPayload, verifyEmailUnsubscribeToken } from "@/lib/email-delivery-pii";
-import { AUTOMATION_BUTTON_URL_ERROR_MESSAGE, AUTOMATION_RECIPES, AUTOMATION_TRIGGERS, AVAILABLE_AUTOMATION_RECIPES, AVAILABLE_AUTOMATION_TRIGGERS, automationExecutionNotes, isAvailableAutomationTrigger, automationConditionMatches, isSafeNewAutomationButtonUrl, automationCustomerKeyHash, dispatchAutomationEvent as dispatchAutomationEventOnDb, DEFERRABLE_AUTOMATION_TRIGGERS, deferrableAutomationEventId, isDeferrableAutomationTrigger, DELAYED_STEP_AUTOMATION_TRIGGERS, automationTriggerSupportsDelayedSteps, delayedStepSubjectType, dryRunAutomationRule, renderAutomationEmailBody, availableAutomationTriggersForVendor, automationReplayOpen, formNoShowWebinarUrl, isAutomationTriggerAvailableForVendor, isAutomationRuleRunnableForVendor, automationTriggerBetaFeature, watchProgressRulePercent, watchDurationRuleMinutes, isWatchDurationMinutes, WATCH_DURATION_MINUTE_OPTIONS, WATCH_DURATION_DETECTION_NOTE, maskAutomationTarget, materializeAutomationRecipe, parseAutomationRule } from "@/lib/automation-workflow";
+import { AUTOMATION_BUTTON_URL_ERROR_MESSAGE, AUTOMATION_RECIPES, AUTOMATION_TRIGGERS, AVAILABLE_AUTOMATION_RECIPES, AVAILABLE_AUTOMATION_TRIGGERS, automationExecutionNotes, isAvailableAutomationTrigger, automationConditionMatches, isSafeNewAutomationButtonUrl, automationCustomerKeyHash, dispatchAutomationEvent as dispatchAutomationEventOnDb, DEFERRABLE_AUTOMATION_TRIGGERS, deferrableAutomationEventId, deferrableExecutionIdempotencyKey, isDeferrableAutomationTrigger, DELAYED_STEP_AUTOMATION_TRIGGERS, automationTriggerSupportsDelayedSteps, delayedStepSubjectType, dryRunAutomationRule, renderAutomationEmailBody, availableAutomationTriggersForVendor, automationReplayOpen, formNoShowWebinarUrl, isAutomationTriggerAvailableForVendor, isAutomationRuleRunnableForVendor, automationTriggerBetaFeature, watchProgressRulePercent, watchDurationRuleMinutes, isWatchDurationMinutes, WATCH_DURATION_MINUTE_OPTIONS, WATCH_DURATION_DETECTION_NOTE, maskAutomationTarget, materializeAutomationRecipe, parseAutomationRule } from "@/lib/automation-workflow";
 
 /**
  * A2-08: the execution claim of a request-path trigger runs in its own short
@@ -35,7 +35,7 @@ import { AUTOMATION_BUTTON_URL_ERROR_MESSAGE, AUTOMATION_RECIPES, AUTOMATION_TRI
 function withClaimTransaction<T>(db: T): T {
   const target = db as Record<string, unknown>;
   if (!target || typeof target !== "object" || "$transaction" in target) return db;
-  const tx = new Proxy(target, { get: (object, key) => (key === "$executeRaw" ? vi.fn().mockResolvedValue(0) : object[key as string]) });
+  const tx = new Proxy(target, { get: (object, key) => (key === "$queryRaw" ? vi.fn().mockResolvedValue([]) : object[key as string]) });
   Object.assign(target, { $transaction: vi.fn(async (fn: (client: unknown) => unknown) => fn(tx)) });
   return db;
 }
@@ -1051,19 +1051,25 @@ describe("A2-08 request-path claim under a merchant save", () => {
     code: "P2010", clientVersion: Prisma.prismaVersion.client, meta: { code: "55P03" },
   });
 
-  /** A rule whose claim transaction gives up on the rule row; every statement inside is recorded. */
-  function heldRuleDb(options: { recordFails?: boolean } = {}) {
+  /**
+   * Rules whose claim transaction gives up on the rule row (or fails with
+   * `claimError`); every statement run inside a transaction is recorded.
+   */
+  function heldRuleDb(options: { recordFails?: boolean; claimError?: () => unknown; rules?: string[] } = {}) {
     const statements: string[] = [];
+    const deferredRows = { createMany: options.recordFails ? vi.fn().mockRejectedValue(new Error("synthetic outage")) : vi.fn().mockResolvedValue({ count: 1 }) };
+    const claimError = options.claimError ?? lockWaitGivenUp;
     const tx = {
-      $executeRaw: vi.fn(async (strings: TemplateStringsArray) => { statements.push(strings.join("?")); return 0; }),
-      automationExecutionLog: { create: vi.fn().mockRejectedValue(lockWaitGivenUp()) },
+      $queryRaw: vi.fn(async (strings: TemplateStringsArray) => { statements.push(strings.join("?")); return []; }),
+      automationExecutionLog: { create: vi.fn().mockRejectedValue(claimError()) },
+      automationDeferredDispatch: deferredRows,
     };
     return {
       statements,
       tx,
-      automationRule: { findMany: vi.fn().mockResolvedValue([{ id: "rule-1", condition: { type: "always" }, actions: [{ type: "add_customer_tag", tag: "VIP" }] }]) },
+      automationRule: { findMany: vi.fn().mockResolvedValue((options.rules ?? ["rule-1"]).map((id) => ({ id, condition: { type: "always" }, actions: [{ type: "add_customer_tag", tag: "VIP" }] }))) },
       automationExecutionLog: { create: vi.fn(), update: vi.fn(), findUnique: vi.fn(), updateMany: vi.fn() },
-      automationDeferredDispatch: { createMany: options.recordFails ? vi.fn().mockRejectedValue(new Error("synthetic outage")) : vi.fn().mockResolvedValue({ count: 1 }) },
+      automationDeferredDispatch: deferredRows,
       customerTagAssignment: { upsert: vi.fn() },
       $transaction: vi.fn(async (fn: (client: typeof tx) => unknown, transactionOptions: unknown) => {
         expect(transactionOptions).toEqual({ maxWait: 5_000, timeout: 10_000 });
@@ -1094,7 +1100,11 @@ describe("A2-08 request-path claim under a merchant save", () => {
   it("bounds the claim's lock wait, runs nothing and records the rule for the job when the wait is given up", async () => {
     const db = heldRuleDb();
     await expect(dispatchAutomationEventOnDb(db as never, registration)).resolves.toEqual([{ ruleId: "rule-1", status: "deferred" }]);
-    expect(db.statements).toEqual(["SET LOCAL lock_timeout = '2s'", "SET LOCAL statement_timeout = '3s'"]);
+    // One statement for both limits (#671 review MINOR-1), then the record's own short lock_timeout (NIT).
+    expect(db.statements).toEqual([
+      "SELECT pg_catalog.set_config('lock_timeout', '2s', true), pg_catalog.set_config('statement_timeout', '3s', true)",
+      "SELECT pg_catalog.set_config('lock_timeout', '2s', true)",
+    ]);
     expect(db.automationExecutionLog.create).not.toHaveBeenCalled();
     expect(db.customerTagAssignment.upsert).not.toHaveBeenCalled();
     expect(db.automationDeferredDispatch.createMany).toHaveBeenCalledWith({
@@ -1102,6 +1112,57 @@ describe("A2-08 request-path claim under a merchant save", () => {
       skipDuplicates: true,
     });
     expect(mocks.captureOperationalError).toHaveBeenCalledWith(expect.any(Error), { source: "automation_dispatch", operation: "claim_deferred" }, { level: "warning" });
+  });
+
+  it("does not report a deferral again when the row already exists (the job deferring its own row)", async () => {
+    const db = heldRuleDb();
+    db.automationDeferredDispatch.createMany.mockResolvedValue({ count: 0 });
+    await expect(dispatchAutomationEventOnDb(db as never, registration)).resolves.toEqual([{ ruleId: "rule-1", status: "deferred" }]);
+    expect(mocks.captureOperationalError).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["P2028", "Transaction API error: Unable to start a transaction in the given time."],
+    ["P2024", "Timed out fetching a new connection from the connection pool."],
+  ])("defers a claim whose transaction could not start (%s) and runs the event's next rule (#671 review MINOR-1)", async (code, message) => {
+    const unavailable = () => new Prisma.PrismaClientKnownRequestError(message, { code, clientVersion: Prisma.prismaVersion.client });
+    const db = heldRuleDb({ rules: ["rule-1", "rule-2"] });
+    // The first claim cannot start its transaction; the second one gets its log.
+    db.$transaction
+      .mockImplementationOnce(async () => { throw unavailable(); })
+      .mockImplementationOnce(async (fn: (client: typeof db.tx) => unknown) => fn(db.tx))
+      .mockImplementationOnce(async (fn: (client: typeof db.tx) => unknown) => fn({
+        ...db.tx,
+        automationExecutionLog: { create: vi.fn().mockResolvedValue({ id: "log-2", createdAt: new Date() }) },
+      }));
+    db.automationExecutionLog.update.mockResolvedValue({});
+    db.customerTagAssignment.upsert.mockResolvedValue({});
+    await expect(dispatchAutomationEventOnDb(db as never, registration)).resolves.toEqual([
+      { ruleId: "rule-1", status: "deferred" },
+      { ruleId: "rule-2", status: "completed" },
+    ]);
+    expect(db.automationDeferredDispatch.createMany).toHaveBeenCalledWith({
+      data: [{ vendorId: "vendor-1", ruleId: "rule-1", trigger: "form_registered", subjectId: "submission-1" }],
+      skipDuplicates: true,
+    });
+    expect(db.customerTagAssignment.upsert).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps throwing any other claim error (nothing is deferred on it)", async () => {
+    const other = heldRuleDb({ claimError: () => new Error("synthetic disk full") });
+    await expect(dispatchAutomationEventOnDb(other as never, registration)).rejects.toThrow("synthetic disk full");
+    expect(other.automationDeferredDispatch.createMany).not.toHaveBeenCalled();
+  });
+
+  it("builds the same idempotency key the claim stores for a deferrable trigger", async () => {
+    const db = heldRuleDb();
+    db.tx.automationExecutionLog.create.mockResolvedValue({ id: "log-1", createdAt: new Date() });
+    db.automationExecutionLog.update.mockResolvedValue({});
+    db.customerTagAssignment.upsert.mockResolvedValue({});
+    db.automationRule.findMany.mockResolvedValue([{ id: "rule-1", version: 4, condition: { type: "always" }, actions: [{ type: "add_customer_tag", tag: "VIP" }] }]);
+    await dispatchAutomationEventOnDb(db as never, registration);
+    const stored = db.tx.automationExecutionLog.create.mock.calls[0]?.[0].data.idempotencyKey;
+    expect(stored).toBe(deferrableExecutionIdempotencyKey({ vendorId: "vendor-1", ruleId: "rule-1", ruleVersion: 4, trigger: "form_registered", subjectId: "submission-1" }));
   });
 
   it("reports a deferral it could not record, without failing the event", async () => {
