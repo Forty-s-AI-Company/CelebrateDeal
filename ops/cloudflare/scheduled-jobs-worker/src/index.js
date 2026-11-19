@@ -11,6 +11,7 @@ export const FREQUENT_JOBS = Object.freeze([
   Object.freeze({ name: "email-deliveries", path: "/api/jobs/email-deliveries" }),
   Object.freeze({ name: "line-notifications", path: "/api/cron/line-notifications" }),
   Object.freeze({ name: "webhook-retry", path: "/api/jobs/webhook-retry" }),
+  Object.freeze({ name: "payment-reconcile", path: "/api/jobs/payment-reconcile" }),
 ]);
 export const DAILY_JOBS = Object.freeze([
   Object.freeze({ name: "electronic-invoices", path: "/api/jobs/electronic-invoices" }),

@@ -44,6 +44,10 @@ function expectedIndexDefinitions(schema: string): Record<string, string> {
       `CREATE UNIQUE INDEX "RefundRecord_paymentTransactionId_providerEventId_key" ON ${schema}."RefundRecord" USING btree ("paymentTransactionId", "providerEventId") WHERE ("providerEventId" IS NOT NULL)`,
     SettlementAdjustmentRequest_one_pending_per_settlement:
       `CREATE UNIQUE INDEX "SettlementAdjustmentRequest_one_pending_per_settlement" ON ${schema}."SettlementAdjustmentRequest" USING btree ("settlementId") WHERE (status = 'pending'::text)`,
+    // A-2 05: the pending-payment reconciler's scan (src/lib/payment-pending-reconciliation.ts);
+    // the predicate must match the scan's literals.
+    PaymentTransaction_payuni_reconcilable_createdAt_idx:
+      `CREATE INDEX "PaymentTransaction_payuni_reconcilable_createdAt_idx" ON ${schema}."PaymentTransaction" USING btree ("createdAt") WHERE (("providerName" = 'payuni'::text) AND (status = ANY (ARRAY['pending'::text, 'expired'::text])))`,
     PayoutItem_vendorId_settlementId_key:
       `CREATE UNIQUE INDEX "PayoutItem_vendorId_settlementId_key" ON ${schema}."PayoutItem" USING btree ("vendorId", "settlementId") WHERE ("settlementId" IS NOT NULL)`,
     PostPurchaseCredit_vendorId_sourceOrderId_active_key:

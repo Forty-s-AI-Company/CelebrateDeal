@@ -70,8 +70,8 @@ type Tenant = { vendorId: string; slug: string };
 type Checkout = { transactionId: string; orderNumber: string };
 
 beforeAll(() => {
-  process.env.CSRF_SECRET ??= "ci-csrf-fixture-32-bytes-safe-key";
-  process.env.NEXT_PUBLIC_APP_URL ??= "https://app.example.test";
+  vi.stubEnv("CSRF_SECRET", "ci-csrf-fixture-32-bytes-safe-key");
+  vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://app.example.test");
 });
 
 afterEach(async () => {

@@ -60,6 +60,7 @@
 | ☐ | `PAYUNI_CREDIT_FEE_BPS`、`PAYUNI_FEE_TAX_BPS` | 依 PayUni 合約費率；預設 280、500。**待會計師確認（D-30）** | owner＋會計師 | 無（格式錯誤用預設值） | 待 D-30；封測不影響 |
 | ☐ | `PAYUNI_REFUND_HOLD_RELEASE_*`、`FINANCE_SECOND_APPROVAL_THRESHOLD_CENTS` | 財務政策預設值（3 次／24 小時／6 小時；NT$50,000） | owner | 無 | 可不設 |
 | ☐ | `PAYMENT_WEBHOOK_MAX_RETRIES` | `.env.production.example` 列 5；webhook 重試上限 | owner | 無 | 可不設 |
+| ☐ | `PAYMENT_RECONCILE_ENABLED` | `true` 才會啟用 PayUni 付款通知遺失時的主動查詢與補單（A-2 05，`/api/jobs/payment-reconcile`）；沒設或其他值時 job 回 `skipped: "disabled"`。staging 設 `true`；**Production 預設不設**，要啟用需 owner 同意 | owner | 無 | Production 待 owner |
 | ☐ | `ECPAY_WEBHOOK_SECRET` | 不使用 | — | — | 不設 |
 | ☐ | `PAYUNI_LIVE_PROBE_*`、`PAYUNI_STAGING_PLAN_TEST_ENABLED`、`WP4_SANDBOX_EXECUTOR_ENABLED` | 只屬 staging／Preview 的受控測試；**Production 不設** | — | — | 不設 |
 

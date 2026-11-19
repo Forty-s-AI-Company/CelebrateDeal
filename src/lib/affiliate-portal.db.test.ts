@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, beforeEach, vi } from "vitest";
 import { Prisma } from "@prisma/client";
 import { getDb } from "@/lib/db";
 import { appendCommissionLedgerEntry } from "@/lib/affiliate-commission-accounting";
@@ -7,6 +7,11 @@ import { AffiliatePortalConflict, getAffiliatePortalStatement, setAffiliatePorta
 import { createReservedPaymentTransaction } from "@/lib/inventory-reservations";
 import { createCommerceOrderForCheckout, reconcileCommerceOrderPaymentTransition } from "@/lib/commerce-orders";
 import { accrueMerchantAffiliatePlan, freezeMerchantAffiliateCheckout, publishMerchantAffiliatePolicy } from "@/lib/merchant-affiliate-policy-service";
+
+// Synthetic secret: this file must not depend on a CSRF_SECRET from the developer's environment.
+const SYNTHETIC_CSRF_SECRET = "synthetic-db-test-secret-longer-than-32-bytes";
+vi.stubEnv("CSRF_SECRET", SYNTHETIC_CSRF_SECRET);
+beforeEach(() => { vi.stubEnv("CSRF_SECRET", SYNTHETIC_CSRF_SECRET); });
 const db=getDb();
 async function fixture(){
  const suffix=randomUUID();const vendor=await db.vendor.create({data:{name:"Synthetic partner shop",slug:`partner-${suffix}`,email:`${suffix}@example.test`,passwordHash:"synthetic-only"}});
