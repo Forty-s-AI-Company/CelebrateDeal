@@ -5,6 +5,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import type { Prisma, User, VendorMember } from "@prisma/client";
+import { betaAgreementGatePath, betaAgreementPending } from "@/lib/beta-agreement";
 import { getDb } from "@/lib/db";
 import { decryptMfaSecret } from "@/lib/mfa";
 import { verifyPasswordAsync } from "@/lib/password";
@@ -369,6 +370,11 @@ export async function requireVendorContext(nextPath?: string, fallbackPath = "/d
   if (!auth.vendor || !auth.member || !isVendorBackofficeRole(auth.member.role)) {
     redirect(auth.isPlatformAdmin ? "/admin/billing/dashboard" : auth.partnerPortalOnly ? PARTNER_PORTAL_PATH : "/login?error=no_vendor");
   }
+  // O-11: every back-office page, layout and Server Action waits for the
+  // vendor's acceptance of the current 封測合作協議 (src/lib/beta-agreement.ts).
+  if (await betaAgreementPending(auth, auth.vendor.id)) {
+    redirect(betaAgreementGatePath(nextPath ? safeMfaNextPath(nextPath, fallbackPath) : undefined));
+  }
 
   return {
     auth,
@@ -504,6 +510,7 @@ export async function requireVendorOwner() {
   if (!auth.vendor || !auth.member || auth.member.status !== ACTIVE_MEMBER_STATUS || auth.member.role !== "owner") {
     redirect("/settings/security?error=owner_required");
   }
+  if (await betaAgreementPending(auth, auth.vendor.id)) redirect(betaAgreementGatePath());
 
   return {
     user: auth.user,

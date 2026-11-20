@@ -1,4 +1,5 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
+import { BETA_AGREEMENT_VERSION } from "@/lib/beta-agreement-content";
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { getDb } from "@/lib/db";
 
@@ -77,6 +78,8 @@ async function createTenant(label: string): Promise<Tenant> {
   created.vendorIds.push(vendor.id);
   const owner = await createUser(`owner-${label}`);
   await db.vendorMember.create({ data: { vendorId: vendor.id, userId: owner.id, role: "owner" } });
+  // The owner accepted the 封測合作協議 earlier (O-11); the gate is covered by src/lib/beta-agreement.db.test.ts.
+  await db.userPolicyConsent.create({ data: { userId: owner.id, vendorId: vendor.id, context: "beta_agreement", agreementVersion: BETA_AGREEMENT_VERSION } });
   const project = await db.salesProject.create({ data: { vendorId: vendor.id, name: "Synthetic project", slug: `project-${suffix}`, mode: "live_course", primaryFlow: "live" } });
   await selectProject(owner.id, vendor.id, project.id);
   const registration = await db.registrationForm.create({

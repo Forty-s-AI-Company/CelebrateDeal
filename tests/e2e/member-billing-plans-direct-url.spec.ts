@@ -4,6 +4,7 @@ import { PrismaClient } from "@prisma/client";
 import { formatCurrency } from "../../src/lib/format";
 import { hashPassword } from "../../src/lib/password";
 import { navigateAndAssertDirectUrlGuard } from "./helpers/direct-url-guard";
+import { seedBetaAgreementForLogin } from "./helpers/beta-agreement";
 
 const db = new PrismaClient();
 const password = "Wp78SyntheticPassword!";
@@ -97,6 +98,7 @@ test("active member is denied billing plans before finance queries or MFA", asyn
 
   try {
     await page.goto("/login");
+    await seedBetaAgreementForLogin(db, user.email);
     await page.getByLabel("Email").fill(user.email);
     await page.getByLabel("密碼").fill(password);
     await page.getByRole("button", { name: "登入" }).click();

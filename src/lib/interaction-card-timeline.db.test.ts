@@ -2,6 +2,7 @@ import { randomBytes, randomUUID } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
 import { classifyLocalTestDatabase } from "../../scripts/local-database-safety";
 import { getDb } from "./db";
+import { BETA_AGREEMENT_CONTEXT, BETA_AGREEMENT_VERSION } from "./beta-agreement-content";
 import { answerCard, commandCard, viewerCardSnapshot } from "./interaction-card";
 import { GET, POST } from "@/app/api/live-interactions/cards/route";
 import { hashLiveViewerToken, LIVE_VIEWER_SESSION_COOKIE } from "./live-quota-admission";
@@ -14,6 +15,9 @@ const now = new Date("2026-09-11T00:00:15Z");
 async function fixture() {
   const db = getDb(); const id = randomUUID();
   const vendor = await db.vendor.create({ data: { name: "Timeline fixture", slug: id, email: `${id}@example.test`, passwordHash: "synthetic" } });
+  // The vendor's owner accepted the 封測合作協議 earlier (O-11); the gate is covered by beta-agreement-api-routes.db.test.ts.
+  const owner = await db.user.create({ data: { name: "Timeline owner", email: `owner-${id}@example.test`, passwordHash: "synthetic", memberships: { create: { vendorId: vendor.id, role: "owner", status: "active" } } } });
+  await db.userPolicyConsent.create({ data: { userId: owner.id, vendorId: vendor.id, context: BETA_AGREEMENT_CONTEXT, agreementVersion: BETA_AGREEMENT_VERSION } });
   const video = await db.video.create({ data: { vendorId: vendor.id, title: "Fixture", videoUrl: "https://example.test/fixture.webm", durationSec: 100 } });
   const live = await db.live.create({ data: { vendorId: vendor.id, videoId: video.id, title: "Timeline", slug: `live-${id}`, status: "live", scheduledAt: new Date("2026-09-11T00:00:00Z") } });
   const scope = { vendorId: vendor.id, liveId: live.id };

@@ -8,6 +8,7 @@ import { protectProductDeliveryConfig, validateProductDeliveryDraft } from "../.
 import { openLiveStudioAdvancedSettings } from "../fixtures/live-studio";
 import { createTeamFunnelFixture, TEAM_FUNNEL_TEST_ONLY } from "../fixtures/team-funnel";
 import { navigateAndAssertDirectUrlGuard } from "./helpers/direct-url-guard";
+import { seedBetaAgreementForLogin } from "./helpers/beta-agreement";
 
 const db = new PrismaClient();
 const password = "Password12345!";
@@ -379,6 +380,7 @@ async function putResetReferenceInHiddenField(page: Page, value: string) {
 
 async function loginMfaAdmin(page: Page, user: MfaTestUser, expectedUrl: RegExp) {
   await page.goto("/login");
+  await seedBetaAgreementForLogin(db, user.email);
   await page.getByLabel("Email").fill(user.email);
   await page.getByLabel("密碼").fill(password);
   await page.getByRole("button", { name: "登入" }).click();
@@ -387,6 +389,7 @@ async function loginMfaAdmin(page: Page, user: MfaTestUser, expectedUrl: RegExp)
 
 async function loginSeededOwner(page: Page) {
   await page.goto("/login");
+  await seedBetaAgreementForLogin(db, seed.email);
   await page.getByLabel("Email").fill(seed.email);
   await page.getByLabel("密碼").fill(password);
   await page.getByRole("button", { name: "登入" }).click();
@@ -703,6 +706,7 @@ test("login page renders and accepts seeded owner", async ({ page }) => {
     "report-uri /api/security/csp-report",
   );
   await expect(page.getByRole("heading", { name: "登入直播商務後台" })).toBeVisible();
+  await seedBetaAgreementForLogin(db, seed.email);
   await page.getByLabel("Email").fill(seed.email);
   await page.getByLabel("密碼").fill(password);
   await page.getByRole("button", { name: "登入" }).click();
@@ -863,6 +867,7 @@ loginRateLimitTest("login failures are audited and the sixth UI attempt is rejec
 
   for (let attempt = 1; attempt <= 5; attempt += 1) {
     await page.goto("/login");
+    await seedBetaAgreementForLogin(db, email);
     await page.getByLabel("Email").fill(email);
     await page.getByLabel("密碼").fill(incorrectCredential);
     await page.getByRole("button", { name: "登入" }).click();
@@ -876,6 +881,7 @@ loginRateLimitTest("login failures are audited and the sixth UI attempt is rejec
   expect(await db.auditLog.count({ where: loginSuccessWhere })).toBe(0);
 
   await page.goto("/login");
+  await seedBetaAgreementForLogin(db, email);
   await page.getByLabel("Email").fill(email);
   await page.getByLabel("密碼").fill(correctCredential);
   await page.getByRole("button", { name: "登入" }).click();
@@ -890,6 +896,7 @@ loginRateLimitTest("login failures are audited and the sixth UI attempt is rejec
 
 passwordResetTest("password reset request hides account existence and revokes an undelivered reset record", async ({ page, passwordResetUser }) => {
   await page.goto("/password-reset/request");
+  await seedBetaAgreementForLogin(db, passwordResetUser.email);
   await page.getByLabel("Email").fill(passwordResetUser.email);
   await page.getByRole("button", { name: "寄送重設信" }).click();
 
@@ -945,6 +952,7 @@ passwordResetTest("password reset request hides account existence and revokes an
 
 passwordResetTest("security password reset smoke targets only the signed-in user and remains locally isolated", async ({ page, passwordResetUser }) => {
   await page.goto("/login");
+  await seedBetaAgreementForLogin(db, passwordResetUser.email);
   await page.getByLabel("Email").fill(passwordResetUser.email);
   await page.getByLabel("密碼").fill(previousCredential);
   await page.getByRole("button", { name: "登入" }).click();
@@ -992,6 +1000,7 @@ passwordResetTest("security password reset smoke targets only the signed-in user
 
 passwordResetTest("password reset confirmation validates safely and replaces credentials through the UI", async ({ page, passwordResetUser }) => {
   await page.goto("/login");
+  await seedBetaAgreementForLogin(db, passwordResetUser.email);
   await page.getByLabel("Email").fill(passwordResetUser.email);
   await page.getByLabel("密碼").fill(previousCredential);
   await page.getByRole("button", { name: "登入" }).click();
@@ -1079,11 +1088,13 @@ passwordResetTest("password reset confirmation validates safely and replaces cre
 
   await page.context().clearCookies();
   await page.goto("/login");
+  await seedBetaAgreementForLogin(db, passwordResetUser.email);
   await page.getByLabel("Email").fill(passwordResetUser.email);
   await page.getByLabel("密碼").fill(previousCredential);
   await page.getByRole("button", { name: "登入" }).click();
   await expect(page).toHaveURL(/\/login\?error=1/);
 
+  await seedBetaAgreementForLogin(db, passwordResetUser.email);
   await page.getByLabel("Email").fill(passwordResetUser.email);
   await page.getByLabel("密碼").fill(replacementCredential);
   await page.getByRole("button", { name: "登入" }).click();
@@ -1263,6 +1274,7 @@ test("protected vendor and admin pages redirect unauthenticated users", async ({
 
 test("vendor finance roles cannot enter the cross-tenant platform admin area", async ({ page }) => {
   await page.goto("/login");
+  await seedBetaAgreementForLogin(db, seed.email);
   await page.getByLabel("Email").fill(seed.email);
   await page.getByLabel("密碼").fill(password);
   await page.getByRole("button", { name: "登入" }).click();
@@ -1544,6 +1556,7 @@ test("public form can submit a lead", async ({ page }) => {
   const email = `lead-${stamp}@example.com`;
   await page.goto(`/form/${seed.formSlug}`);
   await page.getByLabel("姓名").fill("王小明");
+  await seedBetaAgreementForLogin(db, email);
   await page.getByLabel("Email").fill(email);
   await page.route("**/api/form-submissions", (route) => route.fulfill({
     status: 503,
@@ -1698,6 +1711,7 @@ test("team-funnel browser acceptance covers leader publishing, partner modes, at
   const login = async (context: NonNullable<typeof leaderContext>, email: string) => {
     const page = track(await context.newPage(), email);
     await page.goto("/login");
+    await seedBetaAgreementForLogin(db, email);
     await page.getByLabel("Email").fill(email);
     await page.getByLabel("密碼").fill(fixture.password);
     await page.getByRole("button", { name: "登入" }).click();
@@ -1838,6 +1852,7 @@ test("team-funnel browser acceptance covers leader publishing, partner modes, at
     // so attribution is resolved from server-owned page data rather than input.
     const registrationEmail = `lead-${Date.now()}@team-funnel.test`;
     await publicPage.getByLabel("姓名").fill("TEST ONLY 報名訪客");
+    await seedBetaAgreementForLogin(db, registrationEmail);
     await publicPage.getByLabel("Email").fill(registrationEmail);
     await publicPage.getByRole("button", { name: "TEST ONLY 送出報名" }).click();
     await expect(publicPage.getByText("TEST ONLY 已收到報名")).toBeVisible();

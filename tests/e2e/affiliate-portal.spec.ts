@@ -5,6 +5,7 @@ import {PrismaClient} from "@prisma/client";
 import {hashPassword} from "../../src/lib/password";
 import {appendCommissionLedgerEntry} from "../../src/lib/affiliate-commission-accounting";
 import {formatCurrency} from "../../src/lib/format";
+import {seedBetaAgreementForLogin} from "./helpers/beta-agreement";
 
 test.use({trace:"off",screenshot:"off",video:"off"});test.setTimeout(120000);
 test("manager grants portal access; partner reads ledger refund net and loses access on revoke",async({page,browser,baseURL})=>{
@@ -31,7 +32,7 @@ test("manager grants portal access; partner reads ledger refund net and loses ac
  const partnerPage=await partnerContext.newPage(),outsiderPage=await outsiderContext.newPage();
  const statement=`/affiliate-portal/${vendor.slug}/${affiliate.id}`;
  // Partners land on the partner portal; they never get the merchant back office.
- async function login(target:typeof page,email:string,home:RegExp=/\/dashboard$/){await target.goto(`${baseURL}/login`);await target.getByLabel("Email").fill(email);await target.getByLabel("密碼").fill(password);await target.getByRole("button",{name:"登入",exact:true}).click();await expect(target).toHaveURL(home);}
+ async function login(target:typeof page,email:string,home:RegExp=/\/dashboard$/){await seedBetaAgreementForLogin(db,email);await target.goto(`${baseURL}/login`);await target.getByLabel("Email").fill(email);await target.getByLabel("密碼").fill(password);await target.getByRole("button",{name:"登入",exact:true}).click();await expect(target).toHaveURL(home);}
  try{
   for(const context of [page.context(),partnerContext,outsiderContext])await context.route(url=>url.origin!==new URL(baseURL!).origin,route=>route.abort());
   await login(page,manager.email);await page.goto(`/affiliates/${affiliate.id}`);await page.getByRole("link",{name:"夥伴入口授權",exact:true}).click();

@@ -1,4 +1,5 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
+import { BETA_AGREEMENT_VERSION } from "@/lib/beta-agreement-content";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 
 // Owner policies decided 2026-11-10 (refund, suspension, blacklist), on real
@@ -187,6 +188,8 @@ async function signInOwner(vendorId: string) {
   const owner = await db.user.create({ data: { name: "Owner", email: `owner-${key}@example.test`, passwordHash: "synthetic-only" } });
   userIds.push(owner.id);
   await db.vendorMember.create({ data: { vendorId, userId: owner.id, role: "owner" } });
+  // The owner accepted the 封測合作協議 earlier (O-11); the gate is covered by src/lib/beta-agreement.db.test.ts.
+  await db.userPolicyConsent.create({ data: { userId: owner.id, vendorId: vendorId, context: "beta_agreement", agreementVersion: BETA_AGREEMENT_VERSION } });
   const token = randomBytes(32).toString("base64url");
   await db.userSession.create({
     data: { userId: owner.id, vendorId, tokenHash: createHash("sha256").update(token).digest("hex"), expiresAt: new Date(Date.now() + 3_600_000) },

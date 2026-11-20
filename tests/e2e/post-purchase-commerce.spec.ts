@@ -5,6 +5,7 @@ import { hashPassword } from "../../src/lib/password";
 import { createReservedPaymentTransaction, failPendingCheckoutAndReleaseInventory, releaseExpiredInventoryReservations } from "../../src/lib/inventory-reservations";
 import { createCommerceOrderForCheckout, reconcileCommerceOrderPaymentTransition, reconcileCommerceOrderRefund } from "../../src/lib/commerce-orders";
 import { issueBuyerSupportGrant } from "../../src/lib/buyer-support-access";
+import { seedBetaAgreementForLogin } from "./helpers/beta-agreement";
 
 test.use({ trace: "off", screenshot: "off", video: "off" });
 test.setTimeout(120_000);
@@ -26,7 +27,7 @@ test("merchant configures offers; buyer declines, upgrades once, resumes and los
     const alternative = await db.product.create({ data: { vendorId: vendor.id, name: "合成備選商品", slug: `alternative-${suffix}`,
       priceCents: 15000, inventory: 3, fulfillmentTypeConfirmed: true } });
     stage("merchant-login");
-    await page.goto("/login"); await page.getByLabel("Email").fill(user.email);
+    await page.goto("/login"); await seedBetaAgreementForLogin(db, user.email); await page.getByLabel("Email").fill(user.email);
     await page.getByLabel("密碼").fill(password); await page.getByRole("button", { name: "登入", exact: true }).click();
     await expect(page).toHaveURL(/\/dashboard$/);
     stage("merchant-config");

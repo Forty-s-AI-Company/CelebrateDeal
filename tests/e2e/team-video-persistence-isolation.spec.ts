@@ -4,6 +4,7 @@ import { PrismaClient } from "@prisma/client";
 import { assertLocalTestDatabase } from "../../scripts/local-database-safety";
 import { hashPassword } from "../../src/lib/password";
 import { navigateAndAssertDirectUrlGuard } from "./helpers/direct-url-guard";
+import { seedBetaAgreementForLogin } from "./helpers/beta-agreement";
 
 // This journey may mutate only its disposable, loopback synthetic database.
 assertLocalTestDatabase("DATABASE_URL", process.env.DATABASE_URL);
@@ -18,6 +19,7 @@ test("actual video create/edit/reload retains data and rejects foreign tenant re
   const contexts = [await browser.newContext(), await browser.newContext()];
   const login = async (page: Page, email: string) => {
     await page.goto("/login");
+    await seedBetaAgreementForLogin(db, email);
     await page.getByLabel("Email").fill(email);
     await page.getByLabel("密碼").fill(password);
     await page.getByRole("button", { name: "登入", exact: true }).click();

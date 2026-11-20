@@ -42,6 +42,7 @@ import { hashPassword } from "@/lib/password";
 import { acceptVendorMemberInvitationAction } from "@/app/actions/vendor-member-invitation-actions";
 import { sendVendorMemberInvitationEmail } from "@/lib/email";
 import { merchantRegistrationPolicyVersions } from "@/lib/public-policy-content";
+import { BETA_AGREEMENT_VERSION } from "@/lib/beta-agreement-content";
 import {
   acceptVendorMemberInvitation,
   createVendorMemberInvitation,
@@ -82,6 +83,8 @@ async function createVendor(label: string) {
   created.vendorIds.push(vendor.id);
   const owner = await createUser(`owner-${label}`);
   await getDb().vendorMember.create({ data: { vendorId: vendor.id, userId: owner.id, role: "owner" } });
+  // The owner accepted the 封測合作協議 earlier (O-11); this suite is about membership.
+  await getDb().userPolicyConsent.create({ data: { userId: owner.id, vendorId: vendor.id, context: "beta_agreement", agreementVersion: BETA_AGREEMENT_VERSION } });
   // Owners pass the F-027 step-up with a fresh verification.
   await getDb().userMfaFactor.create({ data: { userId: owner.id, secretEncrypted: "synthetic-not-decrypted" } });
   return { vendor, owner };

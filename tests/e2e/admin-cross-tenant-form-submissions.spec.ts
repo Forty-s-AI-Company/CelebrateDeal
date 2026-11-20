@@ -3,6 +3,7 @@ import { expect, test } from "@playwright/test";
 import { PrismaClient } from "@prisma/client";
 import { hashPassword } from "../../src/lib/password";
 import { navigateAndAssertDirectUrlGuard } from "./helpers/direct-url-guard";
+import { seedBetaAgreementForLogin } from "./helpers/beta-agreement";
 
 const db = new PrismaClient();
 const password = "Wp32SyntheticPassword!";
@@ -34,7 +35,7 @@ test("admin cannot open another vendor form submissions through direct URL navig
     db.formSubmission.count({ where: { formId: foreignForm.id } }),
   ]);
   try {
-    await page.goto("/login"); await page.getByLabel("Email").fill(user.email); await page.getByLabel("密碼").fill(password); await page.getByRole("button", { name: "登入" }).click(); await expect(page).toHaveURL(/\/dashboard$/);
+    await page.goto("/login"); await seedBetaAgreementForLogin(db, user.email); await page.getByLabel("Email").fill(user.email); await page.getByLabel("密碼").fill(password); await page.getByRole("button", { name: "登入" }).click(); await expect(page).toHaveURL(/\/dashboard$/);
     const before = await snapshot();
     const ownPath = `/forms/${ownForm.id}/submissions`; const ownResponse = await page.goto(ownPath); expect(ownResponse?.status()).toBe(200); await expect(page.getByRole("heading", { name: `${ownForm.name} 名單` })).toBeVisible(); await expect(page.getByRole("cell", { name: ownCanary, exact: true })).toBeVisible();
     const foreignPath = `/forms/${foreignForm.id}/submissions`;

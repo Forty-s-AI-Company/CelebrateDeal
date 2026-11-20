@@ -10,6 +10,7 @@ import { createStudentPortalAccessToken } from "../../src/lib/student-portal-aut
 import { saveLearnerNotificationConsent } from "../../src/lib/learner-notification-preferences";
 import { protectLearnerNotificationDestination } from "../../src/lib/learner-notification-contract";
 import { formatPortalPushDiagnostic, PORTAL_PUSH_ANNOTATION_TYPE } from "../../scripts/portal-push-diagnostic";
+import { seedBetaAgreementForLogin } from "./helpers/beta-agreement";
 
 test("actual portal worker receives a synthetic device message and keeps authenticated traffic out of cache",async({page,context,baseURL})=>{
  test.setTimeout(120000);
@@ -329,7 +330,7 @@ test("real manager starts course-linked live, reloads and ends it without republ
   const script=await db.interactionScript.create({data:{vendorId:vendor.id,name:"Synthetic published script",status:"published"}});
   const live=await db.live.create({data:{vendorId:vendor.id,title:"Actual manager notification live",slug:randomUUID(),scheduledAt:new Date(Date.now()+3600000),status:"scheduled",streamMode:"vod",videoId:video.id,formId:form.id,messageTemplateId:registration.id,liveReminderTemplateId:reminder.id,interactionScriptId:script.id,products:{create:{productId:product.id}}}});
   await page.route("https://media.example.test/**",route=>route.abort());
-  await page.goto("/login");await page.getByLabel("Email").fill(user.email);await page.getByLabel("密碼").fill(password);await page.getByRole("button",{name:"登入",exact:true}).click();await expect(page).toHaveURL(/\/dashboard$/u);
+  await page.goto("/login");await seedBetaAgreementForLogin(db, user.email); await page.getByLabel("Email").fill(user.email);await page.getByLabel("密碼").fill(password);await page.getByRole("button",{name:"登入",exact:true}).click();await expect(page).toHaveURL(/\/dashboard$/u);
   const path=`/lives/${live.id}/edit`;
   await page.goto(path);await page.locator('button[aria-controls="live-step-panel-publish"]').click();
   const start=page.getByRole("button",{name:"開始直播",exact:true});await expect(start).toBeEnabled();

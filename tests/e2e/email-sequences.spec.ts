@@ -5,6 +5,7 @@ import { processDueDelayedStepRuns } from "../../src/lib/delayed-step-runs";
 import { revealEmailDeliveryPayload } from "../../src/lib/email-delivery-pii";
 import { createFormSubmissionVerificationToken } from "../../src/lib/form-submission-verification";
 import { hashPassword } from "../../src/lib/password";
+import { seedBetaAgreementForLogin } from "./helpers/beta-agreement";
 
 /**
  * F-3 Email 追銷序列, end to end on the production build: the merchant creates
@@ -89,6 +90,7 @@ async function cleanup(fixture: Fixture | null) {
 
 async function login(page: Page, email: string) {
   await page.goto("/login", { waitUntil: "load" });
+  await seedBetaAgreementForLogin(db, email);
   await page.getByLabel("Email").fill(email);
   await page.getByLabel("密碼").fill(password);
   await page.getByRole("button", { name: "登入" }).click();

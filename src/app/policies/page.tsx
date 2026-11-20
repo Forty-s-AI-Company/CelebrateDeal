@@ -20,6 +20,7 @@ export default function PoliciesPage() {
     { href: "/policies/refunds", title: "退款政策", description: "查看退款申請、解除契約與付款支援規則。" },
     { href: "/support", title: "客服與付款協助", description: "查看訂單、履約進度與已有的客服案件。" },
     { href: "/merchant-onboarding", title: "商家使用指南", description: "查看商家設定與使用流程。" },
+    { href: "/policies/beta-agreement", title: "封測合作協議", description: "查看封測商家在後台同意的協議全文與版本。" },
   ] satisfies readonly { href: Route; title: string; description: string }[];
 
   return (

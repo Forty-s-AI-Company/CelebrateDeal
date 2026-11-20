@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { expect, test, type BrowserContext, type Page } from "@playwright/test";
 import { PrismaClient } from "@prisma/client";
 import { createTeamFunnelFixture, TEAM_FUNNEL_TEST_ONLY } from "../fixtures/team-funnel";
+import { seedBetaAgreementForLogin } from "./helpers/beta-agreement";
 
 const db = new PrismaClient();
 
@@ -19,6 +20,7 @@ test("member A cannot publish a template bound to member B's webinar through DOM
 
   const login = async (page: Page) => {
     await page.goto("/login");
+    await seedBetaAgreementForLogin(db, fixture.leader.email);
     await page.getByLabel("Email").fill(fixture.leader.email);
     await page.getByLabel("密碼").fill(fixture.password);
     await page.getByRole("button", { name: "登入" }).click();

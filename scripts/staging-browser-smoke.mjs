@@ -63,6 +63,7 @@ export function classifyFailurePath(url, targetHost = STAGING_ALIAS) {
     const route = ROUTES.find((item) => item.path === parsed.pathname);
     if (route) return route.id.toUpperCase();
     if (/^\/(?:login|mfa)(?:\/|$)/u.test(parsed.pathname)) return "AUTH_REDIRECT";
+    if (parsed.pathname === "/beta-agreement") return "BETA_AGREEMENT_GATE";
     return "OTHER_SAME_HOST";
   } catch { return "INVALID_URL"; }
 }
@@ -492,6 +493,8 @@ export function classifyFinalPath(url, expectedPath, targetHost = STAGING_ALIAS)
     if (parsed.protocol !== "https:" || parsed.hostname !== targetHost || parsed.port || parsed.username || parsed.password) return "OFF_HOST";
     if (parsed.pathname === expectedPath) return "EXPECTED";
     if (/^\/(?:login|mfa)(?:\/|$)/u.test(parsed.pathname)) return "AUTH_REDIRECT";
+    // O-11: the fixture vendor has not accepted the current 封測合作協議 (re-run the WP4 fixture ensure).
+    if (parsed.pathname === "/beta-agreement") return "BETA_AGREEMENT_GATE";
     return "OTHER_SAME_HOST";
   } catch {
     return "INVALID_URL";

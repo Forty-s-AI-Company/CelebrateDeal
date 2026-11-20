@@ -433,6 +433,8 @@ async function keyboardReachable(page: Page, names: string[]) { const found = ne
       db.userSession.create({ data: { userId: user.id, vendorId: vendor.id, tokenHash: sessionTokenHash, expiresAt: new Date("2030-01-01T00:00:00.000Z") } }),
       db.userSession.create({ data: { userId: foreignUser.id, vendorId: foreign.id, tokenHash: foreignSessionTokenHash, expiresAt: new Date("2030-01-01T00:00:00.000Z") } }),
     ]);
+    await db.userPolicyConsent.create({ data: { userId: user.id, vendorId: vendor.id, context: "beta_agreement", agreementVersion: (await import("../../src/lib/beta-agreement-content")).BETA_AGREEMENT_VERSION } });
+    await db.userPolicyConsent.create({ data: { userId: foreignUser.id, vendorId: foreign.id, context: "beta_agreement", agreementVersion: (await import("../../src/lib/beta-agreement-content")).BETA_AGREEMENT_VERSION } });
     const [valid, invalid, foreignForm] = await Promise.all([
       db.registrationForm.create({ data: { vendorId: vendor.id, name: "G7-05 Legacy Valid", slug: "g7-05-legacy-" + runId, headline: "Legacy heading", description: "legacy", submitLabel: "送出", successMessage: "完成", fields: [...fields, { key: "legacy_ref", label: "舊識別碼", type: "url", required: false }], isActive: true } }),
       db.registrationForm.create({ data: { vendorId: vendor.id, name: "G7-05 Legacy Invalid", slug: "g7-05-invalid-" + runId, headline: "invalid", fields: [{ key: "broken key", label: "broken", type: "text", required: false }], isActive: true } }),
@@ -537,6 +539,7 @@ test.describe("G7-54 報名名單查找與管理", () => {
     ]);
     const user = await db.user.create({ data: { email: "g7-54-user-" + runId + "@example.test", name: "G7-54 Owner", passwordHash: "synthetic", status: "active", memberships: { create: { vendorId: vendor.id, role: "owner", status: "active" } } } });
     await db.userSession.create({ data: { userId: user.id, vendorId: vendor.id, tokenHash: sessionTokenHash, expiresAt: new Date("2030-01-01T00:00:00.000Z") } });
+    await db.userPolicyConsent.create({ data: { userId: user.id, vendorId: vendor.id, context: "beta_agreement", agreementVersion: (await import("../../src/lib/beta-agreement-content")).BETA_AGREEMENT_VERSION } });
     const [form, foreignForm] = await Promise.all([
       db.registrationForm.create({ data: { vendorId: vendor.id, name: "G7-54 活動報名", slug: "g7-54-form-" + runId, headline: "合成名單", fields, isActive: true } }),
       db.registrationForm.create({ data: { vendorId: foreignVendor.id, name: "G7-54 FOREIGN CANARY " + runId, slug: "g7-54-foreign-form-" + runId, headline: "foreign", fields, isActive: true } }),

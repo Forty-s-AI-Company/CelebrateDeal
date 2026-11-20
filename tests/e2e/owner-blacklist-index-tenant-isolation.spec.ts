@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { expect, test } from "@playwright/test";
 import { PrismaClient } from "@prisma/client";
 import { hashPassword } from "../../src/lib/password";
+import { seedBetaAgreementForLogin } from "./helpers/beta-agreement";
 
 const db = new PrismaClient();
 const password = "Wp38SyntheticPassword!";
@@ -31,6 +32,7 @@ test("owner receives only its vendor blacklist entries from the blacklist index"
     await page.goto("/login", { waitUntil: "load" });
     await expect(page).toHaveURL(/\/login$/);
     await expect(page.locator("main").first()).toBeVisible();
+    await seedBetaAgreementForLogin(db, user.email);
     await page.getByLabel("Email").fill(user.email);
     await page.getByLabel("密碼").fill(password);
     await page.getByRole("button", { name: "登入" }).click();

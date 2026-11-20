@@ -88,6 +88,18 @@
 - 稽核紀錄出現 `independent_publish_email_gate_owner_fallback` 時，表示某商家的新獨立發布是靠「其他已驗證 owner」通過（reason 說明創辦帳號不存在、停權或已離開）。封測期間每週看一次；同一個已驗證帳號出現在多個這樣的商家，視為疑似濫用，依 (d) 回報。這個規則只是減速，真正的限制是 Turnstile、註冊限流與每商家上限。
 - 驗證信每個收件地址每小時最多 3 封（含註冊時那封）；客戶回報「一直收不到」時先請對方看垃圾郵件匣並等一小時，再走上面的密碼重設。
 
+### 封測合作協議閘門的人工處理（O-11）
+
+- 商家要由 active owner 在後台同意現行版本的《封測合作協議》，其他後台角色才看得到後台；同意紀錄是 `UserPolicyConsent`（`context = beta_agreement`），稽核動作 `beta_agreement_accepted`（`after` 含版本、全文 sha256 與當時的商家名稱）。
+- **商家沒有 active owner**（舊資料、owner 已離開或停權）時，admin／accountant／support 會一直停在「等待商家 owner 同意」頁，沒有人能同意。處理程序：
+  1. 由商家原聯絡人（商家 Email 收件人）以 Email 向客服確認要繼續封測，並指定要成為 owner 的現有成員帳號。
+  2. 目前**沒有**平台後台工具能替沒有 owner 的商家指定 owner（`/settings/team` 的角色變更只限 owner 本人）。需要時由主對話準備一次性腳本：只把指定成員的 role 改為 `owner`，同一交易寫 AuditLog（原因、指定依據的 Email 往來日期），經 owner 明確授權後執行（Production 另需授權）。**不得直接寫入同意紀錄，也不得代商家勾選。**
+  3. 新 owner 登入後台，自己閱讀並同意協議；其他成員下次載入就能進入後台。
+  4. 在客戶回報紀錄記下商家、處理日期與指定 owner 的 Email 往來（不貼完整個資到 Issue）。
+- **平台管理員本人是某商家的 owner**（例如營運自用的商家）：平台管理員本身不受閘門限制，但該商家其他成員會被擋。由這位平台管理員自己開 `/beta-agreement` 同意即可（頁面會顯示同意彈窗與「返回平台管理」）。
+- 成員同時屬於其他已同意的商家時，可以在等待頁「切換商家」，先到另一個商家工作（稽核 `session_vendor_switched`，`before.from = beta_agreement_pending`，不記原商家）。
+- 協議改版（換 `BETA_AGREEMENT_VERSION`）後，所有商家下一次進後台都要重新同意；改版前先在客戶公告說明，並在 staging 重跑一次 WP4 fixture（`/api/admin/ops/payuni/wp4-fixture`），否則 staging browser smoke 會停在 `BETA_AGREEMENT_GATE`。
+
 ## (d) 告警與回報
 
 ### Sentry 告警（O-17）

@@ -6,6 +6,7 @@ import { assertLocalTestDatabase } from "../../scripts/local-database-safety";
 import { createGoalFunnelStepPages } from "../../src/lib/funnel-goal-step-pages";
 import { parseFunnelStepPages } from "../../src/lib/funnel-step-pages";
 import type { FunnelNode } from "../../src/lib/funnel-page-document";
+import { seedBetaAgreementForLogin } from "./helpers/beta-agreement";
 
 test.use({ trace: "off", screenshot: "off", video: "off" });
 
@@ -46,6 +47,7 @@ test("編輯器自動儲存、發布檢查失敗後就地改綁商品、在抽�
   await page.context().route((url) => url.origin !== new URL(baseURL!).origin, (route) => route.abort());
   try {
     await page.goto("/login");
+    await seedBetaAgreementForLogin(db, fixture.owner.email);
     await page.getByLabel("Email").fill(fixture.owner.email);
     await page.getByLabel("密碼").fill(fixture.password);
     await page.getByRole("button", { name: "登入", exact: true }).click();

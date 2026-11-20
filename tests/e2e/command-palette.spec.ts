@@ -3,6 +3,7 @@ import AxeBuilder from "@axe-core/playwright";
 import { expect, test, type Page } from "@playwright/test";
 import { PrismaClient } from "@prisma/client";
 import { hashPassword } from "../../src/lib/password";
+import { seedBetaAgreementForLogin } from "./helpers/beta-agreement";
 
 const db = new PrismaClient();
 const password = "SyntheticPaletteSecret!42";
@@ -13,6 +14,7 @@ test.afterAll(async () => db.$disconnect());
 
 async function login(page: Page, email: string) {
   await page.goto("/login");
+  await seedBetaAgreementForLogin(db, email);
   await page.getByLabel("Email").fill(email);
   await page.getByLabel("密碼").fill(password);
   await page.getByRole("button", { name: "登入", exact: true }).click();

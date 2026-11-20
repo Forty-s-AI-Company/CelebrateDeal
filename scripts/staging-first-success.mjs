@@ -21,7 +21,7 @@ export const ALIAS = "celebrate-deal-staging.carry-digital-nomad.in.net";
 const ORIGIN = `https://${ALIAS}`;
 
 export const STEPS = Object.freeze([
-  "INVITE", "REGISTER", "MERCHANT_VERIFICATION_EMAIL", "MERCHANT_EMAIL_VERIFY", "WELCOME",
+  "INVITE", "REGISTER", "BETA_AGREEMENT", "MERCHANT_VERIFICATION_EMAIL", "MERCHANT_EMAIL_VERIFY", "WELCOME",
   "PRODUCT", "FORM", "VIDEO", "EMAIL_TEMPLATE", "LIVE", "PROJECT_PUBLISH", "PUBLIC_REGISTRATION",
   "BUYER_VERIFICATION_EMAIL", "BUYER_VERIFY", "REGISTRATION_CONFIRMATION_EMAIL",
 ]);
@@ -87,7 +87,7 @@ export function routeCategory(value) {
   if (url.hostname !== ALIAS) return "EXTERNAL";
   const path = url.pathname;
   const fixed = {
-    "/register": "REGISTER", "/welcome": "WELCOME", "/onboarding": "ONBOARDING", "/dashboard": "DASHBOARD",
+    "/register": "REGISTER", "/beta-agreement": "BETA_AGREEMENT", "/welcome": "WELCOME", "/onboarding": "ONBOARDING", "/dashboard": "DASHBOARD",
     "/login": "LOGIN", "/products": "PRODUCTS", "/products/new": "PRODUCT_NEW", "/forms": "FORMS", "/forms/new": "FORM_NEW",
     "/videos": "VIDEOS", "/videos/new": "VIDEO_NEW", "/messages/templates": "TEMPLATES", "/messages/templates/new": "TEMPLATE_NEW",
     "/lives/new": "LIVE_NEW", "/projects": "PROJECTS", "/verify-email": "VERIFY_EMAIL", "/verify-registration": "VERIFY_REGISTRATION",
@@ -103,7 +103,7 @@ export function routeCategory(value) {
 
 /** Owner-side writes the journey needs. Anything else (payments, checkout, refunds, admin) is aborted. */
 const OWNER_WRITE_PATHS = [
-  /^\/register$/u, /^\/welcome$/u, /^\/products\/new$/u, /^\/api\/products\/upsert$/u,
+  /^\/register$/u, /^\/beta-agreement$/u, /^\/welcome$/u, /^\/products\/new$/u, /^\/api\/products\/upsert$/u,
   /^\/forms\/new$/u, /^\/videos\/new$/u, /^\/messages\/templates\/new$/u, /^\/lives\/new$/u, /^\/api\/live-studio\/drafts$/u,
   /^\/projects\/[a-z0-9]+$/u, /^\/api\/auth\/email-verification\/confirm$/u,
 ];
@@ -331,8 +331,27 @@ export async function runStagingFirstSuccess(env = process.env, dependencies = {
       await page.locator('input[name="password"]').fill(`Synthetic-${runId}-Pw!`);
       await page.getByRole("checkbox", { name: /我已閱讀並同意/u }).check();
       await page.getByRole("button", { name: "建立帳號並開始設定", exact: true }).click({ timeout: 10_000 });
-      await page.waitForURL((url) => url.pathname === "/welcome", { timeout: 45_000 });
+      // O-11: a new owner reads and accepts the 封測合作協議 before the back office.
+      await page.waitForURL((url) => url.pathname === "/beta-agreement", { timeout: 45_000 });
       result.sideEffects.registrations = 1;
+    });
+
+    await step("BETA_AGREEMENT", async () => {
+      // Keyboard only, as a reader would: the dialog focuses the text, End reaches the
+      // last clause, Tab reaches the checkbox (enabled only then), Space ticks it, Tab + Enter submit.
+      const dialog = page.getByRole("dialog", { name: "CelebrateDeal 封測合作協議" });
+      ensure(await visible(dialog));
+      const box = dialog.getByRole("checkbox", { name: /我已閱讀並同意《CelebrateDeal 封測合作協議》/u });
+      const agree = dialog.getByRole("button", { name: "同意並進入後台", exact: true });
+      await dialog.getByRole("region", { name: "協議全文" }).focus();
+      await page.keyboard.press("End");
+      for (let tries = 0; tries < 40 && !await box.isEnabled(); tries += 1) await wait(250);
+      await page.keyboard.press("Tab");
+      await page.keyboard.press("Space");
+      ensure(await box.isChecked());
+      ensure(await agree.isEnabled());
+      await agree.click({ timeout: 10_000 });
+      await page.waitForURL((url) => url.pathname === "/welcome", { timeout: 45_000 });
     });
 
     await step("MERCHANT_VERIFICATION_EMAIL", async () => {

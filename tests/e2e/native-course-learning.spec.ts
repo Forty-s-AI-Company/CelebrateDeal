@@ -7,6 +7,7 @@ import { protectCommerceOrderPii } from "../../src/lib/commerce-order-pii";
 import { grantCommerceEntitlement } from "../../src/lib/commerce-order-fulfillment";
 import { reconcileCommerceOrderRefund } from "../../src/lib/commerce-orders";
 import { createStudentPortalAccessToken } from "../../src/lib/student-portal-auth";
+import { seedBetaAgreementForLogin } from "./helpers/beta-agreement";
 
 test.use({ trace: "off", screenshot: "off", video: "off" });
 test("manager publishes a lesson; a purchasing learner saves, resumes, completes and loses access after refund", async ({ page, browser, baseURL }) => {
@@ -19,6 +20,7 @@ test("manager publishes a lesson; a purchasing learner saves, resumes, completes
   const learnerContext = await browser.newContext();
   try {
     await page.goto("/login");
+    await seedBetaAgreementForLogin(db, user.email);
     await page.getByLabel("Email").fill(user.email);
     await page.getByLabel("密碼").fill(password);
     await page.getByRole("button", { name: "登入", exact: true }).click();

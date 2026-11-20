@@ -9,6 +9,8 @@ vi.mock("@/lib/live-quota-admission", () => ({ hasActiveLiveViewerSession: m.adm
 vi.mock("@/lib/live-runtime-readiness", () => ({ getRuntimeLivePublishReadiness: m.readiness }));
 vi.mock("@/lib/live-media-provider", () => ({ mediaOrigin: m.origin, mediaPath: (vendor: string, live: string) => `${vendor}/${live}`, startMediaSession: m.start, stopMediaSession: m.stop }));
 vi.mock("@/lib/live-media-cleanup", () => ({ cleanupMediaSessions: m.cleanup }));
+// The vendor accepted the 封測合作協議 (O-11); the gate is covered by src/lib/beta-agreement-api-routes.db.test.ts.
+vi.mock("@/lib/beta-agreement", () => ({ betaAgreementApiResponse: vi.fn(async () => null) }));
 import { POST } from "./route";
 
 const offer = { action: "offer", liveId: "live-1", direction: "publish", sdp: "v=0\r\n" };

@@ -46,7 +46,9 @@ function surfaceFiles() {
 // 刪除 wrapper 只能改變「名稱由哪個檔案提供」，不能讓名稱消失或憑空新增。
 // 有意新增或移除 action 時，同步更新這份清單。
 const EXPECTED_SURFACE: readonly string[] = [
+  "acceptBetaAgreementAction",
   "acceptVendorMemberInvitationAction",
+  "switchFromBetaAgreementGateAction",
   "activateEmailSequenceAction",
   "addBuyerSupportReplyAction",
   "addCustomerTagAction",

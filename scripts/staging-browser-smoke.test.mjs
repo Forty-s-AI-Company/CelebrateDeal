@@ -15,6 +15,7 @@ test("failure diagnostics stay inside fixed step and route vocabularies", () => 
   assert.equal(classifyFailurePath(`https://${alias}/dashboard`), "DASHBOARD");
   assert.equal(classifyFailurePath(`https://${alias}/login?next=/private`), "AUTH_REDIRECT");
   assert.equal(classifyFailurePath(`https://${alias}/private/path`), "OTHER_SAME_HOST");
+  assert.equal(classifyFailurePath(`https://${alias}/beta-agreement?next=%2Fproducts`), "BETA_AGREEMENT_GATE");
   assert.equal(classifyFailurePath("https://evil.example.test/dashboard"), "OFF_HOST");
   assert.equal(classifyFailurePath("about:blank"), "BLANK");
   assert.equal(classifyFailurePath("not a url"), "INVALID_URL");
@@ -731,6 +732,7 @@ test("Preview browser guards and diagnostics use only the selected target origin
     assert.equal(classifyFinalPath(url, "/dashboard", host), "OFF_HOST");
   }
   assert.equal(classifyFinalPath(`https://${host}/dashboard`, "/dashboard", host), "EXPECTED");
+  assert.equal(classifyFinalPath(`https://${host}/beta-agreement`, "/dashboard", host), "BETA_AGREEMENT_GATE");
 });
 
 test("browser failures expose only fixed categories", () => {

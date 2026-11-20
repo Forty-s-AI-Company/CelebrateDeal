@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { expect, test } from "@playwright/test";
 import { PrismaClient } from "@prisma/client";
 import { createWebinarFunnelFixture } from "../fixtures/webinar-funnel";
+import { seedBetaAgreementForLogin } from "./helpers/beta-agreement";
 
 const db = new PrismaClient();
 const runKey = randomUUID();
@@ -22,6 +23,7 @@ test("Webinar owner saves settings, resolves publish validation and opens every 
   const shot = (name: string) => process.env.WEBINAR_QA_SCREENSHOT_DIR
     ? join(process.env.WEBINAR_QA_SCREENSHOT_DIR, name) : testInfo.outputPath(name);
   await page.goto("/login");
+  await seedBetaAgreementForLogin(db, fixture.owner.email);
   await page.getByLabel("Email").fill(fixture.owner.email);
   await page.getByLabel("密碼").fill(fixture.password);
   await page.getByRole("button", { name: "登入" }).click();

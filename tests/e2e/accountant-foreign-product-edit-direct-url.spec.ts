@@ -3,6 +3,7 @@ import { expect, test } from "@playwright/test";
 import { PrismaClient } from "@prisma/client";
 import { hashPassword } from "../../src/lib/password";
 import { navigateAndAssertDirectUrlGuard } from "./helpers/direct-url-guard";
+import { seedBetaAgreementForLogin } from "./helpers/beta-agreement";
 
 const db = new PrismaClient();
 const password = "Wp44SyntheticPassword!";
@@ -22,7 +23,7 @@ test("active accountant is denied a foreign product editor before tenant lookup"
   const snapshot = async () => Promise.all([db.product.findUniqueOrThrow({ where: { id: ownProduct.id } }), db.product.findUniqueOrThrow({ where: { id: foreignProduct.id } }), db.product.count({ where: { vendorId: ownerVendor.id } }), db.product.count({ where: { vendorId: foreignVendor.id } })]);
   const before = await snapshot();
   try {
-    await page.goto("/login"); await page.getByLabel("Email").fill(user.email); await page.getByLabel("密碼").fill(password); await page.getByRole("button", { name: "登入" }).click(); await expect(page).toHaveURL(/\/dashboard$/);
+    await page.goto("/login"); await seedBetaAgreementForLogin(db, user.email); await page.getByLabel("Email").fill(user.email); await page.getByLabel("密碼").fill(password); await page.getByRole("button", { name: "登入" }).click(); await expect(page).toHaveURL(/\/dashboard$/);
     const requests: string[] = []; page.on("request", (request) => requests.push(request.url()));
     const foreignPath = `/products/${foreignProduct.id}/edit`;
     const { finalResponse } = await navigateAndAssertDirectUrlGuard({

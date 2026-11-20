@@ -3,6 +3,7 @@ import { expect, test } from "@playwright/test";
 import { PrismaClient } from "@prisma/client";
 import { hashPassword } from "../../src/lib/password";
 import { navigateAndAssertDirectUrlGuard } from "./helpers/direct-url-guard";
+import { seedBetaAgreementForLogin } from "./helpers/beta-agreement";
 
 const db = new PrismaClient();
 const password = "Wp43SyntheticPassword!";
@@ -22,7 +23,7 @@ test("active accountant is denied a foreign interaction-role editor before tenan
   const snapshot = async () => Promise.all([db.interactionRole.findUniqueOrThrow({ where: { id: ownRole.id } }), db.interactionRole.findUniqueOrThrow({ where: { id: foreignRole.id } }), db.interactionRole.count({ where: { vendorId: ownerVendor.id } }), db.interactionRole.count({ where: { vendorId: foreignVendor.id } })]);
   const before = await snapshot();
   try {
-    await page.goto("/login"); await page.getByLabel("Email").fill(user.email); await page.getByLabel("密碼").fill(password); await page.getByRole("button", { name: "登入" }).click(); await expect(page).toHaveURL(/\/dashboard$/);
+    await page.goto("/login"); await seedBetaAgreementForLogin(db, user.email); await page.getByLabel("Email").fill(user.email); await page.getByLabel("密碼").fill(password); await page.getByRole("button", { name: "登入" }).click(); await expect(page).toHaveURL(/\/dashboard$/);
     const requests: string[] = [];
     page.on("request", (request) => requests.push(request.url()));
     const foreignPath = `/interaction-roles/${foreignRole.id}/edit`;

@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { expect, test, type TestInfo } from "@playwright/test";
 import { PrismaClient } from "@prisma/client";
 import { createLandingPageFixture, type LandingPageFixture } from "../fixtures/landing-page";
+import { seedBetaAgreementForLogin } from "./helpers/beta-agreement";
 
 const db = new PrismaClient();
 const runKey = randomUUID();
@@ -37,6 +38,7 @@ test("owner creates, edits, publishes and reloads a structured Funnel page", asy
 
   // Authentication is deliberately exercised through the public login UI.
   await page.goto("/login");
+  await seedBetaAgreementForLogin(db, fixture.owner.email);
   await page.getByLabel("Email").fill(fixture.owner.email);
   await page.getByLabel("密碼").fill(fixture.password);
   await page.getByRole("button", { name: "登入" }).click();

@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { getCurrentAuth } from "@/lib/auth";
+import { betaAgreementApiResponse } from "@/lib/beta-agreement";
 import { getDb } from "@/lib/db";
 import { readJsonBody, requireSameOriginRequest } from "@/lib/api-security";
 import { checkRateLimit } from "@/lib/rate-limit";
@@ -25,6 +26,12 @@ async function authorize(request: Request, input: z.infer<typeof schema>, db: Re
   const auth = await getCurrentAuth();
   if (!auth?.vendor || auth.member?.status !== "active" || !["owner", "admin"].includes(auth.member.role)) return json({ error: "沒有講師管理權限。" }, 403);
   if (input.vendorId && input.vendorId !== auth.vendor.id) return json({ error: "活動權限不符。" }, 403);
+  // O-11: a new instructor connection waits for the vendor's 封測合作協議 acceptance.
+  // heartbeat / stop stay open so a broadcast already running at deploy time is not cut.
+  if (input.action === "offer") {
+    const agreementRequired = await betaAgreementApiResponse(auth, { "Cache-Control": "private, no-store" });
+    if (agreementRequired) return agreementRequired;
+  }
   return { vendorId: auth.vendor.id, principal: `instructor:${auth.member.id}` };
 }
 

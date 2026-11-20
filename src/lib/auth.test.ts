@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   cookies: vi.fn(),
   createSession: vi.fn(),
+  findConsent: vi.fn(),
   findSession: vi.fn(),
   findUser: vi.fn(),
   findWp4Member: vi.fn(),
@@ -19,6 +20,7 @@ vi.mock("@/lib/db", () => ({
     userSession: { create: mocks.createSession, findUnique: mocks.findSession, updateMany: mocks.updateSessions },
     user: { findUnique: mocks.findUser, update: mocks.updateUser },
     vendorMember: { findFirst: mocks.findWp4Member },
+    userPolicyConsent: { findFirst: mocks.findConsent },
   }),
 }));
 vi.mock("@/lib/mfa", () => ({ decryptMfaSecret: vi.fn() }));
@@ -46,6 +48,7 @@ import {
   requireVendorSupportMember,
 } from "@/lib/auth";
 import { LEGACY_AUTH_COOKIE_ISSUED_BEFORE, LEGACY_AUTH_COOKIE_SUNSET } from "@/lib/session-cookie";
+import { BETA_AGREEMENT_VERSION } from "@/lib/beta-agreement-content";
 
 function sessionFor({
   platformRole,
@@ -92,6 +95,8 @@ beforeEach(() => {
   vi.clearAllMocks();
   mocks.cookies.mockResolvedValue({ get: () => ({ value: "test-session-token" }) });
   mocks.verifyPasswordAsync.mockResolvedValue(false);
+  // Every vendor has accepted the current 封測合作協議 unless a test says otherwise.
+  mocks.findConsent.mockResolvedValue({ id: "consent-1" });
   mocks.redirect.mockImplementation((path: string) => {
     throw new Error(`redirect:${path}`);
   });
@@ -640,5 +645,65 @@ describe("vendor partner role boundary", () => {
       memberships: [membership("member-p", "vendor-1", "partner", "2026-01-01T00:00:00Z"), membership("member-o", "vendor-2", "owner", "2026-02-01T00:00:00Z")], mfaFactor: null, recoveryCodes: [],
     });
     await expect(authenticateUser("partner@example.test", "candidate")).resolves.toMatchObject({ vendor: { id: "vendor-2" }, member: { role: "owner" }, partnerPortalOnly: false, partnerVendorId: null });
+  });
+});
+
+describe("封測合作協議 gate (O-11)", () => {
+  const roleSession = (role = "owner") => sessionWithMemberships([membership("member-1", "vendor-1", role, "2026-01-01T00:00:00Z")], "vendor-1");
+
+  it("holds every back-office guard at the gate until the vendor has accepted the current version", async () => {
+    mocks.findConsent.mockResolvedValue(null);
+    mocks.findSession.mockResolvedValue(roleSession());
+
+    await expect(requireVendorContext()).rejects.toThrow(/^redirect:\/beta-agreement$/u);
+    await expect(requireVendorManagerContext()).rejects.toThrow(/^redirect:\/beta-agreement$/u);
+    await expect(requireVendorOwner()).rejects.toThrow(/^redirect:\/beta-agreement$/u);
+    // Guards with a default page return there after the gate.
+    await expect(requireVendorOwnerFinance()).rejects.toThrow("redirect:/beta-agreement?next=%2Fbilling%2Fplans");
+    // Bound to this vendor and the server's current version, never a client value.
+    expect(mocks.findConsent).toHaveBeenCalledWith({
+      where: { vendorId: "vendor-1", context: "beta_agreement", agreementVersion: BETA_AGREEMENT_VERSION },
+      select: { id: true },
+    });
+  });
+
+  it("brings the member back to a safe internal path after the gate", async () => {
+    mocks.findConsent.mockResolvedValue(null);
+    mocks.findSession.mockResolvedValue(roleSession());
+
+    await expect(requireVendorManagerContext("/welcome")).rejects.toThrow("redirect:/beta-agreement?next=%2Fwelcome");
+    await expect(requireVendorContext("https://evil.example/phish")).rejects.toThrow(/^redirect:\/beta-agreement$/u);
+    await expect(requireVendorContext("/beta-agreement?next=%2Forders")).rejects.toThrow(/^redirect:\/beta-agreement$/u);
+  });
+
+  it.each(["admin", "accountant", "support", "member"])("also holds a %s member until an owner accepts", async (role) => {
+    mocks.findConsent.mockResolvedValue(null);
+    mocks.findSession.mockResolvedValue(roleSession(role));
+
+    await expect(requireVendorContext()).rejects.toThrow(/^redirect:\/beta-agreement$/u);
+  });
+
+  it("lets the vendor in once it has accepted", async () => {
+    mocks.findConsent.mockResolvedValue({ id: "consent-1" });
+    mocks.findSession.mockResolvedValue(roleSession());
+
+    await expect(requireVendorContext()).resolves.toMatchObject({ vendor: { id: "vendor-1" } });
+    await expect(requireVendorOwner()).resolves.toMatchObject({ vendor: { id: "vendor-1" } });
+  });
+
+  it("never holds a platform administrator, even one with a vendor membership", async () => {
+    mocks.findConsent.mockResolvedValue(null);
+    mocks.findSession.mockResolvedValue(sessionFor({ platformRole: "platform_admin", memberRole: "owner" }));
+
+    await expect(requireVendorContext()).resolves.toMatchObject({ vendor: { id: "vendor-1" } });
+    expect(mocks.findConsent).not.toHaveBeenCalled();
+  });
+
+  it("keeps the partner boundary ahead of the agreement", async () => {
+    mocks.findConsent.mockResolvedValue(null);
+    mocks.findSession.mockResolvedValue(sessionWithMemberships([membership("member-p", "vendor-1", "partner", "2026-01-01T00:00:00Z")], "vendor-1"));
+
+    await expect(requireVendorContext()).rejects.toThrow("redirect:/affiliate-portal");
+    expect(mocks.findConsent).not.toHaveBeenCalled();
   });
 });

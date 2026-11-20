@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { devices, expect, test, type Page } from "@playwright/test";
 import { PrismaClient } from "@prisma/client";
+import { seedBetaAgreementForLogin } from "./helpers/beta-agreement";
 import {
   elementHydratedInPage,
   MOBILE_NAV_MORE_BUTTON,
@@ -53,6 +54,8 @@ test.beforeAll(async () => {
     },
   });
   userId = user.id;
+  // The owner accepted the 封測合作協議 earlier (O-11); this spec is about navigation.
+  await seedBetaAgreementForLogin(db, user.email);
 });
 
 test.afterAll(async () => {

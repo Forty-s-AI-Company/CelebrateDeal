@@ -4,6 +4,7 @@ import path from "node:path";
 import { expect, test, type Browser, type BrowserContext, type Page } from "@playwright/test";
 import { PrismaClient } from "@prisma/client";
 import { hashPassword } from "../../src/lib/password";
+import { seedBetaAgreementForLogin } from "./helpers/beta-agreement";
 
 const db = new PrismaClient();
 const password = "Wp88SyntheticPassword!";
@@ -50,6 +51,7 @@ const PLATFORM_ADMIN_MFA_SETUP = "/mfa/setup?next=%2Fadmin%2Fbilling%2Fdashboard
 
 async function login(page: Page, email: string, expectedUrl: RegExp | string) {
   await page.goto("/login");
+  await seedBetaAgreementForLogin(db, email);
   await page.getByLabel("Email").fill(email);
   await page.getByLabel("密碼").fill(password);
   await page.getByRole("button", { name: "登入" }).click();

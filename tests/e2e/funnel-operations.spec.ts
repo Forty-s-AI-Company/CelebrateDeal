@@ -7,6 +7,7 @@ import { parseFunnelStepPages } from "../../src/lib/funnel-step-pages";
 import { assertLocalTestDatabase } from "../../scripts/local-database-safety";
 import { createFunnelSalesProjectionFixture } from "../fixtures/funnel-operations";
 import { createLandingPageFixture } from "../fixtures/landing-page";
+import { seedBetaAgreementForLogin } from "./helpers/beta-agreement";
 
 const db = new PrismaClient();
 const runKey = randomUUID();
@@ -55,6 +56,7 @@ test("Funnel secondary tabs persist settings and enforce the public deadline", a
     ? route.fulfill({ status: 200, contentType: "text/css", body: "/* TEST ONLY offline font. */" })
     : route.abort("blockedbyclient"));
   await page.goto("/login");
+  await seedBetaAgreementForLogin(db, fixture.owner.email);
   await page.getByLabel("Email").fill(fixture.owner.email);
   await page.getByLabel("密碼").fill(fixture.password);
   await page.getByRole("button", { name: "登入", exact: true }).click();

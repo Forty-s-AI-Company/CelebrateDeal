@@ -1032,3 +1032,21 @@ Current source inventory: 145 models and 99 forward migrations. Previous checkpo
 - 測試：`src/lib/live-studio-draft-live-vendor-fk-migration.db.test.ts`（版本檢查：把門檻調高模擬舊版本時第一個檔案以可讀訊息失敗、外鍵不變；catalog 只有一條、已驗證的複合外鍵與完整定義；建立／改 liveId／改 vendorId 跨商家都 P2003；刪除直播只清 `liveId`；從檔案讀出兩個 migration 的語句，在 rollback 的交易內把表還原成 A3-02 之前的狀態後重放：既有的本家與未綁定草稿值不變；有一筆跨商家草稿時第二個檔案以筆數訊息失敗、兩個外鍵都在且新的仍 NOT VALID、兩個檔案之間新寫入已被擋；刪掉那筆後通過）。另在 PG16 拋棄式資料庫以「master 的 migration + 合成跨商家草稿」實際套用兩個檔案，結果相同。`two-tenant-actions-content.db.test.ts` 原本「A 的草稿綁 B 的直播」的安排資料庫已不接受，改成 A 自己的草稿、表單帶 B 的直播 ID（仍是 `invalid_reference`）。
 - 部署順序：無程式依賴，migration 可先可後。回滾程式不需要回滾 migration。
 - 目前 168 models、168 forward migrations（含本次兩條）；既有 SQL／checksum 不變。
+
+## 2026-11-20 封測合作協議改為後台勾選同意（O-11 clickwrap）
+
+- `20261120100000_user_policy_consent_beta_agreement`：forward-only，排在 `20261119150100_live_studio_draft_live_vendor_fk_validate` 之後；交易層級 `lock_timeout = 5s`。不改任何既有列。
+  - `UserPolicyConsent` 新增可為 NULL 的 `agreementVersion`；`termsVersion`、`privacyVersion` 拿掉 NOT NULL（catalog-only）。
+  - `UserPolicyConsent_context_check` 只多一個允許值 `beta_agreement`。
+  - `UserPolicyConsent_version_check` 重建為「每個 context 只有一種形狀」：`beta_agreement` 必須有 `agreementVersion`（`^[0-9A-Za-z._-]{1,32}$`）且 terms／privacy 為 NULL；其他 context 必須有 terms 與 privacy（同一個格式）且 `agreementVersion` 為 NULL。因為 regex 遇到 NULL 會回 NULL（CHECK 視為通過），每個必填欄位都另外檢查 `IS NOT NULL`。既有的 `merchant_registration`、`vendor_member_invitation` 列保證不變。
+  - 新唯一索引 `UserPolicyConsent_user_vendor_agreement_key` `(userId, vendorId, context, agreementVersion)`：同一人、同一商家、同一版本只有一列。PostgreSQL 的 NULL 互不相等，所以既有列（`agreementVersion` 為 NULL）不受影響；舊的 `(userId, context, termsVersion, privacyVersion)` 唯一索引也碰不到協議列（terms／privacy 為 NULL）。
+  - 鎖：ADD／ALTER COLUMN 是 catalog-only；重建 CHECK 會掃整張表（每人每版一列，很小）；建唯一索引對同一張小表取 SHARE。
+  - Prisma 不比對 CHECK，`prisma-drift-check` 無新 allowlist 項目。
+- 不變式（應用層，`src/lib/beta-agreement.ts`、`src/app/actions/beta-agreement-actions.ts`）：
+  - 版本只來自 `src/lib/beta-agreement-content.ts` 的 `BETA_AGREEMENT_VERSION`；表單回傳的版本只拿來比對，不一致就不寫（`agreement_updated`）。
+  - vendor 與帳號只取自 session；表單的 `vendorId` 只用來確認頁面顯示的乙方仍是目前 session 的商家，不參與任何查詢或寫入。
+  - 只有該商家 active 的 `owner` 能寫入；寫入交易內再查一次 owner membership。同意列與 AuditLog `beta_agreement_accepted`（`after` 只有版本、全文 sha256 與當時的商家名稱）同一交易；`createMany skipDuplicates` 讓重複送出與併發送出只寫一列、一筆 audit。
+  - 閘門判斷「這個 vendor 有沒有目前版本的同意列」，任何 owner 的同意都算；別的 vendor 的列不算。`vendorId` 在商家刪除時 SET NULL（不加 CHECK，否則刪除商家會失敗），紀錄隨使用者保留。
+- 測試：`src/lib/beta-agreement.db.test.ts`（閘門、寫入與 audit、冪等與併發、跨租戶、版本升級、非 owner、商家 API、平台管理員、CHECK 與唯一索引、刪除商家後保留）、`src/lib/beta-agreement.test.ts`、`src/app/actions/beta-agreement-actions.test.ts`、`src/lib/auth.test.ts`。已在 loopback 拋棄式 PostgreSQL 16（`celebratedeal_test`，port 54460）forward-apply 全部 migration。
+- 部署順序：migration 先於程式（舊程式只寫 `merchant_registration`／`vendor_member_invitation`，仍符合新 CHECK）。回滾程式不需要回滾 migration；回滾後閘門消失，已寫入的同意列保留。
+- 目前 168 models、169 forward migrations（含本次一條）；既有 SQL／checksum 不變。

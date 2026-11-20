@@ -7,9 +7,10 @@ import { requireAuth, requireFinanceAdmin } from "@/lib/auth";
 import { assertServerActionSecurity } from "@/lib/csrf";
 import { getDb } from "@/lib/db";
 import { requireRecentMfa } from "@/lib/recent-mfa";
-import { isVendorBackofficeRole, signedInHomePath } from "@/lib/vendor-roles";
+import { signedInHomePath } from "@/lib/vendor-roles";
+import { switchSessionVendor, switchTargetVendorId } from "@/lib/session-vendor-switch";
 import { normalizeVendorSuspensionReason, releaseHeldEntitlements, resumeVendor, suspendVendor } from "@/lib/vendor-suspension";
-import { ACTIVE_VENDOR_WHERE, VENDOR_SUSPENDED_PATH } from "@/lib/vendor-suspension-state";
+import { VENDOR_SUSPENDED_PATH } from "@/lib/vendor-suspension-state";
 
 const ADMIN_PATH = "/admin/vendor-features";
 const VENDOR_ID = /^[A-Za-z0-9_-]{1,128}$/u;
@@ -104,29 +105,9 @@ export async function switchFromSuspendedVendorAction(formData: FormData) {
   const auth = await requireAuth({ nextPath: VENDOR_SUSPENDED_PATH });
   // Only reachable while the session's vendor is suspended; this is not a general vendor switcher.
   if (!auth.suspendedVendor) redirect(signedInHomePath(auth));
-  const vendorId = vendorIdFrom(formData);
+  const vendorId = switchTargetVendorId(formData);
   if (!vendorId) redirect(VENDOR_SUSPENDED_PATH);
-  const meta = await requestAuditMeta();
-  // The membership re-check, the session change and its audit row commit together.
-  const switched = await getDb().$transaction(async (tx) => {
-    const membership = await tx.vendorMember.findFirst({
-      where: { userId: auth.user.id, vendorId, status: "active", vendor: { is: ACTIVE_VENDOR_WHERE } },
-      select: { vendorId: true, role: true },
-    });
-    if (!membership || !isVendorBackofficeRole(membership.role)) return false;
-    const updated = await tx.userSession.updateMany({
-      where: { id: auth.session.id, userId: auth.user.id, revokedAt: null },
-      data: { vendorId: membership.vendorId },
-    });
-    if (updated.count !== 1) return false;
-    await tx.auditLog.create({ data: {
-      vendorId: membership.vendorId, actorId: auth.user.id, actorLabel: membership.role, action: "session_vendor_switched",
-      targetType: "UserSession", targetId: auth.session.id,
-      // The suspended tenant is not named in another tenant's audit trail.
-      before: { from: "suspended_vendor" }, after: { vendorId: membership.vendorId },
-      ipAddress: meta.ipAddress ?? null, userAgent: meta.userAgent ?? null,
-    } });
-    return true;
-  });
+  // Shared with the O-11 agreement gate; the suspended tenant is not named in another tenant's audit trail.
+  const switched = await switchSessionVendor(auth, vendorId, "suspended_vendor");
   redirect(switched ? "/dashboard" : VENDOR_SUSPENDED_PATH);
 }

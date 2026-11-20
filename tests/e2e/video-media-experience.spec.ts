@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { expect, test, type Page } from "@playwright/test";
 import { PrismaClient } from "@prisma/client";
 import { hashPassword } from "../../src/lib/password";
+import { seedBetaAgreementForLogin } from "./helpers/beta-agreement";
 
 const db = new PrismaClient();
 const password = "Video-Media-E2E-Password-123!";
@@ -124,6 +125,7 @@ test.afterAll(async () => {
 
 async function loginOwner(page: Page) {
   await page.goto("/login", { waitUntil: "load" });
+  await seedBetaAgreementForLogin(db, fixture.email);
   await page.getByLabel("Email").fill(fixture.email);
   await page.getByLabel("密碼").fill(password);
   await page.getByRole("button", { name: "登入" }).click();

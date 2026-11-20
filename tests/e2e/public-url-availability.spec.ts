@@ -5,6 +5,7 @@ import { assertLocalTestDatabase } from "../../scripts/local-database-safety";
 import { createFunnelFlow } from "../../src/lib/funnel-flow";
 import { createFunnelStepPages } from "../../src/lib/funnel-step-pages";
 import { createLandingPageFixture, type LandingPageFixture } from "../fixtures/landing-page";
+import { seedBetaAgreementForLogin } from "./helpers/beta-agreement";
 
 const db = new PrismaClient();
 const runKey = randomUUID();
@@ -108,6 +109,7 @@ test("the merchant sees why the public URL is unavailable", async ({ page }) => 
   await db.salesProject.update({ where: { id: fixture.project.id }, data: { status: "draft", publishedAt: null } });
   try {
     await page.goto("/login");
+    await seedBetaAgreementForLogin(db, fixture.owner.email);
     await page.getByLabel("Email").fill(fixture.owner.email);
     await page.getByLabel("密碼").fill(fixture.password);
     await page.getByRole("button", { name: "登入" }).click();

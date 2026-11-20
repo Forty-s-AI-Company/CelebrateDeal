@@ -5,6 +5,7 @@ import { runDelayedStepWorker } from "../../src/lib/automation-delayed-steps";
 import { revealEmailDeliveryPayload } from "../../src/lib/email-delivery-pii";
 import { createFormSubmissionVerificationToken } from "../../src/lib/form-submission-verification";
 import { hashPassword } from "../../src/lib/password";
+import { seedBetaAgreementForLogin } from "./helpers/beta-agreement";
 
 /**
  * F-4 PR 2 自動化規則的延遲步驟, end to end on the production build: an owner
@@ -83,6 +84,7 @@ async function cleanup(fixture: Fixture | null) {
 
 async function login(page: Page, email: string) {
   await page.goto("/login", { waitUntil: "load" });
+  await seedBetaAgreementForLogin(db, email);
   await page.getByLabel("Email").fill(email);
   await page.getByLabel("密碼").fill(password);
   await page.getByRole("button", { name: "登入" }).click();
@@ -183,6 +185,7 @@ test("a registration gets the rule's 2-hour step from the worker, after the owne
     try {
       await visitorPage.goto(`/form/${encodeURIComponent(fixture.form.slug)}`, { waitUntil: "load" });
       await visitorPage.getByLabel("姓名").fill("延遲學員");
+      await seedBetaAgreementForLogin(db, leadEmail);
       await visitorPage.getByLabel("Email").fill(leadEmail);
       await visitorPage.getByRole("button", { name: "送出報名" }).click();
       await expect(visitorPage.getByRole("status").filter({ hasText: "已收到你的資料" })).toBeVisible();

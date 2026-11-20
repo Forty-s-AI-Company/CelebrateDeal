@@ -3,6 +3,8 @@ import {test,expect} from "@playwright/test";
 import {PrismaClient} from "@prisma/client";
 import {createMerchantRegistrationInvite} from "../../src/lib/merchant-registration-invite";
 import {createMerchantEmailVerificationToken} from "../../src/lib/merchant-email-verification-token";
+import {BETA_AGREEMENT_VERSION} from "../../src/lib/beta-agreement-content";
+import {acceptBetaAgreementInBrowser} from "./helpers/beta-agreement";
 const db=new PrismaClient();
 test.use({trace:"off",screenshot:"off",video:"off"});test.setTimeout(180_000);
 test.afterAll(async()=>db.$disconnect());
@@ -22,8 +24,13 @@ for(const width of [1440,390])test(`registration and questionnaire round trip at
   await page.locator('form').getByRole('button').click();await expect(page).toHaveURL(/\/register\?invite=/u);
   await expect(page.getByRole('link',{name:'使用條款'})).toHaveAttribute('href','/policies/terms');await expect(page.getByRole('link',{name:'隱私通知'})).toHaveAttribute('href','/policies/privacy');
   await page.getByRole('checkbox',{name:/我已閱讀並同意/u}).check();
-  await page.locator('form').getByRole('button').click();await expect(page).toHaveURL(/\/welcome$/u);
+  await expect(page.getByRole('link',{name:'封測合作協議'})).toHaveAttribute('href','/policies/beta-agreement');
+  // O-11: the new owner reads and accepts the 封測合作協議 before the back office, then returns to the questionnaire.
+  await page.locator('form').getByRole('button').click();await expect(page).toHaveURL(/\/beta-agreement\?next=%2Fwelcome$/u);
+  expect(await db.userPolicyConsent.count({where:{user:{email},context:'beta_agreement'}})).toBe(0);
+  await acceptBetaAgreementInBrowser(page);await expect(page).toHaveURL(/\/welcome$/u);
   expect(await db.userPolicyConsent.count({where:{user:{email},context:'merchant_registration'}})).toBe(1);
+  expect(await db.userPolicyConsent.count({where:{user:{email},context:'beta_agreement',agreementVersion:BETA_AGREEMENT_VERSION}})).toBe(1);
   for(let step=0;step<4;step++){
    if(step===2)await page.getByRole('checkbox').first().click();else await page.getByRole('radio').first().click();
    const next=page.getByRole('button',{name:step===3?'產生我的工作空間':'下一題',exact:true});await expect(next).toBeEnabled();await next.click();

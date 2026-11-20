@@ -1,4 +1,5 @@
 import { getCurrentAuth } from "@/lib/auth";
+import { betaAgreementApiResponse } from "@/lib/beta-agreement";
 import { getDb } from "@/lib/db";
 import { readJsonBody, requireSameOriginRequest } from "@/lib/api-security";
 import { checkRateLimit } from "@/lib/rate-limit";
@@ -19,6 +20,9 @@ async function handle(request: Request, writing: boolean) {
       const auth = await getCurrentAuth();
       if (!auth?.vendor || !auth.member || auth.member.status !== "active" || !["owner", "admin"].includes(auth.member.role)) return json({ error: "Forbidden" }, 403);
       if (writing) {
+        // O-11: instructor writes wait for the vendor's 封測合作協議 acceptance.
+        const agreementRequired = await betaAgreementApiResponse(auth, { "Cache-Control": "private, no-store" });
+        if (agreementRequired) return agreementRequired;
         if ([...params.keys()].some(k => k !== "mode")) return json({ error: "Invalid request" }, 400);
         const parsed = CardCommandSchema.safeParse(await readJsonBody(request, 8192));
         if (!parsed.success) return json({ error: "Invalid card" }, 400);

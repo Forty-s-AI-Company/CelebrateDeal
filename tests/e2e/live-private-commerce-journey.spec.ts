@@ -5,6 +5,7 @@ import { hashPassword } from "../../src/lib/password";
 import { formatPrivateInboxDiagnostic } from "../../scripts/private-inbox-diagnostic";
 import { startPrivateChatLoopbackIngress } from "../../scripts/live-private-loopback-ingress.mjs";
 import { createFormSubmissionChatSessionToken, FORM_SUBMISSION_CHAT_SESSION_COOKIE } from "../../src/lib/form-submission-chat-session";
+import { seedBetaAgreementForLogin } from "./helpers/beta-agreement";
 
 test.use({ baseURL: "http://127.0.0.1:31044", trace: "off", screenshot: "off", video: "off" });
 test.setTimeout(120_000);
@@ -60,6 +61,7 @@ test("verified viewer and actual instructor exchange private messages; other vie
     await expect(second.page.getByText("甲的合成私人問題", { exact: true })).toHaveCount(0);
 
     await page.goto("/login");
+    await seedBetaAgreementForLogin(db, user.email);
     await page.getByLabel("Email").fill(user.email);
     await page.getByLabel("密碼").fill(password);
     await page.getByRole("button", { name: "登入", exact: true }).click();

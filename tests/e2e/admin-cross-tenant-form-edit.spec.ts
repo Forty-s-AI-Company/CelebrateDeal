@@ -3,6 +3,7 @@ import { expect, test } from "@playwright/test";
 import { PrismaClient } from "@prisma/client";
 import { hashPassword } from "../../src/lib/password";
 import { navigateAndAssertDirectUrlGuard } from "./helpers/direct-url-guard";
+import { seedBetaAgreementForLogin } from "./helpers/beta-agreement";
 
 const db = new PrismaClient();
 const password = "Wp34SyntheticPassword!";
@@ -23,7 +24,7 @@ test("admin cannot open another vendor form edit route through direct URL naviga
   ]);
   const [ownBefore, foreignBefore, ownerCount, foreignCount] = await Promise.all([db.registrationForm.findUniqueOrThrow({ where: { id: ownForm.id } }), db.registrationForm.findUniqueOrThrow({ where: { id: foreignForm.id } }), db.registrationForm.count({ where: { vendorId: ownerVendor.id } }), db.registrationForm.count({ where: { vendorId: foreignVendor.id } })]);
   try {
-    await page.goto("/login"); await page.getByLabel("Email").fill(user.email); await page.getByLabel("密碼").fill(password); await page.getByRole("button", { name: "登入" }).click(); await expect(page).toHaveURL(/\/dashboard$/);
+    await page.goto("/login"); await seedBetaAgreementForLogin(db, user.email); await page.getByLabel("Email").fill(user.email); await page.getByLabel("密碼").fill(password); await page.getByRole("button", { name: "登入" }).click(); await expect(page).toHaveURL(/\/dashboard$/);
     const ownPath = `/forms/${ownForm.id}/edit`; const ownResponse = await page.goto(ownPath); expect(ownResponse?.status()).toBe(200); await expect(page).toHaveURL(new RegExp(`${ownPath}$`)); await expect(page.getByRole("heading", { name: "編輯報名表" })).toBeVisible(); await expect(page.getByLabel("表單名稱")).toHaveValue(ownBefore.name); await expect(page.getByLabel("公開網址")).toHaveValue(ownBefore.slug); await expect(page.getByLabel("公開標題")).toHaveValue(ownBefore.headline); await expect(page.getByText("欄位 JSON", { exact: true })).toHaveCount(0); await expect(page.getByLabel("顯示名稱")).toHaveCount(fields.length); await expect(page.getByText("核心欄位", { exact: true })).toHaveCount(2); expect(JSON.parse(await page.locator('input[name="fields"]').inputValue())).toEqual(ownBefore.fields);
     const foreignPath = `/forms/${foreignForm.id}/edit`;
     const foreignCanaries = [foreignBefore.name, foreignBefore.slug, foreignBefore.headline, foreignBefore.description ?? ""];

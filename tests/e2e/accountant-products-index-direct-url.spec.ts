@@ -4,6 +4,7 @@ import { PrismaClient } from "@prisma/client";
 import { formatCurrency } from "../../src/lib/format";
 import { hashPassword } from "../../src/lib/password";
 import { navigateAndAssertDirectUrlGuard } from "./helpers/direct-url-guard";
+import { seedBetaAgreementForLogin } from "./helpers/beta-agreement";
 
 const db = new PrismaClient();
 const password = "Wp67SyntheticPassword!";
@@ -96,6 +97,7 @@ test("active accountant is denied the products index before product data is quer
 
   try {
     await page.goto("/login");
+    await seedBetaAgreementForLogin(db, user.email);
     await page.getByLabel("Email").fill(user.email);
     await page.getByLabel("密碼").fill(password);
     await page.getByRole("button", { name: "登入" }).click();

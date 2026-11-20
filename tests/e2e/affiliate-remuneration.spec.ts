@@ -7,6 +7,7 @@ import { appendCommissionLedgerEntry } from "../../src/lib/affiliate-commission-
 import { reconcileAffiliatePendingPayout } from "../../src/lib/affiliate-payout-accounting";
 import { CSRF_FIELD_NAME } from "../../src/lib/csrf-constants";
 import { formatAffiliateRemuneration } from "../../src/lib/affiliate-remuneration-format";
+import { seedBetaAgreementForLogin } from "./helpers/beta-agreement";
 test.use({ trace: "off", screenshot: "off", video: "off" });
 test.setTimeout(180000);
 test("owner sets fee; partner submits, receives approval, signs and exports; refund/revoke stay isolated", async ({ page, browser, baseURL }) => {
@@ -27,7 +28,7 @@ test("owner sets fee; partner submits, receives approval, signs and exports; ref
   const memberPath = `/affiliate-portal/${vendor.slug}/${affiliate.id}/remuneration`, managerPath = `/affiliates/${affiliate.id}/remuneration`;
   // Partners land on the partner portal; they never get the merchant back office.
   async function login(target: typeof page, email: string, home: RegExp = /\/dashboard$/u) {
-    await target.goto(`${baseURL}/login`); await target.getByLabel("Email").fill(email); await target.getByLabel("密碼").fill(password); await target.getByRole("button", { name: "登入", exact: true }).click(); await expect(target).toHaveURL(home);
+    await target.goto(`${baseURL}/login`); await seedBetaAgreementForLogin(db, email); await target.getByLabel("Email").fill(email); await target.getByLabel("密碼").fill(password); await target.getByRole("button", { name: "登入", exact: true }).click(); await expect(target).toHaveURL(home);
   }
   // Synthetic CSRF stays inside the browser; only HTTP status leaves evaluate.
   async function exportStatus(target: typeof page, endpoint: string) {

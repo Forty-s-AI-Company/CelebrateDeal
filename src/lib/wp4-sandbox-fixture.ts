@@ -1,4 +1,5 @@
 import type { Prisma, PrismaClient } from "@prisma/client";
+import { BETA_AGREEMENT_CONTEXT, BETA_AGREEMENT_VERSION } from "@/lib/beta-agreement-content";
 
 export const WP4_SANDBOX_FIXTURE = Object.freeze({
   vendorId: "wp4_synthetic_vendor_v1",
@@ -22,7 +23,7 @@ export class Wp4SandboxFixtureConflictError extends Error {
 }
 
 const FIXTURE_DB_CODES = ["P2022", "P2021", "P2002", "P2003", "P1001"] as const;
-type FixtureStage = "VENDOR" | "OWNER" | "MEMBERSHIP" | "PRODUCT" | "PLAN" | "INVOICE" | "TRANSACTION";
+type FixtureStage = "VENDOR" | "OWNER" | "MEMBERSHIP" | "PRODUCT" | "PLAN" | "INVOICE" | "BETA_AGREEMENT" | "TRANSACTION";
 
 /** Only a fixed stage and an allowlisted Prisma code may leave the server. */
 export class Wp4SandboxFixtureDatabaseError extends Error {
@@ -164,6 +165,26 @@ async function ensureMembership(db: FixtureDb) {
   return true;
 }
 
+/**
+ * O-11: the synthetic owner has accepted the current 封測合作協議 for the
+ * synthetic vendor, so the staging runners that open its back office (browser
+ * smoke, funnel and image smokes) reach the pages instead of the gate. This is
+ * fixture state like the membership above: the gate still checks every
+ * request. It is not one of the six counted identities (the runner contract
+ * fixes that count); a new agreement version adds one more row here.
+ */
+async function ensureBetaAgreement(db: FixtureDb) {
+  await db.userPolicyConsent.createMany({
+    data: [{
+      userId: WP4_SANDBOX_FIXTURE.userId,
+      vendorId: WP4_SANDBOX_FIXTURE.vendorId,
+      context: BETA_AGREEMENT_CONTEXT,
+      agreementVersion: BETA_AGREEMENT_VERSION,
+    }],
+    skipDuplicates: true,
+  });
+}
+
 async function ensureProduct(db: FixtureDb) {
   const existing = await db.product.findFirst({
     where: {
@@ -297,6 +318,7 @@ export async function ensureWp4SandboxFixture(db: PrismaClient) {
         await fixtureStep("PLAN", () => ensurePlan(tx)),
         await fixtureStep("INVOICE", () => ensureInvoice(tx)),
       ];
+      await fixtureStep("BETA_AGREEMENT", () => ensureBetaAgreement(tx));
       const createdCount = outcomes.filter(Boolean).length;
       return { createdCount, reusedCount: outcomes.length - createdCount };
     });
