@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { expect, test, type Page } from "@playwright/test";
 import { PrismaClient } from "@prisma/client";
 import { hashPassword } from "../../src/lib/password";
+import { seedBetaAgreementForLogin } from "../e2e/helpers/beta-agreement";
 import { WP4_SANDBOX_FIXTURE as fixed } from "../../src/lib/wp4-sandbox-fixture";
 import { PaymentWebhookPayload, processPaymentWebhook } from "../../src/lib/payment-webhooks";
 test.use({ trace: "off", screenshot: "off", video: "off" });
@@ -72,7 +73,7 @@ test("fixed owner selects a private sandbox plan, reloads real entitlement/refun
   // Legacy active flags still cannot expose the fixed plan to another real authenticated owner.
   await db.billingPlan.update({ where: { id: fixed.planId }, data: { isActive: true } });
   const foreign = await foreignContext.newPage(); await foreign.goto(`${baseURL}/login`);
-  await foreign.getByLabel("Email").fill(foreignUser.email); await foreign.getByLabel("密碼").fill(password);
+  await seedBetaAgreementForLogin(db, foreignUser.email); await foreign.getByLabel("Email").fill(foreignUser.email); await foreign.getByLabel("密碼").fill(password);
   await foreign.getByRole("button", { name: "登入", exact: true }).click(); await expect(foreign).toHaveURL(/\/dashboard$/);
   // F-027 / PR #462: give the foreign owner a fresh step-up so the forged
   // selection below is refused by plan scope, not merely by missing MFA.

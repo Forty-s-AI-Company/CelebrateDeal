@@ -6,6 +6,7 @@ import { randomUUID } from "node:crypto";
 import { expect, test, type Page } from "@playwright/test";
 import { PrismaClient } from "@prisma/client";
 import { hashPassword } from "../../src/lib/password";
+import { seedBetaAgreementForLogin } from "../e2e/helpers/beta-agreement";
 import { unprotectFacebookAccessToken } from "../../src/lib/tracking-credentials";
 import { protectCommerceOrderPii } from "../../src/lib/commerce-order-pii";
 import { PaymentWebhookPayload, processPaymentWebhook } from "../../src/lib/payment-webhooks";
@@ -36,7 +37,10 @@ async function grantRecentMfa(db: PrismaClient, userId: string) {
   await db.userSession.updateMany({ where: { userId, revokedAt: null }, data: { mfaVerifiedAt: new Date() } });
 }
 async function user(db: PrismaClient, vendorId: string, role: string) {
-  return db.user.create({ data: { email: `tracking-${randomUUID()}@example.test`, name: "合成追蹤管理員", passwordHash: hashPassword(password), status: "active", memberships: { create: { vendorId, role, status: "active" } } } });
+  const created = await db.user.create({ data: { email: `tracking-${randomUUID()}@example.test`, name: "合成追蹤管理員", passwordHash: hashPassword(password), status: "active", memberships: { create: { vendorId, role, status: "active" } } } });
+  // The vendor accepted the 封測合作協議 earlier (O-11); this suite is about tracking settings.
+  await seedBetaAgreementForLogin(db, created.email);
+  return created;
 }
 async function vendor(db: PrismaClient) {
   const id = randomUUID(); return db.vendor.create({ data: { betaFeatureGrants: ["courses", "billing", "funnel_binding", "consultation_booking", "browser_live", "danmaku"], enabledFeatureModules: ["funnel_builder", "live_webinar", "affiliate_program", "tax_remuneration", "analytics_advanced", "consultation_booking"], name: "合成追蹤商店", slug: `tracking-browser-${id}`, email: `${id}@example.test`, passwordHash: hashPassword(password), tracking: { create: { facebookPixelId: "123456789" } } } });

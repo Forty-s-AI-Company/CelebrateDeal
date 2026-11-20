@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { afterAll, describe, expect, it, vi } from "vitest";
 import { classifyLocalTestDatabase } from "../../scripts/local-database-safety";
 import { getDb } from "./db";
+import { BETA_AGREEMENT_CONTEXT, BETA_AGREEMENT_VERSION } from "./beta-agreement-content";
 import { DEFAULT_PRESENTER_LAYOUT, PresenterLayoutSchema } from "./presenter-layout";
 import { cleanupMediaSessions } from "./live-media-cleanup";
 
@@ -14,6 +15,9 @@ import { POST } from "@/app/api/live-presenter/route";
 async function fixture() {
   const db = getDb(); const suffix = randomUUID();
   const vendor = await db.vendor.create({ data: { name: "Synthetic presenter", slug: `presenter-${suffix}`, email: `${suffix}@example.test`, passwordHash: "synthetic" } });
+  // The vendor's owner accepted the 封測合作協議 earlier (O-11); the gate is covered by beta-agreement-api-routes.db.test.ts.
+  const owner = await db.user.create({ data: { name: "Synthetic owner", email: `owner-${suffix}@example.test`, passwordHash: "synthetic", memberships: { create: { vendorId: vendor.id, role: "owner", status: "active" } } } });
+  await db.userPolicyConsent.create({ data: { userId: owner.id, vendorId: vendor.id, context: BETA_AGREEMENT_CONTEXT, agreementVersion: BETA_AGREEMENT_VERSION } });
   const live = await db.live.create({ data: { vendorId: vendor.id, title: "Synthetic presenter", slug: `presenter-live-${suffix}`, scheduledAt: new Date(), status: "scheduled" } });
   const scope = { vendorId: vendor.id, liveId: live.id };
   const session = (principal = "instructor:synthetic") => ({ ...scope, principal, direction: "publish", resourcePath: "/synthetic/session", expiresAt: new Date(Date.now() - 1000) });

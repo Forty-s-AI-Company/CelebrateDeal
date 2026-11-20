@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { PrismaClient } from "@prisma/client";
 import { expect, type Page } from "@playwright/test";
 import { hashPassword } from "../../src/lib/password";
+import { seedBetaAgreementForLogin } from "../e2e/helpers/beta-agreement";
 
 /**
  * Synthetic Live Studio tenant that mirrors the 2026-10-29 staging report:
@@ -26,6 +27,8 @@ export async function createLiveStudioFixture(db: PrismaClient) {
     status: "active",
     memberships: { create: { vendorId: vendor.id, role: "owner", status: "active" } },
   } });
+  // The owner accepted the 封測合作協議 earlier (O-11); Live Studio specs are not about the gate.
+  await seedBetaAgreementForLogin(db, user.email);
   const video = await db.video.create({ data: {
     vendorId: vendor.id,
     title: "合成原型食物講座影片",

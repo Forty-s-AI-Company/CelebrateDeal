@@ -246,6 +246,7 @@ test.beforeAll(async () => {
   ]);
   const user = await db.user.create({ data: { email: "g7-06-manager-" + runId + "@example.test", name: "G7-06 Manager", passwordHash: "synthetic", status: "active", memberships: { create: { vendorId: vendor.id, role: "owner", status: "active" } } } });
   await db.userSession.create({ data: { userId: user.id, vendorId: vendor.id, tokenHash, expiresAt: new Date("2030-01-01T00:00:00.000Z") } });
+  await db.userPolicyConsent.create({ data: { userId: user.id, vendorId: vendor.id, context: "beta_agreement", agreementVersion: (await import("../../src/lib/beta-agreement-content")).BETA_AGREEMENT_VERSION } });
   const [role, foreignRole, product] = await Promise.all([
     db.interactionRole.create({ data: { vendorId: vendor.id, name: "G7-06 官方小編", label: "官方角色", roleType: "official", tone: "合成角色", isActive: true } }),
     db.interactionRole.create({ data: { vendorId: foreign.id, name: "G7-06 Foreign Role", label: "Foreign Canary", roleType: "official", isActive: true } }),
