@@ -1,4 +1,5 @@
 import { getCurrentAuth } from "@/lib/auth";
+import { betaAgreementApiResponse } from "@/lib/beta-agreement";
 import { getDb } from "@/lib/db";
 import { readJsonBody, requireSameOriginRequest } from "@/lib/api-security";
 import { checkRateLimit } from "@/lib/rate-limit";
@@ -18,6 +19,9 @@ async function handle(request: Request, writing: boolean) {
     if (closed) return closed;
     const params = new URL(request.url).searchParams;
     if (writing) {
+      // O-11: warm-up scripts (封測合作協議 第 5 條) run only after the vendor accepts it.
+      const agreementRequired = await betaAgreementApiResponse(auth, { "Cache-Control": "private, no-store" });
+      if (agreementRequired) return agreementRequired;
       if (params.size) return json({ error: "不合法參數" }, 400);
       const command = ScriptedCommandSchema.safeParse(await readJsonBody(request, 2048));
       if (!command.success) return json({ error: "不合法指令" }, 400);

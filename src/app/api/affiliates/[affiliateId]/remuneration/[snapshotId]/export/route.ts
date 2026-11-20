@@ -1,6 +1,7 @@
 import { Prisma } from "@prisma/client";
 import { z } from "zod";
 import { getCurrentAuth } from "@/lib/auth";
+import { betaAgreementApiResponse } from "@/lib/beta-agreement";
 import { readFormDataBody, requireSameOriginRequest } from "@/lib/api-security";
 import { CSRF_FIELD_NAME, verifyCsrfToken } from "@/lib/csrf";
 import { getDb } from "@/lib/db";
@@ -17,6 +18,9 @@ export async function POST(request: Request, context: { params: Promise<{ affili
   const auth = await getCurrentAuth();
   if (!auth?.vendor || (auth.user.mfaFactor && !auth.isMfaVerified)) return failure(401);
   if (!["affiliate_program", "tax_remuneration"].every(feature => auth.vendor!.enabledFeatureModules.includes(feature))) return failure(404);
+  // O-11: payee data does not leave before the vendor accepts the 封測合作協議.
+  const agreementRequired = await betaAgreementApiResponse(auth, PrivateHeaders);
+  if (agreementRequired) return agreementRequired;
   const form = await readFormDataBody(request, 4096), token = form?.get(CSRF_FIELD_NAME);
   if (typeof token !== "string" || !await verifyCsrfToken(token)) return failure(403);
   const params = await context.params;

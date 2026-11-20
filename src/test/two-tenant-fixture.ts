@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import { Prisma, type PrismaClient } from "@prisma/client";
+import { BETA_AGREEMENT_CONTEXT, BETA_AGREEMENT_VERSION } from "@/lib/beta-agreement-content";
 
 /**
  * F-134 / B08-05: shared two-tenant fixture for real-PostgreSQL action tests.
@@ -78,6 +79,9 @@ async function createTenant(db: PrismaClient, label: string, trail: Trail): Prom
       vendor: { id: vendor.id, name: vendor.name, enabledFeatureModules: vendor.enabledFeatureModules },
     };
   }
+
+  // The owner accepted the 封測合作協議 earlier (O-11); the gate has its own tests (src/lib/beta-agreement*.db.test.ts).
+  await db.userPolicyConsent.create({ data: { userId: actors.owner.user.id, vendorId: vendor.id, context: BETA_AGREEMENT_CONTEXT, agreementVersion: BETA_AGREEMENT_VERSION } });
 
   const project = await db.salesProject.create({
     data: { vendorId: vendor.id, name: `Project ${label}`, slug: key, mode: "live_course", primaryFlow: "live", status: "draft" },

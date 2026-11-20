@@ -329,7 +329,13 @@ PayUni 的 Notify 整個遺失時，`/api/jobs/payment-reconcile`（`JOB_SECRET`
 | 平台管理員 | 不受影響（甲方），即使同時是某商家成員 |
 | 學員、買家、公開頁 | 不受影響 |
 
-- 閘門在 `requireVendorContext`（所有後台頁、layout、Server Action）、`requireVendorOwner` 與 `requireMerchantApiActor`（回 403 `BETA_AGREEMENT_REQUIRED`）。直接用 `getCurrentAuth` 授權的幾個講師／直播 API（`live-media`、`live-presenter`、`live-danmaku`、`live-interactions/cards`、`live-chat/instructor`、`products/upsert`、`media/videos/status`、聯盟報酬匯出）沒有加；未同意的商家打不開呼叫它們的後台頁。
+- 閘門在 `requireVendorContext`（所有後台頁、layout、Server Action）、`requireVendorOwner` 與 `requireMerchantApiActor`（回 403 `BETA_AGREEMENT_REQUIRED`）。
+- 直接用 `getCurrentAuth` 授權的 API 在角色檢查之後呼叫共用的 `betaAgreementApiResponse(auth)`，同樣回 403 `BETA_AGREEMENT_REQUIRED`：`products/upsert`、`live-danmaku/scripted` 的 POST（暖場腳本，協議第 5 條）、`live-danmaku`／`live-interactions/cards`／`live-chat/instructor`／`live-presenter` 的講師 POST、聯盟報酬匯出、`live-media` 的 `offer`（`heartbeat`／`stop` 不擋，部署當下正在進行的直播不會被切斷）。測試：`src/lib/beta-agreement-api-routes.db.test.ts`。
+- 後續（尚未加閘門）：`media/videos/status`，以及上述 API 的 GET（講師端讀取）。未同意的商家打不開呼叫它們的後台頁，風險只剩直接打 API 讀自己商家的資料。
+- `billing/plans/select` 的原生表單把 `/beta-agreement` 列在可轉址清單（`REDIRECT_PATHS`），未同意時轉到閘門而不是 500。
+- 等待頁（非 owner）有「切換商家」，與 `/vendor-suspended` 共用 `src/lib/session-vendor-switch.ts`；稽核 `before.from = beta_agreement_pending`。
+- 平台管理員本人是 owner 時不受閘門限制，但可自己開 `/beta-agreement` 為該商家同意。沒有 active owner 的商家見 `docs/goal-beta-prep-2026Q4/BETA-OPS.md`。
+- 條文全文的 sha256 綁在版本號上（`src/lib/beta-agreement.test.ts`），audit `after.agreementSha256` 記錄同意當下的全文 hash；甲方名稱與信箱寫死在協議模組，不隨客服信箱變動。
 - 判斷依據：這個 vendor 有沒有 `UserPolicyConsent(context = beta_agreement, agreementVersion = 現行版本)`；任何 owner 的同意都算，別的 vendor 的不算。條文實質變動時換版本號，所有商家下一次進後台都要重新同意。
 - 新註冊：註冊頁只提示「進入後台前會請你閱讀並同意」並連到公開頁；`registerAction` 不寫協議同意，註冊後第一次進後台（`/welcome`）走同一個彈窗，同意後回 `/welcome`，同一人只同意一次。
 - 測試與 fixture：e2e 以 `tests/e2e/helpers/beta-agreement.ts` 的 `seedBetaAgreementForLogin` 在登入前寫入同一種同意列（fixture，閘門照常檢查）；閘門本身由 `tests/e2e/beta-agreement.spec.ts` 與 `registration-onboarding.spec.ts` 用鍵盤操作驗證。staging WP4 合成商家由 `ensureWp4SandboxFixture` 寫入同意列；`staging-first-success.mjs` 在註冊後走 `BETA_AGREEMENT` 步驟。

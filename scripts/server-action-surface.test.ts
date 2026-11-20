@@ -48,6 +48,7 @@ function surfaceFiles() {
 const EXPECTED_SURFACE: readonly string[] = [
   "acceptBetaAgreementAction",
   "acceptVendorMemberInvitationAction",
+  "switchFromBetaAgreementGateAction",
   "activateEmailSequenceAction",
   "addBuyerSupportReplyAction",
   "addCustomerTagAction",

@@ -10,6 +10,8 @@ vi.mock("@/lib/api-security", () => ({
 }));
 vi.mock("@/lib/rate-limit", () => ({ checkRateLimit: mocks.rateLimit }));
 
+// The vendor accepted the 封測合作協議 (O-11); the gate is covered by src/lib/beta-agreement-api-routes.db.test.ts.
+vi.mock("@/lib/beta-agreement", () => ({ betaAgreementApiResponse: vi.fn(async () => null) }));
 import { GET, POST } from "./route";
 
 describe("live danmaku route", () => {

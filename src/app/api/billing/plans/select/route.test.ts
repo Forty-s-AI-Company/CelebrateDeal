@@ -74,6 +74,17 @@ describe("POST /api/billing/plans/select", () => {
     await expect(response.json()).resolves.toEqual({ error: "checkout" });
   });
 
+  it("turns the 封測合作協議 gate redirect into a native 303 (O-11)", async () => {
+    mocks.createPlatformPlanCheckout.mockRejectedValueOnce(Object.assign(new Error("NEXT_REDIRECT"), {
+      digest: "NEXT_REDIRECT;replace;/beta-agreement?next=%2Fbilling%2Fplans;307;",
+    }));
+
+    const response = await POST(request());
+
+    expect(response.status).toBe(303);
+    expect(response.headers.get("location")).toBe("/beta-agreement?next=%2Fbilling%2Fplans");
+  });
+
   it("fails closed when the shared path builder rejects", async () => {
     mocks.platformPlanCheckoutPath.mockImplementationOnce(() => {
       throw new Error("unsafe redirect must be rejected by the transport");

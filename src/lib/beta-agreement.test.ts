@@ -6,23 +6,33 @@ import {
   betaAgreementGatePath,
   betaAgreementReturnPath,
   canAcceptBetaAgreement,
+  betaAgreementTextSha256,
   isCurrentBetaAgreementVersion,
   recordBetaAgreementAcceptance,
 } from "@/lib/beta-agreement";
 import { BETA_AGREEMENT_VERSION, betaAgreement } from "@/lib/beta-agreement-content";
-import { publicSupportContact } from "@/lib/public-policy-content";
 
 describe("封測合作協議 content", () => {
   it("has a database-safe version and the owner's 2026-11-20 decisions", () => {
     expect(BETA_AGREEMENT_VERSION).toBe("beta-2026.11.20");
     // UserPolicyConsent_version_check
     expect(BETA_AGREEMENT_VERSION).toMatch(/^[0-9A-Za-z._-]{1,32}$/u);
-    expect(betaAgreement.operator).toEqual({ name: "Carry Digital Nomad 凱瑞數位", email: publicSupportContact.email });
+    // Written into the module, not read from publicSupportContact (review m-1).
+    expect(betaAgreement.operator).toEqual({ name: "Carry Digital Nomad 凱瑞數位", email: "a88221144@gmail.com" });
     const item = (section: number, index: number) => betaAgreement.sections.find((entry) => entry.number === section)!.items[index - 1];
     expect(item(1, 1)).toBe("封測期間自乙方同意本協議之日起，至本平台正式上線為止；甲方得以 Email 通知提前結束或調整。");
     expect(item(8, 2)).toBe("甲方依本協議對乙方負擔的賠償總額，以新台幣 3,000 元為上限。");
     expect(item(11, 3)).toBe("本協議以乙方在本平台勾選同意的方式簽署，本平台記錄同意的帳號、商家、協議版本與時間。");
     expect(betaAgreement.sections.map((section) => section.number)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]);
+  });
+
+  it("binds the full text to its version: changing a word without a new version fails here", () => {
+    // When the text changes on purpose: give it a new BETA_AGREEMENT_VERSION (every
+    // merchant accepts again) and record the new pair below in the same commit.
+    expect({ version: BETA_AGREEMENT_VERSION, sha256: betaAgreementTextSha256() }).toEqual({
+      version: "beta-2026.11.20",
+      sha256: "868d7d8f2efd87424e857dfdf48060681fffe19084babb5c72be616167ac0f96",
+    });
   });
 
   it("leaves no unfilled blank or drafting note in the text", () => {
@@ -88,7 +98,7 @@ describe("recordBetaAgreementAcceptance", () => {
     });
     expect(tx.auditLog.create).toHaveBeenCalledWith({ data: expect.objectContaining({
       vendorId: "vendor-1", actorId: "user-1", action: "beta_agreement_accepted", targetType: "Vendor", targetId: "vendor-1",
-      after: { agreementVersion: BETA_AGREEMENT_VERSION, vendorName: "合成商家" },
+      after: { agreementVersion: BETA_AGREEMENT_VERSION, agreementSha256: betaAgreementTextSha256(), vendorName: "合成商家" },
     }) });
   });
 

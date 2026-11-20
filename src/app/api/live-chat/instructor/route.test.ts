@@ -5,6 +5,8 @@ vi.mock("@/lib/db", () => ({ getDb: mocks.db }));
 vi.mock("@/lib/live-private-chat", () => ({ listPrivateInstructorChat: mocks.list, listPrivateInstructorConversations: mocks.threads, createPrivateInstructorChat: mocks.create }));
 vi.mock("@/lib/csrf", () => ({ getCsrfToken: mocks.token, verifyCsrfToken: mocks.csrf }));
 vi.mock("@/lib/rate-limit", () => ({ checkRateLimit: mocks.rate }));
+// The vendor accepted the 封測合作協議 (O-11); the gate is covered by src/lib/beta-agreement-api-routes.db.test.ts.
+vi.mock("@/lib/beta-agreement", () => ({ betaAgreementApiResponse: vi.fn(async () => null) }));
 import { GET, POST } from "./route";
 const actor = { user: { id: "user-a" }, vendor: { id: "tenant-a" }, member: { id: "member-a", role: "owner", status: "active" }, session: { id: "session-a" } };
 function request(method = "GET", body?: object, query = "liveId=live-a") {

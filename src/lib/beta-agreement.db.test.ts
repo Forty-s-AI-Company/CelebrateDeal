@@ -33,9 +33,9 @@ vi.mock("@/lib/beta-agreement-content", async (importOriginal) => {
   };
 });
 
-import { acceptBetaAgreementAction } from "@/app/actions/beta-agreement-actions";
+import { acceptBetaAgreementAction, switchFromBetaAgreementGateAction } from "@/app/actions/beta-agreement-actions";
 import { requireVendorContext, requireVendorOwner } from "@/lib/auth";
-import { BETA_AGREEMENT_CONTEXT, recordBetaAgreementAcceptance, vendorHasAcceptedBetaAgreement } from "@/lib/beta-agreement";
+import { BETA_AGREEMENT_CONTEXT, betaAgreementTextSha256, recordBetaAgreementAcceptance, vendorHasAcceptedBetaAgreement } from "@/lib/beta-agreement";
 import { getDb } from "@/lib/db";
 import { requireMerchantApiActor } from "@/lib/merchant-api-security";
 
@@ -118,7 +118,7 @@ describe("封測合作協議 gate and consent record", () => {
       termsVersion: null, privacyVersion: null, acceptedAt: expect.any(Date),
     })]);
     const audits = await db.auditLog.findMany({ where: { vendorId: vendor.id, action: "beta_agreement_accepted" } });
-    expect(audits).toEqual([expect.objectContaining({ actorId: owner.id, targetType: "Vendor", targetId: vendor.id, after: { agreementVersion: ORIGINAL_VERSION, vendorName: "Beta A" } })]);
+    expect(audits).toEqual([expect.objectContaining({ actorId: owner.id, targetType: "Vendor", targetId: vendor.id, after: { agreementVersion: ORIGINAL_VERSION, agreementSha256: betaAgreementTextSha256(), vendorName: "Beta A" } })]);
 
     await expect(outcome(() => requireVendorContext())).resolves.toBe("completed");
     await expect(outcome(() => requireVendorOwner())).resolves.toBe("completed");
@@ -224,6 +224,50 @@ describe("封測合作協議 gate and consent record", () => {
     const allowed = await requireMerchantApiActor(merchantApiRequest());
     // Past the agreement check; the request then stops at the CSRF header it does not carry.
     await expect(allowed.response?.json()).resolves.toEqual({ error: { code: "FORBIDDEN" } });
+  });
+
+  it("lets a held member switch the session to another of their vendors (review m-2)", async () => {
+    const held = await createVendor("Held");
+    const other = await createVendor("Other");
+    const stranger = await createVendor("Stranger");
+    const owner = await createUser("HeldOwner");
+    const member = await createUser("HeldMember");
+    await addMember(held.id, owner.id, "owner");
+    await addMember(held.id, member.id, "admin");
+    await addMember(other.id, member.id, "owner");
+    await recordBetaAgreementAcceptance(db, { userId: member.id, vendorId: other.id, vendorName: other.name });
+    await signIn(member.id, held.id);
+    await expect(outcome(() => requireVendorContext())).resolves.toBe("redirect:/beta-agreement");
+
+    const switchForm = (vendorId: string) => { const form = new FormData(); form.set("vendorId", vendorId); return form; };
+    // Not a member of the stranger vendor: nothing changes.
+    await expect(outcome(() => switchFromBetaAgreementGateAction(switchForm(stranger.id)))).resolves.toBe("redirect:/beta-agreement");
+    await expect(outcome(() => switchFromBetaAgreementGateAction(switchForm(other.id)))).resolves.toBe("redirect:/dashboard");
+    await expect(outcome(() => requireVendorContext())).resolves.toBe("completed");
+    const audit = await db.auditLog.findFirstOrThrow({ where: { vendorId: other.id, action: "session_vendor_switched", actorId: member.id } });
+    // The held vendor is not named in the other tenant's audit trail.
+    expect(audit.before).toEqual({ from: "beta_agreement_pending" });
+    expect(JSON.stringify(audit)).not.toContain(held.id);
+    // Once the session's vendor is not held, this is not a general vendor switcher.
+    await expect(outcome(() => switchFromBetaAgreementGateAction(switchForm(held.id)))).resolves.toBe("redirect:/dashboard");
+    expect(await db.auditLog.count({ where: { action: "session_vendor_switched", actorId: member.id } })).toBe(1);
+  });
+
+  it("records the acceptance of a platform administrator who owns the vendor (review m-3)", async () => {
+    const vendor = await createVendor("AdminOwned");
+    const admin = await db.user.create({ data: { name: "Platform owner", email: `beta-admin-owner-${randomUUID()}@example.test`, passwordHash: "synthetic-only", platformRole: "platform_admin" } });
+    userIds.push(admin.id);
+    const staff = await createUser("AdminOwnedStaff");
+    await addMember(vendor.id, admin.id, "owner");
+    await addMember(vendor.id, staff.id, "support");
+    await signIn(staff.id, vendor.id);
+    await expect(outcome(() => requireVendorContext())).resolves.toBe("redirect:/beta-agreement");
+
+    await signIn(admin.id, vendor.id);
+    await expect(outcome(() => acceptBetaAgreementAction(acceptForm(vendor.id)))).resolves.toBe("redirect:/dashboard");
+    expect(await db.userPolicyConsent.count({ where: { vendorId: vendor.id, userId: admin.id, context: BETA_AGREEMENT_CONTEXT } })).toBe(1);
+    await signIn(staff.id, vendor.id);
+    await expect(outcome(() => requireVendorContext())).resolves.toBe("completed");
   });
 
   it("does not gate a platform administrator", async () => {

@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { getCurrentAuth } from "@/lib/auth";
+import { betaAgreementApiResponse } from "@/lib/beta-agreement";
 import { getDb } from "@/lib/db";
 import { readJsonBody, requireSameOriginRequest } from "@/lib/api-security";
 import { checkRateLimit } from "@/lib/rate-limit";
@@ -25,6 +26,9 @@ async function handle(request: Request, writing: boolean) {
       if (closed) return closed;
       if ([...params.keys()].some(k => !["mode", ...(writing ? [] : ["liveId"])].includes(k))) return json({ error: "Invalid request" }, 400);
       if (writing) {
+        // O-11: instructor writes wait for the vendor's 封測合作協議 acceptance.
+        const agreementRequired = await betaAgreementApiResponse(auth, { "Cache-Control": "private, no-store" });
+        if (agreementRequired) return agreementRequired;
         const parsed = commandSchema.safeParse(await readJsonBody(request, 1024));
         if (!parsed.success) return json({ error: "Invalid request" }, 400);
         return json({ state: await setDanmaku(getDb(), { vendorId: auth.vendor.id, liveId: parsed.data.liveId }, parsed.data.enabled) });

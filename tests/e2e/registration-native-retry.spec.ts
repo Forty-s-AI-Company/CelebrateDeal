@@ -2,7 +2,6 @@ import { randomUUID } from "node:crypto";
 import { expect, test } from "@playwright/test";
 import { PrismaClient } from "@prisma/client";
 import { assertLocalTestDatabase } from "../../scripts/local-database-safety";
-import { seedBetaAgreementForLogin } from "./helpers/beta-agreement";
 
 // WP-05: a rejected native (no-JavaScript) registration returns to its source
 // page with the visitor's fields restored from an encrypted, short-lived draft,
@@ -55,7 +54,6 @@ for (const entry of cases) {
     try {
       await page.goto(`/form/${encodeURIComponent(entry.slug)}${entry.ref ? `?ref=${entry.ref}` : ""}`);
       await page.getByLabel("姓名").fill(visitorName);
-      await seedBetaAgreementForLogin(db, entry.email);
       await page.getByLabel("Email").fill(entry.email);
       await page.getByRole("button", { name: "送出報名" }).click();
 

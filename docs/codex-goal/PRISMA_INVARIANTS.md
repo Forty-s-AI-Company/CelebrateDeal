@@ -1045,7 +1045,7 @@ Current source inventory: 145 models and 99 forward migrations. Previous checkpo
 - 不變式（應用層，`src/lib/beta-agreement.ts`、`src/app/actions/beta-agreement-actions.ts`）：
   - 版本只來自 `src/lib/beta-agreement-content.ts` 的 `BETA_AGREEMENT_VERSION`；表單回傳的版本只拿來比對，不一致就不寫（`agreement_updated`）。
   - vendor 與帳號只取自 session；表單的 `vendorId` 只用來確認頁面顯示的乙方仍是目前 session 的商家，不參與任何查詢或寫入。
-  - 只有該商家 active 的 `owner` 能寫入；寫入交易內再查一次 owner membership。同意列與 AuditLog `beta_agreement_accepted`（`after` 只有版本與當時的商家名稱）同一交易；`createMany skipDuplicates` 讓重複送出與併發送出只寫一列、一筆 audit。
+  - 只有該商家 active 的 `owner` 能寫入；寫入交易內再查一次 owner membership。同意列與 AuditLog `beta_agreement_accepted`（`after` 只有版本、全文 sha256 與當時的商家名稱）同一交易；`createMany skipDuplicates` 讓重複送出與併發送出只寫一列、一筆 audit。
   - 閘門判斷「這個 vendor 有沒有目前版本的同意列」，任何 owner 的同意都算；別的 vendor 的列不算。`vendorId` 在商家刪除時 SET NULL（不加 CHECK，否則刪除商家會失敗），紀錄隨使用者保留。
 - 測試：`src/lib/beta-agreement.db.test.ts`（閘門、寫入與 audit、冪等與併發、跨租戶、版本升級、非 owner、商家 API、平台管理員、CHECK 與唯一索引、刪除商家後保留）、`src/lib/beta-agreement.test.ts`、`src/app/actions/beta-agreement-actions.test.ts`、`src/lib/auth.test.ts`。已在 loopback 拋棄式 PostgreSQL 16（`celebratedeal_test`，port 54460）forward-apply 全部 migration。
 - 部署順序：migration 先於程式（舊程式只寫 `merchant_registration`／`vendor_member_invitation`，仍符合新 CHECK）。回滾程式不需要回滾 migration；回滾後閘門消失，已寫入的同意列保留。

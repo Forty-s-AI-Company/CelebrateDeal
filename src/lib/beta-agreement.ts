@@ -1,6 +1,7 @@
+import { createHash } from "node:crypto";
 import { cache } from "react";
 import type { Prisma, PrismaClient } from "@prisma/client";
-import { BETA_AGREEMENT_CONTEXT, BETA_AGREEMENT_VERSION } from "@/lib/beta-agreement-content";
+import { BETA_AGREEMENT_CONTEXT, BETA_AGREEMENT_VERSION, betaAgreement } from "@/lib/beta-agreement-content";
 import { getDb } from "@/lib/db";
 import { safeInternalPathOr } from "@/lib/safe-internal-path";
 
@@ -28,6 +29,20 @@ export const BETA_AGREEMENT_PATH = "/beta-agreement";
 export const BETA_AGREEMENT_ACCEPT_ROLE = "owner";
 
 type ConsentDb = Pick<PrismaClient | Prisma.TransactionClient, "userPolicyConsent">;
+
+/**
+ * sha256 of everything a merchant reads and agrees to (title, 甲方, preamble,
+ * every clause), as canonical JSON. 乙方 is per acceptance and not part of it.
+ */
+export function betaAgreementTextSha256() {
+  const text = {
+    title: betaAgreement.title,
+    operator: betaAgreement.operator,
+    preamble: betaAgreement.preamble,
+    sections: betaAgreement.sections.map(({ number, heading, items }) => ({ number, heading, items })),
+  };
+  return createHash("sha256").update(JSON.stringify(text), "utf8").digest("hex");
+}
 
 export function isCurrentBetaAgreementVersion(value: unknown): value is typeof BETA_AGREEMENT_VERSION {
   return value === BETA_AGREEMENT_VERSION;
@@ -60,6 +75,22 @@ const acceptedThisRequest = cache((vendorId: string) => vendorHasAcceptedBetaAgr
 export async function betaAgreementPending(auth: { isPlatformAdmin: boolean }, vendorId: string) {
   if (!betaAgreementAppliesTo(auth)) return false;
   return !await acceptedThisRequest(vendorId);
+}
+
+export const BETA_AGREEMENT_API_ERROR_CODE = "BETA_AGREEMENT_REQUIRED";
+
+/**
+ * API form of the gate for routes that authorize with `getCurrentAuth`
+ * directly. Call it right after the route's own role check: it answers 403
+ * `BETA_AGREEMENT_REQUIRED` while the session vendor has not accepted the
+ * current version, and null otherwise (including platform administrators).
+ */
+export async function betaAgreementApiResponse(
+  auth: { isPlatformAdmin: boolean; vendor: { id: string } | null },
+  headers?: HeadersInit,
+): Promise<Response | null> {
+  if (!auth.vendor || !await betaAgreementPending(auth, auth.vendor.id)) return null;
+  return Response.json({ error: { code: BETA_AGREEMENT_API_ERROR_CODE } }, { status: 403, headers });
 }
 
 /** Where to go after the gate: a safe internal path, never the gate itself. */
@@ -108,8 +139,9 @@ export async function recordBetaAgreementAcceptance(
         action: "beta_agreement_accepted",
         targetType: "Vendor",
         targetId: input.vendorId,
-        // The vendor name shown as 乙方 at the time; the account is actorId.
-        after: { agreementVersion: BETA_AGREEMENT_VERSION, vendorName: input.vendorName },
+        // The vendor name shown as 乙方 at the time; the account is actorId; the
+        // hash pins the exact text accepted under this version.
+        after: { agreementVersion: BETA_AGREEMENT_VERSION, agreementSha256: betaAgreementTextSha256(), vendorName: input.vendorName },
       },
     });
     return "recorded" as const;

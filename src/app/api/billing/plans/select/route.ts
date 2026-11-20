@@ -8,6 +8,8 @@ import {
 import { FeatureDisabledError, featureDisabledResponse } from "@/lib/feature-gates";
 
 const REDIRECT_PATHS = [
+  // O-11: requireVendorOwnerFinance sends a vendor without the 封測合作協議 here.
+  "/beta-agreement",
   "/billing/plans",
   "/dashboard",
   "/login",

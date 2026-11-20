@@ -10,6 +10,8 @@ vi.mock("@/lib/csrf", () => ({ assertServerActionSecurity: mocks.assertServerAct
 vi.mock("@/lib/auth", () => ({ getCurrentAuth: mocks.getCurrentAuth }));
 vi.mock("@/lib/product-save", () => ({ mutateProduct: mocks.mutateProduct }));
 
+// The vendor accepted the 封測合作協議 (O-11); the gate is covered by src/lib/beta-agreement-api-routes.db.test.ts.
+vi.mock("@/lib/beta-agreement", () => ({ betaAgreementApiResponse: vi.fn(async () => null) }));
 import { POST } from "./route";
 
 function request(fields: Record<string, string> = {}) {

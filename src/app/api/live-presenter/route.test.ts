@@ -8,6 +8,8 @@ vi.mock("@/lib/db", () => ({ getDb: () => ({ live: { findFirst: m.live }, $trans
 vi.mock("@/lib/api-security", async original => ({ ...await original<typeof import("@/lib/api-security")>(), requireSameOriginRequest: m.sameOrigin }));
 vi.mock("@/lib/rate-limit", () => ({ checkRateLimit: m.limit }));
 vi.mock("@/lib/live-media-provider", () => ({ mediaOrigin: m.origin }));
+// The vendor accepted the 封測合作協議 (O-11); the gate is covered by src/lib/beta-agreement-api-routes.db.test.ts.
+vi.mock("@/lib/beta-agreement", () => ({ betaAgreementApiResponse: vi.fn(async () => null) }));
 import { GET, POST } from "./route";
 
 const live = { id: "live-1", title: "Workshop", slug: "test-live", streamMode: "vod", status: "scheduled", presenterLayout: null, video: { sourceType: "upload" } };

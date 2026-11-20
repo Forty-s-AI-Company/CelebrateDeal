@@ -1,5 +1,3 @@
-import { publicSupportContact } from "@/lib/public-policy-content";
-
 /**
  * CelebrateDeal 封測合作協議（O-11 方案 B，owner 2026-11-20 決定）。
  *
@@ -10,7 +8,8 @@ import { publicSupportContact } from "@/lib/public-policy-content";
  * 版本號是伺服器的唯一事實：彈窗、公開頁 `/policies/beta-agreement` 與
  * `UserPolicyConsent.agreementVersion` 都讀這裡。條文有任何實質變動時必須
  * 換新版本號，所有商家下一次進後台都要重新同意。版本字串要符合資料庫
- * CHECK `^[0-9A-Za-z._-]{1,32}$`。
+ * CHECK `^[0-9A-Za-z._-]{1,32}$`。`src/lib/beta-agreement.test.ts` 把全文的
+ * sha256 綁在版本號上：文字改了而版本沒換，測試就會失敗。
  */
 export const BETA_AGREEMENT_VERSION = "beta-2026.11.20";
 /** `UserPolicyConsent.context` of an acceptance (CHECK UserPolicyConsent_context_check). */
@@ -33,10 +32,13 @@ export const betaAgreement = {
   title: "CelebrateDeal 封測合作協議",
   summary: "參加 CelebrateDeal 封閉測試的商家與平台之間的合作條件，商家在後台勾選同意後生效。",
   version: BETA_AGREEMENT_VERSION,
-  /** 甲方：O-9 定案前使用現行營運名稱與客服信箱。 */
+  /**
+   * 甲方：O-9 定案前使用現行營運名稱與客服信箱。刻意寫死、不引用
+   * publicSupportContact：客服信箱改變不能悄悄改掉已同意版本的條文。
+   */
   operator: {
-    name: publicSupportContact.displayName,
-    email: publicSupportContact.email,
+    name: "Carry Digital Nomad 凱瑞數位",
+    email: "a88221144@gmail.com",
   },
   preamble: "甲方邀請乙方參加 CelebrateDeal 平台（以下稱「本平台」）的封閉測試（以下稱「封測」），雙方同意下列條款。",
   sections: [

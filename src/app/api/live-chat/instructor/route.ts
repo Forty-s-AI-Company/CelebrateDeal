@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { getCurrentAuth } from "@/lib/auth";
+import { betaAgreementApiResponse } from "@/lib/beta-agreement";
 import { readJsonBody, requireSameOriginRequest } from "@/lib/api-security";
 import { getCsrfToken, verifyCsrfToken } from "@/lib/csrf";
 import { getDb } from "@/lib/db";
@@ -15,13 +16,16 @@ const Post = PrivateViewerChatPost.omit({ vendorId: true }).extend({ submissionI
 const headers = { "Cache-Control": "private, no-store", "CDN-Cache-Control": "no-store", "Vary": "Cookie", "X-Content-Type-Options": "nosniff" };
 const json = (value: unknown, status = 200) => Response.json(value, { status, headers });
 const noStore = (response: Response) => { for (const [key, value] of Object.entries(headers)) response.headers.set(key, value); return response; };
-async function gate(request: Request) {
+async function gate(request: Request, writing = false) {
   const denied = requireSameOriginRequest(request, { requireClientHeader: true });
   if (denied) return { response: noStore(denied), actor: null };
   const auth = await getCurrentAuth();
   if (!auth?.vendor || !auth.member || auth.member.status !== "active" || !["owner", "admin"].includes(auth.member.role)) {
     return { response: json({ error: "Private chat access denied" }, 403), actor: null };
   }
+  // O-11: sending waits for the vendor's 封測合作協議 acceptance; reading stays open.
+  const agreementRequired = writing ? await betaAgreementApiResponse(auth, headers) : null;
+  if (agreementRequired) return { response: agreementRequired, actor: null };
   // Authenticated user is the rate identity; forwarded headers cannot create
   // additional buckets for a manager by claiming different addresses.
   const limited = await checkRateLimit(rateLimitRequestWithIdentity(request, null), `private-instructor-chat:${auth.user.id}`, 60, 60_000);
@@ -51,7 +55,7 @@ export async function GET(request: Request) {
   } catch (error) { return failure(error); }
 }
 export async function POST(request: Request) {
-  const access = await gate(request); if (access.response || !access.actor) return access.response ?? json({ error: "Access denied" }, 403);
+  const access = await gate(request, true); if (access.response || !access.actor) return access.response ?? json({ error: "Access denied" }, 403);
   const parsed = Post.safeParse(await readJsonBody(request, 16 * 1024));
   if (!parsed.success) return json({ error: "Invalid private chat request" }, 400);
   if (!await verifyCsrfToken(parsed.data.csrfToken)) return json({ error: "Invalid private chat token" }, 403);

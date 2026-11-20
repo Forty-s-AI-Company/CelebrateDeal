@@ -1,4 +1,5 @@
 import { getCurrentAuth } from "@/lib/auth";
+import { betaAgreementApiResponse } from "@/lib/beta-agreement";
 import { getDb } from "@/lib/db";
 import { readJsonBody, requireSameOriginRequest } from "@/lib/api-security";
 import { checkRateLimit } from "@/lib/rate-limit";
@@ -19,6 +20,9 @@ async function handle(request: Request, writing: boolean) {
   if (!auth?.vendor || auth.member?.status !== "active" || !["owner", "admin"].includes(auth.member.role)) return json({ error: "沒有講師管理權限。" }, 403);
   const closed = featureGateResponse(auth.vendor, "browser_live");
   if (closed) return closed;
+  // O-11: layout and broadcast changes wait for the vendor's 封測合作協議 acceptance.
+  const agreementRequired = writing ? await betaAgreementApiResponse(auth, { "Cache-Control": "private, no-store" }) : null;
+  if (agreementRequired) return agreementRequired;
   const data = writing ? command.safeParse(await readJsonBody(request, 4096)) : null;
   if (writing && !data?.success) return json({ error: "排版設定不正確。" }, 400);
   const liveId = data?.success ? data.data.liveId : new URL(request.url).searchParams.get("liveId");

@@ -5,6 +5,8 @@ vi.mock("@/lib/csrf", () => ({ CSRF_FIELD_NAME: "csrfToken", verifyCsrfToken: mo
 vi.mock("@/lib/db", () => ({ getDb: () => ({ merchantAffiliatePayoutPolicy: { findUnique: mocks.policy } }) }));
 vi.mock("@/lib/affiliate-remuneration-quotes", () => ({ exportAffiliateRemunerationQuote: mocks.export }));
 vi.mock("@/lib/affiliate-remuneration-csv", () => ({ affiliateRemunerationCsv: mocks.csv }));
+// The vendor accepted the 封測合作協議 (O-11); the gate is covered by src/lib/beta-agreement-api-routes.db.test.ts.
+vi.mock("@/lib/beta-agreement", () => ({ betaAgreementApiResponse: vi.fn(async () => null) }));
 import { POST } from "./route";
 const context = { params: Promise.resolve({ affiliateId: "affiliate_a", snapshotId: "snapshot_a" }) };
 function request(token = "synthetic-csrf", origin = "https://example.test") {

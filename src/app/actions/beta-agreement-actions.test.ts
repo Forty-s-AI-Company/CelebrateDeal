@@ -3,6 +3,9 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   requireAuth: vi.fn(),
   record: vi.fn(),
+  pending: vi.fn(),
+  switchVendor: vi.fn(),
+  capture: vi.fn(),
   security: vi.fn(async () => undefined),
 }));
 
@@ -13,9 +16,24 @@ vi.mock("@/lib/db", () => ({ getDb: () => ({ synthetic: true }) }));
 vi.mock("@/lib/beta-agreement", async (importOriginal) => ({
   ...await importOriginal<typeof import("@/lib/beta-agreement")>(),
   recordBetaAgreementAcceptance: mocks.record,
+  betaAgreementPending: mocks.pending,
 }));
+vi.mock("@/lib/session-vendor-switch", async (importOriginal) => ({
+  ...await importOriginal<typeof import("@/lib/session-vendor-switch")>(),
+  switchSessionVendor: mocks.switchVendor,
+}));
+vi.mock("@/lib/monitoring", () => ({ captureOperationalError: mocks.capture }));
 
-import { acceptBetaAgreementAction } from "./beta-agreement-actions";
+import { acceptBetaAgreementAction, switchFromBetaAgreementGateAction } from "./beta-agreement-actions";
+
+async function switchOutcome(data: FormData) {
+  try {
+    await switchFromBetaAgreementGateAction(data);
+    return "completed";
+  } catch (error) {
+    return (error as Error).message;
+  }
+}
 import { BETA_AGREEMENT_VERSION } from "@/lib/beta-agreement-content";
 
 function authFor(role = "owner", overrides: Record<string, unknown> = {}) {
@@ -100,18 +118,58 @@ describe("acceptBetaAgreementAction", () => {
     expect(mocks.record).not.toHaveBeenCalled();
   });
 
-  it("sends suspended, partner-only and platform accounts where they belong", async () => {
+  it("sends suspended and partner-only accounts where they belong", async () => {
     mocks.requireAuth.mockResolvedValue(authFor("owner", { vendor: null, member: null, suspendedVendor: { id: "vendor-1" } }));
     await expect(outcome(form())).resolves.toBe("redirect:/vendor-suspended");
     mocks.requireAuth.mockResolvedValue(authFor("owner", { vendor: null, member: null, partnerPortalOnly: true }));
     await expect(outcome(form())).resolves.toBe("redirect:/affiliate-portal");
+    expect(mocks.record).not.toHaveBeenCalled();
+  });
+
+  it("lets a platform administrator who owns the vendor record its acceptance, and only that one (review m-3)", async () => {
     mocks.requireAuth.mockResolvedValue(authFor("owner", { isPlatformAdmin: true }));
+    await expect(outcome(form({ next: "/orders" }))).resolves.toBe("redirect:/orders");
+    expect(mocks.record).toHaveBeenCalledWith({ synthetic: true }, { userId: "user-1", vendorId: "vendor-1", vendorName: "合成商家" });
+
+    mocks.record.mockClear();
+    mocks.requireAuth.mockResolvedValue(authFor("admin", { isPlatformAdmin: true }));
     await expect(outcome(form({ next: "/orders" }))).resolves.toBe("redirect:/orders");
     expect(mocks.record).not.toHaveBeenCalled();
   });
 
-  it("reports a failed write without claiming success", async () => {
+  it("reports a failed write without claiming success or tenant data", async () => {
     mocks.record.mockRejectedValue(new Error("synthetic database failure"));
     await expect(outcome(form())).resolves.toBe("redirect:/beta-agreement?error=temporarily_unavailable");
+    expect(mocks.capture).toHaveBeenCalledWith(expect.any(Error), { source: "beta-agreement", operation: "record-acceptance" });
+    expect(JSON.stringify(mocks.capture.mock.calls)).not.toMatch(/vendor-1|user-1|合成商家|owner@example/u);
+  });
+});
+
+describe("switchFromBetaAgreementGateAction", () => {
+  it("moves a held member's session to another of their vendors through the shared switch", async () => {
+    mocks.requireAuth.mockResolvedValue(authFor("admin", { session: { id: "session-1" } }));
+    mocks.pending.mockResolvedValue(true);
+    mocks.switchVendor.mockResolvedValue(true);
+    const data = new FormData();
+    data.set("vendorId", "vendor-2");
+    await expect(switchOutcome(data)).resolves.toBe("redirect:/dashboard");
+    expect(mocks.switchVendor).toHaveBeenCalledWith(expect.objectContaining({ user: { id: "user-1", email: "owner@example.test" } }), "vendor-2", "beta_agreement_pending");
+
+    mocks.switchVendor.mockResolvedValue(false);
+    await expect(switchOutcome(data)).resolves.toBe("redirect:/beta-agreement");
+  });
+
+  it("is only reachable while the session vendor is held, and never to the same vendor", async () => {
+    mocks.requireAuth.mockResolvedValue(authFor("admin", { session: { id: "session-1" } }));
+    mocks.pending.mockResolvedValue(false);
+    const data = new FormData();
+    data.set("vendorId", "vendor-2");
+    await expect(switchOutcome(data)).resolves.toBe("redirect:/dashboard");
+    mocks.pending.mockResolvedValue(true);
+    data.set("vendorId", "vendor-1");
+    await expect(switchOutcome(data)).resolves.toBe("redirect:/beta-agreement");
+    data.set("vendorId", "../evil");
+    await expect(switchOutcome(data)).resolves.toBe("redirect:/beta-agreement");
+    expect(mocks.switchVendor).not.toHaveBeenCalled();
   });
 });

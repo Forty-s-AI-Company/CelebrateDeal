@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { mutateProduct } from "@/lib/product-save";
 import { readFormDataBody } from "@/lib/api-security";
 import { getCurrentAuth } from "@/lib/auth";
+import { betaAgreementApiResponse } from "@/lib/beta-agreement";
 import { assertServerActionSecurity } from "@/lib/csrf";
 import { initialProductActionState, type ProductActionError, type ProductFieldErrors } from "@/lib/product-action-state";
 
@@ -50,6 +51,9 @@ export async function POST(request: Request) {
   ) {
     return safeJson("not_found", 403);
   }
+  // O-11: no product writes before the vendor accepts the 封測合作協議.
+  const agreementRequired = await betaAgreementApiResponse(auth, { "Cache-Control": "private, no-store" });
+  if (agreementRequired) return agreementRequired;
 
   try {
     const result = await mutateProduct(auth.vendor.id, initialProductActionState, formData);
