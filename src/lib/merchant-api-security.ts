@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireSameOriginRequest } from "@/lib/api-security";
 import { getCurrentAuth } from "@/lib/auth";
+import { betaAgreementPending } from "@/lib/beta-agreement";
 import { verifyCsrfToken } from "@/lib/csrf";
 import { vendorSuspendedApiResponse } from "@/lib/vendor-suspension";
 
@@ -37,6 +38,10 @@ export async function requireMerchantApiActor(request: Request): Promise<Merchan
     || !["owner", "admin"].includes(auth.member.role)
   ) {
     return { response: NextResponse.json({ error: { code: "FORBIDDEN" } }, { status: 403 }) };
+  }
+  // O-11: merchant APIs wait for the 封測合作協議 like the back-office pages.
+  if (await betaAgreementPending(auth, auth.vendor.id)) {
+    return { response: NextResponse.json({ error: { code: "BETA_AGREEMENT_REQUIRED" } }, { status: 403 }) };
   }
 
   const csrfValid = await verifyCsrfToken(request.headers.get(MERCHANT_API_CSRF_HEADER));

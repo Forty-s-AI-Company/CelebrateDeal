@@ -8,7 +8,8 @@ import { getDb } from "@/lib/db";
 import { CsrfField } from "@/components/csrf-field";
 
 export default async function WelcomePage() {
-  const { auth, vendor } = await requireVendorManagerContext();
+  // The path brings a new merchant back here after the MFA or 封測協議 gate.
+  const { auth, vendor } = await requireVendorManagerContext("/welcome");
   const preference = await getDb().userOnboardingPreference.findUnique({ where: { userId_vendorId: { userId: auth.user.id, vendorId: vendor.id } } });
   if (preference?.questionnaireDoneAt) redirect("/dashboard");
   const answers = parseSalesWorkspaceQuestionnaire(preference?.questionnaireAnswers ?? {});

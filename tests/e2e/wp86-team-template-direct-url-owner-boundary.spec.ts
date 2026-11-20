@@ -3,6 +3,7 @@ import { expect, test, type BrowserContext, type Page } from "@playwright/test";
 import { PrismaClient } from "@prisma/client";
 import { createTeamFunnelFixture, TEAM_FUNNEL_TEST_ONLY } from "../fixtures/team-funnel";
 import { navigateAndAssertDirectUrlGuard } from "./helpers/direct-url-guard";
+import { seedBetaAgreementForLogin } from "./helpers/beta-agreement";
 
 const db = new PrismaClient();
 
@@ -21,6 +22,7 @@ test("same-team non-owner cannot read another member's template edit URL", async
 
   const login = async (page: Page, email: string) => {
     await page.goto("/login");
+    await seedBetaAgreementForLogin(db, email);
     await page.getByLabel("Email").fill(email);
     await page.getByLabel("密碼").fill(fixture.password);
     await page.getByRole("button", { name: "登入" }).click();

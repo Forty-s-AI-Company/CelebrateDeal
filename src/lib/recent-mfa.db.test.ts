@@ -1,4 +1,5 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
+import { BETA_AGREEMENT_VERSION } from "@/lib/beta-agreement-content";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { getDb } from "@/lib/db";
 
@@ -41,6 +42,8 @@ async function createTenant(label: string, options: { ownerHasFactor: boolean })
   const memberEmail = `member-${suffix}@example.test`;
   const memberUser = await db.user.create({ data: { name: `Member ${label}`, email: memberEmail, passwordHash: "synthetic-only" } });
   await db.vendorMember.create({ data: { vendorId: vendor.id, userId: owner.id, role: "owner" } });
+  // The owner accepted the 封測合作協議 earlier (O-11); the gate is covered by src/lib/beta-agreement.db.test.ts.
+  await db.userPolicyConsent.create({ data: { userId: owner.id, vendorId: vendor.id, context: "beta_agreement", agreementVersion: BETA_AGREEMENT_VERSION } });
   const member = await db.vendorMember.create({ data: { vendorId: vendor.id, userId: memberUser.id, role: "accountant" } });
   if (options.ownerHasFactor) {
     await db.userMfaFactor.create({ data: { userId: owner.id, secretEncrypted: "synthetic-not-decrypted" } });

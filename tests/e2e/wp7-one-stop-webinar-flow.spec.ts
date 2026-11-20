@@ -5,6 +5,7 @@ import { expect, test, type Page, type TestInfo } from "@playwright/test";
 import { PrismaClient } from "@prisma/client";
 import { revealEmailDeliveryPayload } from "../../src/lib/email-delivery-pii";
 import { processDuePostLiveFollowups } from "../../src/lib/email-delivery";
+import { seedBetaAgreementForLogin } from "./helpers/beta-agreement";
 
 const db = new PrismaClient();
 const runId = randomUUID();
@@ -233,6 +234,7 @@ test("one stop webinar verifies registration, preserves live playback through de
   await expect(page.getByRole("heading", { name: "WP7 單一場次報名", exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "完成 WP7 報名", exact: true })).toBeVisible();
   await page.getByLabel("姓名").fill("WP7 Lead");
+  await seedBetaAgreementForLogin(db, `wp7-lead-${runId}@example.test`);
   await page.getByLabel("Email").fill(`wp7-lead-${runId}@example.test`);
   await page.getByRole("button", { name: "完成 WP7 報名", exact: true }).click();
   const registrationResponseResult = await registrationResponse;

@@ -3,9 +3,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   getCurrentAuth: vi.fn(),
   verifyCsrfToken: vi.fn(),
+  betaAgreementPending: vi.fn(),
 }));
 
 vi.mock("@/lib/auth", () => ({ getCurrentAuth: mocks.getCurrentAuth }));
+vi.mock("@/lib/beta-agreement", () => ({ betaAgreementPending: mocks.betaAgreementPending }));
 vi.mock("@/lib/csrf", () => ({ verifyCsrfToken: mocks.verifyCsrfToken }));
 
 import { MERCHANT_API_CSRF_HEADER, requireMerchantApiActor } from "./merchant-api-security";
@@ -30,6 +32,7 @@ beforeEach(() => {
     member: { id: "member-1", status: "active", role: "owner" },
   });
   mocks.verifyCsrfToken.mockResolvedValue(true);
+  mocks.betaAgreementPending.mockResolvedValue(false);
 });
 
 afterEach(() => vi.unstubAllEnvs());
@@ -85,5 +88,16 @@ describe("requireMerchantApiActor", () => {
     const allowed = await requireMerchantApiActor(request());
     expect(allowed.actor).toEqual({ vendorId: "session-vendor", memberId: "member-1" });
     expect(mocks.verifyCsrfToken).toHaveBeenLastCalledWith("csrf-token");
+  });
+
+  it("answers BETA_AGREEMENT_REQUIRED until the session vendor accepts the 封測合作協議 (O-11)", async () => {
+    mocks.betaAgreementPending.mockResolvedValue(true);
+
+    const result = await requireMerchantApiActor(request());
+
+    expect(result.actor).toBeUndefined();
+    expect(result.response?.status).toBe(403);
+    await expect(result.response?.json()).resolves.toEqual({ error: { code: "BETA_AGREEMENT_REQUIRED" } });
+    expect(mocks.betaAgreementPending).toHaveBeenCalledWith(expect.anything(), "session-vendor");
   });
 });

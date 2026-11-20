@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { expect, test, type Request } from "@playwright/test";
 import { PrismaClient } from "@prisma/client";
 import { hashPassword } from "../../src/lib/password";
+import { seedBetaAgreementForLogin } from "./helpers/beta-agreement";
 
 const db = new PrismaClient();
 const password = "Wp53SyntheticPassword!";
@@ -37,6 +38,7 @@ test("template owner cannot publish a payload tampered with another member's web
     const snapshot = async () => ({ template: await db.teamFunnelTemplate.findUniqueOrThrow({ where: { id: template.id } }), versions: await db.teamFunnelTemplateVersion.findMany({ where: { templateId: template.id }, orderBy: { version: "asc" } }), page: await db.partnerFunnelPage.findUniqueOrThrow({ where: { id: source.id } }), lives: await db.live.findMany({ where: { id: { in: [ownWebinar.id, foreignWebinar.id] } }, orderBy: { id: "asc" } }) });
     const before = await snapshot();
     await page.goto("/login");
+    await seedBetaAgreementForLogin(db, actor.email);
     await page.getByLabel("Email").fill(actor.email);
     await page.getByLabel("密碼").fill(password);
     await page.getByRole("button", { name: "登入" }).click();

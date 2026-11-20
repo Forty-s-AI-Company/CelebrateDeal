@@ -8,6 +8,7 @@ import { protectCommerceOrderPii } from "../../src/lib/commerce-order-pii";
 import { grantCommerceEntitlement } from "../../src/lib/commerce-order-fulfillment";
 import { reconcileCommerceOrderRefund } from "../../src/lib/commerce-orders";
 import { createStudentPortalAccessToken } from "../../src/lib/student-portal-auth";
+import { seedBetaAgreementForLogin } from "./helpers/beta-agreement";
 
 test.use({trace: "off", screenshot: "off", video: "off"});
 test.setTimeout(120000);
@@ -58,6 +59,7 @@ test("purchased learner posts, replies, likes and reloads a course-isolated comm
     try {
       await managerContext.route((url) => url.origin !== new URL(baseURL!).origin, route => route.abort());
       await managerPage.goto(`${baseURL}/login`);
+      await seedBetaAgreementForLogin(db, manager.email);
       await managerPage.getByLabel("Email").fill(manager.email);
       await managerPage.getByLabel("密碼").fill("SyntheticCommunityManager!");
       await managerPage.getByRole("button",{name:"登入",exact:true}).click();

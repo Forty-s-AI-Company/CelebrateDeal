@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { expect, test, type Page, type Route, type TestInfo } from "@playwright/test";
 import { PrismaClient } from "@prisma/client";
 import { hashPassword } from "../../src/lib/password";
+import { seedBetaAgreementForLogin } from "./helpers/beta-agreement";
 
 const db = new PrismaClient();
 const password = "Loading-Segments-Test-Password-123!";
@@ -72,6 +73,7 @@ async function installRscGate(page: Page, targetPath: string, baseURL: string | 
 
 async function loginOwner(page: Page) {
   await page.goto("/login", { waitUntil: "load" });
+  await seedBetaAgreementForLogin(db, fixture.email);
   await page.getByLabel("Email").fill(fixture.email);
   await page.getByLabel("密碼").fill(password);
   await page.getByRole("button", { name: "登入", exact: true }).click();

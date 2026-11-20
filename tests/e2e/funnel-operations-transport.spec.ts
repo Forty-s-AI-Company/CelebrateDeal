@@ -6,6 +6,7 @@ import { Prisma, PrismaClient } from "@prisma/client";
 import { createLandingPageFixture } from "../fixtures/landing-page";
 import { assertLocalTestDatabase } from "../../scripts/local-database-safety";
 import { createGoalFunnelStepPages } from "../../src/lib/funnel-goal-step-pages";
+import { seedBetaAgreementForLogin } from "./helpers/beta-agreement";
 
 const db = new PrismaClient();
 test.use({ trace: "off", screenshot: "off", video: "off", serviceWorkers: "block" });
@@ -32,6 +33,7 @@ test("diagnostic: isolated operations save without prior editor transitions", as
   await page.context().route(url => url.origin !== origin, route => route.request().url() === "https://rsms.me/inter/inter.css" ? route.fulfill({ status: 200, contentType: "text/css", body: "/* offline */" }) : route.abort("blockedbyclient"));
   try {
     await page.goto("/login");
+    await seedBetaAgreementForLogin(db, fixture.owner.email);
     await page.getByLabel("Email").fill(fixture.owner.email);
     await page.getByLabel("密碼").fill(fixture.password);
     await page.getByRole("button", { name: "登入", exact: true }).click();

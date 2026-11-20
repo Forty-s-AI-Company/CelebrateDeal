@@ -3,6 +3,7 @@ import { expect, test } from "@playwright/test";
 import { PrismaClient } from "@prisma/client";
 import { hashPassword } from "../../src/lib/password";
 import { navigateAndAssertDirectUrlGuard } from "./helpers/direct-url-guard";
+import { seedBetaAgreementForLogin } from "./helpers/beta-agreement";
 
 const db = new PrismaClient();
 const password = "Wp47SyntheticPassword!";
@@ -28,7 +29,7 @@ test("active accountant is denied a foreign affiliate editor before tenant looku
   const snapshot = async () => Promise.all([db.affiliate.findUniqueOrThrow({ where: { id: ownAffiliate.id } }), db.affiliate.findUniqueOrThrow({ where: { id: foreignAffiliate.id } }), db.affiliateClick.findMany({ where: { affiliateId: ownAffiliate.id }, orderBy: { id: "asc" } }), db.affiliateClick.findMany({ where: { affiliateId: foreignAffiliate.id }, orderBy: { id: "asc" } }), db.affiliate.count({ where: { vendorId: ownerVendor.id } }), db.affiliate.count({ where: { vendorId: foreignVendor.id } }), db.affiliateClick.count({ where: { affiliateId: ownAffiliate.id } }), db.affiliateClick.count({ where: { affiliateId: foreignAffiliate.id } })]);
   const before = await snapshot();
   try {
-    await page.goto("/login"); await page.getByLabel("Email").fill(user.email); await page.getByLabel("密碼").fill(password); await page.getByRole("button", { name: "登入" }).click(); await expect(page).toHaveURL(/\/dashboard$/);
+    await page.goto("/login"); await seedBetaAgreementForLogin(db, user.email); await page.getByLabel("Email").fill(user.email); await page.getByLabel("密碼").fill(password); await page.getByRole("button", { name: "登入" }).click(); await expect(page).toHaveURL(/\/dashboard$/);
     const requests: string[] = [];
     page.on("request", (request) => requests.push(request.url()));
     const foreignPath = `/affiliates/${foreignAffiliate.id}/edit`;

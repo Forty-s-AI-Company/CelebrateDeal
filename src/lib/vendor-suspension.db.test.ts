@@ -59,6 +59,8 @@ vi.mock("@/lib/email", async (original) => ({
 import { upsertBlacklistAction } from "@/app/actions/interaction-actions";
 import { resumeVendorAction, suspendVendorAction, switchFromSuspendedVendorAction } from "@/app/actions/vendor-suspension-actions";
 import { getCurrentAuth, requireVendorContext } from "@/lib/auth";
+import { BETA_AGREEMENT_CONTEXT } from "@/lib/beta-agreement";
+import { BETA_AGREEMENT_VERSION } from "@/lib/beta-agreement-content";
 import { createCommerceOrderForCheckout, reconcileCommerceOrderRefund } from "@/lib/commerce-orders";
 import { getDb } from "@/lib/db";
 import { dispatchEmailDelivery, processDueEmailDeliveries } from "@/lib/email-delivery";
@@ -99,6 +101,8 @@ async function createTenant(label: string): Promise<Tenant> {
   const owner = await db.user.create({ data: { name: `Owner ${label}`, email: `owner-${key}@example.test`, passwordHash: "synthetic-only" } });
   userIds.push(owner.id);
   await db.vendorMember.create({ data: { vendorId: vendor.id, userId: owner.id, role: "owner" } });
+  // The owner accepted the 封測合作協議 earlier (O-11); this suite is about suspension.
+  await db.userPolicyConsent.create({ data: { userId: owner.id, vendorId: vendor.id, context: BETA_AGREEMENT_CONTEXT, agreementVersion: BETA_AGREEMENT_VERSION } });
   const form = await db.registrationForm.create({
     data: { vendorId: vendor.id, name: `Form ${label}`, slug: `suspension-form-${key}`, headline: "報名", fields: [{ key: "name", label: "姓名", type: "text", required: true }] },
   });

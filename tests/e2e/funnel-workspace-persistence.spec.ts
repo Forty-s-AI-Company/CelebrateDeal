@@ -5,6 +5,7 @@ import { createLandingPageFixture } from "../fixtures/landing-page";
 import { assertLocalTestDatabase } from "../../scripts/local-database-safety";
 import { createGoalFunnelStepPages } from "../../src/lib/funnel-goal-step-pages";
 import { parseFunnelStepPages } from "../../src/lib/funnel-step-pages";
+import { seedBetaAgreementForLogin } from "./helpers/beta-agreement";
 
 test.use({ trace: "off", screenshot: "off", video: "off" });
 // This journey includes two logins, a save, reloads and inspector edits.
@@ -22,6 +23,7 @@ test("owner saves canvas actions and popup through the full-screen editor and re
   const read = async () => parseFunnelStepPages((await db.landingPage.findUniqueOrThrow({ where: { id: row.id } })).draftContent)!;
   try {
     await page.goto("/login");
+    await seedBetaAgreementForLogin(db, fixture.owner.email);
     await page.getByLabel("Email").fill(fixture.owner.email);
     await page.getByLabel("密碼").fill(fixture.password);
     await page.getByRole("button", { name: "登入", exact: true }).click();
@@ -63,6 +65,7 @@ test("owner saves canvas actions and popup through the full-screen editor and re
     // A separately authenticated tenant must never open this persisted draft.
     const other = await otherContext.newPage();
     await other.goto(`${baseURL}/login`);
+    await seedBetaAgreementForLogin(db, foreign.owner.email);
     await other.getByLabel("Email").fill(foreign.owner.email);
     await other.getByLabel("密碼").fill(foreign.password);
     await other.getByRole("button", { name: "登入", exact: true }).click();

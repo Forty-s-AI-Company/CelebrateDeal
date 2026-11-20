@@ -7,6 +7,7 @@ import { createCommerceOrderForCheckout } from "../../src/lib/commerce-orders";
 import { freezeMerchantAffiliateCheckout } from "../../src/lib/merchant-affiliate-policy-service";
 import { PaymentWebhookPayload, processPaymentWebhook } from "../../src/lib/payment-webhooks";
 import { formatCurrency } from "../../src/lib/format";
+import { seedBetaAgreementForLogin } from "./helpers/beta-agreement";
 
 test.use({ trace: "off", screenshot: "off", video: "off" });
 test.setTimeout(120000);
@@ -21,7 +22,7 @@ test("manager publishes tiers; original checkout survives policy edit; partner r
   const stale = await staleContext.newPage(), partnerPage = await partnerContext.newPage();
   // Partners land on the partner portal; they never get the merchant back office.
   async function login(target: typeof page, email: string, home: RegExp = /\/dashboard$/) {
-    await target.goto(`${baseURL}/login`); await target.getByLabel("Email").fill(email); await target.getByLabel("密碼").fill(password);
+    await target.goto(`${baseURL}/login`); await seedBetaAgreementForLogin(db, email); await target.getByLabel("Email").fill(email); await target.getByLabel("密碼").fill(password);
     await target.getByRole("button", { name: "登入", exact: true }).click(); await expect(target).toHaveURL(home);
   }
   async function checkout() {

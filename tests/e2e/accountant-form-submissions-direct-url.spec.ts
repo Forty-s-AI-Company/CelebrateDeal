@@ -3,6 +3,7 @@ import { expect, test } from "@playwright/test";
 import { PrismaClient } from "@prisma/client";
 import { hashPassword } from "../../src/lib/password";
 import { navigateAndAssertDirectUrlGuard } from "./helpers/direct-url-guard";
+import { seedBetaAgreementForLogin } from "./helpers/beta-agreement";
 
 const db = new PrismaClient();
 const password = "Wp55SyntheticPassword!";
@@ -16,7 +17,7 @@ test("active accountant is denied same-vendor form submissions through direct UR
   const form = await db.registrationForm.create({ data: { vendorId: vendor.id, name: `WP55 Form ${suffix}`, slug: `form-${canary}`, headline: "WP55", fields: [], isActive: true } });
   const submission = await db.formSubmission.create({ data: { formId: form.id, name: canary, email: `${canary}@example.test`, phone: "0900000055" } });
   try {
-    await page.goto("/login"); await page.getByLabel("Email").fill(user.email); await page.getByLabel("密碼").fill(password); await page.getByRole("button", { name: "登入" }).click(); await expect(page).toHaveURL(/\/dashboard$/);
+    await page.goto("/login"); await seedBetaAgreementForLogin(db, user.email); await page.getByLabel("Email").fill(user.email); await page.getByLabel("密碼").fill(password); await page.getByRole("button", { name: "登入" }).click(); await expect(page).toHaveURL(/\/dashboard$/);
     const before = await Promise.all([db.registrationForm.findUniqueOrThrow({ where: { id: form.id } }), db.formSubmission.findUniqueOrThrow({ where: { id: submission.id } }), db.registrationForm.count({ where: { vendorId: vendor.id } }), db.formSubmission.count({ where: { formId: form.id } })]);
     const path = `/forms/${form.id}/submissions`;
     const routeIdentityCanaries = [form.id, path];

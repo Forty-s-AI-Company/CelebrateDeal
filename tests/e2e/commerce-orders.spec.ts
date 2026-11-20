@@ -20,6 +20,7 @@ import { publicLiveAvailabilityWhere } from "../../src/lib/sellable-live";
 import { navigateAndAssertDirectUrlGuard } from "./helpers/direct-url-guard";
 import { openLiveStudioAdvancedSettings } from "../fixtures/live-studio";
 import { formatSanitizedAxeBlockingError } from "../../scripts/playwright-ci-reporter";
+import { seedBetaAgreementForLogin } from "./helpers/beta-agreement";
 
 const db = new PrismaClient();
 const runId = randomUUID().replace(/-/g, "");
@@ -951,6 +952,7 @@ test("desktop merchant can recover upload and validation errors, then publish an
     await page.context().clearCookies();
     expect((await page.goto(`/checkout/${fixture.vendorIds[0]}/${created.id}`))?.status()).toBe(200);
     await page.getByLabel("姓名", { exact: true }).fill("G7-48 合成買家");
+    await seedBetaAgreementForLogin(db, `g7-48-buyer-${runId}@celebratedeal.local`);
     await page.getByLabel("Email", { exact: true }).fill(`g7-48-buyer-${runId}@celebratedeal.local`);
     await page.getByLabel("電話（選填）", { exact: true }).fill("0912345678");
     await page.getByRole("checkbox").check();
@@ -1541,6 +1543,7 @@ test("desktop merchant can recover upload and validation errors, then publish an
     const response = await page.goto(`/checkout/${fixture.vendorIds[0]}/${fixture.productId}`);
     expect(response?.status()).toBe(200);
     await page.getByLabel("姓名", { exact: true }).fill("合成公開買家");
+    await seedBetaAgreementForLogin(db, `g7-14-public-${runId}@celebratedeal.local`);
     await page.getByLabel("Email", { exact: true }).fill(`g7-14-public-${runId}@celebratedeal.local`);
     await page.getByLabel("電話", { exact: true }).fill("0912345678");
     await page.getByLabel("收件人", { exact: true }).fill("合成公開收件人");
@@ -1629,6 +1632,7 @@ test("desktop merchant can recover upload and validation errors, then publish an
 
     const fillCheckout = async () => {
       await page.getByLabel("姓名", { exact: true }).fill("回應遺失測試買家");
+      await seedBetaAgreementForLogin(db, `g7-57-recovery-${runId}@celebratedeal.local`);
       await page.getByLabel("Email", { exact: true }).fill(`g7-57-recovery-${runId}@celebratedeal.local`);
       await page.getByLabel("電話", { exact: true }).fill("0912345678");
       await page.getByLabel("收件人", { exact: true }).fill("回應遺失測試收件人");

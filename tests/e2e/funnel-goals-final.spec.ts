@@ -3,6 +3,7 @@ import { expect, test, type Page } from "@playwright/test";
 import { PrismaClient } from "@prisma/client";
 import { assertLocalTestDatabase } from "../../scripts/local-database-safety";
 import { createLandingPageFixture, type LandingPageFixture } from "../fixtures/landing-page";
+import { seedBetaAgreementForLogin } from "./helpers/beta-agreement";
 
 /**
  * Browser contract for the systeme-style Funnel journey:
@@ -31,6 +32,7 @@ const operationsTabs = ["頁面設定", "自動化規則", "A/B 測試", "成效
 
 async function login(page: Page) {
   await page.goto("/login");
+  await seedBetaAgreementForLogin(db, fixture.owner.email);
   await page.getByLabel("Email").fill(fixture.owner.email);
   await page.getByLabel("密碼").fill(fixture.password);
   await page.getByRole("button", { name: "登入", exact: true }).click();

@@ -10,6 +10,7 @@ import { openLiveStudioAdvancedSettings } from "../fixtures/live-studio";
 import { createLandingPageFixture } from "../fixtures/landing-page";
 import { createGoalFunnelStepPages } from "../../src/lib/funnel-goal-step-pages";
 import { formatSanitizedAxeBlockingError } from "../../scripts/playwright-ci-reporter";
+import { seedBetaAgreementForLogin } from "./helpers/beta-agreement";
 
 const db = new PrismaClient();
 const password = "A11y-Test-Password-123!";
@@ -105,6 +106,7 @@ let ownerLoginIndex = 0;
 async function loginOwner(page: Page) {
   await gotoStableRoute(page, "/login");
   const email = fixture.ownerEmails[ownerLoginIndex++ % fixture.ownerEmails.length];
+  await seedBetaAgreementForLogin(db, email);
   await page.getByLabel("Email").fill(email);
   await page.getByLabel("密碼").fill(password);
   await page.getByRole("button", { name: "登入" }).click();
@@ -685,6 +687,7 @@ test("landing page template library has no blocking axe violations, including th
 test("platform-admin MFA and static operations routes have no blocking axe violations", async ({ page }) => {
   test.setTimeout(120_000);
   await gotoStableRoute(page, "/login");
+  await seedBetaAgreementForLogin(db, fixture.adminEmail);
   await page.getByLabel("Email").fill(fixture.adminEmail);
   await page.getByLabel("密碼").fill(password);
   await page.getByRole("button", { name: "登入" }).click();
@@ -715,6 +718,7 @@ test("platform-admin MFA and static operations routes have no blocking axe viola
 
   await page.context().clearCookies();
   await gotoStableRoute(page, "/login");
+  await seedBetaAgreementForLogin(db, fixture.adminEmail);
   await page.getByLabel("Email").fill(fixture.adminEmail);
   await page.getByLabel("密碼").fill(password);
   await page.getByRole("button", { name: "登入" }).click();
@@ -814,6 +818,7 @@ test("funnel editor publish drawer has no blocking axe violations while sliding 
   const landing = await db.landingPage.create({ data: { vendorId: funnel.vendor.id, projectId: funnel.project.id, name: "A11y 發布抽屜", slug: `a11y-publish-${runId}`, draftContent: JSON.parse(JSON.stringify(content)) } });
   try {
     await gotoStableRoute(page, "/login");
+    await seedBetaAgreementForLogin(db, funnel.owner.email);
     await page.getByLabel("Email").fill(funnel.owner.email);
     await page.getByLabel("密碼").fill(funnel.password);
     await page.getByRole("button", { name: "登入" }).click();

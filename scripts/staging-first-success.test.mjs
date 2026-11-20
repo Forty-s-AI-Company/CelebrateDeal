@@ -15,7 +15,7 @@ function request(url, method = "GET", postData = null) {
 }
 
 test("owner and buyer contexts may write only the journey's own endpoints", () => {
-  for (const path of ["/register", "/welcome", "/api/products/upsert", "/forms/new", "/videos/new", "/messages/templates/new", "/lives/new", "/api/live-studio/drafts", "/projects/abc123", "/api/auth/email-verification/confirm"]) {
+  for (const path of ["/register", "/beta-agreement", "/welcome", "/api/products/upsert", "/forms/new", "/videos/new", "/messages/templates/new", "/lives/new", "/api/live-studio/drafts", "/projects/abc123", "/api/auth/email-verification/confirm"]) {
     assert.equal(classifyRequest(request(`${origin}${path}`, "POST"), "owner"), "WRITE", path);
     assert.equal(classifyRequest(request(`${origin}${path}`, "POST"), "buyer"), "BLOCK", path);
   }
@@ -43,6 +43,7 @@ test("owner and buyer contexts may write only the journey's own endpoints", () =
 test("route evidence keeps fixed categories, never ids, slugs or queries", () => {
   assert.equal(routeCategory(`${origin}/register?invite=secret`), "REGISTER");
   assert.equal(routeCategory(`${origin}/onboarding`), "ONBOARDING");
+  assert.equal(routeCategory(`${origin}/beta-agreement?next=%2Fwelcome`), "BETA_AGREEMENT");
   assert.equal(routeCategory(`${origin}/welcome/preparing`), "OTHER");
   assert.equal(routeCategory(`${origin}/lives/abc123/preview`), "LIVE_PREVIEW");
   assert.equal(routeCategory(`${origin}/projects/abc123?published=1`), "PROJECT");

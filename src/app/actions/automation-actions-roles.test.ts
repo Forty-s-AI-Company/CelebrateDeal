@@ -27,7 +27,8 @@ vi.mock("next/navigation", () => ({ redirect: mocks.redirect }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 vi.mock("@/lib/csrf", () => ({ assertServerActionSecurity: vi.fn(async () => undefined) }));
 vi.mock("@/lib/audit", () => ({ auditSnapshot: (value: unknown) => value, writeAuditLog: mocks.audit }));
-vi.mock("@/lib/db", () => ({ getDb: () => ({ ...mocks.db, userSession: { findUnique: mocks.findSession } }) }));
+// Every vendor here has accepted the 封測合作協議 (O-11); the gate itself is tested in auth.test.ts.
+vi.mock("@/lib/db", () => ({ getDb: () => ({ ...mocks.db, userSession: { findUnique: mocks.findSession }, userPolicyConsent: { findFirst: async () => ({ id: "synthetic-beta-consent" }) } }) }));
 vi.mock("@/components/csrf-field", () => ({ CsrfField: () => null }));
 
 import AutomationSettingsPage from "@/app/(app)/settings/automations/page";

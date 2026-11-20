@@ -3,6 +3,7 @@ import { expect, test } from "@playwright/test";
 import { PrismaClient } from "@prisma/client";
 import { hashPassword } from "../../src/lib/password";
 import { navigateAndAssertDirectUrlGuard } from "./helpers/direct-url-guard";
+import { seedBetaAgreementForLogin } from "./helpers/beta-agreement";
 
 const db = new PrismaClient();
 const password = "Wp58SyntheticPassword!";
@@ -16,7 +17,7 @@ test("active accountant is denied same-vendor brand settings through direct URL 
   const before = await db.vendor.findUniqueOrThrow({ where: { id: vendor.id } });
   const vendorCountBefore = await db.vendor.count();
   try {
-    await page.goto("/login"); await page.getByLabel("Email").fill(user.email); await page.getByLabel("密碼").fill(password); await page.getByRole("button", { name: "登入" }).click(); await expect(page).toHaveURL(/\/dashboard$/);
+    await page.goto("/login"); await seedBetaAgreementForLogin(db, user.email); await page.getByLabel("Email").fill(user.email); await page.getByLabel("密碼").fill(password); await page.getByRole("button", { name: "登入" }).click(); await expect(page).toHaveURL(/\/dashboard$/);
     const posts: string[] = []; const external: string[] = [];
     page.on("request", (request) => { const url = new URL(request.url()); if (request.method() === "POST") posts.push(url.pathname); if (!new Set(["127.0.0.1", "localhost"]).has(url.hostname)) external.push(request.url()); });
     const canaries = [before.logoUrl, before.primaryColor, before.ctaColor, before.timezone, before.supportEmail].filter((value): value is string => Boolean(value));

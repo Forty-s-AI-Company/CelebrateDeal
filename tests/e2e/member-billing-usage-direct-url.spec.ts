@@ -4,6 +4,7 @@ import { PrismaClient } from "@prisma/client";
 import { monthRange } from "../../src/lib/billing";
 import { hashPassword } from "../../src/lib/password";
 import { navigateAndAssertDirectUrlGuard } from "./helpers/direct-url-guard";
+import { seedBetaAgreementForLogin } from "./helpers/beta-agreement";
 
 const db = new PrismaClient();
 const password = "Wp77SyntheticPassword!";
@@ -242,6 +243,7 @@ test("active member is denied billing usage before finance queries or MFA", asyn
 
   try {
     await page.goto("/login");
+    await seedBetaAgreementForLogin(db, user.email);
     await page.getByLabel("Email").fill(user.email);
     await page.getByLabel("密碼").fill(password);
     await page.getByRole("button", { name: "登入" }).click();

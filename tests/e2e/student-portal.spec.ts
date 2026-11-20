@@ -7,6 +7,7 @@ import { revealEmailDeliveryPayload } from "../../src/lib/email-delivery-pii";
 import { createStudentPortalAccessToken } from "../../src/lib/student-portal-auth";
 import { AUTOMATION_VOUCHER_COOKIE } from "../../src/lib/live-interaction";
 import { issueBuyerSupportGrant } from "../../src/lib/buyer-support-access";
+import { seedBetaAgreementForLogin } from "./helpers/beta-agreement";
 
 // Synthetic capabilities stay inside the test process and never enter trace artifacts.
 test.use({ trace: "off", video: "off" });
@@ -46,6 +47,7 @@ test("mailbox login scopes the dashboard, prevents replay and supports logout", 
 
   await page.goto(`/portal/${a.slug}`);
   await expect(page).toHaveURL(new RegExp(`/portal/${a.slug}/login$`));
+  await seedBetaAgreementForLogin(db, email);
   await page.getByLabel("Email", { exact: true }).fill(email);
   await page.getByRole("button", { name: "寄送登入連結" }).click();
   await expect(page.getByRole("status").filter({ hasText: "15 分鐘有效" })).toBeVisible();

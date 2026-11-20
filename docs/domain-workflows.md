@@ -317,6 +317,23 @@ PayUni 的 Notify 整個遺失時，`/api/jobs/payment-reconcile`（`JOB_SECRET`
 
 聯盟出款另受平台開關 `AFFILIATE_PAYOUTS_DISABLED`（F-052）約束：開啟時任何角色都不能標記已付款或匯出提領 CSV；不論開關，標記已付款都必須有已啟用的商家出款政策與已匯出的扣繳快照。support 讀取範圍目前不縮小：案件多數未指派，縮成「只看指派給自己」會讓客服無法接手，留待有客服排班需求時再評估。
 
+### 封測合作協議閘門（O-11，2026-11-20）
+
+商家要先同意現行版本的《封測合作協議》才能使用後台。條文與版本只在 `src/lib/beta-agreement-content.ts`；公開頁 `/policies/beta-agreement` 與後台彈窗讀同一份。
+
+| 角色 | 未同意時 |
+| --- | --- |
+| owner（active） | `/beta-agreement` 阻擋式彈窗：全文、乙方（商家名稱＋自己的帳號 Email，伺服器帶入）、捲到底才能勾選、勾選後才能送出；同意後回原頁（安全的站內路徑）或 `/dashboard` |
+| admin／accountant／support／其他後台角色 | 同一頁，只顯示「等待商家 owner 同意」與全文，沒有同意按鈕；Server Action 也拒絕（`owner_required`） |
+| partner | 不受影響（本來就不會成為 vendor context） |
+| 平台管理員 | 不受影響（甲方），即使同時是某商家成員 |
+| 學員、買家、公開頁 | 不受影響 |
+
+- 閘門在 `requireVendorContext`（所有後台頁、layout、Server Action）、`requireVendorOwner` 與 `requireMerchantApiActor`（回 403 `BETA_AGREEMENT_REQUIRED`）。直接用 `getCurrentAuth` 授權的幾個講師／直播 API（`live-media`、`live-presenter`、`live-danmaku`、`live-interactions/cards`、`live-chat/instructor`、`products/upsert`、`media/videos/status`、聯盟報酬匯出）沒有加；未同意的商家打不開呼叫它們的後台頁。
+- 判斷依據：這個 vendor 有沒有 `UserPolicyConsent(context = beta_agreement, agreementVersion = 現行版本)`；任何 owner 的同意都算，別的 vendor 的不算。條文實質變動時換版本號，所有商家下一次進後台都要重新同意。
+- 新註冊：註冊頁只提示「進入後台前會請你閱讀並同意」並連到公開頁；`registerAction` 不寫協議同意，註冊後第一次進後台（`/welcome`）走同一個彈窗，同意後回 `/welcome`，同一人只同意一次。
+- 測試與 fixture：e2e 以 `tests/e2e/helpers/beta-agreement.ts` 的 `seedBetaAgreementForLogin` 在登入前寫入同一種同意列（fixture，閘門照常檢查）；閘門本身由 `tests/e2e/beta-agreement.spec.ts` 與 `registration-onboarding.spec.ts` 用鍵盤操作驗證。staging WP4 合成商家由 `ensureWp4SandboxFixture` 寫入同意列；`staging-first-success.mjs` 在註冊後走 `BETA_AGREEMENT` 步驟。
+
 ### 商家凍結（F-036／B02-14）
 
 平台管理員在 `/admin/vendor-features` 凍結或解除凍結整個商家（需要 15 分鐘內 MFA step-up；填寫內部原因；寫 AuditLog `vendor_suspended`／`vendor_suspension_lifted`）。權威資料是 `Vendor.suspendedAt`，判斷只走 `src/lib/vendor-suspension-state.ts`，各頁不自行判斷。

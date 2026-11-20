@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { expect, test } from "@playwright/test";
 import { PrismaClient } from "@prisma/client";
 import { hashPassword } from "../../src/lib/password";
+import { seedBetaAgreementForLogin } from "./helpers/beta-agreement";
 const db = new PrismaClient();
 test.use({ trace: "off", screenshot: "off", video: "off" });
 test.setTimeout(180_000);
@@ -19,6 +20,7 @@ for (const viewport of [{ width: 1440, height: 1000 }, { width: 390, height: 844
       const product = await db.product.create({ data: { vendorId: vendor.id, name: "Synthetic product", slug: id, priceCents: 1200, isActive: true, fulfillmentTypeConfirmed: true } });
       await db.salesProjectProduct.create({ data: { vendorId: vendor.id, projectId: project.id, productId: product.id } });
       await page.goto("/login");
+      await seedBetaAgreementForLogin(db, user.email);
       await page.getByLabel("Email").fill(user.email);
       await page.getByLabel("密碼").fill(password);
       await page.getByRole("button", { name: "登入", exact: true }).click();

@@ -4,6 +4,7 @@ import { PrismaClient } from "@prisma/client";
 import { hashPassword } from "../../src/lib/password";
 import { statusLabel } from "../../src/lib/status-labels";
 import { navigateAndAssertDirectUrlGuard } from "./helpers/direct-url-guard";
+import { seedBetaAgreementForLogin } from "./helpers/beta-agreement";
 
 const db = new PrismaClient();
 const password = "Wp41SyntheticPassword!";
@@ -24,7 +25,7 @@ test("admin cannot open another vendor live preview through direct URL navigatio
   const snapshot = async () => Promise.all([db.live.findUniqueOrThrow({ where: { vendorId_id: { vendorId: ownerVendor.id, id: ownLive.id } } }), db.live.findUniqueOrThrow({ where: { vendorId_id: { vendorId: foreignVendor.id, id: foreignLive.id } } }), db.live.count({ where: { vendorId: ownerVendor.id } }), db.live.count({ where: { vendorId: foreignVendor.id } })]);
   const before = await snapshot();
   try {
-    await page.goto("/login"); await page.getByLabel("Email").fill(user.email); await page.getByLabel("密碼").fill(password); await page.getByRole("button", { name: "登入" }).click(); await expect(page).toHaveURL(/\/dashboard$/);
+    await page.goto("/login"); await seedBetaAgreementForLogin(db, user.email); await page.getByLabel("Email").fill(user.email); await page.getByLabel("密碼").fill(password); await page.getByRole("button", { name: "登入" }).click(); await expect(page).toHaveURL(/\/dashboard$/);
     const requests: string[] = []; page.on("request", (request) => requests.push(request.url()));
     const ownPath = `/lives/${ownLive.id}/preview`; const ownResponse = await page.goto(ownPath); expect(ownResponse?.status()).toBe(200); await expect(page).toHaveURL(new RegExp(`${ownPath}$`));
     await expect(page.getByRole("heading", { name: "直播預覽" })).toBeVisible(); await expect(page.getByText(ownLive.title, { exact: true })).toBeVisible(); await expect(page.getByText(ownLive.description ?? "", { exact: true })).toBeVisible(); await expect(page.getByText(`/live/${ownLive.slug}`, { exact: true })).toBeVisible(); await expect(page.getByText(`串流模式：${statusLabel("streamMode", ownLive.streamMode)}`, { exact: true })).toBeVisible(); await expect(page.getByText(`Cloudflare 即時直播：${ownLive.cloudflareLiveInputUid}`, { exact: true })).toBeVisible(); await expect(page.getByRole("link", { name: "開啟公開頁" })).toHaveAttribute("href", `/live/${ownLive.slug}`);

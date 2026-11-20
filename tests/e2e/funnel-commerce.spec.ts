@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { expect, test } from "@playwright/test";
 import { PrismaClient } from "@prisma/client";
 import { createFunnelCommerceFixture } from "../fixtures/funnel-commerce";
+import { seedBetaAgreementForLogin } from "./helpers/beta-agreement";
 
 const db = new PrismaClient();
 const runKey = randomUUID();
@@ -48,6 +49,7 @@ test("商品綁定、可信價格與兩步驟結帳（付款 transport mock，�
     : route.abort("blockedbyclient"));
   const slug = `test-only-commerce-${runKey.replaceAll("-", "").slice(-12)}`;
   await page.goto("/login");
+  await seedBetaAgreementForLogin(db, fixture.owner.email);
   await page.getByLabel("Email").fill(fixture.owner.email);
   await page.getByLabel("密碼").fill(fixture.password);
   await page.getByRole("button", { name: "登入", exact: true }).click();

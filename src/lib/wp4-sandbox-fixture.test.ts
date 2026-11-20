@@ -6,6 +6,7 @@ import {
   Wp4SandboxFixtureConflictError,
   Wp4SandboxFixtureDatabaseError,
 } from "./wp4-sandbox-fixture";
+import { BETA_AGREEMENT_VERSION } from "./beta-agreement-content";
 
 function fixtureDb(overrides: Record<string, unknown> = {}) {
   const transactionDb = {
@@ -15,6 +16,7 @@ function fixtureDb(overrides: Record<string, unknown> = {}) {
     product: { findFirst: vi.fn().mockResolvedValue(null), create: vi.fn(), update: vi.fn() },
     billingPlan: { findFirst: vi.fn().mockResolvedValue(null), create: vi.fn(), update: vi.fn() },
     invoice: { findFirst: vi.fn().mockResolvedValue(null), create: vi.fn(), update: vi.fn() },
+    userPolicyConsent: { createMany: vi.fn().mockResolvedValue({ count: 1 }) },
     ...overrides,
   };
   const db = {
@@ -66,6 +68,11 @@ describe("ensureWp4SandboxFixture", () => {
     expect(transactionDb.invoice.create).toHaveBeenCalledWith(expect.objectContaining({
       data: expect.objectContaining({ id: WP4_SANDBOX_FIXTURE.invoiceId, vendorId: WP4_SANDBOX_FIXTURE.vendorId }),
     }));
+    // O-11 fixture state: the synthetic owner accepted the current 封測合作協議 (not one of the six counted identities).
+    expect(transactionDb.userPolicyConsent.createMany).toHaveBeenCalledWith({
+      data: [{ userId: WP4_SANDBOX_FIXTURE.userId, vendorId: WP4_SANDBOX_FIXTURE.vendorId, context: "beta_agreement", agreementVersion: BETA_AGREEMENT_VERSION }],
+      skipDuplicates: true,
+    });
   });
 
   it("reuses exact fixtures without resetting payment, inventory or membership state", async () => {
