@@ -117,7 +117,20 @@ A3 全部合併後 staging：alias 切到 `ca83e82c`（無新 migration，status
 - npm audit 對 picomatch（GHSA-fc5q-39xc-vjpf）的例外於 2027-01-01 到期；上游出修補版後移除（#642）。
 - 部署前已排入提醒的重新產生：改用原地重算內容的 compare-and-set 腳本（不改狀態），#670 複審建議。背景：A2-13 部署前已排入、尚未寄出的 `live_reminder` 與直播通知保留原本的內容（可能含未清理的姓名）；#670 第一版提案腳本是先標成 `superseded` 再靠 reconcile 重建，但 reconcile 每批只處理 100 筆且沿用之前的進度，依 `incomplete` 重跑時已救回的提醒會再被標掉而永遠不寄，已移除。
 
+## A4. 第四批（2026-11-23 owner 決定後新增）
+
+| # | ID | 項目 | 風險 | 狀態 |
+|---|---|---|---|---|
+| 1 | A4-01 | 通用折扣碼與編輯器 `coupon` 元件（U-10、U-11）；佣金以折扣後實付金額計算 | 高（金流、佣金） | 待排 |
+| 2 | A4-02 | 常青場課後信只寄給看過的報名者：共用開場時間模式與常青結束後補寄目前寄給所有已驗證報名者，要改成與逐觀眾模式一致（Q-17 決定） | 一般 | 待排 |
+| 3 | A4-03 | 應用層限流不採用可偽造的來源 IP 標頭，並為 `/api/security/csp-report` 加限流（D-20；O-7＝否，網域不經 Cloudflare）；完成後才評估 CSP 轉強制（R-01） | 高（安全） | 待排 |
+| 4 | A4-04 | Stream 簽章網址 staging 驗證（`docs/operations/stream-signed-urls-plan.md` §8 第 3 步）；之後鎖定新上傳與既有影片前要再問 owner | 一般 | 金鑰已設（2026-11-23），待驗證 |
+| 5 | A4-05 | PayUni Sandbox 實測補單；通過後再請 owner 授權 Production `PAYMENT_RECONCILE_ENABLED=true`（D-9） | 高（金流） | 待排 |
+| 6 | A4-06 | LINE E2E runner `PRISMA_INIT_FAILED` | 一般 | 處理中 [#693](https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/693) |
+
 ## B. 需要 owner 先做產品決定
+
+> 2026-11-23：owner 決定本段全部照「建議」欄。需要實作的已排入 A4；其餘維持封測後。
 
 | ID | 項目 | 要決定的事 | 建議 |
 |---|---|---|---|
@@ -140,11 +153,11 @@ A3 全部合併後 staging：alias 切到 `ca83e82c`（無新 migration，status
 | AI M1–M4（情境引導、一句話建場、文案、課程大綱） | Cloudflare AI Gateway 與 Workers AI token |
 | 含退款的對帳 runner 實跑（R-06）、財務 QA | O-14 `PAYUNI_QA_FINANCE_TOTP_SECRET` |
 | 還原演練、F-058／F-074、Supabase 遷東京（O-15） | O-4 Supabase 升級與備份 |
-| Dependency review 檢查（每個 PR 都失敗，非必要檢查） | GitHub Dependency graph 與 Private vulnerability reporting |
-| LINE E2E | staging 環境的 LINE secrets |
+| ~~Dependency review 檢查~~ | ✅ 2026-11-23 已開啟 Dependency graph |
+| LINE E2E | secrets 已齊（2026-11-23）；剩 runner 問題 A4-06 |
 | #561 workflow 實跑、合併後切 staging alias | staging 授權（見執行規則）、`VERCEL_TOKEN` 權限 |
-| 外部排程生效（R-07） | owner 以 `wrangler` 部署 |
-| CSP 轉強制（R-01） | Cloudflare WAF rate rule；累積違規報告 |
+| ~~外部排程生效（R-07）~~ | ✅ 2026-11-23 Worker 已部署並驗證 |
+| CSP 轉強制（R-01） | 網域不經 Cloudflare（O-7＝否），改等 A4-03 應用層限流；累積違規報告 |
 | 政策頁內容、F-103「部分互動」字樣 | O-9～O-11 法定資料與律師意見 |
 | 資料保存排程啟用（R-09） | 確認 `scheduled-jobs.yml` 的觸發方式後由 owner 同意開啟 |
 | staging 合成資料清理（R-08） | 備份與 owner 同意 |

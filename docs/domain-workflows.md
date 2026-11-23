@@ -82,6 +82,7 @@
 - **更新規則**：排程 fingerprint 不同就取代；相同時只往較晚的場次移（兩個瀏覽器各有場次時以較晚者為準）。
 - **寄送**：排程取 `sessionStartAt` 在「現在 − 影片長度 − 規則分鐘數」之前、72 小時內的列（逾期超過 72 小時不補寄），排除這位報名者在這條規則底下已有非 `superseded` 課後信的列，依場次開始時間由舊到新、每輪最多 `recipientLimit` 位；Email 無法使用的報名者跳過且不佔名額。以場次開始時間當 `liveScheduledAt` 建立快照；`{{live_start_at}}` 是觀眾自己的場次（與指定場次相同，以 Asia/Taipei 顯示）。不看 fingerprint：排程改掉之前已指派的場次照記錄的時間寄。寄送前檢查重新讀這位報名者的 assignment，場次不同或沒有 assignment 就不寄。
 - **一位報名者、一條規則最多一封**：rejoin 把場次往後移時，舊場次尚未寄出的那封在寄送前被 supersede，新場次到期後的下一輪才建立新的那封；模板改版也一樣（舊版在寄送前被 supersede，下一輪建立新版）。已寄過就不再寄。
+- **owner 2026-11-23 決定**：課後信只寄給看過直播的報名者。逐觀眾模式已符合；共用開場時間模式與下一點的常青結束後補寄仍寄給所有已驗證報名者，待 work-queue A4-02 修正。
 - **常青關閉、結束或改回草稿**：沿用 #582，依原開播時間補寄給已驗證報名者；常青期間已收到同一規則課後信的人不會再收到（待 owner 決定是否改變補寄對象）。
 - **設定重存**：常青生效時儲存常青設定，會在 commit 後把這場直播所有排隊中的課後信標為 `superseded`（`supersedeFixedTimeNotificationsForActiveEvergreen`）；這些報名者會重新出現在排程查詢，若場次仍在 72 小時內，下一輪依同一個 id 重新啟用；超過 72 小時的就不再寄。
 - **涵蓋不到的情況**（不是錯誤，是目前設計的限制）：
@@ -272,6 +273,8 @@
 對帳必須一致：`refundedAmount = sum(valid RefundRecord)`；`net commission = positive commission + void/negative adjustments`；`settlement payable = collected - refunds - fees + adjustments`（D-31 A：聯盟佣金由商家自付，月結**不扣**佣金；`calculateSettlement` 的 `affiliateCommissionCents` 只回報、不扣除，規則與改成平台代扣代付前要補的項目見 `docs/operations/affiliate-commission-settlement-runbook.md`）。以目前資料模型的單位與唯一鍵實作，不用文字公式取代 ledger 驗證。
 
 未知訂單或未驗證 webhook 不可產生權威付款與佣金；client price／vendor／affiliate／rate 不可覆寫 server records。結算鎖定後只追加 adjustment，不改舊 ledger 掩蓋修正。Chargeback／拒付也須核對原交易、佣金與結算調整，不能未經 provider 證據就當成普通退款或重複扣除。回歸涵蓋重複、部分退款、亂序、重複／亂序拒付、過期連結、無效 affiliate、self-referral 政策、provider retry、併發與跨租戶；click-through 不能宣稱收入。
+
+折扣碼（尚未實作，owner 2026-11-23 決定，work-queue A4-01）：佣金以折扣後的實付金額計算。
 
 ### 付款通知遺失時的主動查詢（A-2 05）
 
