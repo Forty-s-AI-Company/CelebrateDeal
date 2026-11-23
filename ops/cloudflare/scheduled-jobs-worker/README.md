@@ -25,6 +25,17 @@
 
 請不要把 `JOB_SECRET` 貼到聊天、截圖、issue 或 repo。
 
+注意事項（2026-11-23 首次部署時遇到）：
+
+- Cloudflare 要求帳號先有 workers.dev 子網域才能設定 cron（錯誤碼 10063）。第一次部署前，先到 Dashboard → 運算 → Workers 和 Pages 打開一次，就會自動建立。本 Worker 設定了 `workers_dev = false`，不會因此多出公開網址。
+- 不在這個資料夾執行時，`secret put` 要加 `--name celebratedeal-scheduler-staging`；`tail` 則把名稱直接放在後面：`npx wrangler tail celebratedeal-scheduler-staging`。
+- 換 `JOB_SECRET` 時，下面四個地方必須是同一個值：
+  - Vercel `celebrate-deal-staging` 的 Preview 環境變數；改完要重新部署 staging 並切換 alias，新值才會生效。
+  - GitHub repo secret。
+  - GitHub 環境 `Preview – celebrate-deal-staging` 的環境 secret；staging workflow 會優先讀這一份。
+  - 這個 Worker。
+- 在 PowerShell 用 `gh secret set` 時，改用 `--body (Get-Clipboard -Raw).Trim()`，不要用管線，避免值的結尾多一個換行。
+
 ## 確認有在運作
 
 - Cloudflare Dashboard → Workers → `celebratedeal-scheduler-staging` → Triggers，應有兩條 cron；Settings → Variables 的 `JOB_SECRET` 應顯示為加密的 secret。

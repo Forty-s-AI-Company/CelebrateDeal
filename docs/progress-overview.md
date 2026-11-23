@@ -15,8 +15,8 @@
 |---|---|---|---|
 | 套件快修（vitest、Sentry、Next.js） | 把有已知漏洞的套件升到安全版本 | 100% | #568 |
 | 自動更新與每週安全掃描（Dependabot、每週稽核、SECURITY.md） | 套件有新版本或漏洞時自動開 PR／開 issue 提醒 | 100% | #565 |
-| PR 漏洞檢查（Dependency review） | 新 PR 引入有漏洞的套件時擋下 | 90% | 程式已就緒；要你在 GitHub 開啟 Dependency graph 才會生效（見第二部分） |
-| GitHub 平台安全設定 | 密碼外洩掃描、推送保護等 | 90% | 大部分 10-27 已設定；剩「Private vulnerability reporting」要你開 |
+| PR 漏洞檢查（Dependency review） | 新 PR 引入有漏洞的套件時擋下 | 100% | 2026-11-23 已開啟 Dependency graph；Dependabot PR 重跑檢查通過 |
+| GitHub 平台安全設定 | 密碼外洩掃描、推送保護等 | 100% | 2026-11-23 已開啟 Private vulnerability reporting；手動執行 Security audit 通過 |
 | 程式碼靜態安全掃描（CodeQL） | 每個 PR 自動掃描常見安全漏洞 | 100% | #589 |
 | 安全警示送到 LINE | 有重大漏洞時用 LINE 通知你 | 0% | 等你決定要不要（目前用 GitHub 通知信） |
 | picomatch 漏洞暫時例外 | 一個新漏洞讓所有 PR 卡住，官方還沒修補版；已加只限這個漏洞、2026-12-31 到期的例外 | 100% | #642；官方出修補版後要移除例外 |
@@ -112,11 +112,11 @@
 
 | # | 要做的事 | 在哪裡做 | 影響 |
 |---|---|---|---|
-| 1 | 部署排程 Worker：在 `ops/cloudflare/scheduled-jobs-worker/` 執行 `npx wrangler login`、`npx wrangler secret put JOB_SECRET`、`npx wrangler deploy` | 你的電腦＋Cloudflare | 沒部署時排程工作（寄信、補跑）只靠備援觸發 |
-| 2 | 開啟 Dependency graph 與 Private vulnerability reporting；手動跑一次 Security audit workflow | GitHub → Settings → Code security；Actions | PR 漏洞檢查目前無效 |
+| 1 | ✅ 完成（2026-11-23）：排程 Worker 已部署，每 5 分鐘呼叫 staging，4 個工作都回 200；`JOB_SECRET` 已換成新值（Vercel Preview、GitHub repo 與環境 secret、Worker 都已同步），GitHub 備援排程也通過 | — | — |
+| 2 | ✅ 完成（2026-11-23）：Dependency graph 與 Private vulnerability reporting 已開啟，Security audit 手動執行通過 | — | — |
 | 3 | staging 環境補 LINE 相關 secret、`CSRF_SECRET`、`CRON_SECRET`、`PAYUNI_QA_FINANCE_TOTP_SECRET`；確認 PayUni 測試卡變數仍有效（O-14） | GitHub → Settings → Environments → Preview – celebrate-deal-staging | LINE 測試與財務退款測試無法跑 |
 | 4 | 換一組有 alias 讀取權限的 `VERCEL_TOKEN`；輪替 `OPS_SMOKE_SECRET`（曾出現在對話中） | Vercel、GitHub | 自動化部署檢查受限；舊值有外洩風險 |
-| 5 | Vercel：回報方案（Hobby／Pro）、Production 與 Preview 的 `JOB_SECRET` 是否相同、重新授權 Vercel 連接器；考慮 staging 升 Pro（O-6、O-16） | Vercel 後台、claude.ai 連接器設定 | 排程可能被限流；金鑰相同有安全風險 |
+| 5 | Vercel：回報方案（Hobby／Pro）、Production 的 `JOB_SECRET` 是否已和 Preview 不同（Preview 已在 2026-11-23 換新）、重新授權 Vercel 連接器；考慮 staging 升 Pro（O-6、O-16） | Vercel 後台、claude.ai 連接器設定 | 排程可能被限流；金鑰相同有安全風險 |
 | 6 | Sentry 建告警：付款通知重試失敗、超賣時通知你（O-17） | Sentry → Alerts | 出問題沒人知道 |
 | 7 | Cloudflare：Stream 簽章金鑰；對 `/api/security/csp-report` 設流量限制；確認正式網域全程經 Cloudflare（O-7） | Cloudflare 後台 | 影片網址可被分享；安全標頭無法轉強制 |
 | 8 | 開通 Cloudflare AI Gateway 與 Workers AI 金鑰 | Cloudflare 後台 | AI 助理無法開始 |
