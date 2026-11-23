@@ -3,6 +3,8 @@
 name = "celebratedeal-scheduler-staging"
 main = "src/index.js"
 compatibility_date = "2026-11-01"
+# 只靠 cron 觸發，不需要公開網址；關掉 workers.dev 免註冊子網域，也少一個對外入口。
+workers_dev = false
 
 [vars]
 TARGET_ORIGIN = "https://celebrate-deal-staging.carry-digital-nomad.in.net"
