@@ -1,4 +1,4 @@
-# 專案進度總覽（2026-11-19 更新）
+# 專案進度總覽（2026-11-23 更新）
 
 這份文件說明「全面審視與升級規劃」（2026-11-11 擬定）和後續工作佇列（`docs/work-queue.md`）目前做到哪裡。
 
@@ -114,12 +114,12 @@
 |---|---|---|---|
 | 1 | ✅ 完成（2026-11-23）：排程 Worker 已部署，每 5 分鐘呼叫 staging，4 個工作都回 200；`JOB_SECRET` 已換成新值（Vercel Preview、GitHub repo 與環境 secret、Worker 都已同步），GitHub 備援排程也通過 | — | — |
 | 2 | ✅ 完成（2026-11-23）：Dependency graph 與 Private vulnerability reporting 已開啟，Security audit 手動執行通過 | — | — |
-| 3 | staging 環境補 LINE 相關 secret、`CSRF_SECRET`、`CRON_SECRET`、`PAYUNI_QA_FINANCE_TOTP_SECRET`；確認 PayUni 測試卡變數仍有效（O-14） | GitHub → Settings → Environments → Preview – celebrate-deal-staging | LINE 測試與財務退款測試無法跑 |
-| 4 | 換一組有 alias 讀取權限的 `VERCEL_TOKEN`；輪替 `OPS_SMOKE_SECRET`（曾出現在對話中） | Vercel、GitHub | 自動化部署檢查受限；舊值有外洩風險 |
-| 5 | Vercel：回報方案（Hobby／Pro）、Production 的 `JOB_SECRET` 是否已和 Preview 不同（Preview 已在 2026-11-23 換新）、重新授權 Vercel 連接器；考慮 staging 升 Pro（O-6、O-16） | Vercel 後台、claude.ai 連接器設定 | 排程可能被限流；金鑰相同有安全風險 |
-| 6 | Sentry 建告警：付款通知重試失敗、超賣時通知你（O-17） | Sentry → Alerts | 出問題沒人知道 |
-| 7 | Cloudflare：Stream 簽章金鑰；對 `/api/security/csp-report` 設流量限制；確認正式網域全程經 Cloudflare（O-7） | Cloudflare 後台 | 影片網址可被分享；安全標頭無法轉強制 |
-| 8 | 開通 Cloudflare AI Gateway 與 Workers AI 金鑰 | Cloudflare 後台 | AI 助理無法開始 |
+| 3 | ✅ 完成（2026-11-23）：測試站需要的 LINE、CSRF、CRON、財務帳號雙重驗證、PayUni 測試卡等密鑰都已設定，測試卡與雙重驗證已實測可用；LINE 自動測試卡在測試環境連不上資料庫，屬程式問題，我在處理（#693），你不用再做事 | — | — |
+| 4 | ✅ 完成（2026-11-23）：`VERCEL_TOKEN` 已換新；`OPS_SMOKE_SECRET` 已換新（Vercel＋GitHub）；舊 Vercel token 未刪，不影響安全（它沒有外洩） | — | — |
+| 5 | ✅ 決定（2026-11-23）：封測期間測試站維持 Hobby，正式上線前與正式站一起升 Pro；測試站 `JOB_SECRET` 已換新，與正式站不同；Vercel 連接器可用，不需重新授權 | — | — |
+| 6 | ✅ 完成（2026-11-23）：Sentry 已有預設規則「高優先度問題寄 Email」，付款重試失敗、超賣、需人工對帳都屬錯誤等級，會通知你；若之後漏通知再改成「所有新錯誤」 | — | — |
+| 7 | ✅ 部分完成（2026-11-23）：Stream 簽章金鑰已設到測試站（舊網址仍可播，等我驗證後再問你是否鎖定）；正式網域 DNS 在 Spaceship、直連 Vercel，**不經 Cloudflare**（O-7＝否），所以 Cloudflare 流量限制做不了，改由程式處理（工作佇列 A4-03），你不用做事 | — | — |
+| 8 | ⏸ 暫緩（2026-11-23）：Cloudflare AI Gateway 與 Workers AI 金鑰等 AI 助理動工時再開通 | Cloudflare 後台 | AI 助理無法開始 |
 
 ### C. 正式上線前（現在封測用 staging，不急）
 
@@ -136,15 +136,17 @@
 
 ### D. 需要你做決定
 
-| # | 問題 | 我的建議 |
+> 2026-11-23 你決定：全部照建議。要寫程式的項目已排入工作佇列 A4 段。
+
+| # | 問題 | 決定（全部照建議） |
 |---|---|---|
-| 1 | 測試商家的「刪除」模式第一次執行前：同意嗎？要先備份嗎？（R-10） | 同意，先備份 |
-| 2 | 要不要做折扣碼？折扣後佣金用哪個金額算？ | 做；佣金用折扣後實付金額算 |
-| 3 | Email 序列與延遲步驟的寄送上限（一個商家一天幾封、多久跑一次） | 開通第一個商家前再定 |
-| 4 | 常青場課後信：沒看直播的報名者要不要寄？ | 只寄給看過的人 |
-| 5 | 不綁直播的 Email 序列與 LINE 步驟要不要做 | 封測回饋後再排 |
-| 6 | 多方案／買家訂閱、自訂網域要不要做 | 封測後 |
-| 7 | 安全警示要不要送 LINE（需要平台官方帳號） | 先用 GitHub 通知信 |
-| 8 | 買家看得到的 AI 內容是否加標示 | 加標示 |
-| 9 | 正式站要不要開啟「PayUni 付款通知遺失時自動補單」（設定 `PAYMENT_RECONCILE_ENABLED=true`；開啟後會用正式商店帳號向 PayUni 查詢並自動入帳） | 先在測試站用 Sandbox 實測補單成功後再開 |
-| 10 | 你電腦上的本機測試資料庫（`celebratedeal-postgres` 的 `celebratedeal_test`）曾被三次誤連，可能留有假資料；要不要重建 | 要重建（只影響本機測試，不影響其他資料） |
+| 1 | 測試商家的「刪除」模式第一次執行前：同意嗎？要先備份嗎？（R-10） | ✅ 同意，先備份 |
+| 2 | 要不要做折扣碼？折扣後佣金用哪個金額算？ | ✅ 做；佣金用折扣後實付金額算 |
+| 3 | Email 序列與延遲步驟的寄送上限（一個商家一天幾封、多久跑一次） | ✅ 開通第一個商家前再定 |
+| 4 | 常青場課後信：沒看直播的報名者要不要寄？ | ✅ 只寄給看過的人 |
+| 5 | 不綁直播的 Email 序列與 LINE 步驟要不要做 | ✅ 封測回饋後再排 |
+| 6 | 多方案／買家訂閱、自訂網域要不要做 | ✅ 封測後 |
+| 7 | 安全警示要不要送 LINE（需要平台官方帳號） | ✅ 先用 GitHub 通知信 |
+| 8 | 買家看得到的 AI 內容是否加標示 | ✅ 加標示 |
+| 9 | 正式站要不要開啟「PayUni 付款通知遺失時自動補單」（設定 `PAYMENT_RECONCILE_ENABLED=true`；開啟後會用正式商店帳號向 PayUni 查詢並自動入帳） | ✅ 先在測試站用 Sandbox 實測補單成功後再開 |
+| 10 | 你電腦上的本機測試資料庫（`celebratedeal-postgres` 的 `celebratedeal_test`）曾被三次誤連，可能留有假資料；要不要重建 | ✅ 要重建（只影響本機測試，不影響其他資料）；已於 2026-11-23 重建 |
