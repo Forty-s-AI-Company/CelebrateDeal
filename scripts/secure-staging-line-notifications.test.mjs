@@ -3,7 +3,9 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import test from "node:test";
 
-import { TASK, runLineStagingValidation, safeFailure, validateInvocation, validateReceipt } from "./secure-staging-line-notifications.mjs";
+import net from "node:net";
+
+import { TASK, databaseShape, prismaDatabaseUrl, probeDatabaseTcp, runLineStagingValidation, safeFailure, validateInvocation, validateReceipt } from "./secure-staging-line-notifications.mjs";
 
 const source = {
   STAGING_DATABASE_URL: "postgresql://staging_user@staging.invalid/postgres",
@@ -104,6 +106,7 @@ test("a non-master SHA is BLOCKED before alias attestation, even if the alias wo
 const attestedDeps = {
   verifyShaOnProtectedMasterImpl: async () => true,
   verifyAliasAttestationImpl: async () => ({ host: "celebrate-deal-staging.carry-digital-nomad.in.net" }),
+  probeDatabaseTcpImpl: async () => null,
 };
 
 function prismaLikeError(name, props, message) {
@@ -156,4 +159,71 @@ test("safeFailure maps Prisma errors to fixed codes and never leaks message text
   for (const error of [prismaLikeError("PrismaClientInitializationError", { errorCode: "P1001" }, secret), new Error(secret)]) {
     assert.doesNotMatch(safeFailure(error), /secret-host|postgresql|pw/u);
   }
+});
+
+test("Prisma init errors without errorCode map to closed connection categories", () => {
+  const host = "aws-0-secret.pooler.supabase.com:6543";
+  const cases = [
+    [`Can't reach database server at \`${host}\``, "PRISMA_INIT_UNREACHABLE"],
+    ["Error querying the database: FATAL: Tenant or user not found", "PRISMA_INIT_TENANT_OR_USER_NOT_FOUND"],
+    [`Authentication failed against database server at \`${host}\``, "PRISMA_INIT_AUTH_FAILED"],
+    ["FATAL: Max client connections reached", "PRISMA_INIT_CONNECTION_LIMIT"],
+    ["Database `postgres` does not exist on the database server", "PRISMA_INIT_DATABASE_MISSING"],
+    ["Error opening a TLS connection: certificate verify failed", "PRISMA_INIT_TLS"],
+    [`Timed out fetching a new connection from the connection pool at \`${host}\``, "PRISMA_INIT_TIMEOUT"],
+    ["Server has closed the connection.", "PRISMA_INIT_CONNECTION_CLOSED"],
+    ["error: Environment variable not found: DIRECT_URL.", "PRISMA_INIT_ENV_MISSING"],
+    ["Unable to require(`libquery_engine-debian-openssl-3.0.x.so.node`).", "PRISMA_INIT_ENGINE_UNAVAILABLE"],
+    ["something new", "PRISMA_INIT_FAILED"],
+  ];
+  for (const [message, code] of cases) {
+    const failure = safeFailure(prismaLikeError("PrismaClientInitializationError", {}, message));
+    assert.equal(failure, code);
+    assert.doesNotMatch(failure, /secret|pooler|6543/u);
+  }
+  // A real P-code still wins over the message.
+  assert.equal(safeFailure(prismaLikeError("PrismaClientInitializationError", { errorCode: "P1000" }, cases[0][0])), "PRISMA_P1000");
+});
+
+test("a failed TCP probe stops before Prisma and records only a fixed code", async () => {
+  let created = false;
+  const receipt = await runLineStagingValidation(source, {
+    ...attestedDeps,
+    probeDatabaseTcpImpl: async () => "DB_TCP_TIMEOUT",
+    createDb: () => { created = true; throw new Error("must not create"); },
+  });
+  assert.equal(created, false);
+  assert.equal(receipt.result, "FAILED");
+  assert.equal(receipt.failureCode, "DB_TCP_TIMEOUT");
+  assert.equal(receipt.cleanup.attempted, false);
+  assert.equal(receipt.sideEffects.cronCalls, 0);
+});
+
+test("the TCP probe distinguishes refused, unresolved and reachable endpoints", async () => {
+  const server = net.createServer((socket) => socket.destroy());
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const { port } = server.address();
+  try {
+    assert.equal(await probeDatabaseTcp(`postgresql://u:p@127.0.0.1:${port}/postgres`), null);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+  assert.equal(await probeDatabaseTcp(`postgresql://u:p@127.0.0.1:${port}/postgres`), "DB_TCP_REFUSED");
+  assert.equal(await probeDatabaseTcp("postgresql://u:p@unresolvable.invalid:5432/postgres"), "DB_TCP_UNRESOLVED");
+  assert.equal(await probeDatabaseTcp("not a url"), "DB_TCP_BINDING_INVALID");
+});
+
+test("databaseShape reports only provider, port and user-form classes", () => {
+  assert.equal(databaseShape("postgresql://postgres.abcref:pw@aws-0-ap-south-1.pooler.supabase.com:6543/postgres"), "supabase_pooler:6543:ref_user");
+  assert.equal(databaseShape("postgresql://postgres:pw@aws-0-ap-south-1.pooler.supabase.com/postgres"), "supabase_pooler:5432:plain_user");
+  assert.equal(databaseShape("postgresql://postgres:pw@db.abcref.supabase.co:5432/postgres"), "supabase_direct:5432:plain_user");
+  assert.equal(databaseShape("postgresql://u:pw@10.0.0.1:7777/postgres"), "other:other:plain_user");
+  assert.equal(databaseShape("nope"), "invalid");
+  assert.doesNotMatch(databaseShape("postgresql://postgres.abcref:pw@aws-0-ap-south-1.pooler.supabase.com:6543/postgres"), /abcref|pw|ap-south/u);
+});
+
+test("only the Supabase transaction pooler gets Prisma pgbouncer mode", () => {
+  assert.equal(new URL(prismaDatabaseUrl("postgresql://postgres.ref:pw@aws-0-x.pooler.supabase.com:6543/postgres?schema=public")).searchParams.get("pgbouncer"), "true");
+  assert.equal(new URL(prismaDatabaseUrl("postgresql://postgres.ref:pw@aws-0-x.pooler.supabase.com:5432/postgres")).searchParams.get("pgbouncer"), null);
+  assert.equal(new URL(prismaDatabaseUrl("postgresql://u:pw@staging.invalid:6543/postgres")).searchParams.get("pgbouncer"), null);
 });
