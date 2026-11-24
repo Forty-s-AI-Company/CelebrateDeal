@@ -26,7 +26,7 @@
 | `CSRF_SECRET` | staging random secret | production 獨立 random secret | Password manager | preflight 通過；不得與 `JOB_SECRET` 共用。**這是應用層資料加密根金鑰：禁止輪替；備份時必須一併保存對應版本**（見 §7）。沒有它時不再退回 `JOB_SECRET`（§8.5） |
 | `DATA_ENCRYPTION_KEYRING` | 選填；JSON 陣列，各金鑰帶 `kid`，恰好一把 `active`，其餘 decrypt-only（§8） | 同左，值與 staging 不同 | owner 產生的 32 bytes 隨機值＋Password manager | 未設定＝`[WARN]`、仍以 `CSRF_SECRET` 衍生的金鑰加密（kid `legacy`）；格式錯、active 不唯一、kid 重複、金鑰長度不足＝`[FAIL]`。輪替步驟見 §8.3，備份要保存對應版本（§8.4） |
 | `LIVE_CHAT_INGRESS_SECRET` | staging random secret，至少 32 字元 | production random secret，至少 32 字元 | Password manager＋edge secret store | preflight 通過；不得輸出或進入 client bundle |
-| `RATE_LIMIT_PROVIDER` | `cloudflare_waf` 或 `upstash_redis` | `cloudflare_waf` 或 `upstash_redis` | Cloudflare / Upstash | preflight 不得顯示 `memory`；Staging 實測 429 |
+| `RATE_LIMIT_PROVIDER` | `upstash_redis`（A4-03：網域不經 Cloudflare，Vercel 上 `cloudflare_waf` 會 FAIL） | `upstash_redis`（同左） | Cloudflare / Upstash | preflight 不得顯示 `memory`；Staging 實測 429 |
 | `CLOUDFLARE_ACCOUNT_ID` | same or staging account | production account | Cloudflare dashboard | direct upload API 可建立 upload URL |
 | `CLOUDFLARE_STREAM_TOKEN` | staging scoped token | production scoped token | Cloudflare API Tokens | 不在 client bundle 出現 |
 | `CLOUDFLARE_STREAM_WEBHOOK_SECRET` | staging webhook secret | production webhook secret | Cloudflare Notifications | 假 secret webhook 會 401 |
@@ -93,7 +93,7 @@ npm run external:smoke
 
 ## 5. Live chat ingress trust
 
-**A4-03（2026-11-24）起**：部署在 Vercel（`VERCEL_ENV` 為 `production`／`preview`）時，live chat 與其他限流相同，直接採用 Vercel edge 設定的 `x-real-ip`（沒有時 `x-forwarded-for`），不需要 ingress proof；網域不經 Cloudflare（O-7＝否），`cf-connecting-ip` 一律不採信。規則見 `docs/domain-workflows.md`「客戶端 IP 信任規則」。以下 proof 合約只適用於非 Vercel 的 production runtime（例如本機 E2E 的 loopback ingress）。
+**A4-03（2026-11-24）起**：部署在 Vercel（`VERCEL_ENV` 為 `production`／`preview`）時，live chat 與其他限流相同，直接採用 Vercel edge 設定的 `x-real-ip`（沒有時 `x-forwarded-for`），不需要 ingress proof；網域不經 Cloudflare（O-7＝否），`cf-connecting-ip` 一律不採信。規則見 `docs/domain-workflows.md`「客戶端 IP 信任規則」。以下 proof 合約只適用於非 Vercel 的 production runtime（例如本機 E2E 的 loopback ingress）。 **不可以在非 Vercel 的主機設定 `VERCEL_ENV`**：它是 edge 已覆寫來源 IP 標頭的唯一訊號，設錯會讓用戶端送的 `x-forwarded-for` 被採信。Vercel 部署上 `RATE_LIMIT_PROVIDER=cloudflare_waf` 會讓 preflight FAIL，請改 `upstash_redis`。
 
 非 Vercel 的 production runtime 上，live chat route 使用專用 header `x-celebratedeal-live-chat-ingress` 作為 edge 入口 proof。前置 proxy 必須在每個請求覆寫該 header，值與 server-side `LIVE_CHAT_INGRESS_SECRET` 完全一致；app 只有在 proof 通過常數時間比較後，才會信任 `cf-connecting-ip` 或 `x-real-ip`。
 

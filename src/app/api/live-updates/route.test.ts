@@ -219,6 +219,43 @@ describe("GET /api/live-updates", () => {
     expect(mocks.findMessages).not.toHaveBeenCalled();
   });
 
+  describe("limiter identity (A4-03 MINOR-1)", () => {
+    function passFor(viewerSessionId: string, token = admissionToken, now?: Date) {
+      return createLiveViewerPass({
+        vendorId: "v1", liveId: "l1", viewerSessionId, admissionToken: token,
+        sessionExpiresAt: new Date(Date.now() + 90_000), ...(now ? { now } : {}),
+      });
+    }
+    function limiterIdentity() {
+      const call = mocks.checkRateLimit.mock.calls.at(-1) as [Request, string, number, number, { clientIp: string | null }];
+      expect(call[1]).toBe("live-updates-read");
+      return call[4].clientIp;
+    }
+
+    it("buckets viewers behind one shared IP by their verified pass, not by the IP", async () => {
+      await GET(request("vendorId=v1&liveId=l1", { cookie: cookie({ pass: passFor("session-1") }) }));
+      const first = limiterIdentity();
+      await GET(request("vendorId=v1&liveId=l1", { cookie: cookie({ pass: passFor("session-2") }) }));
+      const second = limiterIdentity();
+      expect(first).toMatch(/^viewer-session:[0-9a-f]{32}$/u);
+      expect(second).toMatch(/^viewer-session:[0-9a-f]{32}$/u);
+      expect(first).not.toBe(second);
+      expect(first).not.toContain("session-1");
+      // The same session keeps the same bucket across refreshed passes.
+      await GET(request("vendorId=v1&liveId=l1", { cookie: cookie({ pass: passFor("session-1") }) }));
+      expect(limiterIdentity()).toBe(first);
+    });
+
+    it("falls back to the trusted IP for a missing, forged, expired or foreign-cookie pass", async () => {
+      const valid = passFor("session-1");
+      const forged = `${valid.slice(0, -4)}AAAA`;
+      for (const pass of [undefined, forged, passFor("session-1", admissionToken, new Date(Date.now() - 10 * 60_000)), passFor("session-1", "another-admission-token")]) {
+        await GET(request("vendorId=v1&liveId=l1", { cookie: cookie(pass ? { pass } : {}) }));
+        expect(limiterIdentity()).toBe("203.0.113.5");
+      }
+    });
+  });
+
   it("refuses an expired pass and consults the session row", async () => {
     const pass = createLiveViewerPass({
       vendorId: "v1",

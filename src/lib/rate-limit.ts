@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getTrustedClientIp } from "./request-client-ip";
+import { getTrustedClientIp, rateLimitIpBucket } from "./request-client-ip";
 
 export type RateLimitProviderId = "memory" | "cloudflare_waf" | "upstash_redis";
 
@@ -27,20 +27,22 @@ type RateLimitDecision = {
 export type RateLimitOptions = {
   /**
    * The bucket identity the caller already resolved: a trusted client IP from
-   * getTrustedClientIp, a fixed label for an authenticated caller, or null
-   * (one shared "unknown" bucket). Omit it to resolve the trusted client IP
-   * from `request`. Never pass a raw request header here.
+   * getTrustedClientIp, a verified token-derived label, a fixed label for an
+   * authenticated caller, or null (one shared "unknown" bucket). Required
+   * when options are passed; omit the whole options object to resolve the
+   * trusted client IP from `request`. Never pass a raw request header here.
    */
-  clientIp?: string | null;
+  clientIp: string | null;
 };
 
 /**
  * A4-03: the bucket suffix never comes from a header the client can set
- * (cf-connecting-ip, true-client-ip, ...). See getTrustedClientIp.
+ * (cf-connecting-ip, true-client-ip, ...). See getTrustedClientIp. IPv6
+ * addresses count per /64 (rateLimitIpBucket).
  */
 function bucketIdentity(request: Request, options: RateLimitOptions | undefined) {
-  const identity = options && "clientIp" in options ? options.clientIp : getTrustedClientIp(request);
-  return identity ?? "unknown";
+  const identity = options ? options.clientIp : getTrustedClientIp(request);
+  return identity === null ? "unknown" : rateLimitIpBucket(identity);
 }
 
 function cleanup(now: number) {

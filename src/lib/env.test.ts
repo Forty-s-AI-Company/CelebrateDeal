@@ -51,6 +51,16 @@ function configuredEnv(): NodeJS.ProcessEnv {
   };
 }
 
+/** A Vercel deployment's limiter: the domain is not behind Cloudflare (A4-03). */
+function withUpstash(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  return {
+    ...env,
+    [envKey("RATE", "LIMIT", "PROVIDER")]: "upstash_redis",
+    [envKey("UPSTASH", "REDIS", "REST", "URL")]: "https://upstash.test",
+    [envKey("UPSTASH", "REDIS", "REST", "TOKEN")]: "test-upstash-value",
+  };
+}
+
 function check(report: ReturnType<typeof getEnvCheckReport>, key: string, status: EnvCheck["status"]) {
   return report.checks.find((item) => item.key === key && item.status === status);
 }
@@ -60,7 +70,18 @@ describe("getEnvCheckReport", () => {
     const report = getEnvCheckReport(configuredEnv());
 
     expect(report.ok).toBe(true);
-    expect(report.checks.every((item) => item.status === "pass")).toBe(true);
+    // The fixture is a non-Vercel production run (like CI): the only non-pass
+    // item is the A4-03 warning that no source IP header is trusted there.
+    expect(report.checks.filter((item) => item.status !== "pass").map((item) => [item.key, item.status]))
+      .toEqual([["CLIENT_IP_TRUST", "warning"]]);
+  });
+
+  it("passes the source-IP and limiter checks for a Vercel Preview configuration", () => {
+    const report = getEnvCheckReport({ ...withUpstash(configuredEnv()), VERCEL: "1", VERCEL_ENV: "preview" });
+
+    expect(report.ok).toBe(true);
+    expect(check(report, "CLIENT_IP_TRUST", "pass")).toBeDefined();
+    expect(report.checks.filter((item) => ["CLIENT_IP_TRUST", "RATE_LIMIT_PROVIDER"].includes(item.key) && item.status !== "pass")).toEqual([]);
   });
 
   it("fails when a required value is missing", () => {
@@ -240,7 +261,8 @@ describe("getEnvCheckReport", () => {
   });
 
   it("binds PayUni environment to Preview and Production deployment boundaries", () => {
-    const env = configuredEnv();
+    // A Vercel deployment must use upstash_redis (A4-03); the fixture default is CI's cloudflare_waf.
+    const env = withUpstash(configuredEnv());
     env[envKey("PAYMENT", "PROVIDER")] = "payuni";
     env[envKey("PAYUNI", "SANDBOX", "HASH", "KEY")] = "ssssssssssssssssssssssssssssssss";
     env[envKey("PAYUNI", "SANDBOX", "HASH", "IV")] = "ssssssssssssssss";
@@ -391,6 +413,53 @@ describe("getEnvCheckReport", () => {
     expect(check(report, missingKey, "fail")?.message).toBe(`RATE_LIMIT_PROVIDER=upstash_redis 時必須設定 ${missingKey}`);
   });
 
+  describe("source IP trust and provider on Vercel (A4-03)", () => {
+    const providerKey = envKey("RATE", "LIMIT", "PROVIDER");
+    const upstashVercel = () => ({
+      ...configuredEnv(),
+      VERCEL: "1",
+      VERCEL_ENV: "production",
+      [providerKey]: "upstash_redis",
+      [envKey("UPSTASH", "REDIS", "REST", "URL")]: "https://upstash.test",
+      [envKey("UPSTASH", "REDIS", "REST", "TOKEN")]: "test-upstash-value",
+    });
+
+    it("passes on a Vercel deployment and names the trust mode only", () => {
+      const env = upstashVercel();
+      for (const vercelEnv of ["production", "preview"]) {
+        const report = getEnvCheckReport({ ...env, VERCEL_ENV: vercelEnv });
+        expect(check(report, "CLIENT_IP_TRUST", "pass")?.message).toBe("來源 IP 信任模式：vercel-edge");
+        expect(check(report, providerKey, "fail")).toBeUndefined();
+      }
+    });
+
+    it("fails on Vercel infrastructure when VERCEL_ENV does not select the edge rule", () => {
+      for (const env of [
+        { ...upstashVercel(), VERCEL_ENV: undefined },
+        { ...upstashVercel(), VERCEL_ENV: "staging" },
+      ]) {
+        const report = getEnvCheckReport(env);
+        expect(report.ok).toBe(false);
+        expect(check(report, "CLIENT_IP_TRUST", "fail")?.message).toContain("unknown 桶");
+      }
+    });
+
+    it("only warns for a non-Vercel production run such as CI, so CI keeps building", () => {
+      const report = getEnvCheckReport(configuredEnv());
+      expect(check(report, "CLIENT_IP_TRUST", "warning")?.message).toContain("不可在非 Vercel 主機手動設定 VERCEL_ENV");
+      expect(check(report, "CLIENT_IP_TRUST", "fail")).toBeUndefined();
+      expect(check(report, providerKey, "fail")).toBeUndefined();
+    });
+
+    it("refuses cloudflare_waf on a Vercel deployment because the domain is not behind Cloudflare", () => {
+      for (const vercelEnv of ["production", "preview"]) {
+        const report = getEnvCheckReport({ ...configuredEnv(), VERCEL: "1", VERCEL_ENV: vercelEnv });
+        expect(report.ok).toBe(false);
+        expect(check(report, providerKey, "fail")?.message).toContain("upstash_redis");
+      }
+    });
+  });
+
   it("only warns when recommended monitoring values are missing", () => {
     const env = configuredEnv();
     const monitoringKeys = [
@@ -485,7 +554,7 @@ describe("getEnvCheckReport", () => {
   });
 
   it("allows live PAYUNi only for the designated Preview merchant probe", () => {
-    const env = configuredEnv();
+    const env = withUpstash(configuredEnv());
     env.VERCEL_ENV = "preview";
     env.PAYMENT_PROVIDER = "payuni";
     env.PAYUNI_ENV = "production";

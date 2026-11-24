@@ -120,6 +120,7 @@ describe("GET /api/admin/preflight", () => {
       staging_database_url_match: true,
       all_passed: true,
       rateLimit,
+      clientIpTrust: "local-forwarded",
       cloudflare,
     });
     expect(mocks.getEnvCheckReport).toHaveBeenCalledOnce();
@@ -147,6 +148,7 @@ describe("GET /api/admin/preflight", () => {
       staging_database_url_match: true,
       all_passed: false,
       rateLimit,
+      clientIpTrust: "local-forwarded",
       cloudflare,
     });
     expect(JSON.stringify(body)).not.toContain("test-fixture-sensitive database failure");

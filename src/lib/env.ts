@@ -15,9 +15,11 @@ import {
   type DataEncryptionKeyringIssue,
 } from "@/lib/sensitive-data";
 import {
+  clientIpTrustConfig,
   LIVE_CHAT_INGRESS_SECRET_MAX_LENGTH,
   LIVE_CHAT_INGRESS_SECRET_MIN_LENGTH,
 } from "@/lib/request-client-ip";
+import { isVercelDeployment } from "@/lib/vercel-runtime";
 import { REGISTRATION_MODES } from "@/lib/registration-mode";
 import { getTurnstileConfig } from "@/lib/turnstile";
 import { parseCspEnforce } from "@/lib/content-security-policy";
@@ -272,6 +274,49 @@ function turnstileChecks(env: NodeJS.ProcessEnv): EnvCheck[] {
       : "NEXT_PUBLIC_TURNSTILE_SITE_KEY 與 TURNSTILE_SECRET_KEY 必須同時設定；只設定一個時註冊與重新寄送驗證信會一律失敗" }];
   }
   return [{ key: "TURNSTILE_SECRET_KEY", status: "warning", message: "未設定 Turnstile；註冊與重新寄送驗證信沒有機器人防護（邀請制可接受，開放公開註冊前必須設定）" }];
+}
+
+/**
+ * A4-03: which source IP the app trusts (see clientIpTrustConfig), and whether
+ * the selected limiter can count at all. Reports names only, never values.
+ *
+ * - On Vercel infrastructure (VERCEL=1 or VERCEL_ENV set) a trust mode of
+ *   "none" means VERCEL_ENV is missing or unexpected, so every request would
+ *   share one "unknown" limiter bucket: fail.
+ * - Any other deployment-security run without a trusted source (CI's
+ *   NODE_ENV=production preflight and build, `next start` off loopback) is not
+ *   a public deployment: warning, so CI keeps building.
+ * - cloudflare_waf on a Vercel deployment: the domain does not go through
+ *   Cloudflare (O-7), so checkRateLimit would count nothing: fail.
+ */
+function clientIpTrustChecks(env: NodeJS.ProcessEnv, deploymentSecurityRequired: boolean): EnvCheck[] {
+  const checks: EnvCheck[] = [];
+  const trustMode = clientIpTrustConfig(env).trustMode;
+  const onVercelInfrastructure = env.VERCEL === "1" || Boolean(env.VERCEL_ENV?.trim());
+  if (trustMode !== "none") {
+    checks.push({ key: "CLIENT_IP_TRUST", status: "pass", message: `來源 IP 信任模式：${trustMode}` });
+  } else if (onVercelInfrastructure) {
+    checks.push({
+      key: "CLIENT_IP_TRUST",
+      status: "fail",
+      message: "在 Vercel 上但 VERCEL_ENV 不是 production／preview，無法採信 x-real-ip；所有限流會落在同一個 unknown 桶。請確認 Vercel 有自動提供 System Environment Variables",
+    });
+  } else if (deploymentSecurityRequired) {
+    checks.push({
+      key: "CLIENT_IP_TRUST",
+      status: "warning",
+      message: "非 Vercel 的 production runtime 不採信任何來源 IP 標頭，所有限流共用一個桶；只適用 CI 與本機，不可對外部署。不可在非 Vercel 主機手動設定 VERCEL_ENV",
+    });
+  }
+
+  if (isVercelDeployment(env) && env.RATE_LIMIT_PROVIDER === "cloudflare_waf") {
+    checks.push({
+      key: "RATE_LIMIT_PROVIDER",
+      status: "fail",
+      message: "網域不經 Cloudflare（O-7），RATE_LIMIT_PROVIDER=cloudflare_waf 時應用層完全不計數；Vercel 部署請改用 upstash_redis",
+    });
+  }
+  return checks;
 }
 
 function requiresDeploymentSecurity(env: NodeJS.ProcessEnv) {
@@ -639,6 +684,8 @@ export function getEnvCheckReport(env: NodeJS.ProcessEnv = process.env) {
       message: "未設定時預設 memory；正式部署前必須明確設定 cloudflare_waf 或 upstash_redis",
     });
   }
+
+  checks.push(...clientIpTrustChecks(env, deploymentSecurityRequired));
 
   // F-028 / B02-05: RATE_LIMIT_PROVIDER only selects the IP layer. A WAF counts
   // per source IP and cannot stand in for per-account limits, so those

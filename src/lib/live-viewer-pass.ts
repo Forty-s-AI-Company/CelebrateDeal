@@ -176,6 +176,28 @@ export function liveViewerPassFromRequest(request: Request) {
   return value && value.length <= MAX_PASS_LENGTH ? value : null;
 }
 
+/**
+ * A4-03 MINOR-1: limiter identity for viewer polls and chat. Viewers behind one
+ * NAT or carrier-grade NAT share a public IP, so a per-IP bucket would throttle
+ * a whole classroom. A correctly signed, unexpired pass bound to the presented
+ * admission cookie identifies one viewer session without a database read; it
+ * cannot be minted by a client, so rotating cookies cannot open new buckets.
+ * Returns null (caller falls back to the trusted IP) for anything else.
+ */
+export function liveViewerPassRateLimitIdentity(request: Request, admissionToken: string | null | undefined, now?: Date) {
+  const pass = liveViewerPassFromRequest(request);
+  if (!pass || !admissionToken) return null;
+  const payload = pass.split(".")[1];
+  if (!payload || !PAYLOAD_PATTERN.test(payload)) return null;
+  const scope = parseClaims(payload);
+  if (!scope) return null;
+  // The scope is read only to select what to verify against; the signature
+  // check below covers it, and the session id is globally unique.
+  const claim = verifyLiveViewerPass(pass, { vendorId: scope.v, liveId: scope.l, admissionToken, now });
+  if (!claim) return null;
+  return `viewer-session:${createHash("sha256").update(`${PASS_PURPOSE}:limit:${claim.viewerSessionId}`).digest("hex").slice(0, 32)}`;
+}
+
 export function liveViewerPassCookieOptions(request: Request, maxAge = LIVE_VIEWER_PASS_TTL_SECONDS) {
   return {
     httpOnly: true,

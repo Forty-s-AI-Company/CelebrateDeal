@@ -5,6 +5,8 @@ import {
   copyTrustedClientIpHeaders,
   getTrustedClientIp,
   isVercelDeployment,
+  rateLimitIpBucket,
+  resetUnresolvedClientIpLogForTests,
 } from "@/lib/request-client-ip";
 import { liveChatIpTrustConfig } from "@/lib/live-chat-request-security";
 
@@ -51,6 +53,25 @@ describe("clientIpTrustConfig", () => {
     expect(clientIpTrustConfig({ ...otherProduction, RATE_LIMIT_PROVIDER: "upstash_redis" })).toEqual({ trustMode: "none", deploymentSource: "none" });
   });
 
+  it("treats only the explicit loopback E2E production runtime like local (MAJOR-1)", () => {
+    const e2e = {
+      NODE_ENV: "production",
+      E2E_TEST_MODE: "true",
+      E2E_BASE_URL: "http://127.0.0.1:31023",
+      NEXT_PUBLIC_APP_URL: "http://127.0.0.1:31023",
+    } as NodeJS.ProcessEnv;
+    expect(clientIpTrustConfig(e2e)).toEqual({ trustMode: "local-forwarded", deploymentSource: "node" });
+    expect(getTrustedClientIp(request({ "x-forwarded-for": "2001:db8:1:2::1", "cf-connecting-ip": "192.0.2.1" }), e2e)).toBe("2001:db8:1:2::1");
+    for (const env of [
+      { ...e2e, E2E_TEST_MODE: undefined },
+      { ...e2e, E2E_BASE_URL: "http://127.0.0.1:31024" },
+      { ...e2e, NEXT_PUBLIC_APP_URL: "https://app.example.test", E2E_BASE_URL: "https://app.example.test" },
+      { ...e2e, NEXT_PUBLIC_APP_URL: "https://ci.celebratedeal.local", E2E_BASE_URL: "https://ci.celebratedeal.local" },
+    ]) {
+      expect(clientIpTrustConfig(env)).toEqual({ trustMode: "none", deploymentSource: "none" });
+    }
+  });
+
   it("gives live chat the same Vercel rule and keeps its stricter non-Vercel contract", () => {
     expect(liveChatIpTrustConfig({ ...vercelProduction, RATE_LIMIT_PROVIDER: "cloudflare_waf" })).toEqual({ trustMode: "vercel-edge", deploymentSource: "vercel" });
     expect(liveChatIpTrustConfig({ ...vercelPreview, RATE_LIMIT_PROVIDER: "upstash_redis" })).toEqual({ trustMode: "vercel-edge", deploymentSource: "vercel" });
@@ -83,6 +104,54 @@ describe("getTrustedClientIp", () => {
   it("copies only the trusted headers for server-action limiter requests", () => {
     const copied = copyTrustedClientIpHeaders(new Headers({ ...forged(5), "x-real-ip": "203.0.113.12", "x-forwarded-for": "203.0.113.12", "user-agent": "agent" }));
     expect([...copied.keys()].sort()).toEqual(["x-forwarded-for", "x-real-ip"]);
+  });
+});
+
+describe("unresolved production address (MAJOR-2)", () => {
+  it("logs at most once a minute, with the trust mode only", () => {
+    resetUnresolvedClientIpLogForTests();
+    const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      const secretish = { "x-forwarded-for": "198.51.100.77", "cf-connecting-ip": "192.0.2.77" };
+      expect(getTrustedClientIp(request(secretish), otherProduction)).toBeNull();
+      expect(getTrustedClientIp(request(secretish), otherProduction)).toBeNull();
+      expect(getTrustedClientIp(request({}), vercelProduction)).toBeNull();
+      expect(error).toHaveBeenCalledTimes(1);
+      expect(error).toHaveBeenCalledWith("client_ip_unresolved", JSON.stringify({ trustMode: "none" }));
+      expect(JSON.stringify(error.mock.calls)).not.toContain("198.51.100.77");
+      // Development never logs.
+      resetUnresolvedClientIpLogForTests();
+      expect(getTrustedClientIp(request({}), localDev)).toBeNull();
+      expect(error).toHaveBeenCalledTimes(1);
+    } finally {
+      error.mockRestore();
+      resetUnresolvedClientIpLogForTests();
+    }
+  });
+});
+
+describe("rateLimitIpBucket (MINOR-3)", () => {
+  it("cuts IPv6 to its /64 and leaves IPv4 and labels alone", () => {
+    expect(rateLimitIpBucket("2001:db8:aa:bb:1:2:3:4")).toBe("2001:db8:aa:bb::/64");
+    expect(rateLimitIpBucket("2001:0DB8:00AA:00BB::9")).toBe("2001:db8:aa:bb::/64");
+    expect(rateLimitIpBucket("2001:db8::1")).toBe("2001:db8:0:0::/64");
+    expect(rateLimitIpBucket("::1")).toBe("0:0:0:0::/64");
+    expect(rateLimitIpBucket("203.0.113.5")).toBe("203.0.113.5");
+    expect(rateLimitIpBucket("authenticated-buyer")).toBe("authenticated-buyer");
+    expect(rateLimitIpBucket("viewer-session:abc")).toBe("viewer-session:abc");
+  });
+
+  it("shares one limiter bucket across a /64 but keeps the full address for audit", async () => {
+    vi.stubEnv("RATE_LIMIT_PROVIDER", "memory");
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("VERCEL_ENV", "production");
+    const first = request({ "x-real-ip": "2001:db8:aa:bb::1" });
+    expect(getTrustedClientIp(first)).toBe("2001:db8:aa:bb::1");
+    expect(await checkRateLimit(first, "a4-03-v6", 1, 60_000)).toBeNull();
+    expect((await checkRateLimit(request({ "x-real-ip": "2001:db8:aa:bb:ffff::2" }), "a4-03-v6", 1, 60_000))?.status).toBe(429);
+    expect(await checkRateLimit(request({ "x-real-ip": "2001:db8:aa:bc::1" }), "a4-03-v6", 1, 60_000)).toBeNull();
+    // An explicit IPv6 identity is bucketed the same way.
+    expect((await checkRateLimit(request({}), "a4-03-v6", 1, 60_000, { clientIp: "2001:db8:aa:bb::77" }))?.status).toBe(429);
   });
 });
 

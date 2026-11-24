@@ -10,7 +10,7 @@ import {
   ViewerChatQuerySchema,
 } from "@/lib/live-chat";
 import { liveViewerTokenFromRequest } from "@/lib/live-quota-admission";
-import { liveViewerPassFromRequest } from "@/lib/live-viewer-pass";
+import { liveViewerPassFromRequest, liveViewerPassRateLimitIdentity } from "@/lib/live-viewer-pass";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { liveChatIpTrustConfig } from "@/lib/live-chat-request-security";
 import { getRequestClientIp } from "@/lib/request-client-ip";
@@ -70,7 +70,10 @@ async function securityGate(request: Request, key: string, requireTrustedClientI
     return { response: json({ error: "Unable to use live chat" }, 403), clientIp: null };
   }
 
-  const limited = await checkRateLimit(request, key, 60, 60_000, { clientIp });
+  // MINOR-1: a verified viewer pass buckets one viewer session, so viewers
+  // sharing a NAT/CGNAT address do not throttle each other; otherwise per IP.
+  const identity = liveViewerPassRateLimitIdentity(request, liveViewerTokenFromRequest(request)) ?? clientIp;
+  const limited = await checkRateLimit(request, key, 60, 60_000, { clientIp: identity });
   return { response: limited ? noStore(limited) : null, clientIp };
 }
 

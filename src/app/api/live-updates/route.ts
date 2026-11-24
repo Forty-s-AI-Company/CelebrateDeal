@@ -12,7 +12,7 @@ import {
 import { liveChatIpTrustConfig } from "@/lib/live-chat-request-security";
 import { readViewerInteractionState } from "@/lib/live-interaction-viewer-state";
 import { hashLiveViewerToken, liveViewerTokenFromRequest } from "@/lib/live-quota-admission";
-import { liveViewerPassFromRequest } from "@/lib/live-viewer-pass";
+import { liveViewerPassFromRequest, liveViewerPassRateLimitIdentity } from "@/lib/live-viewer-pass";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { getRequestClientIp } from "@/lib/request-client-ip";
 
@@ -78,7 +78,10 @@ export async function GET(request: Request) {
   if (sameOrigin) return noStore(sameOrigin);
 
   const clientIp = getRequestClientIp(request, liveChatIpTrustConfig());
-  const limited = await checkRateLimit(request, "live-updates-read", 180, 60_000, { clientIp });
+  // MINOR-1: a verified viewer pass buckets one viewer session, so viewers
+  // sharing a NAT/CGNAT address do not throttle each other; otherwise per IP.
+  const identity = liveViewerPassRateLimitIdentity(request, liveViewerTokenFromRequest(request)) ?? clientIp;
+  const limited = await checkRateLimit(request, "live-updates-read", 180, 60_000, { clientIp: identity });
   if (limited) return noStore(limited);
 
   const query = parseQuery(request);

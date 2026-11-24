@@ -420,10 +420,15 @@ Web instance、排程 job 與資料庫各用自己的時鐘；一台寫入、另
 - **唯一入口**：`src/lib/request-client-ip.ts` 的 `getTrustedClientIp(request 或 headers)`。限流（`checkRateLimit`）、稽核紀錄（`requestAuditMeta`）、session 的 `ipAddress`、密碼重設信、Turnstile `remoteip`、CSP 回報上限都走它。Server Action 為限流重建 Request 時，用 `copyTrustedClientIpHeaders(await headers())` 只複製它會讀的兩個標頭。
 - **Vercel 部署（`VERCEL_ENV` 為 `production` 或 `preview`）**：讀 `x-real-ip`，沒有時讀 `x-forwarded-for` 第一個位址。依據：Vercel 官方 Request headers 文件寫明 `x-forwarded-for` 由 Vercel 覆寫、不轉送外部送來的值以防偽造，`x-real-ip` 與它相同；`@vercel/functions` 的 `ipAddress()` 也是讀這個標頭。Vercel Function 只能經 Vercel edge 進入，沒有可繞過的直連入口。格式不合（逗號、換行、非 IP、超過 16 跳）時視為沒有 IP，不退回其他標頭。
 - **本機開發與測試（`NODE_ENV` 不是 `production`）**：讀同樣兩個標頭（本機 Next server 在沒有時以 socket 位址補上 `x-forwarded-for`），都沒有時用 runtime 位址。Next 的 server 用 `??=`，**保留**用戶端送來的 `x-forwarded-for`，所以這個模式只能用在不對外的環境。
-- **其他 production runtime（CI build smoke、本機 `next start`、自架）**：不支援，一律回 null；限流把這類請求算進同一個 `unknown` 桶（偏嚴，不會被偽造標頭分桶）。
+- **本機 Playwright（`next start`，`NODE_ENV=production`）**：只有 `isExplicitLocalE2eRuntime` 成立時（`E2E_TEST_MODE=true`，`NEXT_PUBLIC_APP_URL` 是 loopback 且等於 `E2E_BASE_URL`）才比照本機模式，讓 smoke 測試以 `X-Forwarded-For` 隔離限流桶。e2e 不設 `VERCEL_ENV`。
+- **其他 production runtime（CI build smoke、自架）**：不支援，一律回 null；限流把這類請求算進同一個 `unknown` 桶（偏嚴，不會被偽造標頭分桶），並每個執行個體每分鐘最多記一筆 `client_ip_unresolved` 錯誤 log（只含信任模式名稱）。
+- **不可以在非 Vercel 的主機設定 `VERCEL_ENV`**（也不要把 `vercel env pull` 的檔案拿去對外的主機用）：它是「edge 已覆寫 `x-real-ip`／`x-forwarded-for`」的唯一訊號，設錯會讓用戶端自己送的 `x-forwarded-for` 被採信。
+- **IPv6**：限流鍵把 IPv6 位址截到 /64（同一個用戶通常握有整個 /64，逐位址分桶等於可以輪換），稽核紀錄、session 與 Turnstile 仍用完整位址。CSP 回報上限相同。
+- **preflight 與健康檢查**：`CLIENT_IP_TRUST` 檢查在 Vercel 上（`VERCEL=1` 或有 `VERCEL_ENV`）而信任模式是 `none` 時 FAIL；CI 等非 Vercel 的 production 只給 WARN，避免 CI 的 `NODE_ENV=production` preflight 與 build 失敗。Vercel 部署且 `RATE_LIMIT_PROVIDER=cloudflare_waf` 時 FAIL（網域不經 Cloudflare，應改 `upstash_redis`）。`/api/health` 與 `/api/admin/preflight` 回報 `clientIpTrust`（只有模式名稱）；provider 名稱在 `/api/admin/preflight` 的 `rateLimit.provider`。
+- **直播觀眾**：`live-updates-read` 與 `live-chat-read／write` 先以已驗章、未過期、綁定本次 admission cookie 的 viewer pass（`liveViewerPassRateLimitIdentity`，不查資料庫）分桶，一個觀看 session 一桶；沒有有效 pass 時才退回 IP。理由：同一個 NAT 或電信 CGNAT 後面的大量觀眾共用一個 IP，每 IP 180／60 次會互相卡住；pass 無法由用戶端偽造，換 cookie 也開不了新桶。聊天發言仍要求有可信 IP（黑名單與紀錄用）。
 - **呼叫端已知身分時**：`checkRateLimit(request, key, limit, windowMs, { clientIp })` 直接指定桶身分（直播聊天、購買廣播、live-updates 傳入已解析的 IP；講師私訊傳 `null` 搭配 per-user key；upsell 傳固定的 `authenticated-buyer` 搭配 grant 雜湊 key）。不可把原始標頭值傳進 `clientIp`。
 - **直播聊天**：`liveChatIpTrustConfig` 在 Vercel 部署上與上面相同（不再需要 `x-celebratedeal-live-chat-ingress` proof，因為沒有任何前置 proxy 能注入它）；非 Vercel 的 production（本機 E2E）仍沿用 ingress proof 合約，本機開發仍只用 runtime 位址。
-- `RATE_LIMIT_PROVIDER` 只選計數儲存，不決定信任哪個標頭。**注意**：`cloudflare_waf` 時 `checkRateLimit` 不計數；在網域不經 Cloudflare 的現況下等於沒有共用 IP 限流，只剩各端點自己的機制（例如 CSP 回報的單執行個體上限、資料庫帳號層限流）。要有跨執行個體的 IP 限流，staging／Production 需要 `RATE_LIMIT_PROVIDER=upstash_redis`。
+- `RATE_LIMIT_PROVIDER` 只選計數儲存，不決定信任哪個標頭。`cloudflare_waf` 時 `checkRateLimit` 不計數；網域不經 Cloudflare，所以 Vercel 部署上 preflight 直接 FAIL，staging／Production 必須用 `RATE_LIMIT_PROVIDER=upstash_redis`。
 - 測試：`src/lib/trusted-client-ip.test.ts`（偽造 `cf-connecting-ip`／`true-client-ip` 不改變限流鍵）、`src/lib/request-client-ip.test.ts`、`src/app/api/security/csp-report/route.test.ts`。
 
 **CSP 轉強制（R-01）**：要等本項上線、並在 staging 累積一段時間的 `csp_violation` 回報後再評估；A4-03 本身不改 `CSP_ENFORCE`。

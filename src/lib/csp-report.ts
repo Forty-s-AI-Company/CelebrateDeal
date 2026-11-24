@@ -10,7 +10,7 @@
  * full URLs, referrer, script sample, original policy, user agent, line numbers.
  */
 
-import { getTrustedClientIp } from "./request-client-ip";
+import { getTrustedClientIp, rateLimitIpBucket } from "./request-client-ip";
 
 export type CspViolation = {
   disposition: "enforce" | "report" | "unknown";
@@ -39,7 +39,8 @@ let globalWindow: Window = { startedAt: 0, count: 0 };
 const ipWindows = new Map<string, Window>();
 
 function requestIp(request: Request): string {
-  return getTrustedClientIp(request) ?? "unknown";
+  const ip = getTrustedClientIp(request);
+  return ip === null ? "unknown" : rateLimitIpBucket(ip);
 }
 
 /** Returns the seconds to wait when this request is over a local cap, otherwise null. */

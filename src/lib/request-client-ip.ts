@@ -1,5 +1,6 @@
 import { timingSafeEqual } from "node:crypto";
 import { isIP } from "node:net";
+import { isExplicitLocalE2eRuntime } from "./app-url";
 import { isVercelDeployment } from "./vercel-runtime";
 
 const MAX_SINGLE_IP_HEADER_LENGTH = 128;
@@ -198,19 +199,68 @@ export function getRequestClientIp(source: ClientIpHeaderSource, config: ClientI
  *   the edge-overwritten `x-forwarded-for`.
  * - Local development and tests (NODE_ENV is not production): the same
  *   headers as set by the local Next server, else the runtime address.
- * - Any other production runtime (CI build smoke, `next start` on a laptop,
- *   self-hosting) is not a supported deployment: no address is trusted and
- *   callers get null, which the limiter counts in one shared bucket.
+ * - The explicit loopback E2E runtime (`next start` with NODE_ENV=production,
+ *   E2E_TEST_MODE=true and a loopback NEXT_PUBLIC_APP_URL equal to
+ *   E2E_BASE_URL; see isExplicitLocalE2eRuntime): same as local, so the
+ *   Playwright suite can isolate limiter buckets with X-Forwarded-For.
+ * - Any other production runtime (CI build smoke, self-hosting) is not a
+ *   supported deployment: no address is trusted and callers get null, which
+ *   the limiter counts in one shared bucket. Preflight fails this on Vercel.
+ *
+ * VERCEL_ENV must never be set by hand on a non-Vercel host: it is the only
+ * signal that the edge overwrote x-real-ip / x-forwarded-for.
  */
 export function clientIpTrustConfig(env: NodeJS.ProcessEnv = process.env): ClientIpTrustConfig {
   if (isVercelDeployment(env)) return { trustMode: "vercel-edge", deploymentSource: "vercel" };
   if (env.NODE_ENV !== "production") return { trustMode: "local-forwarded", deploymentSource: "node" };
+  if (isExplicitLocalE2eRuntime(env)) return { trustMode: "local-forwarded", deploymentSource: "node" };
   return { trustMode: "none", deploymentSource: "none" };
+}
+
+const UNRESOLVED_LOG_INTERVAL_MS = 60_000;
+let lastUnresolvedLogAt = Number.NEGATIVE_INFINITY;
+
+/**
+ * A production request without a trusted address lands in the shared
+ * "unknown" limiter bucket. Say so at most once a minute per instance, with
+ * the trust mode only: never a header value or anything from the request.
+ */
+function reportUnresolvedClientIp(env: NodeJS.ProcessEnv, trustMode: ClientIpTrustMode, now = Date.now()) {
+  if (env.NODE_ENV !== "production") return;
+  if (now - lastUnresolvedLogAt < UNRESOLVED_LOG_INTERVAL_MS) return;
+  lastUnresolvedLogAt = now;
+  console.error("client_ip_unresolved", JSON.stringify({ trustMode }));
+}
+
+export function resetUnresolvedClientIpLogForTests() {
+  lastUnresolvedLogAt = Number.NEGATIVE_INFINITY;
 }
 
 /** Trusted client IP for limiter keys, audit rows, sessions and Turnstile. Null when unknown. */
 export function getTrustedClientIp(source: ClientIpHeaderSource, env: NodeJS.ProcessEnv = process.env): string | null {
-  return getRequestClientIp(source, clientIpTrustConfig(env));
+  const config = clientIpTrustConfig(env);
+  const ip = getRequestClientIp(source, config);
+  if (ip === null) reportUnresolvedClientIp(env, config.trustMode);
+  return ip;
+}
+
+/**
+ * Limiter bucket form of a trusted address. IPv6 is cut to its /64 prefix (one
+ * subscriber usually holds a whole /64, so per-address buckets would let one
+ * client rotate addresses); IPv4 and non-IP identities pass through. Audit
+ * rows and sessions keep the full address from getTrustedClientIp.
+ */
+export function rateLimitIpBucket(identity: string) {
+  if (isIP(identity) !== 6) return identity;
+  const canonical = canonicalizeIp(identity);
+  if (!canonical) return identity;
+  const [head = "", tail = ""] = canonical.split("::");
+  const headGroups = head ? head.split(":") : [];
+  const tailGroups = canonical.includes("::") ? (tail ? tail.split(":") : []) : [];
+  const groups = canonical.includes("::")
+    ? [...headGroups, ...Array<string>(8 - headGroups.length - tailGroups.length).fill("0"), ...tailGroups]
+    : headGroups;
+  return `${groups.slice(0, 4).map((group) => group.replace(/^0+(?=.)/u, "")).join(":")}::/64`;
 }
 
 /** The only headers getTrustedClientIp reads (vercel-edge and local-forwarded modes). */
