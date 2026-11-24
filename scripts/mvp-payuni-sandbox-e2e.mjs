@@ -1277,7 +1277,7 @@ export const PAYUNI_CARD_FIELDS = Object.freeze([
 export const PAYUNI_CREDIT_TAB_TEXT = "信用卡";
 const PAYUNI_FIELD_TIMEOUT_MS = 20_000;
 const PAYUNI_FALLBACK_WAIT_MS = 10_000;
-const PAYUNI_BROWSER_STEPS = new Set(["NONE", "METHOD", ...PAYUNI_CARD_FIELDS.map((field) => field.step), "SUBMIT"]);
+const PAYUNI_BROWSER_STEPS = new Set(["NONE", "METHOD", ...PAYUNI_CARD_FIELDS.map((field) => field.step), "PRESUBMIT", "SUBMIT"]);
 const DIAGNOSTIC_ENUM = /^[A-Z_]{1,24}$/u;
 const FIELD_SOURCES = new Set(["NONE", "PLACEHOLDER", "LEGACY_PLACEHOLDER", "AUTOCOMPLETE", "PLACEHOLDER_AFTER_TAB", "AUTOCOMPLETE_AFTER_TAB"]);
 const CREDIT_TAB_RESULTS = new Set(["NOT_TRIED", "CLICKED", "NOT_FOUND", "AMBIGUOUS"]);
@@ -2266,6 +2266,12 @@ export async function recordPayUniBrowserFailure(page, diagnostic, error, operat
     diagnostic.page = classifyPayUniBrowserPage(page.url(), operationHost);
     if (diagnostic.step === "SUBMIT") await capturePayUniSubmitDiagnostic(page, diagnostic, operationHost);
     else if (diagnostic.page.startsWith("PAYUNI_") && diagnostic.step !== "NONE") diagnostic.structure = await capturePayUniPageStructure(page);
+    // A page that never settled: the read-only field list, after the stop decision (A4-05 MINOR-3).
+    if (diagnostic.step === "PRESUBMIT") {
+      diagnostic.formFields = diagnostic.page.startsWith("PAYUNI_")
+        ? await capturePayUniFormFieldDiagnostic(page, diagnostic.dialogTexts)
+        : payUniFormFieldFailure("NOT_PAYUNI_PAGE", diagnostic.dialogTexts);
+    }
     const field = PAYUNI_CARD_FIELDS.find((item) => item.step === diagnostic.step);
     if (!field) return;
     diagnostic.mainFrameMatches = await withinMs(page.getByPlaceholder(field.placeholder, { exact: true }).count(), 2_000);
@@ -2282,8 +2288,8 @@ export async function recordPayUniBrowserFailure(page, diagnostic, error, operat
 
 export async function selectPayUniOneTimeCredit(page, diagnostic) {
   markPayUniBrowserStep(diagnostic, "METHOD");
-  await page.getByText("一次付清", { exact: true }).click();
-  await page.locator('input[name="radioOptionpayGroupCredit"]').check({ force: true });
+  await page.getByText("一次付清", { exact: true }).click({ timeout: 20_000 });
+  await page.locator('input[name="radioOptionpayGroupCredit"]').check({ force: true, timeout: 10_000 });
 }
 
 async function sleep(milliseconds) {
@@ -2349,8 +2355,12 @@ async function findPayUniFallbackField(page, field, diagnostic, waitMs = PAYUNI_
 // in the page that each field holds the expected (formatted or masked) value, that 確認送出 is
 // enabled and that no PayUni request is in flight, twice in a row, before the one and only click.
 // A page that never settles is not submitted at all. A dialog after the click still stops the run.
-export const PAYUNI_SETTLE = Object.freeze({ pageLoadMs: 15_000, timeoutMs: 15_000, quietMs: 1_000, pollMs: 250, stablePolls: 2, typeDelayMs: 40 });
-export const PAYUNI_PRESUBMIT_STATUSES = Object.freeze(["NOT_RUN", "SETTLED", "FIELDS_UNSETTLED", "SUBMIT_DISABLED", "NETWORK_BUSY", "UNSTABLE"]);
+export const PAYUNI_SETTLE = Object.freeze({
+  pageLoadMs: 15_000, timeoutMs: 15_000, quietMs: 1_000, pollMs: 250, stablePolls: 2, typeDelayMs: 40, staleRequestMs: 5_000,
+});
+export const PAYUNI_PRESUBMIT_STATUSES = Object.freeze([
+  "NOT_RUN", "SETTLED", "FIELDS_UNSETTLED", "SUBMIT_DISABLED", "NETWORK_BUSY", "UNSTABLE", "DIALOG_BEFORE_SUBMIT",
+]);
 const PRESUBMIT_STATUS_SET = new Set(PAYUNI_PRESUBMIT_STATUSES);
 const PAGE_LOAD_STATES = new Set(["NOT_RUN", "LOADED", "DOM_ONLY", "TIMEOUT", "FAILED"]);
 const PRESUBMIT_FIELD_STEPS = Object.freeze(PAYUNI_CARD_FIELDS.map((field) => field.step));
@@ -2361,7 +2371,8 @@ export function createPayUniPresubmitDiagnostic() {
   return {
     status: "NOT_RUN", pageLoad: "NOT_RUN",
     fields: Object.fromEntries(PRESUBMIT_FIELD_STEPS.map((step) => [step, null])),
-    submitEnabled: null, payuniInflight: null, settleMs: null, checks: 0,
+    submitEnabled: null, payuniInflight: null, payuniIgnored: null,
+    dialogsBeforeSubmit: 0, confirmationVisible: null, settleMs: null, checks: 0,
   };
 }
 
@@ -2376,6 +2387,9 @@ export function formatPayUniPresubmitDiagnostic(value) {
     fields: Object.fromEntries(PRESUBMIT_FIELD_STEPS.map((step) => [step, bool(value.fields?.[step])])),
     submitEnabled: bool(value.submitEnabled),
     payuniInflight: count(value.payuniInflight, 99),
+    payuniIgnored: count(value.payuniIgnored, 99),
+    dialogsBeforeSubmit: count(value.dialogsBeforeSubmit, 9) ?? 0,
+    confirmationVisible: bool(value.confirmationVisible),
     settleMs: count(value.settleMs, 99_999),
     checks: count(value.checks, 999) ?? 0,
   });
@@ -2390,25 +2404,41 @@ function isPayUniHostRequest(request) {
 
 /**
  * Counts PayUni document/script/XHR/fetch requests still in flight and when the last one started or
- * ended. Third-party and long-lived (websocket, event-stream) requests are not counted. Never reads
- * a URL beyond its host, a body or a header.
+ * ended. Third-party and long-lived (websocket, event-stream) requests are not counted, and a request
+ * that has been waiting longer than `staleMs` (a long poll or keep-alive) is reported as ignored
+ * instead of blocking the submit forever. Never reads a URL beyond its host, a body or a header.
  */
-export function trackPayUniRequests(page, now = Date.now) {
-  const pending = new Set();
+export function trackPayUniRequests(page, now = Date.now, staleMs = PAYUNI_SETTLE.staleRequestMs) {
+  const pending = new Map();
   let lastActivityAt = null;
   const relevant = (request) => {
     try { return isPayUniHostRequest(request) && TRACKED_PAYUNI_RESOURCES.has(request.resourceType()); } catch { return false; }
   };
   try {
-    page.on("request", (request) => { if (relevant(request)) { pending.add(request); lastActivityAt = now(); } });
+    page.on("request", (request) => { if (relevant(request)) { const at = now(); pending.set(request, at); lastActivityAt = at; } });
     const done = (request) => { if (pending.delete(request)) lastActivityAt = now(); };
     page.on("requestfinished", done);
     page.on("requestfailed", done);
   } catch { /* A page without request events reports no PayUni traffic. */ }
+  const stale = (at) => [...pending.values()].filter((startedAt) => at - startedAt > staleMs).length;
   return Object.freeze({
-    inflight: () => pending.size,
+    /** Requests in flight that started at most `staleMs` ago. */
+    inflight: (at = now()) => pending.size - stale(at),
+    /** Requests in flight for longer than `staleMs`; printed, never waited for. */
+    ignored: (at = now()) => stale(at),
     quietFor: (at) => (lastActivityAt === null ? Number.POSITIVE_INFINITY : at - lastActivityAt),
   });
+}
+
+/**
+ * Counts native dialogs (alert/confirm/prompt) that open before the one submit click. It only
+ * counts: the runner's own dialog handler still dismisses them. `markSubmitted()` freezes the count.
+ */
+export function countPayUniDialogsBeforeSubmit(page) {
+  let count = 0;
+  let submitted = false;
+  try { page.on("dialog", () => { if (!submitted) count += 1; }); } catch { /* No dialog events: nothing to count. */ }
+  return Object.freeze({ count: () => count, markSubmitted: () => { submitted = true; } });
 }
 
 /** Wait for DOMContentLoaded and then load, bounded; a timeout is recorded and the settle check still decides. */
@@ -2450,14 +2480,15 @@ export function payUniFieldMatchesInPage(element, expected) {
   } catch { return false; }
 }
 
-/** Type one known field key by key, then blur it so change/blur handlers run before anything else. */
+/** Clear one known field, type it key by key, then blur it so change/blur handlers run before anything else. */
 async function enterPayUniField(locator, value, timeout, typeDelayMs) {
+  await locator.clear({ timeout });
   await locator.pressSequentially(value, { delay: typeDelayMs, timeout });
   await locator.blur({ timeout });
 }
 
 /**
- * Fills the four known card fields in a fixed order, key by key with a blur after each, and records
+ * Fills the four known card fields in a fixed order (clear, then key by key, then blur), and records
  * only which step is active; never submits. Returns the locator used for each step so the same
  * elements are re-checked before the submit.
  */
@@ -2487,39 +2518,66 @@ export async function fillPayUniCardFields(page, input, email, fallbackWaitMs = 
 /**
  * The pre-submit gate. Polls until every filled field holds its expected value (checked in the
  * page, true/false only), 確認送出 is enabled and no PayUni request has been in flight for
- * `quietMs`, on `stablePolls` consecutive checks; otherwise returns why it did not settle. It never
- * clicks, types or submits anything.
+ * `quietMs`, on `stablePolls` consecutive checks; otherwise returns why it did not settle.
+ *
+ * A native dialog that opened before the submit (`dialogs.count() > 0`) or a visible "確定" modal
+ * (`confirmation`) ends the gate at once with DIALOG_BEFORE_SUBMIT: the page is not in a state to be
+ * submitted, and the modal is never clicked. Every wait inside one check is cut to the time left, so
+ * the gate as a whole never runs past `timeoutMs` by more than one bookkeeping step. It never clicks,
+ * types or submits anything.
  */
-export async function settlePayUniBeforeSubmit({ filled, submit, tracker = null, presubmit, timing = PAYUNI_SETTLE, now = Date.now, pause = sleep }) {
+export async function settlePayUniBeforeSubmit({
+  filled, submit, tracker = null, dialogs = null, confirmation = null, presubmit, timing = PAYUNI_SETTLE, now = Date.now, pause = sleep,
+}) {
   const state = presubmit && typeof presubmit === "object" ? presubmit : createPayUniPresubmitDiagnostic();
   const startedAt = now();
   const deadline = startedAt + timing.timeoutMs;
+  const left = (cap) => Math.min(cap, Math.max(0, deadline - now()));
   // At least one settled check, whatever the timing says: zero would let an unchecked page through.
   const needed = Math.max(1, Number.isSafeInteger(timing.stablePolls) ? timing.stablePolls : PAYUNI_SETTLE.stablePolls);
   let stable = 0;
   let status = "FIELDS_UNSETTLED";
   for (;;) {
     state.checks += 1;
+    // A call that timed out only because the overall budget ran out says nothing about the page.
+    let cutShort = false;
+    const bounded = async (work, cap) => {
+      const budget = left(cap);
+      const result = await settleWithin(() => work(budget), budget);
+      if (result.timedOut && budget < cap) cutShort = true;
+      return result;
+    };
+    const dialogCount = dialogs ? dialogs.count() : 0;
+    state.dialogsBeforeSubmit = dialogCount;
+    if (dialogCount > 0) { status = "DIALOG_BEFORE_SUBMIT"; stable = 0; break; }
+    const visible = confirmation ? await bounded(() => confirmation.isVisible(), 2_000) : { value: false };
+    if (visible.value === true) { state.confirmationVisible = true; status = "DIALOG_BEFORE_SUBMIT"; stable = 0; break; }
     const fields = {};
     for (const step of PRESUBMIT_FIELD_STEPS) {
       const locator = filled?.locators?.[step];
       const result = locator
-        ? await settleWithin(() => locator.evaluate(payUniFieldMatchesInPage, { step, value: filled.values[step] }), 2_000)
+        ? await bounded(() => locator.evaluate(payUniFieldMatchesInPage, { step, value: filled.values[step] }), 2_000)
         : { value: false };
       fields[step] = result.value === true;
     }
-    const enabled = await settleWithin(() => submit.isEnabled({ timeout: 2_000 }), 2_500);
+    const enabled = await bounded((budget) => submit.isEnabled({ timeout: Math.max(1, budget) }), 2_000);
+    // A check cut short by the deadline keeps the previous complete check's state (the first one is always kept).
+    if (cutShort && state.checks > 1) { state.checks -= 1; break; }
     const at = now();
-    const inflight = tracker ? tracker.inflight() : 0;
+    const inflight = tracker ? tracker.inflight(at) : 0;
     const quiet = inflight === 0 && (tracker ? tracker.quietFor(at) : Number.POSITIVE_INFINITY) >= timing.quietMs;
-    Object.assign(state, { fields, submitEnabled: enabled.value === true, payuniInflight: inflight });
+    state.confirmationVisible = visible.value === false ? false : null;
+    Object.assign(state, { fields, submitEnabled: enabled.value === true, payuniInflight: inflight, payuniIgnored: tracker?.ignored ? tracker.ignored(at) : 0 });
     if (!Object.values(fields).every(Boolean)) status = "FIELDS_UNSETTLED";
     else if (enabled.value !== true) status = "SUBMIT_DISABLED";
     else if (!quiet) status = "NETWORK_BUSY";
+    // The modal check could not answer: not a dialog, but not a settled page either.
+    else if (state.confirmationVisible !== false) status = "UNSTABLE";
     else status = "SETTLED";
     stable = status === "SETTLED" ? stable + 1 : 0;
-    if (stable >= needed || at >= deadline) break;
-    await pause(timing.pollMs);
+    if (stable >= needed || now() >= deadline) break;
+    await pause(left(timing.pollMs));
+    if (now() >= deadline) break;
   }
   state.status = stable >= needed ? "SETTLED" : (status === "SETTLED" ? "UNSTABLE" : status);
   state.settleMs = Math.max(0, now() - startedAt);
@@ -2552,7 +2610,8 @@ export async function defaultBrowserSubmit(input, dependencies = {}) {
   const context = await browser.newContext({ locale: "zh-TW" });
   const page = await context.newPage();
   observePayUniSubmitDialogs(page, input.diagnostic);
-  const payuniTraffic = trackPayUniRequests(page);
+  const payuniTraffic = trackPayUniRequests(page, Date.now, settleTiming(dependencies).staleRequestMs);
+  const dialogsBeforeSubmit = countPayUniDialogsBeforeSubmit(page);
   const presubmit = input.diagnostic?.presubmit ?? createPayUniPresubmitDiagnostic();
   const origin = fixedOrigin(input.previewHost);
   let stage = "PAYMENT_PAGE_UNREACHED";
@@ -2637,11 +2696,14 @@ export async function defaultBrowserSubmit(input, dependencies = {}) {
     const filled = await fillPayUniCardFields(page, input, "wp4-buyer-v1@invalid.example", dependencies.payuniFallbackWaitMs, settleTiming(dependencies).typeDelayMs);
     const submitButton = page.getByRole("button", { name: "確認送出", exact: true });
     // Only a settled page is submitted; an unsettled one ends here with no click at all.
-    if (await settlePayUniBeforeSubmit({ filled, submit: submitButton, tracker: payuniTraffic, presubmit, timing: settleTiming(dependencies) }) !== "SETTLED") {
+    markPayUniBrowserStep(input.diagnostic, "PRESUBMIT");
+    if (await settlePayUniBeforeSubmit({ filled, submit: submitButton, tracker: payuniTraffic, dialogs: dialogsBeforeSubmit,
+      confirmation: page.getByRole("button", { name: "確定", exact: true }), presubmit, timing: settleTiming(dependencies) }) !== "SETTLED") {
       throw new Error("PAYMENT_FIELDS_UNSETTLED");
     }
     stage = "PAYMENT_SUBMIT_REJECTED";
     markPayUniBrowserStep(input.diagnostic, "SUBMIT");
+    dialogsBeforeSubmit.markSubmitted();
     await submitButton.click();
     const confirmation = page.getByRole("button", { name: "確定", exact: true });
     try {
@@ -2709,7 +2771,8 @@ export async function defaultSubscriptionBrowserSubmit(input, dependencies = {})
   const context = await browser.newContext({ locale: "zh-TW" });
   const page = await context.newPage();
   observePayUniSubmitDialogs(page, input.diagnostic);
-  const payuniTraffic = trackPayUniRequests(page);
+  const payuniTraffic = trackPayUniRequests(page, Date.now, settleTiming(dependencies).staleRequestMs);
+  const dialogsBeforeSubmit = countPayUniDialogsBeforeSubmit(page);
   const presubmit = input.diagnostic?.presubmit ?? createPayUniPresubmitDiagnostic();
   const origin = fixedOrigin(input.previewHost);
   let stage = "CHECKOUT_REJECTED";
@@ -2781,12 +2844,15 @@ export async function defaultSubscriptionBrowserSubmit(input, dependencies = {})
     const filled = await fillPayUniCardFields(page, input, "wp4-subscription-v1@invalid.example", dependencies.payuniFallbackWaitMs, settleTiming(dependencies).typeDelayMs);
     const submitButton = page.getByRole("button", { name: "確認送出", exact: true });
     // Settled before the submission is marked: an unsettled page is never submitted.
-    if (await settlePayUniBeforeSubmit({ filled, submit: submitButton, tracker: payuniTraffic, presubmit, timing: settleTiming(dependencies) }) !== "SETTLED") {
+    markPayUniBrowserStep(input.diagnostic, "PRESUBMIT");
+    if (await settlePayUniBeforeSubmit({ filled, submit: submitButton, tracker: payuniTraffic, dialogs: dialogsBeforeSubmit,
+      confirmation: page.getByRole("button", { name: "確定", exact: true }), presubmit, timing: settleTiming(dependencies) }) !== "SETTLED") {
       throw new Error("PAYMENT_FIELDS_UNSETTLED");
     }
     stage = "PAYMENT_SUBMIT_REJECTED";
     if (input.markPaymentSubmission?.() !== true) return "PAYMENT_SUBMIT_REJECTED";
     markPayUniBrowserStep(input.diagnostic, "SUBMIT");
+    dialogsBeforeSubmit.markSubmitted();
     await submitButton.click();
     const confirmation = page.getByRole("button", { name: "確定", exact: true });
     try {
@@ -3415,7 +3481,7 @@ function printBrowserDiagnostic(flowDependencies, result) {
     if (line) process.stdout.write(`wp4_payuni_${name}=${line}\n`);
   };
   // The pre-submit state is printed on a pass too, so passing and stopped runs can be compared.
-  if (diagnostic.presubmit?.status !== "NOT_RUN") emit("presubmit", () => formatPayUniPresubmitDiagnostic(diagnostic.presubmit));
+  if (diagnostic.presubmit && diagnostic.presubmit.pageLoad !== "NOT_RUN") emit("presubmit", () => formatPayUniPresubmitDiagnostic(diagnostic.presubmit));
   if (result === "PASS" || (diagnostic.step === "NONE" && diagnostic.error === "NONE")) return;
   emit("browser_diagnostic", () => formatPayUniBrowserDiagnostic(diagnostic));
   emit("page_structure", () => formatPayUniPageStructure(diagnostic));

@@ -38,6 +38,7 @@ import {
   PAYUNI_FORM_FIELD_BUDGET,
   capturePayUniFormFieldResult,
   classifyPayUniEvaluateError,
+  countPayUniDialogsBeforeSubmit,
   createPayUniPresubmitDiagnostic,
   fillPayUniCardFields,
   formatPayUniPresubmitDiagnostic,
@@ -262,7 +263,7 @@ test("recognizes only the fixed PayUni Sandbox UPP payment page", () => {
 const sourceSha = "a".repeat(40);
 const previewHost = "celebratedeal-wp4-20bc897.vercel.app";
 /** A fake UPP card field that types, blurs and answers the in-page value comparison with true (a settled field). */
-const SETTLED_FIELD = Object.freeze({ async pressSequentially() {}, async fill() {}, async blur() {}, async evaluate() { return true; } });
+const SETTLED_FIELD = Object.freeze({ async clear() {}, async pressSequentially() {}, async fill() {}, async blur() {}, async evaluate() { return true; } });
 const validInput = Object.freeze({
   sourceSha,
   previewHost,
@@ -523,7 +524,7 @@ test("buyer browser submission uses a fixed environment and fails closed on conf
     getByPlaceholder() { return SETTLED_FIELD; },
     getByRole(_role, options) {
       if (options.name === "確認送出") return { async isEnabled() { return true; }, async click() { submitted += 1; } };
-      if (options.name === "確定") return { async waitFor() {}, async evaluate() { return confirmationText; }, async click() { confirmationClicks += 1; } };
+      if (options.name === "確定") return { async isVisible() { return false; }, async waitFor() {}, async evaluate() { return confirmationText; }, async click() { confirmationClicks += 1; } };
       throw new Error("unexpected role");
     },
     locator() { return { async check() {} }; },
@@ -581,7 +582,7 @@ test("buyer browser captures only the exact signed Return POST after the real 30
           headers: () => ({ "content-type": "application/x-www-form-urlencoded" }) });
         listeners.get("response")({ url: () => callbackUrl, status: () => 303, request: () => ({ method: () => "POST" }) });
       } };
-      if (options.name === "確定") return { async waitFor() { throw new TimeoutError(); } };
+      if (options.name === "確定") return { async isVisible() { return false; }, async waitFor() { throw new TimeoutError(); } };
       throw new Error("unexpected role");
     },
     locator(selector) { return selector === "body"
@@ -614,6 +615,7 @@ test("a rejected PayUni card field records only the fixed step, error class and 
       assert.equal(options?.exact, true, "every UPP placeholder lookup is exact");
       return {
         count: async () => 0,
+        async clear() {},
         async pressSequentially(value) {
           if (placeholder === "MM/YY") throw new TimeoutError(`locator.pressSequentially: Timeout 30000ms exceeded. waiting for getByPlaceholder('MM/YY') ${cardNumber}`);
           typed.push(placeholder);
@@ -705,6 +707,7 @@ test("uses the native fixed plan browser flow once without treating the return p
       if (options.name === "確認送出") return { async isEnabled() { return true; }, async click() { submitted += 1; } };
       if (options.name === "確定") {
         return {
+          async isVisible() { return false; },
           async waitFor() { if (!confirmationVisible) throw new TimeoutError(); },
           async evaluate() { return { kind: "MODAL_CLASS", containsForm: false, text: "交易失敗 4147631000000001 請洽發卡行", buttons: ["確定"] }; },
           async click() { confirmationClicks += 1; },
@@ -2008,6 +2011,11 @@ test("a missing card-number placeholder falls back to the autofill field, then t
         const ambiguous = present.length > 1;
         return {
           count: async () => present.length, isVisible: async () => present.length === 1,
+          // Same locator rules as typing: clear() is the first action, so it fails the same way.
+          async clear() {
+            if (ambiguous) { strictViolations += 1; throw new Error(`strict mode violation: getByPlaceholder resolved to ${present.length} elements`); }
+            if (missing) throw new TimeoutError(`Timeout 20000ms exceeded ${SYNTHETIC_CARD}`);
+          },
           async pressSequentially(value) {
             if (ambiguous) { strictViolations += 1; throw new Error(`strict mode violation: getByPlaceholder resolved to ${present.length} elements`); }
             if (missing) throw new TimeoutError(`Timeout 20000ms exceeded ${SYNTHETIC_CARD}`);
@@ -2022,13 +2030,13 @@ test("a missing card-number placeholder falls back to the autofill field, then t
       getByRole(role, options) {
         if (role === "tab") return { count: async () => 0, isVisible: async () => false };
         if (options?.name === "確認送出") return { async isEnabled() { return true; }, async click() { typed.push("submit"); } };
-        if (options?.name === "確定") return { async waitFor() { throw new TimeoutError("none"); } };
+        if (options?.name === "確定") return { async isVisible() { return false; }, async waitFor() { throw new TimeoutError("none"); } };
         throw new Error("unexpected role");
       },
       locator(selector) {
         if (selector === 'input[autocomplete="cc-number"]') {
           return { count: async () => (autocompleteVisible ? 1 : 0), isVisible: async () => autocompleteVisible,
-            async pressSequentially() { typed.push("autocomplete:cc-number"); }, async blur() {}, async evaluate() { return true; } };
+            async clear() {}, async pressSequentially() { typed.push("autocomplete:cc-number"); }, async blur() {}, async evaluate() { return true; } };
         }
         if (selector === 'input[name="radioOptionpayGroupCredit"]') {
           return { count: async () => 1, first: () => ({ async check() { radioChecks += 1; } }), async check() { radioChecks += 1; } };
@@ -2199,7 +2207,8 @@ async function runSubmitScenario({ confirmationText = null, dialog = null, url, 
     },
   };
   const page = {
-    on(event, handler) { handlers.set(event, handler); },
+    // Every listener of an event gets it, like Playwright (the runner adds more than one dialog listener).
+    on(event, handler) { handlers.set(event, [...(handlers.get(event) ?? []), handler]); },
     async goto() {}, async route() {}, async waitForURL() { throw new TimeoutError("Timeout 60000ms exceeded"); },
     url: () => url, frames: () => [frame],
     getByText() { return { async click() {} }; },
@@ -2208,15 +2217,16 @@ async function runSubmitScenario({ confirmationText = null, dialog = null, url, 
       if (options.name === "確認送出") {
         return { async isEnabled() { return true; }, async click() {
           submitted += 1;
-          if (dialog) await handlers.get("dialog")?.({
-            type: () => dialog.type, message: () => dialog.message,
-            async dismiss() { dialogCalls.dismiss += 1; }, async accept() { dialogCalls.accept += 1; },
-          });
+          if (dialog) {
+            const event = { type: () => dialog.type, message: () => dialog.message,
+              async dismiss() { dialogCalls.dismiss += 1; }, async accept() { dialogCalls.accept += 1; } };
+            for (const listener of handlers.get("dialog") ?? []) await listener(event);
+          }
         } };
       }
       if (options.name === "確定") {
-        if (confirmationText === null) return { async waitFor() { throw new TimeoutError("none"); } };
-        return { async waitFor() {}, async evaluate() { return confirmationText; }, async click() { confirmationClicks += 1; } };
+        if (confirmationText === null) return { async isVisible() { return false; }, async waitFor() { throw new TimeoutError("none"); } };
+        return { async isVisible() { return false; }, async waitFor() {}, async evaluate() { return confirmationText; }, async click() { confirmationClicks += 1; } };
       }
       throw new Error("unexpected role");
     },
@@ -2747,7 +2757,8 @@ test("A4-05: the pre-submit gate never clicks or types and settles only on conse
   assert.equal(await settlePayUniBeforeSubmit({ ...settled, presubmit, timing: fast }), "SETTLED");
   assert.equal(settled.log.some((entry) => /^(?:click|fill|type|submit)/u.test(entry)), false, "the gate only reads");
   assert.deepEqual({ ...presubmit, settleMs: 0 }, { status: "SETTLED", pageLoad: "NOT_RUN",
-    fields: { CARD_NUMBER: true, CARD_EXPIRY: true, CARD_CVV: true, EMAIL: true }, submitEnabled: true, payuniInflight: 0, settleMs: 0, checks: 2 });
+    fields: { CARD_NUMBER: true, CARD_EXPIRY: true, CARD_CVV: true, EMAIL: true }, submitEnabled: true, payuniInflight: 0, payuniIgnored: 0,
+    dialogsBeforeSubmit: 0, confirmationVisible: false, settleMs: 0, checks: 2 });
 
   // A zero stablePolls is never "settled without a check".
   const zero = settleFakes({ matches: () => false });
@@ -2770,7 +2781,7 @@ test("A4-05: the pre-submit gate never clicks or types and settles only on conse
   // Good only on the very last check before the deadline: not stable, never SETTLED.
   let clock = 0;
   const lastMinute = settleFakes({ matches: (_step, count) => count >= 2 });
-  assert.equal(await settlePayUniBeforeSubmit({ ...lastMinute, timing: { ...fast, timeoutMs: 1 }, now: () => clock, pause: async () => { clock += 1; } }), "UNSTABLE");
+  assert.equal(await settlePayUniBeforeSubmit({ ...lastMinute, timing: { ...fast, timeoutMs: 2 }, now: () => clock, pause: async () => { clock += 1; } }), "UNSTABLE");
   // A missing locator is a failed check, not a pass.
   const missing = settleFakes();
   delete missing.filled.locators.EMAIL;
@@ -2782,7 +2793,7 @@ test("A4-05: the pre-submit line, the PayUni traffic tracker and the page-ready 
   assert.deepEqual(JSON.parse(formatPayUniPresubmitDiagnostic({ status: `x ${SYNTHETIC_CARD}`, pageLoad: "https://x", fields: { CARD_NUMBER: SYNTHETIC_CARD, EMAIL: true, other: true },
     submitEnabled: "yes", payuniInflight: 1_000, settleMs: -1, checks: 5_000 })), {
     status: "NOT_RUN", pageLoad: "NOT_RUN", fields: { CARD_NUMBER: null, CARD_EXPIRY: null, CARD_CVV: null, EMAIL: true },
-    submitEnabled: null, payuniInflight: 99, settleMs: null, checks: 999,
+    submitEnabled: null, payuniInflight: 99, payuniIgnored: null, dialogsBeforeSubmit: 0, confirmationVisible: null, settleMs: null, checks: 999,
   });
 
   const handlers = new Map();
@@ -2874,21 +2885,32 @@ test("A4-05: the in-page reader isolates a broken stage and drops labels when th
 });
 
 /** A WP4 buyer page whose card fields answer `matches(placeholder, check)`; logs typing, checks and the submit. */
-function wp4SettlePage({ matches = () => true, modalText = null } = {}) {
+function wp4SettlePage({ matches = () => true, modalText = null, modalBeforeSubmit = false, nativeDialogBeforeSubmit = null } = {}) {
   class TimeoutError extends Error { constructor(message = "Timeout 5000ms exceeded") { super(message); this.name = "TimeoutError"; } }
   const events = [];
   const typeOptions = [];
   const checks = new Map();
   let submitted = 0;
   let confirmationClicks = 0;
+  const listeners = new Map();
+  const dialogCalls = { dismiss: 0, accept: 0 };
   const page = {
-    on() {}, async goto() {}, async route() {}, async waitForURL() { throw new TimeoutError(); },
+    on(event, handler) { listeners.set(event, [...(listeners.get(event) ?? []), handler]); },
+    async goto() {}, async route() {}, async waitForURL() { throw new TimeoutError(); },
     async waitForLoadState(state) { events.push(`load:${state}`); },
     url: () => "https://sandbox-api.payuni.com.tw/api/upp", frames: () => [],
     getByText() { return { async click() { events.push("method"); } }; },
     getByPlaceholder(placeholder) {
       return {
-        async pressSequentially(_value, options) { events.push(`type:${placeholder}`); typeOptions.push(options); },
+        async clear() { events.push(`clear:${placeholder}`); },
+        async pressSequentially(_value, options) {
+          events.push(`type:${placeholder}`); typeOptions.push(options);
+          if (nativeDialogBeforeSubmit && placeholder === "MM/YY") {
+            const dialog = { type: () => nativeDialogBeforeSubmit.type, message: () => nativeDialogBeforeSubmit.message,
+              async dismiss() { dialogCalls.dismiss += 1; }, async accept() { dialogCalls.accept += 1; } };
+            for (const listener of listeners.get("dialog") ?? []) await listener(dialog);
+          }
+        },
         async fill() { events.push(`fill:${placeholder}`); },
         async blur() { events.push(`blur:${placeholder}`); },
         async evaluate(fn) {
@@ -2902,14 +2924,14 @@ function wp4SettlePage({ matches = () => true, modalText = null } = {}) {
     getByRole(_role, options) {
       if (options.name === "確認送出") return { async isEnabled() { events.push("enabled"); return true; }, async click() { submitted += 1; events.push("submit"); } };
       if (options.name === "確定") {
-        if (modalText === null) return { async waitFor() { throw new TimeoutError(); } };
-        return { async waitFor() {}, async evaluate() { return modalText; }, async click() { confirmationClicks += 1; } };
+        if (modalText === null) return { async isVisible() { return modalBeforeSubmit; }, async waitFor() { throw new TimeoutError(); } };
+        return { async isVisible() { return modalBeforeSubmit; }, async waitFor() {}, async evaluate() { return modalText; }, async click() { confirmationClicks += 1; } };
       }
       throw new Error("unexpected role");
     },
     locator() { return { async check() {} }; },
   };
-  return { page, events, typeOptions, TimeoutError, counts: () => ({ submitted, confirmationClicks }) };
+  return { page, events, typeOptions, TimeoutError, dialogCalls, counts: () => ({ submitted, confirmationClicks }) };
 }
 
 const WP4_PLACEHOLDERS = ["**** **** **** ****", "MM/YY", "***", "example@example.com"];
@@ -2949,7 +2971,8 @@ test("A4-05: the WP4 buyer runner types, blurs and verifies every known field be
   assert.deepEqual(stuck.counts(), { submitted: 0, confirmationClicks: 0 });
   assert.equal(stuckDiagnostic.presubmit.status, "FIELDS_UNSETTLED");
   assert.equal(stuckDiagnostic.presubmit.fields.CARD_CVV, false);
-  assert.equal(stuckDiagnostic.step, "EMAIL", "the run stopped in the fill step, before SUBMIT");
+  assert.equal(stuckDiagnostic.step, "PRESUBMIT", "the run stopped in its own pre-submit step, not in a field step");
+  assert.equal(stuckDiagnostic.formFields.status, "NO_FRAMES", "the field list is read after the unsettled stop too");
   const line = formatPayUniPresubmitDiagnostic(stuckDiagnostic.presubmit);
   for (const secret of [SYNTHETIC_CARD, "1230", "wp4-buyer"]) assert.equal(line.includes(secret), false, `leaked ${secret}`);
 });
@@ -2981,11 +3004,84 @@ test("A4-05: the shared fill types only the four known fields and returns the sa
   const typed = [];
   const page = { getByPlaceholder(placeholder, options) {
     assert.equal(options.exact, true);
-    return { name: placeholder, async pressSequentially(value, typeOptions) { typed.push([placeholder, typeof value, typeOptions.delay]); }, async blur() {}, async fill() { throw new Error("fill is never used"); } };
+    return { name: placeholder, async clear() { typed.push([placeholder, "clear"]); }, async pressSequentially(value, typeOptions) { typed.push([placeholder, typeof value, typeOptions.delay]); }, async blur() {}, async fill() { throw new Error("fill is never used"); } };
   } };
   const filled = await fillPayUniCardFields(page, { cardNumber: SYNTHETIC_CARD, cardExpiry: "1230", cardCvv: "123" }, "wp4-buyer-v1@invalid.example", 10, 7);
-  assert.deepEqual(typed, WP4_PLACEHOLDERS.map((name) => [name, "string", 7]));
+  assert.deepEqual(typed, WP4_PLACEHOLDERS.flatMap((name) => [[name, "clear"], [name, "string", 7]]), "each field is cleared, then typed");
   assert.deepEqual(Object.keys(filled.locators), ["CARD_NUMBER", "CARD_EXPIRY", "CARD_CVV", "EMAIL"]);
   assert.deepEqual(Object.values(filled.locators).map((locator) => locator.name), WP4_PLACEHOLDERS);
   assert.equal(filled.values.EMAIL, "wp4-buyer-v1@invalid.example");
+});
+
+test("A4-05: the WP4 runners stop before the submit on a native dialog or a visible 確定 modal, unclicked, with the field list", async () => {
+  const run = async (options) => {
+    const fake = wp4SettlePage(options);
+    const browser = { async newContext() { return { async addCookies() {}, async newPage() { return fake.page; },
+      request: { async post() { return { status: () => 200, ok: () => true }; } } }; }, async close() {} };
+    const diagnostic = createPayUniBrowserDiagnostic();
+    const result = await defaultBrowserSubmit({ previewHost, cardNumber: SYNTHETIC_CARD, cardExpiry: "1230", cardCvv: "123",
+      formPayload: { MerID: "merchant" }, supportCookie: "celebrate_support_wp4=synthetic", orderNumber: "CD-20300101000000-WP4A1", diagnostic,
+    }, { playwright: { chromium: { async launch() { return browser; } }, errors: { TimeoutError: fake.TimeoutError } }, payuniSettle: { pollMs: 1, timeoutMs: 200 } });
+    return { result, diagnostic, fake };
+  };
+  const modal = await run({ modalBeforeSubmit: true, modalText: `${PAYUNI_MISSING_INFO_TEXT} 確定` });
+  assert.equal(modal.result, "PAYMENT_FIELDS_REJECTED");
+  assert.deepEqual(modal.fake.counts(), { submitted: 0, confirmationClicks: 0 });
+  assert.equal(modal.diagnostic.presubmit.status, "DIALOG_BEFORE_SUBMIT");
+  assert.equal(modal.diagnostic.presubmit.confirmationVisible, true);
+  assert.equal(modal.diagnostic.presubmit.checks, 1);
+  assert.equal(modal.diagnostic.step, "PRESUBMIT");
+  assert.equal(modal.diagnostic.formFields.status, "NO_FRAMES");
+
+  const native = await run({ nativeDialogBeforeSubmit: { type: "alert", message: PAYUNI_MISSING_INFO_TEXT } });
+  assert.equal(native.result, "PAYMENT_FIELDS_REJECTED");
+  assert.deepEqual(native.fake.counts(), { submitted: 0, confirmationClicks: 0 });
+  assert.deepEqual(native.fake.dialogCalls, { dismiss: 1, accept: 0 }, "dismissed by the runner's own handler, never accepted");
+  assert.equal(native.diagnostic.presubmit.status, "DIALOG_BEFORE_SUBMIT");
+  assert.equal(native.diagnostic.presubmit.dialogsBeforeSubmit, 1);
+  const line = JSON.parse(formatPayUniPresubmitDiagnostic(native.diagnostic.presubmit));
+  assert.deepEqual([line.status, line.dialogsBeforeSubmit], ["DIALOG_BEFORE_SUBMIT", 1]);
+
+  // A dialog after the submit is not a pre-submit dialog: the count is frozen at the click.
+  const handlers = [];
+  const counted = countPayUniDialogsBeforeSubmit({ on: (_event, handler) => handlers.push(handler) });
+  handlers[0]();
+  counted.markSubmitted();
+  handlers[0]();
+  assert.equal(counted.count(), 1);
+  assert.equal(countPayUniDialogsBeforeSubmit({ on() { throw new Error("no events"); } }).count(), 0);
+});
+
+test("A4-05: the pre-submit gate ignores a PayUni request older than the stale limit and stays within its time budget", async () => {
+  const handlers = new Map();
+  let clock = 0;
+  const tracker = trackPayUniRequests({ on: (event, handler) => handlers.set(event, handler) }, () => clock, 5_000);
+  handlers.get("request")({ url: () => "https://sandbox-api.payuni.com.tw/api/poll", resourceType: () => "xhr" });
+  clock = 4_000;
+  assert.deepEqual([tracker.inflight(), tracker.ignored()], [1, 0]);
+  clock = 5_001;
+  assert.deepEqual([tracker.inflight(), tracker.ignored()], [0, 1], "a long poll stops blocking after five seconds");
+  const fakes = settleFakes();
+  const presubmit = createPayUniPresubmitDiagnostic();
+  assert.equal(await settlePayUniBeforeSubmit({ ...fakes, tracker, presubmit, timing: { pollMs: 1, quietMs: 1_000, timeoutMs: 100, stablePolls: 2 },
+    now: () => clock }), "SETTLED");
+  assert.deepEqual([presubmit.payuniInflight, presubmit.payuniIgnored], [0, 1]);
+
+  // Each check waits only for the time left: a page that never answers ends close to timeoutMs.
+  const hanging = { locators: Object.fromEntries(["CARD_NUMBER", "CARD_EXPIRY", "CARD_CVV", "EMAIL"].map((step) =>
+    [step, { evaluate: () => new Promise(() => {}) }])), values: {} };
+  const startedAt = Date.now();
+  const status = await settlePayUniBeforeSubmit({ filled: hanging, submit: { isEnabled: () => new Promise(() => {}) },
+    confirmation: { isVisible: () => new Promise(() => {}) }, timing: { pollMs: 10, quietMs: 0, timeoutMs: 150, stablePolls: 2 } });
+  const elapsed = Date.now() - startedAt;
+  assert.equal(status, "FIELDS_UNSETTLED");
+  assert.ok(elapsed < 600, `stayed within its budget (${elapsed} ms)`);
+
+  // A check cut short by the deadline does not overwrite the last complete one with false values.
+  let fakeClock = 0;
+  const late = settleFakes({ matches: (step, count) => (step === "EMAIL" && count === 2 ? new Promise(() => {}) : true) });
+  const lateState = createPayUniPresubmitDiagnostic();
+  assert.equal(await settlePayUniBeforeSubmit({ ...late, presubmit: lateState, timing: { pollMs: 40, quietMs: 0, timeoutMs: 50, stablePolls: 2 },
+    now: () => fakeClock, pause: async (ms) => { fakeClock += ms; } }), "UNSTABLE");
+  assert.deepEqual([lateState.fields.EMAIL, lateState.checks], [true, 1]);
 });
