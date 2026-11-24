@@ -2,7 +2,9 @@ import { NextResponse } from "next/server";
 import { readJsonBody, requireSameOriginRequest } from "@/lib/api-security";
 import { DiscountCodePreviewRequestSchema } from "@/lib/commerce-checkout";
 import { getDb } from "@/lib/db";
-import { DISCOUNT_CODE_ERROR_CODES, discountCodeTryLaterReply, resolveThrottledDiscountCodeQuote } from "@/lib/discount-codes";
+import { DISCOUNT_CODE_IP_RATE_LIMIT, resolveThrottledDiscountCodeQuote } from "@/lib/discount-code-lookup-throttle";
+import { issueDiscountCodePreviewToken } from "@/lib/discount-code-preview-token";
+import { DISCOUNT_CODE_ERROR_CODES, discountCodeTryLaterReply } from "@/lib/discount-codes";
 import { isProductPurchasable } from "@/lib/feature-gates";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { isVendorAvailableForPublic } from "@/lib/vendor-suspension-state";
@@ -18,8 +20,8 @@ const noStore = { "Cache-Control": "private, no-store" };
 export async function POST(request: Request) {
   const sameOrigin = requireSameOriginRequest(request, { requireClientHeader: true });
   if (sameOrigin) return sameOrigin;
-  // Tighter than checkout itself: this endpoint is the cheapest way to probe codes.
-  const limited = await checkRateLimit(request, "checkout-discount-code", 10, 60_000);
+  // Per-IP layer (low); the per-product and per-vendor layers are in the lookup throttle.
+  const limited = await checkRateLimit(request, DISCOUNT_CODE_IP_RATE_LIMIT.key, DISCOUNT_CODE_IP_RATE_LIMIT.limit, DISCOUNT_CODE_IP_RATE_LIMIT.windowMs);
   if (limited) return limited;
 
   const parsed = DiscountCodePreviewRequestSchema.safeParse(await readJsonBody(request));
@@ -42,13 +44,14 @@ export async function POST(request: Request) {
       })
     : null;
 
+  const now = new Date();
   const result = await resolveThrottledDiscountCodeQuote(db, discountCode, {
     vendorId,
     productId: product.id,
     primaryPriceCents: product.priceCents,
     additionalAmountCents: orderBump?.priceCents ?? 0,
     currency: product.currency,
-    now: new Date(),
+    now,
   });
   if (!result.ok) {
     if (result.reason === "throttled") {
@@ -64,5 +67,9 @@ export async function POST(request: Request) {
     subtotalAmountCents: result.quote.subtotalAmountCents,
     totalAmountCents: result.quote.totalAmountCents,
     currency: result.quote.currency,
+    // Lets this buyer's checkout skip the guessing throttle for 30 minutes; it decides no amount.
+    token: issueDiscountCodePreviewToken({
+      vendorId, productId: product.id, normalizedCode: result.quote.normalizedCode, revision: result.quote.revision, now,
+    }),
   }, { headers: noStore });
 }

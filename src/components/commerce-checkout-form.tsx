@@ -230,7 +230,7 @@ function CheckoutTotal({ priceCents, currency, offer, bumpPrice, discount }: {
 function checkoutDiscountPayload(formData: FormData, applied: DiscountCodePreview | null) {
   const typed = String(formData.get(DISCOUNT_CODE_INPUT_NAME) ?? "").trim();
   if (typed && typed.toUpperCase() !== applied?.code.toUpperCase()) return { ok: false as const, error: "請先按「套用」確認折扣碼，或清空折扣碼欄位後再付款。" };
-  return { ok: true as const, payload: applied ? { discountCode: applied.code, expectedDiscountAmountCents: applied.discountAmountCents } : {} };
+  return { ok: true as const, payload: applied ? { discountCode: applied.code, expectedDiscountAmountCents: applied.discountAmountCents, discountCodeToken: applied.token } : {} };
 }
 
 function checkoutSubmitLabel(phase: CheckoutPhase, hasOffer: boolean, productName: string) {

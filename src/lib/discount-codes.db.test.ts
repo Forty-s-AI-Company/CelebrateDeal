@@ -7,7 +7,8 @@ import { POST as checkout } from "@/app/api/payments/checkout/route";
 import { CHECKOUT_ADMISSION_COOKIE } from "@/lib/checkout-admission";
 import { getDb } from "@/lib/db";
 import { createDiscountCode, DISCOUNT_CODE_PRODUCT_OPTION_LIMIT, discountCodeProductOptions, parseDiscountCodeForm, updateDiscountCode } from "@/lib/discount-code-admin";
-import { DISCOUNT_CODE_LOOKUP_FAILURE_LIMIT, DiscountCodeUnavailableError, reserveDiscountCodeRedemption, resolveDiscountCodeQuote } from "@/lib/discount-codes";
+import { DISCOUNT_CODE_LOOKUP_LIMITS, DISCOUNT_CODE_LOOKUP_WINDOW_MS, resolveThrottledDiscountCodeQuote } from "@/lib/discount-code-lookup-throttle";
+import { DiscountCodeUnavailableError, reserveDiscountCodeRedemption, resolveDiscountCodeQuote } from "@/lib/discount-codes";
 import { releaseExpiredInventoryReservations } from "@/lib/inventory-reservations";
 import { AUTOMATION_VOUCHER_COOKIE, createInteractionBearer, hashInteractionBearer } from "@/lib/live-interaction";
 import { FLASH_SALE_COOKIE } from "@/lib/live-flash-sale";
@@ -83,7 +84,7 @@ async function admit(vendorId: string, productId: string, cookie = "", extra: Re
   return { ...body, cookie: [cookie, `${session.name}=${session.value}`].filter(Boolean).join("; ") };
 }
 
-async function buy(input: { vendorId: string; productId: string; email?: string; discountCode?: string; expectedDiscountAmountCents?: number; orderBumpProductId?: string; cookie?: string }) {
+async function buy(input: { vendorId: string; productId: string; email?: string; discountCode?: string; discountCodeToken?: string; expectedDiscountAmountCents?: number; orderBumpProductId?: string; cookie?: string }) {
   const admission = await admit(input.vendorId, input.productId, input.cookie);
   const response = await checkout(post("/api/payments/checkout", {
     vendorId: input.vendorId,
@@ -94,6 +95,7 @@ async function buy(input: { vendorId: string; productId: string; email?: string;
     shipping,
     ...(input.orderBumpProductId ? { orderBump: { productId: input.orderBumpProductId } } : {}),
     ...(input.discountCode !== undefined ? { discountCode: input.discountCode } : {}),
+    ...(input.discountCodeToken !== undefined ? { discountCodeToken: input.discountCodeToken } : {}),
     ...(input.expectedDiscountAmountCents !== undefined ? { expectedDiscountAmountCents: input.expectedDiscountAmountCents } : {}),
   }, admission.cookie));
   return { response, admission, body: await response.clone().json() as Record<string, unknown> };
@@ -196,30 +198,122 @@ describe("A4-01 tenant isolation", () => {
   });
 });
 
-describe("A4-01 guessing limit per vendor + product (review m-1)", () => {
-  it("answers 429 for every lookup once a product's failures fill the window, at preview and at checkout, without touching other products or vendors", async () => {
-    const a = await vendorWithProducts("throttle A");
-    const b = await vendorWithProducts("throttle B");
+describe("A4-01 guessing limit (review m-1, MJ-1, MN-1, MN-2)", () => {
+  const preview = (vendorId: string, productId: string, code: string) =>
+    previewDiscountCode(post("/api/payments/checkout/discount-code", { vendorId, productId, discountCode: code }));
+  const windowStart = () => new Date(Math.floor(Date.now() / DISCOUNT_CODE_LOOKUP_WINDOW_MS) * DISCOUNT_CODE_LOOKUP_WINDOW_MS);
+  const counter = async (vendorId: string, scopeKey: string) =>
+    (await db.discountCodeLookupThrottle.findUnique({ where: { vendorId_scopeKey_windowStart: { vendorId, scopeKey, windowStart: windowStart() } } }))?.failureCount ?? 0;
+  /** Puts a counter right below its cap, as a long stream of earlier wrong guesses would. */
+  const prefill = (vendorId: string, scopeKey: string, failureCount: number) => db.discountCodeLookupThrottle.upsert({
+    where: { vendorId_scopeKey_windowStart: { vendorId, scopeKey, windowStart: windowStart() } },
+    create: { vendorId, scopeKey, windowStart: windowStart(), failureCount },
+    update: { failureCount },
+  });
+
+  it("counts only codes that do not exist: hits, used-up and below-minimum codes leave the counters alone", async () => {
+    const f = await vendorWithProducts("counts");
+    await createCode(f.vendor.id);
+    await createCode(f.vendor.id, { code: "USEDUP1", maxRedemptions: "1" });
+    await createCode(f.vendor.id, { code: "BIGSPEND", minSubtotal: "50000" });
+    expect((await buy({ vendorId: f.vendor.id, productId: f.product.id, discountCode: "USEDUP1" })).response.status).toBe(200);
+    for (const code of ["SAVE200", "save200", "USEDUP1", "BIGSPEND"]) await preview(f.vendor.id, f.product.id, code);
+    expect(await counter(f.vendor.id, `product:${f.product.id}`)).toBe(0);
+    expect(await counter(f.vendor.id, "vendor")).toBe(0);
+    expect((await preview(f.vendor.id, f.product.id, "NOSUCH1")).status).toBe(409);
+    expect(await counter(f.vendor.id, `product:${f.product.id}`)).toBe(1);
+    expect(await counter(f.vendor.id, "vendor")).toBe(1);
+  });
+
+  it("keeps a live stream's correct code working when many buyers type it at once next to a few typos (review MJ-1)", async () => {
+    const f = await vendorWithProducts("live stream");
+    await createCode(f.vendor.id, { code: "LIVE2026" });
+    const correct = Array.from({ length: 100 }, (_, index) => preview(f.vendor.id, f.product.id, index % 2 ? "live2026" : "LIVE2026"));
+    const wrong = ["LIVE2025", "LIVE2O26", "LIV2026", "LIVE20266", "LIVE-2026"].map((code) => preview(f.vendor.id, f.product.id, code));
+    const [correctResponses, wrongResponses] = await Promise.all([Promise.all(correct), Promise.all(wrong)]);
+    expect(correctResponses.map((response) => response.status)).toEqual(Array(100).fill(200));
+    expect(wrongResponses.map((response) => response.status)).toEqual(Array(5).fill(409));
+    // Only the five typos stay counted; every correct lookup was refunded.
+    expect(await counter(f.vendor.id, `product:${f.product.id}`)).toBe(5);
+    expect(await counter(f.vendor.id, "vendor")).toBe(5);
+    // Buyers who previewed check out with their token.
+    const token = (await correctResponses[0]!.json() as { token: string }).token;
+    expect((await buy({ vendorId: f.vendor.id, productId: f.product.id, discountCode: "LIVE2026", discountCodeToken: token })).response.status).toBe(200);
+  });
+
+  it("locks a product once its cap is reached (even the right code, 429), while a preview token still checks out and token-less checkout stays throttled", async () => {
+    const a = await vendorWithProducts("lock A");
+    const b = await vendorWithProducts("lock B");
     await createCode(a.vendor.id);
     await createCode(b.vendor.id);
-    const preview = (vendorId: string, productId: string, code: string) =>
-      previewDiscountCode(post("/api/payments/checkout/discount-code", { vendorId, productId, discountCode: code }));
-    for (let attempt = 0; attempt < DISCOUNT_CODE_LOOKUP_FAILURE_LIMIT; attempt += 1) {
-      expect((await preview(a.vendor.id, a.product.id, `GUESS${String(attempt).padStart(3, "0")}`)).status).toBe(409);
-    }
-    // Even the real code is refused now, so a hit is indistinguishable.
+    const earlier = await preview(a.vendor.id, a.product.id, "SAVE200");
+    const token = (await earlier.json() as { token: string }).token;
+
+    await prefill(a.vendor.id, `product:${a.product.id}`, DISCOUNT_CODE_LOOKUP_LIMITS.product - 1);
+    expect((await preview(a.vendor.id, a.product.id, "GUESS99")).status).toBe(409);
     const blocked = await preview(a.vendor.id, a.product.id, "SAVE200");
     expect(blocked.status).toBe(429);
     expect(await blocked.json()).toMatchObject({ code: "DISCOUNT_CODE_TRY_LATER" });
-    const checkoutBlocked = await buy({ vendorId: a.vendor.id, productId: a.product.id, discountCode: "SAVE200" });
-    expect(checkoutBlocked.response.status).toBe(429);
-    expect(checkoutBlocked.body).toMatchObject({ code: "DISCOUNT_CODE_TRY_LATER" });
-    expect(await db.commerceOrder.count({ where: { vendorId: a.vendor.id } })).toBe(0);
-    // Checkout without a code still works.
-    expect((await buy({ vendorId: a.vendor.id, productId: a.product.id })).response.status).toBe(200);
+    expect(await counter(a.vendor.id, `product:${a.product.id}`)).toBe(DISCOUNT_CODE_LOOKUP_LIMITS.product);
 
+    const tokenless = await buy({ vendorId: a.vendor.id, productId: a.product.id, discountCode: "SAVE200" });
+    expect([tokenless.response.status, tokenless.body.code]).toEqual([429, "DISCOUNT_CODE_TRY_LATER"]);
+    const forged = await buy({ vendorId: a.vendor.id, productId: a.product.id, discountCode: "SAVE200", discountCodeToken: `${token.slice(0, -2)}xx` });
+    expect(forged.response.status).toBe(429);
+    const otherCode = await buy({ vendorId: a.vendor.id, productId: a.product.id, discountCode: "OTHER10", discountCodeToken: token });
+    expect(otherCode.response.status).toBe(429);
+    const withToken = await buy({ vendorId: a.vendor.id, productId: a.product.id, discountCode: "save200", discountCodeToken: token, expectedDiscountAmountCents: 20_000 });
+    expect([withToken.response.status, withToken.body.amountCents]).toEqual([200, 80_000]);
+    // A token never moves the price: the server row does.
+    expect((await db.paymentTransaction.findFirstOrThrow({ where: { vendorId: a.vendor.id } })).grossAmountCents).toBe(80_000);
+
+    // Checkout without a code, another product of A and vendor B are unaffected.
+    expect((await buy({ vendorId: a.vendor.id, productId: a.product.id })).response.status).toBe(200);
     expect((await preview(a.vendor.id, a.bump.id, "SAVE200")).status).toBe(200);
     expect((await preview(b.vendor.id, b.product.id, "SAVE200")).status).toBe(200);
+  });
+
+  it("refuses a preview token issued before the merchant edited the code", async () => {
+    const f = await vendorWithProducts("token revision");
+    const created = await createCode(f.vendor.id);
+    const token = (await (await preview(f.vendor.id, f.product.id, "SAVE200")).json() as { token: string }).token;
+    const edited = parseDiscountCodeForm(form({ code: "Save200", discountType: "fixed_amount", discountValue: "300", isActive: "on" }), "Asia/Taipei");
+    if (!edited.ok) throw new Error(edited.error);
+    await updateDiscountCode(db, f.vendor.id, created.id, edited.draft);
+    const stale = await buy({ vendorId: f.vendor.id, productId: f.product.id, discountCode: "SAVE200", discountCodeToken: token });
+    expect([stale.response.status, stale.body.code]).toEqual([409, "DISCOUNT_CODE_CHANGED"]);
+    expect(await db.commerceOrder.count({ where: { vendorId: f.vendor.id } })).toBe(0);
+  });
+
+  it("applies the vendor-wide cap across products (review MN-2)", async () => {
+    const f = await vendorWithProducts("vendor cap");
+    await createCode(f.vendor.id);
+    await prefill(f.vendor.id, "vendor", DISCOUNT_CODE_LOOKUP_LIMITS.vendor - 1);
+    expect((await preview(f.vendor.id, f.product.id, "GUESS01")).status).toBe(409);
+    expect((await preview(f.vendor.id, f.bump.id, "SAVE200")).status).toBe(429);
+    // The refused product debit was given back.
+    expect(await counter(f.vendor.id, `product:${f.bump.id}`)).toBe(0);
+  });
+
+  it("never reads the code table more often than the cap under concurrent wrong guesses (review MN-1)", async () => {
+    const f = await vendorWithProducts("concurrent guesses");
+    await createCode(f.vendor.id);
+    const limits = { product: 5, vendor: 1_000 };
+    let lookups = 0;
+    // The real client for the counters; the code table read is counted on the way through.
+    const counting = {
+      $queryRaw: db.$queryRaw.bind(db),
+      discountCodeLookupThrottle: db.discountCodeLookupThrottle,
+      discountCode: { findUnique: (args: Parameters<typeof db.discountCode.findUnique>[0]) => { lookups += 1; return db.discountCode.findUnique(args); } },
+    };
+    const context = { vendorId: f.vendor.id, productId: f.product.id, primaryPriceCents: 100_000, additionalAmountCents: 0, currency: "TWD", now: new Date() };
+    const results = await Promise.all(Array.from({ length: 30 }, (_, index) =>
+      resolveThrottledDiscountCodeQuote(counting as never, `WRONG${String(index).padStart(2, "0")}`, context, limits)));
+    expect(results.filter((result) => !result.ok && result.reason === "invalid")).toHaveLength(5);
+    expect(results.filter((result) => !result.ok && result.reason === "throttled")).toHaveLength(25);
+    expect(lookups).toBe(5);
+    expect(await counter(f.vendor.id, `product:${f.product.id}`)).toBe(5);
+    expect(await counter(f.vendor.id, "vendor")).toBe(5);
   });
 });
 

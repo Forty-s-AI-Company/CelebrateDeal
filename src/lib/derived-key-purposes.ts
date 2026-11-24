@@ -128,6 +128,12 @@ export const DERIVED_KEY_ROTATIONS = Object.freeze({
    * chat, LINE binding or checkout identity. New purpose, so no legacy key.
    */
   liveAttendance: rotation("live-attendance", "live-attendance:r2:8250395cbf4b0704"),
+  /**
+   * A4-01: 30-minute token from a successful discount-code preview; lets that
+   * buyer's checkout skip the guessing throttle. Decides no amount. New
+   * purpose, so no legacy key.
+   */
+  discountCodePreview: rotation("discount-code-preview", "discount-code-preview:r2:d8bba2d4622a57ff"),
 
   // Tier 3: long-lived links and cookies. New key signs; legacy still verifies.
   emailUnsubscribe: rotation(

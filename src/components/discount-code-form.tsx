@@ -51,7 +51,7 @@ export function DiscountCodeForm({ action, values, products, timeZone, submitLab
       <CsrfField />
       {values.id ? <input type="hidden" name="id" value={values.id} /> : null}
       <Field label="折扣碼" name="code" required minLength={6} maxLength={32} pattern="[A-Za-z0-9_\-]{6,32}" defaultValue={values.code}
-        hint="6–32 個英文字母、數字、- 或 _；買家輸入時不分大小寫，同一個商店不能重複。" />
+        hint="6–32 個英文字母、數字、- 或 _；買家輸入時不分大小寫，同一個商店不能重複。建議用不易猜的碼（8 個字元以上、混合英文與數字），避免 SALE10 這類常見字：一直有人猜錯時，系統會暫停這個商品或整個商店的折扣碼查詢 10 分鐘。" />
       <div className="grid gap-4 sm:grid-cols-2">
         <SelectField label="折扣方式" name="discountType" defaultValue={values.discountType}>
           <option value="fixed_amount">折抵固定金額（新台幣元）</option>

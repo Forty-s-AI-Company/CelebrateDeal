@@ -37,6 +37,8 @@ export const CommerceCheckoutRequestSchema = z.object({
   discountCode: z.string().trim().min(1).max(64).optional(),
   /** Only compared with the server's discount; a mismatch refuses the order instead of charging another amount. */
   expectedDiscountAmountCents: z.number().int().safe().nonnegative().optional(),
+  /** Signed preview token: only lets this checkout skip the guessing throttle; never decides an amount. */
+  discountCodeToken: z.string().max(1024).optional(),
 }).strict();
 
 /** A4-01: preview of a discount code on the checkout page. Display only; POST recomputes everything. */
@@ -54,6 +56,7 @@ export const DiscountCodePreviewResponseSchema = z.object({
   subtotalAmountCents: z.number().int().safe().positive(),
   totalAmountCents: z.number().int().safe().positive(),
   currency: z.string().regex(/^[A-Z]{3}$/u),
+  token: z.string().min(1).max(1024),
 }).strict();
 export type DiscountCodePreview = z.infer<typeof DiscountCodePreviewResponseSchema>;
 

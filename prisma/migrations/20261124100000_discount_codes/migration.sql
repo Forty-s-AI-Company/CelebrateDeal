@@ -12,9 +12,11 @@
 --   * "DiscountCodeRedemption": one use per canonical order with the immutable
 --     price snapshot (original subtotal, discount, total, code text and terms).
 --     Composite foreign keys bind the code, order and payment to one vendor.
---   * "DiscountCodeLookupThrottle": failed code lookups per vendor + product
---     in fixed 10-minute windows, so guessing is limited without relying on
---     the buyer's IP (A4-01 review m-1).
+--   * "DiscountCodeLookupThrottle": lookups that found no code, per vendor
+--     ("vendor") and per product ("product:<id>") in fixed 10-minute windows,
+--     so guessing is limited without relying on the buyer's IP (A4-01 review
+--     m-1, MJ-1, MN-2). No product foreign key: the vendor-wide row has no
+--     product, and a deleted product's rows age out with their window.
 --
 -- Forward-only and additive: four new tables, no existing row changes.
 DO $$
@@ -114,11 +116,12 @@ CREATE TABLE "DiscountCodeRedemption" (
 -- CreateTable
 CREATE TABLE "DiscountCodeLookupThrottle" (
     "vendorId" TEXT NOT NULL,
-    "productId" TEXT NOT NULL,
+    "scopeKey" TEXT NOT NULL,
     "windowStart" TIMESTAMP(3) NOT NULL,
     "failureCount" INTEGER NOT NULL DEFAULT 0,
 
-    CONSTRAINT "DiscountCodeLookupThrottle_pkey" PRIMARY KEY ("vendorId","productId","windowStart"),
+    CONSTRAINT "DiscountCodeLookupThrottle_pkey" PRIMARY KEY ("vendorId","scopeKey","windowStart"),
+    CONSTRAINT "DiscountCodeLookupThrottle_scopeKey_check" CHECK ("scopeKey" = 'vendor' OR "scopeKey" ~ '^product:[A-Za-z0-9_-]{1,128}$'),
     CONSTRAINT "DiscountCodeLookupThrottle_failureCount_check" CHECK ("failureCount" >= 0)
 );
 
@@ -178,9 +181,6 @@ ALTER TABLE "DiscountCodeRedemption" ADD CONSTRAINT "DiscountCodeRedemption_vend
 
 -- AddForeignKey
 ALTER TABLE "DiscountCodeLookupThrottle" ADD CONSTRAINT "DiscountCodeLookupThrottle_vendorId_fkey" FOREIGN KEY ("vendorId") REFERENCES "Vendor"("id") ON DELETE CASCADE ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "DiscountCodeLookupThrottle" ADD CONSTRAINT "DiscountCodeLookupThrottle_vendorId_productId_fkey" FOREIGN KEY ("vendorId", "productId") REFERENCES "Product"("vendorId", "id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- Same defense in depth as every other public table (20261020090000).
 ALTER TABLE "DiscountCodeLookupThrottle" ENABLE ROW LEVEL SECURITY;

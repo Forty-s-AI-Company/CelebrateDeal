@@ -5,13 +5,15 @@ import { recordUnsupportedCurrencyRefusal } from "@/lib/checkout-currency-audit"
 import { assertFlashSaleAdmission, consumeFlashSaleQuote, flashSaleBearerFromRequest, FlashSaleUnavailableError, resolveFlashSaleQuote } from "@/lib/live-flash-sale";
 import { consumeCheckoutVoucherClaim, VoucherClaimConflictError, type EligibleCheckoutVoucherClaim } from "@/lib/checkout-voucher-claim";
 import { automationCustomerKeyHash } from "@/lib/customer-key-hash";
+import { DISCOUNT_CODE_IP_RATE_LIMIT, resolveThrottledDiscountCodeQuote } from "@/lib/discount-code-lookup-throttle";
+import { verifyDiscountCodePreviewToken } from "@/lib/discount-code-preview-token";
 import {
   DISCOUNT_CODE_ERROR_CODES,
   DiscountCodeUnavailableError,
   normalizeDiscountCode,
   reserveDiscountCodeRedemption,
   discountCodeTryLaterReply,
-  resolveThrottledDiscountCodeQuote,
+  resolveDiscountCodeQuote,
   type DiscountCodeQuote,
   type DiscountCodeRejection,
 } from "@/lib/discount-codes";
@@ -204,6 +206,48 @@ function discountCodeTryLaterResponse(retryAfterSeconds: number) {
 type CheckoutPromotion = { discountQuote: DiscountCodeQuote | null; voucherClaim: EligibleCheckoutVoucherClaim };
 
 /**
+ * Review MJ-1: a valid preview token (same vendor, product and code, not
+ * expired) skips the guessing throttle and the per-IP discount-code limit;
+ * without one, checkout passes both so it cannot become a guessing channel.
+ * Either way the amount comes only from the DiscountCode row, and a token
+ * issued for an older revision of the code is refused.
+ */
+async function checkoutDiscountCodeQuote(
+  request: Request,
+  data: CheckoutRequestData & { discountCode: string },
+  input: { product: { id: string; priceCents: number; currency: string }; orderBumpProduct: { priceCents: number } | null },
+): Promise<DiscountCodeQuote | NextResponse> {
+  const now = new Date();
+  const context = {
+    vendorId: data.vendorId,
+    productId: input.product.id,
+    primaryPriceCents: input.product.priceCents,
+    additionalAmountCents: input.orderBumpProduct?.priceCents ?? 0,
+    currency: input.product.currency,
+    now,
+  };
+  const normalizedCode = normalizeDiscountCode(data.discountCode);
+  const token = normalizedCode
+    ? verifyDiscountCodePreviewToken(data.discountCodeToken, { vendorId: data.vendorId, productId: input.product.id, normalizedCode, now })
+    : null;
+  if (!token) {
+    const limited = await checkRateLimit(request, DISCOUNT_CODE_IP_RATE_LIMIT.key, DISCOUNT_CODE_IP_RATE_LIMIT.limit, DISCOUNT_CODE_IP_RATE_LIMIT.windowMs);
+    if (limited) return limited;
+  }
+  const result = token
+    ? await resolveDiscountCodeQuote(getDb(), data.discountCode, context)
+    : await resolveThrottledDiscountCodeQuote(getDb(), data.discountCode, context);
+  if (!result.ok) {
+    return result.reason === "throttled" ? discountCodeTryLaterResponse(result.retryAfterSeconds) : discountCodeErrorResponse(result.reason);
+  }
+  if (token && token.revision !== result.quote.revision) return discountCodeErrorResponse("changed");
+  if (data.expectedDiscountAmountCents !== undefined && data.expectedDiscountAmountCents !== result.quote.discountAmountCents) {
+    return discountCodeErrorResponse("changed");
+  }
+  return result.quote;
+}
+
+/**
  * A4-01: one promotion per order. A typed discount code is refused next to a
  * flash sale or post-purchase credit, and otherwise takes the place of an
  * automation/live voucher (which is then left unused). The code is looked up
@@ -220,21 +264,9 @@ async function resolveCheckoutPromotion(
 ): Promise<CheckoutPromotion | NextResponse> {
   if (data.discountCode !== undefined) {
     if (input.exclusiveOffer) return discountCodeErrorResponse("not_combinable");
-    const result = await resolveThrottledDiscountCodeQuote(getDb(), data.discountCode, {
-      vendorId: data.vendorId,
-      productId: input.product.id,
-      primaryPriceCents: input.product.priceCents,
-      additionalAmountCents: input.orderBumpProduct?.priceCents ?? 0,
-      currency: input.product.currency,
-      now: new Date(),
-    });
-    if (!result.ok) {
-      return result.reason === "throttled" ? discountCodeTryLaterResponse(result.retryAfterSeconds) : discountCodeErrorResponse(result.reason);
-    }
-    if (data.expectedDiscountAmountCents !== undefined && data.expectedDiscountAmountCents !== result.quote.discountAmountCents) {
-      return discountCodeErrorResponse("changed");
-    }
-    return { discountQuote: result.quote, voucherClaim: null };
+    const discount = await checkoutDiscountCodeQuote(request, { ...data, discountCode: data.discountCode }, input);
+    if (discount instanceof Response) return discount;
+    return { discountQuote: discount, voucherClaim: null };
   }
   if (input.exclusiveOffer) return { discountQuote: null, voucherClaim: null };
   try {

@@ -10,7 +10,7 @@ const admissionToken = `ca1.${"a".repeat(64)}.${"b".repeat(43)}`;
 let container: HTMLDivElement;
 let root: Root;
 
-const preview = { ok: true, code: "Save200", discountAmountCents: 20_000, subtotalAmountCents: 100_000, totalAmountCents: 80_000, currency: "TWD" };
+const preview = { ok: true, code: "Save200", discountAmountCents: 20_000, subtotalAmountCents: 100_000, totalAmountCents: 80_000, currency: "TWD", token: "dcp1.synthetic.token" };
 const checkoutResult = { ok: true, provider: "demo", orderNumber: "CD-1", transactionId: "transaction-1", amountCents: 80_000, currency: "TWD", checkoutUrl: null, nextAction: "demo_checkout_transaction_created", externalRequired: false };
 
 function json(body: unknown, status = 200) {
@@ -83,7 +83,7 @@ describe("checkout discount code (A4-01)", () => {
     fillBuyer(form);
     await act(async () => { form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })); });
     const checkoutBody = JSON.parse(fetchMock.mock.calls[2]![1].body);
-    expect(checkoutBody).toMatchObject({ discountCode: "Save200", expectedDiscountAmountCents: 20_000 });
+    expect(checkoutBody).toMatchObject({ discountCode: "Save200", expectedDiscountAmountCents: 20_000, discountCodeToken: "dcp1.synthetic.token" });
     expect(checkoutBody).not.toHaveProperty("discountCodeInput");
   });
 

@@ -110,67 +110,6 @@ export function logDiscountCodeRefusal(reason: DiscountCodeRejection, scope: { v
   console.warn("discount_code_refused", { reason, ...scope });
 }
 
-/**
- * Review m-1: failed lookups (unknown code, wrong product, used up, …) are
- * counted per vendor + product in fixed 10-minute windows, independent of the
- * caller's IP. Past the limit, preview and checkout answer every lookup for
- * that product with 429 — also for a valid code, so guessing learns nothing.
- * A code is 6–32 of 38 characters, so 30 tries per 10 minutes is far below
- * any useful guessing rate.
- */
-export const DISCOUNT_CODE_LOOKUP_WINDOW_MS = 10 * 60 * 1000;
-export const DISCOUNT_CODE_LOOKUP_FAILURE_LIMIT = 30;
-
-type ThrottleDb = Pick<PrismaClient | Prisma.TransactionClient, "discountCodeLookupThrottle">;
-
-function lookupWindow(now: Date) {
-  const start = Math.floor(now.getTime() / DISCOUNT_CODE_LOOKUP_WINDOW_MS) * DISCOUNT_CODE_LOOKUP_WINDOW_MS;
-  return { windowStart: new Date(start), retryAfterSeconds: Math.max(1, Math.ceil((start + DISCOUNT_CODE_LOOKUP_WINDOW_MS - now.getTime()) / 1000)) };
-}
-
-/** Null when lookups are allowed; otherwise the seconds until the window ends. */
-export async function discountCodeLookupBlocked(db: ThrottleDb, scope: { vendorId: string; productId: string; now: Date }) {
-  const { windowStart, retryAfterSeconds } = lookupWindow(scope.now);
-  const row = await db.discountCodeLookupThrottle.findUnique({
-    where: { vendorId_productId_windowStart: { vendorId: scope.vendorId, productId: scope.productId, windowStart } },
-    select: { failureCount: true },
-  });
-  return row && row.failureCount >= DISCOUNT_CODE_LOOKUP_FAILURE_LIMIT ? retryAfterSeconds : null;
-}
-
-/** Counts one failed lookup; old windows of the same product are dropped on the way. */
-export async function recordDiscountCodeLookupFailure(db: ThrottleDb, scope: { vendorId: string; productId: string; now: Date }) {
-  const { windowStart } = lookupWindow(scope.now);
-  await db.discountCodeLookupThrottle.upsert({
-    where: { vendorId_productId_windowStart: { vendorId: scope.vendorId, productId: scope.productId, windowStart } },
-    create: { vendorId: scope.vendorId, productId: scope.productId, windowStart, failureCount: 1 },
-    update: { failureCount: { increment: 1 } },
-  });
-  await db.discountCodeLookupThrottle.deleteMany({
-    where: { vendorId: scope.vendorId, productId: scope.productId, windowStart: { lt: new Date(windowStart.getTime() - DISCOUNT_CODE_LOOKUP_WINDOW_MS) } },
-  });
-}
-
-/**
- * The throttled lookup both preview and checkout use: refuses while the
- * product's window is full, and counts every refused lookup.
- */
-export async function resolveThrottledDiscountCodeQuote(
-  db: QuoteDb & ThrottleDb,
-  enteredCode: unknown,
-  context: DiscountCodeCheckoutContext,
-): Promise<DiscountCodeEvaluation | { ok: false; reason: "throttled"; retryAfterSeconds: number }> {
-  const scope = { vendorId: context.vendorId, productId: context.productId, now: context.now };
-  const retryAfterSeconds = await discountCodeLookupBlocked(db, scope);
-  if (retryAfterSeconds !== null) return { ok: false, reason: "throttled", retryAfterSeconds };
-  const result = await resolveDiscountCodeQuote(db, enteredCode, context);
-  if (!result.ok) {
-    logDiscountCodeRefusal(result.reason, { vendorId: context.vendorId, productId: context.productId });
-    await recordDiscountCodeLookupFailure(db, scope);
-  }
-  return result;
-}
-
 export type DiscountCodeRecord = {
   id: string;
   vendorId: string;

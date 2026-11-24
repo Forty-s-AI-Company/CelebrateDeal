@@ -681,7 +681,6 @@ model Product {
 
   merchantAffiliateRates MerchantAffiliateProductRate[]
   discountCodeProducts   DiscountCodeProduct[]
-  discountCodeLookupThrottles DiscountCodeLookupThrottle[]
   @@unique([vendorId, id])
   @@unique([vendorId, slug])
   @@index([vendorId, commerceDomain, isActive])
@@ -4916,19 +4915,20 @@ model DiscountCode {
   @@index([vendorId, createdAt])
 }
 
-/// Failed discount-code lookups per vendor + product in fixed 10-minute
-/// windows. Keyed without the buyer's IP so rotating addresses cannot keep
-/// guessing; over the limit every lookup for that product answers 429.
+/// Discount-code lookups that found no code, per fixed 10-minute window,
+/// independent of the buyer's IP. `scopeKey` is `vendor` (merchant-wide cap)
+/// or `product:<id>` (per-product cap). A lookup is debited before the code
+/// is read (conditional upsert) and refunded when the code exists, so
+/// `failureCount` never passes the cap even under concurrency.
 model DiscountCodeLookupThrottle {
   vendorId     String
-  productId    String
+  scopeKey     String
   windowStart  DateTime
   failureCount Int      @default(0)
 
-  vendor  Vendor  @relation(fields: [vendorId], references: [id], onDelete: Cascade)
-  product Product @relation(fields: [vendorId, productId], references: [vendorId, id], onDelete: Cascade)
+  vendor Vendor @relation(fields: [vendorId], references: [id], onDelete: Cascade)
 
-  @@id([vendorId, productId, windowStart])
+  @@id([vendorId, scopeKey, windowStart])
 }
 
 /// Products a non-global discount code applies to (same vendor only).
