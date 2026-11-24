@@ -93,7 +93,9 @@ npm run external:smoke
 
 ## 5. Live chat ingress trust
 
-Production／Preview 的 live chat route 使用專用 header `x-celebratedeal-live-chat-ingress` 作為 edge 入口 proof。Cloudflare Worker／Transform Rule 或 Vercel 前置 proxy 必須在每個請求覆寫該 header，值與 server-side `LIVE_CHAT_INGRESS_SECRET` 完全一致；app 只有在 proof 通過常數時間比較後，才會信任 `cf-connecting-ip` 或 `x-real-ip`。
+**A4-03（2026-11-24）起**：部署在 Vercel（`VERCEL_ENV` 為 `production`／`preview`）時，live chat 與其他限流相同，直接採用 Vercel edge 設定的 `x-real-ip`（沒有時 `x-forwarded-for`），不需要 ingress proof；網域不經 Cloudflare（O-7＝否），`cf-connecting-ip` 一律不採信。規則見 `docs/domain-workflows.md`「客戶端 IP 信任規則」。以下 proof 合約只適用於非 Vercel 的 production runtime（例如本機 E2E 的 loopback ingress）。
+
+非 Vercel 的 production runtime 上，live chat route 使用專用 header `x-celebratedeal-live-chat-ingress` 作為 edge 入口 proof。前置 proxy 必須在每個請求覆寫該 header，值與 server-side `LIVE_CHAT_INGRESS_SECRET` 完全一致；app 只有在 proof 通過常數時間比較後，才會信任 `cf-connecting-ip` 或 `x-real-ip`。
 
 - `cf-ray` 只是不可信 metadata，不能作為 proof。
 - `RATE_LIMIT_PROVIDER` 只能選擇 Cloudflare／Vercel proxy 類型，不能單獨建立信任根。

@@ -151,10 +151,11 @@ describe("live chat route", () => {
 
   it("does not let forged Cloudflare or forwarded headers split the limiter bucket", async () => {
     const rateLimitIdentities: string[] = [];
-    mocks.checkRateLimit.mockImplementation(async (limitedRequest: Request) => {
-      rateLimitIdentities.push(limitedRequest.headers.get("cf-connecting-ip") ?? "missing");
-      expect(limitedRequest.headers.get("x-forwarded-for")).toBeNull();
-      expect(limitedRequest.headers.get("x-real-ip")).toBeNull();
+    mocks.checkRateLimit.mockImplementation(async (_request: Request, _key: string, _limit: number, _windowMs: number, options?: { clientIp?: string | null }) => {
+      // The route always hands the limiter its resolved identity, so the
+      // limiter never falls back to reading request headers itself.
+      expect(options && "clientIp" in options).toBe(true);
+      rateLimitIdentities.push(options?.clientIp ?? "missing");
       return null;
     });
 
@@ -201,9 +202,8 @@ describe("live chat route", () => {
       deploymentSource: "cloudflare",
       ingressSecret,
     });
-    const [limiterRequest, limiterKey] = mocks.checkRateLimit.mock.calls[0] as [Request, string];
-    expect(limiterRequest.headers.get("cf-connecting-ip")).toBe("203.0.113.5");
-    expect(limiterRequest.headers.get("x-forwarded-for")).toBeNull();
+    const [, limiterKey, , , limiterOptions] = mocks.checkRateLimit.mock.calls[0] as [Request, string, number, number, { clientIp: string | null }];
+    expect(limiterOptions).toEqual({ clientIp: "203.0.113.5" });
     expect(limiterKey).toBe("live-chat-write");
   });
 

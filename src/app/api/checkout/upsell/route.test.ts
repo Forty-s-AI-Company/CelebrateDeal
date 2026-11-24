@@ -127,9 +127,9 @@ describe("post-purchase upsell route", () => {
 
   it("uses a verified grant bucket without caller-controlled proxy identity", async () => {
     await POST(request());
-    const [boundedRequest, key, limit, duration] = mocks.rateLimit.mock.calls[0];
-    expect(boundedRequest.headers.get("x-forwarded-for")).toBeNull();
-    expect(boundedRequest.headers.get("cf-connecting-ip")).toBe("authenticated-buyer");
+    const [, key, limit, duration, options] = mocks.rateLimit.mock.calls[0];
+    // The request carries a forged x-forwarded-for; the bucket identity is fixed.
+    expect(options).toEqual({ clientIp: "authenticated-buyer" });
     expect(key).toMatch(/^post-purchase-upsell:[a-f0-9]{64}$/u);
     expect([limit, duration]).toEqual([12, 60000]);
   });

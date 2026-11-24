@@ -10,6 +10,7 @@ import { hashPasswordAsync } from "@/lib/password";
 import { passwordPolicyErrorCode, validateNewPassword } from "@/lib/password-policy";
 import { merchantRegistrationPolicyVersions } from "@/lib/public-policy-content";
 import { checkRateLimit } from "@/lib/rate-limit";
+import { copyTrustedClientIpHeaders } from "@/lib/request-client-ip";
 import { acceptVendorMemberInvitation, findPendingVendorMemberInvitation } from "@/lib/vendor-member-invitation";
 import { isVendorPartnerRole, PARTNER_PORTAL_PATH } from "@/lib/vendor-roles";
 
@@ -35,11 +36,7 @@ export async function acceptVendorMemberInvitationAction(formData: FormData) {
   if (!token || token.length > 256) redirect("/invitations/accept?error=invalid");
 
   const incoming = await headers();
-  const forwarded = new Headers();
-  for (const name of ["cf-connecting-ip", "x-forwarded-for"]) {
-    const value = incoming.get(name);
-    if (value) forwarded.set(name, value);
-  }
+  const forwarded = copyTrustedClientIpHeaders(incoming);
   const limited = await checkRateLimit(new Request(getCanonicalAppUrl(), { headers: forwarded }), "vendor-member-invitation-accept", 10, 15 * 60 * 1000);
   if (limited) redirect(acceptPath(token, limited.status === 429 ? "rate_limited" : "temporarily_unavailable"));
 

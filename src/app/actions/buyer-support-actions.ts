@@ -16,6 +16,7 @@ import {
 import { assertServerActionSecurity } from "@/lib/csrf";
 import { getDb } from "@/lib/db";
 import { checkRateLimit, getRateLimitProviderStatus } from "@/lib/rate-limit";
+import { copyTrustedClientIpHeaders } from "@/lib/request-client-ip";
 
 const Identifier = z.string().trim().min(1).max(160).regex(/^[A-Za-z0-9_-]+$/u);
 const RequestKey = z.string().uuid();
@@ -42,13 +43,8 @@ async function publicRequest() {
   const headerStore = await headers();
   const host = headerStore.get("host") ?? "localhost";
   const proto = host.includes("localhost") || host.startsWith("127.") ? "http" : "https";
-  const forwardedFor = headerStore.get("x-forwarded-for");
-  const cloudflareIp = headerStore.get("cf-connecting-ip");
   return new Request(`${proto}://${host}/support/requests`, {
-    headers: {
-      ...(forwardedFor ? { "x-forwarded-for": forwardedFor } : {}),
-      ...(cloudflareIp ? { "cf-connecting-ip": cloudflareIp } : {}),
-    },
+    headers: copyTrustedClientIpHeaders(headerStore),
   });
 }
 

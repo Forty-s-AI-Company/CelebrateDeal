@@ -4,6 +4,7 @@ import { readJsonBody, requireSameOriginRequest } from "@/lib/api-security";
 import { getCanonicalAppUrl } from "@/lib/app-url";
 import { schedulePasswordResetLink } from "@/lib/password-reset";
 import { checkRateLimit } from "@/lib/rate-limit";
+import { getTrustedClientIp } from "@/lib/request-client-ip";
 
 // The password reset link is sent by `after()` within this limit
 // (see IMMEDIATE_EMAIL_DISPATCH_MAX_DURATION_SECONDS).
@@ -37,7 +38,7 @@ export async function POST(request: Request) {
   schedulePasswordResetLink({
     email: parsed.data.email,
     appUrl,
-    ipAddress: request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? null,
+    ipAddress: getTrustedClientIp(request),
     userAgent: request.headers.get("user-agent"),
   });
 

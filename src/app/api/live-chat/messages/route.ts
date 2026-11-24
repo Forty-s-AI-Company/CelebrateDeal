@@ -12,7 +12,7 @@ import {
 import { liveViewerTokenFromRequest } from "@/lib/live-quota-admission";
 import { liveViewerPassFromRequest } from "@/lib/live-viewer-pass";
 import { checkRateLimit } from "@/lib/rate-limit";
-import { liveChatIpTrustConfig, rateLimitRequestWithIdentity } from "@/lib/live-chat-request-security";
+import { liveChatIpTrustConfig } from "@/lib/live-chat-request-security";
 import { getRequestClientIp } from "@/lib/request-client-ip";
 
 const NO_STORE_HEADERS = { "Cache-Control": "private, no-store" };
@@ -70,12 +70,7 @@ async function securityGate(request: Request, key: string, requireTrustedClientI
     return { response: json({ error: "Unable to use live chat" }, 403), clientIp: null };
   }
 
-  const limited = await checkRateLimit(
-    rateLimitRequestWithIdentity(request, clientIp),
-    key,
-    60,
-    60_000,
-  );
+  const limited = await checkRateLimit(request, key, 60, 60_000, { clientIp });
   return { response: limited ? noStore(limited) : null, clientIp };
 }
 

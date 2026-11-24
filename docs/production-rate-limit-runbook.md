@@ -104,11 +104,15 @@ RATE_LIMIT_PROVIDER=cloudflare_waf
 
 注意：此模式由 Cloudflare edge 擋流，app 內 `checkRateLimit()` 會直接放行，因此必須在 dashboard 完成 rule 驗收。
 
-### Live chat 的來源信任
+### 來源 IP 信任（A4-03，2026-11-24 更新）
+
+正式網域不經 Cloudflare（O-7＝否），本節的 `cloudflare_waf` 模式實際上沒有 edge rule 在擋。應用層所有限流與 IP 紀錄只採用 `getTrustedClientIp`：Vercel 部署讀 Vercel edge 設定的 `x-real-ip`／`x-forwarded-for`，`cf-connecting-ip`、`true-client-ip` 一律忽略。完整規則與依據見 `docs/domain-workflows.md`「客戶端 IP 信任規則」。下面兩段是 Cloudflare 代理存在時的舊合約，現況只適用於非 Vercel 的 runtime。
+
+### Live chat 的來源信任（非 Vercel runtime）
 
 live chat 另需要 production／Preview env `LIVE_CHAT_INGRESS_SECRET`，至少 32 字元。Cloudflare／Vercel edge 必須覆寫 `x-celebratedeal-live-chat-ingress`，app 以 `timingSafeEqual` 驗證 proof 後才讀取 `cf-connecting-ip` 或 `x-real-ip`。`cf-ray` 與 `RATE_LIMIT_PROVIDER` 都不能單獨作為信任根。Edge 必須封鎖直接 origin 存取，並覆寫使用者提供的同名 header。
 
-`/login` 的 rule 必須以可信 proxy 注入的 `cf-connecting-ip`（優先）或 `x-forwarded-for` 首個位址作為來源識別，並同時涵蓋來源總量與來源＋正規化 Email；不可只依 Email 計數。登入限流回應為 429 時顯示「登入失敗次數過多」提示；限流服務不可用時，app 必須 fail closed 並顯示登入保護服務暫時無法使用的提示。
+`/login` 的來源限流以 `getTrustedClientIp` 的結果作為來源識別（若日後真的加上 Cloudflare 代理，WAF rule 才以 `cf-connecting-ip` 為準），並同時涵蓋來源總量與來源＋正規化 Email；不可只依 Email 計數。登入限流回應為 429 時顯示「登入失敗次數過多」提示；限流服務不可用時，app 必須 fail closed 並顯示登入保護服務暫時無法使用的提示。
 
 ## 5. Staging / Production Env Checklist
 

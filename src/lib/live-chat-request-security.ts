@@ -1,7 +1,16 @@
 import type { ClientIpTrustConfig } from "./request-client-ip";
+import { isVercelDeployment } from "./vercel-runtime";
 import { isExplicitLocalE2eRuntime } from "./app-url";
 
 export function liveChatIpTrustConfig(env: NodeJS.ProcessEnv = process.env): ClientIpTrustConfig {
+  // A4-03: on a Vercel deployment the edge sets x-real-ip and overwrites
+  // x-forwarded-for, and nothing reaches the function around it, so live chat
+  // uses the same rule as every other caller of getTrustedClientIp. The
+  // ingress-proof modes below remain for non-Vercel runtimes only.
+  if (isVercelDeployment(env)) {
+    return { trustMode: "vercel-edge", deploymentSource: "vercel" };
+  }
+
   // Local development must use the runtime-provided address only. A local
   // RATE_LIMIT_PROVIDER value never becomes a proxy trust root.
   if (env.NODE_ENV !== "production") {
@@ -28,17 +37,4 @@ export function liveChatIpTrustConfig(env: NodeJS.ProcessEnv = process.env): Cli
     };
   }
   return { trustMode: "none", deploymentSource: "none" };
-}
-
-export function rateLimitRequestWithIdentity(request: Request, clientIp: string | null) {
-  const headers = new Headers(request.headers);
-
-  // checkRateLimit currently derives its final bucket suffix from these
-  // legacy headers. Replace them with the already-normalized identity chosen
-  // by this route so forged alternate headers cannot create another bucket.
-  headers.delete("x-forwarded-for");
-  headers.delete("x-real-ip");
-  headers.set("cf-connecting-ip", clientIp ?? "unknown");
-  // 限流只讀 metadata；不分岔 body，避免未消費的分支阻塞超量串流取消。
-  return new Request(request.url, { method: request.method, headers });
 }

@@ -13,6 +13,7 @@ import { getDb } from "@/lib/db";
 import { sendVendorMemberInvitationEmail } from "@/lib/email";
 import { sendPasswordResetLink } from "@/lib/password-reset";
 import { checkRateLimit } from "@/lib/rate-limit";
+import { copyTrustedClientIpHeaders, getTrustedClientIp } from "@/lib/request-client-ip";
 import { checkAccountRateLimit } from "@/lib/account-rate-limit";
 import { requireRecentMfa } from "@/lib/recent-mfa";
 import {
@@ -49,11 +50,7 @@ function isSerializationConflict(error: unknown) {
 
 /** IP layer (provider-dependent) first, then the per-vendor database limit (F-028). */
 async function invitationRateLimited(headerStore: Awaited<ReturnType<typeof headers>>, appUrl: string, vendorId: string) {
-  const rateLimitHeaders = new Headers();
-  for (const headerName of ["cf-connecting-ip", "x-forwarded-for"]) {
-    const value = headerStore.get(headerName);
-    if (value) rateLimitHeaders.set(headerName, value);
-  }
+  const rateLimitHeaders = copyTrustedClientIpHeaders(headerStore);
   return await checkRateLimit(new Request(appUrl, { headers: rateLimitHeaders }), "vendor-member-invitation", 5, 60_000)
     ?? await checkAccountRateLimit("vendor_member_invitation_vendor", vendorId);
 }
@@ -210,7 +207,7 @@ export async function resendVendorMemberInvitationAction(formData: FormData) {
     invitationSent = Boolean(await sendPasswordResetLink({
       email: member.user.email,
       appUrl,
-      ipAddress: headerStore.get("x-forwarded-for")?.split(",")[0]?.trim() ?? null,
+      ipAddress: getTrustedClientIp(headerStore),
       userAgent: headerStore.get("user-agent"),
     }));
   } catch {}

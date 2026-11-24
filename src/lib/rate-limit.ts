@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { getTrustedClientIp } from "./request-client-ip";
 
 export type RateLimitProviderId = "memory" | "cloudflare_waf" | "upstash_redis";
 
@@ -23,12 +24,23 @@ type RateLimitDecision = {
   retryAfterSeconds?: number;
 };
 
-function clientIp(request: Request) {
-  return (
-    request.headers.get("cf-connecting-ip")
-    ?? request.headers.get("x-forwarded-for")?.split(",")[0]?.trim()
-    ?? "unknown"
-  );
+export type RateLimitOptions = {
+  /**
+   * The bucket identity the caller already resolved: a trusted client IP from
+   * getTrustedClientIp, a fixed label for an authenticated caller, or null
+   * (one shared "unknown" bucket). Omit it to resolve the trusted client IP
+   * from `request`. Never pass a raw request header here.
+   */
+  clientIp?: string | null;
+};
+
+/**
+ * A4-03: the bucket suffix never comes from a header the client can set
+ * (cf-connecting-ip, true-client-ip, ...). See getTrustedClientIp.
+ */
+function bucketIdentity(request: Request, options: RateLimitOptions | undefined) {
+  const identity = options && "clientIp" in options ? options.clientIp : getTrustedClientIp(request);
+  return identity ?? "unknown";
 }
 
 function cleanup(now: number) {
@@ -84,11 +96,11 @@ function serviceUnavailable() {
   );
 }
 
-async function memoryDecision(request: Request, key: string, limit: number, windowMs: number): Promise<RateLimitDecision> {
+async function memoryDecision(identity: string, key: string, limit: number, windowMs: number): Promise<RateLimitDecision> {
   const now = Date.now();
   cleanup(now);
 
-  const bucketKey = `${key}:${clientIp(request)}`;
+  const bucketKey = `${key}:${identity}`;
   const current = buckets.get(bucketKey);
   const bucket = current && current.resetAt > now ? current : { count: 0, resetAt: now + windowMs };
 
@@ -105,14 +117,14 @@ async function memoryDecision(request: Request, key: string, limit: number, wind
   };
 }
 
-async function upstashDecision(request: Request, key: string, limit: number, windowMs: number): Promise<RateLimitDecision> {
+async function upstashDecision(identity: string, key: string, limit: number, windowMs: number): Promise<RateLimitDecision> {
   const restUrl = process.env.UPSTASH_REDIS_REST_URL?.replace(/\/$/, "");
   const token = process.env.UPSTASH_REDIS_REST_TOKEN;
   if (!restUrl || !token) {
     throw new Error("Upstash Redis REST env is not configured.");
   }
 
-  const bucketKey = `celebratedeal:rl:${key}:${clientIp(request)}`;
+  const bucketKey = `celebratedeal:rl:${key}:${identity}`;
   const response = await fetch(restUrl, {
     method: "POST",
     headers: {
@@ -145,7 +157,13 @@ async function upstashDecision(request: Request, key: string, limit: number, win
   };
 }
 
-export async function checkRateLimit(request: Request, key: string, limit: number, windowMs: number) {
+export async function checkRateLimit(
+  request: Request,
+  key: string,
+  limit: number,
+  windowMs: number,
+  options?: RateLimitOptions,
+) {
   const provider = getRateLimitProviderId();
 
   if (provider === "cloudflare_waf") {
@@ -156,11 +174,12 @@ export async function checkRateLimit(request: Request, key: string, limit: numbe
     return null;
   }
 
+  const identity = bucketIdentity(request, options);
   let decision: RateLimitDecision;
   try {
     decision = provider === "upstash_redis"
-      ? await upstashDecision(request, key, limit, windowMs)
-      : await memoryDecision(request, key, limit, windowMs);
+      ? await upstashDecision(identity, key, limit, windowMs)
+      : await memoryDecision(identity, key, limit, windowMs);
   } catch {
     return serviceUnavailable();
   }

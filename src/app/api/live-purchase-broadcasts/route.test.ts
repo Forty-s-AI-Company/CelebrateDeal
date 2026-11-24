@@ -46,9 +46,8 @@ describe("GET exact live purchase broadcasts", () => {
       req.headers.set("x-celebratedeal-live-chat-ingress", "forged");
       if (mode === "runtime") Object.defineProperty(req, "ip", { value: "192.0.2.19" });
       expect((await GET(req)).status).toBe(index < 120 ? 200 : 429);
-      const limited = mocks.limit.mock.calls.at(-1)![0] as Request;
-      expect(limited.headers.get("cf-connecting-ip")).toBe(mode === "runtime" ? "192.0.2.19" : "unknown");
-      expect(limited.headers.get("x-forwarded-for")).toBeNull();
+      // The route passes its resolved identity; the limiter never reads the forged headers.
+      expect(mocks.limit.mock.calls.at(-1)![4]).toEqual({ clientIp: mode === "runtime" ? "192.0.2.19" : null });
     }
     expect(mocks.list).toHaveBeenCalledTimes(120);
   });

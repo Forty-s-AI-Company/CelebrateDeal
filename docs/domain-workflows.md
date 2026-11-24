@@ -413,6 +413,21 @@ Web instance、排程 job 與資料庫各用自己的時鐘；一台寫入、另
 
 新增時間戳檢查時沿用這個常數，不要把容許值加到到期判斷上。
 
+### 客戶端 IP 信任規則（A4-03，2026-11-24）
+
+正式與 staging 網域的 DNS 在 Spaceship，直接指向 Vercel，不經 Cloudflare（O-7＝否），所以 Cloudflare WAF／rate rule 都不存在，限流只能在應用層做（D-20）。任何用戶端都能自己送 `cf-connecting-ip`、`true-client-ip`、`x-client-ip`、`forwarded` 等標頭，它們一律不採信。
+
+- **唯一入口**：`src/lib/request-client-ip.ts` 的 `getTrustedClientIp(request 或 headers)`。限流（`checkRateLimit`）、稽核紀錄（`requestAuditMeta`）、session 的 `ipAddress`、密碼重設信、Turnstile `remoteip`、CSP 回報上限都走它。Server Action 為限流重建 Request 時，用 `copyTrustedClientIpHeaders(await headers())` 只複製它會讀的兩個標頭。
+- **Vercel 部署（`VERCEL_ENV` 為 `production` 或 `preview`）**：讀 `x-real-ip`，沒有時讀 `x-forwarded-for` 第一個位址。依據：Vercel 官方 Request headers 文件寫明 `x-forwarded-for` 由 Vercel 覆寫、不轉送外部送來的值以防偽造，`x-real-ip` 與它相同；`@vercel/functions` 的 `ipAddress()` 也是讀這個標頭。Vercel Function 只能經 Vercel edge 進入，沒有可繞過的直連入口。格式不合（逗號、換行、非 IP、超過 16 跳）時視為沒有 IP，不退回其他標頭。
+- **本機開發與測試（`NODE_ENV` 不是 `production`）**：讀同樣兩個標頭（本機 Next server 在沒有時以 socket 位址補上 `x-forwarded-for`），都沒有時用 runtime 位址。Next 的 server 用 `??=`，**保留**用戶端送來的 `x-forwarded-for`，所以這個模式只能用在不對外的環境。
+- **其他 production runtime（CI build smoke、本機 `next start`、自架）**：不支援，一律回 null；限流把這類請求算進同一個 `unknown` 桶（偏嚴，不會被偽造標頭分桶）。
+- **呼叫端已知身分時**：`checkRateLimit(request, key, limit, windowMs, { clientIp })` 直接指定桶身分（直播聊天、購買廣播、live-updates 傳入已解析的 IP；講師私訊傳 `null` 搭配 per-user key；upsell 傳固定的 `authenticated-buyer` 搭配 grant 雜湊 key）。不可把原始標頭值傳進 `clientIp`。
+- **直播聊天**：`liveChatIpTrustConfig` 在 Vercel 部署上與上面相同（不再需要 `x-celebratedeal-live-chat-ingress` proof，因為沒有任何前置 proxy 能注入它）；非 Vercel 的 production（本機 E2E）仍沿用 ingress proof 合約，本機開發仍只用 runtime 位址。
+- `RATE_LIMIT_PROVIDER` 只選計數儲存，不決定信任哪個標頭。**注意**：`cloudflare_waf` 時 `checkRateLimit` 不計數；在網域不經 Cloudflare 的現況下等於沒有共用 IP 限流，只剩各端點自己的機制（例如 CSP 回報的單執行個體上限、資料庫帳號層限流）。要有跨執行個體的 IP 限流，staging／Production 需要 `RATE_LIMIT_PROVIDER=upstash_redis`。
+- 測試：`src/lib/trusted-client-ip.test.ts`（偽造 `cf-connecting-ip`／`true-client-ip` 不改變限流鍵）、`src/lib/request-client-ip.test.ts`、`src/app/api/security/csp-report/route.test.ts`。
+
+**CSP 轉強制（R-01）**：要等本項上線、並在 staging 累積一段時間的 `csp_violation` 回報後再評估；A4-03 本身不改 `CSP_ENFORCE`。
+
 ## 瀏覽器 QA
 
 風險決定覆蓋範圍，使用固定非 Production 與唯一合成資料。角色涵蓋受影響的 anonymous、owner、staff、finance、platform admin 未驗證／已驗證 MFA；狀態涵蓋 empty、loading、validation／authorization／provider error、success、duplicate、large list、expired session。

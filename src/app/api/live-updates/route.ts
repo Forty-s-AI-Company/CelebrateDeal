@@ -9,7 +9,7 @@ import {
   listViewerChatUpdates,
   resolveViewerAdmissionContext,
 } from "@/lib/live-chat";
-import { liveChatIpTrustConfig, rateLimitRequestWithIdentity } from "@/lib/live-chat-request-security";
+import { liveChatIpTrustConfig } from "@/lib/live-chat-request-security";
 import { readViewerInteractionState } from "@/lib/live-interaction-viewer-state";
 import { hashLiveViewerToken, liveViewerTokenFromRequest } from "@/lib/live-quota-admission";
 import { liveViewerPassFromRequest } from "@/lib/live-viewer-pass";
@@ -78,7 +78,7 @@ export async function GET(request: Request) {
   if (sameOrigin) return noStore(sameOrigin);
 
   const clientIp = getRequestClientIp(request, liveChatIpTrustConfig());
-  const limited = await checkRateLimit(rateLimitRequestWithIdentity(request, clientIp), "live-updates-read", 180, 60_000);
+  const limited = await checkRateLimit(request, "live-updates-read", 180, 60_000, { clientIp });
   if (limited) return noStore(limited);
 
   const query = parseQuery(request);

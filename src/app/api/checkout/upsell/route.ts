@@ -33,8 +33,8 @@ async function choose(request: Request): Promise<Response> {
   // A verified grant owns the decision bucket. Forged forwarded headers cannot
   // rotate its identity or bypass the bounded retry limit.
   const identity = createHash("sha256").update(initialGrant.id).digest("hex");
-  const limited = await checkRateLimit(new Request(request.url, { headers: { "cf-connecting-ip": "authenticated-buyer" } }),
-    `post-purchase-upsell:${identity}`, 12, 60_000);
+  const limited = await checkRateLimit(request,
+    `post-purchase-upsell:${identity}`, 12, 60_000, { clientIp: "authenticated-buyer" });
   if (limited) return limited;
 
   for (let attempt = 0; attempt < 3; attempt++) {

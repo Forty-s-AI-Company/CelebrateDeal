@@ -2,12 +2,13 @@ import { headers } from "next/headers";
 import type { Prisma } from "@prisma/client";
 import { getDb } from "@/lib/db";
 import { redactedJsonSnapshot } from "@/lib/redaction";
+import { getTrustedClientIp } from "@/lib/request-client-ip";
 
 export async function requestAuditMeta() {
   try {
     const headerStore = await headers();
     return {
-      ipAddress: headerStore.get("x-forwarded-for")?.split(",")[0]?.trim() ?? headerStore.get("x-real-ip"),
+      ipAddress: getTrustedClientIp(headerStore),
       userAgent: headerStore.get("user-agent"),
     };
   } catch {
