@@ -1297,6 +1297,9 @@ export function createPayUniBrowserDiagnostic() {
     structure: null,
     // Post-submit summary (dialogs, modal, host/path class, field errors); see capturePayUniSubmitDiagnostic.
     submit: { captured: false, dialogs: [], modal: "NONE", host: "NONE", path: "NONE", errors: [] },
+    // De-identified dialog text/buttons and blocked third-party hosts; see formatPayUniDialogDiagnostic.
+    dialogTexts: [],
+    externalHosts: [],
   };
 }
 
@@ -1310,6 +1313,7 @@ export function recordPayUniResourceFailure(diagnostic, request) {
     const payuni = host === "payuni.com.tw" || host.endsWith(".payuni.com.tw");
     const key = payuni ? (script ? "payuniScript" : "payuniOther") : (script ? "externalScript" : "externalOther");
     diagnostic.resourceFailures[key] += 1;
+    if (!payuni) recordPayUniExternalHost(diagnostic.externalHosts, host);
   } catch { /* Unclassifiable failures are not counted. */ }
 }
 
@@ -1573,6 +1577,7 @@ export function recordPayUniSubmitDialog(diagnostic, dialog) {
         category: classifyPayUniSubmitMessage(dialog.message?.()),
       });
     }
+    if (diagnostic?.step === "SUBMIT") recordPayUniDialogCapture(diagnostic.dialogTexts, nativePayUniDialogCapture(dialog));
   } catch { /* Diagnostics never change behaviour. */ }
   return Promise.resolve().then(() => dialog.dismiss()).catch(() => {});
 }
@@ -1588,6 +1593,177 @@ export function observePayUniSubmitDialogs(page, diagnostic) {
 export function recordPayUniSubmitModal(diagnostic, text) {
   if (!diagnostic?.submit) return;
   diagnostic.submit.modal = typeof text === "string" && text.trim() !== "" ? classifyPayUniSubmitMessage(text) : "OTHER";
+}
+
+// ---- Unknown-dialog text diagnostic (2026-11-24 runs 45304632382 and 45340752525: after 確認送出
+// PayUni showed a single-button "確定" modal whose text the category diagnostic could not read,
+// `modal=OTHER`). This records only the de-identified dialog text and button labels so the dialog
+// can be identified: e-mail, URLs, long tokens and letter+digit identifiers are masked, every run of
+// two or more digits (ASCII or Chinese numerals, also when split by spaces or - . / , 、 : _) becomes
+// "#", and a text that still holds more than three digits is dropped as REDACTED; the text is capped
+// at 200 characters. A dialog container that holds a form, input or iframe keeps no text at all. It
+// never clicks, accepts or changes the stop decision (contract-tested masking and no-click rules).
+export const PAYUNI_DIALOG_TEXT_MAX = 200;
+const PAYUNI_DIALOG_BUTTON_TEXT_MAX = 40;
+const PAYUNI_DIALOG_BUTTONS_MAX = 6;
+const PAYUNI_DIALOG_CAPTURES_MAX = 3;
+const PAYUNI_EXTERNAL_HOSTS_MAX = 5;
+const PAYUNI_DIALOG_KINDS = new Set([
+  "NATIVE_ALERT", "NATIVE_CONFIRM", "NATIVE_PROMPT", "NATIVE_BEFOREUNLOAD", "NATIVE_OTHER",
+  "ROLE_DIALOG", "MODAL_CLASS", "FIXED_LAYER", "ANCESTOR", "NONE", "UNREADABLE", "OTHER",
+]);
+/** Fixed text kept instead of the content of a dialog container that holds a form, input or iframe. */
+export const PAYUNI_DIALOG_CONTAINS_FORM = "CONTAINS_FORM";
+const PAYUNI_NUMERAL = "[0-9〇零一二三四五六七八九]";
+// Two or more numerals separated by nothing but spaces or - . / , 、 : _ (a spaced card number,
+// "CVV 1 2 3", an expiry "1/30", a spelled-out Chinese number) collapse into one "#".
+const PAYUNI_NUMERAL_RUN = new RegExp(`${PAYUNI_NUMERAL}(?:[\\s\\-./,、:_]*${PAYUNI_NUMERAL})+`, "gu");
+// Digits left after masking; a lone "一" is not counted because it is part of everyday words (統一, 一次).
+const PAYUNI_COUNTED_DIGIT = /[0-9〇零二三四五六七八九]/gu;
+const PAYUNI_DIALOG_MAX_DIGITS = 3;
+
+/** De-identify dialog text: NFKC, then e-mail/URL/token/identifier/digit-run masks and a character whitelist. */
+export function sanitizePayUniDialogText(value, max = PAYUNI_DIALOG_TEXT_MAX) {
+  if (typeof value !== "string") return "";
+  let text = value.slice(0, 8_192).normalize("NFKC").replace(/\s+/gu, " ").trim();
+  text = text.replace(/[^\s@]+@[^\s@]+/gu, "EMAIL");
+  text = text.replace(/(?:[a-z][a-z0-9+.-]*:)?\/\/\S*/giu, "URL");
+  text = text.replace(/(?:[a-z0-9-]+\.)+[a-z]{2,}(?:[/?#]\S*)?/giu, "URL");
+  text = text.replace(/(?=[A-Za-z0-9+/=_-]*[A-Za-z])[A-Za-z0-9+/=_-]{16,}/gu, "TOKEN");
+  // Letter+digit identifiers (order / trade numbers); pure digit runs become "#" below.
+  text = text.replace(/(?<![A-Za-z0-9])(?=[A-Za-z0-9_-]*\d)(?=[A-Za-z0-9_-]*[A-Za-z])[A-Za-z0-9_-]{6,}(?![A-Za-z0-9])/gu, "ID");
+  text = text.replace(PAYUNI_NUMERAL_RUN, "#");
+  text = text.replace(/[^A-Za-z0-9 _\-./*:()#~,!?%$[\]　-〿㐀-䶿一-鿿！-～]/gu, "");
+  text = text.replace(/ {2,}/gu, " ").trim();
+  if (/\d{2,}|@|:\/\//u.test(text) || (text.match(PAYUNI_COUNTED_DIGIT) ?? []).length > PAYUNI_DIALOG_MAX_DIGITS) return "REDACTED";
+  return text.length > max ? `${text.slice(0, max - 1)}~` : text;
+}
+
+/**
+ * Runs inside the PayUni page on the visible "確定" button. Finds the nearest dialog-like ancestor
+ * (role/aria-modal, a modal/popup class, or a fixed layer; else the nearest ancestor with more text)
+ * and returns its visible text plus the labels of its visible buttons. Input values are never read;
+ * Node de-identifies everything before it is kept.
+ */
+export function collectPayUniDialogInPage(button) {
+  const textOf = (element) => String(element?.innerText ?? element?.textContent ?? "").slice(0, 2_000);
+  const shown = (element) => {
+    try {
+      const box = element.getBoundingClientRect();
+      const style = getComputedStyle(element);
+      return box.width > 0 && box.height > 0 && style.visibility !== "hidden" && style.display !== "none";
+    } catch { return false; }
+  };
+  const kindOf = (element) => {
+    const role = String(element.getAttribute?.("role") ?? "").toLowerCase();
+    if (element.tagName === "DIALOG" || role === "dialog" || role === "alertdialog" || element.getAttribute?.("aria-modal") === "true") return "ROLE_DIALOG";
+    const className = String(element.className?.baseVal ?? element.className ?? "");
+    if (/(?:modal|dialog|popup|pop-up|swal|alert|lightbox|overlay)/iu.test(className)) return "MODAL_CLASS";
+    try { if (getComputedStyle(element).position === "fixed") return "FIXED_LAYER"; } catch { /* Unknown style. */ }
+    return null;
+  };
+  const own = textOf(button).trim();
+  let container = null;
+  let kind = "NONE";
+  let fallback = null;
+  for (let element = button?.parentElement, depth = 0; element && element !== document.body && depth < 8; element = element.parentElement, depth += 1) {
+    const found = kindOf(element);
+    if (found) { container = element; kind = found; break; }
+    const text = textOf(element).trim();
+    // A plain ancestor counts only within three levels of the button.
+    if (!fallback && depth < 3 && text !== "" && text !== own) fallback = element;
+  }
+  if (!container && fallback) { container = fallback; kind = "ANCESTOR"; }
+  // A container that holds a form, a field or a frame is page content, not a dialog message: its
+  // text never leaves the page, only the kind, the fixed CONTAINS_FORM marker and button labels.
+  const containsForm = Boolean(container?.querySelector?.("form, input, select, textarea, iframe"));
+  const buttons = [];
+  for (const element of container ? container.querySelectorAll('button, [role="button"], input[type="button"], input[type="submit"], a') : []) {
+    if (buttons.length >= 6) break;
+    if (!shown(element)) continue;
+    const label = element.tagName === "INPUT" ? String(element.getAttribute("value") ?? "") : textOf(element);
+    if (label.trim() !== "") buttons.push(label.slice(0, 100));
+  }
+  return {
+    kind, containsForm, text: container && !containsForm ? textOf(container) : "",
+    buttons: buttons.length > 0 ? buttons : [own.slice(0, 100)],
+  };
+}
+
+/**
+ * Sanitized {kind, text, buttons}; a plain string is treated as the dialog text. A capture marked
+ * `containsForm` keeps only the fixed CONTAINS_FORM text, whatever text it carried.
+ */
+export function sanitizePayUniDialogCapture(raw, kind = null) {
+  const source = typeof raw === "string" ? { text: raw } : (raw !== null && typeof raw === "object" ? raw : {});
+  const resolved = PAYUNI_DIALOG_KINDS.has(kind) ? kind : (PAYUNI_DIALOG_KINDS.has(source.kind) ? source.kind : "OTHER");
+  const buttons = (Array.isArray(source.buttons) ? source.buttons : []).slice(0, PAYUNI_DIALOG_BUTTONS_MAX)
+    .map((label) => sanitizePayUniDialogText(label, PAYUNI_DIALOG_BUTTON_TEXT_MAX)).filter((label) => label !== "");
+  const text = source.containsForm === true ? PAYUNI_DIALOG_CONTAINS_FORM : sanitizePayUniDialogText(source.text);
+  return { kind: resolved, text, buttons };
+}
+
+/** Read the visible "確定" dialog through its button locator; time-boxed, never throws, never clicks. */
+export async function capturePayUniConfirmationDialog(confirmation) {
+  try {
+    const raw = await withinMs(Promise.resolve().then(() => confirmation.evaluate(collectPayUniDialogInPage)), 2_000);
+    return raw === null || raw === undefined ? { kind: "UNREADABLE", text: "", buttons: [] } : sanitizePayUniDialogCapture(raw);
+  } catch { return { kind: "UNREADABLE", text: "", buttons: [] }; }
+}
+
+/** A native alert/confirm/prompt reduced to its type and de-identified message. Never accepts it. */
+export function nativePayUniDialogCapture(dialog) {
+  let type = "";
+  let message = "";
+  try { type = String(dialog?.type?.() ?? "").toUpperCase(); } catch { /* Unknown type. */ }
+  try { message = dialog?.message?.(); } catch { /* Unreadable message. */ }
+  const kind = ["ALERT", "CONFIRM", "PROMPT", "BEFOREUNLOAD"].includes(type) ? `NATIVE_${type}` : "NATIVE_OTHER";
+  return sanitizePayUniDialogCapture({ text: message }, kind);
+}
+
+/**
+ * Hostname of a blocked third-party sub-resource. A host whose sub-domain labels carry a digit or a
+ * random-looking length keeps only its last two labels ("*.cloudfront.net"); an IP address is "IP".
+ */
+export function sanitizePayUniHostName(value) {
+  if (typeof value !== "string") return "OTHER";
+  const host = value.toLowerCase();
+  if (!/^[a-z0-9.-]{1,100}$/u.test(host) || !host.includes(".")) return "OTHER";
+  if (/^\d{1,3}(?:\.\d{1,3}){3}$/u.test(host)) return "IP";
+  const labels = host.split(".");
+  const randomLooking = (label) => /\d/u.test(label) || label.length > 24;
+  const registrable = labels.slice(-2);
+  if (registrable.some((label) => label.length > 24)) return "OTHER";
+  return labels.slice(0, -2).some(randomLooking) ? `*.${registrable.join(".")}` : host;
+}
+
+/** Remember up to five distinct sanitized third-party hosts. */
+export function recordPayUniExternalHost(hosts, hostname) {
+  if (!Array.isArray(hosts)) return;
+  const host = sanitizePayUniHostName(hostname);
+  if (!hosts.includes(host) && hosts.length < PAYUNI_EXTERNAL_HOSTS_MAX) hosts.push(host);
+}
+
+/** Keep up to three dialog captures in arrival order. */
+export function recordPayUniDialogCapture(captures, capture) {
+  if (Array.isArray(captures) && capture && captures.length < PAYUNI_DIALOG_CAPTURES_MAX) captures.push(capture);
+}
+
+/**
+ * One JSON line: de-identified dialog captures, blocked third-party hosts, and (drill only) the
+ * PayUni POST count and seconds after the submit click. Every value is re-sanitized here.
+ */
+export function formatPayUniDialogDiagnostic(value) {
+  if (!value || typeof value !== "object") return null;
+  const dialogs = (Array.isArray(value.dialogs) ? value.dialogs : []).slice(0, PAYUNI_DIALOG_CAPTURES_MAX)
+    .map((capture) => sanitizePayUniDialogCapture(capture, capture?.kind));
+  const externalHosts = [...new Set((Array.isArray(value.externalHosts) ? value.externalHosts : [])
+    .slice(0, PAYUNI_EXTERNAL_HOSTS_MAX).map(sanitizePayUniHostName))];
+  const count = (number, cap) => (Number.isSafeInteger(number) && number >= 0 ? Math.min(number, cap) : null);
+  const payuniPostsAfterSubmit = count(value.payuniPostsAfterSubmit, 99);
+  const afterSubmitSeconds = count(value.afterSubmitSeconds, 999);
+  if (dialogs.length === 0 && externalHosts.length === 0 && payuniPostsAfterSubmit === null) return null;
+  return JSON.stringify({ dialogs, externalHosts, payuniPostsAfterSubmit, afterSubmitSeconds });
 }
 
 /**
@@ -1851,6 +2027,8 @@ export async function defaultBrowserSubmit(input, dependencies = {}) {
           button.closest('[role="dialog"], .modal, .swal2-popup')?.innerText?.slice(0, 4097) ?? "");
       } catch { /* Unreadable/unknown dialogs stay ambiguous. */ }
       recordPayUniSubmitModal(input.diagnostic, confirmationText);
+      // Text-only diagnostic of the same dialog (de-identified, 200 characters); it is still never clicked.
+      recordPayUniDialogCapture(input.diagnostic?.dialogTexts, await capturePayUniConfirmationDialog(confirmation));
       await capturePayUniSubmitDiagnostic(page, input.diagnostic, input.previewHost);
       return classifyPayUniConfirmation(confirmationText);
     } catch (error) {
@@ -1985,6 +2163,7 @@ export async function defaultSubscriptionBrowserSubmit(input, dependencies = {})
           button.closest('[role="dialog"], .modal, .swal2-popup')?.innerText?.slice(0, 4097) ?? "");
       } catch { /* Unreadable modal stays OTHER. */ }
       recordPayUniSubmitModal(input.diagnostic, confirmationText);
+      recordPayUniDialogCapture(input.diagnostic?.dialogTexts, await capturePayUniConfirmationDialog(confirmation));
       await capturePayUniSubmitDiagnostic(page, input.diagnostic, input.previewHost);
       return "PAYMENT_CONFIRMATION_AMBIGUOUS";
     } catch (error) {
@@ -2599,6 +2778,8 @@ function printBrowserDiagnostic(flowDependencies, result) {
   if (structure) process.stdout.write(`wp4_payuni_page_structure=${structure}\n`);
   const submit = formatPayUniSubmitDiagnostic(diagnostic);
   if (submit) process.stdout.write(`wp4_payuni_submit_diagnostic=${submit}\n`);
+  const dialogText = formatPayUniDialogDiagnostic({ dialogs: diagnostic.dialogTexts, externalHosts: diagnostic.externalHosts });
+  if (dialogText) process.stdout.write(`wp4_payuni_dialog_text=${dialogText}\n`);
 }
 
 /** JSON of the already-sanitized frames, re-sanitized and capped; null when nothing was captured. */

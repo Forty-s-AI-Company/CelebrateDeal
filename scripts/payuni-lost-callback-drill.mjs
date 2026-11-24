@@ -5,10 +5,15 @@ import { pathToFileURL } from "node:url";
 
 import {
   attestOperationHost,
+  capturePayUniConfirmationDialog,
   defaultRequest,
   fixedBrowserEnvironment,
+  formatPayUniDialogDiagnostic,
+  nativePayUniDialogCapture,
   prepareIssuedRecoveryCheckout,
   readFixedInputs,
+  recordPayUniDialogCapture,
+  recordPayUniExternalHost,
   validateInvocation,
 } from "./mvp-payuni-sandbox-e2e.mjs";
 import { STAGING_ALIAS_HOST } from "./secure-staging-runner.mjs";
@@ -54,6 +59,8 @@ const FIXED_AMOUNT_CENTS = 100;
 const SYNTHETIC_PAYER_EMAIL = "wp4-buyer-v1@invalid.example";
 const REQUEST_TIMEOUT_MS = 30_000;
 const RETURN_WAIT_MS = 90_000;
+/** After a dismissed native dialog, how long a Return may still arrive before the drill stops. */
+const NATIVE_DIALOG_RETURN_GRACE_MS = 15_000;
 const PROVIDER_QUERY_ATTEMPTS = 6;
 const PROVIDER_QUERY_INTERVAL_MS = 10_000;
 const RECEIPT_DIRECTORY = "payuni-lost-callback";
@@ -348,6 +355,14 @@ function fail(receipt, code) {
  * The isolated payer browser. It reaches only the two PayUni Sandbox hosts;
  * the withheld Return is answered locally and an application callback URL is
  * never allowed through (counted, then aborted).
+ *
+ * An in-page "確定" modal after the submit stops the drill at once, without a
+ * click. A native alert/confirm is dismissed first (never accepted: the same
+ * outcome as Playwright's default) and then recorded; the drill waits up to
+ * 15 more seconds for the Return, which is verified as usual if it arrives,
+ * and stops otherwise. A de-identified diagnostic travels with the result:
+ * the dialog text and button labels (masked, 200 characters), the blocked
+ * third-party hosts, the PayUni POST count and the seconds since the submit.
  */
 export async function defaultLostCallbackBrowser(input, dependencies = {}) {
   const { chromium } = dependencies.playwright ?? await import("playwright");
@@ -355,6 +370,17 @@ export async function defaultLostCallbackBrowser(input, dependencies = {}) {
   let returnBody = null;
   let returnPosts = 0;
   let appCallbackRequests = 0;
+  let submittedAt = null;
+  let nativeDialogAt = null;
+  let payuniPostsAfterSubmit = 0;
+  const externalHosts = [];
+  const dialogs = [];
+  const diagnostic = () => ({
+    dialogs: [...dialogs],
+    externalHosts: [...externalHosts],
+    payuniPostsAfterSubmit: submittedAt === null ? null : payuniPostsAfterSubmit,
+    afterSubmitSeconds: submittedAt === null ? null : Math.max(0, Math.round((Date.now() - submittedAt) / 1_000)),
+  });
   try {
     const context = await browser.newContext({ locale: "zh-TW" });
     const appOrigin = new URL(input.sinkReturnUrl).origin;
@@ -374,7 +400,12 @@ export async function defaultLostCallbackBrowser(input, dependencies = {}) {
         appCallbackRequests += 1;
         return route.abort();
       }
-      return url.protocol === "https:" && PAYUNI_HOSTS.has(url.hostname) ? route.continue() : route.abort();
+      if (url.protocol === "https:" && PAYUNI_HOSTS.has(url.hostname)) {
+        if (submittedAt !== null && request.method() === "POST") payuniPostsAfterSubmit += 1;
+        return route.continue();
+      }
+      if (url.origin !== appOrigin) recordPayUniExternalHost(externalHosts, url.hostname);
+      return route.abort();
     });
     const page = await context.newPage();
     // Same document handling as the WP4 runner: post the UPP form once through
@@ -393,18 +424,40 @@ export async function defaultLostCallbackBrowser(input, dependencies = {}) {
       await page.getByPlaceholder("MM/YY", { exact: true }).pressSequentially(input.cardExpiry, { timeout: 20_000 });
       await page.getByPlaceholder("***", { exact: true }).pressSequentially(input.cardCvv, { timeout: 20_000 });
       await page.getByPlaceholder("example@example.com", { exact: true }).fill(SYNTHETIC_PAYER_EMAIL, { timeout: 20_000 });
+      try {
+        // Record and dismiss (never accept) a native dialog: the same outcome as Playwright's default.
+        page.on("dialog", (dialog) => {
+          // Dismiss first (never accept), then record; a failed record never blocks the dismissal.
+          try { void Promise.resolve(dialog.dismiss()).catch(() => {}); } catch { /* Already closed. */ }
+          if (nativeDialogAt === null) nativeDialogAt = Date.now();
+          try { recordPayUniDialogCapture(dialogs, nativePayUniDialogCapture(dialog)); } catch { /* Diagnostics only. */ }
+        });
+      } catch { /* A page without dialog events keeps Playwright's default dismissal. */ }
+      submittedAt = Date.now();
       await page.getByRole("button", { name: "確認送出", exact: true }).click({ timeout: 20_000 });
     } catch {
       return { code: "PAYMENT_PAGE_REJECTED", appCallbackRequests };
     }
     const deadline = Date.now() + (Number.isSafeInteger(dependencies.returnWaitMs) ? dependencies.returnWaitMs : RETURN_WAIT_MS);
     const confirmation = page.getByRole("button", { name: "確定", exact: true });
+    const nativeGraceMs = Number.isSafeInteger(dependencies.nativeDialogGraceMs) ? dependencies.nativeDialogGraceMs : NATIVE_DIALOG_RETURN_GRACE_MS;
     while (returnPosts === 0 && Date.now() < deadline) {
-      // A second confirmation is never clicked (same rule as the WP4 runner).
-      if (await confirmation.isVisible().catch(() => false)) return { code: "PAYMENT_CONFIRMATION_DIALOG", appCallbackRequests };
+      if (nativeDialogAt !== null && Date.now() - nativeDialogAt >= nativeGraceMs) {
+        return { code: "PAYMENT_CONFIRMATION_DIALOG", appCallbackRequests, diagnostic: diagnostic() };
+      }
+      // A second confirmation is never clicked (same rule as the WP4 runner); only its text is read.
+      if (await confirmation.isVisible().catch(() => false)) {
+        recordPayUniDialogCapture(dialogs, await capturePayUniConfirmationDialog(confirmation));
+        return { code: "PAYMENT_CONFIRMATION_DIALOG", appCallbackRequests, diagnostic: diagnostic() };
+      }
       await page.waitForTimeout(1_000);
     }
-    if (returnPosts === 0 || !returnBody) return { code: "PAYMENT_RETURN_UNOBSERVED", appCallbackRequests };
+    if (returnPosts === 0 || !returnBody) {
+      const code = nativeDialogAt === null ? "PAYMENT_RETURN_UNOBSERVED" : "PAYMENT_CONFIRMATION_DIALOG";
+      return { code, appCallbackRequests, diagnostic: diagnostic() };
+    }
+    // A Return after a dismissed native dialog is still verified as PAID or not; the dialog is printed too.
+    if (dialogs.length > 0) return { code: "RETURN_CAPTURED", returnBody, returnPosts, appCallbackRequests, diagnostic: diagnostic() };
     return { code: "RETURN_CAPTURED", returnBody, returnPosts, appCallbackRequests };
   } finally {
     await browser.close();
@@ -473,6 +526,10 @@ export async function runLostCallbackPayment(input, dependencies = {}) {
       });
     } catch {
       return fail(receipt, "PAYMENT_PAGE_REJECTED");
+    }
+    if (browserResult?.diagnostic && typeof dependencies.onBrowserDiagnostic === "function") {
+      // Printed by the CLI only; the receipt keeps its fixed shape.
+      try { dependencies.onBrowserDiagnostic(browserResult.diagnostic); } catch { /* Diagnostics never change the result. */ }
     }
     const blocked = Number.isSafeInteger(browserResult?.appCallbackRequests) ? Math.min(browserResult.appCallbackRequests, 99) : 0;
     receipt.checks.appCallbacksBlockedInBrowser = blocked;
@@ -592,13 +649,19 @@ async function verifyPayRunMain() {
   if (code !== "VERIFIED") process.exitCode = 2;
 }
 
+/** One de-identified line for a stopped browser step; see formatPayUniDialogDiagnostic. */
+function printBrowserDiagnostic(diagnostic) {
+  const line = formatPayUniDialogDiagnostic(diagnostic);
+  if (line) console.log(`payuni_lost_callback_dialog=${line}`);
+}
+
 async function main() {
   const protectedCi = process.argv.length === 2 && process.env.GITHUB_ACTIONS === "true"
     && process.env.GITHUB_REF === "refs/heads/master" && process.env.GITHUB_REF_PROTECTED === "true"
     && process.env.PAYUNI_ENV === "sandbox";
   const input = readFixedInputs();
   const receipt = protectedCi
-    ? await runLostCallbackPayment(input, { keys: readSandboxKeyInputs() })
+    ? await runLostCallbackPayment(input, { keys: readSandboxKeyInputs(), onBrowserDiagnostic: printBrowserDiagnostic })
     : fail(createPayReceipt(null), "INPUT_REJECTED");
   const safe = validatePayReceipt(receipt) ? receipt : fail(createPayReceipt(null), "INTERNAL_REJECTED");
   if (process.env.RUNNER_TEMP) await writePayReceipt(safe, process.env.RUNNER_TEMP);

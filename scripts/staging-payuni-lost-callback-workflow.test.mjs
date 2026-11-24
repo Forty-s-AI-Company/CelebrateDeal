@@ -1,6 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import fs from "node:fs";
+import { fileURLToPath } from "node:url";
 import yaml from "js-yaml";
 
 const workflow = yaml.load(fs.readFileSync(new URL("../.github/workflows/staging-payuni-lost-callback.yml", import.meta.url), "utf8"));
@@ -51,6 +53,25 @@ test("the payment step is Sandbox-only with both IP families restricted to the f
   const hosts = [...script.matchAll(/\["([a-z0-9.-]+)", "443"\]/gu)].map((match) => match[1]);
   assert.deepEqual(hosts, ["celebrate-deal-staging.carry-digital-nomad.in.net", "sandbox-api.payuni.com.tw", "sandbox-vendor.payuni.com.tw"]);
   assert.equal(/\bnpx\b|\bnpm\b|inputs\./u.test(script), false);
+});
+
+test("the proof step's exact workflow command loads the proof and its drill imports, then refuses a missing configuration", () => {
+  // 2026-11-24 run 45340752525: the command failed to load (top-level await in tsx's CommonJS
+  // output) and the drill's proof never ran. Run the workflow's own command line with no CI, database
+  // or PayUni environment: only a clean CONFIGURATION_REJECTED (exit 3) proves the module graph loaded.
+  const [command, ...args] = proof.run.split(" ");
+  assert.equal(command, "node");
+  const env = {};
+  for (const name of ["PATH", "Path", "SystemRoot", "SYSTEMROOT", "TEMP", "TMP", "TMPDIR", "HOME", "USERPROFILE", "APPDATA", "LOCALAPPDATA"]) {
+    if (process.env[name] !== undefined) env[name] = process.env[name];
+  }
+  const result = spawnSync(process.execPath, args, {
+    cwd: fileURLToPath(new URL("..", import.meta.url)), env, encoding: "utf8", timeout: 120_000, windowsHide: true,
+  });
+  assert.equal(result.error, undefined);
+  assert.doesNotMatch(result.stderr, /Top-level await|ERR_REQUIRE_ASYNC_MODULE|TransformError|ERR_MODULE_NOT_FOUND/u);
+  assert.equal(result.stdout, "payuni_lost_callback_proof=BLOCKED; reason=CONFIGURATION_REJECTED\n", result.stderr);
+  assert.equal(result.status, 3);
 });
 
 test("the proof step is read-only staging DB plus Sandbox query, and receipts are the only artifacts", () => {
