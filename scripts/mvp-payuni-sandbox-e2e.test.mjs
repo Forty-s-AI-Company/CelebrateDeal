@@ -35,6 +35,19 @@ import {
   capturePayUniFormFieldDiagnostic,
   formatPayUniFormFieldDiagnostic,
   isPayUniMissingInfoDialog,
+  PAYUNI_FORM_FIELD_BUDGET,
+  capturePayUniFormFieldResult,
+  classifyPayUniEvaluateError,
+  countPayUniDialogsBeforeSubmit,
+  createPayUniPresubmitDiagnostic,
+  fillPayUniCardFields,
+  formatPayUniPresubmitDiagnostic,
+  payUniFieldMatchesInPage,
+  payUniFormFieldFailure,
+  settlePayUniBeforeSubmit,
+  settleTiming,
+  trackPayUniRequests,
+  waitForPayUniPageReady,
   PAYUNI_MISSING_INFO_TEXT,
   classifyPlaywrightErrorKind,
   createPayUniBrowserDiagnostic,
@@ -249,6 +262,8 @@ test("recognizes only the fixed PayUni Sandbox UPP payment page", () => {
 
 const sourceSha = "a".repeat(40);
 const previewHost = "celebratedeal-wp4-20bc897.vercel.app";
+/** A fake UPP card field that types, blurs and answers the in-page value comparison with true (a settled field). */
+const SETTLED_FIELD = Object.freeze({ async clear() {}, async pressSequentially() {}, async fill() {}, async blur() {}, async evaluate() { return true; } });
 const validInput = Object.freeze({
   sourceSha,
   previewHost,
@@ -506,10 +521,10 @@ test("buyer browser submission uses a fixed environment and fails closed on conf
     async route() {},
     async waitForURL() {},
     getByText() { return { async click() {} }; },
-    getByPlaceholder() { return { async pressSequentially() {}, async fill() {} }; },
+    getByPlaceholder() { return SETTLED_FIELD; },
     getByRole(_role, options) {
-      if (options.name === "確認送出") return { async click() { submitted += 1; } };
-      if (options.name === "確定") return { async waitFor() {}, async evaluate() { return confirmationText; }, async click() { confirmationClicks += 1; } };
+      if (options.name === "確認送出") return { async isEnabled() { return true; }, async click() { submitted += 1; } };
+      if (options.name === "確定") return { async isVisible() { return false; }, async waitFor() {}, async evaluate() { return confirmationText; }, async click() { confirmationClicks += 1; } };
       throw new Error("unexpected role");
     },
     locator() { return { async check() {} }; },
@@ -560,14 +575,14 @@ test("buyer browser captures only the exact signed Return POST after the real 30
     on(name, listener) { listeners.set(name, listener); },
     async goto() {}, async route() {}, async waitForURL() {},
     getByText() { return { async click() {} }; },
-    getByPlaceholder() { return { async pressSequentially() {}, async fill() {} }; },
+    getByPlaceholder() { return SETTLED_FIELD; },
     getByRole(_role, options) {
-      if (options.name === "確認送出") return { async click() {
+      if (options.name === "確認送出") return { async isEnabled() { return true; }, async click() {
         listeners.get("request")({ url: () => callbackUrl, method: () => "POST", postDataBuffer: () => signed,
           headers: () => ({ "content-type": "application/x-www-form-urlencoded" }) });
         listeners.get("response")({ url: () => callbackUrl, status: () => 303, request: () => ({ method: () => "POST" }) });
       } };
-      if (options.name === "確定") return { async waitFor() { throw new TimeoutError(); } };
+      if (options.name === "確定") return { async isVisible() { return false; }, async waitFor() { throw new TimeoutError(); } };
       throw new Error("unexpected role");
     },
     locator(selector) { return selector === "body"
@@ -600,12 +615,14 @@ test("a rejected PayUni card field records only the fixed step, error class and 
       assert.equal(options?.exact, true, "every UPP placeholder lookup is exact");
       return {
         count: async () => 0,
+        async clear() {},
         async pressSequentially(value) {
           if (placeholder === "MM/YY") throw new TimeoutError(`locator.pressSequentially: Timeout 30000ms exceeded. waiting for getByPlaceholder('MM/YY') ${cardNumber}`);
           typed.push(placeholder);
           assert.equal(typeof value, "string");
         },
         async fill() {},
+        async blur() {},
       };
     },
     getByRole() { throw new Error("submit must not be reached"); },
@@ -628,6 +645,8 @@ test("a rejected PayUni card field records only the fixed step, error class and 
     dialogTexts: [],
     externalHosts: [],
     formFields: null,
+    // A page without load events: recorded as FAILED, and the fill stopped before any pre-submit check.
+    presubmit: { ...createPayUniPresubmitDiagnostic(), pageLoad: "FAILED" },
   });
   const line = formatPayUniBrowserDiagnostic(diagnostic);
   assert.equal(line, "step=CARD_EXPIRY; error=TIMEOUT; page=PAYUNI_UPP; mainFrameMatches=0; childFrames=1; childFrameMatches=1; fieldSource=PLACEHOLDER; creditTab=NOT_TRIED; failed_payuniScript=0; failed_payuniOther=0; failed_externalScript=0; failed_externalOther=0");
@@ -683,11 +702,12 @@ test("uses the native fixed plan browser flow once without treating the return p
     async route() {},
     async waitForURL() {},
     getByText() { return { async click() {} }; },
-    getByPlaceholder() { return { async pressSequentially() {}, async fill() {} }; },
+    getByPlaceholder() { return SETTLED_FIELD; },
     getByRole(_role, options) {
-      if (options.name === "確認送出") return { async click() { submitted += 1; } };
+      if (options.name === "確認送出") return { async isEnabled() { return true; }, async click() { submitted += 1; } };
       if (options.name === "確定") {
         return {
+          async isVisible() { return false; },
           async waitFor() { if (!confirmationVisible) throw new TimeoutError(); },
           async evaluate() { return { kind: "MODAL_CLASS", containsForm: false, text: "交易失敗 4147631000000001 請洽發卡行", buttons: ["確定"] }; },
           async click() { confirmationClicks += 1; },
@@ -1991,6 +2011,11 @@ test("a missing card-number placeholder falls back to the autofill field, then t
         const ambiguous = present.length > 1;
         return {
           count: async () => present.length, isVisible: async () => present.length === 1,
+          // Same locator rules as typing: clear() is the first action, so it fails the same way.
+          async clear() {
+            if (ambiguous) { strictViolations += 1; throw new Error(`strict mode violation: getByPlaceholder resolved to ${present.length} elements`); }
+            if (missing) throw new TimeoutError(`Timeout 20000ms exceeded ${SYNTHETIC_CARD}`);
+          },
           async pressSequentially(value) {
             if (ambiguous) { strictViolations += 1; throw new Error(`strict mode violation: getByPlaceholder resolved to ${present.length} elements`); }
             if (missing) throw new TimeoutError(`Timeout 20000ms exceeded ${SYNTHETIC_CARD}`);
@@ -1998,18 +2023,20 @@ test("a missing card-number placeholder falls back to the autofill field, then t
             assert.equal(typeof value, "string");
           },
           async fill() { typed.push(`placeholder:${placeholder}`); },
+          async blur() {},
+          async evaluate() { return true; },
         };
       },
       getByRole(role, options) {
         if (role === "tab") return { count: async () => 0, isVisible: async () => false };
-        if (options?.name === "確認送出") return { async click() { typed.push("submit"); } };
-        if (options?.name === "確定") return { async waitFor() { throw new TimeoutError("none"); } };
+        if (options?.name === "確認送出") return { async isEnabled() { return true; }, async click() { typed.push("submit"); } };
+        if (options?.name === "確定") return { async isVisible() { return false; }, async waitFor() { throw new TimeoutError("none"); } };
         throw new Error("unexpected role");
       },
       locator(selector) {
         if (selector === 'input[autocomplete="cc-number"]') {
           return { count: async () => (autocompleteVisible ? 1 : 0), isVisible: async () => autocompleteVisible,
-            async pressSequentially() { typed.push("autocomplete:cc-number"); } };
+            async clear() {}, async pressSequentially() { typed.push("autocomplete:cc-number"); }, async blur() {}, async evaluate() { return true; } };
         }
         if (selector === 'input[name="radioOptionpayGroupCredit"]') {
           return { count: async () => 1, first: () => ({ async check() { radioChecks += 1; } }), async check() { radioChecks += 1; } };
@@ -2180,24 +2207,26 @@ async function runSubmitScenario({ confirmationText = null, dialog = null, url, 
     },
   };
   const page = {
-    on(event, handler) { handlers.set(event, handler); },
+    // Every listener of an event gets it, like Playwright (the runner adds more than one dialog listener).
+    on(event, handler) { handlers.set(event, [...(handlers.get(event) ?? []), handler]); },
     async goto() {}, async route() {}, async waitForURL() { throw new TimeoutError("Timeout 60000ms exceeded"); },
     url: () => url, frames: () => [frame],
     getByText() { return { async click() {} }; },
-    getByPlaceholder() { return { async pressSequentially() {}, async fill() {} }; },
+    getByPlaceholder() { return SETTLED_FIELD; },
     getByRole(_role, options) {
       if (options.name === "確認送出") {
-        return { async click() {
+        return { async isEnabled() { return true; }, async click() {
           submitted += 1;
-          if (dialog) await handlers.get("dialog")?.({
-            type: () => dialog.type, message: () => dialog.message,
-            async dismiss() { dialogCalls.dismiss += 1; }, async accept() { dialogCalls.accept += 1; },
-          });
+          if (dialog) {
+            const event = { type: () => dialog.type, message: () => dialog.message,
+              async dismiss() { dialogCalls.dismiss += 1; }, async accept() { dialogCalls.accept += 1; } };
+            for (const listener of handlers.get("dialog") ?? []) await listener(event);
+          }
         } };
       }
       if (options.name === "確定") {
-        if (confirmationText === null) return { async waitFor() { throw new TimeoutError("none"); } };
-        return { async waitFor() {}, async evaluate() { return confirmationText; }, async click() { confirmationClicks += 1; } };
+        if (confirmationText === null) return { async isVisible() { return false; }, async waitFor() { throw new TimeoutError("none"); } };
+        return { async isVisible() { return false; }, async waitFor() {}, async evaluate() { return confirmationText; }, async click() { confirmationClicks += 1; } };
       }
       throw new Error("unexpected role");
     },
@@ -2552,9 +2581,18 @@ test("the field collector lists every control's name/id, label, type, required a
   }
 });
 
-test("the field line re-sanitizes tampered values, caps every list and is absent when nothing was read", () => {
-  assert.equal(formatPayUniFormFieldDiagnostic(null), null);
-  assert.equal(formatPayUniFormFieldDiagnostic({ missingInfoDialog: true, frames: [] }), null);
+test("the field line re-sanitizes tampered values, caps every list and says why when nothing was read", () => {
+  assert.equal(formatPayUniFormFieldDiagnostic(null), null, "no line only when no capture was attempted");
+  // A4-05: an empty capture still prints, with its fixed status.
+  assert.deepEqual(JSON.parse(formatPayUniFormFieldDiagnostic({ missingInfoDialog: true, frames: [] })),
+    { status: "NO_FRAMES", missingInfoDialog: true, outcomes: [], frames: [] });
+  assert.deepEqual(JSON.parse(formatPayUniFormFieldDiagnostic({ status: "TIMEOUT", missingInfoDialog: true, frames: [],
+    outcomes: [{ frame: 0, host: "MAIN", outcome: "TIMEOUT", stageErrors: [`FIELDS:${SYNTHETIC_CARD}`, "FIELD:TypeError"] }, { frame: 1, host: "https://evil.test/x", outcome: "free text" }] })),
+    { status: "TIMEOUT", missingInfoDialog: true, frames: [], outcomes: [
+      { frame: 0, host: "MAIN", outcome: "TIMEOUT", stageErrors: ["FIELD:TypeError"] },
+      { frame: 1, host: "OTHER", outcome: "OTHER", stageErrors: [] },
+    ] });
+  assert.equal(JSON.parse(formatPayUniFormFieldDiagnostic({ status: "anything else", frames: [] })).status, "NO_FRAMES");
   const tamperedField = { tag: "<script>", type: "x y", name: `n ${SYNTHETIC_CARD}`, id: "buyer@example.test", label: `持卡人 ${SYNTHETIC_CARD} 0912345678`,
     placeholder: "https://sandbox-api.payuni.com.tw/api/upp?EncryptInfo=private", autocomplete: "cc-number", value: SYNTHETIC_CARD,
     visible: "yes", required: 1, empty: "no", checked: "on", invalid: true };
@@ -2613,7 +2651,9 @@ test("field capture reads every frame read-only, survives unreadable frames and 
   assert.equal(JSON.stringify(frames).includes(SYNTHETIC_CARD), false);
   assert.deepEqual(await capturePayUniFormFields({ frames() { throw new Error("closed"); } }), []);
   assert.deepEqual(await capturePayUniFormFields(null), []);
-  assert.equal(await capturePayUniFormFieldDiagnostic({ frames: () => [] }, []), null);
+  assert.deepEqual(await capturePayUniFormFieldDiagnostic({ frames: () => [] }, []), { status: "NO_FRAMES", missingInfoDialog: false, frames: [], outcomes: [] });
+  assert.equal((await capturePayUniFormFieldDiagnostic({ isClosed: () => true, frames: () => [] }, [])).status, "PAGE_CLOSED");
+  assert.equal((await capturePayUniFormFieldDiagnostic({ frames() { throw new Error("Target page, context or browser has been closed"); } }, [])).status, "PAGE_CLOSED");
 
   assert.equal(isPayUniMissingInfoDialog([{ kind: "FIXED_LAYER", text: `${PAYUNI_MISSING_INFO_TEXT} 確定`, buttons: ["確定"] }]), true);
   assert.equal(isPayUniMissingInfoDialog([{ kind: "MODAL_CLASS", text: "交易失敗", buttons: ["確定"] }]), false);
@@ -2621,6 +2661,10 @@ test("field capture reads every frame read-only, survives unreadable frames and 
   const diagnostic = await capturePayUniFormFieldDiagnostic(page, [{ kind: "FIXED_LAYER", text: `${PAYUNI_MISSING_INFO_TEXT} 確定`, buttons: ["確定"] }]);
   assert.equal(diagnostic.missingInfoDialog, true);
   assert.equal(diagnostic.frames.length, 3);
+  assert.equal(diagnostic.status, "PARTIAL");
+  assert.deepEqual(diagnostic.outcomes.map((item) => [item.frame, item.host, item.outcome]), [
+    [0, "MAIN", "CAPTURED"], [1, "BLANK", "CAPTURED"], [2, "*.hosted-fields.example", "CAPTURED"], [3, "broken.example", "OTHER"], [4, "null.example", "EMPTY"],
+  ]);
 });
 
 test("the WP4 runner lists the page's fields when it stops on the missing-info modal, still unclicked and submitted once", async () => {
@@ -2636,6 +2680,408 @@ test("the WP4 runner lists the page's fields when it stops on the missing-info m
   const other = await runSubmitScenario({ confirmationText: "交易失敗", url: "https://sandbox-api.payuni.com.tw/api/upp" });
   assert.equal(other.diagnostic.formFields.missingInfoDialog, false, "every stopped modal lists fields; only the flag differs");
   const back = await runSubmitScenario({ url: `https://${previewHost}/checkout/result?payment=failed&order=CD-1` });
-  assert.equal(back.diagnostic.formFields, null, "no field is read once the browser left PayUni");
+  assert.deepEqual(back.diagnostic.formFields, { status: "NOT_PAYUNI_PAGE", missingInfoDialog: false, frames: [], outcomes: [] },
+    "no field is read once the browser left PayUni, and the line says so");
   assert.equal(createPayUniBrowserDiagnostic().formFields, null);
+});
+
+// ---- A4-05 fill timing: type key by key, blur, settle, then exactly one submit ----
+
+const fieldElement = (value) => ({ value });
+
+test("A4-05: the in-page value check answers only true/false and accepts formatting or masking, never a wrong value", () => {
+  const check = (step, value, expected) => payUniFieldMatchesInPage(fieldElement(value), { step, value: expected });
+  for (const [step, value, expected, want] of [
+    ["CARD_NUMBER", "4147631000000001", SYNTHETIC_CARD, true],
+    ["CARD_NUMBER", "4147 6310 0000 0001", SYNTHETIC_CARD, true],
+    ["CARD_NUMBER", "4147-6310-0000-0001", SYNTHETIC_CARD, true],
+    ["CARD_NUMBER", "4147 63** **** 0001", SYNTHETIC_CARD, true],
+    ["CARD_NUMBER", "4147 6310 0000 0002", SYNTHETIC_CARD, false],
+    ["CARD_NUMBER", "4147 6310 0000 000", SYNTHETIC_CARD, false],
+    ["CARD_NUMBER", "4147 6310 0000 00011", SYNTHETIC_CARD, false],
+    ["CARD_NUMBER", "", SYNTHETIC_CARD, false],
+    ["CARD_NUMBER", "4147 6310 0000 000a", SYNTHETIC_CARD, false],
+    ["CARD_EXPIRY", "12/30", "1230", true],
+    ["CARD_EXPIRY", "12 / 30", "1230", true],
+    ["CARD_EXPIRY", "1230", "1230", true],
+    ["CARD_EXPIRY", "12/3", "1230", false],
+    ["CARD_EXPIRY", "01/30", "1230", false],
+    ["CARD_CVV", "123", "123", true],
+    ["CARD_CVV", "***", "123", true],
+    ["CARD_CVV", "12", "123", false],
+    ["CARD_CVV", "124", "123", false],
+    ["EMAIL", "wp4-buyer-v1@invalid.example", "wp4-buyer-v1@invalid.example", true],
+    ["EMAIL", " wp4-buyer-v1@invalid.example ", "wp4-buyer-v1@invalid.example", true],
+    ["EMAIL", "wp4-buyer-v1@invalid.exampl", "wp4-buyer-v1@invalid.example", false],
+    ["EMAIL", "", "wp4-buyer-v1@invalid.example", false],
+  ]) {
+    const result = check(step, value, expected);
+    assert.equal(typeof result, "boolean", "only a boolean ever leaves the page");
+    assert.equal(result, want, `${step} ${JSON.stringify(value)}`);
+  }
+  assert.equal(payUniFieldMatchesInPage(null, { step: "CARD_CVV", value: "123" }), false);
+  assert.equal(payUniFieldMatchesInPage({ get value() { throw new Error("detached"); } }, { step: "CARD_CVV", value: "123" }), false);
+  assert.equal(payUniFieldMatchesInPage(fieldElement("123"), null), false);
+  // The function runs in the page, so it must be self-contained.
+  assert.equal(/\b(?:PAYUNI_|sanitize|classify|settleWithin)\w*/u.test(payUniFieldMatchesInPage.toString()), false);
+});
+
+/** A fake pre-submit page: per-field answers, an enabled flag and a log of every call. */
+function settleFakes({ matches = () => true, enabled = () => true } = {}) {
+  const log = [];
+  const checks = new Map();
+  const locator = (step) => ({
+    async evaluate(fn, arg) {
+      assert.equal(fn, payUniFieldMatchesInPage);
+      assert.deepEqual(Object.keys(arg).sort(), ["step", "value"]);
+      checks.set(step, (checks.get(step) ?? 0) + 1);
+      log.push(`check:${step}`);
+      return matches(step, checks.get(step));
+    },
+    async click() { log.push(`click:${step}`); }, async fill() { log.push(`fill:${step}`); }, async pressSequentially() { log.push(`type:${step}`); },
+  });
+  const steps = ["CARD_NUMBER", "CARD_EXPIRY", "CARD_CVV", "EMAIL"];
+  const filled = {
+    locators: Object.fromEntries(steps.map((step) => [step, locator(step)])),
+    values: { CARD_NUMBER: SYNTHETIC_CARD, CARD_EXPIRY: "1230", CARD_CVV: "123", EMAIL: "wp4-buyer-v1@invalid.example" },
+  };
+  let enabledCalls = 0;
+  const submit = { async isEnabled() { enabledCalls += 1; log.push("enabled"); return enabled(enabledCalls); }, async click() { log.push("submit"); } };
+  return { filled, submit, log };
+}
+
+test("A4-05: the pre-submit gate never clicks or types and settles only on consecutive good checks", async () => {
+  const fast = { pollMs: 1, quietMs: 0, timeoutMs: 200, stablePolls: 2 };
+  const settled = settleFakes();
+  const presubmit = createPayUniPresubmitDiagnostic();
+  assert.equal(await settlePayUniBeforeSubmit({ ...settled, presubmit, timing: fast }), "SETTLED");
+  assert.equal(settled.log.some((entry) => /^(?:click|fill|type|submit)/u.test(entry)), false, "the gate only reads");
+  assert.deepEqual({ ...presubmit, settleMs: 0 }, { status: "SETTLED", pageLoad: "NOT_RUN",
+    fields: { CARD_NUMBER: true, CARD_EXPIRY: true, CARD_CVV: true, EMAIL: true }, submitEnabled: true, payuniInflight: 0, payuniIgnored: 0,
+    dialogsBeforeSubmit: 0, confirmationVisible: false, settleMs: 0, checks: 2 });
+
+  // A zero stablePolls is never "settled without a check".
+  const zero = settleFakes({ matches: () => false });
+  assert.equal(await settlePayUniBeforeSubmit({ ...zero, timing: { ...fast, stablePolls: 0, timeoutMs: 0 } }), "FIELDS_UNSETTLED");
+
+  // Good, then bad, then good twice: the bad check resets the count.
+  const flicker = settleFakes({ matches: (step, count) => step !== "CARD_CVV" || count !== 2 });
+  const flickerState = createPayUniPresubmitDiagnostic();
+  assert.equal(await settlePayUniBeforeSubmit({ ...flicker, presubmit: flickerState, timing: fast }), "SETTLED");
+  assert.equal(flickerState.checks, 4);
+
+  const disabled = settleFakes({ enabled: () => false });
+  assert.equal(await settlePayUniBeforeSubmit({ ...disabled, timing: fast }), "SUBMIT_DISABLED");
+  const thrown = settleFakes({ enabled: () => { throw new Error("detached"); } });
+  assert.equal(await settlePayUniBeforeSubmit({ ...thrown, timing: fast }), "SUBMIT_DISABLED");
+  const busy = settleFakes();
+  assert.equal(await settlePayUniBeforeSubmit({ ...busy, tracker: { inflight: () => 1, quietFor: () => 10_000 }, timing: fast }), "NETWORK_BUSY");
+  const recent = settleFakes();
+  assert.equal(await settlePayUniBeforeSubmit({ ...recent, tracker: { inflight: () => 0, quietFor: () => 10 }, timing: { ...fast, quietMs: 1_000 } }), "NETWORK_BUSY");
+  // Good only on the very last check before the deadline: not stable, never SETTLED.
+  let clock = 0;
+  const lastMinute = settleFakes({ matches: (_step, count) => count >= 2 });
+  assert.equal(await settlePayUniBeforeSubmit({ ...lastMinute, timing: { ...fast, timeoutMs: 2 }, now: () => clock, pause: async () => { clock += 1; } }), "UNSTABLE");
+  // A missing locator is a failed check, not a pass.
+  const missing = settleFakes();
+  delete missing.filled.locators.EMAIL;
+  assert.equal(await settlePayUniBeforeSubmit({ ...missing, timing: fast }), "FIELDS_UNSETTLED");
+});
+
+test("A4-05: the pre-submit line, the PayUni traffic tracker and the page-ready wait are fixed-vocabulary", async () => {
+  assert.equal(formatPayUniPresubmitDiagnostic(null), null);
+  assert.deepEqual(JSON.parse(formatPayUniPresubmitDiagnostic({ status: `x ${SYNTHETIC_CARD}`, pageLoad: "https://x", fields: { CARD_NUMBER: SYNTHETIC_CARD, EMAIL: true, other: true },
+    submitEnabled: "yes", payuniInflight: 1_000, settleMs: -1, checks: 5_000 })), {
+    status: "NOT_RUN", pageLoad: "NOT_RUN", fields: { CARD_NUMBER: null, CARD_EXPIRY: null, CARD_CVV: null, EMAIL: true },
+    submitEnabled: null, payuniInflight: 99, payuniIgnored: null, dialogsBeforeSubmit: 0, confirmationVisible: null, settleMs: null, checks: 999,
+  });
+
+  const handlers = new Map();
+  let clock = 1_000;
+  const tracker = trackPayUniRequests({ on: (event, handler) => handlers.set(event, handler) }, () => clock);
+  const request = (url, type) => ({ url: () => url, resourceType: () => type });
+  assert.equal(tracker.inflight(), 0);
+  assert.equal(tracker.quietFor(clock), Number.POSITIVE_INFINITY, "no PayUni traffic yet");
+  const xhr = request("https://sandbox-api.payuni.com.tw/api/upp/bin?card=1", "xhr");
+  handlers.get("request")(xhr);
+  for (const ignored of [request("https://cdn.example.test/a.js", "script"), request("https://sandbox-api.payuni.com.tw/ws", "websocket"),
+    request("http://sandbox-api.payuni.com.tw/api", "xhr"), request("https://payuni.com.tw.evil.test/x", "fetch")]) handlers.get("request")(ignored);
+  assert.equal(tracker.inflight(), 1, "only PayUni document/script/xhr/fetch requests are counted");
+  clock = 1_500;
+  handlers.get("requestfinished")(request("https://sandbox-api.payuni.com.tw/other", "xhr"));
+  assert.equal(tracker.inflight(), 1, "an unknown request finishing changes nothing");
+  handlers.get("requestfailed")(xhr);
+  assert.equal(tracker.inflight(), 0);
+  assert.equal(tracker.quietFor(2_000), 500);
+  assert.equal(trackPayUniRequests({ on() { throw new Error("no events"); } }).inflight(), 0);
+
+  const states = [];
+  const ready = { async waitForLoadState(state, options) { states.push([state, options.timeout > 0]); } };
+  const presubmit = createPayUniPresubmitDiagnostic();
+  assert.equal(await waitForPayUniPageReady(ready, presubmit, 1_000), "LOADED");
+  assert.deepEqual(states, [["domcontentloaded", true], ["load", true]]);
+  assert.equal(presubmit.pageLoad, "LOADED");
+  class TimeoutError extends Error { constructor() { super("Timeout 15000ms exceeded."); this.name = "TimeoutError"; } }
+  assert.equal(await waitForPayUniPageReady({ async waitForLoadState(state) { if (state === "load") throw new TimeoutError(); } }, null, 10), "DOM_ONLY");
+  assert.equal(await waitForPayUniPageReady({ async waitForLoadState() { throw new TimeoutError(); } }, null, 10), "TIMEOUT");
+  assert.equal(await waitForPayUniPageReady({}, null, 10), "FAILED");
+
+  assert.deepEqual(settleTiming({}), settleTiming({ payuniSettle: { pollMs: -1, quietMs: "1", timeoutMs: 1.5 } }));
+  assert.equal(settleTiming({ payuniSettle: { pollMs: 5 } }).pollMs, 5);
+});
+
+test("A4-05: field capture reports why a frame could not be read and keeps within its time budget", async () => {
+  assert.equal(classifyPayUniEvaluateError(new Error("frame.evaluate: Execution context was destroyed, most likely because of a navigation")), "CONTEXT_DESTROYED");
+  assert.equal(classifyPayUniEvaluateError(new Error("frame.evaluate: Target page, context or browser has been closed")), "TARGET_CLOSED");
+  assert.equal(classifyPayUniEvaluateError(new Error("frame.evaluate: Frame was detached")), "FRAME_DETACHED");
+  assert.equal(classifyPayUniEvaluateError(new Error(`frame.evaluate: TypeError: x is not a function ${SYNTHETIC_CARD}`)), "SCRIPT_ERROR");
+  assert.equal(classifyPayUniEvaluateError(Object.assign(new Error("slow"), { name: "TimeoutError" })), "TIMEOUT");
+  assert.equal(classifyPayUniEvaluateError("text"), "OTHER");
+
+  const frame = (url, evaluate) => ({ url: () => url, evaluate });
+  let clock = 0;
+  const page = { frames: () => [
+    frame("https://sandbox-api.payuni.com.tw/api/upp", () => new Promise(() => {})),
+    frame("https://sandbox-vendor.payuni.com.tw/a", async () => { clock += 100; return { fields: [] }; }),
+    frame("https://sandbox-vendor.payuni.com.tw/b", async () => ({ fields: [] })),
+  ] };
+  const result = await capturePayUniFormFieldResult(page, { mainFrameMs: 20, childFrameMs: 20, totalMs: 50 }, () => clock);
+  assert.equal(result.status, "PARTIAL");
+  assert.deepEqual(result.outcomes.map((item) => item.outcome), ["TIMEOUT", "CAPTURED", "SKIPPED"]);
+  assert.equal(result.frames.length, 1);
+  assert.deepEqual(PAYUNI_FORM_FIELD_BUDGET, { mainFrameMs: 6_000, childFrameMs: 2_000, totalMs: 15_000 });
+  assert.deepEqual(payUniFormFieldFailure("not a status"), { status: "CAPTURE_FAILED", missingInfoDialog: false, frames: [], outcomes: [] });
+});
+
+test("A4-05: the in-page reader isolates a broken stage and drops labels when the echo guard could not be built", () => {
+  const saved = globalThis.document;
+  try {
+    const label = { nodeType: 1, tagName: "LABEL", getAttribute: () => null, childNodes: [{ nodeType: 3, nodeValue: "卡號" }] };
+    const input = {
+      tagName: "INPUT", value: SYNTHETIC_CARD, labels: [label], required: false, disabled: false,
+      getAttribute: (name) => ({ type: "text", placeholder: "**** **** **** ****" })[name] ?? null,
+      hasAttribute: () => false, matches: () => false, closest: () => null, getRootNode: () => globalThis.document,
+      previousElementSibling: null, parentElement: null, getBoundingClientRect: () => ({ width: 0, height: 0 }),
+    };
+    let selectorCalls = 0;
+    globalThis.document = {
+      getElementById: () => null,
+      querySelectorAll(selector) {
+        if (selector === "*") throw new TypeError("roots");
+        if (selector.startsWith("input, select")) { selectorCalls += 1; if (selectorCalls === 1) throw new TypeError("typed"); return [input]; }
+        if (selector === "a, label, span, p, div, li") throw new RangeError("agreement");
+        return [];
+      },
+    };
+    const raw = collectPayUniFormFieldsInPage(25);
+    assert.deepEqual(raw.stageErrors, ["ROOTS:TypeError", "TYPED:TypeError", "AGREEMENT:RangeError"]);
+    assert.equal(raw.fields.length, 1, "the field stage still ran");
+    assert.equal(raw.fields[0].label, "", "no label text without a complete echo guard");
+    assert.equal(raw.fields[0].empty, false);
+    assert.equal(JSON.stringify(raw).includes(SYNTHETIC_CARD), false);
+  } finally {
+    globalThis.document = saved;
+  }
+});
+
+/** A WP4 buyer page whose card fields answer `matches(placeholder, check)`; logs typing, checks and the submit. */
+function wp4SettlePage({ matches = () => true, modalText = null, modalBeforeSubmit = false, nativeDialogBeforeSubmit = null } = {}) {
+  class TimeoutError extends Error { constructor(message = "Timeout 5000ms exceeded") { super(message); this.name = "TimeoutError"; } }
+  const events = [];
+  const typeOptions = [];
+  const checks = new Map();
+  let submitted = 0;
+  let confirmationClicks = 0;
+  const listeners = new Map();
+  const dialogCalls = { dismiss: 0, accept: 0 };
+  const page = {
+    on(event, handler) { listeners.set(event, [...(listeners.get(event) ?? []), handler]); },
+    async goto() {}, async route() {}, async waitForURL() { throw new TimeoutError(); },
+    async waitForLoadState(state) { events.push(`load:${state}`); },
+    url: () => "https://sandbox-api.payuni.com.tw/api/upp", frames: () => [],
+    getByText() { return { async click() { events.push("method"); } }; },
+    getByPlaceholder(placeholder) {
+      return {
+        async clear() { events.push(`clear:${placeholder}`); },
+        async pressSequentially(_value, options) {
+          events.push(`type:${placeholder}`); typeOptions.push(options);
+          if (nativeDialogBeforeSubmit && placeholder === "MM/YY") {
+            const dialog = { type: () => nativeDialogBeforeSubmit.type, message: () => nativeDialogBeforeSubmit.message,
+              async dismiss() { dialogCalls.dismiss += 1; }, async accept() { dialogCalls.accept += 1; } };
+            for (const listener of listeners.get("dialog") ?? []) await listener(dialog);
+          }
+        },
+        async fill() { events.push(`fill:${placeholder}`); },
+        async blur() { events.push(`blur:${placeholder}`); },
+        async evaluate(fn) {
+          assert.equal(fn, payUniFieldMatchesInPage);
+          checks.set(placeholder, (checks.get(placeholder) ?? 0) + 1);
+          events.push(`check:${placeholder}`);
+          return matches(placeholder, checks.get(placeholder));
+        },
+      };
+    },
+    getByRole(_role, options) {
+      if (options.name === "確認送出") return { async isEnabled() { events.push("enabled"); return true; }, async click() { submitted += 1; events.push("submit"); } };
+      if (options.name === "確定") {
+        if (modalText === null) return { async isVisible() { return modalBeforeSubmit; }, async waitFor() { throw new TimeoutError(); } };
+        return { async isVisible() { return modalBeforeSubmit; }, async waitFor() {}, async evaluate() { return modalText; }, async click() { confirmationClicks += 1; } };
+      }
+      throw new Error("unexpected role");
+    },
+    locator() { return { async check() {} }; },
+  };
+  return { page, events, typeOptions, TimeoutError, dialogCalls, counts: () => ({ submitted, confirmationClicks }) };
+}
+
+const WP4_PLACEHOLDERS = ["**** **** **** ****", "MM/YY", "***", "example@example.com"];
+
+test("A4-05: the WP4 buyer runner types, blurs and verifies every known field before its one submit, and still stops on the modal", async () => {
+  const fake = wp4SettlePage({ matches: (placeholder, count) => placeholder !== "MM/YY" || count > 1, modalText: `${PAYUNI_MISSING_INFO_TEXT} 確定` });
+  const browser = { async newContext() { return { async addCookies() {}, async newPage() { return fake.page; },
+    request: { async post() { return { status: () => 200, ok: () => true }; } } }; }, async close() {} };
+  const diagnostic = createPayUniBrowserDiagnostic();
+  const result = await defaultBrowserSubmit({ previewHost, cardNumber: SYNTHETIC_CARD, cardExpiry: "1230", cardCvv: "123",
+    formPayload: { MerID: "merchant" }, supportCookie: "celebrate_support_wp4=synthetic", orderNumber: "CD-20300101000000-WP4A1", diagnostic,
+  }, { playwright: { chromium: { async launch() { return browser; } }, errors: { TimeoutError: fake.TimeoutError } }, payuniSettle: { pollMs: 1 } });
+  assert.equal(result, "PAYMENT_CONFIRMATION_AMBIGUOUS", "a dialog after the submit still stops the run");
+  assert.deepEqual(fake.counts(), { submitted: 1, confirmationClicks: 0 });
+  assert.equal(fake.events.indexOf("load:load") < fake.events.indexOf("method"), true, "the page loaded before the first interaction");
+  assert.deepEqual(fake.events.filter((event) => /^(?:type|blur|fill):/u.test(event)), WP4_PLACEHOLDERS.flatMap((name) => [`type:${name}`, `blur:${name}`]));
+  assert.ok(fake.typeOptions.every((options) => options.delay > 0 && options.timeout > 0));
+  const submitAt = fake.events.indexOf("submit");
+  for (const name of WP4_PLACEHOLDERS) {
+    const last = fake.events.lastIndexOf(`check:${name}`);
+    assert.ok(last > fake.events.lastIndexOf(`blur:${WP4_PLACEHOLDERS.at(-1)}`) && last < submitAt, `${name} was verified right before the submit`);
+  }
+  assert.equal(diagnostic.presubmit.status, "SETTLED");
+  assert.equal(diagnostic.presubmit.checks, 3, "the late expiry field delayed the submit by one check");
+  assert.equal(diagnostic.presubmit.pageLoad, "LOADED");
+  assert.equal(diagnostic.formFields.status, "NO_FRAMES", "the stop still prints the field line");
+
+  // Never settles: PAYMENT_FIELDS_REJECTED with no click at all.
+  const stuck = wp4SettlePage({ matches: (placeholder) => placeholder !== "***" });
+  const stuckBrowser = { async newContext() { return { async addCookies() {}, async newPage() { return stuck.page; },
+    request: { async post() { return { status: () => 200, ok: () => true }; } } }; }, async close() {} };
+  const stuckDiagnostic = createPayUniBrowserDiagnostic();
+  const stuckResult = await defaultBrowserSubmit({ previewHost, cardNumber: SYNTHETIC_CARD, cardExpiry: "1230", cardCvv: "123",
+    formPayload: { MerID: "merchant" }, supportCookie: "celebrate_support_wp4=synthetic", orderNumber: "CD-20300101000000-WP4A1", diagnostic: stuckDiagnostic,
+  }, { playwright: { chromium: { async launch() { return stuckBrowser; } }, errors: { TimeoutError: stuck.TimeoutError } }, payuniSettle: { pollMs: 1, timeoutMs: 30 } });
+  assert.equal(stuckResult, "PAYMENT_FIELDS_REJECTED");
+  assert.deepEqual(stuck.counts(), { submitted: 0, confirmationClicks: 0 });
+  assert.equal(stuckDiagnostic.presubmit.status, "FIELDS_UNSETTLED");
+  assert.equal(stuckDiagnostic.presubmit.fields.CARD_CVV, false);
+  assert.equal(stuckDiagnostic.step, "PRESUBMIT", "the run stopped in its own pre-submit step, not in a field step");
+  assert.equal(stuckDiagnostic.formFields.status, "NO_FRAMES", "the field list is read after the unsettled stop too");
+  const line = formatPayUniPresubmitDiagnostic(stuckDiagnostic.presubmit);
+  for (const secret of [SYNTHETIC_CARD, "1230", "wp4-buyer"]) assert.equal(line.includes(secret), false, `leaked ${secret}`);
+});
+
+test("A4-05: the WP4 subscription runner never marks a submission for a page that did not settle", async () => {
+  const fake = wp4SettlePage({ matches: (placeholder) => placeholder !== "example@example.com" });
+  const plan = { getByRole() { return { async click() {} }; } };
+  const upp = { async evaluateAll(callback) {
+    return callback(["MerID", "Version", "EncryptInfo", "HashInfo"].map((name) => ({ getAttribute: (key) => (key === "name" ? name : "synthetic") })));
+  } };
+  fake.page.locator = (selector) => (selector.includes("/api/billing/plans/select") ? plan
+    : selector === 'form[action="https://sandbox-api.payuni.com.tw/api/upp"] input[type="hidden"]' ? upp : { async check() {} });
+  fake.page.waitForURL = async () => {};
+  const browser = { async newContext() { return { async addCookies() {}, async newPage() { return fake.page; },
+    request: { async post() { return { status: () => 200, ok: () => true }; } } }; }, async close() {} };
+  let marked = 0;
+  const result = await defaultSubscriptionBrowserSubmit({
+    previewHost, ownerSessionCookie: "__Host-celebrate_session=opaque-owner-session",
+    cardNumber: SYNTHETIC_CARD, cardExpiry: "1230", cardCvv: "123",
+    markNativePlanCheckoutCreated: () => true, async reservePaymentAttempt() { return true; },
+    markPaymentSubmission() { marked += 1; return true; },
+  }, { playwright: { chromium: { async launch() { return browser; } }, errors: { TimeoutError: fake.TimeoutError } }, payuniSettle: { pollMs: 1, timeoutMs: 30 } });
+  assert.equal(result, "PAYMENT_FIELDS_REJECTED");
+  assert.equal(marked, 0, "the submission is marked only after the page settled");
+  assert.deepEqual(fake.counts(), { submitted: 0, confirmationClicks: 0 });
+});
+
+test("A4-05: the shared fill types only the four known fields and returns the same locators for the re-check", async () => {
+  const typed = [];
+  const page = { getByPlaceholder(placeholder, options) {
+    assert.equal(options.exact, true);
+    return { name: placeholder, async clear() { typed.push([placeholder, "clear"]); }, async pressSequentially(value, typeOptions) { typed.push([placeholder, typeof value, typeOptions.delay]); }, async blur() {}, async fill() { throw new Error("fill is never used"); } };
+  } };
+  const filled = await fillPayUniCardFields(page, { cardNumber: SYNTHETIC_CARD, cardExpiry: "1230", cardCvv: "123" }, "wp4-buyer-v1@invalid.example", 10, 7);
+  assert.deepEqual(typed, WP4_PLACEHOLDERS.flatMap((name) => [[name, "clear"], [name, "string", 7]]), "each field is cleared, then typed");
+  assert.deepEqual(Object.keys(filled.locators), ["CARD_NUMBER", "CARD_EXPIRY", "CARD_CVV", "EMAIL"]);
+  assert.deepEqual(Object.values(filled.locators).map((locator) => locator.name), WP4_PLACEHOLDERS);
+  assert.equal(filled.values.EMAIL, "wp4-buyer-v1@invalid.example");
+});
+
+test("A4-05: the WP4 runners stop before the submit on a native dialog or a visible 確定 modal, unclicked, with the field list", async () => {
+  const run = async (options) => {
+    const fake = wp4SettlePage(options);
+    const browser = { async newContext() { return { async addCookies() {}, async newPage() { return fake.page; },
+      request: { async post() { return { status: () => 200, ok: () => true }; } } }; }, async close() {} };
+    const diagnostic = createPayUniBrowserDiagnostic();
+    const result = await defaultBrowserSubmit({ previewHost, cardNumber: SYNTHETIC_CARD, cardExpiry: "1230", cardCvv: "123",
+      formPayload: { MerID: "merchant" }, supportCookie: "celebrate_support_wp4=synthetic", orderNumber: "CD-20300101000000-WP4A1", diagnostic,
+    }, { playwright: { chromium: { async launch() { return browser; } }, errors: { TimeoutError: fake.TimeoutError } }, payuniSettle: { pollMs: 1, timeoutMs: 200 } });
+    return { result, diagnostic, fake };
+  };
+  const modal = await run({ modalBeforeSubmit: true, modalText: `${PAYUNI_MISSING_INFO_TEXT} 確定` });
+  assert.equal(modal.result, "PAYMENT_FIELDS_REJECTED");
+  assert.deepEqual(modal.fake.counts(), { submitted: 0, confirmationClicks: 0 });
+  assert.equal(modal.diagnostic.presubmit.status, "DIALOG_BEFORE_SUBMIT");
+  assert.equal(modal.diagnostic.presubmit.confirmationVisible, true);
+  assert.equal(modal.diagnostic.presubmit.checks, 1);
+  assert.equal(modal.diagnostic.step, "PRESUBMIT");
+  assert.equal(modal.diagnostic.formFields.status, "NO_FRAMES");
+
+  const native = await run({ nativeDialogBeforeSubmit: { type: "alert", message: PAYUNI_MISSING_INFO_TEXT } });
+  assert.equal(native.result, "PAYMENT_FIELDS_REJECTED");
+  assert.deepEqual(native.fake.counts(), { submitted: 0, confirmationClicks: 0 });
+  assert.deepEqual(native.fake.dialogCalls, { dismiss: 1, accept: 0 }, "dismissed by the runner's own handler, never accepted");
+  assert.equal(native.diagnostic.presubmit.status, "DIALOG_BEFORE_SUBMIT");
+  assert.equal(native.diagnostic.presubmit.dialogsBeforeSubmit, 1);
+  const line = JSON.parse(formatPayUniPresubmitDiagnostic(native.diagnostic.presubmit));
+  assert.deepEqual([line.status, line.dialogsBeforeSubmit], ["DIALOG_BEFORE_SUBMIT", 1]);
+
+  // A dialog after the submit is not a pre-submit dialog: the count is frozen at the click.
+  const handlers = [];
+  const counted = countPayUniDialogsBeforeSubmit({ on: (_event, handler) => handlers.push(handler) });
+  handlers[0]();
+  counted.markSubmitted();
+  handlers[0]();
+  assert.equal(counted.count(), 1);
+  assert.equal(countPayUniDialogsBeforeSubmit({ on() { throw new Error("no events"); } }).count(), 0);
+});
+
+test("A4-05: the pre-submit gate ignores a PayUni request older than the stale limit and stays within its time budget", async () => {
+  const handlers = new Map();
+  let clock = 0;
+  const tracker = trackPayUniRequests({ on: (event, handler) => handlers.set(event, handler) }, () => clock, 5_000);
+  handlers.get("request")({ url: () => "https://sandbox-api.payuni.com.tw/api/poll", resourceType: () => "xhr" });
+  clock = 4_000;
+  assert.deepEqual([tracker.inflight(), tracker.ignored()], [1, 0]);
+  clock = 5_001;
+  assert.deepEqual([tracker.inflight(), tracker.ignored()], [0, 1], "a long poll stops blocking after five seconds");
+  const fakes = settleFakes();
+  const presubmit = createPayUniPresubmitDiagnostic();
+  assert.equal(await settlePayUniBeforeSubmit({ ...fakes, tracker, presubmit, timing: { pollMs: 1, quietMs: 1_000, timeoutMs: 100, stablePolls: 2 },
+    now: () => clock }), "SETTLED");
+  assert.deepEqual([presubmit.payuniInflight, presubmit.payuniIgnored], [0, 1]);
+
+  // Each check waits only for the time left: a page that never answers ends close to timeoutMs.
+  const hanging = { locators: Object.fromEntries(["CARD_NUMBER", "CARD_EXPIRY", "CARD_CVV", "EMAIL"].map((step) =>
+    [step, { evaluate: () => new Promise(() => {}) }])), values: {} };
+  const startedAt = Date.now();
+  const status = await settlePayUniBeforeSubmit({ filled: hanging, submit: { isEnabled: () => new Promise(() => {}) },
+    confirmation: { isVisible: () => new Promise(() => {}) }, timing: { pollMs: 10, quietMs: 0, timeoutMs: 150, stablePolls: 2 } });
+  const elapsed = Date.now() - startedAt;
+  assert.equal(status, "FIELDS_UNSETTLED");
+  assert.ok(elapsed < 600, `stayed within its budget (${elapsed} ms)`);
+
+  // A check cut short by the deadline does not overwrite the last complete one with false values.
+  let fakeClock = 0;
+  const late = settleFakes({ matches: (step, count) => (step === "EMAIL" && count === 2 ? new Promise(() => {}) : true) });
+  const lateState = createPayUniPresubmitDiagnostic();
+  assert.equal(await settlePayUniBeforeSubmit({ ...late, presubmit: lateState, timing: { pollMs: 40, quietMs: 0, timeoutMs: 50, stablePolls: 2 },
+    now: () => fakeClock, pause: async (ms) => { fakeClock += ms; } }), "UNSTABLE");
+  assert.deepEqual([lateState.fields.EMAIL, lateState.checks], [true, 1]);
 });

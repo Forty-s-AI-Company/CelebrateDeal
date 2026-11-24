@@ -17,6 +17,7 @@ import {
   defaultLostCallbackBrowser,
   verifyPayRunReceipt,
   payUniSandboxCrypto,
+  printBrowserDiagnostic,
   providerReportsPaid,
   queryProviderSettlement,
   runLostCallbackPayment,
@@ -31,6 +32,7 @@ import {
   collectPayUniFormFieldsInPage,
   formatPayUniDialogDiagnostic,
   formatPayUniFormFieldDiagnostic,
+  payUniFieldMatchesInPage,
 } from "./mvp-payuni-sandbox-e2e.mjs";
 
 // Synthetic key material only; never a real PayUni key.
@@ -416,12 +418,23 @@ test("v2: a PAID_CALLBACK_WITHHELD receipt must agree with its own matched, foun
   assert.equal(validatePayReceipt(unchecked), false);
 });
 
-/** A fake Playwright: records clicks, the UPP post and what each routed request became. */
-function fakePlaywright({ dialogVisible = false, dialogRaw = null, nativeDialog = null, uppOk = true, onSubmit = async () => {}, onWait = async () => {}, frames = null } = {}) {
+/** The four fields the drill fills, by their exact placeholders; anything else typed is a contract break. */
+const KNOWN_FIELD_PLACEHOLDERS = ["**** **** **** ****", "MM/YY", "***", "example@example.com"];
+
+/**
+ * A fake Playwright: records clicks, the UPP post, what each routed request became, and the order of
+ * typing, blurs, pre-submit checks and the submit click in `log.events`. `fieldMatches(placeholder,
+ * check)` is what the in-page value comparison answers; `pendingPayUniRequest` leaves one PayUni XHR
+ * in flight for the whole run.
+ */
+function fakePlaywright({ dialogVisible = false, dialogRaw = null, nativeDialog = null, uppOk = true, onSubmit = async () => {}, onWait = async () => {}, frames = null,
+  fieldMatches = () => true, submitEnabled = true, pendingPayUniRequest = false, loadState = async () => {},
+  modalBeforeSubmit = false, nativeDialogBeforeSubmit = null } = {}) {
   const log = { clicks: [], routes: [], uppPosts: [], launched: 0, closed: 0, evaluated: 0, nativeDismissed: 0, nativeAccepted: 0, nativeOrder: [], waits: 0,
-    typed: [], frameEvaluations: [] };
+    typed: [], typeOptions: [], frameEvaluations: [], events: [], fieldChecks: [], loadStates: [] };
   let contextHandler = null;
   let dialogHandler = null;
+  const pageHandlers = new Map();
   async function dispatch(url, method = "GET", body = null) {
     const outcome = { action: null };
     await contextHandler({
@@ -437,6 +450,7 @@ function fakePlaywright({ dialogVisible = false, dialogRaw = null, nativeDialog 
     click: async () => {
       log.clicks.push(name);
       if (name !== "確認送出") return;
+      log.events.push("submit");
       await onSubmit(dispatch);
       if (nativeDialog && dialogHandler) {
         await dialogHandler({
@@ -453,16 +467,43 @@ function fakePlaywright({ dialogVisible = false, dialogRaw = null, nativeDialog 
       }
     },
     check: async () => { log.clicks.push(`check:${name}`); },
-    pressSequentially: async () => { log.typed.push(name); },
-    fill: async () => { log.typed.push(name); },
-    isVisible: async () => (name === "確定" ? dialogVisible : true),
-    evaluate: async () => { log.evaluated += 1; return dialogRaw; },
+    clear: async () => { log.events.push(`clear:${name}`); },
+    pressSequentially: async (_value, options) => {
+      log.typed.push(name); log.typeOptions.push(options); log.events.push(`type:${name}`);
+      // A native dialog that the page opens while the expiry is typed (before any submit).
+      if (nativeDialogBeforeSubmit && name === "MM/YY" && dialogHandler) {
+        await dialogHandler({
+          type: () => nativeDialogBeforeSubmit.type, message: () => nativeDialogBeforeSubmit.message,
+          dismiss: () => { log.nativeDismissed += 1; return Promise.resolve(); }, accept: async () => { log.nativeAccepted += 1; },
+        });
+      }
+    },
+    fill: async () => { log.typed.push(name); log.events.push(`fill:${name}`); },
+    blur: async () => { log.events.push(`blur:${name}`); },
+    // The 確定 modal shows after the submit, or already before it with modalBeforeSubmit.
+    isVisible: async () => (name === "確定" ? modalBeforeSubmit || (dialogVisible && log.events.includes("submit")) : true),
+    isEnabled: async () => { log.events.push(`enabled:${name}`); return submitEnabled; },
+    evaluate: async (fn, arg) => {
+      if (name === "確定") { log.evaluated += 1; return dialogRaw; }
+      // The in-page value comparison: it gets the expected value and answers only true/false.
+      log.fieldChecks.push({ name, fn, step: arg?.step });
+      log.events.push(`check:${name}`);
+      return fieldMatches(name, log.fieldChecks.filter((item) => item.name === name).length);
+    },
     or: () => locator(name),
   });
   const page = {
-    on: (event, handler) => { if (event === "dialog") dialogHandler = handler; },
+    on: (event, handler) => {
+      if (event === "dialog") dialogHandler = handler;
+      else pageHandlers.set(event, handler);
+    },
+    waitForLoadState: async (state) => { log.loadStates.push(state); await loadState(state); },
     route: async () => {},
-    goto: async () => {},
+    goto: async () => {
+      if (!pendingPayUniRequest) return;
+      // A PayUni XHR that starts after the document and never finishes.
+      pageHandlers.get("request")?.({ url: () => "https://sandbox-api.payuni.com.tw/api/upp/bin", resourceType: () => "xhr" });
+    },
     getByText: (text) => locator(text),
     locator: (selector) => locator(selector),
     getByPlaceholder: (text) => locator(text),
@@ -497,12 +538,38 @@ const BROWSER_INPUT = Object.freeze({
   cardNumber: INPUT.cardNumber, cardExpiry: INPUT.cardExpiry, cardCvv: INPUT.cardCvv,
 });
 const submitClicks = (log) => log.clicks.filter((name) => name === "確認送出").length;
-const DIAGNOSTIC_KEYS = ["afterSubmitSeconds", "dialogs", "externalHosts", "formFields", "payuniPostsAfterSubmit"];
+const DIAGNOSTIC_KEYS = ["afterSubmitSeconds", "dialogs", "externalHosts", "formFields", "payuniPostsAfterSubmit", "presubmit"];
+/** A settled page: loaded, all four fields match, button enabled, no PayUni request in flight, two checks in a row. */
+const SETTLED_PRESUBMIT = Object.freeze({
+  status: "SETTLED", pageLoad: "LOADED", fields: { CARD_NUMBER: true, CARD_EXPIRY: true, CARD_CVV: true, EMAIL: true },
+  submitEnabled: true, payuniInflight: 0, payuniIgnored: 0, dialogsBeforeSubmit: 0, confirmationVisible: false, settleMs: 0, checks: 2,
+});
+/** The field list of a fake page without frames: still a status, never null. */
+const noFrames = (missingInfoDialog = false) => ({ status: "NO_FRAMES", missingInfoDialog, frames: [], outcomes: [] });
+/** Short settle timing for the fakes; production uses PAYUNI_SETTLE. */
+const FAST = Object.freeze({ pollMs: 5, quietMs: 0, timeoutMs: 300 });
 /** The whole diagnostic, with only the wall-clock seconds normalised. */
 const fixedSeconds = (diagnostic) => {
   assert.deepEqual(Object.keys(diagnostic).sort(), DIAGNOSTIC_KEYS);
-  assert.equal(Number.isSafeInteger(diagnostic.afterSubmitSeconds), true);
-  return { ...diagnostic, afterSubmitSeconds: 0 };
+  assert.equal(diagnostic.afterSubmitSeconds === null || Number.isSafeInteger(diagnostic.afterSubmitSeconds), true);
+  assert.equal(Number.isSafeInteger(diagnostic.presubmit.settleMs), true);
+  return {
+    ...diagnostic,
+    afterSubmitSeconds: diagnostic.afterSubmitSeconds === null ? null : 0,
+    presubmit: { ...diagnostic.presubmit, settleMs: 0 },
+  };
+};
+/** Every field check and the enabled check come after the last typed key and blur, and before the one submit. */
+const assertCheckedBeforeSubmit = (log) => {
+  const submitAt = log.events.indexOf("submit");
+  assert.equal(log.events.filter((event) => event === "submit").length, 1, "submitted exactly once");
+  const lastFill = Math.max(...log.events.map((event, index) => (/^(?:type|fill|blur):/u.test(event) ? index : -1)));
+  for (const name of KNOWN_FIELD_PLACEHOLDERS) {
+    const checks = log.events.map((event, index) => (event === `check:${name}` ? index : -1)).filter((index) => index >= 0);
+    assert.ok(checks.length >= 2, `${name} is checked twice in a row before the submit`);
+    assert.ok(checks.every((index) => index > lastFill && index < submitAt), `${name} is checked after filling and before the submit`);
+  }
+  assert.ok(log.events.indexOf("enabled:確認送出") > lastFill && log.events.indexOf("enabled:確認送出") < submitAt);
 };
 
 test("browser: a confirmation dialog is never clicked and the card form is submitted once", async () => {
@@ -511,10 +578,12 @@ test("browser: a confirmation dialog is never clicked and the card form is submi
   assert.deepEqual(Object.keys(result).sort(), ["appCallbackRequests", "code", "diagnostic"]);
   assert.deepEqual({ ...result, diagnostic: fixedSeconds(result.diagnostic) }, {
     code: "PAYMENT_CONFIRMATION_DIALOG", appCallbackRequests: 0,
-    diagnostic: { dialogs: [{ kind: "UNREADABLE", text: "", buttons: [] }], externalHosts: [], payuniPostsAfterSubmit: 0, afterSubmitSeconds: 0, formFields: null },
+    diagnostic: { dialogs: [{ kind: "UNREADABLE", text: "", buttons: [] }], externalHosts: [], payuniPostsAfterSubmit: 0, afterSubmitSeconds: 0,
+      presubmit: SETTLED_PRESUBMIT, formFields: noFrames() },
   });
   assert.equal(submitClicks(log), 1);
   assert.equal(log.clicks.includes("確定"), false);
+  assertCheckedBeforeSubmit(log);
   assert.deepEqual(log.uppPosts, [{ url: PAYUNI_UPP_URL, form: BROWSER_INPUT.formPayload }]);
   assert.equal(log.closed, 1);
 });
@@ -536,7 +605,8 @@ test("browser: the unknown 確定 modal is read as de-identified text only, neve
     code: "PAYMENT_CONFIRMATION_DIALOG", appCallbackRequests: 0,
     diagnostic: {
       dialogs: [{ kind: "MODAL_CLASS", text: "交易失敗 卡號 # 有效期 # 安全碼 # EMAIL 訂單 ID URL", buttons: ["確定"] }],
-      externalHosts: ["www.recaptcha-cdn.example", "*.cloudfront.net"], payuniPostsAfterSubmit: 1, afterSubmitSeconds: 0, formFields: null,
+      externalHosts: ["www.recaptcha-cdn.example", "*.cloudfront.net"], payuniPostsAfterSubmit: 1, afterSubmitSeconds: 0,
+      presubmit: SETTLED_PRESUBMIT, formFields: noFrames(),
     },
   });
   assert.equal(submitClicks(log), 1);
@@ -553,7 +623,8 @@ test("browser: a native dialog is dismissed before it is read, never accepted, a
   const blocked = await defaultLostCallbackBrowser(BROWSER_INPUT, { playwright: stopped.playwright, nativeDialogGraceMs: 0 });
   assert.deepEqual({ ...blocked, diagnostic: fixedSeconds(blocked.diagnostic) }, {
     code: "PAYMENT_CONFIRMATION_DIALOG", appCallbackRequests: 0,
-    diagnostic: { dialogs: [{ kind: "NATIVE_ALERT", text: "交易失敗 #", buttons: [] }], externalHosts: [], payuniPostsAfterSubmit: 0, afterSubmitSeconds: 0, formFields: null },
+    diagnostic: { dialogs: [{ kind: "NATIVE_ALERT", text: "交易失敗 #", buttons: [] }], externalHosts: [], payuniPostsAfterSubmit: 0, afterSubmitSeconds: 0,
+      presubmit: SETTLED_PRESUBMIT, formFields: noFrames() },
   });
   assert.equal(stopped.log.nativeOrder[0], "dismiss", "the dialog is dismissed before anything is read");
   assert.deepEqual(stopped.log.nativeOrder.slice(1).sort(), ["message", "type"]);
@@ -587,7 +658,8 @@ test("browser: a Return that arrives within the grace after a dismissed native d
   assert.deepEqual(Object.keys(result).sort(), ["appCallbackRequests", "code", "diagnostic", "returnBody", "returnPosts"]);
   assert.deepEqual({ ...result, diagnostic: fixedSeconds(result.diagnostic) }, {
     code: "RETURN_CAPTURED", returnBody, returnPosts: 1, appCallbackRequests: 0,
-    diagnostic: { dialogs: [{ kind: "NATIVE_CONFIRM", text: "確定付款 NT$1?卡號 #", buttons: [] }], externalHosts: [], payuniPostsAfterSubmit: 0, afterSubmitSeconds: 0, formFields: null },
+    diagnostic: { dialogs: [{ kind: "NATIVE_CONFIRM", text: "確定付款 NT$1?卡號 #", buttons: [] }], externalHosts: [], payuniPostsAfterSubmit: 0, afterSubmitSeconds: 0,
+      presubmit: SETTLED_PRESUBMIT, formFields: null },
   });
   assert.equal(log.waits, 2, "it kept waiting after the dialog until the Return arrived");
   assert.equal(log.nativeDismissed, 1);
@@ -624,15 +696,16 @@ test("browser: app callbacks and foreign hosts are aborted; only the exact sink 
     await dispatch(BROWSER_INPUT.sinkReturnUrl, "POST", returnBody);
   } });
   const result = await defaultLostCallbackBrowser(BROWSER_INPUT, { playwright });
-  // No dialog: the capture carries no diagnostic.
-  assert.deepEqual(result, { code: "RETURN_CAPTURED", returnBody, returnPosts: 1, appCallbackRequests: 2 });
+  // No dialog: the capture still carries the pre-submit state (printed on a pass too), no field list.
+  assert.deepEqual({ ...result, diagnostic: fixedSeconds(result.diagnostic) }, {
+    code: "RETURN_CAPTURED", returnBody, returnPosts: 1, appCallbackRequests: 2,
+    diagnostic: { dialogs: [], externalHosts: ["evil.example", "sandbox-api.payuni.com.tw"], payuniPostsAfterSubmit: 0, afterSubmitSeconds: 0, presubmit: SETTLED_PRESUBMIT, formFields: null },
+  });
   assert.equal(submitClicks(log), 1);
+  assertCheckedBeforeSubmit(log);
   assert.deepEqual(log.routes.map((route) => route.action), ["abort", "abort", "abort", "abort", "abort", "abort", "abort", "continue", "fulfill"]);
   assert.equal(log.closed, 1);
 });
-
-/** The four fields the drill fills, by their exact placeholders; anything else typed is a contract break. */
-const KNOWN_FIELD_PLACEHOLDERS = ["**** **** **** ****", "MM/YY", "***", "example@example.com"];
 
 test("browser: on the missing-info modal the drill lists the page's fields read-only, fills only the known four, submits once and stops", async () => {
   const frames = [
@@ -653,7 +726,13 @@ test("browser: on the missing-info modal the drill lists the page's fields read-
   assert.equal(log.clicks.includes("確定"), false, "the modal is never clicked");
   assert.deepEqual(log.typed, KNOWN_FIELD_PLACEHOLDERS, "only the four known fields are typed into");
   assert.ok(log.frameEvaluations.length === 2 && log.frameEvaluations.every(({ fn, limit }) => fn === collectPayUniFormFieldsInPage && limit === 25));
+  assertCheckedBeforeSubmit(log);
   const { formFields } = result.diagnostic;
+  assert.equal(formFields.status, "CAPTURED");
+  assert.deepEqual(formFields.outcomes, [
+    { frame: 0, host: "MAIN", outcome: "CAPTURED", stageErrors: [] },
+    { frame: 1, host: "*.hosted.example", outcome: "CAPTURED", stageErrors: [] },
+  ]);
   assert.equal(formFields.missingInfoDialog, true);
   assert.deepEqual(formFields.frames.map((frame) => frame.host), ["MAIN", "*.hosted.example"]);
   assert.deepEqual(formFields.frames[0].fields[1], { tag: "input", type: "checkbox", name: "agree", id: "", label: "我已閱讀並同意 隱私權政策",
@@ -664,7 +743,7 @@ test("browser: on the missing-info modal the drill lists the page's fields read-
   assert.deepEqual(Object.keys(JSON.parse(formatPayUniDialogDiagnostic(result.diagnostic))).sort(),
     ["afterSubmitSeconds", "dialogs", "externalHosts", "payuniPostsAfterSubmit"]);
 
-  // A native dialog stop lists fields too; a page that cannot be read leaves formFields null and the code unchanged.
+  // A native dialog stop lists fields too; a page that cannot be read keeps the code and says why (never null).
   const native = fakePlaywright({ nativeDialog: { type: "alert", message: PAYUNI_MISSING_INFO_TEXT }, frames });
   const nativeResult = await defaultLostCallbackBrowser(BROWSER_INPUT, { playwright: native.playwright, nativeDialogGraceMs: 0 });
   assert.equal(nativeResult.code, "PAYMENT_CONFIRMATION_DIALOG");
@@ -674,7 +753,109 @@ test("browser: on the missing-info modal the drill lists the page's fields read-
   const unreadable = fakePlaywright({ dialogVisible: true });
   const unreadableResult = await defaultLostCallbackBrowser(BROWSER_INPUT, { playwright: unreadable.playwright });
   assert.equal(unreadableResult.code, "PAYMENT_CONFIRMATION_DIALOG");
-  assert.equal(unreadableResult.diagnostic.formFields, null);
+  assert.deepEqual(unreadableResult.diagnostic.formFields, noFrames());
+});
+
+test("A4-05: a field list that cannot be read prints its fixed reason instead of disappearing", async () => {
+  const dialogRaw = { kind: "FIXED_LAYER", text: `${PAYUNI_MISSING_INFO_TEXT} 確定`, buttons: ["確定"] };
+  const pageError = Object.assign(new Error(`frame.evaluate: TypeError: Cannot read properties of undefined (reading 'x') at ${INPUT.cardNumber}`), { name: "Error" });
+  const frames = [
+    // The main frame throws inside the PayUni page; a child frame never answers.
+    { url: PAYUNI_UPP_URL, raw: null, onEvaluate: async () => { throw pageError; } },
+    { url: "https://sandbox-vendor.payuni.com.tw/x", raw: null, onEvaluate: () => new Promise(() => {}) },
+  ];
+  const { playwright, log } = fakePlaywright({ dialogVisible: true, frames, dialogRaw });
+  const result = await defaultLostCallbackBrowser(BROWSER_INPUT, { playwright, formFieldBudget: { mainFrameMs: 50, childFrameMs: 50, totalMs: 500 } });
+  assert.equal(result.code, "PAYMENT_CONFIRMATION_DIALOG");
+  assert.equal(submitClicks(log), 1);
+  assert.equal(log.clicks.includes("確定"), false);
+  assert.deepEqual(result.diagnostic.formFields, {
+    status: "SCRIPT_ERROR", missingInfoDialog: true, frames: [],
+    outcomes: [
+      { frame: 0, host: "MAIN", outcome: "SCRIPT_ERROR", stageErrors: [] },
+      { frame: 1, host: "sandbox-vendor.payuni.com.tw", outcome: "TIMEOUT", stageErrors: [] },
+    ],
+  });
+  const printed = [];
+  printBrowserDiagnostic(result.diagnostic, (line) => printed.push(line));
+  const fields = printed.find((line) => line.startsWith("payuni_lost_callback_form_fields="));
+  assert.ok(fields, "the field line is printed even though no frame was readable");
+  assert.equal(JSON.parse(fields.slice(fields.indexOf("=") + 1)).status, "SCRIPT_ERROR");
+  for (const line of printed) {
+    for (const secret of [INPUT.cardNumber, "Cannot read", "reading"]) assert.equal(line.includes(secret), false, `leaked ${secret}`);
+  }
+
+  // A page script that breaks one stage of the in-page reader still returns the rest, marked PARTIAL.
+  const partial = fakePlaywright({ dialogVisible: true, dialogRaw, frames: [{ url: PAYUNI_UPP_URL,
+    raw: { fields: [{ tag: "input", type: "checkbox", name: "agree" }], stageErrors: ["AGREEMENT:TypeError", "free text 4000221111111111"] } }] });
+  const partialResult = await defaultLostCallbackBrowser(BROWSER_INPUT, { playwright: partial.playwright });
+  assert.equal(partialResult.diagnostic.formFields.status, "PARTIAL");
+  assert.deepEqual(partialResult.diagnostic.formFields.outcomes, [{ frame: 0, host: "MAIN", outcome: "PARTIAL", stageErrors: ["AGREEMENT:TypeError"] }]);
+
+  // A formatter that throws prints FORMAT_FAILED for its own line; the other lines still print.
+  const broken = { ...result.diagnostic };
+  Object.defineProperty(broken, "formFields", { enumerable: true, get() { throw new Error("broken"); } });
+  const brokenLines = [];
+  printBrowserDiagnostic(broken, (line) => brokenLines.push(line));
+  assert.ok(brokenLines.includes('payuni_lost_callback_form_fields={"status":"FORMAT_FAILED"}'));
+  assert.ok(brokenLines.some((line) => line.startsWith("payuni_lost_callback_dialog=")));
+  assert.ok(brokenLines.some((line) => line.startsWith("payuni_lost_callback_presubmit=")));
+});
+
+test("A4-05: every known field is typed key by key and blurred after the page loaded; fill() is never used", async () => {
+  const { playwright, log } = fakePlaywright({ dialogVisible: true });
+  await defaultLostCallbackBrowser(BROWSER_INPUT, { playwright });
+  assert.deepEqual(log.loadStates, ["domcontentloaded", "load"]);
+  assert.deepEqual(log.typed, KNOWN_FIELD_PLACEHOLDERS, "only the four known fields, in order");
+  assert.equal(log.events.some((event) => event.startsWith("fill:")), false);
+  assert.ok(log.typeOptions.every((options) => Number.isSafeInteger(options?.delay) && options.delay > 0), "typed with a per-key delay");
+  const typing = log.events.filter((event) => /^(?:clear|type|blur):/u.test(event));
+  assert.deepEqual(typing, KNOWN_FIELD_PLACEHOLDERS.flatMap((name) => [`clear:${name}`, `type:${name}`, `blur:${name}`]),
+    "each field is cleared, typed, then blurred right away");
+  assert.ok(log.fieldChecks.every(({ fn }) => fn === payUniFieldMatchesInPage), "values are compared in the page only");
+  assert.deepEqual([...new Set(log.fieldChecks.map(({ step }) => step))], ["CARD_NUMBER", "CARD_EXPIRY", "CARD_CVV", "EMAIL"]);
+});
+
+test("A4-05: a field that settles late is submitted once after it settles; one that never settles is never submitted", async () => {
+  // The expiry field reads empty for the first two checks (a late formatter), then matches.
+  const late = fakePlaywright({ dialogVisible: true, fieldMatches: (name, check) => name !== "MM/YY" || check > 2 });
+  const lateResult = await defaultLostCallbackBrowser(BROWSER_INPUT, { playwright: late.playwright, payuniSettle: FAST });
+  assert.equal(lateResult.code, "PAYMENT_CONFIRMATION_DIALOG");
+  assert.equal(submitClicks(late.log), 1);
+  assertCheckedBeforeSubmit(late.log);
+  assert.equal(lateResult.diagnostic.presubmit.status, "SETTLED");
+  assert.equal(lateResult.diagnostic.presubmit.checks, 4);
+
+  for (const [options, status] of [
+    [{ fieldMatches: (name) => name !== "MM/YY" }, "FIELDS_UNSETTLED"],
+    [{ submitEnabled: false }, "SUBMIT_DISABLED"],
+    [{ pendingPayUniRequest: true }, "NETWORK_BUSY"],
+  ]) {
+    const { playwright, log } = fakePlaywright({ dialogVisible: true, ...options });
+    const result = await defaultLostCallbackBrowser(BROWSER_INPUT, { playwright, payuniSettle: { ...FAST, quietMs: 50 } });
+    assert.equal(result.code, "PAYMENT_FIELDS_UNSETTLED", status);
+    assert.equal(submitClicks(log), 0, `${status}: never submitted`);
+    assert.equal(log.clicks.includes("確定"), false);
+    assert.equal(result.diagnostic.presubmit.status, status);
+    assert.equal(result.diagnostic.payuniPostsAfterSubmit, null, "nothing was submitted");
+    assert.equal(log.closed, 1);
+    const printed = [];
+    printBrowserDiagnostic(result.diagnostic, (line) => printed.push(line));
+    // The field list is read after the unsettled stop too (read-only; the stop code is already fixed).
+    assert.deepEqual(printed.map((line) => line.slice(0, line.indexOf("="))), ["payuni_lost_callback_presubmit", "payuni_lost_callback_form_fields"]);
+    assert.deepEqual(result.diagnostic.formFields, noFrames());
+    for (const secret of [INPUT.cardNumber, INPUT.cardCvv, "wp4-buyer"]) assert.equal(printed[0].includes(secret), false);
+  }
+  const unsettled = fakePlaywright({ fieldMatches: () => false });
+  const unsettledResult = await defaultLostCallbackBrowser(BROWSER_INPUT, { playwright: unsettled.playwright, payuniSettle: FAST });
+  assert.deepEqual(unsettledResult.diagnostic.presubmit.fields, { CARD_NUMBER: false, CARD_EXPIRY: false, CARD_CVV: false, EMAIL: false });
+
+  // The pay phase records no card submission for a page that never settled.
+  const { deps } = dependencies({ browser: async () => unsettledResult });
+  const receipt = await runLostCallbackPayment(INPUT, deps);
+  assert.equal(receipt.failure, "PAYMENT_FIELDS_UNSETTLED");
+  assert.equal(receipt.sideEffects.paymentSubmissions, 0);
+  assert.equal(validatePayReceipt(receipt), true);
 });
 
 test("browser: the dialog result is fixed before the field list is read; a callback during the read changes nothing", async () => {
@@ -710,7 +891,7 @@ test("browser: no Return or a rejected UPP document ends without a capture", asy
   const unobserved = await defaultLostCallbackBrowser(BROWSER_INPUT, { playwright: silent.playwright, returnWaitMs: 0 });
   assert.deepEqual({ ...unobserved, diagnostic: fixedSeconds(unobserved.diagnostic) }, {
     code: "PAYMENT_RETURN_UNOBSERVED", appCallbackRequests: 0,
-    diagnostic: { dialogs: [], externalHosts: [], payuniPostsAfterSubmit: 0, afterSubmitSeconds: 0, formFields: null },
+    diagnostic: { dialogs: [], externalHosts: [], payuniPostsAfterSubmit: 0, afterSubmitSeconds: 0, presubmit: SETTLED_PRESUBMIT, formFields: null },
   });
   assert.equal(submitClicks(silent.log), 1);
   const rejected = fakePlaywright({ uppOk: false });
@@ -788,4 +969,49 @@ test("verify gate: only a successful protected pay run's PAID_CALLBACK_WITHHELD 
   }
   assert.equal(await verifyPayRunReceipt(base, async () => new Response("{}", { status: 404 })), "PAY_RUN_UNAVAILABLE");
   assert.equal(await verifyPayRunReceipt(base, async () => { throw new Error("synthetic network"); }), "PAY_RUN_UNAVAILABLE");
+});
+
+test("A4-05: a 確定 modal or a native dialog before the submit stops the drill unsubmitted, unclicked, with the field list", async () => {
+  // The in-page modal is already visible when the gate runs.
+  const modal = fakePlaywright({ dialogVisible: true, modalBeforeSubmit: true,
+    dialogRaw: { kind: "FIXED_LAYER", text: `${PAYUNI_MISSING_INFO_TEXT} 確定`, buttons: ["確定"] } });
+  const modalResult = await defaultLostCallbackBrowser(BROWSER_INPUT, { playwright: modal.playwright, payuniSettle: FAST });
+  assert.equal(modalResult.code, "PAYMENT_FIELDS_UNSETTLED");
+  assert.equal(submitClicks(modal.log), 0, "never submitted");
+  assert.equal(modal.log.clicks.includes("確定"), false, "the modal is never clicked");
+  assert.equal(modalResult.diagnostic.presubmit.status, "DIALOG_BEFORE_SUBMIT");
+  assert.equal(modalResult.diagnostic.presubmit.confirmationVisible, true);
+  assert.equal(modalResult.diagnostic.presubmit.checks, 1, "the gate stops at once, it does not wait the modal out");
+  assert.deepEqual(modalResult.diagnostic.formFields, noFrames());
+
+  // A native alert while the expiry is typed: dismissed (never accepted), counted apart from after-submit dialogs.
+  const native = fakePlaywright({ nativeDialogBeforeSubmit: { type: "alert", message: `${PAYUNI_MISSING_INFO_TEXT} ${INPUT.cardNumber}` } });
+  const nativeResult = await defaultLostCallbackBrowser(BROWSER_INPUT, { playwright: native.playwright, payuniSettle: FAST, nativeDialogGraceMs: 0 });
+  assert.equal(nativeResult.code, "PAYMENT_FIELDS_UNSETTLED", "not PAYMENT_CONFIRMATION_DIALOG: nothing was submitted");
+  assert.equal(submitClicks(native.log), 0);
+  assert.equal(native.log.nativeDismissed, 1);
+  assert.equal(native.log.nativeAccepted, 0);
+  assert.equal(nativeResult.diagnostic.presubmit.status, "DIALOG_BEFORE_SUBMIT");
+  assert.equal(nativeResult.diagnostic.presubmit.dialogsBeforeSubmit, 1);
+  assert.equal(nativeResult.diagnostic.payuniPostsAfterSubmit, null);
+  assert.equal(nativeResult.diagnostic.formFields.missingInfoDialog, true);
+  const printed = [];
+  printBrowserDiagnostic(nativeResult.diagnostic, (line) => printed.push(line));
+  assert.equal(JSON.parse(printed[0].slice(printed[0].indexOf("=") + 1)).dialogsBeforeSubmit, 1);
+  for (const line of printed) assert.equal(line.includes(INPUT.cardNumber), false);
+
+  const { deps } = dependencies({ browser: async () => nativeResult });
+  const receipt = await runLostCallbackPayment(INPUT, deps);
+  assert.equal(receipt.failure, "PAYMENT_FIELDS_UNSETTLED");
+  assert.equal(receipt.sideEffects.paymentSubmissions, 0);
+});
+
+test("A4-05: a PayUni request that has waited longer than the stale limit is ignored and counted, not waited for", async () => {
+  const { playwright, log } = fakePlaywright({ dialogVisible: true, pendingPayUniRequest: true });
+  const result = await defaultLostCallbackBrowser(BROWSER_INPUT, { playwright, payuniSettle: { ...FAST, staleRequestMs: 0, quietMs: 0 } });
+  assert.equal(result.code, "PAYMENT_CONFIRMATION_DIALOG", "settled and submitted once");
+  assert.equal(submitClicks(log), 1);
+  assert.equal(result.diagnostic.presubmit.status, "SETTLED");
+  assert.equal(result.diagnostic.presubmit.payuniInflight, 0);
+  assert.equal(result.diagnostic.presubmit.payuniIgnored, 1);
 });

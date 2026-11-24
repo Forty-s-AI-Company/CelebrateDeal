@@ -7,16 +7,25 @@ import {
   attestOperationHost,
   capturePayUniConfirmationDialog,
   capturePayUniFormFieldDiagnostic,
+  createPayUniPresubmitDiagnostic,
   defaultRequest,
+  fillPayUniCardFields,
   fixedBrowserEnvironment,
   formatPayUniDialogDiagnostic,
   formatPayUniFormFieldDiagnostic,
+  formatPayUniPresubmitDiagnostic,
   nativePayUniDialogCapture,
+  payUniFormFieldFailure,
   prepareIssuedRecoveryCheckout,
   readFixedInputs,
   recordPayUniDialogCapture,
   recordPayUniExternalHost,
+  selectPayUniOneTimeCredit,
+  settlePayUniBeforeSubmit,
+  settleTiming,
+  trackPayUniRequests,
   validateInvocation,
+  waitForPayUniPageReady,
 } from "./mvp-payuni-sandbox-e2e.mjs";
 import { STAGING_ALIAS_HOST } from "./secure-staging-runner.mjs";
 
@@ -80,6 +89,8 @@ export const PAY_FAILURE_CODES = Object.freeze([
   "FORM_FIELDS_REJECTED",
   "PAYMENT_PROVIDER_HTTP_REJECTED",
   "PAYMENT_PAGE_REJECTED",
+  /** The card fields never settled (value, enabled button, quiet PayUni traffic): nothing was submitted. */
+  "PAYMENT_FIELDS_UNSETTLED",
   "PAYMENT_CONFIRMATION_DIALOG",
   "PAYMENT_RETURN_UNOBSERVED",
   "PAYMENT_RETURN_REJECTED",
@@ -432,10 +443,24 @@ function fail(receipt, code) {
  * of the page (name/id, label or placeholder, type, required, empty, checked,
  * :invalid; never a value) so a newly required PayUni field can be named; it
  * is read-only and runs after the stop decision, so it never changes the code.
+ * That list always carries a fixed status (CAPTURED, TIMEOUT, SCRIPT_ERROR...),
+ * so a failed read is printed as its reason instead of being silently dropped.
+ *
+ * Fill timing (A4-05): the drill waits for the UPP document to load, types the
+ * four known fields key by key with a blur after each (shared with the WP4
+ * runner), and clicks 確認送出 exactly once, only after the page has settled
+ * (every field holds the typed value, checked in the page as true/false; the
+ * button is enabled; no PayUni request in flight). A page that never settles is
+ * not submitted: PAYMENT_FIELDS_UNSETTLED, and its field list is read after that
+ * stop is fixed. A native dialog or a visible 確定 modal before the submit is
+ * DIALOG_BEFORE_SUBMIT in the pre-submit state, also never submitted. The
+ * pre-submit state travels in the diagnostic on every result after the fill,
+ * so passing and stopped runs can be compared.
  */
 export async function defaultLostCallbackBrowser(input, dependencies = {}) {
   const { chromium } = dependencies.playwright ?? await import("playwright");
   const browser = await chromium.launch({ headless: true, env: fixedBrowserEnvironment(), args: ["--no-proxy-server", "--disable-quic"] });
+  const timing = settleTiming(dependencies);
   let returnBody = null;
   let returnPosts = 0;
   let appCallbackRequests = 0;
@@ -444,12 +469,14 @@ export async function defaultLostCallbackBrowser(input, dependencies = {}) {
   let payuniPostsAfterSubmit = 0;
   const externalHosts = [];
   const dialogs = [];
+  const presubmit = createPayUniPresubmitDiagnostic();
   const diagnostic = () => ({
     dialogs: [...dialogs],
     externalHosts: [...externalHosts],
     payuniPostsAfterSubmit: submittedAt === null ? null : payuniPostsAfterSubmit,
     afterSubmitSeconds: submittedAt === null ? null : Math.max(0, Math.round((Date.now() - submittedAt) / 1_000)),
-    // Filled in only by stopOnDialog, after the result is fixed.
+    presubmit: { ...presubmit, fields: { ...presubmit.fields } },
+    // Filled in only by stopWithFields (a dialog stop or an unsettled page), after the result is fixed.
     formFields: null,
   });
   try {
@@ -479,15 +506,35 @@ export async function defaultLostCallbackBrowser(input, dependencies = {}) {
       return route.abort();
     });
     const page = await context.newPage();
+    const payuniTraffic = trackPayUniRequests(page, Date.now, timing.staleRequestMs);
+    // One native-dialog handler for the whole page, registered before anything is filled: it only
+    // dismisses (never accepts) and records. Dialogs before the submit are counted on their own and
+    // stop the pre-submit gate; only a dialog after the submit starts the Return grace period.
+    let dialogsBeforeSubmit = 0;
+    try {
+      page.on("dialog", (dialog) => {
+        // Dismiss first (never accept), then record; a failed record never blocks the dismissal.
+        try { void Promise.resolve(dialog.dismiss()).catch(() => {}); } catch { /* Already closed. */ }
+        if (submittedAt === null) dialogsBeforeSubmit += 1;
+        else if (nativeDialogAt === null) nativeDialogAt = Date.now();
+        try { recordPayUniDialogCapture(dialogs, nativePayUniDialogCapture(dialog)); } catch { /* Diagnostics only. */ }
+      });
+    } catch { /* A page without dialog events keeps Playwright's default dismissal. */ }
     /**
-     * Stop on a dialog. The result (code, callback count, seconds) is fixed before the read-only field
-     * list is collected; the collection only fills in `formFields`, so its time never changes the result.
+     * Stop with a fixed code. The result (code, callback count, seconds) is fixed before the read-only
+     * field list is collected; the collection only fills in `formFields`, so its time never changes the
+     * result. The list always ends with a status: a capture that throws becomes CAPTURE_FAILED, never null.
      */
-    const stopOnDialog = async () => {
-      const result = { code: "PAYMENT_CONFIRMATION_DIALOG", appCallbackRequests, diagnostic: diagnostic() };
-      try { result.diagnostic.formFields = await capturePayUniFormFieldDiagnostic(page, dialogs); } catch { result.diagnostic.formFields = null; }
+    const stopWithFields = async (code) => {
+      const result = { code, appCallbackRequests, diagnostic: diagnostic() };
+      try {
+        result.diagnostic.formFields = await capturePayUniFormFieldDiagnostic(page, dialogs, dependencies.formFieldBudget);
+      } catch {
+        result.diagnostic.formFields = payUniFormFieldFailure("CAPTURE_FAILED", dialogs);
+      }
       return result;
     };
+    const stopOnDialog = () => stopWithFields("PAYMENT_CONFIRMATION_DIALOG");
     // Same document handling as the WP4 runner: post the UPP form once through
     // the isolated request context, then serve that exact response to the page.
     const document = await context.request.post(PAYUNI_UPP_URL, {
@@ -497,26 +544,23 @@ export async function defaultLostCallbackBrowser(input, dependencies = {}) {
     await page.route(PAYUNI_UPP_URL, (route) => route.fulfill({ response: document }), { times: 1 });
     await page.goto(PAYUNI_UPP_URL, { waitUntil: "commit", timeout: REQUEST_TIMEOUT_MS });
     try {
-      await page.getByText("一次付清", { exact: true }).click({ timeout: 20_000 });
-      await page.locator('input[name="radioOptionpayGroupCredit"]').check({ force: true, timeout: 10_000 });
-      const card = page.getByPlaceholder("**** **** **** ****", { exact: true }).or(page.getByPlaceholder("16 碼或 19 碼", { exact: true }));
-      await card.pressSequentially(input.cardNumber, { timeout: 20_000 });
-      await page.getByPlaceholder("MM/YY", { exact: true }).pressSequentially(input.cardExpiry, { timeout: 20_000 });
-      await page.getByPlaceholder("***", { exact: true }).pressSequentially(input.cardCvv, { timeout: 20_000 });
-      await page.getByPlaceholder("example@example.com", { exact: true }).fill(SYNTHETIC_PAYER_EMAIL, { timeout: 20_000 });
-      try {
-        // Record and dismiss (never accept) a native dialog: the same outcome as Playwright's default.
-        page.on("dialog", (dialog) => {
-          // Dismiss first (never accept), then record; a failed record never blocks the dismissal.
-          try { void Promise.resolve(dialog.dismiss()).catch(() => {}); } catch { /* Already closed. */ }
-          if (nativeDialogAt === null) nativeDialogAt = Date.now();
-          try { recordPayUniDialogCapture(dialogs, nativePayUniDialogCapture(dialog)); } catch { /* Diagnostics only. */ }
-        });
-      } catch { /* A page without dialog events keeps Playwright's default dismissal. */ }
+      await waitForPayUniPageReady(page, presubmit, timing.pageLoadMs);
+      await selectPayUniOneTimeCredit(page);
+      // Only the four known fields, by their exact placeholders (shared with the WP4 runner).
+      const filled = await fillPayUniCardFields(page, input, SYNTHETIC_PAYER_EMAIL, undefined, timing.typeDelayMs);
+      const submit = page.getByRole("button", { name: "確認送出", exact: true });
+      const settled = await settlePayUniBeforeSubmit({
+        filled, submit, tracker: payuniTraffic, dialogs: { count: () => dialogsBeforeSubmit },
+        confirmation: page.getByRole("button", { name: "確定", exact: true }), presubmit, timing,
+      });
+      // Not settled (a dialog before the submit included): stop before the only submission. The field
+      // list is read after the stop is fixed, read-only; nothing reached PayUni's payment endpoint.
+      if (settled !== "SETTLED") return await stopWithFields("PAYMENT_FIELDS_UNSETTLED");
       submittedAt = Date.now();
-      await page.getByRole("button", { name: "確認送出", exact: true }).click({ timeout: 20_000 });
+      // The one and only submit click; it is never repeated, whatever happens next.
+      await submit.click({ timeout: 20_000 });
     } catch {
-      return { code: "PAYMENT_PAGE_REJECTED", appCallbackRequests };
+      return { code: "PAYMENT_PAGE_REJECTED", appCallbackRequests, diagnostic: diagnostic() };
     }
     const deadline = Date.now() + (Number.isSafeInteger(dependencies.returnWaitMs) ? dependencies.returnWaitMs : RETURN_WAIT_MS);
     const confirmation = page.getByRole("button", { name: "確定", exact: true });
@@ -534,9 +578,8 @@ export async function defaultLostCallbackBrowser(input, dependencies = {}) {
       if (nativeDialogAt !== null) return stopOnDialog();
       return { code: "PAYMENT_RETURN_UNOBSERVED", appCallbackRequests, diagnostic: diagnostic() };
     }
-    // A Return after a dismissed native dialog is still verified as PAID or not; the dialog is printed too.
-    if (dialogs.length > 0) return { code: "RETURN_CAPTURED", returnBody, returnPosts, appCallbackRequests, diagnostic: diagnostic() };
-    return { code: "RETURN_CAPTURED", returnBody, returnPosts, appCallbackRequests };
+    // A Return is still verified as PAID or not; the diagnostic (pre-submit state, any dismissed dialog) is printed too.
+    return { code: "RETURN_CAPTURED", returnBody, returnPosts, appCallbackRequests, diagnostic: diagnostic() };
   } finally {
     await browser.close();
   }
@@ -605,6 +648,8 @@ export async function runLostCallbackPayment(input, dependencies = {}) {
     } catch {
       return fail(receipt, "PAYMENT_PAGE_REJECTED");
     }
+    // The pre-submit gate stopped before the click: no card submission happened.
+    if (browserResult?.code === "PAYMENT_FIELDS_UNSETTLED") receipt.sideEffects.paymentSubmissions = 0;
     if (browserResult?.diagnostic && typeof dependencies.onBrowserDiagnostic === "function") {
       // Printed by the CLI only; the receipt keeps its fixed shape.
       try { dependencies.onBrowserDiagnostic(browserResult.diagnostic); } catch { /* Diagnostics never change the result. */ }
@@ -736,12 +781,21 @@ async function verifyPayRunMain() {
   if (code !== "VERIFIED") process.exitCode = 2;
 }
 
-/** One de-identified line for a stopped browser step; see formatPayUniDialogDiagnostic. */
-function printBrowserDiagnostic(diagnostic) {
-  const line = formatPayUniDialogDiagnostic(diagnostic);
-  if (line) console.log(`payuni_lost_callback_dialog=${line}`);
-  const fields = formatPayUniFormFieldDiagnostic(diagnostic?.formFields);
-  if (fields) console.log(`payuni_lost_callback_form_fields=${fields}`);
+/**
+ * De-identified lines for the browser step. Each line is formatted on its own: a formatter that
+ * throws prints `{"status":"FORMAT_FAILED"}` for that line and never hides the others (the pay phase
+ * swallows printer errors, which is how a missing line could go unnoticed).
+ */
+export function printBrowserDiagnostic(diagnostic, write = (line) => console.log(line)) {
+  const emit = (name, format) => {
+    let line;
+    try { line = format(); } catch { line = JSON.stringify({ status: "FORMAT_FAILED" }); }
+    if (line) write(`payuni_lost_callback_${name}=${line}`);
+  };
+  emit("presubmit", () => formatPayUniPresubmitDiagnostic(diagnostic?.presubmit));
+  emit("dialog", () => formatPayUniDialogDiagnostic(diagnostic));
+  // Present whenever the drill stopped on a dialog (formFields is then never null).
+  emit("form_fields", () => formatPayUniFormFieldDiagnostic(diagnostic?.formFields));
 }
 
 async function main() {

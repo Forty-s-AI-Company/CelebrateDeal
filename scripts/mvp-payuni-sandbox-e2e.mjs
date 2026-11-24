@@ -1277,7 +1277,7 @@ export const PAYUNI_CARD_FIELDS = Object.freeze([
 export const PAYUNI_CREDIT_TAB_TEXT = "信用卡";
 const PAYUNI_FIELD_TIMEOUT_MS = 20_000;
 const PAYUNI_FALLBACK_WAIT_MS = 10_000;
-const PAYUNI_BROWSER_STEPS = new Set(["NONE", "METHOD", ...PAYUNI_CARD_FIELDS.map((field) => field.step), "SUBMIT"]);
+const PAYUNI_BROWSER_STEPS = new Set(["NONE", "METHOD", ...PAYUNI_CARD_FIELDS.map((field) => field.step), "PRESUBMIT", "SUBMIT"]);
 const DIAGNOSTIC_ENUM = /^[A-Z_]{1,24}$/u;
 const FIELD_SOURCES = new Set(["NONE", "PLACEHOLDER", "LEGACY_PLACEHOLDER", "AUTOCOMPLETE", "PLACEHOLDER_AFTER_TAB", "AUTOCOMPLETE_AFTER_TAB"]);
 const CREDIT_TAB_RESULTS = new Set(["NOT_TRIED", "CLICKED", "NOT_FOUND", "AMBIGUOUS"]);
@@ -1302,6 +1302,8 @@ export function createPayUniBrowserDiagnostic() {
     externalHosts: [],
     // Every reachable form control's state after a stopped submit; see capturePayUniFormFieldDiagnostic.
     formFields: null,
+    // Page load, per-field match, button and PayUni traffic state before the one submit; see settlePayUniBeforeSubmit.
+    presubmit: createPayUniPresubmitDiagnostic(),
   };
 }
 
@@ -1482,8 +1484,22 @@ const FORM_CUSTOM_HINTS = new Set(["CHECKBOX", "AGREE", "CONSENT", "TERMS", "SWI
  * of an editable control are read solely to compute `empty` and to reject label text that echoes a
  * typed value; they are never returned. Label text skips every form control and editable area, and
  * a neighbour or parent is used only when it holds no other control, so a typed value cannot leak.
+ *
+ * A4-05 (run 45388812344 printed no field list at all): every stage is caught on its own, so a page
+ * script that breaks one stage still returns the other stages, plus `stageErrors` as fixed
+ * "STAGE:ErrorName" codes (never the message). When the typed-value stage fails no label or
+ * agreement text is returned, because the echo guard could not be built.
  */
 export function collectPayUniFormFieldsInPage(limit) {
+  const ERROR_NAMES = ["TypeError", "ReferenceError", "RangeError", "SyntaxError", "EvalError", "URIError",
+    "SecurityError", "NotSupportedError", "InvalidStateError"];
+  const stageErrors = [];
+  const failed = (stage, error) => {
+    let name = "OTHER";
+    try { if (ERROR_NAMES.includes(String(error?.name ?? ""))) name = String(error.name); } catch { /* Unreadable error. */ }
+    const code = `${stage}:${name}`;
+    if (!stageErrors.includes(code) && stageErrors.length < 5) stageErrors.push(code);
+  };
   const VALUE_ROLES = new Set(["textbox", "combobox", "listbox", "spinbutton", "searchbox"]);
   const SKIP_TAGS = new Set(["INPUT", "SELECT", "TEXTAREA", "OPTION", "SCRIPT", "STYLE", "NOSCRIPT", "TEMPLATE", "IFRAME"]);
   const attribute = (element, name) => String(element?.getAttribute?.(name) ?? "").slice(0, 200);
@@ -1511,34 +1527,39 @@ export function collectPayUniFormFieldsInPage(limit) {
   const selector = 'input, select, textarea, [role="checkbox"], [role="switch"], [role="radio"], [role="combobox"], [role="textbox"], '
     + '[role="listbox"], [role="spinbutton"], [role="searchbox"], [contenteditable=""], [contenteditable="true"], [contenteditable="plaintext-only"]';
   const roots = [document];
-  for (let index = 0; index < roots.length && roots.length < 20; index += 1) {
-    for (const element of roots[index].querySelectorAll("*")) {
-      if (element.shadowRoot && roots.length < 20) roots.push(element.shadowRoot);
+  try {
+    for (let index = 0; index < roots.length && roots.length < 20; index += 1) {
+      for (const element of roots[index].querySelectorAll("*")) {
+        if (element.shadowRoot && roots.length < 20) roots.push(element.shadowRoot);
+      }
     }
-  }
+  } catch (error) { failed("ROOTS", error); }
   // Typed values of this frame, kept in the page only so that text echoing one (a neighbour span
   // that mirrors the card holder or card number) is never used as a label. Never returned.
   const normalize = (value) => String(value ?? "").replace(/\s+/gu, " ").trim().toLowerCase();
   const typedValues = [];
-  for (const root of roots) {
-    for (const element of root.querySelectorAll(selector)) {
-      try {
-        const tag = element.tagName;
-        const type = attribute(element, "type").toLowerCase();
-        let value = "";
-        if (tag === "TEXTAREA" || (tag === "INPUT" && !["checkbox", "radio", "hidden", "button", "submit", "reset", "image", "file"].includes(type))) value = element.value;
-        else if (tag !== "INPUT" && tag !== "SELECT" && holdsValue(element)) value = element.textContent;
-        const text = normalize(value);
-        if (text.length >= 2 && typedValues.length < 100) typedValues.push(text);
-      } catch { /* An unreadable control simply cannot be echoed. */ }
+  let echoGuard = true;
+  try {
+    for (const root of roots) {
+      for (const element of root.querySelectorAll(selector)) {
+        try {
+          const tag = element.tagName;
+          const type = attribute(element, "type").toLowerCase();
+          let value = "";
+          if (tag === "TEXTAREA" || (tag === "INPUT" && !["checkbox", "radio", "hidden", "button", "submit", "reset", "image", "file"].includes(type))) value = element.value;
+          else if (tag !== "INPUT" && tag !== "SELECT" && holdsValue(element)) value = element.textContent;
+          const text = normalize(value);
+          if (text.length >= 2 && typedValues.length < 100) typedValues.push(text);
+        } catch { echoGuard = false; }
+      }
     }
-  }
+  } catch (error) { echoGuard = false; failed("TYPED", error); }
   const isEcho = (text) => {
     const candidate = normalize(text);
     return candidate !== "" && typedValues.some((value) => candidate.includes(value) || (candidate.length >= 3 && value.includes(candidate)));
   };
-  /** Text kept as a label only when it does not repeat a typed value. */
-  const accept = (text) => (text && !isEcho(text) ? text : "");
+  /** Text kept as a label only when the echo guard is complete and the text does not repeat a typed value. */
+  const accept = (text) => (echoGuard && text && !isEcho(text) ? text : "");
   const fieldCount = (element) => {
     try {
       return (element?.matches?.(selector) ? 1 : 0) + (element?.querySelectorAll?.(selector).length ?? 0);
@@ -1572,83 +1593,93 @@ export function collectPayUniFormFieldsInPage(limit) {
   const fields = [];
   let hiddenInputs = 0;
   let total = 0;
-  for (const root of roots) {
-    for (const element of root.querySelectorAll(selector)) {
-      const tag = String(element.tagName ?? "").toLowerCase();
-      const native = tag === "input" || tag === "select" || tag === "textarea";
-      const role = attribute(element, "role").toLowerCase();
-      const type = tag === "input" ? (attribute(element, "type").toLowerCase() || "text") : native ? tag : (role || "editable");
-      if (tag === "input" && type === "hidden") { hiddenInputs += 1; continue; }
-      total += 1;
-      if (fields.length >= limit) continue;
-      const toggle = ["checkbox", "radio", "switch"].includes(type);
-      let empty = null;
-      let checked = null;
-      try {
-        if (toggle) checked = native ? element.checked === true : attribute(element, "aria-checked") === "true";
-        else if (native) empty = String(element.value ?? "") === "";
-        else empty = String(element.textContent ?? "").trim() === "";
-      } catch { /* Unknown state stays null. */ }
-      let invalid = attribute(element, "aria-invalid") === "true";
-      try { if (native && element.matches(":invalid")) invalid = true; } catch { /* No :invalid support. */ }
-      fields.push({
-        tag, type, name: attribute(element, "name"), id: attribute(element, "id"),
-        label: (!native && toggle ? accept(ownText(element)) : "") || labelOf(element),
-        placeholder: attribute(element, "placeholder"), autocomplete: attribute(element, "autocomplete"),
-        visible: shown(element),
-        required: element.required === true || element.hasAttribute?.("required") === true,
-        ariaRequired: attribute(element, "aria-required") === "true",
-        empty, checked, invalid,
-        disabled: element.disabled === true || attribute(element, "aria-disabled") === "true",
-        shadow: root !== document,
-      });
+  try {
+    for (const root of roots) {
+      for (const element of root.querySelectorAll(selector)) {
+        try {
+          const tag = String(element.tagName ?? "").toLowerCase();
+          const native = tag === "input" || tag === "select" || tag === "textarea";
+          const role = attribute(element, "role").toLowerCase();
+          const type = tag === "input" ? (attribute(element, "type").toLowerCase() || "text") : native ? tag : (role || "editable");
+          if (tag === "input" && type === "hidden") { hiddenInputs += 1; continue; }
+          total += 1;
+          if (fields.length >= limit) continue;
+          const toggle = ["checkbox", "radio", "switch"].includes(type);
+          let empty = null;
+          let checked = null;
+          try {
+            if (toggle) checked = native ? element.checked === true : attribute(element, "aria-checked") === "true";
+            else if (native) empty = String(element.value ?? "") === "";
+            else empty = String(element.textContent ?? "").trim() === "";
+          } catch { /* Unknown state stays null. */ }
+          let invalid = attribute(element, "aria-invalid") === "true";
+          try { if (native && element.matches(":invalid")) invalid = true; } catch { /* No :invalid support. */ }
+          let label = "";
+          try { label = (!native && toggle ? accept(ownText(element)) : "") || labelOf(element); } catch (error) { failed("LABEL", error); }
+          fields.push({
+            tag, type, name: attribute(element, "name"), id: attribute(element, "id"),
+            label,
+            placeholder: attribute(element, "placeholder"), autocomplete: attribute(element, "autocomplete"),
+            visible: shown(element),
+            required: element.required === true || element.hasAttribute?.("required") === true,
+            ariaRequired: attribute(element, "aria-required") === "true",
+            empty, checked, invalid,
+            disabled: element.disabled === true || attribute(element, "aria-disabled") === "true",
+            shadow: root !== document,
+          });
+        } catch (error) { failed("FIELD", error); }
+      }
     }
-  }
+  } catch (error) { failed("FIELDS", error); }
   const hint = /(?:check-?box|agree|consent|terms|switch|toggle)/iu;
   const custom = [];
-  for (const root of roots) {
-    for (const element of root.querySelectorAll("[class]")) {
-      if (custom.length >= 10) break;
-      if (element.matches?.(selector) || !shown(element)) continue;
-      const className = String(element.className?.baseVal ?? element.className ?? "");
-      const match = className.match(hint);
-      if (!match) continue;
-      custom.push({
-        tag: String(element.tagName ?? "").toLowerCase(), hint: match[0].replace("-", "").toUpperCase(),
-        label: accept(ownText(element)) || contextText(element),
-        checked: /(?:^|[\s_-])(?:is-)?(?:checked|active|selected|on)(?:$|[\s_-])/iu.test(className) || attribute(element, "aria-checked") === "true",
-        containsInput: Boolean(element.querySelector?.("input")),
-      });
+  try {
+    for (const root of roots) {
+      for (const element of root.querySelectorAll("[class]")) {
+        if (custom.length >= 10) break;
+        if (element.matches?.(selector) || !shown(element)) continue;
+        const className = String(element.className?.baseVal ?? element.className ?? "");
+        const match = className.match(hint);
+        if (!match) continue;
+        custom.push({
+          tag: String(element.tagName ?? "").toLowerCase(), hint: match[0].replace("-", "").toUpperCase(),
+          label: accept(ownText(element)) || contextText(element),
+          checked: /(?:^|[\s_-])(?:is-)?(?:checked|active|selected|on)(?:$|[\s_-])/iu.test(className) || attribute(element, "aria-checked") === "true",
+          containsInput: Boolean(element.querySelector?.("input")),
+        });
+      }
     }
-  }
+  } catch (error) { failed("CUSTOM", error); }
   const agreementWords = /(?:條款|政策|同意)/u;
   const agreement = [];
   const seen = new Set();
-  for (const root of roots) {
-    for (const element of root.querySelectorAll("a, label, span, p, div, li")) {
-      if (agreement.length >= 3) break;
-      const own = ownText(element, 300);
-      if (!agreementWords.test(own) || !shown(element)) continue;
-      if (Array.from(element.children ?? []).some((child) => agreementWords.test(ownText(child, 300)))) continue;
-      let container = element;
-      // Climb to the agreement row, but never into a block that also holds a text, select or textarea field.
-      for (let parent = element.parentElement, depth = 0; parent && depth < 3; parent = parent.parentElement, depth += 1) {
-        if (ownText(parent, 300).length > 150) break;
-        if (parent.querySelector?.('select, textarea, input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"])')) break;
-        container = parent;
+  try {
+    for (const root of roots) {
+      for (const element of root.querySelectorAll("a, label, span, p, div, li")) {
+        if (agreement.length >= 3) break;
+        const own = ownText(element, 300);
+        if (!agreementWords.test(own) || !shown(element)) continue;
+        if (Array.from(element.children ?? []).some((child) => agreementWords.test(ownText(child, 300)))) continue;
+        let container = element;
+        // Climb to the agreement row, but never into a block that also holds a text, select or textarea field.
+        for (let parent = element.parentElement, depth = 0; parent && depth < 3; parent = parent.parentElement, depth += 1) {
+          if (ownText(parent, 300).length > 150) break;
+          if (parent.querySelector?.('select, textarea, input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"])')) break;
+          container = parent;
+        }
+        const text = accept(ownText(container, 300));
+        if (!text || seen.has(text)) continue;
+        seen.add(text);
+        const toggles = container.querySelectorAll?.('input[type="checkbox"], input[type="radio"], [role="checkbox"], [role="switch"], [class]') ?? [];
+        agreement.push({
+          text,
+          hasToggle: Array.from(toggles).some((node) => node.matches?.('input, [role="checkbox"], [role="switch"]')
+            || hint.test(String(node.className?.baseVal ?? node.className ?? ""))),
+        });
       }
-      const text = accept(ownText(container, 300));
-      if (!text || seen.has(text)) continue;
-      seen.add(text);
-      const toggles = container.querySelectorAll?.('input[type="checkbox"], input[type="radio"], [role="checkbox"], [role="switch"], [class]') ?? [];
-      agreement.push({
-        text,
-        hasToggle: Array.from(toggles).some((node) => node.matches?.('input, [role="checkbox"], [role="switch"]')
-          || hint.test(String(node.className?.baseVal ?? node.className ?? ""))),
-      });
     }
-  }
-  return { fields, total, hiddenInputs, shadowRoots: roots.length - 1, custom, agreement };
+  } catch (error) { failed("AGREEMENT", error); }
+  return { fields, total, hiddenInputs, shadowRoots: roots.length - 1, custom, agreement, stageErrors };
 }
 
 function payUniFrameHost(frame) {
@@ -1667,6 +1698,16 @@ function formIdentifier(value) {
   return sanitizeStructureText(sanitizePayUniDialogText(value, STRUCTURE_TEXT_MAX));
 }
 
+/** A frame host is sanitized once in capture and again when printed; "*.example.com" survives the second pass. */
+function safePayUniFrameHost(host) {
+  if (["MAIN", "BLANK", "UNKNOWN", "OTHER", "IP"].includes(host)) return host;
+  if (typeof host === "string" && host.startsWith("*.")) {
+    const rest = sanitizePayUniHostName(host.slice(2));
+    return rest.includes(".") && !rest.startsWith("*.") ? `*.${rest}` : "OTHER";
+  }
+  return sanitizePayUniHostName(host);
+}
+
 /** Sanitize one frame's raw form controls; unknown shapes yield empty lists and every value is re-checked. */
 export function sanitizePayUniFormFields(raw, frame = 0, host = "MAIN") {
   const source = raw !== null && typeof raw === "object" ? raw : {};
@@ -1674,16 +1715,9 @@ export function sanitizePayUniFormFields(raw, frame = 0, host = "MAIN") {
   const kind = (value) => (typeof value === "string" && /^[a-z][a-z0-9-]{0,23}$/u.test(value.toLowerCase()) ? value.toLowerCase() : value ? "other" : "");
   const count = (value, cap) => (Number.isSafeInteger(value) && value >= 0 ? Math.min(value, cap) : 0);
   const tri = (value) => (value === true ? true : value === false ? false : null);
-  const wildcard = (value) => {
-    const rest = sanitizePayUniHostName(value.slice(2));
-    return rest.includes(".") && !rest.startsWith("*.") ? `*.${rest}` : "OTHER";
-  };
-  // A host is sanitized once in capture and again when printed; "*.example.com" survives the second pass.
-  const safeHost = ["MAIN", "BLANK", "UNKNOWN", "OTHER", "IP"].includes(host) ? host
-    : typeof host === "string" && host.startsWith("*.") ? wildcard(host) : sanitizePayUniHostName(host);
   return {
     frame: Number.isSafeInteger(frame) && frame >= 0 ? Math.min(frame, 9) : 0,
-    host: safeHost,
+    host: safePayUniFrameHost(host),
     total: count(source.total, 999),
     hiddenInputs: count(source.hiddenInputs, 99),
     shadowRoots: count(source.shadowRoots, 99),
@@ -1723,30 +1757,140 @@ export function isPayUniMissingInfoDialog(captures) {
   return Array.isArray(captures) && captures.some((capture) => typeof capture?.text === "string" && capture.text.includes(PAYUNI_MISSING_INFO_TEXT));
 }
 
-/** Sanitized form controls of the main frame and up to seven child frames; time-boxed, never throws, never clicks. */
-export async function capturePayUniFormFields(page) {
-  const frames = [];
+// ---- Field-list capture outcome (A4-05, run 45388812344: the drill stopped on the missing-info modal
+// and printed the dialog line, but no `payuni_lost_callback_form_fields=` line at all). The old
+// capture turned every per-frame failure (a 2 s time-box, an exception inside the PayUni page, a
+// navigation that destroyed the context, a closed page, no frames) into the same `null`, and a null
+// list was simply not printed. Now every capture carries a fixed `status` and one fixed `outcome`
+// per frame, so the line is always printed and says why it is empty; values never leave the page.
+export const PAYUNI_FORM_FIELD_STATUSES = Object.freeze([
+  "CAPTURED", "PARTIAL", "NO_FRAMES", "PAGE_CLOSED", "TIMEOUT", "SCRIPT_ERROR", "CONTEXT_DESTROYED",
+  "TARGET_CLOSED", "FRAME_DETACHED", "EMPTY", "SKIPPED", "OTHER", "CAPTURE_FAILED", "NOT_PAYUNI_PAGE",
+]);
+const FORM_FIELD_STATUS_SET = new Set(PAYUNI_FORM_FIELD_STATUSES);
+const FORM_FRAME_OUTCOMES = new Set(["CAPTURED", "PARTIAL", "TIMEOUT", "SCRIPT_ERROR", "CONTEXT_DESTROYED", "TARGET_CLOSED",
+  "FRAME_DETACHED", "EMPTY", "SKIPPED", "OTHER"]);
+const FORM_STAGE_ERROR = /^(?:ROOTS|TYPED|FIELDS|FIELD|LABEL|CUSTOM|AGREEMENT):(?:TypeError|ReferenceError|RangeError|SyntaxError|EvalError|URIError|SecurityError|NotSupportedError|InvalidStateError|OTHER)$/u;
+const FORM_STAGE_ERRORS_MAX = 5;
+/** Main frame first and longest; the whole capture is bounded so a stop is never delayed by more than 15 s. */
+export const PAYUNI_FORM_FIELD_BUDGET = Object.freeze({ mainFrameMs: 6_000, childFrameMs: 2_000, totalMs: 15_000 });
+
+/** A Playwright evaluate failure reduced to a fixed code; the message (selectors, page text) is never kept. */
+export function classifyPayUniEvaluateError(error) {
+  if (!(error instanceof Error)) return "OTHER";
+  const text = `${error.name} ${error.message}`;
+  if (/Execution context was destroyed|because of a navigation/iu.test(text)) return "CONTEXT_DESTROYED";
+  if (/Target page, context or browser has been closed|TargetClosedError|Target closed/iu.test(text)) return "TARGET_CLOSED";
+  if (/Frame was detached|frame got detached|detached frame/iu.test(text)) return "FRAME_DETACHED";
+  if (/\b(?:TypeError|ReferenceError|RangeError|SyntaxError|EvalError|URIError)\b/u.test(text)) return "SCRIPT_ERROR";
+  if (error.name === "TimeoutError") return "TIMEOUT";
+  return "OTHER";
+}
+
+function sanitizeFormStageErrors(value) {
+  return [...new Set((Array.isArray(value) ? value : []).filter((code) => typeof code === "string" && FORM_STAGE_ERROR.test(code)))]
+    .slice(0, FORM_STAGE_ERRORS_MAX);
+}
+
+function sanitizeFormFrameOutcome(item) {
+  return {
+    frame: Number.isSafeInteger(item?.frame) && item.frame >= 0 ? Math.min(item.frame, 9) : 0,
+    host: safePayUniFrameHost(item?.host),
+    outcome: FORM_FRAME_OUTCOMES.has(item?.outcome) ? item.outcome : "OTHER",
+    stageErrors: sanitizeFormStageErrors(item?.stageErrors),
+  };
+}
+
+/** {value} | {error} | {timedOut}; the timer is always cleared. */
+async function settleWithin(work, milliseconds) {
+  let timer;
   try {
-    const all = page.frames().slice(0, FORM_FRAMES_MAX);
-    for (const [index, frame] of all.entries()) {
-      const raw = await withinMs(Promise.resolve().then(() => frame.evaluate(collectPayUniFormFieldsInPage, FORM_FIELDS_MAX)).catch(() => null), 2_000);
-      if (raw && typeof raw === "object") frames.push(sanitizePayUniFormFields(raw, index, index === 0 ? "MAIN" : payUniFrameHost(frame)));
+    return await Promise.race([
+      Promise.resolve().then(work).then((value) => ({ value }), (error) => ({ error })),
+      new Promise((resolve) => { timer = setTimeout(() => resolve({ timedOut: true }), milliseconds); }),
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/**
+ * Sanitized form controls of the main frame and up to seven child frames, with the overall status
+ * and one fixed outcome per frame. Time-boxed per frame and overall; never throws, never clicks.
+ */
+export async function capturePayUniFormFieldResult(page, budget = PAYUNI_FORM_FIELD_BUDGET, now = Date.now) {
+  const limits = Object.fromEntries(Object.entries(PAYUNI_FORM_FIELD_BUDGET).map(([key, value]) =>
+    [key, Number.isSafeInteger(budget?.[key]) && budget[key] >= 0 ? budget[key] : value]));
+  const frames = [];
+  const outcomes = [];
+  try { if (typeof page?.isClosed === "function" && page.isClosed() === true) return { status: "PAGE_CLOSED", frames, outcomes }; } catch { /* Unknown. */ }
+  let all;
+  try {
+    all = page.frames().slice(0, FORM_FRAMES_MAX);
+  } catch (error) {
+    return { status: classifyPayUniEvaluateError(error) === "TARGET_CLOSED" ? "PAGE_CLOSED" : "NO_FRAMES", frames, outcomes };
+  }
+  if (!Array.isArray(all) || all.length === 0) return { status: "NO_FRAMES", frames, outcomes };
+  const deadline = now() + limits.totalMs;
+  for (const [index, frame] of all.entries()) {
+    let host = "UNKNOWN";
+    try { host = index === 0 ? "MAIN" : payUniFrameHost(frame); } catch { /* Unknown host. */ }
+    const remaining = deadline - now();
+    if (remaining <= 0) { outcomes.push({ frame: index, host, outcome: "SKIPPED", stageErrors: [] }); continue; }
+    const settled = await settleWithin(() => frame.evaluate(collectPayUniFormFieldsInPage, FORM_FIELDS_MAX),
+      Math.min(index === 0 ? limits.mainFrameMs : limits.childFrameMs, remaining));
+    let outcome;
+    let stageErrors = [];
+    if (settled.timedOut) outcome = "TIMEOUT";
+    else if (settled.error) outcome = classifyPayUniEvaluateError(settled.error);
+    else if (!settled.value || typeof settled.value !== "object") outcome = "EMPTY";
+    else {
+      stageErrors = sanitizeFormStageErrors(settled.value.stageErrors);
+      frames.push(sanitizePayUniFormFields(settled.value, index, host));
+      outcome = stageErrors.length > 0 ? "PARTIAL" : "CAPTURED";
     }
-  } catch { /* No field list is better than a changed failure code. */ }
-  return frames;
+    outcomes.push({ frame: index, host, outcome, stageErrors });
+  }
+  let status;
+  if (frames.length === 0) status = outcomes[0]?.outcome ?? "NO_FRAMES";
+  else status = outcomes.every((item) => item.outcome === "CAPTURED") ? "CAPTURED" : "PARTIAL";
+  return { status, frames, outcomes: outcomes.map(sanitizeFormFrameOutcome) };
 }
 
-/** `{missingInfoDialog, frames}` for the dialog captures seen so far, or null when no frame was readable. */
-export async function capturePayUniFormFieldDiagnostic(page, dialogCaptures) {
-  const frames = await capturePayUniFormFields(page);
-  return frames.length > 0 ? { missingInfoDialog: isPayUniMissingInfoDialog(dialogCaptures), frames } : null;
+/** Sanitized form controls only (older callers); never throws. */
+export async function capturePayUniFormFields(page) {
+  try { return (await capturePayUniFormFieldResult(page)).frames; } catch { return []; }
 }
 
-/** One JSON line of the re-sanitized field list; null when nothing was captured. */
+/** A field-list diagnostic that carries only a failure status (the capture itself failed or was not possible). */
+export function payUniFormFieldFailure(status, dialogCaptures = []) {
+  return {
+    status: FORM_FIELD_STATUS_SET.has(status) ? status : "CAPTURE_FAILED",
+    missingInfoDialog: isPayUniMissingInfoDialog(dialogCaptures), frames: [], outcomes: [],
+  };
+}
+
+/** `{status, missingInfoDialog, frames, outcomes}` for the dialog captures seen so far; never null, never throws. */
+export async function capturePayUniFormFieldDiagnostic(page, dialogCaptures, budget = PAYUNI_FORM_FIELD_BUDGET) {
+  try {
+    const result = await capturePayUniFormFieldResult(page, budget);
+    return { status: result.status, missingInfoDialog: isPayUniMissingInfoDialog(dialogCaptures), frames: result.frames, outcomes: result.outcomes };
+  } catch {
+    return payUniFormFieldFailure("CAPTURE_FAILED", dialogCaptures);
+  }
+}
+
+/**
+ * One JSON line of the re-sanitized field list. Any object prints, also with no frames, so a failed
+ * capture is visible as its status; only a missing diagnostic (no capture was attempted) is null.
+ */
 export function formatPayUniFormFieldDiagnostic(value) {
-  if (!value || typeof value !== "object" || !Array.isArray(value.frames) || value.frames.length === 0) return null;
-  const frames = value.frames.slice(0, FORM_FRAMES_MAX).map((frame) => sanitizePayUniFormFields(frame, frame?.frame, frame?.host));
-  return JSON.stringify({ missingInfoDialog: value.missingInfoDialog === true, frames });
+  if (!value || typeof value !== "object") return null;
+  const frames = (Array.isArray(value.frames) ? value.frames : []).slice(0, FORM_FRAMES_MAX)
+    .map((frame) => sanitizePayUniFormFields(frame, frame?.frame, frame?.host));
+  const outcomes = (Array.isArray(value.outcomes) ? value.outcomes : []).slice(0, FORM_FRAMES_MAX).map(sanitizeFormFrameOutcome);
+  const status = FORM_FIELD_STATUS_SET.has(value.status) ? value.status : (frames.length > 0 ? "CAPTURED" : "NO_FRAMES");
+  return JSON.stringify({ status, missingInfoDialog: value.missingInfoDialog === true, outcomes, frames });
 }
 
 function withinMs(promise, milliseconds) {
@@ -2068,11 +2212,16 @@ export async function capturePayUniSubmitDiagnostic(page, diagnostic, operationH
   if (!diagnostic?.submit) return;
   const submit = diagnostic.submit;
   submit.captured = true;
+  // The field list always ends with a status (A4-05): CAPTURE_FAILED or NOT_PAYUNI_PAGE instead of nothing.
+  diagnostic.formFields = payUniFormFieldFailure("CAPTURE_FAILED", diagnostic.dialogTexts);
   try {
     const location = classifyPayUniSubmitLocation(page.url(), operationHost);
     submit.host = location.host;
     submit.path = location.path;
-    if (location.host !== "PAYUNI_UPP") return;
+    if (location.host !== "PAYUNI_UPP") {
+      diagnostic.formFields = payUniFormFieldFailure("NOT_PAYUNI_PAGE", diagnostic.dialogTexts);
+      return;
+    }
     const frames = page.frames().slice(0, STRUCTURE_MAX_FRAMES);
     const collected = [];
     for (const frame of frames) {
@@ -2082,9 +2231,10 @@ export async function capturePayUniSubmitDiagnostic(page, diagnostic, operationH
     submit.errors = sanitizePayUniSubmitErrors(collected);
     const structure = await capturePayUniPageStructure(page);
     if (structure.length > 0) diagnostic.structure = structure;
-    // Read-only list of every control and whether it is empty/checked/invalid; never a value.
-    diagnostic.formFields = await capturePayUniFormFieldDiagnostic(page, diagnostic.dialogTexts);
   } catch { /* No diagnostic is better than a changed failure code. */ }
+  if (diagnostic.formFields.status === "NOT_PAYUNI_PAGE") return;
+  // Read-only list of every control and whether it is empty/checked/invalid; never a value. Never throws.
+  diagnostic.formFields = await capturePayUniFormFieldDiagnostic(page, diagnostic.dialogTexts);
 }
 
 /** One fixed-vocabulary log line; every value is re-validated against its whitelist. */
@@ -2116,6 +2266,12 @@ export async function recordPayUniBrowserFailure(page, diagnostic, error, operat
     diagnostic.page = classifyPayUniBrowserPage(page.url(), operationHost);
     if (diagnostic.step === "SUBMIT") await capturePayUniSubmitDiagnostic(page, diagnostic, operationHost);
     else if (diagnostic.page.startsWith("PAYUNI_") && diagnostic.step !== "NONE") diagnostic.structure = await capturePayUniPageStructure(page);
+    // A page that never settled: the read-only field list, after the stop decision (A4-05 MINOR-3).
+    if (diagnostic.step === "PRESUBMIT") {
+      diagnostic.formFields = diagnostic.page.startsWith("PAYUNI_")
+        ? await capturePayUniFormFieldDiagnostic(page, diagnostic.dialogTexts)
+        : payUniFormFieldFailure("NOT_PAYUNI_PAGE", diagnostic.dialogTexts);
+    }
     const field = PAYUNI_CARD_FIELDS.find((item) => item.step === diagnostic.step);
     if (!field) return;
     diagnostic.mainFrameMatches = await withinMs(page.getByPlaceholder(field.placeholder, { exact: true }).count(), 2_000);
@@ -2130,10 +2286,10 @@ export async function recordPayUniBrowserFailure(page, diagnostic, error, operat
   } catch { /* Diagnostics never change the fixed failure code. */ }
 }
 
-async function selectPayUniOneTimeCredit(page, diagnostic) {
+export async function selectPayUniOneTimeCredit(page, diagnostic) {
   markPayUniBrowserStep(diagnostic, "METHOD");
-  await page.getByText("一次付清", { exact: true }).click();
-  await page.locator('input[name="radioOptionpayGroupCredit"]').check({ force: true });
+  await page.getByText("一次付清", { exact: true }).click({ timeout: 20_000 });
+  await page.locator('input[name="radioOptionpayGroupCredit"]').check({ force: true, timeout: 10_000 });
 }
 
 async function sleep(milliseconds) {
@@ -2189,26 +2345,251 @@ async function findPayUniFallbackField(page, field, diagnostic, waitMs = PAYUNI_
   } catch { return null; }
 }
 
-/** Fills the card fields in a fixed order and records only which step is active; never submits. */
-async function fillPayUniCardFields(page, input, email, fallbackWaitMs = PAYUNI_FALLBACK_WAIT_MS) {
+// ---- Fill timing (A4-05: "請確認付款資訊已填寫" after 確認送出 came and went between runs of the
+// same code: 45362693554 and 45388812344 stopped on it, 45376157147 paid). The runner opened the
+// UPP document at `commit`, started typing as soon as each field was visible, set the e-mail with a
+// single `fill()` (input event only, no key events) and clicked 確認送出 in the same tick. Any PayUni
+// script that binds its handlers late, formats on key events, or updates its own state after
+// change/blur or after a request could see an empty field that the DOM already showed. Now both
+// runners: wait for the document to load, type every field key by key and blur it, then re-check
+// in the page that each field holds the expected (formatted or masked) value, that 確認送出 is
+// enabled and that no PayUni request is in flight, twice in a row, before the one and only click.
+// A page that never settles is not submitted at all. A dialog after the click still stops the run.
+export const PAYUNI_SETTLE = Object.freeze({
+  pageLoadMs: 15_000, timeoutMs: 15_000, quietMs: 1_000, pollMs: 250, stablePolls: 2, typeDelayMs: 40, staleRequestMs: 5_000,
+});
+export const PAYUNI_PRESUBMIT_STATUSES = Object.freeze([
+  "NOT_RUN", "SETTLED", "FIELDS_UNSETTLED", "SUBMIT_DISABLED", "NETWORK_BUSY", "UNSTABLE", "DIALOG_BEFORE_SUBMIT",
+]);
+const PRESUBMIT_STATUS_SET = new Set(PAYUNI_PRESUBMIT_STATUSES);
+const PAGE_LOAD_STATES = new Set(["NOT_RUN", "LOADED", "DOM_ONLY", "TIMEOUT", "FAILED"]);
+const PRESUBMIT_FIELD_STEPS = Object.freeze(PAYUNI_CARD_FIELDS.map((field) => field.step));
+const TRACKED_PAYUNI_RESOURCES = new Set(["document", "script", "xhr", "fetch"]);
+
+/** De-identified pre-submit state: fixed enums, per-field booleans and bounded counts only. */
+export function createPayUniPresubmitDiagnostic() {
+  return {
+    status: "NOT_RUN", pageLoad: "NOT_RUN",
+    fields: Object.fromEntries(PRESUBMIT_FIELD_STEPS.map((step) => [step, null])),
+    submitEnabled: null, payuniInflight: null, payuniIgnored: null,
+    dialogsBeforeSubmit: 0, confirmationVisible: null, settleMs: null, checks: 0,
+  };
+}
+
+/** One JSON line of the re-validated pre-submit state; null when no state exists. */
+export function formatPayUniPresubmitDiagnostic(value) {
+  if (!value || typeof value !== "object") return null;
+  const bool = (item) => (item === true ? true : item === false ? false : null);
+  const count = (item, cap) => (Number.isSafeInteger(item) && item >= 0 ? Math.min(item, cap) : null);
+  return JSON.stringify({
+    status: PRESUBMIT_STATUS_SET.has(value.status) ? value.status : "NOT_RUN",
+    pageLoad: PAGE_LOAD_STATES.has(value.pageLoad) ? value.pageLoad : "NOT_RUN",
+    fields: Object.fromEntries(PRESUBMIT_FIELD_STEPS.map((step) => [step, bool(value.fields?.[step])])),
+    submitEnabled: bool(value.submitEnabled),
+    payuniInflight: count(value.payuniInflight, 99),
+    payuniIgnored: count(value.payuniIgnored, 99),
+    dialogsBeforeSubmit: count(value.dialogsBeforeSubmit, 9) ?? 0,
+    confirmationVisible: bool(value.confirmationVisible),
+    settleMs: count(value.settleMs, 99_999),
+    checks: count(value.checks, 999) ?? 0,
+  });
+}
+
+function isPayUniHostRequest(request) {
+  try {
+    const url = new URL(request.url());
+    return url.protocol === "https:" && (url.hostname === "payuni.com.tw" || url.hostname.endsWith(".payuni.com.tw"));
+  } catch { return false; }
+}
+
+/**
+ * Counts PayUni document/script/XHR/fetch requests still in flight and when the last one started or
+ * ended. Third-party and long-lived (websocket, event-stream) requests are not counted, and a request
+ * that has been waiting longer than `staleMs` (a long poll or keep-alive) is reported as ignored
+ * instead of blocking the submit forever. Never reads a URL beyond its host, a body or a header.
+ */
+export function trackPayUniRequests(page, now = Date.now, staleMs = PAYUNI_SETTLE.staleRequestMs) {
+  const pending = new Map();
+  let lastActivityAt = null;
+  const relevant = (request) => {
+    try { return isPayUniHostRequest(request) && TRACKED_PAYUNI_RESOURCES.has(request.resourceType()); } catch { return false; }
+  };
+  try {
+    page.on("request", (request) => { if (relevant(request)) { const at = now(); pending.set(request, at); lastActivityAt = at; } });
+    const done = (request) => { if (pending.delete(request)) lastActivityAt = now(); };
+    page.on("requestfinished", done);
+    page.on("requestfailed", done);
+  } catch { /* A page without request events reports no PayUni traffic. */ }
+  const stale = (at) => [...pending.values()].filter((startedAt) => at - startedAt > staleMs).length;
+  return Object.freeze({
+    /** Requests in flight that started at most `staleMs` ago. */
+    inflight: (at = now()) => pending.size - stale(at),
+    /** Requests in flight for longer than `staleMs`; printed, never waited for. */
+    ignored: (at = now()) => stale(at),
+    quietFor: (at) => (lastActivityAt === null ? Number.POSITIVE_INFINITY : at - lastActivityAt),
+  });
+}
+
+/**
+ * Counts native dialogs (alert/confirm/prompt) that open before the one submit click. It only
+ * counts: the runner's own dialog handler still dismisses them. `markSubmitted()` freezes the count.
+ */
+export function countPayUniDialogsBeforeSubmit(page) {
+  let count = 0;
+  let submitted = false;
+  try { page.on("dialog", () => { if (!submitted) count += 1; }); } catch { /* No dialog events: nothing to count. */ }
+  return Object.freeze({ count: () => count, markSubmitted: () => { submitted = true; } });
+}
+
+/** Wait for DOMContentLoaded and then load, bounded; a timeout is recorded and the settle check still decides. */
+export async function waitForPayUniPageReady(page, presubmit, waitMs = PAYUNI_SETTLE.pageLoadMs, now = Date.now) {
+  const deadline = now() + waitMs;
+  let state = "FAILED";
+  try {
+    await page.waitForLoadState("domcontentloaded", { timeout: Math.max(1, deadline - now()) });
+    state = "DOM_ONLY";
+    await page.waitForLoadState("load", { timeout: Math.max(1, deadline - now()) });
+    state = "LOADED";
+  } catch (error) {
+    if (state === "FAILED" && classifyPlaywrightErrorKind(error) === "TIMEOUT") state = "TIMEOUT";
+  }
+  if (presubmit && typeof presubmit === "object") presubmit.pageLoad = state;
+  return state;
+}
+
+/**
+ * Runs inside the PayUni page on one card field. Compares the field's current value with the value
+ * the runner typed and returns only true or false; the value never leaves the page. Separators the
+ * page inserts while formatting (spaces, "-", "/") are ignored, and a character the page masked
+ * ("*", "•", "●", "x") counts as matching, but the length must be exact.
+ */
+export function payUniFieldMatchesInPage(element, expected) {
+  try {
+    const value = String(element?.value ?? "");
+    const want = String(expected?.value ?? "");
+    if (want === "" || value === "") return false;
+    if (expected?.step === "EMAIL") return value.trim() === want;
+    if (!/^[0-9\s\-/*•●xX]+$/u.test(value)) return false;
+    const got = value.replace(/[\s\-/]/gu, "");
+    if (got.length !== want.length) return false;
+    for (let index = 0; index < want.length; index += 1) {
+      if (got[index] !== want[index] && !/[*•●xX]/u.test(got[index])) return false;
+    }
+    if (expected?.step === "CARD_EXPIRY") return /^\d{2}\s*\/?\s*\d{2}$/u.test(value.trim()) || /[*•●xX]/u.test(got);
+    return true;
+  } catch { return false; }
+}
+
+/** Clear one known field, type it key by key, then blur it so change/blur handlers run before anything else. */
+async function enterPayUniField(locator, value, timeout, typeDelayMs) {
+  await locator.clear({ timeout });
+  await locator.pressSequentially(value, { delay: typeDelayMs, timeout });
+  await locator.blur({ timeout });
+}
+
+/**
+ * Fills the four known card fields in a fixed order (clear, then key by key, then blur), and records
+ * only which step is active; never submits. Returns the locator used for each step so the same
+ * elements are re-checked before the submit.
+ */
+export async function fillPayUniCardFields(page, input, email, fallbackWaitMs = PAYUNI_FALLBACK_WAIT_MS, typeDelayMs = PAYUNI_SETTLE.typeDelayMs) {
   const values = { CARD_NUMBER: input.cardNumber, CARD_EXPIRY: input.cardExpiry, CARD_CVV: input.cardCvv, EMAIL: email };
   const diagnostic = input.diagnostic ?? createPayUniBrowserDiagnostic();
+  const entered = {};
   for (const field of PAYUNI_CARD_FIELDS) {
     markPayUniBrowserStep(input.diagnostic, field.step);
-    const enter = (locator, timeout) => (field.step === "EMAIL"
-      ? locator.fill(values[field.step], { timeout })
-      : locator.pressSequentially(values[field.step], { timeout }));
+    const primary = page.getByPlaceholder(field.placeholder, { exact: true });
     try {
-      await enter(page.getByPlaceholder(field.placeholder, { exact: true }), PAYUNI_FIELD_TIMEOUT_MS);
+      await enterPayUniField(primary, values[field.step], PAYUNI_FIELD_TIMEOUT_MS, typeDelayMs);
+      entered[field.step] = primary;
       diagnostic.fieldSource = "PLACEHOLDER";
     } catch (error) {
       if (classifyPlaywrightErrorKind(error) !== "TIMEOUT") throw error;
       const fallback = await findPayUniFallbackField(page, field, diagnostic, fallbackWaitMs);
       if (!fallback) throw error;
       diagnostic.fieldSource = fallback.source;
-      await enter(fallback.locator, PAYUNI_FIELD_TIMEOUT_MS);
+      await enterPayUniField(fallback.locator, values[field.step], PAYUNI_FIELD_TIMEOUT_MS, typeDelayMs);
+      entered[field.step] = fallback.locator;
     }
   }
+  return Object.freeze({ locators: Object.freeze(entered), values: Object.freeze(values) });
+}
+
+/**
+ * The pre-submit gate. Polls until every filled field holds its expected value (checked in the
+ * page, true/false only), 確認送出 is enabled and no PayUni request has been in flight for
+ * `quietMs`, on `stablePolls` consecutive checks; otherwise returns why it did not settle.
+ *
+ * A native dialog that opened before the submit (`dialogs.count() > 0`) or a visible "確定" modal
+ * (`confirmation`) ends the gate at once with DIALOG_BEFORE_SUBMIT: the page is not in a state to be
+ * submitted, and the modal is never clicked. Every wait inside one check is cut to the time left, so
+ * the gate as a whole never runs past `timeoutMs` by more than one bookkeeping step. It never clicks,
+ * types or submits anything.
+ */
+export async function settlePayUniBeforeSubmit({
+  filled, submit, tracker = null, dialogs = null, confirmation = null, presubmit, timing = PAYUNI_SETTLE, now = Date.now, pause = sleep,
+}) {
+  const state = presubmit && typeof presubmit === "object" ? presubmit : createPayUniPresubmitDiagnostic();
+  const startedAt = now();
+  const deadline = startedAt + timing.timeoutMs;
+  const left = (cap) => Math.min(cap, Math.max(0, deadline - now()));
+  // At least one settled check, whatever the timing says: zero would let an unchecked page through.
+  const needed = Math.max(1, Number.isSafeInteger(timing.stablePolls) ? timing.stablePolls : PAYUNI_SETTLE.stablePolls);
+  let stable = 0;
+  let status = "FIELDS_UNSETTLED";
+  for (;;) {
+    state.checks += 1;
+    // A call that timed out only because the overall budget ran out says nothing about the page.
+    let cutShort = false;
+    const bounded = async (work, cap) => {
+      const budget = left(cap);
+      const result = await settleWithin(() => work(budget), budget);
+      if (result.timedOut && budget < cap) cutShort = true;
+      return result;
+    };
+    const dialogCount = dialogs ? dialogs.count() : 0;
+    state.dialogsBeforeSubmit = dialogCount;
+    if (dialogCount > 0) { status = "DIALOG_BEFORE_SUBMIT"; stable = 0; break; }
+    const visible = confirmation ? await bounded(() => confirmation.isVisible(), 2_000) : { value: false };
+    if (visible.value === true) { state.confirmationVisible = true; status = "DIALOG_BEFORE_SUBMIT"; stable = 0; break; }
+    const fields = {};
+    for (const step of PRESUBMIT_FIELD_STEPS) {
+      const locator = filled?.locators?.[step];
+      const result = locator
+        ? await bounded(() => locator.evaluate(payUniFieldMatchesInPage, { step, value: filled.values[step] }), 2_000)
+        : { value: false };
+      fields[step] = result.value === true;
+    }
+    const enabled = await bounded((budget) => submit.isEnabled({ timeout: Math.max(1, budget) }), 2_000);
+    // A check cut short by the deadline keeps the previous complete check's state (the first one is always kept).
+    if (cutShort && state.checks > 1) { state.checks -= 1; break; }
+    const at = now();
+    const inflight = tracker ? tracker.inflight(at) : 0;
+    const quiet = inflight === 0 && (tracker ? tracker.quietFor(at) : Number.POSITIVE_INFINITY) >= timing.quietMs;
+    state.confirmationVisible = visible.value === false ? false : null;
+    Object.assign(state, { fields, submitEnabled: enabled.value === true, payuniInflight: inflight, payuniIgnored: tracker?.ignored ? tracker.ignored(at) : 0 });
+    if (!Object.values(fields).every(Boolean)) status = "FIELDS_UNSETTLED";
+    else if (enabled.value !== true) status = "SUBMIT_DISABLED";
+    else if (!quiet) status = "NETWORK_BUSY";
+    // The modal check could not answer: not a dialog, but not a settled page either.
+    else if (state.confirmationVisible !== false) status = "UNSTABLE";
+    else status = "SETTLED";
+    stable = status === "SETTLED" ? stable + 1 : 0;
+    if (stable >= needed || now() >= deadline) break;
+    await pause(left(timing.pollMs));
+    if (now() >= deadline) break;
+  }
+  state.status = stable >= needed ? "SETTLED" : (status === "SETTLED" ? "UNSTABLE" : status);
+  state.settleMs = Math.max(0, now() - startedAt);
+  return state.status;
+}
+
+/** Settle timing; tests may shorten it. Only non-negative safe integers override PAYUNI_SETTLE. */
+export function settleTiming(dependencies = {}) {
+  const override = dependencies?.payuniSettle;
+  if (!override || typeof override !== "object") return PAYUNI_SETTLE;
+  return Object.freeze(Object.fromEntries(Object.entries(PAYUNI_SETTLE).map(([key, value]) =>
+    [key, Number.isSafeInteger(override[key]) && override[key] >= 0 ? override[key] : value])));
 }
 
 export async function defaultBrowserSubmit(input, dependencies = {}) {
@@ -2229,6 +2610,9 @@ export async function defaultBrowserSubmit(input, dependencies = {}) {
   const context = await browser.newContext({ locale: "zh-TW" });
   const page = await context.newPage();
   observePayUniSubmitDialogs(page, input.diagnostic);
+  const payuniTraffic = trackPayUniRequests(page, Date.now, settleTiming(dependencies).staleRequestMs);
+  const dialogsBeforeSubmit = countPayUniDialogsBeforeSubmit(page);
+  const presubmit = input.diagnostic?.presubmit ?? createPayUniPresubmitDiagnostic();
   const origin = fixedOrigin(input.previewHost);
   let stage = "PAYMENT_PAGE_UNREACHED";
   let apiPostSeen = false;
@@ -2305,13 +2689,22 @@ export async function defaultBrowserSubmit(input, dependencies = {}) {
       waitUntil: "commit",
       timeout: REQUEST_TIMEOUT_MS,
     });
+    await waitForPayUniPageReady(page, presubmit, settleTiming(dependencies).pageLoadMs);
     stage = "PAYMENT_METHOD_UNAVAILABLE";
     await selectPayUniOneTimeCredit(page, input.diagnostic);
     stage = "PAYMENT_FIELDS_REJECTED";
-    await fillPayUniCardFields(page, input, "wp4-buyer-v1@invalid.example", dependencies.payuniFallbackWaitMs);
+    const filled = await fillPayUniCardFields(page, input, "wp4-buyer-v1@invalid.example", dependencies.payuniFallbackWaitMs, settleTiming(dependencies).typeDelayMs);
+    const submitButton = page.getByRole("button", { name: "確認送出", exact: true });
+    // Only a settled page is submitted; an unsettled one ends here with no click at all.
+    markPayUniBrowserStep(input.diagnostic, "PRESUBMIT");
+    if (await settlePayUniBeforeSubmit({ filled, submit: submitButton, tracker: payuniTraffic, dialogs: dialogsBeforeSubmit,
+      confirmation: page.getByRole("button", { name: "確定", exact: true }), presubmit, timing: settleTiming(dependencies) }) !== "SETTLED") {
+      throw new Error("PAYMENT_FIELDS_UNSETTLED");
+    }
     stage = "PAYMENT_SUBMIT_REJECTED";
     markPayUniBrowserStep(input.diagnostic, "SUBMIT");
-    await page.getByRole("button", { name: "確認送出", exact: true }).click();
+    dialogsBeforeSubmit.markSubmitted();
+    await submitButton.click();
     const confirmation = page.getByRole("button", { name: "確定", exact: true });
     try {
       await confirmation.waitFor({ state: "visible", timeout: 5_000 });
@@ -2378,6 +2771,9 @@ export async function defaultSubscriptionBrowserSubmit(input, dependencies = {})
   const context = await browser.newContext({ locale: "zh-TW" });
   const page = await context.newPage();
   observePayUniSubmitDialogs(page, input.diagnostic);
+  const payuniTraffic = trackPayUniRequests(page, Date.now, settleTiming(dependencies).staleRequestMs);
+  const dialogsBeforeSubmit = countPayUniDialogsBeforeSubmit(page);
+  const presubmit = input.diagnostic?.presubmit ?? createPayUniPresubmitDiagnostic();
   const origin = fixedOrigin(input.previewHost);
   let stage = "CHECKOUT_REJECTED";
   let paymentPageOpened = false;
@@ -2441,14 +2837,23 @@ export async function defaultSubscriptionBrowserSubmit(input, dependencies = {})
     await page.route(PAYUNI_UPP_URL, (route) => route.fulfill({ response: paymentDocument }), { times: 1 });
     paymentPageOpened = true;
     await page.goto(PAYUNI_UPP_URL, { waitUntil: "commit", timeout: REQUEST_TIMEOUT_MS });
+    await waitForPayUniPageReady(page, presubmit, settleTiming(dependencies).pageLoadMs);
     stage = "PAYMENT_METHOD_UNAVAILABLE";
     await selectPayUniOneTimeCredit(page, input.diagnostic);
     stage = "PAYMENT_FIELDS_REJECTED";
-    await fillPayUniCardFields(page, input, "wp4-subscription-v1@invalid.example", dependencies.payuniFallbackWaitMs);
+    const filled = await fillPayUniCardFields(page, input, "wp4-subscription-v1@invalid.example", dependencies.payuniFallbackWaitMs, settleTiming(dependencies).typeDelayMs);
+    const submitButton = page.getByRole("button", { name: "確認送出", exact: true });
+    // Settled before the submission is marked: an unsettled page is never submitted.
+    markPayUniBrowserStep(input.diagnostic, "PRESUBMIT");
+    if (await settlePayUniBeforeSubmit({ filled, submit: submitButton, tracker: payuniTraffic, dialogs: dialogsBeforeSubmit,
+      confirmation: page.getByRole("button", { name: "確定", exact: true }), presubmit, timing: settleTiming(dependencies) }) !== "SETTLED") {
+      throw new Error("PAYMENT_FIELDS_UNSETTLED");
+    }
     stage = "PAYMENT_SUBMIT_REJECTED";
     if (input.markPaymentSubmission?.() !== true) return "PAYMENT_SUBMIT_REJECTED";
     markPayUniBrowserStep(input.diagnostic, "SUBMIT");
-    await page.getByRole("button", { name: "確認送出", exact: true }).click();
+    dialogsBeforeSubmit.markSubmitted();
+    await submitButton.click();
     const confirmation = page.getByRole("button", { name: "確定", exact: true });
     try {
       await confirmation.waitFor({ state: "visible", timeout: 5_000 });
@@ -3068,16 +3473,21 @@ async function attestedFlowDependencies(input) {
 /** Prints the de-identified PayUni page diagnostic only when a browser step failed. */
 function printBrowserDiagnostic(flowDependencies, result) {
   const diagnostic = flowDependencies?.browserDiagnostic;
-  if (result === "PASS" || !diagnostic || (diagnostic.step === "NONE" && diagnostic.error === "NONE")) return;
-  process.stdout.write(`wp4_payuni_browser_diagnostic=${formatPayUniBrowserDiagnostic(diagnostic)}\n`);
-  const structure = formatPayUniPageStructure(diagnostic);
-  if (structure) process.stdout.write(`wp4_payuni_page_structure=${structure}\n`);
-  const submit = formatPayUniSubmitDiagnostic(diagnostic);
-  if (submit) process.stdout.write(`wp4_payuni_submit_diagnostic=${submit}\n`);
-  const dialogText = formatPayUniDialogDiagnostic({ dialogs: diagnostic.dialogTexts, externalHosts: diagnostic.externalHosts });
-  if (dialogText) process.stdout.write(`wp4_payuni_dialog_text=${dialogText}\n`);
-  const formFields = formatPayUniFormFieldDiagnostic(diagnostic.formFields);
-  if (formFields) process.stdout.write(`wp4_payuni_form_fields=${formFields}\n`);
+  if (!diagnostic) return;
+  /** One line per diagnostic; a formatter that throws prints a fixed FORMAT_FAILED code instead of nothing. */
+  const emit = (name, format) => {
+    let line;
+    try { line = format(); } catch { line = JSON.stringify({ status: "FORMAT_FAILED" }); }
+    if (line) process.stdout.write(`wp4_payuni_${name}=${line}\n`);
+  };
+  // The pre-submit state is printed on a pass too, so passing and stopped runs can be compared.
+  if (diagnostic.presubmit && diagnostic.presubmit.pageLoad !== "NOT_RUN") emit("presubmit", () => formatPayUniPresubmitDiagnostic(diagnostic.presubmit));
+  if (result === "PASS" || (diagnostic.step === "NONE" && diagnostic.error === "NONE")) return;
+  emit("browser_diagnostic", () => formatPayUniBrowserDiagnostic(diagnostic));
+  emit("page_structure", () => formatPayUniPageStructure(diagnostic));
+  emit("submit_diagnostic", () => formatPayUniSubmitDiagnostic(diagnostic));
+  emit("dialog_text", () => formatPayUniDialogDiagnostic({ dialogs: diagnostic.dialogTexts, externalHosts: diagnostic.externalHosts }));
+  emit("form_fields", () => formatPayUniFormFieldDiagnostic(diagnostic.formFields));
 }
 
 /** JSON of the already-sanitized frames, re-sanitized and capped; null when nothing was captured. */
