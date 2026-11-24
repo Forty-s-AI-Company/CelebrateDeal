@@ -2984,7 +2984,7 @@ test("A4-05: the WP4 subscription runner never marks a submission for a page tha
     return callback(["MerID", "Version", "EncryptInfo", "HashInfo"].map((name) => ({ getAttribute: (key) => (key === "name" ? name : "synthetic") })));
   } };
   fake.page.locator = (selector) => (selector.includes("/api/billing/plans/select") ? plan
-    : selector.includes("https://sandbox-api.payuni.com.tw/api/upp") ? upp : { async check() {} });
+    : selector === 'form[action="https://sandbox-api.payuni.com.tw/api/upp"] input[type="hidden"]' ? upp : { async check() {} });
   fake.page.waitForURL = async () => {};
   const browser = { async newContext() { return { async addCookies() {}, async newPage() { return fake.page; },
     request: { async post() { return { status: () => 200, ok: () => true }; } } }; }, async close() {} };
