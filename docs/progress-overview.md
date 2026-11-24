@@ -148,8 +148,8 @@
 | 5 | 授權正式訂單 hash 回填（#550） | 舊訂單的部分查詢不完整 |
 | 6 | 還原演練通過後，把 Supabase 正式專案遷到東京（O-15，你已選 A） | 正式後台容易逾時 |
 | 7 | PayUni 信用卡約定 Token 在正式站小額實測（O-1，需你另外授權） | 綁卡功能無法開放 |
-| 9 | 正式環境的 `RATE_LIMIT_PROVIDER` 改成 `upstash_redis`，並設定 `UPSTASH_REDIS_REST_URL`、`UPSTASH_REDIS_REST_TOKEN`（#701） | 設成 `cloudflare_waf` 時正式站部署會直接失敗 |
 | 8 | 在 Supabase 正式專案確認 PostgreSQL 版本是 15 以上（後台 Settings → Infrastructure，或請我在你授權下做一次唯讀查詢），把版本告訴我 | 版本低於 15 時，正式站的資料庫更新會在 #677 那一步停下（不會壞資料，但後續更新都要等處理） |
+| 9 | 正式環境的 `RATE_LIMIT_PROVIDER` 改成 `upstash_redis`，並設定 `UPSTASH_REDIS_REST_URL`、`UPSTASH_REDIS_REST_TOKEN`（#701） | 設成 `cloudflare_waf` 時正式站部署會直接失敗 |
 
 ### D. 需要你做決定
 
