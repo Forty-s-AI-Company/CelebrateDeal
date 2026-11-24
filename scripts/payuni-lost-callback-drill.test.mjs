@@ -1,16 +1,21 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { existsSync, readdirSync } from "node:fs";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import {
   LOST_CALLBACK_SINK_PATH,
   PAYUNI_QUERY_URL,
+  PAYUNI_UPP_URL,
   UPP_ENCRYPTED_FIELDS,
   appCallbackUrl,
   classifySignedReturn,
   createPayReceipt,
+  defaultLostCallbackBrowser,
+  verifyPayRunReceipt,
   payUniSandboxCrypto,
   providerReportsPaid,
   queryProviderSettlement,
@@ -297,4 +302,170 @@ test("a receipt that gained an identifier, URL or refund cannot be validated or 
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
+});
+
+/** A fake Playwright: records clicks, the UPP post and what each routed request became. */
+function fakePlaywright({ dialogVisible = false, uppOk = true, onSubmit = async () => {} } = {}) {
+  const log = { clicks: [], routes: [], uppPosts: [], launched: 0, closed: 0 };
+  let contextHandler = null;
+  async function dispatch(url, method = "GET", body = null) {
+    const outcome = { action: null };
+    await contextHandler({
+      request: () => ({ url: () => url, method: () => method, postDataBuffer: () => body }),
+      abort: async () => { outcome.action = "abort"; },
+      continue: async () => { outcome.action = "continue"; },
+      fulfill: async () => { outcome.action = "fulfill"; },
+    });
+    log.routes.push({ url, method, action: outcome.action });
+    return outcome.action;
+  }
+  const locator = (name) => ({
+    click: async () => { log.clicks.push(name); if (name === "確認送出") await onSubmit(dispatch); },
+    check: async () => { log.clicks.push(`check:${name}`); },
+    pressSequentially: async () => {},
+    fill: async () => {},
+    isVisible: async () => (name === "確定" ? dialogVisible : true),
+    or: () => locator(name),
+  });
+  const page = {
+    route: async () => {},
+    goto: async () => {},
+    getByText: (text) => locator(text),
+    locator: (selector) => locator(selector),
+    getByPlaceholder: (text) => locator(text),
+    getByRole: (_role, options) => locator(options.name),
+    waitForTimeout: async () => {},
+  };
+  const context = {
+    route: async (_pattern, handler) => { contextHandler = handler; },
+    newPage: async () => page,
+    request: { post: async (url, options) => { log.uppPosts.push({ url, form: options.form }); return { ok: () => uppOk }; } },
+  };
+  const playwright = { chromium: { launch: async () => {
+    log.launched += 1;
+    return { newContext: async () => context, close: async () => { log.closed += 1; } };
+  } } };
+  return { playwright, log };
+}
+
+const BROWSER_INPUT = Object.freeze({
+  formPayload: Object.freeze({ MerID: KEYS.merchantId, Version: "1.0", EncryptInfo: "00", HashInfo: "11" }),
+  sinkReturnUrl: sinkCallbackUrl(ALIAS_ORIGIN, "return"),
+  cardNumber: INPUT.cardNumber, cardExpiry: INPUT.cardExpiry, cardCvv: INPUT.cardCvv,
+});
+const submitClicks = (log) => log.clicks.filter((name) => name === "確認送出").length;
+
+test("browser: a confirmation dialog is never clicked and the card form is submitted once", async () => {
+  const { playwright, log } = fakePlaywright({ dialogVisible: true });
+  const result = await defaultLostCallbackBrowser(BROWSER_INPUT, { playwright });
+  assert.deepEqual(result, { code: "PAYMENT_CONFIRMATION_DIALOG", appCallbackRequests: 0 });
+  assert.equal(submitClicks(log), 1);
+  assert.equal(log.clicks.includes("確定"), false);
+  assert.deepEqual(log.uppPosts, [{ url: PAYUNI_UPP_URL, form: BROWSER_INPUT.formPayload }]);
+  assert.equal(log.closed, 1);
+});
+
+test("browser: app callbacks and foreign hosts are aborted; only the exact sink Return is captured", async () => {
+  const returnBody = Buffer.from("EncryptInfo=aa&HashInfo=bb");
+  const { playwright, log } = fakePlaywright({ onSubmit: async (dispatch) => {
+    await dispatch(`${ALIAS_ORIGIN}/api/webhooks/payments?provider=payuni&source=notify`, "POST", Buffer.from("x"));
+    await dispatch(`${ALIAS_ORIGIN}/api/webhooks/payments?provider=payuni&source=return`, "POST", Buffer.from("x"));
+    await dispatch("https://evil.example/collect", "GET");
+    await dispatch(`${ALIAS_ORIGIN}/checkout/result`, "GET");
+    await dispatch(`${BROWSER_INPUT.sinkReturnUrl}&extra=1`, "POST", Buffer.from("not-this"));
+    await dispatch(`${ALIAS_ORIGIN}${LOST_CALLBACK_SINK_PATH}?source=notify`, "POST", Buffer.from("not-this"));
+    await dispatch("http://sandbox-api.payuni.com.tw/api/upp", "GET");
+    await dispatch("https://sandbox-vendor.payuni.com.tw/static/app.js", "GET");
+    await dispatch(BROWSER_INPUT.sinkReturnUrl, "POST", returnBody);
+  } });
+  const result = await defaultLostCallbackBrowser(BROWSER_INPUT, { playwright });
+  assert.equal(result.code, "RETURN_CAPTURED");
+  assert.equal(result.returnBody, returnBody);
+  assert.equal(result.returnPosts, 1);
+  assert.equal(result.appCallbackRequests, 2);
+  assert.equal(submitClicks(log), 1);
+  assert.deepEqual(log.routes.map((route) => route.action), ["abort", "abort", "abort", "abort", "abort", "abort", "abort", "continue", "fulfill"]);
+  assert.equal(log.closed, 1);
+});
+
+test("browser: no Return or a rejected UPP document ends without a capture", async () => {
+  const silent = fakePlaywright();
+  assert.deepEqual(await defaultLostCallbackBrowser(BROWSER_INPUT, { playwright: silent.playwright, returnWaitMs: 0 }),
+    { code: "PAYMENT_RETURN_UNOBSERVED", appCallbackRequests: 0 });
+  assert.equal(submitClicks(silent.log), 1);
+  const rejected = fakePlaywright({ uppOk: false });
+  assert.deepEqual(await defaultLostCallbackBrowser(BROWSER_INPUT, { playwright: rejected.playwright }),
+    { code: "PAYMENT_PROVIDER_HTTP_REJECTED", appCallbackRequests: 0 });
+  assert.equal(submitClicks(rejected.log), 0);
+  assert.equal(rejected.log.closed, 1);
+});
+
+const APP_DIRECTORY = fileURLToPath(new URL("../src/app/", import.meta.url));
+
+/** Every page/route file under src/app as URL segment patterns (route groups, slots and private folders removed). */
+function appRoutePatterns(directory = APP_DIRECTORY, segments = []) {
+  const patterns = [];
+  for (const entry of readdirSync(directory, { withFileTypes: true })) {
+    if (entry.isDirectory()) {
+      if (entry.name.startsWith("_") || entry.name.startsWith("@")) continue;
+      const routeGroup = /^\(.+\)$/u.test(entry.name);
+      patterns.push(...appRoutePatterns(join(directory, entry.name), routeGroup ? segments : [...segments, entry.name]));
+    } else if (/^(?:page|route)\.(?:tsx?|jsx?)$/u.test(entry.name)) {
+      patterns.push(segments);
+    }
+  }
+  return patterns;
+}
+
+function patternMatches(pattern, path) {
+  if (pattern.length === 0) return path.length === 0;
+  const [head, ...rest] = pattern;
+  if (/^\[\[\.\.\..+\]\]$/u.test(head)) return true;
+  if (/^\[\.\.\..+\]$/u.test(head)) return path.length >= 1;
+  if (path.length === 0) return false;
+  if (/^\[.+\]$/u.test(head)) return patternMatches(rest, path.slice(1));
+  return head === path[0] && patternMatches(rest, path.slice(1));
+}
+
+test("the callback sink has no route on staging: no sink folder and no dynamic or catch-all route matches it", () => {
+  assert.equal(LOST_CALLBACK_SINK_PATH, "/api/qa/payuni-lost-callback-sink");
+  assert.equal(existsSync(join(APP_DIRECTORY, "api", "qa")), false);
+  assert.equal(existsSync(join(APP_DIRECTORY, "api", "qa", "payuni-lost-callback-sink")), false);
+  const patterns = appRoutePatterns();
+  // The matcher itself is live: the real payment callback route is found.
+  assert.equal(patterns.some((pattern) => patternMatches(pattern, ["api", "webhooks", "payments"])), true);
+  for (const path of [["api", "qa"], ["api", "qa", "payuni-lost-callback-sink"]]) {
+    assert.deepEqual(patterns.filter((pattern) => patternMatches(pattern, path)), [], path.join("/"));
+  }
+});
+
+function runResponse(overrides = {}) {
+  return new Response(JSON.stringify({ path: ".github/workflows/staging-payuni-lost-callback.yml", head_branch: "master",
+    event: "workflow_dispatch", status: "completed", conclusion: "success", ...overrides }), { status: 200 });
+}
+
+test("verify gate: only a successful protected pay run's PAID_CALLBACK_WITHHELD receipt for the same SHA passes", async () => {
+  const { deps } = dependencies();
+  const paid = await runLostCallbackPayment(INPUT, deps);
+  const receiptText = JSON.stringify(paid);
+  const base = { sourceSha: SHA, runId: "4500000001", repository: "example-org/example-repo", token: "synthetic-token", receiptText };
+  const requests = [];
+  const fetchImpl = async (url, init) => { requests.push({ url, init }); return runResponse(); };
+  assert.equal(await verifyPayRunReceipt(base, fetchImpl), "VERIFIED");
+  assert.equal(requests[0].url, "https://api.github.com/repos/example-org/example-repo/actions/runs/4500000001");
+  assert.equal(requests[0].init.headers.authorization, "Bearer synthetic-token");
+
+  assert.equal(await verifyPayRunReceipt({ ...base, sourceSha: "b".repeat(40) }, fetchImpl), "PAY_RECEIPT_SOURCE_MISMATCH");
+  assert.equal(await verifyPayRunReceipt({ ...base, receiptText: JSON.stringify(createPayReceipt(SHA)) }, fetchImpl), "PAY_RECEIPT_NOT_PAID");
+  assert.equal(await verifyPayRunReceipt({ ...base, receiptText: JSON.stringify({ ...paid, orderNumber: ORDER }) }, fetchImpl), "PAY_RECEIPT_REJECTED");
+  assert.equal(await verifyPayRunReceipt({ ...base, receiptText: undefined }, fetchImpl), "PAY_RECEIPT_MISSING");
+  assert.equal(await verifyPayRunReceipt({ ...base, receiptText: "{" }, fetchImpl), "PAY_RECEIPT_MISSING");
+  for (const runId of ["", "0", "12a", "1".repeat(21)]) {
+    assert.equal(await verifyPayRunReceipt({ ...base, runId }, fetchImpl), "PAY_RUN_INPUT_REJECTED");
+  }
+  for (const overrides of [{ path: ".github/workflows/other.yml" }, { head_branch: "feature" }, { conclusion: "failure" }, { event: "push" }, { status: "in_progress" }]) {
+    assert.equal(await verifyPayRunReceipt(base, async () => runResponse(overrides)), "PAY_RUN_REJECTED");
+  }
+  assert.equal(await verifyPayRunReceipt(base, async () => new Response("{}", { status: 404 })), "PAY_RUN_UNAVAILABLE");
+  assert.equal(await verifyPayRunReceipt(base, async () => { throw new Error("synthetic network"); }), "PAY_RUN_UNAVAILABLE");
 });

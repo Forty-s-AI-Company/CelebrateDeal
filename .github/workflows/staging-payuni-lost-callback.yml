@@ -6,7 +6,9 @@ name: Staging PayUni lost-callback reconcile drill
 #                read-only proof that the application never posted it.
 #   (wait >= 15 minutes, run scheduled-jobs.yml job=payment-reconcile)
 #   phase=verify read-only proof that the reconciler posted it exactly once;
-#                run it again after another reconcile run for idempotency.
+#                needs pay_run_id: the successful pay run whose pay.json is
+#                PAID_CALLBACK_WITHHELD for the same source_sha. Run it again
+#                after another reconcile run for idempotency.
 # Runbook: docs/domain-workflows.md「付款通知遺失時的主動查詢（A-2 05）」.
 'on':
   workflow_dispatch:
@@ -27,9 +29,15 @@ name: Staging PayUni lost-callback reconcile drill
         required: false
         type: string
         default: ''
+      pay_run_id:
+        description: Successful pay-phase run ID of this workflow for the same SHA (verify phase only)
+        required: false
+        type: string
+        default: ''
 permissions:
   contents: read
   deployments: read
+  actions: read
 concurrency:
   group: staging-payuni-lost-callback
   cancel-in-progress: false
@@ -50,6 +58,7 @@ jobs:
       - run: npm ci --ignore-scripts
       - run: npx prisma generate
       - name: Validate drill contracts before secrets
+        id: contracts
         run: node --test scripts/payuni-lost-callback-drill.test.mjs scripts/staging-payuni-lost-callback-workflow.test.mjs
       - name: Install Chromium before secrets
         if: ${{ inputs.phase == 'pay' }}
@@ -61,12 +70,27 @@ jobs:
           CELEBRATEDEAL_SOURCE_SHA: ${{ inputs.source_sha }}
           CELEBRATEDEAL_DEPLOYMENT_HOST: ${{ inputs.deployment_host }}
         run: node scripts/mvp-payuni-sandbox-e2e.mjs --verify-lineage
+      - name: Download the pay receipt of the given run
+        if: ${{ inputs.phase == 'verify' }}
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: payuni-lost-callback-pay-${{ inputs.source_sha }}
+          run-id: ${{ inputs.pay_run_id }}
+          github-token: ${{ github.token }}
+          path: ${{ runner.temp }}/payuni-lost-callback-pay-input
+      - name: Verify the pay run and its receipt before secrets
+        id: pay_receipt
+        if: ${{ inputs.phase == 'verify' }}
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          CELEBRATEDEAL_SOURCE_SHA: ${{ inputs.source_sha }}
+          PAY_RUN_ID: ${{ inputs.pay_run_id }}
+        run: node scripts/payuni-lost-callback-drill.mjs --verify-pay-run
       - name: Pay in Sandbox with the callback withheld
         id: pay
         if: ${{ inputs.phase == 'pay' }}
         continue-on-error: true
         env:
-          GITHUB_TOKEN: ${{ github.token }}
           CELEBRATEDEAL_SOURCE_SHA: ${{ inputs.source_sha }}
           CELEBRATEDEAL_DEPLOYMENT_HOST: ${{ inputs.deployment_host }}
           PAYUNI_ENV: sandbox
@@ -94,7 +118,6 @@ jobs:
           if (!safeHost.test(deploymentHost || "") || !deploymentHost.endsWith(".vercel.app")) process.exit(2);
           // Vercel firewalls the immutable Preview host; requests go to the attested fixed alias.
           const destinations = [
-            ["api.github.com", "443"],
             ["celebrate-deal-staging.carry-digital-nomad.in.net", "443"],
             ["sandbox-api.payuni.com.tw", "443"],
             ["sandbox-vendor.payuni.com.tw", "443"],
@@ -142,7 +165,7 @@ jobs:
 
           node scripts/payuni-lost-callback-drill.mjs
       - name: Read-only proof of the posting state
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && steps.contracts.outcome == 'success' && ((inputs.phase == 'verify' && steps.pay_receipt.outcome == 'success') || (inputs.phase == 'pay' && steps.pay.outcome != 'skipped')) }}
         env:
           LOST_CALLBACK_PHASE: ${{ inputs.phase }}
           CELEBRATEDEAL_SOURCE_SHA: ${{ inputs.source_sha }}
@@ -159,7 +182,9 @@ jobs:
         if: ${{ always() }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: payuni-lost-callback-${{ inputs.phase }}-${{ inputs.source_sha }}-${{ github.run_attempt }}
+          # Fixed per phase and SHA: the verify phase downloads exactly this name from pay_run_id.
+          # A re-run attempt cannot overwrite the first attempt's receipt.
+          name: payuni-lost-callback-${{ inputs.phase }}-${{ inputs.source_sha }}
           path: |
             ${{ runner.temp }}/payuni-lost-callback/pay.json
             ${{ runner.temp }}/payuni-lost-callback/pay-proof.json

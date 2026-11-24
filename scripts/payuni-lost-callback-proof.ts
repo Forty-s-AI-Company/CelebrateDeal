@@ -16,7 +16,9 @@
  *
  * Phases:
  * - `pay`: right after the drill paid with the callback withheld; expects a
- *   still-undecided payment and no paid event at all (the callback was lost).
+ *   still-undecided payment, no paid event at all, and PayUni reporting the
+ *   trade as paid (only then was a callback really withheld; otherwise the
+ *   result is NO_POSTING_OBSERVED).
  * - `verify`: after `/api/jobs/payment-reconcile` ran; expects exactly one
  *   posting, made by the reconciler. Running it again after more reconcile
  *   runs must give the same counts.
@@ -75,7 +77,7 @@ export type LostCallbackProof = {
   reservation: { count: number; status: string };
   reconcilerAudit: { applied: number; manualReview: number };
   provider: { status: string; settlement: Settlement };
-  evaluation: "CALLBACK_WITHHELD" | "RECONCILED_ONCE" | "NOT_YET_RECONCILED" | "UNEXPECTED_STATE";
+  evaluation: "CALLBACK_WITHHELD" | "NO_POSTING_OBSERVED" | "RECONCILED_ONCE" | "NOT_YET_RECONCILED" | "UNEXPECTED_STATE";
 };
 
 function objectValue(value: unknown): Record<string, unknown> | null {
@@ -99,8 +101,18 @@ function isWp4BuyerCheckout(metadata: unknown, sourceSha: string) {
   return root?.wp4SourceCommit === sourceSha && root.billingPurpose === "buyer_order" && root.productId === WP4_SANDBOX_FIXTURE.productId;
 }
 
-/** Phase expectation over the snapshot; never looks at the provider snapshot (evidence only). */
-export function evaluateLostCallbackProof(proof: Omit<LostCallbackProof, "evaluation" | "provider">): LostCallbackProof["evaluation"] {
+/** PayUni itself reports a complete, collected card trade for the order. */
+function providerReportsPaid(provider: LostCallbackProof["provider"]) {
+  return provider.status === "FOUND" && provider.settlement?.TradeStatus === "1"
+    && provider.settlement.DataSource === "A" && provider.settlement.PaymentType === "1";
+}
+
+/**
+ * Phase expectation over the snapshot. `pay` claims CALLBACK_WITHHELD only when
+ * PayUni reports the trade paid; an undecided payment without that evidence
+ * is NO_POSTING_OBSERVED (nothing proves a callback existed to be lost).
+ */
+export function evaluateLostCallbackProof(proof: Omit<LostCallbackProof, "evaluation">): LostCallbackProof["evaluation"] {
   if (proof.candidate !== "FOUND" || !proof.payment || proof.manualEvents !== 0 || proof.reconcilerAudit.manualReview !== 0
     || proof.order.count !== 1 || proof.payment.amountCents !== 100 || proof.payment.currency !== "TWD"
     || proof.payment.paymentMode !== "platform" || proof.payment.manualHold || proof.providerEvents.other !== 0) {
@@ -109,7 +121,10 @@ export function evaluateLostCallbackProof(proof: Omit<LostCallbackProof, "evalua
   const undecided = UNDECIDED_PAYMENT_STATUSES.has(proof.payment.status) && proof.providerEvents.paid === 0
     && proof.order.paidEvents === 0 && proof.reconcilerAudit.applied === 0
     && (proof.reconciliation === null || proof.reconciliation.status === "active");
-  if (proof.phase === "pay") return undecided ? "CALLBACK_WITHHELD" : "UNEXPECTED_STATE";
+  if (proof.phase === "pay") {
+    if (!undecided) return "UNEXPECTED_STATE";
+    return providerReportsPaid(proof.provider) ? "CALLBACK_WITHHELD" : "NO_POSTING_OBSERVED";
+  }
   if (undecided) return "NOT_YET_RECONCILED";
   const reconciledOnce = proof.payment.status === "paid" && proof.payment.providerTradeRecorded
     && proof.providerEvents.paid === 1 && proof.providerEvents.paidProcessed === 1 && proof.providerEvents.paidSource === "RECONCILER"
@@ -144,14 +159,19 @@ async function readSnapshot(tx: Prisma.TransactionClient, sourceSha: string, pha
   const orderNumber = payment.orderNumber;
   const events = orderNumber
     ? await tx.webhookEvent.findMany({
-      where: { provider: "payuni", payload: { path: ["normalized", "orderNumber"], equals: orderNumber } },
+      // Second guard: an initial PayUni event has no tenant until it is processed (vendorId null);
+      // an event already bound to another vendor is never counted.
+      where: {
+        provider: "payuni", OR: [{ vendorId }, { vendorId: null }],
+        payload: { path: ["normalized", "orderNumber"], equals: orderNumber },
+      },
       select: { id: true, eventType: true, status: true, retryCount: true, payload: true },
     })
     : [];
   const paid = events.filter((event) => event.eventType === "paid");
   const sources = new Set(paid.map((event) => eventSource(event.payload)));
   const manualEvents = orderNumber
-    ? await tx.webhookEvent.count({ where: { provider: "payuni", eventId: { startsWith: `${RECONCILE_MANUAL_EVENT_PREFIX}${orderNumber}:` } } })
+    ? await tx.webhookEvent.count({ where: { provider: "payuni", vendorId, eventId: { startsWith: `${RECONCILE_MANUAL_EVENT_PREFIX}${orderNumber}:` } } })
     : 0;
   const reconciliation = await tx.paymentPendingReconciliation.findUnique({
     where: { vendorId_paymentTransactionId: { vendorId, paymentTransactionId: payment.id } },
@@ -222,13 +242,14 @@ export async function readLostCallbackProof(db: ProofDb, input: {
   const now = input.now ?? new Date();
   const snapshot = await db.$transaction((tx) => readSnapshot(tx, input.sourceSha, input.phase, now), {
     isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead,
+    timeout: 60_000,
   });
   let provider: LostCallbackProof["provider"] = { status: "NOT_QUERIED", settlement: null };
   if (snapshot.orderNumber && input.queryProvider) {
     const result = await input.queryProvider(snapshot.orderNumber);
     provider = { status: typeof result?.status === "string" && /^[A-Z_0-9]{1,32}$/u.test(result.status) ? result.status : "OTHER", settlement: result?.settlement ?? null };
   }
-  return { ...snapshot.proof, provider, evaluation: evaluateLostCallbackProof(snapshot.proof) };
+  return { ...snapshot.proof, provider, evaluation: evaluateLostCallbackProof({ ...snapshot.proof, provider }) };
 }
 
 const PHASE_PASS: Record<LostCallbackPhase, LostCallbackProof["evaluation"]> = { pay: "CALLBACK_WITHHELD", verify: "RECONCILED_ONCE" };

@@ -1,4 +1,5 @@
 import { createCipheriv, createDecipheriv, createHash, randomUUID } from "node:crypto";
+import type { Prisma } from "@prisma/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 // A4-05: the read-only lost-callback proof against the disposable PostgreSQL
@@ -119,11 +120,70 @@ async function drillCheckout(sourceSha: string) {
   return { orderNumber, tradeNo, transactionId: payment.id };
 }
 
-const providerQuery = vi.fn(async () => ({ status: "FOUND", settlement: { TradeStatus: "1", CloseStatus: "9", RemainAmt: "ABSENT" } }));
+const PAID_SETTLEMENT = { TradeStatus: "1", CloseStatus: "9", RemainAmt: "ABSENT", DataSource: "A", PaymentType: "1" };
+const providerQuery = vi.fn(async () => ({ status: "FOUND", settlement: PAID_SETTLEMENT }));
+
+/** The real client; every statement inside the interactive transaction is recorded in order. */
+function recordingDb() {
+  const statements: string[] = [];
+  const wrapped = {
+    $transaction: ((fn: (tx: Prisma.TransactionClient) => Promise<unknown>, options?: Parameters<typeof db.$transaction>[1]) =>
+      db.$transaction((tx) => fn(new Proxy(tx, {
+        get(target, property) {
+          const value = Reflect.get(target, property);
+          if (property === "$executeRaw" && typeof value === "function") {
+            return (strings: TemplateStringsArray, ...values: unknown[]) => {
+              statements.push(`$executeRaw:${strings.join("?")}`);
+              return value.call(target, strings, ...values);
+            };
+          }
+          if (typeof property === "string" && !property.startsWith("$") && value && typeof value === "object") {
+            return new Proxy(value, { get(model, method) {
+              const call = Reflect.get(model, method);
+              if (typeof call !== "function") return call;
+              return (...args: unknown[]) => { statements.push(`${property}.${String(method)}`); return call.apply(model, args); };
+            } });
+          }
+          return typeof value === "function" ? value.bind(target) : value;
+        },
+      })), options)) as typeof db.$transaction,
+  };
+  return { client: wrapped, statements };
+}
 
 describe("PayUni lost-callback proof (A4-05)", () => {
   it("pins the manual reconciliation event prefix to the reconciler's", () => {
     expect(pendingReconcileManualEventId("ORDER", "reason")).toBe(`${RECONCILE_MANUAL_EVENT_PREFIX}ORDER:reason`);
+  });
+
+  it("reads inside a database-enforced read-only transaction: SET TRANSACTION READ ONLY comes first", async () => {
+    const sha = "5".repeat(40);
+    await drillCheckout(sha);
+    const { client, statements } = recordingDb();
+    await expect(readLostCallbackProof(client, { sourceSha: sha, phase: "pay" })).resolves.toMatchObject({ candidate: "FOUND" });
+    expect(statements[0]).toBe("$executeRaw:SET TRANSACTION READ ONLY");
+    expect(statements.length).toBeGreaterThan(5);
+    expect(statements.filter((statement) => /\.(create|update|upsert|delete)/u.test(statement))).toEqual([]);
+    // And PostgreSQL itself refuses a write after that statement.
+    await expect(db.$transaction(async (tx) => {
+      await tx.$executeRaw`SET TRANSACTION READ ONLY`;
+      await tx.auditLog.create({ data: { actorLabel: "lost-callback-proof-test", action: "read_only_probe", targetType: "Test", targetId: "none" } });
+    })).rejects.toThrow(/read-only transaction/u);
+  });
+
+  it("pay: without PayUni reporting the trade paid, the result is NO_POSTING_OBSERVED, never CALLBACK_WITHHELD", async () => {
+    const sha = "6".repeat(40);
+    await drillCheckout(sha);
+    await expect(readLostCallbackProof(db, { sourceSha: sha, phase: "pay" }))
+      .resolves.toMatchObject({ evaluation: "NO_POSTING_OBSERVED", provider: { status: "NOT_QUERIED" } });
+    for (const answer of [
+      { status: "NOT_FOUND", settlement: null },
+      { status: "FOUND", settlement: { ...PAID_SETTLEMENT, TradeStatus: "0" } },
+      { status: "FOUND", settlement: { ...PAID_SETTLEMENT, DataSource: "B" } },
+    ]) {
+      await expect(readLostCallbackProof(db, { sourceSha: sha, phase: "pay", queryProvider: async () => answer }))
+        .resolves.toMatchObject({ evaluation: "NO_POSTING_OBSERVED" });
+    }
   });
 
   it("pay: an undecided checkout with no event is CALLBACK_WITHHELD; verify then reports NOT_YET_RECONCILED", async () => {
@@ -135,7 +195,7 @@ describe("PayUni lost-callback proof (A4-05)", () => {
       payment: { status: "pending", paymentMode: "platform", amountCents: 100, currency: "TWD", providerTradeRecorded: false, manualHold: false },
       providerEvents: { paid: 0, paidSource: "NONE", other: 0 }, manualEvents: 0, reconciliation: null,
       order: { count: 1, paidEvents: 0 }, reservation: { count: 1, status: "reserved" },
-      provider: { status: "FOUND", settlement: { TradeStatus: "1", CloseStatus: "9", RemainAmt: "ABSENT" } },
+      provider: { status: "FOUND", settlement: PAID_SETTLEMENT },
     });
     expect(pay.payment!.ageMinutes).toBeGreaterThanOrEqual(19);
     expect(providerQuery).toHaveBeenLastCalledWith(drill.orderNumber);

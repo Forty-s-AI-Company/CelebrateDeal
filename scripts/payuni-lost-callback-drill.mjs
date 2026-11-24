@@ -1,5 +1,5 @@
 import { createCipheriv, createDecipheriv, createHash, timingSafeEqual } from "node:crypto";
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
@@ -397,7 +397,7 @@ export async function defaultLostCallbackBrowser(input, dependencies = {}) {
     } catch {
       return { code: "PAYMENT_PAGE_REJECTED", appCallbackRequests };
     }
-    const deadline = Date.now() + RETURN_WAIT_MS;
+    const deadline = Date.now() + (Number.isSafeInteger(dependencies.returnWaitMs) ? dependencies.returnWaitMs : RETURN_WAIT_MS);
     const confirmation = page.getByRole("button", { name: "確定", exact: true });
     while (returnPosts === 0 && Date.now() < deadline) {
       // A second confirmation is never clicked (same rule as the WP4 runner).
@@ -530,6 +530,68 @@ export async function writePayReceipt(receipt, runnerTemp) {
   return file;
 }
 
+const RUN_ID = /^[1-9]\d{0,19}$/u;
+const WORKFLOW_PATH = ".github/workflows/staging-payuni-lost-callback.yml";
+
+/**
+ * Verify phase gate (before any secret): the pay run must be a successful
+ * protected-master run of this workflow, and its downloaded `pay.json` must be
+ * a valid PAID_CALLBACK_WITHHELD receipt for the same source SHA. Returns a
+ * fixed code; never throws.
+ */
+export async function verifyPayRunReceipt({ sourceSha, runId, repository, token, receiptText }, fetchImpl = fetch) {
+  if (typeof sourceSha !== "string" || !/^[a-f0-9]{40}$/u.test(sourceSha) || typeof runId !== "string" || !RUN_ID.test(runId)
+    || typeof repository !== "string" || !/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/u.test(repository) || typeof token !== "string" || !token) {
+    return "PAY_RUN_INPUT_REJECTED";
+  }
+  let receipt;
+  try {
+    if (typeof receiptText !== "string" || receiptText.length > 16_384) return "PAY_RECEIPT_MISSING";
+    receipt = JSON.parse(receiptText);
+  } catch {
+    return "PAY_RECEIPT_MISSING";
+  }
+  if (!validatePayReceipt(receipt)) return "PAY_RECEIPT_REJECTED";
+  if (receipt.result !== "PAID_CALLBACK_WITHHELD" || receipt.failure !== "NONE") return "PAY_RECEIPT_NOT_PAID";
+  if (receipt.sourceSha !== sourceSha) return "PAY_RECEIPT_SOURCE_MISMATCH";
+  try {
+    const response = await fetchImpl(`https://api.github.com/repos/${repository}/actions/runs/${runId}`, {
+      headers: { authorization: `Bearer ${token}`, accept: "application/vnd.github+json" },
+      redirect: "error",
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (response.status !== 200) return "PAY_RUN_UNAVAILABLE";
+    const run = await response.json();
+    if (run?.path !== WORKFLOW_PATH || run.head_branch !== "master" || run.event !== "workflow_dispatch"
+      || run.status !== "completed" || run.conclusion !== "success") return "PAY_RUN_REJECTED";
+  } catch {
+    return "PAY_RUN_UNAVAILABLE";
+  }
+  return "VERIFIED";
+}
+
+async function verifyPayRunMain() {
+  const protectedCi = process.argv.length === 3 && process.env.GITHUB_ACTIONS === "true"
+    && process.env.GITHUB_REF === "refs/heads/master" && process.env.GITHUB_REF_PROTECTED === "true";
+  let receiptText;
+  try {
+    receiptText = await readFile(path.join(process.env.RUNNER_TEMP ?? "", "payuni-lost-callback-pay-input", PAY_RECEIPT_FILENAME), "utf8");
+  } catch {
+    receiptText = undefined;
+  }
+  const code = protectedCi
+    ? await verifyPayRunReceipt({
+      sourceSha: process.env.CELEBRATEDEAL_SOURCE_SHA?.trim().toLowerCase(),
+      runId: process.env.PAY_RUN_ID?.trim(),
+      repository: process.env.GITHUB_REPOSITORY,
+      token: process.env.GITHUB_TOKEN,
+      receiptText,
+    })
+    : "PAY_RUN_INPUT_REJECTED";
+  console.log(`payuni_lost_callback_pay_run=${code}`);
+  if (code !== "VERIFIED") process.exitCode = 2;
+}
+
 async function main() {
   const protectedCi = process.argv.length === 2 && process.env.GITHUB_ACTIONS === "true"
     && process.env.GITHUB_REF === "refs/heads/master" && process.env.GITHUB_REF_PROTECTED === "true"
@@ -546,5 +608,6 @@ async function main() {
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
-  await main();
+  if (process.argv[2] === "--verify-pay-run") await verifyPayRunMain();
+  else await main();
 }
