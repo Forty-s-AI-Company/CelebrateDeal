@@ -50,7 +50,7 @@ async function mountAccept(action = vi.fn()) {
         action={action}
         csrfField={<input type="hidden" name="csrfToken" value="synthetic" />}
         vendorId="vendor-1"
-        agreementVersion="beta-2026.11.20"
+        agreementVersion="beta-2026.11.24"
         next="/welcome"
         footer={<button type="button">登出</button>}
       >
@@ -122,7 +122,7 @@ describe("BetaAgreementDialog", () => {
     await mountAccept();
     const form = checkbox().form!;
     expect(form.querySelector<HTMLInputElement>('input[name="vendorId"]')?.value).toBe("vendor-1");
-    expect(form.querySelector<HTMLInputElement>('input[name="agreementVersion"]')?.value).toBe("beta-2026.11.20");
+    expect(form.querySelector<HTMLInputElement>('input[name="agreementVersion"]')?.value).toBe("beta-2026.11.24");
     expect(form.querySelector<HTMLInputElement>('input[name="next"]')?.value).toBe("/welcome");
     expect(form.querySelector('[name*="scroll"]')).toBeNull();
     // 登出 is a separate form; nesting it in the accept form would be invalid HTML.

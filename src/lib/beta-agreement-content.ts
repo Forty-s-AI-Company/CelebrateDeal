@@ -3,7 +3,8 @@
  *
  * 條文依 `docs/goal-beta-prep-2026Q4/beta-merchant-agreement.md`，不含其中的
  * 「使用說明」區塊；owner 已決定第 1 條第 1 項的期間、第 8 條第 2 項的上限，
- * 第 11 條第 3 項改為網頁內勾選同意（clickwrap）。
+ * 第 11 條第 3 項改為網頁內勾選同意（clickwrap）；2026-11-24 決定第 11 條第 1 項
+ * 管轄法院為臺灣臺中地方法院（版本 beta-2026.11.24）。
  *
  * 版本號是伺服器的唯一事實：彈窗、公開頁 `/policies/beta-agreement` 與
  * `UserPolicyConsent.agreementVersion` 都讀這裡。條文有任何實質變動時必須
@@ -11,7 +12,7 @@
  * CHECK `^[0-9A-Za-z._-]{1,32}$`。`src/lib/beta-agreement.test.ts` 把全文的
  * sha256 綁在版本號上：文字改了而版本沒換，測試就會失敗。
  */
-export const BETA_AGREEMENT_VERSION = "beta-2026.11.20";
+export const BETA_AGREEMENT_VERSION = "beta-2026.11.24";
 /** `UserPolicyConsent.context` of an acceptance (CHECK UserPolicyConsent_context_check). */
 export const BETA_AGREEMENT_CONTEXT = "beta_agreement";
 
@@ -134,7 +135,7 @@ export const betaAgreement = {
       number: 11,
       heading: "其他",
       items: [
-        "本協議以中華民國法律為準據法。如有爭議，雙方同意以臺灣臺北地方法院為第一審管轄法院。",
+        "本協議以中華民國法律為準據法。如有爭議，雙方同意以臺灣臺中地方法院為第一審管轄法院。",
         "本協議沒有規定的事項，依本平台公告的使用條款、隱私通知與退款政策辦理；如有衝突，以本協議為準。",
         "本協議以乙方在本平台勾選同意的方式簽署，本平台記錄同意的帳號、商家、協議版本與時間。",
       ],

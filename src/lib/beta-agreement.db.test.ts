@@ -40,7 +40,7 @@ import { getDb } from "@/lib/db";
 import { requireMerchantApiActor } from "@/lib/merchant-api-security";
 
 const db = getDb();
-const ORIGINAL_VERSION = "beta-2026.11.20";
+const ORIGINAL_VERSION = "beta-2026.11.24";
 const vendorIds: string[] = [];
 const userIds: string[] = [];
 
