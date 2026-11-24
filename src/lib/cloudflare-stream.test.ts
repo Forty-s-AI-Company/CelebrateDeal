@@ -1,6 +1,7 @@
 import { generateKeyPairSync } from "node:crypto";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  cloudflareStreamConfigured,
   createDirectCreatorUpload,
   createLiveInput,
   createResumableCreatorUpload,
@@ -23,6 +24,29 @@ afterEach(() => {
 });
 
 describe("Cloudflare Stream API", () => {
+  it("reports configuration only when both the account id and token are set (A4-04)", () => {
+    expect(cloudflareStreamConfigured({ CLOUDFLARE_ACCOUNT_ID: "a", CLOUDFLARE_STREAM_TOKEN: "t" })).toBe(true);
+    expect(cloudflareStreamConfigured({ CLOUDFLARE_ACCOUNT_ID: "a" })).toBe(false);
+    expect(cloudflareStreamConfigured({ CLOUDFLARE_STREAM_TOKEN: "t" })).toBe(false);
+  });
+
+  it("reads a video with a GET and lets request-path callers shorten the timeout (A4-04)", async () => {
+    const timeout = vi.spyOn(AbortSignal, "timeout");
+    const fetchMock = vi.fn().mockImplementation(async () => new Response(JSON.stringify({
+      success: true,
+      result: { uid: "video-1", readyToStream: true, duration: 1.2 },
+    })));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(getStreamVideoStatus("video-1", { timeoutMs: 5_000 })).resolves
+      .toMatchObject({ uid: "video-1", readyToStream: true });
+    await getStreamVideoStatus("video-1");
+
+    expect(fetchMock.mock.calls[0]?.[1]?.method).toBeUndefined();
+    expect(timeout.mock.calls.map(([ms]) => ms)).toEqual([5_000, 15_000]);
+    timeout.mockRestore();
+  });
+
   it("fails closed without configuration and never contacts Cloudflare", async () => {
     vi.stubEnv("CLOUDFLARE_ACCOUNT_ID", undefined);
     vi.stubEnv("CLOUDFLARE_STREAM_TOKEN", undefined);

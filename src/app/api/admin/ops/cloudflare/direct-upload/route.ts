@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { readJsonBody, requireOpsSmokeSecret, unauthorizedJson } from "@/lib/api-security";
 import { classifyCloudflareOperationError, createDirectUploadMapping, DirectUploadRequest } from "@/lib/cloudflare-ops";
+import { syncStreamVideoReadyForOps, type StreamReadyOpsCheck } from "@/lib/cloudflare-stream-ready-sync";
 import { SIGNABLE_VIDEO_SELECT, signVideoUrl } from "@/lib/cloudflare-stream-signing";
 import { getDb } from "@/lib/db";
 import { bindOpsSmokeVendor, opsSmokeVendorId, opsSmokeVendorUnavailable } from "@/lib/ops-smoke";
@@ -21,7 +22,7 @@ export async function GET(request: Request) {
   if (!vendorId) return opsSmokeVendorUnavailable();
 
   // Only a video owned by the configured smoke vendor is visible here.
-  const video = await getDb().video.findFirst({
+  const readVideo = () => getDb().video.findFirst({
     where: { id: videoId.data, vendorId },
     select: {
       ...SIGNABLE_VIDEO_SELECT,
@@ -30,8 +31,27 @@ export async function GET(request: Request) {
       durationSec: true,
     },
   });
+  let video = await readVideo();
   if (!video) {
     return NextResponse.json({ error: "Video not found" }, { status: 404 });
+  }
+
+  // A4-04: the ready webhook is the primary path, but a Cloudflare account has
+  // one webhook URL, so staging may never receive it. A not-ready upload is
+  // checked against Cloudflare here (rate limited per video and overall) and a
+  // ready answer goes through the webhook's own transition code.
+  let providerCheck: StreamReadyOpsCheck["outcome"] | undefined;
+  if (
+    !video.cloudflareReadyToStream
+    && video.status === "processing"
+    && video.sourceType === "cloudflare_stream"
+    && video.cloudflareStreamUid
+  ) {
+    const check = await syncStreamVideoReadyForOps({
+      video: { id: videoId.data, vendorId, cloudflareStreamUid: video.cloudflareStreamUid },
+    });
+    providerCheck = check.outcome;
+    if (check.outcome === "updated") video = (await readVideo()) ?? video;
   }
 
   // F-093: once ready and signing is configured, the smoke check plays a
@@ -49,6 +69,8 @@ export async function GET(request: Request) {
       durationSec: video.durationSec,
       ...(playbackUrl ? { playbackUrl } : {}),
     },
+    // A fixed category only; never a provider message, UID or URL.
+    ...(providerCheck ? { providerCheck } : {}),
   }, { headers: { "Cache-Control": "private, no-store" } });
 }
 

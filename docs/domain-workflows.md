@@ -68,7 +68,7 @@
 
 常青場（`isActiveEvergreenLive`）的觀眾場次只存在簽章 httpOnly cookie。課後信（`post_live_followup`）依常青模式分兩種：
 
-- **商家設定共用開場時間（`evergreenSessionStartAt`）**：這場等同單一固定時間的場次。排程對**所有已驗證報名者**以**目前的**共用開場時間計算（開場＋影片長度＋規則分鐘數），走一般單一時間的路徑，不讀也不寫 `EvergreenSessionAssignment`；設定共用開場前就驗證的人也會收到。商家改動開場時間時，舊時間尚未寄出的那封在寄送前被 supersede，新時間到期才寄；已寄過就不再寄。共用場次結束後才完成驗證的報名者，下一輪排程就會收到所有已到期的課後信（每條規則各一封），和一般單一時間直播相同。
+- **商家設定共用開場時間（`evergreenSessionStartAt`）**：這場等同單一固定時間的場次。排程對**看過的已驗證報名者**以**目前的**共用開場時間計算（開場＋影片長度＋規則分鐘數），走一般單一時間的路徑，不讀也不寫 `EvergreenSessionAssignment`。「看過」＝這位報名者有 `LiveRegistrationAttendance`，且 `lastAdmittedAt` 不早於目前的共用開場時間（入場播放或回放；與 `form_no_show` 的出席判斷同一份紀錄，個人觀看連結也算）；沒看過的人這一輪回報 `not_watched` 略過、不建立任何寄送列，之後有入場紀錄就會在下一輪補上。商家把開場時間往後移後，只看過舊時間的人要看過新時間才會收到。商家改動開場時間時，舊時間尚未寄出的那封在寄送前被 supersede，新時間到期才寄；已寄過就不再寄。共用場次結束後才完成驗證、但之後入場看過的報名者，下一輪排程就會收到所有已到期的課後信（每條規則各一封）。
 - **逐觀眾場次（即時入場、每日固定場次、隨選播放）**：權威資料是 `EvergreenSessionAssignment`（每筆報名一列），只有「在同一個瀏覽器完成 Email 驗證並進入觀看頁」的報名者會有列，常青期間只寄給他們。
 
 逐觀眾場次的規則：
@@ -82,8 +82,8 @@
 - **更新規則**：排程 fingerprint 不同就取代；相同時只往較晚的場次移（兩個瀏覽器各有場次時以較晚者為準）。
 - **寄送**：排程取 `sessionStartAt` 在「現在 − 影片長度 − 規則分鐘數」之前、72 小時內的列（逾期超過 72 小時不補寄），排除這位報名者在這條規則底下已有非 `superseded` 課後信的列，依場次開始時間由舊到新、每輪最多 `recipientLimit` 位；Email 無法使用的報名者跳過且不佔名額。以場次開始時間當 `liveScheduledAt` 建立快照；`{{live_start_at}}` 是觀眾自己的場次（與指定場次相同，以 Asia/Taipei 顯示）。不看 fingerprint：排程改掉之前已指派的場次照記錄的時間寄。寄送前檢查重新讀這位報名者的 assignment，場次不同或沒有 assignment 就不寄。
 - **一位報名者、一條規則最多一封**：rejoin 把場次往後移時，舊場次尚未寄出的那封在寄送前被 supersede，新場次到期後的下一輪才建立新的那封；模板改版也一樣（舊版在寄送前被 supersede，下一輪建立新版）。已寄過就不再寄。
-- **owner 2026-11-23 決定**：課後信只寄給看過直播的報名者。逐觀眾模式已符合；共用開場時間模式與下一點的常青結束後補寄仍寄給所有已驗證報名者，待 work-queue A4-02 修正。
-- **常青關閉、結束或改回草稿**：沿用 #582，依原開播時間補寄給已驗證報名者；常青期間已收到同一規則課後信的人不會再收到（待 owner 決定是否改變補寄對象）。
+- **owner 2026-11-23 決定（Q-17，A4-02 已實作）**：課後信只寄給看過直播的報名者，三種模式一致。「看過」的依據在逐觀眾模式是 `EvergreenSessionAssignment`（驗證過的瀏覽器開啟觀看頁就記錄），共用開場時間與常青結束後補寄沒有這種列，改用 `LiveRegistrationAttendance`（`/api/live-admission` 入場紀錄）。兩者不同：場次列只代表開過觀看頁，入場紀錄代表實際被放行播放；後者不受「驗證與觀看要同一個瀏覽器」限制，個人觀看連結也會記錄。沒看過的人不建立寄送列，只在 job 回應回報 `not_watched`。寄送前檢查也會再確認一次：已排入但沒有入場紀錄的列在寄送前被 supersede。
+- **常青關閉、結束或改回草稿**：沿用 #582，依原開播時間補寄，但只補寄給有入場紀錄（任何時間）的報名者；常青期間已收到同一規則課後信的人不會再收到。範圍是 `isEvergreen` 仍為開啟、但目前不生效（已結束、草稿等）的直播；商家把 `isEvergreen` 關掉後，系統無法分辨它曾是常青場，就當作一般固定時間直播，仍寄給所有已驗證報名者。指定場次直播與從未設定常青的直播不受影響。
 - **設定重存**：常青生效時儲存常青設定，會在 commit 後把這場直播所有排隊中的課後信標為 `superseded`（`supersedeFixedTimeNotificationsForActiveEvergreen`）；這些報名者會重新出現在排程查詢，若場次仍在 72 小時內，下一輪依同一個 id 重新啟用；超過 72 小時的就不再寄。
 - **涵蓋不到的情況**（不是錯誤，是目前設計的限制）：
   - 在 A 裝置看、在 B 裝置驗證：A 沒有報名 cookie，不會記錄；B 只有在自己進入觀看頁後才記錄 B 的場次。
@@ -317,6 +317,7 @@ PayUni 的 Notify 整個遺失時，`/api/jobs/payment-reconcile`（`JOB_SECRET`
   - 之後若收到這筆訂單的已驗證付款（回呼或補單），只有代表「還沒有結果」的五種人工事件會在同一個入帳交易內自動結案（`manual_reconciliation_resolved`）：`query_attempts_exhausted`、`provider_pending_exhausted`、`event_in_progress_exhausted`、`not_found_after_trade_seen`、`window_expired`。其餘原因（`refunded_at_provider`、`capture_cancelled`、`close_status_unknown`、`amount_mismatch`、`multiple_trades`、`trade_status_unknown`、`payment_type_not_allowed`）是付款事件解釋不了的狀況，維持開啟等人工處理。
   - 例外：已經超過 3 天視窗、從沒查到過交易、而且最後一次是查無的補單列，每輪開頭直接關閉（`closed / not_found`，計入 `notFoundClosed`），不轉人工。
 - **入帳失敗**：管線丟錯時事件標 `failed`、15 分鐘後由 webhook-retry 接手（有重試上限與用盡告警）；售完（`InventoryUnavailableError`）另發 `webhook_retry_requires_attention`。補單列記為 `settled / *_handed_to_retry`，不再查詢。
+- **Sandbox 實測（A4-05）**：`.github/workflows/staging-payuni-lost-callback.yml`，只在受保護的 master、staging Preview 環境執行。`phase=pay`（要 `source_sha`＋`deployment_host`，先過 lineage 與 alias 自證）用該 SHA 唯一的 WP4 合成買家結帳（NT$1，伺服器定價，與其他 WP4 任務共用「每個 SHA 一筆」的額度）付款：送出 UPP 表單前，runner 以 Sandbox 金鑰解開伺服器產生的 EncryptInfo，逐欄確認商店、訂單編號、金額、只收信用卡與兩個 staging 回呼網址都是應用程式產生的值，只把 `NotifyURL`／`ReturnURL` 換成 staging 上沒有路由的 `/api/qa/payuni-lost-callback-sink`；Return 在隔離瀏覽器內攔下、只在記憶體驗章確認 PayUni 回報已付款，不轉送給應用程式。付款步驟不帶 GitHub token、出站只到 staging alias 與 PayUni Sandbox。接著 `scripts/payuni-lost-callback-proof.ts` 在 `SET TRANSACTION READ ONLY` 快照內確認交易仍未決、沒有任何 paid 事件，並以唯讀交易查詢記下 `CloseStatus`／`RemainAmt` 等代碼；只有 PayUni 同時回報該筆 `FOUND`＋`TradeStatus 1`＋`DataSource A` 時才判定 `CALLBACK_WITHHELD`（回呼確實遺失），否則是 `NO_POSTING_OBSERVED`，不算通過。等 15 分鐘以上、跑過 `scheduled-jobs.yml job=payment-reconcile` 後執行 `phase=verify`，**必須**給 `source_sha` 與 `pay_run_id`（上一步 pay 的 run id）：workflow 先查 GitHub 確認該 run 是本 workflow 在 master 上成功的 `workflow_dispatch`，下載它的 `payuni-lost-callback-pay-<sha>` artifact，`pay.json` 必須是 `PAID_CALLBACK_WITHHELD` 且 `sourceSha` 相同，否則在注入任何 secret 前停止。之後的唯讀證明要求：交易 paid、paid 事件恰好一筆且由補單建立、訂單 `payment.paid` 一筆、補單列 `settled / paid_applied`、補單 AuditLog 一筆、沒有人工事件；再跑一次補單與 verify，數字不變即證明不會重複入帳。收據只有列舉值、計數與合成金額。
 - **凍結商家**：與 PayUni 回呼完全相同——照常查詢與入帳（交易、訂單、佣金、月結資料），數位／課程權限留在 pending、`payment.paid` 事件標 `fulfillmentHeld`、不跑 `payment_paid` 自動化；解除凍結時由既有流程開通。理由：錢已經被收，凍結只擋交付，不能讓已付款的買家停在「未付款」。
 
 ## 租戶與權限
