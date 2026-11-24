@@ -1,6 +1,27 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
-import { discountCodeFormErrorMessage, parseDiscountCodeForm } from "@/lib/discount-code-admin";
+import { DISCOUNT_CODE_PRODUCT_OPTION_LIMIT, discountCodeFormErrorMessage, discountCodeProductOptions, parseDiscountCodeForm } from "@/lib/discount-code-admin";
+
+describe("discountCodeProductOptions (review m-4)", () => {
+  const option = (id: string) => ({ id, name: id, priceCents: 100, currency: "TWD", isActive: true });
+
+  it("always includes the products a code links, beyond the latest-200 list, bound to the vendor", async () => {
+    const findMany = vi.fn()
+      .mockResolvedValueOnce(Array.from({ length: DISCOUNT_CODE_PRODUCT_OPTION_LIMIT }, (_, index) => option(`recent-${index}`)))
+      .mockResolvedValueOnce([option("recent-1"), option("old-linked")]);
+    const options = await discountCodeProductOptions({ product: { findMany } } as never, "vendor-a", ["recent-1", "old-linked"]);
+    expect(options.map((item) => item.id)).toContain("old-linked");
+    expect(options.filter((item) => item.id === "recent-1")).toHaveLength(1);
+    expect(options).toHaveLength(DISCOUNT_CODE_PRODUCT_OPTION_LIMIT + 1);
+    expect(findMany).toHaveBeenLastCalledWith(expect.objectContaining({ where: { vendorId: "vendor-a", id: { in: ["recent-1", "old-linked"] } } }));
+  });
+
+  it("does not query linked products for a new code", async () => {
+    const findMany = vi.fn().mockResolvedValue([option("recent-0")]);
+    await discountCodeProductOptions({ product: { findMany } } as never, "vendor-a");
+    expect(findMany).toHaveBeenCalledTimes(1);
+  });
+});
 
 function form(values: Record<string, string | string[]>) {
   const data = new FormData();
@@ -41,8 +62,9 @@ describe("parseDiscountCodeForm", () => {
     expect(parseDiscountCodeForm(form({ code: "OFF100", discountType: "fixed_amount", discountValue: "1" }), "Asia/Taipei")).toMatchObject({ ok: true, draft: { isActive: false } });
   });
 
-  it.each([
+  const rejected: Array<[Record<string, string | string[]>, string]> = [
     [{ code: "ab" }, "invalid_code"],
+    [{ code: "SAVE5" }, "invalid_code"],
     [{ code: "雙十一" }, "invalid_code"],
     [{ discountType: "free_shipping" }, "invalid_value"],
     [{ discountValue: "0" }, "invalid_value"],
@@ -55,7 +77,8 @@ describe("parseDiscountCodeForm", () => {
     [{ minSubtotal: "abc" }, "invalid_limit"],
     [{ appliesTo: "selected" }, "invalid_products"],
     [{ appliesTo: "selected", productIds: ["bad id"] }, "invalid_products"],
-  ] as const)("rejects %j as %s", (overrides, error) => {
+  ];
+  it.each(rejected)("rejects %j as %s", (overrides, error) => {
     expect(parseDiscountCodeForm(form({ ...base, ...overrides }), "Asia/Taipei")).toEqual({ ok: false, error });
   });
 });

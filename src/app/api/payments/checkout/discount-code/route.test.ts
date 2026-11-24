@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const db = {
   product: { findFirst: vi.fn() },
   discountCode: { findUnique: vi.fn() },
+  discountCodeLookupThrottle: { findUnique: vi.fn(), upsert: vi.fn(), deleteMany: vi.fn() },
 };
 vi.mock("@/lib/db", () => ({ getDb: () => db }));
 const rateLimit = vi.hoisted(() => vi.fn(async (): Promise<Response | null> => null));
@@ -37,6 +38,7 @@ beforeEach(() => {
   vendorAvailable.mockResolvedValue(true);
   db.product.findFirst.mockResolvedValue(product);
   db.discountCode.findUnique.mockResolvedValue(codeRow);
+  db.discountCodeLookupThrottle.findUnique.mockResolvedValue(null);
 });
 
 describe("POST /api/payments/checkout/discount-code", () => {
@@ -86,6 +88,27 @@ describe("POST /api/payments/checkout/discount-code", () => {
     expect((await POST(request({ extra: true }))).status).toBe(400);
     rateLimit.mockResolvedValueOnce(new Response(null, { status: 429 }));
     expect((await POST(request({}))).status).toBe(429);
+    expect(db.discountCode.findUnique).not.toHaveBeenCalled();
+  });
+
+  it("counts a failed lookup against the vendor + product, not the caller's IP (review m-1)", async () => {
+    db.discountCode.findUnique.mockResolvedValueOnce(null);
+    await POST(request({ discountCode: "GUESS1" }));
+    expect(db.discountCodeLookupThrottle.upsert).toHaveBeenCalledWith(expect.objectContaining({
+      create: expect.objectContaining({ vendorId: "vendor-a", productId: "product-a", failureCount: 1 }),
+      update: { failureCount: { increment: 1 } },
+    }));
+    db.discountCodeLookupThrottle.upsert.mockClear();
+    await POST(request({}));
+    expect(db.discountCodeLookupThrottle.upsert).not.toHaveBeenCalled();
+  });
+
+  it("answers 429 for every code, valid or not, once the product's window is full", async () => {
+    db.discountCodeLookupThrottle.findUnique.mockResolvedValue({ failureCount: 30 });
+    const response = await POST(request({}));
+    expect(response.status).toBe(429);
+    expect(await response.json()).toMatchObject({ code: "DISCOUNT_CODE_TRY_LATER" });
+    expect(Number(response.headers.get("retry-after"))).toBeGreaterThan(0);
     expect(db.discountCode.findUnique).not.toHaveBeenCalled();
   });
 

@@ -109,6 +109,7 @@ describe("FunnelElementInspector 付款元件", () => {
     expect(html).toContain("預填折扣碼");
     expect(html).not.toContain("不支援手動輸入");
     expect(html).not.toContain("data-funnel-inspector-commerce");
+    expect(html).not.toContain("尚未");
     expect(html).not.toContain("即將");
     const definition = getFunnelElementInspectorDefinition("coupon");
     expect(definition.fields.filter((field) => field.target === "props").map((field) => field.id)).toEqual(["prefillCode"]);

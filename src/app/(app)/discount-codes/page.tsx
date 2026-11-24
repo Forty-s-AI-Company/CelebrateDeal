@@ -5,7 +5,7 @@ import { DiscountCodeForm, EMPTY_DISCOUNT_CODE_FORM } from "@/components/discoun
 import { Badge, Card, EmptyState, PageHeader, SubmitButton } from "@/components/ui";
 import { requireVendorManagerContext } from "@/lib/auth";
 import { getDb } from "@/lib/db";
-import { discountCodeFormErrorMessage, discountCodeUsageByCode } from "@/lib/discount-code-admin";
+import { discountCodeFormErrorMessage, discountCodeProductOptions, discountCodeUsageByCode } from "@/lib/discount-code-admin";
 import { formatCurrency, formatDateTime } from "@/lib/format";
 
 const UPDATED_MESSAGES: Record<string, string> = {
@@ -46,12 +46,7 @@ export default async function DiscountCodesPage({ searchParams }: {
       take: 200,
       include: { products: { where: { vendorId: vendor.id }, select: { product: { select: { name: true } } } } },
     }),
-    db.product.findMany({
-      where: { vendorId: vendor.id, priceCents: { gt: 0 } },
-      orderBy: { createdAt: "desc" },
-      take: 200,
-      select: { id: true, name: true, priceCents: true, currency: true, isActive: true },
-    }),
+    discountCodeProductOptions(db, vendor.id),
     discountCodeUsageByCode(db, vendor.id),
   ]);
   const now = new Date();

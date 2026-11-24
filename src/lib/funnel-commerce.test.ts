@@ -16,6 +16,13 @@ describe("Funnel coupon element → checkout discount-code input (A4-01)", () =>
     expect(funnelDiscountCodeEntry([node("coupon", "c", { prefillCode: "<script>" })])).toEqual({});
     expect(funnelDiscountCodeEntry([node("coupon", "c", { prefillCode: 100 })])).toEqual({});
   });
+
+  it("ignores a hidden coupon element, or one inside a hidden container (review n-3)", () => {
+    const hidden = (value: FunnelNode): FunnelNode => ({ ...value, visible: false });
+    expect(funnelDiscountCodeEntry([hidden(node("coupon", "c", { prefillCode: "VIP-10" }))])).toBeNull();
+    expect(funnelDiscountCodeEntry([hidden(node("row", "r", {}, [node("coupon", "c")]))])).toBeNull();
+    expect(funnelDiscountCodeEntry([hidden(node("coupon", "a", { prefillCode: "HIDDEN1" })), node("coupon", "b", { prefillCode: "SHOWN1" })])).toEqual({ prefillCode: "SHOWN1" });
+  });
 });
 import { createEmptyPageDocument, parsePageDocument } from "./funnel-page-document";
 import { createFunnelPageHistory, dispatchFunnelPageCommand, redoFunnelPageHistory, undoFunnelPageHistory } from "./funnel-page-history";

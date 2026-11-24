@@ -4,7 +4,7 @@ import { DiscountCodeForm } from "@/components/discount-code-form";
 import { ButtonLink, Card, PageHeader } from "@/components/ui";
 import { requireVendorManagerContext } from "@/lib/auth";
 import { getDb } from "@/lib/db";
-import { discountCodeFormErrorMessage } from "@/lib/discount-code-admin";
+import { discountCodeFormErrorMessage, discountCodeProductOptions } from "@/lib/discount-code-admin";
 import { formatZonedDateTimeLocal } from "@/lib/zoned-date-time";
 
 export default async function DiscountCodeEditPage({ params, searchParams }: {
@@ -22,12 +22,8 @@ export default async function DiscountCodeEditPage({ params, searchParams }: {
     include: { products: { where: { vendorId: vendor.id }, select: { productId: true } } },
   });
   if (!code) notFound();
-  const products = await db.product.findMany({
-    where: { vendorId: vendor.id, priceCents: { gt: 0 } },
-    orderBy: { createdAt: "desc" },
-    take: 200,
-    select: { id: true, name: true, priceCents: true, currency: true, isActive: true },
-  });
+  // Every linked product is shown, so saving never drops a link the list limit hid.
+  const products = await discountCodeProductOptions(db, vendor.id, code.products.map((link) => link.productId));
   const localInput = (value: Date | null) => value ? formatZonedDateTimeLocal(value, vendor.timezone) : "";
 
   return (

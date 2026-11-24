@@ -28,7 +28,7 @@ export type DiscountCodeType = (typeof DISCOUNT_CODE_TYPES)[number];
 export const DISCOUNT_CODE_MIN_PAYABLE_CENTS = PAYUNI_MIN_TRADE_AMOUNT * 100;
 export const DISCOUNT_CODE_MAX_FIXED_CENTS = 100_000_000;
 
-const ENTERED_CODE = /^[A-Za-z0-9_-]{3,32}$/u;
+const ENTERED_CODE = /^[A-Za-z0-9_-]{6,32}$/u;
 
 /** Case-insensitive form used for storage and lookup; null when malformed. */
 export function normalizeDiscountCode(value: unknown): string | null {
@@ -37,7 +37,7 @@ export function normalizeDiscountCode(value: unknown): string | null {
   return ENTERED_CODE.test(trimmed) ? trimmed.toUpperCase() : null;
 }
 
-export const DiscountCodeInputSchema = z.string().trim().min(3).max(32).regex(ENTERED_CODE);
+export const DiscountCodeInputSchema = z.string().trim().min(6).max(32).regex(ENTERED_CODE);
 
 /** Discount on the primary product line, never leaving less than the minimum payable amount. */
 export function calculateDiscountCodeAmount(input: {
@@ -80,15 +80,96 @@ export class DiscountCodeUnavailableError extends Error {
   }
 }
 
-/** Buyer-facing error codes; the same text for every tenant-boundary failure. */
+/**
+ * Buyer-facing error codes; the same text for every tenant-boundary failure.
+ * The per-buyer limit answers exactly like the total limit (review m-2), so a
+ * response never confirms that an e-mail already used the code; the server
+ * still logs the two apart ({@link logDiscountCodeRefusal}).
+ */
 export const DISCOUNT_CODE_ERROR_CODES: Record<DiscountCodeRejection, string> = {
   invalid: "DISCOUNT_CODE_INVALID",
   min_subtotal_not_met: "DISCOUNT_CODE_MIN_SUBTOTAL",
   usage_limit_reached: "DISCOUNT_CODE_USAGE_LIMIT",
-  buyer_limit_reached: "DISCOUNT_CODE_BUYER_LIMIT",
+  buyer_limit_reached: "DISCOUNT_CODE_USAGE_LIMIT",
   not_combinable: "DISCOUNT_CODE_NOT_COMBINABLE",
   changed: "DISCOUNT_CODE_CHANGED",
 };
+
+export const DISCOUNT_CODE_TRY_LATER = "DISCOUNT_CODE_TRY_LATER";
+
+/** Body and headers of the same 429 that preview and checkout send while a product's lookups are throttled. */
+export function discountCodeTryLaterReply(retryAfterSeconds: number) {
+  return {
+    body: { error: "Too many discount code attempts", code: DISCOUNT_CODE_TRY_LATER },
+    init: { status: 429, headers: { "Cache-Control": "private, no-store", "Retry-After": String(retryAfterSeconds) } },
+  };
+}
+
+/** Server-side record of why a code was refused; ids only, never a code or an e-mail. */
+export function logDiscountCodeRefusal(reason: DiscountCodeRejection, scope: { vendorId: string; productId?: string; discountCodeId?: string }) {
+  console.warn("discount_code_refused", { reason, ...scope });
+}
+
+/**
+ * Review m-1: failed lookups (unknown code, wrong product, used up, …) are
+ * counted per vendor + product in fixed 10-minute windows, independent of the
+ * caller's IP. Past the limit, preview and checkout answer every lookup for
+ * that product with 429 — also for a valid code, so guessing learns nothing.
+ * A code is 6–32 of 38 characters, so 30 tries per 10 minutes is far below
+ * any useful guessing rate.
+ */
+export const DISCOUNT_CODE_LOOKUP_WINDOW_MS = 10 * 60 * 1000;
+export const DISCOUNT_CODE_LOOKUP_FAILURE_LIMIT = 30;
+
+type ThrottleDb = Pick<PrismaClient | Prisma.TransactionClient, "discountCodeLookupThrottle">;
+
+function lookupWindow(now: Date) {
+  const start = Math.floor(now.getTime() / DISCOUNT_CODE_LOOKUP_WINDOW_MS) * DISCOUNT_CODE_LOOKUP_WINDOW_MS;
+  return { windowStart: new Date(start), retryAfterSeconds: Math.max(1, Math.ceil((start + DISCOUNT_CODE_LOOKUP_WINDOW_MS - now.getTime()) / 1000)) };
+}
+
+/** Null when lookups are allowed; otherwise the seconds until the window ends. */
+export async function discountCodeLookupBlocked(db: ThrottleDb, scope: { vendorId: string; productId: string; now: Date }) {
+  const { windowStart, retryAfterSeconds } = lookupWindow(scope.now);
+  const row = await db.discountCodeLookupThrottle.findUnique({
+    where: { vendorId_productId_windowStart: { vendorId: scope.vendorId, productId: scope.productId, windowStart } },
+    select: { failureCount: true },
+  });
+  return row && row.failureCount >= DISCOUNT_CODE_LOOKUP_FAILURE_LIMIT ? retryAfterSeconds : null;
+}
+
+/** Counts one failed lookup; old windows of the same product are dropped on the way. */
+export async function recordDiscountCodeLookupFailure(db: ThrottleDb, scope: { vendorId: string; productId: string; now: Date }) {
+  const { windowStart } = lookupWindow(scope.now);
+  await db.discountCodeLookupThrottle.upsert({
+    where: { vendorId_productId_windowStart: { vendorId: scope.vendorId, productId: scope.productId, windowStart } },
+    create: { vendorId: scope.vendorId, productId: scope.productId, windowStart, failureCount: 1 },
+    update: { failureCount: { increment: 1 } },
+  });
+  await db.discountCodeLookupThrottle.deleteMany({
+    where: { vendorId: scope.vendorId, productId: scope.productId, windowStart: { lt: new Date(windowStart.getTime() - DISCOUNT_CODE_LOOKUP_WINDOW_MS) } },
+  });
+}
+
+/**
+ * The throttled lookup both preview and checkout use: refuses while the
+ * product's window is full, and counts every refused lookup.
+ */
+export async function resolveThrottledDiscountCodeQuote(
+  db: QuoteDb & ThrottleDb,
+  enteredCode: unknown,
+  context: DiscountCodeCheckoutContext,
+): Promise<DiscountCodeEvaluation | { ok: false; reason: "throttled"; retryAfterSeconds: number }> {
+  const scope = { vendorId: context.vendorId, productId: context.productId, now: context.now };
+  const retryAfterSeconds = await discountCodeLookupBlocked(db, scope);
+  if (retryAfterSeconds !== null) return { ok: false, reason: "throttled", retryAfterSeconds };
+  const result = await resolveDiscountCodeQuote(db, enteredCode, context);
+  if (!result.ok) {
+    logDiscountCodeRefusal(result.reason, { vendorId: context.vendorId, productId: context.productId });
+    await recordDiscountCodeLookupFailure(db, scope);
+  }
+  return result;
+}
 
 export type DiscountCodeRecord = {
   id: string;
@@ -258,7 +339,9 @@ export async function reserveDiscountCodeRedemption(tx: ReserveDb, input: {
     });
     const exhausted = current?.revision === quote.revision && current.isActive
       && current.maxRedemptions !== null && current.redemptionCount >= current.maxRedemptions;
-    throw new DiscountCodeUnavailableError(exhausted ? "usage_limit_reached" : "changed");
+    const reason = exhausted ? "usage_limit_reached" : "changed";
+    logDiscountCodeRefusal(reason, { vendorId: quote.vendorId, discountCodeId: quote.discountCodeId });
+    throw new DiscountCodeUnavailableError(reason);
   }
   if (quote.maxRedemptionsPerBuyer !== null) {
     const used = await tx.discountCodeRedemption.count({
@@ -269,7 +352,10 @@ export async function reserveDiscountCodeRedemption(tx: ReserveDb, input: {
         status: { in: ["reserved", "redeemed"] },
       },
     });
-    if (used >= quote.maxRedemptionsPerBuyer) throw new DiscountCodeUnavailableError("buyer_limit_reached");
+    if (used >= quote.maxRedemptionsPerBuyer) {
+      logDiscountCodeRefusal("buyer_limit_reached", { vendorId: quote.vendorId, discountCodeId: quote.discountCodeId });
+      throw new DiscountCodeUnavailableError("buyer_limit_reached");
+    }
   }
   return tx.discountCodeRedemption.create({
     data: {

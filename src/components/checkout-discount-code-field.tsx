@@ -55,7 +55,8 @@ export function CheckoutDiscountCodeField({
       });
       if (!response.ok) {
         onAppliedChange(null);
-        setError(response.status === 429 ? "嘗試太多次，請稍候再試。" : discountCodeErrorMessage(await readCheckoutErrorCode(response)));
+        const code = await readCheckoutErrorCode(response);
+        setError(response.status === 429 && !code ? "嘗試太多次，請稍候再試。" : discountCodeErrorMessage(code));
         return;
       }
       const parsed = DiscountCodePreviewResponseSchema.safeParse(await response.json());

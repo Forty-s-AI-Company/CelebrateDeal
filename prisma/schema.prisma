@@ -111,6 +111,7 @@ model Vendor {
   discountCodes                    DiscountCode[]
   discountCodeProducts             DiscountCodeProduct[]
   discountCodeRedemptions          DiscountCodeRedemption[]
+  discountCodeLookupThrottles      DiscountCodeLookupThrottle[]
   consultantNotes                  ConsultantNote[]
   deliveryUrlAllowlist             VendorDeliveryUrlAllowlist[]
   productDeliveryConfigs           ProductDeliveryConfig[]
@@ -680,6 +681,7 @@ model Product {
 
   merchantAffiliateRates MerchantAffiliateProductRate[]
   discountCodeProducts   DiscountCodeProduct[]
+  discountCodeLookupThrottles DiscountCodeLookupThrottle[]
   @@unique([vendorId, id])
   @@unique([vendorId, slug])
   @@index([vendorId, commerceDomain, isActive])
@@ -4912,6 +4914,21 @@ model DiscountCode {
   @@unique([vendorId, id])
   @@unique([vendorId, normalizedCode])
   @@index([vendorId, createdAt])
+}
+
+/// Failed discount-code lookups per vendor + product in fixed 10-minute
+/// windows. Keyed without the buyer's IP so rotating addresses cannot keep
+/// guessing; over the limit every lookup for that product answers 429.
+model DiscountCodeLookupThrottle {
+  vendorId     String
+  productId    String
+  windowStart  DateTime
+  failureCount Int      @default(0)
+
+  vendor  Vendor  @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  product Product @relation(fields: [vendorId, productId], references: [vendorId, id], onDelete: Cascade)
+
+  @@id([vendorId, productId, windowStart])
 }
 
 /// Products a non-global discount code applies to (same vendor only).

@@ -12,8 +12,11 @@
 --   * "DiscountCodeRedemption": one use per canonical order with the immutable
 --     price snapshot (original subtotal, discount, total, code text and terms).
 --     Composite foreign keys bind the code, order and payment to one vendor.
+--   * "DiscountCodeLookupThrottle": failed code lookups per vendor + product
+--     in fixed 10-minute windows, so guessing is limited without relying on
+--     the buyer's IP (A4-01 review m-1).
 --
--- Forward-only and additive: three new tables, no existing row changes.
+-- Forward-only and additive: four new tables, no existing row changes.
 DO $$
 BEGIN
   PERFORM pg_catalog.set_config('lock_timeout', '5s', true);
@@ -42,7 +45,7 @@ CREATE TABLE "DiscountCode" (
     "updatedAt" TIMESTAMP(3) NOT NULL,
 
     CONSTRAINT "DiscountCode_pkey" PRIMARY KEY ("id"),
-    CONSTRAINT "DiscountCode_normalizedCode_check" CHECK ("normalizedCode" ~ '^[A-Z0-9_-]{3,32}$' AND "normalizedCode" = upper("code")),
+    CONSTRAINT "DiscountCode_normalizedCode_check" CHECK ("normalizedCode" ~ '^[A-Z0-9_-]{6,32}$' AND "normalizedCode" = upper("code")),
     CONSTRAINT "DiscountCode_discount_check" CHECK (
       ("discountType" = 'fixed_amount' AND "discountValue" BETWEEN 1 AND 100000000)
       OR ("discountType" = 'percentage' AND "discountValue" BETWEEN 1 AND 100)
@@ -108,6 +111,17 @@ CREATE TABLE "DiscountCodeRedemption" (
     CONSTRAINT "DiscountCodeRedemption_currency_check" CHECK ("currency" ~ '^[A-Z]{3}$')
 );
 
+-- CreateTable
+CREATE TABLE "DiscountCodeLookupThrottle" (
+    "vendorId" TEXT NOT NULL,
+    "productId" TEXT NOT NULL,
+    "windowStart" TIMESTAMP(3) NOT NULL,
+    "failureCount" INTEGER NOT NULL DEFAULT 0,
+
+    CONSTRAINT "DiscountCodeLookupThrottle_pkey" PRIMARY KEY ("vendorId","productId","windowStart"),
+    CONSTRAINT "DiscountCodeLookupThrottle_failureCount_check" CHECK ("failureCount" >= 0)
+);
+
 -- CreateIndex
 CREATE INDEX "DiscountCode_vendorId_createdAt_idx" ON "DiscountCode"("vendorId", "createdAt");
 
@@ -162,7 +176,14 @@ ALTER TABLE "DiscountCodeRedemption" ADD CONSTRAINT "DiscountCodeRedemption_vend
 -- AddForeignKey
 ALTER TABLE "DiscountCodeRedemption" ADD CONSTRAINT "DiscountCodeRedemption_vendorId_paymentTransactionId_fkey" FOREIGN KEY ("vendorId", "paymentTransactionId") REFERENCES "PaymentTransaction"("vendorId", "id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
+-- AddForeignKey
+ALTER TABLE "DiscountCodeLookupThrottle" ADD CONSTRAINT "DiscountCodeLookupThrottle_vendorId_fkey" FOREIGN KEY ("vendorId") REFERENCES "Vendor"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "DiscountCodeLookupThrottle" ADD CONSTRAINT "DiscountCodeLookupThrottle_vendorId_productId_fkey" FOREIGN KEY ("vendorId", "productId") REFERENCES "Product"("vendorId", "id") ON DELETE CASCADE ON UPDATE CASCADE;
+
 -- Same defense in depth as every other public table (20261020090000).
+ALTER TABLE "DiscountCodeLookupThrottle" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "DiscountCode" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "DiscountCodeProduct" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "DiscountCodeRedemption" ENABLE ROW LEVEL SECURITY;

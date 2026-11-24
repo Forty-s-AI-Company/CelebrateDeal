@@ -10,7 +10,8 @@ import {
   DiscountCodeUnavailableError,
   normalizeDiscountCode,
   reserveDiscountCodeRedemption,
-  resolveDiscountCodeQuote,
+  discountCodeTryLaterReply,
+  resolveThrottledDiscountCodeQuote,
   type DiscountCodeQuote,
   type DiscountCodeRejection,
 } from "@/lib/discount-codes";
@@ -195,6 +196,11 @@ function discountCodeErrorResponse(reason: DiscountCodeRejection) {
   });
 }
 
+function discountCodeTryLaterResponse(retryAfterSeconds: number) {
+  const reply = discountCodeTryLaterReply(retryAfterSeconds);
+  return NextResponse.json(reply.body, reply.init);
+}
+
 type CheckoutPromotion = { discountQuote: DiscountCodeQuote | null; voucherClaim: EligibleCheckoutVoucherClaim };
 
 /**
@@ -214,7 +220,7 @@ async function resolveCheckoutPromotion(
 ): Promise<CheckoutPromotion | NextResponse> {
   if (data.discountCode !== undefined) {
     if (input.exclusiveOffer) return discountCodeErrorResponse("not_combinable");
-    const result = await resolveDiscountCodeQuote(getDb(), data.discountCode, {
+    const result = await resolveThrottledDiscountCodeQuote(getDb(), data.discountCode, {
       vendorId: data.vendorId,
       productId: input.product.id,
       primaryPriceCents: input.product.priceCents,
@@ -222,7 +228,9 @@ async function resolveCheckoutPromotion(
       currency: input.product.currency,
       now: new Date(),
     });
-    if (!result.ok) return discountCodeErrorResponse(result.reason);
+    if (!result.ok) {
+      return result.reason === "throttled" ? discountCodeTryLaterResponse(result.retryAfterSeconds) : discountCodeErrorResponse(result.reason);
+    }
     if (data.expectedDiscountAmountCents !== undefined && data.expectedDiscountAmountCents !== result.quote.discountAmountCents) {
       return discountCodeErrorResponse("changed");
     }

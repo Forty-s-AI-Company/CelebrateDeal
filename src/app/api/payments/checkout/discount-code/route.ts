@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { readJsonBody, requireSameOriginRequest } from "@/lib/api-security";
 import { DiscountCodePreviewRequestSchema } from "@/lib/commerce-checkout";
 import { getDb } from "@/lib/db";
-import { DISCOUNT_CODE_ERROR_CODES, resolveDiscountCodeQuote } from "@/lib/discount-codes";
+import { DISCOUNT_CODE_ERROR_CODES, discountCodeTryLaterReply, resolveThrottledDiscountCodeQuote } from "@/lib/discount-codes";
 import { isProductPurchasable } from "@/lib/feature-gates";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { isVendorAvailableForPublic } from "@/lib/vendor-suspension-state";
@@ -42,7 +42,7 @@ export async function POST(request: Request) {
       })
     : null;
 
-  const result = await resolveDiscountCodeQuote(db, discountCode, {
+  const result = await resolveThrottledDiscountCodeQuote(db, discountCode, {
     vendorId,
     productId: product.id,
     primaryPriceCents: product.priceCents,
@@ -51,6 +51,10 @@ export async function POST(request: Request) {
     now: new Date(),
   });
   if (!result.ok) {
+    if (result.reason === "throttled") {
+      const reply = discountCodeTryLaterReply(result.retryAfterSeconds);
+      return NextResponse.json(reply.body, reply.init);
+    }
     return NextResponse.json({ error: "Discount code unavailable", code: DISCOUNT_CODE_ERROR_CODES[result.reason] }, { status: 409, headers: noStore });
   }
   return NextResponse.json({

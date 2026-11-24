@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   calculateDiscountCodeAmount,
+  DISCOUNT_CODE_ERROR_CODES,
   DISCOUNT_CODE_MIN_PAYABLE_CENTS,
   evaluateDiscountCode,
   normalizeDiscountCode,
@@ -40,7 +41,11 @@ describe("normalizeDiscountCode", () => {
     expect(normalizeDiscountCode("  save-10_x ")).toBe("SAVE-10_X");
   });
 
-  it.each(["ab", "a".repeat(33), "折扣碼", "SAVE 10", "SAVE%", "", 12, null, ["SAVE10"]])("rejects %j", (value) => {
+  it("answers the per-buyer limit exactly like the total limit (review m-2)", () => {
+    expect(DISCOUNT_CODE_ERROR_CODES.buyer_limit_reached).toBe(DISCOUNT_CODE_ERROR_CODES.usage_limit_reached);
+  });
+
+  it.each(["ab", "SAVE5", "a".repeat(33), "折扣碼", "SAVE 10", "SAVE%", "", 12, null, ["SAVE10"]])("rejects %j", (value) => {
     expect(normalizeDiscountCode(value)).toBeNull();
   });
 });

@@ -60,8 +60,9 @@ export type DiscountCodePreview = z.infer<typeof DiscountCodePreviewResponseSche
 const DISCOUNT_CODE_ERROR_MESSAGES: Record<string, string> = {
   DISCOUNT_CODE_INVALID: "折扣碼無效或不適用於這個商品。",
   DISCOUNT_CODE_MIN_SUBTOTAL: "訂單金額未達這個折扣碼的最低消費。",
+  // Also the per-buyer limit (review m-2): the answer never confirms that an e-mail used the code.
   DISCOUNT_CODE_USAGE_LIMIT: "這個折扣碼已達使用上限。",
-  DISCOUNT_CODE_BUYER_LIMIT: "這個 Email 已達此折扣碼的使用次數上限。",
+  DISCOUNT_CODE_TRY_LATER: "這個商品的折扣碼嘗試次數太多，請約 10 分鐘後再試，或先不使用折扣碼結帳。",
   DISCOUNT_CODE_NOT_COMBINABLE: "折扣碼不能與快閃優惠或加購折抵同時使用；請移除折扣碼後再結帳。",
   DISCOUNT_CODE_CHANGED: "折扣碼內容已變更，請重新套用後再結帳。",
 };
@@ -156,7 +157,7 @@ export async function readCheckoutErrorCode(response: Pick<Response, "json">) {
 }
 
 export function checkoutErrorMessage(status: number, code?: string) {
-  if (status === 409 && isDiscountCodeErrorCode(code)) return discountCodeErrorMessage(code);
+  if ((status === 409 || status === 429) && isDiscountCodeErrorCode(code)) return discountCodeErrorMessage(code);
   if (status === 409 && code === "POST_PURCHASE_UNAVAILABLE") return "加購優惠已變更或原訂單權益已失效。請先查看原訂單與待付款加購訂單，避免重複付款。";
   if (status === 409 && code === "FLASH_SALE_UNAVAILABLE") return "快閃優惠已變更、結束或綁定先前訂單。請先確認原訂單狀態；若尚未建立訂單，請返回直播重新確認優惠。";
   if (status === 409 && code === "LIVE_VOUCHER_ALREADY_USED") return "優惠券已綁定先前訂單。請先確認原訂單付款狀態，或聯絡商家協助；重新整理不會解除綁定。";

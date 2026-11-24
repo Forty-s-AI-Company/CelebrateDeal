@@ -6,8 +6,8 @@ import { POST as previewDiscountCode } from "@/app/api/payments/checkout/discoun
 import { POST as checkout } from "@/app/api/payments/checkout/route";
 import { CHECKOUT_ADMISSION_COOKIE } from "@/lib/checkout-admission";
 import { getDb } from "@/lib/db";
-import { createDiscountCode, parseDiscountCodeForm, updateDiscountCode } from "@/lib/discount-code-admin";
-import { DiscountCodeUnavailableError, reserveDiscountCodeRedemption, resolveDiscountCodeQuote } from "@/lib/discount-codes";
+import { createDiscountCode, DISCOUNT_CODE_PRODUCT_OPTION_LIMIT, discountCodeProductOptions, parseDiscountCodeForm, updateDiscountCode } from "@/lib/discount-code-admin";
+import { DISCOUNT_CODE_LOOKUP_FAILURE_LIMIT, DiscountCodeUnavailableError, reserveDiscountCodeRedemption, resolveDiscountCodeQuote } from "@/lib/discount-codes";
 import { releaseExpiredInventoryReservations } from "@/lib/inventory-reservations";
 import { AUTOMATION_VOUCHER_COOKIE, createInteractionBearer, hashInteractionBearer } from "@/lib/live-interaction";
 import { FLASH_SALE_COOKIE } from "@/lib/live-flash-sale";
@@ -16,6 +16,11 @@ import { encodeAttributionCookie } from "@/lib/team-funnel-attribution";
 
 // External delivery is isolated; payment, order, inventory, commission and refund run for real.
 vi.mock("@/lib/commerce-order-email", () => ({ ensureCommerceOrderPaidDelivery: vi.fn() }));
+// The per-IP limiter is not under test (A4-03 owns it); without this, the
+// default in-memory provider would cap these synthetic same-IP requests and
+// the file would depend on CI's RATE_LIMIT_PROVIDER (review n-1). The
+// vendor + product lookup throttle below is database-backed and stays real.
+vi.mock("@/lib/rate-limit", () => ({ checkRateLimit: vi.fn(async () => null) }));
 vi.mock("@/lib/taiwan-electronic-invoice", () => ({ reconcileElectronicInvoiceAfterPayment: vi.fn() }));
 
 const ORIGIN = "http://127.0.0.1:31027";
@@ -191,6 +196,57 @@ describe("A4-01 tenant isolation", () => {
   });
 });
 
+describe("A4-01 guessing limit per vendor + product (review m-1)", () => {
+  it("answers 429 for every lookup once a product's failures fill the window, at preview and at checkout, without touching other products or vendors", async () => {
+    const a = await vendorWithProducts("throttle A");
+    const b = await vendorWithProducts("throttle B");
+    await createCode(a.vendor.id);
+    await createCode(b.vendor.id);
+    const preview = (vendorId: string, productId: string, code: string) =>
+      previewDiscountCode(post("/api/payments/checkout/discount-code", { vendorId, productId, discountCode: code }));
+    for (let attempt = 0; attempt < DISCOUNT_CODE_LOOKUP_FAILURE_LIMIT; attempt += 1) {
+      expect((await preview(a.vendor.id, a.product.id, `GUESS${String(attempt).padStart(3, "0")}`)).status).toBe(409);
+    }
+    // Even the real code is refused now, so a hit is indistinguishable.
+    const blocked = await preview(a.vendor.id, a.product.id, "SAVE200");
+    expect(blocked.status).toBe(429);
+    expect(await blocked.json()).toMatchObject({ code: "DISCOUNT_CODE_TRY_LATER" });
+    const checkoutBlocked = await buy({ vendorId: a.vendor.id, productId: a.product.id, discountCode: "SAVE200" });
+    expect(checkoutBlocked.response.status).toBe(429);
+    expect(checkoutBlocked.body).toMatchObject({ code: "DISCOUNT_CODE_TRY_LATER" });
+    expect(await db.commerceOrder.count({ where: { vendorId: a.vendor.id } })).toBe(0);
+    // Checkout without a code still works.
+    expect((await buy({ vendorId: a.vendor.id, productId: a.product.id })).response.status).toBe(200);
+
+    expect((await preview(a.vendor.id, a.bump.id, "SAVE200")).status).toBe(200);
+    expect((await preview(b.vendor.id, b.product.id, "SAVE200")).status).toBe(200);
+  });
+});
+
+describe("A4-01 back office product options (review m-4)", () => {
+  it("keeps a linked product beyond the 200 newest in the edit form", async () => {
+    const f = await vendorWithProducts("options");
+    // The fixture's product is the oldest; 200 newer priced products push it off the list.
+    await db.product.createMany({ data: Array.from({ length: DISCOUNT_CODE_PRODUCT_OPTION_LIMIT }, (_, index) => ({
+      vendorId: f.vendor.id, name: `Newer ${index}`, slug: `newer-${index}-${randomUUID()}`, priceCents: 1_000, inventory: 1,
+      fulfillmentTypeConfirmed: true, createdAt: new Date(Date.now() + 60_000 + index),
+    })) });
+    const created = await createCode(f.vendor.id, { appliesTo: "selected", productIds: [f.product.id] });
+    const linked = await db.discountCodeProduct.findMany({ where: { vendorId: f.vendor.id, discountCodeId: created.id }, select: { productId: true } });
+    expect((await discountCodeProductOptions(db, f.vendor.id)).map((item) => item.id)).not.toContain(f.product.id);
+    const options = await discountCodeProductOptions(db, f.vendor.id, linked.map((link) => link.productId));
+    expect(options.map((item) => item.id)).toContain(f.product.id);
+    expect(options).toHaveLength(DISCOUNT_CODE_PRODUCT_OPTION_LIMIT + 1);
+  });
+
+  it("never shows another vendor's product even when its id is passed as linked", async () => {
+    const a = await vendorWithProducts("options A");
+    const b = await vendorWithProducts("options B");
+    const options = await discountCodeProductOptions(db, a.vendor.id, [b.product.id]);
+    expect(options.map((item) => item.id)).not.toContain(b.product.id);
+  });
+});
+
 describe("A4-01 usage limits under concurrency", () => {
   it("never exceeds the total limit when buyers check out at the same time", async () => {
     const f = await vendorWithProducts("total limit");
@@ -213,7 +269,8 @@ describe("A4-01 usage limits under concurrency", () => {
     const results = await Promise.all(["Same@Example.test", "same@example.test", " SAME@example.TEST"].map((email) =>
       buy({ vendorId: f.vendor.id, productId: f.product.id, discountCode: "SAVE200", email: email.trim() })));
     expect(results.filter((result) => result.response.status === 200)).toHaveLength(1);
-    expect(results.filter((result) => result.body.code === "DISCOUNT_CODE_BUYER_LIMIT")).toHaveLength(2);
+    // Answered like the total limit, so the response never confirms the e-mail used it (review m-2).
+    expect(results.filter((result) => result.body.code === "DISCOUNT_CODE_USAGE_LIMIT")).toHaveLength(2);
     expect((await codeRow(created.id)).redemptionCount).toBe(1);
     // A different buyer can still use it.
     expect((await buy({ vendorId: f.vendor.id, productId: f.product.id, discountCode: "SAVE200" })).response.status).toBe(200);
@@ -248,6 +305,26 @@ describe("A4-01 release, late payment and refunds", () => {
     // PayUni may still collect the expired order: the buyer paid the discounted price, so it counts.
     await webhook(f.vendor.id, first.orderNumber!, "paid", { grossAmountCents: 80_000 });
     expect(await db.discountCodeRedemption.findFirstOrThrow({ where: { paymentTransactionId: first.id } })).toMatchObject({ status: "redeemed" });
+    expect((await codeRow(created.id)).redemptionCount).toBe(2);
+  });
+
+  it("re-counts a payment that arrives after a failure, even past the per-buyer limit (review m-3)", async () => {
+    const f = await vendorWithProducts("failed then paid");
+    const created = await createCode(f.vendor.id, { maxRedemptionsPerBuyer: "1" });
+    const email = "again@example.test";
+    expect((await buy({ vendorId: f.vendor.id, productId: f.product.id, discountCode: "SAVE200", email })).response.status).toBe(200);
+    const first = await db.paymentTransaction.findFirstOrThrow({ where: { vendorId: f.vendor.id } });
+    await webhook(f.vendor.id, first.orderNumber!, "failed");
+    expect(await db.discountCodeRedemption.findFirstOrThrow({ where: { paymentTransactionId: first.id } })).toMatchObject({ status: "released" });
+
+    // The released use lets the same buyer check out again.
+    expect((await buy({ vendorId: f.vendor.id, productId: f.product.id, discountCode: "SAVE200", email })).response.status).toBe(200);
+    // PayUni then reports the first, failed trade as paid: money was collected at the discounted price.
+    await webhook(f.vendor.id, first.orderNumber!, "paid", { grossAmountCents: 80_000 });
+    expect(await db.commerceOrder.findFirstOrThrow({ where: { primaryPaymentTransactionId: first.id } })).toMatchObject({ status: "paid" });
+    expect(await db.discountCodeRedemption.findFirstOrThrow({ where: { paymentTransactionId: first.id } })).toMatchObject({ status: "redeemed" });
+    const buyerUses = await db.discountCodeRedemption.count({ where: { discountCodeId: created.id, status: { in: ["reserved", "redeemed"] } } });
+    expect(buyerUses).toBe(2);
     expect((await codeRow(created.id)).redemptionCount).toBe(2);
   });
 

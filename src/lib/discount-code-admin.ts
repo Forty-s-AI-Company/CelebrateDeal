@@ -6,7 +6,7 @@ import { parseZonedDateTimeLocal } from "@/lib/zoned-date-time";
 /** A4-01 merchant back office for discount codes. Every write is bound to the session vendor. */
 
 export const DISCOUNT_CODE_FORM_ERRORS = {
-  invalid_code: "折扣碼只能使用 3–32 個英文字母、數字、- 或 _。",
+  invalid_code: "折扣碼只能使用 6–32 個英文字母、數字、- 或 _。",
   invalid_value: "折扣金額需為 NT$1 以上的整數；百分比需為 1–100。",
   invalid_period: "請確認開始與結束時間，結束時間必須晚於開始時間。",
   invalid_limit: "使用上限與最低消費需為正整數（最低消費可為 0）。",
@@ -205,6 +205,35 @@ export async function setDiscountCodeActive(db: PrismaClient, vendorId: string, 
     data: { isActive, revision: { increment: 1 } },
   });
   if (updated.count !== 1) throw new DiscountCodeAdminError("not_found");
+}
+
+const PRODUCT_OPTION_SELECT = { id: true, name: true, priceCents: true, currency: true, isActive: true } as const;
+export const DISCOUNT_CODE_PRODUCT_OPTION_LIMIT = 200;
+
+/**
+ * Product checkboxes for the form: the vendor's latest priced products plus
+ * every product the code already links (review m-4), whatever the list
+ * limit. The form posts only the boxes it shows, so a linked product missing
+ * here would be silently unlinked on save.
+ */
+export async function discountCodeProductOptions(
+  db: Pick<PrismaClient, "product">,
+  vendorId: string,
+  linkedProductIds: readonly string[] = [],
+) {
+  const [recent, linked] = await Promise.all([
+    db.product.findMany({
+      where: { vendorId, priceCents: { gt: 0 } },
+      orderBy: { createdAt: "desc" },
+      take: DISCOUNT_CODE_PRODUCT_OPTION_LIMIT,
+      select: PRODUCT_OPTION_SELECT,
+    }),
+    linkedProductIds.length > 0
+      ? db.product.findMany({ where: { vendorId, id: { in: [...linkedProductIds] } }, select: PRODUCT_OPTION_SELECT })
+      : Promise.resolve([]),
+  ]);
+  const shown = new Set(recent.map((product) => product.id));
+  return [...recent, ...linked.filter((product) => !shown.has(product.id))];
 }
 
 /** Reserved (pending payment) and redeemed uses per code, for the list page. */
