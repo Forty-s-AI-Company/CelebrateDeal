@@ -306,8 +306,8 @@ test("a receipt that gained an identifier, URL or refund cannot be validated or 
 });
 
 /** A fake Playwright: records clicks, the UPP post and what each routed request became. */
-function fakePlaywright({ dialogVisible = false, dialogRaw = null, nativeDialog = null, uppOk = true, onSubmit = async () => {} } = {}) {
-  const log = { clicks: [], routes: [], uppPosts: [], launched: 0, closed: 0, evaluated: 0, nativeDismissed: 0, nativeAccepted: 0 };
+function fakePlaywright({ dialogVisible = false, dialogRaw = null, nativeDialog = null, uppOk = true, onSubmit = async () => {}, onWait = async () => {} } = {}) {
+  const log = { clicks: [], routes: [], uppPosts: [], launched: 0, closed: 0, evaluated: 0, nativeDismissed: 0, nativeAccepted: 0, nativeOrder: [], waits: 0 };
   let contextHandler = null;
   let dialogHandler = null;
   async function dispatch(url, method = "GET", body = null) {
@@ -327,8 +327,17 @@ function fakePlaywright({ dialogVisible = false, dialogRaw = null, nativeDialog 
       if (name !== "確認送出") return;
       await onSubmit(dispatch);
       if (nativeDialog && dialogHandler) {
-        await dialogHandler({ type: () => nativeDialog.type, message: () => nativeDialog.message,
-          dismiss: async () => { log.nativeDismissed += 1; }, accept: async () => { log.nativeAccepted += 1; } });
+        await dialogHandler({
+          type: () => { log.nativeOrder.push("type"); return nativeDialog.type; },
+          message: () => { log.nativeOrder.push("message"); if (nativeDialog.broken) throw new Error("gone"); return nativeDialog.message; },
+          dismiss: () => {
+            log.nativeOrder.push("dismiss");
+            log.nativeDismissed += 1;
+            if (nativeDialog.broken) throw new Error("already closed");
+            return Promise.resolve();
+          },
+          accept: async () => { log.nativeAccepted += 1; },
+        });
       }
     },
     check: async () => { log.clicks.push(`check:${name}`); },
@@ -346,7 +355,7 @@ function fakePlaywright({ dialogVisible = false, dialogRaw = null, nativeDialog 
     locator: (selector) => locator(selector),
     getByPlaceholder: (text) => locator(text),
     getByRole: (_role, options) => locator(options.name),
-    waitForTimeout: async () => {},
+    waitForTimeout: async () => { log.waits += 1; await onWait(dispatch, log.waits); },
   };
   const context = {
     route: async (_pattern, handler) => { contextHandler = handler; },
@@ -366,13 +375,22 @@ const BROWSER_INPUT = Object.freeze({
   cardNumber: INPUT.cardNumber, cardExpiry: INPUT.cardExpiry, cardCvv: INPUT.cardCvv,
 });
 const submitClicks = (log) => log.clicks.filter((name) => name === "確認送出").length;
+const DIAGNOSTIC_KEYS = ["afterSubmitSeconds", "dialogs", "externalHosts", "payuniPostsAfterSubmit"];
+/** The whole diagnostic, with only the wall-clock seconds normalised. */
+const fixedSeconds = (diagnostic) => {
+  assert.deepEqual(Object.keys(diagnostic).sort(), DIAGNOSTIC_KEYS);
+  assert.equal(Number.isSafeInteger(diagnostic.afterSubmitSeconds), true);
+  return { ...diagnostic, afterSubmitSeconds: 0 };
+};
 
 test("browser: a confirmation dialog is never clicked and the card form is submitted once", async () => {
   const { playwright, log } = fakePlaywright({ dialogVisible: true });
   const result = await defaultLostCallbackBrowser(BROWSER_INPUT, { playwright });
-  assert.equal(result.code, "PAYMENT_CONFIRMATION_DIALOG");
-  assert.equal(result.appCallbackRequests, 0);
-  assert.deepEqual(result.diagnostic.dialogs, [{ kind: "UNREADABLE", text: "", buttons: [] }]);
+  assert.deepEqual(Object.keys(result).sort(), ["appCallbackRequests", "code", "diagnostic"]);
+  assert.deepEqual({ ...result, diagnostic: fixedSeconds(result.diagnostic) }, {
+    code: "PAYMENT_CONFIRMATION_DIALOG", appCallbackRequests: 0,
+    diagnostic: { dialogs: [{ kind: "UNREADABLE", text: "", buttons: [] }], externalHosts: [], payuniPostsAfterSubmit: 0, afterSubmitSeconds: 0 },
+  });
   assert.equal(submitClicks(log), 1);
   assert.equal(log.clicks.includes("確定"), false);
   assert.deepEqual(log.uppPosts, [{ url: PAYUNI_UPP_URL, form: BROWSER_INPUT.formPayload }]);
@@ -389,41 +407,71 @@ test("browser: the unknown 確定 modal is read as de-identified text only, neve
     await dispatch("https://sandbox-api.payuni.com.tw/api/upp/pay", "POST", Buffer.from("x"));
     await dispatch("https://www.recaptcha-cdn.example/api.js?k=1", "GET");
     await dispatch("https://www.recaptcha-cdn.example/other.js", "GET");
+    await dispatch("https://d1a2b3c4.cloudfront.net/x.js", "GET");
   } });
   const result = await defaultLostCallbackBrowser(BROWSER_INPUT, { playwright });
-  assert.equal(result.code, "PAYMENT_CONFIRMATION_DIALOG");
+  assert.deepEqual({ ...result, diagnostic: fixedSeconds(result.diagnostic) }, {
+    code: "PAYMENT_CONFIRMATION_DIALOG", appCallbackRequests: 0,
+    diagnostic: {
+      dialogs: [{ kind: "MODAL_CLASS", text: "交易失敗 卡號 # 有效期 # 安全碼 # EMAIL 訂單 ID URL", buttons: ["確定"] }],
+      externalHosts: ["www.recaptcha-cdn.example", "*.cloudfront.net"], payuniPostsAfterSubmit: 1, afterSubmitSeconds: 0,
+    },
+  });
   assert.equal(submitClicks(log), 1);
   assert.equal(log.clicks.includes("確定"), false, "the dialog button is never clicked");
   assert.equal(log.evaluated, 1, "the dialog is read once");
-  assert.deepEqual(result.diagnostic.dialogs, [{ kind: "MODAL_CLASS", text: "交易失敗 卡號 # 有效期 #/# 安全碼 # EMAIL 訂單 ID URL", buttons: ["確定"] }]);
-  assert.deepEqual(result.diagnostic.externalHosts, ["www.recaptcha-cdn.example"]);
-  assert.equal(result.diagnostic.payuniPostsAfterSubmit, 1);
-  assert.equal(Number.isSafeInteger(result.diagnostic.afterSubmitSeconds), true);
   const line = formatPayUniDialogDiagnostic(result.diagnostic);
-  for (const secret of [INPUT.cardNumber, INPUT.cardCvv, "12/30", "invalid.example", ORDER, "https:", "payuni.com.tw", "k=1"]) {
+  for (const secret of [INPUT.cardNumber, INPUT.cardCvv, "12/30", "invalid.example", ORDER, "https:", "payuni.com.tw", "k=1", "d1a2b3c4"]) {
     assert.equal(line.includes(secret), false, `leaked ${secret}`);
   }
 });
 
-test("browser: a native dialog after the submit is dismissed (never accepted), recorded as text and stops the drill", async () => {
+test("browser: a native dialog is dismissed before it is read, never accepted, and stops the drill after the grace", async () => {
+  const stopped = fakePlaywright({ nativeDialog: { type: "alert", message: `交易失敗 ${INPUT.cardNumber}` } });
+  const blocked = await defaultLostCallbackBrowser(BROWSER_INPUT, { playwright: stopped.playwright, nativeDialogGraceMs: 0 });
+  assert.deepEqual({ ...blocked, diagnostic: fixedSeconds(blocked.diagnostic) }, {
+    code: "PAYMENT_CONFIRMATION_DIALOG", appCallbackRequests: 0,
+    diagnostic: { dialogs: [{ kind: "NATIVE_ALERT", text: "交易失敗 #", buttons: [] }], externalHosts: [], payuniPostsAfterSubmit: 0, afterSubmitSeconds: 0 },
+  });
+  assert.equal(stopped.log.nativeOrder[0], "dismiss", "the dialog is dismissed before anything is read");
+  assert.deepEqual(stopped.log.nativeOrder.slice(1).sort(), ["message", "type"]);
+  assert.equal(stopped.log.nativeDismissed, 1);
+  assert.equal(stopped.log.nativeAccepted, 0);
+  assert.equal(submitClicks(stopped.log), 1);
+  assert.equal(stopped.log.clicks.includes("確定"), false);
+
+  // The overall Return deadline also ends the grace with the dialog code, not RETURN_UNOBSERVED.
+  const late = fakePlaywright({ nativeDialog: { type: "confirm", message: "確定付款?" } });
+  const ended = await defaultLostCallbackBrowser(BROWSER_INPUT, { playwright: late.playwright, returnWaitMs: 0 });
+  assert.equal(ended.code, "PAYMENT_CONFIRMATION_DIALOG");
+  assert.deepEqual(ended.diagnostic.dialogs, [{ kind: "NATIVE_CONFIRM", text: "確定付款?", buttons: [] }]);
+
+  // A dialog whose dismiss and message throw still stops the drill with an empty, typed record.
+  const broken = fakePlaywright({ nativeDialog: { type: "alert", message: "x", broken: true } });
+  const brokenResult = await defaultLostCallbackBrowser(BROWSER_INPUT, { playwright: broken.playwright, nativeDialogGraceMs: 0 });
+  assert.equal(brokenResult.code, "PAYMENT_CONFIRMATION_DIALOG");
+  assert.deepEqual(brokenResult.diagnostic.dialogs, [{ kind: "NATIVE_ALERT", text: "", buttons: [] }]);
+  assert.equal(broken.log.nativeDismissed, 1);
+  assert.equal(broken.log.nativeAccepted, 0);
+});
+
+test("browser: a Return that arrives within the grace after a dismissed native dialog is captured and verified as usual", async () => {
   const returnBody = Buffer.from("EncryptInfo=aa&HashInfo=bb");
   const { playwright, log } = fakePlaywright({
     nativeDialog: { type: "confirm", message: `確定付款 NT$1？卡號 ${INPUT.cardNumber}` },
-    onSubmit: async (dispatch) => { await dispatch(BROWSER_INPUT.sinkReturnUrl, "POST", returnBody); },
+    onWait: async (dispatch, count) => { if (count === 2) await dispatch(BROWSER_INPUT.sinkReturnUrl, "POST", returnBody); },
   });
-  // A Return that already arrived stays authoritative: its signed body is still verified as PAID or not.
-  const result = await defaultLostCallbackBrowser(BROWSER_INPUT, { playwright });
+  const result = await defaultLostCallbackBrowser(BROWSER_INPUT, { playwright, nativeDialogGraceMs: 60_000 });
+  assert.deepEqual(Object.keys(result).sort(), ["appCallbackRequests", "code", "diagnostic", "returnBody", "returnPosts"]);
+  assert.deepEqual({ ...result, diagnostic: fixedSeconds(result.diagnostic) }, {
+    code: "RETURN_CAPTURED", returnBody, returnPosts: 1, appCallbackRequests: 0,
+    diagnostic: { dialogs: [{ kind: "NATIVE_CONFIRM", text: "確定付款 NT$1?卡號 #", buttons: [] }], externalHosts: [], payuniPostsAfterSubmit: 0, afterSubmitSeconds: 0 },
+  });
+  assert.equal(log.waits, 2, "it kept waiting after the dialog until the Return arrived");
   assert.equal(log.nativeDismissed, 1);
   assert.equal(log.nativeAccepted, 0);
   assert.equal(submitClicks(log), 1);
   assert.equal(log.clicks.includes("確定"), false);
-  assert.equal(result.code, "RETURN_CAPTURED");
-  const stopped = fakePlaywright({ nativeDialog: { type: "alert", message: `交易失敗 ${INPUT.cardNumber}` } });
-  const blocked = await defaultLostCallbackBrowser(BROWSER_INPUT, { playwright: stopped.playwright });
-  assert.equal(blocked.code, "PAYMENT_CONFIRMATION_DIALOG");
-  assert.deepEqual(blocked.diagnostic.dialogs, [{ kind: "NATIVE_ALERT", text: "交易失敗 #", buttons: [] }]);
-  assert.equal(stopped.log.nativeAccepted, 0);
-  assert.equal(submitClicks(stopped.log), 1);
 });
 
 test("pay phase hands the browser diagnostic to the CLI printer only; the receipt keeps its fixed shape", async () => {
@@ -454,10 +502,8 @@ test("browser: app callbacks and foreign hosts are aborted; only the exact sink 
     await dispatch(BROWSER_INPUT.sinkReturnUrl, "POST", returnBody);
   } });
   const result = await defaultLostCallbackBrowser(BROWSER_INPUT, { playwright });
-  assert.equal(result.code, "RETURN_CAPTURED");
-  assert.equal(result.returnBody, returnBody);
-  assert.equal(result.returnPosts, 1);
-  assert.equal(result.appCallbackRequests, 2);
+  // No dialog: the capture carries no diagnostic.
+  assert.deepEqual(result, { code: "RETURN_CAPTURED", returnBody, returnPosts: 1, appCallbackRequests: 2 });
   assert.equal(submitClicks(log), 1);
   assert.deepEqual(log.routes.map((route) => route.action), ["abort", "abort", "abort", "abort", "abort", "abort", "abort", "continue", "fulfill"]);
   assert.equal(log.closed, 1);
@@ -466,10 +512,10 @@ test("browser: app callbacks and foreign hosts are aborted; only the exact sink 
 test("browser: no Return or a rejected UPP document ends without a capture", async () => {
   const silent = fakePlaywright();
   const unobserved = await defaultLostCallbackBrowser(BROWSER_INPUT, { playwright: silent.playwright, returnWaitMs: 0 });
-  assert.equal(unobserved.code, "PAYMENT_RETURN_UNOBSERVED");
-  assert.equal(unobserved.appCallbackRequests, 0);
-  assert.deepEqual({ ...unobserved.diagnostic, afterSubmitSeconds: 0 },
-    { dialogs: [], externalHosts: [], payuniPostsAfterSubmit: 0, afterSubmitSeconds: 0 });
+  assert.deepEqual({ ...unobserved, diagnostic: fixedSeconds(unobserved.diagnostic) }, {
+    code: "PAYMENT_RETURN_UNOBSERVED", appCallbackRequests: 0,
+    diagnostic: { dialogs: [], externalHosts: [], payuniPostsAfterSubmit: 0, afterSubmitSeconds: 0 },
+  });
   assert.equal(submitClicks(silent.log), 1);
   const rejected = fakePlaywright({ uppOk: false });
   assert.deepEqual(await defaultLostCallbackBrowser(BROWSER_INPUT, { playwright: rejected.playwright }),

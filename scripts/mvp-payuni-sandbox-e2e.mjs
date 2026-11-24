@@ -1598,9 +1598,11 @@ export function recordPayUniSubmitModal(diagnostic, text) {
 // ---- Unknown-dialog text diagnostic (2026-11-24 runs 45304632382 and 45340752525: after 確認送出
 // PayUni showed a single-button "確定" modal whose text the category diagnostic could not read,
 // `modal=OTHER`). This records only the de-identified dialog text and button labels so the dialog
-// can be identified: e-mail, URLs, long tokens and every run of 2+ digits are masked and the text
-// is capped at 200 characters. It never clicks, accepts or changes the stop decision; a card value,
-// key, order or trade number cannot survive the masking (contract-tested).
+// can be identified: e-mail, URLs, long tokens and letter+digit identifiers are masked, every run of
+// two or more digits (ASCII or Chinese numerals, also when split by spaces or - . / , 、 : _) becomes
+// "#", and a text that still holds more than three digits is dropped as REDACTED; the text is capped
+// at 200 characters. A dialog container that holds a form, input or iframe keeps no text at all. It
+// never clicks, accepts or changes the stop decision (contract-tested masking and no-click rules).
 export const PAYUNI_DIALOG_TEXT_MAX = 200;
 const PAYUNI_DIALOG_BUTTON_TEXT_MAX = 40;
 const PAYUNI_DIALOG_BUTTONS_MAX = 6;
@@ -1610,6 +1612,15 @@ const PAYUNI_DIALOG_KINDS = new Set([
   "NATIVE_ALERT", "NATIVE_CONFIRM", "NATIVE_PROMPT", "NATIVE_BEFOREUNLOAD", "NATIVE_OTHER",
   "ROLE_DIALOG", "MODAL_CLASS", "FIXED_LAYER", "ANCESTOR", "NONE", "UNREADABLE", "OTHER",
 ]);
+/** Fixed text kept instead of the content of a dialog container that holds a form, input or iframe. */
+export const PAYUNI_DIALOG_CONTAINS_FORM = "CONTAINS_FORM";
+const PAYUNI_NUMERAL = "[0-9〇零一二三四五六七八九]";
+// Two or more numerals separated by nothing but spaces or - . / , 、 : _ (a spaced card number,
+// "CVV 1 2 3", an expiry "1/30", a spelled-out Chinese number) collapse into one "#".
+const PAYUNI_NUMERAL_RUN = new RegExp(`${PAYUNI_NUMERAL}(?:[\\s\\-./,、:_]*${PAYUNI_NUMERAL})+`, "gu");
+// Digits left after masking; a lone "一" is not counted because it is part of everyday words (統一, 一次).
+const PAYUNI_COUNTED_DIGIT = /[0-9〇零二三四五六七八九]/gu;
+const PAYUNI_DIALOG_MAX_DIGITS = 3;
 
 /** De-identify dialog text: NFKC, then e-mail/URL/token/identifier/digit-run masks and a character whitelist. */
 export function sanitizePayUniDialogText(value, max = PAYUNI_DIALOG_TEXT_MAX) {
@@ -1621,10 +1632,10 @@ export function sanitizePayUniDialogText(value, max = PAYUNI_DIALOG_TEXT_MAX) {
   text = text.replace(/(?=[A-Za-z0-9+/=_-]*[A-Za-z])[A-Za-z0-9+/=_-]{16,}/gu, "TOKEN");
   // Letter+digit identifiers (order / trade numbers); pure digit runs become "#" below.
   text = text.replace(/(?<![A-Za-z0-9])(?=[A-Za-z0-9_-]*\d)(?=[A-Za-z0-9_-]*[A-Za-z])[A-Za-z0-9_-]{6,}(?![A-Za-z0-9])/gu, "ID");
-  text = text.replace(/\d{2,}/gu, "#");
+  text = text.replace(PAYUNI_NUMERAL_RUN, "#");
   text = text.replace(/[^A-Za-z0-9 _\-./*:()#~,!?%$[\]　-〿㐀-䶿一-鿿！-～]/gu, "");
   text = text.replace(/ {2,}/gu, " ").trim();
-  if (/\d{2,}|@|:\/\//u.test(text)) return "REDACTED";
+  if (/\d{2,}|@|:\/\//u.test(text) || (text.match(PAYUNI_COUNTED_DIGIT) ?? []).length > PAYUNI_DIALOG_MAX_DIGITS) return "REDACTED";
   return text.length > max ? `${text.slice(0, max - 1)}~` : text;
 }
 
@@ -1659,9 +1670,13 @@ export function collectPayUniDialogInPage(button) {
     const found = kindOf(element);
     if (found) { container = element; kind = found; break; }
     const text = textOf(element).trim();
-    if (!fallback && text !== "" && text !== own) fallback = element;
+    // A plain ancestor counts only within three levels of the button.
+    if (!fallback && depth < 3 && text !== "" && text !== own) fallback = element;
   }
   if (!container && fallback) { container = fallback; kind = "ANCESTOR"; }
+  // A container that holds a form, a field or a frame is page content, not a dialog message: its
+  // text never leaves the page, only the kind, the fixed CONTAINS_FORM marker and button labels.
+  const containsForm = Boolean(container?.querySelector?.("form, input, select, textarea, iframe"));
   const buttons = [];
   for (const element of container ? container.querySelectorAll('button, [role="button"], input[type="button"], input[type="submit"], a') : []) {
     if (buttons.length >= 6) break;
@@ -1669,16 +1684,23 @@ export function collectPayUniDialogInPage(button) {
     const label = element.tagName === "INPUT" ? String(element.getAttribute("value") ?? "") : textOf(element);
     if (label.trim() !== "") buttons.push(label.slice(0, 100));
   }
-  return { kind, text: container ? textOf(container) : "", buttons: buttons.length > 0 ? buttons : [own.slice(0, 100)] };
+  return {
+    kind, containsForm, text: container && !containsForm ? textOf(container) : "",
+    buttons: buttons.length > 0 ? buttons : [own.slice(0, 100)],
+  };
 }
 
-/** Sanitized {kind, text, buttons}; a plain string is treated as the dialog text. */
+/**
+ * Sanitized {kind, text, buttons}; a plain string is treated as the dialog text. A capture marked
+ * `containsForm` keeps only the fixed CONTAINS_FORM text, whatever text it carried.
+ */
 export function sanitizePayUniDialogCapture(raw, kind = null) {
   const source = typeof raw === "string" ? { text: raw } : (raw !== null && typeof raw === "object" ? raw : {});
   const resolved = PAYUNI_DIALOG_KINDS.has(kind) ? kind : (PAYUNI_DIALOG_KINDS.has(source.kind) ? source.kind : "OTHER");
   const buttons = (Array.isArray(source.buttons) ? source.buttons : []).slice(0, PAYUNI_DIALOG_BUTTONS_MAX)
     .map((label) => sanitizePayUniDialogText(label, PAYUNI_DIALOG_BUTTON_TEXT_MAX)).filter((label) => label !== "");
-  return { kind: resolved, text: sanitizePayUniDialogText(source.text), buttons };
+  const text = source.containsForm === true ? PAYUNI_DIALOG_CONTAINS_FORM : sanitizePayUniDialogText(source.text);
+  return { kind: resolved, text, buttons };
 }
 
 /** Read the visible "確定" dialog through its button locator; time-boxed, never throws, never clicks. */
@@ -1699,12 +1721,20 @@ export function nativePayUniDialogCapture(dialog) {
   return sanitizePayUniDialogCapture({ text: message }, kind);
 }
 
-/** Hostname of a blocked third-party sub-resource; labels with digit runs or random-looking length become "*". */
+/**
+ * Hostname of a blocked third-party sub-resource. A host whose sub-domain labels carry a digit or a
+ * random-looking length keeps only its last two labels ("*.cloudfront.net"); an IP address is "IP".
+ */
 export function sanitizePayUniHostName(value) {
   if (typeof value !== "string") return "OTHER";
   const host = value.toLowerCase();
   if (!/^[a-z0-9.-]{1,100}$/u.test(host) || !host.includes(".")) return "OTHER";
-  return host.split(".").map((label) => (/\d{2,}/u.test(label) || label.length > 24 ? "*" : label)).join(".");
+  if (/^\d{1,3}(?:\.\d{1,3}){3}$/u.test(host)) return "IP";
+  const labels = host.split(".");
+  const randomLooking = (label) => /\d/u.test(label) || label.length > 24;
+  const registrable = labels.slice(-2);
+  if (registrable.some((label) => label.length > 24)) return "OTHER";
+  return labels.slice(0, -2).some(randomLooking) ? `*.${registrable.join(".")}` : host;
 }
 
 /** Remember up to five distinct sanitized third-party hosts. */

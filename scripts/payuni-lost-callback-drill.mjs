@@ -59,6 +59,8 @@ const FIXED_AMOUNT_CENTS = 100;
 const SYNTHETIC_PAYER_EMAIL = "wp4-buyer-v1@invalid.example";
 const REQUEST_TIMEOUT_MS = 30_000;
 const RETURN_WAIT_MS = 90_000;
+/** After a dismissed native dialog, how long a Return may still arrive before the drill stops. */
+const NATIVE_DIALOG_RETURN_GRACE_MS = 15_000;
 const PROVIDER_QUERY_ATTEMPTS = 6;
 const PROVIDER_QUERY_INTERVAL_MS = 10_000;
 const RECEIPT_DIRECTORY = "payuni-lost-callback";
@@ -354,10 +356,12 @@ function fail(receipt, code) {
  * the withheld Return is answered locally and an application callback URL is
  * never allowed through (counted, then aborted).
  *
- * Any dialog after the submit (a native alert/confirm, dismissed exactly as
- * Playwright would by default, or an in-page "確定" modal) stops the drill
- * without a click. A de-identified diagnostic travels with that result: the
- * dialog text and button labels (masked, 200 characters), the blocked
+ * An in-page "確定" modal after the submit stops the drill at once, without a
+ * click. A native alert/confirm is dismissed first (never accepted: the same
+ * outcome as Playwright's default) and then recorded; the drill waits up to
+ * 15 more seconds for the Return, which is verified as usual if it arrives,
+ * and stops otherwise. A de-identified diagnostic travels with the result:
+ * the dialog text and button labels (masked, 200 characters), the blocked
  * third-party hosts, the PayUni POST count and the seconds since the submit.
  */
 export async function defaultLostCallbackBrowser(input, dependencies = {}) {
@@ -367,6 +371,7 @@ export async function defaultLostCallbackBrowser(input, dependencies = {}) {
   let returnPosts = 0;
   let appCallbackRequests = 0;
   let submittedAt = null;
+  let nativeDialogAt = null;
   let payuniPostsAfterSubmit = 0;
   const externalHosts = [];
   const dialogs = [];
@@ -422,8 +427,10 @@ export async function defaultLostCallbackBrowser(input, dependencies = {}) {
       try {
         // Record and dismiss (never accept) a native dialog: the same outcome as Playwright's default.
         page.on("dialog", (dialog) => {
-          recordPayUniDialogCapture(dialogs, nativePayUniDialogCapture(dialog));
-          void Promise.resolve().then(() => dialog.dismiss()).catch(() => {});
+          // Dismiss first (never accept), then record; a failed record never blocks the dismissal.
+          try { void Promise.resolve(dialog.dismiss()).catch(() => {}); } catch { /* Already closed. */ }
+          if (nativeDialogAt === null) nativeDialogAt = Date.now();
+          try { recordPayUniDialogCapture(dialogs, nativePayUniDialogCapture(dialog)); } catch { /* Diagnostics only. */ }
         });
       } catch { /* A page without dialog events keeps Playwright's default dismissal. */ }
       submittedAt = Date.now();
@@ -433,8 +440,11 @@ export async function defaultLostCallbackBrowser(input, dependencies = {}) {
     }
     const deadline = Date.now() + (Number.isSafeInteger(dependencies.returnWaitMs) ? dependencies.returnWaitMs : RETURN_WAIT_MS);
     const confirmation = page.getByRole("button", { name: "確定", exact: true });
+    const nativeGraceMs = Number.isSafeInteger(dependencies.nativeDialogGraceMs) ? dependencies.nativeDialogGraceMs : NATIVE_DIALOG_RETURN_GRACE_MS;
     while (returnPosts === 0 && Date.now() < deadline) {
-      if (dialogs.length > 0) return { code: "PAYMENT_CONFIRMATION_DIALOG", appCallbackRequests, diagnostic: diagnostic() };
+      if (nativeDialogAt !== null && Date.now() - nativeDialogAt >= nativeGraceMs) {
+        return { code: "PAYMENT_CONFIRMATION_DIALOG", appCallbackRequests, diagnostic: diagnostic() };
+      }
       // A second confirmation is never clicked (same rule as the WP4 runner); only its text is read.
       if (await confirmation.isVisible().catch(() => false)) {
         recordPayUniDialogCapture(dialogs, await capturePayUniConfirmationDialog(confirmation));
@@ -442,7 +452,12 @@ export async function defaultLostCallbackBrowser(input, dependencies = {}) {
       }
       await page.waitForTimeout(1_000);
     }
-    if (returnPosts === 0 || !returnBody) return { code: "PAYMENT_RETURN_UNOBSERVED", appCallbackRequests, diagnostic: diagnostic() };
+    if (returnPosts === 0 || !returnBody) {
+      const code = nativeDialogAt === null ? "PAYMENT_RETURN_UNOBSERVED" : "PAYMENT_CONFIRMATION_DIALOG";
+      return { code, appCallbackRequests, diagnostic: diagnostic() };
+    }
+    // A Return after a dismissed native dialog is still verified as PAID or not; the dialog is printed too.
+    if (dialogs.length > 0) return { code: "RETURN_CAPTURED", returnBody, returnPosts, appCallbackRequests, diagnostic: diagnostic() };
     return { code: "RETURN_CAPTURED", returnBody, returnPosts, appCallbackRequests };
   } finally {
     await browser.close();
