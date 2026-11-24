@@ -143,6 +143,23 @@ function setEvergreen(vendorId: string, liveId: string, isEvergreen: boolean) {
   return getDb().live.updateMany({ where: { id: liveId, vendorId }, data: { isEvergreen } });
 }
 
+/** The registrant was admitted to play the Live at `at` (LiveRegistrationAttendance, written by /api/live-admission). */
+function admit(vendorId: string, liveId: string, formSubmissionId: string, at: Date) {
+  return getDb().liveRegistrationAttendance.upsert({
+    where: { vendorId_formSubmissionId: { vendorId, formSubmissionId } },
+    create: { vendorId, liveId, formSubmissionId, firstAdmittedAt: at, lastAdmittedAt: at },
+    update: { lastAdmittedAt: at },
+  });
+}
+
+async function addVerifiedRegistrant(vendorId: string, liveId: string, label: string) {
+  const db = getDb();
+  const form = await db.registrationForm.findFirstOrThrow({ where: { vendorId } });
+  return db.formSubmission.create({
+    data: { formId: form.id, liveId, name: `Lead ${label}`, email: `lead-${label}-${randomUUID()}@example.test`, verificationStatus: "VERIFIED" },
+  });
+}
+
 describe("evergreen post_live_followup disposable database integration", () => {
   it("does not queue a follow-up from the shared scheduledAt while evergreen is active", async () => {
     const { vendor, live } = await createFixture({ isEvergreen: true });
@@ -416,7 +433,9 @@ describe("evergreen post_live_followup disposable database integration", () => {
 
   it("keeps an ended Live's follow-up when the evergreen flag is set on it (evergreen is not active)", async () => {
     const db = getDb();
-    const { vendor, live } = await createFixture({ isEvergreen: false });
+    const { vendor, live, submission } = await createFixture({ isEvergreen: false });
+    // Flagging it evergreen later makes the follow-up watched-only (A4-02).
+    await admit(vendor.id, live.id, submission.id, new Date("2026-09-01T02:05:00.000Z"));
     await db.live.updateMany({
       where: { id: live.id, vendorId: vendor.id },
       data: { status: "ended", endedAt: new Date("2026-09-01T02:10:00.000Z") },
@@ -741,13 +760,15 @@ describe("evergreen post_live_followup with a shared start", () => {
   }
 
   async function sharedFixture(anchor: Date) {
-    // The registrant verified before the anchor was set and never opened the viewer page.
+    // The registrant verified before the anchor was set and never opened the viewer page (no session row).
     const fixture = await createFixture({ isEvergreen: true });
     await setAnchor(fixture.vendor.id, fixture.live.id, anchor);
+    // It did watch the shared session (A4-02: follow-ups go to those who watched).
+    await admit(fixture.vendor.id, fixture.live.id, fixture.submission.id, anchor);
     return fixture;
   }
 
-  it("follows up every verified registrant after the anchor, without any recorded session", async () => {
+  it("follows up a registrant who watched after the anchor, without any recorded session", async () => {
     const db = getDb();
     const { vendor, live, submission } = await sharedFixture(before(2 * HOUR));
     await db.messageTemplate.updateMany({ where: { vendorId: vendor.id }, data: { body: "謝謝 {{name}} 參加 {{live_start_at}} 場。\n{{unsubscribe_url}}" } });
@@ -772,7 +793,7 @@ describe("evergreen post_live_followup with a shared start", () => {
   });
 
   it("moves with the anchor: the old time sends nothing once moved later, the new time does", async () => {
-    const { vendor, live } = await sharedFixture(before(2 * HOUR));
+    const { vendor, live, submission } = await sharedFixture(before(2 * HOUR));
     await processDuePostLiveFollowups({ now, vendorId: vendor.id });
     const [stale] = await followupDeliveries(vendor.id, live.id);
     expect(stale).toMatchObject({ status: "queued" });
@@ -785,6 +806,8 @@ describe("evergreen post_live_followup with a shared start", () => {
     await expect(processDuePostLiveFollowups({ now: new Date(moved.getTime() + 30 * MINUTE), vendorId: vendor.id }))
       .resolves.toEqual([{ status: "not_due" }]);
 
+    // The registrant watches the moved session too.
+    await admit(vendor.id, live.id, submission.id, new Date(moved.getTime() + MINUTE));
     const due = new Date(moved.getTime() + 41 * MINUTE);
     await expect(processDuePostLiveFollowups({ now: due, vendorId: vendor.id })).resolves.toEqual([{ status: "queued" }]);
     const deliveries = await followupDeliveries(vendor.id, live.id);
@@ -810,14 +833,129 @@ describe("evergreen post_live_followup with a shared start", () => {
 
   it("does not send again after the anchor moves once the follow-up was sent", async () => {
     const db = getDb();
-    const { vendor, live } = await sharedFixture(before(2 * HOUR));
+    const { vendor, live, submission } = await sharedFixture(before(2 * HOUR));
     await processDuePostLiveFollowups({ now, vendorId: vendor.id });
     const [sent] = await followupDeliveries(vendor.id, live.id);
     await db.emailDelivery.updateMany({ where: { id: sent!.id, vendorId: vendor.id }, data: { status: "sent", sentAt: now, nextAttemptAt: null } });
 
     await setAnchor(vendor.id, live.id, before(HOUR));
+    await admit(vendor.id, live.id, submission.id, before(HOUR));
     await expect(processDuePostLiveFollowups({ now, vendorId: vendor.id })).resolves.toEqual([{ status: "already_sent" }]);
     await expect(followupDeliveries(vendor.id, live.id)).resolves.toEqual([expect.objectContaining({ id: sent!.id, status: "sent" })]);
+  });
+});
+
+/**
+ * Q-17 / A4-02: on an evergreen Live the follow-up goes only to registrants
+ * who watched. Three modes: per-visitor (EvergreenSessionAssignment, already
+ * so), a merchant shared start, and a Live flagged evergreen that has ended
+ * (the #582 catch-up). A second tenant's Live is judged on its own.
+ */
+describe("evergreen post_live_followup goes only to registrants who watched (A4-02)", () => {
+  const MINUTE = 60_000;
+  const HOUR = 60 * MINUTE;
+  const before = (ms: number) => new Date(now.getTime() - ms);
+  const ended = new Date("2026-09-01T02:10:00.000Z");
+
+  async function withUnwatched(fixture: Awaited<ReturnType<typeof createFixture>>) {
+    const unwatched = await addVerifiedRegistrant(fixture.vendor.id, fixture.live.id, "unwatched");
+    return { ...fixture, watched: fixture.submission, unwatched };
+  }
+
+  async function sharedStart() {
+    const fixture = await withUnwatched(await createFixture({ isEvergreen: true }));
+    const anchor = before(2 * HOUR);
+    await getDb().live.updateMany({ where: { id: fixture.live.id, vendorId: fixture.vendor.id }, data: { evergreenSessionStartAt: anchor } });
+    await admit(fixture.vendor.id, fixture.live.id, fixture.watched.id, new Date(anchor.getTime() + 5 * MINUTE));
+    return { ...fixture, anchor };
+  }
+
+  async function afterEvergreen() {
+    const fixture = await withUnwatched(await createFixture({ isEvergreen: true }));
+    await getDb().live.updateMany({ where: { id: fixture.live.id, vendorId: fixture.vendor.id }, data: { status: "ended", endedAt: ended } });
+    await admit(fixture.vendor.id, fixture.live.id, fixture.watched.id, new Date("2026-09-01T02:05:00.000Z"));
+    return fixture;
+  }
+
+  async function perVisitor() {
+    const fixture = await withUnwatched(await createFixture({ isEvergreen: true }));
+    await recordEvergreenSessionAssignment({
+      vendorId: fixture.vendor.id, liveId: fixture.live.id, formSubmissionId: fixture.watched.id,
+      sessionStartAt: before(2 * HOUR), scheduleFingerprint: "e".repeat(32), now,
+    });
+    return fixture;
+  }
+
+  const recipients = async (vendorId: string, liveId: string) =>
+    (await followupDeliveries(vendorId, liveId)).map((delivery) => delivery.sourceFormSubmissionId);
+
+  it("shared start: queues the one who watched, skips the other with a not_watched record", async () => {
+    const { vendor, live, watched, unwatched } = await sharedStart();
+
+    await expect(processDuePostLiveFollowups({ now, vendorId: vendor.id }))
+      .resolves.toEqual([{ status: "not_watched" }, { status: "queued" }]);
+    await expect(recipients(vendor.id, live.id)).resolves.toEqual([watched.id]);
+    expect(await recipients(vendor.id, live.id)).not.toContain(unwatched.id);
+    const [queued] = await followupDeliveries(vendor.id, live.id);
+    await expect(isCurrentEmailDeliverySnapshot(queued!, now)).resolves.toBe(true);
+  });
+
+  it("shared start: an admission from before the shared start does not count; one at the start does", async () => {
+    const { vendor, live, watched, unwatched, anchor } = await sharedStart();
+    await admit(vendor.id, live.id, watched.id, new Date(anchor.getTime() - MINUTE));
+    await admit(vendor.id, live.id, unwatched.id, anchor);
+
+    await processDuePostLiveFollowups({ now, vendorId: vendor.id });
+    await expect(recipients(vendor.id, live.id)).resolves.toEqual([unwatched.id]);
+  });
+
+  it("shared start: rejects at send time a queued follow-up whose registrant has no admission", async () => {
+    const { vendor, live, watched } = await sharedStart();
+    await processDuePostLiveFollowups({ now, vendorId: vendor.id });
+    const [queued] = await followupDeliveries(vendor.id, live.id);
+    await expect(isCurrentEmailDeliverySnapshot(queued!, now)).resolves.toBe(true);
+
+    await getDb().liveRegistrationAttendance.deleteMany({ where: { vendorId: vendor.id, formSubmissionId: watched.id } });
+    await expect(isCurrentEmailDeliverySnapshot(queued!, now)).resolves.toBe(false);
+  });
+
+  it("after evergreen ended: queues the one who watched, skips the other with a not_watched record", async () => {
+    const { vendor, live, watched, unwatched } = await afterEvergreen();
+
+    await expect(processDuePostLiveFollowups({ now, vendorId: vendor.id }))
+      .resolves.toEqual([{ status: "not_watched" }, { status: "queued" }]);
+    await expect(recipients(vendor.id, live.id)).resolves.toEqual([watched.id]);
+    expect(await recipients(vendor.id, live.id)).not.toContain(unwatched.id);
+    const [queued] = await followupDeliveries(vendor.id, live.id);
+    await expect(isCurrentEmailDeliverySnapshot(queued!, now)).resolves.toBe(true);
+  });
+
+  it("after evergreen ended: a Live that was never evergreen still follows up every verified registrant", async () => {
+    const fixture = await withUnwatched(await createFixture({ isEvergreen: false }));
+    await expect(processDuePostLiveFollowups({ now, vendorId: fixture.vendor.id }))
+      .resolves.toEqual([{ status: "queued" }, { status: "queued" }]);
+  });
+
+  it("per visitor: only the registrant with a recorded session is queued (unchanged)", async () => {
+    const { vendor, live, watched } = await perVisitor();
+
+    await expect(processDuePostLiveFollowups({ now, vendorId: vendor.id })).resolves.toEqual([{ status: "queued" }]);
+    await expect(recipients(vendor.id, live.id)).resolves.toEqual([watched.id]);
+  });
+
+  it("two tenants: each Live is judged on its own admissions only", async () => {
+    const first = await sharedStart();
+    const second = await sharedStart();
+
+    await expect(processDuePostLiveFollowups({ now, vendorId: first.vendor.id }))
+      .resolves.toEqual([{ status: "not_watched" }, { status: "queued" }]);
+    await expect(recipients(first.vendor.id, first.live.id)).resolves.toEqual([first.watched.id]);
+    await expect(recipients(second.vendor.id, second.live.id)).resolves.toEqual([]);
+
+    await expect(processDuePostLiveFollowups({ now, vendorId: second.vendor.id }))
+      .resolves.toEqual([{ status: "not_watched" }, { status: "queued" }]);
+    await expect(recipients(second.vendor.id, second.live.id)).resolves.toEqual([second.watched.id]);
+    await expect(recipients(first.vendor.id, first.live.id)).resolves.toEqual([first.watched.id]);
   });
 });
 

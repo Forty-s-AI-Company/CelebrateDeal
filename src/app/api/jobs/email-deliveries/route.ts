@@ -45,6 +45,9 @@ const SAFE_MATERIALIZATION_STATUSES = new Set([
   "reactivated",
   "not_scheduled",
   "not_configured",
+  // A registrant of an evergreen Live with no admission record: skipped, not
+  // queued (Q-17, A4-02).
+  "not_watched",
   // A post-live follow-up that kept hitting a transient transaction conflict;
   // nothing was written and the next round tries again.
   "conflict",

@@ -122,7 +122,7 @@ A3 全部合併後 staging：alias 切到 `ca83e82c`（無新 migration，status
 | # | ID | 項目 | 風險 | 狀態 |
 |---|---|---|---|---|
 | 1 | A4-01 | 通用折扣碼與編輯器 `coupon` 元件（U-10、U-11）；佣金以折扣後實付金額計算 | 高（金流、佣金） | 待排 |
-| 2 | A4-02 | 常青場課後信只寄給看過的報名者：共用開場時間模式與常青結束後補寄目前寄給所有已驗證報名者，要改成與逐觀眾模式一致（Q-17 決定） | 一般 | 待排 |
+| 2 | A4-02 | 常青場課後信只寄給看過的報名者：共用開場時間模式與常青結束後補寄目前寄給所有已驗證報名者，要改成與逐觀眾模式一致（Q-17 決定） | 一般 | 已實作，待 PR（分支 `ai/evergreen-followup-watched-only`；以 `LiveRegistrationAttendance` 判斷，未驗證 `test:db:concurrency`） |
 | 3 | A4-03 | 應用層限流不採用可偽造的來源 IP 標頭，並為 `/api/security/csp-report` 加限流（D-20；O-7＝否，網域不經 Cloudflare）；完成後才評估 CSP 轉強制（R-01） | 高（安全） | 待排 |
 | 4 | A4-04 | Stream 簽章網址 staging 驗證（`docs/operations/stream-signed-urls-plan.md` §8 第 3 步）；之後鎖定新上傳與既有影片前要再問 owner | 一般 | 金鑰已設（2026-11-23），待驗證 |
 | 5 | A4-05 | PayUni Sandbox 實測補單；通過後再請 owner 授權 Production `PAYMENT_RECONCILE_ENABLED=true`（D-9） | 高（金流） | 待排 |
