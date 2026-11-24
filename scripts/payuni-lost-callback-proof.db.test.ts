@@ -186,6 +186,30 @@ describe("PayUni lost-callback proof (A4-05)", () => {
     }
   });
 
+  it("A4-05: query evidence keeps only the drill's resultShape/rowCheck enums; anything else is NONE", async () => {
+    const sha = "7".repeat(40);
+    await drillCheckout(sha);
+    const listed = await readLostCallbackProof(db, { sourceSha: sha, phase: "pay", queryProvider: async () => (
+      { status: "FOUND", resultShape: "BRACKET_FIELDS", rowCheck: "MATCHED", settlement: PAID_SETTLEMENT }) });
+    expect(listed.provider).toEqual({ status: "FOUND", resultShape: "BRACKET_FIELDS", rowCheck: "MATCHED", settlement: PAID_SETTLEMENT });
+    expect(listed.evaluation).toBe("CALLBACK_WITHHELD");
+    const rejected = await readLostCallbackProof(db, { sourceSha: sha, phase: "pay", queryProvider: async () => (
+      { status: "ROW_REJECTED", resultShape: "ABSENT", rowCheck: "NO_ROWS", settlement: null }) });
+    expect(rejected.provider).toEqual({ status: "ROW_REJECTED", resultShape: "ABSENT", rowCheck: "NO_ROWS", settlement: null });
+    for (const value of ["cd-order", "X".repeat(40)]) {
+      const odd = await readLostCallbackProof(db, { sourceSha: sha, phase: "pay", queryProvider: async () => (
+        { status: "FOUND", resultShape: value, rowCheck: value, settlement: PAID_SETTLEMENT }) });
+      expect(odd.provider).toEqual({ status: "FOUND", resultShape: "NONE", rowCheck: "NONE", settlement: PAID_SETTLEMENT });
+      expect(JSON.stringify(odd)).not.toContain(value);
+    }
+    // Uppercase words that are not in the drill's lists are refused too, not just malformed ones.
+    const unlisted = await readLostCallbackProof(db, { sourceSha: sha, phase: "pay", queryProvider: async () => (
+      { status: "FOUND", resultShape: "PHP", rowCheck: "ORDER_NUMBER", settlement: PAID_SETTLEMENT }) });
+    expect(unlisted.provider).toMatchObject({ resultShape: "NONE", rowCheck: "NONE" });
+    const notQueried = await readLostCallbackProof(db, { sourceSha: sha, phase: "pay" });
+    expect(notQueried.provider).toEqual({ status: "NOT_QUERIED", resultShape: "NONE", rowCheck: "NONE", settlement: null });
+  });
+
   it("pay: an undecided checkout with no event is CALLBACK_WITHHELD; verify then reports NOT_YET_RECONCILED", async () => {
     const sha = "1".repeat(40);
     const drill = await drillCheckout(sha);

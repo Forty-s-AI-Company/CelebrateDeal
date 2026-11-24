@@ -164,6 +164,35 @@ describe("PayUni pending-payment query (A-2 05)", () => {
     await expect(query()).resolves.toMatchObject({ outcome: "manual_reconciliation", reason: "multiple_trades", collectionReported: false });
   });
 
+  // A4-05 (run 45376157147): PayUni encrypts a PHP http_build_query string, so
+  // a Result array arrives as flat Result[0][Field] fields, not one Result value.
+  function bracketEnvelope(rows: Record<string, string>[], status = "SUCCESS") {
+    const fields: Record<string, string> = { Status: status, MerID: "TESTMER" };
+    rows.forEach((row, index) => {
+      for (const [name, value] of Object.entries(row)) fields[`Result[${index}][${name}]`] = value;
+    });
+    return envelope(fields);
+  }
+
+  it("reads PayUni's bracket-encoded Result row exactly like a Result value", async () => {
+    respond(bracketEnvelope([paidRow]));
+    const bracket = await query();
+    respond(envelope({ Status: "SUCCESS", Result: paidRow }));
+    expect(bracket).toEqual(await query());
+    expect(bracket).toMatchObject({ outcome: "paid", orderNumber: ORDER, providerTradeNo: TRADE, grossAmountCents: 2_000, payload: { eventId: `${TRADE}:1` } });
+    respond(bracketEnvelope([{ ...paidRow, DataSource: "B" }]));
+    await expect(query()).resolves.toMatchObject({ outcome: "pending", orderNumber: ORDER });
+  });
+
+  it("applies the same identity and multi-trade rules to bracket-encoded rows", async () => {
+    respond(bracketEnvelope([{ ...paidRow, TradeStatus: "2", TradeNo: "PAYUNI-FIRST" }, paidRow]));
+    await expect(query()).resolves.toMatchObject({ outcome: "manual_reconciliation", reason: "multiple_trades", collectionReported: true });
+    respond(bracketEnvelope([{ ...paidRow, MerTradeNo: "CD-OTHER" }]));
+    await expect(query()).rejects.toMatchObject({ category: "provider_response" });
+    respond(bracketEnvelope([]));
+    await expect(query()).rejects.toMatchObject({ category: "provider_response" });
+  });
+
   it("rejects a response whose HashInfo does not match", async () => {
     const encryptInfo = encrypt({ Status: "SUCCESS", Result: paidRow });
     respond(new URLSearchParams({ MerID: "TESTMER", Version: "2.0", EncryptInfo: encryptInfo, HashInfo: "0".repeat(64) }).toString());

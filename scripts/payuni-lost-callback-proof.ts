@@ -75,7 +75,8 @@ export type LostCallbackProof = {
   order: { count: number; status: string; paidAmountCents: number; paidEvents: number };
   reservation: { count: number; status: string };
   reconcilerAudit: { applied: number; manualReview: number };
-  provider: { status: string; settlement: Settlement };
+  /** resultShape/rowCheck: the drill's de-identified enums (QUERY_RESULT_SHAPES / QUERY_ROW_CHECKS); NONE when not queried. */
+  provider: { status: string; resultShape: string; rowCheck: string; settlement: Settlement };
   evaluation: "CALLBACK_WITHHELD" | "NO_POSTING_OBSERVED" | "RECONCILED_ONCE" | "NOT_YET_RECONCILED" | "UNEXPECTED_STATE";
 };
 
@@ -229,7 +230,7 @@ async function readSnapshot(tx: Prisma.TransactionClient, sourceSha: string, pha
   };
 }
 
-type ProviderQuery = (orderNumber: string) => Promise<{ status: string; settlement: Settlement }>;
+type ProviderQuery = (orderNumber: string) => Promise<{ status: string; resultShape?: string; rowCheck?: string; settlement: Settlement }>;
 
 /** The whole read, then the optional read-only PayUni query. The order number never leaves this function. */
 export async function readLostCallbackProof(db: ProofDb, input: {
@@ -243,10 +244,17 @@ export async function readLostCallbackProof(db: ProofDb, input: {
     isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead,
     timeout: 60_000,
   });
-  let provider: LostCallbackProof["provider"] = { status: "NOT_QUERIED", settlement: null };
+  let provider: LostCallbackProof["provider"] = { status: "NOT_QUERIED", resultShape: "NONE", rowCheck: "NONE", settlement: null };
   if (snapshot.orderNumber && input.queryProvider) {
     const result = await input.queryProvider(snapshot.orderNumber);
-    provider = { status: typeof result?.status === "string" && /^[A-Z_0-9]{1,32}$/u.test(result.status) ? result.status : "OTHER", settlement: result?.settlement ?? null };
+    // The drill's own allowlists (dynamic import for the same CommonJS reason as main()).
+    const { QUERY_RESULT_SHAPES, QUERY_ROW_CHECKS } = await import("./payuni-lost-callback-drill.mjs");
+    const listed = (allowed: readonly string[], value: unknown) => (typeof value === "string" && allowed.includes(value) ? value : "NONE");
+    provider = {
+      status: typeof result?.status === "string" && /^[A-Z_0-9]{1,32}$/u.test(result.status) ? result.status : "OTHER",
+      resultShape: listed(QUERY_RESULT_SHAPES, result?.resultShape), rowCheck: listed(QUERY_ROW_CHECKS, result?.rowCheck),
+      settlement: result?.settlement ?? null,
+    };
   }
   return { ...snapshot.proof, provider, evaluation: evaluateLostCallbackProof({ ...snapshot.proof, provider }) };
 }
