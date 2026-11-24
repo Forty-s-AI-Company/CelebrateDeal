@@ -1300,6 +1300,8 @@ export function createPayUniBrowserDiagnostic() {
     // De-identified dialog text/buttons and blocked third-party hosts; see formatPayUniDialogDiagnostic.
     dialogTexts: [],
     externalHosts: [],
+    // Every reachable form control's state after a stopped submit; see capturePayUniFormFieldDiagnostic.
+    formFields: null,
   };
 }
 
@@ -1453,6 +1455,298 @@ export async function capturePayUniPageStructure(page) {
     }
   } catch { /* No structure is better than a failed diagnostic. */ }
   return frames;
+}
+
+// ---- Required-field diagnostic (2026-11-24 run 45362693554: after 確認送出 PayUni showed
+// "請確認付款資訊已填寫 確定" and one POST, but the page structure listed only the four fields the
+// runner fills). When a runner stops on a PayUni dialog it lists every form control it can reach:
+// main frame, open shadow roots and up to seven child frames; native inputs/selects/textareas,
+// ARIA checkbox/switch/radio/combobox/textbox controls and contenteditable areas, plus class-only
+// checkbox/agree widgets and the sentence around 條款／政策／同意 links. Per control only name, id,
+// label or placeholder text, type, required/aria-required, and whether it is empty, checked,
+// :invalid or disabled. A value never leaves the page: emptiness is computed in the page and only
+// the boolean is returned. Names, ids and placeholders pass the dialog-text masks and then the
+// page-structure whitelist; label and sentence text use the dialog-text sanitizer, and text that
+// repeats a typed value of the frame is never used as a label. It never clicks, fills or submits.
+export const PAYUNI_MISSING_INFO_TEXT = "請確認付款資訊已填寫";
+const FORM_FIELDS_MAX = 25;
+const FORM_CUSTOM_MAX = 10;
+const FORM_AGREEMENT_MAX = 3;
+const FORM_FRAMES_MAX = 8;
+const FORM_LABEL_MAX = 60;
+const FORM_AGREEMENT_TEXT_MAX = 120;
+const FORM_CUSTOM_HINTS = new Set(["CHECKBOX", "AGREE", "CONSENT", "TERMS", "SWITCH", "TOGGLE", "OTHER"]);
+
+/**
+ * Runs inside one PayUni frame. Returns attributes and booleans only: `value` and the `textContent`
+ * of an editable control are read solely to compute `empty` and to reject label text that echoes a
+ * typed value; they are never returned. Label text skips every form control and editable area, and
+ * a neighbour or parent is used only when it holds no other control, so a typed value cannot leak.
+ */
+export function collectPayUniFormFieldsInPage(limit) {
+  const VALUE_ROLES = new Set(["textbox", "combobox", "listbox", "spinbutton", "searchbox"]);
+  const SKIP_TAGS = new Set(["INPUT", "SELECT", "TEXTAREA", "OPTION", "SCRIPT", "STYLE", "NOSCRIPT", "TEMPLATE", "IFRAME"]);
+  const attribute = (element, name) => String(element?.getAttribute?.(name) ?? "").slice(0, 200);
+  const holdsValue = (element) => SKIP_TAGS.has(element.tagName)
+    || element.isContentEditable === true || ["", "true", "plaintext-only"].includes(element.getAttribute?.("contenteditable"))
+    || VALUE_ROLES.has(attribute(element, "role").toLowerCase());
+  const ownText = (element, max = 200) => {
+    let text = "";
+    const walk = (node, depth) => {
+      if (!node || text.length >= max || depth > 8) return;
+      if (node.nodeType === 3) { text += ` ${String(node.nodeValue ?? "")}`; return; }
+      if (node.nodeType !== 1 || holdsValue(node)) return;
+      for (const child of node.childNodes ?? []) walk(child, depth + 1);
+    };
+    walk(element, 0);
+    return text.replace(/\s+/gu, " ").trim().slice(0, max);
+  };
+  const shown = (element) => {
+    try {
+      const box = element.getBoundingClientRect();
+      const style = getComputedStyle(element);
+      return box.width > 0 && box.height > 0 && style.visibility !== "hidden" && style.display !== "none";
+    } catch { return false; }
+  };
+  const selector = 'input, select, textarea, [role="checkbox"], [role="switch"], [role="radio"], [role="combobox"], [role="textbox"], '
+    + '[role="listbox"], [role="spinbutton"], [role="searchbox"], [contenteditable=""], [contenteditable="true"], [contenteditable="plaintext-only"]';
+  const roots = [document];
+  for (let index = 0; index < roots.length && roots.length < 20; index += 1) {
+    for (const element of roots[index].querySelectorAll("*")) {
+      if (element.shadowRoot && roots.length < 20) roots.push(element.shadowRoot);
+    }
+  }
+  // Typed values of this frame, kept in the page only so that text echoing one (a neighbour span
+  // that mirrors the card holder or card number) is never used as a label. Never returned.
+  const normalize = (value) => String(value ?? "").replace(/\s+/gu, " ").trim().toLowerCase();
+  const typedValues = [];
+  for (const root of roots) {
+    for (const element of root.querySelectorAll(selector)) {
+      try {
+        const tag = element.tagName;
+        const type = attribute(element, "type").toLowerCase();
+        let value = "";
+        if (tag === "TEXTAREA" || (tag === "INPUT" && !["checkbox", "radio", "hidden", "button", "submit", "reset", "image", "file"].includes(type))) value = element.value;
+        else if (tag !== "INPUT" && tag !== "SELECT" && holdsValue(element)) value = element.textContent;
+        const text = normalize(value);
+        if (text.length >= 2 && typedValues.length < 100) typedValues.push(text);
+      } catch { /* An unreadable control simply cannot be echoed. */ }
+    }
+  }
+  const isEcho = (text) => {
+    const candidate = normalize(text);
+    return candidate !== "" && typedValues.some((value) => candidate.includes(value) || (candidate.length >= 3 && value.includes(candidate)));
+  };
+  /** Text kept as a label only when it does not repeat a typed value. */
+  const accept = (text) => (text && !isEcho(text) ? text : "");
+  const fieldCount = (element) => {
+    try {
+      return (element?.matches?.(selector) ? 1 : 0) + (element?.querySelectorAll?.(selector).length ?? 0);
+    } catch { return 0; }
+  };
+  /** The parent's text, only when the parent holds at most this one control (any kind, editable areas included). */
+  const contextText = (element) => (element?.parentElement && fieldCount(element.parentElement) <= 1 ? accept(ownText(element.parentElement)) : "");
+  const labelOf = (element) => {
+    try {
+      for (const label of Array.from(element.labels ?? []).slice(0, 2)) { const text = accept(ownText(label)); if (text) return text; }
+    } catch { /* No labels collection. */ }
+    const root = element.getRootNode?.() ?? document;
+    for (const id of attribute(element, "aria-labelledby").split(/\s+/u).filter(Boolean).slice(0, 3)) {
+      const reference = root.getElementById?.(id) ?? document.getElementById(id);
+      const text = reference ? accept(ownText(reference)) : "";
+      if (text) return text;
+    }
+    const wrapper = element.closest?.("label");
+    const wrapped = wrapper ? accept(ownText(wrapper)) : "";
+    if (wrapped) return wrapped;
+    const named = accept(attribute(element, "aria-label") || attribute(element, "title"));
+    if (named) return named;
+    // A preceding neighbour only when it holds no control of any kind and does not echo a typed value.
+    for (let node = element.previousElementSibling, index = 0; node && index < 2; node = node.previousElementSibling, index += 1) {
+      if (fieldCount(node) > 0) break;
+      const text = ownText(node);
+      if (text) return accept(text);
+    }
+    return contextText(element);
+  };
+  const fields = [];
+  let hiddenInputs = 0;
+  let total = 0;
+  for (const root of roots) {
+    for (const element of root.querySelectorAll(selector)) {
+      const tag = String(element.tagName ?? "").toLowerCase();
+      const native = tag === "input" || tag === "select" || tag === "textarea";
+      const role = attribute(element, "role").toLowerCase();
+      const type = tag === "input" ? (attribute(element, "type").toLowerCase() || "text") : native ? tag : (role || "editable");
+      if (tag === "input" && type === "hidden") { hiddenInputs += 1; continue; }
+      total += 1;
+      if (fields.length >= limit) continue;
+      const toggle = ["checkbox", "radio", "switch"].includes(type);
+      let empty = null;
+      let checked = null;
+      try {
+        if (toggle) checked = native ? element.checked === true : attribute(element, "aria-checked") === "true";
+        else if (native) empty = String(element.value ?? "") === "";
+        else empty = String(element.textContent ?? "").trim() === "";
+      } catch { /* Unknown state stays null. */ }
+      let invalid = attribute(element, "aria-invalid") === "true";
+      try { if (native && element.matches(":invalid")) invalid = true; } catch { /* No :invalid support. */ }
+      fields.push({
+        tag, type, name: attribute(element, "name"), id: attribute(element, "id"),
+        label: (!native && toggle ? accept(ownText(element)) : "") || labelOf(element),
+        placeholder: attribute(element, "placeholder"), autocomplete: attribute(element, "autocomplete"),
+        visible: shown(element),
+        required: element.required === true || element.hasAttribute?.("required") === true,
+        ariaRequired: attribute(element, "aria-required") === "true",
+        empty, checked, invalid,
+        disabled: element.disabled === true || attribute(element, "aria-disabled") === "true",
+        shadow: root !== document,
+      });
+    }
+  }
+  const hint = /(?:check-?box|agree|consent|terms|switch|toggle)/iu;
+  const custom = [];
+  for (const root of roots) {
+    for (const element of root.querySelectorAll("[class]")) {
+      if (custom.length >= 10) break;
+      if (element.matches?.(selector) || !shown(element)) continue;
+      const className = String(element.className?.baseVal ?? element.className ?? "");
+      const match = className.match(hint);
+      if (!match) continue;
+      custom.push({
+        tag: String(element.tagName ?? "").toLowerCase(), hint: match[0].replace("-", "").toUpperCase(),
+        label: accept(ownText(element)) || contextText(element),
+        checked: /(?:^|[\s_-])(?:is-)?(?:checked|active|selected|on)(?:$|[\s_-])/iu.test(className) || attribute(element, "aria-checked") === "true",
+        containsInput: Boolean(element.querySelector?.("input")),
+      });
+    }
+  }
+  const agreementWords = /(?:條款|政策|同意)/u;
+  const agreement = [];
+  const seen = new Set();
+  for (const root of roots) {
+    for (const element of root.querySelectorAll("a, label, span, p, div, li")) {
+      if (agreement.length >= 3) break;
+      const own = ownText(element, 300);
+      if (!agreementWords.test(own) || !shown(element)) continue;
+      if (Array.from(element.children ?? []).some((child) => agreementWords.test(ownText(child, 300)))) continue;
+      let container = element;
+      // Climb to the agreement row, but never into a block that also holds a text, select or textarea field.
+      for (let parent = element.parentElement, depth = 0; parent && depth < 3; parent = parent.parentElement, depth += 1) {
+        if (ownText(parent, 300).length > 150) break;
+        if (parent.querySelector?.('select, textarea, input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"])')) break;
+        container = parent;
+      }
+      const text = accept(ownText(container, 300));
+      if (!text || seen.has(text)) continue;
+      seen.add(text);
+      const toggles = container.querySelectorAll?.('input[type="checkbox"], input[type="radio"], [role="checkbox"], [role="switch"], [class]') ?? [];
+      agreement.push({
+        text,
+        hasToggle: Array.from(toggles).some((node) => node.matches?.('input, [role="checkbox"], [role="switch"]')
+          || hint.test(String(node.className?.baseVal ?? node.className ?? ""))),
+      });
+    }
+  }
+  return { fields, total, hiddenInputs, shadowRoots: roots.length - 1, custom, agreement };
+}
+
+function payUniFrameHost(frame) {
+  try {
+    const url = new URL(frame.url());
+    if (url.href === "about:blank" || url.protocol === "about:") return "BLANK";
+    return url.protocol === "https:" ? sanitizePayUniHostName(url.hostname) : "OTHER";
+  } catch { return "UNKNOWN"; }
+}
+
+/**
+ * name / id / placeholder: the dialog-text masks first (digit runs such as "12/30", letter+digit
+ * identifiers such as "pay_8f3k2", 16+ character tokens), then the page-structure whitelist.
+ */
+function formIdentifier(value) {
+  return sanitizeStructureText(sanitizePayUniDialogText(value, STRUCTURE_TEXT_MAX));
+}
+
+/** Sanitize one frame's raw form controls; unknown shapes yield empty lists and every value is re-checked. */
+export function sanitizePayUniFormFields(raw, frame = 0, host = "MAIN") {
+  const source = raw !== null && typeof raw === "object" ? raw : {};
+  const list = (value, max) => (Array.isArray(value) ? value.slice(0, max) : []);
+  const kind = (value) => (typeof value === "string" && /^[a-z][a-z0-9-]{0,23}$/u.test(value.toLowerCase()) ? value.toLowerCase() : value ? "other" : "");
+  const count = (value, cap) => (Number.isSafeInteger(value) && value >= 0 ? Math.min(value, cap) : 0);
+  const tri = (value) => (value === true ? true : value === false ? false : null);
+  const wildcard = (value) => {
+    const rest = sanitizePayUniHostName(value.slice(2));
+    return rest.includes(".") && !rest.startsWith("*.") ? `*.${rest}` : "OTHER";
+  };
+  // A host is sanitized once in capture and again when printed; "*.example.com" survives the second pass.
+  const safeHost = ["MAIN", "BLANK", "UNKNOWN", "OTHER", "IP"].includes(host) ? host
+    : typeof host === "string" && host.startsWith("*.") ? wildcard(host) : sanitizePayUniHostName(host);
+  return {
+    frame: Number.isSafeInteger(frame) && frame >= 0 ? Math.min(frame, 9) : 0,
+    host: safeHost,
+    total: count(source.total, 999),
+    hiddenInputs: count(source.hiddenInputs, 99),
+    shadowRoots: count(source.shadowRoots, 99),
+    fields: list(source.fields, FORM_FIELDS_MAX).map((field) => ({
+      tag: kind(field?.tag),
+      type: kind(field?.type),
+      name: formIdentifier(field?.name),
+      id: formIdentifier(field?.id),
+      label: sanitizePayUniDialogText(field?.label, FORM_LABEL_MAX),
+      placeholder: formIdentifier(field?.placeholder),
+      autocomplete: kind(field?.autocomplete),
+      visible: field?.visible === true,
+      required: field?.required === true,
+      ariaRequired: field?.ariaRequired === true,
+      empty: tri(field?.empty),
+      checked: tri(field?.checked),
+      invalid: field?.invalid === true,
+      disabled: field?.disabled === true,
+      shadow: field?.shadow === true,
+    })),
+    custom: list(source.custom, FORM_CUSTOM_MAX).map((item) => ({
+      tag: kind(item?.tag),
+      hint: FORM_CUSTOM_HINTS.has(item?.hint) ? item.hint : "OTHER",
+      label: sanitizePayUniDialogText(item?.label, FORM_LABEL_MAX),
+      checked: item?.checked === true,
+      containsInput: item?.containsInput === true,
+    })),
+    agreement: list(source.agreement, FORM_AGREEMENT_MAX).map((item) => ({
+      text: sanitizePayUniDialogText(item?.text, FORM_AGREEMENT_TEXT_MAX),
+      hasToggle: item?.hasToggle === true,
+    })),
+  };
+}
+
+/** True when a recorded dialog carries PayUni's "請確認付款資訊已填寫" (a required field is empty). */
+export function isPayUniMissingInfoDialog(captures) {
+  return Array.isArray(captures) && captures.some((capture) => typeof capture?.text === "string" && capture.text.includes(PAYUNI_MISSING_INFO_TEXT));
+}
+
+/** Sanitized form controls of the main frame and up to seven child frames; time-boxed, never throws, never clicks. */
+export async function capturePayUniFormFields(page) {
+  const frames = [];
+  try {
+    const all = page.frames().slice(0, FORM_FRAMES_MAX);
+    for (const [index, frame] of all.entries()) {
+      const raw = await withinMs(Promise.resolve().then(() => frame.evaluate(collectPayUniFormFieldsInPage, FORM_FIELDS_MAX)).catch(() => null), 2_000);
+      if (raw && typeof raw === "object") frames.push(sanitizePayUniFormFields(raw, index, index === 0 ? "MAIN" : payUniFrameHost(frame)));
+    }
+  } catch { /* No field list is better than a changed failure code. */ }
+  return frames;
+}
+
+/** `{missingInfoDialog, frames}` for the dialog captures seen so far, or null when no frame was readable. */
+export async function capturePayUniFormFieldDiagnostic(page, dialogCaptures) {
+  const frames = await capturePayUniFormFields(page);
+  return frames.length > 0 ? { missingInfoDialog: isPayUniMissingInfoDialog(dialogCaptures), frames } : null;
+}
+
+/** One JSON line of the re-sanitized field list; null when nothing was captured. */
+export function formatPayUniFormFieldDiagnostic(value) {
+  if (!value || typeof value !== "object" || !Array.isArray(value.frames) || value.frames.length === 0) return null;
+  const frames = value.frames.slice(0, FORM_FRAMES_MAX).map((frame) => sanitizePayUniFormFields(frame, frame?.frame, frame?.host));
+  return JSON.stringify({ missingInfoDialog: value.missingInfoDialog === true, frames });
 }
 
 function withinMs(promise, milliseconds) {
@@ -1788,6 +2082,8 @@ export async function capturePayUniSubmitDiagnostic(page, diagnostic, operationH
     submit.errors = sanitizePayUniSubmitErrors(collected);
     const structure = await capturePayUniPageStructure(page);
     if (structure.length > 0) diagnostic.structure = structure;
+    // Read-only list of every control and whether it is empty/checked/invalid; never a value.
+    diagnostic.formFields = await capturePayUniFormFieldDiagnostic(page, diagnostic.dialogTexts);
   } catch { /* No diagnostic is better than a changed failure code. */ }
 }
 
@@ -2780,6 +3076,8 @@ function printBrowserDiagnostic(flowDependencies, result) {
   if (submit) process.stdout.write(`wp4_payuni_submit_diagnostic=${submit}\n`);
   const dialogText = formatPayUniDialogDiagnostic({ dialogs: diagnostic.dialogTexts, externalHosts: diagnostic.externalHosts });
   if (dialogText) process.stdout.write(`wp4_payuni_dialog_text=${dialogText}\n`);
+  const formFields = formatPayUniFormFieldDiagnostic(diagnostic.formFields);
+  if (formFields) process.stdout.write(`wp4_payuni_form_fields=${formFields}\n`);
 }
 
 /** JSON of the already-sanitized frames, re-sanitized and capped; null when nothing was captured. */

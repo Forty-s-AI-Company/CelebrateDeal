@@ -29,6 +29,13 @@ import {
   recordPayUniExternalHost,
   recordPayUniDialogCapture,
   formatPayUniDialogDiagnostic,
+  collectPayUniFormFieldsInPage,
+  sanitizePayUniFormFields,
+  capturePayUniFormFields,
+  capturePayUniFormFieldDiagnostic,
+  formatPayUniFormFieldDiagnostic,
+  isPayUniMissingInfoDialog,
+  PAYUNI_MISSING_INFO_TEXT,
   classifyPlaywrightErrorKind,
   createPayUniBrowserDiagnostic,
   formatPayUniBrowserDiagnostic,
@@ -620,6 +627,7 @@ test("a rejected PayUni card field records only the fixed step, error class and 
     submit: { captured: false, dialogs: [], modal: "NONE", host: "NONE", path: "NONE", errors: [] },
     dialogTexts: [],
     externalHosts: [],
+    formFields: null,
   });
   const line = formatPayUniBrowserDiagnostic(diagnostic);
   assert.equal(line, "step=CARD_EXPIRY; error=TIMEOUT; page=PAYUNI_UPP; mainFrameMatches=0; childFrames=1; childFrameMatches=1; fieldSource=PLACEHOLDER; creditTab=NOT_TRIED; failed_payuniScript=0; failed_payuniOther=0; failed_externalScript=0; failed_externalOther=0");
@@ -2445,4 +2453,189 @@ test("the dialog line re-sanitizes tampered values and is absent when nothing wa
   const captures = [];
   for (let index = 0; index < 5; index += 1) recordPayUniDialogCapture(captures, { kind: "NONE", text: "", buttons: [] });
   assert.equal(captures.length, 3);
+});
+
+// ---- Required-field diagnostic (run 45362693554: PayUni "請確認付款資訊已填寫" after 確認送出).
+const FIELD_SECRETS = [SYNTHETIC_CARD, "4147 6310 0000 0001", "buyer@example.test", "12/30", "TEXTAREA-PRIVATE", "EDITABLE-PRIVATE",
+  "OPTION-PRIVATE", "0912345678", "hidden-cipher", "Wang Xiao Ming"];
+
+test("the field collector lists every control's name/id, label, type, required and empty/checked state, never a value", async () => {
+  const { Window } = await import("happy-dom");
+  const window = new Window();
+  const saved = { document: globalThis.document, getComputedStyle: globalThis.getComputedStyle };
+  const interactions = [];
+  try {
+    window.HTMLElement.prototype.getBoundingClientRect = function box() { return { width: 10, height: 10 }; };
+    // Tracked on HTMLElement and again on HTMLInputElement, where inputs may override them.
+    for (const prototype of [window.HTMLElement.prototype, window.HTMLInputElement.prototype]) {
+      for (const method of ["click", "focus", "blur", "dispatchEvent", "select", "setSelectionRange", "setRangeText", "reportValidity"]) {
+        if (typeof prototype[method] !== "function") continue;
+        const original = prototype[method];
+        Object.defineProperty(prototype, method, { configurable: true, writable: true,
+          value: function tracked(...args) { interactions.push(method); return original.apply(this, args); } });
+      }
+    }
+    globalThis.document = window.document;
+    globalThis.getComputedStyle = window.getComputedStyle.bind(window);
+    window.document.body.innerHTML = `<form>
+      <label for="card">卡號</label><input id="card" type="text" placeholder="**** **** **** ****" autocomplete="on">
+      <input name="expiry" type="text" placeholder="MM/YY">
+      <div><span class="echo">4147 6310 0000 0001</span><input name="mirror" type="tel"></div>
+      <div><span>Wang Xiao Ming</span><input name="cardholder" placeholder="Cardholder"></div>
+      <input type="email" placeholder="example@example.com">
+      <input type="hidden" name="EncryptInfo" value="hidden-cipher">
+      <div class="agree-row"><input type="checkbox" name="agree" id="agree" required><label for="agree">我已閱讀並同意 <a>隱私權政策</a> 及 <a>平台服務條款</a></label></div>
+      <div><span>持卡人姓名</span><input name="holder" aria-required="true" aria-invalid="true"></div>
+      <select name="bank" required><option value="">請選擇</option><option value="1">OPTION-PRIVATE</option></select>
+      <label>備註 <textarea name="memo">TEXTAREA-PRIVATE</textarea></label>
+      <div role="checkbox" aria-checked="false" aria-required="true">同意收款條件</div>
+      <span class="pu-checkbox is-checked"></span>
+      <div contenteditable="true">EDITABLE-PRIVATE 0912345678</div>
+      <div id="shadow-host"></div>
+      <input type="radio" name="radioOptionpayGroupCredit" style="display:none">
+    </form>`;
+    window.document.getElementById("card").value = SYNTHETIC_CARD;
+    window.document.querySelector('input[name="expiry"]').value = "12/30";
+    window.document.querySelector('input[name="mirror"]').value = "4147 6310 0000 0001";
+    window.document.querySelector('input[name="cardholder"]').value = "Wang Xiao Ming";
+    window.document.querySelector('input[type="email"]').value = "buyer@example.test";
+    window.document.querySelector('select[name="bank"]').value = "1";
+    const shadow = window.document.getElementById("shadow-host").attachShadow({ mode: "open" });
+    shadow.innerHTML = '<input name="mobile" placeholder="手機號碼" required>';
+    interactions.length = 0;
+    const controls = () => [...window.document.querySelectorAll("input, select, textarea"), ...shadow.querySelectorAll("input")];
+    const state = () => controls().map((control) => [control.value, control.checked === true]);
+    const before = state();
+
+    const raw = collectPayUniFormFieldsInPage(25);
+    assert.deepEqual(interactions, [], "the collector never clicks, focuses, selects or dispatches events");
+    assert.deepEqual(state(), before, "no value or checked state changes");
+    const rawText = JSON.stringify(raw);
+    for (const secret of FIELD_SECRETS) assert.equal(rawText.includes(secret), false, `raw leaked ${secret}`);
+    assert.equal(raw.hiddenInputs, 1);
+    assert.equal(raw.shadowRoots, 1);
+
+    const frame = sanitizePayUniFormFields(raw, 0, "MAIN");
+    const byName = (name) => frame.fields.find((field) => field.name === name || field.id === name || field.placeholder === name);
+    assert.deepEqual(byName("card"), { tag: "input", type: "text", name: "", id: "card", label: "卡號", placeholder: "**** **** **** ****",
+      autocomplete: "on", visible: true, required: false, ariaRequired: false, empty: false, checked: null, invalid: false, disabled: false, shadow: false });
+    assert.equal(byName("EMAIL").empty, false);
+    assert.deepEqual(byName("agree"), { tag: "input", type: "checkbox", name: "agree", id: "agree", label: "我已閱讀並同意 隱私權政策 及 平台服務條款",
+      placeholder: "", autocomplete: "", visible: true, required: true, ariaRequired: false, empty: null, checked: false, invalid: false, disabled: false, shadow: false });
+    assert.deepEqual([byName("holder").label, byName("holder").ariaRequired, byName("holder").invalid, byName("holder").empty], ["持卡人姓名", true, true, true]);
+    assert.equal(byName("bank").empty, false, "a chosen option is reported as not empty, never by its text");
+    assert.equal(byName("bank").label, "", "text of a neighbour that holds another field is never borrowed");
+    assert.deepEqual([byName("memo").label, byName("memo").empty], ["備註", false]);
+    assert.deepEqual(byName("手機號碼"), { tag: "input", type: "text", name: "mobile", id: "", label: "", placeholder: "手機號碼",
+      autocomplete: "", visible: true, required: true, ariaRequired: false, empty: true, checked: null, invalid: false, disabled: false, shadow: true });
+    const ariaCheckbox = frame.fields.find((field) => field.tag === "div" && field.type === "checkbox");
+    assert.deepEqual([ariaCheckbox.label, ariaCheckbox.checked, ariaCheckbox.ariaRequired], ["同意收款條件", false, true]);
+    const editable = frame.fields.find((field) => field.type === "editable");
+    assert.deepEqual([editable.label, editable.empty], ["", false], "a neighbouring custom control's text is never borrowed");
+    assert.deepEqual([byName("expiry").placeholder, byName("expiry").empty], ["MM/YY", false]);
+    assert.equal(byName("mirror").label, "", "a neighbour that echoes the typed card number is not a label");
+    assert.equal(byName("cardholder").label, "", "a neighbour that echoes the typed holder name is not a label");
+    const radio = frame.fields.find((field) => field.type === "radio");
+    // A 16+ letter name is masked as TOKEN like any other long token (dialog-text rules).
+    assert.deepEqual([radio.name, radio.visible, radio.checked], ["TOKEN", false, false]);
+    assert.ok(frame.custom.some((item) => item.hint === "CHECKBOX" && item.checked === true && item.containsInput === false));
+    assert.ok(frame.custom.some((item) => item.hint === "AGREE" && item.label === "我已閱讀並同意 隱私權政策 及 平台服務條款" && item.containsInput));
+    assert.deepEqual(frame.agreement[0], { text: "我已閱讀並同意 隱私權政策 及 平台服務條款", hasToggle: true });
+
+    const line = formatPayUniFormFieldDiagnostic({ missingInfoDialog: true, frames: [frame] });
+    for (const secret of FIELD_SECRETS) assert.equal(line.includes(secret), false, `line leaked ${secret}`);
+    assert.equal(JSON.parse(line).missingInfoDialog, true);
+  } finally {
+    globalThis.document = saved.document;
+    globalThis.getComputedStyle = saved.getComputedStyle;
+    await window.happyDOM.close();
+  }
+});
+
+test("the field line re-sanitizes tampered values, caps every list and is absent when nothing was read", () => {
+  assert.equal(formatPayUniFormFieldDiagnostic(null), null);
+  assert.equal(formatPayUniFormFieldDiagnostic({ missingInfoDialog: true, frames: [] }), null);
+  const tamperedField = { tag: "<script>", type: "x y", name: `n ${SYNTHETIC_CARD}`, id: "buyer@example.test", label: `持卡人 ${SYNTHETIC_CARD} 0912345678`,
+    placeholder: "https://sandbox-api.payuni.com.tw/api/upp?EncryptInfo=private", autocomplete: "cc-number", value: SYNTHETIC_CARD,
+    visible: "yes", required: 1, empty: "no", checked: "on", invalid: true };
+  const line = formatPayUniFormFieldDiagnostic({
+    missingInfoDialog: "yes",
+    frames: Array.from({ length: 12 }, (_, index) => ({
+      frame: index === 0 ? 99 : index, host: index === 1 ? "http://evil.test/x" : "d1a2b3c4.cloudfront.net",
+      total: 10_000, hiddenInputs: -1, shadowRoots: "x",
+      fields: Array.from({ length: 40 }, () => tamperedField),
+      custom: [{ tag: "span", hint: "<b>", label: `卡號 ${SYNTHETIC_CARD}`, checked: "yes", value: SYNTHETIC_CARD }],
+      agreement: Array.from({ length: 9 }, () => ({ text: `同意 buyer@example.test ${SYNTHETIC_CARD}`, hasToggle: 1 })),
+    })),
+  });
+  for (const secret of [...FIELD_SECRETS, "EncryptInfo", "https:", "evil.test", "d1a2b3c4"]) assert.equal(line.includes(secret), false, `leaked ${secret}`);
+  const parsed = JSON.parse(line);
+  assert.equal(parsed.missingInfoDialog, false);
+  assert.equal(parsed.frames.length, 8);
+  assert.deepEqual([parsed.frames[0].frame, parsed.frames[0].total, parsed.frames[0].hiddenInputs, parsed.frames[0].shadowRoots], [9, 999, 0, 0]);
+  assert.equal(parsed.frames[1].host, "OTHER");
+  assert.equal(parsed.frames[2].host, "*.cloudfront.net");
+  assert.equal(parsed.frames[0].fields.length, 25);
+  assert.equal(parsed.frames[0].agreement.length, 3);
+  assert.deepEqual(parsed.frames[0].fields[0], { tag: "other", type: "other", name: "n #", id: "EMAIL", label: "持卡人 #",
+    placeholder: "URL", autocomplete: "cc-number", visible: false, required: false, ariaRequired: false, empty: null, checked: null, invalid: true, disabled: false, shadow: false });
+  assert.deepEqual(parsed.frames[0].custom[0], { tag: "span", hint: "OTHER", label: "卡號 #", checked: false, containsInput: false });
+  assert.deepEqual(parsed.frames[0].agreement[0], { text: "同意 EMAIL #", hasToggle: false });
+
+  // name / id / placeholder get the dialog-text masks before the structure whitelist.
+  const masked = sanitizePayUniFormFields({ fields: [
+    { name: "pay_8f3k2a", id: "tok_9XyZ12ab", placeholder: "12/30" },
+    { name: "tok_abcdefghijklmnopqrstuv", id: "card_no", placeholder: "MM/YY" },
+    { name: "exp 1 2 / 3 0", id: "a1 b2 c3 d4", placeholder: "**** **** **** ****" },
+  ] }).fields;
+  assert.deepEqual(masked.map(({ name, id, placeholder }) => [name, id, placeholder]), [
+    ["ID", "ID", "#"],
+    ["TOKEN", "card_no", "MM/YY"],
+    ["exp #", "REDACTED", "**** **** **** ****"],
+  ]);
+});
+
+test("field capture reads every frame read-only, survives unreadable frames and flags the missing-info dialog", async () => {
+  const calls = [];
+  const frame = (url, raw) => ({ url: () => url, async evaluate(fn, limit) { calls.push([fn, limit]); if (raw instanceof Error) throw raw; return raw; } });
+  const page = { frames: () => [
+    frame("https://sandbox-api.payuni.com.tw/api/upp", { fields: [{ tag: "input", type: "checkbox", name: "agree", required: true, checked: false, value: SYNTHETIC_CARD }], total: 1 }),
+    frame("about:blank", { fields: [] }),
+    frame("https://a1b2c3.hosted-fields.example/x?card=1", { fields: [{ tag: "input", type: "tel", placeholder: "卡號", empty: false }] }),
+    frame("https://broken.example/", new Error("detached")),
+    frame("https://null.example/", null),
+  ] };
+  const frames = await capturePayUniFormFields(page);
+  assert.ok(calls.every(([fn, limit]) => fn === collectPayUniFormFieldsInPage && limit === 25));
+  assert.deepEqual(frames.map((item) => [item.frame, item.host]), [[0, "MAIN"], [1, "BLANK"], [2, "*.hosted-fields.example"]]);
+  assert.deepEqual(frames[0].fields[0], { tag: "input", type: "checkbox", name: "agree", id: "", label: "", placeholder: "", autocomplete: "",
+    visible: false, required: true, ariaRequired: false, empty: null, checked: false, invalid: false, disabled: false, shadow: false });
+  assert.equal(JSON.stringify(frames).includes(SYNTHETIC_CARD), false);
+  assert.deepEqual(await capturePayUniFormFields({ frames() { throw new Error("closed"); } }), []);
+  assert.deepEqual(await capturePayUniFormFields(null), []);
+  assert.equal(await capturePayUniFormFieldDiagnostic({ frames: () => [] }, []), null);
+
+  assert.equal(isPayUniMissingInfoDialog([{ kind: "FIXED_LAYER", text: `${PAYUNI_MISSING_INFO_TEXT} 確定`, buttons: ["確定"] }]), true);
+  assert.equal(isPayUniMissingInfoDialog([{ kind: "MODAL_CLASS", text: "交易失敗", buttons: ["確定"] }]), false);
+  assert.equal(isPayUniMissingInfoDialog(null), false);
+  const diagnostic = await capturePayUniFormFieldDiagnostic(page, [{ kind: "FIXED_LAYER", text: `${PAYUNI_MISSING_INFO_TEXT} 確定`, buttons: ["確定"] }]);
+  assert.equal(diagnostic.missingInfoDialog, true);
+  assert.equal(diagnostic.frames.length, 3);
+});
+
+test("the WP4 runner lists the page's fields when it stops on the missing-info modal, still unclicked and submitted once", async () => {
+  const modal = await runSubmitScenario({ confirmationText: `${PAYUNI_MISSING_INFO_TEXT} 確定`, url: "https://sandbox-api.payuni.com.tw/api/upp" });
+  assert.equal(modal.result, "PAYMENT_CONFIRMATION_AMBIGUOUS", "the stop code is unchanged");
+  assert.equal(modal.submitted, 1);
+  assert.equal(modal.confirmationClicks, 0);
+  assert.equal(modal.diagnostic.formFields.missingInfoDialog, true);
+  const line = formatPayUniFormFieldDiagnostic(modal.diagnostic.formFields);
+  assert.equal(JSON.parse(line).frames[0].fields[0].placeholder, "MM/YY");
+  for (const secret of FIELD_SECRETS) assert.equal(line.includes(secret), false, `leaked ${secret}`);
+
+  const other = await runSubmitScenario({ confirmationText: "交易失敗", url: "https://sandbox-api.payuni.com.tw/api/upp" });
+  assert.equal(other.diagnostic.formFields.missingInfoDialog, false, "every stopped modal lists fields; only the flag differs");
+  const back = await runSubmitScenario({ url: `https://${previewHost}/checkout/result?payment=failed&order=CD-1` });
+  assert.equal(back.diagnostic.formFields, null, "no field is read once the browser left PayUni");
+  assert.equal(createPayUniBrowserDiagnostic().formFields, null);
 });

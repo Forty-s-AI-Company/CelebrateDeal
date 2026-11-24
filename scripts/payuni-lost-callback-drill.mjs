@@ -6,9 +6,11 @@ import { pathToFileURL } from "node:url";
 import {
   attestOperationHost,
   capturePayUniConfirmationDialog,
+  capturePayUniFormFieldDiagnostic,
   defaultRequest,
   fixedBrowserEnvironment,
   formatPayUniDialogDiagnostic,
+  formatPayUniFormFieldDiagnostic,
   nativePayUniDialogCapture,
   prepareIssuedRecoveryCheckout,
   readFixedInputs,
@@ -363,6 +365,10 @@ function fail(receipt, code) {
  * and stops otherwise. A de-identified diagnostic travels with the result:
  * the dialog text and button labels (masked, 200 characters), the blocked
  * third-party hosts, the PayUni POST count and the seconds since the submit.
+ * When the drill stops on a dialog it also lists every reachable form control
+ * of the page (name/id, label or placeholder, type, required, empty, checked,
+ * :invalid; never a value) so a newly required PayUni field can be named; it
+ * is read-only and runs after the stop decision, so it never changes the code.
  */
 export async function defaultLostCallbackBrowser(input, dependencies = {}) {
   const { chromium } = dependencies.playwright ?? await import("playwright");
@@ -380,6 +386,8 @@ export async function defaultLostCallbackBrowser(input, dependencies = {}) {
     externalHosts: [...externalHosts],
     payuniPostsAfterSubmit: submittedAt === null ? null : payuniPostsAfterSubmit,
     afterSubmitSeconds: submittedAt === null ? null : Math.max(0, Math.round((Date.now() - submittedAt) / 1_000)),
+    // Filled in only by stopOnDialog, after the result is fixed.
+    formFields: null,
   });
   try {
     const context = await browser.newContext({ locale: "zh-TW" });
@@ -408,6 +416,15 @@ export async function defaultLostCallbackBrowser(input, dependencies = {}) {
       return route.abort();
     });
     const page = await context.newPage();
+    /**
+     * Stop on a dialog. The result (code, callback count, seconds) is fixed before the read-only field
+     * list is collected; the collection only fills in `formFields`, so its time never changes the result.
+     */
+    const stopOnDialog = async () => {
+      const result = { code: "PAYMENT_CONFIRMATION_DIALOG", appCallbackRequests, diagnostic: diagnostic() };
+      try { result.diagnostic.formFields = await capturePayUniFormFieldDiagnostic(page, dialogs); } catch { result.diagnostic.formFields = null; }
+      return result;
+    };
     // Same document handling as the WP4 runner: post the UPP form once through
     // the isolated request context, then serve that exact response to the page.
     const document = await context.request.post(PAYUNI_UPP_URL, {
@@ -442,19 +459,17 @@ export async function defaultLostCallbackBrowser(input, dependencies = {}) {
     const confirmation = page.getByRole("button", { name: "確定", exact: true });
     const nativeGraceMs = Number.isSafeInteger(dependencies.nativeDialogGraceMs) ? dependencies.nativeDialogGraceMs : NATIVE_DIALOG_RETURN_GRACE_MS;
     while (returnPosts === 0 && Date.now() < deadline) {
-      if (nativeDialogAt !== null && Date.now() - nativeDialogAt >= nativeGraceMs) {
-        return { code: "PAYMENT_CONFIRMATION_DIALOG", appCallbackRequests, diagnostic: diagnostic() };
-      }
+      if (nativeDialogAt !== null && Date.now() - nativeDialogAt >= nativeGraceMs) return stopOnDialog();
       // A second confirmation is never clicked (same rule as the WP4 runner); only its text is read.
       if (await confirmation.isVisible().catch(() => false)) {
         recordPayUniDialogCapture(dialogs, await capturePayUniConfirmationDialog(confirmation));
-        return { code: "PAYMENT_CONFIRMATION_DIALOG", appCallbackRequests, diagnostic: diagnostic() };
+        return stopOnDialog();
       }
       await page.waitForTimeout(1_000);
     }
     if (returnPosts === 0 || !returnBody) {
-      const code = nativeDialogAt === null ? "PAYMENT_RETURN_UNOBSERVED" : "PAYMENT_CONFIRMATION_DIALOG";
-      return { code, appCallbackRequests, diagnostic: diagnostic() };
+      if (nativeDialogAt !== null) return stopOnDialog();
+      return { code: "PAYMENT_RETURN_UNOBSERVED", appCallbackRequests, diagnostic: diagnostic() };
     }
     // A Return after a dismissed native dialog is still verified as PAID or not; the dialog is printed too.
     if (dialogs.length > 0) return { code: "RETURN_CAPTURED", returnBody, returnPosts, appCallbackRequests, diagnostic: diagnostic() };
@@ -653,6 +668,8 @@ async function verifyPayRunMain() {
 function printBrowserDiagnostic(diagnostic) {
   const line = formatPayUniDialogDiagnostic(diagnostic);
   if (line) console.log(`payuni_lost_callback_dialog=${line}`);
+  const fields = formatPayUniFormFieldDiagnostic(diagnostic?.formFields);
+  if (fields) console.log(`payuni_lost_callback_form_fields=${fields}`);
 }
 
 async function main() {
