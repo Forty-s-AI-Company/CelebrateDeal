@@ -15,6 +15,7 @@ import { getDb } from "@/lib/db";
 import { protectEmailDeliveryPayload } from "@/lib/email-delivery-pii";
 import { scheduleImmediateEmailDispatch } from "@/lib/email-delivery-immediate";
 import { checkRateLimit } from "@/lib/rate-limit";
+import { copyTrustedClientIpHeaders } from "@/lib/request-client-ip";
 import { checkAccountRateLimit } from "@/lib/account-rate-limit";
 import { automationCustomerKeyHash } from "@/lib/automation-workflow";
 import { resolveBuyerSupportGrant } from "@/lib/buyer-support-access";
@@ -35,11 +36,9 @@ function value(formData: FormData, key: string) {
 
 async function sourceRequest() {
   const incoming = await headers();
-  const forwarded = new Headers();
-  for (const name of ["cf-connecting-ip", "x-forwarded-for", "user-agent"]) {
-    const header = incoming.get(name);
-    if (header) forwarded.set(name, header);
-  }
+  const forwarded = copyTrustedClientIpHeaders(incoming);
+  const userAgent = incoming.get("user-agent");
+  if (userAgent) forwarded.set("user-agent", userAgent);
   return new Request(getCanonicalAppUrl(), { headers: forwarded });
 }
 

@@ -2,7 +2,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({ security: vi.fn(), auth: vi.fn(), limit: vi.fn(), turnstile: vi.fn(), send: vi.fn() }));
 vi.mock("next/navigation", () => ({ redirect: (path: string): never => { throw new Error(`redirect:${path}`); } }));
-vi.mock("next/headers", () => ({ headers: async () => new Headers({ "cf-connecting-ip": "203.0.113.9" }) }));
+// A4-03: the forged Cloudflare header is ignored; only the trusted address reaches Turnstile.
+vi.mock("next/headers", () => ({ headers: async () => new Headers({ "cf-connecting-ip": "192.0.2.66", "x-forwarded-for": "203.0.113.9" }) }));
 vi.mock("@/lib/csrf", () => ({ assertServerActionSecurity: mocks.security }));
 vi.mock("@/lib/auth", () => ({ requireAuth: mocks.auth }));
 vi.mock("@/lib/app-url", () => ({ getCanonicalAppUrl: () => "http://127.0.0.1:31027" }));

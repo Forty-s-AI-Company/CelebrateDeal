@@ -13,6 +13,7 @@ import {
   verifyTotpCode,
 } from "@/lib/mfa";
 import { checkRateLimit } from "@/lib/rate-limit";
+import { copyTrustedClientIpHeaders } from "@/lib/request-client-ip";
 import { checkAccountRateLimit } from "@/lib/account-rate-limit";
 import { CREDENTIAL_TRANSACTION_OPTIONS, lockUserForCredentialWrite } from "@/lib/credential-write-lock";
 import { accountSecurityPath } from "@/lib/vendor-roles";
@@ -23,8 +24,8 @@ function formText(formData: FormData, key: string) {
 }
 
 function forwardedRequestHeaders(headerStore: Awaited<ReturnType<typeof headers>>) {
-  const forwarded = new Headers();
-  for (const name of ["x-forwarded-for", "x-forwarded-host", "x-forwarded-proto", "user-agent"]) {
+  const forwarded = copyTrustedClientIpHeaders(headerStore);
+  for (const name of ["x-forwarded-host", "x-forwarded-proto", "user-agent"]) {
     const value = headerStore.get(name);
     if (value) forwarded.set(name, value);
   }

@@ -11,6 +11,7 @@ import { assertServerActionSecurity } from "@/lib/csrf";
 import { getDb } from "@/lib/db";
 import { decryptMfaSecret, verifyTotpCode } from "@/lib/mfa";
 import { checkRateLimit } from "@/lib/rate-limit";
+import { copyTrustedClientIpHeaders } from "@/lib/request-client-ip";
 import { checkAccountRateLimit } from "@/lib/account-rate-limit";
 import {
   parseVendorPayoutAccountForm,
@@ -28,8 +29,8 @@ function resultPath(code: string) {
 }
 
 function forwardedRequestHeaders(headerStore: Awaited<ReturnType<typeof headers>>) {
-  const forwarded = new Headers();
-  for (const name of ["x-forwarded-for", "x-forwarded-host", "x-forwarded-proto", "user-agent"]) {
+  const forwarded = copyTrustedClientIpHeaders(headerStore);
+  for (const name of ["x-forwarded-host", "x-forwarded-proto", "user-agent"]) {
     const value = headerStore.get(name);
     if (value) forwarded.set(name, value);
   }

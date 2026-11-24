@@ -9,10 +9,10 @@ import {
   listViewerChatUpdates,
   resolveViewerAdmissionContext,
 } from "@/lib/live-chat";
-import { liveChatIpTrustConfig, rateLimitRequestWithIdentity } from "@/lib/live-chat-request-security";
+import { liveChatIpTrustConfig } from "@/lib/live-chat-request-security";
 import { readViewerInteractionState } from "@/lib/live-interaction-viewer-state";
 import { hashLiveViewerToken, liveViewerTokenFromRequest } from "@/lib/live-quota-admission";
-import { liveViewerPassFromRequest } from "@/lib/live-viewer-pass";
+import { liveViewerPassFromRequest, liveViewerPassRateLimitIdentity } from "@/lib/live-viewer-pass";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { getRequestClientIp } from "@/lib/request-client-ip";
 
@@ -27,6 +27,10 @@ const MAX_QUERY_LENGTH = 1_024;
 // Poll hints returned to the client, which clamps them again on its side.
 const ACTIVE_POLL_MS = 2_000;
 const IDLE_POLL_MS = 3_000;
+/** Per viewer (verified pass) each minute. */
+const LIVE_UPDATES_READ_LIMIT = 180;
+/** Per source IP each minute: 30 viewers' worth, for a classroom behind one CGNAT address. */
+const LIVE_UPDATES_READ_IP_LIMIT = LIVE_UPDATES_READ_LIMIT * 30;
 
 const Identifier = z.string().trim().min(1).max(128);
 const INCLUDE_VALUES = ["chat", "interactions"] as const;
@@ -78,7 +82,18 @@ export async function GET(request: Request) {
   if (sameOrigin) return noStore(sameOrigin);
 
   const clientIp = getRequestClientIp(request, liveChatIpTrustConfig());
-  const limited = await checkRateLimit(rateLimitRequestWithIdentity(request, clientIp), "live-updates-read", 180, 60_000);
+  // A4-03 MAJOR-A: a loose per-IP cap (a CGNAT classroom fits) so one address
+  // cannot multiply its allowance with many admissions, then one bucket per
+  // verified viewer pass (or per IP without one). Both must pass.
+  const ipLimited = await checkRateLimit(request, "live-updates-read-ip", LIVE_UPDATES_READ_IP_LIMIT, 60_000, { clientIp });
+  if (ipLimited) return noStore(ipLimited);
+  const searchParams = request.url.length > MAX_QUERY_LENGTH ? null : new URL(request.url).searchParams;
+  const identity = liveViewerPassRateLimitIdentity(request, {
+    vendorId: searchParams?.get("vendorId") ?? null,
+    liveId: searchParams?.get("liveId") ?? null,
+    admissionToken: liveViewerTokenFromRequest(request),
+  }) ?? clientIp;
+  const limited = await checkRateLimit(request, "live-updates-read", LIVE_UPDATES_READ_LIMIT, 60_000, { clientIp: identity });
   if (limited) return noStore(limited);
 
   const query = parseQuery(request);

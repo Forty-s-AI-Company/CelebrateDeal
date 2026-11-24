@@ -5,6 +5,7 @@ import { getCanonicalAppUrl } from "@/lib/app-url";
 import { getDb } from "@/lib/db";
 import { completeLineLogin, LineFetchLoginProvider } from "@/lib/line-login";
 import { checkRateLimit } from "@/lib/rate-limit";
+import { getTrustedClientIp } from "@/lib/request-client-ip";
 
 function resultRedirect(path: string, status: "linked" | "authenticated" | "error") {
   const url = new URL(path, getCanonicalAppUrl());
@@ -42,7 +43,7 @@ export async function GET(request: Request) {
       identityId: result.identity.id,
       userId,
       vendorId: result.identity.vendorId,
-      ipAddress: request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? null,
+      ipAddress: getTrustedClientIp(request),
       userAgent: request.headers.get("user-agent"),
     });
     if (!session) return resultRedirect("/login", "error");

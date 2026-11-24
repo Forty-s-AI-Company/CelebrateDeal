@@ -1,5 +1,7 @@
 import { timingSafeEqual } from "node:crypto";
 import { isIP } from "node:net";
+import { isExplicitLocalE2eRuntime } from "./app-url";
+import { isVercelDeployment } from "./vercel-runtime";
 
 const MAX_SINGLE_IP_HEADER_LENGTH = 128;
 const MAX_FORWARDED_HEADER_LENGTH = 2_048;
@@ -8,9 +10,12 @@ export const LIVE_CHAT_INGRESS_PROOF_HEADER = "x-celebratedeal-live-chat-ingress
 export const LIVE_CHAT_INGRESS_SECRET_MIN_LENGTH = 32;
 export const LIVE_CHAT_INGRESS_SECRET_MAX_LENGTH = 256;
 
-export type ClientIpSource = "cf-connecting-ip" | "x-real-ip" | "runtime-ip";
-export type ClientIpTrustMode = "cloudflare" | "trusted-proxy" | "runtime" | "none";
+export type ClientIpSource = "cf-connecting-ip" | "x-real-ip" | "x-forwarded-for" | "runtime-ip";
+export type ClientIpTrustMode = "vercel-edge" | "local-forwarded" | "cloudflare" | "trusted-proxy" | "runtime" | "none";
 export type ClientIpDeploymentSource = "cloudflare" | "vercel" | "node" | "none";
+
+/** Anything that can answer header lookups: `Request`, `Headers`, or `await headers()`. */
+export type ClientIpHeaderSource = Request | { get(name: string): string | null };
 
 export type ClientIpTrustConfig = {
   trustMode: ClientIpTrustMode;
@@ -89,29 +94,75 @@ function hasValidIngressProof(request: Request, secret: string | null | undefine
 
 function isTrustedConfiguration(config: ClientIpTrustConfig) {
   return (
-    (config.trustMode === "cloudflare" && config.deploymentSource === "cloudflare")
+    (config.trustMode === "vercel-edge" && config.deploymentSource === "vercel")
+    || (config.trustMode === "local-forwarded" && config.deploymentSource === "node")
+    || (config.trustMode === "cloudflare" && config.deploymentSource === "cloudflare")
     || (config.trustMode === "trusted-proxy" && config.deploymentSource === "vercel")
     || (config.trustMode === "runtime" && config.deploymentSource === "node")
     || (config.trustMode === "none" && config.deploymentSource === "none")
   );
 }
 
-function runtimeIp(request: Request) {
-  const candidate = (request as Request & { ip?: unknown }).ip;
+type HeaderReader = { get(name: string): string | null };
+
+function isRequestLike(source: ClientIpHeaderSource): source is Request {
+  return typeof (source as Partial<Request>).headers?.get === "function";
+}
+
+function headerReader(source: ClientIpHeaderSource): HeaderReader {
+  return isRequestLike(source) ? source.headers : source;
+}
+
+function runtimeIp(source: ClientIpHeaderSource) {
+  if (!isRequestLike(source)) return null;
+  const candidate = (source as Request & { ip?: unknown }).ip;
   return typeof candidate === "string" ? canonicalizeIp(candidate) : null;
 }
 
+export { isVercelDeployment };
+
 /**
- * Resolve the client address with the same Cloudflare-first order used by the
- * in-process rate limiter. A present but malformed Cloudflare header fails
- * closed instead of silently falling back to a spoofable forwarded value.
+ * Resolve the client address under an explicit trust configuration.
+ *
+ * - `vercel-edge`: Vercel's edge sets `x-real-ip` and overwrites
+ *   `x-forwarded-for` on every request (it does not forward a client-sent
+ *   value), and a Vercel Function is only reachable through that edge.
+ * - `local-forwarded`: local development and tests only. Next's own server
+ *   fills `x-forwarded-for` with the socket address when it is absent, but
+ *   keeps a client-sent value, so this mode must never face the internet.
+ * - `cloudflare` / `trusted-proxy`: the live chat ingress-proof contract for
+ *   a non-Vercel runtime behind an edge that injects the proof header.
+ *
+ * `cf-connecting-ip`, `true-client-ip`, `x-client-ip` and `forwarded` are
+ * never read outside the proof-gated `cloudflare` mode: the production domain
+ * does not go through Cloudflare (O-7), so any client can send them.
+ * A present but malformed trusted header fails closed (null).
  */
 export function getRequestClientIpWithSource(
-  request: Request,
+  source: ClientIpHeaderSource,
   config: ClientIpTrustConfig,
 ): { ip: string; source: ClientIpSource } | null {
   if (!isTrustedConfiguration(config)) return null;
   if (config.trustMode === "none") return null;
+  const headers = headerReader(source);
+
+  if (config.trustMode === "vercel-edge" || config.trustMode === "local-forwarded") {
+    const realIp = headers.get("x-real-ip");
+    if (realIp !== null) {
+      const ip = canonicalizeIp(realIp);
+      return ip ? { ip, source: "x-real-ip" } : null;
+    }
+    const forwardedFor = headers.get("x-forwarded-for");
+    const forwardedIp = forwardedFor === null ? null : firstForwardedIp(forwardedFor);
+    if (forwardedIp) return { ip: forwardedIp, source: "x-forwarded-for" };
+    if (forwardedFor !== null || config.trustMode === "vercel-edge") return null;
+    const ip = runtimeIp(source);
+    return ip ? { ip, source: "runtime-ip" } : null;
+  }
+
+  // The proof-gated modes need the full request (proof header + runtime IP).
+  if (!isRequestLike(source)) return null;
+  const request = source;
 
   if (config.trustMode === "cloudflare") {
     // cf-ray is metadata, not proof that the request came through a trusted
@@ -123,7 +174,7 @@ export function getRequestClientIpWithSource(
 
   if (config.trustMode === "trusted-proxy") {
     if (!hasValidIngressProof(request, config.ingressSecret)) return null;
-    // Vercel's edge is the trusted proxy. x-real-ip is the edge-resolved
+    // A proxy in front of the runtime. x-real-ip is the proxy-resolved
     // address; if X-Forwarded-For is present, validate the entire chain and
     // require its client-first value to agree with x-real-ip.
     const ip = canonicalizeIp(request.headers.get("x-real-ip"));
@@ -137,6 +188,102 @@ export function getRequestClientIpWithSource(
   return ip ? { ip, source: "runtime-ip" } : null;
 }
 
-export function getRequestClientIp(request: Request, config: ClientIpTrustConfig): string | null {
-  return getRequestClientIpWithSource(request, config)?.ip ?? null;
+export function getRequestClientIp(source: ClientIpHeaderSource, config: ClientIpTrustConfig): string | null {
+  return getRequestClientIpWithSource(source, config)?.ip ?? null;
+}
+
+/**
+ * A-04-03 / D-20: the one IP trust rule for rate limiting and IP logging.
+ *
+ * - Deployed on Vercel (Preview/Production): the edge-set `x-real-ip`, else
+ *   the edge-overwritten `x-forwarded-for`.
+ * - Local development and tests (NODE_ENV is not production): the same
+ *   headers as set by the local Next server, else the runtime address.
+ * - The explicit loopback E2E runtime (`next start` with NODE_ENV=production,
+ *   E2E_TEST_MODE=true and a loopback NEXT_PUBLIC_APP_URL equal to
+ *   E2E_BASE_URL; see isExplicitLocalE2eRuntime): same as local, so the
+ *   Playwright suite can isolate limiter buckets with X-Forwarded-For.
+ * - Any other production runtime (CI build smoke, self-hosting) is not a
+ *   supported deployment: no address is trusted and callers get null, which
+ *   the limiter counts in one shared bucket. Preflight fails this on Vercel.
+ *
+ * VERCEL_ENV must never be set by hand on a non-Vercel host: it is the only
+ * signal that the edge overwrote x-real-ip / x-forwarded-for.
+ */
+export function clientIpTrustConfig(env: NodeJS.ProcessEnv = process.env): ClientIpTrustConfig {
+  if (isVercelDeployment(env)) return { trustMode: "vercel-edge", deploymentSource: "vercel" };
+  if (env.NODE_ENV !== "production") return { trustMode: "local-forwarded", deploymentSource: "node" };
+  if (isExplicitLocalE2eRuntime(env)) return { trustMode: "local-forwarded", deploymentSource: "node" };
+  return { trustMode: "none", deploymentSource: "none" };
+}
+
+const UNRESOLVED_LOG_INTERVAL_MS = 60_000;
+let lastUnresolvedLogAt = Number.NEGATIVE_INFINITY;
+
+/**
+ * A production request without a trusted address lands in the shared
+ * "unknown" limiter bucket. Say so at most once a minute per instance, with
+ * the trust mode only: never a header value or anything from the request.
+ */
+function reportUnresolvedClientIp(env: NodeJS.ProcessEnv, trustMode: ClientIpTrustMode, now = Date.now()) {
+  if (env.NODE_ENV !== "production") return;
+  if (now - lastUnresolvedLogAt < UNRESOLVED_LOG_INTERVAL_MS) return;
+  lastUnresolvedLogAt = now;
+  console.error("client_ip_unresolved", JSON.stringify({ trustMode }));
+}
+
+export function resetUnresolvedClientIpLogForTests() {
+  lastUnresolvedLogAt = Number.NEGATIVE_INFINITY;
+}
+
+/** Trusted client IP for limiter keys, audit rows, sessions and Turnstile. Null when unknown. */
+export function getTrustedClientIp(source: ClientIpHeaderSource, env: NodeJS.ProcessEnv = process.env): string | null {
+  const config = clientIpTrustConfig(env);
+  const ip = getRequestClientIp(source, config);
+  if (ip === null) reportUnresolvedClientIp(env, config.trustMode);
+  return ip;
+}
+
+/**
+ * Limiter bucket form of a trusted address. IPv6 is cut to its /64 prefix (one
+ * subscriber usually holds a whole /64, so per-address buckets would let one
+ * client rotate addresses); IPv4 and non-IP identities pass through. Audit
+ * rows and sessions keep the full address from getTrustedClientIp.
+ */
+export function rateLimitIpBucket(identity: string) {
+  if (isIP(identity) !== 6) return identity;
+  const canonical = canonicalizeIp(identity);
+  if (!canonical) return identity;
+  const [head = "", tail = ""] = canonical.split("::");
+  const headGroups = head ? head.split(":") : [];
+  const tailGroups = canonical.includes("::") ? (tail ? tail.split(":") : []) : [];
+  const groups = canonical.includes("::")
+    ? [...headGroups, ...Array<string>(8 - headGroups.length - tailGroups.length).fill("0"), ...tailGroups]
+    : headGroups;
+  // ::ffff:0:0/96 (IPv4-mapped) is one IPv4 client: bucket it as that IPv4
+  // address, not as the single /64 every mapped address shares.
+  const values = groups.map((group) => Number.parseInt(group, 16));
+  if (values.length === 8 && values.slice(0, 5).every((value) => value === 0) && values[5] === 0xffff) {
+    const high = values[6]!;
+    const low = values[7]!;
+    return [high >> 8, high & 0xff, low >> 8, low & 0xff].join(".");
+  }
+  return `${groups.slice(0, 4).map((group) => group.replace(/^0+(?=.)/u, "")).join(":")}::/64`;
+}
+
+/** The only headers getTrustedClientIp reads (vercel-edge and local-forwarded modes). */
+export const TRUSTED_CLIENT_IP_HEADERS = ["x-real-ip", "x-forwarded-for"] as const;
+
+/**
+ * Server actions rebuild a Request for checkRateLimit from `await headers()`.
+ * Copy exactly the headers the trust rule reads, so the limiter resolves the
+ * same address as getTrustedClientIp(headerStore) and spoofable alternates
+ * (cf-connecting-ip, true-client-ip, ...) never reach it.
+ */
+export function copyTrustedClientIpHeaders(from: { get(name: string): string | null }, into = new Headers()) {
+  for (const name of TRUSTED_CLIENT_IP_HEADERS) {
+    const value = from.get(name);
+    if (value) into.set(name, value);
+  }
+  return into;
 }

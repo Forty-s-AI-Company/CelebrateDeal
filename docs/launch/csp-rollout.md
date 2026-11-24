@@ -18,9 +18,12 @@
 
 **回報端點的限流（實際行為）**：
 
-1. 共用限流 `checkRateLimit`（每 IP 每分鐘 120）：`RATE_LIMIT_PROVIDER=memory` 或 `upstash_redis` 時生效；`cloudflare_waf`（Production 與 CI 的設定）時 app 內不計數，假設前方 WAF 已限流。
+1. 共用限流 `checkRateLimit`（每 IP 每分鐘 120）：`RATE_LIMIT_PROVIDER=memory` 或 `upstash_redis` 時生效；`cloudflare_waf` 時 app 內不計數。
 2. 端點自己的記憶體上限，不受 provider 影響：每個執行個體每 IP 每分鐘 120、所有來源合計每分鐘 2000，超過回 429 且不讀 body。這是每個 serverless 執行個體各自的上限，不是全站上限。
-3. **建議**：Production 在 Cloudflare 加一條 WAF rate limiting rule：路徑 `/api/security/csp-report`、方法 POST、每 IP 每分鐘 120 次、超過 block 10 分鐘。這才是全站的實際上限（owner 在 Cloudflare 後台設定）。
+3. 兩層的「IP」都是 `getTrustedClientIp`（Vercel 的 `x-real-ip`／`x-forwarded-for`），偽造 `cf-connecting-ip`、`true-client-ip` 不會開新桶（A4-03，規則見 `docs/domain-workflows.md`「客戶端 IP 信任規則」）。body 超過 64 KiB 回 413；429 與 413 都不寫 log、不記錄原始 body。
+4. ~~Cloudflare WAF rate rule~~：網域不經 Cloudflare（O-7＝否，2026-11-23），這條建議不適用。全站（跨執行個體）上限需要 `RATE_LIMIT_PROVIDER=upstash_redis`。
+
+**轉強制（R-01）的前提**：A4-03（本節的 IP 信任與限流）上線後，在 staging 累積一段時間的違規報告，再依第 5 節評估；A4-03 本身不改 `CSP_ENFORCE`。
 
 查 log：Vercel Logs 搜尋 `csp_violation`，依 `directive`＋`blocked`＋`documentPath` 分組；`disposition: "enforce"` 代表真的被擋。`source` 為 `chrome-extension` 等 scheme 的通常是使用者的瀏覽器擴充功能，可忽略。
 

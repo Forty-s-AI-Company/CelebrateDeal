@@ -37,8 +37,9 @@ it("derives tenant, user, membership and session from auth and returns bounded t
   expect(mocks.threads).toHaveBeenCalledWith({}, { vendorId: "tenant-a", userId: "user-a", memberId: "member-a", sessionId: "session-a", liveId: "live-a" });
   expect((await GET(request("GET", undefined, "liveId=live-a&submissionId=viewer-a"))).status).toBe(200);
   expect(mocks.list).toHaveBeenCalledWith({}, expect.objectContaining({ submissionId: "viewer-a", vendorId: "tenant-a" }));
-  const limitRequest = mocks.rate.mock.calls[0][0] as Request;
-  expect(limitRequest.headers.get("x-forwarded-for")).toBeNull(); expect(limitRequest.headers.get("cf-connecting-ip")).toBe("unknown");
+  // Per-user bucket; the caller-supplied x-forwarded-for never becomes the identity.
+  expect(mocks.rate.mock.calls[0][1]).toBe("private-instructor-chat:user-a");
+  expect(mocks.rate.mock.calls[0][4]).toEqual({ clientIp: null });
 });
 it("rejects tenant/member overrides and missing CSRF without writing", async () => {
   expect((await POST(request("POST", { ...body, vendorId: "tenant-b" }))).status).toBe(400);
@@ -74,10 +75,11 @@ it.each([false, true])("rejects an open oversized upload promptly (content-lengt
     ]);
     expect(result.status).toBe(400);
     expect(cancelled).toBe(true);
-    const limiterRequest = mocks.rate.mock.calls[0][0] as Request;
-    expect(limiterRequest.body).toBeNull();
-    expect(limiterRequest.method).toBe("POST");
-    expect(limiterRequest.url).toBe(incoming.url);
+    // The limiter gets the request only for metadata plus an explicit identity;
+    // it never reads (or tees) the body, so the oversized stream is cancelled.
+    const [limiterRequest, , , , limiterOptions] = mocks.rate.mock.calls[0];
+    expect(limiterRequest).toBe(incoming);
+    expect(limiterOptions).toEqual({ clientIp: null });
     expect(mocks.create).not.toHaveBeenCalled();
     expect(mocks.csrf).not.toHaveBeenCalled();
   } finally { clearTimeout(timer); }

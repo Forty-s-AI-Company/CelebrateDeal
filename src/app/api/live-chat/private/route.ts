@@ -3,7 +3,7 @@ import { readJsonBody, requireSameOriginRequest } from "@/lib/api-security";
 import { getCsrfToken, verifyCsrfToken } from "@/lib/csrf";
 import { getDb } from "@/lib/db";
 import { chatSessionTokenFromRequest, LiveChatError } from "@/lib/live-chat";
-import { liveChatIpTrustConfig, rateLimitRequestWithIdentity } from "@/lib/live-chat-request-security";
+import { liveChatIpTrustConfig } from "@/lib/live-chat-request-security";
 import { liveViewerTokenFromRequest } from "@/lib/live-quota-admission";
 import { createPrivateViewerChat, listPrivateViewerChat } from "@/lib/live-private-chat";
 import { PrivateViewerChatPost, PrivateViewerChatQuery } from "@/lib/live-private-chat-contract";
@@ -19,7 +19,7 @@ async function security(request: Request, write: boolean) {
   if (denied) return { response: noStore(denied), ipAddress: null };
   const ipAddress = getRequestClientIp(request, liveChatIpTrustConfig());
   if (write && !ipAddress) return { response: json({ error: "Private chat unavailable" }, 403), ipAddress: null };
-  const limited = await checkRateLimit(rateLimitRequestWithIdentity(request, ipAddress), write ? "private-live-chat-write" : "private-live-chat-read", 60, 60_000);
+  const limited = await checkRateLimit(request, write ? "private-live-chat-write" : "private-live-chat-read", 60, 60_000, { clientIp: ipAddress });
   return { response: limited ? noStore(limited) : null, ipAddress };
 }
 function failure(error: unknown) {

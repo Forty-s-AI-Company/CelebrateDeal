@@ -7,10 +7,10 @@ vi.mock("@/lib/rate-limit", () => ({ checkRateLimit }));
 import { POST } from "@/app/api/security/csp-report/route";
 import { CSP_REPORT_LOCAL_LIMITS, cspReportLocalLimit, resetCspReportLocalLimitForTests } from "@/lib/csp-report";
 
-function cspReportRequest(body = '{"csp-report":{"blocked-uri":"https://example.test"}}', ip?: string) {
+function cspReportRequest(body = '{"csp-report":{"blocked-uri":"https://example.test"}}', ip?: string, extraHeaders: Record<string, string> = {}) {
   return new Request("https://app.example.test/api/security/csp-report", {
     method: "POST",
-    headers: { "content-type": "application/csp-report", ...(ip ? { "cf-connecting-ip": ip } : {}) },
+    headers: { "content-type": "application/csp-report", ...(ip ? { "x-forwarded-for": ip } : {}), ...extraHeaders },
     body,
   });
 }
@@ -34,6 +34,48 @@ describe("POST /api/security/csp-report local cap (applies under RATE_LIMIT_PROV
     expect(request.bodyUsed).toBe(false);
     // Another address still has its own allowance.
     expect((await POST(cspReportRequest(undefined, "198.51.100.8"))).status).toBe(204);
+  });
+
+  it("keys the cap on the trusted IP, so forged cf-connecting-ip / true-client-ip cannot open new buckets (A4-03)", async () => {
+    for (let index = 0; index < CSP_REPORT_LOCAL_LIMITS.perIp; index += 1) {
+      const forged = { "cf-connecting-ip": `192.0.2.${index}`, "true-client-ip": `198.18.0.${index}` };
+      expect((await POST(cspReportRequest(undefined, "198.51.100.7", forged))).status).toBe(204);
+    }
+    const response = await POST(cspReportRequest(undefined, "198.51.100.7", { "cf-connecting-ip": "192.0.2.254", "true-client-ip": "198.18.0.254" }));
+    expect(response.status).toBe(429);
+  });
+
+  it("uses Vercel's edge-set x-real-ip on a Vercel deployment and ignores Cloudflare headers", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("VERCEL_ENV", "production");
+    try {
+      for (let index = 0; index < CSP_REPORT_LOCAL_LIMITS.perIp; index += 1) {
+        const headers = { "x-real-ip": "203.0.113.50", "cf-connecting-ip": `192.0.2.${index}` };
+        expect((await POST(cspReportRequest(undefined, undefined, headers))).status).toBe(204);
+      }
+      const forged = { "x-real-ip": "203.0.113.50", "cf-connecting-ip": "192.0.2.200", "true-client-ip": "192.0.2.201" };
+      expect((await POST(cspReportRequest(undefined, undefined, forged))).status).toBe(429);
+      expect((await POST(cspReportRequest(undefined, undefined, { "x-real-ip": "203.0.113.51" }))).status).toBe(204);
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it("answers 429 and 413 without logging or echoing the body", async () => {
+    const spies = (["debug", "error", "info", "log", "warn"] as const)
+      .map((level) => vi.spyOn(console, level).mockImplementation(() => undefined));
+    const secret = '{"csp-report":{"document-uri":"https://app.example.test/reset?token=leak-me"}}';
+    for (let index = 0; index < CSP_REPORT_LOCAL_LIMITS.perIp; index += 1) {
+      await POST(cspReportRequest('{"x":1}', "198.51.100.9"));
+    }
+    const limited = await POST(cspReportRequest(secret, "198.51.100.9"));
+    expect(limited.status).toBe(429);
+    expect(await limited.text()).not.toContain("leak-me");
+
+    const oversized = await POST(cspReportRequest(secret + " ".repeat(64 * 1024), "198.51.100.10"));
+    expect(oversized.status).toBe(413);
+    expect(await oversized.text()).not.toContain("leak-me");
+    for (const spy of spies) expect(JSON.stringify(spy.mock.calls)).not.toContain("leak-me");
   });
 
   it("caps all reports at 2000 per minute and recovers in the next window", () => {

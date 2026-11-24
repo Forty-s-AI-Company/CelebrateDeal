@@ -97,10 +97,11 @@ it.each([false, true])("rejects an open oversized upload promptly (content-lengt
     ]);
     expect(result.status).toBe(400);
     expect(cancelled).toBe(true);
-    const limiterRequest = mocks.rate.mock.calls[0][0] as Request;
-    expect(limiterRequest.body).toBeNull();
-    expect(limiterRequest.method).toBe("POST");
-    expect(limiterRequest.url).toBe(incoming.url);
+    // The limiter gets the request only for metadata plus the resolved trusted
+    // identity; it never reads (or tees) the body, so the stream is cancelled.
+    const [limiterRequest, , , , limiterOptions] = mocks.rate.mock.calls[0];
+    expect(limiterRequest).toBe(incoming);
+    expect(limiterOptions).toEqual({ clientIp: "203.0.113.5" });
     expect(mocks.create).not.toHaveBeenCalled();
     expect(mocks.csrf).not.toHaveBeenCalled();
   } finally { clearTimeout(timer); }

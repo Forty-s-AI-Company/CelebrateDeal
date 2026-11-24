@@ -15,6 +15,7 @@ import { requireEditableSalesProjectScope, type SalesProjectScope } from "@/lib/
 import { ensureSalesProjectCustomerMembership } from "@/lib/sales-project-customer-membership";
 import { getCanonicalAppUrl } from "@/lib/app-url";
 import { checkRateLimit } from "@/lib/rate-limit";
+import { copyTrustedClientIpHeaders } from "@/lib/request-client-ip";
 import { captureTrackingBrowserContext, type TrackingBrowserContext } from "@/lib/tracking-browser-context";
 import { enqueueAuthoritativeTrackingEvent } from "@/lib/tracking-event-outbox";
 
@@ -107,11 +108,9 @@ function db(): ConsultationDatabase {
 
 async function publicBookingRequest() {
   const incoming = await headers();
-  const forwarded = new Headers();
-  for (const name of ["cf-connecting-ip", "x-forwarded-for", "user-agent"]) {
-    const value = incoming.get(name);
-    if (value) forwarded.set(name, value);
-  }
+  const forwarded = copyTrustedClientIpHeaders(incoming);
+  const userAgent = incoming.get("user-agent");
+  if (userAgent) forwarded.set("user-agent", userAgent);
   return new Request(getCanonicalAppUrl(), { headers: forwarded });
 }
 

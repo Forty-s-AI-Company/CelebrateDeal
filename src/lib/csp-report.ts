@@ -10,6 +10,8 @@
  * full URLs, referrer, script sample, original policy, user agent, line numbers.
  */
 
+import { getTrustedClientIp, rateLimitIpBucket } from "./request-client-ip";
+
 export type CspViolation = {
   disposition: "enforce" | "report" | "unknown";
   directive: string;
@@ -23,10 +25,11 @@ export const MAX_CSP_REPORTS_PER_REQUEST = 20;
 
 /**
  * Per-instance cap that applies under every RATE_LIMIT_PROVIDER. With
- * `cloudflare_waf` the shared limiter returns early (the WAF is expected to
- * count in front of the app), so without this an instance would log every
- * report it receives. Per serverless instance, not global: a Cloudflare WAF
- * rate rule on this path remains the real limit in production.
+ * `cloudflare_waf` the shared limiter returns early, and the production
+ * domain does not go through Cloudflare (O-7), so this cap is what bounds the
+ * endpoint there. Per serverless instance, not global; a global per-IP limit
+ * needs RATE_LIMIT_PROVIDER=upstash_redis. The per-IP key is the trusted
+ * client IP (getTrustedClientIp), never a client-settable header.
  */
 export const CSP_REPORT_LOCAL_LIMITS = { perIp: 120, global: 2000, windowMs: 60_000 } as const;
 const MAX_TRACKED_IPS = 5000;
@@ -36,9 +39,8 @@ let globalWindow: Window = { startedAt: 0, count: 0 };
 const ipWindows = new Map<string, Window>();
 
 function requestIp(request: Request): string {
-  return request.headers.get("cf-connecting-ip")?.trim()
-    || request.headers.get("x-forwarded-for")?.split(",")[0]?.trim()
-    || "unknown";
+  const ip = getTrustedClientIp(request);
+  return ip === null ? "unknown" : rateLimitIpBucket(ip);
 }
 
 /** Returns the seconds to wait when this request is over a local cap, otherwise null. */

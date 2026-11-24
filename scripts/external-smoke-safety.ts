@@ -177,6 +177,30 @@ function isPlainRecord(payload: unknown): payload is Record<string, unknown> {
   return Boolean(payload && typeof payload === "object" && !Array.isArray(payload));
 }
 
+/**
+ * A4-03: a deployed target must resolve client IPs through the Vercel edge
+ * (`clientIpTrust === "vercel-edge"`); otherwise every request shares one
+ * limiter bucket. On Preview the health route also reports the Vercel-injected
+ * commit SHA, which shows the Vercel system variables reached the runtime.
+ * Production deliberately reports a null identity, so only the trust mode is
+ * checked there. Returns allowlisted reasons only, never payload values.
+ */
+export function evaluateDeploymentHealthSignals(
+  payload: unknown,
+  target: "preview" | "production",
+): { ok: true } | { ok: false; reason: string } {
+  if (!isPlainRecord(payload)) return { ok: false, reason: "health_payload_not_json" };
+  if (payload.clientIpTrust !== "vercel-edge") return { ok: false, reason: "client_ip_trust_not_vercel_edge" };
+  if (target === "preview") {
+    const deployment = isPlainRecord(payload.deployment) ? payload.deployment : null;
+    const commitSha = deployment?.commitSha;
+    if (typeof commitSha !== "string" || !/^[a-f0-9]{40}$/u.test(commitSha)) {
+      return { ok: false, reason: "preview_commit_sha_missing" };
+    }
+  }
+  return { ok: true };
+}
+
 function normalizeBaseUrl(url: URL) {
   url.hash = "";
   url.search = "";

@@ -318,6 +318,7 @@ PayUni 的 Notify 整個遺失時，`/api/jobs/payment-reconcile`（`JOB_SECRET`
   - 例外：已經超過 3 天視窗、從沒查到過交易、而且最後一次是查無的補單列，每輪開頭直接關閉（`closed / not_found`，計入 `notFoundClosed`），不轉人工。
 - **入帳失敗**：管線丟錯時事件標 `failed`、15 分鐘後由 webhook-retry 接手（有重試上限與用盡告警）；售完（`InventoryUnavailableError`）另發 `webhook_retry_requires_attention`。補單列記為 `settled / *_handed_to_retry`，不再查詢。
 - **Sandbox 實測（A4-05）**：`.github/workflows/staging-payuni-lost-callback.yml`，只在受保護的 master、staging Preview 環境執行。`phase=pay`（要 `source_sha`＋`deployment_host`，先過 lineage 與 alias 自證）用該 SHA 唯一的 WP4 合成買家結帳（NT$1，伺服器定價，與其他 WP4 任務共用「每個 SHA 一筆」的額度）付款：送出 UPP 表單前，runner 以 Sandbox 金鑰解開伺服器產生的 EncryptInfo，逐欄確認商店、訂單編號、金額、只收信用卡與兩個 staging 回呼網址都是應用程式產生的值，只把 `NotifyURL`／`ReturnURL` 換成 staging 上沒有路由的 `/api/qa/payuni-lost-callback-sink`；Return 在隔離瀏覽器內攔下、只在記憶體驗章確認 PayUni 回報已付款，不轉送給應用程式。付款步驟不帶 GitHub token、出站只到 staging alias 與 PayUni Sandbox。接著 `scripts/payuni-lost-callback-proof.ts` 在 `SET TRANSACTION READ ONLY` 快照內確認交易仍未決、沒有任何 paid 事件，並以唯讀交易查詢記下 `CloseStatus`／`RemainAmt` 等代碼；只有 PayUni 同時回報該筆 `FOUND`＋`TradeStatus 1`＋`DataSource A` 時才判定 `CALLBACK_WITHHELD`（回呼確實遺失），否則是 `NO_POSTING_OBSERVED`，不算通過。等 15 分鐘以上、跑過 `scheduled-jobs.yml job=payment-reconcile` 後執行 `phase=verify`，**必須**給 `source_sha` 與 `pay_run_id`（上一步 pay 的 run id）：workflow 先查 GitHub 確認該 run 是本 workflow 在 master 上成功的 `workflow_dispatch`，下載它的 `payuni-lost-callback-pay-<sha>` artifact，`pay.json` 必須是 `PAID_CALLBACK_WITHHELD` 且 `sourceSha` 相同，否則在注入任何 secret 前停止。之後的唯讀證明要求：交易 paid、paid 事件恰好一筆且由補單建立、訂單 `payment.paid` 一筆、補單列 `settled / paid_applied`、補單 AuditLog 一筆、沒有人工事件；再跑一次補單與 verify，數字不變即證明不會重複入帳。收據只有列舉值、計數與合成金額。
+  - **送出後的對話框**：頁面上的「確定」modal 一律不點、直接以 `PAYMENT_CONFIRMATION_DIALOG` 停下；原生 alert／confirm 先 dismiss（不接受）再記錄，之後最多再等 15 秒，Return 回來就照常驗章，否則同樣停下。停下時 log 會多一行 `payuni_lost_callback_dialog=`（WP4 是 `wp4_payuni_dialog_text=`），只有去識別化的對話框文字與按鈕、被擋的第三方網域、送出後 PayUni POST 次數 `payuniPostsAfterSubmit` 與秒數。**`payuniPostsAfterSubmit > 0` 代表表單已送到 PayUni，可能已建立交易：重跑前先到 PayUni Sandbox 後台（或唯讀交易查詢）確認該訂單的交易狀態**，不要直接換 SHA 再付一次。
 - **凍結商家**：與 PayUni 回呼完全相同——照常查詢與入帳（交易、訂單、佣金、月結資料），數位／課程權限留在 pending、`payment.paid` 事件標 `fulfillmentHeld`、不跑 `payment_paid` 自動化；解除凍結時由既有流程開通。理由：錢已經被收，凍結只擋交付，不能讓已付款的買家停在「未付款」。
 
 ## 租戶與權限
@@ -435,6 +436,27 @@ Web instance、排程 job 與資料庫各用自己的時鐘；一台寫入、另
 | `live-session-result.ts`、`live-session-switch-token.ts`、`form-submission-line-binding-session.ts` | 簽章內 `e`（簽發時間＋TTL） | 感謝頁場次、更換場次連結、LINE 綁定失效 |
 
 新增時間戳檢查時沿用這個常數，不要把容許值加到到期判斷上。
+
+### 客戶端 IP 信任規則（A4-03，2026-11-24）
+
+正式與 staging 網域的 DNS 在 Spaceship，直接指向 Vercel，不經 Cloudflare（O-7＝否），所以 Cloudflare WAF／rate rule 都不存在，限流只能在應用層做（D-20）。任何用戶端都能自己送 `cf-connecting-ip`、`true-client-ip`、`x-client-ip`、`forwarded` 等標頭，它們一律不採信。
+
+- **唯一入口**：`src/lib/request-client-ip.ts` 的 `getTrustedClientIp(request 或 headers)`。限流（`checkRateLimit`）、稽核紀錄（`requestAuditMeta`）、session 的 `ipAddress`、密碼重設信、Turnstile `remoteip`、CSP 回報上限都走它。Server Action 為限流重建 Request 時，用 `copyTrustedClientIpHeaders(await headers())` 只複製它會讀的兩個標頭。
+- **Vercel 部署（`VERCEL_ENV` 為 `production` 或 `preview`）**：讀 `x-real-ip`，沒有時讀 `x-forwarded-for` 第一個位址。依據：Vercel 官方 Request headers 文件寫明 `x-forwarded-for` 由 Vercel 覆寫、不轉送外部送來的值以防偽造，`x-real-ip` 與它相同；`@vercel/functions` 的 `ipAddress()` 也是讀這個標頭。Vercel Function 只能經 Vercel edge 進入，沒有可繞過的直連入口。格式不合（逗號、換行、非 IP、超過 16 跳）時視為沒有 IP，不退回其他標頭。
+- **本機開發與測試（`NODE_ENV` 不是 `production`）**：讀同樣兩個標頭（本機 Next server 在沒有時以 socket 位址補上 `x-forwarded-for`），都沒有時用 runtime 位址。Next 的 server 用 `??=`，**保留**用戶端送來的 `x-forwarded-for`，所以這個模式只能用在不對外的環境。
+- **本機 Playwright（`next start`，`NODE_ENV=production`）**：只有 `isExplicitLocalE2eRuntime` 成立時（`E2E_TEST_MODE=true`，`NEXT_PUBLIC_APP_URL` 是 loopback 且等於 `E2E_BASE_URL`）才比照本機模式，讓 smoke 測試以 `X-Forwarded-For` 隔離限流桶。e2e 不設 `VERCEL_ENV`。
+- **其他 production runtime（CI build smoke、自架）**：不支援，一律回 null；限流把這類請求算進同一個 `unknown` 桶（偏嚴，不會被偽造標頭分桶），並每個執行個體每分鐘最多記一筆 `client_ip_unresolved` 錯誤 log（只含信任模式名稱）。
+- **不可以在非 Vercel 的主機設定 `VERCEL_ENV`**（也不要把 `vercel env pull` 的檔案拿去對外的主機用）：它是「edge 已覆寫 `x-real-ip`／`x-forwarded-for`」的唯一訊號，設錯會讓用戶端自己送的 `x-forwarded-for` 被採信。
+- **IPv6**：限流鍵把 IPv6 位址截到 /64（同一個用戶通常握有整個 /64，逐位址分桶等於可以輪換）；IPv4-mapped 位址（`::ffff:0:0/96`）改用內嵌的 IPv4 分桶。稽核紀錄、session 與 Turnstile 仍用完整位址。CSP 回報上限相同。
+- **preflight 與健康檢查**：`CLIENT_IP_TRUST` 檢查在 Vercel 上（`VERCEL=1` 或有 `VERCEL_ENV`）而信任模式是 `none` 時 FAIL；CI 等非 Vercel 的 production 只給 WARN，避免 CI 的 `NODE_ENV=production` preflight 與 build 失敗。`RATE_LIMIT_PROVIDER=cloudflare_waf` 時：Vercel Production（`VERCEL_ENV=production`）FAIL；Vercel Preview（staging）只給 WARN，訊息相同，避免未確認的 staging 設定擋住所有 staging 部署。`/api/health` 與 `/api/admin/preflight` 回報 `clientIpTrust`（只有模式名稱）；provider 名稱在 `/api/admin/preflight` 的 `rateLimit.provider`。
+- **部署後 smoke**：`scripts/external-smoke.ts`（只打 staging／preview）與 `scripts/qa/go-nogo-public-probe.mjs` 斷言 `/api/health` 的 `clientIpTrust === "vercel-edge"`；staging 另斷言 `deployment.commitSha` 存在（證明 Vercel 系統變數有進到 runtime）。Production 的健康檢查刻意不回部署身分（`commitSha` 一律 null），所以 Production（`GO_NOGO_TARGET=production`）只檢查信任模式。**建議（未實作）**：另設自訂變數 `DEPLOYMENT_PLATFORM=vercel`，在它存在而 `VERCEL_ENV` 缺少時讓 preflight 與執行時都 fail，補上 Vercel 系統變數沒進 runtime 時偵測不到的盲點。
+- **直播觀眾（MAJOR-A）**：每個請求要同時通過兩道限流。(1) 寬鬆的每 IP 上限：`live-updates-read-ip` 每分鐘 5400（180×30）、`live-chat-read-ip` 1800（60×30）、`live-chat-write-ip` 600，讓同一個 NAT 或電信 CGNAT 後面的一整班觀眾不會互相卡住，同時限制單一來源靠開很多 admission 或報名把額度放大的倍數。(2) 身分桶：讀取（`live-updates-read` 180、`live-chat-read` 60）用以 query 的 vendorId／liveId 驗章、未過期、綁定本次 admission cookie 的 viewer pass（`liveViewerPassRateLimitIdentity`）；發言（`live-chat-write` 60）用驗章通過的聊天 session（`chatSpeakerRateLimitIdentity`，以報名 `submissionId` 的雜湊分桶）。兩者都不查資料庫，驗不過才退回 IP。注意：每次新的 admission 會拿到新的 pass、也就是新的桶，所以身分桶本身不是單一來源的上限，上限靠第 (1) 道。聊天發言仍要求有可信 IP（黑名單與紀錄用）。
+- **呼叫端已知身分時**：`checkRateLimit(request, key, limit, windowMs, { clientIp })` 直接指定桶身分（直播聊天、購買廣播、live-updates 傳入已解析的 IP；講師私訊傳 `null` 搭配 per-user key；upsell 傳固定的 `authenticated-buyer` 搭配 grant 雜湊 key）。不可把原始標頭值傳進 `clientIp`。
+- **直播聊天**：`liveChatIpTrustConfig` 在 Vercel 部署上與上面相同（不再需要 `x-celebratedeal-live-chat-ingress` proof，因為沒有任何前置 proxy 能注入它）；非 Vercel 的 production（本機 E2E）仍沿用 ingress proof 合約，本機開發仍只用 runtime 位址。
+- `RATE_LIMIT_PROVIDER` 只選計數儲存，不決定信任哪個標頭。`cloudflare_waf` 時 `checkRateLimit` 不計數；網域不經 Cloudflare，所以 Production 的 preflight 直接 FAIL，staging 給 WARN；兩者都應使用 `RATE_LIMIT_PROVIDER=upstash_redis`。**staging 的 `/api/admin/preflight` 若出現這個 `RATE_LIMIT_PROVIDER` WARN，請 owner 把 staging 改為 `upstash_redis`（並設定 `UPSTASH_REDIS_REST_URL`、`UPSTASH_REDIS_REST_TOKEN`）。** **Production 部署的前置條件（MINOR-B）**：Production 是 `cloudflare_waf` 時 build 的 preflight 會失敗，owner 必須先在 Production 改成 `upstash_redis` 並設好 Upstash 兩個變數，才能部署。
+- 測試：`src/lib/trusted-client-ip.test.ts`（偽造 `cf-connecting-ip`／`true-client-ip` 不改變限流鍵）、`src/lib/request-client-ip.test.ts`、`src/app/api/security/csp-report/route.test.ts`。
+
+**CSP 轉強制（R-01）**：要等本項上線、並在 staging 累積一段時間的 `csp_violation` 回報後再評估；A4-03 本身不改 `CSP_ENFORCE`。
 
 ## 瀏覽器 QA
 

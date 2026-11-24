@@ -987,7 +987,7 @@ describe("loginAction", () => {
     expect(mocks.writeAuditLog).not.toHaveBeenCalled();
   });
 
-  it("forwards the trusted Cloudflare source to the limiter ahead of x-forwarded-for", async () => {
+  it("forwards only the trusted IP headers to the limiter and drops a forged cf-connecting-ip (A4-03)", async () => {
     mocks.headers.mockResolvedValueOnce({
       get: (name: string) => ({
         "cf-connecting-ip": "198.51.100.24",
@@ -1000,7 +1000,7 @@ describe("loginAction", () => {
     await expect(loginAction(loginFormData())).rejects.toThrow("redirect:/login?error=rate_limited");
 
     const [rateLimitRequest] = mocks.checkRateLimit.mock.calls[0] as [Request];
-    expect(rateLimitRequest.headers.get("cf-connecting-ip")).toBe("198.51.100.24");
+    expect(rateLimitRequest.headers.get("cf-connecting-ip")).toBeNull();
     expect(rateLimitRequest.headers.get("x-forwarded-for")).toBe("203.0.113.10, 198.51.100.1");
     expect(mocks.authenticateUser).not.toHaveBeenCalled();
   });

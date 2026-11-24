@@ -5,6 +5,7 @@ import { getStagingDatabaseIdentityReport } from "@/lib/database-identity";
 import { getDb } from "@/lib/db";
 import { getEnvCheckReport } from "@/lib/env";
 import { getRateLimitProviderStatus } from "@/lib/rate-limit";
+import { clientIpTrustConfig } from "@/lib/request-client-ip";
 
 export async function GET(request: Request) {
   if (!requireJobSecret(request)) {
@@ -33,7 +34,9 @@ export async function GET(request: Request) {
     database_reachable: database.status === "pass",
     ...databaseIdentity,
     all_passed: allPassed,
+    // Names only: the provider (rateLimit.provider) and the source-IP trust mode.
     rateLimit: getRateLimitProviderStatus(),
+    clientIpTrust: clientIpTrustConfig().trustMode,
     cloudflare: getCloudflareStreamDiagnostics(),
   });
 }

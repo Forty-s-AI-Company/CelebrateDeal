@@ -13,6 +13,7 @@ import { getDb } from "@/lib/db";
 import { verifyPasswordAsync } from "@/lib/password";
 import { PASSWORD_INPUT_LIMIT } from "@/lib/password-policy";
 import { checkRateLimit } from "@/lib/rate-limit";
+import { copyTrustedClientIpHeaders } from "@/lib/request-client-ip";
 import { recentMfaRedirectPath, recentMfaStatus, requireRecentMfa } from "@/lib/recent-mfa";
 
 const SECURITY_PATH = "/settings/security";
@@ -51,11 +52,7 @@ export async function requestAccountEmailChangeAction(formData: FormData) {
   }
 
   const incoming = await headers();
-  const forwarded = new Headers();
-  for (const name of ["cf-connecting-ip", "x-forwarded-for"]) {
-    const value = incoming.get(name);
-    if (value) forwarded.set(name, value);
-  }
+  const forwarded = copyTrustedClientIpHeaders(incoming);
   const sourceLimited = await checkRateLimit(new Request(getCanonicalAppUrl(), { headers: forwarded }), "account-email-change-source", SOURCE_LIMIT, SOURCE_WINDOW_MS);
   if (sourceLimited) failure(sourceLimited.status === 429 ? "email_change_rate_limited" : "email_change_unavailable");
   const accountLimited = await checkAccountRateLimit("account_email_change_request", auth.user.id);

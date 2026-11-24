@@ -1,11 +1,36 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
+  evaluateDeploymentHealthSignals,
   isLoopbackSmokeTarget,
   resolveSmokeTarget,
   summarizeSmokeFailure,
   summarizeSmokeResponse,
 } from "./external-smoke-safety";
+
+describe("deployment health signals (A4-03)", () => {
+  const sha = "a".repeat(40);
+
+  it("requires the Vercel edge trust mode and, on Preview, the injected commit SHA", () => {
+    expect(evaluateDeploymentHealthSignals({ clientIpTrust: "vercel-edge", deployment: { commitSha: sha } }, "preview")).toEqual({ ok: true });
+    expect(evaluateDeploymentHealthSignals({ clientIpTrust: "vercel-edge", deployment: { commitSha: null } }, "preview"))
+      .toEqual({ ok: false, reason: "preview_commit_sha_missing" });
+    expect(evaluateDeploymentHealthSignals({ clientIpTrust: "none", deployment: { commitSha: sha } }, "preview"))
+      .toEqual({ ok: false, reason: "client_ip_trust_not_vercel_edge" });
+  });
+
+  it("checks only the trust mode on Production, whose health identity is null by design", () => {
+    expect(evaluateDeploymentHealthSignals({ clientIpTrust: "vercel-edge", deployment: { commitSha: null } }, "production")).toEqual({ ok: true });
+    expect(evaluateDeploymentHealthSignals({ clientIpTrust: "local-forwarded" }, "production"))
+      .toEqual({ ok: false, reason: "client_ip_trust_not_vercel_edge" });
+    expect(evaluateDeploymentHealthSignals("not json", "production")).toEqual({ ok: false, reason: "health_payload_not_json" });
+  });
+
+  it("never echoes payload values in the reason", () => {
+    const result = evaluateDeploymentHealthSignals({ clientIpTrust: "secret-looking-value" }, "preview");
+    expect(JSON.stringify(result)).not.toContain("secret-looking-value");
+  });
+});
 
 describe("external smoke safety", () => {
   it("defaults to the local smoke server without extra authorization", () => {
