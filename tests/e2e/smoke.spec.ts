@@ -76,14 +76,20 @@ type PublicRateLimitEndpoint = {
   invalidPayloadError: string;
 };
 
+// The limiter counts IPv6 per /64 (A4-03), so the run and route identity must
+// sit in the first four hextets; the interface half is constant.
 function uniqueRateLimitTestIp(routeId: number) {
+  const digest = createHash("sha256")
+    .update(`${rateLimitRunId}:route:${routeId}`)
+    .digest("hex");
+
   return [
     "2001",
     "0db8",
-    rateLimitRunId.slice(0, 4),
-    rateLimitRunId.slice(4, 8),
-    rateLimitRunId.slice(8, 12),
-    routeId.toString(16).padStart(4, "0"),
+    digest.slice(0, 4),
+    digest.slice(4, 8),
+    "0000",
+    "0000",
     "0000",
     "0001",
   ].join(":");

@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { DERIVED_KEY_ROTATIONS, expiryFitsPreRotationIssue, signWithRotation, verifyWithRotation } from "@/lib/derived-key-rotation";
 import { SERVER_CLOCK_SKEW_SECONDS } from "@/lib/server-clock-skew";
 
@@ -85,6 +86,21 @@ export function verifyFormSubmissionChatSessionToken(
     () => expiryFitsPreRotationIssue(expiresAtSeconds * 1_000, FORM_SUBMISSION_CHAT_SESSION_TTL_SECONDS * 1_000))) return null;
 
   return { submissionId, expiresAt: new Date(expiresAtSeconds * 1_000) };
+}
+
+/**
+ * A4-03 MAJOR-A: limiter identity for a chat speaker. A correctly signed,
+ * unexpired chat-session cookie names one registration (submission) without a
+ * database read; a client cannot mint one, and each new submission is itself
+ * behind the registration limits. Returns null (caller falls back to the
+ * trusted IP) for a missing or invalid token. Callers keep a looser per-IP
+ * limit as well.
+ */
+export function chatSpeakerRateLimitIdentity(token: string | null | undefined, now = new Date()) {
+  if (!token) return null;
+  const claim = verifyFormSubmissionChatSessionToken(token, now);
+  if (!claim) return null;
+  return `chat-speaker:${createHash("sha256").update(`${TOKEN_VERSION}:limit:${claim.submissionId}`).digest("hex").slice(0, 32)}`;
 }
 
 export function formSubmissionChatSessionCookieOptions(secure: boolean): FormSubmissionChatSessionCookieOptions {

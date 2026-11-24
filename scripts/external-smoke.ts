@@ -1,6 +1,8 @@
 import { buildPayUniSandboxWebhookFixture } from "../src/lib/payment-providers/payuni-fixtures";
 import { activePayUniCredentials } from "../src/lib/payuni-credentials";
 import {
+  evaluateDeploymentHealthSignals,
+  isLoopbackSmokeTarget,
   resolveSmokeTarget,
   summarizeSmokeFailure,
   summarizeSmokeResponse,
@@ -84,8 +86,30 @@ async function checkJson(name: string, path: string, init?: RequestInit, bearer:
   }
 }
 
+async function checkDeploymentHealthSignals() {
+  if (!baseUrl || isLoopbackSmokeTarget(baseUrl)) {
+    record({ name: "health client IP trust", status: "skip", detail: "local target is not a Vercel deployment" });
+    return;
+  }
+  try {
+    const response = await request("/api/health", undefined, undefined);
+    const body = await readResponsePayload(response);
+    // Remote smoke only targets Preview/staging (resolveSmokeTarget), so the
+    // Preview identity must be present as well.
+    const signals = evaluateDeploymentHealthSignals(body, "preview");
+    record({
+      name: "health client IP trust",
+      status: signals.ok ? "pass" : "fail",
+      detail: signals.ok ? "clientIpTrust=vercel-edge; commitSha present" : `reason=${signals.reason}`,
+    });
+  } catch (error) {
+    record({ name: "health client IP trust", status: "fail", detail: summarizeSmokeFailure(error) });
+  }
+}
+
 async function main() {
   await checkJson("health", "/api/health");
+  await checkDeploymentHealthSignals();
   await checkJson("admin preflight", "/api/admin/preflight");
 
   if (process.env.RUN_EXTERNAL_PROVIDER_SMOKE !== "true") {

@@ -13,9 +13,13 @@ const MAX_CSP_REPORT_BYTES = 64 * 1024;
  * them by directive, blocked origin and path. Always 204 for well-formed and
  * unknown bodies alike; nothing is stored.
  *
- * Limits: the shared limiter (120/min per IP; a no-op under
- * RATE_LIMIT_PROVIDER=cloudflare_waf), then a per-instance cap that always
- * applies (120/min per IP, 2000/min in total), both before the body is read.
+ * Limits (A4-03): the shared limiter (120/min per IP; a no-op under
+ * RATE_LIMIT_PROVIDER=cloudflare_waf, and no WAF exists in front of the
+ * domain, O-7), then a per-instance cap that always applies (120/min per IP,
+ * 2000/min in total), both before the body is read. Both key on the trusted
+ * client IP (getTrustedClientIp), so forged cf-connecting-ip/true-client-ip
+ * cannot open new buckets. Over a limit: 429; over 64 KiB: 413. Neither
+ * response logs or stores anything, and the raw body is never logged.
  */
 export async function POST(request: Request) {
   const limited = await checkRateLimit(request, "csp-report", 120, 60_000);

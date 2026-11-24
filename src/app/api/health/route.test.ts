@@ -49,6 +49,7 @@ describe("GET /api/health", () => {
       database: "ok",
       latencyMs: expect.any(Number),
       deployment: NO_IDENTITY,
+      clientIpTrust: "local-forwarded",
     });
     expect(response.headers.get("cache-control")).toBe("no-store");
     expect(body.latencyMs).toBeGreaterThanOrEqual(0);
@@ -71,6 +72,7 @@ describe("GET /api/health", () => {
       latencyMs: expect.any(Number),
       error: "Database health check failed",
       deployment: NO_IDENTITY,
+      clientIpTrust: "local-forwarded",
     });
     expect(body.latencyMs).toBeGreaterThanOrEqual(0);
     expect(JSON.stringify(body)).not.toContain(sensitiveError);
@@ -104,6 +106,7 @@ describe("GET /api/health", () => {
           latencyMs: expect.any(Number),
           error: "Database health check failed",
           deployment: NO_IDENTITY,
+          clientIpTrust: "vercel-edge",
         });
         expect(warn).toHaveBeenCalledExactlyOnceWith("health_database_error", {
           category,
@@ -173,6 +176,7 @@ describe("GET /api/health", () => {
         deploymentId: "dpl_Fixture123",
         vercelUrl: "celebrate-deal-staging-abc123-a25814740s-projects.vercel.app",
       },
+      clientIpTrust: "vercel-edge",
     });
   });
 

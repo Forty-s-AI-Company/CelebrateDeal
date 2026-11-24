@@ -124,6 +124,22 @@ describe("request client IP boundary", () => {
     expect(getRequestClientIp(request({ "x-forwarded-for": "198.51.100.8" }), none)).toBeNull();
   });
 
+  it("uses the Vercel edge headers without an ingress proof in vercel-edge mode", () => {
+    const vercel = { trustMode: "vercel-edge", deploymentSource: "vercel" } as const;
+    expect(getRequestClientIpWithSource(request({
+      "x-real-ip": "203.0.113.20",
+      "x-forwarded-for": "203.0.113.20",
+      "cf-connecting-ip": "198.51.100.1",
+      "true-client-ip": "198.51.100.2",
+    }), vercel)).toEqual({ ip: "203.0.113.20", source: "x-real-ip" });
+    expect(getRequestClientIpWithSource(request({ "x-forwarded-for": "203.0.113.21" }), vercel))
+      .toEqual({ ip: "203.0.113.21", source: "x-forwarded-for" });
+    expect(getRequestClientIp(request({ "cf-connecting-ip": "198.51.100.1", "true-client-ip": "198.51.100.2" }), vercel)).toBeNull();
+    expect(getRequestClientIp(request({ "x-real-ip": "not-an-ip", "x-forwarded-for": "203.0.113.21" }), vercel)).toBeNull();
+    // A mismatched deployment source is never a trust root.
+    expect(getRequestClientIp(request({ "x-real-ip": "203.0.113.20" }), { trustMode: "vercel-edge", deploymentSource: "node" })).toBeNull();
+  });
+
   it("fails closed for malformed IP values and overlong chains", () => {
     expect(getRequestClientIp(request({
       [LIVE_CHAT_INGRESS_PROOF_HEADER]: ingressSecret,

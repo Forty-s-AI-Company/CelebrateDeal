@@ -33,6 +33,7 @@ import { hashPasswordAsync, verifyPasswordAsync } from "@/lib/password";
 import { passwordPolicyErrorCode, validateNewPassword } from "@/lib/password-policy";
 import { schedulePasswordResetLink, sendPasswordResetLink } from "@/lib/password-reset";
 import { checkRateLimit } from "@/lib/rate-limit";
+import { copyTrustedClientIpHeaders, getTrustedClientIp } from "@/lib/request-client-ip";
 import { accountLockRemainingSeconds, checkAccountRateLimit, consumeAccountRateLimit, lockAccount } from "@/lib/account-rate-limit";
 import { hasPendingVendorMemberInvitation } from "@/lib/vendor-member-invitation";
 import { completeMfaEnrollment, dismissMfaRecoveryCodes, startMfaEnrollment } from "@/lib/mfa-enrollment";
@@ -55,12 +56,7 @@ function safeInternalPath(value: string, fallback = "/admin/billing/dashboard") 
 }
 
 function forwardedRequestHeaders(headerStore: Awaited<ReturnType<typeof headers>>) {
-  const rateLimitHeaders = new Headers();
-  for (const headerName of ["cf-connecting-ip", "x-forwarded-for"]) {
-    const value = headerStore.get(headerName);
-    if (value) rateLimitHeaders.set(headerName, value);
-  }
-  return rateLimitHeaders;
+  return copyTrustedClientIpHeaders(headerStore);
 }
 
 export async function loginAction(formData: FormData) {
@@ -127,7 +123,7 @@ export async function loginAction(formData: FormData) {
   const { token, expiresAt } = await createUserSession({
     userId: auth.user.id,
     vendorId: login.sessionVendorId,
-    ipAddress: headerStore.get("x-forwarded-for")?.split(",")[0]?.trim() ?? null,
+    ipAddress: getTrustedClientIp(headerStore),
     userAgent: headerStore.get("user-agent"),
     platformRole: auth.user.platformRole,
   });
@@ -254,7 +250,7 @@ export async function requestPasswordResetAction(formData: FormData) {
   schedulePasswordResetLink({
     email,
     appUrl,
-    ipAddress: headerStore.get("x-forwarded-for")?.split(",")[0]?.trim() ?? null,
+    ipAddress: getTrustedClientIp(headerStore),
     userAgent: headerStore.get("user-agent"),
   });
   redirect("/password-reset/request?updated=sent");
@@ -397,7 +393,7 @@ export async function sendPasswordResetSmokeAction(formData: FormData) {
   if (rateLimited) redirect(`${destination}?error=${rateLimited.status === 429 ? "password_reset_smoke_rate_limited" : "password_reset_smoke_unavailable"}`);
   let sent = false;
   try {
-    await sendPasswordResetLink({ email: auth.user.email, appUrl, ipAddress: headerStore.get("x-forwarded-for")?.split(",")[0]?.trim() ?? null, userAgent: headerStore.get("user-agent") });
+    await sendPasswordResetLink({ email: auth.user.email, appUrl, ipAddress: getTrustedClientIp(headerStore), userAgent: headerStore.get("user-agent") });
     await writeAuditLog({ vendorId: auth.vendor?.id ?? null, actorId: auth.user.id, actorLabel: auth.member?.role ?? auth.user.platformRole, action: "password_reset_smoke_email_sent", targetType: "User", targetId: auth.user.id, after: auditSnapshot({ email: auth.user.email }) });
     sent = true;
   } catch {

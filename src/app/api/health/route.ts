@@ -1,5 +1,6 @@
 import { Prisma } from "@prisma/client";
 import { NextResponse } from "next/server";
+import { clientIpTrustConfig } from "@/lib/request-client-ip";
 import { getDb } from "@/lib/db";
 
 type SafePrismaDiagnostic = {
@@ -108,6 +109,9 @@ function logDatabaseDiagnostic(error: unknown) {
 export async function GET() {
   const startedAt = Date.now();
   const deployment = getDeploymentIdentity();
+  // A4-03: the mode name only ("vercel-edge", "local-forwarded" or "none"),
+  // so a smoke check can see that a deployment would not share one bucket.
+  const clientIpTrust = clientIpTrustConfig().trustMode;
 
   try {
     await getDb().$queryRaw`SELECT 1`;
@@ -116,6 +120,7 @@ export async function GET() {
       database: "ok",
       latencyMs: Date.now() - startedAt,
       deployment,
+      clientIpTrust,
     }, { headers: NO_STORE });
   } catch (error) {
     logDatabaseDiagnostic(error);
@@ -125,6 +130,7 @@ export async function GET() {
       latencyMs: Date.now() - startedAt,
       error: "Database health check failed",
       deployment,
+      clientIpTrust,
     }, { status: 503, headers: NO_STORE });
   }
 }

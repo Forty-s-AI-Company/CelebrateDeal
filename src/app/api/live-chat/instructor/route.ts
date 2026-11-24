@@ -5,7 +5,6 @@ import { readJsonBody, requireSameOriginRequest } from "@/lib/api-security";
 import { getCsrfToken, verifyCsrfToken } from "@/lib/csrf";
 import { getDb } from "@/lib/db";
 import { LiveChatError } from "@/lib/live-chat";
-import { rateLimitRequestWithIdentity } from "@/lib/live-chat-request-security";
 import { createPrivateInstructorChat, listPrivateInstructorChat, listPrivateInstructorConversations } from "@/lib/live-private-chat";
 import { PrivateViewerChatPost } from "@/lib/live-private-chat-contract";
 import { checkRateLimit } from "@/lib/rate-limit";
@@ -28,7 +27,7 @@ async function gate(request: Request, writing = false) {
   if (agreementRequired) return { response: agreementRequired, actor: null };
   // Authenticated user is the rate identity; forwarded headers cannot create
   // additional buckets for a manager by claiming different addresses.
-  const limited = await checkRateLimit(rateLimitRequestWithIdentity(request, null), `private-instructor-chat:${auth.user.id}`, 60, 60_000);
+  const limited = await checkRateLimit(request, `private-instructor-chat:${auth.user.id}`, 60, 60_000, { clientIp: null });
   return { response: limited ? noStore(limited) : null,
     actor: { vendorId: auth.vendor.id, userId: auth.user.id, memberId: auth.member.id, sessionId: auth.session.id } };
 }

@@ -13,6 +13,7 @@ import { hashPasswordAsync } from "@/lib/password";
 import { PASSWORD_INPUT_LIMIT, validateNewPassword } from "@/lib/password-policy";
 import { merchantRegistrationPolicyVersions } from "@/lib/public-policy-content";
 import { checkRateLimit } from "@/lib/rate-limit";
+import { copyTrustedClientIpHeaders, getTrustedClientIp } from "@/lib/request-client-ip";
 import { merchantRegistrationInviteMatchesEmail, verifyMerchantRegistrationInvite } from "@/lib/merchant-registration-invite";
 import { isMerchantRegistrationInviteRevoked } from "@/lib/merchant-registration-invite-records";
 import { registrationMode } from "@/lib/registration-mode";
@@ -90,11 +91,7 @@ export async function registerAction(formData: FormData) {
   // Length failures keep the existing "invalid" copy, which states the minimum.
   if (!passwordPolicy.ok) redirect(failure(passwordPolicy.reason === "short" || passwordPolicy.reason === "long" ? "invalid" : passwordPolicy.reason));
   const incoming = await headers();
-  const forwarded = new Headers();
-  for (const name of ["cf-connecting-ip", "x-forwarded-for"]) {
-    const value = incoming.get(name);
-    if (value) forwarded.set(name, value);
-  }
+  const forwarded = copyTrustedClientIpHeaders(incoming);
   const limited = await checkRateLimit(new Request(getCanonicalAppUrl(), { headers: forwarded }), "registration-source", 4, 15 * 60 * 1000);
   if (limited) redirect(failure(limited.status === 429 ? "rate_limited" : "temporarily_unavailable"));
   // Bot protection (disabled only while no Turnstile key is configured). Any
@@ -106,7 +103,7 @@ export async function registerAction(formData: FormData) {
   const turnstile = turnstileExempt ? { ok: true as const } : await verifyTurnstileToken({
     token: formData.get(TURNSTILE_RESPONSE_FIELD),
     action: TURNSTILE_ACTIONS.register,
-    remoteIp: incoming.get("cf-connecting-ip") ?? incoming.get("x-forwarded-for")?.split(",")[0]?.trim() ?? null,
+    remoteIp: getTrustedClientIp(incoming),
   });
   if (!turnstile.ok) redirect(failure(turnstileErrorCode(turnstile)));
   const passwordHash = await hashPasswordAsync(input.password);
@@ -135,7 +132,7 @@ export async function registerAction(formData: FormData) {
   // invite only shows that someone held the link, so this is always sent.
   scheduleMerchantEmailVerification(created);
   try {
-    const session = await createUserSession({ ...created, ipAddress: incoming.get("x-forwarded-for")?.split(",")[0]?.trim() ?? null, userAgent: incoming.get("user-agent") });
+    const session = await createUserSession({ ...created, ipAddress: getTrustedClientIp(incoming), userAgent: incoming.get("user-agent") });
     const store = await cookies();
     writeSessionCookie(store, session.token, session.expiresAt);
     store.delete(LEGACY_VENDOR_COOKIE);
