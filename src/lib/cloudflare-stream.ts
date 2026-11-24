@@ -58,6 +58,13 @@ export class CloudflareStreamError extends Error {
   }
 }
 
+/** True when the account id and API token are both set (values are never read out). */
+export function cloudflareStreamConfigured(env: Readonly<Record<string, string | undefined>> = process.env) {
+  return Boolean(env.CLOUDFLARE_ACCOUNT_ID && env.CLOUDFLARE_STREAM_TOKEN);
+}
+
+const DEFAULT_REQUEST_TIMEOUT_MS = 15_000;
+
 function cloudflareEnv() {
   const accountId = process.env.CLOUDFLARE_ACCOUNT_ID;
   const token = process.env.CLOUDFLARE_STREAM_TOKEN;
@@ -67,7 +74,11 @@ function cloudflareEnv() {
   return { accountId, token };
 }
 
-async function cloudflareRequest(path: string, init?: RequestInit): Promise<unknown> {
+async function cloudflareRequest(
+  path: string,
+  init?: RequestInit,
+  { timeoutMs = DEFAULT_REQUEST_TIMEOUT_MS }: { timeoutMs?: number } = {},
+): Promise<unknown> {
   const { accountId, token } = cloudflareEnv();
   let response: Response;
   try {
@@ -78,7 +89,7 @@ async function cloudflareRequest(path: string, init?: RequestInit): Promise<unkn
         "Content-Type": "application/json",
         ...init?.headers,
       },
-      signal: AbortSignal.timeout(15_000),
+      signal: AbortSignal.timeout(timeoutMs),
     });
   } catch {
     throw new CloudflareStreamError("network");
@@ -172,8 +183,9 @@ export async function createResumableCreatorUpload(input: {
   return parsed.data;
 }
 
-export async function getStreamVideoStatus(uid: string) {
-  const result = await cloudflareRequest(`/stream/${encodeURIComponent(uid)}`);
+/** `GET /stream/{uid}`; read-only. `timeoutMs` shortens the default 15 s cap for request-path callers. */
+export async function getStreamVideoStatus(uid: string, options: { timeoutMs?: number } = {}) {
+  const result = await cloudflareRequest(`/stream/${encodeURIComponent(uid)}`, undefined, options);
   const parsed = CloudflareVideoDetails.safeParse(result);
   if (!parsed.success) {
     throw new CloudflareStreamError("invalid_response", 200);

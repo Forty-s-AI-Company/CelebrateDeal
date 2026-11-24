@@ -157,3 +157,22 @@
 7. **Production**：Staging 全部通過後，對 Production 重複第 1–6 步。
 8. **回滾**：先用同一個端點的 `"mode":"unlock"` 對每個 vendor 解除（同樣先 dry-run、再 `apply`，不需要金鑰；會送 `requireSignedURLs: false` 並清空 `allowedOrigins`），並移除 `CLOUDFLARE_STREAM_LOCK_NEW_UPLOADS`；確認影片都恢復公開後，才視需要移除簽章環境變數。順序反過來的話，已鎖定的影片在移除金鑰後會無法播放。
 9. **金鑰輪替**：建立新 key → 更新環境變數並部署 → 等最長 token 效期過後（預覽與宣傳影片的 token 最長 4 小時）再 `DELETE /stream/keys/{舊 key id}`。
+
+## 9. 影片就緒狀態：webhook 為主、主動查詢為備援（A4-04，2026-11-24）
+
+**限制**：一個 Cloudflare 帳號只能設定**一個** Stream webhook 網址。帳號的通知網址指向 Production 時，staging 永遠收不到就緒通知（2026-11-24 實測：上傳後 16 分鐘內 `/api/cloudflare/*` 請求 0 筆，`staging-stream-resource-smoke.yml` 停在 `RESOURCE_DEADLINE_EXCEEDED`）。Production 只靠 webhook 也是單點：漏收一次，該影片就永遠不會就緒。
+
+**做法**：webhook（`/api/cloudflare/stream-webhook`）仍是主要路徑；另外以唯讀的 `GET /accounts/{account}/stream/{uid}` 主動查詢作備援。
+
+| 項目 | 內容 |
+|---|---|
+| 共用寫入 | `src/lib/cloudflare-stream-video-sync.ts` 的 `applyCloudflareStreamProviderState` 是唯一把 Cloudflare 狀態寫進 `Video` 的程式；webhook 與主動查詢都呼叫它（同一個 Zod schema、同一張狀態轉換表、同樣的 duration／縮圖／播放網址欄位）。主動查詢只在 Cloudflare 回 `readyToStream: true` 時呼叫；未就緒、錯誤、逾時、回應 uid 不符或 duration 超出範圍都不寫 |
+| 租戶與冪等 | 主動查詢從已知的影片出發，uid 查回的列必須正好是同一支影片與同一個 vendor，否則不寫（`scope_mismatch`）；同一個 uid 對到多支影片時一律不寫。每次寫入都是 `updateMany`，條件含 `id`、`vendorId`、目前 `status` 與 uid（三個 uid 欄位任一相符），所以 webhook 與查詢同時送達時只有一方寫入，另一方讀到已就緒且內容相同就結束（不重寫）；上傳被替換（uid 已改）後，舊 uid 的就緒結果不會覆蓋新影片 |
+| 排程 | `/api/jobs/stream-ready-sync`（`JOB_SECRET`，每 5 分鐘）：上傳（`updatedAt`）後 5 分鐘到 24 小時、仍 `processing` 且未就緒、有 `cloudflareStreamUid` 的影片；新上傳優先、商家輪流；每輪最多 10 次 Cloudflare 查詢、30 秒後不再開始、單次 8 秒。每支影片依上傳時間退避：1 小時內每輪（4 分鐘窗）、6 小時內約 30 分鐘、之後約 2 小時，計數存在 `AccountRateLimitBucket`（跨 instance 共用，不新增 migration）；計數器讀寫失敗時不查詢 |
+| ops 狀態端點 | `GET /api/admin/ops/cloudflare/direct-upload?videoId=…`（`OPS_SMOKE_SECRET`，只看 smoke vendor 的影片）：影片未就緒且為 `processing` 時順便查一次，每支影片 15 秒最多一次、全部每分鐘最多 12 次、單次 5 秒。回應多一個 `providerCheck`（`updated`、`unchanged`、`not_ready`、`throttled`、`provider_error`、`provider_unavailable`、`throttle_unavailable`、`error` 等固定類別），寫入後重新讀取再回傳。staging smoke 每 5 秒讀一次，不必等排程 |
+| 輸出 | 只有計數與固定類別；不輸出 token、簽章網址、provider 訊息或 uid。排程查詢錯誤時記一次 Sentry warning（`stream_ready_sync_job`／`provider_query`，只含類別與次數） |
+| 外部呼叫上限 | 排程每 5 分鐘最多 10 次；每支影片 24 小時內最多約 34 次；ops 端點每分鐘最多 12 次。一般使用者或公開請求不會觸發查詢 |
+
+`updatedAt` 當作上傳時間：替換上傳會重設它；未就緒期間若商家改了標題，時間窗會往後移，只是延後查詢，不會漏寫。
+
+部署注意：Cloudflare Worker 觸發器（`ops/cloudflare/scheduled-jobs-worker`）要重新部署才會呼叫新的 job；GitHub heartbeat 與 `scheduled-jobs.yml` 合併後即生效。部署環境需有 `CLOUDFLARE_ACCOUNT_ID`／`CLOUDFLARE_STREAM_TOKEN`（Stream 讀取權限即可），沒有時回 `skipped: "provider_unavailable"`。

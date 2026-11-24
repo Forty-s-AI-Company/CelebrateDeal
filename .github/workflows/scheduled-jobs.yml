@@ -3,7 +3,8 @@ name: Scheduled background jobs (staging)
 # F-042 / B09-01: drives the staging background jobs on a fixed schedule.
 # Runbook: docs/launch/scheduled-jobs-runbook.md
 # - "*/5 * * * *": email/live/learner/LINE delivery, webhook retry + inventory release,
-#   PayUni pending-payment reconciliation (A-2 05), LINE outbox, and (opt-in) live media cleanup. GitHub fires this schedule only every
+#   PayUni pending-payment reconciliation (A-2 05), Cloudflare Stream ready fallback (A4-04),
+#   LINE outbox, and (opt-in) live media cleanup. GitHub fires this schedule only every
 #   few hours (B-1), so, once vars.SCHEDULED_JOBS_HEARTBEAT_ENABLED == 'true', each firing also starts
 #   scheduled-jobs-heartbeat.yml (the real 5-minute loop) when none is active; the direct calls here stay as a backup.
 # - "22 17 * * *" (01:22 Asia/Taipei): electronic invoices, and (opt-in) billing cycle
@@ -29,6 +30,7 @@ on:
           - line-notifications
           - webhook-retry
           - payment-reconcile
+          - stream-ready-sync
           - live-media
           - billing-cycle
           - electronic-invoices
@@ -95,6 +97,14 @@ jobs:
           JOB_SECRET: ${{ secrets.JOB_SECRET }}
         run: node scripts/scheduled-jobs-runner.mjs payment-reconcile
 
+      - name: stream-ready-sync
+        id: stream-ready-sync
+        if: ${{ (github.event_name == 'schedule' && github.event.schedule == '*/5 * * * *') || (github.event_name == 'workflow_dispatch' && (inputs.job == 'all' || inputs.job == 'stream-ready-sync')) }}
+        continue-on-error: true
+        env:
+          JOB_SECRET: ${{ secrets.JOB_SECRET }}
+        run: node scripts/scheduled-jobs-runner.mjs stream-ready-sync
+
       - name: live-media
         id: live-media
         if: ${{ (github.event_name == 'schedule' && github.event.schedule == '*/5 * * * *' && vars.SCHEDULED_JOBS_ENABLE_LIVE_MEDIA == 'true') || (github.event_name == 'workflow_dispatch' && (inputs.job == 'live-media' || (inputs.job == 'all' && vars.SCHEDULED_JOBS_ENABLE_LIVE_MEDIA == 'true'))) }}
@@ -134,6 +144,7 @@ jobs:
           OUTCOME_LINE_NOTIFICATIONS: ${{ steps.line-notifications.outcome }}
           OUTCOME_WEBHOOK_RETRY: ${{ steps.webhook-retry.outcome }}
           OUTCOME_PAYMENT_RECONCILE: ${{ steps.payment-reconcile.outcome }}
+          OUTCOME_STREAM_READY_SYNC: ${{ steps.stream-ready-sync.outcome }}
           OUTCOME_LIVE_MEDIA: ${{ steps.live-media.outcome }}
           OUTCOME_BILLING_CYCLE: ${{ steps.billing-cycle.outcome }}
           OUTCOME_ELECTRONIC_INVOICES: ${{ steps.electronic-invoices.outcome }}
@@ -146,6 +157,7 @@ jobs:
             echo "| line-notifications | ${OUTCOME_LINE_NOTIFICATIONS} |"
             echo "| webhook-retry | ${OUTCOME_WEBHOOK_RETRY} |"
             echo "| payment-reconcile | ${OUTCOME_PAYMENT_RECONCILE} |"
+            echo "| stream-ready-sync | ${OUTCOME_STREAM_READY_SYNC} |"
             echo "| live-media | ${OUTCOME_LIVE_MEDIA} |"
             echo "| billing-cycle | ${OUTCOME_BILLING_CYCLE} |"
             echo "| electronic-invoices | ${OUTCOME_ELECTRONIC_INVOICES} |"
@@ -153,7 +165,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Fail the run when any called job failed
-        if: ${{ always() && (steps.email-deliveries.outcome == 'failure' || steps.line-notifications.outcome == 'failure' || steps.webhook-retry.outcome == 'failure' || steps.payment-reconcile.outcome == 'failure' || steps.live-media.outcome == 'failure' || steps.billing-cycle.outcome == 'failure' || steps.electronic-invoices.outcome == 'failure' || steps.data-retention.outcome == 'failure') }}
+        if: ${{ always() && (steps.email-deliveries.outcome == 'failure' || steps.line-notifications.outcome == 'failure' || steps.webhook-retry.outcome == 'failure' || steps.payment-reconcile.outcome == 'failure' || steps.stream-ready-sync.outcome == 'failure' || steps.live-media.outcome == 'failure' || steps.billing-cycle.outcome == 'failure' || steps.electronic-invoices.outcome == 'failure' || steps.data-retention.outcome == 'failure') }}
         run: |
           echo "::error::At least one scheduled job did not return 2xx. See the scheduled-job lines above."
           exit 1

@@ -75,6 +75,8 @@ https://app.celebratedeal.com/api/cloudflare/stream-webhook
 ```
 
 5. 設定 `CLOUDFLARE_STREAM_WEBHOOK_SECRET`。
+   - **一個 Cloudflare 帳號只能設一個 Stream webhook 網址**。帳號指向 Production 時，staging（與其他環境）收不到就緒通知；換網址會讓原環境收不到，不要為了測試切換。
+   - 影片就緒以 webhook 為主、主動查詢為備援（A4-04）：`/api/jobs/stream-ready-sync` 每 5 分鐘查詢上傳後 5 分鐘到 24 小時仍未就緒的影片；ops 狀態端點 `GET /api/admin/ops/cloudflare/direct-upload?videoId=…` 遇到未就緒影片也會查一次（每支 15 秒一次、全部每分鐘 12 次）。兩者都只在 Cloudflare 回 `readyToStream: true` 時寫回，且與 webhook 共用同一段寫入程式（`src/lib/cloudflare-stream-video-sync.ts`）。
 6. 跑 direct upload smoke test。
 7. 跑 Live Input smoke test。
 8. 準備一個 staging vendor，取得 `SMOKE_VENDOR_ID`，讓 smoke test 可把 Cloudflare UID 寫回 `videos`。
@@ -89,7 +91,7 @@ RUN_CLOUDFLARE_SMOKE=true SMOKE_VENDOR_ID=vendor_xxx npm run external:smoke
 - direct upload 會寫回 `Video.cloudflareStreamUid`、`cloudflarePlaybackId`、`status=processing`。
 - Live Input 回傳 `uid` 與 ingest URL，但不回傳明文 stream key。
 - Live Input 會寫回 `Video.cloudflareLiveInputUid`，stream key 僅保存在後台資料欄位。
-- webhook 收到 ready event 後，`Video.cloudflareReadyToStream` 更新為 true。
+- webhook 收到 ready event 後，`Video.cloudflareReadyToStream` 更新為 true；沒收到 webhook 時，由主動查詢補上（ops 狀態端點回 `providerCheck: "updated"`，或 `stream-ready-sync` 的 `updated` 計數）。
 
 風險：
 

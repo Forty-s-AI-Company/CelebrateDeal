@@ -8,10 +8,12 @@
 
 | cron（UTC） | 台灣時間 | 呼叫（POST，依序） |
 |---|---|---|
-| `*/5 * * * *` | 每 5 分鐘 | `/api/jobs/email-deliveries`、`/api/cron/line-notifications`、`/api/jobs/webhook-retry`、`/api/jobs/payment-reconcile` |
+| `*/5 * * * *` | 每 5 分鐘 | `/api/jobs/email-deliveries`、`/api/cron/line-notifications`、`/api/jobs/webhook-retry`、`/api/jobs/payment-reconcile`、`/api/jobs/stream-ready-sync` |
 | `22 17 * * *` | 每日 01:22 | `/api/jobs/electronic-invoices` |
 
 `/api/jobs/payment-reconcile` 只有在 staging 的 Vercel 環境變數 `PAYMENT_RECONCILE_ENABLED=true` 時才會真的向 PayUni 查詢；沒設時一樣回 200（`skipped: "disabled"`），所以 Worker 照常呼叫即可，開關在 Vercel，不在這裡。
+
+`/api/jobs/stream-ready-sync`（A4-04）是 Cloudflare Stream 影片就緒的備援：webhook 沒送到時，主動向 Cloudflare 查詢上傳後 5 分鐘到 24 小時仍未就緒的影片（每輪最多 10 次查詢、30 秒後不再開始新的查詢，每支影片依上傳時間退避）。該部署沒有設定 `CLOUDFLARE_ACCOUNT_ID`／`CLOUDFLARE_STREAM_TOKEN` 時回 200 `skipped: "provider_unavailable"`。**這個 job 是 2026-11-24 加入的；已部署的 Worker 要重新 `wrangler deploy` 才會呼叫它**（GitHub heartbeat 與 `scheduled-jobs.yml` 合併後即會呼叫）。
 
 目標網址在 `wrangler.toml` 的 `TARGET_ORIGIN`（staging 固定網址）。`live-media`、`billing-cycle`、`data-retention` 封測期間不啟用，所以不在清單內。每個請求逾時 120 秒、不跟隨轉址；日誌只有 job 名稱、HTTP 狀態與耗時。
 

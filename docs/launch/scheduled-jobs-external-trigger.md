@@ -20,6 +20,7 @@ GitHub Actions 的 `*/5 * * * *` 排程實測約每 2～5 小時才跑一次（1
 | line-notifications | `POST /api/cron/line-notifications` | 推進 LINE outbox（有 claim lease，不會重送） | 啟用 |
 | webhook-retry | `POST /api/jobs/webhook-retry` | 先釋放過期庫存保留，再重試失敗的付款 webhook（金流路徑，單次最長約 300 秒） | 啟用（Production 受 B03-07 gate 限制，見 §8） |
 | payment-reconcile | `POST /api/jobs/payment-reconcile` | PayUni 付款通知遺失時主動查詢並補單（A-2 05；每輪最多 20 筆、40 秒後不再開始新的查詢） | 啟用（staging；實際查詢另需 Vercel 環境變數 `PAYMENT_RECONCILE_ENABLED=true`，沒設時回 200 `skipped`；Production 需 owner 同意） |
+| stream-ready-sync | `POST /api/jobs/stream-ready-sync` | Cloudflare Stream 影片就緒備援（A4-04）：webhook 沒送到時，主動查詢上傳後 5 分鐘到 24 小時仍未就緒的影片，每輪最多 10 次查詢、30 秒後不再開始新的查詢，每支影片依上傳時間退避；查到就緒時走與 webhook 相同的寫入程式 | 啟用（沒設定 Cloudflare Stream 時回 200 `skipped`；Cloudflare Worker 要重新部署才會呼叫） |
 | live-media | `POST /api/cron/live-media` | 瀏覽器直播媒體清理；封測隱藏瀏覽器直播（D-09），**不要建立**，否則每次回 503 | 不啟用 |
 
 ### 2.2 每日 01:22（台灣時間）＝ 17:22 UTC
