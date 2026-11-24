@@ -37,7 +37,6 @@ import { pathToFileURL } from "node:url";
 import { Prisma, PrismaClient } from "@prisma/client";
 import { isStagingDatabaseUrl } from "@/lib/database-identity";
 import { WP4_SANDBOX_FIXTURE } from "@/lib/wp4-sandbox-fixture";
-import { payUniSandboxCrypto, queryProviderSettlement, readSandboxKeyInputs } from "./payuni-lost-callback-drill.mjs";
 
 export const LOST_CALLBACK_PROOF_SCHEMA = "celebratedeal-payuni-lost-callback-proof/v1";
 export type LostCallbackPhase = "pay" | "verify";
@@ -255,6 +254,10 @@ export async function readLostCallbackProof(db: ProofDb, input: {
 const PHASE_PASS: Record<LostCallbackPhase, LostCallbackProof["evaluation"]> = { pay: "CALLBACK_WITHHELD", verify: "RECONCILED_ONCE" };
 
 async function main() {
+  // A dynamic import, before the configuration gate so every run proves it loads: tsx compiles this
+  // file as CommonJS, and a static import would require() the drill's ESM graph, whose entry points
+  // use top-level await (ERR_REQUIRE_ASYNC_MODULE). Locked by staging-payuni-lost-callback-workflow.test.mjs.
+  const { payUniSandboxCrypto, queryProviderSettlement, readSandboxKeyInputs } = await import("./payuni-lost-callback-drill.mjs");
   const phase = process.env.LOST_CALLBACK_PHASE;
   const sourceSha = process.env.CELEBRATEDEAL_SOURCE_SHA?.trim().toLowerCase() ?? "";
   const protectedCi = process.argv.length === 2 && process.env.GITHUB_ACTIONS === "true"
@@ -293,6 +296,10 @@ async function main() {
   }
 }
 
+// No top-level await here either: esbuild rejects it in tsx's CommonJS output (2026-11-24 run 45340752525).
 if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
-  await main();
+  main().catch(() => {
+    console.log("payuni_lost_callback_proof=BLOCKED; reason=INTERNAL_FAILURE");
+    process.exitCode = 3;
+  });
 }
