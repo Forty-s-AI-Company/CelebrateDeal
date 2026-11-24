@@ -20,6 +20,15 @@ import {
   capturePayUniSubmitDiagnostic,
   observePayUniSubmitDialogs,
   recordPayUniSubmitDialog,
+  sanitizePayUniDialogText,
+  sanitizePayUniDialogCapture,
+  collectPayUniDialogInPage,
+  capturePayUniConfirmationDialog,
+  nativePayUniDialogCapture,
+  sanitizePayUniHostName,
+  recordPayUniExternalHost,
+  recordPayUniDialogCapture,
+  formatPayUniDialogDiagnostic,
   classifyPlaywrightErrorKind,
   createPayUniBrowserDiagnostic,
   formatPayUniBrowserDiagnostic,
@@ -609,6 +618,8 @@ test("a rejected PayUni card field records only the fixed step, error class and 
     fieldSource: "PLACEHOLDER", creditTab: "NOT_TRIED",
     resourceFailures: { payuniScript: 0, payuniOther: 0, externalScript: 0, externalOther: 0 }, structure: [],
     submit: { captured: false, dialogs: [], modal: "NONE", host: "NONE", path: "NONE", errors: [] },
+    dialogTexts: [],
+    externalHosts: [],
   });
   const line = formatPayUniBrowserDiagnostic(diagnostic);
   assert.equal(line, "step=CARD_EXPIRY; error=TIMEOUT; page=PAYUNI_UPP; mainFrameMatches=0; childFrames=1; childFrameMatches=1; fieldSource=PLACEHOLDER; creditTab=NOT_TRIED; failed_payuniScript=0; failed_payuniOther=0; failed_externalScript=0; failed_externalOther=0");
@@ -1931,6 +1942,8 @@ test("PayUni sub-resource failures are counted by host class and type only", () 
   recordPayUniResourceFailure(diagnostic, { url: () => "not a url", resourceType: () => "script", isNavigationRequest: () => false });
   recordPayUniResourceFailure(null, request("https://cdn.example.test/vue.js", "script"));
   assert.deepEqual(diagnostic.resourceFailures, { payuniScript: 1, payuniOther: 1, externalScript: 1, externalOther: 1 });
+  // Only the third-party hostnames are kept (never the path or query); PayUni hosts are not listed.
+  assert.deepEqual(diagnostic.externalHosts, ["cdn.example.test", "fonts.example.test"]);
 });
 
 test("a missing card-number placeholder falls back to the autofill field, then to the credit tab", async () => {
@@ -2237,4 +2250,123 @@ test("an unreadable page never changes the failure code and still prints a close
   await capturePayUniSubmitDiagnostic(null, null, previewHost);
   observePayUniSubmitDialogs({ on() { throw new Error("no events"); } }, diagnostic);
   await recordPayUniSubmitDialog(null, { dismiss: async () => { throw new Error("gone"); } });
+});
+
+// ---- De-identified dialog text (runs 45304632382 / 45340752525: an unidentified single-button "確定" modal).
+const DIALOG_SECRETS = [SYNTHETIC_CARD, "4147-6310-0000-0001", "4147 6310 0000 0001", "123", "12/30", "1230",
+  "buyer@example.test", "https://sandbox-api.payuni.com.tw/api/upp?EncryptInfo=private", "sandbox-api.payuni.com.tw",
+  "CD-20300101000000-WP4A1", "SYNTHTRADE12345", "12345678901234567890123456789012", "EncryptInfo=private"];
+
+test("dialog text keeps readable words but masks card values, e-mail, URLs, identifiers and keys, capped at 200", () => {
+  const raw = `交易失敗：卡號 ${SYNTHETIC_CARD}（4147-6310-0000-0001 / 4147 6310 0000 0001）有效期 12/30 安全碼 123 `
+    + "buyer@example.test 請改用 https://sandbox-api.payuni.com.tw/api/upp?EncryptInfo=private 或 sandbox-api.payuni.com.tw，"
+    + "訂單 CD-20300101000000-WP4A1 交易 SYNTHTRADE12345 金鑰 12345678901234567890123456789012 需 3D 驗證 NT$1";
+  const text = sanitizePayUniDialogText(raw);
+  assert.ok(text.length <= 200);
+  for (const secret of DIALOG_SECRETS) assert.equal(text.includes(secret), false, `leaked ${secret}`);
+  assert.equal(/\d{2,}|@|:\/\//u.test(text), false);
+  for (const kept of ["交易失敗", "卡號", "安全碼", "EMAIL", "URL", "3D", "驗證"]) assert.ok(text.includes(kept), `lost ${kept}`);
+  // Full-width digits and the full-width @ are normalised before masking.
+  assert.equal(sanitizePayUniDialogText("卡號 ４１４７６３１０００００００００１ ｂｕｙｅｒ＠ｅｘａｍｐｌｅ．ｔｅｓｔ"), "卡號 # EMAIL");
+  assert.equal(sanitizePayUniDialogText("x ".repeat(300)).length, 200);
+  assert.equal(sanitizePayUniDialogText(null), "");
+  assert.equal(sanitizePayUniDialogText("確定"), "確定");
+});
+
+test("the in-page collector reads the nearest dialog's text and visible button labels, never input values", async () => {
+  const { Window } = await import("happy-dom");
+  const window = new Window();
+  const saved = { document: globalThis.document, getComputedStyle: globalThis.getComputedStyle };
+  try {
+    window.HTMLElement.prototype.getBoundingClientRect = function box() { return { width: 10, height: 10 }; };
+    globalThis.document = window.document;
+    globalThis.getComputedStyle = window.getComputedStyle.bind(window);
+    window.document.body.innerHTML = `<form><input value="${SYNTHETIC_CARD}"><button>確認送出</button></form>
+      <div class="pu-modal-box"><div><p>交易失敗，請洽發卡銀行 ${SYNTHETIC_CARD}</p><input value="${SYNTHETIC_CARD}-value"></div>
+      <div><button id="ok">確定</button><button style="display:none">隱藏</button></div></div>`;
+    const raw = collectPayUniDialogInPage(window.document.getElementById("ok"));
+    assert.equal(raw.kind, "MODAL_CLASS");
+    assert.ok(raw.text.includes("交易失敗"));
+    assert.equal(raw.text.includes(`${SYNTHETIC_CARD}-value`), false, "input values are never read");
+    assert.equal(raw.text.includes("確認送出"), false, "the page form is outside the dialog");
+    assert.deepEqual(raw.buttons, ["確定"]);
+    const capture = sanitizePayUniDialogCapture(raw);
+    assert.equal(capture.kind, "MODAL_CLASS");
+    assert.equal(capture.text.includes(SYNTHETIC_CARD), false);
+    // NFKC turns the full-width comma into ","; the card number becomes "#".
+    assert.ok(capture.text.startsWith("交易失敗,請洽發卡銀行 #"), capture.text);
+
+    window.document.body.innerHTML = '<section role="dialog"><h2>提示</h2><span>請確認</span><span><button id="ok2">確定</button><button>取消</button></span></section>';
+    const roleDialog = collectPayUniDialogInPage(window.document.getElementById("ok2"));
+    assert.equal(roleDialog.kind, "ROLE_DIALOG");
+    assert.ok(roleDialog.text.includes("請確認"));
+    assert.deepEqual(roleDialog.buttons, ["確定", "取消"]);
+
+    window.document.body.innerHTML = '<div><div><span>只有一段文字</span><button id="ok3">確定</button></div></div>';
+    const ancestor = collectPayUniDialogInPage(window.document.getElementById("ok3"));
+    assert.equal(ancestor.kind, "ANCESTOR");
+    assert.ok(ancestor.text.includes("只有一段文字"));
+  } finally {
+    globalThis.document = saved.document;
+    globalThis.getComputedStyle = saved.getComputedStyle;
+    await window.happyDOM.close();
+  }
+});
+
+test("a 確定 modal records its de-identified text, is never clicked, and the stop code is unchanged", async () => {
+  const modal = await runSubmitScenario({
+    confirmationText: `付款失敗 ${SYNTHETIC_CARD} buyer@example.test https://sandbox-api.payuni.com.tw/api/upp?EncryptInfo=private`,
+    url: "https://sandbox-api.payuni.com.tw/api/upp",
+  });
+  assert.equal(modal.result, "PAYMENT_CONFIRMATION_AMBIGUOUS");
+  assert.equal(modal.confirmationClicks, 0);
+  assert.equal(modal.submitted, 1);
+  assert.deepEqual(modal.diagnostic.dialogTexts, [{ kind: "OTHER", text: "付款失敗 # EMAIL URL", buttons: [] }]);
+  const line = formatPayUniDialogDiagnostic({ dialogs: modal.diagnostic.dialogTexts, externalHosts: modal.diagnostic.externalHosts });
+  assert.equal(line, '{"dialogs":[{"kind":"OTHER","text":"付款失敗 # EMAIL URL","buttons":[]}],"externalHosts":[],"payuniPostsAfterSubmit":null,"afterSubmitSeconds":null}');
+  for (const secret of DIALOG_SECRETS) assert.equal(line.includes(secret), false, `leaked ${secret}`);
+
+  const unreadable = await runSubmitScenario({ confirmationText: "", url: "https://sandbox-api.payuni.com.tw/api/upp" });
+  assert.equal(unreadable.confirmationClicks, 0);
+  assert.deepEqual(unreadable.diagnostic.dialogTexts, [{ kind: "OTHER", text: "", buttons: [] }]);
+});
+
+test("a native dialog at submit records type and de-identified text and is dismissed, never accepted", async () => {
+  const { diagnostic, dialogCalls, submitted, confirmationClicks } = await runSubmitScenario({
+    dialog: { type: "confirm", message: `確定要付款 NT$1 嗎？卡號 ${SYNTHETIC_CARD}` }, url: "https://sandbox-api.payuni.com.tw/api/upp",
+  });
+  assert.deepEqual(dialogCalls, { dismiss: 1, accept: 0 });
+  assert.equal(submitted, 1);
+  assert.equal(confirmationClicks, 0);
+  assert.deepEqual(diagnostic.dialogTexts, [{ kind: "NATIVE_CONFIRM", text: "確定要付款 NT$1 嗎?卡號 #", buttons: [] }]);
+});
+
+test("the dialog line re-sanitizes tampered values and is absent when nothing was seen", async () => {
+  assert.equal(formatPayUniDialogDiagnostic(null), null);
+  assert.equal(formatPayUniDialogDiagnostic({ dialogs: [], externalHosts: [] }), null);
+  const line = formatPayUniDialogDiagnostic({
+    dialogs: [{ kind: "<script>", text: `卡號 ${SYNTHETIC_CARD} buyer@example.test`, buttons: [`確定 ${SYNTHETIC_CARD}`, 42, "x ".repeat(90)] }, 1, 2, 3],
+    externalHosts: ["CDN.Example.test", "a1234567.cloudfront.net", "http://evil.test/x?y=1", "cdn.example.test"],
+    payuniPostsAfterSubmit: 1_000, afterSubmitSeconds: -1,
+  });
+  const parsed = JSON.parse(line);
+  assert.equal(parsed.dialogs.length, 3);
+  assert.deepEqual(parsed.dialogs[0].kind, "OTHER");
+  assert.equal(parsed.dialogs[0].text, "卡號 # EMAIL");
+  assert.equal(parsed.dialogs[0].buttons[0], "確定 #");
+  assert.equal(parsed.dialogs[0].buttons.length, 2);
+  assert.ok(parsed.dialogs[0].buttons[1].length <= 40);
+  assert.deepEqual(parsed.externalHosts, ["cdn.example.test", "*.cloudfront.net", "OTHER"]);
+  assert.equal(parsed.payuniPostsAfterSubmit, 99);
+  assert.equal(parsed.afterSubmitSeconds, null);
+  for (const secret of DIALOG_SECRETS) assert.equal(line.includes(secret), false, `leaked ${secret}`);
+  assert.deepEqual(await capturePayUniConfirmationDialog({ async evaluate() { throw new Error("detached"); } }), { kind: "UNREADABLE", text: "", buttons: [] });
+  assert.deepEqual(nativePayUniDialogCapture({ type: () => "weird", message: () => { throw new Error("gone"); } }), { kind: "NATIVE_OTHER", text: "", buttons: [] });
+  assert.equal(sanitizePayUniHostName("localhost"), "OTHER");
+  const hosts = [];
+  for (const host of ["a.test", "b.test", "c.test", "d.test", "e.test", "f.test", "a.test"]) recordPayUniExternalHost(hosts, host);
+  assert.deepEqual(hosts, ["a.test", "b.test", "c.test", "d.test", "e.test"]);
+  const captures = [];
+  for (let index = 0; index < 5; index += 1) recordPayUniDialogCapture(captures, { kind: "NONE", text: "", buttons: [] });
+  assert.equal(captures.length, 3);
 });
