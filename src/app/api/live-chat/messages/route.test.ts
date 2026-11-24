@@ -21,7 +21,8 @@ vi.mock("@/lib/live-chat", async () => {
 });
 
 import { LIVE_VIEWER_SESSION_COOKIE } from "@/lib/live-quota-admission";
-import { FORM_SUBMISSION_CHAT_SESSION_COOKIE } from "@/lib/form-submission-chat-session";
+import { createFormSubmissionChatSessionToken, FORM_SUBMISSION_CHAT_SESSION_COOKIE } from "@/lib/form-submission-chat-session";
+import { createLiveViewerPass, LIVE_VIEWER_PASS_COOKIE } from "@/lib/live-viewer-pass";
 import { LiveChatError } from "@/lib/live-chat";
 import { GET, POST } from "@/app/api/live-chat/messages/route";
 
@@ -171,7 +172,9 @@ describe("live chat route", () => {
       expect(response.status).toBe(201);
     }
 
-    expect(rateLimitIdentities).toEqual(["203.0.113.5", "203.0.113.5"]);
+    // Per request: the per-IP cap, then the speaker bucket (the fixture's chat
+    // token is unsigned, so it falls back to the same trusted IP).
+    expect(rateLimitIdentities).toEqual(["203.0.113.5", "203.0.113.5", "203.0.113.5", "203.0.113.5"]);
   });
 
   it("maps creation status, forwards fss1, and keeps the response free of contact data", async () => {
@@ -202,9 +205,11 @@ describe("live chat route", () => {
       deploymentSource: "cloudflare",
       ingressSecret,
     });
-    const [, limiterKey, , , limiterOptions] = mocks.checkRateLimit.mock.calls[0] as [Request, string, number, number, { clientIp: string | null }];
-    expect(limiterOptions).toEqual({ clientIp: "203.0.113.5" });
-    expect(limiterKey).toBe("live-chat-write");
+    const calls = mocks.checkRateLimit.mock.calls.map(([, key, limit, , options]) => [key, limit, options]);
+    expect(calls).toEqual([
+      ["live-chat-write-ip", 600, { clientIp: "203.0.113.5" }],
+      ["live-chat-write", 60, { clientIp: "203.0.113.5" }],
+    ]);
   });
 
   it("maps blocked, keyword, idempotency, transaction and server errors without leaking details", async () => {
@@ -225,5 +230,101 @@ describe("live chat route", () => {
     const payload = await response.json();
     expect(payload).toEqual({ error: "Unable to use live chat" });
     expect(JSON.stringify(payload)).not.toContain("private-db-detail");
+  });
+});
+
+describe("live chat limiter buckets (A4-03 MAJOR-A / MINOR-C)", () => {
+  type LimiterCall = [Request, string, number, number, { clientIp: string | null }];
+  const calls = () => (mocks.checkRateLimit.mock.calls as LimiterCall[]).map(([, key, limit, , options]) => ({ key, limit, clientIp: options.clientIp }));
+
+  function pass(viewerSessionId: string, scope = { vendorId: "v1", liveId: "l1" }, token = admissionToken) {
+    return createLiveViewerPass({ ...scope, viewerSessionId, admissionToken: token, sessionExpiresAt: new Date(Date.now() + 90_000) });
+  }
+  function readRequest(cookie: string) {
+    return new Request("https://app.example.test/api/live-chat/messages?vendorId=v1&liveId=l1", { headers: headers(cookie) });
+  }
+  function postRequest(cookie: string) {
+    return new Request("https://app.example.test/api/live-chat/messages", {
+      method: "POST",
+      headers: headers(cookie),
+      body: JSON.stringify({ vendorId: "v1", liveId: "l1", clientMessageId: crypto.randomUUID(), body: "hello" }),
+    });
+  }
+  const admissionCookie = `${LIVE_VIEWER_SESSION_COOKIE}=${admissionToken}`;
+  const passCookie = (value: string) => `${LIVE_VIEWER_PASS_COOKIE}=${encodeURIComponent(value)}`;
+  const speakerCookie = (submissionId: string) =>
+    `${FORM_SUBMISSION_CHAT_SESSION_COOKIE}=${createFormSubmissionChatSessionToken({ submissionId })}`;
+
+  it("GET: caps the source IP loosely, then buckets each viewer by its verified pass", async () => {
+    await GET(readRequest(`${admissionCookie}; ${passCookie(pass("session-1"))}`));
+    await GET(readRequest(`${admissionCookie}; ${passCookie(pass("session-2"))}`));
+    const [ipA, viewerA, ipB, viewerB] = calls();
+    expect(ipA).toEqual({ key: "live-chat-read-ip", limit: 1800, clientIp: "203.0.113.5" });
+    expect(ipB).toEqual(ipA);
+    expect(viewerA!.key).toBe("live-chat-read");
+    expect(viewerA!.limit).toBe(60);
+    expect(viewerA!.clientIp).toMatch(/^viewer-session:[0-9a-f]{32}$/u);
+    expect(viewerB!.clientIp).toMatch(/^viewer-session:[0-9a-f]{32}$/u);
+    expect(viewerA!.clientIp).not.toBe(viewerB!.clientIp);
+  });
+
+  it("GET: falls back to the IP for a missing, forged, foreign-scope or foreign-cookie pass", async () => {
+    const valid = pass("session-1");
+    const candidates = [
+      null,
+      valid.slice(0, -4) + "AAAA",
+      pass("session-1", { vendorId: "v1", liveId: "other-live" }),
+      pass("session-1", undefined, "B".repeat(43)),
+    ];
+    for (const candidate of candidates) {
+      mocks.checkRateLimit.mockClear();
+      await GET(readRequest(candidate ? `${admissionCookie}; ${passCookie(candidate)}` : admissionCookie));
+      expect(calls()).toEqual([
+        { key: "live-chat-read-ip", limit: 1800, clientIp: "203.0.113.5" },
+        { key: "live-chat-read", limit: 60, clientIp: "203.0.113.5" },
+      ]);
+    }
+  });
+
+  it("POST: buckets each speaker by the verified chat session, with a per-IP cap of 600", async () => {
+    expect((await POST(postRequest(`${speakerCookie("submission-a")}; ${admissionCookie}`))).status).toBe(201);
+    expect((await POST(postRequest(`${speakerCookie("submission-b")}; ${admissionCookie}`))).status).toBe(201);
+    const [ipA, speakerA, ipB, speakerB] = calls();
+    expect(ipA).toEqual({ key: "live-chat-write-ip", limit: 600, clientIp: "203.0.113.5" });
+    expect(ipB).toEqual(ipA);
+    expect(speakerA!.key).toBe("live-chat-write");
+    expect(speakerA!.limit).toBe(60);
+    expect(speakerA!.clientIp).toMatch(/^chat-speaker:[0-9a-f]{32}$/u);
+    expect(speakerA!.clientIp).not.toContain("submission-a");
+    expect(speakerB!.clientIp).toMatch(/^chat-speaker:[0-9a-f]{32}$/u);
+    expect(speakerB!.clientIp).not.toBe(speakerA!.clientIp);
+  });
+
+  it("POST: an unsigned chat session falls back to the IP, and a viewer pass is not a speaker identity", async () => {
+    await POST(postRequest(`${FORM_SUBMISSION_CHAT_SESSION_COOKIE}=${chatToken}; ${admissionCookie}; ${passCookie(pass("session-1"))}`));
+    expect(calls()).toEqual([
+      { key: "live-chat-write-ip", limit: 600, clientIp: "203.0.113.5" },
+      { key: "live-chat-write", limit: 60, clientIp: "203.0.113.5" },
+    ]);
+  });
+
+  it("enforces both buckets: a per-IP 429 stops before the identity bucket, an identity 429 stops before chat", async () => {
+    mocks.checkRateLimit.mockImplementation(async (_request: Request, key: string) =>
+      key.endsWith("-ip") ? new Response(null, { status: 429 }) : null);
+    const read = await GET(readRequest(`${admissionCookie}; ${passCookie(pass("session-1"))}`));
+    expect(read.status).toBe(429);
+    expect(read.headers.get("cache-control")).toBe("private, no-store");
+    expect((await POST(postRequest(`${speakerCookie("submission-a")}; ${admissionCookie}`))).status).toBe(429);
+    expect(calls().map((call) => call.key)).toEqual(["live-chat-read-ip", "live-chat-write-ip"]);
+    expect(mocks.listViewerChatMessages).not.toHaveBeenCalled();
+    expect(mocks.createViewerChatMessage).not.toHaveBeenCalled();
+
+    mocks.checkRateLimit.mockReset();
+    mocks.checkRateLimit.mockImplementation(async (_request: Request, key: string) =>
+      key.endsWith("-ip") ? null : new Response(null, { status: 429 }));
+    expect((await POST(postRequest(`${speakerCookie("submission-a")}; ${admissionCookie}`))).status).toBe(429);
+    expect((await GET(readRequest(`${admissionCookie}; ${passCookie(pass("session-1"))}`))).status).toBe(429);
+    expect(mocks.createViewerChatMessage).not.toHaveBeenCalled();
+    expect(mocks.listViewerChatMessages).not.toHaveBeenCalled();
   });
 });

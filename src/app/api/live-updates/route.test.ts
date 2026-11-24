@@ -246,6 +246,28 @@ describe("GET /api/live-updates", () => {
       expect(limiterIdentity()).toBe(first);
     });
 
+    it("also applies a loose per-IP cap (180 x 30) before the per-viewer bucket (MAJOR-A)", async () => {
+      await GET(request("vendorId=v1&liveId=l1", { cookie: cookie({ pass: passFor("session-1") }) }));
+      const keys = (mocks.checkRateLimit.mock.calls as [Request, string, number, number, { clientIp: string | null }][])
+        .map(([, key, limit, , options]) => [key, limit, options.clientIp]);
+      expect(keys[0]).toEqual(["live-updates-read-ip", 5400, "203.0.113.5"]);
+      expect(keys[1]![0]).toBe("live-updates-read");
+      expect(keys[1]![1]).toBe(180);
+
+      mocks.checkRateLimit.mockReset();
+      mocks.checkRateLimit.mockImplementation(async (_request: Request, key: string) =>
+        key === "live-updates-read-ip" ? new Response(null, { status: 429 }) : null);
+      const limited = await GET(request("vendorId=v1&liveId=l1", { cookie: cookie({ pass: passFor("session-2") }) }));
+      expect(limited.status).toBe(429);
+      expect(mocks.checkRateLimit).toHaveBeenCalledTimes(1);
+      expect(mocks.hasActiveLiveViewerSession).not.toHaveBeenCalled();
+    });
+
+    it("does not accept a pass issued for another live in the query as the viewer bucket", async () => {
+      await GET(request("vendorId=v1&liveId=l2", { cookie: cookie({ pass: passFor("session-1") }) }));
+      expect(limiterIdentity()).toBe("203.0.113.5");
+    });
+
     it("falls back to the trusted IP for a missing, forged, expired or foreign-cookie pass", async () => {
       const valid = passFor("session-1");
       const forged = `${valid.slice(0, -4)}AAAA`;

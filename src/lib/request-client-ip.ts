@@ -260,6 +260,14 @@ export function rateLimitIpBucket(identity: string) {
   const groups = canonical.includes("::")
     ? [...headGroups, ...Array<string>(8 - headGroups.length - tailGroups.length).fill("0"), ...tailGroups]
     : headGroups;
+  // ::ffff:0:0/96 (IPv4-mapped) is one IPv4 client: bucket it as that IPv4
+  // address, not as the single /64 every mapped address shares.
+  const values = groups.map((group) => Number.parseInt(group, 16));
+  if (values.length === 8 && values.slice(0, 5).every((value) => value === 0) && values[5] === 0xffff) {
+    const high = values[6]!;
+    const low = values[7]!;
+    return [high >> 8, high & 0xff, low >> 8, low & 0xff].join(".");
+  }
   return `${groups.slice(0, 4).map((group) => group.replace(/^0+(?=.)/u, "")).join(":")}::/64`;
 }
 

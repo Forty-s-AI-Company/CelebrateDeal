@@ -1,5 +1,6 @@
 // Go/No-Go 公開端點唯讀探測（不登入、不帶任何密鑰）。
 // 用法：STAGING_URL=https://<staging 網域> node scripts/qa/go-nogo-public-probe.mjs
+// Production 部署後：STAGING_URL=https://<正式網域> GO_NOGO_TARGET=production node scripts/qa/go-nogo-public-probe.mjs
 // 只做 GET，並印出每項檢查的結果摘要；任何一項失敗時結束碼為 1。
 const base = (process.env.STAGING_URL ?? "").replace(/\/$/, "");
 if (!base) {
@@ -19,6 +20,18 @@ const get = (path, init) => fetch(base + path, { redirect: "manual", ...init });
   const res = await get("/api/health");
   const body = await res.text();
   record("health", "/api/health 回 200", res.status === 200, `status=${res.status} body=${body.slice(0, 120)}`);
+
+  // A4-03：部署必須經 Vercel edge 解析來源 IP，否則所有限流共用一個桶。
+  // Preview（staging）另要求 Vercel 注入的 commitSha；Production 的健康檢查刻意不回身分，
+  // 所以 GO_NOGO_TARGET=production 時只檢查信任模式。
+  const target = process.env.GO_NOGO_TARGET === "production" ? "production" : "preview";
+  let parsed = null;
+  try { parsed = JSON.parse(body); } catch { parsed = null; }
+  const trust = parsed && typeof parsed === "object" ? parsed.clientIpTrust : undefined;
+  const commitSha = parsed?.deployment?.commitSha;
+  const shaOk = target === "production" || (typeof commitSha === "string" && /^[a-f0-9]{40}$/u.test(commitSha));
+  record("client-ip-trust", `/api/health 的 clientIpTrust 為 vercel-edge${target === "preview" ? "，且有 commitSha" : ""}`,
+    trust === "vercel-edge" && shaOk, `target=${target} clientIpTrust=${typeof trust === "string" ? trust : "無"} commitSha=${target === "preview" ? (shaOk ? "有" : "無") : "不檢查"}`);
 }
 
 // F-079 中文 404

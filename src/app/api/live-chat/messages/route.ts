@@ -11,6 +11,7 @@ import {
 } from "@/lib/live-chat";
 import { liveViewerTokenFromRequest } from "@/lib/live-quota-admission";
 import { liveViewerPassFromRequest, liveViewerPassRateLimitIdentity } from "@/lib/live-viewer-pass";
+import { chatSpeakerRateLimitIdentity } from "@/lib/form-submission-chat-session";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { liveChatIpTrustConfig } from "@/lib/live-chat-request-security";
 import { getRequestClientIp } from "@/lib/request-client-ip";
@@ -61,24 +62,56 @@ type SecurityGateResult = {
   clientIp: string | null;
 };
 
-async function securityGate(request: Request, key: string, requireTrustedClientIp: boolean): Promise<SecurityGateResult> {
+/** Per viewer (pass) or per speaker (chat session) each minute. */
+const LIVE_CHAT_IDENTITY_LIMIT = 60;
+/** Per source IP each minute for reads: room for a classroom behind one CGNAT address. */
+const LIVE_CHAT_READ_IP_LIMIT = LIVE_CHAT_IDENTITY_LIMIT * 30;
+/** Per source IP each minute for posts. */
+const LIVE_CHAT_WRITE_IP_LIMIT = 600;
+
+function rawScope(request: Request) {
+  if (request.url.length > MAX_QUERY_LENGTH) return { vendorId: null, liveId: null };
+  const searchParams = new URL(request.url).searchParams;
+  return { vendorId: searchParams.get("vendorId"), liveId: searchParams.get("liveId") };
+}
+
+/**
+ * A4-03 MAJOR-A: two buckets, both must pass.
+ * - Identity: a verified viewer pass for reads, a verified chat session
+ *   (one registration) for posts, so viewers sharing a NAT/CGNAT address do
+ *   not throttle each other. Without one, the trusted IP.
+ * - Source IP: a looser cap, so one address cannot multiply its allowance by
+ *   opening many admissions or registrations.
+ */
+async function securityGate(request: Request, mode: "read" | "write"): Promise<SecurityGateResult> {
   const sameOrigin = requireSameOriginRequest(request, { requireClientHeader: true });
   if (sameOrigin) return { response: noStore(sameOrigin), clientIp: null };
 
   const clientIp = getRequestClientIp(request, liveChatIpTrustConfig());
-  if (requireTrustedClientIp && !clientIp) {
+  if (mode === "write" && !clientIp) {
     return { response: json({ error: "Unable to use live chat" }, 403), clientIp: null };
   }
 
-  // MINOR-1: a verified viewer pass buckets one viewer session, so viewers
-  // sharing a NAT/CGNAT address do not throttle each other; otherwise per IP.
-  const identity = liveViewerPassRateLimitIdentity(request, liveViewerTokenFromRequest(request)) ?? clientIp;
-  const limited = await checkRateLimit(request, key, 60, 60_000, { clientIp: identity });
+  const ipLimited = mode === "write"
+    ? await checkRateLimit(request, "live-chat-write-ip", LIVE_CHAT_WRITE_IP_LIMIT, 60_000, { clientIp })
+    : await checkRateLimit(request, "live-chat-read-ip", LIVE_CHAT_READ_IP_LIMIT, 60_000, { clientIp });
+  if (ipLimited) return { response: noStore(ipLimited), clientIp };
+
+  const identity = mode === "write"
+    ? chatSpeakerRateLimitIdentity(chatSessionTokenFromRequest(request))
+    : liveViewerPassRateLimitIdentity(request, { ...rawScope(request), admissionToken: liveViewerTokenFromRequest(request) });
+  const limited = await checkRateLimit(
+    request,
+    mode === "write" ? "live-chat-write" : "live-chat-read",
+    LIVE_CHAT_IDENTITY_LIMIT,
+    60_000,
+    { clientIp: identity ?? clientIp },
+  );
   return { response: limited ? noStore(limited) : null, clientIp };
 }
 
 export async function GET(request: Request) {
-  const security = await securityGate(request, "live-chat-read", false);
+  const security = await securityGate(request, "read");
   if (security.response) return security.response;
 
   const rawQuery = queryValues(request);
@@ -101,7 +134,7 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  const security = await securityGate(request, "live-chat-write", true);
+  const security = await securityGate(request, "write");
   if (security.response) return security.response;
 
   const parsed = ViewerChatPostSchema.safeParse(await readJsonBody(request, 16 * 1024));

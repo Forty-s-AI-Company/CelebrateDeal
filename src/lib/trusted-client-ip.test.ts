@@ -137,6 +137,12 @@ describe("rateLimitIpBucket (MINOR-3)", () => {
     expect(rateLimitIpBucket("2001:db8::1")).toBe("2001:db8:0:0::/64");
     expect(rateLimitIpBucket("::1")).toBe("0:0:0:0::/64");
     expect(rateLimitIpBucket("203.0.113.5")).toBe("203.0.113.5");
+    // MINOR-A: IPv4-mapped addresses (::ffff:0:0/96) bucket as their IPv4 address.
+    expect(rateLimitIpBucket("::ffff:203.0.113.5")).toBe("203.0.113.5");
+    expect(rateLimitIpBucket("::FFFF:cb00:7105")).toBe("203.0.113.5");
+    expect(rateLimitIpBucket("::ffff:198.51.100.1")).not.toBe(rateLimitIpBucket("::ffff:198.51.100.2"));
+    // Not mapped: ::ffff:0:x:y style prefixes outside /96 stay /64.
+    expect(rateLimitIpBucket("64:ff9b::203.0.113.5")).toBe("64:ff9b:0:0::/64");
     expect(rateLimitIpBucket("authenticated-buyer")).toBe("authenticated-buyer");
     expect(rateLimitIpBucket("viewer-session:abc")).toBe("viewer-session:abc");
   });
