@@ -79,6 +79,16 @@ function queryResponse(inner, { forgeHash = false } = {}) {
 }
 const PAID_ROW = Object.freeze({ MerTradeNo: ORDER, TradeNo: "SYNTHTRADE1", TradeAmt: "1", TradeStatus: "1", PaymentType: "1", DataSource: "A", CloseStatus: "9", RemainAmt: "0" });
 
+/** PayUni's own encoding: PHP http_build_query of { Status, Result: [row, ...] } (Result[0][Field]=...). */
+function bracketQueryResponse(rows, { status = "SUCCESS", indexed = true } = {}) {
+  const entries = [["Status", status], ["MerID", KEYS.merchantId]];
+  rows.forEach((row, index) => {
+    for (const [name, value] of Object.entries(row)) entries.push([indexed ? `Result[${index}][${name}]` : `Result[${name}]`, value]);
+  });
+  const encryptInfo = crypto.encrypt(entries);
+  return new Response(new URLSearchParams({ MerID: KEYS.merchantId, Version: "2.0", EncryptInfo: encryptInfo, HashInfo: crypto.hash(encryptInfo) }).toString());
+}
+
 test("the Sandbox envelope round-trips and refuses malformed key material", () => {
   const encrypted = crypto.encrypt([["MerID", "A"], ["MerTradeNo", "B"]]);
   assert.deepEqual(crypto.decrypt(encrypted), [["MerID", "A"], ["MerTradeNo", "B"]]);
@@ -184,6 +194,61 @@ test("the provider query is a read-only signed trade query for one order and rep
   assert.equal((await queryProviderSettlement("bad order!", { crypto, merchantId: KEYS.merchantId, fetchImpl })).status, "QUERY_INPUT_REJECTED");
 });
 
+test("A4-05: PayUni's bracket-encoded Result rows (http_build_query) are read like the application reads them", async () => {
+  const query = (response) => queryProviderSettlement(ORDER, { crypto, merchantId: KEYS.merchantId, fetchImpl: async () => response });
+  // Run 45376157147: a signed paid Return, then six queries whose only Result was Result[0][...] fields.
+  const found = await query(bracketQueryResponse([PAID_ROW]));
+  assert.deepEqual(found, { status: "FOUND", rows: 1, resultShape: "BRACKET_FIELDS", rowCheck: "MATCHED", settlement: sanitizeSettlementRow(PAID_ROW) });
+  assert.equal(providerReportsPaid(found), true);
+  const unindexed = await query(bracketQueryResponse([PAID_ROW], { indexed: false }));
+  assert.equal(unindexed.status, "FOUND");
+  assert.equal(unindexed.resultShape, "BRACKET_FIELDS");
+
+  // The same rules as any other encoding: two trades, another order or no order is never FOUND.
+  assert.deepEqual(await query(bracketQueryResponse([PAID_ROW, { ...PAID_ROW, TradeNo: "SYNTHTRADE2" }])),
+    { status: "MULTIPLE_ROWS", rows: 2, resultShape: "BRACKET_FIELDS", rowCheck: "MULTIPLE_ROWS", settlement: null });
+  assert.deepEqual(await query(bracketQueryResponse([{ ...PAID_ROW, MerTradeNo: "CDOTHER" }])),
+    { status: "ROW_REJECTED", rows: 1, resultShape: "BRACKET_FIELDS", rowCheck: "ORDER_MISMATCH", settlement: null });
+  const withoutOrder = Object.fromEntries(Object.entries(PAID_ROW).filter(([name]) => name !== "MerTradeNo"));
+  assert.deepEqual(await query(bracketQueryResponse([withoutOrder])),
+    { status: "ROW_REJECTED", rows: 1, resultShape: "BRACKET_FIELDS", rowCheck: "ORDER_ABSENT", settlement: null });
+  assert.deepEqual(await query(bracketQueryResponse([])),
+    { status: "ROW_REJECTED", rows: 0, resultShape: "ABSENT", rowCheck: "NO_ROWS", settlement: null });
+  assert.deepEqual(await query(queryResponse({ Status: "SUCCESS", Result: { ...PAID_ROW, MerTradeNo: "CDOTHER" } })),
+    { status: "ROW_REJECTED", rows: 1, resultShape: "JSON_STRING", rowCheck: "ORDER_MISMATCH", settlement: null });
+  // A bracket field outside the Result namespace or with a nested key is ignored, never merged into a row.
+  const strayInfo = crypto.encrypt([["Status", "SUCCESS"], ["Other[0][MerTradeNo]", ORDER], ["Result[0][Card][MerTradeNo]", ORDER]]);
+  const stray = await query(new Response(new URLSearchParams({ MerID: KEYS.merchantId, EncryptInfo: strayInfo, HashInfo: crypto.hash(strayInfo) }).toString()));
+  assert.deepEqual(stray,{ status: "ROW_REJECTED", rows: 0, resultShape: "ABSENT", rowCheck: "NO_ROWS", settlement: null });
+
+  // The diagnostic carries enums and counts only.
+  for (const result of [found, await query(bracketQueryResponse([{ ...PAID_ROW, MerTradeNo: "CDOTHER" }]))]) {
+    const text = JSON.stringify(result);
+    for (const value of [ORDER, "CDOTHER", "SYNTHTRADE1", KEYS.merchantId]) assert.equal(text.includes(value), false, value);
+  }
+});
+
+test("A4-05: the pay phase confirms a bracket-encoded paid query with the real query reader", async () => {
+  const requests = { n: 0 };
+  const fetchImpl = async () => { requests.n += 1; return bracketQueryResponse([PAID_ROW]); };
+  const { deps } = dependencies({ fetchImpl });
+  delete deps.queryProvider;
+  const receipt = await runLostCallbackPayment(INPUT, deps);
+  assert.equal(receipt.result, "PAID_CALLBACK_WITHHELD");
+  assert.equal(requests.n, 1);
+  assert.deepEqual(receipt.provider.afterPayment, { status: "FOUND", resultShape: "BRACKET_FIELDS", rowCheck: "MATCHED", settlement: sanitizeSettlementRow(PAID_ROW) });
+  assert.equal(validatePayReceipt(receipt), true);
+  for (const value of [ORDER, "SYNTHTRADE1", KEYS.merchantId]) assert.equal(JSON.stringify(receipt).includes(value), false, value);
+
+  // An unrecognised encoding still fails closed, now with the reason in the receipt.
+  const absent = dependencies({ fetchImpl: async () => bracketQueryResponse([]) });
+  delete absent.deps.queryProvider;
+  const blocked = await runLostCallbackPayment(INPUT, absent.deps);
+  assert.equal(blocked.failure, "PROVIDER_QUERY_UNCONFIRMED");
+  assert.deepEqual(blocked.provider.afterPayment, { status: "ROW_REJECTED", resultShape: "ABSENT", rowCheck: "NO_ROWS", settlement: null });
+  assert.equal(validatePayReceipt(blocked), true);
+});
+
 function preparedCheckout() {
   return {
     invocation: INPUT,
@@ -230,7 +295,7 @@ test("pay phase: one attested checkout, one withheld-callback submission, paid a
   assert.equal(fields.get("TradeAmt"), "1");
   assert.equal(fields.get("MerTradeNo"), ORDER);
   assert.deepEqual(receipt.sideEffects, { fixturePosts: 1, admissionPosts: 1, checkoutPosts: 1, paymentAttemptPosts: 1, paymentSubmissions: 1, refundSubmissions: 0 });
-  assert.deepEqual(receipt.provider.afterPayment, { status: "FOUND", settlement: sanitizeSettlementRow(PAID_ROW) });
+  assert.deepEqual(receipt.provider.afterPayment, { status: "FOUND", resultShape: "NONE", rowCheck: "NONE", settlement: sanitizeSettlementRow(PAID_ROW) });
   assert.equal(validatePayReceipt(receipt), true);
   const text = JSON.stringify(receipt);
   for (const secret of [ORDER, "SYNTHTRADE1", "synthetic_tx", INPUT.cardNumber, INPUT.jobSecret, KEYS.key, KEYS.iv, "celebrate_support_", "https:"]) {
@@ -299,6 +364,14 @@ test("a receipt that gained an identifier, URL or refund cannot be validated or 
   assert.equal(validatePayReceipt({ ...valid, checks: { ...valid.checks, note: ALIAS_ORIGIN } }), false);
   assert.equal(validatePayReceipt({ ...valid, sideEffects: { ...valid.sideEffects, refundSubmissions: 1 } }), false);
   assert.equal(validatePayReceipt({ ...valid, result: "PAID_CALLBACK_WITHHELD" }), false);
+  // The query evidence holds fixed enums only: an extra key, a free-text status or an unknown shape is refused.
+  const evidence = { status: "ROW_REJECTED", resultShape: "ABSENT", rowCheck: "NO_ROWS", settlement: null };
+  assert.equal(validatePayReceipt({ ...valid, provider: { afterPayment: evidence, queryAttempts: 6 } }), true);
+  assert.equal(validatePayReceipt({ ...valid, provider: { afterPayment: { ...evidence, merTradeNo: ORDER }, queryAttempts: 6 } }), false);
+  assert.equal(validatePayReceipt({ ...valid, provider: { afterPayment: { ...evidence, status: "row rejected" }, queryAttempts: 6 } }), false);
+  assert.equal(validatePayReceipt({ ...valid, provider: { afterPayment: { ...evidence, resultShape: "PHP" }, queryAttempts: 6 } }), false);
+  assert.equal(validatePayReceipt({ ...valid, provider: { afterPayment: { ...evidence, rowCheck: ORDER }, queryAttempts: 6 } }), false);
+  assert.equal(validatePayReceipt({ ...valid, provider: { afterPayment: { status: "FOUND", settlement: null }, queryAttempts: 6 } }), false);
   const directory = await mkdtemp(join(tmpdir(), "lost-callback-receipt-"));
   try {
     const file = await writePayReceipt(valid, directory);

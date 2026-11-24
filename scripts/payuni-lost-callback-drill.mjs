@@ -255,20 +255,56 @@ export function sanitizeSettlementRow(row) {
   ]));
 }
 
-function payUniResultRows(response) {
-  const result = response.Result;
-  if (Array.isArray(result)) return result;
+/** How the decrypted query response carried its Result rows; a fixed enum, never a value. */
+export const QUERY_RESULT_SHAPES = Object.freeze(["NONE", "ARRAY", "OBJECT", "JSON_STRING", "QUERY_STRING", "BRACKET_FIELDS", "ABSENT"]);
+/** Why the single Result row was or was not accepted; a fixed enum, never a value. */
+export const QUERY_ROW_CHECKS = Object.freeze(["NONE", "MATCHED", "NO_ROWS", "MULTIPLE_ROWS", "ROW_NOT_OBJECT", "ORDER_ABSENT", "ORDER_MISMATCH"]);
+const BRACKET_RESULT_FIELD = /^Result(?:\[(\d+)\])?\[([^\]]+)\]$/u;
+
+/**
+ * Every Result row of a decrypted trade query, in provider order, plus the
+ * encoding it arrived in. Same reading as the application's
+ * `payUniResultRows` (src/lib/payment-providers/payuni.ts): PayUni encrypts a
+ * PHP `http_build_query` string, so a Result array normally arrives as flat
+ * `Result[0][MerTradeNo]=...` fields (#189 saw the same on trade/close).
+ * Reading only `Result` turned a real paid row into "no rows" (A4-05,
+ * run 45376157147: ROW_REJECTED six times after a signed paid Return).
+ */
+export function payUniResultRows(response) {
+  const result = response?.Result;
+  if (Array.isArray(result)) return { rows: result, shape: "ARRAY" };
   if (typeof result === "string") {
     try {
       const parsed = JSON.parse(result);
-      return Array.isArray(parsed) ? parsed : [parsed];
+      return { rows: Array.isArray(parsed) ? parsed : [parsed], shape: "JSON_STRING" };
     } catch {
       const parsed = Object.fromEntries(new URLSearchParams(result).entries());
-      return Object.keys(parsed).length ? [parsed] : [];
+      return { rows: Object.keys(parsed).length ? [parsed] : [], shape: "QUERY_STRING" };
     }
   }
-  if (result && typeof result === "object") return [result];
-  return [];
+  if (result && typeof result === "object") return { rows: [result], shape: "OBJECT" };
+  const rows = new Map();
+  for (const [key, value] of Object.entries(response ?? {})) {
+    const match = BRACKET_RESULT_FIELD.exec(key);
+    if (!match) continue;
+    const index = Number(match[1] ?? "0");
+    if (!Number.isSafeInteger(index) || index < 0) continue;
+    const row = rows.get(index) ?? {};
+    row[match[2]] = value;
+    rows.set(index, row);
+  }
+  if (rows.size === 0) return { rows: [], shape: "ABSENT" };
+  return { rows: [...rows.keys()].sort((left, right) => left - right).map((index) => rows.get(index)), shape: "BRACKET_FIELDS" };
+}
+
+function queryRowCheck(rows, orderNumber) {
+  if (rows.length === 0) return "NO_ROWS";
+  if (rows.length > 1) return "MULTIPLE_ROWS";
+  const row = rows[0];
+  if (!row || typeof row !== "object" || Array.isArray(row)) return "ROW_NOT_OBJECT";
+  const merTradeNo = row.MerTradeNo;
+  if (merTradeNo === undefined || merTradeNo === null || merTradeNo === "") return "ORDER_ABSENT";
+  return String(merTradeNo) === orderNumber ? "MATCHED" : "ORDER_MISMATCH";
 }
 
 /**
@@ -309,14 +345,34 @@ export async function queryProviderSettlement(orderNumber, { crypto, merchantId,
       const code = typeof inner.Status === "string" && /^[A-Z]{2,10}\d{2,10}$/u.test(inner.Status) ? inner.Status : "OTHER";
       return Object.freeze({ status: code === "QUERY03001" ? "NOT_FOUND" : "PROVIDER_STATUS_OTHER", providerCode: code, rows: 0, settlement: null });
     }
-    const rows = payUniResultRows(inner);
-    if (rows.length !== 1 || String(rows[0]?.MerTradeNo ?? "") !== orderNumber) {
-      return Object.freeze({ status: rows.length > 1 ? "MULTIPLE_ROWS" : "ROW_REJECTED", rows: Math.min(rows.length, 99), settlement: null });
+    const { rows, shape } = payUniResultRows(inner);
+    const rowCheck = queryRowCheck(rows, orderNumber);
+    if (rowCheck !== "MATCHED") {
+      return Object.freeze({
+        status: rowCheck === "MULTIPLE_ROWS" ? "MULTIPLE_ROWS" : "ROW_REJECTED",
+        rows: Math.min(rows.length, 99), resultShape: shape, rowCheck, settlement: null,
+      });
     }
-    return Object.freeze({ status: "FOUND", rows: 1, settlement: sanitizeSettlementRow(rows[0]) });
+    return Object.freeze({ status: "FOUND", rows: 1, resultShape: shape, rowCheck, settlement: sanitizeSettlementRow(rows[0]) });
   } catch {
     return Object.freeze({ status: "QUERY_FAILED", rows: 0, settlement: null });
   }
+}
+
+const QUERY_STATUS = /^[A-Z][A-Z0-9_]{0,31}$/u;
+
+/**
+ * The last query snapshot as receipt evidence: the fixed status, the
+ * de-identified Result encoding and row check, and the sanitized settlement
+ * codes. Anything outside the enums becomes NONE/OTHER; no value is copied.
+ */
+export function afterPaymentEvidence(snapshot) {
+  return {
+    status: typeof snapshot?.status === "string" && QUERY_STATUS.test(snapshot.status) ? snapshot.status : "OTHER",
+    resultShape: QUERY_RESULT_SHAPES.includes(snapshot?.resultShape) ? snapshot.resultShape : "NONE",
+    rowCheck: QUERY_ROW_CHECKS.includes(snapshot?.rowCheck) ? snapshot.rowCheck : "NONE",
+    settlement: snapshot?.settlement ?? null,
+  };
 }
 
 /** True once PayUni reports a complete (DataSource A) collected card trade. */
@@ -566,7 +622,7 @@ export async function runLostCallbackPayment(input, dependencies = {}) {
       if (providerReportsPaid(snapshot)) break;
       if (attempt < PROVIDER_QUERY_ATTEMPTS) await wait(PROVIDER_QUERY_INTERVAL_MS);
     }
-    receipt.provider.afterPayment = snapshot ? { status: snapshot.status, settlement: snapshot.settlement } : null;
+    receipt.provider.afterPayment = snapshot ? afterPaymentEvidence(snapshot) : null;
     if (!providerReportsPaid(snapshot)) return fail(receipt, "PROVIDER_QUERY_UNCONFIRMED");
     receipt.checks.providerQueryPaid = true;
     receipt.result = "PAID_CALLBACK_WITHHELD";
@@ -586,7 +642,13 @@ export function validatePayReceipt(receipt) {
   if ((receipt.result === "PAID_CALLBACK_WITHHELD") !== (receipt.failure === "NONE")) return false;
   const text = JSON.stringify(receipt);
   if (/https?:|@|EncryptInfo|HashInfo/iu.test(text)) return false;
-  const settlement = receipt.provider?.afterPayment?.settlement;
+  const afterPayment = receipt.provider?.afterPayment;
+  if (afterPayment !== null && afterPayment !== undefined) {
+    if (!exactKeys(afterPayment, ["status", "resultShape", "rowCheck", "settlement"]) || typeof afterPayment.status !== "string"
+      || !QUERY_STATUS.test(afterPayment.status) || !QUERY_RESULT_SHAPES.includes(afterPayment.resultShape)
+      || !QUERY_ROW_CHECKS.includes(afterPayment.rowCheck)) return false;
+  }
+  const settlement = afterPayment?.settlement;
   if (settlement && !exactKeys(settlement, [...SETTLEMENT_CODE_FIELDS, ...SETTLEMENT_AMOUNT_FIELDS])) return false;
   return receipt.sideEffects.paymentSubmissions <= 1 && receipt.sideEffects.refundSubmissions === 0
     && receipt.safety.productionOperations === false && receipt.safety.secretsPersisted === false;

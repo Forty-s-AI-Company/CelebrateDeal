@@ -70,6 +70,33 @@ test("fails a 2xx run that reports exhausted or sold-out webhook events, printin
   assert.deepEqual(attentionCounts(JSON.stringify([1, 2])), {});
 });
 
+test("A4-05: payment-reconcile prints its summary counts and skip word only, never identifiers", async () => {
+  const body = JSON.stringify({
+    ok: true, candidates: 1, examined: 1, paid: 1, failed: 0, alreadySettled: 0, inProgress: 0, handedToRetry: 0, inventoryUnavailable: 0,
+    pending: 0, notFound: 0, expired: 0, queryErrors: 0, manualReview: 0, windowExpired: 0, closed: 0, notFoundClosed: 0, claimedElsewhere: 0, errors: 0,
+    orderNumber: "CD-PRIVATE-ORDER", tradeNo: "PRIVATE-TRADE",
+  });
+  const result = await runScheduledJob("payment-reconcile", { JOB_SECRET: secret }, async () => fakeResponse(200, body));
+  assert.equal(result.outcome, "ok");
+  const line = formatResult(result);
+  assert.equal(line, "scheduled-job name=payment-reconcile http=200 outcome=ok inventoryUnavailable=0"
+    + " candidates=1 examined=1 paid=1 failed=0 alreadySettled=0 inProgress=0 handedToRetry=0 pending=0 notFound=0 expired=0 queryErrors=0 manualReview=0 closed=0 errors=0");
+  assert.doesNotMatch(line, /PRIVATE/u);
+
+  const disabled = await runScheduledJob("payment-reconcile", { JOB_SECRET: secret }, async () => fakeResponse(200, JSON.stringify({ ok: true, skipped: "disabled", candidates: 0 })));
+  assert.equal(formatResult(disabled), "scheduled-job name=payment-reconcile http=200 outcome=ok skipped=disabled candidates=0");
+  // An unknown skip word, a negative or fractional count, or free text is never printed.
+  const odd = await runScheduledJob("payment-reconcile", { JOB_SECRET: secret }, async () => fakeResponse(200, JSON.stringify({ skipped: "CD-PRIVATE", paid: -1, examined: 1.5, pending: "2" })));
+  assert.equal(formatResult(odd), "scheduled-job name=payment-reconcile http=200 outcome=ok");
+  // A report never turns a run red; only the attention counters do.
+  const manual = await runScheduledJob("payment-reconcile", { JOB_SECRET: secret }, async () => fakeResponse(200, JSON.stringify({ manualReview: 2, queryErrors: 3 })));
+  assert.equal(manual.outcome, "ok");
+  // Jobs without a report keep the previous line exactly.
+  const retry = await runScheduledJob("webhook-retry", { JOB_SECRET: secret }, async () => fakeResponse(200, JSON.stringify({ paid: 1, skipped: "disabled" })));
+  assert.equal(formatResult(retry), "scheduled-job name=webhook-retry http=200 outcome=ok");
+  assert.equal("report" in retry, false);
+});
+
 test("never sends a request without JOB_SECRET or for an unknown job", async () => {
   let called = 0;
   const fetchImpl = async () => { called += 1; return fakeResponse(200); };

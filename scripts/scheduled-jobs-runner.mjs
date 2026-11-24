@@ -3,7 +3,9 @@
 // JOB_SECRET. Used by .github/workflows/scheduled-jobs.yml (F-042 / B09-01).
 //
 // Output contract: one line with the job name, HTTP status, a fixed outcome
-// word and, when a job reports them, two non-negative attention counts. Response
+// word and, when a job reports them, two non-negative attention counts; jobs
+// that declare `reportCounters` (payment-reconcile) also print those summary
+// counts and a fixed `skipped` word, which never change the outcome. Response
 // bodies, headers, URLs with credentials and error messages are never printed,
 // so the Actions log can serve as invocation evidence without leaking customer
 // or provider data.
@@ -14,6 +16,15 @@ export const REQUEST_TIMEOUT_MS = 120_000;
 const MAX_BODY_BYTES = 256 * 1024;
 /** Top-level response counters that mean "a human must look" (PR #447 review M2). */
 export const ATTENTION_COUNTERS = Object.freeze(["exhausted", "inventoryUnavailable"]);
+/**
+ * Informational payment-reconcile counters (PaymentReconcileSummary): printed so an
+ * operator can see whether a lost-callback payment was examined, applied or held.
+ * They never change the outcome word.
+ */
+export const PAYMENT_RECONCILE_REPORT_COUNTERS = Object.freeze([
+  "candidates", "examined", "paid", "failed", "alreadySettled", "inProgress", "handedToRetry",
+  "pending", "notFound", "expired", "queryErrors", "manualReview", "closed", "errors",
+]);
 
 /**
  * cadence:
@@ -26,7 +37,8 @@ export const SCHEDULED_JOBS = Object.freeze([
   Object.freeze({ name: "line-notifications", path: "/api/cron/line-notifications", cadence: "frequent" }),
   Object.freeze({ name: "webhook-retry", path: "/api/jobs/webhook-retry", cadence: "frequent" }),
   // A-2 05: asks PayUni about payments whose callback never arrived (same cadence as webhook-retry).
-  Object.freeze({ name: "payment-reconcile", path: "/api/jobs/payment-reconcile", cadence: "frequent" }),
+  // A4-05: its summary counts (never an order or trade number) show whether a payment was examined.
+  Object.freeze({ name: "payment-reconcile", path: "/api/jobs/payment-reconcile", cadence: "frequent", reportCounters: PAYMENT_RECONCILE_REPORT_COUNTERS, reportSkipped: Object.freeze(["disabled", "provider_unavailable"]) }),
   // A4-04: asks Cloudflare Stream about uploads whose ready webhook never arrived
   // (the account's single webhook URL may point at another environment).
   Object.freeze({ name: "stream-ready-sync", path: "/api/jobs/stream-ready-sync", cadence: "frequent" }),
@@ -85,7 +97,27 @@ export function attentionCounts(bodyText) {
 }
 
 /**
- * @returns {Promise<{ name: string, status: number, outcome: string, counts?: Record<string, number> }>}
+ * A job's informational report: its declared non-negative integer counters and,
+ * when the value is one of the job's fixed words, `skipped`. Everything else is
+ * discarded.
+ */
+export function reportFields(bodyText, job) {
+  const report = {};
+  if (!job?.reportCounters && !job?.reportSkipped) return report;
+  if (typeof bodyText !== "string" || bodyText.length === 0 || bodyText.length > MAX_BODY_BYTES) return report;
+  let parsed;
+  try { parsed = JSON.parse(bodyText); } catch { return report; }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return report;
+  if (job.reportSkipped?.includes(parsed.skipped)) report.skipped = parsed.skipped;
+  for (const key of job.reportCounters ?? []) {
+    const value = parsed[key];
+    if (Number.isSafeInteger(value) && value >= 0) report[key] = value;
+  }
+  return report;
+}
+
+/**
+ * @returns {Promise<{ name: string, status: number, outcome: string, counts?: Record<string, number>, report?: Record<string, number | string> }>}
  * status 0 means no HTTP response was received.
  */
 export async function runScheduledJob(name, env = process.env, fetchImpl = globalThis.fetch) {
@@ -114,10 +146,13 @@ export async function runScheduledJob(name, env = process.env, fetchImpl = globa
     try { await response.body?.cancel(); } catch { /* body already consumed or closed */ }
     return { name: job.name, status: response.status, outcome };
   }
-  let counts = {};
-  try { counts = attentionCounts(await response.text()); } catch { /* counts stay empty */ }
+  let bodyText = "";
+  try { bodyText = await response.text(); } catch { /* counts stay empty */ }
+  const counts = attentionCounts(bodyText);
   const needsAttention = ATTENTION_COUNTERS.some((key) => (counts[key] ?? 0) > 0);
-  return { name: job.name, status: response.status, outcome: needsAttention ? "needs_attention" : "ok", counts };
+  const result = { name: job.name, status: response.status, outcome: needsAttention ? "needs_attention" : "ok", counts };
+  if (job.reportCounters || job.reportSkipped) result.report = reportFields(bodyText, job);
+  return result;
 }
 
 export function formatResult(result) {
@@ -125,7 +160,13 @@ export function formatResult(result) {
     .filter((key) => Number.isSafeInteger(result.counts?.[key]))
     .map((key) => ` ${key}=${result.counts[key]}`)
     .join("");
-  return `scheduled-job name=${result.name} http=${result.status} outcome=${result.outcome}${counts}`;
+  const job = findScheduledJob(result.name);
+  const skipped = job?.reportSkipped?.includes(result.report?.skipped) ? ` skipped=${result.report.skipped}` : "";
+  const report = (job?.reportCounters ?? [])
+    .filter((key) => Number.isSafeInteger(result.report?.[key]) && result.report[key] >= 0)
+    .map((key) => ` ${key}=${result.report[key]}`)
+    .join("");
+  return `scheduled-job name=${result.name} http=${result.status} outcome=${result.outcome}${counts}${skipped}${report}`;
 }
 
 async function main(argv) {
