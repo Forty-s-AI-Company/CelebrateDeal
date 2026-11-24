@@ -47,7 +47,8 @@ import { STAGING_ALIAS_HOST } from "./secure-staging-runner.mjs";
  * number, trade number, URL, card value, key or provider text.
  */
 
-export const LOST_CALLBACK_PAY_SCHEMA = "celebratedeal-payuni-lost-callback-pay/v1";
+/** v2 (A4-05): provider.afterPayment carries resultShape/rowCheck, and a paid receipt must agree with its query evidence. */
+export const LOST_CALLBACK_PAY_SCHEMA = "celebratedeal-payuni-lost-callback-pay/v2";
 export const PAYUNI_UPP_URL = "https://sandbox-api.payuni.com.tw/api/upp";
 export const PAYUNI_QUERY_URL = "https://sandbox-api.payuni.com.tw/api/trade/query";
 const PAYUNI_HOSTS = new Set(["sandbox-api.payuni.com.tw", "sandbox-vendor.payuni.com.tw"]);
@@ -302,9 +303,15 @@ function queryRowCheck(rows, orderNumber) {
   if (rows.length > 1) return "MULTIPLE_ROWS";
   const row = rows[0];
   if (!row || typeof row !== "object" || Array.isArray(row)) return "ROW_NOT_OBJECT";
-  const merTradeNo = row.MerTradeNo;
-  if (merTradeNo === undefined || merTradeNo === null || merTradeNo === "") return "ORDER_ABSENT";
-  return String(merTradeNo) === orderNumber ? "MATCHED" : "ORDER_MISMATCH";
+  // Same reading as the application's optionalPayloadText: only a string or a
+  // number counts, trimmed; an empty value is absent and any other type
+  // (array, object, boolean) never matches.
+  const raw = row.MerTradeNo;
+  if (raw === undefined || raw === null) return "ORDER_ABSENT";
+  if (typeof raw !== "string" && typeof raw !== "number") return "ORDER_MISMATCH";
+  const merTradeNo = String(raw).trim();
+  if (!merTradeNo) return "ORDER_ABSENT";
+  return merTradeNo === orderNumber ? "MATCHED" : "ORDER_MISMATCH";
 }
 
 /**
@@ -650,6 +657,9 @@ export function validatePayReceipt(receipt) {
   }
   const settlement = afterPayment?.settlement;
   if (settlement && !exactKeys(settlement, [...SETTLEMENT_CODE_FIELDS, ...SETTLEMENT_AMOUNT_FIELDS])) return false;
+  // A paid receipt must be backed by its own matched, found query row.
+  if (receipt.result === "PAID_CALLBACK_WITHHELD" && (afterPayment?.status !== "FOUND" || afterPayment.rowCheck !== "MATCHED"
+    || receipt.checks?.providerQueryPaid !== true)) return false;
   return receipt.sideEffects.paymentSubmissions <= 1 && receipt.sideEffects.refundSubmissions === 0
     && receipt.safety.productionOperations === false && receipt.safety.secretsPersisted === false;
 }

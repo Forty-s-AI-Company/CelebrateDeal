@@ -23,7 +23,8 @@ export const ATTENTION_COUNTERS = Object.freeze(["exhausted", "inventoryUnavaila
  */
 export const PAYMENT_RECONCILE_REPORT_COUNTERS = Object.freeze([
   "candidates", "examined", "paid", "failed", "alreadySettled", "inProgress", "handedToRetry",
-  "pending", "notFound", "expired", "queryErrors", "manualReview", "closed", "errors",
+  "pending", "notFound", "expired", "queryErrors", "manualReview", "windowExpired", "closed", "notFoundClosed",
+  "claimedElsewhere", "errors",
 ]);
 
 /**

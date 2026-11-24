@@ -80,7 +80,8 @@ test("A4-05: payment-reconcile prints its summary counts and skip word only, nev
   assert.equal(result.outcome, "ok");
   const line = formatResult(result);
   assert.equal(line, "scheduled-job name=payment-reconcile http=200 outcome=ok inventoryUnavailable=0"
-    + " candidates=1 examined=1 paid=1 failed=0 alreadySettled=0 inProgress=0 handedToRetry=0 pending=0 notFound=0 expired=0 queryErrors=0 manualReview=0 closed=0 errors=0");
+    + " candidates=1 examined=1 paid=1 failed=0 alreadySettled=0 inProgress=0 handedToRetry=0 pending=0 notFound=0 expired=0 queryErrors=0"
+    + " manualReview=0 windowExpired=0 closed=0 notFoundClosed=0 claimedElsewhere=0 errors=0");
   assert.doesNotMatch(line, /PRIVATE/u);
 
   const disabled = await runScheduledJob("payment-reconcile", { JOB_SECRET: secret }, async () => fakeResponse(200, JSON.stringify({ ok: true, skipped: "disabled", candidates: 0 })));

@@ -397,8 +397,10 @@ function hashInfo(encryptStr: string) {
  * Every Result row of a decrypted query response, in provider order. Callers
  * that only trust one row use `payUniResultRow`; the pending reconciler needs
  * the count so two trades on one order number are never silently reduced to one.
+ * Exported (read-only, pure) only so scripts/payuni-result-rows-parity.test.ts can
+ * pin the lost-callback drill's reader to this one (A4-05).
  */
-function payUniResultRows(value: Record<string, unknown>): unknown[] {
+export function payUniResultRows(value: Record<string, unknown>): unknown[] {
   const result = value.Result;
   if (Array.isArray(result)) return result;
   if (typeof result === "string") {

@@ -216,6 +216,13 @@ test("A4-05: PayUni's bracket-encoded Result rows (http_build_query) are read li
     { status: "ROW_REJECTED", rows: 0, resultShape: "ABSENT", rowCheck: "NO_ROWS", settlement: null });
   assert.deepEqual(await query(queryResponse({ Status: "SUCCESS", Result: { ...PAID_ROW, MerTradeNo: "CDOTHER" } })),
     { status: "ROW_REJECTED", rows: 1, resultShape: "JSON_STRING", rowCheck: "ORDER_MISMATCH", settlement: null });
+  // Like the application (optionalPayloadText): only a string or number counts, trimmed; never an
+  // array or object that merely stringifies to the order number.
+  assert.deepEqual(await query(queryResponse({ Status: "SUCCESS", Result: { ...PAID_ROW, MerTradeNo: [ORDER] } })),
+    { status: "ROW_REJECTED", rows: 1, resultShape: "JSON_STRING", rowCheck: "ORDER_MISMATCH", settlement: null });
+  assert.equal((await query(queryResponse({ Status: "SUCCESS", Result: { ...PAID_ROW, MerTradeNo: { value: ORDER } } }))).rowCheck, "ORDER_MISMATCH");
+  assert.equal((await query(bracketQueryResponse([{ ...PAID_ROW, MerTradeNo: "   " }]))).rowCheck, "ORDER_ABSENT");
+  assert.equal((await query(bracketQueryResponse([{ ...PAID_ROW, MerTradeNo: ` ${ORDER} ` }]))).rowCheck, "MATCHED");
   // A bracket field outside the Result namespace or with a nested key is ignored, never merged into a row.
   const strayInfo = crypto.encrypt([["Status", "SUCCESS"], ["Other[0][MerTradeNo]", ORDER], ["Result[0][Card][MerTradeNo]", ORDER]]);
   const stray = await query(new Response(new URLSearchParams({ MerID: KEYS.merchantId, EncryptInfo: strayInfo, HashInfo: crypto.hash(strayInfo) }).toString()));
@@ -262,6 +269,9 @@ function preparedCheckout() {
   };
 }
 
+/** What queryProviderSettlement returns for PayUni's own paid answer. */
+const MATCHED_PAID_QUERY = Object.freeze({ status: "FOUND", rows: 1, resultShape: "BRACKET_FIELDS", rowCheck: "MATCHED", settlement: sanitizeSettlementRow(PAID_ROW) });
+
 function dependencies(overrides = {}) {
   const calls = { attest: 0, prepare: 0, browser: [], queries: 0, waits: 0 };
   const deps = {
@@ -273,7 +283,7 @@ function dependencies(overrides = {}) {
       return preparedCheckout();
     },
     browser: async (input) => { calls.browser.push(input); return { code: "RETURN_CAPTURED", returnBody: signedBody(PAID_RETURN), returnPosts: 1, appCallbackRequests: 0 }; },
-    queryProvider: async () => { calls.queries += 1; return { status: "FOUND", rows: 1, settlement: sanitizeSettlementRow(PAID_ROW) }; },
+    queryProvider: async () => { calls.queries += 1; return MATCHED_PAID_QUERY; },
     wait: async () => { calls.waits += 1; },
     ...overrides,
   };
@@ -295,7 +305,7 @@ test("pay phase: one attested checkout, one withheld-callback submission, paid a
   assert.equal(fields.get("TradeAmt"), "1");
   assert.equal(fields.get("MerTradeNo"), ORDER);
   assert.deepEqual(receipt.sideEffects, { fixturePosts: 1, admissionPosts: 1, checkoutPosts: 1, paymentAttemptPosts: 1, paymentSubmissions: 1, refundSubmissions: 0 });
-  assert.deepEqual(receipt.provider.afterPayment, { status: "FOUND", resultShape: "NONE", rowCheck: "NONE", settlement: sanitizeSettlementRow(PAID_ROW) });
+  assert.deepEqual(receipt.provider.afterPayment, { status: "FOUND", resultShape: "BRACKET_FIELDS", rowCheck: "MATCHED", settlement: sanitizeSettlementRow(PAID_ROW) });
   assert.equal(validatePayReceipt(receipt), true);
   const text = JSON.stringify(receipt);
   for (const secret of [ORDER, "SYNTHTRADE1", "synthetic_tx", INPUT.cardNumber, INPUT.jobSecret, KEYS.key, KEYS.iv, "celebrate_support_", "https:"]) {
@@ -352,7 +362,7 @@ test("pay phase fails closed on a browser callback attempt, a not-paid Return or
   assert.equal(validatePayReceipt(receipt), true);
 
   const lateFound = { n: 0 };
-  const eventually = dependencies({ queryProvider: async () => (++lateFound.n < 3 ? { status: "NOT_FOUND", rows: 0, settlement: null } : { status: "FOUND", rows: 1, settlement: sanitizeSettlementRow(PAID_ROW) }) });
+  const eventually = dependencies({ queryProvider: async () => (++lateFound.n < 3 ? { status: "NOT_FOUND", rows: 0, settlement: null } : MATCHED_PAID_QUERY) });
   assert.equal((await runLostCallbackPayment(INPUT, eventually.deps)).result, "PAID_CALLBACK_WITHHELD");
   assert.equal(lateFound.n, 3);
 });
@@ -372,6 +382,8 @@ test("a receipt that gained an identifier, URL or refund cannot be validated or 
   assert.equal(validatePayReceipt({ ...valid, provider: { afterPayment: { ...evidence, resultShape: "PHP" }, queryAttempts: 6 } }), false);
   assert.equal(validatePayReceipt({ ...valid, provider: { afterPayment: { ...evidence, rowCheck: ORDER }, queryAttempts: 6 } }), false);
   assert.equal(validatePayReceipt({ ...valid, provider: { afterPayment: { status: "FOUND", settlement: null }, queryAttempts: 6 } }), false);
+  // v1 receipts (no resultShape/rowCheck) are a different schema.
+  assert.equal(validatePayReceipt({ ...valid, schemaVersion: "celebratedeal-payuni-lost-callback-pay/v1" }), false);
   const directory = await mkdtemp(join(tmpdir(), "lost-callback-receipt-"));
   try {
     const file = await writePayReceipt(valid, directory);
@@ -381,6 +393,27 @@ test("a receipt that gained an identifier, URL or refund cannot be validated or 
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
+});
+
+test("v2: a PAID_CALLBACK_WITHHELD receipt must agree with its own matched, found query and providerQueryPaid", async () => {
+  const paid = await runLostCallbackPayment(INPUT, dependencies().deps);
+  assert.equal(paid.schemaVersion, "celebratedeal-payuni-lost-callback-pay/v2");
+  assert.equal(validatePayReceipt(paid), true);
+  const afterPayment = paid.provider.afterPayment;
+  for (const forged of [
+    { ...paid, provider: { ...paid.provider, afterPayment: { ...afterPayment, status: "ROW_REJECTED" } } },
+    { ...paid, provider: { ...paid.provider, afterPayment: { ...afterPayment, rowCheck: "NONE" } } },
+    { ...paid, provider: { ...paid.provider, afterPayment: { ...afterPayment, rowCheck: "ORDER_MISMATCH" } } },
+    { ...paid, provider: { ...paid.provider, afterPayment: null } },
+    { ...paid, checks: { ...paid.checks, providerQueryPaid: false } },
+  ]) {
+    assert.equal(validatePayReceipt(forged), false);
+    const base = { sourceSha: SHA, runId: "4500000001", repository: "example-org/example-repo", token: "synthetic-token", receiptText: JSON.stringify(forged) };
+    assert.equal(await verifyPayRunReceipt(base, async () => { throw new Error("must not be called"); }), "PAY_RECEIPT_REJECTED");
+  }
+  // A query answer without a row check (anything but queryProviderSettlement's own shape) never becomes a writable paid receipt.
+  const unchecked = await runLostCallbackPayment(INPUT, dependencies({ queryProvider: async () => ({ status: "FOUND", rows: 1, settlement: sanitizeSettlementRow(PAID_ROW) }) }).deps);
+  assert.equal(validatePayReceipt(unchecked), false);
 });
 
 /** A fake Playwright: records clicks, the UPP post and what each routed request became. */
