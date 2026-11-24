@@ -877,11 +877,54 @@ function sharedPostLiveSchedule(
   live: EvergreenActivationRecord & { scheduledAt: Date; endedAt: Date | null; streamMode: string },
   vendorTimezone: string | null | undefined,
   now: Date,
-) {
+): SharedPostLiveSchedule | null {
   const evergreen = evergreenScheduleForLive(live, vendorTimezone, now);
-  if (evergreen?.sharedStartAt) return { streamMode: "vod", scheduledAt: evergreen.sharedStartAt, endedAt: null };
+  if (evergreen?.sharedStartAt) {
+    return { streamMode: "vod", scheduledAt: evergreen.sharedStartAt, endedAt: null, watchedSince: evergreen.sharedStartAt };
+  }
   if (evergreen) return null;
-  return { streamMode: live.streamMode, scheduledAt: live.scheduledAt, endedAt: live.endedAt };
+  // A Live that is flagged evergreen but no longer active (ended, taken back
+  // to draft, ...) keeps its original scheduledAt lifecycle (#582), now for
+  // registrants who watched only (A4-02). A Live never flagged evergreen, and
+  // a fixed-session Live, keep following up every verified registrant.
+  const wasEvergreen = live.isEvergreen === true && !isFixedSessionLive(live);
+  return {
+    streamMode: live.streamMode,
+    scheduledAt: live.scheduledAt,
+    endedAt: live.endedAt,
+    ...(wasEvergreen ? { watchedSince: EVERGREEN_ANY_ADMISSION } : {}),
+  };
+}
+
+/**
+ * Q-17 / A4-02: on an evergreen Live every follow-up goes only to registrants
+ * who watched. The per-visitor mode reads EvergreenSessionAssignment (written
+ * when a verified browser opens the viewer page); the shared-start and
+ * after-evergreen paths have no such row, so they read the admission record
+ * LiveRegistrationAttendance (written by /api/live-admission, which also
+ * covers the personal watch link). `watchedSince` is the earliest
+ * `lastAdmittedAt` that counts: the shared start (the session or its replay),
+ * or EVERGREEN_ANY_ADMISSION (any admission) once evergreen has ended.
+ */
+const EVERGREEN_ANY_ADMISSION = null;
+
+type SharedPostLiveSchedule = {
+  streamMode: string;
+  scheduledAt: Date;
+  endedAt: Date | null;
+  watchedSince?: Date | null;
+};
+
+/** Skip reason reported (never stored) for a registrant of an evergreen Live who has no admission record. */
+export const POST_LIVE_FOLLOWUP_NOT_WATCHED = "not_watched";
+
+/** Prisma filter: the registration was admitted to play this Live at or after `since` (any time when null). */
+function watchedAttendanceFilter(vendorId: string, liveId: string, since: Date | null) {
+  return {
+    registrationAttendances: {
+      some: { vendorId, liveId, ...(since ? { lastAdmittedAt: { gte: since } } : {}) },
+    },
+  } satisfies Prisma.FormSubmissionWhereInput;
 }
 
 export async function processDuePostLiveFollowups(
@@ -945,6 +988,20 @@ export async function processDuePostLiveFollowups(
         ? { liveSession: { is: { vendorId: rule.vendorId, liveId: live.id, status: { not: "cancelled" }, startAt: { lte: fixedSessionsDueBefore } } } }
         : {}),
     };
+    // Evergreen shared start / after evergreen (Q-17, A4-02): only registrants
+    // with an admission record are followed up. The others are reported as
+    // `not_watched` (one entry each, up to the per-rule limit) and nothing is
+    // queued, so they never use up the limit of those who did watch.
+    if (shared.watchedSince !== undefined) {
+      const watched = watchedAttendanceFilter(rule.vendorId, live.id, shared.watchedSince);
+      const unwatched = await db.formSubmission.count({
+        where: { ...submissionWhere, NOT: watched },
+      });
+      for (let skipped = 0; skipped < Math.min(unwatched, recipientLimit); skipped += 1) {
+        results.push({ status: POST_LIVE_FOLLOWUP_NOT_WATCHED });
+      }
+      submissionWhere.AND = [watched];
+    }
     const submissionCount = await db.formSubmission.count({ where: submissionWhere });
     const submissions = await db.formSubmission.findMany({
       where: submissionWhere,
@@ -1508,6 +1565,32 @@ async function fixedSessionReminderStart(
   return session.startAt;
 }
 
+/** The address normalizes and is not on this vendor's active blacklist. */
+async function isSendableEmailAddress(database: DeliverySnapshotDatabase, vendorId: string, email: string) {
+  const normalizedEmail = normalizeBlacklistIdentifier("email", email);
+  if (!normalizedEmail) return false;
+  const blocked = await database.blacklist.findFirst({
+    where: { vendorId, identifierType: "email", identifier: normalizedEmail, isActive: true, unblockedAt: null },
+    select: { id: true },
+  });
+  return !blocked;
+}
+
+/** True when no admission record is required (`since` undefined) or the registration has one. */
+async function hasRequiredWatch(
+  database: DeliverySnapshotDatabase,
+  vendorId: string,
+  liveId: string,
+  formSubmissionId: string,
+  since: Date | null | undefined,
+) {
+  if (since === undefined) return true;
+  const watched = await database.formSubmission.count({
+    where: { id: formSubmissionId, liveId, ...watchedAttendanceFilter(vendorId, liveId, since) },
+  });
+  return watched > 0;
+}
+
 async function isCurrentPostLiveFollowupDelivery(
   delivery: EmailDeliverySnapshotIdentity,
   now: Date,
@@ -1569,6 +1652,10 @@ async function isCurrentPostLiveFollowupDelivery(
         select: { sessionStartAt: true },
       });
   if (evergreenSession === null) return false;
+  // Q-17 / A4-02: a follow-up queued for a registrant who has no admission
+  // record (before this rule existed, or for a Live that turned evergreen
+  // later) is not sent.
+  if (shared && !await hasRequiredWatch(database, delivery.vendorId, live.id, submission.id, shared.watchedSince)) return false;
   // A fixed-session registrant's follow-up is anchored on their own session.
   const session = submission.liveSession;
   const fixed = !evergreenSession && live.sessionMode === "fixed_sessions";
@@ -1579,19 +1666,7 @@ async function isCurrentPostLiveFollowupDelivery(
     : fixed && session
       ? { streamMode: "vod", scheduledAt: session.startAt, endedAt: null }
       : shared ?? { streamMode: live.streamMode, scheduledAt: live.scheduledAt, endedAt: live.endedAt };
-  const normalizedEmail = normalizeBlacklistIdentifier("email", submission.email);
-  if (!normalizedEmail) return false;
-  const blacklist = await database.blacklist.findFirst({
-    where: {
-      vendorId: delivery.vendorId,
-      identifierType: "email",
-      identifier: normalizedEmail,
-      isActive: true,
-      unblockedAt: null,
-    },
-    select: { id: true },
-  });
-  if (blacklist) return false;
+  if (!await isSendableEmailAddress(database, delivery.vendorId, submission.email)) return false;
   const completionAt = resolveLiveCompletionAt({
     ...schedule,
     videoDurationSec: live.video?.durationSec ?? null,
