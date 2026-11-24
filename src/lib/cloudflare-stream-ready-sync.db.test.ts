@@ -1,5 +1,18 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+const mocks = vi.hoisted(() => ({
+  createLiveInput: vi.fn(),
+  captureOperationalError: vi.fn(),
+}));
+
+vi.mock("@/lib/cloudflare-stream", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/cloudflare-stream")>();
+  return { ...actual, createLiveInput: mocks.createLiveInput };
+});
+vi.mock("@/lib/monitoring", () => ({ captureOperationalError: mocks.captureOperationalError }));
+
 import { accountRateLimitKeyHash } from "@/lib/account-rate-limit";
+import { createLiveInputMapping } from "@/lib/cloudflare-ops";
 import { CloudflareStreamError, type getStreamVideoStatus } from "@/lib/cloudflare-stream";
 import {
   pollCloudflareStreamVideoReady,
@@ -8,6 +21,7 @@ import {
   STREAM_READY_SYNC_MIN_AGE_MS,
   streamReadyPollScope,
   syncStreamVideoReadyForOps,
+  type StreamReadyHistory,
   type StreamReadyThrottle,
 } from "@/lib/cloudflare-stream-ready-sync";
 import { createCloudflareStreamWebhookHandler } from "@/lib/cloudflare-stream-webhook-handler";
@@ -20,6 +34,11 @@ type StreamDetails = Awaited<ReturnType<typeof getStreamVideoStatus>>;
 const createdVendorIds: string[] = [];
 const throttleKeys: string[] = [];
 const allowAll: StreamReadyThrottle = async () => ({ allowed: true });
+
+beforeEach(() => {
+  mocks.createLiveInput.mockReset();
+  mocks.captureOperationalError.mockReset();
+});
 
 afterEach(async () => {
   vi.unstubAllEnvs();
@@ -51,24 +70,31 @@ async function createProcessingVideo({
   uploadedMsAgo = 10 * 60_000,
   status = "processing",
   ready = false,
+  sourceType = "cloudflare_stream",
+  liveInputUid,
 }: {
   vendorId?: string;
   uid?: string;
   uploadedMsAgo?: number;
   status?: string;
   ready?: boolean;
+  sourceType?: string;
+  /** A live input the row was re-pointed to; it then plays from that uid but keeps `uid` as a stale upload uid. */
+  liveInputUid?: string;
 } = {}) {
   const ownerId = vendorId ?? (await createVendor()).id;
   const db = getDb();
+  const playbackUid = liveInputUid ?? uid;
   const video = await db.video.create({
     data: {
       vendorId: ownerId,
       title: "Processing Video",
-      sourceType: "cloudflare_stream",
-      videoUrl: `https://videodelivery.net/${uid}/manifest/video.m3u8`,
+      sourceType,
+      videoUrl: `https://videodelivery.net/${playbackUid}/manifest/video.m3u8`,
       status,
       cloudflareStreamUid: uid,
-      cloudflarePlaybackId: uid,
+      cloudflareLiveInputUid: liveInputUid ?? null,
+      cloudflarePlaybackId: playbackUid,
       cloudflareReadyToStream: ready,
       durationSec: 0,
       estimatedMinutes: 0,
@@ -298,7 +324,7 @@ describe("applyCloudflareStreamProviderState lost race", () => {
     const result = await applyCloudflareStreamProviderState({
       db: getDb(),
       payload,
-      expectedVideo: { id: video.id, vendorId: video.vendorId },
+      expectedUpload: { id: video.id, vendorId: video.vendorId },
       // The competing webhook commits after this call read `processing` and before it claims.
       converge: async (options) => {
         competing = await applyCloudflareStreamProviderState({ db: getDb(), payload });
@@ -309,6 +335,191 @@ describe("applyCloudflareStreamProviderState lost race", () => {
     expect(competing).toMatchObject({ outcome: "updated", updated: 1 });
     expect(result).toEqual({ outcome: "unchanged", status: "ready", updated: 0 });
     await expect(readSynced(video.id)).resolves.toMatchObject({ status: "ready", cloudflareReadyToStream: true, durationSec: 62 });
+  });
+});
+
+describe("A4-04 review: current-asset binding", () => {
+  it("never makes a live-input video ready or re-points it, even when it kept a stale upload uid", async () => {
+    stubWebhookFallback();
+    const vendor = await createVendor();
+    const liveInputUid = unique("cf_live");
+    const live = await createProcessingVideo({
+      vendorId: vendor.id,
+      sourceType: "cloudflare_live",
+      liveInputUid,
+      uploadedMsAgo: 30 * 60_000,
+    });
+    const before = await readSynced(live.id);
+    const fetchStatus = fetchReturning((uid) => readyDetails(uid));
+
+    // The scheduled scan skips it.
+    await runStreamReadySync({ configured: true, fetchStatus, throttle: allowAll });
+    expect(fetchStatus.mock.calls.map(([uid]) => uid)).not.toContain(live.cloudflareStreamUid);
+
+    // A direct poll for the stale uid is refused before any write.
+    await expect(pollCloudflareStreamVideoReady({ db: getDb(), video: live, fetchStatus }))
+      .resolves.toEqual({ outcome: "stale_asset" });
+
+    await expect(readSynced(live.id)).resolves.toEqual(before);
+    expect(before).toMatchObject({ status: "processing", cloudflareReadyToStream: false, cloudflarePlaybackId: liveInputUid });
+  });
+
+  it("refuses an upload row whose playback was re-pointed away from the polled uid", async () => {
+    const video = await createProcessingVideo();
+    const otherUid = unique("cf_other");
+    await getDb().video.update({ where: { id: video.id }, data: { cloudflarePlaybackId: otherUid } });
+    const before = await readSynced(video.id);
+
+    await expect(pollCloudflareStreamVideoReady({
+      db: getDb(),
+      video,
+      fetchStatus: fetchReturning((uid) => readyDetails(uid)),
+    })).resolves.toEqual({ outcome: "stale_asset" });
+    await expect(readSynced(video.id)).resolves.toEqual(before);
+  });
+
+  it("clears the previous upload uid when a video is re-pointed to a live input, so a late upload webhook no longer matches", async () => {
+    stubWebhookFallback();
+    const video = await createProcessingVideo();
+    const liveInputUid = unique("cf_live");
+    mocks.createLiveInput.mockResolvedValue({ uid: liveInputUid });
+
+    await createLiveInputMapping({ vendorId: video.vendorId, videoId: video.id, name: "Live re-point" });
+    const repointed = await getDb().video.findUniqueOrThrow({
+      where: { id: video.id },
+      select: { sourceType: true, cloudflareStreamUid: true, cloudflareLiveInputUid: true, cloudflarePlaybackId: true },
+    });
+    expect(repointed).toEqual({
+      sourceType: "cloudflare_live",
+      cloudflareStreamUid: null,
+      cloudflareLiveInputUid: liveInputUid,
+      cloudflarePlaybackId: liveInputUid,
+    });
+
+    const late = await createCloudflareStreamWebhookHandler()(webhookRequest({ ...readyDetails(video.cloudflareStreamUid) }));
+    await expect(late.json()).resolves.toMatchObject({ ok: true, updated: 0 });
+    await expect(readSynced(video.id)).resolves.toMatchObject({
+      status: "processing",
+      cloudflarePlaybackId: liveInputUid,
+      videoUrl: `https://videodelivery.net/${liveInputUid}/manifest/video.m3u8`,
+    });
+
+    // The webhook for the live input itself keeps matching as before.
+    const own = await createCloudflareStreamWebhookHandler()(webhookRequest({ uid: liveInputUid, readyToStream: true, duration: 5 }));
+    await expect(own.json()).resolves.toMatchObject({ ok: true, updated: 1 });
+  });
+
+  it.each([
+    ["the poll (current-upload binding)", true],
+    ["the webhook (any-uid binding)", false],
+  ])("re-reads under the uid condition when the row is re-pointed between read and claim: %s", async (_label, poll) => {
+    const video = await createProcessingVideo();
+    const replacementUid = unique("cf_replacement");
+    const payload = CloudflareStreamProviderPayload.parse(readyDetails(video.cloudflareStreamUid));
+
+    const result = await applyCloudflareStreamProviderState({
+      db: getDb(),
+      payload,
+      ...(poll ? { expectedUpload: { id: video.id, vendorId: video.vendorId } } : {}),
+      converge: async (options) => {
+        // A replacement upload commits after the lookup and before the claim.
+        await getDb().$executeRaw`
+          UPDATE "Video"
+             SET "cloudflareStreamUid" = ${replacementUid}, "cloudflarePlaybackId" = ${replacementUid}
+           WHERE "id" = ${video.id}`;
+        return convergeCloudflareVideoTransition(options);
+      },
+    });
+
+    // Without the uid condition on the re-read the retry would loop to contention_exhausted.
+    expect(result).toEqual({ outcome: "unchanged", status: "ready", updated: 0 });
+    await expect(readSynced(video.id)).resolves.toMatchObject({
+      status: "processing",
+      cloudflareReadyToStream: false,
+      cloudflarePlaybackId: replacementUid,
+    });
+  });
+});
+
+describe("A4-04 review: 404, alerts, fairness and catch-up", () => {
+  it("records a 404 as not_found without an alert and holds the video back on the next run", async () => {
+    const video = await createProcessingVideo();
+    throttleKeys.push(
+      accountRateLimitKeyHash("stream_ready_poll_fast", video.id),
+      accountRateLimitKeyHash("stream_ready_poll_not_found", video.id),
+    );
+    const fetchStatus = vi.fn(async () => { throw new CloudflareStreamError("provider_rejected", 404); });
+
+    const first = await runStreamReadySync({ configured: true, fetchStatus });
+    const second = await runStreamReadySync({ configured: true, fetchStatus, throttle: allowAll });
+
+    expect(first).toMatchObject({ notFound: 1, providerErrors: 0, updated: 0 });
+    expect(second.notFoundHeld).toBeGreaterThanOrEqual(1);
+    expect(fetchStatus).toHaveBeenCalledTimes(1);
+    expect(mocks.captureOperationalError).not.toHaveBeenCalled();
+    await expect(pollCloudflareStreamVideoReady({ db: getDb(), video, fetchStatus }))
+      .resolves.toEqual({ outcome: "not_found" });
+  });
+
+  it("sends one aggregated warning per run for other provider errors", async () => {
+    const vendor = await createVendor();
+    await createProcessingVideo({ vendorId: vendor.id });
+    await createProcessingVideo({ vendorId: vendor.id });
+    await createProcessingVideo({ vendorId: vendor.id });
+    const errors = [
+      new CloudflareStreamError("network"),
+      new CloudflareStreamError("provider_rejected", 500),
+      new CloudflareStreamError("network"),
+    ];
+    const fetchStatus = vi.fn(async () => { throw errors.shift() ?? new CloudflareStreamError("network"); });
+
+    const summary = await runStreamReadySync({ configured: true, fetchStatus, throttle: allowAll, vendorId: vendor.id });
+
+    expect(summary.providerErrors).toBe(3);
+    expect(mocks.captureOperationalError).toHaveBeenCalledTimes(1);
+    expect(mocks.captureOperationalError).toHaveBeenCalledWith(expect.any(Error), expect.objectContaining({
+      source: "stream_ready_sync_job",
+      operation: "provider_query",
+      status: "network:2+provider_rejected:1",
+    }), { level: "warning" });
+  });
+
+  it("asks about the least recently queried upload first, so newer uploads cannot starve an older one", async () => {
+    const vendor = await createVendor();
+    const newer = await createProcessingVideo({ vendorId: vendor.id, uploadedMsAgo: 10 * 60_000 });
+    const older = await createProcessingVideo({ vendorId: vendor.id, uploadedMsAgo: 3 * 60 * 60_000 });
+    const history: StreamReadyHistory = async () => new Map([
+      [newer.id, { lastQueriedAt: Date.now() - 5 * 60_000, notFoundUntil: null }],
+      [older.id, { lastQueriedAt: Date.now() - 2 * 60 * 60_000, notFoundUntil: null }],
+    ]);
+    const fetchStatus = fetchReturning((uid) => ({ uid, readyToStream: false }));
+
+    await runStreamReadySync({ configured: true, fetchStatus, throttle: allowAll, history, vendorId: vendor.id, batchLimit: 1 });
+
+    expect(fetchStatus.mock.calls.map(([uid]) => uid)).toEqual([older.cloudflareStreamUid]);
+  });
+
+  it("reaches uploads stuck beyond 24 h only through the wider catch-up window, optionally for one vendor", async () => {
+    const vendor = await createVendor();
+    const other = await createVendor();
+    const stuck = await createProcessingVideo({ vendorId: vendor.id, uploadedMsAgo: 3 * 24 * 60 * 60_000 });
+    const otherStuck = await createProcessingVideo({ vendorId: other.id, uploadedMsAgo: 3 * 24 * 60 * 60_000 });
+    const fetchStatus = fetchReturning((uid) => readyDetails(uid));
+
+    await runStreamReadySync({ configured: true, fetchStatus, throttle: allowAll });
+    expect(fetchStatus.mock.calls.map(([uid]) => uid)).not.toContain(stuck.cloudflareStreamUid);
+
+    const summary = await runStreamReadySync({
+      configured: true,
+      fetchStatus,
+      throttle: allowAll,
+      maxAgeMs: 7 * 24 * 60 * 60_000,
+      vendorId: vendor.id,
+    });
+
+    expect(summary).toMatchObject({ candidates: 1, updated: 1 });
+    await expect(readSynced(stuck.id)).resolves.toMatchObject({ status: "ready", cloudflareReadyToStream: true });
+    await expect(readSynced(otherStuck.id)).resolves.toMatchObject({ status: "processing", cloudflareReadyToStream: false });
   });
 });
 

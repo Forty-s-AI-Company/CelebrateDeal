@@ -58,11 +58,26 @@ function playbackManifestUrl(uid: string) {
 }
 
 /**
- * Every write is conditioned on the row still being mapped to this provider
- * UID. A replacement upload (`persistStreamVideo`) re-points all three UID
- * columns, so a late state for the previous asset cannot overwrite the new
- * one's playback mapping, whether it came from a webhook or from a poll.
+ * Which local row a provider UID may write to.
+ *
+ * - `any_provider_uid` (webhook): the UID may sit in any of the three UID
+ *   columns, as before A4-04. Re-pointing does not clear every column:
+ *   `persistStreamVideo` (replacement upload) rewrites `cloudflareStreamUid`
+ *   and `cloudflarePlaybackId` but keeps `cloudflareLiveInputUid`;
+ *   `createLiveInputMapping` rewrites `cloudflareLiveInputUid` and
+ *   `cloudflarePlaybackId` and clears `cloudflareStreamUid` (since A4-04).
+ * - `current_stream_upload` (poll fallback): only a direct-upload row whose
+ *   current asset is this UID: `sourceType` `cloudflare_stream` with both
+ *   `cloudflareStreamUid` and `cloudflarePlaybackId` equal to it. A row that
+ *   was re-pointed to a live input or another upload no longer matches, even
+ *   if a stale column still holds the UID.
+ *
+ * The same predicate guards the up-front check, every conditional write and
+ * the re-read after a lost claim, so a row re-pointed mid-flight is never
+ * written.
  */
+export type CloudflareStreamAssetBinding = "any_provider_uid" | "current_stream_upload";
+
 function providerUidMatch(uid: string) {
   return {
     OR: [
@@ -71,6 +86,21 @@ function providerUidMatch(uid: string) {
       { cloudflarePlaybackId: uid },
     ],
   };
+}
+
+function assetMatch(uid: string, binding: CloudflareStreamAssetBinding) {
+  return binding === "current_stream_upload"
+    ? { sourceType: "cloudflare_stream", cloudflareStreamUid: uid, cloudflarePlaybackId: uid }
+    : providerUidMatch(uid);
+}
+
+function isCurrentStreamUpload(
+  row: { sourceType: string; cloudflareStreamUid: string | null; cloudflarePlaybackId: string | null },
+  uid: string,
+) {
+  return row.sourceType === "cloudflare_stream"
+    && row.cloudflareStreamUid === uid
+    && row.cloudflarePlaybackId === uid;
 }
 
 function readyProviderMetadata(payload: CloudflareStreamProviderPayload) {
@@ -117,6 +147,8 @@ export type CloudflareStreamSyncOutcome =
   | "ambiguous"
   /** The UID maps to a different video or vendor than the caller expected; nothing written. */
   | "scope_mismatch"
+  /** The expected video's current asset is no longer this direct upload; nothing written. */
+  | "stale_asset"
   /** A conditional write changed the row. */
   | "updated"
   /** Stale, already applied, or lost the race to an equivalent write. */
@@ -133,22 +165,24 @@ export type CloudflareStreamSyncResult = {
 /**
  * Applies one provider state for `payload.uid`.
  *
- * `expectedVideo` is set by callers that start from a known local video (the
+ * `expectedUpload` is set by callers that start from a known local video (the
  * poll fallback): the UID lookup must then resolve to exactly that video and
- * vendor, otherwise nothing is written. Every write is a conditional
- * `updateMany` on `{ id, vendorId, status, uid }`, so concurrent webhook and
- * poll deliveries of the same state apply once and the loser sees
- * `unchanged`.
+ * vendor, and its current asset must be this direct upload (the
+ * `current_stream_upload` binding), otherwise nothing is written. Without it
+ * the webhook's `any_provider_uid` binding applies. Every write is a
+ * conditional `updateMany` on `{ id, vendorId, status }` plus the binding, so
+ * concurrent webhook and poll deliveries of the same state apply once and the
+ * loser sees `unchanged`.
  */
 export async function applyCloudflareStreamProviderState({
   db,
   payload,
-  expectedVideo,
+  expectedUpload,
   converge = convergeCloudflareVideoTransition,
 }: {
   db: SyncDatabase;
   payload: CloudflareStreamProviderPayload;
-  expectedVideo?: { id: string; vendorId: string };
+  expectedUpload?: { id: string; vendorId: string };
   converge?: typeof convergeCloudflareVideoTransition;
 }): Promise<CloudflareStreamSyncResult> {
   const status = normalizedCloudflareStreamStatus(payload);
@@ -160,6 +194,8 @@ export async function applyCloudflareStreamProviderState({
       id: true,
       vendorId: true,
       status: true,
+      sourceType: true,
+      cloudflareStreamUid: true,
       cloudflareReadyToStream: true,
       cloudflarePlaybackId: true,
       videoUrl: true,
@@ -175,11 +211,14 @@ export async function applyCloudflareStreamProviderState({
   const match = matches[0];
   if (!match) return { outcome: "unmapped", status, updated: 0 };
   if (!match.vendorId) return { outcome: "ambiguous", status, updated: 0 };
-  if (expectedVideo && (match.id !== expectedVideo.id || match.vendorId !== expectedVideo.vendorId)) {
+  if (expectedUpload && (match.id !== expectedUpload.id || match.vendorId !== expectedUpload.vendorId)) {
     return { outcome: "scope_mismatch", status, updated: 0 };
   }
+  if (expectedUpload && !isCurrentStreamUpload(match, payload.uid)) {
+    return { outcome: "stale_asset", status, updated: 0 };
+  }
   const vendorId = match.vendorId;
-  const uidMatch = providerUidMatch(payload.uid);
+  const uidMatch = assetMatch(payload.uid, expectedUpload ? "current_stream_upload" : "any_provider_uid");
 
   if (match.status === "archived") {
     // Keep the application-owned archive state terminal while still

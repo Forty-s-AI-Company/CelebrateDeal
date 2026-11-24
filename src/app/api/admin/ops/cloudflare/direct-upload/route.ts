@@ -41,7 +41,12 @@ export async function GET(request: Request) {
   // checked against Cloudflare here (rate limited per video and overall) and a
   // ready answer goes through the webhook's own transition code.
   let providerCheck: StreamReadyOpsCheck["outcome"] | undefined;
-  if (!video.cloudflareReadyToStream && video.status === "processing" && video.cloudflareStreamUid) {
+  if (
+    !video.cloudflareReadyToStream
+    && video.status === "processing"
+    && video.sourceType === "cloudflare_stream"
+    && video.cloudflareStreamUid
+  ) {
     const check = await syncStreamVideoReadyForOps({
       video: { id: videoId.data, vendorId, cloudflareStreamUid: video.cloudflareStreamUid },
     });

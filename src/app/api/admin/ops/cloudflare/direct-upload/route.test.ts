@@ -368,6 +368,10 @@ describe("GET /api/admin/ops/cloudflare/direct-upload", () => {
       ["an archived video", { ...processing, status: "archived" }],
       ["an errored video", { ...processing, status: "error" }],
       ["a live input without a Stream upload uid", { ...processing, cloudflareStreamUid: null, cloudflareLiveInputUid: uid }],
+      [
+        "a live input that kept a stale upload uid",
+        { ...processing, sourceType: "cloudflare_live", cloudflareLiveInputUid: "live-uid", cloudflarePlaybackId: "live-uid" },
+      ],
     ])("never calls Cloudflare for %s", async (_label, video) => {
       mocks.videoFindFirst.mockResolvedValue(video);
 

@@ -61,6 +61,10 @@ export type AccountRateLimitScope = keyof typeof ACCOUNT_RATE_LIMITS;
 /** Time-boxed locks set after a limit is exceeded (same table, own scope). */
 export const ACCOUNT_LOCKS = {
   mfa_verification_lock: { durationMs: 60 * 60_000 },
+  // Not an account lock: the Cloudflare Stream ready job stops asking about a
+  // video for 6 h after Cloudflare answered 404 (upload never finished, or
+  // the direct-upload URL expired).
+  stream_ready_poll_not_found: { durationMs: 6 * 60 * 60_000 },
 } as const satisfies Record<string, { durationMs: number }>;
 
 export type AccountLockScope = keyof typeof ACCOUNT_LOCKS;
