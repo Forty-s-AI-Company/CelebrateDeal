@@ -123,10 +123,10 @@ A3 全部合併後 staging：alias 切到 `ca83e82c`（無新 migration，status
 |---|---|---|---|---|
 | 1 | A4-01 | 通用折扣碼與編輯器 `coupon` 元件（U-10、U-11）；佣金以折扣後實付金額計算 | 高（金流、佣金） | 已完成，三輪獨立審查（[#702](https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/702)；規則見 domain-workflows「折扣碼」） |
 | 2 | A4-02 | 常青場課後信只寄給看過的報名者：共用開場時間模式與常青結束後補寄目前寄給所有已驗證報名者，要改成與逐觀眾模式一致（Q-17 決定） | 一般 | 已完成 [#696](https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/696)（以 `LiveRegistrationAttendance` 判斷；未驗證 `test:db:concurrency`） |
-| 3 | A4-03 | 應用層限流不採用可偽造的來源 IP 標頭，並為 `/api/security/csp-report` 加限流（D-20；O-7＝否，網域不經 Cloudflare）；完成後才評估 CSP 轉強制（R-01） | 高（安全） | 待排 |
-| 4 | A4-04 | Stream 簽章網址 staging 驗證（`docs/operations/stream-signed-urls-plan.md` §8 第 3 步）；之後鎖定新上傳與既有影片前要再問 owner | 一般 | 金鑰已設（2026-11-23），待驗證 |
-| 5 | A4-05 | PayUni Sandbox 實測補單；通過後再請 owner 授權 Production `PAYMENT_RECONCILE_ENABLED=true`（D-9） | 高（金流） | 待排 |
-| 6 | A4-06 | LINE E2E runner `PRISMA_INIT_FAILED` | 一般 | 處理中 [#693](https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/693) |
+| 3 | A4-03 | 應用層限流不採用可偽造的來源 IP 標頭，並為 `/api/security/csp-report` 加限流（D-20；O-7＝否，網域不經 Cloudflare）；完成後才評估 CSP 轉強制（R-01） | 高（安全） | 已完成 [#701](https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/701)（兩輪審查＋複審）：只採信 Vercel 提供的 IP；直播雙層上限；`cloudflare_waf` 在 Production FAIL、Preview WARN；R-01 CSP 轉強制延後評估。Production 部署前需改 `upstash_redis`。後續：付款 webhook 簽章失敗時的 AuditLog 寫入節流（金流，另排） |
+| 4 | A4-04 | Stream 簽章網址 staging 驗證（`docs/operations/stream-signed-urls-plan.md` §8 第 3 步）；之後鎖定新上傳與既有影片前要再問 owner | 一般 | 部分完成：staging 收不到 Stream webhook（帳號只能設一個通知網址），[#699](https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/699)（兩輪審查）加上主動查詢備援；`345369a4` 的 Stream smoke run 45362686913 PASS（含 `signedPlayback`）。未做：§8 第 3 步的瀏覽器播放、續期、token 失效恢復、`allowedOrigins` 實測；Worker 需 owner `wrangler deploy`。後續：改指向直播後舊上傳無人追蹤（MINOR-A）、NIT-1～4 |
+| 5 | A4-05 | PayUni Sandbox 實測補單；通過後再請 owner 授權 Production `PAYMENT_RECONCILE_ENABLED=true`（D-9） | 高（金流） | 進行中：runner [#698](https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/698)、診斷 [#700](https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/700) 已合併。PayUni Sandbox 付款頁約 11-20～11-24 改版，送出後顯示「請確認付款資訊已填寫」（run 45362693554），代表有新的必填欄位未填、付款未送出；補欄位中 |
+| 6 | A4-06 | LINE E2E runner `PRISMA_INIT_FAILED` | 一般 | 已完成 [#693](https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/693) |
 
 ## B. 需要 owner 先做產品決定
 
