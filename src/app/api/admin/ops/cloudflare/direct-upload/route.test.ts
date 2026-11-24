@@ -4,6 +4,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   createDirectUploadMapping: vi.fn(),
   videoFindFirst: vi.fn(),
+  syncStreamVideoReadyForOps: vi.fn(),
+}));
+
+vi.mock("@/lib/cloudflare-stream-ready-sync", () => ({
+  syncStreamVideoReadyForOps: mocks.syncStreamVideoReadyForOps,
 }));
 
 vi.mock("@/lib/cloudflare-ops", async (importOriginal) => {
@@ -282,5 +287,108 @@ describe("GET /api/admin/ops/cloudflare/direct-upload", () => {
     const body = await response.json();
     expect(body.video.playbackUrl).toMatch(/^https:\/\/videodelivery\.net\/[\w-]+\.[\w-]+\.[\w-]+\/manifest\/video\.m3u8$/);
     expect(body.video.playbackUrl).not.toContain(uid);
+  });
+
+  describe("A4-04 Cloudflare ready fallback", () => {
+    const uid = "f0e1d2c3b4a5968778695a4b3c2d1e0f";
+    const processing = {
+      vendorId: "vendor-1",
+      sourceType: "cloudflare_stream",
+      videoUrl: `https://videodelivery.net/${uid}/manifest/video.m3u8`,
+      cloudflareStreamUid: uid,
+      cloudflarePlaybackId: uid,
+      cloudflareLiveInputUid: null,
+      status: "processing",
+      cloudflareReadyToStream: false,
+      durationSec: 0,
+    };
+    const statusRequest = () => new Request(
+      "https://app.example.test/api/admin/ops/cloudflare/direct-upload?videoId=video-1",
+      { headers: { authorization: `Bearer ${smokeSecret}` } },
+    );
+
+    it("checks Cloudflare for a not-ready upload bound to the smoke vendor and returns the re-read status", async () => {
+      mocks.videoFindFirst
+        .mockResolvedValueOnce(processing)
+        .mockResolvedValueOnce({ ...processing, status: "ready", cloudflareReadyToStream: true, durationSec: 1 });
+      mocks.syncStreamVideoReadyForOps.mockResolvedValue({ outcome: "updated" });
+
+      const response = await GET(statusRequest());
+
+      expect(response.status).toBe(200);
+      await expect(response.json()).resolves.toEqual({
+        ok: true,
+        video: { status: "ready", readyToStream: true, durationSec: 1 },
+        providerCheck: "updated",
+      });
+      expect(mocks.syncStreamVideoReadyForOps).toHaveBeenCalledWith({
+        video: { id: "video-1", vendorId: "vendor-1", cloudflareStreamUid: uid },
+      });
+      expect(mocks.videoFindFirst).toHaveBeenCalledTimes(2);
+      for (const [query] of mocks.videoFindFirst.mock.calls) {
+        expect(query).toMatchObject({ where: { id: "video-1", vendorId: "vendor-1" } });
+      }
+    });
+
+    it.each(["not_ready", "throttled", "provider_unavailable", "throttle_unavailable", "error"])(
+      "keeps the stored status and reports only the %s category",
+      async (outcome) => {
+        mocks.videoFindFirst.mockResolvedValue(processing);
+        mocks.syncStreamVideoReadyForOps.mockResolvedValue({ outcome });
+
+        const response = await GET(statusRequest());
+        const text = await response.text();
+
+        expect(response.status).toBe(200);
+        expect(JSON.parse(text)).toEqual({
+          ok: true,
+          video: { status: "processing", readyToStream: false, durationSec: 0 },
+          providerCheck: outcome,
+        });
+        expect(text).not.toContain(uid);
+        expect(mocks.videoFindFirst).toHaveBeenCalledTimes(1);
+      },
+    );
+
+    it("returns only the category for a provider error, never its code or a provider message", async () => {
+      mocks.videoFindFirst.mockResolvedValue(processing);
+      mocks.syncStreamVideoReadyForOps.mockResolvedValue({ outcome: "provider_error", errorCode: "provider_rejected" });
+
+      const response = await GET(statusRequest());
+
+      await expect(response.json()).resolves.toEqual({
+        ok: true,
+        video: { status: "processing", readyToStream: false, durationSec: 0 },
+        providerCheck: "provider_error",
+      });
+    });
+
+    it.each([
+      ["a ready video", { ...processing, status: "ready", cloudflareReadyToStream: true }],
+      ["an archived video", { ...processing, status: "archived" }],
+      ["an errored video", { ...processing, status: "error" }],
+      ["a live input without a Stream upload uid", { ...processing, cloudflareStreamUid: null, cloudflareLiveInputUid: uid }],
+      [
+        "a live input that kept a stale upload uid",
+        { ...processing, sourceType: "cloudflare_live", cloudflareLiveInputUid: "live-uid", cloudflarePlaybackId: "live-uid" },
+      ],
+    ])("never calls Cloudflare for %s", async (_label, video) => {
+      mocks.videoFindFirst.mockResolvedValue(video);
+
+      const response = await GET(statusRequest());
+
+      expect(response.status).toBe(200);
+      expect(mocks.syncStreamVideoReadyForOps).not.toHaveBeenCalled();
+      expect(await response.json()).not.toHaveProperty("providerCheck");
+    });
+
+    it("never calls Cloudflare for a video outside the smoke vendor", async () => {
+      mocks.videoFindFirst.mockResolvedValue(null);
+
+      const response = await GET(statusRequest());
+
+      expect(response.status).toBe(404);
+      expect(mocks.syncStreamVideoReadyForOps).not.toHaveBeenCalled();
+    });
   });
 });

@@ -379,6 +379,10 @@ export async function createLiveInputMapping(input: z.infer<typeof LiveInputRequ
           sourceType: "cloudflare_live",
           videoUrl,
           status: "processing",
+          // A4-04: the previous direct upload is no longer this row's asset.
+          // A stale upload uid let a late ready state for that upload (webhook
+          // or poll) match the row and re-point it back to the old asset.
+          cloudflareStreamUid: null,
           cloudflareLiveInputUid: liveInput.uid,
           cloudflarePlaybackId: liveInput.uid,
           liveStreamKey: encryptedStreamKey,

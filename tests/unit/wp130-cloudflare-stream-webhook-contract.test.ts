@@ -5,7 +5,7 @@ const { fakeDb, fakeCapture } = vi.hoisted(() => ({
   fakeDb: {
     video: {
       findMany: vi.fn(),
-      findUnique: vi.fn(),
+      findFirst: vi.fn(),
       updateMany: vi.fn(),
     },
   },
@@ -25,6 +25,14 @@ import { createCloudflareStreamWebhookHandler } from "@/lib/cloudflare-stream-we
 
 const SECRET = "wp130-synthetic-secret";
 const UID = "wp130-synthetic-stream-uid";
+// A4-04: every write also requires the row to still map to the delivered UID.
+const UID_MATCH = {
+  OR: [
+    { cloudflareStreamUid: UID },
+    { cloudflareLiveInputUid: UID },
+    { cloudflarePlaybackId: UID },
+  ],
+};
 
 function signature(body: string, timestamp = Math.floor(Date.now() / 1000)) {
   const digest = createHmac("sha256", SECRET).update(`${timestamp}.${body}`).digest("hex");
@@ -60,7 +68,7 @@ function matchedVideo(initialStatus = "processing") {
     estimatedMinutes: initialStatus === "ready" ? 1 : 0,
   };
   fakeDb.video.findMany.mockImplementation(async () => [{ ...stored }]);
-  fakeDb.video.findUnique.mockImplementation(async () => ({
+  fakeDb.video.findFirst.mockImplementation(async () => ({
     id: stored.id,
     vendorId: stored.vendorId,
     status: stored.status,
@@ -127,7 +135,7 @@ describe("WP-130 Cloudflare Stream webhook contract", () => {
     expect(payload).toEqual({ ok: true, updated: 1, verificationMode: "official-signature" });
     expect(fakeDb.video.updateMany).toHaveBeenCalledTimes(1);
     expect(fakeDb.video.updateMany).toHaveBeenCalledWith(expect.objectContaining({
-      where: { id: "video-wp130", vendorId: "vendor-wp130", status: "processing" },
+      where: { id: "video-wp130", vendorId: "vendor-wp130", status: "processing", ...UID_MATCH },
       data: expect.objectContaining({ durationSec: 43, estimatedMinutes: 1 }),
     }));
     expect(JSON.stringify(payload)).not.toContain(SECRET);
@@ -196,7 +204,7 @@ describe("WP-130 Cloudflare Stream webhook contract", () => {
     await expect(readyResponse.json()).resolves.toMatchObject({ ok: true, updated: 1 });
     await expect(duplicateReadyResponse.json()).resolves.toMatchObject({ ok: true, updated: 0 });
     expect(fakeDb.video.updateMany).toHaveBeenCalledWith(expect.objectContaining({
-      where: { id: "video-wp130", vendorId: "vendor-wp130", status: "archived" },
+      where: { id: "video-wp130", vendorId: "vendor-wp130", status: "archived", ...UID_MATCH },
       data: expect.objectContaining({ durationSec: 121, estimatedMinutes: 3 }),
     }));
     expect(staleResponse.status).toBe(200);

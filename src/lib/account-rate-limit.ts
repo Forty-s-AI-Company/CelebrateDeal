@@ -42,6 +42,18 @@ export const ACCOUNT_RATE_LIMITS = {
   // Failed TOTP/recovery-code verifications per account per day; beyond the
   // limit each further failure locks verification for an hour (#462 m3).
   mfa_verification_failures: { limit: 50, windowMs: 24 * 60 * 60_000 },
+  // Not account limits: the Cloudflare Stream ready fallback
+  // (src/lib/cloudflare-stream-ready-sync.ts) reuses this table as a
+  // cross-instance throttle on its outbound `GET /stream/{uid}` calls, keyed
+  // by video id. Scheduled job back-off by age since upload (the job runs
+  // every 5 min, so each window sits just under a multiple of it):
+  stream_ready_poll_fast: { limit: 1, windowMs: 4 * 60_000 },
+  stream_ready_poll_medium: { limit: 1, windowMs: 25 * 60_000 },
+  stream_ready_poll_slow: { limit: 1, windowMs: 115 * 60_000 },
+  // Ops status endpoint: one provider call per video per 15 s, and at most
+  // 12 per minute across all videos.
+  stream_ready_poll_ops_video: { limit: 1, windowMs: 15_000 },
+  stream_ready_poll_ops_global: { limit: 12, windowMs: 60_000 },
 } as const satisfies Record<string, { limit: number; windowMs: number }>;
 
 export type AccountRateLimitScope = keyof typeof ACCOUNT_RATE_LIMITS;
@@ -49,6 +61,10 @@ export type AccountRateLimitScope = keyof typeof ACCOUNT_RATE_LIMITS;
 /** Time-boxed locks set after a limit is exceeded (same table, own scope). */
 export const ACCOUNT_LOCKS = {
   mfa_verification_lock: { durationMs: 60 * 60_000 },
+  // Not an account lock: the Cloudflare Stream ready job stops asking about a
+  // video for 6 h after Cloudflare answered 404 (upload never finished, or
+  // the direct-upload URL expired).
+  stream_ready_poll_not_found: { durationMs: 6 * 60 * 60_000 },
 } as const satisfies Record<string, { durationMs: number }>;
 
 export type AccountLockScope = keyof typeof ACCOUNT_LOCKS;

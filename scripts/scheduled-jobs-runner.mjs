@@ -27,6 +27,9 @@ export const SCHEDULED_JOBS = Object.freeze([
   Object.freeze({ name: "webhook-retry", path: "/api/jobs/webhook-retry", cadence: "frequent" }),
   // A-2 05: asks PayUni about payments whose callback never arrived (same cadence as webhook-retry).
   Object.freeze({ name: "payment-reconcile", path: "/api/jobs/payment-reconcile", cadence: "frequent" }),
+  // A4-04: asks Cloudflare Stream about uploads whose ready webhook never arrived
+  // (the account's single webhook URL may point at another environment).
+  Object.freeze({ name: "stream-ready-sync", path: "/api/jobs/stream-ready-sync", cadence: "frequent" }),
   Object.freeze({ name: "live-media", path: "/api/cron/live-media", cadence: "frequent", optInVariable: "SCHEDULED_JOBS_ENABLE_LIVE_MEDIA" }),
   // Issues monthly invoices (and marks due ones overdue); billing is hidden during the beta,
   // so it never runs on a schedule unless the owner opts in (PR #447 review M1).

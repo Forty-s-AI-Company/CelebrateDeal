@@ -157,3 +157,41 @@
 7. **Production**：Staging 全部通過後，對 Production 重複第 1–6 步。
 8. **回滾**：先用同一個端點的 `"mode":"unlock"` 對每個 vendor 解除（同樣先 dry-run、再 `apply`，不需要金鑰；會送 `requireSignedURLs: false` 並清空 `allowedOrigins`），並移除 `CLOUDFLARE_STREAM_LOCK_NEW_UPLOADS`；確認影片都恢復公開後，才視需要移除簽章環境變數。順序反過來的話，已鎖定的影片在移除金鑰後會無法播放。
 9. **金鑰輪替**：建立新 key → 更新環境變數並部署 → 等最長 token 效期過後（預覽與宣傳影片的 token 最長 4 小時）再 `DELETE /stream/keys/{舊 key id}`。
+
+## 9. 影片就緒狀態：webhook 為主、主動查詢為備援（A4-04，2026-11-24）
+
+**限制**：一個 Cloudflare 帳號只能設定**一個** Stream webhook 網址。帳號的通知網址指向 Production 時，staging 永遠收不到就緒通知（2026-11-24 實測：上傳後 16 分鐘內 `/api/cloudflare/*` 請求 0 筆，`staging-stream-resource-smoke.yml` 停在 `RESOURCE_DEADLINE_EXCEEDED`）。Production 只靠 webhook 也是單點：漏收一次，該影片就永遠不會就緒。
+
+**做法**：webhook（`/api/cloudflare/stream-webhook`）仍是主要路徑；另外以唯讀的 `GET /accounts/{account}/stream/{uid}` 主動查詢作備援。
+
+| 項目 | 內容 |
+|---|---|
+| 共用寫入 | `src/lib/cloudflare-stream-video-sync.ts` 的 `applyCloudflareStreamProviderState` 是唯一把 Cloudflare 狀態寫進 `Video` 的程式；webhook 與主動查詢都呼叫它（同一個 Zod schema、同一張狀態轉換表、同樣的 duration／縮圖／播放網址欄位）。主動查詢只在 Cloudflare 回 `readyToStream: true` 時呼叫；未就緒、錯誤、逾時、回應 uid 不符或 duration 超出範圍都不寫 |
+| 租戶與現行資產 | 主動查詢從已知的影片出發，uid 查回的列必須正好是同一支影片與同一個 vendor（否則 `scope_mismatch`），而且這支影片的**現行資產**必須仍是這個直傳上傳：`sourceType = cloudflare_stream`，`cloudflareStreamUid` 與 `cloudflarePlaybackId` 都等於這個 uid（否則 `stale_asset`）。同一個 uid 對到多支影片時一律不寫。查前檢查、每次條件寫入（`updateMany`，含 `id`、`vendorId`、目前 `status`）與搶輸後的重讀都帶同一個資產條件，所以影片在查詢途中被改指向直播輸入或新上傳時不會被寫。webhook 仍以三個 uid 欄位任一相符找列，寫入與重讀同樣要求列仍對應這個 uid |
+| 冪等 | webhook 與查詢同時送達時只有一方寫入；另一方讀到已就緒且內容相同就結束，不重寫 |
+| 改指向時的 uid 欄位 | `createLiveInputMapping` 把既有影片改指向直播輸入時清掉 `cloudflareStreamUid`（2026-11-24 審查 MAJOR-1：保留舊 uid 會讓舊上傳的就緒結果把影片改回舊上傳並標成 ready）。`persistStreamVideo`（替換上傳）保留 `cloudflareLiveInputUid`，因為直播輸入的 key 與錄影設定仍掛在這個欄位；主動查詢靠現行資產條件排除這種列。部署前就已保留舊 uid 的直播輸入列不需要清資料：排程只掃 `cloudflare_stream`，寫入也要求現行資產相符 |
+| 排程 | `/api/jobs/stream-ready-sync`（`JOB_SECRET`，每 5 分鐘）：上傳（`updatedAt`）後 5 分鐘到 24 小時、`sourceType = cloudflare_stream`、仍 `processing` 且未就緒、有 `cloudflareStreamUid` 的影片（最多讀 500 列）。6 小時內回過 404 的先排除；其餘依上次實際查詢時間由舊到新（從未查過的最先）、再商家輪流，所以新上傳不會讓較舊的上傳一直排不到。每輪最多 10 次 Cloudflare 查詢、30 秒後不再開始、單次 8 秒。每支影片依上傳時間退避：1 小時內每輪（4 分鐘窗）、6 小時內約 30 分鐘、之後約 2 小時，計數存在 `AccountRateLimitBucket`（跨 instance 共用，不新增 migration）；計數器讀寫失敗時不查詢 |
+| 404 | Cloudflare 回 404（直傳沒有完成或上傳網址已過期）時記 `notFound`、不送 Sentry，並鎖 6 小時不再查（`stream_ready_poll_not_found`）；24 小時時間窗內最多再查約 4 次 |
+| ops 狀態端點 | `GET /api/admin/ops/cloudflare/direct-upload?videoId=…`（`OPS_SMOKE_SECRET`，只看 smoke vendor 的影片）：影片未就緒、為 `processing` 且是 `cloudflare_stream` 時順便查一次，每支影片 15 秒最多一次、全部每分鐘最多 12 次、單次 5 秒。回應多一個 `providerCheck`（`updated`、`unchanged`、`not_ready`、`not_found`、`stale_asset`、`throttled`、`provider_error`、`provider_unavailable`、`throttle_unavailable`、`error` 等固定類別），寫入後重新讀取再回傳。staging smoke 每 5 秒讀一次，不必等排程 |
+| 輸出 | 只有計數與固定類別；不輸出 token、簽章網址、provider 訊息或 uid。404 以外的查詢錯誤每輪彙總送一次 Sentry warning（`stream_ready_sync_job`／`provider_query`，`status` 例如 `network:2+provider_rejected:1`） |
+| 外部呼叫上限 | 排程每 5 分鐘最多 10 次；每支影片 24 小時內最多約 34 次；ops 端點每分鐘最多 12 次。一般使用者或公開請求不會觸發查詢 |
+
+`updatedAt` 當作上傳時間：替換上傳會重設它；未就緒期間若商家改了標題，時間窗會往後移，只是延後查詢，不會漏寫。
+
+### 9.1 部署前就已卡住超過 24 小時的影片
+
+排程只看 24 小時內的上傳，部署前就卡住的影片要手動補跑一次。**用 `JOB_SECRET` 呼叫補跑端點**（ops 狀態端點只看 smoke vendor 的影片，不能用來補一般商家）：
+
+```bash
+# 先只補一個商家確認結果，再視需要拿掉 vendorId 補全部
+curl -sS -X POST "$APP_URL/api/admin/ops/cloudflare/stream-ready-sync" \
+  -H "Authorization: Bearer $JOB_SECRET" -H "Content-Type: application/json" \
+  -d '{"maxAgeHours":720,"vendorId":"<vendorId>"}'
+```
+
+- `maxAgeHours` 是 24–720 的整數（最長 30 天），其他欄位一律 400。
+- 每次呼叫與排程同樣最多查 10 支、30 秒截止；卡住超過 6 小時的影片退避約 2 小時。重複呼叫直到 `candidates` 為 0，或只剩 `throttled`／`notReady`／`notFoundHeld`；`throttled` 多時隔 2 小時再跑。
+- 回應只有計數。`updated` 是這次補成就緒的支數；`notFound` 是 Cloudflare 上已不存在的上傳（請商家重新上傳）；`providerErrors` 大於 0 時看 Sentry `stream_ready_sync_job`。
+- Production 呼叫前照一般 Production 操作規則先取得 owner 同意；staging 可直接執行。
+
+部署注意：Cloudflare Worker 觸發器（`ops/cloudflare/scheduled-jobs-worker`）要重新部署才會呼叫新的 job；GitHub heartbeat 與 `scheduled-jobs.yml` 合併後即生效。部署環境需有 `CLOUDFLARE_ACCOUNT_ID`／`CLOUDFLARE_STREAM_TOKEN`（Stream 讀取權限即可），沒有時回 `skipped: "provider_unavailable"`。
