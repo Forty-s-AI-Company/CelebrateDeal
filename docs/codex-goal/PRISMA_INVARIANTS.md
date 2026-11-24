@@ -27,7 +27,7 @@
 | Affiliate／billing／payment／ops | 35 | `Affiliate`、`AffiliateClick`、`BillingPlan`、`VendorSubscription`、`PlatformReferralCode`、`PlatformReferralClick`、`PlatformReferralAttribution`、`PlatformReferralCommission`、`PlatformReferralCommissionLedgerEntry`、`PlatformReferralPayout`、`PlatformReferralPayoutBatch`、`VendorUsageLimit`、`UsageRecord`、`StreamUsageLedgerEntry`、`StreamUsageAllocationEntry`、`StreamUsageReconciliation`、`StreamOperationsAlert`、`Invoice`、`Settlement`、`PayoutBatch`、`PayoutItem`、`PaymentAccount`、`PaymentMethodReference`、`PaymentMethodSetupIntent`、`PaymentTransaction`、`PayUniLiveProbe`、`InventoryReservation`、`WebhookEvent`、`RefundRecord`、`AuditLog`、`EmailDelivery`、`EmailSuppression`、`AffiliateCommission`、`AffiliatePayout`、`AffiliateCommissionLedgerEntry` |
 | Team Funnel／attribution | 14 | `SalesTeam`、`TeamMembership`、`TeamMembershipRelationship`、`TeamFunnelTemplate`、`TeamFunnelTemplateVersion`、`TeamFunnelTemplateFieldLock`、`TeamFunnelTemplateProductSlot`、`PartnerFunnelPage`、`PartnerFunnelPageShareSetting`、`PartnerLiveShare`、`PartnerProductSlotOverride`、`TeamClickAttribution`、`TeamLeadAttribution`、`TeamConversionAttribution` |
 | Course commerce／revenue share | 3 | `CourseCommissionAllocation`、`CourseCommissionLedgerEntry`、`CoursePayout` |
-| Commerce order／fulfillment | 11 | `CommerceOrder`、`CommerceOrderItem`、`CommerceOrderEvent`、`CommerceOrderRefund`、`ShippingFulfillment`、`CommerceEntitlement`、`ServiceFulfillment`、`VendorDeliveryUrlAllowlist`、`ProductDeliveryConfig`、`CommerceOrderItemDeliverySnapshot`、`PostPurchaseCredit` |
+| Commerce order／fulfillment | 14 | `CommerceOrder`、`CommerceOrderItem`、`CommerceOrderEvent`、`CommerceOrderRefund`、`ShippingFulfillment`、`CommerceEntitlement`、`ServiceFulfillment`、`VendorDeliveryUrlAllowlist`、`ProductDeliveryConfig`、`CommerceOrderItemDeliverySnapshot`、`PostPurchaseCredit`、`DiscountCode`、`DiscountCodeProduct`、`DiscountCodeRedemption` |
 | Buyer support／refund handoff | 5 | `SupportCase`、`SupportCaseEvent`、`BuyerSupportOrderGrant`、`SupportRefundHandoff`、`SupportRefundHandoffRefund` |
 | LINE identity／delivery／draft | 5 | `LineOfficialAccount`、`LineUserIdentity`、`LineLoginState`、`LineDelivery`、`LineRichMenuDraft` |
 | Consultation scheduling | 2 | `ConsultationEvent`、`ConsultationBooking` |
@@ -1050,3 +1050,20 @@ Current source inventory: 145 models and 99 forward migrations. Previous checkpo
 - 測試：`src/lib/beta-agreement.db.test.ts`（閘門、寫入與 audit、冪等與併發、跨租戶、版本升級、非 owner、商家 API、平台管理員、CHECK 與唯一索引、刪除商家後保留）、`src/lib/beta-agreement.test.ts`、`src/app/actions/beta-agreement-actions.test.ts`、`src/lib/auth.test.ts`。已在 loopback 拋棄式 PostgreSQL 16（`celebratedeal_test`，port 54460）forward-apply 全部 migration。
 - 部署順序：migration 先於程式（舊程式只寫 `merchant_registration`／`vendor_member_invitation`，仍符合新 CHECK）。回滾程式不需要回滾 migration；回滾後閘門消失，已寫入的同意列保留。
 - 目前 168 models、169 forward migrations（含本次一條）；既有 SQL／checksum 不變。
+
+## 2026-11-24 通用折扣碼（A4-01，U-10／U-11）
+
+- `20261124100000_discount_codes`：forward-only，排在 `20261120100000_user_policy_consent_beta_agreement` 之後；交易層級 `lock_timeout = 5s`。只新增三張表，不改任何既有列；三張表都 `ENABLE ROW LEVEL SECURITY`（與 20261020090000 相同）。
+  - `DiscountCode`：`(vendorId, normalizedCode)` 唯一（不分大小寫）；`(vendorId, id)` 唯一供複合外鍵。CHECK：`normalizedCode` 符合 `^[A-Z0-9_-]{3,32}$` 且等於 `upper(code)`；`fixed_amount` 1–100,000,000 分、`percentage` 1–100；`endsAt > startsAt`；上限 ≥ 1、最低消費 ≥ 0；`redemptionCount ≥ 0`、`revision ≥ 1`。`redemptionCount` 不設上限 CHECK：付款失敗或逾期釋放後，PayUni 仍可能收到款，這時重新計入，可能超過 `maxRedemptions`（錢已收）。
+  - `DiscountCodeProduct`：主鍵 `(vendorId, discountCodeId, productId)`；`(vendorId, discountCodeId)` → `DiscountCode`、`(vendorId, productId)` → `Product` 兩個複合外鍵（Cascade），別家的商品連不上（P2003）。
+  - `DiscountCodeRedemption`：每筆訂單最多一列（`(vendorId, orderId)`、`(vendorId, paymentTransactionId)` 唯一）；`(vendorId, discountCodeId)`／`(vendorId, orderId)`／`(vendorId, paymentTransactionId)` 複合外鍵 Restrict。CHECK：狀態與時間欄位一致（`reserved` 沒有 redeemedAt／releasedAt；`redeemed` 有 redeemedAt；`released` 有 releasedAt、releaseReason 且沒有 redeemedAt）；`discountAmountCents > 0`、`totalAmountCents ≥ 100`（NT$1，PayUni 最低金額）、`subtotal = discount + total`。
+  - 鎖：只有新表，FK 驗證對 `Vendor`／`Product`／`CommerceOrder`／`PaymentTransaction` 取 SHARE ROW EXCLUSIVE，只到 commit，毫秒級。
+  - Prisma drift：三張表的 CHECK 不在 Prisma 比對範圍；`prisma migrate diff` 對這三張表沒有差異（allowlist 不變）。
+- 不變式（應用層，`src/lib/discount-codes.ts`、`src/lib/discount-code-admin.ts`、`src/app/api/payments/checkout/route.ts`、`src/lib/commerce-orders.ts`）：
+  - 折扣金額只取自 `DiscountCode`；只折主商品，加購商品原價；主商品至少付 NT$1，TWD 以整數元計算。瀏覽器送的 `expectedDiscountAmountCents` 只用來比對，不一致就拒絕（`DISCOUNT_CODE_CHANGED`）。
+  - 碼只以「被購買商品的 vendor」＋`normalizedCode` 查；別家的碼與不存在的碼回應完全相同（`DISCOUNT_CODE_INVALID`）。後台每個寫入都以 session vendor 綁定 `id` 與商品 id。
+  - 使用次數：checkout 的 Serializable 交易內以條件更新（同 `revision`、啟用、在期間內、`redemptionCount < maxRedemptions`）加一，再數同一買家（`automationCustomerKeyHash`，Email 不分大小寫）的 `reserved`＋`redeemed` 筆數，最後寫 `DiscountCodeRedemption`；任何一步失敗整筆訂單回滾。訂單轉 `payment_failed`／`expired` 時在同一交易釋放（`released`，計數減一）；轉 `paid` 時改 `redeemed`（從 `released` 來的會重新加一）。退款不釋放。
+  - 商家修改折扣碼會讓 `revision` 加一，用舊條件報價的結帳被拒絕；已建立的訂單保留自己的快照。
+- 測試：`src/lib/discount-codes.db.test.ts`（真實 admission＋checkout＋付款管線：快照、預期金額不符、修改後舊報價被拒、兩租戶的預覽與結帳回應相同、別家商品連不上、總上限與每人上限的併發、付款失敗釋放、逾期釋放與逾期後付款重新計入、佣金以折扣後金額計算與部分／全額退款、自動化優惠券不被使用、與快閃優惠不疊加、replay 只接受相同的碼）、`src/lib/discount-codes.test.ts`、`src/lib/discount-code-admin.test.ts`、`src/app/api/payments/checkout/discount-code/route.test.ts`。已在 loopback 拋棄式 PostgreSQL 16（`celebratedeal_test`，port 54461）forward-apply 全部 migration。
+- 部署順序：migration 先於程式（舊程式不讀這三張表）。回滾程式不需要回滾 migration；回滾後已保留的使用次數不會再被釋放，需要時由商家調整上限。
+- 目前 171 models、170 forward migrations（含本次一條）；既有 SQL／checksum 不變。

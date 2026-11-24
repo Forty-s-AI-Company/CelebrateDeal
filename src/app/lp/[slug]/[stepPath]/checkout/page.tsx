@@ -33,6 +33,7 @@ export default async function FunnelCheckoutPage({
             ...(checkout.orderBump ? { orderBump: { productId: checkout.orderBump.id, title: checkout.orderBump.name, description: checkout.orderBump.description ?? "", priceCents: checkout.orderBump.priceCents } } : {}),
             funnel: { ...checkout.reference, expectedVersion: checkout.version, expectedProductRevision: checkout.product.revision, ...(checkout.orderBump ? { expectedOrderBumpRevision: checkout.orderBump.revision } : {}) },
             agreementLabel: checkout.binding.agreement?.label,
+            ...(checkout.discountCodeEntry ? { discountCodeEntry: checkout.discountCodeEntry } : {}),
           }} />
     </main>
   );

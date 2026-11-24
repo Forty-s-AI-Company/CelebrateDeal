@@ -5,6 +5,7 @@ import { CommerceCheckoutEntry } from "@/components/commerce-checkout-entry";
 import type { CommerceCheckoutFulfillmentType } from "@/lib/commerce-checkout";
 import { safeParseCustomCheckoutFields } from "@/lib/commerce-custom-checkout";
 import { getDb } from "@/lib/db";
+import { normalizeDiscountCode, vendorHasApplicableDiscountCode } from "@/lib/discount-codes";
 import { parseSafeExternalHttpUrl } from "@/lib/external-url";
 import { isProductPurchasable } from "@/lib/feature-gates";
 
@@ -27,12 +28,27 @@ async function buyerUpgradeQuote(vendorId: string, productId: string, token?: st
   }
 }
 
+/**
+ * A4-01: the discount-code input appears when the vendor has a code for this
+ * product and no flash sale or upgrade credit is in play. `?code=` only
+ * pre-fills the input; the checkout server decides the discount.
+ */
+async function checkoutDiscountCodeFields(
+  product: { id: string; vendorId: string },
+  intent: { canRenderNewCheckout: boolean; flashSaleRunId?: string; postPurchaseToken?: string; code?: unknown },
+): Promise<{ discountCodeEntry?: { prefillCode?: string } }> {
+  if (!intent.canRenderNewCheckout || intent.flashSaleRunId || intent.postPurchaseToken) return {};
+  if (!await vendorHasApplicableDiscountCode(getDb(), { vendorId: product.vendorId, productId: product.id, now: new Date() })) return {};
+  const prefillCode = normalizeDiscountCode(intent.code);
+  return { discountCodeEntry: prefillCode ? { prefillCode } : {} };
+}
+
 export default async function CommerceCheckoutPage({
   params,
   searchParams,
 }: {
   params: Promise<{ vendorId: string; productId: string }>;
-  searchParams?: Promise<{ resume?: string; flashSale?: string; postPurchaseToken?: string }>;
+  searchParams?: Promise<{ resume?: string; flashSale?: string; postPurchaseToken?: string; code?: string }>;
 }) {
   const { vendorId, productId } = await params;
   const query = await searchParams;
@@ -85,7 +101,9 @@ export default async function CommerceCheckoutPage({
       // checkout. Let the existing recovery entry load its immutable terms.
       return <main className="mx-auto max-w-xl px-4 py-12"><h1 className="mb-5 text-2xl font-black text-slate-950">查看加購訂單</h1><CommerceCheckoutEntry /></main>;
   }
+  const discountCodeFields = await checkoutDiscountCodeFields(product, { canRenderNewCheckout, flashSaleRunId, postPurchaseToken, code: query?.code });
   const currentCheckout = canRenderNewCheckout && customCheckoutFields.success ? {
+    ...discountCodeFields,
     vendorId: product.vendorId,
     ...(flashSaleRunId ? { flashSaleRunId } : {}),
     ...(postPurchaseToken ? { postPurchaseToken } : {}),

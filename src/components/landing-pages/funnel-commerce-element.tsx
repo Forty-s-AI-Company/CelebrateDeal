@@ -1,5 +1,6 @@
 import type { FunnelNodeType } from "@/lib/funnel-page-document";
 import type { FunnelCommerceBinding, FunnelCommerceView } from "@/lib/funnel-commerce";
+import { normalizeDiscountCode } from "@/lib/discount-codes";
 import { formatCurrency } from "@/lib/format";
 import { showcaseReadableOn } from "@/lib/funnel-showcase";
 import { funnelContrastRatio } from "@/lib/funnel-typography";
@@ -10,8 +11,10 @@ const DEFAULT_ACCENT = "#1d4ed8";
 
 /** Commerce never trusts node props, responsive overrides or arbitrary node actions. */
 /** `accentColor` (the page link colour) only paints the checkout button; prices and links still come from the trusted view. */
-export function FunnelCommerceElement({ type, binding, commerce, interactive = false, accentColor = DEFAULT_ACCENT }: {
+export function FunnelCommerceElement({ type, binding, commerce, interactive = false, accentColor = DEFAULT_ACCENT, prefill }: {
   type: FunnelNodeType; binding?: FunnelCommerceBinding; commerce?: FunnelCommerceView; interactive?: boolean; accentColor?: string;
+  /** Coupon only: the merchant's pre-filled code (display; checkout re-validates it). */
+  prefill?: unknown;
 }) {
   // A page colour that would not read as a button on the light offer card (white, transparent, pale) falls back to the default.
   const accent = (funnelContrastRatio(accentColor, "#ffffff") ?? 0) >= 3 ? accentColor : DEFAULT_ACCENT;
@@ -30,7 +33,10 @@ export function FunnelCommerceElement({ type, binding, commerce, interactive = f
     case "customer_type": return <p>結帳時可選擇個人、公司或捐贈發票資料。</p>;
     case "agreement": return <p>{binding.agreement?.label ?? "請於結帳頁閱讀並同意使用條款、隱私通知與退款政策。"}{binding.agreement ? "（結帳時須勾選同意）" : ""}</p>;
     case "order_bump": return commerce.orderBump && commerce.orderBump.id === binding.orderBumpProductId ? <div className="rounded-xl border border-amber-300 bg-amber-50 p-4"><strong>可選加購：{commerce.orderBump.name}</strong><p>{money(commerce.orderBump.priceCents, commerce.orderBump.currency)}，於結帳頁選擇。</p></div> : <p role="status">尚未設定加購商品，請在商品與結帳選擇同幣別商品。</p>;
-    case "coupon": return <div data-funnel-capability="coupon" role="status">目前支援既有已領取優惠券，由結帳伺服器確認資格並折抵；尚未提供手動輸入優惠碼。</div>;
+    case "coupon": {
+      const prefillCode = normalizeDiscountCode(prefill);
+      return <div data-funnel-capability="coupon" role="status" className="grid gap-1 rounded-xl border border-dashed p-4"><strong>有折扣碼嗎？</strong><p>{prefillCode ? `結帳時會自動帶入折扣碼 ${prefillCode}，由結帳伺服器確認後折抵。` : "結帳頁可以輸入折扣碼，由結帳伺服器確認資格後折抵。"}</p></div>;
+    }
     case "shipping_fees": return <div data-funnel-capability="shipping_fees" role="status">{product.fulfillmentType === "physical" ? "目前結帳未提供獨立運費規則，不會額外加收運費。請確認商品售價已涵蓋配送成本。" : "非實體商品不需配送，無額外運費。"}</div>;
     default: return <p role="status">此付款元件尚未支援目前的商品類型。</p>;
   }

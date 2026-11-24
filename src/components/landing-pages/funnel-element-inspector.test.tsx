@@ -103,11 +103,14 @@ describe("FunnelElementInspector 付款元件", () => {
     }
   });
 
-  it("優惠碼明確說明不支援手動輸入，也不暗示之後會接上", () => {
+  it("優惠碼元件說明會在結帳頁顯示輸入框，只提供預填碼欄位、不提供金額", () => {
     const html = render("coupon", { state: "bound", productName: "年度課程" });
-    expect(html).toContain("目前不支援手動輸入優惠碼");
+    expect(html).toContain("折扣碼輸入框");
+    expect(html).toContain("預填折扣碼");
+    expect(html).not.toContain("不支援手動輸入");
     expect(html).not.toContain("data-funnel-inspector-commerce");
-    expect(html).not.toContain("尚未");
     expect(html).not.toContain("即將");
+    const definition = getFunnelElementInspectorDefinition("coupon");
+    expect(definition.fields.filter((field) => field.target === "props").map((field) => field.id)).toEqual(["prefillCode"]);
   });
 });

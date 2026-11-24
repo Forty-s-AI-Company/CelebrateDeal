@@ -1,7 +1,7 @@
 import {
   Activity, Ban, Banknote, BarChart3, Bell, Bot, Boxes, Building2, CalendarCheck, ClipboardList, Cloud, Coins, CreditCard, DoorOpen, FileText, FlaskConical, Gauge,
   GitCompareArrows, Globe, GraduationCap, Handshake, Headphones, Landmark, LayoutTemplate, LifeBuoy, Lock, MailPlus, MessageSquareText, PackageCheck, Palette, PlaySquare,
-  Radio, ReceiptText, Rocket, ScrollText, Send, Settings2, Shield, ShieldAlert, Tags, Target, TextCursorInput, ToggleRight, UserPlus, Users, UsersRound,
+  Radio, ReceiptText, Rocket, ScrollText, Send, Settings2, Shield, ShieldAlert, Tags, Target, TextCursorInput, Ticket, ToggleRight, UserPlus, Users, UsersRound,
   WalletCards, Webhook, Workflow, type LucideIcon,
 } from "lucide-react";
 import { hasVendorFeature, type GatedFeature } from "@/lib/vendor-feature-toggles";
@@ -121,6 +121,7 @@ const operationalGroups: NavGroup[] = [
     label: "成交管理",
     items: [
       { href: "/products", label: "商品", icon: Boxes, managerOnly: true },
+      { href: "/discount-codes", label: "折扣碼", icon: Ticket, managerOnly: true },
       { href: "/orders", label: "訂單與履約", icon: PackageCheck, managerOnly: true },
       { href: "/consultations", label: "諮詢預約", icon: CalendarCheck, managerOnly: true, feature: "consultation_booking" },
       { href: "/customers", label: "學員 CRM", icon: UsersRound, managerOnly: true },

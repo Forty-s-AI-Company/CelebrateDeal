@@ -299,7 +299,14 @@ export const FUNNEL_ELEMENT_INSPECTOR_SCHEMA: Readonly<Record<FunnelNodeType, Fu
   offer_price: restricted(COMMERCE_NOTE),
   agreement: restricted(COMMERCE_NOTE),
   order_bump: restricted(COMMERCE_NOTE),
-  coupon: restricted("目前不支援手動輸入優惠碼。結帳時只會套用訪客已領取的優惠券，由伺服器確認資格後折抵，這個元件沒有可設定的優惠碼或折扣金額。"),
+  coupon: {
+    fields: [
+      { ...content("prefillCode", "預填折扣碼（選填）", "text", "填入「折扣碼」頁面建立的碼，結帳頁會自動帶入並套用；留空則只顯示輸入框讓買家自行輸入。"), responsive: false },
+      ...designFields,
+      ...advancedFields,
+    ],
+    capabilityNote: "放了這個元件，這一步的結帳頁就會顯示折扣碼輸入框。折扣金額、適用商品與使用次數在「折扣碼」頁面設定，結帳時由伺服器確認；折扣碼不能和快閃優惠或加購折抵同時使用。",
+  },
   two_step_order_form: restricted(COMMERCE_NOTE),
   shipping_fees: restricted(COMMERCE_NOTE),
   paid_calendar: restricted("付費行事曆需先完成安全付款整合。"),

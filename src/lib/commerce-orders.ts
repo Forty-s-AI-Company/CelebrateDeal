@@ -13,6 +13,7 @@ import {
 } from "@/lib/commerce-order-pii";
 import { protectCommerceEntitlementAccess } from "@/lib/commerce-entitlement-access";
 import { coursePolicySnapshotFromProduct } from "@/lib/course-policy-snapshot";
+import { confirmDiscountCodeRedemption, releaseDiscountCodeRedemption } from "@/lib/discount-codes";
 import {
   parsePublicHttpsDeliveryUrl,
   protectOrderItemDeliverySnapshot,
@@ -43,6 +44,8 @@ export type CommerceOrdersTransaction = Pick<
   | "vendor"
   | "learnerNotificationSourceEvent"
   | "trackingSetting"
+  | "discountCode"
+  | "discountCodeRedemption"
   | "$queryRaw"
 >;
 
@@ -676,6 +679,8 @@ export async function reconcileCommerceOrderPaymentTransition(
       data: { status: "paid", paidAmountCents: order.totalAmountCents, paidAt: now, failedAt: null },
     });
     if (updated.count !== 1) throw new CommerceOrderConflictError();
+    // A4-01: the order's discount-code use becomes final with the payment.
+    await confirmDiscountCodeRedemption(tx, { vendorId: input.vendorId, orderId: order.id, now });
     // F-036: the money is recorded either way. A suspended vendor's order stays
     // un-provisioned (entitlements pending, no learner notifications) until
     // resumeVendor releases it.
@@ -694,6 +699,8 @@ export async function reconcileCommerceOrderPaymentTransition(
     data: { status: "payment_failed", failedAt: now },
   });
   if (updated.count !== 1) throw new CommerceOrderConflictError();
+  // A4-01: a failed, unpaid order gives its discount-code use back.
+  await releaseDiscountCodeRedemption(tx, { vendorId: input.vendorId, orderId: order.id, reason: "payment_failed", now });
   await appendEvent(tx, { vendorId: input.vendorId, orderId: order.id, dedupKey, eventType: "payment.failed", occurredAt: now, data: sanitizedOrderData({ ...order, status: "payment_failed" }, { paymentTransactionId: input.paymentTransactionId }) });
   return { orderId: order.id, changed: true, status: "payment_failed" as const };
 }
@@ -717,6 +724,7 @@ export async function expireCommerceOrderForPayment(
     data: { status: "expired" },
   });
   if (updated.count !== 1) throw new CommerceOrderConflictError();
+  await releaseDiscountCodeRedemption(tx, { vendorId: input.vendorId, orderId: order.id, reason: "payment_expired", now });
   await appendEvent(tx, { vendorId: input.vendorId, orderId: order.id, dedupKey, eventType: "payment.expired", occurredAt: now, data: sanitizedOrderData({ ...order, status: "expired" }, { paymentTransactionId: input.paymentTransactionId }) });
   return { orderId: order.id, changed: true, status: "expired" as const };
 }

@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { FunnelNode, FunnelNodeType } from "@/lib/funnel-page-document";
+import { normalizeDiscountCode } from "@/lib/discount-codes";
 
 const identifier = z.string().trim().min(1).max(100).regex(/^[A-Za-z0-9_-]+$/u);
 
@@ -71,6 +72,27 @@ export function firstFunnelCommerceNodeId(nodes: readonly FunnelNode[]): string 
     if (nested) return nested;
   }
   return null;
+}
+
+function firstNodeOfType(nodes: readonly FunnelNode[], type: FunnelNodeType): FunnelNode | null {
+  for (const node of nodes) {
+    if (node.type === type) return node;
+    const nested = node.children ? firstNodeOfType(node.children, type) : null;
+    if (nested) return nested;
+  }
+  return null;
+}
+
+/**
+ * A4-01: an order page with a coupon element shows the discount-code input on
+ * its checkout. The element's `prefillCode` is only a pre-filled input value;
+ * the checkout server looks it up and prices it like any typed code.
+ */
+export function funnelDiscountCodeEntry(nodes: readonly FunnelNode[]): { prefillCode?: string } | null {
+  const coupon = firstNodeOfType(nodes, "coupon");
+  if (!coupon) return null;
+  const prefillCode = normalizeDiscountCode(coupon.props.prefillCode);
+  return prefillCode ? { prefillCode } : {};
 }
 
 /**

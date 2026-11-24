@@ -16,9 +16,12 @@ import {
   CommerceCheckoutResponseSchema,
   isAllowedCheckoutDestination,
   shouldDiscardCheckoutAdmission,
+  isDiscountCodeErrorCode,
+  type DiscountCodePreview,
 } from "@/lib/commerce-checkout";
 import type { CustomCheckoutFields } from "@/lib/commerce-custom-checkout";
 import { CheckoutInvoiceFields } from "@/components/checkout-invoice-fields";
+import { CheckoutDiscountCodeField, DISCOUNT_CODE_INPUT_NAME } from "@/components/checkout-discount-code-field";
 import {
   clearCheckoutIdempotencyKey,
   clearCheckoutRecoveryRecord,
@@ -53,6 +56,8 @@ export type CommerceCheckoutFormProps = {
     sku?: string;
     badge?: string;
   };
+  /** A4-01: show the discount-code input; `prefillCode` comes from the editor's coupon element. */
+  discountCodeEntry?: { prefillCode?: string };
 };
 
 function formatCheckoutPrice(priceCents: number, currency: string) {
@@ -207,14 +212,25 @@ function checkoutInvoice(formData: FormData) {
   return { type: "personal", carrier: text("invoiceCarrier"), ...(text("invoiceCarrierNumber") ? { carrierNumber: text("invoiceCarrierNumber") } : {}) };
 }
 
-function CheckoutTotal({ priceCents, currency, offer, bumpPrice }: {
+function CheckoutTotal({ priceCents, currency, offer, bumpPrice, discount }: {
   priceCents?: number; currency: string; offer: { priceCents: number; currency: string } | null; bumpPrice: number;
+  discount: DiscountCodePreview | null;
 }) {
   if (typeof priceCents !== "number" && !offer) return null;
-  return <div className="flex items-center justify-between rounded-xl bg-slate-950 px-5 py-4 text-white" aria-live="polite">
-    <span className="font-semibold">本次結帳總額</span>
-    <strong className="text-xl">{formatCheckoutPrice((offer?.priceCents ?? priceCents ?? 0) + bumpPrice, offer?.currency ?? currency)}</strong>
+  return <div className="grid gap-1 rounded-xl bg-slate-950 px-5 py-4 text-white" aria-live="polite">
+    {discount ? <p className="flex items-center justify-between text-sm text-slate-200"><span>折扣碼 {discount.code}</span><span>−{formatCheckoutPrice(discount.discountAmountCents, discount.currency)}</span></p> : null}
+    <p className="flex items-center justify-between">
+      <span className="font-semibold">本次結帳總額</span>
+      <strong className="text-xl">{formatCheckoutPrice((offer?.priceCents ?? priceCents ?? 0) + bumpPrice - (discount?.discountAmountCents ?? 0), offer?.currency ?? currency)}</strong>
+    </p>
   </div>;
+}
+
+/** The applied code, or an error when the buyer typed a code without applying it. */
+function checkoutDiscountPayload(formData: FormData, applied: DiscountCodePreview | null) {
+  const typed = String(formData.get(DISCOUNT_CODE_INPUT_NAME) ?? "").trim();
+  if (typed && typed.toUpperCase() !== applied?.code.toUpperCase()) return { ok: false as const, error: "請先按「套用」確認折扣碼，或清空折扣碼欄位後再付款。" };
+  return { ok: true as const, payload: applied ? { discountCode: applied.code, expectedDiscountAmountCents: applied.discountAmountCents } : {} };
 }
 
 function checkoutSubmitLabel(phase: CheckoutPhase, hasOffer: boolean, productName: string) {
@@ -226,6 +242,71 @@ function checkoutSubmitLabel(phase: CheckoutPhase, hasOffer: boolean, productNam
 
 function checkoutCustomAnswersPayload(answers: Record<string, string | boolean>) {
   return Object.keys(answers).length > 0 ? { customCheckoutAnswers: answers } : {};
+}
+
+function flashOfferConfirmedMessage(removedDiscountCode: boolean) {
+  return removedDiscountCode
+    ? "已套用快閃優惠，折扣碼不能同時使用，已移除折扣碼。請核對下方結帳總額，再按確認優惠並前往付款。"
+    : "已確認快閃優惠，請核對下方結帳總額，再按確認優惠並前往付款。";
+}
+
+function checkoutIdempotencyKey(vendorId: string, productId: string) {
+  try {
+    return getOrCreateCheckoutIdempotencyKey(
+      window.sessionStorage,
+      vendorId,
+      productId,
+      () => window.crypto.randomUUID(),
+    );
+  } catch {
+    // Storage can be unavailable in hardened browser modes. The in-memory
+    // admission still protects retries within this mounted page.
+    return window.crypto.randomUUID();
+  }
+}
+
+function clearPersistedCheckoutIdentity(vendorId: string, productId: string) {
+  try {
+    clearCheckoutIdempotencyKey(window.sessionStorage, vendorId, productId);
+    clearCheckoutRecoveryRecord(window.sessionStorage, window.location.pathname);
+    const currentUrl = new URL(window.location.href);
+    currentUrl.searchParams.delete("resume");
+    window.history.replaceState(window.history.state, "", currentUrl);
+  } catch {
+    // A storage cleanup failure must not block a known checkout response.
+  }
+}
+
+function rememberCheckoutAttempt(vendorId: string, productId: string, idempotencyKey: string) {
+  try {
+    // This path locator contains no buyer, shipping, invoice or custom answers.
+    saveCheckoutRecoveryRecord(window.sessionStorage, window.location.pathname, { vendorId, productId, idempotencyKey });
+    const resumeUrl = new URL(window.location.href);
+    resumeUrl.searchParams.set("resume", "1");
+    window.history.replaceState(window.history.state, "", resumeUrl);
+  } catch {
+    // In-memory retries still work when browser storage is unavailable.
+  }
+}
+
+/**
+ * A4-01: the discount-code input. Hidden while any other promotion or a
+ * recovery applies (`blockers`: flash sale, post-purchase credit, confirmed
+ * offer, recovery-only), since one order takes one promotion.
+ */
+function CheckoutDiscountSection({ entry, blockers, vendorId, productId, orderBump, disabled, applied, onAppliedChange }: {
+  entry: CommerceCheckoutFormProps["discountCodeEntry"];
+  blockers: readonly unknown[];
+  vendorId: string;
+  productId: string;
+  orderBump?: CommerceCheckoutFormProps["orderBump"];
+  disabled: boolean;
+  applied: DiscountCodePreview | null;
+  onAppliedChange: (preview: DiscountCodePreview | null) => void;
+}) {
+  if (!entry || blockers.some(Boolean)) return null;
+  return <CheckoutDiscountCodeField vendorId={vendorId} productId={productId} prefillCode={entry.prefillCode} disabled={disabled}
+    orderBumpProductId={orderBump?.productId} applied={applied} onAppliedChange={onAppliedChange} />;
 }
 
 function CheckoutPaymentNotice() {
@@ -247,8 +328,9 @@ export function CommerceCheckoutForm({
   initialOrderBumpSelected = false,
   priceCents, currency = "TWD",
   orderBump, funnel, agreementLabel, flashSaleRunId, postPurchaseToken,
-  formMode = "single",
+  formMode = "single", discountCodeEntry,
 }: CommerceCheckoutFormProps) {
+  const [appliedDiscount, setAppliedDiscount] = useState<DiscountCodePreview | null>(null);
   const [phase, setPhase] = useState<CheckoutPhase>("idle");
   const [message, setMessage] = useState("");
   const [canCheckout, setCanCheckout] = useState(!recoveryOnly);
@@ -263,42 +345,6 @@ export function CommerceCheckoutForm({
   const requiresPhone = checkoutRequiresPhone(fulfillmentType);
   const isPending = phase === "submitting" || phase === "redirecting";
   const fieldsDisabled = isPending || phase === "success";
-  function checkoutIdempotencyKey() {
-    try {
-      return getOrCreateCheckoutIdempotencyKey(
-        window.sessionStorage,
-        vendorId,
-        productId,
-        () => window.crypto.randomUUID(),
-      );
-    } catch {
-      // Storage can be unavailable in hardened browser modes. The in-memory
-      // admission still protects retries within this mounted page.
-      return window.crypto.randomUUID();
-    }
-  }
-  function clearPersistedCheckoutIdentity() {
-    try {
-      clearCheckoutIdempotencyKey(window.sessionStorage, vendorId, productId);
-      clearCheckoutRecoveryRecord(window.sessionStorage, window.location.pathname);
-      const currentUrl = new URL(window.location.href);
-      currentUrl.searchParams.delete("resume");
-      window.history.replaceState(window.history.state, "", currentUrl);
-    } catch {
-      // A storage cleanup failure must not block a known checkout response.
-    }
-  }
-  function rememberCheckoutAttempt(idempotencyKey: string) {
-    try {
-      // This path locator contains no buyer, shipping, invoice or custom answers.
-      saveCheckoutRecoveryRecord(window.sessionStorage, window.location.pathname, { vendorId, productId, idempotencyKey });
-      const resumeUrl = new URL(window.location.href);
-      resumeUrl.searchParams.set("resume", "1");
-      window.history.replaceState(window.history.state, "", resumeUrl);
-    } catch {
-      // In-memory retries still work when browser storage is unavailable.
-    }
-  }
   useEffect(() => {
     if (phase === "error" || phase === "success") statusRef.current?.focus();
   }, [phase]);
@@ -315,6 +361,16 @@ export function CommerceCheckoutForm({
     });
     return () => { cancelled = true; };
   }, [productId, recoveryOnly, vendorId]);
+  function resetAfterRefusal(status: number, errorCode: string | undefined) {
+    // The server refused the code; show the undiscounted total until it is applied again.
+    if (isDiscountCodeErrorCode(errorCode)) setAppliedDiscount(null);
+    if (!shouldDiscardCheckoutAdmission(status, errorCode)) return;
+    admission.current = null;
+    setConfirmedOffer(null);
+    // A recovery mismatch can be corrected by the buyer. Keep the saved
+    // key so the next submission still targets the original order.
+    if (!recoveryOnly) clearPersistedCheckoutIdentity(vendorId, productId);
+  }
   function markInputChanged() {
     if (phase === "error") {
       setPhase("idle");
@@ -353,6 +409,12 @@ export function CommerceCheckoutForm({
       field.type === "checkbox" ? formData.get(`custom_${field.key}`) === "on" : text(`custom_${field.key}`),
     ]));
     const invoice = checkoutInvoice(formData);
+    const discount = checkoutDiscountPayload(formData, appliedDiscount);
+    if (!discount.ok) {
+      setPhase("error");
+      setMessage(discount.error);
+      return;
+    }
 
     setPhase("submitting");
     setMessage("正在確認商品與安全結帳資格，接著會建立訂單並保留庫存。");
@@ -360,8 +422,8 @@ export function CommerceCheckoutForm({
     const timeout = window.setTimeout(() => controller.abort(), 30_000);
 
     try {
-      const idempotencyKey = admission.current?.idempotencyKey ?? checkoutIdempotencyKey();
-      rememberCheckoutAttempt(idempotencyKey);
+      const idempotencyKey = admission.current?.idempotencyKey ?? checkoutIdempotencyKey(vendorId, productId);
+      rememberCheckoutAttempt(vendorId, productId, idempotencyKey);
       if (!admission.current) {
         const admissionResponse = await fetch("/api/payments/checkout/admission", {
           method: "POST",
@@ -379,7 +441,7 @@ export function CommerceCheckoutForm({
         }
         const parsedAdmission = CommerceCheckoutAdmissionResponseSchema.safeParse(await admissionResponse.json());
         if (!parsedAdmission.success || parsedAdmission.data.idempotencyKey !== idempotencyKey) {
-          clearPersistedCheckoutIdentity();
+          clearPersistedCheckoutIdentity(vendorId, productId);
           setPhase("error");
           setMessage("無法取得安全結帳憑證；尚未建立訂單，請稍後重試。");
           return;
@@ -390,9 +452,11 @@ export function CommerceCheckoutForm({
         };
         if (parsedAdmission.data.offer) {
           // 先顯示伺服器簽署的優惠價；第二次確認才建立訂單，不自動改價送出。
+          // 快閃優惠與折扣碼不疊加，改以快閃價為準。
           setConfirmedOffer(parsedAdmission.data.offer);
+          setAppliedDiscount(null);
           setPhase("idle");
-          setMessage("已確認快閃優惠，請核對下方結帳總額，再按確認優惠並前往付款。");
+          setMessage(flashOfferConfirmedMessage(Boolean(appliedDiscount)));
           return;
         }
       }
@@ -420,19 +484,15 @@ export function CommerceCheckoutForm({
             },
           } : {}),
           ...checkoutFunnelFields(funnel, agreementLabel, formData),
+          // Empty once a flash offer is confirmed: that clears the code and hides its input.
+          ...discount.payload,
         }),
         signal: controller.signal,
       });
 
       if (!response.ok) {
         const errorCode = await readCheckoutErrorCode(response);
-        if (shouldDiscardCheckoutAdmission(response.status, errorCode)) {
-          admission.current = null;
-          setConfirmedOffer(null);
-          // A recovery mismatch can be corrected by the buyer. Keep the saved
-          // key so the next submission still targets the original order.
-          if (!recoveryOnly) clearPersistedCheckoutIdentity();
-        }
+        resetAfterRefusal(response.status, errorCode);
         setPhase("error");
         setMessage(checkoutErrorMessage(response.status, errorCode));
         return;
@@ -521,7 +581,10 @@ export function CommerceCheckoutForm({
 
       <CheckoutOrderBump offer={orderBump} selected={orderBumpSelected} disabled={fieldsDisabled} currency={currency} onChange={setOrderBumpSelected} />
 
-      <CheckoutTotal priceCents={priceCents} currency={currency} offer={confirmedOffer} bumpPrice={orderBumpSelected ? orderBump?.priceCents ?? 0 : 0} />
+      <CheckoutDiscountSection entry={discountCodeEntry} blockers={[flashSaleRunId, postPurchaseToken, confirmedOffer, recoveryOnly]} vendorId={vendorId} productId={productId}
+        orderBump={orderBumpSelected ? orderBump : undefined} disabled={fieldsDisabled} applied={appliedDiscount} onAppliedChange={setAppliedDiscount} />
+
+      <CheckoutTotal priceCents={priceCents} currency={currency} offer={confirmedOffer} bumpPrice={orderBumpSelected ? orderBump?.priceCents ?? 0 : 0} discount={appliedDiscount} />
 
       <CheckoutPaymentNotice />
 

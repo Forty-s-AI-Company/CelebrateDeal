@@ -60,6 +60,9 @@ function transaction() {
     commerceOrderItemDeliverySnapshot: { create: vi.fn(), updateMany: vi.fn().mockResolvedValue({ count: 0 }) },
     // F-036: the paid transition reads the vendor's suspension under FOR SHARE.
     $queryRaw: vi.fn().mockResolvedValue([{ suspendedAt: null }]),
+    // A4-01: these orders carry no discount code.
+    discountCode: { updateMany: vi.fn().mockResolvedValue({ count: 0 }) },
+    discountCodeRedemption: { findUnique: vi.fn().mockResolvedValue(null), updateMany: vi.fn().mockResolvedValue({ count: 0 }) },
   };
 }
 

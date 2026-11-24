@@ -25,7 +25,9 @@ describe("Funnel element inspector schema", () => {
     expect(Object.keys(FUNNEL_ELEMENT_INSPECTOR_SCHEMA).sort()).toEqual([...FUNNEL_NODE_TYPES].sort());
     expect(FUNNEL_ELEMENT_INSPECTOR_SCHEMA.text.fields.some((item) => item.group === "content" && item.id === "text")).toBe(true);
     expect(FUNNEL_ELEMENT_INSPECTOR_SCHEMA.payment_button.capabilityNote).toContain("商品管理");
-    expect(FUNNEL_ELEMENT_INSPECTOR_SCHEMA.coupon.capabilityNote).toContain("不支援手動輸入優惠碼");
+    // A4-01: the coupon element is usable; its only content field is the pre-filled code, never an amount.
+    expect(FUNNEL_ELEMENT_INSPECTOR_SCHEMA.coupon.capabilityNote).toContain("折扣碼輸入框");
+    expect(FUNNEL_ELEMENT_INSPECTOR_SCHEMA.coupon.fields.filter((item) => item.group === "content").map((item) => [item.id, item.target, item.responsive])).toEqual([["prefillCode", "props", false]]);
     // 自訂程式碼：HTML／CSS／JS 三個等寬程式碼欄位，只編輯基礎值並有伺服器同樣強制的大小上限。
     const codeFields = FUNNEL_ELEMENT_INSPECTOR_SCHEMA.raw_html.fields.filter((item) => item.kind === "code");
     expect(codeFields.map((item) => [item.id, item.maxBytes, item.responsive])).toEqual([["html", 50_000, false], ["css", 20_000, false], ["js", 50_000, false]]);
