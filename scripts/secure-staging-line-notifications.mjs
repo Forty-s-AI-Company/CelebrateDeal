@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
 import fsp from "node:fs/promises";
+import net from "node:net";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -147,11 +148,76 @@ export function validateReceipt(receipt, expected = null) {
 export function safeFailure(error) {
   const prismaCode = typeof error?.errorCode === "string" ? error.errorCode : error?.code;
   if (typeof prismaCode === "string" && /^P\d{4}$/u.test(prismaCode)) return `PRISMA_${prismaCode}`;
-  if (error?.name === "PrismaClientInitializationError") return "PRISMA_INIT_FAILED";
+  if (error?.name === "PrismaClientInitializationError") return classifyPrismaInit(error);
   if (error?.name === "PrismaClientUnknownRequestError") return "PRISMA_UNKNOWN_REQUEST";
   if (error?.name === "PrismaClientRustPanicError") return "PRISMA_RUST_PANIC";
   const code = error instanceof Error ? error.message : "UNKNOWN_FAILURE";
   return /^[A-Z0-9_]{3,80}$/u.test(code) ? code : "UNCLASSIFIED_FAILURE";
+}
+
+// Prisma 6 raises connection failures (e.g. "Can't reach database server") as
+// PrismaClientInitializationError without errorCode. Map the message to a closed
+// vocabulary; the message itself (host, user, port) is never persisted or printed.
+const PRISMA_INIT_PATTERNS = [
+  [/Can't reach database server/iu, "PRISMA_INIT_UNREACHABLE"],
+  [/Tenant or user not found/iu, "PRISMA_INIT_TENANT_OR_USER_NOT_FOUND"],
+  [/Authentication failed|password authentication failed/iu, "PRISMA_INIT_AUTH_FAILED"],
+  [/max client|too many (?:clients|connections)|remaining connection slots/iu, "PRISMA_INIT_CONNECTION_LIMIT"],
+  [/Database [`'"].*[`'"] does not exist/iu, "PRISMA_INIT_DATABASE_MISSING"],
+  [/\bTLS\b|\bSSL\b|certificate/iu, "PRISMA_INIT_TLS"],
+  [/timed out|timeout/iu, "PRISMA_INIT_TIMEOUT"],
+  [/closed the connection|connection reset|Connection refused/iu, "PRISMA_INIT_CONNECTION_CLOSED"],
+  [/Environment variable not found/iu, "PRISMA_INIT_ENV_MISSING"],
+  [/Query Engine|query engine library|Unable to require|libquery_engine/iu, "PRISMA_INIT_ENGINE_UNAVAILABLE"],
+];
+
+function classifyPrismaInit(error) {
+  const message = typeof error?.message === "string" ? error.message : "";
+  for (const [pattern, code] of PRISMA_INIT_PATTERNS) if (pattern.test(message)) return code;
+  return "PRISMA_INIT_FAILED";
+}
+
+// Non-secret shape of the database binding: provider class, port class and user form only.
+export function databaseShape(value) {
+  try {
+    const database = new URL(value);
+    const host = database.hostname;
+    const hostClass = /\.pooler\.supabase\.com$/u.test(host) ? "supabase_pooler"
+      : /^db\.[a-z0-9]+\.supabase\.co$/u.test(host) ? "supabase_direct" : "other";
+    const port = database.port || "5432";
+    const portClass = port === "5432" || port === "6543" ? port : "other";
+    const userForm = /^postgres\.[a-z0-9]+$/u.test(decodeURIComponent(database.username)) ? "ref_user" : "plain_user";
+    return `${hostClass}:${portClass}:${userForm}`;
+  } catch { return "invalid"; }
+}
+
+// The identity check accepts only the schema parameter. Supabase's transaction pooler
+// (6543) still needs Prisma's pgbouncer mode, which disables prepared statements.
+export function prismaDatabaseUrl(value) {
+  const database = new URL(value);
+  if (/[.]pooler[.]supabase[.]com$/u.test(database.hostname) && database.port === "6543") database.searchParams.set("pgbouncer", "true");
+  return database.toString();
+}
+
+// Bounded TCP reachability probe through the same resolver and firewall the engine
+// uses. Separates an egress or network block from a server-side Prisma failure.
+export function probeDatabaseTcp(value, timeoutMs = 8_000) {
+  return new Promise((resolve) => {
+    let database;
+    try { database = new URL(value); } catch { resolve("DB_TCP_BINDING_INVALID"); return; }
+    const socket = net.connect({ host: database.hostname, port: Number(database.port || "5432") });
+    const finish = (code) => { socket.destroy(); resolve(code); };
+    socket.setTimeout(timeoutMs, () => finish("DB_TCP_TIMEOUT"));
+    socket.once("connect", () => finish(null));
+    socket.once("error", (error) => {
+      const code = error?.code;
+      finish(code === "ECONNREFUSED" ? "DB_TCP_REFUSED"
+        : code === "ENOTFOUND" || code === "EAI_AGAIN" ? "DB_TCP_UNRESOLVED"
+        : code === "EHOSTUNREACH" || code === "ENETUNREACH" ? "DB_TCP_NO_ROUTE"
+        : code === "EPERM" || code === "EACCES" ? "DB_TCP_BLOCKED"
+        : "DB_TCP_FAILED");
+    });
+  });
 }
 
 // Requests address the fixed alias only after it attested the lineage-verified deployment;
@@ -243,7 +309,10 @@ export async function runLineStagingValidation(source = process.env, dependencie
     decoyVendorId: `line-e2e-dv-${runKey}`, decoyAccountId: `line-e2e-da-${runKey}`,
     decoyIdentityId: `line-e2e-di-${runKey}`,
   };
-  const db = dependencies.createDb ? dependencies.createDb() : new PrismaClient({ datasources: { db: { url: source.STAGING_DATABASE_URL } }, log: [] });
+  // Probe raw TCP first so an egress block is not reported as a generic Prisma failure.
+  const tcpFailure = await (dependencies.probeDatabaseTcpImpl ?? probeDatabaseTcp)(source.STAGING_DATABASE_URL);
+  if (tcpFailure) { receipt.result = "FAILED"; receipt.failureCode = tcpFailure; return receipt; }
+  const db = dependencies.createDb ? dependencies.createDb() : new PrismaClient({ datasources: { db: { url: prismaDatabaseUrl(source.STAGING_DATABASE_URL) } }, log: [] });
   try {
     const [accounts, identities, deliveries] = await Promise.all([
       db.lineOfficialAccount.count(), db.lineUserIdentity.count(), db.lineDelivery.count(),
@@ -345,7 +414,7 @@ async function main() {
   const temporary = `${output}.${process.pid}.tmp`;
   await fsp.writeFile(temporary, `${JSON.stringify(receipt)}\n`, { encoding: "utf8", flag: "wx" });
   await fsp.rename(temporary, output);
-  process.stdout.write(`${JSON.stringify({ task: TASK, result: receipt.result, receipt: RECEIPT_NAME })}\n`);
+  process.stdout.write(`${JSON.stringify({ task: TASK, result: receipt.result, receipt: RECEIPT_NAME, failure: receipt.failureCode ?? "NONE", databaseShape: databaseShape(process.env.STAGING_DATABASE_URL) })}\n`);
   if (receipt.result !== "PASS") process.exitCode = 2;
 }
 
