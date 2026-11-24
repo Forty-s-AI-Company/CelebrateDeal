@@ -33,7 +33,50 @@ export const CommerceCheckoutRequestSchema = z.object({
   agreementAccepted: z.boolean().optional(),
   /** Signed locator only; POST verifies the current buyer grant and paid source. */
   postPurchaseToken: z.string().regex(/^ppu1\.[A-Za-z0-9_-]{1,2048}\.[A-Za-z0-9_-]{43}$/u).max(2100).optional(),
+  /** A4-01: the code the buyer typed. The discount itself is read only from the server's record. */
+  discountCode: z.string().trim().min(1).max(64).optional(),
+  /** Only compared with the server's discount; a mismatch refuses the order instead of charging another amount. */
+  expectedDiscountAmountCents: z.number().int().safe().nonnegative().optional(),
+  /** Signed preview token: only lets this checkout skip the guessing throttle; never decides an amount. */
+  discountCodeToken: z.string().max(1024).optional(),
 }).strict();
+
+/** A4-01: preview of a discount code on the checkout page. Display only; POST recomputes everything. */
+export const DiscountCodePreviewRequestSchema = z.object({
+  vendorId: checkoutText,
+  productId: checkoutText,
+  discountCode: z.string().trim().min(1).max(64),
+  orderBumpProductId: checkoutText.optional(),
+}).strict();
+
+export const DiscountCodePreviewResponseSchema = z.object({
+  ok: z.literal(true),
+  code: z.string().min(1).max(64),
+  discountAmountCents: z.number().int().safe().positive(),
+  subtotalAmountCents: z.number().int().safe().positive(),
+  totalAmountCents: z.number().int().safe().positive(),
+  currency: z.string().regex(/^[A-Z]{3}$/u),
+  token: z.string().min(1).max(1024),
+}).strict();
+export type DiscountCodePreview = z.infer<typeof DiscountCodePreviewResponseSchema>;
+
+const DISCOUNT_CODE_ERROR_MESSAGES: Record<string, string> = {
+  DISCOUNT_CODE_INVALID: "折扣碼無效或不適用於這個商品。",
+  DISCOUNT_CODE_MIN_SUBTOTAL: "訂單金額未達這個折扣碼的最低消費。",
+  // Also the per-buyer limit (review m-2): the answer never confirms that an e-mail used the code.
+  DISCOUNT_CODE_USAGE_LIMIT: "這個折扣碼已達使用上限。",
+  DISCOUNT_CODE_TRY_LATER: "這個商品的折扣碼嘗試次數太多，請約 10 分鐘後再試，或先不使用折扣碼結帳。",
+  DISCOUNT_CODE_NOT_COMBINABLE: "折扣碼不能與快閃優惠或加購折抵同時使用；請移除折扣碼後再結帳。",
+  DISCOUNT_CODE_CHANGED: "折扣碼內容已變更，請重新套用後再結帳。",
+};
+
+export function isDiscountCodeErrorCode(code: unknown): code is string {
+  return typeof code === "string" && Object.hasOwn(DISCOUNT_CODE_ERROR_MESSAGES, code);
+}
+
+export function discountCodeErrorMessage(code: string | undefined) {
+  return (code && DISCOUNT_CODE_ERROR_MESSAGES[code]) ?? "目前無法確認折扣碼，請稍後再試。";
+}
 
 export const CommerceCheckoutAdmissionResponseSchema = z.object({
   admissionToken: z.string().regex(/^ca1\.[A-Za-z0-9_-]{1,768}\.[A-Za-z0-9_-]{43}$/u).max(900),
@@ -111,12 +154,13 @@ export function isAllowedCheckoutDestination(value: string, currentOrigin: strin
 export async function readCheckoutErrorCode(response: Pick<Response, "json">) {
   try {
     const body: unknown = await response.json();
-    return body && typeof body === "object" && "code" in body && (body.code === "LIVE_VOUCHER_ALREADY_USED" || body.code === "FLASH_SALE_UNAVAILABLE" || body.code === "POST_PURCHASE_UNAVAILABLE" || body.code === "CHECKOUT_BUSY")
+    return body && typeof body === "object" && "code" in body && (body.code === "LIVE_VOUCHER_ALREADY_USED" || body.code === "FLASH_SALE_UNAVAILABLE" || body.code === "POST_PURCHASE_UNAVAILABLE" || body.code === "CHECKOUT_BUSY" || isDiscountCodeErrorCode(body.code))
       ? body.code : undefined;
   } catch { return undefined; }
 }
 
 export function checkoutErrorMessage(status: number, code?: string) {
+  if ((status === 409 || status === 429) && isDiscountCodeErrorCode(code)) return discountCodeErrorMessage(code);
   if (status === 409 && code === "POST_PURCHASE_UNAVAILABLE") return "加購優惠已變更或原訂單權益已失效。請先查看原訂單與待付款加購訂單，避免重複付款。";
   if (status === 409 && code === "FLASH_SALE_UNAVAILABLE") return "快閃優惠已變更、結束或綁定先前訂單。請先確認原訂單狀態；若尚未建立訂單，請返回直播重新確認優惠。";
   if (status === 409 && code === "LIVE_VOUCHER_ALREADY_USED") return "優惠券已綁定先前訂單。請先確認原訂單付款狀態，或聯絡商家協助；重新整理不會解除綁定。";
@@ -137,5 +181,7 @@ export function checkoutErrorMessage(status: number, code?: string) {
  * the next submit resolves that same checkout instead of reserving stock twice.
  */
 export function shouldDiscardCheckoutAdmission(status: number, code?: string) {
-  return status === 409 && code !== "LIVE_VOUCHER_ALREADY_USED" && code !== "POST_PURCHASE_UNAVAILABLE";
+  // A refused discount code rolled the whole order back; the buyer can fix or
+  // remove the code and submit again with the same admission.
+  return status === 409 && code !== "LIVE_VOUCHER_ALREADY_USED" && code !== "POST_PURCHASE_UNAVAILABLE" && !isDiscountCodeErrorCode(code);
 }

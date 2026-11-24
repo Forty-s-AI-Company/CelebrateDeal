@@ -11,6 +11,21 @@ function document(type: FunnelNodeType) {
   const node = (type: FunnelNodeType, id: string, children?: FunnelNode[]): FunnelNode => ({ schemaVersion: 1, id, type, props: { priceCents: 1, label: "惡意價格", href: "https://evil.test" }, overrides: {}, style: {}, visible: true, actions: [], attributes: {}, ...(children ? { children } : {}) });
   return { ...createEmptyPageDocument("page"), commerce: { schemaVersion: 1 as const, productId: "p", orderBumpProductId: "b", formMode: "two_step" as const, agreement: { label: "額外購買同意" } }, root: [node("section", "s", [node("row", "r", [node(type, "leaf")])])] };
 }
+describe("Funnel coupon element (A4-01)", () => {
+  it("shows a valid pre-filled code and ignores a malformed one", () => {
+    const withPrefill = (prefillCode: string) => {
+      const page = document("coupon");
+      const leaf = page.root[0]!.children![0]!.children![0]!;
+      leaf.props = { ...leaf.props, prefillCode };
+      return renderToStaticMarkup(<FunnelPageDocumentRenderer document={page} commerce={commerce} />);
+    };
+    expect(withPrefill(" spring-26 ")).toContain("自動帶入折扣碼 SPRING-26");
+    const malformed = withPrefill("<b>x</b>");
+    expect(malformed).toContain("結帳頁可以輸入折扣碼");
+    expect(malformed).not.toContain("<b>x");
+  });
+});
+
 describe("Funnel commerce renderer", () => {
   it("keeps checkout template children visible even when a lead form is bound", () => {
     const page = { ...instantiateFunnelTemplate("sell-product-checkout", "checkout"), commerce: document("offer_price").commerce };
@@ -63,7 +78,7 @@ describe("Funnel commerce renderer", () => {
     const html = renderToStaticMarkup(<FunnelPageDocumentRenderer document={document(type)} commerce={commerce} />);
     expect(html).not.toContain("目前無法在此預覽");
     expect(html).not.toContain("惡意價格");
-    if (type === "coupon") expect(html).toContain("尚未提供手動輸入優惠碼");
+    if (type === "coupon") expect(html).toContain("結帳頁可以輸入折扣碼");
     if (type === "shipping_fees") expect(html).toContain("未提供獨立運費規則");
     if (type === "agreement") expect(html).toContain("額外購買同意");
     if (type === "order_bump") expect(html).toContain("可信加購");

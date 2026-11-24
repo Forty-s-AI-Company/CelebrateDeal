@@ -4,6 +4,19 @@ import { isSupportedCheckoutCurrency } from "@/lib/checkout-currency";
 import { recordUnsupportedCurrencyRefusal } from "@/lib/checkout-currency-audit";
 import { assertFlashSaleAdmission, consumeFlashSaleQuote, flashSaleBearerFromRequest, FlashSaleUnavailableError, resolveFlashSaleQuote } from "@/lib/live-flash-sale";
 import { consumeCheckoutVoucherClaim, VoucherClaimConflictError, type EligibleCheckoutVoucherClaim } from "@/lib/checkout-voucher-claim";
+import { automationCustomerKeyHash } from "@/lib/customer-key-hash";
+import { DISCOUNT_CODE_IP_RATE_LIMIT, resolveThrottledDiscountCodeQuote } from "@/lib/discount-code-lookup-throttle";
+import { verifyDiscountCodePreviewToken } from "@/lib/discount-code-preview-token";
+import {
+  DISCOUNT_CODE_ERROR_CODES,
+  DiscountCodeUnavailableError,
+  normalizeDiscountCode,
+  reserveDiscountCodeRedemption,
+  discountCodeTryLaterReply,
+  resolveDiscountCodeQuote,
+  type DiscountCodeQuote,
+  type DiscountCodeRejection,
+} from "@/lib/discount-codes";
 import { createHash } from "node:crypto";
 import { NextResponse } from "next/server";
 import { z } from "zod";
@@ -179,6 +192,113 @@ function requestCookie(request: Request, name: string) {
   return null;
 }
 
+function discountCodeErrorResponse(reason: DiscountCodeRejection) {
+  return NextResponse.json({ error: "Discount code unavailable", code: DISCOUNT_CODE_ERROR_CODES[reason] }, {
+    status: 409, headers: { "Cache-Control": "private, no-store" },
+  });
+}
+
+function discountCodeTryLaterResponse(retryAfterSeconds: number) {
+  const reply = discountCodeTryLaterReply(retryAfterSeconds);
+  return NextResponse.json(reply.body, reply.init);
+}
+
+type CheckoutPromotion = { discountQuote: DiscountCodeQuote | null; voucherClaim: EligibleCheckoutVoucherClaim };
+
+/**
+ * Review MJ-1: a valid preview token (same vendor, product and code, not
+ * expired) skips the guessing throttle and the per-IP discount-code limit;
+ * without one, checkout passes both so it cannot become a guessing channel.
+ * Either way the amount comes only from the DiscountCode row, and a token
+ * issued for an older revision of the code is refused.
+ */
+async function checkoutDiscountCodeQuote(
+  request: Request,
+  data: CheckoutRequestData & { discountCode: string },
+  input: { product: { id: string; priceCents: number; currency: string }; orderBumpProduct: { priceCents: number } | null },
+): Promise<DiscountCodeQuote | NextResponse> {
+  const now = new Date();
+  const context = {
+    vendorId: data.vendorId,
+    productId: input.product.id,
+    primaryPriceCents: input.product.priceCents,
+    additionalAmountCents: input.orderBumpProduct?.priceCents ?? 0,
+    currency: input.product.currency,
+    now,
+  };
+  const normalizedCode = normalizeDiscountCode(data.discountCode);
+  const token = normalizedCode
+    ? verifyDiscountCodePreviewToken(data.discountCodeToken, { vendorId: data.vendorId, productId: input.product.id, normalizedCode, now })
+    : null;
+  if (!token) {
+    const limited = await checkRateLimit(request, DISCOUNT_CODE_IP_RATE_LIMIT.key, DISCOUNT_CODE_IP_RATE_LIMIT.limit, DISCOUNT_CODE_IP_RATE_LIMIT.windowMs);
+    if (limited) return limited;
+  }
+  const result = token
+    ? await resolveDiscountCodeQuote(getDb(), data.discountCode, context)
+    : await resolveThrottledDiscountCodeQuote(getDb(), data.discountCode, context);
+  if (!result.ok) {
+    return result.reason === "throttled" ? discountCodeTryLaterResponse(result.retryAfterSeconds) : discountCodeErrorResponse(result.reason);
+  }
+  if (token && token.revision !== result.quote.revision) return discountCodeErrorResponse("changed");
+  if (data.expectedDiscountAmountCents !== undefined && data.expectedDiscountAmountCents !== result.quote.discountAmountCents) {
+    return discountCodeErrorResponse("changed");
+  }
+  return result.quote;
+}
+
+/**
+ * A4-01: one promotion per order. A typed discount code is refused next to a
+ * flash sale or post-purchase credit, and otherwise takes the place of an
+ * automation/live voucher (which is then left unused). The code is looked up
+ * only within the vendor whose product is being bought.
+ */
+async function resolveCheckoutPromotion(
+  request: Request,
+  data: CheckoutRequestData,
+  input: {
+    product: { id: string; priceCents: number; currency: string };
+    orderBumpProduct: { priceCents: number } | null;
+    exclusiveOffer: boolean;
+  },
+): Promise<CheckoutPromotion | NextResponse> {
+  if (data.discountCode !== undefined) {
+    if (input.exclusiveOffer) return discountCodeErrorResponse("not_combinable");
+    const discount = await checkoutDiscountCodeQuote(request, { ...data, discountCode: data.discountCode }, input);
+    if (discount instanceof Response) return discount;
+    return { discountQuote: discount, voucherClaim: null };
+  }
+  if (input.exclusiveOffer) return { discountQuote: null, voucherClaim: null };
+  try {
+    const voucherClaim = await eligibleCheckoutVoucherClaim(request, {
+      vendorId: data.vendorId,
+      productId: input.product.id,
+      priceCents: input.product.priceCents,
+      currency: input.product.currency,
+    });
+    return { discountQuote: null, voucherClaim };
+  } catch (error) {
+    if (error instanceof LiveVoucherAlreadyUsedError) return NextResponse.json({ error: "優惠券已綁定先前訂單，請確認原訂單付款狀態後再試。", code: "LIVE_VOUCHER_ALREADY_USED" }, { status: 409 });
+    throw error;
+  }
+}
+
+/** The normalized code a stored checkout used, or null. */
+function storedDiscountCode(metadata: Record<string, unknown>) {
+  const stored = metadataObject(metadata.discountCode);
+  return typeof stored.normalizedCode === "string" ? stored.normalizedCode : null;
+}
+
+/**
+ * A replay may omit the code (a recovered form does not resend it), but a code
+ * it does send must be the one the stored order used.
+ */
+function replayDiscountCodeMatches(data: CheckoutRequestData, metadata: Record<string, unknown>) {
+  if (data.discountCode === undefined) return true;
+  const requested = normalizeDiscountCode(data.discountCode);
+  return requested !== null && requested === storedDiscountCode(metadata);
+}
+
 async function eligibleCheckoutVoucherClaim(
   request: Request,
   input: { vendorId: string; productId: string; priceCents: number; currency: string },
@@ -230,6 +350,7 @@ function checkoutTransactionMetadata(input: {
   /** Only assigned from a server-validated, verified registration. */
   sourceLiveId?: string;
   voucherClaimId?: string;
+  discountCode?: DiscountCodeQuote | null;
   discountAmountCents?: number;
   checkoutAmountCents?: number;
   orderBumpProductId?: string;
@@ -250,6 +371,13 @@ function checkoutTransactionMetadata(input: {
     ...(input.formSubmissionId ? { formSubmissionId: input.formSubmissionId } : {}),
     ...(input.sourceLiveId ? { sourceLiveId: input.sourceLiveId } : {}),
     ...(input.voucherClaimId ? { voucherClaimId: input.voucherClaimId } : {}),
+    // A4-01 snapshot; the order's DiscountCodeRedemption row is authoritative.
+    ...(input.discountCode ? { discountCode: {
+      id: input.discountCode.discountCodeId,
+      code: input.discountCode.code,
+      normalizedCode: input.discountCode.normalizedCode,
+      discountAmountCents: input.discountCode.discountAmountCents,
+    } } : {}),
     ...(input.discountAmountCents ? { discountAmountCents: input.discountAmountCents } : {}),
     ...(input.checkoutAmountCents ? { checkoutAmountCents: input.checkoutAmountCents } : {}),
     ...(input.orderBumpProductId ? { orderBumpProductId: input.orderBumpProductId } : {}),
@@ -664,6 +792,7 @@ async function existingCheckoutResponse({
     || transaction.checkoutIdempotencyKey !== data.idempotencyKey
     || metadata.productId !== data.productId
     || !replayBumpMatches(data, bumpId, bumpItem)
+    || !replayDiscountCodeMatches(data, metadata)
   ) {
     return NextResponse.json({ error: "Idempotency key already used for another checkout" }, { status: 409 });
   }
@@ -878,19 +1007,15 @@ export async function POST(request: Request) {
   // or payment-provider metadata.
   const referralCode = affiliateAttribution?.referralCode;
   const coursePolicySnapshot = coursePolicySnapshotFromProduct(product);
-  const voucherClaim = saleQuote || postPurchaseQuote ? null : await eligibleCheckoutVoucherClaim(request, {
-    vendorId: parsed.data.vendorId,
-    productId: product.id,
-    priceCents: product.priceCents,
-    currency: product.currency,
-  }).catch((error: unknown) => {
-    if (error instanceof LiveVoucherAlreadyUsedError) return NextResponse.json({ error: "優惠券已綁定先前訂單，請確認原訂單付款狀態後再試。", code: "LIVE_VOUCHER_ALREADY_USED" }, { status: 409 });
-    throw error;
+  const promotion = await resolveCheckoutPromotion(request, parsed.data, {
+    product, orderBumpProduct, exclusiveOffer: Boolean(saleQuote || postPurchaseQuote),
   });
-  if (voucherClaim instanceof Response) return voucherClaim;
-  // 快閃價與優惠券不疊加；實際金額只使用已簽署且重新驗證的報價。
+  if (promotion instanceof Response) return promotion;
+  const { voucherClaim, discountQuote } = promotion;
+  // 快閃價、加購折抵、折扣碼與優惠券不疊加；實際金額只使用已簽署且重新驗證的報價或伺服器紀錄。
   const discountAmountCents = postPurchaseQuote ? postPurchaseQuote.creditAmountCents + postPurchaseQuote.offerDiscountCents
-    : saleQuote ? saleQuote.priceCents - saleQuote.salePriceCents : voucherClaim?.discountAmountCents ?? 0;
+    : saleQuote ? saleQuote.priceCents - saleQuote.salePriceCents
+      : discountQuote?.discountAmountCents ?? voucherClaim?.discountAmountCents ?? 0;
   const checkoutAmountCents = product.priceCents + (orderBumpProduct?.priceCents ?? 0) - discountAmountCents;
   const transactionMetadata = { ...checkoutTransactionMetadata({
     productId: parsed.data.productId,
@@ -901,6 +1026,7 @@ export async function POST(request: Request) {
     formSubmissionId,
     sourceLiveId,
     voucherClaimId: voucherClaim?.id,
+    discountCode: discountQuote,
     discountAmountCents,
     checkoutAmountCents,
     ...(orderBumpProduct ? { orderBumpProductId: orderBumpProduct.id, orderBumpPriceCents: orderBumpProduct.priceCents } : {}),
@@ -960,6 +1086,8 @@ export async function POST(request: Request) {
           orderId: commerceOrder.id,
           now: new Date(),
         });
+        if (discountQuote) await reserveDiscountCodeRedemption(tx, { quote: discountQuote, orderId: commerceOrder.id,
+          paymentTransactionId: createdTransaction.id, buyerKeyHash: automationCustomerKeyHash(parsed.data.vendorId, checkoutPii.buyer.email), now: new Date() });
         if (saleQuote && saleBearer) await consumeFlashSaleQuote(tx, saleBearer, saleQuote, commerceOrder.id, new Date(), reservedRevisions.find((item) => item.productId === product.id));
         if (postPurchaseQuote && parsed.data.postPurchaseToken) await consumePostPurchaseCredit(tx, buyerCookies, {
           token: parsed.data.postPurchaseToken, quote: postPurchaseQuote, targetOrderId: commerceOrder.id,
@@ -988,6 +1116,7 @@ export async function POST(request: Request) {
     if (error instanceof VoucherClaimConflictError) {
       return NextResponse.json({ error: "Voucher already used or expired" }, { status: 409 });
     }
+    if (error instanceof DiscountCodeUnavailableError) return discountCodeErrorResponse(error.reason);
     if (error instanceof FlashSaleUnavailableError) {
       return NextResponse.json({ error: "Flash sale changed or unavailable", code: "FLASH_SALE_UNAVAILABLE" }, { status: 409 });
     }

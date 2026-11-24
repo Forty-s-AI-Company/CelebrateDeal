@@ -31,6 +31,10 @@ exports[`keeps every merchant navigation label aligned with its destination titl
     "label": "商品",
   },
   {
+    "href": "/discount-codes",
+    "label": "折扣碼",
+  },
+  {
     "href": "/orders",
     "label": "訂單與履約",
   },

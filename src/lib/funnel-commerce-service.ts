@@ -4,6 +4,7 @@ import {
   funnelCheckoutPath,
   FunnelCheckoutReferenceSchema,
   FunnelCommerceBindingSchema,
+  funnelDiscountCodeEntry,
   type FunnelCheckoutReference,
   type FunnelCommerceBinding,
   type FunnelCommerceProduct,
@@ -52,6 +53,8 @@ export type ResolvedFunnelCheckout = {
   binding: FunnelCommerceBinding;
   product: FunnelCheckoutProduct;
   orderBump?: FunnelCheckoutProduct;
+  /** A4-01: present when the published order page has a coupon element. */
+  discountCodeEntry?: { prefillCode?: string };
 };
 
 const productSelect = {
@@ -223,7 +226,13 @@ export async function resolvePublishedFunnelCheckout(reference: unknown, databas
     binding: bindingResult.data,
     product,
     ...(orderBump ? { orderBump } : {}),
+    ...withDiscountCodeEntry(document.root),
   };
+}
+
+function withDiscountCodeEntry(root: PageDocument["root"]) {
+  const discountCodeEntry = funnelDiscountCodeEntry(root);
+  return discountCodeEntry ? { discountCodeEntry } : {};
 }
 
 /** Public document commerce never leaks a merchant id, delivery data, or fields. */

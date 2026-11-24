@@ -108,6 +108,10 @@ model Vendor {
   onboardingTaskStates             OnboardingTaskState[]
   salesProjectProducts             SalesProjectProduct[]
   salesProjectCustomers            SalesProjectCustomer[]
+  discountCodes                    DiscountCode[]
+  discountCodeProducts             DiscountCodeProduct[]
+  discountCodeRedemptions          DiscountCodeRedemption[]
+  discountCodeLookupThrottles      DiscountCodeLookupThrottle[]
   consultantNotes                  ConsultantNote[]
   deliveryUrlAllowlist             VendorDeliveryUrlAllowlist[]
   productDeliveryConfigs           ProductDeliveryConfig[]
@@ -676,6 +680,7 @@ model Product {
   salesProjectLinks           SalesProjectProduct[]
 
   merchantAffiliateRates MerchantAffiliateProductRate[]
+  discountCodeProducts   DiscountCodeProduct[]
   @@unique([vendorId, id])
   @@unique([vendorId, slug])
   @@index([vendorId, commerceDomain, isActive])
@@ -2271,6 +2276,7 @@ model PaymentTransaction {
   courseCommissionAllocations CourseCommissionAllocation[]
   platformReferralCommission  PlatformReferralCommission?
   primaryCommerceOrder        CommerceOrder?               @relation("CommerceOrderPrimaryPayment")
+  discountCodeRedemption      DiscountCodeRedemption?
   commerceOrderRefunds        CommerceOrderRefund[]
   supportRefundHandoffs       SupportRefundHandoff[]
 
@@ -2372,6 +2378,7 @@ model CommerceOrder {
   delayedStepRuns           DelayedStepRun[]
 
   merchantAffiliateSnapshot MerchantAffiliateCheckoutSnapshot?
+  discountCodeRedemption    DiscountCodeRedemption?
   @@unique([vendorId, id])
   @@unique([vendorId, orderNumber])
   @@unique([vendorId, checkoutIdempotencyKey])
@@ -4867,4 +4874,111 @@ model MerchantAffiliateCalculation {
   commissions AffiliateCommission[]
   @@unique([vendorId, checkoutId])
   @@unique([vendorId, checkoutId, id])
+}
+
+/// A4-01: a merchant-wide discount code the buyer types at checkout. The
+/// discount comes only from this row (never from the browser) and applies to
+/// the primary product line; the order bump stays at its own price.
+/// `redemptionCount` counts reserved (pending payment) plus redeemed uses and
+/// is changed only by conditional updates inside the checkout and payment
+/// transactions (`src/lib/discount-codes.ts`).
+model DiscountCode {
+  id                     String    @id @default(cuid())
+  vendorId               String
+  /// As the merchant typed it (display only).
+  code                   String
+  /// Upper-case form; unique per vendor so matching ignores case.
+  normalizedCode         String
+  discountType           String
+  /// Minor units for `fixed_amount`; whole percent (1-100) for `percentage`.
+  discountValue          Int
+  currency               String    @default("TWD")
+  appliesToAllProducts   Boolean   @default(true)
+  startsAt               DateTime?
+  endsAt                 DateTime?
+  maxRedemptions         Int?
+  maxRedemptionsPerBuyer Int?
+  minSubtotalCents       Int?
+  isActive               Boolean   @default(true)
+  redemptionCount        Int       @default(0)
+  /// Bumped on every merchant edit; a checkout quote must still match it.
+  revision               Int       @default(1)
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
+
+  vendor      Vendor                   @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  products    DiscountCodeProduct[]
+  redemptions DiscountCodeRedemption[]
+
+  @@unique([vendorId, id])
+  @@unique([vendorId, normalizedCode])
+  @@index([vendorId, createdAt])
+}
+
+/// Discount-code lookups that found no code, per fixed 10-minute window,
+/// independent of the buyer's IP. `scopeKey` is `vendor` (merchant-wide cap)
+/// or `product:<id>` (per-product cap). A lookup is debited before the code
+/// is read (conditional upsert) and refunded when the code exists, so
+/// `failureCount` never passes the cap even under concurrency.
+model DiscountCodeLookupThrottle {
+  vendorId     String
+  scopeKey     String
+  windowStart  DateTime
+  failureCount Int      @default(0)
+
+  vendor Vendor @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+
+  @@id([vendorId, scopeKey, windowStart])
+}
+
+/// Products a non-global discount code applies to (same vendor only).
+model DiscountCodeProduct {
+  vendorId       String
+  discountCodeId String
+  productId      String
+  createdAt      DateTime @default(now())
+
+  vendor       Vendor       @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  discountCode DiscountCode @relation(fields: [vendorId, discountCodeId], references: [vendorId, id], onDelete: Cascade)
+  product      Product      @relation(fields: [vendorId, productId], references: [vendorId, id], onDelete: Cascade)
+
+  @@id([vendorId, discountCodeId, productId])
+  @@index([vendorId, productId])
+}
+
+/// One use of a discount code by one canonical order, with the immutable
+/// price snapshot. `reserved` while the payment is pending, `redeemed` once
+/// paid, `released` when the payment failed or expired unpaid. Refunds never
+/// release a use.
+model DiscountCodeRedemption {
+  id                   String    @id @default(cuid())
+  vendorId             String
+  discountCodeId       String
+  orderId              String
+  paymentTransactionId String
+  /// Tenant-bound buyer e-mail key (same as CommerceOrder.automationCustomerKeyHash).
+  buyerKeyHash         String
+  status               String
+  codeSnapshot         String
+  discountType         String
+  discountValue        Int
+  currency             String
+  subtotalAmountCents  Int
+  discountAmountCents  Int
+  totalAmountCents     Int
+  reservedAt           DateTime  @default(now())
+  redeemedAt           DateTime?
+  releasedAt           DateTime?
+  releaseReason        String?
+
+  vendor             Vendor             @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  discountCode       DiscountCode       @relation(fields: [vendorId, discountCodeId], references: [vendorId, id], onDelete: Restrict)
+  order              CommerceOrder      @relation(fields: [vendorId, orderId], references: [vendorId, id], onDelete: Restrict)
+  paymentTransaction PaymentTransaction @relation(fields: [vendorId, paymentTransactionId], references: [vendorId, id], onDelete: Restrict)
+
+  @@unique([vendorId, id])
+  @@unique([vendorId, orderId])
+  @@unique([vendorId, paymentTransactionId])
+  @@index([vendorId, discountCodeId, buyerKeyHash, status])
+  @@index([vendorId, discountCodeId, status])
 }

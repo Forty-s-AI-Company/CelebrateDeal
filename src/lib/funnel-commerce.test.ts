@@ -1,5 +1,29 @@
 import { describe, expect, it } from "vitest";
-import { FunnelCommerceBindingSchema, FunnelCheckoutReferenceSchema, commerceViewForBinding, funnelCheckoutPath } from "./funnel-commerce";
+import { FunnelCommerceBindingSchema, FunnelCheckoutReferenceSchema, commerceViewForBinding, funnelCheckoutPath, funnelDiscountCodeEntry } from "./funnel-commerce";
+import type { FunnelNode } from "./funnel-page-document";
+
+describe("Funnel coupon element → checkout discount-code input (A4-01)", () => {
+  const node = (type: FunnelNode["type"], id: string, props: Record<string, unknown> = {}, children?: FunnelNode[]): FunnelNode => ({
+    schemaVersion: 1, id, type, props, overrides: {}, style: {}, visible: true, actions: [], attributes: {}, ...(children ? { children } : {}),
+  } as FunnelNode);
+
+  it("is absent without a coupon element", () => {
+    expect(funnelDiscountCodeEntry([node("row", "r", {}, [node("text", "t")])])).toBeNull();
+  });
+
+  it("finds a nested coupon element and only keeps a well-formed pre-filled code", () => {
+    expect(funnelDiscountCodeEntry([node("row", "r", {}, [node("coupon", "c", { prefillCode: " vip-10 " })])])).toEqual({ prefillCode: "VIP-10" });
+    expect(funnelDiscountCodeEntry([node("coupon", "c", { prefillCode: "<script>" })])).toEqual({});
+    expect(funnelDiscountCodeEntry([node("coupon", "c", { prefillCode: 100 })])).toEqual({});
+  });
+
+  it("ignores a hidden coupon element, or one inside a hidden container (review n-3)", () => {
+    const hidden = (value: FunnelNode): FunnelNode => ({ ...value, visible: false });
+    expect(funnelDiscountCodeEntry([hidden(node("coupon", "c", { prefillCode: "VIP-10" }))])).toBeNull();
+    expect(funnelDiscountCodeEntry([hidden(node("row", "r", {}, [node("coupon", "c")]))])).toBeNull();
+    expect(funnelDiscountCodeEntry([hidden(node("coupon", "a", { prefillCode: "HIDDEN1" })), node("coupon", "b", { prefillCode: "SHOWN1" })])).toEqual({ prefillCode: "SHOWN1" });
+  });
+});
 import { createEmptyPageDocument, parsePageDocument } from "./funnel-page-document";
 import { createFunnelPageHistory, dispatchFunnelPageCommand, redoFunnelPageHistory, undoFunnelPageHistory } from "./funnel-page-history";
 import { changeFunnelTemplate } from "./funnel-template-transaction";

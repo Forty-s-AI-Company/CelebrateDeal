@@ -3,12 +3,13 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   findProduct: vi.fn(),
+  findDiscountCode: vi.fn(),
   notFound: vi.fn(() => { throw new Error("not-found"); }),
   redirect: vi.fn((url: string) => { throw new Error(`redirect:${url}`); }),
 }));
 
 vi.mock("@/lib/db", () => ({
-  getDb: () => ({ product: { findFirst: mocks.findProduct } }),
+  getDb: () => ({ product: { findFirst: mocks.findProduct }, discountCode: { findFirst: mocks.findDiscountCode } }),
 }));
 vi.mock("next/navigation", () => ({ notFound: mocks.notFound, redirect: mocks.redirect }));
 
@@ -16,6 +17,7 @@ import CommerceCheckoutPage from "@/app/checkout/[vendorId]/[productId]/page";
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mocks.findDiscountCode.mockResolvedValue(null);
   mocks.findProduct.mockResolvedValue({
     id: "product-1",
     vendorId: "vendor-1",
@@ -64,6 +66,28 @@ describe("CommerceCheckoutPage", () => {
 
     expect(html).toContain("正在檢查是否有可恢復的訂單");
     expect(html).not.toContain('name="buyerEmail"');
+  });
+
+  it("looks for an applicable discount code only within the product's vendor (A4-01)", async () => {
+    await CommerceCheckoutPage({
+      params: Promise.resolve({ vendorId: "vendor-1", productId: "product-1" }),
+      searchParams: Promise.resolve({ code: "spring-26" }),
+    });
+    expect(mocks.findDiscountCode).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({ vendorId: "vendor-1", isActive: true }),
+    }));
+    const lookup = JSON.stringify(mocks.findDiscountCode.mock.calls[0]![0]);
+    expect(lookup).toContain('"productId":"product-1"');
+    // The query string only pre-fills the input; it is never used to look a code up.
+    expect(lookup).not.toContain("SPRING-26");
+  });
+
+  it("does not look up discount codes for a flash-sale checkout", async () => {
+    await CommerceCheckoutPage({
+      params: Promise.resolve({ vendorId: "vendor-1", productId: "product-1" }),
+      searchParams: Promise.resolve({ flashSale: "sale-run" }),
+    });
+    expect(mocks.findDiscountCode).not.toHaveBeenCalled();
   });
 
   it("returns not-found for an unavailable or cross-vendor product", async () => {
