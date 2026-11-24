@@ -1465,8 +1465,9 @@ export async function capturePayUniPageStructure(page) {
 // checkbox/agree widgets and the sentence around 條款／政策／同意 links. Per control only name, id,
 // label or placeholder text, type, required/aria-required, and whether it is empty, checked,
 // :invalid or disabled. A value never leaves the page: emptiness is computed in the page and only
-// the boolean is returned. Names, ids and placeholders use the page-structure sanitizer; label and
-// sentence text use the dialog-text sanitizer. It never clicks, fills or submits anything.
+// the boolean is returned. Names, ids and placeholders pass the dialog-text masks and then the
+// page-structure whitelist; label and sentence text use the dialog-text sanitizer, and text that
+// repeats a typed value of the frame is never used as a label. It never clicks, fills or submits.
 export const PAYUNI_MISSING_INFO_TEXT = "請確認付款資訊已填寫";
 const FORM_FIELDS_MAX = 25;
 const FORM_CUSTOM_MAX = 10;
@@ -1477,9 +1478,10 @@ const FORM_AGREEMENT_TEXT_MAX = 120;
 const FORM_CUSTOM_HINTS = new Set(["CHECKBOX", "AGREE", "CONSENT", "TERMS", "SWITCH", "TOGGLE", "OTHER"]);
 
 /**
- * Runs inside one PayUni frame. Returns attributes and booleans only: `value`, `textContent` of an
- * editable control and option text are read solely to compute `empty`, never returned. Label text
- * skips every form control and editable area, so a typed value cannot leak through a parent label.
+ * Runs inside one PayUni frame. Returns attributes and booleans only: `value` and the `textContent`
+ * of an editable control are read solely to compute `empty` and to reject label text that echoes a
+ * typed value; they are never returned. Label text skips every form control and editable area, and
+ * a neighbour or parent is used only when it holds no other control, so a typed value cannot leak.
  */
 export function collectPayUniFormFieldsInPage(limit) {
   const VALUE_ROLES = new Set(["textbox", "combobox", "listbox", "spinbutton", "searchbox"]);
@@ -1506,44 +1508,67 @@ export function collectPayUniFormFieldsInPage(limit) {
       return box.width > 0 && box.height > 0 && style.visibility !== "hidden" && style.display !== "none";
     } catch { return false; }
   };
-  const fieldCount = (element) => {
-    try {
-      return (element?.matches?.("input, select, textarea") ? 1 : 0) + (element?.querySelectorAll?.("input, select, textarea").length ?? 0);
-    } catch { return 0; }
-  };
-  /** The parent's text, only when the parent holds at most this one field. */
-  const contextText = (element) => (element?.parentElement && fieldCount(element.parentElement) <= 1 ? ownText(element.parentElement) : "");
-  const labelOf = (element) => {
-    try {
-      for (const label of Array.from(element.labels ?? []).slice(0, 2)) { const text = ownText(label); if (text) return text; }
-    } catch { /* No labels collection. */ }
-    const root = element.getRootNode?.() ?? document;
-    for (const id of attribute(element, "aria-labelledby").split(/\s+/u).filter(Boolean).slice(0, 3)) {
-      const reference = root.getElementById?.(id) ?? document.getElementById(id);
-      const text = reference ? ownText(reference) : "";
-      if (text) return text;
-    }
-    const wrapper = element.closest?.("label");
-    const wrapped = wrapper ? ownText(wrapper) : "";
-    if (wrapped) return wrapped;
-    const named = attribute(element, "aria-label") || attribute(element, "title");
-    if (named) return named;
-    // Nearby text only when it belongs to this control alone (no other field in between).
-    for (let node = element.previousElementSibling, index = 0; node && index < 2; node = node.previousElementSibling, index += 1) {
-      if (fieldCount(node) > 0) break;
-      const text = ownText(node);
-      if (text) return text;
-    }
-    return contextText(element);
-  };
+  const selector = 'input, select, textarea, [role="checkbox"], [role="switch"], [role="radio"], [role="combobox"], [role="textbox"], '
+    + '[role="listbox"], [role="spinbutton"], [role="searchbox"], [contenteditable=""], [contenteditable="true"], [contenteditable="plaintext-only"]';
   const roots = [document];
   for (let index = 0; index < roots.length && roots.length < 20; index += 1) {
     for (const element of roots[index].querySelectorAll("*")) {
       if (element.shadowRoot && roots.length < 20) roots.push(element.shadowRoot);
     }
   }
-  const selector = 'input, select, textarea, [role="checkbox"], [role="switch"], [role="radio"], [role="combobox"], [role="textbox"], '
-    + '[role="listbox"], [role="spinbutton"], [role="searchbox"], [contenteditable=""], [contenteditable="true"], [contenteditable="plaintext-only"]';
+  // Typed values of this frame, kept in the page only so that text echoing one (a neighbour span
+  // that mirrors the card holder or card number) is never used as a label. Never returned.
+  const normalize = (value) => String(value ?? "").replace(/\s+/gu, " ").trim().toLowerCase();
+  const typedValues = [];
+  for (const root of roots) {
+    for (const element of root.querySelectorAll(selector)) {
+      try {
+        const tag = element.tagName;
+        const type = attribute(element, "type").toLowerCase();
+        let value = "";
+        if (tag === "TEXTAREA" || (tag === "INPUT" && !["checkbox", "radio", "hidden", "button", "submit", "reset", "image", "file"].includes(type))) value = element.value;
+        else if (tag !== "INPUT" && tag !== "SELECT" && holdsValue(element)) value = element.textContent;
+        const text = normalize(value);
+        if (text.length >= 2 && typedValues.length < 100) typedValues.push(text);
+      } catch { /* An unreadable control simply cannot be echoed. */ }
+    }
+  }
+  const isEcho = (text) => {
+    const candidate = normalize(text);
+    return candidate !== "" && typedValues.some((value) => candidate.includes(value) || (candidate.length >= 3 && value.includes(candidate)));
+  };
+  /** Text kept as a label only when it does not repeat a typed value. */
+  const accept = (text) => (text && !isEcho(text) ? text : "");
+  const fieldCount = (element) => {
+    try {
+      return (element?.matches?.(selector) ? 1 : 0) + (element?.querySelectorAll?.(selector).length ?? 0);
+    } catch { return 0; }
+  };
+  /** The parent's text, only when the parent holds at most this one control (any kind, editable areas included). */
+  const contextText = (element) => (element?.parentElement && fieldCount(element.parentElement) <= 1 ? accept(ownText(element.parentElement)) : "");
+  const labelOf = (element) => {
+    try {
+      for (const label of Array.from(element.labels ?? []).slice(0, 2)) { const text = accept(ownText(label)); if (text) return text; }
+    } catch { /* No labels collection. */ }
+    const root = element.getRootNode?.() ?? document;
+    for (const id of attribute(element, "aria-labelledby").split(/\s+/u).filter(Boolean).slice(0, 3)) {
+      const reference = root.getElementById?.(id) ?? document.getElementById(id);
+      const text = reference ? accept(ownText(reference)) : "";
+      if (text) return text;
+    }
+    const wrapper = element.closest?.("label");
+    const wrapped = wrapper ? accept(ownText(wrapper)) : "";
+    if (wrapped) return wrapped;
+    const named = accept(attribute(element, "aria-label") || attribute(element, "title"));
+    if (named) return named;
+    // A preceding neighbour only when it holds no control of any kind and does not echo a typed value.
+    for (let node = element.previousElementSibling, index = 0; node && index < 2; node = node.previousElementSibling, index += 1) {
+      if (fieldCount(node) > 0) break;
+      const text = ownText(node);
+      if (text) return accept(text);
+    }
+    return contextText(element);
+  };
   const fields = [];
   let hiddenInputs = 0;
   let total = 0;
@@ -1568,7 +1593,7 @@ export function collectPayUniFormFieldsInPage(limit) {
       try { if (native && element.matches(":invalid")) invalid = true; } catch { /* No :invalid support. */ }
       fields.push({
         tag, type, name: attribute(element, "name"), id: attribute(element, "id"),
-        label: (!native && toggle ? ownText(element) : "") || labelOf(element),
+        label: (!native && toggle ? accept(ownText(element)) : "") || labelOf(element),
         placeholder: attribute(element, "placeholder"), autocomplete: attribute(element, "autocomplete"),
         visible: shown(element),
         required: element.required === true || element.hasAttribute?.("required") === true,
@@ -1590,7 +1615,7 @@ export function collectPayUniFormFieldsInPage(limit) {
       if (!match) continue;
       custom.push({
         tag: String(element.tagName ?? "").toLowerCase(), hint: match[0].replace("-", "").toUpperCase(),
-        label: ownText(element) || contextText(element),
+        label: accept(ownText(element)) || contextText(element),
         checked: /(?:^|[\s_-])(?:is-)?(?:checked|active|selected|on)(?:$|[\s_-])/iu.test(className) || attribute(element, "aria-checked") === "true",
         containsInput: Boolean(element.querySelector?.("input")),
       });
@@ -1612,8 +1637,8 @@ export function collectPayUniFormFieldsInPage(limit) {
         if (parent.querySelector?.('select, textarea, input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"])')) break;
         container = parent;
       }
-      const text = ownText(container, 300);
-      if (seen.has(text)) continue;
+      const text = accept(ownText(container, 300));
+      if (!text || seen.has(text)) continue;
       seen.add(text);
       const toggles = container.querySelectorAll?.('input[type="checkbox"], input[type="radio"], [role="checkbox"], [role="switch"], [class]') ?? [];
       agreement.push({
@@ -1632,6 +1657,14 @@ function payUniFrameHost(frame) {
     if (url.href === "about:blank" || url.protocol === "about:") return "BLANK";
     return url.protocol === "https:" ? sanitizePayUniHostName(url.hostname) : "OTHER";
   } catch { return "UNKNOWN"; }
+}
+
+/**
+ * name / id / placeholder: the dialog-text masks first (digit runs such as "12/30", letter+digit
+ * identifiers such as "pay_8f3k2", 16+ character tokens), then the page-structure whitelist.
+ */
+function formIdentifier(value) {
+  return sanitizeStructureText(sanitizePayUniDialogText(value, STRUCTURE_TEXT_MAX));
 }
 
 /** Sanitize one frame's raw form controls; unknown shapes yield empty lists and every value is re-checked. */
@@ -1657,10 +1690,10 @@ export function sanitizePayUniFormFields(raw, frame = 0, host = "MAIN") {
     fields: list(source.fields, FORM_FIELDS_MAX).map((field) => ({
       tag: kind(field?.tag),
       type: kind(field?.type),
-      name: sanitizeStructureText(field?.name),
-      id: sanitizeStructureText(field?.id),
+      name: formIdentifier(field?.name),
+      id: formIdentifier(field?.id),
       label: sanitizePayUniDialogText(field?.label, FORM_LABEL_MAX),
-      placeholder: sanitizeStructureText(field?.placeholder),
+      placeholder: formIdentifier(field?.placeholder),
       autocomplete: kind(field?.autocomplete),
       visible: field?.visible === true,
       required: field?.required === true,

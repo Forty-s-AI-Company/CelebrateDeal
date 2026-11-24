@@ -381,13 +381,13 @@ export async function defaultLostCallbackBrowser(input, dependencies = {}) {
   let payuniPostsAfterSubmit = 0;
   const externalHosts = [];
   const dialogs = [];
-  let formFields = null;
   const diagnostic = () => ({
     dialogs: [...dialogs],
     externalHosts: [...externalHosts],
     payuniPostsAfterSubmit: submittedAt === null ? null : payuniPostsAfterSubmit,
     afterSubmitSeconds: submittedAt === null ? null : Math.max(0, Math.round((Date.now() - submittedAt) / 1_000)),
-    formFields,
+    // Filled in only by stopOnDialog, after the result is fixed.
+    formFields: null,
   });
   try {
     const context = await browser.newContext({ locale: "zh-TW" });
@@ -416,10 +416,14 @@ export async function defaultLostCallbackBrowser(input, dependencies = {}) {
       return route.abort();
     });
     const page = await context.newPage();
-    /** Stop on a dialog: the code is already decided; the read-only field list only travels with it. */
+    /**
+     * Stop on a dialog. The result (code, callback count, seconds) is fixed before the read-only field
+     * list is collected; the collection only fills in `formFields`, so its time never changes the result.
+     */
     const stopOnDialog = async () => {
-      try { formFields = await capturePayUniFormFieldDiagnostic(page, dialogs); } catch { formFields = null; }
-      return { code: "PAYMENT_CONFIRMATION_DIALOG", appCallbackRequests, diagnostic: diagnostic() };
+      const result = { code: "PAYMENT_CONFIRMATION_DIALOG", appCallbackRequests, diagnostic: diagnostic() };
+      try { result.diagnostic.formFields = await capturePayUniFormFieldDiagnostic(page, dialogs); } catch { result.diagnostic.formFields = null; }
+      return result;
     };
     // Same document handling as the WP4 runner: post the UPP form once through
     // the isolated request context, then serve that exact response to the page.

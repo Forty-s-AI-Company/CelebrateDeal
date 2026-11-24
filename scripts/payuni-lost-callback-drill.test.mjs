@@ -366,7 +366,11 @@ function fakePlaywright({ dialogVisible = false, dialogRaw = null, nativeDialog 
   if (frames) {
     page.frames = () => frames.map((frame) => ({
       url: () => frame.url,
-      evaluate: async (fn, limit) => { log.frameEvaluations.push({ fn, limit }); return frame.raw; },
+      evaluate: async (fn, limit) => {
+        log.frameEvaluations.push({ fn, limit });
+        if (frame.onEvaluate) await frame.onEvaluate(dispatch);
+        return frame.raw;
+      },
     }));
   }
   const context = {
@@ -565,6 +569,34 @@ test("browser: on the missing-info modal the drill lists the page's fields read-
   const unreadableResult = await defaultLostCallbackBrowser(BROWSER_INPUT, { playwright: unreadable.playwright });
   assert.equal(unreadableResult.code, "PAYMENT_CONFIRMATION_DIALOG");
   assert.equal(unreadableResult.diagnostic.formFields, null);
+});
+
+test("browser: the dialog result is fixed before the field list is read; a callback during the read changes nothing", async () => {
+  const frames = [{
+    url: PAYUNI_UPP_URL,
+    raw: { fields: [{ tag: "input", type: "checkbox", name: "agree", required: true, checked: false }] },
+    onEvaluate: async (dispatch) => {
+      // A slow read during which the page fires an application callback.
+      await new Promise((resolve) => { setTimeout(resolve, 1_600); });
+      assert.equal(await dispatch(`${ALIAS_ORIGIN}/api/webhooks/payments?provider=payuni&source=notify`, "POST", Buffer.from("x")), "abort");
+    },
+  }];
+  const { playwright, log } = fakePlaywright({
+    dialogVisible: true, frames, dialogRaw: { kind: "FIXED_LAYER", text: `${PAYUNI_MISSING_INFO_TEXT} 確定`, buttons: ["確定"] },
+  });
+  const result = await defaultLostCallbackBrowser(BROWSER_INPUT, { playwright });
+  assert.equal(result.code, "PAYMENT_CONFIRMATION_DIALOG");
+  assert.equal(result.appCallbackRequests, 0, "the callback count was fixed before the read");
+  assert.equal(result.diagnostic.afterSubmitSeconds, 0, "the seconds were fixed before the 1.6 s read");
+  assert.equal(result.diagnostic.formFields.missingInfoDialog, true);
+  assert.equal(result.diagnostic.formFields.frames[0].fields[0].name, "agree");
+  assert.equal(log.routes.at(-1).action, "abort", "the late callback is still aborted");
+  assert.equal(submitClicks(log), 1);
+  assert.equal(log.clicks.includes("確定"), false);
+
+  // The pay phase therefore still reports the dialog, not APP_CALLBACK_ATTEMPTED.
+  const { deps } = dependencies({ browser: async () => result });
+  assert.equal((await runLostCallbackPayment(INPUT, deps)).failure, "PAYMENT_CONFIRMATION_DIALOG");
 });
 
 test("browser: no Return or a rejected UPP document ends without a capture", async () => {

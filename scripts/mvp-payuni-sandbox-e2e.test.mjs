@@ -2457,7 +2457,7 @@ test("the dialog line re-sanitizes tampered values and is absent when nothing wa
 
 // ---- Required-field diagnostic (run 45362693554: PayUni "請確認付款資訊已填寫" after 確認送出).
 const FIELD_SECRETS = [SYNTHETIC_CARD, "4147 6310 0000 0001", "buyer@example.test", "12/30", "TEXTAREA-PRIVATE", "EDITABLE-PRIVATE",
-  "OPTION-PRIVATE", "0912345678", "hidden-cipher"];
+  "OPTION-PRIVATE", "0912345678", "hidden-cipher", "Wang Xiao Ming"];
 
 test("the field collector lists every control's name/id, label, type, required and empty/checked state, never a value", async () => {
   const { Window } = await import("happy-dom");
@@ -2466,14 +2466,22 @@ test("the field collector lists every control's name/id, label, type, required a
   const interactions = [];
   try {
     window.HTMLElement.prototype.getBoundingClientRect = function box() { return { width: 10, height: 10 }; };
-    for (const method of ["click", "focus", "blur", "dispatchEvent"]) {
-      const original = window.HTMLElement.prototype[method];
-      window.HTMLElement.prototype[method] = function tracked(...args) { interactions.push(method); return original?.apply(this, args); };
+    // Tracked on HTMLElement and again on HTMLInputElement, where inputs may override them.
+    for (const prototype of [window.HTMLElement.prototype, window.HTMLInputElement.prototype]) {
+      for (const method of ["click", "focus", "blur", "dispatchEvent", "select", "setSelectionRange", "setRangeText", "reportValidity"]) {
+        if (typeof prototype[method] !== "function") continue;
+        const original = prototype[method];
+        Object.defineProperty(prototype, method, { configurable: true, writable: true,
+          value: function tracked(...args) { interactions.push(method); return original.apply(this, args); } });
+      }
     }
     globalThis.document = window.document;
     globalThis.getComputedStyle = window.getComputedStyle.bind(window);
     window.document.body.innerHTML = `<form>
       <label for="card">卡號</label><input id="card" type="text" placeholder="**** **** **** ****" autocomplete="on">
+      <input name="expiry" type="text" placeholder="MM/YY">
+      <div><span class="echo">4147 6310 0000 0001</span><input name="mirror" type="tel"></div>
+      <div><span>Wang Xiao Ming</span><input name="cardholder" placeholder="Cardholder"></div>
       <input type="email" placeholder="example@example.com">
       <input type="hidden" name="EncryptInfo" value="hidden-cipher">
       <div class="agree-row"><input type="checkbox" name="agree" id="agree" required><label for="agree">我已閱讀並同意 <a>隱私權政策</a> 及 <a>平台服務條款</a></label></div>
@@ -2487,14 +2495,21 @@ test("the field collector lists every control's name/id, label, type, required a
       <input type="radio" name="radioOptionpayGroupCredit" style="display:none">
     </form>`;
     window.document.getElementById("card").value = SYNTHETIC_CARD;
+    window.document.querySelector('input[name="expiry"]').value = "12/30";
+    window.document.querySelector('input[name="mirror"]').value = "4147 6310 0000 0001";
+    window.document.querySelector('input[name="cardholder"]').value = "Wang Xiao Ming";
     window.document.querySelector('input[type="email"]').value = "buyer@example.test";
     window.document.querySelector('select[name="bank"]').value = "1";
     const shadow = window.document.getElementById("shadow-host").attachShadow({ mode: "open" });
     shadow.innerHTML = '<input name="mobile" placeholder="手機號碼" required>';
     interactions.length = 0;
+    const controls = () => [...window.document.querySelectorAll("input, select, textarea"), ...shadow.querySelectorAll("input")];
+    const state = () => controls().map((control) => [control.value, control.checked === true]);
+    const before = state();
 
     const raw = collectPayUniFormFieldsInPage(25);
-    assert.deepEqual(interactions, [], "the collector never clicks, focuses or dispatches events");
+    assert.deepEqual(interactions, [], "the collector never clicks, focuses, selects or dispatches events");
+    assert.deepEqual(state(), before, "no value or checked state changes");
     const rawText = JSON.stringify(raw);
     for (const secret of FIELD_SECRETS) assert.equal(rawText.includes(secret), false, `raw leaked ${secret}`);
     assert.equal(raw.hiddenInputs, 1);
@@ -2516,9 +2531,13 @@ test("the field collector lists every control's name/id, label, type, required a
     const ariaCheckbox = frame.fields.find((field) => field.tag === "div" && field.type === "checkbox");
     assert.deepEqual([ariaCheckbox.label, ariaCheckbox.checked, ariaCheckbox.ariaRequired], ["同意收款條件", false, true]);
     const editable = frame.fields.find((field) => field.type === "editable");
-    assert.deepEqual([editable.label, editable.empty], ["同意收款條件", false]);
-    const radio = byName("radioOptionpayGroupCredit");
-    assert.deepEqual([radio.type, radio.visible, radio.checked], ["radio", false, false]);
+    assert.deepEqual([editable.label, editable.empty], ["", false], "a neighbouring custom control's text is never borrowed");
+    assert.deepEqual([byName("expiry").placeholder, byName("expiry").empty], ["MM/YY", false]);
+    assert.equal(byName("mirror").label, "", "a neighbour that echoes the typed card number is not a label");
+    assert.equal(byName("cardholder").label, "", "a neighbour that echoes the typed holder name is not a label");
+    const radio = frame.fields.find((field) => field.type === "radio");
+    // A 16+ letter name is masked as TOKEN like any other long token (dialog-text rules).
+    assert.deepEqual([radio.name, radio.visible, radio.checked], ["TOKEN", false, false]);
     assert.ok(frame.custom.some((item) => item.hint === "CHECKBOX" && item.checked === true && item.containsInput === false));
     assert.ok(frame.custom.some((item) => item.hint === "AGREE" && item.label === "我已閱讀並同意 隱私權政策 及 平台服務條款" && item.containsInput));
     assert.deepEqual(frame.agreement[0], { text: "我已閱讀並同意 隱私權政策 及 平台服務條款", hasToggle: true });
@@ -2562,6 +2581,18 @@ test("the field line re-sanitizes tampered values, caps every list and is absent
     placeholder: "URL", autocomplete: "cc-number", visible: false, required: false, ariaRequired: false, empty: null, checked: null, invalid: true, disabled: false, shadow: false });
   assert.deepEqual(parsed.frames[0].custom[0], { tag: "span", hint: "OTHER", label: "卡號 #", checked: false, containsInput: false });
   assert.deepEqual(parsed.frames[0].agreement[0], { text: "同意 EMAIL #", hasToggle: false });
+
+  // name / id / placeholder get the dialog-text masks before the structure whitelist.
+  const masked = sanitizePayUniFormFields({ fields: [
+    { name: "pay_8f3k2a", id: "tok_9XyZ12ab", placeholder: "12/30" },
+    { name: "tok_abcdefghijklmnopqrstuv", id: "card_no", placeholder: "MM/YY" },
+    { name: "exp 1 2 / 3 0", id: "a1 b2 c3 d4", placeholder: "**** **** **** ****" },
+  ] }).fields;
+  assert.deepEqual(masked.map(({ name, id, placeholder }) => [name, id, placeholder]), [
+    ["ID", "ID", "#"],
+    ["TOKEN", "card_no", "MM/YY"],
+    ["exp #", "REDACTED", "**** **** **** ****"],
+  ]);
 });
 
 test("field capture reads every frame read-only, survives unreadable frames and flags the missing-info dialog", async () => {
