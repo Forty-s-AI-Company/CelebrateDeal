@@ -451,12 +451,22 @@ describe("getEnvCheckReport", () => {
       expect(check(report, providerKey, "fail")).toBeUndefined();
     });
 
-    it("refuses cloudflare_waf on a Vercel deployment because the domain is not behind Cloudflare", () => {
-      for (const vercelEnv of ["production", "preview"]) {
-        const report = getEnvCheckReport({ ...configuredEnv(), VERCEL: "1", VERCEL_ENV: vercelEnv });
-        expect(report.ok).toBe(false);
-        expect(check(report, providerKey, "fail")?.message).toContain("upstash_redis");
-      }
+    it("refuses cloudflare_waf on the Vercel Production deployment because the domain is not behind Cloudflare", () => {
+      const report = getEnvCheckReport({ ...configuredEnv(), VERCEL: "1", VERCEL_ENV: "production" });
+      expect(report.ok).toBe(false);
+      expect(check(report, providerKey, "fail")?.message).toContain("upstash_redis");
+      expect(check(report, providerKey, "warning")).toBeUndefined();
+    });
+
+    it("only warns about cloudflare_waf on a Vercel Preview (staging) deployment, with the same message", () => {
+      const production = getEnvCheckReport({ ...configuredEnv(), VERCEL: "1", VERCEL_ENV: "production" });
+      const preview = getEnvCheckReport({ ...configuredEnv(), VERCEL: "1", VERCEL_ENV: "preview" });
+      const warning = check(preview, providerKey, "warning");
+      expect(warning?.message).toBe(check(production, providerKey, "fail")?.message);
+      expect(check(preview, providerKey, "fail")).toBeUndefined();
+      // The provider warning alone does not block a staging build.
+      expect(preview.checks.filter((item) => item.status === "fail")).toEqual([]);
+      expect(preview.ok).toBe(true);
     });
   });
 

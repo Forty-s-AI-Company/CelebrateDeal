@@ -287,7 +287,8 @@ function turnstileChecks(env: NodeJS.ProcessEnv): EnvCheck[] {
  *   NODE_ENV=production preflight and build, `next start` off loopback) is not
  *   a public deployment: warning, so CI keeps building.
  * - cloudflare_waf on a Vercel deployment: the domain does not go through
- *   Cloudflare (O-7), so checkRateLimit would count nothing: fail.
+ *   Cloudflare (O-7), so checkRateLimit would count nothing: fail on
+ *   Production, warning on Preview (staging).
  */
 function clientIpTrustChecks(env: NodeJS.ProcessEnv, deploymentSecurityRequired: boolean): EnvCheck[] {
   const checks: EnvCheck[] = [];
@@ -309,10 +310,13 @@ function clientIpTrustChecks(env: NodeJS.ProcessEnv, deploymentSecurityRequired:
     });
   }
 
+  // Production fails. Preview (staging) only warns, so an unconfirmed staging
+  // provider cannot block every staging deployment; the owner switches it to
+  // upstash_redis when /api/admin/preflight shows this warning.
   if (isVercelDeployment(env) && env.RATE_LIMIT_PROVIDER === "cloudflare_waf") {
     checks.push({
       key: "RATE_LIMIT_PROVIDER",
-      status: "fail",
+      status: env.VERCEL_ENV === "production" ? "fail" : "warning",
       message: "網域不經 Cloudflare（O-7），RATE_LIMIT_PROVIDER=cloudflare_waf 時應用層完全不計數；Vercel 部署請改用 upstash_redis",
     });
   }
