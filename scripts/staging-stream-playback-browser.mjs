@@ -6,10 +6,10 @@ import { elementHydratedInPage, HYDRATION_TIMEOUT_MS } from "./staging-browser-h
 import { validateBrowserSmokeBinding, verifyStagingAliasBinding } from "./staging-browser-smoke.mjs";
 import {
   ORIGIN, FIXTURE, STEPS,
-  assessPlaybackProgress, assessRecovery, assessReplayTokenExp, classifyError, classifyPlayerPath,
+  assessNewTokenUse, assessPlaybackProgress, assessRecovery, assessReplayTokenExp, classifyError, classifyPlayerPath, createTokenAttribution,
   classifyRequest, classifyStoredThumbnail, classifyStreamUrl, createReceipt, decodeStreamTokenClaims,
   finalVerdict, formatReceiptLines, isStreamDeliveryHost, receiptLeaks, renewalDelaySeconds,
-  replayDeadline, replayDeadlineMinutes, routeCategory, safariCoverage, setStep, skippedStepsFor,
+  replayDeadline, replayDeadlineMinutes, routeCategory, safariCoverage, setStep, shouldRefuseInRecovery, skippedStepsFor,
   PAGE_ERROR_DETAIL_LIMIT, classifyRequestFailure, classifyVideoLock, postLockCoverage, describePageError, isBenignPageError, streamTokenSubject,
   describeErrorSample, streamRequestOrigin, streamSegmentIdentity, summarizeStreamErrors, tallyStreamRequest, taipeiDateTimeLocal, validUploadUrl, withCorruptedSignature,
 } from "./staging-stream-playback-browser-core.mjs";
@@ -25,7 +25,8 @@ import {
  *
  * Viewer side (cookie-free context, the public /live/<slug> entry + admission, no registration,
  * no checkout): token-form playback, token exp vs the replay deadline, Origin probe, token-failure
- * recovery through page.route 403s, and (full scenario) playing through the first renewal.
+ * recovery through page.route 403s and Cloudflare-like 401s, and (full scenario) playing through
+ * the first renewal on segments signed for the renewed token.
  *
  * Nothing token-like leaves memory: the receipt holds fixed enums, booleans, counts, rounded
  * seconds and HTTP status codes, and `receiptLeaks` checks the text before it is written.
@@ -39,9 +40,14 @@ const OWNER_SESSION_REFRESH_MS = 10 * 60_000;
 const VIDEO_READY_TIMEOUT_MS = 18 * 60_000;
 const FOREIGN_ORIGIN = "https://stream-origin-probe.invalid";
 const PLAYER_VIDEO = '[data-testid="persistent-live-player"] video';
-const RECOVERY_CASES = Object.freeze([
+export const RECOVERY_CASES = Object.freeze([
   { mode: "token_expiry", state: "playing", blockMs: 10_000 },
   { mode: "token_expiry", state: "paused", blockMs: 10_000 },
+  // What Cloudflare does once the token expired (run 45713686375): 401 "signature expired" for
+  // every request carrying the token or signed (`p`/`s`) for it, and it never lifts. Requests
+  // with or signed for a renewed token pass, so only a player that renews AND re-signs recovers.
+  { mode: "token_expiry_401", state: "playing", blockMs: 10_000, httpStatus: 401, persistent: true },
+  { mode: "token_expiry_401", state: "paused", blockMs: 10_000, httpStatus: 401, persistent: true },
   { mode: "blanket_block", state: "playing", blockMs: 20_000 },
   { mode: "blanket_block", state: "paused", blockMs: 20_000 },
 ]);
@@ -58,6 +64,8 @@ export function describeFailure(error) {
 }
 
 const pause = (ms) => new Promise((resolve) => { setTimeout(resolve, ms); });
+/** Body of Cloudflare's answer to an expired signature (run 45713686375 error sample). */
+const EXPIRED_SIGNATURE_BODY = "401 unauthorized signature expired";
 const round1 = (value) => (Number.isFinite(value) ? Math.round(value * 10) / 10 : null);
 
 function browserEnvironment() {
@@ -119,7 +127,7 @@ async function readErrorSample(response) {
 }
 
 /** Network and playback-source observations for one viewer page; tokens stay in memory. */
-function createViewerTracker(page, receipt, phaseOf = () => "OTHER") {
+export function createViewerTracker(page, receipt, phaseOf = () => "OTHER") {
   const state = {
     sources: [], admissionOk: 0, admissionFailed: 0, tokens: [],
     stream: [], uidForm: 0, appUidForm: 0, tokenForm: 0,
@@ -129,6 +137,17 @@ function createViewerTracker(page, receipt, phaseOf = () => "OTHER") {
     let index = state.tokens.indexOf(token);
     if (index === -1) { state.tokens.push(token); index = state.tokens.length - 1; }
     return index;
+  };
+  // Which token each uid-form URI was signed for, from the playlist bodies the player loaded.
+  const attribution = createTokenAttribution();
+  const pendingBodies = new Set();
+  const recordPlaylistBody = (response, ownTokenIndex) => {
+    const playlistUrl = response.url();
+    const read = response.text()
+      .then((text) => { attribution.recordPlaylist(playlistUrl, text, attribution.tokenOf(playlistUrl, ownTokenIndex)); })
+      .catch(() => { /* unreadable body: its URIs stay unattributed */ })
+      .finally(() => { pendingBodies.delete(read); });
+    pendingBodies.add(read);
   };
   const tally = (request, outcome) => tallyStreamRequest(receipt.viewer.streamRequestPatterns,
     { phase: phaseOf(), url: request.url(), resourceType: safeResourceType(request) }, outcome);
@@ -170,11 +189,13 @@ function createViewerTracker(page, receipt, phaseOf = () => "OTHER") {
       const outcome = response.status() < 400 ? "ok" : injected.has(response.request()) ? "injected" : "failed";
       const entry = tally(response.request(), outcome);
       countProviderFailure(entry, outcome);
+      const ownToken = tokenIndex(parsed.token);
       state.stream.push({
-        atMs: Date.now(), status: response.status(), token: tokenIndex(parsed.token), kind: parsed.kind,
-        form: parsed.form, origin: entry?.origin ?? "APP",
+        atMs: Date.now(), status: response.status(), token: ownToken, kind: parsed.kind,
+        form: parsed.form, origin: entry?.origin ?? "APP", url: response.url(),
         identity: streamSegmentIdentity(response.url()), injected: outcome === "injected",
       });
+      if ((parsed.kind === "MANIFEST" || parsed.kind === "PLAYLIST") && outcome === "ok") recordPlaylistBody(response, ownToken);
       // Diagnostics only: a few non-injected error bodies, redacted before they are kept.
       if (outcome === "failed" && errorSamples.length < ERROR_SAMPLE_READ_LIMIT) errorSamples.push(readErrorSample(response));
       return;
@@ -214,7 +235,15 @@ function createViewerTracker(page, receipt, phaseOf = () => "OTHER") {
       return state.sources.at(-1)?.token ?? null;
     },
     tokenIndex,
-    /** Call before the runner itself answers a request (RECOVERY 403s). */
+    /** Token index a Stream URL belongs to: its own token, or the token its playlist was fetched with. */
+    tokenOf: (url) => attribution.tokenOf(url, tokenIndex(classifyStreamUrl(url)?.token ?? null)),
+    /** Resolves once every playlist body seen so far has been read into the attribution. */
+    settled: async () => {
+      while (pendingBodies.size > 0) await Promise.allSettled([...pendingBodies]);
+    },
+    /** Stream responses with `token` replaced by the attributed token (call after `settled`). */
+    attributedStream: () => state.stream.map((entry) => ({ ...entry, token: attribution.tokenOf(entry.url, entry.token) })),
+    /** Call before the runner itself answers a request (RECOVERY 403s／401s). */
     markInjected: (request) => { injected.add(request); },
     streamOkSince: (sinceMs, predicate = () => true) => state.stream.some((entry) => entry.atMs > sinceMs
       && entry.status >= 200 && entry.status < 300 && predicate(entry)),
@@ -967,8 +996,13 @@ export async function probeAllowedOrigins(playbackUrl, fetchImpl = fetch) {
   return result;
 }
 
-async function runRecoveryCase({ viewer, tracker, sample, setPaused, startViewer, wait, receipt, deadlineSeconds, mode, state, blockMs }) {
-  const record = { mode, state, status: "FAIL", reasons: [], forbiddenServed: 0, uidFormBlocked: 0, positionBefore: null, positionAfter: null };
+async function runRecoveryCase({
+  viewer, tracker, sample, setPaused, startViewer, wait, receipt, deadlineSeconds, mode, state, blockMs, httpStatus = 403, persistent = false,
+}) {
+  const record = {
+    mode, state, status: "FAIL", reasons: [], servedStatus: httpStatus, persistent,
+    forbiddenServed: 0, uidFormBlocked: 0, positionBefore: null, positionAfter: null,
+  };
   let handler = null;
   // One predicate instance: page.unroute matches the url argument and the handler.
   const isStream = (url) => isStreamDeliveryHost(url.hostname);
@@ -978,26 +1012,37 @@ async function runRecoveryCase({ viewer, tracker, sample, setPaused, startViewer
     await wait(3_000);
     const blockedToken = tracker.currentToken();
     if (!blockedToken) { record.reasons.push("NO_TOKEN_IN_USE"); return record; }
+    const blockedIndex = tracker.tokenIndex(blockedToken);
     let active = true;
     let firstForbiddenAt = null;
-    // token_expiry: requests carrying the expiring token, plus uid-form playlist/segment URIs that
-    // Cloudflare wrote into playlists fetched with it (worst case: their access ends with that
-    // token, and the player's token swap only rewrites token-form paths). Requests with a renewed
-    // token pass. blanket_block: every Stream request.
-    handler = (route) => {
+    // token_expiry (403, lifted after blockMs): requests carrying the expiring token, plus every
+    // uid-form playlist/segment URI (worst case: their access ends with that token).
+    // token_expiry_401 (never lifted, like Cloudflare after exp): requests carrying the expired
+    // token or signed for it (attributed through the playlist that listed them), and uid-form
+    // URIs no recorded playlist listed (worst case); URIs signed for a renewed token pass.
+    // blanket_block: every Stream request.
+    handler = async (route) => {
       const request = route.request();
       const parsed = classifyStreamUrl(request.url());
       let resourceType = "other";
       try { resourceType = request.resourceType(); } catch { /* fixed fallback */ }
       const providerUid = parsed?.form === "UID" && streamRequestOrigin(parsed, resourceType) === "PROVIDER";
-      if (active && parsed && parsed.kind !== "THUMBNAIL"
-        && (mode === "blanket_block" || parsed.token === blockedToken || providerUid)) {
+      let owner = -1;
+      if (active && persistent && parsed) {
+        // Attribution needs every playlist body seen so far (the one listing this URI included).
+        await tracker.settled();
+        owner = tracker.tokenOf(request.url());
+      }
+      if (active && shouldRefuseInRecovery({ mode, persistent, parsed, providerUid, owner, blockedToken, blockedIndex })) {
         record.forbiddenServed += 1;
         if (providerUid) record.uidFormBlocked += 1;
         tracker.markInjected(request);
         firstForbiddenAt ??= Date.now();
         // CORS-readable like a same-origin-allowed Cloudflare answer, so the player sees the status.
-        return route.fulfill({ status: 403, headers: { "access-control-allow-origin": ORIGIN, "content-type": "text/plain" }, body: "forbidden" });
+        return route.fulfill({
+          status: httpStatus, headers: { "access-control-allow-origin": ORIGIN, "content-type": "text/plain" },
+          body: httpStatus === 401 ? EXPIRED_SIGNATURE_BODY : "forbidden",
+        });
       }
       return route.fallback();
     };
@@ -1021,9 +1066,11 @@ async function runRecoveryCase({ viewer, tracker, sample, setPaused, startViewer
     record.positionBefore = round1(expectedPosition);
     for (let tries = 0; tries < 90 && record.forbiddenServed === 0; tries += 1) await wait(500);
     if (record.forbiddenServed > 0) await wait(blockMs);
-    active = false;
-    await viewer.unroute(isStream, handler);
-    handler = null;
+    if (!persistent) {
+      active = false;
+      await viewer.unroute(isStream, handler);
+      handler = null;
+    }
     await wait(state === "playing" ? 15_000 : 10_000);
     const first = await sample();
     let resumedAfterPlay = null;
@@ -1046,7 +1093,10 @@ async function runRecoveryCase({ viewer, tracker, sample, setPaused, startViewer
     record.positionAfter = round1(after?.currentTime);
     const assessed = assessRecovery({
       state, forbiddenServed: record.forbiddenServed, expectedPosition, after, resumedAfterPlay,
-      streamOkAfterRestore: firstForbiddenAt !== null && tracker.streamOkSince(firstForbiddenAt),
+      // A persistent block stays up: loading resumed only if a segment signed for another
+      // (renewed) token loaded after the first refusal.
+      streamOkAfterRestore: firstForbiddenAt !== null
+        && tracker.streamOkSince(firstForbiddenAt, persistent ? (entry) => entry.kind === "SEGMENT" : undefined),
     });
     record.status = assessed.status;
     record.reasons = assessed.reasons;
@@ -1062,8 +1112,9 @@ async function runRecoveryCase({ viewer, tracker, sample, setPaused, startViewer
 /**
  * Full scenario: one fresh visitor plays through the first scheduled renewal (~28 minutes for a
  * 30-minute replay token) and two more minutes. Asserts the renewal happened on schedule, the
- * renewed token carries the replay deadline as exp, later Stream requests use it, and playback
- * never stalled, paused, ended, errored or jumped back.
+ * renewed token carries the replay deadline as exp, the player loaded a playlist with it and
+ * segments signed for it before the first token expired (and nothing of the first token after),
+ * and playback never stalled, paused, ended, errored or jumped back.
  */
 async function runRenewal({ tracker, sample, startViewer, wait, receipt, deadlineSeconds, viewer }) {
   const result = { status: "FAIL", reasons: [] };
@@ -1113,11 +1164,21 @@ async function runRenewal({ tracker, sample, startViewer, wait, receipt, deadlin
     result.renewedExpDeadlineCapped = exp?.deadlineCapped ?? null;
     result.renewedExpEqualsDeadline = exp?.expEqualsDeadline ?? false;
     result.renewedExpDeltaSeconds = exp?.deltaSeconds ?? null;
-    const renewedIndex = renewed.tokenIndex;
-    // Recorded, not required: over hls.js a VOD loads its playlists once and Cloudflare signs the
-    // uid-form segment URIs itself (`p`/`s` query), so after a renewal no request needs to carry
-    // the new token (run 45561006960: 0, while playback ran 175 s past the first token's exp).
-    result.newTokenStreamRequests = tracker.state.stream.filter((entry) => entry.token === renewedIndex && entry.status >= 200 && entry.status < 300).length;
+    // Required: Cloudflare signs the uid-form segment URIs (`p`/`s`) for the token their playlist
+    // was fetched with and refuses them from that token's exp on (run 45713686375: 27 × 401 after
+    // the first exp, 0 requests with the renewed token). Between the renewal and the first exp the
+    // player must load a playlist with the renewed token and segments signed for it, and must not
+    // touch anything of the first token after its exp. uid-form requests are attributed through
+    // the playlist bodies the player loaded (createTokenAttribution).
+    await tracker.settled();
+    const use = assessNewTokenUse(tracker.attributedStream(), {
+      firstIndex: source.tokenIndex, renewedIndex: renewed.tokenIndex, renewedAtMs: renewed.atMs, initialExpMs,
+    });
+    result.newTokenStreamRequests = use.newTokenStreamRequests;
+    result.newTokenPlaylistRequests = use.newTokenPlaylistRequests;
+    result.newTokenSegmentRequests = use.newTokenSegmentRequests;
+    result.firstTokenRequestsAfterExp = use.firstTokenRequestsAfterExp;
+    result.reasons.push(...use.reasons);
     const afterRenewal = samples.filter((entry) => entry.atMs >= renewed.atMs);
     result.advancedAfterRenewalSeconds = afterRenewal.length >= 2 ? round1(afterRenewal.at(-1).currentTime - afterRenewal[0].currentTime) : 0;
     if (result.observedAfterSeconds > expected + 180) result.reasons.push("RENEWAL_LATE");

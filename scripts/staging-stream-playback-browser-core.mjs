@@ -195,7 +195,7 @@ export const STREAM_PATTERN_LIMIT = 25;
  * Bounded per-shape tally of viewer Stream requests: `{ phase, origin, form, kind, resourceType,
  * pattern, requests, ok, failed, aborted, injected }`. `outcome` is "request", "ok" (2xx/3xx),
  * "failed" (4xx/5xx or a network error), "aborted" (cancelled by the browser or the player, e.g.
- * a native load replaced by hls.js) or "injected" (a 403 the runner itself served in RECOVERY).
+ * a native load replaced by hls.js) or "injected" (a 403 or 401 the runner itself served in RECOVERY).
  * Shapes beyond the limit fold into one OVERFLOW entry.
  */
 export function tallyStreamRequest(list, { phase, url, resourceType }, outcome) {
@@ -663,6 +663,92 @@ export function receiptLeaks(text) {
     || /(?<![A-Za-z0-9+/_-])(?=[A-Za-z0-9+/_-]*[a-z])(?=[A-Za-z0-9+/_-]*[A-Z])(?=[A-Za-z0-9+/_-]*\d)[A-Za-z0-9+/_-]{48,}/u.test(text);
 }
 
+/**
+ * Absolute URIs a playlist references: every non-tag line and every `URI="…"` attribute,
+ * resolved against the playlist URL (mirrors `playlistUris` in src/lib/stream-playlist-refresh.ts).
+ */
+export function playlistReferences(text, playlistUrl) {
+  const uris = [];
+  for (const rawLine of String(text ?? "").split(/\r?\n/u)) {
+    const line = rawLine.trim();
+    if (!line) continue;
+    const references = line.startsWith("#") ? [...line.matchAll(/URI="([^"]+)"/gu)].map((match) => match[1]) : [line];
+    for (const reference of references) {
+      try { uris.push(new URL(reference, playlistUrl).href); } catch { /* unresolvable: ignored */ }
+    }
+  }
+  return uris;
+}
+
+/**
+ * Which playback token a Stream request belongs to (in memory only; indexes are the tracker's).
+ * A token-form URL carries its own token. A uid-form URL is signed by Cloudflare (`p`/`s`) for
+ * the token its playlist was fetched with, so it belongs to the token of the playlist that
+ * listed that exact URL; -1 when no recorded playlist listed it.
+ */
+export function createTokenAttribution() {
+  const derived = new Map();
+  const normalize = (value) => { try { return new URL(value).href; } catch { return null; } };
+  const tokenOf = (url, ownTokenIndex = -1) => {
+    if (ownTokenIndex >= 0) return ownTokenIndex;
+    const href = normalize(url);
+    return href === null ? -1 : derived.get(href) ?? -1;
+  };
+  return {
+    /** A playlist body fetched with token `tokenIndex` (or itself derived from one). */
+    recordPlaylist(playlistUrl, text, tokenIndex) {
+      if (!(tokenIndex >= 0)) return;
+      for (const uri of playlistReferences(text, playlistUrl)) {
+        if (classifyStreamUrl(uri)?.form === "UID") derived.set(uri, tokenIndex);
+      }
+    },
+    tokenOf,
+  };
+}
+
+/**
+ * Whether the RECOVERY route refuses a Stream request (`parsed` = classifyStreamUrl; `owner` =
+ * the attributed token index, only needed when `persistent`). Thumbnails always pass.
+ * - blanket_block: everything.
+ * - token_expiry (403, lifted after a while): the expiring token, plus every provider uid-form
+ *   URI (worst case: their access ends with that token).
+ * - persistent (401, never lifted, like Cloudflare after exp): what carries the expired token or
+ *   was signed for it, plus provider uid-form URIs no recorded playlist listed (worst case).
+ *   URIs signed for a renewed token pass.
+ */
+export function shouldRefuseInRecovery({ mode, persistent = false, parsed, providerUid, owner = -1, blockedToken, blockedIndex = -1 }) {
+  if (!parsed || parsed.kind === "THUMBNAIL") return false;
+  if (mode === "blanket_block") return true;
+  if (persistent) return (blockedIndex >= 0 && owner === blockedIndex) || (providerUid && owner === -1);
+  return parsed.token === blockedToken || providerUid;
+}
+
+/**
+ * Renewal verdict on the token the player actually used. `entries` are Stream responses
+ * `{ atMs, status, kind, form, token, injected }` with `token` the attributed token index.
+ * Between the renewal and the first token's exp the player must load, with 2xx, at least one
+ * token-form playlist or manifest carrying the renewed token AND at least one segment Cloudflare
+ * signed for it; from the first token's exp on, no request may still belong to the first token
+ * (Cloudflare refuses them once the video is locked; before the lock they would pass unnoticed).
+ */
+export function assessNewTokenUse(entries, { firstIndex, renewedIndex, renewedAtMs, initialExpMs = null }) {
+  const inWindow = (entry) => entry.atMs >= renewedAtMs && (initialExpMs === null || entry.atMs < initialExpMs);
+  const ok = (entry) => entry.status >= 200 && entry.status < 300 && !entry.injected;
+  const renewed = renewedIndex >= 0 ? entries.filter((entry) => entry.token === renewedIndex && ok(entry) && inWindow(entry)) : [];
+  const result = {
+    newTokenStreamRequests: renewed.length,
+    newTokenPlaylistRequests: renewed.filter((entry) => entry.form === "TOKEN" && (entry.kind === "PLAYLIST" || entry.kind === "MANIFEST")).length,
+    newTokenSegmentRequests: renewed.filter((entry) => entry.kind === "SEGMENT").length,
+    firstTokenRequestsAfterExp: initialExpMs === null || !(firstIndex >= 0) ? 0
+      : entries.filter((entry) => entry.token === firstIndex && entry.atMs >= initialExpMs && !entry.injected).length,
+    reasons: [],
+  };
+  if (result.newTokenPlaylistRequests === 0) result.reasons.push("NEW_TOKEN_PLAYLIST_NOT_LOADED_BEFORE_FIRST_EXP");
+  if (result.newTokenSegmentRequests === 0) result.reasons.push("NEW_TOKEN_SEGMENTS_NOT_LOADED_BEFORE_FIRST_EXP");
+  if (result.firstTokenRequestsAfterExp > 0) result.reasons.push("FIRST_TOKEN_USED_AFTER_EXP");
+  return result;
+}
+
 /** Path of a Stream URL without its first (uid or token) segment and without the query: a segment's identity. */
 export function streamSegmentIdentity(value) {
   if (!classifyStreamUrl(value)) return null;
@@ -771,7 +857,7 @@ export function formatReceiptLines(receipt) {
     `stream_playback_requests=app_uid:${receipt.viewer.appUidFormStreamRequests} provider_uid:${receipt.viewer.providerUidFormStreamRequests} provider_failures:${receipt.viewer.providerRequestFailures} ${(receipt.viewer.streamRequestPatterns ?? []).map((item) => `${item.phase}/${item.origin}/${item.form}/${item.kind}/${item.resourceType}:${item.pattern}:${item.requests}(ok:${item.ok},failed:${item.failed},aborted:${item.aborted ?? 0},injected:${item.injected ?? 0})`).join(" ") || "NONE"}`,
     // Redacted messages stay in the JSON receipt (pageErrorDetails); the line keeps the fixed fields.
     `stream_playback_errors=page:${receipt.pageErrors} benign:${receipt.benignPageErrors ?? 0} ${(receipt.pageErrorDetails ?? []).map((item) => `${item.actor}/${item.phase}/${item.category}/${item.name}@${item.frame}${item.benign ? "(benign)" : ""}`).join(" ") || "NONE"}`,
-    `stream_playback_renewal=status:${renewal.status ?? "NOT_RUN"} after_s:${renewal.observedAfterSeconds ?? "null"} expected_s:${renewal.expectedAfterSeconds ?? "null"} new_token_requests:${renewal.newTokenStreamRequests ?? "null"} renewed_exp_equals_deadline:${yes(renewal.renewedExpEqualsDeadline ?? null)} max_stall_s:${renewal.progress?.maxStallSeconds ?? "null"}`,
+    `stream_playback_renewal=status:${renewal.status ?? "NOT_RUN"} after_s:${renewal.observedAfterSeconds ?? "null"} expected_s:${renewal.expectedAfterSeconds ?? "null"} new_token_requests:${renewal.newTokenStreamRequests ?? "null"} new_token_playlists:${renewal.newTokenPlaylistRequests ?? "null"} new_token_segments:${renewal.newTokenSegmentRequests ?? "null"} first_token_after_exp:${renewal.firstTokenRequestsAfterExp ?? "null"} renewed_exp_equals_deadline:${yes(renewal.renewedExpEqualsDeadline ?? null)} max_stall_s:${renewal.progress?.maxStallSeconds ?? "null"}`,
     formatRenewalErrorsLine(renewal.errorDiagnostics),
     `stream_playback_recovery=${receipt.recovery.length ? receipt.recovery.map((item) => `${item.mode}/${item.state}:${item.status}${item.reasons?.length ? `(${item.reasons.join("+")})` : ""}`).join(" ") : "NOT_RUN"}`,
     `stream_playback_origin=status:${origin.status ?? "NOT_RUN"} app:${origin.appOrigin ?? "null"} none:${origin.noOrigin ?? "null"} foreign:${origin.foreignOrigin ?? "null"} invalid_token:${origin.invalidToken ?? "null"} invalid_token_cors_readable:${yes(origin.invalidTokenCorsReadable ?? null)} unsigned_uid:${origin.unsignedUidManifest ?? "null"} video_lock:${origin.videoLock ?? "UNKNOWN"}`,

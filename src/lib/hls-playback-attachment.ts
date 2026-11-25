@@ -3,11 +3,28 @@ import {
   createSignedPlaybackRenewal,
   markSourceSwapPlay,
   swapNativePlaybackSource,
-  withCurrentStreamToken,
   type RenewablePlaybackSource,
   type RenewalTimers,
   type SignedPlaybackRenewal,
 } from "@/lib/signed-playback-renewal";
+import {
+  createVodPlaylistResigner,
+  defaultFetchPlaylist,
+  providerSignedUrlKey,
+  type PlaylistFetcher,
+  type VodPlaylistResigner,
+} from "@/lib/stream-playlist-refresh";
+
+export type { PlaylistFetcher };
+
+/** A loaded media playlist as hls.js exposes it (`Level.details`, `MediaPlaylist.details`). */
+export type HlsPlaylistDetails = {
+  live?: boolean;
+  url?: string;
+};
+
+/** A level or alternate rendition; `details` is set once hls.js loaded its media playlist. */
+export type HlsPlaylistHolder = { details?: HlsPlaylistDetails | null };
 
 /** The subset of hls.js the live player uses. */
 export type HlsPlayer = {
@@ -15,7 +32,10 @@ export type HlsPlayer = {
   attachMedia: (media: HTMLMediaElement) => void;
   startLoad: (startPosition?: number) => void;
   destroy: () => void;
-  on: (event: string, listener: (event: string, data: HlsErrorData) => void) => void;
+  on: (event: string, listener: (event: string, data: unknown) => void) => void;
+  readonly levels?: ReadonlyArray<HlsPlaylistHolder> | null;
+  readonly audioTracks?: ReadonlyArray<HlsPlaylistHolder> | null;
+  readonly subtitleTracks?: ReadonlyArray<HlsPlaylistHolder> | null;
 };
 
 export type HlsErrorData = {
@@ -31,7 +51,8 @@ export type HlsConstructor = {
   Events: { ERROR: string; FRAG_LOADED?: string; MANIFEST_PARSED?: string };
   ErrorTypes: { NETWORK_ERROR: string };
   ErrorDetails?: { MANIFEST_LOAD_ERROR?: string; MANIFEST_LOAD_TIMEOUT?: string };
-  new (config?: { xhrSetup?: (xhr: XMLHttpRequest, url: string) => void }): HlsPlayer;
+  // hls.js waits for a returned promise before it opens and sends the request (1.7 XhrLoader).
+  new (config?: { xhrSetup?: (xhr: XMLHttpRequest, url: string) => void | Promise<void> }): HlsPlayer;
 };
 
 /** The part of `document` the stall recovery reads (injectable for tests). */
@@ -66,6 +87,12 @@ export const HLS_STALL_MANUAL_MIN_GAP_MS = 1_000;
 export const HLS_STALL_TOKEN_REUSE_MAX_MS = 120_000;
 /** Failed attempts on the same renewed token after which the next attempt renews anyway. */
 export const HLS_STALL_TOKEN_REUSE_MAX_FAILURES = 3;
+/**
+ * Native HLS: media errors in a row (without the new source reaching `loadedmetadata`) that each
+ * renew and swap the source. After that the element keeps its error until a scheduled renewal
+ * or the viewer presses play, so a refused new token cannot loop.
+ */
+export const NATIVE_MAX_ERROR_RECOVERIES = 3;
 
 /**
  * Delay before recovery attempt number `level` of a stall: 0 for the first one, then
@@ -98,6 +125,18 @@ async function importHls(): Promise<HlsConstructor> {
   return hlsModule.default as unknown as HlsConstructor;
 }
 
+/** URLs of the VOD media playlists hls.js has loaded (live ones it reloads itself). */
+function loadedVodPlaylistUrls(player: HlsPlayer) {
+  const urls = new Set<string>();
+  for (const list of [player.levels, player.audioTracks, player.subtitleTracks]) {
+    for (const holder of list ?? []) {
+      const details = holder?.details;
+      if (details && details.live === false && typeof details.url === "string" && details.url) urls.add(details.url);
+    }
+  }
+  return [...urls];
+}
+
 function defaultVisibility(): PlaybackVisibility | null {
   return typeof document === "undefined" ? null : document;
 }
@@ -106,6 +145,56 @@ const defaultTimers: RenewalTimers = {
   setTimeout: (callback, delay) => globalThis.setTimeout(callback, delay),
   clearTimeout: (handle) => globalThis.clearTimeout(handle as ReturnType<typeof setTimeout>),
 };
+
+/**
+ * hls.js `xhrSetup`: sends each request to the newest token or the URI re-signed for it. A
+ * provider-signed URI requested while its playlist is being re-signed waits for the new
+ * signature (bounded by the refresh timeout; the refresh never rejects).
+ */
+function resigningXhrSetup(resigner: VodPlaylistResigner) {
+  return (xhr: XMLHttpRequest, requestUrl: string) => {
+    const open = () => {
+      const target = resigner.requestUrlFor(requestUrl);
+      if (target !== requestUrl) xhr.open("GET", target, true);
+    };
+    const pending = resigner.pending();
+    if (pending && providerSignedUrlKey(requestUrl) !== null) return pending.then(open, open);
+    open();
+  };
+}
+
+/**
+ * Native HLS: a media network／source error renews and reloads through `recover`. A new source
+ * that fails again before its metadata loaded (e.g. a refused token) does not swap forever: after
+ * NATIVE_MAX_ERROR_RECOVERIES in a row the element keeps its error until a scheduled renewal or
+ * the viewer presses play. Returns the detach function.
+ */
+function attachNativeErrorRecovery(video: HTMLVideoElement, recover: () => void) {
+  let recoveries = 0;
+  const onError = () => {
+    const code = video.error?.code;
+    if (code !== MEDIA_ERR_NETWORK && code !== MEDIA_ERR_SRC_NOT_SUPPORTED) return;
+    if (recoveries >= NATIVE_MAX_ERROR_RECOVERIES) return;
+    recoveries += 1;
+    recover();
+  };
+  const onLoadedMetadata = () => {
+    recoveries = 0;
+  };
+  const onPlay = () => {
+    if (recoveries < NATIVE_MAX_ERROR_RECOVERIES || !video.error) return;
+    recoveries = 0;
+    onError();
+  };
+  video.addEventListener("error", onError);
+  video.addEventListener("loadedmetadata", onLoadedMetadata);
+  video.addEventListener("play", onPlay);
+  return () => {
+    video.removeEventListener("error", onError);
+    video.removeEventListener("loadedmetadata", onLoadedMetadata);
+    video.removeEventListener("play", onPlay);
+  };
+}
 
 type HlsStall = {
   startedAt: number;
@@ -124,8 +213,30 @@ type HlsStall = {
  * fallback. With `expiresInSeconds` (an F-093 signed Stream URL) the source is
  * renewed through `fetchSource` (the admission-checked playback-source
  * endpoint) before the token lapses, and immediately when playback hits an
- * expired-token response (hls.js NETWORK_ERROR 401／403, or a native media
- * network／source error), after which loading resumes at the current position.
+ * expired-token response (hls.js NETWORK_ERROR 401／403 — Cloudflare answers an
+ * expired signature with 401 — or a native media network／source error), after
+ * which loading resumes at the current position.
+ *
+ * Applying a renewed token on hls.js: `xhrSetup` puts the newest token into every
+ * later token-form request (entry manifest, media playlists). Segment and init URIs
+ * are uid-form and signed by Cloudflare (`p`／`s`) for the token their playlist was
+ * fetched with, and hls.js loads a VOD media playlist only once, so on each renewal
+ * the VOD media playlists hls.js holds (usually one or two) are fetched again with
+ * the new token (`fetchPlaylist`, one request each, plus the entry manifest only
+ * when a held playlist URL is itself uid-form), and `xhrSetup` sends every later
+ * request for one of their URIs to the newly signed URI. Segment requests made
+ * while that refresh runs wait for it (at most STREAM_PLAYLIST_REFRESH_TIMEOUT_MS).
+ * Nothing is reloaded in hls.js and the media element is untouched: position,
+ * play／pause, playbackRate and the buffer stay as they are. A live media playlist is
+ * left alone: hls.js reloads it every target duration through `xhrSetup` (new token),
+ * so its segment URIs are re-signed by Cloudflare anyway. A refresh that failed
+ * without the token being refused is retried twice (15 s, 30 s); the stall recovery
+ * below refreshes again before it restarts loading.
+ *
+ * Native HLS (Safari／iOS, only without MediaSource) cannot be told new segment URIs:
+ * a renewal swaps `src` and restores position, play／pause and playbackRate. That
+ * reload is a short visible rebuffer (Safari fetches the manifest again and refills
+ * its buffer) once per renewal, i.e. every 28 minutes on a replay.
  *
  * hls.js does not retry 4xx responses and stops loading on a fatal network
  * error, so a rejection that outlasts one renewal (every Stream request
@@ -135,8 +246,9 @@ type HlsStall = {
  * stall). After a 401／403 an attempt first renews (limited by the renewal's
  * own minimum interval) unless this stall already got a token that is still
  * fresh (renewed less than min(half its lifetime, 2 min) ago and failed fewer
- * than 3 attempts); an expired one is never used. It then calls `startLoad` at the current
- * position, or `loadSource` when the manifest itself never loaded (`startLoad`
+ * than 3 attempts); an expired one is never used. It then refreshes the VOD playlists
+ * for the current token when that has not succeeded yet, and calls `startLoad` at the
+ * current position, or `loadSource` when the manifest itself never loaded (`startLoad`
  * does nothing before hls.js has levels). A paused player in a hidden tab waits
  * for the tab to show; a viewer play, the tab showing again or a renewed token
  * retries at once. A loaded fragment ends the stall. Playback is only resumed
@@ -152,6 +264,7 @@ export function attachHlsPlayback({
   now = () => Date.now(),
   random = Math.random,
   visibility = defaultVisibility(),
+  fetchPlaylist = defaultFetchPlaylist,
 }: {
   video: HTMLVideoElement;
   url: string;
@@ -162,6 +275,7 @@ export function attachHlsPlayback({
   now?: () => number;
   random?: () => number;
   visibility?: PlaybackVisibility | null;
+  fetchPlaylist?: PlaylistFetcher;
 }) {
   let disposed = false;
   let currentUrl = url;
@@ -194,6 +308,11 @@ export function attachHlsPlayback({
   let selfPlayTicket = 0;
   let selfPauseExpected = false;
   let selfPauseTimer: unknown = null;
+  // Re-signs the Cloudflare-signed segment URIs of the VOD playlists hls.js holds (hls.js only).
+  const resigner = createVodPlaylistResigner({
+    initialUrl: url, currentUrl: () => currentUrl, fetchPlaylist, timers,
+    heldPlaylists: () => (native || !player ? null : loadedVodPlaylistUrls(player)),
+  });
 
   const trackedFetchSource = async () => {
     const next = await fetchSource();
@@ -228,9 +347,11 @@ export function attachHlsPlayback({
           nativeReloadPending = false;
           return;
         }
-        // hls.js picks the new token up in xhrSetup on every later request, so a
-        // stalled player only restarts loading. A renewal outside a recovery
-        // attempt (scheduled, or the retry of a failed one) retries at once.
+        // hls.js picks the new token up in xhrSetup on every later token-form request; the
+        // provider-signed segment URIs of the VOD playlists it holds are re-signed here, once
+        // per renewal. A stalled player then only restarts loading. A renewal outside a
+        // recovery attempt (scheduled, or the retry of a failed one) retries at once.
+        if (changed) resigner.renewed();
         if (stall && !stall.attempting) {
           clearStallTimer();
           void attemptRecovery(false);
@@ -279,6 +400,8 @@ export function attachHlsPlayback({
 
   function reloadManifest(target: HlsPlayer) {
     const wasPaused = video.paused;
+    // Every playlist is loaded again with the current token: older re-signed URIs must not win.
+    resigner.reset();
     target.loadSource(currentUrl);
     // A reload that re-creates the MediaSource pauses the element (HTML load algorithm); some
     // engines also queue a pause event for it, which is not the viewer's. Only when the element
@@ -318,6 +441,11 @@ export function attachHlsPlayback({
         // A refused or rate-limited renewal still leaves a usable token when a valid one arrived
         // during this stall; otherwise restarting would only meet the same 401／403.
         usable = renewed !== null || stallTokenValid();
+      }
+      if (usable && manifestParsed && !current.manifestError) {
+        // Segment URIs signed for an expired token keep failing (Cloudflare 401) until the VOD
+        // playlists are re-signed for the current one; joins the renewal's own refresh.
+        await resigner.refresh();
       }
     } catch {
       usable = stallTokenValid();
@@ -420,17 +548,16 @@ export function attachHlsPlayback({
     if (!visibility?.hidden && stall) retryOnViewerAction();
   };
 
-  const onNativeError = () => {
-    const code = video.error?.code;
-    if (code !== MEDIA_ERR_NETWORK && code !== MEDIA_ERR_SRC_NOT_SUPPORTED) return;
-    nativeReloadPending = true;
-    void renewal?.renewNow();
-  };
-
+  let detachNativeRecovery: (() => void) | null = null;
   const startNative = () => {
     if (disposed || !video.canPlayType(NATIVE_HLS_TYPE)) return;
     native = true;
-    if (renewal) video.addEventListener("error", onNativeError);
+    if (renewal) {
+      detachNativeRecovery = attachNativeErrorRecovery(video, () => {
+        nativeReloadPending = true;
+        void renewal.renewNow();
+      });
+    }
     video.src = url;
   };
 
@@ -443,12 +570,7 @@ export function attachHlsPlayback({
         startNative();
         return;
       }
-      const hls = new Hls(renewal ? {
-        xhrSetup: (xhr, requestUrl) => {
-          const target = withCurrentStreamToken(requestUrl, currentUrl);
-          if (target !== requestUrl) xhr.open("GET", target, true);
-        },
-      } : undefined);
+      const hls = new Hls(renewal ? { xhrSetup: resigningXhrSetup(resigner) } : undefined);
       player = hls;
       if (renewal) {
         manifestLoadErrors = new Set([
@@ -457,7 +579,7 @@ export function attachHlsPlayback({
         ]);
         // Without the event the manifest state is unknown; rely on the error details alone.
         manifestParsed = !Hls.Events.MANIFEST_PARSED;
-        hls.on(Hls.Events.ERROR, (_event, data) => onHlsError(data, Hls.ErrorTypes.NETWORK_ERROR));
+        hls.on(Hls.Events.ERROR, (_event, data) => onHlsError(data as HlsErrorData, Hls.ErrorTypes.NETWORK_ERROR));
         if (Hls.Events.MANIFEST_PARSED) hls.on(Hls.Events.MANIFEST_PARSED, onManifestParsed);
         if (Hls.Events.FRAG_LOADED) hls.on(Hls.Events.FRAG_LOADED, onFragLoaded);
         video.addEventListener("play", onPlay);
@@ -475,11 +597,12 @@ export function attachHlsPlayback({
     renewal?.stop();
     clearStallTimer();
     clearSelfPauseExpectation();
+    resigner.dispose();
     stall = null;
     cancelNativeSwap?.();
     player?.destroy();
     player = null;
-    if (native && renewal) video.removeEventListener("error", onNativeError);
+    detachNativeRecovery?.();
     if (stallListenersAttached) {
       video.removeEventListener("play", onPlay);
       video.removeEventListener("pause", onPause);

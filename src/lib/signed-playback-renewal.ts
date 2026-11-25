@@ -3,8 +3,10 @@
  *
  * `/api/live-playback-source` 在簽章啟用時回傳 `expiresInSeconds`。播放器在
  * token 到期前重新呼叫同一個端點（伺服器會再做一次入場檢查）取得新網址：
- * - hls.js：以 `xhrSetup` 把之後每個 manifest／segment 請求的 token 換成最新的，播放不中斷。
- * - Safari 原生 HLS（僅在 hls.js 不支援時）：換 `src` 後補回播放位置。
+ * - hls.js：以 `xhrSetup` 把之後每個 token 形式的 manifest／playlist 請求換成最新 token；
+ *   Cloudflare 自簽（`p`／`s`）的 segment 網址由 `hls-playback-attachment.ts` 以新 token 重抓
+ *   VOD playlist 後改送新簽章，播放不中斷。
+ * - Safari 原生 HLS（僅在 hls.js 不支援時）：換 `src` 後補回播放位置、播放狀態與速度。
  * 續期失敗時只要播放器還掛著就持續退避重試；播放中遇到 401／403 時立即續期。
  */
 
@@ -140,7 +142,7 @@ export function createSignedPlaybackRenewal({
 
 const JWT_PATH_SEGMENT = /^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/;
 
-function isStreamDeliveryHost(hostname: string) {
+export function isStreamDeliveryHost(hostname: string) {
   const host = hostname.toLowerCase();
   return host === "videodelivery.net" || /^customer-[a-z0-9]+\.cloudflarestream\.com$/.test(host);
 }
@@ -186,14 +188,20 @@ export function markSourceSwapPlay(video: object) {
 }
 
 /**
- * Safari 原生 HLS：換網址後回到原播放位置，並維持播放／暫停狀態。
+ * Safari 原生 HLS：換網址後回到原播放位置，並維持播放／暫停狀態與 playbackRate。
  * 回傳取消函式：移除尚未觸發的 `loadedmetadata` 監聽（再次換網址或卸載時呼叫）。
  */
 export function swapNativePlaybackSource(video: HTMLVideoElement, nextUrl: string) {
   const resumeAt = video.currentTime;
   const wasPaused = video.paused;
+  // 換 src 會跑 media element 的 load algorithm，把 playbackRate 重設成 defaultPlaybackRate。
+  const rate = video.playbackRate;
+  const keepRate = () => {
+    if (Number.isFinite(rate) && rate > 0 && video.playbackRate !== rate) video.playbackRate = rate;
+  };
   const restore = () => {
     video.removeEventListener("loadedmetadata", restore);
+    keepRate();
     if (resumeAt > 0 && Number.isFinite(resumeAt)) {
       try {
         video.currentTime = resumeAt;
@@ -209,5 +217,6 @@ export function swapNativePlaybackSource(video: HTMLVideoElement, nextUrl: strin
   };
   video.addEventListener("loadedmetadata", restore);
   video.src = nextUrl;
+  keepRate();
   return () => video.removeEventListener("loadedmetadata", restore);
 }
