@@ -4,7 +4,7 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 import {
   ALIAS, FIXTURE, ORIGIN, STEPS, STREAM_PATTERN_LIMIT,
-  assessPlaybackProgress, classifyRequestFailure, describePageError, isBenignPageError, redactStreamPath, streamRequestOrigin, tallyStreamRequest, assessRecovery, assessReplayTokenExp, classifyPlayerPath, classifyRequest,
+  assessPlaybackProgress, classifyRequestFailure, classifyVideoLock, describePageError, isBenignPageError, postLockCoverage, redactStreamPath, streamTokenSubject, streamRequestOrigin, tallyStreamRequest, assessRecovery, assessReplayTokenExp, classifyPlayerPath, classifyRequest,
   classifyStoredThumbnail, classifyStreamUrl, createReceipt, decodeStreamTokenClaims, finalVerdict,
   formatReceiptLines, receiptLeaks, redactStreamUrl, renewalDelaySeconds, replayDeadline,
   replayDeadlineMinutes, routeCategory, safariCoverage, setStep, skippedStepsFor, taipeiDateTimeLocal,
@@ -322,6 +322,90 @@ test("page errors are reduced to redacted fields; only an interrupted play() is 
   assert.equal(describePageError({ name: "<script>", message: "x" }).name, "Error");
 });
 
+test("run 45561006960 leak: URL query values never survive, in any URL form, and the guard catches them", () => {
+  const p = Buffer.from(JSON.stringify({ typ: "JWT", videoID: uid, ownerID: 12345678, exp: 1800000000 })).toString("base64url");
+  // Exactly how Playwright hands WebKit's "https://…" report over: name "https", message from "/host".
+  const segment = describePageError({ name: "https", message: `/videodelivery.net/${uid}/video/64/seg_161.mp4?p=${p}&s=c2lnbmF0dXJl`, stack: "" });
+  assert.equal(segment.name, "Error");
+  assert.equal(segment.message, "<url:stream/<uid>/video/<n>/seg_<n>.mp4?keys=p,s>");
+  const poll = describePageError({ name: "https", message: `/${ALIAS}/api/live-updates?vendorId=wp4_synthetic_vendor_v1&liveId=cm0abcdefghijklmnop&include=chat,interaction`, stack: "" });
+  assert.equal(poll.message, "<url:app/api/live-updates?keys=include,liveId,vendorId>");
+  const forms = [
+    `see https://${ALIAS}/api/x?token=abc&b=2 now`,
+    `relative /api/live-updates?vendorId=v1&liveId=l1 failed`,
+    `//videodelivery.net/${uid}/video/1/seg_1.mp4?p=${p}`,
+    `videodelivery.net/${uid}/video/1/seg_1.mp4?p=${p}`,
+    `bare ${p} value`,
+  ];
+  for (const message of forms) {
+    const described = describePageError({ name: "TypeError", message, stack: "" });
+    for (const secret of [p, "eyJ", "vendorId=", "liveId=", "token=abc", "v1", uid, ALIAS]) {
+      assert.equal(described.message.includes(secret), false, `${message} -> ${described.message} contains ${secret}`);
+    }
+    assert.equal(receiptLeaks(JSON.stringify(described)), false, described.message);
+  }
+  // The guard itself catches what the old sanitizer let through.
+  for (const leaked of [
+    `"message":"/videodelivery.net/<hex>/video/64/seg_161.mp4?p=${p.slice(0, 40)}"`,
+    `"message":"/${ALIAS}/api/live-updates?vendorId=x&liveId=y"`,
+    `"p":"${p}"`,
+    "?keys=a,b=1",
+  ]) assert.equal(receiptLeaks(leaked), true, leaked);
+  // The receipt's own vocabulary is not a false positive.
+  for (const clean of ["PLAYWRIGHT_WEBKIT_USED_HLS_JS_NATIVE_PATH_NOT_EXERCISED", "videodelivery:/<uid>/video/<n>/seg_<n>.mp4?keys=p,s:17(ok:16,failed:0)", "a".repeat(40)]) {
+    assert.equal(receiptLeaks(clean), false, clean);
+  }
+});
+
+test("a bare load URL report is benign only in the WebKit viewer during the runner's own navigation", () => {
+  const segment = { name: "https", message: `/videodelivery.net/${uid}/video/64/seg_161.mp4?p=x&s=y`, stack: "x\n    at send (https://h/_next/static/immutable/chunks/3cwmmhv6f5k9b.js:29:124403)" };
+  const poll = { name: "https", message: `/${ALIAS}/api/live-updates?vendorId=a&liveId=b`, stack: "" };
+  const during = { viewerBrowser: "webkit", actor: "viewer", duringNavigation: true };
+  for (const error of [segment, poll]) {
+    const described = describePageError(error, during);
+    assert.equal(described.category, "WEBKIT_LOAD_CANCELLED_BY_RUNNER_NAVIGATION");
+    assert.equal(isBenignPageError(described), true);
+    for (const context of [
+      { ...during, duringNavigation: false }, { ...during, viewerBrowser: "chromium" }, { ...during, actor: "owner" }, {},
+    ]) {
+      const other = describePageError(error, context);
+      assert.equal(other.category, "LOAD_URL_REPORT", JSON.stringify(context));
+      assert.equal(isBenignPageError(other), false);
+    }
+  }
+  assert.equal(describePageError(segment, during).frame, "3cwmmhv6f5k9b.js:29:124403");
+  // Anything that is not exactly one player-load or poll URL stays a real page error.
+  for (const message of [
+    `/${ALIAS}/api/live-admission`,
+    `/videodelivery.net/${uid}/thumbnails/thumbnail.jpg`,
+    `/videodelivery.net/${uid}/video/1/seg_1.mp4 and then a TypeError`,
+    "/example.com/api/live-updates",
+  ]) {
+    const described = describePageError({ name: "https", message, stack: "" }, during);
+    assert.equal(isBenignPageError(described), false, message);
+  }
+  assert.equal(isBenignPageError(describePageError({ name: "TypeError", message: "x is not a function" }, during)), false);
+});
+
+test("post-lock playback is claimed only for a locked video that played through the renewal", () => {
+  const receipt = createReceipt(env);
+  assert.deepEqual(postLockCoverage(receipt), { postLockPlayback: "NOT_COVERED", postLockReason: "VIDEO_LOCK_STATE_NOT_OBSERVED" });
+  receipt.origin = { videoLock: "UNLOCKED" };
+  receipt.renewal = { status: "PASS" };
+  assert.deepEqual(postLockCoverage(receipt), { postLockPlayback: "NOT_COVERED", postLockReason: "OBSERVED_BEFORE_LOCK_REQUIRE_SIGNED_URLS_FALSE" });
+  receipt.origin = { videoLock: "LOCKED" };
+  assert.deepEqual(postLockCoverage(receipt), { postLockPlayback: "PASS", postLockReason: "LOCKED_VIDEO_PLAYED_PAST_FIRST_TOKEN_EXP" });
+  receipt.renewal = { status: "FAIL" };
+  assert.equal(postLockCoverage(receipt).postLockPlayback, "NOT_COVERED");
+  assert.equal(classifyVideoLock(200), "UNLOCKED");
+  assert.equal(classifyVideoLock(401), "LOCKED");
+  assert.equal(classifyVideoLock(403), "LOCKED");
+  assert.equal(classifyVideoLock(0), "UNKNOWN");
+  assert.equal(classifyVideoLock(null), "UNKNOWN");
+  assert.equal(streamTokenSubject(classifyStreamUrl(signedManifest).token), uid);
+  assert.equal(streamTokenSubject("a.b"), null);
+});
+
 test("a genuine provider delivery failure blocks the verdict even when every step passed", () => {
   const receipt = createReceipt(env);
   for (const step of STEPS) setStep(receipt, step, "PASS", 1);
@@ -344,12 +428,12 @@ test("receipt lines are single-line key=value records with fixed vocabulary", ()
   receipt.pageErrorDetails.push({ actor: "viewer", phase: "RECOVERY", benign: true, ...describePageError({ name: "AbortError", message: "The play() request was interrupted by a new load request.", stack: "" }) });
   const lines = formatReceiptLines(receipt).split("\n");
   assert.equal(lines.length, 10);
-  assert.ok(lines.some((line) => line.startsWith("stream_playback_requests=app_uid:0 provider_uid:0 provider_failures:0 VIEWER_START/PROVIDER/UID/SEGMENT/xhr:videodelivery:/<uid>/video/<n>/seg_<n>.ts?keys=p=1(ok:0,failed:0,aborted:0,injected:0)")));
+  assert.ok(lines.some((line) => line.startsWith("stream_playback_requests=app_uid:0 provider_uid:0 provider_failures:0 VIEWER_START/PROVIDER/UID/SEGMENT/xhr:videodelivery:/<uid>/video/<n>/seg_<n>.ts?keys=p:1(ok:0,failed:0,aborted:0,injected:0)")));
   assert.ok(lines.includes("stream_playback_errors=page:1 benign:1 viewer/RECOVERY/MEDIA_PLAY_INTERRUPTED/AbortError@NONE(benign)"));
   assert.equal(receiptLeaks(lines.join("\n")), false);
   for (const line of lines) assert.match(line, /^stream_playback_[a-z]+=\S/u);
   assert.ok(lines.some((line) => line.includes("token_expiry/playing:FAIL(NOT_RESUMED+NOT_ADVANCING)")));
-  assert.ok(lines.some((line) => line === "stream_playback_origin=status:PASS app:200 none:200 foreign:403 invalid_token:401 invalid_token_cors_readable:false"));
+  assert.ok(lines.some((line) => line === "stream_playback_origin=status:PASS app:200 none:200 foreign:403 invalid_token:401 invalid_token_cors_readable:false unsigned_uid:null video_lock:UNKNOWN"));
   assert.ok(lines.some((line) => line.includes("safari:NOT_COVERED")));
   assert.ok(lines.some((line) => line.includes("live_renewal:NOT_COVERED")));
 });
@@ -373,14 +457,15 @@ test("Origin probe records Cloudflare status codes only, with the app Origin as 
   const fetchImpl = async (url, options) => {
     calls.push({ url, headers: options.headers, redirect: options.redirect });
     const origin = options.headers.Origin;
+    if (url === `https://videodelivery.net/${uid}/manifest/video.m3u8`) return new Response("#EXTM3U", { status: 200 });
     if (url !== signedManifest) return new Response("", { status: 401, headers: { "access-control-allow-origin": "*" } });
     if (origin === ORIGIN) return new Response("#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=1\nx.m3u8", { status: 200 });
     if (origin) return new Response("", { status: 403 });
     return new Response("#EXTM3U", { status: 200 });
   };
   const result = await probeAllowedOrigins(signedManifest, fetchImpl);
-  assert.deepEqual(result, { status: "PASS", appOrigin: 200, noOrigin: 200, foreignOrigin: 403, invalidToken: 401, invalidTokenCorsReadable: true, appManifest: true });
-  assert.equal(calls.length, 4);
+  assert.deepEqual(result, { status: "PASS", appOrigin: 200, noOrigin: 200, foreignOrigin: 403, invalidToken: 401, invalidTokenCorsReadable: true, appManifest: true, unsignedUidManifest: 200, videoLock: "UNLOCKED" });
+  assert.equal(calls.length, 5);
   for (const call of calls) {
     assert.equal(call.redirect, "manual");
     assert.equal(Object.keys(call.headers).every((key) => key === "Origin"), true);

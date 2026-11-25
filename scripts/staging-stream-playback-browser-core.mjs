@@ -103,6 +103,35 @@ export function classifyStreamUrl(value) {
   };
 }
 
+/** The token's `sub` (the Stream uid), in memory only, for the unsigned-URL lock probe. */
+export function streamTokenSubject(token) {
+  if (typeof token !== "string" || !JWT_SEGMENT.test(token)) return null;
+  try {
+    const sub = JSON.parse(Buffer.from(token.split(".")[1], "base64url").toString("utf8"))?.sub;
+    return typeof sub === "string" && UID_SEGMENT.test(sub) ? sub.toLowerCase() : null;
+  } catch { return null; }
+}
+
+/** Cloudflare's answer to the unsigned uid manifest: 200 = not locked yet, 401/403 = locked. */
+export function classifyVideoLock(status) {
+  if (status === 200) return "UNLOCKED";
+  if (status === 401 || status === 403) return "LOCKED";
+  return "UNKNOWN";
+}
+
+/**
+ * Post-lock coverage is claimed only when the same run saw the video locked (unsigned uid
+ * manifest refused) and still played through the renewal past the first token's exp.
+ */
+export function postLockCoverage(receipt) {
+  const lock = receipt?.origin?.videoLock ?? "UNKNOWN";
+  if (lock === "UNLOCKED") return { postLockPlayback: "NOT_COVERED", postLockReason: "OBSERVED_BEFORE_LOCK_REQUIRE_SIGNED_URLS_FALSE" };
+  if (lock !== "LOCKED") return { postLockPlayback: "NOT_COVERED", postLockReason: "VIDEO_LOCK_STATE_NOT_OBSERVED" };
+  return receipt.renewal?.status === "PASS"
+    ? { postLockPlayback: "PASS", postLockReason: "LOCKED_VIDEO_PLAYED_PAST_FIRST_TOKEN_EXP" }
+    : { postLockPlayback: "NOT_COVERED", postLockReason: "LOCKED_BUT_RENEWAL_NOT_PASSED" };
+}
+
 /** Payload claims only; the signature is never checked or used. */
 export function decodeStreamTokenClaims(token) {
   if (typeof token !== "string" || !JWT_SEGMENT.test(token)) return null;
@@ -213,10 +242,43 @@ export function classifyRequestFailure(errorText) {
 }
 
 /** Strip anything identifying from free text before it may enter the receipt. */
+/**
+ * Matches anything URL-like in free text: with a scheme ("https://h/p?q"), scheme-less with a
+ * host ("//h/p", "/h.tld/p?q" as Playwright leaves it after splitting "https:" off WebKit's
+ * text, "h.tld/p"), or a bare path with a query ("/api/x?a=1"). 2026-11-25 run 45561006960
+ * printed `p=` (base64 JSON with the video and owner ids) from a scheme-less form.
+ */
+const URLISH = /(?:[A-Za-z][A-Za-z0-9+.-]*:)?(?:\/{1,2})?(?:[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+(?::\d+)?(?=[/?#]))?(?:\/[^\s?#]*)?\?[^\s#]*|(?:[A-Za-z][A-Za-z0-9+.-]*:)?\/{0,2}[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+(?::\d+)?\/[^\s]*|[A-Za-z][A-Za-z0-9+.-]*:\/\/\S+/gu;
+
+/** One URL-like token → `<url:host-class/path-shape?keys=a,b>`; query values never survive. */
+function redactUrlish(token) {
+  const [beforeHash] = token.split("#");
+  const queryIndex = beforeHash.indexOf("?");
+  const pathPart = queryIndex === -1 ? beforeHash : beforeHash.slice(0, queryIndex);
+  const query = queryIndex === -1 ? "" : beforeHash.slice(queryIndex + 1);
+  const withoutScheme = pathPart.replace(/^[A-Za-z][A-Za-z0-9+.-]*:/u, "").replace(/^\/+/u, "");
+  const hostMatch = /^([A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+)(?::\d+)?(\/.*)?$/u.exec(withoutScheme);
+  const host = hostMatch ? hostMatch[1].toLowerCase() : null;
+  const path = hostMatch ? (hostMatch[2] ?? "") : `/${withoutScheme}`;
+  const hostClass = host === null ? "relative" : isStreamDeliveryHost(host) ? "stream" : host === ALIAS ? "app" : "other";
+  const shape = path.split("/").map((segment) => {
+    if (segment === "") return "";
+    if (JWT_SEGMENT.test(segment)) return "<token>";
+    if (UID_SEGMENT.test(segment)) return "<uid>";
+    const [, stem, extension = ""] = /^(.*?)(\.[A-Za-z0-9]{1,5})?$/u.exec(segment);
+    return `${stem.replace(/[A-Za-z0-9_-]{20,}/gu, "<long>").replace(/[0-9a-f]{12,}/giu, "<hex>").replace(/\d+/gu, "<n>").replace(/[^A-Za-z0-9_<>-]/gu, "").slice(0, 30)}${extension.replace(/[^.A-Za-z0-9]/gu, "")}`;
+  }).join("/").slice(0, 80);
+  const keys = [...new Set(query.split("&").map((pair) => pair.split("=")[0]).filter(Boolean))]
+    .map((key) => (/^[A-Za-z0-9_.-]{1,24}$/u.test(key) ? key : "<key>")).sort().slice(0, 8);
+  return `<url:${hostClass}${shape}${keys.length ? `?keys=${keys.join(",")}` : ""}>`;
+}
+
 function sanitizeText(value, max) {
   return String(value ?? "")
-    .replace(/[A-Za-z][A-Za-z0-9+.-]*:\/\/\S+/gu, "<url>")
+    .replace(URLISH, (token) => redactUrlish(token))
     .replace(/[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}/gu, "<token>")
+    // Long base64/base64url runs (e.g. a signed `p` parameter) even outside a URL.
+    .replace(/(?<![A-Za-z0-9+/_-])(?=[A-Za-z0-9+/_-]*[a-z])(?=[A-Za-z0-9+/_-]*[A-Z])(?=[A-Za-z0-9+/_-]*\d)[A-Za-z0-9+/_-]{20,}={0,2}/gu, "<long>")
     .replace(/[^\s@]+@[^\s@]+/gu, "<email>")
     .replace(/[0-9a-f]{12,}/giu, "<hex>")
     .replace(/bearer(?:\s+\S+)?/giu, "<bearer>")
@@ -243,31 +305,63 @@ function topFrame(stack) {
  * unhandledRejection }`. WebKit reports unhandled rejections as
  * "Unhandled Promise Rejection: <Name>: <message>".
  */
-export function describePageError(error) {
+export function describePageError(error, context = {}) {
   const raw = String(error?.message ?? error ?? "");
   const unhandledRejection = raw.startsWith("Unhandled Promise Rejection: ");
   const body = unhandledRejection ? raw.slice("Unhandled Promise Rejection: ".length) : raw;
   const named = /^([A-Z][A-Za-z]{0,39}(?:Error|Exception)): ([\s\S]*)$/u.exec(body);
   const rawName = named ? named[1] : String(error?.name ?? "Error");
-  const name = /^[A-Za-z]{1,40}$/u.test(rawName) ? rawName : "Error";
+  const loadUrl = loadReportUrl(rawName, named ? named[2] : body);
+  // Playwright splits WebKit's "https://…" text at the first colon, leaving name "https".
+  const name = loadUrl || !/^[A-Za-z]{1,40}$/u.test(rawName) ? "Error" : rawName;
   const message = sanitizeText(named ? named[2] : body, 160);
   let category = "OTHER";
   // WebKit's generic "The operation was aborted." is also what an aborted fetch rejects with, so
   // only a message that names play() is treated as an interrupted media play.
   if (name === "AbortError" && /play\(\)/u.test(message)) category = "MEDIA_PLAY_INTERRUPTED";
   else if (name === "AbortError") category = "ABORT";
-  else if (/Load failed|Failed to fetch|NetworkError/u.test(message)) category = "NETWORK";
+  else if (loadUrl) {
+    category = context.viewerBrowser === "webkit" && context.actor === "viewer" && context.duringNavigation === true
+      ? "WEBKIT_LOAD_CANCELLED_BY_RUNNER_NAVIGATION" : "LOAD_URL_REPORT";
+  } else if (/Load failed|Failed to fetch|NetworkError/u.test(message)) category = "NETWORK";
   return { name, message, frame: topFrame(error?.stack), category, unhandledRejection };
 }
 
 /**
- * Only an interrupted media play() is benign: a later load()/src change or pause() rejects the
- * pending play() promise with AbortError ("The play() request was interrupted by ..."). It says
- * nothing about playback health; every other page error (including any other AbortError, such as
- * an aborted fetch) still blocks the run.
+ * The whole report is one URL of a player load (Stream manifest/playlist/segment) or of the
+ * viewer's own `/api/live-updates` poll: that is WebKit's console report of a failed or
+ * cancelled network load, not an exception. Playwright's WebKit backend turns every console
+ * message with level "error" and source "javascript" into `pageerror` (Chromium reports only
+ * uncaught exceptions), and Playwright strips the "https:" prefix as an error name.
+ */
+function loadReportUrl(rawName, text) {
+  const trimmed = String(text ?? "").trim();
+  if (!/^\S+$/u.test(trimmed)) return null;
+  let candidate = trimmed;
+  if (/^https?$/iu.test(rawName) && trimmed.startsWith("/")) candidate = `${rawName}:/${trimmed}`;
+  else if (/^\/[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+\//u.test(trimmed)) candidate = `https:/${trimmed}`;
+  let url;
+  try { url = new URL(candidate); } catch { return null; }
+  if (url.protocol !== "https:") return null;
+  const stream = classifyStreamUrl(url.href);
+  if (stream && ["MANIFEST", "PLAYLIST", "SEGMENT"].includes(stream.kind)) return url;
+  return url.hostname === ALIAS && url.pathname === "/api/live-updates" ? url : null;
+}
+
+/**
+ * Benign, and nothing else:
+ * - MEDIA_PLAY_INTERRUPTED: an AbortError naming play() (a later load or pause rejected it).
+ * - WEBKIT_LOAD_CANCELLED_BY_RUNNER_NAVIGATION: in the WebKit viewer, while the runner itself was
+ *   navigating the page away, WebKit's console report of a load it cancelled — a Stream player
+ *   load or the `/api/live-updates` poll, and only the bare URL. 2026-11-25 run 45561006960:
+ *   4 such reports in RECOVERY (each case reloads the page), at hls.js's `xhr.send()` and the
+ *   `fetch(/api/live-updates)` call (whose rejection src/lib/live-updates-client.ts:243 handles);
+ *   the poll is never touched by the runner's 403 route, so only the reload can have cancelled it.
+ * Every other page error, including the same URL report outside a runner navigation, blocks.
  */
 export function isBenignPageError(described) {
-  return described?.category === "MEDIA_PLAY_INTERRUPTED";
+  return described?.category === "MEDIA_PLAY_INTERRUPTED"
+    || described?.category === "WEBKIT_LOAD_CANCELLED_BY_RUNNER_NAVIGATION";
 }
 
 export const PAGE_ERROR_DETAIL_LIMIT = 10;
@@ -510,6 +604,9 @@ export function createReceipt(env = {}) {
       safari: "NOT_COVERED", safariReason: "WEBKIT_NOT_RUN_REAL_SAFARI_REQUIRED", webkitNativeHls: "NOT_EXERCISED",
       liveRenewal: "NOT_COVERED", liveRenewalReason: "NO_SYNTHETIC_LIVE_INPUT_PUBLISHER_IN_STAGING_TOOLING",
       livePreviewPlayer: "NOT_COVERED", livePreviewReason: "PREVIEW_PLAYER_ONLY_FOR_EVERGREEN_LIVE_WITH_PREVIEW",
+      // Renewal and segments signed by Cloudflare are proven against locked videos only when the
+      // unsigned uid manifest is refused (ORIGIN_PROBE videoLock LOCKED, plan §8 step 4).
+      postLockPlayback: "NOT_COVERED", postLockReason: "VIDEO_LOCK_STATE_NOT_OBSERVED",
     },
     pageErrors: 0, benignPageErrors: 0, pageErrorDetails: [], blockedWrites: 0, blockedExternal: 0, suppressedTelemetry: 0, suppressedAnalytics: 0,
     sideEffects: {
@@ -553,7 +650,14 @@ export function receiptLeaks(text) {
     || /(?<![A-Za-z0-9])[a-f0-9]{32}(?![A-Za-z0-9])/iu.test(text)
     || /:\/\//u.test(text)
     || /customer-[a-z0-9]+\.cloudflarestream/iu.test(text)
-    || /Bearer\s/iu.test(text);
+    || /Bearer\s/iu.test(text)
+    // A query value: `?name=value` / `&name=value`. Only the redacted `?keys=a,b` form may appear.
+    || /[?&](?!keys=)[A-Za-z0-9_.-]{1,40}=/u.test(text)
+    || /[?&]keys=[^"\s)>]*=/u.test(text)
+    // base64 JSON (`{"...` encodes to `eyJ`), e.g. Cloudflare's signed segment `p` parameter.
+    || /eyJ[A-Za-z0-9_+/-]{8,}/u.test(text)
+    // A long mixed-case base64-ish run with digits (the receipt's own codes are UPPER_SNAKE).
+    || /(?<![A-Za-z0-9+/_-])(?=[A-Za-z0-9+/_-]*[a-z])(?=[A-Za-z0-9+/_-]*[A-Z])(?=[A-Za-z0-9+/_-]*\d)[A-Za-z0-9+/_-]{48,}/u.test(text);
 }
 
 const yes = (value) => (value === true ? "true" : value === false ? "false" : "null");
@@ -567,14 +671,14 @@ export function formatReceiptLines(receipt) {
     `stream_playback_result=${receipt.result} reason=${receipt.reason} browser=${receipt.viewerBrowser} scenario=${receipt.scenario}`,
     `stream_playback_steps=${steps}`,
     `stream_playback_viewer=token_form:${yes(receipt.viewer.tokenFormPlayback)} uid_form_requests:${receipt.viewer.uidFormStreamRequests} player:${receipt.viewer.playerPath} exp_checks:${receipt.viewer.tokenExpChecks} exp_mismatches:${receipt.viewer.tokenExpMismatches} deadline_capped_matches:${receipt.viewer.deadlineCappedMatches}/${receipt.viewer.deadlineCappedChecks}`,
-    `stream_playback_requests=app_uid:${receipt.viewer.appUidFormStreamRequests} provider_uid:${receipt.viewer.providerUidFormStreamRequests} provider_failures:${receipt.viewer.providerRequestFailures} ${(receipt.viewer.streamRequestPatterns ?? []).map((item) => `${item.phase}/${item.origin}/${item.form}/${item.kind}/${item.resourceType}:${item.pattern}=${item.requests}(ok:${item.ok},failed:${item.failed},aborted:${item.aborted ?? 0},injected:${item.injected ?? 0})`).join(" ") || "NONE"}`,
+    `stream_playback_requests=app_uid:${receipt.viewer.appUidFormStreamRequests} provider_uid:${receipt.viewer.providerUidFormStreamRequests} provider_failures:${receipt.viewer.providerRequestFailures} ${(receipt.viewer.streamRequestPatterns ?? []).map((item) => `${item.phase}/${item.origin}/${item.form}/${item.kind}/${item.resourceType}:${item.pattern}:${item.requests}(ok:${item.ok},failed:${item.failed},aborted:${item.aborted ?? 0},injected:${item.injected ?? 0})`).join(" ") || "NONE"}`,
     // Redacted messages stay in the JSON receipt (pageErrorDetails); the line keeps the fixed fields.
     `stream_playback_errors=page:${receipt.pageErrors} benign:${receipt.benignPageErrors ?? 0} ${(receipt.pageErrorDetails ?? []).map((item) => `${item.actor}/${item.phase}/${item.category}/${item.name}@${item.frame}${item.benign ? "(benign)" : ""}`).join(" ") || "NONE"}`,
     `stream_playback_renewal=status:${renewal.status ?? "NOT_RUN"} after_s:${renewal.observedAfterSeconds ?? "null"} expected_s:${renewal.expectedAfterSeconds ?? "null"} new_token_requests:${renewal.newTokenStreamRequests ?? "null"} renewed_exp_equals_deadline:${yes(renewal.renewedExpEqualsDeadline ?? null)} max_stall_s:${renewal.progress?.maxStallSeconds ?? "null"}`,
     `stream_playback_recovery=${receipt.recovery.length ? receipt.recovery.map((item) => `${item.mode}/${item.state}:${item.status}${item.reasons?.length ? `(${item.reasons.join("+")})` : ""}`).join(" ") : "NOT_RUN"}`,
-    `stream_playback_origin=status:${origin.status ?? "NOT_RUN"} app:${origin.appOrigin ?? "null"} none:${origin.noOrigin ?? "null"} foreign:${origin.foreignOrigin ?? "null"} invalid_token:${origin.invalidToken ?? "null"} invalid_token_cors_readable:${yes(origin.invalidTokenCorsReadable ?? null)}`,
+    `stream_playback_origin=status:${origin.status ?? "NOT_RUN"} app:${origin.appOrigin ?? "null"} none:${origin.noOrigin ?? "null"} foreign:${origin.foreignOrigin ?? "null"} invalid_token:${origin.invalidToken ?? "null"} invalid_token_cors_readable:${yes(origin.invalidTokenCorsReadable ?? null)} unsigned_uid:${origin.unsignedUidManifest ?? "null"} video_lock:${origin.videoLock ?? "UNKNOWN"}`,
     `stream_playback_pages=${receipt.pages.length ? receipt.pages.map((item) => `${item.page}:${item.status}`).join(" ") : "NOT_RUN"}`,
-    `stream_playback_coverage=chromium_hlsjs:${receipt.coverage.chromiumHlsJs} safari:${receipt.coverage.safari}(${receipt.coverage.safariReason}) webkit_native_hls:${receipt.coverage.webkitNativeHls} live_renewal:${receipt.coverage.liveRenewal}(${receipt.coverage.liveRenewalReason}) live_preview_player:${receipt.coverage.livePreviewPlayer}`,
+    `stream_playback_coverage=chromium_hlsjs:${receipt.coverage.chromiumHlsJs} safari:${receipt.coverage.safari}(${receipt.coverage.safariReason}) webkit_native_hls:${receipt.coverage.webkitNativeHls} live_renewal:${receipt.coverage.liveRenewal}(${receipt.coverage.liveRenewalReason}) live_preview_player:${receipt.coverage.livePreviewPlayer} post_lock_playback:${receipt.coverage.postLockPlayback}(${receipt.coverage.postLockReason})`,
   ];
   return lines.join("\n");
 }
