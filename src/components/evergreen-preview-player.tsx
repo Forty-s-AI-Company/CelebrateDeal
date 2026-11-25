@@ -1,7 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { isHlsVideoUrl } from "@/components/promo-video-player";
 import { parseSafeExternalHttpUrl } from "@/lib/external-url";
+import { attachHlsPlayback } from "@/lib/hls-playback-attachment";
+
+// The preview URL is a one-shot signed URL: no renewal source, so an expired token ends the preview.
+const noRenewalSource = async () => null;
 
 export function EvergreenPreviewPlayer({
   videoUrl,
@@ -15,14 +20,23 @@ export function EvergreenPreviewPlayer({
   events: Array<{ id: string; triggerSec: number; title: string; eventType: string }>;
 }) {
   const [currentSeconds, setCurrentSeconds] = useState(0);
+  const videoRef = useRef<HTMLVideoElement>(null);
   const safeUrl = parseSafeExternalHttpUrl(videoUrl);
+  const isHls = safeUrl !== null && isHlsVideoUrl(safeUrl);
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!safeUrl || !isHls || !video) return;
+    // hls.js where MSE is supported (Chrome/Firefox), native HLS otherwise (Safari/iOS).
+    return attachHlsPlayback({ video, url: safeUrl, fetchSource: noRenewalSource });
+  }, [safeUrl, isHls]);
   if (!safeUrl) return <p role="alert" className="rounded-lg bg-amber-50 p-4 text-sm text-amber-900">來源影片網址無法安全預覽。</p>;
   const triggered = events.filter((event) => event.triggerSec <= currentSeconds);
   const latest = triggered.at(-1);
   return (
     <div className="grid gap-3">
       <video
-        src={safeUrl}
+        ref={videoRef}
+        src={isHls ? undefined : safeUrl}
         controls
         playsInline
         style={{ aspectRatio: orientation === "portrait" ? "9 / 16" : "16 / 9", maxHeight: "70dvh" }}
