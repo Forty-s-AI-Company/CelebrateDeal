@@ -1,4 +1,4 @@
-# F-093：重建 staging 的 Cloudflare Stream 簽章金鑰，並把同一次回應的 id 與 pem
+﻿# F-093：重建 staging 的 Cloudflare Stream 簽章金鑰，並把同一次回應的 id 與 pem
 # 一起寫入 Vercel 專案 celebrate-deal-staging 的 Preview 環境變數。
 #
 # 只能由 owner 在自己的電腦執行：Cloudflare API token 用隱藏輸入，金鑰內容不會印在畫面上，
@@ -23,7 +23,7 @@ if ($account -notmatch '^[0-9a-f]{32}$') { throw "Account ID 格式不對（應�
 $cfToken = ConvertFrom-Secure (Read-Host "Cloudflare API token（Stream:Edit，輸入時不會顯示）" -AsSecureString)
 
 $vercelToken = $null
-foreach ($path in @("$env:APPDATA\com.vercel.cli\Data\auth.json", "$env:APPDATA\com.vercel.cli\auth.json", "$env:USERPROFILE\.local\share\com.vercel.cli\auth.json")) {
+foreach ($path in @("$env:APPDATA\xdg.data\com.vercel.cli\auth.json", "$env:APPDATA\com.vercel.cli\Data\auth.json","$env:APPDATA\com.vercel.cli\auth.json", "$env:USERPROFILE\.local\share\com.vercel.cli\auth.json")) {
   if (Test-Path $path) { $vercelToken = (Get-Content $path -Raw | ConvertFrom-Json).token; if ($vercelToken) { break } }
 }
 if (-not $vercelToken) { $vercelToken = ConvertFrom-Secure (Read-Host "找不到 vercel 登入，請貼 Vercel token（輸入時不會顯示）" -AsSecureString) }
